@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#111827" />
+  <title>Football Analytics</title>
+  <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">FOOTBALL ANALYTICS</div>
+        <h1>Матчи и анализ</h1>
+      </div>
+      <button id="profileBtn" class="profile-badge" type="button">FREE</button>
+    </header>
+
+    <main>
+      <section id="matchesView" class="view active">
+        <div class="date-strip">
+          <button class="date-btn" data-offset="-1">Вчера</button>
+          <button class="date-btn active" data-offset="0">Сегодня</button>
+          <button class="date-btn" data-offset="1">Завтра</button>
+        </div>
+        <div class="section-head">
+          <div>
+            <h2 id="matchesTitle">Матчи сегодня</h2>
+            <p id="quotaText">Загрузка профиля…</p>
+          </div>
+          <button id="refreshBtn" class="icon-btn" type="button" aria-label="Обновить">↻</button>
+        </div>
+        <div id="matches" class="matches"></div>
+      </section>
+
+      <section id="analysisView" class="view">
+        <button id="backBtn" class="back-btn" type="button">← К матчам</button>
+        <div id="analysis"></div>
+      </section>
+
+      <section id="profileView" class="view">
+        <button id="profileBackBtn" class="back-btn" type="button">← Назад</button>
+        <div class="panel profile-panel">
+          <div id="avatar" class="avatar">⚽</div>
+          <h2 id="profileName">Профиль</h2>
+          <p id="profileUsername" class="muted"></p>
+          <div class="plan-card">
+            <div>
+              <span class="muted">Тариф</span>
+              <strong id="profilePlan">FREE</strong>
+            </div>
+            <div>
+              <span class="muted">Анализы сегодня</span>
+              <strong id="profileUsage">0 / 3</strong>
+            </div>
+          </div>
+          <button id="proBtn" class="primary-btn" type="button">💎 PRO — скоро</button>
+          <p class="tiny">В следующей версии подключим Telegram Stars и платные уровни.</p>
+        </div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav">
+      <button id="navMatches" class="nav-item active" type="button"><span>⚽</span><small>Матчи</small></button>
+      <button id="navProfile" class="nav-item" type="button"><span>👤</span><small>Профиль</small></button>
+    </nav>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

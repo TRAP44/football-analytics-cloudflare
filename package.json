@@ -1,0 +1,14 @@
+{
+  "name": "football-analytics-miniapp-cloudflare",
+  "version": "2.0.3",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "check": "node --check src/worker.js && node --check public/app.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.38.0"
+  }
+}
