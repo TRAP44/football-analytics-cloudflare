@@ -447,7 +447,45 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === '/health' || url.pathname === '/api/health') {
-      return json({ ok: true, version: '2.0.3-cloudflare', database: hasSupabase(cfg) ? 'supabase' : 'memory', devMode: cfg.devMode });
+      return json({
+        ok: true,
+        version: '2.0.4-cloudflare-diagnostic',
+        database: hasSupabase(cfg) ? 'supabase' : 'memory',
+        devMode: cfg.devMode,
+        envPresent: {
+          telegramBotToken: Boolean(cfg.botToken),
+          apiFootballKey: Boolean(cfg.apiFootballKey),
+          tavilyKey: Boolean(cfg.tavilyKey),
+          supabaseUrl: Boolean(cfg.supabaseUrl),
+          supabaseServiceRoleKey: Boolean(cfg.supabaseKey),
+        },
+      });
+    }
+
+    if (url.pathname === '/health/supabase') {
+      if (!cfg.supabaseUrl || !cfg.supabaseKey) {
+        return json({
+          ok: false,
+          reason: 'missing_runtime_env',
+          supabaseUrlPresent: Boolean(cfg.supabaseUrl),
+          supabaseKeyPresent: Boolean(cfg.supabaseKey),
+        }, 503);
+      }
+      try {
+        const testUrl = new URL(`${cfg.supabaseUrl}/rest/v1/users`);
+        testUrl.searchParams.set('select', 'telegram_id');
+        testUrl.searchParams.set('limit', '1');
+        const r = await fetch(testUrl, { headers: supaHeaders(cfg) });
+        const body = await r.text();
+        return json({
+          ok: r.ok,
+          status: r.status,
+          database: 'supabase',
+          responsePreview: body.slice(0, 180),
+        }, r.ok ? 200 : 502);
+      } catch (error) {
+        return json({ ok: false, database: 'supabase', error: String(error?.message || error) }, 502);
+      }
     }
 
     if (!url.pathname.startsWith('/api/')) return new Response('Not found', { status: 404 });
