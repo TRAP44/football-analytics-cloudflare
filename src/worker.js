@@ -37,7 +37,7 @@ function config(env) {
     tavilyKey: env.TAVILY_KEY || '',
     botToken: env.TELEGRAM_BOT_TOKEN || '',
     supabaseUrl: String(env.SUPABASE_URL || '').replace(/\/$/, ''),
-    supabaseKey: env.SUPABASE_SERVICE_ROLE_KEY || '',
+    supabaseKey: env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY || '',
     cacheMinutes: intEnv(env.CACHE_MINUTES, 20),
     limits: {
       FREE: intEnv(env.FREE_DAILY_LIMIT, 3),
@@ -52,9 +52,12 @@ function hasSupabase(cfg) {
 }
 
 function supaHeaders(cfg, extra = {}) {
+  // New Supabase sb_secret_* keys are opaque API keys, not JWTs.
+  // Send them only in the apikey header. Putting sb_secret_* in
+  // Authorization: Bearer makes PostgREST try to parse it as a JWT
+  // and can produce PGRST303 / JWT validation errors.
   return {
     apikey: cfg.supabaseKey,
-    authorization: `Bearer ${cfg.supabaseKey}`,
     'content-type': 'application/json',
     ...extra,
   };
@@ -449,7 +452,7 @@ export default {
     if (url.pathname === '/health' || url.pathname === '/api/health') {
       return json({
         ok: true,
-        version: '2.0.4-cloudflare-diagnostic',
+        version: '2.0.5-cloudflare-supabase-fix',
         database: hasSupabase(cfg) ? 'supabase' : 'memory',
         devMode: cfg.devMode,
         envPresent: {
