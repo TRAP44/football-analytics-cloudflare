@@ -373,7 +373,24 @@ async function apiMatches(request, cfg) {
   const url = new URL(request.url);
   const requested = url.searchParams.get('date') || '';
   const date = /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : todayUtc();
-  const fixtures = await apiFootball('/fixtures', { date }, cfg);
+  const cacheKey = `matches:${date}:v1`;
+
+  // The free API-Football plan has a strict per-minute cap. A date list is
+  // identical for every user, so cache it once and reuse it for everybody.
+  const cached = await getCache(cacheKey, cfg);
+  if (cached?.matches) return json({ ...cached, cached: true });
+
+  let fixtures;
+  try {
+    fixtures = await apiFootball('/fixtures', { date }, cfg);
+  } catch (error) {
+    const message = String(error?.message || error);
+    if (/too many requests|rate.?limit|requests per minute/i.test(message)) {
+      throw new Error('API-Football временно достиг лимита бесплатного тарифа (10 запросов/мин). Подождите около минуты и нажмите обновить.');
+    }
+    throw error;
+  }
+
   const matches = fixtures
     .filter(f => ['NS', 'TBD', '1H', 'HT', '2H', 'ET', 'P', 'LIVE'].includes(f.fixture?.status?.short || 'NS'))
     .slice(0, 60)
@@ -387,7 +404,11 @@ async function apiMatches(request, cfg) {
       home: { id: f.teams?.home?.id, name: f.teams?.home?.name || '', logo: f.teams?.home?.logo || '' },
       away: { id: f.teams?.away?.id, name: f.teams?.away?.name || '', logo: f.teams?.away?.logo || '' },
     }));
-  return json({ date, matches });
+
+  const payload = { date, matches };
+  // fixture_id=0 is reserved for shared non-fixture list caches.
+  await setCache(cacheKey, 0, payload, cfg);
+  return json({ ...payload, cached: false });
 }
 
 async function apiAnalyze(request, cfg, user) {
@@ -409,12 +430,18 @@ async function apiAnalyze(request, cfg, user) {
   const homeId = fixture.teams?.home?.id, awayId = fixture.teams?.away?.id;
   const homeName = fixture.teams?.home?.name || '', awayName = fixture.teams?.away?.name || '';
 
+  const kickoffMs = fixture.fixture?.date ? Date.parse(fixture.fixture.date) : NaN;
+  const minutesToKickoff = Number.isFinite(kickoffMs) ? Math.round((kickoffMs - Date.now()) / 60000) : null;
+  const status = fixture.fixture?.status?.short || '';
+  const shouldFetchLineups = ['1H', 'HT', '2H', 'ET', 'P', 'LIVE'].includes(status) ||
+    (minutesToKickoff !== null && minutesToKickoff <= 120 && minutesToKickoff >= -240);
+
   const [injuries, predictions, odds, h2h, lineups, web] = await Promise.all([
     apiFootball('/injuries', { fixture: fixtureId }, cfg).catch(() => []),
     apiFootball('/predictions', { fixture: fixtureId }, cfg).catch(() => []),
     apiFootball('/odds', { fixture: fixtureId }, cfg).catch(() => []),
     apiFootball('/fixtures/headtohead', { h2h: `${homeId}-${awayId}`, last: 5 }, cfg).catch(() => []),
-    apiFootball('/fixtures/lineups', { fixture: fixtureId }, cfg).catch(() => []),
+    shouldFetchLineups ? apiFootball('/fixtures/lineups', { fixture: fixtureId }, cfg).catch(() => []) : Promise.resolve([]),
     tavilySearch(`${homeName} ${awayName} injuries team news probable lineups latest`, cfg),
   ]);
 
@@ -452,16 +479,9 @@ export default {
     if (url.pathname === '/health' || url.pathname === '/api/health') {
       return json({
         ok: true,
-        version: '2.0.5-cloudflare-supabase-fix',
+        version: '2.0.6-cloudflare-rate-limit-fix',
         database: hasSupabase(cfg) ? 'supabase' : 'memory',
         devMode: cfg.devMode,
-        envPresent: {
-          telegramBotToken: Boolean(cfg.botToken),
-          apiFootballKey: Boolean(cfg.apiFootballKey),
-          tavilyKey: Boolean(cfg.tavilyKey),
-          supabaseUrl: Boolean(cfg.supabaseUrl),
-          supabaseServiceRoleKey: Boolean(cfg.supabaseKey),
-        },
       });
     }
 
