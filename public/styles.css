@@ -122,3 +122,34 @@ h2 { margin: 0; font-size: 20px; }
   .history-item { grid-template-columns: auto 1fr; }
   .history-open { grid-column: 1 / -1; width: 100%; }
 }
+
+/* v2.2 favorites + reminders */
+.interest-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin: -2px 0 11px; color: var(--hint); font-size: 11px; }
+.interest-row strong { color: var(--text); font-size: 11px; }
+.fav-star { flex: 0 0 auto; width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid var(--line); background: rgba(148,163,184,.06); color: var(--hint); border-radius: 999px; padding: 0; font-size: 17px; }
+.fav-star.active { color: #fbbf24; border-color: rgba(251,191,36,.35); background: rgba(251,191,36,.10); }
+.reminder-btn { width: 100%; margin-top: 13px; border: 1px solid var(--line); background: rgba(148,163,184,.08); color: var(--text); border-radius: 13px; padding: 11px 13px; font-weight: 800; }
+.reminder-btn.active { border-color: color-mix(in srgb, var(--accent) 48%, transparent); background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.favorite-teams { display: grid; gap: 8px; }
+.favorite-team-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid var(--line); background: rgba(148,163,184,.04); border-radius: 14px; padding: 10px; }
+.favorite-team-main { min-width: 0; display: flex; align-items: center; gap: 9px; }
+.favorite-team-main img, .team-placeholder { width: 30px; height: 30px; object-fit: contain; display: grid; place-items: center; }
+.favorite-team-main strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.favorite-remove { border: 1px solid rgba(239,68,68,.25); background: rgba(239,68,68,.07); color: #fca5a5; border-radius: 10px; padding: 7px 9px; font-size: 11px; }
+.compact-empty { padding: 18px 12px; }
+.profile-section-head { margin-bottom: 10px; }
+.pricing-grid { display: grid; gap: 10px; margin-top: 14px; }
+.pricing-card { border: 1px solid var(--line); border-radius: 16px; padding: 14px; background: rgba(148,163,184,.035); }
+.pricing-card.current { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.pricing-name { display: inline-block; color: var(--accent); font-size: 11px; font-weight: 900; letter-spacing: .08em; margin-bottom: 6px; }
+.pricing-card > strong { display: block; font-size: 17px; }
+.pricing-card ul { margin: 10px 0 12px; padding-left: 18px; color: var(--hint); font-size: 12px; line-height: 1.55; }
+.pricing-card button { width: 100%; border: 0; border-radius: 11px; padding: 10px 12px; background: var(--accent); color: var(--accent-text); font-weight: 850; }
+.pricing-card button:disabled { background: rgba(148,163,184,.12); color: var(--hint); }
+
+@media (max-width: 430px) {
+  .interest-row { align-items: flex-start; }
+  .team { gap: 5px; }
+  .fav-star { width: 25px; height: 25px; font-size: 15px; }
+  .plan-card { grid-template-columns: 1fr 1fr; }
+}
