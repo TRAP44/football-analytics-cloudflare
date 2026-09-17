@@ -32,6 +32,7 @@
 
         <div class="filter-strip" id="filterStrip">
           <button class="filter-btn active" data-filter="top">🔥 Топ</button>
+          <button class="filter-btn" data-filter="favorites">⭐ Избранное</button>
           <button class="filter-btn" data-filter="international">🌍 Еврокубки</button>
           <button class="filter-btn" data-filter="england">🏴 Англия</button>
           <button class="filter-btn" data-filter="spain">🇪🇸 Испания</button>
@@ -74,6 +75,7 @@
           <h2 id="profileName">Профиль</h2>
           <p id="profileUsername" class="muted"></p>
           <p id="memberSince" class="tiny"></p>
+
           <div class="plan-card">
             <div>
               <span class="muted">Тариф</span>
@@ -83,10 +85,51 @@
               <span class="muted">Анализы сегодня</span>
               <strong id="profileUsage">0 / 3</strong>
             </div>
+            <div>
+              <span class="muted">Избранные команды</span>
+              <strong id="favoriteCount">0</strong>
+            </div>
+            <div>
+              <span class="muted">Напоминания</span>
+              <strong id="reminderCount">0</strong>
+            </div>
           </div>
-          <button id="proBtn" class="primary-btn" type="button">💎 PRO — скоро</button>
-          <p class="tiny">Оплату через Telegram Stars подключим после стабилизации аналитики.</p>
         </div>
+
+        <section class="panel">
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>⭐ Избранные команды</h2>
+              <p>Матчи этих команд доступны через фильтр «Избранное».</p>
+            </div>
+          </div>
+          <div id="favoriteTeams" class="favorite-teams"></div>
+        </section>
+
+        <section class="panel">
+          <h2>💎 Тарифы</h2>
+          <div class="pricing-grid">
+            <article class="pricing-card current">
+              <span class="pricing-name">FREE</span>
+              <strong>3 анализа / день</strong>
+              <ul><li>Базовый анализ</li><li>Избранные команды</li><li>Напоминания</li></ul>
+              <button type="button" disabled>Текущий</button>
+            </article>
+            <article class="pricing-card">
+              <span class="pricing-name">PRO</span>
+              <strong>20 анализов / день</strong>
+              <ul><li>Больше анализов</li><li>Расширенные функции</li><li>Приоритетные обновления</li></ul>
+              <button id="proBtn" type="button">💎 PRO — скоро</button>
+            </article>
+            <article class="pricing-card">
+              <span class="pricing-name">PREMIUM</span>
+              <strong>100 анализов / день</strong>
+              <ul><li>Высокие лимиты</li><li>Расширенные уведомления</li><li>Будущие PRO-функции</li></ul>
+              <button id="premiumBtn" type="button">👑 PREMIUM — скоро</button>
+            </article>
+          </div>
+          <p class="tiny">Оплату через Telegram Stars подключим отдельным этапом после проверки избранного и напоминаний.</p>
+        </section>
       </section>
     </main>
 
