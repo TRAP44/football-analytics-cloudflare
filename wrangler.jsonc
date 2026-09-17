@@ -8,6 +8,9 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*", "/health"]
   },
+  "triggers": {
+    "crons": ["*/15 * * * *"]
+  },
   "vars": {
     "DEV_MODE": "false",
     "FREE_DAILY_LIMIT": "3",
