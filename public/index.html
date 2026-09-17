@@ -25,6 +25,22 @@
           <button class="date-btn active" data-offset="0">Сегодня</button>
           <button class="date-btn" data-offset="1">Завтра</button>
         </div>
+
+        <div class="search-row">
+          <input id="matchSearch" class="search-input" type="search" inputmode="search" placeholder="🔎 Команда, лига или страна" autocomplete="off" />
+        </div>
+
+        <div class="filter-strip" id="filterStrip">
+          <button class="filter-btn active" data-filter="top">🔥 Топ</button>
+          <button class="filter-btn" data-filter="international">🌍 Еврокубки</button>
+          <button class="filter-btn" data-filter="england">🏴 Англия</button>
+          <button class="filter-btn" data-filter="spain">🇪🇸 Испания</button>
+          <button class="filter-btn" data-filter="italy">🇮🇹 Италия</button>
+          <button class="filter-btn" data-filter="germany">🇩🇪 Германия</button>
+          <button class="filter-btn" data-filter="france">🇫🇷 Франция</button>
+          <button class="filter-btn" data-filter="all">Все</button>
+        </div>
+
         <div class="section-head">
           <div>
             <h2 id="matchesTitle">Матчи сегодня</h2>
@@ -32,6 +48,7 @@
           </div>
           <button id="refreshBtn" class="icon-btn" type="button" aria-label="Обновить">↻</button>
         </div>
+        <div id="matchesCount" class="results-count"></div>
         <div id="matches" class="matches"></div>
       </section>
 
@@ -40,12 +57,23 @@
         <div id="analysis"></div>
       </section>
 
+      <section id="historyView" class="view">
+        <div class="section-head">
+          <div>
+            <h2>История анализов</h2>
+            <p>Последние просмотренные матчи</p>
+          </div>
+          <button id="historyRefreshBtn" class="icon-btn" type="button" aria-label="Обновить">↻</button>
+        </div>
+        <div id="history" class="history-list"></div>
+      </section>
+
       <section id="profileView" class="view">
-        <button id="profileBackBtn" class="back-btn" type="button">← Назад</button>
         <div class="panel profile-panel">
           <div id="avatar" class="avatar">⚽</div>
           <h2 id="profileName">Профиль</h2>
           <p id="profileUsername" class="muted"></p>
+          <p id="memberSince" class="tiny"></p>
           <div class="plan-card">
             <div>
               <span class="muted">Тариф</span>
@@ -57,13 +85,14 @@
             </div>
           </div>
           <button id="proBtn" class="primary-btn" type="button">💎 PRO — скоро</button>
-          <p class="tiny">В следующей версии подключим Telegram Stars и платные уровни.</p>
+          <p class="tiny">Оплату через Telegram Stars подключим после стабилизации аналитики.</p>
         </div>
       </section>
     </main>
 
     <nav class="bottom-nav">
       <button id="navMatches" class="nav-item active" type="button"><span>⚽</span><small>Матчи</small></button>
+      <button id="navHistory" class="nav-item" type="button"><span>🕘</span><small>История</small></button>
       <button id="navProfile" class="nav-item" type="button"><span>👤</span><small>Профиль</small></button>
     </nav>
   </div>
