@@ -10,8 +10,11 @@ const state = {
   offset: 0,
   matches: [],
   history: [],
+  favorites: [],
+  reminders: [],
   filter: 'top',
   search: '',
+  currentAnalysis: null,
 };
 
 const $ = id => document.getElementById(id);
@@ -62,9 +65,9 @@ async function api(path, options = {}) {
   headers.set('Content-Type', 'application/json');
   if (tg?.initData) headers.set('x-telegram-init-data', tg.initData);
   const response = await fetch(path, { ...options, headers });
-  const json = await response.json().catch(() => ({}));
-  if (!response.ok) throw Object.assign(new Error(json.error || `HTTP ${response.status}`), { status: response.status, payload: json });
-  return json;
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw Object.assign(new Error(data.error || `HTTP ${response.status}`), { status: response.status, payload: data });
+  return data;
 }
 
 async function loadProfile() {
@@ -78,7 +81,7 @@ async function loadProfile() {
 
 function renderProfile() {
   if (!state.profile) return;
-  const { user, quota } = state.profile;
+  const { user, quota, stats = {} } = state.profile;
   $('profileBtn').textContent = quota.plan;
   $('quotaText').textContent = `Осталось анализов: ${quota.left} из ${quota.limit}`;
   $('profileName').textContent = user.firstName || 'Пользователь';
@@ -86,6 +89,81 @@ function renderProfile() {
   $('profilePlan').textContent = quota.plan;
   $('profileUsage').textContent = `${quota.used} / ${quota.limit}`;
   $('memberSince').textContent = user.createdAt ? `С нами с ${dateOnly(user.createdAt)}` : '';
+  $('favoriteCount').textContent = String(stats.favorites ?? state.favorites.length);
+  $('reminderCount').textContent = String(stats.reminders ?? state.reminders.length);
+  renderFavoriteTeams();
+}
+
+async function loadFavorites() {
+  try {
+    const data = await api('/api/favorites');
+    state.favorites = data.items || [];
+    renderFavoriteTeams();
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+async function loadReminders() {
+  try {
+    const data = await api('/api/reminders');
+    state.reminders = data.items || [];
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+function favoriteSet() {
+  return new Set(state.favorites.map(x => Number(x.teamId)));
+}
+
+function isFavorite(teamId) {
+  return favoriteSet().has(Number(teamId));
+}
+
+async function toggleFavorite(team) {
+  const active = isFavorite(team.id);
+  try {
+    if (active) {
+      await api(`/api/favorites?teamId=${Number(team.id)}`, { method: 'DELETE' });
+      state.favorites = state.favorites.filter(x => Number(x.teamId) !== Number(team.id));
+      toast(`${team.name}: удалено из избранного`);
+    } else {
+      const data = await api('/api/favorites', {
+        method: 'POST',
+        body: JSON.stringify({ teamId: Number(team.id), teamName: team.name, teamLogo: team.logo || '' }),
+      });
+      state.favorites = [data.item, ...state.favorites.filter(x => Number(x.teamId) !== Number(team.id))];
+      toast(`${team.name}: добавлено в избранное`);
+    }
+    await loadProfile();
+    renderMatches();
+    renderFavoriteTeams();
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+function renderFavoriteTeams() {
+  const el = $('favoriteTeams');
+  if (!el) return;
+  if (!state.favorites.length) {
+    el.innerHTML = '<div class="empty compact-empty">Добавьте любимые команды звёздочкой в списке матчей.</div>';
+    return;
+  }
+  el.innerHTML = state.favorites.map(x => `
+    <div class="favorite-team-row">
+      <div class="favorite-team-main">
+        ${x.teamLogo ? `<img src="${safeUrl(x.teamLogo)}" alt="">` : '<span class="team-placeholder">⚽</span>'}
+        <strong>${escapeHtml(x.teamName)}</strong>
+      </div>
+      <button class="favorite-remove" type="button" data-team-id="${Number(x.teamId)}" data-team-name="${escapeHtml(x.teamName)}">Удалить</button>
+    </div>
+  `).join('');
+  document.querySelectorAll('.favorite-remove').forEach(btn => btn.addEventListener('click', () => {
+    const item = state.favorites.find(x => Number(x.teamId) === Number(btn.dataset.teamId));
+    if (item) toggleFavorite({ id: item.teamId, name: item.teamName, logo: item.teamLogo });
+  }));
 }
 
 async function loadMatches() {
@@ -96,7 +174,7 @@ async function loadMatches() {
   try {
     const data = await api(`/api/matches?date=${localDate(state.offset)}`);
     state.matches = data.matches || [];
-    if (state.filter === 'top' && !state.matches.some(x => x.isTop)) state.filter = 'all';
+    if (state.filter === 'top' && !state.matches.some(x => Number(x.interestScore || 0) >= 50)) state.filter = 'all';
     syncFilterButtons();
     renderMatches();
   } catch (e) {
@@ -110,8 +188,12 @@ function syncFilterButtons() {
 
 function filteredMatches() {
   const q = state.search.trim().toLowerCase();
+  const fav = favoriteSet();
   return state.matches.filter(m => {
-    const byFilter = state.filter === 'all' || (state.filter === 'top' ? m.isTop : m.group === state.filter);
+    let byFilter = state.filter === 'all';
+    if (state.filter === 'top') byFilter = Number(m.interestScore || 0) >= 50;
+    if (['international', 'england', 'spain', 'italy', 'germany', 'france'].includes(state.filter)) byFilter = m.group === state.filter;
+    if (state.filter === 'favorites') byFilter = fav.has(Number(m.home?.id)) || fav.has(Number(m.away?.id));
     if (!byFilter) return false;
     if (!q) return true;
     return [m.home?.name, m.away?.name, m.league, m.country]
@@ -126,6 +208,14 @@ function matchCenter(m) {
   return timeOf(m.date);
 }
 
+function interestLabel(score) {
+  const n = Number(score || 0);
+  if (n >= 80) return '🔥 Очень высокий';
+  if (n >= 65) return '⭐ Высокий';
+  if (n >= 45) return 'Средний';
+  return 'Обычный';
+}
+
 function renderMatches() {
   const list = filteredMatches();
   $('matchesCount').textContent = `Показано: ${list.length} из ${state.matches.length}`;
@@ -135,21 +225,28 @@ function renderMatches() {
     $('showAllBtn')?.addEventListener('click', () => { state.filter = 'all'; syncFilterButtons(); renderMatches(); });
     return;
   }
+
   $('matches').innerHTML = list.map(m => `
-    <article class="match-card ${m.isTop ? 'top-match' : ''}">
+    <article class="match-card ${Number(m.interestScore || 0) >= 50 ? 'top-match' : ''}">
       <div class="match-meta">
         <span>${m.isTop ? '<b class="top-tag">TOP</b> ' : ''}${escapeHtml(m.league || 'Турнир')}</span>
         <span>${escapeHtml(m.country || '')}</span>
       </div>
+      <div class="interest-row">
+        <span>Индекс интереса</span>
+        <strong>${Number(m.interestScore || 0)}/100 · ${interestLabel(m.interestScore)}</strong>
+      </div>
       <div class="team-row">
         <div class="team">
-          ${m.home.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : ''}
-          <strong>${escapeHtml(m.home.name)}</strong>
+          <button class="fav-star ${isFavorite(m.home?.id) ? 'active' : ''}" type="button" data-team-id="${Number(m.home?.id)}" data-team-name="${escapeHtml(m.home?.name || '')}" data-team-logo="${escapeHtml(m.home?.logo || '')}" aria-label="Избранное">${isFavorite(m.home?.id) ? '★' : '☆'}</button>
+          ${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : ''}
+          <strong>${escapeHtml(m.home?.name || '')}</strong>
         </div>
         <div class="kickoff ${m.live ? 'live-kickoff' : ''}">${escapeHtml(matchCenter(m))}</div>
         <div class="team away">
-          <strong>${escapeHtml(m.away.name)}</strong>
-          ${m.away.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : ''}
+          <strong>${escapeHtml(m.away?.name || '')}</strong>
+          ${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : ''}
+          <button class="fav-star ${isFavorite(m.away?.id) ? 'active' : ''}" type="button" data-team-id="${Number(m.away?.id)}" data-team-name="${escapeHtml(m.away?.name || '')}" data-team-logo="${escapeHtml(m.away?.logo || '')}" aria-label="Избранное">${isFavorite(m.away?.id) ? '★' : '☆'}</button>
         </div>
       </div>
       ${m.finished
@@ -161,6 +258,9 @@ function renderMatches() {
   document.querySelectorAll('.analyze-btn[data-fixture]').forEach(btn => {
     btn.addEventListener('click', () => analyzeMatch(Number(btn.dataset.fixture), btn));
   });
+  document.querySelectorAll('.fav-star').forEach(btn => btn.addEventListener('click', () => toggleFavorite({
+    id: Number(btn.dataset.teamId), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '',
+  })));
 }
 
 async function analyzeMatch(fixtureId, btn) {
@@ -168,12 +268,13 @@ async function analyzeMatch(fixtureId, btn) {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Собираю данные…'; }
   try {
     const data = await api('/api/analyze', { method: 'POST', body: JSON.stringify({ fixtureId }) });
+    state.currentAnalysis = data;
     renderAnalysis(data);
     if (state.profile && data.quota) {
       state.profile.quota = data.quota;
       renderProfile();
     }
-    await loadHistory(false);
+    await Promise.all([loadHistory(false), loadReminders()]);
     showView('analysisView');
   } catch (e) {
     if (e.status === 429) toast('Дневной лимит анализов исчерпан.');
@@ -223,7 +324,42 @@ function absenceList(title, items) {
   return `<div class="panel"><h2>${escapeHtml(title)}</h2><ul class="list">${items.slice(0, 10).map(x => `<li><strong>${escapeHtml(x.name)}</strong>${x.reason ? ` — ${escapeHtml(x.reason)}` : ''}${x.type ? ` (${escapeHtml(x.type)})` : ''}</li>`).join('')}</ul></div>`;
 }
 
+function hasReminder(fixtureId) {
+  return state.reminders.some(x => Number(x.fixtureId) === Number(fixtureId));
+}
+
+async function toggleReminder(match) {
+  if (!match?.fixtureId) return;
+  const active = hasReminder(match.fixtureId);
+  try {
+    if (active) {
+      await api(`/api/reminders?fixtureId=${Number(match.fixtureId)}`, { method: 'DELETE' });
+      state.reminders = state.reminders.filter(x => Number(x.fixtureId) !== Number(match.fixtureId));
+      toast('Напоминание отключено');
+    } else {
+      await api('/api/reminders', {
+        method: 'POST',
+        body: JSON.stringify({
+          fixtureId: Number(match.fixtureId),
+          homeName: match.home?.name || '',
+          awayName: match.away?.name || '',
+          leagueName: match.league || '',
+          fixtureDate: match.date || '',
+        }),
+      });
+      await loadReminders();
+      toast('Напомним примерно за 30 минут до матча');
+    }
+    await loadProfile();
+    renderAnalysis(state.currentAnalysis);
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
 function renderAnalysis(d) {
+  if (!d) return;
+  state.currentAnalysis = d;
   const p = d.probabilities || {};
   const m = d.match || {};
   const market = d.market;
@@ -232,6 +368,7 @@ function renderAnalysis(d) {
   const news = d.news || {};
   const homeLine = d.lineups?.home;
   const awayLine = d.lineups?.away;
+  const reminderActive = hasReminder(m.fixtureId);
 
   $('analysis').innerHTML = `
     <section class="panel analysis-hero">
@@ -247,6 +384,7 @@ function renderAnalysis(d) {
         <div class="prob"><span>Ничья</span><strong>${pct(p.draw)}</strong></div>
         <div class="prob"><span>П2</span><strong>${pct(p.away)}</strong></div>
       </div>
+      <button id="reminderBtn" class="reminder-btn ${reminderActive ? 'active' : ''}" type="button">${reminderActive ? '🔔 Напоминание включено' : '🔕 Напомнить за 30 минут'}</button>
       <p>${d.cached ? '⚡ Результат из кэша' : '🆕 Свежий анализ'} · полнота ${d.completeness?.score ?? 0}/${d.completeness?.max ?? 7}</p>
     </section>
 
@@ -289,6 +427,7 @@ function renderAnalysis(d) {
 
     <section class="panel"><p class="tiny warning">${escapeHtml(d.disclaimer || '')}</p></section>
   `;
+  $('reminderBtn')?.addEventListener('click', () => toggleReminder(m));
 }
 
 function safeUrl(url) {
@@ -331,6 +470,8 @@ $('profileBtn').addEventListener('click', () => showView('profileView'));
 $('navMatches').addEventListener('click', () => showView('matchesView'));
 $('navHistory').addEventListener('click', async () => { await loadHistory(true); showView('historyView'); });
 $('navProfile').addEventListener('click', () => showView('profileView'));
-$('proBtn').addEventListener('click', () => toast('Telegram Stars подключим после стабилизации v2.1.'));
+$('proBtn').addEventListener('click', () => toast('Telegram Stars подключим в следующем платёжном этапе.'));
+$('premiumBtn').addEventListener('click', () => toast('PREMIUM будет доступен после подключения Telegram Stars.'));
 
-await Promise.all([loadProfile(), loadMatches(), loadHistory(false)]);
+await Promise.all([loadProfile(), loadFavorites(), loadReminders(), loadMatches(), loadHistory(false)]);
+renderProfile();
