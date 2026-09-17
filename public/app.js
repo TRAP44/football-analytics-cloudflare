@@ -9,14 +9,18 @@ const state = {
   profile: null,
   offset: 0,
   matches: [],
+  history: [],
+  filter: 'top',
+  search: '',
 };
 
 const $ = id => document.getElementById(id);
-const views = ['matchesView', 'analysisView', 'profileView'];
+const views = ['matchesView', 'analysisView', 'historyView', 'profileView'];
 
 function showView(id) {
   views.forEach(v => $(v).classList.toggle('active', v === id));
   $('navMatches').classList.toggle('active', id === 'matchesView' || id === 'analysisView');
+  $('navHistory').classList.toggle('active', id === 'historyView');
   $('navProfile').classList.toggle('active', id === 'profileView');
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -26,7 +30,7 @@ function toast(message) {
   el.textContent = message;
   el.classList.add('show');
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => el.classList.remove('show'), 2600);
+  toast.timer = setTimeout(() => el.classList.remove('show'), 2800);
 }
 
 function localDate(offset = 0) {
@@ -46,6 +50,11 @@ function timeOf(iso) {
 function dateTime(iso) {
   if (!iso) return '';
   return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+}
+
+function dateOnly(iso) {
+  if (!iso) return '';
+  return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' }).format(new Date(iso));
 }
 
 async function api(path, options = {}) {
@@ -76,30 +85,60 @@ function renderProfile() {
   $('profileUsername').textContent = user.username ? `@${user.username}` : `Telegram ID ${user.id}`;
   $('profilePlan').textContent = quota.plan;
   $('profileUsage').textContent = `${quota.used} / ${quota.limit}`;
+  $('memberSince').textContent = user.createdAt ? `С нами с ${dateOnly(user.createdAt)}` : '';
 }
 
 async function loadMatches() {
   $('matches').innerHTML = '<div class="loader">Загружаю матчи…</div>';
+  $('matchesCount').textContent = '';
   const labels = { '-1': 'Матчи вчера', '0': 'Матчи сегодня', '1': 'Матчи завтра' };
   $('matchesTitle').textContent = labels[String(state.offset)] || 'Матчи';
   try {
     const data = await api(`/api/matches?date=${localDate(state.offset)}`);
     state.matches = data.matches || [];
+    if (state.filter === 'top' && !state.matches.some(x => x.isTop)) state.filter = 'all';
+    syncFilterButtons();
     renderMatches();
   } catch (e) {
     $('matches').innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
   }
 }
 
+function syncFilterButtons() {
+  document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.filter === state.filter));
+}
+
+function filteredMatches() {
+  const q = state.search.trim().toLowerCase();
+  return state.matches.filter(m => {
+    const byFilter = state.filter === 'all' || (state.filter === 'top' ? m.isTop : m.group === state.filter);
+    if (!byFilter) return false;
+    if (!q) return true;
+    return [m.home?.name, m.away?.name, m.league, m.country]
+      .filter(Boolean)
+      .some(v => String(v).toLowerCase().includes(q));
+  });
+}
+
+function matchCenter(m) {
+  if (m.finished && m.score?.home !== null && m.score?.away !== null) return `${m.score.home} : ${m.score.away}`;
+  if (m.live) return `${m.score?.home ?? 0}:${m.score?.away ?? 0} · LIVE`;
+  return timeOf(m.date);
+}
+
 function renderMatches() {
-  if (!state.matches.length) {
-    $('matches').innerHTML = '<div class="empty">На выбранную дату матчи не найдены в доступных данных API.</div>';
+  const list = filteredMatches();
+  $('matchesCount').textContent = `Показано: ${list.length} из ${state.matches.length}`;
+  if (!list.length) {
+    const extra = state.filter !== 'all' ? '<button id="showAllBtn" class="secondary-btn" type="button">Показать все матчи</button>' : '';
+    $('matches').innerHTML = `<div class="empty">По выбранному фильтру матчей не найдено.${extra}</div>`;
+    $('showAllBtn')?.addEventListener('click', () => { state.filter = 'all'; syncFilterButtons(); renderMatches(); });
     return;
   }
-  $('matches').innerHTML = state.matches.map(m => `
-    <article class="match-card">
+  $('matches').innerHTML = list.map(m => `
+    <article class="match-card ${m.isTop ? 'top-match' : ''}">
       <div class="match-meta">
-        <span>${escapeHtml(m.league || 'Турнир')}</span>
+        <span>${m.isTop ? '<b class="top-tag">TOP</b> ' : ''}${escapeHtml(m.league || 'Турнир')}</span>
         <span>${escapeHtml(m.country || '')}</span>
       </div>
       <div class="team-row">
@@ -107,25 +146,26 @@ function renderMatches() {
           ${m.home.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : ''}
           <strong>${escapeHtml(m.home.name)}</strong>
         </div>
-        <div class="kickoff">${timeOf(m.date)}</div>
+        <div class="kickoff ${m.live ? 'live-kickoff' : ''}">${escapeHtml(matchCenter(m))}</div>
         <div class="team away">
           <strong>${escapeHtml(m.away.name)}</strong>
           ${m.away.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : ''}
         </div>
       </div>
-      <button class="analyze-btn" data-fixture="${Number(m.fixtureId)}">🧠 Полный анализ</button>
+      ${m.finished
+        ? '<button class="analyze-btn finished-btn" type="button" disabled>Матч завершён</button>'
+        : `<button class="analyze-btn" data-fixture="${Number(m.fixtureId)}">🧠 Полный анализ</button>`}
     </article>
   `).join('');
 
-  document.querySelectorAll('.analyze-btn').forEach(btn => {
+  document.querySelectorAll('.analyze-btn[data-fixture]').forEach(btn => {
     btn.addEventListener('click', () => analyzeMatch(Number(btn.dataset.fixture), btn));
   });
 }
 
 async function analyzeMatch(fixtureId, btn) {
-  const original = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = '⏳ Собираю данные…';
+  const original = btn?.textContent || '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Собираю данные…'; }
   try {
     const data = await api('/api/analyze', { method: 'POST', body: JSON.stringify({ fixtureId }) });
     renderAnalysis(data);
@@ -133,14 +173,47 @@ async function analyzeMatch(fixtureId, btn) {
       state.profile.quota = data.quota;
       renderProfile();
     }
+    await loadHistory(false);
     showView('analysisView');
   } catch (e) {
     if (e.status === 429) toast('Дневной лимит анализов исчерпан.');
     else toast(e.message);
   } finally {
-    btn.disabled = false;
-    btn.textContent = original;
+    if (btn) { btn.disabled = false; btn.textContent = original; }
   }
+}
+
+async function loadHistory(showLoader = true) {
+  if (showLoader) $('history').innerHTML = '<div class="loader">Загружаю историю…</div>';
+  try {
+    const data = await api('/api/history');
+    state.history = data.items || [];
+    renderHistory();
+  } catch (e) {
+    $('history').innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function renderHistory() {
+  if (!state.history.length) {
+    $('history').innerHTML = '<div class="empty">История пока пуста. Сделайте первый полный анализ матча.</div>';
+    return;
+  }
+  $('history').innerHTML = state.history.map(item => `
+    <article class="history-item">
+      <div class="history-logos">
+        ${item.homeLogo ? `<img src="${safeUrl(item.homeLogo)}" alt="">` : ''}
+        <span>—</span>
+        ${item.awayLogo ? `<img src="${safeUrl(item.awayLogo)}" alt="">` : ''}
+      </div>
+      <div class="history-main">
+        <strong>${escapeHtml(item.homeName)} — ${escapeHtml(item.awayName)}</strong>
+        <span>${escapeHtml(item.leagueName || '')}${item.fixtureDate ? ` · ${dateTime(item.fixtureDate)}` : ''}</span>
+      </div>
+      <button class="history-open" data-fixture="${Number(item.fixtureId)}" type="button">Открыть</button>
+    </article>
+  `).join('');
+  document.querySelectorAll('.history-open').forEach(btn => btn.addEventListener('click', () => analyzeMatch(Number(btn.dataset.fixture), btn)));
 }
 
 function pct(v) { return Number.isFinite(Number(v)) ? `${Number(v).toFixed(1)}%` : '—'; }
@@ -214,9 +287,7 @@ function renderAnalysis(d) {
       ${news.results?.length ? `<div class="news-links">${news.results.slice(0, 4).map(r => `<a href="${safeUrl(r.url)}" target="_blank" rel="noopener">↗ ${escapeHtml(r.title || 'Источник')}</a>`).join('')}</div>` : ''}
     </section>
 
-    <section class="panel">
-      <p class="tiny warning">${escapeHtml(d.disclaimer || '')}</p>
-    </section>
+    <section class="panel"><p class="tiny warning">${escapeHtml(d.disclaimer || '')}</p></section>
   `;
 }
 
@@ -240,12 +311,26 @@ document.querySelectorAll('.date-btn').forEach(btn => {
   });
 });
 
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    state.filter = btn.dataset.filter;
+    syncFilterButtons();
+    renderMatches();
+  });
+});
+
+$('matchSearch').addEventListener('input', e => {
+  state.search = e.target.value || '';
+  renderMatches();
+});
+
 $('refreshBtn').addEventListener('click', loadMatches);
+$('historyRefreshBtn').addEventListener('click', () => loadHistory(true));
 $('backBtn').addEventListener('click', () => showView('matchesView'));
-$('profileBackBtn').addEventListener('click', () => showView('matchesView'));
 $('profileBtn').addEventListener('click', () => showView('profileView'));
 $('navMatches').addEventListener('click', () => showView('matchesView'));
+$('navHistory').addEventListener('click', async () => { await loadHistory(true); showView('historyView'); });
 $('navProfile').addEventListener('click', () => showView('profileView'));
-$('proBtn').addEventListener('click', () => toast('Telegram Stars подключим на следующем этапе.'));
+$('proBtn').addEventListener('click', () => toast('Telegram Stars подключим после стабилизации v2.1.'));
 
-await Promise.all([loadProfile(), loadMatches()]);
+await Promise.all([loadProfile(), loadMatches(), loadHistory(false)]);
