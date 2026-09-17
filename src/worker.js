@@ -2,6 +2,7 @@ const memory = {
   users: new Map(),
   usage: new Map(),
   cache: new Map(),
+  history: new Map(),
 };
 
 const enc = new TextEncoder();
@@ -72,6 +73,20 @@ async function supaSelectOne(cfg, table, params) {
   if (!r.ok) throw new Error(`Supabase ${table}: HTTP ${r.status}`);
   const rows = await r.json();
   return rows?.[0] || null;
+}
+
+async function supaSelectMany(cfg, table, params = {}, { limit = 20, order = '' } = {}) {
+  const url = new URL(`${cfg.supabaseUrl}/rest/v1/${table}`);
+  url.searchParams.set('select', '*');
+  url.searchParams.set('limit', String(limit));
+  if (order) url.searchParams.set('order', order);
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  const r = await fetch(url, { headers: supaHeaders(cfg) });
+  if (!r.ok) {
+    const text = await r.text().catch(() => '');
+    throw new Error(`Supabase ${table}: HTTP ${r.status}${text ? ` — ${text.slice(0, 160)}` : ''}`);
+  }
+  return await r.json();
 }
 
 async function supaUpsert(cfg, table, rows, onConflict) {
@@ -235,6 +250,42 @@ async function setCache(cacheKey, fixtureId, payload, cfg) {
   }
 }
 
+async function recordHistory(userId, payload, cfg) {
+  const match = payload?.match;
+  if (!match?.fixtureId) return;
+  const row = {
+    telegram_id: Number(userId),
+    fixture_id: Number(match.fixtureId),
+    home_name: match.home?.name || '',
+    away_name: match.away?.name || '',
+    league_name: match.league || '',
+    fixture_date: match.date || null,
+    home_logo: match.home?.logo || null,
+    away_logo: match.away?.logo || null,
+    viewed_at: new Date().toISOString(),
+  };
+  if (hasSupabase(cfg)) {
+    try { await supaUpsert(cfg, 'analysis_history', row, 'telegram_id,fixture_id'); } catch (e) { console.warn('history write skipped', e?.message || e); }
+    return;
+  }
+  const key = Number(userId);
+  const list = memory.history.get(key) || [];
+  const next = [row, ...list.filter(x => Number(x.fixture_id) !== Number(row.fixture_id))].slice(0, 20);
+  memory.history.set(key, next);
+}
+
+async function getHistory(userId, cfg) {
+  if (hasSupabase(cfg)) {
+    try {
+      return await supaSelectMany(cfg, 'analysis_history', { telegram_id: `eq.${Number(userId)}` }, { limit: 20, order: 'viewed_at.desc' });
+    } catch (e) {
+      console.warn('history read skipped', e?.message || e);
+      return [];
+    }
+  }
+  return memory.history.get(Number(userId)) || [];
+}
+
 async function apiFootball(path, params, cfg) {
   if (!cfg.apiFootballKey) throw new Error('API_FOOTBALL_KEY не настроен в Cloudflare.');
   const url = new URL(`https://v3.football.api-sports.io${path}`);
@@ -361,11 +412,64 @@ function formatH2H(rows, homeId, awayId) {
   return { homeWins, draws, awayWins, matches: matches.slice(0, 5) };
 }
 
+
+const TOP_LEAGUE_IDS = new Set([
+  1, 2, 3, 4, 9, 15, 39, 45, 61, 66, 71, 78, 81, 88, 94, 128, 135, 137, 140, 143, 203, 253, 307, 848,
+]);
+
+function leagueGroup(leagueId, leagueName = '', country = '') {
+  const id = Number(leagueId);
+  const n = String(leagueName).toLowerCase();
+  const c = String(country).toLowerCase();
+  if ([1,2,3,4,9,15,848].includes(id) || /champions|europa|conference|world cup|euro|copa america|club world/.test(n)) return 'international';
+  if (id === 39 || id === 45 || c === 'england') return 'england';
+  if (id === 140 || id === 143 || c === 'spain') return 'spain';
+  if (id === 135 || id === 137 || c === 'italy') return 'italy';
+  if (id === 78 || id === 81 || c === 'germany') return 'germany';
+  if (id === 61 || id === 66 || c === 'france') return 'france';
+  return 'other';
+}
+
+function isTopLeague(leagueId, leagueName = '') {
+  if (TOP_LEAGUE_IDS.has(Number(leagueId))) return true;
+  return /premier league|la liga|serie a|bundesliga|ligue 1|champions league|europa league|conference league|world cup|copa america|major league soccer|primeira liga/i.test(String(leagueName));
+}
+
+function matchStatusRank(status) {
+  if (['1H','HT','2H','ET','P','LIVE'].includes(status)) return 0;
+  if (['NS','TBD'].includes(status)) return 1;
+  if (['FT','AET','PEN'].includes(status)) return 2;
+  return 3;
+}
+
 async function apiMe(request, cfg, user) {
-  const quota = await getQuota(user.id, cfg);
+  const [quota, record] = await Promise.all([getQuota(user.id, cfg), getUserRecord(user.id, cfg)]);
   return json({
-    user: { id: user.id, username: user.username || '', firstName: user.first_name || '', photoUrl: user.photo_url || '' },
+    user: {
+      id: user.id,
+      username: user.username || '',
+      firstName: user.first_name || '',
+      photoUrl: user.photo_url || '',
+      createdAt: record?.created_at || null,
+      subscriptionUntil: record?.subscription_until || null,
+    },
     quota,
+  });
+}
+
+async function apiHistory(request, cfg, user) {
+  const rows = await getHistory(user.id, cfg);
+  return json({
+    items: rows.map(x => ({
+      fixtureId: Number(x.fixture_id),
+      homeName: x.home_name || '',
+      awayName: x.away_name || '',
+      leagueName: x.league_name || '',
+      fixtureDate: x.fixture_date || '',
+      homeLogo: x.home_logo || '',
+      awayLogo: x.away_logo || '',
+      viewedAt: x.viewed_at || '',
+    })),
   });
 }
 
@@ -373,7 +477,7 @@ async function apiMatches(request, cfg) {
   const url = new URL(request.url);
   const requested = url.searchParams.get('date') || '';
   const date = /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : todayUtc();
-  const cacheKey = `matches:${date}:v1`;
+  const cacheKey = `matches:${date}:v2`;
 
   // The free API-Football plan has a strict per-minute cap. A date list is
   // identical for every user, so cache it once and reuse it for everybody.
@@ -392,18 +496,33 @@ async function apiMatches(request, cfg) {
   }
 
   const matches = fixtures
-    .filter(f => ['NS', 'TBD', '1H', 'HT', '2H', 'ET', 'P', 'LIVE'].includes(f.fixture?.status?.short || 'NS'))
-    .slice(0, 60)
-    .map(f => ({
-      fixtureId: f.fixture?.id,
-      date: f.fixture?.date,
-      status: f.fixture?.status?.short || '',
-      league: f.league?.name || '',
-      country: f.league?.country || '',
-      leagueLogo: f.league?.logo || '',
-      home: { id: f.teams?.home?.id, name: f.teams?.home?.name || '', logo: f.teams?.home?.logo || '' },
-      away: { id: f.teams?.away?.id, name: f.teams?.away?.name || '', logo: f.teams?.away?.logo || '' },
-    }));
+    .filter(f => !['CANC', 'PST', 'ABD', 'AWD', 'WO'].includes(f.fixture?.status?.short || ''))
+    .map(f => {
+      const status = f.fixture?.status?.short || '';
+      const leagueId = Number(f.league?.id || 0);
+      return {
+        fixtureId: f.fixture?.id,
+        date: f.fixture?.date,
+        status,
+        finished: ['FT', 'AET', 'PEN'].includes(status),
+        live: ['1H', 'HT', '2H', 'ET', 'P', 'LIVE'].includes(status),
+        score: { home: f.goals?.home ?? null, away: f.goals?.away ?? null },
+        leagueId,
+        league: f.league?.name || '',
+        country: f.league?.country || '',
+        leagueLogo: f.league?.logo || '',
+        isTop: isTopLeague(leagueId, f.league?.name || ''),
+        group: leagueGroup(leagueId, f.league?.name || '', f.league?.country || ''),
+        home: { id: f.teams?.home?.id, name: f.teams?.home?.name || '', logo: f.teams?.home?.logo || '' },
+        away: { id: f.teams?.away?.id, name: f.teams?.away?.name || '', logo: f.teams?.away?.logo || '' },
+      };
+    })
+    .sort((a, b) =>
+      matchStatusRank(a.status) - matchStatusRank(b.status) ||
+      Number(b.isTop) - Number(a.isTop) ||
+      String(a.date || '').localeCompare(String(b.date || ''))
+    )
+    .slice(0, 120);
 
   const payload = { date, matches };
   // fixture_id=0 is reserved for shared non-fixture list caches.
@@ -419,7 +538,10 @@ async function apiAnalyze(request, cfg, user) {
 
   const cacheKey = `fixture:${fixtureId}:v2`;
   const cached = await getCache(cacheKey, cfg);
-  if (cached) return json({ ...cached, cached: true, quota: await getQuota(user.id, cfg) });
+  if (cached) {
+    await recordHistory(user.id, cached, cfg);
+    return json({ ...cached, cached: true, quota: await getQuota(user.id, cfg) });
+  }
 
   const quotaBefore = await getQuota(user.id, cfg);
   if (quotaBefore.left <= 0) return json({ error: `Лимит исчерпан: ${quotaBefore.used}/${quotaBefore.limit} анализов сегодня.`, quota: quotaBefore }, 429);
@@ -468,6 +590,7 @@ async function apiAnalyze(request, cfg, user) {
 
   await setCache(cacheKey, fixtureId, payload, cfg);
   await incrementUsage(user.id, cfg);
+  await recordHistory(user.id, payload, cfg);
   return json({ ...payload, cached: false, quota: await getQuota(user.id, cfg) });
 }
 
@@ -479,7 +602,7 @@ export default {
     if (url.pathname === '/health' || url.pathname === '/api/health') {
       return json({
         ok: true,
-        version: '2.0.6-cloudflare-rate-limit-fix',
+        version: '2.1.0-discovery-history',
         database: hasSupabase(cfg) ? 'supabase' : 'memory',
         devMode: cfg.devMode,
       });
@@ -519,6 +642,7 @@ export default {
 
       if (request.method === 'GET' && url.pathname === '/api/me') return await apiMe(request, cfg, user);
       if (request.method === 'GET' && url.pathname === '/api/matches') return await apiMatches(request, cfg);
+      if (request.method === 'GET' && url.pathname === '/api/history') return await apiHistory(request, cfg, user);
       if (request.method === 'POST' && url.pathname === '/api/analyze') return await apiAnalyze(request, cfg, user);
       return json({ error: 'Маршрут не найден.' }, 404);
     } catch (error) {
