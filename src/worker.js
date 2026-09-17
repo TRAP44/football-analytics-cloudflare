@@ -3,6 +3,8 @@ const memory = {
   usage: new Map(),
   cache: new Map(),
   history: new Map(),
+  favorites: new Map(),
+  reminders: new Map(),
 };
 
 const enc = new TextEncoder();
@@ -286,6 +288,160 @@ async function getHistory(userId, cfg) {
   return memory.history.get(Number(userId)) || [];
 }
 
+
+async function getFavorites(userId, cfg) {
+  if (hasSupabase(cfg)) {
+    try {
+      return await supaSelectMany(cfg, 'favorites', { telegram_id: `eq.${Number(userId)}` }, { limit: 50, order: 'created_at.desc' });
+    } catch (e) {
+      console.warn('favorites read skipped', e?.message || e);
+      return [];
+    }
+  }
+  return memory.favorites.get(Number(userId)) || [];
+}
+
+async function addFavorite(userId, team, cfg) {
+  const row = {
+    telegram_id: Number(userId),
+    team_id: Number(team.id),
+    team_name: String(team.name || ''),
+    team_logo: String(team.logo || ''),
+    created_at: new Date().toISOString(),
+  };
+  if (!Number.isFinite(row.team_id) || row.team_id <= 0 || !row.team_name) throw new Error('Некорректная команда.');
+  if (hasSupabase(cfg)) {
+    await supaUpsert(cfg, 'favorites', row, 'telegram_id,team_id');
+    return row;
+  }
+  const key = Number(userId);
+  const list = memory.favorites.get(key) || [];
+  memory.favorites.set(key, [row, ...list.filter(x => Number(x.team_id) !== row.team_id)].slice(0, 50));
+  return row;
+}
+
+async function removeFavorite(userId, teamId, cfg) {
+  const id = Number(teamId);
+  if (hasSupabase(cfg)) {
+    const url = new URL(`${cfg.supabaseUrl}/rest/v1/favorites`);
+    url.searchParams.set('telegram_id', `eq.${Number(userId)}`);
+    url.searchParams.set('team_id', `eq.${id}`);
+    const r = await fetch(url, { method: 'DELETE', headers: supaHeaders(cfg, { Prefer: 'return=minimal' }) });
+    if (!r.ok) throw new Error(`Supabase favorites: HTTP ${r.status}`);
+    return;
+  }
+  const key = Number(userId);
+  memory.favorites.set(key, (memory.favorites.get(key) || []).filter(x => Number(x.team_id) !== id));
+}
+
+async function getReminders(userId, cfg) {
+  if (hasSupabase(cfg)) {
+    try {
+      return await supaSelectMany(cfg, 'match_reminders', { telegram_id: `eq.${Number(userId)}`, enabled: 'eq.true' }, { limit: 50, order: 'fixture_date.asc' });
+    } catch (e) {
+      console.warn('reminders read skipped', e?.message || e);
+      return [];
+    }
+  }
+  return memory.reminders.get(Number(userId)) || [];
+}
+
+async function addReminder(userId, input, cfg) {
+  const row = {
+    telegram_id: Number(userId),
+    fixture_id: Number(input.fixtureId),
+    home_name: String(input.homeName || ''),
+    away_name: String(input.awayName || ''),
+    league_name: String(input.leagueName || ''),
+    fixture_date: input.fixtureDate ? new Date(input.fixtureDate).toISOString() : null,
+    enabled: true,
+    notified_at: null,
+    created_at: new Date().toISOString(),
+  };
+  if (!Number.isFinite(row.fixture_id) || row.fixture_id <= 0 || !row.fixture_date || !row.home_name || !row.away_name) {
+    throw new Error('Некорректные данные напоминания.');
+  }
+  if (Date.parse(row.fixture_date) <= Date.now() + 5 * 60_000) throw new Error('Матч уже начинается или начался.');
+  if (hasSupabase(cfg)) {
+    await supaUpsert(cfg, 'match_reminders', row, 'telegram_id,fixture_id');
+    return row;
+  }
+  const key = Number(userId);
+  const list = memory.reminders.get(key) || [];
+  memory.reminders.set(key, [row, ...list.filter(x => Number(x.fixture_id) !== row.fixture_id)].slice(0, 50));
+  return row;
+}
+
+async function removeReminder(userId, fixtureId, cfg) {
+  const id = Number(fixtureId);
+  if (hasSupabase(cfg)) {
+    const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
+    url.searchParams.set('telegram_id', `eq.${Number(userId)}`);
+    url.searchParams.set('fixture_id', `eq.${id}`);
+    const r = await fetch(url, { method: 'DELETE', headers: supaHeaders(cfg, { Prefer: 'return=minimal' }) });
+    if (!r.ok) throw new Error(`Supabase reminders: HTTP ${r.status}`);
+    return;
+  }
+  const key = Number(userId);
+  memory.reminders.set(key, (memory.reminders.get(key) || []).filter(x => Number(x.fixture_id) !== id));
+}
+
+async function markReminderNotified(row, cfg) {
+  if (!hasSupabase(cfg)) return;
+  const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
+  url.searchParams.set('telegram_id', `eq.${Number(row.telegram_id)}`);
+  url.searchParams.set('fixture_id', `eq.${Number(row.fixture_id)}`);
+  const r = await fetch(url, {
+    method: 'PATCH',
+    headers: supaHeaders(cfg, { Prefer: 'return=minimal' }),
+    body: JSON.stringify({ notified_at: new Date().toISOString() }),
+  });
+  if (!r.ok) throw new Error(`Supabase reminders patch: HTTP ${r.status}`);
+}
+
+async function sendTelegramMessage(chatId, text, cfg) {
+  if (!cfg.botToken) return false;
+  const r = await fetch(`https://api.telegram.org/bot${cfg.botToken}/sendMessage`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ chat_id: Number(chatId), text, disable_web_page_preview: true }),
+  });
+  return r.ok;
+}
+
+async function processDueReminders(cfg) {
+  if (!hasSupabase(cfg) || !cfg.botToken) return { checked: 0, sent: 0 };
+  const now = Date.now();
+  const from = new Date(now + 15 * 60_000).toISOString();
+  const to = new Date(now + 45 * 60_000).toISOString();
+  let rows = [];
+  try {
+    rows = await supaSelectMany(cfg, 'match_reminders', {
+      enabled: 'eq.true',
+      notified_at: 'is.null',
+      fixture_date: `gte.${from}`,
+    }, { limit: 100, order: 'fixture_date.asc' });
+    rows = rows.filter(x => Date.parse(x.fixture_date) <= Date.parse(to));
+  } catch (e) {
+    console.warn('reminder scheduler skipped', e?.message || e);
+    return { checked: 0, sent: 0 };
+  }
+  let sent = 0;
+  for (const row of rows) {
+    const minutes = Math.max(1, Math.round((Date.parse(row.fixture_date) - now) / 60000));
+    const text = `⚽ Скоро матч\n\n${row.home_name} — ${row.away_name}\n${row.league_name ? `${row.league_name}\n` : ''}Старт примерно через ${minutes} мин.\n\nОткройте Football Manager для свежего анализа.`;
+    try {
+      if (await sendTelegramMessage(row.telegram_id, text, cfg)) {
+        await markReminderNotified(row, cfg);
+        sent++;
+      }
+    } catch (e) {
+      console.warn('reminder send failed', e?.message || e);
+    }
+  }
+  return { checked: rows.length, sent };
+}
+
 async function apiFootball(path, params, cfg) {
   if (!cfg.apiFootballKey) throw new Error('API_FOOTBALL_KEY не настроен в Cloudflare.');
   const url = new URL(`https://v3.football.api-sports.io${path}`);
@@ -417,6 +573,24 @@ const TOP_LEAGUE_IDS = new Set([
   1, 2, 3, 4, 9, 15, 39, 45, 61, 66, 71, 78, 81, 88, 94, 128, 135, 137, 140, 143, 203, 253, 307, 848,
 ]);
 
+
+const BIG_TEAM_RE = /arsenal|liverpool|chelsea|manchester (city|united)|tottenham|newcastle|real madrid|barcelona|atletico madrid|bayern|dortmund|paris saint|psg|inter|milan|juventus|napoli|roma|benfica|porto|sporting|ajax|psv|feyenoord|inter miami|flamengo|palmeiras|river plate|boca juniors/i;
+
+function matchInterestScore({ leagueId, leagueName, country, homeName, awayName, status, date }) {
+  let score = 18;
+  if (isTopLeague(leagueId, leagueName)) score += 34;
+  const group = leagueGroup(leagueId, leagueName, country);
+  if (group === 'international') score += 14;
+  if (BIG_TEAM_RE.test(homeName || '')) score += 13;
+  if (BIG_TEAM_RE.test(awayName || '')) score += 13;
+  if (['1H','HT','2H','ET','P','LIVE'].includes(status)) score += 8;
+  if (date) {
+    const mins = Math.abs((Date.parse(date) - Date.now()) / 60000);
+    if (mins <= 180) score += 5;
+  }
+  return Math.max(10, Math.min(99, Math.round(score)));
+}
+
 function leagueGroup(leagueId, leagueName = '', country = '') {
   const id = Number(leagueId);
   const n = String(leagueName).toLowerCase();
@@ -443,7 +617,12 @@ function matchStatusRank(status) {
 }
 
 async function apiMe(request, cfg, user) {
-  const [quota, record] = await Promise.all([getQuota(user.id, cfg), getUserRecord(user.id, cfg)]);
+  const [quota, record, favorites, reminders] = await Promise.all([
+    getQuota(user.id, cfg),
+    getUserRecord(user.id, cfg),
+    getFavorites(user.id, cfg),
+    getReminders(user.id, cfg),
+  ]);
   return json({
     user: {
       id: user.id,
@@ -454,6 +633,7 @@ async function apiMe(request, cfg, user) {
       subscriptionUntil: record?.subscription_until || null,
     },
     quota,
+    stats: { favorites: favorites.length, reminders: reminders.length },
   });
 }
 
@@ -471,6 +651,52 @@ async function apiHistory(request, cfg, user) {
       viewedAt: x.viewed_at || '',
     })),
   });
+}
+
+
+async function apiFavorites(request, cfg, user) {
+  if (request.method === 'GET') {
+    const rows = await getFavorites(user.id, cfg);
+    return json({ items: rows.map(x => ({ teamId: Number(x.team_id), teamName: x.team_name || '', teamLogo: x.team_logo || '' })) });
+  }
+  if (request.method === 'POST') {
+    let body = {};
+    try { body = await request.json(); } catch {}
+    const row = await addFavorite(user.id, { id: body.teamId, name: body.teamName, logo: body.teamLogo }, cfg);
+    return json({ ok: true, item: { teamId: row.team_id, teamName: row.team_name, teamLogo: row.team_logo } });
+  }
+  if (request.method === 'DELETE') {
+    const url = new URL(request.url);
+    const teamId = Number(url.searchParams.get('teamId'));
+    if (!teamId) return json({ error: 'teamId обязателен.' }, 400);
+    await removeFavorite(user.id, teamId, cfg);
+    return json({ ok: true });
+  }
+  return json({ error: 'Метод не поддерживается.' }, 405);
+}
+
+async function apiReminders(request, cfg, user) {
+  if (request.method === 'GET') {
+    const rows = await getReminders(user.id, cfg);
+    return json({ items: rows.map(x => ({
+      fixtureId: Number(x.fixture_id), homeName: x.home_name || '', awayName: x.away_name || '',
+      leagueName: x.league_name || '', fixtureDate: x.fixture_date || '', notifiedAt: x.notified_at || null,
+    })) });
+  }
+  if (request.method === 'POST') {
+    let body = {};
+    try { body = await request.json(); } catch {}
+    const row = await addReminder(user.id, body, cfg);
+    return json({ ok: true, item: { fixtureId: row.fixture_id, fixtureDate: row.fixture_date } });
+  }
+  if (request.method === 'DELETE') {
+    const url = new URL(request.url);
+    const fixtureId = Number(url.searchParams.get('fixtureId'));
+    if (!fixtureId) return json({ error: 'fixtureId обязателен.' }, 400);
+    await removeReminder(user.id, fixtureId, cfg);
+    return json({ ok: true });
+  }
+  return json({ error: 'Метод не поддерживается.' }, 405);
 }
 
 async function apiMatches(request, cfg) {
@@ -500,6 +726,10 @@ async function apiMatches(request, cfg) {
     .map(f => {
       const status = f.fixture?.status?.short || '';
       const leagueId = Number(f.league?.id || 0);
+      const leagueName = f.league?.name || '';
+      const country = f.league?.country || '';
+      const homeName = f.teams?.home?.name || '';
+      const awayName = f.teams?.away?.name || '';
       return {
         fixtureId: f.fixture?.id,
         date: f.fixture?.date,
@@ -508,17 +738,19 @@ async function apiMatches(request, cfg) {
         live: ['1H', 'HT', '2H', 'ET', 'P', 'LIVE'].includes(status),
         score: { home: f.goals?.home ?? null, away: f.goals?.away ?? null },
         leagueId,
-        league: f.league?.name || '',
-        country: f.league?.country || '',
+        league: leagueName,
+        country,
         leagueLogo: f.league?.logo || '',
-        isTop: isTopLeague(leagueId, f.league?.name || ''),
-        group: leagueGroup(leagueId, f.league?.name || '', f.league?.country || ''),
-        home: { id: f.teams?.home?.id, name: f.teams?.home?.name || '', logo: f.teams?.home?.logo || '' },
-        away: { id: f.teams?.away?.id, name: f.teams?.away?.name || '', logo: f.teams?.away?.logo || '' },
+        isTop: isTopLeague(leagueId, leagueName),
+        group: leagueGroup(leagueId, leagueName, country),
+        interestScore: matchInterestScore({ leagueId, leagueName, country, homeName, awayName, status, date: f.fixture?.date }),
+        home: { id: f.teams?.home?.id, name: homeName, logo: f.teams?.home?.logo || '' },
+        away: { id: f.teams?.away?.id, name: awayName, logo: f.teams?.away?.logo || '' },
       };
     })
     .sort((a, b) =>
       matchStatusRank(a.status) - matchStatusRank(b.status) ||
+      Number(b.interestScore || 0) - Number(a.interestScore || 0) ||
       Number(b.isTop) - Number(a.isTop) ||
       String(a.date || '').localeCompare(String(b.date || ''))
     )
@@ -602,7 +834,7 @@ export default {
     if (url.pathname === '/health' || url.pathname === '/api/health') {
       return json({
         ok: true,
-        version: '2.1.0-discovery-history',
+        version: '2.2.0-favorites-reminders',
         database: hasSupabase(cfg) ? 'supabase' : 'memory',
         devMode: cfg.devMode,
       });
@@ -643,11 +875,18 @@ export default {
       if (request.method === 'GET' && url.pathname === '/api/me') return await apiMe(request, cfg, user);
       if (request.method === 'GET' && url.pathname === '/api/matches') return await apiMatches(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/history') return await apiHistory(request, cfg, user);
+      if (url.pathname === '/api/favorites') return await apiFavorites(request, cfg, user);
+      if (url.pathname === '/api/reminders') return await apiReminders(request, cfg, user);
       if (request.method === 'POST' && url.pathname === '/api/analyze') return await apiAnalyze(request, cfg, user);
       return json({ error: 'Маршрут не найден.' }, 404);
     } catch (error) {
       console.error(error);
       return json({ error: error?.message || 'Ошибка сервера.' }, 502);
     }
+  },
+
+  async scheduled(controller, env, ctx) {
+    const cfg = config(env);
+    ctx.waitUntil(processDueReminders(cfg));
   },
 };
