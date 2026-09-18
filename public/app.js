@@ -132,6 +132,8 @@ function renderProvider() {
   $('providerMinute').textContent = Number.isFinite(Number(p.minuteRemaining)) && Number.isFinite(Number(p.minuteLimit))
     ? `${p.minuteRemaining} / ${p.minuteLimit}` : '—';
   $('providerLiveOdds').textContent = p.liveOddsReady ? 'Авто · включены' : 'Ожидают платный план';
+  if ($('providerPlayerStats')) $('providerPlayerStats').textContent = p.playerStatsReady ? 'Авто · PRO+' : 'Экономный режим';
+  if ($('providerOddsMovement')) $('providerOddsMovement').textContent = p.oddsMovementReady ? 'История включена' : 'После PRO';
 }
 
 async function loadProvider() {
@@ -453,6 +455,48 @@ function startLiveRefresh(fixtureId) {
   }, 1000);
 }
 
+
+function signedPp(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '—';
+  return `${n > 0 ? '+' : ''}${n.toFixed(1)} п.п.`;
+}
+
+function oddsMovementHtml(move) {
+  if (!move?.baseline || !move?.probabilityChange) return '<p class="muted">История движения появится после нескольких LIVE-снимков.</p>';
+  const row = (label, key) => {
+    const d = Number(move.probabilityChange?.[key] || 0);
+    const cls = d > .4 ? 'up' : d < -.4 ? 'down' : 'flat';
+    const arrow = d > .4 ? '↑' : d < -.4 ? '↓' : '→';
+    return `<div class="odds-move-row ${cls}"><span>${label}</span><strong>${move.baseline?.[key] ?? '—'} → ${move.current?.[key] ?? '—'}</strong><b>${arrow} ${signedPp(d)}</b></div>`;
+  };
+  return `<div class="odds-movement-grid">${row('П1','home')}${row('X','draw')}${row('П2','away')}</div><p class="tiny">Сравнение с самым ранним сохранённым LIVE-снимком${move.from ? ` · ${dateTime(move.from)}` : ''}. Изменение указано в implied probability.</p>`;
+}
+
+function livePressureHtml(p, m) {
+  if (!p) return '';
+  const home = Math.max(0, Math.min(100, Number(p.home || 0)));
+  const away = 100 - home;
+  const lead = p.leader === 'home' ? m.home?.name : p.leader === 'away' ? m.away?.name : 'Баланс';
+  return `<section class="panel pulse-panel"><h2>⚡ Пульс матча</h2><div class="pulse-names"><span>${escapeHtml(m.home?.name || '')}</span><strong>${escapeHtml(lead || 'Баланс')}</strong><span>${escapeHtml(m.away?.name || '')}</span></div><div class="pulse-bar"><i style="width:${home}%"></i><b style="width:${away}%"></b></div><div class="pulse-values"><span>${home}</span><span>${away}</span></div><p class="tiny">${escapeHtml(p.note || '')}</p></section>`;
+}
+
+function playerMetricText(p) {
+  const bits = [];
+  if (Number(p.goals)) bits.push(`${p.goals} гол`);
+  if (Number(p.assists)) bits.push(`${p.assists} ассист`);
+  if (Number(p.saves)) bits.push(`${p.saves} сейв`);
+  if (Number(p.shotsOn)) bits.push(`${p.shotsOn} в створ`);
+  if (Number(p.keyPasses)) bits.push(`${p.keyPasses} ключ. пас`);
+  if (!bits.length && Number(p.minutes)) bits.push(`${p.minutes} мин`);
+  return bits.join(' · ') || '—';
+}
+
+function playerLeadersHtml(leaders, m) {
+  const side = (title, list) => `<div class="player-leader-side"><h3>${escapeHtml(title)}</h3>${list?.length ? list.map((p,i) => `<div class="player-leader-row">${p.photo ? `<img src="${safeUrl(p.photo)}" alt="">` : '<span class="player-photo-placeholder">👤</span>'}<div><strong>${i+1}. ${escapeHtml(p.name)}</strong><small>${escapeHtml(playerMetricText(p))}</small></div><b>${p.rating ? p.rating.toFixed(1) : '—'}</b></div>`).join('') : '<p class="muted">Статистика игроков недоступна.</p>'}</div>`;
+  return `<div class="player-leaders-grid">${side(m.home?.name || 'Хозяева', leaders?.home || [])}${side(m.away?.name || 'Гости', leaders?.away || [])}</div>`;
+}
+
 function renderMatchCenter(d) {
   state.currentCenter = d;
   if (d?.provider) { state.provider = d.provider; renderProvider(); }
@@ -487,8 +531,11 @@ function renderMatchCenter(d) {
         <div><span>План данных</span><strong>${escapeHtml(d.provider?.plan || 'UNKNOWN')}</strong></div>
         <div><span>Обновление</span><strong>${Number(d.refreshSeconds || 60)} сек.</strong></div>
         <div><span>Live odds</span><strong>${d.liveOdds ? 'Доступны' : (d.provider?.liveOddsReady ? 'Нет рынка' : 'Платный режим')}</strong></div>
+        <div><span>Player stats</span><strong>${d.availability?.players ? 'Доступны' : (d.provider?.playerStatsReady ? 'Нет данных' : 'PRO+')}</strong></div>
       </div>
     </section>` : ''}
+
+    ${livePressureHtml(d.livePressure, m)}
 
     ${d.liveOdds ? `<section class="panel">
       <h2>💹 LIVE-коэффициенты 1X2</h2>
@@ -498,12 +545,15 @@ function renderMatchCenter(d) {
         <div><span>П2</span><strong>${d.liveOdds.odds?.away ?? '—'}</strong></div>
       </div>
       <p class="tiny">Источников в live-выборке: ${Number(d.liveOdds.sources || 0)}${d.liveOdds.updatedAt ? ` · обновление ${escapeHtml(String(d.liveOdds.updatedAt))}` : ''}</p>
+      <div class="odds-movement-wrap"><h3>Движение рынка</h3>${oddsMovementHtml(d.oddsMovement)}</div>
     </section>` : ''}
 
     <section class="panel">
       <h2>📊 ${live ? 'LIVE-статистика' : 'Статистика матча'}</h2>
       <div style="margin-top:12px">${liveStatsHtml(d.statistics, m)}</div>
     </section>
+
+    ${(d.playerLeaders?.home?.length || d.playerLeaders?.away?.length) ? `<section class="panel"><h2>⭐ Игроки матча</h2><p class="tiny">Рейтинг и ключевые действия по данным провайдера. Не все турниры поддерживают player stats.</p>${playerLeadersHtml(d.playerLeaders, m)}</section>` : ''}
 
     <section class="panel">
       <h2>⚡ События матча</h2>
@@ -521,6 +571,8 @@ function renderMatchCenter(d) {
         <span>${d.availability?.events ? '✅' : '—'} События</span>
         <span>${d.availability?.statistics ? '✅' : '—'} Статистика</span>
         <span>${d.availability?.lineups ? '✅' : '—'} Составы</span>
+        <span>${d.availability?.players ? '✅' : '—'} Игроки</span>
+        <span>${d.oddsMovement?.baseline ? '✅' : '—'} Движение линии</span>
       </div>
       ${d.availability?.limitedCoverage ? '<div class="coverage-badge limited">Ограниченное покрытие · экономим API-лимит</div>' : ''}
       <p class="tiny">Обновлено: ${dateTime(d.generatedAt)}${d.cached ? ' · кэш' : ' · свежие данные'}</p>
