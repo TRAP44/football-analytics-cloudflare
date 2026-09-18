@@ -491,6 +491,39 @@ function renderHistory() {
 
 function pct(v) { return Number.isFinite(Number(v)) ? `${Number(v).toFixed(1)}%` : '—'; }
 
+function formSequence(form) {
+  if (!form) return '—';
+  return String(form).split('').map(x => x === 'W' ? 'П' : x === 'D' ? 'Н' : x === 'L' ? 'ПР' : x).join(' · ');
+}
+
+function formCard(title, form) {
+  const o = form?.overall;
+  const v = form?.venue;
+  if (!o?.sample) return `<div class="form-team-card"><strong>${escapeHtml(title)}</strong><p class="muted">Недостаточно данных по последним матчам.</p></div>`;
+  return `<div class="form-team-card">
+    <strong>${escapeHtml(title)}</strong>
+    <div class="form-sequence">${escapeHtml(formSequence(o.form))}</div>
+    <div class="mini-metrics">
+      <span><b>${o.ppg}</b><small>очки/матч</small></span>
+      <span><b>${o.gfAvg}</b><small>забито</small></span>
+      <span><b>${o.gaAvg}</b><small>пропущено</small></span>
+      <span><b>${o.over25Pct}%</b><small>ТБ 2.5</small></span>
+    </div>
+    ${v?.sample ? `<p class="muted">${form.preferredVenue === 'home' ? 'Дома' : 'В гостях'}: ${v.ppg} очка/матч · выборка ${v.sample}</p>` : ''}
+  </div>`;
+}
+
+function modelWeightsText(weights = {}) {
+  const names = { market: 'рынок', apiPrediction: 'API', recentForm: 'форма', h2h: 'H2H' };
+  const parts = Object.entries(weights).filter(([,v]) => Number(v) > 0).map(([k,v]) => `${names[k] || k} ${Number(v).toFixed(0)}%`);
+  return parts.length ? parts.join(' · ') : 'Недостаточно сигналов';
+}
+
+function bullets(items = [], empty = 'Нет существенных факторов.') {
+  if (!items?.length) return `<p class="muted">${escapeHtml(empty)}</p>`;
+  return `<ul class="list analysis-list">${items.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>`;
+}
+
 function absenceList(title, items) {
   if (!items?.length) return `<div class="data-card"><span>${escapeHtml(title)}</span><strong>Нет данных</strong></div>`;
   return `<div class="panel"><h2>${escapeHtml(title)}</h2><ul class="list">${items.slice(0, 10).map(x => `<li><strong>${escapeHtml(x.name)}</strong>${x.reason ? ` — ${escapeHtml(x.reason)}` : ''}${x.type ? ` (${escapeHtml(x.type)})` : ''}</li>`).join('')}</ul></div>`;
@@ -541,6 +574,9 @@ function renderAnalysis(d) {
   const homeLine = d.lineups?.home;
   const awayLine = d.lineups?.away;
   const reminderActive = hasReminder(m.fixtureId);
+  const confidence = d.confidence || {};
+  const goal = d.goalModel;
+  const recent = d.recentForm || {};
 
   $('analysis').innerHTML = `
     <section class="panel analysis-hero">
@@ -556,17 +592,57 @@ function renderAnalysis(d) {
         <div class="prob"><span>Ничья</span><strong>${pct(p.draw)}</strong></div>
         <div class="prob"><span>П2</span><strong>${pct(p.away)}</strong></div>
       </div>
+      <div class="model-summary">
+        <div><span>Наибольшая вероятность</span><strong>${escapeHtml(d.likelyOutcome || 'Недостаточно данных')}</strong></div>
+        <div><span>Уверенность модели</span><strong>${confidence.score ?? '—'}/100 · ${escapeHtml(confidence.label || '—')}</strong></div>
+      </div>
       <button id="reminderBtn" class="reminder-btn ${reminderActive ? 'active' : ''}" type="button">${reminderActive ? '🔔 Напоминание включено' : '🔕 Напомнить за 30 минут'}</button>
-      <p>${d.cached ? '⚡ Результат из кэша' : '🆕 Свежий анализ'} · полнота ${d.completeness?.score ?? 0}/${d.completeness?.max ?? 7}</p>
+      <p>${d.cached ? '⚡ Результат из кэша' : '🆕 Свежий анализ'} · полнота ${d.completeness?.score ?? 0}/${d.completeness?.max ?? 10}</p>
     </section>
 
     <section class="panel">
-      <h2>💹 Рынок и модель</h2>
+      <h2>🧠 Как получена оценка</h2>
+      <p class="muted">${escapeHtml(d.modelBreakdown?.method || 'Модель объединяет доступные статистические сигналы.')}</p>
+      <div class="model-weights">${escapeHtml(modelWeightsText(d.modelBreakdown?.weights || {}))}</div>
+      <div class="confidence-bar"><span style="width:${Math.max(0, Math.min(100, Number(confidence.score || 0)))}%"></span></div>
+      <p class="muted">Расхождение источников: ${Number.isFinite(Number(confidence.disagreement)) ? `${Number(confidence.disagreement).toFixed(1)} п.п.` : '—'}</p>
+    </section>
+
+    <section class="panel">
+      <h2>📈 Форма команд</h2>
+      <div class="form-grid">
+        ${formCard(m.home?.name || 'Хозяева', recent.home)}
+        ${formCard(m.away?.name || 'Гости', recent.away)}
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>⚽ Голевая модель</h2>
+      ${goal ? `<div class="data-grid" style="margin-top:12px">
+        <div class="data-card"><span>Ожидаемые голы ${escapeHtml(m.home?.name || 'П1')}</span><strong>${goal.homeExpected}</strong></div>
+        <div class="data-card"><span>Ожидаемые голы ${escapeHtml(m.away?.name || 'П2')}</span><strong>${goal.awayExpected}</strong></div>
+        <div class="data-card"><span>ТБ 2.5</span><strong>${pct(goal.over25)}</strong></div>
+        <div class="data-card"><span>Обе забьют</span><strong>${pct(goal.btts)}</strong></div>
+      </div><p class="muted">Простая Poisson-эвристика на основе недавних забитых/пропущенных; это не официальный xG.</p>` : '<p class="muted">Недостаточно недавних матчей для голевой модели.</p>'}
+    </section>
+
+    <section class="panel">
+      <h2>🧩 Ключевые факторы</h2>
+      ${bullets(d.insights, 'Пока нет сильных дополнительных факторов.')}
+    </section>
+
+    <section class="panel risk-panel">
+      <h2>⚠️ Риски и ограничения</h2>
+      ${bullets(d.risks, 'Критичных ограничений по доступным данным не найдено.')}
+    </section>
+
+    <section class="panel">
+      <h2>💹 Рынок и API-прогноз</h2>
       <div class="data-grid" style="margin-top:12px">
         <div class="data-card"><span>Средние кэфы 1 / X / 2</span><strong>${market?.odds ? `${market.odds.home} / ${market.odds.draw} / ${market.odds.away}` : 'Нет данных'}</strong></div>
         <div class="data-card"><span>Букмекеров в выборке</span><strong>${market?.bookmakers ?? '—'}</strong></div>
         <div class="data-card"><span>API-Football</span><strong>${escapeHtml(pred?.winner || 'Нет данных')}</strong></div>
-        <div class="data-card"><span>Подсказка модели</span><strong>${escapeHtml(pred?.advice || 'Нет данных')}</strong></div>
+        <div class="data-card"><span>Подсказка API</span><strong>${escapeHtml(pred?.advice || 'Нет данных')}</strong></div>
       </div>
     </section>
 
