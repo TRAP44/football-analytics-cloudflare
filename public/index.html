@@ -96,6 +96,47 @@
           </div>
         </div>
 
+
+        <section class="panel preferences-panel">
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>⚙️ Персонализация</h2>
+              <p>Настройки списка матчей и уведомлений.</p>
+            </div>
+          </div>
+          <div class="preferences-grid">
+            <label class="setting-field">
+              <span>Экран матчей по умолчанию</span>
+              <select id="defaultFilterSelect">
+                <option value="top">🔥 Топ</option>
+                <option value="favorites">⭐ Избранное</option>
+                <option value="all">Все матчи</option>
+              </select>
+            </label>
+            <label class="setting-field">
+              <span>Напоминать заранее</span>
+              <select id="reminderMinutesSelect">
+                <option value="15">за 15 минут</option>
+                <option value="30">за 30 минут</option>
+                <option value="60">за 60 минут</option>
+              </select>
+            </label>
+            <label class="switch-row"><span><strong>🔴 Сообщение при старте</strong><small>Дополнительное уведомление около начала матча.</small></span><input id="kickoffNotificationToggle" type="checkbox"><i></i></label>
+            <label class="switch-row"><span><strong>🧒 Скрывать youth/reserve</strong><small>Не показывать молодёжные матчи в обычных фильтрах.</small></span><input id="hideYouthToggle" type="checkbox"><i></i></label>
+            <label class="switch-row"><span><strong>⭐ Избранные выше</strong><small>Поднимать матчи любимых команд в начало списка.</small></span><input id="favoriteFirstToggle" type="checkbox"><i></i></label>
+          </div>
+          <button id="savePreferencesBtn" class="primary-setting-btn" type="button">Сохранить настройки</button>
+        </section>
+
+        <section class="panel">
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>🔔 Активные напоминания</h2>
+              <p>Можно отключить ненужный матч прямо здесь.</p>
+            </div>
+          </div>
+          <div id="reminderList" class="reminder-list"></div>
+        </section>
         <section class="panel">
           <div class="section-head profile-section-head">
             <div>
