@@ -1665,51 +1665,188 @@ function embeddedLiveData(fixture) {
 }
 
 
-const TOP_LEAGUE_IDS = new Set([
-  1, 2, 3, 4, 9, 15, 39, 45, 61, 66, 71, 78, 81, 88, 94, 128, 135, 137, 140, 143, 203, 253, 307, 848,
+const COMPETITIONS = new Map([
+  [1,   { name: 'Чемпионат мира', short: 'ЧМ', group: 'international', category: 'national', tier: 'elite', priority: 100 }],
+  [2,   { name: 'Лига чемпионов УЕФА', short: 'ЛЧ', group: 'international', category: 'continental', tier: 'elite', priority: 100 }],
+  [3,   { name: 'Лига Европы УЕФА', short: 'ЛЕ', group: 'international', category: 'continental', tier: 'elite', priority: 94 }],
+  [4,   { name: 'Евро', short: 'Евро', group: 'international', category: 'national', tier: 'elite', priority: 98 }],
+  [9,   { name: 'Копа Америка', short: 'Копа Америка', group: 'international', category: 'national', tier: 'elite', priority: 96 }],
+  [15,  { name: 'Клубный чемпионат мира', short: 'КЧМ', group: 'international', category: 'continental', tier: 'elite', priority: 92 }],
+  [39,  { name: 'Премьер-лига', short: 'АПЛ', group: 'england', category: 'league', tier: 'elite', priority: 100 }],
+  [40,  { name: 'Чемпионшип', short: 'Чемпионшип', group: 'england', category: 'league', tier: 'major', priority: 72 }],
+  [45,  { name: 'Кубок Англии', short: 'FA Cup', group: 'england', category: 'cup', tier: 'major', priority: 84 }],
+  [48,  { name: 'Кубок английской лиги', short: 'EFL Cup', group: 'england', category: 'cup', tier: 'major', priority: 76 }],
+  [61,  { name: 'Лига 1', short: 'Лига 1', group: 'france', category: 'league', tier: 'elite', priority: 92 }],
+  [62,  { name: 'Лига 2', short: 'Лига 2', group: 'france', category: 'league', tier: 'major', priority: 60 }],
+  [66,  { name: 'Кубок Франции', short: 'Кубок Франции', group: 'france', category: 'cup', tier: 'major', priority: 70 }],
+  [71,  { name: 'Серия A Бразилии', short: 'Бразилия A', group: 'brazil', category: 'league', tier: 'major', priority: 78 }],
+  [78,  { name: 'Бундеслига', short: 'Бундеслига', group: 'germany', category: 'league', tier: 'elite', priority: 94 }],
+  [79,  { name: '2. Бундеслига', short: '2. Бундеслига', group: 'germany', category: 'league', tier: 'major', priority: 62 }],
+  [81,  { name: 'Кубок Германии', short: 'DFB-Pokal', group: 'germany', category: 'cup', tier: 'major', priority: 74 }],
+  [88,  { name: 'Эредивизи', short: 'Эредивизи', group: 'netherlands', category: 'league', tier: 'major', priority: 78 }],
+  [94,  { name: 'Примейра-лига', short: 'Португалия', group: 'portugal', category: 'league', tier: 'major', priority: 78 }],
+  [128, { name: 'Профессиональная лига Аргентины', short: 'Аргентина', group: 'argentina', category: 'league', tier: 'major', priority: 76 }],
+  [135, { name: 'Серия A', short: 'Серия A', group: 'italy', category: 'league', tier: 'elite', priority: 94 }],
+  [136, { name: 'Серия B', short: 'Серия B', group: 'italy', category: 'league', tier: 'major', priority: 62 }],
+  [137, { name: 'Кубок Италии', short: 'Кубок Италии', group: 'italy', category: 'cup', tier: 'major', priority: 74 }],
+  [140, { name: 'Ла Лига', short: 'Ла Лига', group: 'spain', category: 'league', tier: 'elite', priority: 96 }],
+  [141, { name: 'Сегунда', short: 'Сегунда', group: 'spain', category: 'league', tier: 'major', priority: 62 }],
+  [143, { name: 'Кубок Испании', short: 'Кубок Испании', group: 'spain', category: 'cup', tier: 'major', priority: 76 }],
+  [203, { name: 'Суперлига Турции', short: 'Турция', group: 'turkey', category: 'league', tier: 'major', priority: 68 }],
+  [253, { name: 'MLS', short: 'MLS', group: 'usa', category: 'league', tier: 'major', priority: 72 }],
+  [307, { name: 'Саудовская Про-лига', short: 'Saudi Pro League', group: 'saudi', category: 'league', tier: 'major', priority: 70 }],
+  [848, { name: 'Лига конференций УЕФА', short: 'ЛК', group: 'international', category: 'continental', tier: 'elite', priority: 88 }],
 ]);
 
-
 const BIG_TEAM_RE = /arsenal|liverpool|chelsea|manchester (city|united)|tottenham|newcastle|real madrid|barcelona|atletico madrid|bayern|dortmund|paris saint|psg|inter|milan|juventus|napoli|roma|benfica|porto|sporting|ajax|psv|feyenoord|inter miami|flamengo|palmeiras|river plate|boca juniors/i;
-const YOUTH_RESERVE_RE = /\bu-?1[789]\b|\bu-?2[013]\b|under ?(17|18|19|20|21|23)|youth|reserve|reserves|development|primavera|juniors?/i;
+const YOUTH_RESERVE_RE = /\bu-?1[789]\b|\bu-?2[013]\b|under ?(17|18|19|20|21|23)|youth|reserve|reserves|development|primavera|juniors?|academy/i;
+const WOMEN_RE = /women|femen|femin|wsl|liga f|frauen|d1 f|feminine/i;
+const FRIENDLY_RE = /friendly|friendlies|club friendly|товарищ/i;
+const CUP_RE = /cup|copa|coppa|pokal|taça|taca|coupe|кубок/i;
+const LOWER_RE = /division 3|division 4|third|fourth|regional|amateur|non league|national league north|national league south/i;
+
+const COUNTRY_RU = new Map(Object.entries({
+  England:'Англия', Spain:'Испания', Italy:'Италия', Germany:'Германия', France:'Франция',
+  Portugal:'Португалия', Netherlands:'Нидерланды', Belgium:'Бельгия', Turkey:'Турция', Scotland:'Шотландия',
+  Brazil:'Бразилия', Argentina:'Аргентина', USA:'США', Mexico:'Мексика', Colombia:'Колумбия',
+  Ecuador:'Эквадор', Uruguay:'Уругвай', Chile:'Чили', Paraguay:'Парагвай', Peru:'Перу',
+  'Saudi-Arabia':'Саудовская Аравия', 'Saudi Arabia':'Саудовская Аравия', Japan:'Япония', Korea:'Южная Корея',
+  Australia:'Австралия', Russia:'Россия', Ukraine:'Украина', Poland:'Польша', Greece:'Греция',
+  Austria:'Австрия', Switzerland:'Швейцария', Denmark:'Дания', Sweden:'Швеция', Norway:'Норвегия',
+  'Czech-Republic':'Чехия', 'Czech Republic':'Чехия', Romania:'Румыния', Croatia:'Хорватия', Serbia:'Сербия',
+  World:'Мир', Europe:'Европа', Africa:'Африка', Asia:'Азия',
+}));
+
+function normalizeCountryName(country = '') {
+  const raw = String(country || '').trim();
+  return COUNTRY_RU.get(raw) || raw || 'Мир';
+}
 
 function isYouthReserveMatch(leagueName = '', homeName = '', awayName = '') {
   return YOUTH_RESERVE_RE.test(`${leagueName || ''} ${homeName || ''} ${awayName || ''}`);
 }
 
-function matchInterestScore({ leagueId, leagueName, country, homeName, awayName, status, date }) {
-  let score = 18;
-  if (isTopLeague(leagueId, leagueName)) score += 34;
-  const group = leagueGroup(leagueId, leagueName, country);
-  if (group === 'international') score += 14;
-  if (BIG_TEAM_RE.test(homeName || '')) score += 13;
-  if (BIG_TEAM_RE.test(awayName || '')) score += 13;
+function detectCompetitionCategory(leagueId, leagueName = '', country = '', homeName = '', awayName = '') {
+  const known = COMPETITIONS.get(Number(leagueId));
+  const hay = `${leagueName} ${country} ${homeName} ${awayName}`;
+  if (isYouthReserveMatch(leagueName, homeName, awayName)) return 'youth';
+  if (WOMEN_RE.test(hay)) return 'women';
+  if (FRIENDLY_RE.test(leagueName)) return 'friendly';
+  if (known?.category) return known.category;
+  if (/champions|europa|conference|world cup|euro|copa america|nations league|club world/i.test(leagueName)) return 'international';
+  if (CUP_RE.test(leagueName)) return 'cup';
+  if (LOWER_RE.test(leagueName)) return 'lower';
+  return 'league';
+}
+
+function leagueGroup(leagueId, leagueName = '', country = '') {
+  const known = COMPETITIONS.get(Number(leagueId));
+  if (known?.group) return known.group;
+  const n = String(leagueName).toLowerCase();
+  const c = String(country).toLowerCase();
+  if (/champions|europa|conference|world cup|euro|copa america|nations league|club world/.test(n)) return 'international';
+  if (c === 'england') return 'england';
+  if (c === 'spain') return 'spain';
+  if (c === 'italy') return 'italy';
+  if (c === 'germany') return 'germany';
+  if (c === 'france') return 'france';
+  if (c === 'portugal') return 'portugal';
+  if (c === 'netherlands') return 'netherlands';
+  if (c === 'brazil') return 'brazil';
+  if (c === 'argentina') return 'argentina';
+  return 'other';
+}
+
+function normalizeCompetition(leagueId, leagueName = '', country = '', homeName = '', awayName = '') {
+  const id = Number(leagueId || 0);
+  const known = COMPETITIONS.get(id);
+  const category = detectCompetitionCategory(id, leagueName, country, homeName, awayName);
+  const youth = category === 'youth';
+  const friendly = category === 'friendly';
+  const lower = category === 'lower';
+  let tier = known?.tier || 'standard';
+  let priority = Number(known?.priority || 45);
+  const lname = String(leagueName || '').toLowerCase();
+  if (!known && category === 'cup') priority = 52;
+  if (!known && category === 'international') priority = 74;
+  if (!known && /libertadores/.test(lname)) { tier = 'elite'; priority = 90; }
+  if (!known && /sudamericana/.test(lname)) { tier = 'major'; priority = 82; }
+  if (!known && /nations league/.test(lname)) { tier = 'major'; priority = 84; }
+  if (!known && /afc champions|caf champions|concacaf champions/.test(lname)) { tier = 'major'; priority = 80; }
+  if (category === 'women') { tier = 'standard'; priority = Math.max(priority, 50); }
+  if (lower) { tier = 'basic'; priority = Math.min(priority, 28); }
+  if (friendly) { tier = 'basic'; priority = Math.min(priority, 24); }
+  if (youth) { tier = 'basic'; priority = 8; }
+  const group = known?.group || leagueGroup(id, leagueName, country);
+  return {
+    id,
+    originalName: String(leagueName || ''),
+    name: known?.name || String(leagueName || 'Турнир'),
+    shortName: known?.short || known?.name || String(leagueName || 'Турнир'),
+    country: normalizeCountryName(country),
+    countryRaw: String(country || ''),
+    group,
+    category,
+    tier,
+    priority,
+    youth,
+    friendly,
+    lower,
+    featured: priority >= 80 && !youth && !friendly && !lower,
+  };
+}
+
+function isTopLeague(leagueId, leagueName = '') {
+  const known = COMPETITIONS.get(Number(leagueId));
+  if (known) return known.priority >= 80;
+  if (YOUTH_RESERVE_RE.test(String(leagueName || ''))) return false;
+  return /premier league|la liga|serie a|bundesliga|ligue 1|champions league|europa league|conference league|world cup|copa america|major league soccer|primeira liga/i.test(String(leagueName));
+}
+
+function normalizeRoundLabel(round = '') {
+  const raw = String(round || '').trim();
+  if (!raw) return '';
+  let m = raw.match(/Regular Season\s*-\s*(\d+)/i);
+  if (m) return `Тур ${m[1]}`;
+  m = raw.match(/Round\s*(\d+)/i);
+  if (m) return `Раунд ${m[1]}`;
+  m = raw.match(/Group Stage\s*-?\s*(.*)/i);
+  if (m) return m[1] ? `Групповой этап · ${m[1]}` : 'Групповой этап';
+  if (/Round of 32/i.test(raw)) return '1/16 финала';
+  if (/Round of 16/i.test(raw)) return '1/8 финала';
+  if (/Quarter/i.test(raw)) return '1/4 финала';
+  if (/Semi/i.test(raw)) return '1/2 финала';
+  if (/Final/i.test(raw) && !/Semi|Quarter/i.test(raw)) return 'Финал';
+  if (/Play-?offs?/i.test(raw)) return raw.replace(/Play-?offs?/i, 'Плей-офф');
+  return raw;
+}
+
+function matchInterestScore({ competition, leagueId, leagueName, country, homeName, awayName, status, date }) {
+  const comp = competition || normalizeCompetition(leagueId, leagueName, country, homeName, awayName);
+  let score = Math.max(8, Math.min(72, Number(comp.priority || 45)));
+  if (BIG_TEAM_RE.test(homeName || '')) score += 12;
+  if (BIG_TEAM_RE.test(awayName || '')) score += 12;
   if (isLiveStatus(status)) score += 8;
   if (date) {
     const mins = Math.abs((Date.parse(date) - Date.now()) / 60000);
     if (mins <= 180) score += 5;
   }
-  if (YOUTH_RESERVE_RE.test(`${leagueName || ''} ${homeName || ''} ${awayName || ''}`)) score -= 40;
+  if (comp.youth) score -= 28;
+  if (comp.friendly) score -= 18;
+  if (comp.lower) score -= 14;
   return Math.max(5, Math.min(99, Math.round(score)));
 }
 
-function leagueGroup(leagueId, leagueName = '', country = '') {
-  const id = Number(leagueId);
-  const n = String(leagueName).toLowerCase();
-  const c = String(country).toLowerCase();
-  if ([1,2,3,4,9,15,848].includes(id) || /champions|europa|conference|world cup|euro|copa america|club world/.test(n)) return 'international';
-  if (id === 39 || id === 45 || c === 'england') return 'england';
-  if (id === 140 || id === 143 || c === 'spain') return 'spain';
-  if (id === 135 || id === 137 || c === 'italy') return 'italy';
-  if (id === 78 || id === 81 || c === 'germany') return 'germany';
-  if (id === 61 || id === 66 || c === 'france') return 'france';
-  return 'other';
-}
-
-function isTopLeague(leagueId, leagueName = '') {
-  if (YOUTH_RESERVE_RE.test(String(leagueName || ''))) return false;
-  if (TOP_LEAGUE_IDS.has(Number(leagueId))) return true;
-  return /premier league|la liga|serie a|bundesliga|ligue 1|champions league|europa league|conference league|world cup|copa america|major league soccer|primeira liga/i.test(String(leagueName));
+function catalogRank(match) {
+  const cat = match?.competition?.category || match?.category || '';
+  if (match?.live) return 0;
+  if (match?.competition?.featured || match?.featured) return 1;
+  if (cat === 'continental' || cat === 'national' || cat === 'international') return 2;
+  if (cat === 'league' || cat === 'cup') return 3;
+  if (cat === 'women') return 4;
+  if (cat === 'friendly') return 6;
+  if (cat === 'youth' || cat === 'lower') return 7;
+  return 5;
 }
 
 function matchStatusRank(status) {
@@ -1830,7 +1967,7 @@ async function apiMatches(request, cfg) {
   const isToday = date === todayUtc();
   const yesterday = new Date(); yesterday.setUTCDate(yesterday.getUTCDate() - 1);
   const isYesterday = date === yesterday.toISOString().slice(0, 10);
-  const cacheKey = `matches:${date}:v4-quality`;
+  const cacheKey = `matches:${date}:v5-catalog`;
 
   const cached = await getCache(cacheKey, cfg);
   if (cached?.matches) return json({ ...cached, cached: true, stale: false });
@@ -1860,8 +1997,12 @@ async function apiMatches(request, cfg) {
       const country = f.league?.country || '';
       const homeName = f.teams?.home?.name || '';
       const awayName = f.teams?.away?.name || '';
-      const youthReserve = isYouthReserveMatch(leagueName, homeName, awayName);
-      const top = isTopLeague(leagueId, leagueName);
+      const competition = normalizeCompetition(leagueId, leagueName, country, homeName, awayName);
+      const top = competition.featured || isTopLeague(leagueId, leagueName);
+      const live = isLiveStatus(status);
+      const finished = isFinishedStatus(status);
+      const round = f.league?.round || '';
+      const roundLabel = normalizeRoundLabel(round);
       return {
         fixtureId: f.fixture?.id,
         date: f.fixture?.date,
@@ -1869,31 +2010,49 @@ async function apiMatches(request, cfg) {
         statusLong: f.fixture?.status?.long || '',
         statusLabel: statusLabel(status, elapsed),
         elapsed,
-        finished: isFinishedStatus(status),
-        live: isLiveStatus(status),
+        finished,
+        live,
         score: scoreSnapshot(f),
         leagueId,
-        league: leagueName,
-        country,
+        league: competition.name,
+        leagueOriginal: leagueName,
+        leagueShort: competition.shortName,
+        round,
+        roundLabel,
+        country: competition.country,
+        countryRaw: country,
         leagueLogo: f.league?.logo || '',
         isTop: top,
-        group: leagueGroup(leagueId, leagueName, country),
-        youthReserve,
-        coverageTier: youthReserve ? 'basic' : top ? 'enhanced' : 'standard',
-        interestScore: matchInterestScore({ leagueId, leagueName, country, homeName, awayName, status, date: f.fixture?.date }),
+        featured: Boolean(competition.featured),
+        group: competition.group,
+        category: competition.category,
+        competition,
+        youthReserve: competition.youth,
+        lowPriority: competition.youth || competition.friendly || competition.lower,
+        coverageTier: competition.youth || competition.lower ? 'basic' : competition.tier === 'elite' ? 'enhanced' : 'standard',
+        interestScore: matchInterestScore({ competition, leagueId, leagueName, country, homeName, awayName, status, date: f.fixture?.date }),
         home: { id: f.teams?.home?.id, name: homeName, logo: f.teams?.home?.logo || '' },
         away: { id: f.teams?.away?.id, name: awayName, logo: f.teams?.away?.logo || '' },
       };
     })
     .sort((a, b) =>
       matchStatusRank(a.status) - matchStatusRank(b.status) ||
+      catalogRank(a) - catalogRank(b) ||
       Number(b.interestScore || 0) - Number(a.interestScore || 0) ||
-      Number(b.isTop) - Number(a.isTop) ||
+      Number(b.competition?.priority || 0) - Number(a.competition?.priority || 0) ||
       String(a.date || '').localeCompare(String(b.date || ''))
     )
     .slice(0, 120);
 
-  const payload = { date, matches, refreshedAt: new Date().toISOString(), provider: providerSnapshot() };
+  const catalog = {
+    featured: matches.filter(x => x.featured).length,
+    live: matches.filter(x => x.live).length,
+    major: matches.filter(x => ['elite','major'].includes(x.competition?.tier)).length,
+    cups: matches.filter(x => x.category === 'cup').length,
+    international: matches.filter(x => ['continental','national','international'].includes(x.category)).length,
+    hiddenLowPriority: matches.filter(x => x.lowPriority).length,
+  };
+  const payload = { date, matches, catalog, refreshedAt: new Date().toISOString(), provider: providerSnapshot() };
   const ttl = isToday ? 1 : isYesterday ? 720 : cfg.cacheMinutes;
   await setCache(cacheKey, 0, payload, cfg, ttl);
   return json({ ...payload, cached: false, stale: false });
@@ -2124,7 +2283,7 @@ async function apiAnalyze(request, cfg, user) {
 
   const payload = {
     generatedAt: new Date().toISOString(),
-    analysisVersion: '2.9.0-quality-engine',
+    analysisVersion: '3.0.0-catalog-engine',
     match: {
       fixtureId, date: fixture.fixture?.date || '', status: fixture.fixture?.status?.short || '',
       venue: fixture.fixture?.venue?.name || '', city: fixture.fixture?.venue?.city || '',
@@ -2174,7 +2333,7 @@ export default {
     if (url.pathname === '/health' || url.pathname === '/api/health') {
       return json({
         ok: true,
-        version: '2.9.0-core-quality',
+        version: '3.0.0-match-catalog',
         database: hasSupabase(cfg) ? 'supabase' : 'memory',
         monetization: cfg.monetizationEnabled ? 'enabled' : 'paused',
         devMode: cfg.devMode,
