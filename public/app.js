@@ -12,6 +12,8 @@ const state = {
   history: [],
   favorites: [],
   reminders: [],
+  preferences: { defaultFilter: 'top', reminderMinutes: 30, kickoffNotification: true, hideYouth: true, favoriteFirst: true },
+  preferencesApplied: false,
   filter: 'top',
   search: '',
   currentAnalysis: null,
@@ -83,6 +85,15 @@ async function api(path, options = {}) {
 async function loadProfile() {
   try {
     state.profile = await api('/api/me');
+    if (state.profile?.preferences) {
+      state.preferences = { ...state.preferences, ...state.profile.preferences };
+      if (!state.preferencesApplied) {
+        state.filter = state.preferences.defaultFilter || 'top';
+        state.preferencesApplied = true;
+        syncFilterButtons();
+        if (state.matches.length) renderMatches();
+      }
+    }
     renderProfile();
   } catch (e) {
     toast(e.message);
@@ -101,7 +112,14 @@ function renderProfile() {
   $('memberSince').textContent = user.createdAt ? `С нами с ${dateOnly(user.createdAt)}` : '';
   $('favoriteCount').textContent = String(stats.favorites ?? state.favorites.length);
   $('reminderCount').textContent = String(stats.reminders ?? state.reminders.length);
+  const prefs = state.preferences || {};
+  if ($('defaultFilterSelect')) $('defaultFilterSelect').value = prefs.defaultFilter || 'top';
+  if ($('reminderMinutesSelect')) $('reminderMinutesSelect').value = String(prefs.reminderMinutes || 30);
+  if ($('kickoffNotificationToggle')) $('kickoffNotificationToggle').checked = prefs.kickoffNotification !== false;
+  if ($('hideYouthToggle')) $('hideYouthToggle').checked = prefs.hideYouth !== false;
+  if ($('favoriteFirstToggle')) $('favoriteFirstToggle').checked = prefs.favoriteFirst !== false;
   renderFavoriteTeams();
+  renderReminderList();
 }
 
 async function loadFavorites() {
@@ -118,9 +136,58 @@ async function loadReminders() {
   try {
     const data = await api('/api/reminders');
     state.reminders = data.items || [];
+    renderReminderList();
   } catch (e) {
     toast(e.message);
   }
+}
+
+function renderReminderList() {
+  const el = $('reminderList');
+  if (!el) return;
+  if (!state.reminders.length) {
+    el.innerHTML = '<div class="empty compact-empty">Активных напоминаний пока нет.</div>';
+    return;
+  }
+  const rows = [...state.reminders].sort((a, b) => Date.parse(a.fixtureDate || 0) - Date.parse(b.fixtureDate || 0));
+  el.innerHTML = rows.map(x => `
+    <div class="reminder-row">
+      <div>
+        <strong>${escapeHtml(x.homeName)} — ${escapeHtml(x.awayName)}</strong>
+        <span>${dateTime(x.fixtureDate)} · за ${Number(x.remindBeforeMinutes || 30)} мин.${x.kickoffNotify ? ' · + старт' : ''}</span>
+      </div>
+      <button class="reminder-remove" type="button" data-fixture-id="${Number(x.fixtureId)}">Отключить</button>
+    </div>`).join('');
+  document.querySelectorAll('.reminder-remove').forEach(btn => btn.addEventListener('click', async () => {
+    try {
+      await api(`/api/reminders?fixtureId=${Number(btn.dataset.fixtureId)}`, { method: 'DELETE' });
+      state.reminders = state.reminders.filter(x => Number(x.fixtureId) !== Number(btn.dataset.fixtureId));
+      renderReminderList();
+      if (state.currentAnalysis) renderAnalysis(state.currentAnalysis);
+      await loadProfile();
+      toast('Напоминание отключено');
+    } catch (e) { toast(e.message); }
+  }));
+}
+
+async function savePreferencesFromUi() {
+  const payload = {
+    defaultFilter: $('defaultFilterSelect')?.value || 'top',
+    reminderMinutes: Number($('reminderMinutesSelect')?.value || 30),
+    kickoffNotification: Boolean($('kickoffNotificationToggle')?.checked),
+    hideYouth: Boolean($('hideYouthToggle')?.checked),
+    favoriteFirst: Boolean($('favoriteFirstToggle')?.checked),
+  };
+  try {
+    const data = await api('/api/preferences', { method: 'PUT', body: JSON.stringify(payload) });
+    state.preferences = { ...state.preferences, ...(data.preferences || payload) };
+    state.profile = state.profile ? { ...state.profile, preferences: state.preferences } : state.profile;
+    state.filter = state.preferences.defaultFilter || state.filter;
+    syncFilterButtons();
+    renderMatches();
+    renderProfile();
+    toast('Настройки сохранены');
+  } catch (e) { toast(e.message); }
 }
 
 function favoriteSet() {
@@ -199,17 +266,30 @@ function syncFilterButtons() {
 function filteredMatches() {
   const q = state.search.trim().toLowerCase();
   const fav = favoriteSet();
-  return state.matches.filter(m => {
+  const prefs = state.preferences || {};
+  const list = state.matches.filter(m => {
+    const isFavMatch = fav.has(Number(m.home?.id)) || fav.has(Number(m.away?.id));
+    if (prefs.hideYouth !== false && m.youthReserve && state.filter !== 'favorites') return false;
     let byFilter = state.filter === 'all';
     if (state.filter === 'top') byFilter = Number(m.interestScore || 0) >= 50 && !m.youthReserve;
     if (['international', 'england', 'spain', 'italy', 'germany', 'france'].includes(state.filter)) byFilter = m.group === state.filter;
-    if (state.filter === 'favorites') byFilter = fav.has(Number(m.home?.id)) || fav.has(Number(m.away?.id));
+    if (state.filter === 'favorites') byFilter = isFavMatch;
     if (!byFilter) return false;
     if (!q) return true;
     return [m.home?.name, m.away?.name, m.league, m.country]
       .filter(Boolean)
       .some(v => String(v).toLowerCase().includes(q));
   });
+  if (prefs.favoriteFirst !== false && state.filter !== 'favorites') {
+    list.sort((a, b) => {
+      const af = fav.has(Number(a.home?.id)) || fav.has(Number(a.away?.id)) ? 1 : 0;
+      const bf = fav.has(Number(b.home?.id)) || fav.has(Number(b.away?.id)) ? 1 : 0;
+      if (af !== bf) return bf - af;
+      if (Boolean(a.live) !== Boolean(b.live)) return a.live ? -1 : 1;
+      return Number(b.interestScore || 0) - Number(a.interestScore || 0);
+    });
+  }
+  return list;
 }
 
 function matchCenter(m) {
@@ -529,8 +609,12 @@ function absenceList(title, items) {
   return `<div class="panel"><h2>${escapeHtml(title)}</h2><ul class="list">${items.slice(0, 10).map(x => `<li><strong>${escapeHtml(x.name)}</strong>${x.reason ? ` — ${escapeHtml(x.reason)}` : ''}${x.type ? ` (${escapeHtml(x.type)})` : ''}</li>`).join('')}</ul></div>`;
 }
 
+function reminderFor(fixtureId) {
+  return state.reminders.find(x => Number(x.fixtureId) === Number(fixtureId)) || null;
+}
+
 function hasReminder(fixtureId) {
-  return state.reminders.some(x => Number(x.fixtureId) === Number(fixtureId));
+  return Boolean(reminderFor(fixtureId));
 }
 
 async function toggleReminder(match) {
@@ -550,10 +634,12 @@ async function toggleReminder(match) {
           awayName: match.away?.name || '',
           leagueName: match.league || '',
           fixtureDate: match.date || '',
+          reminderMinutes: Number(state.preferences?.reminderMinutes || 30),
+          kickoffNotify: state.preferences?.kickoffNotification !== false,
         }),
       });
       await loadReminders();
-      toast('Напомним примерно за 30 минут до матча');
+      toast(`Напомним примерно за ${Number(state.preferences?.reminderMinutes || 30)} минут до матча${state.preferences?.kickoffNotification !== false ? ' и около старта' : ''}`);
     }
     await loadProfile();
     renderAnalysis(state.currentAnalysis);
@@ -658,7 +744,8 @@ function renderAnalysis(d) {
   const news = d.news || {};
   const homeLine = d.lineups?.home;
   const awayLine = d.lineups?.away;
-  const reminderActive = hasReminder(m.fixtureId);
+  const activeReminder = reminderFor(m.fixtureId);
+  const reminderActive = Boolean(activeReminder);
   const confidence = d.confidence || {};
   const goal = d.goalModel;
   const recent = d.recentForm || {};
@@ -708,7 +795,7 @@ function renderAnalysis(d) {
       </div>
 
       <div class="experience-actions">
-        <button id="reminderBtn" class="reminder-btn ${reminderActive ? 'active' : ''}" type="button">${reminderActive ? '🔔 Напоминание включено' : '🔕 Напомнить за 30 минут'}</button>
+        <button id="reminderBtn" class="reminder-btn ${reminderActive ? 'active' : ''}" type="button">${reminderActive ? `🔔 За ${Number(activeReminder?.remindBeforeMinutes || 30)} мин.${activeReminder?.kickoffNotify ? ' + старт' : ''}` : `🔕 Напомнить за ${Number(state.preferences?.reminderMinutes || 30)} минут`}</button>
         <button id="shareAnalysisBtn" class="share-analysis-btn" type="button">↗ Поделиться</button>
       </div>
     </section>
@@ -888,6 +975,7 @@ $('navHistory').addEventListener('click', async () => { await loadHistory(true);
 $('navProfile').addEventListener('click', () => showView('profileView'));
 $('proBtn').addEventListener('click', () => toast('Telegram Stars подключим в следующем платёжном этапе.'));
 $('premiumBtn').addEventListener('click', () => toast('PREMIUM будет доступен после подключения Telegram Stars.'));
+$('savePreferencesBtn')?.addEventListener('click', savePreferencesFromUi);
 
 await Promise.all([loadProfile(), loadFavorites(), loadReminders(), loadMatches(), loadHistory(false)]);
 renderProfile();
