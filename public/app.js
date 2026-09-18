@@ -9,6 +9,7 @@ const state = {
   profile: null,
   offset: 0,
   matches: [],
+  matchesMeta: { refreshedAt: null, stale: false, warning: '', retryAfter: 0 },
   history: [],
   favorites: [],
   reminders: [],
@@ -72,6 +73,24 @@ function dateTime(iso) {
 function dateOnly(iso) {
   if (!iso) return '';
   return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' }).format(new Date(iso));
+}
+
+function relativeAge(iso) {
+  const ms = Date.now() - Date.parse(iso || '');
+  if (!Number.isFinite(ms) || ms < 0) return '';
+  const sec = Math.floor(ms / 1000);
+  if (sec < 15) return 'только что';
+  if (sec < 60) return `${sec} сек. назад`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} мин. назад`;
+  const h = Math.floor(min / 60);
+  return `${h} ч. назад`;
+}
+
+function coverageLabel(tier) {
+  if (tier === 'enhanced') return { text: 'Расширенное', cls: 'enhanced' };
+  if (tier === 'basic') return { text: 'Базовое', cls: 'basic' };
+  return { text: 'Стандартное', cls: 'standard' };
 }
 
 async function api(path, options = {}) {
@@ -372,17 +391,26 @@ function renderFavoriteTeams() {
 async function loadMatches() {
   $('matches').innerHTML = '<div class="loader">Загружаю матчи…</div>';
   $('matchesCount').textContent = '';
+  if ($('dataNotice')) $('dataNotice').innerHTML = '';
   const labels = { '-1': 'Матчи вчера', '0': 'Матчи сегодня', '1': 'Матчи завтра' };
   $('matchesTitle').textContent = labels[String(state.offset)] || 'Матчи';
   try {
     const data = await api(`/api/matches?date=${localDate(state.offset)}`);
     state.matches = data.matches || [];
+    state.matchesMeta = {
+      refreshedAt: data.refreshedAt || null,
+      stale: Boolean(data.stale),
+      warning: data.warning || '',
+      retryAfter: Number(data.retryAfter || 0),
+    };
     if (data.provider) { state.provider = data.provider; renderProvider(); }
     if (state.filter === 'top' && !state.matches.some(x => Number(x.interestScore || 0) >= 50)) state.filter = 'all';
     syncFilterButtons();
     renderMatches();
   } catch (e) {
-    $('matches').innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
+    const retry = Number(e.payload?.retryAfter || 0);
+    const suffix = retry ? `<br><span class="tiny">Повторите примерно через ${retry} сек.</span>` : '';
+    $('matches').innerHTML = `<div class="empty">${escapeHtml(e.message)}${suffix}</div>`;
   }
 }
 
@@ -438,7 +466,13 @@ function interestLabel(score) {
 
 function renderMatches() {
   const list = filteredMatches();
-  $('matchesCount').textContent = `Показано: ${list.length} из ${state.matches.length}`;
+  const age = relativeAge(state.matchesMeta?.refreshedAt);
+  $('matchesCount').textContent = `Показано: ${list.length} из ${state.matches.length}${age ? ` · обновлено ${age}` : ''}`;
+  if ($('dataNotice')) {
+    $('dataNotice').innerHTML = state.matchesMeta?.stale
+      ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.matchesMeta.warning || 'Показаны последние сохранённые данные.')}</div>`
+      : '';
+  }
   if (!list.length) {
     const extra = state.filter !== 'all' ? '<button id="showAllBtn" class="secondary-btn" type="button">Показать все матчи</button>' : '';
     $('matches').innerHTML = `<div class="empty">По выбранному фильтру матчей не найдено.${extra}</div>`;
@@ -456,6 +490,7 @@ function renderMatches() {
         <span>Индекс интереса</span>
         <strong>${Number(m.interestScore || 0)}/100 · ${interestLabel(m.interestScore)}</strong>
       </div>
+      ${(() => { const c = coverageLabel(m.coverageTier); return `<div class="coverage-expectation ${c.cls}">Ожидаемое покрытие: ${c.text}</div>`; })()}
       <div class="team-row">
         <div class="team">
           <button class="fav-star ${isFavorite(m.home?.id) ? 'active' : ''}" type="button" data-team-id="${Number(m.home?.id)}" data-team-name="${escapeHtml(m.home?.name || '')}" data-team-logo="${escapeHtml(m.home?.logo || '')}" aria-label="Избранное">${isFavorite(m.home?.id) ? '★' : '☆'}</button>
@@ -627,6 +662,7 @@ function renderMatchCenter(d) {
       <button id="centerRefreshBtn" class="reminder-btn" type="button">↻ Обновить сейчас</button>
     </section>
 
+    ${d.stale ? `<section class="panel stale-panel"><strong>⚠️ Показан последний сохранённый LIVE-снимок</strong><p>${escapeHtml(d.warning || 'Провайдер временно ограничил запросы.')}</p></section>` : ''}
     ${d.note ? `<section class="panel"><p class="tiny warning">${escapeHtml(d.note)}</p></section>` : ''}
 
     ${live ? `<section class="panel provider-live-panel">
@@ -727,7 +763,9 @@ async function analyzeMatch(fixtureId, btn) {
     await Promise.all([loadHistory(false), loadReminders()]);
     showView('analysisView');
   } catch (e) {
-    if (e.status === 429) toast('Дневной лимит анализов исчерпан.');
+    if (e.status === 429 && String(e.payload?.code || '').startsWith('FOOTBALL_')) {
+      toast(e.payload?.retryAfter ? `Футбольный API на паузе. Повторите через ~${e.payload.retryAfter} сек.` : e.message);
+    } else if (e.status === 429) toast('Дневной лимит анализов исчерпан.');
     else toast(e.message);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = original; }
@@ -988,8 +1026,8 @@ function renderAnalysis(d) {
 
       <div class="experience-health-row">
         <span class="quality-pill ${quality.cls}">● ${quality.label}</span>
-        <span>${d.cached ? '⚡ Кэш' : '🆕 Свежий'} · ${d.completeness?.score ?? 0}/${d.completeness?.max ?? 10}</span>
-        <span>Обновлено ${d.generatedAt ? timeOf(d.generatedAt) : '—'}</span>
+        <span>${d.stale ? '⚠️ Устаревший кэш' : d.cached ? '⚡ Кэш' : '🆕 Свежий'} · ${d.completeness?.score ?? 0}/${d.completeness?.max ?? 10}</span>
+        <span>Обновлено ${d.generatedAt ? `${timeOf(d.generatedAt)} · ${relativeAge(d.generatedAt)}` : '—'}</span>
       </div>
 
       <div class="experience-actions">
@@ -997,6 +1035,8 @@ function renderAnalysis(d) {
         <button id="shareAnalysisBtn" class="share-analysis-btn" type="button">↗ Поделиться</button>
       </div>
     </section>
+
+    ${d.stale ? `<section class="panel stale-panel"><strong>⚠️ Использован последний сохранённый анализ</strong><p>${escapeHtml(d.warning || 'Свежие данные временно недоступны из-за ограничения провайдера.')}</p></section>` : ''}
 
     <div class="analysis-tabs" role="tablist">
       <button class="analysis-tab-btn active" data-tab="overview" type="button">Обзор</button>
@@ -1119,8 +1159,10 @@ function renderAnalysis(d) {
         <div class="transparency-grid">
           <div><span>Полнота</span><strong>${d.completeness?.score ?? 0}/${d.completeness?.max ?? 10}</strong></div>
           <div><span>Анализ</span><strong>v${escapeHtml(d.analysisVersion || '—')}</strong></div>
-          <div><span>Статус</span><strong>${d.cached ? 'Кэш' : 'Свежий'}</strong></div>
+          <div><span>Статус</span><strong>${d.stale ? 'Устаревший кэш' : d.cached ? 'Кэш' : 'Свежий'}</strong></div>
+          <div><span>Режим данных</span><strong>${escapeHtml(d.dataPolicy?.mode || 'standard')}</strong></div>
         </div>
+        ${d.dataPolicy?.skipped?.length ? `<div class="policy-list"><strong>Что было пропущено для экономии/качества:</strong><ul>${d.dataPolicy.skipped.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div>` : ''}
         <p class="tiny warning">${escapeHtml(d.disclaimer || '')}</p>
       </section>
     </div>
@@ -1171,12 +1213,12 @@ $('profileBtn').addEventListener('click', () => showView('profileView'));
 $('navMatches').addEventListener('click', () => showView('matchesView'));
 $('navHistory').addEventListener('click', async () => { await loadHistory(true); showView('historyView'); });
 $('navProfile').addEventListener('click', () => showView('profileView'));
-$('proBtn').addEventListener('click', () => buyPlan('PRO'));
-$('premiumBtn').addEventListener('click', () => buyPlan('PREMIUM'));
+$('proBtn')?.addEventListener('click', () => buyPlan('PRO'));
+$('premiumBtn')?.addEventListener('click', () => buyPlan('PREMIUM'));
 $('billingSyncBtn')?.addEventListener('click', () => syncBilling(true));
 $('subscriptionManageBtn')?.addEventListener('click', () => manageSubscription($('subscriptionManageBtn').dataset.action || 'cancel'));
 $('savePreferencesBtn')?.addEventListener('click', savePreferencesFromUi);
 
-await Promise.all([loadProfile(), loadFavorites(), loadReminders(), loadMatches(), loadHistory(false), loadBilling()]);
+await Promise.all([loadProfile(), loadFavorites(), loadReminders(), loadMatches(), loadHistory(false)]);
 await loadProvider();
 renderProfile();
