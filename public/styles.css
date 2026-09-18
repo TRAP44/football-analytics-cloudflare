@@ -344,3 +344,12 @@ h2 { margin: 0; font-size: 20px; }
 .reminder-row span { display: block; color: var(--hint); font-size: 10px; margin-top: 4px; }
 .reminder-remove { border: 1px solid rgba(239,68,68,.20); border-radius: 10px; background: rgba(239,68,68,.07); color: #fca5a5; padding: 8px 9px; font-size: 10px; font-weight: 800; }
 @media (max-width: 430px) { .reminder-row { grid-template-columns: 1fr; } .reminder-remove { width: 100%; } }
+
+
+/* v2.6 provider / paid API readiness */
+.provider-status-grid, .provider-live-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:12px; }
+.provider-status-grid > div, .provider-live-grid > div { border:1px solid var(--line); border-radius:12px; padding:10px 11px; background:rgba(148,163,184,.035); }
+.provider-status-grid span, .provider-live-grid span { display:block; color:var(--hint); font-size:11px; margin-bottom:4px; }
+.provider-status-grid strong, .provider-live-grid strong { display:block; font-size:13px; }
+.provider-live-panel { border-color: color-mix(in srgb, var(--accent) 24%, var(--line)); }
+@media (max-width:520px) { .provider-status-grid, .provider-live-grid { grid-template-columns:1fr 1fr; } }
