@@ -562,6 +562,91 @@ async function toggleReminder(match) {
   }
 }
 
+function clampPercent(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 0;
+}
+
+function qualityInfo(completeness = {}) {
+  const score = Number(completeness.score || 0);
+  const max = Math.max(1, Number(completeness.max || 10));
+  const ratio = score / max;
+  if (ratio >= .8) return { label: 'Высокая полнота', cls: 'good' };
+  if (ratio >= .55) return { label: 'Средняя полнота', cls: 'medium' };
+  return { label: 'Ограниченные данные', cls: 'low' };
+}
+
+function probabilityStrip(p = {}) {
+  const home = clampPercent(p.home);
+  const draw = clampPercent(p.draw);
+  const away = clampPercent(p.away);
+  const total = home + draw + away || 1;
+  const h = home / total * 100;
+  const d = draw / total * 100;
+  const a = away / total * 100;
+  return `<div class="probability-strip" aria-label="Вероятности исхода">
+    <span class="prob-segment home" style="width:${h.toFixed(2)}%"></span>
+    <span class="prob-segment draw" style="width:${d.toFixed(2)}%"></span>
+    <span class="prob-segment away" style="width:${a.toFixed(2)}%"></span>
+  </div>`;
+}
+
+function analysisSourceStatus(d) {
+  const parts = [];
+  if (d.market) parts.push('Рынок');
+  if (d.apiPrediction) parts.push('API');
+  if (d.recentForm?.home?.overall?.sample || d.recentForm?.away?.overall?.sample) parts.push('Форма');
+  if ((d.h2h?.homeWins || 0) + (d.h2h?.awayWins || 0) + (d.h2h?.draws || 0) > 0) parts.push('H2H');
+  if (d.news?.answer) parts.push('Новости');
+  return parts.length ? parts.join(' · ') : 'Базовые данные';
+}
+
+function compactAbsence(title, items) {
+  if (!items?.length) return `<div class="squad-block"><div class="squad-title">${escapeHtml(title)}</div><p class="muted">Заявленных потерь нет или данные недоступны.</p></div>`;
+  return `<div class="squad-block"><div class="squad-title">${escapeHtml(title)}</div><ul class="compact-list">${items.slice(0, 10).map(x => `<li><strong>${escapeHtml(x.name)}</strong><span>${escapeHtml([x.reason, x.type].filter(Boolean).join(' · '))}</span></li>`).join('')}</ul></div>`;
+}
+
+function lineupBlock(title, lineup) {
+  const players = lineup?.startXI || [];
+  return `<div class="squad-block"><div class="squad-title">${escapeHtml(title)} <span>${escapeHtml(lineup?.formation || '')}</span></div>${players.length ? `<div class="lineup-list">${players.map((x,i) => `<span><b>${i+1}</b>${escapeHtml(x)}</span>`).join('')}</div>` : '<p class="muted">Стартовый состав ещё не опубликован.</p>'}</div>`;
+}
+
+async function shareAnalysis(d) {
+  const m = d?.match || {};
+  const p = d?.probabilities || {};
+  const text = [
+    `⚽ ${m.home?.name || ''} — ${m.away?.name || ''}`,
+    `${m.league || ''}${m.date ? ` · ${dateTime(m.date)}` : ''}`,
+    `П1 ${pct(p.home)} · X ${pct(p.draw)} · П2 ${pct(p.away)}`,
+    `Наиболее вероятно: ${d?.likelyOutcome || '—'}`,
+    `Уверенность: ${d?.confidence?.score ?? '—'}/100`,
+    '',
+    'Football Analytics · аналитическая оценка, не гарантия результата.'
+  ].join('\n');
+  try {
+    if (navigator.share) {
+      await navigator.share({ title: `${m.home?.name || ''} — ${m.away?.name || ''}`, text });
+      return;
+    }
+    await navigator.clipboard.writeText(text);
+    toast('Краткий анализ скопирован');
+  } catch (e) {
+    if (e?.name !== 'AbortError') toast('Не удалось поделиться анализом');
+  }
+}
+
+function bindAnalysisTabs() {
+  const buttons = [...document.querySelectorAll('.analysis-tab-btn')];
+  const panels = [...document.querySelectorAll('.analysis-tab-panel')];
+  buttons.forEach(btn => btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    buttons.forEach(x => x.classList.toggle('active', x === btn));
+    panels.forEach(x => x.classList.toggle('active', x.dataset.panel === tab));
+    const target = document.querySelector('.analysis-tabs');
+    if (target) target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }));
+}
+
 function renderAnalysis(d) {
   if (!d) return;
   state.currentAnalysis = d;
@@ -577,105 +662,188 @@ function renderAnalysis(d) {
   const confidence = d.confidence || {};
   const goal = d.goalModel;
   const recent = d.recentForm || {};
+  const quality = qualityInfo(d.completeness);
+  const confidenceScore = clampPercent(confidence.score);
 
   $('analysis').innerHTML = `
-    <section class="panel analysis-hero">
-      <div class="logos">
-        ${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : ''}
-        <span>VS</span>
-        ${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : ''}
+    <section class="panel match-experience-hero">
+      <div class="match-experience-meta">
+        <span>${escapeHtml(m.league || 'Турнир')}${m.country ? ` · ${escapeHtml(m.country)}` : ''}</span>
+        <span>${dateTime(m.date)}</span>
       </div>
-      <h2>${escapeHtml(m.home?.name || '')} — ${escapeHtml(m.away?.name || '')}</h2>
-      <p>${escapeHtml(m.league || '')} · ${dateTime(m.date)}</p>
-      <div class="probs">
-        <div class="prob"><span>П1</span><strong>${pct(p.home)}</strong></div>
-        <div class="prob"><span>Ничья</span><strong>${pct(p.draw)}</strong></div>
-        <div class="prob"><span>П2</span><strong>${pct(p.away)}</strong></div>
+
+      <div class="match-experience-teams">
+        <div class="experience-team">
+          ${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : '<div class="experience-logo-placeholder">⚽</div>'}
+          <strong>${escapeHtml(m.home?.name || '')}</strong>
+          <small>Хозяева</small>
+        </div>
+        <div class="experience-vs">
+          <span>VS</span>
+          ${m.venue ? `<small>${escapeHtml(m.venue)}</small>` : ''}
+        </div>
+        <div class="experience-team">
+          ${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : '<div class="experience-logo-placeholder">⚽</div>'}
+          <strong>${escapeHtml(m.away?.name || '')}</strong>
+          <small>Гости</small>
+        </div>
       </div>
-      <div class="model-summary">
-        <div><span>Наибольшая вероятность</span><strong>${escapeHtml(d.likelyOutcome || 'Недостаточно данных')}</strong></div>
-        <div><span>Уверенность модели</span><strong>${confidence.score ?? '—'}/100 · ${escapeHtml(confidence.label || '—')}</strong></div>
+
+      <div class="experience-callout">
+        <span>Наиболее вероятный исход</span>
+        <strong>${escapeHtml(d.likelyOutcome || 'Недостаточно данных')}</strong>
       </div>
-      <button id="reminderBtn" class="reminder-btn ${reminderActive ? 'active' : ''}" type="button">${reminderActive ? '🔔 Напоминание включено' : '🔕 Напомнить за 30 минут'}</button>
-      <p>${d.cached ? '⚡ Результат из кэша' : '🆕 Свежий анализ'} · полнота ${d.completeness?.score ?? 0}/${d.completeness?.max ?? 10}</p>
-    </section>
 
-    <section class="panel">
-      <h2>🧠 Как получена оценка</h2>
-      <p class="muted">${escapeHtml(d.modelBreakdown?.method || 'Модель объединяет доступные статистические сигналы.')}</p>
-      <div class="model-weights">${escapeHtml(modelWeightsText(d.modelBreakdown?.weights || {}))}</div>
-      <div class="confidence-bar"><span style="width:${Math.max(0, Math.min(100, Number(confidence.score || 0)))}%"></span></div>
-      <p class="muted">Расхождение источников: ${Number.isFinite(Number(confidence.disagreement)) ? `${Number(confidence.disagreement).toFixed(1)} п.п.` : '—'}</p>
-    </section>
-
-    <section class="panel">
-      <h2>📈 Форма команд</h2>
-      <div class="form-grid">
-        ${formCard(m.home?.name || 'Хозяева', recent.home)}
-        ${formCard(m.away?.name || 'Гости', recent.away)}
+      <div class="experience-prob-labels">
+        <div><span>П1</span><strong>${pct(p.home)}</strong></div>
+        <div><span>X</span><strong>${pct(p.draw)}</strong></div>
+        <div><span>П2</span><strong>${pct(p.away)}</strong></div>
       </div>
-    </section>
+      ${probabilityStrip(p)}
 
-    <section class="panel">
-      <h2>⚽ Голевая модель</h2>
-      ${goal ? `<div class="data-grid" style="margin-top:12px">
-        <div class="data-card"><span>Ожидаемые голы ${escapeHtml(m.home?.name || 'П1')}</span><strong>${goal.homeExpected}</strong></div>
-        <div class="data-card"><span>Ожидаемые голы ${escapeHtml(m.away?.name || 'П2')}</span><strong>${goal.awayExpected}</strong></div>
-        <div class="data-card"><span>ТБ 2.5</span><strong>${pct(goal.over25)}</strong></div>
-        <div class="data-card"><span>Обе забьют</span><strong>${pct(goal.btts)}</strong></div>
-      </div><p class="muted">Простая Poisson-эвристика на основе недавних забитых/пропущенных; это не официальный xG.</p>` : '<p class="muted">Недостаточно недавних матчей для голевой модели.</p>'}
-    </section>
+      <div class="experience-health-row">
+        <span class="quality-pill ${quality.cls}">● ${quality.label}</span>
+        <span>${d.cached ? '⚡ Кэш' : '🆕 Свежий'} · ${d.completeness?.score ?? 0}/${d.completeness?.max ?? 10}</span>
+        <span>Обновлено ${d.generatedAt ? timeOf(d.generatedAt) : '—'}</span>
+      </div>
 
-    <section class="panel">
-      <h2>🧩 Ключевые факторы</h2>
-      ${bullets(d.insights, 'Пока нет сильных дополнительных факторов.')}
-    </section>
-
-    <section class="panel risk-panel">
-      <h2>⚠️ Риски и ограничения</h2>
-      ${bullets(d.risks, 'Критичных ограничений по доступным данным не найдено.')}
-    </section>
-
-    <section class="panel">
-      <h2>💹 Рынок и API-прогноз</h2>
-      <div class="data-grid" style="margin-top:12px">
-        <div class="data-card"><span>Средние кэфы 1 / X / 2</span><strong>${market?.odds ? `${market.odds.home} / ${market.odds.draw} / ${market.odds.away}` : 'Нет данных'}</strong></div>
-        <div class="data-card"><span>Букмекеров в выборке</span><strong>${market?.bookmakers ?? '—'}</strong></div>
-        <div class="data-card"><span>API-Football</span><strong>${escapeHtml(pred?.winner || 'Нет данных')}</strong></div>
-        <div class="data-card"><span>Подсказка API</span><strong>${escapeHtml(pred?.advice || 'Нет данных')}</strong></div>
+      <div class="experience-actions">
+        <button id="reminderBtn" class="reminder-btn ${reminderActive ? 'active' : ''}" type="button">${reminderActive ? '🔔 Напоминание включено' : '🔕 Напомнить за 30 минут'}</button>
+        <button id="shareAnalysisBtn" class="share-analysis-btn" type="button">↗ Поделиться</button>
       </div>
     </section>
 
-    ${absenceList(`🚑 Потери — ${m.home?.name || 'Хозяева'}`, d.absences?.home)}
-    ${absenceList(`🚑 Потери — ${m.away?.name || 'Гости'}`, d.absences?.away)}
+    <div class="analysis-tabs" role="tablist">
+      <button class="analysis-tab-btn active" data-tab="overview" type="button">Обзор</button>
+      <button class="analysis-tab-btn" data-tab="form" type="button">Форма</button>
+      <button class="analysis-tab-btn" data-tab="market" type="button">Рынок</button>
+      <button class="analysis-tab-btn" data-tab="squads" type="button">Составы</button>
+      <button class="analysis-tab-btn" data-tab="context" type="button">Контекст</button>
+    </div>
 
-    <section class="panel">
-      <h2>👥 Составы</h2>
-      <div class="data-grid" style="margin-top:12px">
-        <div class="data-card"><span>${escapeHtml(m.home?.name || '')}</span><strong>${escapeHtml(homeLine?.formation || 'Ещё не опубликован')}</strong></div>
-        <div class="data-card"><span>${escapeHtml(m.away?.name || '')}</span><strong>${escapeHtml(awayLine?.formation || 'Ещё не опубликован')}</strong></div>
-      </div>
-      ${(homeLine?.startXI?.length || awayLine?.startXI?.length) ? `<ul class="list"><li><strong>${escapeHtml(m.home?.name || '')}:</strong> ${escapeHtml((homeLine?.startXI || []).join(', '))}</li><li><strong>${escapeHtml(m.away?.name || '')}:</strong> ${escapeHtml((awayLine?.startXI || []).join(', '))}</li></ul>` : '<p class="muted">Подтверждённые стартовые составы появляются ближе к матчу.</p>'}
-    </section>
+    <div class="analysis-tab-panel active" data-panel="overview">
+      <section class="panel experience-dashboard">
+        <div class="dashboard-metric confidence-metric">
+          <span>Уверенность модели</span>
+          <strong>${confidence.score ?? '—'}/100</strong>
+          <small>${escapeHtml(confidence.label || '—')}</small>
+          <div class="confidence-bar"><span style="width:${confidenceScore}%"></span></div>
+        </div>
+        <div class="dashboard-metric">
+          <span>Источники</span>
+          <strong>${escapeHtml(analysisSourceStatus(d))}</strong>
+          <small>Сигналы объединяются динамически</small>
+        </div>
+        <div class="dashboard-metric">
+          <span>Расхождение</span>
+          <strong>${Number.isFinite(Number(confidence.disagreement)) ? `${Number(confidence.disagreement).toFixed(1)} п.п.` : '—'}</strong>
+          <small>Чем меньше, тем согласованнее источники</small>
+        </div>
+      </section>
 
-    <section class="panel">
-      <h2>🤝 Последние очные</h2>
-      <div class="data-grid" style="margin-top:12px">
-        <div class="data-card"><span>${escapeHtml(m.home?.name || '')}</span><strong>${h2h.homeWins ?? 0} побед</strong></div>
-        <div class="data-card"><span>${escapeHtml(m.away?.name || '')}</span><strong>${h2h.awayWins ?? 0} побед</strong></div>
-      </div>
-      <p class="muted">Ничьих: ${h2h.draws ?? 0}</p>
-    </section>
+      <section class="panel">
+        <h2>🧩 Почему такая оценка</h2>
+        ${bullets(d.insights, 'Пока нет сильных дополнительных факторов.')}
+      </section>
 
-    <section class="panel">
-      <h2>🌐 Свежий веб-контекст</h2>
-      <p>${escapeHtml(news.answer || 'Tavily не подключён или свежая сводка не найдена.')}</p>
-      ${news.results?.length ? `<div class="news-links">${news.results.slice(0, 4).map(r => `<a href="${safeUrl(r.url)}" target="_blank" rel="noopener">↗ ${escapeHtml(r.title || 'Источник')}</a>`).join('')}</div>` : ''}
-    </section>
+      <section class="panel goal-visual-panel">
+        <h2>⚽ Голевая модель</h2>
+        ${goal ? `<div class="goal-score-visual">
+          <div><span>${escapeHtml(m.home?.name || 'Хозяева')}</span><strong>${goal.homeExpected}</strong></div>
+          <div class="goal-divider">:</div>
+          <div><span>${escapeHtml(m.away?.name || 'Гости')}</span><strong>${goal.awayExpected}</strong></div>
+        </div>
+        <div class="goal-market-grid">
+          <div><span>ТБ 2.5</span><strong>${pct(goal.over25)}</strong><div class="mini-progress"><i style="width:${clampPercent(goal.over25)}%"></i></div></div>
+          <div><span>Обе забьют</span><strong>${pct(goal.btts)}</strong><div class="mini-progress"><i style="width:${clampPercent(goal.btts)}%"></i></div></div>
+        </div>
+        <p class="muted">Poisson-эвристика по недавней результативности. Это не официальный xG.</p>` : '<p class="muted">Недостаточно недавних матчей для голевой модели.</p>'}
+      </section>
 
-    <section class="panel"><p class="tiny warning">${escapeHtml(d.disclaimer || '')}</p></section>
+      <section class="panel risk-panel">
+        <h2>⚠️ Риски и ограничения</h2>
+        ${bullets(d.risks, 'Критичных ограничений по доступным данным не найдено.')}
+      </section>
+    </div>
+
+    <div class="analysis-tab-panel" data-panel="form">
+      <section class="panel">
+        <h2>📈 Форма команд</h2>
+        <div class="form-grid experience-form-grid">
+          ${formCard(m.home?.name || 'Хозяева', recent.home)}
+          ${formCard(m.away?.name || 'Гости', recent.away)}
+        </div>
+      </section>
+      <section class="panel">
+        <h2>🤝 Последние очные встречи</h2>
+        <div class="h2h-visual">
+          <div><strong>${h2h.homeWins ?? 0}</strong><span>${escapeHtml(m.home?.name || '')}</span></div>
+          <div class="h2h-draw"><strong>${h2h.draws ?? 0}</strong><span>Ничьи</span></div>
+          <div><strong>${h2h.awayWins ?? 0}</strong><span>${escapeHtml(m.away?.name || '')}</span></div>
+        </div>
+      </section>
+    </div>
+
+    <div class="analysis-tab-panel" data-panel="market">
+      <section class="panel">
+        <h2>💹 Рынок 1X2</h2>
+        <div class="odds-grid">
+          <div><span>П1</span><strong>${market?.odds?.home ?? '—'}</strong></div>
+          <div><span>X</span><strong>${market?.odds?.draw ?? '—'}</strong></div>
+          <div><span>П2</span><strong>${market?.odds?.away ?? '—'}</strong></div>
+        </div>
+        <p class="muted">Букмекеров в выборке: ${market?.bookmakers ?? '—'}. Коэффициенты отражают рынок, а не гарантированный исход.</p>
+      </section>
+      <section class="panel">
+        <h2>🧠 Состав модели</h2>
+        <p class="muted">${escapeHtml(d.modelBreakdown?.method || 'Модель объединяет доступные статистические сигналы.')}</p>
+        <div class="model-weights">${escapeHtml(modelWeightsText(d.modelBreakdown?.weights || {}))}</div>
+        <div class="model-api-card">
+          <span>API-Football</span>
+          <strong>${escapeHtml(pred?.winner || 'Нет данных')}</strong>
+          <small>${escapeHtml(pred?.advice || 'Подсказка недоступна')}</small>
+        </div>
+      </section>
+    </div>
+
+    <div class="analysis-tab-panel" data-panel="squads">
+      <section class="panel">
+        <h2>🚑 Потери</h2>
+        <div class="squad-grid">
+          ${compactAbsence(m.home?.name || 'Хозяева', d.absences?.home)}
+          ${compactAbsence(m.away?.name || 'Гости', d.absences?.away)}
+        </div>
+      </section>
+      <section class="panel">
+        <h2>👥 Стартовые составы</h2>
+        <div class="squad-grid">
+          ${lineupBlock(m.home?.name || 'Хозяева', homeLine)}
+          ${lineupBlock(m.away?.name || 'Гости', awayLine)}
+        </div>
+      </section>
+    </div>
+
+    <div class="analysis-tab-panel" data-panel="context">
+      <section class="panel">
+        <h2>🌐 Свежий веб-контекст</h2>
+        <p class="context-answer">${escapeHtml(news.answer || 'Tavily не подключён или свежая сводка не найдена.')}</p>
+        ${news.results?.length ? `<div class="news-links">${news.results.slice(0, 5).map(r => `<a href="${safeUrl(r.url)}" target="_blank" rel="noopener">↗ ${escapeHtml(r.title || 'Источник')}</a>`).join('')}</div>` : ''}
+      </section>
+      <section class="panel data-transparency-panel">
+        <h2>🔎 Прозрачность данных</h2>
+        <div class="transparency-grid">
+          <div><span>Полнота</span><strong>${d.completeness?.score ?? 0}/${d.completeness?.max ?? 10}</strong></div>
+          <div><span>Анализ</span><strong>v${escapeHtml(d.analysisVersion || '—')}</strong></div>
+          <div><span>Статус</span><strong>${d.cached ? 'Кэш' : 'Свежий'}</strong></div>
+        </div>
+        <p class="tiny warning">${escapeHtml(d.disclaimer || '')}</p>
+      </section>
+    </div>
   `;
+
   $('reminderBtn')?.addEventListener('click', () => toggleReminder(m));
+  $('shareAnalysisBtn')?.addEventListener('click', () => shareAnalysis(d));
+  bindAnalysisTabs();
 }
 
 function safeUrl(url) {
