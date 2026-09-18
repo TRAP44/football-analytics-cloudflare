@@ -9,7 +9,7 @@ const state = {
   profile: null,
   offset: 0,
   matches: [],
-  matchesMeta: { refreshedAt: null, stale: false, warning: '', retryAfter: 0 },
+  matchesMeta: { refreshedAt: null, stale: false, warning: '', retryAfter: 0, catalog: {} },
   history: [],
   favorites: [],
   reminders: [],
@@ -402,9 +402,10 @@ async function loadMatches() {
       stale: Boolean(data.stale),
       warning: data.warning || '',
       retryAfter: Number(data.retryAfter || 0),
+      catalog: data.catalog || {},
     };
     if (data.provider) { state.provider = data.provider; renderProvider(); }
-    if (state.filter === 'top' && !state.matches.some(x => Number(x.interestScore || 0) >= 50)) state.filter = 'all';
+    if (state.filter === 'top' && !state.matches.some(x => x.featured || (Number(x.interestScore || 0) >= 68 && !x.lowPriority))) state.filter = 'all';
     syncFilterButtons();
     renderMatches();
   } catch (e) {
@@ -426,25 +427,44 @@ function filteredMatches() {
     const isFavMatch = fav.has(Number(m.home?.id)) || fav.has(Number(m.away?.id));
     if (prefs.hideYouth !== false && m.youthReserve && state.filter !== 'favorites') return false;
     let byFilter = state.filter === 'all';
-    if (state.filter === 'top') byFilter = Number(m.interestScore || 0) >= 50 && !m.youthReserve;
-    if (['international', 'england', 'spain', 'italy', 'germany', 'france'].includes(state.filter)) byFilter = m.group === state.filter;
+    if (state.filter === 'top') byFilter = Boolean(m.featured) || (Number(m.interestScore || 0) >= 68 && !m.lowPriority);
+    if (state.filter === 'live') byFilter = Boolean(m.live);
+    if (state.filter === 'cups') byFilter = ['cup', 'continental', 'national', 'international'].includes(String(m.category || ''));
+    if (state.filter === 'international') byFilter = ['continental', 'national', 'international'].includes(String(m.category || '')) || m.group === 'international';
+    if (['england', 'spain', 'italy', 'germany', 'france'].includes(state.filter)) byFilter = m.group === state.filter;
     if (state.filter === 'favorites') byFilter = isFavMatch;
     if (!byFilter) return false;
     if (!q) return true;
-    return [m.home?.name, m.away?.name, m.league, m.country]
+    return [m.home?.name, m.away?.name, m.league, m.leagueOriginal, m.leagueShort, m.country, m.countryRaw, m.round, m.roundLabel]
       .filter(Boolean)
       .some(v => String(v).toLowerCase().includes(q));
   });
-  if (prefs.favoriteFirst !== false && state.filter !== 'favorites') {
-    list.sort((a, b) => {
-      const af = fav.has(Number(a.home?.id)) || fav.has(Number(a.away?.id)) ? 1 : 0;
-      const bf = fav.has(Number(b.home?.id)) || fav.has(Number(b.away?.id)) ? 1 : 0;
-      if (af !== bf) return bf - af;
-      if (Boolean(a.live) !== Boolean(b.live)) return a.live ? -1 : 1;
-      return Number(b.interestScore || 0) - Number(a.interestScore || 0);
-    });
-  }
+  list.sort((a, b) => {
+    const af = fav.has(Number(a.home?.id)) || fav.has(Number(a.away?.id)) ? 1 : 0;
+    const bf = fav.has(Number(b.home?.id)) || fav.has(Number(b.away?.id)) ? 1 : 0;
+    if (prefs.favoriteFirst !== false && state.filter !== 'favorites' && af !== bf) return bf - af;
+    if (Boolean(a.live) !== Boolean(b.live)) return a.live ? -1 : 1;
+    if (Boolean(a.featured) !== Boolean(b.featured)) return a.featured ? -1 : 1;
+    const ap = Number(a.competition?.priority || 0), bp = Number(b.competition?.priority || 0);
+    if (ap !== bp) return bp - ap;
+    const ai = Number(a.interestScore || 0), bi = Number(b.interestScore || 0);
+    if (ai !== bi) return bi - ai;
+    return String(a.date || '').localeCompare(String(b.date || ''));
+  });
   return list;
+}
+
+function categoryLabel(category) {
+  const labels = {
+    league: 'Лига', cup: 'Кубок', continental: 'Еврокубок', national: 'Сборные', international: 'Международный',
+    women: 'Женский футбол', friendly: 'Товарищеский', youth: 'Молодёжный', lower: 'Низшая лига',
+  };
+  return labels[String(category || '')] || '';
+}
+
+function categoryClass(category) {
+  const c = String(category || 'other').replace(/[^a-z]/g, '');
+  return `cat-${c || 'other'}`;
 }
 
 function matchCenter(m) {
@@ -467,7 +487,12 @@ function interestLabel(score) {
 function renderMatches() {
   const list = filteredMatches();
   const age = relativeAge(state.matchesMeta?.refreshedAt);
-  $('matchesCount').textContent = `Показано: ${list.length} из ${state.matches.length}${age ? ` · обновлено ${age}` : ''}`;
+  const catalog = state.matchesMeta?.catalog || {};
+  const bits = [`Показано: ${list.length} из ${state.matches.length}`];
+  if (Number(catalog.live || 0) > 0) bits.push(`LIVE: ${Number(catalog.live)}`);
+  if (Number(catalog.featured || 0) > 0) bits.push(`главных: ${Number(catalog.featured)}`);
+  if (age) bits.push(`обновлено ${age}`);
+  $('matchesCount').textContent = bits.join(' · ');
   if ($('dataNotice')) {
     $('dataNotice').innerHTML = state.matchesMeta?.stale
       ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.matchesMeta.warning || 'Показаны последние сохранённые данные.')}</div>`
@@ -483,14 +508,18 @@ function renderMatches() {
   $('matches').innerHTML = list.map(m => `
     <article class="match-card ${Number(m.interestScore || 0) >= 50 ? 'top-match' : ''}">
       <div class="match-meta">
-        <span>${m.isTop ? '<b class="top-tag">TOP</b> ' : ''}${escapeHtml(m.league || 'Турнир')}</span>
+        <span class="competition-name">${m.featured ? '<b class="top-tag">ГЛАВНЫЙ</b> ' : ''}${escapeHtml(m.league || 'Турнир')}</span>
         <span>${escapeHtml(m.country || '')}</span>
+      </div>
+      <div class="catalog-row">
+        ${m.category ? `<span class="competition-chip ${categoryClass(m.category)}">${escapeHtml(categoryLabel(m.category))}</span>` : ''}
+        ${m.roundLabel ? `<span class="round-chip">${escapeHtml(m.roundLabel)}</span>` : ''}
+        <span class="coverage-mini">Покрытие: ${escapeHtml(coverageLabel(m.coverageTier).text)}</span>
       </div>
       <div class="interest-row">
         <span>Индекс интереса</span>
         <strong>${Number(m.interestScore || 0)}/100 · ${interestLabel(m.interestScore)}</strong>
       </div>
-      ${(() => { const c = coverageLabel(m.coverageTier); return `<div class="coverage-expectation ${c.cls}">Ожидаемое покрытие: ${c.text}</div>`; })()}
       <div class="team-row">
         <div class="team">
           <button class="fav-star ${isFavorite(m.home?.id) ? 'active' : ''}" type="button" data-team-id="${Number(m.home?.id)}" data-team-name="${escapeHtml(m.home?.name || '')}" data-team-logo="${escapeHtml(m.home?.logo || '')}" aria-label="Избранное">${isFavorite(m.home?.id) ? '★' : '☆'}</button>
