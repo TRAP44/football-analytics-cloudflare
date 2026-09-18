@@ -1247,7 +1247,7 @@ async function apiAnalyze(request, cfg, user) {
 
   const payload = {
     generatedAt: new Date().toISOString(),
-    analysisVersion: '2.3.0',
+    analysisVersion: '2.4.0',
     match: {
       fixtureId, date: fixture.fixture?.date || '', status: fixture.fixture?.status?.short || '',
       venue: fixture.fixture?.venue?.name || '', city: fixture.fixture?.venue?.city || '',
@@ -1294,7 +1294,7 @@ export default {
     if (url.pathname === '/health' || url.pathname === '/api/health') {
       return json({
         ok: true,
-        version: '2.3.0-analysis-engine',
+        version: '2.4.0-match-experience',
         database: hasSupabase(cfg) ? 'supabase' : 'memory',
         devMode: cfg.devMode,
       });
