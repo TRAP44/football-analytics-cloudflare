@@ -14,6 +14,7 @@ const state = {
   reminders: [],
   preferences: { defaultFilter: 'top', reminderMinutes: 30, kickoffNotification: true, hideYouth: true, favoriteFirst: true },
   preferencesApplied: false,
+  provider: null,
   filter: 'top',
   search: '',
   currentAnalysis: null,
@@ -120,6 +121,25 @@ function renderProfile() {
   if ($('favoriteFirstToggle')) $('favoriteFirstToggle').checked = prefs.favoriteFirst !== false;
   renderFavoriteTeams();
   renderReminderList();
+}
+
+function renderProvider() {
+  const p = state.provider || {};
+  if (!$('providerPlan')) return;
+  $('providerPlan').textContent = p.plan && p.plan !== 'UNKNOWN' ? p.plan : 'Определяется';
+  $('providerDaily').textContent = Number.isFinite(Number(p.dailyRemaining)) && Number.isFinite(Number(p.dailyLimit))
+    ? `${p.dailyRemaining} / ${p.dailyLimit}` : '—';
+  $('providerMinute').textContent = Number.isFinite(Number(p.minuteRemaining)) && Number.isFinite(Number(p.minuteLimit))
+    ? `${p.minuteRemaining} / ${p.minuteLimit}` : '—';
+  $('providerLiveOdds').textContent = p.liveOddsReady ? 'Авто · включены' : 'Ожидают платный план';
+}
+
+async function loadProvider() {
+  try {
+    const data = await api('/api/provider');
+    state.provider = data.provider || state.provider;
+    renderProvider();
+  } catch {}
 }
 
 async function loadFavorites() {
@@ -251,6 +271,7 @@ async function loadMatches() {
   try {
     const data = await api(`/api/matches?date=${localDate(state.offset)}`);
     state.matches = data.matches || [];
+    if (data.provider) { state.provider = data.provider; renderProvider(); }
     if (state.filter === 'top' && !state.matches.some(x => Number(x.interestScore || 0) >= 50)) state.filter = 'all';
     syncFilterButtons();
     renderMatches();
@@ -412,20 +433,20 @@ function updateLiveCountdown() {
 
 function startLiveRefresh(fixtureId) {
   stopLiveRefresh();
-  state.liveRefreshRemaining = 60;
+  state.liveRefreshRemaining = Math.max(15, Number(state.currentCenter?.refreshSeconds || 60));
   updateLiveCountdown();
   state.liveRefreshTimer = setInterval(async () => {
     state.liveRefreshRemaining -= 1;
     updateLiveCountdown();
     if (state.liveRefreshRemaining <= 0) {
-      state.liveRefreshRemaining = 60;
+      state.liveRefreshRemaining = Math.max(15, Number(state.currentCenter?.refreshSeconds || 60));
       try {
         const data = await api(`/api/match-center?fixtureId=${Number(fixtureId)}&t=${Date.now()}`);
         state.currentCenter = data;
         renderMatchCenter(data);
         if (data.mode !== 'live') stopLiveRefresh();
       } catch (e) {
-        state.liveRefreshRemaining = 60;
+        state.liveRefreshRemaining = Math.max(15, Number(state.currentCenter?.refreshSeconds || 60));
         toast(e.message);
       }
     }
@@ -434,6 +455,7 @@ function startLiveRefresh(fixtureId) {
 
 function renderMatchCenter(d) {
   state.currentCenter = d;
+  if (d?.provider) { state.provider = d.provider; renderProvider(); }
   state.currentAnalysis = null;
   const m = d.match || {};
   const live = d.mode === 'live';
@@ -453,11 +475,30 @@ function renderMatchCenter(d) {
       </div>
       <h2>${escapeHtml(m.home?.name || '')} — ${escapeHtml(m.away?.name || '')}</h2>
       <p>${escapeHtml(m.league || '')}${m.venue ? ` · ${escapeHtml(m.venue)}` : ''}</p>
-      ${live ? '<p id="liveRefreshText" class="live-refresh-text">Автообновление через 60 сек.</p>' : `<p class="live-refresh-text">Данные матча сохранены в общем кэше.</p>`}
+      ${live ? `<p id="liveRefreshText" class="live-refresh-text">Автообновление через ${Number(d.refreshSeconds || 60)} сек.</p>` : `<p class="live-refresh-text">Данные матча сохранены в общем кэше.</p>`}
       <button id="centerRefreshBtn" class="reminder-btn" type="button">↻ Обновить сейчас</button>
     </section>
 
     ${d.note ? `<section class="panel"><p class="tiny warning">${escapeHtml(d.note)}</p></section>` : ''}
+
+    ${live ? `<section class="panel provider-live-panel">
+      <h2>📡 Источник LIVE</h2>
+      <div class="provider-live-grid">
+        <div><span>План данных</span><strong>${escapeHtml(d.provider?.plan || 'UNKNOWN')}</strong></div>
+        <div><span>Обновление</span><strong>${Number(d.refreshSeconds || 60)} сек.</strong></div>
+        <div><span>Live odds</span><strong>${d.liveOdds ? 'Доступны' : (d.provider?.liveOddsReady ? 'Нет рынка' : 'Платный режим')}</strong></div>
+      </div>
+    </section>` : ''}
+
+    ${d.liveOdds ? `<section class="panel">
+      <h2>💹 LIVE-коэффициенты 1X2</h2>
+      <div class="odds-grid">
+        <div><span>П1</span><strong>${d.liveOdds.odds?.home ?? '—'}</strong></div>
+        <div><span>X</span><strong>${d.liveOdds.odds?.draw ?? '—'}</strong></div>
+        <div><span>П2</span><strong>${d.liveOdds.odds?.away ?? '—'}</strong></div>
+      </div>
+      <p class="tiny">Источников в live-выборке: ${Number(d.liveOdds.sources || 0)}${d.liveOdds.updatedAt ? ` · обновление ${escapeHtml(String(d.liveOdds.updatedAt))}` : ''}</p>
+    </section>` : ''}
 
     <section class="panel">
       <h2>📊 ${live ? 'LIVE-статистика' : 'Статистика матча'}</h2>
@@ -521,6 +562,7 @@ async function analyzeMatch(fixtureId, btn) {
   try {
     const data = await api('/api/analyze', { method: 'POST', body: JSON.stringify({ fixtureId }) });
     state.currentAnalysis = data;
+    if (data.provider) { state.provider = data.provider; renderProvider(); }
     renderAnalysis(data);
     if (state.profile && data.quota) {
       state.profile.quota = data.quota;
@@ -978,4 +1020,5 @@ $('premiumBtn').addEventListener('click', () => toast('PREMIUM будет дос
 $('savePreferencesBtn')?.addEventListener('click', savePreferencesFromUi);
 
 await Promise.all([loadProfile(), loadFavorites(), loadReminders(), loadMatches(), loadHistory(false)]);
+await loadProvider();
 renderProfile();
