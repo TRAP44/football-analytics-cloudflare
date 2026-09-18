@@ -320,3 +320,27 @@ h2 { margin: 0; font-size: 20px; }
   .goal-market-grid { grid-template-columns: 1fr; }
   .transparency-grid { grid-template-columns: 1fr; }
 }
+
+
+/* v2.5 personalization */
+.preferences-grid { display: grid; gap: 10px; margin-top: 12px; }
+.setting-field { display: grid; gap: 6px; }
+.setting-field > span { color: var(--hint); font-size: 11px; }
+.setting-field select { width: 100%; border: 1px solid var(--line); border-radius: 12px; background: rgba(148,163,184,.06); color: var(--text); padding: 11px 12px; outline: none; }
+.setting-field select:focus { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.switch-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; border: 1px solid var(--line); border-radius: 13px; padding: 11px 12px; background: rgba(148,163,184,.03); cursor: pointer; }
+.switch-row span strong, .switch-row span small { display: block; }
+.switch-row span strong { font-size: 12px; }
+.switch-row span small { color: var(--hint); font-size: 10px; margin-top: 3px; line-height: 1.35; }
+.switch-row input { position: absolute; opacity: 0; pointer-events: none; }
+.switch-row i { position: relative; width: 42px; height: 24px; border-radius: 999px; background: rgba(148,163,184,.18); border: 1px solid var(--line); transition: .18s ease; }
+.switch-row i::after { content: ''; position: absolute; width: 18px; height: 18px; border-radius: 50%; top: 2px; left: 2px; background: #cbd5e1; transition: .18s ease; }
+.switch-row input:checked + i { background: color-mix(in srgb, var(--accent) 35%, transparent); border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.switch-row input:checked + i::after { transform: translateX(18px); background: var(--accent); }
+.primary-setting-btn { width: 100%; margin-top: 12px; border: 0; border-radius: 12px; padding: 11px 13px; background: var(--accent); color: var(--accent-text); font-weight: 900; }
+.reminder-list { display: grid; gap: 8px; margin-top: 10px; }
+.reminder-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 13px; padding: 10px 11px; background: rgba(148,163,184,.03); }
+.reminder-row strong { display: block; font-size: 12px; line-height: 1.3; }
+.reminder-row span { display: block; color: var(--hint); font-size: 10px; margin-top: 4px; }
+.reminder-remove { border: 1px solid rgba(239,68,68,.20); border-radius: 10px; background: rgba(239,68,68,.07); color: #fca5a5; padding: 8px 9px; font-size: 10px; font-weight: 800; }
+@media (max-width: 430px) { .reminder-row { grid-template-columns: 1fr; } .reminder-remove { width: 100%; } }
