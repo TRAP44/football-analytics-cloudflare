@@ -7,6 +7,7 @@ const memory = {
   reminders: new Map(),
   preferences: new Map(),
   oddsSnapshots: new Map(),
+  billingPayments: new Map(),
   provider: { name: 'API-Football', plan: 'UNKNOWN', dailyLimit: null, dailyRemaining: null, minuteLimit: null, minuteRemaining: null, updatedAt: null },
 };
 
@@ -18,6 +19,23 @@ const DEFAULT_PREFERENCES = Object.freeze({
   kickoffNotification: true,
   hideYouth: true,
   favoriteFirst: true,
+});
+
+const SUBSCRIPTION_PERIOD_SECONDS = 2592000;
+
+const BILLING_PLANS = Object.freeze({
+  PRO: {
+    title: 'Football Analytics PRO',
+    description: '20 анализов в день, расширенные функции и приоритетные обновления.',
+    stars: 199,
+    dailyLimit: 20,
+  },
+  PREMIUM: {
+    title: 'Football Analytics PREMIUM',
+    description: '100 анализов в день, максимальные лимиты и расширенные уведомления.',
+    stars: 399,
+    dailyLimit: 100,
+  },
 });
 
 
@@ -51,6 +69,7 @@ function config(env) {
     apiFootballKey: env.API_FOOTBALL_KEY || '',
     tavilyKey: env.TAVILY_KEY || '',
     botToken: env.TELEGRAM_BOT_TOKEN || '',
+    webhookSecret: env.TELEGRAM_WEBHOOK_SECRET || '',
     supabaseUrl: String(env.SUPABASE_URL || '').replace(/\/$/, ''),
     supabaseKey: env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY || '',
     cacheMinutes: intEnv(env.CACHE_MINUTES, 20),
@@ -59,6 +78,10 @@ function config(env) {
       FREE: intEnv(env.FREE_DAILY_LIMIT, 3),
       PRO: intEnv(env.PRO_DAILY_LIMIT, 20),
       PREMIUM: intEnv(env.PREMIUM_DAILY_LIMIT, 100),
+    },
+    starsPrices: {
+      PRO: intEnv(env.PRO_STARS_PRICE, BILLING_PLANS.PRO.stars),
+      PREMIUM: intEnv(env.PREMIUM_STARS_PRICE, BILLING_PLANS.PREMIUM.stars),
     },
   };
 }
@@ -111,6 +134,20 @@ async function supaUpsert(cfg, table, rows, onConflict) {
     method: 'POST',
     headers: supaHeaders(cfg, { Prefer: 'resolution=merge-duplicates,return=minimal' }),
     body: JSON.stringify(Array.isArray(rows) ? rows : [rows]),
+  });
+  if (!r.ok) {
+    const text = await r.text().catch(() => '');
+    throw new Error(`Supabase ${table}: HTTP ${r.status}${text ? ` — ${text.slice(0, 180)}` : ''}`);
+  }
+}
+
+async function supaPatch(cfg, table, filters, patch) {
+  const url = new URL(`${cfg.supabaseUrl}/rest/v1/${table}`);
+  for (const [k, v] of Object.entries(filters || {})) url.searchParams.set(k, v);
+  const r = await fetch(url, {
+    method: 'PATCH',
+    headers: supaHeaders(cfg, { Prefer: 'return=minimal' }),
+    body: JSON.stringify(patch || {}),
   });
   if (!r.ok) {
     const text = await r.text().catch(() => '');
@@ -238,6 +275,321 @@ async function getQuota(userId, cfg) {
   const used = await getUsage(userId, cfg);
   const limit = cfg.limits[plan] || cfg.limits.FREE;
   return { plan, used, limit, left: Math.max(0, limit - used) };
+}
+
+function billingPlanConfig(plan, cfg) {
+  const key = String(plan || '').toUpperCase();
+  if (!BILLING_PLANS[key]) return null;
+  return {
+    key,
+    ...BILLING_PLANS[key],
+    stars: Number(cfg.starsPrices?.[key] || BILLING_PLANS[key].stars),
+    dailyLimit: Number(cfg.limits?.[key] || BILLING_PLANS[key].dailyLimit),
+  };
+}
+
+async function invoiceSignature(base, botToken) {
+  return bytesToHex(await hmacSha256(enc.encode(botToken), base)).slice(0, 24);
+}
+
+async function makeInvoicePayload(userId, plan, botToken) {
+  const nonceBytes = crypto.getRandomValues(new Uint8Array(6));
+  const nonce = bytesToHex(nonceBytes);
+  const base = `fa1|${Number(userId)}|${String(plan).toUpperCase()}|${nonce}`;
+  return `${base}|${await invoiceSignature(base, botToken)}`;
+}
+
+async function parseInvoicePayload(payload, botToken) {
+  const parts = String(payload || '').split('|');
+  if (parts.length !== 5 || parts[0] !== 'fa1') return null;
+  const [, uidRaw, planRaw, nonce, sig] = parts;
+  const uid = Number(uidRaw);
+  const plan = String(planRaw || '').toUpperCase();
+  if (!Number.isSafeInteger(uid) || !BILLING_PLANS[plan] || !/^[0-9a-f]{12}$/i.test(nonce) || !/^[0-9a-f]{24}$/i.test(sig)) return null;
+  const base = `fa1|${uid}|${plan}|${nonce}`;
+  const expected = await invoiceSignature(base, botToken);
+  if (!constantTimeEqual(expected.toLowerCase(), sig.toLowerCase())) return null;
+  return { userId: uid, plan, nonce };
+}
+
+async function telegramApi(method, cfg, body = {}) {
+  if (!cfg.botToken) throw new Error('TELEGRAM_BOT_TOKEN не настроен.');
+  const r = await fetch(`https://api.telegram.org/bot${cfg.botToken}/${method}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || !data?.ok) throw new Error(data?.description || `Telegram ${method}: HTTP ${r.status}`);
+  return data.result;
+}
+
+async function updateUserSubscription(userId, fields, cfg) {
+  const patch = { ...fields, plan_updated_at: new Date().toISOString() };
+  if (hasSupabase(cfg)) {
+    await supaPatch(cfg, 'users', { telegram_id: `eq.${Number(userId)}` }, patch);
+  } else {
+    const old = memory.users.get(Number(userId)) || { telegram_id: Number(userId), plan: 'FREE' };
+    memory.users.set(Number(userId), { ...old, ...patch });
+  }
+}
+
+async function saveBillingPayment(row, cfg) {
+  if (!row?.telegram_payment_charge_id) return;
+  if (hasSupabase(cfg)) {
+    await supaUpsert(cfg, 'billing_payments', row, 'telegram_payment_charge_id');
+  } else {
+    memory.billingPayments.set(String(row.telegram_payment_charge_id), row);
+  }
+}
+
+async function applySuccessfulPayment(userId, payment, cfg, fallbackDate = Math.floor(Date.now() / 1000)) {
+  if (!payment || payment.currency !== 'XTR') return false;
+  const parsed = await parseInvoicePayload(payment.invoice_payload, cfg.botToken);
+  if (!parsed || Number(parsed.userId) !== Number(userId)) return false;
+  const planCfg = billingPlanConfig(parsed.plan, cfg);
+  if (!planCfg || Number(payment.total_amount) !== Number(planCfg.stars)) return false;
+
+  const expiresUnix = Number(payment.subscription_expiration_date || 0)
+    || (Number(fallbackDate || Math.floor(Date.now() / 1000)) + SUBSCRIPTION_PERIOD_SECONDS);
+  const expiresAt = new Date(expiresUnix * 1000).toISOString();
+
+  const chargeId = String(payment.telegram_payment_charge_id || '');
+  if (!chargeId) return false;
+
+  await saveBillingPayment({
+    telegram_payment_charge_id: chargeId,
+    telegram_id: Number(userId),
+    plan: parsed.plan,
+    stars_amount: Number(payment.total_amount),
+    currency: 'XTR',
+    invoice_payload: String(payment.invoice_payload || ''),
+    provider_payment_charge_id: payment.provider_payment_charge_id || null,
+    subscription_expiration_date: expiresAt,
+    is_recurring: Boolean(payment.is_recurring),
+    is_first_recurring: Boolean(payment.is_first_recurring),
+    status: 'paid',
+    created_at: new Date(Number(fallbackDate || Math.floor(Date.now() / 1000)) * 1000).toISOString(),
+  }, cfg);
+
+  await updateUserSubscription(userId, {
+    plan: parsed.plan,
+    subscription_until: expiresAt,
+    subscription_canceled: false,
+    telegram_payment_charge_id: chargeId,
+  }, cfg);
+  return true;
+}
+
+async function billingWebhookStatus(request, cfg) {
+  if (!cfg.botToken || !cfg.webhookSecret) {
+    return { ready: false, reason: 'webhook_not_configured', expectedUrl: `${new URL(request.url).origin}/telegram/webhook` };
+  }
+  const expectedUrl = `${new URL(request.url).origin}/telegram/webhook`;
+  try {
+    const info = await telegramApi('getWebhookInfo', cfg);
+    const ready = String(info?.url || '') === expectedUrl;
+    return {
+      ready,
+      expectedUrl,
+      currentUrl: info?.url || '',
+      pendingUpdates: Number(info?.pending_update_count || 0),
+      lastError: info?.last_error_message || '',
+      reason: ready ? '' : 'webhook_url_mismatch',
+    };
+  } catch (e) {
+    return { ready: false, reason: 'webhook_check_failed', expectedUrl, error: String(e?.message || e) };
+  }
+}
+
+async function syncBillingFromStars(userId, cfg) {
+  const tx = await telegramApi('getStarTransactions', cfg, { offset: 0, limit: 100 });
+  const list = Array.isArray(tx?.transactions) ? tx.transactions : [];
+  let best = null;
+
+  for (const item of list) {
+    const source = item?.source;
+    if (!source || source.type !== 'user' || source.transaction_type !== 'invoice_payment') continue;
+    if (Number(source.user?.id) !== Number(userId)) continue;
+    const parsed = await parseInvoicePayload(source.invoice_payload, cfg.botToken);
+    if (!parsed || Number(parsed.userId) !== Number(userId)) continue;
+    const planCfg = billingPlanConfig(parsed.plan, cfg);
+    if (!planCfg || Number(item.amount) !== Number(planCfg.stars)) continue;
+    const period = Number(source.subscription_period || SUBSCRIPTION_PERIOD_SECONDS);
+    const expiresUnix = Number(item.date || 0) + period;
+    if (!best || expiresUnix > best.expiresUnix) best = { item, source, parsed, expiresUnix };
+  }
+
+  if (!best || best.expiresUnix * 1000 <= Date.now()) {
+    return { synced: false, quota: await getQuota(userId, cfg) };
+  }
+
+  await applySuccessfulPayment(userId, {
+    currency: 'XTR',
+    total_amount: Number(best.item.amount),
+    invoice_payload: best.source.invoice_payload,
+    telegram_payment_charge_id: String(best.item.id || ''),
+    provider_payment_charge_id: '',
+    subscription_expiration_date: best.expiresUnix,
+    is_recurring: true,
+    is_first_recurring: false,
+  }, cfg, Number(best.item.date || Math.floor(Date.now() / 1000)));
+
+  return { synced: true, quota: await getQuota(userId, cfg) };
+}
+
+async function handleTelegramWebhook(request, cfg) {
+  if (!cfg.webhookSecret) return json({ ok: false, error: 'webhook_secret_missing' }, 503);
+  const provided = request.headers.get('x-telegram-bot-api-secret-token') || '';
+  if (!constantTimeEqual(String(provided), String(cfg.webhookSecret))) return json({ ok: false }, 403);
+
+  let update = {};
+  try { update = await request.json(); } catch { return json({ ok: false }, 400); }
+
+  if (update.pre_checkout_query) {
+    const q = update.pre_checkout_query;
+    let ok = false;
+    let errorMessage = 'Не удалось проверить подписку.';
+    try {
+      const parsed = await parseInvoicePayload(q.invoice_payload, cfg.botToken);
+      const planCfg = parsed ? billingPlanConfig(parsed.plan, cfg) : null;
+      ok = Boolean(
+        parsed
+        && Number(parsed.userId) === Number(q.from?.id)
+        && q.currency === 'XTR'
+        && planCfg
+        && Number(q.total_amount) === Number(planCfg.stars)
+      );
+      if (!ok) errorMessage = 'Параметры подписки не совпадают. Откройте приложение и создайте счёт заново.';
+    } catch {}
+    await telegramApi('answerPreCheckoutQuery', cfg, {
+      pre_checkout_query_id: q.id,
+      ok,
+      ...(ok ? {} : { error_message: errorMessage }),
+    });
+    return json({ ok: true });
+  }
+
+  const msg = update.message;
+  if (msg?.successful_payment) {
+    await applySuccessfulPayment(msg.from?.id, msg.successful_payment, cfg, Number(msg.date || Math.floor(Date.now() / 1000)));
+    return json({ ok: true });
+  }
+
+  if (msg?.refunded_payment) {
+    const refund = msg.refunded_payment;
+    const userId = Number(msg.from?.id || 0);
+    const chargeId = String(refund.telegram_payment_charge_id || '');
+    if (hasSupabase(cfg) && chargeId) {
+      await supaPatch(cfg, 'billing_payments', { telegram_payment_charge_id: `eq.${chargeId}` }, { status: 'refunded', updated_at: new Date().toISOString() });
+    }
+    const record = userId ? await getUserRecord(userId, cfg) : null;
+    if (record && String(record.telegram_payment_charge_id || '') === chargeId) {
+      await updateUserSubscription(userId, {
+        plan: 'FREE',
+        subscription_until: new Date().toISOString(),
+        subscription_canceled: true,
+        telegram_payment_charge_id: null,
+      }, cfg);
+    }
+    return json({ ok: true });
+  }
+
+  if (update.subscription) {
+    const sub = update.subscription;
+    const parsed = await parseInvoicePayload(sub.invoice_payload, cfg.botToken);
+    if (parsed && Number(parsed.userId) === Number(sub.user?.id)) {
+      if (sub.state === 'canceled') {
+        await updateUserSubscription(parsed.userId, { subscription_canceled: true }, cfg);
+      } else if (sub.state === 'active') {
+        await updateUserSubscription(parsed.userId, { subscription_canceled: false }, cfg);
+      }
+    }
+    return json({ ok: true });
+  }
+
+  if (msg?.text && /^\/start(?:@\w+)?(?:\s|$)/i.test(msg.text)) {
+    const appUrl = new URL(request.url).origin;
+    await telegramApi('sendMessage', cfg, {
+      chat_id: msg.chat?.id,
+      text: '⚽ Football Analytics\n\nОткройте приложение, чтобы выбрать матч и получить анализ.',
+      reply_markup: {
+        inline_keyboard: [[{ text: '⚽ Открыть приложение', web_app: { url: appUrl } }]],
+      },
+    });
+  }
+
+  return json({ ok: true });
+}
+
+async function apiBillingPlans(request, cfg, user) {
+  const webhook = await billingWebhookStatus(request, cfg);
+  const quota = await getQuota(user.id, cfg);
+  const record = await getUserRecord(user.id, cfg);
+  return json({
+    ready: webhook.ready,
+    reason: webhook.reason || '',
+    webhook: { expectedUrl: webhook.expectedUrl, currentUrl: webhook.currentUrl || '', lastError: webhook.lastError || '' },
+    current: {
+      plan: quota.plan,
+      subscriptionUntil: record?.subscription_until || null,
+      canceled: Boolean(record?.subscription_canceled),
+    },
+    plans: {
+      FREE: { stars: 0, dailyLimit: cfg.limits.FREE },
+      PRO: { stars: billingPlanConfig('PRO', cfg).stars, dailyLimit: cfg.limits.PRO },
+      PREMIUM: { stars: billingPlanConfig('PREMIUM', cfg).stars, dailyLimit: cfg.limits.PREMIUM },
+    },
+  });
+}
+
+async function apiBillingInvoice(request, cfg, user) {
+  const webhook = await billingWebhookStatus(request, cfg);
+  if (!webhook.ready) return json({ error: 'Оплата ещё не активирована: Telegram webhook не настроен.', webhook }, 503);
+
+  let body = {};
+  try { body = await request.json(); } catch {}
+  const plan = String(body.plan || '').toUpperCase();
+  const planCfg = billingPlanConfig(plan, cfg);
+  if (!planCfg) return json({ error: 'Неизвестный тариф.' }, 400);
+
+  const quota = await getQuota(user.id, cfg);
+  const record = await getUserRecord(user.id, cfg);
+  if (quota.plan !== 'FREE' && record?.subscription_until && new Date(record.subscription_until) > new Date()) {
+    return json({ error: quota.plan === plan ? 'Этот тариф уже активен.' : 'Сначала отключите автопродление текущего тарифа и дождитесь окончания оплаченного периода.' }, 409);
+  }
+
+  const payload = await makeInvoicePayload(user.id, plan, cfg.botToken);
+  const invoiceUrl = await telegramApi('createInvoiceLink', cfg, {
+    title: planCfg.title,
+    description: planCfg.description,
+    payload,
+    provider_token: '',
+    currency: 'XTR',
+    prices: [{ label: `${plan} · 30 дней`, amount: planCfg.stars }],
+    subscription_period: SUBSCRIPTION_PERIOD_SECONDS,
+  });
+  return json({ invoiceUrl, plan, stars: planCfg.stars });
+}
+
+async function apiBillingSync(request, cfg, user) {
+  return json(await syncBillingFromStars(user.id, cfg));
+}
+
+async function apiBillingSubscription(request, cfg, user) {
+  let body = {};
+  try { body = await request.json(); } catch {}
+  const action = body.action === 'resume' ? 'resume' : 'cancel';
+  const record = await getUserRecord(user.id, cfg);
+  const chargeId = String(record?.telegram_payment_charge_id || '');
+  if (!chargeId) return json({ error: 'Активная подписка Telegram Stars не найдена.' }, 404);
+  await telegramApi('editUserStarSubscription', cfg, {
+    user_id: Number(user.id),
+    telegram_payment_charge_id: chargeId,
+    is_canceled: action === 'cancel',
+  });
+  await updateUserSubscription(user.id, { subscription_canceled: action === 'cancel' }, cfg);
+  return json({ ok: true, canceled: action === 'cancel' });
 }
 
 async function getCache(cacheKey, cfg) {
@@ -1295,6 +1647,12 @@ async function apiMe(request, cfg, user) {
       subscriptionUntil: record?.subscription_until || null,
     },
     quota,
+    billing: {
+      plan: quota.plan,
+      subscriptionUntil: record?.subscription_until || null,
+      canceled: Boolean(record?.subscription_canceled),
+      paymentChargeIdPresent: Boolean(record?.telegram_payment_charge_id),
+    },
     preferences,
     stats: { favorites: favorites.length, reminders: reminders.length },
   });
@@ -1662,7 +2020,7 @@ export default {
     if (url.pathname === '/health' || url.pathname === '/api/health') {
       return json({
         ok: true,
-        version: '2.7.0-advanced-live',
+        version: '2.8.0-stars-subscriptions',
         database: hasSupabase(cfg) ? 'supabase' : 'memory',
         devMode: cfg.devMode,
       });
@@ -1694,6 +2052,15 @@ export default {
       }
     }
 
+    if (request.method === 'POST' && url.pathname === '/telegram/webhook') {
+      try {
+        return await handleTelegramWebhook(request, cfg);
+      } catch (error) {
+        console.error('telegram webhook', error);
+        return json({ ok: false }, 200);
+      }
+    }
+
     if (!url.pathname.startsWith('/api/')) return new Response('Not found', { status: 404 });
 
     try {
@@ -1702,6 +2069,10 @@ export default {
 
       if (request.method === 'GET' && url.pathname === '/api/me') return await apiMe(request, cfg, user);
       if (request.method === 'GET' && url.pathname === '/api/provider') return json({ provider: providerSnapshot() });
+      if (request.method === 'GET' && url.pathname === '/api/billing/plans') return await apiBillingPlans(request, cfg, user);
+      if (request.method === 'POST' && url.pathname === '/api/billing/invoice') return await apiBillingInvoice(request, cfg, user);
+      if (request.method === 'POST' && url.pathname === '/api/billing/sync') return await apiBillingSync(request, cfg, user);
+      if (request.method === 'POST' && url.pathname === '/api/billing/subscription') return await apiBillingSubscription(request, cfg, user);
       if (request.method === 'GET' && url.pathname === '/api/matches') return await apiMatches(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/match-center') return await apiMatchCenter(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/history') return await apiHistory(request, cfg, user);
