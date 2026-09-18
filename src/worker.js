@@ -6,6 +6,7 @@ const memory = {
   favorites: new Map(),
   reminders: new Map(),
   preferences: new Map(),
+  oddsSnapshots: new Map(),
   provider: { name: 'API-Football', plan: 'UNKNOWN', dailyLimit: null, dailyRemaining: null, minuteLimit: null, minuteRemaining: null, updatedAt: null },
 };
 
@@ -567,7 +568,13 @@ function updateProviderFromHeaders(response) {
 }
 
 function providerSnapshot() {
-  return { ...(memory.provider || {}), liveOddsReady: ['PRO','ULTRA','MEGA'].includes(memory.provider?.plan || '') };
+  const paid = ['PRO','ULTRA','MEGA'].includes(memory.provider?.plan || '');
+  return {
+    ...(memory.provider || {}),
+    liveOddsReady: paid,
+    playerStatsReady: paid,
+    oddsMovementReady: paid,
+  };
 }
 
 function liveRefreshSeconds() {
@@ -687,6 +694,150 @@ function extractLiveMarket(rows) {
   const avg = key => candidates.reduce((sum, x) => sum + x[key], 0) / candidates.length;
   const odds = { home: round1(avg('home')), draw: round1(avg('draw')), away: round1(avg('away')) };
   return { odds, probabilities: normalizeThree(1 / odds.home, 1 / odds.draw, 1 / odds.away), sources: candidates.length, updatedAt: candidates.find(x => x.update)?.update || '' };
+}
+
+
+function numericValue(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(String(value).replace('%', '').replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+
+function formatPlayerLeaders(rows, homeId, awayId) {
+  const sides = { home: [], away: [] };
+  for (const teamRow of rows || []) {
+    const teamId = Number(teamRow.team?.id || 0);
+    const side = teamId === Number(homeId) ? 'home' : teamId === Number(awayId) ? 'away' : '';
+    if (!side) continue;
+    for (const entry of teamRow.players || []) {
+      const st = entry.statistics?.[0] || {};
+      const rating = numericValue(st.games?.rating);
+      const minutes = numericValue(st.games?.minutes) || 0;
+      const goals = numericValue(st.goals?.total) || 0;
+      const assists = numericValue(st.goals?.assists) || 0;
+      const saves = numericValue(st.goals?.saves) || 0;
+      const shotsOn = numericValue(st.shots?.on) || 0;
+      const keyPasses = numericValue(st.passes?.key) || 0;
+      const tackles = numericValue(st.tackles?.total) || 0;
+      const interceptions = numericValue(st.tackles?.interceptions) || 0;
+      if (!minutes && rating === null && !goals && !assists && !saves && !shotsOn && !keyPasses) continue;
+      const impact = (rating || 0) * 10 + goals * 20 + assists * 14 + saves * 2 + shotsOn * 2 + keyPasses * 1.5 + tackles + interceptions;
+      sides[side].push({
+        id: Number(entry.player?.id || 0),
+        name: entry.player?.name || 'Игрок',
+        photo: entry.player?.photo || '',
+        position: st.games?.position || '',
+        rating: rating !== null ? Math.round(rating * 10) / 10 : null,
+        minutes,
+        goals,
+        assists,
+        saves,
+        shotsOn,
+        keyPasses,
+        tackles,
+        interceptions,
+        impact: Math.round(impact * 10) / 10,
+      });
+    }
+  }
+  for (const side of ['home','away']) {
+    sides[side].sort((a,b) => b.impact - a.impact || (b.rating || 0) - (a.rating || 0) || b.minutes - a.minutes);
+    sides[side] = sides[side].slice(0, 6);
+  }
+  return sides;
+}
+
+function livePressure(statistics) {
+  const rows = statistics?.items || [];
+  if (!rows.length) return null;
+  const get = key => rows.find(x => x.key === key) || {};
+  const val = (x, side) => numericValue(x?.[side]) || 0;
+  const totalShots = get('Total Shots');
+  const shotsOn = get('Shots on Goal');
+  const corners = get('Corner Kicks');
+  const possession = get('Ball Possession');
+  const reds = get('Red Cards');
+  const saves = get('Goalkeeper Saves');
+  const score = side => (
+    val(shotsOn, side) * 4.2 +
+    val(totalShots, side) * 1.25 +
+    val(corners, side) * 1.4 +
+    val(possession, side) * 0.07 +
+    val(saves, side === 'home' ? 'away' : 'home') * 0.8 -
+    val(reds, side) * 7
+  );
+  const h = Math.max(0, score('home'));
+  const a = Math.max(0, score('away'));
+  if (h + a < 1) return null;
+  const home = Math.round(h / (h + a) * 100);
+  const away = 100 - home;
+  const diff = home - away;
+  return {
+    home, away,
+    leader: Math.abs(diff) < 10 ? 'balanced' : diff > 0 ? 'home' : 'away',
+    note: 'Эвристика давления по ударам, владению, угловым, сейвам и карточкам. Это не вероятность победы.',
+  };
+}
+
+async function getOddsSnapshots(fixtureId, cfg, limit = 12) {
+  if (hasSupabase(cfg)) {
+    try {
+      const rows = await supaSelectMany(cfg, 'odds_snapshots', {
+        fixture_id: `eq.${Number(fixtureId)}`,
+        market: 'eq.1x2',
+      }, { limit, order: 'snapshot_time.desc' });
+      return (rows || []).map(x => ({
+        at: x.snapshot_time,
+        home: Number(x.home_odd), draw: Number(x.draw_odd), away: Number(x.away_odd),
+        homeProb: Number(x.home_prob), drawProb: Number(x.draw_prob), awayProb: Number(x.away_prob),
+        sources: Number(x.source_count || 0),
+      }));
+    } catch { return []; }
+  }
+  return (memory.oddsSnapshots.get(Number(fixtureId)) || []).slice(-limit).reverse();
+}
+
+async function saveOddsSnapshot(fixtureId, market, cfg) {
+  if (!market?.odds) return false;
+  const previous = await getOddsSnapshots(fixtureId, cfg, 1);
+  const prev = previous[0];
+  const now = new Date();
+  const changed = !prev || ['home','draw','away'].some(k => Math.abs(Number(market.odds[k]) - Number(prev[k])) >= 0.03);
+  const oldEnough = !prev?.at || (now.getTime() - Date.parse(prev.at)) >= 120000;
+  if (!changed && !oldEnough) return false;
+  const p = market.probabilities || {};
+  const row = {
+    fixture_id: Number(fixtureId), market: '1x2', snapshot_time: now.toISOString(),
+    home_odd: Number(market.odds.home), draw_odd: Number(market.odds.draw), away_odd: Number(market.odds.away),
+    home_prob: Number(p.home || 0), draw_prob: Number(p.draw || 0), away_prob: Number(p.away || 0),
+    source_count: Number(market.sources || market.bookmakers || 0),
+  };
+  if (hasSupabase(cfg)) {
+    try { await supaUpsert(cfg, 'odds_snapshots', row); return true; } catch { return false; }
+  }
+  const list = memory.oddsSnapshots.get(Number(fixtureId)) || [];
+  list.push({ at: row.snapshot_time, home: row.home_odd, draw: row.draw_odd, away: row.away_odd, homeProb: row.home_prob, drawProb: row.draw_prob, awayProb: row.away_prob, sources: row.source_count });
+  memory.oddsSnapshots.set(Number(fixtureId), list.slice(-50));
+  return true;
+}
+
+function buildOddsMovement(snapshots, current) {
+  if (!current?.odds) return null;
+  const history = Array.isArray(snapshots) ? snapshots.filter(x => x && x.at) : [];
+  const baseline = history.length ? history[history.length - 1] : null;
+  if (!baseline) return { sample: 1, baseline: null, current: current.odds, probabilityChange: null };
+  const currentP = current.probabilities || normalizeThree(1/current.odds.home,1/current.odds.draw,1/current.odds.away) || {};
+  const baseP = (baseline.homeProb || baseline.drawProb || baseline.awayProb)
+    ? { home: baseline.homeProb, draw: baseline.drawProb, away: baseline.awayProb }
+    : normalizeThree(1/baseline.home,1/baseline.draw,1/baseline.away) || {};
+  const delta = key => Math.round(((Number(currentP[key] || 0) - Number(baseP[key] || 0)) * 10)) / 10;
+  return {
+    sample: history.length + 1,
+    from: baseline.at,
+    baseline: { home: baseline.home, draw: baseline.draw, away: baseline.away },
+    current: current.odds,
+    probabilityChange: { home: delta('home'), draw: delta('draw'), away: delta('away') },
+  };
 }
 
 function extractPrediction(rows) {
@@ -1297,7 +1448,7 @@ async function apiMatchCenter(request, cfg) {
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'fixtureId обязателен.' }, 400);
 
   // Shared across all users. During LIVE it expires after 60 seconds.
-  const baseCacheKey = `match-center:${fixtureId}:v2`;
+  const baseCacheKey = `match-center:${fixtureId}:v4`;
   const cached = await getCache(baseCacheKey, cfg);
   if (cached) return json({ ...cached, cached: true });
 
@@ -1322,19 +1473,34 @@ async function apiMatchCenter(request, cfg) {
   // fixture data does not contain details.
   let events = embedded.events;
   let statistics = embedded.statistics;
+  let playerRows = embedded.players;
   if (!limitedCoverage && (live || finished) && !events.length) {
     events = await apiFootball('/fixtures/events', { fixture: fixtureId }, cfg).catch(() => []);
   }
   if (!limitedCoverage && (live || finished) && !statistics.length) {
     statistics = await apiFootball('/fixtures/statistics', { fixture: fixtureId }, cfg).catch(() => []);
   }
+  // Player-level fixture statistics are useful but expensive on the free plan.
+  // Fetch them automatically only when the provider plan/quota can sustain it.
+  if (!limitedCoverage && (live || finished) && !playerRows.length && paidQuotaHealthy()) {
+    playerRows = await apiFootball('/fixtures/players', { fixture: fixtureId }, cfg).catch(() => []);
+  }
 
   let liveOdds = null;
+  let oddsMovement = null;
   if (live && !limitedCoverage && cfg.liveOddsEnabled && paidQuotaHealthy()) {
     const liveOddsRows = await apiFootball('/odds/live', { fixture: fixtureId }, cfg).catch(() => []);
     liveOdds = extractLiveMarket(liveOddsRows);
+    if (liveOdds) {
+      await saveOddsSnapshot(fixtureId, liveOdds, cfg);
+      const snapshots = await getOddsSnapshots(fixtureId, cfg, 12);
+      oddsMovement = buildOddsMovement(snapshots, liveOdds);
+    }
   }
   const refreshSeconds = live ? liveRefreshSeconds() : 0;
+  const formattedStatistics = formatLiveStatistics(statistics, homeId, awayId);
+  const playerLeaders = formatPlayerLeaders(playerRows, homeId, awayId);
+  const pressure = live ? livePressure(formattedStatistics) : null;
 
   const payload = {
     generatedAt: new Date().toISOString(),
@@ -1355,16 +1521,19 @@ async function apiMatchCenter(request, cfg) {
       away: { id: awayId, name: awayName, logo: fixture.teams?.away?.logo || '' },
     },
     events: formatLiveEvents(events, homeId, awayId),
-    statistics: formatLiveStatistics(statistics, homeId, awayId),
+    statistics: formattedStatistics,
+    livePressure: pressure,
+    playerLeaders,
     lineups: formatLineups(embedded.lineups, homeId, awayId),
     availability: {
       events: events.length > 0,
       statistics: statistics.length > 0,
       lineups: embedded.lineups.length > 0,
-      players: embedded.players.length > 0,
+      players: playerLeaders.home.length > 0 || playerLeaders.away.length > 0,
       limitedCoverage,
     },
     liveOdds,
+    oddsMovement,
     provider: providerSnapshot(),
     refreshSeconds,
     note: limitedCoverage
@@ -1493,7 +1662,7 @@ export default {
     if (url.pathname === '/health' || url.pathname === '/api/health') {
       return json({
         ok: true,
-        version: '2.6.0-paid-api-ready',
+        version: '2.7.0-advanced-live',
         database: hasSupabase(cfg) ? 'supabase' : 'memory',
         devMode: cfg.devMode,
       });
