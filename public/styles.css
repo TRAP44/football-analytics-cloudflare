@@ -353,3 +353,34 @@ h2 { margin: 0; font-size: 20px; }
 .provider-status-grid strong, .provider-live-grid strong { display:block; font-size:13px; }
 .provider-live-panel { border-color: color-mix(in srgb, var(--accent) 24%, var(--line)); }
 @media (max-width:520px) { .provider-status-grid, .provider-live-grid { grid-template-columns:1fr 1fr; } }
+
+
+/* v2.7 advanced LIVE */
+.pulse-panel { border-color: color-mix(in srgb, #f97316 28%, var(--line)); }
+.pulse-names { display:grid; grid-template-columns:1fr auto 1fr; gap:8px; align-items:center; margin-top:10px; color:var(--hint); font-size:11px; }
+.pulse-names span:last-child { text-align:right; }
+.pulse-names strong { color:var(--text); font-size:11px; }
+.pulse-bar { display:flex; overflow:hidden; height:10px; border-radius:999px; background:rgba(148,163,184,.10); margin-top:9px; }
+.pulse-bar i { display:block; background:var(--accent); }
+.pulse-bar b { display:block; background:#f97316; }
+.pulse-values { display:flex; justify-content:space-between; margin-top:5px; font-size:11px; font-weight:800; }
+.odds-movement-wrap { margin-top:14px; padding-top:12px; border-top:1px solid var(--line); }
+.odds-movement-wrap h3 { margin:0 0 9px; font-size:13px; }
+.odds-movement-grid { display:grid; gap:7px; }
+.odds-move-row { display:grid; grid-template-columns:34px 1fr auto; gap:9px; align-items:center; border:1px solid var(--line); border-radius:11px; padding:9px 10px; }
+.odds-move-row span { color:var(--hint); font-size:11px; }
+.odds-move-row strong { font-size:12px; }
+.odds-move-row b { font-size:10px; }
+.odds-move-row.up b { color:#34d399; }
+.odds-move-row.down b { color:#f87171; }
+.odds-move-row.flat b { color:var(--hint); }
+.player-leaders-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
+.player-leader-side { min-width:0; border:1px solid var(--line); border-radius:14px; padding:10px; background:rgba(148,163,184,.025); }
+.player-leader-side h3 { margin:0 0 8px; font-size:12px; }
+.player-leader-row { display:grid; grid-template-columns:34px 1fr auto; gap:8px; align-items:center; padding:7px 0; border-top:1px solid var(--line); }
+.player-leader-row:first-of-type { border-top:0; }
+.player-leader-row img, .player-photo-placeholder { width:32px; height:32px; border-radius:50%; object-fit:cover; background:rgba(148,163,184,.08); display:grid; place-items:center; }
+.player-leader-row strong { display:block; font-size:11px; line-height:1.2; }
+.player-leader-row small { display:block; color:var(--hint); font-size:9px; margin-top:3px; }
+.player-leader-row > b { min-width:30px; text-align:right; font-size:13px; }
+@media (max-width:560px) { .player-leaders-grid { grid-template-columns:1fr; } }
