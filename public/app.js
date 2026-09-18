@@ -15,6 +15,7 @@ const state = {
   preferences: { defaultFilter: 'top', reminderMinutes: 30, kickoffNotification: true, hideYouth: true, favoriteFirst: true },
   preferencesApplied: false,
   provider: null,
+  billing: null,
   filter: 'top',
   search: '',
   currentAnalysis: null,
@@ -121,6 +122,109 @@ function renderProfile() {
   if ($('favoriteFirstToggle')) $('favoriteFirstToggle').checked = prefs.favoriteFirst !== false;
   renderFavoriteTeams();
   renderReminderList();
+  renderBilling();
+}
+
+function renderBilling() {
+  if (!$('billingStatus')) return;
+  const b = state.billing;
+  const quota = state.profile?.quota || {};
+  const currentPlan = String(b?.current?.plan || quota.plan || 'FREE').toUpperCase();
+  const currentUntil = b?.current?.subscriptionUntil || state.profile?.billing?.subscriptionUntil || null;
+  const canceled = Boolean(b?.current?.canceled ?? state.profile?.billing?.canceled);
+
+  document.querySelectorAll('.pricing-card[data-plan]').forEach(card => {
+    card.classList.toggle('current', card.dataset.plan === currentPlan);
+  });
+
+  const pro = b?.plans?.PRO || { stars: 199, dailyLimit: 20 };
+  const premium = b?.plans?.PREMIUM || { stars: 399, dailyLimit: 100 };
+  if ($('proPrice')) $('proPrice').textContent = `${pro.stars} ⭐ / 30 дней`;
+  if ($('premiumPrice')) $('premiumPrice').textContent = `${premium.stars} ⭐ / 30 дней`;
+  if ($('proLimit')) $('proLimit').textContent = `${pro.dailyLimit} анализов / день`;
+  if ($('premiumLimit')) $('premiumLimit').textContent = `${premium.dailyLimit} анализов / день`;
+
+  const ready = Boolean(b?.ready);
+  $('billingStatus').className = `billing-status ${ready ? 'ready' : 'waiting'}`;
+  $('billingStatus').textContent = ready
+    ? '⭐ Telegram Stars подключены. Оплата и автопродление готовы.'
+    : '⚙️ Telegram Stars подготовлены, но webhook ещё не активирован.';
+
+  const proBtn = $('proBtn');
+  const premiumBtn = $('premiumBtn');
+  [proBtn, premiumBtn].forEach(btn => { if (btn) btn.disabled = !ready; });
+  if (proBtn) proBtn.textContent = currentPlan === 'PRO' ? 'Текущий PRO' : `Подключить за ${pro.stars} ⭐`;
+  if (premiumBtn) premiumBtn.textContent = currentPlan === 'PREMIUM' ? 'Текущий PREMIUM' : `Подключить за ${premium.stars} ⭐`;
+  if (proBtn && currentPlan === 'PRO') proBtn.disabled = true;
+  if (premiumBtn && currentPlan === 'PREMIUM') premiumBtn.disabled = true;
+
+  const details = $('subscriptionDetails');
+  const manage = $('subscriptionManageBtn');
+  if (currentPlan !== 'FREE' && currentUntil) {
+    details.hidden = false;
+    details.innerHTML = `<strong>${escapeHtml(currentPlan)}</strong><span>Активен до ${escapeHtml(dateTime(currentUntil))}${canceled ? ' · автопродление отключено' : ' · автопродление включено'}</span>`;
+    manage.hidden = false;
+    manage.textContent = canceled ? '↻ Возобновить автопродление' : 'Отключить автопродление';
+    manage.dataset.action = canceled ? 'resume' : 'cancel';
+  } else {
+    details.hidden = true;
+    manage.hidden = true;
+  }
+}
+
+async function loadBilling() {
+  try {
+    state.billing = await api('/api/billing/plans');
+    renderBilling();
+  } catch (e) {
+    state.billing = { ready: false };
+    renderBilling();
+  }
+}
+
+async function syncBilling(showToast = true) {
+  try {
+    const result = await api('/api/billing/sync', { method: 'POST', body: '{}' });
+    await loadProfile();
+    await loadBilling();
+    if (showToast) toast(result.synced ? 'Подписка синхронизирована' : 'Новых платежей не найдено');
+  } catch (e) { if (showToast) toast(e.message); }
+}
+
+async function buyPlan(plan) {
+  if (!state.billing?.ready) {
+    toast('Оплата ещё не активирована администратором.');
+    return;
+  }
+  if (!tg?.openInvoice) {
+    toast('Оплата доступна только внутри Telegram.');
+    return;
+  }
+  try {
+    const invoice = await api('/api/billing/invoice', { method: 'POST', body: JSON.stringify({ plan }) });
+    tg.openInvoice(invoice.invoiceUrl, async status => {
+      const value = typeof status === 'string' ? status : status?.status;
+      if (value === 'paid') {
+        toast('Платёж принят. Активируем подписку…');
+        await new Promise(resolve => setTimeout(resolve, 700));
+        await syncBilling(false);
+        toast(`${plan} активирован`);
+      } else if (value === 'pending') {
+        toast('Платёж обрабатывается. Нажмите «Проверить оплату» через несколько секунд.');
+      } else if (value === 'failed') {
+        toast('Telegram не смог завершить платёж.');
+      }
+    });
+  } catch (e) { toast(e.message); }
+}
+
+async function manageSubscription(action) {
+  try {
+    const data = await api('/api/billing/subscription', { method: 'POST', body: JSON.stringify({ action }) });
+    await loadProfile();
+    await loadBilling();
+    toast(data.canceled ? 'Автопродление отключено' : 'Автопродление включено');
+  } catch (e) { toast(e.message); }
 }
 
 function renderProvider() {
@@ -1067,10 +1171,12 @@ $('profileBtn').addEventListener('click', () => showView('profileView'));
 $('navMatches').addEventListener('click', () => showView('matchesView'));
 $('navHistory').addEventListener('click', async () => { await loadHistory(true); showView('historyView'); });
 $('navProfile').addEventListener('click', () => showView('profileView'));
-$('proBtn').addEventListener('click', () => toast('Telegram Stars подключим в следующем платёжном этапе.'));
-$('premiumBtn').addEventListener('click', () => toast('PREMIUM будет доступен после подключения Telegram Stars.'));
+$('proBtn').addEventListener('click', () => buyPlan('PRO'));
+$('premiumBtn').addEventListener('click', () => buyPlan('PREMIUM'));
+$('billingSyncBtn')?.addEventListener('click', () => syncBilling(true));
+$('subscriptionManageBtn')?.addEventListener('click', () => manageSubscription($('subscriptionManageBtn').dataset.action || 'cancel'));
 $('savePreferencesBtn')?.addEventListener('click', savePreferencesFromUi);
 
-await Promise.all([loadProfile(), loadFavorites(), loadReminders(), loadMatches(), loadHistory(false)]);
+await Promise.all([loadProfile(), loadFavorites(), loadReminders(), loadMatches(), loadHistory(false), loadBilling()]);
 await loadProvider();
 renderProfile();
