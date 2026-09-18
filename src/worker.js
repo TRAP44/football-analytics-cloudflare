@@ -692,6 +692,10 @@ const TOP_LEAGUE_IDS = new Set([
 const BIG_TEAM_RE = /arsenal|liverpool|chelsea|manchester (city|united)|tottenham|newcastle|real madrid|barcelona|atletico madrid|bayern|dortmund|paris saint|psg|inter|milan|juventus|napoli|roma|benfica|porto|sporting|ajax|psv|feyenoord|inter miami|flamengo|palmeiras|river plate|boca juniors/i;
 const YOUTH_RESERVE_RE = /\bu-?1[789]\b|\bu-?2[013]\b|under ?(17|18|19|20|21|23)|youth|reserve|reserves|development|primavera|juniors?/i;
 
+function isYouthReserveMatch(leagueName = '', homeName = '', awayName = '') {
+  return YOUTH_RESERVE_RE.test(`${leagueName || ''} ${homeName || ''} ${awayName || ''}`);
+}
+
 function matchInterestScore({ leagueId, leagueName, country, homeName, awayName, status, date }) {
   let score = 18;
   if (isTopLeague(leagueId, leagueName)) score += 34;
@@ -866,6 +870,7 @@ async function apiMatches(request, cfg) {
         leagueLogo: f.league?.logo || '',
         isTop: isTopLeague(leagueId, leagueName),
         group: leagueGroup(leagueId, leagueName, country),
+        youthReserve: isYouthReserveMatch(leagueName, homeName, awayName),
         interestScore: matchInterestScore({ leagueId, leagueName, country, homeName, awayName, status, date: f.fixture?.date }),
         home: { id: f.teams?.home?.id, name: homeName, logo: f.teams?.home?.logo || '' },
         away: { id: f.teams?.away?.id, name: awayName, logo: f.teams?.away?.logo || '' },
@@ -890,7 +895,7 @@ async function apiMatchCenter(request, cfg) {
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'fixtureId обязателен.' }, 400);
 
   // Shared across all users. During LIVE it expires after 60 seconds.
-  const baseCacheKey = `match-center:${fixtureId}:v1`;
+  const baseCacheKey = `match-center:${fixtureId}:v2`;
   const cached = await getCache(baseCacheKey, cfg);
   if (cached) return json({ ...cached, cached: true });
 
@@ -904,16 +909,21 @@ async function apiMatchCenter(request, cfg) {
   const homeId = fixture.teams?.home?.id;
   const awayId = fixture.teams?.away?.id;
   const embedded = embeddedLiveData(fixture);
+  const leagueName = fixture.league?.name || '';
+  const homeName = fixture.teams?.home?.name || '';
+  const awayName = fixture.teams?.away?.name || '';
+  const limitedCoverage = isYouthReserveMatch(leagueName, homeName, awayName);
 
-  // New fixtures?id responses normally contain events/statistics/lineups. If a
-  // competition omits them, use at most two targeted fallbacks. Results are
-  // still cached globally, protecting the Free 10 req/min limit.
+  // Free-plan guard: youth/reserve competitions often expose only score/status.
+  // Do not burn extra /events + /statistics calls when coverage is predictably low.
+  // For senior competitions, targeted fallbacks are still allowed when embedded
+  // fixture data does not contain details.
   let events = embedded.events;
   let statistics = embedded.statistics;
-  if ((live || finished) && !events.length) {
+  if (!limitedCoverage && (live || finished) && !events.length) {
     events = await apiFootball('/fixtures/events', { fixture: fixtureId }, cfg).catch(() => []);
   }
-  if ((live || finished) && !statistics.length) {
+  if (!limitedCoverage && (live || finished) && !statistics.length) {
     statistics = await apiFootball('/fixtures/statistics', { fixture: fixtureId }, cfg).catch(() => []);
   }
 
@@ -929,11 +939,11 @@ async function apiMatchCenter(request, cfg) {
       elapsed,
       venue: fixture.fixture?.venue?.name || '',
       city: fixture.fixture?.venue?.city || '',
-      league: fixture.league?.name || '',
+      league: leagueName,
       country: fixture.league?.country || '',
       score: scoreSnapshot(fixture),
-      home: { id: homeId, name: fixture.teams?.home?.name || '', logo: fixture.teams?.home?.logo || '' },
-      away: { id: awayId, name: fixture.teams?.away?.name || '', logo: fixture.teams?.away?.logo || '' },
+      home: { id: homeId, name: homeName, logo: fixture.teams?.home?.logo || '' },
+      away: { id: awayId, name: awayName, logo: fixture.teams?.away?.logo || '' },
     },
     events: formatLiveEvents(events, homeId, awayId),
     statistics: formatLiveStatistics(statistics, homeId, awayId),
@@ -943,11 +953,14 @@ async function apiMatchCenter(request, cfg) {
       statistics: statistics.length > 0,
       lineups: embedded.lineups.length > 0,
       players: embedded.players.length > 0,
+      limitedCoverage,
     },
     refreshSeconds: live ? 60 : 0,
-    note: (!events.length && !statistics.length)
-      ? 'Для этого турнира или конкретного матча провайдер не отдаёт детальные события/статистику. Счёт и статус всё равно обновляются.'
-      : '',
+    note: limitedCoverage
+      ? 'Молодёжный/резервный турнир: в бесплатном режиме не делаем дополнительные запросы за событиями и статистикой, чтобы не тратить лимит API. Счёт и статус обновляются.'
+      : (!events.length && !statistics.length)
+        ? 'Для этого турнира или конкретного матча провайдер не отдаёт детальные события/статистику. Счёт и статус всё равно обновляются.'
+        : '',
   };
 
   await setCache(baseCacheKey, fixtureId, payload, cfg, live ? 1 : finished ? 720 : 5);
@@ -1026,7 +1039,7 @@ export default {
     if (url.pathname === '/health' || url.pathname === '/api/health') {
       return json({
         ok: true,
-        version: '2.2.1-live-center',
+        version: '2.2.2-coverage-guard',
         database: hasSupabase(cfg) ? 'supabase' : 'memory',
         devMode: cfg.devMode,
       });
