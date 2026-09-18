@@ -238,8 +238,9 @@ async function getCache(cacheKey, cfg) {
   return item.payload;
 }
 
-async function setCache(cacheKey, fixtureId, payload, cfg) {
-  const expiresAt = new Date(Date.now() + cfg.cacheMinutes * 60_000).toISOString();
+async function setCache(cacheKey, fixtureId, payload, cfg, minutes = cfg.cacheMinutes) {
+  const ttlMinutes = Number.isFinite(Number(minutes)) ? Math.max(1 / 6, Number(minutes)) : cfg.cacheMinutes;
+  const expiresAt = new Date(Date.now() + ttlMinutes * 60_000).toISOString();
   if (hasSupabase(cfg)) {
     await supaUpsert(cfg, 'analysis_cache', {
       cache_key: cacheKey,
@@ -568,6 +569,120 @@ function formatH2H(rows, homeId, awayId) {
   return { homeWins, draws, awayWins, matches: matches.slice(0, 5) };
 }
 
+const LIVE_STATUSES = new Set(['1H', 'HT', '2H', 'ET', 'BT', 'P', 'INT', 'LIVE']);
+const FINISHED_STATUSES = new Set(['FT', 'AET', 'PEN']);
+
+function isLiveStatus(status) { return LIVE_STATUSES.has(String(status || '').toUpperCase()); }
+function isFinishedStatus(status) { return FINISHED_STATUSES.has(String(status || '').toUpperCase()); }
+
+function statusLabel(status, elapsed) {
+  const s = String(status || '').toUpperCase();
+  const labels = {
+    NS: 'Не начался', TBD: 'Время уточняется', '1H': '1-й тайм', HT: 'Перерыв', '2H': '2-й тайм',
+    ET: 'Доп. время', BT: 'Перерыв', P: 'Пенальти', INT: 'Прерван', LIVE: 'LIVE',
+    FT: 'Завершён', AET: 'Завершён после доп. времени', PEN: 'Завершён по пенальти',
+    PST: 'Перенесён', CANC: 'Отменён', ABD: 'Прерван', AWD: 'Тех. результат', WO: 'Без игры',
+  };
+  const base = labels[s] || s || 'Статус неизвестен';
+  return isLiveStatus(s) && Number.isFinite(Number(elapsed)) ? `${base} · ${Number(elapsed)}′` : base;
+}
+
+function normalizeStatValue(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') return value;
+  return String(value);
+}
+
+const STAT_KEYS = [
+  ['Ball Possession', 'Владение'],
+  ['Total Shots', 'Удары'],
+  ['Shots on Goal', 'В створ'],
+  ['Shots off Goal', 'Мимо'],
+  ['Blocked Shots', 'Блокированные'],
+  ['Corner Kicks', 'Угловые'],
+  ['Offsides', 'Офсайды'],
+  ['Fouls', 'Фолы'],
+  ['Yellow Cards', 'Жёлтые'],
+  ['Red Cards', 'Красные'],
+  ['Goalkeeper Saves', 'Сейвы'],
+  ['Total passes', 'Передачи'],
+  ['Passes accurate', 'Точные передачи'],
+  ['Passes %', 'Точность передач'],
+  ['expected_goals', 'xG'],
+];
+
+function formatLiveStatistics(rows, homeId, awayId) {
+  const byTeam = new Map();
+  for (const row of rows || []) {
+    const id = Number(row.team?.id || 0);
+    const values = {};
+    for (const stat of row.statistics || []) values[String(stat.type || '')] = normalizeStatValue(stat.value);
+    byTeam.set(id, { teamId: id, teamName: row.team?.name || '', values });
+  }
+  const home = byTeam.get(Number(homeId)) || { teamId: Number(homeId), values: {} };
+  const away = byTeam.get(Number(awayId)) || { teamId: Number(awayId), values: {} };
+  const items = STAT_KEYS.map(([key, label]) => ({
+    key, label, home: home.values[key] ?? null, away: away.values[key] ?? null,
+  })).filter(x => x.home !== null || x.away !== null);
+  return { home, away, items };
+}
+
+function translateEvent(type, detail) {
+  const t = String(type || '').toLowerCase();
+  const d = String(detail || '').toLowerCase();
+  if (t === 'goal') {
+    if (d.includes('own')) return '⚽ Автогол';
+    if (d.includes('missed')) return '❌ Незабитый пенальти';
+    if (d.includes('penalty')) return '⚽ Гол с пенальти';
+    return '⚽ Гол';
+  }
+  if (t === 'card') {
+    if (d.includes('red')) return '🟥 Красная карточка';
+    if (d.includes('second yellow')) return '🟥 Вторая жёлтая';
+    return '🟨 Жёлтая карточка';
+  }
+  if (t === 'subst') return '🔄 Замена';
+  if (t === 'var') return '📺 VAR';
+  return detail || type || 'Событие';
+}
+
+function formatLiveEvents(rows, homeId, awayId) {
+  return (rows || []).map((event, index) => ({
+    id: `${event.time?.elapsed || 0}-${event.time?.extra || 0}-${index}`,
+    minute: Number(event.time?.elapsed || 0),
+    extra: Number(event.time?.extra || 0),
+    teamId: Number(event.team?.id || 0),
+    side: Number(event.team?.id) === Number(homeId) ? 'home' : Number(event.team?.id) === Number(awayId) ? 'away' : '',
+    teamName: event.team?.name || '',
+    player: event.player?.name || '',
+    assist: event.assist?.name || '',
+    type: event.type || '',
+    detail: event.detail || '',
+    label: translateEvent(event.type, event.detail),
+    comments: event.comments || '',
+  })).sort((a, b) => a.minute - b.minute || a.extra - b.extra);
+}
+
+function scoreSnapshot(fixture) {
+  return {
+    home: fixture.goals?.home ?? null,
+    away: fixture.goals?.away ?? null,
+    halftime: fixture.score?.halftime || null,
+    fulltime: fixture.score?.fulltime || null,
+    extratime: fixture.score?.extratime || null,
+    penalty: fixture.score?.penalty || null,
+  };
+}
+
+function embeddedLiveData(fixture) {
+  return {
+    events: Array.isArray(fixture.events) ? fixture.events : [],
+    lineups: Array.isArray(fixture.lineups) ? fixture.lineups : [],
+    statistics: Array.isArray(fixture.statistics) ? fixture.statistics : [],
+    players: Array.isArray(fixture.players) ? fixture.players : [],
+  };
+}
+
 
 const TOP_LEAGUE_IDS = new Set([
   1, 2, 3, 4, 9, 15, 39, 45, 61, 66, 71, 78, 81, 88, 94, 128, 135, 137, 140, 143, 203, 253, 307, 848,
@@ -575,6 +690,7 @@ const TOP_LEAGUE_IDS = new Set([
 
 
 const BIG_TEAM_RE = /arsenal|liverpool|chelsea|manchester (city|united)|tottenham|newcastle|real madrid|barcelona|atletico madrid|bayern|dortmund|paris saint|psg|inter|milan|juventus|napoli|roma|benfica|porto|sporting|ajax|psv|feyenoord|inter miami|flamengo|palmeiras|river plate|boca juniors/i;
+const YOUTH_RESERVE_RE = /\bu-?1[789]\b|\bu-?2[013]\b|under ?(17|18|19|20|21|23)|youth|reserve|reserves|development|primavera|juniors?/i;
 
 function matchInterestScore({ leagueId, leagueName, country, homeName, awayName, status, date }) {
   let score = 18;
@@ -583,12 +699,13 @@ function matchInterestScore({ leagueId, leagueName, country, homeName, awayName,
   if (group === 'international') score += 14;
   if (BIG_TEAM_RE.test(homeName || '')) score += 13;
   if (BIG_TEAM_RE.test(awayName || '')) score += 13;
-  if (['1H','HT','2H','ET','P','LIVE'].includes(status)) score += 8;
+  if (isLiveStatus(status)) score += 8;
   if (date) {
     const mins = Math.abs((Date.parse(date) - Date.now()) / 60000);
     if (mins <= 180) score += 5;
   }
-  return Math.max(10, Math.min(99, Math.round(score)));
+  if (YOUTH_RESERVE_RE.test(`${leagueName || ''} ${homeName || ''} ${awayName || ''}`)) score -= 40;
+  return Math.max(5, Math.min(99, Math.round(score)));
 }
 
 function leagueGroup(leagueId, leagueName = '', country = '') {
@@ -605,14 +722,15 @@ function leagueGroup(leagueId, leagueName = '', country = '') {
 }
 
 function isTopLeague(leagueId, leagueName = '') {
+  if (YOUTH_RESERVE_RE.test(String(leagueName || ''))) return false;
   if (TOP_LEAGUE_IDS.has(Number(leagueId))) return true;
   return /premier league|la liga|serie a|bundesliga|ligue 1|champions league|europa league|conference league|world cup|copa america|major league soccer|primeira liga/i.test(String(leagueName));
 }
 
 function matchStatusRank(status) {
-  if (['1H','HT','2H','ET','P','LIVE'].includes(status)) return 0;
+  if (isLiveStatus(status)) return 0;
   if (['NS','TBD'].includes(status)) return 1;
-  if (['FT','AET','PEN'].includes(status)) return 2;
+  if (isFinishedStatus(status)) return 2;
   return 3;
 }
 
@@ -703,10 +821,11 @@ async function apiMatches(request, cfg) {
   const url = new URL(request.url);
   const requested = url.searchParams.get('date') || '';
   const date = /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : todayUtc();
-  const cacheKey = `matches:${date}:v2`;
+  const isToday = date === todayUtc();
+  const cacheKey = `matches:${date}:v3`;
 
-  // The free API-Football plan has a strict per-minute cap. A date list is
-  // identical for every user, so cache it once and reuse it for everybody.
+  // Today's list is refreshed every ~60 seconds so LIVE score/status does not
+  // stay stale for 20 minutes. Yesterday/tomorrow remain heavily cached.
   const cached = await getCache(cacheKey, cfg);
   if (cached?.matches) return json({ ...cached, cached: true });
 
@@ -716,7 +835,7 @@ async function apiMatches(request, cfg) {
   } catch (error) {
     const message = String(error?.message || error);
     if (/too many requests|rate.?limit|requests per minute/i.test(message)) {
-      throw new Error('API-Football временно достиг лимита бесплатного тарифа (10 запросов/мин). Подождите около минуты и нажмите обновить.');
+      throw new Error('API-Football временно достиг лимита запросов. Подождите около минуты и нажмите обновить.');
     }
     throw error;
   }
@@ -725,6 +844,7 @@ async function apiMatches(request, cfg) {
     .filter(f => !['CANC', 'PST', 'ABD', 'AWD', 'WO'].includes(f.fixture?.status?.short || ''))
     .map(f => {
       const status = f.fixture?.status?.short || '';
+      const elapsed = Number(f.fixture?.status?.elapsed ?? 0) || null;
       const leagueId = Number(f.league?.id || 0);
       const leagueName = f.league?.name || '';
       const country = f.league?.country || '';
@@ -734,9 +854,12 @@ async function apiMatches(request, cfg) {
         fixtureId: f.fixture?.id,
         date: f.fixture?.date,
         status,
-        finished: ['FT', 'AET', 'PEN'].includes(status),
-        live: ['1H', 'HT', '2H', 'ET', 'P', 'LIVE'].includes(status),
-        score: { home: f.goals?.home ?? null, away: f.goals?.away ?? null },
+        statusLong: f.fixture?.status?.long || '',
+        statusLabel: statusLabel(status, elapsed),
+        elapsed,
+        finished: isFinishedStatus(status),
+        live: isLiveStatus(status),
+        score: scoreSnapshot(f),
         leagueId,
         league: leagueName,
         country,
@@ -756,9 +879,78 @@ async function apiMatches(request, cfg) {
     )
     .slice(0, 120);
 
-  const payload = { date, matches };
-  // fixture_id=0 is reserved for shared non-fixture list caches.
-  await setCache(cacheKey, 0, payload, cfg);
+  const payload = { date, matches, refreshedAt: new Date().toISOString() };
+  await setCache(cacheKey, 0, payload, cfg, isToday ? 1 : cfg.cacheMinutes);
+  return json({ ...payload, cached: false });
+}
+
+async function apiMatchCenter(request, cfg) {
+  const url = new URL(request.url);
+  const fixtureId = Number(url.searchParams.get('fixtureId'));
+  if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'fixtureId обязателен.' }, 400);
+
+  // Shared across all users. During LIVE it expires after 60 seconds.
+  const baseCacheKey = `match-center:${fixtureId}:v1`;
+  const cached = await getCache(baseCacheKey, cfg);
+  if (cached) return json({ ...cached, cached: true });
+
+  const fixture = (await apiFootball('/fixtures', { id: fixtureId }, cfg))[0];
+  if (!fixture) return json({ error: 'Матч не найден.' }, 404);
+
+  const status = fixture.fixture?.status?.short || '';
+  const elapsed = Number(fixture.fixture?.status?.elapsed ?? 0) || null;
+  const live = isLiveStatus(status);
+  const finished = isFinishedStatus(status);
+  const homeId = fixture.teams?.home?.id;
+  const awayId = fixture.teams?.away?.id;
+  const embedded = embeddedLiveData(fixture);
+
+  // New fixtures?id responses normally contain events/statistics/lineups. If a
+  // competition omits them, use at most two targeted fallbacks. Results are
+  // still cached globally, protecting the Free 10 req/min limit.
+  let events = embedded.events;
+  let statistics = embedded.statistics;
+  if ((live || finished) && !events.length) {
+    events = await apiFootball('/fixtures/events', { fixture: fixtureId }, cfg).catch(() => []);
+  }
+  if ((live || finished) && !statistics.length) {
+    statistics = await apiFootball('/fixtures/statistics', { fixture: fixtureId }, cfg).catch(() => []);
+  }
+
+  const payload = {
+    generatedAt: new Date().toISOString(),
+    mode: live ? 'live' : finished ? 'finished' : 'upcoming',
+    match: {
+      fixtureId,
+      date: fixture.fixture?.date || '',
+      status,
+      statusLong: fixture.fixture?.status?.long || '',
+      statusLabel: statusLabel(status, elapsed),
+      elapsed,
+      venue: fixture.fixture?.venue?.name || '',
+      city: fixture.fixture?.venue?.city || '',
+      league: fixture.league?.name || '',
+      country: fixture.league?.country || '',
+      score: scoreSnapshot(fixture),
+      home: { id: homeId, name: fixture.teams?.home?.name || '', logo: fixture.teams?.home?.logo || '' },
+      away: { id: awayId, name: fixture.teams?.away?.name || '', logo: fixture.teams?.away?.logo || '' },
+    },
+    events: formatLiveEvents(events, homeId, awayId),
+    statistics: formatLiveStatistics(statistics, homeId, awayId),
+    lineups: formatLineups(embedded.lineups, homeId, awayId),
+    availability: {
+      events: events.length > 0,
+      statistics: statistics.length > 0,
+      lineups: embedded.lineups.length > 0,
+      players: embedded.players.length > 0,
+    },
+    refreshSeconds: live ? 60 : 0,
+    note: (!events.length && !statistics.length)
+      ? 'Для этого турнира или конкретного матча провайдер не отдаёт детальные события/статистику. Счёт и статус всё равно обновляются.'
+      : '',
+  };
+
+  await setCache(baseCacheKey, fixtureId, payload, cfg, live ? 1 : finished ? 720 : 5);
   return json({ ...payload, cached: false });
 }
 
@@ -787,7 +979,7 @@ async function apiAnalyze(request, cfg, user) {
   const kickoffMs = fixture.fixture?.date ? Date.parse(fixture.fixture.date) : NaN;
   const minutesToKickoff = Number.isFinite(kickoffMs) ? Math.round((kickoffMs - Date.now()) / 60000) : null;
   const status = fixture.fixture?.status?.short || '';
-  const shouldFetchLineups = ['1H', 'HT', '2H', 'ET', 'P', 'LIVE'].includes(status) ||
+  const shouldFetchLineups = isLiveStatus(status) ||
     (minutesToKickoff !== null && minutesToKickoff <= 120 && minutesToKickoff >= -240);
 
   const [injuries, predictions, odds, h2h, lineups, web] = await Promise.all([
@@ -834,7 +1026,7 @@ export default {
     if (url.pathname === '/health' || url.pathname === '/api/health') {
       return json({
         ok: true,
-        version: '2.2.0-favorites-reminders',
+        version: '2.2.1-live-center',
         database: hasSupabase(cfg) ? 'supabase' : 'memory',
         devMode: cfg.devMode,
       });
@@ -874,6 +1066,7 @@ export default {
 
       if (request.method === 'GET' && url.pathname === '/api/me') return await apiMe(request, cfg, user);
       if (request.method === 'GET' && url.pathname === '/api/matches') return await apiMatches(request, cfg);
+      if (request.method === 'GET' && url.pathname === '/api/match-center') return await apiMatchCenter(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/history') return await apiHistory(request, cfg, user);
       if (url.pathname === '/api/favorites') return await apiFavorites(request, cfg, user);
       if (url.pathname === '/api/reminders') return await apiReminders(request, cfg, user);
