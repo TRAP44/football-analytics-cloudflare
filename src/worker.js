@@ -8,7 +8,7 @@ const memory = {
   preferences: new Map(),
   oddsSnapshots: new Map(),
   billingPayments: new Map(),
-  provider: { name: 'API-Football', plan: 'UNKNOWN', dailyLimit: null, dailyRemaining: null, minuteLimit: null, minuteRemaining: null, updatedAt: null },
+  provider: { name: 'API-Football', plan: 'UNKNOWN', dailyLimit: null, dailyRemaining: null, minuteLimit: null, minuteRemaining: null, updatedAt: null, cooldownUntil: null, lastError: '' },
 };
 
 const enc = new TextEncoder();
@@ -74,6 +74,10 @@ function config(env) {
     supabaseKey: env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY || '',
     cacheMinutes: intEnv(env.CACHE_MINUTES, 20),
     liveOddsEnabled: boolEnv(env.ENABLE_LIVE_ODDS, true),
+    // Монетизацию сознательно держим выключенной до финального этапа проекта.
+    // Старый webhook может оставаться настроенным: pre-checkout будет отклонён,
+    // а UI оплаты не показывается, пока флаг не включён явно.
+    monetizationEnabled: boolEnv(env.MONETIZATION_ENABLED, false),
     limits: {
       FREE: intEnv(env.FREE_DAILY_LIMIT, 3),
       PRO: intEnv(env.PRO_DAILY_LIMIT, 20),
@@ -448,6 +452,14 @@ async function handleTelegramWebhook(request, cfg) {
 
   if (update.pre_checkout_query) {
     const q = update.pre_checkout_query;
+    if (!cfg.monetizationEnabled) {
+      await telegramApi('answerPreCheckoutQuery', cfg, {
+        pre_checkout_query_id: q.id,
+        ok: false,
+        error_message: 'Оплата временно отключена: мы завершаем основной функционал сервиса.',
+      });
+      return json({ ok: true });
+    }
     let ok = false;
     let errorMessage = 'Не удалось проверить подписку.';
     try {
@@ -592,15 +604,27 @@ async function apiBillingSubscription(request, cfg, user) {
   return json({ ok: true, canceled: action === 'cancel' });
 }
 
-async function getCache(cacheKey, cfg) {
+async function getCacheEntry(cacheKey, cfg, allowExpired = false) {
   if (hasSupabase(cfg)) {
     const row = await supaSelectOne(cfg, 'analysis_cache', { cache_key: `eq.${cacheKey}` });
-    if (!row || new Date(row.expires_at) <= new Date()) return null;
-    return row.payload;
+    if (!row) return null;
+    const expired = new Date(row.expires_at) <= new Date();
+    if (expired && !allowExpired) return null;
+    return { payload: row.payload, expired, expiresAt: row.expires_at };
   }
   const item = memory.cache.get(cacheKey);
-  if (!item || item.expiresAt <= Date.now()) return null;
-  return item.payload;
+  if (!item) return null;
+  const expired = item.expiresAt <= Date.now();
+  if (expired && !allowExpired) return null;
+  return { payload: item.payload, expired, expiresAt: new Date(item.expiresAt).toISOString() };
+}
+
+async function getCache(cacheKey, cfg) {
+  return (await getCacheEntry(cacheKey, cfg, false))?.payload || null;
+}
+
+async function getStaleCache(cacheKey, cfg) {
+  return (await getCacheEntry(cacheKey, cfg, true))?.payload || null;
 }
 
 async function setCache(cacheKey, fixtureId, payload, cfg, minutes = cfg.cacheMinutes) {
@@ -909,6 +933,7 @@ function updateProviderFromHeaders(response) {
   const minuteLimit = readNum('x-ratelimit-limit');
   const minuteRemaining = readNum('x-ratelimit-remaining');
   memory.provider = {
+    ...memory.provider,
     name: 'API-Football',
     plan: inferFootballPlan(dailyLimit),
     dailyLimit,
@@ -921,11 +946,15 @@ function updateProviderFromHeaders(response) {
 
 function providerSnapshot() {
   const paid = ['PRO','ULTRA','MEGA'].includes(memory.provider?.plan || '');
+  const cooldownUntil = memory.provider?.cooldownUntil || null;
+  const cooldownActive = Boolean(cooldownUntil && Date.parse(cooldownUntil) > Date.now());
   return {
     ...(memory.provider || {}),
     liveOddsReady: paid,
     playerStatsReady: paid,
     oddsMovementReady: paid,
+    cooldownActive,
+    cooldownUntil: cooldownActive ? cooldownUntil : null,
   };
 }
 
@@ -944,8 +973,49 @@ function paidQuotaHealthy() {
   return true;
 }
 
+function footballError(message, code = 'FOOTBALL_API', retryAfter = 0) {
+  const error = new Error(message);
+  error.code = code;
+  error.retryAfter = Math.max(0, Number(retryAfter || 0));
+  return error;
+}
+
+function isFootballRateLimitError(error) {
+  return ['FOOTBALL_RATE_LIMIT', 'FOOTBALL_COOLDOWN'].includes(String(error?.code || ''))
+    || /too many requests|rate.?limit|requests per minute|лимит запросов/i.test(String(error?.message || ''));
+}
+
+function footballCooldownRemaining() {
+  const until = Date.parse(memory.provider?.cooldownUntil || '');
+  return Number.isFinite(until) ? Math.max(0, Math.ceil((until - Date.now()) / 1000)) : 0;
+}
+
+function freeQuotaHealthy(minDaily = 25, minMinute = 5) {
+  const p = memory.provider || {};
+  if (['PRO','ULTRA','MEGA'].includes(p.plan)) return true;
+  if (Number.isFinite(Number(p.dailyRemaining)) && Number(p.dailyRemaining) < minDaily) return false;
+  if (Number.isFinite(Number(p.minuteRemaining)) && Number(p.minuteRemaining) < minMinute) return false;
+  return !providerSnapshot().cooldownActive;
+}
+
 async function apiFootball(path, params, cfg) {
-  if (!cfg.apiFootballKey) throw new Error('API_FOOTBALL_KEY не настроен в Cloudflare.');
+  if (!cfg.apiFootballKey) throw footballError('API_FOOTBALL_KEY не настроен в Cloudflare.', 'FOOTBALL_CONFIG');
+
+  const cooldown = footballCooldownRemaining();
+  if (cooldown > 0) {
+    throw footballError(`API-Football на паузе после ограничения. Повторите примерно через ${cooldown} сек.`, 'FOOTBALL_COOLDOWN', cooldown);
+  }
+  // Если предыдущий ответ уже показал 0 запросов в минутном окне,
+  // не отправляем заведомо лишний запрос. Ждём до минуты от последнего ответа.
+  if (Number(memory.provider?.minuteRemaining) === 0 && memory.provider?.updatedAt) {
+    const ageSec = Math.max(0, Math.floor((Date.now() - Date.parse(memory.provider.updatedAt)) / 1000));
+    const waitSec = Math.max(1, 60 - ageSec);
+    if (waitSec > 0 && ageSec < 60) {
+      memory.provider.cooldownUntil = new Date(Date.now() + waitSec * 1000).toISOString();
+      throw footballError(`Минутная квота API-Football исчерпана. Повторите примерно через ${waitSec} сек.`, 'FOOTBALL_COOLDOWN', waitSec);
+    }
+  }
+
   const url = new URL(`https://v3.football.api-sports.io${path}`);
   for (const [key, value] of Object.entries(params || {})) {
     if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
@@ -955,12 +1025,31 @@ async function apiFootball(path, params, cfg) {
   });
   updateProviderFromHeaders(r);
   const body = await r.json().catch(() => ({}));
-  if (!r.ok) {
-    if (r.status === 429) throw new Error('API-Football временно достиг лимита запросов. Попробуйте чуть позже.');
-    throw new Error(`API-Football HTTP ${r.status}`);
+
+  if (r.status === 429) {
+    const retryHeader = Number(r.headers.get('retry-after') || 0);
+    const retryAfter = Number.isFinite(retryHeader) && retryHeader > 0 ? retryHeader : 65;
+    memory.provider.cooldownUntil = new Date(Date.now() + retryAfter * 1000).toISOString();
+    memory.provider.lastError = 'rate_limit';
+    throw footballError(`API-Football достиг минутного лимита. Повторите примерно через ${retryAfter} сек.`, 'FOOTBALL_RATE_LIMIT', retryAfter);
   }
+  if (!r.ok) {
+    memory.provider.lastError = `http_${r.status}`;
+    throw footballError(`API-Football временно недоступен (HTTP ${r.status}).`, 'FOOTBALL_HTTP');
+  }
+
   const errors = body?.errors && typeof body.errors === 'object' ? Object.values(body.errors).filter(Boolean) : [];
-  if (errors.length) throw new Error(`API-Football: ${errors.join('; ')}`);
+  if (errors.length) {
+    const message = errors.join('; ');
+    memory.provider.lastError = message.slice(0, 160);
+    if (/too many requests|rate.?limit|requests per minute/i.test(message)) {
+      memory.provider.cooldownUntil = new Date(Date.now() + 65_000).toISOString();
+      throw footballError('API-Football достиг лимита запросов. Покажем кэш, если он есть.', 'FOOTBALL_RATE_LIMIT', 65);
+    }
+    throw footballError(`API-Football: ${message}`, 'FOOTBALL_RESPONSE');
+  }
+
+  memory.provider.lastError = '';
   return Array.isArray(body.response) ? body.response : [];
 }
 
@@ -1273,7 +1362,7 @@ function summarizeFormRows(rows, teamId, preferredVenue) {
   return { overall: summarize(last), venue: summarize(venue), preferredVenue };
 }
 
-async function getRecentTeamForm(teamId, preferredVenue, fixtureDate, fixtureId, cfg) {
+async function getRecentTeamForm(teamId, preferredVenue, fixtureDate, fixtureId, cfg, { allowNetwork = true } = {}) {
   if (!teamId) return null;
   const targetMs = Number.isFinite(Date.parse(fixtureDate || '')) ? Date.parse(fixtureDate) : Date.now();
   const to = ymd(new Date(targetMs - 60_000));
@@ -1281,6 +1370,7 @@ async function getRecentTeamForm(teamId, preferredVenue, fixtureDate, fixtureId,
   const cacheKey = `teamform:${Number(teamId)}:${preferredVenue}:${to}:v2`;
   const cached = await getCache(cacheKey, cfg);
   if (cached) return cached;
+  if (!allowNetwork) return null;
   const rows = await apiFootball('/fixtures', { team: Number(teamId), from, to }, cfg);
   const usable = rows.filter(x => {
     const id = Number(x.fixture?.id || 0);
@@ -1653,6 +1743,7 @@ async function apiMe(request, cfg, user) {
       canceled: Boolean(record?.subscription_canceled),
       paymentChargeIdPresent: Boolean(record?.telegram_payment_charge_id),
     },
+    features: { monetizationEnabled: cfg.monetizationEnabled },
     preferences,
     stats: { favorites: favorites.length, reminders: reminders.length },
   });
@@ -1737,20 +1828,24 @@ async function apiMatches(request, cfg) {
   const requested = url.searchParams.get('date') || '';
   const date = /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : todayUtc();
   const isToday = date === todayUtc();
-  const cacheKey = `matches:${date}:v3`;
+  const yesterday = new Date(); yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  const isYesterday = date === yesterday.toISOString().slice(0, 10);
+  const cacheKey = `matches:${date}:v4-quality`;
 
-  // Today's list is refreshed every ~60 seconds so LIVE score/status does not
-  // stay stale for 20 minutes. Yesterday/tomorrow remain heavily cached.
   const cached = await getCache(cacheKey, cfg);
-  if (cached?.matches) return json({ ...cached, cached: true });
+  if (cached?.matches) return json({ ...cached, cached: true, stale: false });
 
   let fixtures;
   try {
     fixtures = await apiFootball('/fixtures', { date }, cfg);
   } catch (error) {
-    const message = String(error?.message || error);
-    if (/too many requests|rate.?limit|requests per minute/i.test(message)) {
-      throw new Error('API-Football временно достиг лимита запросов. Подождите около минуты и нажмите обновить.');
+    const stale = await getStaleCache(cacheKey, cfg);
+    if (stale?.matches && isFootballRateLimitError(error)) {
+      return json({
+        ...stale, cached: true, stale: true,
+        warning: 'Показаны последние сохранённые данные: API-Football временно ограничил частоту запросов.',
+        retryAfter: Number(error?.retryAfter || 60),
+      });
     }
     throw error;
   }
@@ -1765,6 +1860,8 @@ async function apiMatches(request, cfg) {
       const country = f.league?.country || '';
       const homeName = f.teams?.home?.name || '';
       const awayName = f.teams?.away?.name || '';
+      const youthReserve = isYouthReserveMatch(leagueName, homeName, awayName);
+      const top = isTopLeague(leagueId, leagueName);
       return {
         fixtureId: f.fixture?.id,
         date: f.fixture?.date,
@@ -1779,9 +1876,10 @@ async function apiMatches(request, cfg) {
         league: leagueName,
         country,
         leagueLogo: f.league?.logo || '',
-        isTop: isTopLeague(leagueId, leagueName),
+        isTop: top,
         group: leagueGroup(leagueId, leagueName, country),
-        youthReserve: isYouthReserveMatch(leagueName, homeName, awayName),
+        youthReserve,
+        coverageTier: youthReserve ? 'basic' : top ? 'enhanced' : 'standard',
         interestScore: matchInterestScore({ leagueId, leagueName, country, homeName, awayName, status, date: f.fixture?.date }),
         home: { id: f.teams?.home?.id, name: homeName, logo: f.teams?.home?.logo || '' },
         away: { id: f.teams?.away?.id, name: awayName, logo: f.teams?.away?.logo || '' },
@@ -1796,8 +1894,9 @@ async function apiMatches(request, cfg) {
     .slice(0, 120);
 
   const payload = { date, matches, refreshedAt: new Date().toISOString(), provider: providerSnapshot() };
-  await setCache(cacheKey, 0, payload, cfg, isToday ? 1 : cfg.cacheMinutes);
-  return json({ ...payload, cached: false });
+  const ttl = isToday ? 1 : isYesterday ? 720 : cfg.cacheMinutes;
+  await setCache(cacheKey, 0, payload, cfg, ttl);
+  return json({ ...payload, cached: false, stale: false });
 }
 
 async function apiMatchCenter(request, cfg) {
@@ -1810,7 +1909,16 @@ async function apiMatchCenter(request, cfg) {
   const cached = await getCache(baseCacheKey, cfg);
   if (cached) return json({ ...cached, cached: true });
 
-  const fixture = (await apiFootball('/fixtures', { id: fixtureId }, cfg))[0];
+  let fixture;
+  try {
+    fixture = (await apiFootball('/fixtures', { id: fixtureId }, cfg))[0];
+  } catch (error) {
+    const stale = await getStaleCache(baseCacheKey, cfg);
+    if (stale && isFootballRateLimitError(error)) {
+      return json({ ...stale, cached: true, stale: true, warning: 'LIVE-данные временно показаны из последнего кэша из-за лимита API.', retryAfter: Number(error?.retryAfter || 60) });
+    }
+    throw error;
+  }
   if (!fixture) return json({ error: 'Матч не найден.' }, 404);
 
   const status = fixture.fixture?.status?.short || '';
@@ -1911,17 +2019,27 @@ async function apiAnalyze(request, cfg, user) {
   const fixtureId = Number(body?.fixtureId);
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'Некорректный fixtureId.' }, 400);
 
-  const cacheKey = `fixture:${fixtureId}:v3-analysis-engine`;
+  const cacheKey = `fixture:${fixtureId}:v4-quality-engine`;
   const cached = await getCache(cacheKey, cfg);
   if (cached) {
     await recordHistory(user.id, cached, cfg);
-    return json({ ...cached, cached: true, quota: await getQuota(user.id, cfg) });
+    return json({ ...cached, cached: true, stale: false, quota: await getQuota(user.id, cfg) });
   }
 
+  const staleBefore = await getStaleCache(cacheKey, cfg);
   const quotaBefore = await getQuota(user.id, cfg);
   if (quotaBefore.left <= 0) return json({ error: `Лимит исчерпан: ${quotaBefore.used}/${quotaBefore.limit} анализов сегодня.`, quota: quotaBefore }, 429);
 
-  const fixture = (await apiFootball('/fixtures', { id: fixtureId }, cfg))[0];
+  let fixture;
+  try {
+    fixture = (await apiFootball('/fixtures', { id: fixtureId }, cfg))[0];
+  } catch (error) {
+    if (staleBefore && isFootballRateLimitError(error)) {
+      await recordHistory(user.id, staleBefore, cfg);
+      return json({ ...staleBefore, cached: true, stale: true, warning: 'Показан последний сохранённый анализ: футбольный API временно ограничил запросы.', retryAfter: Number(error?.retryAfter || 60), quota: quotaBefore });
+    }
+    throw error;
+  }
   if (!fixture) return json({ error: 'Матч не найден.' }, 404);
 
   const homeId = fixture.teams?.home?.id, awayId = fixture.teams?.away?.id;
@@ -1931,29 +2049,53 @@ async function apiAnalyze(request, cfg, user) {
   const kickoffMs = fixture.fixture?.date ? Date.parse(fixture.fixture.date) : NaN;
   const minutesToKickoff = Number.isFinite(kickoffMs) ? Math.round((kickoffMs - Date.now()) / 60000) : null;
   const status = fixture.fixture?.status?.short || '';
-  const shouldFetchLineups = isLiveStatus(status) ||
-    (minutesToKickoff !== null && minutesToKickoff <= 120 && minutesToKickoff >= -240);
   const detailedCoverage = !isYouthReserveMatch(leagueName, homeName, awayName);
+  const providerPlan = memory.provider?.plan || 'UNKNOWN';
+  const paid = ['PRO','ULTRA','MEGA'].includes(providerPlan);
+  const healthyFree = freeQuotaHealthy(30, 6);
+  const minuteRemaining = Number(memory.provider?.minuteRemaining);
+  const lowMinuteBudget = !paid && Number.isFinite(minuteRemaining) && minuteRemaining < 5;
+  const veryLowMinuteBudget = !paid && Number.isFinite(minuteRemaining) && minuteRemaining < 3;
+  const canFetchLineups = detailedCoverage && (paid || freeQuotaHealthy(15, 5)) && (
+    isLiveStatus(status) || (minutesToKickoff !== null && minutesToKickoff <= 90 && minutesToKickoff >= -240)
+  );
+  const canFetchFreshForm = detailedCoverage && (paid || healthyFree);
+  const canFetchH2H = detailedCoverage && (paid || !lowMinuteBudget);
+  const canFetchInjuries = paid || !veryLowMinuteBudget;
 
-  const basePromises = [
-    apiFootball('/injuries', { fixture: fixtureId }, cfg).catch(() => []),
-    apiFootball('/predictions', { fixture: fixtureId }, cfg).catch(() => []),
-    apiFootball('/odds', { fixture: fixtureId }, cfg).catch(() => []),
-    apiFootball('/fixtures/headtohead', { h2h: `${homeId}-${awayId}`, last: 5 }, cfg).catch(() => []),
-    shouldFetchLineups ? apiFootball('/fixtures/lineups', { fixture: fixtureId }, cfg).catch(() => []) : Promise.resolve([]),
-    tavilySearch(`${homeName} ${awayName} injuries team news probable lineups latest`, cfg),
-  ];
+  const skipped = [];
+  if (!canFetchFreshForm && detailedCoverage) skipped.push('Свежая форма команд: сохранён API-лимит; используем кэш, если он есть.');
+  if (!canFetchLineups && detailedCoverage && minutesToKickoff !== null && minutesToKickoff <= 120) skipped.push('Составы: запрос отложен из-за лимита или до публикации стартовых XI.');
+  if (!canFetchH2H && detailedCoverage) skipped.push('H2H временно пропущен: осталось мало запросов в минутном окне.');
+  if (!canFetchInjuries) skipped.push('Травмы временно пропущены: осталось критически мало запросов в минутном окне.');
+  if (!detailedCoverage) skipped.push('Молодёжный/резервный турнир: расширенные запросы ограничены из-за слабого покрытия.');
 
-  if (detailedCoverage) {
-    basePromises.push(
-      getRecentTeamForm(homeId, 'home', fixture.fixture?.date, fixtureId, cfg).catch(() => null),
-      getRecentTeamForm(awayId, 'away', fixture.fixture?.date, fixtureId, cfg).catch(() => null),
-    );
-  } else {
-    basePromises.push(Promise.resolve(null), Promise.resolve(null));
+  let injuries = [], predictions = [], odds = [], h2hRows = [], lineupsRows = [];
+  try {
+    [injuries, predictions, odds, h2hRows] = await Promise.all([
+      canFetchInjuries ? apiFootball('/injuries', { fixture: fixtureId }, cfg).catch(() => []) : Promise.resolve([]),
+      apiFootball('/predictions', { fixture: fixtureId }, cfg).catch(() => []),
+      apiFootball('/odds', { fixture: fixtureId }, cfg).catch(() => []),
+      canFetchH2H ? apiFootball('/fixtures/headtohead', { h2h: `${homeId}-${awayId}`, last: 5 }, cfg).catch(() => []) : Promise.resolve([]),
+    ]);
+    if (canFetchLineups) lineupsRows = await apiFootball('/fixtures/lineups', { fixture: fixtureId }, cfg).catch(() => []);
+  } catch (error) {
+    if (staleBefore && isFootballRateLimitError(error)) {
+      await recordHistory(user.id, staleBefore, cfg);
+      return json({ ...staleBefore, cached: true, stale: true, warning: 'Показан последний сохранённый анализ: API временно достиг лимита.', retryAfter: Number(error?.retryAfter || 60), quota: quotaBefore });
+    }
+    throw error;
   }
 
-  const [injuries, predictions, odds, h2hRows, lineupsRows, web, homeForm, awayForm] = await Promise.all(basePromises);
+  const webPromise = tavilySearch(`${homeName} ${awayName} injuries team news probable lineups latest`, cfg);
+  const homeFormPromise = detailedCoverage
+    ? getRecentTeamForm(homeId, 'home', fixture.fixture?.date, fixtureId, cfg, { allowNetwork: canFetchFreshForm }).catch(() => null)
+    : Promise.resolve(null);
+  const awayFormPromise = detailedCoverage
+    ? getRecentTeamForm(awayId, 'away', fixture.fixture?.date, fixtureId, cfg, { allowNetwork: canFetchFreshForm }).catch(() => null)
+    : Promise.resolve(null);
+  const [web, homeForm, awayForm] = await Promise.all([webPromise, homeFormPromise, awayFormPromise]);
+
   const market = extractMarket(odds);
   const apiPrediction = extractPrediction(predictions);
   const h2h = formatH2H(h2hRows, homeId, awayId);
@@ -1970,9 +2112,19 @@ async function apiAnalyze(request, cfg, user) {
     homeName, awayName, minutesToKickoff, confidence,
   });
 
+  const availableSignals = [
+    market && 'market',
+    apiPrediction && 'apiPrediction',
+    homeForm?.overall && awayForm?.overall && 'recentForm',
+    h2hRows.length && 'h2h',
+    injuries.length && 'injuries',
+    lineupsRows.length && 'lineups',
+    web.answer && 'web',
+  ].filter(Boolean);
+
   const payload = {
     generatedAt: new Date().toISOString(),
-    analysisVersion: '2.5.0',
+    analysisVersion: '2.9.0-quality-engine',
     match: {
       fixtureId, date: fixture.fixture?.date || '', status: fixture.fixture?.status?.short || '',
       venue: fixture.fixture?.venue?.name || '', city: fixture.fixture?.venue?.city || '',
@@ -1986,18 +2138,16 @@ async function apiAnalyze(request, cfg, user) {
     modelBreakdown: {
       weights: blended.weights,
       signals: blended.signals,
-      method: 'Динамическое объединение рынка, API prediction, недавней формы и H2H с небольшим консервативным учётом потерь состава.',
+      method: 'Динамическое объединение рынка, API prediction, формы и H2H. При низкой квоте низкоприоритетные запросы пропускаются вместо ошибки.',
     },
-    market,
-    apiPrediction,
-    recentForm: { home: homeForm, away: awayForm },
-    goalModel,
-    absences,
-    lineups,
-    h2h,
-    insights: notes.factors,
-    risks: notes.risks,
-    news: web,
+    dataPolicy: {
+      providerPlan,
+      mode: paid ? 'full' : healthyFree ? 'balanced-free' : 'quota-saver',
+      availableSignals,
+      skipped,
+    },
+    market, apiPrediction, recentForm: { home: homeForm, away: awayForm }, goalModel, absences, lineups, h2h,
+    insights: notes.factors, risks: [...(notes.risks || []), ...skipped], news: web,
     completeness: {
       score: [fixture, market, apiPrediction, injuries.length, h2hRows.length, lineupsRows.length, web.answer, homeForm?.overall, awayForm?.overall, goalModel].filter(Boolean).length,
       max: 10,
@@ -2006,10 +2156,14 @@ async function apiAnalyze(request, cfg, user) {
     disclaimer: 'Расчёт основан на доступных статистических сигналах и не гарантирует исход матча. Это не финансовая рекомендация.',
   };
 
-  await setCache(cacheKey, fixtureId, payload, cfg);
+  let ttl = cfg.cacheMinutes;
+  if (isFinishedStatus(status)) ttl = 720;
+  else if (minutesToKickoff !== null && minutesToKickoff <= 120) ttl = 10;
+  else if (minutesToKickoff !== null && minutesToKickoff > 360) ttl = 45;
+  await setCache(cacheKey, fixtureId, payload, cfg, ttl);
   await incrementUsage(user.id, cfg);
   await recordHistory(user.id, payload, cfg);
-  return json({ ...payload, cached: false, quota: await getQuota(user.id, cfg) });
+  return json({ ...payload, cached: false, stale: false, quota: await getQuota(user.id, cfg) });
 }
 
 export default {
@@ -2020,8 +2174,9 @@ export default {
     if (url.pathname === '/health' || url.pathname === '/api/health') {
       return json({
         ok: true,
-        version: '2.8.0-stars-subscriptions',
+        version: '2.9.0-core-quality',
         database: hasSupabase(cfg) ? 'supabase' : 'memory',
+        monetization: cfg.monetizationEnabled ? 'enabled' : 'paused',
         devMode: cfg.devMode,
       });
     }
@@ -2069,10 +2224,13 @@ export default {
 
       if (request.method === 'GET' && url.pathname === '/api/me') return await apiMe(request, cfg, user);
       if (request.method === 'GET' && url.pathname === '/api/provider') return json({ provider: providerSnapshot() });
-      if (request.method === 'GET' && url.pathname === '/api/billing/plans') return await apiBillingPlans(request, cfg, user);
-      if (request.method === 'POST' && url.pathname === '/api/billing/invoice') return await apiBillingInvoice(request, cfg, user);
-      if (request.method === 'POST' && url.pathname === '/api/billing/sync') return await apiBillingSync(request, cfg, user);
-      if (request.method === 'POST' && url.pathname === '/api/billing/subscription') return await apiBillingSubscription(request, cfg, user);
+      if (url.pathname.startsWith('/api/billing/')) {
+        if (!cfg.monetizationEnabled) return json({ error: 'Монетизация отложена до финального этапа проекта.' }, 404);
+        if (request.method === 'GET' && url.pathname === '/api/billing/plans') return await apiBillingPlans(request, cfg, user);
+        if (request.method === 'POST' && url.pathname === '/api/billing/invoice') return await apiBillingInvoice(request, cfg, user);
+        if (request.method === 'POST' && url.pathname === '/api/billing/sync') return await apiBillingSync(request, cfg, user);
+        if (request.method === 'POST' && url.pathname === '/api/billing/subscription') return await apiBillingSubscription(request, cfg, user);
+      }
       if (request.method === 'GET' && url.pathname === '/api/matches') return await apiMatches(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/match-center') return await apiMatchCenter(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/history') return await apiHistory(request, cfg, user);
@@ -2083,7 +2241,14 @@ export default {
       return json({ error: 'Маршрут не найден.' }, 404);
     } catch (error) {
       console.error(error);
-      return json({ error: error?.message || 'Ошибка сервера.' }, 502);
+      const retryAfter = Number(error?.retryAfter || 0);
+      const status = isFootballRateLimitError(error) ? 429 : 502;
+      return json({
+        error: error?.message || 'Ошибка сервера.',
+        code: error?.code || 'SERVER_ERROR',
+        retryAfter: retryAfter || undefined,
+        provider: providerSnapshot(),
+      }, status);
     }
   },
 
