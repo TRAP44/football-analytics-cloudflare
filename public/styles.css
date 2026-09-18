@@ -416,3 +416,18 @@ h2 { margin: 0; font-size: 20px; }
 .roadmap-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 13px; background: rgba(148,163,184,.035); }
 .roadmap-status span { color: var(--hint); font-size: 11px; }
 .roadmap-status strong { font-size: 13px; text-align: right; }
+
+/* v3.0 competition catalog */
+.competition-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.catalog-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: -3px 0 10px; }
+.competition-chip, .round-chip, .coverage-mini { display: inline-flex; align-items: center; min-height: 22px; padding: 3px 7px; border-radius: 999px; border: 1px solid var(--line); font-size: 9px; font-weight: 800; letter-spacing: .02em; }
+.competition-chip { color: var(--text); background: color-mix(in srgb, var(--surface) 90%, transparent); }
+.competition-chip.cat-league { color: #bfdbfe; border-color: rgba(96,165,250,.24); background: rgba(96,165,250,.07); }
+.competition-chip.cat-cup { color: #fde68a; border-color: rgba(245,158,11,.25); background: rgba(245,158,11,.08); }
+.competition-chip.cat-continental, .competition-chip.cat-national, .competition-chip.cat-international { color: #c4b5fd; border-color: rgba(167,139,250,.28); background: rgba(139,92,246,.09); }
+.competition-chip.cat-women { color: #fbcfe8; border-color: rgba(244,114,182,.26); background: rgba(244,114,182,.08); }
+.competition-chip.cat-friendly { color: #d1d5db; }
+.competition-chip.cat-youth, .competition-chip.cat-lower { color: #fed7aa; border-color: rgba(251,146,60,.24); background: rgba(251,146,60,.07); }
+.round-chip { color: var(--hint); font-weight: 700; }
+.coverage-mini { margin-left: auto; color: var(--hint); font-weight: 700; }
+@media (max-width: 520px) { .coverage-mini { margin-left: 0; } }
