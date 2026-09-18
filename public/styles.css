@@ -399,3 +399,20 @@ h2 { margin: 0; font-size: 20px; }
 .pricing-card.premium-card { background: linear-gradient(180deg, rgba(168,85,247,.08), rgba(148,163,184,.025)); }
 .pricing-card.current { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent); }
 @media (min-width: 760px) { .pricing-grid { grid-template-columns: repeat(3, 1fr); } }
+
+/* v2.9 core quality */
+.data-notice { margin: 8px 0 12px; padding: 10px 12px; border-radius: 12px; font-size: 12px; line-height: 1.45; }
+.data-notice.stale { border: 1px solid rgba(245,158,11,.28); background: rgba(245,158,11,.08); color: #fde68a; }
+.coverage-expectation { display: inline-flex; align-items: center; gap: 6px; margin: 8px 0 2px; padding: 4px 8px; border-radius: 999px; font-size: 10px; font-weight: 800; border: 1px solid var(--line); color: var(--hint); }
+.coverage-expectation.enhanced { border-color: rgba(34,197,94,.24); background: rgba(34,197,94,.07); color: #86efac; }
+.coverage-expectation.standard { border-color: rgba(96,165,250,.24); background: rgba(96,165,250,.07); color: #bfdbfe; }
+.coverage-expectation.basic { border-color: rgba(245,158,11,.24); background: rgba(245,158,11,.07); color: #fde68a; }
+.stale-panel { border-color: rgba(245,158,11,.28) !important; background: rgba(245,158,11,.06) !important; }
+.stale-panel strong { color: #fde68a; }
+.stale-panel p { margin: 6px 0 0; color: var(--hint); font-size: 12px; line-height: 1.45; }
+.policy-list { margin-top: 12px; padding: 11px 12px; border-radius: 12px; background: rgba(148,163,184,.045); border: 1px solid var(--line); }
+.policy-list strong { display: block; margin-bottom: 6px; font-size: 12px; }
+.policy-list ul { margin: 0; padding-left: 18px; color: var(--hint); font-size: 12px; line-height: 1.5; }
+.roadmap-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 13px; background: rgba(148,163,184,.035); }
+.roadmap-status span { color: var(--hint); font-size: 11px; }
+.roadmap-status strong { font-size: 13px; text-align: right; }
