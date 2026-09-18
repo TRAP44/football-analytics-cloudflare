@@ -27,13 +27,15 @@
         </div>
 
         <div class="search-row">
-          <input id="matchSearch" class="search-input" type="search" inputmode="search" placeholder="🔎 Команда, лига или страна" autocomplete="off" />
+          <input id="matchSearch" class="search-input" type="search" inputmode="search" placeholder="🔎 Команда, турнир или страна" autocomplete="off" />
         </div>
 
         <div class="filter-strip" id="filterStrip">
-          <button class="filter-btn active" data-filter="top">🔥 Топ</button>
+          <button class="filter-btn active" data-filter="top">🔥 Главные</button>
+          <button class="filter-btn" data-filter="live">🔴 LIVE</button>
           <button class="filter-btn" data-filter="favorites">⭐ Избранное</button>
-          <button class="filter-btn" data-filter="international">🌍 Еврокубки</button>
+          <button class="filter-btn" data-filter="international">🌍 Международные</button>
+          <button class="filter-btn" data-filter="cups">🏆 Кубки</button>
           <button class="filter-btn" data-filter="england">🏴 Англия</button>
           <button class="filter-btn" data-filter="spain">🇪🇸 Испания</button>
           <button class="filter-btn" data-filter="italy">🇮🇹 Италия</button>
@@ -109,7 +111,7 @@
             <label class="setting-field">
               <span>Экран матчей по умолчанию</span>
               <select id="defaultFilterSelect">
-                <option value="top">🔥 Топ</option>
+                <option value="top">🔥 Главные</option>
                 <option value="favorites">⭐ Избранное</option>
                 <option value="all">Все матчи</option>
               </select>
