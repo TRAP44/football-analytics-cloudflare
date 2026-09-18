@@ -201,7 +201,7 @@ function filteredMatches() {
   const fav = favoriteSet();
   return state.matches.filter(m => {
     let byFilter = state.filter === 'all';
-    if (state.filter === 'top') byFilter = Number(m.interestScore || 0) >= 50;
+    if (state.filter === 'top') byFilter = Number(m.interestScore || 0) >= 50 && !m.youthReserve;
     if (['international', 'england', 'spain', 'italy', 'germany', 'france'].includes(state.filter)) byFilter = m.group === state.filter;
     if (state.filter === 'favorites') byFilter = fav.has(Number(m.home?.id)) || fav.has(Number(m.away?.id));
     if (!byFilter) return false;
@@ -263,7 +263,7 @@ function renderMatches() {
         </div>
       </div>
       ${m.live
-        ? `<button class="analyze-btn live-center-btn" data-center="${Number(m.fixtureId)}">🔴 LIVE-центр</button>`
+        ? `<button class="analyze-btn live-center-btn" data-center="${Number(m.fixtureId)}">${m.youthReserve ? '🔴 LIVE-счёт' : '🔴 LIVE-центр'}</button>`
         : m.finished
           ? `<button class="analyze-btn finished-btn" data-center="${Number(m.fixtureId)}">📋 Итоги матча</button>`
           : `<button class="analyze-btn" data-fixture="${Number(m.fixtureId)}">🧠 Предматчевый анализ</button>`}
@@ -401,6 +401,7 @@ function renderMatchCenter(d) {
         <span>${d.availability?.statistics ? '✅' : '—'} Статистика</span>
         <span>${d.availability?.lineups ? '✅' : '—'} Составы</span>
       </div>
+      ${d.availability?.limitedCoverage ? '<div class="coverage-badge limited">Ограниченное покрытие · экономим API-лимит</div>' : ''}
       <p class="tiny">Обновлено: ${dateTime(d.generatedAt)}${d.cached ? ' · кэш' : ' · свежие данные'}</p>
     </section>
   `;
