@@ -5,9 +5,19 @@ const memory = {
   history: new Map(),
   favorites: new Map(),
   reminders: new Map(),
+  preferences: new Map(),
 };
 
 const enc = new TextEncoder();
+
+const DEFAULT_PREFERENCES = Object.freeze({
+  defaultFilter: 'top',
+  reminderMinutes: 30,
+  kickoffNotification: true,
+  hideYouth: true,
+  favoriteFirst: true,
+});
+
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -335,6 +345,58 @@ async function removeFavorite(userId, teamId, cfg) {
   memory.favorites.set(key, (memory.favorites.get(key) || []).filter(x => Number(x.team_id) !== id));
 }
 
+function normalizePreferences(row = {}) {
+  const allowedFilters = new Set(['top', 'favorites', 'all']);
+  const rawFilter = row.default_filter ?? row.defaultFilter ?? DEFAULT_PREFERENCES.defaultFilter;
+  const reminder = Number(row.reminder_minutes ?? row.reminderMinutes ?? DEFAULT_PREFERENCES.reminderMinutes);
+  return {
+    defaultFilter: allowedFilters.has(String(rawFilter)) ? String(rawFilter) : DEFAULT_PREFERENCES.defaultFilter,
+    reminderMinutes: [15, 30, 60].includes(reminder) ? reminder : DEFAULT_PREFERENCES.reminderMinutes,
+    kickoffNotification: row.kickoff_notification ?? row.kickoffNotification ?? DEFAULT_PREFERENCES.kickoffNotification,
+    hideYouth: row.hide_youth ?? row.hideYouth ?? DEFAULT_PREFERENCES.hideYouth,
+    favoriteFirst: row.favorite_first ?? row.favoriteFirst ?? DEFAULT_PREFERENCES.favoriteFirst,
+  };
+}
+
+async function getPreferences(userId, cfg) {
+  if (hasSupabase(cfg)) {
+    try {
+      const row = await supaSelectOne(cfg, 'user_preferences', { telegram_id: `eq.${Number(userId)}` });
+      return normalizePreferences(row || {});
+    } catch (e) {
+      console.warn('preferences read skipped', e?.message || e);
+      return { ...DEFAULT_PREFERENCES };
+    }
+  }
+  return normalizePreferences(memory.preferences.get(Number(userId)) || {});
+}
+
+async function savePreferences(userId, input, cfg) {
+  const current = await getPreferences(userId, cfg);
+  const next = normalizePreferences({
+    defaultFilter: input.defaultFilter ?? current.defaultFilter,
+    reminderMinutes: input.reminderMinutes ?? current.reminderMinutes,
+    kickoffNotification: input.kickoffNotification ?? current.kickoffNotification,
+    hideYouth: input.hideYouth ?? current.hideYouth,
+    favoriteFirst: input.favoriteFirst ?? current.favoriteFirst,
+  });
+  const row = {
+    telegram_id: Number(userId),
+    default_filter: next.defaultFilter,
+    reminder_minutes: next.reminderMinutes,
+    kickoff_notification: Boolean(next.kickoffNotification),
+    hide_youth: Boolean(next.hideYouth),
+    favorite_first: Boolean(next.favoriteFirst),
+    updated_at: new Date().toISOString(),
+  };
+  if (hasSupabase(cfg)) {
+    await supaUpsert(cfg, 'user_preferences', row, 'telegram_id');
+  } else {
+    memory.preferences.set(Number(userId), row);
+  }
+  return next;
+}
+
 async function getReminders(userId, cfg) {
   if (hasSupabase(cfg)) {
     try {
@@ -348,6 +410,10 @@ async function getReminders(userId, cfg) {
 }
 
 async function addReminder(userId, input, cfg) {
+  const prefs = await getPreferences(userId, cfg);
+  const requestedMinutes = Number(input.reminderMinutes ?? prefs.reminderMinutes);
+  const reminderMinutes = [15, 30, 60].includes(requestedMinutes) ? requestedMinutes : 30;
+  const kickoffNotify = input.kickoffNotify === undefined ? Boolean(prefs.kickoffNotification) : Boolean(input.kickoffNotify);
   const row = {
     telegram_id: Number(userId),
     fixture_id: Number(input.fixtureId),
@@ -356,7 +422,10 @@ async function addReminder(userId, input, cfg) {
     league_name: String(input.leagueName || ''),
     fixture_date: input.fixtureDate ? new Date(input.fixtureDate).toISOString() : null,
     enabled: true,
+    remind_before_minutes: reminderMinutes,
+    kickoff_notify: kickoffNotify,
     notified_at: null,
+    kickoff_notified_at: null,
     created_at: new Date().toISOString(),
   };
   if (!Number.isFinite(row.fixture_id) || row.fixture_id <= 0 || !row.fixture_date || !row.home_name || !row.away_name) {
@@ -387,7 +456,7 @@ async function removeReminder(userId, fixtureId, cfg) {
   memory.reminders.set(key, (memory.reminders.get(key) || []).filter(x => Number(x.fixture_id) !== id));
 }
 
-async function markReminderNotified(row, cfg) {
+async function patchReminder(row, patch, cfg) {
   if (!hasSupabase(cfg)) return;
   const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
   url.searchParams.set('telegram_id', `eq.${Number(row.telegram_id)}`);
@@ -395,7 +464,7 @@ async function markReminderNotified(row, cfg) {
   const r = await fetch(url, {
     method: 'PATCH',
     headers: supaHeaders(cfg, { Prefer: 'return=minimal' }),
-    body: JSON.stringify({ notified_at: new Date().toISOString() }),
+    body: JSON.stringify(patch),
   });
   if (!r.ok) throw new Error(`Supabase reminders patch: HTTP ${r.status}`);
 }
@@ -411,36 +480,58 @@ async function sendTelegramMessage(chatId, text, cfg) {
 }
 
 async function processDueReminders(cfg) {
-  if (!hasSupabase(cfg) || !cfg.botToken) return { checked: 0, sent: 0 };
+  if (!hasSupabase(cfg) || !cfg.botToken) return { checked: 0, sent: 0, kickoffSent: 0 };
   const now = Date.now();
-  const from = new Date(now + 15 * 60_000).toISOString();
-  const to = new Date(now + 45 * 60_000).toISOString();
+  const from = new Date(now - 10 * 60_000).toISOString();
+  const toMs = now + 75 * 60_000;
   let rows = [];
   try {
     rows = await supaSelectMany(cfg, 'match_reminders', {
       enabled: 'eq.true',
-      notified_at: 'is.null',
       fixture_date: `gte.${from}`,
-    }, { limit: 100, order: 'fixture_date.asc' });
-    rows = rows.filter(x => Date.parse(x.fixture_date) <= Date.parse(to));
+    }, { limit: 200, order: 'fixture_date.asc' });
+    rows = rows.filter(x => Date.parse(x.fixture_date) <= toMs);
   } catch (e) {
     console.warn('reminder scheduler skipped', e?.message || e);
-    return { checked: 0, sent: 0 };
+    return { checked: 0, sent: 0, kickoffSent: 0 };
   }
+
   let sent = 0;
+  let kickoffSent = 0;
   for (const row of rows) {
-    const minutes = Math.max(1, Math.round((Date.parse(row.fixture_date) - now) / 60000));
-    const text = `⚽ Скоро матч\n\n${row.home_name} — ${row.away_name}\n${row.league_name ? `${row.league_name}\n` : ''}Старт примерно через ${minutes} мин.\n\nОткройте Football Manager для свежего анализа.`;
+    const kickoffMs = Date.parse(row.fixture_date);
+    if (!Number.isFinite(kickoffMs)) continue;
+    const deltaMinutes = (kickoffMs - now) / 60000;
+    const remindBefore = [15, 30, 60].includes(Number(row.remind_before_minutes)) ? Number(row.remind_before_minutes) : 30;
+    const kickoffEnabled = row.kickoff_notify !== false;
+
     try {
-      if (await sendTelegramMessage(row.telegram_id, text, cfg)) {
-        await markReminderNotified(row, cfg);
-        sent++;
+      // Around kickoff, prefer a single kickoff message instead of sending two notifications at once.
+      if (kickoffEnabled && !row.kickoff_notified_at && deltaMinutes <= 5 && deltaMinutes >= -10) {
+        const text = `🔴 Матч начинается\n\n${row.home_name} — ${row.away_name}${row.league_name ? `\n${row.league_name}` : ''}\n\nОткройте Football Manager: LIVE-центр появится, когда провайдер обновит статус.`;
+        if (await sendTelegramMessage(row.telegram_id, text, cfg)) {
+          await patchReminder(row, {
+            kickoff_notified_at: new Date().toISOString(),
+            notified_at: row.notified_at || new Date().toISOString(),
+          }, cfg);
+          kickoffSent++;
+        }
+        continue;
+      }
+
+      if (!row.notified_at && deltaMinutes > 5 && deltaMinutes <= remindBefore) {
+        const minutes = Math.max(1, Math.round(deltaMinutes));
+        const text = `⚽ Скоро матч\n\n${row.home_name} — ${row.away_name}${row.league_name ? `\n${row.league_name}` : ''}\nСтарт примерно через ${minutes} мин.\n\nОткройте Football Manager для свежего предматчевого анализа.`;
+        if (await sendTelegramMessage(row.telegram_id, text, cfg)) {
+          await patchReminder(row, { notified_at: new Date().toISOString() }, cfg);
+          sent++;
+        }
       }
     } catch (e) {
       console.warn('reminder send failed', e?.message || e);
     }
   }
-  return { checked: rows.length, sent };
+  return { checked: rows.length, sent, kickoffSent };
 }
 
 async function apiFootball(path, params, cfg) {
@@ -952,11 +1043,12 @@ function matchStatusRank(status) {
 }
 
 async function apiMe(request, cfg, user) {
-  const [quota, record, favorites, reminders] = await Promise.all([
+  const [quota, record, favorites, reminders, preferences] = await Promise.all([
     getQuota(user.id, cfg),
     getUserRecord(user.id, cfg),
     getFavorites(user.id, cfg),
     getReminders(user.id, cfg),
+    getPreferences(user.id, cfg),
   ]);
   return json({
     user: {
@@ -968,6 +1060,7 @@ async function apiMe(request, cfg, user) {
       subscriptionUntil: record?.subscription_until || null,
     },
     quota,
+    preferences,
     stats: { favorites: favorites.length, reminders: reminders.length },
   });
 }
@@ -1016,6 +1109,7 @@ async function apiReminders(request, cfg, user) {
     return json({ items: rows.map(x => ({
       fixtureId: Number(x.fixture_id), homeName: x.home_name || '', awayName: x.away_name || '',
       leagueName: x.league_name || '', fixtureDate: x.fixture_date || '', notifiedAt: x.notified_at || null,
+      remindBeforeMinutes: Number(x.remind_before_minutes || 30), kickoffNotify: x.kickoff_notify !== false, kickoffNotifiedAt: x.kickoff_notified_at || null,
     })) });
   }
   if (request.method === 'POST') {
@@ -1030,6 +1124,17 @@ async function apiReminders(request, cfg, user) {
     if (!fixtureId) return json({ error: 'fixtureId обязателен.' }, 400);
     await removeReminder(user.id, fixtureId, cfg);
     return json({ ok: true });
+  }
+  return json({ error: 'Метод не поддерживается.' }, 405);
+}
+
+async function apiPreferences(request, cfg, user) {
+  if (request.method === 'GET') return json({ preferences: await getPreferences(user.id, cfg) });
+  if (request.method === 'PUT' || request.method === 'POST') {
+    let body = {};
+    try { body = await request.json(); } catch {}
+    const preferences = await savePreferences(user.id, body, cfg);
+    return json({ ok: true, preferences });
   }
   return json({ error: 'Метод не поддерживается.' }, 405);
 }
@@ -1247,7 +1352,7 @@ async function apiAnalyze(request, cfg, user) {
 
   const payload = {
     generatedAt: new Date().toISOString(),
-    analysisVersion: '2.4.0',
+    analysisVersion: '2.5.0',
     match: {
       fixtureId, date: fixture.fixture?.date || '', status: fixture.fixture?.status?.short || '',
       venue: fixture.fixture?.venue?.name || '', city: fixture.fixture?.venue?.city || '',
@@ -1294,7 +1399,7 @@ export default {
     if (url.pathname === '/health' || url.pathname === '/api/health') {
       return json({
         ok: true,
-        version: '2.4.0-match-experience',
+        version: '2.5.0-personalization',
         database: hasSupabase(cfg) ? 'supabase' : 'memory',
         devMode: cfg.devMode,
       });
@@ -1338,6 +1443,7 @@ export default {
       if (request.method === 'GET' && url.pathname === '/api/history') return await apiHistory(request, cfg, user);
       if (url.pathname === '/api/favorites') return await apiFavorites(request, cfg, user);
       if (url.pathname === '/api/reminders') return await apiReminders(request, cfg, user);
+      if (url.pathname === '/api/preferences') return await apiPreferences(request, cfg, user);
       if (request.method === 'POST' && url.pathname === '/api/analyze') return await apiAnalyze(request, cfg, user);
       return json({ error: 'Маршрут не найден.' }, 404);
     } catch (error) {
