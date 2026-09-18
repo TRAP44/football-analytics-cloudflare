@@ -532,6 +532,219 @@ function combineProbabilities(market, model) {
   if (m && p) return normalizeThree(m.home * 0.55 + p.home * 0.45, m.draw * 0.55 + p.draw * 0.45, m.away * 0.55 + p.away * 0.45);
   return m || p || null;
 }
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, Number(value)));
+}
+
+function ymd(value) {
+  const d = new Date(value);
+  return Number.isFinite(d.getTime()) ? d.toISOString().slice(0, 10) : todayUtc();
+}
+
+function teamResult(fixture, teamId) {
+  const homeId = Number(fixture.teams?.home?.id || 0);
+  const awayId = Number(fixture.teams?.away?.id || 0);
+  const isHome = homeId === Number(teamId);
+  const isAway = awayId === Number(teamId);
+  if (!isHome && !isAway) return null;
+  const hg = Number(fixture.goals?.home ?? 0);
+  const ag = Number(fixture.goals?.away ?? 0);
+  const gf = isHome ? hg : ag;
+  const ga = isHome ? ag : hg;
+  return {
+    date: fixture.fixture?.date || '',
+    venue: isHome ? 'home' : 'away',
+    opponent: isHome ? fixture.teams?.away?.name || '' : fixture.teams?.home?.name || '',
+    opponentLogo: isHome ? fixture.teams?.away?.logo || '' : fixture.teams?.home?.logo || '',
+    league: fixture.league?.name || '',
+    gf,
+    ga,
+    result: gf > ga ? 'W' : gf < ga ? 'L' : 'D',
+  };
+}
+
+function summarizeFormRows(rows, teamId, preferredVenue) {
+  const all = (rows || [])
+    .map(x => teamResult(x, teamId))
+    .filter(Boolean)
+    .sort((a, b) => Date.parse(b.date || 0) - Date.parse(a.date || 0));
+  const last = all.slice(0, 5);
+  const venue = all.filter(x => x.venue === preferredVenue).slice(0, 3);
+  const summarize = list => {
+    if (!list.length) return null;
+    const wins = list.filter(x => x.result === 'W').length;
+    const draws = list.filter(x => x.result === 'D').length;
+    const losses = list.filter(x => x.result === 'L').length;
+    const gf = list.reduce((s, x) => s + x.gf, 0);
+    const ga = list.reduce((s, x) => s + x.ga, 0);
+    return {
+      sample: list.length,
+      wins, draws, losses,
+      ppg: round1((wins * 3 + draws) / list.length),
+      gfAvg: round1(gf / list.length),
+      gaAvg: round1(ga / list.length),
+      gdAvg: round1((gf - ga) / list.length),
+      bttsPct: round1(list.filter(x => x.gf > 0 && x.ga > 0).length / list.length * 100),
+      over25Pct: round1(list.filter(x => x.gf + x.ga >= 3).length / list.length * 100),
+      cleanSheetPct: round1(list.filter(x => x.ga === 0).length / list.length * 100),
+      form: list.map(x => x.result).join(''),
+      matches: list,
+    };
+  };
+  return { overall: summarize(last), venue: summarize(venue), preferredVenue };
+}
+
+async function getRecentTeamForm(teamId, preferredVenue, fixtureDate, fixtureId, cfg) {
+  if (!teamId) return null;
+  const targetMs = Number.isFinite(Date.parse(fixtureDate || '')) ? Date.parse(fixtureDate) : Date.now();
+  const to = ymd(new Date(targetMs - 60_000));
+  const from = ymd(new Date(targetMs - 90 * 86400_000));
+  const cacheKey = `teamform:${Number(teamId)}:${preferredVenue}:${to}:v2`;
+  const cached = await getCache(cacheKey, cfg);
+  if (cached) return cached;
+  const rows = await apiFootball('/fixtures', { team: Number(teamId), from, to }, cfg);
+  const usable = rows.filter(x => {
+    const id = Number(x.fixture?.id || 0);
+    const dateMs = Date.parse(x.fixture?.date || '');
+    return id !== Number(fixtureId) && isFinishedStatus(x.fixture?.status?.short) && Number.isFinite(dateMs) && dateMs < targetMs;
+  });
+  const summary = summarizeFormRows(usable, teamId, preferredVenue);
+  await setCache(cacheKey, Number(fixtureId || teamId), summary, cfg, 120);
+  return summary;
+}
+
+function formProbabilities(homeForm, awayForm) {
+  const h = homeForm?.overall, a = awayForm?.overall;
+  if (!h?.sample || !a?.sample) return null;
+  const hv = homeForm?.venue?.sample >= 2 ? homeForm.venue.ppg : h.ppg;
+  const av = awayForm?.venue?.sample >= 2 ? awayForm.venue.ppg : a.ppg;
+  let edge = 4; // conservative home-field prior
+  edge += clamp((h.ppg - a.ppg) * 8, -18, 18);
+  edge += clamp((h.gdAvg - a.gdAvg) * 2.6, -10, 10);
+  edge += clamp((hv - av) * 3.5, -8, 8);
+  edge = clamp(edge, -24, 24);
+  const draw = clamp(28.5 - Math.abs(edge) * 0.24, 20, 29);
+  const remaining = 100 - draw;
+  const homeShare = 1 / (1 + Math.exp(-edge / 8.5));
+  return normalizeThree(remaining * homeShare, draw, remaining * (1 - homeShare));
+}
+
+function h2hProbabilities(h2h) {
+  const total = Number(h2h?.homeWins || 0) + Number(h2h?.draws || 0) + Number(h2h?.awayWins || 0);
+  if (!total) return null;
+  return normalizeThree(Number(h2h.homeWins || 0) + 1, Number(h2h.draws || 0) + 1, Number(h2h.awayWins || 0) + 1);
+}
+
+function blendProbabilitySignals({ market, model, form, h2h }) {
+  const candidates = [
+    ['market', market?.probabilities, 0.42],
+    ['apiPrediction', model?.probabilities, 0.24],
+    ['recentForm', form, 0.26],
+    ['h2h', h2h, 0.08],
+  ].filter(([, p]) => p && [p.home, p.draw, p.away].every(x => Number.isFinite(Number(x))));
+  if (!candidates.length) return { probabilities: null, weights: {}, signals: [] };
+  const weightSum = candidates.reduce((s, x) => s + x[2], 0);
+  const weights = {};
+  let home = 0, draw = 0, away = 0;
+  const signals = [];
+  for (const [name, p, rawWeight] of candidates) {
+    const w = rawWeight / weightSum;
+    weights[name] = round1(w * 100);
+    home += Number(p.home) * w;
+    draw += Number(p.draw) * w;
+    away += Number(p.away) * w;
+    signals.push({ name, probabilities: p, weight: round1(w * 100) });
+  }
+  return { probabilities: normalizeThree(home, draw, away), weights, signals };
+}
+
+function applyAbsenceAdjustment(probabilities, absences) {
+  if (!probabilities) return null;
+  const homeCount = Math.min(6, absences?.home?.length || 0);
+  const awayCount = Math.min(6, absences?.away?.length || 0);
+  const shift = clamp((awayCount - homeCount) * 0.55, -3.3, 3.3);
+  return normalizeThree(probabilities.home + shift, probabilities.draw, probabilities.away - shift);
+}
+
+function poissonGoalModel(homeForm, awayForm) {
+  const h = homeForm?.overall, a = awayForm?.overall;
+  if (!h?.sample || !a?.sample || h.sample < 3 || a.sample < 3) return null;
+  const hv = homeForm?.venue?.sample >= 2 ? homeForm.venue : h;
+  const av = awayForm?.venue?.sample >= 2 ? awayForm.venue : a;
+  const homeLambda = clamp(((h.gfAvg + a.gaAvg + hv.gfAvg + av.gaAvg) / 4) + 0.12, 0.35, 3.4);
+  const awayLambda = clamp(((a.gfAvg + h.gaAvg + av.gfAvg + hv.gaAvg) / 4) - 0.03, 0.25, 3.2);
+  const total = homeLambda + awayLambda;
+  const underOrEqual2 = Math.exp(-total) * (1 + total + (total * total) / 2);
+  const over25 = clamp((1 - underOrEqual2) * 100, 0, 100);
+  const btts = clamp((1 - Math.exp(-homeLambda)) * (1 - Math.exp(-awayLambda)) * 100, 0, 100);
+  return {
+    homeExpected: round1(homeLambda),
+    awayExpected: round1(awayLambda),
+    totalExpected: round1(total),
+    over25: round1(over25),
+    btts: round1(btts),
+  };
+}
+
+function outcomeName(probabilities, homeName, awayName) {
+  if (!probabilities) return 'Недостаточно данных';
+  const rows = [
+    { key: 'home', label: homeName || 'П1', value: Number(probabilities.home) },
+    { key: 'draw', label: 'Ничья', value: Number(probabilities.draw) },
+    { key: 'away', label: awayName || 'П2', value: Number(probabilities.away) },
+  ].sort((a, b) => b.value - a.value);
+  return rows[0]?.label || 'Недостаточно данных';
+}
+
+function signalDisagreement(signals, finalP) {
+  if (!finalP || !signals?.length) return null;
+  const values = signals.map(s => (
+    Math.abs(Number(s.probabilities.home) - Number(finalP.home)) +
+    Math.abs(Number(s.probabilities.draw) - Number(finalP.draw)) +
+    Math.abs(Number(s.probabilities.away) - Number(finalP.away))
+  ) / 3);
+  return round1(values.reduce((a, b) => a + b, 0) / values.length);
+}
+
+function confidenceModel(signals, finalP, homeForm, awayForm) {
+  const coverage = clamp((signals?.length || 0) / 4, 0, 1);
+  const formSample = Math.min(1, Math.min(homeForm?.overall?.sample || 0, awayForm?.overall?.sample || 0) / 5);
+  const disagreement = signalDisagreement(signals, finalP) ?? 18;
+  const score = Math.round(clamp(38 + coverage * 34 + formSample * 12 - disagreement * 0.65, 30, 88));
+  return {
+    score,
+    label: score >= 72 ? 'Высокая' : score >= 55 ? 'Средняя' : 'Низкая',
+    disagreement,
+    coverage: round1(coverage * 100),
+  };
+}
+
+function buildAnalysisNotes({ probabilities, market, model, homeForm, awayForm, h2h, absences, lineups, news, homeName, awayName, minutesToKickoff, confidence }) {
+  const factors = [];
+  const risks = [];
+  const hp = homeForm?.overall?.ppg, ap = awayForm?.overall?.ppg;
+  if (Number.isFinite(hp) && Number.isFinite(ap) && Math.abs(hp - ap) >= 0.35) {
+    factors.push(`${hp > ap ? homeName : awayName} лучше по форме последних матчей: ${Math.max(hp, ap).toFixed(1)} против ${Math.min(hp, ap).toFixed(1)} очка за игру.`);
+  }
+  if (market?.probabilities) {
+    const leader = outcomeName(market.probabilities, homeName, awayName);
+    factors.push(`Рынок 1X2 сильнее всего оценивает вариант «${leader}».`);
+  }
+  if (model?.winner) factors.push(`Прогноз API-Football указывает: ${model.winner}.`);
+  const homeAbs = absences?.home?.length || 0, awayAbs = absences?.away?.length || 0;
+  if (Math.abs(homeAbs - awayAbs) >= 2) factors.push(`${homeAbs > awayAbs ? homeName : awayName} имеет больше отмеченных потерь состава (${Math.max(homeAbs, awayAbs)} против ${Math.min(homeAbs, awayAbs)}).`);
+  const h2hTotal = (h2h?.homeWins || 0) + (h2h?.draws || 0) + (h2h?.awayWins || 0);
+  if (h2hTotal >= 3 && Math.abs((h2h.homeWins || 0) - (h2h.awayWins || 0)) >= 2) factors.push(`В последних очных матчах преимущество по победам у ${h2h.homeWins > h2h.awayWins ? homeName : awayName}.`);
+  if (!market) risks.push('Нет доступной линии 1X2 — итог сильнее зависит от статистических источников.');
+  if (!model?.probabilities) risks.push('API-Football не отдал процентный prediction для этого матча.');
+  if ((homeForm?.overall?.sample || 0) < 4 || (awayForm?.overall?.sample || 0) < 4) risks.push('Небольшая выборка недавних матчей одной из команд.');
+  if (confidence?.disagreement >= 10) risks.push('Источники заметно расходятся между собой — уверенность модели снижена.');
+  if (minutesToKickoff !== null && minutesToKickoff <= 120 && !lineups?.home && !lineups?.away) risks.push('Подтверждённые стартовые составы ещё не доступны.');
+  if (!news?.answer) risks.push('Не удалось получить свежий новостной контекст из веб-поиска.');
+  if (!factors.length && probabilities) factors.push(`Наибольшая расчётная вероятность сейчас у варианта «${outcomeName(probabilities, homeName, awayName)}».`);
+  return { factors: factors.slice(0, 5), risks: risks.slice(0, 5) };
+}
 function formatAbsences(rows, homeId, awayId) {
   const out = { home: [], away: [] };
   for (const item of rows || []) {
@@ -973,7 +1186,7 @@ async function apiAnalyze(request, cfg, user) {
   const fixtureId = Number(body?.fixtureId);
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'Некорректный fixtureId.' }, 400);
 
-  const cacheKey = `fixture:${fixtureId}:v2`;
+  const cacheKey = `fixture:${fixtureId}:v3-analysis-engine`;
   const cached = await getCache(cacheKey, cfg);
   if (cached) {
     await recordHistory(user.id, cached, cfg);
@@ -988,41 +1201,83 @@ async function apiAnalyze(request, cfg, user) {
 
   const homeId = fixture.teams?.home?.id, awayId = fixture.teams?.away?.id;
   const homeName = fixture.teams?.home?.name || '', awayName = fixture.teams?.away?.name || '';
+  const leagueName = fixture.league?.name || '';
 
   const kickoffMs = fixture.fixture?.date ? Date.parse(fixture.fixture.date) : NaN;
   const minutesToKickoff = Number.isFinite(kickoffMs) ? Math.round((kickoffMs - Date.now()) / 60000) : null;
   const status = fixture.fixture?.status?.short || '';
   const shouldFetchLineups = isLiveStatus(status) ||
     (minutesToKickoff !== null && minutesToKickoff <= 120 && minutesToKickoff >= -240);
+  const detailedCoverage = !isYouthReserveMatch(leagueName, homeName, awayName);
 
-  const [injuries, predictions, odds, h2h, lineups, web] = await Promise.all([
+  const basePromises = [
     apiFootball('/injuries', { fixture: fixtureId }, cfg).catch(() => []),
     apiFootball('/predictions', { fixture: fixtureId }, cfg).catch(() => []),
     apiFootball('/odds', { fixture: fixtureId }, cfg).catch(() => []),
     apiFootball('/fixtures/headtohead', { h2h: `${homeId}-${awayId}`, last: 5 }, cfg).catch(() => []),
     shouldFetchLineups ? apiFootball('/fixtures/lineups', { fixture: fixtureId }, cfg).catch(() => []) : Promise.resolve([]),
     tavilySearch(`${homeName} ${awayName} injuries team news probable lineups latest`, cfg),
-  ]);
+  ];
 
-  const market = extractMarket(odds), model = extractPrediction(predictions);
+  if (detailedCoverage) {
+    basePromises.push(
+      getRecentTeamForm(homeId, 'home', fixture.fixture?.date, fixtureId, cfg).catch(() => null),
+      getRecentTeamForm(awayId, 'away', fixture.fixture?.date, fixtureId, cfg).catch(() => null),
+    );
+  } else {
+    basePromises.push(Promise.resolve(null), Promise.resolve(null));
+  }
+
+  const [injuries, predictions, odds, h2hRows, lineupsRows, web, homeForm, awayForm] = await Promise.all(basePromises);
+  const market = extractMarket(odds);
+  const apiPrediction = extractPrediction(predictions);
+  const h2h = formatH2H(h2hRows, homeId, awayId);
+  const absences = formatAbsences(injuries, homeId, awayId);
+  const lineups = formatLineups(lineupsRows, homeId, awayId);
+  const recentFormProb = formProbabilities(homeForm, awayForm);
+  const h2hProb = h2hProbabilities(h2h);
+  const blended = blendProbabilitySignals({ market, model: apiPrediction, form: recentFormProb, h2h: h2hProb });
+  const probabilities = applyAbsenceAdjustment(blended.probabilities, absences);
+  const goalModel = poissonGoalModel(homeForm, awayForm);
+  const confidence = confidenceModel(blended.signals, probabilities, homeForm, awayForm);
+  const notes = buildAnalysisNotes({
+    probabilities, market, model: apiPrediction, homeForm, awayForm, h2h, absences, lineups, news: web,
+    homeName, awayName, minutesToKickoff, confidence,
+  });
+
   const payload = {
     generatedAt: new Date().toISOString(),
+    analysisVersion: '2.3.0',
     match: {
       fixtureId, date: fixture.fixture?.date || '', status: fixture.fixture?.status?.short || '',
       venue: fixture.fixture?.venue?.name || '', city: fixture.fixture?.venue?.city || '',
-      league: fixture.league?.name || '', country: fixture.league?.country || '',
+      league: leagueName, country: fixture.league?.country || '',
       home: { id: homeId, name: homeName, logo: fixture.teams?.home?.logo || '' },
       away: { id: awayId, name: awayName, logo: fixture.teams?.away?.logo || '' },
     },
-    probabilities: combineProbabilities(market, model),
+    probabilities,
+    confidence,
+    likelyOutcome: outcomeName(probabilities, homeName, awayName),
+    modelBreakdown: {
+      weights: blended.weights,
+      signals: blended.signals,
+      method: 'Динамическое объединение рынка, API prediction, недавней формы и H2H с небольшим консервативным учётом потерь состава.',
+    },
     market,
-    apiPrediction: model,
-    absences: formatAbsences(injuries, homeId, awayId),
-    lineups: formatLineups(lineups, homeId, awayId),
-    h2h: formatH2H(h2h, homeId, awayId),
+    apiPrediction,
+    recentForm: { home: homeForm, away: awayForm },
+    goalModel,
+    absences,
+    lineups,
+    h2h,
+    insights: notes.factors,
+    risks: notes.risks,
     news: web,
-    completeness: { score: [fixture, market, model, injuries.length, h2h.length, lineups.length, web.answer].filter(Boolean).length, max: 7 },
-    disclaimer: 'Статистическая аналитика не гарантирует исход матча и не является финансовой рекомендацией.',
+    completeness: {
+      score: [fixture, market, apiPrediction, injuries.length, h2hRows.length, lineupsRows.length, web.answer, homeForm?.overall, awayForm?.overall, goalModel].filter(Boolean).length,
+      max: 10,
+    },
+    disclaimer: 'Расчёт основан на доступных статистических сигналах и не гарантирует исход матча. Это не финансовая рекомендация.',
   };
 
   await setCache(cacheKey, fixtureId, payload, cfg);
@@ -1039,7 +1294,7 @@ export default {
     if (url.pathname === '/health' || url.pathname === '/api/health') {
       return json({
         ok: true,
-        version: '2.2.2-coverage-guard',
+        version: '2.3.0-analysis-engine',
         database: hasSupabase(cfg) ? 'supabase' : 'memory',
         devMode: cfg.devMode,
       });
