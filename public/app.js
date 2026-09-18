@@ -15,12 +15,22 @@ const state = {
   filter: 'top',
   search: '',
   currentAnalysis: null,
+  currentCenter: null,
+  liveRefreshTimer: null,
+  liveRefreshRemaining: 0,
 };
 
 const $ = id => document.getElementById(id);
 const views = ['matchesView', 'analysisView', 'historyView', 'profileView'];
 
+function stopLiveRefresh() {
+  if (state.liveRefreshTimer) clearInterval(state.liveRefreshTimer);
+  state.liveRefreshTimer = null;
+  state.liveRefreshRemaining = 0;
+}
+
 function showView(id) {
+  if (id !== 'analysisView') stopLiveRefresh();
   views.forEach(v => $(v).classList.toggle('active', v === id));
   $('navMatches').classList.toggle('active', id === 'matchesView' || id === 'analysisView');
   $('navHistory').classList.toggle('active', id === 'historyView');
@@ -204,7 +214,10 @@ function filteredMatches() {
 
 function matchCenter(m) {
   if (m.finished && m.score?.home !== null && m.score?.away !== null) return `${m.score.home} : ${m.score.away}`;
-  if (m.live) return `${m.score?.home ?? 0}:${m.score?.away ?? 0} · LIVE`;
+  if (m.live) {
+    const minute = Number(m.elapsed || 0) > 0 ? ` · ${Number(m.elapsed)}′` : '';
+    return `${m.score?.home ?? 0}:${m.score?.away ?? 0} · LIVE${minute}`;
+  }
   return timeOf(m.date);
 }
 
@@ -249,21 +262,179 @@ function renderMatches() {
           <button class="fav-star ${isFavorite(m.away?.id) ? 'active' : ''}" type="button" data-team-id="${Number(m.away?.id)}" data-team-name="${escapeHtml(m.away?.name || '')}" data-team-logo="${escapeHtml(m.away?.logo || '')}" aria-label="Избранное">${isFavorite(m.away?.id) ? '★' : '☆'}</button>
         </div>
       </div>
-      ${m.finished
-        ? '<button class="analyze-btn finished-btn" type="button" disabled>Матч завершён</button>'
-        : `<button class="analyze-btn" data-fixture="${Number(m.fixtureId)}">🧠 Полный анализ</button>`}
+      ${m.live
+        ? `<button class="analyze-btn live-center-btn" data-center="${Number(m.fixtureId)}">🔴 LIVE-центр</button>`
+        : m.finished
+          ? `<button class="analyze-btn finished-btn" data-center="${Number(m.fixtureId)}">📋 Итоги матча</button>`
+          : `<button class="analyze-btn" data-fixture="${Number(m.fixtureId)}">🧠 Предматчевый анализ</button>`}
     </article>
   `).join('');
 
   document.querySelectorAll('.analyze-btn[data-fixture]').forEach(btn => {
     btn.addEventListener('click', () => analyzeMatch(Number(btn.dataset.fixture), btn));
   });
+  document.querySelectorAll('.analyze-btn[data-center]').forEach(btn => {
+    btn.addEventListener('click', () => openMatchCenter(Number(btn.dataset.center), btn));
+  });
   document.querySelectorAll('.fav-star').forEach(btn => btn.addEventListener('click', () => toggleFavorite({
     id: Number(btn.dataset.teamId), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '',
   })));
 }
 
+function statValue(v) {
+  if (v === null || v === undefined || v === '') return '—';
+  return escapeHtml(String(v));
+}
+
+function minuteLabel(event) {
+  const base = Number(event.minute || 0);
+  const extra = Number(event.extra || 0);
+  return `${base}${extra > 0 ? `+${extra}` : ''}′`;
+}
+
+function liveEventsHtml(events = []) {
+  if (!events.length) return '<div class="empty compact-empty">События пока не доступны для этого матча.</div>';
+  return `<div class="live-events">${events.map(e => `
+    <div class="live-event ${escapeHtml(e.side || '')}">
+      <span class="event-minute">${minuteLabel(e)}</span>
+      <div class="event-main">
+        <strong>${escapeHtml(e.label || 'Событие')}</strong>
+        <span>${escapeHtml(e.player || e.teamName || '')}${e.assist ? ` · ${escapeHtml(e.assist)}` : ''}</span>
+      </div>
+      <span class="event-team">${escapeHtml(e.teamName || '')}</span>
+    </div>`).join('')}</div>`;
+}
+
+function liveStatsHtml(stats, match) {
+  const items = stats?.items || [];
+  if (!items.length) return '<div class="empty compact-empty">Детальная статистика недоступна для этого матча.</div>';
+  return `<div class="live-stats">
+    <div class="live-stat-head"><strong>${escapeHtml(match.home?.name || '')}</strong><span></span><strong>${escapeHtml(match.away?.name || '')}</strong></div>
+    ${items.map(x => `<div class="live-stat-row"><strong>${statValue(x.home)}</strong><span>${escapeHtml(x.label)}</span><strong>${statValue(x.away)}</strong></div>`).join('')}
+  </div>`;
+}
+
+function lineupLiveHtml(lineups, match) {
+  const home = lineups?.home;
+  const away = lineups?.away;
+  if (!home && !away) return '<div class="empty compact-empty">Составы не опубликованы или не входят в покрытие турнира.</div>';
+  return `<div class="data-grid">
+    <div class="data-card"><span>${escapeHtml(match.home?.name || '')}</span><strong>${escapeHtml(home?.formation || '—')}</strong><p>${escapeHtml((home?.startXI || []).join(', ') || 'Нет стартового состава')}</p></div>
+    <div class="data-card"><span>${escapeHtml(match.away?.name || '')}</span><strong>${escapeHtml(away?.formation || '—')}</strong><p>${escapeHtml((away?.startXI || []).join(', ') || 'Нет стартового состава')}</p></div>
+  </div>`;
+}
+
+function updateLiveCountdown() {
+  const el = $('liveRefreshText');
+  if (!el || !state.currentCenter || state.currentCenter.mode !== 'live') return;
+  el.textContent = `Автообновление через ${Math.max(0, state.liveRefreshRemaining)} сек.`;
+}
+
+function startLiveRefresh(fixtureId) {
+  stopLiveRefresh();
+  state.liveRefreshRemaining = 60;
+  updateLiveCountdown();
+  state.liveRefreshTimer = setInterval(async () => {
+    state.liveRefreshRemaining -= 1;
+    updateLiveCountdown();
+    if (state.liveRefreshRemaining <= 0) {
+      state.liveRefreshRemaining = 60;
+      try {
+        const data = await api(`/api/match-center?fixtureId=${Number(fixtureId)}&t=${Date.now()}`);
+        state.currentCenter = data;
+        renderMatchCenter(data);
+        if (data.mode !== 'live') stopLiveRefresh();
+      } catch (e) {
+        state.liveRefreshRemaining = 60;
+        toast(e.message);
+      }
+    }
+  }, 1000);
+}
+
+function renderMatchCenter(d) {
+  state.currentCenter = d;
+  state.currentAnalysis = null;
+  const m = d.match || {};
+  const live = d.mode === 'live';
+  const finished = d.mode === 'finished';
+  const score = m.score || {};
+  const scoreText = `${score.home ?? 0} : ${score.away ?? 0}`;
+  $('analysis').innerHTML = `
+    <section class="panel live-hero ${live ? 'is-live' : ''}">
+      <div class="live-status-row">
+        <span class="live-pill ${live ? 'active' : 'finished'}">${live ? '● LIVE' : finished ? '✓ ЗАВЕРШЁН' : 'МАТЧ'}</span>
+        <span>${escapeHtml(m.statusLabel || m.status || '')}</span>
+      </div>
+      <div class="logos">
+        ${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : ''}
+        <strong class="live-score">${escapeHtml(scoreText)}</strong>
+        ${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : ''}
+      </div>
+      <h2>${escapeHtml(m.home?.name || '')} — ${escapeHtml(m.away?.name || '')}</h2>
+      <p>${escapeHtml(m.league || '')}${m.venue ? ` · ${escapeHtml(m.venue)}` : ''}</p>
+      ${live ? '<p id="liveRefreshText" class="live-refresh-text">Автообновление через 60 сек.</p>' : `<p class="live-refresh-text">Данные матча сохранены в общем кэше.</p>`}
+      <button id="centerRefreshBtn" class="reminder-btn" type="button">↻ Обновить сейчас</button>
+    </section>
+
+    ${d.note ? `<section class="panel"><p class="tiny warning">${escapeHtml(d.note)}</p></section>` : ''}
+
+    <section class="panel">
+      <h2>📊 ${live ? 'LIVE-статистика' : 'Статистика матча'}</h2>
+      <div style="margin-top:12px">${liveStatsHtml(d.statistics, m)}</div>
+    </section>
+
+    <section class="panel">
+      <h2>⚡ События матча</h2>
+      <div style="margin-top:12px">${liveEventsHtml(d.events)}</div>
+    </section>
+
+    <section class="panel">
+      <h2>👥 Составы</h2>
+      <div style="margin-top:12px">${lineupLiveHtml(d.lineups, m)}</div>
+    </section>
+
+    <section class="panel coverage-panel">
+      <h2>Покрытие данных</h2>
+      <div class="coverage-grid">
+        <span>${d.availability?.events ? '✅' : '—'} События</span>
+        <span>${d.availability?.statistics ? '✅' : '—'} Статистика</span>
+        <span>${d.availability?.lineups ? '✅' : '—'} Составы</span>
+      </div>
+      <p class="tiny">Обновлено: ${dateTime(d.generatedAt)}${d.cached ? ' · кэш' : ' · свежие данные'}</p>
+    </section>
+  `;
+  $('centerRefreshBtn')?.addEventListener('click', async () => {
+    const btn = $('centerRefreshBtn');
+    btn.disabled = true; btn.textContent = '⏳ Обновляю…';
+    try {
+      // Cache is intentionally shared for 60 seconds, so manual refresh can
+      // return the same snapshot without wasting API quota.
+      const data = await api(`/api/match-center?fixtureId=${Number(m.fixtureId)}&t=${Date.now()}`);
+      state.currentCenter = data;
+      renderMatchCenter(data);
+    } catch (e) { toast(e.message); }
+  });
+  if (live) startLiveRefresh(m.fixtureId); else stopLiveRefresh();
+}
+
+async function openMatchCenter(fixtureId, btn) {
+  const original = btn?.textContent || '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Загружаю матч…'; }
+  try {
+    const data = await api(`/api/match-center?fixtureId=${Number(fixtureId)}`);
+    renderMatchCenter(data);
+    showView('analysisView');
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = original; }
+  }
+}
+
 async function analyzeMatch(fixtureId, btn) {
+  stopLiveRefresh();
+  state.currentCenter = null;
   const original = btn?.textContent || '';
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Собираю данные…'; }
   try {
