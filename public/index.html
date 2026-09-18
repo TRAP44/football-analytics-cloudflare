@@ -50,6 +50,7 @@
           <button id="refreshBtn" class="icon-btn" type="button" aria-label="Обновить">↻</button>
         </div>
         <div id="matchesCount" class="results-count"></div>
+        <div id="dataNotice"></div>
         <div id="matches" class="matches"></div>
       </section>
 
@@ -165,44 +166,7 @@
           <p class="tiny">FREE работает экономно. На PRO+ приложение автоматически ускоряет LIVE, включает live odds, player stats и сохраняет движение линии, если эти данные доступны у провайдера.</p>
         </section>
 
-        <section class="panel billing-panel">
-          <div class="section-head profile-section-head">
-            <div>
-              <h2>💎 Тарифы и Telegram Stars</h2>
-              <p>Подписка на 30 дней с автоматическим продлением через Telegram.</p>
-            </div>
-          </div>
-          <div id="billingStatus" class="billing-status waiting">Проверяем Telegram Stars…</div>
-          <div id="subscriptionDetails" class="subscription-details" hidden></div>
-          <div class="billing-actions">
-            <button id="subscriptionManageBtn" class="secondary-setting-btn" type="button" hidden>Отключить автопродление</button>
-            <button id="billingSyncBtn" class="secondary-setting-btn" type="button">↻ Проверить оплату</button>
-          </div>
-          <div class="pricing-grid">
-            <article class="pricing-card current" data-plan="FREE">
-              <span class="pricing-name">FREE</span>
-              <strong>3 анализа / день</strong>
-              <span class="pricing-price">0 ⭐</span>
-              <ul><li>Предматчевый анализ</li><li>Избранные команды</li><li>Напоминания</li></ul>
-              <button type="button" disabled>Бесплатно</button>
-            </article>
-            <article class="pricing-card" data-plan="PRO">
-              <span class="pricing-name">PRO</span>
-              <strong id="proLimit">20 анализов / день</strong>
-              <span id="proPrice" class="pricing-price">199 ⭐ / 30 дней</span>
-              <ul><li>Больше анализов</li><li>Расширенный LIVE</li><li>Приоритетные обновления</li></ul>
-              <button id="proBtn" type="button" disabled>Подключить PRO</button>
-            </article>
-            <article class="pricing-card premium-card" data-plan="PREMIUM">
-              <span class="pricing-name">PREMIUM</span>
-              <strong id="premiumLimit">100 анализов / день</strong>
-              <span id="premiumPrice" class="pricing-price">399 ⭐ / 30 дней</span>
-              <ul><li>Высокие лимиты</li><li>Расширенные уведомления</li><li>Все новые premium-функции</li></ul>
-              <button id="premiumBtn" type="button" disabled>Подключить PREMIUM</button>
-            </article>
-          </div>
-          <p class="tiny">Цифровые подписки оплачиваются Telegram Stars. Отмена автопродления не отключает доступ до конца уже оплаченного периода.</p>
-        </section>
+
       </section>
     </main>
 
