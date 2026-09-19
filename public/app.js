@@ -1,3 +1,5 @@
+const CLIENT_VERSION = '4.2.0-release-hardening';
+
 const tg = window.Telegram?.WebApp;
 if (tg) {
   tg.ready();
@@ -22,6 +24,12 @@ const state = {
   modelQualityDays: 90,
   diagnostics: null,
   diagnosticsLoading: false,
+  releaseReadiness: null,
+  releaseReadinessLoading: false,
+  serverVersion: '',
+  versionMismatch: false,
+  storageAvailable: true,
+  liveRefreshWasActive: false,
   filter: 'top',
   search: '',
   globalSearch: { query: '', remoteTeams: [], remoteCompetitions: [], loading: false, warning: '', searchedAt: null },
@@ -43,7 +51,7 @@ const state = {
   providerLoaded: false,
   viewScroll: {},
   matchesLoadSeq: 0,
-  clientPerf: { startedAt: new Date().toISOString(), requests: 0, completed: 0, failed: 0, deduped: 0, retries: 0, totalMs: 0, lastMs: null },
+  clientPerf: { startedAt: new Date().toISOString(), requests: 0, completed: 0, failed: 0, deduped: 0, retries: 0, totalMs: 0, lastMs: null, clientErrors: 0, lastError: '' },
 };
 
 const inflightGetRequests = new Map();
@@ -80,7 +88,7 @@ function showView(id, options = {}) {
   const current = activeViewId();
   syncTopbar(id);
   if (current && current !== id) state.viewScroll[current] = window.scrollY || 0;
-  if (id !== 'analysisView') stopLiveRefresh();
+  if (id !== 'analysisView') { stopLiveRefresh(); state.liveRefreshWasActive = false; }
   views.forEach(v => $(v).classList.toggle('active', v === id));
   $('navMatches').classList.toggle('active', id === 'matchesView' || id === 'tournamentView' || id === 'teamView' || id === 'analysisView');
   $('navSearch')?.classList.toggle('active', id === 'searchView');
@@ -103,6 +111,17 @@ function toast(message) {
   toast.timer = setTimeout(() => el.classList.remove('show'), 2800);
 }
 
+function observeServerVersion(serverVersion) {
+  state.serverVersion = String(serverVersion || '');
+  state.versionMismatch = Boolean(state.serverVersion && state.serverVersion !== CLIENT_VERSION);
+  const banner = $('versionBanner');
+  if (!banner) return;
+  banner.hidden = !state.versionMismatch;
+  if ($('versionBannerText')) $('versionBannerText').textContent = state.versionMismatch
+    ? `Доступна новая версия приложения (${state.serverVersion}). Обновите Mini App, чтобы исключить конфликт старого интерфейса и нового Worker.`
+    : '';
+}
+
 function localDate(offset = 0) {
   const d = new Date();
   d.setDate(d.getDate() + offset);
@@ -112,19 +131,28 @@ function localDate(offset = 0) {
   return `${y}-${m}-${day}`;
 }
 
+function safeDate(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isFinite(d.getTime()) ? d : null;
+}
+
 function timeOf(iso) {
-  if (!iso) return '—';
-  return new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+  const d = safeDate(iso);
+  if (!d) return '—';
+  try { return new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' }).format(d); } catch { return '—'; }
 }
 
 function dateTime(iso) {
-  if (!iso) return '';
-  return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+  const d = safeDate(iso);
+  if (!d) return '';
+  try { return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(d); } catch { return ''; }
 }
 
 function dateOnly(iso) {
-  if (!iso) return '';
-  return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' }).format(new Date(iso));
+  const d = safeDate(iso);
+  if (!d) return '';
+  try { return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' }).format(d); } catch { return ''; }
 }
 
 function relativeAge(iso) {
@@ -171,6 +199,8 @@ async function api(path, options = {}) {
       try {
         const { timeoutMs: _timeoutMs, retry: _retry, dedupe: _dedupe, ...fetchOptions } = options;
         const response = await fetch(path, { ...fetchOptions, method, headers, signal: controller.signal });
+        const serverVersion = String(response.headers.get('x-app-version') || '');
+        if (serverVersion) observeServerVersion(serverVersion);
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
           const error = Object.assign(new Error(data.error || `HTTP ${response.status}`), { status: response.status, payload: data });
@@ -406,10 +436,66 @@ async function openProfileView() {
   if (!state.favoritesLoaded) essentials.push(loadFavorites());
   if (!state.remindersLoaded) essentials.push(loadReminders());
   if (!state.providerLoaded) essentials.push(loadProvider());
-  essentials.push(loadModelQuality(false), loadDiagnostics(false));
+  essentials.push(loadModelQuality(false), loadReleaseReadiness(false));
   await Promise.allSettled(essentials);
 }
 
+
+function releaseStateLabel(value) {
+  const map = { ready: 'Готово', warning: 'Почти готово', blocked: 'Блокировано' };
+  return map[String(value || '')] || 'Нет данных';
+}
+
+function renderReleaseReadiness() {
+  const root = $('releaseStatus');
+  const badge = $('releaseBadge');
+  const checksEl = $('releaseChecks');
+  const meta = $('releaseMeta');
+  if (!root || !badge || !checksEl) return;
+  if (state.releaseReadinessLoading) {
+    badge.textContent = 'Проверка'; badge.className = 'release-badge waiting';
+    root.textContent = 'Проверяю обязательные зависимости ядра…';
+    checksEl.innerHTML = '';
+    if (meta) meta.textContent = '';
+    return;
+  }
+  const r = state.releaseReadiness;
+  if (!r?.available) {
+    badge.textContent = 'Нет данных'; badge.className = 'release-badge';
+    root.textContent = r?.reason || 'Проверка ещё не запускалась.';
+    checksEl.innerHTML = '';
+    return;
+  }
+  badge.textContent = releaseStateLabel(r.status);
+  badge.className = `release-badge ${escapeHtml(r.status || '')}`;
+  root.textContent = r.label || 'Проверка завершена.';
+  if (meta) meta.textContent = `${Number(r.score || 0)}% · ${relativeAge(r.generatedAt)}`;
+  checksEl.innerHTML = (r.checks || []).map(x => `
+    <div class="release-check ${escapeHtml(x.state || 'warn')}">
+      <i>${x.state === 'pass' ? '✓' : x.state === 'fail' ? '×' : '!'}</i>
+      <span><strong>${escapeHtml(x.label || '')}</strong><small>${escapeHtml(x.detail || '')}</small></span>
+    </div>`).join('') || '<div class="empty compact-empty">Нет результатов проверки.</div>';
+}
+
+async function loadReleaseReadiness(force = false) {
+  if (state.releaseReadinessLoading) return;
+  if (!force && state.releaseReadiness) { renderReleaseReadiness(); return; }
+  state.releaseReadinessLoading = true;
+  renderReleaseReadiness();
+  try {
+    state.releaseReadiness = await api(`/api/release-readiness${force ? '?refresh=1' : ''}`);
+    if (state.releaseReadiness?.diagnostics) {
+      state.diagnostics = state.releaseReadiness.diagnostics;
+      if (state.diagnostics?.provider) { state.provider = state.diagnostics.provider; renderProvider(); }
+      renderDiagnostics();
+    }
+  } catch (e) {
+    state.releaseReadiness = { available: false, reason: e.message || 'Не удалось выполнить release-проверку.' };
+  } finally {
+    state.releaseReadinessLoading = false;
+    renderReleaseReadiness();
+  }
+}
 
 function diagPct(value) {
   return Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)}%` : '—';
@@ -508,7 +594,7 @@ function renderDiagnostics() {
     const cp = state.clientPerf || {};
     const avg = Number(cp.completed || 0) > 0 ? Math.round(Number(cp.totalMs || 0) / Number(cp.completed)) : null;
     client.hidden = false;
-    client.innerHTML = `<div class="diagnostics-block-head"><strong>📱 Клиент Mini App</strong><span>v4.1</span></div><div class="diagnostics-grid">
+    client.innerHTML = `<div class="diagnostics-block-head"><strong>📱 Клиент Mini App</strong><span>v4.2</span></div><div class="diagnostics-grid">
       <div><span>Сеть</span><strong>${navigator.onLine === false ? 'Offline' : 'Online'}</strong><small>${navigator.connection?.effectiveType ? escapeHtml(navigator.connection.effectiveType) : 'тип сети —'}</small></div>
       <div><span>Средний API</span><strong>${avg !== null ? `${avg} мс` : '—'}</strong><small>последний ${cp.lastMs !== null ? `${cp.lastMs} мс` : '—'}</small></div>
       <div><span>Запросы</span><strong>${Number(cp.requests || 0)}</strong><small>${Number(cp.completed || 0)} успешно · ${Number(cp.failed || 0)} ошибок</small></div>
@@ -823,11 +909,24 @@ function renderFavoriteTeams() {
 }
 
 
+function storageGet(key) {
+  try { return localStorage.getItem(key); }
+  catch { state.storageAvailable = false; return null; }
+}
+function storageSet(key, value) {
+  try { localStorage.setItem(key, value); return true; }
+  catch { state.storageAvailable = false; return false; }
+}
+function storageRemove(key) {
+  try { localStorage.removeItem(key); return true; }
+  catch { state.storageAvailable = false; return false; }
+}
+
 const RECENT_TEAMS_KEY = 'football_recent_teams_v1';
 
 function getRecentTeams() {
   try {
-    const rows = JSON.parse(localStorage.getItem(RECENT_TEAMS_KEY) || '[]');
+    const rows = JSON.parse(storageGet(RECENT_TEAMS_KEY) || '[]');
     return Array.isArray(rows) ? rows.filter(x => Number(x?.id) > 0 && x?.name).slice(0, 10) : [];
   } catch { return []; }
 }
@@ -837,12 +936,12 @@ function rememberTeam(team) {
   try {
     const row = { id: Number(team.id), name: String(team.name), logo: String(team.logo || ''), country: String(team.country || ''), viewedAt: new Date().toISOString() };
     const next = [row, ...getRecentTeams().filter(x => Number(x.id) !== row.id)].slice(0, 10);
-    localStorage.setItem(RECENT_TEAMS_KEY, JSON.stringify(next));
+    storageSet(RECENT_TEAMS_KEY, JSON.stringify(next));
   } catch {}
 }
 
 function clearRecentTeams() {
-  try { localStorage.removeItem(RECENT_TEAMS_KEY); } catch {}
+  storageRemove(RECENT_TEAMS_KEY)
   renderDiscoveryHome();
 }
 
@@ -982,11 +1081,11 @@ function matchSnapshotKey(date) { return `${MATCH_SNAPSHOT_PREFIX}${date}`; }
 
 function readMatchSnapshot(date) {
   try {
-    const raw = localStorage.getItem(matchSnapshotKey(date));
+    const raw = storageGet(matchSnapshotKey(date));
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed?.savedAt || Date.now() - Number(parsed.savedAt) > MATCH_SNAPSHOT_MAX_AGE_MS) {
-      localStorage.removeItem(matchSnapshotKey(date));
+      storageRemove(matchSnapshotKey(date));
       return null;
     }
     return parsed;
@@ -995,7 +1094,7 @@ function readMatchSnapshot(date) {
 
 function writeMatchSnapshot(date, data) {
   try {
-    localStorage.setItem(matchSnapshotKey(date), JSON.stringify({
+    storageSet(matchSnapshotKey(date), JSON.stringify({
       savedAt: Date.now(),
       matches: data.matches || [],
       refreshedAt: data.refreshedAt || new Date().toISOString(),
@@ -1621,6 +1720,12 @@ function updateLiveCountdown() {
 function startLiveRefresh(fixtureId) {
   stopLiveRefresh();
   state.liveRefreshRemaining = Math.max(15, Number(state.currentCenter?.refreshSeconds || 60));
+  if (document.hidden) {
+    state.liveRefreshWasActive = true;
+    updateLiveCountdown();
+    return;
+  }
+  state.liveRefreshWasActive = true;
   updateLiveCountdown();
   state.liveRefreshTimer = setInterval(async () => {
     state.liveRefreshRemaining -= 1;
@@ -2323,6 +2428,26 @@ function updateConnectionBanner() {
   banner.textContent = offline ? '📴 Нет сети — доступные сохранённые данные останутся на экране.' : '';
 }
 
+function noteClientError(error) {
+  const message = String(error?.message || error || 'Неизвестная ошибка').slice(0, 180);
+  state.clientPerf.clientErrors += 1;
+  state.clientPerf.lastError = message;
+}
+window.addEventListener('error', event => noteClientError(event?.error || event?.message));
+window.addEventListener('unhandledrejection', event => noteClientError(event?.reason));
+$('versionReloadBtn')?.addEventListener('click', () => location.reload());
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    if (state.liveRefreshTimer) { stopLiveRefresh(); state.liveRefreshWasActive = true; }
+    return;
+  }
+  const fixtureId = Number(state.currentCenter?.match?.fixtureId || 0);
+  if (fixtureId && state.currentCenter?.mode === 'live' && activeViewId() === 'analysisView' && state.liveRefreshWasActive) {
+    startLiveRefresh(fixtureId);
+  }
+});
+
 window.addEventListener('offline', () => { updateConnectionBanner(); toast('Нет подключения к интернету'); });
 window.addEventListener('online', () => {
   updateConnectionBanner();
@@ -2380,6 +2505,7 @@ $('savePreferencesBtn')?.addEventListener('click', savePreferencesFromUi);
 $('modelQualityRefreshBtn')?.addEventListener('click', () => loadModelQuality(true));
 $('modelQualityPeriod')?.addEventListener('change', () => loadModelQuality(true));
 $('diagnosticsRefreshBtn')?.addEventListener('click', () => loadDiagnostics(true));
+$('releaseRefreshBtn')?.addEventListener('click', () => loadReleaseReadiness(true));
 
 async function scheduleIdle(task) {
   if ('requestIdleCallback' in window) return new Promise(resolve => requestIdleCallback(async () => { try { await task(); } finally { resolve(); } }, { timeout: 1800 }));
@@ -2388,7 +2514,7 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// v4.1 keeps the fast v4.0 startup while refreshing the visual shell.
+// v4.2 keeps the fast v4.0 startup and adds release/QA guards without extra football API calls.
 // v4.0: first paint is intentionally small — matches/profile/favorites only.
 // History, reminders and provider details are loaded later or when their screen opens.
 await Promise.allSettled([loadProfile(), loadFavorites(), loadMatches()]);
