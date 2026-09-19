@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#111827" />
   <title>Football Manager · Match Intelligence</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=4.1.0" />
+  <link rel="stylesheet" href="/styles.css?v=4.2.0" />
 </head>
 <body>
   <div class="app-shell">
@@ -23,6 +23,7 @@
     </header>
 
     <div id="connectionBanner" class="connection-banner" role="status" aria-live="polite" hidden></div>
+    <div id="versionBanner" class="version-banner" role="status" aria-live="polite" hidden><span id="versionBannerText"></span><button id="versionReloadBtn" type="button">Обновить</button></div>
 
     <main>
       <section id="matchesView" class="view active">
@@ -279,6 +280,22 @@
           <p class="tiny">FREE работает экономно. На PRO+ приложение автоматически ускоряет LIVE, включает live odds, player stats и сохраняет движение линии, если эти данные доступны у провайдера.</p>
         </section>
 
+        <section class="panel release-panel">
+          <div class="section-head profile-section-head release-head">
+            <div>
+              <h2>✅ Готовность ядра</h2>
+              <p>Автопроверка обязательных зависимостей перед release candidate.</p>
+            </div>
+            <button id="releaseRefreshBtn" class="icon-btn" type="button" aria-label="Повторить release-проверку">↻</button>
+          </div>
+          <div class="release-summary">
+            <span id="releaseBadge" class="release-badge">Нет данных</span>
+            <div><strong id="releaseStatus">Откройте профиль, чтобы выполнить проверку.</strong><small id="releaseMeta"></small></div>
+          </div>
+          <div id="releaseChecks" class="release-checks"></div>
+          <p class="tiny diagnostics-privacy">Проверка не активирует оплату и не тратит запросы API-Football. Она проверяет runtime-конфигурацию, Supabase, миграции и состояние уже используемого провайдера.</p>
+        </section>
+
         <section class="panel diagnostics-panel">
           <div class="section-head profile-section-head diagnostics-head">
             <div>
@@ -314,6 +331,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=4.1.0"></script>
+  <script type="module" src="/app.js?v=4.2.0"></script>
 </body>
 </html>
