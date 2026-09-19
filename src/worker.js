@@ -11,6 +11,7 @@ const memory = {
   modelPredictions: new Map(),
   opsEvents: [],
   integrity: { lastRun: null, recentIssues: [] },
+  releaseReadiness: null,
   telemetry: {
     startedAt: new Date().toISOString(),
     apiRequests: 0,
@@ -34,7 +35,7 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '4.1.0-visual-design';
+const APP_VERSION = '4.2.0-release-hardening';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -2017,7 +2018,7 @@ async function readRecentOpsEvents(cfg, limit = 10) {
   }
 }
 
-async function apiDiagnostics(request, cfg) {
+async function collectDiagnostics(cfg) {
   const [supabase, ops, integrity] = await Promise.all([
     probeSupabase(cfg),
     readRecentOpsEvents(cfg, 12),
@@ -2044,7 +2045,7 @@ async function apiDiagnostics(request, cfg) {
   if (Number(integrity.lastRun?.warnings || 0) > 0 && !Number(integrity.lastRun?.quarantined || 0)) recommendations.push('В последней выборке есть предупреждения целостности данных; приложение оставило матчи доступными, но пометило их для контроля.');
   if (!recommendations.length) recommendations.push('Критичных действий сейчас не требуется.');
 
-  return json({
+  return {
     available: true,
     version: APP_VERSION,
     generatedAt: new Date().toISOString(),
@@ -2055,7 +2056,84 @@ async function apiDiagnostics(request, cfg) {
     observability: { persistent: ops.persistent, migrationReady: ops.migrationReady, retentionDays: cfg.opsRetentionDays, recentEvents: ops.items },
     integrity,
     recommendations,
-  });
+  };
+}
+
+async function apiDiagnostics(request, cfg) {
+  return json(await collectDiagnostics(cfg));
+}
+
+async function probeOptionalTable(cfg, table) {
+  if (!hasSupabase(cfg)) return { ok: false, status: 'not_configured' };
+  try {
+    const url = new URL(`${cfg.supabaseUrl}/rest/v1/${table}`);
+    url.searchParams.set('select', '*');
+    url.searchParams.set('limit', '1');
+    const r = await fetch(url, { headers: supaHeaders(cfg) });
+    if (r.ok) return { ok: true, status: 'ok' };
+    return { ok: false, status: `http_${r.status}` };
+  } catch (error) {
+    return { ok: false, status: 'network_error', detail: redactOpsString(error?.message || error, 120) };
+  }
+}
+
+function releaseCheck(id, label, state, detail, blocking = false) {
+  return { id, label, state, detail, blocking: Boolean(blocking) };
+}
+
+async function apiReleaseReadiness(request, cfg) {
+  const now = Date.now();
+  const force = new URL(request.url).searchParams.get('refresh') === '1';
+  if (!force && memory.releaseReadiness?.value && now - Number(memory.releaseReadiness.at || 0) < 30000) {
+    return json({ ...memory.releaseReadiness.value, cached: true });
+  }
+
+  const [diagnostics, modelTable] = await Promise.all([
+    collectDiagnostics(cfg),
+    probeOptionalTable(cfg, 'model_predictions'),
+  ]);
+  const provider = diagnostics.provider || {};
+  const checks = [
+    releaseCheck('football_api', 'API-Football key', cfg.apiFootballKey ? 'pass' : 'fail', cfg.apiFootballKey ? 'Ключ доступен Worker.' : 'API_FOOTBALL_KEY отсутствует.', true),
+    releaseCheck('supabase_config', 'Supabase config', hasSupabase(cfg) ? 'pass' : 'fail', hasSupabase(cfg) ? 'URL и service key доступны runtime.' : 'Не хватает SUPABASE_URL или service key.', true),
+    releaseCheck('supabase_online', 'Supabase/PostgREST', diagnostics.supabase?.ok ? 'pass' : 'fail', diagnostics.supabase?.ok ? `Ответ ${Number(diagnostics.supabase?.latencyMs || 0)} мс.` : `Статус: ${diagnostics.supabase?.status || 'offline'}.`, true),
+    releaseCheck('model_backtest', 'Backtest schema v3.6+', modelTable.ok ? 'pass' : 'fail', modelTable.ok ? 'Таблица model_predictions доступна.' : `model_predictions: ${modelTable.status}.`, true),
+    releaseCheck('observability', 'Observability schema v3.8', diagnostics.observability?.migrationReady ? 'pass' : 'warn', diagnostics.observability?.migrationReady ? 'Постоянный журнал ops_events доступен.' : 'Журнал работает только в памяти Worker.', false),
+    releaseCheck('integrity', 'Data Integrity schema v3.9', diagnostics.integrity?.migrationReady ? 'pass' : 'fail', diagnostics.integrity?.migrationReady ? 'История integrity-проверок доступна.' : 'Нужна migration v3.9.', true),
+    releaseCheck('provider_health', 'Состояние API-Football', provider.health === 'critical' ? 'fail' : provider.health === 'warning' || provider.health === 'waiting' ? 'warn' : 'pass', provider.health === 'waiting' ? 'Ещё не было успешного provider-запроса после старта Worker.' : `Health: ${provider.health || 'unknown'}.`, provider.health === 'critical'),
+    releaseCheck('telegram', 'Telegram bot runtime', cfg.botToken ? 'pass' : 'warn', cfg.botToken ? 'TELEGRAM_BOT_TOKEN доступен.' : 'Без bot token не будут работать Telegram-уведомления.', false),
+    releaseCheck('production_mode', 'Production mode', cfg.devMode ? 'warn' : 'pass', cfg.devMode ? 'DEV_MODE=true — перед релизом выключить.' : 'DEV_MODE=false.', false),
+    releaseCheck('monetization', 'Монетизация', cfg.monetizationEnabled ? 'warn' : 'pass', cfg.monetizationEnabled ? 'Монетизация включена, хотя текущий план проекта — запускать её в финале.' : 'Оплата корректно остаётся на паузе.', false),
+    releaseCheck('integrity_last_run', 'Последняя проверка матчей', diagnostics.integrity?.lastRun?.health === 'critical' ? 'warn' : 'pass', diagnostics.integrity?.lastRun ? `Health: ${diagnostics.integrity.lastRun.health || 'ok'}, quality ${Number(diagnostics.integrity.lastRun.qualityScore || 0)}%.` : 'Проверка появится после загрузки каталога матчей.', false),
+  ];
+
+  const blockers = checks.filter(x => x.state === 'fail' && x.blocking);
+  const warnings = checks.filter(x => x.state === 'warn' || (x.state === 'fail' && !x.blocking));
+  const passed = checks.filter(x => x.state === 'pass').length;
+  const score = Math.round((passed / checks.length) * 100);
+  const status = blockers.length ? 'blocked' : warnings.length ? 'warning' : 'ready';
+  const label = blockers.length ? 'Есть блокирующие проверки' : warnings.length ? 'Ядро готово, есть предупреждения' : 'Core release candidate готов';
+
+  const value = {
+    available: true,
+    version: APP_VERSION,
+    generatedAt: new Date().toISOString(),
+    status,
+    label,
+    score,
+    checks,
+    blockers: blockers.map(x => x.id),
+    warnings: warnings.map(x => x.id),
+    diagnostics,
+    policy: {
+      monetizationExpected: 'paused',
+      paymentTestingRequiredNow: false,
+      providerUpgradeRequiredNow: false,
+      note: 'v4.2 проверяет готовность основной бесплатной части. Оплата и переход на расширенный API остаются отдельными будущими этапами.',
+    },
+  };
+  memory.releaseReadiness = { at: now, value };
+  return json(value);
 }
 
 async function tavilySearch(query, cfg) {
@@ -4138,7 +4216,7 @@ async function apiAnalyze(request, cfg, user) {
 
   const payload = {
     generatedAt: new Date().toISOString(),
-    analysisVersion: '4.1.0-visual-design',
+    analysisVersion: '4.2.0-release-hardening',
     match: {
       fixtureId, date: fixture.fixture?.date || '', status: fixture.fixture?.status?.short || '',
       venue: fixture.fixture?.venue?.name || '', city: fixture.fixture?.venue?.city || '',
@@ -4209,6 +4287,7 @@ export default {
         dataIntegrity: 'enabled',
         performanceUx: 'enabled',
         visualDesign: 'enabled',
+        releaseHardening: 'enabled',
         devMode: cfg.devMode,
       });
     }
@@ -4259,6 +4338,7 @@ export default {
       if (request.method === 'GET' && url.pathname === '/api/me') return await apiMe(request, cfg, user);
       if (request.method === 'GET' && url.pathname === '/api/provider') return json({ provider: providerSnapshot() });
       if (request.method === 'GET' && url.pathname === '/api/diagnostics') return await apiDiagnostics(request, cfg);
+      if (request.method === 'GET' && url.pathname === '/api/release-readiness') return await apiReleaseReadiness(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/data-integrity') return await apiDataIntegrity(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/model-quality') return await apiModelQuality(request, cfg);
       if (url.pathname.startsWith('/api/billing/')) {
