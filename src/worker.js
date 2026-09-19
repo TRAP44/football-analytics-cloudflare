@@ -39,6 +39,16 @@ const BILLING_PLANS = Object.freeze({
   },
 });
 
+const MODEL_BASE_WEIGHTS = Object.freeze({
+  market: 0.42,
+  apiPrediction: 0.24,
+  recentForm: 0.26,
+  h2h: 0.08,
+});
+
+const CALIBRATION_CACHE_KEY = 'model-calibration:global:v3.7';
+const CALIBRATION_CACHE_MINUTES = 360;
+
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -717,6 +727,244 @@ function scoreBrier(row, actualOutcome) {
   return Math.round((sum / 3) * 10000) / 10000;
 }
 
+function validThreeProbabilities(probabilities) {
+  return Boolean(probabilities && ['home','draw','away'].every(key => Number.isFinite(Number(probabilities[key]))));
+}
+
+function rowFinalProbabilities(row) {
+  const raw = [row?.home_prob, row?.draw_prob, row?.away_prob];
+  if (raw.some(value => value === null || value === undefined || value === '')) return null;
+  const p = { home: Number(raw[0]), draw: Number(raw[1]), away: Number(raw[2]) };
+  if (!validThreeProbabilities(p)) return null;
+  return normalizeThree(p.home, p.draw, p.away);
+}
+
+function rowRawProbabilities(row) {
+  const raw = [row?.raw_home_prob, row?.raw_draw_prob, row?.raw_away_prob];
+  if (raw.some(value => value === null || value === undefined || value === '')) return rowFinalProbabilities(row);
+  const p = { home: Number(raw[0]), draw: Number(raw[1]), away: Number(raw[2]) };
+  if (!validThreeProbabilities(p)) return rowFinalProbabilities(row);
+  return normalizeThree(p.home, p.draw, p.away) || rowFinalProbabilities(row);
+}
+
+function brierFromProbabilities(probabilities, actualOutcome) {
+  if (!validThreeProbabilities(probabilities) || !['home','draw','away'].includes(String(actualOutcome || ''))) return null;
+  const probs = {
+    home: Math.max(0, Math.min(1, Number(probabilities.home) / 100)),
+    draw: Math.max(0, Math.min(1, Number(probabilities.draw) / 100)),
+    away: Math.max(0, Math.min(1, Number(probabilities.away) / 100)),
+  };
+  const sum = ['home','draw','away'].reduce((acc, key) => acc + Math.pow(probs[key] - (actualOutcome === key ? 1 : 0), 2), 0);
+  return Math.round((sum / 3) * 10000) / 10000;
+}
+
+function logLossFromProbabilities(probabilities, actualOutcome) {
+  if (!validThreeProbabilities(probabilities) || !['home','draw','away'].includes(String(actualOutcome || ''))) return null;
+  const p = Math.max(0.01, Math.min(0.99, Number(probabilities[actualOutcome]) / 100));
+  return -Math.log(p);
+}
+
+function temperatureScaleProbabilities(probabilities, temperature = 1) {
+  if (!validThreeProbabilities(probabilities)) return probabilities || null;
+  const t = clamp(Number(temperature) || 1, 0.8, 1.35);
+  if (Math.abs(t - 1) < 0.001) return normalizeThree(probabilities.home, probabilities.draw, probabilities.away);
+  const exponent = 1 / t;
+  const h = Math.pow(Math.max(0.0001, Number(probabilities.home) / 100), exponent);
+  const d = Math.pow(Math.max(0.0001, Number(probabilities.draw) / 100), exponent);
+  const a = Math.pow(Math.max(0.0001, Number(probabilities.away) / 100), exponent);
+  return normalizeThree(h, d, a);
+}
+
+function parseJsonObject(value) {
+  if (!value) return {};
+  if (typeof value === 'object' && !Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function signalProbabilitySnapshot(signals) {
+  const out = {};
+  for (const signal of signals || []) {
+    if (!signal?.name || !validThreeProbabilities(signal.probabilities)) continue;
+    out[String(signal.name)] = normalizeThree(signal.probabilities.home, signal.probabilities.draw, signal.probabilities.away);
+  }
+  return out;
+}
+
+function predictedOutcomeForProbabilities(probabilities) {
+  return predictionOutcomeKey(probabilities);
+}
+
+function averageMetric(rows, fn) {
+  const values = (rows || []).map(fn).map(Number).filter(Number.isFinite);
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+}
+
+function fitTemperatureCalibration(rows) {
+  const valid = (rows || [])
+    .filter(row => ['home','draw','away'].includes(String(row.actual_outcome || '')) && rowRawProbabilities(row))
+    .sort((a, b) => Date.parse(a.kickoff_at || 0) - Date.parse(b.kickoff_at || 0));
+  if (valid.length < 50) {
+    return { active: false, temperature: 1, sample: valid.length, trainSample: 0, validationSample: 0, baselineLogLoss: null, calibratedLogLoss: null, improvement: null };
+  }
+
+  const validationCount = Math.max(10, Math.min(50, Math.floor(valid.length * 0.2)));
+  const train = valid.slice(0, valid.length - validationCount);
+  const validation = valid.slice(valid.length - validationCount);
+  if (train.length < 40 || validation.length < 10) {
+    return { active: false, temperature: 1, sample: valid.length, trainSample: train.length, validationSample: validation.length, baselineLogLoss: null, calibratedLogLoss: null, improvement: null };
+  }
+
+  let bestTemperature = 1;
+  let bestTrainLoss = Infinity;
+  for (let t = 0.8; t <= 1.3501; t += 0.05) {
+    const temperature = Math.round(t * 100) / 100;
+    const loss = averageMetric(train, row => logLossFromProbabilities(temperatureScaleProbabilities(rowRawProbabilities(row), temperature), row.actual_outcome));
+    if (Number.isFinite(loss) && loss < bestTrainLoss) {
+      bestTrainLoss = loss;
+      bestTemperature = temperature;
+    }
+  }
+
+  const baselineValidation = averageMetric(validation, row => logLossFromProbabilities(rowRawProbabilities(row), row.actual_outcome));
+  const candidateValidation = averageMetric(validation, row => logLossFromProbabilities(temperatureScaleProbabilities(rowRawProbabilities(row), bestTemperature), row.actual_outcome));
+  const gain = Number.isFinite(baselineValidation) && Number.isFinite(candidateValidation) ? baselineValidation - candidateValidation : 0;
+  // Guardrail: a temperature learned on the training slice is activated only if it also helps on newer holdout matches.
+  const active = Math.abs(bestTemperature - 1) >= 0.04 && gain >= 0.005;
+  return {
+    active,
+    temperature: active ? bestTemperature : 1,
+    candidateTemperature: bestTemperature,
+    sample: valid.length,
+    trainSample: train.length,
+    validationSample: validation.length,
+    baselineLogLoss: Number.isFinite(baselineValidation) ? Math.round(baselineValidation * 1000) / 1000 : null,
+    calibratedLogLoss: Number.isFinite(candidateValidation) ? Math.round(candidateValidation * 1000) / 1000 : null,
+    improvement: Number.isFinite(baselineValidation) && baselineValidation > 0 ? Math.round((gain / baselineValidation) * 1000) / 10 : null,
+  };
+}
+
+function signalCalibrationStats(rows) {
+  const names = Object.keys(MODEL_BASE_WEIGHTS);
+  return names.map(name => {
+    const samples = [];
+    for (const row of rows || []) {
+      const signalMap = parseJsonObject(row?.signal_probabilities);
+      const probabilities = signalMap?.[name];
+      if (!validThreeProbabilities(probabilities) || !['home','draw','away'].includes(String(row?.actual_outcome || ''))) continue;
+      samples.push({ probabilities, actualOutcome: String(row.actual_outcome) });
+    }
+    const briers = samples.map(x => brierFromProbabilities(x.probabilities, x.actualOutcome)).filter(Number.isFinite);
+    const hits = samples.filter(x => predictedOutcomeForProbabilities(x.probabilities) === x.actualOutcome).length;
+    const avgBrier = briers.length ? average(briers) : null;
+    return {
+      name,
+      sample: samples.length,
+      accuracy: pct(hits, samples.length),
+      avgBrier: Number.isFinite(avgBrier) ? Math.round(avgBrier * 1000) / 1000 : null,
+      baseWeight: MODEL_BASE_WEIGHTS[name],
+    };
+  });
+}
+
+function adaptiveSignalWeights(stats) {
+  const eligible = (stats || []).filter(x => x.sample >= 30 && Number.isFinite(Number(x.avgBrier)));
+  const active = eligible.length >= 2;
+  if (!active) return { active: false, weights: { ...MODEL_BASE_WEIGHTS }, stats: (stats || []).map(x => ({ ...x, currentWeight: MODEL_BASE_WEIGHTS[x.name] })) };
+
+  const unnormalized = {};
+  for (const item of stats || []) {
+    const base = Number(MODEL_BASE_WEIGHTS[item.name] || 0);
+    if (!base) continue;
+    let adjusted = base;
+    if (item.sample >= 30 && Number.isFinite(Number(item.avgBrier))) {
+      // Uniform 1X2 has Brier ~= 0.222. Convert skill into a small, strongly capped weight adjustment.
+      const qualityFactor = clamp(0.2222 / Math.max(0.12, Number(item.avgBrier)), 0.85, 1.15);
+      const shrink = Math.min(1, item.sample / 100) * 0.65;
+      adjusted = base * (1 + (qualityFactor - 1) * shrink);
+      adjusted = clamp(adjusted, base * 0.88, base * 1.12);
+    }
+    unnormalized[item.name] = adjusted;
+  }
+  const sum = Object.values(unnormalized).reduce((acc, value) => acc + Number(value || 0), 0) || 1;
+  const weights = Object.fromEntries(Object.entries(unnormalized).map(([name, value]) => [name, Number(value) / sum]));
+  return {
+    active: true,
+    weights,
+    stats: (stats || []).map(x => ({ ...x, currentWeight: Number(weights[x.name] ?? MODEL_BASE_WEIGHTS[x.name] ?? 0) })),
+  };
+}
+
+function baselineCalibrationProfile(sample = 0, stats = []) {
+  return {
+    version: '3.7',
+    generatedAt: new Date().toISOString(),
+    mode: sample >= 20 ? 'shadow' : 'baseline',
+    sample,
+    temperature: 1,
+    temperatureActive: false,
+    weightsActive: false,
+    signalWeights: { ...MODEL_BASE_WEIGHTS },
+    signalStats: (stats || []).map(x => ({ ...x, currentWeight: MODEL_BASE_WEIGHTS[x.name] || 0 })),
+    temperatureValidation: { sample, trainSample: 0, validationSample: 0, baselineLogLoss: null, calibratedLogLoss: null, improvement: null },
+    note: sample >= 20 ? 'Калибратор собирает выборку в теневом режиме. Итоговые вероятности пока не меняются.' : 'Сначала нужно накопить завершённые предматчевые прогнозы.',
+  };
+}
+
+function buildCalibrationProfile(rows) {
+  const valid = (rows || []).filter(row => ['home','draw','away'].includes(String(row.actual_outcome || '')));
+  const signalStats = signalCalibrationStats(valid);
+  const temperature = fitTemperatureCalibration(valid);
+  const weights = adaptiveSignalWeights(signalStats);
+  const active = Boolean(temperature.active || weights.active);
+  const shadow = !active && (valid.length >= 20 || signalStats.some(x => x.sample >= 10));
+  return {
+    version: '3.7',
+    generatedAt: new Date().toISOString(),
+    mode: active ? 'active' : shadow ? 'shadow' : 'baseline',
+    sample: valid.length,
+    temperature: temperature.active ? temperature.temperature : 1,
+    temperatureActive: Boolean(temperature.active),
+    weightsActive: Boolean(weights.active),
+    signalWeights: weights.active ? weights.weights : { ...MODEL_BASE_WEIGHTS },
+    signalStats: weights.stats,
+    temperatureValidation: temperature,
+    note: active
+      ? 'Калибровка включена только после проверки на более новых holdout-матчах; изменения весов ограничены защитными пределами.'
+      : shadow
+        ? 'Данные уже собираются, но защитные пороги ещё не разрешили менять итоговые вероятности.'
+        : 'Недостаточно завершённых прогнозов для безопасной автоматической калибровки.',
+  };
+}
+
+async function getCalibrationProfile(cfg, { force = false } = {}) {
+  if (!force) {
+    try {
+      const cached = await getCache(CALIBRATION_CACHE_KEY, cfg);
+      if (cached?.version === '3.7') return cached;
+    } catch {}
+  }
+
+  let rows = [];
+  if (hasSupabase(cfg)) {
+    try {
+      const since = new Date(Date.now() - 365 * 86400_000).toISOString();
+      rows = await supaSelectMany(cfg, 'model_predictions', { status: 'eq.settled', kickoff_at: `gte.${since}` }, { limit: 500, order: 'kickoff_at.desc' });
+    } catch (error) {
+      return baselineCalibrationProfile(0, []);
+    }
+  } else {
+    rows = [...memory.modelPredictions.values()].filter(x => x.status === 'settled');
+  }
+  const profile = buildCalibrationProfile(rows);
+  try { await setCache(CALIBRATION_CACHE_KEY, 0, profile, cfg, CALIBRATION_CACHE_MINUTES); } catch {}
+  return profile;
+}
+
 async function captureModelPrediction(payload, cfg) {
   const match = payload?.match;
   const probabilities = payload?.probabilities;
@@ -732,7 +980,7 @@ async function captureModelPrediction(payload, cfg) {
 
   const row = {
     fixture_id: fixtureId,
-    analysis_version: String(payload.analysisVersion || '3.6.0-analysis-quality'),
+    analysis_version: String(payload.analysisVersion || '3.7.0-model-calibration'),
     captured_at: new Date().toISOString(),
     kickoff_at: new Date(kickoffMs).toISOString(),
     league_id: Number(match.leagueId || 0) || null,
@@ -748,6 +996,14 @@ async function captureModelPrediction(payload, cfg) {
     confidence_score: Number(payload.confidence?.score || 0) || null,
     signal_names: (payload.modelBreakdown?.signals || []).map(x => String(x?.name || '')).filter(Boolean),
     signal_weights: payload.modelBreakdown?.weights || {},
+    signal_probabilities: signalProbabilitySnapshot(payload.modelBreakdown?.signals || []),
+    raw_home_prob: Number.isFinite(Number(payload.rawProbabilities?.home)) ? Number(payload.rawProbabilities.home) : Number(probabilities.home),
+    raw_draw_prob: Number.isFinite(Number(payload.rawProbabilities?.draw)) ? Number(payload.rawProbabilities.draw) : Number(probabilities.draw),
+    raw_away_prob: Number.isFinite(Number(payload.rawProbabilities?.away)) ? Number(payload.rawProbabilities.away) : Number(probabilities.away),
+    calibration_mode: String(payload.modelCalibration?.mode || 'baseline'),
+    calibration_temperature: Number(payload.modelCalibration?.temperature || 1),
+    calibration_sample: Number(payload.modelCalibration?.sample || 0),
+    calibration_weights: payload.modelCalibration?.signalWeights || {},
     data_mode: String(payload.dataPolicy?.mode || ''),
     completeness_score: Number(payload.completeness?.score || 0),
     completeness_max: Number(payload.completeness?.max || 0),
@@ -764,8 +1020,17 @@ async function captureModelPrediction(payload, cfg) {
       await supaInsertIgnore(cfg, 'model_predictions', row, 'fixture_id');
       return true;
     } catch (error) {
-      console.warn('model prediction capture skipped', error?.message || error);
-      return false;
+      // Keep v3.6 installations functional until the optional v3.7 ALTER migration is applied.
+      try {
+        const legacyRow = { ...row };
+        for (const key of ['signal_probabilities','raw_home_prob','raw_draw_prob','raw_away_prob','calibration_mode','calibration_temperature','calibration_sample','calibration_weights']) delete legacyRow[key];
+        await supaInsertIgnore(cfg, 'model_predictions', legacyRow, 'fixture_id');
+        console.warn('v3.7 calibration columns are not available yet; prediction stored in legacy format');
+        return true;
+      } catch (legacyError) {
+        console.warn('model prediction capture skipped', legacyError?.message || error?.message || error);
+        return false;
+      }
     }
   }
   if (!memory.modelPredictions.has(fixtureId)) memory.modelPredictions.set(fixtureId, row);
@@ -850,7 +1115,7 @@ function qualityBucket(rows, label) {
   };
 }
 
-function buildModelQuality(settledRows, pendingRows, days) {
+function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = null) {
   const rows = (settledRows || []).filter(x => ['home','draw','away'].includes(String(x.actual_outcome || '')));
   const evaluated = rows.length;
   const correct = rows.filter(x => x.correct === true).length;
@@ -891,6 +1156,22 @@ function buildModelQuality(settledRows, pendingRows, days) {
     return { name, sample: group.length, accuracy: pct(group.filter(x => x.correct === true).length, group.length), avgBrier: group.length ? Math.round((average(group.map(x => x.brier_score)) || 0) * 1000) / 1000 : null };
   });
 
+  const signalPerformance = signalCalibrationStats(rows);
+  const v37Rows = rows.filter(row => String(row.analysis_version || '').startsWith('3.7') && ['home','draw','away'].includes(String(row.actual_outcome || '')) && rowRawProbabilities(row));
+  const rawBrier = averageMetric(v37Rows, row => brierFromProbabilities(rowRawProbabilities(row), row.actual_outcome));
+  const finalBrier = averageMetric(v37Rows, row => brierFromProbabilities(rowFinalProbabilities(row), row.actual_outcome));
+  const rawLogLoss = averageMetric(v37Rows, row => logLossFromProbabilities(rowRawProbabilities(row), row.actual_outcome));
+  const finalLogLoss = averageMetric(v37Rows, row => logLossFromProbabilities(rowFinalProbabilities(row), row.actual_outcome));
+  const calibrationImpact = {
+    sample: v37Rows.length,
+    rawBrier: Number.isFinite(rawBrier) ? Math.round(rawBrier * 1000) / 1000 : null,
+    finalBrier: Number.isFinite(finalBrier) ? Math.round(finalBrier * 1000) / 1000 : null,
+    brierDelta: Number.isFinite(rawBrier) && Number.isFinite(finalBrier) ? Math.round((rawBrier - finalBrier) * 1000) / 1000 : null,
+    rawLogLoss: Number.isFinite(rawLogLoss) ? Math.round(rawLogLoss * 1000) / 1000 : null,
+    finalLogLoss: Number.isFinite(finalLogLoss) ? Math.round(finalLogLoss * 1000) / 1000 : null,
+    logLossDelta: Number.isFinite(rawLogLoss) && Number.isFinite(finalLogLoss) ? Math.round((rawLogLoss - finalLogLoss) * 1000) / 1000 : null,
+  };
+
   const over25Rows = rows.filter(x => typeof x.over25_correct === 'boolean');
   const bttsRows = rows.filter(x => typeof x.btts_correct === 'boolean');
   const recent = rows.slice(0, 12).map(row => ({
@@ -917,6 +1198,9 @@ function buildModelQuality(settledRows, pendingRows, days) {
     confidence,
     outcome,
     signals,
+    signalPerformance,
+    calibrationEngine: calibrationProfile || baselineCalibrationProfile(evaluated, signalPerformance),
+    calibrationImpact,
     secondary: {
       over25: { sample: over25Rows.length, accuracy: pct(over25Rows.filter(x => x.over25_correct === true).length, over25Rows.length) },
       btts: { sample: bttsRows.length, accuracy: pct(bttsRows.filter(x => x.btts_correct === true).length, bttsRows.length) },
@@ -935,6 +1219,7 @@ async function apiModelQuality(request, cfg) {
   const url = new URL(request.url);
   const requestedDays = Number(url.searchParams.get('days') || 90);
   const days = [30, 90, 180, 365].includes(requestedDays) ? requestedDays : 90;
+  const forceCalibration = url.searchParams.get('refresh') === '1';
   const since = new Date(Date.now() - days * 86400_000).toISOString();
   let settled = [], pending = [];
   if (hasSupabase(cfg)) {
@@ -951,7 +1236,8 @@ async function apiModelQuality(request, cfg) {
     settled = all.filter(x => x.status === 'settled').sort((a,b) => Date.parse(b.kickoff_at) - Date.parse(a.kickoff_at));
     pending = all.filter(x => x.status === 'pending');
   }
-  return json({ available: true, ...buildModelQuality(settled, pending, days) });
+  const calibrationProfile = await getCalibrationProfile(cfg, { force: forceCalibration }).catch(() => baselineCalibrationProfile(settled.length));
+  return json({ available: true, ...buildModelQuality(settled, pending, days, calibrationProfile) });
 }
 
 async function settleBacktestDaily(cfg) {
@@ -1749,15 +2035,16 @@ function h2hProbabilities(h2h) {
   return normalizeThree(Number(h2h.homeWins || 0) + 1, Number(h2h.draws || 0) + 1, Number(h2h.awayWins || 0) + 1);
 }
 
-function blendProbabilitySignals({ market, model, form, h2h }) {
+function blendProbabilitySignals({ market, model, form, h2h, weightOverrides = null }) {
+  const configured = weightOverrides && typeof weightOverrides === 'object' ? weightOverrides : MODEL_BASE_WEIGHTS;
   const candidates = [
-    ['market', market?.probabilities, 0.42],
-    ['apiPrediction', model?.probabilities, 0.24],
-    ['recentForm', form, 0.26],
-    ['h2h', h2h, 0.08],
-  ].filter(([, p]) => p && [p.home, p.draw, p.away].every(x => Number.isFinite(Number(x))));
+    ['market', market?.probabilities, Number(configured.market ?? MODEL_BASE_WEIGHTS.market)],
+    ['apiPrediction', model?.probabilities, Number(configured.apiPrediction ?? MODEL_BASE_WEIGHTS.apiPrediction)],
+    ['recentForm', form, Number(configured.recentForm ?? MODEL_BASE_WEIGHTS.recentForm)],
+    ['h2h', h2h, Number(configured.h2h ?? MODEL_BASE_WEIGHTS.h2h)],
+  ].filter(([, p, w]) => p && [p.home, p.draw, p.away].every(x => Number.isFinite(Number(x))) && Number.isFinite(w) && w > 0);
   if (!candidates.length) return { probabilities: null, weights: {}, signals: [] };
-  const weightSum = candidates.reduce((s, x) => s + x[2], 0);
+  const weightSum = candidates.reduce((sum, x) => sum + x[2], 0);
   const weights = {};
   let home = 0, draw = 0, away = 0;
   const signals = [];
@@ -3199,8 +3486,16 @@ async function apiAnalyze(request, cfg, user) {
   const lineups = formatLineups(lineupsRows, homeId, awayId);
   const recentFormProb = formProbabilities(homeForm, awayForm);
   const h2hProb = h2hProbabilities(h2h);
-  const blended = blendProbabilitySignals({ market, model: apiPrediction, form: recentFormProb, h2h: h2hProb });
-  const probabilities = applyAbsenceAdjustment(blended.probabilities, absences);
+  const calibrationProfile = await getCalibrationProfile(cfg).catch(() => baselineCalibrationProfile());
+  const baselineBlend = blendProbabilitySignals({ market, model: apiPrediction, form: recentFormProb, h2h: h2hProb, weightOverrides: MODEL_BASE_WEIGHTS });
+  const blended = calibrationProfile.weightsActive
+    ? blendProbabilitySignals({ market, model: apiPrediction, form: recentFormProb, h2h: h2hProb, weightOverrides: calibrationProfile.signalWeights })
+    : baselineBlend;
+  const rawProbabilities = applyAbsenceAdjustment(baselineBlend.probabilities, absences);
+  const weightedProbabilities = applyAbsenceAdjustment(blended.probabilities, absences);
+  const probabilities = calibrationProfile.temperatureActive
+    ? temperatureScaleProbabilities(weightedProbabilities, calibrationProfile.temperature)
+    : weightedProbabilities;
   const goalModel = poissonGoalModel(homeForm, awayForm);
   const comparison = buildMatchComparison({
     homeName, awayName, homeForm, awayForm, homeStanding, awayStanding, homeSeasonStats, awaySeasonStats,
@@ -3211,6 +3506,11 @@ async function apiAnalyze(request, cfg, user) {
     probabilities, market, model: apiPrediction, homeForm, awayForm, h2h, absences, lineups, news: web,
     homeName, awayName, minutesToKickoff, confidence,
   });
+  if (calibrationProfile.mode === 'active') {
+    notes.factors.unshift(`Калибратор v3.7 активен на базе ${Number(calibrationProfile.sample || 0)} завершённых прогнозов; корректировки ограничены защитными порогами.`);
+  } else if (calibrationProfile.mode === 'shadow') {
+    notes.risks.push('Калибратор пока работает в теневом режиме: выборка собирается, но итоговые вероятности ещё не корректируются автоматически.');
+  }
 
   const availableSignals = [
     market && 'market',
@@ -3224,7 +3524,7 @@ async function apiAnalyze(request, cfg, user) {
 
   const payload = {
     generatedAt: new Date().toISOString(),
-    analysisVersion: '3.6.0-analysis-quality',
+    analysisVersion: '3.7.0-model-calibration',
     match: {
       fixtureId, date: fixture.fixture?.date || '', status: fixture.fixture?.status?.short || '',
       venue: fixture.fixture?.venue?.name || '', city: fixture.fixture?.venue?.city || '',
@@ -3233,12 +3533,24 @@ async function apiAnalyze(request, cfg, user) {
       away: { id: awayId, name: awayName, logo: fixture.teams?.away?.logo || '' },
     },
     probabilities,
+    rawProbabilities,
+    modelCalibration: {
+      version: calibrationProfile.version || '3.7',
+      mode: calibrationProfile.mode || 'baseline',
+      sample: Number(calibrationProfile.sample || 0),
+      temperature: Number(calibrationProfile.temperature || 1),
+      temperatureActive: Boolean(calibrationProfile.temperatureActive),
+      weightsActive: Boolean(calibrationProfile.weightsActive),
+      signalWeights: calibrationProfile.signalWeights || { ...MODEL_BASE_WEIGHTS },
+      validation: calibrationProfile.temperatureValidation || null,
+      note: calibrationProfile.note || '',
+    },
     confidence,
     likelyOutcome: outcomeName(probabilities, homeName, awayName),
     modelBreakdown: {
       weights: blended.weights,
       signals: blended.signals,
-      method: 'Динамическое объединение рынка, API prediction, формы и H2H. При низкой квоте низкоприоритетные запросы пропускаются вместо ошибки.',
+      method: 'Рынок, API prediction, форма и H2H объединяются динамически. v3.7 может безопасно корректировать веса и резкость вероятностей только после backtest-проверки на holdout-матчах.',
     },
     dataPolicy: {
       providerPlan,
@@ -3275,7 +3587,7 @@ export default {
     if (url.pathname === '/health' || url.pathname === '/api/health') {
       return json({
         ok: true,
-        version: '3.6.0-analysis-quality',
+        version: '3.7.0-model-calibration',
         database: hasSupabase(cfg) ? 'supabase' : 'memory',
         monetization: cfg.monetizationEnabled ? 'enabled' : 'paused',
         devMode: cfg.devMode,
