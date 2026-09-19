@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#111827" />
   <title>Football Manager · Match Intelligence</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=4.2.0" />
+  <link rel="stylesheet" href="/styles.css?v=4.3.0" />
 </head>
 <body>
   <div class="app-shell">
@@ -161,6 +161,7 @@
           <h2 id="profileName">Профиль</h2>
           <p id="profileUsername" class="muted"></p>
           <p id="memberSince" class="tiny"></p>
+          <span id="adminRoleBadge" class="admin-role-badge" hidden>🔐 Администратор</span>
 
           <div class="plan-card">
             <div>
@@ -182,6 +183,23 @@
           </div>
         </div>
 
+
+        <section class="panel data-mode-panel">
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>⚽ Покрытие футбольных данных</h2>
+              <p>Пользователь видит только режим сервиса — технические лимиты скрыты.</p>
+            </div>
+          </div>
+          <div class="provider-status-grid public-data-grid">
+            <div><span>Режим</span><strong id="dataModeLabel">Стандартное покрытие</strong></div>
+            <div><span>LIVE refresh</span><strong id="dataModeRefresh">адаптивно</strong></div>
+            <div><span>Составы</span><strong id="dataModeLineups">По доступности</strong></div>
+            <div><span>Player stats</span><strong id="dataModePlayers">По доступности</strong></div>
+            <div><span>Live odds</span><strong id="dataModeOdds">По доступности</strong></div>
+          </div>
+          <p id="dataModeNote" class="tiny">Покрытие зависит от турнира и доступности данных провайдера.</p>
+        </section>
 
         <section class="panel preferences-panel">
           <div class="section-head profile-section-head">
@@ -233,7 +251,7 @@
           <div id="favoriteTeams" class="favorite-teams"></div>
         </section>
 
-        <section class="panel model-quality-panel">
+        <section class="panel model-quality-panel" data-admin-only hidden>
           <div class="section-head profile-section-head model-quality-head">
             <div>
               <h2>🧪 Качество модели</h2>
@@ -262,7 +280,7 @@
           <p class="tiny quality-method-note">Сохраняется первый предматчевый расчёт по fixture. Поздние перерасчёты не переписывают историю, поэтому статистика не «подгоняется» под результат.</p>
         </section>
 
-        <section class="panel">
+        <section class="panel" data-admin-only hidden>
           <div class="section-head profile-section-head">
             <div>
               <h2>📡 Источник футбольных данных</h2>
@@ -280,7 +298,7 @@
           <p class="tiny">FREE работает экономно. На PRO+ приложение автоматически ускоряет LIVE, включает live odds, player stats и сохраняет движение линии, если эти данные доступны у провайдера.</p>
         </section>
 
-        <section class="panel release-panel">
+        <section class="panel release-panel" data-admin-only hidden>
           <div class="section-head profile-section-head release-head">
             <div>
               <h2>✅ Готовность ядра</h2>
@@ -296,7 +314,7 @@
           <p class="tiny diagnostics-privacy">Проверка не активирует оплату и не тратит запросы API-Football. Она проверяет runtime-конфигурацию, Supabase, миграции и состояние уже используемого провайдера.</p>
         </section>
 
-        <section class="panel diagnostics-panel">
+        <section class="panel diagnostics-panel" data-admin-only hidden>
           <div class="section-head profile-section-head diagnostics-head">
             <div>
               <h2>🛠 Диагностика системы</h2>
@@ -331,6 +349,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=4.2.0"></script>
+  <script type="module" src="/app.js?v=4.3.0"></script>
 </body>
 </html>
