@@ -19,9 +19,11 @@ const state = {
   billing: null,
   filter: 'top',
   search: '',
+  globalSearch: { query: '', remoteTeams: [], remoteCompetitions: [], loading: false, warning: '', searchedAt: null },
   currentAnalysis: null,
   currentCenter: null,
   currentTournament: null,
+  tournamentBackView: 'matchesView',
   currentTeam: null,
   teamBackView: 'matchesView',
   teamCache: new Map(),
@@ -31,7 +33,7 @@ const state = {
 };
 
 const $ = id => document.getElementById(id);
-const views = ['matchesView', 'tournamentView', 'teamView', 'analysisView', 'historyView', 'profileView'];
+const views = ['matchesView', 'searchView', 'tournamentView', 'teamView', 'analysisView', 'historyView', 'profileView'];
 
 function stopLiveRefresh() {
   if (state.liveRefreshTimer) clearInterval(state.liveRefreshTimer);
@@ -43,6 +45,7 @@ function showView(id) {
   if (id !== 'analysisView') stopLiveRefresh();
   views.forEach(v => $(v).classList.toggle('active', v === id));
   $('navMatches').classList.toggle('active', id === 'matchesView' || id === 'tournamentView' || id === 'teamView' || id === 'analysisView');
+  $('navSearch')?.classList.toggle('active', id === 'searchView');
   $('navHistory').classList.toggle('active', id === 'historyView');
   $('navProfile').classList.toggle('active', id === 'profileView');
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -121,6 +124,7 @@ async function loadProfile() {
       }
     }
     renderProfile();
+renderDiscoveryHome();
   } catch (e) {
     toast(e.message);
   }
@@ -277,6 +281,7 @@ async function loadFavorites() {
     const data = await api('/api/favorites');
     state.favorites = data.items || [];
     renderFavoriteTeams();
+    renderDiscoveryHome();
   } catch (e) {
     toast(e.message);
   }
@@ -367,6 +372,7 @@ async function toggleFavorite(team) {
     renderMatches();
     if (state.currentTournament) renderTournamentMatches();
     renderFavoriteTeams();
+    renderDiscoveryHome();
   } catch (e) {
     toast(e.message);
   }
@@ -395,6 +401,158 @@ function renderFavoriteTeams() {
   el.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => openTeam({ id: Number(btn.dataset.openTeam), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '' })));
 }
 
+
+const RECENT_TEAMS_KEY = 'football_recent_teams_v1';
+
+function getRecentTeams() {
+  try {
+    const rows = JSON.parse(localStorage.getItem(RECENT_TEAMS_KEY) || '[]');
+    return Array.isArray(rows) ? rows.filter(x => Number(x?.id) > 0 && x?.name).slice(0, 10) : [];
+  } catch { return []; }
+}
+
+function rememberTeam(team) {
+  if (!team?.id || !team?.name) return;
+  try {
+    const row = { id: Number(team.id), name: String(team.name), logo: String(team.logo || ''), country: String(team.country || ''), viewedAt: new Date().toISOString() };
+    const next = [row, ...getRecentTeams().filter(x => Number(x.id) !== row.id)].slice(0, 10);
+    localStorage.setItem(RECENT_TEAMS_KEY, JSON.stringify(next));
+  } catch {}
+}
+
+function clearRecentTeams() {
+  try { localStorage.removeItem(RECENT_TEAMS_KEY); } catch {}
+  renderDiscoveryHome();
+}
+
+function discoveryTeamCard(team, badge = '') {
+  return `<button class="discovery-team-card" type="button" data-search-team="${Number(team.id)}" data-team-name="${escapeHtml(team.name || '')}" data-team-logo="${escapeHtml(team.logo || '')}" data-team-country="${escapeHtml(team.country || '')}">
+    <span class="discovery-team-logo">${team.logo ? `<img src="${safeUrl(team.logo)}" alt="">` : '⚽'}</span>
+    <span class="discovery-team-copy"><strong>${escapeHtml(team.name || 'Команда')}</strong><small>${escapeHtml(team.country || badge || '')}${team.national ? ' · сборная' : ''}</small></span>
+    ${badge ? `<i>${escapeHtml(badge)}</i>` : '<b>›</b>'}
+  </button>`;
+}
+
+function discoveryCompetitionCard(comp, badge = '') {
+  return `<button class="discovery-competition-card" type="button" data-search-competition="${Number(comp.leagueId)}" data-season="${Number(comp.season || new Date().getFullYear())}" data-comp-name="${escapeHtml(comp.name || comp.shortName || 'Турнир')}" data-comp-short="${escapeHtml(comp.shortName || comp.name || 'Турнир')}" data-comp-country="${escapeHtml(comp.country || '')}" data-comp-category="${escapeHtml(comp.category || '')}" data-comp-tier="${escapeHtml(comp.tier || 'standard')}">
+    <span class="discovery-comp-icon">🏆</span><span><strong>${escapeHtml(comp.shortName || comp.name || 'Турнир')}</strong><small>${escapeHtml(comp.country || '')}${badge ? ` · ${escapeHtml(badge)}` : ''}</small></span><b>›</b>
+  </button>`;
+}
+
+function bindDiscoveryActions(root = document) {
+  root.querySelectorAll?.('[data-search-team]').forEach(btn => btn.addEventListener('click', () => openTeam({
+    id: Number(btn.dataset.searchTeam), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '', country: btn.dataset.teamCountry || '',
+  })));
+  root.querySelectorAll?.('[data-search-competition]').forEach(btn => btn.addEventListener('click', () => openTournamentMeta({
+    leagueId: Number(btn.dataset.searchCompetition), season: Number(btn.dataset.season || new Date().getFullYear()), name: btn.dataset.compName || 'Турнир', shortName: btn.dataset.compShort || btn.dataset.compName || 'Турнир', country: btn.dataset.compCountry || '', category: btn.dataset.compCategory || '', tier: btn.dataset.compTier || 'standard', logo: '',
+  })));
+}
+
+function localDiscoveryResults(query) {
+  const q = String(query || '').trim().toLowerCase().replace(/ё/g, 'е');
+  if (!q) return { teams: [], competitions: [] };
+  const teams = new Map(), competitions = new Map();
+  for (const m of state.matches) {
+    for (const team of [m.home, m.away]) {
+      if (!team?.id || !team?.name) continue;
+      const hay = `${team.name} ${m.country || ''}`.toLowerCase().replace(/ё/g, 'е');
+      if (hay.includes(q) && !teams.has(Number(team.id))) teams.set(Number(team.id), { ...team, country: m.country || '' });
+    }
+    const chay = `${m.league || ''} ${m.leagueOriginal || ''} ${m.leagueShort || ''} ${m.country || ''}`.toLowerCase().replace(/ё/g, 'е');
+    if (Number(m.leagueId) > 0 && chay.includes(q) && !competitions.has(Number(m.leagueId))) competitions.set(Number(m.leagueId), {
+      leagueId: Number(m.leagueId), season: Number(m.season || new Date().getFullYear()), name: m.league || m.leagueOriginal || 'Турнир', shortName: m.leagueShort || m.league || 'Турнир', country: m.country || '', category: m.category || '', tier: m.competition?.tier || 'standard', logo: m.leagueLogo || '',
+    });
+  }
+  return { teams: [...teams.values()].slice(0, 10), competitions: [...competitions.values()].slice(0, 8) };
+}
+
+function mergeById(first = [], second = [], idKey = 'id') {
+  const seen = new Set(), out = [];
+  for (const row of [...first, ...second]) {
+    const id = Number(row?.[idKey] || 0);
+    if (!id || seen.has(id)) continue;
+    seen.add(id); out.push(row);
+  }
+  return out;
+}
+
+function renderDiscoveryHome() {
+  const recentEl = $('searchRecent');
+  const favEl = $('searchFavorites');
+  const compEl = $('searchCompetitions');
+  if (recentEl) {
+    const rows = getRecentTeams();
+    recentEl.innerHTML = rows.length ? rows.map(x => discoveryTeamCard(x, 'Недавно')).join('') : '<div class="empty compact-empty">Открытые команды появятся здесь.</div>';
+  }
+  if (favEl) {
+    favEl.innerHTML = state.favorites.length ? state.favorites.slice(0, 10).map(x => discoveryTeamCard({ id:x.teamId, name:x.teamName, logo:x.teamLogo }, 'Избранное')).join('') : '<div class="empty compact-empty">Добавьте команду в избранное — она появится здесь.</div>';
+  }
+  if (compEl) {
+    const seen = new Set();
+    const comps = state.matches.filter(m => Number(m.leagueId) > 0 && !m.lowPriority).sort((a,b) => Number(b.competition?.priority||0)-Number(a.competition?.priority||0)).filter(m => { const id=Number(m.leagueId); if(seen.has(id)) return false; seen.add(id); return true; }).slice(0,8);
+    compEl.innerHTML = comps.length ? comps.map(m => `<button class="competition-shortcut" type="button" data-open-tournament="${Number(m.leagueId)}">${m.leagueLogo ? `<img src="${safeUrl(m.leagueLogo)}" alt="">` : '<span class="competition-logo-placeholder">🏆</span>'}<span><strong>${escapeHtml(m.leagueShort || m.league || 'Турнир')}</strong><small>${escapeHtml(m.country || '')}</small></span>${m.live ? '<b>LIVE</b>' : ''}</button>`).join('') : '<div class="empty compact-empty">Сначала загрузите список матчей.</div>';
+    compEl.querySelectorAll?.('[data-open-tournament]').forEach(btn => btn.addEventListener('click', () => openTournament(Number(btn.dataset.openTournament))));
+  }
+  bindDiscoveryActions($('searchRecent'));
+  bindDiscoveryActions($('searchFavorites'));
+}
+
+function renderGlobalSearch() {
+  const query = String(state.globalSearch.query || '').trim();
+  const wrap = $('searchResultsWrap'), out = $('searchResults'), meta = $('searchResultsMeta'), status = $('searchStatus');
+  if (!wrap || !out) return;
+  if (!query) {
+    wrap.hidden = true;
+    if (status) status.innerHTML = '';
+    renderDiscoveryHome();
+    return;
+  }
+  const local = localDiscoveryResults(query);
+  const teams = mergeById(local.teams, state.globalSearch.remoteTeams, 'id');
+  const comps = mergeById(local.competitions, state.globalSearch.remoteCompetitions, 'leagueId');
+  wrap.hidden = false;
+  if (meta) meta.textContent = `${teams.length} команд · ${comps.length} турниров`;
+  if (status) {
+    status.innerHTML = state.globalSearch.loading ? '<div class="data-notice">🔎 Ищу по футбольному каталогу…</div>' : state.globalSearch.warning ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.globalSearch.warning)}</div>` : '';
+  }
+  const teamHtml = teams.length ? `<section class="panel search-result-block"><div class="mini-section-head"><strong>Команды</strong><span>${teams.length}</span></div><div class="discovery-grid">${teams.slice(0,16).map(x => discoveryTeamCard(x, x.youthReserve ? 'Youth/Reserve' : '')).join('')}</div></section>` : '';
+  const compHtml = comps.length ? `<section class="panel search-result-block"><div class="mini-section-head"><strong>Турниры</strong><span>${comps.length}</span></div><div class="discovery-grid">${comps.slice(0,10).map(x => discoveryCompetitionCard(x)).join('')}</div></section>` : '';
+  out.innerHTML = teamHtml + compHtml || `<div class="empty">Ничего не найдено. Для команды вне сегодняшнего списка введите минимум 3 символа и нажмите «Найти».</div>`;
+  bindDiscoveryActions(out);
+}
+
+async function runGlobalSearch() {
+  const input = $('globalSearchInput');
+  const query = String(input?.value || '').trim();
+  state.globalSearch.query = query;
+  state.globalSearch.warning = '';
+  if (query.length < 3) { state.globalSearch.remoteTeams = []; state.globalSearch.remoteCompetitions = []; renderGlobalSearch(); return; }
+  state.globalSearch.loading = true; renderGlobalSearch();
+  try {
+    const data = await api(`/api/search?q=${encodeURIComponent(query)}`);
+    state.globalSearch.remoteTeams = data.teams || [];
+    state.globalSearch.remoteCompetitions = data.competitions || [];
+    state.globalSearch.warning = data.warning || data.hint || '';
+    state.globalSearch.searchedAt = data.refreshedAt || new Date().toISOString();
+    if (data.provider) { state.provider = data.provider; renderProvider(); }
+  } catch (e) {
+    state.globalSearch.warning = e.message;
+  } finally {
+    state.globalSearch.loading = false; renderGlobalSearch();
+  }
+}
+
+function openTournamentMeta(meta) {
+  const current = activeViewId(); if (current !== 'tournamentView') state.tournamentBackView = current;
+  const existing = state.matches.find(m => Number(m.leagueId) === Number(meta?.leagueId));
+  if (existing) return openTournament(Number(meta.leagueId));
+  if (!meta?.leagueId) return;
+  state.currentTournament = {
+    leagueId:Number(meta.leagueId), season:Number(meta.season || new Date().getFullYear()), name:meta.name || 'Турнир', shortName:meta.shortName || meta.name || 'Турнир', country:meta.country || '', logo:meta.logo || '', category:meta.category || '', tier:meta.tier || 'standard',
+  };
+  renderTournamentHero(); renderTournamentMatches(); setTournamentTab('matches', false); showView('tournamentView');
+}
+
 async function loadMatches() {
   $('matches').innerHTML = '<div class="loader">Загружаю матчи…</div>';
   $('matchesCount').textContent = '';
@@ -415,6 +573,7 @@ async function loadMatches() {
     if (state.filter === 'top' && !state.matches.some(x => x.featured || (Number(x.interestScore || 0) >= 68 && !x.lowPriority))) state.filter = 'all';
     syncFilterButtons();
     renderMatches();
+    renderDiscoveryHome();
   } catch (e) {
     const retry = Number(e.payload?.retryAfter || 0);
     const suffix = retry ? `<br><span class="tiny">Повторите примерно через ${retry} сек.</span>` : '';
@@ -647,6 +806,7 @@ function tournamentKey(t) {
 }
 
 function openTournament(leagueId) {
+  const current = activeViewId(); if (current !== 'tournamentView') state.tournamentBackView = current;
   const rows = currentTournamentMatches(leagueId);
   const source = rows[0] || state.matches.find(m => Number(m.leagueId) === Number(leagueId));
   if (!source) {
@@ -798,7 +958,7 @@ async function loadTeamHub(team, force=false) {
   catch(e){ $('teamHero').innerHTML=`<div class="empty">${escapeHtml(e.message)}</div>`; }
 }
 function openTeam(team) {
-  if(!team?.id) return; const current=activeViewId(); if(current!=='teamView') state.teamBackView=current;
+  if(!team?.id) return; rememberTeam(team); renderDiscoveryHome(); const current=activeViewId(); if(current!=='teamView') state.teamBackView=current;
   state.currentTeam={id:Number(team.id),name:team.name||'',logo:team.logo||'',data:null}; setTeamTab('overview'); showView('teamView'); loadTeamHub(state.currentTeam,false);
 }
 function setTeamTab(tab) {
@@ -806,6 +966,7 @@ function setTeamTab(tab) {
   $('teamOverviewPanel')?.classList.toggle('active',tab==='overview'); $('teamResultsPanel')?.classList.toggle('active',tab==='results'); $('teamSchedulePanel')?.classList.toggle('active',tab==='schedule');
 }
 function openTournamentFromTeam() {
+  state.tournamentBackView = 'teamView';
   const comp=state.currentTeam?.data?.primaryCompetition; if(!comp?.leagueId) return toast('Основной турнир команды пока не определён.');
   const existing=state.matches.find(m=>Number(m.leagueId)===Number(comp.leagueId)); if(existing) return openTournament(Number(comp.leagueId));
   state.currentTournament={leagueId:Number(comp.leagueId),season:Number(comp.season||new Date().getFullYear()),name:comp.name||'Турнир',shortName:comp.shortName||comp.name||'Турнир',country:comp.country||'',logo:comp.logo||'',category:comp.category||'',tier:comp.tier||'standard'};
@@ -1495,15 +1656,20 @@ $('matchSearch').addEventListener('input', e => {
   renderMatches();
 });
 
+$('globalSearchBtn')?.addEventListener('click', runGlobalSearch);
+$('globalSearchInput')?.addEventListener('input', e => { state.globalSearch.query = e.target.value || ''; state.globalSearch.remoteTeams = []; state.globalSearch.remoteCompetitions = []; state.globalSearch.warning = ''; renderGlobalSearch(); });
+$('globalSearchInput')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); runGlobalSearch(); } });
+$('clearRecentTeamsBtn')?.addEventListener('click', clearRecentTeams);
 $('refreshBtn').addEventListener('click', loadMatches);
 $('historyRefreshBtn').addEventListener('click', () => loadHistory(true));
 $('backBtn').addEventListener('click', () => showView('matchesView'));
-$('tournamentBackBtn')?.addEventListener('click', () => showView('matchesView'));
+$('tournamentBackBtn')?.addEventListener('click', () => showView(state.tournamentBackView || 'matchesView'));
 $('teamBackBtn')?.addEventListener('click', () => showView(state.teamBackView || 'matchesView'));
 document.querySelectorAll('.tournament-tab').forEach(btn => btn.addEventListener('click', () => setTournamentTab(btn.dataset.tournamentTab || 'matches')));
 document.querySelectorAll('.team-tab').forEach(btn => btn.addEventListener('click', () => setTeamTab(btn.dataset.teamTab || 'overview')));
 $('profileBtn').addEventListener('click', () => showView('profileView'));
 $('navMatches').addEventListener('click', () => showView('matchesView'));
+$('navSearch')?.addEventListener('click', () => { renderDiscoveryHome(); renderGlobalSearch(); showView('searchView'); setTimeout(() => $('globalSearchInput')?.focus(), 80); });
 $('navHistory').addEventListener('click', async () => { await loadHistory(true); showView('historyView'); });
 $('navProfile').addEventListener('click', () => showView('profileView'));
 $('proBtn')?.addEventListener('click', () => buyPlan('PRO'));
