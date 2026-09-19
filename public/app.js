@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '4.3.0-admin-expanded-data';
+const CLIENT_VERSION = '4.4.0-match-center-2';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -36,6 +36,7 @@ const state = {
   globalSearch: { query: '', remoteTeams: [], remoteCompetitions: [], loading: false, warning: '', searchedAt: null },
   currentAnalysis: null,
   currentCenter: null,
+  currentCenterTab: 'summary',
   currentTournament: null,
   tournamentBackView: 'matchesView',
   currentTeam: null,
@@ -1734,14 +1735,71 @@ function liveStatsHtml(stats, match) {
   </div>`;
 }
 
+function lineupPlayerName(p) {
+  return typeof p === 'string' ? p : (p?.name || 'Игрок');
+}
+
+function lineupPlayerNumber(p) {
+  if (typeof p === 'string') return '';
+  return p?.number ?? '';
+}
+
+function lineupPlayerGrid(p) {
+  if (typeof p === 'string') return '';
+  return String(p?.grid || '');
+}
+
+function shortPlayerName(name) {
+  const parts = String(name || '').trim().split(/\s+/);
+  return escapeHtml(parts.length > 1 ? parts[parts.length - 1] : (parts[0] || 'Игрок'));
+}
+
+function lineupPitchHtml(lineup, title) {
+  if (!lineup?.startXI?.length) return '<div class="empty compact-empty">Стартовый состав ещё не опубликован.</div>';
+  const players = lineup.startXI || [];
+  const parsed = players.map((p, i) => {
+    const bits = lineupPlayerGrid(p).split(':').map(Number);
+    return { p, row: Number.isFinite(bits[0]) ? bits[0] : null, col: Number.isFinite(bits[1]) ? bits[1] : null, i };
+  });
+  const hasGrid = parsed.filter(x => x.row && x.col).length >= 8;
+  if (!hasGrid) {
+    return `<div class="lineup-fallback">${players.map((p, i) => `<div class="lineup-fallback-row"><b>${lineupPlayerNumber(p) || i + 1}</b><span>${escapeHtml(lineupPlayerName(p))}</span></div>`).join('')}</div>`;
+  }
+  const maxRow = Math.max(...parsed.filter(x => x.row).map(x => x.row), 4);
+  const rowCounts = {};
+  parsed.forEach(x => { if (x.row) rowCounts[x.row] = Math.max(rowCounts[x.row] || 0, x.col || 1); });
+  return `<div class="formation-pitch" aria-label="${escapeHtml(title)}">
+    <div class="pitch-half-line"></div><div class="pitch-circle"></div>
+    ${parsed.map(({p,row,col,i}) => {
+      const safeRow = row || Math.min(maxRow, i < 1 ? 1 : 2 + Math.floor((i-1)/4));
+      const count = Math.max(1, rowCounts[safeRow] || 1);
+      const safeCol = col || ((i % count) + 1);
+      const x = count === 1 ? 50 : 12 + ((safeCol - 1) / Math.max(1, count - 1)) * 76;
+      const y = maxRow <= 1 ? 50 : 91 - ((safeRow - 1) / (maxRow - 1)) * 82;
+      return `<div class="pitch-player" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%">
+        <span>${lineupPlayerNumber(p) || '•'}</span><small>${shortPlayerName(lineupPlayerName(p))}</small>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+function lineupTeamHtml(lineup, title) {
+  if (!lineup) return `<div class="center-lineup-team"><h3>${escapeHtml(title)}</h3><div class="empty compact-empty">Состав не опубликован.</div></div>`;
+  const subs = lineup.substitutes || [];
+  return `<div class="center-lineup-team">
+    <div class="center-lineup-head"><div><h3>${escapeHtml(title)}</h3><span>${escapeHtml(lineup.formation || 'Схема —')}</span></div><div class="coach-chip">👔 ${escapeHtml(lineup.coach || 'Тренер —')}</div></div>
+    ${lineupPitchHtml(lineup, title)}
+    <details class="bench-details"><summary>Запасные · ${subs.length}</summary>
+      <div class="bench-grid">${subs.length ? subs.map(p => `<span><b>${lineupPlayerNumber(p) || '•'}</b>${escapeHtml(lineupPlayerName(p))}</span>`).join('') : '<i>Нет данных</i>'}</div>
+    </details>
+  </div>`;
+}
+
 function lineupLiveHtml(lineups, match) {
   const home = lineups?.home;
   const away = lineups?.away;
   if (!home && !away) return '<div class="empty compact-empty">Составы не опубликованы или не входят в покрытие турнира.</div>';
-  return `<div class="data-grid">
-    <div class="data-card"><span>${escapeHtml(match.home?.name || '')}</span><strong>${escapeHtml(home?.formation || '—')}</strong><p>${escapeHtml((home?.startXI || []).join(', ') || 'Нет стартового состава')}</p></div>
-    <div class="data-card"><span>${escapeHtml(match.away?.name || '')}</span><strong>${escapeHtml(away?.formation || '—')}</strong><p>${escapeHtml((away?.startXI || []).join(', ') || 'Нет стартового состава')}</p></div>
-  </div>`;
+  return `<div class="center-lineups-grid">${lineupTeamHtml(home, match.home?.name || 'Хозяева')}${lineupTeamHtml(away, match.away?.name || 'Гости')}</div>`;
 }
 
 function updateLiveCountdown() {
@@ -1827,110 +1885,281 @@ function liveAbsencesHtml(absences, match) {
   return `<div class="absence-live-grid">${side(match.home?.name || 'Хозяева', absences?.home || [])}${side(match.away?.name || 'Гости', absences?.away || [])}</div>`;
 }
 
+
+function centerStatNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(String(value).replace('%','').replace(',','.'));
+  return Number.isFinite(n) ? n : null;
+}
+
+function centerStatRow(stats, key) {
+  return (stats?.items || []).find(x => x.key === key) || null;
+}
+
+function centerCompareRow(label, homeValue, awayValue, suffix = '') {
+  const hn = centerStatNumber(homeValue);
+  const an = centerStatNumber(awayValue);
+  const total = Math.max(0.001, (hn || 0) + (an || 0));
+  const hp = hn === null ? 50 : Math.max(6, Math.min(94, (hn / total) * 100));
+  const ap = 100 - hp;
+  const fmt = v => v === null || v === undefined || v === '' ? '—' : `${escapeHtml(String(v))}${suffix && !String(v).includes(suffix) ? suffix : ''}`;
+  return `<div class="center-stat-visual">
+    <div class="center-stat-values"><strong>${fmt(homeValue)}</strong><span>${escapeHtml(label)}</span><strong>${fmt(awayValue)}</strong></div>
+    <div class="center-stat-bar"><i style="width:${hp}%"></i><b style="width:${ap}%"></b></div>
+  </div>`;
+}
+
+function centerKeyStatsHtml(stats) {
+  const rows = [
+    ['expected_goals','xG'],
+    ['Shots on Goal','В створ'],
+    ['Total Shots','Удары'],
+    ['Ball Possession','Владение'],
+    ['Corner Kicks','Угловые'],
+  ].map(([key,label]) => [centerStatRow(stats,key), label]).filter(([row]) => row);
+  if (!rows.length) return '<div class="empty compact-empty">Ключевая статистика пока недоступна.</div>';
+  return `<div class="center-key-stats">${rows.slice(0,5).map(([r,l]) => centerCompareRow(l,r.home,r.away)).join('')}</div>`;
+}
+
+function centerAllStatsHtml(stats) {
+  const items = stats?.items || [];
+  if (!items.length) return '<div class="empty compact-empty">Детальная статистика пока недоступна.</div>';
+  return `<div class="center-all-stats">${items.map(x => centerCompareRow(x.label, x.home, x.away)).join('')}</div>`;
+}
+
+function timelineEventsHtml(events = [], match = {}) {
+  if (!events.length) return '<div class="empty compact-empty">События матча пока не доступны.</div>';
+  let hs = 0, as = 0;
+  const enriched = events.map(e => {
+    const isGoal = String(e.type || '').toLowerCase() === 'goal' && !String(e.detail || '').toLowerCase().includes('missed');
+    if (isGoal) {
+      if (e.side === 'home') hs += 1;
+      if (e.side === 'away') as += 1;
+    }
+    return { ...e, goalScore: isGoal ? `${hs}:${as}` : '' };
+  });
+  return `<div class="center-timeline">
+    <div class="timeline-club-head"><span>${escapeHtml(match.home?.name || 'Хозяева')}</span><b>Хронология</b><span>${escapeHtml(match.away?.name || 'Гости')}</span></div>
+    ${enriched.map(e => `<div class="timeline-row ${escapeHtml(e.side || 'neutral')} ${String(e.type).toLowerCase()==='goal'?'goal':''}">
+      <div class="timeline-home">${e.side==='home' ? `<strong>${escapeHtml(e.player || e.teamName || '')}</strong><span>${escapeHtml(e.label || '')}</span>` : ''}</div>
+      <div class="timeline-minute"><b>${minuteLabel(e)}</b>${e.goalScore ? `<em>${e.goalScore}</em>` : ''}</div>
+      <div class="timeline-away">${e.side==='away' ? `<strong>${escapeHtml(e.player || e.teamName || '')}</strong><span>${escapeHtml(e.label || '')}</span>` : ''}</div>
+    </div>`).join('')}
+  </div>`;
+}
+
+function centerPlayersHtml(leaders, match) {
+  const side = (title, list = []) => `<div class="center-player-team"><h3>${escapeHtml(title)}</h3>${list.length ? list.map((p,i)=>`
+    <div class="center-player-row">
+      <div class="center-player-rank">${i+1}</div>
+      ${p.photo ? `<img src="${safeUrl(p.photo)}" alt="">` : '<span class="center-player-avatar">👤</span>'}
+      <div class="center-player-info"><strong>${escapeHtml(p.name)}</strong><small>${escapeHtml(playerMetricText(p))}</small></div>
+      <div class="center-player-rating">${p.rating ? p.rating.toFixed(1) : '—'}</div>
+    </div>`).join('') : '<div class="empty compact-empty">Player stats недоступны.</div>'}</div>`;
+  return `<div class="center-players-grid">${side(match.home?.name || 'Хозяева', leaders?.home || [])}${side(match.away?.name || 'Гости', leaders?.away || [])}</div>`;
+}
+
+function centerCoverageHtml(d) {
+  const cells = [
+    ['События', d.availability?.events],
+    ['Статистика', d.availability?.statistics],
+    ['Составы', d.availability?.lineups],
+    ['Игроки', d.availability?.players],
+    ['Потери', d.availability?.injuries],
+    ['Рынок', Boolean(d.liveOdds)],
+  ];
+  return `<div class="center-coverage">${cells.map(([label,ok])=>`<span class="${ok?'ok':''}">${ok?'✓':'·'} ${label}</span>`).join('')}</div>`;
+}
+
+function centerMarketHtml(d) {
+  if (!d.liveOdds) return `<div class="empty compact-empty">LIVE-рынок 1X2 сейчас недоступен. Покрытие зависит от турнира и режима данных.</div>`;
+  return `<div class="center-market">
+    <div class="odds-grid">
+      <div><span>П1</span><strong>${d.liveOdds.odds?.home ?? '—'}</strong></div>
+      <div><span>X</span><strong>${d.liveOdds.odds?.draw ?? '—'}</strong></div>
+      <div><span>П2</span><strong>${d.liveOdds.odds?.away ?? '—'}</strong></div>
+    </div>
+    <p class="tiny">Источников: ${Number(d.liveOdds.sources || 0)}${d.liveOdds.updatedAt ? ` · ${escapeHtml(String(d.liveOdds.updatedAt))}` : ''}</p>
+    <div class="odds-movement-wrap"><h3>Движение рынка</h3>${oddsMovementHtml(d.oddsMovement)}</div>
+  </div>`;
+}
+
+function centerAbsenceSummary(absences, match) {
+  const hc = absences?.home?.length || 0;
+  const ac = absences?.away?.length || 0;
+  if (!hc && !ac) return '';
+  return `<div class="center-absence-summary">
+    <div><span>${escapeHtml(match.home?.name || 'Хозяева')}</span><strong>${hc}</strong><small>потерь</small></div>
+    <div><span>${escapeHtml(match.away?.name || 'Гости')}</span><strong>${ac}</strong><small>потерь</small></div>
+  </div>`;
+}
+
+function setMatchCenterTab(tab, scroll = false) {
+  state.currentCenterTab = tab || 'summary';
+  document.querySelectorAll('.center-tab-btn').forEach(btn => {
+    const active = btn.dataset.centerTab === state.currentCenterTab;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  document.querySelectorAll('.center-tab-panel').forEach(panel => panel.classList.toggle('active', panel.dataset.centerPanel === state.currentCenterTab));
+  if (scroll) document.querySelector('.center-tabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function bindMatchCenterTabs() {
+  document.querySelectorAll('.center-tab-btn').forEach(btn => btn.addEventListener('click', () => setMatchCenterTab(btn.dataset.centerTab, false)));
+  setMatchCenterTab(state.currentCenterTab || 'summary');
+}
+
 function renderMatchCenter(d) {
+  const previousFixture = Number(state.currentCenter?.match?.fixtureId || 0);
   state.currentCenter = d;
   if (isAdmin() && d?.provider?.visibility === 'admin') { state.provider = d.provider; renderProvider(); }
   state.currentAnalysis = null;
   const m = d.match || {};
+  if (previousFixture && previousFixture !== Number(m.fixtureId || 0)) state.currentCenterTab = 'summary';
+
   const live = d.mode === 'live';
   const finished = d.mode === 'finished';
+  const upcoming = d.mode === 'upcoming';
   const score = m.score || {};
-  const scoreText = `${score.home ?? 0} : ${score.away ?? 0}`;
+  const scoreText = upcoming ? timeOf(m.date) : `${score.home ?? 0} : ${score.away ?? 0}`;
+  const statusText = live ? '● LIVE' : finished ? '✓ ЗАВЕРШЁН' : 'ПРЕДСТОИТ';
+  const latestEvents = (d.events || []).slice(-3).reverse();
+
   $('analysis').innerHTML = `
-    <section class="panel live-hero ${live ? 'is-live' : ''}">
-      <div class="live-status-row">
-        <span class="live-pill ${live ? 'active' : 'finished'}">${live ? '● LIVE' : finished ? '✓ ЗАВЕРШЁН' : 'МАТЧ'}</span>
-        <span>${escapeHtml(m.statusLabel || m.status || '')}</span>
+    <section class="panel center-hero ${live ? 'is-live' : ''}">
+      <div class="center-hero-top">
+        <span class="live-pill ${live ? 'active' : finished ? 'finished' : ''}">${statusText}</span>
+        <span class="center-competition">${escapeHtml(m.league || '')}${m.round ? ` · ${escapeHtml(m.round)}` : ''}</span>
       </div>
-      <div class="logos">
-        ${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : ''}
-        <strong class="live-score">${escapeHtml(scoreText)}</strong>
-        ${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : ''}
+
+      <div class="center-scoreboard">
+        <button class="center-team-card" type="button" data-center-team="${Number(m.home?.id || 0)}">
+          ${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : '<span class="center-logo-fallback">⚽</span>'}
+          <strong>${escapeHtml(m.home?.name || '')}</strong>
+          <small>Хозяева</small>
+        </button>
+        <div class="center-score-core">
+          <strong>${escapeHtml(scoreText)}</strong>
+          <span>${escapeHtml(m.statusLabel || '')}</span>
+          ${live ? `<small id="liveRefreshText">Обновление через ${Number(d.refreshSeconds || 60)} сек.</small>` : `<small>${upcoming ? dateTime(m.date) : `Обновлено ${dateTime(d.generatedAt)}`}</small>`}
+        </div>
+        <button class="center-team-card away" type="button" data-center-team="${Number(m.away?.id || 0)}">
+          ${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : '<span class="center-logo-fallback">⚽</span>'}
+          <strong>${escapeHtml(m.away?.name || '')}</strong>
+          <small>Гости</small>
+        </button>
       </div>
-      <h2>${escapeHtml(m.home?.name || '')} — ${escapeHtml(m.away?.name || '')}</h2>
-      <p>${escapeHtml(m.league || '')}${m.venue ? ` · ${escapeHtml(m.venue)}` : ''}</p>
-      ${live ? `<p id="liveRefreshText" class="live-refresh-text">Автообновление через ${Number(d.refreshSeconds || 60)} сек.</p>` : `<p class="live-refresh-text">Данные матча сохранены в общем кэше.</p>`}
-      <button id="centerRefreshBtn" class="reminder-btn" type="button">↻ Обновить сейчас</button>
+
+      <div class="center-meta-line">
+        ${m.venue ? `<span>🏟 ${escapeHtml(m.venue)}</span>` : ''}
+        ${m.city ? `<span>📍 ${escapeHtml(m.city)}</span>` : ''}
+        ${m.referee ? `<span>🧑‍⚖️ ${escapeHtml(m.referee)}</span>` : ''}
+      </div>
+
+      <div class="center-hero-actions">
+        <button id="centerRefreshBtn" class="reminder-btn" type="button">↻ Обновить</button>
+        ${upcoming ? `<button id="centerAnalyzeBtn" class="primary-btn center-analyze-inline" type="button">🧠 Полный анализ</button>` : ''}
+      </div>
     </section>
 
-    ${d.stale ? `<section class="panel stale-panel"><strong>⚠️ Показан последний сохранённый LIVE-снимок</strong><p>${escapeHtml(d.warning || 'Провайдер временно ограничил запросы.')}</p></section>` : ''}
-    ${d.note ? `<section class="panel"><p class="tiny warning">${escapeHtml(d.note)}</p></section>` : ''}
+    ${d.stale ? `<section class="panel stale-panel"><strong>⚠️ Показан последний сохранённый снимок</strong><p>${escapeHtml(d.warning || 'Провайдер временно ограничил запросы.')}</p></section>` : ''}
+    ${d.note ? `<section class="panel center-note"><p class="tiny warning">${escapeHtml(d.note)}</p></section>` : ''}
 
-    ${live ? `<section class="panel provider-live-panel">
-      <h2>📡 Покрытие LIVE</h2>
-      <div class="provider-live-grid">
-        <div><span>Режим данных</span><strong>${escapeHtml(d.dataCapabilities?.label || d.provider?.label || 'Стандартное покрытие')}</strong></div>
-        <div><span>Обновление</span><strong>${Number(d.refreshSeconds || 60)} сек.</strong></div>
-        <div><span>Live odds</span><strong>${d.liveOdds ? 'Доступны' : 'По доступности'}</strong></div>
-        <div><span>Player stats</span><strong>${d.availability?.players ? 'Доступны' : 'По доступности'}</strong></div>
+    <div class="center-tabs-wrap">
+      <div class="center-tabs" role="tablist" aria-label="Разделы матча">
+        <button class="center-tab-btn" data-center-tab="summary" type="button">Обзор</button>
+        <button class="center-tab-btn" data-center-tab="timeline" type="button">Хронология</button>
+        <button class="center-tab-btn" data-center-tab="stats" type="button">Статистика</button>
+        <button class="center-tab-btn" data-center-tab="lineups" type="button">Составы</button>
+        <button class="center-tab-btn" data-center-tab="players" type="button">Игроки</button>
+        <button class="center-tab-btn" data-center-tab="market" type="button">Рынок</button>
       </div>
-    </section>` : ''}
+    </div>
 
-    ${livePressureHtml(d.livePressure, m)}
+    <div class="center-tab-panel" data-center-panel="summary">
+      ${livePressureHtml(d.livePressure, m)}
+      <section class="panel">
+        <div class="center-section-title"><div><h2>Ключевые показатели</h2><p>Самые полезные метрики в одном экране</p></div><span class="coverage-badge">${escapeHtml(d.dataCapabilities?.label || 'Покрытие данных')}</span></div>
+        ${centerKeyStatsHtml(d.statistics)}
+      </section>
 
-    ${d.liveOdds ? `<section class="panel">
-      <h2>💹 LIVE-коэффициенты 1X2</h2>
-      <div class="odds-grid">
-        <div><span>П1</span><strong>${d.liveOdds.odds?.home ?? '—'}</strong></div>
-        <div><span>X</span><strong>${d.liveOdds.odds?.draw ?? '—'}</strong></div>
-        <div><span>П2</span><strong>${d.liveOdds.odds?.away ?? '—'}</strong></div>
-      </div>
-      <p class="tiny">Источников в live-выборке: ${Number(d.liveOdds.sources || 0)}${d.liveOdds.updatedAt ? ` · обновление ${escapeHtml(String(d.liveOdds.updatedAt))}` : ''}</p>
-      <div class="odds-movement-wrap"><h3>Движение рынка</h3>${oddsMovementHtml(d.oddsMovement)}</div>
-    </section>` : ''}
+      ${latestEvents.length ? `<section class="panel"><div class="center-section-title"><div><h2>Последние события</h2><p>Что произошло недавно</p></div></div>${liveEventsHtml(latestEvents)}</section>` : ''}
 
-    <section class="panel">
-      <h2>📊 ${live ? 'LIVE-статистика' : 'Статистика матча'}</h2>
-      <div style="margin-top:12px">${liveStatsHtml(d.statistics, m)}</div>
-    </section>
+      ${(d.absences?.home?.length || d.absences?.away?.length) ? `<section class="panel"><div class="center-section-title"><div><h2>🩺 Потери состава</h2><p>Подтверждённые недоступные игроки</p></div></div>${centerAbsenceSummary(d.absences,m)}${liveAbsencesHtml(d.absences,m)}</section>` : ''}
 
-    ${(d.playerLeaders?.home?.length || d.playerLeaders?.away?.length) ? `<section class="panel"><h2>⭐ Игроки матча</h2><p class="tiny">Рейтинг и ключевые действия по данным провайдера. Не все турниры поддерживают player stats.</p>${playerLeadersHtml(d.playerLeaders, m)}</section>` : ''}
+      <section class="panel coverage-panel">
+        <div class="center-section-title"><div><h2>Покрытие и свежесть</h2><p>${d.cached ? 'Данные из общего кэша' : 'Свежий ответ провайдера'} · ${dateTime(d.generatedAt)}</p></div></div>
+        ${centerCoverageHtml(d)}
+        ${d.availability?.limitedCoverage ? '<div class="coverage-badge limited">Ограниченное покрытие · экономим API-лимит</div>' : ''}
+      </section>
+    </div>
 
-    <section class="panel">
-      <h2>⚡ События матча</h2>
-      <div style="margin-top:12px">${liveEventsHtml(d.events)}</div>
-    </section>
+    <div class="center-tab-panel" data-center-panel="timeline">
+      <section class="panel">
+        <div class="center-section-title"><div><h2>⚡ Хронология матча</h2><p>Голы, карточки, замены и VAR</p></div></div>
+        ${timelineEventsHtml(d.events, m)}
+      </section>
+    </div>
 
-    ${(d.absences?.home?.length || d.absences?.away?.length) ? `<section class="panel">
-      <h2>🩺 Недоступные игроки</h2>
-      <p class="tiny">Подтверждённые травмы/дисквалификации по данным провайдера.</p>
-      ${liveAbsencesHtml(d.absences, m)}
-    </section>` : ''}
+    <div class="center-tab-panel" data-center-panel="stats">
+      <section class="panel">
+        <div class="center-section-title"><div><h2>📊 Статистика матча</h2><p>Сравнение команд по доступным показателям</p></div></div>
+        ${centerAllStatsHtml(d.statistics)}
+      </section>
+    </div>
 
-    <section class="panel">
-      <h2>👥 Составы</h2>
-      <div style="margin-top:12px">${lineupLiveHtml(d.lineups, m)}</div>
-    </section>
+    <div class="center-tab-panel" data-center-panel="lineups">
+      <section class="panel">
+        <div class="center-section-title"><div><h2>👥 Составы и схема</h2><p>Стартовые XI, формации и запасные</p></div></div>
+        ${lineupLiveHtml(d.lineups, m)}
+      </section>
+      ${(d.absences?.home?.length || d.absences?.away?.length) ? `<section class="panel"><h2>🩺 Недоступные игроки</h2>${liveAbsencesHtml(d.absences,m)}</section>` : ''}
+    </div>
 
-    <section class="panel coverage-panel">
-      <h2>Покрытие данных</h2>
-      <div class="coverage-grid">
-        <span>${d.availability?.events ? '✅' : '—'} События</span>
-        <span>${d.availability?.statistics ? '✅' : '—'} Статистика</span>
-        <span>${d.availability?.lineups ? '✅' : '—'} Составы</span>
-        <span>${d.availability?.players ? '✅' : '—'} Игроки</span>
-        <span>${d.availability?.injuries ? '✅' : '—'} Потери</span>
-        <span>${d.oddsMovement?.baseline ? '✅' : '—'} Движение линии</span>
-      </div>
-      ${d.availability?.limitedCoverage ? '<div class="coverage-badge limited">Ограниченное покрытие · экономим API-лимит</div>' : ''}
-      <p class="tiny">Обновлено: ${dateTime(d.generatedAt)}${d.cached ? ' · кэш' : ' · свежие данные'}</p>
-    </section>
+    <div class="center-tab-panel" data-center-panel="players">
+      <section class="panel">
+        <div class="center-section-title"><div><h2>⭐ Игроки матча</h2><p>Лучшие доступные player stats и рейтинг</p></div></div>
+        ${centerPlayersHtml(d.playerLeaders, m)}
+      </section>
+    </div>
+
+    <div class="center-tab-panel" data-center-panel="market">
+      <section class="panel">
+        <div class="center-section-title"><div><h2>💹 LIVE-рынок</h2><p>1X2 и движение implied probability</p></div></div>
+        ${centerMarketHtml(d)}
+      </section>
+    </div>
   `;
+
+  bindMatchCenterTabs();
+
+  document.querySelectorAll('[data-center-team]').forEach(btn => btn.addEventListener('click', () => {
+    const teamId = Number(btn.dataset.centerTeam || 0);
+    if (!teamId) return;
+    openTeam(teamId, btn);
+  }));
+
+  $('centerAnalyzeBtn')?.addEventListener('click', e => analyzeMatch(Number(m.fixtureId), e.currentTarget));
+
   $('centerRefreshBtn')?.addEventListener('click', async () => {
     const btn = $('centerRefreshBtn');
     btn.disabled = true; btn.textContent = '⏳ Обновляю…';
     try {
-      // Cache is intentionally shared for 60 seconds, so manual refresh can
-      // return the same snapshot without wasting API quota.
       const data = await api(`/api/match-center?fixtureId=${Number(m.fixtureId)}&t=${Date.now()}`);
       state.currentCenter = data;
       renderMatchCenter(data);
-    } catch (e) { toast(e.message); }
+    } catch (e) {
+      toast(e.message);
+      btn.disabled = false; btn.textContent = '↻ Обновить';
+    }
   });
+
   if (live) startLiveRefresh(m.fixtureId); else stopLiveRefresh();
 }
 
 async function openMatchCenter(fixtureId, btn) {
+  if (Number(state.currentCenter?.match?.fixtureId || 0) !== Number(fixtureId)) state.currentCenterTab = 'summary';
   const original = btn?.textContent || '';
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Загружаю матч…'; }
   try {
@@ -2129,7 +2358,7 @@ function compactAbsence(title, items) {
 
 function lineupBlock(title, lineup) {
   const players = lineup?.startXI || [];
-  return `<div class="squad-block"><div class="squad-title">${escapeHtml(title)} <span>${escapeHtml(lineup?.formation || '')}</span></div>${players.length ? `<div class="lineup-list">${players.map((x,i) => `<span><b>${i+1}</b>${escapeHtml(x)}</span>`).join('')}</div>` : '<p class="muted">Стартовый состав ещё не опубликован.</p>'}</div>`;
+  return `<div class="squad-block"><div class="squad-title">${escapeHtml(title)} <span>${escapeHtml(lineup?.formation || '')}</span></div>${players.length ? `<div class="lineup-list">${players.map((x,i) => `<span><b>${lineupPlayerNumber(x) || i+1}</b>${escapeHtml(lineupPlayerName(x))}</span>`).join('')}</div>` : '<p class="muted">Стартовый состав ещё не опубликован.</p>'}</div>`;
 }
 
 async function shareAnalysis(d) {
