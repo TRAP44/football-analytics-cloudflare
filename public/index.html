@@ -61,6 +61,39 @@
         <div id="matches" class="matches"></div>
       </section>
 
+      <section id="searchView" class="view">
+        <div class="section-head search-page-head">
+          <div>
+            <h2>Поиск</h2>
+            <p>Команды и турниры — даже если сегодня они не играют</p>
+          </div>
+        </div>
+        <section class="panel global-search-panel">
+          <div class="global-search-box">
+            <input id="globalSearchInput" class="search-input" type="search" inputmode="search" placeholder="Например: Arsenal, Барселона, Лига чемпионов" autocomplete="off" />
+            <button id="globalSearchBtn" class="global-search-btn" type="button">Найти</button>
+          </div>
+          <p class="tiny">Поиск по текущему каталогу мгновенный. Для команды вне сегодняшних матчей нажмите «Найти» — запрос к API выполняется только после 3 символов и кэшируется.</p>
+        </section>
+        <div id="searchStatus"></div>
+        <section id="searchResultsWrap" class="search-section" hidden>
+          <div class="mini-section-head"><strong>Результаты</strong><span id="searchResultsMeta"></span></div>
+          <div id="searchResults" class="search-results"></div>
+        </section>
+        <section id="searchRecentWrap" class="search-section">
+          <div class="mini-section-head"><strong>Недавно открывали</strong><button id="clearRecentTeamsBtn" class="text-btn" type="button">Очистить</button></div>
+          <div id="searchRecent" class="discovery-grid"></div>
+        </section>
+        <section id="searchFavoritesWrap" class="search-section">
+          <div class="mini-section-head"><strong>⭐ Избранные команды</strong><span>Быстрый доступ</span></div>
+          <div id="searchFavorites" class="discovery-grid"></div>
+        </section>
+        <section id="searchCompetitionsWrap" class="search-section">
+          <div class="mini-section-head"><strong>Популярные турниры</strong><span>Из текущего каталога</span></div>
+          <div id="searchCompetitions" class="competition-shortcuts search-competition-shortcuts"></div>
+        </section>
+      </section>
+
       <section id="tournamentView" class="view">
         <button id="tournamentBackBtn" class="back-btn" type="button">← К матчам</button>
         <div id="tournamentHero"></div>
@@ -207,6 +240,7 @@
 
     <nav class="bottom-nav">
       <button id="navMatches" class="nav-item active" type="button"><span>⚽</span><small>Матчи</small></button>
+      <button id="navSearch" class="nav-item" type="button"><span>🔎</span><small>Поиск</small></button>
       <button id="navHistory" class="nav-item" type="button"><span>🕘</span><small>История</small></button>
       <button id="navProfile" class="nav-item" type="button"><span>👤</span><small>Профиль</small></button>
     </nav>
