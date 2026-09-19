@@ -21,12 +21,14 @@ const state = {
   search: '',
   currentAnalysis: null,
   currentCenter: null,
+  currentTournament: null,
+  tournamentStandings: new Map(),
   liveRefreshTimer: null,
   liveRefreshRemaining: 0,
 };
 
 const $ = id => document.getElementById(id);
-const views = ['matchesView', 'analysisView', 'historyView', 'profileView'];
+const views = ['matchesView', 'tournamentView', 'analysisView', 'historyView', 'profileView'];
 
 function stopLiveRefresh() {
   if (state.liveRefreshTimer) clearInterval(state.liveRefreshTimer);
@@ -37,7 +39,7 @@ function stopLiveRefresh() {
 function showView(id) {
   if (id !== 'analysisView') stopLiveRefresh();
   views.forEach(v => $(v).classList.toggle('active', v === id));
-  $('navMatches').classList.toggle('active', id === 'matchesView' || id === 'analysisView');
+  $('navMatches').classList.toggle('active', id === 'matchesView' || id === 'tournamentView' || id === 'analysisView');
   $('navHistory').classList.toggle('active', id === 'historyView');
   $('navProfile').classList.toggle('active', id === 'profileView');
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -360,6 +362,7 @@ async function toggleFavorite(team) {
     }
     await loadProfile();
     renderMatches();
+    if (state.currentTournament) renderTournamentMatches();
     renderFavoriteTeams();
   } catch (e) {
     toast(e.message);
@@ -484,33 +487,66 @@ function interestLabel(score) {
   return 'Обычный';
 }
 
-function renderMatches() {
-  const list = filteredMatches();
-  const age = relativeAge(state.matchesMeta?.refreshedAt);
-  const catalog = state.matchesMeta?.catalog || {};
-  const bits = [`Показано: ${list.length} из ${state.matches.length}`];
-  if (Number(catalog.live || 0) > 0) bits.push(`LIVE: ${Number(catalog.live)}`);
-  if (Number(catalog.featured || 0) > 0) bits.push(`главных: ${Number(catalog.featured)}`);
-  if (age) bits.push(`обновлено ${age}`);
-  $('matchesCount').textContent = bits.join(' · ');
-  if ($('dataNotice')) {
-    $('dataNotice').innerHTML = state.matchesMeta?.stale
-      ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.matchesMeta.warning || 'Показаны последние сохранённые данные.')}</div>`
-      : '';
+function competitionGroups(list) {
+  const groups = new Map();
+  for (const m of list) {
+    const key = Number(m.leagueId || 0) || `${m.league || ''}:${m.country || ''}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(m);
   }
-  if (!list.length) {
-    const extra = state.filter !== 'all' ? '<button id="showAllBtn" class="secondary-btn" type="button">Показать все матчи</button>' : '';
-    $('matches').innerHTML = `<div class="empty">По выбранному фильтру матчей не найдено.${extra}</div>`;
-    $('showAllBtn')?.addEventListener('click', () => { state.filter = 'all'; syncFilterButtons(); renderMatches(); });
+  return [...groups.values()].sort((a, b) => {
+    const aLive = a.some(x => x.live) ? 1 : 0;
+    const bLive = b.some(x => x.live) ? 1 : 0;
+    if (aLive !== bLive) return bLive - aLive;
+    const ap = Math.max(...a.map(x => Number(x.competition?.priority || 0)));
+    const bp = Math.max(...b.map(x => Number(x.competition?.priority || 0)));
+    if (ap !== bp) return bp - ap;
+    const ai = Math.max(...a.map(x => Number(x.interestScore || 0)));
+    const bi = Math.max(...b.map(x => Number(x.interestScore || 0)));
+    if (ai !== bi) return bi - ai;
+    return String(a[0]?.date || '').localeCompare(String(b[0]?.date || ''));
+  });
+}
+
+function renderPopularCompetitions() {
+  const wrap = $('popularCompetitionsWrap');
+  const el = $('popularCompetitions');
+  if (!wrap || !el) return;
+  const seen = new Set();
+  const rows = state.matches
+    .filter(m => Number(m.leagueId) > 0 && !m.youthReserve && !m.lowPriority)
+    .sort((a, b) => {
+      if (Boolean(a.live) !== Boolean(b.live)) return a.live ? -1 : 1;
+      const ap = Number(a.competition?.priority || 0), bp = Number(b.competition?.priority || 0);
+      if (ap !== bp) return bp - ap;
+      return Number(b.interestScore || 0) - Number(a.interestScore || 0);
+    })
+    .filter(m => {
+      const id = Number(m.leagueId);
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    })
+    .slice(0, 7);
+  if (!rows.length) {
+    wrap.hidden = true;
+    el.innerHTML = '';
     return;
   }
+  wrap.hidden = false;
+  el.innerHTML = rows.map(m => `
+    <button class="competition-shortcut" type="button" data-open-tournament="${Number(m.leagueId)}">
+      ${m.leagueLogo ? `<img src="${safeUrl(m.leagueLogo)}" alt="">` : '<span class="competition-logo-placeholder">🏆</span>'}
+      <span><strong>${escapeHtml(m.leagueShort || m.league || 'Турнир')}</strong><small>${escapeHtml(m.country || '')}</small></span>
+      ${m.live ? '<b>LIVE</b>' : ''}
+    </button>`).join('');
+  el.querySelectorAll('[data-open-tournament]').forEach(btn => btn.addEventListener('click', () => openTournament(Number(btn.dataset.openTournament))));
+}
 
-  $('matches').innerHTML = list.map(m => `
+function matchCardHtml(m, { grouped = false } = {}) {
+  return `
     <article class="match-card ${Number(m.interestScore || 0) >= 50 ? 'top-match' : ''}">
-      <div class="match-meta">
-        <span class="competition-name">${m.featured ? '<b class="top-tag">ГЛАВНЫЙ</b> ' : ''}${escapeHtml(m.league || 'Турнир')}</span>
-        <span>${escapeHtml(m.country || '')}</span>
-      </div>
+      ${grouped ? '' : `<div class="match-meta"><span class="competition-name">${m.featured ? '<b class="top-tag">ГЛАВНЫЙ</b> ' : ''}${escapeHtml(m.league || 'Турнир')}</span><span>${escapeHtml(m.country || '')}</span></div>`}
       <div class="catalog-row">
         ${m.category ? `<span class="competition-chip ${categoryClass(m.category)}">${escapeHtml(categoryLabel(m.category))}</span>` : ''}
         ${m.roundLabel ? `<span class="round-chip">${escapeHtml(m.roundLabel)}</span>` : ''}
@@ -538,18 +574,179 @@ function renderMatches() {
         : m.finished
           ? `<button class="analyze-btn finished-btn" data-center="${Number(m.fixtureId)}">📋 Итоги матча</button>`
           : `<button class="analyze-btn" data-fixture="${Number(m.fixtureId)}">🧠 Предматчевый анализ</button>`}
-    </article>
-  `).join('');
+    </article>`;
+}
 
-  document.querySelectorAll('.analyze-btn[data-fixture]').forEach(btn => {
+function bindMatchActions(root = document) {
+  root.querySelectorAll('.analyze-btn[data-fixture]').forEach(btn => {
     btn.addEventListener('click', () => analyzeMatch(Number(btn.dataset.fixture), btn));
   });
-  document.querySelectorAll('.analyze-btn[data-center]').forEach(btn => {
+  root.querySelectorAll('.analyze-btn[data-center]').forEach(btn => {
     btn.addEventListener('click', () => openMatchCenter(Number(btn.dataset.center), btn));
   });
-  document.querySelectorAll('.fav-star').forEach(btn => btn.addEventListener('click', () => toggleFavorite({
+  root.querySelectorAll('.fav-star').forEach(btn => btn.addEventListener('click', () => toggleFavorite({
     id: Number(btn.dataset.teamId), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '',
   })));
+  root.querySelectorAll('[data-open-tournament]').forEach(btn => btn.addEventListener('click', () => openTournament(Number(btn.dataset.openTournament))));
+}
+
+function renderMatches() {
+  const list = filteredMatches();
+  const age = relativeAge(state.matchesMeta?.refreshedAt);
+  const catalog = state.matchesMeta?.catalog || {};
+  const groups = competitionGroups(list);
+  const bits = [`Показано: ${list.length} из ${state.matches.length}`];
+  if (groups.length) bits.push(`турниров: ${groups.length}`);
+  if (Number(catalog.live || 0) > 0) bits.push(`LIVE: ${Number(catalog.live)}`);
+  if (Number(catalog.featured || 0) > 0) bits.push(`главных: ${Number(catalog.featured)}`);
+  if (age) bits.push(`обновлено ${age}`);
+  $('matchesCount').textContent = bits.join(' · ');
+  renderPopularCompetitions();
+  if ($('dataNotice')) {
+    $('dataNotice').innerHTML = state.matchesMeta?.stale
+      ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.matchesMeta.warning || 'Показаны последние сохранённые данные.')}</div>`
+      : '';
+  }
+  if (!list.length) {
+    const extra = state.filter !== 'all' ? '<button id="showAllBtn" class="secondary-btn" type="button">Показать все матчи</button>' : '';
+    $('matches').innerHTML = `<div class="empty">По выбранному фильтру матчей не найдено.${extra}</div>`;
+    $('showAllBtn')?.addEventListener('click', () => { state.filter = 'all'; syncFilterButtons(); renderMatches(); });
+    return;
+  }
+
+  $('matches').innerHTML = groups.map(rows => {
+    const first = rows[0];
+    const liveCount = rows.filter(x => x.live).length;
+    return `<section class="competition-group">
+      <button class="competition-group-head" type="button" data-open-tournament="${Number(first.leagueId)}">
+        <span class="competition-group-logo">${first.leagueLogo ? `<img src="${safeUrl(first.leagueLogo)}" alt="">` : '🏆'}</span>
+        <span class="competition-group-main"><strong>${escapeHtml(first.league || 'Турнир')}</strong><small>${escapeHtml(first.country || '')}${first.season ? ` · сезон ${Number(first.season)}` : ''}</small></span>
+        <span class="competition-group-count">${liveCount ? `<b>${liveCount} LIVE</b>` : ''}<small>${rows.length} ${rows.length === 1 ? 'матч' : 'матчей'}</small><i>›</i></span>
+      </button>
+      <div class="competition-group-matches">${rows.map(m => matchCardHtml(m, { grouped: true })).join('')}</div>
+    </section>`;
+  }).join('');
+  bindMatchActions($('matches'));
+}
+
+function currentTournamentMatches(leagueId = state.currentTournament?.leagueId) {
+  return state.matches.filter(m => Number(m.leagueId) === Number(leagueId));
+}
+
+function tournamentKey(t) {
+  return `${Number(t?.leagueId || 0)}:${Number(t?.season || 0)}`;
+}
+
+function openTournament(leagueId) {
+  const rows = currentTournamentMatches(leagueId);
+  const source = rows[0] || state.matches.find(m => Number(m.leagueId) === Number(leagueId));
+  if (!source) {
+    toast('Турнир не найден в текущем списке матчей.');
+    return;
+  }
+  state.currentTournament = {
+    leagueId: Number(source.leagueId),
+    season: Number(source.season || new Date().getFullYear()),
+    name: source.league || source.leagueOriginal || 'Турнир',
+    shortName: source.leagueShort || source.league || 'Турнир',
+    country: source.country || '',
+    logo: source.leagueLogo || '',
+    category: source.category || '',
+    tier: source.competition?.tier || 'standard',
+  };
+  renderTournamentHero();
+  renderTournamentMatches();
+  setTournamentTab('matches', false);
+  showView('tournamentView');
+}
+
+function renderTournamentHero() {
+  const t = state.currentTournament;
+  if (!t) return;
+  const rows = currentTournamentMatches(t.leagueId);
+  const live = rows.filter(x => x.live).length;
+  $('tournamentHero').innerHTML = `<section class="panel tournament-hero">
+    <div class="tournament-identity">
+      <div class="tournament-logo">${t.logo ? `<img src="${safeUrl(t.logo)}" alt="">` : '🏆'}</div>
+      <div><span>${escapeHtml(t.country || '')}</span><h2>${escapeHtml(t.name)}</h2><p>Сезон ${Number(t.season)} · ${escapeHtml(categoryLabel(t.category) || 'Турнир')}</p></div>
+    </div>
+    <div class="tournament-summary">
+      <div><span>Матчей в выбранный день</span><strong>${rows.length}</strong></div>
+      <div><span>LIVE сейчас</span><strong>${live}</strong></div>
+      <div><span>Покрытие</span><strong>${escapeHtml(t.tier === 'elite' ? 'Высокое' : t.tier === 'major' ? 'Хорошее' : 'Стандарт')}</strong></div>
+    </div>
+  </section>`;
+}
+
+function renderTournamentMatches() {
+  const t = state.currentTournament;
+  if (!t) return;
+  const rows = currentTournamentMatches(t.leagueId);
+  const el = $('tournamentMatches');
+  if (!rows.length) {
+    el.innerHTML = '<div class="empty">В выбранный день матчей этого турнира нет.</div>';
+    return;
+  }
+  el.innerHTML = `<div class="tournament-day-note">Матчи на ${escapeHtml(dateOnly(localDate(state.offset)))}</div><div class="tournament-match-list">${rows.map(m => matchCardHtml(m, { grouped: true })).join('')}</div>`;
+  bindMatchActions(el);
+}
+
+function standingFormHtml(form = '') {
+  const chars = String(form || '').toUpperCase().split('').filter(x => ['W','D','L'].includes(x)).slice(-5);
+  if (!chars.length) return '<span class="standings-form-empty">—</span>';
+  return `<span class="standings-form">${chars.map(x => `<i class="${x === 'W' ? 'win' : x === 'D' ? 'draw' : 'loss'}">${x === 'W' ? 'В' : x === 'D' ? 'Н' : 'П'}</i>`).join('')}</span>`;
+}
+
+function renderTournamentStandings(data) {
+  const el = $('tournamentTable');
+  const t = state.currentTournament;
+  if (!el || !t) return;
+  if (!data?.available || !data?.groups?.length) {
+    el.innerHTML = `<div class="empty compact-empty">${escapeHtml(data?.reason || 'Таблица турнира сейчас недоступна.')}${data?.warning ? `<br><span class="tiny">${escapeHtml(data.warning)}</span>` : ''}</div>`;
+    return;
+  }
+  const currentIds = new Set(currentTournamentMatches(t.leagueId).flatMap(m => [Number(m.home?.id), Number(m.away?.id)]));
+  el.innerHTML = `${data.stale ? `<div class="data-notice stale">⚠️ ${escapeHtml(data.warning || 'Показана сохранённая таблица.')}</div>` : ''}${data.groups.map((group, gi) => `
+    <section class="panel standings-panel">
+      ${group.name ? `<h2>${escapeHtml(group.name)}</h2>` : `<h2>Турнирная таблица</h2>`}
+      <div class="standings-scroll"><table class="standings-table">
+        <thead><tr><th>#</th><th>Команда</th><th>И</th><th class="wide-stat">В</th><th class="wide-stat">Н</th><th class="wide-stat">П</th><th>М</th><th>+/-</th><th>О</th><th>Форма</th></tr></thead>
+        <tbody>${group.rows.map(row => `<tr class="${currentIds.has(Number(row.team?.id)) ? 'today-team' : ''}">
+          <td><b>${Number(row.rank)}</b></td>
+          <td><div class="standing-team">${row.team?.logo ? `<img src="${safeUrl(row.team.logo)}" alt="">` : ''}<strong>${escapeHtml(row.team?.name || '')}</strong></div></td>
+          <td>${Number(row.played)}</td><td class="wide-stat">${Number(row.win)}</td><td class="wide-stat">${Number(row.draw)}</td><td class="wide-stat">${Number(row.lose)}</td>
+          <td>${Number(row.goalsFor)}:${Number(row.goalsAgainst)}</td><td class="${Number(row.goalsDiff) > 0 ? 'positive' : Number(row.goalsDiff) < 0 ? 'negative' : ''}">${Number(row.goalsDiff) > 0 ? '+' : ''}${Number(row.goalsDiff)}</td><td><b>${Number(row.points)}</b></td><td>${standingFormHtml(row.form)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+      <p class="tiny table-note">Таблица загружается только при открытии этой вкладки и кэшируется на 6 часов, чтобы не расходовать бесплатную квоту API.</p>
+    </section>`).join('')}`;
+}
+
+async function loadTournamentStandings(force = false) {
+  const t = state.currentTournament;
+  if (!t) return;
+  const key = tournamentKey(t);
+  const el = $('tournamentTable');
+  if (!force && state.tournamentStandings.has(key)) {
+    renderTournamentStandings(state.tournamentStandings.get(key));
+    return;
+  }
+  el.innerHTML = '<div class="loader">Загружаю таблицу турнира…</div>';
+  try {
+    const data = await api(`/api/tournament?leagueId=${Number(t.leagueId)}&season=${Number(t.season)}`);
+    state.tournamentStandings.set(key, data);
+    if (data.provider) { state.provider = data.provider; renderProvider(); }
+    renderTournamentStandings(data);
+  } catch (e) {
+    el.innerHTML = `<div class="empty compact-empty">${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function setTournamentTab(tab, load = true) {
+  document.querySelectorAll('.tournament-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tournamentTab === tab));
+  $('tournamentMatchesPanel').classList.toggle('active', tab === 'matches');
+  $('tournamentTablePanel').classList.toggle('active', tab === 'table');
+  if (tab === 'table' && load) loadTournamentStandings(false);
 }
 
 function statValue(v) {
@@ -1238,6 +1435,8 @@ $('matchSearch').addEventListener('input', e => {
 $('refreshBtn').addEventListener('click', loadMatches);
 $('historyRefreshBtn').addEventListener('click', () => loadHistory(true));
 $('backBtn').addEventListener('click', () => showView('matchesView'));
+$('tournamentBackBtn')?.addEventListener('click', () => showView('matchesView'));
+document.querySelectorAll('.tournament-tab').forEach(btn => btn.addEventListener('click', () => setTournamentTab(btn.dataset.tournamentTab || 'matches')));
 $('profileBtn').addEventListener('click', () => showView('profileView'));
 $('navMatches').addEventListener('click', () => showView('matchesView'));
 $('navHistory').addEventListener('click', async () => { await loadHistory(true); showView('historyView'); });
