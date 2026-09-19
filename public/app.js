@@ -27,6 +27,8 @@ const state = {
   currentTeam: null,
   teamBackView: 'matchesView',
   teamCache: new Map(),
+  teamIntelligenceCache: new Map(),
+  teamSquadCache: new Map(),
   tournamentStandings: new Map(),
   liveRefreshTimer: null,
   liveRefreshRemaining: 0,
@@ -935,6 +937,96 @@ function bindTeamFixtureActions(root) {
   root.querySelectorAll('[data-center]').forEach(btn => btn.addEventListener('click', () => openMatchCenter(Number(btn.dataset.center), btn)));
   root.querySelectorAll('[data-open-tournament]').forEach(btn => btn.addEventListener('click', openTournamentFromTeam));
 }
+
+function teamPercent(value) {
+  return value === null || value === undefined ? '—' : `${Number(value).toFixed(Number(value) % 1 ? 1 : 0)}%`;
+}
+function teamDecimal(value) {
+  return value === null || value === undefined || Number.isNaN(Number(value)) ? '—' : String(Math.round(Number(value) * 100) / 100);
+}
+function teamFormBadges(form='') {
+  return String(form || '').slice(-12).split('').map(teamResultBadge).join('') || '<span class="muted">—</span>';
+}
+function seasonSplitCard(label, played, wins, draws, losses, ppg, gf, ga) {
+  return `<div class="season-split-card"><div class="mini-section-head"><strong>${escapeHtml(label)}</strong><span>${Number(played || 0)} игр</span></div><div class="season-split-line"><span>В / Н / П</span><b>${Number(wins||0)} / ${Number(draws||0)} / ${Number(losses||0)}</b></div><div class="season-split-line"><span>Очки / матч</span><b>${teamDecimal(ppg)}</b></div><div class="season-split-line"><span>Голы</span><b>${Number(gf||0)} : ${Number(ga||0)}</b></div></div>`;
+}
+function renderTeamIntelligence(data) {
+  const el = $('teamIntelligence'); if (!el) return;
+  if (!data?.available || !data?.stats?.available) {
+    el.innerHTML = `<div class="empty compact-empty">${escapeHtml(data?.reason || 'Сезонная статистика для этой команды сейчас недоступна.')}</div>`;
+    return;
+  }
+  const s=data.stats, f=s.fixtures||{}, d=s.derived||{}, g=s.goals||{}, b=s.biggest||{};
+  const warning=data.stale ? `<div class="data-notice stale">⚠️ ${escapeHtml(data.warning || 'Показана сохранённая сезонная статистика.')}</div>` : '';
+  const leagueTitle=[s.league?.name, s.league?.season].filter(Boolean).join(' · ');
+  const goalDiff=Number(g.difference||0);
+  el.innerHTML = `${warning}
+    <section class="panel intelligence-hero">
+      <div class="mini-section-head"><strong>📊 Сезонная статистика</strong><span>${escapeHtml(leagueTitle)}</span></div>
+      <div class="intelligence-kpis">
+        <div><span>Матчи</span><strong>${Number(f.played?.total||0)}</strong></div>
+        <div><span>Очки / матч</span><strong>${teamDecimal(d.ppg)}</strong></div>
+        <div><span>Победы</span><strong>${teamPercent(d.winRate)}</strong></div>
+        <div><span>Разница</span><strong class="${goalDiff>0?'positive':goalDiff<0?'negative':''}">${goalDiff>0?'+':''}${goalDiff}</strong></div>
+      </div>
+      <div class="team-season-form"><span>Форма сезона</span><div>${teamFormBadges(s.form)}</div></div>
+    </section>
+    <section class="panel">
+      <h2>🏠 Дома / ✈️ В гостях</h2>
+      <div class="season-split-grid">
+        ${seasonSplitCard('Дома',f.played?.home,f.wins?.home,f.draws?.home,f.losses?.home,d.homePpg,g.for?.home,g.against?.home)}
+        ${seasonSplitCard('В гостях',f.played?.away,f.wins?.away,f.draws?.away,f.losses?.away,d.awayPpg,g.for?.away,g.against?.away)}
+      </div>
+    </section>
+    <section class="panel">
+      <h2>⚽ Атака и оборона</h2>
+      <div class="team-kpi-grid intelligence-detail-grid">
+        <div><span>Забито / матч</span><strong>${teamDecimal(d.goalsForPerMatch)}</strong></div>
+        <div><span>Пропущено / матч</span><strong>${teamDecimal(d.goalsAgainstPerMatch)}</strong></div>
+        <div><span>Сухие матчи</span><strong>${teamPercent(d.cleanSheetRate)}</strong></div>
+        <div><span>Без гола</span><strong>${teamPercent(d.failedToScoreRate)}</strong></div>
+        <div><span>Всего голов</span><strong>${Number(g.for?.total||0)} : ${Number(g.against?.total||0)}</strong></div>
+        <div><span>Схема</span><strong>${escapeHtml(s.mostUsedLineup?.formation || '—')}</strong></div>
+      </div>
+    </section>
+    <section class="panel season-records">
+      <h2>📌 Максимумы сезона</h2>
+      <div class="season-record-grid">
+        <div><span>Крупнейшая победа дома</span><strong>${escapeHtml(b.winHome || '—')}</strong></div>
+        <div><span>Крупнейшая победа в гостях</span><strong>${escapeHtml(b.winAway || '—')}</strong></div>
+        <div><span>Крупнейшее поражение дома</span><strong>${escapeHtml(b.lossHome || '—')}</strong></div>
+        <div><span>Крупнейшее поражение в гостях</span><strong>${escapeHtml(b.lossAway || '—')}</strong></div>
+      </div>
+      <p class="tiny">Данные этой вкладки загружаются только при открытии и кэшируются на 6 часов.</p>
+    </section>`;
+}
+async function loadTeamIntelligence(force=false) {
+  const team=state.currentTeam, comp=team?.data?.primaryCompetition, el=$('teamIntelligence');
+  if(!team?.id || !el) return;
+  if(!comp?.leagueId || !comp?.season){ el.innerHTML='<div class="empty compact-empty">Сначала нужно определить основной турнир команды.</div>'; return; }
+  const key=`${Number(team.id)}:${Number(comp.leagueId)}:${Number(comp.season)}`;
+  if(!force && state.teamIntelligenceCache.has(key)){ renderTeamIntelligence(state.teamIntelligenceCache.get(key)); return; }
+  el.innerHTML='<div class="loader">Загружаю сезонную статистику…</div>';
+  const q=new URLSearchParams({teamId:String(Number(team.id)),leagueId:String(Number(comp.leagueId)),season:String(Number(comp.season)),teamName:team.name||'',teamLogo:team.logo||'',leagueName:comp.name||'',leagueLogo:comp.logo||'',country:comp.country||''});
+  try{const data=await api(`/api/team/intelligence?${q.toString()}`);state.teamIntelligenceCache.set(key,data);if(data.provider){state.provider=data.provider;renderProvider();}renderTeamIntelligence(data);}catch(e){el.innerHTML=`<div class="empty compact-empty">${escapeHtml(e.message)}</div>`;}
+}
+function playerCard(p) {
+  return `<div class="squad-player">${p.photo?`<img src="${safeUrl(p.photo)}" alt="">`:'<span class="squad-avatar">👤</span>'}<div><strong>${escapeHtml(p.name||'')}</strong><small>${p.number?`№${Number(p.number)} · `:''}${p.age?`${Number(p.age)} лет`:'Возраст —'}</small></div></div>`;
+}
+function renderTeamSquad(data) {
+  const el=$('teamSquad'); if(!el) return;
+  if(!data?.available || !data?.groups?.length){el.innerHTML=`<div class="empty compact-empty">${escapeHtml(data?.reason||'Состав команды сейчас недоступен.')}</div>`;return;}
+  const sm=data.summary||{};
+  const warning=data.stale?`<div class="data-notice stale">⚠️ ${escapeHtml(data.warning||'Показан сохранённый состав.')}</div>`:'';
+  el.innerHTML=`${warning}<section class="panel squad-summary-panel"><div class="mini-section-head"><strong>👥 Состав команды</strong><span>${Number(sm.total||0)} игроков</span></div><div class="squad-summary-grid"><div><span>Средний возраст</span><strong>${sm.averageAge??'—'}</strong></div><div><span>Вратари</span><strong>${Number(sm.goalkeepers||0)}</strong></div><div><span>Защитники</span><strong>${Number(sm.defenders||0)}</strong></div><div><span>Полузащитники</span><strong>${Number(sm.midfielders||0)}</strong></div><div><span>Нападающие</span><strong>${Number(sm.attackers||0)}</strong></div></div></section>${data.groups.map(group=>`<section class="panel squad-group"><div class="mini-section-head"><strong>${escapeHtml(group.label||'Игроки')}</strong><span>${group.players?.length||0}</span></div><div class="squad-player-grid">${(group.players||[]).map(playerCard).join('')}</div></section>`).join('')}<p class="tiny squad-cache-note">Состав загружается только при открытии вкладки и кэшируется на 12 часов. Статистика отдельных игроков будет подключена после перехода на расширенный API-план.</p>`;
+}
+async function loadTeamSquad(force=false) {
+  const team=state.currentTeam, el=$('teamSquad'); if(!team?.id||!el) return;
+  const key=String(Number(team.id)); if(!force&&state.teamSquadCache.has(key)){renderTeamSquad(state.teamSquadCache.get(key));return;}
+  el.innerHTML='<div class="loader">Загружаю состав…</div>';
+  try{const data=await api(`/api/team/squad?teamId=${Number(team.id)}`);state.teamSquadCache.set(key,data);if(data.provider){state.provider=data.provider;renderProvider();}renderTeamSquad(data);}catch(e){el.innerHTML=`<div class="empty compact-empty">${escapeHtml(e.message)}</div>`;}
+}
+
 function renderTeamHub(data) {
   const team = data?.team || state.currentTeam || {}; state.currentTeam = { ...state.currentTeam, ...team, data };
   const fav = isFavorite(team.id), comp = data?.primaryCompetition, standing = data?.standing, form = data?.form, next = data?.liveNow || data?.nextMatch;
@@ -953,7 +1045,7 @@ function renderTeamHub(data) {
 async function loadTeamHub(team, force=false) {
   const key=String(Number(team?.id||0)); if (!key || key==='0') return;
   const cached=state.teamCache.get(key); if (cached && !force) { renderTeamHub(cached); return; }
-  $('teamHero').innerHTML='<div class="loader">Загружаю страницу команды…</div>'; $('teamOverview').innerHTML=''; $('teamResults').innerHTML=''; $('teamSchedule').innerHTML='';
+  $('teamHero').innerHTML='<div class="loader">Загружаю страницу команды…</div>'; $('teamOverview').innerHTML=''; $('teamIntelligence').innerHTML='<div class="empty compact-empty">Откройте вкладку «Статистика», чтобы загрузить сезонные данные.</div>'; $('teamSquad').innerHTML='<div class="empty compact-empty">Откройте вкладку «Состав», чтобы загрузить игроков.</div>'; $('teamResults').innerHTML=''; $('teamSchedule').innerHTML='';
   try { const q=new URLSearchParams({teamId:String(Number(team.id)),name:team.name||'',logo:team.logo||''}); const data=await api(`/api/team?${q.toString()}`); state.teamCache.set(key,data); if(data.provider){state.provider=data.provider;renderProvider();} renderTeamHub(data); }
   catch(e){ $('teamHero').innerHTML=`<div class="empty">${escapeHtml(e.message)}</div>`; }
 }
@@ -963,7 +1055,13 @@ function openTeam(team) {
 }
 function setTeamTab(tab) {
   document.querySelectorAll('.team-tab').forEach(btn=>btn.classList.toggle('active',btn.dataset.teamTab===tab));
-  $('teamOverviewPanel')?.classList.toggle('active',tab==='overview'); $('teamResultsPanel')?.classList.toggle('active',tab==='results'); $('teamSchedulePanel')?.classList.toggle('active',tab==='schedule');
+  $('teamOverviewPanel')?.classList.toggle('active',tab==='overview');
+  $('teamIntelligencePanel')?.classList.toggle('active',tab==='intelligence');
+  $('teamSquadPanel')?.classList.toggle('active',tab==='squad');
+  $('teamResultsPanel')?.classList.toggle('active',tab==='results');
+  $('teamSchedulePanel')?.classList.toggle('active',tab==='schedule');
+  if(tab==='intelligence') loadTeamIntelligence(false);
+  if(tab==='squad') loadTeamSquad(false);
 }
 function openTournamentFromTeam() {
   state.tournamentBackView = 'teamView';
