@@ -1960,6 +1960,141 @@ async function apiPreferences(request, cfg, user) {
   return json({ error: 'Метод не поддерживается.' }, 405);
 }
 
+
+const SEARCH_COMPETITION_ALIASES = new Map([
+  [1, 'world cup чемпионат мира чм fifa'],
+  [2, 'champions league ucl лига чемпионов лч'],
+  [3, 'europa league uel лига европы ле'],
+  [4, 'euro european championship евро'],
+  [9, 'copa america копа америка'],
+  [15, 'club world cup клубный чемпионат мира кчм'],
+  [39, 'premier league epl english premier league апл премьер лига англия'],
+  [40, 'championship efl championship чемпионшип англия'],
+  [45, 'fa cup кубок англии'],
+  [48, 'efl cup carabao cup league cup кубок лиги англия'],
+  [61, 'ligue 1 лига 1 франция'],
+  [62, 'ligue 2 лига 2 франция'],
+  [66, 'coupe de france кубок франции'],
+  [71, 'brasileirao serie a brazil бразилия серия а'],
+  [78, 'bundesliga бундеслига германия'],
+  [79, '2 bundesliga вторая бундеслига германия'],
+  [81, 'dfb pokal кубок германии'],
+  [88, 'eredivisie эредивизи нидерланды'],
+  [94, 'primeira liga португалия примейра лига'],
+  [128, 'argentina liga profesional аргентина'],
+  [135, 'serie a italy серия а италия'],
+  [136, 'serie b italy серия b италия'],
+  [137, 'coppa italia кубок италии'],
+  [140, 'la liga laliga примера испания ла лига'],
+  [141, 'segunda division сегунда испания'],
+  [143, 'copa del rey кубок испании'],
+  [203, 'super lig turkey суперлига турция'],
+  [253, 'mls major league soccer сша'],
+  [307, 'saudi pro league саудовская про лига'],
+  [848, 'conference league uecl лига конференций лк'],
+]);
+
+function searchText(value = '') {
+  return String(value || '').trim().toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ');
+}
+
+function competitionCountryByGroup(group = '') {
+  const map = {
+    england: 'Англия', spain: 'Испания', italy: 'Италия', germany: 'Германия', france: 'Франция',
+    portugal: 'Португалия', netherlands: 'Нидерланды', brazil: 'Бразилия', argentina: 'Аргентина',
+    turkey: 'Турция', usa: 'США', saudi: 'Саудовская Аравия', international: 'Международные',
+  };
+  return map[String(group || '')] || 'Мир';
+}
+
+function searchKnownCompetitions(query = '') {
+  const q = searchText(query);
+  const season = new Date().getUTCFullYear();
+  const rows = [];
+  for (const [id, item] of COMPETITIONS.entries()) {
+    const aliases = SEARCH_COMPETITION_ALIASES.get(Number(id)) || '';
+    const hay = searchText(`${item.name || ''} ${item.short || ''} ${aliases} ${competitionCountryByGroup(item.group)}`);
+    if (q && !hay.includes(q)) continue;
+    let score = Number(item.priority || 0);
+    if (q) {
+      const name = searchText(item.name || '');
+      const short = searchText(item.short || '');
+      if (name === q || short === q) score += 120;
+      else if (name.startsWith(q) || short.startsWith(q)) score += 70;
+      else if (hay.includes(q)) score += 30;
+    }
+    rows.push({
+      leagueId: Number(id), season,
+      name: item.name || `Турнир ${id}`,
+      shortName: item.short || item.name || `Турнир ${id}`,
+      country: competitionCountryByGroup(item.group),
+      category: item.category || 'league', tier: item.tier || 'standard', group: item.group || 'other',
+      priority: Number(item.priority || 0), score,
+    });
+  }
+  return rows.sort((a,b) => b.score - a.score || b.priority - a.priority).slice(0, q ? 8 : 10);
+}
+
+function normalizeSearchTeam(row = {}, query = '') {
+  const team = row?.team || row || {};
+  const name = String(team.name || '');
+  const q = searchText(query);
+  const n = searchText(name);
+  let score = 0;
+  if (q && n === q) score += 140;
+  else if (q && n.startsWith(q)) score += 90;
+  else if (q && n.includes(q)) score += 50;
+  if (BIG_TEAM_RE.test(name)) score += 25;
+  const youthReserve = YOUTH_RESERVE_RE.test(name);
+  if (youthReserve) score -= 45;
+  if (team.national) score += 10;
+  return {
+    id: Number(team.id || 0), name,
+    code: String(team.code || ''), country: normalizeCountryName(team.country || ''), countryRaw: String(team.country || ''),
+    logo: String(team.logo || ''), national: Boolean(team.national), founded: Number(team.founded || 0) || null,
+    youthReserve, venue: row?.venue ? { name: row.venue.name || '', city: row.venue.city || '' } : null,
+    score,
+  };
+}
+
+async function apiSearch(request, cfg) {
+  const url = new URL(request.url);
+  const query = String(url.searchParams.get('q') || '').trim().slice(0, 60);
+  const q = searchText(query);
+  const competitions = searchKnownCompetitions(query);
+  if (!q) return json({ query: '', teams: [], competitions, provider: providerSnapshot(), hint: 'Введите название команды или турнира.' });
+  if (q.length < 3) return json({ query, teams: [], competitions, provider: providerSnapshot(), hint: 'Для поиска команды введите минимум 3 символа.' });
+
+  const cacheKey = `search:teams:${encodeURIComponent(q)}:v1`;
+  const cached = await getCache(cacheKey, cfg);
+  if (cached?.teams) return json({ ...cached, competitions, cached: true, provider: providerSnapshot() });
+
+  let rows = [];
+  let warning = '';
+  try {
+    if (!freeQuotaHealthy(8, 2)) {
+      const stale = await getStaleCache(cacheKey, cfg);
+      if (stale?.teams) return json({ ...stale, competitions, cached: true, stale: true, warning: 'Поиск показан из кэша: бережём лимит API-Football.', provider: providerSnapshot() });
+      return json({ query, teams: [], competitions, cached: false, warning: 'Поиск команд временно не запущен: бережём остаток бесплатной квоты API.', provider: providerSnapshot() });
+    }
+    rows = await apiFootball('/teams', { search: query }, cfg);
+  } catch (error) {
+    const stale = await getStaleCache(cacheKey, cfg);
+    if (stale?.teams) return json({ ...stale, competitions, cached: true, stale: true, warning: 'Не удалось обновить поиск — показаны сохранённые результаты.', provider: providerSnapshot() });
+    if (isFootballRateLimitError(error)) warning = 'API-Football временно ограничил поиск команд. Повторите чуть позже.';
+    else throw error;
+  }
+
+  const seen = new Set();
+  const teams = rows.map(x => normalizeSearchTeam(x, query))
+    .filter(x => x.id > 0 && x.name && !seen.has(x.id) && seen.add(x.id))
+    .sort((a,b) => b.score - a.score || a.name.localeCompare(b.name, 'ru'))
+    .slice(0, 16);
+  const payload = { query, teams, warning, refreshedAt: new Date().toISOString() };
+  await setCache(cacheKey, 0, payload, cfg, 720);
+  return json({ ...payload, competitions, cached: false, provider: providerSnapshot() });
+}
+
 async function apiMatches(request, cfg) {
   const url = new URL(request.url);
   const requested = url.searchParams.get('date') || '';
@@ -2455,7 +2590,7 @@ async function apiAnalyze(request, cfg, user) {
 
   const payload = {
     generatedAt: new Date().toISOString(),
-    analysisVersion: '3.2.0-team-hub',
+    analysisVersion: '3.3.0-search-discovery',
     match: {
       fixtureId, date: fixture.fixture?.date || '', status: fixture.fixture?.status?.short || '',
       venue: fixture.fixture?.venue?.name || '', city: fixture.fixture?.venue?.city || '',
@@ -2505,7 +2640,7 @@ export default {
     if (url.pathname === '/health' || url.pathname === '/api/health') {
       return json({
         ok: true,
-        version: '3.2.0-team-hub',
+        version: '3.3.0-search-discovery',
         database: hasSupabase(cfg) ? 'supabase' : 'memory',
         monetization: cfg.monetizationEnabled ? 'enabled' : 'paused',
         devMode: cfg.devMode,
@@ -2562,6 +2697,7 @@ export default {
         if (request.method === 'POST' && url.pathname === '/api/billing/sync') return await apiBillingSync(request, cfg, user);
         if (request.method === 'POST' && url.pathname === '/api/billing/subscription') return await apiBillingSubscription(request, cfg, user);
       }
+      if (request.method === 'GET' && url.pathname === '/api/search') return await apiSearch(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/matches') return await apiMatches(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/tournament') return await apiTournament(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/team') return await apiTeam(request, cfg);
