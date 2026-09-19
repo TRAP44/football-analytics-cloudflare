@@ -9,7 +9,7 @@ const state = {
   profile: null,
   offset: 0,
   matches: [],
-  matchesMeta: { refreshedAt: null, stale: false, warning: '', retryAfter: 0, catalog: {} },
+  matchesMeta: { refreshedAt: null, stale: false, warning: '', retryAfter: 0, catalog: {}, integrity: null },
   history: [],
   favorites: [],
   reminders: [],
@@ -342,12 +342,13 @@ function renderDiagnostics() {
   const provider = $('diagnosticsProvider');
   const database = $('diagnosticsDatabase');
   const runtime = $('diagnosticsRuntime');
+  const integrity = $('diagnosticsIntegrity');
   const events = $('diagnosticsEvents');
   const recommendations = $('diagnosticsRecommendations');
   if (state.diagnosticsLoading) {
     root.textContent = 'Проверяю Worker, Supabase, кэш и API-Football…';
     if (badge) { badge.textContent = 'Проверка'; badge.className = 'diagnostics-badge waiting'; }
-    [provider, database, runtime, events, recommendations].forEach(x => { if (x) x.hidden = true; });
+    [provider, database, runtime, integrity, events, recommendations].forEach(x => { if (x) x.hidden = true; });
     return;
   }
   if (!d) {
@@ -405,6 +406,23 @@ function renderDiagnostics() {
         <div><span>Ошибки маршрутов</span><strong>${Number(rt.routeErrors || 0)}</strong><small>uptime ${escapeHtml(diagDuration(rt.uptimeSeconds))}</small></div>
       </div>
       <p class="tiny diagnostics-note">Счётчики runtime относятся только к текущему экземпляру Cloudflare Worker. Дневной и минутный расход выше берётся непосредственно из заголовков API-Football.</p>`;
+  }
+
+  const integrityData = d.integrity || {};
+  const integrityRun = integrityData.lastRun || {};
+  const integrityIssues = integrityData.recentIssues || [];
+  if (integrity) {
+    integrity.hidden = false;
+    integrity.innerHTML = `
+      <div class="diagnostics-block-head"><strong>Целостность матчей</strong><span>${escapeHtml(integrityRun.health || (integrityData.migrationReady ? 'waiting' : 'migration'))}</span></div>
+      <div class="diagnostics-grid">
+        <div><span>Проверено</span><strong>${integrityRun.inspected ?? '—'}</strong><small>${integrityRun.observedAt ? relativeAge(integrityRun.observedAt) : 'ещё нет запуска'}</small></div>
+        <div><span>Quality score</span><strong>${Number.isFinite(Number(integrityRun.qualityScore)) ? `${Math.round(Number(integrityRun.qualityScore))}%` : '—'}</strong><small>${Number(integrityRun.clean || 0)} без замечаний</small></div>
+        <div><span>Скрыто guard</span><strong>${Number(integrityRun.quarantined || 0)}</strong><small>${Number(integrityRun.duplicates || 0)} дубликатов</small></div>
+        <div><span>Предупреждения</span><strong>${Number(integrityRun.warnings || 0)}</strong><small>${Number(integrityRun.errors || 0)} ошибок</small></div>
+      </div>
+      ${!integrityData.migrationReady ? '<p class="diagnostics-warning">Нужна migration v3.9 для постоянного журнала Data Integrity.</p>' : ''}
+      ${integrityIssues.length ? `<div class="integrity-issue-list">${integrityIssues.slice(0,5).map(item => `<div><b>${escapeHtml(item.issue_code || item.code || 'DATA')}</b><span>${escapeHtml(item.message || '')}</span><small>${escapeHtml([item.home_name || item.home, item.away_name || item.away].filter(Boolean).join(' — '))}${item.fixture_id || item.fixtureId ? ` · #${Number(item.fixture_id || item.fixtureId)}` : ''}</small></div>`).join('')}</div>` : ''}`;
   }
 
   const recent = obs.recentEvents || [];
@@ -859,6 +877,7 @@ async function loadMatches() {
       warning: data.warning || '',
       retryAfter: Number(data.retryAfter || 0),
       catalog: data.catalog || {},
+      integrity: data.integrity || null,
     };
     if (data.provider) { state.provider = data.provider; renderProvider(); }
     if (state.filter === 'top' && !state.matches.some(x => x.featured || (Number(x.interestScore || 0) >= 68 && !x.lowPriority))) state.filter = 'all';
@@ -1005,6 +1024,7 @@ function matchCardHtml(m, { grouped = false } = {}) {
         ${m.category ? `<span class="competition-chip ${categoryClass(m.category)}">${escapeHtml(categoryLabel(m.category))}</span>` : ''}
         ${m.roundLabel ? `<span class="round-chip">${escapeHtml(m.roundLabel)}</span>` : ''}
         <span class="coverage-mini">Покрытие: ${escapeHtml(coverageLabel(m.coverageTier).text)}</span>
+        ${m.integrity?.state === 'warning' ? `<span class="integrity-mini warning" title="${escapeHtml((m.integrity?.issues || []).map(x => x.message).join(' · '))}">⚠ данные</span>` : ''}
       </div>
       <div class="interest-row">
         <span>Индекс интереса</span>
@@ -1058,13 +1078,18 @@ function renderMatches() {
   if (groups.length) bits.push(`турниров: ${groups.length}`);
   if (Number(catalog.live || 0) > 0) bits.push(`LIVE: ${Number(catalog.live)}`);
   if (Number(catalog.featured || 0) > 0) bits.push(`главных: ${Number(catalog.featured)}`);
+  const integrity = state.matchesMeta?.integrity || {};
+  if (Number.isFinite(Number(integrity.qualityScore))) bits.push(`качество: ${Math.round(Number(integrity.qualityScore))}%`);
   if (age) bits.push(`обновлено ${age}`);
   $('matchesCount').textContent = bits.join(' · ');
   renderPopularCompetitions();
   if ($('dataNotice')) {
-    $('dataNotice').innerHTML = state.matchesMeta?.stale
-      ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.matchesMeta.warning || 'Показаны последние сохранённые данные.')}</div>`
-      : '';
+    const notices = [];
+    if (state.matchesMeta?.stale) notices.push(`<div class="data-notice stale">⚠️ ${escapeHtml(state.matchesMeta.warning || 'Показаны последние сохранённые данные.')}</div>`);
+    if (Number(integrity.quarantined || 0) > 0 || Number(integrity.warnings || 0) > 0) {
+      notices.push(`<div class="data-notice integrity-notice">🛡️ Проверка данных: ${Number(integrity.inspected || 0)} проверено · ${Number(integrity.quarantined || 0)} скрыто · ${Number(integrity.warnings || 0)} предупрежд.</div>`);
+    }
+    $('dataNotice').innerHTML = notices.join('');
   }
   if (!list.length) {
     const extra = state.filter !== 'all' ? '<button id="showAllBtn" class="secondary-btn" type="button">Показать все матчи</button>' : '';
