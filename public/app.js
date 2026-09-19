@@ -181,28 +181,29 @@ function renderModelQuality() {
   const badge = $('modelQualitySampleBadge');
   const headline = $('modelQualityHeadline');
   const calibration = $('modelQualityCalibration');
+  const engine = $('modelQualityEngine');
   const confidence = $('modelQualityConfidence');
   const secondary = $('modelQualitySecondary');
   const recent = $('modelQualityRecent');
-  if (!status || !badge || !headline || !calibration || !confidence || !secondary || !recent) return;
+  if (!status || !badge || !headline || !calibration || !engine || !confidence || !secondary || !recent) return;
 
   const q = state.modelQuality;
   if (state.modelQualityLoading) {
     status.textContent = 'Загружаю backtest…';
     badge.textContent = 'Загрузка';
-    [headline, calibration, confidence, secondary, recent].forEach(x => x.hidden = true);
+    [headline, calibration, engine, confidence, secondary, recent].forEach(x => x.hidden = true);
     return;
   }
   if (!q) {
     status.textContent = 'Данные ещё не загружены.';
     badge.textContent = 'Нет данных';
-    [headline, calibration, confidence, secondary, recent].forEach(x => x.hidden = true);
+    [headline, calibration, engine, confidence, secondary, recent].forEach(x => x.hidden = true);
     return;
   }
   if (q.available === false) {
     status.textContent = q.reason || 'Backtest пока недоступен.';
     badge.textContent = 'Нужна миграция';
-    [headline, calibration, confidence, secondary, recent].forEach(x => x.hidden = true);
+    [headline, calibration, engine, confidence, secondary, recent].forEach(x => x.hidden = true);
     return;
   }
 
@@ -232,13 +233,36 @@ function renderModelQuality() {
       </div>`).join('')}</div>
     ${q.methodology?.warning ? `<p class="quality-warning">⚠️ ${escapeHtml(q.methodology.warning)}</p>` : ''}`;
 
+  const ce = q.calibrationEngine || {};
+  const impact = q.calibrationImpact || {};
+  const modeLabel = ce.mode === 'active' ? 'Активен' : ce.mode === 'shadow' ? 'Тень' : 'База';
+  const signalRows = (q.signalPerformance || []).some(x => Number(x.sample || 0) > 0) ? (q.signalPerformance || []) : (q.signals || []);
+  engine.hidden = false;
+  engine.innerHTML = `
+    <div class="quality-block-head"><strong>⚙️ Калибратор v3.7</strong><span class="calibration-mode ${escapeHtml(ce.mode || 'baseline')}">${modeLabel}</span></div>
+    <div class="calibration-engine-grid">
+      <div><span>Режим</span><strong>${modeLabel}</strong><small>${ce.mode === 'active' ? 'коррекции разрешены guardrails' : ce.mode === 'shadow' ? 'измеряет, но не меняет прогноз' : 'базовые веса'}</small></div>
+      <div><span>Temperature</span><strong>${Number.isFinite(Number(ce.temperature)) ? Number(ce.temperature).toFixed(2) : '1.00'}</strong><small>1.00 = без сжатия вероятностей</small></div>
+      <div><span>Backtest</span><strong>${Number(ce.sample || 0)}</strong><small>завершённых snapshot</small></div>
+      <div><span>Holdout</span><strong>${Number(ce.temperatureValidation?.validationSample || 0)}</strong><small>${Number.isFinite(Number(ce.temperatureValidation?.improvement)) ? `${Number(ce.temperatureValidation.improvement).toFixed(1)}% log loss` : 'ещё нет проверки'}</small></div>
+    </div>
+    <div class="calibration-weights">
+      ${(ce.signalStats || []).map(x => {
+        const base = Number(x.baseWeight || 0) * 100;
+        const current = Number(x.currentWeight ?? x.baseWeight ?? 0) * 100;
+        return `<div class="calibration-weight-row"><span>${escapeHtml(signalLabel(x.name))}</span><div><i style="--w:${Math.max(0, Math.min(100, current))}%"></i></div><strong>${base.toFixed(0)} → ${current.toFixed(1)}%</strong><small>n=${Number(x.sample || 0)}${Number.isFinite(Number(x.avgBrier)) ? ` · Brier ${qualityNum(x.avgBrier)}` : ''}</small></div>`;
+      }).join('')}
+    </div>
+    ${Number(impact.sample || 0) ? `<div class="calibration-impact"><span>Проверка v3.7: n=${Number(impact.sample || 0)}</span><strong>Brier ${qualityNum(impact.rawBrier)} → ${qualityNum(impact.finalBrier)}</strong><small>${Number(impact.brierDelta || 0) > 0 ? 'улучшение' : Number(impact.brierDelta || 0) < 0 ? 'ухудшение — автоматика будет видна в backtest' : 'без изменения'}</small></div>` : '<p class="quality-engine-note">Эффект v3.7 появится после завершения первых матчей, рассчитанных этой версией.</p>'}
+    <p class="quality-engine-note">${escapeHtml(ce.note || 'Автокалибровка включается только после достаточной выборки.')}</p>`;
+
   confidence.hidden = false;
   confidence.innerHTML = `
     <div class="quality-block-head"><strong>По уверенности модели</strong><span>не рейтинг, а диагностика</span></div>
     <div class="quality-mini-grid">${(q.confidence || []).map(x => `
       <div><span>${escapeHtml(x.label)}</span><strong>${qualityPct(x.accuracy)}</strong><small>n=${Number(x.sample || 0)} · Brier ${qualityNum(x.avgBrier)}</small></div>`).join('')}</div>
-    <div class="quality-signal-grid">${(q.signals || []).map(x => `
-      <div><span>${escapeHtml(signalLabel(x.name))}</span><strong>${qualityPct(x.accuracy)}</strong><small>n=${Number(x.sample || 0)}</small></div>`).join('')}</div>`;
+    <div class="quality-signal-grid">${signalRows.map(x => `
+      <div><span>${escapeHtml(signalLabel(x.name))}</span><strong>${qualityPct(x.accuracy)}</strong><small>n=${Number(x.sample || 0)}${Number.isFinite(Number(x.avgBrier)) ? ` · Brier ${qualityNum(x.avgBrier)}` : ''}</small></div>`).join('')}</div>`;
 
   const sec = q.secondary || {};
   secondary.hidden = false;
@@ -275,7 +299,7 @@ async function loadModelQuality(force = false) {
   state.modelQualityLoading = true;
   renderModelQuality();
   try {
-    state.modelQuality = await api(`/api/model-quality?days=${days}`);
+    state.modelQuality = await api(`/api/model-quality?days=${days}${force ? '&refresh=1' : ''}`);
   } catch (e) {
     state.modelQuality = { available: false, reason: e.message || 'Не удалось загрузить backtest.' };
   } finally {
@@ -1871,6 +1895,7 @@ function renderAnalysis(d) {
         <h2>🧠 Состав модели</h2>
         <p class="muted">${escapeHtml(d.modelBreakdown?.method || 'Модель объединяет доступные статистические сигналы.')}</p>
         <div class="model-weights">${escapeHtml(modelWeightsText(d.modelBreakdown?.weights || {}))}</div>
+        ${d.modelCalibration ? `<div class="analysis-calibration-card ${escapeHtml(d.modelCalibration.mode || 'baseline')}"><span>Калибровка v${escapeHtml(d.modelCalibration.version || '3.7')}</span><strong>${d.modelCalibration.mode === 'active' ? 'Активна' : d.modelCalibration.mode === 'shadow' ? 'Теневой режим' : 'Базовый режим'}</strong><small>n=${Number(d.modelCalibration.sample || 0)} · T=${Number(d.modelCalibration.temperature || 1).toFixed(2)}${d.modelCalibration.weightsActive ? ' · адаптивные веса' : ''}</small></div>` : ''}
         <div class="model-api-card">
           <span>API-Football</span>
           <strong>${escapeHtml(pred?.winner || 'Нет данных')}</strong>
