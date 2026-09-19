@@ -1517,6 +1517,39 @@ function bindAnalysisTabs() {
   }));
 }
 
+
+function comparisonValue(metric, side) {
+  const value = Number(metric?.[side === 'home' ? 'homeValue' : 'awayValue']);
+  if (!Number.isFinite(value)) return '—';
+  if (metric.format === 'percent') return `${Math.round(value)}%`;
+  if (metric.format === 'rank') return `${Math.round(value)} место`;
+  if (metric.format === 'integer') return String(Math.round(value));
+  return value.toFixed(1);
+}
+
+function comparisonMetricRow(metric) {
+  const edge = metric?.edge || 'even';
+  const edgeLabel = edge === 'home' ? '← преимущество' : edge === 'away' ? 'преимущество →' : '≈ близко';
+  return `<div class="comparison-row ${escapeHtml(edge)}">
+    <div class="comparison-values"><strong>${comparisonValue(metric,'home')}</strong><span>${escapeHtml(metric.label || '')}</span><strong>${comparisonValue(metric,'away')}</strong></div>
+    <div class="comparison-track"><i class="home"></i><b>${escapeHtml(edgeLabel)}</b><i class="away"></i></div>
+    ${metric.note ? `<small>${escapeHtml(metric.note)}</small>` : ''}
+  </div>`;
+}
+
+function comparisonAdvantages(title, items = [], side = '') {
+  return `<div class="comparison-advantages-card ${side}"><strong>${escapeHtml(title)}</strong>${items.length
+    ? `<ul>${items.map(x=>`<li>${escapeHtml(x)}</li>`).join('')}</ul>`
+    : '<p>Явного перевеса по доступным метрикам нет.</p>'}</div>`;
+}
+
+function comparisonTeamHeader(team, side, edges) {
+  return `<button class="comparison-team-head ${side}" type="button" data-open-team="${Number(team?.id || 0)}" data-team-name="${escapeHtml(team?.name || '')}" data-team-logo="${safeUrl(team?.logo || '')}">
+    ${team?.logo ? `<img src="${safeUrl(team.logo)}" alt="">` : '<span class="comparison-logo-placeholder">⚽</span>'}
+    <span><strong>${escapeHtml(team?.name || '')}</strong><small>${Number(edges || 0)} метрик с преимуществом</small></span>
+  </button>`;
+}
+
 function renderAnalysis(d) {
   if (!d) return;
   state.currentAnalysis = d;
@@ -1533,6 +1566,7 @@ function renderAnalysis(d) {
   const confidence = d.confidence || {};
   const goal = d.goalModel;
   const recent = d.recentForm || {};
+  const comparison = d.comparison || { metrics: [], advantages: { home: [], away: [] }, score: { home: 0, away: 0, even: 0 }, dataReuse: {} };
   const quality = qualityInfo(d.completeness);
   const confidenceScore = clampPercent(confidence.score);
 
@@ -1589,6 +1623,7 @@ function renderAnalysis(d) {
     <div class="analysis-tabs" role="tablist">
       <button class="analysis-tab-btn active" data-tab="overview" type="button">Обзор</button>
       <button class="analysis-tab-btn" data-tab="form" type="button">Форма</button>
+      <button class="analysis-tab-btn" data-tab="comparison" type="button">Сравнение</button>
       <button class="analysis-tab-btn" data-tab="market" type="button">Рынок</button>
       <button class="analysis-tab-btn" data-tab="squads" type="button">Составы</button>
       <button class="analysis-tab-btn" data-tab="context" type="button">Контекст</button>
@@ -1657,6 +1692,37 @@ function renderAnalysis(d) {
       </section>
     </div>
 
+    <div class="analysis-tab-panel" data-panel="comparison">
+      <section class="panel comparison-hero-panel">
+        <div class="comparison-heads">
+          ${comparisonTeamHeader(m.home, 'home', comparison.score?.home)}
+          <div class="comparison-score"><span>МЕТРИКИ</span><strong>${Number(comparison.score?.home || 0)} : ${Number(comparison.score?.away || 0)}</strong><small>${Number(comparison.score?.even || 0)} близких</small></div>
+          ${comparisonTeamHeader(m.away, 'away', comparison.score?.away)}
+        </div>
+        <div class="comparison-balance">${escapeHtml(comparison.balanceLabel || 'Сравнение строится по доступным данным')}</div>
+      </section>
+
+      <section class="panel">
+        <div class="comparison-section-head"><h2>⚖️ Команда к команде</h2><span>${comparison.metrics?.length || 0} метрик</span></div>
+        ${comparison.metrics?.length ? `<div class="comparison-metrics">${comparison.metrics.map(comparisonMetricRow).join('')}</div>` : '<div class="empty compact-empty">Недостаточно сопоставимых данных для детального сравнения.</div>'}
+      </section>
+
+      <section class="panel">
+        <h2>🔎 Ключевые преимущества</h2>
+        <div class="comparison-advantages-grid">
+          ${comparisonAdvantages(m.home?.name || 'Хозяева', comparison.advantages?.home || [], 'home')}
+          ${comparisonAdvantages(m.away?.name || 'Гости', comparison.advantages?.away || [], 'away')}
+        </div>
+      </section>
+
+      <section class="panel comparison-reuse-panel">
+        <div class="comparison-section-head"><h2>♻️ Переиспользование данных</h2><span>+${Number(comparison.dataReuse?.separateApiRequests || 0)} API</span></div>
+        <p>${escapeHtml(comparison.dataReuse?.note || 'Сравнение использует уже загруженные данные.')}</p>
+        <div class="reuse-chips">${(comparison.dataReuse?.sources || []).map(x=>`<span>${escapeHtml(x)}</span>`).join('')}</div>
+        <div class="reuse-status"><span>${comparison.dataReuse?.seasonStatsCached ? '✓' : '—'} Сезонная статистика из кэша</span><span>${comparison.dataReuse?.standingsCached ? '✓' : '—'} Таблица из кэша</span></div>
+      </section>
+    </div>
+
     <div class="analysis-tab-panel" data-panel="market">
       <section class="panel">
         <h2>💹 Рынок 1X2</h2>
@@ -1718,6 +1784,9 @@ function renderAnalysis(d) {
 
   $('reminderBtn')?.addEventListener('click', () => toggleReminder(m));
   $('shareAnalysisBtn')?.addEventListener('click', () => shareAnalysis(d));
+  $('analysis')?.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => openTeam({
+    id: Number(btn.dataset.openTeam), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '',
+  })));
   bindAnalysisTabs();
 }
 
