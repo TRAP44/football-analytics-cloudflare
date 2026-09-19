@@ -35,7 +35,7 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '4.3.0-admin-expanded-data';
+const APP_VERSION = '4.4.0-match-center-2';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -2648,13 +2648,28 @@ function formatAbsences(rows, homeId, awayId) {
   }
   return out;
 }
+function normalizeLineupPlayer(entry) {
+  const p = entry?.player || {};
+  if (!p?.name) return null;
+  return {
+    id: Number(p.id || 0),
+    name: p.name || 'Игрок',
+    number: p.number ?? null,
+    pos: p.pos || '',
+    grid: p.grid || '',
+    photo: p.photo || '',
+  };
+}
+
 function formatLineups(rows, homeId, awayId) {
   const out = { home: null, away: null };
   for (const x of rows || []) {
     const lineup = {
-      formation: x.formation || '', coach: x.coach?.name || '',
-      startXI: (x.startXI || []).map(v => v.player?.name).filter(Boolean),
-      substitutes: (x.substitutes || []).map(v => v.player?.name).filter(Boolean),
+      formation: x.formation || '',
+      coach: x.coach?.name || '',
+      coachPhoto: x.coach?.photo || '',
+      startXI: (x.startXI || []).map(normalizeLineupPlayer).filter(Boolean),
+      substitutes: (x.substitutes || []).map(normalizeLineupPlayer).filter(Boolean),
     };
     if (Number(x.team?.id) === Number(homeId)) out.home = lineup;
     if (Number(x.team?.id) === Number(awayId)) out.away = lineup;
@@ -3919,7 +3934,7 @@ async function apiMatchCenter(request, cfg) {
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'fixtureId обязателен.' }, 400);
 
   // Shared across all users. During LIVE it expires after 60 seconds.
-  const baseCacheKey = `match-center:${fixtureId}:v6-expanded-data`;
+  const baseCacheKey = `match-center:${fixtureId}:v7-match-center-2`;
   const cached = await getCache(baseCacheKey, cfg);
   if (cached) return json({ ...cached, cached: true });
 
@@ -4020,8 +4035,13 @@ async function apiMatchCenter(request, cfg) {
       elapsed,
       venue: fixture.fixture?.venue?.name || '',
       city: fixture.fixture?.venue?.city || '',
+      referee: fixture.fixture?.referee || '',
+      timezone: fixture.fixture?.timezone || '',
       league: leagueName,
+      leagueId: Number(fixture.league?.id || 0),
+      leagueLogo: fixture.league?.logo || '',
       country: fixture.league?.country || '',
+      round: fixture.league?.round || '',
       score: scoreSnapshot(fixture),
       integrity: { state: centerIntegrity.state, score: centerIntegrity.qualityScore, warnings: centerIntegrity.warnings, issues: centerIntegrity.issues.filter(x => x.severity !== 'info').slice(0, 3) },
       home: { id: homeId, name: homeName, logo: fixture.teams?.home?.logo || '' },
@@ -4362,6 +4382,7 @@ export default {
         releaseHardening: 'enabled',
         adminSecurity: 'enabled',
         expandedDataReady: 'enabled',
+        matchCenter2: 'enabled',
         devMode: cfg.devMode,
       });
     }
