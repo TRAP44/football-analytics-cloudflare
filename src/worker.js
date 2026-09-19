@@ -998,7 +998,7 @@ function freeQuotaHealthy(minDaily = 25, minMinute = 5) {
   return !providerSnapshot().cooldownActive;
 }
 
-async function apiFootball(path, params, cfg) {
+async function apiFootball(path, params, cfg, options = {}) {
   if (!cfg.apiFootballKey) throw footballError('API_FOOTBALL_KEY не настроен в Cloudflare.', 'FOOTBALL_CONFIG');
 
   const cooldown = footballCooldownRemaining();
@@ -1050,6 +1050,7 @@ async function apiFootball(path, params, cfg) {
   }
 
   memory.provider.lastError = '';
+  if (options.responseType === 'any') return body.response ?? null;
   return Array.isArray(body.response) ? body.response : [];
 }
 
@@ -2365,6 +2366,191 @@ async function apiTeam(request, cfg) {
   return json({ ...payload, cached:false, stale:false, provider:providerSnapshot() });
 }
 
+
+function teamStatsNum(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function teamStatsAvg(value) {
+  const n = Number(String(value ?? '').replace(',', '.'));
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : null;
+}
+
+function teamStatsRate(part, total) {
+  const p = teamStatsNum(part), t = teamStatsNum(total);
+  return t > 0 ? Math.round((p / t) * 1000) / 10 : null;
+}
+
+function normalizeTeamSeasonStatistics(row, fallback = {}) {
+  const fixtures = row?.fixtures || {};
+  const played = fixtures.played || {};
+  const wins = fixtures.wins || {};
+  const draws = fixtures.draws || {};
+  const loses = fixtures.loses || {};
+  const goalsFor = row?.goals?.for || {};
+  const goalsAgainst = row?.goals?.against || {};
+  const totalPlayed = teamStatsNum(played.total);
+  const points = teamStatsNum(wins.total) * 3 + teamStatsNum(draws.total);
+  const homePlayed = teamStatsNum(played.home), awayPlayed = teamStatsNum(played.away);
+  const homePoints = teamStatsNum(wins.home) * 3 + teamStatsNum(draws.home);
+  const awayPoints = teamStatsNum(wins.away) * 3 + teamStatsNum(draws.away);
+  const gf = teamStatsNum(goalsFor?.total?.total), ga = teamStatsNum(goalsAgainst?.total?.total);
+  const clean = row?.clean_sheet || {}, failed = row?.failed_to_score || {};
+  const biggest = row?.biggest || {};
+  const penalties = row?.penalty || {};
+  const lineups = Array.isArray(row?.lineups) ? row.lineups : [];
+  const mostUsedLineup = [...lineups].sort((a,b) => teamStatsNum(b?.played) - teamStatsNum(a?.played))[0] || null;
+  return {
+    available: Boolean(row && (row.team?.id || fallback.teamId)),
+    team: {
+      id: Number(row?.team?.id || fallback.teamId || 0),
+      name: String(row?.team?.name || fallback.teamName || ''),
+      logo: String(row?.team?.logo || fallback.teamLogo || ''),
+    },
+    league: {
+      id: Number(row?.league?.id || fallback.leagueId || 0),
+      name: String(row?.league?.name || fallback.leagueName || ''),
+      country: normalizeCountryName(row?.league?.country || fallback.country || ''),
+      logo: String(row?.league?.logo || fallback.leagueLogo || ''),
+      season: Number(row?.league?.season || fallback.season || 0),
+    },
+    form: String(row?.form || ''),
+    fixtures: {
+      played: { home: homePlayed, away: awayPlayed, total: totalPlayed },
+      wins: { home: teamStatsNum(wins.home), away: teamStatsNum(wins.away), total: teamStatsNum(wins.total) },
+      draws: { home: teamStatsNum(draws.home), away: teamStatsNum(draws.away), total: teamStatsNum(draws.total) },
+      losses: { home: teamStatsNum(loses.home), away: teamStatsNum(loses.away), total: teamStatsNum(loses.total) },
+    },
+    goals: {
+      for: { home: teamStatsNum(goalsFor?.total?.home), away: teamStatsNum(goalsFor?.total?.away), total: gf, average: teamStatsAvg(goalsFor?.average?.total) },
+      against: { home: teamStatsNum(goalsAgainst?.total?.home), away: teamStatsNum(goalsAgainst?.total?.away), total: ga, average: teamStatsAvg(goalsAgainst?.average?.total) },
+      difference: gf - ga,
+    },
+    cleanSheets: { home: teamStatsNum(clean.home), away: teamStatsNum(clean.away), total: teamStatsNum(clean.total) },
+    failedToScore: { home: teamStatsNum(failed.home), away: teamStatsNum(failed.away), total: teamStatsNum(failed.total) },
+    biggest: {
+      winHome: String(biggest?.wins?.home || ''), winAway: String(biggest?.wins?.away || ''),
+      lossHome: String(biggest?.loses?.home || ''), lossAway: String(biggest?.loses?.away || ''),
+      goalsForHome: teamStatsNum(biggest?.goals?.for?.home), goalsForAway: teamStatsNum(biggest?.goals?.for?.away),
+      goalsAgainstHome: teamStatsNum(biggest?.goals?.against?.home), goalsAgainstAway: teamStatsNum(biggest?.goals?.against?.away),
+    },
+    penalties: {
+      scored: teamStatsNum(penalties?.scored?.total), missed: teamStatsNum(penalties?.missed?.total), total: teamStatsNum(penalties?.total),
+    },
+    mostUsedLineup: mostUsedLineup ? { formation: String(mostUsedLineup.formation || ''), played: teamStatsNum(mostUsedLineup.played) } : null,
+    derived: {
+      points,
+      ppg: totalPlayed ? Math.round((points / totalPlayed) * 100) / 100 : null,
+      homePpg: homePlayed ? Math.round((homePoints / homePlayed) * 100) / 100 : null,
+      awayPpg: awayPlayed ? Math.round((awayPoints / awayPlayed) * 100) / 100 : null,
+      winRate: teamStatsRate(wins.total, totalPlayed),
+      cleanSheetRate: teamStatsRate(clean.total, totalPlayed),
+      failedToScoreRate: teamStatsRate(failed.total, totalPlayed),
+      goalsForPerMatch: totalPlayed ? Math.round((gf / totalPlayed) * 100) / 100 : null,
+      goalsAgainstPerMatch: totalPlayed ? Math.round((ga / totalPlayed) * 100) / 100 : null,
+    },
+  };
+}
+
+async function apiTeamIntelligence(request, cfg) {
+  const url = new URL(request.url);
+  const teamId = Number(url.searchParams.get('teamId'));
+  const leagueId = Number(url.searchParams.get('leagueId'));
+  const season = Number(url.searchParams.get('season'));
+  if (!teamId || !leagueId || !season) return json({ error: 'teamId, leagueId и season обязательны.' }, 400);
+  const cacheKey = `team:intelligence:${teamId}:${leagueId}:${season}:v1`;
+  const cached = await getCache(cacheKey, cfg);
+  if (cached) return json({ ...cached, cached: true, stale: false, provider: providerSnapshot() });
+  if (!freeQuotaHealthy(15, 2)) {
+    const stale = await getStaleCache(cacheKey, cfg);
+    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Сезонная статистика показана из кэша: бережём лимит API-Football.', provider: providerSnapshot() });
+    return json({ available: false, quotaGuard: true, reason: 'Сезонная статистика временно не запрашивается: сохраняем остаток квоты API-Football.', provider: providerSnapshot() });
+  }
+  try {
+    const row = await apiFootball('/teams/statistics', { team: teamId, league: leagueId, season }, cfg, { responseType: 'any' });
+    const stats = normalizeTeamSeasonStatistics(row, {
+      teamId, leagueId, season,
+      teamName: url.searchParams.get('teamName') || '', teamLogo: url.searchParams.get('teamLogo') || '',
+      leagueName: url.searchParams.get('leagueName') || '', country: url.searchParams.get('country') || '', leagueLogo: url.searchParams.get('leagueLogo') || '',
+    });
+    const payload = { available: stats.available, stats, refreshedAt: new Date().toISOString(), reason: stats.available ? '' : 'Провайдер не вернул сезонную статистику для этой команды.' };
+    await setCache(cacheKey, teamId, payload, cfg, 360);
+    return json({ ...payload, cached: false, stale: false, provider: providerSnapshot() });
+  } catch (error) {
+    const stale = await getStaleCache(cacheKey, cfg);
+    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Не удалось обновить сезонную статистику — показана сохранённая версия.', provider: providerSnapshot() });
+    return json({ available: false, reason: `Сезонная статистика сейчас недоступна: ${String(error?.message || error).slice(0, 180)}`, provider: providerSnapshot() });
+  }
+}
+
+function normalizeSquadPosition(position) {
+  const p = String(position || '').toLowerCase();
+  if (p.includes('goal')) return { key: 'goalkeeper', label: 'Вратари', order: 1 };
+  if (p.includes('def')) return { key: 'defender', label: 'Защитники', order: 2 };
+  if (p.includes('mid')) return { key: 'midfielder', label: 'Полузащитники', order: 3 };
+  if (p.includes('att')) return { key: 'attacker', label: 'Нападающие', order: 4 };
+  return { key: 'other', label: 'Другие', order: 5 };
+}
+
+function normalizeTeamSquad(rows, teamId) {
+  const row = (Array.isArray(rows) ? rows : []).find(x => Number(x?.team?.id) === Number(teamId)) || rows?.[0] || null;
+  if (!row) return { available: false, team: { id: Number(teamId) }, players: [], groups: [], summary: { total: 0, averageAge: null } };
+  const players = (Array.isArray(row.players) ? row.players : []).map(p => {
+    const pos = normalizeSquadPosition(p.position);
+    return {
+      id: Number(p.id || 0), name: String(p.name || ''), age: Number(p.age || 0) || null,
+      number: Number(p.number || 0) || null, position: String(p.position || ''), positionKey: pos.key, positionLabel: pos.label,
+      photo: String(p.photo || ''), order: pos.order,
+    };
+  }).filter(p => p.id || p.name).sort((a,b) => a.order - b.order || (a.number || 999) - (b.number || 999) || a.name.localeCompare(b.name));
+  const ages = players.map(p => p.age).filter(Boolean);
+  const groupMap = new Map();
+  for (const p of players) {
+    if (!groupMap.has(p.positionKey)) groupMap.set(p.positionKey, { key: p.positionKey, label: p.positionLabel, order: p.order, players: [] });
+    groupMap.get(p.positionKey).players.push(p);
+  }
+  const groups = [...groupMap.values()].sort((a,b) => a.order - b.order);
+  return {
+    available: players.length > 0,
+    team: { id: Number(row.team?.id || teamId), name: String(row.team?.name || ''), logo: String(row.team?.logo || '') },
+    players, groups,
+    summary: {
+      total: players.length,
+      averageAge: ages.length ? Math.round((ages.reduce((a,b)=>a+b,0) / ages.length) * 10) / 10 : null,
+      goalkeepers: players.filter(p => p.positionKey === 'goalkeeper').length,
+      defenders: players.filter(p => p.positionKey === 'defender').length,
+      midfielders: players.filter(p => p.positionKey === 'midfielder').length,
+      attackers: players.filter(p => p.positionKey === 'attacker').length,
+    },
+  };
+}
+
+async function apiTeamSquad(request, cfg) {
+  const url = new URL(request.url);
+  const teamId = Number(url.searchParams.get('teamId'));
+  if (!teamId) return json({ error: 'teamId обязателен.' }, 400);
+  const cacheKey = `team:squad:${teamId}:v1`;
+  const cached = await getCache(cacheKey, cfg);
+  if (cached) return json({ ...cached, cached: true, stale: false, provider: providerSnapshot() });
+  if (!freeQuotaHealthy(10, 2)) {
+    const stale = await getStaleCache(cacheKey, cfg);
+    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Состав показан из кэша: бережём лимит API-Football.', provider: providerSnapshot() });
+    return json({ available: false, quotaGuard: true, reason: 'Состав временно не запрашивается: сохраняем остаток квоты API-Football.', provider: providerSnapshot() });
+  }
+  try {
+    const rows = await apiFootball('/players/squads', { team: teamId }, cfg);
+    const squad = normalizeTeamSquad(rows, teamId);
+    const payload = { ...squad, refreshedAt: new Date().toISOString(), reason: squad.available ? '' : 'Провайдер не вернул текущий состав команды.' };
+    await setCache(cacheKey, teamId, payload, cfg, 720);
+    return json({ ...payload, cached: false, stale: false, provider: providerSnapshot() });
+  } catch (error) {
+    const stale = await getStaleCache(cacheKey, cfg);
+    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Не удалось обновить состав — показана сохранённая версия.', provider: providerSnapshot() });
+    return json({ available: false, reason: `Состав сейчас недоступен: ${String(error?.message || error).slice(0, 180)}`, provider: providerSnapshot() });
+  }
+}
+
 async function apiMatchCenter(request, cfg) {
   const url = new URL(request.url);
   const fixtureId = Number(url.searchParams.get('fixtureId'));
@@ -2590,7 +2776,7 @@ async function apiAnalyze(request, cfg, user) {
 
   const payload = {
     generatedAt: new Date().toISOString(),
-    analysisVersion: '3.3.0-search-discovery',
+    analysisVersion: '3.4.0-team-intelligence',
     match: {
       fixtureId, date: fixture.fixture?.date || '', status: fixture.fixture?.status?.short || '',
       venue: fixture.fixture?.venue?.name || '', city: fixture.fixture?.venue?.city || '',
@@ -2640,7 +2826,7 @@ export default {
     if (url.pathname === '/health' || url.pathname === '/api/health') {
       return json({
         ok: true,
-        version: '3.3.0-search-discovery',
+        version: '3.4.0-team-intelligence',
         database: hasSupabase(cfg) ? 'supabase' : 'memory',
         monetization: cfg.monetizationEnabled ? 'enabled' : 'paused',
         devMode: cfg.devMode,
@@ -2701,6 +2887,8 @@ export default {
       if (request.method === 'GET' && url.pathname === '/api/matches') return await apiMatches(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/tournament') return await apiTournament(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/team') return await apiTeam(request, cfg);
+      if (request.method === 'GET' && url.pathname === '/api/team/intelligence') return await apiTeamIntelligence(request, cfg);
+      if (request.method === 'GET' && url.pathname === '/api/team/squad') return await apiTeamSquad(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/match-center') return await apiMatchCenter(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/history') return await apiHistory(request, cfg, user);
       if (url.pathname === '/api/favorites') return await apiFavorites(request, cfg, user);
