@@ -22,13 +22,16 @@ const state = {
   currentAnalysis: null,
   currentCenter: null,
   currentTournament: null,
+  currentTeam: null,
+  teamBackView: 'matchesView',
+  teamCache: new Map(),
   tournamentStandings: new Map(),
   liveRefreshTimer: null,
   liveRefreshRemaining: 0,
 };
 
 const $ = id => document.getElementById(id);
-const views = ['matchesView', 'tournamentView', 'analysisView', 'historyView', 'profileView'];
+const views = ['matchesView', 'tournamentView', 'teamView', 'analysisView', 'historyView', 'profileView'];
 
 function stopLiveRefresh() {
   if (state.liveRefreshTimer) clearInterval(state.liveRefreshTimer);
@@ -39,7 +42,7 @@ function stopLiveRefresh() {
 function showView(id) {
   if (id !== 'analysisView') stopLiveRefresh();
   views.forEach(v => $(v).classList.toggle('active', v === id));
-  $('navMatches').classList.toggle('active', id === 'matchesView' || id === 'tournamentView' || id === 'analysisView');
+  $('navMatches').classList.toggle('active', id === 'matchesView' || id === 'tournamentView' || id === 'teamView' || id === 'analysisView');
   $('navHistory').classList.toggle('active', id === 'historyView');
   $('navProfile').classList.toggle('active', id === 'profileView');
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -378,10 +381,10 @@ function renderFavoriteTeams() {
   }
   el.innerHTML = state.favorites.map(x => `
     <div class="favorite-team-row">
-      <div class="favorite-team-main">
+      <button class="favorite-team-main team-open-link" type="button" data-open-team="${Number(x.teamId)}" data-team-name="${escapeHtml(x.teamName)}" data-team-logo="${escapeHtml(x.teamLogo || '')}">
         ${x.teamLogo ? `<img src="${safeUrl(x.teamLogo)}" alt="">` : '<span class="team-placeholder">⚽</span>'}
         <strong>${escapeHtml(x.teamName)}</strong>
-      </div>
+      </button>
       <button class="favorite-remove" type="button" data-team-id="${Number(x.teamId)}" data-team-name="${escapeHtml(x.teamName)}">Удалить</button>
     </div>
   `).join('');
@@ -389,6 +392,7 @@ function renderFavoriteTeams() {
     const item = state.favorites.find(x => Number(x.teamId) === Number(btn.dataset.teamId));
     if (item) toggleFavorite({ id: item.teamId, name: item.teamName, logo: item.teamLogo });
   }));
+  el.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => openTeam({ id: Number(btn.dataset.openTeam), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '' })));
 }
 
 async function loadMatches() {
@@ -559,13 +563,17 @@ function matchCardHtml(m, { grouped = false } = {}) {
       <div class="team-row">
         <div class="team">
           <button class="fav-star ${isFavorite(m.home?.id) ? 'active' : ''}" type="button" data-team-id="${Number(m.home?.id)}" data-team-name="${escapeHtml(m.home?.name || '')}" data-team-logo="${escapeHtml(m.home?.logo || '')}" aria-label="Избранное">${isFavorite(m.home?.id) ? '★' : '☆'}</button>
-          ${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : ''}
-          <strong>${escapeHtml(m.home?.name || '')}</strong>
+          <button class="team-open-link match-team-open" type="button" data-open-team="${Number(m.home?.id)}" data-team-name="${escapeHtml(m.home?.name || '')}" data-team-logo="${escapeHtml(m.home?.logo || '')}">
+            ${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : ''}
+            <strong>${escapeHtml(m.home?.name || '')}</strong>
+          </button>
         </div>
         <div class="kickoff ${m.live ? 'live-kickoff' : ''}">${escapeHtml(matchCenter(m))}</div>
         <div class="team away">
-          <strong>${escapeHtml(m.away?.name || '')}</strong>
-          ${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : ''}
+          <button class="team-open-link match-team-open away-open" type="button" data-open-team="${Number(m.away?.id)}" data-team-name="${escapeHtml(m.away?.name || '')}" data-team-logo="${escapeHtml(m.away?.logo || '')}">
+            <strong>${escapeHtml(m.away?.name || '')}</strong>
+            ${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : ''}
+          </button>
           <button class="fav-star ${isFavorite(m.away?.id) ? 'active' : ''}" type="button" data-team-id="${Number(m.away?.id)}" data-team-name="${escapeHtml(m.away?.name || '')}" data-team-logo="${escapeHtml(m.away?.logo || '')}" aria-label="Избранное">${isFavorite(m.away?.id) ? '★' : '☆'}</button>
         </div>
       </div>
@@ -588,6 +596,7 @@ function bindMatchActions(root = document) {
     id: Number(btn.dataset.teamId), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '',
   })));
   root.querySelectorAll('[data-open-tournament]').forEach(btn => btn.addEventListener('click', () => openTournament(Number(btn.dataset.openTournament))));
+  root.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => openTeam({ id: Number(btn.dataset.openTeam), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '' })));
 }
 
 function renderMatches() {
@@ -713,13 +722,14 @@ function renderTournamentStandings(data) {
         <thead><tr><th>#</th><th>Команда</th><th>И</th><th class="wide-stat">В</th><th class="wide-stat">Н</th><th class="wide-stat">П</th><th>М</th><th>+/-</th><th>О</th><th>Форма</th></tr></thead>
         <tbody>${group.rows.map(row => `<tr class="${currentIds.has(Number(row.team?.id)) ? 'today-team' : ''}">
           <td><b>${Number(row.rank)}</b></td>
-          <td><div class="standing-team">${row.team?.logo ? `<img src="${safeUrl(row.team.logo)}" alt="">` : ''}<strong>${escapeHtml(row.team?.name || '')}</strong></div></td>
+          <td><button class="standing-team team-open-link" type="button" data-open-team="${Number(row.team?.id)}" data-team-name="${escapeHtml(row.team?.name || '')}" data-team-logo="${escapeHtml(row.team?.logo || '')}">${row.team?.logo ? `<img src="${safeUrl(row.team.logo)}" alt="">` : ''}<strong>${escapeHtml(row.team?.name || '')}</strong></button></td>
           <td>${Number(row.played)}</td><td class="wide-stat">${Number(row.win)}</td><td class="wide-stat">${Number(row.draw)}</td><td class="wide-stat">${Number(row.lose)}</td>
           <td>${Number(row.goalsFor)}:${Number(row.goalsAgainst)}</td><td class="${Number(row.goalsDiff) > 0 ? 'positive' : Number(row.goalsDiff) < 0 ? 'negative' : ''}">${Number(row.goalsDiff) > 0 ? '+' : ''}${Number(row.goalsDiff)}</td><td><b>${Number(row.points)}</b></td><td>${standingFormHtml(row.form)}</td>
         </tr>`).join('')}</tbody>
       </table></div>
       <p class="tiny table-note">Таблица загружается только при открытии этой вкладки и кэшируется на 6 часов, чтобы не расходовать бесплатную квоту API.</p>
     </section>`).join('')}`;
+  el.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => openTeam({ id: Number(btn.dataset.openTeam), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '' })));
 }
 
 async function loadTournamentStandings(force = false) {
@@ -747,6 +757,59 @@ function setTournamentTab(tab, load = true) {
   $('tournamentMatchesPanel').classList.toggle('active', tab === 'matches');
   $('tournamentTablePanel').classList.toggle('active', tab === 'table');
   if (tab === 'table' && load) loadTournamentStandings(false);
+}
+
+
+function activeViewId() { return document.querySelector('.view.active')?.id || 'matchesView'; }
+function teamResultBadge(result) {
+  const r = String(result || '').toUpperCase();
+  if (!['W','D','L'].includes(r)) return '';
+  return `<span class="team-result ${r === 'W' ? 'win' : r === 'D' ? 'draw' : 'loss'}">${r === 'W' ? 'В' : r === 'D' ? 'Н' : 'П'}</span>`;
+}
+function teamMatchRow(m) {
+  const center = m.live ? `<button class="mini-match-action live" type="button" data-center="${Number(m.fixtureId)}">LIVE</button>` : m.finished ? `<span class="team-score">${m.score?.home ?? '—'} : ${m.score?.away ?? '—'}</span>` : `<button class="mini-match-action" type="button" data-fixture="${Number(m.fixtureId)}">Анализ</button>`;
+  return `<article class="team-fixture-row"><div class="team-fixture-date"><strong>${escapeHtml(dateTime(m.date))}</strong><small>${escapeHtml(m.roundLabel || m.league || '')}</small></div><div class="team-fixture-opponent">${m.opponent?.logo ? `<img src="${safeUrl(m.opponent.logo)}" alt="">` : '<span>⚽</span>'}<div><strong>${escapeHtml(m.opponent?.name || '')}</strong><small>${m.venue === 'home' ? 'Дома' : 'В гостях'} · ${escapeHtml(m.league || '')}</small></div></div><div class="team-fixture-outcome">${teamResultBadge(m.result)}${center}</div></article>`;
+}
+function bindTeamFixtureActions(root) {
+  root.querySelectorAll('[data-fixture]').forEach(btn => btn.addEventListener('click', () => analyzeMatch(Number(btn.dataset.fixture), btn)));
+  root.querySelectorAll('[data-center]').forEach(btn => btn.addEventListener('click', () => openMatchCenter(Number(btn.dataset.center), btn)));
+  root.querySelectorAll('[data-open-tournament]').forEach(btn => btn.addEventListener('click', openTournamentFromTeam));
+}
+function renderTeamHub(data) {
+  const team = data?.team || state.currentTeam || {}; state.currentTeam = { ...state.currentTeam, ...team, data };
+  const fav = isFavorite(team.id), comp = data?.primaryCompetition, standing = data?.standing, form = data?.form, next = data?.liveNow || data?.nextMatch;
+  const stale = data?.stale ? `<div class="data-notice stale">⚠️ ${escapeHtml(data.warning || 'Показаны сохранённые данные команды.')}</div>` : '';
+  $('teamHero').innerHTML = `${stale}<section class="panel team-hero"><div class="team-hero-main"><div class="team-hero-logo">${team.logo ? `<img src="${safeUrl(team.logo)}" alt="">` : '⚽'}</div><div class="team-hero-copy"><span>СТРАНИЦА КОМАНДЫ</span><h2>${escapeHtml(team.name || 'Команда')}</h2><p>${comp ? `${escapeHtml(comp.name)} · ${escapeHtml(comp.country || '')}` : 'Турнир определяется по последним матчам'}</p></div><button id="teamFavoriteBtn" class="team-favorite-big ${fav ? 'active' : ''}" type="button">${fav ? '★' : '☆'}</button></div><div class="team-hero-stats"><div><span>Форма</span><strong>${form?.form ? escapeHtml(form.form.replace(/W/g,'В').replace(/D/g,'Н').replace(/L/g,'П')) : '—'}</strong></div><div><span>Очки / матч</span><strong>${form?.ppg ?? '—'}</strong></div><div><span>Голы</span><strong>${form ? `${form.gfAvg} / ${form.gaAvg}` : '—'}</strong></div><div><span>Место</span><strong>${standing?.rank ? `${standing.rank}` : '—'}</strong></div></div>${comp ? `<button id="teamTournamentBtn" class="secondary-btn team-tournament-btn" type="button">🏆 ${escapeHtml(comp.shortName || comp.name)} · открыть турнир</button>` : ''}</section>`;
+  $('teamFavoriteBtn')?.addEventListener('click', async () => { await toggleFavorite({ id:Number(team.id), name:team.name||'', logo:team.logo||'' }); renderTeamHub(state.currentTeam?.data || data); });
+  $('teamTournamentBtn')?.addEventListener('click', openTournamentFromTeam);
+  const formHtml = form ? `<section class="panel team-form-panel"><h2>📈 Последние ${Number(form.sample || 0)} матчей</h2><div class="team-form-line">${String(form.form || '').split('').map(teamResultBadge).join('')}</div><div class="team-kpi-grid"><div><span>Победы</span><strong>${Number(form.wins||0)}</strong></div><div><span>Ничьи</span><strong>${Number(form.draws||0)}</strong></div><div><span>Поражения</span><strong>${Number(form.losses||0)}</strong></div><div><span>Забивает</span><strong>${form.gfAvg ?? '—'}</strong></div><div><span>Пропускает</span><strong>${form.gaAvg ?? '—'}</strong></div><div><span>ОЗ</span><strong>${form.bttsPct ?? '—'}%</strong></div></div></section>` : '<section class="panel"><div class="empty compact-empty">Пока недостаточно завершённых матчей для формы.</div></section>';
+  const nextHtml = next ? `<section class="panel next-team-match"><div class="mini-section-head"><strong>${next.live ? '🔴 Матч идёт' : '⏭ Ближайший матч'}</strong><span>${escapeHtml(dateTime(next.date))}</span></div>${teamMatchRow(next)}</section>` : '<section class="panel"><div class="empty compact-empty">Ближайший матч в доступном окне не найден.</div></section>';
+  const positionHtml = standing ? `<section class="panel team-standing-card"><h2>🏆 Положение в турнире</h2><div class="team-standing-summary"><strong>${Number(standing.rank)} место</strong><span>${Number(standing.points)} очков · ${Number(standing.played)} матчей · ${Number(standing.goalsFor)}:${Number(standing.goalsAgainst)}</span></div></section>` : `<section class="panel team-standing-card"><h2>🏆 Положение в турнире</h2><p class="muted">Позиция появится после загрузки таблицы турнира. Так мы не расходуем отдельный API-запрос автоматически.</p>${comp ? '<button class="secondary-btn" type="button" data-open-tournament="1">Открыть турнир и таблицу</button>' : ''}</section>`;
+  $('teamOverview').innerHTML = `${nextHtml}${formHtml}${positionHtml}`; bindTeamFixtureActions($('teamOverview'));
+  $('teamResults').innerHTML = data?.recent?.length ? `<div class="team-fixtures-list">${data.recent.map(teamMatchRow).join('')}</div>` : '<div class="empty">Завершённых матчей в доступном окне нет.</div>';
+  $('teamSchedule').innerHTML = data?.upcoming?.length ? `<div class="team-fixtures-list">${data.upcoming.map(teamMatchRow).join('')}</div>` : '<div class="empty">Предстоящих матчей в доступном окне нет.</div>';
+  bindTeamFixtureActions($('teamResults')); bindTeamFixtureActions($('teamSchedule'));
+}
+async function loadTeamHub(team, force=false) {
+  const key=String(Number(team?.id||0)); if (!key || key==='0') return;
+  const cached=state.teamCache.get(key); if (cached && !force) { renderTeamHub(cached); return; }
+  $('teamHero').innerHTML='<div class="loader">Загружаю страницу команды…</div>'; $('teamOverview').innerHTML=''; $('teamResults').innerHTML=''; $('teamSchedule').innerHTML='';
+  try { const q=new URLSearchParams({teamId:String(Number(team.id)),name:team.name||'',logo:team.logo||''}); const data=await api(`/api/team?${q.toString()}`); state.teamCache.set(key,data); if(data.provider){state.provider=data.provider;renderProvider();} renderTeamHub(data); }
+  catch(e){ $('teamHero').innerHTML=`<div class="empty">${escapeHtml(e.message)}</div>`; }
+}
+function openTeam(team) {
+  if(!team?.id) return; const current=activeViewId(); if(current!=='teamView') state.teamBackView=current;
+  state.currentTeam={id:Number(team.id),name:team.name||'',logo:team.logo||'',data:null}; setTeamTab('overview'); showView('teamView'); loadTeamHub(state.currentTeam,false);
+}
+function setTeamTab(tab) {
+  document.querySelectorAll('.team-tab').forEach(btn=>btn.classList.toggle('active',btn.dataset.teamTab===tab));
+  $('teamOverviewPanel')?.classList.toggle('active',tab==='overview'); $('teamResultsPanel')?.classList.toggle('active',tab==='results'); $('teamSchedulePanel')?.classList.toggle('active',tab==='schedule');
+}
+function openTournamentFromTeam() {
+  const comp=state.currentTeam?.data?.primaryCompetition; if(!comp?.leagueId) return toast('Основной турнир команды пока не определён.');
+  const existing=state.matches.find(m=>Number(m.leagueId)===Number(comp.leagueId)); if(existing) return openTournament(Number(comp.leagueId));
+  state.currentTournament={leagueId:Number(comp.leagueId),season:Number(comp.season||new Date().getFullYear()),name:comp.name||'Турнир',shortName:comp.shortName||comp.name||'Турнир',country:comp.country||'',logo:comp.logo||'',category:comp.category||'',tier:comp.tier||'standard'};
+  renderTournamentHero(); renderTournamentMatches(); setTournamentTab('table',true); showView('tournamentView');
 }
 
 function statValue(v) {
@@ -1436,7 +1499,9 @@ $('refreshBtn').addEventListener('click', loadMatches);
 $('historyRefreshBtn').addEventListener('click', () => loadHistory(true));
 $('backBtn').addEventListener('click', () => showView('matchesView'));
 $('tournamentBackBtn')?.addEventListener('click', () => showView('matchesView'));
+$('teamBackBtn')?.addEventListener('click', () => showView(state.teamBackView || 'matchesView'));
 document.querySelectorAll('.tournament-tab').forEach(btn => btn.addEventListener('click', () => setTournamentTab(btn.dataset.tournamentTab || 'matches')));
+document.querySelectorAll('.team-tab').forEach(btn => btn.addEventListener('click', () => setTeamTab(btn.dataset.teamTab || 'overview')));
 $('profileBtn').addEventListener('click', () => showView('profileView'));
 $('navMatches').addEventListener('click', () => showView('matchesView'));
 $('navHistory').addEventListener('click', async () => { await loadHistory(true); showView('historyView'); });
