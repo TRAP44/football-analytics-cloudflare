@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '4.2.0-release-hardening';
+const CLIENT_VERSION = '4.3.0-admin-expanded-data';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -18,6 +18,7 @@ const state = {
   preferences: { defaultFilter: 'top', reminderMinutes: 30, kickoffNotification: true, hideYouth: true, favoriteFirst: true },
   preferencesApplied: false,
   provider: null,
+  dataCapabilities: null,
   billing: null,
   modelQuality: null,
   modelQualityLoading: false,
@@ -69,7 +70,7 @@ const VIEW_CHROME = {
   teamView: ['Команда', 'Форма, состав и календарь клуба'],
   analysisView: ['Анализ матча', 'Вероятности, форма и ключевые факторы'],
   historyView: ['История', 'Недавно просмотренные анализы'],
-  profileView: ['Профиль', 'Настройки, качество модели и диагностика'],
+  profileView: ['Профиль', 'Настройки, избранное и персонализация'],
 };
 
 function syncTopbar(id) {
@@ -239,6 +240,7 @@ async function api(path, options = {}) {
 async function loadProfile() {
   try {
     state.profile = await api('/api/me');
+    state.dataCapabilities = state.profile?.features?.dataCapabilities || state.dataCapabilities;
     if (state.profile?.preferences) {
       state.preferences = { ...state.preferences, ...state.profile.preferences };
       if (!state.preferencesApplied) {
@@ -255,6 +257,28 @@ renderDiscoveryHome();
   }
 }
 
+function isAdmin() {
+  return Boolean(state.profile?.features?.isAdmin);
+}
+
+function applyAdminVisibility() {
+  const admin = isAdmin();
+  document.querySelectorAll('[data-admin-only]').forEach(el => { el.hidden = !admin; });
+  const badge = $('adminRoleBadge');
+  if (badge) badge.hidden = !admin;
+}
+
+function renderDataCapabilities() {
+  const c = state.dataCapabilities || state.profile?.features?.dataCapabilities || {};
+  const features = c.features || {};
+  if ($('dataModeLabel')) $('dataModeLabel').textContent = c.label || (c.mode === 'expanded' ? 'Расширенное покрытие' : 'Стандартное покрытие');
+  if ($('dataModeRefresh')) $('dataModeRefresh').textContent = Number(c.refreshSeconds || 60) <= 30 ? `${Number(c.refreshSeconds || 60)} сек.` : 'адаптивно';
+  if ($('dataModeLineups')) $('dataModeLineups').textContent = features.lineupsFallback ? 'Расширенно' : 'По доступности';
+  if ($('dataModePlayers')) $('dataModePlayers').textContent = features.playerStats ? 'Расширенно' : 'По доступности';
+  if ($('dataModeOdds')) $('dataModeOdds').textContent = features.liveOdds ? 'Расширенно' : 'По доступности';
+  if ($('dataModeNote')) $('dataModeNote').textContent = c.note || 'Покрытие зависит от турнира и доступности данных провайдера.';
+}
+
 function renderProfile() {
   if (!state.profile) return;
   const { user, quota, stats = {} } = state.profile;
@@ -263,7 +287,7 @@ function renderProfile() {
   else if ($('profileBtn')) $('profileBtn').textContent = quota.plan;
   $('quotaText').textContent = `Осталось анализов: ${quota.left} из ${quota.limit}`;
   $('profileName').textContent = user.firstName || 'Пользователь';
-  $('profileUsername').textContent = user.username ? `@${user.username}` : `Telegram ID ${user.id}`;
+  $('profileUsername').textContent = user.username ? `@${user.username} · Telegram ID ${user.id}` : `Telegram ID ${user.id}`;
   $('profilePlan').textContent = quota.plan;
   $('profileUsage').textContent = `${quota.used} / ${quota.limit}`;
   $('memberSince').textContent = user.createdAt ? `С нами с ${dateOnly(user.createdAt)}` : '';
@@ -278,6 +302,8 @@ function renderProfile() {
   renderFavoriteTeams();
   renderReminderList();
   renderBilling();
+  applyAdminVisibility();
+  renderDataCapabilities();
 }
 
 
@@ -411,6 +437,7 @@ function renderModelQuality() {
 }
 
 async function loadModelQuality(force = false) {
+  if (!isAdmin()) return;
   if (state.modelQualityLoading) return;
   const days = Number($('modelQualityPeriod')?.value || state.modelQualityDays || 90);
   state.modelQualityDays = days;
@@ -435,8 +462,10 @@ async function openProfileView() {
   const essentials = [];
   if (!state.favoritesLoaded) essentials.push(loadFavorites());
   if (!state.remindersLoaded) essentials.push(loadReminders());
-  if (!state.providerLoaded) essentials.push(loadProvider());
-  essentials.push(loadModelQuality(false), loadReleaseReadiness(false));
+  if (isAdmin()) {
+    if (!state.providerLoaded) essentials.push(loadProvider());
+    essentials.push(loadModelQuality(false), loadReleaseReadiness(false));
+  }
   await Promise.allSettled(essentials);
 }
 
@@ -478,6 +507,7 @@ function renderReleaseReadiness() {
 }
 
 async function loadReleaseReadiness(force = false) {
+  if (!isAdmin()) return;
   if (state.releaseReadinessLoading) return;
   if (!force && state.releaseReadiness) { renderReleaseReadiness(); return; }
   state.releaseReadinessLoading = true;
@@ -639,6 +669,7 @@ function renderDiagnostics() {
 }
 
 async function loadDiagnostics(force = false) {
+  if (!isAdmin()) return;
   if (state.diagnosticsLoading) return;
   state.diagnosticsLoading = true;
   renderDiagnostics();
@@ -759,6 +790,7 @@ async function manageSubscription(action) {
 }
 
 function renderProvider() {
+  if (!isAdmin()) return;
   const p = state.provider || {};
   if (!$('providerPlan')) return;
   $('providerPlan').textContent = p.plan && p.plan !== 'UNKNOWN' ? p.plan : 'Определяется';
@@ -772,6 +804,7 @@ function renderProvider() {
 }
 
 async function loadProvider() {
+  if (!isAdmin()) return;
   try {
     const data = await api('/api/provider');
     state.provider = data.provider || state.provider;
@@ -1054,7 +1087,7 @@ async function runGlobalSearch() {
     state.globalSearch.remoteCompetitions = data.competitions || [];
     state.globalSearch.warning = data.warning || data.hint || '';
     state.globalSearch.searchedAt = data.refreshedAt || new Date().toISOString();
-    if (data.provider) { state.provider = data.provider; renderProvider(); }
+    if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
   } catch (e) {
     state.globalSearch.warning = e.message;
   } finally {
@@ -1115,7 +1148,7 @@ function applyMatchPayload(data, { snapshot = false } = {}) {
     integrity: data.integrity || null,
     localSnapshot: snapshot,
   };
-  if (data.provider) { state.provider = data.provider; renderProvider(); }
+  if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
   if (state.filter === 'top' && !state.matches.some(x => x.featured || (Number(x.interestScore || 0) >= 68 && !x.lowPriority))) state.filter = 'all';
   syncFilterButtons();
   renderMatches();
@@ -1504,7 +1537,7 @@ async function loadTournamentStandings(force = false) {
   try {
     const data = await api(`/api/tournament?leagueId=${Number(t.leagueId)}&season=${Number(t.season)}`);
     state.tournamentStandings.set(key, data);
-    if (data.provider) { state.provider = data.provider; renderProvider(); }
+    if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
     renderTournamentStandings(data);
   } catch (e) {
     el.innerHTML = `<div class="empty compact-empty">${escapeHtml(e.message)}</div>`;
@@ -1605,7 +1638,7 @@ async function loadTeamIntelligence(force=false) {
   if(!force && state.teamIntelligenceCache.has(key)){ renderTeamIntelligence(state.teamIntelligenceCache.get(key)); return; }
   el.innerHTML='<div class="loader">Загружаю сезонную статистику…</div>';
   const q=new URLSearchParams({teamId:String(Number(team.id)),leagueId:String(Number(comp.leagueId)),season:String(Number(comp.season)),teamName:team.name||'',teamLogo:team.logo||'',leagueName:comp.name||'',leagueLogo:comp.logo||'',country:comp.country||''});
-  try{const data=await api(`/api/team/intelligence?${q.toString()}`);state.teamIntelligenceCache.set(key,data);if(data.provider){state.provider=data.provider;renderProvider();}renderTeamIntelligence(data);}catch(e){el.innerHTML=`<div class="empty compact-empty">${escapeHtml(e.message)}</div>`;}
+  try{const data=await api(`/api/team/intelligence?${q.toString()}`);state.teamIntelligenceCache.set(key,data);if(isAdmin() && data.provider?.visibility==='admin'){state.provider=data.provider;renderProvider();}renderTeamIntelligence(data);}catch(e){el.innerHTML=`<div class="empty compact-empty">${escapeHtml(e.message)}</div>`;}
 }
 function playerCard(p) {
   return `<div class="squad-player">${p.photo?`<img src="${safeUrl(p.photo)}" alt="">`:'<span class="squad-avatar">👤</span>'}<div><strong>${escapeHtml(p.name||'')}</strong><small>${p.number?`№${Number(p.number)} · `:''}${p.age?`${Number(p.age)} лет`:'Возраст —'}</small></div></div>`;
@@ -1621,7 +1654,7 @@ async function loadTeamSquad(force=false) {
   const team=state.currentTeam, el=$('teamSquad'); if(!team?.id||!el) return;
   const key=String(Number(team.id)); if(!force&&state.teamSquadCache.has(key)){renderTeamSquad(state.teamSquadCache.get(key));return;}
   el.innerHTML='<div class="loader">Загружаю состав…</div>';
-  try{const data=await api(`/api/team/squad?teamId=${Number(team.id)}`);state.teamSquadCache.set(key,data);if(data.provider){state.provider=data.provider;renderProvider();}renderTeamSquad(data);}catch(e){el.innerHTML=`<div class="empty compact-empty">${escapeHtml(e.message)}</div>`;}
+  try{const data=await api(`/api/team/squad?teamId=${Number(team.id)}`);state.teamSquadCache.set(key,data);if(isAdmin() && data.provider?.visibility==='admin'){state.provider=data.provider;renderProvider();}renderTeamSquad(data);}catch(e){el.innerHTML=`<div class="empty compact-empty">${escapeHtml(e.message)}</div>`;}
 }
 
 function renderTeamHub(data) {
@@ -1643,7 +1676,7 @@ async function loadTeamHub(team, force=false) {
   const key=String(Number(team?.id||0)); if (!key || key==='0') return;
   const cached=state.teamCache.get(key); if (cached && !force) { renderTeamHub(cached); return; }
   $('teamHero').innerHTML='<div class="loader">Загружаю страницу команды…</div>'; $('teamOverview').innerHTML=''; $('teamIntelligence').innerHTML='<div class="empty compact-empty">Откройте вкладку «Статистика», чтобы загрузить сезонные данные.</div>'; $('teamSquad').innerHTML='<div class="empty compact-empty">Откройте вкладку «Состав», чтобы загрузить игроков.</div>'; $('teamResults').innerHTML=''; $('teamSchedule').innerHTML='';
-  try { const q=new URLSearchParams({teamId:String(Number(team.id)),name:team.name||'',logo:team.logo||''}); const data=await api(`/api/team?${q.toString()}`); state.teamCache.set(key,data); if(data.provider){state.provider=data.provider;renderProvider();} renderTeamHub(data); }
+  try { const q=new URLSearchParams({teamId:String(Number(team.id)),name:team.name||'',logo:team.logo||''}); const data=await api(`/api/team?${q.toString()}`); state.teamCache.set(key,data); if(isAdmin() && data.provider?.visibility==='admin'){state.provider=data.provider;renderProvider();} renderTeamHub(data); }
   catch(e){ $('teamHero').innerHTML=`<div class="empty">${escapeHtml(e.message)}</div>`; }
 }
 function openTeam(team) {
@@ -1787,9 +1820,16 @@ function playerLeadersHtml(leaders, m) {
   return `<div class="player-leaders-grid">${side(m.home?.name || 'Хозяева', leaders?.home || [])}${side(m.away?.name || 'Гости', leaders?.away || [])}</div>`;
 }
 
+function liveAbsencesHtml(absences, match) {
+  const side = (title, rows = []) => `<div class="absence-live-side"><h3>${escapeHtml(title)}</h3>${rows.length
+    ? rows.map(x => `<div class="absence-live-row"><strong>${escapeHtml(x.name || 'Игрок')}</strong><span>${escapeHtml(x.reason || x.type || 'Недоступен')}</span></div>`).join('')
+    : '<p class="muted">Нет подтверждённых данных.</p>'}</div>`;
+  return `<div class="absence-live-grid">${side(match.home?.name || 'Хозяева', absences?.home || [])}${side(match.away?.name || 'Гости', absences?.away || [])}</div>`;
+}
+
 function renderMatchCenter(d) {
   state.currentCenter = d;
-  if (d?.provider) { state.provider = d.provider; renderProvider(); }
+  if (isAdmin() && d?.provider?.visibility === 'admin') { state.provider = d.provider; renderProvider(); }
   state.currentAnalysis = null;
   const m = d.match || {};
   const live = d.mode === 'live';
@@ -1817,12 +1857,12 @@ function renderMatchCenter(d) {
     ${d.note ? `<section class="panel"><p class="tiny warning">${escapeHtml(d.note)}</p></section>` : ''}
 
     ${live ? `<section class="panel provider-live-panel">
-      <h2>📡 Источник LIVE</h2>
+      <h2>📡 Покрытие LIVE</h2>
       <div class="provider-live-grid">
-        <div><span>План данных</span><strong>${escapeHtml(d.provider?.plan || 'UNKNOWN')}</strong></div>
+        <div><span>Режим данных</span><strong>${escapeHtml(d.dataCapabilities?.label || d.provider?.label || 'Стандартное покрытие')}</strong></div>
         <div><span>Обновление</span><strong>${Number(d.refreshSeconds || 60)} сек.</strong></div>
-        <div><span>Live odds</span><strong>${d.liveOdds ? 'Доступны' : (d.provider?.liveOddsReady ? 'Нет рынка' : 'Платный режим')}</strong></div>
-        <div><span>Player stats</span><strong>${d.availability?.players ? 'Доступны' : (d.provider?.playerStatsReady ? 'Нет данных' : 'PRO+')}</strong></div>
+        <div><span>Live odds</span><strong>${d.liveOdds ? 'Доступны' : 'По доступности'}</strong></div>
+        <div><span>Player stats</span><strong>${d.availability?.players ? 'Доступны' : 'По доступности'}</strong></div>
       </div>
     </section>` : ''}
 
@@ -1851,6 +1891,12 @@ function renderMatchCenter(d) {
       <div style="margin-top:12px">${liveEventsHtml(d.events)}</div>
     </section>
 
+    ${(d.absences?.home?.length || d.absences?.away?.length) ? `<section class="panel">
+      <h2>🩺 Недоступные игроки</h2>
+      <p class="tiny">Подтверждённые травмы/дисквалификации по данным провайдера.</p>
+      ${liveAbsencesHtml(d.absences, m)}
+    </section>` : ''}
+
     <section class="panel">
       <h2>👥 Составы</h2>
       <div style="margin-top:12px">${lineupLiveHtml(d.lineups, m)}</div>
@@ -1863,6 +1909,7 @@ function renderMatchCenter(d) {
         <span>${d.availability?.statistics ? '✅' : '—'} Статистика</span>
         <span>${d.availability?.lineups ? '✅' : '—'} Составы</span>
         <span>${d.availability?.players ? '✅' : '—'} Игроки</span>
+        <span>${d.availability?.injuries ? '✅' : '—'} Потери</span>
         <span>${d.oddsMovement?.baseline ? '✅' : '—'} Движение линии</span>
       </div>
       ${d.availability?.limitedCoverage ? '<div class="coverage-badge limited">Ограниченное покрытие · экономим API-лимит</div>' : ''}
@@ -1905,7 +1952,7 @@ async function analyzeMatch(fixtureId, btn) {
   try {
     const data = await api('/api/analyze', { method: 'POST', body: JSON.stringify({ fixtureId }) });
     state.currentAnalysis = data;
-    if (data.provider) { state.provider = data.provider; renderProvider(); }
+    if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
     renderAnalysis(data);
     if (state.profile && data.quota) {
       state.profile.quota = data.quota;
@@ -2514,11 +2561,13 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// v4.2 keeps the fast v4.0 startup and adds release/QA guards without extra football API calls.
+// v4.3 keeps the fast v4.0 startup, protects admin telemetry and prepares expanded football data.
 // v4.0: first paint is intentionally small — matches/profile/favorites only.
 // History, reminders and provider details are loaded later or when their screen opens.
 await Promise.allSettled([loadProfile(), loadFavorites(), loadMatches()]);
 renderProfile();
 scheduleIdle(async () => {
-  await Promise.allSettled([loadReminders(), loadProvider()]);
+  const tasks = [loadReminders()];
+  if (isAdmin()) tasks.push(loadProvider());
+  await Promise.allSettled(tasks);
 });
