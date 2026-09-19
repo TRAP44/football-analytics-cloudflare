@@ -35,7 +35,7 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '4.4.0-match-center-2';
+const APP_VERSION = '4.5.0-smart-match-insights';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -2345,6 +2345,247 @@ function livePressure(statistics) {
   };
 }
 
+
+function smartStat(statistics, key, side) {
+  const row = (statistics?.items || []).find(x => x.key === key);
+  return numericValue(row?.[side]);
+}
+
+function smartSideName(side, homeName, awayName) {
+  return side === 'home' ? homeName : side === 'away' ? awayName : '';
+}
+
+function smartInsight(type, side, icon, title, text, importance = 'medium', metrics = []) {
+  return { type, side, icon, title, text, importance, metrics };
+}
+
+function recentEventSummary(events, elapsed, homeName, awayName) {
+  if (!Array.isArray(events) || !events.length || !Number.isFinite(Number(elapsed))) return null;
+  const cutoff = Math.max(0, Number(elapsed) - 15);
+  const recent = events.filter(e => Number(e.minute || 0) >= cutoff);
+  if (!recent.length) return null;
+
+  const score = { home: 0, away: 0 };
+  const key = { home: 0, away: 0 };
+  for (const e of recent) {
+    const side = e.side === 'home' || e.side === 'away' ? e.side : '';
+    if (!side) continue;
+    const t = String(e.type || '').toLowerCase();
+    const d = String(e.detail || '').toLowerCase();
+    if (t === 'goal' && !d.includes('missed')) { score[side] += 1; key[side] += 4; }
+    else if (t === 'card' && d.includes('red')) key[side] -= 2;
+    else if (t === 'var') key[side] += 1;
+  }
+
+  const diff = key.home - key.away;
+  if (score.home || score.away) {
+    const leader = score.home > score.away ? 'home' : score.away > score.home ? 'away' : 'balanced';
+    return {
+      leader,
+      title: 'Последние 15 минут',
+      text: leader === 'balanced'
+        ? `На последнем отрезке команды обменялись голевыми событиями (${score.home}:${score.away}).`
+        : `${smartSideName(leader, homeName, awayName)} активнее на последнем отрезке: голы за 15 минут — ${score[leader]}:${score[leader === 'home' ? 'away' : 'home']}.`,
+      homeScore: key.home,
+      awayScore: key.away,
+    };
+  }
+  if (Math.abs(diff) >= 2) {
+    const leader = diff > 0 ? 'home' : 'away';
+    return {
+      leader,
+      title: 'Последний отрезок',
+      text: `${smartSideName(leader, homeName, awayName)} чаще оказывается в центре ключевых событий последних 15 минут.`,
+      homeScore: key.home,
+      awayScore: key.away,
+    };
+  }
+  return null;
+}
+
+function buildSmartMatchInsights({
+  statistics, events, pressure, score, elapsed, status,
+  homeName, awayName, playerLeaders, absences,
+}) {
+  const insights = [];
+  const homeGoals = numericValue(score?.home) ?? 0;
+  const awayGoals = numericValue(score?.away) ?? 0;
+
+  const hs = smartStat(statistics, 'Total Shots', 'home');
+  const as = smartStat(statistics, 'Total Shots', 'away');
+  const hso = smartStat(statistics, 'Shots on Goal', 'home');
+  const aso = smartStat(statistics, 'Shots on Goal', 'away');
+  const hxg = smartStat(statistics, 'expected_goals', 'home');
+  const axg = smartStat(statistics, 'expected_goals', 'away');
+  const hpos = smartStat(statistics, 'Ball Possession', 'home');
+  const apos = smartStat(statistics, 'Ball Possession', 'away');
+  const hcorn = smartStat(statistics, 'Corner Kicks', 'home');
+  const acorn = smartStat(statistics, 'Corner Kicks', 'away');
+  const hsaves = smartStat(statistics, 'Goalkeeper Saves', 'home');
+  const asaves = smartStat(statistics, 'Goalkeeper Saves', 'away');
+  const hred = smartStat(statistics, 'Red Cards', 'home') || 0;
+  const ared = smartStat(statistics, 'Red Cards', 'away') || 0;
+
+  if (pressure && Math.abs(Number(pressure.home || 0) - Number(pressure.away || 0)) >= 12) {
+    const side = pressure.home > pressure.away ? 'home' : 'away';
+    const own = side === 'home' ? pressure.home : pressure.away;
+    const opp = side === 'home' ? pressure.away : pressure.home;
+    insights.push(smartInsight(
+      'pressure', side, '⚡', 'Территориальное давление',
+      `${smartSideName(side, homeName, awayName)} сильнее по совокупности ударов, владения, угловых и других доступных метрик (${own}:${opp} по индексу давления).`,
+      Math.abs(own - opp) >= 24 ? 'high' : 'medium',
+      [{ label: 'Индекс давления', home: pressure.home, away: pressure.away }]
+    ));
+  }
+
+  if (hxg !== null && axg !== null && Math.abs(hxg - axg) >= 0.45) {
+    const side = hxg > axg ? 'home' : 'away';
+    insights.push(smartInsight(
+      'chance_quality', side, '🎯', 'Качество моментов',
+      `${smartSideName(side, homeName, awayName)} создаёт более качественные моменты по xG: ${hxg.toFixed(2)} — ${axg.toFixed(2)}.`,
+      Math.abs(hxg - axg) >= 0.9 ? 'high' : 'medium',
+      [{ label: 'xG', home: hxg, away: axg }]
+    ));
+  } else if (hso !== null && aso !== null && hs !== null && as !== null) {
+    const shotEdge = (hso - aso) * 2 + (hs - as) * 0.45;
+    if (Math.abs(shotEdge) >= 3) {
+      const side = shotEdge > 0 ? 'home' : 'away';
+      insights.push(smartInsight(
+        'chance_volume', side, '🥅', 'Объём атак',
+        `${smartSideName(side, homeName, awayName)} чаще доводит атаки до ударов: ${hs}:${as}, в створ — ${hso}:${aso}.`,
+        'medium',
+        [{ label: 'Удары', home: hs, away: as }, { label: 'В створ', home: hso, away: aso }]
+      ));
+    }
+  }
+
+  const scoreLeader = homeGoals > awayGoals ? 'home' : awayGoals > homeGoals ? 'away' : 'balanced';
+  let performanceLeader = 'balanced';
+  if (hxg !== null && axg !== null && Math.abs(hxg - axg) >= 0.5) performanceLeader = hxg > axg ? 'home' : 'away';
+  else if (hso !== null && aso !== null && hs !== null && as !== null) {
+    const perf = (hso - aso) * 2 + (hs - as) * 0.5;
+    if (Math.abs(perf) >= 3.5) performanceLeader = perf > 0 ? 'home' : 'away';
+  }
+  if (scoreLeader !== 'balanced' && performanceLeader !== 'balanced' && scoreLeader !== performanceLeader) {
+    insights.push(smartInsight(
+      'score_mismatch', performanceLeader, '↔️', 'Счёт расходится с картиной игры',
+      `${smartSideName(scoreLeader, homeName, awayName)} ведёт ${homeGoals}:${awayGoals}, но по качеству/объёму моментов сильнее выглядит ${smartSideName(performanceLeader, homeName, awayName)}.`,
+      'high'
+    ));
+  } else if (scoreLeader === 'balanced' && performanceLeader !== 'balanced') {
+    insights.push(smartInsight(
+      'score_mismatch', performanceLeader, '↔️', 'При равном счёте есть перевес',
+      `Счёт равный, но ${smartSideName(performanceLeader, homeName, awayName)} имеет заметное преимущество по доступным атакующим показателям.`,
+      'medium'
+    ));
+  }
+
+  if (hxg !== null && homeGoals - hxg >= 0.8) {
+    insights.push(smartInsight('finishing', 'home', '🔥', 'Реализация выше ожидаемой',
+      `${homeName} забил ${homeGoals} при xG ${hxg.toFixed(2)} — реализация заметно выше качества созданных моментов.`, 'medium'));
+  }
+  if (axg !== null && awayGoals - axg >= 0.8) {
+    insights.push(smartInsight('finishing', 'away', '🔥', 'Реализация выше ожидаемой',
+      `${awayName} забил ${awayGoals} при xG ${axg.toFixed(2)} — реализация заметно выше качества созданных моментов.`, 'medium'));
+  }
+
+  if (hred > 0 || ared > 0) {
+    const side = hred > ared ? 'home' : ared > hred ? 'away' : 'balanced';
+    const text = side === 'balanced'
+      ? `У обеих команд есть удаления (${hred}:${ared}), что сильно меняет структуру матча.`
+      : `${smartSideName(side, homeName, awayName)} играет в меньшинстве: красные карточки ${hred}:${ared}.`;
+    insights.push(smartInsight('discipline', side, '🟥', 'Удаление влияет на матч', text, 'high'));
+  }
+
+  if (hsaves !== null && hsaves >= 4 && (aso === null || aso >= hsaves)) {
+    insights.push(smartInsight('goalkeeper', 'home', '🧤', 'Вратарь удерживает хозяев',
+      `Вратарь ${homeName} уже сделал ${hsaves} сейвов — его вклад заметен в текущем счёте.`, 'medium'));
+  }
+  if (asaves !== null && asaves >= 4 && (hso === null || hso >= asaves)) {
+    insights.push(smartInsight('goalkeeper', 'away', '🧤', 'Вратарь удерживает гостей',
+      `Вратарь ${awayName} уже сделал ${asaves} сейвов — его вклад заметен в текущем счёте.`, 'medium'));
+  }
+
+  if (hpos !== null && apos !== null && Math.abs(hpos - apos) >= 16) {
+    const side = hpos > apos ? 'home' : 'away';
+    insights.push(smartInsight('possession', side, '🧠', 'Контроль мяча',
+      `${smartSideName(side, homeName, awayName)} значительно больше владеет мячом: ${hpos}% — ${apos}%. Владение само по себе не гарантирует более опасные моменты.`,
+      'low'));
+  }
+
+  if (hcorn !== null && acorn !== null && Math.abs(hcorn - acorn) >= 5) {
+    const side = hcorn > acorn ? 'home' : 'away';
+    insights.push(smartInsight('territory', side, '🚩', 'Территориальный перевес',
+      `${smartSideName(side, homeName, awayName)} чаще доводит атаки до угловых: ${hcorn}:${acorn}.`, 'low'));
+  }
+
+  const recent = recentEventSummary(events, elapsed, homeName, awayName);
+  if (recent) {
+    insights.push(smartInsight('recent_phase', recent.leader, '⏱️', recent.title, recent.text, 'medium'));
+  }
+
+  const leaders = [
+    ...(playerLeaders?.home || []).map(p => ({ ...p, side: 'home' })),
+    ...(playerLeaders?.away || []).map(p => ({ ...p, side: 'away' })),
+  ].filter(p => Number(p.rating || 0) >= 7.5).sort((a,b) => Number(b.rating || 0) - Number(a.rating || 0));
+  if (leaders[0]) {
+    const p = leaders[0];
+    insights.push(smartInsight('player', p.side, '⭐', 'Выделяется игрок',
+      `${p.name} — один из самых заметных по доступной статистике${p.rating ? `, рейтинг ${Number(p.rating).toFixed(1)}` : ''}${p.goals ? `, голов: ${p.goals}` : ''}${p.assists ? `, ассистов: ${p.assists}` : ''}.`,
+      'low'));
+  }
+
+  const hAbs = absences?.home?.length || 0;
+  const aAbs = absences?.away?.length || 0;
+  if (Math.abs(hAbs - aAbs) >= 2 && Math.max(hAbs, aAbs) >= 2) {
+    const side = hAbs > aAbs ? 'home' : 'away';
+    insights.push(smartInsight('availability', side, '🩺', 'Разница по потерям',
+      `${smartSideName(side, homeName, awayName)} имеет больше подтверждённых потерь состава: ${hAbs}:${aAbs}.`, 'low'));
+  }
+
+  if (Number.isFinite(Number(elapsed)) && Number(elapsed) >= 20 && hs !== null && as !== null) {
+    const projectedShots = ((hs + as) / Math.max(1, Number(elapsed))) * 90;
+    if (projectedShots >= 28) {
+      insights.push(smartInsight('tempo', 'balanced', '🏃', 'Высокий темп',
+        `По текущей частоте ударов матч идёт в высоком темпе — около ${Math.round(projectedShots)} ударов в пересчёте на 90 минут.`, 'low'));
+    } else if (projectedShots <= 13 && Number(elapsed) >= 35) {
+      insights.push(smartInsight('tempo', 'balanced', '🧱', 'Закрытый характер',
+        `Ударов немного для текущей минуты матча — темп создания моментов пока низкий.`, 'low'));
+    }
+  }
+
+  const importanceRank = { high: 3, medium: 2, low: 1 };
+  const typeRank = { score_mismatch: 9, discipline: 8, chance_quality: 7, pressure: 6, chance_volume: 5, goalkeeper: 4, recent_phase: 3, finishing: 3, possession: 2, territory: 2, player: 1, availability: 1, tempo: 1 };
+  insights.sort((a,b) => (importanceRank[b.importance] - importanceRank[a.importance]) || ((typeRank[b.type] || 0) - (typeRank[a.type] || 0)));
+
+  const coverageParts = [
+    hxg !== null && axg !== null,
+    hs !== null && as !== null,
+    hso !== null && aso !== null,
+    hpos !== null && apos !== null,
+    Array.isArray(events) && events.length > 0,
+    Boolean(pressure),
+    (playerLeaders?.home?.length || 0) + (playerLeaders?.away?.length || 0) > 0,
+  ];
+  const dataScore = Math.round(coverageParts.filter(Boolean).length / coverageParts.length * 100);
+  const dataLabel = dataScore >= 75 ? 'Высокое покрытие' : dataScore >= 45 ? 'Среднее покрытие' : 'Базовое покрытие';
+
+  const main = insights[0] || null;
+  const headline = main?.title || (pressure?.leader === 'balanced' ? 'Матч выглядит сбалансированным' : 'Недостаточно данных для сильного вывода');
+  const summary = main?.text || 'Доступных событий и статистики пока недостаточно для содержательного автоматического вывода.';
+
+  return {
+    available: Boolean(insights.length),
+    headline,
+    summary,
+    dataScore,
+    dataLabel,
+    insights: insights.slice(0, 7),
+    methodology: 'Автоматические выводы строятся только из текущего счёта, событий и официальной статистики матча. Это объяснение происходящего, а не прогноз результата.',
+    generatedForStatus: String(status || ''),
+  };
+}
+
 async function getOddsSnapshots(fixtureId, cfg, limit = 12) {
   if (hasSupabase(cfg)) {
     try {
@@ -3934,7 +4175,7 @@ async function apiMatchCenter(request, cfg) {
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'fixtureId обязателен.' }, 400);
 
   // Shared across all users. During LIVE it expires after 60 seconds.
-  const baseCacheKey = `match-center:${fixtureId}:v7-match-center-2`;
+  const baseCacheKey = `match-center:${fixtureId}:v8-smart-insights`;
   const cached = await getCache(baseCacheKey, cfg);
   if (cached) return json({ ...cached, cached: true });
 
@@ -4021,7 +4262,20 @@ async function apiMatchCenter(request, cfg) {
   const playerLeaders = formatPlayerLeaders(playerRows, homeId, awayId);
   const lineups = formatLineups(lineupRows, homeId, awayId);
   const absences = formatAbsences(injuryRows, homeId, awayId);
-  const pressure = live ? livePressure(formattedStatistics) : null;
+  const pressure = (live || finished) ? livePressure(formattedStatistics) : null;
+  const formattedEvents = formatLiveEvents(events, homeId, awayId);
+  const smartInsights = (live || finished) ? buildSmartMatchInsights({
+    statistics: formattedStatistics,
+    events: formattedEvents,
+    pressure,
+    score: scoreSnapshot(fixture),
+    elapsed,
+    status,
+    homeName,
+    awayName,
+    playerLeaders,
+    absences,
+  }) : null;
 
   const payload = {
     generatedAt: new Date().toISOString(),
@@ -4047,9 +4301,10 @@ async function apiMatchCenter(request, cfg) {
       home: { id: homeId, name: homeName, logo: fixture.teams?.home?.logo || '' },
       away: { id: awayId, name: awayName, logo: fixture.teams?.away?.logo || '' },
     },
-    events: formatLiveEvents(events, homeId, awayId),
+    events: formattedEvents,
     statistics: formattedStatistics,
     livePressure: pressure,
+    smartInsights,
     playerLeaders,
     lineups,
     absences,
@@ -4383,6 +4638,7 @@ export default {
         adminSecurity: 'enabled',
         expandedDataReady: 'enabled',
         matchCenter2: 'enabled',
+        smartMatchInsights: 'enabled',
         devMode: cfg.devMode,
       });
     }
