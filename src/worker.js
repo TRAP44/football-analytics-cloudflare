@@ -8,6 +8,7 @@ const memory = {
   preferences: new Map(),
   oddsSnapshots: new Map(),
   billingPayments: new Map(),
+  modelPredictions: new Map(),
   provider: { name: 'API-Football', plan: 'UNKNOWN', dailyLimit: null, dailyRemaining: null, minuteLimit: null, minuteRemaining: null, updatedAt: null, cooldownUntil: null, lastError: '' },
 };
 
@@ -137,6 +138,20 @@ async function supaUpsert(cfg, table, rows, onConflict) {
   const r = await fetch(url, {
     method: 'POST',
     headers: supaHeaders(cfg, { Prefer: 'resolution=merge-duplicates,return=minimal' }),
+    body: JSON.stringify(Array.isArray(rows) ? rows : [rows]),
+  });
+  if (!r.ok) {
+    const text = await r.text().catch(() => '');
+    throw new Error(`Supabase ${table}: HTTP ${r.status}${text ? ` — ${text.slice(0, 180)}` : ''}`);
+  }
+}
+
+async function supaInsertIgnore(cfg, table, rows, onConflict) {
+  const url = new URL(`${cfg.supabaseUrl}/rest/v1/${table}`);
+  if (onConflict) url.searchParams.set('on_conflict', onConflict);
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: supaHeaders(cfg, { Prefer: 'resolution=ignore-duplicates,return=minimal' }),
     body: JSON.stringify(Array.isArray(rows) ? rows : [rows]),
   });
   if (!r.ok) {
@@ -639,6 +654,335 @@ async function setCache(cacheKey, fixtureId, payload, cfg, minutes = cfg.cacheMi
     }, 'cache_key');
   } else {
     memory.cache.set(cacheKey, { payload, expiresAt: Date.parse(expiresAt) });
+  }
+}
+
+
+function predictionOutcomeKey(probabilities) {
+  if (!probabilities) return '';
+  const rows = [
+    ['home', Number(probabilities.home)],
+    ['draw', Number(probabilities.draw)],
+    ['away', Number(probabilities.away)],
+  ].filter(([, value]) => Number.isFinite(value));
+  if (rows.length !== 3) return '';
+  rows.sort((a, b) => b[1] - a[1]);
+  return rows[0]?.[0] || '';
+}
+
+function predictionOutcomeLabel(key, homeName = 'Хозяева', awayName = 'Гости') {
+  if (key === 'home') return homeName;
+  if (key === 'away') return awayName;
+  if (key === 'draw') return 'Ничья';
+  return '—';
+}
+
+function topProbabilityValue(row) {
+  return Math.max(Number(row?.home_prob || 0), Number(row?.draw_prob || 0), Number(row?.away_prob || 0));
+}
+
+function actualOutcomeFromGoals(homeGoals, awayGoals) {
+  const h = Number(homeGoals), a = Number(awayGoals);
+  if (!Number.isFinite(h) || !Number.isFinite(a)) return '';
+  if (h > a) return 'home';
+  if (a > h) return 'away';
+  return 'draw';
+}
+
+function regulationScore(fixture) {
+  const full = fixture?.score?.fulltime || fixture?.score?.fullTime || null;
+  let home = Number(full?.home), away = Number(full?.away);
+  if (!Number.isFinite(home) || !Number.isFinite(away)) {
+    home = Number(fixture?.goals?.home ?? fixture?.score?.home);
+    away = Number(fixture?.goals?.away ?? fixture?.score?.away);
+  }
+  return Number.isFinite(home) && Number.isFinite(away) ? { home, away } : null;
+}
+
+function fixtureIdentity(fixture) {
+  return Number(fixture?.fixture?.id || fixture?.fixtureId || fixture?.id || 0);
+}
+
+function fixtureStatusShort(fixture) {
+  return String(fixture?.fixture?.status?.short || fixture?.status || '');
+}
+
+function scoreBrier(row, actualOutcome) {
+  const probs = {
+    home: Math.max(0, Math.min(1, Number(row.home_prob || 0) / 100)),
+    draw: Math.max(0, Math.min(1, Number(row.draw_prob || 0) / 100)),
+    away: Math.max(0, Math.min(1, Number(row.away_prob || 0) / 100)),
+  };
+  const sum = ['home','draw','away'].reduce((acc, key) => acc + Math.pow(probs[key] - (actualOutcome === key ? 1 : 0), 2), 0);
+  return Math.round((sum / 3) * 10000) / 10000;
+}
+
+async function captureModelPrediction(payload, cfg) {
+  const match = payload?.match;
+  const probabilities = payload?.probabilities;
+  const fixtureId = Number(match?.fixtureId || 0);
+  const kickoffMs = Date.parse(match?.date || '');
+  const status = String(match?.status || '').toUpperCase();
+  if (!fixtureId || !probabilities || !Number.isFinite(kickoffMs)) return false;
+  if (!['NS', 'TBD'].includes(status)) return false;
+  // Backtest only genuine pre-match snapshots, never a prediction captured after kickoff.
+  if (kickoffMs <= Date.now() + 120_000) return false;
+  const predictedOutcome = predictionOutcomeKey(probabilities);
+  if (!predictedOutcome) return false;
+
+  const row = {
+    fixture_id: fixtureId,
+    analysis_version: String(payload.analysisVersion || '3.6.0-analysis-quality'),
+    captured_at: new Date().toISOString(),
+    kickoff_at: new Date(kickoffMs).toISOString(),
+    league_id: Number(match.leagueId || 0) || null,
+    league_name: String(match.league || ''),
+    home_id: Number(match.home?.id || 0) || null,
+    away_id: Number(match.away?.id || 0) || null,
+    home_name: String(match.home?.name || ''),
+    away_name: String(match.away?.name || ''),
+    home_prob: Number(probabilities.home),
+    draw_prob: Number(probabilities.draw),
+    away_prob: Number(probabilities.away),
+    predicted_outcome: predictedOutcome,
+    confidence_score: Number(payload.confidence?.score || 0) || null,
+    signal_names: (payload.modelBreakdown?.signals || []).map(x => String(x?.name || '')).filter(Boolean),
+    signal_weights: payload.modelBreakdown?.weights || {},
+    data_mode: String(payload.dataPolicy?.mode || ''),
+    completeness_score: Number(payload.completeness?.score || 0),
+    completeness_max: Number(payload.completeness?.max || 0),
+    home_expected_goals: Number.isFinite(Number(payload.goalModel?.homeExpected)) ? Number(payload.goalModel.homeExpected) : null,
+    away_expected_goals: Number.isFinite(Number(payload.goalModel?.awayExpected)) ? Number(payload.goalModel.awayExpected) : null,
+    over25_prob: Number.isFinite(Number(payload.goalModel?.over25)) ? Number(payload.goalModel.over25) : null,
+    btts_prob: Number.isFinite(Number(payload.goalModel?.btts)) ? Number(payload.goalModel.btts) : null,
+    status: 'pending',
+  };
+
+  if (hasSupabase(cfg)) {
+    try {
+      // fixture_id is the primary key: the FIRST pre-match snapshot stays immutable.
+      await supaInsertIgnore(cfg, 'model_predictions', row, 'fixture_id');
+      return true;
+    } catch (error) {
+      console.warn('model prediction capture skipped', error?.message || error);
+      return false;
+    }
+  }
+  if (!memory.modelPredictions.has(fixtureId)) memory.modelPredictions.set(fixtureId, row);
+  return true;
+}
+
+async function settlePredictionsFromFixtures(fixtures, cfg) {
+  const finished = (fixtures || []).filter(f => isFinishedStatus(fixtureStatusShort(f)) && fixtureIdentity(f));
+  if (!finished.length) return { checked: 0, settled: 0 };
+  const ids = [...new Set(finished.map(fixtureIdentity).filter(Boolean))];
+  let rows = [];
+  if (hasSupabase(cfg)) {
+    try {
+      rows = await supaSelectMany(cfg, 'model_predictions', {
+        status: 'eq.pending',
+        fixture_id: `in.(${ids.join(',')})`,
+      }, { limit: Math.min(500, ids.length + 10) });
+    } catch (error) {
+      console.warn('model prediction settle read skipped', error?.message || error);
+      return { checked: 0, settled: 0 };
+    }
+  } else {
+    rows = ids.map(id => memory.modelPredictions.get(Number(id))).filter(x => x?.status === 'pending');
+  }
+  if (!rows.length) return { checked: 0, settled: 0 };
+
+  const fixtureMap = new Map(finished.map(f => [fixtureIdentity(f), f]));
+  let settled = 0;
+  for (const row of rows) {
+    const fixture = fixtureMap.get(Number(row.fixture_id));
+    const score = regulationScore(fixture);
+    if (!score) continue;
+    const actualOutcome = actualOutcomeFromGoals(score.home, score.away);
+    if (!actualOutcome) continue;
+    const totalGoals = score.home + score.away;
+    const bttsActual = score.home > 0 && score.away > 0;
+    const over25Actual = totalGoals >= 3;
+    const patch = {
+      status: 'settled',
+      settled_at: new Date().toISOString(),
+      actual_home_goals: score.home,
+      actual_away_goals: score.away,
+      actual_outcome: actualOutcome,
+      correct: String(row.predicted_outcome || '') === actualOutcome,
+      brier_score: scoreBrier(row, actualOutcome),
+      over25_actual: over25Actual,
+      over25_correct: row.over25_prob === null || row.over25_prob === undefined ? null : (Number(row.over25_prob) >= 50) === over25Actual,
+      btts_actual: bttsActual,
+      btts_correct: row.btts_prob === null || row.btts_prob === undefined ? null : (Number(row.btts_prob) >= 50) === bttsActual,
+    };
+    if (hasSupabase(cfg)) {
+      try {
+        await supaPatch(cfg, 'model_predictions', { fixture_id: `eq.${Number(row.fixture_id)}`, status: 'eq.pending' }, patch);
+        settled++;
+      } catch (error) {
+        console.warn('model prediction settle patch skipped', error?.message || error);
+      }
+    } else {
+      memory.modelPredictions.set(Number(row.fixture_id), { ...row, ...patch });
+      settled++;
+    }
+  }
+  return { checked: rows.length, settled };
+}
+
+function average(values) {
+  const rows = (values || []).map(Number).filter(Number.isFinite);
+  return rows.length ? rows.reduce((a, b) => a + b, 0) / rows.length : null;
+}
+
+function pct(part, total) {
+  return total > 0 ? Math.round((part / total) * 1000) / 10 : null;
+}
+
+function qualityBucket(rows, label) {
+  const valid = (rows || []).filter(x => typeof x.correct === 'boolean');
+  return {
+    label,
+    sample: valid.length,
+    accuracy: pct(valid.filter(x => x.correct).length, valid.length),
+    avgBrier: valid.length ? Math.round((average(valid.map(x => x.brier_score)) || 0) * 1000) / 1000 : null,
+  };
+}
+
+function buildModelQuality(settledRows, pendingRows, days) {
+  const rows = (settledRows || []).filter(x => ['home','draw','away'].includes(String(x.actual_outcome || '')));
+  const evaluated = rows.length;
+  const correct = rows.filter(x => x.correct === true).length;
+  const brier = average(rows.map(x => x.brier_score));
+  const logLossValues = rows.map(row => {
+    const key = String(row.actual_outcome || '');
+    const p = Math.max(0.01, Math.min(0.99, Number(row[`${key}_prob`] || 0) / 100));
+    return -Math.log(p);
+  });
+  const avgLogLoss = average(logLossValues);
+
+  const calibrationDefs = [
+    ['34–44%', 34, 45], ['45–54%', 45, 55], ['55–64%', 55, 65], ['65–74%', 65, 75], ['75%+', 75, 101],
+  ];
+  const calibration = calibrationDefs.map(([label, min, max]) => {
+    const group = rows.filter(x => { const p = topProbabilityValue(x); return p >= min && p < max; });
+    return {
+      label, sample: group.length,
+      avgPredicted: group.length ? Math.round((average(group.map(topProbabilityValue)) || 0) * 10) / 10 : null,
+      hitRate: pct(group.filter(x => x.correct === true).length, group.length),
+    };
+  });
+
+  const confidence = [
+    qualityBucket(rows.filter(x => Number(x.confidence_score || 0) < 55), 'Низкая'),
+    qualityBucket(rows.filter(x => Number(x.confidence_score || 0) >= 55 && Number(x.confidence_score || 0) < 72), 'Средняя'),
+    qualityBucket(rows.filter(x => Number(x.confidence_score || 0) >= 72), 'Высокая'),
+  ];
+
+  const outcome = ['home','draw','away'].map(key => {
+    const group = rows.filter(x => String(x.predicted_outcome || '') === key);
+    return { key, sample: group.length, accuracy: pct(group.filter(x => x.correct === true).length, group.length) };
+  });
+
+  const signalNames = ['market','apiPrediction','recentForm','h2h'];
+  const signals = signalNames.map(name => {
+    const group = rows.filter(x => Array.isArray(x.signal_names) && x.signal_names.includes(name));
+    return { name, sample: group.length, accuracy: pct(group.filter(x => x.correct === true).length, group.length), avgBrier: group.length ? Math.round((average(group.map(x => x.brier_score)) || 0) * 1000) / 1000 : null };
+  });
+
+  const over25Rows = rows.filter(x => typeof x.over25_correct === 'boolean');
+  const bttsRows = rows.filter(x => typeof x.btts_correct === 'boolean');
+  const recent = rows.slice(0, 12).map(row => ({
+    fixtureId: Number(row.fixture_id), kickoffAt: row.kickoff_at, league: row.league_name || '',
+    home: row.home_name || '', away: row.away_name || '',
+    score: `${Number(row.actual_home_goals)}:${Number(row.actual_away_goals)}`,
+    predictedOutcome: row.predicted_outcome || '', actualOutcome: row.actual_outcome || '',
+    predictedLabel: predictionOutcomeLabel(row.predicted_outcome, row.home_name, row.away_name),
+    topProbability: Math.round(topProbabilityValue(row) * 10) / 10,
+    correct: row.correct === true, brier: Number(row.brier_score), confidence: Number(row.confidence_score || 0) || null,
+  }));
+
+  return {
+    periodDays: days,
+    generatedAt: new Date().toISOString(),
+    sample: { settled: evaluated, pending: (pendingRows || []).length, ready: evaluated >= 20, calibrationReady: evaluated >= 50 },
+    headline: {
+      accuracy: pct(correct, evaluated),
+      avgBrier: brier === null ? null : Math.round(brier * 1000) / 1000,
+      avgLogLoss: avgLogLoss === null ? null : Math.round(avgLogLoss * 1000) / 1000,
+      avgTopProbability: evaluated ? Math.round((average(rows.map(topProbabilityValue)) || 0) * 10) / 10 : null,
+    },
+    calibration,
+    confidence,
+    outcome,
+    signals,
+    secondary: {
+      over25: { sample: over25Rows.length, accuracy: pct(over25Rows.filter(x => x.over25_correct === true).length, over25Rows.length) },
+      btts: { sample: bttsRows.length, accuracy: pct(bttsRows.filter(x => x.btts_correct === true).length, bttsRows.length) },
+    },
+    recent,
+    methodology: {
+      snapshot: 'Для каждого fixture сохраняется первый расчёт, сделанный до стартового свистка. Поздние перерасчёты не перезаписывают его.',
+      outcome: 'Точность исхода = доля матчей, где максимальная вероятность 1X2 совпала с фактическим исходом.',
+      brier: 'Brier score учитывает все три вероятности 1X2; ниже — лучше. В интерфейсе он показан вместе с размером выборки.',
+      warning: evaluated < 20 ? 'Выборка пока мала: цифры считаются технической диагностикой, а не доказанной точностью модели.' : '',
+    },
+  };
+}
+
+async function apiModelQuality(request, cfg) {
+  const url = new URL(request.url);
+  const requestedDays = Number(url.searchParams.get('days') || 90);
+  const days = [30, 90, 180, 365].includes(requestedDays) ? requestedDays : 90;
+  const since = new Date(Date.now() - days * 86400_000).toISOString();
+  let settled = [], pending = [];
+  if (hasSupabase(cfg)) {
+    try {
+      [settled, pending] = await Promise.all([
+        supaSelectMany(cfg, 'model_predictions', { status: 'eq.settled', kickoff_at: `gte.${since}` }, { limit: 500, order: 'kickoff_at.desc' }),
+        supaSelectMany(cfg, 'model_predictions', { status: 'eq.pending', kickoff_at: `gte.${since}` }, { limit: 500, order: 'kickoff_at.desc' }),
+      ]);
+    } catch (error) {
+      return json({ available: false, reason: 'Таблица backtest ещё не создана. Выполните supabase_migration_v3_6.sql.', detail: String(error?.message || error).slice(0, 180) });
+    }
+  } else {
+    const all = [...memory.modelPredictions.values()].filter(x => Date.parse(x.kickoff_at || '') >= Date.parse(since));
+    settled = all.filter(x => x.status === 'settled').sort((a,b) => Date.parse(b.kickoff_at) - Date.parse(a.kickoff_at));
+    pending = all.filter(x => x.status === 'pending');
+  }
+  return json({ available: true, ...buildModelQuality(settled, pending, days) });
+}
+
+async function settleBacktestDaily(cfg) {
+  if (!hasSupabase(cfg) || !cfg.apiFootballKey) return { skipped: 'no_persistent_database_or_provider' };
+  const d = new Date(Date.now() - 86400_000);
+  const date = d.toISOString().slice(0, 10);
+  const markerKey = `backtest:settled:${date}:v1`;
+  if (await getCache(markerKey, cfg)) return { skipped: 'already_checked', date };
+  const start = `${date}T00:00:00.000Z`;
+  const end = new Date(Date.parse(start) + 86400_000).toISOString();
+  let pending = [];
+  try {
+    pending = await supaSelectMany(cfg, 'model_predictions', { status: 'eq.pending', kickoff_at: `gte.${start}` }, { limit: 200, order: 'kickoff_at.asc' });
+  } catch (error) {
+    console.warn('daily backtest pending read skipped', error?.message || error);
+    return { skipped: 'prediction_table_unavailable' };
+  }
+  pending = pending.filter(x => Date.parse(x.kickoff_at || '') < Date.parse(end));
+  if (!pending.length) {
+    await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), pending: 0 }, cfg, 1440);
+    return { date, pending: 0, settled: 0 };
+  }
+  if (!freeQuotaHealthy(12, 3)) return { skipped: 'provider_quota_guard', date, pending: pending.length };
+  try {
+    const fixtures = await apiFootball('/fixtures', { date }, cfg);
+    const result = await settlePredictionsFromFixtures(fixtures, cfg);
+    await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), pending: pending.length, settled: result.settled }, cfg, 1440);
+    return { date, pending: pending.length, settled: result.settled };
+  } catch (error) {
+    console.warn('daily backtest settle skipped', error?.message || error);
+    return { skipped: 'provider_error', date };
   }
 }
 
@@ -2123,6 +2467,9 @@ async function apiMatches(request, cfg) {
     throw error;
   }
 
+  // Reuse the fixtures request we already made to settle tracked predictions at zero additional provider cost.
+  await settlePredictionsFromFixtures(fixtures, cfg).catch(() => null);
+
   const matches = fixtures
     .filter(f => !['CANC', 'PST', 'ABD', 'AWD', 'WO'].includes(f.fixture?.status?.short || ''))
     .map(f => {
@@ -2754,7 +3101,7 @@ async function apiAnalyze(request, cfg, user) {
   const fixtureId = Number(body?.fixtureId);
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'Некорректный fixtureId.' }, 400);
 
-  const cacheKey = `fixture:${fixtureId}:v5-match-comparison`;
+  const cacheKey = `fixture:${fixtureId}:v6-analysis-quality`;
   const cached = await getCache(cacheKey, cfg);
   if (cached) {
     await recordHistory(user.id, cached, cfg);
@@ -2776,6 +3123,8 @@ async function apiAnalyze(request, cfg, user) {
     throw error;
   }
   if (!fixture) return json({ error: 'Матч не найден.' }, 404);
+  // If this fixture has already finished, settle any earlier immutable pre-match snapshot without another football API call.
+  if (isFinishedStatus(fixture.fixture?.status?.short)) await settlePredictionsFromFixtures([fixture], cfg).catch(() => null);
 
   const homeId = fixture.teams?.home?.id, awayId = fixture.teams?.away?.id;
   const homeName = fixture.teams?.home?.name || '', awayName = fixture.teams?.away?.name || '';
@@ -2875,7 +3224,7 @@ async function apiAnalyze(request, cfg, user) {
 
   const payload = {
     generatedAt: new Date().toISOString(),
-    analysisVersion: '3.5.0-match-comparison',
+    analysisVersion: '3.6.0-analysis-quality',
     match: {
       fixtureId, date: fixture.fixture?.date || '', status: fixture.fixture?.status?.short || '',
       venue: fixture.fixture?.venue?.name || '', city: fixture.fixture?.venue?.city || '',
@@ -2912,6 +3261,7 @@ async function apiAnalyze(request, cfg, user) {
   else if (minutesToKickoff !== null && minutesToKickoff <= 120) ttl = 10;
   else if (minutesToKickoff !== null && minutesToKickoff > 360) ttl = 45;
   await setCache(cacheKey, fixtureId, payload, cfg, ttl);
+  await captureModelPrediction(payload, cfg);
   await incrementUsage(user.id, cfg);
   await recordHistory(user.id, payload, cfg);
   return json({ ...payload, cached: false, stale: false, quota: await getQuota(user.id, cfg) });
@@ -2925,7 +3275,7 @@ export default {
     if (url.pathname === '/health' || url.pathname === '/api/health') {
       return json({
         ok: true,
-        version: '3.5.0-match-comparison',
+        version: '3.6.0-analysis-quality',
         database: hasSupabase(cfg) ? 'supabase' : 'memory',
         monetization: cfg.monetizationEnabled ? 'enabled' : 'paused',
         devMode: cfg.devMode,
@@ -2975,6 +3325,7 @@ export default {
 
       if (request.method === 'GET' && url.pathname === '/api/me') return await apiMe(request, cfg, user);
       if (request.method === 'GET' && url.pathname === '/api/provider') return json({ provider: providerSnapshot() });
+      if (request.method === 'GET' && url.pathname === '/api/model-quality') return await apiModelQuality(request, cfg);
       if (url.pathname.startsWith('/api/billing/')) {
         if (!cfg.monetizationEnabled) return json({ error: 'Монетизация отложена до финального этапа проекта.' }, 404);
         if (request.method === 'GET' && url.pathname === '/api/billing/plans') return await apiBillingPlans(request, cfg, user);
@@ -3010,6 +3361,9 @@ export default {
 
   async scheduled(controller, env, ctx) {
     const cfg = config(env);
-    ctx.waitUntil(processDueReminders(cfg));
+    ctx.waitUntil(Promise.allSettled([
+      processDueReminders(cfg),
+      settleBacktestDaily(cfg),
+    ]));
   },
 };
