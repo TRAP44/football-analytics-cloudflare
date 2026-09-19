@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#111827" />
-  <title>Football Analytics · Match Comparison</title>
+  <title>Football Analytics · Analysis Quality</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
   <link rel="stylesheet" href="/styles.css" />
 </head>
@@ -218,6 +218,34 @@
             </div>
           </div>
           <div id="favoriteTeams" class="favorite-teams"></div>
+        </section>
+
+        <section class="panel model-quality-panel">
+          <div class="section-head profile-section-head model-quality-head">
+            <div>
+              <h2>🧪 Качество модели</h2>
+              <p>Backtest по прогнозам, сохранённым до начала матча.</p>
+            </div>
+            <button id="modelQualityRefreshBtn" class="icon-btn" type="button" aria-label="Обновить качество модели">↻</button>
+          </div>
+          <div class="quality-controls">
+            <label>Период
+              <select id="modelQualityPeriod">
+                <option value="30">30 дней</option>
+                <option value="90" selected>90 дней</option>
+                <option value="180">180 дней</option>
+                <option value="365">365 дней</option>
+              </select>
+            </label>
+            <span id="modelQualitySampleBadge" class="quality-sample-badge">Нет данных</span>
+          </div>
+          <div id="modelQualityStatus" class="tiny quality-status">Откройте профиль, чтобы загрузить backtest.</div>
+          <div id="modelQualityHeadline" class="quality-headline" hidden></div>
+          <div id="modelQualityCalibration" class="quality-block" hidden></div>
+          <div id="modelQualityConfidence" class="quality-block" hidden></div>
+          <div id="modelQualitySecondary" class="quality-block" hidden></div>
+          <div id="modelQualityRecent" class="quality-block" hidden></div>
+          <p class="tiny quality-method-note">Сохраняется первый предматчевый расчёт по fixture. Поздние перерасчёты не переписывают историю, поэтому статистика не «подгоняется» под результат.</p>
         </section>
 
         <section class="panel">
