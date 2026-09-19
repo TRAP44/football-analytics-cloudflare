@@ -35,7 +35,7 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '4.2.0-release-hardening';
+const APP_VERSION = '4.3.0-admin-expanded-data';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -101,6 +101,13 @@ function intEnv(value, fallback) {
   return Number.isFinite(n) ? Math.max(1, Math.floor(n)) : fallback;
 }
 
+function telegramIdList(value) {
+  return String(value || '')
+    .split(/[\s,;]+/)
+    .map(x => Number(x))
+    .filter(x => Number.isFinite(x) && x > 0);
+}
+
 function config(env) {
   return {
     devMode: boolEnv(env.DEV_MODE, false),
@@ -108,6 +115,7 @@ function config(env) {
     tavilyKey: env.TAVILY_KEY || '',
     botToken: env.TELEGRAM_BOT_TOKEN || '',
     webhookSecret: env.TELEGRAM_WEBHOOK_SECRET || '',
+    adminTelegramIds: telegramIdList(env.ADMIN_TELEGRAM_IDS),
     supabaseUrl: String(env.SUPABASE_URL || '').replace(/\/$/, ''),
     supabaseKey: env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY || '',
     cacheMinutes: intEnv(env.CACHE_MINUTES, 20),
@@ -127,6 +135,39 @@ function config(env) {
       PREMIUM: intEnv(env.PREMIUM_STARS_PRICE, BILLING_PLANS.PREMIUM.stars),
     },
   };
+}
+
+function isAdminUser(user, cfg) {
+  if (!user?.id) return false;
+  if (cfg.devMode) return true;
+  return (cfg.adminTelegramIds || []).includes(Number(user.id));
+}
+
+function publicDataCapabilities() {
+  const paid = ['PRO', 'ULTRA', 'MEGA'].includes(String(memory.provider?.plan || '').toUpperCase());
+  const healthy = paidQuotaHealthy();
+  return {
+    visibility: 'public',
+    mode: paid ? 'expanded' : 'standard',
+    label: paid ? 'Расширенное покрытие' : 'Стандартное покрытие',
+    refreshSeconds: liveRefreshSeconds(),
+    features: {
+      events: true,
+      matchStatistics: true,
+      lineupsFallback: Boolean(paid && healthy),
+      playerStats: Boolean(paid && healthy),
+      injuries: Boolean(paid && healthy),
+      liveOdds: Boolean(paid && healthy),
+      oddsMovement: Boolean(paid && healthy),
+    },
+    note: paid
+      ? 'Расширенный режим активируется автоматически при доступной квоте провайдера.'
+      : 'Сейчас приложение экономит запросы. После перехода провайдера на расширенный план дополнительные LIVE-данные включатся автоматически.',
+  };
+}
+
+function adminForbidden() {
+  return json({ error: 'Этот технический раздел доступен только администратору.', code: 'ADMIN_ONLY' }, 403);
 }
 
 function hasSupabase(cfg) {
@@ -1807,6 +1848,7 @@ function providerSnapshot() {
   else if (cooldownActive || memory.provider?.lastError === 'rate_limit') health = 'critical';
   else if (memory.provider?.lastError || (Number.isFinite(Number(memory.provider?.minuteRemaining)) && Number(memory.provider.minuteRemaining) <= 2) || (Number.isFinite(dailyUsedPct) && dailyUsedPct >= 90)) health = 'warning';
   return {
+    visibility: 'admin',
     ...(memory.provider || {}),
     dailyUsed,
     minuteUsed,
@@ -3185,7 +3227,12 @@ async function apiMe(request, cfg, user) {
       canceled: Boolean(record?.subscription_canceled),
       paymentChargeIdPresent: Boolean(record?.telegram_payment_charge_id),
     },
-    features: { monetizationEnabled: cfg.monetizationEnabled },
+    features: {
+      monetizationEnabled: cfg.monetizationEnabled,
+      isAdmin: isAdminUser(user, cfg),
+      role: isAdminUser(user, cfg) ? 'admin' : 'user',
+      dataCapabilities: publicDataCapabilities(),
+    },
     preferences,
     stats: { favorites: favorites.length, reminders: reminders.length },
   });
@@ -3367,25 +3414,25 @@ async function apiSearch(request, cfg) {
   const query = String(url.searchParams.get('q') || '').trim().slice(0, 60);
   const q = searchText(query);
   const competitions = searchKnownCompetitions(query);
-  if (!q) return json({ query: '', teams: [], competitions, provider: providerSnapshot(), hint: 'Введите название команды или турнира.' });
-  if (q.length < 3) return json({ query, teams: [], competitions, provider: providerSnapshot(), hint: 'Для поиска команды введите минимум 3 символа.' });
+  if (!q) return json({ query: '', teams: [], competitions, provider: publicDataCapabilities(), hint: 'Введите название команды или турнира.' });
+  if (q.length < 3) return json({ query, teams: [], competitions, provider: publicDataCapabilities(), hint: 'Для поиска команды введите минимум 3 символа.' });
 
   const cacheKey = `search:teams:${encodeURIComponent(q)}:v1`;
   const cached = await getCache(cacheKey, cfg);
-  if (cached?.teams) return json({ ...cached, competitions, cached: true, provider: providerSnapshot() });
+  if (cached?.teams) return json({ ...cached, competitions, cached: true, provider: publicDataCapabilities() });
 
   let rows = [];
   let warning = '';
   try {
     if (!freeQuotaHealthy(8, 2)) {
       const stale = await getStaleCache(cacheKey, cfg);
-      if (stale?.teams) return json({ ...stale, competitions, cached: true, stale: true, warning: 'Поиск показан из кэша: бережём лимит API-Football.', provider: providerSnapshot() });
-      return json({ query, teams: [], competitions, cached: false, warning: 'Поиск команд временно не запущен: бережём остаток бесплатной квоты API.', provider: providerSnapshot() });
+      if (stale?.teams) return json({ ...stale, competitions, cached: true, stale: true, warning: 'Поиск показан из кэша: бережём лимит API-Football.', provider: publicDataCapabilities() });
+      return json({ query, teams: [], competitions, cached: false, warning: 'Поиск команд временно не запущен: бережём остаток бесплатной квоты API.', provider: publicDataCapabilities() });
     }
     rows = await apiFootball('/teams', { search: query }, cfg);
   } catch (error) {
     const stale = await getStaleCache(cacheKey, cfg);
-    if (stale?.teams) return json({ ...stale, competitions, cached: true, stale: true, warning: 'Не удалось обновить поиск — показаны сохранённые результаты.', provider: providerSnapshot() });
+    if (stale?.teams) return json({ ...stale, competitions, cached: true, stale: true, warning: 'Не удалось обновить поиск — показаны сохранённые результаты.', provider: publicDataCapabilities() });
     if (isFootballRateLimitError(error)) warning = 'API-Football временно ограничил поиск команд. Повторите чуть позже.';
     else throw error;
   }
@@ -3397,7 +3444,7 @@ async function apiSearch(request, cfg) {
     .slice(0, 16);
   const payload = { query, teams, warning, refreshedAt: new Date().toISOString() };
   await setCache(cacheKey, 0, payload, cfg, 720);
-  return json({ ...payload, competitions, cached: false, provider: providerSnapshot() });
+  return json({ ...payload, competitions, cached: false, provider: publicDataCapabilities() });
 }
 
 async function apiMatches(request, cfg) {
@@ -3504,7 +3551,7 @@ async function apiMatches(request, cfg) {
     international: matches.filter(x => ['continental','national','international'].includes(x.category)).length,
     hiddenLowPriority: matches.filter(x => x.lowPriority).length,
   };
-  const payload = { date, matches, catalog, integrity: integrityRun.report, refreshedAt: new Date().toISOString(), provider: providerSnapshot() };
+  const payload = { date, matches, catalog, integrity: integrityRun.report, refreshedAt: new Date().toISOString(), provider: publicDataCapabilities() };
   const ttl = isToday ? 1 : isYesterday ? 720 : cfg.cacheMinutes;
   await setCache(cacheKey, 0, payload, cfg, ttl);
   return json({ ...payload, cached: false, stale: false });
@@ -3543,17 +3590,17 @@ async function apiTournament(request, cfg) {
 
   const cacheKey = `tournament:${leagueId}:${season}:standings:v1`;
   const cached = await getCache(cacheKey, cfg);
-  if (cached) return json({ ...cached, cached: true, stale: false, provider: providerSnapshot() });
+  if (cached) return json({ ...cached, cached: true, stale: false, provider: publicDataCapabilities() });
 
   // Таблица — дополнительный запрос. На FREE не тратим последний запрос минутной квоты.
   const minuteRemaining = Number(memory.provider?.minuteRemaining);
   if (Number.isFinite(minuteRemaining) && minuteRemaining <= 1) {
     const stale = await getStaleCache(cacheKey, cfg);
-    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Таблица показана из сохранённого кэша: минутная квота API почти исчерпана.', provider: providerSnapshot() });
+    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Таблица показана из сохранённого кэша: минутная квота API почти исчерпана.', provider: publicDataCapabilities() });
     return json({
       leagueId, season, standings: [], groups: [], available: false,
       reason: 'Таблица временно не запрашивается: бережём последний запрос минутной квоты API-Football.',
-      provider: providerSnapshot(),
+      provider: publicDataCapabilities(),
     });
   }
 
@@ -3584,14 +3631,14 @@ async function apiTournament(request, cfg) {
       reason: standings.length ? '' : 'Провайдер не вернул таблицу для этого турнира и сезона.',
     };
     await setCache(cacheKey, 0, payload, cfg, 360);
-    return json({ ...payload, cached: false, stale: false, provider: providerSnapshot() });
+    return json({ ...payload, cached: false, stale: false, provider: publicDataCapabilities() });
   } catch (error) {
     const stale = await getStaleCache(cacheKey, cfg);
-    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Не удалось обновить таблицу — показана последняя сохранённая версия.', provider: providerSnapshot() });
+    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Не удалось обновить таблицу — показана последняя сохранённая версия.', provider: publicDataCapabilities() });
     return json({
       leagueId, season, standings: [], groups: [], available: false,
       reason: `Таблица сейчас недоступна: ${String(error?.message || error).slice(0, 180)}`,
-      provider: providerSnapshot(),
+      provider: publicDataCapabilities(),
     });
   }
 }
@@ -3653,12 +3700,12 @@ async function apiTeam(request, cfg) {
   const from = fromDate.toISOString().slice(0,10), to = toDate.toISOString().slice(0,10);
   const cacheKey = `teamhub:${teamId}:${from}:${to}:v1`;
   const cached = await getCache(cacheKey, cfg);
-  if (cached) return json({ ...cached, standing: await cachedTeamStanding(teamId, cached.primaryCompetition, cfg), cached:true, stale:false, provider:providerSnapshot() });
+  if (cached) return json({ ...cached, standing: await cachedTeamStanding(teamId, cached.primaryCompetition, cfg), cached:true, stale:false, provider:publicDataCapabilities() });
   let fixtures;
   try { fixtures = await apiFootball('/fixtures', { team:teamId, from, to }, cfg); }
   catch (error) {
     const stale = await getStaleCache(cacheKey, cfg);
-    if (stale && isFootballRateLimitError(error)) return json({ ...stale, standing:await cachedTeamStanding(teamId, stale.primaryCompetition, cfg), cached:true, stale:true, warning:'Страница команды показана из последнего кэша из-за лимита API.', provider:providerSnapshot() });
+    if (stale && isFootballRateLimitError(error)) return json({ ...stale, standing:await cachedTeamStanding(teamId, stale.primaryCompetition, cfg), cached:true, stale:true, warning:'Страница команды показана из последнего кэша из-за лимита API.', provider:publicDataCapabilities() });
     throw error;
   }
   const usable = (fixtures||[]).filter(f => !['CANC','ABD','AWD','WO'].includes(String(f.fixture?.status?.short||'')));
@@ -3678,7 +3725,7 @@ async function apiTeam(request, cfg) {
   const standing = await cachedTeamStanding(teamId, primaryCompetition, cfg);
   const payload = { team, primaryCompetition, standing, form, recent, upcoming, liveNow:upcoming.find(x=>x.live)||null, nextMatch:upcoming.find(x=>!x.live)||upcoming[0]||null, refreshedAt:new Date().toISOString() };
   await setCache(cacheKey, teamId, payload, cfg, 120);
-  return json({ ...payload, cached:false, stale:false, provider:providerSnapshot() });
+  return json({ ...payload, cached:false, stale:false, provider:publicDataCapabilities() });
 }
 
 
@@ -3776,11 +3823,11 @@ async function apiTeamIntelligence(request, cfg) {
   if (!teamId || !leagueId || !season) return json({ error: 'teamId, leagueId и season обязательны.' }, 400);
   const cacheKey = `team:intelligence:${teamId}:${leagueId}:${season}:v1`;
   const cached = await getCache(cacheKey, cfg);
-  if (cached) return json({ ...cached, cached: true, stale: false, provider: providerSnapshot() });
+  if (cached) return json({ ...cached, cached: true, stale: false, provider: publicDataCapabilities() });
   if (!freeQuotaHealthy(15, 2)) {
     const stale = await getStaleCache(cacheKey, cfg);
-    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Сезонная статистика показана из кэша: бережём лимит API-Football.', provider: providerSnapshot() });
-    return json({ available: false, quotaGuard: true, reason: 'Сезонная статистика временно не запрашивается: сохраняем остаток квоты API-Football.', provider: providerSnapshot() });
+    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Сезонная статистика показана из кэша: бережём лимит API-Football.', provider: publicDataCapabilities() });
+    return json({ available: false, quotaGuard: true, reason: 'Сезонная статистика временно не запрашивается: сохраняем остаток квоты API-Football.', provider: publicDataCapabilities() });
   }
   try {
     const row = await apiFootball('/teams/statistics', { team: teamId, league: leagueId, season }, cfg, { responseType: 'any' });
@@ -3791,11 +3838,11 @@ async function apiTeamIntelligence(request, cfg) {
     });
     const payload = { available: stats.available, stats, refreshedAt: new Date().toISOString(), reason: stats.available ? '' : 'Провайдер не вернул сезонную статистику для этой команды.' };
     await setCache(cacheKey, teamId, payload, cfg, 360);
-    return json({ ...payload, cached: false, stale: false, provider: providerSnapshot() });
+    return json({ ...payload, cached: false, stale: false, provider: publicDataCapabilities() });
   } catch (error) {
     const stale = await getStaleCache(cacheKey, cfg);
-    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Не удалось обновить сезонную статистику — показана сохранённая версия.', provider: providerSnapshot() });
-    return json({ available: false, reason: `Сезонная статистика сейчас недоступна: ${String(error?.message || error).slice(0, 180)}`, provider: providerSnapshot() });
+    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Не удалось обновить сезонную статистику — показана сохранённая версия.', provider: publicDataCapabilities() });
+    return json({ available: false, reason: `Сезонная статистика сейчас недоступна: ${String(error?.message || error).slice(0, 180)}`, provider: publicDataCapabilities() });
   }
 }
 
@@ -3847,22 +3894,22 @@ async function apiTeamSquad(request, cfg) {
   if (!teamId) return json({ error: 'teamId обязателен.' }, 400);
   const cacheKey = `team:squad:${teamId}:v1`;
   const cached = await getCache(cacheKey, cfg);
-  if (cached) return json({ ...cached, cached: true, stale: false, provider: providerSnapshot() });
+  if (cached) return json({ ...cached, cached: true, stale: false, provider: publicDataCapabilities() });
   if (!freeQuotaHealthy(10, 2)) {
     const stale = await getStaleCache(cacheKey, cfg);
-    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Состав показан из кэша: бережём лимит API-Football.', provider: providerSnapshot() });
-    return json({ available: false, quotaGuard: true, reason: 'Состав временно не запрашивается: сохраняем остаток квоты API-Football.', provider: providerSnapshot() });
+    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Состав показан из кэша: бережём лимит API-Football.', provider: publicDataCapabilities() });
+    return json({ available: false, quotaGuard: true, reason: 'Состав временно не запрашивается: сохраняем остаток квоты API-Football.', provider: publicDataCapabilities() });
   }
   try {
     const rows = await apiFootball('/players/squads', { team: teamId }, cfg);
     const squad = normalizeTeamSquad(rows, teamId);
     const payload = { ...squad, refreshedAt: new Date().toISOString(), reason: squad.available ? '' : 'Провайдер не вернул текущий состав команды.' };
     await setCache(cacheKey, teamId, payload, cfg, 720);
-    return json({ ...payload, cached: false, stale: false, provider: providerSnapshot() });
+    return json({ ...payload, cached: false, stale: false, provider: publicDataCapabilities() });
   } catch (error) {
     const stale = await getStaleCache(cacheKey, cfg);
-    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Не удалось обновить состав — показана сохранённая версия.', provider: providerSnapshot() });
-    return json({ available: false, reason: `Состав сейчас недоступен: ${String(error?.message || error).slice(0, 180)}`, provider: providerSnapshot() });
+    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Не удалось обновить состав — показана сохранённая версия.', provider: publicDataCapabilities() });
+    return json({ available: false, reason: `Состав сейчас недоступен: ${String(error?.message || error).slice(0, 180)}`, provider: publicDataCapabilities() });
   }
 }
 
@@ -3872,7 +3919,7 @@ async function apiMatchCenter(request, cfg) {
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'fixtureId обязателен.' }, 400);
 
   // Shared across all users. During LIVE it expires after 60 seconds.
-  const baseCacheKey = `match-center:${fixtureId}:v5-integrity`;
+  const baseCacheKey = `match-center:${fixtureId}:v6-expanded-data`;
   const cached = await getCache(baseCacheKey, cfg);
   if (cached) return json({ ...cached, cached: true });
 
@@ -3924,6 +3971,25 @@ async function apiMatchCenter(request, cfg) {
     playerRows = await apiFootball('/fixtures/players', { fixture: fixtureId }, cfg).catch(() => []);
   }
 
+  // v4.3 Expanded Football Data: once a paid provider plan is active and the
+  // quota is healthy, enrich Match Center with official lineups and absences.
+  // On FREE these calls stay disabled, so the current economical behaviour is preserved.
+  let lineupRows = embedded.lineups;
+  let injuryRows = [];
+  const kickoffMsCenter = fixture.fixture?.date ? Date.parse(fixture.fixture.date) : NaN;
+  const minutesToKickoffCenter = Number.isFinite(kickoffMsCenter)
+    ? Math.round((kickoffMsCenter - Date.now()) / 60000)
+    : null;
+  const lineupsWindow = live || finished || (
+    minutesToKickoffCenter !== null && minutesToKickoffCenter <= 120 && minutesToKickoffCenter >= -300
+  );
+  if (!limitedCoverage && paidQuotaHealthy() && lineupsWindow && !lineupRows.length) {
+    lineupRows = await apiFootball('/fixtures/lineups', { fixture: fixtureId }, cfg).catch(() => []);
+  }
+  if (!limitedCoverage && paidQuotaHealthy() && !finished) {
+    injuryRows = await apiFootball('/injuries', { fixture: fixtureId }, cfg).catch(() => []);
+  }
+
   let liveOdds = null;
   let oddsMovement = null;
   if (live && !limitedCoverage && cfg.liveOddsEnabled && paidQuotaHealthy()) {
@@ -3938,6 +4004,8 @@ async function apiMatchCenter(request, cfg) {
   const refreshSeconds = live ? liveRefreshSeconds() : 0;
   const formattedStatistics = formatLiveStatistics(statistics, homeId, awayId);
   const playerLeaders = formatPlayerLeaders(playerRows, homeId, awayId);
+  const lineups = formatLineups(lineupRows, homeId, awayId);
+  const absences = formatAbsences(injuryRows, homeId, awayId);
   const pressure = live ? livePressure(formattedStatistics) : null;
 
   const payload = {
@@ -3963,17 +4031,20 @@ async function apiMatchCenter(request, cfg) {
     statistics: formattedStatistics,
     livePressure: pressure,
     playerLeaders,
-    lineups: formatLineups(embedded.lineups, homeId, awayId),
+    lineups,
+    absences,
     availability: {
       events: events.length > 0,
       statistics: statistics.length > 0,
-      lineups: embedded.lineups.length > 0,
+      lineups: lineupRows.length > 0,
       players: playerLeaders.home.length > 0 || playerLeaders.away.length > 0,
+      injuries: injuryRows.length > 0,
       limitedCoverage,
     },
+    dataCapabilities: publicDataCapabilities(),
     liveOdds,
     oddsMovement,
-    provider: providerSnapshot(),
+    provider: publicDataCapabilities(),
     refreshSeconds,
     note: limitedCoverage
       ? 'Молодёжный/резервный турнир: в бесплатном режиме не делаем дополнительные запросы за событиями и статистикой, чтобы не тратить лимит API. Счёт и статус обновляются.'
@@ -4216,7 +4287,7 @@ async function apiAnalyze(request, cfg, user) {
 
   const payload = {
     generatedAt: new Date().toISOString(),
-    analysisVersion: '4.2.0-release-hardening',
+    analysisVersion: '4.3.0-admin-expanded-data',
     match: {
       fixtureId, date: fixture.fixture?.date || '', status: fixture.fixture?.status?.short || '',
       venue: fixture.fixture?.venue?.name || '', city: fixture.fixture?.venue?.city || '',
@@ -4246,18 +4317,19 @@ async function apiAnalyze(request, cfg, user) {
       method: 'Рынок, API prediction, форма и H2H объединяются динамически. v3.7 может безопасно корректировать веса и резкость вероятностей только после backtest-проверки на holdout-матчах.',
     },
     dataPolicy: {
-      providerPlan,
+      dataMode: paid ? 'expanded' : 'standard',
       mode: paid ? 'full' : healthyFree ? 'balanced-free' : 'quota-saver',
       availableSignals,
       skipped,
     },
+    dataCapabilities: publicDataCapabilities(),
     market, apiPrediction, recentForm: { home: homeForm, away: awayForm }, goalModel, comparison, absences, lineups, h2h,
     insights: notes.factors, risks: [...(notes.risks || []), ...skipped], news: web,
     completeness: {
       score: [fixture, market, apiPrediction, injuries.length, h2hRows.length, lineupsRows.length, web.answer, homeForm?.overall, awayForm?.overall, goalModel].filter(Boolean).length,
       max: 10,
     },
-    provider: providerSnapshot(),
+    provider: publicDataCapabilities(),
     disclaimer: 'Расчёт основан на доступных статистических сигналах и не гарантирует исход матча. Это не финансовая рекомендация.',
   };
 
@@ -4288,34 +4360,18 @@ export default {
         performanceUx: 'enabled',
         visualDesign: 'enabled',
         releaseHardening: 'enabled',
+        adminSecurity: 'enabled',
+        expandedDataReady: 'enabled',
         devMode: cfg.devMode,
       });
     }
 
     if (url.pathname === '/health/supabase') {
-      if (!cfg.supabaseUrl || !cfg.supabaseKey) {
-        return json({
-          ok: false,
-          reason: 'missing_runtime_env',
-          supabaseUrlPresent: Boolean(cfg.supabaseUrl),
-          supabaseKeyPresent: Boolean(cfg.supabaseKey),
-        }, 503);
-      }
-      try {
-        const testUrl = new URL(`${cfg.supabaseUrl}/rest/v1/users`);
-        testUrl.searchParams.set('select', 'telegram_id');
-        testUrl.searchParams.set('limit', '1');
-        const r = await fetch(testUrl, { headers: supaHeaders(cfg) });
-        const body = await r.text();
-        return json({
-          ok: r.ok,
-          status: r.status,
-          database: 'supabase',
-          responsePreview: body.slice(0, 180),
-        }, r.ok ? 200 : 502);
-      } catch (error) {
-        return json({ ok: false, database: 'supabase', error: String(error?.message || error) }, 502);
-      }
+      return json({
+        ok: false,
+        error: 'Техническая проверка Supabase перенесена в защищённую админ-диагностику Mini App.',
+        code: 'ADMIN_DIAGNOSTICS_ONLY',
+      }, 404);
     }
 
     if (request.method === 'POST' && url.pathname === '/telegram/webhook') {
@@ -4336,11 +4392,30 @@ export default {
       if (!user) return json({ error: 'Откройте приложение внутри Telegram.' }, 401);
 
       if (request.method === 'GET' && url.pathname === '/api/me') return await apiMe(request, cfg, user);
-      if (request.method === 'GET' && url.pathname === '/api/provider') return json({ provider: providerSnapshot() });
-      if (request.method === 'GET' && url.pathname === '/api/diagnostics') return await apiDiagnostics(request, cfg);
-      if (request.method === 'GET' && url.pathname === '/api/release-readiness') return await apiReleaseReadiness(request, cfg);
-      if (request.method === 'GET' && url.pathname === '/api/data-integrity') return await apiDataIntegrity(request, cfg);
-      if (request.method === 'GET' && url.pathname === '/api/model-quality') return await apiModelQuality(request, cfg);
+      if (request.method === 'GET' && url.pathname === '/api/data-capabilities') return json({ dataCapabilities: publicDataCapabilities() });
+
+      // v4.3 Admin Security: technical endpoints are protected server-side.
+      // Hiding cards in the UI is not considered authorization.
+      if (request.method === 'GET' && url.pathname === '/api/provider') {
+        if (!isAdminUser(user, cfg)) return adminForbidden();
+        return json({ provider: providerSnapshot() });
+      }
+      if (request.method === 'GET' && url.pathname === '/api/diagnostics') {
+        if (!isAdminUser(user, cfg)) return adminForbidden();
+        return await apiDiagnostics(request, cfg);
+      }
+      if (request.method === 'GET' && url.pathname === '/api/release-readiness') {
+        if (!isAdminUser(user, cfg)) return adminForbidden();
+        return await apiReleaseReadiness(request, cfg);
+      }
+      if (request.method === 'GET' && url.pathname === '/api/data-integrity') {
+        if (!isAdminUser(user, cfg)) return adminForbidden();
+        return await apiDataIntegrity(request, cfg);
+      }
+      if (request.method === 'GET' && url.pathname === '/api/model-quality') {
+        if (!isAdminUser(user, cfg)) return adminForbidden();
+        return await apiModelQuality(request, cfg);
+      }
       if (url.pathname.startsWith('/api/billing/')) {
         if (!cfg.monetizationEnabled) return json({ error: 'Монетизация отложена до финального этапа проекта.' }, 404);
         if (request.method === 'GET' && url.pathname === '/api/billing/plans') return await apiBillingPlans(request, cfg, user);
@@ -4377,7 +4452,7 @@ export default {
         error: error?.message || 'Ошибка сервера.',
         code: error?.code || 'SERVER_ERROR',
         retryAfter: retryAfter || undefined,
-        provider: providerSnapshot(),
+        provider: publicDataCapabilities(),
       }, status);
     }
   },
