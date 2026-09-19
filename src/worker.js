@@ -34,7 +34,7 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '4.0.0-performance-ux';
+const APP_VERSION = '4.1.0-visual-design';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -4138,7 +4138,7 @@ async function apiAnalyze(request, cfg, user) {
 
   const payload = {
     generatedAt: new Date().toISOString(),
-    analysisVersion: '4.0.0-performance-ux',
+    analysisVersion: '4.1.0-visual-design',
     match: {
       fixtureId, date: fixture.fixture?.date || '', status: fixture.fixture?.status?.short || '',
       venue: fixture.fixture?.venue?.name || '', city: fixture.fixture?.venue?.city || '',
@@ -4208,6 +4208,7 @@ export default {
         observability: 'enabled',
         dataIntegrity: 'enabled',
         performanceUx: 'enabled',
+        visualDesign: 'enabled',
         devMode: cfg.devMode,
       });
     }
