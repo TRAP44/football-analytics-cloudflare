@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '4.4.0-match-center-2';
+const CLIENT_VERSION = '4.5.0-smart-match-insights';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -2010,6 +2010,65 @@ function bindMatchCenterTabs() {
   setMatchCenterTab(state.currentCenterTab || 'summary');
 }
 
+
+function insightSideLabel(side, match) {
+  if (side === 'home') return match.home?.name || 'Хозяева';
+  if (side === 'away') return match.away?.name || 'Гости';
+  return 'Матч';
+}
+
+function smartInsightCardHtml(insight, match) {
+  const sideClass = insight.side === 'home' ? 'home' : insight.side === 'away' ? 'away' : 'neutral';
+  const metrics = Array.isArray(insight.metrics) && insight.metrics.length
+    ? `<div class="insight-metrics">${insight.metrics.map(m => `<span>${escapeHtml(m.label || '')}: <b>${m.home ?? '—'} — ${m.away ?? '—'}</b></span>`).join('')}</div>`
+    : '';
+  return `<article class="smart-insight-card ${sideClass} ${escapeHtml(insight.importance || 'medium')}">
+    <div class="smart-insight-icon">${escapeHtml(insight.icon || '💡')}</div>
+    <div class="smart-insight-body">
+      <div class="smart-insight-kicker">${escapeHtml(insightSideLabel(insight.side, match))}</div>
+      <h3>${escapeHtml(insight.title || 'Наблюдение')}</h3>
+      <p>${escapeHtml(insight.text || '')}</p>
+      ${metrics}
+    </div>
+  </article>`;
+}
+
+function smartInsightsHeroHtml(si, match) {
+  if (!si?.available) {
+    return `<section class="panel smart-story-panel is-empty">
+      <div class="center-section-title"><div><h2>🧠 Умные инсайты</h2><p>Автоматическое объяснение происходящего</p></div></div>
+      <div class="empty compact-empty">Пока недостаточно статистики и событий для содержательного вывода.</div>
+    </section>`;
+  }
+  const first = si.insights?.[0];
+  return `<section class="panel smart-story-panel">
+    <div class="smart-story-top">
+      <div><span class="smart-story-label">🧠 КАРТИНА МАТЧА</span><h2>${escapeHtml(si.headline || '')}</h2></div>
+      <div class="smart-data-score"><strong>${Number(si.dataScore || 0)}%</strong><span>${escapeHtml(si.dataLabel || 'Покрытие')}</span></div>
+    </div>
+    <p class="smart-story-summary">${escapeHtml(si.summary || '')}</p>
+    ${first ? `<div class="smart-story-focus"><span>${escapeHtml(first.icon || '💡')}</span><b>${escapeHtml(insightSideLabel(first.side, match))}</b><small>${escapeHtml(first.importance === 'high' ? 'Сильный сигнал' : first.importance === 'medium' ? 'Заметный сигнал' : 'Наблюдение')}</small></div>` : ''}
+    <button class="text-btn smart-open-insights" type="button">Все инсайты →</button>
+  </section>`;
+}
+
+function smartInsightsFullHtml(si, match) {
+  if (!si?.available) {
+    return `<div class="empty"><strong>Недостаточно данных</strong><p>Когда появятся статистика и события, здесь будут автоматические выводы по ходу матча.</p></div>`;
+  }
+  return `<div class="smart-insights-full">
+    <section class="panel smart-insight-summary-panel">
+      <div class="smart-story-top">
+        <div><span class="smart-story-label">ТЕКУЩАЯ КАРТИНА</span><h2>${escapeHtml(si.headline || '')}</h2></div>
+        <div class="smart-data-score"><strong>${Number(si.dataScore || 0)}%</strong><span>${escapeHtml(si.dataLabel || '')}</span></div>
+      </div>
+      <p>${escapeHtml(si.summary || '')}</p>
+    </section>
+    <div class="smart-insight-list">${(si.insights || []).map(x => smartInsightCardHtml(x, match)).join('')}</div>
+    <section class="panel smart-methodology"><strong>Как это считается</strong><p>${escapeHtml(si.methodology || '')}</p></section>
+  </div>`;
+}
+
 function renderMatchCenter(d) {
   const previousFixture = Number(state.currentCenter?.match?.fixtureId || 0);
   state.currentCenter = d;
@@ -2069,6 +2128,7 @@ function renderMatchCenter(d) {
     <div class="center-tabs-wrap">
       <div class="center-tabs" role="tablist" aria-label="Разделы матча">
         <button class="center-tab-btn" data-center-tab="summary" type="button">Обзор</button>
+        <button class="center-tab-btn" data-center-tab="insights" type="button">Инсайты</button>
         <button class="center-tab-btn" data-center-tab="timeline" type="button">Хронология</button>
         <button class="center-tab-btn" data-center-tab="stats" type="button">Статистика</button>
         <button class="center-tab-btn" data-center-tab="lineups" type="button">Составы</button>
@@ -2078,6 +2138,7 @@ function renderMatchCenter(d) {
     </div>
 
     <div class="center-tab-panel" data-center-panel="summary">
+      ${smartInsightsHeroHtml(d.smartInsights, m)}
       ${livePressureHtml(d.livePressure, m)}
       <section class="panel">
         <div class="center-section-title"><div><h2>Ключевые показатели</h2><p>Самые полезные метрики в одном экране</p></div><span class="coverage-badge">${escapeHtml(d.dataCapabilities?.label || 'Покрытие данных')}</span></div>
@@ -2093,6 +2154,10 @@ function renderMatchCenter(d) {
         ${centerCoverageHtml(d)}
         ${d.availability?.limitedCoverage ? '<div class="coverage-badge limited">Ограниченное покрытие · экономим API-лимит</div>' : ''}
       </section>
+    </div>
+
+    <div class="center-tab-panel" data-center-panel="insights">
+      ${smartInsightsFullHtml(d.smartInsights, m)}
     </div>
 
     <div class="center-tab-panel" data-center-panel="timeline">
@@ -2133,6 +2198,7 @@ function renderMatchCenter(d) {
   `;
 
   bindMatchCenterTabs();
+  document.querySelectorAll('.smart-open-insights').forEach(btn => btn.addEventListener('click', () => setMatchCenterTab('insights', true)));
 
   document.querySelectorAll('[data-center-team]').forEach(btn => btn.addEventListener('click', () => {
     const teamId = Number(btn.dataset.centerTeam || 0);
