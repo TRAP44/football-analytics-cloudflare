@@ -9,10 +9,27 @@ const memory = {
   oddsSnapshots: new Map(),
   billingPayments: new Map(),
   modelPredictions: new Map(),
-  provider: { name: 'API-Football', plan: 'UNKNOWN', dailyLimit: null, dailyRemaining: null, minuteLimit: null, minuteRemaining: null, updatedAt: null, cooldownUntil: null, lastError: '' },
+  opsEvents: [],
+  telemetry: {
+    startedAt: new Date().toISOString(),
+    apiRequests: 0,
+    apiSuccess: 0,
+    apiErrors: 0,
+    rateLimits: 0,
+    cacheHits: 0,
+    cacheMisses: 0,
+    staleCacheHits: 0,
+    cacheWrites: 0,
+    cacheWriteErrors: 0,
+    supabaseErrors: 0,
+    routeErrors: 0,
+  },
+  provider: { name: 'API-Football', plan: 'UNKNOWN', dailyLimit: null, dailyRemaining: null, minuteLimit: null, minuteRemaining: null, updatedAt: null, cooldownUntil: null, lastError: '', lastStatus: null, lastLatencyMs: null, lastRequestAt: null, lastSuccessAt: null },
 };
 
 const enc = new TextEncoder();
+const APP_VERSION = '3.8.0-reliability-observability';
+const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
   defaultFilter: 'top',
@@ -89,6 +106,7 @@ function config(env) {
     // Старый webhook может оставаться настроенным: pre-checkout будет отклонён,
     // а UI оплаты не показывается, пока флаг не включён явно.
     monetizationEnabled: boolEnv(env.MONETIZATION_ENABLED, false),
+    opsRetentionDays: intEnv(env.OPS_RETENTION_DAYS, 14),
     limits: {
       FREE: intEnv(env.FREE_DAILY_LIMIT, 3),
       PRO: intEnv(env.PRO_DAILY_LIMIT, 20),
@@ -182,6 +200,119 @@ async function supaPatch(cfg, table, filters, patch) {
     const text = await r.text().catch(() => '');
     throw new Error(`Supabase ${table}: HTTP ${r.status}${text ? ` — ${text.slice(0, 180)}` : ''}`);
   }
+}
+
+async function supaDelete(cfg, table, filters = {}) {
+  const url = new URL(`${cfg.supabaseUrl}/rest/v1/${table}`);
+  for (const [k, v] of Object.entries(filters || {})) url.searchParams.set(k, v);
+  const r = await fetch(url, {
+    method: 'DELETE',
+    headers: supaHeaders(cfg, { Prefer: 'return=minimal' }),
+  });
+  if (!r.ok) {
+    const text = await r.text().catch(() => '');
+    throw new Error(`Supabase ${table}: HTTP ${r.status}${text ? ` — ${text.slice(0, 180)}` : ''}`);
+  }
+}
+
+function bumpTelemetry(key, amount = 1) {
+  if (!memory.telemetry) return;
+  const current = Number(memory.telemetry[key] || 0);
+  memory.telemetry[key] = current + Number(amount || 0);
+}
+
+function redactOpsString(value, max = 500) {
+  return String(value ?? '')
+    .replace(/bot\d+:[A-Za-z0-9_-]+/g, 'bot[redacted]')
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [redacted]')
+    .replace(/sb_secret_[A-Za-z0-9_-]+/gi, 'sb_secret_[redacted]')
+    .replace(/x-apisports-key\s*[:=]\s*[^\s,;]+/gi, 'x-apisports-key=[redacted]')
+    .slice(0, max);
+}
+
+function safeOpsMetadata(meta = {}) {
+  const out = {};
+  for (const [key, value] of Object.entries(meta || {})) {
+    if (/token|secret|password|authorization|api.?key|init.?data/i.test(key)) continue;
+    if (value === null || value === undefined) continue;
+    if (typeof value === 'number' || typeof value === 'boolean') out[key] = value;
+    else if (typeof value === 'string') out[key] = redactOpsString(value, 240);
+    else if (Array.isArray(value)) out[key] = value.slice(0, 12).map(x => typeof x === 'string' ? redactOpsString(x, 120) : x);
+    else if (typeof value === 'object') {
+      try { out[key] = JSON.parse(redactOpsString(JSON.stringify(value), 600)); }
+      catch { out[key] = redactOpsString(String(value), 240); }
+    }
+  }
+  return out;
+}
+
+async function recordOpsEvent(cfg, event = {}) {
+  const row = {
+    created_at: new Date().toISOString(),
+    severity: ['info','warning','error','critical'].includes(String(event.severity || '')) ? String(event.severity) : 'info',
+    source: redactOpsString(event.source || 'worker', 80),
+    event_type: redactOpsString(event.eventType || 'runtime', 100),
+    code: redactOpsString(event.code || '', 100),
+    message: redactOpsString(event.message || '', 500),
+    endpoint: redactOpsString(event.endpoint || '', 160),
+    status: Number.isFinite(Number(event.status)) ? Number(event.status) : null,
+    duration_ms: Number.isFinite(Number(event.durationMs)) ? Math.max(0, Math.round(Number(event.durationMs))) : null,
+    metadata: safeOpsMetadata(event.meta || {}),
+  };
+  memory.opsEvents.unshift(row);
+  memory.opsEvents = memory.opsEvents.slice(0, MAX_MEMORY_OPS_EVENTS);
+  if (!hasSupabase(cfg)) return row;
+  try {
+    const url = new URL(`${cfg.supabaseUrl}/rest/v1/ops_events`);
+    await fetch(url, {
+      method: 'POST',
+      headers: supaHeaders(cfg, { Prefer: 'return=minimal' }),
+      body: JSON.stringify(row),
+    });
+  } catch {
+    // Observability must never become a new failure mode for the product.
+  }
+  return row;
+}
+
+async function cleanupOpsEvents(cfg) {
+  if (!hasSupabase(cfg)) return { skipped: true };
+  const days = Math.max(1, Number(cfg.opsRetentionDays || 14));
+  const cutoff = new Date(Date.now() - days * 86400_000).toISOString();
+  try {
+    await supaDelete(cfg, 'ops_events', { created_at: `lt.${cutoff}` });
+    return { ok: true, cutoff };
+  } catch (error) {
+    return { ok: false, error: redactOpsString(error?.message || error, 180) };
+  }
+}
+
+function telemetrySnapshot() {
+  const t = memory.telemetry || {};
+  const requests = Number(t.apiRequests || 0);
+  const hits = Number(t.cacheHits || 0);
+  const misses = Number(t.cacheMisses || 0);
+  const stale = Number(t.staleCacheHits || 0);
+  const cacheLookups = hits + misses + stale;
+  return {
+    startedAt: t.startedAt || null,
+    uptimeSeconds: t.startedAt ? Math.max(0, Math.floor((Date.now() - Date.parse(t.startedAt)) / 1000)) : null,
+    apiRequests: requests,
+    apiSuccess: Number(t.apiSuccess || 0),
+    apiErrors: Number(t.apiErrors || 0),
+    rateLimits: Number(t.rateLimits || 0),
+    quotaBlocks: Number(t.quotaBlocks || 0),
+    apiSuccessRate: requests ? Math.round((Number(t.apiSuccess || 0) / requests) * 1000) / 10 : null,
+    cacheHits: hits,
+    cacheMisses: misses,
+    staleCacheHits: stale,
+    cacheWrites: Number(t.cacheWrites || 0),
+    cacheWriteErrors: Number(t.cacheWriteErrors || 0),
+    cacheHitRate: cacheLookups ? Math.round((hits / cacheLookups) * 1000) / 10 : null,
+    supabaseErrors: Number(t.supabaseErrors || 0),
+    routeErrors: Number(t.routeErrors || 0),
+    note: 'Runtime counters describe the current Cloudflare Worker isolate; provider quota values come from API-Football response headers.',
+  };
 }
 
 function bytesToHex(bytes) {
@@ -630,18 +761,62 @@ async function apiBillingSubscription(request, cfg, user) {
 }
 
 async function getCacheEntry(cacheKey, cfg, allowExpired = false) {
-  if (hasSupabase(cfg)) {
-    const row = await supaSelectOne(cfg, 'analysis_cache', { cache_key: `eq.${cacheKey}` });
-    if (!row) return null;
-    const expired = new Date(row.expires_at) <= new Date();
-    if (expired && !allowExpired) return null;
-    return { payload: row.payload, expired, expiresAt: row.expires_at };
+  // L1 cache inside the current Worker isolate. This reduces Supabase reads and
+  // also gives us a tiny fallback during a transient database problem.
+  const local = memory.cache.get(cacheKey);
+  if (local && local.expiresAt > Date.now()) {
+    bumpTelemetry('cacheHits');
+    return { payload: local.payload, expired: false, expiresAt: new Date(local.expiresAt).toISOString(), layer: 'memory' };
   }
-  const item = memory.cache.get(cacheKey);
-  if (!item) return null;
-  const expired = item.expiresAt <= Date.now();
-  if (expired && !allowExpired) return null;
-  return { payload: item.payload, expired, expiresAt: new Date(item.expiresAt).toISOString() };
+
+  if (hasSupabase(cfg)) {
+    try {
+      const row = await supaSelectOne(cfg, 'analysis_cache', { cache_key: `eq.${cacheKey}` });
+      if (!row) {
+        bumpTelemetry('cacheMisses');
+        if (allowExpired && local) {
+          bumpTelemetry('staleCacheHits');
+          return { payload: local.payload, expired: true, expiresAt: new Date(local.expiresAt).toISOString(), layer: 'memory-stale' };
+        }
+        return null;
+      }
+      const expiresAtMs = Date.parse(row.expires_at);
+      const expired = Number.isFinite(expiresAtMs) ? expiresAtMs <= Date.now() : true;
+      memory.cache.set(cacheKey, { payload: row.payload, expiresAt: Number.isFinite(expiresAtMs) ? expiresAtMs : Date.now() - 1 });
+      if (expired && !allowExpired) {
+        bumpTelemetry('cacheMisses');
+        return null;
+      }
+      if (expired) bumpTelemetry('staleCacheHits');
+      else bumpTelemetry('cacheHits');
+      return { payload: row.payload, expired, expiresAt: row.expires_at, layer: 'supabase' };
+    } catch (error) {
+      bumpTelemetry('supabaseErrors');
+      if (local && (allowExpired || local.expiresAt > Date.now())) {
+        if (local.expiresAt <= Date.now()) bumpTelemetry('staleCacheHits');
+        else bumpTelemetry('cacheHits');
+        recordOpsEvent(cfg, {
+          severity: 'warning', source: 'cache', eventType: 'supabase_cache_read_fallback', code: 'CACHE_DB_READ',
+          message: error?.message || error, meta: { cacheKey },
+        }).catch(() => {});
+        return { payload: local.payload, expired: local.expiresAt <= Date.now(), expiresAt: new Date(local.expiresAt).toISOString(), layer: 'memory-fallback' };
+      }
+      throw error;
+    }
+  }
+
+  if (!local) {
+    bumpTelemetry('cacheMisses');
+    return null;
+  }
+  const expired = local.expiresAt <= Date.now();
+  if (expired && !allowExpired) {
+    bumpTelemetry('cacheMisses');
+    return null;
+  }
+  if (expired) bumpTelemetry('staleCacheHits');
+  else bumpTelemetry('cacheHits');
+  return { payload: local.payload, expired, expiresAt: new Date(local.expiresAt).toISOString(), layer: 'memory' };
 }
 
 async function getCache(cacheKey, cfg) {
@@ -655,18 +830,29 @@ async function getStaleCache(cacheKey, cfg) {
 async function setCache(cacheKey, fixtureId, payload, cfg, minutes = cfg.cacheMinutes) {
   const ttlMinutes = Number.isFinite(Number(minutes)) ? Math.max(1 / 6, Number(minutes)) : cfg.cacheMinutes;
   const expiresAt = new Date(Date.now() + ttlMinutes * 60_000).toISOString();
-  if (hasSupabase(cfg)) {
+  const expiresAtMs = Date.parse(expiresAt);
+  // Always keep an L1 copy. Supabase remains the persistent/shared cache.
+  memory.cache.set(cacheKey, { payload, expiresAt: expiresAtMs });
+  bumpTelemetry('cacheWrites');
+  if (!hasSupabase(cfg)) return;
+  try {
     await supaUpsert(cfg, 'analysis_cache', {
       cache_key: cacheKey,
       fixture_id: Number(fixtureId),
       payload,
       expires_at: expiresAt,
     }, 'cache_key');
-  } else {
-    memory.cache.set(cacheKey, { payload, expiresAt: Date.parse(expiresAt) });
+  } catch (error) {
+    bumpTelemetry('cacheWriteErrors');
+    bumpTelemetry('supabaseErrors');
+    recordOpsEvent(cfg, {
+      severity: 'warning', source: 'cache', eventType: 'supabase_cache_write_fallback', code: 'CACHE_DB_WRITE',
+      message: error?.message || error, meta: { cacheKey, fixtureId: Number(fixtureId || 0) },
+    }).catch(() => {});
+    // Cache persistence is an optimization. Do not fail a successful user request
+    // only because the shared cache could not be written.
   }
 }
-
 
 function predictionOutcomeKey(probabilities) {
   if (!probabilities) return '';
@@ -1565,21 +1751,45 @@ function updateProviderFromHeaders(response) {
   memory.provider = {
     ...memory.provider,
     name: 'API-Football',
-    plan: inferFootballPlan(dailyLimit),
-    dailyLimit,
-    dailyRemaining,
-    minuteLimit,
-    minuteRemaining,
+    plan: dailyLimit !== null ? inferFootballPlan(dailyLimit) : (memory.provider?.plan || 'UNKNOWN'),
+    dailyLimit: dailyLimit ?? memory.provider?.dailyLimit ?? null,
+    dailyRemaining: dailyRemaining ?? memory.provider?.dailyRemaining ?? null,
+    minuteLimit: minuteLimit ?? memory.provider?.minuteLimit ?? null,
+    minuteRemaining: minuteRemaining ?? memory.provider?.minuteRemaining ?? null,
     updatedAt: new Date().toISOString(),
   };
+}
+
+function quotaUsed(limit, remaining) {
+  if (limit === null || limit === undefined || remaining === null || remaining === undefined || limit === '' || remaining === '') return null;
+  const l = Number(limit), r = Number(remaining);
+  return Number.isFinite(l) && Number.isFinite(r) ? Math.max(0, l - r) : null;
+}
+
+function quotaUsedPct(limit, remaining) {
+  const l = Number(limit), used = quotaUsed(limit, remaining);
+  return Number.isFinite(l) && l > 0 && Number.isFinite(used) ? Math.round((used / l) * 1000) / 10 : null;
 }
 
 function providerSnapshot() {
   const paid = ['PRO','ULTRA','MEGA'].includes(memory.provider?.plan || '');
   const cooldownUntil = memory.provider?.cooldownUntil || null;
   const cooldownActive = Boolean(cooldownUntil && Date.parse(cooldownUntil) > Date.now());
+  const dailyUsed = quotaUsed(memory.provider?.dailyLimit, memory.provider?.dailyRemaining);
+  const minuteUsed = quotaUsed(memory.provider?.minuteLimit, memory.provider?.minuteRemaining);
+  const dailyUsedPct = quotaUsedPct(memory.provider?.dailyLimit, memory.provider?.dailyRemaining);
+  const minuteUsedPct = quotaUsedPct(memory.provider?.minuteLimit, memory.provider?.minuteRemaining);
+  let health = 'ok';
+  if ((memory.provider?.plan || 'UNKNOWN') === 'UNKNOWN' && !memory.provider?.updatedAt) health = 'waiting';
+  else if (cooldownActive || memory.provider?.lastError === 'rate_limit') health = 'critical';
+  else if (memory.provider?.lastError || (Number.isFinite(Number(memory.provider?.minuteRemaining)) && Number(memory.provider.minuteRemaining) <= 2) || (Number.isFinite(dailyUsedPct) && dailyUsedPct >= 90)) health = 'warning';
   return {
     ...(memory.provider || {}),
+    dailyUsed,
+    minuteUsed,
+    dailyUsedPct,
+    minuteUsedPct,
+    health,
     liveOddsReady: paid,
     playerStatsReady: paid,
     oddsMovementReady: paid,
@@ -1629,19 +1839,22 @@ function freeQuotaHealthy(minDaily = 25, minMinute = 5) {
 }
 
 async function apiFootball(path, params, cfg, options = {}) {
-  if (!cfg.apiFootballKey) throw footballError('API_FOOTBALL_KEY не настроен в Cloudflare.', 'FOOTBALL_CONFIG');
+  if (!cfg.apiFootballKey) {
+    await recordOpsEvent(cfg, { severity: 'critical', source: 'provider', eventType: 'configuration', code: 'FOOTBALL_CONFIG', message: 'API_FOOTBALL_KEY отсутствует.' });
+    throw footballError('API_FOOTBALL_KEY не настроен в Cloudflare.', 'FOOTBALL_CONFIG');
+  }
 
   const cooldown = footballCooldownRemaining();
   if (cooldown > 0) {
+    bumpTelemetry('quotaBlocks');
     throw footballError(`API-Football на паузе после ограничения. Повторите примерно через ${cooldown} сек.`, 'FOOTBALL_COOLDOWN', cooldown);
   }
-  // Если предыдущий ответ уже показал 0 запросов в минутном окне,
-  // не отправляем заведомо лишний запрос. Ждём до минуты от последнего ответа.
   if (Number(memory.provider?.minuteRemaining) === 0 && memory.provider?.updatedAt) {
     const ageSec = Math.max(0, Math.floor((Date.now() - Date.parse(memory.provider.updatedAt)) / 1000));
     const waitSec = Math.max(1, 60 - ageSec);
     if (waitSec > 0 && ageSec < 60) {
       memory.provider.cooldownUntil = new Date(Date.now() + waitSec * 1000).toISOString();
+      bumpTelemetry('quotaBlocks');
       throw footballError(`Минутная квота API-Football исчерпана. Повторите примерно через ${waitSec} сек.`, 'FOOTBALL_COOLDOWN', waitSec);
     }
   }
@@ -1650,10 +1863,32 @@ async function apiFootball(path, params, cfg, options = {}) {
   for (const [key, value] of Object.entries(params || {})) {
     if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
   }
-  const r = await fetch(url, {
-    headers: { 'x-apisports-key': cfg.apiFootballKey, Accept: 'application/json' },
-  });
+
+  const startedAt = Date.now();
+  bumpTelemetry('apiRequests');
+  memory.provider.lastRequestAt = new Date(startedAt).toISOString();
+  let r;
+  try {
+    r = await fetch(url, {
+      headers: { 'x-apisports-key': cfg.apiFootballKey, Accept: 'application/json' },
+    });
+  } catch (error) {
+    const durationMs = Date.now() - startedAt;
+    bumpTelemetry('apiErrors');
+    memory.provider.lastStatus = null;
+    memory.provider.lastLatencyMs = durationMs;
+    memory.provider.lastError = 'network_error';
+    await recordOpsEvent(cfg, {
+      severity: 'error', source: 'provider', eventType: 'api_request', code: 'FOOTBALL_NETWORK',
+      message: error?.message || 'Network error', endpoint: path, durationMs,
+    });
+    throw footballError('Не удалось подключиться к API-Football.', 'FOOTBALL_NETWORK');
+  }
+
+  const durationMs = Date.now() - startedAt;
   updateProviderFromHeaders(r);
+  memory.provider.lastStatus = r.status;
+  memory.provider.lastLatencyMs = durationMs;
   const body = await r.json().catch(() => ({}));
 
   if (r.status === 429) {
@@ -1661,10 +1896,22 @@ async function apiFootball(path, params, cfg, options = {}) {
     const retryAfter = Number.isFinite(retryHeader) && retryHeader > 0 ? retryHeader : 65;
     memory.provider.cooldownUntil = new Date(Date.now() + retryAfter * 1000).toISOString();
     memory.provider.lastError = 'rate_limit';
+    bumpTelemetry('apiErrors');
+    bumpTelemetry('rateLimits');
+    await recordOpsEvent(cfg, {
+      severity: 'warning', source: 'provider', eventType: 'rate_limit', code: 'FOOTBALL_RATE_LIMIT',
+      message: `API-Football HTTP 429; retry ${retryAfter}s`, endpoint: path, status: r.status, durationMs,
+      meta: { retryAfter, plan: memory.provider?.plan || 'UNKNOWN', minuteRemaining: memory.provider?.minuteRemaining, dailyRemaining: memory.provider?.dailyRemaining },
+    });
     throw footballError(`API-Football достиг минутного лимита. Повторите примерно через ${retryAfter} сек.`, 'FOOTBALL_RATE_LIMIT', retryAfter);
   }
   if (!r.ok) {
     memory.provider.lastError = `http_${r.status}`;
+    bumpTelemetry('apiErrors');
+    await recordOpsEvent(cfg, {
+      severity: r.status >= 500 ? 'error' : 'warning', source: 'provider', eventType: 'api_request', code: 'FOOTBALL_HTTP',
+      message: `API-Football HTTP ${r.status}`, endpoint: path, status: r.status, durationMs,
+    });
     throw footballError(`API-Football временно недоступен (HTTP ${r.status}).`, 'FOOTBALL_HTTP');
   }
 
@@ -1672,16 +1919,114 @@ async function apiFootball(path, params, cfg, options = {}) {
   if (errors.length) {
     const message = errors.join('; ');
     memory.provider.lastError = message.slice(0, 160);
+    bumpTelemetry('apiErrors');
     if (/too many requests|rate.?limit|requests per minute/i.test(message)) {
       memory.provider.cooldownUntil = new Date(Date.now() + 65_000).toISOString();
+      bumpTelemetry('rateLimits');
+      await recordOpsEvent(cfg, {
+        severity: 'warning', source: 'provider', eventType: 'rate_limit', code: 'FOOTBALL_RATE_LIMIT_BODY',
+        message, endpoint: path, status: r.status, durationMs,
+      });
       throw footballError('API-Football достиг лимита запросов. Покажем кэш, если он есть.', 'FOOTBALL_RATE_LIMIT', 65);
     }
+    await recordOpsEvent(cfg, {
+      severity: 'warning', source: 'provider', eventType: 'api_response', code: 'FOOTBALL_RESPONSE',
+      message, endpoint: path, status: r.status, durationMs,
+    });
     throw footballError(`API-Football: ${message}`, 'FOOTBALL_RESPONSE');
   }
 
   memory.provider.lastError = '';
+  memory.provider.lastSuccessAt = new Date().toISOString();
+  bumpTelemetry('apiSuccess');
   if (options.responseType === 'any') return body.response ?? null;
   return Array.isArray(body.response) ? body.response : [];
+}
+
+async function probeSupabase(cfg) {
+  if (!hasSupabase(cfg)) return { configured: false, ok: false, status: 'not_configured', latencyMs: null, cache: null };
+  const startedAt = Date.now();
+  try {
+    const url = new URL(`${cfg.supabaseUrl}/rest/v1/analysis_cache`);
+    url.searchParams.set('select', 'cache_key,expires_at');
+    url.searchParams.set('order', 'expires_at.desc');
+    url.searchParams.set('limit', '200');
+    const r = await fetch(url, { headers: supaHeaders(cfg, { Prefer: 'count=exact' }) });
+    const latencyMs = Date.now() - startedAt;
+    if (!r.ok) {
+      bumpTelemetry('supabaseErrors');
+      const text = await r.text().catch(() => '');
+      return { configured: true, ok: false, status: `http_${r.status}`, latencyMs, detail: redactOpsString(text, 180), cache: null };
+    }
+    const rows = await r.json().catch(() => []);
+    const now = Date.now();
+    const fresh = rows.filter(x => Date.parse(x.expires_at || '') > now).length;
+    const stale = rows.filter(x => Date.parse(x.expires_at || '') <= now).length;
+    const range = r.headers.get('content-range') || '';
+    const totalRaw = range.includes('/') ? range.split('/').pop() : '';
+    const total = /^\d+$/.test(totalRaw) ? Number(totalRaw) : rows.length;
+    return {
+      configured: true,
+      ok: true,
+      status: 'ok',
+      latencyMs,
+      cache: { total, sampled: rows.length, freshInSample: fresh, staleInSample: stale, newestExpiry: rows?.[0]?.expires_at || null },
+    };
+  } catch (error) {
+    bumpTelemetry('supabaseErrors');
+    return { configured: true, ok: false, status: 'network_error', latencyMs: Date.now() - startedAt, detail: redactOpsString(error?.message || error, 180), cache: null };
+  }
+}
+
+async function readRecentOpsEvents(cfg, limit = 10) {
+  const fallback = () => ({ persistent: false, migrationReady: false, items: memory.opsEvents.slice(0, limit) });
+  if (!hasSupabase(cfg)) return fallback();
+  try {
+    const url = new URL(`${cfg.supabaseUrl}/rest/v1/ops_events`);
+    url.searchParams.set('select', 'created_at,severity,source,event_type,code,message,endpoint,status,duration_ms,metadata');
+    url.searchParams.set('order', 'created_at.desc');
+    url.searchParams.set('limit', String(Math.max(1, Math.min(20, limit))));
+    const r = await fetch(url, { headers: supaHeaders(cfg) });
+    if (!r.ok) return fallback();
+    const items = await r.json().catch(() => []);
+    return { persistent: true, migrationReady: true, items };
+  } catch {
+    return fallback();
+  }
+}
+
+async function apiDiagnostics(request, cfg) {
+  const [supabase, ops] = await Promise.all([
+    probeSupabase(cfg),
+    readRecentOpsEvents(cfg, 12),
+  ]);
+  const provider = providerSnapshot();
+  let overall;
+  if (supabase.configured && !supabase.ok) overall = { state: 'critical', label: 'Нужна проверка Supabase' };
+  else if (provider.health === 'critical') overall = { state: 'critical', label: 'API-Football временно ограничен' };
+  else if (!ops.migrationReady && hasSupabase(cfg)) overall = { state: 'warning', label: 'Выполните migration v3.8' };
+  else if (provider.health === 'warning' || Number(memory.telemetry?.routeErrors || 0) > 0 || Number(memory.telemetry?.cacheWriteErrors || 0) > 0) overall = { state: 'warning', label: 'Есть предупреждения' };
+  else if (provider.health === 'waiting') overall = { state: 'waiting', label: 'Ожидаем первый запрос к API' };
+  else overall = { state: 'ok', label: 'Системы работают штатно' };
+
+  const recommendations = [];
+  if (supabase.ok && !ops.migrationReady && hasSupabase(cfg)) recommendations.push('Выполните supabase_migration_v3_8.sql, чтобы журнал ошибок сохранялся между перезапусками Worker.');
+  if (provider.cooldownActive) recommendations.push(`API-Football находится на паузе ещё примерно ${footballCooldownRemaining()} сек.; приложение должно использовать сохранённый кэш.`);
+  if (supabase.configured && !supabase.ok) recommendations.push('Проверьте SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY и доступность PostgREST.');
+  if (Number(provider.dailyUsedPct) >= 90) recommendations.push('Дневная квота API-Football использована более чем на 90%; до сброса лимита работаем в экономном режиме.');
+  if (!recommendations.length) recommendations.push('Критичных действий сейчас не требуется.');
+
+  return json({
+    available: true,
+    version: APP_VERSION,
+    generatedAt: new Date().toISOString(),
+    overall,
+    provider,
+    supabase,
+    runtime: telemetrySnapshot(),
+    observability: { persistent: ops.persistent, migrationReady: ops.migrationReady, retentionDays: cfg.opsRetentionDays, recentEvents: ops.items },
+    recommendations,
+  });
 }
 
 async function tavilySearch(query, cfg) {
@@ -3587,9 +3932,10 @@ export default {
     if (url.pathname === '/health' || url.pathname === '/api/health') {
       return json({
         ok: true,
-        version: '3.7.0-model-calibration',
+        version: APP_VERSION,
         database: hasSupabase(cfg) ? 'supabase' : 'memory',
         monetization: cfg.monetizationEnabled ? 'enabled' : 'paused',
+        observability: 'enabled',
         devMode: cfg.devMode,
       });
     }
@@ -3625,6 +3971,8 @@ export default {
         return await handleTelegramWebhook(request, cfg);
       } catch (error) {
         console.error('telegram webhook', error);
+        bumpTelemetry('routeErrors');
+        await recordOpsEvent(cfg, { severity: 'error', source: 'telegram', eventType: 'webhook', code: 'TELEGRAM_WEBHOOK', message: error?.message || error, endpoint: '/telegram/webhook' });
         return json({ ok: false }, 200);
       }
     }
@@ -3637,6 +3985,7 @@ export default {
 
       if (request.method === 'GET' && url.pathname === '/api/me') return await apiMe(request, cfg, user);
       if (request.method === 'GET' && url.pathname === '/api/provider') return json({ provider: providerSnapshot() });
+      if (request.method === 'GET' && url.pathname === '/api/diagnostics') return await apiDiagnostics(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/model-quality') return await apiModelQuality(request, cfg);
       if (url.pathname.startsWith('/api/billing/')) {
         if (!cfg.monetizationEnabled) return json({ error: 'Монетизация отложена до финального этапа проекта.' }, 404);
@@ -3661,7 +4010,15 @@ export default {
     } catch (error) {
       console.error(error);
       const retryAfter = Number(error?.retryAfter || 0);
-      const status = isFootballRateLimitError(error) ? 429 : 502;
+      const rateLimited = isFootballRateLimitError(error);
+      const status = rateLimited ? 429 : 502;
+      if (!rateLimited) {
+        bumpTelemetry('routeErrors');
+        await recordOpsEvent(cfg, {
+          severity: 'error', source: 'api', eventType: 'route_error', code: error?.code || 'SERVER_ERROR',
+          message: error?.message || 'Ошибка сервера.', endpoint: url.pathname, status,
+        });
+      }
       return json({
         error: error?.message || 'Ошибка сервера.',
         code: error?.code || 'SERVER_ERROR',
@@ -3673,9 +4030,21 @@ export default {
 
   async scheduled(controller, env, ctx) {
     const cfg = config(env);
-    ctx.waitUntil(Promise.allSettled([
-      processDueReminders(cfg),
-      settleBacktestDaily(cfg),
-    ]));
+    const scheduledAt = new Date(Number(controller?.scheduledTime || Date.now()));
+    const tasks = [
+      ['reminders', processDueReminders(cfg)],
+      ['backtest', settleBacktestDaily(cfg)],
+    ];
+    if (scheduledAt.getUTCHours() === 3 && scheduledAt.getUTCMinutes() < 15) {
+      tasks.push(['ops_cleanup', cleanupOpsEvents(cfg)]);
+    }
+    ctx.waitUntil((async () => {
+      const results = await Promise.allSettled(tasks.map(([, promise]) => promise));
+      for (let i = 0; i < results.length; i++) {
+        if (results[i].status === 'rejected') {
+          await recordOpsEvent(cfg, { severity: 'error', source: 'cron', eventType: 'scheduled_task', code: 'CRON_TASK', message: results[i].reason?.message || results[i].reason, meta: { task: tasks[i][0] } });
+        }
+      }
+    })());
   },
 };
