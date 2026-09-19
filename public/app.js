@@ -37,7 +37,19 @@ const state = {
   tournamentStandings: new Map(),
   liveRefreshTimer: null,
   liveRefreshRemaining: 0,
+  favoritesLoaded: false,
+  remindersLoaded: false,
+  historyLoaded: false,
+  providerLoaded: false,
+  viewScroll: {},
+  matchesLoadSeq: 0,
+  clientPerf: { startedAt: new Date().toISOString(), requests: 0, completed: 0, failed: 0, deduped: 0, retries: 0, totalMs: 0, lastMs: null },
 };
+
+const inflightGetRequests = new Map();
+const MATCH_SNAPSHOT_PREFIX = 'football-analytics:v4:matches:';
+const MATCH_SNAPSHOT_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+
 
 const $ = id => document.getElementById(id);
 const views = ['matchesView', 'searchView', 'tournamentView', 'teamView', 'analysisView', 'historyView', 'profileView'];
@@ -48,14 +60,22 @@ function stopLiveRefresh() {
   state.liveRefreshRemaining = 0;
 }
 
-function showView(id) {
+function showView(id, options = {}) {
+  const current = activeViewId();
+  if (current && current !== id) state.viewScroll[current] = window.scrollY || 0;
   if (id !== 'analysisView') stopLiveRefresh();
   views.forEach(v => $(v).classList.toggle('active', v === id));
   $('navMatches').classList.toggle('active', id === 'matchesView' || id === 'tournamentView' || id === 'teamView' || id === 'analysisView');
   $('navSearch')?.classList.toggle('active', id === 'searchView');
   $('navHistory').classList.toggle('active', id === 'historyView');
   $('navProfile').classList.toggle('active', id === 'profileView');
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  document.querySelectorAll('.nav-item').forEach(btn => btn.removeAttribute('aria-current'));
+  if (id === 'matchesView' || id === 'tournamentView' || id === 'teamView' || id === 'analysisView') $('navMatches')?.setAttribute('aria-current', 'page');
+  if (id === 'searchView') $('navSearch')?.setAttribute('aria-current', 'page');
+  if (id === 'historyView') $('navHistory')?.setAttribute('aria-current', 'page');
+  if (id === 'profileView') $('navProfile')?.setAttribute('aria-current', 'page');
+  const top = options.restore ? Number(state.viewScroll[id] || 0) : 0;
+  requestAnimationFrame(() => window.scrollTo({ top, behavior: 'auto' }));
 }
 
 function toast(message) {
@@ -109,13 +129,64 @@ function coverageLabel(tier) {
 }
 
 async function api(path, options = {}) {
-  const headers = new Headers(options.headers || {});
-  headers.set('Content-Type', 'application/json');
-  if (tg?.initData) headers.set('x-telegram-init-data', tg.initData);
-  const response = await fetch(path, { ...options, headers });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw Object.assign(new Error(data.error || `HTTP ${response.status}`), { status: response.status, payload: data });
-  return data;
+  const method = String(options.method || 'GET').toUpperCase();
+  const isGet = method === 'GET';
+  const timeoutMs = Number(options.timeoutMs || 12000);
+  const retryable = isGet && options.retry !== false;
+  const dedupe = isGet && options.dedupe !== false;
+  const requestKey = `${method}:${path}`;
+
+  if (dedupe && inflightGetRequests.has(requestKey)) {
+    state.clientPerf.deduped += 1;
+    return inflightGetRequests.get(requestKey);
+  }
+
+  const task = (async () => {
+    let attempt = 0;
+    while (true) {
+      const started = performance.now();
+      state.clientPerf.requests += 1;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(new DOMException('timeout', 'AbortError')), timeoutMs);
+      const headers = new Headers(options.headers || {});
+      headers.set('Content-Type', 'application/json');
+      if (tg?.initData) headers.set('x-telegram-init-data', tg.initData);
+      try {
+        const { timeoutMs: _timeoutMs, retry: _retry, dedupe: _dedupe, ...fetchOptions } = options;
+        const response = await fetch(path, { ...fetchOptions, method, headers, signal: controller.signal });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const error = Object.assign(new Error(data.error || `HTTP ${response.status}`), { status: response.status, payload: data });
+          if (retryable && attempt < 1 && [502, 503, 504].includes(response.status)) throw Object.assign(error, { transient: true });
+          throw error;
+        }
+        const elapsed = Math.round(performance.now() - started);
+        state.clientPerf.completed += 1;
+        state.clientPerf.lastMs = elapsed;
+        state.clientPerf.totalMs += elapsed;
+        return data;
+      } catch (error) {
+        const aborted = error?.name === 'AbortError';
+        const transient = Boolean(error?.transient) || aborted || (!error?.status && navigator.onLine !== false);
+        if (retryable && attempt < 1 && transient) {
+          attempt += 1;
+          state.clientPerf.retries += 1;
+          await new Promise(resolve => setTimeout(resolve, 450));
+          continue;
+        }
+        state.clientPerf.failed += 1;
+        if (aborted) throw Object.assign(new Error('Сервер отвечает слишком долго. Попробуйте ещё раз.'), { status: 408 });
+        if (navigator.onLine === false && !error?.status) throw Object.assign(new Error('Нет подключения к интернету. Показаны сохранённые данные, если они доступны.'), { status: 0 });
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+  })();
+
+  if (dedupe) inflightGetRequests.set(requestKey, task);
+  try { return await task; }
+  finally { if (dedupe && inflightGetRequests.get(requestKey) === task) inflightGetRequests.delete(requestKey); }
 }
 
 async function loadProfile() {
@@ -312,7 +383,12 @@ async function loadModelQuality(force = false) {
 
 async function openProfileView() {
   showView('profileView');
-  await Promise.all([loadModelQuality(false), loadDiagnostics(false)]);
+  const essentials = [];
+  if (!state.favoritesLoaded) essentials.push(loadFavorites());
+  if (!state.remindersLoaded) essentials.push(loadReminders());
+  if (!state.providerLoaded) essentials.push(loadProvider());
+  essentials.push(loadModelQuality(false), loadDiagnostics(false));
+  await Promise.allSettled(essentials);
 }
 
 
@@ -342,13 +418,14 @@ function renderDiagnostics() {
   const provider = $('diagnosticsProvider');
   const database = $('diagnosticsDatabase');
   const runtime = $('diagnosticsRuntime');
+  const client = $('diagnosticsClient');
   const integrity = $('diagnosticsIntegrity');
   const events = $('diagnosticsEvents');
   const recommendations = $('diagnosticsRecommendations');
   if (state.diagnosticsLoading) {
     root.textContent = 'Проверяю Worker, Supabase, кэш и API-Football…';
     if (badge) { badge.textContent = 'Проверка'; badge.className = 'diagnostics-badge waiting'; }
-    [provider, database, runtime, integrity, events, recommendations].forEach(x => { if (x) x.hidden = true; });
+    [provider, database, runtime, client, integrity, events, recommendations].forEach(x => { if (x) x.hidden = true; });
     return;
   }
   if (!d) {
@@ -406,6 +483,18 @@ function renderDiagnostics() {
         <div><span>Ошибки маршрутов</span><strong>${Number(rt.routeErrors || 0)}</strong><small>uptime ${escapeHtml(diagDuration(rt.uptimeSeconds))}</small></div>
       </div>
       <p class="tiny diagnostics-note">Счётчики runtime относятся только к текущему экземпляру Cloudflare Worker. Дневной и минутный расход выше берётся непосредственно из заголовков API-Football.</p>`;
+  }
+
+  if (client) {
+    const cp = state.clientPerf || {};
+    const avg = Number(cp.completed || 0) > 0 ? Math.round(Number(cp.totalMs || 0) / Number(cp.completed)) : null;
+    client.hidden = false;
+    client.innerHTML = `<div class="diagnostics-block-head"><strong>📱 Клиент Mini App</strong><span>v4.0</span></div><div class="diagnostics-grid">
+      <div><span>Сеть</span><strong>${navigator.onLine === false ? 'Offline' : 'Online'}</strong><small>${navigator.connection?.effectiveType ? escapeHtml(navigator.connection.effectiveType) : 'тип сети —'}</small></div>
+      <div><span>Средний API</span><strong>${avg !== null ? `${avg} мс` : '—'}</strong><small>последний ${cp.lastMs !== null ? `${cp.lastMs} мс` : '—'}</small></div>
+      <div><span>Запросы</span><strong>${Number(cp.requests || 0)}</strong><small>${Number(cp.completed || 0)} успешно · ${Number(cp.failed || 0)} ошибок</small></div>
+      <div><span>Оптимизация</span><strong>${Number(cp.deduped || 0)} dedupe</strong><small>${Number(cp.retries || 0)} авто-повторов</small></div>
+    </div>`;
   }
 
   const integrityData = d.integrity || {};
@@ -581,6 +670,7 @@ async function loadProvider() {
   try {
     const data = await api('/api/provider');
     state.provider = data.provider || state.provider;
+    state.providerLoaded = true;
     renderProvider();
   } catch {}
 }
@@ -589,7 +679,9 @@ async function loadFavorites() {
   try {
     const data = await api('/api/favorites');
     state.favorites = data.items || [];
+    state.favoritesLoaded = true;
     renderFavoriteTeams();
+    if (state.matches.length) renderMatches();
     renderDiscoveryHome();
   } catch (e) {
     toast(e.message);
@@ -600,6 +692,7 @@ async function loadReminders() {
   try {
     const data = await api('/api/reminders');
     state.reminders = data.items || [];
+    state.remindersLoaded = true;
     renderReminderList();
   } catch (e) {
     toast(e.message);
@@ -862,32 +955,100 @@ function openTournamentMeta(meta) {
   renderTournamentHero(); renderTournamentMatches(); setTournamentTab('matches', false); showView('tournamentView');
 }
 
-async function loadMatches() {
-  $('matches').innerHTML = '<div class="loader">Загружаю матчи…</div>';
-  $('matchesCount').textContent = '';
-  if ($('dataNotice')) $('dataNotice').innerHTML = '';
-  const labels = { '-1': 'Матчи вчера', '0': 'Матчи сегодня', '1': 'Матчи завтра' };
-  $('matchesTitle').textContent = labels[String(state.offset)] || 'Матчи';
+function matchSkeletonHtml(count = 4) {
+  return `<div class="skeleton-stack" aria-hidden="true">${Array.from({ length: count }, () => '<div class="skeleton-card"><i></i><b></b><b></b><span></span></div>').join('')}</div>`;
+}
+
+function matchSnapshotKey(date) { return `${MATCH_SNAPSHOT_PREFIX}${date}`; }
+
+function readMatchSnapshot(date) {
   try {
-    const data = await api(`/api/matches?date=${localDate(state.offset)}`);
-    state.matches = data.matches || [];
-    state.matchesMeta = {
-      refreshedAt: data.refreshedAt || null,
-      stale: Boolean(data.stale),
-      warning: data.warning || '',
-      retryAfter: Number(data.retryAfter || 0),
+    const raw = localStorage.getItem(matchSnapshotKey(date));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.savedAt || Date.now() - Number(parsed.savedAt) > MATCH_SNAPSHOT_MAX_AGE_MS) {
+      localStorage.removeItem(matchSnapshotKey(date));
+      return null;
+    }
+    return parsed;
+  } catch { return null; }
+}
+
+function writeMatchSnapshot(date, data) {
+  try {
+    localStorage.setItem(matchSnapshotKey(date), JSON.stringify({
+      savedAt: Date.now(),
+      matches: data.matches || [],
+      refreshedAt: data.refreshedAt || new Date().toISOString(),
       catalog: data.catalog || {},
       integrity: data.integrity || null,
-    };
-    if (data.provider) { state.provider = data.provider; renderProvider(); }
-    if (state.filter === 'top' && !state.matches.some(x => x.featured || (Number(x.interestScore || 0) >= 68 && !x.lowPriority))) state.filter = 'all';
-    syncFilterButtons();
-    renderMatches();
-    renderDiscoveryHome();
+    }));
+  } catch {}
+}
+
+function applyMatchPayload(data, { snapshot = false } = {}) {
+  state.matches = data.matches || [];
+  state.matchesMeta = {
+    refreshedAt: data.refreshedAt || null,
+    stale: Boolean(data.stale || snapshot),
+    warning: data.warning || (snapshot ? 'Мгновенно показана сохранённая копия. Идёт фоновое обновление.' : ''),
+    retryAfter: Number(data.retryAfter || 0),
+    catalog: data.catalog || {},
+    integrity: data.integrity || null,
+    localSnapshot: snapshot,
+  };
+  if (data.provider) { state.provider = data.provider; renderProvider(); }
+  if (state.filter === 'top' && !state.matches.some(x => x.featured || (Number(x.interestScore || 0) >= 68 && !x.lowPriority))) state.filter = 'all';
+  syncFilterButtons();
+  renderMatches();
+  renderDiscoveryHome();
+  $('matches')?.setAttribute('aria-busy', snapshot ? 'true' : 'false');
+}
+
+async function loadMatches(options = {}) {
+  const force = Boolean(options.force);
+  const silent = Boolean(options.silent);
+  const seq = ++state.matchesLoadSeq;
+  const date = localDate(state.offset);
+  const labels = { '-1': 'Матчи вчера', '0': 'Матчи сегодня', '1': 'Матчи завтра' };
+  $('matchesTitle').textContent = labels[String(state.offset)] || 'Матчи';
+  $('matches')?.setAttribute('aria-busy', 'true');
+
+  let snapshot = null;
+  if (!force) snapshot = readMatchSnapshot(date);
+  const canReuseCurrent = state.matches.length && state.matchesMeta?.date === date;
+  if (snapshot && !canReuseCurrent) {
+    applyMatchPayload(snapshot, { snapshot: true });
+    state.matchesMeta.date = date;
+  } else if (!silent && !canReuseCurrent) {
+    state.matches = [];
+    $('matches').innerHTML = matchSkeletonHtml();
+    $('matchesCount').textContent = '';
+    if ($('dataNotice')) $('dataNotice').innerHTML = '';
+  }
+
+  try {
+    const data = await api(`/api/matches?date=${date}`, { timeoutMs: 10000 });
+    if (seq !== state.matchesLoadSeq) return;
+    data.refreshedAt ||= new Date().toISOString();
+    writeMatchSnapshot(date, data);
+    applyMatchPayload(data, { snapshot: false });
+    state.matchesMeta.date = date;
   } catch (e) {
+    if (seq !== state.matchesLoadSeq) return;
     const retry = Number(e.payload?.retryAfter || 0);
+    if (state.matches.length && (snapshot || state.matchesMeta?.date === date)) {
+      state.matchesMeta.stale = true;
+      state.matchesMeta.warning = e.message || 'Не удалось обновить данные. Показана последняя сохранённая версия.';
+      state.matchesMeta.retryAfter = retry;
+      renderMatches();
+      $('matches')?.setAttribute('aria-busy', 'false');
+      return;
+    }
     const suffix = retry ? `<br><span class="tiny">Повторите примерно через ${retry} сек.</span>` : '';
-    $('matches').innerHTML = `<div class="empty">${escapeHtml(e.message)}${suffix}</div>`;
+    $('matches').innerHTML = `<div class="empty error-state"><strong>Не удалось загрузить матчи</strong><span>${escapeHtml(e.message)}${suffix}</span><button id="matchesRetryBtn" class="secondary-btn" type="button">Повторить</button></div>`;
+    $('matchesRetryBtn')?.addEventListener('click', () => loadMatches({ force: true }));
+    $('matches')?.setAttribute('aria-busy', 'false');
   }
 }
 
@@ -1639,6 +1800,7 @@ async function loadHistory(showLoader = true) {
   try {
     const data = await api('/api/history');
     state.history = data.items || [];
+    state.historyLoaded = true;
     renderHistory();
   } catch (e) {
     $('history').innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
@@ -2116,6 +2278,38 @@ function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>'"]/g, ch => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[ch]));
 }
 
+function optimizeImages(root = document) {
+  root.querySelectorAll?.('img').forEach(img => {
+    if (!img.hasAttribute('decoding')) img.decoding = 'async';
+    if (!img.closest('.analysis-hero, .team-hero, .tournament-hero') && !img.hasAttribute('loading')) img.loading = 'lazy';
+  });
+}
+
+const imageObserver = new MutationObserver(records => {
+  for (const record of records) for (const node of record.addedNodes) if (node.nodeType === 1) optimizeImages(node);
+});
+imageObserver.observe(document.body, { childList: true, subtree: true });
+optimizeImages();
+
+function updateConnectionBanner() {
+  const banner = $('connectionBanner');
+  if (!banner) return;
+  const offline = navigator.onLine === false;
+  banner.hidden = !offline;
+  banner.classList.toggle('offline', offline);
+  banner.textContent = offline ? '📴 Нет сети — доступные сохранённые данные останутся на экране.' : '';
+}
+
+window.addEventListener('offline', () => { updateConnectionBanner(); toast('Нет подключения к интернету'); });
+window.addEventListener('online', () => {
+  updateConnectionBanner();
+  toast('Соединение восстановлено');
+  if (activeViewId() === 'matchesView') loadMatches({ silent: true });
+});
+updateConnectionBanner();
+
+let matchSearchTimer = null;
+
 document.querySelectorAll('.date-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.date-btn').forEach(x => x.classList.remove('active'));
@@ -2135,24 +2329,25 @@ document.querySelectorAll('.filter-btn').forEach(btn => {
 
 $('matchSearch').addEventListener('input', e => {
   state.search = e.target.value || '';
-  renderMatches();
+  clearTimeout(matchSearchTimer);
+  matchSearchTimer = setTimeout(renderMatches, 110);
 });
 
 $('globalSearchBtn')?.addEventListener('click', runGlobalSearch);
 $('globalSearchInput')?.addEventListener('input', e => { state.globalSearch.query = e.target.value || ''; state.globalSearch.remoteTeams = []; state.globalSearch.remoteCompetitions = []; state.globalSearch.warning = ''; renderGlobalSearch(); });
 $('globalSearchInput')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); runGlobalSearch(); } });
 $('clearRecentTeamsBtn')?.addEventListener('click', clearRecentTeams);
-$('refreshBtn').addEventListener('click', loadMatches);
+$('refreshBtn').addEventListener('click', () => loadMatches({ force: true }));
 $('historyRefreshBtn').addEventListener('click', () => loadHistory(true));
-$('backBtn').addEventListener('click', () => showView('matchesView'));
-$('tournamentBackBtn')?.addEventListener('click', () => showView(state.tournamentBackView || 'matchesView'));
-$('teamBackBtn')?.addEventListener('click', () => showView(state.teamBackView || 'matchesView'));
+$('backBtn').addEventListener('click', () => showView('matchesView', { restore: true }));
+$('tournamentBackBtn')?.addEventListener('click', () => showView(state.tournamentBackView || 'matchesView', { restore: true }));
+$('teamBackBtn')?.addEventListener('click', () => showView(state.teamBackView || 'matchesView', { restore: true }));
 document.querySelectorAll('.tournament-tab').forEach(btn => btn.addEventListener('click', () => setTournamentTab(btn.dataset.tournamentTab || 'matches')));
 document.querySelectorAll('.team-tab').forEach(btn => btn.addEventListener('click', () => setTeamTab(btn.dataset.teamTab || 'overview')));
 $('profileBtn').addEventListener('click', openProfileView);
 $('navMatches').addEventListener('click', () => showView('matchesView'));
 $('navSearch')?.addEventListener('click', () => { renderDiscoveryHome(); renderGlobalSearch(); showView('searchView'); setTimeout(() => $('globalSearchInput')?.focus(), 80); });
-$('navHistory').addEventListener('click', async () => { await loadHistory(true); showView('historyView'); });
+$('navHistory').addEventListener('click', async () => { showView('historyView'); if (!state.historyLoaded) await loadHistory(true); else renderHistory(); });
 $('navProfile').addEventListener('click', openProfileView);
 $('proBtn')?.addEventListener('click', () => buyPlan('PRO'));
 $('premiumBtn')?.addEventListener('click', () => buyPlan('PREMIUM'));
@@ -2163,6 +2358,15 @@ $('modelQualityRefreshBtn')?.addEventListener('click', () => loadModelQuality(tr
 $('modelQualityPeriod')?.addEventListener('change', () => loadModelQuality(true));
 $('diagnosticsRefreshBtn')?.addEventListener('click', () => loadDiagnostics(true));
 
-await Promise.all([loadProfile(), loadFavorites(), loadReminders(), loadMatches(), loadHistory(false)]);
-await loadProvider();
+async function scheduleIdle(task) {
+  if ('requestIdleCallback' in window) return new Promise(resolve => requestIdleCallback(async () => { try { await task(); } finally { resolve(); } }, { timeout: 1800 }));
+  return new Promise(resolve => setTimeout(async () => { try { await task(); } finally { resolve(); } }, 250));
+}
+
+// v4.0: first paint is intentionally small — matches/profile/favorites only.
+// History, reminders and provider details are loaded later or when their screen opens.
+await Promise.allSettled([loadProfile(), loadFavorites(), loadMatches()]);
 renderProfile();
+scheduleIdle(async () => {
+  await Promise.allSettled([loadReminders(), loadProvider()]);
+});
