@@ -17,6 +17,9 @@ const state = {
   preferencesApplied: false,
   provider: null,
   billing: null,
+  modelQuality: null,
+  modelQualityLoading: false,
+  modelQualityDays: 90,
   filter: 'top',
   search: '',
   globalSearch: { query: '', remoteTeams: [], remoteCompetitions: [], loading: false, warning: '', searchedAt: null },
@@ -153,6 +156,137 @@ function renderProfile() {
   renderFavoriteTeams();
   renderReminderList();
   renderBilling();
+}
+
+
+function qualityPct(value) {
+  return Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)}%` : '—';
+}
+
+function qualityNum(value, digits = 3) {
+  return Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : '—';
+}
+
+function signalLabel(name) {
+  const labels = { market: 'Рынок', apiPrediction: 'API prediction', recentForm: 'Форма', h2h: 'H2H' };
+  return labels[String(name || '')] || String(name || 'Сигнал');
+}
+
+function outcomeShortLabel(key) {
+  return key === 'home' ? 'П1' : key === 'away' ? 'П2' : key === 'draw' ? 'X' : '—';
+}
+
+function renderModelQuality() {
+  const status = $('modelQualityStatus');
+  const badge = $('modelQualitySampleBadge');
+  const headline = $('modelQualityHeadline');
+  const calibration = $('modelQualityCalibration');
+  const confidence = $('modelQualityConfidence');
+  const secondary = $('modelQualitySecondary');
+  const recent = $('modelQualityRecent');
+  if (!status || !badge || !headline || !calibration || !confidence || !secondary || !recent) return;
+
+  const q = state.modelQuality;
+  if (state.modelQualityLoading) {
+    status.textContent = 'Загружаю backtest…';
+    badge.textContent = 'Загрузка';
+    [headline, calibration, confidence, secondary, recent].forEach(x => x.hidden = true);
+    return;
+  }
+  if (!q) {
+    status.textContent = 'Данные ещё не загружены.';
+    badge.textContent = 'Нет данных';
+    [headline, calibration, confidence, secondary, recent].forEach(x => x.hidden = true);
+    return;
+  }
+  if (q.available === false) {
+    status.textContent = q.reason || 'Backtest пока недоступен.';
+    badge.textContent = 'Нужна миграция';
+    [headline, calibration, confidence, secondary, recent].forEach(x => x.hidden = true);
+    return;
+  }
+
+  const sample = q.sample || {};
+  const h = q.headline || {};
+  badge.textContent = sample.ready ? `${sample.settled || 0} матчей` : `${sample.settled || 0} / 20 матчей`;
+  badge.classList.toggle('ready', Boolean(sample.ready));
+  status.textContent = sample.settled
+    ? `${sample.settled} завершённых прогнозов · ${sample.pending || 0} ожидают результата${sample.calibrationReady ? ' · калибровка уже информативнее' : ''}`
+    : `Пока нет завершённых прогнозов. Новые предматчевые анализы будут автоматически попадать в backtest.`;
+
+  headline.hidden = false;
+  headline.innerHTML = `
+    <div><span>Точность 1X2</span><strong>${qualityPct(h.accuracy)}</strong><small>максимальная вероятность</small></div>
+    <div><span>Brier score</span><strong>${qualityNum(h.avgBrier)}</strong><small>ниже — лучше</small></div>
+    <div><span>Log loss</span><strong>${qualityNum(h.avgLogLoss)}</strong><small>штраф за уверенные ошибки</small></div>
+    <div><span>Средний top %</span><strong>${qualityPct(h.avgTopProbability)}</strong><small>уверенность лидера</small></div>`;
+
+  calibration.hidden = false;
+  calibration.innerHTML = `
+    <div class="quality-block-head"><strong>Калибровка вероятностей</strong><span>прогноз vs факт</span></div>
+    <div class="quality-calibration-list">${(q.calibration || []).map(x => `
+      <div class="quality-cal-row">
+        <span>${escapeHtml(x.label)}</span>
+        <div class="quality-cal-bars"><i style="--w:${Math.max(0, Math.min(100, Number(x.avgPredicted || 0)))}%"></i><b style="--w:${Math.max(0, Math.min(100, Number(x.hitRate || 0)))}%"></b></div>
+        <strong>${x.sample ? `${qualityPct(x.hitRate)} · n=${x.sample}` : '—'}</strong>
+      </div>`).join('')}</div>
+    ${q.methodology?.warning ? `<p class="quality-warning">⚠️ ${escapeHtml(q.methodology.warning)}</p>` : ''}`;
+
+  confidence.hidden = false;
+  confidence.innerHTML = `
+    <div class="quality-block-head"><strong>По уверенности модели</strong><span>не рейтинг, а диагностика</span></div>
+    <div class="quality-mini-grid">${(q.confidence || []).map(x => `
+      <div><span>${escapeHtml(x.label)}</span><strong>${qualityPct(x.accuracy)}</strong><small>n=${Number(x.sample || 0)} · Brier ${qualityNum(x.avgBrier)}</small></div>`).join('')}</div>
+    <div class="quality-signal-grid">${(q.signals || []).map(x => `
+      <div><span>${escapeHtml(signalLabel(x.name))}</span><strong>${qualityPct(x.accuracy)}</strong><small>n=${Number(x.sample || 0)}</small></div>`).join('')}</div>`;
+
+  const sec = q.secondary || {};
+  secondary.hidden = false;
+  secondary.innerHTML = `
+    <div class="quality-block-head"><strong>Дополнительные рынки модели</strong><span>порог 50%</span></div>
+    <div class="quality-secondary-grid">
+      <div><span>ТБ 2.5</span><strong>${qualityPct(sec.over25?.accuracy)}</strong><small>n=${Number(sec.over25?.sample || 0)}</small></div>
+      <div><span>Обе забьют</span><strong>${qualityPct(sec.btts?.accuracy)}</strong><small>n=${Number(sec.btts?.sample || 0)}</small></div>
+    </div>`;
+
+  recent.hidden = false;
+  if (!(q.recent || []).length) {
+    recent.innerHTML = '<div class="empty compact-empty">Завершённых прогнозов пока нет.</div>';
+  } else {
+    recent.innerHTML = `
+      <div class="quality-block-head"><strong>Последние проверки</strong><span>${Number(q.periodDays || state.modelQualityDays)} дней</span></div>
+      <div class="quality-recent-list">${q.recent.map(x => `
+        <div class="quality-recent-row ${x.correct ? 'hit' : 'miss'}">
+          <div><strong>${escapeHtml(x.home)} — ${escapeHtml(x.away)}</strong><span>${escapeHtml(x.league || '')}${x.kickoffAt ? ` · ${escapeHtml(dateTime(x.kickoffAt))}` : ''}</span></div>
+          <div class="quality-result"><b>${escapeHtml(x.score)}</b><small>${escapeHtml(x.predictedLabel || outcomeShortLabel(x.predictedOutcome))} · ${qualityPct(x.topProbability)}</small></div>
+          <em>${x.correct ? '✓' : '×'}</em>
+        </div>`).join('')}</div>`;
+  }
+}
+
+async function loadModelQuality(force = false) {
+  if (state.modelQualityLoading) return;
+  const days = Number($('modelQualityPeriod')?.value || state.modelQualityDays || 90);
+  state.modelQualityDays = days;
+  if (!force && state.modelQuality && Number(state.modelQuality.periodDays || days) === days) {
+    renderModelQuality();
+    return;
+  }
+  state.modelQualityLoading = true;
+  renderModelQuality();
+  try {
+    state.modelQuality = await api(`/api/model-quality?days=${days}`);
+  } catch (e) {
+    state.modelQuality = { available: false, reason: e.message || 'Не удалось загрузить backtest.' };
+  } finally {
+    state.modelQualityLoading = false;
+    renderModelQuality();
+  }
+}
+
+async function openProfileView() {
+  showView('profileView');
+  await loadModelQuality(false);
 }
 
 function renderBilling() {
@@ -1834,16 +1968,18 @@ $('tournamentBackBtn')?.addEventListener('click', () => showView(state.tournamen
 $('teamBackBtn')?.addEventListener('click', () => showView(state.teamBackView || 'matchesView'));
 document.querySelectorAll('.tournament-tab').forEach(btn => btn.addEventListener('click', () => setTournamentTab(btn.dataset.tournamentTab || 'matches')));
 document.querySelectorAll('.team-tab').forEach(btn => btn.addEventListener('click', () => setTeamTab(btn.dataset.teamTab || 'overview')));
-$('profileBtn').addEventListener('click', () => showView('profileView'));
+$('profileBtn').addEventListener('click', openProfileView);
 $('navMatches').addEventListener('click', () => showView('matchesView'));
 $('navSearch')?.addEventListener('click', () => { renderDiscoveryHome(); renderGlobalSearch(); showView('searchView'); setTimeout(() => $('globalSearchInput')?.focus(), 80); });
 $('navHistory').addEventListener('click', async () => { await loadHistory(true); showView('historyView'); });
-$('navProfile').addEventListener('click', () => showView('profileView'));
+$('navProfile').addEventListener('click', openProfileView);
 $('proBtn')?.addEventListener('click', () => buyPlan('PRO'));
 $('premiumBtn')?.addEventListener('click', () => buyPlan('PREMIUM'));
 $('billingSyncBtn')?.addEventListener('click', () => syncBilling(true));
 $('subscriptionManageBtn')?.addEventListener('click', () => manageSubscription($('subscriptionManageBtn').dataset.action || 'cancel'));
 $('savePreferencesBtn')?.addEventListener('click', savePreferencesFromUi);
+$('modelQualityRefreshBtn')?.addEventListener('click', () => loadModelQuality(true));
+$('modelQualityPeriod')?.addEventListener('change', () => loadModelQuality(true));
 
 await Promise.all([loadProfile(), loadFavorites(), loadReminders(), loadMatches(), loadHistory(false)]);
 await loadProvider();
