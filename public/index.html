@@ -44,6 +44,11 @@
           <button class="filter-btn" data-filter="all">Все</button>
         </div>
 
+        <section id="popularCompetitionsWrap" class="popular-competitions" hidden>
+          <div class="mini-section-head"><strong>Популярные турниры</strong><span>Открыть турнир</span></div>
+          <div id="popularCompetitions" class="competition-shortcuts"></div>
+        </section>
+
         <div class="section-head">
           <div>
             <h2 id="matchesTitle">Матчи сегодня</h2>
@@ -54,6 +59,21 @@
         <div id="matchesCount" class="results-count"></div>
         <div id="dataNotice"></div>
         <div id="matches" class="matches"></div>
+      </section>
+
+      <section id="tournamentView" class="view">
+        <button id="tournamentBackBtn" class="back-btn" type="button">← К матчам</button>
+        <div id="tournamentHero"></div>
+        <div class="tournament-tabs">
+          <button class="tournament-tab active" data-tournament-tab="matches" type="button">Матчи</button>
+          <button class="tournament-tab" data-tournament-tab="table" type="button">Таблица</button>
+        </div>
+        <section id="tournamentMatchesPanel" class="tournament-panel active">
+          <div id="tournamentMatches"></div>
+        </section>
+        <section id="tournamentTablePanel" class="tournament-panel">
+          <div id="tournamentTable"></div>
+        </section>
       </section>
 
       <section id="analysisView" class="view">
