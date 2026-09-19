@@ -2014,6 +2014,7 @@ async function apiMatches(request, cfg) {
         live,
         score: scoreSnapshot(f),
         leagueId,
+        season: Number(f.league?.season || 0) || null,
         league: competition.name,
         leagueOriginal: leagueName,
         leagueShort: competition.shortName,
@@ -2056,6 +2057,92 @@ async function apiMatches(request, cfg) {
   const ttl = isToday ? 1 : isYesterday ? 720 : cfg.cacheMinutes;
   await setCache(cacheKey, 0, payload, cfg, ttl);
   return json({ ...payload, cached: false, stale: false });
+}
+
+
+function normalizeStandingRow(row = {}) {
+  const all = row?.all || {};
+  const goals = all?.goals || {};
+  return {
+    rank: Number(row?.rank || 0),
+    team: {
+      id: Number(row?.team?.id || 0),
+      name: String(row?.team?.name || ''),
+      logo: String(row?.team?.logo || ''),
+    },
+    points: Number(row?.points || 0),
+    goalsDiff: Number(row?.goalsDiff || 0),
+    played: Number(all?.played || 0),
+    win: Number(all?.win || 0),
+    draw: Number(all?.draw || 0),
+    lose: Number(all?.lose || 0),
+    goalsFor: Number(goals?.for || 0),
+    goalsAgainst: Number(goals?.against || 0),
+    form: String(row?.form || '').slice(-6),
+    description: String(row?.description || ''),
+  };
+}
+
+async function apiTournament(request, cfg) {
+  const url = new URL(request.url);
+  const leagueId = Number(url.searchParams.get('leagueId'));
+  const season = Number(url.searchParams.get('season'));
+  if (!Number.isFinite(leagueId) || leagueId <= 0) return json({ error: 'leagueId обязателен.' }, 400);
+  if (!Number.isFinite(season) || season < 2000 || season > 2100) return json({ error: 'season обязателен.' }, 400);
+
+  const cacheKey = `tournament:${leagueId}:${season}:standings:v1`;
+  const cached = await getCache(cacheKey, cfg);
+  if (cached) return json({ ...cached, cached: true, stale: false, provider: providerSnapshot() });
+
+  // Таблица — дополнительный запрос. На FREE не тратим последний запрос минутной квоты.
+  const minuteRemaining = Number(memory.provider?.minuteRemaining);
+  if (Number.isFinite(minuteRemaining) && minuteRemaining <= 1) {
+    const stale = await getStaleCache(cacheKey, cfg);
+    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Таблица показана из сохранённого кэша: минутная квота API почти исчерпана.', provider: providerSnapshot() });
+    return json({
+      leagueId, season, standings: [], groups: [], available: false,
+      reason: 'Таблица временно не запрашивается: бережём последний запрос минутной квоты API-Football.',
+      provider: providerSnapshot(),
+    });
+  }
+
+  try {
+    const response = await apiFootball('/standings', { league: leagueId, season }, cfg);
+    const league = response?.[0]?.league || {};
+    const groups = Array.isArray(league?.standings) ? league.standings : [];
+    const normalizedGroups = groups.map((rows, index) => ({
+      name: groups.length > 1 ? `Группа ${index + 1}` : '',
+      rows: (Array.isArray(rows) ? rows : []).map(normalizeStandingRow).filter(x => x.team.id),
+    })).filter(g => g.rows.length);
+    const standings = normalizedGroups.flatMap(g => g.rows);
+    const payload = {
+      leagueId,
+      season,
+      available: standings.length > 0,
+      league: {
+        id: Number(league?.id || leagueId),
+        name: String(league?.name || ''),
+        country: normalizeCountryName(league?.country || ''),
+        logo: String(league?.logo || ''),
+        flag: String(league?.flag || ''),
+        season: Number(league?.season || season),
+      },
+      groups: normalizedGroups,
+      standings,
+      refreshedAt: new Date().toISOString(),
+      reason: standings.length ? '' : 'Провайдер не вернул таблицу для этого турнира и сезона.',
+    };
+    await setCache(cacheKey, 0, payload, cfg, 360);
+    return json({ ...payload, cached: false, stale: false, provider: providerSnapshot() });
+  } catch (error) {
+    const stale = await getStaleCache(cacheKey, cfg);
+    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Не удалось обновить таблицу — показана последняя сохранённая версия.', provider: providerSnapshot() });
+    return json({
+      leagueId, season, standings: [], groups: [], available: false,
+      reason: `Таблица сейчас недоступна: ${String(error?.message || error).slice(0, 180)}`,
+      provider: providerSnapshot(),
+    });
+  }
 }
 
 async function apiMatchCenter(request, cfg) {
@@ -2283,7 +2370,7 @@ async function apiAnalyze(request, cfg, user) {
 
   const payload = {
     generatedAt: new Date().toISOString(),
-    analysisVersion: '3.0.0-catalog-engine',
+    analysisVersion: '3.1.0-tournament-hub',
     match: {
       fixtureId, date: fixture.fixture?.date || '', status: fixture.fixture?.status?.short || '',
       venue: fixture.fixture?.venue?.name || '', city: fixture.fixture?.venue?.city || '',
@@ -2333,7 +2420,7 @@ export default {
     if (url.pathname === '/health' || url.pathname === '/api/health') {
       return json({
         ok: true,
-        version: '3.0.0-match-catalog',
+        version: '3.1.0-tournament-hub',
         database: hasSupabase(cfg) ? 'supabase' : 'memory',
         monetization: cfg.monetizationEnabled ? 'enabled' : 'paused',
         devMode: cfg.devMode,
@@ -2391,6 +2478,7 @@ export default {
         if (request.method === 'POST' && url.pathname === '/api/billing/subscription') return await apiBillingSubscription(request, cfg, user);
       }
       if (request.method === 'GET' && url.pathname === '/api/matches') return await apiMatches(request, cfg);
+      if (request.method === 'GET' && url.pathname === '/api/tournament') return await apiTournament(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/match-center') return await apiMatchCenter(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/history') return await apiHistory(request, cfg, user);
       if (url.pathname === '/api/favorites') return await apiFavorites(request, cfg, user);
