@@ -10,6 +10,7 @@ const memory = {
   billingPayments: new Map(),
   modelPredictions: new Map(),
   opsEvents: [],
+  integrity: { lastRun: null, recentIssues: [] },
   telemetry: {
     startedAt: new Date().toISOString(),
     apiRequests: 0,
@@ -23,12 +24,17 @@ const memory = {
     cacheWriteErrors: 0,
     supabaseErrors: 0,
     routeErrors: 0,
+    integrityRuns: 0,
+    integrityWarnings: 0,
+    integrityErrors: 0,
+    integrityQuarantined: 0,
+    integrityDuplicates: 0,
   },
   provider: { name: 'API-Football', plan: 'UNKNOWN', dailyLimit: null, dailyRemaining: null, minuteLimit: null, minuteRemaining: null, updatedAt: null, cooldownUntil: null, lastError: '', lastStatus: null, lastLatencyMs: null, lastRequestAt: null, lastSuccessAt: null },
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '3.8.0-reliability-observability';
+const APP_VERSION = '3.9.0-data-integrity';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -287,6 +293,14 @@ async function cleanupOpsEvents(cfg) {
   }
 }
 
+
+async function cleanupIntegrityData(cfg) {
+  if (!hasSupabase(cfg)) return;
+  const cutoff = new Date(Date.now() - cfg.opsRetentionDays * 86400000).toISOString();
+  try { await supaDelete(cfg, 'match_integrity_events', { observed_at: `lt.${cutoff}` }); } catch {}
+  try { await supaDelete(cfg, 'match_integrity_runs', { observed_at: `lt.${cutoff}` }); } catch {}
+}
+
 function telemetrySnapshot() {
   const t = memory.telemetry || {};
   const requests = Number(t.apiRequests || 0);
@@ -311,6 +325,11 @@ function telemetrySnapshot() {
     cacheHitRate: cacheLookups ? Math.round((hits / cacheLookups) * 1000) / 10 : null,
     supabaseErrors: Number(t.supabaseErrors || 0),
     routeErrors: Number(t.routeErrors || 0),
+    integrityRuns: Number(t.integrityRuns || 0),
+    integrityWarnings: Number(t.integrityWarnings || 0),
+    integrityErrors: Number(t.integrityErrors || 0),
+    integrityQuarantined: Number(t.integrityQuarantined || 0),
+    integrityDuplicates: Number(t.integrityDuplicates || 0),
     note: 'Runtime counters describe the current Cloudflare Worker isolate; provider quota values come from API-Football response headers.',
   };
 }
@@ -1343,7 +1362,7 @@ function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = 
   });
 
   const signalPerformance = signalCalibrationStats(rows);
-  const v37Rows = rows.filter(row => String(row.analysis_version || '').startsWith('3.7') && ['home','draw','away'].includes(String(row.actual_outcome || '')) && rowRawProbabilities(row));
+  const v37Rows = rows.filter(row => /^(?:3\.(?:[7-9]|[1-9]\d)|[4-9]\.)/.test(String(row.analysis_version || '')) && ['home','draw','away'].includes(String(row.actual_outcome || '')) && rowRawProbabilities(row));
   const rawBrier = averageMetric(v37Rows, row => brierFromProbabilities(rowRawProbabilities(row), row.actual_outcome));
   const finalBrier = averageMetric(v37Rows, row => brierFromProbabilities(rowFinalProbabilities(row), row.actual_outcome));
   const rawLogLoss = averageMetric(v37Rows, row => logLossFromProbabilities(rowRawProbabilities(row), row.actual_outcome));
@@ -1996,24 +2015,30 @@ async function readRecentOpsEvents(cfg, limit = 10) {
 }
 
 async function apiDiagnostics(request, cfg) {
-  const [supabase, ops] = await Promise.all([
+  const [supabase, ops, integrity] = await Promise.all([
     probeSupabase(cfg),
     readRecentOpsEvents(cfg, 12),
+    readIntegrityDiagnostics(cfg, 12),
   ]);
   const provider = providerSnapshot();
   let overall;
   if (supabase.configured && !supabase.ok) overall = { state: 'critical', label: 'Нужна проверка Supabase' };
   else if (provider.health === 'critical') overall = { state: 'critical', label: 'API-Football временно ограничен' };
   else if (!ops.migrationReady && hasSupabase(cfg)) overall = { state: 'warning', label: 'Выполните migration v3.8' };
-  else if (provider.health === 'warning' || Number(memory.telemetry?.routeErrors || 0) > 0 || Number(memory.telemetry?.cacheWriteErrors || 0) > 0) overall = { state: 'warning', label: 'Есть предупреждения' };
+  else if (!integrity.migrationReady && hasSupabase(cfg)) overall = { state: 'warning', label: 'Выполните migration v3.9' };
+  else if (integrity.lastRun?.health === 'critical') overall = { state: 'warning', label: 'Есть проблемы качества футбольных данных' };
+  else if (provider.health === 'warning' || integrity.lastRun?.health === 'warning' || Number(memory.telemetry?.routeErrors || 0) > 0 || Number(memory.telemetry?.cacheWriteErrors || 0) > 0) overall = { state: 'warning', label: 'Есть предупреждения' };
   else if (provider.health === 'waiting') overall = { state: 'waiting', label: 'Ожидаем первый запрос к API' };
   else overall = { state: 'ok', label: 'Системы работают штатно' };
 
   const recommendations = [];
   if (supabase.ok && !ops.migrationReady && hasSupabase(cfg)) recommendations.push('Выполните supabase_migration_v3_8.sql, чтобы журнал ошибок сохранялся между перезапусками Worker.');
+  if (!integrity.migrationReady && hasSupabase(cfg)) recommendations.push('Выполните supabase_migration_v3_9.sql, чтобы проверки качества матчей сохранялись и были видны после перезапуска Worker.');
   if (provider.cooldownActive) recommendations.push(`API-Football находится на паузе ещё примерно ${footballCooldownRemaining()} сек.; приложение должно использовать сохранённый кэш.`);
   if (supabase.configured && !supabase.ok) recommendations.push('Проверьте SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY и доступность PostgREST.');
   if (Number(provider.dailyUsedPct) >= 90) recommendations.push('Дневная квота API-Football использована более чем на 90%; до сброса лимита работаем в экономном режиме.');
+  if (Number(integrity.lastRun?.quarantined || 0) > 0) recommendations.push(`Integrity Guard скрыл ${Number(integrity.lastRun.quarantined)} подозрительных матч(а/ей) из последней выборки. Проверьте список issue codes ниже.`);
+  if (Number(integrity.lastRun?.warnings || 0) > 0 && !Number(integrity.lastRun?.quarantined || 0)) recommendations.push('В последней выборке есть предупреждения целостности данных; приложение оставило матчи доступными, но пометило их для контроля.');
   if (!recommendations.length) recommendations.push('Критичных действий сейчас не требуется.');
 
   return json({
@@ -2025,6 +2050,7 @@ async function apiDiagnostics(request, cfg) {
     supabase,
     runtime: telemetrySnapshot(),
     observability: { persistent: ops.persistent, migrationReady: ops.migrationReady, retentionDays: cfg.opsRetentionDays, recentEvents: ops.items },
+    integrity,
     recommendations,
   });
 }
@@ -2539,7 +2565,7 @@ function statusLabel(status, elapsed) {
     NS: 'Не начался', TBD: 'Время уточняется', '1H': '1-й тайм', HT: 'Перерыв', '2H': '2-й тайм',
     ET: 'Доп. время', BT: 'Перерыв', P: 'Пенальти', INT: 'Прерван', LIVE: 'LIVE',
     FT: 'Завершён', AET: 'Завершён после доп. времени', PEN: 'Завершён по пенальти',
-    PST: 'Перенесён', CANC: 'Отменён', ABD: 'Прерван', AWD: 'Тех. результат', WO: 'Без игры',
+    SUSP: 'Приостановлен', PST: 'Перенесён', CANC: 'Отменён', ABD: 'Прерван', AWD: 'Тех. результат', WO: 'Без игры',
   };
   const base = labels[s] || s || 'Статус неизвестен';
   return isLiveStatus(s) && Number.isFinite(Number(elapsed)) ? `${base} · ${Number(elapsed)}′` : base;
@@ -2833,6 +2859,227 @@ function matchStatusRank(status) {
   return 3;
 }
 
+
+const KNOWN_FIXTURE_STATUSES = new Set(['TBD','NS','1H','HT','2H','ET','BT','P','SUSP','INT','FT','AET','PEN','PST','CANC','ABD','AWD','WO','LIVE']);
+const INTEGRITY_SEVERITY_WEIGHT = Object.freeze({ info: 4, warning: 13, error: 38 });
+
+function finiteNonNegative(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+function fixtureScorePair(fixture) {
+  const home = finiteNonNegative(fixture?.goals?.home);
+  const away = finiteNonNegative(fixture?.goals?.away);
+  return { home, away };
+}
+
+function previousMatchMap(payload) {
+  const map = new Map();
+  for (const row of payload?.matches || []) {
+    const id = Number(row?.fixtureId || 0);
+    if (id > 0) map.set(id, row);
+  }
+  return map;
+}
+
+function validateFixtureIntegrity(fixture, requestedDate = '', previous = null) {
+  const issues = [];
+  const add = (severity, code, message, meta = {}) => issues.push({ severity, code, message, meta });
+  const fixtureId = Number(fixture?.fixture?.id || 0);
+  const date = String(fixture?.fixture?.date || '');
+  const kickoffMs = Date.parse(date);
+  const status = String(fixture?.fixture?.status?.short || '').toUpperCase();
+  const elapsedRaw = fixture?.fixture?.status?.elapsed;
+  const elapsed = elapsedRaw === null || elapsedRaw === undefined ? null : Number(elapsedRaw);
+  const leagueId = Number(fixture?.league?.id || 0);
+  const leagueName = String(fixture?.league?.name || '').trim();
+  const homeId = Number(fixture?.teams?.home?.id || 0);
+  const awayId = Number(fixture?.teams?.away?.id || 0);
+  const homeName = String(fixture?.teams?.home?.name || '').trim();
+  const awayName = String(fixture?.teams?.away?.name || '').trim();
+  const score = fixtureScorePair(fixture);
+
+  if (!Number.isFinite(fixtureId) || fixtureId <= 0) add('error', 'FIXTURE_ID_MISSING', 'Матч не имеет корректного fixture id.');
+  if (!Number.isFinite(kickoffMs)) add('error', 'KICKOFF_INVALID', 'Некорректное время начала матча.', { date });
+  if (!homeName || !awayName) add('error', 'TEAM_NAME_MISSING', 'У одной из команд отсутствует название.');
+  if (homeId <= 0 || awayId <= 0) add('error', 'TEAM_ID_MISSING', 'У одной из команд отсутствует корректный team id.');
+  if ((homeId > 0 && homeId === awayId) || (homeName && awayName && homeName.toLowerCase() === awayName.toLowerCase())) add('error', 'SAME_TEAM', 'Хозяева и гости определены как одна команда.');
+  if (!leagueId || !leagueName) add('warning', 'LEAGUE_INCOMPLETE', 'Неполные данные турнира.', { leagueId, leagueName });
+  if (!status || !KNOWN_FIXTURE_STATUSES.has(status)) add('warning', 'STATUS_UNKNOWN', 'Неизвестный статус матча.', { status });
+
+  const rawScores = [fixture?.goals?.home, fixture?.goals?.away, fixture?.score?.halftime?.home, fixture?.score?.halftime?.away, fixture?.score?.fulltime?.home, fixture?.score?.fulltime?.away];
+  if (rawScores.some(v => v !== null && v !== undefined && Number.isFinite(Number(v)) && Number(v) < 0)) add('error', 'SCORE_NEGATIVE', 'Обнаружено отрицательное значение счёта.');
+
+  if (isLiveStatus(status)) {
+    if (Number.isFinite(kickoffMs) && kickoffMs > Date.now() + 20 * 60000) add('error', 'LIVE_BEFORE_KICKOFF', 'LIVE-статус получен задолго до времени начала.', { minutesAhead: Math.round((kickoffMs - Date.now()) / 60000) });
+    if (elapsed !== null && (!Number.isFinite(elapsed) || elapsed < 0 || elapsed > 150)) add('warning', 'ELAPSED_INVALID', 'Подозрительное значение игровой минуты.', { elapsed });
+    if (score.home === null || score.away === null) add('warning', 'LIVE_SCORE_MISSING', 'LIVE-матч пришёл без полного текущего счёта.');
+  }
+
+  if (isFinishedStatus(status)) {
+    if (Number.isFinite(kickoffMs) && kickoffMs > Date.now() + 20 * 60000) add('error', 'FINISHED_BEFORE_KICKOFF', 'Завершённый статус получен до времени начала.');
+    if (score.home === null || score.away === null) add('warning', 'FINAL_SCORE_MISSING', 'Завершённый матч пришёл без итогового счёта.');
+    if (status === 'FT') {
+      const ftHome = finiteNonNegative(fixture?.score?.fulltime?.home);
+      const ftAway = finiteNonNegative(fixture?.score?.fulltime?.away);
+      if (ftHome !== null && ftAway !== null && score.home !== null && score.away !== null && (ftHome !== score.home || ftAway !== score.away)) {
+        add('warning', 'FINAL_SCORE_CONFLICT', 'Текущий и fulltime счёт не совпадают.', { goals: `${score.home}:${score.away}`, fulltime: `${ftHome}:${ftAway}` });
+      }
+    }
+  }
+
+  if (['NS','TBD'].includes(status) && Number.isFinite(kickoffMs) && Date.now() - kickoffMs > 6 * 3600000) {
+    add('warning', 'STALE_PREMATCH_STATUS', 'Матч давно должен был начаться, но статус всё ещё предматчевый.', { hoursLate: Math.round((Date.now() - kickoffMs) / 3600000) });
+  }
+  if (['NS','TBD'].includes(status) && ((score.home || 0) > 0 || (score.away || 0) > 0)) add('warning', 'PREMATCH_WITH_SCORE', 'Предматчевый статус содержит ненулевой счёт.');
+
+  if (!fixture?.teams?.home?.logo || !fixture?.teams?.away?.logo) add('info', 'TEAM_LOGO_MISSING', 'У одной из команд отсутствует логотип.');
+  if (!fixture?.league?.logo) add('info', 'LEAGUE_LOGO_MISSING', 'У турнира отсутствует логотип.');
+
+  if (Number.isFinite(kickoffMs) && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
+    const requestedNoon = Date.parse(`${requestedDate}T12:00:00Z`);
+    if (Number.isFinite(requestedNoon) && Math.abs(kickoffMs - requestedNoon) > 38 * 3600000) add('warning', 'DATE_WINDOW_MISMATCH', 'Время матча сильно выходит за запрошенную дату.', { requestedDate, fixtureDate: date });
+  }
+
+  if (previous) {
+    const prevStatus = String(previous.status || '').toUpperCase();
+    const prevElapsed = Number(previous.elapsed);
+    const prevHome = finiteNonNegative(previous?.score?.home);
+    const prevAway = finiteNonNegative(previous?.score?.away);
+    if ((isLiveStatus(prevStatus) || isFinishedStatus(prevStatus)) && ['NS','TBD'].includes(status)) add('warning', 'STATUS_REGRESSION', 'Статус матча откатился к предматчевому.', { previousStatus: prevStatus, currentStatus: status });
+    if (isFinishedStatus(prevStatus) && !isFinishedStatus(status)) add('warning', 'FINISHED_STATUS_REGRESSION', 'Ранее завершённый матч вернулся в незавершённый статус.', { previousStatus: prevStatus, currentStatus: status });
+    if (isLiveStatus(prevStatus) && isLiveStatus(status) && Number.isFinite(prevElapsed) && Number.isFinite(elapsed) && elapsed + 3 < prevElapsed) add('warning', 'ELAPSED_REGRESSION', 'Игровая минута уменьшилась относительно предыдущего снимка.', { previousElapsed: prevElapsed, currentElapsed: elapsed });
+    if (prevHome !== null && prevAway !== null && score.home !== null && score.away !== null && (score.home < prevHome || score.away < prevAway)) add('warning', 'SCORE_REGRESSION', 'Счёт уменьшился относительно предыдущего снимка; возможна VAR-коррекция или конфликт данных.', { previous: `${prevHome}:${prevAway}`, current: `${score.home}:${score.away}` });
+  }
+
+  const quarantine = issues.some(x => x.severity === 'error');
+  const warnings = issues.filter(x => x.severity === 'warning').length;
+  const errors = issues.filter(x => x.severity === 'error').length;
+  const infos = issues.filter(x => x.severity === 'info').length;
+  const qualityScore = Math.max(0, Math.min(100, 100 - warnings * INTEGRITY_SEVERITY_WEIGHT.warning - errors * INTEGRITY_SEVERITY_WEIGHT.error - infos * INTEGRITY_SEVERITY_WEIGHT.info));
+  const state = quarantine ? 'error' : warnings ? 'warning' : infos ? 'incomplete' : 'clean';
+  return { fixtureId, state, qualityScore, quarantine, warnings, errors, infos, issues };
+}
+
+function integritySignature(fixture) {
+  const leagueId = Number(fixture?.league?.id || 0);
+  const homeId = Number(fixture?.teams?.home?.id || 0);
+  const awayId = Number(fixture?.teams?.away?.id || 0);
+  const ms = Date.parse(fixture?.fixture?.date || '');
+  const minute = Number.isFinite(ms) ? Math.floor(ms / 60000) : 0;
+  return `${leagueId}:${homeId}:${awayId}:${minute}`;
+}
+
+function runMatchIntegrityGuard(fixtures, requestedDate, previousPayload = null) {
+  const previous = previousMatchMap(previousPayload);
+  const accepted = [];
+  const issues = [];
+  const seenIds = new Set();
+  const seenSignatures = new Map();
+  let quarantined = 0, duplicates = 0, warningMatches = 0, incompleteMatches = 0, cleanMatches = 0, repaired = 0;
+
+  for (const fixture of fixtures || []) {
+    const fixtureId = Number(fixture?.fixture?.id || 0);
+    let result = validateFixtureIntegrity(fixture, requestedDate, previous.get(fixtureId));
+    if (fixtureId > 0 && seenIds.has(fixtureId)) {
+      duplicates++;
+      result = { ...result, state: 'error', quarantine: true, errors: result.errors + 1, qualityScore: 0, issues: [...result.issues, { severity: 'error', code: 'DUPLICATE_FIXTURE_ID', message: 'Повтор fixture id в одном ответе API.', meta: { fixtureId } }] };
+    }
+    const signature = integritySignature(fixture);
+    if (!result.quarantine && signature && seenSignatures.has(signature)) {
+      duplicates++;
+      const firstId = seenSignatures.get(signature);
+      result = { ...result, state: 'error', quarantine: true, errors: result.errors + 1, qualityScore: 0, issues: [...result.issues, { severity: 'error', code: 'DUPLICATE_MATCH_SIGNATURE', message: 'Найден дубликат того же матча с другим fixture id.', meta: { firstFixtureId: firstId, duplicateFixtureId: fixtureId } }] };
+    }
+    if (fixtureId > 0) seenIds.add(fixtureId);
+    if (!result.quarantine && signature) seenSignatures.set(signature, fixtureId);
+
+    for (const issue of result.issues) {
+      if (issue.severity === 'info') continue;
+      issues.push({ fixtureId: fixtureId || null, ...issue, home: fixture?.teams?.home?.name || '', away: fixture?.teams?.away?.name || '', league: fixture?.league?.name || '' });
+    }
+
+    if (result.quarantine) {
+      quarantined++;
+      continue;
+    }
+    if (result.state === 'warning') warningMatches++;
+    else if (result.state === 'incomplete') incompleteMatches++;
+    else cleanMatches++;
+    accepted.push({ fixture, integrity: { state: result.state, score: result.qualityScore, warnings: result.warnings, infos: result.infos, issues: result.issues.filter(x => x.severity !== 'info').slice(0, 3).map(x => ({ severity: x.severity, code: x.code, message: x.message })) } });
+  }
+
+  const inspected = (fixtures || []).length;
+  const errors = issues.filter(x => x.severity === 'error').length;
+  const warnings = issues.filter(x => x.severity === 'warning').length;
+  const qualityScore = inspected ? Math.round((accepted.reduce((sum, x) => sum + Number(x.integrity?.score || 0), 0) / inspected) * 10) / 10 : 100;
+  const quarantinePct = inspected ? quarantined / inspected * 100 : 0;
+  const health = quarantinePct >= 10 || errors >= 5 ? 'critical' : (quarantined || warnings ? 'warning' : 'ok');
+  return {
+    accepted,
+    report: { requestedDate, inspected, accepted: accepted.length, clean: cleanMatches, incomplete: incompleteMatches, warningMatches, quarantined, duplicates, repaired, warnings, errors, qualityScore, health },
+    issues,
+  };
+}
+
+async function persistIntegrityRun(cfg, report, issues) {
+  const runId = crypto.randomUUID();
+  const observedAt = new Date().toISOString();
+  const run = { runId, observedAt, ...report };
+  memory.integrity.lastRun = run;
+  memory.integrity.recentIssues = (issues || []).slice(0, 30).map(x => ({ observed_at: observedAt, run_id: runId, ...x }));
+  bumpTelemetry('integrityRuns');
+  bumpTelemetry('integrityWarnings', Number(report?.warnings || 0));
+  bumpTelemetry('integrityErrors', Number(report?.errors || 0));
+  bumpTelemetry('integrityQuarantined', Number(report?.quarantined || 0));
+  bumpTelemetry('integrityDuplicates', Number(report?.duplicates || 0));
+  if (!hasSupabase(cfg)) return run;
+  try {
+    await supaUpsert(cfg, 'match_integrity_runs', {
+      run_id: runId,
+      observed_at: observedAt,
+      fixture_date: report?.requestedDate || null,
+      inspected: Number(report?.inspected || 0), accepted: Number(report?.accepted || 0), clean: Number(report?.clean || 0), incomplete: Number(report?.incomplete || 0),
+      warning_matches: Number(report?.warningMatches || 0), quarantined: Number(report?.quarantined || 0), duplicates: Number(report?.duplicates || 0), repaired: Number(report?.repaired || 0),
+      warning_count: Number(report?.warnings || 0), error_count: Number(report?.errors || 0), quality_score: Number(report?.qualityScore || 0), health: report?.health || 'ok', metadata: {},
+    }, 'run_id');
+    const rows = (issues || []).slice(0, 60).map(issue => ({
+      run_id: runId, observed_at: observedAt, fixture_date: report?.requestedDate || null, fixture_id: issue.fixtureId ? Number(issue.fixtureId) : null,
+      severity: issue.severity || 'warning', issue_code: issue.code || 'DATA_QUALITY', message: String(issue.message || '').slice(0, 400),
+      home_name: String(issue.home || '').slice(0, 120), away_name: String(issue.away || '').slice(0, 120), league_name: String(issue.league || '').slice(0, 160), metadata: safeOpsMetadata(issue.meta || {}),
+    }));
+    if (rows.length) await supaUpsert(cfg, 'match_integrity_events', rows);
+  } catch (error) {
+    bumpTelemetry('supabaseErrors');
+    await recordOpsEvent(cfg, { severity: 'warning', source: 'integrity', eventType: 'persistence', code: 'INTEGRITY_DB_WRITE', message: error?.message || error, meta: { inspected: report?.inspected, quarantined: report?.quarantined } }).catch(() => {});
+  }
+  return run;
+}
+
+async function readIntegrityDiagnostics(cfg, limit = 12) {
+  const fallback = () => ({ persistent: false, migrationReady: false, lastRun: memory.integrity.lastRun, recentIssues: memory.integrity.recentIssues.slice(0, limit) });
+  if (!hasSupabase(cfg)) return { ...fallback(), migrationReady: true };
+  try {
+    const runs = await supaSelectMany(cfg, 'match_integrity_runs', {}, { limit: 1, order: 'observed_at.desc' });
+    const events = await supaSelectMany(cfg, 'match_integrity_events', {}, { limit: Math.max(1, Math.min(30, limit)), order: 'observed_at.desc' });
+    const row = runs?.[0] || null;
+    const lastRun = row ? {
+      runId: row.run_id, observedAt: row.observed_at, requestedDate: row.fixture_date, inspected: Number(row.inspected || 0), accepted: Number(row.accepted || 0), clean: Number(row.clean || 0), incomplete: Number(row.incomplete || 0),
+      warningMatches: Number(row.warning_matches || 0), quarantined: Number(row.quarantined || 0), duplicates: Number(row.duplicates || 0), repaired: Number(row.repaired || 0), warnings: Number(row.warning_count || 0), errors: Number(row.error_count || 0), qualityScore: Number(row.quality_score || 0), health: row.health || 'ok',
+    } : null;
+    return { persistent: true, migrationReady: true, lastRun, recentIssues: events || [] };
+  } catch {
+    return fallback();
+  }
+}
+
+async function apiDataIntegrity(request, cfg) {
+  const data = await readIntegrityDiagnostics(cfg, 24);
+  return json({ available: true, version: APP_VERSION, generatedAt: new Date().toISOString(), ...data });
+}
+
 async function apiMe(request, cfg, user) {
   const [quota, record, favorites, reminders, preferences] = await Promise.all([
     getQuota(user.id, cfg),
@@ -3079,16 +3326,17 @@ async function apiMatches(request, cfg) {
   const isToday = date === todayUtc();
   const yesterday = new Date(); yesterday.setUTCDate(yesterday.getUTCDate() - 1);
   const isYesterday = date === yesterday.toISOString().slice(0, 10);
-  const cacheKey = `matches:${date}:v5-catalog`;
+  const cacheKey = `matches:${date}:v6-integrity`;
 
   const cached = await getCache(cacheKey, cfg);
   if (cached?.matches) return json({ ...cached, cached: true, stale: false });
+  const previousPayload = await getStaleCache(cacheKey, cfg).catch(() => null);
 
   let fixtures;
   try {
     fixtures = await apiFootball('/fixtures', { date }, cfg);
   } catch (error) {
-    const stale = await getStaleCache(cacheKey, cfg);
+    const stale = previousPayload || await getStaleCache(cacheKey, cfg);
     if (stale?.matches && isFootballRateLimitError(error)) {
       return json({
         ...stale, cached: true, stale: true,
@@ -3099,12 +3347,18 @@ async function apiMatches(request, cfg) {
     throw error;
   }
 
-  // Reuse the fixtures request we already made to settle tracked predictions at zero additional provider cost.
-  await settlePredictionsFromFixtures(fixtures, cfg).catch(() => null);
+  const integrityRun = runMatchIntegrityGuard(fixtures, date, previousPayload);
+  await persistIntegrityRun(cfg, integrityRun.report, integrityRun.issues).catch(() => null);
+  const verifiedFixtures = integrityRun.accepted;
 
-  const matches = fixtures
-    .filter(f => !['CANC', 'PST', 'ABD', 'AWD', 'WO'].includes(f.fixture?.status?.short || ''))
-    .map(f => {
+  // Reuse the verified fixtures request we already made to settle tracked predictions at zero additional provider cost.
+  await settlePredictionsFromFixtures(verifiedFixtures.map(x => x.fixture), cfg).catch(() => null);
+
+  const matches = verifiedFixtures
+    .filter(entry => !['CANC', 'PST', 'ABD', 'AWD', 'WO'].includes(entry.fixture?.fixture?.status?.short || ''))
+    .map(entry => {
+      const f = entry.fixture;
+      const integrity = entry.integrity;
       const status = f.fixture?.status?.short || '';
       const elapsed = Number(f.fixture?.status?.elapsed ?? 0) || null;
       const leagueId = Number(f.league?.id || 0);
@@ -3147,6 +3401,7 @@ async function apiMatches(request, cfg) {
         lowPriority: competition.youth || competition.friendly || competition.lower,
         coverageTier: competition.youth || competition.lower ? 'basic' : competition.tier === 'elite' ? 'enhanced' : 'standard',
         interestScore: matchInterestScore({ competition, leagueId, leagueName, country, homeName, awayName, status, date: f.fixture?.date }),
+        integrity,
         home: { id: f.teams?.home?.id, name: homeName, logo: f.teams?.home?.logo || '' },
         away: { id: f.teams?.away?.id, name: awayName, logo: f.teams?.away?.logo || '' },
       };
@@ -3168,7 +3423,7 @@ async function apiMatches(request, cfg) {
     international: matches.filter(x => ['continental','national','international'].includes(x.category)).length,
     hiddenLowPriority: matches.filter(x => x.lowPriority).length,
   };
-  const payload = { date, matches, catalog, refreshedAt: new Date().toISOString(), provider: providerSnapshot() };
+  const payload = { date, matches, catalog, integrity: integrityRun.report, refreshedAt: new Date().toISOString(), provider: providerSnapshot() };
   const ttl = isToday ? 1 : isYesterday ? 720 : cfg.cacheMinutes;
   await setCache(cacheKey, 0, payload, cfg, ttl);
   return json({ ...payload, cached: false, stale: false });
@@ -3536,7 +3791,7 @@ async function apiMatchCenter(request, cfg) {
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'fixtureId обязателен.' }, 400);
 
   // Shared across all users. During LIVE it expires after 60 seconds.
-  const baseCacheKey = `match-center:${fixtureId}:v4`;
+  const baseCacheKey = `match-center:${fixtureId}:v5-integrity`;
   const cached = await getCache(baseCacheKey, cfg);
   if (cached) return json({ ...cached, cached: true });
 
@@ -3551,6 +3806,11 @@ async function apiMatchCenter(request, cfg) {
     throw error;
   }
   if (!fixture) return json({ error: 'Матч не найден.' }, 404);
+  const centerIntegrity = validateFixtureIntegrity(fixture, '', null);
+  if (centerIntegrity.quarantine) {
+    await recordOpsEvent(cfg, { severity: 'warning', source: 'integrity', eventType: 'single_fixture_guard', code: 'MATCH_CENTER_REJECTED', message: 'Match Center отклонил structurally invalid fixture.', meta: { fixtureId, issues: centerIntegrity.issues.filter(x => x.severity === 'error').map(x => x.code) } }).catch(() => {});
+    return json({ error: 'Данные этого матча не прошли проверку целостности. Попробуйте позже.', code: 'MATCH_DATA_INVALID', integrity: centerIntegrity }, 409);
+  }
 
   const status = fixture.fixture?.status?.short || '';
   const elapsed = Number(fixture.fixture?.status?.elapsed ?? 0) || null;
@@ -3614,6 +3874,7 @@ async function apiMatchCenter(request, cfg) {
       league: leagueName,
       country: fixture.league?.country || '',
       score: scoreSnapshot(fixture),
+      integrity: { state: centerIntegrity.state, score: centerIntegrity.qualityScore, warnings: centerIntegrity.warnings, issues: centerIntegrity.issues.filter(x => x.severity !== 'info').slice(0, 3) },
       home: { id: homeId, name: homeName, logo: fixture.teams?.home?.logo || '' },
       away: { id: awayId, name: awayName, logo: fixture.teams?.away?.logo || '' },
     },
@@ -3733,7 +3994,7 @@ async function apiAnalyze(request, cfg, user) {
   const fixtureId = Number(body?.fixtureId);
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'Некорректный fixtureId.' }, 400);
 
-  const cacheKey = `fixture:${fixtureId}:v6-analysis-quality`;
+  const cacheKey = `fixture:${fixtureId}:v7-integrity`;
   const cached = await getCache(cacheKey, cfg);
   if (cached) {
     await recordHistory(user.id, cached, cfg);
@@ -3755,6 +4016,11 @@ async function apiAnalyze(request, cfg, user) {
     throw error;
   }
   if (!fixture) return json({ error: 'Матч не найден.' }, 404);
+  const analysisIntegrity = validateFixtureIntegrity(fixture, '', null);
+  if (analysisIntegrity.quarantine) {
+    await recordOpsEvent(cfg, { severity: 'warning', source: 'integrity', eventType: 'single_fixture_guard', code: 'ANALYSIS_REJECTED', message: 'Анализ отклонён: fixture не прошёл структурную проверку.', meta: { fixtureId, issues: analysisIntegrity.issues.filter(x => x.severity === 'error').map(x => x.code) } }).catch(() => {});
+    return json({ error: 'Данные матча выглядят противоречиво, поэтому анализ временно заблокирован.', code: 'MATCH_DATA_INVALID', integrity: analysisIntegrity, quota: quotaBefore }, 409);
+  }
   // If this fixture has already finished, settle any earlier immutable pre-match snapshot without another football API call.
   if (isFinishedStatus(fixture.fixture?.status?.short)) await settlePredictionsFromFixtures([fixture], cfg).catch(() => null);
 
@@ -3869,13 +4135,14 @@ async function apiAnalyze(request, cfg, user) {
 
   const payload = {
     generatedAt: new Date().toISOString(),
-    analysisVersion: '3.7.0-model-calibration',
+    analysisVersion: '3.9.0-data-integrity',
     match: {
       fixtureId, date: fixture.fixture?.date || '', status: fixture.fixture?.status?.short || '',
       venue: fixture.fixture?.venue?.name || '', city: fixture.fixture?.venue?.city || '',
       leagueId, season, league: leagueName, country: fixture.league?.country || '',
       home: { id: homeId, name: homeName, logo: fixture.teams?.home?.logo || '' },
       away: { id: awayId, name: awayName, logo: fixture.teams?.away?.logo || '' },
+      integrity: { state: analysisIntegrity.state, score: analysisIntegrity.qualityScore, warnings: analysisIntegrity.warnings, issues: analysisIntegrity.issues.filter(x => x.severity !== 'info').slice(0, 3) },
     },
     probabilities,
     rawProbabilities,
@@ -3936,6 +4203,7 @@ export default {
         database: hasSupabase(cfg) ? 'supabase' : 'memory',
         monetization: cfg.monetizationEnabled ? 'enabled' : 'paused',
         observability: 'enabled',
+        dataIntegrity: 'enabled',
         devMode: cfg.devMode,
       });
     }
@@ -3986,6 +4254,7 @@ export default {
       if (request.method === 'GET' && url.pathname === '/api/me') return await apiMe(request, cfg, user);
       if (request.method === 'GET' && url.pathname === '/api/provider') return json({ provider: providerSnapshot() });
       if (request.method === 'GET' && url.pathname === '/api/diagnostics') return await apiDiagnostics(request, cfg);
+      if (request.method === 'GET' && url.pathname === '/api/data-integrity') return await apiDataIntegrity(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/model-quality') return await apiModelQuality(request, cfg);
       if (url.pathname.startsWith('/api/billing/')) {
         if (!cfg.monetizationEnabled) return json({ error: 'Монетизация отложена до финального этапа проекта.' }, 404);
@@ -4037,6 +4306,7 @@ export default {
     ];
     if (scheduledAt.getUTCHours() === 3 && scheduledAt.getUTCMinutes() < 15) {
       tasks.push(['ops_cleanup', cleanupOpsEvents(cfg)]);
+      tasks.push(['integrity_cleanup', cleanupIntegrityData(cfg)]);
     }
     ctx.waitUntil((async () => {
       const results = await Promise.allSettled(tasks.map(([, promise]) => promise));
