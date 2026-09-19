@@ -2665,13 +2665,96 @@ async function apiMatchCenter(request, cfg) {
   return json({ ...payload, cached: false });
 }
 
+
+async function cachedSeasonStatsForComparison(teamId, leagueId, season, cfg) {
+  if (!teamId || !leagueId || !season) return null;
+  const cached = await getStaleCache(`team:intelligence:${Number(teamId)}:${Number(leagueId)}:${Number(season)}:v1`, cfg);
+  return cached?.stats?.available ? cached.stats : null;
+}
+
+function comparisonNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function comparisonMetric({ key, label, homeValue, awayValue, format = 'number', better = 'higher', minGap = 0, note = '' }) {
+  const home = comparisonNumber(homeValue);
+  const away = comparisonNumber(awayValue);
+  if (home === null || away === null) return null;
+  const gap = Math.abs(home - away);
+  let edge = 'even';
+  if (gap > Number(minGap || 0)) {
+    const homeBetter = better === 'lower' ? home < away : home > away;
+    edge = homeBetter ? 'home' : 'away';
+  }
+  return { key, label, homeValue: home, awayValue: away, format, better, edge, note };
+}
+
+function buildMatchComparison({ homeName, awayName, homeForm, awayForm, homeStanding, awayStanding, homeSeasonStats, awaySeasonStats, goalModel, h2h, absences, hasInjuryData }) {
+  const hOverall = homeForm?.overall || null;
+  const aOverall = awayForm?.overall || null;
+  const hVenue = homeForm?.venue || null;
+  const aVenue = awayForm?.venue || null;
+  const hSeason = homeSeasonStats?.derived || null;
+  const aSeason = awaySeasonStats?.derived || null;
+
+  const metrics = [
+    comparisonMetric({ key:'form_ppg', label:'Форма · очки/матч', homeValue:hOverall?.ppg, awayValue:aOverall?.ppg, format:'decimal', minGap:.14, note:'Последние 5 завершённых матчей.' }),
+    comparisonMetric({ key:'venue_ppg', label:'Дома / в гостях', homeValue:hVenue?.ppg, awayValue:aVenue?.ppg, format:'decimal', minGap:.14, note:'Хозяева дома против гостей на выезде.' }),
+    comparisonMetric({ key:'attack', label:'Атака · гол/матч', homeValue:(hSeason && aSeason) ? hSeason.goalsForPerMatch : hOverall?.gfAvg, awayValue:(hSeason && aSeason) ? aSeason.goalsForPerMatch : aOverall?.gfAvg, format:'decimal', minGap:.14, note:(hSeason && aSeason) ? 'Сезонная статистика из уже загруженного кэша.' : 'Недавняя результативность.' }),
+    comparisonMetric({ key:'defense', label:'Оборона · пропущено', homeValue:(hSeason && aSeason) ? hSeason.goalsAgainstPerMatch : hOverall?.gaAvg, awayValue:(hSeason && aSeason) ? aSeason.goalsAgainstPerMatch : aOverall?.gaAvg, format:'decimal', better:'lower', minGap:.14, note:'Меньше — лучше.' }),
+    comparisonMetric({ key:'clean_sheets', label:'Сухие матчи', homeValue:(hSeason && aSeason) ? hSeason.cleanSheetRate : hOverall?.cleanSheetPct, awayValue:(hSeason && aSeason) ? aSeason.cleanSheetRate : aOverall?.cleanSheetPct, format:'percent', minGap:8, note:(hSeason && aSeason) ? 'Доля матчей сезона без пропущенных.' : 'Доля в последних матчах.' }),
+    comparisonMetric({ key:'expected_goals', label:'Голевая оценка модели', homeValue:goalModel?.homeExpected, awayValue:goalModel?.awayExpected, format:'decimal', minGap:.14, note:'Poisson-эвристика по доступной форме.' }),
+    comparisonMetric({ key:'table_rank', label:'Место в таблице', homeValue:homeStanding?.rank, awayValue:awayStanding?.rank, format:'rank', better:'lower', minGap:0, note:'Показывается только если таблица турнира уже была загружена.' }),
+    ((Number(h2h?.homeWins||0)+Number(h2h?.awayWins||0)+Number(h2h?.draws||0)) > 0) ? comparisonMetric({ key:'h2h', label:'Победы в H2H', homeValue:h2h?.homeWins, awayValue:h2h?.awayWins, format:'integer', minGap:0, note:'Последние доступные очные встречи.' }) : null,
+    hasInjuryData ? comparisonMetric({ key:'absences', label:'Отмеченные потери', homeValue:absences?.home?.length || 0, awayValue:absences?.away?.length || 0, format:'integer', better:'lower', minGap:0, note:'Только подтверждённые провайдером отсутствия.' }) : null,
+  ].filter(Boolean);
+
+  const descriptions = {
+    form_ppg: 'лучше текущая форма', venue_ppg: 'сильнее профиль дома/в гостях', attack: 'выше результативность',
+    defense: 'меньше пропускает', clean_sheets: 'чаще сохраняет ворота сухими', expected_goals: 'выше голевая оценка модели',
+    table_rank: 'выше позиция в таблице', h2h: 'больше побед в очных матчах', absences: 'меньше отмеченных потерь состава',
+  };
+  const advantages = { home: [], away: [] };
+  let homeEdges = 0, awayEdges = 0, even = 0;
+  for (const metric of metrics) {
+    if (metric.edge === 'home') { homeEdges += 1; if (advantages.home.length < 4) advantages.home.push(descriptions[metric.key] || metric.label); }
+    else if (metric.edge === 'away') { awayEdges += 1; if (advantages.away.length < 4) advantages.away.push(descriptions[metric.key] || metric.label); }
+    else even += 1;
+  }
+
+  let balanceLabel = 'Баланс доступных метрик близкий';
+  if (homeEdges >= awayEdges + 2) balanceLabel = `${homeName} впереди по большему числу доступных метрик`;
+  else if (awayEdges >= homeEdges + 2) balanceLabel = `${awayName} впереди по большему числу доступных метрик`;
+
+  const sources = ['последние матчи', 'дом/выезд'];
+  if (homeSeasonStats && awaySeasonStats) sources.push('кэш сезонной статистики');
+  if (homeStanding && awayStanding) sources.push('кэш таблицы');
+  if ((Number(h2h?.homeWins||0)+Number(h2h?.awayWins||0)+Number(h2h?.draws||0)) > 0) sources.push('H2H');
+  if (hasInjuryData) sources.push('потери состава');
+
+  return {
+    metrics,
+    advantages,
+    score: { home: homeEdges, away: awayEdges, even },
+    balanceLabel,
+    dataReuse: {
+      separateApiRequests: 0,
+      seasonStatsCached: Boolean(homeSeasonStats && awaySeasonStats),
+      standingsCached: Boolean(homeStanding && awayStanding),
+      sources,
+      note: 'Вкладка сравнения сама не делает дополнительных запросов к API-Football: она собирается из данных текущего анализа и уже существующего кэша.',
+    },
+  };
+}
+
 async function apiAnalyze(request, cfg, user) {
   let body = {};
   try { body = await request.json(); } catch {}
   const fixtureId = Number(body?.fixtureId);
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'Некорректный fixtureId.' }, 400);
 
-  const cacheKey = `fixture:${fixtureId}:v4-quality-engine`;
+  const cacheKey = `fixture:${fixtureId}:v5-match-comparison`;
   const cached = await getCache(cacheKey, cfg);
   if (cached) {
     await recordHistory(user.id, cached, cfg);
@@ -2748,6 +2831,18 @@ async function apiAnalyze(request, cfg, user) {
     : Promise.resolve(null);
   const [web, homeForm, awayForm] = await Promise.all([webPromise, homeFormPromise, awayFormPromise]);
 
+  // v3.5 Match Comparison: reuse only already cached deep team data.
+  // This adds Supabase cache reads but deliberately makes zero extra API-Football calls.
+  const leagueId = Number(fixture.league?.id || 0);
+  const season = Number(fixture.league?.season || 0) || null;
+  const comparisonCompetition = { leagueId, season };
+  const [homeStanding, awayStanding, homeSeasonStats, awaySeasonStats] = await Promise.all([
+    cachedTeamStanding(homeId, comparisonCompetition, cfg).catch(() => null),
+    cachedTeamStanding(awayId, comparisonCompetition, cfg).catch(() => null),
+    cachedSeasonStatsForComparison(homeId, leagueId, season, cfg).catch(() => null),
+    cachedSeasonStatsForComparison(awayId, leagueId, season, cfg).catch(() => null),
+  ]);
+
   const market = extractMarket(odds);
   const apiPrediction = extractPrediction(predictions);
   const h2h = formatH2H(h2hRows, homeId, awayId);
@@ -2758,6 +2853,10 @@ async function apiAnalyze(request, cfg, user) {
   const blended = blendProbabilitySignals({ market, model: apiPrediction, form: recentFormProb, h2h: h2hProb });
   const probabilities = applyAbsenceAdjustment(blended.probabilities, absences);
   const goalModel = poissonGoalModel(homeForm, awayForm);
+  const comparison = buildMatchComparison({
+    homeName, awayName, homeForm, awayForm, homeStanding, awayStanding, homeSeasonStats, awaySeasonStats,
+    goalModel, h2h, absences, hasInjuryData: injuries.length > 0,
+  });
   const confidence = confidenceModel(blended.signals, probabilities, homeForm, awayForm);
   const notes = buildAnalysisNotes({
     probabilities, market, model: apiPrediction, homeForm, awayForm, h2h, absences, lineups, news: web,
@@ -2776,11 +2875,11 @@ async function apiAnalyze(request, cfg, user) {
 
   const payload = {
     generatedAt: new Date().toISOString(),
-    analysisVersion: '3.4.0-team-intelligence',
+    analysisVersion: '3.5.0-match-comparison',
     match: {
       fixtureId, date: fixture.fixture?.date || '', status: fixture.fixture?.status?.short || '',
       venue: fixture.fixture?.venue?.name || '', city: fixture.fixture?.venue?.city || '',
-      league: leagueName, country: fixture.league?.country || '',
+      leagueId, season, league: leagueName, country: fixture.league?.country || '',
       home: { id: homeId, name: homeName, logo: fixture.teams?.home?.logo || '' },
       away: { id: awayId, name: awayName, logo: fixture.teams?.away?.logo || '' },
     },
@@ -2798,7 +2897,7 @@ async function apiAnalyze(request, cfg, user) {
       availableSignals,
       skipped,
     },
-    market, apiPrediction, recentForm: { home: homeForm, away: awayForm }, goalModel, absences, lineups, h2h,
+    market, apiPrediction, recentForm: { home: homeForm, away: awayForm }, goalModel, comparison, absences, lineups, h2h,
     insights: notes.factors, risks: [...(notes.risks || []), ...skipped], news: web,
     completeness: {
       score: [fixture, market, apiPrediction, injuries.length, h2hRows.length, lineupsRows.length, web.answer, homeForm?.overall, awayForm?.overall, goalModel].filter(Boolean).length,
@@ -2826,7 +2925,7 @@ export default {
     if (url.pathname === '/health' || url.pathname === '/api/health') {
       return json({
         ok: true,
-        version: '3.4.0-team-intelligence',
+        version: '3.5.0-match-comparison',
         database: hasSupabase(cfg) ? 'supabase' : 'memory',
         monetization: cfg.monetizationEnabled ? 'enabled' : 'paused',
         devMode: cfg.devMode,
