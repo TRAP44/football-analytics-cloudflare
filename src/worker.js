@@ -34,7 +34,7 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '3.9.0-data-integrity';
+const APP_VERSION = '4.0.0-performance-ux';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -79,6 +79,9 @@ function json(data, status = 200) {
     headers: {
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
+      'x-content-type-options': 'nosniff',
+      'x-app-version': APP_VERSION,
+      'vary': 'x-telegram-init-data',
     },
   });
 }
@@ -4135,7 +4138,7 @@ async function apiAnalyze(request, cfg, user) {
 
   const payload = {
     generatedAt: new Date().toISOString(),
-    analysisVersion: '3.9.0-data-integrity',
+    analysisVersion: '4.0.0-performance-ux',
     match: {
       fixtureId, date: fixture.fixture?.date || '', status: fixture.fixture?.status?.short || '',
       venue: fixture.fixture?.venue?.name || '', city: fixture.fixture?.venue?.city || '',
@@ -4204,6 +4207,7 @@ export default {
         monetization: cfg.monetizationEnabled ? 'enabled' : 'paused',
         observability: 'enabled',
         dataIntegrity: 'enabled',
+        performanceUx: 'enabled',
         devMode: cfg.devMode,
       });
     }
