@@ -54,6 +54,22 @@ const MATCH_SNAPSHOT_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const $ = id => document.getElementById(id);
 const views = ['matchesView', 'searchView', 'tournamentView', 'teamView', 'analysisView', 'historyView', 'profileView'];
 
+const VIEW_CHROME = {
+  matchesView: ['Матчи', 'Сегодня, LIVE и предматчевая аналитика'],
+  searchView: ['Поиск', 'Команды, турниры и быстрый доступ'],
+  tournamentView: ['Турнир', 'Матчи, таблица и контекст соревнования'],
+  teamView: ['Команда', 'Форма, состав и календарь клуба'],
+  analysisView: ['Анализ матча', 'Вероятности, форма и ключевые факторы'],
+  historyView: ['История', 'Недавно просмотренные анализы'],
+  profileView: ['Профиль', 'Настройки, качество модели и диагностика'],
+};
+
+function syncTopbar(id) {
+  const [title, subtitle] = VIEW_CHROME[id] || VIEW_CHROME.matchesView;
+  if ($('topbarTitle')) $('topbarTitle').textContent = title;
+  if ($('topbarSubtitle')) $('topbarSubtitle').textContent = subtitle;
+}
+
 function stopLiveRefresh() {
   if (state.liveRefreshTimer) clearInterval(state.liveRefreshTimer);
   state.liveRefreshTimer = null;
@@ -62,6 +78,7 @@ function stopLiveRefresh() {
 
 function showView(id, options = {}) {
   const current = activeViewId();
+  syncTopbar(id);
   if (current && current !== id) state.viewScroll[current] = window.scrollY || 0;
   if (id !== 'analysisView') stopLiveRefresh();
   views.forEach(v => $(v).classList.toggle('active', v === id));
@@ -211,7 +228,9 @@ renderDiscoveryHome();
 function renderProfile() {
   if (!state.profile) return;
   const { user, quota, stats = {} } = state.profile;
-  $('profileBtn').textContent = quota.plan;
+  const profilePlanLabel = $('profileBtn')?.querySelector('span');
+  if (profilePlanLabel) profilePlanLabel.textContent = quota.plan;
+  else if ($('profileBtn')) $('profileBtn').textContent = quota.plan;
   $('quotaText').textContent = `Осталось анализов: ${quota.left} из ${quota.limit}`;
   $('profileName').textContent = user.firstName || 'Пользователь';
   $('profileUsername').textContent = user.username ? `@${user.username}` : `Telegram ID ${user.id}`;
@@ -489,7 +508,7 @@ function renderDiagnostics() {
     const cp = state.clientPerf || {};
     const avg = Number(cp.completed || 0) > 0 ? Math.round(Number(cp.totalMs || 0) / Number(cp.completed)) : null;
     client.hidden = false;
-    client.innerHTML = `<div class="diagnostics-block-head"><strong>📱 Клиент Mini App</strong><span>v4.0</span></div><div class="diagnostics-grid">
+    client.innerHTML = `<div class="diagnostics-block-head"><strong>📱 Клиент Mini App</strong><span>v4.1</span></div><div class="diagnostics-grid">
       <div><span>Сеть</span><strong>${navigator.onLine === false ? 'Offline' : 'Online'}</strong><small>${navigator.connection?.effectiveType ? escapeHtml(navigator.connection.effectiveType) : 'тип сети —'}</small></div>
       <div><span>Средний API</span><strong>${avg !== null ? `${avg} мс` : '—'}</strong><small>последний ${cp.lastMs !== null ? `${cp.lastMs} мс` : '—'}</small></div>
       <div><span>Запросы</span><strong>${Number(cp.requests || 0)}</strong><small>${Number(cp.completed || 0)} успешно · ${Number(cp.failed || 0)} ошибок</small></div>
@@ -1178,8 +1197,10 @@ function renderPopularCompetitions() {
 }
 
 function matchCardHtml(m, { grouped = false } = {}) {
+  const interest = Math.max(0, Math.min(100, Number(m.interestScore || 0)));
+  const cardState = m.live ? 'is-live' : m.finished ? 'is-finished' : 'is-upcoming';
   return `
-    <article class="match-card ${Number(m.interestScore || 0) >= 50 ? 'top-match' : ''}">
+    <article class="match-card ${Number(m.interestScore || 0) >= 50 ? 'top-match' : ''} ${cardState}">
       ${grouped ? '' : `<div class="match-meta"><span class="competition-name">${m.featured ? '<b class="top-tag">ГЛАВНЫЙ</b> ' : ''}${escapeHtml(m.league || 'Турнир')}</span><span>${escapeHtml(m.country || '')}</span></div>`}
       <div class="catalog-row">
         ${m.category ? `<span class="competition-chip ${categoryClass(m.category)}">${escapeHtml(categoryLabel(m.category))}</span>` : ''}
@@ -1188,22 +1209,23 @@ function matchCardHtml(m, { grouped = false } = {}) {
         ${m.integrity?.state === 'warning' ? `<span class="integrity-mini warning" title="${escapeHtml((m.integrity?.issues || []).map(x => x.message).join(' · '))}">⚠ данные</span>` : ''}
       </div>
       <div class="interest-row">
-        <span>Индекс интереса</span>
-        <strong>${Number(m.interestScore || 0)}/100 · ${interestLabel(m.interestScore)}</strong>
+        <span>Интерес</span>
+        <div class="interest-meter" aria-hidden="true"><i style="--interest:${interest}%"></i></div>
+        <strong>${interest}/100 · ${interestLabel(m.interestScore)}</strong>
       </div>
       <div class="team-row">
         <div class="team">
           <button class="fav-star ${isFavorite(m.home?.id) ? 'active' : ''}" type="button" data-team-id="${Number(m.home?.id)}" data-team-name="${escapeHtml(m.home?.name || '')}" data-team-logo="${escapeHtml(m.home?.logo || '')}" aria-label="Избранное">${isFavorite(m.home?.id) ? '★' : '☆'}</button>
           <button class="team-open-link match-team-open" type="button" data-open-team="${Number(m.home?.id)}" data-team-name="${escapeHtml(m.home?.name || '')}" data-team-logo="${escapeHtml(m.home?.logo || '')}">
-            ${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : ''}
-            <strong>${escapeHtml(m.home?.name || '')}</strong>
+            ${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : '<span class="team-logo-fallback">⚽</span>'}
+            <span class="match-team-copy"><strong>${escapeHtml(m.home?.name || '')}</strong><small>Хозяева</small></span>
           </button>
         </div>
         <div class="kickoff ${m.live ? 'live-kickoff' : ''}">${escapeHtml(matchCenter(m))}</div>
         <div class="team away">
           <button class="team-open-link match-team-open away-open" type="button" data-open-team="${Number(m.away?.id)}" data-team-name="${escapeHtml(m.away?.name || '')}" data-team-logo="${escapeHtml(m.away?.logo || '')}">
-            <strong>${escapeHtml(m.away?.name || '')}</strong>
-            ${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : ''}
+            <span class="match-team-copy"><strong>${escapeHtml(m.away?.name || '')}</strong><small>Гости</small></span>
+            ${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : '<span class="team-logo-fallback">⚽</span>'}
           </button>
           <button class="fav-star ${isFavorite(m.away?.id) ? 'active' : ''}" type="button" data-team-id="${Number(m.away?.id)}" data-team-name="${escapeHtml(m.away?.name || '')}" data-team-logo="${escapeHtml(m.away?.logo || '')}" aria-label="Избранное">${isFavorite(m.away?.id) ? '★' : '☆'}</button>
         </div>
@@ -1235,14 +1257,15 @@ function renderMatches() {
   const age = relativeAge(state.matchesMeta?.refreshedAt);
   const catalog = state.matchesMeta?.catalog || {};
   const groups = competitionGroups(list);
-  const bits = [`Показано: ${list.length} из ${state.matches.length}`];
-  if (groups.length) bits.push(`турниров: ${groups.length}`);
-  if (Number(catalog.live || 0) > 0) bits.push(`LIVE: ${Number(catalog.live)}`);
-  if (Number(catalog.featured || 0) > 0) bits.push(`главных: ${Number(catalog.featured)}`);
   const integrity = state.matchesMeta?.integrity || {};
-  if (Number.isFinite(Number(integrity.qualityScore))) bits.push(`качество: ${Math.round(Number(integrity.qualityScore))}%`);
-  if (age) bits.push(`обновлено ${age}`);
-  $('matchesCount').textContent = bits.join(' · ');
+  const summaryBits = [
+    `<span class="summary-pill"><b>${list.length}</b> из ${state.matches.length}</span>`,
+    groups.length ? `<span class="summary-pill"><b>${groups.length}</b> турниров</span>` : '',
+    Number(catalog.live || 0) > 0 ? `<span class="summary-pill live"><b>${Number(catalog.live)}</b> LIVE</span>` : '',
+    Number.isFinite(Number(integrity.qualityScore)) ? `<span class="summary-pill quality">данные <b>${Math.round(Number(integrity.qualityScore))}%</b></span>` : '',
+    age ? `<span class="summary-pill muted-pill">↻ ${escapeHtml(age)}</span>` : '',
+  ].filter(Boolean);
+  $('matchesCount').innerHTML = summaryBits.join('');
   renderPopularCompetitions();
   if ($('dataNotice')) {
     const notices = [];
@@ -2363,6 +2386,9 @@ async function scheduleIdle(task) {
   return new Promise(resolve => setTimeout(async () => { try { await task(); } finally { resolve(); } }, 250));
 }
 
+syncTopbar('matchesView');
+
+// v4.1 keeps the fast v4.0 startup while refreshing the visual shell.
 // v4.0: first paint is intentionally small — matches/profile/favorites only.
 // History, reminders and provider details are loaded later or when their screen opens.
 await Promise.allSettled([loadProfile(), loadFavorites(), loadMatches()]);
