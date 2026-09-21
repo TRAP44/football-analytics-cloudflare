@@ -54,7 +54,7 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '5.1.0-production-load-safety';
+const APP_VERSION = '5.2.0-failure-recovery';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -192,6 +192,75 @@ function publicDataCapabilities() {
 
 function adminForbidden() {
   return json({ error: 'Этот технический раздел доступен только администратору.', code: 'ADMIN_ONLY' }, 403);
+}
+
+function publicRouteError(error, rateLimited = false) {
+  const code = String(error?.code || (rateLimited ? 'FOOTBALL_RATE_LIMIT' : 'SERVER_ERROR'));
+  const retryAfter = Number(error?.retryAfter || 0) || undefined;
+
+  if (rateLimited || ['FOOTBALL_RATE_LIMIT', 'FOOTBALL_COOLDOWN'].includes(code)) {
+    return {
+      status: 429,
+      body: {
+        error: retryAfter
+          ? `Футбольные данные временно обновляются медленнее. Повторите примерно через ${retryAfter} сек.`
+          : 'Футбольные данные временно обновляются медленнее. Попробуйте чуть позже.',
+        code,
+        category: 'rate_limit',
+        recoverable: true,
+        retryAfter,
+      },
+    };
+  }
+
+  if (code === 'UPSTREAM_TIMEOUT') {
+    return {
+      status: 504,
+      body: {
+        error: 'Источник данных отвечает медленнее обычного. Сохранённые данные останутся доступны, попробуйте обновить позже.',
+        code,
+        category: 'timeout',
+        recoverable: true,
+      },
+    };
+  }
+
+  if (code.startsWith('FOOTBALL_')) {
+    return {
+      status: 502,
+      body: {
+        error: 'Футбольный источник временно недоступен. Приложение использует кэш там, где он есть.',
+        code,
+        category: 'provider',
+        recoverable: true,
+        retryAfter,
+      },
+    };
+  }
+
+  const raw = String(error?.message || '');
+  if (/supabase|postgrest|database/i.test(raw)) {
+    return {
+      status: 503,
+      body: {
+        error: 'Сервис хранения данных временно недоступен. Основные футбольные экраны попробуют продолжить работу через кэш.',
+        code: code === 'SERVER_ERROR' ? 'DATABASE_DEGRADED' : code,
+        category: 'database',
+        recoverable: true,
+      },
+    };
+  }
+
+  return {
+    status: 502,
+    body: {
+      error: 'Сервис временно недоступен. Попробуйте повторить действие через несколько секунд.',
+      code,
+      category: 'service',
+      recoverable: true,
+      retryAfter,
+    },
+  };
 }
 
 function sleepMs(ms) {
@@ -6551,6 +6620,9 @@ export default {
         serverSingleflight: 'enabled',
         burstGuard: 'enabled',
         upstreamTimeouts: 'enabled',
+        failureRecovery: 'enabled',
+        gracefulErrors: 'enabled',
+        webviewRecovery: 'enabled',
         devMode: cfg.devMode,
       });
     }
@@ -6656,22 +6728,19 @@ export default {
       return json({ error: 'Маршрут не найден.' }, 404);
     } catch (error) {
       console.error(error);
-      const retryAfter = Number(error?.retryAfter || 0);
       const rateLimited = isFootballRateLimitError(error);
-      const status = rateLimited ? 429 : 502;
+      const publicError = publicRouteError(error, rateLimited);
       if (!rateLimited) {
         bumpTelemetry('routeErrors');
         await recordOpsEvent(cfg, {
           severity: 'error', source: 'api', eventType: 'route_error', code: error?.code || 'SERVER_ERROR',
-          message: error?.message || 'Ошибка сервера.', endpoint: url.pathname, status,
+          message: error?.message || 'Ошибка сервера.', endpoint: url.pathname, status: publicError.status,
         });
       }
       return json({
-        error: error?.message || 'Ошибка сервера.',
-        code: error?.code || 'SERVER_ERROR',
-        retryAfter: retryAfter || undefined,
+        ...publicError.body,
         provider: publicDataCapabilities(),
-      }, status);
+      }, publicError.status, publicError.body.retryAfter ? { 'retry-after': String(publicError.body.retryAfter) } : {});
     }
   },
 
