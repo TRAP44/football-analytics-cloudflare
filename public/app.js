@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '4.7.0-model-dashboard';
+const CLIENT_VERSION = '4.8.0-provider-transition';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -18,6 +18,9 @@ const state = {
   preferences: { defaultFilter: 'top', reminderMinutes: 30, kickoffNotification: true, hideYouth: true, favoriteFirst: true },
   preferencesApplied: false,
   provider: null,
+  providerTransition: null,
+  providerAudit: null,
+  providerAuditLoading: false,
   dataCapabilities: null,
   billing: null,
   modelQuality: null,
@@ -546,6 +549,8 @@ async function loadModelQuality(force = false) {
 
 async function openProfileView() {
   showView('profileView');
+  const lastFixture = Number(state.currentCenter?.match?.fixtureId || state.currentAnalysis?.match?.fixtureId || 0);
+  if (lastFixture && $('providerAuditFixtureId') && !$('providerAuditFixtureId').value) $('providerAuditFixtureId').value = String(lastFixture);
   const essentials = [];
   if (!state.favoritesLoaded) essentials.push(loadFavorites());
   if (!state.remindersLoaded) essentials.push(loadReminders());
@@ -876,6 +881,74 @@ async function manageSubscription(action) {
   } catch (e) { toast(e.message); }
 }
 
+function providerAuditStateLabel(stateValue) {
+  return ({
+    available: 'Данные',
+    empty: 'Пусто',
+    error: 'Ошибка',
+    preview: 'После upgrade',
+    not_applicable: 'Не нужно',
+  })[stateValue] || '—';
+}
+
+function renderProviderAudit() {
+  if (!isAdmin()) return;
+  const transition = state.providerTransition || {};
+  const audit = state.providerAudit;
+  const status = $('providerAuditStatus');
+  const result = $('providerAuditResult');
+  const runBtn = $('providerAuditBtn');
+  const probeBtn = $('providerProbeBtn');
+
+  if ($('providerTransitionMode')) $('providerTransitionMode').textContent = transition.label || 'Ожидаем тариф';
+  if ($('providerRefreshCadence')) $('providerRefreshCadence').textContent = transition.liveRefreshSeconds ? `${transition.liveRefreshSeconds} сек.` : '—';
+  if ($('providerExpectedDaily')) $('providerExpectedDaily').textContent = transition.expected?.daily ? String(transition.expected.daily) : '—';
+  if ($('providerExpectedMinute')) $('providerExpectedMinute').textContent = transition.expected?.minute ? String(transition.expected.minute) : '—';
+
+  if (runBtn) runBtn.disabled = Boolean(state.providerAuditLoading);
+  if (probeBtn) probeBtn.disabled = Boolean(state.providerAuditLoading);
+
+  if (!status || !result) return;
+  if (state.providerAuditLoading) {
+    status.textContent = '⏳ Выполняю контролируемую проверку endpoint…';
+    result.hidden = true;
+    return;
+  }
+  if (!audit) {
+    status.textContent = transition.paid
+      ? 'Тариф обнаружен. Укажите fixture ID и запустите аудит.'
+      : 'Сначала обновите тариф. На FREE полный аудит будет заблокирован для экономии квоты.';
+    result.hidden = true;
+    return;
+  }
+
+  result.hidden = false;
+  const summary = audit.summary || {};
+  const blocked = Boolean(audit.blocked);
+  status.textContent = blocked
+    ? (audit.note || 'Полный аудит заблокирован guardrail.')
+    : `${summary.label || 'Аудит завершён'} · ${Number(summary.score || 0)}% · ${Number(audit.durationMs || 0)} мс`;
+
+  const fixture = audit.fixture || {};
+  const endpoints = audit.endpoints || [];
+  result.innerHTML = `
+    <div class="provider-audit-head">
+      <div><strong>${escapeHtml(fixture.home || '—')} — ${escapeHtml(fixture.away || '—')}</strong><span>Fixture ${Number(fixture.fixtureId || 0)} · ${escapeHtml(fixture.status || '')}</span></div>
+      <span class="provider-audit-score ${blocked ? 'blocked' : Number(summary.score || 0) >= 80 ? 'good' : 'warn'}">${blocked ? 'GUARD' : `${Number(summary.score || 0)}%`}</span>
+    </div>
+    <div class="provider-audit-cost">
+      <span>Запросов этого запуска</span><strong>${Number(audit.cost?.usedNow || 0)}</strong>
+      <small>полный аудит максимум ${Number(audit.cost?.maxFullAudit || 0)}</small>
+    </div>
+    <div class="provider-endpoint-grid">${endpoints.map(x => `
+      <div class="provider-endpoint-row ${escapeHtml(x.state || '')}">
+        <div><strong>${escapeHtml(x.label || x.key || '')}</strong><small>${escapeHtml(x.note || '')}</small></div>
+        <span>${providerAuditStateLabel(x.state)}</span>
+        <em>${Number.isFinite(Number(x.latencyMs)) ? `${Number(x.latencyMs)} мс` : ''}</em>
+      </div>`).join('')}</div>
+    <p class="tiny">${escapeHtml(audit.note || '')}</p>`;
+}
+
 function renderProvider() {
   if (!isAdmin()) return;
   const p = state.provider || {};
@@ -885,9 +958,10 @@ function renderProvider() {
     ? `${p.dailyRemaining} / ${p.dailyLimit}` : '—';
   $('providerMinute').textContent = Number.isFinite(Number(p.minuteRemaining)) && Number.isFinite(Number(p.minuteLimit))
     ? `${p.minuteRemaining} / ${p.minuteLimit}` : '—';
-  $('providerLiveOdds').textContent = p.liveOddsReady ? 'Авто · включены' : 'Ожидают платный план';
-  if ($('providerPlayerStats')) $('providerPlayerStats').textContent = p.playerStatsReady ? 'Авто · PRO+' : 'Экономный режим';
-  if ($('providerOddsMovement')) $('providerOddsMovement').textContent = p.oddsMovementReady ? 'История включена' : 'После PRO';
+  $('providerLiveOdds').textContent = p.liveOddsReady ? 'Авто · расширенный режим' : 'Экономный режим';
+  if ($('providerPlayerStats')) $('providerPlayerStats').textContent = p.playerStatsReady ? 'Авто · расширенный' : 'По требованию';
+  if ($('providerOddsMovement')) $('providerOddsMovement').textContent = p.oddsMovementReady ? 'История включена' : 'Экономный режим';
+  renderProviderAudit();
 }
 
 async function loadProvider() {
@@ -895,9 +969,53 @@ async function loadProvider() {
   try {
     const data = await api('/api/provider');
     state.provider = data.provider || state.provider;
+    state.providerTransition = data.transition || state.providerTransition;
+    state.providerAudit = data.lastAudit || state.providerAudit;
     state.providerLoaded = true;
     renderProvider();
   } catch {}
+}
+
+async function probeProvider() {
+  if (!isAdmin() || state.providerAuditLoading) return;
+  state.providerAuditLoading = true;
+  renderProviderAudit();
+  try {
+    const data = await api('/api/provider/probe?refresh=1', { retry: false, dedupe: false });
+    state.provider = data.provider || state.provider;
+    state.providerTransition = data.transition || state.providerTransition;
+    toast(data.probe?.ok ? 'Тариф и квоты обновлены' : (data.probe?.note || 'Проверка тарифа завершена'));
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    state.providerAuditLoading = false;
+    renderProvider();
+  }
+}
+
+async function runProviderCoverageAudit(fixtureId, force = true) {
+  if (!isAdmin() || state.providerAuditLoading) return;
+  const id = Number(fixtureId || $('providerAuditFixtureId')?.value || 0);
+  if (!id) { toast('Укажи fixture ID'); return; }
+  if ($('providerAuditFixtureId')) $('providerAuditFixtureId').value = String(id);
+  state.providerAuditLoading = true;
+  renderProviderAudit();
+  try {
+    const data = await api(`/api/provider/coverage-audit?fixtureId=${id}${force ? '&refresh=1' : ''}`, {
+      retry: false,
+      dedupe: false,
+      timeoutMs: 30000,
+    });
+    state.providerAudit = data;
+    state.provider = data.provider || state.provider;
+    state.providerTransition = data.transition || state.providerTransition;
+    toast(data.blocked ? 'Guardrail не дал потратить лишнюю квоту' : 'Coverage Audit завершён');
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    state.providerAuditLoading = false;
+    renderProvider();
+  }
 }
 
 async function loadFavorites() {
@@ -2202,9 +2320,10 @@ function renderMatchCenter(d) {
         ${m.referee ? `<span>🧑‍⚖️ ${escapeHtml(m.referee)}</span>` : ''}
       </div>
 
-      <div class="center-hero-actions">
+      <div class="center-hero-actions ${isAdmin() ? 'has-admin-audit' : ''}">
         <button id="centerRefreshBtn" class="reminder-btn" type="button">↻ Обновить</button>
         ${upcoming ? `<button id="centerAnalyzeBtn" class="primary-btn center-analyze-inline" type="button">🧠 Полный анализ</button>` : ''}
+        ${isAdmin() ? `<button id="centerCoverageAuditBtn" class="reminder-btn admin-audit-btn" type="button">🧪 Coverage</button>` : ''}
       </div>
     </section>
 
@@ -2293,6 +2412,11 @@ function renderMatchCenter(d) {
   }));
 
   $('centerAnalyzeBtn')?.addEventListener('click', e => analyzeMatch(Number(m.fixtureId), e.currentTarget));
+  $('centerCoverageAuditBtn')?.addEventListener('click', async () => {
+    await runProviderCoverageAudit(Number(m.fixtureId), true);
+    await openProfileView();
+    setTimeout(() => $('providerAuditResult')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120);
+  });
 
   $('centerRefreshBtn')?.addEventListener('click', async () => {
     const btn = $('centerRefreshBtn');
@@ -3058,6 +3182,9 @@ $('savePreferencesBtn')?.addEventListener('click', savePreferencesFromUi);
 $('modelQualityRefreshBtn')?.addEventListener('click', () => loadModelQuality(true));
 $('modelQualityPeriod')?.addEventListener('change', () => loadModelQuality(true));
 $('diagnosticsRefreshBtn')?.addEventListener('click', () => loadDiagnostics(true));
+$('providerProbeBtn')?.addEventListener('click', () => probeProvider());
+$('providerAuditBtn')?.addEventListener('click', () => runProviderCoverageAudit(null, true));
+$('providerAuditFixtureId')?.addEventListener('keydown', e => { if (e.key === 'Enter') runProviderCoverageAudit(null, true); });
 $('releaseRefreshBtn')?.addEventListener('click', () => loadReleaseReadiness(true));
 
 async function scheduleIdle(task) {
@@ -3067,7 +3194,7 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// v4.7 keeps admin telemetry protected and expands immutable prediction tracking without extra football API calls.
+// v4.8 adds an explicit admin-only provider transition probe and controlled endpoint coverage audit.
 // v4.0: first paint is intentionally small — matches/profile/favorites only.
 // History, reminders and provider details are loaded later or when their screen opens.
 await Promise.allSettled([loadProfile(), loadFavorites(), loadMatches()]);
