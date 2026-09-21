@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#111827" />
   <title>Football Manager · Match Intelligence</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=6.2.0" />
+  <link rel="stylesheet" href="/styles.css?v=6.3.0" />
 </head>
 <body>
   <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
     <div class="boot-card">
       <div class="boot-logo"><span>FM</span></div>
-      <div class="boot-kicker">FOOTBALL MANAGER · RC10</div>
+      <div class="boot-kicker">FOOTBALL MANAGER · RC11</div>
       <h1 id="bootTitle">Запускаю Football Manager</h1>
       <p id="bootText">Проверяю совместимость версии…</p>
       <div class="boot-progress" aria-hidden="true"><i id="bootProgressFill"></i></div>
@@ -315,6 +315,7 @@
             <div class="runtime-controls-actions">
               <button id="modelRemediationDryRunBtn" class="reminder-btn" type="button">Обновить dry-run</button>
               <button id="modelRemediationRunBtn" class="primary-setting-btn" type="button" disabled>Восстановить pending</button>
+              <button id="modelRemediationCircuitResetBtn" class="reminder-btn" type="button" hidden>Сбросить breaker</button>
             </div>
             <div id="modelRemediationHistory" class="model-remediation-history"></div>
             <p class="tiny quality-method-note">Удаление и перезапись prediction snapshots запрещены. Recovery меняет только `pending` после повторной проверки финального счёта и сохраняет audit trail без Telegram ID в интерфейсе.</p>
@@ -420,7 +421,7 @@
             <label class="runtime-control-row"><div><strong>LIVE auto-refresh</strong><small>Останавливает автоматическое обновление LIVE без отключения уже сохранённого Match Center.</small></div><input id="runtimeLiveToggle" type="checkbox" checked></label>
             <label class="runtime-control-row"><div><strong>Новые уведомления</strong><small>Создание новых reminders и cron-delivery. Удалять существующие reminders можно.</small></div><input id="runtimeRemindersToggle" type="checkbox" checked></label>
             <label class="runtime-control-row"><div><strong>Расширенные provider-данные</strong><small>Players, injuries, live odds и другие enrichment features. Core events/statistics остаются.</small></div><input id="runtimeExpandedToggle" type="checkbox" checked></label>
-            <label class="runtime-control-row"><div><strong>Авто settlement catch-up</strong><small>RC10 watchdog: один безопасный batch в сутки, до 20 fixture / 5 дат. По умолчанию shadow; ручной recovery остаётся доступен.</small></div><input id="runtimeAutoSettlementRecoveryToggle" type="checkbox"></label>
+            <label class="runtime-control-row"><div><strong>Авто settlement catch-up</strong><small>RC11 watchdog: один безопасный batch в сутки, до 20 fixture / 5 дат. По умолчанию shadow; ручной recovery остаётся доступен.</small></div><input id="runtimeAutoSettlementRecoveryToggle" type="checkbox"></label>
           </div>
 
           <label class="runtime-message-field">
@@ -499,14 +500,14 @@
         <section class="panel rc-panel" data-admin-only hidden>
           <div class="section-head profile-section-head">
             <div>
-              <h2>🚦 Release Candidate RC10</h2>
+              <h2>🚦 Release Candidate RC11</h2>
               <p>Regression + startup compatibility: runtime, security, schema, user routes, safety gates и client contract.</p>
             </div>
             <button id="rcRunBtn" class="primary-setting-btn rc-run-btn" type="button">Запустить QA</button>
           </div>
 
           <div class="rc-status-row">
-            <span id="rcBadge" class="rc-badge">RC10</span>
+            <span id="rcBadge" class="rc-badge">RC11</span>
             <div>
               <strong id="rcStatus">Полный regression smoke-test ещё не запускался.</strong>
               <small id="rcMeta">Без Analyze, без изменений user data, без расхода API-Football.</small>
@@ -589,6 +590,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=6.2.0"></script>
+  <script type="module" src="/app.js?v=6.3.0"></script>
 </body>
 </html>

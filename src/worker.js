@@ -59,11 +59,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.2.0-rc10';
+const APP_VERSION = '6.3.0-rc11';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc10';
-const RC_NAME = 'RC10';
+const RELEASE_CHANNEL = 'rc11';
+const RC_NAME = 'RC11';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -650,6 +650,8 @@ function appManifest(cfg) {
       settlementRecovery: true,
       settlementWatchdog: true,
       automaticSettlementRecovery: true,
+      settlementCircuitBreaker: true,
+      settlementReliability: true,
     },
     serverTime: new Date().toISOString(),
   };
@@ -3086,6 +3088,132 @@ async function probeSettlementWatchdogSchema(cfg) {
   }
 }
 
+
+const SETTLEMENT_CIRCUIT_FAILURE_THRESHOLD = 2;
+const SETTLEMENT_CIRCUIT_OPEN_HOURS = 72;
+
+async function probeSettlementReliabilitySchema(cfg) {
+  if (!hasSupabase(cfg)) return { ok: false, status: 'not_configured' };
+  try {
+    const url = new URL(`${cfg.supabaseUrl}/rest/v1/settlement_watchdog_state`);
+    url.searchParams.set('select', 'id,consecutive_failures,circuit_open_until,last_run_at,last_status,last_action_id,last_error,updated_at');
+    url.searchParams.set('limit', '1');
+    const r = await fetchWithTimeout(url, { headers: supaHeaders(cfg) }, 7000, 'Supabase settlement reliability schema');
+    return { ok: r.ok, status: r.ok ? 'ok' : `http_${r.status}` };
+  } catch (error) {
+    return { ok: false, status: error?.code || 'error', detail: redactOpsString(error?.message || error, 140) };
+  }
+}
+
+function normalizeSettlementReliability(row = {}) {
+  const openUntil = row.circuit_open_until || row.circuitOpenUntil || null;
+  const openTs = openUntil ? Date.parse(openUntil) : 0;
+  return {
+    consecutiveFailures: Math.max(0, Number(row.consecutive_failures ?? row.consecutiveFailures ?? 0)),
+    circuitOpenUntil: openUntil,
+    circuitOpen: Number.isFinite(openTs) && openTs > Date.now(),
+    lastRunAt: row.last_run_at || row.lastRunAt || null,
+    lastStatus: String(row.last_status || row.lastStatus || 'never'),
+    lastActionId: row.last_action_id || row.lastActionId || null,
+    lastError: String(row.last_error || row.lastError || '').slice(0, 180),
+    updatedAt: row.updated_at || row.updatedAt || null,
+  };
+}
+
+async function loadSettlementReliability(cfg) {
+  if (!hasSupabase(cfg)) return normalizeSettlementReliability();
+  const row = await supaSelectOne(cfg, 'settlement_watchdog_state', { id: 'eq.global' });
+  return normalizeSettlementReliability(row || {});
+}
+
+async function saveSettlementReliability(cfg, patch = {}) {
+  if (!hasSupabase(cfg)) return normalizeSettlementReliability(patch);
+  const current = await loadSettlementReliability(cfg).catch(() => normalizeSettlementReliability());
+  const merged = {
+    id: 'global',
+    consecutive_failures: Math.max(0, Number(patch.consecutiveFailures ?? current.consecutiveFailures ?? 0)),
+    circuit_open_until: patch.circuitOpenUntil !== undefined ? patch.circuitOpenUntil : current.circuitOpenUntil,
+    last_run_at: patch.lastRunAt !== undefined ? patch.lastRunAt : current.lastRunAt,
+    last_status: String(patch.lastStatus ?? current.lastStatus ?? 'never').slice(0, 32),
+    last_action_id: patch.lastActionId !== undefined ? patch.lastActionId : current.lastActionId,
+    last_error: String(patch.lastError !== undefined ? patch.lastError : current.lastError || '').slice(0, 180),
+    updated_at: new Date().toISOString(),
+  };
+  await supaUpsert(cfg, 'settlement_watchdog_state', merged, 'id');
+  return normalizeSettlementReliability(merged);
+}
+
+async function noteSettlementWatchdogOutcome(cfg, status, meta = {}) {
+  const current = await loadSettlementReliability(cfg).catch(() => normalizeSettlementReliability());
+  const now = new Date().toISOString();
+  if (['completed', 'partial'].includes(String(status))) {
+    return await saveSettlementReliability(cfg, {
+      consecutiveFailures: 0,
+      circuitOpenUntil: null,
+      lastRunAt: now,
+      lastStatus: String(status),
+      lastActionId: meta.actionId || null,
+      lastError: '',
+    });
+  }
+  if (String(status) !== 'failed') {
+    return await saveSettlementReliability(cfg, {
+      lastRunAt: now,
+      lastStatus: String(status || 'unknown'),
+      lastActionId: meta.actionId || null,
+      lastError: meta.error || '',
+    });
+  }
+  const failures = Number(current.consecutiveFailures || 0) + 1;
+  const circuitOpenUntil = failures >= SETTLEMENT_CIRCUIT_FAILURE_THRESHOLD
+    ? new Date(Date.now() + SETTLEMENT_CIRCUIT_OPEN_HOURS * 3600_000).toISOString()
+    : current.circuitOpenUntil;
+  return await saveSettlementReliability(cfg, {
+    consecutiveFailures: failures,
+    circuitOpenUntil,
+    lastRunAt: now,
+    lastStatus: 'failed',
+    lastActionId: meta.actionId || null,
+    lastError: meta.error || '',
+  });
+}
+
+async function resetSettlementCircuit(cfg, user, reason) {
+  const before = await loadSettlementReliability(cfg);
+  const after = await saveSettlementReliability(cfg, {
+    consecutiveFailures: 0,
+    circuitOpenUntil: null,
+    lastRunAt: before.lastRunAt,
+    lastStatus: 'reset',
+    lastActionId: null,
+    lastError: '',
+  });
+  const action = await recordRemediationAction(cfg, user, {
+    actionType: 'circuit_reset',
+    triggerSource: 'admin',
+    status: 'completed',
+    reason,
+    candidateCount: 0,
+    inspectedCount: 0,
+    settledCount: 0,
+    skippedCount: 0,
+    fixtureIds: [],
+    detail: {
+      previousFailures: Number(before.consecutiveFailures || 0),
+      previousOpenUntil: before.circuitOpenUntil || null,
+    },
+  });
+  await recordOpsEvent(cfg, {
+    severity: 'info',
+    source: 'model',
+    eventType: 'settlement_watchdog',
+    code: 'SETTLEMENT_CIRCUIT_RESET',
+    message: reason,
+    meta: { previousFailures: before.consecutiveFailures, previousOpenUntil: before.circuitOpenUntil },
+  }).catch(() => null);
+  return { before, after, action };
+}
+
 async function recordRemediationAction(cfg, user, action) {
   const row = {
     action_id: String(action.actionId || crypto.randomUUID()),
@@ -3130,9 +3258,11 @@ async function buildModelRemediationReport(cfg, { maxRows = 5000 } = {}) {
   if (!hasSupabase(cfg) && !cfg.devMode) {
     return { available: false, reason: 'Supabase не настроен: remediation требует постоянную базу данных.' };
   }
-  const [schema, watchdogSchema, runtimeState] = await Promise.all([
+  const [schema, watchdogSchema, reliabilitySchema, reliability, runtimeState] = await Promise.all([
     hasSupabase(cfg) ? probeOptionalTable(cfg, 'prediction_integrity_actions') : Promise.resolve({ ok: true, status: 'memory' }),
     hasSupabase(cfg) ? probeSettlementWatchdogSchema(cfg) : Promise.resolve({ ok: true, status: 'memory' }),
+    hasSupabase(cfg) ? probeSettlementReliabilitySchema(cfg) : Promise.resolve({ ok: true, status: 'memory' }),
+    hasSupabase(cfg) ? loadSettlementReliability(cfg).catch(() => normalizeSettlementReliability()) : Promise.resolve(normalizeSettlementReliability()),
     loadRuntimeControls(cfg),
   ]);
   const loaded = await loadPredictionRemediationRows(cfg, maxRows);
@@ -3186,6 +3316,19 @@ async function buildModelRemediationReport(cfg, { maxRows = 5000 } = {}) {
       maxFixturesPerRun: 20,
       maxDatesPerRun: 5,
       quotaGuard: true,
+      reliability: {
+        schemaReady: Boolean(reliabilitySchema.ok),
+        schemaStatus: reliabilitySchema.status || (reliabilitySchema.ok ? 'ok' : 'missing'),
+        consecutiveFailures: Number(reliability.consecutiveFailures || 0),
+        circuitOpen: Boolean(reliability.circuitOpen),
+        circuitOpenUntil: reliability.circuitOpenUntil || null,
+        lastRunAt: reliability.lastRunAt || null,
+        lastStatus: reliability.lastStatus || 'never',
+        lastActionId: reliability.lastActionId || null,
+        lastError: reliability.lastError || '',
+        failureThreshold: SETTLEMENT_CIRCUIT_FAILURE_THRESHOLD,
+        openHours: SETTLEMENT_CIRCUIT_OPEN_HOURS,
+      },
     },
     policy: {
       dryRunFirst: true,
@@ -3194,7 +3337,7 @@ async function buildModelRemediationReport(cfg, { maxRows = 5000 } = {}) {
       onlySettlesPending: true,
       adminIdExposed: false,
       automaticRecoveryRuntimeGated: true,
-      note: 'GET выполняет read-only dry-run. POST повторно проверяет candidate token. RC10 watchdog работает раз в сутки и делает auto recovery только при включённом runtime switch; меняются только pending-строки с подтверждённым финальным счётом API-Football.',
+      note: 'GET выполняет read-only dry-run. RC11 добавляет persistent circuit breaker: после двух последовательных failed auto-recovery он блокирует unattended provider-write на 72 часа. Ручной reset требует admin action и причины.',
     },
   };
 }
@@ -3203,9 +3346,17 @@ async function apiModelRemediation(request, cfg, user) {
   if (request.method === 'GET') return json(await buildModelRemediationReport(cfg));
   if (request.method !== 'POST') return json({ error: 'Метод не поддерживается.' }, 405);
   const body = await request.json().catch(() => ({}));
-  if (String(body?.action || '') !== 'recover') return json({ error: 'Поддерживается только action=recover.' }, 400);
+  const requestedAction = String(body?.action || '');
   const reason = redactOpsString(body?.reason || '', 220).trim();
-  if (reason.length < 5) return json({ error: 'Укажите причину восстановления (минимум 5 символов).' }, 400);
+  if (reason.length < 5) return json({ error: 'Укажите причину действия (минимум 5 символов).' }, 400);
+  if (requestedAction === 'reset_circuit') {
+    const schema = await probeSettlementReliabilitySchema(cfg);
+    if (!schema.ok) return json({ error: 'Нужна migration v6.3 для Settlement Circuit Breaker.', code: 'SETTLEMENT_RELIABILITY_SCHEMA' }, 409);
+    const reset = await resetSettlementCircuit(cfg, user, reason);
+    const report = await buildModelRemediationReport(cfg).catch(() => null);
+    return json({ ok: true, reset, report });
+  }
+  if (requestedAction !== 'recover') return json({ error: 'Поддерживаются action=recover и action=reset_circuit.' }, 400);
 
   const report = await buildModelRemediationReport(cfg);
   if (!report.available) return json(report, 503);
@@ -3251,6 +3402,7 @@ async function apiModelRemediation(request, cfg, user) {
       detail: { providerCalls: dates.length, finishedFixtures: fixtures.filter(f => isFinishedStatus(fixtureStatusShort(f))).length, settlementChecked: settlement.checked },
     });
     memory.modelRemediation.lastRun = action;
+    await noteSettlementWatchdogOutcome(cfg, status, { actionId }).catch(() => null);
     await recordOpsEvent(cfg, {
       severity: skippedCount ? 'warning' : 'info', source: 'model', eventType: 'prediction_remediation',
       code: skippedCount ? 'REMEDIATION_PARTIAL' : 'REMEDIATION_COMPLETED', message: reason,
@@ -3275,7 +3427,7 @@ async function apiModelRemediation(request, cfg, user) {
   }
 }
 
-function settlementWatchdogDecision(report, runtime, { providerReady = true, quotaHealthy = true, schemaReady = true, runtimeVerified = true } = {}) {
+function settlementWatchdogDecision(report, runtime, { providerReady = true, quotaHealthy = true, schemaReady = true, runtimeVerified = true, circuitOpen = false } = {}) {
   const stalePending = Number(report?.recovery?.stalePending || 0);
   const selectedCount = Number(report?.recovery?.selectedCount || 0);
   const providerCalls = Number(report?.recovery?.estimatedProviderCalls || 0);
@@ -3284,6 +3436,7 @@ function settlementWatchdogDecision(report, runtime, { providerReady = true, quo
   if (!stalePending) return { state: 'clean', recover: false, stalePending, selectedCount, providerCalls };
   if (!runtimeVerified) return { state: 'runtime_unverified', recover: false, stalePending, selectedCount, providerCalls };
   if (!runtime?.autoSettlementRecoveryEnabled) return { state: 'observe', recover: false, stalePending, selectedCount, providerCalls };
+  if (circuitOpen) return { state: 'circuit_open', recover: false, stalePending, selectedCount, providerCalls };
   if (!providerReady) return { state: 'provider_missing', recover: false, stalePending, selectedCount, providerCalls };
   if (!quotaHealthy) return { state: 'quota_guard', recover: false, stalePending, selectedCount, providerCalls };
   if (!selectedCount || !providerCalls) return { state: 'no_batch', recover: false, stalePending, selectedCount, providerCalls };
@@ -3299,13 +3452,15 @@ function settlementWatchdogSelfTest() {
   const shadow = settlementWatchdogDecision(report, { autoSettlementRecoveryEnabled: false }, { schemaReady: true, providerReady: true, quotaHealthy: true });
   const unverified = settlementWatchdogDecision(report, { autoSettlementRecoveryEnabled: true }, { schemaReady: true, runtimeVerified: false, providerReady: true, quotaHealthy: true });
   const quota = settlementWatchdogDecision(report, { autoSettlementRecoveryEnabled: true }, { schemaReady: true, runtimeVerified: true, providerReady: true, quotaHealthy: false });
+  const circuit = settlementWatchdogDecision(report, { autoSettlementRecoveryEnabled: true }, { schemaReady: true, runtimeVerified: true, providerReady: true, quotaHealthy: true, circuitOpen: true });
   const recover = settlementWatchdogDecision(report, { autoSettlementRecoveryEnabled: true }, { schemaReady: true, runtimeVerified: true, providerReady: true, quotaHealthy: true });
   const clean = settlementWatchdogDecision({ ...report, recovery: { stalePending: 0, selectedCount: 0, estimatedProviderCalls: 0 } }, { autoSettlementRecoveryEnabled: true }, { schemaReady: true, providerReady: true, quotaHealthy: true });
   return {
-    pass: shadow.state === 'observe' && !shadow.recover && unverified.state === 'runtime_unverified' && !unverified.recover && quota.state === 'quota_guard' && !quota.recover && recover.state === 'recover' && recover.recover && clean.state === 'clean',
+    pass: shadow.state === 'observe' && !shadow.recover && unverified.state === 'runtime_unverified' && !unverified.recover && quota.state === 'quota_guard' && !quota.recover && circuit.state === 'circuit_open' && !circuit.recover && recover.state === 'recover' && recover.recover && clean.state === 'clean',
     shadow: shadow.state,
     runtime: unverified.state,
     quota: quota.state,
+    circuit: circuit.state,
     active: recover.state,
     clean: clean.state,
   };
@@ -3334,6 +3489,7 @@ async function runSettlementWatchdog(cfg) {
     runtimeVerified: runtimeState.source === 'supabase',
     providerReady: Boolean(cfg.apiFootballKey),
     quotaHealthy: automaticSettlementQuotaHealthy(),
+    circuitOpen: Boolean(report?.watchdog?.reliability?.circuitOpen),
   });
   const baseMeta = {
     state: decision.state,
@@ -3344,6 +3500,9 @@ async function runSettlementWatchdog(cfg) {
     autoRecoveryEnabled: Boolean(runtime.autoSettlementRecoveryEnabled),
     runtimeVerified: runtimeState.source === 'supabase',
     runtimeRevision: Number(runtime.revision || 1),
+    circuitOpen: Boolean(report?.watchdog?.reliability?.circuitOpen),
+    circuitOpenUntil: report?.watchdog?.reliability?.circuitOpenUntil || null,
+    consecutiveFailures: Number(report?.watchdog?.reliability?.consecutiveFailures || 0),
   };
 
   if (decision.state === 'clean') {
@@ -3352,13 +3511,14 @@ async function runSettlementWatchdog(cfg) {
   }
 
   if (!decision.recover) {
-    const severity = ['schema_missing', 'runtime_unverified', 'provider_missing', 'quota_guard', 'unavailable'].includes(decision.state) ? 'warning' : 'info';
+    const severity = ['schema_missing', 'runtime_unverified', 'provider_missing', 'quota_guard', 'circuit_open', 'unavailable'].includes(decision.state) ? 'warning' : 'info';
     const code = ({
       observe: 'SETTLEMENT_WATCHDOG_OBSERVE',
       schema_missing: 'SETTLEMENT_WATCHDOG_SCHEMA',
       runtime_unverified: 'SETTLEMENT_WATCHDOG_RUNTIME',
       provider_missing: 'SETTLEMENT_WATCHDOG_PROVIDER',
       quota_guard: 'SETTLEMENT_WATCHDOG_QUOTA',
+      circuit_open: 'SETTLEMENT_WATCHDOG_CIRCUIT_OPEN',
       no_batch: 'SETTLEMENT_WATCHDOG_NO_BATCH',
       unavailable: 'SETTLEMENT_WATCHDOG_UNAVAILABLE',
     })[decision.state] || 'SETTLEMENT_WATCHDOG';
@@ -3384,7 +3544,7 @@ async function runSettlementWatchdog(cfg) {
   const fixtureSet = new Set(currentIds);
   const fixtures = [];
   const actionId = crypto.randomUUID();
-  const reason = 'RC10 scheduled settlement catch-up';
+  const reason = 'RC11 scheduled settlement catch-up';
   let auditStarted = false;
   let executionResult = null;
 
@@ -3446,6 +3606,7 @@ async function runSettlementWatchdog(cfg) {
     return { ok: true, ...baseMeta, actionId, settledCount, skippedCount, status };
   } catch (error) {
     if (executionResult) {
+      await noteSettlementWatchdogOutcome(cfg, executionResult.status, { actionId }).catch(() => null);
       await recordOpsEvent(cfg, {
         severity: 'error',
         source: 'model',
@@ -3463,6 +3624,7 @@ async function runSettlementWatchdog(cfg) {
       }, cfg, 1440).catch(() => null);
       return { ok: true, ...baseMeta, actionId, ...executionResult, auditPending: true };
     }
+    await noteSettlementWatchdogOutcome(cfg, 'failed', { actionId, error: redactOpsString(error?.message || error, 180) }).catch(() => null);
     const failurePatch = {
       status: 'failed',
       inspectedCount: currentIds.length,
@@ -5741,7 +5903,7 @@ async function apiReleaseReadiness(request, cfg) {
       modelIntegritySelfTest().pass ? 'Probabilities, captured_at timing и outcome consistency проходят synthetic self-test.' : 'Prediction Integrity self-test не прошёл.', true),
     releaseCheck('prediction_remediation', 'Prediction Remediation v6.1', remediationTable.ok ? 'pass' : 'fail',
       remediationTable.ok ? 'Audit trail remediation доступен.' : 'Нужна supabase_migration_v6_1.sql.', true),
-    releaseCheck('settlement_watchdog_schema', 'Settlement Watchdog schema v6.2', watchdogSchema.ok ? 'pass' : 'fail',
+    releaseCheck('settlement_watchdog_schema', 'Settlement Watchdog schema v6.3', watchdogSchema.ok ? 'pass' : 'fail',
       watchdogSchema.ok ? 'Runtime switch и cron audit source доступны.' : 'Нужна supabase_migration_v6_2.sql.', true),
     releaseCheck('settlement_watchdog_selftest', 'Settlement Watchdog self-test', watchdogSelfTest.pass ? 'pass' : 'fail',
       watchdogSelfTest.pass ? `shadow=${watchdogSelfTest.shadow}, runtime=${watchdogSelfTest.runtime}, quota=${watchdogSelfTest.quota}, active=${watchdogSelfTest.active}.` : 'Watchdog decision self-test не прошёл.', true),
@@ -5798,7 +5960,7 @@ async function apiReleaseReadiness(request, cfg) {
       monetizationExpected: 'paused',
       paymentTestingRequiredNow: false,
       providerUpgradeRequiredNow: false,
-      note: 'RC10 добавляет ежедневный settlement watchdog и runtime-gated auto catch-up. Ручной dry-run/recovery RC9 сохраняется; immutable snapshots и пользовательская оплата не меняются.',
+      note: 'RC11 добавляет ежедневный settlement watchdog и runtime-gated auto catch-up. Ручной dry-run/recovery RC9 сохраняется; immutable snapshots и пользовательская оплата не меняются.',
     },
   };
   memory.releaseReadiness = { at: now, value };
@@ -5937,8 +6099,8 @@ async function apiRcRegression(request, cfg, user) {
   const startedAt = Date.now();
 
   // 1) Core runtime / security configuration.
-  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.2.0-rc10' ? 'pass' : 'fail',
-    `Worker: ${APP_VERSION}; ожидается 6.2.0-rc10.`, true));
+  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.3.0-rc11' ? 'pass' : 'fail',
+    `Worker: ${APP_VERSION}; ожидается 6.3.0-rc11.`, true));
   checks.push(rcCheck('api_contract', 'runtime', 'API contract', API_CONTRACT_VERSION === 5 ? 'pass' : 'fail',
     `Contract ${API_CONTRACT_VERSION}; min client ${MIN_CLIENT_VERSION}.`, true));
   checks.push(rcCheck('app_manifest', 'runtime', 'Public App Manifest', appManifest(cfg)?.version === APP_VERSION ? 'pass' : 'fail',
@@ -6016,7 +6178,7 @@ async function apiRcRegression(request, cfg, user) {
   checks.push(rcCheck(
     'settlement_watchdog_schema',
     'database',
-    'Settlement Watchdog schema v6.2',
+    'Settlement Watchdog schema v6.3',
     watchdogSchema.ok ? 'pass' : 'fail',
     watchdogSchema.ok ? 'Runtime switch + trigger_source доступны.' : 'Запустите supabase_migration_v6_2.sql.',
     true
@@ -9127,6 +9289,8 @@ export default {
         settlementRecovery: 'enabled',
         settlementWatchdog: 'enabled',
         automaticSettlementRecovery: 'runtime-controlled',
+        settlementCircuitBreaker: 'enabled',
+        settlementReliability: 'enabled',
         runtimeControlsCacheSeconds: 30,
         devMode: cfg.devMode,
       });
