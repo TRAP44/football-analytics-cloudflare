@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '5.8.0-rc6';
+const CLIENT_VERSION = '5.9.0-rc7';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc6';
+const CLIENT_RELEASE_CHANNEL = 'rc7';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -576,7 +576,7 @@ async function runStartupSequence() {
 
   setBootStatus(
     'Подключаю данные',
-    manifest ? `RC6 · API contract ${manifest.apiContract}` : 'Manifest временно недоступен — продолжаю в безопасном режиме.',
+    manifest ? `RC7 · API contract ${manifest.apiContract}` : 'Manifest временно недоступен — продолжаю в безопасном режиме.',
     38
   );
 
@@ -960,10 +960,11 @@ function renderModelQuality() {
         <div><span>Точность</span><strong>${qualityPct(ov.accuracy)}</strong><small>1X2</small></div>
         <div><span>Brier</span><strong>${qualityNum(ov.avgBrier)}</strong><small>ниже лучше</small></div>
         <div><span>Gap</span><strong>${Number.isFinite(Number(ov.calibrationGap)) ? `${Number(ov.calibrationGap).toFixed(1)} п.п.` : '—'}</strong><small>top % − accuracy</small></div>
+        <div><span>Cal error</span><strong>${Number.isFinite(Number(q.calibrationDiagnostics?.weightedTopCalibrationError)) ? `${Number(q.calibrationDiagnostics.weightedTopCalibrationError).toFixed(1)} п.п.` : '—'}</strong><small>weighted · 5 buckets</small></div>
       </div>
 
       <div class="model-dash-section">
-        <div class="model-dash-section-head"><strong>Тренд по неделям</strong><span>accuracy + Brier</span></div>
+        <div class="model-dash-section-head"><strong>Тренд по неделям</strong><span>accuracy + размер выборки; Brier указан текстом</span></div>
         ${(db.trend || []).length ? `<div class="model-trend-chart">${db.trend.map(x => {
           const acc = Math.max(2, Math.min(100, Number(x.accuracy || 0)));
           const sampleH = Math.max(8, Math.round(Number(x.sample || 0) / trendMaxSample * 100));
@@ -1005,6 +1006,33 @@ function renderModelQuality() {
       </div>
 
       <div class="model-dash-section">
+        <div class="model-dash-section-head"><strong>Исходы модели</strong><span>описательный срез П1 / X / П2</span></div>
+        <div class="model-dash-mini-grid">${(db.outcomes || []).map(x => `
+          <div>
+            <span>${escapeHtml(x.label)}</span>
+            <strong>${x.sample ? qualityPct(x.accuracy) : '—'}</strong>
+            <small>n=${Number(x.sample || 0)} · Brier ${qualityNum(x.avgBrier)}</small>
+          </div>`).join('')}</div>
+      </div>
+
+      <div class="model-dash-section">
+        <div class="model-dash-section-head"><strong>Version cohorts</strong><span>без рейтинга и автоматического promotion</span></div>
+        ${(db.versions || []).length ? `<div class="model-version-table">${db.versions.map(x => `
+          <div class="model-version-row">
+            <div>
+              <strong>${escapeHtml(x.version || 'legacy / unknown')}</strong>
+              <small>n=${Number(x.sample || 0)} · ${x.firstKickoffAt ? escapeHtml(dateTime(x.firstKickoffAt)) : '—'} → ${x.lastKickoffAt ? escapeHtml(dateTime(x.lastKickoffAt)) : '—'}</small>
+            </div>
+            <div><span>Accuracy</span><b>${qualityPct(x.accuracy)}</b></div>
+            <div><span>Brier</span><b>${qualityNum(x.avgBrier)}</b></div>
+            <div><span>Log loss</span><b>${qualityNum(x.avgLogLoss)}</b></div>
+            <div><span>Cal error</span><b>${Number.isFinite(Number(x.calibrationError)) ? `${Number(x.calibrationError).toFixed(1)} п.п.` : '—'}</b></div>
+            <div><span>Signals</span><b>${qualityPct(x.signalSnapshotCoverage)}</b></div>
+          </div>`).join('')}</div>` : '<div class="empty compact-empty">Version cohorts пока не сформированы.</div>'}
+        <p class="quality-engine-note">Разрез показывает исторические cohorts analysis_version. Различия могут быть связаны с периодом, лигами и составом данных; интерфейс не выбирает победителя.</p>
+      </div>
+
+      <div class="model-dash-section">
         <div class="model-dash-section-head"><strong>Signal-level performance</strong><span>источник сам по себе vs итоговый blend</span></div>
         <div class="model-signal-table">${(db.signals || []).map(x => `
           <div class="model-signal-row">
@@ -1019,6 +1047,24 @@ function renderModelQuality() {
         <div class="model-dash-section-head"><strong>Режимы калибратора</strong><span>описательный срез, версии модели различаются</span></div>
         <div class="model-dash-mini-grid">${db.calibrationModes.map(x => `<div><span>${escapeHtml(x.label)}</span><strong>${qualityPct(x.accuracy)}</strong><small>n=${Number(x.sample || 0)} · Brier ${qualityNum(x.avgBrier)}</small></div>`).join('')}</div>
       </div>` : ''}
+
+      <div class="model-dash-section">
+        <div class="model-dash-section-head"><strong>🧪 Prediction Integrity</strong><span>${escapeHtml(q.integrity?.label || 'нет данных')}</span></div>
+        <div class="model-integrity-summary ${escapeHtml(q.integrity?.status || 'clean')}">
+          <div><span>Loaded</span><strong>${Number(q.integrity?.loadedRows || 0)}</strong><small>settled + pending</small></div>
+          <div><span>Severe</span><strong>${Number(q.integrity?.severeIssues || 0)}</strong><small>probability / timing / duplicate</small></div>
+          <div><span>Warning</span><strong>${Number(q.integrity?.warningIssues || 0)}</strong><small>settlement / outcome</small></div>
+          <div><span>Info</span><strong>${Number(q.integrity?.informationalIssues || 0)}</strong><small>legacy metadata</small></div>
+        </div>
+        <div class="model-integrity-list">${(q.integrity?.checks || []).map(x => `
+          <div class="${escapeHtml(x.state || 'info')}">
+            <i>${x.state === 'pass' ? '✓' : x.state === 'fail' ? '×' : x.state === 'warn' ? '!' : 'i'}</i>
+            <span><strong>${escapeHtml(x.label || '')}</strong><small>${escapeHtml(x.detail || '')}</small></span>
+            <em>${Number(x.count || 0)}</em>
+          </div>`).join('')}</div>
+        ${q.integrity?.truncatedPotentially ? '<div class="data-notice stale">Выборка достигла лимита admin endpoint: integrity относится к загруженным строкам, а не ко всей истории.</div>' : ''}
+        <p class="quality-engine-note">${escapeHtml(q.integrity?.note || '')}</p>
+      </div>
 
       <div class="model-dash-section">
         <div class="model-dash-section-head"><strong>Наблюдения для проверки</strong><span>ничего не меняют автоматически</span></div>
@@ -1036,7 +1082,7 @@ function renderModelQuality() {
       <div class="quality-block-head"><strong>Последние проверки</strong><span>${Number(q.periodDays || state.modelQualityDays)} дней</span></div>
       <div class="quality-recent-list">${q.recent.map(x => `
         <div class="quality-recent-row ${x.correct ? 'hit' : 'miss'}">
-          <div><strong>${escapeHtml(x.home)} — ${escapeHtml(x.away)}</strong><span>${escapeHtml(x.league || '')}${x.kickoffAt ? ` · ${escapeHtml(dateTime(x.kickoffAt))}` : ''}</span></div>
+          <div><strong>${escapeHtml(x.home)} — ${escapeHtml(x.away)}</strong><span>${escapeHtml(x.league || '')}${x.kickoffAt ? ` · ${escapeHtml(dateTime(x.kickoffAt))}` : ''}${x.analysisVersion ? ` · ${escapeHtml(x.analysisVersion)}` : ''}</span></div>
           <div class="quality-result"><b>${escapeHtml(x.score)}</b><small>${escapeHtml(x.predictedLabel || outcomeShortLabel(x.predictedOutcome))} · ${qualityPct(x.topProbability)}</small></div>
           <em>${x.correct ? '✓' : '×'}</em>
         </div>`).join('')}</div>`;
@@ -1263,11 +1309,11 @@ function runClientContractSmoke() {
   const adminSections = [...document.querySelectorAll('[data-admin-only]')];
   add('admin_sections', 'Admin UI маркировка', adminSections.length >= 6, `${adminSections.length} технических секций помечены data-admin-only.`);
 
-  const cssLink = document.querySelector('link[href*="styles.css?v=5.8.0"]');
-  const appScript = document.querySelector('script[src*="app.js?v=5.8.0"]');
+  const cssLink = document.querySelector('link[href*="styles.css?v=5.9.0"]');
+  const appScript = document.querySelector('script[src*="app.js?v=5.9.0"]');
   add('cache_bust', 'Cache-bust assets', Boolean(cssLink && appScript), `CSS ${cssLink ? 'OK' : 'MISS'} · JS ${appScript ? 'OK' : 'MISS'}.`);
 
-  add('client_version', 'Версия клиента', CLIENT_VERSION === '5.8.0-rc6', CLIENT_VERSION);
+  add('client_version', 'Версия клиента', CLIENT_VERSION === '5.9.0-rc7', CLIENT_VERSION);
   add('telegram_sdk', 'Telegram WebApp SDK', Boolean(window.Telegram?.WebApp), window.Telegram?.WebApp ? 'SDK доступен.' : 'В обычном браузере SDK может отсутствовать; в Telegram должен быть доступен.');
 
   const navButtons = ['navMatches','navSearch','navHistory','navProfile'].filter(id => $(id));
@@ -1293,7 +1339,7 @@ function runClientContractSmoke() {
 }
 
 function rcStateText(status) {
-  if (status === 'rc_ready') return 'RC6 READY';
+  if (status === 'rc_ready') return 'RC7 READY';
   if (status === 'rc_with_holds') return 'RC + HOLD';
   if (status === 'blocked') return 'BLOCK';
   return 'WAIT';
@@ -1327,7 +1373,7 @@ function renderRcRegression() {
   const r = state.rcRegression;
   if (!r) {
     badge.className = 'rc-badge';
-    badge.textContent = 'RC6';
+    badge.textContent = 'RC7';
     status.textContent = 'Полный regression smoke-test ещё не запускался.';
     meta.textContent = 'Тест безопасный: без Analyze, без изменений user data, без API-Football.';
     summary.innerHTML = '';
@@ -1463,7 +1509,7 @@ function renderRuntimeHistory() {
   const rows = Array.isArray(panel.history) ? panel.history : [];
   status.textContent = rows.length
     ? `Последние revision: ${rows.length}. Rollback создаёт новую revision и не удаляет историю.`
-    : 'История появится после первого изменения RC6.';
+    : 'История появится после первого изменения Runtime Controls.';
 
   if (!rows.length) {
     list.innerHTML = '<div class="empty compact-empty">Пока нет сохранённых checkpoint.</div>';
@@ -4819,7 +4865,7 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// v5.8 RC6: audited Runtime Controls history and server-side rollback without a redeploy.
+// v5.9 RC7: prediction integrity diagnostics, version cohorts and calibration QA without automatic model promotion.
 // The boot watchdog never leaves the user behind an endless splash screen.
 const startupWatchdog = setTimeout(() => {
   if (!$('bootGate')?.hidden && !state.compatibilityBlocked) {
