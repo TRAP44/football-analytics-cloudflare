@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '5.7.0-rc5';
+const CLIENT_VERSION = '5.8.0-rc6';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc5';
+const CLIENT_RELEASE_CHANNEL = 'rc6';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -576,7 +576,7 @@ async function runStartupSequence() {
 
   setBootStatus(
     'Подключаю данные',
-    manifest ? `RC5 · API contract ${manifest.apiContract}` : 'Manifest временно недоступен — продолжаю в безопасном режиме.',
+    manifest ? `RC6 · API contract ${manifest.apiContract}` : 'Manifest временно недоступен — продолжаю в безопасном режиме.',
     38
   );
 
@@ -1263,11 +1263,11 @@ function runClientContractSmoke() {
   const adminSections = [...document.querySelectorAll('[data-admin-only]')];
   add('admin_sections', 'Admin UI маркировка', adminSections.length >= 6, `${adminSections.length} технических секций помечены data-admin-only.`);
 
-  const cssLink = document.querySelector('link[href*="styles.css?v=5.7.0"]');
-  const appScript = document.querySelector('script[src*="app.js?v=5.7.0"]');
+  const cssLink = document.querySelector('link[href*="styles.css?v=5.8.0"]');
+  const appScript = document.querySelector('script[src*="app.js?v=5.8.0"]');
   add('cache_bust', 'Cache-bust assets', Boolean(cssLink && appScript), `CSS ${cssLink ? 'OK' : 'MISS'} · JS ${appScript ? 'OK' : 'MISS'}.`);
 
-  add('client_version', 'Версия клиента', CLIENT_VERSION === '5.7.0-rc5', CLIENT_VERSION);
+  add('client_version', 'Версия клиента', CLIENT_VERSION === '5.8.0-rc6', CLIENT_VERSION);
   add('telegram_sdk', 'Telegram WebApp SDK', Boolean(window.Telegram?.WebApp), window.Telegram?.WebApp ? 'SDK доступен.' : 'В обычном браузере SDK может отсутствовать; в Telegram должен быть доступен.');
 
   const navButtons = ['navMatches','navSearch','navHistory','navProfile'].filter(id => $(id));
@@ -1278,8 +1278,8 @@ function runClientContractSmoke() {
 
   const bootIds = ['bootGate','bootTitle','bootText','bootProgressFill','bootReloadBtn','versionBanner','versionReloadBtn'];
   add('startup_contract', 'Startup / rollback contract', bootIds.every(id => $(id)), `${bootIds.filter(id => $(id)).length}/${bootIds.length} элементов.`);
-  const runtimeIds = ['runtimeBanner','runtimeBannerTitle','runtimeBannerText','runtimeControlsStatus','runtimeSaveBtn'];
-  add('runtime_controls_contract', 'Runtime Controls contract', runtimeIds.every(id => $(id)), `${runtimeIds.filter(id => $(id)).length}/${runtimeIds.length} элементов.`);
+  const runtimeIds = ['runtimeBanner','runtimeBannerTitle','runtimeBannerText','runtimeControlsStatus','runtimeSaveBtn','runtimeHistoryList','runtimeChangeReason'];
+  add('runtime_controls_contract', 'Runtime Controls + rollback contract', runtimeIds.every(id => $(id)), `${runtimeIds.filter(id => $(id)).length}/${runtimeIds.length} элементов.`);
   add('api_contract', 'Client API contract', CLIENT_API_CONTRACT === 5, `contract ${CLIENT_API_CONTRACT} · ${CLIENT_RELEASE_CHANNEL}`);
 
   return {
@@ -1293,7 +1293,7 @@ function runClientContractSmoke() {
 }
 
 function rcStateText(status) {
-  if (status === 'rc_ready') return 'RC5 READY';
+  if (status === 'rc_ready') return 'RC6 READY';
   if (status === 'rc_with_holds') return 'RC + HOLD';
   if (status === 'blocked') return 'BLOCK';
   return 'WAIT';
@@ -1327,7 +1327,7 @@ function renderRcRegression() {
   const r = state.rcRegression;
   if (!r) {
     badge.className = 'rc-badge';
-    badge.textContent = 'RC5';
+    badge.textContent = 'RC6';
     status.textContent = 'Полный regression smoke-test ещё не запускался.';
     meta.textContent = 'Тест безопасный: без Analyze, без изменений user data, без API-Football.';
     summary.innerHTML = '';
@@ -1420,6 +1420,125 @@ function runtimeControlsFormValue(id, fallback = true) {
   return el ? Boolean(el.checked) : fallback;
 }
 
+
+function runtimeHistoryActionLabel(action) {
+  return ({
+    baseline: 'Baseline',
+    update: 'Изменение',
+    defaults: 'Safe defaults',
+    rollback: 'Rollback',
+  })[String(action || '')] || String(action || 'Изменение');
+}
+
+function runtimeHistorySummary(controls = {}) {
+  const disabled = [];
+  if (controls.maintenanceMode) disabled.push('maintenance');
+  if (controls.analysisEnabled === false) disabled.push('analysis');
+  if (controls.searchEnabled === false) disabled.push('search');
+  if (controls.liveEnabled === false) disabled.push('live');
+  if (controls.remindersEnabled === false) disabled.push('reminders');
+  if (controls.expandedDataEnabled === false) disabled.push('expanded');
+  return disabled.length ? `Ограничения: ${disabled.join(', ')}` : 'Все функции включены';
+}
+
+function renderRuntimeHistory() {
+  if (!isAdmin()) return;
+  const panel = state.runtimeControlsAdmin;
+  const status = $('runtimeHistoryStatus');
+  const list = $('runtimeHistoryList');
+  if (!status || !list) return;
+
+  if (!panel?.schemaReady) {
+    status.textContent = 'Runtime Controls schema недоступна.';
+    list.innerHTML = '';
+    return;
+  }
+
+  if (!panel.historyReady) {
+    status.textContent = panel.historyReason || 'Нужна supabase_migration_v5_8.sql для history/rollback.';
+    list.innerHTML = '<div class="data-notice stale">История и rollback пока недоступны. Основные Runtime Controls продолжают работать.</div>';
+    return;
+  }
+
+  const rows = Array.isArray(panel.history) ? panel.history : [];
+  status.textContent = rows.length
+    ? `Последние revision: ${rows.length}. Rollback создаёт новую revision и не удаляет историю.`
+    : 'История появится после первого изменения RC6.';
+
+  if (!rows.length) {
+    list.innerHTML = '<div class="empty compact-empty">Пока нет сохранённых checkpoint.</div>';
+    return;
+  }
+
+  const currentRevision = Number(panel.controls?.revision || 0);
+  list.innerHTML = rows.map(row => {
+    const isCurrent = Number(row.revision || 0) === currentRevision;
+    return `<div class="runtime-history-row ${isCurrent ? 'current' : ''}">
+      <div class="runtime-history-copy">
+        <strong>revision ${Number(row.revision || 0)} · ${escapeHtml(runtimeHistoryActionLabel(row.action))}</strong>
+        <span>${escapeHtml(runtimeHistorySummary(row.controls || {}))}</span>
+        <small>${row.createdAt ? escapeHtml(dateTime(row.createdAt)) : '—'}${row.reason ? ` · ${escapeHtml(row.reason)}` : ''}${row.sourceRevision ? ` · из rev ${Number(row.sourceRevision)}` : ''}</small>
+      </div>
+      ${isCurrent
+        ? '<span class="runtime-history-current">ACTIVE</span>'
+        : `<button class="reminder-btn runtime-rollback-btn" type="button" data-history-id="${Number(row.id || 0)}" data-revision="${Number(row.revision || 0)}">Вернуть</button>`}
+    </div>`;
+  }).join('');
+
+  list.querySelectorAll('.runtime-rollback-btn').forEach(button => {
+    button.addEventListener('click', () => restoreRuntimeRevision(
+      Number(button.dataset.historyId || 0),
+      Number(button.dataset.revision || 0),
+    ));
+  });
+}
+
+async function restoreRuntimeRevision(historyId, sourceRevision) {
+  if (!isAdmin() || state.runtimeControlsSaving) return;
+  const current = state.runtimeControlsAdmin?.controls;
+  if (!current || !historyId) return;
+
+  const reasonInput = String($('runtimeChangeReason')?.value || '').trim();
+  const reason = reasonInput || `Rollback to revision ${Number(sourceRevision || 0)}`;
+  if (!window.confirm(`Вернуть Runtime Controls к revision ${Number(sourceRevision || 0)}? Текущая revision ${Number(current.revision || 0)} останется в истории.`)) return;
+
+  state.runtimeControlsSaving = true;
+  renderRuntimeControls();
+  try {
+    const result = await api('/api/runtime-controls/rollback', {
+      method: 'POST',
+      body: JSON.stringify({
+        expectedRevision: Number(current.revision || 0),
+        historyId: Number(historyId),
+        reason,
+      }),
+      retry: false,
+      dedupe: false,
+      timeoutMs: 12000,
+    });
+
+    state.runtimeControlsAdmin = {
+      available: true,
+      schemaReady: true,
+      source: 'supabase',
+      historyReady: true,
+      controls: result.controls,
+      history: result.history || [],
+    };
+    state.runtimeStatus = result.controls;
+    if ($('runtimeChangeReason')) $('runtimeChangeReason').value = '';
+    applyRuntimeUi();
+    toast(`Rollback выполнен → revision ${Number(result.controls?.revision || 0)}`);
+  } catch (e) {
+    toast(e.message);
+    state.runtimeControlsAdmin = null;
+    await loadRuntimeControlsAdmin(true);
+  } finally {
+    state.runtimeControlsSaving = false;
+    renderRuntimeControls();
+  }
+}
+
 function renderRuntimeControls() {
   if (!isAdmin()) return;
   const badge = $('runtimeControlsBadge');
@@ -1476,6 +1595,7 @@ function renderRuntimeControls() {
   ];
   for (const [id, key] of map) if ($(id)) $(id).checked = Boolean(c[key]);
   if ($('runtimeMessage')) $('runtimeMessage').value = c.message || '';
+  renderRuntimeHistory();
 }
 
 async function loadRuntimeControlsAdmin(force = false) {
@@ -1511,6 +1631,8 @@ function runtimeControlsPayload() {
     remindersEnabled: runtimeControlsFormValue('runtimeRemindersToggle', true),
     expandedDataEnabled: runtimeControlsFormValue('runtimeExpandedToggle', true),
     message: String($('runtimeMessage')?.value || '').trim().slice(0, 280),
+    reason: String($('runtimeChangeReason')?.value || '').trim().slice(0, 240),
+    action: 'update',
   };
 }
 
@@ -1544,9 +1666,12 @@ async function saveRuntimeControls(payload = null, options = {}) {
       available: true,
       schemaReady: true,
       source: 'supabase',
+      historyReady: Boolean(result.historyReady),
       controls: result.controls,
+      history: result.history || [],
     };
     state.runtimeStatus = result.controls;
+    if ($('runtimeChangeReason')) $('runtimeChangeReason').value = '';
     applyRuntimeUi();
     toast('Runtime Controls применены');
   } catch (e) {
@@ -1572,6 +1697,8 @@ async function restoreRuntimeDefaults() {
     remindersEnabled: true,
     expandedDataEnabled: true,
     message: '',
+    reason: 'Safe defaults restored by administrator.',
+    action: 'defaults',
   }, { skipConfirm: true });
 }
 
@@ -4692,7 +4819,7 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// v5.7 RC5: server-side runtime controls and emergency kill switches without a redeploy.
+// v5.8 RC6: audited Runtime Controls history and server-side rollback without a redeploy.
 // The boot watchdog never leaves the user behind an endless splash screen.
 const startupWatchdog = setTimeout(() => {
   if (!$('bootGate')?.hidden && !state.compatibilityBlocked) {
