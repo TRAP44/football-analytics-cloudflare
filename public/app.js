@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '5.9.0-rc7';
+const CLIENT_VERSION = '6.0.0-rc8';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc7';
+const CLIENT_RELEASE_CHANNEL = 'rc8';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -576,7 +576,7 @@ async function runStartupSequence() {
 
   setBootStatus(
     'Подключаю данные',
-    manifest ? `RC7 · API contract ${manifest.apiContract}` : 'Manifest временно недоступен — продолжаю в безопасном режиме.',
+    manifest ? `RC8 · API contract ${manifest.apiContract}` : 'Manifest временно недоступен — продолжаю в безопасном режиме.',
     38
   );
 
@@ -880,11 +880,12 @@ function renderModelQuality() {
 
   const sample = q.sample || {};
   const h = q.headline || {};
+  const excludedText = Number(sample.excluded || 0) > 0 ? ` · ${Number(sample.excluded)} исключено integrity` : '';
   badge.textContent = sample.ready ? `${sample.settled || 0} матчей` : `${sample.settled || 0} / 20 матчей`;
   badge.classList.toggle('ready', Boolean(sample.ready));
   status.textContent = sample.settled
-    ? `${sample.settled} завершённых прогнозов · ${sample.pending || 0} ожидают результата${sample.calibrationReady ? ' · калибровка уже информативнее' : ''}`
-    : `Пока нет завершённых прогнозов. Новые предматчевые анализы будут автоматически попадать в backtest.`;
+    ? `${sample.settled} проверенных прогнозов · ${sample.pending || 0} ожидают результата${excludedText}${sample.calibrationReady ? ' · калибровка уже информативнее' : ''}`
+    : `Пока нет проверенных завершённых прогнозов${excludedText}. Новые предматчевые анализы будут автоматически попадать в backtest.`;
 
   headline.hidden = false;
   headline.innerHTML = `
@@ -1052,7 +1053,7 @@ function renderModelQuality() {
         <div class="model-dash-section-head"><strong>🧪 Prediction Integrity</strong><span>${escapeHtml(q.integrity?.label || 'нет данных')}</span></div>
         <div class="model-integrity-summary ${escapeHtml(q.integrity?.status || 'clean')}">
           <div><span>Loaded</span><strong>${Number(q.integrity?.loadedRows || 0)}</strong><small>settled + pending</small></div>
-          <div><span>Severe</span><strong>${Number(q.integrity?.severeIssues || 0)}</strong><small>probability / timing / duplicate</small></div>
+          <div><span>Severe</span><strong>${Number(q.integrity?.severeIssues || 0)}</strong><small>probability / timing / consistency</small></div>
           <div><span>Warning</span><strong>${Number(q.integrity?.warningIssues || 0)}</strong><small>settlement / outcome</small></div>
           <div><span>Info</span><strong>${Number(q.integrity?.informationalIssues || 0)}</strong><small>legacy metadata</small></div>
         </div>
@@ -1309,11 +1310,11 @@ function runClientContractSmoke() {
   const adminSections = [...document.querySelectorAll('[data-admin-only]')];
   add('admin_sections', 'Admin UI маркировка', adminSections.length >= 6, `${adminSections.length} технических секций помечены data-admin-only.`);
 
-  const cssLink = document.querySelector('link[href*="styles.css?v=5.9.0"]');
-  const appScript = document.querySelector('script[src*="app.js?v=5.9.0"]');
+  const cssLink = document.querySelector('link[href*="styles.css?v=6.0.0"]');
+  const appScript = document.querySelector('script[src*="app.js?v=6.0.0"]');
   add('cache_bust', 'Cache-bust assets', Boolean(cssLink && appScript), `CSS ${cssLink ? 'OK' : 'MISS'} · JS ${appScript ? 'OK' : 'MISS'}.`);
 
-  add('client_version', 'Версия клиента', CLIENT_VERSION === '5.9.0-rc7', CLIENT_VERSION);
+  add('client_version', 'Версия клиента', CLIENT_VERSION === '6.0.0-rc8', CLIENT_VERSION);
   add('telegram_sdk', 'Telegram WebApp SDK', Boolean(window.Telegram?.WebApp), window.Telegram?.WebApp ? 'SDK доступен.' : 'В обычном браузере SDK может отсутствовать; в Telegram должен быть доступен.');
 
   const navButtons = ['navMatches','navSearch','navHistory','navProfile'].filter(id => $(id));
@@ -1339,7 +1340,7 @@ function runClientContractSmoke() {
 }
 
 function rcStateText(status) {
-  if (status === 'rc_ready') return 'RC7 READY';
+  if (status === 'rc_ready') return 'RC8 READY';
   if (status === 'rc_with_holds') return 'RC + HOLD';
   if (status === 'blocked') return 'BLOCK';
   return 'WAIT';
@@ -1373,7 +1374,7 @@ function renderRcRegression() {
   const r = state.rcRegression;
   if (!r) {
     badge.className = 'rc-badge';
-    badge.textContent = 'RC7';
+    badge.textContent = 'RC8';
     status.textContent = 'Полный regression smoke-test ещё не запускался.';
     meta.textContent = 'Тест безопасный: без Analyze, без изменений user data, без API-Football.';
     summary.innerHTML = '';
@@ -4865,7 +4866,7 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// v5.9 RC7: prediction integrity diagnostics, version cohorts and calibration QA without automatic model promotion.
+// v6.0 RC8: captured_at integrity hardening and verified-only model quality metrics.
 // The boot watchdog never leaves the user behind an endless splash screen.
 const startupWatchdog = setTimeout(() => {
   if (!$('bootGate')?.hidden && !state.compatibilityBlocked) {
