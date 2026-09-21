@@ -14,6 +14,10 @@ const memory = {
   releaseReadiness: null,
   providerAudit: { last: null, byFixture: new Map() },
   providerE2E: { last: null },
+  productionReadiness: null,
+  inflight: new Map(),
+  routeBurst: new Map(),
+  userSyncAt: new Map(),
   providerFeatureFetch: {
     api: 0,
     cache: 0,
@@ -40,12 +44,17 @@ const memory = {
     integrityErrors: 0,
     integrityQuarantined: 0,
     integrityDuplicates: 0,
+    singleflightJoins: 0,
+    burstBlocks: 0,
+    upstreamTimeouts: 0,
+    userSyncSkips: 0,
+    memoryPrunes: 0,
   },
   provider: { name: 'API-Football', plan: 'UNKNOWN', dailyLimit: null, dailyRemaining: null, minuteLimit: null, minuteRemaining: null, updatedAt: null, cooldownUntil: null, lastError: '', lastStatus: null, lastLatencyMs: null, lastRequestAt: null, lastSuccessAt: null },
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '5.0.0-expanded-data-release-gate';
+const APP_VERSION = '5.1.0-production-load-safety';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -84,7 +93,7 @@ const CALIBRATION_CACHE_KEY = 'model-calibration:global:v3.7';
 const CALIBRATION_CACHE_MINUTES = 360;
 
 
-function json(data, status = 200) {
+function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
@@ -93,6 +102,7 @@ function json(data, status = 200) {
       'x-content-type-options': 'nosniff',
       'x-app-version': APP_VERSION,
       'vary': 'x-telegram-init-data',
+      ...extraHeaders,
     },
   });
 }
@@ -184,6 +194,158 @@ function adminForbidden() {
   return json({ error: 'Этот технический раздел доступен только администратору.', code: 'ADMIN_ONLY' }, 403);
 }
 
+function sleepMs(ms) {
+  return new Promise(resolve => setTimeout(resolve, Math.max(0, Number(ms || 0))));
+}
+
+async function fetchWithTimeout(input, init = {}, timeoutMs = 8000, source = 'upstream') {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new DOMException('timeout', 'AbortError')), Math.max(500, Number(timeoutMs || 8000)));
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      bumpTelemetry('upstreamTimeouts');
+      const timeoutError = new Error(`${source} timeout после ${Math.max(500, Number(timeoutMs || 8000))} мс`);
+      timeoutError.code = 'UPSTREAM_TIMEOUT';
+      timeoutError.source = source;
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function withSingleFlight(key, factory, options = {}) {
+  const normalized = String(key || '');
+  if (!normalized) return await factory();
+  const existing = memory.inflight.get(normalized);
+  if (existing) {
+    if (options.countTelemetry !== false) bumpTelemetry('singleflightJoins');
+    return await existing;
+  }
+  const task = Promise.resolve().then(factory);
+  memory.inflight.set(normalized, task);
+  try {
+    return await task;
+  } finally {
+    if (memory.inflight.get(normalized) === task) memory.inflight.delete(normalized);
+  }
+}
+
+function pruneMemoryState() {
+  let pruned = 0;
+  const now = Date.now();
+
+  if (memory.cache.size > 600) {
+    for (const [key, value] of memory.cache) {
+      if (Number(value?.expiresAt || 0) <= now && memory.cache.size > 450) {
+        memory.cache.delete(key);
+        pruned++;
+      }
+    }
+    while (memory.cache.size > 500) {
+      const first = memory.cache.keys().next().value;
+      if (first === undefined) break;
+      memory.cache.delete(first);
+      pruned++;
+    }
+  }
+
+  if (memory.userSyncAt.size > 1500) {
+    for (const [key, at] of memory.userSyncAt) {
+      if (now - Number(at || 0) > 60 * 60 * 1000) {
+        memory.userSyncAt.delete(key);
+        pruned++;
+      }
+    }
+  }
+
+  if (memory.routeBurst.size > 2500) {
+    for (const [key, bucket] of memory.routeBurst) {
+      if (now - Number(bucket?.startedAt || 0) > 5 * 60 * 1000) {
+        memory.routeBurst.delete(key);
+        pruned++;
+      }
+    }
+  }
+
+  if (pruned) bumpTelemetry('memoryPrunes', pruned);
+  return pruned;
+}
+
+const ROUTE_BURST_POLICIES = Object.freeze([
+  { test: p => p === '/api/analyze', limit: 3, windowMs: 30000, label: 'analysis' },
+  { test: p => p === '/api/match-center', limit: 8, windowMs: 10000, label: 'match-center' },
+  { test: p => p === '/api/search', limit: 10, windowMs: 10000, label: 'search' },
+  { test: p => p === '/api/tournament', limit: 8, windowMs: 10000, label: 'tournament' },
+  { test: p => p === '/api/team' || p.startsWith('/api/team/'), limit: 10, windowMs: 10000, label: 'team' },
+  { test: p => p === '/api/provider/e2e-validation', limit: 1, windowMs: 30000, label: 'provider-e2e' },
+  { test: p => p === '/api/provider/coverage-audit', limit: 2, windowMs: 30000, label: 'coverage-audit' },
+  { test: p => p === '/api/provider/probe', limit: 3, windowMs: 30000, label: 'provider-probe' },
+  { test: p => p === '/api/diagnostics' || p === '/api/release-readiness' || p === '/api/production-readiness', limit: 6, windowMs: 30000, label: 'admin-diagnostics' },
+]);
+
+function routeBurstPolicy(pathname) {
+  return ROUTE_BURST_POLICIES.find(policy => policy.test(pathname)) || null;
+}
+
+function enforceRouteBurst(request, user) {
+  const path = new URL(request.url).pathname;
+  const policy = routeBurstPolicy(path);
+  if (!policy || !user?.id) return null;
+
+  const now = Date.now();
+  const key = `${Number(user.id)}:${policy.label}`;
+  const current = memory.routeBurst.get(key);
+  let bucket = current;
+  if (!bucket || now - Number(bucket.startedAt || 0) >= policy.windowMs) {
+    bucket = { startedAt: now, count: 0 };
+  }
+  bucket.count += 1;
+  memory.routeBurst.set(key, bucket);
+
+  if (bucket.count <= policy.limit) {
+    if (memory.routeBurst.size > 2500) pruneMemoryState();
+    return null;
+  }
+
+  const retryAfter = Math.max(1, Math.ceil((policy.windowMs - (now - bucket.startedAt)) / 1000));
+  bumpTelemetry('burstBlocks');
+  return json({
+    error: 'Слишком много одинаковых действий подряд. Подождите несколько секунд.',
+    code: 'BURST_GUARD',
+    retryAfter,
+  }, 429, { 'retry-after': String(retryAfter) });
+}
+
+function productionSafetySnapshot() {
+  return {
+    singleflight: {
+      active: memory.inflight.size,
+      joins: Number(memory.telemetry?.singleflightJoins || 0),
+    },
+    burstGuard: {
+      activeBuckets: memory.routeBurst.size,
+      blocked: Number(memory.telemetry?.burstBlocks || 0),
+      policies: ROUTE_BURST_POLICIES.map(x => ({ label: x.label, limit: x.limit, windowMs: x.windowMs })),
+    },
+    upstream: {
+      timeouts: Number(memory.telemetry?.upstreamTimeouts || 0),
+      supabaseTimeoutMs: 7000,
+      apiFootballTimeoutMs: 10000,
+    },
+    memory: {
+      cacheEntries: memory.cache.size,
+      cacheSoftLimit: 500,
+      userSyncEntries: memory.userSyncAt.size,
+      userSyncTtlSeconds: 600,
+      pruned: Number(memory.telemetry?.memoryPrunes || 0),
+    },
+  };
+}
+
 function hasSupabase(cfg) {
   return Boolean(cfg.supabaseUrl && cfg.supabaseKey);
 }
@@ -205,7 +367,7 @@ async function supaSelectOne(cfg, table, params) {
   url.searchParams.set('select', '*');
   url.searchParams.set('limit', '1');
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const r = await fetch(url, { headers: supaHeaders(cfg) });
+  const r = await fetchWithTimeout(url, { headers: supaHeaders(cfg) }, 7000, `Supabase ${table}`);
   if (!r.ok) throw new Error(`Supabase ${table}: HTTP ${r.status}`);
   const rows = await r.json();
   return rows?.[0] || null;
@@ -217,7 +379,7 @@ async function supaSelectMany(cfg, table, params = {}, { limit = 20, order = '' 
   url.searchParams.set('limit', String(limit));
   if (order) url.searchParams.set('order', order);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const r = await fetch(url, { headers: supaHeaders(cfg) });
+  const r = await fetchWithTimeout(url, { headers: supaHeaders(cfg) }, 7000, `Supabase ${table}`);
   if (!r.ok) {
     const text = await r.text().catch(() => '');
     throw new Error(`Supabase ${table}: HTTP ${r.status}${text ? ` — ${text.slice(0, 160)}` : ''}`);
@@ -228,11 +390,11 @@ async function supaSelectMany(cfg, table, params = {}, { limit = 20, order = '' 
 async function supaUpsert(cfg, table, rows, onConflict) {
   const url = new URL(`${cfg.supabaseUrl}/rest/v1/${table}`);
   if (onConflict) url.searchParams.set('on_conflict', onConflict);
-  const r = await fetch(url, {
+  const r = await fetchWithTimeout(url, {
     method: 'POST',
     headers: supaHeaders(cfg, { Prefer: 'resolution=merge-duplicates,return=minimal' }),
     body: JSON.stringify(Array.isArray(rows) ? rows : [rows]),
-  });
+  }, 7000, `Supabase ${table}`);
   if (!r.ok) {
     const text = await r.text().catch(() => '');
     throw new Error(`Supabase ${table}: HTTP ${r.status}${text ? ` — ${text.slice(0, 180)}` : ''}`);
@@ -242,11 +404,11 @@ async function supaUpsert(cfg, table, rows, onConflict) {
 async function supaInsertIgnore(cfg, table, rows, onConflict) {
   const url = new URL(`${cfg.supabaseUrl}/rest/v1/${table}`);
   if (onConflict) url.searchParams.set('on_conflict', onConflict);
-  const r = await fetch(url, {
+  const r = await fetchWithTimeout(url, {
     method: 'POST',
     headers: supaHeaders(cfg, { Prefer: 'resolution=ignore-duplicates,return=minimal' }),
     body: JSON.stringify(Array.isArray(rows) ? rows : [rows]),
-  });
+  }, 7000, `Supabase ${table}`);
   if (!r.ok) {
     const text = await r.text().catch(() => '');
     throw new Error(`Supabase ${table}: HTTP ${r.status}${text ? ` — ${text.slice(0, 180)}` : ''}`);
@@ -256,11 +418,11 @@ async function supaInsertIgnore(cfg, table, rows, onConflict) {
 async function supaPatch(cfg, table, filters, patch) {
   const url = new URL(`${cfg.supabaseUrl}/rest/v1/${table}`);
   for (const [k, v] of Object.entries(filters || {})) url.searchParams.set(k, v);
-  const r = await fetch(url, {
+  const r = await fetchWithTimeout(url, {
     method: 'PATCH',
     headers: supaHeaders(cfg, { Prefer: 'return=minimal' }),
     body: JSON.stringify(patch || {}),
-  });
+  }, 7000, `Supabase ${table}`);
   if (!r.ok) {
     const text = await r.text().catch(() => '');
     throw new Error(`Supabase ${table}: HTTP ${r.status}${text ? ` — ${text.slice(0, 180)}` : ''}`);
@@ -270,10 +432,10 @@ async function supaPatch(cfg, table, filters, patch) {
 async function supaDelete(cfg, table, filters = {}) {
   const url = new URL(`${cfg.supabaseUrl}/rest/v1/${table}`);
   for (const [k, v] of Object.entries(filters || {})) url.searchParams.set(k, v);
-  const r = await fetch(url, {
+  const r = await fetchWithTimeout(url, {
     method: 'DELETE',
     headers: supaHeaders(cfg, { Prefer: 'return=minimal' }),
-  });
+  }, 7000, `Supabase ${table}`);
   if (!r.ok) {
     const text = await r.text().catch(() => '');
     throw new Error(`Supabase ${table}: HTTP ${r.status}${text ? ` — ${text.slice(0, 180)}` : ''}`);
@@ -329,11 +491,11 @@ async function recordOpsEvent(cfg, event = {}) {
   if (!hasSupabase(cfg)) return row;
   try {
     const url = new URL(`${cfg.supabaseUrl}/rest/v1/ops_events`);
-    await fetch(url, {
+    await fetchWithTimeout(url, {
       method: 'POST',
       headers: supaHeaders(cfg, { Prefer: 'return=minimal' }),
       body: JSON.stringify(row),
-    });
+    }, 4000, 'Supabase ops event');
   } catch {
     // Observability must never become a new failure mode for the product.
   }
@@ -389,6 +551,14 @@ function telemetrySnapshot() {
     integrityErrors: Number(t.integrityErrors || 0),
     integrityQuarantined: Number(t.integrityQuarantined || 0),
     integrityDuplicates: Number(t.integrityDuplicates || 0),
+    singleflightJoins: Number(t.singleflightJoins || 0),
+    burstBlocks: Number(t.burstBlocks || 0),
+    upstreamTimeouts: Number(t.upstreamTimeouts || 0),
+    userSyncSkips: Number(t.userSyncSkips || 0),
+    memoryPrunes: Number(t.memoryPrunes || 0),
+    inflightNow: memory.inflight.size,
+    routeBucketsNow: memory.routeBurst.size,
+    l1CacheEntries: memory.cache.size,
     note: 'Runtime counters describe the current Cloudflare Worker isolate; provider quota values come from API-Football response headers.',
   };
 }
@@ -449,13 +619,24 @@ async function getRequestUser(request, cfg) {
     user = { id: 999001, username: 'dev_user', first_name: 'DEV', last_name: 'User' };
   }
   if (!user) return null;
-  await upsertUser(user, cfg);
+  try {
+    await upsertUser(user, cfg);
+  } catch (error) {
+    // Authentication is already cryptographically validated. A transient DB
+    // write problem must not take public read-only football screens offline.
+    bumpTelemetry('supabaseErrors');
+    recordOpsEvent(cfg, {
+      severity: 'warning', source: 'auth', eventType: 'user_sync', code: 'USER_SYNC_DEGRADED',
+      message: error?.message || error, meta: { telegramId: Number(user.id) },
+    }).catch(() => {});
+  }
   return user;
 }
 
 async function upsertUser(user, cfg) {
+  const userId = Number(user.id);
   const record = {
-    telegram_id: Number(user.id),
+    telegram_id: userId,
     username: user.username || null,
     first_name: user.first_name || null,
     last_name: user.last_name || null,
@@ -464,11 +645,25 @@ async function upsertUser(user, cfg) {
   };
 
   if (hasSupabase(cfg)) {
-    await supaUpsert(cfg, 'users', record, 'telegram_id');
+    const lastSync = Number(memory.userSyncAt.get(userId) || 0);
+    if (lastSync && Date.now() - lastSync < 10 * 60 * 1000) {
+      bumpTelemetry('userSyncSkips');
+      return;
+    }
+    await withSingleFlight(`user-sync:${userId}`, async () => {
+      const insideLastSync = Number(memory.userSyncAt.get(userId) || 0);
+      if (insideLastSync && Date.now() - insideLastSync < 10 * 60 * 1000) {
+        bumpTelemetry('userSyncSkips');
+        return;
+      }
+      await supaUpsert(cfg, 'users', record, 'telegram_id');
+      memory.userSyncAt.set(userId, Date.now());
+      if (memory.userSyncAt.size > 1500) pruneMemoryState();
+    });
     return;
   }
-  const old = memory.users.get(Number(user.id)) || { plan: 'FREE', created_at: new Date().toISOString() };
-  memory.users.set(Number(user.id), { ...old, ...record });
+  const old = memory.users.get(userId) || { plan: 'FREE', created_at: new Date().toISOString() };
+  memory.users.set(userId, { ...old, ...record });
 }
 
 async function getUserRecord(userId, cfg) {
@@ -844,6 +1039,9 @@ async function getCacheEntry(cacheKey, cfg, allowExpired = false) {
   const local = memory.cache.get(cacheKey);
   if (local && local.expiresAt > Date.now()) {
     bumpTelemetry('cacheHits');
+    // Touch the key so Map insertion order acts as a lightweight LRU.
+    memory.cache.delete(cacheKey);
+    memory.cache.set(cacheKey, local);
     return { payload: local.payload, expired: false, expiresAt: new Date(local.expiresAt).toISOString(), layer: 'memory' };
   }
 
@@ -879,7 +1077,13 @@ async function getCacheEntry(cacheKey, cfg, allowExpired = false) {
         }).catch(() => {});
         return { payload: local.payload, expired: local.expiresAt <= Date.now(), expiresAt: new Date(local.expiresAt).toISOString(), layer: 'memory-fallback' };
       }
-      throw error;
+      recordOpsEvent(cfg, {
+        severity: 'warning', source: 'cache', eventType: 'supabase_cache_read_degraded', code: 'CACHE_DB_READ_NO_L1',
+        message: error?.message || error, meta: { cacheKey },
+      }).catch(() => {});
+      // Treat a transient shared-cache outage as a cache miss. The route may
+      // still refresh from API-Football and serve the user.
+      return null;
     }
   }
 
@@ -911,6 +1115,7 @@ async function setCache(cacheKey, fixtureId, payload, cfg, minutes = cfg.cacheMi
   const expiresAtMs = Date.parse(expiresAt);
   // Always keep an L1 copy. Supabase remains the persistent/shared cache.
   memory.cache.set(cacheKey, { payload, expiresAt: expiresAtMs });
+  if (memory.cache.size > 600) pruneMemoryState();
   bumpTelemetry('cacheWrites');
   if (!hasSupabase(cfg)) return;
   try {
@@ -1898,7 +2103,7 @@ async function removeFavorite(userId, teamId, cfg) {
     const url = new URL(`${cfg.supabaseUrl}/rest/v1/favorites`);
     url.searchParams.set('telegram_id', `eq.${Number(userId)}`);
     url.searchParams.set('team_id', `eq.${id}`);
-    const r = await fetch(url, { method: 'DELETE', headers: supaHeaders(cfg, { Prefer: 'return=minimal' }) });
+    const r = await fetchWithTimeout(url, { method: 'DELETE', headers: supaHeaders(cfg, { Prefer: 'return=minimal' }) }, 7000, 'Supabase favorites');
     if (!r.ok) throw new Error(`Supabase favorites: HTTP ${r.status}`);
     return;
   }
@@ -2009,7 +2214,7 @@ async function removeReminder(userId, fixtureId, cfg) {
     const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
     url.searchParams.set('telegram_id', `eq.${Number(userId)}`);
     url.searchParams.set('fixture_id', `eq.${id}`);
-    const r = await fetch(url, { method: 'DELETE', headers: supaHeaders(cfg, { Prefer: 'return=minimal' }) });
+    const r = await fetchWithTimeout(url, { method: 'DELETE', headers: supaHeaders(cfg, { Prefer: 'return=minimal' }) }, 7000, 'Supabase reminders');
     if (!r.ok) throw new Error(`Supabase reminders: HTTP ${r.status}`);
     return;
   }
@@ -2022,21 +2227,21 @@ async function patchReminder(row, patch, cfg) {
   const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
   url.searchParams.set('telegram_id', `eq.${Number(row.telegram_id)}`);
   url.searchParams.set('fixture_id', `eq.${Number(row.fixture_id)}`);
-  const r = await fetch(url, {
+  const r = await fetchWithTimeout(url, {
     method: 'PATCH',
     headers: supaHeaders(cfg, { Prefer: 'return=minimal' }),
     body: JSON.stringify(patch),
-  });
+  }, 7000, 'Supabase reminders patch');
   if (!r.ok) throw new Error(`Supabase reminders patch: HTTP ${r.status}`);
 }
 
 async function sendTelegramMessage(chatId, text, cfg) {
   if (!cfg.botToken) return false;
-  const r = await fetch(`https://api.telegram.org/bot${cfg.botToken}/sendMessage`, {
+  const r = await fetchWithTimeout(`https://api.telegram.org/bot${cfg.botToken}/sendMessage`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ chat_id: Number(chatId), text, disable_web_page_preview: true }),
-  });
+  }, 7000, 'Telegram sendMessage');
   return r.ok;
 }
 
@@ -3086,7 +3291,7 @@ function freeQuotaHealthy(minDaily = 25, minMinute = 5) {
   return !providerSnapshot().cooldownActive;
 }
 
-async function apiFootball(path, params, cfg, options = {}) {
+async function apiFootballNetwork(path, params, cfg, options = {}) {
   if (!cfg.apiFootballKey) {
     await recordOpsEvent(cfg, { severity: 'critical', source: 'provider', eventType: 'configuration', code: 'FOOTBALL_CONFIG', message: 'API_FOOTBALL_KEY отсутствует.' });
     throw footballError('API_FOOTBALL_KEY не настроен в Cloudflare.', 'FOOTBALL_CONFIG');
@@ -3117,9 +3322,9 @@ async function apiFootball(path, params, cfg, options = {}) {
   memory.provider.lastRequestAt = new Date(startedAt).toISOString();
   let r;
   try {
-    r = await fetch(url, {
+    r = await fetchWithTimeout(url, {
       headers: { 'x-apisports-key': cfg.apiFootballKey, Accept: 'application/json' },
-    });
+    }, Number(options.timeoutMs || 10000), 'API-Football');
   } catch (error) {
     const durationMs = Date.now() - startedAt;
     bumpTelemetry('apiErrors');
@@ -3191,6 +3396,22 @@ async function apiFootball(path, params, cfg, options = {}) {
   return Array.isArray(body.response) ? body.response : [];
 }
 
+function providerRequestKey(path, params, options = {}) {
+  const pairs = Object.entries(params || {})
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join('&');
+  return `football:${path}?${pairs}:type=${options.responseType || 'array'}`;
+}
+
+async function apiFootball(path, params, cfg, options = {}) {
+  return await withSingleFlight(
+    providerRequestKey(path, params, options),
+    () => apiFootballNetwork(path, params, cfg, options),
+  );
+}
+
 async function probeSupabase(cfg) {
   if (!hasSupabase(cfg)) return { configured: false, ok: false, status: 'not_configured', latencyMs: null, cache: null };
   const startedAt = Date.now();
@@ -3199,7 +3420,7 @@ async function probeSupabase(cfg) {
     url.searchParams.set('select', 'cache_key,expires_at');
     url.searchParams.set('order', 'expires_at.desc');
     url.searchParams.set('limit', '200');
-    const r = await fetch(url, { headers: supaHeaders(cfg, { Prefer: 'count=exact' }) });
+    const r = await fetchWithTimeout(url, { headers: supaHeaders(cfg, { Prefer: 'count=exact' }) }, 7000, 'Supabase diagnostics');
     const latencyMs = Date.now() - startedAt;
     if (!r.ok) {
       bumpTelemetry('supabaseErrors');
@@ -3234,7 +3455,7 @@ async function readRecentOpsEvents(cfg, limit = 10) {
     url.searchParams.set('select', 'created_at,severity,source,event_type,code,message,endpoint,status,duration_ms,metadata');
     url.searchParams.set('order', 'created_at.desc');
     url.searchParams.set('limit', String(Math.max(1, Math.min(20, limit))));
-    const r = await fetch(url, { headers: supaHeaders(cfg) });
+    const r = await fetchWithTimeout(url, { headers: supaHeaders(cfg) }, 7000, 'Supabase ops');
     if (!r.ok) return fallback();
     const items = await r.json().catch(() => []);
     return { persistent: true, migrationReady: true, items };
@@ -3294,7 +3515,7 @@ async function probeOptionalTable(cfg, table) {
     const url = new URL(`${cfg.supabaseUrl}/rest/v1/${table}`);
     url.searchParams.set('select', '*');
     url.searchParams.set('limit', '1');
-    const r = await fetch(url, { headers: supaHeaders(cfg) });
+    const r = await fetchWithTimeout(url, { headers: supaHeaders(cfg) }, 7000, `Supabase ${table} probe`);
     if (r.ok) return { ok: true, status: 'ok' };
     return { ok: false, status: `http_${r.status}` };
   } catch (error) {
@@ -3339,6 +3560,8 @@ async function apiReleaseReadiness(request, cfg) {
     ),
     releaseCheck('telegram', 'Telegram bot runtime', cfg.botToken ? 'pass' : 'warn', cfg.botToken ? 'TELEGRAM_BOT_TOKEN доступен.' : 'Без bot token не будут работать Telegram-уведомления.', false),
     releaseCheck('production_mode', 'Production mode', cfg.devMode ? 'warn' : 'pass', cfg.devMode ? 'DEV_MODE=true — перед релизом выключить.' : 'DEV_MODE=false.', false),
+    releaseCheck('load_safety', 'Production Load Safety', memory.productionReadiness?.value?.status === 'blocked' ? 'fail' : memory.productionReadiness?.value ? 'pass' : 'warn',
+      memory.productionReadiness?.value ? `${memory.productionReadiness.value.label} · ${memory.productionReadiness.value.score}%.` : 'Production Safety Gate ещё не запускался.', false),
     releaseCheck('monetization', 'Монетизация', cfg.monetizationEnabled ? 'warn' : 'pass', cfg.monetizationEnabled ? 'Монетизация включена, хотя текущий план проекта — запускать её в финале.' : 'Оплата корректно остаётся на паузе.', false),
     releaseCheck('integrity_last_run', 'Последняя проверка матчей', diagnostics.integrity?.lastRun?.health === 'critical' ? 'warn' : 'pass', diagnostics.integrity?.lastRun ? `Health: ${diagnostics.integrity.lastRun.health || 'ok'}, quality ${Number(diagnostics.integrity.lastRun.qualityScore || 0)}%.` : 'Проверка появится после загрузки каталога матчей.', false),
   ];
@@ -3365,10 +3588,99 @@ async function apiReleaseReadiness(request, cfg) {
       monetizationExpected: 'paused',
       paymentTestingRequiredNow: false,
       providerUpgradeRequiredNow: false,
-      note: 'v4.2 проверяет готовность основной бесплатной части. Оплата и переход на расширенный API остаются отдельными будущими этапами.',
+      note: 'v5.1 проверяет эксплуатационную устойчивость ядра. Оплата пользователей по-прежнему остаётся финальным этапом.',
     },
   };
   memory.releaseReadiness = { at: now, value };
+  return json(value);
+}
+
+
+async function runSingleFlightSelfTest() {
+  const key = `selftest:${Date.now()}`;
+  let executions = 0;
+  const values = await Promise.all(Array.from({ length: 8 }, () =>
+    withSingleFlight(key, async () => {
+      executions += 1;
+      await sleepMs(25);
+      return 'ok';
+    }, { countTelemetry: false })
+  ));
+  return { pass: executions === 1 && values.every(x => x === 'ok'), executions, callers: values.length };
+}
+
+function productionCheck(id, label, state, detail, blocking = false) {
+  return { id, label, state, detail, blocking: Boolean(blocking) };
+}
+
+async function apiProductionReadiness(request, cfg) {
+  const now = Date.now();
+  const force = new URL(request.url).searchParams.get('refresh') === '1';
+  if (!force && memory.productionReadiness?.value && now - Number(memory.productionReadiness.at || 0) < 30000) {
+    return json({ ...memory.productionReadiness.value, cached: true });
+  }
+
+  const [diagnostics, singleflightTest] = await Promise.all([
+    collectDiagnostics(cfg),
+    runSingleFlightSelfTest(),
+  ]);
+  const safety = productionSafetySnapshot();
+  const providerBudget = providerBudgetProfile();
+  const paidProvider = providerTransitionProfile().paid;
+  const lastE2E = await loadLastProviderE2E(cfg);
+
+  const checks = [
+    productionCheck('supabase', 'Supabase отвечает', diagnostics.supabase?.ok ? 'pass' : 'fail',
+      diagnostics.supabase?.ok ? `${Number(diagnostics.supabase?.latencyMs || 0)} мс.` : `${diagnostics.supabase?.status || 'offline'}.`, true),
+    productionCheck('singleflight', 'Server-side SingleFlight', singleflightTest.pass ? 'pass' : 'fail',
+      singleflightTest.pass ? `${singleflightTest.callers} параллельных вызовов → ${singleflightTest.executions} выполнение.` : 'Коалесинг параллельных запросов не прошёл self-test.', true),
+    productionCheck('burst_guard', 'Burst Guard', ROUTE_BURST_POLICIES.length >= 6 ? 'pass' : 'fail',
+      `${ROUTE_BURST_POLICIES.length} политик для дорогих маршрутов; блокировок в isolate: ${Number(memory.telemetry?.burstBlocks || 0)}.`, true),
+    productionCheck('upstream_timeouts', 'Upstream timeouts', 'pass',
+      'Supabase 7 сек., API-Football 10 сек.; зависшие upstream не держат Worker бесконечно.', true),
+    productionCheck('user_sync', 'Telegram user sync cache', 'pass',
+      `Повторная синхронизация users ограничена 1 разом / 10 минут; пропущено записей: ${Number(memory.telemetry?.userSyncSkips || 0)}.`, false),
+    productionCheck('memory_bounds', 'Bounded L1 memory', memory.cache.size <= 600 ? 'pass' : 'warn',
+      `${memory.cache.size} cache entries; soft target 500, prune threshold 600.`, false),
+    productionCheck('quota_guard', 'Quota Orchestrator', providerBudget.mode === 'emergency' ? 'warn' : 'pass',
+      `${providerBudget.label}; daily reserve ${Number(providerBudget.daily?.reserve || 0)}.`, false),
+    productionCheck('expanded_e2e', 'Expanded Data E2E', !paidProvider ? 'warn' : lastE2E?.status?.ready ? 'pass' : 'warn',
+      !paidProvider
+        ? 'FREE: полноценный E2E отложен до увеличения квоты.'
+        : lastE2E?.status?.ready
+          ? `${lastE2E.status.label} · fixture ${lastE2E.fixtureId}.`
+          : 'Расширенный тариф обнаружен, но Release Gate ещё не подтверждён.', false),
+    productionCheck('monetization', 'Монетизация paused', cfg.monetizationEnabled ? 'fail' : 'pass',
+      cfg.monetizationEnabled ? 'Монетизация включена раньше финального этапа.' : 'Пользовательские платежи остаются выключены.', true),
+  ];
+
+  const blockers = checks.filter(x => x.state === 'fail' && x.blocking);
+  const warnings = checks.filter(x => x.state === 'warn' || (x.state === 'fail' && !x.blocking));
+  const passed = checks.filter(x => x.state === 'pass').length;
+  const status = blockers.length ? 'blocked' : warnings.length ? 'warning' : 'ready';
+  const value = {
+    available: true,
+    version: APP_VERSION,
+    generatedAt: new Date().toISOString(),
+    status,
+    label: blockers.length ? 'Production gate заблокирован' : warnings.length ? 'Production-ready с ожидаемыми ограничениями' : 'Production safety gate пройден',
+    score: Math.round(passed / checks.length * 100),
+    checks,
+    blockers: blockers.map(x => x.id),
+    warnings: warnings.map(x => x.id),
+    safety,
+    diagnostics: {
+      supabase: diagnostics.supabase,
+      provider: diagnostics.provider,
+      runtime: diagnostics.runtime,
+    },
+    policy: {
+      payments: 'paused',
+      externalLoadGenerator: false,
+      note: 'Self-test не создаёт искусственный внешний трафик и не расходует API-Football. Реальный нагрузочный прогон выполняется позже на staging/production traffic.',
+    },
+  };
+  memory.productionReadiness = { at: now, value };
   return json(value);
 }
 
@@ -6235,6 +6547,10 @@ export default {
         featureCache: 'enabled',
         expandedDataE2E: 'enabled',
         expandedDataReleaseGate: 'enabled',
+        productionLoadSafety: 'enabled',
+        serverSingleflight: 'enabled',
+        burstGuard: 'enabled',
+        upstreamTimeouts: 'enabled',
         devMode: cfg.devMode,
       });
     }
@@ -6263,6 +6579,9 @@ export default {
     try {
       const user = await getRequestUser(request, cfg);
       if (!user) return json({ error: 'Откройте приложение внутри Telegram.' }, 401);
+
+      const burstResponse = enforceRouteBurst(request, user);
+      if (burstResponse) return burstResponse;
 
       if (request.method === 'GET' && url.pathname === '/api/me') return await apiMe(request, cfg, user);
       if (request.method === 'GET' && url.pathname === '/api/data-capabilities') return json({ dataCapabilities: publicDataCapabilities() });
@@ -6302,6 +6621,10 @@ export default {
       if (request.method === 'GET' && url.pathname === '/api/release-readiness') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
         return await apiReleaseReadiness(request, cfg);
+      }
+      if (request.method === 'GET' && url.pathname === '/api/production-readiness') {
+        if (!isAdminUser(user, cfg)) return adminForbidden();
+        return await apiProductionReadiness(request, cfg);
       }
       if (request.method === 'GET' && url.pathname === '/api/data-integrity') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
