@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#111827" />
   <title>Football Manager · Match Intelligence</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=5.4.0" />
+  <link rel="stylesheet" href="/styles.css?v=5.5.0" />
 </head>
 <body>
   <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
     <div class="boot-card">
       <div class="boot-logo"><span>FM</span></div>
-      <div class="boot-kicker">FOOTBALL MANAGER · RC2</div>
+      <div class="boot-kicker">FOOTBALL MANAGER · RC3</div>
       <h1 id="bootTitle">Запускаю Football Manager</h1>
       <p id="bootText">Проверяю совместимость версии…</p>
       <div class="boot-progress" aria-hidden="true"><i id="bootProgressFill"></i></div>
@@ -379,17 +379,44 @@
           <p class="tiny diagnostics-privacy">Полный audit запускается только администратором вручную. Результат кэшируется на 15 минут. Пустой endpoint не всегда ошибка: покрытие зависит от турнира и стадии матча.</p>
         </section>
 
+        <section class="panel release-monitor-panel" data-admin-only hidden>
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>📡 Release Monitor</h2>
+              <p>Ошибки, startup/recovery telemetry и operational budget после deploy.</p>
+            </div>
+            <div class="release-monitor-actions">
+              <select id="releaseMonitorPeriod" aria-label="Период Release Monitor">
+                <option value="6">6ч</option>
+                <option value="24" selected>24ч</option>
+                <option value="72">72ч</option>
+                <option value="168">7д</option>
+              </select>
+              <button id="releaseMonitorRefreshBtn" class="icon-btn" type="button" aria-label="Обновить Release Monitor">↻</button>
+            </div>
+          </div>
+
+          <div class="release-monitor-status">
+            <span id="releaseMonitorBadge" class="release-monitor-badge">WAIT</span>
+            <div><strong id="releaseMonitorStatus">Release Monitor ещё не запускался.</strong><small id="releaseMonitorMeta">Без API-Football и без изменения пользовательских данных.</small></div>
+          </div>
+          <div id="releaseMonitorKpis"></div>
+          <div id="releaseMonitorClient" class="release-monitor-block"></div>
+          <div id="releaseMonitorIssues" class="release-monitor-block"></div>
+          <div id="releaseMonitorIncidents" class="release-monitor-block"></div>
+        </section>
+
         <section class="panel rc-panel" data-admin-only hidden>
           <div class="section-head profile-section-head">
             <div>
-              <h2>🚦 Release Candidate RC2</h2>
+              <h2>🚦 Release Candidate RC3</h2>
               <p>Regression + startup compatibility: runtime, security, schema, user routes, safety gates и client contract.</p>
             </div>
             <button id="rcRunBtn" class="primary-setting-btn rc-run-btn" type="button">Запустить QA</button>
           </div>
 
           <div class="rc-status-row">
-            <span id="rcBadge" class="rc-badge">RC2</span>
+            <span id="rcBadge" class="rc-badge">RC3</span>
             <div>
               <strong id="rcStatus">Полный regression smoke-test ещё не запускался.</strong>
               <small id="rcMeta">Без Analyze, без изменений user data, без расхода API-Football.</small>
@@ -472,6 +499,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=5.4.0"></script>
+  <script type="module" src="/app.js?v=5.5.0"></script>
 </body>
 </html>
