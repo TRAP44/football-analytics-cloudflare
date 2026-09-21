@@ -1,4 +1,6 @@
-const CLIENT_VERSION = '5.3.0-rc1';
+const CLIENT_VERSION = '5.4.0-rc2';
+const CLIENT_API_CONTRACT = 5;
+const CLIENT_RELEASE_CHANNEL = 'rc2';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -37,8 +39,18 @@ const state = {
   productionReadinessLoading: false,
   rcRegression: null,
   rcRegressionLoading: false,
+  appManifest: null,
   serverVersion: '',
   versionMismatch: false,
+  compatibilityBlocked: false,
+  compatibilityReason: '',
+  startup: {
+    startedAt: performance.now(),
+    finishedAt: null,
+    manifestOk: false,
+    degraded: false,
+    watchdogFired: false,
+  },
   storageAvailable: true,
   liveRefreshWasActive: false,
   network: {
@@ -76,7 +88,7 @@ const state = {
   providerLoaded: false,
   viewScroll: {},
   matchesLoadSeq: 0,
-  clientPerf: { startedAt: new Date().toISOString(), requests: 0, completed: 0, failed: 0, deduped: 0, retries: 0, rateLimited: 0, timeouts: 0, recoveries: 0, degradedEvents: 0, totalMs: 0, lastMs: null, clientErrors: 0, lastError: '' },
+  clientPerf: { startedAt: new Date().toISOString(), requests: 0, completed: 0, failed: 0, deduped: 0, retries: 0, rateLimited: 0, timeouts: 0, recoveries: 0, degradedEvents: 0, manifestFailures: 0, bootMs: null, totalMs: 0, lastMs: null, clientErrors: 0, lastError: '' },
 };
 
 const inflightGetRequests = new Map();
@@ -152,6 +164,7 @@ function friendlyErrorMessage(error) {
   const category = apiErrorCategory(error);
   const retryAfter = Number(error?.retryAfter || error?.payload?.retryAfter || 0);
   if (category === 'offline') return 'Нет подключения к интернету. Сохранённые данные останутся на экране.';
+  if (error?.status === 426 || error?.payload?.category === 'compatibility') return 'Версия Mini App устарела. Обновите приложение.';
   if (category === 'auth') return 'Сессия Telegram не подтверждена. Закройте Mini App и откройте его снова из бота.';
   if (category === 'timeout') return 'Сервис отвечает медленнее обычного. Попробуйте обновить ещё раз.';
   if (category === 'rate_limit') return retryAfter
@@ -263,16 +276,189 @@ async function recoverActiveView({ automatic = false } = {}) {
   }
 }
 
-function observeServerVersion(serverVersion) {
-  state.serverVersion = String(serverVersion || '');
-  state.versionMismatch = Boolean(state.serverVersion && state.serverVersion !== CLIENT_VERSION);
-  const banner = $('versionBanner');
-  if (!banner) return;
-  banner.hidden = !state.versionMismatch;
-  if ($('versionBannerText')) $('versionBannerText').textContent = state.versionMismatch
-    ? `Доступна новая версия приложения (${state.serverVersion}). Обновите Mini App, чтобы исключить конфликт старого интерфейса и нового Worker.`
-    : '';
+function versionTuple(value) {
+  const core = String(value || '').trim().replace(/^v/i, '').split('-')[0];
+  const parts = core.split('.').map(x => Number.parseInt(x, 10));
+  return [0, 1, 2].map(i => Number.isFinite(parts[i]) ? parts[i] : 0);
 }
+
+function compareVersions(a, b) {
+  const av = versionTuple(a), bv = versionTuple(b);
+  for (let i = 0; i < 3; i += 1) {
+    if (av[i] > bv[i]) return 1;
+    if (av[i] < bv[i]) return -1;
+  }
+  return 0;
+}
+
+function forceFreshReload() {
+  const url = new URL(location.href);
+  url.searchParams.set('_app_reload', String(Date.now()));
+  location.replace(url.toString());
+}
+
+function renderVersionCompatibility() {
+  const banner = $('versionBanner');
+  const text = $('versionBannerText');
+  const button = $('versionReloadBtn');
+  if (!banner || !text || !button) return;
+
+  banner.classList.toggle('blocking', Boolean(state.compatibilityBlocked));
+  banner.hidden = !(state.compatibilityBlocked || state.versionMismatch);
+
+  if (state.compatibilityBlocked) {
+    text.textContent = state.compatibilityReason || 'Эта версия Mini App несовместима с текущим Worker. Обновите приложение.';
+    button.textContent = 'Обновить';
+    return;
+  }
+
+  if (state.versionMismatch) {
+    text.textContent = `Доступно обновление ${state.serverVersion || state.appManifest?.recommendedClientVersion || ''}. Текущая версия совместима, но лучше перезагрузить Mini App.`;
+    button.textContent = 'Обновить';
+    return;
+  }
+
+  text.textContent = '';
+}
+
+function evaluateCompatibility(manifest = state.appManifest, headerContract = null, headerMinClient = '') {
+  const serverContract = Number(headerContract || manifest?.apiContract || 0);
+  const minClient = String(headerMinClient || manifest?.minClientVersion || '');
+  const recommended = String(manifest?.recommendedClientVersion || manifest?.version || state.serverVersion || '');
+
+  let blocked = false;
+  let reason = '';
+
+  if (serverContract && serverContract !== CLIENT_API_CONTRACT) {
+    blocked = true;
+    reason = `Нужна новая версия приложения: API contract ${serverContract}, а интерфейс использует ${CLIENT_API_CONTRACT}.`;
+  } else if (minClient && compareVersions(CLIENT_VERSION, minClient) < 0) {
+    blocked = true;
+    reason = `Версия интерфейса ${CLIENT_VERSION} устарела. Минимальная совместимая версия — ${minClient}.`;
+  }
+
+  state.compatibilityBlocked = blocked;
+  state.compatibilityReason = reason;
+  state.serverVersion = String(manifest?.version || state.serverVersion || '');
+  state.versionMismatch = Boolean(!blocked && recommended && recommended !== CLIENT_VERSION);
+  renderVersionCompatibility();
+  return !blocked;
+}
+
+function observeServerVersion(serverVersion, response = null) {
+  state.serverVersion = String(serverVersion || state.serverVersion || '');
+  const contract = response ? response.headers.get('x-api-contract') : null;
+  const minClient = response ? response.headers.get('x-min-client-version') : '';
+  evaluateCompatibility(state.appManifest, contract, minClient);
+}
+
+async function loadAppManifest() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(new DOMException('timeout', 'AbortError')), 6000);
+  try {
+    const response = await fetch('/api/app-manifest', {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    const manifest = await response.json().catch(() => null);
+    if (!response.ok || !manifest?.version) throw new Error('App Manifest недоступен');
+    state.appManifest = manifest;
+    state.startup.manifestOk = true;
+    state.serverVersion = String(manifest.version || '');
+    evaluateCompatibility(manifest);
+    return manifest;
+  } catch (error) {
+    state.clientPerf.manifestFailures += 1;
+    state.startup.degraded = true;
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function setBootStatus(title, text = '', progress = null) {
+  if ($('bootTitle')) $('bootTitle').textContent = title;
+  if ($('bootText')) $('bootText').textContent = text;
+  if ($('bootProgressFill') && Number.isFinite(Number(progress))) {
+    $('bootProgressFill').style.width = `${Math.max(0, Math.min(100, Number(progress)))}%`;
+  }
+}
+
+function hideBootGate() {
+  const gate = $('bootGate');
+  if (!gate) return;
+  gate.classList.add('done');
+  state.startup.finishedAt = performance.now();
+  state.clientPerf.bootMs = Math.round(state.startup.finishedAt - state.startup.startedAt);
+  setTimeout(() => { gate.hidden = true; gate.classList.remove('done'); }, 220);
+}
+
+function showBootRecovery({ blocking = false, title = '', text = '' } = {}) {
+  const gate = $('bootGate');
+  if (!gate) return;
+  gate.hidden = false;
+  gate.classList.toggle('blocking', Boolean(blocking));
+  setBootStatus(title || (blocking ? 'Нужно обновить Mini App' : 'Не удалось завершить запуск'), text, 100);
+  if ($('bootRetryBtn')) $('bootRetryBtn').hidden = Boolean(blocking);
+  if ($('bootContinueBtn')) $('bootContinueBtn').hidden = Boolean(blocking);
+  if ($('bootReloadBtn')) $('bootReloadBtn').hidden = false;
+}
+
+async function runStartupSequence() {
+  const gate = $('bootGate');
+  if (gate) {
+    gate.hidden = false;
+    gate.classList.remove('blocking', 'done');
+  }
+  if ($('bootRetryBtn')) $('bootRetryBtn').hidden = true;
+  if ($('bootContinueBtn')) $('bootContinueBtn').hidden = true;
+  if ($('bootReloadBtn')) $('bootReloadBtn').hidden = true;
+
+  setBootStatus('Запускаю Football Manager', 'Проверяю совместимость версии…', 12);
+  const manifest = await loadAppManifest();
+
+  if (state.compatibilityBlocked) {
+    showBootRecovery({
+      blocking: true,
+      title: 'Нужно обновить Mini App',
+      text: state.compatibilityReason,
+    });
+    return false;
+  }
+
+  setBootStatus(
+    'Подключаю данные',
+    manifest ? `RC2 · API contract ${manifest.apiContract}` : 'Manifest временно недоступен — продолжаю в безопасном режиме.',
+    38
+  );
+
+  await Promise.allSettled([loadProfile(), loadFavorites(), loadMatches()]);
+  renderProfile();
+
+  const usable = Boolean(state.profile || state.matches.length || readMatchSnapshot(localDate(state.offset)));
+  if (!usable && navigator.onLine === false) {
+    showBootRecovery({
+      blocking: false,
+      title: 'Нет подключения к интернету',
+      text: 'Подключитесь к сети и повторите запуск. Если сохранённые матчи появятся, можно продолжить в приложении.',
+    });
+    return false;
+  }
+
+  setBootStatus('Готово', state.startup.degraded ? 'Запуск выполнен с ограниченной проверкой версии.' : 'Версия и основные данные проверены.', 100);
+  await new Promise(resolve => setTimeout(resolve, 120));
+  hideBootGate();
+
+  scheduleIdle(async () => {
+    const tasks = [loadReminders()];
+    if (isAdmin()) tasks.push(loadProvider());
+    await Promise.allSettled(tasks);
+  });
+  return true;
+}
+
 
 function localDate(offset = 0) {
   const d = new Date();
@@ -352,7 +538,11 @@ async function api(path, options = {}) {
         const { timeoutMs: _timeoutMs, retry: _retry, dedupe: _dedupe, ...fetchOptions } = options;
         const response = await fetch(path, { ...fetchOptions, method, headers, signal: controller.signal });
         const serverVersion = String(response.headers.get('x-app-version') || '');
-        if (serverVersion) observeServerVersion(serverVersion);
+        if (serverVersion) observeServerVersion(serverVersion, response);
+        if (state.compatibilityBlocked) {
+          showBootRecovery({ blocking: true, title: 'Нужно обновить Mini App', text: state.compatibilityReason });
+          throw Object.assign(new Error(state.compatibilityReason), { status: 426, payload: { category: 'compatibility' } });
+        }
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
           const error = Object.assign(new Error(data.error || `HTTP ${response.status}`), {
@@ -905,11 +1095,11 @@ function runClientContractSmoke() {
   const adminSections = [...document.querySelectorAll('[data-admin-only]')];
   add('admin_sections', 'Admin UI маркировка', adminSections.length >= 6, `${adminSections.length} технических секций помечены data-admin-only.`);
 
-  const cssLink = document.querySelector('link[href*="styles.css?v=5.3.0"]');
-  const appScript = document.querySelector('script[src*="app.js?v=5.3.0"]');
+  const cssLink = document.querySelector('link[href*="styles.css?v=5.4.0"]');
+  const appScript = document.querySelector('script[src*="app.js?v=5.4.0"]');
   add('cache_bust', 'Cache-bust assets', Boolean(cssLink && appScript), `CSS ${cssLink ? 'OK' : 'MISS'} · JS ${appScript ? 'OK' : 'MISS'}.`);
 
-  add('client_version', 'Версия клиента', CLIENT_VERSION === '5.3.0-rc1', CLIENT_VERSION);
+  add('client_version', 'Версия клиента', CLIENT_VERSION === '5.4.0-rc2', CLIENT_VERSION);
   add('telegram_sdk', 'Telegram WebApp SDK', Boolean(window.Telegram?.WebApp), window.Telegram?.WebApp ? 'SDK доступен.' : 'В обычном браузере SDK может отсутствовать; в Telegram должен быть доступен.');
 
   const navButtons = ['navMatches','navSearch','navHistory','navProfile'].filter(id => $(id));
@@ -917,6 +1107,10 @@ function runClientContractSmoke() {
 
   const recoveryIds = ['connectionBannerIcon','connectionBannerTitle','connectionBannerText','connectionRetryBtn'];
   add('recovery_contract', 'Recovery UX contract', recoveryIds.every(id => $(id)), `${recoveryIds.filter(id => $(id)).length}/${recoveryIds.length} элементов.`);
+
+  const bootIds = ['bootGate','bootTitle','bootText','bootProgressFill','bootReloadBtn','versionBanner','versionReloadBtn'];
+  add('startup_contract', 'Startup / rollback contract', bootIds.every(id => $(id)), `${bootIds.filter(id => $(id)).length}/${bootIds.length} элементов.`);
+  add('api_contract', 'Client API contract', CLIENT_API_CONTRACT === 5, `contract ${CLIENT_API_CONTRACT} · ${CLIENT_RELEASE_CHANNEL}`);
 
   return {
     version: CLIENT_VERSION,
@@ -929,7 +1123,7 @@ function runClientContractSmoke() {
 }
 
 function rcStateText(status) {
-  if (status === 'rc_ready') return 'RC READY';
+  if (status === 'rc_ready') return 'RC2 READY';
   if (status === 'rc_with_holds') return 'RC + HOLD';
   if (status === 'blocked') return 'BLOCK';
   return 'WAIT';
@@ -963,7 +1157,7 @@ function renderRcRegression() {
   const r = state.rcRegression;
   if (!r) {
     badge.className = 'rc-badge';
-    badge.textContent = 'RC1';
+    badge.textContent = 'RC2';
     status.textContent = 'Полный regression smoke-test ещё не запускался.';
     meta.textContent = 'Тест безопасный: без Analyze, без изменений user data, без API-Football.';
     summary.innerHTML = '';
@@ -1139,6 +1333,8 @@ function renderDiagnostics() {
       <div><span>Защита клиента</span><strong>${Number(cp.rateLimited || 0)} × 429</strong><small>${Number(cp.timeouts || 0)} timeout</small></div>
       <div><span>Recovery UX</span><strong>${Number(cp.recoveries || 0)} recovery</strong><small>${Number(cp.degradedEvents || 0)} degraded events</small></div>
       <div><span>Состояние сети</span><strong>${escapeHtml(state.network.mode || 'online')}</strong><small>${state.network.lastRecoveredAt ? `recovered ${escapeHtml(relativeAge(state.network.lastRecoveredAt))}` : 'без восстановлений'}</small></div>
+      <div><span>Startup</span><strong>${Number.isFinite(Number(cp.bootMs)) ? `${Number(cp.bootMs)} мс` : '—'}</strong><small>${state.startup.manifestOk ? 'manifest OK' : `${Number(cp.manifestFailures || 0)} manifest fail`}</small></div>
+      <div><span>API contract</span><strong>${CLIENT_API_CONTRACT}</strong><small>${escapeHtml(state.appManifest?.releaseChannel || CLIENT_RELEASE_CHANNEL)} · min ${escapeHtml(state.appManifest?.minClientVersion || '—')}</small></div>
     </div>`;
   }
 
@@ -3815,7 +4011,7 @@ function noteClientError(error) {
 }
 window.addEventListener('error', event => noteClientError(event?.error || event?.message));
 window.addEventListener('unhandledrejection', event => noteClientError(event?.reason));
-$('versionReloadBtn')?.addEventListener('click', () => location.reload());
+$('versionReloadBtn')?.addEventListener('click', forceFreshReload);
 
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
@@ -3906,6 +4102,9 @@ $('providerAuditBtn')?.addEventListener('click', () => runProviderCoverageAudit(
 $('providerE2EBtn')?.addEventListener('click', () => runProviderE2E(null));
 $('providerAuditFixtureId')?.addEventListener('keydown', e => { if (e.key === 'Enter') runProviderCoverageAudit(null, true); });
 $('releaseRefreshBtn')?.addEventListener('click', () => loadReleaseReadiness(true));
+$('bootReloadBtn')?.addEventListener('click', forceFreshReload);
+$('bootRetryBtn')?.addEventListener('click', () => runStartupSequence());
+$('bootContinueBtn')?.addEventListener('click', hideBootGate);
 
 async function scheduleIdle(task) {
   if ('requestIdleCallback' in window) return new Promise(resolve => requestIdleCallback(async () => { try { await task(); } finally { resolve(); } }, { timeout: 1800 }));
@@ -3914,13 +4113,21 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// v5.3 RC1 adds read-only full regression smoke tests and a client DOM contract gate.
-// v4.0: first paint is intentionally small — matches/profile/favorites only.
-// History, reminders and provider details are loaded later or when their screen opens.
-await Promise.allSettled([loadProfile(), loadFavorites(), loadMatches()]);
-renderProfile();
-scheduleIdle(async () => {
-  const tasks = [loadReminders()];
-  if (isAdmin()) tasks.push(loadProvider());
-  await Promise.allSettled(tasks);
-});
+// v5.4 RC2: Telegram startup gate, public app manifest and rollback-safe compatibility checks.
+// The boot watchdog never leaves the user behind an endless splash screen.
+const startupWatchdog = setTimeout(() => {
+  if (!$('bootGate')?.hidden && !state.compatibilityBlocked) {
+    state.startup.watchdogFired = true;
+    showBootRecovery({
+      blocking: false,
+      title: 'Запуск занимает больше обычного',
+      text: 'Можно повторить проверку или открыть интерфейс с уже доступными данными.',
+    });
+  }
+}, 10000);
+
+try {
+  await runStartupSequence();
+} finally {
+  clearTimeout(startupWatchdog);
+}
