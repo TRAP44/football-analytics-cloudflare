@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '5.5.0-rc3';
+const CLIENT_VERSION = '5.6.0-rc4';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc3';
+const CLIENT_RELEASE_CHANNEL = 'rc4';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -42,6 +42,8 @@ const state = {
   releaseMonitor: null,
   releaseMonitorLoading: false,
   releaseMonitorHours: 24,
+  reminderHealth: null,
+  reminderHealthLoading: false,
   clientTelemetrySent: new Set(),
   appManifest: null,
   serverVersion: '',
@@ -488,7 +490,7 @@ async function runStartupSequence() {
 
   setBootStatus(
     'Подключаю данные',
-    manifest ? `RC3 · API contract ${manifest.apiContract}` : 'Manifest временно недоступен — продолжаю в безопасном режиме.',
+    manifest ? `RC4 · API contract ${manifest.apiContract}` : 'Manifest временно недоступен — продолжаю в безопасном режиме.',
     38
   );
 
@@ -963,7 +965,7 @@ async function openProfileView() {
   if (!state.remindersLoaded) essentials.push(loadReminders());
   if (isAdmin()) {
     if (!state.providerLoaded) essentials.push(loadProvider());
-    essentials.push(loadModelQuality(false), loadReleaseReadiness(false), loadProductionReadiness(false), loadReleaseMonitor(false));
+    essentials.push(loadModelQuality(false), loadReleaseReadiness(false), loadProductionReadiness(false), loadReleaseMonitor(false), loadReminderHealth(false));
   }
   await Promise.allSettled(essentials);
 }
@@ -1153,11 +1155,11 @@ function runClientContractSmoke() {
   const adminSections = [...document.querySelectorAll('[data-admin-only]')];
   add('admin_sections', 'Admin UI маркировка', adminSections.length >= 6, `${adminSections.length} технических секций помечены data-admin-only.`);
 
-  const cssLink = document.querySelector('link[href*="styles.css?v=5.5.0"]');
-  const appScript = document.querySelector('script[src*="app.js?v=5.5.0"]');
+  const cssLink = document.querySelector('link[href*="styles.css?v=5.6.0"]');
+  const appScript = document.querySelector('script[src*="app.js?v=5.6.0"]');
   add('cache_bust', 'Cache-bust assets', Boolean(cssLink && appScript), `CSS ${cssLink ? 'OK' : 'MISS'} · JS ${appScript ? 'OK' : 'MISS'}.`);
 
-  add('client_version', 'Версия клиента', CLIENT_VERSION === '5.5.0-rc3', CLIENT_VERSION);
+  add('client_version', 'Версия клиента', CLIENT_VERSION === '5.6.0-rc4', CLIENT_VERSION);
   add('telegram_sdk', 'Telegram WebApp SDK', Boolean(window.Telegram?.WebApp), window.Telegram?.WebApp ? 'SDK доступен.' : 'В обычном браузере SDK может отсутствовать; в Telegram должен быть доступен.');
 
   const navButtons = ['navMatches','navSearch','navHistory','navProfile'].filter(id => $(id));
@@ -1181,7 +1183,7 @@ function runClientContractSmoke() {
 }
 
 function rcStateText(status) {
-  if (status === 'rc_ready') return 'RC3 READY';
+  if (status === 'rc_ready') return 'RC4 READY';
   if (status === 'rc_with_holds') return 'RC + HOLD';
   if (status === 'blocked') return 'BLOCK';
   return 'WAIT';
@@ -1215,7 +1217,7 @@ function renderRcRegression() {
   const r = state.rcRegression;
   if (!r) {
     badge.className = 'rc-badge';
-    badge.textContent = 'RC3';
+    badge.textContent = 'RC4';
     status.textContent = 'Полный regression smoke-test ещё не запускался.';
     meta.textContent = 'Тест безопасный: без Analyze, без изменений user data, без API-Football.';
     summary.innerHTML = '';
@@ -1300,6 +1302,110 @@ async function loadRcRegression(force = true) {
   }
 }
 
+
+
+function renderReminderHealth() {
+  if (!isAdmin()) return;
+  const badge = $('reminderHealthBadge');
+  const status = $('reminderHealthStatus');
+  const kpis = $('reminderHealthKpis');
+  const recent = $('reminderHealthRecent');
+  const refresh = $('reminderHealthRefreshBtn');
+  const test = $('reminderTestBtn');
+  if (!badge || !status || !kpis || !recent || !refresh || !test) return;
+
+  refresh.disabled = Boolean(state.reminderHealthLoading);
+  test.disabled = Boolean(state.reminderHealthLoading);
+
+  if (state.reminderHealthLoading) {
+    badge.className = 'reminder-health-badge running';
+    badge.textContent = 'RUN';
+    status.textContent = 'Проверяю scheduler и delivery claims…';
+    kpis.innerHTML = '';
+    recent.innerHTML = '';
+    return;
+  }
+
+  const r = state.reminderHealth;
+  if (!r) {
+    badge.className = 'reminder-health-badge';
+    badge.textContent = 'WAIT';
+    status.textContent = 'Delivery Health ещё не загружен.';
+    kpis.innerHTML = '';
+    recent.innerHTML = '';
+    return;
+  }
+
+  if (!r.available) {
+    badge.className = 'reminder-health-badge blocked';
+    badge.textContent = 'SQL';
+    status.textContent = r.reason || 'Нужна migration v5.6.';
+    kpis.innerHTML = '<div class="data-notice stale">Перед проверкой уведомлений запустите <b>supabase_migration_v5_6.sql</b>.</div>';
+    recent.innerHTML = '';
+    return;
+  }
+
+  const healthy = r.health?.state === 'healthy';
+  badge.className = `reminder-health-badge ${healthy ? 'healthy' : 'watch'}`;
+  badge.textContent = healthy ? 'OK' : 'WATCH';
+  status.textContent = `${r.health?.label || 'Delivery Health'} · cron каждые ${Number(r.scheduler?.cadenceMinutes || 5)} мин.`;
+
+  const s = r.summary || {};
+  kpis.innerHTML = `<div class="reminder-health-grid">
+    <div><span>Активные</span><strong>${Number(s.activeUpcoming || 0)}</strong><small>будущие матчи</small></div>
+    <div><span>До 90 мин.</span><strong>${Number(s.dueNext90Minutes || 0)}</strong><small>скоро к отправке</small></div>
+    <div><span>Pre-match 24ч</span><strong>${Number(s.prematchSent24h || 0)}</strong><small>доставлено</small></div>
+    <div><span>Kickoff 24ч</span><strong>${Number(s.kickoffSent24h || 0)}</strong><small>доставлено</small></div>
+    <div><span>Ошибки 24ч</span><strong>${Number(s.failed24h || 0)}</strong><small>видны в Monitor</small></div>
+    <div><span>Claims</span><strong>${Number(s.activeClaims || 0)}</strong><small>${Number(s.staleClaims || 0)} stale</small></div>
+  </div>`;
+
+  recent.innerHTML = (r.recent || []).length
+    ? `<div class="reminder-health-list">${r.recent.map(x => `
+      <div class="${x.hasError ? 'error' : 'ok'}">
+        <div><strong>${escapeHtml(x.match || `Fixture ${x.fixtureId}`)}</strong><small>${x.fixtureDate ? dateTime(x.fixtureDate) : ''}</small></div>
+        <span>${escapeHtml(x.state || '')}</span>
+        <em>${Number(x.prematchAttempts || 0)} + ${Number(x.kickoffAttempts || 0)} попыт.</em>
+      </div>`).join('')}</div><p class="tiny">${escapeHtml(r.note || '')}</p>`
+    : '<div class="empty compact-empty">Недавних delivery attempts пока нет.</div>';
+}
+
+async function loadReminderHealth(force = false) {
+  if (!isAdmin() || state.reminderHealthLoading) return;
+  if (!force && state.reminderHealth) { renderReminderHealth(); return; }
+  state.reminderHealthLoading = true;
+  renderReminderHealth();
+  try {
+    state.reminderHealth = await api('/api/reminder-health', { retry: false, timeoutMs: 12000 });
+  } catch (e) {
+    state.reminderHealth = { available: false, reason: e.message };
+  } finally {
+    state.reminderHealthLoading = false;
+    renderReminderHealth();
+  }
+}
+
+async function sendReminderTest() {
+  if (!isAdmin() || state.reminderHealthLoading) return;
+  state.reminderHealthLoading = true;
+  renderReminderHealth();
+  try {
+    const result = await api('/api/reminder-health', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'test' }),
+      retry: false,
+      dedupe: false,
+      timeoutMs: 12000,
+    });
+    toast(result.message || 'Тест отправлен');
+    state.reminderHealth = null;
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    state.reminderHealthLoading = false;
+    await loadReminderHealth(true);
+  }
+}
 
 function releaseMonitorStateLabel(stateValue) {
   return stateValue === 'healthy' ? 'STABLE' : stateValue === 'watch' ? 'WATCH' : stateValue === 'incident' ? 'INCIDENT' : 'WAIT';
@@ -1980,6 +2086,14 @@ async function loadReminders() {
   }
 }
 
+function reminderDeliveryBadge(item) {
+  const status = String(item?.deliveryStatus || 'scheduled');
+  if (status === 'kickoff_sent') return '<span class="reminder-delivery-badge sent">✓ Старт отправлен</span>';
+  if (status === 'prematch_sent') return '<span class="reminder-delivery-badge sent">✓ Предматчевое отправлено</span>';
+  if (status === 'retry_pending') return '<span class="reminder-delivery-badge retry">↻ Повтор доставки</span>';
+  return '<span class="reminder-delivery-badge scheduled">● Запланировано</span>';
+}
+
 function renderReminderList() {
   const el = $('reminderList');
   if (!el) return;
@@ -1993,6 +2107,7 @@ function renderReminderList() {
       <div>
         <strong>${escapeHtml(x.homeName)} — ${escapeHtml(x.awayName)}</strong>
         <span>${dateTime(x.fixtureDate)} · за ${Number(x.remindBeforeMinutes || 30)} мин.${x.kickoffNotify ? ' · + старт' : ''}</span>
+        ${reminderDeliveryBadge(x)}
       </div>
       <button class="reminder-remove" type="button" data-fixture-id="${Number(x.fixtureId)}">Отключить</button>
     </div>`).join('');
@@ -4263,6 +4378,8 @@ $('diagnosticsRefreshBtn')?.addEventListener('click', () => loadDiagnostics(true
 $('productionReadinessRefreshBtn')?.addEventListener('click', () => loadProductionReadiness(true));
 $('releaseMonitorRefreshBtn')?.addEventListener('click', () => loadReleaseMonitor(true));
 $('releaseMonitorPeriod')?.addEventListener('change', () => { state.releaseMonitor = null; loadReleaseMonitor(true); });
+$('reminderHealthRefreshBtn')?.addEventListener('click', () => loadReminderHealth(true));
+$('reminderTestBtn')?.addEventListener('click', () => sendReminderTest());
 $('rcRunBtn')?.addEventListener('click', () => loadRcRegression(true));
 $('providerProbeBtn')?.addEventListener('click', () => probeProvider());
 $('providerAuditBtn')?.addEventListener('click', () => runProviderCoverageAudit(null, true));
@@ -4280,7 +4397,7 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// v5.5 RC3: release monitor, privacy-safe client telemetry and operational budget on top of RC2 startup safety.
+// v5.6 RC4: atomic reminder delivery claims, five-minute cron cadence and admin notification health.
 // The boot watchdog never leaves the user behind an endless splash screen.
 const startupWatchdog = setTimeout(() => {
   if (!$('bootGate')?.hidden && !state.compatibilityBlocked) {
