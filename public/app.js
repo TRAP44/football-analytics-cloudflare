@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '4.8.0-provider-transition';
+const CLIENT_VERSION = '4.9.0-quota-orchestrator';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -19,6 +19,7 @@ const state = {
   preferencesApplied: false,
   provider: null,
   providerTransition: null,
+  providerBudget: null,
   providerAudit: null,
   providerAuditLoading: false,
   dataCapabilities: null,
@@ -905,6 +906,31 @@ function renderProviderAudit() {
   if ($('providerExpectedDaily')) $('providerExpectedDaily').textContent = transition.expected?.daily ? String(transition.expected.daily) : '—';
   if ($('providerExpectedMinute')) $('providerExpectedMinute').textContent = transition.expected?.minute ? String(transition.expected.minute) : '—';
 
+  const budget = state.providerBudget || {};
+  if ($('quotaBudgetMode')) $('quotaBudgetMode').textContent = budget.label || 'Ожидаем данные';
+  if ($('quotaBudgetDaily')) $('quotaBudgetDaily').textContent = Number.isFinite(Number(budget.daily?.remaining))
+    ? `${budget.daily.remaining} · резерв ${Number(budget.daily?.reserve || 0)}` : '—';
+  if ($('quotaBudgetMinute')) $('quotaBudgetMinute').textContent = Number.isFinite(Number(budget.minute?.remaining))
+    ? `${budget.minute.remaining} · резерв ${Number(budget.minute?.reserve || 0)}` : '—';
+  if ($('quotaFeatureApi')) $('quotaFeatureApi').textContent = String(Number(budget.counters?.api || 0));
+  if ($('quotaFeatureCache')) $('quotaFeatureCache').textContent = String(Number(budget.counters?.cache || 0));
+  if ($('quotaFeatureStale')) $('quotaFeatureStale').textContent = String(Number(budget.counters?.stale || 0));
+  if ($('quotaFeatureSkipped')) $('quotaFeatureSkipped').textContent = String(Number(budget.counters?.skipped || 0));
+  if ($('quotaBudgetNote')) $('quotaBudgetNote').textContent = budget.note || 'Feature-level cache активен.';
+
+  const featureList = $('quotaFeatureList');
+  if (featureList) {
+    const rows = Object.entries(budget.counters?.byFeature || {});
+    featureList.innerHTML = rows.length ? rows.map(([name, c]) => `
+      <div class="quota-feature-row">
+        <strong>${escapeHtml(name)}</strong>
+        <span>API ${Number(c.api || 0)}</span>
+        <span>cache ${Number(c.cache || 0)}</span>
+        <span>stale ${Number(c.stale || 0)}</span>
+        <span>skip ${Number(c.skipped || 0)}</span>
+      </div>`).join('') : '<div class="empty compact-empty">Счётчики появятся после Match Center.</div>';
+  }
+
   if (runBtn) runBtn.disabled = Boolean(state.providerAuditLoading);
   if (probeBtn) probeBtn.disabled = Boolean(state.providerAuditLoading);
 
@@ -970,6 +996,7 @@ async function loadProvider() {
     const data = await api('/api/provider');
     state.provider = data.provider || state.provider;
     state.providerTransition = data.transition || state.providerTransition;
+    state.providerBudget = data.budget || state.providerBudget;
     state.providerAudit = data.lastAudit || state.providerAudit;
     state.providerLoaded = true;
     renderProvider();
@@ -984,6 +1011,10 @@ async function probeProvider() {
     const data = await api('/api/provider/probe?refresh=1', { retry: false, dedupe: false });
     state.provider = data.provider || state.provider;
     state.providerTransition = data.transition || state.providerTransition;
+    try {
+      const budgetData = await api('/api/provider/budget', { retry: false });
+      state.providerBudget = budgetData.budget || state.providerBudget;
+    } catch {}
     toast(data.probe?.ok ? 'Тариф и квоты обновлены' : (data.probe?.note || 'Проверка тарифа завершена'));
   } catch (e) {
     toast(e.message);
@@ -1009,6 +1040,10 @@ async function runProviderCoverageAudit(fixtureId, force = true) {
     state.providerAudit = data;
     state.provider = data.provider || state.provider;
     state.providerTransition = data.transition || state.providerTransition;
+    try {
+      const budgetData = await api('/api/provider/budget', { retry: false });
+      state.providerBudget = budgetData.budget || state.providerBudget;
+    } catch {}
     toast(data.blocked ? 'Guardrail не дал потратить лишнюю квоту' : 'Coverage Audit завершён');
   } catch (e) {
     toast(e.message);
@@ -2163,6 +2198,39 @@ function centerPlayersHtml(leaders, match) {
   return `<div class="center-players-grid">${side(match.home?.name || 'Хозяева', leaders?.home || [])}${side(match.away?.name || 'Гости', leaders?.away || [])}</div>`;
 }
 
+
+function freshnessSourceLabel(source) {
+  return ({
+    embedded: 'fixture',
+    api: 'API',
+    cache: 'cache',
+    stale: 'stale',
+    skipped: 'skip',
+    error: 'error',
+  })[source] || source || '—';
+}
+
+function freshnessAgeLabel(seconds) {
+  const s = Number(seconds);
+  if (!Number.isFinite(s)) return '';
+  if (s < 60) return `${Math.max(0, Math.round(s))}с`;
+  if (s < 3600) return `${Math.round(s / 60)}м`;
+  return `${Math.round(s / 3600)}ч`;
+}
+
+function centerFreshnessHtml(d) {
+  const rows = Object.entries(d.dataFreshness || {});
+  if (!rows.length) return '';
+  const names = { events:'События', statistics:'Статистика', players:'Игроки', lineups:'Составы', injuries:'Потери', liveOdds:'LIVE odds' };
+  return `<div class="center-freshness">
+    ${rows.map(([key, meta]) => `<div class="${escapeHtml(meta?.source || '')}">
+      <span>${escapeHtml(names[key] || key)}</span>
+      <strong>${escapeHtml(freshnessSourceLabel(meta?.source))}</strong>
+      <small>${freshnessAgeLabel(meta?.ageSeconds)}${meta?.policy?.ttlSeconds ? ` · TTL ${Math.round(Number(meta.policy.ttlSeconds)/60*10)/10}м` : ''}</small>
+    </div>`).join('')}
+  </div>`;
+}
+
 function centerCoverageHtml(d) {
   const cells = [
     ['События', d.availability?.events],
@@ -2357,6 +2425,8 @@ function renderMatchCenter(d) {
       <section class="panel coverage-panel">
         <div class="center-section-title"><div><h2>Покрытие и свежесть</h2><p>${d.cached ? 'Данные из общего кэша' : 'Свежий ответ провайдера'} · ${dateTime(d.generatedAt)}</p></div></div>
         ${centerCoverageHtml(d)}
+        ${centerFreshnessHtml(d)}
+        ${d.quotaMode ? `<div class="quota-public-chip">${escapeHtml(d.quotaMode.label || '')} · refresh ${Number(d.quotaMode.liveRefreshSeconds || d.refreshSeconds || 0)} сек.</div>` : ''}
         ${d.availability?.limitedCoverage ? '<div class="coverage-badge limited">Ограниченное покрытие · экономим API-лимит</div>' : ''}
       </section>
     </div>
@@ -3194,7 +3264,7 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// v4.8 adds an explicit admin-only provider transition probe and controlled endpoint coverage audit.
+// v4.9 adds plan-aware quota orchestration and feature-level caching for expanded Match Center data.
 // v4.0: first paint is intentionally small — matches/profile/favorites only.
 // History, reminders and provider details are loaded later or when their screen opens.
 await Promise.allSettled([loadProfile(), loadFavorites(), loadMatches()]);
