@@ -1602,3 +1602,37 @@ main { position: relative; z-index: 1; }
   .provider-endpoint-row{grid-template-columns:minmax(0,1fr) auto}
   .provider-endpoint-row>em{grid-column:2;text-align:right}
 }
+
+
+/* v4.9 Quota Orchestrator + Feature Cache */
+.quota-orchestrator-box{margin:12px 0;border:1px solid color-mix(in srgb,var(--accent) 24%,var(--line));border-radius:15px;padding:11px;background:color-mix(in srgb,var(--accent) 4%,var(--surface))}
+.quota-orchestrator-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:9px}
+.quota-orchestrator-head strong{display:block;font-size:11px}
+.quota-orchestrator-head span{display:block;margin-top:2px;color:var(--accent);font-size:10px;font-weight:900}
+.quota-orchestrator-head small{font-size:8px;color:var(--hint)}
+.quota-orchestrator-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.quota-orchestrator-grid>div{border:1px solid var(--line);border-radius:11px;padding:8px;background:var(--surface)}
+.quota-orchestrator-grid span{display:block;font-size:8px;color:var(--hint)}
+.quota-orchestrator-grid strong{display:block;margin-top:2px;font-size:10px}
+.quota-feature-list{display:grid;gap:5px;margin-top:8px}
+.quota-feature-row{display:grid;grid-template-columns:minmax(0,1fr) repeat(4,auto);gap:7px;align-items:center;border-top:1px solid var(--line);padding-top:6px}
+.quota-feature-row strong{font-size:9px}
+.quota-feature-row span{font-size:8px;color:var(--hint);white-space:nowrap}
+.center-freshness{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:10px}
+.center-freshness>div{border:1px solid var(--line);border-radius:11px;padding:7px;background:var(--surface)}
+.center-freshness span,.center-freshness small{display:block;font-size:8px;color:var(--hint)}
+.center-freshness strong{display:block;font-size:10px;margin:2px 0}
+.center-freshness>div.api strong,.center-freshness>div.embedded strong{color:var(--good)}
+.center-freshness>div.cache strong{color:var(--accent)}
+.center-freshness>div.stale strong,.center-freshness>div.skipped strong{color:var(--warn)}
+.center-freshness>div.error strong{color:var(--danger)}
+.quota-public-chip{margin-top:8px;display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:6px 9px;color:var(--hint);font-size:9px}
+@media(max-width:520px){
+  .quota-orchestrator-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .center-freshness{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:380px){
+  .quota-feature-row{grid-template-columns:1fr 1fr 1fr}
+  .quota-feature-row strong{grid-column:1/-1}
+  .quota-feature-row span:last-child{display:none}
+}
