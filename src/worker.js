@@ -55,7 +55,10 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '5.3.0-rc1';
+const APP_VERSION = '5.4.0-rc2';
+const API_CONTRACT_VERSION = 5;
+const MIN_CLIENT_VERSION = '5.3.0';
+const RELEASE_CHANNEL = 'rc2';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -102,6 +105,9 @@ function json(data, status = 200, extraHeaders = {}) {
       'cache-control': 'no-store',
       'x-content-type-options': 'nosniff',
       'x-app-version': APP_VERSION,
+      'x-api-contract': String(API_CONTRACT_VERSION),
+      'x-min-client-version': MIN_CLIENT_VERSION,
+      'x-release-channel': RELEASE_CHANNEL,
       'vary': 'x-telegram-init-data',
       ...extraHeaders,
     },
@@ -188,6 +194,35 @@ function publicDataCapabilities() {
           ? 'Расширенный режим активен. Feature-level cache снижает повторные запросы.'
           : 'Расширенный тариф активен, но сейчас включён защитный режим квоты.')
       : 'Сейчас приложение экономит запросы. После увеличения квоты расширенные данные включатся автоматически.',
+  };
+}
+
+
+function appManifest(cfg) {
+  return {
+    ok: true,
+    app: 'football-manager',
+    version: APP_VERSION,
+    recommendedClientVersion: APP_VERSION,
+    minClientVersion: MIN_CLIENT_VERSION,
+    apiContract: API_CONTRACT_VERSION,
+    releaseChannel: RELEASE_CHANNEL,
+    releaseCandidate: 'RC2',
+    maintenance: false,
+    monetization: cfg.monetizationEnabled ? 'enabled' : 'paused',
+    compatibility: {
+      hardBlockBelowMinClient: true,
+      contractRequired: API_CONTRACT_VERSION,
+      softReloadOnVersionDifference: true,
+    },
+    features: {
+      startupSafety: true,
+      rollbackSafety: true,
+      failureRecovery: true,
+      productionLoadSafety: true,
+      regressionQA: true,
+    },
+    serverTime: new Date().toISOString(),
   };
 }
 
@@ -3757,7 +3792,7 @@ async function apiProductionReadiness(request, cfg) {
 }
 
 
-const RC_NAME = 'RC1';
+const RC_NAME = 'RC2';
 
 function rcCheck(id, group, label, state, detail, blocking = false) {
   return { id, group, label, state, detail, blocking: Boolean(blocking) };
@@ -3801,8 +3836,12 @@ async function apiRcRegression(request, cfg, user) {
   const startedAt = Date.now();
 
   // 1) Core runtime / security configuration.
-  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '5.3.0-rc1' ? 'pass' : 'fail',
-    `Worker: ${APP_VERSION}; ожидается 5.3.0-rc1.`, true));
+  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '5.4.0-rc2' ? 'pass' : 'fail',
+    `Worker: ${APP_VERSION}; ожидается 5.4.0-rc2.`, true));
+  checks.push(rcCheck('api_contract', 'runtime', 'API contract', API_CONTRACT_VERSION === 5 ? 'pass' : 'fail',
+    `Contract ${API_CONTRACT_VERSION}; min client ${MIN_CLIENT_VERSION}.`, true));
+  checks.push(rcCheck('app_manifest', 'runtime', 'Public App Manifest', appManifest(cfg)?.version === APP_VERSION ? 'pass' : 'fail',
+    `Release channel ${RELEASE_CHANNEL}; manifest ${appManifest(cfg)?.version || '—'}.`, true));
   checks.push(rcCheck('production_mode', 'runtime', 'DEV_MODE выключен', cfg.devMode ? 'fail' : 'pass',
     cfg.devMode ? 'DEV_MODE=true.' : 'DEV_MODE=false.', true));
   checks.push(rcCheck('monetization_paused', 'runtime', 'Монетизация на паузе', cfg.monetizationEnabled ? 'fail' : 'pass',
@@ -6877,12 +6916,20 @@ export default {
         failureRecovery: 'enabled',
         gracefulErrors: 'enabled',
         webviewRecovery: 'enabled',
-        releaseCandidate: 'RC1',
+        releaseCandidate: 'RC2',
         regressionQA: 'enabled',
         rcSmokeTest: 'enabled',
         clientContractQA: 'enabled',
+        appManifest: 'enabled',
+        apiContract: API_CONTRACT_VERSION,
+        startupSafety: 'enabled',
+        rollbackSafety: 'enabled',
         devMode: cfg.devMode,
       });
+    }
+
+    if (request.method === 'GET' && url.pathname === '/api/app-manifest') {
+      return json(appManifest(cfg));
     }
 
     if (url.pathname === '/health/supabase') {
