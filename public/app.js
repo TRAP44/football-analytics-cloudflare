@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.2.0-rc10';
+const CLIENT_VERSION = '6.3.0-rc11';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc10';
+const CLIENT_RELEASE_CHANNEL = 'rc11';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -579,7 +579,7 @@ async function runStartupSequence() {
 
   setBootStatus(
     'Подключаю данные',
-    manifest ? `RC10 · API contract ${manifest.apiContract}` : 'Manifest временно недоступен — продолжаю в безопасном режиме.',
+    manifest ? `RC11 · API contract ${manifest.apiContract}` : 'Manifest временно недоступен — продолжаю в безопасном режиме.',
     38
   );
 
@@ -1119,6 +1119,7 @@ function remediationActionLabel(action) {
   if (action?.status === 'completed') return 'Выполнено';
   if (action?.status === 'partial') return 'Частично';
   if (action?.status === 'failed') return 'Ошибка';
+  if (action?.status === 'interrupted') return 'Прервано';
   return 'Нет статуса';
 }
 
@@ -1171,7 +1172,8 @@ function renderModelRemediation() {
     <div><span>Stale pending</span><strong>${Number(recovery.stalePending || 0)}</strong><small>старше 36 часов</small></div>
     <div><span>В batch</span><strong>${Number(recovery.selectedCount || 0)}</strong><small>до ${Number(recovery.maxFixturesPerRun || 20)} fixture</small></div>
     <div><span>API calls</span><strong>${Number(recovery.estimatedProviderCalls || 0)}</strong><small>по уникальным датам</small></div>
-    <div><span>Watchdog</span><strong>${watchdog.autoRecoveryEnabled ? 'AUTO' : 'SHADOW'}</strong><small>${watchdog.schemaReady ? `${escapeHtml(watchdog.scheduleUtc || '04:00')} UTC` : 'нужна migration v6.2'}</small></div>`;
+    <div><span>Watchdog</span><strong>${watchdog.autoRecoveryEnabled ? 'AUTO' : 'SHADOW'}</strong><small>${watchdog.schemaReady ? `${escapeHtml(watchdog.scheduleUtc || '04:00')} UTC` : 'нужна migration v6.2'}</small></div>
+    <div><span>Run ledger</span><strong>${watchdog.retrySchemaReady ? `${Number(watchdog.activeRuns || 0)} active` : 'MIGRATION'}</strong><small>${watchdog.retrySchemaReady ? `${Number(watchdog.orphanedRuns || 0)} orphaned · retry ≤ ${Number(watchdog.maxAutoAttempts || 2)}` : 'нужна migration v6.3'}</small></div>`;
 
   candidates.innerHTML = (recovery.candidates || []).length
     ? `<div class="model-remediation-list">${recovery.candidates.map(item => `
@@ -1182,7 +1184,7 @@ function renderModelRemediation() {
   history.innerHTML = actions.length
     ? `<div class="model-remediation-history-head"><strong>Последние действия</strong><span>admin ID скрыт</span></div>
        <div class="model-remediation-action-list">${actions.map(action => `
-         <div class="${escapeHtml(action.status || 'failed')}"><span><strong>${escapeHtml(remediationActionLabel(action))}${action.actionType === 'auto_recover' ? ' · AUTO' : ''}</strong><small>${escapeHtml(action.reason || 'Без комментария')} · ${action.createdAt ? escapeHtml(dateTime(action.createdAt)) : '—'}${action.triggerSource ? ` · ${escapeHtml(action.triggerSource)}` : ''}</small></span><em>${Number(action.settledCount || 0)} settled · ${Number(action.skippedCount || 0)} skipped</em></div>`).join('')}</div>`
+         <div class="${escapeHtml(action.status || 'failed')}"><span><strong>${escapeHtml(remediationActionLabel(action))}${action.actionType === 'auto_recover' ? ` · AUTO${Number(action.attemptNo || 1) > 1 ? ` · attempt ${Number(action.attemptNo)}` : ''}` : ''}</strong><small>${escapeHtml(action.reason || 'Без комментария')} · ${action.createdAt ? escapeHtml(dateTime(action.createdAt)) : '—'}${action.triggerSource ? ` · ${escapeHtml(action.triggerSource)}` : ''}${action.retryOfActionId ? ' · safe retry' : ''}</small></span><em>${Number(action.settledCount || 0)} settled · ${Number(action.skippedCount || 0)} skipped</em></div>`).join('')}</div>`
     : '<p class="tiny quality-method-note">Audit trail пока пуст.</p>';
 
   runBtn.textContent = state.modelRemediationRunning ? 'Восстанавливаю…' : 'Восстановить pending';
@@ -1447,11 +1449,11 @@ function runClientContractSmoke() {
   const adminSections = [...document.querySelectorAll('[data-admin-only]')];
   add('admin_sections', 'Admin UI маркировка', adminSections.length >= 6, `${adminSections.length} технических секций помечены data-admin-only.`);
 
-  const cssLink = document.querySelector('link[href*="styles.css?v=6.2.0"]');
-  const appScript = document.querySelector('script[src*="app.js?v=6.2.0"]');
+  const cssLink = document.querySelector('link[href*="styles.css?v=6.3.0"]');
+  const appScript = document.querySelector('script[src*="app.js?v=6.3.0"]');
   add('cache_bust', 'Cache-bust assets', Boolean(cssLink && appScript), `CSS ${cssLink ? 'OK' : 'MISS'} · JS ${appScript ? 'OK' : 'MISS'}.`);
 
-  add('client_version', 'Версия клиента', CLIENT_VERSION === '6.2.0-rc10', CLIENT_VERSION);
+  add('client_version', 'Версия клиента', CLIENT_VERSION === '6.3.0-rc11', CLIENT_VERSION);
   add('telegram_sdk', 'Telegram WebApp SDK', Boolean(window.Telegram?.WebApp), window.Telegram?.WebApp ? 'SDK доступен.' : 'В обычном браузере SDK может отсутствовать; в Telegram должен быть доступен.');
 
   const navButtons = ['navMatches','navSearch','navHistory','navProfile'].filter(id => $(id));
@@ -1477,7 +1479,7 @@ function runClientContractSmoke() {
 }
 
 function rcStateText(status) {
-  if (status === 'rc_ready') return 'RC10 READY';
+  if (status === 'rc_ready') return 'RC11 READY';
   if (status === 'rc_with_holds') return 'RC + HOLD';
   if (status === 'blocked') return 'BLOCK';
   return 'WAIT';
@@ -1511,7 +1513,7 @@ function renderRcRegression() {
   const r = state.rcRegression;
   if (!r) {
     badge.className = 'rc-badge';
-    badge.textContent = 'RC10';
+    badge.textContent = 'RC11';
     status.textContent = 'Полный regression smoke-test ещё не запускался.';
     meta.textContent = 'Тест безопасный: без Analyze, без изменений user data, без API-Football.';
     summary.innerHTML = '';
@@ -5012,7 +5014,7 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// v6.2 RC10: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
+// v6.3 RC11: persistent settlement run ledger with orphan detection and bounded safe retry.
 // The boot watchdog never leaves the user behind an endless splash screen.
 const startupWatchdog = setTimeout(() => {
   if (!$('bootGate')?.hidden && !state.compatibilityBlocked) {
