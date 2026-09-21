@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#111827" />
   <title>Football Manager · Match Intelligence</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=5.0.0" />
+  <link rel="stylesheet" href="/styles.css?v=5.1.0" />
 </head>
 <body>
   <div class="app-shell">
@@ -374,6 +374,25 @@
           <p class="tiny diagnostics-privacy">Проверка не активирует оплату и не тратит запросы API-Football. Она проверяет runtime-конфигурацию, Supabase, миграции и состояние уже используемого провайдера.</p>
         </section>
 
+        <section class="panel production-readiness-panel" data-admin-only hidden>
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>🛡 Production QA & Load Safety</h2>
+              <p>Проверка защиты от параллельных запросов, зависших upstream и случайных burst-нажатий.</p>
+            </div>
+            <button id="productionReadinessRefreshBtn" class="icon-btn" type="button" aria-label="Повторить production-проверку">↻</button>
+          </div>
+
+          <div class="production-status-row">
+            <span id="productionReadinessBadge" class="production-badge">WAIT</span>
+            <div><strong id="productionReadinessStatus">Production Safety Gate ещё не запускался.</strong><small>Тест не создаёт внешний load и не расходует API-Football.</small></div>
+            <strong id="productionReadinessScore" class="production-score">—</strong>
+          </div>
+
+          <div id="productionReadinessChecks" class="production-checks"></div>
+          <div id="productionReadinessRuntime" class="production-runtime"></div>
+        </section>
+
         <section class="panel diagnostics-panel" data-admin-only hidden>
           <div class="section-head profile-section-head diagnostics-head">
             <div>
@@ -409,6 +428,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=5.0.0"></script>
+  <script type="module" src="/app.js?v=5.1.0"></script>
 </body>
 </html>
