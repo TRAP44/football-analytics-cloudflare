@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '5.4.0-rc2';
+const CLIENT_VERSION = '5.5.0-rc3';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc2';
+const CLIENT_RELEASE_CHANNEL = 'rc3';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -39,6 +39,10 @@ const state = {
   productionReadinessLoading: false,
   rcRegression: null,
   rcRegressionLoading: false,
+  releaseMonitor: null,
+  releaseMonitorLoading: false,
+  releaseMonitorHours: 24,
+  clientTelemetrySent: new Set(),
   appManifest: null,
   serverVersion: '',
   versionMismatch: false,
@@ -188,6 +192,48 @@ function normalizeApiError(error) {
   });
 }
 
+
+function telemetryViewName() {
+  try { return activeViewId() || 'unknown'; } catch { return 'unknown'; }
+}
+
+function sendClientTelemetry(event, meta = {}, { once = false } = {}) {
+  const key = `${event}:${meta.reason || meta.errorKind || meta.view || ''}`;
+  if (once && state.clientTelemetrySent.has(key)) return;
+  if (!tg?.initData || navigator.onLine === false) return;
+  if (once) state.clientTelemetrySent.add(key);
+
+  const payload = {
+    event,
+    meta: {
+      clientVersion: CLIENT_VERSION,
+      apiContract: CLIENT_API_CONTRACT,
+      releaseChannel: CLIENT_RELEASE_CHANNEL,
+      view: meta.view || telemetryViewName(),
+      networkMode: meta.networkMode || state.network.mode || 'online',
+      bootMs: meta.bootMs,
+      manifestOk: meta.manifestOk,
+      degraded: meta.degraded,
+      blocking: meta.blocking,
+      reason: meta.reason || '',
+      errorKind: meta.errorKind || '',
+    },
+  };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3500);
+  fetch('/api/client-telemetry', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-telegram-init-data': tg.initData,
+    },
+    body: JSON.stringify(payload),
+    keepalive: true,
+    signal: controller.signal,
+  }).catch(() => {}).finally(() => clearTimeout(timer));
+}
+
 function setNetworkMode(mode, options = {}) {
   const previous = state.network.mode;
   state.network.mode = mode;
@@ -198,6 +244,7 @@ function setNetworkMode(mode, options = {}) {
   if (mode === 'online' && ['offline', 'degraded', 'recovering'].includes(previous)) {
     state.network.lastRecoveredAt = new Date().toISOString();
     state.clientPerf.recoveries += 1;
+    sendClientTelemetry('network_recovery', { reason: previous, networkMode: mode }, { once: false });
   }
   updateConnectionBanner();
 }
@@ -392,6 +439,11 @@ function hideBootGate() {
   gate.classList.add('done');
   state.startup.finishedAt = performance.now();
   state.clientPerf.bootMs = Math.round(state.startup.finishedAt - state.startup.startedAt);
+  sendClientTelemetry('boot_ok', {
+    bootMs: state.clientPerf.bootMs,
+    manifestOk: state.startup.manifestOk,
+    degraded: state.startup.degraded,
+  }, { once: true });
   setTimeout(() => { gate.hidden = true; gate.classList.remove('done'); }, 220);
 }
 
@@ -404,6 +456,12 @@ function showBootRecovery({ blocking = false, title = '', text = '' } = {}) {
   if ($('bootRetryBtn')) $('bootRetryBtn').hidden = Boolean(blocking);
   if ($('bootContinueBtn')) $('bootContinueBtn').hidden = Boolean(blocking);
   if ($('bootReloadBtn')) $('bootReloadBtn').hidden = false;
+  sendClientTelemetry(blocking ? 'compatibility_block' : 'boot_recovery', {
+    blocking: Boolean(blocking),
+    reason: blocking ? 'compatibility' : (state.network.mode || 'startup'),
+    manifestOk: state.startup.manifestOk,
+    degraded: state.startup.degraded,
+  }, { once: true });
 }
 
 async function runStartupSequence() {
@@ -430,7 +488,7 @@ async function runStartupSequence() {
 
   setBootStatus(
     'Подключаю данные',
-    manifest ? `RC2 · API contract ${manifest.apiContract}` : 'Manifest временно недоступен — продолжаю в безопасном режиме.',
+    manifest ? `RC3 · API contract ${manifest.apiContract}` : 'Manifest временно недоступен — продолжаю в безопасном режиме.',
     38
   );
 
@@ -905,7 +963,7 @@ async function openProfileView() {
   if (!state.remindersLoaded) essentials.push(loadReminders());
   if (isAdmin()) {
     if (!state.providerLoaded) essentials.push(loadProvider());
-    essentials.push(loadModelQuality(false), loadReleaseReadiness(false), loadProductionReadiness(false));
+    essentials.push(loadModelQuality(false), loadReleaseReadiness(false), loadProductionReadiness(false), loadReleaseMonitor(false));
   }
   await Promise.allSettled(essentials);
 }
@@ -1095,11 +1153,11 @@ function runClientContractSmoke() {
   const adminSections = [...document.querySelectorAll('[data-admin-only]')];
   add('admin_sections', 'Admin UI маркировка', adminSections.length >= 6, `${adminSections.length} технических секций помечены data-admin-only.`);
 
-  const cssLink = document.querySelector('link[href*="styles.css?v=5.4.0"]');
-  const appScript = document.querySelector('script[src*="app.js?v=5.4.0"]');
+  const cssLink = document.querySelector('link[href*="styles.css?v=5.5.0"]');
+  const appScript = document.querySelector('script[src*="app.js?v=5.5.0"]');
   add('cache_bust', 'Cache-bust assets', Boolean(cssLink && appScript), `CSS ${cssLink ? 'OK' : 'MISS'} · JS ${appScript ? 'OK' : 'MISS'}.`);
 
-  add('client_version', 'Версия клиента', CLIENT_VERSION === '5.4.0-rc2', CLIENT_VERSION);
+  add('client_version', 'Версия клиента', CLIENT_VERSION === '5.5.0-rc3', CLIENT_VERSION);
   add('telegram_sdk', 'Telegram WebApp SDK', Boolean(window.Telegram?.WebApp), window.Telegram?.WebApp ? 'SDK доступен.' : 'В обычном браузере SDK может отсутствовать; в Telegram должен быть доступен.');
 
   const navButtons = ['navMatches','navSearch','navHistory','navProfile'].filter(id => $(id));
@@ -1123,7 +1181,7 @@ function runClientContractSmoke() {
 }
 
 function rcStateText(status) {
-  if (status === 'rc_ready') return 'RC2 READY';
+  if (status === 'rc_ready') return 'RC3 READY';
   if (status === 'rc_with_holds') return 'RC + HOLD';
   if (status === 'blocked') return 'BLOCK';
   return 'WAIT';
@@ -1157,7 +1215,7 @@ function renderRcRegression() {
   const r = state.rcRegression;
   if (!r) {
     badge.className = 'rc-badge';
-    badge.textContent = 'RC2';
+    badge.textContent = 'RC3';
     status.textContent = 'Полный regression smoke-test ещё не запускался.';
     meta.textContent = 'Тест безопасный: без Analyze, без изменений user data, без API-Football.';
     summary.innerHTML = '';
@@ -1239,6 +1297,109 @@ async function loadRcRegression(force = true) {
   } finally {
     state.rcRegressionLoading = false;
     renderRcRegression();
+  }
+}
+
+
+function releaseMonitorStateLabel(stateValue) {
+  return stateValue === 'healthy' ? 'STABLE' : stateValue === 'watch' ? 'WATCH' : stateValue === 'incident' ? 'INCIDENT' : 'WAIT';
+}
+
+function releaseMonitorDelta(value) {
+  const n = Number(value || 0);
+  if (!n) return '0';
+  return `${n > 0 ? '+' : ''}${n}`;
+}
+
+function renderReleaseMonitor() {
+  if (!isAdmin()) return;
+  const badge = $('releaseMonitorBadge');
+  const title = $('releaseMonitorStatus');
+  const meta = $('releaseMonitorMeta');
+  const kpis = $('releaseMonitorKpis');
+  const client = $('releaseMonitorClient');
+  const issues = $('releaseMonitorIssues');
+  const incidents = $('releaseMonitorIncidents');
+  if (!badge || !title || !meta || !kpis || !client || !issues || !incidents) return;
+
+  if (state.releaseMonitorLoading) {
+    badge.className = 'release-monitor-badge running';
+    badge.textContent = 'RUN';
+    title.textContent = 'Собираю операционные события…';
+    meta.textContent = 'Без API-Football';
+    kpis.innerHTML = client.innerHTML = issues.innerHTML = incidents.innerHTML = '';
+    return;
+  }
+
+  const r = state.releaseMonitor;
+  if (!r?.available) {
+    badge.className = 'release-monitor-badge';
+    badge.textContent = 'WAIT';
+    title.textContent = 'Release Monitor ещё не запускался.';
+    meta.textContent = 'Показывает ошибки, client recovery и operational budget.';
+    kpis.innerHTML = client.innerHTML = issues.innerHTML = incidents.innerHTML = '';
+    return;
+  }
+
+  const health = r.health || {};
+  badge.className = `release-monitor-badge ${escapeHtml(health.state || '')}`;
+  badge.textContent = releaseMonitorStateLabel(health.state);
+  title.textContent = health.label || 'Release Monitor';
+  meta.textContent = `${Number(health.score || 0)}% · ${Number(r.hours || 24)}ч · ${r.persistent ? 'ops_events' : 'runtime memory'} · ${relativeAge(r.generatedAt)}`;
+
+  const c = r.current || {};
+  const p = r.previous || {};
+  const budget = c.operationalBudget || {};
+  kpis.innerHTML = `<div class="release-monitor-kpis">
+    <div><span>Ошибки</span><strong>${Number(c.errorLike || 0)}</strong><small>${releaseMonitorDelta(r.trend?.errorsDelta)} к прошлому периоду</small></div>
+    <div><span>Warnings</span><strong>${Number(c.warningLike || 0)}</strong><small>${releaseMonitorDelta(r.trend?.warningsDelta)} к прошлому периоду</small></div>
+    <div><span>Ops budget</span><strong>${Number(budget.remaining || 0)}/${Number(budget.allowance || 0)}</strong><small>${budget.exhausted ? 'превышен' : 'остаток событий'}</small></div>
+    <div><span>Событий</span><strong>${Number(c.total || 0)}</strong><small>предыдущий период ${Number(p.total || 0)}</small></div>
+  </div>`;
+
+  const cc = c.client || {};
+  client.innerHTML = `<div class="release-monitor-section-head"><strong>📱 Client telemetry</strong><span>allowlist · без пользовательского контента</span></div>
+    <div class="release-client-grid">
+      <div><span>Boot OK</span><strong>${Number(cc.bootOk || 0)}</strong></div>
+      <div><span>Boot recovery</span><strong>${Number(cc.bootRecovery || 0)}</strong></div>
+      <div><span>Compatibility block</span><strong>${Number(cc.compatibilityBlocks || 0)}</strong></div>
+      <div><span>Client errors</span><strong>${Number(cc.clientErrors || 0)}</strong></div>
+      <div><span>Network recovery</span><strong>${Number(cc.networkRecovery || 0)}</strong></div>
+    </div>`;
+
+  const codes = c.topCodes || [];
+  issues.innerHTML = `<div class="release-monitor-section-head"><strong>Главные сигналы</strong><span>warning/error/critical</span></div>
+    ${codes.length ? `<div class="release-issue-list">${codes.map(x => `<div><strong>${escapeHtml(x.key)}</strong><span>${Number(x.count || 0)}</span></div>`).join('')}</div>` : '<div class="empty compact-empty">Ошибок и предупреждений за период нет.</div>'}`;
+
+  const rows = r.incidents || [];
+  incidents.innerHTML = `<details class="release-incidents"><summary>Последние события · ${rows.length}</summary>
+    <div>${rows.length ? rows.map(x => `<article class="${escapeHtml(x.severity || 'warning')}">
+      <div><strong>${escapeHtml(x.code || x.source || '')}</strong><span>${escapeHtml(dateTime(x.createdAt))}</span></div>
+      <p>${escapeHtml(x.message || '')}</p>
+      <small>${escapeHtml(x.source || '')}${x.endpoint ? ` · ${escapeHtml(x.endpoint)}` : ''}</small>
+    </article>`).join('') : '<div class="empty compact-empty">Нет событий.</div>'}</div>
+  </details>
+  <p class="tiny">${escapeHtml(r.policy?.note || '')}</p>`;
+}
+
+async function loadReleaseMonitor(force = false) {
+  if (!isAdmin() || state.releaseMonitorLoading) return;
+  if (!force && state.releaseMonitor) { renderReleaseMonitor(); return; }
+  state.releaseMonitorLoading = true;
+  renderReleaseMonitor();
+  try {
+    const hours = Number($('releaseMonitorPeriod')?.value || state.releaseMonitorHours || 24);
+    state.releaseMonitorHours = hours;
+    state.releaseMonitor = await api(`/api/release-monitor?hours=${hours}${force ? '&refresh=1' : ''}`, {
+      retry: false,
+      timeoutMs: 12000,
+    });
+  } catch (e) {
+    state.releaseMonitor = { available: false, reason: e.message };
+    toast(e.message);
+  } finally {
+    state.releaseMonitorLoading = false;
+    renderReleaseMonitor();
   }
 }
 
@@ -4008,6 +4169,10 @@ function noteClientError(error) {
   const message = String(error?.message || error || 'Неизвестная ошибка').slice(0, 180);
   state.clientPerf.clientErrors += 1;
   state.clientPerf.lastError = message;
+  sendClientTelemetry('client_error', {
+    errorKind: String(error?.name || typeof error || 'runtime').slice(0, 50),
+    view: telemetryViewName(),
+  }, { once: true });
 }
 window.addEventListener('error', event => noteClientError(event?.error || event?.message));
 window.addEventListener('unhandledrejection', event => noteClientError(event?.reason));
@@ -4096,6 +4261,8 @@ $('modelQualityRefreshBtn')?.addEventListener('click', () => loadModelQuality(tr
 $('modelQualityPeriod')?.addEventListener('change', () => loadModelQuality(true));
 $('diagnosticsRefreshBtn')?.addEventListener('click', () => loadDiagnostics(true));
 $('productionReadinessRefreshBtn')?.addEventListener('click', () => loadProductionReadiness(true));
+$('releaseMonitorRefreshBtn')?.addEventListener('click', () => loadReleaseMonitor(true));
+$('releaseMonitorPeriod')?.addEventListener('change', () => { state.releaseMonitor = null; loadReleaseMonitor(true); });
 $('rcRunBtn')?.addEventListener('click', () => loadRcRegression(true));
 $('providerProbeBtn')?.addEventListener('click', () => probeProvider());
 $('providerAuditBtn')?.addEventListener('click', () => runProviderCoverageAudit(null, true));
@@ -4113,7 +4280,7 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// v5.4 RC2: Telegram startup gate, public app manifest and rollback-safe compatibility checks.
+// v5.5 RC3: release monitor, privacy-safe client telemetry and operational budget on top of RC2 startup safety.
 // The boot watchdog never leaves the user behind an endless splash screen.
 const startupWatchdog = setTimeout(() => {
   if (!$('bootGate')?.hidden && !state.compatibilityBlocked) {
