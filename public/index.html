@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#111827" />
   <title>Football Manager · Match Intelligence</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=4.9.0" />
+  <link rel="stylesheet" href="/styles.css?v=5.0.0" />
 </head>
 <body>
   <div class="app-shell">
@@ -339,6 +339,20 @@
             </div>
           </div>
 
+          <div class="expanded-release-gate">
+            <div class="expanded-release-head">
+              <div>
+                <span id="expandedGateBadge" class="expanded-gate-badge hold">HOLD</span>
+                <div><strong id="expandedGateTitle">Код v5.0 готов, ждём повышенную квоту</strong><small id="expandedGateMeta">Финальная end-to-end проверка expanded data path</small></div>
+              </div>
+              <button id="providerE2EBtn" class="primary-setting-btn" type="button">🚦 Запустить E2E</button>
+            </div>
+            <div id="expandedGateSteps" class="expanded-gate-steps">
+              <div class="expanded-gate-empty"><strong>Release Gate ещё не запускался.</strong><p>На FREE проверка остановится после одного /status запроса.</p></div>
+            </div>
+            <div id="expandedGateDetails" class="expanded-gate-details" hidden></div>
+          </div>
+
           <p id="providerAuditStatus" class="tiny">На FREE полный audit не запускается: guardrail тратит только fixture-запрос и останавливается.</p>
           <div id="providerAuditResult" class="provider-audit-result" hidden></div>
           <p class="tiny diagnostics-privacy">Полный audit запускается только администратором вручную. Результат кэшируется на 15 минут. Пустой endpoint не всегда ошибка: покрытие зависит от турнира и стадии матча.</p>
@@ -395,6 +409,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=4.9.0"></script>
+  <script type="module" src="/app.js?v=5.0.0"></script>
 </body>
 </html>
