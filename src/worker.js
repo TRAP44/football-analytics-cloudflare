@@ -58,10 +58,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '5.9.0-rc7';
+const APP_VERSION = '6.0.0-rc8';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc7';
+const RELEASE_CHANNEL = 'rc8';
+const RC_NAME = 'RC8';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -611,7 +612,7 @@ function appManifest(cfg) {
     minClientVersion: MIN_CLIENT_VERSION,
     apiContract: API_CONTRACT_VERSION,
     releaseChannel: RELEASE_CHANNEL,
-    releaseCandidate: 'RC7',
+    releaseCandidate: RC_NAME,
     maintenance: Boolean(runtimeControlsSnapshot().maintenanceMode),
     monetization: cfg.monetizationEnabled ? 'enabled' : 'paused',
     runtime: publicRuntimeControls(),
@@ -1731,7 +1732,10 @@ function scoreBrier(row, actualOutcome) {
 }
 
 function validThreeProbabilities(probabilities) {
-  return Boolean(probabilities && ['home','draw','away'].every(key => Number.isFinite(Number(probabilities[key]))));
+  return Boolean(probabilities && ['home','draw','away'].every(key => {
+    const value = probabilities[key];
+    return value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
+  }));
 }
 
 function rowFinalProbabilities(row) {
@@ -1919,7 +1923,7 @@ function baselineCalibrationProfile(sample = 0, stats = []) {
 }
 
 function buildCalibrationProfile(rows) {
-  const valid = (rows || []).filter(row => ['home','draw','away'].includes(String(row.actual_outcome || '')));
+  const valid = verifiedSettledRows(rows);
   const signalStats = signalCalibrationStats(valid);
   const temperature = fitTemperatureCalibration(valid);
   const weights = adaptiveSignalWeights(signalStats);
@@ -2114,7 +2118,7 @@ function qualityBucket(rows, label) {
     label,
     sample: valid.length,
     accuracy: pct(valid.filter(x => x.correct).length, valid.length),
-    avgBrier: valid.length ? Math.round((average(valid.map(x => x.brier_score)) || 0) * 1000) / 1000 : null,
+    avgBrier: valid.length ? Math.round((average(valid.map(verifiedBrierScore).filter(Number.isFinite)) || 0) * 1000) / 1000 : null,
   };
 }
 
@@ -2145,7 +2149,7 @@ function dashboardBucket(rows, label, extra = {}) {
   const hitCount = valid.filter(row => row.correct === true).length;
   const top = average(valid.map(topProbabilityValue));
   const acc = pct(hitCount, valid.length);
-  const brier = average(valid.map(row => Number(row?.brier_score)).filter(Number.isFinite));
+  const brier = average(valid.map(verifiedBrierScore).filter(Number.isFinite));
   const logLoss = average(valid.map(dashboardLogLoss).filter(Number.isFinite));
   const confidence = average(valid.map(row => Number(row?.confidence_score)).filter(Number.isFinite));
   const completeness = average(valid.map(dashboardCompletenessPercent).filter(Number.isFinite));
@@ -2271,7 +2275,7 @@ function buildSignalDashboard(rows) {
       if (Number.isFinite(sl)) signalLosses.push(sl);
       if (predictedOutcomeForProbabilities(probabilities) === row.actual_outcome) signalHits++;
     }
-    const finalBrier = average(subset.map(row => Number(row?.brier_score)).filter(Number.isFinite));
+    const finalBrier = average(subset.map(verifiedBrierScore).filter(Number.isFinite));
     const finalAccuracy = pct(subset.filter(row => row.correct === true).length, subset.length);
     const signalBrier = average(signalBriers);
     const signalAccuracy = pct(signalHits, subset.length);
@@ -2377,7 +2381,7 @@ function buildModelDashboardObservations(rows, dashboard) {
     notes.push({
       level: 'info',
       title: 'Явных диагностических отклонений нет',
-      text: 'Продолжаем накапливать immutable pre-match snapshots. v5.9 ничего не меняет в весах автоматически — integrity и cohorts используются только как диагностика.',
+      text: 'Продолжаем накапливать immutable pre-match snapshots. v6.0 ничего не меняет в весах автоматически — integrity и cohorts используются только как диагностика.',
     });
   }
 
@@ -2394,7 +2398,7 @@ function weightedTopCalibrationError(rows) {
   const defs = [
     [0, 45], [45, 55], [55, 65], [65, 75], [75, 101],
   ];
-  const valid = (rows || []).filter(row => ['home','draw','away'].includes(String(row?.actual_outcome || '')));
+  const valid = (rows || []).filter(modelQualityEligibleRow);
   if (!valid.length) return null;
 
   let weighted = 0;
@@ -2443,12 +2447,96 @@ function buildModelVersionCohorts(rows) {
 }
 
 function predictionProbabilityIntegrity(row) {
-  const values = ['home_prob','draw_prob','away_prob'].map(key => Number(row?.[key]));
-  const finite = values.every(Number.isFinite);
+  const raw = ['home_prob','draw_prob','away_prob'].map(key => row?.[key]);
+  const present = raw.every(value => value !== null && value !== undefined && value !== '');
+  const values = raw.map(Number);
+  const finite = present && values.every(Number.isFinite);
   const bounded = finite && values.every(value => value >= 0 && value <= 100);
   const sum = finite ? values.reduce((a, b) => a + b, 0) : null;
   const sumOk = Number.isFinite(sum) && Math.abs(sum - 100) <= 1.5;
-  return { finite, bounded, sum, sumOk, valid: finite && bounded && sumOk };
+  return { present, finite, bounded, sum, sumOk, valid: present && finite && bounded && sumOk };
+}
+
+function predictionSnapshotTiming(row) {
+  // model_predictions uses captured_at. created_at is accepted only as a
+  // compatibility fallback for old/manual snapshots.
+  const capturedRaw = row?.captured_at ?? row?.created_at;
+  const kickoffRaw = row?.kickoff_at;
+  const capturedAt = capturedRaw === null || capturedRaw === undefined || capturedRaw === '' ? NaN : Date.parse(capturedRaw);
+  const kickoffAt = kickoffRaw === null || kickoffRaw === undefined || kickoffRaw === '' ? NaN : Date.parse(kickoffRaw);
+  const valid = Number.isFinite(capturedAt) && Number.isFinite(kickoffAt);
+  return { capturedAt, kickoffAt, valid, late: valid && capturedAt >= kickoffAt };
+}
+
+function settledOutcomeIntegrity(row) {
+  const outcome = String(row?.actual_outcome || '');
+  const homeRaw = row?.actual_home_goals;
+  const awayRaw = row?.actual_away_goals;
+  const home = Number(homeRaw);
+  const away = Number(awayRaw);
+  const scoreValid = homeRaw !== null && homeRaw !== undefined && homeRaw !== '' &&
+    awayRaw !== null && awayRaw !== undefined && awayRaw !== '' &&
+    Number.isInteger(home) && Number.isInteger(away) && home >= 0 && away >= 0;
+  const outcomeValid = ['home','draw','away'].includes(outcome);
+  const expectedOutcome = scoreValid ? actualOutcomeFromGoals(home, away) : '';
+  return {
+    scoreValid,
+    outcomeValid,
+    expectedOutcome,
+    valid: scoreValid && outcomeValid && expectedOutcome === outcome,
+  };
+}
+
+function predictionConsistency(row, { settled = false } = {}) {
+  const probabilityCheck = predictionProbabilityIntegrity(row);
+  if (!probabilityCheck.valid) return { testable: false, valid: false, predictedValid: false, topMatches: false, correctMatches: false };
+  const predicted = String(row?.predicted_outcome || '');
+  const predictedValid = ['home','draw','away'].includes(predicted);
+  const expectedPredicted = predictionOutcomeKey({
+    home: Number(row.home_prob),
+    draw: Number(row.draw_prob),
+    away: Number(row.away_prob),
+  });
+  const topMatches = predictedValid && predicted === expectedPredicted;
+  let correctMatches = true;
+  if (settled) {
+    const actual = String(row?.actual_outcome || '');
+    correctMatches = typeof row?.correct === 'boolean' &&
+      ['home','draw','away'].includes(actual) &&
+      row.correct === (predicted === actual);
+  }
+  return { testable: true, predictedValid, topMatches, correctMatches, valid: predictedValid && topMatches && correctMatches };
+}
+
+function modelQualityEligibleRow(row) {
+  const timing = predictionSnapshotTiming(row);
+  return predictionProbabilityIntegrity(row).valid &&
+    timing.valid && !timing.late &&
+    settledOutcomeIntegrity(row).valid &&
+    predictionConsistency(row, { settled: true }).valid;
+}
+
+function verifiedSettledRows(settledRows, pendingRows = []) {
+  const settled = Array.isArray(settledRows) ? settledRows : [];
+  const all = [...settled, ...(Array.isArray(pendingRows) ? pendingRows : [])];
+  const fixtureCounts = new Map();
+  for (const row of all) {
+    const id = Number(row?.fixture_id || 0);
+    if (Number.isInteger(id) && id > 0) fixtureCounts.set(id, Number(fixtureCounts.get(id) || 0) + 1);
+  }
+  return settled.filter(row => {
+    const id = Number(row?.fixture_id || 0);
+    return Number.isInteger(id) && id > 0 && fixtureCounts.get(id) === 1 && modelQualityEligibleRow(row);
+  });
+}
+
+function verifiedBrierScore(row) {
+  if (!predictionProbabilityIntegrity(row).valid || !settledOutcomeIntegrity(row).valid) return null;
+  return brierFromProbabilities({
+    home: Number(row.home_prob),
+    draw: Number(row.draw_prob),
+    away: Number(row.away_prob),
+  }, String(row.actual_outcome));
 }
 
 function buildPredictionIntegrity(settledRows, pendingRows) {
@@ -2458,25 +2546,31 @@ function buildPredictionIntegrity(settledRows, pendingRows) {
   const now = Date.now();
 
   const invalidProbabilities = all.filter(row => !predictionProbabilityIntegrity(row).valid);
-  const snapshotAfterKickoff = all.filter(row => {
-    const created = Date.parse(row?.created_at || '');
-    const kickoff = Date.parse(row?.kickoff_at || '');
-    return Number.isFinite(created) && Number.isFinite(kickoff) && created >= kickoff;
-  });
+  const invalidSnapshotMetadata = all.filter(row => !predictionSnapshotTiming(row).valid);
+  const snapshotAfterKickoff = all.filter(row => predictionSnapshotTiming(row).late);
   const stalePending = pending.filter(row => {
-    const kickoff = Date.parse(row?.kickoff_at || '');
-    return Number.isFinite(kickoff) && kickoff < now - 36 * 3600_000;
+    const timing = predictionSnapshotTiming(row);
+    return Number.isFinite(timing.kickoffAt) && timing.kickoffAt < now - 36 * 3600_000;
   });
   const missingVersion = all.filter(row => !String(row?.analysis_version || '').trim());
   const missingSignals = all.filter(row => {
     const signalMap = parseJsonObject(row?.signal_probabilities);
     return !signalMap || !Object.keys(signalMap).length;
   });
-  const invalidSettledOutcome = settled.filter(row =>
-    !['home','draw','away'].includes(String(row?.actual_outcome || '')) ||
-    !Number.isFinite(Number(row?.actual_home_goals)) ||
-    !Number.isFinite(Number(row?.actual_away_goals))
-  );
+  const invalidSettledOutcome = settled.filter(row => !settledOutcomeIntegrity(row).valid);
+  const inconsistentPrediction = all.filter(row => {
+    if (!predictionProbabilityIntegrity(row).valid) return false;
+    const check = predictionConsistency(row, { settled: false });
+    return !check.predictedValid || !check.topMatches;
+  });
+  const invalidCorrectFlag = settled.filter(row => {
+    if (!predictionProbabilityIntegrity(row).valid || !settledOutcomeIntegrity(row).valid) return false;
+    return !predictionConsistency(row, { settled: true }).correctMatches;
+  });
+  const invalidFixtureIds = all.filter(row => {
+    const id = Number(row?.fixture_id || 0);
+    return !Number.isInteger(id) || id <= 0;
+  });
 
   const fixtureCounts = new Map();
   for (const row of all) {
@@ -2489,8 +2583,10 @@ function buildPredictionIntegrity(settledRows, pendingRows) {
     .map(([fixtureId, count]) => ({ fixtureId, count }))
     .slice(0, 20);
 
-  const severe = invalidProbabilities.length + snapshotAfterKickoff.length + duplicateFixtures.length;
-  const warning = stalePending.length + invalidSettledOutcome.length;
+  const severe = invalidProbabilities.length + invalidSnapshotMetadata.length + snapshotAfterKickoff.length +
+    invalidSettledOutcome.length + inconsistentPrediction.length + invalidCorrectFlag.length +
+    invalidFixtureIds.length + duplicateFixtures.length;
+  const warning = stalePending.length;
 
   const checks = [
     {
@@ -2501,6 +2597,15 @@ function buildPredictionIntegrity(settledRows, pendingRows) {
       detail: invalidProbabilities.length
         ? 'Есть строки с NaN/выходом за 0–100 или суммой, отличающейся от 100 более чем на 1.5 п.п.'
         : 'Все загруженные 1X2 probability snapshots проходят базовую проверку.',
+    },
+    {
+      key: 'snapshot_metadata',
+      label: 'Snapshot timestamps',
+      state: invalidSnapshotMetadata.length ? 'fail' : 'pass',
+      count: invalidSnapshotMetadata.length,
+      detail: invalidSnapshotMetadata.length
+        ? 'Есть строки без корректного captured_at или kickoff_at; pre-match статус нельзя подтвердить.'
+        : 'captured_at и kickoff_at доступны у всех загруженных snapshots.',
     },
     {
       key: 'snapshot_timing',
@@ -2523,11 +2628,38 @@ function buildPredictionIntegrity(settledRows, pendingRows) {
     {
       key: 'settled_outcome',
       label: 'Фактический результат',
-      state: invalidSettledOutcome.length ? 'warn' : 'pass',
+      state: invalidSettledOutcome.length ? 'fail' : 'pass',
       count: invalidSettledOutcome.length,
       detail: invalidSettledOutcome.length
-        ? 'Есть settled-строки без корректного 1X2 outcome/счёта.'
-        : 'Settled-строки имеют фактический outcome и счёт.',
+        ? 'Есть settled-строки без корректного счёта либо outcome не совпадает со счётом.'
+        : 'Settled-строки имеют корректный счёт и согласованный 1X2 outcome.',
+    },
+    {
+      key: 'prediction_consistency',
+      label: 'Predicted outcome',
+      state: inconsistentPrediction.length ? 'fail' : 'pass',
+      count: inconsistentPrediction.length,
+      detail: inconsistentPrediction.length
+        ? 'Есть строки, где predicted_outcome отсутствует или не совпадает с максимальной 1X2 вероятностью.'
+        : 'predicted_outcome согласован с максимальной 1X2 вероятностью.',
+    },
+    {
+      key: 'correct_flag',
+      label: 'Correct flag',
+      state: invalidCorrectFlag.length ? 'fail' : 'pass',
+      count: invalidCorrectFlag.length,
+      detail: invalidCorrectFlag.length
+        ? 'Есть settled-строки, где correct не согласован с predicted_outcome и actual_outcome.'
+        : 'Флаг correct согласован с прогнозом и фактическим исходом.',
+    },
+    {
+      key: 'fixture_identity',
+      label: 'Fixture identity',
+      state: invalidFixtureIds.length ? 'fail' : 'pass',
+      count: invalidFixtureIds.length,
+      detail: invalidFixtureIds.length
+        ? 'Есть строки без положительного целочисленного fixture_id.'
+        : 'Все загруженные строки имеют корректный fixture_id.',
     },
     {
       key: 'duplicates',
@@ -2571,11 +2703,16 @@ function buildPredictionIntegrity(settledRows, pendingRows) {
     checks,
     examples: {
       invalidProbabilityFixtures: invalidProbabilities.slice(0, 8).map(row => Number(row?.fixture_id || 0)).filter(Boolean),
+      invalidSnapshotFixtures: invalidSnapshotMetadata.slice(0, 8).map(row => Number(row?.fixture_id || 0)).filter(Boolean),
       lateSnapshotFixtures: snapshotAfterKickoff.slice(0, 8).map(row => Number(row?.fixture_id || 0)).filter(Boolean),
       stalePendingFixtures: stalePending.slice(0, 8).map(row => Number(row?.fixture_id || 0)).filter(Boolean),
+      invalidOutcomeFixtures: invalidSettledOutcome.slice(0, 8).map(row => Number(row?.fixture_id || 0)).filter(Boolean),
+      inconsistentPredictionFixtures: inconsistentPrediction.slice(0, 8).map(row => Number(row?.fixture_id || 0)).filter(Boolean),
+      invalidCorrectFlagFixtures: invalidCorrectFlag.slice(0, 8).map(row => Number(row?.fixture_id || 0)).filter(Boolean),
+      invalidFixtureRows: invalidFixtureIds.length,
       duplicateFixtures,
     },
-    note: 'Integrity проверяет только строки, загруженные текущим admin endpoint (до 500 settled + 500 pending). Это QA-контроль данных, а не автоматическая перенастройка модели.',
+    note: 'Integrity проверяет только строки, загруженные текущим admin endpoint (до 500 settled + 500 pending). Строки с FAIL исключаются из метрик качества; веса модели автоматически не меняются.',
   };
 }
 
@@ -2584,16 +2721,39 @@ function modelIntegritySelfTest() {
   const valid = {
     fixture_id: 1,
     home_prob: 50, draw_prob: 25, away_prob: 25,
+    predicted_outcome: 'home', correct: true,
     actual_outcome: 'home', actual_home_goals: 2, actual_away_goals: 1,
     analysis_version: 'selftest', signal_probabilities: { market: { home: 50, draw: 25, away: 25 } },
     kickoff_at: new Date(now - 2 * 3600_000).toISOString(),
-    created_at: new Date(now - 3 * 3600_000).toISOString(),
+    captured_at: new Date(now - 3 * 3600_000).toISOString(),
   };
   const invalid = {
     ...valid,
     fixture_id: 2,
     home_prob: 90, draw_prob: 30, away_prob: 20,
-    created_at: new Date(now - 1 * 3600_000).toISOString(),
+    captured_at: new Date(now - 1 * 3600_000).toISOString(),
+  };
+  const missingProbability = {
+    ...valid,
+    fixture_id: 4,
+    home_prob: null, draw_prob: 50, away_prob: 50,
+  };
+  const missingTimestamp = {
+    ...valid,
+    fixture_id: 5,
+    captured_at: null,
+  };
+  const invalidOutcome = {
+    ...valid,
+    fixture_id: 6,
+    actual_outcome: 'away',
+    correct: false,
+  };
+  const inconsistentPrediction = {
+    ...valid,
+    fixture_id: 7,
+    predicted_outcome: 'away',
+    correct: false,
   };
   const stalePending = {
     ...valid,
@@ -2602,23 +2762,26 @@ function modelIntegritySelfTest() {
     actual_home_goals: null,
     actual_away_goals: null,
     kickoff_at: new Date(now - 48 * 3600_000).toISOString(),
-    created_at: new Date(now - 49 * 3600_000).toISOString(),
+    captured_at: new Date(now - 49 * 3600_000).toISOString(),
   };
-  const result = buildPredictionIntegrity([valid, invalid], [stalePending]);
+  const result = buildPredictionIntegrity([valid, invalid, missingProbability, missingTimestamp, invalidOutcome, inconsistentPrediction], [stalePending]);
   return {
     pass:
-      result.checks.find(x => x.key === 'probabilities')?.count === 1 &&
+      result.checks.find(x => x.key === 'probabilities')?.count === 2 &&
+      result.checks.find(x => x.key === 'snapshot_metadata')?.count === 1 &&
       result.checks.find(x => x.key === 'snapshot_timing')?.count === 1 &&
-      result.checks.find(x => x.key === 'pending_settlement')?.count === 1,
+      result.checks.find(x => x.key === 'pending_settlement')?.count === 1 &&
+      result.checks.find(x => x.key === 'settled_outcome')?.count === 1 &&
+      result.checks.find(x => x.key === 'prediction_consistency')?.count === 1,
     result,
   };
 }
 
 function buildModelDashboard(rows, days) {
-  const valid = (rows || []).filter(row => ['home','draw','away'].includes(String(row?.actual_outcome || '')));
+  const valid = (rows || []).filter(modelQualityEligibleRow);
   const overview = dashboardBucket(valid, 'Все прогнозы');
   const dashboard = {
-    version: '5.9',
+    version: '6.0',
     periodDays: days,
     generatedAt: new Date().toISOString(),
     overview,
@@ -2638,10 +2801,11 @@ function buildModelDashboard(rows, days) {
 }
 
 function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = null) {
-  const rows = (settledRows || []).filter(x => ['home','draw','away'].includes(String(x.actual_outcome || '')));
+  const rows = verifiedSettledRows(settledRows, pendingRows);
   const evaluated = rows.length;
+  const excluded = Math.max(0, (settledRows || []).length - evaluated);
   const correct = rows.filter(x => x.correct === true).length;
-  const brier = average(rows.map(x => x.brier_score));
+  const brier = average(rows.map(verifiedBrierScore).filter(Number.isFinite));
   const logLossValues = rows.map(row => {
     const key = String(row.actual_outcome || '');
     const p = Math.max(0.01, Math.min(0.99, Number(row[`${key}_prob`] || 0) / 100));
@@ -2675,7 +2839,7 @@ function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = 
   const signalNames = ['market','apiPrediction','recentForm','h2h'];
   const signals = signalNames.map(name => {
     const group = rows.filter(x => Array.isArray(x.signal_names) && x.signal_names.includes(name));
-    return { name, sample: group.length, accuracy: pct(group.filter(x => x.correct === true).length, group.length), avgBrier: group.length ? Math.round((average(group.map(x => x.brier_score)) || 0) * 1000) / 1000 : null };
+    return { name, sample: group.length, accuracy: pct(group.filter(x => x.correct === true).length, group.length), avgBrier: group.length ? Math.round((average(group.map(verifiedBrierScore).filter(Number.isFinite)) || 0) * 1000) / 1000 : null };
   });
 
   const signalPerformance = signalCalibrationStats(rows);
@@ -2703,7 +2867,7 @@ function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = 
     predictedOutcome: row.predicted_outcome || '', actualOutcome: row.actual_outcome || '',
     predictedLabel: predictionOutcomeLabel(row.predicted_outcome, row.home_name, row.away_name),
     topProbability: Math.round(topProbabilityValue(row) * 10) / 10,
-    correct: row.correct === true, brier: Number(row.brier_score), confidence: Number(row.confidence_score || 0) || null,
+    correct: row.correct === true, brier: verifiedBrierScore(row), confidence: Number(row.confidence_score || 0) || null,
     analysisVersion: modelVersionName(row),
   }));
 
@@ -2711,7 +2875,7 @@ function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = 
     periodDays: days,
     generatedAt: new Date().toISOString(),
     queryLimitPerStatus: 500,
-    sample: { settled: evaluated, pending: (pendingRows || []).length, ready: evaluated >= 20, calibrationReady: evaluated >= 50 },
+    sample: { settled: evaluated, excluded, loadedSettled: (settledRows || []).length, pending: (pendingRows || []).length, ready: evaluated >= 20, calibrationReady: evaluated >= 50 },
     headline: {
       accuracy: pct(correct, evaluated),
       avgBrier: brier === null ? null : Math.round(brier * 1000) / 1000,
@@ -2742,7 +2906,7 @@ function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = 
       outcome: 'Точность исхода = доля матчей, где максимальная вероятность 1X2 совпала с фактическим исходом.',
       brier: 'Brier score учитывает все три вероятности 1X2; ниже — лучше. В интерфейсе он показан вместе с размером выборки.',
       versionCohorts: 'Сравнение analysis_version является описательным и не используется для автоматического выбора/продвижения версии.',
-      integrity: 'Probability sum, snapshot timing, stale pending и fixture uniqueness проверяются отдельно от качества прогноза.',
+      integrity: 'В метрики входят только строки с валидными probabilities, captured_at до kickoff, согласованными outcome/predicted_outcome/correct и уникальным fixture.',
       warning: evaluated < 20 ? 'Выборка пока мала: цифры считаются технической диагностикой, а не доказанной точностью модели.' : '',
     },
   };
@@ -3491,7 +3655,7 @@ async function apiReminderHealth(request, cfg, user) {
 
     const result = await sendTelegramMessage(
       user.id,
-      `✅ Football Manager\n\nТест уведомлений v5.9 RC7 прошёл. Если вы видите это сообщение, Telegram delivery работает.`,
+      `✅ Football Manager\n\nТест уведомлений v6.0 RC8 прошёл. Если вы видите это сообщение, Telegram delivery работает.`,
       cfg
     );
 
@@ -4929,7 +5093,7 @@ async function apiReleaseMonitor(request, cfg) {
   const value = {
     available: true,
     version: APP_VERSION,
-    releaseCandidate: 'RC7',
+    releaseCandidate: RC_NAME,
     generatedAt: new Date().toISOString(),
     hours,
     persistent: source.persistent,
@@ -5001,7 +5165,7 @@ async function apiReleaseReadiness(request, cfg) {
     releaseCheck('supabase_online', 'Supabase/PostgREST', diagnostics.supabase?.ok ? 'pass' : 'fail', diagnostics.supabase?.ok ? `Ответ ${Number(diagnostics.supabase?.latencyMs || 0)} мс.` : `Статус: ${diagnostics.supabase?.status || 'offline'}.`, true),
     releaseCheck('model_backtest', 'Backtest schema v3.6+', modelTable.ok ? 'pass' : 'fail', modelTable.ok ? 'Таблица model_predictions доступна.' : `model_predictions: ${modelTable.status}.`, true),
     releaseCheck('prediction_integrity', 'Prediction Integrity self-test', modelIntegritySelfTest().pass ? 'pass' : 'fail',
-      modelIntegritySelfTest().pass ? 'Probability/timing/pending integrity checks проходят synthetic self-test.' : 'Prediction Integrity self-test не прошёл.', true),
+      modelIntegritySelfTest().pass ? 'Probabilities, captured_at timing и outcome consistency проходят synthetic self-test.' : 'Prediction Integrity self-test не прошёл.', true),
     releaseCheck('runtime_controls_schema', 'Runtime Controls schema v5.7', runtimeTable.ok ? 'pass' : 'fail', runtimeTable.ok ? 'Таблица runtime_controls доступна.' : 'Нужна supabase_migration_v5_7.sql.', true),
     releaseCheck('runtime_history_schema', 'Runtime rollback history v5.8', runtimeHistoryTable.ok ? 'pass' : 'fail', runtimeHistoryTable.ok ? 'История Runtime Controls доступна.' : 'Нужна supabase_migration_v5_8.sql.', true),
     releaseCheck('runtime_controls_state', 'Runtime Controls state', runtime.maintenanceMode ? 'warn' : 'pass', runtime.maintenanceMode ? `Maintenance включён${runtime.message ? `: ${runtime.message}` : '.'}` : `Revision ${Number(runtime.revision || 1)} · рабочий режим.`, false),
@@ -5053,7 +5217,7 @@ async function apiReleaseReadiness(request, cfg) {
       monetizationExpected: 'paused',
       paymentTestingRequiredNow: false,
       providerUpgradeRequiredNow: false,
-      note: 'RC7 усиливает качество prediction snapshots и version cohorts без автоматического продвижения модели и без включения пользовательской оплаты.',
+      note: 'RC8 исправляет проверку captured_at и исключает integrity FAIL из метрик без автоматического продвижения модели и без включения пользовательской оплаты.',
     },
   };
   memory.releaseReadiness = { at: now, value };
@@ -5150,8 +5314,6 @@ async function apiProductionReadiness(request, cfg) {
 }
 
 
-const RC_NAME = 'RC7';
-
 function rcCheck(id, group, label, state, detail, blocking = false) {
   return { id, group, label, state, detail, blocking: Boolean(blocking) };
 }
@@ -5194,8 +5356,8 @@ async function apiRcRegression(request, cfg, user) {
   const startedAt = Date.now();
 
   // 1) Core runtime / security configuration.
-  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '5.9.0-rc7' ? 'pass' : 'fail',
-    `Worker: ${APP_VERSION}; ожидается 5.9.0-rc7.`, true));
+  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.0.0-rc8' ? 'pass' : 'fail',
+    `Worker: ${APP_VERSION}; ожидается 6.0.0-rc8.`, true));
   checks.push(rcCheck('api_contract', 'runtime', 'API contract', API_CONTRACT_VERSION === 5 ? 'pass' : 'fail',
     `Contract ${API_CONTRACT_VERSION}; min client ${MIN_CLIENT_VERSION}.`, true));
   checks.push(rcCheck('app_manifest', 'runtime', 'Public App Manifest', appManifest(cfg)?.version === APP_VERSION ? 'pass' : 'fail',
@@ -5260,7 +5422,7 @@ async function apiRcRegression(request, cfg, user) {
   checks.push(rcCheck(
     'runtime_controls_state',
     'runtime',
-    'Runtime Controls RC7',
+    'Runtime Controls RC8',
     runtimeState.schemaReady ? 'pass' : 'fail',
     runtimeState.schemaReady
       ? `Revision ${Number(runtimeState.value?.revision || 1)} · ${runtimeState.value?.maintenanceMode ? 'maintenance ON' : 'normal mode'}.`
@@ -5366,7 +5528,7 @@ async function apiRcRegression(request, cfg, user) {
     'Prediction Integrity self-test',
     integritySelfTest.pass ? 'pass' : 'fail',
     integritySelfTest.pass
-      ? 'Synthetic invalid probabilities, late snapshot и stale pending обнаруживаются ожидаемо.'
+      ? 'Synthetic missing/invalid probabilities, captured_at timing, stale pending и outcome consistency обнаруживаются ожидаемо.'
       : 'Prediction Integrity self-test не прошёл.',
     true
   ));
@@ -5404,8 +5566,8 @@ async function apiRcRegression(request, cfg, user) {
     label: blockers.length
       ? 'RC заблокирован: есть обязательные ошибки'
       : warnings.length
-        ? 'RC1 готов к проверке, есть ожидаемые HOLD/WARN'
-        : 'RC1 regression gate пройден',
+        ? `${RC_NAME} готов к проверке, есть ожидаемые HOLD/WARN`
+        : `${RC_NAME} regression gate пройден`,
     score,
     summary: {
       total: checks.length,
@@ -8324,7 +8486,7 @@ export default {
         failureRecovery: 'enabled',
         gracefulErrors: 'enabled',
         webviewRecovery: 'enabled',
-        releaseCandidate: 'RC7',
+        releaseCandidate: RC_NAME,
         regressionQA: 'enabled',
         rcSmokeTest: 'enabled',
         clientContractQA: 'enabled',
