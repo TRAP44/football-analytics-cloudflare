@@ -2127,7 +2127,8 @@ main { position: relative; z-index: 1; }
 .runtime-controls-badge,.reminder-health-badge,.release-monitor-badge,.production-badge,.expanded-gate-badge{min-width:72px}
 
 
-/* RC16 — Calibration Promotion Gate */
-.rc-panel:before{content:"RC16"}
+/* RC17 — Calibration Promotion Gate */
+.rc-panel:before{content:"RC17"}
 .calibration-promotion-note{margin-top:9px;padding:9px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font-size:9px;color:var(--hint)}
 .calibration-promotion-note strong{color:var(--text)}
+
