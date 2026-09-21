@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '4.5.0-smart-match-insights';
+const CLIENT_VERSION = '4.6.0-prematch-intelligence';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -35,6 +35,7 @@ const state = {
   search: '',
   globalSearch: { query: '', remoteTeams: [], remoteCompetitions: [], loading: false, warning: '', searchedAt: null },
   currentAnalysis: null,
+  currentAnalysisTab: 'brief',
   currentCenter: null,
   currentCenterTab: 'summary',
   currentTournament: null,
@@ -69,7 +70,7 @@ const VIEW_CHROME = {
   searchView: ['Поиск', 'Команды, турниры и быстрый доступ'],
   tournamentView: ['Турнир', 'Матчи, таблица и контекст соревнования'],
   teamView: ['Команда', 'Форма, состав и календарь клуба'],
-  analysisView: ['Анализ матча', 'Вероятности, форма и ключевые факторы'],
+  analysisView: ['Анализ матча', 'Бриф, вероятности, сценарии и ключевые факторы'],
   historyView: ['История', 'Недавно просмотренные анализы'],
   profileView: ['Профиль', 'Настройки, избранное и персонализация'],
 };
@@ -2451,16 +2452,23 @@ async function shareAnalysis(d) {
   }
 }
 
-function bindAnalysisTabs() {
+function setAnalysisTab(tab, scroll = false) {
+  state.currentAnalysisTab = tab || 'brief';
   const buttons = [...document.querySelectorAll('.analysis-tab-btn')];
   const panels = [...document.querySelectorAll('.analysis-tab-panel')];
-  buttons.forEach(btn => btn.addEventListener('click', () => {
-    const tab = btn.dataset.tab;
-    buttons.forEach(x => x.classList.toggle('active', x === btn));
-    panels.forEach(x => x.classList.toggle('active', x.dataset.panel === tab));
-    const target = document.querySelector('.analysis-tabs');
-    if (target) target.scrollIntoView({ block: 'start', behavior: 'smooth' });
-  }));
+  buttons.forEach(btn => {
+    const active = btn.dataset.tab === state.currentAnalysisTab;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  panels.forEach(panel => panel.classList.toggle('active', panel.dataset.panel === state.currentAnalysisTab));
+  if (scroll) document.querySelector('.analysis-tabs')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+
+function bindAnalysisTabs() {
+  const buttons = [...document.querySelectorAll('.analysis-tab-btn')];
+  buttons.forEach(btn => btn.addEventListener('click', () => setAnalysisTab(btn.dataset.tab, true)));
+  setAnalysisTab(state.currentAnalysisTab || 'brief', false);
 }
 
 
@@ -2496,8 +2504,114 @@ function comparisonTeamHeader(team, side, edges) {
   </button>`;
 }
 
+
+function prematchOutcomeName(key, match) {
+  if (key === 'home') return match.home?.name || 'П1';
+  if (key === 'away') return match.away?.name || 'П2';
+  if (key === 'draw') return 'Ничья';
+  return '—';
+}
+
+function prematchUncertaintyClass(level) {
+  return level === 'low' ? 'good' : level === 'high' ? 'low' : 'medium';
+}
+
+function prematchDriverCard(driver, match) {
+  const sideName = driver.side === 'home' ? match.home?.name : driver.side === 'away' ? match.away?.name : '';
+  const strengthText = driver.strength === 'high' ? 'сильный фактор' : driver.strength === 'low' ? 'контекст' : 'заметный фактор';
+  return `<article class="prematch-driver ${escapeHtml(driver.side || 'neutral')} ${escapeHtml(driver.strength || 'medium')}">
+    <div class="prematch-driver-icon">${escapeHtml(driver.icon || '•')}</div>
+    <div class="prematch-driver-body">
+      <div class="prematch-driver-kicker">${sideName ? `${escapeHtml(sideName)} · ` : ''}${escapeHtml(strengthText)}</div>
+      <h3>${escapeHtml(driver.title || 'Фактор')}</h3>
+      <p>${escapeHtml(driver.text || '')}</p>
+      ${Number.isFinite(Number(driver.weight)) ? `<div class="driver-weight"><span>Вес в blend</span><strong>${Number(driver.weight).toFixed(1)}%</strong></div>` : ''}
+    </div>
+  </article>`;
+}
+
+function prematchScenarioCard(scenario) {
+  return `<article class="prematch-scenario ${escapeHtml(scenario.tone || 'balanced')}">
+    <div class="prematch-scenario-top"><span>${escapeHtml(scenario.icon || '•')}</span><small>${escapeHtml(scenario.relevance || '')}</small></div>
+    <h3>${escapeHtml(scenario.title || '')}</h3>
+    <p>${escapeHtml(scenario.text || '')}</p>
+  </article>`;
+}
+
+function prematchSourceRow(row, match) {
+  const finalKey = state.currentAnalysis?.preMatchIntelligence?.leader?.key || '';
+  return `<div class="prematch-source-row ${row.agreesWithFinal ? 'agree' : 'disagree'}">
+    <div class="prematch-source-main">
+      <span class="prematch-source-icon">${escapeHtml(row.icon || '•')}</span>
+      <div><strong>${escapeHtml(row.label || '')}</strong><small>Вес ${Number(row.weight || 0).toFixed(1)}%</small></div>
+    </div>
+    <div class="prematch-source-result">
+      <strong>${escapeHtml(row.leader || '—')}</strong>
+      <span>${Number(row.leaderProbability || 0).toFixed(1)}%</span>
+    </div>
+    <div class="prematch-source-status">${row.agreesWithFinal ? '✓ согласен' : '↔ расходится'}</div>
+  </div>`;
+}
+
+function prematchBriefHtml(pm, match, probabilities) {
+  if (!pm) {
+    return `<section class="panel"><div class="empty"><strong>Бриф недоступен</strong><p>Пересчитайте анализ после обновления приложения.</p></div></section>`;
+  }
+  const uncertainty = pm.uncertainty || {};
+  const leader = pm.leader || {};
+  const dataScore = Number(pm.dataScore || 0);
+  return `
+    <section class="panel prematch-brief-hero">
+      <div class="prematch-brief-top">
+        <div>
+          <span class="prematch-brief-label">🧠 MATCH BRIEF</span>
+          <h2>${escapeHtml(pm.headline || 'Предматчевый бриф')}</h2>
+        </div>
+        <div class="prematch-data-score"><strong>${dataScore}%</strong><span>полнота данных</span></div>
+      </div>
+      <p class="prematch-brief-summary">${escapeHtml(pm.summary || '')}</p>
+
+      <div class="prematch-brief-kpis">
+        <div><span>Главный сценарий</span><strong>${escapeHtml(leader.label || prematchOutcomeName(leader.key, match))}</strong><small>${Number(leader.probability || 0).toFixed(1)}%</small></div>
+        <div><span>Отрыв</span><strong>${Number(leader.gap || 0).toFixed(1)} п.п.</strong><small>от второго исхода</small></div>
+        <div><span>Неопределённость</span><strong>${Number(uncertainty.score || 0)}/100</strong><small>${escapeHtml(uncertainty.label || '')}</small></div>
+      </div>
+
+      <div class="prematch-hero-probs">
+        <div><span>${escapeHtml(match.home?.name || 'П1')}</span><strong>${pct(probabilities?.home)}</strong></div>
+        <div><span>Ничья</span><strong>${pct(probabilities?.draw)}</strong></div>
+        <div><span>${escapeHtml(match.away?.name || 'П2')}</span><strong>${pct(probabilities?.away)}</strong></div>
+      </div>
+      ${probabilityStrip(probabilities)}
+    </section>
+
+    <section class="panel">
+      <div class="prematch-section-head"><div><h2>Почему модель пришла к этим процентам</h2><p>Факторы отсортированы по полезности и весу источников</p></div><span>${(pm.drivers || []).length} факторов</span></div>
+      <div class="prematch-driver-list">${(pm.drivers || []).length ? pm.drivers.map(x => prematchDriverCard(x, match)).join('') : '<div class="empty compact-empty">Сильных факторов пока недостаточно.</div>'}</div>
+    </section>
+
+    <section class="panel">
+      <div class="prematch-section-head"><div><h2>Сценарии матча</h2><p>Не новые прогнозы, а интерпретация уже рассчитанных сигналов</p></div></div>
+      <div class="prematch-scenarios">${(pm.scenarios || []).length ? pm.scenarios.map(prematchScenarioCard).join('') : '<div class="empty compact-empty">Сценарии не сформированы из-за ограниченных данных.</div>'}</div>
+    </section>
+
+    <section class="panel">
+      <div class="prematch-section-head"><div><h2>Что может изменить оценку до старта</h2><p>Факторы, за которыми стоит следить перед матчем</p></div></div>
+      ${(pm.watch || []).length ? `<div class="prematch-watch-list">${pm.watch.map((x,i)=>`<div><b>${i+1}</b><span>${escapeHtml(x)}</span></div>`).join('')}</div>` : '<div class="empty compact-empty">Критичных ожидаемых изменений по доступным данным нет.</div>'}
+    </section>
+
+    <section class="panel">
+      <div class="prematch-section-head"><div><h2>Как голосуют источники</h2><p>Каждый источник имеет собственную оценку и вес в объединении</p></div></div>
+      <div class="prematch-source-table">${(pm.sourceRows || []).length ? pm.sourceRows.map(x => prematchSourceRow(x, match)).join('') : '<div class="empty compact-empty">Детальные signal-level данные пока недоступны.</div>'}</div>
+      <p class="tiny warning">${escapeHtml(pm.methodology || '')}</p>
+    </section>`;
+}
+
 function renderAnalysis(d) {
   if (!d) return;
+  const previousFixture = Number(state.currentAnalysis?.match?.fixtureId || 0);
+  const nextFixture = Number(d?.match?.fixtureId || 0);
+  if (previousFixture && nextFixture && previousFixture !== nextFixture) state.currentAnalysisTab = 'brief';
   state.currentAnalysis = d;
   const p = d.probabilities || {};
   const m = d.match || {};
@@ -2545,6 +2659,12 @@ function renderAnalysis(d) {
         <strong>${escapeHtml(d.likelyOutcome || 'Недостаточно данных')}</strong>
       </div>
 
+      ${d.preMatchIntelligence ? `<button class="prematch-brief-jump" id="openPrematchBrief" type="button">
+        <span>🧠 Предматчевый бриф</span>
+        <strong>${escapeHtml(d.preMatchIntelligence.headline || '')}</strong>
+        <small>Открыть причины, сценарии и риски →</small>
+      </button>` : ''}
+
       <div class="experience-prob-labels">
         <div><span>П1</span><strong>${pct(p.home)}</strong></div>
         <div><span>X</span><strong>${pct(p.draw)}</strong></div>
@@ -2567,7 +2687,8 @@ function renderAnalysis(d) {
     ${d.stale ? `<section class="panel stale-panel"><strong>⚠️ Использован последний сохранённый анализ</strong><p>${escapeHtml(d.warning || 'Свежие данные временно недоступны из-за ограничения провайдера.')}</p></section>` : ''}
 
     <div class="analysis-tabs" role="tablist">
-      <button class="analysis-tab-btn active" data-tab="overview" type="button">Обзор</button>
+      <button class="analysis-tab-btn" data-tab="brief" type="button">Бриф</button>
+      <button class="analysis-tab-btn" data-tab="overview" type="button">Обзор</button>
       <button class="analysis-tab-btn" data-tab="form" type="button">Форма</button>
       <button class="analysis-tab-btn" data-tab="comparison" type="button">Сравнение</button>
       <button class="analysis-tab-btn" data-tab="market" type="button">Рынок</button>
@@ -2575,7 +2696,11 @@ function renderAnalysis(d) {
       <button class="analysis-tab-btn" data-tab="context" type="button">Контекст</button>
     </div>
 
-    <div class="analysis-tab-panel active" data-panel="overview">
+    <div class="analysis-tab-panel" data-panel="brief">
+      ${prematchBriefHtml(d.preMatchIntelligence, m, p)}
+    </div>
+
+    <div class="analysis-tab-panel" data-panel="overview">
       <section class="panel experience-dashboard">
         <div class="dashboard-metric confidence-metric">
           <span>Уверенность модели</span>
@@ -2731,6 +2856,7 @@ function renderAnalysis(d) {
 
   $('reminderBtn')?.addEventListener('click', () => toggleReminder(m));
   $('shareAnalysisBtn')?.addEventListener('click', () => shareAnalysis(d));
+  $('openPrematchBrief')?.addEventListener('click', () => setAnalysisTab('brief', true));
   $('analysis')?.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => openTeam({
     id: Number(btn.dataset.openTeam), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '',
   })));
