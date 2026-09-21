@@ -1835,3 +1835,47 @@ main { position: relative; z-index: 1; }
   .rc-check-list>div{grid-template-columns:20px minmax(0,1fr)}
   .rc-check-list em{grid-column:2;text-align:right}
 }
+
+
+/* v5.4 RC2 — Telegram Startup & Rollback Safety */
+.boot-gate{
+  position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:22px;
+  background:
+    radial-gradient(circle at 50% 18%,color-mix(in srgb,var(--accent) 18%,transparent),transparent 34%),
+    var(--bg);
+  transition:opacity .2s ease,visibility .2s ease
+}
+.boot-gate[hidden]{display:none}
+.boot-gate.done{opacity:0;visibility:hidden}
+.boot-card{width:min(100%,390px);text-align:center}
+.boot-logo{
+  width:68px;height:68px;margin:0 auto 16px;border-radius:22px;display:grid;place-items:center;
+  background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 78%,#fff),var(--accent));
+  color:#08111d;box-shadow:0 18px 50px color-mix(in srgb,var(--accent) 18%,transparent)
+}
+.boot-logo span{font-weight:1000;font-size:21px;letter-spacing:-.06em}
+.boot-kicker{font-size:9px;font-weight:950;letter-spacing:.14em;color:var(--accent);margin-bottom:7px}
+.boot-card h1{font-size:22px;letter-spacing:-.035em;margin:0}
+.boot-card p{font-size:11px;line-height:1.5;color:var(--hint);margin:8px auto 14px;max-width:330px}
+.boot-progress{height:5px;border-radius:999px;overflow:hidden;background:rgba(148,163,184,.10)}
+.boot-progress i{display:block;width:0;height:100%;border-radius:inherit;background:var(--accent);transition:width .28s ease}
+.boot-actions{display:flex;justify-content:center;flex-wrap:wrap;gap:8px;margin-top:16px}
+.boot-actions button{width:auto;min-width:120px;margin:0}
+.boot-gate.blocking .boot-logo{background:color-mix(in srgb,var(--warn) 78%,#fff)}
+.boot-gate.blocking .boot-kicker{color:var(--warn)}
+
+.version-banner.blocking{
+  border-color:color-mix(in srgb,var(--danger) 45%,var(--line));
+  background:color-mix(in srgb,var(--danger) 8%,var(--surface))
+}
+.version-banner.blocking span{color:var(--text)}
+
+.rc-panel:before{content:"RC2"}
+
+@media(max-width:390px){
+  .boot-actions{display:grid;grid-template-columns:1fr}
+  .boot-actions button{width:100%}
+}
+@media(prefers-reduced-motion:reduce){
+  .boot-gate,.boot-progress i{transition:none}
+}
