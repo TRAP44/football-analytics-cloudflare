@@ -58,10 +58,10 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '5.8.0-rc6';
+const APP_VERSION = '5.9.0-rc7';
 const API_CONTRACT_VERSION = 5;
-const MIN_CLIENT_VERSION = '5.7.0';
-const RELEASE_CHANNEL = 'rc6';
+const MIN_CLIENT_VERSION = '5.8.0';
+const RELEASE_CHANNEL = 'rc7';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -278,7 +278,7 @@ async function ensureRuntimeHistoryBaseline(cfg, value, user) {
   await supaInsertIgnore(cfg, 'runtime_control_history', {
     revision: Number(snapshot.revision || 1),
     action: 'baseline',
-    reason: 'Baseline captured before the first RC6 runtime change.',
+    reason: 'Baseline captured before the first runtime-history change.',
     snapshot,
     app_version: APP_VERSION,
     changed_by: Number(user?.id || 0) || null,
@@ -611,7 +611,7 @@ function appManifest(cfg) {
     minClientVersion: MIN_CLIENT_VERSION,
     apiContract: API_CONTRACT_VERSION,
     releaseChannel: RELEASE_CHANNEL,
-    releaseCandidate: 'RC6',
+    releaseCandidate: 'RC7',
     maintenance: Boolean(runtimeControlsSnapshot().maintenanceMode),
     monetization: cfg.monetizationEnabled ? 'enabled' : 'paused',
     runtime: publicRuntimeControls(),
@@ -634,6 +634,9 @@ function appManifest(cfg) {
       emergencyKillSwitches: true,
       runtimeRollback: true,
       runtimeHistory: true,
+      predictionIntegrity: true,
+      modelVersionCohorts: true,
+      calibrationDiagnostics: true,
     },
     serverTime: new Date().toISOString(),
   };
@@ -2374,18 +2377,248 @@ function buildModelDashboardObservations(rows, dashboard) {
     notes.push({
       level: 'info',
       title: 'Явных диагностических отклонений нет',
-      text: 'Продолжаем накапливать immutable pre-match snapshots. v4.7 ничего не меняет в весах автоматически — только показывает разрезы.',
+      text: 'Продолжаем накапливать immutable pre-match snapshots. v5.9 ничего не меняет в весах автоматически — integrity и cohorts используются только как диагностика.',
     });
   }
 
   return notes.slice(0, 5);
 }
 
+
+function modelVersionName(row) {
+  const version = String(row?.analysis_version || '').trim();
+  return version || 'legacy / unknown';
+}
+
+function weightedTopCalibrationError(rows) {
+  const defs = [
+    [0, 45], [45, 55], [55, 65], [65, 75], [75, 101],
+  ];
+  const valid = (rows || []).filter(row => ['home','draw','away'].includes(String(row?.actual_outcome || '')));
+  if (!valid.length) return null;
+
+  let weighted = 0;
+  let used = 0;
+  for (const [min, max] of defs) {
+    const group = valid.filter(row => {
+      const top = topProbabilityValue(row);
+      return Number.isFinite(Number(top)) && top >= min && top < max;
+    });
+    if (!group.length) continue;
+    const predicted = average(group.map(topProbabilityValue));
+    const actual = pct(group.filter(row => row.correct === true).length, group.length);
+    if (!Number.isFinite(Number(predicted)) || !Number.isFinite(Number(actual))) continue;
+    weighted += Math.abs(Number(predicted) - Number(actual)) * group.length;
+    used += group.length;
+  }
+  return used ? dashboardRound(weighted / used, 1) : null;
+}
+
+function buildModelVersionCohorts(rows) {
+  const groups = new Map();
+  for (const row of rows || []) {
+    const version = modelVersionName(row);
+    if (!groups.has(version)) groups.set(version, []);
+    groups.get(version).push(row);
+  }
+
+  return [...groups.entries()].map(([version, cohortRows]) => {
+    const bucket = dashboardBucket(cohortRows, version, { version });
+    const kickoffTimes = cohortRows.map(row => Date.parse(row?.kickoff_at || '')).filter(Number.isFinite);
+    const signalReady = cohortRows.filter(row => {
+      const signalMap = parseJsonObject(row?.signal_probabilities);
+      return signalMap && Object.keys(signalMap).length > 0;
+    }).length;
+    return {
+      ...bucket,
+      calibrationError: weightedTopCalibrationError(cohortRows),
+      signalSnapshotCoverage: pct(signalReady, cohortRows.length),
+      firstKickoffAt: kickoffTimes.length ? new Date(Math.min(...kickoffTimes)).toISOString() : null,
+      lastKickoffAt: kickoffTimes.length ? new Date(Math.max(...kickoffTimes)).toISOString() : null,
+    };
+  }).sort((a, b) =>
+    Date.parse(b.lastKickoffAt || 0) - Date.parse(a.lastKickoffAt || 0) ||
+    Number(b.sample || 0) - Number(a.sample || 0)
+  );
+}
+
+function predictionProbabilityIntegrity(row) {
+  const values = ['home_prob','draw_prob','away_prob'].map(key => Number(row?.[key]));
+  const finite = values.every(Number.isFinite);
+  const bounded = finite && values.every(value => value >= 0 && value <= 100);
+  const sum = finite ? values.reduce((a, b) => a + b, 0) : null;
+  const sumOk = Number.isFinite(sum) && Math.abs(sum - 100) <= 1.5;
+  return { finite, bounded, sum, sumOk, valid: finite && bounded && sumOk };
+}
+
+function buildPredictionIntegrity(settledRows, pendingRows) {
+  const settled = Array.isArray(settledRows) ? settledRows : [];
+  const pending = Array.isArray(pendingRows) ? pendingRows : [];
+  const all = [...settled, ...pending];
+  const now = Date.now();
+
+  const invalidProbabilities = all.filter(row => !predictionProbabilityIntegrity(row).valid);
+  const snapshotAfterKickoff = all.filter(row => {
+    const created = Date.parse(row?.created_at || '');
+    const kickoff = Date.parse(row?.kickoff_at || '');
+    return Number.isFinite(created) && Number.isFinite(kickoff) && created >= kickoff;
+  });
+  const stalePending = pending.filter(row => {
+    const kickoff = Date.parse(row?.kickoff_at || '');
+    return Number.isFinite(kickoff) && kickoff < now - 36 * 3600_000;
+  });
+  const missingVersion = all.filter(row => !String(row?.analysis_version || '').trim());
+  const missingSignals = all.filter(row => {
+    const signalMap = parseJsonObject(row?.signal_probabilities);
+    return !signalMap || !Object.keys(signalMap).length;
+  });
+  const invalidSettledOutcome = settled.filter(row =>
+    !['home','draw','away'].includes(String(row?.actual_outcome || '')) ||
+    !Number.isFinite(Number(row?.actual_home_goals)) ||
+    !Number.isFinite(Number(row?.actual_away_goals))
+  );
+
+  const fixtureCounts = new Map();
+  for (const row of all) {
+    const id = Number(row?.fixture_id || 0);
+    if (!id) continue;
+    fixtureCounts.set(id, Number(fixtureCounts.get(id) || 0) + 1);
+  }
+  const duplicateFixtures = [...fixtureCounts.entries()]
+    .filter(([, count]) => count > 1)
+    .map(([fixtureId, count]) => ({ fixtureId, count }))
+    .slice(0, 20);
+
+  const severe = invalidProbabilities.length + snapshotAfterKickoff.length + duplicateFixtures.length;
+  const warning = stalePending.length + invalidSettledOutcome.length;
+
+  const checks = [
+    {
+      key: 'probabilities',
+      label: 'Вероятности 1X2',
+      state: invalidProbabilities.length ? 'fail' : 'pass',
+      count: invalidProbabilities.length,
+      detail: invalidProbabilities.length
+        ? 'Есть строки с NaN/выходом за 0–100 или суммой, отличающейся от 100 более чем на 1.5 п.п.'
+        : 'Все загруженные 1X2 probability snapshots проходят базовую проверку.',
+    },
+    {
+      key: 'snapshot_timing',
+      label: 'Pre-match snapshot timing',
+      state: snapshotAfterKickoff.length ? 'fail' : 'pass',
+      count: snapshotAfterKickoff.length,
+      detail: snapshotAfterKickoff.length
+        ? 'Есть snapshot, созданные в момент kickoff или позже.'
+        : 'Поздние snapshot в загруженной выборке не обнаружены.',
+    },
+    {
+      key: 'pending_settlement',
+      label: 'Зависшие pending',
+      state: stalePending.length ? 'warn' : 'pass',
+      count: stalePending.length,
+      detail: stalePending.length
+        ? 'Есть pending-прогнозы старше 36 часов после kickoff — нужен контроль daily settlement.'
+        : 'Зависших pending старше 36 часов нет.',
+    },
+    {
+      key: 'settled_outcome',
+      label: 'Фактический результат',
+      state: invalidSettledOutcome.length ? 'warn' : 'pass',
+      count: invalidSettledOutcome.length,
+      detail: invalidSettledOutcome.length
+        ? 'Есть settled-строки без корректного 1X2 outcome/счёта.'
+        : 'Settled-строки имеют фактический outcome и счёт.',
+    },
+    {
+      key: 'duplicates',
+      label: 'Fixture uniqueness',
+      state: duplicateFixtures.length ? 'fail' : 'pass',
+      count: duplicateFixtures.length,
+      detail: duplicateFixtures.length
+        ? 'В загруженной выборке повторяется fixture_id.'
+        : 'Дубликаты fixture_id в загруженной выборке не обнаружены.',
+    },
+    {
+      key: 'version_metadata',
+      label: 'Версия анализа',
+      state: missingVersion.length ? 'info' : 'pass',
+      count: missingVersion.length,
+      detail: missingVersion.length
+        ? 'У старых snapshots может отсутствовать analysis_version; они показываются как legacy / unknown.'
+        : 'У всех загруженных snapshots есть analysis_version.',
+    },
+    {
+      key: 'signal_snapshot',
+      label: 'Signal snapshots',
+      state: missingSignals.length ? 'info' : 'pass',
+      count: missingSignals.length,
+      detail: missingSignals.length
+        ? 'У части старых версий отсутствует signal_probabilities; это информационное ограничение cohort-аналитики.'
+        : 'Signal probabilities доступны у всей загруженной выборки.',
+    },
+  ];
+
+  return {
+    status: severe ? 'blocked' : warning ? 'watch' : 'clean',
+    label: severe ? 'Есть нарушения integrity' : warning ? 'Есть пункты для проверки' : 'Integrity checks пройдены',
+    loadedRows: all.length,
+    settledRows: settled.length,
+    pendingRows: pending.length,
+    severeIssues: severe,
+    warningIssues: warning,
+    informationalIssues: missingVersion.length + missingSignals.length,
+    truncatedPotentially: settled.length >= 500 || pending.length >= 500,
+    checks,
+    examples: {
+      invalidProbabilityFixtures: invalidProbabilities.slice(0, 8).map(row => Number(row?.fixture_id || 0)).filter(Boolean),
+      lateSnapshotFixtures: snapshotAfterKickoff.slice(0, 8).map(row => Number(row?.fixture_id || 0)).filter(Boolean),
+      stalePendingFixtures: stalePending.slice(0, 8).map(row => Number(row?.fixture_id || 0)).filter(Boolean),
+      duplicateFixtures,
+    },
+    note: 'Integrity проверяет только строки, загруженные текущим admin endpoint (до 500 settled + 500 pending). Это QA-контроль данных, а не автоматическая перенастройка модели.',
+  };
+}
+
+function modelIntegritySelfTest() {
+  const now = Date.now();
+  const valid = {
+    fixture_id: 1,
+    home_prob: 50, draw_prob: 25, away_prob: 25,
+    actual_outcome: 'home', actual_home_goals: 2, actual_away_goals: 1,
+    analysis_version: 'selftest', signal_probabilities: { market: { home: 50, draw: 25, away: 25 } },
+    kickoff_at: new Date(now - 2 * 3600_000).toISOString(),
+    created_at: new Date(now - 3 * 3600_000).toISOString(),
+  };
+  const invalid = {
+    ...valid,
+    fixture_id: 2,
+    home_prob: 90, draw_prob: 30, away_prob: 20,
+    created_at: new Date(now - 1 * 3600_000).toISOString(),
+  };
+  const stalePending = {
+    ...valid,
+    fixture_id: 3,
+    actual_outcome: null,
+    actual_home_goals: null,
+    actual_away_goals: null,
+    kickoff_at: new Date(now - 48 * 3600_000).toISOString(),
+    created_at: new Date(now - 49 * 3600_000).toISOString(),
+  };
+  const result = buildPredictionIntegrity([valid, invalid], [stalePending]);
+  return {
+    pass:
+      result.checks.find(x => x.key === 'probabilities')?.count === 1 &&
+      result.checks.find(x => x.key === 'snapshot_timing')?.count === 1 &&
+      result.checks.find(x => x.key === 'pending_settlement')?.count === 1,
+    result,
+  };
+}
+
 function buildModelDashboard(rows, days) {
   const valid = (rows || []).filter(row => ['home','draw','away'].includes(String(row?.actual_outcome || '')));
   const overview = dashboardBucket(valid, 'Все прогнозы');
   const dashboard = {
-    version: '4.7',
+    version: '5.9',
     periodDays: days,
     generatedAt: new Date().toISOString(),
     overview,
@@ -2394,11 +2627,13 @@ function buildModelDashboard(rows, days) {
     completeness: buildCompletenessDashboard(valid),
     leagues: buildLeagueDashboard(valid),
     outcomes: buildOutcomeDashboard(valid),
+    versions: buildModelVersionCohorts(valid),
+    weightedCalibrationError: weightedTopCalibrationError(valid),
     signals: buildSignalDashboard(valid),
     calibrationModes: buildCalibrationModeDashboard(valid),
   };
   dashboard.observations = buildModelDashboardObservations(valid, dashboard);
-  dashboard.note = 'Dashboard использует только immutable pre-match snapshots и фактические результаты. Разрезы с маленьким n не используются для автоматической перенастройки модели.';
+  dashboard.note = 'Dashboard использует immutable pre-match snapshots и фактические результаты. Version cohorts описательны: система не выбирает «лучшую» версию и ничего не продвигает автоматически.';
   return dashboard;
 }
 
@@ -2469,11 +2704,13 @@ function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = 
     predictedLabel: predictionOutcomeLabel(row.predicted_outcome, row.home_name, row.away_name),
     topProbability: Math.round(topProbabilityValue(row) * 10) / 10,
     correct: row.correct === true, brier: Number(row.brier_score), confidence: Number(row.confidence_score || 0) || null,
+    analysisVersion: modelVersionName(row),
   }));
 
   return {
     periodDays: days,
     generatedAt: new Date().toISOString(),
+    queryLimitPerStatus: 500,
     sample: { settled: evaluated, pending: (pendingRows || []).length, ready: evaluated >= 20, calibrationReady: evaluated >= 50 },
     headline: {
       accuracy: pct(correct, evaluated),
@@ -2487,6 +2724,12 @@ function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = 
     signals,
     signalPerformance,
     dashboard: buildModelDashboard(rows, days),
+    integrity: buildPredictionIntegrity(settledRows, pendingRows),
+    calibrationDiagnostics: {
+      weightedTopCalibrationError: weightedTopCalibrationError(rows),
+      label: 'Weighted top-probability calibration error',
+      note: 'Средневзвешенный абсолютный разрыв между средней top-вероятностью и hit rate по 5 probability buckets; меньше — лучше. Это диагностическая метрика, не автоматический release threshold.',
+    },
     calibrationEngine: calibrationProfile || baselineCalibrationProfile(evaluated, signalPerformance),
     calibrationImpact,
     secondary: {
@@ -2498,6 +2741,8 @@ function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = 
       snapshot: 'Для каждого fixture сохраняется первый расчёт, сделанный до стартового свистка. Поздние перерасчёты не перезаписывают его.',
       outcome: 'Точность исхода = доля матчей, где максимальная вероятность 1X2 совпала с фактическим исходом.',
       brier: 'Brier score учитывает все три вероятности 1X2; ниже — лучше. В интерфейсе он показан вместе с размером выборки.',
+      versionCohorts: 'Сравнение analysis_version является описательным и не используется для автоматического выбора/продвижения версии.',
+      integrity: 'Probability sum, snapshot timing, stale pending и fixture uniqueness проверяются отдельно от качества прогноза.',
       warning: evaluated < 20 ? 'Выборка пока мала: цифры считаются технической диагностикой, а не доказанной точностью модели.' : '',
     },
   };
@@ -3246,7 +3491,7 @@ async function apiReminderHealth(request, cfg, user) {
 
     const result = await sendTelegramMessage(
       user.id,
-      `✅ Football Manager\n\nТест уведомлений v5.8 RC6 прошёл. Если вы видите это сообщение, Telegram delivery работает.`,
+      `✅ Football Manager\n\nТест уведомлений v5.9 RC7 прошёл. Если вы видите это сообщение, Telegram delivery работает.`,
       cfg
     );
 
@@ -4684,7 +4929,7 @@ async function apiReleaseMonitor(request, cfg) {
   const value = {
     available: true,
     version: APP_VERSION,
-    releaseCandidate: 'RC6',
+    releaseCandidate: 'RC7',
     generatedAt: new Date().toISOString(),
     hours,
     persistent: source.persistent,
@@ -4755,6 +5000,8 @@ async function apiReleaseReadiness(request, cfg) {
     releaseCheck('supabase_config', 'Supabase config', hasSupabase(cfg) ? 'pass' : 'fail', hasSupabase(cfg) ? 'URL и service key доступны runtime.' : 'Не хватает SUPABASE_URL или service key.', true),
     releaseCheck('supabase_online', 'Supabase/PostgREST', diagnostics.supabase?.ok ? 'pass' : 'fail', diagnostics.supabase?.ok ? `Ответ ${Number(diagnostics.supabase?.latencyMs || 0)} мс.` : `Статус: ${diagnostics.supabase?.status || 'offline'}.`, true),
     releaseCheck('model_backtest', 'Backtest schema v3.6+', modelTable.ok ? 'pass' : 'fail', modelTable.ok ? 'Таблица model_predictions доступна.' : `model_predictions: ${modelTable.status}.`, true),
+    releaseCheck('prediction_integrity', 'Prediction Integrity self-test', modelIntegritySelfTest().pass ? 'pass' : 'fail',
+      modelIntegritySelfTest().pass ? 'Probability/timing/pending integrity checks проходят synthetic self-test.' : 'Prediction Integrity self-test не прошёл.', true),
     releaseCheck('runtime_controls_schema', 'Runtime Controls schema v5.7', runtimeTable.ok ? 'pass' : 'fail', runtimeTable.ok ? 'Таблица runtime_controls доступна.' : 'Нужна supabase_migration_v5_7.sql.', true),
     releaseCheck('runtime_history_schema', 'Runtime rollback history v5.8', runtimeHistoryTable.ok ? 'pass' : 'fail', runtimeHistoryTable.ok ? 'История Runtime Controls доступна.' : 'Нужна supabase_migration_v5_8.sql.', true),
     releaseCheck('runtime_controls_state', 'Runtime Controls state', runtime.maintenanceMode ? 'warn' : 'pass', runtime.maintenanceMode ? `Maintenance включён${runtime.message ? `: ${runtime.message}` : '.'}` : `Revision ${Number(runtime.revision || 1)} · рабочий режим.`, false),
@@ -4806,7 +5053,7 @@ async function apiReleaseReadiness(request, cfg) {
       monetizationExpected: 'paused',
       paymentTestingRequiredNow: false,
       providerUpgradeRequiredNow: false,
-      note: 'RC6 добавляет журнал Runtime Controls и безопасный rollback без включения пользовательской оплаты.',
+      note: 'RC7 усиливает качество prediction snapshots и version cohorts без автоматического продвижения модели и без включения пользовательской оплаты.',
     },
   };
   memory.releaseReadiness = { at: now, value };
@@ -4903,7 +5150,7 @@ async function apiProductionReadiness(request, cfg) {
 }
 
 
-const RC_NAME = 'RC6';
+const RC_NAME = 'RC7';
 
 function rcCheck(id, group, label, state, detail, blocking = false) {
   return { id, group, label, state, detail, blocking: Boolean(blocking) };
@@ -4947,8 +5194,8 @@ async function apiRcRegression(request, cfg, user) {
   const startedAt = Date.now();
 
   // 1) Core runtime / security configuration.
-  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '5.8.0-rc6' ? 'pass' : 'fail',
-    `Worker: ${APP_VERSION}; ожидается 5.8.0-rc6.`, true));
+  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '5.9.0-rc7' ? 'pass' : 'fail',
+    `Worker: ${APP_VERSION}; ожидается 5.9.0-rc7.`, true));
   checks.push(rcCheck('api_contract', 'runtime', 'API contract', API_CONTRACT_VERSION === 5 ? 'pass' : 'fail',
     `Contract ${API_CONTRACT_VERSION}; min client ${MIN_CLIENT_VERSION}.`, true));
   checks.push(rcCheck('app_manifest', 'runtime', 'Public App Manifest', appManifest(cfg)?.version === APP_VERSION ? 'pass' : 'fail',
@@ -5013,7 +5260,7 @@ async function apiRcRegression(request, cfg, user) {
   checks.push(rcCheck(
     'runtime_controls_state',
     'runtime',
-    'Runtime Controls RC6',
+    'Runtime Controls RC7',
     runtimeState.schemaReady ? 'pass' : 'fail',
     runtimeState.schemaReady
       ? `Revision ${Number(runtimeState.value?.revision || 1)} · ${runtimeState.value?.maintenanceMode ? 'maintenance ON' : 'normal mode'}.`
@@ -5112,6 +5359,18 @@ async function apiRcRegression(request, cfg, user) {
   ));
 
   // 5) Static server-side invariants.
+  const integritySelfTest = modelIntegritySelfTest();
+  checks.push(rcCheck(
+    'prediction_integrity_selftest',
+    'safety',
+    'Prediction Integrity self-test',
+    integritySelfTest.pass ? 'pass' : 'fail',
+    integritySelfTest.pass
+      ? 'Synthetic invalid probabilities, late snapshot и stale pending обнаруживаются ожидаемо.'
+      : 'Prediction Integrity self-test не прошёл.',
+    true
+  ));
+
   const safety = productionSafetySnapshot();
   checks.push(rcCheck('singleflight', 'safety', 'Server SingleFlight', 'pass',
     `${Number(safety.singleflight?.joins || 0)} joins; ${Number(safety.singleflight?.active || 0)} active.`, true));
@@ -8065,7 +8324,7 @@ export default {
         failureRecovery: 'enabled',
         gracefulErrors: 'enabled',
         webviewRecovery: 'enabled',
-        releaseCandidate: 'RC6',
+        releaseCandidate: 'RC7',
         regressionQA: 'enabled',
         rcSmokeTest: 'enabled',
         clientContractQA: 'enabled',
@@ -8083,6 +8342,9 @@ export default {
         emergencyKillSwitches: 'enabled',
         runtimeRollback: 'enabled',
         runtimeHistory: 'enabled',
+        predictionIntegrity: 'enabled',
+        modelVersionCohorts: 'enabled',
+        calibrationDiagnostics: 'enabled',
         runtimeControlsCacheSeconds: 30,
         devMode: cfg.devMode,
       });
