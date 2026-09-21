@@ -1,8 +1,8 @@
-# QA Release Checklist — v6.7.1 RC15
+# QA Release Checklist — v6.7.2 RC15
 
 ## Deploy
 - применён `supabase_migration_v6_7.sql`;
-- Worker/client = `6.7.1-rc15`;
+- Worker/client = `6.7.2-rc15`;
 - cron, Secrets, wrangler не менялись;
 - monetization paused.
 
@@ -46,3 +46,13 @@
 - при нормальном runtime `#runtimeBanner[hidden]` визуально отсутствует;
 - maintenance/limited по-прежнему показывают runtime banner после снятия `hidden`;
 - cache-bust CSS/JS = 6.7.1.
+
+
+## RC15 UI cleanup 6.7.2
+- startup показывает актуальный RC из manifest, а не RC10;
+- декоративная метка QA-панели = RC15;
+- Runtime banner скрыт при hidden;
+- основные пользовательские и административные подписи русифицированы;
+- устаревшие v5.0/HOLD placeholder-тексты удалены;
+- provider/runtime/release/remediation панели используют понятные русские статусы;
+- JS/HTML/CSS contract не потерял обязательные ID.

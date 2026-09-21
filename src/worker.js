@@ -59,7 +59,7 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.7.1-rc15';
+const APP_VERSION = '6.7.2-rc15';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
 const RELEASE_CHANNEL = 'rc15';
@@ -6845,41 +6845,41 @@ async function apiReleaseReadiness(request, cfg) {
   const provider = diagnostics.provider || {};
   const watchdogSelfTest = settlementWatchdogSelfTest();
   const checks = [
-    releaseCheck('football_api', 'API-Football key', cfg.apiFootballKey ? 'pass' : 'fail', cfg.apiFootballKey ? 'Ключ доступен Worker.' : 'API_FOOTBALL_KEY отсутствует.', true),
-    releaseCheck('supabase_config', 'Supabase config', hasSupabase(cfg) ? 'pass' : 'fail', hasSupabase(cfg) ? 'URL и service key доступны runtime.' : 'Не хватает SUPABASE_URL или service key.', true),
+    releaseCheck('football_api', 'Ключ API-Football', cfg.apiFootballKey ? 'pass' : 'fail', cfg.apiFootballKey ? 'Ключ доступен Worker.' : 'API_FOOTBALL_KEY отсутствует.', true),
+    releaseCheck('supabase_config', 'Настройка Supabase', hasSupabase(cfg) ? 'pass' : 'fail', hasSupabase(cfg) ? 'URL и service key доступны runtime.' : 'Не хватает SUPABASE_URL или service key.', true),
     releaseCheck('supabase_online', 'Supabase/PostgREST', diagnostics.supabase?.ok ? 'pass' : 'fail', diagnostics.supabase?.ok ? `Ответ ${Number(diagnostics.supabase?.latencyMs || 0)} мс.` : `Статус: ${diagnostics.supabase?.status || 'offline'}.`, true),
-    releaseCheck('model_backtest', 'Backtest schema v3.6+', modelTable.ok ? 'pass' : 'fail', modelTable.ok ? 'Таблица model_predictions доступна.' : `model_predictions: ${modelTable.status}.`, true),
-    releaseCheck('prediction_integrity', 'Prediction Integrity self-test', modelIntegritySelfTest().pass ? 'pass' : 'fail',
+    releaseCheck('model_backtest', 'Схема исторической проверки v3.6+', modelTable.ok ? 'pass' : 'fail', modelTable.ok ? 'Таблица model_predictions доступна.' : `model_predictions: ${modelTable.status}.`, true),
+    releaseCheck('prediction_integrity', 'Самопроверка целостности прогнозов', modelIntegritySelfTest().pass ? 'pass' : 'fail',
       modelIntegritySelfTest().pass ? 'Probabilities, captured_at timing и outcome consistency проходят synthetic self-test.' : 'Prediction Integrity self-test не прошёл.', true),
-    releaseCheck('prediction_remediation', 'Prediction Remediation v6.1', remediationTable.ok ? 'pass' : 'fail',
+    releaseCheck('prediction_remediation', 'Восстановление прогнозов v6.1', remediationTable.ok ? 'pass' : 'fail',
       remediationTable.ok ? 'Audit trail remediation доступен.' : 'Нужна supabase_migration_v6_1.sql.', true),
-    releaseCheck('settlement_watchdog_schema', 'Settlement Watchdog schema v6.4', watchdogSchema.ok ? 'pass' : 'fail',
+    releaseCheck('settlement_watchdog_schema', 'Схема контроля результатов v6.4', watchdogSchema.ok ? 'pass' : 'fail',
       watchdogSchema.ok ? 'Runtime switch и cron audit source доступны.' : 'Нужна supabase_migration_v6_2.sql.', true),
-    releaseCheck('settlement_watchdog_selftest', 'Settlement Watchdog self-test', watchdogSelfTest.pass ? 'pass' : 'fail',
+    releaseCheck('settlement_watchdog_selftest', 'Самопроверка контроля результатов', watchdogSelfTest.pass ? 'pass' : 'fail',
       watchdogSelfTest.pass ? `shadow=${watchdogSelfTest.shadow}, runtime=${watchdogSelfTest.runtime}, quota=${watchdogSelfTest.quota}, active=${watchdogSelfTest.active}.` : 'Watchdog decision self-test не прошёл.', true),
-    releaseCheck('settlement_run_ledger_schema', 'Settlement Run Ledger schema v6.4', runLedgerSchema.ok ? 'pass' : 'fail',
+    releaseCheck('settlement_run_ledger_schema', 'Схема журнала запусков v6.4', runLedgerSchema.ok ? 'pass' : 'fail',
       runLedgerSchema.ok ? 'Interrupted-run timestamps, attempt counter и retry lineage доступны.' : 'Нужна supabase_migration_v6_4.sql.', true),
-    releaseCheck('settlement_run_ledger_selftest', 'Settlement Run Ledger self-test', settlementRunLedgerSelfTest().pass ? 'pass' : 'fail',
+    releaseCheck('settlement_run_ledger_selftest', 'Самопроверка журнала запусков', settlementRunLedgerSelfTest().pass ? 'pass' : 'fail',
       settlementRunLedgerSelfTest().pass ? 'Fresh=1, interrupted retry=2, attempt 3 exhausts lineage, different batch starts fresh.' : 'Run-ledger self-test не прошёл.', true),
-    releaseCheck('settlement_finality_schema', 'Settlement Finality schema v6.5', finalitySchema.ok ? 'pass' : 'fail',
+    releaseCheck('settlement_finality_schema', 'Схема подтверждения результата v6.5', finalitySchema.ok ? 'pass' : 'fail',
       finalitySchema.ok ? 'Verification state и drift audit table доступны.' : 'Нужна supabase_migration_v6_5.sql.', true),
-    releaseCheck('settlement_finality_selftest', 'Settlement Finality self-test', settlementFinalitySelfTest().pass ? 'pass' : 'fail',
+    releaseCheck('settlement_finality_selftest', 'Самопроверка подтверждения результата', settlementFinalitySelfTest().pass ? 'pass' : 'fail',
       settlementFinalitySelfTest().pass ? 'First matching pass verifies; second matching pass confirms; late score/status changes become drift.' : 'Settlement Finality self-test не прошёл.', true),
-    releaseCheck('settlement_adjudication_schema', 'Settlement Adjudication schema v6.6', adjudicationSchema.ok ? 'pass' : 'fail',
+    releaseCheck('settlement_adjudication_schema', 'Схема разбора расхождений v6.6', adjudicationSchema.ok ? 'pass' : 'fail',
       adjudicationSchema.ok ? 'Resolution audit и model resolution fields доступны.' : 'Нужна supabase_migration_v6_6.sql.', true),
-    releaseCheck('settlement_adjudication_selftest', 'Settlement Adjudication self-test', settlementDriftAdjudicationSelfTest().pass ? 'pass' : 'fail',
+    releaseCheck('settlement_adjudication_selftest', 'Самопроверка разбора расхождений', settlementDriftAdjudicationSelfTest().pass ? 'pass' : 'fail',
       settlementDriftAdjudicationSelfTest().pass ? 'Keep/accept/void transitions valid; unsafe provider acceptance blocked.' : 'Settlement Adjudication self-test не прошёл.', true),
-    releaseCheck('settlement_trust_schema', 'Trusted Metrics schema v6.7', trustSchema.ok ? 'pass' : 'fail',
+    releaseCheck('settlement_trust_schema', 'Схема доверенных метрик v6.7', trustSchema.ok ? 'pass' : 'fail',
       trustSchema.ok ? 'Verification count и first-pass timestamp доступны.' : 'Нужна supabase_migration_v6_7.sql.', true),
-    releaseCheck('trusted_metrics_gate_selftest', 'Trusted Metrics Gate self-test', trustedMetricsGateSelfTest().pass ? 'pass' : 'fail',
+    releaseCheck('trusted_metrics_gate_selftest', 'Самопроверка доверенных метрик', trustedMetricsGateSelfTest().pass ? 'pass' : 'fail',
       trustedMetricsGateSelfTest().pass ? 'Только confirmed/adjudicated settled rows допускаются в metrics/calibration.' : 'Trusted Metrics Gate self-test не прошёл.', true),
-    releaseCheck('automatic_settlement_recovery', 'Automatic settlement recovery', 'pass',
+    releaseCheck('automatic_settlement_recovery', 'Автоматическое восстановление результатов', 'pass',
       runtime.autoSettlementRecoveryEnabled ? 'Runtime switch ON: cron catch-up разрешён guardrails.' : 'Runtime switch OFF: watchdog работает в shadow и только сигнализирует.', false),
-    releaseCheck('runtime_controls_schema', 'Runtime Controls schema v5.7', runtimeTable.ok ? 'pass' : 'fail', runtimeTable.ok ? 'Таблица runtime_controls доступна.' : 'Нужна supabase_migration_v5_7.sql.', true),
-    releaseCheck('runtime_history_schema', 'Runtime rollback history v5.8', runtimeHistoryTable.ok ? 'pass' : 'fail', runtimeHistoryTable.ok ? 'История Runtime Controls доступна.' : 'Нужна supabase_migration_v5_8.sql.', true),
-    releaseCheck('runtime_controls_state', 'Runtime Controls state', runtime.maintenanceMode ? 'warn' : 'pass', runtime.maintenanceMode ? `Maintenance включён${runtime.message ? `: ${runtime.message}` : '.'}` : `Revision ${Number(runtime.revision || 1)} · рабочий режим.`, false),
-    releaseCheck('observability', 'Observability schema v3.8', diagnostics.observability?.migrationReady ? 'pass' : 'warn', diagnostics.observability?.migrationReady ? 'Постоянный журнал ops_events доступен.' : 'Журнал работает только в памяти Worker.', false),
-    releaseCheck('integrity', 'Data Integrity schema v3.9', diagnostics.integrity?.migrationReady ? 'pass' : 'fail', diagnostics.integrity?.migrationReady ? 'История integrity-проверок доступна.' : 'Нужна migration v3.9.', true),
+    releaseCheck('runtime_controls_schema', 'Схема управления функциями v5.7', runtimeTable.ok ? 'pass' : 'fail', runtimeTable.ok ? 'Таблица runtime_controls доступна.' : 'Нужна supabase_migration_v5_7.sql.', true),
+    releaseCheck('runtime_history_schema', 'История откатов v5.8', runtimeHistoryTable.ok ? 'pass' : 'fail', runtimeHistoryTable.ok ? 'История Runtime Controls доступна.' : 'Нужна supabase_migration_v5_8.sql.', true),
+    releaseCheck('runtime_controls_state', 'Состояние управления функциями', runtime.maintenanceMode ? 'warn' : 'pass', runtime.maintenanceMode ? `Maintenance включён${runtime.message ? `: ${runtime.message}` : '.'}` : `Revision ${Number(runtime.revision || 1)} · рабочий режим.`, false),
+    releaseCheck('observability', 'Схема журнала событий v3.8', diagnostics.observability?.migrationReady ? 'pass' : 'warn', diagnostics.observability?.migrationReady ? 'Постоянный журнал ops_events доступен.' : 'Журнал работает только в памяти Worker.', false),
+    releaseCheck('integrity', 'Схема целостности данных v3.9', diagnostics.integrity?.migrationReady ? 'pass' : 'fail', diagnostics.integrity?.migrationReady ? 'История integrity-проверок доступна.' : 'Нужна migration v3.9.', true),
     releaseCheck('provider_health', 'Состояние API-Football', provider.health === 'critical' ? 'fail' : provider.health === 'warning' || provider.health === 'waiting' ? 'warn' : 'pass', provider.health === 'waiting' ? 'Ещё не было успешного provider-запроса после старта Worker.' : `Health: ${provider.health || 'unknown'}.`, provider.health === 'critical'),
     releaseCheck('provider_transition', 'Provider transition', providerTransitionProfile().paid ? 'pass' : 'warn', providerTransitionProfile().paid ? `${providerTransitionProfile().plan}: расширенный режим активен.` : `${providerTransitionProfile().plan}: приложение остаётся в экономном режиме до увеличения квоты.`, false),
     releaseCheck('quota_orchestrator', 'Quota Orchestrator', providerBudgetProfile().mode === 'emergency' ? 'warn' : 'pass', `${providerBudgetProfile().label}; feature cache api/cache=${Number(memory.providerFeatureFetch?.api || 0)}/${Number(memory.providerFeatureFetch?.cache || 0)}.`, false),
@@ -6894,7 +6894,7 @@ async function apiReleaseReadiness(request, cfg) {
     ),
     releaseCheck('telegram', 'Telegram bot runtime', cfg.botToken ? 'pass' : 'warn', cfg.botToken ? 'TELEGRAM_BOT_TOKEN доступен.' : 'Без bot token не будут работать Telegram-уведомления.', false),
     releaseCheck('production_mode', 'Production mode', cfg.devMode ? 'warn' : 'pass', cfg.devMode ? 'DEV_MODE=true — перед релизом выключить.' : 'DEV_MODE=false.', false),
-    releaseCheck('load_safety', 'Production Load Safety', memory.productionReadiness?.value?.status === 'blocked' ? 'fail' : memory.productionReadiness?.value ? 'pass' : 'warn',
+    releaseCheck('load_safety', 'Защита от нагрузки', memory.productionReadiness?.value?.status === 'blocked' ? 'fail' : memory.productionReadiness?.value ? 'pass' : 'warn',
       memory.productionReadiness?.value ? `${memory.productionReadiness.value.label} · ${memory.productionReadiness.value.score}%.` : 'Production Safety Gate ещё не запускался.', false),
     releaseCheck('rc_regression', 'RC Regression Smoke', memory.rcRegression?.value?.status === 'blocked' ? 'fail' : memory.rcRegression?.value ? 'pass' : 'warn',
       memory.rcRegression?.value ? `${memory.rcRegression.value.label} · ${memory.rcRegression.value.score}%.` : 'RC smoke-test ещё не запускался.', false),
@@ -6966,7 +6966,7 @@ async function apiProductionReadiness(request, cfg) {
   checks.push(rcCheck(
     'settlement_run_ledger_selftest',
     'safety',
-    'Settlement Run Ledger self-test',
+    'Самопроверка журнала запусков',
     runLedgerSelfTest.pass ? 'pass' : 'fail',
     runLedgerSelfTest.pass
       ? `fresh=${runLedgerSelfTest.fresh}; retry=${runLedgerSelfTest.retry}; exhausted=${runLedgerSelfTest.exhausted}; differentBatch=${runLedgerSelfTest.differentBatch}.`
@@ -6978,7 +6978,7 @@ async function apiProductionReadiness(request, cfg) {
   checks.push(rcCheck(
     'settlement_finality_selftest',
     'safety',
-    'Settlement Finality self-test',
+    'Самопроверка подтверждения результата',
     finalitySelfTest.pass ? 'pass' : 'fail',
     finalitySelfTest.pass
       ? `verified=${finalitySelfTest.verified}; scoreDrift=${finalitySelfTest.scoreDrift}; statusDrift=${finalitySelfTest.statusDrift}; wait=${finalitySelfTest.wait}.`
@@ -6990,7 +6990,7 @@ async function apiProductionReadiness(request, cfg) {
   checks.push(rcCheck(
     'settlement_adjudication_selftest',
     'safety',
-    'Settlement Adjudication self-test',
+    'Самопроверка разбора расхождений',
     adjudicationSelfTest.pass ? 'pass' : 'fail',
     adjudicationSelfTest.pass
       ? `keep=${adjudicationSelfTest.keep}; accept=${adjudicationSelfTest.accept}; void=${adjudicationSelfTest.void}; unsafeBlocked=${adjudicationSelfTest.unsafeAcceptBlocked}.`
@@ -7002,7 +7002,7 @@ async function apiProductionReadiness(request, cfg) {
   checks.push(rcCheck(
     'trusted_metrics_gate_selftest',
     'safety',
-    'Trusted Metrics Gate self-test',
+    'Самопроверка доверенных метрик',
     trustedGateSelfTest.pass ? 'pass' : 'fail',
     trustedGateSelfTest.pass
       ? `confirmed=${trustedGateSelfTest.confirmed}; adjudicated=${trustedGateSelfTest.adjudicated}; verifiedBlocked=${trustedGateSelfTest.verifiedBlocked}; unverifiedBlocked=${trustedGateSelfTest.unverifiedBlocked}; driftBlocked=${trustedGateSelfTest.driftBlocked}; voidBlocked=${trustedGateSelfTest.voidBlocked}.`
@@ -7113,17 +7113,17 @@ async function apiRcRegression(request, cfg, user) {
   const startedAt = Date.now();
 
   // 1) Core runtime / security configuration.
-  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.7.1-rc15' ? 'pass' : 'fail',
-    `Worker: ${APP_VERSION}; ожидается 6.7.1-rc15.`, true));
-  checks.push(rcCheck('api_contract', 'runtime', 'API contract', API_CONTRACT_VERSION === 5 ? 'pass' : 'fail',
+  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.7.2-rc15' ? 'pass' : 'fail',
+    `Worker: ${APP_VERSION}; ожидается 6.7.2-rc15.`, true));
+  checks.push(rcCheck('api_contract', 'runtime', 'Контракт API', API_CONTRACT_VERSION === 5 ? 'pass' : 'fail',
     `Contract ${API_CONTRACT_VERSION}; min client ${MIN_CLIENT_VERSION}.`, true));
-  checks.push(rcCheck('app_manifest', 'runtime', 'Public App Manifest', appManifest(cfg)?.version === APP_VERSION ? 'pass' : 'fail',
+  checks.push(rcCheck('app_manifest', 'runtime', 'Публичный манифест приложения', appManifest(cfg)?.version === APP_VERSION ? 'pass' : 'fail',
     `Release channel ${RELEASE_CHANNEL}; manifest ${appManifest(cfg)?.version || '—'}.`, true));
   checks.push(rcCheck('production_mode', 'runtime', 'DEV_MODE выключен', cfg.devMode ? 'fail' : 'pass',
     cfg.devMode ? 'DEV_MODE=true.' : 'DEV_MODE=false.', true));
   checks.push(rcCheck('monetization_paused', 'runtime', 'Монетизация на паузе', cfg.monetizationEnabled ? 'fail' : 'pass',
     cfg.monetizationEnabled ? 'MONETIZATION_ENABLED=true.' : 'Платёжный контур не активирован.', true));
-  checks.push(rcCheck('telegram_runtime', 'runtime', 'Telegram runtime', cfg.botToken ? 'pass' : 'fail',
+  checks.push(rcCheck('telegram_runtime', 'runtime', 'Среда Telegram', cfg.botToken ? 'pass' : 'fail',
     cfg.botToken ? 'Bot token доступен Worker.' : 'TELEGRAM_BOT_TOKEN отсутствует.', true));
   checks.push(rcCheck('football_key', 'runtime', 'API-Football runtime', cfg.apiFootballKey ? 'pass' : 'fail',
     cfg.apiFootballKey ? 'API key доступен Worker.' : 'API_FOOTBALL_KEY отсутствует.', true));
@@ -7134,9 +7134,9 @@ async function apiRcRegression(request, cfg, user) {
   const failClosedOk = !cfg.devMode && !isAdminUser({ id: 0 }, cfg);
   checks.push(rcCheck('admin_current', 'security', 'Текущий пользователь — admin', currentAdminOk ? 'pass' : 'fail',
     currentAdminOk ? 'Server-side Telegram initData подтверждён и ID разрешён.' : 'Текущий user не проходит admin gate.', true));
-  checks.push(rcCheck('admin_fail_closed', 'security', 'Admin gate fail-closed', failClosedOk ? 'pass' : 'fail',
+  checks.push(rcCheck('admin_fail_closed', 'security', 'Защита доступа администратора', failClosedOk ? 'pass' : 'fail',
     failClosedOk ? 'Неизвестный Telegram ID не получает admin role.' : 'Проверьте DEV_MODE/admin gate.', true));
-  checks.push(rcCheck('admin_list', 'security', 'ADMIN_TELEGRAM_IDS настроен', cfg.adminTelegramIds?.length ? 'pass' : 'fail',
+  checks.push(rcCheck('admin_list', 'security', 'Список администраторов настроен', cfg.adminTelegramIds?.length ? 'pass' : 'fail',
     cfg.adminTelegramIds?.length ? `Настроено ID: ${cfg.adminTelegramIds.length}. Значения не раскрываются.` : 'Список администраторов пуст.', true));
 
   // 2) Persistence schema regression.
@@ -7180,7 +7180,7 @@ async function apiRcRegression(request, cfg, user) {
   checks.push(rcCheck(
     'runtime_controls_state',
     'runtime',
-    'Runtime Controls RC10',
+    'Управление функциями',
     runtimeState.schemaReady ? 'pass' : 'fail',
     runtimeState.schemaReady
       ? `Revision ${Number(runtimeState.value?.revision || 1)} · ${runtimeState.value?.maintenanceMode ? 'maintenance ON' : 'normal mode'} · auto-settlement ${runtimeState.value?.autoSettlementRecoveryEnabled ? 'ON' : 'shadow'}.`
@@ -7192,7 +7192,7 @@ async function apiRcRegression(request, cfg, user) {
   checks.push(rcCheck(
     'settlement_watchdog_schema',
     'database',
-    'Settlement Watchdog schema v6.4',
+    'Схема контроля результатов v6.4',
     watchdogSchema.ok ? 'pass' : 'fail',
     watchdogSchema.ok ? 'Runtime switch + trigger_source доступны.' : 'Запустите supabase_migration_v6_2.sql.',
     true
@@ -7202,7 +7202,7 @@ async function apiRcRegression(request, cfg, user) {
   checks.push(rcCheck(
     'runtime_history_schema',
     'database',
-    'Runtime rollback history v5.8',
+    'История откатов v5.8',
     runtimeHistorySchema.ok ? 'pass' : 'fail',
     runtimeHistorySchema.ok ? 'История revision и rollback доступны.' : 'Запустите supabase_migration_v5_8.sql.',
     true
@@ -7212,7 +7212,7 @@ async function apiRcRegression(request, cfg, user) {
   checks.push(rcCheck(
     'reminder_delivery_schema',
     'database',
-    'Reminder delivery schema v5.6',
+    'Схема доставки уведомлений v5.6',
     reminderSchema.ok ? 'pass' : 'fail',
     reminderSchema.ok ? 'Atomic delivery claim columns доступны.' : 'Запустите supabase_migration_v5_6.sql.',
     true
@@ -7257,7 +7257,7 @@ async function apiRcRegression(request, cfg, user) {
   checks.push(rcCheck(
     'production_gate',
     'gates',
-    'Production Load Safety',
+    'Защита от нагрузки',
     production?.status === 'blocked' ? 'fail' : production?.available ? (production?.status === 'ready' ? 'pass' : 'warn') : 'fail',
     production?.available ? `${production.label || production.status} · ${Number(production.score || 0)}%.` : 'Production Safety Gate недоступен.',
     true
@@ -7293,7 +7293,7 @@ async function apiRcRegression(request, cfg, user) {
   checks.push(rcCheck(
     'prediction_integrity_selftest',
     'safety',
-    'Prediction Integrity self-test',
+    'Самопроверка целостности прогнозов',
     integritySelfTest.pass ? 'pass' : 'fail',
     integritySelfTest.pass
       ? 'Synthetic missing/invalid probabilities, captured_at timing, stale pending и outcome consistency обнаруживаются ожидаемо.'
@@ -7317,7 +7317,7 @@ async function apiRcRegression(request, cfg, user) {
   checks.push(rcCheck(
     'settlement_watchdog_selftest',
     'safety',
-    'Settlement Watchdog self-test',
+    'Самопроверка контроля результатов',
     watchdogSelfTest.pass ? 'pass' : 'fail',
     watchdogSelfTest.pass
       ? `shadow=${watchdogSelfTest.shadow}; runtime=${watchdogSelfTest.runtime}; quota=${watchdogSelfTest.quota}; active=${watchdogSelfTest.active}; clean=${watchdogSelfTest.clean}.`

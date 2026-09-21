@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '6.7.1-rc15';
+const CLIENT_VERSION = '6.7.2-rc15';
 const CLIENT_API_CONTRACT = 5;
 const CLIENT_RELEASE_CHANNEL = 'rc15';
 
@@ -179,10 +179,10 @@ function friendlyErrorMessage(error) {
   const category = apiErrorCategory(error);
   const retryAfter = Number(error?.retryAfter || error?.payload?.retryAfter || 0);
   if (category === 'offline') return 'Нет подключения к интернету. Сохранённые данные останутся на экране.';
-  if (error?.status === 426 || error?.payload?.category === 'compatibility') return 'Версия Mini App устарела. Обновите приложение.';
+  if (error?.status === 426 || error?.payload?.category === 'compatibility') return 'Версия приложения устарела. Обновите приложение.';
   if (error?.payload?.category === 'maintenance') return error?.payload?.error || 'Football Manager временно на техническом обслуживании.';
   if (error?.payload?.category === 'feature_disabled') return error?.payload?.error || 'Эта функция временно приостановлена.';
-  if (category === 'auth') return 'Сессия Telegram не подтверждена. Закройте Mini App и откройте его снова из бота.';
+  if (category === 'auth') return 'Сессия Telegram не подтверждена. Закройте приложение и откройте его снова из бота.';
   if (category === 'timeout') return 'Сервис отвечает медленнее обычного. Попробуйте обновить ещё раз.';
   if (category === 'rate_limit') return retryAfter
     ? `Слишком много запросов. Повторите примерно через ${retryAfter} сек.`
@@ -368,13 +368,13 @@ function renderVersionCompatibility() {
   banner.hidden = !(state.compatibilityBlocked || state.versionMismatch);
 
   if (state.compatibilityBlocked) {
-    text.textContent = state.compatibilityReason || 'Эта версия Mini App несовместима с текущим Worker. Обновите приложение.';
+    text.textContent = state.compatibilityReason || 'Эта версия приложения несовместима с текущим сервером. Обновите приложение.';
     button.textContent = 'Обновить';
     return;
   }
 
   if (state.versionMismatch) {
-    text.textContent = `Доступно обновление ${state.serverVersion || state.appManifest?.recommendedClientVersion || ''}. Текущая версия совместима, но лучше перезагрузить Mini App.`;
+    text.textContent = `Доступно обновление ${state.serverVersion || state.appManifest?.recommendedClientVersion || ''}. Текущая версия совместима, но лучше перезагрузить приложение.`;
     button.textContent = 'Обновить';
     return;
   }
@@ -392,7 +392,7 @@ function evaluateCompatibility(manifest = state.appManifest, headerContract = nu
 
   if (serverContract && serverContract !== CLIENT_API_CONTRACT) {
     blocked = true;
-    reason = `Нужна новая версия приложения: API contract ${serverContract}, а интерфейс использует ${CLIENT_API_CONTRACT}.`;
+    reason = `Нужна новая версия приложения: контракт API ${serverContract}, а интерфейс использует ${CLIENT_API_CONTRACT}.`;
   } else if (minClient && compareVersions(CLIENT_VERSION, minClient) < 0) {
     blocked = true;
     reason = `Версия интерфейса ${CLIENT_VERSION} устарела. Минимальная совместимая версия — ${minClient}.`;
@@ -424,7 +424,7 @@ async function loadAppManifest() {
       signal: controller.signal,
     });
     const manifest = await response.json().catch(() => null);
-    if (!response.ok || !manifest?.version) throw new Error('App Manifest недоступен');
+    if (!response.ok || !manifest?.version) throw new Error('Манифест приложения недоступен');
     state.appManifest = manifest;
     state.startup.manifestOk = true;
     state.serverVersion = String(manifest.version || '');
@@ -543,7 +543,7 @@ function showBootRecovery({ blocking = false, title = '', text = '' } = {}) {
   if (!gate) return;
   gate.hidden = false;
   gate.classList.toggle('blocking', Boolean(blocking));
-  setBootStatus(title || (blocking ? 'Нужно обновить Mini App' : 'Не удалось завершить запуск'), text, 100);
+  setBootStatus(title || (blocking ? 'Нужно обновить приложение' : 'Не удалось завершить запуск'), text, 100);
   if ($('bootRetryBtn')) $('bootRetryBtn').hidden = Boolean(blocking);
   if ($('bootContinueBtn')) $('bootContinueBtn').hidden = Boolean(blocking);
   if ($('bootReloadBtn')) $('bootReloadBtn').hidden = false;
@@ -571,7 +571,7 @@ async function runStartupSequence() {
   if (state.compatibilityBlocked) {
     showBootRecovery({
       blocking: true,
-      title: 'Нужно обновить Mini App',
+      title: 'Нужно обновить приложение',
       text: state.compatibilityReason,
     });
     return false;
@@ -579,7 +579,7 @@ async function runStartupSequence() {
 
   setBootStatus(
     'Подключаю данные',
-    manifest ? `RC10 · API contract ${manifest.apiContract}` : 'Manifest временно недоступен — продолжаю в безопасном режиме.',
+    manifest ? `${manifest.releaseCandidate || CLIENT_RELEASE_CHANNEL.toUpperCase()} · контракт API ${manifest.apiContract}` : 'Манифест временно недоступен — продолжаю в безопасном режиме.',
     38
   );
 
@@ -702,7 +702,7 @@ async function api(path, options = {}) {
         const serverVersion = String(response.headers.get('x-app-version') || '');
         if (serverVersion) observeServerVersion(serverVersion, response);
         if (state.compatibilityBlocked) {
-          showBootRecovery({ blocking: true, title: 'Нужно обновить Mini App', text: state.compatibilityReason });
+          showBootRecovery({ blocking: true, title: 'Нужно обновить приложение', text: state.compatibilityReason });
           throw Object.assign(new Error(state.compatibilityReason), { status: 426, payload: { category: 'compatibility' } });
         }
         const data = await response.json().catch(() => ({}));
@@ -802,16 +802,21 @@ function renderDataCapabilities() {
   if ($('dataModeNote')) $('dataModeNote').textContent = c.note || 'Покрытие зависит от турнира и доступности данных провайдера.';
 }
 
+function planLabel(plan) {
+  const value = String(plan || '').toUpperCase();
+  return ({ FREE: 'Бесплатный', PRO: 'PRO', PREMIUM: 'PREMIUM', ULTRA: 'ULTRA', MEGA: 'MEGA' })[value] || String(plan || '—');
+}
+
 function renderProfile() {
   if (!state.profile) return;
   const { user, quota, stats = {} } = state.profile;
   const profilePlanLabel = $('profileBtn')?.querySelector('span');
-  if (profilePlanLabel) profilePlanLabel.textContent = quota.plan;
-  else if ($('profileBtn')) $('profileBtn').textContent = quota.plan;
+  if (profilePlanLabel) profilePlanLabel.textContent = planLabel(quota.plan);
+  else if ($('profileBtn')) $('profileBtn').textContent = planLabel(quota.plan);
   $('quotaText').textContent = `Осталось анализов: ${quota.left} из ${quota.limit}`;
   $('profileName').textContent = user.firstName || 'Пользователь';
-  $('profileUsername').textContent = user.username ? `@${user.username} · Telegram ID ${user.id}` : `Telegram ID ${user.id}`;
-  $('profilePlan').textContent = quota.plan;
+  $('profileUsername').textContent = user.username ? `@${user.username} · ID Telegram ${user.id}` : `ID Telegram ${user.id}`;
+  $('profilePlan').textContent = planLabel(quota.plan);
   $('profileUsage').textContent = `${quota.used} / ${quota.limit}`;
   $('memberSince').textContent = user.createdAt ? `С нами с ${dateOnly(user.createdAt)}` : '';
   $('favoriteCount').textContent = String(stats.favorites ?? state.favorites.length);
@@ -863,7 +868,7 @@ function renderModelQuality() {
 
   const q = state.modelQuality;
   if (state.modelQualityLoading) {
-    status.textContent = 'Загружаю backtest…';
+    status.textContent = 'Загружаю историческую проверку…';
     badge.textContent = 'Загрузка';
     [headline, calibration, engine, confidence, secondary, dashboard, recent].forEach(x => x.hidden = true);
     return;
@@ -875,7 +880,7 @@ function renderModelQuality() {
     return;
   }
   if (q.available === false) {
-    status.textContent = q.reason || 'Backtest пока недоступен.';
+    status.textContent = q.reason || 'Историческая проверка пока недоступна.';
     badge.textContent = 'Нужна миграция';
     [headline, calibration, engine, confidence, secondary, dashboard, recent].forEach(x => x.hidden = true);
     return;
@@ -883,12 +888,12 @@ function renderModelQuality() {
 
   const sample = q.sample || {};
   const h = q.headline || {};
-  const excludedText = Number(sample.excluded || 0) > 0 ? ` · ${Number(sample.excluded)} исключено integrity` : '';
+  const excludedText = Number(sample.excluded || 0) > 0 ? ` · ${Number(sample.excluded)} исключено проверкой целостности` : '';
   badge.textContent = sample.ready ? `${sample.settled || 0} матчей` : `${sample.settled || 0} / 20 матчей`;
   badge.classList.toggle('ready', Boolean(sample.ready));
   status.textContent = sample.settled
     ? `${sample.settled} проверенных прогнозов · ${sample.pending || 0} ожидают результата${excludedText}${sample.calibrationReady ? ' · калибровка уже информативнее' : ''}`
-    : `Пока нет проверенных завершённых прогнозов${excludedText}. Новые предматчевые анализы будут автоматически попадать в backtest.`;
+    : `Пока нет проверенных завершённых прогнозов${excludedText}. Новые предматчевые анализы будут автоматически попадать в историческую проверку.`;
 
   headline.hidden = false;
   headline.innerHTML = `
@@ -916,7 +921,7 @@ function renderModelQuality() {
   engine.innerHTML = `
     <div class="quality-block-head"><strong>⚙️ Калибратор v3.7</strong><span class="calibration-mode ${escapeHtml(ce.mode || 'baseline')}">${modeLabel}</span></div>
     <div class="calibration-engine-grid">
-      <div><span>Режим</span><strong>${modeLabel}</strong><small>${ce.mode === 'active' ? 'коррекции разрешены guardrails' : ce.mode === 'shadow' ? 'измеряет, но не меняет прогноз' : 'базовые веса'}</small></div>
+      <div><span>Режим</span><strong>${modeLabel}</strong><small>${ce.mode === 'active' ? 'коррекции разрешены защитными правилами' : ce.mode === 'shadow' ? 'измеряет, но не меняет прогноз' : 'базовые веса'}</small></div>
       <div><span>Temperature</span><strong>${Number.isFinite(Number(ce.temperature)) ? Number(ce.temperature).toFixed(2) : '1.00'}</strong><small>1.00 = без сжатия вероятностей</small></div>
       <div><span>Backtest</span><strong>${Number(ce.sample || 0)}</strong><small>завершённых snapshot</small></div>
       <div><span>Holdout</span><strong>${Number(ce.temperatureValidation?.validationSample || 0)}</strong><small>${Number.isFinite(Number(ce.temperatureValidation?.improvement)) ? `${Number(ce.temperatureValidation.improvement).toFixed(1)}% log loss` : 'ещё нет проверки'}</small></div>
@@ -928,7 +933,7 @@ function renderModelQuality() {
         return `<div class="calibration-weight-row"><span>${escapeHtml(signalLabel(x.name))}</span><div><i style="--w:${Math.max(0, Math.min(100, current))}%"></i></div><strong>${base.toFixed(0)} → ${current.toFixed(1)}%</strong><small>n=${Number(x.sample || 0)}${Number.isFinite(Number(x.avgBrier)) ? ` · Brier ${qualityNum(x.avgBrier)}` : ''}</small></div>`;
       }).join('')}
     </div>
-    ${Number(impact.sample || 0) ? `<div class="calibration-impact"><span>Проверка v3.7: n=${Number(impact.sample || 0)}</span><strong>Brier ${qualityNum(impact.rawBrier)} → ${qualityNum(impact.finalBrier)}</strong><small>${Number(impact.brierDelta || 0) > 0 ? 'улучшение' : Number(impact.brierDelta || 0) < 0 ? 'ухудшение — автоматика будет видна в backtest' : 'без изменения'}</small></div>` : '<p class="quality-engine-note">Эффект v3.7 появится после завершения первых матчей, рассчитанных этой версией.</p>'}
+    ${Number(impact.sample || 0) ? `<div class="calibration-impact"><span>Проверка v3.7: n=${Number(impact.sample || 0)}</span><strong>Brier ${qualityNum(impact.rawBrier)} → ${qualityNum(impact.finalBrier)}</strong><small>${Number(impact.brierDelta || 0) > 0 ? 'улучшение' : Number(impact.brierDelta || 0) < 0 ? 'ухудшение — автоматика будет видна в исторической проверке' : 'без изменения'}</small></div>` : '<p class="quality-engine-note">Эффект v3.7 появится после завершения первых матчей, рассчитанных этой версией.</p>'}
     <p class="quality-engine-note">${escapeHtml(ce.note || 'Автокалибровка включается только после достаточной выборки.')}</p>`;
 
   confidence.hidden = false;
@@ -951,7 +956,7 @@ function renderModelQuality() {
   const db = q.dashboard || {};
   dashboard.hidden = false;
   if (!db.overview || !Number(db.overview.sample || 0)) {
-    dashboard.innerHTML = '<div class="empty compact-empty">Model Dashboard заполнится после завершения первых прогнозов.</div>';
+    dashboard.innerHTML = '<div class="empty compact-empty">Панель модели заполнится после завершения первых прогнозов.</div>';
   } else {
     const ov = db.overview || {};
     const trendMaxSample = Math.max(1, ...(db.trend || []).map(x => Number(x.sample || 0)));
@@ -1020,7 +1025,7 @@ function renderModelQuality() {
       </div>
 
       <div class="model-dash-section">
-        <div class="model-dash-section-head"><strong>Version cohorts</strong><span>без рейтинга и автоматического promotion</span></div>
+        <div class="model-dash-section-head"><strong>Сравнение версий</strong><span>без рейтинга и автоматического promotion</span></div>
         ${(db.versions || []).length ? `<div class="model-version-table">${db.versions.map(x => `
           <div class="model-version-row">
             <div>
@@ -1031,9 +1036,9 @@ function renderModelQuality() {
             <div><span>Brier</span><b>${qualityNum(x.avgBrier)}</b></div>
             <div><span>Log loss</span><b>${qualityNum(x.avgLogLoss)}</b></div>
             <div><span>Cal error</span><b>${Number.isFinite(Number(x.calibrationError)) ? `${Number(x.calibrationError).toFixed(1)} п.п.` : '—'}</b></div>
-            <div><span>Signals</span><b>${qualityPct(x.signalSnapshotCoverage)}</b></div>
-          </div>`).join('')}</div>` : '<div class="empty compact-empty">Version cohorts пока не сформированы.</div>'}
-        <p class="quality-engine-note">Разрез показывает исторические cohorts analysis_version. Различия могут быть связаны с периодом, лигами и составом данных; интерфейс не выбирает победителя.</p>
+            <div><span>Сигналы</span><b>${qualityPct(x.signalSnapshotCoverage)}</b></div>
+          </div>`).join('')}</div>` : '<div class="empty compact-empty">Сравнение версий пока не сформировано.</div>'}
+        <p class="quality-engine-note">Разрез показывает исторические cohorts версия анализа. Различия могут быть связаны с периодом, лигами и составом данных; интерфейс не выбирает победителя.</p>
       </div>
 
       <div class="model-dash-section">
@@ -1058,7 +1063,7 @@ function renderModelQuality() {
           <div><span>Loaded</span><strong>${Number(q.integrity?.loadedRows || 0)}</strong><small>settled + pending</small></div>
           <div><span>Severe</span><strong>${Number(q.integrity?.severeIssues || 0)}</strong><small>probability / timing / consistency</small></div>
           <div><span>Warning</span><strong>${Number(q.integrity?.warningIssues || 0)}</strong><small>settlement / outcome</small></div>
-          <div><span>Info</span><strong>${Number(q.integrity?.informationalIssues || 0)}</strong><small>legacy metadata</small></div>
+          <div><span>Info</span><strong>${Number(q.integrity?.informationalIssues || 0)}</strong><small>устаревшие метаданные</small></div>
         </div>
         <div class="model-integrity-list">${(q.integrity?.checks || []).map(x => `
           <div class="${escapeHtml(x.state || 'info')}">
@@ -1066,7 +1071,7 @@ function renderModelQuality() {
             <span><strong>${escapeHtml(x.label || '')}</strong><small>${escapeHtml(x.detail || '')}</small></span>
             <em>${Number(x.count || 0)}</em>
           </div>`).join('')}</div>
-        ${q.integrity?.truncatedPotentially ? '<div class="data-notice stale">Выборка достигла лимита admin endpoint: integrity относится к загруженным строкам, а не ко всей истории.</div>' : ''}
+        ${q.integrity?.truncatedPotentially ? '<div class="data-notice stale">Выборка достигла лимита административного запроса: проверка целостности относится к загруженным строкам, а не ко всей истории.</div>' : ''}
         <p class="quality-engine-note">${escapeHtml(q.integrity?.note || '')}</p>
       </div>
 
@@ -1107,7 +1112,7 @@ async function loadModelQuality(force = false) {
   try {
     state.modelQuality = await api(`/api/model-quality?days=${days}${force ? '&refresh=1' : ''}`);
   } catch (e) {
-    state.modelQuality = { available: false, reason: e.message || 'Не удалось загрузить backtest.' };
+    state.modelQuality = { available: false, reason: e.message || 'Не удалось загрузить историческую проверку.' };
   } finally {
     state.modelQualityLoading = false;
     renderModelQuality();
@@ -1138,7 +1143,7 @@ function renderModelRemediation() {
   runBtn.disabled = true;
 
   if (state.modelRemediationLoading) {
-    status.textContent = 'Сканирую prediction history без внешних запросов…';
+    status.textContent = 'Сканирую историю прогнозов без внешних запросов…';
     summary.innerHTML = '';
     candidates.innerHTML = '';
     history.innerHTML = '';
@@ -1147,7 +1152,7 @@ function renderModelRemediation() {
   }
   const r = state.modelRemediation;
   if (!r) {
-    status.textContent = 'Dry-run ещё не выполнен.';
+    status.textContent = 'Предварительная проверка ещё не выполнена.';
     summary.innerHTML = '';
     candidates.innerHTML = '';
     history.innerHTML = '';
@@ -1155,7 +1160,7 @@ function renderModelRemediation() {
     return;
   }
   if (r.available === false) {
-    status.textContent = r.reason || 'Remediation недоступен.';
+    status.textContent = r.reason || 'Восстановление недоступно.';
     summary.innerHTML = '';
     candidates.innerHTML = '';
     history.innerHTML = '';
@@ -1176,32 +1181,32 @@ function renderModelRemediation() {
     resetBtn.disabled = Boolean(state.modelRemediationLoading || state.modelRemediationRunning || !reliability.schemaReady);
   }
   status.textContent = !r.schemaReady
-    ? 'Нужна supabase_migration_v6_1.sql: dry-run доступен, выполнение заблокировано.'
+    ? 'Нужна supabase_migration_v6_1.sql: предварительная проверка доступна, выполнение заблокировано.'
     : Number(driftReview.unresolved || 0)
-      ? `Требуют adjudication: ${Number(driftReview.unresolved)} drift case(s). Stale pending: ${Number(recovery.stalePending || 0)}.`
+      ? `Требуют ручного разбора: ${Number(driftReview.unresolved)} расхождений. Зависших ожиданий: ${Number(recovery.stalePending || 0)}.`
       : recovery.stalePending
-        ? `Найдено ${Number(recovery.stalePending)} stale pending; безопасный batch — ${Number(recovery.selectedCount || 0)}.`
-        : 'Stale pending и unresolved drift не обнаружены.';
+        ? `Найдено зависших ожиданий: ${Number(recovery.stalePending)}; безопасный пакет — ${Number(recovery.selectedCount || 0)}.`
+        : 'Зависшие ожидания и неразобранные расхождения не обнаружены.';
   summary.innerHTML = `
     <div><span>Просканировано</span><strong>${Number(scan.loadedRows || 0)}</strong><small>${scan.truncated ? `лимит ${Number(scan.maxRows || 0)}` : 'полная выборка'}</small></div>
-    <div><span>Stale pending</span><strong>${Number(recovery.stalePending || 0)}</strong><small>старше 36 часов</small></div>
-    <div><span>В batch</span><strong>${Number(recovery.selectedCount || 0)}</strong><small>до ${Number(recovery.maxFixturesPerRun || 20)} fixture</small></div>
-    <div><span>API calls</span><strong>${Number(recovery.estimatedProviderCalls || 0)}</strong><small>по уникальным датам</small></div>
-    <div><span>Watchdog</span><strong>${watchdog.autoRecoveryEnabled ? 'AUTO' : 'SHADOW'}</strong><small>${watchdog.schemaReady ? `${escapeHtml(watchdog.scheduleUtc || '04:00')} UTC` : 'нужна migration v6.2'}</small></div>
-    <div><span>Circuit breaker</span><strong>${reliability.circuitOpen ? 'OPEN' : 'CLOSED'}</strong><small>${reliability.schemaReady ? (reliability.circuitOpenUntil ? `до ${escapeHtml(dateTime(reliability.circuitOpenUntil))}` : `${Number(reliability.consecutiveFailures || 0)}/${Number(reliability.failureThreshold || 2)} failures`) : 'нужна migration v6.3'}</small></div>
-    <div><span>Run ledger</span><strong>${Number(runLedger.activeStarted || 0) ? 'BUSY' : Number(runLedger.staleStarted || 0) ? 'STALE' : 'CLEAR'}</strong><small>${runLedger.schemaReady ? `${Number(runLedger.activeStarted || 0)} active · ${Number(runLedger.staleStarted || 0)} stale · max ${Number(runLedger.maxAttempts || 3)} attempts` : 'нужна migration v6.4'}</small></div>
-    <div><span>Settlement finality</span><strong>${Number(finality.drift || 0) ? 'DRIFT' : Number(finality.unverified || 0) || Number(finality.verified || 0) ? 'VERIFYING' : 'TRUSTED'}</strong><small>${finality.schemaReady ? `${Number(finality.confirmed || 0)} confirmed · ${Number(finality.verified || 0)} first-pass · ${Number(finality.unverified || 0)} pending · ${Number(finality.adjudicated || 0)} adjudicated · ${Number(finality.drift || 0)} drift` : 'нужна migration v6.7'}</small></div>
-    <div><span>Trusted metrics</span><strong>${Number(finality.trustedForMetrics || 0)}</strong><small>только confirmed + adjudicated</small></div>
-    <div><span>Drift review</span><strong>${Number(driftReview.unresolved || 0) ? 'ACTION' : 'CLEAR'}</strong><small>${driftReview.schemaReady ? `${Number(driftReview.unresolved || 0)} unresolved · explicit admin decision` : 'нужна migration v6.6'}</small></div>`;
+    <div><span>Зависшие ожидания</span><strong>${Number(recovery.stalePending || 0)}</strong><small>старше 36 часов</small></div>
+    <div><span>В пакете</span><strong>${Number(recovery.selectedCount || 0)}</strong><small>до ${Number(recovery.maxFixturesPerRun || 20)} fixture</small></div>
+    <div><span>Запросы API</span><strong>${Number(recovery.estimatedProviderCalls || 0)}</strong><small>по уникальным датам</small></div>
+    <div><span>Контроль результатов</span><strong>${watchdog.autoRecoveryEnabled ? 'АВТО' : 'НАБЛЮДЕНИЕ'}</strong><small>${watchdog.schemaReady ? `${escapeHtml(watchdog.scheduleUtc || '04:00')} UTC` : 'нужна миграция v6.2'}</small></div>
+    <div><span>Защитный контур</span><strong>${reliability.circuitOpen ? 'ОТКРЫТА' : 'ЗАКРЫТА'}</strong><small>${reliability.schemaReady ? (reliability.circuitOpenUntil ? `до ${escapeHtml(dateTime(reliability.circuitOpenUntil))}` : `${Number(reliability.consecutiveFailures || 0)}/${Number(reliability.failureThreshold || 2)} ошибок`) : 'нужна миграция v6.3'}</small></div>
+    <div><span>Журнал запусков</span><strong>${Number(runLedger.activeStarted || 0) ? 'ЗАНЯТО' : Number(runLedger.staleStarted || 0) ? 'ЗАВИСЛО' : 'ЧИСТО'}</strong><small>${runLedger.schemaReady ? `${Number(runLedger.activeStarted || 0)} активных · ${Number(runLedger.staleStarted || 0)} зависших · максимум ${Number(runLedger.maxAttempts || 3)} попытки` : 'нужна миграция v6.4'}</small></div>
+    <div><span>Подтверждение результата</span><strong>${Number(finality.drift || 0) ? 'РАСХОЖДЕНИЕ' : Number(finality.unverified || 0) || Number(finality.verified || 0) ? 'ПРОВЕРКА' : 'ПОДТВЕРЖДЕНО'}</strong><small>${finality.schemaReady ? `${Number(finality.confirmed || 0)} confirmed · ${Number(finality.verified || 0)} first-pass · ${Number(finality.unverified || 0)} pending · ${Number(finality.adjudicated || 0)} adjudicated · ${Number(finality.drift || 0)} drift` : 'нужна миграция v6.7'}</small></div>
+    <div><span>Доверенные метрики</span><strong>${Number(finality.trustedForMetrics || 0)}</strong><small>только confirmed + adjudicated</small></div>
+    <div><span>Разбор расхождений</span><strong>${Number(driftReview.unresolved || 0) ? 'ТРЕБУЕТ ДЕЙСТВИЯ' : 'ЧИСТО'}</strong><small>${driftReview.schemaReady ? `${Number(driftReview.unresolved || 0)} неразобранных · требуется решение администратора` : 'нужна миграция v6.6'}</small></div>`;
 
   candidates.innerHTML = (recovery.candidates || []).length
     ? `<div class="model-remediation-list">${recovery.candidates.map(item => `
         <div><span><strong>${escapeHtml(item.home || '—')} — ${escapeHtml(item.away || '—')}</strong><small>${escapeHtml(item.league || '')} · ${item.kickoffAt ? escapeHtml(dateTime(item.kickoffAt)) : '—'}</small></span><em>#${Number(item.fixtureId || 0)} · ${Number(item.ageHours || 0)}ч</em></div>`).join('')}</div>`
-    : '<div class="empty compact-empty">Кандидатов для recovery нет.</div>';
+    : '<div class="empty compact-empty">Кандидатов для восстановления нет.</div>';
 
   const driftItems = driftReview.items || [];
   driftQueue.innerHTML = driftItems.length
-    ? `<div class="model-remediation-history-head"><strong>Settlement drift review</strong><span>reason + explicit action</span></div>
+    ? `<div class="model-remediation-history-head"><strong>Разбор расхождений результатов</strong><span>причина + явное решение</span></div>
        <div class="settlement-drift-list">${driftItems.map(item => {
          const stored = item.stored || {};
          const provider = item.provider || {};
@@ -1209,24 +1214,24 @@ function renderModelRemediation() {
          const storedScore = Number.isFinite(Number(stored.homeGoals)) && Number.isFinite(Number(stored.awayGoals)) ? `${Number(stored.homeGoals)}:${Number(stored.awayGoals)}` : '—';
          const providerScore = Number.isFinite(Number(provider.homeGoals)) && Number.isFinite(Number(provider.awayGoals)) ? `${Number(provider.homeGoals)}:${Number(provider.awayGoals)}` : '—';
          return `<div class="settlement-drift-item">
-           <div class="settlement-drift-copy"><strong>${escapeHtml(item.home || '—')} — ${escapeHtml(item.away || '—')}</strong><small>${escapeHtml(item.league || '')} · #${Number(item.fixtureId || 0)} · ${item.observedAt ? escapeHtml(dateTime(item.observedAt)) : '—'}</small><span>stored ${escapeHtml(storedScore)} ${escapeHtml(stored.outcome || '')} → provider ${escapeHtml(providerScore)} ${escapeHtml(provider.outcome || '')} · ${escapeHtml(provider.status || '')}</span><em>${escapeHtml(item.driftReason || 'provider drift')}${locked ? ` · locked: ${escapeHtml(locked)}` : ''}</em></div>
+           <div class="settlement-drift-copy"><strong>${escapeHtml(item.home || '—')} — ${escapeHtml(item.away || '—')}</strong><small>${escapeHtml(item.league || '')} · #${Number(item.fixtureId || 0)} · ${item.observedAt ? escapeHtml(dateTime(item.observedAt)) : '—'}</small><span>сохранено ${escapeHtml(storedScore)} ${escapeHtml(stored.outcome || '')} → провайдер ${escapeHtml(providerScore)} ${escapeHtml(provider.outcome || '')} · ${escapeHtml(provider.status || '')}</span><em>${escapeHtml(item.driftReason || 'расхождение данных провайдера')}${locked ? ` · locked: ${escapeHtml(locked)}` : ''}</em></div>
            <div class="settlement-drift-actions">
-             <button class="reminder-btn" type="button" data-drift-fixture="${Number(item.fixtureId || 0)}" data-drift-action="keep_stored" ${locked && locked !== 'keep_stored' ? 'disabled' : ''}>Оставить stored</button>
-             <button class="primary-setting-btn" type="button" data-drift-fixture="${Number(item.fixtureId || 0)}" data-drift-action="accept_provider" ${!item.providerAcceptable || (locked && locked !== 'accept_provider') ? 'disabled' : ''}>Принять provider</button>
+             <button class="reminder-btn" type="button" data-drift-fixture="${Number(item.fixtureId || 0)}" data-drift-action="keep_stored" ${locked && locked !== 'keep_stored' ? 'disabled' : ''}>Оставить сохранённое</button>
+             <button class="primary-setting-btn" type="button" data-drift-fixture="${Number(item.fixtureId || 0)}" data-drift-action="accept_provider" ${!item.providerAcceptable || (locked && locked !== 'accept_provider') ? 'disabled' : ''}>Принять данные провайдера</button>
              <button class="reminder-btn" type="button" data-drift-fixture="${Number(item.fixtureId || 0)}" data-drift-action="void_prediction" ${locked && locked !== 'void_prediction' ? 'disabled' : ''}>Исключить из метрик</button>
            </div>
          </div>`;
        }).join('')}</div>`
-    : '<p class="tiny quality-method-note">Unresolved drift case отсутствуют.</p>';
+    : '<p class="tiny quality-method-note">Неразобранных расхождений нет.</p>';
 
   const actions = r.recentActions || [];
   history.innerHTML = actions.length
     ? `<div class="model-remediation-history-head"><strong>Последние действия</strong><span>admin ID скрыт</span></div>
        <div class="model-remediation-action-list">${actions.map(action => `
-         <div class="${escapeHtml(action.status || 'failed')}"><span><strong>${escapeHtml(remediationActionLabel(action))}${action.actionType === 'auto_recover' ? ' · AUTO' : action.actionType === 'circuit_reset' ? ' · BREAKER RESET' : ''}</strong><small>${escapeHtml(action.reason || 'Без комментария')} · ${action.createdAt ? escapeHtml(dateTime(action.createdAt)) : '—'}${action.triggerSource ? ` · ${escapeHtml(action.triggerSource)}` : ''}${action.attemptNo ? ` · attempt ${Number(action.attemptNo)}` : ''}${action.retryOfActionId ? ' · retry' : ''}</small></span><em>${Number(action.settledCount || 0)} settled · ${Number(action.skippedCount || 0)} skipped</em></div>`).join('')}</div>`
-    : '<p class="tiny quality-method-note">Audit trail пока пуст.</p>';
+         <div class="${escapeHtml(action.status || 'failed')}"><span><strong>${escapeHtml(remediationActionLabel(action))}${action.actionType === 'auto_recover' ? ' · АВТО' : action.actionType === 'circuit_reset' ? ' · СБРОС ЗАЩИТЫ' : ''}</strong><small>${escapeHtml(action.reason || 'Без комментария')} · ${action.createdAt ? escapeHtml(dateTime(action.createdAt)) : '—'}${action.triggerSource ? ` · ${escapeHtml(action.triggerSource)}` : ''}${action.attemptNo ? ` · попытка ${Number(action.attemptNo)}` : ''}${action.retryOfActionId ? ' · повтор' : ''}</small></span><em>${Number(action.settledCount || 0)} закрыто · ${Number(action.skippedCount || 0)} пропущено</em></div>`).join('')}</div>`
+    : '<p class="tiny quality-method-note">Журнал действий пока пуст.</p>';
 
-  runBtn.textContent = state.modelRemediationRunning ? 'Восстанавливаю…' : 'Восстановить pending';
+  runBtn.textContent = state.modelRemediationRunning ? 'Восстанавливаю…' : 'Восстановить ожидающие';
   runBtn.disabled = Boolean(state.modelRemediationRunning || !r.schemaReady || !recovery.candidateToken || !Number(recovery.selectedCount || 0));
 }
 
@@ -1238,7 +1243,7 @@ async function loadModelRemediation(force = false) {
   try {
     state.modelRemediation = await api('/api/model-remediation', { retry: false, timeoutMs: 45000, dedupe: false });
   } catch (error) {
-    state.modelRemediation = { available: false, reason: error.message || 'Не удалось выполнить remediation dry-run.' };
+    state.modelRemediation = { available: false, reason: error.message || 'Не удалось выполнить предварительную проверку восстановления.' };
   } finally {
     state.modelRemediationLoading = false;
     renderModelRemediation();
@@ -1251,8 +1256,8 @@ async function runModelRemediation() {
   const recovery = report?.recovery || {};
   const reason = String($('modelRemediationReason')?.value || '').trim();
   if (reason.length < 5) return toast('Укажите причину восстановления — минимум 5 символов.');
-  if (!report?.schemaReady || !recovery.candidateToken || !(recovery.fixtureIds || []).length) return toast('Сначала выполните актуальный dry-run.');
-  const confirmed = window.confirm(`Повторно проверить ${Number(recovery.selectedCount || 0)} pending-прогнозов? Ожидается до ${Number(recovery.estimatedProviderCalls || 0)} запросов API-Football.`);
+  if (!report?.schemaReady || !recovery.candidateToken || !(recovery.fixtureIds || []).length) return toast('Сначала выполните актуальную предварительную проверку.');
+  const confirmed = window.confirm(`Повторно проверить ${Number(recovery.selectedCount || 0)} ожидающих прогнозов? Ожидается до ${Number(recovery.estimatedProviderCalls || 0)} запросов API-Football.`);
   if (!confirmed) return;
 
   state.modelRemediationRunning = true;
@@ -1274,12 +1279,12 @@ async function runModelRemediation() {
     state.modelRemediation = result.report || state.modelRemediation;
     state.modelQuality = null;
     toast(result.execution?.status === 'completed'
-      ? `Recovery завершён: ${Number(result.execution?.settledCount || 0)} settled.`
-      : `Recovery завершён частично: ${Number(result.execution?.settledCount || 0)} settled, ${Number(result.execution?.skippedCount || 0)} skipped.`);
+      ? `Восстановление завершено: закрыто ${Number(result.execution?.settledCount || 0)}.`
+      : `Восстановление завершено частично: закрыто ${Number(result.execution?.settledCount || 0)}, пропущено ${Number(result.execution?.skippedCount || 0)}.`);
     if ($('modelRemediationReason')) $('modelRemediationReason').value = '';
     await loadModelQuality(true);
   } catch (error) {
-    toast(error.message || 'Recovery не выполнен. Обновите dry-run.');
+    toast(error.message || 'Восстановление не выполнено. Обновите предварительную проверку.');
     state.modelRemediationRunning = false;
     state.modelRemediation = null;
     await loadModelRemediation(true);
@@ -1295,19 +1300,19 @@ async function resolveSettlementDriftFromUi(fixtureId, action) {
   if (!isAdmin() || state.modelRemediationRunning) return;
   const review = state.modelRemediation?.driftReview || {};
   const item = (review.items || []).find(row => Number(row.fixtureId) === Number(fixtureId));
-  if (!item) return toast('Drift case устарел. Обновите dry-run.');
+  if (!item) return toast('Данные расхождения устарели. Обновите предварительную проверку.');
   const reason = String($('modelRemediationReason')?.value || '').trim();
-  if (reason.length < 5) return toast('Укажите причину adjudication — минимум 5 символов.');
+  if (reason.length < 5) return toast('Укажите причину разбора — минимум 5 символов.');
   if (item.lockedAction && String(item.lockedAction) !== String(action)) {
-    return toast(`Этот drift event уже заблокирован действием ${item.lockedAction}.`);
+    return toast(`Для этого расхождения уже зафиксировано действие: ${item.lockedAction}.`);
   }
   const labels = {
-    keep_stored: 'оставить сохранённый settlement',
-    accept_provider: 'принять provider-коррекцию и пересчитать outcome-метрики',
-    void_prediction: 'исключить прогноз из backtest-метрик',
+    keep_stored: 'оставить сохранённый результат',
+    accept_provider: 'принять исправление провайдера и пересчитать метрики результата',
+    void_prediction: 'исключить прогноз из исторических метрик',
   };
   if (!labels[action]) return;
-  if (!window.confirm(`Fixture #${Number(item.fixtureId)}: ${labels[action]}? Действие будет записано в immutable audit.`)) return;
+  if (!window.confirm(`Матч #${Number(item.fixtureId)}: ${labels[action]}? Действие будет записано в неизменяемый журнал.`)) return;
 
   state.modelRemediationRunning = true;
   renderModelRemediation();
@@ -1331,13 +1336,13 @@ async function resolveSettlementDriftFromUi(fixtureId, action) {
     state.modelQuality = null;
     if ($('modelRemediationReason')) $('modelRemediationReason').value = '';
     toast(action === 'accept_provider'
-      ? 'Provider-коррекция принята и записана в audit.'
+      ? 'Исправление провайдера принято и записано в журнал.'
       : action === 'void_prediction'
-        ? 'Прогноз исключён из backtest-метрик и записан в audit.'
-        : 'Stored settlement подтверждён администратором и записан в audit.');
+        ? 'Прогноз исключён из исторических метрик и записан в журнал.'
+        : 'Сохранённый результат подтверждён администратором и записан в журнал.');
     await loadModelQuality(true);
   } catch (error) {
-    toast(error.message || 'Drift adjudication не выполнена.');
+    toast(error.message || 'Разбор расхождения не выполнен.');
     state.modelRemediation = null;
     await loadModelRemediation(true);
   } finally {
@@ -1349,10 +1354,10 @@ async function resolveSettlementDriftFromUi(fixtureId, action) {
 async function resetSettlementCircuitFromUi() {
   if (!isAdmin() || state.modelRemediationRunning) return;
   const reliability = state.modelRemediation?.watchdog?.reliability || {};
-  if (!reliability.circuitOpen) return toast('Circuit breaker уже закрыт.');
+  if (!reliability.circuitOpen) return toast('Защитный контур уже закрыт.');
   const reason = String($('modelRemediationReason')?.value || '').trim();
-  if (reason.length < 5) return toast('Укажите причину сброса breaker — минимум 5 символов.');
-  if (!window.confirm('Закрыть Settlement Circuit Breaker и снова разрешить AUTO при следующем watchdog-run?')) return;
+  if (reason.length < 5) return toast('Укажите причину сброса защиты — минимум 5 символов.');
+  if (!window.confirm('Закрыть защитный контур и снова разрешить автоматическое восстановление при следующей проверке?')) return;
   state.modelRemediationRunning = true;
   renderModelRemediation();
   try {
@@ -1366,9 +1371,9 @@ async function resetSettlementCircuitFromUi() {
     });
     state.modelRemediation = result.report || state.modelRemediation;
     if ($('modelRemediationReason')) $('modelRemediationReason').value = '';
-    toast('Settlement Circuit Breaker закрыт. Сброс записан в audit trail.');
+    toast('Защитный контур закрыт. Сброс записан в журнал.');
   } catch (error) {
-    toast(error.message || 'Не удалось сбросить circuit breaker.');
+    toast(error.message || 'Не удалось сбросить защитный контур.');
     state.modelRemediation = null;
     await loadModelRemediation(true);
   } finally {
@@ -1442,7 +1447,7 @@ async function loadReleaseReadiness(force = false) {
       renderDiagnostics();
     }
   } catch (e) {
-    state.releaseReadiness = { available: false, reason: e.message || 'Не удалось выполнить release-проверку.' };
+    state.releaseReadiness = { available: false, reason: e.message || 'Не удалось выполнить проверку готовности.' };
   } finally {
     state.releaseReadinessLoading = false;
     renderReleaseReadiness();
@@ -1468,9 +1473,9 @@ function diagnosticsStateLabel(stateValue) {
 
 
 function productionStateLabel(stateValue) {
-  if (stateValue === 'ready') return 'READY';
-  if (stateValue === 'warning') return 'CHECK';
-  if (stateValue === 'blocked') return 'BLOCK';
+  if (stateValue === 'ready') return 'ГОТОВО';
+  if (stateValue === 'warning') return 'ПРОВЕРИТЬ';
+  if (stateValue === 'blocked') return 'ЗАБЛОКИРОВАНО';
   return '—';
 }
 
@@ -1484,7 +1489,7 @@ function renderProductionReadiness() {
   if (!root || !badge || !score || !checks || !runtime) return;
 
   if (state.productionReadinessLoading) {
-    root.textContent = 'Проверяю singleflight, burst guard, timeout и bounded memory…';
+    root.textContent = 'Проверяю объединение запросов, частотную защиту, тайм-ауты и ограничение памяти…';
     badge.textContent = 'RUN';
     badge.className = 'production-badge running';
     score.textContent = '—';
@@ -1495,8 +1500,8 @@ function renderProductionReadiness() {
 
   const r = state.productionReadiness;
   if (!r) {
-    root.textContent = 'Production Safety Gate ещё не запускался.';
-    badge.textContent = 'WAIT';
+    root.textContent = 'Проверка производственной безопасности ещё не запускалась.';
+    badge.textContent = 'ОЖИДАНИЕ';
     badge.className = 'production-badge';
     score.textContent = '—';
     checks.innerHTML = '';
@@ -1513,14 +1518,14 @@ function renderProductionReadiness() {
     <div class="production-check ${escapeHtml(x.state || '')}">
       <span>${x.state === 'pass' ? '✓' : x.state === 'fail' ? '×' : '!'}</span>
       <div><strong>${escapeHtml(x.label || '')}</strong><small>${escapeHtml(x.detail || '')}</small></div>
-      <em>${x.blocking ? 'core' : 'guard'}</em>
+      <em>${x.blocking ? 'обязательно' : 'защита'}</em>
     </div>`).join('');
 
   const s = r.safety || {};
   runtime.innerHTML = `
     <div class="production-runtime-grid">
-      <div><span>SingleFlight joins</span><strong>${Number(s.singleflight?.joins || 0)}</strong><small>${Number(s.singleflight?.active || 0)} сейчас</small></div>
-      <div><span>Burst blocks</span><strong>${Number(s.burstGuard?.blocked || 0)}</strong><small>${Number(s.burstGuard?.activeBuckets || 0)} bucket</small></div>
+      <div><span>Объединено одинаковых запросов</span><strong>${Number(s.singleflight?.joins || 0)}</strong><small>${Number(s.singleflight?.active || 0)} сейчас</small></div>
+      <div><span>Блокировки частых запросов</span><strong>${Number(s.burstGuard?.blocked || 0)}</strong><small>${Number(s.burstGuard?.activeBuckets || 0)} bucket</small></div>
       <div><span>Upstream timeout</span><strong>${Number(s.upstream?.timeouts || 0)}</strong><small>DB ${Number(s.upstream?.supabaseTimeoutMs || 0)/1000}с · API ${Number(s.upstream?.apiFootballTimeoutMs || 0)/1000}с</small></div>
       <div><span>L1 cache</span><strong>${Number(s.memory?.cacheEntries || 0)}</strong><small>soft limit ${Number(s.memory?.cacheSoftLimit || 0)}</small></div>
       <div><span>User sync cache</span><strong>${Number(s.memory?.userSyncEntries || 0)}</strong><small>${Math.round(Number(s.memory?.userSyncTtlSeconds || 0)/60)} мин.</small></div>
@@ -1543,7 +1548,7 @@ async function loadProductionReadiness(force = false) {
   } catch (e) {
     state.productionReadiness = {
       status: 'blocked',
-      label: e.message || 'Production Safety Gate не выполнен.',
+      label: e.message || 'Проверка производственной безопасности не выполнена.',
       score: 0,
       checks: [],
       safety: {},
@@ -1574,26 +1579,26 @@ function runClientContractSmoke() {
   add('unique_ids', 'Уникальные HTML id', duplicates.length === 0, duplicates.length ? `Дубликаты: ${[...new Set(duplicates)].join(', ')}` : `${allIds.length} id без дублей.`);
 
   const adminSections = [...document.querySelectorAll('[data-admin-only]')];
-  add('admin_sections', 'Admin UI маркировка', adminSections.length >= 6, `${adminSections.length} технических секций помечены data-admin-only.`);
+  add('admin_sections', 'Разметка интерфейса администратора', adminSections.length >= 6, `${adminSections.length} технических секций доступны только администратору.`);
 
-  const cssLink = document.querySelector('link[href*="styles.css?v=6.7.1"]');
-  const appScript = document.querySelector('script[src*="app.js?v=6.7.1"]');
-  add('cache_bust', 'Cache-bust assets', Boolean(cssLink && appScript), `CSS ${cssLink ? 'OK' : 'MISS'} · JS ${appScript ? 'OK' : 'MISS'}.`);
+  const cssLink = document.querySelector('link[href*="styles.css?v=6.7.2"]');
+  const appScript = document.querySelector('script[src*="app.js?v=6.7.2"]');
+  add('cache_bust', 'Версии файлов интерфейса', Boolean(cssLink && appScript), `CSS ${cssLink ? 'OK' : 'MISS'} · JS ${appScript ? 'OK' : 'MISS'}.`);
 
-  add('client_version', 'Версия клиента', CLIENT_VERSION === '6.7.1-rc15', CLIENT_VERSION);
+  add('client_version', 'Версия клиента', CLIENT_VERSION === '6.7.2-rc15', CLIENT_VERSION);
   add('telegram_sdk', 'Telegram WebApp SDK', Boolean(window.Telegram?.WebApp), window.Telegram?.WebApp ? 'SDK доступен.' : 'В обычном браузере SDK может отсутствовать; в Telegram должен быть доступен.');
 
   const navButtons = ['navMatches','navSearch','navHistory','navProfile'].filter(id => $(id));
   add('navigation', 'Нижняя навигация', navButtons.length === 4, `${navButtons.length}/4 кнопки.`);
 
   const recoveryIds = ['connectionBannerIcon','connectionBannerTitle','connectionBannerText','connectionRetryBtn'];
-  add('recovery_contract', 'Recovery UX contract', recoveryIds.every(id => $(id)), `${recoveryIds.filter(id => $(id)).length}/${recoveryIds.length} элементов.`);
+  add('recovery_contract', 'Контракт восстановления интерфейса', recoveryIds.every(id => $(id)), `${recoveryIds.filter(id => $(id)).length}/${recoveryIds.length} элементов.`);
 
   const bootIds = ['bootGate','bootTitle','bootText','bootProgressFill','bootReloadBtn','versionBanner','versionReloadBtn'];
-  add('startup_contract', 'Startup / rollback contract', bootIds.every(id => $(id)), `${bootIds.filter(id => $(id)).length}/${bootIds.length} элементов.`);
+  add('startup_contract', 'Контракт запуска и отката', bootIds.every(id => $(id)), `${bootIds.filter(id => $(id)).length}/${bootIds.length} элементов.`);
   const runtimeIds = ['runtimeBanner','runtimeBannerTitle','runtimeBannerText','runtimeControlsStatus','runtimeSaveBtn','runtimeHistoryList','runtimeChangeReason','runtimeAutoSettlementRecoveryToggle'];
-  add('runtime_controls_contract', 'Runtime Controls + rollback contract', runtimeIds.every(id => $(id)), `${runtimeIds.filter(id => $(id)).length}/${runtimeIds.length} элементов.`);
-  add('api_contract', 'Client API contract', CLIENT_API_CONTRACT === 5, `contract ${CLIENT_API_CONTRACT} · ${CLIENT_RELEASE_CHANNEL}`);
+  add('runtime_controls_contract', 'Контракт управления функциями и отката', runtimeIds.every(id => $(id)), `${runtimeIds.filter(id => $(id)).length}/${runtimeIds.length} элементов.`);
+  add('api_contract', 'Клиентский контракт API', CLIENT_API_CONTRACT === 5, `contract ${CLIENT_API_CONTRACT} · ${CLIENT_RELEASE_CHANNEL}`);
 
   return {
     version: CLIENT_VERSION,
@@ -1606,10 +1611,10 @@ function runClientContractSmoke() {
 }
 
 function rcStateText(status) {
-  if (status === 'rc_ready') return 'RC15 READY';
-  if (status === 'rc_with_holds') return 'RC + HOLD';
-  if (status === 'blocked') return 'BLOCK';
-  return 'WAIT';
+  if (status === 'rc_ready') return 'RC15 ГОТОВ';
+  if (status === 'rc_with_holds') return 'RC С ОГРАНИЧЕНИЯМИ';
+  if (status === 'blocked') return 'ЗАБЛОКИРОВАНО';
+  return 'ОЖИДАНИЕ';
 }
 
 function renderRcRegression() {
@@ -1628,7 +1633,7 @@ function renderRcRegression() {
   if (state.rcRegressionLoading) {
     badge.className = 'rc-badge running';
     badge.textContent = 'RUN';
-    status.textContent = 'Запускаю read-only regression smoke-test…';
+    status.textContent = 'Запускаю безопасную регрессионную проверку…';
     meta.textContent = 'API-Football не расходуется';
     summary.innerHTML = '';
     groups.innerHTML = '';
@@ -1640,9 +1645,9 @@ function renderRcRegression() {
   const r = state.rcRegression;
   if (!r) {
     badge.className = 'rc-badge';
-    badge.textContent = 'RC10';
-    status.textContent = 'Полный regression smoke-test ещё не запускался.';
-    meta.textContent = 'Тест безопасный: без Analyze, без изменений user data, без API-Football.';
+    badge.textContent = 'RC15';
+    status.textContent = 'Полная регрессионная проверка ещё не запускалась.';
+    meta.textContent = 'Тест безопасный: без полного анализа, без изменения пользовательских данных и без расхода API-Football.';
     summary.innerHTML = '';
     groups.innerHTML = '';
     client.innerHTML = '';
@@ -1653,8 +1658,8 @@ function renderRcRegression() {
   const cls = r.status === 'rc_ready' ? 'ready' : r.status === 'blocked' ? 'blocked' : 'warning';
   badge.className = `rc-badge ${cls}`;
   badge.textContent = rcStateText(r.status);
-  status.textContent = r.label || 'Regression завершён.';
-  meta.textContent = `${Number(r.score || 0)}% backend · ${relativeAge(r.generatedAt)} · ${Number(r.durationMs || 0)} мс`;
+  status.textContent = r.label || 'Регрессионная проверка завершена.';
+  meta.textContent = `${Number(r.score || 0)}% сервер · ${relativeAge(r.generatedAt)} · ${Number(r.durationMs || 0)} мс`;
 
   summary.innerHTML = `
     <div class="rc-summary-grid">
@@ -1666,27 +1671,27 @@ function renderRcRegression() {
 
   const groupLabels = {
     runtime:'Runtime', security:'Security', database:'Supabase schema',
-    user_routes:'User routes', gates:'Release gates', provider:'Provider', safety:'Safety',
+    user_routes:'User routes', gates:'Release gates', provider:'Провайдер', safety:'Безопасность',
   };
   groups.innerHTML = `<div class="rc-group-grid">${Object.entries(r.groups || {}).map(([key,g]) => `
     <div class="${Number(g.fail || 0) ? 'fail' : Number(g.warn || 0) ? 'warn' : 'pass'}">
       <span>${escapeHtml(groupLabels[key] || key)}</span>
       <strong>${Number(g.pass || 0)}/${Number(g.total || 0)}</strong>
-      <small>${Number(g.warn || 0)} warn · ${Number(g.fail || 0)} fail</small>
+      <small>${Number(g.warn || 0)} предупреждений · ${Number(g.fail || 0)} ошибок</small>
     </div>`).join('')}</div>`;
 
   const cs = r.clientContract || runClientContractSmoke();
   client.innerHTML = `
-    <div class="rc-client-head"><strong>📱 Client Contract QA</strong><span>${Number(cs.passed || 0)}/${Number(cs.total || 0)}</span></div>
+    <div class="rc-client-head"><strong>📱 Проверка клиентского контракта</strong><span>${Number(cs.passed || 0)}/${Number(cs.total || 0)}</span></div>
     <div class="rc-client-checks">${(cs.checks || []).map(x => `
       <div class="${x.pass ? 'pass' : 'fail'}"><i>${x.pass ? '✓' : '×'}</i><span><strong>${escapeHtml(x.label || '')}</strong><small>${escapeHtml(x.detail || '')}</small></span></div>`).join('')}</div>`;
 
-  checks.innerHTML = `<details class="rc-details"><summary>Все backend-проверки · ${Number(r.summary?.total || 0)}</summary>
+  checks.innerHTML = `<details class="rc-details"><summary>Все серверные проверки · ${Number(r.summary?.total || 0)}</summary>
     <div class="rc-check-list">${(r.checks || []).map(x => `
       <div class="${escapeHtml(x.state || 'warn')}">
         <i>${x.state === 'pass' ? '✓' : x.state === 'fail' ? '×' : '!'}</i>
         <span><strong>${escapeHtml(x.label || '')}</strong><small>${escapeHtml(x.detail || '')}</small></span>
-        <em>${x.blocking ? 'core' : x.group}</em>
+        <em>${x.blocking ? 'обязательно' : (groupLabels[x.group] || x.group)}</em>
       </div>`).join('')}</div>
   </details>
   <p class="tiny">${escapeHtml(r.policy?.note || '')}</p>`;
@@ -1707,11 +1712,11 @@ async function loadRcRegression(force = true) {
     result.clientContract = runClientContractSmoke();
     state.rcRegression = result;
     const clientFailed = Number(result.clientContract?.failed || 0);
-    toast(result.status === 'blocked' || clientFailed ? 'RC smoke-test: есть пункты для проверки' : 'RC smoke-test завершён');
+    toast(result.status === 'blocked' || clientFailed ? 'Регрессионная проверка RC: есть пункты для проверки' : 'Регрессионная проверка RC завершена');
   } catch (e) {
     state.rcRegression = {
       status: 'blocked',
-      label: e.message || 'RC smoke-test не выполнен.',
+      label: e.message || 'Регрессионная проверка RC не выполнена.',
       score: 0,
       summary: { total: 0, passed: 0, warnings: 0, blockers: 1 },
       groups: {},
@@ -1751,8 +1756,8 @@ function runtimeHistorySummary(controls = {}) {
   if (controls.liveEnabled === false) disabled.push('live');
   if (controls.remindersEnabled === false) disabled.push('reminders');
   if (controls.expandedDataEnabled === false) disabled.push('expanded');
-  const auto = controls.autoSettlementRecoveryEnabled ? ' · auto-settlement ON' : ' · auto-settlement shadow';
-  return disabled.length ? `Ограничения: ${disabled.join(', ')}${auto}` : `Core-функции включены${auto}`;
+  const auto = controls.autoSettlementRecoveryEnabled ? ' · автовосстановление включено' : ' · автовосстановление: наблюдение';
+  return disabled.length ? `Ограничения: ${disabled.join(', ')}${auto}` : `Основные функции включены${auto}`;
 }
 
 function renderRuntimeHistory() {
@@ -1763,24 +1768,24 @@ function renderRuntimeHistory() {
   if (!status || !list) return;
 
   if (!panel?.schemaReady) {
-    status.textContent = 'Runtime Controls schema недоступна.';
+    status.textContent = 'Схема управления функциями недоступна.';
     list.innerHTML = '';
     return;
   }
 
   if (!panel.historyReady) {
-    status.textContent = panel.historyReason || 'Нужна supabase_migration_v5_8.sql для history/rollback.';
-    list.innerHTML = '<div class="data-notice stale">История и rollback пока недоступны. Основные Runtime Controls продолжают работать.</div>';
+    status.textContent = panel.historyReason || 'Нужна supabase_migration_v5_8.sql для истории и отката.';
+    list.innerHTML = '<div class="data-notice stale">История и откат пока недоступны. Основное управление функциями продолжает работать.</div>';
     return;
   }
 
   const rows = Array.isArray(panel.history) ? panel.history : [];
   status.textContent = rows.length
-    ? `Последние revision: ${rows.length}. Rollback создаёт новую revision и не удаляет историю.`
-    : 'История появится после первого изменения Runtime Controls.';
+    ? `Последние версии: ${rows.length}. Откат создаёт новую версию и не удаляет историю.`
+    : 'История появится после первого изменения настроек функций.';
 
   if (!rows.length) {
-    list.innerHTML = '<div class="empty compact-empty">Пока нет сохранённых checkpoint.</div>';
+    list.innerHTML = '<div class="empty compact-empty">Пока нет сохранённых точек восстановления.</div>';
     return;
   }
 
@@ -1791,10 +1796,10 @@ function renderRuntimeHistory() {
       <div class="runtime-history-copy">
         <strong>revision ${Number(row.revision || 0)} · ${escapeHtml(runtimeHistoryActionLabel(row.action))}</strong>
         <span>${escapeHtml(runtimeHistorySummary(row.controls || {}))}</span>
-        <small>${row.createdAt ? escapeHtml(dateTime(row.createdAt)) : '—'}${row.reason ? ` · ${escapeHtml(row.reason)}` : ''}${row.sourceRevision ? ` · из rev ${Number(row.sourceRevision)}` : ''}</small>
+        <small>${row.createdAt ? escapeHtml(dateTime(row.createdAt)) : '—'}${row.reason ? ` · ${escapeHtml(row.reason)}` : ''}${row.sourceRevision ? ` · из версии ${Number(row.sourceRevision)}` : ''}</small>
       </div>
       ${isCurrent
-        ? '<span class="runtime-history-current">ACTIVE</span>'
+        ? '<span class="runtime-history-current">АКТИВНО</span>'
         : `<button class="reminder-btn runtime-rollback-btn" type="button" data-history-id="${Number(row.id || 0)}" data-revision="${Number(row.revision || 0)}">Вернуть</button>`}
     </div>`;
   }).join('');
@@ -1813,8 +1818,8 @@ async function restoreRuntimeRevision(historyId, sourceRevision) {
   if (!current || !historyId) return;
 
   const reasonInput = String($('runtimeChangeReason')?.value || '').trim();
-  const reason = reasonInput || `Rollback to revision ${Number(sourceRevision || 0)}`;
-  if (!window.confirm(`Вернуть Runtime Controls к revision ${Number(sourceRevision || 0)}? Текущая revision ${Number(current.revision || 0)} останется в истории.`)) return;
+  const reason = reasonInput || `Откат к версии ${Number(sourceRevision || 0)}`;
+  if (!window.confirm(`Вернуть настройки функций к версии ${Number(sourceRevision || 0)}? Текущая версия ${Number(current.revision || 0)} останется в истории.`)) return;
 
   state.runtimeControlsSaving = true;
   renderRuntimeControls();
@@ -1842,7 +1847,7 @@ async function restoreRuntimeRevision(historyId, sourceRevision) {
     state.runtimeStatus = result.controls;
     if ($('runtimeChangeReason')) $('runtimeChangeReason').value = '';
     applyRuntimeUi();
-    toast(`Rollback выполнен → revision ${Number(result.controls?.revision || 0)}`);
+    toast(`Откат выполнен → версия ${Number(result.controls?.revision || 0)}`);
   } catch (e) {
     toast(e.message);
     state.runtimeControlsAdmin = null;
@@ -1872,14 +1877,14 @@ function renderRuntimeControls() {
   if (busy) {
     badge.className = 'runtime-controls-badge running';
     badge.textContent = state.runtimeControlsSaving ? 'SAVE' : 'RUN';
-    status.textContent = state.runtimeControlsSaving ? 'Применяю runtime-настройки…' : 'Загружаю runtime-настройки…';
+    status.textContent = state.runtimeControlsSaving ? 'Применяю настройки функций…' : 'Загружаю настройки функций…';
     return;
   }
 
   if (!panel) {
     badge.className = 'runtime-controls-badge';
-    badge.textContent = 'WAIT';
-    status.textContent = 'Runtime Controls ещё не загружены.';
+    badge.textContent = 'ОЖИДАНИЕ';
+    status.textContent = 'Настройки функций ещё не загружены.';
     return;
   }
 
@@ -1895,8 +1900,8 @@ function renderRuntimeControls() {
   badge.className = `runtime-controls-badge ${c.maintenanceMode ? 'maintenance' : 'healthy'}`;
   badge.textContent = c.maintenanceMode ? 'MAINT' : 'LIVE';
   status.textContent = c.maintenanceMode
-    ? 'Maintenance mode включён для обычных пользователей.'
-    : 'Runtime-настройки активны. Изменения применяются без Deploy.';
+    ? 'Режим технического обслуживания включён для обычных пользователей.'
+    : 'Настройки функций активны. Изменения применяются без нового развёртывания.';
   revision.textContent = `revision ${Number(c.revision || 1)}${c.updatedAt ? ` · ${relativeAge(c.updatedAt)}` : ''}`;
 
   const map = [
@@ -1956,7 +1961,7 @@ async function saveRuntimeControls(payload = null, options = {}) {
   if (!isAdmin() || state.runtimeControlsSaving) return;
   const body = payload || runtimeControlsPayload();
   if (!Number(body.expectedRevision || 0)) {
-    toast('Сначала обновите Runtime Controls.');
+    toast('Сначала обновите настройки функций.');
     return;
   }
 
@@ -1964,10 +1969,10 @@ async function saveRuntimeControls(payload = null, options = {}) {
   const enablingAutoRecovery = Boolean(body.autoSettlementRecoveryEnabled) && !Boolean(state.runtimeControlsAdmin?.controls?.autoSettlementRecoveryEnabled);
   if (!options.skipConfirm) {
     const message = enablingAutoRecovery
-      ? 'Включить автоматический settlement catch-up? Watchdog сможет один раз в сутки сделать до 5 provider-запросов и изменить только stale pending со подтверждённым финальным счётом.'
+      ? 'Включить автоматическое восстановление результатов? Система сможет один раз в сутки сделать до 5 запросов провайдера и изменить только зависшие ожидающие записи с подтверждённым финальным счётом.'
       : disabling
-        ? 'Применить ограничения сейчас? Они затронут обычных пользователей без нового Deploy.'
-        : 'Применить runtime-настройки?';
+        ? 'Применить ограничения сейчас? Они затронут обычных пользователей без нового развёртывания.'
+        : 'Применить настройки функций?';
     if (!window.confirm(message)) return;
   }
 
@@ -1992,7 +1997,7 @@ async function saveRuntimeControls(payload = null, options = {}) {
     state.runtimeStatus = result.controls;
     if ($('runtimeChangeReason')) $('runtimeChangeReason').value = '';
     applyRuntimeUi();
-    toast('Runtime Controls применены');
+    toast('Настройки функций применены');
   } catch (e) {
     toast(e.message);
     state.runtimeControlsAdmin = null;
@@ -2006,7 +2011,7 @@ async function saveRuntimeControls(payload = null, options = {}) {
 async function restoreRuntimeDefaults() {
   const current = state.runtimeControlsAdmin?.controls;
   if (!current) { await loadRuntimeControlsAdmin(true); return; }
-  if (!window.confirm('Вернуть safe defaults: core-функции включены, maintenance выключен, автоматический settlement recovery остаётся в shadow?')) return;
+  if (!window.confirm('Вернуть безопасные настройки: основные функции включены, техническое обслуживание выключено, автоматическое восстановление остаётся в режиме наблюдения?')) return;
   await saveRuntimeControls({
     expectedRevision: Number(current.revision || 0),
     maintenanceMode: false,
@@ -2038,7 +2043,7 @@ function renderReminderHealth() {
   if (state.reminderHealthLoading) {
     badge.className = 'reminder-health-badge running';
     badge.textContent = 'RUN';
-    status.textContent = 'Проверяю scheduler и delivery claims…';
+    status.textContent = 'Проверяю расписание и фиксацию задач доставки…';
     kpis.innerHTML = '';
     recent.innerHTML = '';
     return;
@@ -2047,8 +2052,8 @@ function renderReminderHealth() {
   const r = state.reminderHealth;
   if (!r) {
     badge.className = 'reminder-health-badge';
-    badge.textContent = 'WAIT';
-    status.textContent = 'Delivery Health ещё не загружен.';
+    badge.textContent = 'ОЖИДАНИЕ';
+    status.textContent = 'Состояние доставки ещё не загружено.';
     kpis.innerHTML = '';
     recent.innerHTML = '';
     return;
@@ -2057,7 +2062,7 @@ function renderReminderHealth() {
   if (!r.available) {
     badge.className = 'reminder-health-badge blocked';
     badge.textContent = 'SQL';
-    status.textContent = r.reason || 'Нужна migration v5.6.';
+    status.textContent = r.reason || 'Нужна миграция v5.6.';
     kpis.innerHTML = '<div class="data-notice stale">Перед проверкой уведомлений запустите <b>supabase_migration_v5_6.sql</b>.</div>';
     recent.innerHTML = '';
     return;
@@ -2066,7 +2071,7 @@ function renderReminderHealth() {
   const healthy = r.health?.state === 'healthy';
   badge.className = `reminder-health-badge ${healthy ? 'healthy' : 'watch'}`;
   badge.textContent = healthy ? 'OK' : 'WATCH';
-  status.textContent = `${r.health?.label || 'Delivery Health'} · cron каждые ${Number(r.scheduler?.cadenceMinutes || 5)} мин.`;
+  status.textContent = `${r.health?.label || 'Состояние доставки'} · проверка каждые ${Number(r.scheduler?.cadenceMinutes || 5)} мин.`;
 
   const s = r.summary || {};
   kpis.innerHTML = `<div class="reminder-health-grid">
@@ -2081,11 +2086,11 @@ function renderReminderHealth() {
   recent.innerHTML = (r.recent || []).length
     ? `<div class="reminder-health-list">${r.recent.map(x => `
       <div class="${x.hasError ? 'error' : 'ok'}">
-        <div><strong>${escapeHtml(x.match || `Fixture ${x.fixtureId}`)}</strong><small>${x.fixtureDate ? dateTime(x.fixtureDate) : ''}</small></div>
+        <div><strong>${escapeHtml(x.match || `Матч #${x.fixtureId}`)}</strong><small>${x.fixtureDate ? dateTime(x.fixtureDate) : ''}</small></div>
         <span>${escapeHtml(x.state || '')}</span>
         <em>${Number(x.prematchAttempts || 0)} + ${Number(x.kickoffAttempts || 0)} попыт.</em>
       </div>`).join('')}</div><p class="tiny">${escapeHtml(r.note || '')}</p>`
-    : '<div class="empty compact-empty">Недавних delivery attempts пока нет.</div>';
+    : '<div class="empty compact-empty">Недавних попыток доставки пока нет.</div>';
 }
 
 async function loadReminderHealth(force = false) {
@@ -2158,9 +2163,9 @@ function renderReleaseMonitor() {
   const r = state.releaseMonitor;
   if (!r?.available) {
     badge.className = 'release-monitor-badge';
-    badge.textContent = 'WAIT';
-    title.textContent = 'Release Monitor ещё не запускался.';
-    meta.textContent = 'Показывает ошибки, client recovery и operational budget.';
+    badge.textContent = 'ОЖИДАНИЕ';
+    title.textContent = 'Мониторинг выпуска ещё не запускался.';
+    meta.textContent = 'Показывает ошибки, восстановление клиента и операционные лимиты.';
     kpis.innerHTML = client.innerHTML = issues.innerHTML = incidents.innerHTML = '';
     return;
   }
@@ -2168,8 +2173,8 @@ function renderReleaseMonitor() {
   const health = r.health || {};
   badge.className = `release-monitor-badge ${escapeHtml(health.state || '')}`;
   badge.textContent = releaseMonitorStateLabel(health.state);
-  title.textContent = health.label || 'Release Monitor';
-  meta.textContent = `${Number(health.score || 0)}% · ${Number(r.hours || 24)}ч · ${r.persistent ? 'ops_events' : 'runtime memory'} · ${relativeAge(r.generatedAt)}`;
+  title.textContent = health.label || 'Мониторинг выпуска';
+  meta.textContent = `${Number(health.score || 0)}% · ${Number(r.hours || 24)}ч · ${r.persistent ? 'журнал событий' : 'память процесса'} · ${relativeAge(r.generatedAt)}`;
 
   const c = r.current || {};
   const p = r.previous || {};
@@ -2241,7 +2246,7 @@ function renderDiagnostics() {
   const events = $('diagnosticsEvents');
   const recommendations = $('diagnosticsRecommendations');
   if (state.diagnosticsLoading) {
-    root.textContent = 'Проверяю Worker, Supabase, кэш и API-Football…';
+    root.textContent = 'Проверяю сервер, Supabase, кэш и API-Football…';
     if (badge) { badge.textContent = 'Проверка'; badge.className = 'diagnostics-badge waiting'; }
     [provider, database, runtime, client, integrity, events, recommendations].forEach(x => { if (x) x.hidden = true; });
     return;
@@ -2271,7 +2276,7 @@ function renderDiagnostics() {
         <div><span>Минутное окно</span><strong>${Number.isFinite(Number(p.minuteUsed)) && Number.isFinite(Number(p.minuteLimit)) ? `${Number(p.minuteUsed)} / ${Number(p.minuteLimit)}` : '—'}</strong><small>${diagPct(p.minuteUsedPct)}</small></div>
         <div><span>Последний ответ</span><strong>${Number.isFinite(Number(p.lastLatencyMs)) ? `${Number(p.lastLatencyMs)} мс` : '—'}</strong><small>${p.lastSuccessAt ? relativeAge(p.lastSuccessAt) : (p.lastError || 'нет данных')}</small></div>
       </div>
-      ${p.cooldownActive ? `<p class="diagnostics-warning">⏳ Rate-limit cooldown активен до ${escapeHtml(dateTime(p.cooldownUntil))}.</p>` : ''}`;
+      ${p.cooldownActive ? `<p class="diagnostics-warning">⏳ Пауза из-за лимита запросов активна до ${escapeHtml(dateTime(p.cooldownUntil))}.</p>` : ''}`;
   }
 
   const db = d.supabase || {};
@@ -2285,7 +2290,7 @@ function renderDiagnostics() {
         <div><span>PostgREST</span><strong>${db.ok ? 'OK' : 'Ошибка'}</strong><small>${Number.isFinite(Number(db.latencyMs)) ? `${Number(db.latencyMs)} мс` : '—'}</small></div>
         <div><span>Записей cache</span><strong>${Number.isFinite(Number(cache.total)) ? Number(cache.total) : '—'}</strong><small>выборка ${Number(cache.sampled || 0)}</small></div>
         <div><span>Свежие / stale</span><strong>${Number(cache.freshInSample || 0)} / ${Number(cache.staleInSample || 0)}</strong><small>в диагностической выборке</small></div>
-        <div><span>Журнал ошибок</span><strong>${obs.persistent ? 'Supabase' : 'Memory'}</strong><small>${obs.migrationReady ? `хранение ${Number(obs.retentionDays || 14)} дн.` : 'нужна migration v3.8'}</small></div>
+        <div><span>Журнал ошибок</span><strong>${obs.persistent ? 'Supabase' : 'Memory'}</strong><small>${obs.migrationReady ? `хранение ${Number(obs.retentionDays || 14)} дн.` : 'нужна миграция v3.8'}</small></div>
       </div>`;
   }
 
@@ -2336,7 +2341,7 @@ function renderDiagnostics() {
         <div><span>Скрыто guard</span><strong>${Number(integrityRun.quarantined || 0)}</strong><small>${Number(integrityRun.duplicates || 0)} дубликатов</small></div>
         <div><span>Предупреждения</span><strong>${Number(integrityRun.warnings || 0)}</strong><small>${Number(integrityRun.errors || 0)} ошибок</small></div>
       </div>
-      ${!integrityData.migrationReady ? '<p class="diagnostics-warning">Нужна migration v3.9 для постоянного журнала Data Integrity.</p>' : ''}
+      ${!integrityData.migrationReady ? '<p class="diagnostics-warning">Нужна миграция v3.9 для постоянного журнала целостности данных.</p>' : ''}
       ${integrityIssues.length ? `<div class="integrity-issue-list">${integrityIssues.slice(0,5).map(item => `<div><b>${escapeHtml(item.issue_code || item.code || 'DATA')}</b><span>${escapeHtml(item.message || '')}</span><small>${escapeHtml([item.home_name || item.home, item.away_name || item.away].filter(Boolean).join(' — '))}${item.fixture_id || item.fixtureId ? ` · #${Number(item.fixture_id || item.fixtureId)}` : ''}</small></div>`).join('')}</div>` : ''}`;
   }
 
@@ -2401,7 +2406,7 @@ function renderBilling() {
   $('billingStatus').className = `billing-status ${ready ? 'ready' : 'waiting'}`;
   $('billingStatus').textContent = ready
     ? '⭐ Telegram Stars подключены. Оплата и автопродление готовы.'
-    : '⚙️ Telegram Stars подготовлены, но webhook ещё не активирован.';
+    : '⚙️ Telegram Stars подготовлены, но обработчик платежей ещё не активирован.';
 
   const proBtn = $('proBtn');
   const premiumBtn = $('premiumBtn');
@@ -2485,7 +2490,7 @@ function providerAuditStateLabel(stateValue) {
     available: 'Данные',
     empty: 'Пусто',
     error: 'Ошибка',
-    preview: 'После upgrade',
+    preview: 'После повышения тарифа',
     not_applicable: 'Не нужно',
   })[stateValue] || '—';
 }
@@ -2514,7 +2519,7 @@ function renderProviderAudit() {
   if ($('quotaFeatureCache')) $('quotaFeatureCache').textContent = String(Number(budget.counters?.cache || 0));
   if ($('quotaFeatureStale')) $('quotaFeatureStale').textContent = String(Number(budget.counters?.stale || 0));
   if ($('quotaFeatureSkipped')) $('quotaFeatureSkipped').textContent = String(Number(budget.counters?.skipped || 0));
-  if ($('quotaBudgetNote')) $('quotaBudgetNote').textContent = budget.note || 'Feature-level cache активен.';
+  if ($('quotaBudgetNote')) $('quotaBudgetNote').textContent = budget.note || 'Кэш отдельных функций активен.';
 
   const featureList = $('quotaFeatureList');
   if (featureList) {
@@ -2535,14 +2540,14 @@ function renderProviderAudit() {
 
   if (!status || !result) return;
   if (state.providerAuditLoading) {
-    status.textContent = '⏳ Выполняю контролируемую проверку endpoint…';
+    status.textContent = '⏳ Выполняю контролируемую проверку источников данных…';
     result.hidden = true;
     return;
   }
   if (!audit) {
     status.textContent = transition.paid
-      ? 'Тариф обнаружен. Укажите fixture ID и запустите аудит.'
-      : 'Сначала обновите тариф. На FREE полный аудит будет заблокирован для экономии квоты.';
+      ? 'Тариф обнаружен. Укажите ID матча и запустите проверку.'
+      : 'Сначала обновите тариф. На бесплатном плане полная проверка будет заблокирована для экономии квоты.';
     result.hidden = true;
     return;
   }
@@ -2551,19 +2556,19 @@ function renderProviderAudit() {
   const summary = audit.summary || {};
   const blocked = Boolean(audit.blocked);
   status.textContent = blocked
-    ? (audit.note || 'Полный аудит заблокирован guardrail.')
-    : `${summary.label || 'Аудит завершён'} · ${Number(summary.score || 0)}% · ${Number(audit.durationMs || 0)} мс`;
+    ? (audit.note || 'Полная проверка заблокирована защитой квоты.')
+    : `${summary.label || 'Проверка завершена'} · ${Number(summary.score || 0)}% · ${Number(audit.durationMs || 0)} мс`;
 
   const fixture = audit.fixture || {};
   const endpoints = audit.endpoints || [];
   result.innerHTML = `
     <div class="provider-audit-head">
-      <div><strong>${escapeHtml(fixture.home || '—')} — ${escapeHtml(fixture.away || '—')}</strong><span>Fixture ${Number(fixture.fixtureId || 0)} · ${escapeHtml(fixture.status || '')}</span></div>
-      <span class="provider-audit-score ${blocked ? 'blocked' : Number(summary.score || 0) >= 80 ? 'good' : 'warn'}">${blocked ? 'GUARD' : `${Number(summary.score || 0)}%`}</span>
+      <div><strong>${escapeHtml(fixture.home || '—')} — ${escapeHtml(fixture.away || '—')}</strong><span>Матч #${Number(fixture.fixtureId || 0)} · ${escapeHtml(fixture.status || '')}</span></div>
+      <span class="provider-audit-score ${blocked ? 'blocked' : Number(summary.score || 0) >= 80 ? 'good' : 'warn'}">${blocked ? 'ЗАЩИТА' : `${Number(summary.score || 0)}%`}</span>
     </div>
     <div class="provider-audit-cost">
       <span>Запросов этого запуска</span><strong>${Number(audit.cost?.usedNow || 0)}</strong>
-      <small>полный аудит максимум ${Number(audit.cost?.maxFullAudit || 0)}</small>
+      <small>полная проверка максимум ${Number(audit.cost?.maxFullAudit || 0)}</small>
     </div>
     <div class="provider-endpoint-grid">${endpoints.map(x => `
       <div class="provider-endpoint-row ${escapeHtml(x.state || '')}">
@@ -2606,10 +2611,10 @@ function renderExpandedDataReleaseGate() {
 
   if (state.providerE2ELoading) {
     badge.className = 'expanded-gate-badge running';
-    badge.textContent = 'RUN';
-    title.textContent = 'Выполняется Expanded Data E2E…';
-    meta.textContent = 'На повышенной квоте тест может занять несколько десятков секунд.';
-    stepsEl.innerHTML = '<div class="empty compact-empty">Проверяю provider → coverage → Match Center → cache reuse.</div>';
+    badge.textContent = 'ВЫП.';
+    title.textContent = 'Выполняется сквозная проверка расширенных данных…';
+    meta.textContent = 'На повышенной квоте проверка может занять несколько десятков секунд.';
+    stepsEl.innerHTML = '<div class="empty compact-empty">Проверяю провайдера → покрытие → центр матча → повторное использование кэша.</div>';
     details.hidden = true;
     return;
   }
@@ -2617,14 +2622,14 @@ function renderExpandedDataReleaseGate() {
   if (!result) {
     const paid = Boolean(transition.paid);
     badge.className = `expanded-gate-badge ${paid ? 'ready' : 'hold'}`;
-    badge.textContent = paid ? 'READY?' : 'HOLD';
-    title.textContent = paid ? 'Тариф обнаружен — можно запускать E2E' : 'Код v5.0 готов, ждём повышенную квоту';
+    badge.textContent = paid ? 'ГОТОВ?' : 'ОЖИДАНИЕ';
+    title.textContent = paid ? 'Тариф обнаружен — можно запускать сквозную проверку' : 'Сквозная проверка расширенных данных';
     meta.textContent = paid
-      ? `${transition.plan || 'PAID'} · ${budget.label || 'режим не определён'}`
-      : `${transition.plan || 'FREE'} · полный тест не тратит квоту до upgrade`;
+      ? `${planLabel(transition.plan || 'PAID')} · ${budget.label || 'режим не определён'}`
+      : `${planLabel(transition.plan || 'FREE')} · полная проверка не тратит квоту до повышения тарифа`;
     stepsEl.innerHTML = `
       <div class="expanded-gate-empty">
-        <strong>${paid ? 'Запустите финальную проверку на реальном fixture.' : 'На FREE тест безопасно остановится после одного /status запроса.'}</strong>
+        <strong>${paid ? 'Запустите финальную проверку на реальном матче.' : 'На бесплатном плане проверка безопасно остановится после одного запроса состояния.'}</strong>
         <p>Пользовательская монетизация остаётся выключенной.</p>
       </div>`;
     details.hidden = true;
@@ -2636,11 +2641,11 @@ function renderExpandedDataReleaseGate() {
     : status.code === 'READY_WITH_LIMITATIONS' ? 'warn'
       : status.code === 'NEEDS_ATTENTION' ? 'fail' : 'hold';
   badge.className = `expanded-gate-badge ${cls}`;
-  badge.textContent = status.code === 'READY' ? 'READY'
-    : status.code === 'READY_WITH_LIMITATIONS' ? 'LIMIT'
-      : status.code === 'NEEDS_ATTENTION' ? 'CHECK' : 'HOLD';
-  title.textContent = status.label || 'Expanded Data Release Gate';
-  meta.textContent = `Fixture ${Number(result.fixtureId || 0)} · ${dateTime(result.generatedAt)} · ${Number(result.durationMs || 0)} мс`;
+  badge.textContent = status.code === 'READY' ? 'ГОТОВО'
+    : status.code === 'READY_WITH_LIMITATIONS' ? 'ОГРАН.'
+      : status.code === 'NEEDS_ATTENTION' ? 'ПРОВЕРИТЬ' : 'ОЖИДАНИЕ';
+  title.textContent = status.label || 'Сквозная проверка расширенных данных';
+  meta.textContent = `Матч #${Number(result.fixtureId || 0)} · ${dateTime(result.generatedAt)} · ${Number(result.durationMs || 0)} мс`;
 
   stepsEl.innerHTML = (result.steps || []).map(step => `
     <div class="expanded-gate-step ${escapeHtml(step.state || '')}">
@@ -2660,8 +2665,8 @@ function renderExpandedDataReleaseGate() {
   details.innerHTML = `
     <div class="expanded-gate-metrics">
       <div><span>План</span><strong>${escapeHtml(result.transition?.plan || '—')}</strong></div>
-      <div><span>Coverage</span><strong>${coverage ? `${Number(coverage.score || 0)}%` : '—'}</strong></div>
-      <div><span>Cache reuse</span><strong>${result.cacheVerification?.cached ? 'PASS' : result.blocked ? '—' : 'CHECK'}</strong></div>
+      <div><span>Покрытие</span><strong>${coverage ? `${Number(coverage.score || 0)}%` : '—'}</strong></div>
+      <div><span>Повтор из кэша</span><strong>${result.cacheVerification?.cached ? 'PASS' : result.blocked ? '—' : 'CHECK'}</strong></div>
       <div><span>Daily cost</span><strong>${Number.isFinite(Number(result.requestCost?.observedDailyDelta)) ? Number(result.requestCost.observedDailyDelta) : '—'}</strong></div>
     </div>
     ${result.matchCenter?.fixture ? `<div class="expanded-gate-fixture">
@@ -2675,7 +2680,7 @@ function renderExpandedDataReleaseGate() {
 async function runProviderE2E(fixtureId) {
   if (!isAdmin() || state.providerE2ELoading || state.providerAuditLoading) return;
   const id = Number(fixtureId || $('providerAuditFixtureId')?.value || 0);
-  if (!id) { toast('Укажи fixture ID'); return; }
+  if (!id) { toast('Укажите ID матча'); return; }
   if ($('providerAuditFixtureId')) $('providerAuditFixtureId').value = String(id);
 
   state.providerE2ELoading = true;
@@ -2691,7 +2696,7 @@ async function runProviderE2E(fixtureId) {
     state.providerTransition = data.transition || state.providerTransition;
     state.providerBudget = data.budget || state.providerBudget;
     if (data.coverageAudit) state.providerAudit = { ...data.coverageAudit, fixture: data.coverageAudit.fixture || state.providerAudit?.fixture };
-    toast(data.status?.ready ? 'Expanded Data Release Gate пройден' : (data.status?.label || 'E2E завершён'));
+    toast(data.status?.ready ? 'Сквозная проверка расширенных данных пройдена' : (data.status?.label || 'Сквозная проверка завершена'));
   } catch (e) {
     toast(e.message);
   } finally {
@@ -2754,7 +2759,7 @@ async function probeProvider() {
 async function runProviderCoverageAudit(fixtureId, force = true) {
   if (!isAdmin() || state.providerAuditLoading) return;
   const id = Number(fixtureId || $('providerAuditFixtureId')?.value || 0);
-  if (!id) { toast('Укажи fixture ID'); return; }
+  if (!id) { toast('Укажите ID матча'); return; }
   if ($('providerAuditFixtureId')) $('providerAuditFixtureId').value = String(id);
   state.providerAuditLoading = true;
   renderProviderAudit();
@@ -2771,7 +2776,7 @@ async function runProviderCoverageAudit(fixtureId, force = true) {
       const budgetData = await api('/api/provider/budget', { retry: false });
       state.providerBudget = budgetData.budget || state.providerBudget;
     } catch {}
-    toast(data.blocked ? 'Guardrail не дал потратить лишнюю квоту' : 'Coverage Audit завершён');
+    toast(data.blocked ? 'Защита не дала потратить лишнюю квоту' : 'Проверка покрытия завершена');
   } catch (e) {
     toast(e.message);
   } finally {
@@ -3869,7 +3874,7 @@ function oddsMovementHtml(move) {
     const arrow = d > .4 ? '↑' : d < -.4 ? '↓' : '→';
     return `<div class="odds-move-row ${cls}"><span>${label}</span><strong>${move.baseline?.[key] ?? '—'} → ${move.current?.[key] ?? '—'}</strong><b>${arrow} ${signedPp(d)}</b></div>`;
   };
-  return `<div class="odds-movement-grid">${row('П1','home')}${row('X','draw')}${row('П2','away')}</div><p class="tiny">Сравнение с самым ранним сохранённым LIVE-снимком${move.from ? ` · ${dateTime(move.from)}` : ''}. Изменение указано в implied probability.</p>`;
+  return `<div class="odds-movement-grid">${row('П1','home')}${row('X','draw')}${row('П2','away')}</div><p class="tiny">Сравнение с самым ранним сохранённым LIVE-снимком${move.from ? ` · ${dateTime(move.from)}` : ''}. Изменение указано в расчётной вероятности.</p>`;
 }
 
 function livePressureHtml(p, m) {
@@ -3973,7 +3978,7 @@ function centerPlayersHtml(leaders, match) {
       ${p.photo ? `<img src="${safeUrl(p.photo)}" alt="">` : '<span class="center-player-avatar">👤</span>'}
       <div class="center-player-info"><strong>${escapeHtml(p.name)}</strong><small>${escapeHtml(playerMetricText(p))}</small></div>
       <div class="center-player-rating">${p.rating ? p.rating.toFixed(1) : '—'}</div>
-    </div>`).join('') : '<div class="empty compact-empty">Player stats недоступны.</div>'}</div>`;
+    </div>`).join('') : '<div class="empty compact-empty">Статистика игроков недоступна.</div>'}</div>`;
   return `<div class="center-players-grid">${side(match.home?.name || 'Хозяева', leaders?.home || [])}${side(match.away?.name || 'Гости', leaders?.away || [])}</div>`;
 }
 
@@ -4170,7 +4175,7 @@ function renderMatchCenter(d) {
       <div class="center-hero-actions ${isAdmin() ? 'has-admin-audit' : ''}">
         <button id="centerRefreshBtn" class="reminder-btn" type="button">↻ Обновить</button>
         ${upcoming ? `<button id="centerAnalyzeBtn" class="primary-btn center-analyze-inline" type="button">🧠 Полный анализ</button>` : ''}
-        ${isAdmin() ? `<button id="centerCoverageAuditBtn" class="reminder-btn admin-audit-btn" type="button">🧪 Coverage</button>` : ''}
+        ${isAdmin() ? `<button id="centerCoverageAuditBtn" class="reminder-btn admin-audit-btn" type="button">🧪 Покрытие</button>` : ''}
         ${isAdmin() ? `<button id="centerE2EBtn" class="reminder-btn admin-e2e-btn" type="button">🚦 E2E</button>` : ''}
       </div>
     </section>
@@ -4206,7 +4211,7 @@ function renderMatchCenter(d) {
         <div class="center-section-title"><div><h2>Покрытие и свежесть</h2><p>${d.cached ? 'Данные из общего кэша' : 'Свежий ответ провайдера'} · ${dateTime(d.generatedAt)}</p></div></div>
         ${centerCoverageHtml(d)}
         ${centerFreshnessHtml(d)}
-        ${d.quotaMode ? `<div class="quota-public-chip">${escapeHtml(d.quotaMode.label || '')} · refresh ${Number(d.quotaMode.liveRefreshSeconds || d.refreshSeconds || 0)} сек.</div>` : ''}
+        ${d.quotaMode ? `<div class="quota-public-chip">${escapeHtml(d.quotaMode.label || '')} · обновление ${Number(d.quotaMode.liveRefreshSeconds || d.refreshSeconds || 0)} сек.</div>` : ''}
         ${d.availability?.limitedCoverage ? '<div class="coverage-badge limited">Ограниченное покрытие · экономим API-лимит</div>' : ''}
       </section>
     </div>

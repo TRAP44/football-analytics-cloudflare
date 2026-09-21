@@ -2120,3 +2120,8 @@ main { position: relative; z-index: 1; }
 .settlement-drift-copy small,.settlement-drift-copy span,.settlement-drift-copy em{font-size:12px;line-height:1.35;opacity:.78;font-style:normal}
 .settlement-drift-actions{display:flex;flex-wrap:wrap;gap:8px}
 .settlement-drift-actions button{flex:1 1 150px}
+
+
+/* RC15 UI cleanup */
+.rc-panel:before{content:"RC15"}
+.runtime-controls-badge,.reminder-health-badge,.release-monitor-badge,.production-badge,.expanded-gate-badge{min-width:72px}

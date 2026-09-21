@@ -4,9 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#111827" />
-  <title>Football Manager · Match Intelligence</title>
+  <title>Football Manager · Аналитика матчей</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=6.7.1" />
+  <link rel="stylesheet" href="/styles.css?v=6.7.2" />
 </head>
 <body>
   <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
@@ -19,7 +19,7 @@
       <div class="boot-actions">
         <button id="bootRetryBtn" class="secondary-btn" type="button" hidden>Повторить</button>
         <button id="bootContinueBtn" class="secondary-btn" type="button" hidden>Открыть интерфейс</button>
-        <button id="bootReloadBtn" class="primary-btn" type="button" hidden>Обновить Mini App</button>
+        <button id="bootReloadBtn" class="primary-btn" type="button" hidden>Обновить приложение</button>
       </div>
     </div>
   </div>
@@ -33,7 +33,7 @@
           <p id="topbarSubtitle">Сегодня, LIVE и предматчевая аналитика</p>
         </div>
       </div>
-      <button id="profileBtn" class="profile-badge" type="button" aria-label="Открыть профиль"><i></i><span>FREE</span></button>
+      <button id="profileBtn" class="profile-badge" type="button" aria-label="Открыть профиль"><i></i><span>Бесплатный</span></button>
     </header>
 
     <div id="connectionBanner" class="connection-banner" role="status" aria-live="polite" hidden>
@@ -47,7 +47,7 @@
     <div id="versionBanner" class="version-banner" role="status" aria-live="polite" hidden><span id="versionBannerText"></span><button id="versionReloadBtn" type="button">Обновить</button></div>
     <div id="runtimeBanner" class="runtime-banner" role="status" aria-live="polite" hidden>
       <span id="runtimeBannerIcon" class="runtime-banner-icon">⚙️</span>
-      <div class="runtime-banner-copy"><strong id="runtimeBannerTitle">Runtime status</strong><span id="runtimeBannerText"></span></div>
+      <div class="runtime-banner-copy"><strong id="runtimeBannerTitle">Состояние функций</strong><span id="runtimeBannerText"></span></div>
     </div>
 
     <main>
@@ -218,10 +218,10 @@
           </div>
           <div class="provider-status-grid public-data-grid">
             <div><span>Режим</span><strong id="dataModeLabel">Стандартное покрытие</strong></div>
-            <div><span>LIVE refresh</span><strong id="dataModeRefresh">адаптивно</strong></div>
+            <div><span>Обновление LIVE</span><strong id="dataModeRefresh">адаптивно</strong></div>
             <div><span>Составы</span><strong id="dataModeLineups">По доступности</strong></div>
-            <div><span>Player stats</span><strong id="dataModePlayers">По доступности</strong></div>
-            <div><span>Live odds</span><strong id="dataModeOdds">По доступности</strong></div>
+            <div><span>Статистика игроков</span><strong id="dataModePlayers">По доступности</strong></div>
+            <div><span>Коэффициенты LIVE</span><strong id="dataModeOdds">По доступности</strong></div>
           </div>
           <p id="dataModeNote" class="tiny">Покрытие зависит от турнира и доступности данных провайдера.</p>
         </section>
@@ -251,7 +251,7 @@
               </select>
             </label>
             <label class="switch-row"><span><strong>🔴 Сообщение при старте</strong><small>Дополнительное уведомление около начала матча.</small></span><input id="kickoffNotificationToggle" type="checkbox"><i></i></label>
-            <label class="switch-row"><span><strong>🧒 Скрывать youth/reserve</strong><small>Не показывать молодёжные матчи в обычных фильтрах.</small></span><input id="hideYouthToggle" type="checkbox"><i></i></label>
+            <label class="switch-row"><span><strong>🧒 Скрывать молодёжные и резервные команды</strong><small>Не показывать молодёжные матчи в обычных фильтрах.</small></span><input id="hideYouthToggle" type="checkbox"><i></i></label>
             <label class="switch-row"><span><strong>⭐ Избранные выше</strong><small>Поднимать матчи любимых команд в начало списка.</small></span><input id="favoriteFirstToggle" type="checkbox"><i></i></label>
           </div>
           <button id="savePreferencesBtn" class="primary-setting-btn" type="button">Сохранить настройки</button>
@@ -280,7 +280,7 @@
           <div class="section-head profile-section-head model-quality-head">
             <div>
               <h2>🧪 Качество модели</h2>
-              <p>Backtest по прогнозам, сохранённым до начала матча.</p>
+              <p>Историческая проверка прогнозов, сохранённых до начала матча.</p>
             </div>
             <button id="modelQualityRefreshBtn" class="icon-btn" type="button" aria-label="Обновить качество модели">↻</button>
           </div>
@@ -295,7 +295,7 @@
             </label>
             <span id="modelQualitySampleBadge" class="quality-sample-badge">Нет данных</span>
           </div>
-          <div id="modelQualityStatus" class="tiny quality-status">Откройте профиль, чтобы загрузить backtest.</div>
+          <div id="modelQualityStatus" class="tiny quality-status">Откройте профиль, чтобы загрузить историческую проверку.</div>
           <div id="modelQualityHeadline" class="quality-headline" hidden></div>
           <div id="modelQualityCalibration" class="quality-block" hidden></div>
           <div id="modelQualityEngine" class="quality-block" hidden></div>
@@ -304,24 +304,24 @@
           <div id="modelQualityDashboard" class="quality-block model-dashboard-block" hidden></div>
           <div id="modelQualityRecent" class="quality-block" hidden></div>
           <div id="modelRemediation" class="quality-block model-remediation-block" hidden>
-            <div class="quality-block-head"><strong>🛟 Integrity Remediation</strong><span>dry-run → подтверждение → audit</span></div>
-            <div id="modelRemediationStatus" class="tiny quality-status">Dry-run ещё не выполнен.</div>
+            <div class="quality-block-head"><strong>🛟 Восстановление целостности</strong><span>проверка → подтверждение → журнал</span></div>
+            <div id="modelRemediationStatus" class="tiny quality-status">Предварительная проверка ещё не выполнена.</div>
             <div id="modelRemediationSummary" class="model-remediation-summary"></div>
             <div id="modelRemediationCandidates" class="model-remediation-candidates"></div>
             <div id="modelRemediationDriftQueue" class="model-remediation-drift-queue"></div>
             <label class="runtime-message-field model-remediation-reason">
-              <span>Причина admin action</span>
+              <span>Причина действия администратора</span>
               <input id="modelRemediationReason" maxlength="220" placeholder="Например: подтверждён официальный результат после provider correction">
             </label>
             <div class="runtime-controls-actions">
-              <button id="modelRemediationDryRunBtn" class="reminder-btn" type="button">Обновить dry-run</button>
-              <button id="modelRemediationRunBtn" class="primary-setting-btn" type="button" disabled>Восстановить pending</button>
-              <button id="modelRemediationCircuitResetBtn" class="reminder-btn" type="button" hidden>Сбросить breaker</button>
+              <button id="modelRemediationDryRunBtn" class="reminder-btn" type="button">Обновить проверку</button>
+              <button id="modelRemediationRunBtn" class="primary-setting-btn" type="button" disabled>Восстановить ожидающие</button>
+              <button id="modelRemediationCircuitResetBtn" class="reminder-btn" type="button" hidden>Сбросить защиту</button>
             </div>
             <div id="modelRemediationHistory" class="model-remediation-history"></div>
-            <p class="tiny quality-method-note">Удаление и перезапись prediction snapshots запрещены. Recovery меняет только `pending` после повторной проверки финального счёта и сохраняет audit trail без Telegram ID в интерфейсе.</p>
+            <p class="tiny quality-method-note">Удаление и перезапись снимков прогнозов запрещены. Восстановление меняет только ожидающие записи после повторной проверки финального счёта и сохраняет журнал без ID Telegram в интерфейсе.</p>
           </div>
-          <p class="tiny quality-method-note">Сохраняется первый предматчевый расчёт по fixture. Поздние перерасчёты не переписывают историю, поэтому статистика не «подгоняется» под результат.</p>
+          <p class="tiny quality-method-note">Для каждого матча сохраняется первый предматчевый расчёт. Поздние перерасчёты не переписывают историю, поэтому статистика не «подгоняется» под результат.</p>
         </section>
 
         <section class="panel" data-admin-only hidden>
@@ -335,116 +335,116 @@
             <div><span>План API</span><strong id="providerPlan">Определяется</strong></div>
             <div><span>Осталось сегодня</span><strong id="providerDaily">—</strong></div>
             <div><span>Осталось / мин</span><strong id="providerMinute">—</strong></div>
-            <div><span>Live odds</span><strong id="providerLiveOdds">—</strong></div>
-            <div><span>Player stats</span><strong id="providerPlayerStats">—</strong></div>
-            <div><span>Движение odds</span><strong id="providerOddsMovement">—</strong></div>
+            <div><span>Коэффициенты LIVE</span><strong id="providerLiveOdds">—</strong></div>
+            <div><span>Статистика игроков</span><strong id="providerPlayerStats">—</strong></div>
+            <div><span>Движение коэффициентов</span><strong id="providerOddsMovement">—</strong></div>
           </div>
-          <p class="tiny">API-Football предоставляет endpoint по единой схеме, а платный тариф прежде всего увеличивает квоту и rate limit. Приложение на FREE сознательно экономит запросы; при обнаружении PRO/ULTRA/MEGA расширенный режим включается автоматически.</p>
+          <p class="tiny">API-Football работает по единой схеме, а платный тариф в основном увеличивает квоту и лимит запросов. На бесплатном плане приложение экономит запросы; при обнаружении расширенного тарифа дополнительные возможности включаются автоматически.</p>
         </section>
 
         <section class="panel provider-audit-panel" data-admin-only hidden>
           <div class="section-head profile-section-head">
             <div>
-              <h2>🧪 Provider Transition & Coverage Audit</h2>
-              <p>Контролируемая проверка тарифа и фактического покрытия endpoint на выбранном матче.</p>
+              <h2>🧪 Проверка источника данных</h2>
+              <p>Проверка тарифа и доступности данных API-Football на выбранном матче.</p>
             </div>
           </div>
 
           <div class="provider-transition-grid">
             <div><span>Режим</span><strong id="providerTransitionMode">Ожидаем тариф</strong></div>
-            <div><span>LIVE refresh</span><strong id="providerRefreshCadence">—</strong></div>
-            <div><span>Ожидаемый daily</span><strong id="providerExpectedDaily">—</strong></div>
-            <div><span>Ожидаемый / min</span><strong id="providerExpectedMinute">—</strong></div>
+            <div><span>Обновление LIVE</span><strong id="providerRefreshCadence">—</strong></div>
+            <div><span>Ожидаемый дневной лимит</span><strong id="providerExpectedDaily">—</strong></div>
+            <div><span>Ожидаемый лимит / мин.</span><strong id="providerExpectedMinute">—</strong></div>
           </div>
 
           <div class="quota-orchestrator-box">
             <div class="quota-orchestrator-head">
-              <div><strong>⚙️ Quota Orchestrator</strong><span id="quotaBudgetMode">Ожидаем данные</span></div>
-              <small>Feature-level cache</small>
+              <div><strong>⚙️ Контроль квоты</strong><span id="quotaBudgetMode">Ожидаем данные</span></div>
+              <small>Кэш отдельных функций</small>
             </div>
             <div class="quota-orchestrator-grid">
-              <div><span>Daily остаток</span><strong id="quotaBudgetDaily">—</strong></div>
-              <div><span>Minute остаток</span><strong id="quotaBudgetMinute">—</strong></div>
-              <div><span>Feature API</span><strong id="quotaFeatureApi">0</strong></div>
-              <div><span>Cache hits</span><strong id="quotaFeatureCache">0</strong></div>
-              <div><span>Stale fallback</span><strong id="quotaFeatureStale">0</strong></div>
-              <div><span>Skipped</span><strong id="quotaFeatureSkipped">0</strong></div>
+              <div><span>Остаток на день</span><strong id="quotaBudgetDaily">—</strong></div>
+              <div><span>Остаток на минуту</span><strong id="quotaBudgetMinute">—</strong></div>
+              <div><span>Запросы API</span><strong id="quotaFeatureApi">0</strong></div>
+              <div><span>Из кэша</span><strong id="quotaFeatureCache">0</strong></div>
+              <div><span>Резерв из кэша</span><strong id="quotaFeatureStale">0</strong></div>
+              <div><span>Пропущено</span><strong id="quotaFeatureПропущено">0</strong></div>
             </div>
             <div id="quotaFeatureList" class="quota-feature-list"></div>
-            <p id="quotaBudgetNote" class="tiny">Feature-level cache активен.</p>
+            <p id="quotaBudgetNote" class="tiny">Кэш отдельных функций активен.</p>
           </div>
 
           <div class="provider-audit-controls">
             <button id="providerProbeBtn" class="reminder-btn" type="button">1. Обновить тариф · 1 запрос</button>
             <div class="provider-audit-fixture">
-              <input id="providerAuditFixtureId" type="number" min="1" inputmode="numeric" placeholder="Fixture ID">
-              <button id="providerAuditBtn" class="primary-setting-btn" type="button">2. Coverage Audit</button>
+              <input id="providerAuditFixtureId" type="number" min="1" inputmode="numeric" placeholder="ID матча">
+              <button id="providerAuditBtn" class="primary-setting-btn" type="button">Проверить покрытие</button>
             </div>
           </div>
 
           <div class="expanded-release-gate">
             <div class="expanded-release-head">
               <div>
-                <span id="expandedGateBadge" class="expanded-gate-badge hold">HOLD</span>
-                <div><strong id="expandedGateTitle">Код v5.0 готов, ждём повышенную квоту</strong><small id="expandedGateMeta">Финальная end-to-end проверка expanded data path</small></div>
+                <span id="expandedGateBadge" class="expanded-gate-badge hold">ОЖИДАНИЕ</span>
+                <div><strong id="expandedGateTitle">Сквозная проверка расширенных данных</strong><small id="expandedGateMeta">Проверка полного пути данных от API до интерфейса</small></div>
               </div>
-              <button id="providerE2EBtn" class="primary-setting-btn" type="button">🚦 Запустить E2E</button>
+              <button id="providerE2EBtn" class="primary-setting-btn" type="button">🚦 Запустить сквозную проверку</button>
             </div>
             <div id="expandedGateSteps" class="expanded-gate-steps">
-              <div class="expanded-gate-empty"><strong>Release Gate ещё не запускался.</strong><p>На FREE проверка остановится после одного /status запроса.</p></div>
+              <div class="expanded-gate-empty"><strong>Сквозная проверка ещё не запускалась.</strong><p>На бесплатном плане проверка остановится после одного запроса состояния.</p></div>
             </div>
             <div id="expandedGateDetails" class="expanded-gate-details" hidden></div>
           </div>
 
-          <p id="providerAuditStatus" class="tiny">На FREE полный audit не запускается: guardrail тратит только fixture-запрос и останавливается.</p>
+          <p id="providerAuditStatus" class="tiny">На бесплатном плане полная проверка не запускается: защита расходует только один запрос матча и останавливается.</p>
           <div id="providerAuditResult" class="provider-audit-result" hidden></div>
-          <p class="tiny diagnostics-privacy">Полный audit запускается только администратором вручную. Результат кэшируется на 15 минут. Пустой endpoint не всегда ошибка: покрытие зависит от турнира и стадии матча.</p>
+          <p class="tiny diagnostics-privacy">Полная проверка запускается администратором вручную. Результат хранится в кэше 15 минут. Пустой ответ не всегда означает ошибку: доступность данных зависит от турнира и стадии матча.</p>
         </section>
 
         <section class="panel runtime-controls-panel" data-admin-only hidden>
           <div class="section-head profile-section-head">
             <div>
-              <h2>🧯 Runtime Controls & Kill Switches</h2>
-              <p>Отключение проблемной функции без нового Deploy. Изменения применяются примерно за 30 секунд.</p>
+              <h2>🧯 Управление функциями</h2>
+              <p>Отключение проблемной функции без нового развёртывания. Изменения применяются примерно за 30 секунд.</p>
             </div>
-            <button id="runtimeControlsRefreshBtn" class="icon-btn" type="button" aria-label="Обновить Runtime Controls">↻</button>
+            <button id="runtimeControlsRefreshBtn" class="icon-btn" type="button" aria-label="Обновить управление функциями">↻</button>
           </div>
 
           <div class="runtime-controls-status">
-            <span id="runtimeControlsBadge" class="runtime-controls-badge">WAIT</span>
-            <div><strong id="runtimeControlsStatus">Runtime Controls ещё не загружены.</strong><small id="runtimeControlsRevision">—</small></div>
+            <span id="runtimeControlsBadge" class="runtime-controls-badge">ОЖИДАНИЕ</span>
+            <div><strong id="runtimeControlsStatus">Настройки функций ещё не загружены.</strong><small id="runtimeControlsRevision">—</small></div>
           </div>
 
           <div class="runtime-control-list">
-            <label class="runtime-control-row danger"><div><strong>Maintenance mode</strong><small>Останавливает основные футбольные маршруты у обычных пользователей. Администратор сохраняет доступ.</small></div><input id="runtimeMaintenanceToggle" type="checkbox"></label>
+            <label class="runtime-control-row danger"><div><strong>Техническое обслуживание</strong><small>Останавливает основные футбольные маршруты у обычных пользователей. Администратор сохраняет доступ.</small></div><input id="runtimeMaintenanceToggle" type="checkbox"></label>
             <label class="runtime-control-row"><div><strong>Полный анализ</strong><small>Разрешить `/api/analyze` и кнопки полного предматчевого анализа.</small></div><input id="runtimeAnalysisToggle" type="checkbox" checked></label>
-            <label class="runtime-control-row"><div><strong>Удалённый поиск</strong><small>Локальный каталог остаётся доступен, даже если provider-поиск выключен.</small></div><input id="runtimeSearchToggle" type="checkbox" checked></label>
-            <label class="runtime-control-row"><div><strong>LIVE auto-refresh</strong><small>Останавливает автоматическое обновление LIVE без отключения уже сохранённого Match Center.</small></div><input id="runtimeLiveToggle" type="checkbox" checked></label>
-            <label class="runtime-control-row"><div><strong>Новые уведомления</strong><small>Создание новых reminders и cron-delivery. Удалять существующие reminders можно.</small></div><input id="runtimeRemindersToggle" type="checkbox" checked></label>
-            <label class="runtime-control-row"><div><strong>Расширенные provider-данные</strong><small>Players, injuries, live odds и другие enrichment features. Core events/statistics остаются.</small></div><input id="runtimeExpandedToggle" type="checkbox" checked></label>
-            <label class="runtime-control-row"><div><strong>Авто settlement catch-up</strong><small>RC15 watchdog: один безопасный batch в сутки, до 20 fixture / 5 дат. По умолчанию shadow; ручной recovery остаётся доступен.</small></div><input id="runtimeAutoSettlementRecoveryToggle" type="checkbox"></label>
+            <label class="runtime-control-row"><div><strong>Удалённый поиск</strong><small>Локальный каталог остаётся доступен, даже если поиск через провайдера выключен.</small></div><input id="runtimeSearchToggle" type="checkbox" checked></label>
+            <label class="runtime-control-row"><div><strong>Автообновление LIVE</strong><small>Останавливает автоматическое обновление LIVE, не отключая уже сохранённый центр матча.</small></div><input id="runtimeLiveToggle" type="checkbox" checked></label>
+            <label class="runtime-control-row"><div><strong>Новые уведомления</strong><small>Создание новых уведомлений и их доставка по расписанию. Существующие уведомления можно удалять.</small></div><input id="runtimeRemindersToggle" type="checkbox" checked></label>
+            <label class="runtime-control-row"><div><strong>Расширенные данные провайдера</strong><small>Игроки, травмы, LIVE-коэффициенты и другие дополнительные данные. Основные события и статистика остаются доступными.</small></div><input id="runtimeExpandedToggle" type="checkbox" checked></label>
+            <label class="runtime-control-row"><div><strong>Автовосстановление результатов</strong><small>RC15: один безопасный пакет в сутки, до 20 матчей / 5 дат. По умолчанию только наблюдение; ручное восстановление остаётся доступным.</small></div><input id="runtimeAutoSettlementRecoveryToggle" type="checkbox"></label>
           </div>
 
           <label class="runtime-message-field">
-            <span>Сообщение пользователям при maintenance</span>
+            <span>Сообщение пользователям при техническом обслуживании</span>
             <textarea id="runtimeMessage" rows="3" maxlength="280" placeholder="Например: Обновляем футбольные данные. Вернёмся через несколько минут."></textarea>
           </label>
 
           <label class="runtime-message-field">
             <span>Причина изменения / комментарий</span>
-            <input id="runtimeChangeReason" maxlength="240" placeholder="Например: временно отключаем LIVE из-за provider 5xx">
+            <input id="runtimeChangeReason" maxlength="240" placeholder="Например: временно отключаем LIVE из-за ошибок провайдера">
           </label>
 
           <div class="runtime-controls-actions">
-            <button id="runtimeDefaultsBtn" class="reminder-btn" type="button">Вернуть safe defaults</button>
+            <button id="runtimeDefaultsBtn" class="reminder-btn" type="button">Вернуть безопасные настройки</button>
             <button id="runtimeSaveBtn" class="primary-setting-btn" type="button">Применить изменения</button>
           </div>
-          <p class="tiny diagnostics-privacy">Все изменения server-side, доступны только ADMIN_TELEGRAM_IDS и пишутся в ops_events. Пользовательскую оплату эти переключатели не включают.</p>
+          <p class="tiny diagnostics-privacy">Все изменения применяются на сервере, доступны только администраторам и записываются в журнал событий. Эти переключатели не включают оплату.</p>
 
           <div class="runtime-history">
             <div class="runtime-history-head">
               <div>
-                <strong>↩ История и rollback</strong>
+                <strong>↩ История и откат</strong>
                 <span id="runtimeHistoryStatus">История ещё не загружена.</span>
               </div>
             </div>
@@ -455,17 +455,17 @@
         <section class="panel reminder-health-panel" data-admin-only hidden>
           <div class="section-head profile-section-head">
             <div>
-              <h2>🔔 Notification Delivery Health</h2>
-              <p>Atomic claims, Telegram delivery, cron cadence и защита от дублей.</p>
+              <h2>🔔 Доставка уведомлений</h2>
+              <p>Безопасное получение задач, доставка через Telegram, расписание и защита от дублей.</p>
             </div>
             <div class="reminder-health-actions">
               <button id="reminderTestBtn" class="reminder-btn" type="button">Отправить тест себе</button>
-              <button id="reminderHealthRefreshBtn" class="icon-btn" type="button" aria-label="Обновить Notification Health">↻</button>
+              <button id="reminderHealthRefreshBtn" class="icon-btn" type="button" aria-label="Обновить состояние уведомлений">↻</button>
             </div>
           </div>
           <div class="reminder-health-status">
-            <span id="reminderHealthBadge" class="reminder-health-badge">WAIT</span>
-            <strong id="reminderHealthStatus">Delivery Health ещё не загружен.</strong>
+            <span id="reminderHealthBadge" class="reminder-health-badge">ОЖИДАНИЕ</span>
+            <strong id="reminderHealthStatus">Состояние доставки ещё не загружено.</strong>
           </div>
           <div id="reminderHealthKpis"></div>
           <div id="reminderHealthRecent"></div>
@@ -474,23 +474,23 @@
         <section class="panel release-monitor-panel" data-admin-only hidden>
           <div class="section-head profile-section-head">
             <div>
-              <h2>📡 Release Monitor</h2>
-              <p>Ошибки, startup/recovery telemetry и operational budget после deploy.</p>
+              <h2>📡 Мониторинг выпуска</h2>
+              <p>Ошибки, телеметрия запуска и восстановления, а также нагрузка после развёртывания.</p>
             </div>
             <div class="release-monitor-actions">
-              <select id="releaseMonitorPeriod" aria-label="Период Release Monitor">
+              <select id="releaseMonitorPeriod" aria-label="Период мониторинга выпуска">
                 <option value="6">6ч</option>
                 <option value="24" selected>24ч</option>
                 <option value="72">72ч</option>
                 <option value="168">7д</option>
               </select>
-              <button id="releaseMonitorRefreshBtn" class="icon-btn" type="button" aria-label="Обновить Release Monitor">↻</button>
+              <button id="releaseMonitorRefreshBtn" class="icon-btn" type="button" aria-label="Обновить мониторинг выпуска">↻</button>
             </div>
           </div>
 
           <div class="release-monitor-status">
-            <span id="releaseMonitorBadge" class="release-monitor-badge">WAIT</span>
-            <div><strong id="releaseMonitorStatus">Release Monitor ещё не запускался.</strong><small id="releaseMonitorMeta">Без API-Football и без изменения пользовательских данных.</small></div>
+            <span id="releaseMonitorBadge" class="release-monitor-badge">ОЖИДАНИЕ</span>
+            <div><strong id="releaseMonitorStatus">Мониторинг выпуска ещё не запускался.</strong><small id="releaseMonitorMeta">Без API-Football и без изменения пользовательских данных.</small></div>
           </div>
           <div id="releaseMonitorKpis"></div>
           <div id="releaseMonitorClient" class="release-monitor-block"></div>
@@ -501,17 +501,17 @@
         <section class="panel rc-panel" data-admin-only hidden>
           <div class="section-head profile-section-head">
             <div>
-              <h2>🚦 Release Candidate RC15</h2>
-              <p>Regression + startup compatibility: runtime, security, schema, user routes, safety gates и client contract.</p>
+              <h2>🚦 Кандидат на выпуск RC15</h2>
+              <p>Регрессионная проверка: среда выполнения, безопасность, схема базы, пользовательские маршруты и клиентский контракт.</p>
             </div>
-            <button id="rcRunBtn" class="primary-setting-btn rc-run-btn" type="button">Запустить QA</button>
+            <button id="rcRunBtn" class="primary-setting-btn rc-run-btn" type="button">Запустить проверку</button>
           </div>
 
           <div class="rc-status-row">
             <span id="rcBadge" class="rc-badge">RC15</span>
             <div>
-              <strong id="rcStatus">Полный regression smoke-test ещё не запускался.</strong>
-              <small id="rcMeta">Без Analyze, без изменений user data, без расхода API-Football.</small>
+              <strong id="rcStatus">Полная регрессионная проверка ещё не запускалась.</strong>
+              <small id="rcMeta">Без полного анализа, без изменения пользовательских данных и без расхода API-Football.</small>
             </div>
           </div>
 
@@ -525,30 +525,30 @@
           <div class="section-head profile-section-head release-head">
             <div>
               <h2>✅ Готовность ядра</h2>
-              <p>Автопроверка обязательных зависимостей перед release candidate.</p>
+              <p>Автопроверка обязательных зависимостей перед выпуском.</p>
             </div>
-            <button id="releaseRefreshBtn" class="icon-btn" type="button" aria-label="Повторить release-проверку">↻</button>
+            <button id="releaseRefreshBtn" class="icon-btn" type="button" aria-label="Повторить проверку готовности">↻</button>
           </div>
           <div class="release-summary">
             <span id="releaseBadge" class="release-badge">Нет данных</span>
             <div><strong id="releaseStatus">Откройте профиль, чтобы выполнить проверку.</strong><small id="releaseMeta"></small></div>
           </div>
           <div id="releaseChecks" class="release-checks"></div>
-          <p class="tiny diagnostics-privacy">Проверка не активирует оплату и не тратит запросы API-Football. Она проверяет runtime-конфигурацию, Supabase, миграции и состояние уже используемого провайдера.</p>
+          <p class="tiny diagnostics-privacy">Проверка не активирует оплату и не тратит запросы API-Football. Она проверяет конфигурацию приложения, Supabase, миграции и состояние провайдера.</p>
         </section>
 
         <section class="panel production-readiness-panel" data-admin-only hidden>
           <div class="section-head profile-section-head">
             <div>
-              <h2>🛡 Production QA & Load Safety</h2>
-              <p>Проверка защиты от параллельных запросов, зависших upstream и случайных burst-нажатий.</p>
+              <h2>🛡 Производственная проверка и защита от нагрузки</h2>
+              <p>Проверка защиты от параллельных запросов, зависших внешних сервисов и серии повторных нажатий.</p>
             </div>
-            <button id="productionReadinessRefreshBtn" class="icon-btn" type="button" aria-label="Повторить production-проверку">↻</button>
+            <button id="productionReadinessRefreshBtn" class="icon-btn" type="button" aria-label="Повторить производственную проверку">↻</button>
           </div>
 
           <div class="production-status-row">
-            <span id="productionReadinessBadge" class="production-badge">WAIT</span>
-            <div><strong id="productionReadinessStatus">Production Safety Gate ещё не запускался.</strong><small>Тест не создаёт внешний load и не расходует API-Football.</small></div>
+            <span id="productionReadinessBadge" class="production-badge">ОЖИДАНИЕ</span>
+            <div><strong id="productionReadinessStatus">Проверка производственной безопасности ещё не запускалась.</strong><small>Тест не создаёт внешнюю нагрузку и не расходует API-Football.</small></div>
             <strong id="productionReadinessScore" class="production-score">—</strong>
           </div>
 
@@ -560,7 +560,7 @@
           <div class="section-head profile-section-head diagnostics-head">
             <div>
               <h2>🛠 Диагностика системы</h2>
-              <p>Worker, API-Football, Supabase, кэш и журнал ошибок.</p>
+              <p>Серверный обработчик, API-Football, Supabase, кэш и журнал ошибок.</p>
             </div>
             <button id="diagnosticsRefreshBtn" class="icon-btn" type="button" aria-label="Обновить диагностику">↻</button>
           </div>
@@ -591,6 +591,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=6.7.1"></script>
+  <script type="module" src="/app.js?v=6.7.2"></script>
 </body>
 </html>
