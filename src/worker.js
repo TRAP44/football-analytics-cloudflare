@@ -35,7 +35,7 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '4.6.0-prematch-intelligence';
+const APP_VERSION = '4.7.0-model-dashboard';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1365,6 +1365,293 @@ function qualityBucket(rows, label) {
   };
 }
 
+
+function dashboardRound(value, digits = 3) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  const factor = Math.pow(10, digits);
+  return Math.round(n * factor) / factor;
+}
+
+function dashboardLogLoss(row) {
+  const key = String(row?.actual_outcome || '');
+  if (!['home','draw','away'].includes(key)) return null;
+  const p = Math.max(0.01, Math.min(0.99, Number(row?.[`${key}_prob`] || 0) / 100));
+  return -Math.log(p);
+}
+
+function dashboardCompletenessPercent(row) {
+  const score = Number(row?.completeness_score || 0);
+  const max = Number(row?.completeness_max || 0);
+  if (!Number.isFinite(score) || !Number.isFinite(max) || max <= 0) return null;
+  return clamp(score / max * 100, 0, 100);
+}
+
+function dashboardBucket(rows, label, extra = {}) {
+  const valid = (rows || []).filter(row => ['home','draw','away'].includes(String(row?.actual_outcome || '')));
+  const hitCount = valid.filter(row => row.correct === true).length;
+  const top = average(valid.map(topProbabilityValue));
+  const acc = pct(hitCount, valid.length);
+  const brier = average(valid.map(row => Number(row?.brier_score)).filter(Number.isFinite));
+  const logLoss = average(valid.map(dashboardLogLoss).filter(Number.isFinite));
+  const confidence = average(valid.map(row => Number(row?.confidence_score)).filter(Number.isFinite));
+  const completeness = average(valid.map(dashboardCompletenessPercent).filter(Number.isFinite));
+  return {
+    label,
+    sample: valid.length,
+    accuracy: acc,
+    avgBrier: dashboardRound(brier),
+    avgLogLoss: dashboardRound(logLoss),
+    avgTopProbability: dashboardRound(top, 1),
+    calibrationGap: Number.isFinite(Number(top)) && Number.isFinite(Number(acc)) ? dashboardRound(Number(top) - Number(acc), 1) : null,
+    avgConfidence: dashboardRound(confidence, 1),
+    avgCompleteness: dashboardRound(completeness, 1),
+    ...extra,
+  };
+}
+
+function dashboardWeekKey(value) {
+  const d = new Date(value || 0);
+  if (!Number.isFinite(d.getTime())) return '';
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() - day + 1);
+  d.setUTCHours(0,0,0,0);
+  return d.toISOString().slice(0,10);
+}
+
+function dashboardWeekLabel(key) {
+  const d = new Date(`${key}T00:00:00.000Z`);
+  if (!Number.isFinite(d.getTime())) return key;
+  return `${String(d.getUTCDate()).padStart(2,'0')}.${String(d.getUTCMonth()+1).padStart(2,'0')}`;
+}
+
+function buildWeeklyDashboard(rows, limit = 10) {
+  const groups = new Map();
+  for (const row of rows || []) {
+    const key = dashboardWeekKey(row?.kickoff_at);
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  return [...groups.entries()]
+    .sort((a,b) => a[0].localeCompare(b[0]))
+    .slice(-limit)
+    .map(([key, group]) => dashboardBucket(group, dashboardWeekLabel(key), { key }));
+}
+
+function buildLeagueDashboard(rows) {
+  const groups = new Map();
+  for (const row of rows || []) {
+    const id = Number(row?.league_id || 0);
+    const name = String(row?.league_name || '').trim() || 'Неизвестный турнир';
+    const key = id ? `id:${id}` : `name:${name.toLowerCase()}`;
+    if (!groups.has(key)) groups.set(key, { id: id || null, name, rows: [] });
+    groups.get(key).rows.push(row);
+  }
+  return [...groups.values()]
+    .map(group => dashboardBucket(group.rows, group.name, { leagueId: group.id, leagueName: group.name }))
+    .sort((a,b) => Number(b.sample || 0) - Number(a.sample || 0) || String(a.leagueName).localeCompare(String(b.leagueName)))
+    .slice(0, 12);
+}
+
+function buildConfidenceDashboard(rows) {
+  const defs = [
+    ['<50', -Infinity, 50],
+    ['50–59', 50, 60],
+    ['60–69', 60, 70],
+    ['70–79', 70, 80],
+    ['80+', 80, Infinity],
+  ];
+  return defs.map(([label,min,max]) => dashboardBucket(
+    (rows || []).filter(row => {
+      const v = Number(row?.confidence_score);
+      return Number.isFinite(v) && v >= min && v < max;
+    }),
+    label
+  ));
+}
+
+function buildCompletenessDashboard(rows) {
+  const defs = [
+    ['<60%', -Infinity, 60],
+    ['60–79%', 60, 80],
+    ['80%+', 80, Infinity],
+  ];
+  return defs.map(([label,min,max]) => dashboardBucket(
+    (rows || []).filter(row => {
+      const v = dashboardCompletenessPercent(row);
+      return Number.isFinite(v) && v >= min && v < max;
+    }),
+    label
+  ));
+}
+
+function buildCalibrationModeDashboard(rows) {
+  const defs = [
+    ['baseline', 'База'],
+    ['shadow', 'Тень'],
+    ['active', 'Активен'],
+  ];
+  return defs.map(([mode,label]) => dashboardBucket(
+    (rows || []).filter(row => String(row?.calibration_mode || 'baseline') === mode),
+    label,
+    { mode }
+  )).filter(x => x.sample > 0);
+}
+
+function buildSignalDashboard(rows) {
+  const names = Object.keys(MODEL_BASE_WEIGHTS);
+  return names.map(name => {
+    const subset = [];
+    const signalBriers = [];
+    const signalLosses = [];
+    let signalHits = 0;
+    for (const row of rows || []) {
+      if (!['home','draw','away'].includes(String(row?.actual_outcome || ''))) continue;
+      const signalMap = parseJsonObject(row?.signal_probabilities);
+      const probabilities = signalMap?.[name];
+      if (!validThreeProbabilities(probabilities)) continue;
+      subset.push(row);
+      const sb = brierFromProbabilities(probabilities, row.actual_outcome);
+      const sl = logLossFromProbabilities(probabilities, row.actual_outcome);
+      if (Number.isFinite(sb)) signalBriers.push(sb);
+      if (Number.isFinite(sl)) signalLosses.push(sl);
+      if (predictedOutcomeForProbabilities(probabilities) === row.actual_outcome) signalHits++;
+    }
+    const finalBrier = average(subset.map(row => Number(row?.brier_score)).filter(Number.isFinite));
+    const finalAccuracy = pct(subset.filter(row => row.correct === true).length, subset.length);
+    const signalBrier = average(signalBriers);
+    const signalAccuracy = pct(signalHits, subset.length);
+    return {
+      name,
+      label: signalDisplayName(name),
+      sample: subset.length,
+      signalAccuracy,
+      finalAccuracy,
+      signalBrier: dashboardRound(signalBrier),
+      finalBrier: dashboardRound(finalBrier),
+      brierDeltaVsBlend: Number.isFinite(Number(signalBrier)) && Number.isFinite(Number(finalBrier))
+        ? dashboardRound(Number(signalBrier) - Number(finalBrier))
+        : null,
+      signalLogLoss: dashboardRound(average(signalLosses)),
+      baseWeight: dashboardRound(Number(MODEL_BASE_WEIGHTS[name] || 0) * 100, 1),
+    };
+  });
+}
+
+function buildOutcomeDashboard(rows) {
+  return ['home','draw','away'].map(key => dashboardBucket(
+    (rows || []).filter(row => String(row?.predicted_outcome || '') === key),
+    key === 'home' ? 'П1' : key === 'draw' ? 'X' : 'П2',
+    { key }
+  ));
+}
+
+function buildModelDashboardObservations(rows, dashboard) {
+  const notes = [];
+  const overall = dashboard?.overview || {};
+  const sample = Number(overall.sample || 0);
+
+  if (sample < 30) {
+    notes.push({
+      level: 'info',
+      title: 'Выборка ещё небольшая',
+      text: `В периоде ${sample} завершённых прогнозов. Разрезы по лигам и confidence пока нужно читать как диагностику, а не как устойчивые закономерности.`,
+    });
+  }
+
+  if (sample >= 20 && Number.isFinite(Number(overall.calibrationGap)) && Number(overall.calibrationGap) >= 8) {
+    notes.push({
+      level: 'warn',
+      title: 'Модель выглядит переуверенной',
+      text: `Средняя top-вероятность выше фактической точности примерно на ${Number(overall.calibrationGap).toFixed(1)} п.п. Калибровку стоит продолжать проверять на новых матчах.`,
+    });
+  }
+
+  const high = (dashboard?.confidence || []).find(x => x.label === '80+');
+  const mid = (dashboard?.confidence || []).find(x => x.label === '60–69');
+  if (Number(high?.sample || 0) >= 12 && Number(mid?.sample || 0) >= 12 &&
+      Number.isFinite(Number(high?.accuracy)) && Number.isFinite(Number(mid?.accuracy)) &&
+      Number(high.accuracy) <= Number(mid.accuracy)) {
+    notes.push({
+      level: 'warn',
+      title: 'Высокий confidence пока не даёт прироста',
+      text: `В диапазоне 80+ точность ${Number(high.accuracy).toFixed(1)}%, а в 60–69 — ${Number(mid.accuracy).toFixed(1)}%. Это повод проверить причины, но не менять пороги автоматически.`,
+    });
+  }
+
+  const weakLeague = (dashboard?.leagues || []).find(x =>
+    Number(x.sample || 0) >= 10 &&
+    Number.isFinite(Number(x.avgBrier)) &&
+    Number.isFinite(Number(overall.avgBrier)) &&
+    Number(x.avgBrier) >= Number(overall.avgBrier) + 0.035
+  );
+  if (weakLeague) {
+    notes.push({
+      level: 'watch',
+      title: 'Есть лига для дополнительной проверки',
+      text: `${weakLeague.leagueName}: n=${weakLeague.sample}, Brier ${Number(weakLeague.avgBrier).toFixed(3)} против общего ${Number(overall.avgBrier).toFixed(3)}. Возможна специфика турнира или просто шум выборки.`,
+    });
+  }
+
+  const weakSignal = (dashboard?.signals || []).find(x =>
+    Number(x.sample || 0) >= 30 &&
+    Number.isFinite(Number(x.brierDeltaVsBlend)) &&
+    Number(x.brierDeltaVsBlend) >= 0.025
+  );
+  if (weakSignal) {
+    notes.push({
+      level: 'watch',
+      title: 'Один источник слабее итогового blend',
+      text: `${weakSignal.label}: собственный Brier ${Number(weakSignal.signalBrier).toFixed(3)}, blend на тех же матчах ${Number(weakSignal.finalBrier).toFixed(3)}. Текущий вес уже ограничен guardrails.`,
+    });
+  }
+
+  const latest = (dashboard?.trend || []).slice(-3);
+  if (latest.length >= 3 && latest.every(x => Number(x.sample || 0) >= 4)) {
+    const first = Number(latest[0]?.avgBrier);
+    const last = Number(latest[latest.length - 1]?.avgBrier);
+    if (Number.isFinite(first) && Number.isFinite(last) && last <= first - 0.025) {
+      notes.push({
+        level: 'good',
+        title: 'Последние недели выглядят лучше по Brier',
+        text: `Brier снизился примерно с ${first.toFixed(3)} до ${last.toFixed(3)}. Нужна более длинная серия, чтобы считать это устойчивым улучшением.`,
+      });
+    }
+  }
+
+  if (!notes.length) {
+    notes.push({
+      level: 'info',
+      title: 'Явных диагностических отклонений нет',
+      text: 'Продолжаем накапливать immutable pre-match snapshots. v4.7 ничего не меняет в весах автоматически — только показывает разрезы.',
+    });
+  }
+
+  return notes.slice(0, 5);
+}
+
+function buildModelDashboard(rows, days) {
+  const valid = (rows || []).filter(row => ['home','draw','away'].includes(String(row?.actual_outcome || '')));
+  const overview = dashboardBucket(valid, 'Все прогнозы');
+  const dashboard = {
+    version: '4.7',
+    periodDays: days,
+    generatedAt: new Date().toISOString(),
+    overview,
+    trend: buildWeeklyDashboard(valid, 10),
+    confidence: buildConfidenceDashboard(valid),
+    completeness: buildCompletenessDashboard(valid),
+    leagues: buildLeagueDashboard(valid),
+    outcomes: buildOutcomeDashboard(valid),
+    signals: buildSignalDashboard(valid),
+    calibrationModes: buildCalibrationModeDashboard(valid),
+  };
+  dashboard.observations = buildModelDashboardObservations(valid, dashboard);
+  dashboard.note = 'Dashboard использует только immutable pre-match snapshots и фактические результаты. Разрезы с маленьким n не используются для автоматической перенастройки модели.';
+  return dashboard;
+}
+
 function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = null) {
   const rows = (settledRows || []).filter(x => ['home','draw','away'].includes(String(x.actual_outcome || '')));
   const evaluated = rows.length;
@@ -1449,6 +1736,7 @@ function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = 
     outcome,
     signals,
     signalPerformance,
+    dashboard: buildModelDashboard(rows, days),
     calibrationEngine: calibrationProfile || baselineCalibrationProfile(evaluated, signalPerformance),
     calibrationImpact,
     secondary: {
@@ -4913,7 +5201,7 @@ async function apiAnalyze(request, cfg, user) {
 
   const payload = {
     generatedAt: new Date().toISOString(),
-    analysisVersion: '4.6.0-prematch-intelligence',
+    analysisVersion: '4.7.0-model-dashboard',
     match: {
       fixtureId, date: fixture.fixture?.date || '', status: fixture.fixture?.status?.short || '',
       venue: fixture.fixture?.venue?.name || '', city: fixture.fixture?.venue?.city || '',
@@ -4989,6 +5277,7 @@ export default {
         matchCenter2: 'enabled',
         smartMatchInsights: 'enabled',
         preMatchIntelligence: 'enabled',
+        modelDashboard2: 'enabled',
         devMode: cfg.devMode,
       });
     }
