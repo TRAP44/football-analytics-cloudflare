@@ -1925,3 +1925,40 @@ main { position: relative; z-index: 1; }
   .release-monitor-section-head{display:block}
   .release-monitor-section-head span{display:block;text-align:left;margin-top:3px}
 }
+
+
+/* v5.6 RC4 — Notification Delivery Reliability */
+.reminder-delivery-badge{display:inline-flex;align-items:center;margin-top:5px;border:1px solid var(--line);border-radius:999px;padding:4px 7px;font-size:8px;font-weight:850;color:var(--hint)}
+.reminder-delivery-badge.sent{color:var(--good);border-color:color-mix(in srgb,var(--good) 28%,var(--line))}
+.reminder-delivery-badge.retry{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 30%,var(--line))}
+.reminder-delivery-badge.scheduled{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 24%,var(--line))}
+.reminder-health-actions{display:flex;align-items:center;gap:7px}
+.reminder-health-actions .reminder-btn{width:auto;margin:0;padding:8px 10px;font-size:9px}
+.reminder-health-status{display:flex;align-items:center;gap:9px;margin:10px 0}
+.reminder-health-status strong{font-size:10px}
+.reminder-health-badge{min-width:52px;text-align:center;border:1px solid var(--line);border-radius:999px;padding:6px 8px;font-size:9px;font-weight:950;color:var(--hint)}
+.reminder-health-badge.healthy{color:var(--good);border-color:color-mix(in srgb,var(--good) 38%,var(--line))}
+.reminder-health-badge.watch{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 38%,var(--line))}
+.reminder-health-badge.blocked{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 38%,var(--line))}
+.reminder-health-badge.running{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 38%,var(--line))}
+.reminder-health-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:10px 0}
+.reminder-health-grid>div{border:1px solid var(--line);border-radius:11px;padding:8px;background:var(--surface)}
+.reminder-health-grid span,.reminder-health-grid small{display:block;color:var(--hint);font-size:8px}
+.reminder-health-grid strong{display:block;font-size:13px;margin:2px 0}
+.reminder-health-list{display:grid;gap:6px;margin-top:10px}
+.reminder-health-list>div{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;border:1px solid var(--line);border-radius:11px;padding:8px}
+.reminder-health-list>div.error{border-color:color-mix(in srgb,var(--warn) 30%,var(--line))}
+.reminder-health-list strong{display:block;font-size:9px}
+.reminder-health-list small{display:block;color:var(--hint);font-size:8px;margin-top:2px}
+.reminder-health-list>span{font-size:8px;color:var(--accent)}
+.reminder-health-list em{font-size:8px;color:var(--hint);font-style:normal;white-space:nowrap}
+.rc-panel:before{content:"RC4"}
+@media(max-width:520px){
+  .reminder-health-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .reminder-health-list>div{grid-template-columns:minmax(0,1fr) auto}
+  .reminder-health-list em{grid-column:2;text-align:right}
+}
+@media(max-width:390px){
+  .reminder-health-actions{display:grid;grid-template-columns:1fr auto}
+  .reminder-health-actions .reminder-btn{width:100%}
+}
