@@ -17,6 +17,7 @@ const memory = {
   productionReadiness: null,
   rcRegression: null,
   releaseMonitor: null,
+  runtimeControls: { value: null, loadedAt: 0, source: 'defaults', schemaReady: null },
   clientTelemetryDedupe: new Map(),
   inflight: new Map(),
   routeBurst: new Map(),
@@ -57,10 +58,10 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '5.6.0-rc4';
+const APP_VERSION = '5.7.0-rc5';
 const API_CONTRACT_VERSION = 5;
-const MIN_CLIENT_VERSION = '5.5.0';
-const RELEASE_CHANNEL = 'rc4';
+const MIN_CLIENT_VERSION = '5.6.0';
+const RELEASE_CHANNEL = 'rc5';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -70,6 +71,19 @@ const DEFAULT_PREFERENCES = Object.freeze({
   hideYouth: true,
   favoriteFirst: true,
 });
+
+const DEFAULT_RUNTIME_CONTROLS = Object.freeze({
+  maintenanceMode: false,
+  analysisEnabled: true,
+  searchEnabled: true,
+  liveEnabled: true,
+  remindersEnabled: true,
+  expandedDataEnabled: true,
+  message: '',
+  revision: 1,
+  updatedAt: null,
+});
+const RUNTIME_CONTROLS_CACHE_MS = 30_000;
 
 const SUBSCRIPTION_PERIOD_SECONDS = 2592000;
 
@@ -172,30 +186,235 @@ function isAdminUser(user, cfg) {
   return (cfg.adminTelegramIds || []).includes(Number(user.id));
 }
 
+function runtimeControlsSnapshot() {
+  return memory.runtimeControls?.value || { ...DEFAULT_RUNTIME_CONTROLS };
+}
+
+function normalizeRuntimeControls(row = {}) {
+  return {
+    maintenanceMode: Boolean(row.maintenance_mode ?? row.maintenanceMode ?? DEFAULT_RUNTIME_CONTROLS.maintenanceMode),
+    analysisEnabled: (row.analysis_enabled ?? row.analysisEnabled) !== false,
+    searchEnabled: (row.search_enabled ?? row.searchEnabled) !== false,
+    liveEnabled: (row.live_enabled ?? row.liveEnabled) !== false,
+    remindersEnabled: (row.reminders_enabled ?? row.remindersEnabled) !== false,
+    expandedDataEnabled: (row.expanded_data_enabled ?? row.expandedDataEnabled) !== false,
+    message: String(row.message || '').slice(0, 280),
+    revision: Math.max(1, Number(row.revision || 1)),
+    updatedAt: row.updated_at || row.updatedAt || null,
+  };
+}
+
+function publicRuntimeControls(value = runtimeControlsSnapshot()) {
+  return {
+    maintenanceMode: Boolean(value.maintenanceMode),
+    analysisEnabled: value.analysisEnabled !== false,
+    searchEnabled: value.searchEnabled !== false,
+    liveEnabled: value.liveEnabled !== false,
+    remindersEnabled: value.remindersEnabled !== false,
+    expandedDataEnabled: value.expandedDataEnabled !== false,
+    message: String(value.message || '').slice(0, 280),
+    revision: Number(value.revision || 1),
+    updatedAt: value.updatedAt || null,
+  };
+}
+
+async function loadRuntimeControls(cfg, options = {}) {
+  const force = Boolean(options.force);
+  const now = Date.now();
+  if (!force && memory.runtimeControls?.value && now - Number(memory.runtimeControls.loadedAt || 0) < RUNTIME_CONTROLS_CACHE_MS) {
+    return { ...memory.runtimeControls, cached: true };
+  }
+
+  if (!hasSupabase(cfg)) {
+    const value = { ...DEFAULT_RUNTIME_CONTROLS };
+    memory.runtimeControls = { value, loadedAt: now, source: 'defaults', schemaReady: false };
+    return { ...memory.runtimeControls, cached: false };
+  }
+
+  try {
+    const row = await supaSelectOne(cfg, 'runtime_controls', { id: 'eq.global' });
+    const value = normalizeRuntimeControls(row || DEFAULT_RUNTIME_CONTROLS);
+    memory.runtimeControls = { value, loadedAt: now, source: row ? 'supabase' : 'defaults', schemaReady: Boolean(row) };
+    return { ...memory.runtimeControls, cached: false };
+  } catch (error) {
+    const previous = memory.runtimeControls?.value;
+    const value = previous || { ...DEFAULT_RUNTIME_CONTROLS };
+    memory.runtimeControls = { value, loadedAt: now, source: previous ? 'stale' : 'defaults', schemaReady: false, error: redactOpsString(error?.message || error, 160) };
+    return { ...memory.runtimeControls, cached: false };
+  }
+}
+
+async function saveRuntimeControls(cfg, user, body = {}) {
+  const currentState = await loadRuntimeControls(cfg, { force: true });
+  if (!currentState.schemaReady) {
+    return { error: 'Нужна supabase_migration_v5_7.sql.', code: 'RUNTIME_CONTROLS_SCHEMA', status: 409 };
+  }
+
+  const current = currentState.value;
+  const expectedRevision = Number(body.expectedRevision || 0);
+  if (!expectedRevision || expectedRevision !== Number(current.revision || 1)) {
+    return {
+      error: 'Настройки уже изменились в другой сессии. Обновите панель и повторите.',
+      code: 'RUNTIME_CONTROLS_CONFLICT',
+      status: 409,
+      current: publicRuntimeControls(current),
+    };
+  }
+
+  const next = {
+    maintenance_mode: Boolean(body.maintenanceMode),
+    analysis_enabled: body.analysisEnabled !== false,
+    search_enabled: body.searchEnabled !== false,
+    live_enabled: body.liveEnabled !== false,
+    reminders_enabled: body.remindersEnabled !== false,
+    expanded_data_enabled: body.expandedDataEnabled !== false,
+    message: String(body.message || '').trim().slice(0, 280),
+    revision: expectedRevision + 1,
+    updated_at: new Date().toISOString(),
+    updated_by: Number(user?.id || 0) || null,
+  };
+
+  const url = new URL(`${cfg.supabaseUrl}/rest/v1/runtime_controls`);
+  url.searchParams.set('id', 'eq.global');
+  url.searchParams.set('revision', `eq.${expectedRevision}`);
+  const response = await fetchWithTimeout(url, {
+    method: 'PATCH',
+    headers: supaHeaders(cfg, { Prefer: 'return=representation' }),
+    body: JSON.stringify(next),
+  }, 7000, 'Supabase runtime controls');
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`Supabase runtime_controls: HTTP ${response.status}${text ? ` — ${text.slice(0, 160)}` : ''}`);
+  }
+  const rows = await response.json().catch(() => []);
+  if (!Array.isArray(rows) || rows.length !== 1) {
+    return {
+      error: 'Настройки изменились до сохранения. Обновите панель и повторите.',
+      code: 'RUNTIME_CONTROLS_CONFLICT',
+      status: 409,
+      current: publicRuntimeControls((await loadRuntimeControls(cfg, { force: true })).value),
+    };
+  }
+
+  const value = normalizeRuntimeControls(rows[0]);
+  memory.runtimeControls = { value, loadedAt: Date.now(), source: 'supabase', schemaReady: true };
+  await recordOpsEvent(cfg, {
+    severity: value.maintenanceMode ? 'warning' : 'info',
+    source: 'release',
+    eventType: 'runtime_controls',
+    code: value.maintenanceMode ? 'MAINTENANCE_ENABLED' : 'RUNTIME_CONTROLS_UPDATED',
+    message: `Runtime controls updated to revision ${value.revision}.`,
+    endpoint: '/api/runtime-controls',
+    meta: {
+      revision: value.revision,
+      maintenanceMode: value.maintenanceMode,
+      analysisEnabled: value.analysisEnabled,
+      searchEnabled: value.searchEnabled,
+      liveEnabled: value.liveEnabled,
+      remindersEnabled: value.remindersEnabled,
+      expandedDataEnabled: value.expandedDataEnabled,
+    },
+  }).catch(() => {});
+  return { value, status: 200 };
+}
+
+function runtimeFeatureResponse(code, message, runtime, status = 503) {
+  return json({
+    error: message,
+    code,
+    category: code === 'MAINTENANCE_MODE' ? 'maintenance' : 'feature_disabled',
+    recoverable: true,
+    runtime: publicRuntimeControls(runtime),
+  }, status);
+}
+
+function runtimeGuard(request, user, cfg, runtime) {
+  if (isAdminUser(user, cfg)) return null;
+  const url = new URL(request.url);
+  const path = url.pathname;
+  const method = request.method;
+
+  const footballRoutes = new Set([
+    '/api/matches', '/api/search', '/api/tournament', '/api/team', '/api/team/intelligence',
+    '/api/team/squad', '/api/match-center', '/api/analyze'
+  ]);
+
+  if (runtime.maintenanceMode && footballRoutes.has(path)) {
+    return runtimeFeatureResponse(
+      'MAINTENANCE_MODE',
+      runtime.message || 'Football Manager временно находится на техническом обслуживании. Попробуйте позже.',
+      runtime,
+      503,
+    );
+  }
+  if (path === '/api/analyze' && method === 'POST' && runtime.analysisEnabled === false) {
+    return runtimeFeatureResponse('ANALYSIS_DISABLED', 'Полный анализ временно приостановлен администратором.', runtime, 503);
+  }
+  if (path === '/api/search' && runtime.searchEnabled === false) {
+    return runtimeFeatureResponse('SEARCH_DISABLED', 'Удалённый поиск временно приостановлен. Локальный каталог остаётся доступен.', runtime, 503);
+  }
+  if (path === '/api/reminders' && method === 'POST' && runtime.remindersEnabled === false) {
+    return runtimeFeatureResponse('REMINDERS_DISABLED', 'Новые уведомления временно приостановлены. Уже созданные можно удалить.', runtime, 503);
+  }
+  return null;
+}
+
+async function apiRuntimeControls(request, cfg, user) {
+  if (request.method === 'GET') {
+    const state = await loadRuntimeControls(cfg, { force: new URL(request.url).searchParams.get('refresh') === '1' });
+    return json({
+      available: Boolean(state.schemaReady),
+      source: state.source,
+      schemaReady: Boolean(state.schemaReady),
+      controls: publicRuntimeControls(state.value),
+      cacheSeconds: Math.round(RUNTIME_CONTROLS_CACHE_MS / 1000),
+      reason: state.schemaReady ? '' : 'Нужна supabase_migration_v5_7.sql.',
+    });
+  }
+  if (request.method === 'PATCH' || request.method === 'POST') {
+    let body = {};
+    try { body = await request.json(); } catch {}
+    const result = await saveRuntimeControls(cfg, user, body);
+    if (result.error) return json({ error: result.error, code: result.code, current: result.current }, result.status || 400);
+    return json({ ok: true, controls: publicRuntimeControls(result.value) });
+  }
+  return json({ error: 'Метод не поддерживается.' }, 405);
+}
+
 function publicDataCapabilities() {
   const paid = ['PRO', 'ULTRA', 'MEGA'].includes(String(memory.provider?.plan || '').toUpperCase());
   const healthy = paidQuotaHealthy();
   const publicBudget = providerPublicBudgetMode();
-  const canEnrich = Boolean(paid && healthy && !['conserve','emergency'].includes(publicBudget.mode));
+  const runtime = runtimeControlsSnapshot();
+  const expandedAllowed = runtime.expandedDataEnabled !== false;
+  const liveAllowed = runtime.liveEnabled !== false;
+  const canEnrich = Boolean(paid && healthy && expandedAllowed && !['conserve','emergency'].includes(publicBudget.mode));
   return {
     visibility: 'public',
     mode: paid ? 'expanded' : 'standard',
-    label: publicBudget.label,
-    refreshSeconds: publicBudget.liveRefreshSeconds,
+    label: runtime.maintenanceMode ? 'Техническое обслуживание' : publicBudget.label,
+    refreshSeconds: liveAllowed ? publicBudget.liveRefreshSeconds : 0,
+    runtime: publicRuntimeControls(runtime),
     features: {
       events: true,
       matchStatistics: true,
-      lineupsFallback: Boolean(paid && healthy),
+      liveRefresh: liveAllowed,
+      lineupsFallback: Boolean(paid && healthy && expandedAllowed),
       playerStats: canEnrich,
       injuries: canEnrich,
-      liveOdds: canEnrich,
-      oddsMovement: canEnrich,
+      liveOdds: Boolean(canEnrich && liveAllowed),
+      oddsMovement: Boolean(canEnrich && liveAllowed),
     },
-    note: paid
-      ? (canEnrich
-          ? 'Расширенный режим активен. Feature-level cache снижает повторные запросы.'
-          : 'Расширенный тариф активен, но сейчас включён защитный режим квоты.')
-      : 'Сейчас приложение экономит запросы. После увеличения квоты расширенные данные включатся автоматически.',
+    note: runtime.maintenanceMode
+      ? (runtime.message || 'Часть футбольных функций временно приостановлена.')
+      : !expandedAllowed
+        ? 'Расширенные provider-данные временно отключены администратором.'
+        : paid
+          ? (canEnrich
+              ? 'Расширенный режим активен. Feature-level cache снижает повторные запросы.'
+              : 'Расширенный тариф активен, но сейчас включён защитный режим квоты.')
+          : 'Сейчас приложение экономит запросы. После увеличения квоты расширенные данные включатся автоматически.',
   };
 }
 
@@ -209,9 +428,10 @@ function appManifest(cfg) {
     minClientVersion: MIN_CLIENT_VERSION,
     apiContract: API_CONTRACT_VERSION,
     releaseChannel: RELEASE_CHANNEL,
-    releaseCandidate: 'RC4',
-    maintenance: false,
+    releaseCandidate: 'RC5',
+    maintenance: Boolean(runtimeControlsSnapshot().maintenanceMode),
     monetization: cfg.monetizationEnabled ? 'enabled' : 'paused',
+    runtime: publicRuntimeControls(),
     compatibility: {
       hardBlockBelowMinClient: true,
       contractRequired: API_CONTRACT_VERSION,
@@ -227,6 +447,8 @@ function appManifest(cfg) {
       clientTelemetry: true,
       notificationReliability: true,
       reminderDeliveryClaims: true,
+      runtimeControls: true,
+      emergencyKillSwitches: true,
     },
     serverTime: new Date().toISOString(),
   };
@@ -406,6 +628,7 @@ const ROUTE_BURST_POLICIES = Object.freeze([
   { test: p => p === '/api/provider/probe', limit: 3, windowMs: 30000, label: 'provider-probe' },
   { test: p => p === '/api/client-telemetry', limit: 12, windowMs: 60000, label: 'client-telemetry' },
   { test: p => p === '/api/reminder-health', limit: 6, windowMs: 30000, label: 'reminder-health' },
+  { test: p => p === '/api/runtime-controls', limit: 6, windowMs: 30000, label: 'runtime-controls' },
   { test: p => p === '/api/diagnostics' || p === '/api/release-readiness' || p === '/api/production-readiness' || p === '/api/rc-regression' || p === '/api/release-monitor', limit: 6, windowMs: 30000, label: 'admin-diagnostics' },
 ]);
 
@@ -2603,6 +2826,11 @@ async function processDueReminders(cfg) {
     return { checked: 0, sent: 0, kickoffSent: 0, failed: 0, claimed: 0, staleClaims: 0 };
   }
 
+  const runtimeState = await loadRuntimeControls(cfg);
+  if (runtimeState.value?.remindersEnabled === false) {
+    return { checked: 0, sent: 0, kickoffSent: 0, failed: 0, claimed: 0, staleClaims: 0, disabled: true };
+  }
+
   const stale = await clearStaleReminderClaims(cfg).catch(() => ({ prematch: 0, kickoff: 0 }));
   const now = Date.now();
   const from = new Date(now - 8 * 60_000).toISOString();
@@ -2832,7 +3060,7 @@ async function apiReminderHealth(request, cfg, user) {
 
     const result = await sendTelegramMessage(
       user.id,
-      `✅ Football Manager\n\nТест уведомлений v5.6 RC4 прошёл. Если вы видите это сообщение, Telegram delivery работает.`,
+      `✅ Football Manager\n\nТест уведомлений v5.7 RC5 прошёл. Если вы видите это сообщение, Telegram delivery работает.`,
       cfg
     );
 
@@ -3111,6 +3339,7 @@ function providerPublicBudgetMode() {
 
 function providerFeaturePolicy(feature, context = {}) {
   const budget = providerBudgetProfile();
+  const runtime = runtimeControlsSnapshot();
   const mode = context.mode || 'live';
   const paid = budget.paid;
   const limitedCoverage = Boolean(context.limitedCoverage);
@@ -3122,6 +3351,16 @@ function providerFeaturePolicy(feature, context = {}) {
   if (limitedCoverage && ['events','statistics','players','lineups','injuries','liveOdds'].includes(feature)) {
     allowed = false;
     reason = 'limited_coverage';
+  }
+
+  if (runtime.expandedDataEnabled === false && ['players','lineups','injuries','liveOdds'].includes(feature)) {
+    allowed = false;
+    reason = 'runtime_disabled';
+  }
+
+  if (runtime.liveEnabled === false && feature === 'liveOdds') {
+    allowed = false;
+    reason = 'live_disabled';
   }
 
   if (['players','lineups','injuries','liveOdds'].includes(feature) && !paid) {
@@ -4259,7 +4498,7 @@ async function apiReleaseMonitor(request, cfg) {
   const value = {
     available: true,
     version: APP_VERSION,
-    releaseCandidate: 'RC4',
+    releaseCandidate: 'RC5',
     generatedAt: new Date().toISOString(),
     hours,
     persistent: source.persistent,
@@ -4316,16 +4555,21 @@ async function apiReleaseReadiness(request, cfg) {
     return json({ ...memory.releaseReadiness.value, cached: true });
   }
 
-  const [diagnostics, modelTable] = await Promise.all([
+  const [diagnostics, modelTable, runtimeTable] = await Promise.all([
     collectDiagnostics(cfg),
     probeOptionalTable(cfg, 'model_predictions'),
+    probeOptionalTable(cfg, 'runtime_controls'),
   ]);
+  const runtimeState = await loadRuntimeControls(cfg, { force: true });
+  const runtime = runtimeState.value;
   const provider = diagnostics.provider || {};
   const checks = [
     releaseCheck('football_api', 'API-Football key', cfg.apiFootballKey ? 'pass' : 'fail', cfg.apiFootballKey ? 'Ключ доступен Worker.' : 'API_FOOTBALL_KEY отсутствует.', true),
     releaseCheck('supabase_config', 'Supabase config', hasSupabase(cfg) ? 'pass' : 'fail', hasSupabase(cfg) ? 'URL и service key доступны runtime.' : 'Не хватает SUPABASE_URL или service key.', true),
     releaseCheck('supabase_online', 'Supabase/PostgREST', diagnostics.supabase?.ok ? 'pass' : 'fail', diagnostics.supabase?.ok ? `Ответ ${Number(diagnostics.supabase?.latencyMs || 0)} мс.` : `Статус: ${diagnostics.supabase?.status || 'offline'}.`, true),
     releaseCheck('model_backtest', 'Backtest schema v3.6+', modelTable.ok ? 'pass' : 'fail', modelTable.ok ? 'Таблица model_predictions доступна.' : `model_predictions: ${modelTable.status}.`, true),
+    releaseCheck('runtime_controls_schema', 'Runtime Controls schema v5.7', runtimeTable.ok ? 'pass' : 'fail', runtimeTable.ok ? 'Таблица runtime_controls доступна.' : 'Нужна supabase_migration_v5_7.sql.', true),
+    releaseCheck('runtime_controls_state', 'Runtime Controls state', runtime.maintenanceMode ? 'warn' : 'pass', runtime.maintenanceMode ? `Maintenance включён${runtime.message ? `: ${runtime.message}` : '.'}` : `Revision ${Number(runtime.revision || 1)} · рабочий режим.`, false),
     releaseCheck('observability', 'Observability schema v3.8', diagnostics.observability?.migrationReady ? 'pass' : 'warn', diagnostics.observability?.migrationReady ? 'Постоянный журнал ops_events доступен.' : 'Журнал работает только в памяти Worker.', false),
     releaseCheck('integrity', 'Data Integrity schema v3.9', diagnostics.integrity?.migrationReady ? 'pass' : 'fail', diagnostics.integrity?.migrationReady ? 'История integrity-проверок доступна.' : 'Нужна migration v3.9.', true),
     releaseCheck('provider_health', 'Состояние API-Football', provider.health === 'critical' ? 'fail' : provider.health === 'warning' || provider.health === 'waiting' ? 'warn' : 'pass', provider.health === 'waiting' ? 'Ещё не было успешного provider-запроса после старта Worker.' : `Health: ${provider.health || 'unknown'}.`, provider.health === 'critical'),
@@ -4374,7 +4618,7 @@ async function apiReleaseReadiness(request, cfg) {
       monetizationExpected: 'paused',
       paymentTestingRequiredNow: false,
       providerUpgradeRequiredNow: false,
-      note: 'v5.1 проверяет эксплуатационную устойчивость ядра. Оплата пользователей по-прежнему остаётся финальным этапом.',
+      note: 'RC5 добавляет аварийные runtime-переключатели без включения пользовательской оплаты.',
     },
   };
   memory.releaseReadiness = { at: now, value };
@@ -4471,7 +4715,7 @@ async function apiProductionReadiness(request, cfg) {
 }
 
 
-const RC_NAME = 'RC4';
+const RC_NAME = 'RC5';
 
 function rcCheck(id, group, label, state, detail, blocking = false) {
   return { id, group, label, state, detail, blocking: Boolean(blocking) };
@@ -4515,8 +4759,8 @@ async function apiRcRegression(request, cfg, user) {
   const startedAt = Date.now();
 
   // 1) Core runtime / security configuration.
-  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '5.6.0-rc4' ? 'pass' : 'fail',
-    `Worker: ${APP_VERSION}; ожидается 5.6.0-rc4.`, true));
+  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '5.7.0-rc5' ? 'pass' : 'fail',
+    `Worker: ${APP_VERSION}; ожидается 5.7.0-rc5.`, true));
   checks.push(rcCheck('api_contract', 'runtime', 'API contract', API_CONTRACT_VERSION === 5 ? 'pass' : 'fail',
     `Contract ${API_CONTRACT_VERSION}; min client ${MIN_CLIENT_VERSION}.`, true));
   checks.push(rcCheck('app_manifest', 'runtime', 'Public App Manifest', appManifest(cfg)?.version === APP_VERSION ? 'pass' : 'fail',
@@ -4550,6 +4794,7 @@ async function apiRcRegression(request, cfg, user) {
     ['favorites', 'Favorites', true],
     ['user_preferences', 'Preferences', true],
     ['match_reminders', 'Reminders', true],
+    ['runtime_controls', 'Runtime controls', true],
     ['model_predictions', 'Model predictions', true],
     ['ops_events', 'Observability', false],
     ['match_integrity_runs', 'Integrity runs', true],
@@ -4574,6 +4819,18 @@ async function apiRcRegression(request, cfg, user) {
       table.blocking
     ));
   }
+
+  const runtimeState = await loadRuntimeControls(cfg, { force: true });
+  checks.push(rcCheck(
+    'runtime_controls_state',
+    'runtime',
+    'Runtime Controls RC5',
+    runtimeState.schemaReady ? 'pass' : 'fail',
+    runtimeState.schemaReady
+      ? `Revision ${Number(runtimeState.value?.revision || 1)} · ${runtimeState.value?.maintenanceMode ? 'maintenance ON' : 'normal mode'}.`
+      : 'Запустите supabase_migration_v5_7.sql.',
+    true
+  ));
 
   const reminderSchema = await probeReminderReliabilitySchema(cfg);
   checks.push(rcCheck(
@@ -6371,6 +6628,7 @@ async function apiMe(request, cfg, user) {
       isAdmin: isAdminUser(user, cfg),
       role: isAdminUser(user, cfg) ? 'admin' : 'user',
       dataCapabilities: publicDataCapabilities(),
+      runtime: publicRuntimeControls(),
     },
     preferences,
     stats: { favorites: favorites.length, reminders: reminders.length },
@@ -7182,7 +7440,7 @@ async function apiMatchCenter(request, cfg) {
       oddsMovement = buildOddsMovement(snapshots, liveOdds);
     }
   }
-  const refreshSeconds = live ? providerBudgetProfile().liveRefreshSeconds : 0;
+  const refreshSeconds = live && runtimeControlsSnapshot().liveEnabled !== false ? providerBudgetProfile().liveRefreshSeconds : 0;
   const formattedStatistics = formatLiveStatistics(statistics, homeId, awayId);
   const playerLeaders = formatPlayerLeaders(playerRows, homeId, awayId);
   const lineups = formatLineups(lineupRows, homeId, awayId);
@@ -7608,7 +7866,7 @@ export default {
         failureRecovery: 'enabled',
         gracefulErrors: 'enabled',
         webviewRecovery: 'enabled',
-        releaseCandidate: 'RC4',
+        releaseCandidate: 'RC5',
         regressionQA: 'enabled',
         rcSmokeTest: 'enabled',
         clientContractQA: 'enabled',
@@ -7622,12 +7880,27 @@ export default {
         notificationReliability: 'enabled',
         reminderDeliveryClaims: 'enabled',
         reminderCronMinutes: 5,
+        runtimeControls: 'enabled',
+        emergencyKillSwitches: 'enabled',
+        runtimeControlsCacheSeconds: 30,
         devMode: cfg.devMode,
       });
     }
 
     if (request.method === 'GET' && url.pathname === '/api/app-manifest') {
+      await loadRuntimeControls(cfg);
       return json(appManifest(cfg));
+    }
+
+    if (request.method === 'GET' && url.pathname === '/api/runtime-status') {
+      const runtimeState = await loadRuntimeControls(cfg);
+      return json({
+        ok: true,
+        available: Boolean(runtimeState.schemaReady),
+        runtime: publicRuntimeControls(runtimeState.value),
+        source: runtimeState.source,
+        cacheSeconds: Math.round(RUNTIME_CONTROLS_CACHE_MS / 1000),
+      });
     }
 
     if (url.pathname === '/health/supabase') {
@@ -7655,12 +7928,20 @@ export default {
       const user = await getRequestUser(request, cfg);
       if (!user) return json({ error: 'Откройте приложение внутри Telegram.' }, 401);
 
+      const runtimeState = await loadRuntimeControls(cfg);
+      const runtimeResponse = runtimeGuard(request, user, cfg, runtimeState.value);
+      if (runtimeResponse) return runtimeResponse;
+
       const burstResponse = enforceRouteBurst(request, user);
       if (burstResponse) return burstResponse;
 
       if (request.method === 'GET' && url.pathname === '/api/me') return await apiMe(request, cfg, user);
       if (request.method === 'GET' && url.pathname === '/api/data-capabilities') return json({ dataCapabilities: publicDataCapabilities() });
       if (request.method === 'POST' && url.pathname === '/api/client-telemetry') return await apiClientTelemetry(request, cfg, user);
+      if (url.pathname === '/api/runtime-controls') {
+        if (!isAdminUser(user, cfg)) return adminForbidden();
+        return await apiRuntimeControls(request, cfg, user);
+      }
 
       // v4.3 Admin Security: technical endpoints are protected server-side.
       // Hiding cards in the UI is not considered authorization.
