@@ -58,10 +58,10 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '5.7.0-rc5';
+const APP_VERSION = '5.8.0-rc6';
 const API_CONTRACT_VERSION = 5;
-const MIN_CLIENT_VERSION = '5.6.0';
-const RELEASE_CHANNEL = 'rc5';
+const MIN_CLIENT_VERSION = '5.7.0';
+const RELEASE_CHANNEL = 'rc6';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -244,6 +244,125 @@ async function loadRuntimeControls(cfg, options = {}) {
   }
 }
 
+
+function runtimeHistorySnapshot(value) {
+  const c = publicRuntimeControls(value);
+  return {
+    maintenanceMode: c.maintenanceMode,
+    analysisEnabled: c.analysisEnabled,
+    searchEnabled: c.searchEnabled,
+    liveEnabled: c.liveEnabled,
+    remindersEnabled: c.remindersEnabled,
+    expandedDataEnabled: c.expandedDataEnabled,
+    message: c.message,
+    revision: c.revision,
+    updatedAt: c.updatedAt,
+  };
+}
+
+async function probeRuntimeHistorySchema(cfg) {
+  if (!hasSupabase(cfg)) return { ok: false, status: 'not_configured' };
+  try {
+    const url = new URL(`${cfg.supabaseUrl}/rest/v1/runtime_control_history`);
+    url.searchParams.set('select', 'id,revision,action,reason,snapshot,app_version,source_revision,created_at');
+    url.searchParams.set('limit', '1');
+    const r = await fetchWithTimeout(url, { headers: supaHeaders(cfg) }, 7000, 'Supabase runtime history schema');
+    return { ok: r.ok, status: r.ok ? 'ok' : `http_${r.status}` };
+  } catch (error) {
+    return { ok: false, status: error?.code || 'error' };
+  }
+}
+
+async function ensureRuntimeHistoryBaseline(cfg, value, user) {
+  const snapshot = runtimeHistorySnapshot(value);
+  await supaInsertIgnore(cfg, 'runtime_control_history', {
+    revision: Number(snapshot.revision || 1),
+    action: 'baseline',
+    reason: 'Baseline captured before the first RC6 runtime change.',
+    snapshot,
+    app_version: APP_VERSION,
+    changed_by: Number(user?.id || 0) || null,
+    source_revision: null,
+    created_at: snapshot.updatedAt || new Date().toISOString(),
+  }, 'revision');
+}
+
+async function appendRuntimeHistory(cfg, value, user, meta = {}) {
+  const snapshot = runtimeHistorySnapshot(value);
+  await supaInsertIgnore(cfg, 'runtime_control_history', {
+    revision: Number(snapshot.revision || 1),
+    action: String(meta.action || 'update').slice(0, 40),
+    reason: String(meta.reason || '').trim().slice(0, 240),
+    snapshot,
+    app_version: APP_VERSION,
+    changed_by: Number(user?.id || 0) || null,
+    source_revision: Number(meta.sourceRevision || 0) || null,
+    created_at: new Date().toISOString(),
+  }, 'revision');
+}
+
+async function listRuntimeHistory(cfg, limit = 12) {
+  const rows = await supaSelectMany(cfg, 'runtime_control_history', {}, {
+    limit: Math.max(1, Math.min(30, Number(limit || 12))),
+    order: 'revision.desc',
+  });
+
+  return (rows || []).map(row => {
+    const snapshot = normalizeRuntimeControls(row.snapshot || {});
+    return {
+      id: Number(row.id || 0),
+      revision: Number(row.revision || snapshot.revision || 0),
+      action: String(row.action || 'update'),
+      reason: String(row.reason || '').slice(0, 240),
+      appVersion: String(row.app_version || ''),
+      sourceRevision: Number(row.source_revision || 0) || null,
+      createdAt: row.created_at || null,
+      controls: publicRuntimeControls(snapshot),
+    };
+  });
+}
+
+async function rollbackRuntimeControls(cfg, user, body = {}) {
+  const historySchema = await probeRuntimeHistorySchema(cfg);
+  if (!historySchema.ok) {
+    return {
+      error: 'Нужна supabase_migration_v5_8.sql для истории и rollback.',
+      code: 'RUNTIME_HISTORY_SCHEMA',
+      status: 409,
+    };
+  }
+
+  const expectedRevision = Number(body.expectedRevision || 0);
+  const historyId = Number(body.historyId || 0);
+  if (!expectedRevision || !historyId) {
+    return { error: 'Не хватает revision/historyId для rollback.', code: 'RUNTIME_ROLLBACK_INPUT', status: 400 };
+  }
+
+  const row = await supaSelectOne(cfg, 'runtime_control_history', { id: `eq.${historyId}` });
+  if (!row?.snapshot) {
+    return { error: 'Снимок Runtime Controls не найден.', code: 'RUNTIME_ROLLBACK_NOT_FOUND', status: 404 };
+  }
+
+  const target = normalizeRuntimeControls(row.snapshot);
+  if (Number(target.revision || 0) === expectedRevision) {
+    return { error: 'Выбрана уже активная revision.', code: 'RUNTIME_ROLLBACK_SAME_REVISION', status: 409 };
+  }
+
+  return await saveRuntimeControls(cfg, user, {
+    expectedRevision,
+    maintenanceMode: target.maintenanceMode,
+    analysisEnabled: target.analysisEnabled,
+    searchEnabled: target.searchEnabled,
+    liveEnabled: target.liveEnabled,
+    remindersEnabled: target.remindersEnabled,
+    expandedDataEnabled: target.expandedDataEnabled,
+    message: target.message,
+    reason: String(body.reason || `Rollback to revision ${Number(row.revision || target.revision || 0)}`).slice(0, 240),
+    action: 'rollback',
+    sourceRevision: Number(row.revision || target.revision || 0),
+  });
+}
+
 async function saveRuntimeControls(cfg, user, body = {}) {
   const currentState = await loadRuntimeControls(cfg, { force: true });
   if (!currentState.schemaReady) {
@@ -260,6 +379,16 @@ async function saveRuntimeControls(cfg, user, body = {}) {
       current: publicRuntimeControls(current),
     };
   }
+
+  const historySchema = await probeRuntimeHistorySchema(cfg);
+  if (historySchema.ok) {
+    await ensureRuntimeHistoryBaseline(cfg, current, user).catch(() => {});
+  }
+
+  const changeReason = String(body.reason || '').trim().slice(0, 240);
+  const requestedAction = String(body.action || 'update').trim();
+  const changeAction = ['update', 'defaults', 'rollback'].includes(requestedAction) ? requestedAction : 'update';
+  const sourceRevision = Number(body.sourceRevision || 0) || null;
 
   const next = {
     maintenance_mode: Boolean(body.maintenanceMode),
@@ -299,6 +428,15 @@ async function saveRuntimeControls(cfg, user, body = {}) {
 
   const value = normalizeRuntimeControls(rows[0]);
   memory.runtimeControls = { value, loadedAt: Date.now(), source: 'supabase', schemaReady: true };
+
+  if (historySchema.ok) {
+    await appendRuntimeHistory(cfg, value, user, {
+      action: changeAction,
+      reason: changeReason,
+      sourceRevision,
+    }).catch(() => {});
+  }
+
   await recordOpsEvent(cfg, {
     severity: value.maintenanceMode ? 'warning' : 'info',
     source: 'release',
@@ -314,9 +452,13 @@ async function saveRuntimeControls(cfg, user, body = {}) {
       liveEnabled: value.liveEnabled,
       remindersEnabled: value.remindersEnabled,
       expandedDataEnabled: value.expandedDataEnabled,
+      action: changeAction,
+      reason: changeReason,
+      sourceRevision,
+      historyReady: historySchema.ok,
     },
   }).catch(() => {});
-  return { value, status: 200 };
+  return { value, status: 200, historyReady: historySchema.ok };
 }
 
 function runtimeFeatureResponse(code, message, runtime, status = 503) {
@@ -363,23 +505,64 @@ function runtimeGuard(request, user, cfg, runtime) {
 async function apiRuntimeControls(request, cfg, user) {
   if (request.method === 'GET') {
     const state = await loadRuntimeControls(cfg, { force: new URL(request.url).searchParams.get('refresh') === '1' });
+    const historySchema = await probeRuntimeHistorySchema(cfg);
+    let history = [];
+    if (historySchema.ok) {
+      history = await listRuntimeHistory(cfg, 12).catch(() => []);
+    }
     return json({
       available: Boolean(state.schemaReady),
       source: state.source,
       schemaReady: Boolean(state.schemaReady),
+      historyReady: Boolean(historySchema.ok),
       controls: publicRuntimeControls(state.value),
+      history,
       cacheSeconds: Math.round(RUNTIME_CONTROLS_CACHE_MS / 1000),
       reason: state.schemaReady ? '' : 'Нужна supabase_migration_v5_7.sql.',
+      historyReason: historySchema.ok ? '' : 'Нужна supabase_migration_v5_8.sql для истории и rollback.',
     });
   }
+
   if (request.method === 'PATCH' || request.method === 'POST') {
     let body = {};
     try { body = await request.json(); } catch {}
     const result = await saveRuntimeControls(cfg, user, body);
     if (result.error) return json({ error: result.error, code: result.code, current: result.current }, result.status || 400);
-    return json({ ok: true, controls: publicRuntimeControls(result.value) });
+
+    let history = [];
+    if (result.historyReady) history = await listRuntimeHistory(cfg, 12).catch(() => []);
+    return json({
+      ok: true,
+      controls: publicRuntimeControls(result.value),
+      historyReady: Boolean(result.historyReady),
+      history,
+    });
   }
+
   return json({ error: 'Метод не поддерживается.' }, 405);
+}
+
+async function apiRuntimeRollback(request, cfg, user) {
+  if (request.method !== 'POST') return json({ error: 'Метод не поддерживается.' }, 405);
+
+  let body = {};
+  try { body = await request.json(); } catch {}
+  const result = await rollbackRuntimeControls(cfg, user, body);
+  if (result.error) {
+    return json({
+      error: result.error,
+      code: result.code,
+      current: result.current,
+    }, result.status || 400);
+  }
+
+  const history = await listRuntimeHistory(cfg, 12).catch(() => []);
+  return json({
+    ok: true,
+    controls: publicRuntimeControls(result.value),
+    historyReady: true,
+    history,
+  });
 }
 
 function publicDataCapabilities() {
@@ -428,7 +611,7 @@ function appManifest(cfg) {
     minClientVersion: MIN_CLIENT_VERSION,
     apiContract: API_CONTRACT_VERSION,
     releaseChannel: RELEASE_CHANNEL,
-    releaseCandidate: 'RC5',
+    releaseCandidate: 'RC6',
     maintenance: Boolean(runtimeControlsSnapshot().maintenanceMode),
     monetization: cfg.monetizationEnabled ? 'enabled' : 'paused',
     runtime: publicRuntimeControls(),
@@ -449,6 +632,8 @@ function appManifest(cfg) {
       reminderDeliveryClaims: true,
       runtimeControls: true,
       emergencyKillSwitches: true,
+      runtimeRollback: true,
+      runtimeHistory: true,
     },
     serverTime: new Date().toISOString(),
   };
@@ -629,6 +814,7 @@ const ROUTE_BURST_POLICIES = Object.freeze([
   { test: p => p === '/api/client-telemetry', limit: 12, windowMs: 60000, label: 'client-telemetry' },
   { test: p => p === '/api/reminder-health', limit: 6, windowMs: 30000, label: 'reminder-health' },
   { test: p => p === '/api/runtime-controls', limit: 6, windowMs: 30000, label: 'runtime-controls' },
+  { test: p => p === '/api/runtime-controls/rollback', limit: 3, windowMs: 30000, label: 'runtime-rollback' },
   { test: p => p === '/api/diagnostics' || p === '/api/release-readiness' || p === '/api/production-readiness' || p === '/api/rc-regression' || p === '/api/release-monitor', limit: 6, windowMs: 30000, label: 'admin-diagnostics' },
 ]);
 
@@ -3060,7 +3246,7 @@ async function apiReminderHealth(request, cfg, user) {
 
     const result = await sendTelegramMessage(
       user.id,
-      `✅ Football Manager\n\nТест уведомлений v5.7 RC5 прошёл. Если вы видите это сообщение, Telegram delivery работает.`,
+      `✅ Football Manager\n\nТест уведомлений v5.8 RC6 прошёл. Если вы видите это сообщение, Telegram delivery работает.`,
       cfg
     );
 
@@ -4498,7 +4684,7 @@ async function apiReleaseMonitor(request, cfg) {
   const value = {
     available: true,
     version: APP_VERSION,
-    releaseCandidate: 'RC5',
+    releaseCandidate: 'RC6',
     generatedAt: new Date().toISOString(),
     hours,
     persistent: source.persistent,
@@ -4555,10 +4741,11 @@ async function apiReleaseReadiness(request, cfg) {
     return json({ ...memory.releaseReadiness.value, cached: true });
   }
 
-  const [diagnostics, modelTable, runtimeTable] = await Promise.all([
+  const [diagnostics, modelTable, runtimeTable, runtimeHistoryTable] = await Promise.all([
     collectDiagnostics(cfg),
     probeOptionalTable(cfg, 'model_predictions'),
     probeOptionalTable(cfg, 'runtime_controls'),
+    probeOptionalTable(cfg, 'runtime_control_history'),
   ]);
   const runtimeState = await loadRuntimeControls(cfg, { force: true });
   const runtime = runtimeState.value;
@@ -4569,6 +4756,7 @@ async function apiReleaseReadiness(request, cfg) {
     releaseCheck('supabase_online', 'Supabase/PostgREST', diagnostics.supabase?.ok ? 'pass' : 'fail', diagnostics.supabase?.ok ? `Ответ ${Number(diagnostics.supabase?.latencyMs || 0)} мс.` : `Статус: ${diagnostics.supabase?.status || 'offline'}.`, true),
     releaseCheck('model_backtest', 'Backtest schema v3.6+', modelTable.ok ? 'pass' : 'fail', modelTable.ok ? 'Таблица model_predictions доступна.' : `model_predictions: ${modelTable.status}.`, true),
     releaseCheck('runtime_controls_schema', 'Runtime Controls schema v5.7', runtimeTable.ok ? 'pass' : 'fail', runtimeTable.ok ? 'Таблица runtime_controls доступна.' : 'Нужна supabase_migration_v5_7.sql.', true),
+    releaseCheck('runtime_history_schema', 'Runtime rollback history v5.8', runtimeHistoryTable.ok ? 'pass' : 'fail', runtimeHistoryTable.ok ? 'История Runtime Controls доступна.' : 'Нужна supabase_migration_v5_8.sql.', true),
     releaseCheck('runtime_controls_state', 'Runtime Controls state', runtime.maintenanceMode ? 'warn' : 'pass', runtime.maintenanceMode ? `Maintenance включён${runtime.message ? `: ${runtime.message}` : '.'}` : `Revision ${Number(runtime.revision || 1)} · рабочий режим.`, false),
     releaseCheck('observability', 'Observability schema v3.8', diagnostics.observability?.migrationReady ? 'pass' : 'warn', diagnostics.observability?.migrationReady ? 'Постоянный журнал ops_events доступен.' : 'Журнал работает только в памяти Worker.', false),
     releaseCheck('integrity', 'Data Integrity schema v3.9', diagnostics.integrity?.migrationReady ? 'pass' : 'fail', diagnostics.integrity?.migrationReady ? 'История integrity-проверок доступна.' : 'Нужна migration v3.9.', true),
@@ -4618,7 +4806,7 @@ async function apiReleaseReadiness(request, cfg) {
       monetizationExpected: 'paused',
       paymentTestingRequiredNow: false,
       providerUpgradeRequiredNow: false,
-      note: 'RC5 добавляет аварийные runtime-переключатели без включения пользовательской оплаты.',
+      note: 'RC6 добавляет журнал Runtime Controls и безопасный rollback без включения пользовательской оплаты.',
     },
   };
   memory.releaseReadiness = { at: now, value };
@@ -4715,7 +4903,7 @@ async function apiProductionReadiness(request, cfg) {
 }
 
 
-const RC_NAME = 'RC5';
+const RC_NAME = 'RC6';
 
 function rcCheck(id, group, label, state, detail, blocking = false) {
   return { id, group, label, state, detail, blocking: Boolean(blocking) };
@@ -4759,8 +4947,8 @@ async function apiRcRegression(request, cfg, user) {
   const startedAt = Date.now();
 
   // 1) Core runtime / security configuration.
-  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '5.7.0-rc5' ? 'pass' : 'fail',
-    `Worker: ${APP_VERSION}; ожидается 5.7.0-rc5.`, true));
+  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '5.8.0-rc6' ? 'pass' : 'fail',
+    `Worker: ${APP_VERSION}; ожидается 5.8.0-rc6.`, true));
   checks.push(rcCheck('api_contract', 'runtime', 'API contract', API_CONTRACT_VERSION === 5 ? 'pass' : 'fail',
     `Contract ${API_CONTRACT_VERSION}; min client ${MIN_CLIENT_VERSION}.`, true));
   checks.push(rcCheck('app_manifest', 'runtime', 'Public App Manifest', appManifest(cfg)?.version === APP_VERSION ? 'pass' : 'fail',
@@ -4795,6 +4983,7 @@ async function apiRcRegression(request, cfg, user) {
     ['user_preferences', 'Preferences', true],
     ['match_reminders', 'Reminders', true],
     ['runtime_controls', 'Runtime controls', true],
+    ['runtime_control_history', 'Runtime rollback history', true],
     ['model_predictions', 'Model predictions', true],
     ['ops_events', 'Observability', false],
     ['match_integrity_runs', 'Integrity runs', true],
@@ -4824,11 +5013,21 @@ async function apiRcRegression(request, cfg, user) {
   checks.push(rcCheck(
     'runtime_controls_state',
     'runtime',
-    'Runtime Controls RC5',
+    'Runtime Controls RC6',
     runtimeState.schemaReady ? 'pass' : 'fail',
     runtimeState.schemaReady
       ? `Revision ${Number(runtimeState.value?.revision || 1)} · ${runtimeState.value?.maintenanceMode ? 'maintenance ON' : 'normal mode'}.`
       : 'Запустите supabase_migration_v5_7.sql.',
+    true
+  ));
+
+  const runtimeHistorySchema = await probeRuntimeHistorySchema(cfg);
+  checks.push(rcCheck(
+    'runtime_history_schema',
+    'database',
+    'Runtime rollback history v5.8',
+    runtimeHistorySchema.ok ? 'pass' : 'fail',
+    runtimeHistorySchema.ok ? 'История revision и rollback доступны.' : 'Запустите supabase_migration_v5_8.sql.',
     true
   ));
 
@@ -7866,7 +8065,7 @@ export default {
         failureRecovery: 'enabled',
         gracefulErrors: 'enabled',
         webviewRecovery: 'enabled',
-        releaseCandidate: 'RC5',
+        releaseCandidate: 'RC6',
         regressionQA: 'enabled',
         rcSmokeTest: 'enabled',
         clientContractQA: 'enabled',
@@ -7882,6 +8081,8 @@ export default {
         reminderCronMinutes: 5,
         runtimeControls: 'enabled',
         emergencyKillSwitches: 'enabled',
+        runtimeRollback: 'enabled',
+        runtimeHistory: 'enabled',
         runtimeControlsCacheSeconds: 30,
         devMode: cfg.devMode,
       });
@@ -7941,6 +8142,10 @@ export default {
       if (url.pathname === '/api/runtime-controls') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
         return await apiRuntimeControls(request, cfg, user);
+      }
+      if (url.pathname === '/api/runtime-controls/rollback') {
+        if (!isAdminUser(user, cfg)) return adminForbidden();
+        return await apiRuntimeRollback(request, cfg, user);
       }
 
       // v4.3 Admin Security: technical endpoints are protected server-side.
