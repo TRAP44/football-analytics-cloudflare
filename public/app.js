@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '5.6.0-rc4';
+const CLIENT_VERSION = '5.7.0-rc5';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc4';
+const CLIENT_RELEASE_CHANNEL = 'rc5';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -44,6 +44,10 @@ const state = {
   releaseMonitorHours: 24,
   reminderHealth: null,
   reminderHealthLoading: false,
+  runtimeStatus: null,
+  runtimeControlsAdmin: null,
+  runtimeControlsLoading: false,
+  runtimeControlsSaving: false,
   clientTelemetrySent: new Set(),
   appManifest: null,
   serverVersion: '',
@@ -156,6 +160,8 @@ function toast(message) {
 
 function apiErrorCategory(error) {
   if (navigator.onLine === false || error?.status === 0) return 'offline';
+  if (error?.payload?.category === 'maintenance') return 'maintenance';
+  if (error?.payload?.category === 'feature_disabled') return 'feature_disabled';
   if (error?.status === 401) return 'auth';
   if (error?.status === 408 || error?.status === 504 || error?.payload?.category === 'timeout' || error?.payload?.code === 'UPSTREAM_TIMEOUT') return 'timeout';
   if (error?.status === 429 || error?.payload?.category === 'rate_limit') return 'rate_limit';
@@ -171,6 +177,8 @@ function friendlyErrorMessage(error) {
   const retryAfter = Number(error?.retryAfter || error?.payload?.retryAfter || 0);
   if (category === 'offline') return 'Нет подключения к интернету. Сохранённые данные останутся на экране.';
   if (error?.status === 426 || error?.payload?.category === 'compatibility') return 'Версия Mini App устарела. Обновите приложение.';
+  if (error?.payload?.category === 'maintenance') return error?.payload?.error || 'Football Manager временно на техническом обслуживании.';
+  if (error?.payload?.category === 'feature_disabled') return error?.payload?.error || 'Эта функция временно приостановлена.';
   if (category === 'auth') return 'Сессия Telegram не подтверждена. Закройте Mini App и откройте его снова из бота.';
   if (category === 'timeout') return 'Сервис отвечает медленнее обычного. Попробуйте обновить ещё раз.';
   if (category === 'rate_limit') return retryAfter
@@ -294,6 +302,7 @@ async function recoverActiveView({ automatic = false } = {}) {
   setNetworkMode('recovering', { message: 'Проверяю свежие данные…' });
 
   try {
+    await loadRuntimeStatus(true);
     const view = activeViewId();
     if (view === 'matchesView') {
       await loadMatches({ force: true, silent: true });
@@ -416,7 +425,9 @@ async function loadAppManifest() {
     state.appManifest = manifest;
     state.startup.manifestOk = true;
     state.serverVersion = String(manifest.version || '');
+    if (manifest.runtime) state.runtimeStatus = manifest.runtime;
     evaluateCompatibility(manifest);
+    applyRuntimeUi();
     return manifest;
   } catch (error) {
     state.clientPerf.manifestFailures += 1;
@@ -424,6 +435,81 @@ async function loadAppManifest() {
     return null;
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+
+function runtimeAllows(key) {
+  const runtime = state.runtimeStatus || state.profile?.features?.runtime || {};
+  return runtime?.[key] !== false;
+}
+
+function runtimeDisabledLabels(runtime = state.runtimeStatus || {}) {
+  const items = [];
+  if (runtime.analysisEnabled === false) items.push('анализ');
+  if (runtime.searchEnabled === false) items.push('поиск');
+  if (runtime.liveEnabled === false) items.push('LIVE-обновления');
+  if (runtime.remindersEnabled === false) items.push('новые уведомления');
+  if (runtime.expandedDataEnabled === false) items.push('расширенные данные');
+  return items;
+}
+
+function applyRuntimeUi() {
+  const runtime = state.runtimeStatus || state.profile?.features?.runtime || null;
+  const banner = $('runtimeBanner');
+  const icon = $('runtimeBannerIcon');
+  const title = $('runtimeBannerTitle');
+  const text = $('runtimeBannerText');
+
+  if (!runtime) {
+    if (banner) banner.hidden = true;
+    return;
+  }
+
+  state.runtimeStatus = runtime;
+  const disabled = runtimeDisabledLabels(runtime);
+  if (banner && icon && title && text) {
+    if (runtime.maintenanceMode) {
+      banner.hidden = false;
+      banner.className = 'runtime-banner maintenance';
+      icon.textContent = '🛠';
+      title.textContent = 'Техническое обслуживание';
+      text.textContent = runtime.message || 'Часть футбольных функций временно приостановлена.';
+    } else if (disabled.length) {
+      banner.hidden = false;
+      banner.className = 'runtime-banner limited';
+      icon.textContent = '⚙️';
+      title.textContent = 'Часть функций временно ограничена';
+      text.textContent = disabled.join(' · ');
+    } else {
+      banner.hidden = true;
+    }
+  }
+
+  const searchDisabled = !runtimeAllows('searchEnabled');
+  $('navSearch')?.classList.remove('feature-disabled');
+  $('navSearch')?.removeAttribute('aria-disabled');
+  if ($('globalSearchBtn')) $('globalSearchBtn').disabled = searchDisabled;
+
+  if (!runtimeAllows('liveEnabled')) stopLiveRefresh();
+}
+
+async function loadRuntimeStatus(force = false) {
+  try {
+    const data = await api(`/api/runtime-status${force ? `?t=${Date.now()}` : ''}`, {
+      retry: false,
+      dedupe: !force,
+      timeoutMs: 7000,
+    });
+    state.runtimeStatus = data.runtime || state.runtimeStatus;
+    applyRuntimeUi();
+    return state.runtimeStatus;
+  } catch (error) {
+    // Manifest may carry a recent safe snapshot, so startup does not fail only
+    // because the dedicated runtime endpoint is temporarily unavailable.
+    if (!state.runtimeStatus && state.appManifest?.runtime) state.runtimeStatus = state.appManifest.runtime;
+    applyRuntimeUi();
+    return state.runtimeStatus;
   }
 }
 
@@ -490,12 +576,25 @@ async function runStartupSequence() {
 
   setBootStatus(
     'Подключаю данные',
-    manifest ? `RC4 · API contract ${manifest.apiContract}` : 'Manifest временно недоступен — продолжаю в безопасном режиме.',
+    manifest ? `RC5 · API contract ${manifest.apiContract}` : 'Manifest временно недоступен — продолжаю в безопасном режиме.',
     38
   );
 
-  await Promise.allSettled([loadProfile(), loadFavorites(), loadMatches()]);
+  await loadRuntimeStatus(false);
+  await Promise.allSettled([loadProfile(), loadFavorites()]);
   renderProfile();
+  applyRuntimeUi();
+
+  if (isAdmin() || !state.runtimeStatus?.maintenanceMode) {
+    await Promise.allSettled([loadMatches()]);
+  } else {
+    const snapshot = readMatchSnapshot(localDate(state.offset));
+    if (snapshot) applyMatchPayload(snapshot, { snapshot: true });
+    else if ($('matches')) {
+      $('matches').innerHTML = `<div class="empty">${escapeHtml(state.runtimeStatus?.message || 'Football Manager временно находится на техническом обслуживании.')}</div>`;
+      $('matches').setAttribute('aria-busy', 'false');
+    }
+  }
 
   const usable = Boolean(state.profile || state.matches.length || readMatchSnapshot(localDate(state.offset)));
   if (!usable && navigator.onLine === false) {
@@ -604,6 +703,11 @@ async function api(path, options = {}) {
           throw Object.assign(new Error(state.compatibilityReason), { status: 426, payload: { category: 'compatibility' } });
         }
         const data = await response.json().catch(() => ({}));
+        const runtimeFromPayload = data?.runtime || data?.dataCapabilities?.runtime || data?.features?.runtime || null;
+        if (runtimeFromPayload) {
+          state.runtimeStatus = runtimeFromPayload;
+          applyRuntimeUi();
+        }
         if (!response.ok) {
           const error = Object.assign(new Error(data.error || `HTTP ${response.status}`), {
             status: response.status,
@@ -611,7 +715,7 @@ async function api(path, options = {}) {
             retryAfter: Number(data.retryAfter || response.headers.get('retry-after') || 0),
           });
           if (response.status === 429) state.clientPerf.rateLimited += 1;
-          if (retryable && attempt < 1 && [502, 503, 504].includes(response.status)) throw Object.assign(error, { transient: true });
+          if (retryable && attempt < 1 && [502, 503, 504].includes(response.status) && !['maintenance','feature_disabled'].includes(String(data.category || ''))) throw Object.assign(error, { transient: true });
           throw error;
         }
         const elapsed = Math.round(performance.now() - started);
@@ -686,7 +790,9 @@ function renderDataCapabilities() {
   const c = state.dataCapabilities || state.profile?.features?.dataCapabilities || {};
   const features = c.features || {};
   if ($('dataModeLabel')) $('dataModeLabel').textContent = c.label || (c.mode === 'expanded' ? 'Расширенное покрытие' : 'Стандартное покрытие');
-  if ($('dataModeRefresh')) $('dataModeRefresh').textContent = Number(c.refreshSeconds || 60) <= 30 ? `${Number(c.refreshSeconds || 60)} сек.` : 'адаптивно';
+  if ($('dataModeRefresh')) $('dataModeRefresh').textContent = features.liveRefresh === false || Number(c.refreshSeconds) === 0
+    ? 'пауза'
+    : Number(c.refreshSeconds || 60) <= 30 ? `${Number(c.refreshSeconds || 60)} сек.` : 'адаптивно';
   if ($('dataModeLineups')) $('dataModeLineups').textContent = features.lineupsFallback ? 'Расширенно' : 'По доступности';
   if ($('dataModePlayers')) $('dataModePlayers').textContent = features.playerStats ? 'Расширенно' : 'По доступности';
   if ($('dataModeOdds')) $('dataModeOdds').textContent = features.liveOdds ? 'Расширенно' : 'По доступности';
@@ -717,7 +823,9 @@ function renderProfile() {
   renderReminderList();
   renderBilling();
   applyAdminVisibility();
+  if (state.profile?.features?.runtime) state.runtimeStatus = state.profile.features.runtime;
   renderDataCapabilities();
+  applyRuntimeUi();
 }
 
 
@@ -965,7 +1073,7 @@ async function openProfileView() {
   if (!state.remindersLoaded) essentials.push(loadReminders());
   if (isAdmin()) {
     if (!state.providerLoaded) essentials.push(loadProvider());
-    essentials.push(loadModelQuality(false), loadReleaseReadiness(false), loadProductionReadiness(false), loadReleaseMonitor(false), loadReminderHealth(false));
+    essentials.push(loadRuntimeControlsAdmin(false), loadModelQuality(false), loadReleaseReadiness(false), loadProductionReadiness(false), loadReleaseMonitor(false), loadReminderHealth(false));
   }
   await Promise.allSettled(essentials);
 }
@@ -1155,11 +1263,11 @@ function runClientContractSmoke() {
   const adminSections = [...document.querySelectorAll('[data-admin-only]')];
   add('admin_sections', 'Admin UI маркировка', adminSections.length >= 6, `${adminSections.length} технических секций помечены data-admin-only.`);
 
-  const cssLink = document.querySelector('link[href*="styles.css?v=5.6.0"]');
-  const appScript = document.querySelector('script[src*="app.js?v=5.6.0"]');
+  const cssLink = document.querySelector('link[href*="styles.css?v=5.7.0"]');
+  const appScript = document.querySelector('script[src*="app.js?v=5.7.0"]');
   add('cache_bust', 'Cache-bust assets', Boolean(cssLink && appScript), `CSS ${cssLink ? 'OK' : 'MISS'} · JS ${appScript ? 'OK' : 'MISS'}.`);
 
-  add('client_version', 'Версия клиента', CLIENT_VERSION === '5.6.0-rc4', CLIENT_VERSION);
+  add('client_version', 'Версия клиента', CLIENT_VERSION === '5.7.0-rc5', CLIENT_VERSION);
   add('telegram_sdk', 'Telegram WebApp SDK', Boolean(window.Telegram?.WebApp), window.Telegram?.WebApp ? 'SDK доступен.' : 'В обычном браузере SDK может отсутствовать; в Telegram должен быть доступен.');
 
   const navButtons = ['navMatches','navSearch','navHistory','navProfile'].filter(id => $(id));
@@ -1170,6 +1278,8 @@ function runClientContractSmoke() {
 
   const bootIds = ['bootGate','bootTitle','bootText','bootProgressFill','bootReloadBtn','versionBanner','versionReloadBtn'];
   add('startup_contract', 'Startup / rollback contract', bootIds.every(id => $(id)), `${bootIds.filter(id => $(id)).length}/${bootIds.length} элементов.`);
+  const runtimeIds = ['runtimeBanner','runtimeBannerTitle','runtimeBannerText','runtimeControlsStatus','runtimeSaveBtn'];
+  add('runtime_controls_contract', 'Runtime Controls contract', runtimeIds.every(id => $(id)), `${runtimeIds.filter(id => $(id)).length}/${runtimeIds.length} элементов.`);
   add('api_contract', 'Client API contract', CLIENT_API_CONTRACT === 5, `contract ${CLIENT_API_CONTRACT} · ${CLIENT_RELEASE_CHANNEL}`);
 
   return {
@@ -1183,7 +1293,7 @@ function runClientContractSmoke() {
 }
 
 function rcStateText(status) {
-  if (status === 'rc_ready') return 'RC4 READY';
+  if (status === 'rc_ready') return 'RC5 READY';
   if (status === 'rc_with_holds') return 'RC + HOLD';
   if (status === 'blocked') return 'BLOCK';
   return 'WAIT';
@@ -1217,7 +1327,7 @@ function renderRcRegression() {
   const r = state.rcRegression;
   if (!r) {
     badge.className = 'rc-badge';
-    badge.textContent = 'RC4';
+    badge.textContent = 'RC5';
     status.textContent = 'Полный regression smoke-test ещё не запускался.';
     meta.textContent = 'Тест безопасный: без Analyze, без изменений user data, без API-Football.';
     summary.innerHTML = '';
@@ -1303,6 +1413,167 @@ async function loadRcRegression(force = true) {
 }
 
 
+
+
+function runtimeControlsFormValue(id, fallback = true) {
+  const el = $(id);
+  return el ? Boolean(el.checked) : fallback;
+}
+
+function renderRuntimeControls() {
+  if (!isAdmin()) return;
+  const badge = $('runtimeControlsBadge');
+  const status = $('runtimeControlsStatus');
+  const revision = $('runtimeControlsRevision');
+  const saveBtn = $('runtimeSaveBtn');
+  const defaultsBtn = $('runtimeDefaultsBtn');
+  const refreshBtn = $('runtimeControlsRefreshBtn');
+  const panel = state.runtimeControlsAdmin;
+  if (!badge || !status || !revision || !saveBtn || !defaultsBtn || !refreshBtn) return;
+
+  const busy = Boolean(state.runtimeControlsLoading || state.runtimeControlsSaving);
+  saveBtn.disabled = busy;
+  defaultsBtn.disabled = busy;
+  refreshBtn.disabled = busy;
+
+  if (busy) {
+    badge.className = 'runtime-controls-badge running';
+    badge.textContent = state.runtimeControlsSaving ? 'SAVE' : 'RUN';
+    status.textContent = state.runtimeControlsSaving ? 'Применяю runtime-настройки…' : 'Загружаю runtime-настройки…';
+    return;
+  }
+
+  if (!panel) {
+    badge.className = 'runtime-controls-badge';
+    badge.textContent = 'WAIT';
+    status.textContent = 'Runtime Controls ещё не загружены.';
+    return;
+  }
+
+  if (!panel.available || !panel.schemaReady) {
+    badge.className = 'runtime-controls-badge blocked';
+    badge.textContent = 'SQL';
+    status.textContent = panel.reason || 'Нужна supabase_migration_v5_7.sql.';
+    revision.textContent = 'schema missing';
+    return;
+  }
+
+  const c = panel.controls || {};
+  badge.className = `runtime-controls-badge ${c.maintenanceMode ? 'maintenance' : 'healthy'}`;
+  badge.textContent = c.maintenanceMode ? 'MAINT' : 'LIVE';
+  status.textContent = c.maintenanceMode
+    ? 'Maintenance mode включён для обычных пользователей.'
+    : 'Runtime-настройки активны. Изменения применяются без Deploy.';
+  revision.textContent = `revision ${Number(c.revision || 1)}${c.updatedAt ? ` · ${relativeAge(c.updatedAt)}` : ''}`;
+
+  const map = [
+    ['runtimeMaintenanceToggle', 'maintenanceMode'],
+    ['runtimeAnalysisToggle', 'analysisEnabled'],
+    ['runtimeSearchToggle', 'searchEnabled'],
+    ['runtimeLiveToggle', 'liveEnabled'],
+    ['runtimeRemindersToggle', 'remindersEnabled'],
+    ['runtimeExpandedToggle', 'expandedDataEnabled'],
+  ];
+  for (const [id, key] of map) if ($(id)) $(id).checked = Boolean(c[key]);
+  if ($('runtimeMessage')) $('runtimeMessage').value = c.message || '';
+}
+
+async function loadRuntimeControlsAdmin(force = false) {
+  if (!isAdmin() || state.runtimeControlsLoading) return;
+  if (!force && state.runtimeControlsAdmin) { renderRuntimeControls(); return; }
+  state.runtimeControlsLoading = true;
+  renderRuntimeControls();
+  try {
+    state.runtimeControlsAdmin = await api(`/api/runtime-controls${force ? '?refresh=1' : ''}`, {
+      retry: false,
+      dedupe: !force,
+      timeoutMs: 12000,
+    });
+    if (state.runtimeControlsAdmin?.controls) {
+      state.runtimeStatus = state.runtimeControlsAdmin.controls;
+      applyRuntimeUi();
+    }
+  } catch (e) {
+    state.runtimeControlsAdmin = { available: false, schemaReady: false, reason: e.message };
+  } finally {
+    state.runtimeControlsLoading = false;
+    renderRuntimeControls();
+  }
+}
+
+function runtimeControlsPayload() {
+  return {
+    expectedRevision: Number(state.runtimeControlsAdmin?.controls?.revision || 0),
+    maintenanceMode: runtimeControlsFormValue('runtimeMaintenanceToggle', false),
+    analysisEnabled: runtimeControlsFormValue('runtimeAnalysisToggle', true),
+    searchEnabled: runtimeControlsFormValue('runtimeSearchToggle', true),
+    liveEnabled: runtimeControlsFormValue('runtimeLiveToggle', true),
+    remindersEnabled: runtimeControlsFormValue('runtimeRemindersToggle', true),
+    expandedDataEnabled: runtimeControlsFormValue('runtimeExpandedToggle', true),
+    message: String($('runtimeMessage')?.value || '').trim().slice(0, 280),
+  };
+}
+
+async function saveRuntimeControls(payload = null, options = {}) {
+  if (!isAdmin() || state.runtimeControlsSaving) return;
+  const body = payload || runtimeControlsPayload();
+  if (!Number(body.expectedRevision || 0)) {
+    toast('Сначала обновите Runtime Controls.');
+    return;
+  }
+
+  const disabling = body.maintenanceMode || !body.analysisEnabled || !body.searchEnabled || !body.liveEnabled || !body.remindersEnabled || !body.expandedDataEnabled;
+  if (!options.skipConfirm) {
+    const message = disabling
+      ? 'Применить ограничения сейчас? Они затронут обычных пользователей без нового Deploy.'
+      : 'Вернуть все runtime-функции в рабочий режим?';
+    if (!window.confirm(message)) return;
+  }
+
+  state.runtimeControlsSaving = true;
+  renderRuntimeControls();
+  try {
+    const result = await api('/api/runtime-controls', {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+      retry: false,
+      dedupe: false,
+      timeoutMs: 12000,
+    });
+    state.runtimeControlsAdmin = {
+      available: true,
+      schemaReady: true,
+      source: 'supabase',
+      controls: result.controls,
+    };
+    state.runtimeStatus = result.controls;
+    applyRuntimeUi();
+    toast('Runtime Controls применены');
+  } catch (e) {
+    toast(e.message);
+    state.runtimeControlsAdmin = null;
+    await loadRuntimeControlsAdmin(true);
+  } finally {
+    state.runtimeControlsSaving = false;
+    renderRuntimeControls();
+  }
+}
+
+async function restoreRuntimeDefaults() {
+  const current = state.runtimeControlsAdmin?.controls;
+  if (!current) { await loadRuntimeControlsAdmin(true); return; }
+  if (!window.confirm('Вернуть безопасные значения по умолчанию: все функции включены, maintenance выключен?')) return;
+  await saveRuntimeControls({
+    expectedRevision: Number(current.revision || 0),
+    maintenanceMode: false,
+    analysisEnabled: true,
+    searchEnabled: true,
+    liveEnabled: true,
+    remindersEnabled: true,
+    expandedDataEnabled: true,
+    message: '',
+  }, { skipConfirm: true });
+}
 
 function renderReminderHealth() {
   if (!isAdmin()) return;
@@ -2337,6 +2608,13 @@ async function runGlobalSearch() {
   const query = String(input?.value || '').trim();
   state.globalSearch.query = query;
   state.globalSearch.warning = '';
+  if (!runtimeAllows('searchEnabled')) {
+    state.globalSearch.remoteTeams = [];
+    state.globalSearch.remoteCompetitions = [];
+    state.globalSearch.warning = 'Удалённый поиск временно приостановлен. Используйте локальный каталог матчей.';
+    renderGlobalSearch();
+    return;
+  }
   if (query.length < 3) { state.globalSearch.remoteTeams = []; state.globalSearch.remoteCompetitions = []; renderGlobalSearch(); return; }
   state.globalSearch.loading = true; renderGlobalSearch();
   try {
@@ -3097,6 +3375,12 @@ function updateLiveCountdown() {
 
 function startLiveRefresh(fixtureId) {
   stopLiveRefresh();
+  if (!runtimeAllows('liveEnabled')) {
+    state.liveRefreshWasActive = false;
+    const el = $('liveRefreshText');
+    if (el) el.textContent = 'Автообновление LIVE временно приостановлено.';
+    return;
+  }
   state.liveRefreshRemaining = Math.max(15, Number(state.currentCenter?.refreshSeconds || 60));
   if (document.hidden) {
     state.liveRefreshWasActive = true;
@@ -3574,6 +3858,10 @@ async function openMatchCenter(fixtureId, btn) {
 }
 
 async function analyzeMatch(fixtureId, btn) {
+  if (!runtimeAllows('analysisEnabled')) {
+    toast(state.runtimeStatus?.message || 'Полный анализ временно приостановлен.');
+    return;
+  }
   stopLiveRefresh();
   state.currentCenter = null;
   const original = btn?.textContent || '';
@@ -3690,6 +3978,10 @@ function hasReminder(fixtureId) {
 async function toggleReminder(match) {
   if (!match?.fixtureId) return;
   const active = hasReminder(match.fixtureId);
+  if (!active && !runtimeAllows('remindersEnabled')) {
+    toast('Новые уведомления временно приостановлены.');
+    return;
+  }
   try {
     if (active) {
       await api(`/api/reminders?fixtureId=${Number(match.fixtureId)}`, { method: 'DELETE' });
@@ -4380,6 +4672,9 @@ $('releaseMonitorRefreshBtn')?.addEventListener('click', () => loadReleaseMonito
 $('releaseMonitorPeriod')?.addEventListener('change', () => { state.releaseMonitor = null; loadReleaseMonitor(true); });
 $('reminderHealthRefreshBtn')?.addEventListener('click', () => loadReminderHealth(true));
 $('reminderTestBtn')?.addEventListener('click', () => sendReminderTest());
+$('runtimeControlsRefreshBtn')?.addEventListener('click', () => loadRuntimeControlsAdmin(true));
+$('runtimeSaveBtn')?.addEventListener('click', () => saveRuntimeControls());
+$('runtimeDefaultsBtn')?.addEventListener('click', () => restoreRuntimeDefaults());
 $('rcRunBtn')?.addEventListener('click', () => loadRcRegression(true));
 $('providerProbeBtn')?.addEventListener('click', () => probeProvider());
 $('providerAuditBtn')?.addEventListener('click', () => runProviderCoverageAudit(null, true));
@@ -4397,7 +4692,7 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// v5.6 RC4: atomic reminder delivery claims, five-minute cron cadence and admin notification health.
+// v5.7 RC5: server-side runtime controls and emergency kill switches without a redeploy.
 // The boot watchdog never leaves the user behind an endless splash screen.
 const startupWatchdog = setTimeout(() => {
   if (!$('bootGate')?.hidden && !state.compatibilityBlocked) {
