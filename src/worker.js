@@ -59,7 +59,7 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.7.0-rc15';
+const APP_VERSION = '6.7.1-rc15';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
 const RELEASE_CHANNEL = 'rc15';
@@ -7113,8 +7113,8 @@ async function apiRcRegression(request, cfg, user) {
   const startedAt = Date.now();
 
   // 1) Core runtime / security configuration.
-  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.7.0-rc15' ? 'pass' : 'fail',
-    `Worker: ${APP_VERSION}; ожидается 6.7.0-rc15.`, true));
+  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.7.1-rc15' ? 'pass' : 'fail',
+    `Worker: ${APP_VERSION}; ожидается 6.7.1-rc15.`, true));
   checks.push(rcCheck('api_contract', 'runtime', 'API contract', API_CONTRACT_VERSION === 5 ? 'pass' : 'fail',
     `Contract ${API_CONTRACT_VERSION}; min client ${MIN_CLIENT_VERSION}.`, true));
   checks.push(rcCheck('app_manifest', 'runtime', 'Public App Manifest', appManifest(cfg)?.version === APP_VERSION ? 'pass' : 'fail',

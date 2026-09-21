@@ -1968,6 +1968,7 @@ main { position: relative; z-index: 1; }
   display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px;align-items:center;
   margin:8px 0 0;border:1px solid var(--line);border-radius:13px;padding:9px 10px;background:var(--surface)
 }
+.runtime-banner[hidden]{display:none!important}
 .runtime-banner-icon{width:28px;height:28px;border-radius:10px;display:grid;place-items:center;background:var(--surface-soft);font-size:13px}
 .runtime-banner-copy{min-width:0}
 .runtime-banner-copy strong,.runtime-banner-copy span{display:block}

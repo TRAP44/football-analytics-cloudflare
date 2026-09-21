@@ -1,4 +1,4 @@
-# Football Analytics Mini App v6.7.0 — RC15 Trusted Metrics Gate & Two-Pass Finality
+# Football Analytics Mini App v6.7.1 — RC15 Trusted Metrics Gate & Two-Pass Finality
 
 RC15 усиливает RC13/RC14: первый совпавший provider-check больше не считается окончательной финальностью для model-quality.
 
@@ -30,7 +30,7 @@ RC15 не меняет prediction snapshot. Автоматический verifie
 ## Health
 
 Ожидается:
-- version = `6.7.0-rc15`;
+- version = `6.7.1-rc15`;
 - releaseCandidate = `RC15`;
 - trustedMetricsGate = enabled;
 - twoPassSettlementFinality = enabled;
@@ -39,3 +39,8 @@ RC15 не меняет prediction snapshot. Автоматический verifie
 - monetization = paused.
 
 Telegram Stars остаются paused.
+
+
+## RC15 hotfix 6.7.1
+
+Исправлено отображение пустого Runtime status banner в Telegram WebView: `runtimeBanner[hidden]` теперь принудительно получает `display:none!important`. Cache-bust обновлён, чтобы клиент забрал новый CSS после Deploy.

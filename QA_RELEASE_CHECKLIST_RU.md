@@ -1,8 +1,8 @@
-# QA Release Checklist — v6.7.0 RC15
+# QA Release Checklist — v6.7.1 RC15
 
 ## Deploy
 - применён `supabase_migration_v6_7.sql`;
-- Worker/client = `6.7.0-rc15`;
+- Worker/client = `6.7.1-rc15`;
 - cron, Secrets, wrangler не менялись;
 - monetization paused.
 
@@ -40,3 +40,9 @@
 
 ## Инварианты
 Автоматический finality verifier не переписывает provider drift. Prediction snapshots immutable. Telegram Stars остаются paused.
+
+
+## RC15 hotfix 6.7.1
+- при нормальном runtime `#runtimeBanner[hidden]` визуально отсутствует;
+- maintenance/limited по-прежнему показывают runtime banner после снятия `hidden`;
+- cache-bust CSS/JS = 6.7.1.

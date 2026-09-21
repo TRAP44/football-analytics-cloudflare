@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '6.7.0-rc15';
+const CLIENT_VERSION = '6.7.1-rc15';
 const CLIENT_API_CONTRACT = 5;
 const CLIENT_RELEASE_CHANNEL = 'rc15';
 
@@ -1576,11 +1576,11 @@ function runClientContractSmoke() {
   const adminSections = [...document.querySelectorAll('[data-admin-only]')];
   add('admin_sections', 'Admin UI маркировка', adminSections.length >= 6, `${adminSections.length} технических секций помечены data-admin-only.`);
 
-  const cssLink = document.querySelector('link[href*="styles.css?v=6.7.0"]');
-  const appScript = document.querySelector('script[src*="app.js?v=6.7.0"]');
+  const cssLink = document.querySelector('link[href*="styles.css?v=6.7.1"]');
+  const appScript = document.querySelector('script[src*="app.js?v=6.7.1"]');
   add('cache_bust', 'Cache-bust assets', Boolean(cssLink && appScript), `CSS ${cssLink ? 'OK' : 'MISS'} · JS ${appScript ? 'OK' : 'MISS'}.`);
 
-  add('client_version', 'Версия клиента', CLIENT_VERSION === '6.7.0-rc15', CLIENT_VERSION);
+  add('client_version', 'Версия клиента', CLIENT_VERSION === '6.7.1-rc15', CLIENT_VERSION);
   add('telegram_sdk', 'Telegram WebApp SDK', Boolean(window.Telegram?.WebApp), window.Telegram?.WebApp ? 'SDK доступен.' : 'В обычном браузере SDK может отсутствовать; в Telegram должен быть доступен.');
 
   const navButtons = ['navMatches','navSearch','navHistory','navProfile'].filter(id => $(id));
