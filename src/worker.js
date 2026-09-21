@@ -57,10 +57,10 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '5.5.0-rc3';
+const APP_VERSION = '5.6.0-rc4';
 const API_CONTRACT_VERSION = 5;
-const MIN_CLIENT_VERSION = '5.4.0';
-const RELEASE_CHANNEL = 'rc3';
+const MIN_CLIENT_VERSION = '5.5.0';
+const RELEASE_CHANNEL = 'rc4';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -209,7 +209,7 @@ function appManifest(cfg) {
     minClientVersion: MIN_CLIENT_VERSION,
     apiContract: API_CONTRACT_VERSION,
     releaseChannel: RELEASE_CHANNEL,
-    releaseCandidate: 'RC3',
+    releaseCandidate: 'RC4',
     maintenance: false,
     monetization: cfg.monetizationEnabled ? 'enabled' : 'paused',
     compatibility: {
@@ -225,6 +225,8 @@ function appManifest(cfg) {
       regressionQA: true,
       releaseMonitor: true,
       clientTelemetry: true,
+      notificationReliability: true,
+      reminderDeliveryClaims: true,
     },
     serverTime: new Date().toISOString(),
   };
@@ -403,6 +405,7 @@ const ROUTE_BURST_POLICIES = Object.freeze([
   { test: p => p === '/api/provider/coverage-audit', limit: 2, windowMs: 30000, label: 'coverage-audit' },
   { test: p => p === '/api/provider/probe', limit: 3, windowMs: 30000, label: 'provider-probe' },
   { test: p => p === '/api/client-telemetry', limit: 12, windowMs: 60000, label: 'client-telemetry' },
+  { test: p => p === '/api/reminder-health', limit: 6, windowMs: 30000, label: 'reminder-health' },
   { test: p => p === '/api/diagnostics' || p === '/api/release-readiness' || p === '/api/production-readiness' || p === '/api/rc-regression' || p === '/api/release-monitor', limit: 6, windowMs: 30000, label: 'admin-diagnostics' },
 ]);
 
@@ -2311,6 +2314,15 @@ async function addReminder(userId, input, cfg) {
     kickoff_notify: kickoffNotify,
     notified_at: null,
     kickoff_notified_at: null,
+    prematch_claimed_at: null,
+    kickoff_claimed_at: null,
+    prematch_attempts: 0,
+    kickoff_attempts: 0,
+    delivery_last_error: null,
+    delivery_last_attempt_at: null,
+    delivery_last_success_at: null,
+    delivery_disabled_reason: null,
+    delivery_retry_after: null,
     created_at: new Date().toISOString(),
   };
   if (!Number.isFinite(row.fixture_id) || row.fixture_id <= 0 || !row.fixture_date || !row.home_name || !row.away_name) {
@@ -2354,70 +2366,501 @@ async function patchReminder(row, patch, cfg) {
   if (!r.ok) throw new Error(`Supabase reminders patch: HTTP ${r.status}`);
 }
 
+function reminderDeliveryStatus(row) {
+  if (row?.kickoff_notified_at) return 'kickoff_sent';
+  if (row?.notified_at) return 'prematch_sent';
+  if (row?.delivery_last_error) return 'retry_pending';
+  return 'scheduled';
+}
+
+async function clearStaleReminderClaims(cfg) {
+  if (!hasSupabase(cfg)) return { prematch: 0, kickoff: 0 };
+  const cutoff = new Date(Date.now() - 20 * 60_000).toISOString();
+
+  const clearColumn = async column => {
+    const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
+    url.searchParams.set('enabled', 'eq.true');
+    url.searchParams.set(column, `lt.${cutoff}`);
+    const r = await fetchWithTimeout(url, {
+      method: 'PATCH',
+      headers: supaHeaders(cfg, { Prefer: 'return=representation' }),
+      body: JSON.stringify({ [column]: null }),
+    }, 7000, 'Supabase reminder stale claim');
+    if (!r.ok) throw new Error(`Supabase reminder claims: HTTP ${r.status}`);
+    const rows = await r.json().catch(() => []);
+    return Array.isArray(rows) ? rows.length : 0;
+  };
+
+  const prematch = await clearColumn('prematch_claimed_at').catch(() => 0);
+  const kickoff = await clearColumn('kickoff_claimed_at').catch(() => 0);
+  const total = prematch + kickoff;
+
+  if (total > 0) {
+    await recordOpsEvent(cfg, {
+      severity: 'warning',
+      source: 'reminders',
+      eventType: 'reminder_delivery',
+      code: 'REMINDER_STALE_CLAIMS',
+      message: `Recovered ${total} stale reminder delivery claims.`,
+      meta: { prematch, kickoff },
+    }).catch(() => {});
+  }
+
+  return { prematch, kickoff };
+}
+
+async function claimReminderDelivery(row, kind, cfg) {
+  if (!hasSupabase(cfg)) return { claimed: true, claimAt: new Date().toISOString() };
+
+  const kickoff = kind === 'kickoff';
+  const claimColumn = kickoff ? 'kickoff_claimed_at' : 'prematch_claimed_at';
+  const doneColumn = kickoff ? 'kickoff_notified_at' : 'notified_at';
+  const attemptsColumn = kickoff ? 'kickoff_attempts' : 'prematch_attempts';
+  const claimAt = new Date().toISOString();
+
+  const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
+  url.searchParams.set('telegram_id', `eq.${Number(row.telegram_id)}`);
+  url.searchParams.set('fixture_id', `eq.${Number(row.fixture_id)}`);
+  url.searchParams.set('enabled', 'eq.true');
+  url.searchParams.set(doneColumn, 'is.null');
+  url.searchParams.set(claimColumn, 'is.null');
+
+  const r = await fetchWithTimeout(url, {
+    method: 'PATCH',
+    headers: supaHeaders(cfg, { Prefer: 'return=representation' }),
+    body: JSON.stringify({
+      [claimColumn]: claimAt,
+      [attemptsColumn]: Math.max(0, Number(row?.[attemptsColumn] || 0)) + 1,
+      delivery_last_attempt_at: claimAt,
+      delivery_last_error: null,
+    }),
+  }, 7000, 'Supabase reminder claim');
+
+  if (!r.ok) throw new Error(`Supabase reminder claim: HTTP ${r.status}`);
+  const rows = await r.json().catch(() => []);
+  return { claimed: Array.isArray(rows) && rows.length === 1, claimAt };
+}
+
+async function finishReminderDelivery(row, kind, claimAt, cfg) {
+  if (!hasSupabase(cfg)) return;
+  const kickoff = kind === 'kickoff';
+  const claimColumn = kickoff ? 'kickoff_claimed_at' : 'prematch_claimed_at';
+  const doneColumn = kickoff ? 'kickoff_notified_at' : 'notified_at';
+  const doneAt = new Date().toISOString();
+
+  const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
+  url.searchParams.set('telegram_id', `eq.${Number(row.telegram_id)}`);
+  url.searchParams.set('fixture_id', `eq.${Number(row.fixture_id)}`);
+  url.searchParams.set(claimColumn, `eq.${claimAt}`);
+
+  const patch = {
+    [doneColumn]: doneAt,
+    [claimColumn]: null,
+    delivery_last_success_at: doneAt,
+    delivery_last_error: null,
+    delivery_retry_after: null,
+  };
+
+  if (kickoff && !row.notified_at) patch.notified_at = doneAt;
+
+  const r = await fetchWithTimeout(url, {
+    method: 'PATCH',
+    headers: supaHeaders(cfg, { Prefer: 'return=minimal' }),
+    body: JSON.stringify(patch),
+  }, 7000, 'Supabase reminder finish');
+  if (!r.ok) throw new Error(`Supabase reminder finish: HTTP ${r.status}`);
+}
+
+async function releaseReminderClaim(row, kind, claimAt, errorMessage, cfg, options = {}) {
+  if (!hasSupabase(cfg)) return;
+  const claimColumn = kind === 'kickoff' ? 'kickoff_claimed_at' : 'prematch_claimed_at';
+
+  const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
+  url.searchParams.set('telegram_id', `eq.${Number(row.telegram_id)}`);
+  url.searchParams.set('fixture_id', `eq.${Number(row.fixture_id)}`);
+  url.searchParams.set(claimColumn, `eq.${claimAt}`);
+
+  const patch = {
+    [claimColumn]: null,
+    delivery_last_error: redactOpsString(errorMessage || 'Telegram delivery failed.', 240),
+    delivery_last_attempt_at: new Date().toISOString(),
+    delivery_retry_after: Number(options.retryAfter || 0) > 0
+      ? new Date(Date.now() + Number(options.retryAfter) * 1000).toISOString()
+      : null,
+  };
+
+  if (options.disable) {
+    patch.enabled = false;
+    patch.delivery_disabled_reason = redactOpsString(options.disableReason || 'telegram_forbidden', 80);
+  }
+
+  const r = await fetchWithTimeout(url, {
+    method: 'PATCH',
+    headers: supaHeaders(cfg, { Prefer: 'return=minimal' }),
+    body: JSON.stringify(patch),
+  }, 7000, 'Supabase reminder release');
+  if (!r.ok) throw new Error(`Supabase reminder release: HTTP ${r.status}`);
+}
+
 async function sendTelegramMessage(chatId, text, cfg) {
-  if (!cfg.botToken) return false;
-  const r = await fetchWithTimeout(`https://api.telegram.org/bot${cfg.botToken}/sendMessage`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ chat_id: Number(chatId), text, disable_web_page_preview: true }),
-  }, 7000, 'Telegram sendMessage');
-  return r.ok;
+  if (!cfg.botToken) {
+    return { ok: false, status: 0, errorCode: 0, description: 'Bot token missing.', retryAfter: 0 };
+  }
+
+  try {
+    const r = await fetchWithTimeout(`https://api.telegram.org/bot${cfg.botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chat_id: Number(chatId), text, disable_web_page_preview: true }),
+    }, 7000, 'Telegram sendMessage');
+
+    const body = await r.json().catch(() => null);
+    return {
+      ok: Boolean(r.ok && body?.ok !== false),
+      status: Number(r.status || 0),
+      errorCode: Number(body?.error_code || 0),
+      description: redactOpsString(body?.description || (r.ok ? '' : `Telegram HTTP ${r.status}`), 220),
+      retryAfter: Number(body?.parameters?.retry_after || r.headers.get('retry-after') || 0),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      errorCode: 0,
+      description: redactOpsString(error?.message || 'Telegram network error.', 220),
+      retryAfter: 0,
+    };
+  }
+}
+
+async function recordReminderDelivery(cfg, { row, kind, result, success, disabled = false }) {
+  const code = success
+    ? (kind === 'kickoff' ? 'REMINDER_SENT_KICKOFF' : 'REMINDER_SENT_PREMATCH')
+    : disabled
+      ? 'REMINDER_FORBIDDEN'
+      : 'REMINDER_SEND_FAILED';
+
+  await recordOpsEvent(cfg, {
+    severity: success ? 'info' : 'warning',
+    source: 'reminders',
+    eventType: 'reminder_delivery',
+    code,
+    message: success
+      ? `Reminder ${kind} delivered.`
+      : `Reminder ${kind} delivery failed: ${result?.description || 'unknown error'}`,
+    endpoint: 'cron:reminders',
+    status: Number(result?.status || 0) || null,
+    meta: {
+      fixtureId: Number(row?.fixture_id || 0),
+      kind,
+      telegramStatus: Number(result?.status || 0) || null,
+      telegramErrorCode: Number(result?.errorCode || 0) || null,
+      retryAfter: Number(result?.retryAfter || 0) || null,
+    },
+  });
+}
+
+async function deliverClaimedReminder(row, kind, text, cfg) {
+  const claim = await claimReminderDelivery(row, kind, cfg);
+  if (!claim.claimed) return { state: 'already_claimed' };
+
+  const result = await sendTelegramMessage(row.telegram_id, text, cfg);
+
+  if (result.ok) {
+    await finishReminderDelivery(row, kind, claim.claimAt, cfg);
+    await recordReminderDelivery(cfg, { row, kind, result, success: true }).catch(() => {});
+    return { state: 'sent', result };
+  }
+
+  const forbidden = Number(result.status) === 403 || Number(result.errorCode) === 403;
+
+  await releaseReminderClaim(
+    row,
+    kind,
+    claim.claimAt,
+    result.description || 'Telegram delivery failed.',
+    cfg,
+    {
+      disable: forbidden,
+      disableReason: forbidden ? 'telegram_forbidden' : '',
+      retryAfter: Number(result.retryAfter || 0),
+    },
+  ).catch(() => {});
+
+  await recordReminderDelivery(cfg, {
+    row,
+    kind,
+    result,
+    success: false,
+    disabled: forbidden,
+  }).catch(() => {});
+
+  return { state: forbidden ? 'disabled' : 'failed', result };
 }
 
 async function processDueReminders(cfg) {
-  if (!hasSupabase(cfg) || !cfg.botToken) return { checked: 0, sent: 0, kickoffSent: 0 };
+  if (!hasSupabase(cfg) || !cfg.botToken) {
+    return { checked: 0, sent: 0, kickoffSent: 0, failed: 0, claimed: 0, staleClaims: 0 };
+  }
+
+  const stale = await clearStaleReminderClaims(cfg).catch(() => ({ prematch: 0, kickoff: 0 }));
   const now = Date.now();
-  const from = new Date(now - 10 * 60_000).toISOString();
-  const toMs = now + 75 * 60_000;
+  const from = new Date(now - 8 * 60_000).toISOString();
+  const toMs = now + 65 * 60_000;
   let rows = [];
+
   try {
     rows = await supaSelectMany(cfg, 'match_reminders', {
       enabled: 'eq.true',
       fixture_date: `gte.${from}`,
-    }, { limit: 200, order: 'fixture_date.asc' });
+    }, { limit: 250, order: 'fixture_date.asc' });
     rows = rows.filter(x => Date.parse(x.fixture_date) <= toMs);
   } catch (e) {
-    console.warn('reminder scheduler skipped', e?.message || e);
-    return { checked: 0, sent: 0, kickoffSent: 0 };
+    await recordOpsEvent(cfg, {
+      severity: 'error',
+      source: 'reminders',
+      eventType: 'reminder_scheduler',
+      code: 'REMINDER_SCHEDULER_READ_FAILED',
+      message: e?.message || e,
+      endpoint: 'cron:reminders',
+    }).catch(() => {});
+    return { checked: 0, sent: 0, kickoffSent: 0, failed: 1, claimed: 0, staleClaims: stale.prematch + stale.kickoff };
   }
 
   let sent = 0;
   let kickoffSent = 0;
+  let failed = 0;
+  let claimed = 0;
+
   for (const row of rows) {
     const kickoffMs = Date.parse(row.fixture_date);
     if (!Number.isFinite(kickoffMs)) continue;
+
+    const retryAfterMs = Date.parse(row.delivery_retry_after || '');
+    if (Number.isFinite(retryAfterMs) && retryAfterMs > now) continue;
+
     const deltaMinutes = (kickoffMs - now) / 60000;
-    const remindBefore = [15, 30, 60].includes(Number(row.remind_before_minutes)) ? Number(row.remind_before_minutes) : 30;
+    const remindBefore = [15, 30, 60].includes(Number(row.remind_before_minutes))
+      ? Number(row.remind_before_minutes)
+      : 30;
     const kickoffEnabled = row.kickoff_notify !== false;
 
     try {
-      // Around kickoff, prefer a single kickoff message instead of sending two notifications at once.
-      if (kickoffEnabled && !row.kickoff_notified_at && deltaMinutes <= 5 && deltaMinutes >= -10) {
+      // Cron cadence is 5 minutes in v5.6. This window is deliberately wider
+      // than one cron interval so a slightly delayed execution still delivers.
+      if (kickoffEnabled && !row.kickoff_notified_at && deltaMinutes <= 4 && deltaMinutes >= -7) {
         const text = `🔴 Матч начинается\n\n${row.home_name} — ${row.away_name}${row.league_name ? `\n${row.league_name}` : ''}\n\nОткройте Football Manager: LIVE-центр появится, когда провайдер обновит статус.`;
-        if (await sendTelegramMessage(row.telegram_id, text, cfg)) {
-          await patchReminder(row, {
-            kickoff_notified_at: new Date().toISOString(),
-            notified_at: row.notified_at || new Date().toISOString(),
-          }, cfg);
-          kickoffSent++;
-        }
+        const delivery = await deliverClaimedReminder(row, 'kickoff', text, cfg);
+        if (delivery.state === 'sent') kickoffSent++;
+        else if (delivery.state === 'already_claimed') claimed++;
+        else failed++;
         continue;
       }
 
-      if (!row.notified_at && deltaMinutes > 5 && deltaMinutes <= remindBefore) {
+      const lowerBound = kickoffEnabled ? 5 : 0;
+      if (!row.notified_at && deltaMinutes >= lowerBound && deltaMinutes <= remindBefore + 2) {
         const minutes = Math.max(1, Math.round(deltaMinutes));
         const text = `⚽ Скоро матч\n\n${row.home_name} — ${row.away_name}${row.league_name ? `\n${row.league_name}` : ''}\nСтарт примерно через ${minutes} мин.\n\nОткройте Football Manager для свежего предматчевого анализа.`;
-        if (await sendTelegramMessage(row.telegram_id, text, cfg)) {
-          await patchReminder(row, { notified_at: new Date().toISOString() }, cfg);
-          sent++;
-        }
+        const delivery = await deliverClaimedReminder(row, 'prematch', text, cfg);
+        if (delivery.state === 'sent') sent++;
+        else if (delivery.state === 'already_claimed') claimed++;
+        else failed++;
       }
     } catch (e) {
-      console.warn('reminder send failed', e?.message || e);
+      failed++;
+      await recordOpsEvent(cfg, {
+        severity: 'warning',
+        source: 'reminders',
+        eventType: 'reminder_delivery',
+        code: 'REMINDER_DELIVERY_EXCEPTION',
+        message: e?.message || e,
+        endpoint: 'cron:reminders',
+        meta: { fixtureId: Number(row.fixture_id || 0) },
+      }).catch(() => {});
     }
   }
-  return { checked: rows.length, sent, kickoffSent };
+
+  const summary = {
+    checked: rows.length,
+    sent,
+    kickoffSent,
+    failed,
+    claimed,
+    staleClaims: stale.prematch + stale.kickoff,
+  };
+
+  if (sent || kickoffSent || failed || summary.staleClaims) {
+    await recordOpsEvent(cfg, {
+      severity: failed ? 'warning' : 'info',
+      source: 'reminders',
+      eventType: 'reminder_scheduler',
+      code: failed ? 'REMINDER_RUN_WITH_FAILURES' : 'REMINDER_RUN_OK',
+      message: `Reminder cron: checked=${rows.length}, prematch=${sent}, kickoff=${kickoffSent}, failed=${failed}.`,
+      endpoint: 'cron:reminders',
+      meta: summary,
+    }).catch(() => {});
+  }
+
+  return summary;
 }
+
+async function probeReminderReliabilitySchema(cfg) {
+  if (!hasSupabase(cfg)) return { ok: false, status: 'not_configured' };
+
+  try {
+    const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
+    url.searchParams.set(
+      'select',
+      'fixture_id,prematch_claimed_at,kickoff_claimed_at,prematch_attempts,kickoff_attempts,delivery_last_error,delivery_last_attempt_at,delivery_last_success_at,delivery_disabled_reason,delivery_retry_after'
+    );
+    url.searchParams.set('limit', '1');
+    const r = await fetchWithTimeout(url, { headers: supaHeaders(cfg) }, 7000, 'Supabase reminder reliability schema');
+    return { ok: r.ok, status: r.ok ? 'ok' : `http_${r.status}` };
+  } catch (error) {
+    return { ok: false, status: error?.code || 'error' };
+  }
+}
+
+async function getReminderHealth(cfg) {
+  const schema = await probeReminderReliabilitySchema(cfg);
+  if (!schema.ok) {
+    return {
+      available: false,
+      migrationReady: false,
+      reason: 'Нужна supabase_migration_v5_6.sql.',
+      scheduler: { cadenceMinutes: 5 },
+    };
+  }
+
+  const now = Date.now();
+  const fromIso = new Date(now - 24 * 3600_000).toISOString();
+  let rows = [];
+
+  try {
+    rows = await supaSelectMany(cfg, 'match_reminders', {
+      fixture_date: `gte.${fromIso}`,
+    }, { limit: 500, order: 'fixture_date.asc' });
+  } catch (error) {
+    return {
+      available: false,
+      migrationReady: true,
+      reason: redactOpsString(error?.message || 'Не удалось прочитать reminders.', 180),
+      scheduler: { cadenceMinutes: 5 },
+    };
+  }
+
+  const active = rows.filter(x => x.enabled !== false);
+  const upcoming = active.filter(x => Date.parse(x.fixture_date || '') >= now);
+  const dueSoon = upcoming.filter(x => Date.parse(x.fixture_date || '') <= now + 90 * 60_000);
+  const prematchSent24h = rows.filter(x => Date.parse(x.notified_at || '') >= now - 24 * 3600_000).length;
+  const kickoffSent24h = rows.filter(x => Date.parse(x.kickoff_notified_at || '') >= now - 24 * 3600_000).length;
+
+  const failed24h = rows.filter(x =>
+    x.delivery_last_error &&
+    Date.parse(x.delivery_last_attempt_at || '') >= now - 24 * 3600_000
+  );
+
+  const staleClaims = rows.filter(x =>
+    [x.prematch_claimed_at, x.kickoff_claimed_at].some(value => {
+      const t = Date.parse(value || '');
+      return Number.isFinite(t) && now - t > 20 * 60_000;
+    })
+  );
+
+  const activeClaims = rows.filter(x =>
+    [x.prematch_claimed_at, x.kickoff_claimed_at].some(value => {
+      const t = Date.parse(value || '');
+      return Number.isFinite(t) && now - t <= 20 * 60_000;
+    })
+  );
+
+  const recent = [...rows]
+    .filter(x => x.delivery_last_attempt_at || x.delivery_last_success_at)
+    .sort((a, b) =>
+      Date.parse(b.delivery_last_attempt_at || b.delivery_last_success_at || 0) -
+      Date.parse(a.delivery_last_attempt_at || a.delivery_last_success_at || 0)
+    )
+    .slice(0, 12)
+    .map(x => ({
+      fixtureId: Number(x.fixture_id || 0),
+      match: `${x.home_name || ''} — ${x.away_name || ''}`.trim(),
+      fixtureDate: x.fixture_date || null,
+      state: reminderDeliveryStatus(x),
+      enabled: x.enabled !== false,
+      prematchAttempts: Number(x.prematch_attempts || 0),
+      kickoffAttempts: Number(x.kickoff_attempts || 0),
+      lastAttemptAt: x.delivery_last_attempt_at || null,
+      lastSuccessAt: x.delivery_last_success_at || null,
+      hasError: Boolean(x.delivery_last_error),
+      disabledReason: x.delivery_disabled_reason || null,
+    }));
+
+  return {
+    available: true,
+    migrationReady: true,
+    generatedAt: new Date().toISOString(),
+    scheduler: {
+      cadenceMinutes: 5,
+      claimTimeoutMinutes: 20,
+      nextRunMaximumDelayMinutes: 5,
+    },
+    summary: {
+      activeUpcoming: upcoming.length,
+      dueNext90Minutes: dueSoon.length,
+      prematchSent24h,
+      kickoffSent24h,
+      failed24h: failed24h.length,
+      activeClaims: activeClaims.length,
+      staleClaims: staleClaims.length,
+      disabled24h: rows.filter(x => x.enabled === false && x.delivery_disabled_reason).length,
+    },
+    recent,
+    health: staleClaims.length || failed24h.length >= 3
+      ? { state: 'watch', label: 'Нужен контроль доставки' }
+      : { state: 'healthy', label: 'Доставка выглядит штатно' },
+    note: 'Delivery claims предотвращают параллельную отправку одного уведомления. Telegram 403 отключает конкретное недоставляемое напоминание.',
+  };
+}
+
+async function apiReminderHealth(request, cfg, user) {
+  if (request.method === 'GET') return json(await getReminderHealth(cfg));
+
+  if (request.method === 'POST') {
+    let body = {};
+    try { body = await request.json(); } catch {}
+    if (body?.action !== 'test') return json({ error: 'Неизвестное действие.' }, 400);
+
+    const result = await sendTelegramMessage(
+      user.id,
+      `✅ Football Manager\n\nТест уведомлений v5.6 RC4 прошёл. Если вы видите это сообщение, Telegram delivery работает.`,
+      cfg
+    );
+
+    await recordOpsEvent(cfg, {
+      severity: result.ok ? 'info' : 'warning',
+      source: 'reminders',
+      eventType: 'reminder_test',
+      code: result.ok ? 'REMINDER_TEST_OK' : 'REMINDER_TEST_FAILED',
+      message: result.ok ? 'Admin reminder test delivered.' : `Admin reminder test failed: ${result.description || 'unknown'}`,
+      endpoint: '/api/reminder-health',
+      status: Number(result.status || 0) || null,
+      meta: {
+        telegramStatus: Number(result.status || 0) || null,
+        errorCode: Number(result.errorCode || 0) || null,
+      },
+    }).catch(() => {});
+
+    return json({
+      ok: result.ok,
+      message: result.ok ? 'Тестовое Telegram-уведомление отправлено.' : 'Telegram не принял тестовое уведомление.',
+      telegramStatus: Number(result.status || 0) || null,
+      retryAfter: Number(result.retryAfter || 0) || null,
+    }, result.ok ? 200 : 502);
+  }
+
+  return json({ error: 'Метод не поддерживается.' }, 405);
+}
+
 
 function inferFootballPlan(dailyLimit) {
   const n = Number(dailyLimit || 0);
@@ -3816,7 +4259,7 @@ async function apiReleaseMonitor(request, cfg) {
   const value = {
     available: true,
     version: APP_VERSION,
-    releaseCandidate: 'RC3',
+    releaseCandidate: 'RC4',
     generatedAt: new Date().toISOString(),
     hours,
     persistent: source.persistent,
@@ -4028,7 +4471,7 @@ async function apiProductionReadiness(request, cfg) {
 }
 
 
-const RC_NAME = 'RC3';
+const RC_NAME = 'RC4';
 
 function rcCheck(id, group, label, state, detail, blocking = false) {
   return { id, group, label, state, detail, blocking: Boolean(blocking) };
@@ -4072,8 +4515,8 @@ async function apiRcRegression(request, cfg, user) {
   const startedAt = Date.now();
 
   // 1) Core runtime / security configuration.
-  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '5.5.0-rc3' ? 'pass' : 'fail',
-    `Worker: ${APP_VERSION}; ожидается 5.5.0-rc3.`, true));
+  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '5.6.0-rc4' ? 'pass' : 'fail',
+    `Worker: ${APP_VERSION}; ожидается 5.6.0-rc4.`, true));
   checks.push(rcCheck('api_contract', 'runtime', 'API contract', API_CONTRACT_VERSION === 5 ? 'pass' : 'fail',
     `Contract ${API_CONTRACT_VERSION}; min client ${MIN_CLIENT_VERSION}.`, true));
   checks.push(rcCheck('app_manifest', 'runtime', 'Public App Manifest', appManifest(cfg)?.version === APP_VERSION ? 'pass' : 'fail',
@@ -4131,6 +4574,16 @@ async function apiRcRegression(request, cfg, user) {
       table.blocking
     ));
   }
+
+  const reminderSchema = await probeReminderReliabilitySchema(cfg);
+  checks.push(rcCheck(
+    'reminder_delivery_schema',
+    'database',
+    'Reminder delivery schema v5.6',
+    reminderSchema.ok ? 'pass' : 'fail',
+    reminderSchema.ok ? 'Atomic delivery claim columns доступны.' : 'Запустите supabase_migration_v5_6.sql.',
+    true
+  ));
 
   // 3) Read-only user route regression. No mutation and no API-Football usage.
   const readRoutes = await Promise.all([
@@ -5969,6 +6422,9 @@ async function apiReminders(request, cfg, user) {
       fixtureId: Number(x.fixture_id), homeName: x.home_name || '', awayName: x.away_name || '',
       leagueName: x.league_name || '', fixtureDate: x.fixture_date || '', notifiedAt: x.notified_at || null,
       remindBeforeMinutes: Number(x.remind_before_minutes || 30), kickoffNotify: x.kickoff_notify !== false, kickoffNotifiedAt: x.kickoff_notified_at || null,
+      deliveryStatus: reminderDeliveryStatus(x),
+      deliveryAttempts: Number(x.prematch_attempts || 0) + Number(x.kickoff_attempts || 0),
+      deliveryLastAttemptAt: x.delivery_last_attempt_at || null,
     })) });
   }
   if (request.method === 'POST') {
@@ -7152,7 +7608,7 @@ export default {
         failureRecovery: 'enabled',
         gracefulErrors: 'enabled',
         webviewRecovery: 'enabled',
-        releaseCandidate: 'RC3',
+        releaseCandidate: 'RC4',
         regressionQA: 'enabled',
         rcSmokeTest: 'enabled',
         clientContractQA: 'enabled',
@@ -7163,6 +7619,9 @@ export default {
         releaseMonitor: 'enabled',
         clientTelemetry: 'enabled',
         operationalBudget: 'enabled',
+        notificationReliability: 'enabled',
+        reminderDeliveryClaims: 'enabled',
+        reminderCronMinutes: 5,
         devMode: cfg.devMode,
       });
     }
@@ -7250,6 +7709,10 @@ export default {
       if (request.method === 'GET' && url.pathname === '/api/release-monitor') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
         return await apiReleaseMonitor(request, cfg);
+      }
+      if (url.pathname === '/api/reminder-health') {
+        if (!isAdminUser(user, cfg)) return adminForbidden();
+        return await apiReminderHealth(request, cfg, user);
       }
       if (request.method === 'GET' && url.pathname === '/api/data-integrity') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
