@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.6.0-rc14';
+const CLIENT_VERSION = '6.7.0-rc15';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc14';
+const CLIENT_RELEASE_CHANNEL = 'rc15';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -1190,7 +1190,8 @@ function renderModelRemediation() {
     <div><span>Watchdog</span><strong>${watchdog.autoRecoveryEnabled ? 'AUTO' : 'SHADOW'}</strong><small>${watchdog.schemaReady ? `${escapeHtml(watchdog.scheduleUtc || '04:00')} UTC` : 'нужна migration v6.2'}</small></div>
     <div><span>Circuit breaker</span><strong>${reliability.circuitOpen ? 'OPEN' : 'CLOSED'}</strong><small>${reliability.schemaReady ? (reliability.circuitOpenUntil ? `до ${escapeHtml(dateTime(reliability.circuitOpenUntil))}` : `${Number(reliability.consecutiveFailures || 0)}/${Number(reliability.failureThreshold || 2)} failures`) : 'нужна migration v6.3'}</small></div>
     <div><span>Run ledger</span><strong>${Number(runLedger.activeStarted || 0) ? 'BUSY' : Number(runLedger.staleStarted || 0) ? 'STALE' : 'CLEAR'}</strong><small>${runLedger.schemaReady ? `${Number(runLedger.activeStarted || 0)} active · ${Number(runLedger.staleStarted || 0)} stale · max ${Number(runLedger.maxAttempts || 3)} attempts` : 'нужна migration v6.4'}</small></div>
-    <div><span>Settlement finality</span><strong>${Number(finality.drift || 0) ? 'DRIFT' : Number(finality.unverified || 0) ? 'PENDING' : 'VERIFIED'}</strong><small>${finality.schemaReady ? `${Number(finality.verified || 0)} verified · ${Number(finality.unverified || 0)} pending · ${Number(finality.drift || 0)} drift · ${Number(finality.adjudicated || 0)} adjudicated` : 'нужна migration v6.5'}</small></div>
+    <div><span>Settlement finality</span><strong>${Number(finality.drift || 0) ? 'DRIFT' : Number(finality.unverified || 0) || Number(finality.verified || 0) ? 'VERIFYING' : 'TRUSTED'}</strong><small>${finality.schemaReady ? `${Number(finality.confirmed || 0)} confirmed · ${Number(finality.verified || 0)} first-pass · ${Number(finality.unverified || 0)} pending · ${Number(finality.adjudicated || 0)} adjudicated · ${Number(finality.drift || 0)} drift` : 'нужна migration v6.7'}</small></div>
+    <div><span>Trusted metrics</span><strong>${Number(finality.trustedForMetrics || 0)}</strong><small>только confirmed + adjudicated</small></div>
     <div><span>Drift review</span><strong>${Number(driftReview.unresolved || 0) ? 'ACTION' : 'CLEAR'}</strong><small>${driftReview.schemaReady ? `${Number(driftReview.unresolved || 0)} unresolved · explicit admin decision` : 'нужна migration v6.6'}</small></div>`;
 
   candidates.innerHTML = (recovery.candidates || []).length
@@ -1575,11 +1576,11 @@ function runClientContractSmoke() {
   const adminSections = [...document.querySelectorAll('[data-admin-only]')];
   add('admin_sections', 'Admin UI маркировка', adminSections.length >= 6, `${adminSections.length} технических секций помечены data-admin-only.`);
 
-  const cssLink = document.querySelector('link[href*="styles.css?v=6.6.0"]');
-  const appScript = document.querySelector('script[src*="app.js?v=6.6.0"]');
+  const cssLink = document.querySelector('link[href*="styles.css?v=6.7.0"]');
+  const appScript = document.querySelector('script[src*="app.js?v=6.7.0"]');
   add('cache_bust', 'Cache-bust assets', Boolean(cssLink && appScript), `CSS ${cssLink ? 'OK' : 'MISS'} · JS ${appScript ? 'OK' : 'MISS'}.`);
 
-  add('client_version', 'Версия клиента', CLIENT_VERSION === '6.6.0-rc14', CLIENT_VERSION);
+  add('client_version', 'Версия клиента', CLIENT_VERSION === '6.7.0-rc15', CLIENT_VERSION);
   add('telegram_sdk', 'Telegram WebApp SDK', Boolean(window.Telegram?.WebApp), window.Telegram?.WebApp ? 'SDK доступен.' : 'В обычном браузере SDK может отсутствовать; в Telegram должен быть доступен.');
 
   const navButtons = ['navMatches','navSearch','navHistory','navProfile'].filter(id => $(id));
@@ -1605,7 +1606,7 @@ function runClientContractSmoke() {
 }
 
 function rcStateText(status) {
-  if (status === 'rc_ready') return 'RC14 READY';
+  if (status === 'rc_ready') return 'RC15 READY';
   if (status === 'rc_with_holds') return 'RC + HOLD';
   if (status === 'blocked') return 'BLOCK';
   return 'WAIT';
@@ -5146,7 +5147,7 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// v6.6 RC14: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
+// v6.7 RC15: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
 // The boot watchdog never leaves the user behind an endless splash screen.
 const startupWatchdog = setTimeout(() => {
   if (!$('bootGate')?.hidden && !state.compatibilityBlocked) {

@@ -1,40 +1,42 @@
-# QA Release Checklist — v6.6.0 RC14
+# QA Release Checklist — v6.7.0 RC15
 
 ## Deploy
-- применён `supabase_migration_v6_6.sql`;
-- Worker/client = `6.6.0-rc14`;
-- cron, Secrets и wrangler не менялись;
+- применён `supabase_migration_v6_7.sql`;
+- Worker/client = `6.7.0-rc15`;
+- cron, Secrets, wrangler не менялись;
 - monetization paused.
 
-## Drift Review
-- drift queue доступна только admin UI;
-- queue читает только `status=settled + verification_state=drift`;
-- latest drift event используется как source event;
-- resolution token меняется при изменении stored/provider snapshot;
-- reason минимум 5 символов;
-- source_event_id разрешается только один раз;
-- before/provider/after сохраняются в audit;
-- admin Telegram ID не выводится в интерфейс.
+## Two-Pass Finality
+- новый settlement имеет unverified + count 0;
+- first matching check после 6h → verified + count 1;
+- first_verified_at фиксируется один раз;
+- verified не проходит second pass раньше 24h;
+- second matching check → confirmed + count 2;
+- изменение score/outcome на втором check → drift;
+- изменение terminal status FT/AET/PEN между passes → drift;
+- confirmed больше не участвует в verification queue.
 
-## Actions
-- keep_stored не меняет score/outcome;
-- accept_provider разрешён только FT/AET/PEN с валидным score/outcome;
-- accept_provider пересчитывает correct/Brier/Over2.5/BTTS outcome fields;
-- CANC/ABD/AWD/WO блокируются для accept_provider;
-- void_prediction переводит status в void;
-- успешное решение переводит verification state в adjudicated.
+## Trusted Metrics Gate
+- confirmed settled включается;
+- adjudicated settled включается;
+- verified first-pass исключается;
+- unverified исключается;
+- drift исключается;
+- void исключается;
+- calibration использует тот же gate;
+- новый cache generation не принимает RC14 calibration cache.
 
 ## Regression
 Обязательный PASS:
 - Prediction Integrity self-test;
-- Prediction Remediation self-test;
 - Settlement Watchdog self-test;
 - Settlement Run Ledger self-test;
 - Settlement Finality self-test;
-- Settlement Adjudication schema v6.6;
 - Settlement Adjudication self-test;
+- Trusted Metrics schema v6.7;
+- Trusted Metrics Gate self-test;
 - Production Load Safety;
 - Admin Security.
 
 ## Инварианты
-Автоматические процессы не переписывают drift settlement. Изменение возможно только explicit admin adjudication. Telegram Stars остаются paused.
+Автоматический finality verifier не переписывает provider drift. Prediction snapshots immutable. Telegram Stars остаются paused.

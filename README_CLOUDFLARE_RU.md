@@ -1,39 +1,40 @@
-# Football Analytics Mini App v6.6.0 — RC14 Settlement Drift Review & Explicit Adjudication
+# Football Analytics Mini App v6.7.0 — RC15 Trusted Metrics Gate & Two-Pass Finality
 
-RC14 завершает manual review-контур после RC13 Settlement Finality Verification.
+RC15 усиливает RC13/RC14: первый совпавший provider-check больше не считается окончательной финальностью для model-quality.
 
 ## Что нового
 
-- unresolved drift появляется в отдельной admin queue;
-- для каждого drift-event доступны только три явных решения:
-  - `keep_stored` — оставить исходный settlement;
-  - `accept_provider` — явно принять новый provider score/outcome и пересчитать backtest outcome-метрики;
-  - `void_prediction` — исключить prediction из backtest-метрик;
-- каждое действие требует причины;
-- stale snapshot/token guard запрещает решение по устаревшему drift;
-- один source drift-event получает только одно зафиксированное решение;
-- сохраняется immutable before/provider/after audit;
-- admin Telegram ID может храниться backend-аудитом, но не выводится в UI;
-- `accept_provider` разрешён только для безопасного финального FT/AET/PEN с валидным счётом;
-- CANC/ABD/AWD/WO нельзя автоматически принять как новый score через adjudication;
-- resolved settlement получает state `adjudicated`.
+- первый finality pass после settlement старше 6 часов: `unverified → verified`;
+- второй matching pass выполняется не раньше чем через 24 часа после первого: `verified → confirmed`;
+- если score/outcome либо финальный provider status изменился на втором проходе: `verified → drift`;
+- только `confirmed` и `adjudicated` settled rows участвуют в model-quality и calibration;
+- `unverified`, first-pass `verified`, `drift` и `void` исключаются;
+- добавлены `settlement_verification_count` и `settlement_first_verified_at`;
+- calibration cache generation изменена, чтобы старый RC14 cache не обходил новый trusted gate;
+- UI показывает confirmed / first-pass / pending / adjudicated / drift и отдельный Trusted metrics count.
+
+## Finality lifecycle
+
+`pending → settled/unverified → verified → confirmed`
+
+В любой provider-check возможно `→ drift`, после чего RC14 требует explicit admin adjudication.
 
 ## Safety
 
-Автомат RC13 по-прежнему никогда не исправляет score. Любое изменение settlement возможно только явным admin action RC14 с подтверждением, reason и audit trail.
+RC15 не меняет prediction snapshot. Автоматический verifier не принимает provider correction — при расхождении создаётся drift. Изменение stored settlement по-прежнему возможно только через RC14 explicit adjudication.
 
 ## Supabase
 
-Перед Deploy выполнить `supabase_migration_v6_6.sql`.
+Перед Deploy выполнить `supabase_migration_v6_7.sql`.
 
 ## Health
 
 Ожидается:
-- version = `6.6.0-rc14`;
-- releaseCandidate = `RC14`;
+- version = `6.7.0-rc15`;
+- releaseCandidate = `RC15`;
+- trustedMetricsGate = enabled;
+- twoPassSettlementFinality = enabled;
 - settlementFinalityVerification = enabled;
-- settlementDriftGuard = enabled;
-- settlementDriftReview = enabled;
 - settlementAdjudication = enabled;
 - monetization = paused.
 
