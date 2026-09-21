@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#111827" />
   <title>Football Manager · Match Intelligence</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=4.8.0" />
+  <link rel="stylesheet" href="/styles.css?v=4.9.0" />
 </head>
 <body>
   <div class="app-shell">
@@ -314,6 +314,23 @@
             <div><span>Ожидаемый / min</span><strong id="providerExpectedMinute">—</strong></div>
           </div>
 
+          <div class="quota-orchestrator-box">
+            <div class="quota-orchestrator-head">
+              <div><strong>⚙️ Quota Orchestrator</strong><span id="quotaBudgetMode">Ожидаем данные</span></div>
+              <small>Feature-level cache</small>
+            </div>
+            <div class="quota-orchestrator-grid">
+              <div><span>Daily остаток</span><strong id="quotaBudgetDaily">—</strong></div>
+              <div><span>Minute остаток</span><strong id="quotaBudgetMinute">—</strong></div>
+              <div><span>Feature API</span><strong id="quotaFeatureApi">0</strong></div>
+              <div><span>Cache hits</span><strong id="quotaFeatureCache">0</strong></div>
+              <div><span>Stale fallback</span><strong id="quotaFeatureStale">0</strong></div>
+              <div><span>Skipped</span><strong id="quotaFeatureSkipped">0</strong></div>
+            </div>
+            <div id="quotaFeatureList" class="quota-feature-list"></div>
+            <p id="quotaBudgetNote" class="tiny">Feature-level cache активен.</p>
+          </div>
+
           <div class="provider-audit-controls">
             <button id="providerProbeBtn" class="reminder-btn" type="button">1. Обновить тариф · 1 запрос</button>
             <div class="provider-audit-fixture">
@@ -378,6 +395,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=4.8.0"></script>
+  <script type="module" src="/app.js?v=4.9.0"></script>
 </body>
 </html>
