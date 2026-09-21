@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#111827" />
   <title>Football Manager · Match Intelligence</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=5.5.0" />
+  <link rel="stylesheet" href="/styles.css?v=5.6.0" />
 </head>
 <body>
   <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
     <div class="boot-card">
       <div class="boot-logo"><span>FM</span></div>
-      <div class="boot-kicker">FOOTBALL MANAGER · RC3</div>
+      <div class="boot-kicker">FOOTBALL MANAGER · RC4</div>
       <h1 id="bootTitle">Запускаю Football Manager</h1>
       <p id="bootText">Проверяю совместимость версии…</p>
       <div class="boot-progress" aria-hidden="true"><i id="bootProgressFill"></i></div>
@@ -379,6 +379,25 @@
           <p class="tiny diagnostics-privacy">Полный audit запускается только администратором вручную. Результат кэшируется на 15 минут. Пустой endpoint не всегда ошибка: покрытие зависит от турнира и стадии матча.</p>
         </section>
 
+        <section class="panel reminder-health-panel" data-admin-only hidden>
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>🔔 Notification Delivery Health</h2>
+              <p>Atomic claims, Telegram delivery, cron cadence и защита от дублей.</p>
+            </div>
+            <div class="reminder-health-actions">
+              <button id="reminderTestBtn" class="reminder-btn" type="button">Отправить тест себе</button>
+              <button id="reminderHealthRefreshBtn" class="icon-btn" type="button" aria-label="Обновить Notification Health">↻</button>
+            </div>
+          </div>
+          <div class="reminder-health-status">
+            <span id="reminderHealthBadge" class="reminder-health-badge">WAIT</span>
+            <strong id="reminderHealthStatus">Delivery Health ещё не загружен.</strong>
+          </div>
+          <div id="reminderHealthKpis"></div>
+          <div id="reminderHealthRecent"></div>
+        </section>
+
         <section class="panel release-monitor-panel" data-admin-only hidden>
           <div class="section-head profile-section-head">
             <div>
@@ -409,14 +428,14 @@
         <section class="panel rc-panel" data-admin-only hidden>
           <div class="section-head profile-section-head">
             <div>
-              <h2>🚦 Release Candidate RC3</h2>
+              <h2>🚦 Release Candidate RC4</h2>
               <p>Regression + startup compatibility: runtime, security, schema, user routes, safety gates и client contract.</p>
             </div>
             <button id="rcRunBtn" class="primary-setting-btn rc-run-btn" type="button">Запустить QA</button>
           </div>
 
           <div class="rc-status-row">
-            <span id="rcBadge" class="rc-badge">RC3</span>
+            <span id="rcBadge" class="rc-badge">RC4</span>
             <div>
               <strong id="rcStatus">Полный regression smoke-test ещё не запускался.</strong>
               <small id="rcMeta">Без Analyze, без изменений user data, без расхода API-Football.</small>
@@ -499,6 +518,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=5.5.0"></script>
+  <script type="module" src="/app.js?v=5.6.0"></script>
 </body>
 </html>
