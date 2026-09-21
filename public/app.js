@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '5.1.0-production-load-safety';
+const CLIENT_VERSION = '5.2.0-failure-recovery';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -39,6 +39,18 @@ const state = {
   versionMismatch: false,
   storageAvailable: true,
   liveRefreshWasActive: false,
+  network: {
+    mode: navigator.onLine === false ? 'offline' : 'online',
+    lastSuccessAt: null,
+    lastFailureAt: null,
+    lastRecoveredAt: null,
+    lastAutoRecoveryAt: 0,
+    consecutiveFailures: 0,
+    retryAfter: 0,
+    category: '',
+    message: '',
+    hiddenAt: null,
+  },
   filter: 'top',
   search: '',
   globalSearch: { query: '', remoteTeams: [], remoteCompetitions: [], loading: false, warning: '', searchedAt: null },
@@ -62,7 +74,7 @@ const state = {
   providerLoaded: false,
   viewScroll: {},
   matchesLoadSeq: 0,
-  clientPerf: { startedAt: new Date().toISOString(), requests: 0, completed: 0, failed: 0, deduped: 0, retries: 0, rateLimited: 0, timeouts: 0, totalMs: 0, lastMs: null, clientErrors: 0, lastError: '' },
+  clientPerf: { startedAt: new Date().toISOString(), requests: 0, completed: 0, failed: 0, deduped: 0, retries: 0, rateLimited: 0, timeouts: 0, recoveries: 0, degradedEvents: 0, totalMs: 0, lastMs: null, clientErrors: 0, lastError: '' },
 };
 
 const inflightGetRequests = new Map();
@@ -120,6 +132,133 @@ function toast(message) {
   el.classList.add('show');
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+function apiErrorCategory(error) {
+  if (navigator.onLine === false || error?.status === 0) return 'offline';
+  if (error?.status === 401) return 'auth';
+  if (error?.status === 408 || error?.status === 504 || error?.payload?.category === 'timeout' || error?.payload?.code === 'UPSTREAM_TIMEOUT') return 'timeout';
+  if (error?.status === 429 || error?.payload?.category === 'rate_limit') return 'rate_limit';
+  if (error?.status === 409 && error?.payload?.code === 'MATCH_DATA_INVALID') return 'integrity';
+  if (error?.payload?.category === 'database') return 'database';
+  if (error?.payload?.category === 'provider' || String(error?.payload?.code || '').startsWith('FOOTBALL_')) return 'provider';
+  if ([502, 503].includes(Number(error?.status))) return 'service';
+  return 'generic';
+}
+
+function friendlyErrorMessage(error) {
+  const category = apiErrorCategory(error);
+  const retryAfter = Number(error?.retryAfter || error?.payload?.retryAfter || 0);
+  if (category === 'offline') return 'Нет подключения к интернету. Сохранённые данные останутся на экране.';
+  if (category === 'auth') return 'Сессия Telegram не подтверждена. Закройте Mini App и откройте его снова из бота.';
+  if (category === 'timeout') return 'Сервис отвечает медленнее обычного. Попробуйте обновить ещё раз.';
+  if (category === 'rate_limit') return retryAfter
+    ? `Слишком много запросов. Повторите примерно через ${retryAfter} сек.`
+    : 'Сервис временно ограничил частоту обновлений. Попробуйте чуть позже.';
+  if (category === 'integrity') return 'Данные этого матча сейчас перепроверяются. Попробуйте открыть его немного позже.';
+  if (category === 'database') return 'Хранилище данных временно недоступно. Основные футбольные экраны продолжат работу через доступный кэш.';
+  if (category === 'provider') return 'Футбольные данные временно недоступны. Если есть сохранённая версия, приложение оставит её на экране.';
+  if (category === 'service') return 'Сервис временно недоступен. Попробуйте повторить действие через несколько секунд.';
+  return error?.message || 'Не удалось получить данные. Попробуйте ещё раз.';
+}
+
+function normalizeApiError(error) {
+  const message = friendlyErrorMessage(error);
+  return Object.assign(new Error(message), {
+    status: Number(error?.status || 0),
+    payload: error?.payload || null,
+    retryAfter: Number(error?.retryAfter || error?.payload?.retryAfter || 0),
+    category: apiErrorCategory(error),
+    cause: error,
+  });
+}
+
+function setNetworkMode(mode, options = {}) {
+  const previous = state.network.mode;
+  state.network.mode = mode;
+  state.network.category = options.category || '';
+  state.network.message = options.message || '';
+  state.network.retryAfter = Number(options.retryAfter || 0);
+  if (mode === 'degraded' && previous !== 'degraded') state.clientPerf.degradedEvents += 1;
+  if (mode === 'online' && ['offline', 'degraded', 'recovering'].includes(previous)) {
+    state.network.lastRecoveredAt = new Date().toISOString();
+    state.clientPerf.recoveries += 1;
+  }
+  updateConnectionBanner();
+}
+
+function noteRequestSuccess() {
+  state.network.lastSuccessAt = new Date().toISOString();
+  state.network.consecutiveFailures = 0;
+  state.network.retryAfter = 0;
+  if (navigator.onLine !== false && ['degraded', 'recovering'].includes(state.network.mode)) {
+    setNetworkMode('online');
+  }
+}
+
+function noteRequestFailure(error) {
+  state.network.lastFailureAt = new Date().toISOString();
+  state.network.consecutiveFailures += 1;
+  const category = apiErrorCategory(error);
+  const retryAfter = Number(error?.retryAfter || error?.payload?.retryAfter || 0);
+  if (category === 'offline') {
+    setNetworkMode('offline', { category, message: friendlyErrorMessage(error), retryAfter });
+    return;
+  }
+  if (['timeout', 'rate_limit', 'provider', 'database', 'service'].includes(category)) {
+    setNetworkMode('degraded', { category, message: friendlyErrorMessage(error), retryAfter });
+  }
+}
+
+function recoveryCardHtml({ title = 'Не удалось обновить данные', message = '', retryId = '', compact = false } = {}) {
+  return `<div class="recovery-card ${compact ? 'compact' : ''}">
+    <div class="recovery-card-icon">↻</div>
+    <div class="recovery-card-copy"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(message || 'Попробуйте ещё раз.')}</span></div>
+    ${retryId ? `<button id="${escapeHtml(retryId)}" class="secondary-btn recovery-retry-btn" type="button">Повторить</button>` : ''}
+  </div>`;
+}
+
+async function recoverActiveView({ automatic = false } = {}) {
+  if (navigator.onLine === false) {
+    setNetworkMode('offline', { category: 'offline', message: 'Нет подключения к интернету.' });
+    return;
+  }
+
+  const now = Date.now();
+  if (automatic && now - Number(state.network.lastAutoRecoveryAt || 0) < 15000) return;
+  if (automatic) state.network.lastAutoRecoveryAt = now;
+  setNetworkMode('recovering', { message: 'Проверяю свежие данные…' });
+
+  try {
+    const view = activeViewId();
+    if (view === 'matchesView') {
+      await loadMatches({ force: true, silent: true });
+    } else if (view === 'teamView' && state.currentTeam?.id) {
+      await loadTeamHub(state.currentTeam, true);
+    } else if (view === 'tournamentView') {
+      await loadMatches({ force: true, silent: true });
+      renderTournamentHero();
+      renderTournamentMatches();
+      if ($('tournamentTablePanel')?.classList.contains('active')) await loadTournamentStandings(true);
+    } else if (view === 'analysisView' && state.currentCenter?.match?.fixtureId) {
+      const fixtureId = Number(state.currentCenter.match.fixtureId);
+      const data = await api(`/api/match-center?fixtureId=${fixtureId}&recovery=${Date.now()}`, { dedupe: false });
+      renderMatchCenter(data);
+    } else if (view === 'historyView') {
+      await loadHistory(false);
+    } else if (view === 'profileView') {
+      await loadProfile();
+    } else {
+      await api('/api/health', { retry: false, timeoutMs: 6000 });
+    }
+    // api() itself moves the connection back to online only after a real
+    // successful request. Some screen loaders intentionally catch errors to
+    // keep stale content visible, so do not overwrite their degraded state here.
+    if (state.network.mode === 'online' && !automatic) toast('Данные обновлены');
+  } catch (error) {
+    noteRequestFailure(error);
+    if (!automatic) toast(friendlyErrorMessage(error));
+  }
 }
 
 function observeServerVersion(serverVersion) {
@@ -227,6 +366,7 @@ async function api(path, options = {}) {
         state.clientPerf.completed += 1;
         state.clientPerf.lastMs = elapsed;
         state.clientPerf.totalMs += elapsed;
+        noteRequestSuccess();
         return data;
       } catch (error) {
         const aborted = error?.name === 'AbortError';
@@ -238,15 +378,16 @@ async function api(path, options = {}) {
           continue;
         }
         state.clientPerf.failed += 1;
+        let finalError = error;
         if (aborted) {
           state.clientPerf.timeouts += 1;
-          throw Object.assign(new Error('Сервер отвечает слишком долго. Попробуйте ещё раз.'), { status: 408 });
+          finalError = Object.assign(new Error('Сервер отвечает слишком долго.'), { status: 408, payload: { category: 'timeout' } });
+        } else if (navigator.onLine === false && !error?.status) {
+          finalError = Object.assign(new Error('Нет подключения к интернету.'), { status: 0 });
         }
-        if (error?.status === 429 && error?.retryAfter) {
-          throw Object.assign(new Error(`Слишком много запросов. Повторите примерно через ${Number(error.retryAfter)} сек.`), error);
-        }
-        if (navigator.onLine === false && !error?.status) throw Object.assign(new Error('Нет подключения к интернету. Показаны сохранённые данные, если они доступны.'), { status: 0 });
-        throw error;
+        finalError = normalizeApiError(finalError);
+        noteRequestFailure(finalError);
+        throw finalError;
       } finally {
         clearTimeout(timeout);
       }
@@ -830,6 +971,8 @@ function renderDiagnostics() {
       <div><span>Запросы</span><strong>${Number(cp.requests || 0)}</strong><small>${Number(cp.completed || 0)} успешно · ${Number(cp.failed || 0)} ошибок</small></div>
       <div><span>Оптимизация</span><strong>${Number(cp.deduped || 0)} dedupe</strong><small>${Number(cp.retries || 0)} авто-повторов</small></div>
       <div><span>Защита клиента</span><strong>${Number(cp.rateLimited || 0)} × 429</strong><small>${Number(cp.timeouts || 0)} timeout</small></div>
+      <div><span>Recovery UX</span><strong>${Number(cp.recoveries || 0)} recovery</strong><small>${Number(cp.degradedEvents || 0)} degraded events</small></div>
+      <div><span>Состояние сети</span><strong>${escapeHtml(state.network.mode || 'online')}</strong><small>${state.network.lastRecoveredAt ? `recovered ${escapeHtml(relativeAge(state.network.lastRecoveredAt))}` : 'без восстановлений'}</small></div>
     </div>`;
   }
 
@@ -2016,8 +2159,15 @@ async function loadTournamentStandings(force = false) {
     state.tournamentStandings.set(key, data);
     if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
     renderTournamentStandings(data);
-  } catch (e) {
-    el.innerHTML = `<div class="empty compact-empty">${escapeHtml(e.message)}</div>`;
+} catch (e) {
+    const cached = state.tournamentStandings.get(key);
+    if (cached) {
+      renderTournamentStandings(cached);
+      el.insertAdjacentHTML('afterbegin', `<div class="data-notice stale">⚠️ ${escapeHtml(e.message)} Показана последняя сохранённая таблица.</div>`);
+      return;
+    }
+    el.innerHTML = recoveryCardHtml({ title: 'Таблица временно недоступна', message: e.message, retryId: 'tournamentStandingsRetry', compact: true });
+    $('tournamentStandingsRetry')?.addEventListener('click', () => loadTournamentStandings(true));
   }
 }
 
@@ -2115,7 +2265,11 @@ async function loadTeamIntelligence(force=false) {
   if(!force && state.teamIntelligenceCache.has(key)){ renderTeamIntelligence(state.teamIntelligenceCache.get(key)); return; }
   el.innerHTML='<div class="loader">Загружаю сезонную статистику…</div>';
   const q=new URLSearchParams({teamId:String(Number(team.id)),leagueId:String(Number(comp.leagueId)),season:String(Number(comp.season)),teamName:team.name||'',teamLogo:team.logo||'',leagueName:comp.name||'',leagueLogo:comp.logo||'',country:comp.country||''});
-  try{const data=await api(`/api/team/intelligence?${q.toString()}`);state.teamIntelligenceCache.set(key,data);if(isAdmin() && data.provider?.visibility==='admin'){state.provider=data.provider;renderProvider();}renderTeamIntelligence(data);}catch(e){el.innerHTML=`<div class="empty compact-empty">${escapeHtml(e.message)}</div>`;}
+  try{const data=await api(`/api/team/intelligence?${q.toString()}`);state.teamIntelligenceCache.set(key,data);if(isAdmin() && data.provider?.visibility==='admin'){state.provider=data.provider;renderProvider();}renderTeamIntelligence(data);}catch(e){
+    const cached=state.teamIntelligenceCache.get(key);
+    if(cached){renderTeamIntelligence(cached);el.insertAdjacentHTML('afterbegin',`<div class="data-notice stale">⚠️ ${escapeHtml(e.message)} Показаны сохранённые показатели.</div>`);}
+    else{el.innerHTML=recoveryCardHtml({title:'Статистика команды временно недоступна',message:e.message,retryId:'teamIntelligenceRetry',compact:true});$('teamIntelligenceRetry')?.addEventListener('click',()=>loadTeamIntelligence(true));}
+  }
 }
 function playerCard(p) {
   return `<div class="squad-player">${p.photo?`<img src="${safeUrl(p.photo)}" alt="">`:'<span class="squad-avatar">👤</span>'}<div><strong>${escapeHtml(p.name||'')}</strong><small>${p.number?`№${Number(p.number)} · `:''}${p.age?`${Number(p.age)} лет`:'Возраст —'}</small></div></div>`;
@@ -2131,7 +2285,11 @@ async function loadTeamSquad(force=false) {
   const team=state.currentTeam, el=$('teamSquad'); if(!team?.id||!el) return;
   const key=String(Number(team.id)); if(!force&&state.teamSquadCache.has(key)){renderTeamSquad(state.teamSquadCache.get(key));return;}
   el.innerHTML='<div class="loader">Загружаю состав…</div>';
-  try{const data=await api(`/api/team/squad?teamId=${Number(team.id)}`);state.teamSquadCache.set(key,data);if(isAdmin() && data.provider?.visibility==='admin'){state.provider=data.provider;renderProvider();}renderTeamSquad(data);}catch(e){el.innerHTML=`<div class="empty compact-empty">${escapeHtml(e.message)}</div>`;}
+  try{const data=await api(`/api/team/squad?teamId=${Number(team.id)}`);state.teamSquadCache.set(key,data);if(isAdmin() && data.provider?.visibility==='admin'){state.provider=data.provider;renderProvider();}renderTeamSquad(data);}catch(e){
+    const cached=state.teamSquadCache.get(key);
+    if(cached){renderTeamSquad(cached);el.insertAdjacentHTML('afterbegin',`<div class="data-notice stale">⚠️ ${escapeHtml(e.message)} Показан сохранённый состав.</div>`);}
+    else{el.innerHTML=recoveryCardHtml({title:'Состав временно недоступен',message:e.message,retryId:'teamSquadRetry',compact:true});$('teamSquadRetry')?.addEventListener('click',()=>loadTeamSquad(true));}
+  }
 }
 
 function renderTeamHub(data) {
@@ -2152,9 +2310,24 @@ function renderTeamHub(data) {
 async function loadTeamHub(team, force=false) {
   const key=String(Number(team?.id||0)); if (!key || key==='0') return;
   const cached=state.teamCache.get(key); if (cached && !force) { renderTeamHub(cached); return; }
-  $('teamHero').innerHTML='<div class="loader">Загружаю страницу команды…</div>'; $('teamOverview').innerHTML=''; $('teamIntelligence').innerHTML='<div class="empty compact-empty">Откройте вкладку «Статистика», чтобы загрузить сезонные данные.</div>'; $('teamSquad').innerHTML='<div class="empty compact-empty">Откройте вкладку «Состав», чтобы загрузить игроков.</div>'; $('teamResults').innerHTML=''; $('teamSchedule').innerHTML='';
-  try { const q=new URLSearchParams({teamId:String(Number(team.id)),name:team.name||'',logo:team.logo||''}); const data=await api(`/api/team?${q.toString()}`); state.teamCache.set(key,data); if(isAdmin() && data.provider?.visibility==='admin'){state.provider=data.provider;renderProvider();} renderTeamHub(data); }
-  catch(e){ $('teamHero').innerHTML=`<div class="empty">${escapeHtml(e.message)}</div>`; }
+  if (!cached) {
+    $('teamHero').innerHTML='<div class="loader">Загружаю страницу команды…</div>'; $('teamOverview').innerHTML=''; $('teamIntelligence').innerHTML='<div class="empty compact-empty">Откройте вкладку «Статистика», чтобы загрузить сезонные данные.</div>'; $('teamSquad').innerHTML='<div class="empty compact-empty">Откройте вкладку «Состав», чтобы загрузить игроков.</div>'; $('teamResults').innerHTML=''; $('teamSchedule').innerHTML='';
+  }
+  try {
+    const q=new URLSearchParams({teamId:String(Number(team.id)),name:team.name||'',logo:team.logo||''});
+    const data=await api(`/api/team?${q.toString()}`);
+    state.teamCache.set(key,data);
+    if(isAdmin() && data.provider?.visibility==='admin'){state.provider=data.provider;renderProvider();}
+    renderTeamHub(data);
+  } catch(e) {
+    if (cached) {
+      renderTeamHub(cached);
+      $('teamHero')?.insertAdjacentHTML('afterbegin', `<div class="data-notice stale">⚠️ ${escapeHtml(e.message)} Показана последняя открытая версия команды.</div>`);
+      return;
+    }
+    $('teamHero').innerHTML=recoveryCardHtml({ title:'Страница команды временно недоступна', message:e.message, retryId:'teamHubRetry' });
+    $('teamHubRetry')?.addEventListener('click', () => loadTeamHub(team, true));
+  }
 }
 function openTeam(team) {
   if(!team?.id) return; rememberTeam(team); renderDiscoveryHome(); const current=activeViewId(); if(current!=='teamView') state.teamBackView=current;
@@ -2795,8 +2968,14 @@ async function loadHistory(showLoader = true) {
     state.history = data.items || [];
     state.historyLoaded = true;
     renderHistory();
-  } catch (e) {
-    $('history').innerHTML = `<div class="empty">${escapeHtml(e.message)}</div>`;
+} catch (e) {
+    if (state.historyLoaded && state.history.length) {
+      renderHistory();
+      $('history')?.insertAdjacentHTML('afterbegin', `<div class="data-notice stale">⚠️ ${escapeHtml(e.message)} Показана последняя загруженная история.</div>`);
+      return;
+    }
+    $('history').innerHTML = recoveryCardHtml({ title: 'История временно недоступна', message: e.message, retryId: 'historyRecoveryRetry' });
+    $('historyRecoveryRetry')?.addEventListener('click', () => loadHistory(true));
   }
 }
 
@@ -3411,12 +3590,57 @@ optimizeImages();
 
 function updateConnectionBanner() {
   const banner = $('connectionBanner');
-  if (!banner) return;
-  const offline = navigator.onLine === false;
-  banner.hidden = !offline;
-  banner.classList.toggle('offline', offline);
-  banner.textContent = offline ? '📴 Нет сети — доступные сохранённые данные останутся на экране.' : '';
+  const title = $('connectionBannerTitle');
+  const text = $('connectionBannerText');
+  const icon = $('connectionBannerIcon');
+  const retry = $('connectionRetryBtn');
+  if (!banner || !title || !text || !icon || !retry) return;
+
+  if (navigator.onLine === false) state.network.mode = 'offline';
+  const mode = state.network.mode || 'online';
+  banner.className = `connection-banner ${mode}`;
+  retry.hidden = !['offline','degraded'].includes(mode) || navigator.onLine === false;
+
+  if (mode === 'offline') {
+    banner.hidden = false;
+    icon.textContent = '📴';
+    title.textContent = 'Нет подключения';
+    text.textContent = 'Оставляем доступные сохранённые данные на экране. После восстановления сети попробуем обновиться автоматически.';
+    return;
+  }
+
+  if (mode === 'recovering') {
+    banner.hidden = false;
+    icon.textContent = '↻';
+    title.textContent = 'Восстанавливаю данные';
+    text.textContent = state.network.message || 'Проверяю соединение и текущий экран.';
+    return;
+  }
+
+  if (mode === 'degraded') {
+    banner.hidden = false;
+    icon.textContent = state.network.category === 'rate_limit' ? '⏳' : '⚠️';
+    title.textContent = state.network.category === 'rate_limit' ? 'Обновления временно ограничены' : 'Часть данных обновляется медленнее';
+    text.textContent = state.network.message || 'Сохранённые данные останутся доступны.';
+    return;
+  }
+
+  if (mode === 'online' && state.network.lastRecoveredAt) {
+    banner.hidden = false;
+    banner.classList.add('recovered');
+    icon.textContent = '✓';
+    title.textContent = 'Соединение восстановлено';
+    text.textContent = 'Свежие данные снова доступны.';
+    clearTimeout(updateConnectionBanner.hideTimer);
+    updateConnectionBanner.hideTimer = setTimeout(() => {
+      if (state.network.mode === 'online') banner.hidden = true;
+    }, 1800);
+    return;
+  }
+
+  banner.hidden = true;
 }
+
 
 function noteClientError(error) {
   const message = String(error?.message || error || 'Неизвестная ошибка').slice(0, 180);
@@ -3429,21 +3653,35 @@ $('versionReloadBtn')?.addEventListener('click', () => location.reload());
 
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
+    state.network.hiddenAt = Date.now();
     if (state.liveRefreshTimer) { stopLiveRefresh(); state.liveRefreshWasActive = true; }
     return;
   }
+
+  const hiddenForMs = state.network.hiddenAt ? Date.now() - Number(state.network.hiddenAt) : 0;
+  state.network.hiddenAt = null;
   const fixtureId = Number(state.currentCenter?.match?.fixtureId || 0);
+
   if (fixtureId && state.currentCenter?.mode === 'live' && activeViewId() === 'analysisView' && state.liveRefreshWasActive) {
     startLiveRefresh(fixtureId);
   }
+
+  // Telegram can keep the WebView suspended for minutes. Refresh only the
+  // current screen, never re-run a paid/limited pre-match analysis automatically.
+  if (hiddenForMs >= 60000 && navigator.onLine !== false) {
+    recoverActiveView({ automatic: true });
+  }
 });
 
-window.addEventListener('offline', () => { updateConnectionBanner(); toast('Нет подключения к интернету'); });
-window.addEventListener('online', () => {
-  updateConnectionBanner();
-  toast('Соединение восстановлено');
-  if (activeViewId() === 'matchesView') loadMatches({ silent: true });
+window.addEventListener('offline', () => {
+  setNetworkMode('offline', { category: 'offline', message: 'Нет подключения к интернету.' });
+  toast('Нет подключения — сохранённые данные останутся доступны');
 });
+window.addEventListener('online', () => {
+  setNetworkMode('recovering', { message: 'Соединение вернулось. Обновляю текущий экран…' });
+  recoverActiveView({ automatic: true });
+});
+$('connectionRetryBtn')?.addEventListener('click', () => recoverActiveView({ automatic: false }));
 updateConnectionBanner();
 
 let matchSearchTimer = null;
@@ -3509,7 +3747,7 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// v5.1 adds production load-safety guards: server singleflight, burst protection, bounded L1 memory and upstream timeouts.
+// v5.2 unifies offline/degraded/recovery UX and safely refreshes Telegram WebView after reconnect/resume.
 // v4.0: first paint is intentionally small — matches/profile/favorites only.
 // History, reminders and provider details are loaded later or when their screen opens.
 await Promise.allSettled([loadProfile(), loadFavorites(), loadMatches()]);
