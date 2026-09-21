@@ -1,11 +1,11 @@
-# QA Release Checklist — v6.9.0 RC17
+# QA Release Checklist — v6.10.0 RC18
 
 ## Deploy
 
-- применён `supabase_migration_v6_9.sql` либо fresh baseline;
-- Worker/client = `6.9.0-rc17`;
-- package = `6.9.0`;
-- cache generation = `3.9-champion1`;
+- применены `supabase_migration_v6_9.sql` и `supabase_migration_v6_10.sql`;
+- Worker/client = `6.10.0-rc18`;
+- package = `6.10.0`;
+- cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;
 - `MONETIZATION_ENABLED=false` до отдельного решения о запуске оплаты.
@@ -21,6 +21,19 @@
 - новый прогноз сохраняет `calibration_profile_fingerprint`;
 - post-promotion guard ждёт минимум 20 trusted матчей;
 - rollback возвращает `previous_fingerprint` и создаёт `ops_events` audit.
+- transition RPC блокирует stale revision с SQLSTATE `40001`;
+- promotion/rollback и смена статусов профилей атомарны;
+- freeze блокирует автоматические переходы;
+- manual rollback разрешён только на `previous_fingerprint`;
+- каждый переход записан в `model_calibration_transitions`.
+
+## Admin Access
+
+- реальный Telegram-пользователь без allowlist не получает admin даже при `DEV_MODE=true`;
+- синтетический dev-admin помечается сервером и имеет ID `999001`;
+- PREMIUM и другие тарифы не дают admin-права;
+- клиент показывает бейдж только когда сервер одновременно вернул `isAdmin=true` и `role=admin`;
+- `/api/calibration-control` возвращает `403` обычному пользователю.
 
 ## Database
 
@@ -28,7 +41,7 @@
 - `anon` и `authenticated` не имеют прямого доступа;
 - `service_role` имеет необходимые права Data API;
 - foreign key и filtered-query колонки индексированы;
-- fresh-install baseline применяется к пустой базе без ручного добавления таблиц.
+- fresh-install baseline v6.9 и migration v6.10 применяются к пустой базе без ручного добавления таблиц.
 
 ## Automated checks
 
