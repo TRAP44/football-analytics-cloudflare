@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#111827" />
   <title>Football Manager · Match Intelligence</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=4.7.0" />
+  <link rel="stylesheet" href="/styles.css?v=4.8.0" />
 </head>
 <body>
   <div class="app-shell">
@@ -296,7 +296,35 @@
             <div><span>Player stats</span><strong id="providerPlayerStats">—</strong></div>
             <div><span>Движение odds</span><strong id="providerOddsMovement">—</strong></div>
           </div>
-          <p class="tiny">FREE работает экономно. На PRO+ приложение автоматически ускоряет LIVE, включает live odds, player stats и сохраняет движение линии, если эти данные доступны у провайдера.</p>
+          <p class="tiny">API-Football предоставляет endpoint по единой схеме, а платный тариф прежде всего увеличивает квоту и rate limit. Приложение на FREE сознательно экономит запросы; при обнаружении PRO/ULTRA/MEGA расширенный режим включается автоматически.</p>
+        </section>
+
+        <section class="panel provider-audit-panel" data-admin-only hidden>
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>🧪 Provider Transition & Coverage Audit</h2>
+              <p>Контролируемая проверка тарифа и фактического покрытия endpoint на выбранном матче.</p>
+            </div>
+          </div>
+
+          <div class="provider-transition-grid">
+            <div><span>Режим</span><strong id="providerTransitionMode">Ожидаем тариф</strong></div>
+            <div><span>LIVE refresh</span><strong id="providerRefreshCadence">—</strong></div>
+            <div><span>Ожидаемый daily</span><strong id="providerExpectedDaily">—</strong></div>
+            <div><span>Ожидаемый / min</span><strong id="providerExpectedMinute">—</strong></div>
+          </div>
+
+          <div class="provider-audit-controls">
+            <button id="providerProbeBtn" class="reminder-btn" type="button">1. Обновить тариф · 1 запрос</button>
+            <div class="provider-audit-fixture">
+              <input id="providerAuditFixtureId" type="number" min="1" inputmode="numeric" placeholder="Fixture ID">
+              <button id="providerAuditBtn" class="primary-setting-btn" type="button">2. Coverage Audit</button>
+            </div>
+          </div>
+
+          <p id="providerAuditStatus" class="tiny">На FREE полный audit не запускается: guardrail тратит только fixture-запрос и останавливается.</p>
+          <div id="providerAuditResult" class="provider-audit-result" hidden></div>
+          <p class="tiny diagnostics-privacy">Полный audit запускается только администратором вручную. Результат кэшируется на 15 минут. Пустой endpoint не всегда ошибка: покрытие зависит от турнира и стадии матча.</p>
         </section>
 
         <section class="panel release-panel" data-admin-only hidden>
@@ -350,6 +378,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=4.7.0"></script>
+  <script type="module" src="/app.js?v=4.8.0"></script>
 </body>
 </html>
