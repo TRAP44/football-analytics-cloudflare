@@ -2070,13 +2070,13 @@ main { position: relative; z-index: 1; }
 .model-integrity-list .warn i{color:var(--warn)}
 .model-integrity-list .fail i{color:var(--danger)}
 .model-integrity-list .info i{color:var(--accent)}
-.rc-panel:before{content:"RC9"}
+.rc-panel:before{content:"RC10"}
 
 /* v6.0 RC8 — Prediction Integrity hardening */
 
-/* v6.1 RC9 — Integrity Remediation & Settlement Recovery */
+/* v6.2 RC10 — Settlement Watchdog & Automatic Catch-up */
 .model-remediation-block{display:grid;gap:11px;border-color:color-mix(in srgb,#38bdf8 24%,var(--line));background:linear-gradient(145deg,color-mix(in srgb,#38bdf8 7%,var(--surface)),var(--surface))}
-.model-remediation-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.model-remediation-summary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
 .model-remediation-summary>div{display:grid;gap:3px;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
 .model-remediation-summary span,.model-remediation-summary small{font-size:9px;color:var(--muted)}
 .model-remediation-summary strong{font-size:17px;color:var(--text)}
@@ -2086,6 +2086,7 @@ main { position: relative; z-index: 1; }
 .model-remediation-list strong,.model-remediation-action-list strong{font-size:10px;color:var(--text)}
 .model-remediation-list small,.model-remediation-action-list small{font-size:9px;color:var(--muted);overflow-wrap:anywhere}
 .model-remediation-list em,.model-remediation-action-list em{font-size:9px;font-style:normal;color:var(--muted);text-align:right;white-space:nowrap}
+.model-remediation-action-list>div.started{border-color:color-mix(in srgb,var(--accent) 32%,var(--line))}
 .model-remediation-action-list>div.completed{border-color:color-mix(in srgb,#22c55e 28%,var(--line))}
 .model-remediation-action-list>div.partial{border-color:color-mix(in srgb,#f59e0b 34%,var(--line))}
 .model-remediation-action-list>div.failed{border-color:color-mix(in srgb,#ef4444 34%,var(--line))}

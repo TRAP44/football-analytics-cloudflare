@@ -59,11 +59,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.1.0-rc9';
+const APP_VERSION = '6.2.0-rc10';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc9';
-const RC_NAME = 'RC9';
+const RELEASE_CHANNEL = 'rc10';
+const RC_NAME = 'RC10';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -81,6 +81,7 @@ const DEFAULT_RUNTIME_CONTROLS = Object.freeze({
   liveEnabled: true,
   remindersEnabled: true,
   expandedDataEnabled: true,
+  autoSettlementRecoveryEnabled: false,
   message: '',
   revision: 1,
   updatedAt: null,
@@ -200,6 +201,7 @@ function normalizeRuntimeControls(row = {}) {
     liveEnabled: (row.live_enabled ?? row.liveEnabled) !== false,
     remindersEnabled: (row.reminders_enabled ?? row.remindersEnabled) !== false,
     expandedDataEnabled: (row.expanded_data_enabled ?? row.expandedDataEnabled) !== false,
+    autoSettlementRecoveryEnabled: Boolean(row.auto_settlement_recovery_enabled ?? row.autoSettlementRecoveryEnabled ?? DEFAULT_RUNTIME_CONTROLS.autoSettlementRecoveryEnabled),
     message: String(row.message || '').slice(0, 280),
     revision: Math.max(1, Number(row.revision || 1)),
     updatedAt: row.updated_at || row.updatedAt || null,
@@ -214,6 +216,7 @@ function publicRuntimeControls(value = runtimeControlsSnapshot()) {
     liveEnabled: value.liveEnabled !== false,
     remindersEnabled: value.remindersEnabled !== false,
     expandedDataEnabled: value.expandedDataEnabled !== false,
+    autoSettlementRecoveryEnabled: Boolean(value.autoSettlementRecoveryEnabled),
     message: String(value.message || '').slice(0, 280),
     revision: Number(value.revision || 1),
     updatedAt: value.updatedAt || null,
@@ -256,6 +259,7 @@ function runtimeHistorySnapshot(value) {
     liveEnabled: c.liveEnabled,
     remindersEnabled: c.remindersEnabled,
     expandedDataEnabled: c.expandedDataEnabled,
+    autoSettlementRecoveryEnabled: c.autoSettlementRecoveryEnabled,
     message: c.message,
     revision: c.revision,
     updatedAt: c.updatedAt,
@@ -358,6 +362,7 @@ async function rollbackRuntimeControls(cfg, user, body = {}) {
     liveEnabled: target.liveEnabled,
     remindersEnabled: target.remindersEnabled,
     expandedDataEnabled: target.expandedDataEnabled,
+    autoSettlementRecoveryEnabled: target.autoSettlementRecoveryEnabled,
     message: target.message,
     reason: String(body.reason || `Rollback to revision ${Number(row.revision || target.revision || 0)}`).slice(0, 240),
     action: 'rollback',
@@ -399,6 +404,7 @@ async function saveRuntimeControls(cfg, user, body = {}) {
     live_enabled: body.liveEnabled !== false,
     reminders_enabled: body.remindersEnabled !== false,
     expanded_data_enabled: body.expandedDataEnabled !== false,
+    auto_settlement_recovery_enabled: Boolean(body.autoSettlementRecoveryEnabled),
     message: String(body.message || '').trim().slice(0, 280),
     revision: expectedRevision + 1,
     updated_at: new Date().toISOString(),
@@ -454,6 +460,7 @@ async function saveRuntimeControls(cfg, user, body = {}) {
       liveEnabled: value.liveEnabled,
       remindersEnabled: value.remindersEnabled,
       expandedDataEnabled: value.expandedDataEnabled,
+      autoSettlementRecoveryEnabled: value.autoSettlementRecoveryEnabled,
       action: changeAction,
       reason: changeReason,
       sourceRevision,
@@ -641,6 +648,8 @@ function appManifest(cfg) {
       calibrationDiagnostics: true,
       predictionRemediation: true,
       settlementRecovery: true,
+      settlementWatchdog: true,
+      automaticSettlementRecovery: true,
     },
     serverTime: new Date().toISOString(),
   };
@@ -2400,7 +2409,7 @@ function buildModelDashboardObservations(rows, dashboard) {
     notes.push({
       level: 'info',
       title: 'Явных диагностических отклонений нет',
-      text: 'Продолжаем накапливать immutable pre-match snapshots. v6.1 добавляет только контролируемое settlement recovery и не меняет веса модели автоматически.',
+      text: 'Продолжаем накапливать immutable pre-match snapshots. v6.2 добавляет settlement watchdog и runtime-gated catch-up, не меняя веса модели автоматически.',
     });
   }
 
@@ -3032,6 +3041,7 @@ function publicRemediationAction(row) {
     actionId: String(row?.action_id || ''),
     createdAt: row?.created_at || null,
     actionType: String(row?.action_type || ''),
+    triggerSource: String(row?.trigger_source || (row?.action_type === 'auto_recover' ? 'cron' : 'admin')),
     status: String(row?.status || ''),
     reason: String(row?.reason || ''),
     candidateCount: Number(row?.candidate_count || 0),
@@ -3051,10 +3061,36 @@ async function loadRemediationActions(cfg, limit = 10) {
   return rows.map(publicRemediationAction);
 }
 
+async function probeSettlementWatchdogSchema(cfg) {
+  if (!hasSupabase(cfg)) return { ok: false, status: 'not_configured' };
+  try {
+    const runtimeUrl = new URL(`${cfg.supabaseUrl}/rest/v1/runtime_controls`);
+    runtimeUrl.searchParams.set('select', 'auto_settlement_recovery_enabled');
+    runtimeUrl.searchParams.set('limit', '1');
+    const actionUrl = new URL(`${cfg.supabaseUrl}/rest/v1/prediction_integrity_actions`);
+    actionUrl.searchParams.set('select', 'trigger_source');
+    actionUrl.searchParams.set('limit', '1');
+    const [runtimeResponse, actionResponse] = await Promise.all([
+      fetchWithTimeout(runtimeUrl, { headers: supaHeaders(cfg) }, 7000, 'Supabase settlement watchdog runtime schema'),
+      fetchWithTimeout(actionUrl, { headers: supaHeaders(cfg) }, 7000, 'Supabase settlement watchdog audit schema'),
+    ]);
+    if (!runtimeResponse.ok || !actionResponse.ok) {
+      return {
+        ok: false,
+        status: `runtime_${runtimeResponse.status}_audit_${actionResponse.status}`,
+      };
+    }
+    return { ok: true, status: 'ok' };
+  } catch (error) {
+    return { ok: false, status: error?.code || 'error', detail: redactOpsString(error?.message || error, 140) };
+  }
+}
+
 async function recordRemediationAction(cfg, user, action) {
   const row = {
     action_id: String(action.actionId || crypto.randomUUID()),
     action_type: String(action.actionType || 'recover'),
+    ...(action.triggerSource ? { trigger_source: String(action.triggerSource).slice(0, 20) } : {}),
     status: String(action.status || 'completed'),
     reason: redactOpsString(action.reason || '', 220),
     admin_telegram_id: Number(user?.id || 0) || null,
@@ -3071,11 +3107,34 @@ async function recordRemediationAction(cfg, user, action) {
   return publicRemediationAction({ ...row, created_at: new Date().toISOString() });
 }
 
+async function finalizeRemediationAction(cfg, actionId, patch = {}) {
+  const update = {
+    status: String(patch.status || 'completed'),
+    inspected_count: Number(patch.inspectedCount || 0),
+    settled_count: Number(patch.settledCount || 0),
+    skipped_count: Number(patch.skippedCount || 0),
+    detail: patch.detail || {},
+  };
+  if (hasSupabase(cfg)) {
+    await supaPatch(cfg, 'prediction_integrity_actions', { action_id: `eq.${String(actionId)}` }, update);
+  }
+  const idx = memory.modelRemediation.actions.findIndex(row => String(row?.action_id || '') === String(actionId));
+  if (idx >= 0) memory.modelRemediation.actions[idx] = { ...memory.modelRemediation.actions[idx], ...update };
+  const row = idx >= 0
+    ? memory.modelRemediation.actions[idx]
+    : { action_id: String(actionId), created_at: new Date().toISOString(), ...update };
+  return publicRemediationAction(row);
+}
+
 async function buildModelRemediationReport(cfg, { maxRows = 5000 } = {}) {
   if (!hasSupabase(cfg) && !cfg.devMode) {
     return { available: false, reason: 'Supabase не настроен: remediation требует постоянную базу данных.' };
   }
-  const schema = hasSupabase(cfg) ? await probeOptionalTable(cfg, 'prediction_integrity_actions') : { ok: true, status: 'memory' };
+  const [schema, watchdogSchema, runtimeState] = await Promise.all([
+    hasSupabase(cfg) ? probeOptionalTable(cfg, 'prediction_integrity_actions') : Promise.resolve({ ok: true, status: 'memory' }),
+    hasSupabase(cfg) ? probeSettlementWatchdogSchema(cfg) : Promise.resolve({ ok: true, status: 'memory' }),
+    loadRuntimeControls(cfg),
+  ]);
   const loaded = await loadPredictionRemediationRows(cfg, maxRows);
   const settled = loaded.rows.filter(row => row.status === 'settled');
   const pending = loaded.rows.filter(row => row.status === 'pending');
@@ -3117,13 +3176,25 @@ async function buildModelRemediationReport(cfg, { maxRows = 5000 } = {}) {
       })),
     },
     recentActions,
+    watchdog: {
+      schemaReady: Boolean(watchdogSchema.ok),
+      schemaStatus: watchdogSchema.status || (watchdogSchema.ok ? 'ok' : 'missing'),
+      mode: runtimeState.value?.autoSettlementRecoveryEnabled ? 'active' : 'shadow',
+      autoRecoveryEnabled: Boolean(runtimeState.value?.autoSettlementRecoveryEnabled),
+      scheduleUtc: '04:00',
+      maxRunsPerDay: 1,
+      maxFixturesPerRun: 20,
+      maxDatesPerRun: 5,
+      quotaGuard: true,
+    },
     policy: {
       dryRunFirst: true,
       deletesPredictions: false,
       rewritesSnapshots: false,
       onlySettlesPending: true,
       adminIdExposed: false,
-      note: 'GET выполняет read-only dry-run. POST повторно проверяет candidate token и меняет только pending-строки с подтверждённым финальным счётом API-Football.',
+      automaticRecoveryRuntimeGated: true,
+      note: 'GET выполняет read-only dry-run. POST повторно проверяет candidate token. RC10 watchdog работает раз в сутки и делает auto recovery только при включённом runtime switch; меняются только pending-строки с подтверждённым финальным счётом API-Football.',
     },
   };
 }
@@ -3201,6 +3272,236 @@ async function apiModelRemediation(request, cfg, user) {
       detail: { providerCalls: dates.length, error: redactOpsString(error?.message || error, 180) },
     }).catch(() => null);
     throw error;
+  }
+}
+
+function settlementWatchdogDecision(report, runtime, { providerReady = true, quotaHealthy = true, schemaReady = true, runtimeVerified = true } = {}) {
+  const stalePending = Number(report?.recovery?.stalePending || 0);
+  const selectedCount = Number(report?.recovery?.selectedCount || 0);
+  const providerCalls = Number(report?.recovery?.estimatedProviderCalls || 0);
+  if (!report?.available) return { state: 'unavailable', recover: false, stalePending, selectedCount, providerCalls };
+  if (!schemaReady || !report?.schemaReady) return { state: 'schema_missing', recover: false, stalePending, selectedCount, providerCalls };
+  if (!stalePending) return { state: 'clean', recover: false, stalePending, selectedCount, providerCalls };
+  if (!runtimeVerified) return { state: 'runtime_unverified', recover: false, stalePending, selectedCount, providerCalls };
+  if (!runtime?.autoSettlementRecoveryEnabled) return { state: 'observe', recover: false, stalePending, selectedCount, providerCalls };
+  if (!providerReady) return { state: 'provider_missing', recover: false, stalePending, selectedCount, providerCalls };
+  if (!quotaHealthy) return { state: 'quota_guard', recover: false, stalePending, selectedCount, providerCalls };
+  if (!selectedCount || !providerCalls) return { state: 'no_batch', recover: false, stalePending, selectedCount, providerCalls };
+  return { state: 'recover', recover: true, stalePending, selectedCount, providerCalls };
+}
+
+function settlementWatchdogSelfTest() {
+  const report = {
+    available: true,
+    schemaReady: true,
+    recovery: { stalePending: 7, selectedCount: 5, estimatedProviderCalls: 2 },
+  };
+  const shadow = settlementWatchdogDecision(report, { autoSettlementRecoveryEnabled: false }, { schemaReady: true, providerReady: true, quotaHealthy: true });
+  const unverified = settlementWatchdogDecision(report, { autoSettlementRecoveryEnabled: true }, { schemaReady: true, runtimeVerified: false, providerReady: true, quotaHealthy: true });
+  const quota = settlementWatchdogDecision(report, { autoSettlementRecoveryEnabled: true }, { schemaReady: true, runtimeVerified: true, providerReady: true, quotaHealthy: false });
+  const recover = settlementWatchdogDecision(report, { autoSettlementRecoveryEnabled: true }, { schemaReady: true, runtimeVerified: true, providerReady: true, quotaHealthy: true });
+  const clean = settlementWatchdogDecision({ ...report, recovery: { stalePending: 0, selectedCount: 0, estimatedProviderCalls: 0 } }, { autoSettlementRecoveryEnabled: true }, { schemaReady: true, providerReady: true, quotaHealthy: true });
+  return {
+    pass: shadow.state === 'observe' && !shadow.recover && unverified.state === 'runtime_unverified' && !unverified.recover && quota.state === 'quota_guard' && !quota.recover && recover.state === 'recover' && recover.recover && clean.state === 'clean',
+    shadow: shadow.state,
+    runtime: unverified.state,
+    quota: quota.state,
+    active: recover.state,
+    clean: clean.state,
+  };
+}
+
+function automaticSettlementQuotaHealthy() {
+  const p = memory.provider || {};
+  const paid = ['PRO', 'ULTRA', 'MEGA'].includes(String(p.plan || '').toUpperCase());
+  if (paid) return !providerSnapshot().cooldownActive;
+  const dailyKnown = Number.isFinite(Number(p.dailyRemaining));
+  const minuteKnown = Number.isFinite(Number(p.minuteRemaining));
+  if (!dailyKnown || !minuteKnown) return false;
+  return freeQuotaHealthy(15, 4);
+}
+
+async function runSettlementWatchdog(cfg) {
+  if (!hasSupabase(cfg)) return { skipped: 'no_persistent_database' };
+  const markerKey = `settlement-watchdog:${todayUtc()}:v1`;
+  if (await getCache(markerKey, cfg)) return { skipped: 'already_checked', date: todayUtc() };
+
+  const report = await buildModelRemediationReport(cfg, { maxRows: 5000 });
+  const runtimeState = await loadRuntimeControls(cfg);
+  const runtime = runtimeState.value || DEFAULT_RUNTIME_CONTROLS;
+  const decision = settlementWatchdogDecision(report, runtime, {
+    schemaReady: Boolean(report?.watchdog?.schemaReady),
+    runtimeVerified: runtimeState.source === 'supabase',
+    providerReady: Boolean(cfg.apiFootballKey),
+    quotaHealthy: automaticSettlementQuotaHealthy(),
+  });
+  const baseMeta = {
+    state: decision.state,
+    stalePending: decision.stalePending,
+    selectedCount: decision.selectedCount,
+    providerCalls: decision.providerCalls,
+    scanTruncated: Boolean(report?.scan?.truncated),
+    autoRecoveryEnabled: Boolean(runtime.autoSettlementRecoveryEnabled),
+    runtimeVerified: runtimeState.source === 'supabase',
+    runtimeRevision: Number(runtime.revision || 1),
+  };
+
+  if (decision.state === 'clean') {
+    await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), ...baseMeta }, cfg, 1440).catch(() => null);
+    return { ok: true, ...baseMeta };
+  }
+
+  if (!decision.recover) {
+    const severity = ['schema_missing', 'runtime_unverified', 'provider_missing', 'quota_guard', 'unavailable'].includes(decision.state) ? 'warning' : 'info';
+    const code = ({
+      observe: 'SETTLEMENT_WATCHDOG_OBSERVE',
+      schema_missing: 'SETTLEMENT_WATCHDOG_SCHEMA',
+      runtime_unverified: 'SETTLEMENT_WATCHDOG_RUNTIME',
+      provider_missing: 'SETTLEMENT_WATCHDOG_PROVIDER',
+      quota_guard: 'SETTLEMENT_WATCHDOG_QUOTA',
+      no_batch: 'SETTLEMENT_WATCHDOG_NO_BATCH',
+      unavailable: 'SETTLEMENT_WATCHDOG_UNAVAILABLE',
+    })[decision.state] || 'SETTLEMENT_WATCHDOG';
+    await recordOpsEvent(cfg, {
+      severity,
+      source: 'model',
+      eventType: 'settlement_watchdog',
+      code,
+      message: decision.state === 'observe'
+        ? `Settlement watchdog detected ${decision.stalePending} stale pending; automatic recovery is paused by runtime control.`
+        : `Settlement watchdog did not execute recovery: ${decision.state}.`,
+      meta: baseMeta,
+    }).catch(() => null);
+    if (decision.state !== 'quota_guard') {
+      await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), ...baseMeta }, cfg, 1440).catch(() => null);
+    }
+    return { ok: true, ...baseMeta };
+  }
+
+  const currentIds = [...new Set((report.recovery?.fixtureIds || []).map(Number).filter(x => Number.isInteger(x) && x > 0))];
+  const candidateMap = new Map((report.recovery?.candidates || []).map(row => [Number(row.fixtureId), row]));
+  const dates = [...new Set(currentIds.map(id => String(candidateMap.get(id)?.kickoffAt || '').slice(0, 10)).filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date)))];
+  const fixtureSet = new Set(currentIds);
+  const fixtures = [];
+  const actionId = crypto.randomUUID();
+  const reason = 'RC10 scheduled settlement catch-up';
+  let auditStarted = false;
+  let executionResult = null;
+
+  try {
+    await recordRemediationAction(cfg, null, {
+      actionId,
+      actionType: 'auto_recover',
+      triggerSource: 'cron',
+      status: 'started',
+      reason,
+      candidateCount: Number(report.recovery?.stalePending || 0),
+      inspectedCount: currentIds.length,
+      settledCount: 0,
+      skippedCount: currentIds.length,
+      fixtureIds: currentIds,
+      detail: {
+        phase: 'preflight',
+        providerCallsPlanned: dates.length,
+        scanTruncated: Boolean(report.scan?.truncated),
+        runtimeRevision: Number(runtime.revision || 1),
+      },
+    });
+    auditStarted = true;
+
+    for (const date of dates) {
+      const rows = await apiFootball('/fixtures', { date }, cfg);
+      fixtures.push(...rows.filter(fixture => fixtureSet.has(fixtureIdentity(fixture))));
+    }
+    const settlement = await settlePredictionsFromFixtures(fixtures, cfg);
+    const after = await supaSelectMany(cfg, 'model_predictions', { fixture_id: `in.(${currentIds.join(',')})` }, { limit: currentIds.length + 2 });
+    const settledCount = after.filter(row => row.status === 'settled').length;
+    const skippedCount = Math.max(0, currentIds.length - settledCount);
+    const status = skippedCount ? 'partial' : 'completed';
+    executionResult = { settledCount, skippedCount, status };
+    const action = await finalizeRemediationAction(cfg, actionId, {
+      status,
+      inspectedCount: currentIds.length,
+      settledCount,
+      skippedCount,
+      detail: {
+        phase: 'final',
+        providerCalls: dates.length,
+        finishedFixtures: fixtures.filter(f => isFinishedStatus(fixtureStatusShort(f))).length,
+        settlementChecked: settlement.checked,
+        scanTruncated: Boolean(report.scan?.truncated),
+        runtimeRevision: Number(runtime.revision || 1),
+      },
+    });
+    memory.modelRemediation.lastRun = action;
+    await recordOpsEvent(cfg, {
+      severity: skippedCount ? 'warning' : 'info',
+      source: 'model',
+      eventType: 'settlement_watchdog',
+      code: skippedCount ? 'SETTLEMENT_WATCHDOG_PARTIAL' : 'SETTLEMENT_WATCHDOG_COMPLETED',
+      message: `${reason}: ${settledCount} settled, ${skippedCount} skipped.`,
+      meta: { ...baseMeta, actionId, settledCount, skippedCount },
+    }).catch(() => null);
+    await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), ...baseMeta, actionId, settledCount, skippedCount, status }, cfg, 1440).catch(() => null);
+    return { ok: true, ...baseMeta, actionId, settledCount, skippedCount, status };
+  } catch (error) {
+    if (executionResult) {
+      await recordOpsEvent(cfg, {
+        severity: 'error',
+        source: 'model',
+        eventType: 'settlement_watchdog',
+        code: 'SETTLEMENT_WATCHDOG_AUDIT_FINALIZE_FAILED',
+        message: error?.message || error,
+        meta: { ...baseMeta, actionId, ...executionResult, auditStatus: 'started' },
+      }).catch(() => null);
+      await setCache(markerKey, 0, {
+        checkedAt: new Date().toISOString(),
+        ...baseMeta,
+        actionId,
+        ...executionResult,
+        auditPending: true,
+      }, cfg, 1440).catch(() => null);
+      return { ok: true, ...baseMeta, actionId, ...executionResult, auditPending: true };
+    }
+    const failurePatch = {
+      status: 'failed',
+      inspectedCount: currentIds.length,
+      settledCount: 0,
+      skippedCount: currentIds.length,
+      detail: {
+        phase: auditStarted ? 'execution' : 'audit_preflight',
+        providerCalls: dates.length,
+        scanTruncated: Boolean(report.scan?.truncated),
+        runtimeRevision: Number(runtime.revision || 1),
+        error: redactOpsString(error?.message || error, 180),
+      },
+    };
+    if (auditStarted) {
+      await finalizeRemediationAction(cfg, actionId, failurePatch).catch(() => null);
+    } else {
+      await recordRemediationAction(cfg, null, {
+        actionId,
+        actionType: 'auto_recover',
+        triggerSource: 'cron',
+        status: 'failed',
+        reason,
+        candidateCount: Number(report.recovery?.stalePending || 0),
+        inspectedCount: currentIds.length,
+        settledCount: 0,
+        skippedCount: currentIds.length,
+        fixtureIds: currentIds,
+        detail: failurePatch.detail,
+      }).catch(() => null);
+    }
+    await recordOpsEvent(cfg, {
+      severity: 'error',
+      source: 'model',
+      eventType: 'settlement_watchdog',
+      code: 'SETTLEMENT_WATCHDOG_FAILED',
+      message: error?.message || error,
+      meta: { ...baseMeta, actionId },
+    }).catch(() => null);
+    return { ok: false, ...baseMeta, actionId, error: redactOpsString(error?.message || error, 180) };
   }
 }
 
@@ -3922,7 +4223,7 @@ async function apiReminderHealth(request, cfg, user) {
 
     const result = await sendTelegramMessage(
       user.id,
-      `✅ Football Manager\n\nТест уведомлений v6.1 RC9 прошёл. Если вы видите это сообщение, Telegram delivery работает.`,
+      `✅ Football Manager\n\nТест уведомлений v6.2 RC10 прошёл. Если вы видите это сообщение, Telegram delivery работает.`,
       cfg
     );
 
@@ -5424,9 +5725,13 @@ async function apiReleaseReadiness(request, cfg) {
     probeOptionalTable(cfg, 'runtime_controls'),
     probeOptionalTable(cfg, 'runtime_control_history'),
   ]);
-  const runtimeState = await loadRuntimeControls(cfg, { force: true });
+  const [runtimeState, watchdogSchema] = await Promise.all([
+    loadRuntimeControls(cfg, { force: true }),
+    probeSettlementWatchdogSchema(cfg),
+  ]);
   const runtime = runtimeState.value;
   const provider = diagnostics.provider || {};
+  const watchdogSelfTest = settlementWatchdogSelfTest();
   const checks = [
     releaseCheck('football_api', 'API-Football key', cfg.apiFootballKey ? 'pass' : 'fail', cfg.apiFootballKey ? 'Ключ доступен Worker.' : 'API_FOOTBALL_KEY отсутствует.', true),
     releaseCheck('supabase_config', 'Supabase config', hasSupabase(cfg) ? 'pass' : 'fail', hasSupabase(cfg) ? 'URL и service key доступны runtime.' : 'Не хватает SUPABASE_URL или service key.', true),
@@ -5436,6 +5741,12 @@ async function apiReleaseReadiness(request, cfg) {
       modelIntegritySelfTest().pass ? 'Probabilities, captured_at timing и outcome consistency проходят synthetic self-test.' : 'Prediction Integrity self-test не прошёл.', true),
     releaseCheck('prediction_remediation', 'Prediction Remediation v6.1', remediationTable.ok ? 'pass' : 'fail',
       remediationTable.ok ? 'Audit trail remediation доступен.' : 'Нужна supabase_migration_v6_1.sql.', true),
+    releaseCheck('settlement_watchdog_schema', 'Settlement Watchdog schema v6.2', watchdogSchema.ok ? 'pass' : 'fail',
+      watchdogSchema.ok ? 'Runtime switch и cron audit source доступны.' : 'Нужна supabase_migration_v6_2.sql.', true),
+    releaseCheck('settlement_watchdog_selftest', 'Settlement Watchdog self-test', watchdogSelfTest.pass ? 'pass' : 'fail',
+      watchdogSelfTest.pass ? `shadow=${watchdogSelfTest.shadow}, runtime=${watchdogSelfTest.runtime}, quota=${watchdogSelfTest.quota}, active=${watchdogSelfTest.active}.` : 'Watchdog decision self-test не прошёл.', true),
+    releaseCheck('automatic_settlement_recovery', 'Automatic settlement recovery', 'pass',
+      runtime.autoSettlementRecoveryEnabled ? 'Runtime switch ON: cron catch-up разрешён guardrails.' : 'Runtime switch OFF: watchdog работает в shadow и только сигнализирует.', false),
     releaseCheck('runtime_controls_schema', 'Runtime Controls schema v5.7', runtimeTable.ok ? 'pass' : 'fail', runtimeTable.ok ? 'Таблица runtime_controls доступна.' : 'Нужна supabase_migration_v5_7.sql.', true),
     releaseCheck('runtime_history_schema', 'Runtime rollback history v5.8', runtimeHistoryTable.ok ? 'pass' : 'fail', runtimeHistoryTable.ok ? 'История Runtime Controls доступна.' : 'Нужна supabase_migration_v5_8.sql.', true),
     releaseCheck('runtime_controls_state', 'Runtime Controls state', runtime.maintenanceMode ? 'warn' : 'pass', runtime.maintenanceMode ? `Maintenance включён${runtime.message ? `: ${runtime.message}` : '.'}` : `Revision ${Number(runtime.revision || 1)} · рабочий режим.`, false),
@@ -5487,7 +5798,7 @@ async function apiReleaseReadiness(request, cfg) {
       monetizationExpected: 'paused',
       paymentTestingRequiredNow: false,
       providerUpgradeRequiredNow: false,
-      note: 'RC9 добавляет read-only dry-run, защищённое settlement recovery и audit trail без удаления snapshots и без включения пользовательской оплаты.',
+      note: 'RC10 добавляет ежедневный settlement watchdog и runtime-gated auto catch-up. Ручной dry-run/recovery RC9 сохраняется; immutable snapshots и пользовательская оплата не меняются.',
     },
   };
   memory.releaseReadiness = { at: now, value };
@@ -5626,8 +5937,8 @@ async function apiRcRegression(request, cfg, user) {
   const startedAt = Date.now();
 
   // 1) Core runtime / security configuration.
-  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.1.0-rc9' ? 'pass' : 'fail',
-    `Worker: ${APP_VERSION}; ожидается 6.1.0-rc9.`, true));
+  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.2.0-rc10' ? 'pass' : 'fail',
+    `Worker: ${APP_VERSION}; ожидается 6.2.0-rc10.`, true));
   checks.push(rcCheck('api_contract', 'runtime', 'API contract', API_CONTRACT_VERSION === 5 ? 'pass' : 'fail',
     `Contract ${API_CONTRACT_VERSION}; min client ${MIN_CLIENT_VERSION}.`, true));
   checks.push(rcCheck('app_manifest', 'runtime', 'Public App Manifest', appManifest(cfg)?.version === APP_VERSION ? 'pass' : 'fail',
@@ -5693,11 +6004,21 @@ async function apiRcRegression(request, cfg, user) {
   checks.push(rcCheck(
     'runtime_controls_state',
     'runtime',
-    'Runtime Controls RC9',
+    'Runtime Controls RC10',
     runtimeState.schemaReady ? 'pass' : 'fail',
     runtimeState.schemaReady
-      ? `Revision ${Number(runtimeState.value?.revision || 1)} · ${runtimeState.value?.maintenanceMode ? 'maintenance ON' : 'normal mode'}.`
+      ? `Revision ${Number(runtimeState.value?.revision || 1)} · ${runtimeState.value?.maintenanceMode ? 'maintenance ON' : 'normal mode'} · auto-settlement ${runtimeState.value?.autoSettlementRecoveryEnabled ? 'ON' : 'shadow'}.`
       : 'Запустите supabase_migration_v5_7.sql.',
+    true
+  ));
+
+  const watchdogSchema = await probeSettlementWatchdogSchema(cfg);
+  checks.push(rcCheck(
+    'settlement_watchdog_schema',
+    'database',
+    'Settlement Watchdog schema v6.2',
+    watchdogSchema.ok ? 'pass' : 'fail',
+    watchdogSchema.ok ? 'Runtime switch + trigger_source доступны.' : 'Запустите supabase_migration_v6_2.sql.',
     true
   ));
 
@@ -5813,6 +6134,18 @@ async function apiRcRegression(request, cfg, user) {
     remediationSelfTest.pass
       ? `${remediationSelfTest.candidates} stale candidates → ${remediationSelfTest.selected} selected across ${remediationSelfTest.dates} date batch(es).`
       : 'Prediction Remediation selection self-test не прошёл.',
+    true
+  ));
+
+  const watchdogSelfTest = settlementWatchdogSelfTest();
+  checks.push(rcCheck(
+    'settlement_watchdog_selftest',
+    'safety',
+    'Settlement Watchdog self-test',
+    watchdogSelfTest.pass ? 'pass' : 'fail',
+    watchdogSelfTest.pass
+      ? `shadow=${watchdogSelfTest.shadow}; runtime=${watchdogSelfTest.runtime}; quota=${watchdogSelfTest.quota}; active=${watchdogSelfTest.active}; clean=${watchdogSelfTest.clean}.`
+      : 'Settlement Watchdog decision self-test не прошёл.',
     true
   ));
 
@@ -8792,6 +9125,8 @@ export default {
         calibrationDiagnostics: 'enabled',
         predictionRemediation: 'enabled',
         settlementRecovery: 'enabled',
+        settlementWatchdog: 'enabled',
+        automaticSettlementRecovery: 'runtime-controlled',
         runtimeControlsCacheSeconds: 30,
         devMode: cfg.devMode,
       });
@@ -8962,13 +9297,19 @@ export default {
   async scheduled(controller, env, ctx) {
     const cfg = config(env);
     const scheduledAt = new Date(Number(controller?.scheduledTime || Date.now()));
+    const backtestTask = settleBacktestDaily(cfg);
     const tasks = [
       ['reminders', processDueReminders(cfg)],
-      ['backtest', settleBacktestDaily(cfg)],
+      ['backtest', backtestTask],
     ];
     if (scheduledAt.getUTCHours() === 3 && scheduledAt.getUTCMinutes() < 15) {
       tasks.push(['ops_cleanup', cleanupOpsEvents(cfg)]);
       tasks.push(['integrity_cleanup', cleanupIntegrityData(cfg)]);
+    }
+    if (scheduledAt.getUTCHours() === 4 && scheduledAt.getUTCMinutes() < 15) {
+      // Sequence catch-up after the normal daily settlement so one cron invocation
+      // never spends provider quota on both recovery paths concurrently.
+      tasks.push(['settlement_watchdog', backtestTask.then(() => runSettlementWatchdog(cfg))]);
     }
     ctx.waitUntil((async () => {
       const results = await Promise.allSettled(tasks.map(([, promise]) => promise));

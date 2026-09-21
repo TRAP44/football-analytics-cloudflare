@@ -1,123 +1,104 @@
-# Football Analytics Mini App v6.1.0 — RC9 Integrity Remediation & Settlement Recovery
+# Football Analytics Mini App v6.2.0 — RC10 Settlement Watchdog & Automatic Catch-up
 
-RC9 добавляет защищённое ручное восстановление зависших `pending`-прогнозов. Система всегда начинает с read-only dry-run, ограничивает provider-нагрузку, повторно проверяет список кандидатов перед записью и сохраняет audit trail.
+RC10 закрывает операционный разрыв после RC9: ручной recovery уже умел исправлять stale `pending`, но ежедневный settlement мог пропустить матч после краткого сбоя API-Football или позднего финального статуса. Теперь есть ежедневный watchdog и опциональный автоматический catch-up.
 
-## Integrity Remediation
+## Что нового в RC10
 
-Администратор получает отдельный блок в Model Dashboard:
+- ежедневный Settlement Watchdog запускается существующим cron около `04:00 UTC`;
+- повторный запуск в тот же день блокируется persistent marker;
+- watchdog сканирует prediction history без API-Football;
+- по умолчанию работает в `SHADOW`: обнаруживает stale pending и пишет operational event, но ничего не меняет;
+- автоматический recovery включается только отдельным Runtime Control;
+- авто-режим использует тот же безопасный batch: максимум 20 fixture и 5 уникальных дат;
+- для unattended recovery требуется подтверждённое состояние Runtime Controls и известная безопасная provider quota;
+- до provider-вызовов создаётся audit intent со статусом `started`;
+- cron recovery помечается `action_type=auto_recover`, `trigger_source=cron`;
+- ручной RC9 dry-run/recovery полностью сохраняется.
 
-- сканирование до 5000 prediction snapshots без API-Football запросов;
-- полный integrity summary по загруженной истории;
-- список stale pending старше 36 часов;
-- безопасный batch до 20 fixture и не более 5 уникальных дат;
-- оценку числа provider-запросов до выполнения;
-- обязательную причину ручного recovery;
-- историю completed / partial / failed действий.
+## Почему этот этап нужен
 
-Кнопка recovery активируется только после актуального dry-run. Worker формирует fingerprint выбранных fixture и возвращает `409 REMEDIATION_STALE`, если другая сессия или cron уже изменили список.
+Старый daily settlement проверяет в основном предыдущий день и ставит marker. Если в момент проверки provider был недоступен либо fixture ещё не имел финального статуса, prediction мог остаться `pending` надолго. RC9 дал безопасный ручной способ исправления. RC10 добавляет bounded catch-up, чтобы эта ситуация не требовала постоянного ручного контроля.
 
-Recovery не удаляет predictions и не переписывает immutable probabilities. Он может только перевести существующую строку из `pending` в `settled`, если API-Football вернул подтверждённый финальный счёт.
+## Безопасность автоматического recovery
+
+Автоматический режим не является безусловным cron-write. Для записи одновременно требуются:
+
+- migration v6.2;
+- Runtime Controls, успешно прочитанные из Supabase;
+- `auto_settlement_recovery_enabled = true`;
+- API-Football key;
+- известный безопасный остаток quota;
+- stale pending старше 36 часов;
+- непустой batch до 20 fixture / 5 дат;
+- audit intent, успешно записанный до provider-запросов.
+
+Если любое условие не выполнено, watchdog остаётся read-only и пишет диагностический event.
 
 ## Audit trail
 
-Migration `supabase_migration_v6_1.sql` добавляет таблицу `prediction_integrity_actions`.
+`supabase_migration_v6_2.sql` расширяет `prediction_integrity_actions`:
 
-Сохраняются причина, status, количество inspected / settled / skipped, fixture IDs и технический detail. Telegram ID администратора хранится только для внутреннего аудита и не возвращается интерфейсу.
+- новый `action_type = auto_recover`;
+- новый `trigger_source = admin | cron`;
+- новый промежуточный status `started`.
 
-## Основа RC8 сохраняется
+Если Worker прервётся после audit intent, в истории останется `started`, что делает незавершённую автоматическую попытку видимой. Telegram ID администратора по-прежнему не возвращается UI.
 
-- проверка pre-match времени использует реальное поле таблицы `captured_at` (с fallback на `created_at` для ручных legacy snapshots);
-- пустые `null`/`''` probabilities больше не преобразуются в допустимый ноль;
-- проверяются согласованность счёта с `actual_outcome`, максимум probabilities с `predicted_outcome` и флаг `correct`;
-- строки с integrity FAIL отображаются в диагностике, но исключаются из accuracy / Brier / log loss / calibration cohorts;
-- Brier для dashboard пересчитывается из проверенных probabilities, а не доверяет потенциально пустому сохранённому значению.
+## Runtime Controls
 
-## Prediction Integrity
+Добавлен kill switch:
 
-Админский Model Dashboard теперь отдельно проверяет качество prediction snapshots:
+`Авто settlement catch-up`
 
-- вероятности 1X2 конечные, в диапазоне 0–100 и суммируются примерно до 100%;
-- pre-match snapshot не создан в момент kickoff или позже;
-- `captured_at` и `kickoff_at` присутствуют и корректно читаются;
-- pending-прогнозы не зависли более чем на 36 часов после kickoff;
-- settled-прогнозы содержат фактический outcome и счёт;
-- fixture_id не повторяется в загруженной выборке;
-- analysis_version присутствует;
-- signal_probabilities присутствует там, где версия их поддерживает.
+Safe default — `OFF`. В этом режиме watchdog активен, но работает только как наблюдатель. Rollback к старым revision, где поле отсутствует, также трактуется как `OFF`.
 
-Ошибки metadata старых версий показываются как INFO и не смешиваются с тяжёлыми integrity-нарушениями.
+## Integrity Remediation RC9 сохраняется
 
-## Version Cohorts
+Администратор по-прежнему может:
 
-Model Dashboard показывает отдельные cohorts по `analysis_version`:
+- выполнить read-only dry-run;
+- увидеть stale pending;
+- подтвердить актуальный candidate token;
+- вручную восстановить безопасный batch;
+- увидеть completed / partial / failed / started actions в истории.
 
-- sample;
-- 1X2 accuracy;
-- Brier;
-- log loss;
-- weighted calibration error;
-- coverage signal snapshots;
-- период cohort.
-
-Это описательная аналитика. Приложение НЕ ранжирует версии, не выбирает победителя и ничего не продвигает автоматически.
-
-## Calibration diagnostics
-
-Добавлена метрика:
-
-`Weighted top-probability calibration error`
-
-Она считается как средневзвешенный абсолютный разрыв между средней top-вероятностью и фактическим hit rate по 5 probability buckets.
-
-Меньше — лучше, но эта цифра не является автоматическим release threshold.
-
-## Outcome cohorts
-
-В UI теперь показываются уже существующие server-side разрезы:
-
-- П1
-- X
-- П2
-
-с sample / accuracy / Brier.
-
-## Weekly chart fix
-
-Исправлена старая подпись графика.
-
-Вторая колонка графика всегда показывала размер выборки, поэтому подпись теперь честно говорит:
-
-`accuracy + размер выборки; Brier указан текстом`
+Recovery никогда не удаляет prediction snapshots и не переписывает probabilities, `captured_at`, `analysis_version` или signal snapshots. Меняются только settlement-поля существующей `pending` строки после подтверждённого финального счёта.
 
 ## Regression QA
 
-RC9 smoke-test сохраняет расширенный `Prediction Integrity self-test` и добавляет `Prediction Remediation self-test`.
-Он не делает внешних запросов и проверяет, что движок умеет обнаружить:
-- неверную сумму probabilities;
-- отсутствующую probability;
-- отсутствующий `captured_at`;
-- snapshot после kickoff;
-- stale pending;
-- несогласованный фактический outcome;
-- `predicted_outcome`, не совпадающий с максимальной вероятностью.
+RC10 сохраняет предыдущие self-test и добавляет `Settlement Watchdog self-test`. Он проверяет decision policy без внешних запросов:
 
-Remediation self-test отдельно проверяет выбор stale pending, размер batch и ограничение по уникальным датам. Он не выполняет внешние запросы и не изменяет данные.
+- SHADOW при выключенном auto recovery;
+- блокировку при quota guard;
+- переход в recovery только при разрешённых guardrails;
+- clean state при отсутствии stale pending.
 
-## Ограничение выборки
+## Cron
 
-`/api/model-quality` загружает максимум:
-- 500 settled;
-- 500 pending
+`wrangler.jsonc` менять не нужно. Уже существующий cron `*/5 * * * *` используется так:
 
-за выбранный период.
+- reminders и обычный settlement — как раньше;
+- maintenance cleanup — около `03:00 UTC`;
+- Settlement Watchdog — только в окне `04:00–04:14 UTC`, с daily marker.
 
-Если лимит достигнут, UI явно предупреждает, что integrity относится к загруженной выборке.
+## Health
 
-Remediation dry-run сканирует до 5000 строк. При достижении лимита UI помечает выборку как truncated и не утверждает, что проверена вся история.
+`/health` для RC10 возвращает в том числе:
 
-## SQL / Secrets / API
+- `version = 6.2.0-rc10`;
+- `releaseCandidate = RC10`;
+- `settlementWatchdog = enabled`;
+- `automaticSettlementRecovery = runtime-controlled`;
+- `predictionRemediation = enabled`;
+- `settlementRecovery = enabled`;
+- `monetization = paused`.
 
-- Обязательна migration `supabase_migration_v6_1.sql`.
-- Новые Secrets не нужны.
-- Dry-run не использует API-Football. Ручной recovery делает не более 5 запросов за запуск и блокируется защитой квоты.
-- Telegram Stars остаются `paused`.
+## Ограничения
+
+- один auto recovery batch в сутки;
+- максимум 20 fixture;
+- максимум 5 уникальных дат / provider calls;
+- на FREE автоматический режим не работает при неизвестной quota;
+- scan ограничен 5000 prediction rows и явно сообщает `truncated`;
+- автоматические изменения весов/калибратора отсутствуют;
+- Telegram Stars остаются на паузе.

@@ -1,59 +1,71 @@
-# QA Release Checklist — v6.1.0 RC9
+# QA Release Checklist — v6.2.0 RC10
 
 ## Deploy
-- заменены 5 файлов;
-- выполнена `supabase_migration_v6_1.sql`;
+
+- применён `supabase_migration_v6_2.sql`;
+- заменены Worker / client файлы;
 - Secrets не менялись;
+- `wrangler.jsonc` и cron не менялись;
 - Telegram Stars остаются paused.
 
 ## Health
-Проверить:
-- version = `6.1.0-rc9`
-- releaseCandidate = `RC9`
-- predictionIntegrity = `enabled`
-- modelVersionCohorts = `enabled`
-- calibrationDiagnostics = `enabled`
-- predictionRemediation = `enabled`
-- settlementRecovery = `enabled`
-- devMode = `false`
 
-## Model Dashboard
-- Prediction Integrity отображается;
-- probabilities check PASS;
-- snapshot timestamps PASS;
-- snapshot timing PASS;
-- settled outcome PASS;
-- predicted outcome PASS;
-- correct flag PASS;
-- duplicate fixture PASS;
-- stale pending = 0 или объяснимый WARN;
-- legacy version/signal metadata может быть INFO;
-- Version cohorts отображаются без ranking/winner;
-- Outcome cohorts П1/X/П2 отображаются;
-- Cal error подписан как диагностическая метрика;
-- weekly chart подпись соответствует реальным bars.
+Проверить:
+
+- version = `6.2.0-rc10`;
+- releaseCandidate = `RC10`;
+- predictionIntegrity = `enabled`;
+- predictionRemediation = `enabled`;
+- settlementRecovery = `enabled`;
+- settlementWatchdog = `enabled`;
+- automaticSettlementRecovery = `runtime-controlled`;
+- devMode = `false`.
+
+## Runtime Controls
+
+- новый toggle `Авто settlement catch-up` отображается;
+- default = OFF / SHADOW;
+- save создаёт новую revision;
+- history snapshot содержит auto-settlement state;
+- rollback корректно восстанавливает state;
+- rollback к pre-RC10 snapshot безопасно трактует auto recovery как OFF.
 
 ## Integrity Remediation
-- migration status готов;
-- read-only dry-run загружается без API-Football запросов;
-- scan показывает размер и truncated status;
-- stale pending candidates ограничены 20 fixture / 5 дат;
-- кнопка recovery требует причину;
-- изменение списка кандидатов приводит к `REMEDIATION_STALE`, а не к записи;
-- recovery меняет только `pending` с подтверждённым финальным счётом;
-- completed / partial / failed action появляется в audit history;
-- Telegram ID администратора не отображается в UI;
-- удаление prediction snapshots отсутствует.
 
-## RC9
+- dry-run остаётся read-only;
+- stale pending старше 36 часов определяется;
+- batch ≤ 20 fixture / ≤ 5 дат;
+- candidate token защищает ручной recovery от stale session;
+- карточка Watchdog показывает SHADOW или AUTO;
+- `trigger_source` виден как `admin` / `cron`, admin Telegram ID не отображается;
+- manual recovery не удаляет и не перезаписывает immutable snapshot fields.
+
+## Settlement Watchdog
+
+- migration v6.2 определяется как ready;
+- при auto OFF decision = shadow / observe;
+- при неизвестной FREE quota unattended recovery блокируется;
+- Runtime Controls должны быть подтверждены из Supabase, stale/default state не разрешает auto write;
+- перед provider calls создаётся audit row `auto_recover / cron / started`;
+- после успешного run status становится completed или partial;
+- при ошибке status становится failed либо остаётся started как видимый interrupted intent;
+- daily marker предотвращает повторный полноценный run в тот же день;
+- watchdog не делает provider calls, если stale pending = 0.
+
+## RC10
+
 Обязательный PASS:
+
 - Prediction Integrity self-test;
 - Prediction Remediation self-test;
-- Prediction remediation audit table;
-- предыдущие Runtime Controls / rollback checks;
-- Supabase schema;
+- Settlement Watchdog self-test;
+- Settlement Watchdog schema v6.2;
+- Runtime Controls RC10;
+- Runtime rollback history;
 - Production Load Safety;
-- Admin Security.
+- Admin Security;
+- Supabase required tables.
 
-## Важно
-RC9 исправляет только settlement-поля stale pending после повторной проверки API-Football. Immutable probabilities, captured_at и model version не перезаписываются. Веса/калибратор не меняются.
+## Инварианты
+
+RC10 не меняет probabilities, captured_at, analysis_version, signal snapshots, веса модели или калибратор. Автоматизация касается только settlement recovery stale pending. Монетизация остаётся выключенной.

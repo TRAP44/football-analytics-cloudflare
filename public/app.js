@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.1.0-rc9';
+const CLIENT_VERSION = '6.2.0-rc10';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc9';
+const CLIENT_RELEASE_CHANNEL = 'rc10';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -579,7 +579,7 @@ async function runStartupSequence() {
 
   setBootStatus(
     'Подключаю данные',
-    manifest ? `RC9 · API contract ${manifest.apiContract}` : 'Manifest временно недоступен — продолжаю в безопасном режиме.',
+    manifest ? `RC10 · API contract ${manifest.apiContract}` : 'Manifest временно недоступен — продолжаю в безопасном режиме.',
     38
   );
 
@@ -1115,6 +1115,7 @@ async function loadModelQuality(force = false) {
 }
 
 function remediationActionLabel(action) {
+  if (action?.status === 'started') return 'Запущено';
   if (action?.status === 'completed') return 'Выполнено';
   if (action?.status === 'partial') return 'Частично';
   if (action?.status === 'failed') return 'Ошибка';
@@ -1159,6 +1160,7 @@ function renderModelRemediation() {
 
   const scan = r.scan || {};
   const recovery = r.recovery || {};
+  const watchdog = r.watchdog || {};
   status.textContent = !r.schemaReady
     ? 'Нужна supabase_migration_v6_1.sql: dry-run доступен, выполнение заблокировано.'
     : recovery.stalePending
@@ -1168,7 +1170,8 @@ function renderModelRemediation() {
     <div><span>Просканировано</span><strong>${Number(scan.loadedRows || 0)}</strong><small>${scan.truncated ? `лимит ${Number(scan.maxRows || 0)}` : 'полная выборка'}</small></div>
     <div><span>Stale pending</span><strong>${Number(recovery.stalePending || 0)}</strong><small>старше 36 часов</small></div>
     <div><span>В batch</span><strong>${Number(recovery.selectedCount || 0)}</strong><small>до ${Number(recovery.maxFixturesPerRun || 20)} fixture</small></div>
-    <div><span>API calls</span><strong>${Number(recovery.estimatedProviderCalls || 0)}</strong><small>по уникальным датам</small></div>`;
+    <div><span>API calls</span><strong>${Number(recovery.estimatedProviderCalls || 0)}</strong><small>по уникальным датам</small></div>
+    <div><span>Watchdog</span><strong>${watchdog.autoRecoveryEnabled ? 'AUTO' : 'SHADOW'}</strong><small>${watchdog.schemaReady ? `${escapeHtml(watchdog.scheduleUtc || '04:00')} UTC` : 'нужна migration v6.2'}</small></div>`;
 
   candidates.innerHTML = (recovery.candidates || []).length
     ? `<div class="model-remediation-list">${recovery.candidates.map(item => `
@@ -1179,7 +1182,7 @@ function renderModelRemediation() {
   history.innerHTML = actions.length
     ? `<div class="model-remediation-history-head"><strong>Последние действия</strong><span>admin ID скрыт</span></div>
        <div class="model-remediation-action-list">${actions.map(action => `
-         <div class="${escapeHtml(action.status || 'failed')}"><span><strong>${escapeHtml(remediationActionLabel(action))}</strong><small>${escapeHtml(action.reason || 'Без комментария')} · ${action.createdAt ? escapeHtml(dateTime(action.createdAt)) : '—'}</small></span><em>${Number(action.settledCount || 0)} settled · ${Number(action.skippedCount || 0)} skipped</em></div>`).join('')}</div>`
+         <div class="${escapeHtml(action.status || 'failed')}"><span><strong>${escapeHtml(remediationActionLabel(action))}${action.actionType === 'auto_recover' ? ' · AUTO' : ''}</strong><small>${escapeHtml(action.reason || 'Без комментария')} · ${action.createdAt ? escapeHtml(dateTime(action.createdAt)) : '—'}${action.triggerSource ? ` · ${escapeHtml(action.triggerSource)}` : ''}</small></span><em>${Number(action.settledCount || 0)} settled · ${Number(action.skippedCount || 0)} skipped</em></div>`).join('')}</div>`
     : '<p class="tiny quality-method-note">Audit trail пока пуст.</p>';
 
   runBtn.textContent = state.modelRemediationRunning ? 'Восстанавливаю…' : 'Восстановить pending';
@@ -1444,11 +1447,11 @@ function runClientContractSmoke() {
   const adminSections = [...document.querySelectorAll('[data-admin-only]')];
   add('admin_sections', 'Admin UI маркировка', adminSections.length >= 6, `${adminSections.length} технических секций помечены data-admin-only.`);
 
-  const cssLink = document.querySelector('link[href*="styles.css?v=6.1.0"]');
-  const appScript = document.querySelector('script[src*="app.js?v=6.1.0"]');
+  const cssLink = document.querySelector('link[href*="styles.css?v=6.2.0"]');
+  const appScript = document.querySelector('script[src*="app.js?v=6.2.0"]');
   add('cache_bust', 'Cache-bust assets', Boolean(cssLink && appScript), `CSS ${cssLink ? 'OK' : 'MISS'} · JS ${appScript ? 'OK' : 'MISS'}.`);
 
-  add('client_version', 'Версия клиента', CLIENT_VERSION === '6.1.0-rc9', CLIENT_VERSION);
+  add('client_version', 'Версия клиента', CLIENT_VERSION === '6.2.0-rc10', CLIENT_VERSION);
   add('telegram_sdk', 'Telegram WebApp SDK', Boolean(window.Telegram?.WebApp), window.Telegram?.WebApp ? 'SDK доступен.' : 'В обычном браузере SDK может отсутствовать; в Telegram должен быть доступен.');
 
   const navButtons = ['navMatches','navSearch','navHistory','navProfile'].filter(id => $(id));
@@ -1459,7 +1462,7 @@ function runClientContractSmoke() {
 
   const bootIds = ['bootGate','bootTitle','bootText','bootProgressFill','bootReloadBtn','versionBanner','versionReloadBtn'];
   add('startup_contract', 'Startup / rollback contract', bootIds.every(id => $(id)), `${bootIds.filter(id => $(id)).length}/${bootIds.length} элементов.`);
-  const runtimeIds = ['runtimeBanner','runtimeBannerTitle','runtimeBannerText','runtimeControlsStatus','runtimeSaveBtn','runtimeHistoryList','runtimeChangeReason'];
+  const runtimeIds = ['runtimeBanner','runtimeBannerTitle','runtimeBannerText','runtimeControlsStatus','runtimeSaveBtn','runtimeHistoryList','runtimeChangeReason','runtimeAutoSettlementRecoveryToggle'];
   add('runtime_controls_contract', 'Runtime Controls + rollback contract', runtimeIds.every(id => $(id)), `${runtimeIds.filter(id => $(id)).length}/${runtimeIds.length} элементов.`);
   add('api_contract', 'Client API contract', CLIENT_API_CONTRACT === 5, `contract ${CLIENT_API_CONTRACT} · ${CLIENT_RELEASE_CHANNEL}`);
 
@@ -1474,7 +1477,7 @@ function runClientContractSmoke() {
 }
 
 function rcStateText(status) {
-  if (status === 'rc_ready') return 'RC9 READY';
+  if (status === 'rc_ready') return 'RC10 READY';
   if (status === 'rc_with_holds') return 'RC + HOLD';
   if (status === 'blocked') return 'BLOCK';
   return 'WAIT';
@@ -1508,7 +1511,7 @@ function renderRcRegression() {
   const r = state.rcRegression;
   if (!r) {
     badge.className = 'rc-badge';
-    badge.textContent = 'RC9';
+    badge.textContent = 'RC10';
     status.textContent = 'Полный regression smoke-test ещё не запускался.';
     meta.textContent = 'Тест безопасный: без Analyze, без изменений user data, без API-Football.';
     summary.innerHTML = '';
@@ -1619,7 +1622,8 @@ function runtimeHistorySummary(controls = {}) {
   if (controls.liveEnabled === false) disabled.push('live');
   if (controls.remindersEnabled === false) disabled.push('reminders');
   if (controls.expandedDataEnabled === false) disabled.push('expanded');
-  return disabled.length ? `Ограничения: ${disabled.join(', ')}` : 'Все функции включены';
+  const auto = controls.autoSettlementRecoveryEnabled ? ' · auto-settlement ON' : ' · auto-settlement shadow';
+  return disabled.length ? `Ограничения: ${disabled.join(', ')}${auto}` : `Core-функции включены${auto}`;
 }
 
 function renderRuntimeHistory() {
@@ -1773,6 +1777,7 @@ function renderRuntimeControls() {
     ['runtimeLiveToggle', 'liveEnabled'],
     ['runtimeRemindersToggle', 'remindersEnabled'],
     ['runtimeExpandedToggle', 'expandedDataEnabled'],
+    ['runtimeAutoSettlementRecoveryToggle', 'autoSettlementRecoveryEnabled'],
   ];
   for (const [id, key] of map) if ($(id)) $(id).checked = Boolean(c[key]);
   if ($('runtimeMessage')) $('runtimeMessage').value = c.message || '';
@@ -1811,6 +1816,7 @@ function runtimeControlsPayload() {
     liveEnabled: runtimeControlsFormValue('runtimeLiveToggle', true),
     remindersEnabled: runtimeControlsFormValue('runtimeRemindersToggle', true),
     expandedDataEnabled: runtimeControlsFormValue('runtimeExpandedToggle', true),
+    autoSettlementRecoveryEnabled: runtimeControlsFormValue('runtimeAutoSettlementRecoveryToggle', false),
     message: String($('runtimeMessage')?.value || '').trim().slice(0, 280),
     reason: String($('runtimeChangeReason')?.value || '').trim().slice(0, 240),
     action: 'update',
@@ -1826,10 +1832,13 @@ async function saveRuntimeControls(payload = null, options = {}) {
   }
 
   const disabling = body.maintenanceMode || !body.analysisEnabled || !body.searchEnabled || !body.liveEnabled || !body.remindersEnabled || !body.expandedDataEnabled;
+  const enablingAutoRecovery = Boolean(body.autoSettlementRecoveryEnabled) && !Boolean(state.runtimeControlsAdmin?.controls?.autoSettlementRecoveryEnabled);
   if (!options.skipConfirm) {
-    const message = disabling
-      ? 'Применить ограничения сейчас? Они затронут обычных пользователей без нового Deploy.'
-      : 'Вернуть все runtime-функции в рабочий режим?';
+    const message = enablingAutoRecovery
+      ? 'Включить автоматический settlement catch-up? Watchdog сможет один раз в сутки сделать до 5 provider-запросов и изменить только stale pending со подтверждённым финальным счётом.'
+      : disabling
+        ? 'Применить ограничения сейчас? Они затронут обычных пользователей без нового Deploy.'
+        : 'Применить runtime-настройки?';
     if (!window.confirm(message)) return;
   }
 
@@ -1868,7 +1877,7 @@ async function saveRuntimeControls(payload = null, options = {}) {
 async function restoreRuntimeDefaults() {
   const current = state.runtimeControlsAdmin?.controls;
   if (!current) { await loadRuntimeControlsAdmin(true); return; }
-  if (!window.confirm('Вернуть безопасные значения по умолчанию: все функции включены, maintenance выключен?')) return;
+  if (!window.confirm('Вернуть safe defaults: core-функции включены, maintenance выключен, автоматический settlement recovery остаётся в shadow?')) return;
   await saveRuntimeControls({
     expectedRevision: Number(current.revision || 0),
     maintenanceMode: false,
@@ -1877,6 +1886,7 @@ async function restoreRuntimeDefaults() {
     liveEnabled: true,
     remindersEnabled: true,
     expandedDataEnabled: true,
+    autoSettlementRecoveryEnabled: false,
     message: '',
     reason: 'Safe defaults restored by administrator.',
     action: 'defaults',
@@ -5002,7 +5012,7 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// v6.1 RC9: bounded settlement recovery with dry-run, concurrency token and audit trail.
+// v6.2 RC10: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
 // The boot watchdog never leaves the user behind an endless splash screen.
 const startupWatchdog = setTimeout(() => {
   if (!$('bootGate')?.hidden && !state.compatibilityBlocked) {
