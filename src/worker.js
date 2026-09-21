@@ -1,3 +1,11 @@
+import {
+  CALIBRATION_LIFECYCLE_RULES,
+  calibrationProfileFingerprint,
+  evaluatePostPromotionRollback,
+  evaluatePromotionWindows,
+  splitRollingValidation,
+} from './calibration-lifecycle.js';
+
 const memory = {
   users: new Map(),
   usage: new Map(),
@@ -59,11 +67,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.8.0-rc16';
+const APP_VERSION = '6.9.0-rc17';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc16';
-const RC_NAME = 'RC16';
+const RELEASE_CHANNEL = 'rc17';
+const RC_NAME = 'RC17';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -112,7 +120,7 @@ const MODEL_BASE_WEIGHTS = Object.freeze({
   h2h: 0.08,
 });
 
-const CALIBRATION_PROFILE_VERSION = '3.8-promotion1';
+const CALIBRATION_PROFILE_VERSION = '3.9-champion1';
 const CALIBRATION_CACHE_KEY = `model-calibration:global:${CALIBRATION_PROFILE_VERSION}`;
 const CALIBRATION_CACHE_MINUTES = 360;
 
@@ -663,6 +671,8 @@ function appManifest(cfg) {
       twoPassSettlementFinality: true,
       calibrationPromotionGate: true,
       adaptiveWeightsHoldout: true,
+      calibrationChampionChallenger: true,
+      calibrationAutomaticRollback: true,
     },
     serverTime: new Date().toISOString(),
   };
@@ -1856,16 +1866,12 @@ function fitTemperatureCalibration(rows) {
   const valid = (rows || [])
     .filter(row => ['home','draw','away'].includes(String(row.actual_outcome || '')) && rowRawProbabilities(row))
     .sort((a, b) => Date.parse(a.kickoff_at || 0) - Date.parse(b.kickoff_at || 0));
-  if (valid.length < 50) {
-    return { active: false, temperature: 1, sample: valid.length, trainSample: 0, validationSample: 0, baselineLogLoss: null, calibratedLogLoss: null, improvement: null };
+  const split = splitRollingValidation(valid);
+  if (!split.ready) {
+    return { active: false, temperature: 1, candidateTemperature: 1, sample: valid.length, trainSample: 0, validationSample: 0, validationWindows: [], baselineLogLoss: null, calibratedLogLoss: null, improvement: null, reason: 'Нужно минимум 80 trusted-матчей для двух последовательных holdout-окон.' };
   }
 
-  const validationCount = Math.max(10, Math.min(50, Math.floor(valid.length * 0.2)));
-  const train = valid.slice(0, valid.length - validationCount);
-  const validation = valid.slice(valid.length - validationCount);
-  if (train.length < 40 || validation.length < 10) {
-    return { active: false, temperature: 1, sample: valid.length, trainSample: train.length, validationSample: validation.length, baselineLogLoss: null, calibratedLogLoss: null, improvement: null };
-  }
+  const { train, windows } = split;
 
   let bestTemperature = 1;
   let bestTrainLoss = Infinity;
@@ -1878,11 +1884,27 @@ function fitTemperatureCalibration(rows) {
     }
   }
 
+  const validationWindows = windows.map(window => {
+    const baselineLogLoss = averageMetric(window, row => logLossFromProbabilities(rowRawProbabilities(row), row.actual_outcome));
+    const candidateLogLoss = averageMetric(window, row => logLossFromProbabilities(temperatureScaleProbabilities(rowRawProbabilities(row), bestTemperature), row.actual_outcome));
+    const baselineBrier = averageMetric(window, row => brierFromProbabilities(rowRawProbabilities(row), row.actual_outcome));
+    const candidateBrier = averageMetric(window, row => brierFromProbabilities(temperatureScaleProbabilities(rowRawProbabilities(row), bestTemperature), row.actual_outcome));
+    return {
+      sample: window.length,
+      from: window[0]?.kickoff_at || null,
+      to: window.at(-1)?.kickoff_at || null,
+      baselineBrier,
+      candidateBrier,
+      baselineLogLoss,
+      candidateLogLoss,
+    };
+  });
+  const gate = evaluatePromotionWindows(validationWindows);
+  const validation = windows.flat();
   const baselineValidation = averageMetric(validation, row => logLossFromProbabilities(rowRawProbabilities(row), row.actual_outcome));
   const candidateValidation = averageMetric(validation, row => logLossFromProbabilities(temperatureScaleProbabilities(rowRawProbabilities(row), bestTemperature), row.actual_outcome));
   const gain = Number.isFinite(baselineValidation) && Number.isFinite(candidateValidation) ? baselineValidation - candidateValidation : 0;
-  // Guardrail: a temperature learned on the training slice is activated only if it also helps on newer holdout matches.
-  const active = Math.abs(bestTemperature - 1) >= 0.04 && gain >= 0.005;
+  const active = Math.abs(bestTemperature - 1) >= 0.04 && gate.pass;
   return {
     active,
     temperature: active ? bestTemperature : 1,
@@ -1890,9 +1912,11 @@ function fitTemperatureCalibration(rows) {
     sample: valid.length,
     trainSample: train.length,
     validationSample: validation.length,
+    validationWindows: gate.windows,
     baselineLogLoss: Number.isFinite(baselineValidation) ? Math.round(baselineValidation * 1000) / 1000 : null,
     calibratedLogLoss: Number.isFinite(candidateValidation) ? Math.round(candidateValidation * 1000) / 1000 : null,
     improvement: Number.isFinite(baselineValidation) && baselineValidation > 0 ? Math.round((gain / baselineValidation) * 1000) / 10 : null,
+    reason: gate.reason,
   };
 }
 
@@ -1973,7 +1997,8 @@ function fitAdaptiveSignalWeightsHoldout(rows) {
     .sort((a, b) => Date.parse(a.kickoff_at || 0) - Date.parse(b.kickoff_at || 0));
 
   const fallbackStats = signalCalibrationStats(valid);
-  if (valid.length < 60) {
+  const split = splitRollingValidation(valid);
+  if (!split.ready) {
     return {
       active: false,
       weights: { ...MODEL_BASE_WEIGHTS },
@@ -1988,18 +2013,18 @@ function fitAdaptiveSignalWeightsHoldout(rows) {
       candidateLogLoss: null,
       brierGain: null,
       logLossGain: null,
+      validationWindows: [],
       changedWeightL1: 0,
-      reason: 'Нужно минимум 60 trusted-матчей для отдельной проверки адаптивных весов.',
+      reason: 'Нужно минимум 80 trusted-матчей для двух последовательных holdout-окон весов.',
     };
   }
 
-  const validationCount = Math.max(12, Math.min(50, Math.floor(valid.length * 0.2)));
-  const train = valid.slice(0, valid.length - validationCount);
-  const validation = valid.slice(valid.length - validationCount);
+  const { train, windows } = split;
+  const validation = windows.flat();
   const trainStats = signalCalibrationStats(train);
   const candidate = adaptiveSignalWeights(trainStats);
 
-  if (train.length < 48 || validation.length < 12 || !candidate.active) {
+  if (!candidate.active) {
     return {
       active: false,
       weights: { ...MODEL_BASE_WEIGHTS },
@@ -2014,16 +2039,32 @@ function fitAdaptiveSignalWeightsHoldout(rows) {
       candidateLogLoss: null,
       brierGain: null,
       logLossGain: null,
+      validationWindows: [],
       changedWeightL1: 0,
       reason: 'Обучающая часть ещё не сформировала устойчивый кандидат весов.',
     };
   }
 
-  const evaluated = validation.map(row => ({
-    actualOutcome: String(row.actual_outcome),
-    baseline: rowSignalBlendProbabilities(row, MODEL_BASE_WEIGHTS),
-    candidate: rowSignalBlendProbabilities(row, candidate.weights),
-  })).filter(row => row.baseline && row.candidate);
+  const evaluateRows = source => source.map(row => ({
+      source: row,
+      actualOutcome: String(row.actual_outcome),
+      baseline: rowSignalBlendProbabilities(row, MODEL_BASE_WEIGHTS),
+      candidate: rowSignalBlendProbabilities(row, candidate.weights),
+    })).filter(row => row.baseline && row.candidate);
+  const evaluated = evaluateRows(validation);
+  const validationWindows = windows.map(window => {
+    const windowRows = evaluateRows(window);
+    return {
+      sample: windowRows.length,
+      from: windowRows[0]?.source?.kickoff_at || null,
+      to: windowRows.at(-1)?.source?.kickoff_at || null,
+      baselineBrier: averageMetric(windowRows, row => brierFromProbabilities(row.baseline, row.actualOutcome)),
+      candidateBrier: averageMetric(windowRows, row => brierFromProbabilities(row.candidate, row.actualOutcome)),
+      baselineLogLoss: averageMetric(windowRows, row => logLossFromProbabilities(row.baseline, row.actualOutcome)),
+      candidateLogLoss: averageMetric(windowRows, row => logLossFromProbabilities(row.candidate, row.actualOutcome)),
+    };
+  });
+  const gate = evaluatePromotionWindows(validationWindows);
 
   const baselineBrier = averageMetric(evaluated, row => brierFromProbabilities(row.baseline, row.actualOutcome));
   const candidateBrier = averageMetric(evaluated, row => brierFromProbabilities(row.candidate, row.actualOutcome));
@@ -2034,11 +2075,8 @@ function fitAdaptiveSignalWeightsHoldout(rows) {
   const changedWeightL1 = Object.keys(MODEL_BASE_WEIGHTS)
     .reduce((sum, name) => sum + Math.abs(Number(candidate.weights?.[name] || 0) - Number(MODEL_BASE_WEIGHTS[name] || 0)), 0);
 
-  // RC16 gate: adaptive weights must improve Brier on newer holdout matches and must not worsen log loss.
-  const active = evaluated.length >= 12 &&
-    changedWeightL1 >= 0.01 &&
-    Number.isFinite(brierGain) && brierGain >= 0.001 &&
-    Number.isFinite(logLossGain) && logLossGain >= 0;
+  // RC17 gate: both sequential holdout windows must beat the baseline.
+  const active = changedWeightL1 >= 0.01 && gate.pass;
 
   return {
     active,
@@ -2048,6 +2086,7 @@ function fitAdaptiveSignalWeightsHoldout(rows) {
     sample: valid.length,
     trainSample: train.length,
     validationSample: evaluated.length,
+    validationWindows: gate.windows,
     baselineBrier: Number.isFinite(baselineBrier) ? Math.round(baselineBrier * 10000) / 10000 : null,
     candidateBrier: Number.isFinite(candidateBrier) ? Math.round(candidateBrier * 10000) / 10000 : null,
     baselineLogLoss: Number.isFinite(baselineLogLoss) ? Math.round(baselineLogLoss * 1000) / 1000 : null,
@@ -2055,9 +2094,7 @@ function fitAdaptiveSignalWeightsHoldout(rows) {
     brierGain: Number.isFinite(brierGain) ? Math.round(brierGain * 10000) / 10000 : null,
     logLossGain: Number.isFinite(logLossGain) ? Math.round(logLossGain * 1000) / 1000 : null,
     changedWeightL1: Math.round(changedWeightL1 * 10000) / 10000,
-    reason: active
-      ? 'Кандидат весов улучшил Brier на более новых trusted holdout-матчах и не ухудшил log loss.'
-      : 'Кандидат весов остаётся в тени: holdout не подтвердил безопасное улучшение.',
+    reason: active ? gate.reason : `Кандидат весов остаётся в тени: ${gate.reason}`,
   };
 }
 
@@ -2118,18 +2155,11 @@ async function probeCalibrationPromotionSchema(cfg) {
 }
 
 async function calibrationPromotionFingerprint(profile) {
-  const gate = profile?.promotionGate || {};
-  const source = JSON.stringify({
-    version: profile?.version || CALIBRATION_PROFILE_VERSION,
-    sample: Number(profile?.sample || 0),
-    temperatureCandidate: Number(profile?.temperatureValidation?.candidateTemperature || 1),
-    temperatureActive: Boolean(profile?.temperatureActive),
-    candidateWeights: profile?.weightsValidation?.candidateWeights || {},
-    weightValidationSample: Number(profile?.weightsValidation?.validationSample || 0),
-    decision: gate.status || 'baseline',
+  return await calibrationProfileFingerprint({
+    ...profile,
+    temperature: profile?.temperatureActive ? profile?.temperature : 1,
+    signalWeights: profile?.weightsActive ? profile?.signalWeights : { ...MODEL_BASE_WEIGHTS },
   });
-  const digest = await crypto.subtle.digest('SHA-256', enc.encode(source));
-  return bytesToHex(new Uint8Array(digest)).slice(0, 32);
 }
 
 function calibrationMetricOrNull(value) {
@@ -2169,6 +2199,218 @@ async function persistCalibrationPromotionValidation(cfg, profile) {
       appVersion: APP_VERSION,
     },
   }, 'candidate_fingerprint');
+}
+
+async function probeCalibrationLifecycleSchema(cfg) {
+  if (!hasSupabase(cfg)) return { ok: false, status: 'not_configured' };
+  try {
+    const [profiles, state] = await Promise.all([
+      probeOptionalTable(cfg, 'model_calibration_profiles'),
+      probeOptionalTable(cfg, 'model_calibration_state'),
+    ]);
+    return { ok: Boolean(profiles.ok && state.ok), profiles, state };
+  } catch (error) {
+    return { ok: false, status: error?.code || 'error' };
+  }
+}
+
+function lifecycleProfileFromRow(row) {
+  if (!row) return null;
+  const stored = parseJsonObject(row?.detail)?.profile || {};
+  return {
+    ...stored,
+    version: String(row.profile_version || stored.version || CALIBRATION_PROFILE_VERSION),
+    fingerprint: String(row.fingerprint || stored.fingerprint || ''),
+    temperature: Number(row.temperature || stored.temperature || 1),
+    temperatureActive: Boolean(row.temperature_active),
+    weightsActive: Boolean(row.weights_active),
+    signalWeights: parseJsonObject(row.signal_weights) || stored.signalWeights || { ...MODEL_BASE_WEIGHTS },
+    sample: Number(row.trusted_sample || stored.sample || 0),
+    mode: row.temperature_active || row.weights_active ? 'active' : 'baseline',
+  };
+}
+
+async function persistCalibrationLifecycleProfile(cfg, profile, status = 'challenger') {
+  const fingerprint = profile?.fingerprint || await calibrationPromotionFingerprint(profile);
+  const weights = profile?.weightsValidation || {};
+  const temp = profile?.temperatureValidation || {};
+  await supaInsertIgnore(cfg, 'model_calibration_profiles', {
+    fingerprint,
+    profile_version: String(profile?.version || CALIBRATION_PROFILE_VERSION),
+    status,
+    temperature: Number(profile?.temperature || 1),
+    temperature_active: Boolean(profile?.temperatureActive),
+    signal_weights: profile?.signalWeights || { ...MODEL_BASE_WEIGHTS },
+    weights_active: Boolean(profile?.weightsActive),
+    trusted_sample: Number(profile?.sample || 0),
+    train_sample: Math.max(Number(weights.trainSample || 0), Number(temp.trainSample || 0)),
+    validation_sample: Math.max(Number(weights.validationSample || 0), Number(temp.validationSample || 0)),
+    validation_windows: weights.validationWindows?.length ? weights.validationWindows : temp.validationWindows || [],
+    baseline_brier: calibrationMetricOrNull(weights.baselineBrier),
+    candidate_brier: calibrationMetricOrNull(weights.candidateBrier),
+    baseline_log_loss: calibrationMetricOrNull(weights.baselineLogLoss) ?? calibrationMetricOrNull(temp.baselineLogLoss),
+    candidate_log_loss: calibrationMetricOrNull(weights.candidateLogLoss) ?? calibrationMetricOrNull(temp.calibratedLogLoss),
+    source_cutoff: profile?.generatedAt || new Date().toISOString(),
+    detail: { profile: { ...profile, fingerprint }, appVersion: APP_VERSION },
+  }, 'fingerprint');
+  return fingerprint;
+}
+
+async function loadCalibrationLifecycleState(cfg) {
+  const state = await supaSelectOne(cfg, 'model_calibration_state', { id: 'eq.global' });
+  if (!state) return { state: null, active: null, previous: null };
+  const [active, previous] = await Promise.all([
+    state.active_fingerprint ? supaSelectOne(cfg, 'model_calibration_profiles', { fingerprint: `eq.${state.active_fingerprint}` }) : null,
+    state.previous_fingerprint ? supaSelectOne(cfg, 'model_calibration_profiles', { fingerprint: `eq.${state.previous_fingerprint}` }) : null,
+  ]);
+  return { state, active: lifecycleProfileFromRow(active), previous: lifecycleProfileFromRow(previous) };
+}
+
+function probabilitiesForCalibrationProfile(row, profile) {
+  const weights = profile?.weightsActive ? profile.signalWeights : MODEL_BASE_WEIGHTS;
+  const blended = rowSignalBlendProbabilities(row, weights);
+  if (!blended) return null;
+  return profile?.temperatureActive ? temperatureScaleProbabilities(blended, profile.temperature) : blended;
+}
+
+function compareCalibrationProfiles(rows, champion, challenger) {
+  const valid = (rows || []).filter(row => ['home','draw','away'].includes(String(row?.actual_outcome || '')));
+  const split = splitRollingValidation(valid);
+  if (!split.ready) return { pass: false, status: 'shadow', windows: [], reason: 'Недостаточно trusted-матчей для champion–challenger сравнения.' };
+  const windows = split.windows.map(window => {
+    const evaluated = window.map(row => ({
+      row,
+      actual: String(row.actual_outcome),
+      baseline: probabilitiesForCalibrationProfile(row, champion),
+      candidate: probabilitiesForCalibrationProfile(row, challenger),
+    })).filter(item => item.baseline && item.candidate);
+    return {
+      sample: evaluated.length,
+      from: evaluated[0]?.row?.kickoff_at || null,
+      to: evaluated.at(-1)?.row?.kickoff_at || null,
+      baselineBrier: averageMetric(evaluated, item => brierFromProbabilities(item.baseline, item.actual)),
+      candidateBrier: averageMetric(evaluated, item => brierFromProbabilities(item.candidate, item.actual)),
+      baselineLogLoss: averageMetric(evaluated, item => logLossFromProbabilities(item.baseline, item.actual)),
+      candidateLogLoss: averageMetric(evaluated, item => logLossFromProbabilities(item.candidate, item.actual)),
+    };
+  });
+  return evaluatePromotionWindows(windows);
+}
+
+function evaluateActivePostPromotion(rows, active, previous) {
+  if (!active?.fingerprint || !previous?.fingerprint) return evaluatePostPromotionRollback({ sample: 0 });
+  const evaluated = (rows || []).filter(row =>
+    String(row?.calibration_profile_fingerprint || '') === String(active.fingerprint)
+    && ['home','draw','away'].includes(String(row?.actual_outcome || ''))
+  ).map(row => ({
+    actual: String(row.actual_outcome),
+    active: rowFinalProbabilities(row),
+    champion: probabilitiesForCalibrationProfile(row, previous),
+  })).filter(item => item.active && item.champion);
+  return evaluatePostPromotionRollback({
+    sample: evaluated.length,
+    activeBrier: averageMetric(evaluated, item => brierFromProbabilities(item.active, item.actual)),
+    championBrier: averageMetric(evaluated, item => brierFromProbabilities(item.champion, item.actual)),
+    activeLogLoss: averageMetric(evaluated, item => logLossFromProbabilities(item.active, item.actual)),
+    championLogLoss: averageMetric(evaluated, item => logLossFromProbabilities(item.champion, item.actual)),
+  });
+}
+
+async function saveCalibrationLifecycleState(cfg, currentState, next = {}) {
+  const revision = Math.max(0, Number(currentState?.revision || 0)) + 1;
+  const row = {
+    id: 'global',
+    active_fingerprint: next.activeFingerprint || null,
+    previous_fingerprint: next.previousFingerprint || null,
+    activated_at: next.activatedAt || new Date().toISOString(),
+    last_evaluated_at: new Date().toISOString(),
+    last_rollback_at: next.lastRollbackAt || currentState?.last_rollback_at || null,
+    revision,
+    updated_at: new Date().toISOString(),
+  };
+  await supaUpsert(cfg, 'model_calibration_state', row, 'id');
+  return row;
+}
+
+async function resolveCalibrationLifecycle(cfg, candidate, trustedRows) {
+  const fingerprint = await calibrationPromotionFingerprint(candidate);
+  candidate.fingerprint = fingerprint;
+  const schema = await probeCalibrationLifecycleSchema(cfg);
+  if (!schema.ok) {
+    const baseline = baselineCalibrationProfile(candidate.sample, candidate.signalStats || []);
+    baseline.fingerprint = await calibrationPromotionFingerprint(baseline);
+    return {
+      ...baseline,
+      lifecycle: { available: false, status: 'blocked', activeFingerprint: baseline.fingerprint, challengerFingerprint: fingerprint, reason: 'Нужна supabase_migration_v6_9.sql; production остаётся на baseline.' },
+    };
+  }
+
+  const eligible = candidate?.promotionGate?.status === 'promoted';
+  await persistCalibrationLifecycleProfile(cfg, candidate, eligible ? 'challenger' : candidate?.promotionGate?.status === 'held' ? 'held' : 'challenger');
+  let lifecycle = await loadCalibrationLifecycleState(cfg);
+
+  if (!lifecycle.active) {
+    const baseline = baselineCalibrationProfile(candidate.sample, candidate.signalStats || []);
+    baseline.fingerprint = await calibrationPromotionFingerprint(baseline);
+    await persistCalibrationLifecycleProfile(cfg, baseline, 'active');
+    const state = await saveCalibrationLifecycleState(cfg, lifecycle.state, { activeFingerprint: baseline.fingerprint });
+    lifecycle = { state, active: baseline, previous: null };
+  }
+
+  const postPromotion = evaluateActivePostPromotion(trustedRows, lifecycle.active, lifecycle.previous);
+  if (postPromotion.rollback && lifecycle.previous?.fingerprint) {
+    const failedFingerprint = lifecycle.active.fingerprint;
+    const state = await saveCalibrationLifecycleState(cfg, lifecycle.state, {
+      activeFingerprint: lifecycle.previous.fingerprint,
+      previousFingerprint: null,
+      lastRollbackAt: new Date().toISOString(),
+    });
+    await Promise.all([
+      supaPatch(cfg, 'model_calibration_profiles', { fingerprint: `eq.${failedFingerprint}` }, { status: 'rolled_back', retired_at: new Date().toISOString(), rollback_reason: postPromotion.reason }),
+      supaPatch(cfg, 'model_calibration_profiles', { fingerprint: `eq.${lifecycle.previous.fingerprint}` }, { status: 'active', activated_at: new Date().toISOString(), retired_at: null, rollback_reason: null }),
+    ]);
+    await recordOpsEvent(cfg, { severity: 'warning', source: 'model', eventType: 'calibration_rollback', code: 'CALIBRATION_AUTO_ROLLBACK', message: postPromotion.reason, meta: { failedFingerprint, restoredFingerprint: lifecycle.previous.fingerprint, sample: postPromotion.sample } });
+    lifecycle = { state, active: lifecycle.previous, previous: null };
+  }
+
+  let comparison = null;
+  let promoted = false;
+  if (eligible && fingerprint !== lifecycle.active.fingerprint) {
+    comparison = compareCalibrationProfiles(trustedRows, lifecycle.active, candidate);
+    if (comparison.pass) {
+      const previousFingerprint = lifecycle.active.fingerprint;
+      const state = await saveCalibrationLifecycleState(cfg, lifecycle.state, { activeFingerprint: fingerprint, previousFingerprint });
+      await Promise.all([
+        supaPatch(cfg, 'model_calibration_profiles', { fingerprint: `eq.${previousFingerprint}` }, { status: 'retired', retired_at: new Date().toISOString() }),
+        supaPatch(cfg, 'model_calibration_profiles', { fingerprint: `eq.${fingerprint}` }, { status: 'active', activated_at: new Date().toISOString(), retired_at: null, rollback_reason: null }),
+      ]);
+      await recordOpsEvent(cfg, { severity: 'info', source: 'model', eventType: 'calibration_promotion', code: 'CALIBRATION_PROMOTED', message: comparison.reason, meta: { fingerprint, previousFingerprint } });
+      lifecycle = { state, active: candidate, previous: lifecycle.active };
+      promoted = true;
+    }
+  }
+
+  const production = lifecycle.active || baselineCalibrationProfile(candidate.sample, candidate.signalStats || []);
+  return {
+    ...production,
+    fingerprint: production.fingerprint,
+    lifecycle: {
+      available: true,
+      status: promoted ? 'promoted' : production.fingerprint === fingerprint ? 'active' : eligible ? 'held' : 'shadow',
+      activeFingerprint: production.fingerprint,
+      previousFingerprint: lifecycle.previous?.fingerprint || null,
+      challengerFingerprint: fingerprint,
+      revision: Number(lifecycle.state?.revision || 0),
+      comparison,
+      postPromotion,
+      candidate: {
+        mode: candidate.mode,
+        sample: candidate.sample,
+        promotionGate: candidate.promotionGate,
+        validationWindows: candidate.weightsValidation?.validationWindows || candidate.temperatureValidation?.validationWindows || [],
+      },
+    },
+  };
 }
 
 function baselineCalibrationProfile(sample = 0, stats = []) {
@@ -2215,7 +2457,7 @@ function buildCalibrationProfile(rows) {
   const temperature = fitTemperatureCalibration(valid);
   const weights = fitAdaptiveSignalWeightsHoldout(valid);
   const active = Boolean(temperature.active || weights.active);
-  const validationReady = Number(weights.validationSample || 0) >= 12 || Number(temperature.validationSample || 0) >= 10;
+  const validationReady = Number(weights.validationSample || 0) >= 40 || Number(temperature.validationSample || 0) >= 40;
   const shadow = !active && (valid.length >= 20 || validationReady || signalStats.some(x => x.sample >= 10));
   const promotionStatus = active ? 'promoted' : validationReady ? 'held' : shadow ? 'shadow' : 'baseline';
   return {
@@ -2240,15 +2482,15 @@ function buildCalibrationProfile(rows) {
       weightHoldoutSample: Number(weights.validationSample || 0),
       temperatureHoldoutSample: Number(temperature.validationSample || 0),
       note: active
-        ? 'Автокалибровка разрешена только компонентам, прошедшим более новый trusted holdout.'
+        ? 'Автокалибровка прошла два последовательных trusted holdout-окна и готова к champion–challenger сравнению.'
         : validationReady
           ? 'Кандидат удержан в тени: holdout ещё не подтвердил безопасное улучшение.'
           : 'Кандидат остаётся в тени до достаточной trusted holdout-выборки.',
     },
     note: active
-      ? 'RC16: изменения вероятностей разрешены только компонентам, прошедшим holdout promotion gate.'
+      ? 'RC17: кандидат прошёл два holdout-окна; постоянный lifecycle решает продвижение относительно активного champion.'
       : shadow
-        ? 'RC16: кандидат измеряется в тени; итоговые вероятности не меняются без подтверждённого holdout-улучшения.'
+        ? 'RC17: challenger измеряется в тени; production использует только постоянный active-профиль.'
         : 'Недостаточно trusted-прогнозов для безопасной автоматической калибровки.',
   };
 }
@@ -2272,10 +2514,18 @@ async function getCalibrationProfile(cfg, { force = false } = {}) {
   } else {
     rows = [...memory.modelPredictions.values()].filter(x => x.status === 'settled');
   }
-  const profile = buildCalibrationProfile(rows);
-  try { await persistCalibrationPromotionValidation(cfg, profile); } catch (error) {
+  const candidate = buildCalibrationProfile(rows);
+  try { await persistCalibrationPromotionValidation(cfg, candidate); } catch (error) {
     console.warn('calibration promotion audit skipped', error?.message || error);
   }
+  const profile = hasSupabase(cfg)
+    ? await resolveCalibrationLifecycle(cfg, candidate, verifiedSettledRows(rows)).catch(async error => {
+        console.warn('calibration lifecycle fallback', error?.message || error);
+        const baseline = baselineCalibrationProfile(candidate.sample, candidate.signalStats || []);
+        baseline.fingerprint = await calibrationPromotionFingerprint(baseline);
+        return { ...baseline, lifecycle: { available: false, status: 'fallback', activeFingerprint: baseline.fingerprint, challengerFingerprint: candidate.fingerprint || null, reason: 'Lifecycle persistence failed; production remains on baseline.' } };
+      })
+    : { ...candidate, fingerprint: await calibrationPromotionFingerprint(candidate), lifecycle: { available: false, status: 'memory' } };
   try { await setCache(CALIBRATION_CACHE_KEY, 0, profile, cfg, CALIBRATION_CACHE_MINUTES); } catch {}
   return profile;
 }
@@ -2316,6 +2566,7 @@ async function captureModelPrediction(payload, cfg) {
     raw_draw_prob: Number.isFinite(Number(payload.rawProbabilities?.draw)) ? Number(payload.rawProbabilities.draw) : Number(probabilities.draw),
     raw_away_prob: Number.isFinite(Number(payload.rawProbabilities?.away)) ? Number(payload.rawProbabilities.away) : Number(probabilities.away),
     calibration_mode: String(payload.modelCalibration?.mode || 'baseline'),
+    calibration_profile_fingerprint: String(payload.modelCalibration?.fingerprint || ''),
     calibration_temperature: Number(payload.modelCalibration?.temperature || 1),
     calibration_sample: Number(payload.modelCalibration?.sample || 0),
     calibration_weights: payload.modelCalibration?.signalWeights || {},
@@ -2338,7 +2589,7 @@ async function captureModelPrediction(payload, cfg) {
       // Keep v3.6 installations functional until the optional v3.7 ALTER migration is applied.
       try {
         const legacyRow = { ...row };
-        for (const key of ['signal_probabilities','raw_home_prob','raw_draw_prob','raw_away_prob','calibration_mode','calibration_temperature','calibration_sample','calibration_weights']) delete legacyRow[key];
+        for (const key of ['signal_probabilities','raw_home_prob','raw_draw_prob','raw_away_prob','calibration_mode','calibration_profile_fingerprint','calibration_temperature','calibration_sample','calibration_weights']) delete legacyRow[key];
         await supaInsertIgnore(cfg, 'model_predictions', legacyRow, 'fixture_id');
         console.warn('v3.7 calibration columns are not available yet; prediction stored in legacy format');
         return true;
@@ -3252,7 +3503,7 @@ function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = 
     calibrationDiagnostics: {
       weightedTopCalibrationError: weightedTopCalibrationError(rows),
       label: 'Weighted top-probability calibration error',
-      note: 'Средневзвешенный абсолютный разрыв между средней top-вероятностью и hit rate по 5 probability buckets; меньше — лучше. RC16 не использует эту метрику отдельно: продвижение калибровки требует holdout-проверки.',
+      note: 'Средневзвешенный абсолютный разрыв между средней top-вероятностью и hit rate по 5 probability buckets; меньше — лучше. RC17 не использует эту метрику отдельно: продвижение требует двух holdout-окон и сравнения с champion.',
     },
     calibrationEngine: calibrationProfile || baselineCalibrationProfile(evaluated, signalPerformance),
     calibrationImpact,
@@ -7102,7 +7353,7 @@ async function apiReleaseReadiness(request, cfg) {
     probeOptionalTable(cfg, 'runtime_controls'),
     probeOptionalTable(cfg, 'runtime_control_history'),
   ]);
-  const [runtimeState, watchdogSchema, runLedgerSchema, finalitySchema, adjudicationSchema, trustSchema, calibrationPromotionSchema] = await Promise.all([
+  const [runtimeState, watchdogSchema, runLedgerSchema, finalitySchema, adjudicationSchema, trustSchema, calibrationPromotionSchema, calibrationLifecycleSchema] = await Promise.all([
     loadRuntimeControls(cfg, { force: true }),
     probeSettlementWatchdogSchema(cfg),
     probeSettlementRunLedgerSchema(cfg),
@@ -7110,6 +7361,7 @@ async function apiReleaseReadiness(request, cfg) {
     probeSettlementAdjudicationSchema(cfg),
     probeSettlementTrustSchema(cfg),
     probeCalibrationPromotionSchema(cfg),
+    probeCalibrationLifecycleSchema(cfg),
   ]);
   const runtime = runtimeState.value;
   const provider = diagnostics.provider || {};
@@ -7147,6 +7399,8 @@ async function apiReleaseReadiness(request, cfg) {
       calibrationPromotionSchema.ok ? 'Аудит holdout-решений доступен.' : 'Нужна supabase_migration_v6_8.sql.', true),
     releaseCheck('calibration_promotion_selftest', 'Самопроверка продвижения калибровки', calibrationPromotionSelfTest().pass ? 'pass' : 'fail',
       calibrationPromotionSelfTest().pass ? 'Устойчивое улучшение проходит gate, synthetic overfit блокируется.' : 'Calibration Promotion self-test не прошёл.', true),
+    releaseCheck('calibration_lifecycle_schema', 'Champion–challenger lifecycle v6.9', calibrationLifecycleSchema.ok ? 'pass' : 'fail',
+      calibrationLifecycleSchema.ok ? 'Постоянный active-профиль и rollback state доступны.' : 'Нужна supabase_migration_v6_9.sql.', true),
     releaseCheck('automatic_settlement_recovery', 'Автоматическое восстановление результатов', 'pass',
       runtime.autoSettlementRecoveryEnabled ? 'Runtime switch ON: cron catch-up разрешён guardrails.' : 'Runtime switch OFF: watchdog работает в shadow и только сигнализирует.', false),
     releaseCheck('runtime_controls_schema', 'Схема управления функциями v5.7', runtimeTable.ok ? 'pass' : 'fail', runtimeTable.ok ? 'Таблица runtime_controls доступна.' : 'Нужна supabase_migration_v5_7.sql.', true),
@@ -7387,8 +7641,8 @@ async function apiRcRegression(request, cfg, user) {
   const startedAt = Date.now();
 
   // 1) Core runtime / security configuration.
-  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.8.0-rc16' ? 'pass' : 'fail',
-    `Worker: ${APP_VERSION}; ожидается 6.8.0-rc16.`, true));
+  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.9.0-rc17' ? 'pass' : 'fail',
+    `Worker: ${APP_VERSION}; ожидается 6.9.0-rc17.`, true));
   checks.push(rcCheck('api_contract', 'runtime', 'Контракт API', API_CONTRACT_VERSION === 5 ? 'pass' : 'fail',
     `Contract ${API_CONTRACT_VERSION}; min client ${MIN_CLIENT_VERSION}.`, true));
   checks.push(rcCheck('app_manifest', 'runtime', 'Публичный манифест приложения', appManifest(cfg)?.version === APP_VERSION ? 'pass' : 'fail',
@@ -7426,6 +7680,8 @@ async function apiRcRegression(request, cfg, user) {
     ['runtime_control_history', 'Runtime rollback history', true],
     ['model_predictions', 'Model predictions', true],
     ['model_calibration_validations', 'Calibration promotion audit', true],
+    ['model_calibration_profiles', 'Calibration profile registry', true],
+    ['model_calibration_state', 'Calibration active state', true],
     ['prediction_integrity_actions', 'Prediction remediation audit', true],
     ['ops_events', 'Observability', false],
     ['match_integrity_runs', 'Integrity runs', true],
@@ -10433,7 +10689,7 @@ async function apiAnalyze(request, cfg, user) {
     homeName, awayName, minutesToKickoff, confidence,
   });
   if (calibrationProfile.mode === 'active') {
-    notes.factors.unshift(`Калибратор v3.8 активен на базе ${Number(calibrationProfile.sample || 0)} завершённых прогнозов; корректировки ограничены защитными порогами.`);
+    notes.factors.unshift(`Калибратор v3.9 active (${String(calibrationProfile.fingerprint || '').slice(0, 8) || 'baseline'}) на базе ${Number(calibrationProfile.sample || 0)} trusted-прогнозов.`);
   } else if (calibrationProfile.mode === 'shadow') {
     notes.risks.push('Калибратор пока работает в теневом режиме: выборка собирается, но итоговые вероятности ещё не корректируются автоматически.');
   }
@@ -10488,6 +10744,7 @@ async function apiAnalyze(request, cfg, user) {
     rawProbabilities,
     modelCalibration: {
       version: calibrationProfile.version || CALIBRATION_PROFILE_VERSION,
+      fingerprint: calibrationProfile.fingerprint || '',
       mode: calibrationProfile.mode || 'baseline',
       sample: Number(calibrationProfile.sample || 0),
       temperature: Number(calibrationProfile.temperature || 1),
@@ -10497,6 +10754,7 @@ async function apiAnalyze(request, cfg, user) {
       validation: calibrationProfile.temperatureValidation || null,
       weightsValidation: calibrationProfile.weightsValidation || null,
       promotionGate: calibrationProfile.promotionGate || null,
+      lifecycle: calibrationProfile.lifecycle || null,
       note: calibrationProfile.note || '',
     },
     confidence,
@@ -10504,7 +10762,7 @@ async function apiAnalyze(request, cfg, user) {
     modelBreakdown: {
       weights: blended.weights,
       signals: blended.signals,
-      method: 'Рынок, API prediction, форма и H2H объединяются динамически. v3.8 применяет изменения весов и резкости вероятностей только после отдельной проверки на более новых trusted holdout-матчах.',
+      method: 'Рынок, API prediction, форма и H2H объединяются динамически. v3.9 применяет постоянный active-профиль только после двух holdout-окон и champion–challenger проверки.',
     },
     dataPolicy: {
       dataMode: paid ? 'expanded' : 'standard',
@@ -10604,6 +10862,8 @@ export default {
         twoPassSettlementFinality: 'enabled',
         calibrationPromotionGate: 'enabled',
         adaptiveWeightsHoldout: 'enabled',
+        calibrationChampionChallenger: 'enabled',
+        calibrationAutomaticRollback: 'enabled',
         runtimeControlsCacheSeconds: 30,
         devMode: cfg.devMode,
       });
