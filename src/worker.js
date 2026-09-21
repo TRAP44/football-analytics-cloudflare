@@ -13,6 +13,14 @@ const memory = {
   integrity: { lastRun: null, recentIssues: [] },
   releaseReadiness: null,
   providerAudit: { last: null, byFixture: new Map() },
+  providerFeatureFetch: {
+    api: 0,
+    cache: 0,
+    stale: 0,
+    skipped: 0,
+    byFeature: {},
+    lastUpdatedAt: null,
+  },
   telemetry: {
     startedAt: new Date().toISOString(),
     apiRequests: 0,
@@ -36,7 +44,7 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '4.8.0-provider-transition';
+const APP_VERSION = '4.9.0-quota-orchestrator';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -147,23 +155,27 @@ function isAdminUser(user, cfg) {
 function publicDataCapabilities() {
   const paid = ['PRO', 'ULTRA', 'MEGA'].includes(String(memory.provider?.plan || '').toUpperCase());
   const healthy = paidQuotaHealthy();
+  const publicBudget = providerPublicBudgetMode();
+  const canEnrich = Boolean(paid && healthy && !['conserve','emergency'].includes(publicBudget.mode));
   return {
     visibility: 'public',
     mode: paid ? 'expanded' : 'standard',
-    label: paid ? 'Расширенное покрытие' : 'Стандартное покрытие',
-    refreshSeconds: liveRefreshSeconds(),
+    label: publicBudget.label,
+    refreshSeconds: publicBudget.liveRefreshSeconds,
     features: {
       events: true,
       matchStatistics: true,
       lineupsFallback: Boolean(paid && healthy),
-      playerStats: Boolean(paid && healthy),
-      injuries: Boolean(paid && healthy),
-      liveOdds: Boolean(paid && healthy),
-      oddsMovement: Boolean(paid && healthy),
+      playerStats: canEnrich,
+      injuries: canEnrich,
+      liveOdds: canEnrich,
+      oddsMovement: canEnrich,
     },
     note: paid
-      ? 'Расширенный режим активен: приложение использует повышенную квоту для более частого LIVE и дополнительных запросов по требованию.'
-      : 'API-Football даёт доступ к основным endpoint и на FREE, но приложение сознательно работает экономно. После увеличения квоты расширенный режим включится автоматически.',
+      ? (canEnrich
+          ? 'Расширенный режим активен. Feature-level cache снижает повторные запросы.'
+          : 'Расширенный тариф активен, но сейчас включён защитный режим квоты.')
+      : 'Сейчас приложение экономит запросы. После увеличения квоты расширенные данные включатся автоматически.',
   };
 }
 
@@ -2213,6 +2225,285 @@ function providerTransitionProfile() {
   };
 }
 
+
+const PROVIDER_BUDGET_FLOORS = Object.freeze({
+  FREE:  { dailyReserve: 20,  minuteReserve: 3,  conserveDailyPct: 25, conserveMinutePct: 35 },
+  PRO:   { dailyReserve: 400, minuteReserve: 18, conserveDailyPct: 10, conserveMinutePct: 12 },
+  ULTRA: { dailyReserve: 2500, minuteReserve: 30, conserveDailyPct: 8, conserveMinutePct: 10 },
+  MEGA:  { dailyReserve: 4000, minuteReserve: 45, conserveDailyPct: 7, conserveMinutePct: 9 },
+});
+
+const PROVIDER_FEATURE_TTLS = Object.freeze({
+  events:      { live: 30,  finished: 21600, upcoming: 300 },
+  statistics:  { live: 45,  finished: 21600, upcoming: 300 },
+  players:     { live: 120, finished: 21600, upcoming: 600 },
+  lineups:     { live: 300, finished: 21600, upcoming: 300 },
+  injuries:    { live: 1800, finished: 21600, upcoming: 1800 },
+  liveOdds:    { live: 30,  finished: 300, upcoming: 120 },
+});
+
+function providerFeatureCounter(feature, type) {
+  const root = memory.providerFeatureFetch;
+  root[type] = Number(root[type] || 0) + 1;
+  root.byFeature ||= {};
+  root.byFeature[feature] ||= { api: 0, cache: 0, stale: 0, skipped: 0 };
+  root.byFeature[feature][type] = Number(root.byFeature[feature][type] || 0) + 1;
+  root.lastUpdatedAt = new Date().toISOString();
+}
+
+function quotaPercentRemaining(remaining, limit) {
+  const r = Number(remaining), l = Number(limit);
+  if (!Number.isFinite(r) || !Number.isFinite(l) || l <= 0) return null;
+  return clamp(r / l * 100, 0, 100);
+}
+
+function providerBudgetProfile() {
+  const p = memory.provider || {};
+  const plan = String(p.plan || 'UNKNOWN').toUpperCase();
+  const floors = PROVIDER_BUDGET_FLOORS[plan] || PROVIDER_BUDGET_FLOORS.FREE;
+  const dailyPct = quotaPercentRemaining(p.dailyRemaining, p.dailyLimit);
+  const minutePct = quotaPercentRemaining(p.minuteRemaining, p.minuteLimit);
+  const dailyRemaining = Number.isFinite(Number(p.dailyRemaining)) ? Number(p.dailyRemaining) : null;
+  const minuteRemaining = Number.isFinite(Number(p.minuteRemaining)) ? Number(p.minuteRemaining) : null;
+  const cooldown = providerSnapshot().cooldownActive;
+  const paid = ['PRO','ULTRA','MEGA'].includes(plan);
+
+  let mode = paid ? 'expanded' : 'economy';
+  if (plan === 'UNKNOWN') mode = 'waiting';
+  if (cooldown) mode = 'emergency';
+  else if (
+    (dailyRemaining !== null && dailyRemaining <= floors.dailyReserve) ||
+    (minuteRemaining !== null && minuteRemaining <= floors.minuteReserve)
+  ) mode = 'emergency';
+  else if (
+    (dailyPct !== null && dailyPct <= floors.conserveDailyPct) ||
+    (minutePct !== null && minutePct <= floors.conserveMinutePct)
+  ) mode = 'conserve';
+
+  const label = ({
+    waiting: 'Ожидаем квоту',
+    economy: 'Экономный режим',
+    expanded: 'Расширенный режим',
+    conserve: 'Режим экономии',
+    emergency: 'Защитный резерв',
+  })[mode] || mode;
+
+  return {
+    visibility: 'admin',
+    plan,
+    paid,
+    mode,
+    label,
+    daily: {
+      limit: Number.isFinite(Number(p.dailyLimit)) ? Number(p.dailyLimit) : null,
+      remaining: dailyRemaining,
+      remainingPct: dailyPct === null ? null : Math.round(dailyPct * 10) / 10,
+      reserve: floors.dailyReserve,
+    },
+    minute: {
+      limit: Number.isFinite(Number(p.minuteLimit)) ? Number(p.minuteLimit) : null,
+      remaining: minuteRemaining,
+      remainingPct: minutePct === null ? null : Math.round(minutePct * 10) / 10,
+      reserve: floors.minuteReserve,
+    },
+    dailyRemainingPct: dailyPct === null ? null : Math.round(dailyPct * 10) / 10,
+    liveRefreshSeconds: mode === 'conserve' ? Math.max(60, liveRefreshSeconds()) : mode === 'emergency' ? 90 : liveRefreshSeconds(),
+    counters: {
+      api: Number(memory.providerFeatureFetch?.api || 0),
+      cache: Number(memory.providerFeatureFetch?.cache || 0),
+      stale: Number(memory.providerFeatureFetch?.stale || 0),
+      skipped: Number(memory.providerFeatureFetch?.skipped || 0),
+      byFeature: memory.providerFeatureFetch?.byFeature || {},
+      lastUpdatedAt: memory.providerFeatureFetch?.lastUpdatedAt || null,
+    },
+    note: mode === 'emergency'
+      ? 'Дополнительные enrichment-запросы блокируются, пока квота не восстановится.'
+      : mode === 'conserve'
+        ? 'Часть enrichment-запросов замедлена или пропускается, чтобы сохранить резерв.'
+        : paid
+          ? 'Квота здорова: расширенные данные разрешены с feature-level cache.'
+          : 'FREE работает в экономном режиме с приоритетом основных данных матча.',
+  };
+}
+
+function providerPublicBudgetMode() {
+  const budget = providerBudgetProfile();
+  return {
+    mode: budget.mode,
+    label: budget.mode === 'expanded'
+      ? 'Расширенное покрытие'
+      : budget.mode === 'conserve'
+        ? 'Сберегающий режим'
+        : budget.mode === 'emergency'
+          ? 'Ограниченное обновление'
+          : 'Стандартное покрытие',
+    liveRefreshSeconds: budget.liveRefreshSeconds,
+  };
+}
+
+function providerFeaturePolicy(feature, context = {}) {
+  const budget = providerBudgetProfile();
+  const mode = context.mode || 'live';
+  const paid = budget.paid;
+  const limitedCoverage = Boolean(context.limitedCoverage);
+  const featureTtl = PROVIDER_FEATURE_TTLS[feature] || { live: 60, finished: 3600, upcoming: 300 };
+  let ttlSeconds = Number(featureTtl[mode] || featureTtl.live || 60);
+  let allowed = true;
+  let reason = '';
+
+  if (limitedCoverage && ['events','statistics','players','lineups','injuries','liveOdds'].includes(feature)) {
+    allowed = false;
+    reason = 'limited_coverage';
+  }
+
+  if (['players','lineups','injuries','liveOdds'].includes(feature) && !paid) {
+    allowed = false;
+    reason = 'economy_plan';
+  }
+
+  if (budget.mode === 'emergency' && !['events','statistics'].includes(feature)) {
+    allowed = false;
+    reason = 'quota_reserve';
+  }
+
+  if (budget.mode === 'conserve') {
+    ttlSeconds = Math.max(ttlSeconds, feature === 'events' ? 45 : feature === 'statistics' ? 75 : 300);
+    if (['players','injuries','liveOdds'].includes(feature)) {
+      allowed = false;
+      reason = 'conserve_mode';
+    }
+  }
+
+  if (mode === 'finished') ttlSeconds = Math.max(ttlSeconds, 21600);
+  if (mode === 'upcoming' && feature === 'liveOdds') {
+    allowed = false;
+    reason = 'not_live';
+  }
+
+  return {
+    feature,
+    allowed,
+    reason,
+    ttlSeconds,
+    budgetMode: budget.mode,
+    priority: ['events','statistics'].includes(feature) ? 'core' : ['lineups','players'].includes(feature) ? 'enhanced' : 'optional',
+  };
+}
+
+function featureCacheAgeSeconds(payload) {
+  const t = Date.parse(payload?.fetchedAt || '');
+  return Number.isFinite(t) ? Math.max(0, Math.floor((Date.now() - t) / 1000)) : null;
+}
+
+async function providerFeatureFetch({ feature, path, params, fixtureId, cfg, context = {} }) {
+  const policy = providerFeaturePolicy(feature, context);
+  const cacheKey = `provider-feature:${feature}:${Number(fixtureId || 0)}:v4.9`;
+  const freshEntry = await getCacheEntry(cacheKey, cfg, false).catch(() => null);
+  if (freshEntry?.payload) {
+    providerFeatureCounter(feature, 'cache');
+    return {
+      data: freshEntry.payload.data ?? [],
+      meta: {
+        feature,
+        source: 'cache',
+        fetchedAt: freshEntry.payload.fetchedAt || null,
+        ageSeconds: featureCacheAgeSeconds(freshEntry.payload),
+        expiresAt: freshEntry.expiresAt || null,
+        policy,
+      },
+    };
+  }
+
+  const staleEntry = await getCacheEntry(cacheKey, cfg, true).catch(() => null);
+
+  if (!policy.allowed) {
+    providerFeatureCounter(feature, 'skipped');
+    if (staleEntry?.payload) {
+      providerFeatureCounter(feature, 'stale');
+      return {
+        data: staleEntry.payload.data ?? [],
+        meta: {
+          feature,
+          source: 'stale',
+          fetchedAt: staleEntry.payload.fetchedAt || null,
+          ageSeconds: featureCacheAgeSeconds(staleEntry.payload),
+          expiresAt: staleEntry.expiresAt || null,
+          policy,
+          reason: policy.reason,
+        },
+      };
+    }
+    return {
+      data: [],
+      meta: {
+        feature,
+        source: 'skipped',
+        fetchedAt: null,
+        ageSeconds: null,
+        expiresAt: null,
+        policy,
+        reason: policy.reason,
+      },
+    };
+  }
+
+  try {
+    const data = await apiFootball(path, params, cfg);
+    const wrapped = { data, fetchedAt: new Date().toISOString() };
+    await setCache(cacheKey, fixtureId, wrapped, cfg, policy.ttlSeconds / 60).catch(() => null);
+    providerFeatureCounter(feature, 'api');
+    return {
+      data,
+      meta: {
+        feature,
+        source: 'api',
+        fetchedAt: wrapped.fetchedAt,
+        ageSeconds: 0,
+        expiresAt: new Date(Date.now() + policy.ttlSeconds * 1000).toISOString(),
+        policy,
+      },
+    };
+  } catch (error) {
+    if (staleEntry?.payload) {
+      providerFeatureCounter(feature, 'stale');
+      return {
+        data: staleEntry.payload.data ?? [],
+        meta: {
+          feature,
+          source: 'stale',
+          fetchedAt: staleEntry.payload.fetchedAt || null,
+          ageSeconds: featureCacheAgeSeconds(staleEntry.payload),
+          expiresAt: staleEntry.expiresAt || null,
+          policy,
+          reason: String(error?.code || 'api_error'),
+        },
+      };
+    }
+    providerFeatureCounter(feature, 'skipped');
+    return {
+      data: [],
+      meta: {
+        feature,
+        source: 'error',
+        fetchedAt: null,
+        ageSeconds: null,
+        expiresAt: null,
+        policy,
+        reason: String(error?.code || 'api_error'),
+      },
+    };
+  }
+}
+
+async function apiProviderBudget(request, cfg) {
+  return json({
+    provider: providerSnapshot(),
+    budget: providerBudgetProfile(),
+    transition: providerTransitionProfile(),
+    featureTtls: PROVIDER_FEATURE_TTLS,
+  });
+}
+
 function providerEndpointLabel(key) {
   return ({
     fixture: 'Fixture bundle',
@@ -2699,6 +2990,7 @@ async function apiReleaseReadiness(request, cfg) {
     releaseCheck('integrity', 'Data Integrity schema v3.9', diagnostics.integrity?.migrationReady ? 'pass' : 'fail', diagnostics.integrity?.migrationReady ? 'История integrity-проверок доступна.' : 'Нужна migration v3.9.', true),
     releaseCheck('provider_health', 'Состояние API-Football', provider.health === 'critical' ? 'fail' : provider.health === 'warning' || provider.health === 'waiting' ? 'warn' : 'pass', provider.health === 'waiting' ? 'Ещё не было успешного provider-запроса после старта Worker.' : `Health: ${provider.health || 'unknown'}.`, provider.health === 'critical'),
     releaseCheck('provider_transition', 'Provider transition', providerTransitionProfile().paid ? 'pass' : 'warn', providerTransitionProfile().paid ? `${providerTransitionProfile().plan}: расширенный режим активен.` : `${providerTransitionProfile().plan}: приложение остаётся в экономном режиме до увеличения квоты.`, false),
+    releaseCheck('quota_orchestrator', 'Quota Orchestrator', providerBudgetProfile().mode === 'emergency' ? 'warn' : 'pass', `${providerBudgetProfile().label}; feature cache api/cache=${Number(memory.providerFeatureFetch?.api || 0)}/${Number(memory.providerFeatureFetch?.cache || 0)}.`, false),
     releaseCheck('telegram', 'Telegram bot runtime', cfg.botToken ? 'pass' : 'warn', cfg.botToken ? 'TELEGRAM_BOT_TOKEN доступен.' : 'Без bot token не будут работать Telegram-уведомления.', false),
     releaseCheck('production_mode', 'Production mode', cfg.devMode ? 'warn' : 'pass', cfg.devMode ? 'DEV_MODE=true — перед релизом выключить.' : 'DEV_MODE=false.', false),
     releaseCheck('monetization', 'Монетизация', cfg.monetizationEnabled ? 'warn' : 'pass', cfg.monetizationEnabled ? 'Монетизация включена, хотя текущий план проекта — запускать её в финале.' : 'Оплата корректно остаётся на паузе.', false),
@@ -5057,7 +5349,7 @@ async function apiMatchCenter(request, cfg) {
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'fixtureId обязателен.' }, 400);
 
   // Shared across all users. During LIVE it expires after 60 seconds.
-  const baseCacheKey = `match-center:${fixtureId}:v8-smart-insights`;
+  const baseCacheKey = `match-center:${fixtureId}:v9-quota-orchestrator`;
   const cached = await getCache(baseCacheKey, cfg);
   if (cached) return json({ ...cached, cached: true });
 
@@ -5089,31 +5381,52 @@ async function apiMatchCenter(request, cfg) {
   const homeName = fixture.teams?.home?.name || '';
   const awayName = fixture.teams?.away?.name || '';
   const limitedCoverage = isYouthReserveMatch(leagueName, homeName, awayName);
+  const centerMode = live ? 'live' : finished ? 'finished' : 'upcoming';
+  const featureMeta = {};
 
-  // Free-plan guard: youth/reserve competitions often expose only score/status.
+  // v4.9: every expensive enrichment feature gets its own cache + quota policy.
   // Do not burn extra /events + /statistics calls when coverage is predictably low.
   // For senior competitions, targeted fallbacks are still allowed when embedded
   // fixture data does not contain details.
   let events = embedded.events;
   let statistics = embedded.statistics;
   let playerRows = embedded.players;
-  if (!limitedCoverage && (live || finished) && !events.length) {
-    events = await apiFootball('/fixtures/events', { fixture: fixtureId }, cfg).catch(() => []);
-  }
-  if (!limitedCoverage && (live || finished) && !statistics.length) {
-    statistics = await apiFootball('/fixtures/statistics', { fixture: fixtureId }, cfg).catch(() => []);
-  }
-  // Player-level fixture statistics are useful but expensive on the free plan.
-  // Fetch them automatically only when the provider plan/quota can sustain it.
-  if (!limitedCoverage && (live || finished) && !playerRows.length && paidQuotaHealthy()) {
-    playerRows = await apiFootball('/fixtures/players', { fixture: fixtureId }, cfg).catch(() => []);
-  }
-
-  // v4.3 Expanded Football Data: once a paid provider plan is active and the
-  // quota is healthy, enrich Match Center with official lineups and absences.
-  // On FREE these calls stay disabled, so the current economical behaviour is preserved.
   let lineupRows = embedded.lineups;
   let injuryRows = [];
+
+  if (events.length) {
+    featureMeta.events = { feature: 'events', source: 'embedded', ageSeconds: 0, policy: providerFeaturePolicy('events', { mode: centerMode, limitedCoverage }) };
+  } else if (live || finished) {
+    const result = await providerFeatureFetch({
+      feature: 'events', path: '/fixtures/events', params: { fixture: fixtureId },
+      fixtureId, cfg, context: { mode: centerMode, limitedCoverage },
+    });
+    events = result.data;
+    featureMeta.events = result.meta;
+  }
+
+  if (statistics.length) {
+    featureMeta.statistics = { feature: 'statistics', source: 'embedded', ageSeconds: 0, policy: providerFeaturePolicy('statistics', { mode: centerMode, limitedCoverage }) };
+  } else if (live || finished) {
+    const result = await providerFeatureFetch({
+      feature: 'statistics', path: '/fixtures/statistics', params: { fixture: fixtureId },
+      fixtureId, cfg, context: { mode: centerMode, limitedCoverage },
+    });
+    statistics = result.data;
+    featureMeta.statistics = result.meta;
+  }
+
+  if (playerRows.length) {
+    featureMeta.players = { feature: 'players', source: 'embedded', ageSeconds: 0, policy: providerFeaturePolicy('players', { mode: centerMode, limitedCoverage }) };
+  } else if (live || finished) {
+    const result = await providerFeatureFetch({
+      feature: 'players', path: '/fixtures/players', params: { fixture: fixtureId },
+      fixtureId, cfg, context: { mode: centerMode, limitedCoverage },
+    });
+    playerRows = result.data;
+    featureMeta.players = result.meta;
+  }
+
   const kickoffMsCenter = fixture.fixture?.date ? Date.parse(fixture.fixture.date) : NaN;
   const minutesToKickoffCenter = Number.isFinite(kickoffMsCenter)
     ? Math.round((kickoffMsCenter - Date.now()) / 60000)
@@ -5121,25 +5434,43 @@ async function apiMatchCenter(request, cfg) {
   const lineupsWindow = live || finished || (
     minutesToKickoffCenter !== null && minutesToKickoffCenter <= 120 && minutesToKickoffCenter >= -300
   );
-  if (!limitedCoverage && paidQuotaHealthy() && lineupsWindow && !lineupRows.length) {
-    lineupRows = await apiFootball('/fixtures/lineups', { fixture: fixtureId }, cfg).catch(() => []);
+
+  if (lineupRows.length) {
+    featureMeta.lineups = { feature: 'lineups', source: 'embedded', ageSeconds: 0, policy: providerFeaturePolicy('lineups', { mode: centerMode, limitedCoverage }) };
+  } else if (lineupsWindow) {
+    const result = await providerFeatureFetch({
+      feature: 'lineups', path: '/fixtures/lineups', params: { fixture: fixtureId },
+      fixtureId, cfg, context: { mode: centerMode, limitedCoverage },
+    });
+    lineupRows = result.data;
+    featureMeta.lineups = result.meta;
   }
-  if (!limitedCoverage && paidQuotaHealthy() && !finished) {
-    injuryRows = await apiFootball('/injuries', { fixture: fixtureId }, cfg).catch(() => []);
+
+  if (!finished) {
+    const result = await providerFeatureFetch({
+      feature: 'injuries', path: '/injuries', params: { fixture: fixtureId },
+      fixtureId, cfg, context: { mode: centerMode, limitedCoverage },
+    });
+    injuryRows = result.data;
+    featureMeta.injuries = result.meta;
   }
 
   let liveOdds = null;
   let oddsMovement = null;
-  if (live && !limitedCoverage && cfg.liveOddsEnabled && paidQuotaHealthy()) {
-    const liveOddsRows = await apiFootball('/odds/live', { fixture: fixtureId }, cfg).catch(() => []);
-    liveOdds = extractLiveMarket(liveOddsRows);
+  if (live && cfg.liveOddsEnabled) {
+    const result = await providerFeatureFetch({
+      feature: 'liveOdds', path: '/odds/live', params: { fixture: fixtureId },
+      fixtureId, cfg, context: { mode: centerMode, limitedCoverage },
+    });
+    featureMeta.liveOdds = result.meta;
+    liveOdds = extractLiveMarket(result.data);
     if (liveOdds) {
       await saveOddsSnapshot(fixtureId, liveOdds, cfg);
       const snapshots = await getOddsSnapshots(fixtureId, cfg, 12);
       oddsMovement = buildOddsMovement(snapshots, liveOdds);
     }
   }
-  const refreshSeconds = live ? liveRefreshSeconds() : 0;
+  const refreshSeconds = live ? providerBudgetProfile().liveRefreshSeconds : 0;
   const formattedStatistics = formatLiveStatistics(statistics, homeId, awayId);
   const playerLeaders = formatPlayerLeaders(playerRows, homeId, awayId);
   const lineups = formatLineups(lineupRows, homeId, awayId);
@@ -5190,6 +5521,8 @@ async function apiMatchCenter(request, cfg) {
     playerLeaders,
     lineups,
     absences,
+    dataFreshness: featureMeta,
+    quotaMode: providerPublicBudgetMode(),
     availability: {
       events: events.length > 0,
       statistics: statistics.length > 0,
@@ -5204,10 +5537,14 @@ async function apiMatchCenter(request, cfg) {
     provider: publicDataCapabilities(),
     refreshSeconds,
     note: limitedCoverage
-      ? 'Молодёжный/резервный турнир: в бесплатном режиме не делаем дополнительные запросы за событиями и статистикой, чтобы не тратить лимит API. Счёт и статус обновляются.'
-      : (!events.length && !statistics.length)
-        ? 'Для этого турнира или конкретного матча провайдер не отдаёт детальные события/статистику. Счёт и статус всё равно обновляются.'
-        : '',
+      ? 'Молодёжный/резервный турнир: дополнительные enrichment-запросы ограничены для экономии квоты.'
+      : providerBudgetProfile().mode === 'emergency'
+        ? 'API-квота в защитном резерве: часть расширенных данных временно берётся из кэша или пропускается.'
+        : providerBudgetProfile().mode === 'conserve'
+          ? 'Включён сберегающий режим: тяжёлые enrichment-запросы обновляются реже.'
+          : (!events.length && !statistics.length)
+            ? 'Для этого турнира или матча провайдер не отдаёт детальные события/статистику.'
+            : '',
   };
 
   await setCache(baseCacheKey, fixtureId, payload, cfg, live ? Math.max(1/6, refreshSeconds / 60) : finished ? 720 : 5);
@@ -5548,6 +5885,8 @@ export default {
         modelDashboard2: 'enabled',
         providerTransition: 'enabled',
         coverageAudit: 'enabled',
+        quotaOrchestrator: 'enabled',
+        featureCache: 'enabled',
         devMode: cfg.devMode,
       });
     }
@@ -5584,7 +5923,16 @@ export default {
       // Hiding cards in the UI is not considered authorization.
       if (request.method === 'GET' && url.pathname === '/api/provider') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
-        return json({ provider: providerSnapshot(), transition: providerTransitionProfile(), lastAudit: memory.providerAudit.last });
+        return json({
+          provider: providerSnapshot(),
+          transition: providerTransitionProfile(),
+          budget: providerBudgetProfile(),
+          lastAudit: memory.providerAudit.last,
+        });
+      }
+      if (request.method === 'GET' && url.pathname === '/api/provider/budget') {
+        if (!isAdminUser(user, cfg)) return adminForbidden();
+        return await apiProviderBudget(request, cfg);
       }
       if (request.method === 'GET' && url.pathname === '/api/provider/probe') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
