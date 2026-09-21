@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#111827" />
   <title>Football Manager · Match Intelligence</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=5.1.0" />
+  <link rel="stylesheet" href="/styles.css?v=5.2.0" />
 </head>
 <body>
   <div class="app-shell">
@@ -22,7 +22,14 @@
       <button id="profileBtn" class="profile-badge" type="button" aria-label="Открыть профиль"><i></i><span>FREE</span></button>
     </header>
 
-    <div id="connectionBanner" class="connection-banner" role="status" aria-live="polite" hidden></div>
+    <div id="connectionBanner" class="connection-banner" role="status" aria-live="polite" hidden>
+      <span id="connectionBannerIcon" class="connection-banner-icon">⚠️</span>
+      <div class="connection-banner-copy">
+        <strong id="connectionBannerTitle">Состояние соединения</strong>
+        <span id="connectionBannerText"></span>
+      </div>
+      <button id="connectionRetryBtn" class="connection-retry-btn" type="button" hidden>Повторить</button>
+    </div>
     <div id="versionBanner" class="version-banner" role="status" aria-live="polite" hidden><span id="versionBannerText"></span><button id="versionReloadBtn" type="button">Обновить</button></div>
 
     <main>
@@ -428,6 +435,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=5.1.0"></script>
+  <script type="module" src="/app.js?v=5.2.0"></script>
 </body>
 </html>
