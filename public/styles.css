@@ -1727,3 +1727,57 @@ main { position: relative; z-index: 1; }
   .production-score{grid-column:2;text-align:right}
   .production-runtime-grid{grid-template-columns:1fr}
 }
+
+
+/* v5.2 Production UX & Failure Recovery */
+.connection-banner{
+  display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:9px;
+  transition:opacity .18s ease,transform .18s ease,border-color .18s ease
+}
+.connection-banner-icon{
+  width:28px;height:28px;border-radius:10px;display:grid;place-items:center;
+  background:rgba(148,163,184,.08);font-size:13px
+}
+.connection-banner-copy{min-width:0}
+.connection-banner-copy strong,.connection-banner-copy span{display:block}
+.connection-banner-copy strong{font-size:10px;color:var(--text)}
+.connection-banner-copy span{font-size:9px;line-height:1.35;color:var(--hint);margin-top:2px}
+.connection-retry-btn{
+  border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text);
+  padding:7px 9px;font-size:9px;font-weight:850
+}
+.connection-banner.offline{border-color:color-mix(in srgb,var(--warn) 42%,var(--line))}
+.connection-banner.degraded{border-color:color-mix(in srgb,var(--warn) 36%,var(--line));background:color-mix(in srgb,var(--warn) 7%,var(--surface))}
+.connection-banner.recovering{border-color:color-mix(in srgb,var(--accent) 40%,var(--line));background:color-mix(in srgb,var(--accent) 7%,var(--surface))}
+.connection-banner.recovering .connection-banner-icon{animation:recoverySpin 1s linear infinite}
+.connection-banner.recovered{border-color:color-mix(in srgb,var(--good) 38%,var(--line));background:color-mix(in srgb,var(--good) 7%,var(--surface))}
+.connection-banner.recovered .connection-banner-icon{color:var(--good)}
+@keyframes recoverySpin{to{transform:rotate(360deg)}}
+
+.recovery-card{
+  display:grid;grid-template-columns:38px minmax(0,1fr) auto;gap:10px;align-items:center;
+  border:1px solid color-mix(in srgb,var(--warn) 24%,var(--line));border-radius:16px;padding:13px;
+  background:color-mix(in srgb,var(--warn) 4%,var(--surface))
+}
+.recovery-card.compact{padding:10px;border-radius:13px}
+.recovery-card-icon{
+  width:36px;height:36px;border-radius:12px;display:grid;place-items:center;
+  background:var(--surface-soft);color:var(--accent);font-size:17px;font-weight:900
+}
+.recovery-card-copy{min-width:0}
+.recovery-card-copy strong{display:block;font-size:11px}
+.recovery-card-copy span{display:block;color:var(--hint);font-size:9px;line-height:1.4;margin-top:3px}
+.recovery-retry-btn{width:auto!important;min-width:90px!important;margin:0!important;padding:8px 10px!important;font-size:9px!important}
+
+.data-notice.stale + .panel,
+.data-notice.stale + .team-hero{margin-top:8px}
+
+@media(max-width:430px){
+  .connection-banner{grid-template-columns:auto minmax(0,1fr)}
+  .connection-retry-btn{grid-column:2;justify-self:start}
+  .recovery-card{grid-template-columns:34px minmax(0,1fr)}
+  .recovery-retry-btn{grid-column:2;justify-self:start}
+}
+@media(prefers-reduced-motion:reduce){
+  .connection-banner.recovering .connection-banner-icon{animation:none}
+}
