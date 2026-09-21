@@ -1962,3 +1962,43 @@ main { position: relative; z-index: 1; }
   .reminder-health-actions{display:grid;grid-template-columns:1fr auto}
   .reminder-health-actions .reminder-btn{width:100%}
 }
+
+/* v5.7 RC5 — Runtime Controls & Emergency Kill Switches */
+.runtime-banner{
+  display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px;align-items:center;
+  margin:8px 0 0;border:1px solid var(--line);border-radius:13px;padding:9px 10px;background:var(--surface)
+}
+.runtime-banner-icon{width:28px;height:28px;border-radius:10px;display:grid;place-items:center;background:var(--surface-soft);font-size:13px}
+.runtime-banner-copy{min-width:0}
+.runtime-banner-copy strong,.runtime-banner-copy span{display:block}
+.runtime-banner-copy strong{font-size:10px}
+.runtime-banner-copy span{font-size:9px;color:var(--hint);line-height:1.35;margin-top:2px}
+.runtime-banner.maintenance{border-color:color-mix(in srgb,var(--danger) 40%,var(--line));background:color-mix(in srgb,var(--danger) 7%,var(--surface))}
+.runtime-banner.maintenance .runtime-banner-icon{color:var(--danger)}
+.runtime-banner.limited{border-color:color-mix(in srgb,var(--warn) 34%,var(--line));background:color-mix(in srgb,var(--warn) 6%,var(--surface))}
+.nav-item.feature-disabled{opacity:.46}
+.runtime-controls-status{display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px;align-items:center;margin:10px 0 12px}
+.runtime-controls-status strong,.runtime-controls-status small{display:block}
+.runtime-controls-status strong{font-size:10px}
+.runtime-controls-status small{color:var(--hint);font-size:8px;margin-top:2px}
+.runtime-controls-badge{min-width:58px;text-align:center;border:1px solid var(--line);border-radius:999px;padding:6px 8px;font-size:9px;font-weight:950;color:var(--hint)}
+.runtime-controls-badge.healthy{color:var(--good);border-color:color-mix(in srgb,var(--good) 38%,var(--line))}
+.runtime-controls-badge.maintenance{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 40%,var(--line))}
+.runtime-controls-badge.blocked{color:var(--danger)}
+.runtime-controls-badge.running{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 40%,var(--line))}
+.runtime-control-list{display:grid;gap:7px}
+.runtime-control-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:10px;background:var(--surface)}
+.runtime-control-row.danger{border-color:color-mix(in srgb,var(--danger) 20%,var(--line))}
+.runtime-control-row strong,.runtime-control-row small{display:block}
+.runtime-control-row strong{font-size:10px}
+.runtime-control-row small{font-size:8px;color:var(--hint);line-height:1.4;margin-top:2px}
+.runtime-control-row input[type="checkbox"]{width:20px;height:20px;accent-color:var(--accent)}
+.runtime-message-field{display:grid;gap:6px;margin-top:10px}
+.runtime-message-field>span{font-size:9px;color:var(--hint)}
+.runtime-message-field textarea{width:100%;resize:vertical;box-sizing:border-box;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--text);padding:10px;font:inherit;font-size:10px;line-height:1.45}
+.runtime-controls-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.runtime-controls-actions button{margin:0;width:100%}
+.rc-panel:before{content:"RC5"}
+@media(max-width:420px){
+  .runtime-controls-actions{grid-template-columns:1fr}
+}
