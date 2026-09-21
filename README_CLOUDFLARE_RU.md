@@ -1,59 +1,97 @@
-# Football Analytics Mini App v2.0.3 — Cloudflare Workers
+# Football Analytics Mini App v6.0.0 — RC8 Prediction Integrity Hardening
 
-Эта версия подготовлена для Cloudflare Workers + Static Assets и не требует банковской карты для тестового бесплатного запуска.
+RC8 исправляет контракт времени prediction snapshot и не допускает повреждённые строки в метрики качества. Новых платных функций и новых API-Football запросов нет.
 
-## Что загружать в GitHub
+## Что исправлено в RC8
 
-Загрузите содержимое этой папки в корень репозитория. Реальный `.env` не загружайте.
+- проверка pre-match времени использует реальное поле таблицы `captured_at` (с fallback на `created_at` для ручных legacy snapshots);
+- пустые `null`/`''` probabilities больше не преобразуются в допустимый ноль;
+- проверяются согласованность счёта с `actual_outcome`, максимум probabilities с `predicted_outcome` и флаг `correct`;
+- строки с integrity FAIL отображаются в диагностике, но исключаются из accuracy / Brier / log loss / calibration cohorts;
+- Brier для dashboard пересчитывается из проверенных probabilities, а не доверяет потенциально пустому сохранённому значению.
 
-Ключевые файлы:
-- `wrangler.jsonc`
-- `src/worker.js`
-- `public/`
-- `package.json`
-- `supabase_schema.sql`
+## Prediction Integrity
 
-## Cloudflare
+Админский Model Dashboard теперь отдельно проверяет качество prediction snapshots:
 
-1. Workers & Pages → Create application.
-2. Import a repository → GitHub.
-3. Выберите репозиторий `football-analytics-miniapp`.
-4. Production branch: `main`.
-5. Build command оставить пустым.
-6. Deploy command: `npx wrangler deploy`.
-7. Root directory: `/` (или пусто).
-8. Save and Deploy.
+- вероятности 1X2 конечные, в диапазоне 0–100 и суммируются примерно до 100%;
+- pre-match snapshot не создан в момент kickoff или позже;
+- `captured_at` и `kickoff_at` присутствуют и корректно читаются;
+- pending-прогнозы не зависли более чем на 36 часов после kickoff;
+- settled-прогнозы содержат фактический outcome и счёт;
+- fixture_id не повторяется в загруженной выборке;
+- analysis_version присутствует;
+- signal_probabilities присутствует там, где версия их поддерживает.
 
-После первого deploy откройте Worker → Settings → Variables and Secrets и добавьте Secrets:
-- `TELEGRAM_BOT_TOKEN`
-- `API_FOOTBALL_KEY`
-- `TAVILY_KEY`
+Ошибки metadata старых версий показываются как INFO и не смешиваются с тяжёлыми integrity-нарушениями.
 
-Необязательно пока:
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
+## Version Cohorts
 
-Не секретные значения уже лежат в `wrangler.jsonc`:
-- DEV_MODE=false
-- FREE_DAILY_LIMIT=3
-- PRO_DAILY_LIMIT=20
-- PREMIUM_DAILY_LIMIT=100
-- CACHE_MINUTES=20
+Model Dashboard показывает отдельные cohorts по `analysis_version`:
 
-## Проверка
+- sample;
+- 1X2 accuracy;
+- Brier;
+- log loss;
+- weighted calibration error;
+- coverage signal snapshots;
+- период cohort.
 
-Откройте:
-`https://ВАШ-WORKER.workers.dev/health`
+Это описательная аналитика. Приложение НЕ ранжирует версии, не выбирает победителя и ничего не продвигает автоматически.
 
-Ожидаемый ответ:
-`{"ok":true,"version":"2.0.3-cloudflare",...}`
+## Calibration diagnostics
 
-Обычное открытие сайта в браузере покажет интерфейс, но API будет требовать Telegram, потому что DEV_MODE=false. Это нормально.
+Добавлена метрика:
 
-## Telegram
+`Weighted top-probability calibration error`
 
-После получения HTTPS URL укажите его в @BotFather как Main Mini App URL.
+Она считается как средневзвешенный абсолютный разрыв между средней top-вероятностью и фактическим hit rate по 5 probability buckets.
 
-## Supabase
+Меньше — лучше, но эта цифра не является автоматическим release threshold.
 
-Без Supabase Worker использует временную память, поэтому лимиты и кэш могут сбрасываться. Для публичного запуска подключим Supabase следующим шагом.
+## Outcome cohorts
+
+В UI теперь показываются уже существующие server-side разрезы:
+
+- П1
+- X
+- П2
+
+с sample / accuracy / Brier.
+
+## Weekly chart fix
+
+Исправлена старая подпись графика.
+
+Вторая колонка графика всегда показывала размер выборки, поэтому подпись теперь честно говорит:
+
+`accuracy + размер выборки; Brier указан текстом`
+
+## Regression QA
+
+RC8 smoke-test получил расширенный synthetic `Prediction Integrity self-test`.
+Он не делает внешних запросов и проверяет, что движок умеет обнаружить:
+- неверную сумму probabilities;
+- отсутствующую probability;
+- отсутствующий `captured_at`;
+- snapshot после kickoff;
+- stale pending.
+- несогласованный фактический outcome;
+- `predicted_outcome`, не совпадающий с максимальной вероятностью.
+
+## Ограничение выборки
+
+`/api/model-quality` загружает максимум:
+- 500 settled;
+- 500 pending
+
+за выбранный период.
+
+Если лимит достигнут, UI явно предупреждает, что integrity относится к загруженной выборке.
+
+## SQL / Secrets / API
+
+- SQL не нужен.
+- Новые Secrets не нужны.
+- Новых API-Football запросов нет.
+- Telegram Stars остаются `paused`.
