@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.5.0-rc13';
+const CLIENT_VERSION = '6.6.0-rc14';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc13';
+const CLIENT_RELEASE_CHANNEL = 'rc14';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -1129,9 +1129,10 @@ function renderModelRemediation() {
   const summary = $('modelRemediationSummary');
   const candidates = $('modelRemediationCandidates');
   const history = $('modelRemediationHistory');
+  const driftQueue = $('modelRemediationDriftQueue');
   const dryBtn = $('modelRemediationDryRunBtn');
   const runBtn = $('modelRemediationRunBtn');
-  if (!root || !status || !summary || !candidates || !history || !dryBtn || !runBtn) return;
+  if (!root || !status || !summary || !candidates || !history || !driftQueue || !dryBtn || !runBtn) return;
   root.hidden = false;
   dryBtn.disabled = Boolean(state.modelRemediationLoading || state.modelRemediationRunning);
   runBtn.disabled = true;
@@ -1141,6 +1142,7 @@ function renderModelRemediation() {
     summary.innerHTML = '';
     candidates.innerHTML = '';
     history.innerHTML = '';
+    driftQueue.innerHTML = '';
     return;
   }
   const r = state.modelRemediation;
@@ -1149,6 +1151,7 @@ function renderModelRemediation() {
     summary.innerHTML = '';
     candidates.innerHTML = '';
     history.innerHTML = '';
+    driftQueue.innerHTML = '';
     return;
   }
   if (r.available === false) {
@@ -1156,6 +1159,7 @@ function renderModelRemediation() {
     summary.innerHTML = '';
     candidates.innerHTML = '';
     history.innerHTML = '';
+    driftQueue.innerHTML = '';
     return;
   }
 
@@ -1165,6 +1169,7 @@ function renderModelRemediation() {
   const reliability = watchdog.reliability || {};
   const runLedger = watchdog.runLedger || {};
   const finality = watchdog.finality || {};
+  const driftReview = r.driftReview || {};
   const resetBtn = $('modelRemediationCircuitResetBtn');
   if (resetBtn) {
     resetBtn.hidden = !reliability.circuitOpen;
@@ -1172,9 +1177,11 @@ function renderModelRemediation() {
   }
   status.textContent = !r.schemaReady
     ? 'Нужна supabase_migration_v6_1.sql: dry-run доступен, выполнение заблокировано.'
-    : recovery.stalePending
-      ? `Найдено ${Number(recovery.stalePending)} stale pending; безопасный batch — ${Number(recovery.selectedCount || 0)}.`
-      : 'Stale pending не обнаружены. Выполнение не требуется.';
+    : Number(driftReview.unresolved || 0)
+      ? `Требуют adjudication: ${Number(driftReview.unresolved)} drift case(s). Stale pending: ${Number(recovery.stalePending || 0)}.`
+      : recovery.stalePending
+        ? `Найдено ${Number(recovery.stalePending)} stale pending; безопасный batch — ${Number(recovery.selectedCount || 0)}.`
+        : 'Stale pending и unresolved drift не обнаружены.';
   summary.innerHTML = `
     <div><span>Просканировано</span><strong>${Number(scan.loadedRows || 0)}</strong><small>${scan.truncated ? `лимит ${Number(scan.maxRows || 0)}` : 'полная выборка'}</small></div>
     <div><span>Stale pending</span><strong>${Number(recovery.stalePending || 0)}</strong><small>старше 36 часов</small></div>
@@ -1183,12 +1190,33 @@ function renderModelRemediation() {
     <div><span>Watchdog</span><strong>${watchdog.autoRecoveryEnabled ? 'AUTO' : 'SHADOW'}</strong><small>${watchdog.schemaReady ? `${escapeHtml(watchdog.scheduleUtc || '04:00')} UTC` : 'нужна migration v6.2'}</small></div>
     <div><span>Circuit breaker</span><strong>${reliability.circuitOpen ? 'OPEN' : 'CLOSED'}</strong><small>${reliability.schemaReady ? (reliability.circuitOpenUntil ? `до ${escapeHtml(dateTime(reliability.circuitOpenUntil))}` : `${Number(reliability.consecutiveFailures || 0)}/${Number(reliability.failureThreshold || 2)} failures`) : 'нужна migration v6.3'}</small></div>
     <div><span>Run ledger</span><strong>${Number(runLedger.activeStarted || 0) ? 'BUSY' : Number(runLedger.staleStarted || 0) ? 'STALE' : 'CLEAR'}</strong><small>${runLedger.schemaReady ? `${Number(runLedger.activeStarted || 0)} active · ${Number(runLedger.staleStarted || 0)} stale · max ${Number(runLedger.maxAttempts || 3)} attempts` : 'нужна migration v6.4'}</small></div>
-    <div><span>Settlement finality</span><strong>${Number(finality.drift || 0) ? 'DRIFT' : Number(finality.unverified || 0) ? 'PENDING' : 'VERIFIED'}</strong><small>${finality.schemaReady ? `${Number(finality.verified || 0)} verified · ${Number(finality.unverified || 0)} pending · ${Number(finality.drift || 0)} drift` : 'нужна migration v6.5'}</small></div>`;
+    <div><span>Settlement finality</span><strong>${Number(finality.drift || 0) ? 'DRIFT' : Number(finality.unverified || 0) ? 'PENDING' : 'VERIFIED'}</strong><small>${finality.schemaReady ? `${Number(finality.verified || 0)} verified · ${Number(finality.unverified || 0)} pending · ${Number(finality.drift || 0)} drift · ${Number(finality.adjudicated || 0)} adjudicated` : 'нужна migration v6.5'}</small></div>
+    <div><span>Drift review</span><strong>${Number(driftReview.unresolved || 0) ? 'ACTION' : 'CLEAR'}</strong><small>${driftReview.schemaReady ? `${Number(driftReview.unresolved || 0)} unresolved · explicit admin decision` : 'нужна migration v6.6'}</small></div>`;
 
   candidates.innerHTML = (recovery.candidates || []).length
     ? `<div class="model-remediation-list">${recovery.candidates.map(item => `
         <div><span><strong>${escapeHtml(item.home || '—')} — ${escapeHtml(item.away || '—')}</strong><small>${escapeHtml(item.league || '')} · ${item.kickoffAt ? escapeHtml(dateTime(item.kickoffAt)) : '—'}</small></span><em>#${Number(item.fixtureId || 0)} · ${Number(item.ageHours || 0)}ч</em></div>`).join('')}</div>`
     : '<div class="empty compact-empty">Кандидатов для recovery нет.</div>';
+
+  const driftItems = driftReview.items || [];
+  driftQueue.innerHTML = driftItems.length
+    ? `<div class="model-remediation-history-head"><strong>Settlement drift review</strong><span>reason + explicit action</span></div>
+       <div class="settlement-drift-list">${driftItems.map(item => {
+         const stored = item.stored || {};
+         const provider = item.provider || {};
+         const locked = String(item.lockedAction || '');
+         const storedScore = Number.isFinite(Number(stored.homeGoals)) && Number.isFinite(Number(stored.awayGoals)) ? `${Number(stored.homeGoals)}:${Number(stored.awayGoals)}` : '—';
+         const providerScore = Number.isFinite(Number(provider.homeGoals)) && Number.isFinite(Number(provider.awayGoals)) ? `${Number(provider.homeGoals)}:${Number(provider.awayGoals)}` : '—';
+         return `<div class="settlement-drift-item">
+           <div class="settlement-drift-copy"><strong>${escapeHtml(item.home || '—')} — ${escapeHtml(item.away || '—')}</strong><small>${escapeHtml(item.league || '')} · #${Number(item.fixtureId || 0)} · ${item.observedAt ? escapeHtml(dateTime(item.observedAt)) : '—'}</small><span>stored ${escapeHtml(storedScore)} ${escapeHtml(stored.outcome || '')} → provider ${escapeHtml(providerScore)} ${escapeHtml(provider.outcome || '')} · ${escapeHtml(provider.status || '')}</span><em>${escapeHtml(item.driftReason || 'provider drift')}${locked ? ` · locked: ${escapeHtml(locked)}` : ''}</em></div>
+           <div class="settlement-drift-actions">
+             <button class="reminder-btn" type="button" data-drift-fixture="${Number(item.fixtureId || 0)}" data-drift-action="keep_stored" ${locked && locked !== 'keep_stored' ? 'disabled' : ''}>Оставить stored</button>
+             <button class="primary-setting-btn" type="button" data-drift-fixture="${Number(item.fixtureId || 0)}" data-drift-action="accept_provider" ${!item.providerAcceptable || (locked && locked !== 'accept_provider') ? 'disabled' : ''}>Принять provider</button>
+             <button class="reminder-btn" type="button" data-drift-fixture="${Number(item.fixtureId || 0)}" data-drift-action="void_prediction" ${locked && locked !== 'void_prediction' ? 'disabled' : ''}>Исключить из метрик</button>
+           </div>
+         </div>`;
+       }).join('')}</div>`
+    : '<p class="tiny quality-method-note">Unresolved drift case отсутствуют.</p>';
 
   const actions = r.recentActions || [];
   history.innerHTML = actions.length
@@ -1260,6 +1288,62 @@ async function runModelRemediation() {
   }
 }
 
+
+
+async function resolveSettlementDriftFromUi(fixtureId, action) {
+  if (!isAdmin() || state.modelRemediationRunning) return;
+  const review = state.modelRemediation?.driftReview || {};
+  const item = (review.items || []).find(row => Number(row.fixtureId) === Number(fixtureId));
+  if (!item) return toast('Drift case устарел. Обновите dry-run.');
+  const reason = String($('modelRemediationReason')?.value || '').trim();
+  if (reason.length < 5) return toast('Укажите причину adjudication — минимум 5 символов.');
+  if (item.lockedAction && String(item.lockedAction) !== String(action)) {
+    return toast(`Этот drift event уже заблокирован действием ${item.lockedAction}.`);
+  }
+  const labels = {
+    keep_stored: 'оставить сохранённый settlement',
+    accept_provider: 'принять provider-коррекцию и пересчитать outcome-метрики',
+    void_prediction: 'исключить прогноз из backtest-метрик',
+  };
+  if (!labels[action]) return;
+  if (!window.confirm(`Fixture #${Number(item.fixtureId)}: ${labels[action]}? Действие будет записано в immutable audit.`)) return;
+
+  state.modelRemediationRunning = true;
+  renderModelRemediation();
+  try {
+    const result = await api('/api/model-remediation', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        action: 'resolve_drift',
+        resolutionAction: action,
+        fixtureId: Number(item.fixtureId),
+        eventId: Number(item.eventId),
+        resolutionToken: String(item.resolutionToken || ''),
+        reason,
+      }),
+      retry: false,
+      timeoutMs: 30000,
+      dedupe: false,
+    });
+    state.modelRemediation = result.report || null;
+    state.modelQuality = null;
+    if ($('modelRemediationReason')) $('modelRemediationReason').value = '';
+    toast(action === 'accept_provider'
+      ? 'Provider-коррекция принята и записана в audit.'
+      : action === 'void_prediction'
+        ? 'Прогноз исключён из backtest-метрик и записан в audit.'
+        : 'Stored settlement подтверждён администратором и записан в audit.');
+    await loadModelQuality(true);
+  } catch (error) {
+    toast(error.message || 'Drift adjudication не выполнена.');
+    state.modelRemediation = null;
+    await loadModelRemediation(true);
+  } finally {
+    state.modelRemediationRunning = false;
+    renderModelRemediation();
+  }
+}
 
 async function resetSettlementCircuitFromUi() {
   if (!isAdmin() || state.modelRemediationRunning) return;
@@ -1479,7 +1563,7 @@ function runClientContractSmoke() {
     'matchesView','searchView','tournamentView','teamView','analysisView','historyView','profileView',
     'navMatches','navSearch','navHistory','navProfile',
     'connectionBanner','connectionRetryBtn','toast',
-    'modelQualityStatus','modelRemediationStatus','modelRemediationDryRunBtn','modelRemediationRunBtn','modelRemediationCircuitResetBtn','providerAuditStatus','releaseStatus','productionReadinessStatus','diagnosticsStatus',
+    'modelQualityStatus','modelRemediationStatus','modelRemediationDryRunBtn','modelRemediationRunBtn','modelRemediationCircuitResetBtn','modelRemediationDriftQueue','providerAuditStatus','releaseStatus','productionReadinessStatus','diagnosticsStatus',
   ];
   const missing = requiredIds.filter(id => !$(id));
   add('required_dom', 'Основные DOM-контракты', missing.length === 0, missing.length ? `Нет: ${missing.join(', ')}` : `${requiredIds.length}/${requiredIds.length} элементов.`);
@@ -1491,11 +1575,11 @@ function runClientContractSmoke() {
   const adminSections = [...document.querySelectorAll('[data-admin-only]')];
   add('admin_sections', 'Admin UI маркировка', adminSections.length >= 6, `${adminSections.length} технических секций помечены data-admin-only.`);
 
-  const cssLink = document.querySelector('link[href*="styles.css?v=6.5.0"]');
-  const appScript = document.querySelector('script[src*="app.js?v=6.5.0"]');
+  const cssLink = document.querySelector('link[href*="styles.css?v=6.6.0"]');
+  const appScript = document.querySelector('script[src*="app.js?v=6.6.0"]');
   add('cache_bust', 'Cache-bust assets', Boolean(cssLink && appScript), `CSS ${cssLink ? 'OK' : 'MISS'} · JS ${appScript ? 'OK' : 'MISS'}.`);
 
-  add('client_version', 'Версия клиента', CLIENT_VERSION === '6.5.0-rc13', CLIENT_VERSION);
+  add('client_version', 'Версия клиента', CLIENT_VERSION === '6.6.0-rc14', CLIENT_VERSION);
   add('telegram_sdk', 'Telegram WebApp SDK', Boolean(window.Telegram?.WebApp), window.Telegram?.WebApp ? 'SDK доступен.' : 'В обычном браузере SDK может отсутствовать; в Telegram должен быть доступен.');
 
   const navButtons = ['navMatches','navSearch','navHistory','navProfile'].filter(id => $(id));
@@ -1521,7 +1605,7 @@ function runClientContractSmoke() {
 }
 
 function rcStateText(status) {
-  if (status === 'rc_ready') return 'RC13 READY';
+  if (status === 'rc_ready') return 'RC14 READY';
   if (status === 'rc_with_holds') return 'RC + HOLD';
   if (status === 'blocked') return 'BLOCK';
   return 'WAIT';
@@ -5031,6 +5115,11 @@ $('modelQualityPeriod')?.addEventListener('change', () => loadModelQuality(true)
 $('modelRemediationDryRunBtn')?.addEventListener('click', () => loadModelRemediation(true));
 $('modelRemediationRunBtn')?.addEventListener('click', runModelRemediation);
 $('modelRemediationCircuitResetBtn')?.addEventListener('click', resetSettlementCircuitFromUi);
+$('modelRemediationDriftQueue')?.addEventListener('click', event => {
+  const button = event.target?.closest?.('[data-drift-action]');
+  if (!button || button.disabled) return;
+  resolveSettlementDriftFromUi(Number(button.dataset.driftFixture || 0), String(button.dataset.driftAction || ''));
+});
 $('diagnosticsRefreshBtn')?.addEventListener('click', () => loadDiagnostics(true));
 $('productionReadinessRefreshBtn')?.addEventListener('click', () => loadProductionReadiness(true));
 $('releaseMonitorRefreshBtn')?.addEventListener('click', () => loadReleaseMonitor(true));
@@ -5057,7 +5146,7 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// v6.5 RC13: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
+// v6.6 RC14: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
 // The boot watchdog never leaves the user behind an endless splash screen.
 const startupWatchdog = setTimeout(() => {
   if (!$('bootGate')?.hidden && !state.compatibilityBlocked) {

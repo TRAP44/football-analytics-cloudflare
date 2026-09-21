@@ -59,11 +59,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.5.0-rc13';
+const APP_VERSION = '6.6.0-rc14';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc13';
-const RC_NAME = 'RC13';
+const RELEASE_CHANNEL = 'rc14';
+const RC_NAME = 'RC14';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -656,6 +656,8 @@ function appManifest(cfg) {
       interruptedRunRecovery: true,
       settlementFinalityVerification: true,
       settlementDriftGuard: true,
+      settlementDriftReview: true,
+      settlementAdjudication: true,
     },
     serverTime: new Date().toISOString(),
   };
@@ -3085,6 +3087,384 @@ function settlementFinalitySummary(rows = []) {
     verified: count('verified'),
     drift: count('drift'),
     unverified: count('unverified'),
+    adjudicated: count('adjudicated'),
+  };
+}
+
+
+const SETTLEMENT_DRIFT_ACTIONS = new Set(['keep_stored', 'accept_provider', 'void_prediction']);
+
+async function probeSettlementAdjudicationSchema(cfg) {
+  if (!hasSupabase(cfg)) return { ok: false, status: 'not_configured' };
+  try {
+    const predictionUrl = new URL(`${cfg.supabaseUrl}/rest/v1/model_predictions`);
+    predictionUrl.searchParams.set('select', 'settlement_resolved_at,settlement_resolution_action,settlement_resolution_event_id');
+    predictionUrl.searchParams.set('limit', '1');
+    const resolutionUrl = new URL(`${cfg.supabaseUrl}/rest/v1/settlement_drift_resolutions`);
+    resolutionUrl.searchParams.set('select', 'source_event_id,fixture_id,action,reason,created_at');
+    resolutionUrl.searchParams.set('limit', '1');
+    const [predictionResponse, resolutionResponse] = await Promise.all([
+      fetchWithTimeout(predictionUrl, { headers: supaHeaders(cfg) }, 7000, 'Supabase settlement adjudication prediction schema'),
+      fetchWithTimeout(resolutionUrl, { headers: supaHeaders(cfg) }, 7000, 'Supabase settlement adjudication resolution schema'),
+    ]);
+    if (!predictionResponse.ok || !resolutionResponse.ok) {
+      return { ok: false, status: `prediction_${predictionResponse.status}_resolution_${resolutionResponse.status}` };
+    }
+    return { ok: true, status: 'ok' };
+  } catch (error) {
+    return { ok: false, status: error?.code || 'error', detail: redactOpsString(error?.message || error, 140) };
+  }
+}
+
+function settlementDriftBeforeSnapshot(row = {}) {
+  return {
+    status: String(row.status || ''),
+    homeGoals: Number.isFinite(Number(row.actual_home_goals)) ? Number(row.actual_home_goals) : null,
+    awayGoals: Number.isFinite(Number(row.actual_away_goals)) ? Number(row.actual_away_goals) : null,
+    outcome: String(row.actual_outcome || ''),
+    correct: typeof row.correct === 'boolean' ? row.correct : null,
+    brierScore: Number.isFinite(Number(row.brier_score)) ? Number(row.brier_score) : null,
+    over25Actual: typeof row.over25_actual === 'boolean' ? row.over25_actual : null,
+    over25Correct: typeof row.over25_correct === 'boolean' ? row.over25_correct : null,
+    bttsActual: typeof row.btts_actual === 'boolean' ? row.btts_actual : null,
+    bttsCorrect: typeof row.btts_correct === 'boolean' ? row.btts_correct : null,
+  };
+}
+
+function settlementDriftProviderSnapshot(event = {}) {
+  return {
+    status: String(event.provider_status || ''),
+    homeGoals: Number.isFinite(Number(event.provider_home_goals)) ? Number(event.provider_home_goals) : null,
+    awayGoals: Number.isFinite(Number(event.provider_away_goals)) ? Number(event.provider_away_goals) : null,
+    outcome: String(event.provider_outcome || ''),
+    observedAt: event.observed_at || null,
+    reason: String(event.reason || ''),
+  };
+}
+
+function buildSettlementDriftResolution(row, event, action, resolvedAt = new Date().toISOString()) {
+  const normalizedAction = String(action || '');
+  if (!SETTLEMENT_DRIFT_ACTIONS.has(normalizedAction)) {
+    return { valid: false, error: 'unsupported_action' };
+  }
+  const before = settlementDriftBeforeSnapshot(row);
+  const provider = settlementDriftProviderSnapshot(event);
+  const common = {
+    settlement_verification_state: 'adjudicated',
+    settlement_resolved_at: resolvedAt,
+    settlement_resolution_action: normalizedAction,
+    settlement_resolution_event_id: Number(event?.id || 0) || null,
+  };
+
+  if (normalizedAction === 'keep_stored') {
+    return {
+      valid: true,
+      patch: common,
+      before,
+      provider,
+      after: { ...before, verificationState: 'adjudicated', resolutionAction: normalizedAction },
+    };
+  }
+
+  if (normalizedAction === 'void_prediction') {
+    return {
+      valid: true,
+      patch: { ...common, status: 'void' },
+      before,
+      provider,
+      after: { ...before, status: 'void', verificationState: 'adjudicated', resolutionAction: normalizedAction },
+    };
+  }
+
+  const providerStatus = String(event?.provider_status || '').toUpperCase();
+  const home = Number(event?.provider_home_goals);
+  const away = Number(event?.provider_away_goals);
+  const outcome = actualOutcomeFromGoals(home, away);
+  const eventOutcome = String(event?.provider_outcome || '');
+  if (!isFinishedStatus(providerStatus) || !Number.isFinite(home) || !Number.isFinite(away) || !outcome ||
+      (eventOutcome && eventOutcome !== outcome)) {
+    return { valid: false, error: 'provider_result_not_safe_to_accept', before, provider };
+  }
+  const totalGoals = home + away;
+  const over25Actual = totalGoals >= 3;
+  const bttsActual = home > 0 && away > 0;
+  const patch = {
+    ...common,
+    status: 'settled',
+    actual_home_goals: home,
+    actual_away_goals: away,
+    actual_outcome: outcome,
+    correct: String(row?.predicted_outcome || '') === outcome,
+    brier_score: scoreBrier(row, outcome),
+    over25_actual: over25Actual,
+    over25_correct: row?.over25_prob === null || row?.over25_prob === undefined ? null : (Number(row.over25_prob) >= 50) === over25Actual,
+    btts_actual: bttsActual,
+    btts_correct: row?.btts_prob === null || row?.btts_prob === undefined ? null : (Number(row.btts_prob) >= 50) === bttsActual,
+    settlement_verified_at: resolvedAt,
+    settlement_verified_status: providerStatus,
+  };
+  return {
+    valid: true,
+    patch,
+    before,
+    provider,
+    after: {
+      status: 'settled',
+      homeGoals: home,
+      awayGoals: away,
+      outcome,
+      correct: patch.correct,
+      brierScore: patch.brier_score,
+      over25Actual,
+      over25Correct: patch.over25_correct,
+      bttsActual,
+      bttsCorrect: patch.btts_correct,
+      verificationState: 'adjudicated',
+      resolutionAction: normalizedAction,
+    },
+  };
+}
+
+async function settlementDriftResolutionToken(row, event) {
+  const source = [
+    Number(row?.fixture_id || 0),
+    String(row?.settlement_verification_state || ''),
+    String(row?.status || ''),
+    String(row?.actual_home_goals ?? ''),
+    String(row?.actual_away_goals ?? ''),
+    String(row?.actual_outcome || ''),
+    Number(event?.id || 0),
+    String(event?.observed_at || ''),
+    String(event?.provider_home_goals ?? ''),
+    String(event?.provider_away_goals ?? ''),
+    String(event?.provider_outcome || ''),
+    String(event?.provider_status || ''),
+  ].join('|');
+  const digest = await crypto.subtle.digest('SHA-256', enc.encode(source));
+  return bytesToHex(new Uint8Array(digest)).slice(0, 32);
+}
+
+function settlementDriftAdjudicationSelfTest() {
+  const row = {
+    status: 'settled',
+    predicted_outcome: 'home',
+    actual_home_goals: 2,
+    actual_away_goals: 1,
+    actual_outcome: 'home',
+    correct: true,
+    home_prob: 60,
+    draw_prob: 25,
+    away_prob: 15,
+    over25_prob: 55,
+    btts_prob: 52,
+  };
+  const event = {
+    id: 11,
+    provider_status: 'FT',
+    provider_home_goals: 1,
+    provider_away_goals: 1,
+    provider_outcome: 'draw',
+  };
+  const keep = buildSettlementDriftResolution(row, event, 'keep_stored', '2026-01-01T00:00:00.000Z');
+  const accept = buildSettlementDriftResolution(row, event, 'accept_provider', '2026-01-01T00:00:00.000Z');
+  const voided = buildSettlementDriftResolution(row, event, 'void_prediction', '2026-01-01T00:00:00.000Z');
+  const unsafe = buildSettlementDriftResolution(row, { ...event, provider_status: 'CANC' }, 'accept_provider', '2026-01-01T00:00:00.000Z');
+  return {
+    pass: keep.valid && keep.patch.settlement_verification_state === 'adjudicated' &&
+      keep.patch.actual_home_goals === undefined &&
+      accept.valid && accept.patch.actual_home_goals === 1 && accept.patch.actual_away_goals === 1 &&
+      accept.patch.actual_outcome === 'draw' && accept.patch.correct === false &&
+      voided.valid && voided.patch.status === 'void' &&
+      !unsafe.valid,
+    keep: keep.valid,
+    accept: accept.valid ? accept.patch.actual_outcome : accept.error,
+    void: voided.valid ? voided.patch.status : voided.error,
+    unsafeAcceptBlocked: !unsafe.valid,
+  };
+}
+
+async function loadSettlementDriftReview(cfg, limit = 20) {
+  if (!hasSupabase(cfg)) return { schemaReady: false, items: [], unresolved: 0 };
+  const schema = await probeSettlementAdjudicationSchema(cfg);
+  if (!schema.ok) return { schemaReady: false, schemaStatus: schema.status, items: [], unresolved: 0 };
+  const rows = await supaSelectMany(cfg, 'model_predictions', {
+    status: 'eq.settled',
+    settlement_verification_state: 'eq.drift',
+  }, { limit: Math.max(1, Math.min(20, Number(limit || 20))), order: 'kickoff_at.desc' });
+  if (!rows.length) return { schemaReady: true, schemaStatus: 'ok', items: [], unresolved: 0 };
+
+  const ids = [...new Set(rows.map(row => Number(row.fixture_id)).filter(x => Number.isInteger(x) && x > 0))];
+  const events = await supaSelectMany(cfg, 'settlement_verification_events', {
+    state: 'eq.drift',
+    fixture_id: `in.(${ids.join(',')})`,
+  }, { limit: Math.min(100, Math.max(20, ids.length * 4)), order: 'observed_at.desc' });
+  const eventByFixture = new Map();
+  for (const event of events || []) {
+    const id = Number(event.fixture_id);
+    if (!eventByFixture.has(id)) eventByFixture.set(id, event);
+  }
+  const eventIds = [...new Set([...eventByFixture.values()].map(event => Number(event.id)).filter(Boolean))];
+  let resolutions = [];
+  if (eventIds.length) {
+    resolutions = await supaSelectMany(cfg, 'settlement_drift_resolutions', {
+      source_event_id: `in.(${eventIds.join(',')})`,
+    }, { limit: eventIds.length + 5, order: 'created_at.desc' }).catch(() => []);
+  }
+  const resolutionByEvent = new Map((resolutions || []).map(row => [Number(row.source_event_id), row]));
+
+  const items = await Promise.all(rows.map(async row => {
+    const event = eventByFixture.get(Number(row.fixture_id)) || null;
+    const locked = event ? resolutionByEvent.get(Number(event.id)) || null : null;
+    const providerStatus = String(event?.provider_status || '').toUpperCase();
+    const providerHome = Number(event?.provider_home_goals);
+    const providerAway = Number(event?.provider_away_goals);
+    const providerOutcome = actualOutcomeFromGoals(providerHome, providerAway);
+    const providerAcceptable = Boolean(event && isFinishedStatus(providerStatus) &&
+      Number.isFinite(providerHome) && Number.isFinite(providerAway) &&
+      providerOutcome && (!event.provider_outcome || String(event.provider_outcome) === providerOutcome));
+    return {
+      fixtureId: Number(row.fixture_id),
+      league: String(row.league_name || ''),
+      home: String(row.home_name || ''),
+      away: String(row.away_name || ''),
+      kickoffAt: row.kickoff_at || null,
+      eventId: Number(event?.id || 0) || null,
+      observedAt: event?.observed_at || null,
+      driftReason: String(event?.reason || ''),
+      stored: settlementDriftBeforeSnapshot(row),
+      provider: settlementDriftProviderSnapshot(event || {}),
+      providerAcceptable,
+      resolutionToken: event ? await settlementDriftResolutionToken(row, event) : '',
+      lockedAction: locked ? String(locked.action || '') : '',
+    };
+  }));
+  return {
+    schemaReady: true,
+    schemaStatus: 'ok',
+    unresolved: items.length,
+    maxItems: 20,
+    actions: ['keep_stored', 'accept_provider', 'void_prediction'],
+    items,
+  };
+}
+
+async function resolveSettlementDrift(cfg, user, input = {}) {
+  const schema = await probeSettlementAdjudicationSchema(cfg);
+  if (!schema.ok) {
+    const error = new Error('Нужна migration v6.6 для Settlement Drift Adjudication.');
+    error.code = 'SETTLEMENT_ADJUDICATION_SCHEMA';
+    throw error;
+  }
+  const fixtureId = Number(input.fixtureId || 0);
+  const eventId = Number(input.eventId || 0);
+  const action = String(input.resolutionAction || '');
+  const reason = redactOpsString(input.reason || '', 220).trim();
+  if (!Number.isInteger(fixtureId) || fixtureId <= 0 || !Number.isInteger(eventId) || eventId <= 0) {
+    const error = new Error('Некорректный drift case.');
+    error.code = 'SETTLEMENT_DRIFT_CASE';
+    throw error;
+  }
+  if (!SETTLEMENT_DRIFT_ACTIONS.has(action)) {
+    const error = new Error('Неизвестное действие adjudication.');
+    error.code = 'SETTLEMENT_DRIFT_ACTION';
+    throw error;
+  }
+  if (reason.length < 5) {
+    const error = new Error('Укажите причину adjudication — минимум 5 символов.');
+    error.code = 'SETTLEMENT_DRIFT_REASON';
+    throw error;
+  }
+
+  const row = await supaSelectOne(cfg, 'model_predictions', { fixture_id: `eq.${fixtureId}` });
+  if (!row || row.status !== 'settled' || String(row.settlement_verification_state || '') !== 'drift') {
+    const error = new Error('Drift case уже изменён. Обновите dry-run.');
+    error.code = 'SETTLEMENT_DRIFT_STALE';
+    throw error;
+  }
+  const events = await supaSelectMany(cfg, 'settlement_verification_events', {
+    fixture_id: `eq.${fixtureId}`,
+    state: 'eq.drift',
+  }, { limit: 1, order: 'observed_at.desc' });
+  const event = events?.[0] || null;
+  if (!event || Number(event.id) !== eventId) {
+    const error = new Error('Drift event изменился. Обновите dry-run.');
+    error.code = 'SETTLEMENT_DRIFT_EVENT_STALE';
+    throw error;
+  }
+  const expectedToken = await settlementDriftResolutionToken(row, event);
+  if (!input.resolutionToken || String(input.resolutionToken) !== expectedToken) {
+    const error = new Error('Drift snapshot изменился. Обновите dry-run.');
+    error.code = 'SETTLEMENT_DRIFT_TOKEN_STALE';
+    throw error;
+  }
+
+  const resolution = buildSettlementDriftResolution(row, event, action);
+  if (!resolution.valid) {
+    const error = new Error(action === 'accept_provider'
+      ? 'Provider-коррекцию нельзя безопасно принять для этого статуса/счёта. Используйте keep stored или void.'
+      : 'Adjudication не может быть применена.');
+    error.code = 'SETTLEMENT_DRIFT_UNSAFE';
+    throw error;
+  }
+
+  const auditRow = {
+    source_event_id: eventId,
+    fixture_id: fixtureId,
+    action,
+    reason,
+    admin_telegram_id: Number(user?.id || 0) || null,
+    before_snapshot: resolution.before,
+    provider_snapshot: resolution.provider,
+    after_snapshot: resolution.after,
+    created_at: new Date().toISOString(),
+  };
+  await supaInsertIgnore(cfg, 'settlement_drift_resolutions', auditRow, 'source_event_id');
+  const persisted = await supaSelectOne(cfg, 'settlement_drift_resolutions', { source_event_id: `eq.${eventId}` });
+  if (!persisted) {
+    const error = new Error('Не удалось зафиксировать adjudication audit.');
+    error.code = 'SETTLEMENT_DRIFT_AUDIT';
+    throw error;
+  }
+  if (String(persisted.action || '') !== action) {
+    const error = new Error(`Этот drift event уже заблокирован действием ${String(persisted.action || '')}. Обновите dry-run.`);
+    error.code = 'SETTLEMENT_DRIFT_ALREADY_LOCKED';
+    throw error;
+  }
+
+  await supaPatch(cfg, 'model_predictions', {
+    fixture_id: `eq.${fixtureId}`,
+    status: 'eq.settled',
+    settlement_verification_state: 'eq.drift',
+  }, resolution.patch);
+
+  await recordOpsEvent(cfg, {
+    severity: action === 'accept_provider' ? 'warning' : 'info',
+    source: 'model',
+    eventType: 'settlement_adjudication',
+    code: action === 'accept_provider'
+      ? 'SETTLEMENT_DRIFT_PROVIDER_ACCEPTED'
+      : action === 'void_prediction'
+        ? 'SETTLEMENT_DRIFT_VOIDED'
+        : 'SETTLEMENT_DRIFT_STORED_CONFIRMED',
+    message: reason,
+    meta: {
+      fixtureId,
+      sourceEventId: eventId,
+      action,
+      stored: resolution.before,
+      provider: resolution.provider,
+      after: resolution.after,
+    },
+  }).catch(() => null);
+
+  return {
+    fixtureId,
+    sourceEventId: eventId,
+    action,
+    resolvedAt: resolution.patch.settlement_resolved_at,
+    before: resolution.before,
+    provider: resolution.provider,
+    after: resolution.after,
   };
 }
 
@@ -3606,12 +3986,13 @@ async function buildModelRemediationReport(cfg, { maxRows = 5000 } = {}) {
   if (!hasSupabase(cfg) && !cfg.devMode) {
     return { available: false, reason: 'Supabase не настроен: remediation требует постоянную базу данных.' };
   }
-  const [schema, watchdogSchema, reliabilitySchema, runLedgerSchema, finalitySchema, reliability, runtimeState] = await Promise.all([
+  const [schema, watchdogSchema, reliabilitySchema, runLedgerSchema, finalitySchema, adjudicationSchema, reliability, runtimeState] = await Promise.all([
     hasSupabase(cfg) ? probeOptionalTable(cfg, 'prediction_integrity_actions') : Promise.resolve({ ok: true, status: 'memory' }),
     hasSupabase(cfg) ? probeSettlementWatchdogSchema(cfg) : Promise.resolve({ ok: true, status: 'memory' }),
     hasSupabase(cfg) ? probeSettlementReliabilitySchema(cfg) : Promise.resolve({ ok: true, status: 'memory' }),
     hasSupabase(cfg) ? probeSettlementRunLedgerSchema(cfg) : Promise.resolve({ ok: true, status: 'memory' }),
     hasSupabase(cfg) ? probeSettlementFinalitySchema(cfg) : Promise.resolve({ ok: true, status: 'memory' }),
+    hasSupabase(cfg) ? probeSettlementAdjudicationSchema(cfg) : Promise.resolve({ ok: true, status: 'memory' }),
     hasSupabase(cfg) ? loadSettlementReliability(cfg).catch(() => normalizeSettlementReliability()) : Promise.resolve(normalizeSettlementReliability()),
     loadRuntimeControls(cfg),
   ]);
@@ -3628,6 +4009,9 @@ async function buildModelRemediationReport(cfg, { maxRows = 5000 } = {}) {
     : { active: [], stale: [], cutoff: null };
   const integrity = buildPredictionIntegrity(settled, pending);
   const finality = settlementFinalitySummary(loaded.rows);
+  const driftReview = adjudicationSchema.ok
+    ? await loadSettlementDriftReview(cfg, 20).catch(error => ({ schemaReady: true, schemaStatus: 'error', unresolved: 0, items: [], error: redactOpsString(error?.message || error, 160) }))
+    : { schemaReady: false, schemaStatus: adjudicationSchema.status || 'missing', unresolved: 0, items: [] };
   return {
     available: true,
     version: APP_VERSION,
@@ -3660,6 +4044,7 @@ async function buildModelRemediationReport(cfg, { maxRows = 5000 } = {}) {
       })),
     },
     recentActions,
+    driftReview,
     watchdog: {
       schemaReady: Boolean(watchdogSchema.ok),
       schemaStatus: watchdogSchema.status || (watchdogSchema.ok ? 'ok' : 'missing'),
@@ -3697,6 +4082,7 @@ async function buildModelRemediationReport(cfg, { maxRows = 5000 } = {}) {
         verified: Number(finality.verified || 0),
         drift: Number(finality.drift || 0),
         unverified: Number(finality.unverified || 0),
+        adjudicated: Number(finality.adjudicated || 0),
         totalSettled: Number(finality.totalSettled || 0),
         scheduleUtc: '05:00',
         delayHours: SETTLEMENT_FINALITY_DELAY_HOURS,
@@ -3711,7 +4097,7 @@ async function buildModelRemediationReport(cfg, { maxRows = 5000 } = {}) {
       onlySettlesPending: true,
       adminIdExposed: false,
       automaticRecoveryRuntimeGated: true,
-      note: 'GET выполняет read-only dry-run. RC13 добавляет settlement finality verification: поздний provider drift не переписывается автоматически, а помечается drift и исключается из model-quality/calibration до ручного разбора.',
+      note: 'GET выполняет read-only dry-run. RC14 добавляет explicit drift adjudication: keep stored, accept provider или void prediction. Каждое действие требует причины, stale-token guard и immutable before/provider/after audit.',
     },
   };
 }
@@ -3730,7 +4116,23 @@ async function apiModelRemediation(request, cfg, user) {
     const report = await buildModelRemediationReport(cfg).catch(() => null);
     return json({ ok: true, reset, report });
   }
-  if (requestedAction !== 'recover') return json({ error: 'Поддерживаются action=recover и action=reset_circuit.' }, 400);
+  if (requestedAction === 'resolve_drift') {
+    try {
+      const resolution = await resolveSettlementDrift(cfg, user, {
+        fixtureId: body?.fixtureId,
+        eventId: body?.eventId,
+        resolutionAction: body?.resolutionAction,
+        resolutionToken: body?.resolutionToken,
+        reason,
+      });
+      const report = await buildModelRemediationReport(cfg).catch(() => null);
+      return json({ ok: true, resolution, report });
+    } catch (error) {
+      const status = ['SETTLEMENT_DRIFT_STALE','SETTLEMENT_DRIFT_EVENT_STALE','SETTLEMENT_DRIFT_TOKEN_STALE','SETTLEMENT_DRIFT_ALREADY_LOCKED'].includes(String(error?.code || '')) ? 409 : 400;
+      return json({ error: error?.message || 'Drift adjudication не выполнена.', code: error?.code || 'SETTLEMENT_DRIFT' }, status);
+    }
+  }
+  if (requestedAction !== 'recover') return json({ error: 'Поддерживаются action=recover, action=reset_circuit и action=resolve_drift.' }, 400);
 
   const report = await buildModelRemediationReport(cfg);
   if (!report.available) return json(report, 503);
@@ -6303,11 +6705,12 @@ async function apiReleaseReadiness(request, cfg) {
     probeOptionalTable(cfg, 'runtime_controls'),
     probeOptionalTable(cfg, 'runtime_control_history'),
   ]);
-  const [runtimeState, watchdogSchema, runLedgerSchema, finalitySchema] = await Promise.all([
+  const [runtimeState, watchdogSchema, runLedgerSchema, finalitySchema, adjudicationSchema] = await Promise.all([
     loadRuntimeControls(cfg, { force: true }),
     probeSettlementWatchdogSchema(cfg),
     probeSettlementRunLedgerSchema(cfg),
     probeSettlementFinalitySchema(cfg),
+    probeSettlementAdjudicationSchema(cfg),
   ]);
   const runtime = runtimeState.value;
   const provider = diagnostics.provider || {};
@@ -6333,6 +6736,10 @@ async function apiReleaseReadiness(request, cfg) {
       finalitySchema.ok ? 'Verification state и drift audit table доступны.' : 'Нужна supabase_migration_v6_5.sql.', true),
     releaseCheck('settlement_finality_selftest', 'Settlement Finality self-test', settlementFinalitySelfTest().pass ? 'pass' : 'fail',
       settlementFinalitySelfTest().pass ? 'Matching final score verifies; score/status correction becomes drift; non-final waits.' : 'Settlement Finality self-test не прошёл.', true),
+    releaseCheck('settlement_adjudication_schema', 'Settlement Adjudication schema v6.6', adjudicationSchema.ok ? 'pass' : 'fail',
+      adjudicationSchema.ok ? 'Resolution audit и model resolution fields доступны.' : 'Нужна supabase_migration_v6_6.sql.', true),
+    releaseCheck('settlement_adjudication_selftest', 'Settlement Adjudication self-test', settlementDriftAdjudicationSelfTest().pass ? 'pass' : 'fail',
+      settlementDriftAdjudicationSelfTest().pass ? 'Keep/accept/void transitions valid; unsafe provider acceptance blocked.' : 'Settlement Adjudication self-test не прошёл.', true),
     releaseCheck('automatic_settlement_recovery', 'Automatic settlement recovery', 'pass',
       runtime.autoSettlementRecoveryEnabled ? 'Runtime switch ON: cron catch-up разрешён guardrails.' : 'Runtime switch OFF: watchdog работает в shadow и только сигнализирует.', false),
     releaseCheck('runtime_controls_schema', 'Runtime Controls schema v5.7', runtimeTable.ok ? 'pass' : 'fail', runtimeTable.ok ? 'Таблица runtime_controls доступна.' : 'Нужна supabase_migration_v5_7.sql.', true),
@@ -6446,6 +6853,18 @@ async function apiProductionReadiness(request, cfg) {
     true
   ));
 
+  const adjudicationSelfTest = settlementDriftAdjudicationSelfTest();
+  checks.push(rcCheck(
+    'settlement_adjudication_selftest',
+    'safety',
+    'Settlement Adjudication self-test',
+    adjudicationSelfTest.pass ? 'pass' : 'fail',
+    adjudicationSelfTest.pass
+      ? `keep=${adjudicationSelfTest.keep}; accept=${adjudicationSelfTest.accept}; void=${adjudicationSelfTest.void}; unsafeBlocked=${adjudicationSelfTest.unsafeAcceptBlocked}.`
+      : 'Settlement Adjudication self-test не прошёл.',
+    true
+  ));
+
   const safety = productionSafetySnapshot();
   const providerBudget = providerBudgetProfile();
   const paidProvider = providerTransitionProfile().paid;
@@ -6549,8 +6968,8 @@ async function apiRcRegression(request, cfg, user) {
   const startedAt = Date.now();
 
   // 1) Core runtime / security configuration.
-  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.5.0-rc13' ? 'pass' : 'fail',
-    `Worker: ${APP_VERSION}; ожидается 6.5.0-rc13.`, true));
+  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.6.0-rc14' ? 'pass' : 'fail',
+    `Worker: ${APP_VERSION}; ожидается 6.6.0-rc14.`, true));
   checks.push(rcCheck('api_contract', 'runtime', 'API contract', API_CONTRACT_VERSION === 5 ? 'pass' : 'fail',
     `Contract ${API_CONTRACT_VERSION}; min client ${MIN_CLIENT_VERSION}.`, true));
   checks.push(rcCheck('app_manifest', 'runtime', 'Public App Manifest', appManifest(cfg)?.version === APP_VERSION ? 'pass' : 'fail',
@@ -9745,6 +10164,8 @@ export default {
         interruptedRunRecovery: 'enabled',
         settlementFinalityVerification: 'enabled',
         settlementDriftGuard: 'enabled',
+        settlementDriftReview: 'enabled',
+        settlementAdjudication: 'enabled',
         runtimeControlsCacheSeconds: 30,
         devMode: cfg.devMode,
       });

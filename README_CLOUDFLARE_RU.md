@@ -1,38 +1,40 @@
-# Football Analytics Mini App v6.5.0 — RC13 Settlement Finality Verification & Drift Guard
+# Football Analytics Mini App v6.6.0 — RC14 Settlement Drift Review & Explicit Adjudication
 
-RC13 закрывает следующий риск после безопасного auto-recovery: уже settled результат может позже измениться у provider.
+RC14 завершает manual review-контур после RC13 Settlement Finality Verification.
 
 ## Что нового
 
-- settled rows получают состояние `unverified | verified | drift`;
-- повторная finality-проверка запускается около `05:00 UTC`;
-- проверяются только settlement старше 6 часов;
-- окно проверки — последние 7 дней;
-- максимум 100 fixture и 3 даты/provider calls за run;
-- совпавший финальный счёт → `verified`;
-- изменившийся счёт/outcome либо terminal provider status `AWD/WO/CANC/ABD` → `drift`;
-- drift никогда не переписывает сохранённый settlement автоматически;
-- drift записывается в отдельный `settlement_verification_events`;
-- строки drift исключаются из model-quality и calibration;
-- Integrity Remediation показывает verified / pending / drift.
+- unresolved drift появляется в отдельной admin queue;
+- для каждого drift-event доступны только три явных решения:
+  - `keep_stored` — оставить исходный settlement;
+  - `accept_provider` — явно принять новый provider score/outcome и пересчитать backtest outcome-метрики;
+  - `void_prediction` — исключить prediction из backtest-метрик;
+- каждое действие требует причины;
+- stale snapshot/token guard запрещает решение по устаревшему drift;
+- один source drift-event получает только одно зафиксированное решение;
+- сохраняется immutable before/provider/after audit;
+- admin Telegram ID может храниться backend-аудитом, но не выводится в UI;
+- `accept_provider` разрешён только для безопасного финального FT/AET/PEN с валидным счётом;
+- CANC/ABD/AWD/WO нельзя автоматически принять как новый score через adjudication;
+- resolved settlement получает state `adjudicated`.
 
 ## Safety
 
-Первый prediction snapshot остаётся immutable. RC13 также не делает silent correction уже записанного результата: поздняя provider-коррекция требует отдельного review-этапа.
+Автомат RC13 по-прежнему никогда не исправляет score. Любое изменение settlement возможно только явным admin action RC14 с подтверждением, reason и audit trail.
 
 ## Supabase
 
-Перед Deploy выполнить `supabase_migration_v6_5.sql`.
+Перед Deploy выполнить `supabase_migration_v6_6.sql`.
 
 ## Health
 
 Ожидается:
-- version = `6.5.0-rc13`;
-- releaseCandidate = `RC13`;
+- version = `6.6.0-rc14`;
+- releaseCandidate = `RC14`;
 - settlementFinalityVerification = enabled;
 - settlementDriftGuard = enabled;
-- settlementRunLedger = enabled;
-- settlementCircuitBreaker = enabled;
+- settlementDriftReview = enabled;
+- settlementAdjudication = enabled;
 - monetization = paused.
 
 Telegram Stars остаются paused.

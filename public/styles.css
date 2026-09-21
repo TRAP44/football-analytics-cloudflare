@@ -2109,3 +2109,13 @@ main { position: relative; z-index: 1; }
   .model-version-row{grid-template-columns:1fr}
   .model-version-row>div:first-child{grid-column:auto}
 }
+
+
+/* RC14 settlement drift adjudication */
+.model-remediation-drift-queue{margin-top:12px}
+.settlement-drift-list{display:grid;gap:10px}
+.settlement-drift-item{display:grid;gap:10px;padding:12px;border:1px solid var(--line,#2b3442);border-radius:14px;background:rgba(255,255,255,.025)}
+.settlement-drift-copy{display:grid;gap:3px}
+.settlement-drift-copy small,.settlement-drift-copy span,.settlement-drift-copy em{font-size:12px;line-height:1.35;opacity:.78;font-style:normal}
+.settlement-drift-actions{display:flex;flex-wrap:wrap;gap:8px}
+.settlement-drift-actions button{flex:1 1 150px}
