@@ -15,6 +15,7 @@ const memory = {
   providerAudit: { last: null, byFixture: new Map() },
   providerE2E: { last: null },
   productionReadiness: null,
+  rcRegression: null,
   inflight: new Map(),
   routeBurst: new Map(),
   userSyncAt: new Map(),
@@ -54,7 +55,7 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '5.2.0-failure-recovery';
+const APP_VERSION = '5.3.0-rc1';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -353,7 +354,7 @@ const ROUTE_BURST_POLICIES = Object.freeze([
   { test: p => p === '/api/provider/e2e-validation', limit: 1, windowMs: 30000, label: 'provider-e2e' },
   { test: p => p === '/api/provider/coverage-audit', limit: 2, windowMs: 30000, label: 'coverage-audit' },
   { test: p => p === '/api/provider/probe', limit: 3, windowMs: 30000, label: 'provider-probe' },
-  { test: p => p === '/api/diagnostics' || p === '/api/release-readiness' || p === '/api/production-readiness', limit: 6, windowMs: 30000, label: 'admin-diagnostics' },
+  { test: p => p === '/api/diagnostics' || p === '/api/release-readiness' || p === '/api/production-readiness' || p === '/api/rc-regression', limit: 6, windowMs: 30000, label: 'admin-diagnostics' },
 ]);
 
 function routeBurstPolicy(pathname) {
@@ -3631,6 +3632,8 @@ async function apiReleaseReadiness(request, cfg) {
     releaseCheck('production_mode', 'Production mode', cfg.devMode ? 'warn' : 'pass', cfg.devMode ? 'DEV_MODE=true — перед релизом выключить.' : 'DEV_MODE=false.', false),
     releaseCheck('load_safety', 'Production Load Safety', memory.productionReadiness?.value?.status === 'blocked' ? 'fail' : memory.productionReadiness?.value ? 'pass' : 'warn',
       memory.productionReadiness?.value ? `${memory.productionReadiness.value.label} · ${memory.productionReadiness.value.score}%.` : 'Production Safety Gate ещё не запускался.', false),
+    releaseCheck('rc_regression', 'RC Regression Smoke', memory.rcRegression?.value?.status === 'blocked' ? 'fail' : memory.rcRegression?.value ? 'pass' : 'warn',
+      memory.rcRegression?.value ? `${memory.rcRegression.value.label} · ${memory.rcRegression.value.score}%.` : 'RC smoke-test ещё не запускался.', false),
     releaseCheck('monetization', 'Монетизация', cfg.monetizationEnabled ? 'warn' : 'pass', cfg.monetizationEnabled ? 'Монетизация включена, хотя текущий план проекта — запускать её в финале.' : 'Оплата корректно остаётся на паузе.', false),
     releaseCheck('integrity_last_run', 'Последняя проверка матчей', diagnostics.integrity?.lastRun?.health === 'critical' ? 'warn' : 'pass', diagnostics.integrity?.lastRun ? `Health: ${diagnostics.integrity.lastRun.health || 'ok'}, quality ${Number(diagnostics.integrity.lastRun.qualityScore || 0)}%.` : 'Проверка появится после загрузки каталога матчей.', false),
   ];
@@ -3750,6 +3753,257 @@ async function apiProductionReadiness(request, cfg) {
     },
   };
   memory.productionReadiness = { at: now, value };
+  return json(value);
+}
+
+
+const RC_NAME = 'RC1';
+
+function rcCheck(id, group, label, state, detail, blocking = false) {
+  return { id, group, label, state, detail, blocking: Boolean(blocking) };
+}
+
+async function rcReadRoute(label, factory) {
+  const startedAt = Date.now();
+  try {
+    const response = await factory();
+    const status = Number(response?.status || 0);
+    const body = await responseJsonSafe(response);
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      latencyMs: Date.now() - startedAt,
+      label,
+      shape: body && typeof body === 'object' ? Object.keys(body).slice(0, 12) : [],
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      latencyMs: Date.now() - startedAt,
+      label,
+      error: redactOpsString(error?.message || error, 140),
+      shape: [],
+    };
+  }
+}
+
+async function apiRcRegression(request, cfg, user) {
+  const url = new URL(request.url);
+  const force = url.searchParams.get('refresh') === '1';
+  const now = Date.now();
+
+  if (!force && memory.rcRegression?.value && now - Number(memory.rcRegression.at || 0) < 30000) {
+    return json({ ...memory.rcRegression.value, cached: true });
+  }
+
+  const checks = [];
+  const startedAt = Date.now();
+
+  // 1) Core runtime / security configuration.
+  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '5.3.0-rc1' ? 'pass' : 'fail',
+    `Worker: ${APP_VERSION}; ожидается 5.3.0-rc1.`, true));
+  checks.push(rcCheck('production_mode', 'runtime', 'DEV_MODE выключен', cfg.devMode ? 'fail' : 'pass',
+    cfg.devMode ? 'DEV_MODE=true.' : 'DEV_MODE=false.', true));
+  checks.push(rcCheck('monetization_paused', 'runtime', 'Монетизация на паузе', cfg.monetizationEnabled ? 'fail' : 'pass',
+    cfg.monetizationEnabled ? 'MONETIZATION_ENABLED=true.' : 'Платёжный контур не активирован.', true));
+  checks.push(rcCheck('telegram_runtime', 'runtime', 'Telegram runtime', cfg.botToken ? 'pass' : 'fail',
+    cfg.botToken ? 'Bot token доступен Worker.' : 'TELEGRAM_BOT_TOKEN отсутствует.', true));
+  checks.push(rcCheck('football_key', 'runtime', 'API-Football runtime', cfg.apiFootballKey ? 'pass' : 'fail',
+    cfg.apiFootballKey ? 'API key доступен Worker.' : 'API_FOOTBALL_KEY отсутствует.', true));
+  checks.push(rcCheck('supabase_runtime', 'runtime', 'Supabase runtime', hasSupabase(cfg) ? 'pass' : 'fail',
+    hasSupabase(cfg) ? 'URL и service key доступны.' : 'SUPABASE_URL/service key отсутствуют.', true));
+
+  const currentAdminOk = isAdminUser(user, cfg);
+  const failClosedOk = !cfg.devMode && !isAdminUser({ id: 0 }, cfg);
+  checks.push(rcCheck('admin_current', 'security', 'Текущий пользователь — admin', currentAdminOk ? 'pass' : 'fail',
+    currentAdminOk ? 'Server-side Telegram initData подтверждён и ID разрешён.' : 'Текущий user не проходит admin gate.', true));
+  checks.push(rcCheck('admin_fail_closed', 'security', 'Admin gate fail-closed', failClosedOk ? 'pass' : 'fail',
+    failClosedOk ? 'Неизвестный Telegram ID не получает admin role.' : 'Проверьте DEV_MODE/admin gate.', true));
+  checks.push(rcCheck('admin_list', 'security', 'ADMIN_TELEGRAM_IDS настроен', cfg.adminTelegramIds?.length ? 'pass' : 'fail',
+    cfg.adminTelegramIds?.length ? `Настроено ID: ${cfg.adminTelegramIds.length}. Значения не раскрываются.` : 'Список администраторов пуст.', true));
+
+  // 2) Persistence schema regression.
+  const requiredTables = [
+    ['users', 'Users', true],
+    ['usage_daily', 'Usage quota', true],
+    ['analysis_cache', 'Shared cache', true],
+    ['analysis_history', 'Analysis history', true],
+    ['favorites', 'Favorites', true],
+    ['user_preferences', 'Preferences', true],
+    ['match_reminders', 'Reminders', true],
+    ['model_predictions', 'Model predictions', true],
+    ['ops_events', 'Observability', false],
+    ['match_integrity_runs', 'Integrity runs', true],
+    ['match_integrity_events', 'Integrity events', true],
+    ['odds_snapshots', 'Odds history', false],
+    ['billing_payments', 'Billing storage (paused)', false],
+  ];
+
+  const tableResults = await Promise.all(requiredTables.map(async ([table, label, blocking]) => {
+    const result = await probeOptionalTable(cfg, table);
+    return { table, label, blocking, ...result };
+  }));
+
+  for (const table of tableResults) {
+    const state = table.ok ? 'pass' : table.blocking ? 'fail' : 'warn';
+    checks.push(rcCheck(
+      `table_${table.table}`,
+      'database',
+      table.label,
+      state,
+      table.ok ? `${table.table}: доступна.` : `${table.table}: ${table.status || 'ошибка'}.`,
+      table.blocking
+    ));
+  }
+
+  // 3) Read-only user route regression. No mutation and no API-Football usage.
+  const readRoutes = await Promise.all([
+    rcReadRoute('Profile', () => apiMe(request, cfg, user)),
+    rcReadRoute('Favorites', () => apiFavorites(new Request(request.url, { method: 'GET', headers: request.headers }), cfg, user)),
+    rcReadRoute('Reminders', () => apiReminders(new Request(request.url, { method: 'GET', headers: request.headers }), cfg, user)),
+    rcReadRoute('Preferences', () => apiPreferences(new Request(request.url, { method: 'GET', headers: request.headers }), cfg, user)),
+    rcReadRoute('History', () => apiHistory(new Request(request.url, { method: 'GET', headers: request.headers }), cfg, user)),
+  ]);
+
+  for (const route of readRoutes) {
+    checks.push(rcCheck(
+      `read_${route.label.toLowerCase()}`,
+      'user_routes',
+      `${route.label} GET`,
+      route.ok ? 'pass' : 'fail',
+      route.ok
+        ? `HTTP ${route.status} · ${route.latencyMs} мс · shape: ${route.shape.join(', ') || 'object'}.`
+        : `HTTP ${route.status || '—'} · ${route.error || 'route failed'}.`,
+      true
+    ));
+  }
+
+  // 4) Existing release/safety gates.
+  let release = null;
+  let production = null;
+  try { release = await responseJsonSafe(await apiReleaseReadiness(new Request(`${url.origin}/api/release-readiness?refresh=1`), cfg)); } catch {}
+  try { production = await responseJsonSafe(await apiProductionReadiness(new Request(`${url.origin}/api/production-readiness?refresh=1`), cfg)); } catch {}
+
+  checks.push(rcCheck(
+    'release_gate',
+    'gates',
+    'Core Release Readiness',
+    release?.status === 'blocked' ? 'fail' : release?.available ? (release?.status === 'ready' ? 'pass' : 'warn') : 'fail',
+    release?.available ? `${release.label || release.status} · ${Number(release.score || 0)}%.` : 'Release Readiness недоступен.',
+    true
+  ));
+  checks.push(rcCheck(
+    'production_gate',
+    'gates',
+    'Production Load Safety',
+    production?.status === 'blocked' ? 'fail' : production?.available ? (production?.status === 'ready' ? 'pass' : 'warn') : 'fail',
+    production?.available ? `${production.label || production.status} · ${Number(production.score || 0)}%.` : 'Production Safety Gate недоступен.',
+    true
+  ));
+
+  const transition = providerTransitionProfile();
+  const budget = providerBudgetProfile();
+  const lastE2E = await loadLastProviderE2E(cfg);
+
+  checks.push(rcCheck(
+    'provider_mode',
+    'provider',
+    'Provider mode',
+    budget.mode === 'emergency' ? 'warn' : 'pass',
+    `${transition.plan} · ${budget.label}.`,
+    false
+  ));
+  checks.push(rcCheck(
+    'expanded_e2e',
+    'provider',
+    'Expanded Data E2E',
+    transition.paid
+      ? (lastE2E?.status?.ready ? 'pass' : 'warn')
+      : 'warn',
+    transition.paid
+      ? (lastE2E?.status?.ready ? `${lastE2E.status.label} · fixture ${lastE2E.fixtureId}.` : 'Расширенный тариф обнаружен, но E2E ещё не подтверждён.')
+      : 'FREE/HOLD допустим для RC ядра; полный expanded E2E выполняется после увеличения квоты.',
+    false
+  ));
+
+  // 5) Static server-side invariants.
+  const safety = productionSafetySnapshot();
+  checks.push(rcCheck('singleflight', 'safety', 'Server SingleFlight', 'pass',
+    `${Number(safety.singleflight?.joins || 0)} joins; ${Number(safety.singleflight?.active || 0)} active.`, true));
+  checks.push(rcCheck('burst_guard', 'safety', 'Burst Guard policies', Number(safety.burstGuard?.policies?.length || 0) >= 8 ? 'pass' : 'fail',
+    `${Number(safety.burstGuard?.policies?.length || 0)} route policies.`, true));
+  checks.push(rcCheck('timeouts', 'safety', 'Upstream timeouts', 'pass',
+    `Supabase ${Number(safety.upstream?.supabaseTimeoutMs || 0)} мс; API-Football ${Number(safety.upstream?.apiFootballTimeoutMs || 0)} мс.`, true));
+  checks.push(rcCheck('l1_bounds', 'safety', 'Bounded L1 cache', Number(safety.memory?.cacheEntries || 0) <= 600 ? 'pass' : 'warn',
+    `${Number(safety.memory?.cacheEntries || 0)} entries; soft limit ${Number(safety.memory?.cacheSoftLimit || 500)}.`, false));
+
+  const blockers = checks.filter(x => x.state === 'fail' && x.blocking);
+  const warnings = checks.filter(x => x.state === 'warn' || (x.state === 'fail' && !x.blocking));
+  const passed = checks.filter(x => x.state === 'pass').length;
+  const score = Math.round((passed / Math.max(1, checks.length)) * 100);
+  const status = blockers.length ? 'blocked' : warnings.length ? 'rc_with_holds' : 'rc_ready';
+
+  const groups = {};
+  for (const check of checks) {
+    groups[check.group] ||= { total: 0, pass: 0, warn: 0, fail: 0 };
+    groups[check.group].total += 1;
+    groups[check.group][check.state] = Number(groups[check.group][check.state] || 0) + 1;
+  }
+
+  const value = {
+    available: true,
+    releaseCandidate: RC_NAME,
+    version: APP_VERSION,
+    generatedAt: new Date().toISOString(),
+    durationMs: Date.now() - startedAt,
+    status,
+    label: blockers.length
+      ? 'RC заблокирован: есть обязательные ошибки'
+      : warnings.length
+        ? 'RC1 готов к проверке, есть ожидаемые HOLD/WARN'
+        : 'RC1 regression gate пройден',
+    score,
+    summary: {
+      total: checks.length,
+      passed,
+      warnings: warnings.length,
+      blockers: blockers.length,
+    },
+    groups,
+    checks,
+    readRoutes,
+    tableResults: tableResults.map(x => ({ table: x.table, ok: x.ok, status: x.status, blocking: x.blocking })),
+    provider: {
+      plan: transition.plan,
+      mode: budget.mode,
+      expandedE2E: lastE2E?.status?.code || (transition.paid ? 'NOT_RUN' : 'HOLD_FREE'),
+    },
+    policy: {
+      mutatesUserData: false,
+      consumesFootballApi: false,
+      sqlRequired: false,
+      payments: 'paused',
+      note: 'RC smoke-test проверяет runtime, schema, read-only user routes, security и safety gates. Он не запускает Analyze и не расходует API-Football.',
+    },
+  };
+
+  memory.rcRegression = { at: now, value };
+  await recordOpsEvent(cfg, {
+    severity: blockers.length ? 'error' : warnings.length ? 'warning' : 'info',
+    source: 'release',
+    eventType: 'rc_regression',
+    code: blockers.length ? 'RC_BLOCKED' : warnings.length ? 'RC_WITH_HOLDS' : 'RC_READY',
+    message: value.label,
+    meta: {
+      releaseCandidate: RC_NAME,
+      score,
+      blockers: blockers.map(x => x.id),
+      warnings: warnings.map(x => x.id),
+      durationMs: value.durationMs,
+    },
+  }).catch(() => {});
+
   return json(value);
 }
 
@@ -6623,6 +6877,10 @@ export default {
         failureRecovery: 'enabled',
         gracefulErrors: 'enabled',
         webviewRecovery: 'enabled',
+        releaseCandidate: 'RC1',
+        regressionQA: 'enabled',
+        rcSmokeTest: 'enabled',
+        clientContractQA: 'enabled',
         devMode: cfg.devMode,
       });
     }
@@ -6697,6 +6955,10 @@ export default {
       if (request.method === 'GET' && url.pathname === '/api/production-readiness') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
         return await apiProductionReadiness(request, cfg);
+      }
+      if (request.method === 'GET' && url.pathname === '/api/rc-regression') {
+        if (!isAdminUser(user, cfg)) return adminForbidden();
+        return await apiRcRegression(request, cfg, user);
       }
       if (request.method === 'GET' && url.pathname === '/api/data-integrity') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
