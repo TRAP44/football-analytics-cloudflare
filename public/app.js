@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '5.0.0-expanded-data-release-gate';
+const CLIENT_VERSION = '5.1.0-production-load-safety';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -33,6 +33,8 @@ const state = {
   diagnosticsLoading: false,
   releaseReadiness: null,
   releaseReadinessLoading: false,
+  productionReadiness: null,
+  productionReadinessLoading: false,
   serverVersion: '',
   versionMismatch: false,
   storageAvailable: true,
@@ -60,7 +62,7 @@ const state = {
   providerLoaded: false,
   viewScroll: {},
   matchesLoadSeq: 0,
-  clientPerf: { startedAt: new Date().toISOString(), requests: 0, completed: 0, failed: 0, deduped: 0, retries: 0, totalMs: 0, lastMs: null, clientErrors: 0, lastError: '' },
+  clientPerf: { startedAt: new Date().toISOString(), requests: 0, completed: 0, failed: 0, deduped: 0, retries: 0, rateLimited: 0, timeouts: 0, totalMs: 0, lastMs: null, clientErrors: 0, lastError: '' },
 };
 
 const inflightGetRequests = new Map();
@@ -212,7 +214,12 @@ async function api(path, options = {}) {
         if (serverVersion) observeServerVersion(serverVersion);
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
-          const error = Object.assign(new Error(data.error || `HTTP ${response.status}`), { status: response.status, payload: data });
+          const error = Object.assign(new Error(data.error || `HTTP ${response.status}`), {
+            status: response.status,
+            payload: data,
+            retryAfter: Number(data.retryAfter || response.headers.get('retry-after') || 0),
+          });
+          if (response.status === 429) state.clientPerf.rateLimited += 1;
           if (retryable && attempt < 1 && [502, 503, 504].includes(response.status)) throw Object.assign(error, { transient: true });
           throw error;
         }
@@ -227,11 +234,17 @@ async function api(path, options = {}) {
         if (retryable && attempt < 1 && transient) {
           attempt += 1;
           state.clientPerf.retries += 1;
-          await new Promise(resolve => setTimeout(resolve, 450));
+          await new Promise(resolve => setTimeout(resolve, 350 + Math.floor(Math.random() * 250)));
           continue;
         }
         state.clientPerf.failed += 1;
-        if (aborted) throw Object.assign(new Error('Сервер отвечает слишком долго. Попробуйте ещё раз.'), { status: 408 });
+        if (aborted) {
+          state.clientPerf.timeouts += 1;
+          throw Object.assign(new Error('Сервер отвечает слишком долго. Попробуйте ещё раз.'), { status: 408 });
+        }
+        if (error?.status === 429 && error?.retryAfter) {
+          throw Object.assign(new Error(`Слишком много запросов. Повторите примерно через ${Number(error.retryAfter)} сек.`), error);
+        }
         if (navigator.onLine === false && !error?.status) throw Object.assign(new Error('Нет подключения к интернету. Показаны сохранённые данные, если они доступны.'), { status: 0 });
         throw error;
       } finally {
@@ -559,7 +572,7 @@ async function openProfileView() {
   if (!state.remindersLoaded) essentials.push(loadReminders());
   if (isAdmin()) {
     if (!state.providerLoaded) essentials.push(loadProvider());
-    essentials.push(loadModelQuality(false), loadReleaseReadiness(false));
+    essentials.push(loadModelQuality(false), loadReleaseReadiness(false), loadProductionReadiness(false));
   }
   await Promise.allSettled(essentials);
 }
@@ -639,6 +652,95 @@ function diagnosticsStateLabel(stateValue) {
   return map[String(stateValue || '')] || 'Неизвестно';
 }
 
+
+function productionStateLabel(stateValue) {
+  if (stateValue === 'ready') return 'READY';
+  if (stateValue === 'warning') return 'CHECK';
+  if (stateValue === 'blocked') return 'BLOCK';
+  return '—';
+}
+
+function renderProductionReadiness() {
+  if (!isAdmin()) return;
+  const root = $('productionReadinessStatus');
+  const badge = $('productionReadinessBadge');
+  const score = $('productionReadinessScore');
+  const checks = $('productionReadinessChecks');
+  const runtime = $('productionReadinessRuntime');
+  if (!root || !badge || !score || !checks || !runtime) return;
+
+  if (state.productionReadinessLoading) {
+    root.textContent = 'Проверяю singleflight, burst guard, timeout и bounded memory…';
+    badge.textContent = 'RUN';
+    badge.className = 'production-badge running';
+    score.textContent = '—';
+    checks.innerHTML = '';
+    runtime.innerHTML = '';
+    return;
+  }
+
+  const r = state.productionReadiness;
+  if (!r) {
+    root.textContent = 'Production Safety Gate ещё не запускался.';
+    badge.textContent = 'WAIT';
+    badge.className = 'production-badge';
+    score.textContent = '—';
+    checks.innerHTML = '';
+    runtime.innerHTML = '';
+    return;
+  }
+
+  root.textContent = r.label || 'Проверка завершена.';
+  badge.textContent = productionStateLabel(r.status);
+  badge.className = `production-badge ${escapeHtml(r.status || '')}`;
+  score.textContent = `${Number(r.score || 0)}%`;
+
+  checks.innerHTML = (r.checks || []).map(x => `
+    <div class="production-check ${escapeHtml(x.state || '')}">
+      <span>${x.state === 'pass' ? '✓' : x.state === 'fail' ? '×' : '!'}</span>
+      <div><strong>${escapeHtml(x.label || '')}</strong><small>${escapeHtml(x.detail || '')}</small></div>
+      <em>${x.blocking ? 'core' : 'guard'}</em>
+    </div>`).join('');
+
+  const s = r.safety || {};
+  runtime.innerHTML = `
+    <div class="production-runtime-grid">
+      <div><span>SingleFlight joins</span><strong>${Number(s.singleflight?.joins || 0)}</strong><small>${Number(s.singleflight?.active || 0)} сейчас</small></div>
+      <div><span>Burst blocks</span><strong>${Number(s.burstGuard?.blocked || 0)}</strong><small>${Number(s.burstGuard?.activeBuckets || 0)} bucket</small></div>
+      <div><span>Upstream timeout</span><strong>${Number(s.upstream?.timeouts || 0)}</strong><small>DB ${Number(s.upstream?.supabaseTimeoutMs || 0)/1000}с · API ${Number(s.upstream?.apiFootballTimeoutMs || 0)/1000}с</small></div>
+      <div><span>L1 cache</span><strong>${Number(s.memory?.cacheEntries || 0)}</strong><small>soft limit ${Number(s.memory?.cacheSoftLimit || 0)}</small></div>
+      <div><span>User sync cache</span><strong>${Number(s.memory?.userSyncEntries || 0)}</strong><small>${Math.round(Number(s.memory?.userSyncTtlSeconds || 0)/60)} мин.</small></div>
+      <div><span>Memory prune</span><strong>${Number(s.memory?.pruned || 0)}</strong><small>в этом isolate</small></div>
+    </div>
+    <p class="tiny">${escapeHtml(r.policy?.note || '')}</p>`;
+}
+
+async function loadProductionReadiness(force = false) {
+  if (!isAdmin()) return;
+  if (state.productionReadinessLoading) return;
+  if (!force && state.productionReadiness) { renderProductionReadiness(); return; }
+  state.productionReadinessLoading = true;
+  renderProductionReadiness();
+  try {
+    state.productionReadiness = await api(`/api/production-readiness${force ? '?refresh=1' : ''}`, {
+      retry: false,
+      timeoutMs: 15000,
+    });
+  } catch (e) {
+    state.productionReadiness = {
+      status: 'blocked',
+      label: e.message || 'Production Safety Gate не выполнен.',
+      score: 0,
+      checks: [],
+      safety: {},
+      policy: {},
+    };
+  } finally {
+    state.productionReadinessLoading = false;
+    renderProductionReadiness();
+  }
+}
+
 function renderDiagnostics() {
   const root = $('diagnosticsStatus');
   if (!root) return;
@@ -709,7 +811,10 @@ function renderDiagnostics() {
       <div class="diagnostics-grid">
         <div><span>API запросов</span><strong>${Number(rt.apiRequests || 0)}</strong><small>успех ${diagPct(rt.apiSuccessRate)}</small></div>
         <div><span>Cache hit</span><strong>${diagPct(rt.cacheHitRate)}</strong><small>${Number(rt.cacheHits || 0)} hit · ${Number(rt.cacheMisses || 0)} miss</small></div>
-        <div><span>Rate limits</span><strong>${Number(rt.rateLimits || 0)}</strong><small>${Number(rt.quotaBlocks || 0)} запроса остановлено guard</small></div>
+        <div><span>Rate limits</span><strong>${Number(rt.rateLimits || 0)}</strong><small>${Number(rt.quotaBlocks || 0)} запроса остановлено quota guard</small></div>
+        <div><span>Burst guard</span><strong>${Number(rt.burstBlocks || 0)}</strong><small>${Number(rt.singleflightJoins || 0)} singleflight joins</small></div>
+        <div><span>Upstream timeout</span><strong>${Number(rt.upstreamTimeouts || 0)}</strong><small>${Number(rt.userSyncSkips || 0)} user sync записей пропущено</small></div>
+        <div><span>L1 cache</span><strong>${Number(rt.l1CacheEntries || 0)}</strong><small>${Number(rt.memoryPrunes || 0)} memory prune</small></div>
         <div><span>Ошибки маршрутов</span><strong>${Number(rt.routeErrors || 0)}</strong><small>uptime ${escapeHtml(diagDuration(rt.uptimeSeconds))}</small></div>
       </div>
       <p class="tiny diagnostics-note">Счётчики runtime относятся только к текущему экземпляру Cloudflare Worker. Дневной и минутный расход выше берётся непосредственно из заголовков API-Football.</p>`;
@@ -719,11 +824,12 @@ function renderDiagnostics() {
     const cp = state.clientPerf || {};
     const avg = Number(cp.completed || 0) > 0 ? Math.round(Number(cp.totalMs || 0) / Number(cp.completed)) : null;
     client.hidden = false;
-    client.innerHTML = `<div class="diagnostics-block-head"><strong>📱 Клиент Mini App</strong><span>v4.2</span></div><div class="diagnostics-grid">
+    client.innerHTML = `<div class="diagnostics-block-head"><strong>📱 Клиент Mini App</strong><span>v5.1</span></div><div class="diagnostics-grid">
       <div><span>Сеть</span><strong>${navigator.onLine === false ? 'Offline' : 'Online'}</strong><small>${navigator.connection?.effectiveType ? escapeHtml(navigator.connection.effectiveType) : 'тип сети —'}</small></div>
       <div><span>Средний API</span><strong>${avg !== null ? `${avg} мс` : '—'}</strong><small>последний ${cp.lastMs !== null ? `${cp.lastMs} мс` : '—'}</small></div>
       <div><span>Запросы</span><strong>${Number(cp.requests || 0)}</strong><small>${Number(cp.completed || 0)} успешно · ${Number(cp.failed || 0)} ошибок</small></div>
       <div><span>Оптимизация</span><strong>${Number(cp.deduped || 0)} dedupe</strong><small>${Number(cp.retries || 0)} авто-повторов</small></div>
+      <div><span>Защита клиента</span><strong>${Number(cp.rateLimited || 0)} × 429</strong><small>${Number(cp.timeouts || 0)} timeout</small></div>
     </div>`;
   }
 
@@ -3389,6 +3495,7 @@ $('savePreferencesBtn')?.addEventListener('click', savePreferencesFromUi);
 $('modelQualityRefreshBtn')?.addEventListener('click', () => loadModelQuality(true));
 $('modelQualityPeriod')?.addEventListener('change', () => loadModelQuality(true));
 $('diagnosticsRefreshBtn')?.addEventListener('click', () => loadDiagnostics(true));
+$('productionReadinessRefreshBtn')?.addEventListener('click', () => loadProductionReadiness(true));
 $('providerProbeBtn')?.addEventListener('click', () => probeProvider());
 $('providerAuditBtn')?.addEventListener('click', () => runProviderCoverageAudit(null, true));
 $('providerE2EBtn')?.addEventListener('click', () => runProviderE2E(null));
@@ -3402,7 +3509,7 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// v5.0 adds the admin-only expanded-data E2E validator and release gate without enabling user payments.
+// v5.1 adds production load-safety guards: server singleflight, burst protection, bounded L1 memory and upstream timeouts.
 // v4.0: first paint is intentionally small — matches/profile/favorites only.
 // History, reminders and provider details are loaded later or when their screen opens.
 await Promise.allSettled([loadProfile(), loadFavorites(), loadMatches()]);
