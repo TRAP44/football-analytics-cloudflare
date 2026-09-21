@@ -1781,3 +1781,57 @@ main { position: relative; z-index: 1; }
 @media(prefers-reduced-motion:reduce){
   .connection-banner.recovering .connection-banner-icon{animation:none}
 }
+
+
+/* v5.3 Release Candidate RC1 */
+.rc-panel{position:relative;overflow:hidden}
+.rc-panel:before{content:"RC1";position:absolute;right:-8px;top:-12px;font-size:58px;font-weight:950;letter-spacing:-.08em;color:color-mix(in srgb,var(--accent) 5%,transparent);pointer-events:none}
+.rc-run-btn{white-space:nowrap}
+.rc-status-row{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:center;margin:10px 0 12px}
+.rc-status-row>div{min-width:0}
+.rc-status-row strong{display:block;font-size:11px}
+.rc-status-row small{display:block;color:var(--hint);font-size:8px;line-height:1.4;margin-top:3px}
+.rc-badge{min-width:66px;text-align:center;padding:7px 9px;border:1px solid var(--line);border-radius:999px;color:var(--hint);font-size:9px;font-weight:950;letter-spacing:.05em}
+.rc-badge.ready{color:var(--good);border-color:color-mix(in srgb,var(--good) 42%,var(--line))}
+.rc-badge.warning{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 42%,var(--line))}
+.rc-badge.blocked{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 42%,var(--line))}
+.rc-badge.running{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 42%,var(--line))}
+.rc-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin:10px 0}
+.rc-summary-grid>div,.rc-group-grid>div{border:1px solid var(--line);border-radius:12px;padding:9px;background:var(--surface)}
+.rc-summary-grid span,.rc-summary-grid small,.rc-group-grid span,.rc-group-grid small{display:block;color:var(--hint);font-size:8px}
+.rc-summary-grid strong,.rc-group-grid strong{display:block;font-size:14px;margin:2px 0}
+.rc-group-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:10px 0}
+.rc-group-grid>div.pass{border-color:color-mix(in srgb,var(--good) 22%,var(--line))}
+.rc-group-grid>div.warn{border-color:color-mix(in srgb,var(--warn) 30%,var(--line))}
+.rc-group-grid>div.fail{border-color:color-mix(in srgb,var(--danger) 34%,var(--line))}
+.rc-client-head{display:flex;justify-content:space-between;gap:10px;align-items:center;margin:13px 0 8px}
+.rc-client-head strong{font-size:11px}
+.rc-client-head span{font-size:10px;color:var(--accent);font-weight:900}
+.rc-client-checks{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.rc-client-checks>div{display:grid;grid-template-columns:20px minmax(0,1fr);gap:7px;border:1px solid var(--line);border-radius:10px;padding:8px}
+.rc-client-checks i{font-style:normal;font-weight:950;font-size:10px}
+.rc-client-checks .pass i{color:var(--good)}
+.rc-client-checks .fail i{color:var(--danger)}
+.rc-client-checks strong{display:block;font-size:9px}
+.rc-client-checks small{display:block;color:var(--hint);font-size:8px;line-height:1.3;margin-top:2px}
+.rc-details{margin-top:12px;border:1px solid var(--line);border-radius:12px;padding:9px}
+.rc-details summary{font-size:10px;font-weight:850;cursor:pointer}
+.rc-check-list{display:grid;gap:5px;margin-top:8px}
+.rc-check-list>div{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:7px;align-items:center;padding:7px;border-top:1px solid var(--line)}
+.rc-check-list i{font-style:normal;font-weight:950;font-size:10px}
+.rc-check-list .pass i{color:var(--good)}
+.rc-check-list .warn i{color:var(--warn)}
+.rc-check-list .fail i{color:var(--danger)}
+.rc-check-list strong{display:block;font-size:9px}
+.rc-check-list small{display:block;color:var(--hint);font-size:8px;line-height:1.3;margin-top:2px}
+.rc-check-list em{font-style:normal;color:var(--hint);font-size:7px;white-space:nowrap}
+@media(max-width:520px){
+  .rc-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .rc-group-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .rc-client-checks{grid-template-columns:1fr}
+}
+@media(max-width:360px){
+  .rc-group-grid{grid-template-columns:1fr}
+  .rc-check-list>div{grid-template-columns:20px minmax(0,1fr)}
+  .rc-check-list em{grid-column:2;text-align:right}
+}
