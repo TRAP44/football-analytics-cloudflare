@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.9.0-rc17';
+const CLIENT_VERSION = '6.10.0-rc18';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc16';
+const CLIENT_RELEASE_CHANNEL = 'rc18';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -31,6 +31,9 @@ const state = {
   modelQuality: null,
   modelQualityLoading: false,
   modelQualityDays: 90,
+  calibrationControl: null,
+  calibrationControlLoading: false,
+  calibrationControlSaving: false,
   modelRemediation: null,
   modelRemediationLoading: false,
   modelRemediationRunning: false,
@@ -774,12 +777,15 @@ async function loadProfile() {
     renderProfile();
 renderDiscoveryHome();
   } catch (e) {
+    state.profile = null;
+    applyAdminVisibility();
     toast(e.message);
   }
 }
 
 function isAdmin() {
-  return Boolean(state.profile?.features?.isAdmin);
+  return state.profile?.features?.isAdmin === true
+    && state.profile?.features?.role === 'admin';
 }
 
 function applyAdminVisibility() {
@@ -919,7 +925,9 @@ function renderModelQuality() {
   const weightValidation = ce.weightsValidation || {};
   const promotion = ce.promotionGate || {};
   const lifecycle = ce.lifecycle || {};
-  const lifecycleLabel = lifecycle.status === 'promoted'
+  const lifecycleLabel = lifecycle.status === 'frozen'
+    ? 'FROZEN'
+    : lifecycle.status === 'promoted'
     ? 'НОВЫЙ CHAMPION'
     : lifecycle.status === 'active'
       ? 'ACTIVE'
@@ -940,7 +948,7 @@ function renderModelQuality() {
   const signalRows = (q.signalPerformance || []).some(x => Number(x.sample || 0) > 0) ? (q.signalPerformance || []) : (q.signals || []);
   engine.hidden = false;
   engine.innerHTML = `
-    <div class="quality-block-head"><strong>⚙️ Калибратор v3.9</strong><span class="calibration-mode ${escapeHtml(ce.mode || 'baseline')}">${modeLabel}</span></div>
+    <div class="quality-block-head"><strong>⚙️ Калибратор v4.0</strong><span class="calibration-mode ${escapeHtml(ce.mode || 'baseline')}">${modeLabel}</span></div>
     <div class="calibration-engine-grid">
       <div><span>Режим</span><strong>${modeLabel}</strong><small>${ce.mode === 'active' ? 'коррекции разрешены защитными правилами' : ce.mode === 'shadow' ? 'измеряет, но не меняет прогноз' : 'базовые веса'}</small></div>
       <div><span>Temperature</span><strong>${Number.isFinite(Number(ce.temperature)) ? Number(ce.temperature).toFixed(2) : '1.00'}</strong><small>1.00 = без сжатия вероятностей</small></div>
@@ -951,7 +959,7 @@ function renderModelQuality() {
       <div><span>Lifecycle</span><strong>${lifecycleLabel}</strong><small>revision ${Number(lifecycle.revision || 0)}</small></div>
       <div><span>Active fingerprint</span><strong>${escapeHtml(String(lifecycle.activeFingerprint || ce.fingerprint || '—').slice(0, 10))}</strong><small>${lifecycle.previousFingerprint ? `rollback → ${escapeHtml(String(lifecycle.previousFingerprint).slice(0, 10))}` : 'предыдущего champion нет'}</small></div>
     </div>
-    <div class="calibration-promotion-note"><strong>Защита RC17:</strong> challenger проходит два последовательных trusted holdout-окна, затем сравнивается с active champion. После продвижения отдельная когорта может автоматически вернуть предыдущий профиль.</div>
+    <div class="calibration-promotion-note"><strong>Защита RC18:</strong> challenger проходит два последовательных trusted holdout-окна, затем атомарно сравнивается с active champion. ${lifecycle.frozen ? `Lifecycle заморожен: ${escapeHtml(lifecycle.freezeReason || 'причина указана в административном журнале')}.` : 'После продвижения отдельная когорта может автоматически вернуть предыдущий профиль.'}</div>
     <div class="calibration-weights">
       ${(ce.signalStats || []).map(x => {
         const base = Number(x.baseWeight || 0) * 100;
@@ -1142,6 +1150,109 @@ async function loadModelQuality(force = false) {
   } finally {
     state.modelQualityLoading = false;
     renderModelQuality();
+  }
+}
+
+function calibrationTransitionLabel(action) {
+  return ({
+    initialize: 'Инициализация',
+    promote: 'Новый champion',
+    rollback: 'Автооткат',
+    manual_rollback: 'Ручной откат',
+    freeze: 'Заморозка',
+    unfreeze: 'Разморозка',
+  })[String(action || '')] || String(action || 'Переход');
+}
+
+function shortFingerprint(value) {
+  return value ? String(value).slice(0, 12) : '—';
+}
+
+function renderCalibrationControl() {
+  const status = $('calibrationControlStatus');
+  const summary = $('calibrationControlSummary');
+  const history = $('calibrationControlHistory');
+  const freezeBtn = $('calibrationFreezeBtn');
+  const unfreezeBtn = $('calibrationUnfreezeBtn');
+  const rollbackBtn = $('calibrationRollbackBtn');
+  if (!status || !summary || !history || !freezeBtn || !unfreezeBtn || !rollbackBtn) return;
+
+  const saving = state.calibrationControlSaving;
+  const data = state.calibrationControl;
+  if (state.calibrationControlLoading) {
+    status.textContent = 'Загружаю атомарное состояние lifecycle…';
+    summary.innerHTML = '';
+    history.innerHTML = '';
+  } else if (!data?.available) {
+    status.textContent = data?.reason || 'Lifecycle пока недоступен.';
+    summary.innerHTML = '';
+    history.innerHTML = '';
+  } else {
+    status.textContent = data.frozen
+      ? `Переходы заморожены${data.freezeReason ? `: ${data.freezeReason}` : '.'}`
+      : 'Автоматические promotion и rollback разрешены.';
+    summary.innerHTML = `
+      <div><span>Состояние</span><strong>${data.frozen ? 'ЗАМОРОЖЕНО' : 'АКТИВНО'}</strong><small>revision ${Number(data.revision || 0)}</small></div>
+      <div><span>Champion</span><strong>${escapeHtml(shortFingerprint(data.activeFingerprint))}</strong><small>active fingerprint</small></div>
+      <div><span>Предыдущий</span><strong>${escapeHtml(shortFingerprint(data.previousFingerprint))}</strong><small>rollback target</small></div>`;
+    history.innerHTML = (data.transitions || []).length
+      ? `<div class="model-remediation-history-head"><strong>Последние переходы</strong><span>actor ID скрыт</span></div>${data.transitions.slice(0, 8).map(row => `
+          <div class="model-remediation-history-row">
+            <div><strong>${escapeHtml(calibrationTransitionLabel(row.action))}</strong><span>${escapeHtml(row.reason || '')}</span></div>
+            <small>r${Number(row.expectedRevision || 0)} → r${Number(row.resultingRevision || 0)} · ${escapeHtml(relativeAge(row.createdAt))}</small>
+          </div>`).join('')}`
+      : '<div class="empty compact-empty">Переходов пока нет.</div>';
+  }
+
+  const frozen = Boolean(data?.frozen);
+  freezeBtn.hidden = frozen;
+  unfreezeBtn.hidden = !frozen;
+  freezeBtn.disabled = saving || !data?.available;
+  unfreezeBtn.disabled = saving || !data?.available;
+  rollbackBtn.disabled = saving || !data?.available || !data?.previousFingerprint;
+}
+
+async function loadCalibrationControl(force = false) {
+  if (!isAdmin() || state.calibrationControlLoading) return;
+  if (!force && state.calibrationControl) return renderCalibrationControl();
+  state.calibrationControlLoading = true;
+  renderCalibrationControl();
+  try {
+    state.calibrationControl = await api('/api/calibration-control');
+  } catch (error) {
+    state.calibrationControl = { available: false, reason: error.message || 'Не удалось загрузить lifecycle.' };
+  } finally {
+    state.calibrationControlLoading = false;
+    renderCalibrationControl();
+  }
+}
+
+async function runCalibrationControlAction(action) {
+  if (!isAdmin() || state.calibrationControlSaving) return;
+  const reason = String($('calibrationControlReason')?.value || '').trim();
+  if (reason.length < 5) return toast('Укажите причину действия — минимум 5 символов.');
+  const labels = { freeze: 'заморозить автоматические переходы', unfreeze: 'разморозить автоматические переходы', manual_rollback: 'вернуть предыдущий champion' };
+  if (!window.confirm(`Подтвердить действие: ${labels[action] || action}?`)) return;
+  state.calibrationControlSaving = true;
+  renderCalibrationControl();
+  try {
+    state.calibrationControl = await api('/api/calibration-control', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action, reason }),
+      retry: false,
+      dedupe: false,
+    });
+    if ($('calibrationControlReason')) $('calibrationControlReason').value = '';
+    toast('Состояние калибровки обновлено атомарно.');
+    await loadModelQuality(true);
+  } catch (error) {
+    toast(error.message || 'Не удалось изменить состояние калибровки.');
+    state.calibrationControl = null;
+    await loadCalibrationControl(true);
+  } finally {
+    state.calibrationControlSaving = false;
+    renderCalibrationControl();
   }
 }
 
@@ -1417,7 +1528,7 @@ async function openProfileView() {
   if (!state.remindersLoaded) essentials.push(loadReminders());
   if (isAdmin()) {
     if (!state.providerLoaded) essentials.push(loadProvider());
-    essentials.push(loadRuntimeControlsAdmin(false), loadModelQuality(false), loadModelRemediation(false), loadReleaseReadiness(false), loadProductionReadiness(false), loadReleaseMonitor(false), loadReminderHealth(false));
+    essentials.push(loadRuntimeControlsAdmin(false), loadModelQuality(false), loadCalibrationControl(false), loadModelRemediation(false), loadReleaseReadiness(false), loadProductionReadiness(false), loadReleaseMonitor(false), loadReminderHealth(false));
   }
   await Promise.allSettled(essentials);
 }
@@ -1607,11 +1718,11 @@ function runClientContractSmoke() {
   const adminSections = [...document.querySelectorAll('[data-admin-only]')];
   add('admin_sections', 'Разметка интерфейса администратора', adminSections.length >= 6, `${adminSections.length} технических секций доступны только администратору.`);
 
-  const cssLink = document.querySelector('link[href*="styles.css?v=6.9.0"]');
-  const appScript = document.querySelector('script[src*="app.js?v=6.9.0"]');
+  const cssLink = document.querySelector('link[href*="styles.css?v=6.10.0"]');
+  const appScript = document.querySelector('script[src*="app.js?v=6.10.0"]');
   add('cache_bust', 'Версии файлов интерфейса', Boolean(cssLink && appScript), `CSS ${cssLink ? 'OK' : 'MISS'} · JS ${appScript ? 'OK' : 'MISS'}.`);
 
-  add('client_version', 'Версия клиента', CLIENT_VERSION === '6.9.0-rc17', CLIENT_VERSION);
+  add('client_version', 'Версия клиента', CLIENT_VERSION === '6.10.0-rc18', CLIENT_VERSION);
   add('telegram_sdk', 'Telegram WebApp SDK', Boolean(window.Telegram?.WebApp), window.Telegram?.WebApp ? 'SDK доступен.' : 'В обычном браузере SDK может отсутствовать; в Telegram должен быть доступен.');
 
   const navButtons = ['navMatches','navSearch','navHistory','navProfile'].filter(id => $(id));
@@ -1637,7 +1748,7 @@ function runClientContractSmoke() {
 }
 
 function rcStateText(status) {
-  if (status === 'rc_ready') return 'RC17 ГОТОВ';
+  if (status === 'rc_ready') return 'RC18 ГОТОВ';
   if (status === 'rc_with_holds') return 'RC С ОГРАНИЧЕНИЯМИ';
   if (status === 'blocked') return 'ЗАБЛОКИРОВАНО';
   return 'ОЖИДАНИЕ';
@@ -1671,7 +1782,7 @@ function renderRcRegression() {
   const r = state.rcRegression;
   if (!r) {
     badge.className = 'rc-badge';
-    badge.textContent = 'RC17';
+    badge.textContent = 'RC18';
     status.textContent = 'Полная регрессионная проверка ещё не запускалась.';
     meta.textContent = 'Тест безопасный: без полного анализа, без изменения пользовательских данных и без расхода API-Football.';
     summary.innerHTML = '';
@@ -4917,7 +5028,7 @@ function renderAnalysis(d) {
         <h2>🧠 Состав модели</h2>
         <p class="muted">${escapeHtml(d.modelBreakdown?.method || 'Модель объединяет доступные статистические сигналы.')}</p>
         <div class="model-weights">${escapeHtml(modelWeightsText(d.modelBreakdown?.weights || {}))}</div>
-        ${d.modelCalibration ? `<div class="analysis-calibration-card ${escapeHtml(d.modelCalibration.mode || 'baseline')}"><span>Калибровка v${escapeHtml(d.modelCalibration.version || '3.9')}</span><strong>${d.modelCalibration.mode === 'active' ? 'Active champion' : d.modelCalibration.mode === 'shadow' ? 'Теневой challenger' : 'Baseline champion'}</strong><small>${escapeHtml(String(d.modelCalibration.fingerprint || '').slice(0, 8) || 'base')} · n=${Number(d.modelCalibration.sample || 0)} · T=${Number(d.modelCalibration.temperature || 1).toFixed(2)}${d.modelCalibration.weightsActive ? ' · адаптивные веса' : ''}</small></div>` : ''}
+      ${d.modelCalibration ? `<div class="analysis-calibration-card ${escapeHtml(d.modelCalibration.mode || 'baseline')}"><span>Калибровка v${escapeHtml(d.modelCalibration.version || '4.0')}</span><strong>${d.modelCalibration.mode === 'active' ? 'Active champion' : d.modelCalibration.mode === 'shadow' ? 'Теневой challenger' : 'Baseline champion'}</strong><small>${escapeHtml(String(d.modelCalibration.fingerprint || '').slice(0, 8) || 'base')} · n=${Number(d.modelCalibration.sample || 0)} · T=${Number(d.modelCalibration.temperature || 1).toFixed(2)}${d.modelCalibration.weightsActive ? ' · адаптивные веса' : ''}</small></div>` : ''}
         <div class="model-api-card">
           <span>API-Football</span>
           <strong>${escapeHtml(pred?.winner || 'Нет данных')}</strong>
@@ -5142,8 +5253,11 @@ $('premiumBtn')?.addEventListener('click', () => buyPlan('PREMIUM'));
 $('billingSyncBtn')?.addEventListener('click', () => syncBilling(true));
 $('subscriptionManageBtn')?.addEventListener('click', () => manageSubscription($('subscriptionManageBtn').dataset.action || 'cancel'));
 $('savePreferencesBtn')?.addEventListener('click', savePreferencesFromUi);
-$('modelQualityRefreshBtn')?.addEventListener('click', () => Promise.allSettled([loadModelQuality(true), loadModelRemediation(true)]));
+$('modelQualityRefreshBtn')?.addEventListener('click', () => Promise.allSettled([loadModelQuality(true), loadCalibrationControl(true), loadModelRemediation(true)]));
 $('modelQualityPeriod')?.addEventListener('change', () => loadModelQuality(true));
+$('calibrationFreezeBtn')?.addEventListener('click', () => runCalibrationControlAction('freeze'));
+$('calibrationUnfreezeBtn')?.addEventListener('click', () => runCalibrationControlAction('unfreeze'));
+$('calibrationRollbackBtn')?.addEventListener('click', () => runCalibrationControlAction('manual_rollback'));
 $('modelRemediationDryRunBtn')?.addEventListener('click', () => loadModelRemediation(true));
 $('modelRemediationRunBtn')?.addEventListener('click', runModelRemediation);
 $('modelRemediationCircuitResetBtn')?.addEventListener('click', resetSettlementCircuitFromUi);
@@ -5178,7 +5292,7 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// v6.7 RC17: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
+// v6.7 RC18: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
 // The boot watchdog never leaves the user behind an endless splash screen.
 const startupWatchdog = setTimeout(() => {
   if (!$('bootGate')?.hidden && !state.compatibilityBlocked) {

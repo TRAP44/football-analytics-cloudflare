@@ -5,6 +5,11 @@ import {
   evaluatePromotionWindows,
   splitRollingValidation,
 } from './calibration-lifecycle.js';
+import {
+  DEVELOPMENT_TELEGRAM_ID,
+  isAdminUser,
+  telegramIdList,
+} from './access-control.js';
 
 const memory = {
   users: new Map(),
@@ -67,11 +72,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.9.0-rc17';
+const APP_VERSION = '6.10.0-rc18';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc17';
-const RC_NAME = 'RC17';
+const RELEASE_CHANNEL = 'rc18';
+const RC_NAME = 'RC18';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -120,7 +125,7 @@ const MODEL_BASE_WEIGHTS = Object.freeze({
   h2h: 0.08,
 });
 
-const CALIBRATION_PROFILE_VERSION = '3.9-champion1';
+const CALIBRATION_PROFILE_VERSION = '4.0-atomic1';
 const CALIBRATION_CACHE_KEY = `model-calibration:global:${CALIBRATION_PROFILE_VERSION}`;
 const CALIBRATION_CACHE_MINUTES = 360;
 
@@ -156,13 +161,6 @@ function intEnv(value, fallback) {
   return Number.isFinite(n) ? Math.max(1, Math.floor(n)) : fallback;
 }
 
-function telegramIdList(value) {
-  return String(value || '')
-    .split(/[\s,;]+/)
-    .map(x => Number(x))
-    .filter(x => Number.isFinite(x) && x > 0);
-}
-
 function config(env) {
   return {
     devMode: boolEnv(env.DEV_MODE, false),
@@ -190,12 +188,6 @@ function config(env) {
       PREMIUM: intEnv(env.PREMIUM_STARS_PRICE, BILLING_PLANS.PREMIUM.stars),
     },
   };
-}
-
-function isAdminUser(user, cfg) {
-  if (!user?.id) return false;
-  if (cfg.devMode) return true;
-  return (cfg.adminTelegramIds || []).includes(Number(user.id));
 }
 
 function runtimeControlsSnapshot() {
@@ -1028,6 +1020,23 @@ async function supaDelete(cfg, table, filters = {}) {
   }
 }
 
+async function supaRpc(cfg, functionName, payload = {}) {
+  const url = new URL(`${cfg.supabaseUrl}/rest/v1/rpc/${functionName}`);
+  const r = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: supaHeaders(cfg),
+    body: JSON.stringify(payload || {}),
+  }, 7000, `Supabase RPC ${functionName}`);
+  const body = await r.json().catch(() => null);
+  if (!r.ok) {
+    const error = new Error(`Supabase RPC ${functionName}: HTTP ${r.status}${body?.message ? ` — ${redactOpsString(body.message, 180)}` : ''}`);
+    error.code = String(body?.code || `HTTP_${r.status}`);
+    error.detail = body?.details || null;
+    throw error;
+  }
+  return Array.isArray(body) && body.length === 1 ? body[0] : body;
+}
+
 function bumpTelemetry(key, amount = 1) {
   if (!memory.telemetry) return;
   const current = Number(memory.telemetry[key] || 0);
@@ -1202,7 +1211,13 @@ async function getRequestUser(request, cfg) {
   const initData = request.headers.get('x-telegram-init-data') || '';
   let user = await validateTelegramInitData(initData, cfg.botToken);
   if (!user && cfg.devMode) {
-    user = { id: 999001, username: 'dev_user', first_name: 'DEV', last_name: 'User' };
+    user = {
+      id: DEVELOPMENT_TELEGRAM_ID,
+      username: 'dev_user',
+      first_name: 'DEV',
+      last_name: 'User',
+      __developmentIdentity: true,
+    };
   }
   if (!user) return null;
   try {
@@ -2075,7 +2090,7 @@ function fitAdaptiveSignalWeightsHoldout(rows) {
   const changedWeightL1 = Object.keys(MODEL_BASE_WEIGHTS)
     .reduce((sum, name) => sum + Math.abs(Number(candidate.weights?.[name] || 0) - Number(MODEL_BASE_WEIGHTS[name] || 0)), 0);
 
-  // RC17 gate: both sequential holdout windows must beat the baseline.
+  // RC18 gate: both sequential holdout windows must beat the baseline.
   const active = changedWeightL1 >= 0.01 && gate.pass;
 
   return {
@@ -2204,11 +2219,12 @@ async function persistCalibrationPromotionValidation(cfg, profile) {
 async function probeCalibrationLifecycleSchema(cfg) {
   if (!hasSupabase(cfg)) return { ok: false, status: 'not_configured' };
   try {
-    const [profiles, state] = await Promise.all([
+    const [profiles, state, transitions] = await Promise.all([
       probeOptionalTable(cfg, 'model_calibration_profiles'),
       probeOptionalTable(cfg, 'model_calibration_state'),
+      probeOptionalTable(cfg, 'model_calibration_transitions'),
     ]);
-    return { ok: Boolean(profiles.ok && state.ok), profiles, state };
+    return { ok: Boolean(profiles.ok && state.ok && transitions.ok), profiles, state, transitions };
   } catch (error) {
     return { ok: false, status: error?.code || 'error' };
   }
@@ -2317,19 +2333,33 @@ function evaluateActivePostPromotion(rows, active, previous) {
 }
 
 async function saveCalibrationLifecycleState(cfg, currentState, next = {}) {
-  const revision = Math.max(0, Number(currentState?.revision || 0)) + 1;
-  const row = {
-    id: 'global',
-    active_fingerprint: next.activeFingerprint || null,
-    previous_fingerprint: next.previousFingerprint || null,
-    activated_at: next.activatedAt || new Date().toISOString(),
-    last_evaluated_at: new Date().toISOString(),
-    last_rollback_at: next.lastRollbackAt || currentState?.last_rollback_at || null,
-    revision,
-    updated_at: new Date().toISOString(),
+  return await supaRpc(cfg, 'transition_model_calibration', {
+    p_expected_revision: Math.max(0, Number(currentState?.revision || 0)),
+    p_action: String(next.action || ''),
+    p_target_fingerprint: next.targetFingerprint || null,
+    p_reason: String(next.reason || 'Calibration lifecycle transition.'),
+    p_actor_telegram_id: next.actorTelegramId ? Number(next.actorTelegramId) : null,
+    p_metadata: safeOpsMetadata(next.metadata || {}),
+  });
+}
+
+function isCalibrationRevisionConflict(error) {
+  return String(error?.code || '') === '40001'
+    || /revision conflict/i.test(String(error?.message || ''));
+}
+
+async function notifyCalibrationAdmins(cfg, action, detail = '') {
+  if (!cfg.botToken || !(cfg.adminTelegramIds || []).length) return;
+  const labels = {
+    initialize: 'инициализирован',
+    promote: 'продвинут новый champion',
+    rollback: 'выполнен автоматический rollback',
+    manual_rollback: 'выполнен ручной rollback',
+    freeze: 'lifecycle заморожен',
+    unfreeze: 'lifecycle разморожен',
   };
-  await supaUpsert(cfg, 'model_calibration_state', row, 'id');
-  return row;
+  const text = `⚙️ Calibration RC18: ${labels[action] || action}.${detail ? `\n${String(detail).slice(0, 500)}` : ''}`;
+  await Promise.allSettled((cfg.adminTelegramIds || []).map(id => sendTelegramMessage(id, text, cfg)));
 }
 
 async function resolveCalibrationLifecycle(cfg, candidate, trustedRows) {
@@ -2341,7 +2371,7 @@ async function resolveCalibrationLifecycle(cfg, candidate, trustedRows) {
     baseline.fingerprint = await calibrationPromotionFingerprint(baseline);
     return {
       ...baseline,
-      lifecycle: { available: false, status: 'blocked', activeFingerprint: baseline.fingerprint, challengerFingerprint: fingerprint, reason: 'Нужна supabase_migration_v6_9.sql; production остаётся на baseline.' },
+      lifecycle: { available: false, status: 'blocked', activeFingerprint: baseline.fingerprint, challengerFingerprint: fingerprint, reason: 'Нужна supabase_migration_v6_10.sql; production остаётся на baseline.' },
     };
   }
 
@@ -2353,40 +2383,61 @@ async function resolveCalibrationLifecycle(cfg, candidate, trustedRows) {
     const baseline = baselineCalibrationProfile(candidate.sample, candidate.signalStats || []);
     baseline.fingerprint = await calibrationPromotionFingerprint(baseline);
     await persistCalibrationLifecycleProfile(cfg, baseline, 'active');
-    const state = await saveCalibrationLifecycleState(cfg, lifecycle.state, { activeFingerprint: baseline.fingerprint });
-    lifecycle = { state, active: baseline, previous: null };
+    try {
+      const state = await saveCalibrationLifecycleState(cfg, lifecycle.state, {
+        action: 'initialize',
+        targetFingerprint: baseline.fingerprint,
+        reason: 'RC18 baseline lifecycle initialization.',
+        metadata: { appVersion: APP_VERSION },
+      });
+      lifecycle = { state, active: baseline, previous: null };
+      await notifyCalibrationAdmins(cfg, 'initialize', `Active: ${baseline.fingerprint.slice(0, 12)}`);
+    } catch (error) {
+      if (!isCalibrationRevisionConflict(error)) throw error;
+      lifecycle = await loadCalibrationLifecycleState(cfg);
+    }
   }
 
   const postPromotion = evaluateActivePostPromotion(trustedRows, lifecycle.active, lifecycle.previous);
-  if (postPromotion.rollback && lifecycle.previous?.fingerprint) {
+  if (postPromotion.rollback && lifecycle.previous?.fingerprint && !lifecycle.state?.frozen) {
     const failedFingerprint = lifecycle.active.fingerprint;
-    const state = await saveCalibrationLifecycleState(cfg, lifecycle.state, {
-      activeFingerprint: lifecycle.previous.fingerprint,
-      previousFingerprint: null,
-      lastRollbackAt: new Date().toISOString(),
-    });
-    await Promise.all([
-      supaPatch(cfg, 'model_calibration_profiles', { fingerprint: `eq.${failedFingerprint}` }, { status: 'rolled_back', retired_at: new Date().toISOString(), rollback_reason: postPromotion.reason }),
-      supaPatch(cfg, 'model_calibration_profiles', { fingerprint: `eq.${lifecycle.previous.fingerprint}` }, { status: 'active', activated_at: new Date().toISOString(), retired_at: null, rollback_reason: null }),
-    ]);
-    await recordOpsEvent(cfg, { severity: 'warning', source: 'model', eventType: 'calibration_rollback', code: 'CALIBRATION_AUTO_ROLLBACK', message: postPromotion.reason, meta: { failedFingerprint, restoredFingerprint: lifecycle.previous.fingerprint, sample: postPromotion.sample } });
-    lifecycle = { state, active: lifecycle.previous, previous: null };
+    try {
+      const state = await saveCalibrationLifecycleState(cfg, lifecycle.state, {
+        action: 'rollback',
+        targetFingerprint: lifecycle.previous.fingerprint,
+        reason: postPromotion.reason,
+        metadata: { failedFingerprint, sample: postPromotion.sample, appVersion: APP_VERSION },
+      });
+      await recordOpsEvent(cfg, { severity: 'warning', source: 'model', eventType: 'calibration_rollback', code: 'CALIBRATION_AUTO_ROLLBACK', message: postPromotion.reason, meta: { failedFingerprint, restoredFingerprint: lifecycle.previous.fingerprint, sample: postPromotion.sample } });
+      await notifyCalibrationAdmins(cfg, 'rollback', `${failedFingerprint.slice(0, 12)} → ${lifecycle.previous.fingerprint.slice(0, 12)}. ${postPromotion.reason}`);
+      lifecycle = { state, active: lifecycle.previous, previous: null };
+    } catch (error) {
+      if (!isCalibrationRevisionConflict(error)) throw error;
+      lifecycle = await loadCalibrationLifecycleState(cfg);
+    }
   }
 
   let comparison = null;
   let promoted = false;
-  if (eligible && fingerprint !== lifecycle.active.fingerprint) {
+  if (eligible && fingerprint !== lifecycle.active.fingerprint && !lifecycle.state?.frozen) {
     comparison = compareCalibrationProfiles(trustedRows, lifecycle.active, candidate);
     if (comparison.pass) {
       const previousFingerprint = lifecycle.active.fingerprint;
-      const state = await saveCalibrationLifecycleState(cfg, lifecycle.state, { activeFingerprint: fingerprint, previousFingerprint });
-      await Promise.all([
-        supaPatch(cfg, 'model_calibration_profiles', { fingerprint: `eq.${previousFingerprint}` }, { status: 'retired', retired_at: new Date().toISOString() }),
-        supaPatch(cfg, 'model_calibration_profiles', { fingerprint: `eq.${fingerprint}` }, { status: 'active', activated_at: new Date().toISOString(), retired_at: null, rollback_reason: null }),
-      ]);
-      await recordOpsEvent(cfg, { severity: 'info', source: 'model', eventType: 'calibration_promotion', code: 'CALIBRATION_PROMOTED', message: comparison.reason, meta: { fingerprint, previousFingerprint } });
-      lifecycle = { state, active: candidate, previous: lifecycle.active };
-      promoted = true;
+      try {
+        const state = await saveCalibrationLifecycleState(cfg, lifecycle.state, {
+          action: 'promote',
+          targetFingerprint: fingerprint,
+          reason: comparison.reason,
+          metadata: { previousFingerprint, appVersion: APP_VERSION },
+        });
+        await recordOpsEvent(cfg, { severity: 'info', source: 'model', eventType: 'calibration_promotion', code: 'CALIBRATION_PROMOTED', message: comparison.reason, meta: { fingerprint, previousFingerprint } });
+        await notifyCalibrationAdmins(cfg, 'promote', `${previousFingerprint.slice(0, 12)} → ${fingerprint.slice(0, 12)}. ${comparison.reason}`);
+        lifecycle = { state, active: candidate, previous: lifecycle.active };
+        promoted = true;
+      } catch (error) {
+        if (!isCalibrationRevisionConflict(error)) throw error;
+        lifecycle = await loadCalibrationLifecycleState(cfg);
+      }
     }
   }
 
@@ -2396,11 +2447,15 @@ async function resolveCalibrationLifecycle(cfg, candidate, trustedRows) {
     fingerprint: production.fingerprint,
     lifecycle: {
       available: true,
-      status: promoted ? 'promoted' : production.fingerprint === fingerprint ? 'active' : eligible ? 'held' : 'shadow',
+      status: lifecycle.state?.frozen ? 'frozen' : promoted ? 'promoted' : production.fingerprint === fingerprint ? 'active' : eligible ? 'held' : 'shadow',
       activeFingerprint: production.fingerprint,
       previousFingerprint: lifecycle.previous?.fingerprint || null,
       challengerFingerprint: fingerprint,
       revision: Number(lifecycle.state?.revision || 0),
+      frozen: Boolean(lifecycle.state?.frozen),
+      freezeReason: lifecycle.state?.freeze_reason || '',
+      frozenAt: lifecycle.state?.frozen_at || null,
+      lastTransition: lifecycle.state?.last_transition || '',
       comparison,
       postPromotion,
       candidate: {
@@ -2411,6 +2466,87 @@ async function resolveCalibrationLifecycle(cfg, candidate, trustedRows) {
       },
     },
   };
+}
+
+function publicCalibrationControlState(lifecycle, transitions = []) {
+  const state = lifecycle?.state || {};
+  return {
+    available: Boolean(state?.id),
+    activeFingerprint: lifecycle?.active?.fingerprint || state.active_fingerprint || null,
+    previousFingerprint: lifecycle?.previous?.fingerprint || state.previous_fingerprint || null,
+    revision: Number(state.revision || 0),
+    frozen: Boolean(state.frozen),
+    freezeReason: state.freeze_reason || '',
+    frozenAt: state.frozen_at || null,
+    lastTransition: state.last_transition || '',
+    lastTransitionReason: state.last_transition_reason || '',
+    updatedAt: state.updated_at || null,
+    transitions: (transitions || []).map(row => ({
+      id: Number(row.id || 0),
+      action: row.action || '',
+      fromActiveFingerprint: row.from_active_fingerprint || null,
+      toActiveFingerprint: row.to_active_fingerprint || null,
+      fromPreviousFingerprint: row.from_previous_fingerprint || null,
+      toPreviousFingerprint: row.to_previous_fingerprint || null,
+      expectedRevision: Number(row.expected_revision || 0),
+      resultingRevision: Number(row.resulting_revision || 0),
+      reason: row.reason || '',
+      createdAt: row.created_at || null,
+    })),
+  };
+}
+
+async function apiCalibrationControl(request, cfg, user) {
+  const schema = await probeCalibrationLifecycleSchema(cfg);
+  if (!schema.ok) return json({ available: false, reason: 'Нужна supabase_migration_v6_10.sql.' }, 503);
+
+  let lifecycle = await loadCalibrationLifecycleState(cfg);
+  if (request.method === 'GET') {
+    const transitions = await supaSelectMany(cfg, 'model_calibration_transitions', {}, { limit: 20, order: 'created_at.desc' });
+    return json(publicCalibrationControlState(lifecycle, transitions));
+  }
+  if (request.method !== 'POST') return json({ error: 'Метод не поддерживается.' }, 405);
+
+  let body = {};
+  try { body = await request.json(); } catch {}
+  const action = String(body.action || '').trim().toLowerCase();
+  if (!['freeze','unfreeze','manual_rollback'].includes(action)) {
+    return json({ error: 'Действие должно быть freeze, unfreeze или manual_rollback.' }, 400);
+  }
+  const reason = String(body.reason || '').trim();
+  if (reason.length < 5) return json({ error: 'Укажите причину действия — минимум 5 символов.' }, 400);
+  if (action === 'manual_rollback' && !lifecycle.previous?.fingerprint) {
+    return json({ error: 'Предыдущий champion отсутствует; ручной rollback невозможен.' }, 409);
+  }
+
+  try {
+    await saveCalibrationLifecycleState(cfg, lifecycle.state, {
+      action,
+      targetFingerprint: action === 'manual_rollback' ? lifecycle.previous.fingerprint : null,
+      reason,
+      actorTelegramId: user.id,
+      metadata: { source: 'admin_ui', appVersion: APP_VERSION },
+    });
+  } catch (error) {
+    if (isCalibrationRevisionConflict(error)) {
+      return json({ error: 'Состояние уже изменилось другим процессом. Обновите данные и повторите действие.', code: 'CALIBRATION_REVISION_CONFLICT' }, 409);
+    }
+    throw error;
+  }
+
+  await recordOpsEvent(cfg, {
+    severity: action === 'manual_rollback' ? 'warning' : 'info',
+    source: 'model',
+    eventType: `calibration_${action}`,
+    code: `CALIBRATION_${action.toUpperCase()}`,
+    message: reason,
+    meta: { revision: Number(lifecycle.state?.revision || 0), actorTelegramId: Number(user.id) },
+  });
+  await notifyCalibrationAdmins(cfg, action, reason);
+
+  lifecycle = await loadCalibrationLifecycleState(cfg);
+  const transitions = await supaSelectMany(cfg, 'model_calibration_transitions', {}, { limit: 20, order: 'created_at.desc' });
+  return json({ ok: true, ...publicCalibrationControlState(lifecycle, transitions) });
 }
 
 function baselineCalibrationProfile(sample = 0, stats = []) {
@@ -2488,9 +2624,9 @@ function buildCalibrationProfile(rows) {
           : 'Кандидат остаётся в тени до достаточной trusted holdout-выборки.',
     },
     note: active
-      ? 'RC17: кандидат прошёл два holdout-окна; постоянный lifecycle решает продвижение относительно активного champion.'
+      ? 'RC18: кандидат прошёл два holdout-окна; постоянный lifecycle решает продвижение относительно активного champion.'
       : shadow
-        ? 'RC17: challenger измеряется в тени; production использует только постоянный active-профиль.'
+        ? 'RC18: challenger измеряется в тени; production использует только постоянный active-профиль.'
         : 'Недостаточно trusted-прогнозов для безопасной автоматической калибровки.',
   };
 }
@@ -3503,7 +3639,7 @@ function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = 
     calibrationDiagnostics: {
       weightedTopCalibrationError: weightedTopCalibrationError(rows),
       label: 'Weighted top-probability calibration error',
-      note: 'Средневзвешенный абсолютный разрыв между средней top-вероятностью и hit rate по 5 probability buckets; меньше — лучше. RC17 не использует эту метрику отдельно: продвижение требует двух holdout-окон и сравнения с champion.',
+      note: 'Средневзвешенный абсолютный разрыв между средней top-вероятностью и hit rate по 5 probability buckets; меньше — лучше. RC18 не использует эту метрику отдельно: продвижение требует двух holdout-окон и сравнения с champion.',
     },
     calibrationEngine: calibrationProfile || baselineCalibrationProfile(evaluated, signalPerformance),
     calibrationImpact,
@@ -7399,8 +7535,8 @@ async function apiReleaseReadiness(request, cfg) {
       calibrationPromotionSchema.ok ? 'Аудит holdout-решений доступен.' : 'Нужна supabase_migration_v6_8.sql.', true),
     releaseCheck('calibration_promotion_selftest', 'Самопроверка продвижения калибровки', calibrationPromotionSelfTest().pass ? 'pass' : 'fail',
       calibrationPromotionSelfTest().pass ? 'Устойчивое улучшение проходит gate, synthetic overfit блокируется.' : 'Calibration Promotion self-test не прошёл.', true),
-    releaseCheck('calibration_lifecycle_schema', 'Champion–challenger lifecycle v6.9', calibrationLifecycleSchema.ok ? 'pass' : 'fail',
-      calibrationLifecycleSchema.ok ? 'Постоянный active-профиль и rollback state доступны.' : 'Нужна supabase_migration_v6_9.sql.', true),
+    releaseCheck('calibration_lifecycle_schema', 'Atomic calibration lifecycle v6.10', calibrationLifecycleSchema.ok ? 'pass' : 'fail',
+      calibrationLifecycleSchema.ok ? 'Atomic state, transition audit и rollback state доступны.' : 'Нужна supabase_migration_v6_10.sql.', true),
     releaseCheck('automatic_settlement_recovery', 'Автоматическое восстановление результатов', 'pass',
       runtime.autoSettlementRecoveryEnabled ? 'Runtime switch ON: cron catch-up разрешён guardrails.' : 'Runtime switch OFF: watchdog работает в shadow и только сигнализирует.', false),
     releaseCheck('runtime_controls_schema', 'Схема управления функциями v5.7', runtimeTable.ok ? 'pass' : 'fail', runtimeTable.ok ? 'Таблица runtime_controls доступна.' : 'Нужна supabase_migration_v5_7.sql.', true),
@@ -7641,8 +7777,8 @@ async function apiRcRegression(request, cfg, user) {
   const startedAt = Date.now();
 
   // 1) Core runtime / security configuration.
-  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.9.0-rc17' ? 'pass' : 'fail',
-    `Worker: ${APP_VERSION}; ожидается 6.9.0-rc17.`, true));
+  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.10.0-rc18' ? 'pass' : 'fail',
+    `Worker: ${APP_VERSION}; ожидается 6.10.0-rc18.`, true));
   checks.push(rcCheck('api_contract', 'runtime', 'Контракт API', API_CONTRACT_VERSION === 5 ? 'pass' : 'fail',
     `Contract ${API_CONTRACT_VERSION}; min client ${MIN_CLIENT_VERSION}.`, true));
   checks.push(rcCheck('app_manifest', 'runtime', 'Публичный манифест приложения', appManifest(cfg)?.version === APP_VERSION ? 'pass' : 'fail',
@@ -7660,10 +7796,14 @@ async function apiRcRegression(request, cfg, user) {
 
   const currentAdminOk = isAdminUser(user, cfg);
   const failClosedOk = !cfg.devMode && !isAdminUser({ id: 0 }, cfg);
+  const devIsolationOk = !isAdminUser({ id: 5195504559 }, { ...cfg, devMode: true, adminTelegramIds: [] })
+    && isAdminUser({ id: DEVELOPMENT_TELEGRAM_ID, __developmentIdentity: true }, { ...cfg, devMode: true, adminTelegramIds: [] });
   checks.push(rcCheck('admin_current', 'security', 'Текущий пользователь — admin', currentAdminOk ? 'pass' : 'fail',
     currentAdminOk ? 'Server-side Telegram initData подтверждён и ID разрешён.' : 'Текущий user не проходит admin gate.', true));
   checks.push(rcCheck('admin_fail_closed', 'security', 'Защита доступа администратора', failClosedOk ? 'pass' : 'fail',
     failClosedOk ? 'Неизвестный Telegram ID не получает admin role.' : 'Проверьте DEV_MODE/admin gate.', true));
+  checks.push(rcCheck('admin_dev_isolation', 'security', 'DEV_MODE не повышает реальных пользователей', devIsolationOk ? 'pass' : 'fail',
+    devIsolationOk ? 'Только серверная synthetic dev-identity получает dev admin role.' : 'DEV_MODE admin isolation нарушена.', true));
   checks.push(rcCheck('admin_list', 'security', 'Список администраторов настроен', cfg.adminTelegramIds?.length ? 'pass' : 'fail',
     cfg.adminTelegramIds?.length ? `Настроено ID: ${cfg.adminTelegramIds.length}. Значения не раскрываются.` : 'Список администраторов пуст.', true));
 
@@ -7682,6 +7822,7 @@ async function apiRcRegression(request, cfg, user) {
     ['model_calibration_validations', 'Calibration promotion audit', true],
     ['model_calibration_profiles', 'Calibration profile registry', true],
     ['model_calibration_state', 'Calibration active state', true],
+    ['model_calibration_transitions', 'Atomic calibration transition audit', true],
     ['prediction_integrity_actions', 'Prediction remediation audit', true],
     ['ops_events', 'Observability', false],
     ['match_integrity_runs', 'Integrity runs', true],
@@ -10689,7 +10830,7 @@ async function apiAnalyze(request, cfg, user) {
     homeName, awayName, minutesToKickoff, confidence,
   });
   if (calibrationProfile.mode === 'active') {
-    notes.factors.unshift(`Калибратор v3.9 active (${String(calibrationProfile.fingerprint || '').slice(0, 8) || 'baseline'}) на базе ${Number(calibrationProfile.sample || 0)} trusted-прогнозов.`);
+    notes.factors.unshift(`Калибратор v4.0 active (${String(calibrationProfile.fingerprint || '').slice(0, 8) || 'baseline'}) на базе ${Number(calibrationProfile.sample || 0)} trusted-прогнозов.`);
   } else if (calibrationProfile.mode === 'shadow') {
     notes.risks.push('Калибратор пока работает в теневом режиме: выборка собирается, но итоговые вероятности ещё не корректируются автоматически.');
   }
@@ -10762,7 +10903,7 @@ async function apiAnalyze(request, cfg, user) {
     modelBreakdown: {
       weights: blended.weights,
       signals: blended.signals,
-      method: 'Рынок, API prediction, форма и H2H объединяются динамически. v3.9 применяет постоянный active-профиль только после двух holdout-окон и champion–challenger проверки.',
+      method: 'Рынок, API prediction, форма и H2H объединяются динамически. v4.0 применяет постоянный active-профиль только после двух holdout-окон и атомарной champion–challenger проверки.',
     },
     dataPolicy: {
       dataMode: paid ? 'expanded' : 'standard',
@@ -10864,6 +11005,9 @@ export default {
         adaptiveWeightsHoldout: 'enabled',
         calibrationChampionChallenger: 'enabled',
         calibrationAutomaticRollback: 'enabled',
+        calibrationAtomicTransitions: 'enabled',
+        calibrationManualFreeze: 'enabled',
+        adminDevModeIsolation: 'enabled',
         runtimeControlsCacheSeconds: 30,
         devMode: cfg.devMode,
       });
@@ -10988,6 +11132,10 @@ export default {
       if (request.method === 'GET' && url.pathname === '/api/model-quality') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
         return await apiModelQuality(request, cfg);
+      }
+      if (url.pathname === '/api/calibration-control') {
+        if (!isAdminUser(user, cfg)) return adminForbidden();
+        return await apiCalibrationControl(request, cfg, user);
       }
       if (url.pathname === '/api/model-remediation') {
         if (!isAdminUser(user, cfg)) return adminForbidden();

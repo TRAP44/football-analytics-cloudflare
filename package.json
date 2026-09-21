@@ -1,12 +1,12 @@
 {
   "name": "football-analytics-miniapp-cloudflare",
-  "version": "6.9.0",
+  "version": "6.10.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "check": "node --check src/worker.js && node --check src/calibration-lifecycle.js && node --check public/app.js",
+    "check": "node --check src/worker.js && node --check src/calibration-lifecycle.js && node --check src/access-control.js && node --check public/app.js",
     "test": "node --test",
     "verify:release": "node scripts/verify-release.js"
   },

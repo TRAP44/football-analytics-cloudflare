@@ -1,20 +1,23 @@
-# Установка Football Analytics v6.9.0 RC17
+# Установка Football Analytics v6.10.0 RC18
 
 ## Новый Supabase-проект
 
 1. Откройте Supabase SQL Editor.
 2. Выполните `supabase_baseline_v6_9.sql` целиком.
-3. Не запускайте после baseline старые numbered migrations: их изменения уже включены.
-4. В Supabase Data API убедитесь, что таблицы схемы `public` доступны роли `service_role`. Прямой доступ `anon` и `authenticated` миграция отзывает.
+3. Затем выполните `supabase_migration_v6_10.sql`.
+4. Не запускайте после baseline миграции v6.3–v6.9: их изменения уже включены.
+5. В Supabase Data API убедитесь, что таблицы схемы `public` доступны роли `service_role`. Прямой доступ `anon` и `authenticated` миграция отзывает.
 
-## Обновление существующего проекта v6.8
+## Обновление существующего проекта
 
 1. Сделайте резервную копию базы.
-2. Выполните `supabase_migration_v6_9.sql`.
-3. Не запускайте `supabase_baseline_v6_9.sql` на существующей базе.
-4. После deploy откройте защищённую RC Regression панель и убедитесь, что доступны:
+2. Для v6.8 выполните сначала `supabase_migration_v6_9.sql`.
+3. Выполните `supabase_migration_v6_10.sql`.
+4. Не запускайте `supabase_baseline_v6_9.sql` на существующей базе.
+5. После deploy откройте защищённую RC Regression панель и убедитесь, что доступны:
    - `model_calibration_profiles`;
    - `model_calibration_state`;
+   - `model_calibration_transitions`;
    - `model_predictions.calibration_profile_fingerprint`.
 
 Если установка старее v6.8, сначала примените отсутствующие исторические миграции в порядке версий. Не удаляйте уже применённые записи миграций из Supabase.
@@ -48,7 +51,8 @@ npm run deploy
 
 После deploy:
 
-1. `/health` сообщает `6.9.0-rc17` и `RC17`.
+1. `/health` сообщает `6.10.0-rc18` и `RC18`.
 2. RC Regression не содержит blocking failures.
 3. В разделе качества модели показаны active fingerprint и состояние challenger.
-4. До накопления нужной выборки production остаётся на baseline champion.
+4. Обычный аккаунт не показывает бейдж «Администратор» и не видит технические панели.
+5. До накопления нужной выборки production остаётся на baseline champion.

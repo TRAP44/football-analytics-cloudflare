@@ -18,8 +18,8 @@ const passingWindow = (from, to) => ({
 });
 
 test('fingerprint depends on production parameters, not object key order', async () => {
-  const a = await calibrationProfileFingerprint({ version: '3.9', temperature: 1.1, temperatureActive: true, weightsActive: true, signalWeights: { market: 0.5, form: 0.5 } });
-  const b = await calibrationProfileFingerprint({ signalWeights: { form: 0.5, market: 0.5 }, weightsActive: true, temperatureActive: true, temperature: 1.1, version: '3.9' });
+  const a = await calibrationProfileFingerprint({ version: '4.0', temperature: 1.1, temperatureActive: true, weightsActive: true, signalWeights: { market: 0.5, form: 0.5 } });
+  const b = await calibrationProfileFingerprint({ signalWeights: { form: 0.5, market: 0.5 }, weightsActive: true, temperatureActive: true, temperature: 1.1, version: '4.0' });
   assert.equal(a, b);
 });
 
