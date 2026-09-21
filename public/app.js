@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '4.9.0-quota-orchestrator';
+const CLIENT_VERSION = '5.0.0-expanded-data-release-gate';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -21,7 +21,9 @@ const state = {
   providerTransition: null,
   providerBudget: null,
   providerAudit: null,
+  providerE2E: null,
   providerAuditLoading: false,
+  providerE2ELoading: false,
   dataCapabilities: null,
   billing: null,
   modelQuality: null,
@@ -931,8 +933,9 @@ function renderProviderAudit() {
       </div>`).join('') : '<div class="empty compact-empty">Счётчики появятся после Match Center.</div>';
   }
 
-  if (runBtn) runBtn.disabled = Boolean(state.providerAuditLoading);
-  if (probeBtn) probeBtn.disabled = Boolean(state.providerAuditLoading);
+  if (runBtn) runBtn.disabled = Boolean(state.providerAuditLoading || state.providerE2ELoading);
+  if (probeBtn) probeBtn.disabled = Boolean(state.providerAuditLoading || state.providerE2ELoading);
+  if ($('providerE2EBtn')) $('providerE2EBtn').disabled = Boolean(state.providerAuditLoading || state.providerE2ELoading);
 
   if (!status || !result) return;
   if (state.providerAuditLoading) {
@@ -975,6 +978,132 @@ function renderProviderAudit() {
     <p class="tiny">${escapeHtml(audit.note || '')}</p>`;
 }
 
+
+function e2eStepIcon(stateValue) {
+  return stateValue === 'pass' ? '✓'
+    : stateValue === 'fail' ? '×'
+      : stateValue === 'warn' ? '!'
+        : stateValue === 'hold' ? '⏸' : '•';
+}
+
+function e2eStepLabel(stateValue) {
+  return stateValue === 'pass' ? 'OK'
+    : stateValue === 'fail' ? 'Ошибка'
+      : stateValue === 'warn' ? 'Проверить'
+        : stateValue === 'hold' ? 'Ожидание' : '—';
+}
+
+function renderExpandedDataReleaseGate() {
+  if (!isAdmin()) return;
+  const result = state.providerE2E;
+  const transition = state.providerTransition || {};
+  const budget = state.providerBudget || {};
+  const badge = $('expandedGateBadge');
+  const title = $('expandedGateTitle');
+  const meta = $('expandedGateMeta');
+  const stepsEl = $('expandedGateSteps');
+  const details = $('expandedGateDetails');
+  const btn = $('providerE2EBtn');
+
+  if (btn) btn.disabled = Boolean(state.providerE2ELoading || state.providerAuditLoading);
+  if (!badge || !title || !meta || !stepsEl || !details) return;
+
+  if (state.providerE2ELoading) {
+    badge.className = 'expanded-gate-badge running';
+    badge.textContent = 'RUN';
+    title.textContent = 'Выполняется Expanded Data E2E…';
+    meta.textContent = 'На повышенной квоте тест может занять несколько десятков секунд.';
+    stepsEl.innerHTML = '<div class="empty compact-empty">Проверяю provider → coverage → Match Center → cache reuse.</div>';
+    details.hidden = true;
+    return;
+  }
+
+  if (!result) {
+    const paid = Boolean(transition.paid);
+    badge.className = `expanded-gate-badge ${paid ? 'ready' : 'hold'}`;
+    badge.textContent = paid ? 'READY?' : 'HOLD';
+    title.textContent = paid ? 'Тариф обнаружен — можно запускать E2E' : 'Код v5.0 готов, ждём повышенную квоту';
+    meta.textContent = paid
+      ? `${transition.plan || 'PAID'} · ${budget.label || 'режим не определён'}`
+      : `${transition.plan || 'FREE'} · полный тест не тратит квоту до upgrade`;
+    stepsEl.innerHTML = `
+      <div class="expanded-gate-empty">
+        <strong>${paid ? 'Запустите финальную проверку на реальном fixture.' : 'На FREE тест безопасно остановится после одного /status запроса.'}</strong>
+        <p>Пользовательская монетизация остаётся выключенной.</p>
+      </div>`;
+    details.hidden = true;
+    return;
+  }
+
+  const status = result.status || {};
+  const cls = status.code === 'READY' ? 'ready'
+    : status.code === 'READY_WITH_LIMITATIONS' ? 'warn'
+      : status.code === 'NEEDS_ATTENTION' ? 'fail' : 'hold';
+  badge.className = `expanded-gate-badge ${cls}`;
+  badge.textContent = status.code === 'READY' ? 'READY'
+    : status.code === 'READY_WITH_LIMITATIONS' ? 'LIMIT'
+      : status.code === 'NEEDS_ATTENTION' ? 'CHECK' : 'HOLD';
+  title.textContent = status.label || 'Expanded Data Release Gate';
+  meta.textContent = `Fixture ${Number(result.fixtureId || 0)} · ${dateTime(result.generatedAt)} · ${Number(result.durationMs || 0)} мс`;
+
+  stepsEl.innerHTML = (result.steps || []).map(step => `
+    <div class="expanded-gate-step ${escapeHtml(step.state || '')}">
+      <span>${e2eStepIcon(step.state)}</span>
+      <div><strong>${escapeHtml(step.label || '')}</strong><small>${escapeHtml(step.note || '')}</small></div>
+      <em>${e2eStepLabel(step.state)}</em>
+    </div>`).join('');
+
+  details.hidden = false;
+  const coverage = result.coverageAudit?.summary;
+  const freshness = result.matchCenter?.dataFreshness || {};
+  const sourceCounts = Object.values(freshness).reduce((acc, x) => {
+    const key = x?.source || 'other';
+    acc[key] = Number(acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  details.innerHTML = `
+    <div class="expanded-gate-metrics">
+      <div><span>План</span><strong>${escapeHtml(result.transition?.plan || '—')}</strong></div>
+      <div><span>Coverage</span><strong>${coverage ? `${Number(coverage.score || 0)}%` : '—'}</strong></div>
+      <div><span>Cache reuse</span><strong>${result.cacheVerification?.cached ? 'PASS' : result.blocked ? '—' : 'CHECK'}</strong></div>
+      <div><span>Daily cost</span><strong>${Number.isFinite(Number(result.requestCost?.observedDailyDelta)) ? Number(result.requestCost.observedDailyDelta) : '—'}</strong></div>
+    </div>
+    ${result.matchCenter?.fixture ? `<div class="expanded-gate-fixture">
+      <strong>${escapeHtml(result.matchCenter.fixture.home?.name || '')} — ${escapeHtml(result.matchCenter.fixture.away?.name || '')}</strong>
+      <span>${escapeHtml(result.matchCenter.mode || '')} · first ${Number(result.matchCenter.firstResponseMs || 0)} мс · second ${Number(result.cacheVerification?.secondResponseMs || 0)} мс</span>
+    </div>` : ''}
+    ${Object.keys(sourceCounts).length ? `<div class="expanded-gate-sources">${Object.entries(sourceCounts).map(([key,value]) => `<span>${escapeHtml(key)} <b>${Number(value)}</b></span>`).join('')}</div>` : ''}
+    <p class="tiny">${escapeHtml(result.note || '')}</p>`;
+}
+
+async function runProviderE2E(fixtureId) {
+  if (!isAdmin() || state.providerE2ELoading || state.providerAuditLoading) return;
+  const id = Number(fixtureId || $('providerAuditFixtureId')?.value || 0);
+  if (!id) { toast('Укажи fixture ID'); return; }
+  if ($('providerAuditFixtureId')) $('providerAuditFixtureId').value = String(id);
+
+  state.providerE2ELoading = true;
+  renderExpandedDataReleaseGate();
+  try {
+    const data = await api(`/api/provider/e2e-validation?fixtureId=${id}`, {
+      retry: false,
+      dedupe: false,
+      timeoutMs: 60000,
+    });
+    state.providerE2E = data;
+    state.provider = data.provider || state.provider;
+    state.providerTransition = data.transition || state.providerTransition;
+    state.providerBudget = data.budget || state.providerBudget;
+    if (data.coverageAudit) state.providerAudit = { ...data.coverageAudit, fixture: data.coverageAudit.fixture || state.providerAudit?.fixture };
+    toast(data.status?.ready ? 'Expanded Data Release Gate пройден' : (data.status?.label || 'E2E завершён'));
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    state.providerE2ELoading = false;
+    renderProvider();
+  }
+}
+
 function renderProvider() {
   if (!isAdmin()) return;
   const p = state.provider || {};
@@ -988,6 +1117,7 @@ function renderProvider() {
   if ($('providerPlayerStats')) $('providerPlayerStats').textContent = p.playerStatsReady ? 'Авто · расширенный' : 'По требованию';
   if ($('providerOddsMovement')) $('providerOddsMovement').textContent = p.oddsMovementReady ? 'История включена' : 'Экономный режим';
   renderProviderAudit();
+  renderExpandedDataReleaseGate();
 }
 
 async function loadProvider() {
@@ -998,6 +1128,7 @@ async function loadProvider() {
     state.providerTransition = data.transition || state.providerTransition;
     state.providerBudget = data.budget || state.providerBudget;
     state.providerAudit = data.lastAudit || state.providerAudit;
+    state.providerE2E = data.lastE2E || state.providerE2E;
     state.providerLoaded = true;
     renderProvider();
   } catch {}
@@ -2392,6 +2523,7 @@ function renderMatchCenter(d) {
         <button id="centerRefreshBtn" class="reminder-btn" type="button">↻ Обновить</button>
         ${upcoming ? `<button id="centerAnalyzeBtn" class="primary-btn center-analyze-inline" type="button">🧠 Полный анализ</button>` : ''}
         ${isAdmin() ? `<button id="centerCoverageAuditBtn" class="reminder-btn admin-audit-btn" type="button">🧪 Coverage</button>` : ''}
+        ${isAdmin() ? `<button id="centerE2EBtn" class="reminder-btn admin-e2e-btn" type="button">🚦 E2E</button>` : ''}
       </div>
     </section>
 
@@ -2486,6 +2618,11 @@ function renderMatchCenter(d) {
     await runProviderCoverageAudit(Number(m.fixtureId), true);
     await openProfileView();
     setTimeout(() => $('providerAuditResult')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120);
+  });
+  $('centerE2EBtn')?.addEventListener('click', async () => {
+    await runProviderE2E(Number(m.fixtureId));
+    await openProfileView();
+    setTimeout(() => $('expandedGateSteps')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120);
   });
 
   $('centerRefreshBtn')?.addEventListener('click', async () => {
@@ -3254,6 +3391,7 @@ $('modelQualityPeriod')?.addEventListener('change', () => loadModelQuality(true)
 $('diagnosticsRefreshBtn')?.addEventListener('click', () => loadDiagnostics(true));
 $('providerProbeBtn')?.addEventListener('click', () => probeProvider());
 $('providerAuditBtn')?.addEventListener('click', () => runProviderCoverageAudit(null, true));
+$('providerE2EBtn')?.addEventListener('click', () => runProviderE2E(null));
 $('providerAuditFixtureId')?.addEventListener('keydown', e => { if (e.key === 'Enter') runProviderCoverageAudit(null, true); });
 $('releaseRefreshBtn')?.addEventListener('click', () => loadReleaseReadiness(true));
 
@@ -3264,7 +3402,7 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// v4.9 adds plan-aware quota orchestration and feature-level caching for expanded Match Center data.
+// v5.0 adds the admin-only expanded-data E2E validator and release gate without enabling user payments.
 // v4.0: first paint is intentionally small — matches/profile/favorites only.
 // History, reminders and provider details are loaded later or when their screen opens.
 await Promise.allSettled([loadProfile(), loadFavorites(), loadMatches()]);
