@@ -12,6 +12,7 @@ const memory = {
   opsEvents: [],
   integrity: { lastRun: null, recentIssues: [] },
   releaseReadiness: null,
+  providerAudit: { last: null, byFixture: new Map() },
   telemetry: {
     startedAt: new Date().toISOString(),
     apiRequests: 0,
@@ -35,7 +36,7 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '4.7.0-model-dashboard';
+const APP_VERSION = '4.8.0-provider-transition';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -161,8 +162,8 @@ function publicDataCapabilities() {
       oddsMovement: Boolean(paid && healthy),
     },
     note: paid
-      ? 'Расширенный режим активируется автоматически при доступной квоте провайдера.'
-      : 'Сейчас приложение экономит запросы. После перехода провайдера на расширенный план дополнительные LIVE-данные включатся автоматически.',
+      ? 'Расширенный режим активен: приложение использует повышенную квоту для более частого LIVE и дополнительных запросов по требованию.'
+      : 'API-Football даёт доступ к основным endpoint и на FREE, но приложение сознательно работает экономно. После увеличения квоты расширенный режим включится автоматически.',
   };
 }
 
@@ -2146,6 +2147,7 @@ function providerSnapshot() {
     liveOddsReady: paid,
     playerStatsReady: paid,
     oddsMovementReady: paid,
+    endpointAccessModel: 'all_endpoints_quota_limited',
     cooldownActive,
     cooldownUntil: cooldownActive ? cooldownUntil : null,
   };
@@ -2164,6 +2166,271 @@ function paidQuotaHealthy() {
   if (Number.isFinite(Number(p.dailyRemaining)) && Number(p.dailyRemaining) < 50) return false;
   if (Number.isFinite(Number(p.minuteRemaining)) && Number(p.minuteRemaining) < 5) return false;
   return true;
+}
+
+
+const PROVIDER_PLAN_LIMITS = Object.freeze({
+  FREE: { daily: 100, minute: 10, second: null, mode: 'economy' },
+  PRO: { daily: 7500, minute: 300, second: 5, mode: 'expanded' },
+  ULTRA: { daily: 75000, minute: 450, second: 7.5, mode: 'expanded-fast' },
+  MEGA: { daily: 150000, minute: 900, second: 15, mode: 'expanded-fast' },
+});
+
+function providerTransitionProfile() {
+  const snapshot = providerSnapshot();
+  const plan = String(snapshot.plan || 'UNKNOWN').toUpperCase();
+  const expected = PROVIDER_PLAN_LIMITS[plan] || null;
+  const paid = ['PRO','ULTRA','MEGA'].includes(plan);
+  const detected = plan !== 'UNKNOWN';
+  const dailyMatchesExpected = expected && Number.isFinite(Number(snapshot.dailyLimit))
+    ? Number(snapshot.dailyLimit) === Number(expected.daily)
+    : null;
+  const minuteMatchesExpected = expected && Number.isFinite(Number(snapshot.minuteLimit))
+    ? Number(snapshot.minuteLimit) === Number(expected.minute)
+    : null;
+  return {
+    visibility: 'admin',
+    detected,
+    plan,
+    paid,
+    mode: paid ? 'expanded' : plan === 'FREE' ? 'economy' : 'waiting',
+    label: paid ? 'Расширенный режим' : plan === 'FREE' ? 'Экономный режим' : 'Ожидаем определение тарифа',
+    expected,
+    liveRefreshSeconds: liveRefreshSeconds(),
+    quotaHealthy: paid ? paidQuotaHealthy() : freeQuotaHealthy(20, 3),
+    headersMatchPlan: {
+      daily: dailyMatchesExpected,
+      minute: minuteMatchesExpected,
+    },
+    safety: {
+      fullCoverageAuditAllowed: Boolean(paid && paidQuotaHealthy()),
+      freeAuditGuard: !paid,
+      auditMaxCalls: 9,
+    },
+    note: paid
+      ? 'Повышенная квота обнаружена по rate-limit headers. Расширенные запросы разрешены guardrails приложения.'
+      : 'Полный endpoint-аудит заблокирован на FREE, чтобы не тратить заметную часть дневных 100 запросов.',
+  };
+}
+
+function providerEndpointLabel(key) {
+  return ({
+    fixture: 'Fixture bundle',
+    events: 'Events',
+    statistics: 'Match statistics',
+    lineups: 'Lineups',
+    players: 'Player statistics',
+    injuries: 'Injuries',
+    predictions: 'Predictions',
+    odds: 'Pre-match odds',
+    liveOdds: 'Live odds',
+  })[key] || key;
+}
+
+function providerAuditEndpointPlan(fixture) {
+  const status = String(fixture?.fixture?.status?.short || '').toUpperCase();
+  const live = isLiveStatus(status);
+  const finished = isFinishedStatus(status);
+  const kickoffMs = Date.parse(fixture?.fixture?.date || '');
+  const minsToKickoff = Number.isFinite(kickoffMs) ? Math.round((kickoffMs - Date.now()) / 60000) : null;
+  const lineupsExpected = live || finished || (minsToKickoff !== null && minsToKickoff <= 120);
+  return [
+    { key: 'events', path: '/fixtures/events', params: { fixture: Number(fixture?.fixture?.id || 0) }, applicable: live || finished, expectedData: live || finished },
+    { key: 'statistics', path: '/fixtures/statistics', params: { fixture: Number(fixture?.fixture?.id || 0) }, applicable: live || finished, expectedData: live || finished },
+    { key: 'lineups', path: '/fixtures/lineups', params: { fixture: Number(fixture?.fixture?.id || 0) }, applicable: lineupsExpected, expectedData: lineupsExpected },
+    { key: 'players', path: '/fixtures/players', params: { fixture: Number(fixture?.fixture?.id || 0) }, applicable: live || finished, expectedData: live || finished },
+    { key: 'injuries', path: '/injuries', params: { fixture: Number(fixture?.fixture?.id || 0) }, applicable: !finished, expectedData: false },
+    { key: 'predictions', path: '/predictions', params: { fixture: Number(fixture?.fixture?.id || 0) }, applicable: !finished, expectedData: !finished },
+    { key: 'odds', path: '/odds', params: { fixture: Number(fixture?.fixture?.id || 0) }, applicable: !live && !finished, expectedData: false },
+    { key: 'liveOdds', path: '/odds/live', params: { fixture: Number(fixture?.fixture?.id || 0) }, applicable: live, expectedData: false },
+  ];
+}
+
+async function providerAuditCall(item, cfg) {
+  if (!item.applicable) {
+    return {
+      key: item.key,
+      label: providerEndpointLabel(item.key),
+      state: 'not_applicable',
+      results: null,
+      latencyMs: null,
+      note: 'Не применяется к текущему статусу матча.',
+    };
+  }
+  const startedAt = Date.now();
+  try {
+    const data = await apiFootball(item.path, item.params, cfg);
+    const results = Array.isArray(data) ? data.length : (data ? 1 : 0);
+    const state = results > 0 ? 'available' : 'empty';
+    return {
+      key: item.key,
+      label: providerEndpointLabel(item.key),
+      state,
+      results,
+      latencyMs: Date.now() - startedAt,
+      note: results > 0
+        ? 'Данные возвращены.'
+        : item.expectedData
+          ? 'Endpoint ответил без данных. Для этого матча покрытие может быть неполным.'
+          : 'Пустой ответ допустим для этого endpoint/матча.',
+    };
+  } catch (error) {
+    return {
+      key: item.key,
+      label: providerEndpointLabel(item.key),
+      state: 'error',
+      results: null,
+      latencyMs: Date.now() - startedAt,
+      code: String(error?.code || 'ERROR'),
+      note: redactOpsString(error?.message || 'Ошибка endpoint.', 160),
+    };
+  }
+}
+
+function providerAuditScore(endpoints) {
+  const relevant = (endpoints || []).filter(x => x.state !== 'not_applicable');
+  if (!relevant.length) return 0;
+  const points = relevant.reduce((sum, x) => {
+    if (x.state === 'available') return sum + 1;
+    if (x.state === 'empty') return sum + 0.6;
+    return sum;
+  }, 0);
+  return Math.round(points / relevant.length * 100);
+}
+
+async function apiProviderProbe(request, cfg) {
+  const force = new URL(request.url).searchParams.get('refresh') === '1';
+  if (!force && memory.provider?.updatedAt && Date.now() - Date.parse(memory.provider.updatedAt) < 30000) {
+    return json({
+      provider: providerSnapshot(),
+      transition: providerTransitionProfile(),
+      cached: true,
+    });
+  }
+
+  // /status is deliberately admin-only and called only on explicit request.
+  // We use it to refresh subscription/quota headers without exposing account data.
+  let statusOk = false;
+  let statusNote = '';
+  try {
+    await apiFootball('/status', {}, cfg, { responseType: 'any' });
+    statusOk = true;
+    statusNote = 'Тариф и квоты обновлены через /status.';
+  } catch (error) {
+    statusNote = redactOpsString(error?.message || 'Не удалось обновить provider status.', 160);
+  }
+
+  return json({
+    provider: providerSnapshot(),
+    transition: providerTransitionProfile(),
+    probe: { ok: statusOk, note: statusNote, costRequests: 1 },
+    cached: false,
+  });
+}
+
+async function apiProviderCoverageAudit(request, cfg) {
+  const url = new URL(request.url);
+  const fixtureId = Number(url.searchParams.get('fixtureId') || 0);
+  const force = url.searchParams.get('refresh') === '1';
+  if (!fixtureId) return json({ error: 'Укажите fixtureId для Coverage Audit.' }, 400);
+
+  const cacheKey = `provider-coverage-audit:${fixtureId}:v4.8`;
+  if (!force) {
+    const cached = await getCache(cacheKey, cfg).catch(() => null);
+    if (cached) return json({ ...cached, cached: true });
+  }
+
+  const startedAt = Date.now();
+  let fixture = null;
+  try {
+    fixture = (await apiFootball('/fixtures', { id: fixtureId }, cfg))[0] || null;
+  } catch (error) {
+    return json({
+      error: error?.message || 'Не удалось загрузить fixture для аудита.',
+      code: error?.code || 'AUDIT_FIXTURE',
+      provider: providerSnapshot(),
+      transition: providerTransitionProfile(),
+    }, isFootballRateLimitError(error) ? 429 : 502);
+  }
+  if (!fixture) return json({ error: 'Fixture не найден у API-Football.' }, 404);
+
+  const transition = providerTransitionProfile();
+  const status = String(fixture.fixture?.status?.short || '').toUpperCase();
+  const fixtureSummary = {
+    fixtureId,
+    date: fixture.fixture?.date || '',
+    status,
+    league: fixture.league?.name || '',
+    home: fixture.teams?.home?.name || '',
+    away: fixture.teams?.away?.name || '',
+  };
+  const plan = providerAuditEndpointPlan(fixture);
+
+  if (!transition.paid || !transition.safety.fullCoverageAuditAllowed) {
+    const preview = {
+      available: true,
+      blocked: true,
+      reason: transition.paid ? 'quota_guard' : 'paid_plan_required',
+      generatedAt: new Date().toISOString(),
+      fixture: fixtureSummary,
+      provider: providerSnapshot(),
+      transition,
+      cost: { usedNow: 1, maxFullAudit: 1 + plan.filter(x => x.applicable).length },
+      endpoints: plan.map(x => ({
+        key: x.key,
+        label: providerEndpointLabel(x.key),
+        state: x.applicable ? 'preview' : 'not_applicable',
+        note: x.applicable ? 'Будет проверен после активации расширенного режима.' : 'Не применяется к текущему статусу матча.',
+      })),
+      note: transition.paid
+        ? 'Полный аудит не запущен: quota guard считает остаток лимита недостаточным.'
+        : 'На FREE выполнен только fixture-запрос. Полный аудит намеренно не тратит оставшиеся запросы.',
+    };
+    memory.providerAudit.last = preview;
+    memory.providerAudit.byFixture.set(fixtureId, preview);
+    return json(preview);
+  }
+
+  const results = [];
+  for (const item of plan) {
+    results.push(await providerAuditCall(item, cfg));
+    // Conservative pacing for PRO and shared Worker bursts.
+    if (item.applicable) await new Promise(resolve => setTimeout(resolve, 230));
+  }
+
+  const relevant = results.filter(x => x.state !== 'not_applicable');
+  const errors = relevant.filter(x => x.state === 'error').length;
+  const available = relevant.filter(x => x.state === 'available').length;
+  const empty = relevant.filter(x => x.state === 'empty').length;
+  const score = providerAuditScore(results);
+  const audit = {
+    available: true,
+    blocked: false,
+    generatedAt: new Date().toISOString(),
+    fixture: fixtureSummary,
+    provider: providerSnapshot(),
+    transition: providerTransitionProfile(),
+    cost: {
+      usedNow: 1 + plan.filter(x => x.applicable).length,
+      maxFullAudit: 1 + plan.filter(x => x.applicable).length,
+    },
+    summary: {
+      score,
+      label: errors ? 'Есть ошибки endpoint' : score >= 80 ? 'Покрытие хорошее' : score >= 55 ? 'Покрытие частичное' : 'Покрытие ограниченное',
+      checked: relevant.length,
+      available,
+      empty,
+      errors,
+    },
+    endpoints: results,
+    durationMs: Date.now() - startedAt,
+    note: 'Пустой ответ не всегда означает проблему: lineups, odds, injuries и live odds зависят от турнира, статуса и момента времени.',
+  };
+
+  memory.providerAudit.last = audit;
+  memory.providerAudit.byFixture.set(fixtureId, audit);
+  await setCache(cacheKey, fixtureId, audit, cfg, 15).catch(() => null);
+  return json(audit);
 }
 
 function footballError(message, code = 'FOOTBALL_API', retryAfter = 0) {
@@ -2431,6 +2698,7 @@ async function apiReleaseReadiness(request, cfg) {
     releaseCheck('observability', 'Observability schema v3.8', diagnostics.observability?.migrationReady ? 'pass' : 'warn', diagnostics.observability?.migrationReady ? 'Постоянный журнал ops_events доступен.' : 'Журнал работает только в памяти Worker.', false),
     releaseCheck('integrity', 'Data Integrity schema v3.9', diagnostics.integrity?.migrationReady ? 'pass' : 'fail', diagnostics.integrity?.migrationReady ? 'История integrity-проверок доступна.' : 'Нужна migration v3.9.', true),
     releaseCheck('provider_health', 'Состояние API-Football', provider.health === 'critical' ? 'fail' : provider.health === 'warning' || provider.health === 'waiting' ? 'warn' : 'pass', provider.health === 'waiting' ? 'Ещё не было успешного provider-запроса после старта Worker.' : `Health: ${provider.health || 'unknown'}.`, provider.health === 'critical'),
+    releaseCheck('provider_transition', 'Provider transition', providerTransitionProfile().paid ? 'pass' : 'warn', providerTransitionProfile().paid ? `${providerTransitionProfile().plan}: расширенный режим активен.` : `${providerTransitionProfile().plan}: приложение остаётся в экономном режиме до увеличения квоты.`, false),
     releaseCheck('telegram', 'Telegram bot runtime', cfg.botToken ? 'pass' : 'warn', cfg.botToken ? 'TELEGRAM_BOT_TOKEN доступен.' : 'Без bot token не будут работать Telegram-уведомления.', false),
     releaseCheck('production_mode', 'Production mode', cfg.devMode ? 'warn' : 'pass', cfg.devMode ? 'DEV_MODE=true — перед релизом выключить.' : 'DEV_MODE=false.', false),
     releaseCheck('monetization', 'Монетизация', cfg.monetizationEnabled ? 'warn' : 'pass', cfg.monetizationEnabled ? 'Монетизация включена, хотя текущий план проекта — запускать её в финале.' : 'Оплата корректно остаётся на паузе.', false),
@@ -5278,6 +5546,8 @@ export default {
         smartMatchInsights: 'enabled',
         preMatchIntelligence: 'enabled',
         modelDashboard2: 'enabled',
+        providerTransition: 'enabled',
+        coverageAudit: 'enabled',
         devMode: cfg.devMode,
       });
     }
@@ -5314,7 +5584,15 @@ export default {
       // Hiding cards in the UI is not considered authorization.
       if (request.method === 'GET' && url.pathname === '/api/provider') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
-        return json({ provider: providerSnapshot() });
+        return json({ provider: providerSnapshot(), transition: providerTransitionProfile(), lastAudit: memory.providerAudit.last });
+      }
+      if (request.method === 'GET' && url.pathname === '/api/provider/probe') {
+        if (!isAdminUser(user, cfg)) return adminForbidden();
+        return await apiProviderProbe(request, cfg);
+      }
+      if (request.method === 'GET' && url.pathname === '/api/provider/coverage-audit') {
+        if (!isAdminUser(user, cfg)) return adminForbidden();
+        return await apiProviderCoverageAudit(request, cfg);
       }
       if (request.method === 'GET' && url.pathname === '/api/diagnostics') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
