@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '4.6.0-prematch-intelligence';
+const CLIENT_VERSION = '4.7.0-model-dashboard';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -334,26 +334,27 @@ function renderModelQuality() {
   const engine = $('modelQualityEngine');
   const confidence = $('modelQualityConfidence');
   const secondary = $('modelQualitySecondary');
+  const dashboard = $('modelQualityDashboard');
   const recent = $('modelQualityRecent');
-  if (!status || !badge || !headline || !calibration || !engine || !confidence || !secondary || !recent) return;
+  if (!status || !badge || !headline || !calibration || !engine || !confidence || !secondary || !dashboard || !recent) return;
 
   const q = state.modelQuality;
   if (state.modelQualityLoading) {
     status.textContent = 'Загружаю backtest…';
     badge.textContent = 'Загрузка';
-    [headline, calibration, engine, confidence, secondary, recent].forEach(x => x.hidden = true);
+    [headline, calibration, engine, confidence, secondary, dashboard, recent].forEach(x => x.hidden = true);
     return;
   }
   if (!q) {
     status.textContent = 'Данные ещё не загружены.';
     badge.textContent = 'Нет данных';
-    [headline, calibration, engine, confidence, secondary, recent].forEach(x => x.hidden = true);
+    [headline, calibration, engine, confidence, secondary, dashboard, recent].forEach(x => x.hidden = true);
     return;
   }
   if (q.available === false) {
     status.textContent = q.reason || 'Backtest пока недоступен.';
     badge.textContent = 'Нужна миграция';
-    [headline, calibration, engine, confidence, secondary, recent].forEach(x => x.hidden = true);
+    [headline, calibration, engine, confidence, secondary, dashboard, recent].forEach(x => x.hidden = true);
     return;
   }
 
@@ -422,6 +423,90 @@ function renderModelQuality() {
       <div><span>ТБ 2.5</span><strong>${qualityPct(sec.over25?.accuracy)}</strong><small>n=${Number(sec.over25?.sample || 0)}</small></div>
       <div><span>Обе забьют</span><strong>${qualityPct(sec.btts?.accuracy)}</strong><small>n=${Number(sec.btts?.sample || 0)}</small></div>
     </div>`;
+
+  const db = q.dashboard || {};
+  dashboard.hidden = false;
+  if (!db.overview || !Number(db.overview.sample || 0)) {
+    dashboard.innerHTML = '<div class="empty compact-empty">Model Dashboard заполнится после завершения первых прогнозов.</div>';
+  } else {
+    const ov = db.overview || {};
+    const trendMaxSample = Math.max(1, ...(db.trend || []).map(x => Number(x.sample || 0)));
+    const leagues = db.leagues || [];
+    dashboard.innerHTML = `
+      <div class="quality-block-head"><strong>📊 Model Dashboard 2.0</strong><span>${Number(db.periodDays || q.periodDays || 90)} дней</span></div>
+
+      <div class="model-dash-kpis">
+        <div><span>Snapshot</span><strong>${Number(ov.sample || 0)}</strong><small>settled</small></div>
+        <div><span>Точность</span><strong>${qualityPct(ov.accuracy)}</strong><small>1X2</small></div>
+        <div><span>Brier</span><strong>${qualityNum(ov.avgBrier)}</strong><small>ниже лучше</small></div>
+        <div><span>Gap</span><strong>${Number.isFinite(Number(ov.calibrationGap)) ? `${Number(ov.calibrationGap).toFixed(1)} п.п.` : '—'}</strong><small>top % − accuracy</small></div>
+      </div>
+
+      <div class="model-dash-section">
+        <div class="model-dash-section-head"><strong>Тренд по неделям</strong><span>accuracy + Brier</span></div>
+        ${(db.trend || []).length ? `<div class="model-trend-chart">${db.trend.map(x => {
+          const acc = Math.max(2, Math.min(100, Number(x.accuracy || 0)));
+          const sampleH = Math.max(8, Math.round(Number(x.sample || 0) / trendMaxSample * 100));
+          return `<div class="model-trend-col" title="${escapeHtml(x.label)} · n=${Number(x.sample || 0)} · ${qualityPct(x.accuracy)}">
+            <div class="model-trend-bars"><i style="height:${acc}%"></i><b style="height:${sampleH}%"></b></div>
+            <strong>${qualityPct(x.accuracy)}</strong>
+            <span>${escapeHtml(x.label)}</span>
+            <small>n=${Number(x.sample || 0)} · B ${qualityNum(x.avgBrier)}</small>
+          </div>`;
+        }).join('')}</div>` : '<div class="empty compact-empty">Пока недостаточно недельных данных.</div>'}
+      </div>
+
+      <div class="model-dash-section">
+        <div class="model-dash-section-head"><strong>Confidence bands</strong><span>проверяем, растёт ли качество с confidence</span></div>
+        <div class="model-band-list">${(db.confidence || []).map(x => `
+          <div class="model-band-row">
+            <span>${escapeHtml(x.label)}</span>
+            <div><i style="--w:${Math.max(0, Math.min(100, Number(x.accuracy || 0)))}%"></i></div>
+            <strong>${x.sample ? qualityPct(x.accuracy) : '—'}</strong>
+            <small>n=${Number(x.sample || 0)} · B ${qualityNum(x.avgBrier)}</small>
+          </div>`).join('')}</div>
+      </div>
+
+      <div class="model-dash-section">
+        <div class="model-dash-section-head"><strong>Полнота данных</strong><span>влияет ли богатство входных данных</span></div>
+        <div class="model-dash-mini-grid">${(db.completeness || []).map(x => `
+          <div><span>${escapeHtml(x.label)}</span><strong>${qualityPct(x.accuracy)}</strong><small>n=${Number(x.sample || 0)} · Brier ${qualityNum(x.avgBrier)}</small></div>`).join('')}</div>
+      </div>
+
+      <div class="model-dash-section">
+        <div class="model-dash-section-head"><strong>Лиги</strong><span>сортировка по размеру выборки</span></div>
+        ${leagues.length ? `<div class="model-league-table">${leagues.map(x => `
+          <div class="model-league-row">
+            <div><strong>${escapeHtml(x.leagueName || x.label)}</strong><small>n=${Number(x.sample || 0)} · confidence ${qualityPct(x.avgConfidence)}</small></div>
+            <span>${qualityPct(x.accuracy)}</span>
+            <span>B ${qualityNum(x.avgBrier)}</span>
+            <em>${Number.isFinite(Number(x.calibrationGap)) ? `${Number(x.calibrationGap) >= 0 ? '+' : ''}${Number(x.calibrationGap).toFixed(1)} п.п.` : '—'}</em>
+          </div>`).join('')}</div>` : '<div class="empty compact-empty">Лиг для сравнения пока нет.</div>'}
+      </div>
+
+      <div class="model-dash-section">
+        <div class="model-dash-section-head"><strong>Signal-level performance</strong><span>источник сам по себе vs итоговый blend</span></div>
+        <div class="model-signal-table">${(db.signals || []).map(x => `
+          <div class="model-signal-row">
+            <div><strong>${escapeHtml(signalLabel(x.name))}</strong><small>n=${Number(x.sample || 0)} · базовый вес ${Number(x.baseWeight || 0).toFixed(0)}%</small></div>
+            <div><span>Источник</span><b>${qualityPct(x.signalAccuracy)}</b><small>B ${qualityNum(x.signalBrier)}</small></div>
+            <div><span>Blend</span><b>${qualityPct(x.finalAccuracy)}</b><small>B ${qualityNum(x.finalBrier)}</small></div>
+            <em class="${Number(x.brierDeltaVsBlend || 0) <= 0 ? 'good' : 'watch'}">${Number.isFinite(Number(x.brierDeltaVsBlend)) ? `${Number(x.brierDeltaVsBlend) >= 0 ? '+' : ''}${Number(x.brierDeltaVsBlend).toFixed(3)}` : '—'}</em>
+          </div>`).join('')}</div>
+      </div>
+
+      ${(db.calibrationModes || []).length ? `<div class="model-dash-section">
+        <div class="model-dash-section-head"><strong>Режимы калибратора</strong><span>описательный срез, версии модели различаются</span></div>
+        <div class="model-dash-mini-grid">${db.calibrationModes.map(x => `<div><span>${escapeHtml(x.label)}</span><strong>${qualityPct(x.accuracy)}</strong><small>n=${Number(x.sample || 0)} · Brier ${qualityNum(x.avgBrier)}</small></div>`).join('')}</div>
+      </div>` : ''}
+
+      <div class="model-dash-section">
+        <div class="model-dash-section-head"><strong>Наблюдения для проверки</strong><span>ничего не меняют автоматически</span></div>
+        <div class="model-observations">${(db.observations || []).map(x => `
+          <div class="${escapeHtml(x.level || 'info')}"><span>${x.level === 'good' ? '✓' : x.level === 'warn' ? '!' : x.level === 'watch' ? '↗' : 'i'}</span><div><strong>${escapeHtml(x.title || '')}</strong><p>${escapeHtml(x.text || '')}</p></div></div>`).join('')}</div>
+        <p class="quality-engine-note">${escapeHtml(db.note || '')}</p>
+      </div>`;
+  }
 
   recent.hidden = false;
   if (!(q.recent || []).length) {
@@ -2982,7 +3067,7 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// v4.3 keeps the fast v4.0 startup, protects admin telemetry and prepares expanded football data.
+// v4.7 keeps admin telemetry protected and expands immutable prediction tracking without extra football API calls.
 // v4.0: first paint is intentionally small — matches/profile/favorites only.
 // History, reminders and provider details are loaded later or when their screen opens.
 await Promise.allSettled([loadProfile(), loadFavorites(), loadMatches()]);
