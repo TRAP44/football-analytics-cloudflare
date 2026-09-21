@@ -16,6 +16,8 @@ const memory = {
   providerE2E: { last: null },
   productionReadiness: null,
   rcRegression: null,
+  releaseMonitor: null,
+  clientTelemetryDedupe: new Map(),
   inflight: new Map(),
   routeBurst: new Map(),
   userSyncAt: new Map(),
@@ -55,10 +57,10 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '5.4.0-rc2';
+const APP_VERSION = '5.5.0-rc3';
 const API_CONTRACT_VERSION = 5;
-const MIN_CLIENT_VERSION = '5.3.0';
-const RELEASE_CHANNEL = 'rc2';
+const MIN_CLIENT_VERSION = '5.4.0';
+const RELEASE_CHANNEL = 'rc3';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -207,7 +209,7 @@ function appManifest(cfg) {
     minClientVersion: MIN_CLIENT_VERSION,
     apiContract: API_CONTRACT_VERSION,
     releaseChannel: RELEASE_CHANNEL,
-    releaseCandidate: 'RC2',
+    releaseCandidate: 'RC3',
     maintenance: false,
     monetization: cfg.monetizationEnabled ? 'enabled' : 'paused',
     compatibility: {
@@ -221,6 +223,8 @@ function appManifest(cfg) {
       failureRecovery: true,
       productionLoadSafety: true,
       regressionQA: true,
+      releaseMonitor: true,
+      clientTelemetry: true,
     },
     serverTime: new Date().toISOString(),
   };
@@ -376,6 +380,15 @@ function pruneMemoryState() {
     }
   }
 
+  if (memory.clientTelemetryDedupe.size > 1500) {
+    for (const [key, at] of memory.clientTelemetryDedupe) {
+      if (now - Number(at || 0) > 30 * 60 * 1000) {
+        memory.clientTelemetryDedupe.delete(key);
+        pruned++;
+      }
+    }
+  }
+
   if (pruned) bumpTelemetry('memoryPrunes', pruned);
   return pruned;
 }
@@ -389,7 +402,8 @@ const ROUTE_BURST_POLICIES = Object.freeze([
   { test: p => p === '/api/provider/e2e-validation', limit: 1, windowMs: 30000, label: 'provider-e2e' },
   { test: p => p === '/api/provider/coverage-audit', limit: 2, windowMs: 30000, label: 'coverage-audit' },
   { test: p => p === '/api/provider/probe', limit: 3, windowMs: 30000, label: 'provider-probe' },
-  { test: p => p === '/api/diagnostics' || p === '/api/release-readiness' || p === '/api/production-readiness' || p === '/api/rc-regression', limit: 6, windowMs: 30000, label: 'admin-diagnostics' },
+  { test: p => p === '/api/client-telemetry', limit: 12, windowMs: 60000, label: 'client-telemetry' },
+  { test: p => p === '/api/diagnostics' || p === '/api/release-readiness' || p === '/api/production-readiness' || p === '/api/rc-regression' || p === '/api/release-monitor', limit: 6, windowMs: 30000, label: 'admin-diagnostics' },
 ]);
 
 function routeBurstPolicy(pathname) {
@@ -3610,6 +3624,226 @@ async function collectDiagnostics(cfg) {
   };
 }
 
+
+const CLIENT_TELEMETRY_EVENTS = new Set([
+  'boot_ok',
+  'boot_recovery',
+  'compatibility_block',
+  'network_recovery',
+  'client_error',
+]);
+
+function clientTelemetryMetadata(body = {}) {
+  const meta = body?.meta && typeof body.meta === 'object' ? body.meta : {};
+  const out = {
+    clientVersion: redactOpsString(meta.clientVersion || '', 40),
+    apiContract: Number.isFinite(Number(meta.apiContract)) ? Number(meta.apiContract) : null,
+    releaseChannel: redactOpsString(meta.releaseChannel || '', 30),
+    view: redactOpsString(meta.view || '', 40),
+    networkMode: redactOpsString(meta.networkMode || '', 30),
+    bootMs: Number.isFinite(Number(meta.bootMs)) ? Math.max(0, Math.min(60000, Math.round(Number(meta.bootMs)))) : null,
+    manifestOk: typeof meta.manifestOk === 'boolean' ? meta.manifestOk : null,
+    degraded: typeof meta.degraded === 'boolean' ? meta.degraded : null,
+    blocking: typeof meta.blocking === 'boolean' ? meta.blocking : null,
+    reason: redactOpsString(meta.reason || '', 80),
+    errorKind: redactOpsString(meta.errorKind || '', 60),
+  };
+  return Object.fromEntries(Object.entries(out).filter(([, value]) => value !== null && value !== ''));
+}
+
+async function apiClientTelemetry(request, cfg, user) {
+  let body = {};
+  try { body = await request.json(); } catch {}
+  const event = String(body?.event || '').trim().toLowerCase();
+  if (!CLIENT_TELEMETRY_EVENTS.has(event)) {
+    return json({ ok: false, error: 'Unsupported telemetry event.' }, 400);
+  }
+
+  const meta = clientTelemetryMetadata(body);
+  const dedupePart = meta.reason || meta.errorKind || meta.view || '';
+  const dedupeKey = `${Number(user.id)}:${event}:${meta.clientVersion || ''}:${dedupePart}`;
+  const last = Number(memory.clientTelemetryDedupe.get(dedupeKey) || 0);
+  if (last && Date.now() - last < 5 * 60 * 1000) {
+    return json({ ok: true, deduped: true });
+  }
+  memory.clientTelemetryDedupe.set(dedupeKey, Date.now());
+  if (memory.clientTelemetryDedupe.size > 1500) pruneMemoryState();
+
+  const severity = ['compatibility_block', 'client_error'].includes(event) ? 'warning' : 'info';
+  await recordOpsEvent(cfg, {
+    severity,
+    source: 'client',
+    eventType: 'client_telemetry',
+    code: event.toUpperCase(),
+    message: `Client event: ${event}`,
+    endpoint: '/api/client-telemetry',
+    meta,
+  });
+  return json({ ok: true, deduped: false });
+}
+
+async function readOpsEventsRange(cfg, startIso, endIso, limit = 600) {
+  const startMs = Date.parse(startIso || '');
+  const endMs = Date.parse(endIso || '');
+  const fallbackItems = memory.opsEvents.filter(item => {
+    const t = Date.parse(item?.created_at || '');
+    return Number.isFinite(t) && t >= startMs && t < endMs;
+  }).slice(0, limit);
+  const fallback = () => ({ persistent: false, migrationReady: false, items: fallbackItems });
+  if (!hasSupabase(cfg)) return fallback();
+  try {
+    const url = new URL(`${cfg.supabaseUrl}/rest/v1/ops_events`);
+    url.searchParams.set('select', 'created_at,severity,source,event_type,code,message,endpoint,status,duration_ms,metadata');
+    url.searchParams.set('created_at', `gte.${startIso}`);
+    url.searchParams.append('created_at', `lt.${endIso}`);
+    url.searchParams.set('order', 'created_at.desc');
+    url.searchParams.set('limit', String(Math.max(1, Math.min(1000, Number(limit || 600)))));
+    const r = await fetchWithTimeout(url, { headers: supaHeaders(cfg) }, 7000, 'Supabase release monitor');
+    if (!r.ok) return fallback();
+    const items = await r.json().catch(() => []);
+    return { persistent: true, migrationReady: true, items };
+  } catch {
+    return fallback();
+  }
+}
+
+function releaseTopGroups(items, keyFn, limit = 8) {
+  const counts = new Map();
+  for (const item of items || []) {
+    const key = String(keyFn(item) || '').trim() || 'unknown';
+    counts.set(key, Number(counts.get(key) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([key, count]) => ({ key, count }))
+    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
+    .slice(0, limit);
+}
+
+function summarizeReleaseWindow(items = [], hours = 24) {
+  const severity = { info: 0, warning: 0, error: 0, critical: 0 };
+  for (const item of items) {
+    const key = String(item?.severity || 'info');
+    if (key in severity) severity[key] += 1;
+  }
+  const client = items.filter(x => x?.source === 'client' && x?.event_type === 'client_telemetry');
+  const clientCounts = Object.fromEntries(releaseTopGroups(client, x => x.code, 12).map(x => [x.key, x.count]));
+  const errorLike = severity.error + severity.critical;
+  const compatibilityBlocks = Number(clientCounts.COMPATIBILITY_BLOCK || 0);
+  const clientErrors = Number(clientCounts.CLIENT_ERROR || 0);
+  const bootRecovery = Number(clientCounts.BOOT_RECOVERY || 0);
+  const bootOk = Number(clientCounts.BOOT_OK || 0);
+  const networkRecovery = Number(clientCounts.NETWORK_RECOVERY || 0);
+  const allowance = Math.max(2, Math.ceil((Number(hours || 24) / 24) * 5));
+  return {
+    total: items.length,
+    severity,
+    errorLike,
+    warningLike: severity.warning,
+    client: {
+      total: client.length,
+      bootOk,
+      bootRecovery,
+      compatibilityBlocks,
+      clientErrors,
+      networkRecovery,
+    },
+    topSources: releaseTopGroups(items, x => x.source, 8),
+    topCodes: releaseTopGroups(items.filter(x => x.severity !== 'info'), x => x.code || x.event_type, 10),
+    operationalBudget: {
+      allowance,
+      used: errorLike,
+      remaining: Math.max(0, allowance - errorLike),
+      exhausted: errorLike > allowance,
+    },
+  };
+}
+
+function releaseMonitorHealth(current, persistent) {
+  const critical = Number(current?.severity?.critical || 0);
+  const errors = Number(current?.severity?.error || 0);
+  const warnings = Number(current?.severity?.warning || 0);
+  const compat = Number(current?.client?.compatibilityBlocks || 0);
+  const clientErrors = Number(current?.client?.clientErrors || 0);
+  let state = 'healthy';
+  if (critical > 0 || errors >= 8 || compat >= 3) state = 'incident';
+  else if (errors >= 3 || warnings >= 8 || clientErrors >= 4 || !persistent) state = 'watch';
+
+  const score = Math.max(0, Math.min(100,
+    100 - critical * 25 - errors * 8 - warnings * 2 - compat * 10 - clientErrors * 4 - (persistent ? 0 : 8)
+  ));
+  const label = state === 'incident'
+    ? 'Есть активные признаки инцидента'
+    : state === 'watch'
+      ? 'Нужен контроль перед расширением аудитории'
+      : 'Релиз выглядит стабильным';
+  return { state, label, score };
+}
+
+async function apiReleaseMonitor(request, cfg) {
+  const url = new URL(request.url);
+  const hours = Math.max(1, Math.min(168, Number(url.searchParams.get('hours') || 24)));
+  const force = url.searchParams.get('refresh') === '1';
+  const cacheKey = `h${hours}`;
+  const cached = memory.releaseMonitor?.[cacheKey];
+  if (!force && cached?.value && Date.now() - Number(cached.at || 0) < 30000) {
+    return json({ ...cached.value, cached: true });
+  }
+
+  const end = new Date();
+  const currentStart = new Date(end.getTime() - hours * 3600_000);
+  const previousStart = new Date(currentStart.getTime() - hours * 3600_000);
+  const source = await readOpsEventsRange(cfg, previousStart.toISOString(), end.toISOString(), 1000);
+  const currentItems = source.items.filter(x => Date.parse(x.created_at || '') >= currentStart.getTime());
+  const previousItems = source.items.filter(x => {
+    const t = Date.parse(x.created_at || '');
+    return Number.isFinite(t) && t >= previousStart.getTime() && t < currentStart.getTime();
+  });
+  const current = summarizeReleaseWindow(currentItems, hours);
+  const previous = summarizeReleaseWindow(previousItems, hours);
+  const health = releaseMonitorHealth(current, source.persistent);
+  const incidents = currentItems
+    .filter(x => ['warning','error','critical'].includes(String(x.severity || '')))
+    .slice(0, 12)
+    .map(x => ({
+      createdAt: x.created_at,
+      severity: x.severity,
+      source: x.source,
+      code: x.code || x.event_type,
+      message: redactOpsString(x.message || '', 180),
+      endpoint: x.endpoint || '',
+    }));
+
+  const value = {
+    available: true,
+    version: APP_VERSION,
+    releaseCandidate: 'RC3',
+    generatedAt: new Date().toISOString(),
+    hours,
+    persistent: source.persistent,
+    migrationReady: source.migrationReady,
+    health,
+    current,
+    previous,
+    trend: {
+      errorsDelta: current.errorLike - previous.errorLike,
+      warningsDelta: current.warningLike - previous.warningLike,
+      clientErrorsDelta: Number(current.client?.clientErrors || 0) - Number(previous.client?.clientErrors || 0),
+      bootRecoveryDelta: Number(current.client?.bootRecovery || 0) - Number(previous.client?.bootRecovery || 0),
+    },
+    incidents,
+    runtime: telemetrySnapshot(),
+    policy: {
+      noFootballApiCalls: true,
+      noUserDataMutation: true,
+      telemetryPrivacy: 'Client telemetry is allowlisted and excludes free-form chat/user content.',
+      note: 'Operational budget counts persisted error/critical ops events; it is a release signal, not a formal availability SLO.',
+    },
+  };
+  memory.releaseMonitor ||= {};
+  memory.releaseMonitor[cacheKey] = { at: Date.now(), value };
+  return json(value);
+}
+
 async function apiDiagnostics(request, cfg) {
   return json(await collectDiagnostics(cfg));
 }
@@ -3669,6 +3903,8 @@ async function apiReleaseReadiness(request, cfg) {
       memory.productionReadiness?.value ? `${memory.productionReadiness.value.label} · ${memory.productionReadiness.value.score}%.` : 'Production Safety Gate ещё не запускался.', false),
     releaseCheck('rc_regression', 'RC Regression Smoke', memory.rcRegression?.value?.status === 'blocked' ? 'fail' : memory.rcRegression?.value ? 'pass' : 'warn',
       memory.rcRegression?.value ? `${memory.rcRegression.value.label} · ${memory.rcRegression.value.score}%.` : 'RC smoke-test ещё не запускался.', false),
+    releaseCheck('release_monitor', 'Release Monitor', memory.releaseMonitor?.h24?.value?.health?.state === 'incident' ? 'warn' : memory.releaseMonitor?.h24?.value ? 'pass' : 'warn',
+      memory.releaseMonitor?.h24?.value ? `${memory.releaseMonitor.h24.value.health.label} · ${memory.releaseMonitor.h24.value.health.score}%.` : 'Release Monitor ещё не запускался.', false),
     releaseCheck('monetization', 'Монетизация', cfg.monetizationEnabled ? 'warn' : 'pass', cfg.monetizationEnabled ? 'Монетизация включена, хотя текущий план проекта — запускать её в финале.' : 'Оплата корректно остаётся на паузе.', false),
     releaseCheck('integrity_last_run', 'Последняя проверка матчей', diagnostics.integrity?.lastRun?.health === 'critical' ? 'warn' : 'pass', diagnostics.integrity?.lastRun ? `Health: ${diagnostics.integrity.lastRun.health || 'ok'}, quality ${Number(diagnostics.integrity.lastRun.qualityScore || 0)}%.` : 'Проверка появится после загрузки каталога матчей.', false),
   ];
@@ -3792,7 +4028,7 @@ async function apiProductionReadiness(request, cfg) {
 }
 
 
-const RC_NAME = 'RC2';
+const RC_NAME = 'RC3';
 
 function rcCheck(id, group, label, state, detail, blocking = false) {
   return { id, group, label, state, detail, blocking: Boolean(blocking) };
@@ -3836,8 +4072,8 @@ async function apiRcRegression(request, cfg, user) {
   const startedAt = Date.now();
 
   // 1) Core runtime / security configuration.
-  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '5.4.0-rc2' ? 'pass' : 'fail',
-    `Worker: ${APP_VERSION}; ожидается 5.4.0-rc2.`, true));
+  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '5.5.0-rc3' ? 'pass' : 'fail',
+    `Worker: ${APP_VERSION}; ожидается 5.5.0-rc3.`, true));
   checks.push(rcCheck('api_contract', 'runtime', 'API contract', API_CONTRACT_VERSION === 5 ? 'pass' : 'fail',
     `Contract ${API_CONTRACT_VERSION}; min client ${MIN_CLIENT_VERSION}.`, true));
   checks.push(rcCheck('app_manifest', 'runtime', 'Public App Manifest', appManifest(cfg)?.version === APP_VERSION ? 'pass' : 'fail',
@@ -6916,7 +7152,7 @@ export default {
         failureRecovery: 'enabled',
         gracefulErrors: 'enabled',
         webviewRecovery: 'enabled',
-        releaseCandidate: 'RC2',
+        releaseCandidate: 'RC3',
         regressionQA: 'enabled',
         rcSmokeTest: 'enabled',
         clientContractQA: 'enabled',
@@ -6924,6 +7160,9 @@ export default {
         apiContract: API_CONTRACT_VERSION,
         startupSafety: 'enabled',
         rollbackSafety: 'enabled',
+        releaseMonitor: 'enabled',
+        clientTelemetry: 'enabled',
+        operationalBudget: 'enabled',
         devMode: cfg.devMode,
       });
     }
@@ -6962,6 +7201,7 @@ export default {
 
       if (request.method === 'GET' && url.pathname === '/api/me') return await apiMe(request, cfg, user);
       if (request.method === 'GET' && url.pathname === '/api/data-capabilities') return json({ dataCapabilities: publicDataCapabilities() });
+      if (request.method === 'POST' && url.pathname === '/api/client-telemetry') return await apiClientTelemetry(request, cfg, user);
 
       // v4.3 Admin Security: technical endpoints are protected server-side.
       // Hiding cards in the UI is not considered authorization.
@@ -7006,6 +7246,10 @@ export default {
       if (request.method === 'GET' && url.pathname === '/api/rc-regression') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
         return await apiRcRegression(request, cfg, user);
+      }
+      if (request.method === 'GET' && url.pathname === '/api/release-monitor') {
+        if (!isAdminUser(user, cfg)) return adminForbidden();
+        return await apiReleaseMonitor(request, cfg);
       }
       if (request.method === 'GET' && url.pathname === '/api/data-integrity') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
