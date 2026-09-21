@@ -1636,3 +1636,58 @@ main { position: relative; z-index: 1; }
   .quota-feature-row strong{grid-column:1/-1}
   .quota-feature-row span:last-child{display:none}
 }
+
+
+/* v5.0 Expanded Data E2E + Release Gate */
+.expanded-release-gate{margin:14px 0;border:1px solid color-mix(in srgb,var(--accent) 28%,var(--line));border-radius:16px;padding:12px;background:
+  radial-gradient(circle at 100% 0,color-mix(in srgb,var(--accent) 10%,transparent),transparent 38%),
+  var(--surface)}
+.expanded-release-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.expanded-release-head>div{display:flex;gap:9px;align-items:flex-start;min-width:0}
+.expanded-release-head strong{display:block;font-size:12px}
+.expanded-release-head small{display:block;color:var(--hint);font-size:9px;margin-top:3px}
+.expanded-gate-badge{flex:0 0 auto;min-width:48px;text-align:center;padding:6px 8px;border:1px solid var(--line);border-radius:999px;font-size:9px;font-weight:950;letter-spacing:.06em}
+.expanded-gate-badge.ready{color:var(--good);border-color:color-mix(in srgb,var(--good) 42%,var(--line))}
+.expanded-gate-badge.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 42%,var(--line))}
+.expanded-gate-badge.fail{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 42%,var(--line))}
+.expanded-gate-badge.hold{color:var(--hint)}
+.expanded-gate-badge.running{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 42%,var(--line))}
+.expanded-gate-steps{display:grid;gap:6px;margin-top:11px}
+.expanded-gate-step{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:8px;align-items:center;border:1px solid var(--line);border-radius:11px;padding:8px}
+.expanded-gate-step>span{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:var(--surface-soft);font-size:10px;font-weight:950}
+.expanded-gate-step>div{min-width:0}
+.expanded-gate-step strong{display:block;font-size:10px}
+.expanded-gate-step small{display:block;color:var(--hint);font-size:8px;line-height:1.35;margin-top:2px}
+.expanded-gate-step>em{font-size:8px;font-style:normal;white-space:nowrap;color:var(--hint)}
+.expanded-gate-step.pass>span,.expanded-gate-step.pass>em{color:var(--good)}
+.expanded-gate-step.warn>span,.expanded-gate-step.warn>em{color:var(--warn)}
+.expanded-gate-step.fail>span,.expanded-gate-step.fail>em{color:var(--danger)}
+.expanded-gate-step.hold>span,.expanded-gate-step.hold>em{color:var(--hint)}
+.expanded-gate-empty{border:1px dashed var(--line);border-radius:12px;padding:10px}
+.expanded-gate-empty strong{font-size:10px}
+.expanded-gate-empty p{font-size:9px;color:var(--hint);margin:4px 0 0}
+.expanded-gate-details{display:grid;gap:9px;margin-top:10px}
+.expanded-gate-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.expanded-gate-metrics>div{border:1px solid var(--line);border-radius:11px;padding:8px}
+.expanded-gate-metrics span{display:block;color:var(--hint);font-size:8px}
+.expanded-gate-metrics strong{display:block;font-size:10px;margin-top:2px}
+.expanded-gate-fixture{border:1px solid var(--line);border-radius:11px;padding:9px}
+.expanded-gate-fixture strong{display:block;font-size:10px}
+.expanded-gate-fixture span{display:block;color:var(--hint);font-size:8px;margin-top:2px}
+.expanded-gate-sources{display:flex;flex-wrap:wrap;gap:6px}
+.expanded-gate-sources span{border:1px solid var(--line);border-radius:999px;padding:5px 7px;font-size:8px;color:var(--hint)}
+.expanded-gate-sources b{color:var(--text)}
+.admin-e2e-btn{border-color:color-mix(in srgb,var(--good) 28%,var(--line))}
+.center-hero-actions.has-admin-audit{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:560px){
+  .expanded-release-head{display:grid;grid-template-columns:1fr}
+  .expanded-release-head>button{width:100%}
+  .expanded-gate-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .center-hero-actions.has-admin-audit{grid-template-columns:1fr 1fr}
+  .center-hero-actions.has-admin-audit .admin-audit-btn,
+  .center-hero-actions.has-admin-audit .admin-e2e-btn{grid-column:auto}
+}
+@media(max-width:380px){
+  .expanded-gate-step{grid-template-columns:22px minmax(0,1fr)}
+  .expanded-gate-step>em{grid-column:2;text-align:right}
+}
