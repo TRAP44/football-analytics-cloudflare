@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#111827" />
   <title>Football Manager · Match Intelligence</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=5.2.0" />
+  <link rel="stylesheet" href="/styles.css?v=5.3.0" />
 </head>
 <body>
   <div class="app-shell">
@@ -365,6 +365,29 @@
           <p class="tiny diagnostics-privacy">Полный audit запускается только администратором вручную. Результат кэшируется на 15 минут. Пустой endpoint не всегда ошибка: покрытие зависит от турнира и стадии матча.</p>
         </section>
 
+        <section class="panel rc-panel" data-admin-only hidden>
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>🚦 Release Candidate RC1</h2>
+              <p>Read-only regression: runtime, security, Supabase schema, user routes, safety gates и client contract.</p>
+            </div>
+            <button id="rcRunBtn" class="primary-setting-btn rc-run-btn" type="button">Запустить QA</button>
+          </div>
+
+          <div class="rc-status-row">
+            <span id="rcBadge" class="rc-badge">RC1</span>
+            <div>
+              <strong id="rcStatus">Полный regression smoke-test ещё не запускался.</strong>
+              <small id="rcMeta">Без Analyze, без изменений user data, без расхода API-Football.</small>
+            </div>
+          </div>
+
+          <div id="rcSummary"></div>
+          <div id="rcGroups"></div>
+          <div id="rcClient"></div>
+          <div id="rcChecks"></div>
+        </section>
+
         <section class="panel release-panel" data-admin-only hidden>
           <div class="section-head profile-section-head release-head">
             <div>
@@ -435,6 +458,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=5.2.0"></script>
+  <script type="module" src="/app.js?v=5.3.0"></script>
 </body>
 </html>
