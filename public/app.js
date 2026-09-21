@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '5.2.0-failure-recovery';
+const CLIENT_VERSION = '5.3.0-rc1';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -35,6 +35,8 @@ const state = {
   releaseReadinessLoading: false,
   productionReadiness: null,
   productionReadinessLoading: false,
+  rcRegression: null,
+  rcRegressionLoading: false,
   serverVersion: '',
   versionMismatch: false,
   storageAvailable: true,
@@ -879,6 +881,170 @@ async function loadProductionReadiness(force = false) {
   } finally {
     state.productionReadinessLoading = false;
     renderProductionReadiness();
+  }
+}
+
+
+function runClientContractSmoke() {
+  const checks = [];
+  const add = (id, label, pass, detail) => checks.push({ id, label, pass: Boolean(pass), detail: String(detail || '') });
+
+  const requiredIds = [
+    'matchesView','searchView','tournamentView','teamView','analysisView','historyView','profileView',
+    'navMatches','navSearch','navHistory','navProfile',
+    'connectionBanner','connectionRetryBtn','toast',
+    'modelQualityStatus','providerAuditStatus','releaseStatus','productionReadinessStatus','diagnosticsStatus',
+  ];
+  const missing = requiredIds.filter(id => !$(id));
+  add('required_dom', 'Основные DOM-контракты', missing.length === 0, missing.length ? `Нет: ${missing.join(', ')}` : `${requiredIds.length}/${requiredIds.length} элементов.`);
+
+  const allIds = [...document.querySelectorAll('[id]')].map(el => el.id);
+  const duplicates = allIds.filter((id, i) => allIds.indexOf(id) !== i);
+  add('unique_ids', 'Уникальные HTML id', duplicates.length === 0, duplicates.length ? `Дубликаты: ${[...new Set(duplicates)].join(', ')}` : `${allIds.length} id без дублей.`);
+
+  const adminSections = [...document.querySelectorAll('[data-admin-only]')];
+  add('admin_sections', 'Admin UI маркировка', adminSections.length >= 6, `${adminSections.length} технических секций помечены data-admin-only.`);
+
+  const cssLink = document.querySelector('link[href*="styles.css?v=5.3.0"]');
+  const appScript = document.querySelector('script[src*="app.js?v=5.3.0"]');
+  add('cache_bust', 'Cache-bust assets', Boolean(cssLink && appScript), `CSS ${cssLink ? 'OK' : 'MISS'} · JS ${appScript ? 'OK' : 'MISS'}.`);
+
+  add('client_version', 'Версия клиента', CLIENT_VERSION === '5.3.0-rc1', CLIENT_VERSION);
+  add('telegram_sdk', 'Telegram WebApp SDK', Boolean(window.Telegram?.WebApp), window.Telegram?.WebApp ? 'SDK доступен.' : 'В обычном браузере SDK может отсутствовать; в Telegram должен быть доступен.');
+
+  const navButtons = ['navMatches','navSearch','navHistory','navProfile'].filter(id => $(id));
+  add('navigation', 'Нижняя навигация', navButtons.length === 4, `${navButtons.length}/4 кнопки.`);
+
+  const recoveryIds = ['connectionBannerIcon','connectionBannerTitle','connectionBannerText','connectionRetryBtn'];
+  add('recovery_contract', 'Recovery UX contract', recoveryIds.every(id => $(id)), `${recoveryIds.filter(id => $(id)).length}/${recoveryIds.length} элементов.`);
+
+  return {
+    version: CLIENT_VERSION,
+    generatedAt: new Date().toISOString(),
+    total: checks.length,
+    passed: checks.filter(x => x.pass).length,
+    failed: checks.filter(x => !x.pass).length,
+    checks,
+  };
+}
+
+function rcStateText(status) {
+  if (status === 'rc_ready') return 'RC READY';
+  if (status === 'rc_with_holds') return 'RC + HOLD';
+  if (status === 'blocked') return 'BLOCK';
+  return 'WAIT';
+}
+
+function renderRcRegression() {
+  if (!isAdmin()) return;
+  const badge = $('rcBadge');
+  const status = $('rcStatus');
+  const meta = $('rcMeta');
+  const summary = $('rcSummary');
+  const groups = $('rcGroups');
+  const client = $('rcClient');
+  const checks = $('rcChecks');
+  const btn = $('rcRunBtn');
+  if (!badge || !status || !meta || !summary || !groups || !client || !checks || !btn) return;
+
+  btn.disabled = Boolean(state.rcRegressionLoading);
+  if (state.rcRegressionLoading) {
+    badge.className = 'rc-badge running';
+    badge.textContent = 'RUN';
+    status.textContent = 'Запускаю read-only regression smoke-test…';
+    meta.textContent = 'API-Football не расходуется';
+    summary.innerHTML = '';
+    groups.innerHTML = '';
+    client.innerHTML = '';
+    checks.innerHTML = '';
+    return;
+  }
+
+  const r = state.rcRegression;
+  if (!r) {
+    badge.className = 'rc-badge';
+    badge.textContent = 'RC1';
+    status.textContent = 'Полный regression smoke-test ещё не запускался.';
+    meta.textContent = 'Тест безопасный: без Analyze, без изменений user data, без API-Football.';
+    summary.innerHTML = '';
+    groups.innerHTML = '';
+    client.innerHTML = '';
+    checks.innerHTML = '';
+    return;
+  }
+
+  const cls = r.status === 'rc_ready' ? 'ready' : r.status === 'blocked' ? 'blocked' : 'warning';
+  badge.className = `rc-badge ${cls}`;
+  badge.textContent = rcStateText(r.status);
+  status.textContent = r.label || 'Regression завершён.';
+  meta.textContent = `${Number(r.score || 0)}% backend · ${relativeAge(r.generatedAt)} · ${Number(r.durationMs || 0)} мс`;
+
+  summary.innerHTML = `
+    <div class="rc-summary-grid">
+      <div><span>Всего</span><strong>${Number(r.summary?.total || 0)}</strong></div>
+      <div><span>PASS</span><strong>${Number(r.summary?.passed || 0)}</strong></div>
+      <div><span>WARN/HOLD</span><strong>${Number(r.summary?.warnings || 0)}</strong></div>
+      <div><span>BLOCK</span><strong>${Number(r.summary?.blockers || 0)}</strong></div>
+    </div>`;
+
+  const groupLabels = {
+    runtime:'Runtime', security:'Security', database:'Supabase schema',
+    user_routes:'User routes', gates:'Release gates', provider:'Provider', safety:'Safety',
+  };
+  groups.innerHTML = `<div class="rc-group-grid">${Object.entries(r.groups || {}).map(([key,g]) => `
+    <div class="${Number(g.fail || 0) ? 'fail' : Number(g.warn || 0) ? 'warn' : 'pass'}">
+      <span>${escapeHtml(groupLabels[key] || key)}</span>
+      <strong>${Number(g.pass || 0)}/${Number(g.total || 0)}</strong>
+      <small>${Number(g.warn || 0)} warn · ${Number(g.fail || 0)} fail</small>
+    </div>`).join('')}</div>`;
+
+  const cs = r.clientContract || runClientContractSmoke();
+  client.innerHTML = `
+    <div class="rc-client-head"><strong>📱 Client Contract QA</strong><span>${Number(cs.passed || 0)}/${Number(cs.total || 0)}</span></div>
+    <div class="rc-client-checks">${(cs.checks || []).map(x => `
+      <div class="${x.pass ? 'pass' : 'fail'}"><i>${x.pass ? '✓' : '×'}</i><span><strong>${escapeHtml(x.label || '')}</strong><small>${escapeHtml(x.detail || '')}</small></span></div>`).join('')}</div>`;
+
+  checks.innerHTML = `<details class="rc-details"><summary>Все backend-проверки · ${Number(r.summary?.total || 0)}</summary>
+    <div class="rc-check-list">${(r.checks || []).map(x => `
+      <div class="${escapeHtml(x.state || 'warn')}">
+        <i>${x.state === 'pass' ? '✓' : x.state === 'fail' ? '×' : '!'}</i>
+        <span><strong>${escapeHtml(x.label || '')}</strong><small>${escapeHtml(x.detail || '')}</small></span>
+        <em>${x.blocking ? 'core' : x.group}</em>
+      </div>`).join('')}</div>
+  </details>
+  <p class="tiny">${escapeHtml(r.policy?.note || '')}</p>`;
+}
+
+async function loadRcRegression(force = true) {
+  if (!isAdmin() || state.rcRegressionLoading) return;
+  if (!force && state.rcRegression) { renderRcRegression(); return; }
+
+  state.rcRegressionLoading = true;
+  renderRcRegression();
+  try {
+    const result = await api(`/api/rc-regression${force ? '?refresh=1' : ''}`, {
+      retry: false,
+      timeoutMs: 45000,
+      dedupe: false,
+    });
+    result.clientContract = runClientContractSmoke();
+    state.rcRegression = result;
+    const clientFailed = Number(result.clientContract?.failed || 0);
+    toast(result.status === 'blocked' || clientFailed ? 'RC smoke-test: есть пункты для проверки' : 'RC smoke-test завершён');
+  } catch (e) {
+    state.rcRegression = {
+      status: 'blocked',
+      label: e.message || 'RC smoke-test не выполнен.',
+      score: 0,
+      summary: { total: 0, passed: 0, warnings: 0, blockers: 1 },
+      groups: {},
+      checks: [],
+      clientContract: runClientContractSmoke(),
+      policy: {},
+    };
+  } finally {
+    state.rcRegressionLoading = false;
+    renderRcRegression();
   }
 }
 
@@ -3734,6 +3900,7 @@ $('modelQualityRefreshBtn')?.addEventListener('click', () => loadModelQuality(tr
 $('modelQualityPeriod')?.addEventListener('change', () => loadModelQuality(true));
 $('diagnosticsRefreshBtn')?.addEventListener('click', () => loadDiagnostics(true));
 $('productionReadinessRefreshBtn')?.addEventListener('click', () => loadProductionReadiness(true));
+$('rcRunBtn')?.addEventListener('click', () => loadRcRegression(true));
 $('providerProbeBtn')?.addEventListener('click', () => probeProvider());
 $('providerAuditBtn')?.addEventListener('click', () => runProviderCoverageAudit(null, true));
 $('providerE2EBtn')?.addEventListener('click', () => runProviderE2E(null));
@@ -3747,7 +3914,7 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// v5.2 unifies offline/degraded/recovery UX and safely refreshes Telegram WebView after reconnect/resume.
+// v5.3 RC1 adds read-only full regression smoke tests and a client DOM contract gate.
 // v4.0: first paint is intentionally small — matches/profile/favorites only.
 // History, reminders and provider details are loaded later or when their screen opens.
 await Promise.allSettled([loadProfile(), loadFavorites(), loadMatches()]);
