@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.7.2-rc15';
+const CLIENT_VERSION = '6.8.0-rc16';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc15';
+const CLIENT_RELEASE_CHANNEL = 'rc16';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -916,16 +916,28 @@ function renderModelQuality() {
   const ce = q.calibrationEngine || {};
   const impact = q.calibrationImpact || {};
   const modeLabel = ce.mode === 'active' ? 'Активен' : ce.mode === 'shadow' ? 'Тень' : 'База';
+  const weightValidation = ce.weightsValidation || {};
+  const promotion = ce.promotionGate || {};
+  const promotionLabel = promotion.status === 'promoted'
+    ? 'РАЗРЕШЕНО'
+    : promotion.status === 'held'
+      ? 'УДЕРЖАНО'
+      : promotion.status === 'shadow'
+        ? 'ТЕНЬ'
+        : 'БАЗА';
   const signalRows = (q.signalPerformance || []).some(x => Number(x.sample || 0) > 0) ? (q.signalPerformance || []) : (q.signals || []);
   engine.hidden = false;
   engine.innerHTML = `
-    <div class="quality-block-head"><strong>⚙️ Калибратор v3.7</strong><span class="calibration-mode ${escapeHtml(ce.mode || 'baseline')}">${modeLabel}</span></div>
+    <div class="quality-block-head"><strong>⚙️ Калибратор v3.8</strong><span class="calibration-mode ${escapeHtml(ce.mode || 'baseline')}">${modeLabel}</span></div>
     <div class="calibration-engine-grid">
       <div><span>Режим</span><strong>${modeLabel}</strong><small>${ce.mode === 'active' ? 'коррекции разрешены защитными правилами' : ce.mode === 'shadow' ? 'измеряет, но не меняет прогноз' : 'базовые веса'}</small></div>
       <div><span>Temperature</span><strong>${Number.isFinite(Number(ce.temperature)) ? Number(ce.temperature).toFixed(2) : '1.00'}</strong><small>1.00 = без сжатия вероятностей</small></div>
       <div><span>Backtest</span><strong>${Number(ce.sample || 0)}</strong><small>завершённых snapshot</small></div>
-      <div><span>Holdout</span><strong>${Number(ce.temperatureValidation?.validationSample || 0)}</strong><small>${Number.isFinite(Number(ce.temperatureValidation?.improvement)) ? `${Number(ce.temperatureValidation.improvement).toFixed(1)}% log loss` : 'ещё нет проверки'}</small></div>
+      <div><span>Holdout температуры</span><strong>${Number(ce.temperatureValidation?.validationSample || 0)}</strong><small>${Number.isFinite(Number(ce.temperatureValidation?.improvement)) ? `${Number(ce.temperatureValidation.improvement).toFixed(1)}% log loss` : 'ещё нет проверки'}</small></div>
+      <div><span>Holdout весов</span><strong>${Number(weightValidation.validationSample || 0)}</strong><small>${Number.isFinite(Number(weightValidation.brierGain)) ? `Δ Brier ${Number(weightValidation.brierGain).toFixed(4)}` : 'ещё нет проверки'}</small></div>
+      <div><span>Продвижение</span><strong>${promotionLabel}</strong><small>только trusted holdout</small></div>
     </div>
+    <div class="calibration-promotion-note"><strong>Защита RC16:</strong> адаптивные веса не применяются к новым прогнозам, пока более новые trusted-матчи не подтвердят улучшение Brier без ухудшения log loss.</div>
     <div class="calibration-weights">
       ${(ce.signalStats || []).map(x => {
         const base = Number(x.baseWeight || 0) * 100;
@@ -1581,11 +1593,11 @@ function runClientContractSmoke() {
   const adminSections = [...document.querySelectorAll('[data-admin-only]')];
   add('admin_sections', 'Разметка интерфейса администратора', adminSections.length >= 6, `${adminSections.length} технических секций доступны только администратору.`);
 
-  const cssLink = document.querySelector('link[href*="styles.css?v=6.7.2"]');
-  const appScript = document.querySelector('script[src*="app.js?v=6.7.2"]');
+  const cssLink = document.querySelector('link[href*="styles.css?v=6.8.0"]');
+  const appScript = document.querySelector('script[src*="app.js?v=6.8.0"]');
   add('cache_bust', 'Версии файлов интерфейса', Boolean(cssLink && appScript), `CSS ${cssLink ? 'OK' : 'MISS'} · JS ${appScript ? 'OK' : 'MISS'}.`);
 
-  add('client_version', 'Версия клиента', CLIENT_VERSION === '6.7.2-rc15', CLIENT_VERSION);
+  add('client_version', 'Версия клиента', CLIENT_VERSION === '6.8.0-rc16', CLIENT_VERSION);
   add('telegram_sdk', 'Telegram WebApp SDK', Boolean(window.Telegram?.WebApp), window.Telegram?.WebApp ? 'SDK доступен.' : 'В обычном браузере SDK может отсутствовать; в Telegram должен быть доступен.');
 
   const navButtons = ['navMatches','navSearch','navHistory','navProfile'].filter(id => $(id));
@@ -1611,7 +1623,7 @@ function runClientContractSmoke() {
 }
 
 function rcStateText(status) {
-  if (status === 'rc_ready') return 'RC15 ГОТОВ';
+  if (status === 'rc_ready') return 'RC16 ГОТОВ';
   if (status === 'rc_with_holds') return 'RC С ОГРАНИЧЕНИЯМИ';
   if (status === 'blocked') return 'ЗАБЛОКИРОВАНО';
   return 'ОЖИДАНИЕ';
@@ -1645,7 +1657,7 @@ function renderRcRegression() {
   const r = state.rcRegression;
   if (!r) {
     badge.className = 'rc-badge';
-    badge.textContent = 'RC15';
+    badge.textContent = 'RC16';
     status.textContent = 'Полная регрессионная проверка ещё не запускалась.';
     meta.textContent = 'Тест безопасный: без полного анализа, без изменения пользовательских данных и без расхода API-Football.';
     summary.innerHTML = '';
@@ -4891,7 +4903,7 @@ function renderAnalysis(d) {
         <h2>🧠 Состав модели</h2>
         <p class="muted">${escapeHtml(d.modelBreakdown?.method || 'Модель объединяет доступные статистические сигналы.')}</p>
         <div class="model-weights">${escapeHtml(modelWeightsText(d.modelBreakdown?.weights || {}))}</div>
-        ${d.modelCalibration ? `<div class="analysis-calibration-card ${escapeHtml(d.modelCalibration.mode || 'baseline')}"><span>Калибровка v${escapeHtml(d.modelCalibration.version || '3.7')}</span><strong>${d.modelCalibration.mode === 'active' ? 'Активна' : d.modelCalibration.mode === 'shadow' ? 'Теневой режим' : 'Базовый режим'}</strong><small>n=${Number(d.modelCalibration.sample || 0)} · T=${Number(d.modelCalibration.temperature || 1).toFixed(2)}${d.modelCalibration.weightsActive ? ' · адаптивные веса' : ''}</small></div>` : ''}
+        ${d.modelCalibration ? `<div class="analysis-calibration-card ${escapeHtml(d.modelCalibration.mode || 'baseline')}"><span>Калибровка v${escapeHtml(d.modelCalibration.version || '3.8')}</span><strong>${d.modelCalibration.mode === 'active' ? 'Активна' : d.modelCalibration.mode === 'shadow' ? 'Теневой режим' : 'Базовый режим'}</strong><small>n=${Number(d.modelCalibration.sample || 0)} · T=${Number(d.modelCalibration.temperature || 1).toFixed(2)}${d.modelCalibration.weightsActive ? ' · адаптивные веса' : ''}</small></div>` : ''}
         <div class="model-api-card">
           <span>API-Football</span>
           <strong>${escapeHtml(pred?.winner || 'Нет данных')}</strong>
@@ -5152,7 +5164,7 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// v6.7 RC15: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
+// v6.7 RC16: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
 // The boot watchdog never leaves the user behind an endless splash screen.
 const startupWatchdog = setTimeout(() => {
   if (!$('bootGate')?.hidden && !state.compatibilityBlocked) {

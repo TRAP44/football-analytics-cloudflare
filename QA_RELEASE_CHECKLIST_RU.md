@@ -1,58 +1,38 @@
-# QA Release Checklist — v6.7.2 RC15
+# QA Release Checklist — v6.8.0 RC16
 
 ## Deploy
-- применён `supabase_migration_v6_7.sql`;
-- Worker/client = `6.7.2-rc15`;
-- cron, Secrets, wrangler не менялись;
+- применён `supabase_migration_v6_8.sql`;
+- Worker/client = `6.8.0-rc16`;
+- package = `6.8.0`;
+- cron, Secrets и wrangler не менялись;
 - monetization paused.
 
-## Two-Pass Finality
-- новый settlement имеет unverified + count 0;
-- first matching check после 6h → verified + count 1;
-- first_verified_at фиксируется один раз;
-- verified не проходит second pass раньше 24h;
-- second matching check → confirmed + count 2;
-- изменение score/outcome на втором check → drift;
-- изменение terminal status FT/AET/PEN между passes → drift;
-- confirmed больше не участвует в verification queue.
+## Calibration Promotion Gate
+- cache generation = `3.8-promotion1`;
+- при <60 trusted rows adaptive weights не активируются;
+- train и holdout разделены по kickoff_at;
+- weight candidate строится только на train;
+- holdout содержит минимум 12 матчей;
+- promotion требует Brier gain >= 0.001;
+- promotion запрещён при ухудшении log loss;
+- synthetic stable candidate проходит self-test;
+- synthetic overfit candidate блокируется;
+- baseline weights остаются production при held/shadow;
+- temperature и weights имеют отдельные validation результаты.
 
-## Trusted Metrics Gate
-- confirmed settled включается;
-- adjudicated settled включается;
-- verified first-pass исключается;
-- unverified исключается;
-- drift исключается;
-- void исключается;
-- calibration использует тот же gate;
-- новый cache generation не принимает RC14 calibration cache.
+## Audit
+- `model_calibration_validations` доступна;
+- candidate_fingerprint уникален;
+- decision ∈ baseline/shadow/held/promoted;
+- сохраняются sample/train/validation и metric deltas.
 
 ## Regression
 Обязательный PASS:
-- Prediction Integrity self-test;
-- Settlement Watchdog self-test;
-- Settlement Run Ledger self-test;
-- Settlement Finality self-test;
-- Settlement Adjudication self-test;
-- Trusted Metrics schema v6.7;
-- Trusted Metrics Gate self-test;
+- Prediction Integrity;
+- Trusted Metrics Gate;
+- Two-Pass Settlement Finality;
+- Settlement Adjudication;
+- Calibration Promotion schema v6.8;
+- Calibration Promotion self-test;
 - Production Load Safety;
 - Admin Security.
-
-## Инварианты
-Автоматический finality verifier не переписывает provider drift. Prediction snapshots immutable. Telegram Stars остаются paused.
-
-
-## RC15 hotfix 6.7.1
-- при нормальном runtime `#runtimeBanner[hidden]` визуально отсутствует;
-- maintenance/limited по-прежнему показывают runtime banner после снятия `hidden`;
-- cache-bust CSS/JS = 6.7.1.
-
-
-## RC15 UI cleanup 6.7.2
-- startup показывает актуальный RC из manifest, а не RC10;
-- декоративная метка QA-панели = RC15;
-- Runtime banner скрыт при hidden;
-- основные пользовательские и административные подписи русифицированы;
-- устаревшие v5.0/HOLD placeholder-тексты удалены;
-- provider/runtime/release/remediation панели используют понятные русские статусы;
-- JS/HTML/CSS contract не потерял обязательные ID.

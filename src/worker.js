@@ -59,11 +59,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.7.2-rc15';
+const APP_VERSION = '6.8.0-rc16';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc15';
-const RC_NAME = 'RC15';
+const RELEASE_CHANNEL = 'rc16';
+const RC_NAME = 'RC16';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -112,7 +112,7 @@ const MODEL_BASE_WEIGHTS = Object.freeze({
   h2h: 0.08,
 });
 
-const CALIBRATION_PROFILE_VERSION = '3.7-finality2';
+const CALIBRATION_PROFILE_VERSION = '3.8-promotion1';
 const CALIBRATION_CACHE_KEY = `model-calibration:global:${CALIBRATION_PROFILE_VERSION}`;
 const CALIBRATION_CACHE_MINUTES = 360;
 
@@ -661,6 +661,8 @@ function appManifest(cfg) {
       settlementAdjudication: true,
       trustedMetricsGate: true,
       twoPassSettlementFinality: true,
+      calibrationPromotionGate: true,
+      adaptiveWeightsHoldout: true,
     },
     serverTime: new Date().toISOString(),
   };
@@ -1945,6 +1947,230 @@ function adaptiveSignalWeights(stats) {
   };
 }
 
+
+function rowSignalBlendProbabilities(row, weightOverrides = MODEL_BASE_WEIGHTS) {
+  const signalMap = parseJsonObject(row?.signal_probabilities);
+  const configured = weightOverrides && typeof weightOverrides === 'object' ? weightOverrides : MODEL_BASE_WEIGHTS;
+  const candidates = Object.keys(MODEL_BASE_WEIGHTS)
+    .map(name => [name, signalMap?.[name], Number(configured[name] ?? MODEL_BASE_WEIGHTS[name])])
+    .filter(([, probabilities, weight]) => validThreeProbabilities(probabilities) && Number.isFinite(weight) && weight > 0);
+  if (candidates.length < 2) return null;
+  const total = candidates.reduce((sum, row) => sum + row[2], 0);
+  if (!(total > 0)) return null;
+  let home = 0, draw = 0, away = 0;
+  for (const [, probabilities, rawWeight] of candidates) {
+    const weight = rawWeight / total;
+    home += Number(probabilities.home) * weight;
+    draw += Number(probabilities.draw) * weight;
+    away += Number(probabilities.away) * weight;
+  }
+  return normalizeThree(home, draw, away);
+}
+
+function fitAdaptiveSignalWeightsHoldout(rows) {
+  const valid = (rows || [])
+    .filter(row => ['home','draw','away'].includes(String(row?.actual_outcome || '')) && rowSignalBlendProbabilities(row, MODEL_BASE_WEIGHTS))
+    .sort((a, b) => Date.parse(a.kickoff_at || 0) - Date.parse(b.kickoff_at || 0));
+
+  const fallbackStats = signalCalibrationStats(valid);
+  if (valid.length < 60) {
+    return {
+      active: false,
+      weights: { ...MODEL_BASE_WEIGHTS },
+      candidateWeights: { ...MODEL_BASE_WEIGHTS },
+      stats: fallbackStats.map(x => ({ ...x, currentWeight: MODEL_BASE_WEIGHTS[x.name] || 0 })),
+      sample: valid.length,
+      trainSample: 0,
+      validationSample: 0,
+      baselineBrier: null,
+      candidateBrier: null,
+      baselineLogLoss: null,
+      candidateLogLoss: null,
+      brierGain: null,
+      logLossGain: null,
+      changedWeightL1: 0,
+      reason: 'Нужно минимум 60 trusted-матчей для отдельной проверки адаптивных весов.',
+    };
+  }
+
+  const validationCount = Math.max(12, Math.min(50, Math.floor(valid.length * 0.2)));
+  const train = valid.slice(0, valid.length - validationCount);
+  const validation = valid.slice(valid.length - validationCount);
+  const trainStats = signalCalibrationStats(train);
+  const candidate = adaptiveSignalWeights(trainStats);
+
+  if (train.length < 48 || validation.length < 12 || !candidate.active) {
+    return {
+      active: false,
+      weights: { ...MODEL_BASE_WEIGHTS },
+      candidateWeights: candidate.weights || { ...MODEL_BASE_WEIGHTS },
+      stats: candidate.stats || fallbackStats,
+      sample: valid.length,
+      trainSample: train.length,
+      validationSample: validation.length,
+      baselineBrier: null,
+      candidateBrier: null,
+      baselineLogLoss: null,
+      candidateLogLoss: null,
+      brierGain: null,
+      logLossGain: null,
+      changedWeightL1: 0,
+      reason: 'Обучающая часть ещё не сформировала устойчивый кандидат весов.',
+    };
+  }
+
+  const evaluated = validation.map(row => ({
+    actualOutcome: String(row.actual_outcome),
+    baseline: rowSignalBlendProbabilities(row, MODEL_BASE_WEIGHTS),
+    candidate: rowSignalBlendProbabilities(row, candidate.weights),
+  })).filter(row => row.baseline && row.candidate);
+
+  const baselineBrier = averageMetric(evaluated, row => brierFromProbabilities(row.baseline, row.actualOutcome));
+  const candidateBrier = averageMetric(evaluated, row => brierFromProbabilities(row.candidate, row.actualOutcome));
+  const baselineLogLoss = averageMetric(evaluated, row => logLossFromProbabilities(row.baseline, row.actualOutcome));
+  const candidateLogLoss = averageMetric(evaluated, row => logLossFromProbabilities(row.candidate, row.actualOutcome));
+  const brierGain = Number.isFinite(baselineBrier) && Number.isFinite(candidateBrier) ? baselineBrier - candidateBrier : null;
+  const logLossGain = Number.isFinite(baselineLogLoss) && Number.isFinite(candidateLogLoss) ? baselineLogLoss - candidateLogLoss : null;
+  const changedWeightL1 = Object.keys(MODEL_BASE_WEIGHTS)
+    .reduce((sum, name) => sum + Math.abs(Number(candidate.weights?.[name] || 0) - Number(MODEL_BASE_WEIGHTS[name] || 0)), 0);
+
+  // RC16 gate: adaptive weights must improve Brier on newer holdout matches and must not worsen log loss.
+  const active = evaluated.length >= 12 &&
+    changedWeightL1 >= 0.01 &&
+    Number.isFinite(brierGain) && brierGain >= 0.001 &&
+    Number.isFinite(logLossGain) && logLossGain >= 0;
+
+  return {
+    active,
+    weights: active ? candidate.weights : { ...MODEL_BASE_WEIGHTS },
+    candidateWeights: candidate.weights,
+    stats: candidate.stats,
+    sample: valid.length,
+    trainSample: train.length,
+    validationSample: evaluated.length,
+    baselineBrier: Number.isFinite(baselineBrier) ? Math.round(baselineBrier * 10000) / 10000 : null,
+    candidateBrier: Number.isFinite(candidateBrier) ? Math.round(candidateBrier * 10000) / 10000 : null,
+    baselineLogLoss: Number.isFinite(baselineLogLoss) ? Math.round(baselineLogLoss * 1000) / 1000 : null,
+    candidateLogLoss: Number.isFinite(candidateLogLoss) ? Math.round(candidateLogLoss * 1000) / 1000 : null,
+    brierGain: Number.isFinite(brierGain) ? Math.round(brierGain * 10000) / 10000 : null,
+    logLossGain: Number.isFinite(logLossGain) ? Math.round(logLossGain * 1000) / 1000 : null,
+    changedWeightL1: Math.round(changedWeightL1 * 10000) / 10000,
+    reason: active
+      ? 'Кандидат весов улучшил Brier на более новых trusted holdout-матчах и не ухудшил log loss.'
+      : 'Кандидат весов остаётся в тени: holdout не подтвердил безопасное улучшение.',
+  };
+}
+
+function calibrationPromotionSelfTest() {
+  const signalFor = (actual, strength, wrong = false) => {
+    const key = wrong ? (actual === 'home' ? 'away' : 'home') : actual;
+    const draw = Math.round((100 - strength) * 0.3);
+    return key === 'home'
+      ? { home: strength, draw, away: 100 - strength - draw }
+      : { home: 100 - strength - draw, draw, away: strength };
+  };
+  const makeRows = (overfit = false) => Array.from({ length: 80 }, (_, index) => {
+    const actual = index % 2 === 0 ? 'home' : 'away';
+    const validation = index >= 64;
+    return {
+      fixture_id: index + 1,
+      kickoff_at: new Date(Date.UTC(2026, 0, 1 + index)).toISOString(),
+      actual_outcome: actual,
+      signal_probabilities: {
+        // Train says market is strong and the other signals are weak.
+        // Stable holdout keeps that relationship; overfit holdout flips it.
+        market: signalFor(actual, 90, overfit && validation),
+        apiPrediction: signalFor(actual, 70, true),
+        recentForm: signalFor(actual, validation && overfit ? 90 : 75, !(validation && overfit)),
+        h2h: signalFor(actual, 65, true),
+      },
+    };
+  });
+  const stable = fitAdaptiveSignalWeightsHoldout(makeRows(false));
+  const overfit = fitAdaptiveSignalWeightsHoldout(makeRows(true));
+  return {
+    pass: stable.active &&
+      stable.validationSample >= 12 &&
+      Number(stable.brierGain) >= 0.001 &&
+      Number(stable.logLossGain) >= 0 &&
+      !overfit.active,
+    stableActive: stable.active,
+    stableValidation: stable.validationSample,
+    stableBrierGain: stable.brierGain,
+    stableLogLossGain: stable.logLossGain,
+    overfitBlocked: !overfit.active,
+    overfitBrierGain: overfit.brierGain,
+    overfitLogLossGain: overfit.logLossGain,
+  };
+}
+
+async function probeCalibrationPromotionSchema(cfg) {
+  if (!hasSupabase(cfg)) return { ok: false, status: 'not_configured' };
+  try {
+    const url = new URL(`${cfg.supabaseUrl}/rest/v1/model_calibration_validations`);
+    url.searchParams.set('select', 'candidate_fingerprint,profile_version,decision,validation_sample');
+    url.searchParams.set('limit', '1');
+    const r = await fetchWithTimeout(url, { headers: supaHeaders(cfg) }, 7000, 'Supabase calibration promotion schema');
+    return { ok: r.ok, status: r.ok ? 'ok' : `http_${r.status}` };
+  } catch (error) {
+    return { ok: false, status: error?.code || 'error', detail: redactOpsString(error?.message || error, 140) };
+  }
+}
+
+async function calibrationPromotionFingerprint(profile) {
+  const gate = profile?.promotionGate || {};
+  const source = JSON.stringify({
+    version: profile?.version || CALIBRATION_PROFILE_VERSION,
+    sample: Number(profile?.sample || 0),
+    temperatureCandidate: Number(profile?.temperatureValidation?.candidateTemperature || 1),
+    temperatureActive: Boolean(profile?.temperatureActive),
+    candidateWeights: profile?.weightsValidation?.candidateWeights || {},
+    weightValidationSample: Number(profile?.weightsValidation?.validationSample || 0),
+    decision: gate.status || 'baseline',
+  });
+  const digest = await crypto.subtle.digest('SHA-256', enc.encode(source));
+  return bytesToHex(new Uint8Array(digest)).slice(0, 32);
+}
+
+function calibrationMetricOrNull(value) {
+  return value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))
+    ? Number(value)
+    : null;
+}
+
+async function persistCalibrationPromotionValidation(cfg, profile) {
+  if (!hasSupabase(cfg) || !profile?.promotionGate?.validationReady) return;
+  const schema = await probeCalibrationPromotionSchema(cfg);
+  if (!schema.ok) return;
+  const weights = profile.weightsValidation || {};
+  const temp = profile.temperatureValidation || {};
+  const candidateFingerprint = await calibrationPromotionFingerprint(profile);
+  await supaInsertIgnore(cfg, 'model_calibration_validations', {
+    candidate_fingerprint: candidateFingerprint,
+    profile_version: String(profile.version || CALIBRATION_PROFILE_VERSION),
+    decision: String(profile.promotionGate.status || 'shadow'),
+    trusted_sample: Number(profile.sample || 0),
+    train_sample: Math.max(Number(weights.trainSample || 0), Number(temp.trainSample || 0)),
+    validation_sample: Math.max(Number(weights.validationSample || 0), Number(temp.validationSample || 0)),
+    temperature_candidate: Number(temp.candidateTemperature || 1),
+    temperature_active: Boolean(profile.temperatureActive),
+    candidate_weights: weights.candidateWeights || { ...MODEL_BASE_WEIGHTS },
+    weights_active: Boolean(profile.weightsActive),
+    baseline_brier: calibrationMetricOrNull(weights.baselineBrier),
+    candidate_brier: calibrationMetricOrNull(weights.candidateBrier),
+    baseline_log_loss: calibrationMetricOrNull(weights.baselineLogLoss) ?? calibrationMetricOrNull(temp.baselineLogLoss),
+    candidate_log_loss: calibrationMetricOrNull(weights.candidateLogLoss) ?? calibrationMetricOrNull(temp.calibratedLogLoss),
+    brier_gain: calibrationMetricOrNull(weights.brierGain),
+    log_loss_gain: calibrationMetricOrNull(weights.logLossGain),
+    detail: {
+      promotionGate: profile.promotionGate,
+      weightsReason: weights.reason || '',
+      temperatureImprovementPct: temp.improvement ?? null,
+      appVersion: APP_VERSION,
+    },
+  }, 'candidate_fingerprint');
+}
+
 function baselineCalibrationProfile(sample = 0, stats = []) {
   return {
     version: CALIBRATION_PROFILE_VERSION,
@@ -1957,6 +2183,28 @@ function baselineCalibrationProfile(sample = 0, stats = []) {
     signalWeights: { ...MODEL_BASE_WEIGHTS },
     signalStats: (stats || []).map(x => ({ ...x, currentWeight: MODEL_BASE_WEIGHTS[x.name] || 0 })),
     temperatureValidation: { sample, trainSample: 0, validationSample: 0, baselineLogLoss: null, calibratedLogLoss: null, improvement: null },
+    weightsValidation: {
+      active: false,
+      weights: { ...MODEL_BASE_WEIGHTS },
+      candidateWeights: { ...MODEL_BASE_WEIGHTS },
+      sample,
+      trainSample: 0,
+      validationSample: 0,
+      baselineBrier: null,
+      candidateBrier: null,
+      baselineLogLoss: null,
+      candidateLogLoss: null,
+      brierGain: null,
+      logLossGain: null,
+      changedWeightL1: 0,
+      reason: 'Недостаточно trusted-матчей для отдельной holdout-проверки весов.',
+    },
+    promotionGate: {
+      status: sample >= 20 ? 'shadow' : 'baseline',
+      validationReady: false,
+      trustedSample: sample,
+      note: sample >= 20 ? 'Кандидат калибровки собирает доказательства в тени.' : 'Сначала нужно накопить trusted settlement.',
+    },
     note: sample >= 20 ? 'Калибратор собирает выборку в теневом режиме. Итоговые вероятности пока не меняются.' : 'Сначала нужно накопить завершённые предматчевые прогнозы.',
   };
 }
@@ -1965,9 +2213,11 @@ function buildCalibrationProfile(rows) {
   const valid = verifiedSettledRows(rows);
   const signalStats = signalCalibrationStats(valid);
   const temperature = fitTemperatureCalibration(valid);
-  const weights = adaptiveSignalWeights(signalStats);
+  const weights = fitAdaptiveSignalWeightsHoldout(valid);
   const active = Boolean(temperature.active || weights.active);
-  const shadow = !active && (valid.length >= 20 || signalStats.some(x => x.sample >= 10));
+  const validationReady = Number(weights.validationSample || 0) >= 12 || Number(temperature.validationSample || 0) >= 10;
+  const shadow = !active && (valid.length >= 20 || validationReady || signalStats.some(x => x.sample >= 10));
+  const promotionStatus = active ? 'promoted' : validationReady ? 'held' : shadow ? 'shadow' : 'baseline';
   return {
     version: CALIBRATION_PROFILE_VERSION,
     generatedAt: new Date().toISOString(),
@@ -1977,13 +2227,29 @@ function buildCalibrationProfile(rows) {
     temperatureActive: Boolean(temperature.active),
     weightsActive: Boolean(weights.active),
     signalWeights: weights.active ? weights.weights : { ...MODEL_BASE_WEIGHTS },
-    signalStats: weights.stats,
+    signalStats: (weights.stats || signalStats).map(x => ({
+      ...x,
+      currentWeight: Number((weights.active ? weights.weights : MODEL_BASE_WEIGHTS)[x.name] ?? MODEL_BASE_WEIGHTS[x.name] ?? 0),
+    })),
     temperatureValidation: temperature,
+    weightsValidation: weights,
+    promotionGate: {
+      status: promotionStatus,
+      validationReady,
+      trustedSample: valid.length,
+      weightHoldoutSample: Number(weights.validationSample || 0),
+      temperatureHoldoutSample: Number(temperature.validationSample || 0),
+      note: active
+        ? 'Автокалибровка разрешена только компонентам, прошедшим более новый trusted holdout.'
+        : validationReady
+          ? 'Кандидат удержан в тени: holdout ещё не подтвердил безопасное улучшение.'
+          : 'Кандидат остаётся в тени до достаточной trusted holdout-выборки.',
+    },
     note: active
-      ? 'Калибровка включена только после проверки на более новых holdout-матчах; изменения весов ограничены защитными пределами.'
+      ? 'RC16: изменения вероятностей разрешены только компонентам, прошедшим holdout promotion gate.'
       : shadow
-        ? 'Данные уже собираются, но защитные пороги ещё не разрешили менять итоговые вероятности.'
-        : 'Недостаточно завершённых прогнозов для безопасной автоматической калибровки.',
+        ? 'RC16: кандидат измеряется в тени; итоговые вероятности не меняются без подтверждённого holdout-улучшения.'
+        : 'Недостаточно trusted-прогнозов для безопасной автоматической калибровки.',
   };
 }
 
@@ -2007,6 +2273,9 @@ async function getCalibrationProfile(cfg, { force = false } = {}) {
     rows = [...memory.modelPredictions.values()].filter(x => x.status === 'settled');
   }
   const profile = buildCalibrationProfile(rows);
+  try { await persistCalibrationPromotionValidation(cfg, profile); } catch (error) {
+    console.warn('calibration promotion audit skipped', error?.message || error);
+  }
   try { await setCache(CALIBRATION_CACHE_KEY, 0, profile, cfg, CALIBRATION_CACHE_MINUTES); } catch {}
   return profile;
 }
@@ -2983,7 +3252,7 @@ function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = 
     calibrationDiagnostics: {
       weightedTopCalibrationError: weightedTopCalibrationError(rows),
       label: 'Weighted top-probability calibration error',
-      note: 'Средневзвешенный абсолютный разрыв между средней top-вероятностью и hit rate по 5 probability buckets; меньше — лучше. Это диагностическая метрика, не автоматический release threshold.',
+      note: 'Средневзвешенный абсолютный разрыв между средней top-вероятностью и hit rate по 5 probability buckets; меньше — лучше. RC16 не использует эту метрику отдельно: продвижение калибровки требует holdout-проверки.',
     },
     calibrationEngine: calibrationProfile || baselineCalibrationProfile(evaluated, signalPerformance),
     calibrationImpact,
@@ -6833,13 +7102,14 @@ async function apiReleaseReadiness(request, cfg) {
     probeOptionalTable(cfg, 'runtime_controls'),
     probeOptionalTable(cfg, 'runtime_control_history'),
   ]);
-  const [runtimeState, watchdogSchema, runLedgerSchema, finalitySchema, adjudicationSchema, trustSchema] = await Promise.all([
+  const [runtimeState, watchdogSchema, runLedgerSchema, finalitySchema, adjudicationSchema, trustSchema, calibrationPromotionSchema] = await Promise.all([
     loadRuntimeControls(cfg, { force: true }),
     probeSettlementWatchdogSchema(cfg),
     probeSettlementRunLedgerSchema(cfg),
     probeSettlementFinalitySchema(cfg),
     probeSettlementAdjudicationSchema(cfg),
     probeSettlementTrustSchema(cfg),
+    probeCalibrationPromotionSchema(cfg),
   ]);
   const runtime = runtimeState.value;
   const provider = diagnostics.provider || {};
@@ -6873,6 +7143,10 @@ async function apiReleaseReadiness(request, cfg) {
       trustSchema.ok ? 'Verification count и first-pass timestamp доступны.' : 'Нужна supabase_migration_v6_7.sql.', true),
     releaseCheck('trusted_metrics_gate_selftest', 'Самопроверка доверенных метрик', trustedMetricsGateSelfTest().pass ? 'pass' : 'fail',
       trustedMetricsGateSelfTest().pass ? 'Только confirmed/adjudicated settled rows допускаются в metrics/calibration.' : 'Trusted Metrics Gate self-test не прошёл.', true),
+    releaseCheck('calibration_promotion_schema', 'Схема продвижения калибровки v6.8', calibrationPromotionSchema.ok ? 'pass' : 'fail',
+      calibrationPromotionSchema.ok ? 'Аудит holdout-решений доступен.' : 'Нужна supabase_migration_v6_8.sql.', true),
+    releaseCheck('calibration_promotion_selftest', 'Самопроверка продвижения калибровки', calibrationPromotionSelfTest().pass ? 'pass' : 'fail',
+      calibrationPromotionSelfTest().pass ? 'Устойчивое улучшение проходит gate, synthetic overfit блокируется.' : 'Calibration Promotion self-test не прошёл.', true),
     releaseCheck('automatic_settlement_recovery', 'Автоматическое восстановление результатов', 'pass',
       runtime.autoSettlementRecoveryEnabled ? 'Runtime switch ON: cron catch-up разрешён guardrails.' : 'Runtime switch OFF: watchdog работает в shadow и только сигнализирует.', false),
     releaseCheck('runtime_controls_schema', 'Схема управления функциями v5.7', runtimeTable.ok ? 'pass' : 'fail', runtimeTable.ok ? 'Таблица runtime_controls доступна.' : 'Нужна supabase_migration_v5_7.sql.', true),
@@ -7113,8 +7387,8 @@ async function apiRcRegression(request, cfg, user) {
   const startedAt = Date.now();
 
   // 1) Core runtime / security configuration.
-  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.7.2-rc15' ? 'pass' : 'fail',
-    `Worker: ${APP_VERSION}; ожидается 6.7.2-rc15.`, true));
+  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.8.0-rc16' ? 'pass' : 'fail',
+    `Worker: ${APP_VERSION}; ожидается 6.8.0-rc16.`, true));
   checks.push(rcCheck('api_contract', 'runtime', 'Контракт API', API_CONTRACT_VERSION === 5 ? 'pass' : 'fail',
     `Contract ${API_CONTRACT_VERSION}; min client ${MIN_CLIENT_VERSION}.`, true));
   checks.push(rcCheck('app_manifest', 'runtime', 'Публичный манифест приложения', appManifest(cfg)?.version === APP_VERSION ? 'pass' : 'fail',
@@ -7151,6 +7425,7 @@ async function apiRcRegression(request, cfg, user) {
     ['runtime_controls', 'Runtime controls', true],
     ['runtime_control_history', 'Runtime rollback history', true],
     ['model_predictions', 'Model predictions', true],
+    ['model_calibration_validations', 'Calibration promotion audit', true],
     ['prediction_integrity_actions', 'Prediction remediation audit', true],
     ['ops_events', 'Observability', false],
     ['match_integrity_runs', 'Integrity runs', true],
@@ -7215,6 +7490,18 @@ async function apiRcRegression(request, cfg, user) {
     'Схема доставки уведомлений v5.6',
     reminderSchema.ok ? 'pass' : 'fail',
     reminderSchema.ok ? 'Atomic delivery claim columns доступны.' : 'Запустите supabase_migration_v5_6.sql.',
+    true
+  ));
+
+  const calibrationSelfTest = calibrationPromotionSelfTest();
+  checks.push(rcCheck(
+    'calibration_promotion_selftest',
+    'safety',
+    'Calibration Promotion self-test',
+    calibrationSelfTest.pass ? 'pass' : 'fail',
+    calibrationSelfTest.pass
+      ? `stableActive=${calibrationSelfTest.stableActive}; holdout=${calibrationSelfTest.stableValidation}; overfitBlocked=${calibrationSelfTest.overfitBlocked}.`
+      : 'Calibration Promotion self-test не прошёл.',
     true
   ));
 
@@ -10146,7 +10433,7 @@ async function apiAnalyze(request, cfg, user) {
     homeName, awayName, minutesToKickoff, confidence,
   });
   if (calibrationProfile.mode === 'active') {
-    notes.factors.unshift(`Калибратор v3.7 активен на базе ${Number(calibrationProfile.sample || 0)} завершённых прогнозов; корректировки ограничены защитными порогами.`);
+    notes.factors.unshift(`Калибратор v3.8 активен на базе ${Number(calibrationProfile.sample || 0)} завершённых прогнозов; корректировки ограничены защитными порогами.`);
   } else if (calibrationProfile.mode === 'shadow') {
     notes.risks.push('Калибратор пока работает в теневом режиме: выборка собирается, но итоговые вероятности ещё не корректируются автоматически.');
   }
@@ -10208,6 +10495,8 @@ async function apiAnalyze(request, cfg, user) {
       weightsActive: Boolean(calibrationProfile.weightsActive),
       signalWeights: calibrationProfile.signalWeights || { ...MODEL_BASE_WEIGHTS },
       validation: calibrationProfile.temperatureValidation || null,
+      weightsValidation: calibrationProfile.weightsValidation || null,
+      promotionGate: calibrationProfile.promotionGate || null,
       note: calibrationProfile.note || '',
     },
     confidence,
@@ -10215,7 +10504,7 @@ async function apiAnalyze(request, cfg, user) {
     modelBreakdown: {
       weights: blended.weights,
       signals: blended.signals,
-      method: 'Рынок, API prediction, форма и H2H объединяются динамически. v3.7 может безопасно корректировать веса и резкость вероятностей только после backtest-проверки на holdout-матчах.',
+      method: 'Рынок, API prediction, форма и H2H объединяются динамически. v3.8 применяет изменения весов и резкости вероятностей только после отдельной проверки на более новых trusted holdout-матчах.',
     },
     dataPolicy: {
       dataMode: paid ? 'expanded' : 'standard',
@@ -10313,6 +10602,8 @@ export default {
         settlementAdjudication: 'enabled',
         trustedMetricsGate: 'enabled',
         twoPassSettlementFinality: 'enabled',
+        calibrationPromotionGate: 'enabled',
+        adaptiveWeightsHoldout: 'enabled',
         runtimeControlsCacheSeconds: 30,
         devMode: cfg.devMode,
       });
