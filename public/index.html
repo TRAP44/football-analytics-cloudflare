@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#111827" />
   <title>Football Manager · Match Intelligence</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=5.7.0" />
+  <link rel="stylesheet" href="/styles.css?v=5.8.0" />
 </head>
 <body>
   <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
     <div class="boot-card">
       <div class="boot-logo"><span>FM</span></div>
-      <div class="boot-kicker">FOOTBALL MANAGER · RC5</div>
+      <div class="boot-kicker">FOOTBALL MANAGER · RC6</div>
       <h1 id="bootTitle">Запускаю Football Manager</h1>
       <p id="bootText">Проверяю совместимость версии…</p>
       <div class="boot-progress" aria-hidden="true"><i id="bootProgressFill"></i></div>
@@ -411,11 +411,26 @@
             <textarea id="runtimeMessage" rows="3" maxlength="280" placeholder="Например: Обновляем футбольные данные. Вернёмся через несколько минут."></textarea>
           </label>
 
+          <label class="runtime-message-field">
+            <span>Причина изменения / комментарий</span>
+            <input id="runtimeChangeReason" maxlength="240" placeholder="Например: временно отключаем LIVE из-за provider 5xx">
+          </label>
+
           <div class="runtime-controls-actions">
             <button id="runtimeDefaultsBtn" class="reminder-btn" type="button">Вернуть safe defaults</button>
             <button id="runtimeSaveBtn" class="primary-setting-btn" type="button">Применить изменения</button>
           </div>
           <p class="tiny diagnostics-privacy">Все изменения server-side, доступны только ADMIN_TELEGRAM_IDS и пишутся в ops_events. Пользовательскую оплату эти переключатели не включают.</p>
+
+          <div class="runtime-history">
+            <div class="runtime-history-head">
+              <div>
+                <strong>↩ История и rollback</strong>
+                <span id="runtimeHistoryStatus">История ещё не загружена.</span>
+              </div>
+            </div>
+            <div id="runtimeHistoryList" class="runtime-history-list"></div>
+          </div>
         </section>
 
         <section class="panel reminder-health-panel" data-admin-only hidden>
@@ -467,14 +482,14 @@
         <section class="panel rc-panel" data-admin-only hidden>
           <div class="section-head profile-section-head">
             <div>
-              <h2>🚦 Release Candidate RC5</h2>
+              <h2>🚦 Release Candidate RC6</h2>
               <p>Regression + startup compatibility: runtime, security, schema, user routes, safety gates и client contract.</p>
             </div>
             <button id="rcRunBtn" class="primary-setting-btn rc-run-btn" type="button">Запустить QA</button>
           </div>
 
           <div class="rc-status-row">
-            <span id="rcBadge" class="rc-badge">RC5</span>
+            <span id="rcBadge" class="rc-badge">RC6</span>
             <div>
               <strong id="rcStatus">Полный regression smoke-test ещё не запускался.</strong>
               <small id="rcMeta">Без Analyze, без изменений user data, без расхода API-Football.</small>
@@ -557,6 +572,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=5.7.0"></script>
+  <script type="module" src="/app.js?v=5.8.0"></script>
 </body>
 </html>
