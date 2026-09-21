@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.0.0-rc8';
+const CLIENT_VERSION = '6.1.0-rc9';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc8';
+const CLIENT_RELEASE_CHANNEL = 'rc9';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -31,6 +31,9 @@ const state = {
   modelQuality: null,
   modelQualityLoading: false,
   modelQualityDays: 90,
+  modelRemediation: null,
+  modelRemediationLoading: false,
+  modelRemediationRunning: false,
   diagnostics: null,
   diagnosticsLoading: false,
   releaseReadiness: null,
@@ -576,7 +579,7 @@ async function runStartupSequence() {
 
   setBootStatus(
     'Подключаю данные',
-    manifest ? `RC8 · API contract ${manifest.apiContract}` : 'Manifest временно недоступен — продолжаю в безопасном режиме.',
+    manifest ? `RC9 · API contract ${manifest.apiContract}` : 'Manifest временно недоступен — продолжаю в безопасном режиме.',
     38
   );
 
@@ -1111,6 +1114,137 @@ async function loadModelQuality(force = false) {
   }
 }
 
+function remediationActionLabel(action) {
+  if (action?.status === 'completed') return 'Выполнено';
+  if (action?.status === 'partial') return 'Частично';
+  if (action?.status === 'failed') return 'Ошибка';
+  return 'Нет статуса';
+}
+
+function renderModelRemediation() {
+  const root = $('modelRemediation');
+  const status = $('modelRemediationStatus');
+  const summary = $('modelRemediationSummary');
+  const candidates = $('modelRemediationCandidates');
+  const history = $('modelRemediationHistory');
+  const dryBtn = $('modelRemediationDryRunBtn');
+  const runBtn = $('modelRemediationRunBtn');
+  if (!root || !status || !summary || !candidates || !history || !dryBtn || !runBtn) return;
+  root.hidden = false;
+  dryBtn.disabled = Boolean(state.modelRemediationLoading || state.modelRemediationRunning);
+  runBtn.disabled = true;
+
+  if (state.modelRemediationLoading) {
+    status.textContent = 'Сканирую prediction history без внешних запросов…';
+    summary.innerHTML = '';
+    candidates.innerHTML = '';
+    history.innerHTML = '';
+    return;
+  }
+  const r = state.modelRemediation;
+  if (!r) {
+    status.textContent = 'Dry-run ещё не выполнен.';
+    summary.innerHTML = '';
+    candidates.innerHTML = '';
+    history.innerHTML = '';
+    return;
+  }
+  if (r.available === false) {
+    status.textContent = r.reason || 'Remediation недоступен.';
+    summary.innerHTML = '';
+    candidates.innerHTML = '';
+    history.innerHTML = '';
+    return;
+  }
+
+  const scan = r.scan || {};
+  const recovery = r.recovery || {};
+  status.textContent = !r.schemaReady
+    ? 'Нужна supabase_migration_v6_1.sql: dry-run доступен, выполнение заблокировано.'
+    : recovery.stalePending
+      ? `Найдено ${Number(recovery.stalePending)} stale pending; безопасный batch — ${Number(recovery.selectedCount || 0)}.`
+      : 'Stale pending не обнаружены. Выполнение не требуется.';
+  summary.innerHTML = `
+    <div><span>Просканировано</span><strong>${Number(scan.loadedRows || 0)}</strong><small>${scan.truncated ? `лимит ${Number(scan.maxRows || 0)}` : 'полная выборка'}</small></div>
+    <div><span>Stale pending</span><strong>${Number(recovery.stalePending || 0)}</strong><small>старше 36 часов</small></div>
+    <div><span>В batch</span><strong>${Number(recovery.selectedCount || 0)}</strong><small>до ${Number(recovery.maxFixturesPerRun || 20)} fixture</small></div>
+    <div><span>API calls</span><strong>${Number(recovery.estimatedProviderCalls || 0)}</strong><small>по уникальным датам</small></div>`;
+
+  candidates.innerHTML = (recovery.candidates || []).length
+    ? `<div class="model-remediation-list">${recovery.candidates.map(item => `
+        <div><span><strong>${escapeHtml(item.home || '—')} — ${escapeHtml(item.away || '—')}</strong><small>${escapeHtml(item.league || '')} · ${item.kickoffAt ? escapeHtml(dateTime(item.kickoffAt)) : '—'}</small></span><em>#${Number(item.fixtureId || 0)} · ${Number(item.ageHours || 0)}ч</em></div>`).join('')}</div>`
+    : '<div class="empty compact-empty">Кандидатов для recovery нет.</div>';
+
+  const actions = r.recentActions || [];
+  history.innerHTML = actions.length
+    ? `<div class="model-remediation-history-head"><strong>Последние действия</strong><span>admin ID скрыт</span></div>
+       <div class="model-remediation-action-list">${actions.map(action => `
+         <div class="${escapeHtml(action.status || 'failed')}"><span><strong>${escapeHtml(remediationActionLabel(action))}</strong><small>${escapeHtml(action.reason || 'Без комментария')} · ${action.createdAt ? escapeHtml(dateTime(action.createdAt)) : '—'}</small></span><em>${Number(action.settledCount || 0)} settled · ${Number(action.skippedCount || 0)} skipped</em></div>`).join('')}</div>`
+    : '<p class="tiny quality-method-note">Audit trail пока пуст.</p>';
+
+  runBtn.textContent = state.modelRemediationRunning ? 'Восстанавливаю…' : 'Восстановить pending';
+  runBtn.disabled = Boolean(state.modelRemediationRunning || !r.schemaReady || !recovery.candidateToken || !Number(recovery.selectedCount || 0));
+}
+
+async function loadModelRemediation(force = false) {
+  if (!isAdmin() || state.modelRemediationLoading || state.modelRemediationRunning) return;
+  if (!force && state.modelRemediation) { renderModelRemediation(); return; }
+  state.modelRemediationLoading = true;
+  renderModelRemediation();
+  try {
+    state.modelRemediation = await api('/api/model-remediation', { retry: false, timeoutMs: 45000, dedupe: false });
+  } catch (error) {
+    state.modelRemediation = { available: false, reason: error.message || 'Не удалось выполнить remediation dry-run.' };
+  } finally {
+    state.modelRemediationLoading = false;
+    renderModelRemediation();
+  }
+}
+
+async function runModelRemediation() {
+  if (!isAdmin() || state.modelRemediationRunning) return;
+  const report = state.modelRemediation;
+  const recovery = report?.recovery || {};
+  const reason = String($('modelRemediationReason')?.value || '').trim();
+  if (reason.length < 5) return toast('Укажите причину восстановления — минимум 5 символов.');
+  if (!report?.schemaReady || !recovery.candidateToken || !(recovery.fixtureIds || []).length) return toast('Сначала выполните актуальный dry-run.');
+  const confirmed = window.confirm(`Повторно проверить ${Number(recovery.selectedCount || 0)} pending-прогнозов? Ожидается до ${Number(recovery.estimatedProviderCalls || 0)} запросов API-Football.`);
+  if (!confirmed) return;
+
+  state.modelRemediationRunning = true;
+  renderModelRemediation();
+  try {
+    const result = await api('/api/model-remediation', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        action: 'recover',
+        reason,
+        candidateToken: recovery.candidateToken,
+        fixtureIds: recovery.fixtureIds,
+      }),
+      retry: false,
+      timeoutMs: 60000,
+      dedupe: false,
+    });
+    state.modelRemediation = result.report || state.modelRemediation;
+    state.modelQuality = null;
+    toast(result.execution?.status === 'completed'
+      ? `Recovery завершён: ${Number(result.execution?.settledCount || 0)} settled.`
+      : `Recovery завершён частично: ${Number(result.execution?.settledCount || 0)} settled, ${Number(result.execution?.skippedCount || 0)} skipped.`);
+    if ($('modelRemediationReason')) $('modelRemediationReason').value = '';
+    await loadModelQuality(true);
+  } catch (error) {
+    toast(error.message || 'Recovery не выполнен. Обновите dry-run.');
+    state.modelRemediationRunning = false;
+    state.modelRemediation = null;
+    await loadModelRemediation(true);
+  } finally {
+    state.modelRemediationRunning = false;
+    renderModelRemediation();
+  }
+}
+
 async function openProfileView() {
   showView('profileView');
   const lastFixture = Number(state.currentCenter?.match?.fixtureId || state.currentAnalysis?.match?.fixtureId || 0);
@@ -1120,7 +1254,7 @@ async function openProfileView() {
   if (!state.remindersLoaded) essentials.push(loadReminders());
   if (isAdmin()) {
     if (!state.providerLoaded) essentials.push(loadProvider());
-    essentials.push(loadRuntimeControlsAdmin(false), loadModelQuality(false), loadReleaseReadiness(false), loadProductionReadiness(false), loadReleaseMonitor(false), loadReminderHealth(false));
+    essentials.push(loadRuntimeControlsAdmin(false), loadModelQuality(false), loadModelRemediation(false), loadReleaseReadiness(false), loadProductionReadiness(false), loadReleaseMonitor(false), loadReminderHealth(false));
   }
   await Promise.allSettled(essentials);
 }
@@ -1298,7 +1432,7 @@ function runClientContractSmoke() {
     'matchesView','searchView','tournamentView','teamView','analysisView','historyView','profileView',
     'navMatches','navSearch','navHistory','navProfile',
     'connectionBanner','connectionRetryBtn','toast',
-    'modelQualityStatus','providerAuditStatus','releaseStatus','productionReadinessStatus','diagnosticsStatus',
+    'modelQualityStatus','modelRemediationStatus','modelRemediationDryRunBtn','modelRemediationRunBtn','providerAuditStatus','releaseStatus','productionReadinessStatus','diagnosticsStatus',
   ];
   const missing = requiredIds.filter(id => !$(id));
   add('required_dom', 'Основные DOM-контракты', missing.length === 0, missing.length ? `Нет: ${missing.join(', ')}` : `${requiredIds.length}/${requiredIds.length} элементов.`);
@@ -1310,11 +1444,11 @@ function runClientContractSmoke() {
   const adminSections = [...document.querySelectorAll('[data-admin-only]')];
   add('admin_sections', 'Admin UI маркировка', adminSections.length >= 6, `${adminSections.length} технических секций помечены data-admin-only.`);
 
-  const cssLink = document.querySelector('link[href*="styles.css?v=6.0.0"]');
-  const appScript = document.querySelector('script[src*="app.js?v=6.0.0"]');
+  const cssLink = document.querySelector('link[href*="styles.css?v=6.1.0"]');
+  const appScript = document.querySelector('script[src*="app.js?v=6.1.0"]');
   add('cache_bust', 'Cache-bust assets', Boolean(cssLink && appScript), `CSS ${cssLink ? 'OK' : 'MISS'} · JS ${appScript ? 'OK' : 'MISS'}.`);
 
-  add('client_version', 'Версия клиента', CLIENT_VERSION === '6.0.0-rc8', CLIENT_VERSION);
+  add('client_version', 'Версия клиента', CLIENT_VERSION === '6.1.0-rc9', CLIENT_VERSION);
   add('telegram_sdk', 'Telegram WebApp SDK', Boolean(window.Telegram?.WebApp), window.Telegram?.WebApp ? 'SDK доступен.' : 'В обычном браузере SDK может отсутствовать; в Telegram должен быть доступен.');
 
   const navButtons = ['navMatches','navSearch','navHistory','navProfile'].filter(id => $(id));
@@ -1340,7 +1474,7 @@ function runClientContractSmoke() {
 }
 
 function rcStateText(status) {
-  if (status === 'rc_ready') return 'RC8 READY';
+  if (status === 'rc_ready') return 'RC9 READY';
   if (status === 'rc_with_holds') return 'RC + HOLD';
   if (status === 'blocked') return 'BLOCK';
   return 'WAIT';
@@ -1374,7 +1508,7 @@ function renderRcRegression() {
   const r = state.rcRegression;
   if (!r) {
     badge.className = 'rc-badge';
-    badge.textContent = 'RC8';
+    badge.textContent = 'RC9';
     status.textContent = 'Полный regression smoke-test ещё не запускался.';
     meta.textContent = 'Тест безопасный: без Analyze, без изменений user data, без API-Football.';
     summary.innerHTML = '';
@@ -4838,8 +4972,10 @@ $('premiumBtn')?.addEventListener('click', () => buyPlan('PREMIUM'));
 $('billingSyncBtn')?.addEventListener('click', () => syncBilling(true));
 $('subscriptionManageBtn')?.addEventListener('click', () => manageSubscription($('subscriptionManageBtn').dataset.action || 'cancel'));
 $('savePreferencesBtn')?.addEventListener('click', savePreferencesFromUi);
-$('modelQualityRefreshBtn')?.addEventListener('click', () => loadModelQuality(true));
+$('modelQualityRefreshBtn')?.addEventListener('click', () => Promise.allSettled([loadModelQuality(true), loadModelRemediation(true)]));
 $('modelQualityPeriod')?.addEventListener('change', () => loadModelQuality(true));
+$('modelRemediationDryRunBtn')?.addEventListener('click', () => loadModelRemediation(true));
+$('modelRemediationRunBtn')?.addEventListener('click', runModelRemediation);
 $('diagnosticsRefreshBtn')?.addEventListener('click', () => loadDiagnostics(true));
 $('productionReadinessRefreshBtn')?.addEventListener('click', () => loadProductionReadiness(true));
 $('releaseMonitorRefreshBtn')?.addEventListener('click', () => loadReleaseMonitor(true));
@@ -4866,7 +5002,7 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// v6.0 RC8: captured_at integrity hardening and verified-only model quality metrics.
+// v6.1 RC9: bounded settlement recovery with dry-run, concurrency token and audit trail.
 // The boot watchdog never leaves the user behind an endless splash screen.
 const startupWatchdog = setTimeout(() => {
   if (!$('bootGate')?.hidden && !state.compatibilityBlocked) {

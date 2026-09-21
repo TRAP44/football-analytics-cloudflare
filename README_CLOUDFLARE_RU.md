@@ -1,8 +1,30 @@
-# Football Analytics Mini App v6.0.0 — RC8 Prediction Integrity Hardening
+# Football Analytics Mini App v6.1.0 — RC9 Integrity Remediation & Settlement Recovery
 
-RC8 исправляет контракт времени prediction snapshot и не допускает повреждённые строки в метрики качества. Новых платных функций и новых API-Football запросов нет.
+RC9 добавляет защищённое ручное восстановление зависших `pending`-прогнозов. Система всегда начинает с read-only dry-run, ограничивает provider-нагрузку, повторно проверяет список кандидатов перед записью и сохраняет audit trail.
 
-## Что исправлено в RC8
+## Integrity Remediation
+
+Администратор получает отдельный блок в Model Dashboard:
+
+- сканирование до 5000 prediction snapshots без API-Football запросов;
+- полный integrity summary по загруженной истории;
+- список stale pending старше 36 часов;
+- безопасный batch до 20 fixture и не более 5 уникальных дат;
+- оценку числа provider-запросов до выполнения;
+- обязательную причину ручного recovery;
+- историю completed / partial / failed действий.
+
+Кнопка recovery активируется только после актуального dry-run. Worker формирует fingerprint выбранных fixture и возвращает `409 REMEDIATION_STALE`, если другая сессия или cron уже изменили список.
+
+Recovery не удаляет predictions и не переписывает immutable probabilities. Он может только перевести существующую строку из `pending` в `settled`, если API-Football вернул подтверждённый финальный счёт.
+
+## Audit trail
+
+Migration `supabase_migration_v6_1.sql` добавляет таблицу `prediction_integrity_actions`.
+
+Сохраняются причина, status, количество inspected / settled / skipped, fixture IDs и технический detail. Telegram ID администратора хранится только для внутреннего аудита и не возвращается интерфейсу.
+
+## Основа RC8 сохраняется
 
 - проверка pre-match времени использует реальное поле таблицы `captured_at` (с fallback на `created_at` для ручных legacy snapshots);
 - пустые `null`/`''` probabilities больше не преобразуются в допустимый ноль;
@@ -69,15 +91,17 @@ Model Dashboard показывает отдельные cohorts по `analysis_v
 
 ## Regression QA
 
-RC8 smoke-test получил расширенный synthetic `Prediction Integrity self-test`.
+RC9 smoke-test сохраняет расширенный `Prediction Integrity self-test` и добавляет `Prediction Remediation self-test`.
 Он не делает внешних запросов и проверяет, что движок умеет обнаружить:
 - неверную сумму probabilities;
 - отсутствующую probability;
 - отсутствующий `captured_at`;
 - snapshot после kickoff;
-- stale pending.
+- stale pending;
 - несогласованный фактический outcome;
 - `predicted_outcome`, не совпадающий с максимальной вероятностью.
+
+Remediation self-test отдельно проверяет выбор stale pending, размер batch и ограничение по уникальным датам. Он не выполняет внешние запросы и не изменяет данные.
 
 ## Ограничение выборки
 
@@ -89,9 +113,11 @@ RC8 smoke-test получил расширенный synthetic `Prediction Integ
 
 Если лимит достигнут, UI явно предупреждает, что integrity относится к загруженной выборке.
 
+Remediation dry-run сканирует до 5000 строк. При достижении лимита UI помечает выборку как truncated и не утверждает, что проверена вся история.
+
 ## SQL / Secrets / API
 
-- SQL не нужен.
+- Обязательна migration `supabase_migration_v6_1.sql`.
 - Новые Secrets не нужны.
-- Новых API-Football запросов нет.
+- Dry-run не использует API-Football. Ручной recovery делает не более 5 запросов за запуск и блокируется защитой квоты.
 - Telegram Stars остаются `paused`.

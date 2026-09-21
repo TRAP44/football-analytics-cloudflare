@@ -9,6 +9,7 @@ const memory = {
   oddsSnapshots: new Map(),
   billingPayments: new Map(),
   modelPredictions: new Map(),
+  modelRemediation: { lastRun: null, actions: [] },
   opsEvents: [],
   integrity: { lastRun: null, recentIssues: [] },
   releaseReadiness: null,
@@ -58,11 +59,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.0.0-rc8';
+const APP_VERSION = '6.1.0-rc9';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc8';
-const RC_NAME = 'RC8';
+const RELEASE_CHANNEL = 'rc9';
+const RC_NAME = 'RC9';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -638,6 +639,8 @@ function appManifest(cfg) {
       predictionIntegrity: true,
       modelVersionCohorts: true,
       calibrationDiagnostics: true,
+      predictionRemediation: true,
+      settlementRecovery: true,
     },
     serverTime: new Date().toISOString(),
   };
@@ -819,6 +822,7 @@ const ROUTE_BURST_POLICIES = Object.freeze([
   { test: p => p === '/api/reminder-health', limit: 6, windowMs: 30000, label: 'reminder-health' },
   { test: p => p === '/api/runtime-controls', limit: 6, windowMs: 30000, label: 'runtime-controls' },
   { test: p => p === '/api/runtime-controls/rollback', limit: 3, windowMs: 30000, label: 'runtime-rollback' },
+  { test: p => p === '/api/model-remediation', limit: 4, windowMs: 60000, label: 'model-remediation' },
   { test: p => p === '/api/diagnostics' || p === '/api/release-readiness' || p === '/api/production-readiness' || p === '/api/rc-regression' || p === '/api/release-monitor', limit: 6, windowMs: 30000, label: 'admin-diagnostics' },
 ]);
 
@@ -920,6 +924,21 @@ async function supaSelectMany(cfg, table, params = {}, { limit = 20, order = '' 
     throw new Error(`Supabase ${table}: HTTP ${r.status}${text ? ` — ${text.slice(0, 160)}` : ''}`);
   }
   return await r.json();
+}
+
+async function supaSelectPaged(cfg, table, params = {}, { pageSize = 500, maxRows = 5000, order = '' } = {}) {
+  const rows = [];
+  const size = Math.max(1, Math.min(1000, Number(pageSize || 500)));
+  const cap = Math.max(size, Math.min(10000, Number(maxRows || 5000)));
+  for (let offset = 0; offset < cap; offset += size) {
+    const page = await supaSelectMany(cfg, table, { ...params, offset: String(offset) }, {
+      limit: Math.min(size, cap - offset),
+      order,
+    });
+    rows.push(...page);
+    if (page.length < Math.min(size, cap - offset)) return { rows, truncated: false };
+  }
+  return { rows, truncated: rows.length >= cap };
 }
 
 async function supaUpsert(cfg, table, rows, onConflict) {
@@ -2381,7 +2400,7 @@ function buildModelDashboardObservations(rows, dashboard) {
     notes.push({
       level: 'info',
       title: 'Явных диагностических отклонений нет',
-      text: 'Продолжаем накапливать immutable pre-match snapshots. v6.0 ничего не меняет в весах автоматически — integrity и cohorts используются только как диагностика.',
+      text: 'Продолжаем накапливать immutable pre-match snapshots. v6.1 добавляет только контролируемое settlement recovery и не меняет веса модели автоматически.',
     });
   }
 
@@ -2777,11 +2796,35 @@ function modelIntegritySelfTest() {
   };
 }
 
+function modelRemediationSelfTest() {
+  const now = Date.now();
+  const row = (fixtureId, hoursAgo, status = 'pending') => ({
+    fixture_id: fixtureId,
+    status,
+    kickoff_at: new Date(now - hoursAgo * 3600_000).toISOString(),
+    captured_at: new Date(now - (hoursAgo + 2) * 3600_000).toISOString(),
+  });
+  const candidates = stalePredictionCandidates([
+    row(11, 48),
+    row(12, 40),
+    row(13, 12),
+    row(14, 72, 'settled'),
+  ], now);
+  const batch = selectRemediationBatch(candidates, 20, 5);
+  return {
+    pass: candidates.length === 2 && batch.selected.length === 2 &&
+      batch.selected.map(x => Number(x.fixture_id)).join(',') === '11,12' && batch.dates.length <= 5,
+    candidates: candidates.length,
+    selected: batch.selected.length,
+    dates: batch.dates.length,
+  };
+}
+
 function buildModelDashboard(rows, days) {
   const valid = (rows || []).filter(modelQualityEligibleRow);
   const overview = dashboardBucket(valid, 'Все прогнозы');
   const dashboard = {
-    version: '6.0',
+    version: '6.1',
     periodDays: days,
     generatedAt: new Date().toISOString(),
     overview,
@@ -2935,6 +2978,230 @@ async function apiModelQuality(request, cfg) {
   }
   const calibrationProfile = await getCalibrationProfile(cfg, { force: forceCalibration }).catch(() => baselineCalibrationProfile(settled.length));
   return json({ available: true, ...buildModelQuality(settled, pending, days, calibrationProfile) });
+}
+
+function stalePredictionCandidates(rows, now = Date.now()) {
+  return (rows || [])
+    .filter(row => {
+      const id = Number(row?.fixture_id || 0);
+      const kickoff = Date.parse(row?.kickoff_at || '');
+      return row?.status === 'pending' && Number.isInteger(id) && id > 0 &&
+        Number.isFinite(kickoff) && kickoff < now - 36 * 3600_000;
+    })
+    .sort((a, b) => Date.parse(a.kickoff_at || 0) - Date.parse(b.kickoff_at || 0));
+}
+
+function selectRemediationBatch(candidates, maxFixtures = 20, maxDates = 5) {
+  const selected = [];
+  const dates = new Set();
+  for (const row of candidates || []) {
+    const date = String(row?.kickoff_at || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    if (!dates.has(date) && dates.size >= maxDates) continue;
+    dates.add(date);
+    selected.push(row);
+    if (selected.length >= maxFixtures) break;
+  }
+  return { selected, dates: [...dates] };
+}
+
+async function remediationFingerprint(rows) {
+  const source = (rows || [])
+    .map(row => `${Number(row?.fixture_id || 0)}:${String(row?.kickoff_at || '')}:${String(row?.captured_at || row?.created_at || '')}`)
+    .sort()
+    .join('|');
+  if (!source) return '';
+  const digest = await crypto.subtle.digest('SHA-256', enc.encode(source));
+  return bytesToHex(new Uint8Array(digest)).slice(0, 32);
+}
+
+async function loadPredictionRemediationRows(cfg, maxRows = 5000) {
+  if (hasSupabase(cfg)) {
+    return await supaSelectPaged(cfg, 'model_predictions', {}, {
+      pageSize: 1000,
+      maxRows,
+      order: 'kickoff_at.desc',
+    });
+  }
+  const rows = [...memory.modelPredictions.values()].sort((a, b) => Date.parse(b.kickoff_at || 0) - Date.parse(a.kickoff_at || 0));
+  return { rows: rows.slice(0, maxRows), truncated: rows.length > maxRows };
+}
+
+function publicRemediationAction(row) {
+  return {
+    actionId: String(row?.action_id || ''),
+    createdAt: row?.created_at || null,
+    actionType: String(row?.action_type || ''),
+    status: String(row?.status || ''),
+    reason: String(row?.reason || ''),
+    candidateCount: Number(row?.candidate_count || 0),
+    inspectedCount: Number(row?.inspected_count || 0),
+    settledCount: Number(row?.settled_count || 0),
+    skippedCount: Number(row?.skipped_count || 0),
+    detail: parseJsonObject(row?.detail),
+  };
+}
+
+async function loadRemediationActions(cfg, limit = 10) {
+  if (!hasSupabase(cfg)) return memory.modelRemediation.actions.slice(0, limit).map(publicRemediationAction);
+  const rows = await supaSelectMany(cfg, 'prediction_integrity_actions', {}, {
+    limit: Math.max(1, Math.min(20, Number(limit || 10))),
+    order: 'created_at.desc',
+  });
+  return rows.map(publicRemediationAction);
+}
+
+async function recordRemediationAction(cfg, user, action) {
+  const row = {
+    action_id: String(action.actionId || crypto.randomUUID()),
+    action_type: String(action.actionType || 'recover'),
+    status: String(action.status || 'completed'),
+    reason: redactOpsString(action.reason || '', 220),
+    admin_telegram_id: Number(user?.id || 0) || null,
+    candidate_count: Number(action.candidateCount || 0),
+    inspected_count: Number(action.inspectedCount || 0),
+    settled_count: Number(action.settledCount || 0),
+    skipped_count: Number(action.skippedCount || 0),
+    fixture_ids: (action.fixtureIds || []).map(Number).filter(Number.isFinite).slice(0, 20),
+    detail: action.detail || {},
+  };
+  if (hasSupabase(cfg)) await supaInsertIgnore(cfg, 'prediction_integrity_actions', row, 'action_id');
+  memory.modelRemediation.actions.unshift({ ...row, created_at: new Date().toISOString() });
+  memory.modelRemediation.actions = memory.modelRemediation.actions.slice(0, 20);
+  return publicRemediationAction({ ...row, created_at: new Date().toISOString() });
+}
+
+async function buildModelRemediationReport(cfg, { maxRows = 5000 } = {}) {
+  if (!hasSupabase(cfg) && !cfg.devMode) {
+    return { available: false, reason: 'Supabase не настроен: remediation требует постоянную базу данных.' };
+  }
+  const schema = hasSupabase(cfg) ? await probeOptionalTable(cfg, 'prediction_integrity_actions') : { ok: true, status: 'memory' };
+  const loaded = await loadPredictionRemediationRows(cfg, maxRows);
+  const settled = loaded.rows.filter(row => row.status === 'settled');
+  const pending = loaded.rows.filter(row => row.status === 'pending');
+  const candidates = stalePredictionCandidates(pending);
+  const batch = selectRemediationBatch(candidates);
+  const candidateToken = await remediationFingerprint(batch.selected);
+  let recentActions = [];
+  if (schema.ok) recentActions = await loadRemediationActions(cfg, 10).catch(() => []);
+  const integrity = buildPredictionIntegrity(settled, pending);
+  return {
+    available: true,
+    version: APP_VERSION,
+    generatedAt: new Date().toISOString(),
+    schemaReady: Boolean(schema.ok),
+    schemaStatus: schema.status || (schema.ok ? 'ok' : 'missing'),
+    scan: {
+      loadedRows: loaded.rows.length,
+      settledRows: settled.length,
+      pendingRows: pending.length,
+      maxRows,
+      truncated: Boolean(loaded.truncated),
+    },
+    integrity,
+    recovery: {
+      stalePending: candidates.length,
+      selectedCount: batch.selected.length,
+      candidateToken,
+      fixtureIds: batch.selected.map(row => Number(row.fixture_id)),
+      estimatedProviderCalls: batch.dates.length,
+      maxFixturesPerRun: 20,
+      maxDatesPerRun: 5,
+      candidates: batch.selected.map(row => ({
+        fixtureId: Number(row.fixture_id),
+        kickoffAt: row.kickoff_at,
+        league: String(row.league_name || ''),
+        home: String(row.home_name || ''),
+        away: String(row.away_name || ''),
+        ageHours: Math.max(0, Math.floor((Date.now() - Date.parse(row.kickoff_at || 0)) / 3600_000)),
+      })),
+    },
+    recentActions,
+    policy: {
+      dryRunFirst: true,
+      deletesPredictions: false,
+      rewritesSnapshots: false,
+      onlySettlesPending: true,
+      adminIdExposed: false,
+      note: 'GET выполняет read-only dry-run. POST повторно проверяет candidate token и меняет только pending-строки с подтверждённым финальным счётом API-Football.',
+    },
+  };
+}
+
+async function apiModelRemediation(request, cfg, user) {
+  if (request.method === 'GET') return json(await buildModelRemediationReport(cfg));
+  if (request.method !== 'POST') return json({ error: 'Метод не поддерживается.' }, 405);
+  const body = await request.json().catch(() => ({}));
+  if (String(body?.action || '') !== 'recover') return json({ error: 'Поддерживается только action=recover.' }, 400);
+  const reason = redactOpsString(body?.reason || '', 220).trim();
+  if (reason.length < 5) return json({ error: 'Укажите причину восстановления (минимум 5 символов).' }, 400);
+
+  const report = await buildModelRemediationReport(cfg);
+  if (!report.available) return json(report, 503);
+  if (!report.schemaReady) return json({ error: 'Нужна migration v6.1 для audit trail.', code: 'MODEL_REMEDIATION_SCHEMA', report }, 409);
+  const requestedIds = [...new Set((Array.isArray(body?.fixtureIds) ? body.fixtureIds : []).map(Number).filter(x => Number.isInteger(x) && x > 0))].sort((a, b) => a - b);
+  const currentIds = [...(report.recovery?.fixtureIds || [])].map(Number).sort((a, b) => a - b);
+  if (!report.recovery?.candidateToken || String(body?.candidateToken || '') !== report.recovery.candidateToken ||
+      requestedIds.join(',') !== currentIds.join(',')) {
+    return json({ error: 'Список кандидатов изменился. Обновите dry-run перед восстановлением.', code: 'REMEDIATION_STALE', report }, 409);
+  }
+  if (!currentIds.length) return json({ ok: true, execution: { status: 'nothing_to_do', settled: 0, skipped: 0 }, report });
+  if (!freeQuotaHealthy(10, 3)) {
+    return json({ error: 'Недостаточно безопасного остатка квоты API-Football. Повторите позже.', code: 'REMEDIATION_QUOTA', report }, 429);
+  }
+
+  const candidateMap = new Map((report.recovery?.candidates || []).map(row => [Number(row.fixtureId), row]));
+  const dates = [...new Set([...candidateMap.values()].map(row => String(row.kickoffAt || '').slice(0, 10)).filter(Boolean))];
+  const fixtureSet = new Set(currentIds);
+  const fixtures = [];
+  const actionId = crypto.randomUUID();
+  try {
+    for (const date of dates) {
+      const rows = await apiFootball('/fixtures', { date }, cfg);
+      fixtures.push(...rows.filter(fixture => fixtureSet.has(fixtureIdentity(fixture))));
+    }
+    const settlement = await settlePredictionsFromFixtures(fixtures, cfg);
+    const after = hasSupabase(cfg)
+      ? await supaSelectMany(cfg, 'model_predictions', { fixture_id: `in.(${currentIds.join(',')})` }, { limit: currentIds.length + 2 })
+      : currentIds.map(id => memory.modelPredictions.get(id)).filter(Boolean);
+    const settledCount = after.filter(row => row.status === 'settled').length;
+    const skippedCount = Math.max(0, currentIds.length - settledCount);
+    const status = skippedCount ? 'partial' : 'completed';
+    const action = await recordRemediationAction(cfg, user, {
+      actionId,
+      actionType: 'recover',
+      status,
+      reason,
+      candidateCount: report.recovery.stalePending,
+      inspectedCount: currentIds.length,
+      settledCount,
+      skippedCount,
+      fixtureIds: currentIds,
+      detail: { providerCalls: dates.length, finishedFixtures: fixtures.filter(f => isFinishedStatus(fixtureStatusShort(f))).length, settlementChecked: settlement.checked },
+    });
+    memory.modelRemediation.lastRun = action;
+    await recordOpsEvent(cfg, {
+      severity: skippedCount ? 'warning' : 'info', source: 'model', eventType: 'prediction_remediation',
+      code: skippedCount ? 'REMEDIATION_PARTIAL' : 'REMEDIATION_COMPLETED', message: reason,
+      meta: { actionId, inspectedCount: currentIds.length, settledCount, skippedCount, providerCalls: dates.length },
+    }).catch(() => null);
+    const refreshedReport = await buildModelRemediationReport(cfg).catch(() => null);
+    return json({ ok: true, execution: action, report: refreshedReport || report });
+  } catch (error) {
+    await recordRemediationAction(cfg, user, {
+      actionId,
+      actionType: 'recover',
+      status: 'failed',
+      reason,
+      candidateCount: report.recovery.stalePending,
+      inspectedCount: currentIds.length,
+      settledCount: 0,
+      skippedCount: currentIds.length,
+      fixtureIds: currentIds,
+      detail: { providerCalls: dates.length, error: redactOpsString(error?.message || error, 180) },
+    }).catch(() => null);
+    throw error;
+  }
 }
 
 async function settleBacktestDaily(cfg) {
@@ -3655,7 +3922,7 @@ async function apiReminderHealth(request, cfg, user) {
 
     const result = await sendTelegramMessage(
       user.id,
-      `✅ Football Manager\n\nТест уведомлений v6.0 RC8 прошёл. Если вы видите это сообщение, Telegram delivery работает.`,
+      `✅ Football Manager\n\nТест уведомлений v6.1 RC9 прошёл. Если вы видите это сообщение, Telegram delivery работает.`,
       cfg
     );
 
@@ -5150,9 +5417,10 @@ async function apiReleaseReadiness(request, cfg) {
     return json({ ...memory.releaseReadiness.value, cached: true });
   }
 
-  const [diagnostics, modelTable, runtimeTable, runtimeHistoryTable] = await Promise.all([
+  const [diagnostics, modelTable, remediationTable, runtimeTable, runtimeHistoryTable] = await Promise.all([
     collectDiagnostics(cfg),
     probeOptionalTable(cfg, 'model_predictions'),
+    probeOptionalTable(cfg, 'prediction_integrity_actions'),
     probeOptionalTable(cfg, 'runtime_controls'),
     probeOptionalTable(cfg, 'runtime_control_history'),
   ]);
@@ -5166,6 +5434,8 @@ async function apiReleaseReadiness(request, cfg) {
     releaseCheck('model_backtest', 'Backtest schema v3.6+', modelTable.ok ? 'pass' : 'fail', modelTable.ok ? 'Таблица model_predictions доступна.' : `model_predictions: ${modelTable.status}.`, true),
     releaseCheck('prediction_integrity', 'Prediction Integrity self-test', modelIntegritySelfTest().pass ? 'pass' : 'fail',
       modelIntegritySelfTest().pass ? 'Probabilities, captured_at timing и outcome consistency проходят synthetic self-test.' : 'Prediction Integrity self-test не прошёл.', true),
+    releaseCheck('prediction_remediation', 'Prediction Remediation v6.1', remediationTable.ok ? 'pass' : 'fail',
+      remediationTable.ok ? 'Audit trail remediation доступен.' : 'Нужна supabase_migration_v6_1.sql.', true),
     releaseCheck('runtime_controls_schema', 'Runtime Controls schema v5.7', runtimeTable.ok ? 'pass' : 'fail', runtimeTable.ok ? 'Таблица runtime_controls доступна.' : 'Нужна supabase_migration_v5_7.sql.', true),
     releaseCheck('runtime_history_schema', 'Runtime rollback history v5.8', runtimeHistoryTable.ok ? 'pass' : 'fail', runtimeHistoryTable.ok ? 'История Runtime Controls доступна.' : 'Нужна supabase_migration_v5_8.sql.', true),
     releaseCheck('runtime_controls_state', 'Runtime Controls state', runtime.maintenanceMode ? 'warn' : 'pass', runtime.maintenanceMode ? `Maintenance включён${runtime.message ? `: ${runtime.message}` : '.'}` : `Revision ${Number(runtime.revision || 1)} · рабочий режим.`, false),
@@ -5217,7 +5487,7 @@ async function apiReleaseReadiness(request, cfg) {
       monetizationExpected: 'paused',
       paymentTestingRequiredNow: false,
       providerUpgradeRequiredNow: false,
-      note: 'RC8 исправляет проверку captured_at и исключает integrity FAIL из метрик без автоматического продвижения модели и без включения пользовательской оплаты.',
+      note: 'RC9 добавляет read-only dry-run, защищённое settlement recovery и audit trail без удаления snapshots и без включения пользовательской оплаты.',
     },
   };
   memory.releaseReadiness = { at: now, value };
@@ -5356,8 +5626,8 @@ async function apiRcRegression(request, cfg, user) {
   const startedAt = Date.now();
 
   // 1) Core runtime / security configuration.
-  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.0.0-rc8' ? 'pass' : 'fail',
-    `Worker: ${APP_VERSION}; ожидается 6.0.0-rc8.`, true));
+  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.1.0-rc9' ? 'pass' : 'fail',
+    `Worker: ${APP_VERSION}; ожидается 6.1.0-rc9.`, true));
   checks.push(rcCheck('api_contract', 'runtime', 'API contract', API_CONTRACT_VERSION === 5 ? 'pass' : 'fail',
     `Contract ${API_CONTRACT_VERSION}; min client ${MIN_CLIENT_VERSION}.`, true));
   checks.push(rcCheck('app_manifest', 'runtime', 'Public App Manifest', appManifest(cfg)?.version === APP_VERSION ? 'pass' : 'fail',
@@ -5394,6 +5664,7 @@ async function apiRcRegression(request, cfg, user) {
     ['runtime_controls', 'Runtime controls', true],
     ['runtime_control_history', 'Runtime rollback history', true],
     ['model_predictions', 'Model predictions', true],
+    ['prediction_integrity_actions', 'Prediction remediation audit', true],
     ['ops_events', 'Observability', false],
     ['match_integrity_runs', 'Integrity runs', true],
     ['match_integrity_events', 'Integrity events', true],
@@ -5422,7 +5693,7 @@ async function apiRcRegression(request, cfg, user) {
   checks.push(rcCheck(
     'runtime_controls_state',
     'runtime',
-    'Runtime Controls RC8',
+    'Runtime Controls RC9',
     runtimeState.schemaReady ? 'pass' : 'fail',
     runtimeState.schemaReady
       ? `Revision ${Number(runtimeState.value?.revision || 1)} · ${runtimeState.value?.maintenanceMode ? 'maintenance ON' : 'normal mode'}.`
@@ -5530,6 +5801,18 @@ async function apiRcRegression(request, cfg, user) {
     integritySelfTest.pass
       ? 'Synthetic missing/invalid probabilities, captured_at timing, stale pending и outcome consistency обнаруживаются ожидаемо.'
       : 'Prediction Integrity self-test не прошёл.',
+    true
+  ));
+
+  const remediationSelfTest = modelRemediationSelfTest();
+  checks.push(rcCheck(
+    'prediction_remediation_selftest',
+    'safety',
+    'Prediction Remediation self-test',
+    remediationSelfTest.pass ? 'pass' : 'fail',
+    remediationSelfTest.pass
+      ? `${remediationSelfTest.candidates} stale candidates → ${remediationSelfTest.selected} selected across ${remediationSelfTest.dates} date batch(es).`
+      : 'Prediction Remediation selection self-test не прошёл.',
     true
   ));
 
@@ -8507,6 +8790,8 @@ export default {
         predictionIntegrity: 'enabled',
         modelVersionCohorts: 'enabled',
         calibrationDiagnostics: 'enabled',
+        predictionRemediation: 'enabled',
+        settlementRecovery: 'enabled',
         runtimeControlsCacheSeconds: 30,
         devMode: cfg.devMode,
       });
@@ -8631,6 +8916,10 @@ export default {
       if (request.method === 'GET' && url.pathname === '/api/model-quality') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
         return await apiModelQuality(request, cfg);
+      }
+      if (url.pathname === '/api/model-remediation') {
+        if (!isAdminUser(user, cfg)) return adminForbidden();
+        return await apiModelRemediation(request, cfg, user);
       }
       if (url.pathname.startsWith('/api/billing/')) {
         if (!cfg.monetizationEnabled) return json({ error: 'Монетизация отложена до финального этапа проекта.' }, 404);
