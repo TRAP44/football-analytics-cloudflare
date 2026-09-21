@@ -13,6 +13,7 @@ const memory = {
   integrity: { lastRun: null, recentIssues: [] },
   releaseReadiness: null,
   providerAudit: { last: null, byFixture: new Map() },
+  providerE2E: { last: null },
   providerFeatureFetch: {
     api: 0,
     cache: 0,
@@ -44,7 +45,7 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '4.9.0-quota-orchestrator';
+const APP_VERSION = '5.0.0-expanded-data-release-gate';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -2495,6 +2496,342 @@ async function providerFeatureFetch({ feature, path, params, fixtureId, cfg, con
   }
 }
 
+
+function providerValidationStep(key, label, state, note, meta = {}) {
+  return { key, label, state, note, meta };
+}
+
+function providerValidationStatus(steps = []) {
+  const blocking = steps.filter(x => x.state === 'fail');
+  const holds = steps.filter(x => x.state === 'hold');
+  const warnings = steps.filter(x => x.state === 'warn');
+  if (blocking.length) return { code: 'NEEDS_ATTENTION', label: 'Нужна проверка', ready: false };
+  if (holds.length) return { code: 'HOLD', label: 'Ожидает расширенный тариф', ready: false };
+  if (warnings.length) return { code: 'READY_WITH_LIMITATIONS', label: 'Готово с ограничениями', ready: true };
+  return { code: 'READY', label: 'Готово к расширенному режиму', ready: true };
+}
+
+function providerFeatureSourcesSummary(dataFreshness = {}) {
+  const summary = { api: 0, cache: 0, embedded: 0, stale: 0, skipped: 0, error: 0, other: 0 };
+  for (const meta of Object.values(dataFreshness || {})) {
+    const source = String(meta?.source || 'other');
+    if (source in summary) summary[source] += 1;
+    else summary.other += 1;
+  }
+  return summary;
+}
+
+async function responseJsonSafe(response) {
+  try { return await response.json(); } catch { return null; }
+}
+
+async function loadLastProviderE2E(cfg) {
+  if (memory.providerE2E?.last) return memory.providerE2E.last;
+  const cached = await getCache('provider-e2e:last:v5.0', cfg).catch(() => null);
+  if (cached) memory.providerE2E.last = cached;
+  return cached || null;
+}
+
+async function saveProviderE2E(result, fixtureId, cfg) {
+  memory.providerE2E.last = result;
+  await setCache('provider-e2e:last:v5.0', Number(fixtureId || 0), result, cfg, 1440).catch(() => null);
+}
+
+async function apiProviderE2EValidation(request, cfg) {
+  const url = new URL(request.url);
+  const fixtureId = Number(url.searchParams.get('fixtureId') || 0);
+  if (!fixtureId) return json({ error: 'Укажите fixtureId для E2E validation.' }, 400);
+
+  const startedAt = Date.now();
+  const steps = [];
+  const before = providerSnapshot();
+
+  // Step 1: refresh real provider headers. One request even on FREE.
+  let probeOk = false;
+  try {
+    await apiFootball('/status', {}, cfg, { responseType: 'any' });
+    probeOk = true;
+  } catch (error) {
+    steps.push(providerValidationStep(
+      'provider_probe',
+      'Связь с API-Football',
+      'fail',
+      redactOpsString(error?.message || 'Provider status недоступен.', 180),
+    ));
+  }
+
+  const transition = providerTransitionProfile();
+  const budget = providerBudgetProfile();
+  const afterProbe = providerSnapshot();
+
+  if (probeOk) {
+    steps.push(providerValidationStep(
+      'provider_probe',
+      'Связь с API-Football',
+      'pass',
+      `Provider отвечает. Определён тариф ${transition.plan}.`,
+      { plan: transition.plan },
+    ));
+  }
+
+  steps.push(providerValidationStep(
+    'paid_plan',
+    'Расширенная квота',
+    transition.paid ? 'pass' : 'hold',
+    transition.paid
+      ? `${transition.plan}: расширенный режим доступен.`
+      : `${transition.plan}: код v5.0 готов, но полный E2E намеренно не запускается на FREE.`,
+    { plan: transition.plan, paid: transition.paid },
+  ));
+
+  steps.push(providerValidationStep(
+    'quota_budget',
+    'Защитный резерв квоты',
+    budget.mode === 'emergency' ? 'fail' : budget.mode === 'conserve' ? 'warn' : transition.paid ? 'pass' : 'hold',
+    `${budget.label}. Daily: ${budget.daily?.remaining ?? '—'} / ${budget.daily?.limit ?? '—'}, minute: ${budget.minute?.remaining ?? '—'} / ${budget.minute?.limit ?? '—'}.`,
+    { mode: budget.mode },
+  ));
+
+  steps.push(providerValidationStep(
+    'monetization',
+    'Оплата пользователей',
+    cfg.monetizationEnabled ? 'fail' : 'pass',
+    cfg.monetizationEnabled
+      ? 'MONETIZATION_ENABLED включён — для текущего этапа это преждевременно.'
+      : 'Монетизация остаётся paused, как запланировано.',
+  ));
+
+  // Important: FREE / reserve modes stop here. No audit or Match Center burst.
+  if (!transition.paid || budget.mode === 'emergency') {
+    const status = providerValidationStatus(steps);
+    const result = {
+      version: '5.0',
+      generatedAt: new Date().toISOString(),
+      fixtureId,
+      blocked: true,
+      reason: !transition.paid ? 'paid_plan_required' : 'quota_reserve',
+      status,
+      steps,
+      provider: afterProbe,
+      transition,
+      budget,
+      coverageAudit: null,
+      matchCenter: null,
+      cacheVerification: null,
+      requestCost: {
+        estimated: 1,
+        observedDailyDelta: Number.isFinite(Number(before.dailyRemaining)) && Number.isFinite(Number(afterProbe.dailyRemaining))
+          ? Math.max(0, Number(before.dailyRemaining) - Number(afterProbe.dailyRemaining))
+          : null,
+      },
+      durationMs: Date.now() - startedAt,
+      note: !transition.paid
+        ? 'На FREE выполнен только /status. Полный E2E будет доступен сразу после обнаружения повышенной квоты.'
+        : 'E2E остановлен защитным резервом квоты.',
+    };
+    await saveProviderE2E(result, fixtureId, cfg);
+    await recordOpsEvent(cfg, {
+      severity: 'info',
+      source: 'provider',
+      eventType: 'expanded_data_e2e',
+      code: 'E2E_HOLD',
+      message: result.note,
+      meta: { fixtureId, plan: transition.plan, mode: budget.mode, status: status.code },
+    }).catch(() => {});
+    return json(result);
+  }
+
+  if (budget.mode === 'conserve') {
+    steps.push(providerValidationStep(
+      'e2e_execution',
+      'Полный E2E запуск',
+      'warn',
+      'Quota Orchestrator находится в conserve. Проверка продолжится, но результат помечается ограниченным.',
+    ));
+  }
+
+  // Step 2: real endpoint coverage. Reuse recent cached audit when available.
+  let audit = null;
+  try {
+    const auditResponse = await apiProviderCoverageAudit(
+      new Request(`https://internal/api/provider/coverage-audit?fixtureId=${fixtureId}`),
+      cfg
+    );
+    audit = await responseJsonSafe(auditResponse);
+  } catch (error) {
+    audit = { error: error?.message || String(error), summary: { errors: 1, score: 0 } };
+  }
+
+  if (audit?.blocked) {
+    steps.push(providerValidationStep(
+      'coverage_audit',
+      'Endpoint Coverage Audit',
+      'hold',
+      audit.note || 'Coverage Audit остановлен guardrail.',
+    ));
+  } else if (audit?.summary) {
+    const errors = Number(audit.summary.errors || 0);
+    const score = Number(audit.summary.score || 0);
+    const state = errors > 1 || score < 45 ? 'fail' : errors > 0 || score < 75 ? 'warn' : 'pass';
+    steps.push(providerValidationStep(
+      'coverage_audit',
+      'Endpoint Coverage Audit',
+      state,
+      `${audit.summary.label || 'Coverage'} · ${score}% · ошибок ${errors}.`,
+      { score, errors, available: Number(audit.summary.available || 0), empty: Number(audit.summary.empty || 0) },
+    ));
+  } else {
+    steps.push(providerValidationStep(
+      'coverage_audit',
+      'Endpoint Coverage Audit',
+      'fail',
+      audit?.error || 'Coverage Audit не вернул результат.',
+    ));
+  }
+
+  // Step 3: actual product path. First call may populate cache, second must reuse Match Center cache.
+  let firstCenter = null;
+  let secondCenter = null;
+  let firstMs = null;
+  let secondMs = null;
+  try {
+    const firstStarted = Date.now();
+    const firstResponse = await apiMatchCenter(
+      new Request(`https://internal/api/match-center?fixtureId=${fixtureId}`),
+      cfg
+    );
+    firstMs = Date.now() - firstStarted;
+    firstCenter = await responseJsonSafe(firstResponse);
+
+    const secondStarted = Date.now();
+    const secondResponse = await apiMatchCenter(
+      new Request(`https://internal/api/match-center?fixtureId=${fixtureId}`),
+      cfg
+    );
+    secondMs = Date.now() - secondStarted;
+    secondCenter = await responseJsonSafe(secondResponse);
+  } catch (error) {
+    firstCenter = { error: error?.message || String(error) };
+  }
+
+  const matchCenterOk = Boolean(
+    firstCenter?.match?.fixtureId === fixtureId &&
+    firstCenter?.match?.home?.name &&
+    firstCenter?.match?.away?.name &&
+    firstCenter?.mode
+  );
+  steps.push(providerValidationStep(
+    'match_center',
+    'Match Center end-to-end',
+    matchCenterOk ? 'pass' : 'fail',
+    matchCenterOk
+      ? `${firstCenter.match.home.name} — ${firstCenter.match.away.name}; mode=${firstCenter.mode}; первый ответ ${firstMs} мс.`
+      : (firstCenter?.error || 'Match Center не вернул корректный payload.'),
+    { firstMs, mode: firstCenter?.mode || null },
+  ));
+
+  const cacheOk = Boolean(secondCenter?.cached);
+  steps.push(providerValidationStep(
+    'cache_reuse',
+    'Повторный запрос без лишнего API',
+    cacheOk ? 'pass' : 'warn',
+    cacheOk
+      ? `Второй Match Center обслужен общим cache за ${secondMs} мс.`
+      : 'Второй ответ не был помечен cached — стоит проверить общий cache.',
+    { secondMs, cached: cacheOk },
+  ));
+
+  const sources = providerFeatureSourcesSummary(firstCenter?.dataFreshness || {});
+  const featureCount = Object.values(sources).reduce((sum, value) => sum + Number(value || 0), 0);
+  steps.push(providerValidationStep(
+    'feature_pipeline',
+    'Expanded feature pipeline',
+    !matchCenterOk ? 'fail' : sources.error > 0 ? 'warn' : featureCount > 0 ? 'pass' : 'warn',
+    featureCount
+      ? `Источники: API ${sources.api}, cache ${sources.cache}, fixture ${sources.embedded}, stale ${sources.stale}, skip ${sources.skipped}, error ${sources.error}.`
+      : 'Матч не потребовал feature-level enrichment или данные не были доступны.',
+    sources,
+  ));
+
+  const after = providerSnapshot();
+  const budgetAfter = providerBudgetProfile();
+  const observedDailyDelta =
+    Number.isFinite(Number(before.dailyRemaining)) && Number.isFinite(Number(after.dailyRemaining))
+      ? Math.max(0, Number(before.dailyRemaining) - Number(after.dailyRemaining))
+      : null;
+
+  steps.push(providerValidationStep(
+    'post_run_quota',
+    'Квота после теста',
+    budgetAfter.mode === 'emergency' ? 'fail' : budgetAfter.mode === 'conserve' ? 'warn' : 'pass',
+    `${budgetAfter.label}. Остаток daily ${budgetAfter.daily?.remaining ?? '—'}, minute ${budgetAfter.minute?.remaining ?? '—'}.`,
+    { mode: budgetAfter.mode },
+  ));
+
+  const status = providerValidationStatus(steps);
+  const result = {
+    version: '5.0',
+    generatedAt: new Date().toISOString(),
+    fixtureId,
+    blocked: false,
+    status,
+    steps,
+    provider: after,
+    transition: providerTransitionProfile(),
+    budget: budgetAfter,
+    coverageAudit: audit ? {
+      blocked: Boolean(audit.blocked),
+      fixture: audit.fixture || null,
+      summary: audit.summary || null,
+      cost: audit.cost || null,
+      endpoints: (audit.endpoints || []).map(x => ({
+        key: x.key, label: x.label, state: x.state, results: x.results ?? null,
+        latencyMs: x.latencyMs ?? null, note: x.note || '',
+      })),
+    } : null,
+    matchCenter: matchCenterOk ? {
+      fixture: firstCenter.match,
+      mode: firstCenter.mode,
+      availability: firstCenter.availability || {},
+      quotaMode: firstCenter.quotaMode || null,
+      dataFreshness: firstCenter.dataFreshness || {},
+      firstResponseMs: firstMs,
+    } : { error: firstCenter?.error || 'invalid_payload', firstResponseMs: firstMs },
+    cacheVerification: {
+      cached: cacheOk,
+      secondResponseMs: secondMs,
+    },
+    requestCost: {
+      estimatedMax: 16,
+      observedDailyDelta,
+      note: 'Observed delta берётся из rate-limit headers и может быть недоступна, если провайдер не прислал оба значения.',
+    },
+    durationMs: Date.now() - startedAt,
+    note: status.ready
+      ? 'Кодовая часть expanded-data path прошла release gate. Это не включает пользовательскую монетизацию.'
+      : 'Release gate нашёл пункт, который нужно проверить до полноценного expanded режима.',
+  };
+
+  await saveProviderE2E(result, fixtureId, cfg);
+  await recordOpsEvent(cfg, {
+    severity: status.code === 'NEEDS_ATTENTION' ? 'warning' : 'info',
+    source: 'provider',
+    eventType: 'expanded_data_e2e',
+    code: `E2E_${status.code}`,
+    message: result.note,
+    meta: {
+      fixtureId,
+      plan: result.transition?.plan || 'UNKNOWN',
+      status: status.code,
+      coverageScore: result.coverageAudit?.summary?.score ?? null,
+      cacheReuse: cacheOk,
+      observedDailyDelta,
+      durationMs: result.durationMs,
+    },
+  }).catch(() => {});
+  return json(result);
+}
+
 async function apiProviderBudget(request, cfg) {
   return json({
     provider: providerSnapshot(),
@@ -2991,6 +3328,15 @@ async function apiReleaseReadiness(request, cfg) {
     releaseCheck('provider_health', 'Состояние API-Football', provider.health === 'critical' ? 'fail' : provider.health === 'warning' || provider.health === 'waiting' ? 'warn' : 'pass', provider.health === 'waiting' ? 'Ещё не было успешного provider-запроса после старта Worker.' : `Health: ${provider.health || 'unknown'}.`, provider.health === 'critical'),
     releaseCheck('provider_transition', 'Provider transition', providerTransitionProfile().paid ? 'pass' : 'warn', providerTransitionProfile().paid ? `${providerTransitionProfile().plan}: расширенный режим активен.` : `${providerTransitionProfile().plan}: приложение остаётся в экономном режиме до увеличения квоты.`, false),
     releaseCheck('quota_orchestrator', 'Quota Orchestrator', providerBudgetProfile().mode === 'emergency' ? 'warn' : 'pass', `${providerBudgetProfile().label}; feature cache api/cache=${Number(memory.providerFeatureFetch?.api || 0)}/${Number(memory.providerFeatureFetch?.cache || 0)}.`, false),
+    releaseCheck(
+      'expanded_e2e',
+      'Expanded Data E2E',
+      memory.providerE2E?.last?.status?.ready ? 'pass' : memory.providerE2E?.last?.status?.code === 'NEEDS_ATTENTION' ? 'warn' : 'warn',
+      memory.providerE2E?.last
+        ? `${memory.providerE2E.last.status?.label || 'Нет статуса'} · fixture ${memory.providerE2E.last.fixtureId || '—'}.`
+        : 'E2E ещё не запускался. На FREE это ожидаемо.',
+      false
+    ),
     releaseCheck('telegram', 'Telegram bot runtime', cfg.botToken ? 'pass' : 'warn', cfg.botToken ? 'TELEGRAM_BOT_TOKEN доступен.' : 'Без bot token не будут работать Telegram-уведомления.', false),
     releaseCheck('production_mode', 'Production mode', cfg.devMode ? 'warn' : 'pass', cfg.devMode ? 'DEV_MODE=true — перед релизом выключить.' : 'DEV_MODE=false.', false),
     releaseCheck('monetization', 'Монетизация', cfg.monetizationEnabled ? 'warn' : 'pass', cfg.monetizationEnabled ? 'Монетизация включена, хотя текущий план проекта — запускать её в финале.' : 'Оплата корректно остаётся на паузе.', false),
@@ -5887,6 +6233,8 @@ export default {
         coverageAudit: 'enabled',
         quotaOrchestrator: 'enabled',
         featureCache: 'enabled',
+        expandedDataE2E: 'enabled',
+        expandedDataReleaseGate: 'enabled',
         devMode: cfg.devMode,
       });
     }
@@ -5928,11 +6276,16 @@ export default {
           transition: providerTransitionProfile(),
           budget: providerBudgetProfile(),
           lastAudit: memory.providerAudit.last,
+          lastE2E: await loadLastProviderE2E(cfg),
         });
       }
       if (request.method === 'GET' && url.pathname === '/api/provider/budget') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
         return await apiProviderBudget(request, cfg);
+      }
+      if (request.method === 'GET' && url.pathname === '/api/provider/e2e-validation') {
+        if (!isAdminUser(user, cfg)) return adminForbidden();
+        return await apiProviderE2EValidation(request, cfg);
       }
       if (request.method === 'GET' && url.pathname === '/api/provider/probe') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
