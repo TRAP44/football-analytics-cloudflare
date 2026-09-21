@@ -1,37 +1,38 @@
-# Football Analytics Mini App v6.4.0 — RC12 Interrupted Run Reconciliation & Bounded Retry
+# Football Analytics Mini App v6.5.0 — RC13 Settlement Finality Verification & Drift Guard
 
-RC12 закрывает разрыв после RC11: audit intent со статусом `started` больше не может зависнуть навсегда после остановки Worker.
+RC13 закрывает следующий риск после безопасного auto-recovery: уже settled результат может позже измениться у provider.
 
 ## Что нового
 
-- persistent run-ledger поверх `prediction_integrity_actions`;
-- `started` старше 30 минут считается stale и автоматически переводится в `interrupted`;
-- пока существует активный `started`, новый unattended run не запускается;
-- exact fixture batch после `interrupted` продолжает retry lineage;
-- `attempt_no` ограничен значениями 1..3;
-- попытка 4 не выполняется: lineage получает `retry_exhausted`;
-- `retry_of_action_id` связывает повтор с предыдущим interrupted run;
-- terminal actions получают `finished_at`, каждый update — `updated_at`;
-- UI показывает состояние Run ledger и номер попытки.
+- settled rows получают состояние `unverified | verified | drift`;
+- повторная finality-проверка запускается около `05:00 UTC`;
+- проверяются только settlement старше 6 часов;
+- окно проверки — последние 7 дней;
+- максимум 100 fixture и 3 даты/provider calls за run;
+- совпавший финальный счёт → `verified`;
+- изменившийся счёт/outcome либо terminal provider status `AWD/WO/CANC/ABD` → `drift`;
+- drift никогда не переписывает сохранённый settlement автоматически;
+- drift записывается в отдельный `settlement_verification_events`;
+- строки drift исключаются из model-quality и calibration;
+- Integrity Remediation показывает verified / pending / drift.
 
 ## Safety
 
-RC12 не меняет prediction probabilities, model weights, captured_at, analysis_version или signal snapshots.
-Reconciliation касается только audit/run-state автоматического settlement recovery.
+Первый prediction snapshot остаётся immutable. RC13 также не делает silent correction уже записанного результата: поздняя provider-коррекция требует отдельного review-этапа.
 
 ## Supabase
 
-Перед deploy выполнить `supabase_migration_v6_4.sql`.
+Перед Deploy выполнить `supabase_migration_v6_5.sql`.
 
 ## Health
 
 Ожидается:
-- version = `6.4.0-rc12`;
-- releaseCandidate = `RC12`;
-- settlementWatchdog = enabled;
-- settlementCircuitBreaker = enabled;
+- version = `6.5.0-rc13`;
+- releaseCandidate = `RC13`;
+- settlementFinalityVerification = enabled;
+- settlementDriftGuard = enabled;
 - settlementRunLedger = enabled;
-- interruptedRunRecovery = enabled;
+- settlementCircuitBreaker = enabled;
 - monetization = paused.
 
 Telegram Stars остаются paused.

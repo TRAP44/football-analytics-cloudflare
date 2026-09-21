@@ -1,44 +1,40 @@
-# QA Release Checklist — v6.4.0 RC12
+# QA Release Checklist — v6.5.0 RC13
 
 ## Deploy
-- применён `supabase_migration_v6_4.sql`;
-- версия Worker/client = `6.4.0-rc12`;
-- cron, Secrets и wrangler не менялись;
+- применён `supabase_migration_v6_5.sql`;
+- Worker/client = `6.5.0-rc13`;
+- cron, Secrets, wrangler не менялись;
 - monetization paused.
 
-## Run Ledger
-- schema fields updated_at / finished_at / attempt_no / retry_of_action_id доступны;
-- default attempt_no = 1;
-- status допускает interrupted;
-- active started блокирует новый unattended run;
-- started старше 30 минут переводится в interrupted;
-- reconciliation не удаляет audit row;
-- exact batch retry получает attempt 2/3 и retry_of_action_id;
-- после attempt 3 следующий retry блокируется;
-- другая fixture batch начинает новую lineage с attempt 1;
-- terminal status записывает finished_at.
-
-## Circuit Breaker
-- interrupted reconciliation считается failed reliability outcome;
-- AUTO toggle не обходит OPEN breaker;
-- manual circuit reset остаётся admin-only с обязательной причиной.
+## Settlement Finality
+- model_predictions имеет settlement_verification_state;
+- допустимые state: unverified / verified / drift;
+- settlement_verification_events доступна backend service role;
+- новый settlement стартует как unverified;
+- verifier не трогает settlement моложе 6 часов;
+- verified требует совпадение score + outcome;
+- provider AWD/WO/CANC/ABD трактуется как drift;
+- drift не переписывает actual_home_goals / actual_away_goals / actual_outcome;
+- drift создаёт audit event;
+- drift исключается из model-quality;
+- drift исключается из calibration;
+- дневной run ограничен 100 fixture / 3 датами.
 
 ## UI
-- Run ledger показывает CLEAR / BUSY / STALE;
-- история показывает interrupted;
-- виден номер attempt и признак retry;
-- admin Telegram ID не отображается.
+- Settlement finality показывает VERIFIED / PENDING / DRIFT;
+- видны verified / pending / drift counters;
+- admin Telegram ID по-прежнему не раскрывается.
 
-## RC12
+## RC13
 Обязательный PASS:
 - Prediction Integrity self-test;
 - Prediction Remediation self-test;
 - Settlement Watchdog self-test;
-- Settlement Run Ledger schema v6.4;
 - Settlement Run Ledger self-test;
-- Runtime Controls / rollback;
+- Settlement Finality schema v6.5;
+- Settlement Finality self-test;
 - Production Load Safety;
 - Admin Security.
 
 ## Инварианты
-Prediction snapshots остаются immutable. Telegram Stars остаются paused.
+Prediction snapshot и сохранённый settlement не исправляются молча. Telegram Stars остаются paused.

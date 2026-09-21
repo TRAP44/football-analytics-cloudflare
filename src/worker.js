@@ -59,11 +59,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.4.0-rc12';
+const APP_VERSION = '6.5.0-rc13';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc12';
-const RC_NAME = 'RC12';
+const RELEASE_CHANNEL = 'rc13';
+const RC_NAME = 'RC13';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -654,6 +654,8 @@ function appManifest(cfg) {
       settlementReliability: true,
       settlementRunLedger: true,
       interruptedRunRecovery: true,
+      settlementFinalityVerification: true,
+      settlementDriftGuard: true,
     },
     serverTime: new Date().toISOString(),
   };
@@ -1999,6 +2001,7 @@ async function getCalibrationProfile(cfg, { force = false } = {}) {
   } else {
     rows = [...memory.modelPredictions.values()].filter(x => x.status === 'settled');
   }
+  rows = rows.filter(row => String(row?.settlement_verification_state || 'unverified') !== 'drift');
   const profile = buildCalibrationProfile(rows);
   try { await setCache(CALIBRATION_CACHE_KEY, 0, profile, cfg, CALIBRATION_CACHE_MINUTES); } catch {}
   return profile;
@@ -2119,6 +2122,9 @@ async function settlePredictionsFromFixtures(fixtures, cfg) {
       over25_correct: row.over25_prob === null || row.over25_prob === undefined ? null : (Number(row.over25_prob) >= 50) === over25Actual,
       btts_actual: bttsActual,
       btts_correct: row.btts_prob === null || row.btts_prob === undefined ? null : (Number(row.btts_prob) >= 50) === bttsActual,
+      settlement_verification_state: 'unverified',
+      settlement_verified_at: null,
+      settlement_verified_status: fixtureStatusShort(fixture),
     };
     if (hasSupabase(cfg)) {
       try {
@@ -2962,7 +2968,7 @@ function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = 
       outcome: 'Точность исхода = доля матчей, где максимальная вероятность 1X2 совпала с фактическим исходом.',
       brier: 'Brier score учитывает все три вероятности 1X2; ниже — лучше. В интерфейсе он показан вместе с размером выборки.',
       versionCohorts: 'Сравнение analysis_version является описательным и не используется для автоматического выбора/продвижения версии.',
-      integrity: 'В метрики входят только строки с валидными probabilities, captured_at до kickoff, согласованными outcome/predicted_outcome/correct и уникальным fixture.',
+      integrity: 'В метрики входят только строки с валидными probabilities, captured_at до kickoff, согласованными outcome/predicted_outcome/correct и уникальным fixture. Settlement rows со state=drift исключаются до ручного разбора.',
       warning: evaluated < 20 ? 'Выборка пока мала: цифры считаются технической диагностикой, а не доказанной точностью модели.' : '',
     },
   };
@@ -2989,8 +2995,204 @@ async function apiModelQuality(request, cfg) {
     settled = all.filter(x => x.status === 'settled').sort((a,b) => Date.parse(b.kickoff_at) - Date.parse(a.kickoff_at));
     pending = all.filter(x => x.status === 'pending');
   }
+  settled = settled.filter(row => String(row?.settlement_verification_state || 'unverified') !== 'drift');
   const calibrationProfile = await getCalibrationProfile(cfg, { force: forceCalibration }).catch(() => baselineCalibrationProfile(settled.length));
   return json({ available: true, ...buildModelQuality(settled, pending, days, calibrationProfile) });
+}
+
+
+const SETTLEMENT_FINALITY_DELAY_HOURS = 6;
+const SETTLEMENT_FINALITY_LOOKBACK_DAYS = 7;
+const SETTLEMENT_FINALITY_MAX_FIXTURES = 100;
+const SETTLEMENT_FINALITY_MAX_DATES = 3;
+const SETTLEMENT_FINALITY_DRIFT_STATUSES = new Set(['AWD', 'WO', 'CANC', 'ABD']);
+
+async function probeSettlementFinalitySchema(cfg) {
+  if (!hasSupabase(cfg)) return { ok: false, status: 'not_configured' };
+  try {
+    const predictionUrl = new URL(`${cfg.supabaseUrl}/rest/v1/model_predictions`);
+    predictionUrl.searchParams.set('select', 'settlement_verification_state,settlement_verified_at,settlement_verified_status');
+    predictionUrl.searchParams.set('limit', '1');
+    const eventUrl = new URL(`${cfg.supabaseUrl}/rest/v1/settlement_verification_events`);
+    eventUrl.searchParams.set('select', 'id,fixture_id,state,observed_at');
+    eventUrl.searchParams.set('limit', '1');
+    const [predictionResponse, eventResponse] = await Promise.all([
+      fetchWithTimeout(predictionUrl, { headers: supaHeaders(cfg) }, 7000, 'Supabase settlement finality prediction schema'),
+      fetchWithTimeout(eventUrl, { headers: supaHeaders(cfg) }, 7000, 'Supabase settlement finality event schema'),
+    ]);
+    if (!predictionResponse.ok || !eventResponse.ok) {
+      return { ok: false, status: `prediction_${predictionResponse.status}_events_${eventResponse.status}` };
+    }
+    return { ok: true, status: 'ok' };
+  } catch (error) {
+    return { ok: false, status: error?.code || 'error', detail: redactOpsString(error?.message || error, 140) };
+  }
+}
+
+function settlementFinalityVerdict(row, fixture) {
+  const status = fixtureStatusShort(fixture).toUpperCase();
+  if (SETTLEMENT_FINALITY_DRIFT_STATUSES.has(status)) {
+    return { state: 'drift', reason: `provider_status_${status.toLowerCase()}`, status, score: regulationScore(fixture) };
+  }
+  if (!isFinishedStatus(status)) return { state: 'wait', reason: 'provider_not_final', status, score: null };
+  const score = regulationScore(fixture);
+  if (!score) return { state: 'wait', reason: 'score_unavailable', status, score: null };
+  const storedHome = Number(row?.actual_home_goals);
+  const storedAway = Number(row?.actual_away_goals);
+  const storedOutcome = String(row?.actual_outcome || '');
+  const providerOutcome = actualOutcomeFromGoals(score.home, score.away);
+  if (!Number.isFinite(storedHome) || !Number.isFinite(storedAway) || !providerOutcome) {
+    return { state: 'drift', reason: 'stored_settlement_incomplete', status, score, providerOutcome };
+  }
+  const same = storedHome === score.home && storedAway === score.away && storedOutcome === providerOutcome;
+  return {
+    state: same ? 'verified' : 'drift',
+    reason: same ? 'score_and_outcome_match' : 'score_or_outcome_changed',
+    status,
+    score,
+    providerOutcome,
+  };
+}
+
+function settlementFinalitySelfTest() {
+  const row = { actual_home_goals: 2, actual_away_goals: 1, actual_outcome: 'home' };
+  const fixture = (status, home, away) => ({
+    fixture: { id: 1, status: { short: status } },
+    score: { fulltime: { home, away } },
+    goals: { home, away },
+  });
+  const verified = settlementFinalityVerdict(row, fixture('FT', 2, 1));
+  const scoreDrift = settlementFinalityVerdict(row, fixture('FT', 1, 1));
+  const statusDrift = settlementFinalityVerdict(row, fixture('AWD', 2, 1));
+  const wait = settlementFinalityVerdict(row, fixture('2H', 2, 1));
+  return {
+    pass: verified.state === 'verified' &&
+      scoreDrift.state === 'drift' &&
+      statusDrift.state === 'drift' &&
+      wait.state === 'wait',
+    verified: verified.state,
+    scoreDrift: scoreDrift.state,
+    statusDrift: statusDrift.state,
+    wait: wait.state,
+  };
+}
+
+function settlementFinalitySummary(rows = []) {
+  const settled = (rows || []).filter(row => row?.status === 'settled');
+  const count = state => settled.filter(row => String(row?.settlement_verification_state || 'unverified') === state).length;
+  return {
+    totalSettled: settled.length,
+    verified: count('verified'),
+    drift: count('drift'),
+    unverified: count('unverified'),
+  };
+}
+
+async function runSettlementFinalityVerification(cfg) {
+  if (!hasSupabase(cfg) || !cfg.apiFootballKey) return { skipped: 'no_persistent_database_or_provider' };
+  const schema = await probeSettlementFinalitySchema(cfg);
+  if (!schema.ok) return { skipped: 'finality_schema_missing', status: schema.status };
+
+  const markerKey = `settlement-finality:${todayUtc()}:v1`;
+  if (await getCache(markerKey, cfg)) return { skipped: 'already_checked', date: todayUtc() };
+  if (!automaticSettlementQuotaHealthy()) return { skipped: 'provider_quota_guard' };
+
+  const since = new Date(Date.now() - SETTLEMENT_FINALITY_LOOKBACK_DAYS * 86400_000).toISOString();
+  const verifyBefore = new Date(Date.now() - SETTLEMENT_FINALITY_DELAY_HOURS * 3600_000).toISOString();
+  let rows = await supaSelectMany(cfg, 'model_predictions', {
+    status: 'eq.settled',
+    settlement_verification_state: 'eq.unverified',
+    kickoff_at: `gte.${since}`,
+    settled_at: `lte.${verifyBefore}`,
+  }, { limit: SETTLEMENT_FINALITY_MAX_FIXTURES, order: 'kickoff_at.desc' });
+
+  if (!rows.length) {
+    await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), candidates: 0, verified: 0, drift: 0 }, cfg, 1440).catch(() => null);
+    return { ok: true, candidates: 0, verified: 0, drift: 0, skipped: 0 };
+  }
+
+  const selected = [];
+  const dates = new Set();
+  for (const row of rows) {
+    const date = String(row?.kickoff_at || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    if (!dates.has(date) && dates.size >= SETTLEMENT_FINALITY_MAX_DATES) continue;
+    dates.add(date);
+    selected.push(row);
+    if (selected.length >= SETTLEMENT_FINALITY_MAX_FIXTURES) break;
+  }
+
+  const fixtureIds = new Set(selected.map(row => Number(row.fixture_id)).filter(Boolean));
+  const fixtureMap = new Map();
+  for (const date of dates) {
+    const fixtures = await apiFootball('/fixtures', { date }, cfg);
+    for (const fixture of fixtures || []) {
+      const id = fixtureIdentity(fixture);
+      if (fixtureIds.has(id)) fixtureMap.set(id, fixture);
+    }
+  }
+
+  let verified = 0, drift = 0, skipped = 0;
+  for (const row of selected) {
+    const fixture = fixtureMap.get(Number(row.fixture_id));
+    if (!fixture) { skipped++; continue; }
+    const verdict = settlementFinalityVerdict(row, fixture);
+    if (verdict.state === 'wait') { skipped++; continue; }
+
+    const now = new Date().toISOString();
+    await supaPatch(cfg, 'model_predictions', { fixture_id: `eq.${Number(row.fixture_id)}`, status: 'eq.settled' }, {
+      settlement_verification_state: verdict.state,
+      settlement_verified_at: now,
+      settlement_verified_status: verdict.status,
+    });
+
+    if (verdict.state === 'verified') {
+      verified++;
+      continue;
+    }
+
+    drift++;
+    await supaInsertIgnore(cfg, 'settlement_verification_events', {
+      observed_at: now,
+      fixture_id: Number(row.fixture_id),
+      state: 'drift',
+      reason: verdict.reason,
+      stored_home_goals: Number.isFinite(Number(row.actual_home_goals)) ? Number(row.actual_home_goals) : null,
+      stored_away_goals: Number.isFinite(Number(row.actual_away_goals)) ? Number(row.actual_away_goals) : null,
+      stored_outcome: String(row.actual_outcome || ''),
+      provider_home_goals: Number.isFinite(Number(verdict.score?.home)) ? Number(verdict.score.home) : null,
+      provider_away_goals: Number.isFinite(Number(verdict.score?.away)) ? Number(verdict.score.away) : null,
+      provider_outcome: String(verdict.providerOutcome || ''),
+      provider_status: verdict.status,
+      detail: {
+        settledAt: row.settled_at || null,
+        verificationDelayHours: SETTLEMENT_FINALITY_DELAY_HOURS,
+        appVersion: APP_VERSION,
+      },
+    });
+  }
+
+  const result = {
+    ok: true,
+    candidates: selected.length,
+    verified,
+    drift,
+    skipped,
+    providerCalls: dates.size,
+    dates: [...dates],
+  };
+  await recordOpsEvent(cfg, {
+    severity: drift ? 'warning' : 'info',
+    source: 'model',
+    eventType: 'settlement_finality',
+    code: drift ? 'SETTLEMENT_FINALITY_DRIFT' : 'SETTLEMENT_FINALITY_VERIFIED',
+    message: drift
+      ? `Settlement finality found ${drift} drift row(s); model metrics will exclude them.`
+      : `Settlement finality verified ${verified} row(s).`,
+    meta: result,
+  }).catch(() => null);
+  await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), ...result }, cfg, 1440).catch(() => null);
+  return result;
 }
 
 function stalePredictionCandidates(rows, now = Date.now()) {
@@ -3404,11 +3606,12 @@ async function buildModelRemediationReport(cfg, { maxRows = 5000 } = {}) {
   if (!hasSupabase(cfg) && !cfg.devMode) {
     return { available: false, reason: 'Supabase не настроен: remediation требует постоянную базу данных.' };
   }
-  const [schema, watchdogSchema, reliabilitySchema, runLedgerSchema, reliability, runtimeState] = await Promise.all([
+  const [schema, watchdogSchema, reliabilitySchema, runLedgerSchema, finalitySchema, reliability, runtimeState] = await Promise.all([
     hasSupabase(cfg) ? probeOptionalTable(cfg, 'prediction_integrity_actions') : Promise.resolve({ ok: true, status: 'memory' }),
     hasSupabase(cfg) ? probeSettlementWatchdogSchema(cfg) : Promise.resolve({ ok: true, status: 'memory' }),
     hasSupabase(cfg) ? probeSettlementReliabilitySchema(cfg) : Promise.resolve({ ok: true, status: 'memory' }),
     hasSupabase(cfg) ? probeSettlementRunLedgerSchema(cfg) : Promise.resolve({ ok: true, status: 'memory' }),
+    hasSupabase(cfg) ? probeSettlementFinalitySchema(cfg) : Promise.resolve({ ok: true, status: 'memory' }),
     hasSupabase(cfg) ? loadSettlementReliability(cfg).catch(() => normalizeSettlementReliability()) : Promise.resolve(normalizeSettlementReliability()),
     loadRuntimeControls(cfg),
   ]);
@@ -3424,6 +3627,7 @@ async function buildModelRemediationReport(cfg, { maxRows = 5000 } = {}) {
     ? await inspectSettlementRunLedger(cfg).catch(() => ({ active: [], stale: [], cutoff: null }))
     : { active: [], stale: [], cutoff: null };
   const integrity = buildPredictionIntegrity(settled, pending);
+  const finality = settlementFinalitySummary(loaded.rows);
   return {
     available: true,
     version: APP_VERSION,
@@ -3487,6 +3691,18 @@ async function buildModelRemediationReport(cfg, { maxRows = 5000 } = {}) {
         staleAfterMinutes: SETTLEMENT_RUN_STALE_MINUTES,
         maxAttempts: SETTLEMENT_RUN_MAX_ATTEMPTS,
       },
+      finality: {
+        schemaReady: Boolean(finalitySchema.ok),
+        schemaStatus: finalitySchema.status || (finalitySchema.ok ? 'ok' : 'missing'),
+        verified: Number(finality.verified || 0),
+        drift: Number(finality.drift || 0),
+        unverified: Number(finality.unverified || 0),
+        totalSettled: Number(finality.totalSettled || 0),
+        scheduleUtc: '05:00',
+        delayHours: SETTLEMENT_FINALITY_DELAY_HOURS,
+        lookbackDays: SETTLEMENT_FINALITY_LOOKBACK_DAYS,
+        maxDatesPerRun: SETTLEMENT_FINALITY_MAX_DATES,
+      },
     },
     policy: {
       dryRunFirst: true,
@@ -3495,7 +3711,7 @@ async function buildModelRemediationReport(cfg, { maxRows = 5000 } = {}) {
       onlySettlesPending: true,
       adminIdExposed: false,
       automaticRecoveryRuntimeGated: true,
-      note: 'GET выполняет read-only dry-run. RC12 добавляет run-ledger reconciliation: stale started auto-recovery переводятся в interrupted, активный started блокирует параллельный run, exact-batch retry ограничен тремя попытками.',
+      note: 'GET выполняет read-only dry-run. RC13 добавляет settlement finality verification: поздний provider drift не переписывается автоматически, а помечается drift и исключается из model-quality/calibration до ручного разбора.',
     },
   };
 }
@@ -6087,10 +6303,11 @@ async function apiReleaseReadiness(request, cfg) {
     probeOptionalTable(cfg, 'runtime_controls'),
     probeOptionalTable(cfg, 'runtime_control_history'),
   ]);
-  const [runtimeState, watchdogSchema, runLedgerSchema] = await Promise.all([
+  const [runtimeState, watchdogSchema, runLedgerSchema, finalitySchema] = await Promise.all([
     loadRuntimeControls(cfg, { force: true }),
     probeSettlementWatchdogSchema(cfg),
     probeSettlementRunLedgerSchema(cfg),
+    probeSettlementFinalitySchema(cfg),
   ]);
   const runtime = runtimeState.value;
   const provider = diagnostics.provider || {};
@@ -6112,6 +6329,10 @@ async function apiReleaseReadiness(request, cfg) {
       runLedgerSchema.ok ? 'Interrupted-run timestamps, attempt counter и retry lineage доступны.' : 'Нужна supabase_migration_v6_4.sql.', true),
     releaseCheck('settlement_run_ledger_selftest', 'Settlement Run Ledger self-test', settlementRunLedgerSelfTest().pass ? 'pass' : 'fail',
       settlementRunLedgerSelfTest().pass ? 'Fresh=1, interrupted retry=2, attempt 3 exhausts lineage, different batch starts fresh.' : 'Run-ledger self-test не прошёл.', true),
+    releaseCheck('settlement_finality_schema', 'Settlement Finality schema v6.5', finalitySchema.ok ? 'pass' : 'fail',
+      finalitySchema.ok ? 'Verification state и drift audit table доступны.' : 'Нужна supabase_migration_v6_5.sql.', true),
+    releaseCheck('settlement_finality_selftest', 'Settlement Finality self-test', settlementFinalitySelfTest().pass ? 'pass' : 'fail',
+      settlementFinalitySelfTest().pass ? 'Matching final score verifies; score/status correction becomes drift; non-final waits.' : 'Settlement Finality self-test не прошёл.', true),
     releaseCheck('automatic_settlement_recovery', 'Automatic settlement recovery', 'pass',
       runtime.autoSettlementRecoveryEnabled ? 'Runtime switch ON: cron catch-up разрешён guardrails.' : 'Runtime switch OFF: watchdog работает в shadow и только сигнализирует.', false),
     releaseCheck('runtime_controls_schema', 'Runtime Controls schema v5.7', runtimeTable.ok ? 'pass' : 'fail', runtimeTable.ok ? 'Таблица runtime_controls доступна.' : 'Нужна supabase_migration_v5_7.sql.', true),
@@ -6165,7 +6386,7 @@ async function apiReleaseReadiness(request, cfg) {
       monetizationExpected: 'paused',
       paymentTestingRequiredNow: false,
       providerUpgradeRequiredNow: false,
-      note: 'RC12 добавляет ежедневный settlement watchdog и runtime-gated auto catch-up. Ручной dry-run/recovery RC9 сохраняется; immutable snapshots и пользовательская оплата не меняются.',
+      note: 'RC13 добавляет ежедневный settlement watchdog и runtime-gated auto catch-up. Ручной dry-run/recovery RC9 сохраняется; immutable snapshots и пользовательская оплата не меняются.',
     },
   };
   memory.releaseReadiness = { at: now, value };
@@ -6210,6 +6431,18 @@ async function apiProductionReadiness(request, cfg) {
     runLedgerSelfTest.pass
       ? `fresh=${runLedgerSelfTest.fresh}; retry=${runLedgerSelfTest.retry}; exhausted=${runLedgerSelfTest.exhausted}; differentBatch=${runLedgerSelfTest.differentBatch}.`
       : 'Settlement Run Ledger self-test не прошёл.',
+    true
+  ));
+
+  const finalitySelfTest = settlementFinalitySelfTest();
+  checks.push(rcCheck(
+    'settlement_finality_selftest',
+    'safety',
+    'Settlement Finality self-test',
+    finalitySelfTest.pass ? 'pass' : 'fail',
+    finalitySelfTest.pass
+      ? `verified=${finalitySelfTest.verified}; scoreDrift=${finalitySelfTest.scoreDrift}; statusDrift=${finalitySelfTest.statusDrift}; wait=${finalitySelfTest.wait}.`
+      : 'Settlement Finality self-test не прошёл.',
     true
   ));
 
@@ -6316,8 +6549,8 @@ async function apiRcRegression(request, cfg, user) {
   const startedAt = Date.now();
 
   // 1) Core runtime / security configuration.
-  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.4.0-rc12' ? 'pass' : 'fail',
-    `Worker: ${APP_VERSION}; ожидается 6.4.0-rc12.`, true));
+  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.5.0-rc13' ? 'pass' : 'fail',
+    `Worker: ${APP_VERSION}; ожидается 6.5.0-rc13.`, true));
   checks.push(rcCheck('api_contract', 'runtime', 'API contract', API_CONTRACT_VERSION === 5 ? 'pass' : 'fail',
     `Contract ${API_CONTRACT_VERSION}; min client ${MIN_CLIENT_VERSION}.`, true));
   checks.push(rcCheck('app_manifest', 'runtime', 'Public App Manifest', appManifest(cfg)?.version === APP_VERSION ? 'pass' : 'fail',
@@ -9510,6 +9743,8 @@ export default {
         settlementReliability: 'enabled',
         settlementRunLedger: 'enabled',
         interruptedRunRecovery: 'enabled',
+        settlementFinalityVerification: 'enabled',
+        settlementDriftGuard: 'enabled',
         runtimeControlsCacheSeconds: 30,
         devMode: cfg.devMode,
       });
@@ -9693,6 +9928,11 @@ export default {
       // Sequence catch-up after the normal daily settlement so one cron invocation
       // never spends provider quota on both recovery paths concurrently.
       tasks.push(['settlement_watchdog', backtestTask.then(() => runSettlementWatchdog(cfg))]);
+    }
+    if (scheduledAt.getUTCHours() === 5 && scheduledAt.getUTCMinutes() < 15) {
+      // Finality verification is intentionally delayed and read-mostly:
+      // it never rewrites stored outcomes when provider data drift is detected.
+      tasks.push(['settlement_finality', backtestTask.then(() => runSettlementFinalityVerification(cfg))]);
     }
     ctx.waitUntil((async () => {
       const results = await Promise.allSettled(tasks.map(([, promise]) => promise));
