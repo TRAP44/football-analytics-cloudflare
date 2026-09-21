@@ -1,42 +1,37 @@
-# Football Analytics Mini App v6.3.0 — RC11 Settlement Circuit Breaker & Reliability SLO
+# Football Analytics Mini App v6.4.0 — RC12 Interrupted Run Reconciliation & Bounded Retry
 
-RC11 добавляет fail-safe поверх автоматического settlement catch-up из RC10.
+RC12 закрывает разрыв после RC11: audit intent со статусом `started` больше не может зависнуть навсегда после остановки Worker.
 
 ## Что нового
 
-- persistent состояние reliability в Supabase;
-- consecutive failure counter для unattended auto recovery;
-- circuit breaker открывается после 2 последовательных failed AUTO run;
-- breaker блокирует автоматический provider-write на 72 часа;
-- completed или partial recovery закрывает breaker и сбрасывает счётчик;
-- admin может вручную закрыть breaker, указав причину;
-- reset записывается в prediction remediation audit как `circuit_reset`;
-- состояние breaker видно в Integrity Remediation;
-- runtime AUTO toggle и circuit breaker независимы: AUTO=ON не обходит OPEN breaker.
+- persistent run-ledger поверх `prediction_integrity_actions`;
+- `started` старше 30 минут считается stale и автоматически переводится в `interrupted`;
+- пока существует активный `started`, новый unattended run не запускается;
+- exact fixture batch после `interrupted` продолжает retry lineage;
+- `attempt_no` ограничен значениями 1..3;
+- попытка 4 не выполняется: lineage получает `retry_exhausted`;
+- `retry_of_action_id` связывает повтор с предыдущим interrupted run;
+- terminal actions получают `finished_at`, каждый update — `updated_at`;
+- UI показывает состояние Run ledger и номер попытки.
 
-## Почему это нужно
+## Safety
 
-RC10 сделал recovery автоматическим, но unattended automation не должна бесконечно повторять потенциально проблемную запись после серии provider/database failures. RC11 превращает watchdog в fail-closed систему.
+RC12 не меняет prediction probabilities, model weights, captured_at, analysis_version или signal snapshots.
+Reconciliation касается только audit/run-state автоматического settlement recovery.
 
-## Инварианты
+## Supabase
 
-RC11 не меняет probabilities, model weights, captured_at, analysis_version и signal snapshots. Breaker управляет только разрешением автоматического settlement recovery.
-
-## Migration
-
-Перед deploy выполнить `supabase_migration_v6_3.sql`.
+Перед deploy выполнить `supabase_migration_v6_4.sql`.
 
 ## Health
 
-`/health`:
-- version = `6.3.0-rc11`
-- releaseCandidate = `RC11`
-- settlementWatchdog = enabled
-- automaticSettlementRecovery = runtime-controlled
-- settlementCircuitBreaker = enabled
-- settlementReliability = enabled
-- monetization = paused
-
-## Монетизация
+Ожидается:
+- version = `6.4.0-rc12`;
+- releaseCandidate = `RC12`;
+- settlementWatchdog = enabled;
+- settlementCircuitBreaker = enabled;
+- settlementRunLedger = enabled;
+- interruptedRunRecovery = enabled;
+- monetization = paused.
 
 Telegram Stars остаются paused.

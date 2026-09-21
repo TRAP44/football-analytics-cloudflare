@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.3.0-rc11';
+const CLIENT_VERSION = '6.4.0-rc12';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc11';
+const CLIENT_RELEASE_CHANNEL = 'rc12';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -1119,6 +1119,7 @@ function remediationActionLabel(action) {
   if (action?.status === 'completed') return 'Выполнено';
   if (action?.status === 'partial') return 'Частично';
   if (action?.status === 'failed') return 'Ошибка';
+  if (action?.status === 'interrupted') return 'Прервано';
   return 'Нет статуса';
 }
 
@@ -1162,6 +1163,7 @@ function renderModelRemediation() {
   const recovery = r.recovery || {};
   const watchdog = r.watchdog || {};
   const reliability = watchdog.reliability || {};
+  const runLedger = watchdog.runLedger || {};
   const resetBtn = $('modelRemediationCircuitResetBtn');
   if (resetBtn) {
     resetBtn.hidden = !reliability.circuitOpen;
@@ -1178,7 +1180,8 @@ function renderModelRemediation() {
     <div><span>В batch</span><strong>${Number(recovery.selectedCount || 0)}</strong><small>до ${Number(recovery.maxFixturesPerRun || 20)} fixture</small></div>
     <div><span>API calls</span><strong>${Number(recovery.estimatedProviderCalls || 0)}</strong><small>по уникальным датам</small></div>
     <div><span>Watchdog</span><strong>${watchdog.autoRecoveryEnabled ? 'AUTO' : 'SHADOW'}</strong><small>${watchdog.schemaReady ? `${escapeHtml(watchdog.scheduleUtc || '04:00')} UTC` : 'нужна migration v6.2'}</small></div>
-    <div><span>Circuit breaker</span><strong>${reliability.circuitOpen ? 'OPEN' : 'CLOSED'}</strong><small>${reliability.schemaReady ? (reliability.circuitOpenUntil ? `до ${escapeHtml(dateTime(reliability.circuitOpenUntil))}` : `${Number(reliability.consecutiveFailures || 0)}/${Number(reliability.failureThreshold || 2)} failures`) : 'нужна migration v6.3'}</small></div>`;
+    <div><span>Circuit breaker</span><strong>${reliability.circuitOpen ? 'OPEN' : 'CLOSED'}</strong><small>${reliability.schemaReady ? (reliability.circuitOpenUntil ? `до ${escapeHtml(dateTime(reliability.circuitOpenUntil))}` : `${Number(reliability.consecutiveFailures || 0)}/${Number(reliability.failureThreshold || 2)} failures`) : 'нужна migration v6.3'}</small></div>
+    <div><span>Run ledger</span><strong>${Number(runLedger.activeStarted || 0) ? 'BUSY' : Number(runLedger.staleStarted || 0) ? 'STALE' : 'CLEAR'}</strong><small>${runLedger.schemaReady ? `${Number(runLedger.activeStarted || 0)} active · ${Number(runLedger.staleStarted || 0)} stale · max ${Number(runLedger.maxAttempts || 3)} attempts` : 'нужна migration v6.4'}</small></div>`;
 
   candidates.innerHTML = (recovery.candidates || []).length
     ? `<div class="model-remediation-list">${recovery.candidates.map(item => `
@@ -1189,7 +1192,7 @@ function renderModelRemediation() {
   history.innerHTML = actions.length
     ? `<div class="model-remediation-history-head"><strong>Последние действия</strong><span>admin ID скрыт</span></div>
        <div class="model-remediation-action-list">${actions.map(action => `
-         <div class="${escapeHtml(action.status || 'failed')}"><span><strong>${escapeHtml(remediationActionLabel(action))}${action.actionType === 'auto_recover' ? ' · AUTO' : action.actionType === 'circuit_reset' ? ' · BREAKER RESET' : ''}</strong><small>${escapeHtml(action.reason || 'Без комментария')} · ${action.createdAt ? escapeHtml(dateTime(action.createdAt)) : '—'}${action.triggerSource ? ` · ${escapeHtml(action.triggerSource)}` : ''}</small></span><em>${Number(action.settledCount || 0)} settled · ${Number(action.skippedCount || 0)} skipped</em></div>`).join('')}</div>`
+         <div class="${escapeHtml(action.status || 'failed')}"><span><strong>${escapeHtml(remediationActionLabel(action))}${action.actionType === 'auto_recover' ? ' · AUTO' : action.actionType === 'circuit_reset' ? ' · BREAKER RESET' : ''}</strong><small>${escapeHtml(action.reason || 'Без комментария')} · ${action.createdAt ? escapeHtml(dateTime(action.createdAt)) : '—'}${action.triggerSource ? ` · ${escapeHtml(action.triggerSource)}` : ''}${action.attemptNo ? ` · attempt ${Number(action.attemptNo)}` : ''}${action.retryOfActionId ? ' · retry' : ''}</small></span><em>${Number(action.settledCount || 0)} settled · ${Number(action.skippedCount || 0)} skipped</em></div>`).join('')}</div>`
     : '<p class="tiny quality-method-note">Audit trail пока пуст.</p>';
 
   runBtn.textContent = state.modelRemediationRunning ? 'Восстанавливаю…' : 'Восстановить pending';
@@ -1486,11 +1489,11 @@ function runClientContractSmoke() {
   const adminSections = [...document.querySelectorAll('[data-admin-only]')];
   add('admin_sections', 'Admin UI маркировка', adminSections.length >= 6, `${adminSections.length} технических секций помечены data-admin-only.`);
 
-  const cssLink = document.querySelector('link[href*="styles.css?v=6.3.0"]');
-  const appScript = document.querySelector('script[src*="app.js?v=6.3.0"]');
+  const cssLink = document.querySelector('link[href*="styles.css?v=6.4.0"]');
+  const appScript = document.querySelector('script[src*="app.js?v=6.4.0"]');
   add('cache_bust', 'Cache-bust assets', Boolean(cssLink && appScript), `CSS ${cssLink ? 'OK' : 'MISS'} · JS ${appScript ? 'OK' : 'MISS'}.`);
 
-  add('client_version', 'Версия клиента', CLIENT_VERSION === '6.3.0-rc11', CLIENT_VERSION);
+  add('client_version', 'Версия клиента', CLIENT_VERSION === '6.4.0-rc12', CLIENT_VERSION);
   add('telegram_sdk', 'Telegram WebApp SDK', Boolean(window.Telegram?.WebApp), window.Telegram?.WebApp ? 'SDK доступен.' : 'В обычном браузере SDK может отсутствовать; в Telegram должен быть доступен.');
 
   const navButtons = ['navMatches','navSearch','navHistory','navProfile'].filter(id => $(id));
@@ -5052,7 +5055,7 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// v6.3 RC11: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
+// v6.4 RC12: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
 // The boot watchdog never leaves the user behind an endless splash screen.
 const startupWatchdog = setTimeout(() => {
   if (!$('bootGate')?.hidden && !state.compatibilityBlocked) {

@@ -59,11 +59,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.3.0-rc11';
+const APP_VERSION = '6.4.0-rc12';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc11';
-const RC_NAME = 'RC11';
+const RELEASE_CHANNEL = 'rc12';
+const RC_NAME = 'RC12';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -652,6 +652,8 @@ function appManifest(cfg) {
       automaticSettlementRecovery: true,
       settlementCircuitBreaker: true,
       settlementReliability: true,
+      settlementRunLedger: true,
+      interruptedRunRecovery: true,
     },
     serverTime: new Date().toISOString(),
   };
@@ -3042,6 +3044,8 @@ function publicRemediationAction(row) {
   return {
     actionId: String(row?.action_id || ''),
     createdAt: row?.created_at || null,
+    updatedAt: row?.updated_at || null,
+    finishedAt: row?.finished_at || null,
     actionType: String(row?.action_type || ''),
     triggerSource: String(row?.trigger_source || (row?.action_type === 'auto_recover' ? 'cron' : 'admin')),
     status: String(row?.status || ''),
@@ -3050,6 +3054,8 @@ function publicRemediationAction(row) {
     inspectedCount: Number(row?.inspected_count || 0),
     settledCount: Number(row?.settled_count || 0),
     skippedCount: Number(row?.skipped_count || 0),
+    attemptNo: Math.max(1, Number(row?.attempt_no || 1)),
+    retryOfActionId: row?.retry_of_action_id ? String(row.retry_of_action_id) : null,
     detail: parseJsonObject(row?.detail),
   };
 }
@@ -3088,6 +3094,136 @@ async function probeSettlementWatchdogSchema(cfg) {
   }
 }
 
+
+
+const SETTLEMENT_RUN_STALE_MINUTES = 30;
+const SETTLEMENT_RUN_MAX_ATTEMPTS = 3;
+
+async function probeSettlementRunLedgerSchema(cfg) {
+  if (!hasSupabase(cfg)) return { ok: false, status: 'not_configured' };
+  try {
+    const url = new URL(`${cfg.supabaseUrl}/rest/v1/prediction_integrity_actions`);
+    url.searchParams.set('select', 'updated_at,finished_at,attempt_no,retry_of_action_id');
+    url.searchParams.set('limit', '1');
+    const r = await fetchWithTimeout(url, { headers: supaHeaders(cfg) }, 7000, 'Supabase settlement run ledger schema');
+    return { ok: r.ok, status: r.ok ? 'ok' : `http_${r.status}` };
+  } catch (error) {
+    return { ok: false, status: error?.code || 'error', detail: redactOpsString(error?.message || error, 140) };
+  }
+}
+
+function settlementBatchKey(fixtureIds = []) {
+  return [...new Set((fixtureIds || []).map(Number).filter(x => Number.isInteger(x) && x > 0))]
+    .sort((a, b) => a - b)
+    .join(',');
+}
+
+function settlementRetryDecision(latestAction, fixtureIds = []) {
+  const currentKey = settlementBatchKey(fixtureIds);
+  if (!latestAction || settlementBatchKey(latestAction.fixture_ids || latestAction.fixtureIds || []) !== currentKey) {
+    return { attemptNo: 1, retryOfActionId: null, retryExhausted: false };
+  }
+  if (String(latestAction.status || '') !== 'interrupted') {
+    return { attemptNo: 1, retryOfActionId: null, retryExhausted: false };
+  }
+  const previousAttempt = Math.max(1, Number(latestAction.attempt_no || latestAction.attemptNo || 1));
+  if (previousAttempt >= SETTLEMENT_RUN_MAX_ATTEMPTS) {
+    return {
+      attemptNo: SETTLEMENT_RUN_MAX_ATTEMPTS,
+      retryOfActionId: String(latestAction.action_id || latestAction.actionId || ''),
+      retryExhausted: true,
+    };
+  }
+  return {
+    attemptNo: previousAttempt + 1,
+    retryOfActionId: String(latestAction.action_id || latestAction.actionId || ''),
+    retryExhausted: false,
+  };
+}
+
+function settlementRunLedgerSelfTest() {
+  const ids = [30, 10, 20];
+  const fresh = settlementRetryDecision(null, ids);
+  const retry = settlementRetryDecision({ status: 'interrupted', attempt_no: 1, action_id: 'a', fixture_ids: [20, 30, 10] }, ids);
+  const exhausted = settlementRetryDecision({ status: 'interrupted', attempt_no: 3, action_id: 'b', fixture_ids: [10, 20, 30] }, ids);
+  const different = settlementRetryDecision({ status: 'interrupted', attempt_no: 2, action_id: 'c', fixture_ids: [10, 20] }, ids);
+  return {
+    pass: fresh.attemptNo === 1 && !fresh.retryOfActionId &&
+      retry.attemptNo === 2 && retry.retryOfActionId === 'a' && !retry.retryExhausted &&
+      exhausted.attemptNo === 3 && exhausted.retryExhausted &&
+      different.attemptNo === 1 && !different.retryOfActionId,
+    fresh: fresh.attemptNo,
+    retry: retry.attemptNo,
+    exhausted: exhausted.retryExhausted,
+    differentBatch: different.attemptNo,
+  };
+}
+
+async function inspectSettlementRunLedger(cfg) {
+  if (!hasSupabase(cfg)) return { active: [], stale: [], cutoff: null };
+  const rows = await supaSelectMany(cfg, 'prediction_integrity_actions', {
+    action_type: 'eq.auto_recover',
+    status: 'eq.started',
+  }, { limit: 20, order: 'updated_at.asc' });
+  const cutoffTs = Date.now() - SETTLEMENT_RUN_STALE_MINUTES * 60_000;
+  const active = [];
+  const stale = [];
+  for (const row of rows || []) {
+    const ts = Date.parse(row.updated_at || row.created_at || 0);
+    if (Number.isFinite(ts) && ts <= cutoffTs) stale.push(row);
+    else active.push(row);
+  }
+  return { active, stale, cutoff: new Date(cutoffTs).toISOString() };
+}
+
+async function reconcileInterruptedSettlementActions(cfg) {
+  const ledger = await inspectSettlementRunLedger(cfg);
+  if (!ledger.stale.length) return { reconciled: [], active: ledger.active, cutoff: ledger.cutoff };
+  const now = new Date().toISOString();
+  const reconciled = [];
+  for (const row of ledger.stale) {
+    const detail = {
+      ...parseJsonObject(row.detail),
+      phase: 'interrupted',
+      interruptedReason: 'stale_started_reconciled',
+      interruptedAt: now,
+    };
+    await supaPatch(cfg, 'prediction_integrity_actions', { action_id: `eq.${String(row.action_id)}` }, {
+      status: 'interrupted',
+      updated_at: now,
+      finished_at: now,
+      detail,
+    });
+    reconciled.push({ ...row, status: 'interrupted', updated_at: now, finished_at: now, detail });
+  }
+  await noteSettlementWatchdogOutcome(cfg, 'failed', {
+    actionId: reconciled[reconciled.length - 1]?.action_id || null,
+    error: `${reconciled.length} stale started settlement run(s) reconciled as interrupted`,
+  }).catch(() => null);
+  await recordOpsEvent(cfg, {
+    severity: 'warning',
+    source: 'model',
+    eventType: 'settlement_watchdog',
+    code: 'SETTLEMENT_RUN_INTERRUPTED',
+    message: `Reconciled ${reconciled.length} stale started settlement run(s) as interrupted.`,
+    meta: {
+      count: reconciled.length,
+      staleMinutes: SETTLEMENT_RUN_STALE_MINUTES,
+      actionIds: reconciled.map(x => String(x.action_id)).slice(0, 10),
+    },
+  }).catch(() => null);
+  return { reconciled, active: ledger.active, cutoff: ledger.cutoff };
+}
+
+async function resolveSettlementRetryLineage(cfg, fixtureIds) {
+  if (!hasSupabase(cfg)) return settlementRetryDecision(null, fixtureIds);
+  const rows = await supaSelectMany(cfg, 'prediction_integrity_actions', {
+    action_type: 'eq.auto_recover',
+  }, { limit: 20, order: 'created_at.desc' });
+  const key = settlementBatchKey(fixtureIds);
+  const latest = (rows || []).find(row => settlementBatchKey(row.fixture_ids || []) === key) || null;
+  return settlementRetryDecision(latest, fixtureIds);
+}
 
 const SETTLEMENT_CIRCUIT_FAILURE_THRESHOLD = 2;
 const SETTLEMENT_CIRCUIT_OPEN_HOURS = 72;
@@ -3215,12 +3351,18 @@ async function resetSettlementCircuit(cfg, user, reason) {
 }
 
 async function recordRemediationAction(cfg, user, action) {
+  const now = new Date().toISOString();
+  const actionStatus = String(action.status || 'completed');
   const row = {
     action_id: String(action.actionId || crypto.randomUUID()),
     action_type: String(action.actionType || 'recover'),
     ...(action.triggerSource ? { trigger_source: String(action.triggerSource).slice(0, 20) } : {}),
-    status: String(action.status || 'completed'),
+    status: actionStatus,
     reason: redactOpsString(action.reason || '', 220),
+    updated_at: now,
+    finished_at: actionStatus === 'started' ? null : now,
+    attempt_no: Math.max(1, Math.min(SETTLEMENT_RUN_MAX_ATTEMPTS, Number(action.attemptNo || 1))),
+    retry_of_action_id: action.retryOfActionId ? String(action.retryOfActionId) : null,
     admin_telegram_id: Number(user?.id || 0) || null,
     candidate_count: Number(action.candidateCount || 0),
     inspected_count: Number(action.inspectedCount || 0),
@@ -3230,14 +3372,18 @@ async function recordRemediationAction(cfg, user, action) {
     detail: action.detail || {},
   };
   if (hasSupabase(cfg)) await supaInsertIgnore(cfg, 'prediction_integrity_actions', row, 'action_id');
-  memory.modelRemediation.actions.unshift({ ...row, created_at: new Date().toISOString() });
+  memory.modelRemediation.actions.unshift({ ...row, created_at: now });
   memory.modelRemediation.actions = memory.modelRemediation.actions.slice(0, 20);
-  return publicRemediationAction({ ...row, created_at: new Date().toISOString() });
+  return publicRemediationAction({ ...row, created_at: now });
 }
 
 async function finalizeRemediationAction(cfg, actionId, patch = {}) {
+  const now = new Date().toISOString();
+  const finalStatus = String(patch.status || 'completed');
   const update = {
-    status: String(patch.status || 'completed'),
+    status: finalStatus,
+    updated_at: now,
+    finished_at: finalStatus === 'started' ? null : now,
     inspected_count: Number(patch.inspectedCount || 0),
     settled_count: Number(patch.settledCount || 0),
     skipped_count: Number(patch.skippedCount || 0),
@@ -3258,10 +3404,11 @@ async function buildModelRemediationReport(cfg, { maxRows = 5000 } = {}) {
   if (!hasSupabase(cfg) && !cfg.devMode) {
     return { available: false, reason: 'Supabase не настроен: remediation требует постоянную базу данных.' };
   }
-  const [schema, watchdogSchema, reliabilitySchema, reliability, runtimeState] = await Promise.all([
+  const [schema, watchdogSchema, reliabilitySchema, runLedgerSchema, reliability, runtimeState] = await Promise.all([
     hasSupabase(cfg) ? probeOptionalTable(cfg, 'prediction_integrity_actions') : Promise.resolve({ ok: true, status: 'memory' }),
     hasSupabase(cfg) ? probeSettlementWatchdogSchema(cfg) : Promise.resolve({ ok: true, status: 'memory' }),
     hasSupabase(cfg) ? probeSettlementReliabilitySchema(cfg) : Promise.resolve({ ok: true, status: 'memory' }),
+    hasSupabase(cfg) ? probeSettlementRunLedgerSchema(cfg) : Promise.resolve({ ok: true, status: 'memory' }),
     hasSupabase(cfg) ? loadSettlementReliability(cfg).catch(() => normalizeSettlementReliability()) : Promise.resolve(normalizeSettlementReliability()),
     loadRuntimeControls(cfg),
   ]);
@@ -3273,6 +3420,9 @@ async function buildModelRemediationReport(cfg, { maxRows = 5000 } = {}) {
   const candidateToken = await remediationFingerprint(batch.selected);
   let recentActions = [];
   if (schema.ok) recentActions = await loadRemediationActions(cfg, 10).catch(() => []);
+  const runLedger = runLedgerSchema.ok
+    ? await inspectSettlementRunLedger(cfg).catch(() => ({ active: [], stale: [], cutoff: null }))
+    : { active: [], stale: [], cutoff: null };
   const integrity = buildPredictionIntegrity(settled, pending);
   return {
     available: true,
@@ -3329,6 +3479,14 @@ async function buildModelRemediationReport(cfg, { maxRows = 5000 } = {}) {
         failureThreshold: SETTLEMENT_CIRCUIT_FAILURE_THRESHOLD,
         openHours: SETTLEMENT_CIRCUIT_OPEN_HOURS,
       },
+      runLedger: {
+        schemaReady: Boolean(runLedgerSchema.ok),
+        schemaStatus: runLedgerSchema.status || (runLedgerSchema.ok ? 'ok' : 'missing'),
+        activeStarted: Number(runLedger.active?.length || 0),
+        staleStarted: Number(runLedger.stale?.length || 0),
+        staleAfterMinutes: SETTLEMENT_RUN_STALE_MINUTES,
+        maxAttempts: SETTLEMENT_RUN_MAX_ATTEMPTS,
+      },
     },
     policy: {
       dryRunFirst: true,
@@ -3337,7 +3495,7 @@ async function buildModelRemediationReport(cfg, { maxRows = 5000 } = {}) {
       onlySettlesPending: true,
       adminIdExposed: false,
       automaticRecoveryRuntimeGated: true,
-      note: 'GET выполняет read-only dry-run. RC11 добавляет persistent circuit breaker: после двух последовательных failed auto-recovery он блокирует unattended provider-write на 72 часа. Ручной reset требует admin action и причины.',
+      note: 'GET выполняет read-only dry-run. RC12 добавляет run-ledger reconciliation: stale started auto-recovery переводятся в interrupted, активный started блокирует параллельный run, exact-batch retry ограничен тремя попытками.',
     },
   };
 }
@@ -3479,7 +3637,26 @@ function automaticSettlementQuotaHealthy() {
 async function runSettlementWatchdog(cfg) {
   if (!hasSupabase(cfg)) return { skipped: 'no_persistent_database' };
   const markerKey = `settlement-watchdog:${todayUtc()}:v1`;
-  if (await getCache(markerKey, cfg)) return { skipped: 'already_checked', date: todayUtc() };
+  const runLedgerSchema = await probeSettlementRunLedgerSchema(cfg);
+  if (!runLedgerSchema.ok) return { skipped: 'run_ledger_schema_missing', status: runLedgerSchema.status };
+  const reconciliation = await reconcileInterruptedSettlementActions(cfg);
+  const ledgerAfter = await inspectSettlementRunLedger(cfg);
+  if (ledgerAfter.active.length) {
+    await recordOpsEvent(cfg, {
+      severity: 'warning',
+      source: 'model',
+      eventType: 'settlement_watchdog',
+      code: 'SETTLEMENT_RUN_IN_PROGRESS',
+      message: 'Settlement watchdog skipped because another started run is still active.',
+      meta: {
+        activeRuns: ledgerAfter.active.length,
+        staleAfterMinutes: SETTLEMENT_RUN_STALE_MINUTES,
+        actionIds: ledgerAfter.active.map(x => String(x.action_id)).slice(0, 10),
+      },
+    }).catch(() => null);
+    return { skipped: 'run_in_progress', activeRuns: ledgerAfter.active.length };
+  }
+  if (await getCache(markerKey, cfg)) return { skipped: 'already_checked', date: todayUtc(), reconciledInterrupted: reconciliation.reconciled.length };
 
   const report = await buildModelRemediationReport(cfg, { maxRows: 5000 });
   const runtimeState = await loadRuntimeControls(cfg);
@@ -3503,6 +3680,8 @@ async function runSettlementWatchdog(cfg) {
     circuitOpen: Boolean(report?.watchdog?.reliability?.circuitOpen),
     circuitOpenUntil: report?.watchdog?.reliability?.circuitOpenUntil || null,
     consecutiveFailures: Number(report?.watchdog?.reliability?.consecutiveFailures || 0),
+    reconciledInterrupted: Number(reconciliation.reconciled?.length || 0),
+    runLedgerActive: Number(ledgerAfter.active?.length || 0),
   };
 
   if (decision.state === 'clean') {
@@ -3543,8 +3722,21 @@ async function runSettlementWatchdog(cfg) {
   const dates = [...new Set(currentIds.map(id => String(candidateMap.get(id)?.kickoffAt || '').slice(0, 10)).filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date)))];
   const fixtureSet = new Set(currentIds);
   const fixtures = [];
+  const retry = await resolveSettlementRetryLineage(cfg, currentIds);
+  if (retry.retryExhausted) {
+    await recordOpsEvent(cfg, {
+      severity: 'warning',
+      source: 'model',
+      eventType: 'settlement_watchdog',
+      code: 'SETTLEMENT_RETRY_EXHAUSTED',
+      message: 'Settlement retry lineage exhausted for the current exact fixture batch.',
+      meta: { ...baseMeta, retryOfActionId: retry.retryOfActionId, maxAttempts: SETTLEMENT_RUN_MAX_ATTEMPTS },
+    }).catch(() => null);
+    await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), ...baseMeta, state: 'retry_exhausted' }, cfg, 1440).catch(() => null);
+    return { ok: true, ...baseMeta, state: 'retry_exhausted', retryOfActionId: retry.retryOfActionId };
+  }
   const actionId = crypto.randomUUID();
-  const reason = 'RC11 scheduled settlement catch-up';
+  const reason = 'RC12 scheduled settlement catch-up';
   let auditStarted = false;
   let executionResult = null;
 
@@ -3555,6 +3747,8 @@ async function runSettlementWatchdog(cfg) {
       triggerSource: 'cron',
       status: 'started',
       reason,
+      attemptNo: retry.attemptNo,
+      retryOfActionId: retry.retryOfActionId,
       candidateCount: Number(report.recovery?.stalePending || 0),
       inspectedCount: currentIds.length,
       settledCount: 0,
@@ -3565,6 +3759,10 @@ async function runSettlementWatchdog(cfg) {
         providerCallsPlanned: dates.length,
         scanTruncated: Boolean(report.scan?.truncated),
         runtimeRevision: Number(runtime.revision || 1),
+        candidateToken: String(report.recovery?.candidateToken || ''),
+        batchKey: settlementBatchKey(currentIds),
+        attemptNo: retry.attemptNo,
+        retryOfActionId: retry.retryOfActionId,
       },
     });
     auditStarted = true;
@@ -3647,6 +3845,8 @@ async function runSettlementWatchdog(cfg) {
         triggerSource: 'cron',
         status: 'failed',
         reason,
+        attemptNo: retry.attemptNo,
+        retryOfActionId: retry.retryOfActionId,
         candidateCount: Number(report.recovery?.stalePending || 0),
         inspectedCount: currentIds.length,
         settledCount: 0,
@@ -5887,9 +6087,10 @@ async function apiReleaseReadiness(request, cfg) {
     probeOptionalTable(cfg, 'runtime_controls'),
     probeOptionalTable(cfg, 'runtime_control_history'),
   ]);
-  const [runtimeState, watchdogSchema] = await Promise.all([
+  const [runtimeState, watchdogSchema, runLedgerSchema] = await Promise.all([
     loadRuntimeControls(cfg, { force: true }),
     probeSettlementWatchdogSchema(cfg),
+    probeSettlementRunLedgerSchema(cfg),
   ]);
   const runtime = runtimeState.value;
   const provider = diagnostics.provider || {};
@@ -5903,10 +6104,14 @@ async function apiReleaseReadiness(request, cfg) {
       modelIntegritySelfTest().pass ? 'Probabilities, captured_at timing и outcome consistency проходят synthetic self-test.' : 'Prediction Integrity self-test не прошёл.', true),
     releaseCheck('prediction_remediation', 'Prediction Remediation v6.1', remediationTable.ok ? 'pass' : 'fail',
       remediationTable.ok ? 'Audit trail remediation доступен.' : 'Нужна supabase_migration_v6_1.sql.', true),
-    releaseCheck('settlement_watchdog_schema', 'Settlement Watchdog schema v6.3', watchdogSchema.ok ? 'pass' : 'fail',
+    releaseCheck('settlement_watchdog_schema', 'Settlement Watchdog schema v6.4', watchdogSchema.ok ? 'pass' : 'fail',
       watchdogSchema.ok ? 'Runtime switch и cron audit source доступны.' : 'Нужна supabase_migration_v6_2.sql.', true),
     releaseCheck('settlement_watchdog_selftest', 'Settlement Watchdog self-test', watchdogSelfTest.pass ? 'pass' : 'fail',
       watchdogSelfTest.pass ? `shadow=${watchdogSelfTest.shadow}, runtime=${watchdogSelfTest.runtime}, quota=${watchdogSelfTest.quota}, active=${watchdogSelfTest.active}.` : 'Watchdog decision self-test не прошёл.', true),
+    releaseCheck('settlement_run_ledger_schema', 'Settlement Run Ledger schema v6.4', runLedgerSchema.ok ? 'pass' : 'fail',
+      runLedgerSchema.ok ? 'Interrupted-run timestamps, attempt counter и retry lineage доступны.' : 'Нужна supabase_migration_v6_4.sql.', true),
+    releaseCheck('settlement_run_ledger_selftest', 'Settlement Run Ledger self-test', settlementRunLedgerSelfTest().pass ? 'pass' : 'fail',
+      settlementRunLedgerSelfTest().pass ? 'Fresh=1, interrupted retry=2, attempt 3 exhausts lineage, different batch starts fresh.' : 'Run-ledger self-test не прошёл.', true),
     releaseCheck('automatic_settlement_recovery', 'Automatic settlement recovery', 'pass',
       runtime.autoSettlementRecoveryEnabled ? 'Runtime switch ON: cron catch-up разрешён guardrails.' : 'Runtime switch OFF: watchdog работает в shadow и только сигнализирует.', false),
     releaseCheck('runtime_controls_schema', 'Runtime Controls schema v5.7', runtimeTable.ok ? 'pass' : 'fail', runtimeTable.ok ? 'Таблица runtime_controls доступна.' : 'Нужна supabase_migration_v5_7.sql.', true),
@@ -5960,7 +6165,7 @@ async function apiReleaseReadiness(request, cfg) {
       monetizationExpected: 'paused',
       paymentTestingRequiredNow: false,
       providerUpgradeRequiredNow: false,
-      note: 'RC11 добавляет ежедневный settlement watchdog и runtime-gated auto catch-up. Ручной dry-run/recovery RC9 сохраняется; immutable snapshots и пользовательская оплата не меняются.',
+      note: 'RC12 добавляет ежедневный settlement watchdog и runtime-gated auto catch-up. Ручной dry-run/recovery RC9 сохраняется; immutable snapshots и пользовательская оплата не меняются.',
     },
   };
   memory.releaseReadiness = { at: now, value };
@@ -5996,6 +6201,18 @@ async function apiProductionReadiness(request, cfg) {
     collectDiagnostics(cfg),
     runSingleFlightSelfTest(),
   ]);
+  const runLedgerSelfTest = settlementRunLedgerSelfTest();
+  checks.push(rcCheck(
+    'settlement_run_ledger_selftest',
+    'safety',
+    'Settlement Run Ledger self-test',
+    runLedgerSelfTest.pass ? 'pass' : 'fail',
+    runLedgerSelfTest.pass
+      ? `fresh=${runLedgerSelfTest.fresh}; retry=${runLedgerSelfTest.retry}; exhausted=${runLedgerSelfTest.exhausted}; differentBatch=${runLedgerSelfTest.differentBatch}.`
+      : 'Settlement Run Ledger self-test не прошёл.',
+    true
+  ));
+
   const safety = productionSafetySnapshot();
   const providerBudget = providerBudgetProfile();
   const paidProvider = providerTransitionProfile().paid;
@@ -6099,8 +6316,8 @@ async function apiRcRegression(request, cfg, user) {
   const startedAt = Date.now();
 
   // 1) Core runtime / security configuration.
-  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.3.0-rc11' ? 'pass' : 'fail',
-    `Worker: ${APP_VERSION}; ожидается 6.3.0-rc11.`, true));
+  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.4.0-rc12' ? 'pass' : 'fail',
+    `Worker: ${APP_VERSION}; ожидается 6.4.0-rc12.`, true));
   checks.push(rcCheck('api_contract', 'runtime', 'API contract', API_CONTRACT_VERSION === 5 ? 'pass' : 'fail',
     `Contract ${API_CONTRACT_VERSION}; min client ${MIN_CLIENT_VERSION}.`, true));
   checks.push(rcCheck('app_manifest', 'runtime', 'Public App Manifest', appManifest(cfg)?.version === APP_VERSION ? 'pass' : 'fail',
@@ -6178,7 +6395,7 @@ async function apiRcRegression(request, cfg, user) {
   checks.push(rcCheck(
     'settlement_watchdog_schema',
     'database',
-    'Settlement Watchdog schema v6.3',
+    'Settlement Watchdog schema v6.4',
     watchdogSchema.ok ? 'pass' : 'fail',
     watchdogSchema.ok ? 'Runtime switch + trigger_source доступны.' : 'Запустите supabase_migration_v6_2.sql.',
     true
@@ -9291,6 +9508,8 @@ export default {
         automaticSettlementRecovery: 'runtime-controlled',
         settlementCircuitBreaker: 'enabled',
         settlementReliability: 'enabled',
+        settlementRunLedger: 'enabled',
+        interruptedRunRecovery: 'enabled',
         runtimeControlsCacheSeconds: 30,
         devMode: cfg.devMode,
       });
