@@ -1,0 +1,38 @@
+name: Rollback Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_id:
+        description: Cloudflare Worker version ID to restore
+        required: true
+        type: string
+      confirm:
+        description: Type ROLLBACK to confirm
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-production
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    if: inputs.confirm == 'ROLLBACK'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Roll back Worker
+        uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.136.1"
+          command: rollback ${{ inputs.version_id }} --yes --message "Manual rollback from GitHub Actions"

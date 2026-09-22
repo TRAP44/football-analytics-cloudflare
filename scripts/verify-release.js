@@ -4,13 +4,13 @@ const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const worker = fs.readFileSync('src/worker.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
-const expected = `${pkg.version}-rc19`;
+const expected = `${pkg.version}-rc20`;
 const failures = [];
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC19'")) failures.push('Worker RC name must be RC19');
+if (!worker.includes("const RC_NAME = 'RC20'")) failures.push('Worker RC name must be RC20');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc19'")) failures.push('Client release channel must be rc19');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc20'")) failures.push('Client release channel must be rc20');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -18,6 +18,9 @@ if (!fs.existsSync('supabase_migration_v6_11.sql')) failures.push('Missing v6.11
 if (!fs.existsSync('supabase_migration_v6_11_1.sql')) failures.push('Missing v6.11.1 default-ACL migration');
 if (!fs.existsSync('supabase_baseline_v6_9.sql')) failures.push('Missing v6.9 baseline');
 if (!fs.existsSync('src/access-control.js')) failures.push('Missing access-control module');
+if (!fs.existsSync('scripts/post-deploy-smoke.js')) failures.push('Missing post-deploy smoke test');
+if (!fs.existsSync('.github/workflows/deploy-production.yml')) failures.push('Missing production deploy workflow');
+if (!fs.existsSync('.github/workflows/rollback-production.yml')) failures.push('Missing production rollback workflow');
 
 const migration = fs.readFileSync('supabase_migration_v6_10.sql', 'utf8');
 if (!migration.includes('transition_model_calibration')) failures.push('Missing atomic calibration transition RPC');

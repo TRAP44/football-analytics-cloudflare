@@ -1,4 +1,4 @@
-# Установка Football Analytics v6.11.0 RC19
+# Установка Football Analytics v6.12.0 RC20
 
 ## Новый Supabase-проект
 
@@ -46,18 +46,34 @@ SUPABASE_SECRET_KEY
 
 ## Проверка и deploy
 
+Для автоматического production deploy добавьте в GitHub Environment `production` или Repository Secrets:
+
+```text
+CLOUDFLARE_API_TOKEN
+CLOUDFLARE_ACCOUNT_ID
+```
+
+API token должен быть ограничен нужным Cloudflare account и правом редактирования Workers. Не добавляйте эти значения в `.env`, `.dev.vars` или файлы репозитория.
+
+Опционально задайте Repository Variable `CLOUDFLARE_WORKER_URL`, если smoke-проверка должна использовать custom domain вместо URL, возвращённого Wrangler.
+
+Обычный процесс: PR → `Quality` → merge в `main` → `Deploy Production` → RC20 smoke. Локальный ручной deploy остаётся доступен:
+
 ```bash
 npm ci
 npm run check
 npm test
 npm run verify:release
+npm run verify:worker
 npm run deploy
 ```
 
 После deploy:
 
-1. `/health` сообщает `6.11.0-rc19` и `RC19`.
+1. `/health` сообщает `6.12.0-rc20` и `RC20`.
 2. RC Regression не содержит blocking failures.
 3. В разделе качества модели показаны active fingerprint и состояние challenger.
 4. Обычный аккаунт не показывает бейдж «Администратор» и не видит технические панели.
 5. До накопления нужной выборки production остаётся на baseline champion.
+
+Для аварийного возврата откройте workflow `Rollback Production`, укажите version ID из Cloudflare Deployments и введите `ROLLBACK`. Rollback меняет только версию Worker; состояние Supabase он не откатывает.

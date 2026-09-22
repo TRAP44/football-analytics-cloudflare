@@ -1,14 +1,18 @@
-# QA Release Checklist — v6.11.0 RC19
+# QA Release Checklist — v6.12.0 RC20
 
 ## Deploy
 
 - применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql` и `supabase_migration_v6_11_1.sql`;
-- Worker/client = `6.11.0-rc19`;
-- package = `6.11.0`;
+- Worker/client = `6.12.0-rc20`;
+- package = `6.12.0`;
 - cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;
 - `MONETIZATION_ENABLED=false` до отдельного решения о запуске оплаты.
+- production environment содержит `CLOUDFLARE_API_TOKEN` и `CLOUDFLARE_ACCOUNT_ID`;
+- Cloudflare token ограничен нужным account и Workers Edit;
+- `Deploy Production` запускается только после успешного `Quality` на `main`;
+- deploy использует `--keep-vars` и не удаляет dashboard variables;
 
 ## Champion–Challenger
 
@@ -55,6 +59,7 @@
 npm run check
 npm test
 npm run verify:release
+npm run verify:worker
 ```
 
 Также обязательны встроенные проверки:
@@ -67,3 +72,14 @@ npm run verify:release
 - Calibration Lifecycle schema;
 - Production Load Safety;
 - Admin Security.
+- Cloudflare post-deploy smoke.
+
+## Post-deploy
+
+- `/health` возвращает `6.12.0-rc20`, `RC20` и `devMode=false`;
+- `cloudflareDeploymentGate=enabled`;
+- `/api/app-manifest` соответствует версии Worker;
+- `/`, CSS и JS доступны после обновления asset cache key;
+- `/api/me`, `/api/release-readiness` и `/api/calibration-control` без Telegram initData возвращают `401`;
+- `/health/supabase` публично недоступен;
+- при ошибке используется `Rollback Production` с предыдущим version ID.
