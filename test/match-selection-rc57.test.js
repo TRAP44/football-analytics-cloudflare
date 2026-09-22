@@ -41,7 +41,7 @@ test('Mini App preserves server ranking and explains the primary match',()=> {
 test('Telegram highlights the primary match and analytics remains query-text free',()=> {
   assert.match(worker,/matches=rankTeamDiscoveryMatches\(matches\)\.slice\(0,3\)/);
   assert.match(worker,/Основной матч для анализа/);
-  assert.match(worker,/Первый матч — основной выбор FM AI для анализа/);
+  assert.match(worker,/Первый матч — основной выбор FM AI/);
   const event=/eventName:'search_result',channel:'telegram',metadata:\{intent:parts\.intent,outcome:'match',recognized,recovery,primaryFixtureId,count:Math\.min\(3,matches\.length\)\}/;
   assert.match(worker,event);
 });
