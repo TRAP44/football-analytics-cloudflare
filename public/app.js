@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.21.0-rc29';
+const CLIENT_VERSION = '6.22.0-rc30';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc29';
+const CLIENT_RELEASE_CHANNEL = 'rc30';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -917,7 +917,16 @@ function planLabel(plan) {
 
 function technicalStateLabel(value) {
   const key = String(value || '').toLowerCase();
-  return ({ healthy:'норма', ok:'норма', waiting:'ожидание', warning:'предупреждение', critical:'проблема', online:'в сети', offline:'нет связи', scheduled:'запланировано', prematch_sent:'предматчевое отправлено', kickoff_sent:'старт отправлен', retry_pending:'ожидает повторной доставки', sent:'отправлено', failed:'ошибка' })[key] || String(value || '—');
+  return ({
+    healthy:'норма', ok:'норма', waiting:'ожидание', warning:'предупреждение', critical:'проблема',
+    online:'в сети', offline:'нет связи', scheduled:'запланировано', prematch_sent:'предматчевое отправлено',
+    kickoff_sent:'старт отправлен', retry_pending:'ожидает повторной доставки', sent:'отправлено', failed:'ошибка',
+    active:'активно', shadow:'наблюдение', baseline:'базовый режим', enabled:'включено', disabled:'выключено',
+    full:'полный режим', 'balanced-free':'сбалансированный режим', 'quota-saver':'экономный режим',
+    expanded:'расширенный режим', standard:'стандартный режим', embedded:'данные матча',
+    api:'источник данных', cache:'кэш', stale:'резервный кэш', skipped:'пропущено', error:'ошибка',
+    memory:'временное хранилище', supabase:'Supabase',
+  })[key] || String(value || '—');
 }
 
 function humanizeTechnicalText(value) {
@@ -976,6 +985,14 @@ function humanizeTechnicalText(value) {
     [/\bconfidence\b/gi, 'уверенность'],
     [/\bBrier\s+score\b/gi, 'ошибка Брайера'],
     [/\bBrier\b/gi, 'ошибка Брайера'],
+    [/\bActive champion\b/gi, 'активная модель'],
+    [/\bBaseline champion\b/gi, 'базовая активная модель'],
+    [/\bsignal-level\b/gi, 'по отдельным сигналам'],
+    [/\bblend\b/gi, 'общая модель'],
+    [/\bLIVE odds\b/gi, 'коэффициенты в реальном времени'],
+    [/\bTTL\b/g, 'срок обновления'],
+    [/\bH2H\b/g, 'очные встречи'],
+    [/\bSafe defaults restored by administrator\.\b/gi, 'Администратор восстановил безопасные настройки.'],
     [/\bFREE\b/g, 'Бесплатный'],
     [/\bHOLD\b/g, 'ОЖИДАНИЕ'],
     [/\bHTTP\b/g, 'код ответа'],
@@ -984,6 +1001,60 @@ function humanizeTechnicalText(value) {
   ];
   for (const [pattern, replacement] of rules) text = text.replace(pattern, replacement);
   return text;
+}
+
+function publicText(value) {
+  const raw = String(value ?? '');
+  const exact = {
+    high: 'высокий', medium: 'средний', low: 'низкий',
+    active: 'активно', shadow: 'режим наблюдения', baseline: 'базовый режим',
+    full: 'полный режим', 'balanced-free': 'сбалансированный режим', 'quota-saver': 'экономный режим',
+    expanded: 'расширенный режим', standard: 'стандартный режим',
+    fixture: 'данные матча', embedded: 'данные матча', cache: 'кэш',
+    stale: 'резервный кэш', skipped: 'пропущено', error: 'ошибка',
+  };
+  const key = raw.trim().toLowerCase();
+  if (exact[key]) return exact[key];
+  return humanizeTechnicalText(raw)
+    .replace(/\bsignal-level\b/gi, 'по отдельным сигналам')
+    .replace(/\bH2H\b/g, 'очные встречи')
+    .replace(/\bblend\b/gi, 'общая модель');
+}
+
+function dataPolicyModeLabel(value) {
+  const key = String(value || '').toLowerCase();
+  return ({
+    full: 'Полный режим',
+    'balanced-free': 'Сбалансированный режим',
+    'quota-saver': 'Экономный режим',
+    expanded: 'Расширенный режим',
+    standard: 'Стандартный режим',
+  })[key] || publicText(value || 'Стандартный режим');
+}
+
+function calibrationModeLabel(value) {
+  const key = String(value || '').toLowerCase();
+  return key === 'active' ? 'Активная модель'
+    : key === 'shadow' ? 'Кандидат в режиме наблюдения'
+      : 'Базовая модель';
+}
+
+function predictionAdviceLabel(value) {
+  let text = String(value || '');
+  const rules = [
+    [/\bDouble chance\s*:/gi, 'Двойной шанс:'],
+    [/\bCombo Winner\s*:/gi, 'Комбинация — победитель:'],
+    [/\bWinner\s*:/gi, 'Победитель:'],
+    [/\bHome or Draw\b/gi, 'хозяева или ничья'],
+    [/\bAway or Draw\b/gi, 'гости или ничья'],
+    [/\bHome or Away\b/gi, 'хозяева или гости'],
+    [/\band \+([0-9.]+) goals\b/gi, 'и тотал больше $1'],
+    [/\band -([0-9.]+) goals\b/gi, 'и тотал меньше $1'],
+    [/\bgoals\b/gi, 'голов'],
+    [/\bNo prediction\b/gi, 'Прогноз недоступен'],
+  ];
+  for (const [pattern, replacement] of rules) text = text.replace(pattern, replacement);
+  return publicText(text);
 }
 
 function renderProfile() {
@@ -1977,7 +2048,7 @@ function renderRcRegression() {
   const r = state.rcRegression;
   if (!r) {
     badge.className = 'rc-badge';
-    badge.textContent = 'RC29';
+    badge.textContent = 'RC30';
     status.textContent = 'Полная регрессионная проверка ещё не запускалась.';
     meta.textContent = 'Тест безопасный: без полного анализа, без изменения пользовательских данных и без расхода API-Football.';
     summary.innerHTML = '';
@@ -2128,7 +2199,7 @@ function renderRuntimeHistory() {
       <div class="runtime-history-copy">
         <strong>версия ${Number(row.revision || 0)} · ${escapeHtml(runtimeHistoryActionLabel(row.action))}</strong>
         <span>${escapeHtml(runtimeHistorySummary(row.controls || {}))}</span>
-        <small>${row.createdAt ? escapeHtml(dateTime(row.createdAt)) : '—'}${row.reason ? ` · ${escapeHtml(row.reason)}` : ''}${row.sourceRevision ? ` · из версии ${Number(row.sourceRevision)}` : ''}</small>
+        <small>${row.createdAt ? escapeHtml(dateTime(row.createdAt)) : '—'}${row.reason ? ` · ${escapeHtml(humanizeTechnicalText(row.reason))}` : ''}${row.sourceRevision ? ` · из версии ${Number(row.sourceRevision)}` : ''}</small>
       </div>
       ${isCurrent
         ? '<span class="runtime-history-current">АКТИВНО</span>'
@@ -2354,7 +2425,7 @@ async function restoreRuntimeDefaults() {
     expandedDataEnabled: true,
     autoSettlementRecoveryEnabled: false,
     message: '',
-    reason: 'Safe defaults restored by administrator.',
+    reason: 'Администратор восстановил безопасные настройки.',
     action: 'defaults',
   }, { skipConfirm: true });
 }
@@ -4445,7 +4516,7 @@ function playerLeadersHtml(leaders, m) {
 
 function liveAbsencesHtml(absences, match) {
   const side = (title, rows = []) => `<div class="absence-live-side"><h3>${escapeHtml(title)}</h3>${rows.length
-    ? rows.map(x => `<div class="absence-live-row"><strong>${escapeHtml(x.name || 'Игрок')}</strong><span>${escapeHtml(x.reason || x.type || 'Недоступен')}</span></div>`).join('')
+    ? rows.map(x => `<div class="absence-live-row"><strong>${escapeHtml(x.name || 'Игрок')}</strong><span>${escapeHtml(publicText(x.reason || x.type || 'Недоступен'))}</span></div>`).join('')
     : '<p class="muted">Нет подтверждённых данных.</p>'}</div>`;
   return `<div class="absence-live-grid">${side(match.home?.name || 'Хозяева', absences?.home || [])}${side(match.away?.name || 'Гости', absences?.away || [])}</div>`;
 }
@@ -4506,9 +4577,9 @@ function timelineEventsHtml(events = [], match = {}) {
   return `<div class="center-timeline">
     <div class="timeline-club-head"><span>${escapeHtml(match.home?.name || 'Хозяева')}</span><b>Хронология</b><span>${escapeHtml(match.away?.name || 'Гости')}</span></div>
     ${enriched.map(e => `<div class="timeline-row ${escapeHtml(e.side || 'neutral')} ${String(e.type).toLowerCase()==='goal'?'goal':''}">
-      <div class="timeline-home">${e.side==='home' ? `<strong>${escapeHtml(e.player || e.teamName || '')}</strong><span>${escapeHtml(e.label || '')}</span>` : ''}</div>
+      <div class="timeline-home">${e.side==='home' ? `<strong>${escapeHtml(e.player || e.teamName || '')}</strong><span>${escapeHtml(publicText(e.label || ''))}</span>` : ''}</div>
       <div class="timeline-minute"><b>${minuteLabel(e)}</b>${e.goalScore ? `<em>${e.goalScore}</em>` : ''}</div>
-      <div class="timeline-away">${e.side==='away' ? `<strong>${escapeHtml(e.player || e.teamName || '')}</strong><span>${escapeHtml(e.label || '')}</span>` : ''}</div>
+      <div class="timeline-away">${e.side==='away' ? `<strong>${escapeHtml(e.player || e.teamName || '')}</strong><span>${escapeHtml(publicText(e.label || ''))}</span>` : ''}</div>
     </div>`).join('')}
   </div>`;
 }
@@ -4527,13 +4598,13 @@ function centerPlayersHtml(leaders, match) {
 
 function freshnessSourceLabel(source) {
   return ({
-    embedded: 'fixture',
-    api: 'API',
-    cache: 'cache',
-    stale: 'stale',
-    skipped: 'skip',
-    error: 'error',
-  })[source] || source || '—';
+    embedded: 'данные матча',
+    api: 'источник данных',
+    cache: 'кэш',
+    stale: 'резервный кэш',
+    skipped: 'пропущено',
+    error: 'ошибка',
+  })[source] || publicText(source) || '—';
 }
 
 function freshnessAgeLabel(seconds) {
@@ -4547,12 +4618,12 @@ function freshnessAgeLabel(seconds) {
 function centerFreshnessHtml(d) {
   const rows = Object.entries(d.dataFreshness || {});
   if (!rows.length) return '';
-  const names = { events:'События', statistics:'Статистика', players:'Игроки', lineups:'Составы', injuries:'Потери', liveOdds:'LIVE odds' };
+  const names = { events:'События', statistics:'Статистика', players:'Игроки', lineups:'Составы', injuries:'Потери', liveOdds:'Коэффициенты' };
   return `<div class="center-freshness">
     ${rows.map(([key, meta]) => `<div class="${escapeHtml(meta?.source || '')}">
       <span>${escapeHtml(names[key] || key)}</span>
       <strong>${escapeHtml(freshnessSourceLabel(meta?.source))}</strong>
-      <small>${freshnessAgeLabel(meta?.ageSeconds)}${meta?.policy?.ttlSeconds ? ` · TTL ${Math.round(Number(meta.policy.ttlSeconds)/60*10)/10}м` : ''}</small>
+      <small>${freshnessAgeLabel(meta?.ageSeconds)}${meta?.policy?.ttlSeconds ? ` · срок обновления ${Math.round(Number(meta.policy.ttlSeconds)/60*10)/10} мин.` : ''}</small>
     </div>`).join('')}
   </div>`;
 }
@@ -5057,13 +5128,13 @@ function modelWeightsText(weights = {}) {
 }
 
 function bullets(items = [], empty = 'Нет существенных факторов.') {
-  if (!items?.length) return `<p class="muted">${escapeHtml(empty)}</p>`;
-  return `<ul class="list analysis-list">${items.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>`;
+  if (!items?.length) return `<p class="muted">${escapeHtml(publicText(empty))}</p>`;
+  return `<ul class="list analysis-list">${items.map(x => `<li>${escapeHtml(publicText(x))}</li>`).join('')}</ul>`;
 }
 
 function absenceList(title, items) {
   if (!items?.length) return `<div class="data-card"><span>${escapeHtml(title)}</span><strong>Нет данных</strong></div>`;
-  return `<div class="panel"><h2>${escapeHtml(title)}</h2><ul class="list">${items.slice(0, 10).map(x => `<li><strong>${escapeHtml(x.name)}</strong>${x.reason ? ` — ${escapeHtml(x.reason)}` : ''}${x.type ? ` (${escapeHtml(x.type)})` : ''}</li>`).join('')}</ul></div>`;
+  return `<div class="panel"><h2>${escapeHtml(title)}</h2><ul class="list">${items.slice(0, 10).map(x => `<li><strong>${escapeHtml(x.name)}</strong>${x.reason ? ` — ${escapeHtml(publicText(x.reason))}` : ''}${x.type ? ` (${escapeHtml(publicText(x.type))})` : ''}</li>`).join('')}</ul></div>`;
 }
 
 function reminderFor(fixtureId) {
@@ -5184,16 +5255,16 @@ function probabilityStrip(p = {}) {
 function analysisSourceStatus(d) {
   const parts = [];
   if (d.market) parts.push('Рынок');
-  if (d.apiPrediction) parts.push('API');
+  if (d.apiPrediction) parts.push('Прогноз источника данных');
   if (d.recentForm?.home?.overall?.sample || d.recentForm?.away?.overall?.sample) parts.push('Форма');
-  if ((d.h2h?.homeWins || 0) + (d.h2h?.awayWins || 0) + (d.h2h?.draws || 0) > 0) parts.push('H2H');
+  if ((d.h2h?.homeWins || 0) + (d.h2h?.awayWins || 0) + (d.h2h?.draws || 0) > 0) parts.push('Очные встречи');
   if (d.news?.answer) parts.push('Новости');
   return parts.length ? parts.join(' · ') : 'Базовые данные';
 }
 
 function compactAbsence(title, items) {
   if (!items?.length) return `<div class="squad-block"><div class="squad-title">${escapeHtml(title)}</div><p class="muted">Заявленных потерь нет или данные недоступны.</p></div>`;
-  return `<div class="squad-block"><div class="squad-title">${escapeHtml(title)}</div><ul class="compact-list">${items.slice(0, 10).map(x => `<li><strong>${escapeHtml(x.name)}</strong><span>${escapeHtml([x.reason, x.type].filter(Boolean).join(' · '))}</span></li>`).join('')}</ul></div>`;
+  return `<div class="squad-block"><div class="squad-title">${escapeHtml(title)}</div><ul class="compact-list">${items.slice(0, 10).map(x => `<li><strong>${escapeHtml(x.name)}</strong><span>${escapeHtml([x.reason, x.type].filter(Boolean).map(publicText).join(' · '))}</span></li>`).join('')}</ul></div>`;
 }
 
 function lineupBlock(title, lineup) {
@@ -5305,18 +5376,18 @@ function prematchDriverCard(driver, match) {
     <div class="prematch-driver-icon">${escapeHtml(driver.icon || '•')}</div>
     <div class="prematch-driver-body">
       <div class="prematch-driver-kicker">${sideName ? `${escapeHtml(sideName)} · ` : ''}${escapeHtml(strengthText)}</div>
-      <h3>${escapeHtml(driver.title || 'Фактор')}</h3>
-      <p>${escapeHtml(driver.text || '')}</p>
-      ${Number.isFinite(Number(driver.weight)) ? `<div class="driver-weight"><span>Вес в blend</span><strong>${Number(driver.weight).toFixed(1)}%</strong></div>` : ''}
+      <h3>${escapeHtml(publicText(driver.title || 'Фактор'))}</h3>
+      <p>${escapeHtml(publicText(driver.text || ''))}</p>
+      ${Number.isFinite(Number(driver.weight)) ? `<div class="driver-weight"><span>Вес в общей модели</span><strong>${Number(driver.weight).toFixed(1)}%</strong></div>` : ''}
     </div>
   </article>`;
 }
 
 function prematchScenarioCard(scenario) {
   return `<article class="prematch-scenario ${escapeHtml(scenario.tone || 'balanced')}">
-    <div class="prematch-scenario-top"><span>${escapeHtml(scenario.icon || '•')}</span><small>${escapeHtml(scenario.relevance || '')}</small></div>
-    <h3>${escapeHtml(scenario.title || '')}</h3>
-    <p>${escapeHtml(scenario.text || '')}</p>
+    <div class="prematch-scenario-top"><span>${escapeHtml(scenario.icon || '•')}</span><small>${escapeHtml(publicText(scenario.relevance || ''))}</small></div>
+    <h3>${escapeHtml(publicText(scenario.title || ''))}</h3>
+    <p>${escapeHtml(publicText(scenario.text || ''))}</p>
   </article>`;
 }
 
@@ -5325,7 +5396,7 @@ function prematchSourceRow(row, match) {
   return `<div class="prematch-source-row ${row.agreesWithFinal ? 'agree' : 'disagree'}">
     <div class="prematch-source-main">
       <span class="prematch-source-icon">${escapeHtml(row.icon || '•')}</span>
-      <div><strong>${escapeHtml(row.label || '')}</strong><small>Вес ${Number(row.weight || 0).toFixed(1)}%</small></div>
+      <div><strong>${escapeHtml(publicText(row.label || ''))}</strong><small>Вес ${Number(row.weight || 0).toFixed(1)}%</small></div>
     </div>
     <div class="prematch-source-result">
       <strong>${escapeHtml(row.leader || '—')}</strong>
@@ -5346,17 +5417,17 @@ function prematchBriefHtml(pm, match, probabilities) {
     <section class="panel prematch-brief-hero">
       <div class="prematch-brief-top">
         <div>
-          <span class="prematch-brief-label">🧠 MATCH BRIEF</span>
-          <h2>${escapeHtml(pm.headline || 'Предматчевый бриф')}</h2>
+          <span class="prematch-brief-label">🧠 ПРЕДМАТЧЕВЫЙ БРИФ</span>
+          <h2>${escapeHtml(publicText(pm.headline || 'Предматчевый бриф'))}</h2>
         </div>
         <div class="prematch-data-score"><strong>${dataScore}%</strong><span>полнота данных</span></div>
       </div>
-      <p class="prematch-brief-summary">${escapeHtml(pm.summary || '')}</p>
+      <p class="prematch-brief-summary">${escapeHtml(publicText(pm.summary || ''))}</p>
 
       <div class="prematch-brief-kpis">
         <div><span>Главный сценарий</span><strong>${escapeHtml(leader.label || prematchOutcomeName(leader.key, match))}</strong><small>${Number(leader.probability || 0).toFixed(1)}%</small></div>
         <div><span>Отрыв</span><strong>${Number(leader.gap || 0).toFixed(1)} п.п.</strong><small>от второго исхода</small></div>
-        <div><span>Неопределённость</span><strong>${Number(uncertainty.score || 0)}/100</strong><small>${escapeHtml(uncertainty.label || '')}</small></div>
+        <div><span>Неопределённость</span><strong>${Number(uncertainty.score || 0)}/100</strong><small>${escapeHtml(publicText(uncertainty.label || ''))}</small></div>
       </div>
 
       <div class="prematch-hero-probs">
@@ -5379,13 +5450,13 @@ function prematchBriefHtml(pm, match, probabilities) {
 
     <section class="panel">
       <div class="prematch-section-head"><div><h2>Что может изменить оценку до старта</h2><p>Факторы, за которыми стоит следить перед матчем</p></div></div>
-      ${(pm.watch || []).length ? `<div class="prematch-watch-list">${pm.watch.map((x,i)=>`<div><b>${i+1}</b><span>${escapeHtml(x)}</span></div>`).join('')}</div>` : '<div class="empty compact-empty">Критичных ожидаемых изменений по доступным данным нет.</div>'}
+      ${(pm.watch || []).length ? `<div class="prematch-watch-list">${pm.watch.map((x,i)=>`<div><b>${i+1}</b><span>${escapeHtml(publicText(x))}</span></div>`).join('')}</div>` : '<div class="empty compact-empty">Критичных ожидаемых изменений по доступным данным нет.</div>'}
     </section>
 
     <section class="panel">
       <div class="prematch-section-head"><div><h2>Как голосуют источники</h2><p>Каждый источник имеет собственную оценку и вес в объединении</p></div></div>
-      <div class="prematch-source-table">${(pm.sourceRows || []).length ? pm.sourceRows.map(x => prematchSourceRow(x, match)).join('') : '<div class="empty compact-empty">Детальные signal-level данные пока недоступны.</div>'}</div>
-      <p class="tiny warning">${escapeHtml(pm.methodology || '')}</p>
+      <div class="prematch-source-table">${(pm.sourceRows || []).length ? pm.sourceRows.map(x => prematchSourceRow(x, match)).join('') : '<div class="empty compact-empty">Детальные данные по отдельным сигналам пока недоступны.</div>'}</div>
+      <p class="tiny warning">${escapeHtml(publicText(pm.methodology || ''))}</p>
     </section>`;
 }
 
@@ -5444,7 +5515,7 @@ function renderAnalysis(d) {
 
       ${d.preMatchIntelligence ? `<button class="prematch-brief-jump" id="openPrematchBrief" type="button">
         <span>🧠 Предматчевый бриф</span>
-        <strong>${escapeHtml(d.preMatchIntelligence.headline || '')}</strong>
+        <strong>${escapeHtml(publicText(d.preMatchIntelligence.headline || ''))}</strong>
         <small>Открыть причины, сценарии и риски →</small>
       </button>` : ''}
 
@@ -5488,7 +5559,7 @@ function renderAnalysis(d) {
         <div class="dashboard-metric confidence-metric">
           <span>Уверенность модели</span>
           <strong>${confidence.score ?? '—'}/100</strong>
-          <small>${escapeHtml(confidence.label || '—')}</small>
+          <small>${escapeHtml(publicText(confidence.label || '—'))}</small>
           <div class="confidence-bar"><span style="width:${confidenceScore}%"></span></div>
         </div>
         <div class="dashboard-metric">
@@ -5553,7 +5624,7 @@ function renderAnalysis(d) {
           <div class="comparison-score"><span>МЕТРИКИ</span><strong>${Number(comparison.score?.home || 0)} : ${Number(comparison.score?.away || 0)}</strong><small>${Number(comparison.score?.even || 0)} близких</small></div>
           ${comparisonTeamHeader(m.away, 'away', comparison.score?.away)}
         </div>
-        <div class="comparison-balance">${escapeHtml(comparison.balanceLabel || 'Сравнение строится по доступным данным')}</div>
+        <div class="comparison-balance">${escapeHtml(publicText(comparison.balanceLabel || 'Сравнение строится по доступным данным'))}</div>
       </section>
 
       <section class="panel">
@@ -5571,8 +5642,8 @@ function renderAnalysis(d) {
 
       <section class="panel comparison-reuse-panel">
         <div class="comparison-section-head"><h2>♻️ Переиспользование данных</h2><span>+${Number(comparison.dataReuse?.separateApiRequests || 0)} API</span></div>
-        <p>${escapeHtml(comparison.dataReuse?.note || 'Сравнение использует уже загруженные данные.')}</p>
-        <div class="reuse-chips">${(comparison.dataReuse?.sources || []).map(x=>`<span>${escapeHtml(x)}</span>`).join('')}</div>
+        <p>${escapeHtml(publicText(comparison.dataReuse?.note || 'Сравнение использует уже загруженные данные.'))}</p>
+        <div class="reuse-chips">${(comparison.dataReuse?.sources || []).map(x=>`<span>${escapeHtml(publicText(x))}</span>`).join('')}</div>
         <div class="reuse-status"><span>${comparison.dataReuse?.seasonStatsCached ? '✓' : '—'} Сезонная статистика из кэша</span><span>${comparison.dataReuse?.standingsCached ? '✓' : '—'} Таблица из кэша</span></div>
       </section>
     </div>
@@ -5591,11 +5662,11 @@ function renderAnalysis(d) {
         <h2>🧠 Состав модели</h2>
         <p class="muted">${escapeHtml(d.modelBreakdown?.method || 'Модель объединяет доступные статистические сигналы.')}</p>
         <div class="model-weights">${escapeHtml(modelWeightsText(d.modelBreakdown?.weights || {}))}</div>
-      ${d.modelCalibration ? `<div class="analysis-calibration-card ${escapeHtml(d.modelCalibration.mode || 'baseline')}"><span>Калибровка v${escapeHtml(d.modelCalibration.version || '4.0')}</span><strong>${d.modelCalibration.mode === 'active' ? 'Active champion' : d.modelCalibration.mode === 'shadow' ? 'Кандидат в режиме наблюдения' : 'Baseline champion'}</strong><small>${escapeHtml(String(d.modelCalibration.fingerprint || '').slice(0, 8) || 'base')} · n=${Number(d.modelCalibration.sample || 0)} · T=${Number(d.modelCalibration.temperature || 1).toFixed(2)}${d.modelCalibration.weightsActive ? ' · адаптивные веса' : ''}</small></div>` : ''}
+      ${d.modelCalibration ? `<div class="analysis-calibration-card ${escapeHtml(d.modelCalibration.mode || 'baseline')}"><span>Калибровка v${escapeHtml(d.modelCalibration.version || '4.0')}</span><strong>${escapeHtml(calibrationModeLabel(d.modelCalibration.mode))}</strong><small>профиль ${escapeHtml(String(d.modelCalibration.fingerprint || '').slice(0, 8) || 'базовый')} · выборка ${Number(d.modelCalibration.sample || 0)} · коэффициент ${Number(d.modelCalibration.temperature || 1).toFixed(2)}${d.modelCalibration.weightsActive ? ' · адаптивные веса' : ''}</small></div>` : ''}
         <div class="model-api-card">
           <span>Источник API-Football</span>
           <strong>${escapeHtml(pred?.winner || 'Нет данных')}</strong>
-          <small>${escapeHtml(pred?.advice || 'Подсказка недоступна')}</small>
+          <small>${escapeHtml(predictionAdviceLabel(pred?.advice || 'Подсказка недоступна'))}</small>
         </div>
       </section>
     </div>
@@ -5629,9 +5700,9 @@ function renderAnalysis(d) {
           <div><span>Полнота</span><strong>${d.completeness?.score ?? 0}/${d.completeness?.max ?? 10}</strong></div>
           <div><span>Анализ</span><strong>v${escapeHtml(d.analysisVersion || '—')}</strong></div>
           <div><span>Статус</span><strong>${d.stale ? 'Устаревший кэш' : d.cached ? 'Кэш' : 'Свежий'}</strong></div>
-          <div><span>Режим данных</span><strong>${escapeHtml(d.dataPolicy?.mode || 'standard')}</strong></div>
+          <div><span>Режим данных</span><strong>${escapeHtml(dataPolicyModeLabel(d.dataPolicy?.mode || 'standard'))}</strong></div>
         </div>
-        ${d.dataPolicy?.skipped?.length ? `<div class="policy-list"><strong>Что было пропущено для экономии/качества:</strong><ul>${d.dataPolicy.skipped.map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul></div>` : ''}
+        ${d.dataPolicy?.skipped?.length ? `<div class="policy-list"><strong>Что было пропущено для экономии/качества:</strong><ul>${d.dataPolicy.skipped.map(x => `<li>${escapeHtml(publicText(x))}</li>`).join('')}</ul></div>` : ''}
         <p class="tiny warning">${escapeHtml(d.disclaimer || '')}</p>
       </section>
     </div>
