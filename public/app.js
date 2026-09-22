@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.35.0-rc43';
+const CLIENT_VERSION = '6.36.0-rc44';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc43';
+const CLIENT_RELEASE_CHANNEL = 'rc44';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -5245,6 +5245,29 @@ function smartInsightsFullHtml(si, match) {
   </div>`;
 }
 
+function liveAiCoachHtml(ai, match) {
+  if (!ai?.available) return '';
+  const tone = ['holds','weakened','broken','shifted','wait'].includes(ai.state) ? ai.state : 'neutral';
+  const pressure = ai.current?.pressure || {};
+  const xg = ai.current?.xg || {};
+  const pressureText = Number.isFinite(Number(pressure.home)) && Number.isFinite(Number(pressure.away)) ? `${pressure.home}:${pressure.away}` : '—';
+  const xgText = Number.isFinite(Number(xg.home)) && Number.isFinite(Number(xg.away)) ? `${Number(xg.home).toFixed(2)}:${Number(xg.away).toFixed(2)}` : '—';
+  const watch = Array.isArray(ai.watchNext) ? ai.watchNext.slice(0,3) : [];
+  return `<section class="panel live-ai-coach ${tone}">
+    <div class="live-ai-head"><div><span>AI LIVE · ${Number(match.elapsed || 0) ? `${Number(match.elapsed)}′` : 'сейчас'}</span><h2>${escapeHtml(publicText(ai.headline || 'Читаю матч в реальном времени'))}</h2></div><b>${Math.round(Number(ai.confidence || 0))}%</b></div>
+    <p class="live-ai-summary">${escapeHtml(publicText(ai.summary || ''))}</p>
+    <div class="live-ai-decision"><span>Решение AI сейчас</span><strong>${escapeHtml(publicText(ai.action?.label || 'Наблюдать'))}</strong><small>${escapeHtml(publicText(ai.action?.reason || 'Дождитесь более устойчивой картины.'))}</small></div>
+    <div class="live-ai-grid">
+      <div><span>Счёт</span><strong>${match.score?.home ?? 0}:${match.score?.away ?? 0}</strong><small>${Number(match.elapsed || 0) ? `${Number(match.elapsed)} мин.` : 'LIVE'}</small></div>
+      <div><span>Давление</span><strong>${pressureText}</strong><small>${escapeHtml(publicText(ai.current?.pressureLeaderLabel || 'Баланс'))}</small></div>
+      <div><span>xG</span><strong>${xgText}</strong><small>${escapeHtml(publicText(ai.current?.chanceLabel || 'По доступным данным'))}</small></div>
+      <div><span>Риск сценария</span><strong>${escapeHtml(publicText(ai.volatility?.label || 'Средний'))}</strong><small>${escapeHtml(publicText(ai.volatility?.reason || 'Матч может быстро измениться.'))}</small></div>
+    </div>
+    ${ai.prematch?.available ? `<div class="live-ai-prematch"><span>До матча</span><strong>${escapeHtml(publicText(ai.prematch.signal || ai.prematch.outcome || 'AI-разбор'))}</strong><b>${escapeHtml(publicText(ai.prematch.stateLabel || 'сравниваю'))}</b></div>` : `<div class="live-ai-prematch muted"><span>До матча</span><strong>Сохранённого AI-разбора нет</strong><b>читаю только LIVE</b></div>`}
+    ${watch.length ? `<div class="live-ai-watch"><strong>Что смотреть дальше</strong><ul>${watch.map(x=>`<li>${escapeHtml(publicText(x))}</li>`).join('')}</ul></div>` : ''}
+    <p class="live-ai-disclaimer">LIVE-оценка перестраивается при каждом обновлении счёта, событий и статистики. Это объяснение сценария, а не гарантия результата.</p>
+  </section>`;
+}
 function renderMatchCenter(d) {
   const previousFixture = Number(state.currentCenter?.match?.fixtureId || 0);
   state.currentCenter = d;
@@ -5316,6 +5339,7 @@ function renderMatchCenter(d) {
     </div>
 
     <div class="center-tab-panel" data-center-panel="summary">
+      ${live ? liveAiCoachHtml(d.liveAiCoach, m) : ''}
       ${smartInsightsHeroHtml(d.smartInsights, m)}
       ${livePressureHtml(d.livePressure, m)}
       <section class="panel">

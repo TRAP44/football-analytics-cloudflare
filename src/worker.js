@@ -75,11 +75,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.35.0-rc43';
+const APP_VERSION = '6.36.0-rc44';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc43';
-const RC_NAME = 'RC43';
+const RELEASE_CHANNEL = 'rc44';
+const RC_NAME = 'RC44';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1775,7 +1775,7 @@ async function handleTelegramWebhook(request, cfg) {
   }
 
   if (chatId && (/^\/live(?:@\w+)?(?:\s|$)/i.test(text) || /^live$/i.test(text) || /^лайв$/i.test(text))) {
-    await telegramApi('sendMessage', cfg, { chat_id: chatId, text: '🔴 Открываю LIVE-центр: счёт, минута, события, статистика и давление команд по доступным данным.', reply_markup: { inline_keyboard: [[{ text: '🔴 Открыть LIVE', web_app: { url: telegramWebAppUrl(request, { filter: 'live' }) } }]] } });
+    await telegramApi('sendMessage', cfg, { chat_id: chatId, text: '🔴 Открываю AI LIVE-центр: счёт, минута, давление, xG/удары, ключевые события и сравнение с предматчевым сценарием, если он был сохранён.', reply_markup: { inline_keyboard: [[{ text: '🔴 Открыть LIVE', web_app: { url: telegramWebAppUrl(request, { filter: 'live' }) } }]] } });
     return json({ ok: true });
   }
 
@@ -8591,6 +8591,121 @@ function recentEventSummary(events, elapsed, homeName, awayName) {
   return null;
 }
 
+function sideFromPrematchSignal(code = '') {
+  if (['home','double_home'].includes(String(code))) return 'home';
+  if (['away','double_away'].includes(String(code))) return 'away';
+  return 'balanced';
+}
+
+function livePerformanceSide({ statistics, pressure } = {}) {
+  const hxg=smartStat(statistics,'expected_goals','home'), axg=smartStat(statistics,'expected_goals','away');
+  if (hxg !== null && axg !== null && Math.abs(hxg-axg) >= .35) return hxg>axg?'home':'away';
+  const hso=smartStat(statistics,'Shots on Goal','home'), aso=smartStat(statistics,'Shots on Goal','away');
+  if (hso !== null && aso !== null && Math.abs(hso-aso) >= 2) return hso>aso?'home':'away';
+  if (pressure?.leader === 'home' || pressure?.leader === 'away') return pressure.leader;
+  return 'balanced';
+}
+
+function liveMarketShift(oddsMovement = null) {
+  const p=oddsMovement?.probabilityChange;
+  if (!p) return null;
+  const rows=[['home',Number(p.home||0)],['draw',Number(p.draw||0)],['away',Number(p.away||0)]].sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
+  const [side,delta]=rows[0] || [];
+  if (!side || Math.abs(delta) < 3) return null;
+  return { side, delta:Math.round(delta*10)/10 };
+}
+
+function buildLiveAiCoach({ statistics, events, pressure, score, elapsed, homeName, awayName, smartInsights, prematch, oddsMovement } = {}) {
+  const minute=Number(elapsed||0);
+  const hg=Number(score?.home||0), ag=Number(score?.away||0);
+  const hxg=smartStat(statistics,'expected_goals','home'), axg=smartStat(statistics,'expected_goals','away');
+  const hred=smartStat(statistics,'Red Cards','home')||0, ared=smartStat(statistics,'Red Cards','away')||0;
+  const performanceSide=livePerformanceSide({statistics,pressure});
+  const pressureLeader=pressure?.leader || 'balanced';
+  const pressureLeaderLabel=pressureLeader==='home'?homeName:pressureLeader==='away'?awayName:'Баланс';
+  const chanceSide=hxg!==null&&axg!==null&&Math.abs(hxg-axg)>=.25?(hxg>axg?'home':'away'):performanceSide;
+  const chanceLabel=chanceSide==='home'?`${homeName} опаснее`:chanceSide==='away'?`${awayName} опаснее`:'Без явного перевеса';
+  const recent=recentEventSummary(events,minute,homeName,awayName);
+  const marketShift=liveMarketShift(oddsMovement);
+  const pre= prematch?.aiInstructor || null;
+  const preSignal=pre?.betSignal || null;
+  const expectedSide=sideFromPrematchSignal(preSignal?.code);
+  let support=0, contradiction=0;
+  if (preSignal?.code === 'skip') contradiction += 1;
+  if (expectedSide==='home' || expectedSide==='away') {
+    const other=expectedSide==='home'?'away':'home';
+    const expectedGoals=expectedSide==='home'?hg:ag, otherGoals=other==='home'?hg:ag;
+    if (performanceSide===expectedSide) support += 1.2;
+    if (pressureLeader===expectedSide && Math.abs(Number(pressure?.home||0)-Number(pressure?.away||0))>=12) support += .8;
+    if (expectedGoals>otherGoals) support += minute>=45?1.2:.7;
+    if (performanceSide===other) contradiction += 1.2;
+    if (otherGoals>expectedGoals) contradiction += minute>=45?1.5:.8;
+    if ((expectedSide==='home'?hred:ared) > (other==='home'?hred:ared)) contradiction += 1.8;
+  } else if (preSignal?.code === 'over25') {
+    const totalGoals=hg+ag, totalXg=(hxg??0)+(axg??0);
+    if (totalGoals>=2 || (minute<=60 && totalXg>=1.8)) support += 2;
+    if (minute>=60 && totalGoals===0 && totalXg<1.2) contradiction += 2;
+  } else if (preSignal?.code === 'btts') {
+    if (hg>0 && ag>0) support += 2;
+    if (minute>=65 && (hg===0 || ag===0) && ((hg===0?hxg:axg)??0)<.5) contradiction += 1.8;
+  }
+  if (recent?.leader && recent.leader===expectedSide) support += .5;
+  if (recent?.leader && expectedSide!=='balanced' && recent.leader!==expectedSide && recent.leader!=='balanced') contradiction += .5;
+
+  let state='neutral', stateLabel='Пока без вывода';
+  if (!pre) { state='shifted'; stateLabel='Нет предматчевого снимка'; }
+  else if (preSignal?.code === 'skip') { state='wait'; stateLabel='До матча: пропуск'; }
+  else if (contradiction>=3 && contradiction>support+1) { state='broken'; stateLabel='Сценарий сломан'; }
+  else if (contradiction>=1.8 && contradiction>support) { state='weakened'; stateLabel='Сценарий ослаб'; }
+  else if (support>=1.8 && support>=contradiction+.5) { state='holds'; stateLabel='Сценарий подтверждается'; }
+  else { state='shifted'; stateLabel='Сценарий меняется'; }
+
+  const dataScore=Number(smartInsights?.dataScore||0);
+  const confidence=Math.max(20,Math.min(92,Math.round(dataScore*.68 + Math.min(90,minute)/90*14 + (pressure?8:0) + ((events||[]).length?6:0))));
+  const recentCritical=(events||[]).some(e=>Number(e.minute||0)>=Math.max(0,minute-10) && (String(e.type||'').toLowerCase()==='goal' || (String(e.type||'').toLowerCase()==='card' && String(e.detail||'').toLowerCase().includes('red'))));
+  let volatilityLabel='Средний', volatilityReason='Картина матча может измениться после одного ключевого эпизода.';
+  if (hred!==ared || recentCritical || Math.abs(Number(marketShift?.delta||0))>=8) { volatilityLabel='Высокий'; volatilityReason='Есть удаление, недавнее ключевое событие или резкий сдвиг рынка.'; }
+  else if (minute>=75 && Math.abs(hg-ag)<=1) { volatilityLabel='Высокий'; volatilityReason='Концовка близкого матча — один эпизод может полностью изменить сценарий.'; }
+  else if (Math.abs(Number(pressure?.home||50)-Number(pressure?.away||50))<10) { volatilityLabel='Умеренный'; volatilityReason='По текущим показателям матч остаётся достаточно ровным.'; }
+
+  let action={code:'watch',label:'Наблюдать',reason:'Собираю ещё несколько устойчивых сигналов по ходу матча.'};
+  if (confidence<45 || dataScore<35) action={code:'wait',label:'Ждать больше данных',reason:'Покрытия пока мало для уверенного live-вывода.'};
+  else if (state==='broken') action={code:'avoid',label:'Не опираться на предматчевый сигнал',reason:'Текущий счёт и игровая картина заметно противоречат исходному сценарию.'};
+  else if (state==='weakened') action={code:'watch',label:'Сценарий под вопросом',reason:'Есть признаки против исходной идеи; важны следующие 5–10 минут.'};
+  else if (state==='holds' && confidence>=62) action={code:'hold',label:'Сценарий подтверждается',reason:'Счёт и/или качество игры пока не противоречат предматчевой идее.'};
+  else if (!pre) action={code:'watch',label:'Читать матч по LIVE-данным',reason:'Предматчевого AI-снимка нет, поэтому сравнение строится только по текущей игре.'};
+
+  const watch=[];
+  if (pressureLeader==='home' || pressureLeader==='away') watch.push(`${pressureLeaderLabel}: сохранится ли перевес по давлению в следующие 5–10 минут.`);
+  if (hxg!==null && axg!==null) watch.push(`xG сейчас ${hxg.toFixed(2)}:${axg.toFixed(2)} — важно, продолжает ли расти преимущество по качеству моментов.`);
+  if (hred!==ared) watch.push('Удаление меняет базовый сценарий: отдельно следите за ударами и территорией после красной карточки.');
+  else if (recent?.text) watch.push(recent.text);
+  if (marketShift) { const n=marketShift.side==='home'?homeName:marketShift.side==='away'?awayName:'ничью'; watch.push(`Рынок заметно сдвинулся в сторону ${n}: ${marketShift.delta>0?'+':''}${marketShift.delta} п.п. по расчётной вероятности.`); }
+  if (!watch.length) watch.push('Следите за ударами в створ, xG и первым заметным изменением давления.');
+
+  const mainTeam=performanceSide==='home'?homeName:performanceSide==='away'?awayName:'';
+  let headline='Матч пока читается осторожно';
+  if (state==='holds') headline='Предматчевый сценарий держится';
+  else if (state==='weakened') headline='Предматчевый сценарий ослабевает';
+  else if (state==='broken') headline='Матч ушёл против предматчевого сценария';
+  else if (!pre && mainTeam) headline=`${mainTeam} выглядит убедительнее по LIVE-данным`;
+  else if (mainTeam) headline=`${mainTeam} сейчас выглядит активнее`;
+  const summary=state==='broken'
+    ? 'AI больше не считает корректным опираться на исходную предматчевую идею без переоценки текущих данных.'
+    : state==='weakened'
+      ? 'Часть текущих сигналов расходится с тем, что ожидалось до матча. Live-картина важнее старого прогноза.'
+      : state==='holds'
+        ? 'Текущие данные в целом поддерживают исходный сценарий, но красная карточка, гол или резкий сдвиг давления могут быстро его изменить.'
+        : 'AI оценивает только то, что реально видно сейчас по счёту, событиям, статистике и рынку.';
+
+  return {
+    available:Boolean(smartInsights?.available || pressure || (events||[]).length), state, headline, summary, confidence,
+    action, volatility:{label:volatilityLabel,reason:volatilityReason},
+    current:{pressure:pressure?{home:Number(pressure.home),away:Number(pressure.away)}:null,pressureLeaderLabel,chanceLabel,xg:{home:hxg,away:axg},performanceSide,marketShift},
+    prematch:{available:Boolean(pre),signal:preSignal?.label||'',outcome:pre?.verdict?.outcome||'',confidence:Number(pre?.confidenceScore||0),stateLabel},
+    watchNext:watch.slice(0,3),
+  };
+}
 function buildSmartMatchInsights({
   statistics, events, pressure, score, elapsed, status,
   homeName, awayName, playerLeaders, absences,
@@ -10833,7 +10948,7 @@ async function apiMatchCenter(request, cfg) {
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'Номер матча обязателен.' }, 400);
 
   // Shared across all users. During LIVE it expires after 60 seconds.
-  const baseCacheKey = `match-center:${fixtureId}:v9-quota-orchestrator`;
+  const baseCacheKey = `match-center:${fixtureId}:v10-ai-live-coach`;
   const cached = await getCache(baseCacheKey, cfg);
   if (cached) return json({ ...cached, cached: true });
 
@@ -10975,6 +11090,20 @@ async function apiMatchCenter(request, cfg) {
     absences,
   }) : null;
 
+  const prematchAnalysis = live ? await getStaleCache(`fixture:${fixtureId}:v10-ai-instructor`, cfg).catch(() => null) : null;
+  const liveAiCoach = live ? buildLiveAiCoach({
+    statistics: formattedStatistics,
+    events: formattedEvents,
+    pressure,
+    score: scoreSnapshot(fixture),
+    elapsed,
+    homeName,
+    awayName,
+    smartInsights,
+    prematch: prematchAnalysis,
+    oddsMovement,
+  }) : null;
+
   const payload = {
     generatedAt: new Date().toISOString(),
     mode: live ? 'live' : finished ? 'finished' : 'upcoming',
@@ -11003,6 +11132,7 @@ async function apiMatchCenter(request, cfg) {
     statistics: formattedStatistics,
     livePressure: pressure,
     smartInsights,
+    liveAiCoach,
     playerLeaders,
     lineups,
     absences,
@@ -11536,6 +11666,9 @@ export default {
         analyzedMatchHub: 'enabled',
         telegramLastVerdict: 'enabled',
         historyAnalysisCacheFix: 'enabled',
+        aiLiveCoach: 'enabled',
+        prematchLiveComparison: 'enabled',
+        liveScenarioGuard: 'enabled',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
