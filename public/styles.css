@@ -2376,7 +2376,7 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 
 
 /* RC37 — explainable personal recommendations */
-.rc-panel:before { content:"RC39"; }
+.rc-panel:before { content:"RC40"; }
 .overview-action.recommended b { color:var(--accent); }
 .match-signal.favorite-signal { color:#fbbf24; border-color:rgba(251,191,36,.28); background:rgba(251,191,36,.07); }
 .profile-data-details { margin:0 0 12px; border:1px solid var(--line-soft); border-radius:17px; background:color-mix(in srgb,var(--surface) 72%,transparent); overflow:hidden; }
@@ -2442,3 +2442,46 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 .league-filter-drawer .popular-competitions { margin:10px 10px 12px; padding-top:10px; border-top:1px solid var(--line-soft); }
 .league-filter-drawer .popular-competitions .mini-section-head { margin-bottom:8px; }
 .league-filter-drawer.has-active-filter > summary span { color:var(--accent); font-weight:850; }
+
+
+/* RC40 — AI football instructor, premium startup and betting-context brief */
+.boot-gate{overflow:hidden;background:radial-gradient(circle at 50% 20%,color-mix(in srgb,var(--accent) 22%,transparent),transparent 31%),radial-gradient(circle at 15% 82%,rgba(34,197,94,.10),transparent 30%),linear-gradient(180deg,#07110d 0%,var(--bg) 52%,#070b12 100%)}
+.boot-card{position:relative;width:min(100%,410px);padding:28px 22px 22px;border:1px solid color-mix(in srgb,var(--accent) 26%,var(--line));border-radius:28px;background:color-mix(in srgb,var(--surface) 88%,transparent);box-shadow:0 28px 90px rgba(0,0,0,.36);backdrop-filter:blur(18px)}
+.boot-orbit{position:absolute;inset:-70px auto auto 50%;width:240px;height:240px;transform:translateX(-50%);pointer-events:none}
+.boot-orbit i{position:absolute;inset:0;border:1px solid color-mix(in srgb,var(--accent) 18%,transparent);border-radius:50%;animation:aiOrbit 8s linear infinite}
+.boot-orbit i:nth-child(2){inset:28px;animation-duration:6s;animation-direction:reverse}
+.boot-orbit i:nth-child(3){inset:58px;animation-duration:4s}
+.boot-logo{position:relative;z-index:1;width:78px;height:78px;border-radius:25px;box-shadow:0 0 0 8px color-mix(in srgb,var(--accent) 7%,transparent),0 24px 60px color-mix(in srgb,var(--accent) 22%,transparent)}
+.boot-logo span{font-size:24px;letter-spacing:-.04em}
+.boot-kicker{position:relative;z-index:1;margin-top:2px}
+.boot-card h1{position:relative;z-index:1;font-size:25px}
+.boot-feature-row{display:flex;justify-content:center;flex-wrap:wrap;gap:6px;margin:14px 0 13px}
+.boot-feature-row span{border:1px solid var(--line);border-radius:999px;padding:6px 9px;background:rgba(148,163,184,.045);font-size:9px;font-weight:800;color:var(--hint)}
+.boot-progress{height:6px;background:rgba(148,163,184,.09)}
+.boot-progress i{box-shadow:0 0 18px color-mix(in srgb,var(--accent) 42%,transparent)}
+.boot-progress-caption{display:flex;justify-content:space-between;gap:10px;margin-top:7px;color:var(--hint);font-size:8px}
+.boot-progress-caption span{color:var(--accent);font-weight:950;letter-spacing:.12em}
+.boot-progress-caption b{font-weight:650}
+@keyframes aiOrbit{to{transform:rotate(360deg)}}
+.ai-instructor-card{position:relative;overflow:hidden;border-color:color-mix(in srgb,var(--accent) 36%,var(--line));background:linear-gradient(150deg,color-mix(in srgb,var(--accent) 9%,var(--surface)),var(--surface) 58%)}
+.ai-instructor-card:after{content:"";position:absolute;width:160px;height:160px;border-radius:50%;right:-70px;top:-90px;background:color-mix(in srgb,var(--accent) 10%,transparent);filter:blur(2px)}
+.ai-instructor-card.skip{border-color:color-mix(in srgb,var(--warn) 35%,var(--line))}
+.ai-instructor-head{position:relative;z-index:1;display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:13px}
+.ai-instructor-head span{display:block;color:var(--accent);font-size:8px;font-weight:950;letter-spacing:.12em;margin-bottom:4px}
+.ai-instructor-head h2{font-size:18px}
+.ai-instructor-head>b{width:38px;height:38px;display:grid;place-items:center;border-radius:13px;background:var(--accent);color:var(--accent-text);font-size:13px;box-shadow:0 10px 24px color-mix(in srgb,var(--accent) 20%,transparent)}
+.ai-instructor-main{position:relative;z-index:1;display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:10px}
+.ai-instructor-pick,.ai-instructor-facts>div{border:1px solid var(--line);border-radius:15px;padding:12px;background:rgba(148,163,184,.035)}
+.ai-instructor-pick>span,.ai-instructor-facts span{display:block;color:var(--hint);font-size:9px}
+.ai-instructor-pick>strong{display:block;font-size:20px;line-height:1.1;margin:7px 0}
+.ai-instructor-pick>small,.ai-instructor-facts small{display:block;color:var(--hint);font-size:9px;line-height:1.4;margin-top:4px}
+.ai-instructor-facts{display:grid;grid-template-columns:1fr;gap:7px}
+.ai-instructor-facts strong{display:block;font-size:12px;margin-top:3px}
+.ai-instructor-reasons,.ai-instructor-risks{position:relative;z-index:1;margin-top:11px;padding-top:10px;border-top:1px solid var(--line)}
+.ai-instructor-reasons>strong,.ai-instructor-risks>strong{font-size:10px}
+.ai-instructor-reasons ul,.ai-instructor-risks ul{margin:7px 0 0;padding-left:18px;color:var(--hint);font-size:10px;line-height:1.45}
+.ai-instructor-disclaimer{position:relative;z-index:1;margin:11px 0 0;color:var(--hint);font-size:8px;line-height:1.45}
+.analysis-referee-line{display:inline-flex;align-items:center;gap:7px;margin:7px auto 0;border:1px solid var(--line);border-radius:999px;padding:6px 9px;color:var(--hint);font-size:9px}
+.analysis-referee-line strong{color:var(--text);font-size:9px}
+@media(max-width:520px){.ai-instructor-main{grid-template-columns:1fr}.boot-card{padding:25px 17px 20px}.boot-feature-row{gap:5px}}
+@media(prefers-reduced-motion:reduce){.boot-orbit i{animation:none}}

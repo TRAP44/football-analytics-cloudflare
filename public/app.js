@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.31.0-rc39';
+const CLIENT_VERSION = '6.32.0-rc40';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc39';
+const CLIENT_RELEASE_CHANNEL = 'rc40';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -714,7 +714,7 @@ async function runStartupSequence() {
   if ($('bootContinueBtn')) $('bootContinueBtn').hidden = true;
   if ($('bootReloadBtn')) $('bootReloadBtn').hidden = true;
 
-  setBootStatus('Запускаю приложение', 'Проверяю совместимость версии…', 12);
+  setBootStatus('Запускаю AI-инструктора', 'Проверяю версию и готовлю футбольные данные…', 12);
   const manifest = await loadAppManifest();
 
   if (state.compatibilityBlocked) {
@@ -727,7 +727,7 @@ async function runStartupSequence() {
   }
 
   setBootStatus(
-    'Подключаю данные',
+    'Собираю футбольный контекст',
     manifest ? `${manifest.releaseCandidate || CLIENT_RELEASE_CHANNEL.toUpperCase()} · версия обмена данными ${manifest.apiContract}` : 'Манифест временно недоступен — продолжаю в безопасном режиме.',
     38
   );
@@ -758,7 +758,8 @@ async function runStartupSequence() {
     return false;
   }
 
-  setBootStatus('Готово', state.startup.degraded ? 'Запуск выполнен с ограниченной проверкой версии.' : 'Версия и основные данные проверены.', 100);
+  applyLaunchIntent();
+  setBootStatus('AI-инструктор готов', state.startup.degraded ? 'Основные данные доступны, часть проверок завершится позже.' : 'Матчи, форма, составы, рынок и контекст готовы к разбору.', 100);
   await new Promise(resolve => setTimeout(resolve, 120));
   hideBootGate();
 
@@ -5967,6 +5968,56 @@ function prematchBriefHtml(pm, match, probabilities) {
     </section>`;
 }
 
+function aiInstructorHtml(ai = {}, match = {}) {
+  const signal = ai.betSignal || {};
+  const factors = Array.isArray(ai.factors) ? ai.factors.slice(0, 3) : [];
+  const risks = Array.isArray(ai.risks) ? ai.risks.slice(0, 2) : [];
+  const signalClass = signal.code === 'skip' ? 'skip' : signal.code === 'watch' ? 'watch' : 'active';
+  const confidenceText = Number.isFinite(Number(ai.confidenceScore)) ? `${Math.round(Number(ai.confidenceScore))}/100` : 'данных мало';
+  return `
+    <section class="panel ai-instructor-card ${signalClass}">
+      <div class="ai-instructor-head">
+        <div><span>AI ФУТБОЛЬНЫЙ ИНСТРУКТОР</span><h2>Мой разбор перед матчем</h2></div>
+        <b>AI</b>
+      </div>
+      <div class="ai-instructor-main">
+        <div class="ai-instructor-pick">
+          <span>Что рассмотреть</span>
+          <strong>${escapeHtml(signal.label || 'Сначала изучить матч')}</strong>
+          <small>${escapeHtml(publicText(signal.reason || 'Собираю доступные сигналы и риски.'))}</small>
+        </div>
+        <div class="ai-instructor-facts">
+          <div><span>Уверенность</span><strong>${escapeHtml(ai.confidenceLabel || '—')}</strong><small>${confidenceText}</small></div>
+          <div><span>Риск</span><strong>${escapeHtml(ai.riskLabel || '—')}</strong><small>${escapeHtml(publicText(ai.riskNote || 'Оценивайте несколько факторов.'))}</small></div>
+          <div><span>Судья</span><strong>${escapeHtml(ai.referee || match.referee || 'Ещё не указан')}</strong><small>${escapeHtml(publicText(ai.refereeNote || 'Назначение судьи может появиться ближе к матчу.'))}</small></div>
+        </div>
+      </div>
+      ${factors.length ? `<div class="ai-instructor-reasons"><strong>Почему так</strong><ul>${factors.map(x => `<li>${escapeHtml(publicText(x))}</li>`).join('')}</ul></div>` : ''}
+      ${risks.length ? `<div class="ai-instructor-risks"><strong>Что может сломать сценарий</strong><ul>${risks.map(x => `<li>${escapeHtml(publicText(x))}</li>`).join('')}</ul></div>` : ''}
+      <p class="ai-instructor-disclaimer">Это аналитический сигнал по данным матча, а не гарантия результата. Если сигнал слабый, лучший вариант — пропустить ставку.</p>
+    </section>`;
+}
+
+let launchIntentHandled = false;
+function applyLaunchIntent() {
+  if (launchIntentHandled) return;
+  launchIntentHandled = true;
+  const params = new URLSearchParams(location.search);
+  const filter = String(params.get('filter') || '').toLowerCase();
+  const view = String(params.get('view') || '').toLowerCase();
+  if (['top', 'live', 'favorites', 'all'].includes(filter)) {
+    state.filter = filter;
+    syncFilterButtons();
+    if (state.matches.length) renderMatches();
+  }
+  if (view === 'search') {
+    renderDiscoveryHome();
+    renderGlobalSearch();
+    showView('searchView');
+  } else {
+    showView('matchesView', { restore: true });
+  }
+}
 function renderAnalysis(d) {
   if (!d) return;
   const previousFixture = Number(state.currentAnalysis?.match?.fixtureId || 0);
@@ -5997,6 +6048,7 @@ function renderAnalysis(d) {
         <span>${escapeHtml(m.league || 'Турнир')}${m.country ? ` · ${escapeHtml(m.country)}` : ''}</span>
         <span>${dateTime(m.date)}</span>
       </div>
+      ${m.referee ? `<div class="analysis-referee-line"><span>🧑‍⚖️ Судья</span><strong>${escapeHtml(m.referee)}</strong></div>` : ''}
 
       <div class="match-experience-teams">
         <div class="experience-team">
@@ -6046,6 +6098,8 @@ function renderAnalysis(d) {
     </section>
 
     ${d.stale ? `<section class="panel stale-panel"><strong>⚠️ Использован последний сохранённый анализ</strong><p>${escapeHtml(d.warning || 'Свежие данные временно недоступны из-за ограничения источника данных.')}</p></section>` : ''}
+
+    ${aiInstructorHtml(d.aiInstructor || {}, m)}
 
     <div class="analysis-tabs" role="tablist">
       <button class="analysis-tab-btn" data-tab="brief" type="button">Главное</button>
