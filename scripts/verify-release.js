@@ -9,15 +9,15 @@ const staticHeaders = fs.readFileSync('public/_headers', 'utf8');
 const styles = fs.readFileSync('public/styles.css', 'utf8');
 const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml', 'utf8');
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
-const expected = `${pkg.version}-rc50`;
+const expected = `${pkg.version}-rc51`;
 const failures = [];
 
 if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) failures.push('package-lock version must match package.json');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC50'")) failures.push('Worker RC name must be RC50');
+if (!worker.includes("const RC_NAME = 'RC51'")) failures.push('Worker RC name must be RC51');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc50'")) failures.push('Client release channel must be rc50');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc51'")) failures.push('Client release channel must be rc51');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -34,8 +34,8 @@ if (!fs.existsSync('.github/workflows/rollback-production.yml')) failures.push('
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
-if (!deployWorkflow.includes('--message "RC50 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC50');
-if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.42.0-rc50"')) failures.push('Production smoke must verify 6.42.0-rc50');
+if (!deployWorkflow.includes('--message "RC51 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC51');
+if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.43.0-rc51"')) failures.push('Production smoke must verify 6.43.0-rc51');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
 if (!/id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden/.test(html)) failures.push('Admin role badge must use the fail-closed admin-only visibility contract');
 if (!/\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i.test(styles)) failures.push('Global hidden elements must remain display:none');
@@ -68,6 +68,7 @@ if (!fs.existsSync('test/telegram-button-ui-rc47.test.js')) failures.push('Missi
 if (!fs.existsSync('test/telegram-inline-ai-rc48.test.js')) failures.push('Missing RC48 Telegram inline-AI regression test');
 if (!fs.existsSync('test/public-product-rc49.test.js')) failures.push('Missing RC49 public-product regression test');
 if (!fs.existsSync('test/fm-ai-news-rc50.test.js')) failures.push('Missing RC50 FM AI News regression test');
+if (!fs.existsSync('test/media-launch-ux-rc51.test.js')) failures.push('Missing RC51 media-launch UX regression test');
 if (!fs.existsSync('test/ai-instructor-rc43.test.js')) failures.push('Missing RC43 persistent-AI regression test');
 if (!fs.existsSync('test/ai-instructor-rc42.test.js')) failures.push('Missing RC42 referee/AI-focus regression test');
 if (!worker.includes('function loadRefereeHistoryProfile')) failures.push('RC44 referee history loader is missing');
@@ -174,3 +175,9 @@ if (!worker.includes('tavilyNewsSearch') || !worker.includes("topic:'news'")) fa
 if (!worker.includes('footballNewsCategory') || !worker.includes('footballNewsImpactText')) failures.push('RC50 news classification/impact contract is missing');
 if (!worker.includes('sendFavoriteTeamNews') || !worker.includes('currentMorningFootballNews')) failures.push('RC50 personalized/morning news flows are missing');
 if (!worker.includes("newsMiniAppSeparation: 'enabled'") || html.includes('id="newsView"')) failures.push('RC50 news must stay out of the Mini App shell');
+
+if (!worker.includes("publicTelegramOnboarding: 'enabled'") || !worker.includes("mediaLaunchUx: 'enabled'")) failures.push('RC51 public onboarding health contract is missing');
+if (!worker.includes('favoriteMatchTeamRow') || !worker.includes('favorite:toggle:')) failures.push('RC51 inline favorites are missing');
+if (!worker.includes('editMessageReplyMarkup') || !worker.includes('toggleBotFavorite')) failures.push('RC51 in-place favorite UX is missing');
+if (!worker.includes('FM AI · MATCH') || !worker.includes("brandedMatchCards: 'enabled'")) failures.push('RC51 branded match card is missing');
+if (!worker.includes("telegramSearchAliasParity: 'enabled'") || !worker.includes("Number(plan.best?.score || 0) < 280")) failures.push('RC51 short Telegram alias parity is missing');

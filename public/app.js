@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.42.0-rc50';
+const CLIENT_VERSION = '6.43.0-rc51';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc50';
+const CLIENT_RELEASE_CHANNEL = 'rc51';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';

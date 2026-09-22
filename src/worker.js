@@ -75,11 +75,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.42.0-rc50';
+const APP_VERSION = '6.43.0-rc51';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc50';
-const RC_NAME = 'RC50';
+const RELEASE_CHANNEL = 'rc51';
+const RC_NAME = 'RC51';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1535,15 +1535,35 @@ function footballBotKeyboard(request) {
   };
 }
 
-function footballMatchActionKeyboard(request, match = {}, searchUrl = '') {
+function favoriteTeamIdSet(rows = []) {
+  return new Set((rows || []).map(x=>Number(x.team_id || x.teamId || 0)).filter(Boolean));
+}
+
+function favoriteMatchTeamRow(match = {}, favorites = []) {
+  const fav=favoriteTeamIdSet(favorites);
+  const fixtureId=Number(match?.fixtureId || 0);
+  const teams=[match?.home,match?.away].filter(x=>Number(x?.id || 0)>0 && x?.name);
+  if (!teams.length) return [];
+  return teams.map(team=>({
+    text:`${fav.has(Number(team.id))?'★':'☆'} ${String(team.name || 'Команда').slice(0,22)}`,
+    callback_data:`favorite:toggle:${Number(team.id)}:${fixtureId}`,
+  }));
+}
+
+function footballMatchActionKeyboard(request, match = {}, searchUrl = '', favorites = []) {
   const fixtureId = Number(match?.fixtureId || 0);
   if (!fixtureId) return footballBotKeyboard(request);
+  const favoriteRow=favoriteMatchTeamRow(match,favorites);
   if (match?.live || match?.finished) {
-    const rows = [[{ text: match.live ? '🔴 Открыть LIVE-центр' : '📋 Открыть центр матча', web_app: { url: telegramWebAppUrl(request, { fixtureId, action: 'center' }) } }]];
+    const rows = [];
+    if (favoriteRow.length) rows.push(favoriteRow);
+    rows.push([{ text: match.live ? '🔴 Открыть LIVE-центр' : '📋 Открыть центр матча', web_app: { url: telegramWebAppUrl(request, { fixtureId, action: 'center' }) } }]);
     if (searchUrl) rows.push([{ text: '🔎 Вернуться к поиску', web_app: { url: searchUrl } }]);
     return { inline_keyboard: rows };
   }
-  const rows = [
+  const rows = [];
+  if (favoriteRow.length) rows.push(favoriteRow);
+  rows.push(
     [
       { text: '🧠 AI-вердикт', callback_data: `match:verdict:${fixtureId}` },
       { text: '🧑‍⚖️ Судья', callback_data: `match:referee:${fixtureId}` },
@@ -1553,10 +1573,10 @@ function footballMatchActionKeyboard(request, match = {}, searchUrl = '') {
       { text: '💹 Рынок и риски', callback_data: `match:market:${fixtureId}` },
     ],
     [
-      { text: '🔄 Проверить AI', callback_data: `match:refresh:${fixtureId}` },
-      { text: '📊 Полный разбор', web_app: { url: telegramWebAppUrl(request, { fixtureId, action: 'analysis', tab: 'overview' }) } },
+      { text: '🔄 Обновить AI', callback_data: `match:refresh:${fixtureId}` },
+      { text: '📊 Полный AI-разбор', web_app: { url: telegramWebAppUrl(request, { fixtureId, action: 'analysis', tab: 'overview' }) } },
     ],
-  ];
+  );
   if (searchUrl) rows.push([{ text: '🔎 Другие результаты', web_app: { url: searchUrl } }]);
   return { inline_keyboard: rows };
 }
@@ -1564,9 +1584,12 @@ function footballMatchActionKeyboard(request, match = {}, searchUrl = '') {
 function normalizeBotFixtureCard(match = {}) {
   const fixtureId = Number(match?.fixtureId || match?.fixture?.id || 0);
   const status = String(match?.status || match?.fixture?.status?.short || '');
-  const homeName = String(match?.home?.name || match?.homeName || match?.teams?.home?.name || 'Хозяева');
-  const awayName = String(match?.away?.name || match?.awayName || match?.teams?.away?.name || 'Гости');
-  const league = String(match?.league?.name || match?.league || 'Турнир');
+  const homeSource=match?.home || match?.teams?.home || {};
+  const awaySource=match?.away || match?.teams?.away || {};
+  const homeName = String(homeSource?.name || match?.homeName || 'Хозяева');
+  const awayName = String(awaySource?.name || match?.awayName || 'Гости');
+  const leagueSource=match?.league;
+  const league = String((typeof leagueSource==='object' ? leagueSource?.name : leagueSource) || match?.leagueShort || 'Турнир');
   return {
     fixtureId,
     date:String(match?.date || match?.fixture?.date || ''),
@@ -1574,11 +1597,15 @@ function normalizeBotFixtureCard(match = {}) {
     statusLabel:String(match?.statusLabel || statusLabel(status, match?.fixture?.status?.elapsed)),
     live:Boolean(match?.live) || isLiveStatus(status),
     finished:Boolean(match?.finished) || isFinishedStatus(status),
-    home:{name:homeName},
-    away:{name:awayName},
+    elapsed:Number(match?.elapsed || match?.fixture?.status?.elapsed || 0) || null,
+    home:{id:Number(homeSource?.id || 0),name:homeName,logo:String(homeSource?.logo || '')},
+    away:{id:Number(awaySource?.id || 0),name:awayName,logo:String(awaySource?.logo || '')},
     homeName,
     awayName,
     league,
+    leagueId:Number(match?.leagueId || (typeof leagueSource==='object' ? leagueSource?.id : 0) || 0),
+    country:String(match?.country || (typeof leagueSource==='object' ? leagueSource?.country : '') || ''),
+    round:String(match?.roundLabel || match?.round || (typeof leagueSource==='object' ? leagueSource?.round : '') || ''),
   };
 }
 
@@ -1586,18 +1613,34 @@ async function rememberBotFixtureCards(matches = [], cfg) {
   await Promise.allSettled((matches || []).map(async match => {
     const card = normalizeBotFixtureCard(match);
     if (!card.fixtureId) return;
-    await setCache(`bot:fixture-card:${card.fixtureId}:v1`, card.fixtureId, { match:card, savedAt:new Date().toISOString() }, cfg, 180);
+    const writes=[setCache(`bot:fixture-card:${card.fixtureId}:v2`, card.fixtureId, { match:card, savedAt:new Date().toISOString() }, cfg, 180)];
+    for (const team of [card.home,card.away]) {
+      if (Number(team?.id || 0)>0 && team?.name) writes.push(setCache(`bot:team-card:${Number(team.id)}:v1`,Number(team.id),{team,savedAt:new Date().toISOString()},cfg,720));
+    }
+    await Promise.allSettled(writes);
   }));
+}
+
+async function loadBotTeamCard(teamId,cfg) {
+  const id=Number(teamId || 0);
+  if (!id) return null;
+  const cached=await getCache(`bot:team-card:${id}:v1`,cfg).catch(()=>null);
+  if (cached?.team?.name) return cached.team;
+  return null;
 }
 
 async function loadBotFixtureCard(fixtureId, cfg) {
   const id = Number(fixtureId || 0);
   if (!id) return null;
-  const saved = await getCache(`bot:fixture-card:${id}:v1`, cfg).catch(()=>null);
+  const saved = await getCache(`bot:fixture-card:${id}:v2`, cfg).catch(()=>null);
   if (saved?.match) return normalizeBotFixtureCard(saved.match);
   const analyzed = await getCache(`fixture:${id}:v10-ai-instructor`, cfg).catch(()=>null);
-  if (analyzed?.match) return normalizeBotFixtureCard(analyzed.match);
-  if (!freeQuotaHealthy(6,1)) return { fixtureId:id, home:{name:'Матч'}, away:{name:String(id)}, homeName:'Матч', awayName:String(id), league:'Футбол', live:false, finished:false };
+  if (analyzed?.match) {
+    const card=normalizeBotFixtureCard(analyzed.match);
+    await rememberBotFixtureCards([card],cfg);
+    return card;
+  }
+  if (!freeQuotaHealthy(6,1)) return { fixtureId:id, home:{id:0,name:'Матч',logo:''}, away:{id:0,name:String(id),logo:''}, homeName:'Матч', awayName:String(id), league:'Футбол', live:false, finished:false };
   const fixture = (await apiFootball('/fixtures',{id},cfg).catch(()=>[]))[0];
   if (!fixture) return null;
   const card = normalizeBotFixtureCard(fixture);
@@ -1605,23 +1648,45 @@ async function loadBotFixtureCard(fixtureId, cfg) {
   return card;
 }
 
-function botFixtureCardText(match = {}) {
-  const card = normalizeBotFixtureCard(match);
-  const status = card.live ? `🔴 ${card.statusLabel || 'Матч идёт'}` : card.finished ? 'Матч завершён' : digestTime(card.date);
-  return `⚽ <b>${telegramHtmlEscape(card.homeName)} — ${telegramHtmlEscape(card.awayName)}</b>\n${telegramHtmlEscape(card.league)} · ${telegramHtmlEscape(status)}\n\nВыберите, что хотите узнать:`;
+function botFixtureDateTime(iso = '') {
+  const d=new Date(iso || '');
+  if (!Number.isFinite(d.getTime())) return 'время уточняется';
+  return new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:'UTC'}).format(d)+' UTC';
 }
 
-async function sendBotFixtureMenu(request, cfg, chatId, fixtureId) {
-  const match = await loadBotFixtureCard(fixtureId, cfg);
+function botFixtureCardText(match = {}, { aiReady=false } = {}) {
+  const card = normalizeBotFixtureCard(match);
+  const status = card.live ? `🔴 ${card.statusLabel || 'Матч идёт'}` : card.finished ? '✅ Матч завершён' : `🗓 ${botFixtureDateTime(card.date)}`;
+  const round=card.round ? ` · ${telegramHtmlEscape(card.round)}` : '';
+  const aiState=card.finished ? '📋 Доступен центр матча' : aiReady ? '🧠 AI-разбор уже сохранён' : '🧠 AI готов собрать полный разбор';
+  return [
+    '⚽ <b>FM AI · MATCH</b>',
+    '',
+    `<b>${telegramHtmlEscape(card.homeName)} — ${telegramHtmlEscape(card.awayName)}</b>`,
+    `${telegramHtmlEscape(card.league)}${round}`,
+    telegramHtmlEscape(status),
+    `<i>${telegramHtmlEscape(aiState)}</i>`,
+    '',
+    'Выберите нужный блок. ☆/★ добавляет клуб в «Мои команды».',
+  ].join('\n');
+}
+
+async function sendBotFixtureMenu(request, cfg, userId, chatId, fixtureId) {
+  const [match,favorites,analysis] = await Promise.all([
+    loadBotFixtureCard(fixtureId,cfg),
+    getFavorites(userId,cfg).catch(()=>[]),
+    getCache(`fixture:${Number(fixtureId)}:v10-ai-instructor`,cfg).catch(()=>null),
+  ]);
   if (!match) {
     await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'Матч больше не найден в доступных данных.',reply_markup:footballBotKeyboard(request)});
     return;
   }
+  await rememberBotFixtureCards([match],cfg);
   await telegramApi('sendMessage',cfg,{
     chat_id:chatId,
     parse_mode:'HTML',
-    text:botFixtureCardText(match),
-    reply_markup:footballMatchActionKeyboard(request,match),
+    text:botFixtureCardText(match,{aiReady:Boolean(analysis)}),
+    reply_markup:footballMatchActionKeyboard(request,match,'',favorites),
   });
 }
 
@@ -1738,11 +1803,14 @@ async function sendBotFixtureSection(request, cfg, userId, chatId, fixtureId, se
       : section === 'squads' ? botSquadsText(data)
         : section === 'market' ? botMarketRiskText(data)
           : botAiVerdictText(data);
+    const match=normalizeBotFixtureCard(data.match);
+    await rememberBotFixtureCards([match],cfg);
+    const favorites=await getFavorites(userId,cfg).catch(()=>[]);
     await telegramApi('sendMessage',cfg,{
       chat_id:chatId,
       parse_mode:'HTML',
       text,
-      reply_markup:footballMatchActionKeyboard(request, normalizeBotFixtureCard(data.match)),
+      reply_markup:footballMatchActionKeyboard(request, match, '', favorites),
     });
   } catch (error) {
     const status=Number(error?.status || 0);
@@ -1759,22 +1827,53 @@ async function sendBotFixtureSection(request, cfg, userId, chatId, fixtureId, se
   }
 }
 
+async function toggleBotFavorite(userId, teamId, cfg) {
+  const id=Number(teamId || 0);
+  if (!id) throw new Error('Команда не определена.');
+  const favorites=await getFavorites(userId,cfg);
+  const current=favorites.find(x=>Number(x.team_id)===id);
+  if (current) {
+    await removeFavorite(userId,id,cfg);
+    return {active:false,team:{id,name:current.team_name || 'Команда',logo:current.team_logo || ''}};
+  }
+  const team=await loadBotTeamCard(id,cfg);
+  if (!team?.name) throw new Error('Данные клуба устарели. Откройте карточку матча заново.');
+  await addFavorite(userId,team,cfg);
+  return {active:true,team};
+}
+
 async function configureFootballBot(request, cfg, chatId) {
   const appUrl = telegramWebAppUrl(request);
   await Promise.allSettled([
     telegramApi('setMyCommands', cfg, { commands: [] }),
     telegramApi('setMyName', cfg, { name: 'FM AI • Футбольный Инструктор' }),
     telegramApi('setMyShortDescription', cfg, { short_description: 'AI-разбор матчей + важные футбольные новости, составы, судья, рынок и риски.' }),
-    telegramApi('setMyDescription', cfg, { description: 'FM AI помогает разбирать футбольные матчи и следить за важными новостями. Контент — в Telegram, полный AI-анализ выбранного матча — в Mini App.' }),
+    telegramApi('setMyDescription', cfg, { description: 'FM AI — футбольный AI-инструктор. Матчи, LIVE и новости — в Telegram. Выберите матч и откройте минимальный Mini App для полного AI-разбора.' }),
     telegramApi('setChatMenuButton', cfg, { chat_id: chatId, menu_button: { type: 'web_app', text: '⚽ FM AI', web_app: { url: appUrl } } }),
   ]);
 }
 
-async function sendFootballBotHome(request, cfg, chatId) {
+async function sendFootballBotHome(request, cfg, chatId, telegramUser = {}) {
+  const firstName=String(telegramUser?.first_name || '').trim().slice(0,40);
+  const hello=firstName ? `Привет, <b>${telegramHtmlEscape(firstName)}</b>.` : 'Привет.';
   await telegramApi('sendMessage', cfg, {
     chat_id: chatId,
     parse_mode: 'HTML',
-    text: '<b>⚽ FM AI · Футбольный Инструктор</b>\n\nЯ помогаю быстро понять матч до стартового свистка и во время игры.\n\n🧠 AI-идея и сценарий\n📈 форма и очные встречи\n👥 составы, травмы и потери\n🧑‍⚖️ судья и контекст\n💹 рынок, коэффициенты и риски\n📰 важные новости и их футбольный контекст\n🔴 LIVE-картина матча\n\n<b>Всё управление — кнопками под полем ввода.</b> Можно и просто написать «Арсенал» или «Интер — Милан». Если данных мало или сигнал слабый, я прямо скажу, что матч лучше пропустить.',
+    text: [
+      '⚽ <b>FM AI · Футбольный Инструктор</b>',
+      '',
+      `${hello} Здесь футбол превращается в понятный контекст, а не в стену статистики.`,
+      '',
+      '<b>Как начать:</b>',
+      '1️⃣ Нажмите «Матчи сегодня» или «Найти матч».',
+      '2️⃣ В карточке выберите AI-вердикт, составы, судью или рынок.',
+      '3️⃣ «Полный AI-разбор» откроет минимальный Mini App с глубоким анализом.',
+      '',
+      '📰 Новости и LIVE остаются здесь, в Telegram.',
+      '⭐ Отмечайте команды прямо в карточке матча — по ним появятся персональные матчи и новости.',
+      '',
+      '<i>Если данных недостаточно или сценарий слабый, FM AI прямо предложит пропустить матч.</i>',
+    ].join('\n'),
     reply_markup: footballBotKeyboard(request),
   });
 }
@@ -1813,6 +1912,8 @@ function digestFixtureRows(fixtures = [], limit = 3) {
     const status = String(f.fixture?.status?.short || '');
     return {
       fixtureId:Number(f.fixture?.id || 0), date:f.fixture?.date || '', status, live:isLiveStatus(status),
+      home:{id:Number(f.teams?.home?.id || 0),name:homeName,logo:String(f.teams?.home?.logo || '')},
+      away:{id:Number(f.teams?.away?.id || 0),name:awayName,logo:String(f.teams?.away?.logo || '')},
       homeName, awayName, league:competition.shortName || competition.name || f.league?.name || 'Турнир',
       score:matchInterestScore({ competition, leagueId, leagueName:f.league?.name || '', country:f.league?.country || '', homeName, awayName, status, date:f.fixture?.date || '' }),
       priority:Number(competition.priority || 0), featured:Boolean(competition.featured),
@@ -1916,7 +2017,7 @@ async function botTeamIdMatches(teamId,cfg) {
 async function sendBotFavoriteTeams(request,cfg,userId,chatId) {
   const favorites=await getFavorites(userId,cfg);
   if (!favorites.length) {
-    await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'⭐ Избранных команд пока нет. Добавление клубов в избранное перенесём в Telegram-карточки клуба.',reply_markup:footballBotKeyboard(request)});
+    await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'⭐ <b>Мои команды пока пусты</b>\n\nОткройте любой матч и нажмите ☆ рядом с нужным клубом. После этого здесь появятся его ближайшие игры, а в FM AI News — персональные новости.',parse_mode:'HTML',reply_markup:footballBotKeyboard(request)});
     return;
   }
   const rows=favorites.slice(0,12).map(x=>[{text:`⭐ ${String(x.team_name || 'Команда').slice(0,40)}`,callback_data:`favorite:team:${Number(x.team_id)}`}]);
@@ -2079,8 +2180,8 @@ async function botCachedDayMatches(parts, cfg) {
 
 async function botRemoteTeamMatches(parts, cfg) {
   const query = String(parts.first || '').trim();
-  if (query.length < 3 || !freeQuotaHealthy(10,2)) return [];
   const plan=topTeamSearchPlan(query);
+  if ((query.length < 3 && Number(plan.best?.score || 0) < 280) || !freeQuotaHealthy(10,2)) return [];
   const q = searchText(plan.providerQuery || query);
   const teamCacheKey = `search:teams:${encodeURIComponent(q)}:v2-global`;
   let teams = (await getCache(teamCacheKey,cfg).catch(()=>null))?.teams || [];
@@ -2111,7 +2212,7 @@ async function botRemoteTeamMatches(parts, cfg) {
     .slice(0,3);
 }
 
-async function sendBotFootballSearch(request, cfg, chatId, rawText) {
+async function sendBotFootballSearch(request, cfg, userId, chatId, rawText) {
   const parts=botSearchParts(rawText);
   if (parts.query.length < 2) {
     await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'Напишите название команды или вопрос о матче. Например: «Арсенал», «что поставить на Арсенал — Челси» или «кто судья Интер — Милан».',reply_markup:{inline_keyboard:[[{text:'🔎 Открыть поиск',web_app:{url:telegramWebAppUrl(request,{view:'search'})}}]]}});
@@ -2124,15 +2225,16 @@ async function sendBotFootballSearch(request, cfg, chatId, rawText) {
     await telegramApi('sendMessage',cfg,{
       chat_id:chatId,
       parse_mode:'HTML',
-      text:`🔎 По запросу <b>${telegramHtmlEscape(parts.query)}</b> я не нашёл подходящий матч в доступных данных. Откройте поиск приложения — там можно посмотреть команды, турниры, прошедшие и предстоящие игры.`,
+      text:`🔎 По запросу <b>${telegramHtmlEscape(parts.query)}</b> подходящий матч сейчас не найден. Попробуйте полное название клуба или откройте AI-поиск — он ищет команды глобально по разным лигам и странам.`,
       reply_markup:{inline_keyboard:[[{text:'🔎 Искать в приложении',web_app:{url:searchUrl}}]]},
     });
     return;
   }
   await rememberBotFixtureCards(matches, cfg);
+  const favorites=await getFavorites(userId,cfg).catch(()=>[]);
   const rows=matches.map((match,index)=>botMatchLine(match,index));
   const replyMarkup = matches.length === 1
-    ? footballMatchActionKeyboard(request, matches[0], searchUrl)
+    ? footballMatchActionKeyboard(request, normalizeBotFixtureCard(matches[0]), searchUrl, favorites)
     : { inline_keyboard: [
         ...matches.map(match=>[{text:botMatchButtonText(match),callback_data:`match:menu:${Number(match.fixtureId)}`}]),
         [{text:'🔎 Все результаты поиска',web_app:{url:searchUrl}}],
@@ -2140,7 +2242,7 @@ async function sendBotFootballSearch(request, cfg, chatId, rawText) {
   await telegramApi('sendMessage',cfg,{
     chat_id:chatId,
     parse_mode:'HTML',
-    text:[`<b>${telegramHtmlEscape(botIntentLead(parts))}</b>`,`Запрос: «${telegramHtmlEscape(parts.query)}»`,'',...rows,'',matches.length === 1 ? 'Выберите, что именно хотите узнать о матче:' : 'Выберите матч — откроется его AI-разбор.'].join('\n'),
+    text:[`<b>${telegramHtmlEscape(botIntentLead(parts))}</b>`,`Запрос: «${telegramHtmlEscape(parts.query)}»`,'',...rows,'',matches.length === 1 ? 'Матч найден. Выберите нужный блок:' : 'Выберите матч — откроется его карточка FM AI.'].join('\n'),
     reply_markup:replyMarkup,
   });
 }
@@ -2250,6 +2352,25 @@ async function handleTelegramWebhook(request, cfg) {
       await sendFavoriteTeamNews(request,cfg,callbackUserId,callbackChatId,Number(newsTeamRefresh[1]),{force:true});
       return json({ok:true});
     }
+    const favoriteToggle=data.match(/^favorite:toggle:(\d+):(\d+)$/);
+    if (callbackChatId && favoriteToggle) {
+      const teamId=Number(favoriteToggle[1]), fixtureId=Number(favoriteToggle[2]);
+      try {
+        const result=await toggleBotFavorite(callbackUserId,teamId,cfg);
+        await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:result.active?`★ ${result.team.name} добавлен в «Мои команды»`:`☆ ${result.team.name} удалён из «Моих команд»`}).catch(()=>null);
+        if (fixtureId && cb.message?.message_id) {
+          const [match,favorites]=await Promise.all([loadBotFixtureCard(fixtureId,cfg),getFavorites(callbackUserId,cfg)]);
+          if (match) await telegramApi('editMessageReplyMarkup',cfg,{
+            chat_id:callbackChatId,
+            message_id:Number(cb.message.message_id),
+            reply_markup:footballMatchActionKeyboard(request,match,'',favorites),
+          }).catch(()=>null);
+        }
+      } catch (error) {
+        await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:error?.message || 'Не удалось изменить избранное',show_alert:true}).catch(()=>null);
+      }
+      return json({ok:true});
+    }
     const favoriteAction=data.match(/^favorite:team:(\d+)$/);
     if (callbackChatId && favoriteAction) {
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Ищу матчи клуба…'}).catch(()=>null);
@@ -2264,7 +2385,7 @@ async function handleTelegramWebhook(request, cfg) {
         callback_query_id: cb.id,
         text: section === 'menu' ? 'Открываю карточку матча' : 'Собираю футбольные данные…',
       }).catch(()=>null);
-      if (section === 'menu') await sendBotFixtureMenu(request, cfg, callbackChatId, fixtureId);
+      if (section === 'menu') await sendBotFixtureMenu(request, cfg, callbackUserId, callbackChatId, fixtureId);
       else await sendBotFixtureSection(request, cfg, callbackUserId, callbackChatId, fixtureId, section === 'refresh' ? 'verdict' : section);
       return json({ ok: true });
     }
@@ -2314,7 +2435,7 @@ async function handleTelegramWebhook(request, cfg) {
   const chatId = msg?.chat?.id;
   if (chatId && /^\/start(?:@\w+)?(?:\s|$)/i.test(text)) {
     await configureFootballBot(request, cfg, chatId);
-    await sendFootballBotHome(request, cfg, chatId);
+    await sendFootballBotHome(request, cfg, chatId, msg.from || {});
     return json({ ok: true });
   }
 
@@ -2357,7 +2478,7 @@ async function handleTelegramWebhook(request, cfg) {
   }
 
   if (chatId && /^\/(?:search|ask)(?:@\w+)?(?:\s|$)/i.test(text)) {
-    await sendBotFootballSearch(request, cfg, chatId, text);
+    await sendBotFootballSearch(request, cfg, Number(msg.from?.id || chatId), chatId, text);
     return json({ ok: true });
   }
 
@@ -2385,12 +2506,12 @@ async function handleTelegramWebhook(request, cfg) {
 
   if (chatId && /^(?:меню|главное меню|старт)$/i.test(text)) {
     await configureFootballBot(request, cfg, chatId);
-    await sendFootballBotHome(request, cfg, chatId);
+    await sendFootballBotHome(request, cfg, chatId, msg.from || {});
     return json({ ok: true });
   }
 
   if (chatId && text && !text.startsWith('/')) {
-    await sendBotFootballSearch(request, cfg, chatId, text);
+    await sendBotFootballSearch(request, cfg, Number(msg.from?.id || chatId), chatId, text);
   }
 
   return json({ ok: true });
@@ -12596,6 +12717,11 @@ export default {
         favoriteTeamNews: 'enabled',
         morningNewsDigest: 'enabled',
         newsMiniAppSeparation: 'enabled',
+        publicTelegramOnboarding: 'enabled',
+        inlineFavoriteTeams: 'enabled',
+        brandedMatchCards: 'enabled',
+        telegramSearchAliasParity: 'enabled',
+        mediaLaunchUx: 'enabled',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',

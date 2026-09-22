@@ -1,10 +1,10 @@
-# QA Release Checklist — v6.42.0 RC50
+# QA Release Checklist — v6.43.0 RC51
 
 ## Deploy
 
 - применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql`, `supabase_migration_v6_11_1.sql` и `supabase_migration_v6_12.sql` и `supabase_migration_v6_13.sql` и `supabase_migration_v6_14.sql`;
-- Worker/client = `6.42.0-rc50`;
-- package = `6.42.0`;
+- Worker/client = `6.43.0-rc51`;
+- package = `6.43.0`;
 - cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;
@@ -89,6 +89,22 @@
 - слабое покрытие приводит к «Ждать больше данных»;
 - сломанный сценарий приводит к «Не опираться на предматчевый сигнал»;
 - никаких новых таблиц или внешних провайдеров RC44 не добавляет.
+
+## RC51 — Public Telegram UX
+
+- новый /start не показывает slash-меню и объясняет продукт через кнопочный сценарий;
+- Telegram first_name экранируется перед вставкой в HTML-приветствие;
+- match card отображает «FM AI · MATCH», турнир, UTC-время/статус и состояние сохранённого AI-разбора;
+- нормализованная Telegram-карточка сохраняет реальные home/away team IDs и logos;
+- ☆/★ доступны непосредственно в карточке выбранного матча;
+- favorite callback содержит только числовые teamId/fixtureId и укладывается в лимит callback_data Telegram;
+- добавление/удаление использует существующие `addFavorite/removeFavorite`, то есть единый Supabase-источник с Mini App;
+- после toggle клавиатура обновляется через `editMessageReplyMarkup`, без спама новыми сообщениями;
+- если team card устарел, favorite toggle завершается понятным alert и не создаёт выдуманный клуб;
+- «Мои команды» при пустом состоянии объясняет, как добавить первую команду;
+- короткий алиас «МЮ» разрешается только если глобальный каталог дал точное известное совпадение;
+- кнопки AI-разбора, новости клуба и ближайшие матчи продолжают использовать тот же favorite state;
+- новых таблиц и миграций RC51 нет.
 
 ## RC50 — FM AI News
 
