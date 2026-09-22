@@ -31,8 +31,8 @@ test('referee is normalized into a structured context object', () => {
 });
 
 test('telegram morning digest is opt-in and persisted securely', () => {
-  assert.match(worker, /command: 'digest'/);
-  assert.match(worker, /command: 'digest_off'/);
+  assert.match(worker, /callback_data:\s*'digest:on'/);
+  assert.match(worker, /callback_data:\s*'digest:off'/);
   assert.match(worker, /processDailyDigests/);
   assert.match(worker, /bot_digest_subscriptions/);
   assert.match(migration, /enable row level security/);
