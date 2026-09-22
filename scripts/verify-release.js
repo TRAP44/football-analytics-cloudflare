@@ -9,15 +9,15 @@ const staticHeaders = fs.readFileSync('public/_headers', 'utf8');
 const styles = fs.readFileSync('public/styles.css', 'utf8');
 const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml', 'utf8');
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
-const expected = `${pkg.version}-rc47`;
+const expected = `${pkg.version}-rc48`;
 const failures = [];
 
 if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) failures.push('package-lock version must match package.json');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC47'")) failures.push('Worker RC name must be RC47');
+if (!worker.includes("const RC_NAME = 'RC48'")) failures.push('Worker RC name must be RC48');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc47'")) failures.push('Client release channel must be rc47');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc48'")) failures.push('Client release channel must be rc48');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -34,8 +34,8 @@ if (!fs.existsSync('.github/workflows/rollback-production.yml')) failures.push('
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
-if (!deployWorkflow.includes('--message "RC47 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC47');
-if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.39.0-rc47"')) failures.push('Production smoke must verify 6.39.0-rc47');
+if (!deployWorkflow.includes('--message "RC48 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC48');
+if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.40.0-rc48"')) failures.push('Production smoke must verify 6.40.0-rc48');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
 if (!/id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden/.test(html)) failures.push('Admin role badge must use the fail-closed admin-only visibility contract');
 if (!/\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i.test(styles)) failures.push('Global hidden elements must remain display:none');
@@ -65,6 +65,7 @@ if (!fs.existsSync('test/live-ai-rc44.test.js')) failures.push('Missing RC44 AI 
 if (!fs.existsSync('test/ai-experience-rc45.test.js')) failures.push('Missing RC45 ranking/bot regression test');
 if (!fs.existsSync('test/ai-instructor-rc46.test.js')) failures.push('Missing RC46 AI trust/intent regression test');
 if (!fs.existsSync('test/telegram-button-ui-rc47.test.js')) failures.push('Missing RC47 Telegram button-first regression test');
+if (!fs.existsSync('test/telegram-inline-ai-rc48.test.js')) failures.push('Missing RC48 Telegram inline-AI regression test');
 if (!fs.existsSync('test/ai-instructor-rc43.test.js')) failures.push('Missing RC43 persistent-AI regression test');
 if (!fs.existsSync('test/ai-instructor-rc42.test.js')) failures.push('Missing RC42 referee/AI-focus regression test');
 if (!worker.includes('function loadRefereeHistoryProfile')) failures.push('RC44 referee history loader is missing');
@@ -142,7 +143,7 @@ if (!app.includes('function liveAiCoachHtml') || !app.includes('d.liveAiCoach'))
 
 if (!worker.includes("aiMatchRanking: 'enabled'") || !worker.includes("analyzedSkipLane: 'enabled'")) failures.push('RC45 AI ranking contract is missing');
 if (!worker.includes("botNaturalFootballSearch: 'enabled'") || !worker.includes("botFixtureDeepLinks: 'enabled'")) failures.push('RC45 bot search contract is missing');
-if (!worker.includes('function sendBotFootballSearch') || !worker.includes("command: 'search'")) failures.push('RC45 natural bot search is missing');
+if (!worker.includes('function sendBotFootballSearch') || !worker.includes('function botSearchParts')) failures.push('RC45 natural bot search is missing');
 if (!app.includes('AI-РЕЙТИНГ ДНЯ') || !app.includes('openLaunchFixture')) failures.push('RC45 ranked home/deep-link UI is missing');
 
 if (!worker.includes("aiDataTrust: 'enabled'") || !worker.includes("aiMatchPlan: 'enabled'")) failures.push('RC46 AI trust/plan contract is missing');
@@ -154,3 +155,8 @@ if (!worker.includes("botPersistentKeyboard: 'enabled'") || !worker.includes("bo
 if (!worker.includes("botSlashMenuHidden: 'enabled'") || !worker.includes("botProfileBranding: 'enabled'")) failures.push('RC47 Telegram branding contract is missing');
 if (!worker.includes("commands: []") || !worker.includes("is_persistent: true")) failures.push('RC47 slash-menu removal/persistent keyboard is missing');
 if (!worker.includes('footballMatchActionKeyboard') || !app.includes("params.get('tab')")) failures.push('RC47 match action deep-link contract is missing');
+
+if (!worker.includes("botInlineAiVerdict: 'enabled'") || !worker.includes("botInlineMatchSections: 'enabled'")) failures.push('RC48 inline Telegram AI contract is missing');
+if (!worker.includes("botCachedAnalysisReuse: 'enabled'") || !worker.includes("botMatchCardCallbacks: 'enabled'")) failures.push('RC48 cached Telegram analysis contract is missing');
+if (!worker.includes('function botAiVerdictText') || !worker.includes('function sendBotFixtureSection')) failures.push('RC48 Telegram verdict renderer is missing');
+if (!worker.includes("callback_data: `match:verdict:") || !worker.includes("callback_data:`match:menu:")) failures.push('RC48 match callbacks are missing');

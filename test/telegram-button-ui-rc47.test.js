@@ -23,8 +23,8 @@ test('bot profile is branded as FM AI',()=> {
 
 test('single match search exposes action buttons',()=> {
   assert.match(worker,/function footballMatchActionKeyboard/);
-  assert.match(worker,/🧠 AI-идея/);
-  assert.match(worker,/🧑‍⚖️ Судья и контекст/);
+  assert.match(worker,/🧠 AI-вердикт/);
+  assert.match(worker,/🧑‍⚖️ Судья/);
   assert.match(worker,/👥 Составы и потери/);
   assert.match(worker,/💹 Рынок и риски/);
   assert.match(worker,/📊 Полный разбор/);
