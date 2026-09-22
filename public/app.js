@@ -926,7 +926,10 @@ function technicalStateLabel(value) {
     expanded:'расширенный режим', standard:'стандартный режим', embedded:'данные матча',
     api:'источник данных', cache:'кэш', stale:'резервный кэш', skipped:'пропущено', error:'ошибка',
     memory:'временное хранилище', supabase:'Supabase',
-  })[key] || String(value || '—');
+    clean:'норма', watch:'требует внимания', migration:'нужна миграция', fallback:'резервный режим',
+    running:'выполняется', completed:'завершено', partial:'частично', blocked:'заблокировано',
+    unknown:'не определено', info:'информация',
+  })[key] || humanizeTechnicalText(value || '—');
 }
 
 function humanizeTechnicalText(value) {
@@ -965,6 +968,8 @@ function humanizeTechnicalText(value) {
     [/\benrichment\b/gi, 'обогащение данных'],
     [/\bholdout\b/gi, 'отложенная выборка'],
     [/\btrusted\b/gi, 'доверенные'],
+    [/\bActive champion\b/gi, 'активная модель'],
+    [/\bBaseline champion\b/gi, 'базовая активная модель'],
     [/\bchampion\b/gi, 'активная модель'],
     [/\bchallenger\b/gi, 'кандидат'],
     [/\bbaseline\b/gi, 'базовый профиль'],
@@ -988,14 +993,12 @@ function humanizeTechnicalText(value) {
     [/\bconfidence\b/gi, 'уверенность'],
     [/\bBrier\s+score\b/gi, 'ошибка Брайера'],
     [/\bBrier\b/gi, 'ошибка Брайера'],
-    [/\bActive champion\b/gi, 'активная модель'],
-    [/\bBaseline champion\b/gi, 'базовая активная модель'],
     [/\bsignal-level\b/gi, 'по отдельным сигналам'],
     [/\bblend\b/gi, 'общая модель'],
     [/\bLIVE odds\b/gi, 'коэффициенты в реальном времени'],
     [/\bTTL\b/g, 'срок обновления'],
     [/\bH2H\b/g, 'очные встречи'],
-    [/\bSafe defaults restored by administrator\.\b/gi, 'Администратор восстановил безопасные настройки.'],
+    [/Safe defaults restored by administrator\./gi, 'Администратор восстановил безопасные настройки.'],
     [/\bFREE\b/g, 'Бесплатный'],
     [/\bHOLD\b/g, 'ОЖИДАНИЕ'],
     [/\bHTTP\b/g, 'код ответа'],
@@ -1023,6 +1026,22 @@ function humanizeTechnicalText(value) {
     [/\berror\b/gi, 'ошибка'],
     [/\broute\b/gi, 'маршрут'],
     [/\bclient\b/gi, 'клиент'],
+    [/\bactive\b/gi, 'активный'],
+    [/\bstatus\b/gi, 'статус'],
+    [/\bmode\b/gi, 'режим'],
+    [/\bwatch\b/gi, 'наблюдение'],
+    [/\bclean\b/gi, 'норма'],
+    [/\bunknown\b/gi, 'не определено'],
+    [/\bavailable\b/gi, 'доступно'],
+    [/\bunavailable\b/gi, 'недоступно'],
+    [/\bstored\b/gi, 'сохранённый'],
+    [/\bincomplete\b/gi, 'неполный'],
+    [/\bscore\b/gi, 'счёт'],
+    [/\boutcome\b/gi, 'исход'],
+    [/\bchanged\b/gi, 'изменён'],
+    [/\bfinal\b/gi, 'финальный'],
+    [/\bmatch\b/gi, 'совпадение'],
+    [/\bsecond[- ]pass\b/gi, 'повторная проверка'],
   ];
   for (const [pattern, replacement] of rules) text = text.replace(pattern, replacement);
   return text.replace(/_/g, ' ').replace(/\s{2,}/g, ' ').trim();
@@ -2114,7 +2133,7 @@ function renderRcRegression() {
   };
   groups.innerHTML = `<div class="rc-group-grid">${Object.entries(r.groups || {}).map(([key,g]) => `
     <div class="${Number(g.fail || 0) ? 'fail' : Number(g.warn || 0) ? 'warn' : 'pass'}">
-      <span>${escapeHtml(groupLabels[key] || key)}</span>
+      <span>${escapeHtml(groupLabels[key] || humanizeTechnicalText(key))}</span>
       <strong>${Number(g.pass || 0)}/${Number(g.total || 0)}</strong>
       <small>${Number(g.warn || 0)} предупреждений · ${Number(g.fail || 0)} ошибок</small>
     </div>`).join('')}</div>`;
@@ -2130,7 +2149,7 @@ function renderRcRegression() {
       <div class="${escapeHtml(x.state || 'warn')}">
         <i>${x.state === 'pass' ? '✓' : x.state === 'fail' ? '×' : '!'}</i>
         <span><strong>${escapeHtml(humanizeTechnicalText(x.label || ''))}</strong><small>${escapeHtml(humanizeTechnicalText(x.detail || ''))}</small></span>
-        <em>${x.blocking ? 'обязательно' : (groupLabels[x.group] || x.group)}</em>
+        <em>${x.blocking ? 'обязательно' : (groupLabels[x.group] || humanizeTechnicalText(x.group))}</em>
       </div>`).join('')}</div>
   </details>
   <p class="tiny">${escapeHtml(humanizeTechnicalText(r.policy?.note || ''))}</p>`;
@@ -3011,7 +3030,7 @@ function renderProviderAudit() {
     </div>
     <div class="provider-endpoint-grid">${endpoints.map(x => `
       <div class="provider-endpoint-row ${escapeHtml(x.state || '')}">
-        <div><strong>${escapeHtml(x.label || x.key || '')}</strong><small>${escapeHtml(humanizeTechnicalText(x.note || ''))}</small></div>
+        <div><strong>${escapeHtml(humanizeTechnicalText(x.label || x.key || ''))}</strong><small>${escapeHtml(humanizeTechnicalText(x.note || ''))}</small></div>
         <span>${providerAuditStateLabel(x.state)}</span>
         <em>${Number.isFinite(Number(x.latencyMs)) ? `${Number(x.latencyMs)} мс` : ''}</em>
       </div>`).join('')}</div>
