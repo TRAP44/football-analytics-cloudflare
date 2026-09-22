@@ -2376,7 +2376,7 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 
 
 /* RC37 — explainable personal recommendations */
-.rc-panel:before { content:"RC38"; }
+.rc-panel:before { content:"RC39"; }
 .overview-action.recommended b { color:var(--accent); }
 .match-signal.favorite-signal { color:#fbbf24; border-color:rgba(251,191,36,.28); background:rgba(251,191,36,.07); }
 .profile-data-details { margin:0 0 12px; border:1px solid var(--line-soft); border-radius:17px; background:color-mix(in srgb,var(--surface) 72%,transparent); overflow:hidden; }
@@ -2436,3 +2436,9 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 :root[data-button-style="compact"] .first-run-guide-dismiss { border-radius:7px; }
 @media (max-width:520px) { .match-card-actions { grid-template-columns:1fr; gap:6px; } .quick-reminder-btn { min-height:38px; } }
 @media (max-width:380px) { .first-run-guide { grid-template-columns:1fr; } .first-run-guide-dismiss { width:100%; } }
+
+
+/* RC39 — focused match home */
+.league-filter-drawer .popular-competitions { margin:10px 10px 12px; padding-top:10px; border-top:1px solid var(--line-soft); }
+.league-filter-drawer .popular-competitions .mini-section-head { margin-bottom:8px; }
+.league-filter-drawer.has-active-filter > summary span { color:var(--accent); font-weight:850; }

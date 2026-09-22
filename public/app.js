@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.30.0-rc38';
+const CLIENT_VERSION = '6.31.0-rc39';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc38';
+const CLIENT_RELEASE_CHANNEL = 'rc39';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -1223,7 +1223,14 @@ function renderProfile() {
   const profilePlanLabel = $('profileBtn')?.querySelector('span');
   if (profilePlanLabel) profilePlanLabel.textContent = planLabel(quota.plan);
   else if ($('profileBtn')) $('profileBtn').textContent = planLabel(quota.plan);
-  $('quotaText').textContent = `Осталось анализов: ${quota.left} из ${quota.limit}${state.profileStale ? ' · сохранённые данные' : ''}`;
+  const quotaText = $('quotaText');
+  if (quotaText) {
+    const showQuota = Number(quota.left) <= 3 || state.profileStale;
+    quotaText.hidden = !showQuota;
+    quotaText.textContent = state.profileStale
+      ? 'Показаны сохранённые данные профиля'
+      : `Осталось анализов: ${quota.left} из ${quota.limit}`;
+  }
   $('profileName').textContent = user.firstName || 'Пользователь';
   const avatar = $('avatar');
   if (avatar) {
@@ -4015,7 +4022,22 @@ function syncFilterButtons() {
     btn.setAttribute('aria-pressed', active ? 'true' : 'false');
   });
   const drawer = document.querySelector('.league-filter-drawer');
-  if (drawer) drawer.classList.toggle('has-active-filter', ['international', 'cups', 'england', 'spain', 'italy', 'germany', 'france'].includes(state.filter));
+  if (drawer) {
+    const leagueFilters = ['international', 'cups', 'england', 'spain', 'italy', 'germany', 'france'];
+    const activeLeagueFilter = leagueFilters.includes(state.filter);
+    drawer.classList.toggle('has-active-filter', activeLeagueFilter);
+    const summaryValue = drawer.querySelector('summary span');
+    const labels = {
+      international: 'Международные',
+      cups: 'Кубки',
+      england: 'Англия',
+      spain: 'Испания',
+      italy: 'Италия',
+      germany: 'Германия',
+      france: 'Франция',
+    };
+    if (summaryValue) summaryValue.textContent = activeLeagueFilter ? labels[state.filter] : 'Выбрать';
+  }
 }
 
 function normalizedSignalText(value) {
@@ -4077,7 +4099,9 @@ function personalMatchInsight(match, signals = personalContextSignals()) {
 function renderDailyOverview() {
   const title = $('dailyOverviewTitle');
   const text = $('dailyOverviewText');
+  const kicker = $('dailyOverviewKicker');
   if (!title || !text) return;
+  if (kicker) kicker.textContent = state.offset < 0 ? 'ВЧЕРА ДЛЯ ВАС' : state.offset > 0 ? 'ЗАВТРА ДЛЯ ВАС' : 'СЕГОДНЯ ДЛЯ ВАС';
   const favorites = favoriteSet();
   const visible = state.matches.filter(match => state.preferences?.hideYouth === false || !match.youthReserve);
   const live = visible.filter(match => match.live).length;
@@ -4212,7 +4236,7 @@ function renderPopularCompetitions() {
       seen.add(id);
       return true;
     })
-    .slice(0, 7);
+    .slice(0, 5);
   if (!rows.length) {
     wrap.hidden = true;
     el.innerHTML = '';
@@ -6340,6 +6364,8 @@ document.querySelectorAll('.filter-btn').forEach(btn => {
     state.filter = btn.dataset.filter;
     syncFilterButtons();
     renderMatches();
+    const drawer = btn.closest('.league-filter-drawer');
+    if (drawer) drawer.open = false;
   });
 });
 

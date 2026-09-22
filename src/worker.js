@@ -73,11 +73,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.30.0-rc38';
+const APP_VERSION = '6.31.0-rc39';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc38';
-const RC_NAME = 'RC38';
+const RELEASE_CHANNEL = 'rc39';
+const RC_NAME = 'RC39';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -11166,6 +11166,8 @@ export default {
         reminderWriteConfirmation: 'enabled',
         quickMatchReminders: 'enabled',
         firstRunGuide: 'enabled',
+        focusedMatchHome: 'enabled',
+        contextualLeagueFilter: 'enabled',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
