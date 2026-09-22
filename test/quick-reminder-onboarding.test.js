@@ -8,8 +8,8 @@ const html = fs.readFileSync('public/index.html', 'utf8');
 const css = fs.readFileSync('public/styles.css', 'utf8');
 
 test('daily overview uses a concrete user-facing title', () => {
-  assert.match(html, /id="dailyOverviewTitle">Матчи для вас</);
-  assert.match(app, /title\.textContent = 'Матчи для вас'/);
+  assert.match(html, /id="dailyOverviewTitle">Рекомендации для вас/);
+  assert.match(app, /title\.textContent = 'Рекомендации для вас'/);
   assert.doesNotMatch(html, /Главное без лишнего/);
 });
 test('upcoming match cards expose a quick reminder action', () => {

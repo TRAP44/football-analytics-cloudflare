@@ -4088,16 +4088,16 @@ function renderDailyOverview() {
   if ($('overviewFavoriteCount')) $('overviewFavoriteCount').textContent = String(favoriteMatches);
   if ($('overviewRecommendedCount')) $('overviewRecommendedCount').textContent = String(recommended);
   if (live > 0) {
-    title.textContent = `${russianCountLabel(live, 'матч идёт', 'матча идут', 'матчей идут')} прямо сейчас`;
+    title.textContent = 'Сейчас в эфире';
     text.textContent = favoriteMatches ? `И ещё ${russianCountLabel(favoriteMatches, 'матч любимой команды', 'матча любимых команд', 'матчей любимых команд')} в вашем списке.` : `${russianCountLabel(recommended, 'рекомендация собрана', 'рекомендации собраны', 'рекомендаций собрано')} для вас.`;
   } else if (favoriteMatches > 0) {
-    title.textContent = 'Любимые команды уже собраны';
+    title.textContent = 'Матчи ваших команд';
     text.textContent = `${russianCountLabel(favoriteMatches, 'важный матч', 'важных матча', 'важных матчей')} — без поиска по всему расписанию.`;
   } else if (visible.length > 0) {
-    title.textContent = 'Матчи для вас';
-    text.textContent = `${russianCountLabel(recommended, 'рекомендация собрана', 'рекомендации собраны', 'рекомендаций собрано')} из ${visible.length} доступных матчей.`;
+    title.textContent = 'Рекомендации для вас';
+    text.textContent = `${russianCountLabel(recommended, 'матч подобран', 'матча подобраны', 'матчей подобрано')} из ${visible.length} доступных — с учётом ваших интересов.`;
   } else {
-    title.textContent = 'Собираю ваш футбольный день';
+    title.textContent = 'Матчи скоро появятся';
     text.textContent = 'Свежие матчи появятся здесь сразу после загрузки.';
   }
 }
