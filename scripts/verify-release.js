@@ -6,6 +6,7 @@ const app = fs.readFileSync('public/app.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const staticHeaders = fs.readFileSync('public/_headers', 'utf8');
 const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml', 'utf8');
+const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
 const expected = `${pkg.version}-rc21`;
 const failures = [];
 
@@ -26,6 +27,7 @@ if (!fs.existsSync('.github/workflows/rollback-production.yml')) failures.push('
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
+if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
 
 const migration = fs.readFileSync('supabase_migration_v6_10.sql', 'utf8');
 if (!migration.includes('transition_model_calibration')) failures.push('Missing atomic calibration transition RPC');

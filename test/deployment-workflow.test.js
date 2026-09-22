@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const deploy = fs.readFileSync(new URL('../.github/workflows/deploy-production.yml', import.meta.url), 'utf8');
 const rollback = fs.readFileSync(new URL('../.github/workflows/rollback-production.yml', import.meta.url), 'utf8');
 const quality = fs.readFileSync(new URL('../.github/workflows/quality.yml', import.meta.url), 'utf8');
+const wrangler = fs.readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8');
 
 test('production deploy follows successful Quality on main', () => {
   assert.match(deploy, /workflow_run:[\s\S]*workflows: \[Quality\][\s\S]*branches: \[main\]/);
@@ -37,4 +38,8 @@ test('quality verifies a dry-run Worker bundle with pinned GitHub actions', () =
   assert.match(quality, /npm run verify:worker/);
   assert.match(quality, /actions\/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1/);
   assert.match(quality, /actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020/);
+});
+
+test('all health probes run through the Worker instead of the SPA fallback', () => {
+  assert.match(wrangler, /"run_worker_first"\s*:\s*\[[^\]]*"\/health"[^\]]*"\/health\/\*"/);
 });
