@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#111827" />
   <title>Футбольная аналитика · Матчи</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=6.28.0" />
+  <link rel="stylesheet" href="/styles.css?v=6.29.0" />
 </head>
 <body>
   <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
     <div class="boot-card">
       <div class="boot-logo"><span>FM</span></div>
-      <div class="boot-kicker">ФУТБОЛЬНАЯ АНАЛИТИКА · версия 6.28</div>
+      <div class="boot-kicker">ФУТБОЛЬНАЯ АНАЛИТИКА · версия 6.29</div>
       <h1 id="bootTitle">Запускаю приложение</h1>
       <p id="bootText">Проверяю совместимость версии…</p>
       <div class="boot-progress" aria-hidden="true"><i id="bootProgressFill"></i></div>
@@ -67,7 +67,7 @@
           <div class="daily-overview-actions">
             <button type="button" class="overview-action live" data-quick-filter="live"><b id="overviewLiveCount">0</b><span>Сейчас</span></button>
             <button type="button" class="overview-action favorite" data-quick-filter="favorites"><b id="overviewFavoriteCount">0</b><span>Любимые</span></button>
-            <button id="overviewSearchBtn" type="button" class="overview-action search"><b>⌕</b><span>Найти</span></button>
+            <button type="button" class="overview-action recommended" data-quick-filter="top"><b id="overviewRecommendedCount">0</b><span>Для вас</span></button>
           </div>
         </section>
 
@@ -76,7 +76,7 @@
         </div>
 
         <div class="filter-strip" id="filterStrip">
-          <button type="button" class="filter-btn active" data-filter="top">🔥 Главные</button>
+          <button type="button" class="filter-btn active" data-filter="top">✨ Для вас</button>
           <button type="button" class="filter-btn" data-filter="live">🔴 Сейчас</button>
           <button type="button" class="filter-btn" data-filter="favorites">⭐ Избранное</button>
           <button type="button" class="filter-btn" data-filter="all">Все</button>
@@ -235,6 +235,8 @@
         </div>
 
 
+        <details class="profile-data-details">
+          <summary><span><strong>О данных и возможностях</strong><small>Покрытие матчей и доступность статистики</small></span><b id="dataModeSummary">Стандартный режим</b></summary>
         <section class="panel data-mode-panel">
           <div class="section-head profile-section-head">
             <div>
@@ -251,6 +253,7 @@
           </div>
           <p id="dataModeNote" class="tiny">Покрытие зависит от турнира и доступности данных источника.</p>
         </section>
+        </details>
 
         <section class="panel preferences-panel">
           <div class="section-head profile-section-head">
@@ -279,7 +282,7 @@
             <label class="setting-field">
               <span>Экран матчей по умолчанию</span>
               <select id="defaultFilterSelect">
-                <option value="top">🔥 Главные</option>
+                <option value="top">✨ Для вас</option>
                 <option value="favorites">⭐ Избранное</option>
                 <option value="all">Все матчи</option>
               </select>
@@ -584,7 +587,7 @@
           </div>
 
           <div class="rc-status-row">
-            <span id="rcBadge" class="rc-badge">Версия 36</span>
+            <span id="rcBadge" class="rc-badge">Версия 37</span>
             <div>
               <strong id="rcStatus">Полная регрессионная проверка ещё не запускалась.</strong>
               <small id="rcMeta">Без полного анализа, без изменения пользовательских данных и без расхода API-Football.</small>
@@ -667,6 +670,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=6.28.0"></script>
+  <script type="module" src="/app.js?v=6.29.0"></script>
 </body>
 </html>

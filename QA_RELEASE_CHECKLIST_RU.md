@@ -1,10 +1,10 @@
-# QA Release Checklist — v6.28.0 RC36
+# QA Release Checklist — v6.29.0 RC37
 
 ## Deploy
 
 - применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql` и `supabase_migration_v6_11_1.sql`;
-- Worker/client = `6.28.0-rc36`;
-- package = `6.28.0`;
+- Worker/client = `6.29.0-rc37`;
+- package = `6.29.0`;
 - cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;

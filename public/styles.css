@@ -2374,6 +2374,23 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 .admin-advanced-content { padding:0 8px 8px; }
 .admin-advanced-content > .panel { margin:8px 0 0; border-radius:15px; box-shadow:none; }
 
+
+/* RC37 — explainable personal recommendations */
+.rc-panel:before { content:"RC37"; }
+.overview-action.recommended b { color:var(--accent); }
+.match-signal.favorite-signal { color:#fbbf24; border-color:rgba(251,191,36,.28); background:rgba(251,191,36,.07); }
+.profile-data-details { margin:0 0 12px; border:1px solid var(--line-soft); border-radius:17px; background:color-mix(in srgb,var(--surface) 72%,transparent); overflow:hidden; }
+.profile-data-details > summary { min-height:58px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 13px; list-style:none; cursor:pointer; }
+.profile-data-details > summary::-webkit-details-marker { display:none; }
+.profile-data-details > summary span { min-width:0; }
+.profile-data-details > summary strong,.profile-data-details > summary small { display:block; }
+.profile-data-details > summary strong { font-size:11px; }
+.profile-data-details > summary small { margin-top:3px; color:var(--hint); font-size:8px; }
+.profile-data-details > summary b { flex:0 0 auto; display:inline-flex; align-items:center; min-height:24px; padding:5px 8px; border:1px solid color-mix(in srgb,var(--accent) 24%,var(--line)); border-radius:999px; color:var(--accent); font-size:8px; }
+.profile-data-details > summary::after { content:"⌄"; color:var(--hint); transition:transform .16s ease; }
+.profile-data-details[open] > summary::after { transform:rotate(180deg); }
+.profile-data-details .data-mode-panel { margin:0 8px 8px; border-radius:15px; box-shadow:none; }
+
 @media (max-width:560px) {
   .daily-overview { grid-template-columns:1fr; gap:13px; }
   .daily-overview-actions { grid-template-columns:repeat(3,1fr); }

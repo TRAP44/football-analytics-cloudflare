@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.28.0-rc36';
+const CLIENT_VERSION = '6.29.0-rc37';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc36';
+const CLIENT_RELEASE_CHANNEL = 'rc37';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const DEFAULT_UI_PREFERENCES = { theme: 'system', buttonStyle: 'soft' };
@@ -748,7 +748,7 @@ async function runStartupSequence() {
   hideBootGate();
 
   scheduleIdle(async () => {
-    const tasks = [loadReminders()];
+    const tasks = [loadReminders(), loadHistory(false)];
     if (isAdmin()) tasks.push(loadProvider());
     await Promise.allSettled(tasks);
   });
@@ -982,6 +982,7 @@ function renderDataCapabilities() {
   const c = state.dataCapabilities || state.profile?.features?.dataCapabilities || {};
   const features = c.features || {};
   if ($('dataModeLabel')) $('dataModeLabel').textContent = c.label || (c.mode === 'expanded' ? 'Расширенное покрытие' : 'Стандартное покрытие');
+  if ($('dataModeSummary')) $('dataModeSummary').textContent = c.mode === 'expanded' ? 'Расширенный режим' : 'Стандартный режим';
   if ($('dataModeRefresh')) $('dataModeRefresh').textContent = features.liveRefresh === false || Number(c.refreshSeconds) === 0
     ? 'пауза'
     : Number(c.refreshSeconds || 60) <= 30 ? `${Number(c.refreshSeconds || 60)} сек.` : 'адаптивно';
@@ -3937,7 +3938,7 @@ function applyMatchPayload(data, { snapshot = false } = {}) {
     localSnapshot: snapshot,
   };
   if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
-  if (state.filter === 'top' && !state.matches.some(x => x.featured || (Number(x.interestScore || 0) >= 68 && !x.lowPriority))) state.filter = 'all';
+  if (state.filter === 'top' && !state.matches.some(x => personalMatchInsight(x).recommended)) state.filter = 'all';
   syncFilterButtons();
   renderMatches();
   renderDiscoveryHome();
@@ -4001,6 +4002,62 @@ function syncFilterButtons() {
   if (drawer) drawer.classList.toggle('has-active-filter', ['international', 'cups', 'england', 'spain', 'italy', 'germany', 'france'].includes(state.filter));
 }
 
+function normalizedSignalText(value) {
+  return String(value || '').trim().toLocaleLowerCase('ru-RU');
+}
+
+function personalContextSignals() {
+  const viewedTeams = new Set();
+  const viewedLeagues = new Set();
+  for (const item of state.history.slice(0, 20)) {
+    const home = normalizedSignalText(item.homeName);
+    const away = normalizedSignalText(item.awayName);
+    const league = normalizedSignalText(item.leagueName);
+    if (home) viewedTeams.add(home);
+    if (away) viewedTeams.add(away);
+    if (league) viewedLeagues.add(league);
+  }
+  return {
+    favoriteTeams: favoriteSet(),
+    viewedTeams,
+    viewedLeagues,
+    hasPersonalData: state.favorites.length > 0 || viewedTeams.size > 0,
+  };
+}
+
+function personalMatchInsight(match, signals = personalContextSignals()) {
+  const homeId = Number(match.home?.id || 0);
+  const awayId = Number(match.away?.id || 0);
+  const homeName = normalizedSignalText(match.home?.name);
+  const awayName = normalizedSignalText(match.away?.name);
+  const leagueName = normalizedSignalText(match.league || match.leagueOriginal);
+  const favorite = signals.favoriteTeams.has(homeId) || signals.favoriteTeams.has(awayId);
+  const viewedTeam = signals.viewedTeams.has(homeName) || signals.viewedTeams.has(awayName);
+  const viewedLeague = signals.viewedLeagues.has(leagueName);
+  let score = Math.min(34, Number(match.interestScore || 0) * .34) + Math.min(26, Number(match.competition?.priority || 0) * 3);
+  if (favorite) score += 150;
+  if (viewedTeam) score += 72;
+  else if (viewedLeague) score += 18;
+  if (match.live) score += 48;
+  if (match.featured) score += 34;
+  if (match.lowPriority) score -= 55;
+  if (match.youthReserve) score -= 80;
+
+  let reason = '';
+  if (favorite) reason = 'Любимая команда';
+  else if (viewedTeam) reason = 'Вы смотрели эту команду';
+  else if (match.live) reason = 'Сейчас в эфире';
+  else if (match.featured) reason = 'Главный матч';
+  else if (viewedLeague) reason = 'Знакомый турнир';
+  else if (Number(match.interestScore || 0) >= 80) reason = 'Высокий интерес';
+
+  const baseline = Boolean(match.featured) || (Number(match.interestScore || 0) >= 68 && !match.lowPriority);
+  const recommended = signals.hasPersonalData
+    ? Boolean(favorite || viewedTeam || match.live || match.featured || (!match.lowPriority && Number(match.interestScore || 0) >= 74))
+    : baseline;
+  return { score, reason, favorite, viewedTeam, viewedLeague, recommended };
+}
+
 function renderDailyOverview() {
   const title = $('dailyOverviewTitle');
   const text = $('dailyOverviewText');
@@ -4009,17 +4066,20 @@ function renderDailyOverview() {
   const visible = state.matches.filter(match => state.preferences?.hideYouth === false || !match.youthReserve);
   const live = visible.filter(match => match.live).length;
   const favoriteMatches = visible.filter(match => favorites.has(Number(match.home?.id)) || favorites.has(Number(match.away?.id))).length;
+  const signals = personalContextSignals();
+  const recommended = visible.filter(match => personalMatchInsight(match, signals).recommended).length;
   if ($('overviewLiveCount')) $('overviewLiveCount').textContent = String(live);
   if ($('overviewFavoriteCount')) $('overviewFavoriteCount').textContent = String(favoriteMatches);
+  if ($('overviewRecommendedCount')) $('overviewRecommendedCount').textContent = String(recommended);
   if (live > 0) {
     title.textContent = `${russianCountLabel(live, 'матч идёт', 'матча идут', 'матчей идут')} прямо сейчас`;
-    text.textContent = favoriteMatches ? `И ещё ${russianCountLabel(favoriteMatches, 'матч любимой команды', 'матча любимых команд', 'матчей любимых команд')} в вашем списке.` : 'Откройте центр матча, чтобы следить за счётом и событиями.';
+    text.textContent = favoriteMatches ? `И ещё ${russianCountLabel(favoriteMatches, 'матч любимой команды', 'матча любимых команд', 'матчей любимых команд')} в вашем списке.` : `${russianCountLabel(recommended, 'рекомендация собрана', 'рекомендации собраны', 'рекомендаций собрано')} для вас.`;
   } else if (favoriteMatches > 0) {
     title.textContent = 'Любимые команды уже собраны';
     text.textContent = `${russianCountLabel(favoriteMatches, 'важный матч', 'важных матча', 'важных матчей')} — без поиска по всему расписанию.`;
   } else if (visible.length > 0) {
     title.textContent = 'Главное без лишнего';
-    text.textContent = `${russianCountLabel(visible.length, 'матч доступен', 'матча доступны', 'матчей доступно')} — самые заметные уже подняты выше.`;
+    text.textContent = `${russianCountLabel(recommended, 'рекомендация собрана', 'рекомендации собраны', 'рекомендаций собрано')} из ${visible.length} доступных матчей.`;
   } else {
     title.textContent = 'Собираю ваш футбольный день';
     text.textContent = 'Свежие матчи появятся здесь сразу после загрузки.';
@@ -4030,11 +4090,12 @@ function filteredMatches() {
   const q = state.search.trim().toLowerCase();
   const fav = favoriteSet();
   const prefs = state.preferences || {};
+  const signals = personalContextSignals();
   const list = state.matches.filter(m => {
     const isFavMatch = fav.has(Number(m.home?.id)) || fav.has(Number(m.away?.id));
     if (prefs.hideYouth !== false && m.youthReserve && state.filter !== 'favorites') return false;
     let byFilter = state.filter === 'all';
-    if (state.filter === 'top') byFilter = Boolean(m.featured) || (Number(m.interestScore || 0) >= 68 && !m.lowPriority);
+    if (state.filter === 'top') byFilter = personalMatchInsight(m, signals).recommended;
     if (state.filter === 'live') byFilter = Boolean(m.live);
     if (state.filter === 'cups') byFilter = ['cup', 'continental', 'national', 'international'].includes(String(m.category || ''));
     if (state.filter === 'international') byFilter = ['continental', 'national', 'international'].includes(String(m.category || '')) || m.group === 'international';
@@ -4050,6 +4111,10 @@ function filteredMatches() {
     const af = fav.has(Number(a.home?.id)) || fav.has(Number(a.away?.id)) ? 1 : 0;
     const bf = fav.has(Number(b.home?.id)) || fav.has(Number(b.away?.id)) ? 1 : 0;
     if (prefs.favoriteFirst !== false && state.filter !== 'favorites' && af !== bf) return bf - af;
+    if (state.filter === 'top') {
+      const personalDelta = personalMatchInsight(b, signals).score - personalMatchInsight(a, signals).score;
+      if (personalDelta) return personalDelta;
+    }
     if (Boolean(a.live) !== Boolean(b.live)) return a.live ? -1 : 1;
     if (Boolean(a.featured) !== Boolean(b.featured)) return a.featured ? -1 : 1;
     const ap = Number(a.competition?.priority || 0), bp = Number(b.competition?.priority || 0);
@@ -4150,14 +4215,18 @@ function renderPopularCompetitions() {
 function matchCardHtml(m, { grouped = false } = {}) {
   const interest = Math.max(0, Math.min(100, Number(m.interestScore || 0)));
   const cardState = m.live ? 'is-live' : m.finished ? 'is-finished' : 'is-upcoming';
-  const signal = m.featured ? 'Матч дня' : interest >= 80 ? 'Высокий интерес' : interest >= 65 ? 'Стоит внимания' : '';
+  const personalInsight = personalMatchInsight(m);
+  const signal = state.filter === 'top' && personalInsight.reason
+    ? personalInsight.reason
+    : m.featured ? 'Матч дня' : interest >= 80 ? 'Высокий интерес' : interest >= 65 ? 'Стоит внимания' : '';
+  const signalIcon = personalInsight.favorite ? '★' : personalInsight.viewedTeam ? '↺' : m.live ? '●' : m.featured ? '✦' : '🔥';
   return `
     <article class="match-card ${Number(m.interestScore || 0) >= 50 ? 'top-match' : ''} ${cardState}">
       ${grouped ? '' : `<div class="match-meta"><span class="competition-name">${m.featured ? '<b class="top-tag">ГЛАВНЫЙ</b> ' : ''}${escapeHtml(m.league || 'Турнир')}</span><span>${escapeHtml(m.country || '')}</span></div>`}
       <div class="catalog-row">
         ${m.category ? `<span class="competition-chip ${categoryClass(m.category)}">${escapeHtml(categoryLabel(m.category))}</span>` : ''}
         ${m.roundLabel ? `<span class="round-chip">${escapeHtml(m.roundLabel)}</span>` : ''}
-        ${signal ? `<span class="match-signal">${m.featured ? '✦' : '🔥'} ${signal}</span>` : ''}
+        ${signal ? `<span class="match-signal ${personalInsight.favorite ? 'favorite-signal' : ''}">${signalIcon} ${signal}</span>` : ''}
         ${m.integrity?.state === 'warning' ? '<span class="integrity-mini warning">⚠ проверяем данные</span>' : ''}
       </div>
       <div class="team-row">
@@ -5328,6 +5397,7 @@ function rememberHistoryAnalysis(data) {
   state.historyLoadError = '';
   state.historyRevision += 1;
   if (activeViewId() === 'historyView') renderHistory();
+  if (state.matches.length) renderMatches();
 }
 
 async function loadHistory(showLoader = true) {
@@ -5342,6 +5412,7 @@ async function loadHistory(showLoader = true) {
     state.history = data.items || [];
     state.historyLoaded = true;
     state.historyLoadError = '';
+    if (state.matches.length) renderMatches();
   } catch (e) {
     if (revisionAtStart !== state.historyRevision) return;
     state.historyLoadError = e.message || 'Не удалось загрузить историю.';
@@ -6228,8 +6299,6 @@ document.querySelectorAll('[data-quick-filter]').forEach(btn => {
     $('matchesTitle')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 });
-$('overviewSearchBtn')?.addEventListener('click', () => $('navSearch')?.click());
-
 document.querySelectorAll('[data-theme-choice]').forEach(button => {
   button.addEventListener('click', () => saveInterfacePreference('theme', button.dataset.themeChoice || 'system'));
 });
