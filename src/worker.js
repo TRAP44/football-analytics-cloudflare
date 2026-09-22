@@ -73,11 +73,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.21.0-rc29';
+const APP_VERSION = '6.22.0-rc30';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc29';
-const RC_NAME = 'RC29';
+const RELEASE_CHANNEL = 'rc30';
+const RC_NAME = 'RC30';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -9164,7 +9164,7 @@ function buildPreMatchIntelligence({
       confirmed: Boolean(lineups?.home && lineups?.away),
     },
     absences: { home: homeAbs, away: awayAbs },
-    methodology: 'Бриф объясняет уже рассчитанные вероятности через веса источников, форму, H2H, потери и голевую эвристику. Он не добавляет новый прогноз и не является рекомендацией для ставок.',
+    methodology: 'Бриф объясняет уже рассчитанные вероятности через веса источников, форму, очные встречи, потери и голевую эвристику. Он не добавляет новый прогноз и не является рекомендацией для ставок.',
   };
 }
 function formatAbsences(rows, homeId, awayId) {
@@ -10919,7 +10919,7 @@ async function apiAnalyze(request, cfg, user) {
     homeName, awayName, minutesToKickoff, confidence,
   });
   if (calibrationProfile.mode === 'active') {
-    notes.factors.unshift(`Калибратор вероятностей активен (${String(calibrationProfile.fingerprint || '').slice(0, 8) || 'baseline'}) на базе ${Number(calibrationProfile.sample || 0)} доверенных прогнозов.`);
+    notes.factors.unshift(`Калибратор вероятностей активен (${String(calibrationProfile.fingerprint || '').slice(0, 8) || 'базовый'}) на базе ${Number(calibrationProfile.sample || 0)} доверенных прогнозов.`);
   } else if (calibrationProfile.mode === 'shadow') {
     notes.risks.push('Калибратор пока работает в теневом режиме: выборка собирается, но итоговые вероятности ещё не корректируются автоматически.');
   }
@@ -11074,6 +11074,9 @@ export default {
         russianUiLocalization: 'enabled',
         adminRussianLocalization: 'enabled',
         prematchRussianLocalization: 'enabled',
+        dynamicRussianLocalization: 'enabled',
+        adminTextHumanization: 'enabled',
+        matchCenterRussianLocalization: 'enabled',
         releaseCandidate: RC_NAME,
         regressionQA: 'enabled',
         rcSmokeTest: 'enabled',
