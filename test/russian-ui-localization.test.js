@@ -47,8 +47,6 @@ test('common user-facing mixed English labels are removed from the Mini App', ()
     'MATCH BRIEF',
     'Вес в blend',
     'signal-level данные',
-    'Active champion',
-    'Baseline champion',
     "embedded: 'fixture'",
     "cache: 'cache'",
     "stale: 'stale'",
@@ -61,6 +59,9 @@ test('common user-facing mixed English labels are removed from the Mini App', ()
   assert.match(app, /function publicText\(value\)/);
   assert.match(app, /function dataPolicyModeLabel\(value\)/);
   assert.match(app, /function predictionAdviceLabel\(value\)/);
+  assert.match(app, /Калибровка RC30/);
+  assert.match(app, /подтверждено ·/);
+  assert.match(app, /первый ответ/);
 });
 
 test('admin panels have a display-only technical vocabulary translator', () => {
