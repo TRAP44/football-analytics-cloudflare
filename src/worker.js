@@ -73,11 +73,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.22.0-rc30';
+const APP_VERSION = '6.23.0-rc31';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc30';
-const RC_NAME = 'RC30';
+const RELEASE_CHANNEL = 'rc31';
+const RC_NAME = 'RC31';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
