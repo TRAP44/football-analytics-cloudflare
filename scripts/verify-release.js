@@ -9,15 +9,15 @@ const staticHeaders = fs.readFileSync('public/_headers', 'utf8');
 const styles = fs.readFileSync('public/styles.css', 'utf8');
 const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml', 'utf8');
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
-const expected = `${pkg.version}-rc37`;
+const expected = `${pkg.version}-rc38`;
 const failures = [];
 
 if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) failures.push('package-lock version must match package.json');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC37'")) failures.push('Worker RC name must be RC37');
+if (!worker.includes("const RC_NAME = 'RC38'")) failures.push('Worker RC name must be RC38');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc37'")) failures.push('Client release channel must be rc37');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc38'")) failures.push('Client release channel must be rc38');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -31,8 +31,8 @@ if (!fs.existsSync('.github/workflows/rollback-production.yml')) failures.push('
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
-if (!deployWorkflow.includes('--message "RC37 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC37');
-if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.29.0-rc37"')) failures.push('Production smoke must verify 6.29.0-rc37');
+if (!deployWorkflow.includes('--message "RC38 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC38');
+if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.30.0-rc38"')) failures.push('Production smoke must verify 6.30.0-rc38');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
 if (!/id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden/.test(html)) failures.push('Admin role badge must use the fail-closed admin-only visibility contract');
 if (!/\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i.test(styles)) failures.push('Global hidden elements must remain display:none');

@@ -6,6 +6,14 @@ const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf
 const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
 
+test('the daily overview uses clear wording', () => {
+  assert.match(html, /id="dailyOverviewTitle">Рекомендации для вас<\/h2>/);
+  assert.match(app, /title\.textContent = 'Рекомендации для вас'/);
+  assert.match(app, /title\.textContent = 'Сейчас в эфире'/);
+  assert.match(app, /title\.textContent = 'Матчи ваших команд'/);
+  assert.doesNotMatch(app, /Главное без лишнего/);
+});
+
 test('the primary match feed is presented as a personal For You view', () => {
   assert.match(html, /class="filter-btn active" data-filter="top">✨ Для вас/);
   assert.match(html, /id="overviewRecommendedCount"/);
