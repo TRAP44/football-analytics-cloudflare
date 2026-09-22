@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.32.0-rc40';
+const CLIENT_VERSION = '6.33.0-rc41';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc40';
+const CLIENT_RELEASE_CHANNEL = 'rc41';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -5970,6 +5970,7 @@ function prematchBriefHtml(pm, match, probabilities) {
 
 function aiInstructorHtml(ai = {}, match = {}) {
   const signal = ai.betSignal || {};
+  const verdict = ai.verdict || {};
   const factors = Array.isArray(ai.factors) ? ai.factors.slice(0, 3) : [];
   const risks = Array.isArray(ai.risks) ? ai.risks.slice(0, 2) : [];
   const signalClass = signal.code === 'skip' ? 'skip' : signal.code === 'watch' ? 'watch' : 'active';
@@ -5980,16 +5981,24 @@ function aiInstructorHtml(ai = {}, match = {}) {
         <div><span>AI ФУТБОЛЬНЫЙ ИНСТРУКТОР</span><h2>Мой разбор перед матчем</h2></div>
         <b>AI</b>
       </div>
+      <div class="ai-verdict-grid" aria-label="Вердикт AI за 10 секунд">
+        <div><span>Исход</span><strong>${escapeHtml(verdict.outcome || '—')}</strong></div>
+        <div><span>Тотал 2.5</span><strong>${escapeHtml(verdict.total || '—')}</strong></div>
+        <div><span>Обе забьют</span><strong>${escapeHtml(verdict.btts || '—')}</strong></div>
+        <div class="${signal.code === 'skip' ? 'skip' : 'action'}"><span>Решение</span><strong>${escapeHtml(signal.label || 'Изучить матч')}</strong></div>
+      </div>
       <div class="ai-instructor-main">
         <div class="ai-instructor-pick">
-          <span>Что рассмотреть</span>
+          <span>Главная идея</span>
           <strong>${escapeHtml(signal.label || 'Сначала изучить матч')}</strong>
           <small>${escapeHtml(publicText(signal.reason || 'Собираю доступные сигналы и риски.'))}</small>
+          ${ai.marketNote ? `<div class="ai-market-note">💹 ${escapeHtml(publicText(ai.marketNote))}</div>` : ''}
+          ${ai.lineupImpact?.note ? `<div class="ai-lineup-note">👥 ${escapeHtml(publicText(ai.lineupImpact.note))}</div>` : ''}
         </div>
         <div class="ai-instructor-facts">
           <div><span>Уверенность</span><strong>${escapeHtml(ai.confidenceLabel || '—')}</strong><small>${confidenceText}</small></div>
           <div><span>Риск</span><strong>${escapeHtml(ai.riskLabel || '—')}</strong><small>${escapeHtml(publicText(ai.riskNote || 'Оценивайте несколько факторов.'))}</small></div>
-          <div><span>Судья</span><strong>${escapeHtml(ai.referee || match.referee || 'Ещё не указан')}</strong><small>${escapeHtml(publicText(ai.refereeNote || 'Назначение судьи может появиться ближе к матчу.'))}</small></div>
+          <div><span>Судья</span><strong>${escapeHtml(ai.refereeProfile?.name || ai.referee || match.referee || 'Ещё не указан')}</strong><small>${escapeHtml(publicText(ai.refereeProfile?.country ? `${ai.refereeProfile.country} · ${ai.refereeNote || ''}` : ai.refereeNote || 'Назначение судьи может появиться ближе к матчу.'))}</small></div>
         </div>
       </div>
       ${factors.length ? `<div class="ai-instructor-reasons"><strong>Почему так</strong><ul>${factors.map(x => `<li>${escapeHtml(publicText(x))}</li>`).join('')}</ul></div>` : ''}

@@ -1,10 +1,10 @@
-# QA Release Checklist — v6.32.0 RC40
+# QA Release Checklist — v6.33.0 RC41
 
 ## Deploy
 
-- применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql` и `supabase_migration_v6_11_1.sql`;
-- Worker/client = `6.32.0-rc40`;
-- package = `6.32.0`;
+- применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql`, `supabase_migration_v6_11_1.sql` и `supabase_migration_v6_12.sql`;
+- Worker/client = `6.33.0-rc41`;
+- package = `6.33.0`;
 - cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;
@@ -46,6 +46,19 @@
 - `/today`, `/live`, `/favorites` и `/help` возвращают полезные сообщения и быстрые кнопки;
 - неизвестный обычный текст возвращает главное меню, а не игнорируется;
 - новых миграций Supabase нет.
+
+## RC41 — AI-вердикт и Telegram-дайджест
+
+- AI-карточка содержит исход, тотал 2.5, обе забьют и действие;
+- слабый сигнал остаётся «Пропустить ставку»;
+- рынок показывает объяснение движения 1X2 только при наличии истории;
+- составы показывают количество потерь и статус публикации стартовых XI;
+- судья отображается как имя/страна без неподтверждённой статистики;
+- /picks возвращает 3 заметных матча дня;
+- /digest включает, /digest_off отключает добровольную утреннюю подборку;
+- cron не дублирует доставку в один UTC-день благодаря last_sent_date;
+- таблица bot_digest_subscriptions закрыта от anon/authenticated и доступна service_role.
+
 
 ## Champion–Challenger
 

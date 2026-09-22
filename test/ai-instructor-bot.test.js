@@ -22,7 +22,7 @@ test('pre-match analysis exposes referee context', () => {
 });
 
 test('startup experience identifies the AI role', () => {
-  assert.match(html, /FOOTBALL MANAGER AI/);
+  assert.match(html, /FM AI/);
   assert.match(html, /AI ФУТБОЛЬНЫЙ ИНСТРУКТОР/);
   assert.match(html, /boot-feature-row/);
   assert.match(app, /Запускаю AI-инструктора/);
@@ -38,7 +38,7 @@ test('telegram bot has useful commands and mini-app routes', () => {
   assert.match(app, /function applyLaunchIntent/);
 });
 
-test('RC40 health exposes AI and bot contracts', () => {
+test('RC41 health exposes AI and bot contracts', () => {
   assert.match(worker, /aiFootballInstructor:\s*'enabled'/);
   assert.match(worker, /refereeContext:\s*'enabled'/);
   assert.match(worker, /telegramBotHub:\s*'enabled'/);

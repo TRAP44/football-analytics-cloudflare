@@ -21,6 +21,7 @@ const memory = {
   reminders: new Map(),
   preferences: new Map(),
   oddsSnapshots: new Map(),
+  botDigestSubscriptions: new Map(),
   billingPayments: new Map(),
   modelPredictions: new Map(),
   modelRemediation: { lastRun: null, actions: [] },
@@ -73,11 +74,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.32.0-rc40';
+const APP_VERSION = '6.33.0-rc41';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc40';
-const RC_NAME = 'RC40';
+const RELEASE_CHANNEL = 'rc41';
+const RC_NAME = 'RC41';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1533,6 +1534,9 @@ async function configureFootballBot(request, cfg, chatId) {
       { command: 'today', description: 'Матчи и AI-разбор на сегодня' },
       { command: 'live', description: 'Матчи в реальном времени' },
       { command: 'favorites', description: 'Матчи любимых команд' },
+      { command: 'picks', description: '3 матча дня' },
+      { command: 'digest', description: 'Включить утреннюю подборку' },
+      { command: 'digest_off', description: 'Отключить утреннюю подборку' },
       { command: 'help', description: 'Как пользоваться ботом' },
     ] }),
     telegramApi('setChatMenuButton', cfg, { chat_id: chatId, menu_button: { type: 'web_app', text: '⚽ Открыть AI-футбол', web_app: { url: appUrl } } }),
@@ -1543,10 +1547,116 @@ async function sendFootballBotHome(request, cfg, chatId) {
   await telegramApi('sendMessage', cfg, {
     chat_id: chatId,
     parse_mode: 'HTML',
-    text: '<b>⚽ Football Manager AI</b>\n\nЯ ваш AI-инструктор по футболу. Помогаю быстро понять матч до стартового свистка и во время игры.\n\n🧠 вероятности и сценарий матча\n📈 форма и очные встречи\n👥 составы и потери\n🧑‍⚖️ судья и контекст встречи\n💹 рынок, коэффициенты и риски\n🔴 LIVE-события и статистика\n\nЕсли сигнал слабый, я прямо скажу, что матч лучше пропустить.',
+    text: '<b>⚽ FM AI · Футбольный инструктор</b>\n\nЯ ваш AI-инструктор по футболу. Помогаю быстро понять матч до стартового свистка и во время игры.\n\n🧠 вероятности и сценарий матча\n📈 форма и очные встречи\n👥 составы и потери\n🧑‍⚖️ судья и контекст встречи\n💹 рынок, коэффициенты и риски\n🔴 LIVE-события и статистика\n\nЕсли сигнал слабый, я прямо скажу, что матч лучше пропустить.',
     reply_markup: footballBotKeyboard(request),
   });
 }
+
+function digestFixtureRows(fixtures = []) {
+  return (fixtures || []).filter(f => {
+    const status = String(f.fixture?.status?.short || '');
+    const home = String(f.teams?.home?.name || '');
+    const away = String(f.teams?.away?.name || '');
+    return !['CANC','PST','ABD','AWD','WO'].includes(status) && !isYouthReserveMatch(f.league?.name || '', home, away);
+  }).map(f => {
+    const leagueId = Number(f.league?.id || 0);
+    const homeName = f.teams?.home?.name || '';
+    const awayName = f.teams?.away?.name || '';
+    const competition = normalizeCompetition(leagueId, f.league?.name || '', f.league?.country || '', homeName, awayName);
+    const status = String(f.fixture?.status?.short || '');
+    return {
+      fixtureId:Number(f.fixture?.id || 0), date:f.fixture?.date || '', status, live:isLiveStatus(status),
+      homeName, awayName, league:competition.shortName || competition.name || f.league?.name || 'Турнир',
+      score:matchInterestScore({ competition, leagueId, leagueName:f.league?.name || '', country:f.league?.country || '', homeName, awayName, status, date:f.fixture?.date || '' }),
+      priority:Number(competition.priority || 0), featured:Boolean(competition.featured),
+    };
+  }).filter(x => x.fixtureId)
+    .sort((a,b) => Number(b.live)-Number(a.live) || Number(b.featured)-Number(a.featured) || b.score-a.score || b.priority-a.priority || String(a.date).localeCompare(String(b.date)))
+    .slice(0,3);
+}
+
+function digestTime(iso) {
+  const d = new Date(iso || '');
+  if (!Number.isFinite(d.getTime())) return '—';
+  return new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'UTC'}).format(d) + ' UTC';
+}
+
+function dailyDigestText(rows = []) {
+  if (!rows.length) return '⚽ Сегодня пока нет подходящих матчей для короткой AI-подборки.';
+  return ['🧠 <b>3 матча дня · AI-подборка</b>','',...rows.map((x,i)=>`${i+1}. <b>${x.homeName} — ${x.awayName}</b>\n${x.league} · ${x.live ? '🔴 идёт сейчас' : digestTime(x.date)}`),'','Откройте матч в приложении — там будут вероятности, составы, судья, рынок и риски.'].join('\n');
+}
+
+async function setBotDigestSubscription(userId, chatId, enabled, cfg, appUrl = '') {
+  const previous = hasSupabase(cfg) ? null : memory.botDigestSubscriptions.get(Number(userId));
+  const row = {
+    telegram_id:Number(userId), chat_id:Number(chatId), enabled:Boolean(enabled), hour_utc:7,
+    app_url:String(appUrl || previous?.app_url || '').slice(0,500),
+    updated_at:new Date().toISOString(),
+  };
+  if (hasSupabase(cfg)) await supaUpsert(cfg,'bot_digest_subscriptions',row,'telegram_id');
+  else memory.botDigestSubscriptions.set(Number(userId),{...previous,...row,last_sent_date:previous?.last_sent_date || null});
+  return row;
+}
+
+async function loadBotDigestSubscriptions(cfg) {
+  if (hasSupabase(cfg)) return await supaSelectMany(cfg,'bot_digest_subscriptions',{enabled:'eq.true'},{limit:1000,order:'telegram_id.asc'});
+  return [...memory.botDigestSubscriptions.values()].filter(x=>x.enabled);
+}
+
+async function markDigestSent(row, date, cfg) {
+  if (hasSupabase(cfg)) return await supaPatch(cfg,'bot_digest_subscriptions',{telegram_id:`eq.${Number(row.telegram_id)}`},{last_sent_date:date,updated_at:new Date().toISOString()});
+  memory.botDigestSubscriptions.set(Number(row.telegram_id),{...row,last_sent_date:date,updated_at:new Date().toISOString()});
+}
+
+async function currentDailyDigest(cfg) {
+  const date=todayUtc();
+  const cacheKey=`bot:digest:${date}:v1`;
+  const cached=await getCache(cacheKey,cfg);
+  if (cached?.rows) return cached;
+  const fixtures=await apiFootball('/fixtures',{date},cfg);
+  const payload={date,rows:digestFixtureRows(fixtures),generatedAt:new Date().toISOString()};
+  await setCache(cacheKey,0,payload,cfg,10);
+  return payload;
+}
+
+async function sendDailyPicks(request,cfg,chatId) {
+  const digest=await currentDailyDigest(cfg);
+  await telegramApi('sendMessage',cfg,{
+    chat_id:chatId, parse_mode:'HTML', text:dailyDigestText(digest.rows),
+    reply_markup:{inline_keyboard:[[{text:'🧠 Открыть AI-подборку',web_app:{url:telegramWebAppUrl(request,{filter:'top'})}}]]},
+  });
+}
+
+function digestAppUrl(base) {
+  try { const u=new URL(String(base || '')); u.searchParams.set('filter','top'); return u.toString(); } catch { return ''; }
+}
+
+async function processDailyDigests(cfg,scheduledAt=new Date()) {
+  if (!cfg.botToken) return {sent:0,skipped:'bot_token_missing'};
+  const hour=scheduledAt.getUTCHours();
+  const date=scheduledAt.toISOString().slice(0,10);
+  const subscriptions=(await loadBotDigestSubscriptions(cfg))
+    .filter(x=>Number(x.hour_utc ?? 7)===hour && String(x.last_sent_date || '')!==date);
+  if (!subscriptions.length) return {sent:0,eligible:0};
+  const digest=await currentDailyDigest(cfg);
+  let sent=0;
+  for (let i=0;i<subscriptions.length;i+=20) {
+    const batch=subscriptions.slice(i,i+20);
+    const results=await Promise.allSettled(batch.map(async row=>{
+      const url=digestAppUrl(row.app_url);
+      await telegramApi('sendMessage',cfg,{
+        chat_id:Number(row.chat_id), parse_mode:'HTML', text:dailyDigestText(digest.rows),
+        ...(url ? {reply_markup:{inline_keyboard:[[{text:'🧠 Открыть подборку',web_app:{url}}]]}} : {}),
+      });
+      await markDigestSent(row,date,cfg);
+      return true;
+    }));
+    sent+=results.filter(x=>x.status==='fulfilled').length;
+    if (i+20<subscriptions.length) await sleepMs(1000);
+  }
+  return {sent,eligible:subscriptions.length,date};
+}
+
 async function handleTelegramWebhook(request, cfg) {
   if (!cfg.webhookSecret) return json({ ok: false, error: 'webhook_secret_missing' }, 503);
   const provided = request.headers.get('x-telegram-bot-api-secret-token') || '';
@@ -1634,7 +1744,7 @@ async function handleTelegramWebhook(request, cfg) {
   }
 
   if (chatId && /^\/help(?:@\w+)?(?:\s|$)/i.test(text)) {
-    await telegramApi('sendMessage', cfg, { chat_id: chatId, parse_mode: 'HTML', text: '<b>Как пользоваться Football Manager AI</b>\n\n/today — матчи и AI-разбор на сегодня\n/live — матчи, которые идут сейчас\n/favorites — ваши команды\n/help — эта подсказка\n\nВ мини-приложении выберите матч и нажмите «Предматчевый анализ». AI-инструктор покажет вероятности, идею для рассмотрения, риски, судью, форму, составы и рынок.', reply_markup: footballBotKeyboard(request) });
+    await telegramApi('sendMessage', cfg, { chat_id: chatId, parse_mode: 'HTML', text: '<b>Как пользоваться AI-инструктором</b>\n\n/today — матчи и AI-разбор на сегодня\n/live — матчи, которые идут сейчас\n/favorites — ваши команды\n/picks — 3 матча дня\n/digest — включить утреннюю подборку\n/digest_off — отключить её\n/help — эта подсказка\n\nВ мини-приложении выберите матч и нажмите «Предматчевый анализ». AI-инструктор покажет вероятности, идею для рассмотрения, риски, судью, форму, составы и рынок.', reply_markup: footballBotKeyboard(request) });
     return json({ ok: true });
   }
 
@@ -1650,6 +1760,23 @@ async function handleTelegramWebhook(request, cfg) {
 
   if (chatId && /^\/favorites(?:@\w+)?(?:\s|$)/i.test(text)) {
     await telegramApi('sendMessage', cfg, { chat_id: chatId, text: '⭐ Здесь будут матчи команд, которые вы отметили звёздочкой в приложении.', reply_markup: { inline_keyboard: [[{ text: '⭐ Мои команды', web_app: { url: telegramWebAppUrl(request, { filter: 'favorites' }) } }]] } });
+    return json({ ok: true });
+  }
+
+  if (chatId && /^\/picks(?:@\w+)?(?:\s|$)/i.test(text)) {
+    await sendDailyPicks(request, cfg, chatId);
+    return json({ ok: true });
+  }
+
+  if (chatId && /^\/digest(?:@\w+)?(?:\s|$)/i.test(text)) {
+    await setBotDigestSubscription(msg.from?.id || chatId, chatId, true, cfg, telegramWebAppUrl(request));
+    await telegramApi('sendMessage', cfg, { chat_id: chatId, text: '✅ Утренняя AI-подборка включена. До 3 заметных матчей дня будут приходить примерно в 07:00 UTC. Отключить: /digest_off' });
+    return json({ ok: true });
+  }
+
+  if (chatId && /^\/digest_off(?:@\w+)?(?:\s|$)/i.test(text)) {
+    await setBotDigestSubscription(msg.from?.id || chatId, chatId, false, cfg, telegramWebAppUrl(request));
+    await telegramApi('sendMessage', cfg, { chat_id: chatId, text: '🔕 Утренняя AI-подборка отключена. Включить снова: /digest' });
     return json({ ok: true });
   }
 
@@ -10946,7 +11073,40 @@ function buildMatchComparison({ homeName, awayName, homeForm, awayForm, homeStan
   };
 }
 
-function buildAiInstructor({ probabilities, goalModel, confidence, completeness, factors = [], risks = [], referee = '' } = {}) {
+
+function refereeProfile(value = '') {
+  const raw=String(value || '').trim();
+  if(!raw) return {name:'',country:'',available:false};
+  const parts=raw.split(',').map(x=>x.trim()).filter(Boolean);
+  return {name:parts[0] || raw,country:parts.slice(1).join(', '),available:true};
+}
+
+function buildLineupImpact({absences,lineups,homeName='Хозяева',awayName='Гости'}={}) {
+  const homeAbs=Array.isArray(absences?.home)?absences.home.length:0;
+  const awayAbs=Array.isArray(absences?.away)?absences.away.length:0;
+  const homeConfirmed=Number(lineups?.home?.startXI?.length || 0)>=10;
+  const awayConfirmed=Number(lineups?.away?.startXI?.length || 0)>=10;
+  const diff=homeAbs-awayAbs;
+  let label='Баланс потерь близкий';
+  let note=`Потери: ${homeName} — ${homeAbs}, ${awayName} — ${awayAbs}.`;
+  if(diff>=2){label=`Потерь больше у ${homeName}`;note+=` У ${homeName} заметно больше подтверждённых отсутствий.`;}
+  else if(diff<=-2){label=`Потерь больше у ${awayName}`;note+=` У ${awayName} заметно больше подтверждённых отсутствий.`;}
+  if(homeConfirmed&&awayConfirmed) note+=' Стартовые составы подтверждены.';
+  else if(homeConfirmed||awayConfirmed) note+=' Подтверждён состав только одной команды.';
+  else note+=' Стартовые составы ещё не подтверждены.';
+  return {homeAbsences:homeAbs,awayAbsences:awayAbs,homeConfirmed,awayConfirmed,label,note};
+}
+
+function marketMovementNote(movement={}) {
+  const delta=movement?.probabilityChange;
+  if(!delta || Number(movement?.sample || 0)<2) return 'История движения коэффициентов ещё собирается.';
+  const rows=[['П1',Number(delta.home||0)],['Н',Number(delta.draw||0)],['П2',Number(delta.away||0)]].sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
+  const [label,value]=rows[0];
+  if(Math.abs(value)<1) return 'Существенного движения рынка по 1X2 пока нет.';
+  return `Рынок сместился к ${label}: ${value>0?'+':''}${value.toFixed(1)} п.п. по подразумеваемой вероятности.`;
+}
+
+function buildAiInstructor({ probabilities, goalModel, confidence, completeness, factors = [], risks = [], referee = '', refereeData = null, lineupImpact = null, marketMovement = null } = {}) {
   const p = { home: Number(probabilities?.home || 0), draw: Number(probabilities?.draw || 0), away: Number(probabilities?.away || 0) };
   const confidenceScore = Math.max(0, Math.min(100, Number(confidence?.score || 0)));
   const completenessScore = Number(completeness?.score || 0);
@@ -10964,11 +11124,21 @@ function buildAiInstructor({ probabilities, goalModel, confidence, completeness,
   if (confidenceScore < 56 || completenessScore < 6) betSignal = { code:'skip', label:'Пропустить ставку', strength:0, reason: confidenceScore < 56 ? 'Уверенность модели ниже рабочего порога.' : 'Для уверенного сигнала недостаточно данных по матчу.' };
   const riskLabel = confidenceScore >= 74 && completenessScore >= 8 ? 'Умеренный' : confidenceScore >= 60 && completenessScore >= 6 ? 'Повышенный' : 'Высокий';
   const confidenceLabel = confidenceScore >= 74 ? 'Высокая' : confidenceScore >= 60 ? 'Средняя' : 'Низкая';
+  const maxOutcome = [['П1',p.home],['Н',p.draw],['П2',p.away]].sort((a,b)=>b[1]-a[1])[0];
+  const over25 = Number(goalModel?.over25 || 0);
+  const btts = Number(goalModel?.btts || 0);
+  const verdict = {
+    outcome: maxOutcome ? `${maxOutcome[0]} · ${Math.round(maxOutcome[1])}%` : '—',
+    total: !goalModel ? 'Нет данных' : over25 >= 55 ? `ТБ 2.5 · ${Math.round(over25)}%` : over25 <= 45 ? `ТМ 2.5 · ${Math.round(100-over25)}%` : 'Без перевеса',
+    btts: !goalModel ? 'Нет данных' : btts >= 55 ? `Да · ${Math.round(btts)}%` : btts <= 45 ? `Нет · ${Math.round(100-btts)}%` : 'Без перевеса',
+  };
   return {
-    role:'football-ai-instructor', confidenceScore:Math.round(confidenceScore), confidenceLabel, riskLabel, betSignal,
+    role:'football-ai-instructor', confidenceScore:Math.round(confidenceScore), confidenceLabel, riskLabel, betSignal, verdict,
     riskNote: betSignal.code === 'skip' ? 'Сильного сигнала нет — не форсируйте решение.' : 'Проверяйте составы и изменения коэффициентов ближе к старту.',
-    referee:String(referee || ''),
-    refereeNote: referee ? 'Арбитр назначен. В этой версии имя используется как контекст; статистика карточек судьи станет отдельным сигналом позже.' : 'Назначение судьи ещё не опубликовано источником данных.',
+    referee:String(referee || ''), refereeProfile:refereeData || refereeProfile(referee),
+    refereeNote: referee ? 'Арбитр назначен; имя учитывается как контекст матча.' : 'Назначение судьи ещё не опубликовано источником данных.',
+    lineupImpact:lineupImpact || null,
+    marketNote:marketMovementNote(marketMovement || {}),
     factors:(factors || []).slice(0,4), risks:(risks || []).slice(0,3),
   };
 }
@@ -10978,7 +11148,7 @@ async function apiAnalyze(request, cfg, user) {
   const fixtureId = Number(body?.fixtureId);
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'Некорректный номер матча.' }, 400);
 
-  const cacheKey = `fixture:${fixtureId}:v8-prematch-intelligence`;
+  const cacheKey = `fixture:${fixtureId}:v10-ai-instructor`;
   const cached = await getCache(cacheKey, cfg);
   if (cached) {
     await recordHistory(user.id, cached, cfg);
@@ -11075,10 +11245,14 @@ async function apiAnalyze(request, cfg, user) {
   ]);
 
   const market = extractMarket(odds);
+  const previousMarketSnapshots = market ? await getOddsSnapshots(fixtureId, cfg, 8).catch(() => []) : [];
+  const marketMovement = buildOddsMovement(previousMarketSnapshots, market);
+  if (market) await saveOddsSnapshot(fixtureId, market, cfg).catch(() => false);
   const apiPrediction = extractPrediction(predictions);
   const h2h = formatH2H(h2hRows, homeId, awayId);
   const absences = formatAbsences(injuries, homeId, awayId);
   const lineups = formatLineups(lineupsRows, homeId, awayId);
+  const lineupImpact = buildLineupImpact({ absences, lineups, homeName, awayName });
   const recentFormProb = formProbabilities(homeForm, awayForm);
   const h2hProb = h2hProbabilities(h2h);
   const calibrationProfile = await getCalibrationProfile(cfg).catch(() => baselineCalibrationProfile());
@@ -11185,9 +11359,9 @@ async function apiAnalyze(request, cfg, user) {
       skipped,
     },
     dataCapabilities: publicDataCapabilities(),
-    market, apiPrediction, recentForm: { home: homeForm, away: awayForm }, goalModel, comparison, absences, lineups, h2h,
+    market, marketMovement, apiPrediction, recentForm: { home: homeForm, away: awayForm }, goalModel, comparison, absences, lineups, lineupImpact, h2h,
     preMatchIntelligence,
-    aiInstructor: buildAiInstructor({ probabilities, goalModel, confidence, completeness: completenessPreview, factors: notes.factors, risks: [...(notes.risks || []), ...skipped], referee: fixture.fixture?.referee || '' }),
+    aiInstructor: buildAiInstructor({ probabilities, goalModel, confidence, completeness: completenessPreview, factors: notes.factors, risks: [...(notes.risks || []), ...skipped], referee: fixture.fixture?.referee || '', refereeData: refereeProfile(fixture.fixture?.referee || ''), lineupImpact, marketMovement }),
     insights: notes.factors, risks: [...(notes.risks || []), ...skipped], news: web,
     completeness: completenessPreview,
     provider: publicDataCapabilities(),
@@ -11260,6 +11434,10 @@ export default {
         refereeContext: 'enabled',
         telegramBotHub: 'enabled',
         aiLaunchExperience: 'enabled',
+        aiTenSecondVerdict: 'enabled',
+        preMatchMarketMovement: 'enabled',
+        lineupImpactBrief: 'enabled',
+        dailyBotDigest: 'enabled',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
@@ -11496,6 +11674,9 @@ export default {
       ['reminders', processDueReminders(cfg)],
       ['backtest', backtestTask],
     ];
+    if (scheduledAt.getUTCHours() === 7 && scheduledAt.getUTCMinutes() < 10) {
+      tasks.push(['daily_digest', processDailyDigests(cfg, scheduledAt)]);
+    }
     if (scheduledAt.getUTCHours() === 3 && scheduledAt.getUTCMinutes() < 15) {
       tasks.push(['ops_cleanup', cleanupOpsEvents(cfg)]);
       tasks.push(['integrity_cleanup', cleanupIntegrityData(cfg)]);
