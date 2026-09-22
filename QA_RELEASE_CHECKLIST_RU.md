@@ -1,10 +1,10 @@
-# QA Release Checklist — v6.50.0 RC58
+# QA Release Checklist — v6.51.0 RC59
 
 ## Deploy
 
 - применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql`, `supabase_migration_v6_11_1.sql`, `supabase_migration_v6_12.sql`, `supabase_migration_v6_13.sql`, `supabase_migration_v6_14.sql` и `supabase_migration_v6_15.sql`;
-- Worker/client = `6.50.0-rc58`;
-- package = `6.50.0`;
+- Worker/client = `6.51.0-rc59`;
+- package = `6.51.0`;
 - cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;
@@ -90,6 +90,21 @@
 - сломанный сценарий приводит к «Не опираться на предматчевый сигнал»;
 - никаких новых таблиц или внешних провайдеров RC44 не добавляет.
 
+## RC59 — AI Freshness Guard & Pre-Kickoff Recheck
+
+- `analysisFreshness()` возвращает `state/label/ageMinutes/minutesToKickoff/maxAgeMinutes/needsRecheck/reasonCode/reason`;
+- deterministic drill проверяет: 8-минутный AI за 30 минут до старта без составов требует recheck, 2-минутный — свежий, 30-минутный за 8 часов до игры — свежий;
+- cached analysis возвращается без сети, если freshness ещё рабочий;
+- `recheck=true` обходит даже формально неистёкший cache, когда динамическое окно уже считает AI устаревшим;
+- бесплатный recheck разрешён только через `userHasAnalyzedFixture()` и существующий `analysis_history`;
+- `incrementUsage` не вызывается при `freeRecheck`, но первый fresh calculation продолжает учитывать дневную квоту;
+- provider rate-limit fallback возвращает старый snapshot с честным `freshness.needsRecheck`, а не маскирует его как свежий;
+- adaptive cache TTL соответствует 45/20/10/5/3 минутам по расстоянию до kickoff;
+- Telegram quick brief вызывает анализ с `recheck:true` и показывает freshness;
+- Mini App `analyzeMatch` по умолчанию отправляет `recheck:true`; History freshness-card имеет явную кнопку обновления;
+- `/api/launch-funnel.rechecks` содержит только агрегаты total/free/charged;
+- production smoke требует `aiFreshnessGuard/preKickoffRecheck/userScopedFreeRecheck/lineupFreshnessWindow/adaptiveAnalysisTtl/analysisFreshnessSelfTest`;
+- миграция Supabase не требуется.
 ## RC58 — One-Tap AI Handoff
 
 - `match:menu:<fixtureId>` для pre-match вызывает `sendBotFixtureMenu`, который сразу строит `botAiHandoffText` через защищённый `botAnalyzeFixture`;

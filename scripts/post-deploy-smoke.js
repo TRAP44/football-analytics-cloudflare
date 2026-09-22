@@ -62,6 +62,12 @@ const REQUIRED_HEALTH_FLAGS = [
   'directFixtureDeepLink',
   'handoffFunnelTracking',
   'oneTapHandoffSelfTest',
+  'aiFreshnessGuard',
+  'preKickoffRecheck',
+  'userScopedFreeRecheck',
+  'lineupFreshnessWindow',
+  'adaptiveAnalysisTtl',
+  'analysisFreshnessSelfTest',
 ];
 
 function delay(ms) {

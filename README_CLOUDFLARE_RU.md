@@ -1,7 +1,22 @@
-# Football Analytics Mini App v6.50.0 — RC58
+# Football Analytics Mini App v6.51.0 — RC59
 
 Telegram Mini App для футбольной аналитики на Cloudflare Workers, Supabase, API-Football и Tavily.
 
+## RC59: AI Freshness Guard & Pre-Kickoff Recheck
+
+- каждый полный/короткий AI-ответ теперь получает динамический `freshness` со статусом `fresh / recheck / started`;
+- freshness учитывает возраст расчёта, время до стартового свистка, наличие стартовых составов и рынок;
+- адаптивное окно кэша: >6 ч — 45 мин., 2–6 ч — 20 мин., 45–120 мин. — 10 мин., 15–45 мин. — 5 мин., последние 15 мин. — 3 мин.;
+- если до старта ≤90 минут и оба состава ещё не подтверждены, допустимый возраст дополнительно ограничивается 5 минутами;
+- one-tap Telegram и Mini App отправляют `recheck=true`; сервер обновляет данные только если freshness действительно требует перепроверки;
+- повторная pre-kickoff перепроверка бесплатна только если этот Telegram-пользователь уже имеет данный fixture в `analysis_history`; первый анализ сохраняет обычный лимит;
+- при лимите пользователя = 0 уже анализированный fixture всё равно можно бесплатно перепроверить перед стартом;
+- History теперь тоже получает актуальный freshness-state и может предложить перепроверку вместо молчаливого показа старого snapshot;
+- Telegram short brief показывает возраст AI и причину, почему требуется/не требуется recheck;
+- Mini App показывает отдельную freshness-card и кнопку `Перепроверить AI сейчас`, когда расчёт вышел из рабочего окна;
+- launch funnel агрегирует `analysis_recheck`: total / free / charged без текста поискового запроса;
+- новых таблиц Supabase, новых API-Football endpoints и платёжной логики RC59 не добавляет;
+- версия Worker/client/production smoke: v6.51.0 RC59.
 ## RC58: One-Tap AI Handoff
 
 - тап по pre-match fixture из Telegram теперь сразу запускает короткий AI-бриф вместо промежуточной карточки с меню;

@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.50.0-rc58';
+const APP_VERSION = '6.51.0-rc59';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc58';
-const RC_NAME = 'RC58';
+const RELEASE_CHANNEL = 'rc59';
+const RC_NAME = 'RC59';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -683,6 +683,8 @@ function appManifest(cfg) {
       primaryMatchRecommendation: true,
       oneTapAiHandoff: true,
       cachedFullAnalysisHandoff: true,
+      aiFreshnessGuard: true,
+      preKickoffRecheck: true,
       calibrationChampionChallenger: true,
       calibrationAutomaticRollback: true,
     },
@@ -1577,6 +1579,8 @@ async function apiLaunchFunnel(request,cfg) {
     bucket.events+=1;
     campaignMap.set(key,bucket);
   }
+  const recheckRows=rows.filter(x=>String(x.event_name || '')==='analysis_recheck');
+  const recheckFree=recheckRows.filter(x=>Boolean(x?.metadata && typeof x.metadata==='object' ? x.metadata.free : false)).length;
   const handoffUsers=setFor(['ai_handoff']);
   const fullAiUsers=setFor(['full_ai']);
   const handoffToFull=new Set([...handoffUsers].filter(uid=>fullAiUsers.has(uid)));
@@ -1609,6 +1613,7 @@ async function apiLaunchFunnel(request,cfg) {
     funnel,
     bottleneck,
     handoff:{users:handoffUsers.size,fullAiUsers:handoffToFull.size,conversionPct:handoffUsers.size?Math.round((handoffToFull.size/handoffUsers.size)*1000)/10:0},
+    rechecks:{total:recheckRows.length,free:recheckFree,charged:Math.max(0,recheckRows.length-recheckFree)},
     returnLoop:{newsOpen:newsOpen.size,newsReturn:newsReturn.size,conversionPct:newsOpen.size?Math.round((newsReturn.size/newsOpen.size)*1000)/10:0},
     searchQuality:{attempts:searchResultRows.length,match:searchMatches,recognizedNoMatch:searchRecognizedNoMatch,notFound:searchNotFound,recoveredRecent:searchRecoveredRecent,matchPct:searchResultRows.length?Math.round((searchMatches/searchResultRows.length)*1000)/10:0},
     campaigns,
@@ -2081,7 +2086,7 @@ async function botAnalyzeFixture(request, cfg, userId, fixtureId) {
   const inner = new Request(request.url, {
     method:'POST',
     headers:{'content-type':'application/json'},
-    body:JSON.stringify({fixtureId:Number(fixtureId),origin:'telegram_quick'}),
+    body:JSON.stringify({fixtureId:Number(fixtureId),origin:'telegram_quick',recheck:true}),
   });
   const response = await apiAnalyze(inner, cfg, { id:Number(userId) });
   let payload = {};
@@ -2137,6 +2142,8 @@ function botAiHandoffText(data = {}) {
   const confidence=Number.isFinite(Number(ai.confidenceScore)) ? `${Math.round(Number(ai.confidenceScore))}/100` : '—';
   const trustScore=Number.isFinite(Number(trust.score)) ? `${Math.round(Number(trust.score))}%` : '—';
   const skip=signal.code==='skip';
+  const freshness=data.freshness || analysisFreshness(data);
+  const freshIcon=freshness.needsRecheck?'🟠':freshness.state==='started'?'⚪':'🟢';
   return [
     '🧠 <b>FM AI · короткая оценка</b>',
     `<b>${telegramHtmlEscape(match.home?.name || 'Хозяева')} — ${telegramHtmlEscape(match.away?.name || 'Гости')}</b>`,
@@ -2146,8 +2153,10 @@ function botAiHandoffText(data = {}) {
     `🧠 Уверенность: ${telegramHtmlEscape(ai.confidenceLabel || '—')} · ${confidence}`,
     `⚠️ Риск: ${telegramHtmlEscape(ai.riskLabel || '—')}`,
     `🗂 Данные: ${telegramHtmlEscape(trust.label || '—')} · ${trustScore}`,
+    `${freshIcon} Свежесть: <b>${telegramHtmlEscape(freshness.label || '—')}</b> · ${Number(freshness.ageMinutes || 0)} мин.`,
     '',
     `Почему: ${telegramHtmlEscape(signal.reason || ai.riskNote || 'Оцениваю доступные данные матча.')}`,
+    freshness.reason ? `Свежесть: ${telegramHtmlEscape(freshness.reason)}` : '',
     '',
     '<i>Полный AI-разбор откроется сразу на этом матче — повторно искать его не нужно.</i>',
   ].join('\n');
@@ -11577,13 +11586,7 @@ async function apiHistoryAnalysis(request, cfg, user) {
     }, 404);
   }
 
-  return json({
-    ...payload,
-    cached: true,
-    stale: !fresh,
-    historyReadOnly: true,
-    quota: await getQuota(user.id, cfg),
-  });
+  return json(analysisResponsePayload(payload,{cached:true,stale:!fresh,historyReadOnly:true,recheck:{requested:false,performed:false,free:false,reasonCode:analysisFreshness(payload).reasonCode},quota:await getQuota(user.id,cfg)}));
 }
 
 
@@ -13083,25 +13086,93 @@ function buildAiInstructor({ probabilities, goalModel, confidence, completeness,
     factors:(factors || []).slice(0,4), risks:(risks || []).slice(0,3),
   };
 }
+function analysisFreshness(payload = {}, now = Date.now()) {
+  const generatedMs=Date.parse(payload?.generatedAt || '');
+  const kickoffMs=Date.parse(payload?.match?.date || '');
+  const status=String(payload?.match?.status || '');
+  const live=isLiveStatus(status);
+  const finished=isFinishedStatus(status);
+  const ageMinutes=Number.isFinite(generatedMs) ? Math.max(0,Math.round((now-generatedMs)/60000)) : 99999;
+  const minutesToKickoff=Number.isFinite(kickoffMs) ? Math.round((kickoffMs-now)/60000) : null;
+  const homeConfirmed=Number(payload?.lineups?.home?.startXI?.length || 0)>=10;
+  const awayConfirmed=Number(payload?.lineups?.away?.startXI?.length || 0)>=10;
+  const lineupsConfirmed=homeConfirmed && awayConfirmed;
+  const marketAvailable=Boolean(payload?.market);
+  if (live || finished || (minutesToKickoff !== null && minutesToKickoff < -5)) {
+    return {state:'started',label:finished?'Матч завершён':'Матч уже начался',ageMinutes,minutesToKickoff,maxAgeMinutes:0,needsRecheck:false,lineupsConfirmed,marketAvailable,reasonCode:'match_started',reason:'Предматчевый AI больше не обновляется как pre-match: используйте центр матча.'};
+  }
+  let maxAgeMinutes=45;
+  if (minutesToKickoff !== null) {
+    if (minutesToKickoff <= 15) maxAgeMinutes=3;
+    else if (minutesToKickoff <= 45) maxAgeMinutes=5;
+    else if (minutesToKickoff <= 120) maxAgeMinutes=10;
+    else if (minutesToKickoff <= 360) maxAgeMinutes=20;
+  }
+  if (minutesToKickoff !== null && minutesToKickoff <= 90 && !lineupsConfirmed) maxAgeMinutes=Math.min(maxAgeMinutes,5);
+  const needsRecheck=ageMinutes>maxAgeMinutes;
+  let reasonCode='fresh';
+  let reason=`AI обновлён ${ageMinutes} мин. назад; рабочее окно свежести — ${maxAgeMinutes} мин.`;
+  if (needsRecheck && minutesToKickoff !== null && minutesToKickoff <= 90 && !lineupsConfirmed) {
+    reasonCode='lineups_window';
+    reason='Матч близко: стартовые составы могли появиться после последнего расчёта.';
+  } else if (needsRecheck && minutesToKickoff !== null && minutesToKickoff <= 30 && marketAvailable) {
+    reasonCode='market_window';
+    reason='До старта мало времени: рынок и вероятности могли заметно измениться.';
+  } else if (needsRecheck) {
+    reasonCode='age_window';
+    reason=`Последнему AI-разбору ${ageMinutes} мин.; для этого этапа до матча лимит свежести ${maxAgeMinutes} мин.`;
+  }
+  return {state:needsRecheck?'recheck':'fresh',label:needsRecheck?'Нужна перепроверка':'AI свежий',ageMinutes,minutesToKickoff,maxAgeMinutes,needsRecheck,lineupsConfirmed,marketAvailable,reasonCode,reason};
+}
+
+async function userHasAnalyzedFixture(userId, fixtureId, cfg) {
+  const uid=Number(userId || 0), id=Number(fixtureId || 0);
+  if (!uid || !id) return false;
+  if (hasSupabase(cfg)) {
+    try {
+      const row=await supaSelectOne(cfg,'analysis_history',{telegram_id:`eq.${uid}`,fixture_id:`eq.${id}`});
+      return Boolean(row?.fixture_id);
+    } catch { return false; }
+  }
+  return (memory.history.get(uid) || []).some(row=>Number(row.fixture_id)===id);
+}
+
+const ANALYSIS_FRESHNESS_DRILL_NOW=Date.parse('2026-09-23T18:00:00Z');
+function analysisFreshnessDrill() {
+  const base={match:{date:'2026-09-23T18:30:00Z',status:'NS'},market:{odds:{home:2,draw:3,away:4}},lineups:{home:{startXI:[]},away:{startXI:[]}}};
+  const stale=analysisFreshness({...base,generatedAt:'2026-09-23T17:52:00Z'},ANALYSIS_FRESHNESS_DRILL_NOW);
+  const fresh=analysisFreshness({...base,generatedAt:'2026-09-23T17:58:00Z'},ANALYSIS_FRESHNESS_DRILL_NOW);
+  const far=analysisFreshness({...base,match:{date:'2026-09-24T02:00:00Z',status:'NS'},generatedAt:'2026-09-23T17:30:00Z'},ANALYSIS_FRESHNESS_DRILL_NOW);
+  return {pass:stale.needsRecheck && stale.reasonCode==='lineups_window' && !fresh.needsRecheck && !far.needsRecheck,cases:3};
+}
+
+function analysisResponsePayload(payload = {}, extra = {}) {
+  return {...payload,freshness:analysisFreshness(payload),...extra};
+}
 async function apiAnalyze(request, cfg, user) {
   let body = {};
   try { body = await request.json(); } catch {}
   const fixtureId = Number(body?.fixtureId);
   const analysisOrigin=String(body?.origin || 'miniapp').slice(0,30);
+  const recheckRequested=Boolean(body?.recheck);
   const trackFullAi=analysisOrigin !== 'telegram_quick';
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'Некорректный номер матча.' }, 400);
 
   const cacheKey = `fixture:${fixtureId}:v10-ai-instructor`;
   const cached = await getCache(cacheKey, cfg);
-  if (cached) {
+  const staleBefore = cached || await getStaleCache(cacheKey, cfg);
+  const previousFreshness = staleBefore ? analysisFreshness(staleBefore) : null;
+  const needsFreshnessRecheck=Boolean(recheckRequested && staleBefore && previousFreshness?.needsRecheck);
+  let freeRecheck=false;
+  if (needsFreshnessRecheck) freeRecheck=await userHasAnalyzedFixture(user.id,fixtureId,cfg);
+  if (cached && !needsFreshnessRecheck) {
     await recordHistory(user.id, cached, cfg);
-    if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true}});
-    return json({ ...cached, cached: true, stale: false, quota: await getQuota(user.id, cfg) });
+    if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,freshness:previousFreshness?.state || 'fresh'}});
+    return json(analysisResponsePayload(cached,{cached:true,stale:false,recheck:{requested:recheckRequested,performed:false,free:false,reasonCode:previousFreshness?.reasonCode || 'fresh'},quota:await getQuota(user.id,cfg)}));
   }
 
-  const staleBefore = await getStaleCache(cacheKey, cfg);
   const quotaBefore = await getQuota(user.id, cfg);
-  if (quotaBefore.left <= 0) return json({ error: `Лимит исчерпан: ${quotaBefore.used}/${quotaBefore.limit} анализов сегодня.`, quota: quotaBefore }, 429);
+  if (!freeRecheck && quotaBefore.left <= 0) return json({ error: `Лимит исчерпан: ${quotaBefore.used}/${quotaBefore.limit} анализов сегодня.`, quota: quotaBefore }, 429);
 
   let fixture;
   try {
@@ -13110,7 +13181,7 @@ async function apiAnalyze(request, cfg, user) {
     if (staleBefore && isFootballRateLimitError(error)) {
       await recordHistory(user.id, staleBefore, cfg);
       if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,stale:true}});
-      return json({ ...staleBefore, cached: true, stale: true, warning: 'Показан последний сохранённый анализ: источник футбольных данных временно ограничил запросы.', retryAfter: Number(error?.retryAfter || 60), quota: quotaBefore });
+      return json(analysisResponsePayload(staleBefore,{cached:true,stale:true,warning:'Показан последний сохранённый анализ: источник футбольных данных временно ограничил запросы.',retryAfter:Number(error?.retryAfter || 60),recheck:{requested:recheckRequested,performed:false,free:freeRecheck,reasonCode:previousFreshness?.reasonCode || 'provider_limit'},quota:quotaBefore}));
     }
     throw error;
   }
@@ -13164,7 +13235,7 @@ async function apiAnalyze(request, cfg, user) {
     if (staleBefore && isFootballRateLimitError(error)) {
       await recordHistory(user.id, staleBefore, cfg);
       if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,stale:true}});
-      return json({ ...staleBefore, cached: true, stale: true, warning: 'Показан последний сохранённый анализ: источник данных временно достиг лимита.', retryAfter: Number(error?.retryAfter || 60), quota: quotaBefore });
+      return json(analysisResponsePayload(staleBefore,{cached:true,stale:true,warning:'Показан последний сохранённый анализ: источник данных временно достиг лимита.',retryAfter:Number(error?.retryAfter || 60),recheck:{requested:recheckRequested,performed:false,free:freeRecheck,reasonCode:previousFreshness?.reasonCode || 'provider_limit'},quota:quotaBefore}));
     }
     throw error;
   }
@@ -13317,14 +13388,18 @@ async function apiAnalyze(request, cfg, user) {
 
   let ttl = cfg.cacheMinutes;
   if (isFinishedStatus(status)) ttl = 720;
+  else if (minutesToKickoff !== null && minutesToKickoff <= 15) ttl = 3;
+  else if (minutesToKickoff !== null && minutesToKickoff <= 45) ttl = 5;
   else if (minutesToKickoff !== null && minutesToKickoff <= 120) ttl = 10;
+  else if (minutesToKickoff !== null && minutesToKickoff <= 360) ttl = 20;
   else if (minutesToKickoff !== null && minutesToKickoff > 360) ttl = 45;
   await setCache(cacheKey, fixtureId, payload, cfg, ttl);
   await captureModelPrediction(payload, cfg);
-  await incrementUsage(user.id, cfg);
+  if (!freeRecheck) await incrementUsage(user.id, cfg);
   await recordHistory(user.id, payload, cfg);
-  if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:false}});
-  return json({ ...payload, cached: false, stale: false, quota: await getQuota(user.id, cfg) });
+  if (needsFreshnessRecheck) void recordGrowthEvent(cfg,{userId:user.id,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:previousFreshness?.reasonCode || 'age_window'}});
+  if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:false,recheck:needsFreshnessRecheck}});
+  return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:needsFreshnessRecheck,free:freeRecheck,reasonCode:previousFreshness?.reasonCode || 'fresh'},quota:await getQuota(user.id,cfg)}));
 }
 
 async function publicServiceStatus(cfg) {
@@ -13493,6 +13568,13 @@ export default {
         directFixtureDeepLink: 'enabled',
         handoffFunnelTracking: 'enabled',
         oneTapHandoffSelfTest: oneTapHandoffDrill().pass ? 'enabled' : 'failed',
+        aiFreshnessGuard: 'enabled',
+        preKickoffRecheck: 'enabled',
+        userScopedFreeRecheck: 'enabled',
+        lineupFreshnessWindow: 'enabled',
+        adaptiveAnalysisTtl: 'enabled',
+        analysisFreshnessSelfTest: analysisFreshnessDrill().pass ? 'enabled' : 'failed',
+        analysisFreshnessCases: analysisFreshnessDrill().cases,
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',

@@ -79,6 +79,12 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         directFixtureDeepLink: 'enabled',
         handoffFunnelTracking: 'enabled',
         oneTapHandoffSelfTest: 'enabled',
+        aiFreshnessGuard: 'enabled',
+        preKickoffRecheck: 'enabled',
+        userScopedFreeRecheck: 'enabled',
+        lineupFreshnessWindow: 'enabled',
+        adaptiveAnalysisTtl: 'enabled',
+        analysisFreshnessSelfTest: 'enabled',
       });
     }
     if (url.pathname === '/api/app-manifest') return json({ version: '6.27.0-rc35', releaseCandidate: 'RC35' });

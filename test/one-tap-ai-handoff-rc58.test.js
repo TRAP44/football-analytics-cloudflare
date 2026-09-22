@@ -27,17 +27,17 @@ test('full analysis handoff deep-links to the same fixture and brief tab',()=> {
 test('Mini App handoff records full AI through analyze instead of history shortcut',()=> {
   assert.match(app,/const handoff = params\.get\('handoff'\) === '1'/);
   assert.match(app,/openLaunchFixture\(fixtureId, action, tab, handoff\)/);
-  assert.match(app,/if \(handoff\) return analyzeMatch\(id, null\)/);
-  const handoffIndex=app.indexOf('if (handoff) return analyzeMatch(id, null)');
+  assert.match(app,/if \(handoff\) return analyzeMatch\(id, null, \{ recheck:true \}\)/);
+  const handoffIndex=app.indexOf('if (handoff) return analyzeMatch(id, null, { recheck:true })');
   const historyIndex=app.indexOf('await loadHistory(false);',handoffIndex);
   assert.ok(handoffIndex>=0 && historyIndex>handoffIndex);
 });
 
 test('cached Telegram brief to full Mini App does not increment usage twice',()=> {
   const start=worker.indexOf('async function apiAnalyze(request, cfg, user)');
-  const cached=worker.indexOf('if (cached) {',start);
-  const cachedReturn=worker.indexOf('return json({ ...cached, cached: true',cached);
-  const increment=worker.indexOf('await incrementUsage(user.id, cfg);',start);
+  const cached=worker.indexOf('if (cached && !needsFreshnessRecheck) {',start);
+  const cachedReturn=worker.indexOf('return json(analysisResponsePayload(cached',cached);
+  const increment=worker.indexOf('if (!freeRecheck) await incrementUsage(user.id, cfg);',start);
   assert.ok(start>=0 && cached>start && cachedReturn>cached && increment>cachedReturn);
   assert.match(worker,/trackFullAi=analysisOrigin !== 'telegram_quick'/);
 });

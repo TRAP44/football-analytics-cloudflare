@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.50.0-rc58';
+const CLIENT_VERSION = '6.51.0-rc59';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc58';
+const CLIENT_RELEASE_CHANNEL = 'rc59';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2850,11 +2850,13 @@ function renderLaunchFunnel() {
   const first=d.funnel?.[0] || {};
   const last=d.funnel?.at?.(-1) || d.funnel?.[d.funnel.length-1] || {};
   const handoff=d.handoff || {};
+  const rechecks=d.rechecks || {};
   kpis.innerHTML=`<div class="release-monitor-kpis">
     <div><span>Входы</span><strong>${Number(first.users || 0)}</strong><small>bot + Mini App</small></div>
     <div><span>Полный AI</span><strong>${Number(last.users || 0)}</strong><small>${launchFunnelPct(last.fromEntryPct)} от входов</small></div>
     <div><span>Кампаний</span><strong>${Number(d.campaigns?.length || 0)}</strong><small>source + campaign</small></div>
     <div><span>One‑tap → полный AI</span><strong>${Number(handoff.fullAiUsers || 0)}</strong><small>${launchFunnelPct(handoff.conversionPct)} от AI-handoff</small></div>
+    <div><span>AI перепроверки</span><strong>${Number(rechecks.total || 0)}</strong><small>${Number(rechecks.free || 0)} без повторного списания</small></div>
     <div><span>Возврат из новостей</span><strong>${Number(d.returnLoop?.newsReturn || 0)}</strong><small>${launchFunnelPct(d.returnLoop?.conversionPct)} от открывших новости</small></div>
   </div>`;
 
@@ -2863,6 +2865,7 @@ function renderLaunchFunnel() {
   const searchQuality=d.searchQuality || {};
   stages.innerHTML=`<div class="release-monitor-section-head"><strong>Воронка</strong><span>уникальные пользователи</span></div>
     ${bottleneck ? `<div class="data-notice">🎯 Узкое место: <strong>${escapeHtml(bottleneck.label || '')}</strong> · теряется ${launchFunnelPct(bottleneck.dropPct)} пользователей перехода.</div>` : ''}
+    ${Number(rechecks.total || 0) ? `<div class="data-notice">🕒 Freshness guard: <strong>${Number(rechecks.total || 0)}</strong> перепроверок · ${Number(rechecks.free || 0)} бесплатных повторных · ${Number(rechecks.charged || 0)} первых анализов.</div>` : ''}
     ${Number(handoff.users || 0) ? `<div class="data-notice">⚡ One‑tap AI: <strong>${Number(handoff.users || 0)}</strong> пользователей получили Telegram‑бриф · ${Number(handoff.fullAiUsers || 0)} дошли до полного AI · конверсия ${launchFunnelPct(handoff.conversionPct)}.</div>` : ''}
     ${Number(searchQuality.attempts || 0) ? `<div class="data-notice">🔎 Качество поиска: <strong>${launchFunnelPct(searchQuality.matchPct)}</strong> поисков сразу дали матч · матч ${Number(searchQuality.match || 0)} · клуб распознан без матча ${Number(searchQuality.recognizedNoMatch || 0)} · не найдено ${Number(searchQuality.notFound || 0)} · спасено последним матчем ${Number(searchQuality.recoveredRecent || 0)}.</div>` : ''}
     <div class="launch-funnel-stages">${rows.map((x,index)=>`<div>
@@ -5618,7 +5621,7 @@ function syncAnalysisBusyUi() {
   });
 }
 
-async function analyzeMatch(fixtureId, btn) {
+async function analyzeMatch(fixtureId, btn, options = {}) {
   if (state.analysisActionPending) {
     toast('Анализ уже выполняется. Дождитесь завершения текущего запроса.');
     return;
@@ -5636,7 +5639,7 @@ async function analyzeMatch(fixtureId, btn) {
   const original = btn?.textContent || '';
   if (btn) btn.textContent = '⏳ Собираю данные…';
   try {
-    const data = await api('/api/analyze', { method: 'POST', body: JSON.stringify({ fixtureId, origin:'miniapp' }) });
+    const data = await api('/api/analyze', { method: 'POST', body: JSON.stringify({ fixtureId, origin:'miniapp', recheck: options.recheck !== false }) });
     if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
     renderAnalysis(data);
     rememberHistoryAnalysis(data);
@@ -6271,7 +6274,7 @@ async function openLaunchFixture(fixtureId, action, tab = '', handoff = false) {
   if (requestedTab) state.currentAnalysisTab = requestedTab;
   if (action === 'center') return openMatchCenter(id, null);
   if (action === 'analysis') {
-    if (handoff) return analyzeMatch(id, null);
+    if (handoff) return analyzeMatch(id, null, { recheck:true });
     await loadHistory(false);
     if (analysisHistoryForFixture(id)) return openHistoryAnalysis(id, null);
     return analyzeMatch(id, null);
@@ -6312,6 +6315,21 @@ function applyLaunchIntent() {
     renderGlobalSearch();
     showView('searchView', { restore: true });
   }
+}
+function analysisFreshnessHtml(freshness = {}, recheck = {}) {
+  if (!freshness || !freshness.label) return '';
+  const state=String(freshness.state || 'fresh');
+  const icon=state==='recheck'?'🟠':state==='started'?'⚪':'🟢';
+  const mins=Number(freshness.ageMinutes || 0);
+  const kickoff=Number.isFinite(Number(freshness.minutesToKickoff)) ? Number(freshness.minutesToKickoff) : null;
+  const kickoffText=kickoff===null?'':kickoff>0?` · до старта ${kickoff} мин.`:' · матч уже начался';
+  const action=freshness.needsRecheck ? '<button id="analysisRecheckBtn" class="freshness-recheck-btn" type="button">↻ Перепроверить AI сейчас</button>' : '';
+  const rechecked=recheck?.performed ? `<small class="freshness-recheck-meta">${recheck.free ? 'Перепроверено без повторного списания лимита' : 'Выполнена свежая перепроверка'}</small>` : '';
+  return `<section class="panel analysis-freshness ${escapeHtml(state)}">
+    <div><span>${icon}</span><div><strong>${escapeHtml(freshness.label)}</strong><small>Расчёту ${mins} мин.${escapeHtml(kickoffText)}</small></div></div>
+    <p>${escapeHtml(publicText(freshness.reason || ''))}</p>
+    ${rechecked}${action}
+  </section>`;
 }
 function renderAnalysis(d) {
   if (!d) return;
@@ -6393,6 +6411,8 @@ function renderAnalysis(d) {
     </section>
 
     ${d.stale ? `<section class="panel stale-panel"><strong>⚠️ Использован последний сохранённый анализ</strong><p>${escapeHtml(d.warning || 'Свежие данные временно недоступны из-за ограничения источника данных.')}</p></section>` : ''}
+
+    ${analysisFreshnessHtml(d.freshness || {}, d.recheck || {})}
 
     ${aiInstructorHtml(d.aiInstructor || {}, m)}
 
@@ -6564,6 +6584,7 @@ function renderAnalysis(d) {
     </div>
   `;
 
+  $('analysisRecheckBtn')?.addEventListener('click', e => analyzeMatch(Number(m.fixtureId), e.currentTarget, { recheck:true }));
   $('reminderBtn')?.addEventListener('click', () => toggleReminder(m));
   $('shareAnalysisBtn')?.addEventListener('click', () => shareAnalysis(d));
   $('openPrematchBrief')?.addEventListener('click', () => setAnalysisTab('brief', true));

@@ -11,7 +11,7 @@ test('renderAnalysis owns currentAnalysis assignment so a new fixture resets the
   assert.match(render[0], /previousFixture/);
   assert.match(render[0], /previousFixture !== nextFixture/);
 
-  const analyze = app.match(/async function analyzeMatch\(fixtureId, btn\)[\s\S]*?\n}\n\nfunction historyItemFromAnalysis/);
+  const analyze = app.match(/async function analyzeMatch\(fixtureId, btn, options = \{\}\)[\s\S]*?\n}\n\nfunction historyItemFromAnalysis/);
   assert.ok(analyze, 'analyzeMatch must exist');
   assert.doesNotMatch(analyze[0], /state\.currentAnalysis = data/);
 
@@ -21,7 +21,7 @@ test('renderAnalysis owns currentAnalysis assignment so a new fixture resets the
 });
 
 test('a completed analysis is shown before secondary history and reminder refreshes finish', () => {
-  const analyze = app.match(/async function analyzeMatch\(fixtureId, btn\)[\s\S]*?\n}\n\nfunction historyItemFromAnalysis/);
+  const analyze = app.match(/async function analyzeMatch\(fixtureId, btn, options = \{\}\)[\s\S]*?\n}\n\nfunction historyItemFromAnalysis/);
   assert.ok(analyze, 'analyzeMatch must exist');
   const showIndex = analyze[0].indexOf("showView('analysisView')");
   const secondaryIndex = analyze[0].indexOf('void Promise.allSettled([loadHistory(false), loadReminders()])');
