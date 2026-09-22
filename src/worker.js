@@ -38,6 +38,8 @@ const memory = {
   clientTelemetryDedupe: new Map(),
   inflight: new Map(),
   routeBurst: new Map(),
+  telegramBurst: new Map(),
+  telegramUpdateDedupe: new Map(),
   userSyncAt: new Map(),
   providerFeatureFetch: {
     api: 0,
@@ -67,6 +69,8 @@ const memory = {
     integrityDuplicates: 0,
     singleflightJoins: 0,
     burstBlocks: 0,
+    telegramBurstBlocks: 0,
+    telegramDuplicateUpdates: 0,
     upstreamTimeouts: 0,
     userSyncSkips: 0,
     memoryPrunes: 0,
@@ -75,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.43.0-rc51';
+const APP_VERSION = '6.44.0-rc52';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc51';
-const RC_NAME = 'RC51';
+const RELEASE_CHANNEL = 'rc52';
+const RC_NAME = 'RC52';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -827,6 +831,24 @@ function pruneMemoryState() {
     }
   }
 
+  if (memory.telegramBurst.size > 2500) {
+    for (const [key, bucket] of memory.telegramBurst) {
+      if (now - Number(bucket?.startedAt || 0) > 5 * 60 * 1000) {
+        memory.telegramBurst.delete(key);
+        pruned++;
+      }
+    }
+  }
+
+  if (memory.telegramUpdateDedupe.size > 4000) {
+    for (const [key, value] of memory.telegramUpdateDedupe) {
+      if (now - Number(value?.at || 0) > 10 * 60 * 1000) {
+        memory.telegramUpdateDedupe.delete(key);
+        pruned++;
+      }
+    }
+  }
+
   if (memory.clientTelemetryDedupe.size > 1500) {
     for (const [key, at] of memory.clientTelemetryDedupe) {
       if (now - Number(at || 0) > 30 * 60 * 1000) {
@@ -890,6 +912,76 @@ function enforceRouteBurst(request, user) {
   }, 429, { 'retry-after': String(retryAfter) });
 }
 
+const TELEGRAM_BURST_POLICIES = Object.freeze({
+  message: { limit: 10, windowMs: 10000, label: 'message' },
+  callback: { limit: 16, windowMs: 10000, label: 'callback' },
+  refresh: { limit: 4, windowMs: 30000, label: 'refresh' },
+});
+
+function telegramUpdateDedupeKey(update = {}) {
+  const updateId=Number(update?.update_id);
+  if (Number.isSafeInteger(updateId) && updateId >= 0) return `u:${updateId}`;
+  const callbackId=String(update?.callback_query?.id || '');
+  if (callbackId) return `c:${callbackId.slice(0,120)}`;
+  const chatId=Number(update?.message?.chat?.id || 0);
+  const messageId=Number(update?.message?.message_id || 0);
+  return chatId && messageId ? `m:${chatId}:${messageId}` : '';
+}
+
+function claimTelegramUpdate(update = {}) {
+  const key=telegramUpdateDedupeKey(update);
+  if (!key) return {key:'',duplicate:false};
+  const now=Date.now();
+  const prior=memory.telegramUpdateDedupe.get(key);
+  if (prior && now-Number(prior.at || 0)<10*60*1000) {
+    bumpTelemetry('telegramDuplicateUpdates');
+    return {key,duplicate:true};
+  }
+  memory.telegramUpdateDedupe.set(key,{at:now,state:'processing'});
+  if (memory.telegramUpdateDedupe.size>4000) pruneMemoryState();
+  return {key,duplicate:false};
+}
+
+function completeTelegramUpdate(key='') {
+  if (!key) return;
+  const current=memory.telegramUpdateDedupe.get(key);
+  memory.telegramUpdateDedupe.set(key,{at:Date.now(),state:'done',startedAt:current?.at || null});
+}
+
+function releaseTelegramUpdate(key='') {
+  if (key) memory.telegramUpdateDedupe.delete(key);
+}
+
+function telegramBurstKind(update = {}) {
+  if (update?.pre_checkout_query || update?.subscription || update?.message?.successful_payment || update?.message?.refunded_payment) return '';
+  const callback=String(update?.callback_query?.data || '');
+  if (/^(?:news:refresh|news:team_refresh:|match:refresh:)/.test(callback)) return 'refresh';
+  if (update?.callback_query) return 'callback';
+  if (update?.message?.text) return 'message';
+  return '';
+}
+
+function enforceTelegramBurst(update = {}) {
+  const kind=telegramBurstKind(update);
+  const policy=TELEGRAM_BURST_POLICIES[kind];
+  if (!policy) return null;
+  const userId=Number(update?.callback_query?.from?.id || update?.message?.from?.id || 0);
+  if (!userId) return null;
+  const now=Date.now();
+  const key=`${userId}:${policy.label}`;
+  let bucket=memory.telegramBurst.get(key);
+  if (!bucket || now-Number(bucket.startedAt || 0)>=policy.windowMs) bucket={startedAt:now,count:0};
+  bucket.count+=1;
+  memory.telegramBurst.set(key,bucket);
+  if (bucket.count<=policy.limit) {
+    if (memory.telegramBurst.size>2500) pruneMemoryState();
+    return null;
+  }
+  const retryAfter=Math.max(1,Math.ceil((policy.windowMs-(now-bucket.startedAt))/1000));
+  bumpTelemetry('telegramBurstBlocks');
+  return {blocked:true,userId,kind,retryAfter};
+}
+
 function productionSafetySnapshot() {
   return {
     singleflight: {
@@ -900,6 +992,13 @@ function productionSafetySnapshot() {
       activeBuckets: memory.routeBurst.size,
       blocked: Number(memory.telemetry?.burstBlocks || 0),
       policies: ROUTE_BURST_POLICIES.map(x => ({ label: x.label, limit: x.limit, windowMs: x.windowMs })),
+    },
+    telegramWebhook: {
+      activeBuckets: memory.telegramBurst.size,
+      blocked: Number(memory.telemetry?.telegramBurstBlocks || 0),
+      duplicateUpdates: Number(memory.telemetry?.telegramDuplicateUpdates || 0),
+      dedupeEntries: memory.telegramUpdateDedupe.size,
+      policies: Object.values(TELEGRAM_BURST_POLICIES).map(x=>({label:x.label,limit:x.limit,windowMs:x.windowMs})),
     },
     upstream: {
       timeouts: Number(memory.telemetry?.upstreamTimeouts || 0),
@@ -1520,6 +1619,14 @@ function telegramWebAppUrl(request, params = {}) {
   return url.toString();
 }
 
+function publicSiteUrl(request, pathname = '/') {
+  const url=new URL(request.url);
+  url.pathname=pathname.startsWith('/') ? pathname : `/${pathname}`;
+  url.search='';
+  url.hash='';
+  return url.toString();
+}
+
 function footballBotKeyboard(request) {
   return {
     keyboard: [
@@ -1882,7 +1989,24 @@ async function sendFootballBotHelp(request, cfg, chatId) {
   await telegramApi('sendMessage', cfg, {
     chat_id: chatId,
     parse_mode: 'HTML',
-    text: '<b>Как пользоваться FM AI</b>\n\n⚽ <b>Матчи сегодня</b> — персональная лента матчей.\n🔴 <b>LIVE</b> — матчи, которые идут сейчас.\n🧠 <b>AI-подборка</b> — три заметных матча дня.\n🔎 <b>Найти матч</b> — бот попросит написать команду или игру.\n⭐ <b>Мои команды</b> — избранное.\n🕘 <b>Последний разбор</b> — сохранённый AI-вердикт.\n📰 <b>Новости</b> — важные футбольные события с источниками и объяснением, почему они могут быть важны.\n☀️ <b>Утренняя подборка</b> — матчи дня и главное за утро.\n\nПосле выбора матча кнопки <b>AI-вердикт · Судья · Составы · Рынок</b> отвечают прямо в Telegram. Mini App нужен только для полного подробного разбора.\n\nМожно также просто написать название команды или матча обычным текстом.',
+    text: [
+      '<b>Как пользоваться FM AI</b>',
+      '',
+      '⚽ <b>Матчи сегодня</b> — персональная лента матчей.',
+      '🔴 <b>LIVE</b> — матчи, которые идут сейчас.',
+      '🧠 <b>AI-подборка</b> — три заметных матча дня.',
+      '🔎 <b>Найти матч</b> — бот попросит написать команду или игру.',
+      '⭐ <b>Мои команды</b> — избранное.',
+      '🕘 <b>Последний разбор</b> — сохранённый AI-вердикт.',
+      '📰 <b>Новости</b> — важные события с источниками и объяснением контекста.',
+      '☀️ <b>Утренняя подборка</b> — матчи дня и главное за утро.',
+      '',
+      'После выбора матча быстрые блоки отвечают прямо в Telegram. <b>Полный AI-разбор</b> открывается в Mini App.',
+      '',
+      '<i>FM AI — информационно-аналитический сервис. Он не гарантирует исход матча и не является финансовой или букмекерской рекомендацией.</i>',
+      '',
+      `<a href="${telegramHtmlEscape(publicSiteUrl(request,'/privacy.html'))}">Privacy</a> · <a href="${telegramHtmlEscape(publicSiteUrl(request,'/terms.html'))}">Terms</a> · <a href="${telegramHtmlEscape(publicSiteUrl(request,'/status.html'))}">Status</a>`,
+    ].join('\n'),
     reply_markup: footballBotKeyboard(request),
   });
 }
@@ -2268,14 +2392,7 @@ async function sendLastAiVerdict(request, cfg, userId, chatId) {
       : {inline_keyboard:[[{text:'🕘 Открыть историю',web_app:{url:telegramWebAppUrl(request,{view:'history'})}}]]},
   });
 }
-async function handleTelegramWebhook(request, cfg) {
-  if (!cfg.webhookSecret) return json({ ok: false, error: 'webhook_secret_missing' }, 503);
-  const provided = request.headers.get('x-telegram-bot-api-secret-token') || '';
-  if (!constantTimeEqual(String(provided), String(cfg.webhookSecret))) return json({ ok: false }, 403);
-
-  let update = {};
-  try { update = await request.json(); } catch { return json({ ok: false }, 400); }
-
+async function processTelegramUpdate(request, cfg, update) {
   if (update.pre_checkout_query) {
     const q = update.pre_checkout_query;
     if (!cfg.monetizationEnabled) {
@@ -2515,6 +2632,40 @@ async function handleTelegramWebhook(request, cfg) {
   }
 
   return json({ ok: true });
+}
+
+async function handleTelegramWebhook(request, cfg) {
+  if (!cfg.webhookSecret) return json({ ok: false, error: 'webhook_secret_missing' }, 503);
+  const provided=request.headers.get('x-telegram-bot-api-secret-token') || '';
+  if (!constantTimeEqual(String(provided),String(cfg.webhookSecret))) return json({ok:false},403);
+
+  let update={};
+  try { update=await request.json(); } catch { return json({ok:false},400); }
+
+  const claim=claimTelegramUpdate(update);
+  if (claim.duplicate) return json({ok:true,deduped:true});
+
+  const burst=enforceTelegramBurst(update);
+  if (burst?.blocked) {
+    completeTelegramUpdate(claim.key);
+    const callbackId=String(update?.callback_query?.id || '');
+    if (callbackId) {
+      await telegramApi('answerCallbackQuery',cfg,{
+        callback_query_id:callbackId,
+        text:`Слишком много действий подряд. Повторите через ${burst.retryAfter} сек.`,
+      }).catch(()=>null);
+    }
+    return json({ok:true,throttled:true,retryAfter:burst.retryAfter});
+  }
+
+  try {
+    const response=await processTelegramUpdate(request,cfg,update);
+    completeTelegramUpdate(claim.key);
+    return response;
+  } catch (error) {
+    releaseTelegramUpdate(claim.key);
+    throw error;
+  }
 }
 
 async function apiBillingPlans(request, cfg, user) {
@@ -8996,6 +9147,8 @@ async function apiRcRegression(request, cfg, user) {
     `${Number(safety.singleflight?.joins || 0)} joins; ${Number(safety.singleflight?.active || 0)} active.`, true));
   checks.push(rcCheck('burst_guard', 'safety', 'Защита от всплесков запросов', Number(safety.burstGuard?.policies?.length || 0) >= 8 ? 'pass' : 'fail',
     `${Number(safety.burstGuard?.policies?.length || 0)} route policies.`, true));
+  checks.push(rcCheck('telegram_webhook_guard', 'safety', 'Защита Telegram webhook', Number(safety.telegramWebhook?.policies?.length || 0) >= 3 ? 'pass' : 'fail',
+    `${Number(safety.telegramWebhook?.policies?.length || 0)} policies; ${Number(safety.telegramWebhook?.duplicateUpdates || 0)} duplicate updates ignored.`, true));
   checks.push(rcCheck('timeouts', 'safety', 'Тайм-ауты внешних сервисов', 'pass',
     `Supabase ${Number(safety.upstream?.supabaseTimeoutMs || 0)} мс; API-Football ${Number(safety.upstream?.apiFootballTimeoutMs || 0)} мс.`, true));
   checks.push(rcCheck('l1_bounds', 'safety', 'Ограниченное быстрое хранилище', Number(safety.memory?.cacheEntries || 0) <= 600 ? 'pass' : 'warn',
@@ -9071,7 +9224,8 @@ async function apiRcRegression(request, cfg, user) {
 }
 
 const NEWS_BLOCKED_HOST_RE = /(?:facebook|instagram|tiktok|twitter|x\.com|youtube|youtu\.be|pinterest|betting|bet365|tips?ster|prediction)/i;
-const NEWS_MAJOR_SOURCE_RE = /(?:reuters|apnews|bbc\.|espn|skysports|theathletic|uefa\.|fifa\.|goal\.|marca\.|as\.com|lequipe|kicker|gazzetta)/i;
+const NEWS_MAJOR_SOURCE_RE = /(?:reuters|apnews|bbc\.|espn|skysports|theathletic|goal\.|marca\.|as\.com|lequipe|kicker|gazzetta)/i;
+const NEWS_OFFICIAL_SOURCE_RE = /(?:uefa\.|fifa\.|premierleague\.com|laliga\.com|bundesliga\.com|legaseriea\.it|ligue1\.com)/i;
 
 function externalNewsUrl(value = '') {
   try {
@@ -9083,6 +9237,25 @@ function externalNewsUrl(value = '') {
 function newsSourceDomain(value = '') {
   try { return new URL(String(value || '')).hostname.replace(/^www\./,''); }
   catch { return ''; }
+}
+
+function newsSourceTrust(url = '') {
+  const value=String(url || '');
+  if (NEWS_OFFICIAL_SOURCE_RE.test(value)) return {tier:'official',score:95,label:'Официальный источник'};
+  if (NEWS_MAJOR_SOURCE_RE.test(value)) return {tier:'major',score:88,label:'Крупный источник'};
+  return {tier:'web',score:58,label:'Веб-источник'};
+}
+
+function applyNewsTrustGate(item = {}) {
+  const trust=newsSourceTrust(item.url);
+  const originalImpact=String(item?.category?.impact || 'low');
+  const needsConfirmation=originalImpact==='high' && !['official','major'].includes(trust.tier);
+  return {
+    ...item,
+    trust,
+    verification:needsConfirmation ? 'needs_confirmation' : 'source_backed',
+    category:needsConfirmation ? {...item.category,impact:'medium'} : item.category,
+  };
 }
 
 function footballNewsCategory(article = {}) {
@@ -9125,7 +9298,7 @@ function normalizeFootballNewsResult(row = {}) {
     source:newsSourceDomain(url),
     publishedAt:String(row.published_date || row.publishedAt || ''),
     category,
-    sourceTier:NEWS_MAJOR_SOURCE_RE.test(url) ? 'major' : 'web',
+    sourceTier:newsSourceTrust(url).tier,
   };
 }
 
@@ -9138,9 +9311,11 @@ function dedupeFootballNews(rows = [], limit = 6) {
     const tk=searchText(item.title).replace(/[^a-zа-я0-9 ]/gi,'').slice(0,90);
     if (seenUrl.has(item.url) || (tk && seenTitle.has(tk))) continue;
     seenUrl.add(item.url); if (tk) seenTitle.add(tk);
-    out.push(item);
+    out.push(applyNewsTrustGate(item));
   }
-  return out.sort((a,b)=>(b.sourceTier==='major')-(a.sourceTier==='major') || (b.category.impact==='high')-(a.category.impact==='high')).slice(0,limit);
+  const tierScore=x=>x.sourceTier==='official'?3:x.sourceTier==='major'?2:1;
+  const impactScore=x=>x.category?.impact==='high'?3:x.category?.impact==='medium'?2:1;
+  return out.sort((a,b)=>tierScore(b)-tierScore(a) || impactScore(b)-impactScore(a)).slice(0,limit);
 }
 
 async function tavilyNewsSearch(query, cfg, { days = 3, maxResults = 7 } = {}) {
@@ -9212,7 +9387,8 @@ function newsFeedText(items = [], { title='FM AI News', teamName='', fixture=nul
       `${index+1}. ${item.category.icon} <b>${telegramHtmlEscape(item.title)}</b>`,
       `${telegramHtmlEscape(item.category.label)} · ${newsImpactBadge(item.category.impact)}`,
       `Почему важно: ${telegramHtmlEscape(why)}`,
-      `Источник: ${telegramHtmlEscape(item.source || 'веб-источник')}`,
+      `Источник: ${telegramHtmlEscape(item.source || 'веб-источник')} · ${telegramHtmlEscape(item.trust?.label || 'Веб-источник')}`,
+      ...(item.verification==='needs_confirmation' ? ['Проверка: требуется подтверждение ещё одним надёжным источником.'] : []),
     ].join('\n');
   });
   const intro=teamName ? `Новости по <b>${telegramHtmlEscape(teamName)}</b>` : '<b>Главное в футболе</b>';
@@ -9277,7 +9453,7 @@ async function currentMorningFootballNews(cfg) {
 
 function morningNewsText(items = []) {
   if (!items.length) return '';
-  return ['📰 <b>Главное за утро</b>','',...items.slice(0,2).map((item,i)=>`${i+1}. ${item.category.icon} <b>${telegramHtmlEscape(item.title)}</b>\n${telegramHtmlEscape(item.category.label)} · ${newsImpactBadge(item.category.impact)}\nИсточник: ${telegramHtmlEscape(item.source || 'веб-источник')}`),'','Откройте источник или нажмите «Новости», чтобы увидеть объяснение FM AI.'].join('\n');
+  return ['📰 <b>Главное за утро</b>','',...items.slice(0,2).map((item,i)=>`${i+1}. ${item.category.icon} <b>${telegramHtmlEscape(item.title)}</b>\n${telegramHtmlEscape(item.category.label)} · ${newsImpactBadge(item.category.impact)}\nИсточник: ${telegramHtmlEscape(item.source || 'веб-источник')} · ${telegramHtmlEscape(item.trust?.label || 'Веб-источник')}`),'','Откройте источник или нажмите «Новости», чтобы увидеть объяснение FM AI.'].join('\n');
 }
 
 async function tavilySearch(query, cfg) {
@@ -12624,10 +12800,40 @@ async function apiAnalyze(request, cfg, user) {
   return json({ ...payload, cached: false, stale: false, quota: await getQuota(user.id, cfg) });
 }
 
+async function publicServiceStatus(cfg) {
+  const runtimeState=await loadRuntimeControls(cfg);
+  const runtime=publicRuntimeControls(runtimeState.value);
+  const providerCooldown=Number(memory.provider?.cooldownUntil || 0)>Date.now();
+  const maintenance=Boolean(runtime.maintenanceMode);
+  const coreLimited=maintenance || !runtime.analysisEnabled || !runtime.searchEnabled;
+  const status=maintenance ? 'maintenance' : providerCooldown || coreLimited ? 'degraded' : 'operational';
+  return {
+    ok:status!=='maintenance',
+    status,
+    label:status==='operational'?'Все основные системы работают':status==='maintenance'?'Техническое обслуживание':'Часть функций работает с ограничениями',
+    version:APP_VERSION,
+    releaseCandidate:RC_NAME,
+    generatedAt:new Date().toISOString(),
+    services:{
+      telegram:cfg.botToken && cfg.webhookSecret ? 'operational' : 'configuration_required',
+      miniApp:'operational',
+      aiAnalysis:runtime.analysisEnabled ? (cfg.apiFootballKey ? 'operational' : 'configuration_required') : 'paused',
+      search:runtime.searchEnabled ? (cfg.apiFootballKey ? 'operational' : 'configuration_required') : 'paused',
+      live:runtime.liveEnabled ? (cfg.apiFootballKey ? 'operational' : 'configuration_required') : 'paused',
+      news:cfg.tavilyKey ? 'operational' : 'limited',
+    },
+    notice:runtime.message || '',
+  };
+}
+
 export default {
   async fetch(request, env) {
     const cfg = config(env);
     const url = new URL(request.url);
+
+    if (request.method === 'GET' && url.pathname === '/status') {
+      return json(await publicServiceStatus(cfg),200,{'cache-control':'no-store'});
+    }
 
     if (url.pathname === '/health' || url.pathname === '/api/health') {
       return json({
@@ -12722,6 +12928,12 @@ export default {
         brandedMatchCards: 'enabled',
         telegramSearchAliasParity: 'enabled',
         mediaLaunchUx: 'enabled',
+        mediaLaunchHardening: 'enabled',
+        telegramWebhookDedupe: 'enabled',
+        telegramWebhookBurstGuard: 'enabled',
+        newsSourceTrustGate: 'enabled',
+        publicLegalPages: 'enabled',
+        publicStatusPage: 'enabled',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',

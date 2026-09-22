@@ -1,6 +1,24 @@
-# Football Analytics Mini App v6.43.0 — RC51
+# Football Analytics Mini App v6.44.0 — RC52
 
 Telegram Mini App для футбольной аналитики на Cloudflare Workers, Supabase, API-Football и Tavily.
+
+## RC52: Media Launch Hardening
+
+- Telegram webhook получил отдельный per-user burst guard: обычные сообщения, callback-действия и тяжёлые refresh-кнопки имеют разные окна/лимиты;
+- платёжные lifecycle-события исключены из generic burst throttle;
+- Telegram `update_id`/callback/message identity дедуплицируется: повторная доставка одного update не может повторно переключить избранное или запустить действие;
+- если обработка update падает с исключением, dedupe-claim освобождается и Telegram может безопасно повторить доставку;
+- `/telegram/*` принудительно направлен через Worker в Cloudflare Assets config;
+- публичный `/status` показывает только безопасное состояние пользовательских сервисов и версию релиза;
+- добавлены публичные `privacy.html`, `terms.html`, `status.html` и внешний `status.js`;
+- Mini App показывает компактные ссылки Privacy / Terms / Status без добавления новых продуктовых экранов;
+- Telegram help содержит AI-дисклеймер и ссылки на trust-страницы;
+- новостной trust-gate различает official/major/web источники;
+- high-impact новость из одиночного обычного web-источника автоматически понижается до medium и помечается как требующая подтверждения;
+- production smoke проверяет public status, legal pages, CSP и что webhook без secret получает HTTP 403;
+- RC regression теперь отдельно проверяет Telegram webhook guard;
+- новых таблиц Supabase и миграций RC52 нет;
+- версия Worker/client/production smoke: v6.44.0 RC52.
 
 ## RC51: Public Telegram UX — подготовка к запуску в СМИ
 

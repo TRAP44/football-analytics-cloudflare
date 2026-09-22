@@ -26,6 +26,12 @@ const REQUIRED_HEALTH_FLAGS = [
   'dynamicRussianLocalization',
   'adminTextHumanization',
   'matchCenterRussianLocalization',
+  'mediaLaunchHardening',
+  'telegramWebhookDedupe',
+  'telegramWebhookBurstGuard',
+  'newsSourceTrustGate',
+  'publicLegalPages',
+  'publicStatusPage',
 ];
 
 function delay(ms) {
@@ -42,14 +48,15 @@ function deploymentBaseUrl(value) {
   return url;
 }
 
-async function request(fetchImpl, baseUrl, path, timeoutMs = 8000) {
+async function request(fetchImpl, baseUrl, path, timeoutMs = 8000, init = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetchImpl(new URL(path, baseUrl), {
-      method: 'GET',
+      method: init.method || 'GET',
       redirect: 'follow',
-      headers: { accept: 'application/json, text/html;q=0.9' },
+      headers: { accept: 'application/json, text/html;q=0.9', ...(init.headers || {}) },
+      ...(init.body !== undefined ? { body:init.body } : {}),
       signal: controller.signal,
     });
   } finally {
@@ -127,12 +134,29 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
   const hiddenProbe = await request(fetchImpl, baseUrl, '/health/supabase');
   if (hiddenProbe.status !== 404) throw new Error('/health/supabase must remain unavailable publicly.');
 
+  const publicStatusResponse = await request(fetchImpl, baseUrl, '/status');
+  const publicStatus = await jsonBody(publicStatusResponse, 'Public status endpoint');
+  if (!publicStatusResponse.ok || publicStatus?.version !== expectedVersion || publicStatus?.releaseCandidate !== expectedReleaseCandidate) {
+    throw new Error('Public status endpoint does not match the deployed release.');
+  }
+
+  for (const path of ['/privacy.html','/terms.html','/status.html']) {
+    const response=await request(fetchImpl,baseUrl,path);
+    const type=String(response.headers.get('content-type') || '').toLowerCase();
+    if (!response.ok || !type.includes('text/html')) throw new Error(`${path} must be a public HTML page.`);
+    const csp=String(response.headers.get('content-security-policy') || '');
+    if (!csp.includes("object-src 'none'")) throw new Error(`${path} is missing the static security policy.`);
+  }
+
+  const webhookProbe=await request(fetchImpl,baseUrl,'/telegram/webhook',8000,{method:'POST',headers:{'content-type':'application/json'},body:'{}'});
+  if (webhookProbe.status !== 403) throw new Error(`Telegram webhook must reject a request without its secret with HTTP 403, received ${webhookProbe.status}.`);
+
   return {
     ok: true,
     origin: baseUrl.origin,
     version: health.version,
     releaseCandidate: health.releaseCandidate,
-    checks: 11,
+    checks: 17,
   };
 }
 

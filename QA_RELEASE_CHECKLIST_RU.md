@@ -1,10 +1,10 @@
-# QA Release Checklist — v6.43.0 RC51
+# QA Release Checklist — v6.44.0 RC52
 
 ## Deploy
 
 - применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql`, `supabase_migration_v6_11_1.sql` и `supabase_migration_v6_12.sql` и `supabase_migration_v6_13.sql` и `supabase_migration_v6_14.sql`;
-- Worker/client = `6.43.0-rc51`;
-- package = `6.43.0`;
+- Worker/client = `6.44.0-rc52`;
+- package = `6.44.0`;
 - cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;
@@ -89,6 +89,25 @@
 - слабое покрытие приводит к «Ждать больше данных»;
 - сломанный сценарий приводит к «Не опираться на предматчевый сигнал»;
 - никаких новых таблиц или внешних провайдеров RC44 не добавляет.
+
+## RC52 — Media Launch Hardening
+
+- повторный Telegram update не должен повторно выполнять favorite toggle или AI callback;
+- при исключении во время обработки dedupe-claim должен освобождаться;
+- message/callback/refresh имеют раздельные burst policies;
+- payment/pre-checkout/subscription updates не блокируются generic Telegram burst guard;
+- webhook без `x-telegram-bot-api-secret-token` получает HTTP 403 в Production;
+- Cloudflare Assets `run_worker_first` содержит `/telegram/*` и `/status`;
+- `/status` не раскрывает ключи, Supabase URL, Telegram ID админа или provider quota;
+- Privacy/Terms/Status доступны как статические HTTPS-страницы с CSP;
+- privacy описывает реально используемые пользовательские данные и внешних провайдеров;
+- terms явно отделяет AI-анализ от гарантии результата и финансовой/букмекерской рекомендации;
+- trust-ссылки видны на основном AI-search экране, но не создают новую продуктовую навигацию Mini App;
+- official/major news source сохраняет исходную impact-категорию;
+- high-impact news из обычного web source понижается до medium и показывает «требуется подтверждение»;
+- production smoke проверяет release version на `/status`, три trust pages и webhook secret enforcement;
+- RC regression содержит blocking check `telegram_webhook_guard`;
+- новых таблиц и миграций RC52 нет.
 
 ## RC51 — Public Telegram UX
 
