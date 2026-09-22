@@ -24,7 +24,7 @@ test('telegram bot accepts natural football search through the shared safe route
   assert.match(worker,/function botCachedDayMatches/);
   assert.match(worker,/function botRemoteTeamMatches/);
   assert.match(worker,/function botSearchParts/);
-  assert.match(worker,/await sendBotFootballSearch\(request, cfg, chatId, text\)/);
+  assert.match(worker,/await sendBotFootballSearch\(request, cfg, Number\(msg\.from\?\.id \|\| chatId\), chatId, text\)/);
 });
 
 test('telegram bot escapes HTML and guards provider quota',()=>{

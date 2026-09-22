@@ -27,7 +27,7 @@ test('single match search exposes action buttons',()=> {
   assert.match(worker,/🧑‍⚖️ Судья/);
   assert.match(worker,/👥 Составы и потери/);
   assert.match(worker,/💹 Рынок и риски/);
-  assert.match(worker,/📊 Полный разбор/);
+  assert.match(worker,/📊 Полный AI-разбор/);
 });
 
 test('digest is managed with buttons and callback queries',()=> {
