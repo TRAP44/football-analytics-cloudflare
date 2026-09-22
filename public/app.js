@@ -974,7 +974,7 @@ function humanizeTechnicalText(value) {
     [/\bworker\b/gi, 'серверный обработчик'],
     [/\bhealth\b/gi, 'состояние'],
     [/\bconfidence\b/gi, 'уверенность'],
-    [/\bBrier score\b/gi, 'ошибка Брайера'],
+    [/\bBrier\s+score\b/gi, 'ошибка Брайера'],
     [/\bBrier\b/gi, 'ошибка Брайера'],
     [/\bFREE\b/g, 'Бесплатный'],
     [/\bHOLD\b/g, 'ОЖИДАНИЕ'],
