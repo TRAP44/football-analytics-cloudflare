@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.13.0-rc21';
+const CLIENT_VERSION = '6.14.0-rc22';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc21';
+const CLIENT_RELEASE_CHANNEL = 'rc22';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -790,9 +790,16 @@ function isAdmin() {
 
 function applyAdminVisibility() {
   const admin = isAdmin();
-  document.querySelectorAll('[data-admin-only]').forEach(el => { el.hidden = !admin; });
+  document.querySelectorAll('[data-admin-only]').forEach(el => {
+    el.hidden = !admin;
+    el.setAttribute('aria-hidden', admin ? 'false' : 'true');
+  });
   const badge = $('adminRoleBadge');
-  if (badge) badge.hidden = !admin;
+  if (badge) {
+    badge.hidden = !admin;
+    badge.setAttribute('aria-hidden', admin ? 'false' : 'true');
+    badge.textContent = admin ? '🔐 Администратор' : '';
+  }
 }
 
 function renderDataCapabilities() {
@@ -959,7 +966,7 @@ function renderModelQuality() {
       <div><span>Lifecycle</span><strong>${lifecycleLabel}</strong><small>revision ${Number(lifecycle.revision || 0)}</small></div>
       <div><span>Active fingerprint</span><strong>${escapeHtml(String(lifecycle.activeFingerprint || ce.fingerprint || '—').slice(0, 10))}</strong><small>${lifecycle.previousFingerprint ? `rollback → ${escapeHtml(String(lifecycle.previousFingerprint).slice(0, 10))}` : 'предыдущего champion нет'}</small></div>
     </div>
-    <div class="calibration-promotion-note"><strong>Защита RC21:</strong> challenger проходит два последовательных trusted holdout-окна, затем атомарно сравнивается с active champion. ${lifecycle.frozen ? `Lifecycle заморожен: ${escapeHtml(lifecycle.freezeReason || 'причина указана в административном журнале')}.` : 'После продвижения отдельная когорта может автоматически вернуть предыдущий профиль.'}</div>
+    <div class="calibration-promotion-note"><strong>Защита RC22:</strong> challenger проходит два последовательных trusted holdout-окна, затем атомарно сравнивается с active champion. ${lifecycle.frozen ? `Lifecycle заморожен: ${escapeHtml(lifecycle.freezeReason || 'причина указана в административном журнале')}.` : 'После продвижения отдельная когорта может автоматически вернуть предыдущий профиль.'}</div>
     <div class="calibration-weights">
       ${(ce.signalStats || []).map(x => {
         const base = Number(x.baseWeight || 0) * 100;
@@ -1718,11 +1725,11 @@ function runClientContractSmoke() {
   const adminSections = [...document.querySelectorAll('[data-admin-only]')];
   add('admin_sections', 'Разметка интерфейса администратора', adminSections.length >= 6, `${adminSections.length} технических секций доступны только администратору.`);
 
-  const cssLink = document.querySelector('link[href*="styles.css?v=6.13.0"]');
-  const appScript = document.querySelector('script[src*="app.js?v=6.13.0"]');
+  const cssLink = document.querySelector('link[href*="styles.css?v=6.14.0"]');
+  const appScript = document.querySelector('script[src*="app.js?v=6.14.0"]');
   add('cache_bust', 'Версии файлов интерфейса', Boolean(cssLink && appScript), `CSS ${cssLink ? 'OK' : 'MISS'} · JS ${appScript ? 'OK' : 'MISS'}.`);
 
-  add('client_version', 'Версия клиента', CLIENT_VERSION === '6.13.0-rc21', CLIENT_VERSION);
+  add('client_version', 'Версия клиента', CLIENT_VERSION === '6.14.0-rc22', CLIENT_VERSION);
   add('telegram_sdk', 'Telegram WebApp SDK', Boolean(window.Telegram?.WebApp), window.Telegram?.WebApp ? 'SDK доступен.' : 'В обычном браузере SDK может отсутствовать; в Telegram должен быть доступен.');
 
   const navButtons = ['navMatches','navSearch','navHistory','navProfile'].filter(id => $(id));
@@ -1748,7 +1755,7 @@ function runClientContractSmoke() {
 }
 
 function rcStateText(status) {
-  if (status === 'rc_ready') return 'RC21 ГОТОВ';
+  if (status === 'rc_ready') return 'RC22 ГОТОВ';
   if (status === 'rc_with_holds') return 'RC С ОГРАНИЧЕНИЯМИ';
   if (status === 'blocked') return 'ЗАБЛОКИРОВАНО';
   return 'ОЖИДАНИЕ';
@@ -1782,7 +1789,7 @@ function renderRcRegression() {
   const r = state.rcRegression;
   if (!r) {
     badge.className = 'rc-badge';
-    badge.textContent = 'RC21';
+    badge.textContent = 'RC22';
     status.textContent = 'Полная регрессионная проверка ещё не запускалась.';
     meta.textContent = 'Тест безопасный: без полного анализа, без изменения пользовательских данных и без расхода API-Football.';
     summary.innerHTML = '';
@@ -5292,7 +5299,7 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// RC21: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
+// RC22: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
 // The boot watchdog never leaves the user behind an endless splash screen.
 const startupWatchdog = setTimeout(() => {
   if (!$('bootGate')?.hidden && !state.compatibilityBlocked) {

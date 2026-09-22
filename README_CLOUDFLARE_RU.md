@@ -1,6 +1,14 @@
-# Football Analytics Mini App v6.13.0 — RC21
+# Football Analytics Mini App v6.14.0 — RC22
 
 Telegram Mini App для футбольной аналитики на Cloudflare Workers, Supabase и API-Football.
+
+## RC22: UI Access Integrity
+
+- бейдж «Администратор» теперь подчиняется тому же fail-closed контракту `data-admin-only`, что и вся админ-панель;
+- `hidden` принудительно сохраняет `display:none`, поэтому Telegram WebView не покажет скрытый служебный элемент из-за компонентного CSS;
+- клиент синхронизирует `hidden` и `aria-hidden` и очищает подпись роли для обычного пользователя;
+- регрессионный тест блокирует релиз, если admin-only элементы перестанут быть скрыты по умолчанию;
+- версия клиента, Worker и production smoke переведены на v6.14.0 RC22.
 
 ## RC21: Release Security Hardening
 

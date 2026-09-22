@@ -1,10 +1,10 @@
-# QA Release Checklist — v6.13.0 RC21
+# QA Release Checklist — v6.14.0 RC22
 
 ## Deploy
 
 - применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql` и `supabase_migration_v6_11_1.sql`;
-- Worker/client = `6.13.0-rc21`;
-- package = `6.13.0`;
+- Worker/client = `6.14.0-rc22`;
+- package = `6.14.0`;
 - cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;
@@ -78,7 +78,7 @@ npm run verify:worker
 
 ## Post-deploy
 
-- `/health` возвращает `6.13.0-rc21`, `RC21` и `devMode=false`;
+- `/health` возвращает `6.14.0-rc22`, `RC22` и `devMode=false`;
 - `cloudflareDeploymentGate=enabled`;
 - `browserSecurityPolicy=enabled` и `failClosedDeployment=enabled`;
 - `/api/app-manifest` соответствует версии Worker;

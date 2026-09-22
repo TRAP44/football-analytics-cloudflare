@@ -1246,6 +1246,7 @@ main { position: relative; z-index: 1; }
   border:1px solid var(--line);border-radius:999px;font-size:12px;font-weight:800;
   background:color-mix(in srgb,var(--card) 86%,transparent);
 }
+.admin-role-badge[hidden]{display:none!important}
 [data-admin-only][hidden]{display:none!important}
 .data-mode-panel .public-data-grid{margin-top:8px}
 .absence-live-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}
@@ -2136,7 +2137,7 @@ main { position: relative; z-index: 1; }
 .runtime-controls-badge,.reminder-health-badge,.release-monitor-badge,.production-badge,.expanded-gate-badge{min-width:72px}
 
 
-/* RC21 — Release Security Hardening */
-.rc-panel:before{content:"RC21"}
+/* RC22 — Release Security Hardening */
+.rc-panel:before{content:"RC22"}
 .calibration-promotion-note{margin-top:9px;padding:9px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font-size:9px;color:var(--hint)}
 .calibration-promotion-note strong{color:var(--text)}
