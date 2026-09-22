@@ -43,9 +43,21 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         dynamicRussianLocalization: 'enabled',
         adminTextHumanization: 'enabled',
         matchCenterRussianLocalization: 'enabled',
+        mediaLaunchHardening: 'enabled',
+        telegramWebhookDedupe: 'enabled',
+        telegramWebhookBurstGuard: 'enabled',
+        newsSourceTrustGate: 'enabled',
+        publicLegalPages: 'enabled',
+        publicStatusPage: 'enabled',
       });
     }
     if (url.pathname === '/api/app-manifest') return json({ version: '6.27.0-rc35', releaseCandidate: 'RC35' });
+    if (url.pathname === '/status') return json({ ok:true, status:'operational', version:'6.27.0-rc35', releaseCandidate:'RC35', services:{telegram:'operational'} });
+    if (['/privacy.html','/terms.html','/status.html'].includes(url.pathname)) return new Response('<!doctype html>', { status:200, headers:{
+      'content-type':'text/html; charset=UTF-8',
+      'content-security-policy':"default-src 'self'; object-src 'none'",
+    }});
+    if (url.pathname === '/telegram/webhook') return json({ ok:false },403);
     if (url.pathname === '/') return new Response('<!doctype html>', { status: 200, headers: {
       'content-type': 'text/html; charset=UTF-8',
       'content-security-policy': "default-src 'self'; script-src 'self' https://telegram.org; object-src 'none'",
@@ -64,7 +76,7 @@ test('post-deploy smoke validates RC35, security headers and protected routes', 
     retryDelayMs: 0,
   });
   assert.equal(result.ok, true);
-  assert.equal(result.checks, 11);
+  assert.equal(result.checks, 17);
 });
 
 test('post-deploy smoke retries while the previous Worker version is propagating', async () => {
