@@ -46,7 +46,7 @@ test('team standing action opens the actual competition table instead of a hardc
   assert.doesNotMatch(app, /data-open-tournament="1"/);
 });
 
-test('RC25 health advertises interaction-safety contracts', () => {
+test('RC26 health advertises interaction-safety contracts', () => {
   assert.match(worker, /interactionSafety:\s*'enabled'/);
   assert.match(worker, /actionDeduplication:\s*'enabled'/);
   assert.match(worker, /staleResponseGuard:\s*'enabled'/);

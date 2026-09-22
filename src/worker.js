@@ -73,11 +73,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.17.0-rc25';
+const APP_VERSION = '6.18.0-rc26';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc25';
-const RC_NAME = 'RC25';
+const RELEASE_CHANNEL = 'rc26';
+const RC_NAME = 'RC26';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -2123,7 +2123,7 @@ function fitAdaptiveSignalWeightsHoldout(rows) {
   const changedWeightL1 = Object.keys(MODEL_BASE_WEIGHTS)
     .reduce((sum, name) => sum + Math.abs(Number(candidate.weights?.[name] || 0) - Number(MODEL_BASE_WEIGHTS[name] || 0)), 0);
 
-  // RC25 gate: both sequential holdout windows must beat the baseline.
+  // RC26 gate: both sequential holdout windows must beat the baseline.
   const active = changedWeightL1 >= 0.01 && gate.pass;
 
   return {
@@ -2391,7 +2391,7 @@ async function notifyCalibrationAdmins(cfg, action, detail = '') {
     freeze: 'lifecycle заморожен',
     unfreeze: 'lifecycle разморожен',
   };
-  const text = `⚙️ Calibration RC25: ${labels[action] || action}.${detail ? `\n${String(detail).slice(0, 500)}` : ''}`;
+  const text = `⚙️ Calibration RC26: ${labels[action] || action}.${detail ? `\n${String(detail).slice(0, 500)}` : ''}`;
   await Promise.allSettled((cfg.adminTelegramIds || []).map(id => sendTelegramMessage(id, text, cfg)));
 }
 
@@ -2420,7 +2420,7 @@ async function resolveCalibrationLifecycle(cfg, candidate, trustedRows) {
       const state = await saveCalibrationLifecycleState(cfg, lifecycle.state, {
         action: 'initialize',
         targetFingerprint: baseline.fingerprint,
-        reason: 'RC25 baseline lifecycle initialization.',
+        reason: 'RC26 baseline lifecycle initialization.',
         metadata: { appVersion: APP_VERSION },
       });
       lifecycle = { state, active: baseline, previous: null };
@@ -2657,9 +2657,9 @@ function buildCalibrationProfile(rows) {
           : 'Кандидат остаётся в тени до достаточной trusted holdout-выборки.',
     },
     note: active
-      ? 'RC25: кандидат прошёл два holdout-окна; постоянный lifecycle решает продвижение относительно активного champion.'
+      ? 'RC26: кандидат прошёл два holdout-окна; постоянный lifecycle решает продвижение относительно активного champion.'
       : shadow
-        ? 'RC25: challenger измеряется в тени; production использует только постоянный active-профиль.'
+        ? 'RC26: challenger измеряется в тени; production использует только постоянный active-профиль.'
         : 'Недостаточно trusted-прогнозов для безопасной автоматической калибровки.',
   };
 }
@@ -3672,7 +3672,7 @@ function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = 
     calibrationDiagnostics: {
       weightedTopCalibrationError: weightedTopCalibrationError(rows),
       label: 'Weighted top-probability calibration error',
-      note: 'Средневзвешенный абсолютный разрыв между средней top-вероятностью и hit rate по 5 probability buckets; меньше — лучше. RC25 не использует эту метрику отдельно: продвижение требует двух holdout-окон и сравнения с champion.',
+      note: 'Средневзвешенный абсолютный разрыв между средней top-вероятностью и hit rate по 5 probability buckets; меньше — лучше. RC26 не использует эту метрику отдельно: продвижение требует двух holdout-окон и сравнения с champion.',
     },
     calibrationEngine: calibrationProfile || baselineCalibrationProfile(evaluated, signalPerformance),
     calibrationImpact,
@@ -7543,7 +7543,7 @@ async function apiReleaseReadiness(request, cfg) {
     releaseCheck('backend_security_contract', 'Контракт безопасности Supabase', backendSecurity.ok ? 'pass' : 'fail',
       backendSecurity.ok
         ? 'Все public-таблицы защищены RLS; anon/authenticated не имеют прямых прав; RPC закрыты.'
-        : `RC25 security contract: ${backendSecurity.status || 'ошибка'}.`, true),
+        : `RC26 security contract: ${backendSecurity.status || 'ошибка'}.`, true),
     releaseCheck('model_backtest', 'Схема исторической проверки v3.6+', modelTable.ok ? 'pass' : 'fail', modelTable.ok ? 'Таблица model_predictions доступна.' : `model_predictions: ${modelTable.status}.`, true),
     releaseCheck('prediction_integrity', 'Самопроверка целостности прогнозов', modelIntegritySelfTest().pass ? 'pass' : 'fail',
       modelIntegritySelfTest().pass ? 'Probabilities, captured_at timing и outcome consistency проходят synthetic self-test.' : 'Самопроверка целостности прогнозов не прошла.', true),
@@ -11051,6 +11051,9 @@ export default {
         actionDeduplication: 'enabled',
         staleResponseGuard: 'enabled',
         profileFailSoft: 'enabled',
+        entityNavigationSafety: 'enabled',
+        personalDataStateSafety: 'enabled',
+        asyncEntityGuard: 'enabled',
         releaseCandidate: RC_NAME,
         regressionQA: 'enabled',
         rcSmokeTest: 'enabled',

@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.17.0-rc25';
+const CLIENT_VERSION = '6.18.0-rc26';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc25';
+const CLIENT_RELEASE_CHANNEL = 'rc26';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -97,10 +97,18 @@ const state = {
   teamIntelligenceCache: new Map(),
   teamSquadCache: new Map(),
   tournamentStandings: new Map(),
+  teamHubRequestSeq: 0,
+  teamIntelligenceRequestSeq: 0,
+  teamSquadRequestSeq: 0,
+  tournamentStandingsRequestSeq: 0,
   liveRefreshTimer: null,
   liveRefreshRemaining: 0,
   favoritesLoaded: false,
+  favoritesLoading: false,
+  favoritesLoadError: '',
   remindersLoaded: false,
+  remindersLoading: false,
+  remindersLoadError: '',
   historyLoaded: false,
   providerLoaded: false,
   viewScroll: {},
@@ -1062,7 +1070,7 @@ function renderModelQuality() {
       <div><span>Жизненный цикл</span><strong>${lifecycleLabel}</strong><small>ревизия ${Number(lifecycle.revision || 0)}</small></div>
       <div><span>Отпечаток активной модели</span><strong>${escapeHtml(String(lifecycle.activeFingerprint || ce.fingerprint || '—').slice(0, 10))}</strong><small>${lifecycle.previousFingerprint ? `откат → ${escapeHtml(String(lifecycle.previousFingerprint).slice(0, 10))}` : 'предыдущей активной модели нет'}</small></div>
     </div>
-    <div class="calibration-promotion-note"><strong>Защита RC25:</strong> кандидат проходит два последовательных окна доверенной отложенной выборки, затем атомарно сравнивается с активной моделью. ${lifecycle.frozen ? `Жизненный цикл заморожен: ${escapeHtml(lifecycle.freezeReason || 'причина указана в административном журнале')}.` : 'После продвижения отдельная когорта может автоматически вернуть предыдущий профиль.'}</div>
+    <div class="calibration-promotion-note"><strong>Защита RC26:</strong> кандидат проходит два последовательных окна доверенной отложенной выборки, затем атомарно сравнивается с активной моделью. ${lifecycle.frozen ? `Жизненный цикл заморожен: ${escapeHtml(lifecycle.freezeReason || 'причина указана в административном журнале')}.` : 'После продвижения отдельная когорта может автоматически вернуть предыдущий профиль.'}</div>
     <div class="calibration-weights">
       ${(ce.signalStats || []).map(x => {
         const base = Number(x.baseWeight || 0) * 100;
@@ -1851,7 +1859,7 @@ function runClientContractSmoke() {
 }
 
 function rcStateText(status) {
-  if (status === 'rc_ready') return 'RC25 ГОТОВ';
+  if (status === 'rc_ready') return 'RC26 ГОТОВ';
   if (status === 'rc_with_holds') return 'RC С ОГРАНИЧЕНИЯМИ';
   if (status === 'blocked') return 'ЗАБЛОКИРОВАНО';
   return 'ОЖИДАНИЕ';
@@ -1885,7 +1893,7 @@ function renderRcRegression() {
   const r = state.rcRegression;
   if (!r) {
     badge.className = 'rc-badge';
-    badge.textContent = 'RC25';
+    badge.textContent = 'RC26';
     status.textContent = 'Полная регрессионная проверка ещё не запускалась.';
     meta.textContent = 'Тест безопасный: без полного анализа, без изменения пользовательских данных и без расхода API-Football.';
     summary.innerHTML = '';
@@ -3026,26 +3034,42 @@ async function runProviderCoverageAudit(fixtureId, force = true) {
 }
 
 async function loadFavorites() {
+  if (state.favoritesLoading) return;
+  state.favoritesLoading = true;
+  state.favoritesLoadError = '';
+  renderFavoriteTeams();
   try {
     const data = await api('/api/favorites');
     state.favorites = data.items || [];
     state.favoritesLoaded = true;
-    renderFavoriteTeams();
+    state.favoritesLoadError = '';
     if (state.matches.length) renderMatches();
     renderDiscoveryHome();
   } catch (e) {
-    toast(e.message);
+    state.favoritesLoadError = e.message || 'Не удалось загрузить избранное.';
+    if (state.favoritesLoaded) toast('Избранное временно не обновилось — показаны последние данные.');
+  } finally {
+    state.favoritesLoading = false;
+    renderFavoriteTeams();
   }
 }
 
 async function loadReminders() {
+  if (state.remindersLoading) return;
+  state.remindersLoading = true;
+  state.remindersLoadError = '';
+  renderReminderList();
   try {
     const data = await api('/api/reminders');
     state.reminders = data.items || [];
     state.remindersLoaded = true;
-    renderReminderList();
+    state.remindersLoadError = '';
   } catch (e) {
-    toast(e.message);
+    state.remindersLoadError = e.message || 'Не удалось загрузить напоминания.';
+    if (state.remindersLoaded) toast('Напоминания временно не обновились — показаны последние данные.');
+  } finally {
+    state.remindersLoading = false;
+    renderReminderList();
   }
 }
 
@@ -3060,12 +3084,22 @@ function reminderDeliveryBadge(item) {
 function renderReminderList() {
   const el = $('reminderList');
   if (!el) return;
+  if (state.remindersLoading && !state.remindersLoaded) {
+    el.innerHTML = '<div class="loader compact-loader">Загружаю напоминания…</div>';
+    return;
+  }
+  if (state.remindersLoadError && !state.remindersLoaded) {
+    el.innerHTML = recoveryCardHtml({ title:'Напоминания временно недоступны', message:state.remindersLoadError, retryId:'remindersRetry', compact:true });
+    $('remindersRetry')?.addEventListener('click', loadReminders);
+    return;
+  }
   if (!state.reminders.length) {
     el.innerHTML = '<div class="empty compact-empty">Активных напоминаний пока нет.</div>';
     return;
   }
   const rows = [...state.reminders].sort((a, b) => Date.parse(a.fixtureDate || 0) - Date.parse(b.fixtureDate || 0));
-  el.innerHTML = rows.map(x => `
+  const staleNotice = state.remindersLoadError ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.remindersLoadError)} Показаны последние загруженные напоминания.</div>` : '';
+  el.innerHTML = staleNotice + rows.map(x => `
     <div class="reminder-row">
       <div>
         <strong>${escapeHtml(x.homeName)} — ${escapeHtml(x.awayName)}</strong>
@@ -3155,6 +3189,7 @@ async function toggleFavorite(team) {
   const teamId = Number(team?.id || 0);
   if (!teamId || state.favoriteMutations.has(teamId)) return;
   const active = isFavorite(teamId);
+  state.favoritesLoadError = '';
   state.favoriteMutations.add(teamId);
   syncFavoriteMutationUi(teamId);
   try {
@@ -3192,11 +3227,21 @@ async function toggleFavorite(team) {
 function renderFavoriteTeams() {
   const el = $('favoriteTeams');
   if (!el) return;
+  if (state.favoritesLoading && !state.favoritesLoaded) {
+    el.innerHTML = '<div class="loader compact-loader">Загружаю избранное…</div>';
+    return;
+  }
+  if (state.favoritesLoadError && !state.favoritesLoaded) {
+    el.innerHTML = recoveryCardHtml({ title:'Избранное временно недоступно', message:state.favoritesLoadError, retryId:'favoritesRetry', compact:true });
+    $('favoritesRetry')?.addEventListener('click', loadFavorites);
+    return;
+  }
   if (!state.favorites.length) {
     el.innerHTML = '<div class="empty compact-empty">Добавьте любимые команды звёздочкой в списке матчей.</div>';
     return;
   }
-  el.innerHTML = state.favorites.map(x => `
+  const staleNotice = state.favoritesLoadError ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.favoritesLoadError)} Показано последнее загруженное избранное.</div>` : '';
+  el.innerHTML = staleNotice + state.favorites.map(x => `
     <div class="favorite-team-row">
       <button class="favorite-team-main team-open-link" type="button" data-open-team="${Number(x.teamId)}" data-team-name="${escapeHtml(x.teamName)}" data-team-logo="${escapeHtml(x.teamLogo || '')}">
         ${x.teamLogo ? `<img src="${safeUrl(x.teamLogo)}" alt="">` : '<span class="team-placeholder">⚽</span>'}
@@ -3825,18 +3870,21 @@ async function loadTournamentStandings(force = false) {
   const t = state.currentTournament;
   if (!t) return;
   const key = tournamentKey(t);
+  const seq = ++state.tournamentStandingsRequestSeq;
   const el = $('tournamentTable');
   if (!force && state.tournamentStandings.has(key)) {
-    renderTournamentStandings(state.tournamentStandings.get(key));
+    if (key === tournamentKey(state.currentTournament)) renderTournamentStandings(state.tournamentStandings.get(key));
     return;
   }
   el.innerHTML = '<div class="loader">Загружаю таблицу турнира…</div>';
   try {
     const data = await api(`/api/tournament?leagueId=${Number(t.leagueId)}&season=${Number(t.season)}`);
     state.tournamentStandings.set(key, data);
+    if (seq !== state.tournamentStandingsRequestSeq || key !== tournamentKey(state.currentTournament)) return;
     if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
     renderTournamentStandings(data);
-} catch (e) {
+  } catch (e) {
+    if (seq !== state.tournamentStandingsRequestSeq || key !== tournamentKey(state.currentTournament)) return;
     const cached = state.tournamentStandings.get(key);
     if (cached) {
       renderTournamentStandings(cached);
@@ -3883,7 +3931,7 @@ function teamMatchRow(m) {
 function bindTeamFixtureActions(root) {
   root.querySelectorAll('[data-fixture]').forEach(btn => btn.addEventListener('click', () => analyzeMatch(Number(btn.dataset.fixture), btn)));
   root.querySelectorAll('[data-center]').forEach(btn => btn.addEventListener('click', () => openMatchCenter(Number(btn.dataset.center), btn)));
-  root.querySelectorAll('[data-open-tournament]').forEach(btn => btn.addEventListener('click', openTournamentFromTeam));
+  root.querySelectorAll('[data-open-tournament]').forEach(btn => btn.addEventListener('click', () => openTournamentFromTeam(false)));
 }
 
 function teamPercent(value) {
@@ -3953,10 +4001,21 @@ async function loadTeamIntelligence(force=false) {
   if(!team?.id || !el) return;
   if(!comp?.leagueId || !comp?.season){ el.innerHTML='<div class="empty compact-empty">Сначала нужно определить основной турнир команды.</div>'; return; }
   const key=`${Number(team.id)}:${Number(comp.leagueId)}:${Number(comp.season)}`;
-  if(!force && state.teamIntelligenceCache.has(key)){ renderTeamIntelligence(state.teamIntelligenceCache.get(key)); return; }
+  const seq=++state.teamIntelligenceRequestSeq;
+  if(!force && state.teamIntelligenceCache.has(key)){
+    if(Number(state.currentTeam?.id)===Number(team.id)) renderTeamIntelligence(state.teamIntelligenceCache.get(key));
+    return;
+  }
   el.innerHTML='<div class="loader">Загружаю сезонную статистику…</div>';
   const q=new URLSearchParams({teamId:String(Number(team.id)),leagueId:String(Number(comp.leagueId)),season:String(Number(comp.season)),teamName:team.name||'',teamLogo:team.logo||'',leagueName:comp.name||'',leagueLogo:comp.logo||'',country:comp.country||''});
-  try{const data=await api(`/api/team/intelligence?${q.toString()}`);state.teamIntelligenceCache.set(key,data);if(isAdmin() && data.provider?.visibility==='admin'){state.provider=data.provider;renderProvider();}renderTeamIntelligence(data);}catch(e){
+  try{
+    const data=await api(`/api/team/intelligence?${q.toString()}`);
+    state.teamIntelligenceCache.set(key,data);
+    if(seq!==state.teamIntelligenceRequestSeq || Number(state.currentTeam?.id)!==Number(team.id)) return;
+    if(isAdmin() && data.provider?.visibility==='admin'){state.provider=data.provider;renderProvider();}
+    renderTeamIntelligence(data);
+  }catch(e){
+    if(seq!==state.teamIntelligenceRequestSeq || Number(state.currentTeam?.id)!==Number(team.id)) return;
     const cached=state.teamIntelligenceCache.get(key);
     if(cached){renderTeamIntelligence(cached);el.insertAdjacentHTML('afterbegin',`<div class="data-notice stale">⚠️ ${escapeHtml(e.message)} Показаны сохранённые показатели.</div>`);}
     else{el.innerHTML=recoveryCardHtml({title:'Статистика команды временно недоступна',message:e.message,retryId:'teamIntelligenceRetry',compact:true});$('teamIntelligenceRetry')?.addEventListener('click',()=>loadTeamIntelligence(true));}
@@ -3974,9 +4033,21 @@ function renderTeamSquad(data) {
 }
 async function loadTeamSquad(force=false) {
   const team=state.currentTeam, el=$('teamSquad'); if(!team?.id||!el) return;
-  const key=String(Number(team.id)); if(!force&&state.teamSquadCache.has(key)){renderTeamSquad(state.teamSquadCache.get(key));return;}
+  const key=String(Number(team.id));
+  const seq=++state.teamSquadRequestSeq;
+  if(!force&&state.teamSquadCache.has(key)){
+    if(Number(state.currentTeam?.id)===Number(team.id)) renderTeamSquad(state.teamSquadCache.get(key));
+    return;
+  }
   el.innerHTML='<div class="loader">Загружаю состав…</div>';
-  try{const data=await api(`/api/team/squad?teamId=${Number(team.id)}`);state.teamSquadCache.set(key,data);if(isAdmin() && data.provider?.visibility==='admin'){state.provider=data.provider;renderProvider();}renderTeamSquad(data);}catch(e){
+  try{
+    const data=await api(`/api/team/squad?teamId=${Number(team.id)}`);
+    state.teamSquadCache.set(key,data);
+    if(seq!==state.teamSquadRequestSeq || Number(state.currentTeam?.id)!==Number(team.id)) return;
+    if(isAdmin() && data.provider?.visibility==='admin'){state.provider=data.provider;renderProvider();}
+    renderTeamSquad(data);
+  }catch(e){
+    if(seq!==state.teamSquadRequestSeq || Number(state.currentTeam?.id)!==Number(team.id)) return;
     const cached=state.teamSquadCache.get(key);
     if(cached){renderTeamSquad(cached);el.insertAdjacentHTML('afterbegin',`<div class="data-notice stale">⚠️ ${escapeHtml(e.message)} Показан сохранённый состав.</div>`);}
     else{el.innerHTML=recoveryCardHtml({title:'Состав временно недоступен',message:e.message,retryId:'teamSquadRetry',compact:true});$('teamSquadRetry')?.addEventListener('click',()=>loadTeamSquad(true));}
@@ -4002,17 +4073,24 @@ function renderTeamHub(data) {
 }
 async function loadTeamHub(team, force=false) {
   const key=String(Number(team?.id||0)); if (!key || key==='0') return;
-  const cached=state.teamCache.get(key); if (cached && !force) { renderTeamHub(cached); return; }
-  if (!cached) {
+  const seq=++state.teamHubRequestSeq;
+  const cached=state.teamCache.get(key);
+  if (cached && !force) {
+    if(String(Number(state.currentTeam?.id||0))===key) renderTeamHub(cached);
+    return;
+  }
+  if (!cached && String(Number(state.currentTeam?.id||0))===key) {
     $('teamHero').innerHTML='<div class="loader">Загружаю страницу команды…</div>'; $('teamOverview').innerHTML=''; $('teamIntelligence').innerHTML='<div class="empty compact-empty">Откройте вкладку «Статистика», чтобы загрузить сезонные данные.</div>'; $('teamSquad').innerHTML='<div class="empty compact-empty">Откройте вкладку «Состав», чтобы загрузить игроков.</div>'; $('teamResults').innerHTML=''; $('teamSchedule').innerHTML='';
   }
   try {
     const q=new URLSearchParams({teamId:String(Number(team.id)),name:team.name||'',logo:team.logo||''});
     const data=await api(`/api/team?${q.toString()}`);
     state.teamCache.set(key,data);
+    if(seq!==state.teamHubRequestSeq || String(Number(state.currentTeam?.id||0))!==key) return;
     if(isAdmin() && data.provider?.visibility==='admin'){state.provider=data.provider;renderProvider();}
     renderTeamHub(data);
   } catch(e) {
+    if(seq!==state.teamHubRequestSeq || String(Number(state.currentTeam?.id||0))!==key) return;
     if (cached) {
       renderTeamHub(cached);
       $('teamHero')?.insertAdjacentHTML('afterbegin', `<div class="data-notice stale">⚠️ ${escapeHtml(e.message)} Показана последняя открытая версия команды.</div>`);
@@ -4864,6 +4942,7 @@ async function toggleReminder(match) {
   const fixtureId = Number(match.fixtureId);
   if (state.reminderMutations.has(fixtureId)) return;
   const active = hasReminder(fixtureId);
+  state.remindersLoadError = '';
   if (!active && !runtimeAllows('remindersEnabled')) {
     toast('Новые уведомления временно приостановлены.');
     return;
@@ -5629,7 +5708,7 @@ async function scheduleIdle(task) {
 
 showView('matchesView', { restore: true });
 
-// RC25: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
+// RC26: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
 // The boot watchdog never leaves the user behind an endless splash screen.
 const startupWatchdog = setTimeout(() => {
   if (!$('bootGate')?.hidden && !state.compatibilityBlocked) {
