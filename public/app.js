@@ -1204,13 +1204,13 @@ function renderModelQuality() {
       <div class="quality-cal-row">
         <span>${escapeHtml(x.label)}</span>
         <div class="quality-cal-bars"><i style="--w:${Math.max(0, Math.min(100, Number(x.avgPredicted || 0)))}%"></i><b style="--w:${Math.max(0, Math.min(100, Number(x.hitRate || 0)))}%"></b></div>
-        <strong>${x.sample ? `${qualityPct(x.hitRate)} · n=${x.sample}` : '—'}</strong>
+        <strong>${x.sample ? `${qualityPct(x.hitRate)} · выборка ${x.sample}` : '—'}</strong>
       </div>`).join('')}</div>
     ${q.methodology?.warning ? `<p class="quality-warning">⚠️ ${escapeHtml(q.methodology.warning)}</p>` : ''}`;
 
   const ce = q.calibrationEngine || {};
   const impact = q.calibrationImpact || {};
-  const modeLabel = ce.mode === 'active' ? 'Активен' : ce.mode === 'shadow' ? 'Тень' : 'База';
+  const modeLabel = ce.mode === 'active' ? 'Активен' : ce.mode === 'shadow' ? 'Наблюдение' : 'Базовый';
   const weightValidation = ce.weightsValidation || {};
   const promotion = ce.promotionGate || {};
   const lifecycle = ce.lifecycle || {};
@@ -1232,8 +1232,8 @@ function renderModelQuality() {
     : promotion.status === 'held'
       ? 'УДЕРЖАНО'
       : promotion.status === 'shadow'
-        ? 'ТЕНЬ'
-        : 'БАЗА';
+        ? 'НАБЛЮДЕНИЕ'
+        : 'БАЗОВЫЙ';
   const signalRows = (q.signalPerformance || []).some(x => Number(x.sample || 0) > 0) ? (q.signalPerformance || []) : (q.signals || []);
   engine.hidden = false;
   engine.innerHTML = `
@@ -1265,7 +1265,7 @@ function renderModelQuality() {
     <div class="quality-mini-grid">${(q.confidence || []).map(x => `
       <div><span>${escapeHtml(x.label)}</span><strong>${qualityPct(x.accuracy)}</strong><small>матчей: ${Number(x.sample || 0)} · ошибка Брайера ${qualityNum(x.avgBrier)}</small></div>`).join('')}</div>
     <div class="quality-signal-grid">${signalRows.map(x => `
-      <div><span>${escapeHtml(signalLabel(x.name))}</span><strong>${qualityPct(x.accuracy)}</strong><small>n=${Number(x.sample || 0)}${Number.isFinite(Number(x.avgBrier)) ? ` · ошибка Брайера ${qualityNum(x.avgBrier)}` : ''}</small></div>`).join('')}</div>`;
+      <div><span>${escapeHtml(signalLabel(x.name))}</span><strong>${qualityPct(x.accuracy)}</strong><small>выборка ${Number(x.sample || 0)}${Number.isFinite(Number(x.avgBrier)) ? ` · ошибка Брайера ${qualityNum(x.avgBrier)}` : ''}</small></div>`).join('')}</div>`;
 
   const sec = q.secondary || {};
   secondary.hidden = false;
@@ -1300,11 +1300,11 @@ function renderModelQuality() {
         ${(db.trend || []).length ? `<div class="model-trend-chart">${db.trend.map(x => {
           const acc = Math.max(2, Math.min(100, Number(x.accuracy || 0)));
           const sampleH = Math.max(8, Math.round(Number(x.sample || 0) / trendMaxSample * 100));
-          return `<div class="model-trend-col" title="${escapeHtml(x.label)} · n=${Number(x.sample || 0)} · ${qualityPct(x.accuracy)}">
+          return `<div class="model-trend-col" title="${escapeHtml(x.label)} · выборка ${Number(x.sample || 0)} · ${qualityPct(x.accuracy)}">
             <div class="model-trend-bars"><i style="height:${acc}%"></i><b style="height:${sampleH}%"></b></div>
             <strong>${qualityPct(x.accuracy)}</strong>
             <span>${escapeHtml(x.label)}</span>
-            <small>n=${Number(x.sample || 0)} · Ошибка Брайера ${qualityNum(x.avgBrier)}</small>
+            <small>выборка ${Number(x.sample || 0)} · Ошибка Брайера ${qualityNum(x.avgBrier)}</small>
           </div>`;
         }).join('')}</div>` : '<div class="empty compact-empty">Пока недостаточно недельных данных.</div>'}
       </div>
@@ -1316,7 +1316,7 @@ function renderModelQuality() {
             <span>${escapeHtml(x.label)}</span>
             <div><i style="--w:${Math.max(0, Math.min(100, Number(x.accuracy || 0)))}%"></i></div>
             <strong>${x.sample ? qualityPct(x.accuracy) : '—'}</strong>
-            <small>n=${Number(x.sample || 0)} · Ошибка Брайера ${qualityNum(x.avgBrier)}</small>
+            <small>выборка ${Number(x.sample || 0)} · Ошибка Брайера ${qualityNum(x.avgBrier)}</small>
           </div>`).join('')}</div>
       </div>
 
@@ -1368,9 +1368,9 @@ function renderModelQuality() {
         <div class="model-dash-section-head"><strong>Качество отдельных сигналов</strong><span>источник отдельно и итоговая смесь</span></div>
         <div class="model-signal-table">${(db.signals || []).map(x => `
           <div class="model-signal-row">
-            <div><strong>${escapeHtml(signalLabel(x.name))}</strong><small>n=${Number(x.sample || 0)} · базовый вес ${Number(x.baseWeight || 0).toFixed(0)}%</small></div>
-            <div><span>Источник</span><b>${qualityPct(x.signalAccuracy)}</b><small>B ${qualityNum(x.signalBrier)}</small></div>
-            <div><span>Итог</span><b>${qualityPct(x.finalAccuracy)}</b><small>B ${qualityNum(x.finalBrier)}</small></div>
+            <div><strong>${escapeHtml(signalLabel(x.name))}</strong><small>выборка ${Number(x.sample || 0)} · базовый вес ${Number(x.baseWeight || 0).toFixed(0)}%</small></div>
+            <div><span>Источник</span><b>${qualityPct(x.signalAccuracy)}</b><small>Брайер ${qualityNum(x.signalBrier)}</small></div>
+            <div><span>Итог</span><b>${qualityPct(x.finalAccuracy)}</b><small>Брайер ${qualityNum(x.finalBrier)}</small></div>
             <em class="${Number(x.brierDeltaVsBlend || 0) <= 0 ? 'good' : 'watch'}">${Number.isFinite(Number(x.brierDeltaVsBlend)) ? `${Number(x.brierDeltaVsBlend) >= 0 ? '+' : ''}${Number(x.brierDeltaVsBlend).toFixed(3)}` : '—'}</em>
           </div>`).join('')}</div>
       </div>
@@ -1554,6 +1554,17 @@ function remediationActionLabel(action) {
   return 'Нет статуса';
 }
 
+function remediationActionCodeLabel(value) {
+  return ({
+    keep_stored: 'оставить сохранённое',
+    accept_provider: 'принять данные провайдера',
+    void_prediction: 'исключить из метрик',
+    recover: 'восстановить',
+    auto_recover: 'автовосстановление',
+    circuit_reset: 'сброс защиты',
+  })[String(value || '')] || humanizeTechnicalText(value || '—');
+}
+
 function renderModelRemediation() {
   const root = $('modelRemediation');
   const status = $('modelRemediationStatus');
@@ -1640,7 +1651,7 @@ function renderModelRemediation() {
          const storedScore = Number.isFinite(Number(stored.homeGoals)) && Number.isFinite(Number(stored.awayGoals)) ? `${Number(stored.homeGoals)}:${Number(stored.awayGoals)}` : '—';
          const providerScore = Number.isFinite(Number(provider.homeGoals)) && Number.isFinite(Number(provider.awayGoals)) ? `${Number(provider.homeGoals)}:${Number(provider.awayGoals)}` : '—';
          return `<div class="settlement-drift-item">
-           <div class="settlement-drift-copy"><strong>${escapeHtml(item.home || '—')} — ${escapeHtml(item.away || '—')}</strong><small>${escapeHtml(item.league || '')} · #${Number(item.fixtureId || 0)} · ${item.observedAt ? escapeHtml(dateTime(item.observedAt)) : '—'}</small><span>сохранено ${escapeHtml(storedScore)} ${escapeHtml(stored.outcome || '')} → провайдер ${escapeHtml(providerScore)} ${escapeHtml(provider.outcome || '')} · ${escapeHtml(provider.status || '')}</span><em>${escapeHtml(item.driftReason || 'расхождение данных провайдера')}${locked ? ` · locked: ${escapeHtml(locked)}` : ''}</em></div>
+           <div class="settlement-drift-copy"><strong>${escapeHtml(item.home || '—')} — ${escapeHtml(item.away || '—')}</strong><small>${escapeHtml(item.league || '')} · #${Number(item.fixtureId || 0)} · ${item.observedAt ? escapeHtml(dateTime(item.observedAt)) : '—'}</small><span>сохранено ${escapeHtml(storedScore)} ${escapeHtml(outcomeShortLabel(stored.outcome))} → провайдер ${escapeHtml(providerScore)} ${escapeHtml(outcomeShortLabel(provider.outcome))} · ${escapeHtml(humanizeTechnicalText(provider.status || ''))}</span><em>${escapeHtml(humanizeTechnicalText(item.driftReason || 'расхождение данных провайдера'))}${locked ? ` · решение: ${escapeHtml(remediationActionCodeLabel(locked))}` : ''}</em></div>
            <div class="settlement-drift-actions">
              <button class="reminder-btn" type="button" data-drift-fixture="${Number(item.fixtureId || 0)}" data-drift-action="keep_stored" ${locked && locked !== 'keep_stored' ? 'disabled' : ''}>Оставить сохранённое</button>
              <button class="primary-setting-btn" type="button" data-drift-fixture="${Number(item.fixtureId || 0)}" data-drift-action="accept_provider" ${!item.providerAcceptable || (locked && locked !== 'accept_provider') ? 'disabled' : ''}>Принять данные провайдера</button>
@@ -1654,7 +1665,7 @@ function renderModelRemediation() {
   history.innerHTML = actions.length
     ? `<div class="model-remediation-history-head"><strong>Последние действия</strong><span>идентификатор администратора скрыт</span></div>
        <div class="model-remediation-action-list">${actions.map(action => `
-         <div class="${escapeHtml(action.status || 'failed')}"><span><strong>${escapeHtml(remediationActionLabel(action))}${action.actionType === 'auto_recover' ? ' · АВТО' : action.actionType === 'circuit_reset' ? ' · СБРОС ЗАЩИТЫ' : ''}</strong><small>${escapeHtml(action.reason || 'Без комментария')} · ${action.createdAt ? escapeHtml(dateTime(action.createdAt)) : '—'}${action.triggerSource ? ` · ${escapeHtml(action.triggerSource)}` : ''}${action.attemptNo ? ` · попытка ${Number(action.attemptNo)}` : ''}${action.retryOfActionId ? ' · повтор' : ''}</small></span><em>${Number(action.settledCount || 0)} закрыто · ${Number(action.skippedCount || 0)} пропущено</em></div>`).join('')}</div>`
+         <div class="${escapeHtml(action.status || 'failed')}"><span><strong>${escapeHtml(remediationActionLabel(action))}${action.actionType === 'auto_recover' ? ' · АВТО' : action.actionType === 'circuit_reset' ? ' · СБРОС ЗАЩИТЫ' : ''}</strong><small>${escapeHtml(humanizeTechnicalText(action.reason || 'Без комментария'))} · ${action.createdAt ? escapeHtml(dateTime(action.createdAt)) : '—'}${action.triggerSource ? ` · источник: ${escapeHtml(humanizeTechnicalText(action.triggerSource))}` : ''}${action.attemptNo ? ` · попытка ${Number(action.attemptNo)}` : ''}${action.retryOfActionId ? ' · повтор' : ''}</small></span><em>${Number(action.settledCount || 0)} закрыто · ${Number(action.skippedCount || 0)} пропущено</em></div>`).join('')}</div>`
     : '<p class="tiny quality-method-note">Журнал действий пока пуст.</p>';
 
   runBtn.textContent = state.modelRemediationRunning ? 'Восстанавливаю…' : 'Восстановить ожидающие';
@@ -2736,7 +2747,7 @@ function renderDiagnostics() {
         <div><span>Кэш L1</span><strong>${Number(rt.l1CacheEntries || 0)}</strong><small>${Number(rt.memoryPrunes || 0)} очисток памяти</small></div>
         <div><span>Ошибки маршрутов</span><strong>${Number(rt.routeErrors || 0)}</strong><small>работает ${escapeHtml(diagDuration(rt.uptimeSeconds))}</small></div>
       </div>
-      <p class="tiny diagnostics-note">Счётчики среды выполнения относятся только к текущему экземпляру Cloudflare Worker. Дневной и минутный расход выше берётся непосредственно из заголовков API-Football.</p>`;
+      <p class="tiny diagnostics-note">Счётчики среды выполнения относятся только к текущему экземпляру серверному обработчику Cloudflare. Дневной и минутный расход выше берётся непосредственно из заголовков API-Football.</p>`;
   }
 
   if (client) {
@@ -2762,7 +2773,7 @@ function renderDiagnostics() {
   if (integrity) {
     integrity.hidden = false;
     integrity.innerHTML = `
-      <div class="diagnostics-block-head"><strong>Целостность матчей</strong><span>${escapeHtml(technicalStateLabel(integrityRun.health || (integrityData.migrationReady ? 'waiting' : 'migration'))}</span></div>
+      <div class="diagnostics-block-head"><strong>Целостность матчей</strong><span>${escapeHtml(technicalStateLabel(integrityRun.health || (integrityData.migrationReady ? 'waiting' : 'migration')))}</span></div>
       <div class="diagnostics-grid">
         <div><span>Проверено</span><strong>${integrityRun.inspected ?? '—'}</strong><small>${integrityRun.observedAt ? relativeAge(integrityRun.observedAt) : 'ещё нет запуска'}</small></div>
         <div><span>Оценка качества</span><strong>${Number.isFinite(Number(integrityRun.qualityScore)) ? `${Math.round(Number(integrityRun.qualityScore))}%` : '—'}</strong><small>${Number(integrityRun.clean || 0)} без замечаний</small></div>
