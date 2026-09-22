@@ -2762,3 +2762,11 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 .search-team-summary{width:100%;color:inherit;text-align:left;font:inherit;cursor:pointer}
 .search-team-summary>b{margin-left:auto;flex:0 0 auto;font-size:11px;font-weight:900;white-space:nowrap;opacity:.72}
 .search-team-summary:hover,.search-team-summary:focus-visible{border-color:rgba(56,189,248,.38);background:rgba(56,189,248,.06)}
+
+
+/* RC57 — match selection intelligence */
+.search-match-card.is-primary{border-color:rgba(56,189,248,.46);box-shadow:0 0 0 1px rgba(56,189,248,.08),0 16px 36px rgba(2,132,199,.08)}
+.search-match-primary{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:-2px 0 10px;padding:8px 10px;border-radius:11px;background:rgba(56,189,248,.08);font-size:11px}
+.search-match-primary b{font-size:10px;letter-spacing:.08em;white-space:nowrap}.search-match-primary span{opacity:.78;text-align:right;line-height:1.35}
+.primary-selection-note{border-color:rgba(56,189,248,.24)}
+@media(max-width:520px){.search-match-primary{align-items:flex-start;flex-direction:column}.search-match-primary span{text-align:left}}

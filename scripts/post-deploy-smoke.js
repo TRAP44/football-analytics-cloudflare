@@ -51,6 +51,11 @@ const REQUIRED_HEALTH_FLAGS = [
   'sharedFixtureDiscoveryCache',
   'extendedTeamCalendar',
   'recentMatchFallback',
+  'matchSelectionIntelligence',
+  'primaryMatchRecommendation',
+  'officialMatchPriority',
+  'selectionReasonUx',
+  'matchSelectionSelfTest',
 ];
 
 function delay(ms) {

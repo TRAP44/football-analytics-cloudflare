@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.48.0-rc56';
+const APP_VERSION = '6.49.0-rc57';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc56';
-const RC_NAME = 'RC56';
+const RELEASE_CHANNEL = 'rc57';
+const RC_NAME = 'RC57';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -679,6 +679,8 @@ function appManifest(cfg) {
       searchOutcomeAnalytics: true,
       zeroResultRecovery: true,
       teamFixtureDiscovery: true,
+      matchSelectionIntelligence: true,
+      primaryMatchRecommendation: true,
       calibrationChampionChallenger: true,
       calibrationAutomaticRollback: true,
     },
@@ -2474,7 +2476,7 @@ function botMatchAction(match) {
 function botMatchButtonText(match) {
   const home = String(match?.home?.name || match?.homeName || 'Хозяева');
   const away = String(match?.away?.name || match?.awayName || 'Гости');
-  const prefix = match?.live ? '🔴' : match?.finished ? '📋' : '🧠';
+  const prefix = match?.selection?.primary ? '⭐' : match?.live ? '🔴' : match?.finished ? '📋' : '🧠';
   const label = `${prefix} ${home} — ${away}`;
   return label.length > 58 ? `${label.slice(0,55)}…` : label;
 }
@@ -2488,7 +2490,8 @@ function botMatchLine(match, index) {
     : match?.finished
       ? `завершён · ${match?.score?.home ?? '—'}:${match?.score?.away ?? '—'}`
       : digestTime(match?.date);
-  return `${index + 1}. <b>${home} — ${away}</b>\n${league} · ${status}`;
+  const primary=match?.selection?.primary ? `⭐ <b>Основной матч для анализа</b> · ${telegramHtmlEscape(match.selection.reason || '')}\n` : '';
+  return `${primary}${index + 1}. <b>${home} — ${away}</b>\n${league} · ${status}`;
 }
 
 async function botCachedDayMatches(parts, cfg) {
@@ -2527,6 +2530,7 @@ async function sendBotFootballSearch(request, cfg, userId, chatId, rawText) {
   const recognized=Boolean(searchPlan.best && Number(searchPlan.best.score || 0)>=170);
   let matches=await botCachedDayMatches(parts,cfg);
   if (!matches.length) matches=await botRemoteTeamMatches(parts,cfg);
+  matches=rankTeamDiscoveryMatches(matches).slice(0,3);
   const searchUrl=telegramWebAppUrl(request,{view:'search',q:parts.query});
   if (!matches.length) {
     const known=recognized;
@@ -2542,7 +2546,8 @@ async function sendBotFootballSearch(request, cfg, userId, chatId, rawText) {
     return;
   }
   const recovery=matches.some(match=>!match.finished)?'upcoming':'recent';
-  void recordGrowthEvent(cfg,{userId,eventName:'search_result',channel:'telegram',metadata:{intent:parts.intent,outcome:'match',recognized,recovery,count:Math.min(3,matches.length)}});
+  const primaryFixtureId=Number(matches.find(match=>match.selection?.primary)?.fixtureId || matches[0]?.fixtureId || 0);
+  void recordGrowthEvent(cfg,{userId,eventName:'search_result',channel:'telegram',metadata:{intent:parts.intent,outcome:'match',recognized,recovery,primaryFixtureId,count:Math.min(3,matches.length)}});
   await rememberBotFixtureCards(matches, cfg);
   const favorites=await getFavorites(userId,cfg).catch(()=>[]);
   const rows=matches.map((match,index)=>botMatchLine(match,index));
@@ -2555,7 +2560,7 @@ async function sendBotFootballSearch(request, cfg, userId, chatId, rawText) {
   await telegramApi('sendMessage',cfg,{
     chat_id:chatId,
     parse_mode:'HTML',
-    text:[`<b>${telegramHtmlEscape(botIntentLead(parts))}</b>`,`Запрос: «${telegramHtmlEscape(parts.query)}»`,'',...rows,'',matches.length === 1 ? 'Матч найден. Выберите нужный блок:' : 'Выберите матч — откроется его карточка FM AI.'].join('\n'),
+    text:[`<b>${telegramHtmlEscape(botIntentLead(parts))}</b>`,`Запрос: «${telegramHtmlEscape(parts.query)}»`,'',...rows,'',matches.length === 1 ? 'Матч найден. Выберите нужный блок:' : '⭐ Первый матч — основной выбор FM AI для анализа. Остальные оставлены для сравнения.'].join('\n'),
     reply_markup:replyMarkup,
   });
 }
@@ -11884,6 +11889,65 @@ function teamDiscoveryWindow() {
   return {from:fromDate.toISOString().slice(0,10),to:toDate.toISOString().slice(0,10)};
 }
 
+function matchSelectionProfile(match = {}, now = Date.now()) {
+  const competition=match?.competition || {};
+  const category=String(competition.category || match?.category || '');
+  const homeName=String(match?.home?.name || match?.homeName || '');
+  const awayName=String(match?.away?.name || match?.awayName || '');
+  const firstTeam=!isYouthReserveMatch(match?.league || competition.name || '',homeName,awayName);
+  const official=Boolean(firstTeam && category !== 'friendly');
+  const live=Boolean(match?.live);
+  const finished=Boolean(match?.finished);
+  const kickoff=Date.parse(match?.date || 0);
+  const distanceMs=Number.isFinite(kickoff) ? Math.abs(kickoff-now) : Number.MAX_SAFE_INTEGER;
+  const lane=live ? 0 : !finished && official ? 1 : !finished ? 2 : official ? 3 : 4;
+  const priority=Math.max(0,Math.min(99,Number(competition.priority || 0)));
+  const reason=live
+    ? 'Матч идёт сейчас'
+    : lane===1
+      ? 'Ближайший официальный матч основной команды'
+      : lane===2
+        ? 'Ближайший доступный матч; официальный календарь не найден'
+        : lane===3
+          ? 'Последний официальный матч; будущих игр пока нет'
+          : 'Последний доступный матч';
+  return {lane,official,firstTeam,priority,distanceMs,reason};
+}
+
+function compareMatchSelection(a, b, now = Date.now()) {
+  const pa=matchSelectionProfile(a,now), pb=matchSelectionProfile(b,now);
+  if (pa.lane!==pb.lane) return pa.lane-pb.lane;
+  const ad=Date.parse(a?.date || 0), bd=Date.parse(b?.date || 0);
+  if (pa.lane<=2 && Number.isFinite(ad) && Number.isFinite(bd) && ad!==bd) return ad-bd;
+  if (pa.lane>=3 && Number.isFinite(ad) && Number.isFinite(bd) && ad!==bd) return bd-ad;
+  if (pa.priority!==pb.priority) return pb.priority-pa.priority;
+  return Number(a?.fixtureId || 0)-Number(b?.fixtureId || 0);
+}
+
+function rankTeamDiscoveryMatches(matches = [], now = Date.now()) {
+  const ranked=[...(matches || [])].sort((a,b)=>compareMatchSelection(a,b,now));
+  return ranked.map((match,index)=>{
+    const profile=matchSelectionProfile(match,now);
+    return {...match,selection:{primary:index===0,rank:index+1,reason:profile.reason,official:profile.official,firstTeam:profile.firstTeam,lane:profile.lane}};
+  });
+}
+
+const MATCH_SELECTION_DRILL_NOW = Date.parse('2026-09-23T00:00:00Z');
+
+function matchSelectionDrill() {
+  const base={home:{name:'Example FC'},away:{name:'Opponent'},competition:{category:'league',priority:80}};
+  const rows=[
+    {...base,fixtureId:1,date:'2026-09-24T18:00:00Z',finished:false,live:false,competition:{category:'friendly',priority:24}},
+    {...base,fixtureId:2,date:'2026-09-26T18:00:00Z',finished:false,live:false,competition:{category:'cup',priority:74}},
+    {...base,fixtureId:3,date:'2026-09-28T18:00:00Z',finished:false,live:false,competition:{category:'league',priority:94}},
+    {...base,fixtureId:4,date:'2026-09-22T18:00:00Z',finished:true,live:false,competition:{category:'league',priority:94}},
+    {...base,fixtureId:5,date:'2026-09-25T18:00:00Z',finished:false,live:false,home:{name:'Example FC U21'},competition:{category:'youth',priority:8}},
+  ];
+  const ranked=rankTeamDiscoveryMatches(rows,MATCH_SELECTION_DRILL_NOW);
+  const primary=ranked[0];
+  const officialUpcoming=ranked.filter(x=>!x.finished && x.selection?.official).map(x=>x.fixtureId);
+  return {pass:Number(primary?.fixtureId)===2 && officialUpcoming.join(',')==='2,3',primaryFixtureId:Number(primary?.fixtureId || 0),total:rows.length};
+}
 function splitTeamDiscoveryMatches(matches = [], secondQuery = '', options = {}) {
   const second=searchText(secondQuery);
   const now=Date.now();
@@ -11892,13 +11956,13 @@ function splitTeamDiscoveryMatches(matches = [], secondQuery = '', options = {})
     if (!second) return true;
     return searchText(`${match.home?.name || ''} ${match.away?.name || ''}`).includes(second);
   });
-  const upcoming=filtered.filter(match=>!match.finished && (match.live || Date.parse(match.date || 0)>=now-3*60*60*1000))
-    .sort((a,b)=>Number(b.live)-Number(a.live) || Date.parse(a.date || 0)-Date.parse(b.date || 0))
+  const ranked=rankTeamDiscoveryMatches(filtered,now);
+  const upcoming=ranked.filter(match=>!match.finished && (match.live || Date.parse(match.date || 0)>=now-3*60*60*1000))
     .slice(0,Number(options.upcomingLimit || 8));
-  const recent=filtered.filter(match=>match.finished)
-    .sort((a,b)=>Date.parse(b.date || 0)-Date.parse(a.date || 0))
+  const recent=ranked.filter(match=>match.finished)
     .slice(0,Number(options.recentLimit || 4));
-  return {upcoming,recent,mode:upcoming.length ? 'upcoming' : recent.length ? 'recent' : 'empty'};
+  const primary=ranked[0] || null;
+  return {upcoming,recent,primary,mode:upcoming.length ? 'upcoming' : recent.length ? 'recent' : 'empty'};
 }
 
 function teamSearchFixturePayload(team, fixtures = [], secondQuery = '', meta = {}) {
@@ -11906,7 +11970,8 @@ function teamSearchFixturePayload(team, fixtures = [], secondQuery = '', meta = 
   return {
     matches:[...split.upcoming,...split.recent],
     matchSource:{kind:'team',id:Number(team?.id || 0),name:String(team?.name || 'Команда')},
-    matchDiscovery:{mode:split.mode,upcoming:split.upcoming.length,recent:split.recent.length,windowPastDays:TEAM_DISCOVERY_PAST_DAYS,windowFutureDays:TEAM_DISCOVERY_FUTURE_DAYS,cached:Boolean(meta.cached),stale:Boolean(meta.stale)},
+    primaryFixtureId:Number(split.primary?.fixtureId || 0) || null,
+    matchDiscovery:{mode:split.mode,upcoming:split.upcoming.length,recent:split.recent.length,primaryFixtureId:Number(split.primary?.fixtureId || 0) || null,primaryReason:String(split.primary?.selection?.reason || ''),windowPastDays:TEAM_DISCOVERY_PAST_DAYS,windowFutureDays:TEAM_DISCOVERY_FUTURE_DAYS,cached:Boolean(meta.cached),stale:Boolean(meta.stale)},
     warning:String(meta.warning || ''),
     refreshedAt:meta.refreshedAt || new Date().toISOString(),
   };
@@ -12280,7 +12345,7 @@ async function apiTeam(request, cfg) {
   const form = summarizeFormRows(completedRaw, teamId, 'home')?.overall || null;
   const primaryCompetition = choosePrimaryTeamCompetition(normalized);
   const standing = await cachedTeamStanding(teamId, primaryCompetition, cfg);
-  const payload = { team, primaryCompetition, standing, form, recent, upcoming, discovery:{mode:discovery.mode,windowPastDays:TEAM_DISCOVERY_PAST_DAYS,windowFutureDays:TEAM_DISCOVERY_FUTURE_DAYS}, liveNow:upcoming.find(x=>x.live)||null, nextMatch:upcoming.find(x=>!x.live)||upcoming[0]||null, refreshedAt:new Date().toISOString() };
+  const payload = { team, primaryCompetition, standing, form, recent, upcoming, primaryFixtureId:Number(discovery.primary?.fixtureId || 0) || null, discovery:{mode:discovery.mode,primaryFixtureId:Number(discovery.primary?.fixtureId || 0) || null,primaryReason:String(discovery.primary?.selection?.reason || ''),windowPastDays:TEAM_DISCOVERY_PAST_DAYS,windowFutureDays:TEAM_DISCOVERY_FUTURE_DAYS}, liveNow:upcoming.find(x=>x.live)||null, nextMatch:upcoming.find(x=>!x.live)||upcoming[0]||null, refreshedAt:new Date().toISOString() };
   await setCache(cacheKey, teamId, payload, cfg, 120);
   return json({ ...payload, cached:false, stale:false, provider:publicDataCapabilities() });
 }
@@ -13311,6 +13376,12 @@ export default {
         sharedFixtureDiscoveryCache: 'enabled',
         extendedTeamCalendar: 'enabled',
         recentMatchFallback: 'enabled',
+        matchSelectionIntelligence: 'enabled',
+        primaryMatchRecommendation: 'enabled',
+        officialMatchPriority: 'enabled',
+        selectionReasonUx: 'enabled',
+        matchSelectionSelfTest: matchSelectionDrill().pass ? 'enabled' : 'failed',
+        matchSelectionCases: matchSelectionDrill().total,
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',

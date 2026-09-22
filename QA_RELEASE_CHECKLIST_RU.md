@@ -1,10 +1,10 @@
-# QA Release Checklist — v6.48.0 RC56
+# QA Release Checklist — v6.49.0 RC57
 
 ## Deploy
 
 - применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql`, `supabase_migration_v6_11_1.sql`, `supabase_migration_v6_12.sql`, `supabase_migration_v6_13.sql`, `supabase_migration_v6_14.sql` и `supabase_migration_v6_15.sql`;
-- Worker/client = `6.48.0-rc56`;
-- package = `6.48.0`;
+- Worker/client = `6.49.0-rc57`;
+- package = `6.49.0`;
 - cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;
@@ -90,6 +90,19 @@
 - сломанный сценарий приводит к «Не опираться на предматчевый сигнал»;
 - никаких новых таблиц или внешних провайдеров RC44 не добавляет.
 
+## RC57 — Match Selection Intelligence
+
+- `matchSelectionProfile` различает LIVE, официальный upcoming, прочий upcoming, официальный recent и прочий recent;
+- `rankTeamDiscoveryMatches` ставит ближайший официальный матч основной команды выше более раннего friendly/youth;
+- deterministic drill выбирает fixture 2 (кубок через 3 дня) выше friendly завтра и лиги через 5 дней;
+- `teamSearchFixturePayload` возвращает `primaryFixtureId`, а `matchDiscovery` — `primaryFixtureId/primaryReason`;
+- Mini App делает merge remote matches перед local matches, чтобы не потерять server selection metadata;
+- сортировка upcoming/finished учитывает `selection.rank` до даты;
+- основной match card имеет `is-primary`, badge `ОСНОВНОЙ МАТЧ` и reason;
+- Telegram multi-result search отмечает основной fixture звездой и ставит его первым;
+- `search_result` не получает query/rawText; допускается только numeric `primaryFixtureId`;
+- `/health.matchSelectionSelfTest = enabled`; production smoke требует RC57 health-флаги;
+- новых миграций Supabase, новых API-Football вызовов и платёжных функций RC57 нет.
 ## RC56 — Match Discovery & Zero-Result Recovery
 
 - поиск команды вызывает `loadSearchTeamMatches` на backend и не запускает скрытый второй `/api/team` запрос из Mini App;

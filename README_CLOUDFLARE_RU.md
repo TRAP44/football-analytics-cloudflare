@@ -1,7 +1,20 @@
-# Football Analytics Mini App v6.48.0 — RC56
+# Football Analytics Mini App v6.49.0 — RC57
 
 Telegram Mini App для футбольной аналитики на Cloudflare Workers, Supabase, API-Football и Tavily.
 
+## RC57: Match Selection Intelligence
+
+- поиск команды теперь не просто показывает список матчей, а выбирает один основной fixture для анализа;
+- порядок выбора: LIVE → ближайший официальный матч основной команды → ближайший прочий матч → последний официальный → последний прочий;
+- товарищеский или молодёжный матч не может вытеснить ближайший официальный матч только потому, что начинается раньше;
+- backend возвращает `primaryFixtureId` и фиксированное объяснение `primaryReason`; Mini App не пересчитывает выбор самостоятельно;
+- server ranking сохраняется при объединении с локальным кэшем: remote result имеет приоритет над локальным дубликатом fixture;
+- основной матч получает badge `⭐ ОСНОВНОЙ МАТЧ` и причину выбора в Mini App;
+- Telegram ставит основной матч первым, отмечает его `⭐` и объясняет, что остальные оставлены для сравнения;
+- `search_result` сохраняет только numeric `primaryFixtureId` вместе с прежними безопасными полями, без текста запроса;
+- добавлен deterministic `matchSelectionDrill`: официальный кубковый матч через 3 дня должен быть выше товарищеского завтра и лиги через 5 дней;
+- новых запросов к API-Football, таблиц Supabase и платёжных функций RC57 не добавляет;
+- версия Worker/client/production smoke: v6.49.0 RC57.
 ## RC56: Match Discovery & Zero-Result Recovery
 
 - team search теперь сразу загружает ближайшие и недавние матчи на backend, без автоматического второго запроса Mini App к Team Hub;

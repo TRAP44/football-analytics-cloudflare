@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.48.0-rc56';
+const CLIENT_VERSION = '6.49.0-rc57';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc56';
+const CLIENT_RELEASE_CHANNEL = 'rc57';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -105,7 +105,7 @@ const state = {
   },
   filter: 'top',
   search: '',
-  globalSearch: { query: '', mode: 'all', remoteTeams: [], knownTeams: [], remoteCompetitions: [], remoteMatches: [], matchSourceTeam: '', matchDiscovery: null, loading: false, warning: '', searchedAt: null, requestSeq: 0 },
+  globalSearch: { query: '', mode: 'all', remoteTeams: [], knownTeams: [], remoteCompetitions: [], remoteMatches: [], matchSourceTeam: '', matchDiscovery: null, primaryFixtureId: null, loading: false, warning: '', searchedAt: null, requestSeq: 0 },
   currentAnalysis: null,
   currentAnalysisTab: 'brief',
   analysisBackView: 'matchesView',
@@ -3867,13 +3867,15 @@ function russianCountLabel(value, one, few, many) {
 
 function searchMatchCard(match) {
   const finished = Boolean(match?.finished);
+  const primary=Boolean(match?.selection?.primary || Number(match?.fixtureId || 0)===Number(state.globalSearch.primaryFixtureId || 0));
   const live = Boolean(match?.live);
   const score = finished || live ? `${match?.score?.home ?? '—'} : ${match?.score?.away ?? '—'}` : '';
   const status = live ? (match.statusLabel || 'Матч идёт') : finished ? 'Завершён' : dateTime(match.date);
   const action = finished || live
     ? `<button class="search-match-action" type="button" data-search-center="${Number(match.fixtureId)}">${finished ? 'Итоги' : 'Центр матча'}</button>`
     : `<button class="search-match-action" type="button" data-search-fixture="${Number(match.fixtureId)}">Преданализ</button>`;
-  return `<article class="search-match-card ${live ? 'is-live' : finished ? 'is-finished' : 'is-upcoming'}">
+  const primaryLabel=primary ? `<div class="search-match-primary"><b>⭐ ОСНОВНОЙ МАТЧ</b><span>${escapeHtml(match?.selection?.reason || state.globalSearch.matchDiscovery?.primaryReason || 'Основной выбор FM AI для анализа')}</span></div>` : '';
+  return `<article class="search-match-card ${live ? 'is-live' : finished ? 'is-finished' : 'is-upcoming'} ${primary ? 'is-primary' : ''}">${primaryLabel}
     <div class="search-match-meta"><span>${escapeHtml(match.league || match.competition?.name || 'Матч')}</span><small>${escapeHtml(status)}</small></div>
     <div class="search-match-teams">
       <span>${match.home?.logo ? `<img src="${safeUrl(match.home.logo)}" alt="">` : '⚽'}<strong>${escapeHtml(match.home?.name || 'Хозяева')}</strong></span>
@@ -3924,9 +3926,9 @@ function renderGlobalSearch() {
   const teams = mergeById(local.teams, state.globalSearch.remoteTeams, 'id');
   const knownTeams = state.globalSearch.knownTeams || [];
   const comps = mergeById(local.competitions, state.globalSearch.remoteCompetitions, 'leagueId');
-  const matches = mergeById(local.matches, state.globalSearch.remoteMatches, 'fixtureId');
-  const upcoming = matches.filter(x => !x.finished).sort((a,b) => Date.parse(a.date || 0) - Date.parse(b.date || 0));
-  const finished = matches.filter(x => x.finished).sort((a,b) => Date.parse(b.date || 0) - Date.parse(a.date || 0));
+  const matches = mergeById(state.globalSearch.remoteMatches, local.matches, 'fixtureId');
+  const upcoming = matches.filter(x => !x.finished).sort((a,b) => Number(a?.selection?.rank || 999)-Number(b?.selection?.rank || 999) || Date.parse(a.date || 0)-Date.parse(b.date || 0));
+  const finished = matches.filter(x => x.finished).sort((a,b) => Number(a?.selection?.rank || 999)-Number(b?.selection?.rank || 999) || Date.parse(b.date || 0)-Date.parse(a.date || 0));
   const mode = state.globalSearch.mode || 'all';
 
   wrap.hidden = false;
@@ -3941,6 +3943,9 @@ function renderGlobalSearch() {
         ? `<div class="data-notice">🕘 ${escapeHtml(state.globalSearch.matchSourceTeam)}: ближайших матчей сейчас нет — показываю последние завершённые игры.</div>`
         : `<div class="data-notice">⚽ Матчи: ${escapeHtml(state.globalSearch.matchSourceTeam)} · ближайшие и последние игры</div>`
       : '';
+    const selectionNote = Number(state.globalSearch.primaryFixtureId || 0) && discovery?.primaryReason
+      ? `<div class="data-notice primary-selection-note">⭐ FM AI выбрал основной матч: <strong>${escapeHtml(discovery.primaryReason)}</strong>.</div>`
+      : '';
     const emptyCalendarNote = state.globalSearch.matchSourceTeam && discovery?.mode === 'empty'
       ? `<div class="data-notice">🗓 ${escapeHtml(state.globalSearch.matchSourceTeam)} найден. В окне ${Number(discovery.windowPastDays || 30)} дней назад / ${Number(discovery.windowFutureDays || 120)} дней вперёд календарь не вернулся — откройте карточку команды или повторите поиск позже.</div>`
       : '';
@@ -3950,8 +3955,8 @@ function renderGlobalSearch() {
     status.innerHTML = state.globalSearch.loading
       ? '<div class="data-notice">🔎 Ищу команды, лиги и матчи…</div>'
       : state.globalSearch.warning
-        ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.globalSearch.warning)}</div>${resolvedNote}${knownNote}${emptyCalendarNote}${sourceNote}`
-        : `${resolvedNote}${knownNote}${emptyCalendarNote}${sourceNote}`;
+        ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.globalSearch.warning)}</div>${resolvedNote}${knownNote}${selectionNote}${emptyCalendarNote}${sourceNote}`
+        : `${resolvedNote}${knownNote}${selectionNote}${emptyCalendarNote}${sourceNote}`;
   }
 
   const sections = [];
@@ -3992,6 +3997,7 @@ async function runGlobalSearch() {
   state.globalSearch.knownTeams = [];
   state.globalSearch.matchSourceTeam = '';
   state.globalSearch.matchDiscovery = null;
+  state.globalSearch.primaryFixtureId = null;
 
   if (query.length < 2 || !runtimeAllows('searchEnabled')) {
     state.globalSearch.loading = false;
@@ -4014,6 +4020,7 @@ async function runGlobalSearch() {
     state.globalSearch.remoteMatches = data.matches || [];
     state.globalSearch.matchSourceTeam = data.matchSource?.name || '';
     state.globalSearch.matchDiscovery = data.matchDiscovery || null;
+    state.globalSearch.primaryFixtureId = Number(data.primaryFixtureId || data.matchDiscovery?.primaryFixtureId || 0) || null;
     state.globalSearch.warning = data.warning || data.hint || '';
     state.globalSearch.searchedAt = data.refreshedAt || new Date().toISOString();
     if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
