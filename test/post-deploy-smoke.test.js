@@ -73,6 +73,12 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         officialMatchPriority: 'enabled',
         selectionReasonUx: 'enabled',
         matchSelectionSelfTest: 'enabled',
+        oneTapAiHandoff: 'enabled',
+        telegramAutoQuickBrief: 'enabled',
+        cachedFullAnalysisHandoff: 'enabled',
+        directFixtureDeepLink: 'enabled',
+        handoffFunnelTracking: 'enabled',
+        oneTapHandoffSelfTest: 'enabled',
       });
     }
     if (url.pathname === '/api/app-manifest') return json({ version: '6.27.0-rc35', releaseCandidate: 'RC35' });

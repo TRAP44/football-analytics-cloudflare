@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.49.0-rc57';
+const CLIENT_VERSION = '6.50.0-rc58';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc57';
+const CLIENT_RELEASE_CHANNEL = 'rc58';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2849,10 +2849,12 @@ function renderLaunchFunnel() {
   meta.textContent=`${Number(d.uniqueUsers || 0)} пользователей · ${Number(d.events || 0)} событий · хранение ${Number(d.retentionDays || 90)} дней`;
   const first=d.funnel?.[0] || {};
   const last=d.funnel?.at?.(-1) || d.funnel?.[d.funnel.length-1] || {};
+  const handoff=d.handoff || {};
   kpis.innerHTML=`<div class="release-monitor-kpis">
     <div><span>Входы</span><strong>${Number(first.users || 0)}</strong><small>bot + Mini App</small></div>
     <div><span>Полный AI</span><strong>${Number(last.users || 0)}</strong><small>${launchFunnelPct(last.fromEntryPct)} от входов</small></div>
     <div><span>Кампаний</span><strong>${Number(d.campaigns?.length || 0)}</strong><small>source + campaign</small></div>
+    <div><span>One‑tap → полный AI</span><strong>${Number(handoff.fullAiUsers || 0)}</strong><small>${launchFunnelPct(handoff.conversionPct)} от AI-handoff</small></div>
     <div><span>Возврат из новостей</span><strong>${Number(d.returnLoop?.newsReturn || 0)}</strong><small>${launchFunnelPct(d.returnLoop?.conversionPct)} от открывших новости</small></div>
   </div>`;
 
@@ -2861,6 +2863,7 @@ function renderLaunchFunnel() {
   const searchQuality=d.searchQuality || {};
   stages.innerHTML=`<div class="release-monitor-section-head"><strong>Воронка</strong><span>уникальные пользователи</span></div>
     ${bottleneck ? `<div class="data-notice">🎯 Узкое место: <strong>${escapeHtml(bottleneck.label || '')}</strong> · теряется ${launchFunnelPct(bottleneck.dropPct)} пользователей перехода.</div>` : ''}
+    ${Number(handoff.users || 0) ? `<div class="data-notice">⚡ One‑tap AI: <strong>${Number(handoff.users || 0)}</strong> пользователей получили Telegram‑бриф · ${Number(handoff.fullAiUsers || 0)} дошли до полного AI · конверсия ${launchFunnelPct(handoff.conversionPct)}.</div>` : ''}
     ${Number(searchQuality.attempts || 0) ? `<div class="data-notice">🔎 Качество поиска: <strong>${launchFunnelPct(searchQuality.matchPct)}</strong> поисков сразу дали матч · матч ${Number(searchQuality.match || 0)} · клуб распознан без матча ${Number(searchQuality.recognizedNoMatch || 0)} · не найдено ${Number(searchQuality.notFound || 0)} · спасено последним матчем ${Number(searchQuality.recoveredRecent || 0)}.</div>` : ''}
     <div class="launch-funnel-stages">${rows.map((x,index)=>`<div>
       <span>${index+1}. ${escapeHtml(x.label || x.key || '')}</span>
@@ -6260,7 +6263,7 @@ function aiInstructorHtml(ai = {}, match = {}) {
 }
 
 let launchIntentHandled = false;
-async function openLaunchFixture(fixtureId, action, tab = '') {
+async function openLaunchFixture(fixtureId, action, tab = '', handoff = false) {
   const id = Number(fixtureId || 0);
   if (!id) return;
   const allowedTabs = new Set(['brief','overview','form','comparison','market','squads','context']);
@@ -6268,6 +6271,7 @@ async function openLaunchFixture(fixtureId, action, tab = '') {
   if (requestedTab) state.currentAnalysisTab = requestedTab;
   if (action === 'center') return openMatchCenter(id, null);
   if (action === 'analysis') {
+    if (handoff) return analyzeMatch(id, null);
     await loadHistory(false);
     if (analysisHistoryForFixture(id)) return openHistoryAnalysis(id, null);
     return analyzeMatch(id, null);
@@ -6284,6 +6288,7 @@ function applyLaunchIntent() {
   const fixtureId = Number(params.get('fixtureId') || 0);
   const action = String(params.get('action') || '').toLowerCase();
   const tab = String(params.get('tab') || '').toLowerCase();
+  const handoff = params.get('handoff') === '1';
   if (['top', 'live', 'favorites', 'all'].includes(filter)) {
     state.filter = filter;
   }
@@ -6302,7 +6307,7 @@ function applyLaunchIntent() {
     void loadHistory(false);
   } else if (fixtureId > 0 && ['analysis','center'].includes(action)) {
     showView('searchView');
-    void openLaunchFixture(fixtureId, action, tab);
+    void openLaunchFixture(fixtureId, action, tab, handoff);
   } else {
     renderGlobalSearch();
     showView('searchView', { restore: true });

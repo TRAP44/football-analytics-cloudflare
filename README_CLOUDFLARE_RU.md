@@ -1,7 +1,20 @@
-# Football Analytics Mini App v6.49.0 — RC57
+# Football Analytics Mini App v6.50.0 — RC58
 
 Telegram Mini App для футбольной аналитики на Cloudflare Workers, Supabase, API-Football и Tavily.
 
+## RC58: One-Tap AI Handoff
+
+- тап по pre-match fixture из Telegram теперь сразу запускает короткий AI-бриф вместо промежуточной карточки с меню;
+- бриф содержит идею/skip, исход, уверенность, риск, качество данных и короткое объяснение;
+- первая кнопка после брифа — `📊 Полный AI-разбор`, ведущая прямо на тот же `fixtureId` в Mini App;
+- Telegram deep-link использует `action=analysis&tab=brief&handoff=1`, поэтому повторный поиск и выбор матча исключены;
+- Mini App при `handoff=1` намеренно вызывает `/api/analyze`, а не открывает history shortcut: это фиксирует реальный `full_ai` переход;
+- если Telegram уже создал анализ, `/api/analyze` возвращает cached payload до `incrementUsage`, поэтому переход в полный разбор не списывает второй анализ;
+- LIVE и завершённые матчи сохраняют прежний безопасный путь через центр матча, без автоматического pre-match AI;
+- одиночный результат поиска получил явную кнопку `Короткая AI-оценка`, multi-result и daily/favorites используют существующий `match:menu` как one-tap entry;
+- добавлено событие `ai_handoff` без текста запроса и агрегат `handoff → full_ai` в launch funnel;
+- новых таблиц Supabase, новых API-Football endpoints и платёжной логики RC58 не добавляет;
+- версия Worker/client/production smoke: v6.50.0 RC58.
 ## RC57: Match Selection Intelligence
 
 - поиск команды теперь не просто показывает список матчей, а выбирает один основной fixture для анализа;

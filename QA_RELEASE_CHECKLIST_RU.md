@@ -1,10 +1,10 @@
-# QA Release Checklist — v6.49.0 RC57
+# QA Release Checklist — v6.50.0 RC58
 
 ## Deploy
 
 - применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql`, `supabase_migration_v6_11_1.sql`, `supabase_migration_v6_12.sql`, `supabase_migration_v6_13.sql`, `supabase_migration_v6_14.sql` и `supabase_migration_v6_15.sql`;
-- Worker/client = `6.49.0-rc57`;
-- package = `6.49.0`;
+- Worker/client = `6.50.0-rc58`;
+- package = `6.50.0`;
 - cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;
@@ -90,6 +90,19 @@
 - сломанный сценарий приводит к «Не опираться на предматчевый сигнал»;
 - никаких новых таблиц или внешних провайдеров RC44 не добавляет.
 
+## RC58 — One-Tap AI Handoff
+
+- `match:menu:<fixtureId>` для pre-match вызывает `sendBotFixtureMenu`, который сразу строит `botAiHandoffText` через защищённый `botAnalyzeFixture`;
+- LIVE/finished не запускают pre-match анализ автоматически и остаются на match-center пути;
+- `footballQuickAiHandoffKeyboard` ставит `Полный AI-разбор` первой кнопкой;
+- `telegramAnalysisHandoffParams` всегда задаёт `fixtureId/action=analysis/tab=brief/handoff=1`;
+- single-result search использует `footballSearchHandoffKeyboard`, а multi-result/daily/favorites продолжают вести через один `match:menu` tap;
+- Mini App читает `handoff=1` и сразу вызывает `analyzeMatch`, минуя history shortcut;
+- cached ветка `apiAnalyze` возвращается до `incrementUsage`, поэтому Telegram brief → full Mini App не расходует квоту дважды;
+- `quick_ai` и новый `ai_handoff` не содержат search query/rawText;
+- `/api/launch-funnel` агрегирует `handoff.users/fullAiUsers/conversionPct`; admin UI показывает one-tap conversion;
+- production smoke требует `oneTapAiHandoff/telegramAutoQuickBrief/cachedFullAnalysisHandoff/directFixtureDeepLink/handoffFunnelTracking/oneTapHandoffSelfTest`;
+- новых миграций Supabase и платёжных функций RC58 нет.
 ## RC57 — Match Selection Intelligence
 
 - `matchSelectionProfile` различает LIVE, официальный upcoming, прочий upcoming, официальный recent и прочий recent;

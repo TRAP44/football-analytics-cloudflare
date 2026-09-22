@@ -56,6 +56,12 @@ const REQUIRED_HEALTH_FLAGS = [
   'officialMatchPriority',
   'selectionReasonUx',
   'matchSelectionSelfTest',
+  'oneTapAiHandoff',
+  'telegramAutoQuickBrief',
+  'cachedFullAnalysisHandoff',
+  'directFixtureDeepLink',
+  'handoffFunnelTracking',
+  'oneTapHandoffSelfTest',
 ];
 
 function delay(ms) {
