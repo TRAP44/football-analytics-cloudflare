@@ -1,10 +1,10 @@
-# QA Release Checklist — v6.34.0 RC42
+# QA Release Checklist — v6.35.0 RC43
 
 ## Deploy
 
-- применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql`, `supabase_migration_v6_11_1.sql` и `supabase_migration_v6_12.sql` и `supabase_migration_v6_13.sql`;
-- Worker/client = `6.34.0-rc42`;
-- package = `6.34.0`;
+- применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql`, `supabase_migration_v6_11_1.sql` и `supabase_migration_v6_12.sql` и `supabase_migration_v6_13.sql` и `supabase_migration_v6_14.sql`;
+- Worker/client = `6.35.0-rc43`;
+- package = `6.35.0`;
 - cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;
@@ -68,6 +68,16 @@
 - карточки и фолы агрегируются без дополнительных запросов поставщику;
 - профиль судьи доступен только с выборки >= 3 матчей;
 - таблица referee_match_history закрыта от anon/authenticated и доступна service_role.
+
+## RC43 — постоянный AI-вердикт
+
+- после анализа history row содержит AI signal/risk/confidence/verdict snapshot;
+- карточка матча показывает сохранённый AI-вердикт без автоматического нового анализа;
+- повторное открытие использует `/api/history-analysis` и cache v10;
+- AI-центр скрыт до появления хотя бы одного сохранённого разбора предстоящего матча;
+- `/last` показывает последний AI-вердикт и ведёт в историю приложения;
+- новые поля analysis_history доступны только backend/service-role через существующий закрытый контур;
+- старые строки истории без AI-полей продолжают отображаться.
 
 ## Champion–Challenger
 

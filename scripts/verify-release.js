@@ -9,15 +9,15 @@ const staticHeaders = fs.readFileSync('public/_headers', 'utf8');
 const styles = fs.readFileSync('public/styles.css', 'utf8');
 const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml', 'utf8');
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
-const expected = `${pkg.version}-rc42`;
+const expected = `${pkg.version}-rc43`;
 const failures = [];
 
 if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) failures.push('package-lock version must match package.json');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC42'")) failures.push('Worker RC name must be RC42');
+if (!worker.includes("const RC_NAME = 'RC43'")) failures.push('Worker RC name must be RC43');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc42'")) failures.push('Client release channel must be rc42');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc43'")) failures.push('Client release channel must be rc43');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -25,6 +25,7 @@ if (!fs.existsSync('supabase_migration_v6_11.sql')) failures.push('Missing v6.11
 if (!fs.existsSync('supabase_migration_v6_11_1.sql')) failures.push('Missing v6.11.1 default-ACL migration');
 if (!fs.existsSync('supabase_migration_v6_12.sql')) failures.push('Missing v6.12 bot-digest migration');
 if (!fs.existsSync('supabase_migration_v6_13.sql')) failures.push('Missing v6.13 referee-history migration');
+if (!fs.existsSync('supabase_migration_v6_14.sql')) failures.push('Missing v6.14 persistent-AI-history migration');
 if (!fs.existsSync('supabase_baseline_v6_9.sql')) failures.push('Missing v6.9 baseline');
 if (!fs.existsSync('src/access-control.js')) failures.push('Missing access-control module');
 if (!fs.existsSync('scripts/post-deploy-smoke.js')) failures.push('Missing post-deploy smoke test');
@@ -33,8 +34,8 @@ if (!fs.existsSync('.github/workflows/rollback-production.yml')) failures.push('
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
-if (!deployWorkflow.includes('--message "RC42 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC42');
-if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.34.0-rc42"')) failures.push('Production smoke must verify 6.34.0-rc42');
+if (!deployWorkflow.includes('--message "RC43 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC43');
+if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.35.0-rc43"')) failures.push('Production smoke must verify 6.35.0-rc43');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
 if (!/id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden/.test(html)) failures.push('Admin role badge must use the fail-closed admin-only visibility contract');
 if (!/\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i.test(styles)) failures.push('Global hidden elements must remain display:none');
@@ -56,30 +57,31 @@ if (!app.includes('analysisActionPending: false')) failures.push('Analysis dupli
 if (!app.includes('matchCenterRequestSeq: 0')) failures.push('Match-center stale-response guard is missing');
 if (!app.includes('favoriteMutations: new Set()')) failures.push('Favorite mutation guard is missing');
 if (!app.includes('reminderMutations: new Set()')) failures.push('Reminder mutation guard is missing');
-if (!fs.existsSync('test/quick-reminder-onboarding.test.js')) failures.push('Missing RC42 quick-reminder/onboarding regression test');
-if (!fs.existsSync('test/main-screen-focus.test.js')) failures.push('Missing RC42 focused-home regression test');
-if (!fs.existsSync('test/ai-instructor-bot.test.js')) failures.push('Missing RC42 AI-instructor/bot regression test');
-if (!fs.existsSync('test/ai-instructor-rc42.test.js')) failures.push('Missing RC42 AI-intelligence regression test');
-if (!fs.existsSync('test/ai-instructor-rc42.test.js')) failures.push('Missing RC42 referee/AI-focus regression test');
-if (!worker.includes('function loadRefereeHistoryProfile')) failures.push('RC42 referee history loader is missing');
-if (!worker.includes('saveRefereeMatchHistory')) failures.push('RC42 referee history collector is missing');
-if (!app.includes('function renderAiFocus')) failures.push('RC42 AI focus card is missing');
-if (!worker.includes("verifiedRefereeHistory: 'enabled'") || !worker.includes("aiFocusOfDay: 'enabled'")) failures.push('RC42 health contract is missing');
-if (!worker.includes('function buildLineupImpact')) failures.push('RC42 lineup impact engine is missing');
-if (!worker.includes('function marketMovementNote')) failures.push('RC42 market movement explanation is missing');
-if (!worker.includes('processDailyDigests')) failures.push('RC42 daily bot digest is missing');
-if (!worker.includes("aiTenSecondVerdict: 'enabled'") || !worker.includes("dailyBotDigest: 'enabled'")) failures.push('RC42 AI health contract is missing');
+if (!fs.existsSync('test/quick-reminder-onboarding.test.js')) failures.push('Missing RC43 quick-reminder/onboarding regression test');
+if (!fs.existsSync('test/main-screen-focus.test.js')) failures.push('Missing RC43 focused-home regression test');
+if (!fs.existsSync('test/ai-instructor-bot.test.js')) failures.push('Missing RC43 AI-instructor/bot regression test');
+if (!fs.existsSync('test/ai-instructor-rc43.test.js')) failures.push('Missing RC43 AI-intelligence regression test');
+if (!fs.existsSync('test/ai-instructor-rc43.test.js')) failures.push('Missing RC43 persistent-AI regression test');
+if (!fs.existsSync('test/ai-instructor-rc43.test.js')) failures.push('Missing RC43 referee/AI-focus regression test');
+if (!worker.includes('function loadRefereeHistoryProfile')) failures.push('RC43 referee history loader is missing');
+if (!worker.includes('saveRefereeMatchHistory')) failures.push('RC43 referee history collector is missing');
+if (!app.includes('function renderAiFocus')) failures.push('RC43 AI focus card is missing');
+if (!worker.includes("verifiedRefereeHistory: 'enabled'") || !worker.includes("aiFocusOfDay: 'enabled'")) failures.push('RC43 health contract is missing');
+if (!worker.includes('function buildLineupImpact')) failures.push('RC43 lineup impact engine is missing');
+if (!worker.includes('function marketMovementNote')) failures.push('RC43 market movement explanation is missing');
+if (!worker.includes('processDailyDigests')) failures.push('RC43 daily bot digest is missing');
+if (!worker.includes("aiTenSecondVerdict: 'enabled'") || !worker.includes("dailyBotDigest: 'enabled'")) failures.push('RC43 AI health contract is missing');
 if (!worker.includes('function buildAiInstructor')) failures.push('AI football instructor engine is missing');
 if (!worker.includes("referee: fixture.fixture?.referee || ''")) failures.push('Pre-match referee context is missing');
 if (!app.includes('function aiInstructorHtml')) failures.push('AI instructor UI is missing');
 if (!html.includes('FM AI') || !html.includes('AI ФУТБОЛЬНЫЙ ИНСТРУКТОР') || !html.includes('boot-feature-row')) failures.push('AI startup experience is missing');
-if (!worker.includes("telegramBotHub: 'enabled'") || !worker.includes("aiFootballInstructor: 'enabled'")) failures.push('RC42 AI/bot health contract is missing');
+if (!worker.includes("telegramBotHub: 'enabled'") || !worker.includes("aiFootballInstructor: 'enabled'")) failures.push('RC43 AI/bot health contract is missing');
 if (!html.includes('id="dailyOverviewKicker"')) failures.push('Contextual overview kicker is missing');
 if (!html.includes('id="quotaText" hidden')) failures.push('Main-screen quota must be hidden by default');
-if (!worker.includes("focusedMatchHome: 'enabled'") || !worker.includes("contextualLeagueFilter: 'enabled'")) failures.push('RC42 focused-home health contract is missing');
+if (!worker.includes("focusedMatchHome: 'enabled'") || !worker.includes("contextualLeagueFilter: 'enabled'")) failures.push('RC43 focused-home health contract is missing');
 if (!html.includes('id="firstRunGuide"') || !html.includes('id="firstRunGuideDismiss"')) failures.push('First-run guide markup is missing');
 if (!app.includes('data-quick-reminder')) failures.push('Quick reminder action is missing from match cards');
-if (!worker.includes("quickMatchReminders: 'enabled'") || !worker.includes("firstRunGuide: 'enabled'")) failures.push('RC42 health contract is missing');
+if (!worker.includes("quickMatchReminders: 'enabled'") || !worker.includes("firstRunGuide: 'enabled'")) failures.push('RC43 health contract is missing');
 if (!app.includes('profileStale: false')) failures.push('Profile fail-soft state is missing');
 if (!fs.existsSync('test/entity-state-safety.test.js')) failures.push('Missing entity-state safety regression test');
 if (!app.includes('teamHubRequestSeq: 0')) failures.push('Team hub stale-response guard is missing');
@@ -125,3 +127,7 @@ if (failures.length) {
 }
 
 console.log(`Release metadata is consistent for ${expected}.`);
+
+if (!worker.includes("persistentAiVerdicts: 'enabled'") || !worker.includes("analyzedMatchHub: 'enabled'")) failures.push('RC43 persistent AI health contract is missing');
+if (!worker.includes("historyAnalysisCacheFix: 'enabled'") || !worker.includes("fixture:${fixtureId}:v10-ai-instructor")) failures.push('RC43 history cache contract is missing');
+if (!app.includes('function renderAiCenterSummary') || !app.includes('matchAiSnapshotHtml')) failures.push('RC43 analyzed-match UI is missing');

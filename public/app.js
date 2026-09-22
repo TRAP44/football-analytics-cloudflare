@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.34.0-rc42';
+const CLIENT_VERSION = '6.35.0-rc43';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc42';
+const CLIENT_RELEASE_CHANNEL = 'rc43';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -4255,6 +4255,7 @@ function renderPopularCompetitions() {
 
 function matchCardHtml(m, { grouped = false } = {}) {
   const interest = Math.max(0, Math.min(100, Number(m.interestScore || 0)));
+  const aiHistory = analysisHistoryForFixture(m.fixtureId);
   const cardState = m.live ? 'is-live' : m.finished ? 'is-finished' : 'is-upcoming';
   const personalInsight = personalMatchInsight(m);
   const signal = state.filter === 'top' && personalInsight.reason
@@ -4273,6 +4274,7 @@ function matchCardHtml(m, { grouped = false } = {}) {
         ${signal ? `<span class="match-signal ${personalInsight.favorite ? 'favorite-signal' : ''}">${signalIcon} ${signal}</span>` : ''}
         ${m.integrity?.state === 'warning' ? '<span class="integrity-mini warning">⚠ проверяем данные</span>' : ''}
       </div>
+      ${matchAiSnapshotHtml(m)}
       <div class="team-row">
         <div class="team">
           <button class="fav-star ${isFavorite(m.home?.id) ? 'active' : ''} ${state.favoriteMutations.has(Number(m.home?.id)) ? 'is-pending' : ''}" type="button" data-team-id="${Number(m.home?.id)}" data-team-name="${escapeHtml(m.home?.name || '')}" data-team-logo="${escapeHtml(m.home?.logo || '')}" aria-pressed="${isFavorite(m.home?.id) ? 'true' : 'false'}" aria-label="${isFavorite(m.home?.id) ? 'Удалить из избранного' : 'Добавить в избранное'}: ${escapeHtml(m.home?.name || '')}" ${state.favoriteMutations.has(Number(m.home?.id)) ? 'disabled' : ''}>${isFavorite(m.home?.id) ? '★' : '☆'}</button>
@@ -4295,18 +4297,53 @@ function matchCardHtml(m, { grouped = false } = {}) {
           ? `<button class="analyze-btn live-center-btn" type="button" data-center="${Number(m.fixtureId)}">${m.youthReserve ? '🔴 Счёт матча' : '🔴 Центр матча'}</button>`
           : m.finished
             ? `<button class="analyze-btn finished-btn" type="button" data-center="${Number(m.fixtureId)}">📋 Итоги матча</button>`
-            : `<button class="analyze-btn" type="button" data-fixture="${Number(m.fixtureId)}">🧠 Предматчевый анализ</button>`}
+            : aiHistory
+              ? `<button class="analyze-btn analyzed-btn" type="button" data-history-analysis="${Number(m.fixtureId)}">🧠 Открыть AI-разбор</button>`
+              : `<button class="analyze-btn" type="button" data-fixture="${Number(m.fixtureId)}">🧠 Предматчевый анализ</button>`}
         ${!m.live && !m.finished ? `<button class="quick-reminder-btn ${reminderActive ? 'active' : ''} ${reminderPending ? 'is-pending' : ''}" type="button" data-quick-reminder="${Number(m.fixtureId)}" aria-pressed="${reminderActive ? 'true' : 'false'}" ${reminderPending ? 'disabled' : ''}>${reminderActive ? '🔔 Напоминание включено' : `🔔 Напомнить за ${reminderMinutes} мин.`}</button>` : ''}
       </div>
     </article>`;
 }
 
+function analysisHistoryForFixture(fixtureId) {
+  const id = Number(fixtureId || 0);
+  if (!id) return null;
+  return state.history.find(item => Number(item.fixtureId) === id && item.aiSignalLabel) || null;
+}
+
+function matchAiSnapshotHtml(match) {
+  const item = analysisHistoryForFixture(match?.fixtureId);
+  if (!item) return '';
+  const skip = item.aiSignalCode === 'skip';
+  const confidence = Number.isFinite(Number(item.aiConfidence)) ? `${Math.round(Number(item.aiConfidence))}/100` : '—';
+  return `<div class="match-ai-snapshot ${skip ? 'skip' : 'active'}"><span>AI</span><strong>${escapeHtml(item.aiSignalLabel || 'Разбор готов')}</strong><small>${item.aiOutcome ? `Исход ${escapeHtml(item.aiOutcome)} · ` : ''}уверенность ${confidence}${item.aiRisk ? ` · риск ${escapeHtml(String(item.aiRisk).toLowerCase())}` : ''}</small></div>`;
+}
+
+function renderAiCenterSummary() {
+  const wrap = $('aiCenterSummary');
+  if (!wrap) return;
+  const upcoming = state.matches.filter(m => !m.live && !m.finished);
+  const analyzed = upcoming.map(match => ({ match, history:analysisHistoryForFixture(match.fixtureId) })).filter(x => x.history);
+  if (!analyzed.length) { wrap.hidden = true; wrap.innerHTML = ''; return; }
+  const signals = analyzed.filter(x => x.history.aiSignalCode !== 'skip');
+  const skips = analyzed.filter(x => x.history.aiSignalCode === 'skip');
+  const highRisk = analyzed.filter(x => String(x.history.aiRisk || '').toLowerCase() === 'высокий');
+  const strongest = [...signals].sort((a,b) => Number(b.history.aiConfidence || 0) - Number(a.history.aiConfidence || 0))[0] || analyzed[0];
+  const h = strongest.history;
+  const m = strongest.match;
+  wrap.hidden = false;
+  wrap.innerHTML = `<div class="ai-center-head"><div><span>AI-ЦЕНТР</span><strong>Уже разобранные матчи</strong></div><small>Повторное открытие не тратит новый анализ</small></div><div class="ai-center-metrics"><div><b>${signals.length}</b><span>сигналов</span></div><div><b>${skips.length}</b><span>пропустить</span></div><div><b>${highRisk.length}</b><span>высокий риск</span></div></div><button class="ai-center-feature" type="button" data-ai-center-history="${Number(m.fixtureId)}"><span>${h.aiSignalCode === 'skip' ? '⚠️ Осторожно' : '🧠 Сильнейший разбор'}</span><strong>${escapeHtml(m.home?.name || '')} — ${escapeHtml(m.away?.name || '')}</strong><small>${escapeHtml(h.aiSignalLabel || 'AI-разбор')} · уверенность ${Math.round(Number(h.aiConfidence || 0))}/100</small></button>`;
+  wrap.querySelector('[data-ai-center-history]')?.addEventListener('click', event => openHistoryAnalysis(Number(event.currentTarget.dataset.aiCenterHistory), event.currentTarget));
+}
 function bindMatchActions(root = document) {
   root.querySelectorAll('.analyze-btn[data-fixture]').forEach(btn => {
     btn.addEventListener('click', () => analyzeMatch(Number(btn.dataset.fixture), btn));
   });
   root.querySelectorAll('.analyze-btn[data-center]').forEach(btn => {
     btn.addEventListener('click', () => openMatchCenter(Number(btn.dataset.center), btn));
+  });
+  root.querySelectorAll('.analyze-btn[data-history-analysis]').forEach(btn => {
+    btn.addEventListener('click', () => openHistoryAnalysis(Number(btn.dataset.historyAnalysis), btn));
   });
   root.querySelectorAll('.fav-star').forEach(btn => btn.addEventListener('click', () => toggleFavorite({
     id: Number(btn.dataset.teamId), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '',
@@ -4350,6 +4387,7 @@ function renderMatches() {
   $('matchesCount').innerHTML = summaryBits.join('');
   renderDailyOverview();
   renderAiFocus();
+  renderAiCenterSummary();
   renderPopularCompetitions();
   if ($('dataNotice')) {
     const notices = [];
@@ -5453,6 +5491,14 @@ function historyItemFromAnalysis(data = {}) {
     fixtureDate: match.date || '',
     homeLogo: match.home?.logo || '',
     awayLogo: match.away?.logo || '',
+    aiSignalCode: data?.aiInstructor?.betSignal?.code || '',
+    aiSignalLabel: data?.aiInstructor?.betSignal?.label || '',
+    aiConfidence: Number(data?.aiInstructor?.confidenceScore ?? 0) || null,
+    aiRisk: data?.aiInstructor?.riskLabel || '',
+    aiOutcome: data?.aiInstructor?.verdict?.outcome || '',
+    aiTotal: data?.aiInstructor?.verdict?.total || '',
+    aiBtts: data?.aiInstructor?.verdict?.btts || '',
+    analysisVersion: data?.analysisVersion || '',
     viewedAt: new Date().toISOString(),
   };
 }
@@ -5563,6 +5609,7 @@ function renderHistory() {
       <div class="history-main">
         <strong>${escapeHtml(item.homeName)} — ${escapeHtml(item.awayName)}</strong>
         <span>${escapeHtml(item.leagueName || '')}${item.fixtureDate ? ` · ${dateTime(item.fixtureDate)}` : ''}${item.viewedAt ? ` · открыто ${relativeAge(item.viewedAt)}` : ''}</span>
+        ${item.aiSignalLabel ? `<em class="history-ai-chip ${item.aiSignalCode === 'skip' ? 'skip' : ''}">AI · ${escapeHtml(item.aiSignalLabel)}${Number.isFinite(Number(item.aiConfidence)) ? ` · ${Math.round(Number(item.aiConfidence))}/100` : ''}</em>` : ''}
       </div>
       <button class="history-open" data-fixture="${Number(item.fixtureId)}" type="button" aria-label="Открыть анализ матча ${escapeHtml(item.homeName)} — ${escapeHtml(item.awayName)}">Открыть</button>
     </article>
@@ -6039,6 +6086,9 @@ function applyLaunchIntent() {
     renderDiscoveryHome();
     renderGlobalSearch();
     showView('searchView');
+  } else if (view === 'history') {
+    showView('historyView');
+    void loadHistory(false);
   } else {
     showView('matchesView', { restore: true });
   }

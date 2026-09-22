@@ -75,11 +75,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.34.0-rc42';
+const APP_VERSION = '6.35.0-rc43';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc42';
-const RC_NAME = 'RC42';
+const RELEASE_CHANNEL = 'rc43';
+const RC_NAME = 'RC43';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1536,6 +1536,7 @@ async function configureFootballBot(request, cfg, chatId) {
       { command: 'live', description: 'Матчи в реальном времени' },
       { command: 'favorites', description: 'Матчи любимых команд' },
       { command: 'picks', description: '3 матча дня' },
+      { command: 'last', description: 'Последний AI-разбор' },
       { command: 'digest', description: 'Включить утреннюю подборку' },
       { command: 'digest_off', description: 'Отключить утреннюю подборку' },
       { command: 'help', description: 'Как пользоваться ботом' },
@@ -1658,6 +1659,25 @@ async function processDailyDigests(cfg,scheduledAt=new Date()) {
   return {sent,eligible:subscriptions.length,date};
 }
 
+function lastAiVerdictText(row = {}) {
+  if (!row?.fixture_id) return 'История AI-разборов пока пуста.';
+  const teams = `${row.home_name || 'Хозяева'} — ${row.away_name || 'Гости'}`;
+  if (!row.ai_signal_label) return `Последний анализ: ${teams}. Он был создан до сохранения быстрых AI-вердиктов; откройте историю в приложении.`;
+  const confidence = Number.isFinite(Number(row.ai_confidence)) ? ` · уверенность ${Math.round(Number(row.ai_confidence))}/100` : '';
+  const risk = row.ai_risk ? ` · риск ${String(row.ai_risk).toLowerCase()}` : '';
+  const outcome = row.ai_outcome ? `\nИсход: ${row.ai_outcome}` : '';
+  return `🧠 Последний AI-разбор\n${teams}\n${row.ai_signal_label}${confidence}${risk}${outcome}`;
+}
+
+async function sendLastAiVerdict(request, cfg, userId, chatId) {
+  const rows = await getHistory(userId, cfg);
+  const row = rows[0];
+  await telegramApi('sendMessage', cfg, {
+    chat_id:chatId,
+    text:lastAiVerdictText(row),
+    reply_markup:{inline_keyboard:[[{text:'🕘 Открыть историю',web_app:{url:telegramWebAppUrl(request,{view:'history'})}}]]},
+  });
+}
 async function handleTelegramWebhook(request, cfg) {
   if (!cfg.webhookSecret) return json({ ok: false, error: 'webhook_secret_missing' }, 503);
   const provided = request.headers.get('x-telegram-bot-api-secret-token') || '';
@@ -1745,7 +1765,7 @@ async function handleTelegramWebhook(request, cfg) {
   }
 
   if (chatId && /^\/help(?:@\w+)?(?:\s|$)/i.test(text)) {
-    await telegramApi('sendMessage', cfg, { chat_id: chatId, parse_mode: 'HTML', text: '<b>Как пользоваться AI-инструктором</b>\n\n/today — матчи и AI-разбор на сегодня\n/live — матчи, которые идут сейчас\n/favorites — ваши команды\n/picks — 3 матча дня\n/digest — включить утреннюю подборку\n/digest_off — отключить её\n/help — эта подсказка\n\nВ мини-приложении выберите матч и нажмите «Предматчевый анализ». AI-инструктор покажет вероятности, идею для рассмотрения, риски, судью, форму, составы и рынок.', reply_markup: footballBotKeyboard(request) });
+    await telegramApi('sendMessage', cfg, { chat_id: chatId, parse_mode: 'HTML', text: '<b>Как пользоваться AI-инструктором</b>\n\n/today — матчи и AI-разбор на сегодня\n/live — матчи, которые идут сейчас\n/favorites — ваши команды\n/picks — 3 матча дня\n/last — последний AI-разбор\n/digest — включить утреннюю подборку\n/digest_off — отключить её\n/help — эта подсказка\n\nВ мини-приложении выберите матч и нажмите «Предматчевый анализ». AI-инструктор покажет вероятности, идею для рассмотрения, риски, судью, форму, составы и рынок.', reply_markup: footballBotKeyboard(request) });
     return json({ ok: true });
   }
 
@@ -1766,6 +1786,11 @@ async function handleTelegramWebhook(request, cfg) {
 
   if (chatId && /^\/picks(?:@\w+)?(?:\s|$)/i.test(text)) {
     await sendDailyPicks(request, cfg, chatId);
+    return json({ ok: true });
+  }
+
+  if (chatId && /^\/last(?:@\w+)?(?:\s|$)/i.test(text)) {
+    await sendLastAiVerdict(request, cfg, Number(msg.from?.id || chatId), chatId);
     return json({ ok: true });
   }
 
@@ -5527,6 +5552,9 @@ async function settleBacktestDaily(cfg) {
 
 async function recordHistory(userId, payload, cfg) {
   const match = payload?.match;
+  const instructor = payload?.aiInstructor || {};
+  const verdict = instructor?.verdict || {};
+  const signal = instructor?.betSignal || {};
   if (!match?.fixtureId) return;
   const row = {
     telegram_id: Number(userId),
@@ -5537,6 +5565,14 @@ async function recordHistory(userId, payload, cfg) {
     fixture_date: match.date || null,
     home_logo: match.home?.logo || null,
     away_logo: match.away?.logo || null,
+    ai_signal_code: String(signal.code || '').slice(0,40),
+    ai_signal_label: String(signal.label || '').slice(0,160),
+    ai_confidence: Number.isFinite(Number(instructor.confidenceScore)) ? Math.max(0, Math.min(100, Math.round(Number(instructor.confidenceScore)))) : null,
+    ai_risk: String(instructor.riskLabel || '').slice(0,60),
+    ai_outcome: String(verdict.outcome || '').slice(0,80),
+    ai_total: String(verdict.total || '').slice(0,80),
+    ai_btts: String(verdict.btts || '').slice(0,80),
+    analysis_version: String(payload?.analysisVersion || '').slice(0,80),
     viewed_at: new Date().toISOString(),
   };
   if (hasSupabase(cfg)) {
@@ -9984,6 +10020,14 @@ async function apiHistory(request, cfg, user) {
       fixtureDate: x.fixture_date || '',
       homeLogo: x.home_logo || '',
       awayLogo: x.away_logo || '',
+      aiSignalCode: x.ai_signal_code || '',
+      aiSignalLabel: x.ai_signal_label || '',
+      aiConfidence: Number.isFinite(Number(x.ai_confidence)) ? Number(x.ai_confidence) : null,
+      aiRisk: x.ai_risk || '',
+      aiOutcome: x.ai_outcome || '',
+      aiTotal: x.ai_total || '',
+      aiBtts: x.ai_btts || '',
+      analysisVersion: x.analysis_version || '',
       viewedAt: x.viewed_at || '',
     })),
   });
@@ -9998,7 +10042,7 @@ async function apiHistoryAnalysis(request, cfg, user) {
     return json({ error: 'Этот матч отсутствует в вашей истории анализов.', code: 'HISTORY_ANALYSIS_NOT_FOUND' }, 404);
   }
 
-  const cacheKey = `fixture:${fixtureId}:v9-ai-instructor`;
+  const cacheKey = `fixture:${fixtureId}:v10-ai-instructor`;
   const fresh = await getCache(cacheKey, cfg);
   const payload = fresh || await getStaleCache(cacheKey, cfg);
   if (!payload) {
@@ -11488,6 +11532,10 @@ export default {
         dailyBotDigest: 'enabled',
         verifiedRefereeHistory: 'enabled',
         aiFocusOfDay: 'enabled',
+        persistentAiVerdicts: 'enabled',
+        analyzedMatchHub: 'enabled',
+        telegramLastVerdict: 'enabled',
+        historyAnalysisCacheFix: 'enabled',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
