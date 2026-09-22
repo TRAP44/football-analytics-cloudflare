@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.22.0-rc30';
+const CLIENT_VERSION = '6.23.0-rc31';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc30';
+const CLIENT_RELEASE_CHANNEL = 'rc31';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -141,7 +141,7 @@ const VIEW_CHROME = {
   searchView: ['Поиск', 'Команды, турниры и быстрый доступ'],
   tournamentView: ['Турнир', 'Матчи, таблица и контекст соревнования'],
   teamView: ['Команда', 'Форма, состав и календарь клуба'],
-  analysisView: ['Анализ матча', 'Бриф, вероятности, сценарии и ключевые факторы'],
+  analysisView: ['Анализ матча', 'Главное, вероятности, сценарии и ключевые факторы'],
   historyView: ['История', 'Недавно просмотренные анализы'],
   profileView: ['Профиль', 'Настройки, избранное и персонализация'],
 };
@@ -1051,11 +1051,30 @@ function publicText(value) {
   const raw = String(value ?? '');
   const exact = {
     high: 'высокий', medium: 'средний', low: 'низкий',
+    'shots on goal': 'Удары в створ',
+    'shots off goal': 'Удары мимо',
+    'total shots': 'Все удары',
+    'blocked shots': 'Заблокированные удары',
+    'shots insidebox': 'Удары из штрафной',
+    'shots outsidebox': 'Удары из-за штрафной',
+    'ball possession': 'Владение мячом',
+    'corner kicks': 'Угловые',
+    'offsides': 'Офсайды',
+    'fouls': 'Фолы',
+    'yellow cards': 'Жёлтые карточки',
+    'red cards': 'Красные карточки',
+    'goalkeeper saves': 'Сейвы вратаря',
+    'total passes': 'Передачи',
+    'passes accurate': 'Точные передачи',
+    'passes %': 'Точность передач',
+    'expected_goals': 'Ожидаемые голы (xG)',
+    'expected goals': 'Ожидаемые голы (xG)',
+    'goals prevented': 'Предотвращённые голы',
     active: 'активно', shadow: 'режим наблюдения', baseline: 'базовый режим',
     full: 'полный режим', 'balanced-free': 'сбалансированный режим', 'quota-saver': 'экономный режим',
     expanded: 'расширенный режим', standard: 'стандартный режим',
-    fixture: 'данные матча', embedded: 'данные матча', cache: 'кэш',
-    stale: 'резервный кэш', skipped: 'пропущено', error: 'ошибка',
+    fixture: 'данные матча', embedded: 'данные матча', cache: 'сохранённые данные',
+    stale: 'резервные сохранённые данные', skipped: 'пропущено', error: 'ошибка',
   };
   const key = raw.trim().toLowerCase();
   if (exact[key]) return exact[key];
@@ -1129,7 +1148,7 @@ function renderProfile() {
       avatar.replaceChildren(img);
     }
   }
-  $('profileUsername').textContent = user.username ? `@${user.username} · ID Telegram ${user.id}` : `ID Telegram ${user.id}`;
+  $('profileUsername').textContent = user.username ? `@${user.username}` : '';
   $('profilePlan').textContent = planLabel(quota.plan);
   $('profileUsage').textContent = `${quota.used} / ${quota.limit}`;
   $('memberSince').textContent = user.createdAt ? `С нами с ${dateOnly(user.createdAt)}` : '';
@@ -4405,7 +4424,7 @@ function liveStatsHtml(stats, match) {
   if (!items.length) return '<div class="empty compact-empty">Детальная статистика недоступна для этого матча.</div>';
   return `<div class="live-stats">
     <div class="live-stat-head"><strong>${escapeHtml(match.home?.name || '')}</strong><span></span><strong>${escapeHtml(match.away?.name || '')}</strong></div>
-    ${items.map(x => `<div class="live-stat-row"><strong>${statValue(x.home)}</strong><span>${escapeHtml(x.label)}</span><strong>${statValue(x.away)}</strong></div>`).join('')}
+    ${items.map(x => `<div class="live-stat-row"><strong>${statValue(x.home)}</strong><span>${escapeHtml(publicText(x.label))}</span><strong>${statValue(x.away)}</strong></div>`).join('')}
   </div>`;
 }
 
@@ -4615,7 +4634,7 @@ function centerKeyStatsHtml(stats) {
 function centerAllStatsHtml(stats) {
   const items = stats?.items || [];
   if (!items.length) return '<div class="empty compact-empty">Детальная статистика пока недоступна.</div>';
-  return `<div class="center-all-stats">${items.map(x => centerCompareRow(x.label, x.home, x.away)).join('')}</div>`;
+  return `<div class="center-all-stats">${items.map(x => centerCompareRow(publicText(x.label), x.home, x.away)).join('')}</div>`;
 }
 
 function timelineEventsHtml(events = [], match = {}) {
@@ -5463,7 +5482,7 @@ function prematchSourceRow(row, match) {
 
 function prematchBriefHtml(pm, match, probabilities) {
   if (!pm) {
-    return `<section class="panel"><div class="empty"><strong>Бриф недоступен</strong><p>Пересчитайте анализ после обновления приложения.</p></div></section>`;
+    return `<section class="panel"><div class="empty"><strong>Главное недоступен</strong><p>Пересчитайте анализ после обновления приложения.</p></div></section>`;
   }
   const uncertainty = pm.uncertainty || {};
   const leader = pm.leader || {};
@@ -5596,7 +5615,7 @@ function renderAnalysis(d) {
     ${d.stale ? `<section class="panel stale-panel"><strong>⚠️ Использован последний сохранённый анализ</strong><p>${escapeHtml(d.warning || 'Свежие данные временно недоступны из-за ограничения провайдера.')}</p></section>` : ''}
 
     <div class="analysis-tabs" role="tablist">
-      <button class="analysis-tab-btn" data-tab="brief" type="button">Бриф</button>
+      <button class="analysis-tab-btn" data-tab="brief" type="button">Главное</button>
       <button class="analysis-tab-btn" data-tab="overview" type="button">Обзор</button>
       <button class="analysis-tab-btn" data-tab="form" type="button">Форма</button>
       <button class="analysis-tab-btn" data-tab="comparison" type="button">Сравнение</button>
@@ -5715,7 +5734,7 @@ function renderAnalysis(d) {
       </section>
       <section class="panel">
         <h2>🧠 Состав модели</h2>
-        <p class="muted">${escapeHtml(d.modelBreakdown?.method || 'Модель объединяет доступные статистические сигналы.')}</p>
+        <p class="muted">${escapeHtml(publicText(d.modelBreakdown?.method || 'Модель объединяет доступные статистические сигналы.'))}</p>
         <div class="model-weights">${escapeHtml(modelWeightsText(d.modelBreakdown?.weights || {}))}</div>
       ${d.modelCalibration ? `<div class="analysis-calibration-card ${escapeHtml(d.modelCalibration.mode || 'baseline')}"><span>Калибровка v${escapeHtml(d.modelCalibration.version || '4.0')}</span><strong>${escapeHtml(calibrationModeLabel(d.modelCalibration.mode))}</strong><small>профиль ${escapeHtml(String(d.modelCalibration.fingerprint || '').slice(0, 8) || 'базовый')} · выборка ${Number(d.modelCalibration.sample || 0)} · коэффициент ${Number(d.modelCalibration.temperature || 1).toFixed(2)}${d.modelCalibration.weightsActive ? ' · адаптивные веса' : ''}</small></div>` : ''}
         <div class="model-api-card">
@@ -5758,7 +5777,7 @@ function renderAnalysis(d) {
           <div><span>Режим данных</span><strong>${escapeHtml(dataPolicyModeLabel(d.dataPolicy?.mode || 'standard'))}</strong></div>
         </div>
         ${d.dataPolicy?.skipped?.length ? `<div class="policy-list"><strong>Что было пропущено для экономии/качества:</strong><ul>${d.dataPolicy.skipped.map(x => `<li>${escapeHtml(publicText(x))}</li>`).join('')}</ul></div>` : ''}
-        <p class="tiny warning">${escapeHtml(d.disclaimer || '')}</p>
+        <p class="tiny warning">${escapeHtml(publicText(d.disclaimer || ''))}</p>
       </section>
     </div>
   `;
