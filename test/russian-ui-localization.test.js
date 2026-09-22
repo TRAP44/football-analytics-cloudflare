@@ -145,5 +145,5 @@ test('Russian counters use grammatical forms for user-facing quantities', () => 
   assert.match(app, /function russianCountLabel\(/);
   assert.match(app, /'матч', 'матча', 'матчей'/);
   assert.match(app, /'команда', 'команды', 'команд'/);
-  assert.match(app, /'турнир', 'турнира', 'турниров'/);
+  assert.match(app, /'лига', 'лиги', 'лиг'/);
 });

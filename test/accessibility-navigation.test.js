@@ -38,7 +38,7 @@ test('top bar heading can receive programmatic focus', () => {
 });
 
 test('search, favorites and reminders empty states provide recovery actions', () => {
-  assert.match(app, /searchEmptyMatches/);
+  assert.match(app, /searchEmptyAll/);
   assert.match(app, /favoritesEmptyMatches/);
   assert.match(app, /remindersEmptyMatches/);
   assert.match(app, /favoritesEmptyRetry/);
