@@ -2137,13 +2137,13 @@ main { position: relative; z-index: 1; }
 .runtime-controls-badge,.reminder-health-badge,.release-monitor-badge,.production-badge,.expanded-gate-badge{min-width:72px}
 
 
-/* RC27 — Release Security Hardening */
-.rc-panel:before{content:"RC27"}
+/* RC28 — Release Security Hardening */
+.rc-panel:before{content:"RC28"}
 .calibration-promotion-note{margin-top:9px;padding:9px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font-size:9px;color:var(--hint)}
 .calibration-promotion-note strong{color:var(--text)}
 
 
-/* RC27 — Interface Consistency & Profile Polish */
+/* RC28 — Interface Consistency & Profile Polish */
 [data-admin-only][aria-hidden="true"],
 [data-admin-only][inert]{display:none!important}
 .avatar{overflow:hidden}
@@ -2156,7 +2156,7 @@ main { position: relative; z-index: 1; }
 .release-incidents{overflow-wrap:anywhere}
 
 
-/* RC27 — User Flow & Mobile UX Hardening */
+/* RC28 — User Flow & Mobile UX Hardening */
 html, body, .app-shell { min-height: 100dvh; }
 .view[hidden],
 .tournament-panel[hidden],
@@ -2173,15 +2173,19 @@ html, body, .app-shell { min-height: 100dvh; }
 }
 
 
-/* RC27 — Interaction Safety & Data-State Reliability */
+/* RC28 — Interaction Safety & Data-State Reliability */
 button.is-pending,
 button:disabled.is-pending { opacity:.65; cursor:wait; }
 
 
-/* RC27 — Async Entity Consistency & Personal Data States */
+/* RC28 — Async Entity Consistency & Personal Data States */
 .compact-loader { min-height: 72px; display:flex; align-items:center; justify-content:center; }
 
 
-/* RC27 — Personal Data Write Consistency */
+/* RC28 — Personal Data Write Consistency */
 #favoriteTeams[aria-live],
 #reminderList[aria-live] { min-height: 40px; }
+
+
+/* RC28 — Analysis & History Transition Integrity */
+#history[aria-live] { min-height: 72px; }

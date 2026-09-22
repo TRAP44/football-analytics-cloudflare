@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.19.0-rc27';
+const CLIENT_VERSION = '6.20.0-rc28';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc27';
+const CLIENT_RELEASE_CHANNEL = 'rc28';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -112,6 +112,10 @@ const state = {
   remindersLoadError: '',
   remindersRevision: 0,
   historyLoaded: false,
+  historyLoading: false,
+  historyLoadError: '',
+  historyRevision: 0,
+  historyOpenRequestSeq: 0,
   providerLoaded: false,
   viewScroll: {},
   matchesLoadSeq: 0,
@@ -200,6 +204,9 @@ function handleBackNavigation() {
 function showView(id, options = {}) {
   if (!views.includes(id) || !$(id)) id = 'matchesView';
   const current = activeViewId();
+  if (current === 'historyView' && id !== 'historyView' && !options.fromHistoryOpen) {
+    state.historyOpenRequestSeq += 1;
+  }
   syncTopbar(id);
   if (current && current !== id) state.viewScroll[current] = window.scrollY || 0;
   if (id !== 'analysisView') { stopLiveRefresh(); state.liveRefreshWasActive = false; }
@@ -741,7 +748,9 @@ function relativeAge(iso) {
   const min = Math.floor(sec / 60);
   if (min < 60) return `${min} мин. назад`;
   const h = Math.floor(min / 60);
-  return `${h} ч. назад`;
+  if (h < 24) return `${h} ч. назад`;
+  const days = Math.floor(h / 24);
+  return `${days} дн. назад`;
 }
 
 function coverageLabel(tier) {
@@ -1072,7 +1081,7 @@ function renderModelQuality() {
       <div><span>Жизненный цикл</span><strong>${lifecycleLabel}</strong><small>ревизия ${Number(lifecycle.revision || 0)}</small></div>
       <div><span>Отпечаток активной модели</span><strong>${escapeHtml(String(lifecycle.activeFingerprint || ce.fingerprint || '—').slice(0, 10))}</strong><small>${lifecycle.previousFingerprint ? `откат → ${escapeHtml(String(lifecycle.previousFingerprint).slice(0, 10))}` : 'предыдущей активной модели нет'}</small></div>
     </div>
-    <div class="calibration-promotion-note"><strong>Защита RC27:</strong> кандидат проходит два последовательных окна доверенной отложенной выборки, затем атомарно сравнивается с активной моделью. ${lifecycle.frozen ? `Жизненный цикл заморожен: ${escapeHtml(lifecycle.freezeReason || 'причина указана в административном журнале')}.` : 'После продвижения отдельная когорта может автоматически вернуть предыдущий профиль.'}</div>
+    <div class="calibration-promotion-note"><strong>Защита RC28:</strong> кандидат проходит два последовательных окна доверенной отложенной выборки, затем атомарно сравнивается с активной моделью. ${lifecycle.frozen ? `Жизненный цикл заморожен: ${escapeHtml(lifecycle.freezeReason || 'причина указана в административном журнале')}.` : 'После продвижения отдельная когорта может автоматически вернуть предыдущий профиль.'}</div>
     <div class="calibration-weights">
       ${(ce.signalStats || []).map(x => {
         const base = Number(x.baseWeight || 0) * 100;
@@ -1861,7 +1870,7 @@ function runClientContractSmoke() {
 }
 
 function rcStateText(status) {
-  if (status === 'rc_ready') return 'RC27 ГОТОВ';
+  if (status === 'rc_ready') return 'RC28 ГОТОВ';
   if (status === 'rc_with_holds') return 'RC С ОГРАНИЧЕНИЯМИ';
   if (status === 'blocked') return 'ЗАБЛОКИРОВАНО';
   return 'ОЖИДАНИЕ';
@@ -1895,7 +1904,7 @@ function renderRcRegression() {
   const r = state.rcRegression;
   if (!r) {
     badge.className = 'rc-badge';
-    badge.textContent = 'RC27';
+    badge.textContent = 'RC28';
     status.textContent = 'Полная регрессионная проверка ещё не запускалась.';
     meta.textContent = 'Тест безопасный: без полного анализа, без изменения пользовательских данных и без расхода API-Football.';
     summary.innerHTML = '';
@@ -4808,15 +4817,15 @@ async function analyzeMatch(fixtureId, btn) {
   if (btn) btn.textContent = '⏳ Собираю данные…';
   try {
     const data = await api('/api/analyze', { method: 'POST', body: JSON.stringify({ fixtureId }) });
-    state.currentAnalysis = data;
     if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
     renderAnalysis(data);
+    rememberHistoryAnalysis(data);
     if (state.profile && data.quota) {
       state.profile.quota = data.quota;
       renderProfile();
     }
-    await Promise.all([loadHistory(false), loadReminders()]);
     showView('analysisView');
+    void Promise.allSettled([loadHistory(false), loadReminders()]);
   } catch (e) {
     if (e.status === 429 && String(e.payload?.code || '').startsWith('FOOTBALL_')) {
       toast(e.payload?.retryAfter ? `Футбольный API на паузе. Повторите через ~${e.payload.retryAfter} сек.` : e.message);
@@ -4829,41 +4838,72 @@ async function analyzeMatch(fixtureId, btn) {
   }
 }
 
+function historyItemFromAnalysis(data = {}) {
+  const match = data?.match || {};
+  const fixtureId = Number(match.fixtureId || 0);
+  if (!fixtureId) return null;
+  return {
+    fixtureId,
+    homeName: match.home?.name || '',
+    awayName: match.away?.name || '',
+    leagueName: match.league || '',
+    fixtureDate: match.date || '',
+    homeLogo: match.home?.logo || '',
+    awayLogo: match.away?.logo || '',
+    viewedAt: new Date().toISOString(),
+  };
+}
+
+function rememberHistoryAnalysis(data) {
+  const item = historyItemFromAnalysis(data);
+  if (!item) return;
+  state.history = [item, ...state.history.filter(x => Number(x.fixtureId) !== item.fixtureId)].slice(0, 50);
+  state.historyLoaded = true;
+  state.historyLoadError = '';
+  state.historyRevision += 1;
+  if (activeViewId() === 'historyView') renderHistory();
+}
+
 async function loadHistory(showLoader = true) {
-  if (showLoader) $('history').innerHTML = '<div class="loader">Загружаю историю…</div>';
+  if (state.historyLoading) return;
+  const revisionAtStart = state.historyRevision;
+  state.historyLoading = true;
+  state.historyLoadError = '';
+  if (showLoader || !state.historyLoaded) renderHistory();
   try {
     const data = await api('/api/history');
+    if (revisionAtStart !== state.historyRevision) return;
     state.history = data.items || [];
     state.historyLoaded = true;
+    state.historyLoadError = '';
+  } catch (e) {
+    if (revisionAtStart !== state.historyRevision) return;
+    state.historyLoadError = e.message || 'Не удалось загрузить историю.';
+  } finally {
+    state.historyLoading = false;
     renderHistory();
-} catch (e) {
-    if (state.historyLoaded && state.history.length) {
-      renderHistory();
-      $('history')?.insertAdjacentHTML('afterbegin', `<div class="data-notice stale">⚠️ ${escapeHtml(e.message)} Показана последняя загруженная история.</div>`);
-      return;
-    }
-    $('history').innerHTML = recoveryCardHtml({ title: 'История временно недоступна', message: e.message, retryId: 'historyRecoveryRetry' });
-    $('historyRecoveryRetry')?.addEventListener('click', () => loadHistory(true));
   }
 }
 
 async function openHistoryAnalysis(fixtureId, btn) {
   const sourceView = activeViewId();
   if (sourceView !== 'analysisView') state.analysisBackView = sourceView;
+  const seq = ++state.historyOpenRequestSeq;
   const original = btn?.textContent || '';
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Открываю…'; }
   try {
     const data = await api(`/api/history-analysis?fixtureId=${Number(fixtureId)}`, { retry: false, timeoutMs: 9000 });
-    state.currentAnalysis = data;
+    if (seq !== state.historyOpenRequestSeq) return;
     state.currentCenter = null;
     renderAnalysis(data);
-    showView('analysisView');
+    showView('analysisView', { fromHistoryOpen: true });
   } catch (error) {
+    if (seq !== state.historyOpenRequestSeq) return;
     if (Number(error?.status || 0) === 404) {
       const center = await requestMatchCenter(fixtureId, {}, { timeoutMs: 9000 });
-      if (!center) return;
+      if (seq !== state.historyOpenRequestSeq || !center) return;
       renderMatchCenter(center);
-      showView('analysisView');
+      showView('analysisView', { fromHistoryOpen: true });
       toast('Сохранённый полный анализ уже недоступен — открыт центр матча.');
     } else {
       toast(error.message);
@@ -4874,11 +4914,29 @@ async function openHistoryAnalysis(fixtureId, btn) {
 }
 
 function renderHistory() {
-  if (!state.history.length) {
-    $('history').innerHTML = '<div class="empty">История пока пуста. Сделайте первый полный анализ матча.</div>';
+  const el = $('history');
+  if (!el) return;
+  if (state.historyLoading && !state.historyLoaded) {
+    el.innerHTML = '<div class="loader">Загружаю историю…</div>';
     return;
   }
-  $('history').innerHTML = state.history.map(item => `
+  if (state.historyLoadError && !state.historyLoaded) {
+    el.innerHTML = recoveryCardHtml({ title: 'История временно недоступна', message: state.historyLoadError, retryId: 'historyRecoveryRetry' });
+    $('historyRecoveryRetry')?.addEventListener('click', () => loadHistory(true));
+    return;
+  }
+  if (!state.history.length) {
+    el.innerHTML = state.historyLoadError
+      ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.historyLoadError)} Последняя загруженная история была пустой.</div>`
+      : '<div class="empty">История пока пуста. Сделайте первый полный анализ матча.</div>';
+    return;
+  }
+  const notice = state.historyLoading
+    ? '<div class="data-notice">↻ Обновляю историю…</div>'
+    : state.historyLoadError
+      ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.historyLoadError)} Показана последняя загруженная история.</div>`
+      : '';
+  el.innerHTML = notice + state.history.map(item => `
     <article class="history-item">
       <div class="history-logos">
         ${item.homeLogo ? `<img src="${safeUrl(item.homeLogo)}" alt="">` : ''}
@@ -4887,12 +4945,12 @@ function renderHistory() {
       </div>
       <div class="history-main">
         <strong>${escapeHtml(item.homeName)} — ${escapeHtml(item.awayName)}</strong>
-        <span>${escapeHtml(item.leagueName || '')}${item.fixtureDate ? ` · ${dateTime(item.fixtureDate)}` : ''}</span>
+        <span>${escapeHtml(item.leagueName || '')}${item.fixtureDate ? ` · ${dateTime(item.fixtureDate)}` : ''}${item.viewedAt ? ` · открыто ${relativeAge(item.viewedAt)}` : ''}</span>
       </div>
       <button class="history-open" data-fixture="${Number(item.fixtureId)}" type="button">Открыть</button>
     </article>
   `).join('');
-  document.querySelectorAll('.history-open').forEach(btn => btn.addEventListener('click', () => openHistoryAnalysis(Number(btn.dataset.fixture), btn)));
+  el.querySelectorAll('.history-open').forEach(btn => btn.addEventListener('click', () => openHistoryAnalysis(Number(btn.dataset.fixture), btn)));
 }
 
 function pct(v) { return Number.isFinite(Number(v)) ? `${Number(v).toFixed(1)}%` : '—'; }
@@ -5743,9 +5801,10 @@ async function scheduleIdle(task) {
 
 $('favoriteTeams')?.setAttribute('aria-live', 'polite');
 $('reminderList')?.setAttribute('aria-live', 'polite');
+$('history')?.setAttribute('aria-live', 'polite');
 showView('matchesView', { restore: true });
 
-// RC27: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
+// RC28: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
 // The boot watchdog never leaves the user behind an endless splash screen.
 const startupWatchdog = setTimeout(() => {
   if (!$('bootGate')?.hidden && !state.compatibilityBlocked) {

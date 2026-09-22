@@ -45,7 +45,7 @@ test('empty cached personal-data lists still surface refresh failures', () => {
   assert.match(app, /Последний загруженный список напоминаний был пуст/);
 });
 
-test('RC27 health exposes personal-data write consistency contracts', () => {
+test('RC28 health exposes personal-data write consistency contracts', () => {
   assert.match(worker, /personalDataWriteConsistency:\s*'enabled'/);
   assert.match(worker, /reminderWriteConfirmation:\s*'enabled'/);
   assert.match(worker, /readWriteRaceGuard:\s*'enabled'/);
