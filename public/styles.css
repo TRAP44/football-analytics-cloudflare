@@ -2198,6 +2198,8 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 /* RC32: keyboard accessibility and actionable empty states */
 .analysis-tab-btn:focus-visible,
 .center-tab-btn:focus-visible,
+.tournament-tab:focus-visible,
+.team-tab:focus-visible,
 .history-open:focus-visible,
 .empty-actions button:focus-visible {
   outline: 2px solid var(--accent);
@@ -2208,3 +2210,8 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 .empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 14px; }
 .empty-actions .primary-setting-btn,
 .empty-actions .secondary-btn { width: auto; margin: 0; }
+
+.profile-empty-state strong,
+.search-empty-state strong { display: block; margin-bottom: 6px; font-size: 14px; }
+.profile-empty-state p,
+.search-empty-state p { margin: 0; color: var(--hint); line-height: 1.5; }

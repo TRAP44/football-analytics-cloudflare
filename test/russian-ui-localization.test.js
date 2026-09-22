@@ -69,6 +69,10 @@ test('common user-facing mixed English labels are removed from the Mini App', ()
     '⚡ Кэш',
     'Рынок 1X2',
     'Защита RC30',
+    '1X2',
+    '<span>X</span>',
+    "row('X','draw')",
+    "key === 'draw' ? 'X'",
     "badge.textContent = 'SQL'",
   ];
   for (const phrase of russianCopyForbidden) assert.equal(app.includes(phrase), false, phrase);
@@ -128,11 +132,18 @@ test('obsolete release/admin copy is not exposed by the current worker', () => {
   ]) assert.equal(worker.includes(phrase), false, phrase);
 });
 
-test('RC32 health publishes all localization contracts', () => {
+test('RC33 health publishes all localization contracts', () => {
   assert.match(worker, /russianUiLocalization:\s*'enabled'/);
   assert.match(worker, /adminRussianLocalization:\s*'enabled'/);
   assert.match(worker, /prematchRussianLocalization:\s*'enabled'/);
   assert.match(worker, /dynamicRussianLocalization:\s*'enabled'/);
   assert.match(worker, /adminTextHumanization:\s*'enabled'/);
   assert.match(worker, /matchCenterRussianLocalization:\s*'enabled'/);
+});
+
+test('Russian counters use grammatical forms for user-facing quantities', () => {
+  assert.match(app, /function russianCountLabel\(/);
+  assert.match(app, /'матч', 'матча', 'матчей'/);
+  assert.match(app, /'команда', 'команды', 'команд'/);
+  assert.match(app, /'турнир', 'турнира', 'турниров'/);
 });

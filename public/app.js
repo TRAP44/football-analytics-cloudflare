@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.24.0-rc32';
+const CLIENT_VERSION = '6.25.0-rc33';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc32';
+const CLIENT_RELEASE_CHANNEL = 'rc33';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -1187,7 +1187,7 @@ function signalLabel(name) {
 }
 
 function outcomeShortLabel(key) {
-  return key === 'home' ? 'П1' : key === 'away' ? 'П2' : key === 'draw' ? 'X' : '—';
+  return key === 'home' ? 'П1' : key === 'away' ? 'П2' : key === 'draw' ? 'Н' : '—';
 }
 
 function renderModelQuality() {
@@ -1225,7 +1225,7 @@ function renderModelQuality() {
   const sample = q.sample || {};
   const h = q.headline || {};
   const excludedText = Number(sample.excluded || 0) > 0 ? ` · ${Number(sample.excluded)} исключено проверкой целостности` : '';
-  badge.textContent = sample.ready ? `${sample.settled || 0} матчей` : `${sample.settled || 0} / 20 матчей`;
+  badge.textContent = sample.ready ? russianCountLabel(sample.settled || 0, 'матч', 'матча', 'матчей') : `${sample.settled || 0} / 20 матчей`;
   badge.classList.toggle('ready', Boolean(sample.ready));
   status.textContent = sample.settled
     ? `${sample.settled} проверенных прогнозов · ${sample.pending || 0} ожидают результата${excludedText}${sample.calibrationReady ? ' · калибровка уже информативнее' : ''}`
@@ -1233,7 +1233,7 @@ function renderModelQuality() {
 
   headline.hidden = false;
   headline.innerHTML = `
-    <div><span>Точность 1X2</span><strong>${qualityPct(h.accuracy)}</strong><small>максимальная вероятность</small></div>
+    <div><span>Точность П1 / Н / П2</span><strong>${qualityPct(h.accuracy)}</strong><small>максимальная вероятность</small></div>
     <div><span>Ошибка Брайера</span><strong>${qualityNum(h.avgBrier)}</strong><small>ниже — лучше</small></div>
     <div><span>Логарифмическая ошибка</span><strong>${qualityNum(h.avgLogLoss)}</strong><small>штраф за уверенные ошибки</small></div>
     <div><span>Средняя уверенность</span><strong>${qualityPct(h.avgTopProbability)}</strong><small>уверенность лидера</small></div>`;
@@ -1330,7 +1330,7 @@ function renderModelQuality() {
 
       <div class="model-dash-kpis">
         <div><span>Снимки</span><strong>${Number(ov.sample || 0)}</strong><small>завершено</small></div>
-        <div><span>Точность</span><strong>${qualityPct(ov.accuracy)}</strong><small>1X2</small></div>
+        <div><span>Точность</span><strong>${qualityPct(ov.accuracy)}</strong><small>П1 / Н / П2</small></div>
         <div><span>Ошибка Брайера</span><strong>${qualityNum(ov.avgBrier)}</strong><small>ниже лучше</small></div>
         <div><span>Разрыв</span><strong>${Number.isFinite(Number(ov.calibrationGap)) ? `${Number(ov.calibrationGap).toFixed(1)} п.п.` : '—'}</strong><small>уверенность − точность</small></div>
         <div><span>Ошибка калибровки</span><strong>${Number.isFinite(Number(q.calibrationDiagnostics?.weightedTopCalibrationError)) ? `${Number(q.calibrationDiagnostics.weightedTopCalibrationError).toFixed(1)} п.п.` : '—'}</strong><small>взвешенно · 5 групп</small></div>
@@ -3332,9 +3332,19 @@ function renderReminderList() {
     return;
   }
   if (!state.reminders.length) {
-    el.innerHTML = state.remindersLoadError
+    const warning = state.remindersLoadError
       ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.remindersLoadError)} Последний загруженный список напоминаний был пуст.</div>`
-      : '<div class="empty compact-empty">Активных напоминаний пока нет.</div>';
+      : '';
+    const retry = state.remindersLoadError
+      ? '<button id="remindersEmptyRetry" class="secondary-btn" type="button">Обновить</button>'
+      : '';
+    el.innerHTML = `${warning}<div class="empty compact-empty profile-empty-state">
+      <strong>Активных напоминаний пока нет</strong>
+      <p>Откройте матч и включите напоминание перед началом.</p>
+      <div class="empty-actions">${retry}<button id="remindersEmptyMatches" class="secondary-btn" type="button">Перейти к матчам</button></div>
+    </div>`;
+    $('remindersEmptyRetry')?.addEventListener('click', loadReminders);
+    $('remindersEmptyMatches')?.addEventListener('click', () => showView('matchesView'));
     return;
   }
   const rows = [...state.reminders].sort((a, b) => Date.parse(a.fixtureDate || 0) - Date.parse(b.fixtureDate || 0));
@@ -3484,9 +3494,19 @@ function renderFavoriteTeams() {
     return;
   }
   if (!state.favorites.length) {
-    el.innerHTML = state.favoritesLoadError
+    const warning = state.favoritesLoadError
       ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.favoritesLoadError)} Последний загруженный список избранного был пуст.</div>`
-      : '<div class="empty compact-empty">Добавьте любимые команды звёздочкой в списке матчей.</div>';
+      : '';
+    const retry = state.favoritesLoadError
+      ? '<button id="favoritesEmptyRetry" class="secondary-btn" type="button">Обновить</button>'
+      : '';
+    el.innerHTML = `${warning}<div class="empty compact-empty profile-empty-state">
+      <strong>Избранных команд пока нет</strong>
+      <p>Добавьте команду звёздочкой в списке матчей.</p>
+      <div class="empty-actions">${retry}<button id="favoritesEmptyMatches" class="secondary-btn" type="button">Перейти к матчам</button></div>
+    </div>`;
+    $('favoritesEmptyRetry')?.addEventListener('click', loadFavorites);
+    $('favoritesEmptyMatches')?.addEventListener('click', () => showView('matchesView'));
     return;
   }
   const staleNotice = state.favoritesLoadError ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.favoritesLoadError)} Показано последнее загруженное избранное.</div>` : '';
@@ -3615,6 +3635,18 @@ function renderDiscoveryHome() {
   bindDiscoveryActions($('searchFavorites'));
 }
 
+function russianCountLabel(value, one, few, many) {
+  const n = Math.max(0, Math.trunc(Number(value) || 0));
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  const word = mod10 === 1 && mod100 !== 11
+    ? one
+    : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)
+      ? few
+      : many;
+  return `${n} ${word}`;
+}
+
 function renderGlobalSearch() {
   const query = String(state.globalSearch.query || '').trim();
   const wrap = $('searchResultsWrap'), out = $('searchResults'), meta = $('searchResultsMeta'), status = $('searchStatus');
@@ -3634,14 +3666,19 @@ function renderGlobalSearch() {
   const teams = mergeById(local.teams, state.globalSearch.remoteTeams, 'id');
   const comps = mergeById(local.competitions, state.globalSearch.remoteCompetitions, 'leagueId');
   wrap.hidden = false;
-  if (meta) meta.textContent = `${teams.length} команд · ${comps.length} турниров`;
+  if (meta) meta.textContent = `${russianCountLabel(teams.length, 'команда', 'команды', 'команд')} · ${russianCountLabel(comps.length, 'турнир', 'турнира', 'турниров')}`;
   if (status) {
     status.innerHTML = state.globalSearch.loading ? '<div class="data-notice">🔎 Ищу по футбольному каталогу…</div>' : state.globalSearch.warning ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.globalSearch.warning)}</div>` : '';
   }
   const teamHtml = teams.length ? `<section class="panel search-result-block"><div class="mini-section-head"><strong>Команды</strong><span>${teams.length}</span></div><div class="discovery-grid">${teams.slice(0,16).map(x => discoveryTeamCard(x, x.youthReserve ? 'Молодёжная/резерв' : '')).join('')}</div></section>` : '';
   const compHtml = comps.length ? `<section class="panel search-result-block"><div class="mini-section-head"><strong>Турниры</strong><span>${comps.length}</span></div><div class="discovery-grid">${comps.slice(0,10).map(x => discoveryCompetitionCard(x)).join('')}</div></section>` : '';
-  out.innerHTML = teamHtml + compHtml || `<div class="empty">Ничего не найдено. Для команды вне сегодняшнего списка введите минимум 3 символа и нажмите «Найти».</div>`;
+  out.innerHTML = teamHtml + compHtml || `<div class="empty search-empty-state">
+    <strong>Ничего не найдено</strong>
+    <p>Для команды вне сегодняшнего списка введите минимум 3 символа и нажмите «Найти».</p>
+    <div class="empty-actions"><button id="searchEmptyMatches" class="secondary-btn" type="button">Перейти к матчам</button></div>
+  </div>`;
   bindDiscoveryActions(out);
+  $('searchEmptyMatches')?.addEventListener('click', () => showView('matchesView'));
 }
 
 async function runGlobalSearch() {
@@ -4012,7 +4049,7 @@ function renderMatches() {
       <button class="competition-group-head" type="button" data-open-tournament="${Number(first.leagueId)}">
         <span class="competition-group-logo">${first.leagueLogo ? `<img src="${safeUrl(first.leagueLogo)}" alt="">` : '🏆'}</span>
         <span class="competition-group-main"><strong>${escapeHtml(first.league || 'Турнир')}</strong><small>${escapeHtml(first.country || '')}${first.season ? ` · сезон ${Number(first.season)}` : ''}</small></span>
-        <span class="competition-group-count">${liveCount ? `<b>${liveCount} сейчас</b>` : ''}<small>${rows.length} ${rows.length === 1 ? 'матч' : 'матчей'}</small><i>›</i></span>
+        <span class="competition-group-count">${liveCount ? `<b>${liveCount} сейчас</b>` : ''}<small>${russianCountLabel(rows.length, 'матч', 'матча', 'матчей')}</small><i>›</i></span>
       </button>
       <div class="competition-group-matches">${rows.map(m => matchCardHtml(m, { grouped: true })).join('')}</div>
     </section>`;
@@ -4146,21 +4183,28 @@ async function loadTournamentStandings(force = false) {
 }
 
 function setTournamentTab(tab, load = true) {
-  document.querySelectorAll('.tournament-tab').forEach(btn => {
+  const buttons = [...document.querySelectorAll('.tournament-tab')];
+  const panels = [['tournamentMatchesPanel', 'matches'], ['tournamentTablePanel', 'table']];
+  buttons.forEach(btn => {
     const active = btn.dataset.tournamentTab === tab;
+    const name = btn.dataset.tournamentTab || 'matches';
+    btn.id = `tournament-tab-${name}`;
     btn.classList.toggle('active', active);
     btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-controls', `tournament-panel-${name}`);
     btn.setAttribute('aria-selected', active ? 'true' : 'false');
     btn.tabIndex = active ? 0 : -1;
   });
-  [['tournamentMatchesPanel', 'matches'], ['tournamentTablePanel', 'table']].forEach(([id, key]) => {
+  panels.forEach(([id, key]) => {
     const panel = $(id);
     if (!panel) return;
     const active = tab === key;
+    panel.id = `tournament-panel-${key}`;
     panel.classList.toggle('active', active);
     panel.hidden = !active;
     panel.toggleAttribute('inert', !active);
     panel.setAttribute('role', 'tabpanel');
+    panel.setAttribute('aria-labelledby', `tournament-tab-${key}`);
     panel.setAttribute('aria-hidden', active ? 'false' : 'true');
   });
   if (tab === 'table' && load) loadTournamentStandings(false);
@@ -4310,9 +4354,9 @@ function renderTeamHub(data) {
   $('teamHero').innerHTML = `${stale}<section class="panel team-hero"><div class="team-hero-main"><div class="team-hero-logo">${team.logo ? `<img src="${safeUrl(team.logo)}" alt="">` : '⚽'}</div><div class="team-hero-copy"><span>СТРАНИЦА КОМАНДЫ</span><h2>${escapeHtml(team.name || 'Команда')}</h2><p>${comp ? `${escapeHtml(comp.name)} · ${escapeHtml(comp.country || '')}` : 'Турнир определяется по последним матчам'}</p></div><button id="teamFavoriteBtn" class="team-favorite-big ${fav ? 'active' : ''} ${favoritePending ? 'is-pending' : ''}" type="button" data-team-id="${Number(team.id)}" aria-pressed="${fav ? 'true' : 'false'}" aria-label="${fav ? 'Удалить команду из избранного' : 'Добавить команду в избранное'}" ${favoritePending ? 'disabled' : ''}>${fav ? '★' : '☆'}</button></div><div class="team-hero-stats"><div><span>Форма</span><strong>${form?.form ? escapeHtml(form.form.replace(/W/g,'В').replace(/D/g,'Н').replace(/L/g,'П')) : '—'}</strong></div><div><span>Очки / матч</span><strong>${form?.ppg ?? '—'}</strong></div><div><span>Голы</span><strong>${form ? `${form.gfAvg} / ${form.gaAvg}` : '—'}</strong></div><div><span>Место</span><strong>${standing?.rank ? `${standing.rank}` : '—'}</strong></div></div>${comp ? `<button id="teamTournamentBtn" class="secondary-btn team-tournament-btn" type="button">🏆 ${escapeHtml(comp.shortName || comp.name)} · открыть турнир</button>` : ''}</section>`;
   $('teamFavoriteBtn')?.addEventListener('click', async () => { await toggleFavorite({ id:Number(team.id), name:team.name||'', logo:team.logo||'' }); renderTeamHub(state.currentTeam?.data || data); });
   $('teamTournamentBtn')?.addEventListener('click', () => openTournamentFromTeam(false));
-  const formHtml = form ? `<section class="panel team-form-panel"><h2>📈 Последние ${Number(form.sample || 0)} матчей</h2><div class="team-form-line">${String(form.form || '').split('').map(teamResultBadge).join('')}</div><div class="team-kpi-grid"><div><span>Победы</span><strong>${Number(form.wins||0)}</strong></div><div><span>Ничьи</span><strong>${Number(form.draws||0)}</strong></div><div><span>Поражения</span><strong>${Number(form.losses||0)}</strong></div><div><span>Забивает</span><strong>${form.gfAvg ?? '—'}</strong></div><div><span>Пропускает</span><strong>${form.gaAvg ?? '—'}</strong></div><div><span>ОЗ</span><strong>${form.bttsPct ?? '—'}%</strong></div></div></section>` : '<section class="panel"><div class="empty compact-empty">Пока недостаточно завершённых матчей для формы.</div></section>';
+  const formHtml = form ? `<section class="panel team-form-panel"><h2>📈 Последние ${russianCountLabel(form.sample || 0, 'матч', 'матча', 'матчей')}</h2><div class="team-form-line">${String(form.form || '').split('').map(teamResultBadge).join('')}</div><div class="team-kpi-grid"><div><span>Победы</span><strong>${Number(form.wins||0)}</strong></div><div><span>Ничьи</span><strong>${Number(form.draws||0)}</strong></div><div><span>Поражения</span><strong>${Number(form.losses||0)}</strong></div><div><span>Забивает</span><strong>${form.gfAvg ?? '—'}</strong></div><div><span>Пропускает</span><strong>${form.gaAvg ?? '—'}</strong></div><div><span>ОЗ</span><strong>${form.bttsPct ?? '—'}%</strong></div></div></section>` : '<section class="panel"><div class="empty compact-empty">Пока недостаточно завершённых матчей для формы.</div></section>';
   const nextHtml = next ? `<section class="panel next-team-match"><div class="mini-section-head"><strong>${next.live ? '🔴 Матч идёт' : '⏭ Ближайший матч'}</strong><span>${escapeHtml(dateTime(next.date))}</span></div>${teamMatchRow(next)}</section>` : '<section class="panel"><div class="empty compact-empty">Ближайший матч в доступном окне не найден.</div></section>';
-  const positionHtml = standing ? `<section class="panel team-standing-card"><h2>🏆 Положение в турнире</h2><div class="team-standing-summary"><strong>${Number(standing.rank)} место</strong><span>${Number(standing.points)} очков · ${Number(standing.played)} матчей · ${Number(standing.goalsFor)}:${Number(standing.goalsAgainst)}</span></div></section>` : `<section class="panel team-standing-card"><h2>🏆 Положение в турнире</h2><p class="muted">Позиция появится после загрузки таблицы турнира. Так мы не делаем отдельный запрос к источнику данных автоматически.</p>${comp ? '<button id="teamStandingTableBtn" class="secondary-btn" type="button">Открыть турнирную таблицу</button>' : ''}</section>`;
+  const positionHtml = standing ? `<section class="panel team-standing-card"><h2>🏆 Положение в турнире</h2><div class="team-standing-summary"><strong>${Number(standing.rank)} место</strong><span>${Number(standing.points)} очков · ${russianCountLabel(standing.played, 'матч', 'матча', 'матчей')} · ${Number(standing.goalsFor)}:${Number(standing.goalsAgainst)}</span></div></section>` : `<section class="panel team-standing-card"><h2>🏆 Положение в турнире</h2><p class="muted">Позиция появится после загрузки таблицы турнира. Так мы не делаем отдельный запрос к источнику данных автоматически.</p>${comp ? '<button id="teamStandingTableBtn" class="secondary-btn" type="button">Открыть турнирную таблицу</button>' : ''}</section>`;
   $('teamOverview').innerHTML = `${nextHtml}${formHtml}${positionHtml}`;
   bindTeamFixtureActions($('teamOverview'));
   $('teamStandingTableBtn')?.addEventListener('click', () => openTournamentFromTeam(true));
@@ -4354,10 +4398,14 @@ function openTeam(team) {
   state.currentTeam={id:Number(team.id),name:team.name||'',logo:team.logo||'',data:null}; setTeamTab('overview'); showView('teamView'); loadTeamHub(state.currentTeam,false);
 }
 function setTeamTab(tab) {
-  document.querySelectorAll('.team-tab').forEach(btn => {
+  const buttons = [...document.querySelectorAll('.team-tab')];
+  buttons.forEach(btn => {
     const active = btn.dataset.teamTab === tab;
+    const name = btn.dataset.teamTab || 'overview';
+    btn.id = `team-tab-${name}`;
     btn.classList.toggle('active', active);
     btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-controls', `team-panel-${name}`);
     btn.setAttribute('aria-selected', active ? 'true' : 'false');
     btn.tabIndex = active ? 0 : -1;
   });
@@ -4372,10 +4420,12 @@ function setTeamTab(tab) {
     const panel = $(id);
     if (!panel) return;
     const active = tab === key;
+    panel.id = `team-panel-${key}`;
     panel.classList.toggle('active', active);
     panel.hidden = !active;
     panel.toggleAttribute('inert', !active);
     panel.setAttribute('role', 'tabpanel');
+    panel.setAttribute('aria-labelledby', `team-tab-${key}`);
     panel.setAttribute('aria-hidden', active ? 'false' : 'true');
   });
   if(tab==='intelligence') loadTeamIntelligence(false);
@@ -4564,7 +4614,7 @@ function oddsMovementHtml(move) {
     const arrow = d > .4 ? '↑' : d < -.4 ? '↓' : '→';
     return `<div class="odds-move-row ${cls}"><span>${label}</span><strong>${move.baseline?.[key] ?? '—'} → ${move.current?.[key] ?? '—'}</strong><b>${arrow} ${signedPp(d)}</b></div>`;
   };
-  return `<div class="odds-movement-grid">${row('П1','home')}${row('X','draw')}${row('П2','away')}</div><p class="tiny">Сравнение с самым ранним сохранённым снимком во время матча${move.from ? ` · ${dateTime(move.from)}` : ''}. Изменение указано в расчётной вероятности.</p>`;
+  return `<div class="odds-movement-grid">${row('П1','home')}${row('Н','draw')}${row('П2','away')}</div><p class="tiny">Сравнение с самым ранним сохранённым снимком во время матча${move.from ? ` · ${dateTime(move.from)}` : ''}. Изменение указано в расчётной вероятности.</p>`;
 }
 
 function livePressureHtml(p, m) {
@@ -4722,7 +4772,7 @@ function centerMarketHtml(d) {
   return `<div class="center-market">
     <div class="odds-grid">
       <div><span>П1</span><strong>${d.liveOdds.odds?.home ?? '—'}</strong></div>
-      <div><span>X</span><strong>${d.liveOdds.odds?.draw ?? '—'}</strong></div>
+      <div><span>Н</span><strong>${d.liveOdds.odds?.draw ?? '—'}</strong></div>
       <div><span>П2</span><strong>${d.liveOdds.odds?.away ?? '—'}</strong></div>
     </div>
     <p class="tiny">Источников: ${Number(d.liveOdds.sources || 0)}${d.liveOdds.updatedAt ? ` · ${escapeHtml(String(d.liveOdds.updatedAt))}` : ''}</p>
@@ -4960,7 +5010,7 @@ function renderMatchCenter(d) {
 
     <div class="center-tab-panel" data-center-panel="market">
       <section class="panel">
-        <div class="center-section-title"><div><h2>💹 Рынок в реальном времени</h2><p>Коэффициенты 1X2 и изменение расчётной рыночной вероятности</p></div></div>
+        <div class="center-section-title"><div><h2>💹 Рынок в реальном времени</h2><p>Коэффициенты П1 / Н / П2 и изменение расчётной рыночной вероятности</p></div></div>
         ${centerMarketHtml(d)}
       </section>
     </div>
@@ -5778,7 +5828,7 @@ function renderAnalysis(d) {
         <h2>💹 Коэффициенты П1 / Н / П2</h2>
         <div class="odds-grid">
           <div><span>П1</span><strong>${market?.odds?.home ?? '—'}</strong></div>
-          <div><span>X</span><strong>${market?.odds?.draw ?? '—'}</strong></div>
+          <div><span>Н</span><strong>${market?.odds?.draw ?? '—'}</strong></div>
           <div><span>П2</span><strong>${market?.odds?.away ?? '—'}</strong></div>
         </div>
         <p class="muted">Букмекеров в выборке: ${market?.bookmakers ?? '—'}. Коэффициенты отражают рынок, а не гарантированный исход.</p>
@@ -6008,8 +6058,12 @@ $('historyRefreshBtn').addEventListener('click', () => loadHistory(true));
 $('backBtn').addEventListener('click', handleBackNavigation);
 $('tournamentBackBtn')?.addEventListener('click', handleBackNavigation);
 $('teamBackBtn')?.addEventListener('click', handleBackNavigation);
-document.querySelectorAll('.tournament-tab').forEach(btn => btn.addEventListener('click', () => setTournamentTab(btn.dataset.tournamentTab || 'matches')));
-document.querySelectorAll('.team-tab').forEach(btn => btn.addEventListener('click', () => setTeamTab(btn.dataset.teamTab || 'overview')));
+const tournamentTabs = [...document.querySelectorAll('.tournament-tab')];
+tournamentTabs.forEach(btn => btn.addEventListener('click', () => setTournamentTab(btn.dataset.tournamentTab || 'matches')));
+bindRovingTabKeyboard(tournamentTabs, 'tournamentTab', value => setTournamentTab(value));
+const teamTabs = [...document.querySelectorAll('.team-tab')];
+teamTabs.forEach(btn => btn.addEventListener('click', () => setTeamTab(btn.dataset.teamTab || 'overview')));
+bindRovingTabKeyboard(teamTabs, 'teamTab', value => setTeamTab(value));
 $('profileBtn').addEventListener('click', openProfileView);
 $('navMatches').addEventListener('click', () => showView('matchesView'));
 $('navSearch')?.addEventListener('click', () => {
