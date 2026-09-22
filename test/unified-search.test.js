@@ -28,10 +28,12 @@ test('search enriches league queries with cached upcoming and finished fixtures'
   assert.match(app, /data\.matchSource\?\.name/);
 });
 
-test('search enriches a team query with recent and upcoming fixtures', () => {
-  assert.match(app, /\/api\/team\?teamId=/);
-  assert.match(app, /\.\.\.\(hub\.upcoming \|\| \[\]\)/);
-  assert.match(app, /\.\.\.\(hub\.recent \|\| \[\]\)/);
+test('search enriches a team query on the server with recent and upcoming fixtures', () => {
+  assert.match(worker, /async function loadSearchTeamMatches\(/);
+  assert.match(worker, /search:team-fixtures:/);
+  assert.match(worker, /teamFixtureDiscovery: 'enabled'/);
+  assert.doesNotMatch(app, /const hub = await api\(`\/api\/team\?teamId=/);
+  assert.match(app, /data\.matchDiscovery \|\| null/);
   assert.match(app, /Предстоящие матчи/);
   assert.match(app, /Завершённые матчи/);
 });

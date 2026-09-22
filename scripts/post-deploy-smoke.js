@@ -46,6 +46,11 @@ const REQUIRED_HEALTH_FLAGS = [
   'searchOutcomeAnalytics',
   'searchRetryUx',
   'searchQualitySelfTest',
+  'zeroResultRecovery',
+  'teamFixtureDiscovery',
+  'sharedFixtureDiscoveryCache',
+  'extendedTeamCalendar',
+  'recentMatchFallback',
 ];
 
 function delay(ms) {

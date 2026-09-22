@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.47.0-rc55';
+const APP_VERSION = '6.48.0-rc56';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc55';
-const RC_NAME = 'RC55';
+const RELEASE_CHANNEL = 'rc56';
+const RC_NAME = 'RC56';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -677,6 +677,8 @@ function appManifest(cfg) {
       searchLeagueFixtures: true,
       searchQualityDrill: true,
       searchOutcomeAnalytics: true,
+      zeroResultRecovery: true,
+      teamFixtureDiscovery: true,
       calibrationChampionChallenger: true,
       calibrationAutomaticRollback: true,
     },
@@ -1578,6 +1580,7 @@ async function apiLaunchFunnel(request,cfg) {
   const searchMatches=searchResultRows.filter(x=>searchOutcome(x)==='match').length;
   const searchRecognizedNoMatch=searchResultRows.filter(x=>searchOutcome(x)==='recognized_no_match').length;
   const searchNotFound=searchResultRows.filter(x=>searchOutcome(x)==='not_found').length;
+  const searchRecoveredRecent=searchResultRows.filter(x=>searchOutcome(x)==='match' && String(x?.metadata && typeof x.metadata==='object' ? x.metadata.recovery || '' : '')==='recent').length;
   const transitions=funnel.slice(1).map((stage,index)=>({
     from:funnel[index]?.key || '',to:stage.key,label:`${funnel[index]?.label || ''} → ${stage.label || ''}`,
     fromUsers:Number(funnel[index]?.users || 0),toUsers:Number(stage.users || 0),conversionPct:Number(stage.fromPreviousPct || 0),
@@ -1599,7 +1602,7 @@ async function apiLaunchFunnel(request,cfg) {
     funnel,
     bottleneck,
     returnLoop:{newsOpen:newsOpen.size,newsReturn:newsReturn.size,conversionPct:newsOpen.size?Math.round((newsReturn.size/newsOpen.size)*1000)/10:0},
-    searchQuality:{attempts:searchResultRows.length,match:searchMatches,recognizedNoMatch:searchRecognizedNoMatch,notFound:searchNotFound,matchPct:searchResultRows.length?Math.round((searchMatches/searchResultRows.length)*1000)/10:0},
+    searchQuality:{attempts:searchResultRows.length,match:searchMatches,recognizedNoMatch:searchRecognizedNoMatch,notFound:searchNotFound,recoveredRecent:searchRecoveredRecent,matchPct:searchResultRows.length?Math.round((searchMatches/searchResultRows.length)*1000)/10:0},
     campaigns,
     privacy:'Ответ содержит только агрегаты; Telegram ID и текст поисковых запросов пользователей не возвращаются.',
   });
@@ -2508,25 +2511,9 @@ async function botRemoteTeamMatches(parts, cfg) {
     if (teams.length) await setCache(teamCacheKey,0,{query,resolvedQuery:plan.resolved?plan.providerQuery:'',teams,warning:'',refreshedAt:new Date().toISOString()},cfg,1440).catch(()=>null);
   }
   const team = teams[0];
-  if (!team?.id || !freeQuotaHealthy(8,1)) return [];
-  const fromDate=new Date(); fromDate.setUTCDate(fromDate.getUTCDate()-7);
-  const toDate=new Date(); toDate.setUTCDate(toDate.getUTCDate()+30);
-  const from=fromDate.toISOString().slice(0,10), to=toDate.toISOString().slice(0,10);
-  const cacheKey=`bot:team-matches:${Number(team.id)}:${from}:${to}:v1`;
-  let payload=await getCache(cacheKey,cfg).catch(()=>null);
-  if (!payload?.matches) {
-    const fixtures=await apiFootball('/fixtures',{team:Number(team.id),from,to},cfg).catch(()=>[]);
-    const matches=(fixtures||[]).filter(f=>!['CANC','PST','ABD','AWD','WO'].includes(String(f.fixture?.status?.short||''))).map(f=>normalizeTeamHubMatch(f,Number(team.id))).filter(x=>x.fixtureId);
-    payload={matches,refreshedAt:new Date().toISOString()};
-    await setCache(cacheKey,Number(team.id),payload,cfg,120).catch(()=>null);
-  }
-  const second=searchText(parts.second);
-  const now=Date.now();
-  return (payload.matches||[])
-    .filter(m => !second || searchText(`${m.home?.name||''} ${m.away?.name||''}`).includes(second))
-    .filter(m => m.live || !m.finished || Date.parse(m.date||0) >= now-24*60*60*1000)
-    .sort((a,b) => Number(b.live)-Number(a.live) || Number(a.finished)-Number(b.finished) || Date.parse(a.date||0)-Date.parse(b.date||0))
-    .slice(0,3);
+  if (!team?.id) return [];
+  const discovery=await loadSearchTeamMatches(team,cfg,{secondQuery:parts.second});
+  return (discovery.matches || []).slice(0,3);
 }
 
 async function sendBotFootballSearch(request, cfg, userId, chatId, rawText) {
@@ -2554,7 +2541,8 @@ async function sendBotFootballSearch(request, cfg, userId, chatId, rawText) {
     });
     return;
   }
-  void recordGrowthEvent(cfg,{userId,eventName:'search_result',channel:'telegram',metadata:{intent:parts.intent,outcome:'match',recognized,count:Math.min(3,matches.length)}});
+  const recovery=matches.some(match=>!match.finished)?'upcoming':'recent';
+  void recordGrowthEvent(cfg,{userId,eventName:'search_result',channel:'telegram',metadata:{intent:parts.intent,outcome:'match',recognized,recovery,count:Math.min(3,matches.length)}});
   await rememberBotFixtureCards(matches, cfg);
   const favorites=await getFavorites(userId,cfg).catch(()=>[]);
   const rows=matches.map((match,index)=>botMatchLine(match,index));
@@ -11885,6 +11873,69 @@ function mergeSearchWarnings(...values) {
   return [...new Set(values.map(x => String(x || '').trim()).filter(Boolean))].join(' ');
 }
 
+const TEAM_DISCOVERY_PAST_DAYS = 30;
+const TEAM_DISCOVERY_FUTURE_DAYS = 120;
+
+function teamDiscoveryWindow() {
+  const fromDate=new Date();
+  fromDate.setUTCDate(fromDate.getUTCDate()-TEAM_DISCOVERY_PAST_DAYS);
+  const toDate=new Date();
+  toDate.setUTCDate(toDate.getUTCDate()+TEAM_DISCOVERY_FUTURE_DAYS);
+  return {from:fromDate.toISOString().slice(0,10),to:toDate.toISOString().slice(0,10)};
+}
+
+function splitTeamDiscoveryMatches(matches = [], secondQuery = '', options = {}) {
+  const second=searchText(secondQuery);
+  const now=Date.now();
+  const filtered=(matches || []).filter(match=>{
+    if (!match?.fixtureId) return false;
+    if (!second) return true;
+    return searchText(`${match.home?.name || ''} ${match.away?.name || ''}`).includes(second);
+  });
+  const upcoming=filtered.filter(match=>!match.finished && (match.live || Date.parse(match.date || 0)>=now-3*60*60*1000))
+    .sort((a,b)=>Number(b.live)-Number(a.live) || Date.parse(a.date || 0)-Date.parse(b.date || 0))
+    .slice(0,Number(options.upcomingLimit || 8));
+  const recent=filtered.filter(match=>match.finished)
+    .sort((a,b)=>Date.parse(b.date || 0)-Date.parse(a.date || 0))
+    .slice(0,Number(options.recentLimit || 4));
+  return {upcoming,recent,mode:upcoming.length ? 'upcoming' : recent.length ? 'recent' : 'empty'};
+}
+
+function teamSearchFixturePayload(team, fixtures = [], secondQuery = '', meta = {}) {
+  const split=splitTeamDiscoveryMatches(fixtures,secondQuery,{upcomingLimit:8,recentLimit:4});
+  return {
+    matches:[...split.upcoming,...split.recent],
+    matchSource:{kind:'team',id:Number(team?.id || 0),name:String(team?.name || 'Команда')},
+    matchDiscovery:{mode:split.mode,upcoming:split.upcoming.length,recent:split.recent.length,windowPastDays:TEAM_DISCOVERY_PAST_DAYS,windowFutureDays:TEAM_DISCOVERY_FUTURE_DAYS,cached:Boolean(meta.cached),stale:Boolean(meta.stale)},
+    warning:String(meta.warning || ''),
+    refreshedAt:meta.refreshedAt || new Date().toISOString(),
+  };
+}
+
+async function loadSearchTeamMatches(team, cfg, options = {}) {
+  const teamId=Number(team?.id || 0);
+  if (!teamId) return {matches:[],matchSource:null,matchDiscovery:{mode:'empty',upcoming:0,recent:0,windowPastDays:TEAM_DISCOVERY_PAST_DAYS,windowFutureDays:TEAM_DISCOVERY_FUTURE_DAYS},warning:''};
+  const {from,to}=teamDiscoveryWindow();
+  const cacheKey=`search:team-fixtures:${teamId}:${from}:${to}:v2`;
+  const cached=await getCache(cacheKey,cfg);
+  if (cached?.fixtures) return teamSearchFixturePayload(team,cached.fixtures,options.secondQuery,{cached:true,refreshedAt:cached.refreshedAt});
+  if (!freeQuotaHealthy(8,1)) {
+    const stale=await getStaleCache(cacheKey,cfg);
+    if (stale?.fixtures) return teamSearchFixturePayload(team,stale.fixtures,options.secondQuery,{cached:true,stale:true,refreshedAt:stale.refreshedAt,warning:'Календарь команды показан из сохранённых данных: бережём лимит источника.'});
+    return {matches:[],matchSource:{kind:'team',id:teamId,name:String(team?.name || 'Команда')},matchDiscovery:{mode:'empty',upcoming:0,recent:0,windowPastDays:TEAM_DISCOVERY_PAST_DAYS,windowFutureDays:TEAM_DISCOVERY_FUTURE_DAYS,cached:false,stale:false},warning:'Команда найдена, но календарь временно не обновляется: бережём остаток лимита источника.'};
+  }
+  try {
+    const rows=await apiFootball('/fixtures',{team:teamId,from,to},cfg);
+    const fixtures=(rows || []).filter(f=>!['CANC','PST','ABD','AWD','WO'].includes(String(f.fixture?.status?.short || ''))).map(f=>normalizeTeamHubMatch(f,teamId)).filter(x=>x.fixtureId);
+    const payload={fixtures,refreshedAt:new Date().toISOString()};
+    await setCache(cacheKey,teamId,payload,cfg,180);
+    return teamSearchFixturePayload(team,fixtures,options.secondQuery,{refreshedAt:payload.refreshedAt});
+  } catch (error) {
+    const stale=await getStaleCache(cacheKey,cfg);
+    if (stale?.fixtures) return teamSearchFixturePayload(team,stale.fixtures,options.secondQuery,{cached:true,stale:true,refreshedAt:stale.refreshedAt,warning:'Не удалось обновить календарь команды — показаны последние сохранённые матчи.'});
+    return {matches:[],matchSource:{kind:'team',id:teamId,name:String(team?.name || 'Команда')},matchDiscovery:{mode:'empty',upcoming:0,recent:0,windowPastDays:TEAM_DISCOVERY_PAST_DAYS,windowFutureDays:TEAM_DISCOVERY_FUTURE_DAYS,cached:false,stale:false},warning:isFootballRateLimitError(error)?'Источник временно ограничил календарь команды. Команда найдена — повторите поиск позже.':'Команда найдена, но её календарь сейчас недоступен.'};
+  }
+}
 async function apiSearch(request, cfg) {
   const url = new URL(request.url);
   const query = String(url.searchParams.get('q') || '').trim().slice(0, 60);
@@ -11907,7 +11958,7 @@ async function apiSearch(request, cfg) {
   if (cached?.teams) {
     const fixtureSearch = preferCompetitionSearch(competitions[0], cached.teams)
       ? await loadSearchCompetitionMatches(competitions[0], cfg)
-      : { matches: [], matchSource: null, warning: '' };
+      : await loadSearchTeamMatches(cached.teams[0], cfg);
     return json({ ...cached, query, knownTeams, resolvedQuery:teamPlan.resolved ? teamPlan.providerQuery : (cached.resolvedQuery || ''), competitions, ...fixtureSearch, warning: mergeSearchWarnings(cached.warning, fixtureSearch.warning), cached: true, provider: publicDataCapabilities() });
   }
 
@@ -11919,7 +11970,7 @@ async function apiSearch(request, cfg) {
       const staleTeams = stale?.teams || [];
       const fixtureSearch = preferCompetitionSearch(competitions[0], staleTeams)
         ? await loadSearchCompetitionMatches(competitions[0], cfg)
-        : { matches: [], matchSource: null, warning: '' };
+        : await loadSearchTeamMatches(staleTeams[0], cfg);
       return json({
         ...(stale || { teams: [] }), query, knownTeams, resolvedQuery:teamPlan.resolved ? teamPlan.providerQuery : (stale?.resolvedQuery || ''), competitions, ...fixtureSearch,
         cached: Boolean(stale), stale: Boolean(stale),
@@ -11936,7 +11987,7 @@ async function apiSearch(request, cfg) {
     if (stale?.teams) {
       const fixtureSearch = preferCompetitionSearch(competitions[0], stale.teams)
         ? await loadSearchCompetitionMatches(competitions[0], cfg)
-        : { matches: [], matchSource: null, warning: '' };
+        : await loadSearchTeamMatches(stale.teams[0], cfg);
       return json({ ...stale, query, knownTeams, resolvedQuery:teamPlan.resolved ? teamPlan.providerQuery : (stale.resolvedQuery || ''), competitions, ...fixtureSearch, cached: true, stale: true, warning: mergeSearchWarnings('Не удалось обновить поиск — показаны сохранённые результаты.', fixtureSearch.warning), provider: publicDataCapabilities() });
     }
     if (isFootballRateLimitError(error)) warning = 'API-Football временно ограничил поиск команд. Повторите чуть позже.';
@@ -11949,7 +12000,7 @@ async function apiSearch(request, cfg) {
     .sort((x, y) => y.score - x.score || x.name.localeCompare(y.name, 'ru')).slice(0, 16);
   const fixtureSearch = preferCompetitionSearch(competitions[0], teams)
     ? await loadSearchCompetitionMatches(competitions[0], cfg)
-    : { matches: [], matchSource: null, warning: '' };
+    : await loadSearchTeamMatches(teams[0], cfg);
   const payload = { query, resolvedQuery:teamPlan.resolved ? teamPlan.providerQuery : '', teams, knownTeams, warning, refreshedAt: new Date().toISOString() };
   await setCache(cacheKey, 0, payload, cfg, 1440);
   return json({ ...payload, competitions, ...fixtureSearch, warning: mergeSearchWarnings(warning, fixtureSearch.warning), cached: false, provider: publicDataCapabilities() });
@@ -12203,10 +12254,8 @@ async function apiTeam(request, cfg) {
   const url = new URL(request.url);
   const teamId = Number(url.searchParams.get('teamId'));
   if (!Number.isFinite(teamId) || teamId <= 0) return json({ error: 'Номер команды обязателен.' }, 400);
-  const fromDate = new Date(); fromDate.setUTCDate(fromDate.getUTCDate() - 45);
-  const toDate = new Date(); toDate.setUTCDate(toDate.getUTCDate() + 45);
-  const from = fromDate.toISOString().slice(0,10), to = toDate.toISOString().slice(0,10);
-  const cacheKey = `teamhub:${teamId}:${from}:${to}:v1`;
+  const {from,to}=teamDiscoveryWindow();
+  const cacheKey = `teamhub:${teamId}:${from}:${to}:v2`;
   const cached = await getCache(cacheKey, cfg);
   if (cached) return json({ ...cached, standing: await cachedTeamStanding(teamId, cached.primaryCompetition, cfg), cached:true, stale:false, provider:publicDataCapabilities() });
   let fixtures;
@@ -12216,11 +12265,11 @@ async function apiTeam(request, cfg) {
     if (stale && isFootballRateLimitError(error)) return json({ ...stale, standing:await cachedTeamStanding(teamId, stale.primaryCompetition, cfg), cached:true, stale:true, warning:'Страница команды показана из последних сохранённых данных из-за лимита источника данных.', provider:publicDataCapabilities() });
     throw error;
   }
-  const usable = (fixtures||[]).filter(f => !['CANC','ABD','AWD','WO'].includes(String(f.fixture?.status?.short||'')));
+  const usable = (fixtures||[]).filter(f => !['CANC','PST','ABD','AWD','WO'].includes(String(f.fixture?.status?.short||'')));
   const normalized = usable.map(f => normalizeTeamHubMatch(f, teamId)).filter(x => x.fixtureId);
-  const now = Date.now();
-  const recent = normalized.filter(x => x.finished).sort((a,b)=>Date.parse(b.date||0)-Date.parse(a.date||0)).slice(0,8);
-  const upcoming = normalized.filter(x => !x.finished && (x.live || Date.parse(x.date||0) >= now - 3*60*60*1000)).sort((a,b)=>(a.live===b.live ? Date.parse(a.date||0)-Date.parse(b.date||0) : a.live ? -1 : 1)).slice(0,8);
+  const discovery=splitTeamDiscoveryMatches(normalized,'',{upcomingLimit:8,recentLimit:8});
+  const recent=discovery.recent;
+  const upcoming=discovery.upcoming;
   let rawTeam = null;
   for (const f of usable) {
     if (Number(f.teams?.home?.id)===teamId) { rawTeam=f.teams.home; break; }
@@ -12231,7 +12280,7 @@ async function apiTeam(request, cfg) {
   const form = summarizeFormRows(completedRaw, teamId, 'home')?.overall || null;
   const primaryCompetition = choosePrimaryTeamCompetition(normalized);
   const standing = await cachedTeamStanding(teamId, primaryCompetition, cfg);
-  const payload = { team, primaryCompetition, standing, form, recent, upcoming, liveNow:upcoming.find(x=>x.live)||null, nextMatch:upcoming.find(x=>!x.live)||upcoming[0]||null, refreshedAt:new Date().toISOString() };
+  const payload = { team, primaryCompetition, standing, form, recent, upcoming, discovery:{mode:discovery.mode,windowPastDays:TEAM_DISCOVERY_PAST_DAYS,windowFutureDays:TEAM_DISCOVERY_FUTURE_DAYS}, liveNow:upcoming.find(x=>x.live)||null, nextMatch:upcoming.find(x=>!x.live)||upcoming[0]||null, refreshedAt:new Date().toISOString() };
   await setCache(cacheKey, teamId, payload, cfg, 120);
   return json({ ...payload, cached:false, stale:false, provider:publicDataCapabilities() });
 }
@@ -13257,6 +13306,11 @@ export default {
         searchRetryUx: 'enabled',
         searchQualitySelfTest: searchQualityDrill().pass ? 'enabled' : 'failed',
         searchQualityCases: searchQualityDrill().total,
+        zeroResultRecovery: 'enabled',
+        teamFixtureDiscovery: 'enabled',
+        sharedFixtureDiscoveryCache: 'enabled',
+        extendedTeamCalendar: 'enabled',
+        recentMatchFallback: 'enabled',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',

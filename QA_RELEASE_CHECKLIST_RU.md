@@ -1,10 +1,10 @@
-# QA Release Checklist — v6.47.0 RC55
+# QA Release Checklist — v6.48.0 RC56
 
 ## Deploy
 
 - применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql`, `supabase_migration_v6_11_1.sql`, `supabase_migration_v6_12.sql`, `supabase_migration_v6_13.sql`, `supabase_migration_v6_14.sql` и `supabase_migration_v6_15.sql`;
-- Worker/client = `6.47.0-rc55`;
-- package = `6.47.0`;
+- Worker/client = `6.48.0-rc56`;
+- package = `6.48.0`;
 - cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;
@@ -90,6 +90,21 @@
 - сломанный сценарий приводит к «Не опираться на предматчевый сигнал»;
 - никаких новых таблиц или внешних провайдеров RC44 не добавляет.
 
+## RC56 — Match Discovery & Zero-Result Recovery
+
+- поиск команды вызывает `loadSearchTeamMatches` на backend и не запускает скрытый второй `/api/team` запрос из Mini App;
+- Telegram и Mini App используют cache `search:team-fixtures:<teamId>:<from>:<to>:v2`;
+- календарь discovery работает в окне -30 / +120 дней через `from/to`, без `next`;
+- live и upcoming имеют приоритет; если их нет, возвращаются последние завершённые матчи;
+- postponed/cancelled/abandoned/awarded fixtures не используются для discovery;
+- Team Hub использует тот же selector и cache generation `teamhub:*:v2`;
+- remote team result кликабелен и открывает Team Hub только по явному действию пользователя;
+- `matchDiscovery.mode` различает `upcoming / recent / empty`;
+- UI объясняет `recent` как fallback, а `empty` как отсутствие календаря в окне;
+- Telegram `search_result` добавляет только безопасное поле recovery и не сохраняет query;
+- launch-funnel возвращает `searchQuality.recoveredRecent`;
+- production smoke требует `zeroResultRecovery/teamFixtureDiscovery/sharedFixtureDiscoveryCache/extendedTeamCalendar/recentMatchFallback`;
+- новых миграций Supabase и платёжных функций RC56 нет.
 ## RC55 — Real Launch Drill & Search Quality
 
 - `МЮ`, `мю!!!`, `ПСЖ?`, `Барса.` и другие запросы с пунктуацией резолвятся в ожидаемый клуб;

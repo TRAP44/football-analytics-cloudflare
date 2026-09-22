@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.47.0-rc55';
+const CLIENT_VERSION = '6.48.0-rc56';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc55';
+const CLIENT_RELEASE_CHANNEL = 'rc56';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -105,7 +105,7 @@ const state = {
   },
   filter: 'top',
   search: '',
-  globalSearch: { query: '', mode: 'all', remoteTeams: [], knownTeams: [], remoteCompetitions: [], remoteMatches: [], matchSourceTeam: '', loading: false, warning: '', searchedAt: null, requestSeq: 0 },
+  globalSearch: { query: '', mode: 'all', remoteTeams: [], knownTeams: [], remoteCompetitions: [], remoteMatches: [], matchSourceTeam: '', matchDiscovery: null, loading: false, warning: '', searchedAt: null, requestSeq: 0 },
   currentAnalysis: null,
   currentAnalysisTab: 'brief',
   analysisBackView: 'matchesView',
@@ -2861,7 +2861,7 @@ function renderLaunchFunnel() {
   const searchQuality=d.searchQuality || {};
   stages.innerHTML=`<div class="release-monitor-section-head"><strong>Воронка</strong><span>уникальные пользователи</span></div>
     ${bottleneck ? `<div class="data-notice">🎯 Узкое место: <strong>${escapeHtml(bottleneck.label || '')}</strong> · теряется ${launchFunnelPct(bottleneck.dropPct)} пользователей перехода.</div>` : ''}
-    ${Number(searchQuality.attempts || 0) ? `<div class="data-notice">🔎 Качество поиска: <strong>${launchFunnelPct(searchQuality.matchPct)}</strong> поисков сразу дали матч · матч ${Number(searchQuality.match || 0)} · клуб распознан без матча ${Number(searchQuality.recognizedNoMatch || 0)} · не найдено ${Number(searchQuality.notFound || 0)}.</div>` : ''}
+    ${Number(searchQuality.attempts || 0) ? `<div class="data-notice">🔎 Качество поиска: <strong>${launchFunnelPct(searchQuality.matchPct)}</strong> поисков сразу дали матч · матч ${Number(searchQuality.match || 0)} · клуб распознан без матча ${Number(searchQuality.recognizedNoMatch || 0)} · не найдено ${Number(searchQuality.notFound || 0)} · спасено последним матчем ${Number(searchQuality.recoveredRecent || 0)}.</div>` : ''}
     <div class="launch-funnel-stages">${rows.map((x,index)=>`<div>
       <span>${index+1}. ${escapeHtml(x.label || x.key || '')}</span>
       <strong>${Number(x.users || 0)}</strong>
@@ -3757,10 +3757,11 @@ function discoveryTeamCard(team, badge = '') {
 }
 
 function searchTeamSummaryCard(team) {
-  return `<div class="search-entity-summary">
+  return `<button class="search-entity-summary search-team-summary" type="button" data-search-team="${Number(team.id)}" data-team-name="${escapeHtml(team.name || '')}" data-team-logo="${escapeHtml(team.logo || '')}" data-team-country="${escapeHtml(team.country || '')}" aria-label="Открыть ${escapeHtml(team.name || 'команду')}">
     <span class="discovery-team-logo">${team.logo ? `<img src="${safeUrl(team.logo)}" alt="">` : '⚽'}</span>
     <span><small>КОМАНДА НАЙДЕНА</small><strong>${escapeHtml(team.name || 'Команда')}</strong><em>${escapeHtml(team.country || '')}${team.national ? ' · сборная' : ''}</em></span>
-  </div>`;
+    <b>Открыть →</b>
+  </button>`;
 }
 
 function knownTeamSummaryCard(team) {
@@ -3934,8 +3935,14 @@ function renderGlobalSearch() {
     const resolvedNote = state.globalSearch.resolvedQuery
       ? `<div class="data-notice">🌍 Распознано глобально: <strong>${escapeHtml(state.globalSearch.resolvedQuery)}</strong></div>`
       : '';
+    const discovery=state.globalSearch.matchDiscovery;
     const sourceNote = state.globalSearch.matchSourceTeam && matches.length
-      ? `<div class="data-notice">⚽ Матчи: ${escapeHtml(state.globalSearch.matchSourceTeam)} · последние и ближайшие игры</div>`
+      ? discovery?.mode === 'recent'
+        ? `<div class="data-notice">🕘 ${escapeHtml(state.globalSearch.matchSourceTeam)}: ближайших матчей сейчас нет — показываю последние завершённые игры.</div>`
+        : `<div class="data-notice">⚽ Матчи: ${escapeHtml(state.globalSearch.matchSourceTeam)} · ближайшие и последние игры</div>`
+      : '';
+    const emptyCalendarNote = state.globalSearch.matchSourceTeam && discovery?.mode === 'empty'
+      ? `<div class="data-notice">🗓 ${escapeHtml(state.globalSearch.matchSourceTeam)} найден. В окне ${Number(discovery.windowPastDays || 30)} дней назад / ${Number(discovery.windowFutureDays || 120)} дней вперёд календарь не вернулся — откройте карточку команды или повторите поиск позже.</div>`
       : '';
     const knownNote = !teams.length && knownTeams.length
       ? `<div class="data-notice">✅ Клуб распознан глобальным каталогом. Матчи появятся здесь, как только источник данных вернёт доступный календарь.</div>`
@@ -3943,8 +3950,8 @@ function renderGlobalSearch() {
     status.innerHTML = state.globalSearch.loading
       ? '<div class="data-notice">🔎 Ищу команды, лиги и матчи…</div>'
       : state.globalSearch.warning
-        ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.globalSearch.warning)}</div>${resolvedNote}${knownNote}${sourceNote}`
-        : `${resolvedNote}${knownNote}${sourceNote}`;
+        ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.globalSearch.warning)}</div>${resolvedNote}${knownNote}${emptyCalendarNote}${sourceNote}`
+        : `${resolvedNote}${knownNote}${emptyCalendarNote}${sourceNote}`;
   }
 
   const sections = [];
@@ -3984,6 +3991,7 @@ async function runGlobalSearch() {
   state.globalSearch.remoteMatches = [];
   state.globalSearch.knownTeams = [];
   state.globalSearch.matchSourceTeam = '';
+  state.globalSearch.matchDiscovery = null;
 
   if (query.length < 2 || !runtimeAllows('searchEnabled')) {
     state.globalSearch.loading = false;
@@ -4005,22 +4013,9 @@ async function runGlobalSearch() {
     state.globalSearch.resolvedQuery = data.resolvedQuery || '';
     state.globalSearch.remoteMatches = data.matches || [];
     state.globalSearch.matchSourceTeam = data.matchSource?.name || '';
+    state.globalSearch.matchDiscovery = data.matchDiscovery || null;
     state.globalSearch.warning = data.warning || data.hint || '';
     state.globalSearch.searchedAt = data.refreshedAt || new Date().toISOString();
-
-    const bestTeam = state.globalSearch.remoteTeams[0] || localDiscoveryResults(query).teams[0] || null;
-    if (!state.globalSearch.remoteMatches.length && bestTeam?.id) {
-      try {
-        const hub = await api(`/api/team?teamId=${Number(bestTeam.id)}&name=${encodeURIComponent(bestTeam.name || '')}&logo=${encodeURIComponent(bestTeam.logo || '')}`, { timeoutMs: 10000 });
-        if (seq !== state.globalSearch.requestSeq || query !== String(state.globalSearch.query || '').trim()) return;
-        state.globalSearch.remoteMatches = [...(hub.upcoming || []), ...(hub.recent || [])];
-        state.globalSearch.matchSourceTeam = hub.team?.name || bestTeam.name || '';
-      } catch (matchError) {
-        if (seq === state.globalSearch.requestSeq && !state.globalSearch.warning) {
-          state.globalSearch.warning = 'Команда найдена, но расширенный список матчей сейчас недоступен. Показаны уже загруженные результаты.';
-        }
-      }
-    }
     if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
   } catch (e) {
     if (seq !== state.globalSearch.requestSeq) return;
