@@ -36,8 +36,9 @@ test('match cards explain why a recommendation is shown', () => {
   assert.match(app, /favorite-signal/);
 });
 
-test('history enrichment is deferred and technical profile data is collapsed', () => {
-  assert.match(app, /const tasks = \[loadReminders\(\), loadHistory\(false\)\]/);
+test('AI history is deferred while technical profile data stays collapsed for admin', () => {
+  assert.match(app, /const tasks = \[loadHistory\(false\)\]/);
+  assert.match(app, /tasks\.push\(loadProvider\(\),loadReminders\(\)\)/);
   assert.match(html, /<details class="profile-data-details">/);
   assert.match(html, /id="dataModeSummary"/);
   assert.match(css, /\.profile-data-details > summary/);
