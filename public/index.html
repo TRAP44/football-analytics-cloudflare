@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#111827" />
   <title>Football Manager · Аналитика матчей</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=6.15.0" />
+  <link rel="stylesheet" href="/styles.css?v=6.16.0" />
 </head>
 <body>
   <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
     <div class="boot-card">
       <div class="boot-logo"><span>FM</span></div>
-      <div class="boot-kicker">FOOTBALL MANAGER · RC23</div>
+      <div class="boot-kicker">FOOTBALL MANAGER · RC24</div>
       <h1 id="bootTitle">Запускаю Football Manager</h1>
       <p id="bootText">Проверяю совместимость версии…</p>
       <div class="boot-progress" aria-hidden="true"><i id="bootProgressFill"></i></div>
@@ -53,27 +53,27 @@
     <main>
       <section id="matchesView" class="view active">
         <div class="date-strip">
-          <button class="date-btn" data-offset="-1">Вчера</button>
-          <button class="date-btn active" data-offset="0">Сегодня</button>
-          <button class="date-btn" data-offset="1">Завтра</button>
+          <button class="date-btn" type="button" data-offset="-1">Вчера</button>
+          <button class="date-btn active" type="button" data-offset="0">Сегодня</button>
+          <button class="date-btn" type="button" data-offset="1">Завтра</button>
         </div>
 
         <div class="search-row">
-          <input id="matchSearch" class="search-input" type="search" inputmode="search" placeholder="🔎 Команда, турнир или страна" autocomplete="off" />
+          <input id="matchSearch" class="search-input" type="search" aria-label="Поиск по матчам" inputmode="search" placeholder="🔎 Команда, турнир или страна" autocomplete="off" />
         </div>
 
         <div class="filter-strip" id="filterStrip">
-          <button class="filter-btn active" data-filter="top">🔥 Главные</button>
-          <button class="filter-btn" data-filter="live">🔴 LIVE</button>
-          <button class="filter-btn" data-filter="favorites">⭐ Избранное</button>
-          <button class="filter-btn" data-filter="international">🌍 Международные</button>
-          <button class="filter-btn" data-filter="cups">🏆 Кубки</button>
-          <button class="filter-btn" data-filter="england">🏴 Англия</button>
-          <button class="filter-btn" data-filter="spain">🇪🇸 Испания</button>
-          <button class="filter-btn" data-filter="italy">🇮🇹 Италия</button>
-          <button class="filter-btn" data-filter="germany">🇩🇪 Германия</button>
-          <button class="filter-btn" data-filter="france">🇫🇷 Франция</button>
-          <button class="filter-btn" data-filter="all">Все</button>
+          <button type="button" class="filter-btn active" data-filter="top">🔥 Главные</button>
+          <button type="button" class="filter-btn" data-filter="live">🔴 LIVE</button>
+          <button type="button" class="filter-btn" data-filter="favorites">⭐ Избранное</button>
+          <button type="button" class="filter-btn" data-filter="international">🌍 Международные</button>
+          <button type="button" class="filter-btn" data-filter="cups">🏆 Кубки</button>
+          <button type="button" class="filter-btn" data-filter="england">🏴 Англия</button>
+          <button type="button" class="filter-btn" data-filter="spain">🇪🇸 Испания</button>
+          <button type="button" class="filter-btn" data-filter="italy">🇮🇹 Италия</button>
+          <button type="button" class="filter-btn" data-filter="germany">🇩🇪 Германия</button>
+          <button type="button" class="filter-btn" data-filter="france">🇫🇷 Франция</button>
+          <button type="button" class="filter-btn" data-filter="all">Все</button>
         </div>
 
         <section id="popularCompetitionsWrap" class="popular-competitions" hidden>
@@ -108,7 +108,7 @@
         </div>
         <section class="panel global-search-panel">
           <div class="global-search-box">
-            <input id="globalSearchInput" class="search-input" type="search" inputmode="search" placeholder="Например: Arsenal, Барселона, Лига чемпионов" autocomplete="off" />
+            <input id="globalSearchInput" class="search-input" type="search" aria-label="Поиск команд и турниров" inputmode="search" placeholder="Например: Arsenal, Барселона, Лига чемпионов" autocomplete="off" />
             <button id="globalSearchBtn" class="global-search-btn" type="button">Найти</button>
           </div>
           <p class="tiny">Поиск по текущему каталогу мгновенный. Для команды вне сегодняшних матчей нажмите «Найти» — запрос к API выполняется только после 3 символов и кэшируется.</p>
@@ -135,7 +135,7 @@
       <section id="tournamentView" class="view">
         <button id="tournamentBackBtn" class="back-btn" type="button">← К матчам</button>
         <div id="tournamentHero"></div>
-        <div class="tournament-tabs">
+        <div class="tournament-tabs" role="tablist" aria-label="Разделы турнира">
           <button class="tournament-tab active" data-tournament-tab="matches" type="button">Матчи</button>
           <button class="tournament-tab" data-tournament-tab="table" type="button">Таблица</button>
         </div>
@@ -150,7 +150,7 @@
       <section id="teamView" class="view">
         <button id="teamBackBtn" class="back-btn" type="button">← Назад</button>
         <div id="teamHero"></div>
-        <div class="team-tabs">
+        <div class="team-tabs" role="tablist" aria-label="Разделы команды">
           <button class="team-tab active" data-team-tab="overview" type="button">Обзор</button>
           <button class="team-tab" data-team-tab="intelligence" type="button">Статистика</button>
           <button class="team-tab" data-team-tab="squad" type="button">Состав</button>
@@ -300,7 +300,7 @@
           <div id="modelQualityCalibration" class="quality-block" hidden></div>
           <div id="modelQualityEngine" class="quality-block" hidden></div>
           <div id="calibrationControl" class="quality-block calibration-control-block">
-            <div class="quality-block-head"><strong>🧭 Управление калибровкой RC23</strong><span>атомарная смена + журнал</span></div>
+            <div class="quality-block-head"><strong>🧭 Управление калибровкой RC24</strong><span>атомарная смена + журнал</span></div>
             <div id="calibrationControlStatus" class="tiny quality-status">Состояние жизненного цикла ещё не загружено.</div>
             <div id="calibrationControlSummary" class="calibration-control-summary"></div>
             <label class="runtime-message-field calibration-control-reason">
@@ -438,7 +438,7 @@
             <label class="runtime-control-row"><div><strong>Автообновление LIVE</strong><small>Останавливает автоматическое обновление LIVE, не отключая уже сохранённый центр матча.</small></div><input id="runtimeLiveToggle" type="checkbox" checked></label>
             <label class="runtime-control-row"><div><strong>Новые уведомления</strong><small>Создание новых уведомлений и их доставка по расписанию. Существующие уведомления можно удалять.</small></div><input id="runtimeRemindersToggle" type="checkbox" checked></label>
             <label class="runtime-control-row"><div><strong>Расширенные данные провайдера</strong><small>Игроки, травмы, LIVE-коэффициенты и другие дополнительные данные. Основные события и статистика остаются доступными.</small></div><input id="runtimeExpandedToggle" type="checkbox" checked></label>
-            <label class="runtime-control-row"><div><strong>Автовосстановление результатов</strong><small>RC23: один безопасный пакет в сутки, до 20 матчей / 5 дат. По умолчанию только наблюдение; ручное восстановление остаётся доступным.</small></div><input id="runtimeAutoSettlementRecoveryToggle" type="checkbox"></label>
+            <label class="runtime-control-row"><div><strong>Автовосстановление результатов</strong><small>RC24: один безопасный пакет в сутки, до 20 матчей / 5 дат. По умолчанию только наблюдение; ручное восстановление остаётся доступным.</small></div><input id="runtimeAutoSettlementRecoveryToggle" type="checkbox"></label>
           </div>
 
           <label class="runtime-message-field">
@@ -517,14 +517,14 @@
         <section class="panel rc-panel" data-admin-only hidden>
           <div class="section-head profile-section-head">
             <div>
-              <h2>🚦 Кандидат на выпуск RC23</h2>
+              <h2>🚦 Кандидат на выпуск RC24</h2>
               <p>Регрессионная проверка: среда выполнения, безопасность, схема базы, пользовательские маршруты и клиентский контракт.</p>
             </div>
             <button id="rcRunBtn" class="primary-setting-btn rc-run-btn" type="button">Запустить проверку</button>
           </div>
 
           <div class="rc-status-row">
-            <span id="rcBadge" class="rc-badge">RC23</span>
+            <span id="rcBadge" class="rc-badge">RC24</span>
             <div>
               <strong id="rcStatus">Полная регрессионная проверка ещё не запускалась.</strong>
               <small id="rcMeta">Без полного анализа, без изменения пользовательских данных и без расхода API-Football.</small>
@@ -607,6 +607,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=6.15.0"></script>
+  <script type="module" src="/app.js?v=6.16.0"></script>
 </body>
 </html>

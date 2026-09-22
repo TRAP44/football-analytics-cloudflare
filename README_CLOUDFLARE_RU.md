@@ -1,6 +1,17 @@
-# Football Analytics Mini App v6.15.0 — RC23
+# Football Analytics Mini App v6.16.0 — RC24
 
 Telegram Mini App для футбольной аналитики на Cloudflare Workers, Supabase и API-Football.
+
+## RC24: User Flow & Mobile UX Hardening
+
+- вложенные экраны теперь возвращают пользователя именно туда, откуда он пришёл: матч → история/команда/турнир/матчи;
+- подключена нативная Telegram BackButton для центра матча, команды и турнира;
+- история открывает сохранённый анализ в read-only режиме и не расходует ещё один дневной анализ; если полный кэш уже недоступен, открывается центр матча;
+- устранена гонка удалённого поиска: старый ответ больше не перезапишет результаты нового запроса;
+- мобильный переход на вкладку поиска больше не открывает клавиатуру автоматически;
+- неактивные представления и вкладки получают hidden/inert/aria-hidden, а активные вкладки — aria-selected;
+- добавлены 44px touch-targets, 16px search inputs и dynamic viewport height для мобильных WebView;
+- Worker/client/production smoke переведены на v6.16.0 RC24.
 
 ## RC23: Interface Consistency & Profile Polish
 

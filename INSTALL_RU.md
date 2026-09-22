@@ -1,4 +1,4 @@
-# Установка Football Analytics v6.15.0 RC23
+# Установка Football Analytics v6.16.0 RC24
 
 ## Новый Supabase-проект
 
@@ -57,7 +57,7 @@ API token должен быть ограничен нужным Cloudflare accou
 
 Опционально задайте Repository Variable `CLOUDFLARE_WORKER_URL`, если smoke-проверка должна использовать custom domain вместо URL, возвращённого Wrangler.
 
-Обычный процесс: PR → `Quality` → merge в `main` → `Deploy Production` → RC23 smoke. Отсутствующие Cloudflare credentials блокируют workflow с ошибкой. Локальный ручной deploy остаётся доступен:
+Обычный процесс: PR → `Quality` → merge в `main` → `Deploy Production` → RC24 smoke. Отсутствующие Cloudflare credentials блокируют workflow с ошибкой. Локальный ручной deploy остаётся доступен:
 
 ```bash
 npm ci
@@ -70,11 +70,11 @@ npm run deploy
 
 После deploy:
 
-1. `/health` сообщает `6.15.0-rc23` и `RC23`.
+1. `/health` сообщает `6.16.0-rc24` и `RC24`.
 2. RC Regression не содержит blocking failures.
 3. В разделе качества модели показаны active fingerprint и состояние challenger.
 4. Обычный аккаунт не показывает бейдж «Администратор» и не видит технические панели.
 5. До накопления нужной выборки production остаётся на baseline champion.
-6. HTML-ответ содержит RC23 CSP и `X-Content-Type-Options: nosniff`.
+6. HTML-ответ содержит RC24 CSP и `X-Content-Type-Options: nosniff`.
 
 Для аварийного возврата откройте workflow `Rollback Production`, укажите version ID из Cloudflare Deployments и введите `ROLLBACK`. Rollback меняет только версию Worker; состояние Supabase он не откатывает.

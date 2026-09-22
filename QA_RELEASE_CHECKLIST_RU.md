@@ -1,10 +1,10 @@
-# QA Release Checklist — v6.15.0 RC23
+# QA Release Checklist — v6.16.0 RC24
 
 ## Deploy
 
 - применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql` и `supabase_migration_v6_11_1.sql`;
-- Worker/client = `6.15.0-rc23`;
-- package = `6.15.0`;
+- Worker/client = `6.16.0-rc24`;
+- package = `6.16.0`;
 - cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;
@@ -78,7 +78,7 @@ npm run verify:worker
 
 ## Post-deploy
 
-- `/health` возвращает `6.15.0-rc23`, `RC23` и `devMode=false`;
+- `/health` возвращает `6.16.0-rc24`, `RC24` и `devMode=false`;
 - `cloudflareDeploymentGate=enabled`;
 - `browserSecurityPolicy=enabled` и `failClosedDeployment=enabled`;
 - `/api/app-manifest` соответствует версии Worker;
@@ -89,9 +89,19 @@ npm run verify:worker
 - при ошибке используется `Rollback Production` с предыдущим version ID.
 
 
-## RC23 UI/роль
+## RC24 UI/роль
 - обычный пользователь не видит и не может сфокусировать admin-only элементы;
 - администратор после загрузки профиля видит технические панели;
 - Telegram-фото профиля загружается через безопасный URL, при ошибке остаётся ⚽;
 - на ширине 320–360 px длинные диагностические строки не выходят за карточки;
 - основные подписи админ-панели не смешивают русские фразы с английскими статусами.
+
+
+## RC24 User Flow / Mobile UX
+- BackButton Telegram показан только на вложенных экранах и возвращает к реальному предыдущему экрану;
+- кнопка «Назад» из анализа, открытого из истории/команды/турнира, не отправляет пользователя принудительно на список матчей;
+- открытие записи истории не вызывает POST /api/analyze и не увеличивает дневной счётчик анализа;
+- устаревший ответ поиска не может заменить результаты более нового запроса;
+- на мобильном открытие вкладки «Поиск» не вызывает клавиатуру без действия пользователя;
+- неактивные view/tab panels скрыты, inert и aria-hidden;
+- touch-target основных мобильных кнопок не меньше 44 px.

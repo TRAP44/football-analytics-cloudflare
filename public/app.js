@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.15.0-rc23';
+const CLIENT_VERSION = '6.16.0-rc24';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc23';
+const CLIENT_RELEASE_CHANNEL = 'rc24';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -83,9 +83,10 @@ const state = {
   },
   filter: 'top',
   search: '',
-  globalSearch: { query: '', remoteTeams: [], remoteCompetitions: [], loading: false, warning: '', searchedAt: null },
+  globalSearch: { query: '', remoteTeams: [], remoteCompetitions: [], loading: false, warning: '', searchedAt: null, requestSeq: 0 },
   currentAnalysis: null,
   currentAnalysisTab: 'brief',
+  analysisBackView: 'matchesView',
   currentCenter: null,
   currentCenterTab: 'summary',
   currentTournament: null,
@@ -137,12 +138,64 @@ function stopLiveRefresh() {
   state.liveRefreshRemaining = 0;
 }
 
+const BACK_VIEW_LABELS = Object.freeze({
+  matchesView: 'К матчам',
+  searchView: 'К поиску',
+  historyView: 'К истории',
+  profileView: 'К профилю',
+  tournamentView: 'К турниру',
+  teamView: 'К команде',
+});
+
+function viewBackTarget(id = activeViewId()) {
+  if (id === 'analysisView') return state.analysisBackView || 'matchesView';
+  if (id === 'teamView') return state.teamBackView || 'matchesView';
+  if (id === 'tournamentView') return state.tournamentBackView || 'matchesView';
+  return 'matchesView';
+}
+
+function syncBackButtons() {
+  const bindings = [
+    ['backBtn', state.analysisBackView || 'matchesView'],
+    ['teamBackBtn', state.teamBackView || 'matchesView'],
+    ['tournamentBackBtn', state.tournamentBackView || 'matchesView'],
+  ];
+  bindings.forEach(([id, target]) => {
+    const button = $(id);
+    if (button) button.textContent = `← ${BACK_VIEW_LABELS[target] || 'Назад'}`;
+  });
+}
+
+function syncTelegramBackButton(id = activeViewId()) {
+  if (!tg?.BackButton) return;
+  try {
+    if (['analysisView', 'teamView', 'tournamentView'].includes(id)) tg.BackButton.show();
+    else tg.BackButton.hide();
+  } catch {}
+}
+
+function handleBackNavigation() {
+  const current = activeViewId();
+  if (!['analysisView', 'teamView', 'tournamentView'].includes(current)) return false;
+  showView(viewBackTarget(current), { restore: true });
+  return true;
+}
+
 function showView(id, options = {}) {
+  if (!views.includes(id) || !$(id)) id = 'matchesView';
   const current = activeViewId();
   syncTopbar(id);
   if (current && current !== id) state.viewScroll[current] = window.scrollY || 0;
   if (id !== 'analysisView') { stopLiveRefresh(); state.liveRefreshWasActive = false; }
-  views.forEach(v => $(v).classList.toggle('active', v === id));
+  views.forEach(v => {
+    const view = $(v);
+    if (!view) return;
+    const active = v === id;
+    view.classList.toggle('active', active);
+    view.hidden = !active;
+    view.toggleAttribute('inert', !active);
+    view.setAttribute('aria-hidden', active ? 'false' : 'true');
+  });
   $('navMatches').classList.toggle('active', id === 'matchesView' || id === 'tournamentView' || id === 'teamView' || id === 'analysisView');
   $('navSearch')?.classList.toggle('active', id === 'searchView');
   $('navHistory').classList.toggle('active', id === 'historyView');
@@ -152,6 +205,8 @@ function showView(id, options = {}) {
   if (id === 'searchView') $('navSearch')?.setAttribute('aria-current', 'page');
   if (id === 'historyView') $('navHistory')?.setAttribute('aria-current', 'page');
   if (id === 'profileView') $('navProfile')?.setAttribute('aria-current', 'page');
+  syncBackButtons();
+  syncTelegramBackButton(id);
   const top = options.restore ? Number(state.viewScroll[id] || 0) : 0;
   requestAnimationFrame(() => window.scrollTo({ top, behavior: 'auto' }));
 }
@@ -495,7 +550,10 @@ function applyRuntimeUi() {
   const searchDisabled = !runtimeAllows('searchEnabled');
   $('navSearch')?.classList.remove('feature-disabled');
   $('navSearch')?.removeAttribute('aria-disabled');
-  if ($('globalSearchBtn')) $('globalSearchBtn').disabled = searchDisabled;
+  if ($('globalSearchBtn')) {
+    $('globalSearchBtn').disabled = searchDisabled || Boolean(state.globalSearch.loading);
+    $('globalSearchBtn').textContent = state.globalSearch.loading ? 'Ищу…' : 'Найти';
+  }
 
   if (!runtimeAllows('liveEnabled')) stopLiveRefresh();
 }
@@ -987,7 +1045,7 @@ function renderModelQuality() {
       <div><span>Жизненный цикл</span><strong>${lifecycleLabel}</strong><small>ревизия ${Number(lifecycle.revision || 0)}</small></div>
       <div><span>Отпечаток активной модели</span><strong>${escapeHtml(String(lifecycle.activeFingerprint || ce.fingerprint || '—').slice(0, 10))}</strong><small>${lifecycle.previousFingerprint ? `откат → ${escapeHtml(String(lifecycle.previousFingerprint).slice(0, 10))}` : 'предыдущей активной модели нет'}</small></div>
     </div>
-    <div class="calibration-promotion-note"><strong>Защита RC23:</strong> кандидат проходит два последовательных окна доверенной отложенной выборки, затем атомарно сравнивается с активной моделью. ${lifecycle.frozen ? `Жизненный цикл заморожен: ${escapeHtml(lifecycle.freezeReason || 'причина указана в административном журнале')}.` : 'После продвижения отдельная когорта может автоматически вернуть предыдущий профиль.'}</div>
+    <div class="calibration-promotion-note"><strong>Защита RC24:</strong> кандидат проходит два последовательных окна доверенной отложенной выборки, затем атомарно сравнивается с активной моделью. ${lifecycle.frozen ? `Жизненный цикл заморожен: ${escapeHtml(lifecycle.freezeReason || 'причина указана в административном журнале')}.` : 'После продвижения отдельная когорта может автоматически вернуть предыдущий профиль.'}</div>
     <div class="calibration-weights">
       ${(ce.signalStats || []).map(x => {
         const base = Number(x.baseWeight || 0) * 100;
@@ -1776,7 +1834,7 @@ function runClientContractSmoke() {
 }
 
 function rcStateText(status) {
-  if (status === 'rc_ready') return 'RC23 ГОТОВ';
+  if (status === 'rc_ready') return 'RC24 ГОТОВ';
   if (status === 'rc_with_holds') return 'RC С ОГРАНИЧЕНИЯМИ';
   if (status === 'blocked') return 'ЗАБЛОКИРОВАНО';
   return 'ОЖИДАНИЕ';
@@ -1810,7 +1868,7 @@ function renderRcRegression() {
   const r = state.rcRegression;
   if (!r) {
     badge.className = 'rc-badge';
-    badge.textContent = 'RC23';
+    badge.textContent = 'RC24';
     status.textContent = 'Полная регрессионная проверка ещё не запускалась.';
     meta.textContent = 'Тест безопасный: без полного анализа, без изменения пользовательских данных и без расхода API-Football.';
     summary.innerHTML = '';
@@ -3199,6 +3257,11 @@ function renderDiscoveryHome() {
 function renderGlobalSearch() {
   const query = String(state.globalSearch.query || '').trim();
   const wrap = $('searchResultsWrap'), out = $('searchResults'), meta = $('searchResultsMeta'), status = $('searchStatus');
+  const searchButton = $('globalSearchBtn');
+  if (searchButton) {
+    searchButton.disabled = Boolean(state.globalSearch.loading) || !runtimeAllows('searchEnabled');
+    searchButton.textContent = state.globalSearch.loading ? 'Ищу…' : 'Найти';
+  }
   if (!wrap || !out) return;
   if (!query) {
     wrap.hidden = true;
@@ -3223,28 +3286,42 @@ function renderGlobalSearch() {
 async function runGlobalSearch() {
   const input = $('globalSearchInput');
   const query = String(input?.value || '').trim();
+  const seq = ++state.globalSearch.requestSeq;
   state.globalSearch.query = query;
   state.globalSearch.warning = '';
   if (!runtimeAllows('searchEnabled')) {
+    state.globalSearch.loading = false;
     state.globalSearch.remoteTeams = [];
     state.globalSearch.remoteCompetitions = [];
     state.globalSearch.warning = 'Удалённый поиск временно приостановлен. Используйте локальный каталог матчей.';
     renderGlobalSearch();
     return;
   }
-  if (query.length < 3) { state.globalSearch.remoteTeams = []; state.globalSearch.remoteCompetitions = []; renderGlobalSearch(); return; }
-  state.globalSearch.loading = true; renderGlobalSearch();
+  if (query.length < 3) {
+    state.globalSearch.loading = false;
+    state.globalSearch.remoteTeams = [];
+    state.globalSearch.remoteCompetitions = [];
+    renderGlobalSearch();
+    return;
+  }
+  state.globalSearch.loading = true;
+  renderGlobalSearch();
   try {
     const data = await api(`/api/search?q=${encodeURIComponent(query)}`);
+    if (seq !== state.globalSearch.requestSeq || query !== String(state.globalSearch.query || '').trim()) return;
     state.globalSearch.remoteTeams = data.teams || [];
     state.globalSearch.remoteCompetitions = data.competitions || [];
     state.globalSearch.warning = data.warning || data.hint || '';
     state.globalSearch.searchedAt = data.refreshedAt || new Date().toISOString();
     if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
   } catch (e) {
+    if (seq !== state.globalSearch.requestSeq) return;
     state.globalSearch.warning = e.message;
   } finally {
-    state.globalSearch.loading = false; renderGlobalSearch();
+    if (seq === state.globalSearch.requestSeq) {
+      state.globalSearch.loading = false;
+      renderGlobalSearch();
+    }
   }
 }
 
@@ -3705,9 +3782,23 @@ async function loadTournamentStandings(force = false) {
 }
 
 function setTournamentTab(tab, load = true) {
-  document.querySelectorAll('.tournament-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tournamentTab === tab));
-  $('tournamentMatchesPanel').classList.toggle('active', tab === 'matches');
-  $('tournamentTablePanel').classList.toggle('active', tab === 'table');
+  document.querySelectorAll('.tournament-tab').forEach(btn => {
+    const active = btn.dataset.tournamentTab === tab;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    btn.tabIndex = active ? 0 : -1;
+  });
+  [['tournamentMatchesPanel', 'matches'], ['tournamentTablePanel', 'table']].forEach(([id, key]) => {
+    const panel = $(id);
+    if (!panel) return;
+    const active = tab === key;
+    panel.classList.toggle('active', active);
+    panel.hidden = !active;
+    panel.toggleAttribute('inert', !active);
+    panel.setAttribute('role', 'tabpanel');
+    panel.setAttribute('aria-hidden', active ? 'false' : 'true');
+  });
   if (tab === 'table' && load) loadTournamentStandings(false);
 }
 
@@ -3867,12 +3958,30 @@ function openTeam(team) {
   state.currentTeam={id:Number(team.id),name:team.name||'',logo:team.logo||'',data:null}; setTeamTab('overview'); showView('teamView'); loadTeamHub(state.currentTeam,false);
 }
 function setTeamTab(tab) {
-  document.querySelectorAll('.team-tab').forEach(btn=>btn.classList.toggle('active',btn.dataset.teamTab===tab));
-  $('teamOverviewPanel')?.classList.toggle('active',tab==='overview');
-  $('teamIntelligencePanel')?.classList.toggle('active',tab==='intelligence');
-  $('teamSquadPanel')?.classList.toggle('active',tab==='squad');
-  $('teamResultsPanel')?.classList.toggle('active',tab==='results');
-  $('teamSchedulePanel')?.classList.toggle('active',tab==='schedule');
+  document.querySelectorAll('.team-tab').forEach(btn => {
+    const active = btn.dataset.teamTab === tab;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    btn.tabIndex = active ? 0 : -1;
+  });
+  const panels = [
+    ['teamOverviewPanel', 'overview'],
+    ['teamIntelligencePanel', 'intelligence'],
+    ['teamSquadPanel', 'squad'],
+    ['teamResultsPanel', 'results'],
+    ['teamSchedulePanel', 'schedule'],
+  ];
+  panels.forEach(([id, key]) => {
+    const panel = $(id);
+    if (!panel) return;
+    const active = tab === key;
+    panel.classList.toggle('active', active);
+    panel.hidden = !active;
+    panel.toggleAttribute('inert', !active);
+    panel.setAttribute('role', 'tabpanel');
+    panel.setAttribute('aria-hidden', active ? 'false' : 'true');
+  });
   if(tab==='intelligence') loadTeamIntelligence(false);
   if(tab==='squad') loadTeamSquad(false);
 }
@@ -4220,9 +4329,18 @@ function setMatchCenterTab(tab, scroll = false) {
   document.querySelectorAll('.center-tab-btn').forEach(btn => {
     const active = btn.dataset.centerTab === state.currentCenterTab;
     btn.classList.toggle('active', active);
+    btn.setAttribute('role', 'tab');
     btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    btn.tabIndex = active ? 0 : -1;
   });
-  document.querySelectorAll('.center-tab-panel').forEach(panel => panel.classList.toggle('active', panel.dataset.centerPanel === state.currentCenterTab));
+  document.querySelectorAll('.center-tab-panel').forEach(panel => {
+    const active = panel.dataset.centerPanel === state.currentCenterTab;
+    panel.classList.toggle('active', active);
+    panel.hidden = !active;
+    panel.toggleAttribute('inert', !active);
+    panel.setAttribute('role', 'tabpanel');
+    panel.setAttribute('aria-hidden', active ? 'false' : 'true');
+  });
   if (scroll) document.querySelector('.center-tabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
@@ -4460,6 +4578,8 @@ function renderMatchCenter(d) {
 }
 
 async function openMatchCenter(fixtureId, btn) {
+  const sourceView = activeViewId();
+  if (sourceView !== 'analysisView') state.analysisBackView = sourceView;
   if (Number(state.currentCenter?.match?.fixtureId || 0) !== Number(fixtureId)) state.currentCenterTab = 'summary';
   const original = btn?.textContent || '';
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Загружаю матч…'; }
@@ -4475,6 +4595,8 @@ async function openMatchCenter(fixtureId, btn) {
 }
 
 async function analyzeMatch(fixtureId, btn) {
+  const sourceView = activeViewId();
+  if (sourceView !== 'analysisView') state.analysisBackView = sourceView;
   if (!runtimeAllows('analysisEnabled')) {
     toast(state.runtimeStatus?.message || 'Полный анализ временно приостановлен.');
     return;
@@ -4522,6 +4644,31 @@ async function loadHistory(showLoader = true) {
   }
 }
 
+async function openHistoryAnalysis(fixtureId, btn) {
+  const sourceView = activeViewId();
+  if (sourceView !== 'analysisView') state.analysisBackView = sourceView;
+  const original = btn?.textContent || '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Открываю…'; }
+  try {
+    const data = await api(`/api/history-analysis?fixtureId=${Number(fixtureId)}`, { retry: false, timeoutMs: 9000 });
+    state.currentAnalysis = data;
+    state.currentCenter = null;
+    renderAnalysis(data);
+    showView('analysisView');
+  } catch (error) {
+    if (Number(error?.status || 0) === 404) {
+      const center = await api(`/api/match-center?fixtureId=${Number(fixtureId)}`, { timeoutMs: 9000 });
+      renderMatchCenter(center);
+      showView('analysisView');
+      toast('Сохранённый полный анализ уже недоступен — открыт центр матча.');
+    } else {
+      toast(error.message);
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = original; }
+  }
+}
+
 function renderHistory() {
   if (!state.history.length) {
     $('history').innerHTML = '<div class="empty">История пока пуста. Сделайте первый полный анализ матча.</div>';
@@ -4541,7 +4688,7 @@ function renderHistory() {
       <button class="history-open" data-fixture="${Number(item.fixtureId)}" type="button">Открыть</button>
     </article>
   `).join('');
-  document.querySelectorAll('.history-open').forEach(btn => btn.addEventListener('click', () => analyzeMatch(Number(btn.dataset.fixture), btn)));
+  document.querySelectorAll('.history-open').forEach(btn => btn.addEventListener('click', () => openHistoryAnalysis(Number(btn.dataset.fixture), btn)));
 }
 
 function pct(v) { return Number.isFinite(Number(v)) ? `${Number(v).toFixed(1)}%` : '—'; }
@@ -4707,9 +4854,18 @@ function setAnalysisTab(tab, scroll = false) {
   buttons.forEach(btn => {
     const active = btn.dataset.tab === state.currentAnalysisTab;
     btn.classList.toggle('active', active);
+    btn.setAttribute('role', 'tab');
     btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    btn.tabIndex = active ? 0 : -1;
   });
-  panels.forEach(panel => panel.classList.toggle('active', panel.dataset.panel === state.currentAnalysisTab));
+  panels.forEach(panel => {
+    const active = panel.dataset.panel === state.currentAnalysisTab;
+    panel.classList.toggle('active', active);
+    panel.hidden = !active;
+    panel.toggleAttribute('inert', !active);
+    panel.setAttribute('role', 'tabpanel');
+    panel.setAttribute('aria-hidden', active ? 'false' : 'true');
+  });
   if (scroll) document.querySelector('.analysis-tabs')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
 
@@ -5261,19 +5417,34 @@ $('matchSearch').addEventListener('input', e => {
 });
 
 $('globalSearchBtn')?.addEventListener('click', runGlobalSearch);
-$('globalSearchInput')?.addEventListener('input', e => { state.globalSearch.query = e.target.value || ''; state.globalSearch.remoteTeams = []; state.globalSearch.remoteCompetitions = []; state.globalSearch.warning = ''; renderGlobalSearch(); });
+$('globalSearchInput')?.addEventListener('input', e => {
+  state.globalSearch.requestSeq += 1;
+  state.globalSearch.loading = false;
+  state.globalSearch.query = e.target.value || '';
+  state.globalSearch.remoteTeams = [];
+  state.globalSearch.remoteCompetitions = [];
+  state.globalSearch.warning = '';
+  renderGlobalSearch();
+});
 $('globalSearchInput')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); runGlobalSearch(); } });
 $('clearRecentTeamsBtn')?.addEventListener('click', clearRecentTeams);
 $('refreshBtn').addEventListener('click', () => loadMatches({ force: true }));
 $('historyRefreshBtn').addEventListener('click', () => loadHistory(true));
-$('backBtn').addEventListener('click', () => showView('matchesView', { restore: true }));
-$('tournamentBackBtn')?.addEventListener('click', () => showView(state.tournamentBackView || 'matchesView', { restore: true }));
-$('teamBackBtn')?.addEventListener('click', () => showView(state.teamBackView || 'matchesView', { restore: true }));
+$('backBtn').addEventListener('click', handleBackNavigation);
+$('tournamentBackBtn')?.addEventListener('click', handleBackNavigation);
+$('teamBackBtn')?.addEventListener('click', handleBackNavigation);
 document.querySelectorAll('.tournament-tab').forEach(btn => btn.addEventListener('click', () => setTournamentTab(btn.dataset.tournamentTab || 'matches')));
 document.querySelectorAll('.team-tab').forEach(btn => btn.addEventListener('click', () => setTeamTab(btn.dataset.teamTab || 'overview')));
 $('profileBtn').addEventListener('click', openProfileView);
 $('navMatches').addEventListener('click', () => showView('matchesView'));
-$('navSearch')?.addEventListener('click', () => { renderDiscoveryHome(); renderGlobalSearch(); showView('searchView'); setTimeout(() => $('globalSearchInput')?.focus(), 80); });
+$('navSearch')?.addEventListener('click', () => {
+  renderDiscoveryHome();
+  renderGlobalSearch();
+  showView('searchView');
+  if (window.matchMedia?.('(pointer: fine)').matches) {
+    setTimeout(() => $('globalSearchInput')?.focus({ preventScroll: true }), 80);
+  }
+});
 $('navHistory').addEventListener('click', async () => { showView('historyView'); if (!state.historyLoaded) await loadHistory(true); else renderHistory(); });
 $('navProfile').addEventListener('click', openProfileView);
 $('proBtn')?.addEventListener('click', () => buyPlan('PRO'));
@@ -5313,14 +5484,18 @@ $('bootReloadBtn')?.addEventListener('click', forceFreshReload);
 $('bootRetryBtn')?.addEventListener('click', () => runStartupSequence());
 $('bootContinueBtn')?.addEventListener('click', hideBootGate);
 
+if (tg?.BackButton?.onClick) {
+  try { tg.BackButton.onClick(handleBackNavigation); } catch {}
+}
+
 async function scheduleIdle(task) {
   if ('requestIdleCallback' in window) return new Promise(resolve => requestIdleCallback(async () => { try { await task(); } finally { resolve(); } }, { timeout: 1800 }));
   return new Promise(resolve => setTimeout(async () => { try { await task(); } finally { resolve(); } }, 250));
 }
 
-syncTopbar('matchesView');
+showView('matchesView', { restore: true });
 
-// RC23: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
+// RC24: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
 // The boot watchdog never leaves the user behind an endless splash screen.
 const startupWatchdog = setTimeout(() => {
   if (!$('bootGate')?.hidden && !state.compatibilityBlocked) {

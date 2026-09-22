@@ -2137,13 +2137,13 @@ main { position: relative; z-index: 1; }
 .runtime-controls-badge,.reminder-health-badge,.release-monitor-badge,.production-badge,.expanded-gate-badge{min-width:72px}
 
 
-/* RC23 — Release Security Hardening */
-.rc-panel:before{content:"RC23"}
+/* RC24 — Release Security Hardening */
+.rc-panel:before{content:"RC24"}
 .calibration-promotion-note{margin-top:9px;padding:9px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font-size:9px;color:var(--hint)}
 .calibration-promotion-note strong{color:var(--text)}
 
 
-/* RC23 — Interface Consistency & Profile Polish */
+/* RC24 — Interface Consistency & Profile Polish */
 [data-admin-only][aria-hidden="true"],
 [data-admin-only][inert]{display:none!important}
 .avatar{overflow:hidden}
@@ -2154,3 +2154,20 @@ main { position: relative; z-index: 1; }
 .quality-block,
 .runtime-history-copy,
 .release-incidents{overflow-wrap:anywhere}
+
+
+/* RC24 — User Flow & Mobile UX Hardening */
+html, body, .app-shell { min-height: 100dvh; }
+.view[hidden],
+.tournament-panel[hidden],
+.team-panel[hidden],
+.analysis-tab-panel[hidden],
+.center-tab-panel[hidden] { display: none !important; }
+@media (max-width: 560px) {
+  input[type="search"] { font-size: 16px; }
+  .back-btn, .icon-btn, .global-search-btn, .history-open { min-height: 44px; }
+  .tournament-tabs, .team-tabs, .analysis-tabs, .center-tabs {
+    scroll-padding-inline: 12px;
+    -webkit-overflow-scrolling: touch;
+  }
+}

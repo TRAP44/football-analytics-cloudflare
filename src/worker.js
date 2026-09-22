@@ -73,11 +73,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.15.0-rc23';
+const APP_VERSION = '6.16.0-rc24';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc23';
-const RC_NAME = 'RC23';
+const RELEASE_CHANNEL = 'rc24';
+const RC_NAME = 'RC24';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -2123,7 +2123,7 @@ function fitAdaptiveSignalWeightsHoldout(rows) {
   const changedWeightL1 = Object.keys(MODEL_BASE_WEIGHTS)
     .reduce((sum, name) => sum + Math.abs(Number(candidate.weights?.[name] || 0) - Number(MODEL_BASE_WEIGHTS[name] || 0)), 0);
 
-  // RC23 gate: both sequential holdout windows must beat the baseline.
+  // RC24 gate: both sequential holdout windows must beat the baseline.
   const active = changedWeightL1 >= 0.01 && gate.pass;
 
   return {
@@ -2391,7 +2391,7 @@ async function notifyCalibrationAdmins(cfg, action, detail = '') {
     freeze: 'lifecycle заморожен',
     unfreeze: 'lifecycle разморожен',
   };
-  const text = `⚙️ Calibration RC23: ${labels[action] || action}.${detail ? `\n${String(detail).slice(0, 500)}` : ''}`;
+  const text = `⚙️ Calibration RC24: ${labels[action] || action}.${detail ? `\n${String(detail).slice(0, 500)}` : ''}`;
   await Promise.allSettled((cfg.adminTelegramIds || []).map(id => sendTelegramMessage(id, text, cfg)));
 }
 
@@ -2420,7 +2420,7 @@ async function resolveCalibrationLifecycle(cfg, candidate, trustedRows) {
       const state = await saveCalibrationLifecycleState(cfg, lifecycle.state, {
         action: 'initialize',
         targetFingerprint: baseline.fingerprint,
-        reason: 'RC23 baseline lifecycle initialization.',
+        reason: 'RC24 baseline lifecycle initialization.',
         metadata: { appVersion: APP_VERSION },
       });
       lifecycle = { state, active: baseline, previous: null };
@@ -2657,9 +2657,9 @@ function buildCalibrationProfile(rows) {
           : 'Кандидат остаётся в тени до достаточной trusted holdout-выборки.',
     },
     note: active
-      ? 'RC23: кандидат прошёл два holdout-окна; постоянный lifecycle решает продвижение относительно активного champion.'
+      ? 'RC24: кандидат прошёл два holdout-окна; постоянный lifecycle решает продвижение относительно активного champion.'
       : shadow
-        ? 'RC23: challenger измеряется в тени; production использует только постоянный active-профиль.'
+        ? 'RC24: challenger измеряется в тени; production использует только постоянный active-профиль.'
         : 'Недостаточно trusted-прогнозов для безопасной автоматической калибровки.',
   };
 }
@@ -3672,7 +3672,7 @@ function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = 
     calibrationDiagnostics: {
       weightedTopCalibrationError: weightedTopCalibrationError(rows),
       label: 'Weighted top-probability calibration error',
-      note: 'Средневзвешенный абсолютный разрыв между средней top-вероятностью и hit rate по 5 probability buckets; меньше — лучше. RC23 не использует эту метрику отдельно: продвижение требует двух holdout-окон и сравнения с champion.',
+      note: 'Средневзвешенный абсолютный разрыв между средней top-вероятностью и hit rate по 5 probability buckets; меньше — лучше. RC24 не использует эту метрику отдельно: продвижение требует двух holdout-окон и сравнения с champion.',
     },
     calibrationEngine: calibrationProfile || baselineCalibrationProfile(evaluated, signalPerformance),
     calibrationImpact,
@@ -7543,7 +7543,7 @@ async function apiReleaseReadiness(request, cfg) {
     releaseCheck('backend_security_contract', 'Контракт безопасности Supabase', backendSecurity.ok ? 'pass' : 'fail',
       backendSecurity.ok
         ? 'Все public-таблицы защищены RLS; anon/authenticated не имеют прямых прав; RPC закрыты.'
-        : `RC23 security contract: ${backendSecurity.status || 'ошибка'}.`, true),
+        : `RC24 security contract: ${backendSecurity.status || 'ошибка'}.`, true),
     releaseCheck('model_backtest', 'Схема исторической проверки v3.6+', modelTable.ok ? 'pass' : 'fail', modelTable.ok ? 'Таблица model_predictions доступна.' : `model_predictions: ${modelTable.status}.`, true),
     releaseCheck('prediction_integrity', 'Самопроверка целостности прогнозов', modelIntegritySelfTest().pass ? 'pass' : 'fail',
       modelIntegritySelfTest().pass ? 'Probabilities, captured_at timing и outcome consistency проходят synthetic self-test.' : 'Самопроверка целостности прогнозов не прошла.', true),
@@ -9797,6 +9797,34 @@ async function apiHistory(request, cfg, user) {
   });
 }
 
+async function apiHistoryAnalysis(request, cfg, user) {
+  const fixtureId = Number(new URL(request.url).searchParams.get('fixtureId'));
+  if (!Number.isSafeInteger(fixtureId) || fixtureId <= 0) return json({ error: 'fixtureId обязателен.' }, 400);
+
+  const history = await getHistory(user.id, cfg);
+  if (!history.some(row => Number(row.fixture_id) === fixtureId)) {
+    return json({ error: 'Этот матч отсутствует в вашей истории анализов.', code: 'HISTORY_ANALYSIS_NOT_FOUND' }, 404);
+  }
+
+  const cacheKey = `fixture:${fixtureId}:v8-prematch-intelligence`;
+  const fresh = await getCache(cacheKey, cfg);
+  const payload = fresh || await getStaleCache(cacheKey, cfg);
+  if (!payload) {
+    return json({
+      error: 'Сохранённый полный анализ уже недоступен. Откройте центр матча или выполните новый анализ вручную.',
+      code: 'HISTORY_ANALYSIS_UNAVAILABLE',
+    }, 404);
+  }
+
+  return json({
+    ...payload,
+    cached: true,
+    stale: !fresh,
+    historyReadOnly: true,
+    quota: await getQuota(user.id, cfg),
+  });
+}
+
 
 async function apiFavorites(request, cfg, user) {
   if (request.method === 'GET') {
@@ -11016,6 +11044,9 @@ export default {
         failureRecovery: 'enabled',
         gracefulErrors: 'enabled',
         webviewRecovery: 'enabled',
+        userFlowHardening: 'enabled',
+        telegramBackNavigation: 'enabled',
+        quotaSafeHistory: 'enabled',
         releaseCandidate: RC_NAME,
         regressionQA: 'enabled',
         rcSmokeTest: 'enabled',
@@ -11210,6 +11241,7 @@ export default {
       if (request.method === 'GET' && url.pathname === '/api/team/squad') return await apiTeamSquad(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/match-center') return await apiMatchCenter(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/history') return await apiHistory(request, cfg, user);
+      if (request.method === 'GET' && url.pathname === '/api/history-analysis') return await apiHistoryAnalysis(request, cfg, user);
       if (url.pathname === '/api/favorites') return await apiFavorites(request, cfg, user);
       if (url.pathname === '/api/reminders') return await apiReminders(request, cfg, user);
       if (url.pathname === '/api/preferences') return await apiPreferences(request, cfg, user);
