@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#111827" />
   <title>Футбольная аналитика · Матчи</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=6.25.0" />
+  <link rel="stylesheet" href="/styles.css?v=6.26.0" />
 </head>
 <body>
   <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
@@ -103,16 +103,23 @@
         <div class="section-head search-page-head">
           <div>
             <h2>Поиск</h2>
-            <p>Команды и турниры — даже если сегодня они не играют</p>
+            <p>Команды, лиги, предстоящие и завершённые матчи</p>
           </div>
         </div>
         <section class="panel global-search-panel">
           <div class="global-search-box">
-            <input id="globalSearchInput" class="search-input" type="search" aria-label="Поиск команд и турниров" inputmode="search" placeholder="Например: Арсенал, Барселона, Лига чемпионов" autocomplete="off" />
+            <input id="globalSearchInput" class="search-input" type="search" aria-label="Поиск команд, лиг и матчей" inputmode="search" placeholder="Команда или лига, например: Барселона" autocomplete="off" />
             <button id="globalSearchBtn" class="global-search-btn" type="button">Найти</button>
           </div>
-          <p class="tiny">Поиск по текущему каталогу мгновенный. Для команды вне сегодняшних матчей нажмите «Найти» — запрос к источнику данных выполняется только после 3 символов и сохраняется на ограниченное время.</p>
+          <p class="tiny">Начните вводить название. После нажатия «Найти» приложение дополнительно покажет ближайшие и уже сыгранные матчи найденной команды.</p>
         </section>
+        <div class="search-mode-tabs" role="group" aria-label="Фильтр результатов поиска">
+          <button class="search-mode-btn active" type="button" data-search-mode="all" aria-pressed="true">Все</button>
+          <button class="search-mode-btn" type="button" data-search-mode="teams" aria-pressed="false">Команды</button>
+          <button class="search-mode-btn" type="button" data-search-mode="competitions" aria-pressed="false">Лиги</button>
+          <button class="search-mode-btn" type="button" data-search-mode="upcoming" aria-pressed="false">Предстоящие</button>
+          <button class="search-mode-btn" type="button" data-search-mode="finished" aria-pressed="false">Завершённые</button>
+        </div>
         <div id="searchStatus"></div>
         <section id="searchResultsWrap" class="search-section" hidden>
           <div class="mini-section-head"><strong>Результаты</strong><span id="searchResultsMeta"></span></div>
@@ -607,6 +614,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=6.25.0"></script>
+  <script type="module" src="/app.js?v=6.26.0"></script>
 </body>
 </html>

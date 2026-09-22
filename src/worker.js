@@ -73,11 +73,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.25.0-rc33';
+const APP_VERSION = '6.26.0-rc34';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc33';
-const RC_NAME = 'RC33';
+const RELEASE_CHANNEL = 'rc34';
+const RC_NAME = 'RC34';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -665,6 +665,8 @@ function appManifest(cfg) {
       twoPassSettlementFinality: true,
       calibrationPromotionGate: true,
       adaptiveWeightsHoldout: true,
+      unifiedSearch: true,
+      searchMatchHistory: true,
       calibrationChampionChallenger: true,
       calibrationAutomaticRollback: true,
     },

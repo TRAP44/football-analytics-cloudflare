@@ -132,7 +132,7 @@ test('obsolete release/admin copy is not exposed by the current worker', () => {
   ]) assert.equal(worker.includes(phrase), false, phrase);
 });
 
-test('RC33 health publishes all localization contracts', () => {
+test('RC34 health publishes all localization contracts', () => {
   assert.match(worker, /russianUiLocalization:\s*'enabled'/);
   assert.match(worker, /adminRussianLocalization:\s*'enabled'/);
   assert.match(worker, /prematchRussianLocalization:\s*'enabled'/);
