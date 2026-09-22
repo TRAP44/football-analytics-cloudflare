@@ -1775,7 +1775,7 @@ async function handleTelegramWebhook(request, cfg) {
   }
 
   if (chatId && (/^\/live(?:@\w+)?(?:\s|$)/i.test(text) || /^live$/i.test(text) || /^лайв$/i.test(text))) {
-    await telegramApi('sendMessage', cfg, { chat_id: chatId, text: '🔴 Открываю AI LIVE-центр: счёт, минута, давление, xG/удары, ключевые события и сравнение с предматчевым сценарием, если он был сохранён.', reply_markup: { inline_keyboard: [[{ text: '🔴 Открыть LIVE', web_app: { url: telegramWebAppUrl(request, { filter: 'live' }) } }]] } });
+    await telegramApi('sendMessage', cfg, { chat_id: chatId, text: '🔴 Открываю AI-центр матча в реальном времени: счёт, минута, давление, xG/удары, ключевые события и сравнение с предматчевым сценарием, если он был сохранён.', reply_markup: { inline_keyboard: [[{ text: '🔴 Открыть LIVE', web_app: { url: telegramWebAppUrl(request, { filter: 'live' }) } }]] } });
     return json({ ok: true });
   }
 
