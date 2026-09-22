@@ -4305,6 +4305,29 @@ function matchCardHtml(m, { grouped = false } = {}) {
     </article>`;
 }
 
+function bindMatchActions(root = document) {
+  root.querySelectorAll('.analyze-btn[data-fixture]').forEach(btn => {
+    btn.addEventListener('click', () => analyzeMatch(Number(btn.dataset.fixture), btn));
+  });
+  root.querySelectorAll('.analyze-btn[data-center]').forEach(btn => {
+    btn.addEventListener('click', () => openMatchCenter(Number(btn.dataset.center), btn));
+  });
+  root.querySelectorAll('.analyze-btn[data-history-analysis]').forEach(btn => {
+    btn.addEventListener('click', () => openHistoryAnalysis(Number(btn.dataset.historyAnalysis), btn));
+  });
+  root.querySelectorAll('.fav-star').forEach(btn => btn.addEventListener('click', () => toggleFavorite({
+    id: Number(btn.dataset.teamId), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '',
+  })));
+  root.querySelectorAll('[data-quick-reminder]').forEach(btn => btn.addEventListener('click', () => {
+    const fixtureId = Number(btn.dataset.quickReminder);
+    const match = state.matches.find(item => Number(item.fixtureId) === fixtureId);
+    if (match) toggleReminder(match);
+  }));
+  root.querySelectorAll('[data-open-tournament]').forEach(btn => btn.addEventListener('click', () => openTournament(Number(btn.dataset.openTournament))));
+  root.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => openTeam({ id: Number(btn.dataset.openTeam), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '' })));
+}
+
+
 function analysisHistoryForFixture(fixtureId) {
   const id = Number(fixtureId || 0);
   if (!id) return null;
@@ -4335,28 +4358,6 @@ function renderAiCenterSummary() {
   wrap.innerHTML = `<div class="ai-center-head"><div><span>AI-ЦЕНТР</span><strong>Уже разобранные матчи</strong></div><small>Повторное открытие не тратит новый анализ</small></div><div class="ai-center-metrics"><div><b>${signals.length}</b><span>сигналов</span></div><div><b>${skips.length}</b><span>пропустить</span></div><div><b>${highRisk.length}</b><span>высокий риск</span></div></div><button class="ai-center-feature" type="button" data-ai-center-history="${Number(m.fixtureId)}"><span>${h.aiSignalCode === 'skip' ? '⚠️ Осторожно' : '🧠 Сильнейший разбор'}</span><strong>${escapeHtml(m.home?.name || '')} — ${escapeHtml(m.away?.name || '')}</strong><small>${escapeHtml(h.aiSignalLabel || 'AI-разбор')} · уверенность ${Math.round(Number(h.aiConfidence || 0))}/100</small></button>`;
   wrap.querySelector('[data-ai-center-history]')?.addEventListener('click', event => openHistoryAnalysis(Number(event.currentTarget.dataset.aiCenterHistory), event.currentTarget));
 }
-function bindMatchActions(root = document) {
-  root.querySelectorAll('.analyze-btn[data-fixture]').forEach(btn => {
-    btn.addEventListener('click', () => analyzeMatch(Number(btn.dataset.fixture), btn));
-  });
-  root.querySelectorAll('.analyze-btn[data-center]').forEach(btn => {
-    btn.addEventListener('click', () => openMatchCenter(Number(btn.dataset.center), btn));
-  });
-  root.querySelectorAll('.analyze-btn[data-history-analysis]').forEach(btn => {
-    btn.addEventListener('click', () => openHistoryAnalysis(Number(btn.dataset.historyAnalysis), btn));
-  });
-  root.querySelectorAll('.fav-star').forEach(btn => btn.addEventListener('click', () => toggleFavorite({
-    id: Number(btn.dataset.teamId), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '',
-  })));
-  root.querySelectorAll('[data-quick-reminder]').forEach(btn => btn.addEventListener('click', () => {
-    const fixtureId = Number(btn.dataset.quickReminder);
-    const match = state.matches.find(item => Number(item.fixtureId) === fixtureId);
-    if (match) toggleReminder(match);
-  }));
-  root.querySelectorAll('[data-open-tournament]').forEach(btn => btn.addEventListener('click', () => openTournament(Number(btn.dataset.openTournament))));
-  root.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => openTeam({ id: Number(btn.dataset.openTeam), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '' })));
-}
-
 function renderAiFocus() {
   const wrap = $('aiFocus');
   if (!wrap) return;
