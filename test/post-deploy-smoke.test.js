@@ -54,6 +54,10 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         firstPartyGrowthAnalytics: 'enabled',
         launchFunnelAnalytics: 'enabled',
         launchPrivacyGuard: 'enabled',
+        launchSimulation: 'enabled',
+        conversionUx: 'enabled',
+        highIntentSearchFallback: 'enabled',
+        newsReturnLoop: 'enabled',
       });
     }
     if (url.pathname === '/api/app-manifest') return json({ version: '6.27.0-rc35', releaseCandidate: 'RC35' });
@@ -81,7 +85,7 @@ test('post-deploy smoke validates RC35, security headers and protected routes', 
     retryDelayMs: 0,
   });
   assert.equal(result.ok, true);
-  assert.equal(result.checks, 18);
+  assert.equal(result.checks, 19);
 });
 
 test('post-deploy smoke retries while the previous Worker version is propagating', async () => {

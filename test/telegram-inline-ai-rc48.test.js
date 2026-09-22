@@ -36,7 +36,7 @@ test('match cards are cached and selectable from multi-result search and daily p
 
 test('find-match button prompts for natural text in chat',()=> {
   assert.match(worker,/text === '🔎 Найти матч'/);
-  assert.match(worker,/Напишите название команды или конкретный матч/);
+  assert.match(worker,/Напишите клуб или конкретный матч/);
 });
 
 test('RC48 health exposes inline bot contracts',()=> {

@@ -8,9 +8,9 @@ test('public onboarding explains the Telegram and Mini App roles',()=> {
   assert.match(worker,/function sendFootballBotHome/);
   assert.match(worker,/telegramUser = \{\}/);
   assert.match(worker,/Привет, <b>/);
-  assert.match(worker,/Новости и LIVE остаются здесь, в Telegram/);
+  assert.match(worker,/Новости.*LIVE остаются здесь, в Telegram/);
   assert.match(worker,/Полный AI-разбор/);
-  assert.match(worker,/Если данных недостаточно или сценарий слабый/);
+  assert.match(worker,/Если данных мало или перевеса нет/);
 });
 
 test('match cards preserve team identity and use FM AI branding',()=> {
