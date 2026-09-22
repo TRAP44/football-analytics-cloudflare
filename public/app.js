@@ -3943,7 +3943,7 @@ function renderMatches() {
   const summaryBits = [
     `<span class="summary-pill"><b>${list.length}</b> из ${state.matches.length}</span>`,
     groups.length ? `<span class="summary-pill"><b>${groups.length}</b> турниров</span>` : '',
-    Number(catalog.live || 0) > 0 ? `<span class="summary-pill live"><b>${Number(catalog.live)}</b> LIVE</span>` : '',
+    Number(catalog.live || 0) > 0 ? `<span class="summary-pill live"><b>${Number(catalog.live)}</b> сейчас идут</span>` : '',
     Number.isFinite(Number(integrity.qualityScore)) ? `<span class="summary-pill quality">данные <b>${Math.round(Number(integrity.qualityScore))}%</b></span>` : '',
     age ? `<span class="summary-pill muted-pill">↻ ${escapeHtml(age)}</span>` : '',
   ].filter(Boolean);
@@ -3971,7 +3971,7 @@ function renderMatches() {
       <button class="competition-group-head" type="button" data-open-tournament="${Number(first.leagueId)}">
         <span class="competition-group-logo">${first.leagueLogo ? `<img src="${safeUrl(first.leagueLogo)}" alt="">` : '🏆'}</span>
         <span class="competition-group-main"><strong>${escapeHtml(first.league || 'Турнир')}</strong><small>${escapeHtml(first.country || '')}${first.season ? ` · сезон ${Number(first.season)}` : ''}</small></span>
-        <span class="competition-group-count">${liveCount ? `<b>${liveCount} LIVE</b>` : ''}<small>${rows.length} ${rows.length === 1 ? 'матч' : 'матчей'}</small><i>›</i></span>
+        <span class="competition-group-count">${liveCount ? `<b>${liveCount} сейчас</b>` : ''}<small>${rows.length} ${rows.length === 1 ? 'матч' : 'матчей'}</small><i>›</i></span>
       </button>
       <div class="competition-group-matches">${rows.map(m => matchCardHtml(m, { grouped: true })).join('')}</div>
     </section>`;
@@ -4023,7 +4023,7 @@ function renderTournamentHero() {
     </div>
     <div class="tournament-summary">
       <div><span>Матчей в выбранный день</span><strong>${rows.length}</strong></div>
-      <div><span>LIVE сейчас</span><strong>${live}</strong></div>
+      <div><span>Сейчас идут</span><strong>${live}</strong></div>
       <div><span>Покрытие</span><strong>${escapeHtml(t.tier === 'elite' ? 'Высокое' : t.tier === 'major' ? 'Хорошее' : 'Стандарт')}</strong></div>
     </div>
   </section>`;
@@ -4133,7 +4133,7 @@ function teamResultBadge(result) {
   return `<span class="team-result ${r === 'W' ? 'win' : r === 'D' ? 'draw' : 'loss'}">${r === 'W' ? 'В' : r === 'D' ? 'Н' : 'П'}</span>`;
 }
 function teamMatchRow(m) {
-  const center = m.live ? `<button class="mini-match-action live" type="button" data-center="${Number(m.fixtureId)}">LIVE</button>` : m.finished ? `<span class="team-score">${m.score?.home ?? '—'} : ${m.score?.away ?? '—'}</span>` : `<button class="mini-match-action" type="button" data-fixture="${Number(m.fixtureId)}">Анализ</button>`;
+  const center = m.live ? `<button class="mini-match-action live" type="button" data-center="${Number(m.fixtureId)}">Сейчас</button>` : m.finished ? `<span class="team-score">${m.score?.home ?? '—'} : ${m.score?.away ?? '—'}</span>` : `<button class="mini-match-action" type="button" data-fixture="${Number(m.fixtureId)}">Анализ</button>`;
   return `<article class="team-fixture-row"><div class="team-fixture-date"><strong>${escapeHtml(dateTime(m.date))}</strong><small>${escapeHtml(m.roundLabel || m.league || '')}</small></div><div class="team-fixture-opponent">${m.opponent?.logo ? `<img src="${safeUrl(m.opponent.logo)}" alt="">` : '<span>⚽</span>'}<div><strong>${escapeHtml(m.opponent?.name || '')}</strong><small>${m.venue === 'home' ? 'Дома' : 'В гостях'} · ${escapeHtml(m.league || '')}</small></div></div><div class="team-fixture-outcome">${teamResultBadge(m.result)}${center}</div></article>`;
 }
 function bindTeamFixtureActions(root) {
@@ -4909,7 +4909,7 @@ function renderMatchCenter(d) {
 
     <div class="center-tab-panel" data-center-panel="market">
       <section class="panel">
-        <div class="center-section-title"><div><h2>💹 LIVE-рынок</h2><p>1X2 и движение расчётная рыночная вероятность</p></div></div>
+        <div class="center-section-title"><div><h2>💹 Рынок в реальном времени</h2><p>Коэффициенты 1X2 и изменение расчётной рыночной вероятности</p></div></div>
         ${centerMarketHtml(d)}
       </section>
     </div>
