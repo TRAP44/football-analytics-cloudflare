@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#111827" />
   <title>Футбольная аналитика · Матчи</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=6.22.0" />
+  <link rel="stylesheet" href="/styles.css?v=6.23.0" />
 </head>
 <body>
   <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
     <div class="boot-card">
       <div class="boot-logo"><span>FM</span></div>
-      <div class="boot-kicker">ФУТБОЛЬНАЯ АНАЛИТИКА · версия RC30</div>
+      <div class="boot-kicker">ФУТБОЛЬНАЯ АНАЛИТИКА · версия 6.23</div>
       <h1 id="bootTitle">Запускаю приложение</h1>
       <p id="bootText">Проверяю совместимость версии…</p>
       <div class="boot-progress" aria-hidden="true"><i id="bootProgressFill"></i></div>
@@ -223,7 +223,7 @@
             <div><span>Статистика игроков</span><strong id="dataModePlayers">По доступности</strong></div>
             <div><span>Коэффициенты во время матча</span><strong id="dataModeOdds">По доступности</strong></div>
           </div>
-          <p id="dataModeNote" class="tiny">Покрытие зависит от турнира и доступности данных провайдера.</p>
+          <p id="dataModeNote" class="tiny">Покрытие зависит от турнира и доступности данных источника.</p>
         </section>
 
         <section class="panel preferences-panel">
@@ -300,7 +300,7 @@
           <div id="modelQualityCalibration" class="quality-block" hidden></div>
           <div id="modelQualityEngine" class="quality-block" hidden></div>
           <div id="calibrationControl" class="quality-block calibration-control-block">
-            <div class="quality-block-head"><strong>🧭 Управление калибровкой RC30</strong><span>атомарная смена + журнал</span></div>
+            <div class="quality-block-head"><strong>🧭 Управление калибровкой</strong><span>безопасная смена + журнал</span></div>
             <div id="calibrationControlStatus" class="tiny quality-status">Состояние жизненного цикла ещё не загружено.</div>
             <div id="calibrationControlSummary" class="calibration-control-summary"></div>
             <label class="runtime-message-field calibration-control-reason">
@@ -313,7 +313,7 @@
               <button id="calibrationRollbackBtn" class="reminder-btn danger" type="button">Вернуть предыдущий</button>
             </div>
             <div id="calibrationControlHistory" class="model-remediation-history"></div>
-            <p class="tiny quality-method-note">Переход выполняется одной транзакцией Supabase с проверкой версии. Конкурирующее изменение будет отклонено, а не перезаписано.</p>
+            <p class="tiny quality-method-note">Изменение выполняется безопасно с проверкой версии данных. Одновременное изменение не перезапишет уже сохранённые настройки.</p>
           </div>
           <div id="modelQualityConfidence" class="quality-block" hidden></div>
           <div id="modelQualitySecondary" class="quality-block" hidden></div>
@@ -344,7 +344,7 @@
           <div class="section-head profile-section-head">
             <div>
               <h2>📡 Источник футбольных данных</h2>
-              <p>План определяется автоматически по лимитам API-Football.</p>
+              <p>Тариф определяется автоматически по доступным лимитам источника API-Football.</p>
             </div>
           </div>
           <div class="provider-status-grid">
@@ -438,7 +438,7 @@
             <label class="runtime-control-row"><div><strong>Автообновление матча</strong><small>Останавливает автоматическое обновление матча, не отключая уже сохранённый центр матча.</small></div><input id="runtimeLiveToggle" type="checkbox" checked></label>
             <label class="runtime-control-row"><div><strong>Новые уведомления</strong><small>Создание новых уведомлений и их доставка по расписанию. Существующие уведомления можно удалять.</small></div><input id="runtimeRemindersToggle" type="checkbox" checked></label>
             <label class="runtime-control-row"><div><strong>Расширенные данные провайдера</strong><small>Игроки, травмы, коэффициенты во время матча и другие дополнительные данные. Основные события и статистика остаются доступными.</small></div><input id="runtimeExpandedToggle" type="checkbox" checked></label>
-            <label class="runtime-control-row"><div><strong>Автовосстановление результатов</strong><small>RC30: один безопасный пакет в сутки, до 20 матчей / 5 дат. По умолчанию только наблюдение; ручное восстановление остаётся доступным.</small></div><input id="runtimeAutoSettlementRecoveryToggle" type="checkbox"></label>
+            <label class="runtime-control-row"><div><strong>Автовосстановление результатов</strong><small>Один безопасный пакет в сутки, до 20 матчей / 5 дат. По умолчанию только наблюдение; ручное восстановление остаётся доступным.</small></div><input id="runtimeAutoSettlementRecoveryToggle" type="checkbox"></label>
           </div>
 
           <label class="runtime-message-field">
@@ -517,14 +517,14 @@
         <section class="panel rc-panel" data-admin-only hidden>
           <div class="section-head profile-section-head">
             <div>
-              <h2>🚦 Кандидат на выпуск RC30</h2>
-              <p>Регрессионная проверка: среда выполнения, безопасность, схема базы, пользовательские маршруты и клиентский контракт.</p>
+              <h2>🚦 Проверка перед выпуском</h2>
+              <p>Регрессионная проверка: работа функций, безопасность, база данных, пользовательские маршруты и совместимость интерфейса с сервером.</p>
             </div>
             <button id="rcRunBtn" class="primary-setting-btn rc-run-btn" type="button">Запустить проверку</button>
           </div>
 
           <div class="rc-status-row">
-            <span id="rcBadge" class="rc-badge">RC30</span>
+            <span id="rcBadge" class="rc-badge">Версия 31</span>
             <div>
               <strong id="rcStatus">Полная регрессионная проверка ещё не запускалась.</strong>
               <small id="rcMeta">Без полного анализа, без изменения пользовательских данных и без расхода API-Football.</small>
@@ -556,7 +556,7 @@
         <section class="panel production-readiness-panel" data-admin-only hidden>
           <div class="section-head profile-section-head">
             <div>
-              <h2>🛡 Производственная проверка и защита от нагрузки</h2>
+              <h2>🛡 Проверка стабильности и защита от нагрузки</h2>
               <p>Проверка защиты от параллельных запросов, зависших внешних сервисов и серии повторных нажатий.</p>
             </div>
             <button id="productionReadinessRefreshBtn" class="icon-btn" type="button" aria-label="Повторить производственную проверку">↻</button>
@@ -564,7 +564,7 @@
 
           <div class="production-status-row">
             <span id="productionReadinessBadge" class="production-badge">ОЖИДАНИЕ</span>
-            <div><strong id="productionReadinessStatus">Проверка производственной безопасности ещё не запускалась.</strong><small>Тест не создаёт внешнюю нагрузку и не расходует API-Football.</small></div>
+            <div><strong id="productionReadinessStatus">Проверка стабильности ещё не запускалась.</strong><small>Тест не создаёт внешнюю нагрузку и не расходует API-Football.</small></div>
             <strong id="productionReadinessScore" class="production-score">—</strong>
           </div>
 
@@ -607,6 +607,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=6.22.0"></script>
+  <script type="module" src="/app.js?v=6.23.0"></script>
 </body>
 </html>
