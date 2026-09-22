@@ -43,6 +43,24 @@ test('common user-facing mixed English labels are removed from the Mini App', ()
     'Теневой challenger',
   ];
   for (const phrase of forbiddenApp) assert.equal(app.includes(phrase), false, phrase);
+  const rc30Forbidden = [
+    'MATCH BRIEF',
+    'Вес в blend',
+    'signal-level данные',
+    'Active champion',
+    'Baseline champion',
+    "embedded: 'fixture'",
+    "cache: 'cache'",
+    "stale: 'stale'",
+    "skipped: 'skip'",
+    "error: 'error'",
+    "liveOdds:'LIVE odds'",
+    ' · TTL ',
+  ];
+  for (const phrase of rc30Forbidden) assert.equal(app.includes(phrase), false, phrase);
+  assert.match(app, /function publicText\(value\)/);
+  assert.match(app, /function dataPolicyModeLabel\(value\)/);
+  assert.match(app, /function predictionAdviceLabel\(value\)/);
 });
 
 test('admin panels have a display-only technical vocabulary translator', () => {
@@ -76,8 +94,11 @@ test('obsolete release/admin copy is not exposed by the current worker', () => {
   for (const phrase of forbidden) assert.equal(worker.includes(phrase), false, phrase);
 });
 
-test('RC29 health publishes all localization contracts', () => {
+test('RC30 health publishes all localization contracts', () => {
   assert.match(worker, /russianUiLocalization:\s*'enabled'/);
   assert.match(worker, /adminRussianLocalization:\s*'enabled'/);
   assert.match(worker, /prematchRussianLocalization:\s*'enabled'/);
+  assert.match(worker, /dynamicRussianLocalization:\s*'enabled'/);
+  assert.match(worker, /adminTextHumanization:\s*'enabled'/);
+  assert.match(worker, /matchCenterRussianLocalization:\s*'enabled'/);
 });
