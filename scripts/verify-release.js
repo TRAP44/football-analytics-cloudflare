@@ -60,10 +60,10 @@ if (!app.includes('reminderMutations: new Set()')) failures.push('Reminder mutat
 if (!fs.existsSync('test/quick-reminder-onboarding.test.js')) failures.push('Missing RC44 quick-reminder/onboarding regression test');
 if (!fs.existsSync('test/main-screen-focus.test.js')) failures.push('Missing RC44 focused-home regression test');
 if (!fs.existsSync('test/ai-instructor-bot.test.js')) failures.push('Missing RC44 AI-instructor/bot regression test');
-if (!fs.existsSync('test/ai-instructor-rc44.test.js')) failures.push('Missing RC44 AI-intelligence regression test');
+if (!fs.existsSync('test/ai-instructor-rc41.test.js')) failures.push('Missing RC41 AI-intelligence regression test');
 if (!fs.existsSync('test/live-ai-rc44.test.js')) failures.push('Missing RC44 AI LIVE regression test');
-if (!fs.existsSync('test/ai-instructor-rc44.test.js')) failures.push('Missing RC44 persistent-AI regression test');
-if (!fs.existsSync('test/ai-instructor-rc44.test.js')) failures.push('Missing RC44 referee/AI-focus regression test');
+if (!fs.existsSync('test/ai-instructor-rc43.test.js')) failures.push('Missing RC43 persistent-AI regression test');
+if (!fs.existsSync('test/ai-instructor-rc42.test.js')) failures.push('Missing RC42 referee/AI-focus regression test');
 if (!worker.includes('function loadRefereeHistoryProfile')) failures.push('RC44 referee history loader is missing');
 if (!worker.includes('saveRefereeMatchHistory')) failures.push('RC44 referee history collector is missing');
 if (!app.includes('function renderAiFocus')) failures.push('RC44 AI focus card is missing');
