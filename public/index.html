@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#111827" />
   <title>Футбольная аналитика · Матчи</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=6.27.0" />
+  <link rel="stylesheet" href="/styles.css?v=6.28.0" />
 </head>
 <body>
   <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
     <div class="boot-card">
       <div class="boot-logo"><span>FM</span></div>
-      <div class="boot-kicker">ФУТБОЛЬНАЯ АНАЛИТИКА · версия 6.27</div>
+      <div class="boot-kicker">ФУТБОЛЬНАЯ АНАЛИТИКА · версия 6.28</div>
       <h1 id="bootTitle">Запускаю приложение</h1>
       <p id="bootText">Проверяю совместимость версии…</p>
       <div class="boot-progress" aria-hidden="true"><i id="bootProgressFill"></i></div>
@@ -58,6 +58,19 @@
           <button class="date-btn" type="button" data-offset="1">Завтра</button>
         </div>
 
+        <section id="dailyOverview" class="daily-overview" aria-live="polite">
+          <div class="daily-overview-copy">
+            <span>ВАШ ФУТБОЛЬНЫЙ ДЕНЬ</span>
+            <h2 id="dailyOverviewTitle">Главное без лишнего</h2>
+            <p id="dailyOverviewText">Собираю матчи, которые важны именно вам.</p>
+          </div>
+          <div class="daily-overview-actions">
+            <button type="button" class="overview-action live" data-quick-filter="live"><b id="overviewLiveCount">0</b><span>Сейчас</span></button>
+            <button type="button" class="overview-action favorite" data-quick-filter="favorites"><b id="overviewFavoriteCount">0</b><span>Любимые</span></button>
+            <button id="overviewSearchBtn" type="button" class="overview-action search"><b>⌕</b><span>Найти</span></button>
+          </div>
+        </section>
+
         <div class="search-row">
           <input id="matchSearch" class="search-input" type="search" aria-label="Поиск по матчам" inputmode="search" placeholder="🔎 Команда, турнир или страна" autocomplete="off" />
         </div>
@@ -66,15 +79,21 @@
           <button type="button" class="filter-btn active" data-filter="top">🔥 Главные</button>
           <button type="button" class="filter-btn" data-filter="live">🔴 Сейчас</button>
           <button type="button" class="filter-btn" data-filter="favorites">⭐ Избранное</button>
-          <button type="button" class="filter-btn" data-filter="international">🌍 Международные</button>
-          <button type="button" class="filter-btn" data-filter="cups">🏆 Кубки</button>
-          <button type="button" class="filter-btn" data-filter="england">🏴 Англия</button>
-          <button type="button" class="filter-btn" data-filter="spain">🇪🇸 Испания</button>
-          <button type="button" class="filter-btn" data-filter="italy">🇮🇹 Италия</button>
-          <button type="button" class="filter-btn" data-filter="germany">🇩🇪 Германия</button>
-          <button type="button" class="filter-btn" data-filter="france">🇫🇷 Франция</button>
           <button type="button" class="filter-btn" data-filter="all">Все</button>
         </div>
+
+        <details class="league-filter-drawer">
+          <summary>Лиги и турниры <span>Выбрать</span></summary>
+          <div class="league-filter-grid">
+            <button type="button" class="filter-btn" data-filter="international">🌍 Международные</button>
+            <button type="button" class="filter-btn" data-filter="cups">🏆 Кубки</button>
+            <button type="button" class="filter-btn" data-filter="england">🏴 Англия</button>
+            <button type="button" class="filter-btn" data-filter="spain">🇪🇸 Испания</button>
+            <button type="button" class="filter-btn" data-filter="italy">🇮🇹 Италия</button>
+            <button type="button" class="filter-btn" data-filter="germany">🇩🇪 Германия</button>
+            <button type="button" class="filter-btn" data-filter="france">🇫🇷 Франция</button>
+          </div>
+        </details>
 
         <section id="popularCompetitionsWrap" class="popular-competitions" hidden>
           <div class="mini-section-head"><strong>Популярные турниры</strong><span>Открыть турнир</span></div>
@@ -241,6 +260,22 @@
             </div>
           </div>
           <div class="preferences-grid">
+            <fieldset class="appearance-fieldset">
+              <legend>Цвет интерфейса</legend>
+              <div class="theme-options" role="radiogroup" aria-label="Цвет интерфейса">
+                <button type="button" class="theme-option" data-theme-choice="system" aria-pressed="false"><i class="theme-preview system"></i><span>Telegram</span></button>
+                <button type="button" class="theme-option" data-theme-choice="dark" aria-pressed="false"><i class="theme-preview dark"></i><span>Чёрный</span></button>
+                <button type="button" class="theme-option" data-theme-choice="light" aria-pressed="false"><i class="theme-preview light"></i><span>Белый</span></button>
+                <button type="button" class="theme-option" data-theme-choice="ocean" aria-pressed="false"><i class="theme-preview ocean"></i><span>Океан</span></button>
+              </div>
+            </fieldset>
+            <fieldset class="appearance-fieldset">
+              <legend>Форма кнопок</legend>
+              <div class="button-style-options" role="radiogroup" aria-label="Форма кнопок">
+                <button type="button" data-button-style-choice="soft" aria-pressed="false">Мягкие</button>
+                <button type="button" data-button-style-choice="compact" aria-pressed="false">Строгие</button>
+              </div>
+            </fieldset>
             <label class="setting-field">
               <span>Экран матчей по умолчанию</span>
               <select id="defaultFilterSelect">
@@ -281,6 +316,24 @@
             </div>
           </div>
           <div id="favoriteTeams" class="favorite-teams"></div>
+        </section>
+
+        <section class="panel admin-console" data-admin-only hidden>
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>🛠 Центр управления</h2>
+              <p>Ежедневные действия на виду, редкие проверки убраны в отдельный раздел.</p>
+            </div>
+          </div>
+          <div class="admin-console-actions">
+            <button type="button" data-admin-target="runtimeControlsPanel"><span>🧯</span><strong>Функции</strong><small>Включить или остановить</small></button>
+            <button type="button" data-admin-target="providerStatusPanel"><span>📡</span><strong>Источник</strong><small>Тариф и лимиты</small></button>
+            <button type="button" data-admin-target="diagnosticsPanel"><span>🩺</span><strong>Диагностика</strong><small>Проверить систему</small></button>
+          </div>
+          <details id="adminAdvancedTools" class="admin-advanced-tools">
+            <summary><span><strong>Дополнительные инструменты</strong><small>Модель, выпуск, уведомления и нагрузка</small></span><b>7 разделов</b></summary>
+            <div id="adminAdvancedContent" class="admin-advanced-content"></div>
+          </details>
         </section>
 
         <section class="panel model-quality-panel" data-admin-only hidden>
@@ -347,7 +400,7 @@
           <p class="tiny quality-method-note">Для каждого матча сохраняется первый предматчевый расчёт. Поздние перерасчёты не переписывают историю, поэтому статистика не «подгоняется» под результат.</p>
         </section>
 
-        <section class="panel" data-admin-only hidden>
+        <section id="providerStatusPanel" class="panel provider-status-panel" data-admin-only hidden>
           <div class="section-head profile-section-head">
             <div>
               <h2>📡 Источник футбольных данных</h2>
@@ -424,7 +477,7 @@
           <p class="tiny diagnostics-privacy">Полная проверка запускается администратором вручную. Результат сохраняется на 15 минут. Пустой ответ не всегда означает ошибку: доступность данных зависит от турнира и стадии матча.</p>
         </section>
 
-        <section class="panel runtime-controls-panel" data-admin-only hidden>
+        <section id="runtimeControlsPanel" class="panel runtime-controls-panel" data-admin-only hidden>
           <div class="section-head profile-section-head">
             <div>
               <h2>🧯 Управление функциями</h2>
@@ -531,7 +584,7 @@
           </div>
 
           <div class="rc-status-row">
-            <span id="rcBadge" class="rc-badge">Версия 31</span>
+            <span id="rcBadge" class="rc-badge">Версия 36</span>
             <div>
               <strong id="rcStatus">Полная регрессионная проверка ещё не запускалась.</strong>
               <small id="rcMeta">Без полного анализа, без изменения пользовательских данных и без расхода API-Football.</small>
@@ -579,7 +632,7 @@
           <div id="productionReadinessRuntime" class="production-runtime"></div>
         </section>
 
-        <section class="panel diagnostics-panel" data-admin-only hidden>
+        <section id="diagnosticsPanel" class="panel diagnostics-panel" data-admin-only hidden>
           <div class="section-head profile-section-head diagnostics-head">
             <div>
               <h2>🛠 Диагностика системы</h2>
@@ -614,6 +667,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=6.27.0"></script>
+  <script type="module" src="/app.js?v=6.28.0"></script>
 </body>
 </html>

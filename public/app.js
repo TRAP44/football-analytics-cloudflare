@@ -1,6 +1,23 @@
-const CLIENT_VERSION = '6.27.0-rc35';
+const CLIENT_VERSION = '6.28.0-rc36';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc35';
+const CLIENT_RELEASE_CHANNEL = 'rc36';
+
+const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
+const DEFAULT_UI_PREFERENCES = { theme: 'system', buttonStyle: 'soft' };
+function readUiPreferences() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(UI_PREFERENCES_KEY) || '{}');
+    return {
+      theme: ['system', 'dark', 'light', 'ocean'].includes(saved.theme) ? saved.theme : DEFAULT_UI_PREFERENCES.theme,
+      buttonStyle: ['soft', 'compact'].includes(saved.buttonStyle) ? saved.buttonStyle : DEFAULT_UI_PREFERENCES.buttonStyle,
+    };
+  } catch {
+    return { ...DEFAULT_UI_PREFERENCES };
+  }
+}
+const initialUiPreferences = readUiPreferences();
+document.documentElement.dataset.theme = initialUiPreferences.theme;
+document.documentElement.dataset.buttonStyle = initialUiPreferences.buttonStyle;
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -18,6 +35,7 @@ const state = {
   favorites: [],
   reminders: [],
   preferences: { defaultFilter: 'top', reminderMinutes: 30, kickoffNotification: true, hideYouth: true, favoriteFirst: true },
+  uiPreferences: initialUiPreferences,
   preferencesApplied: false,
   provider: null,
   providerTransition: null,
@@ -135,6 +153,35 @@ const MATCH_SNAPSHOT_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 
 const $ = id => document.getElementById(id);
 const views = ['matchesView', 'searchView', 'tournamentView', 'teamView', 'analysisView', 'historyView', 'profileView'];
+
+function applyInterfacePreferences({ announce = false } = {}) {
+  const prefs = state.uiPreferences || DEFAULT_UI_PREFERENCES;
+  document.documentElement.dataset.theme = prefs.theme;
+  document.documentElement.dataset.buttonStyle = prefs.buttonStyle;
+  document.querySelectorAll('[data-theme-choice]').forEach(button => {
+    const active = button.dataset.themeChoice === prefs.theme;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+  document.querySelectorAll('[data-button-style-choice]').forEach(button => {
+    const active = button.dataset.buttonStyleChoice === prefs.buttonStyle;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+  requestAnimationFrame(() => {
+    const background = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0b1220';
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', background);
+    try { tg?.setHeaderColor(background); } catch {}
+    try { tg?.setBackgroundColor(background); } catch {}
+  });
+  if (announce) toast('Оформление применено');
+}
+
+function saveInterfacePreference(key, value) {
+  state.uiPreferences = { ...state.uiPreferences, [key]: value };
+  try { localStorage.setItem(UI_PREFERENCES_KEY, JSON.stringify(state.uiPreferences)); } catch {}
+  applyInterfacePreferences({ announce: true });
+}
 
 const VIEW_CHROME = {
   matchesView: ['Матчи', 'Сегодня, матчи в реальном времени и предматчевая аналитика'],
@@ -900,6 +947,37 @@ function applyAdminVisibility() {
   }
 }
 
+function organizeAdminConsole() {
+  const content = $('adminAdvancedContent');
+  if (!content || content.dataset.ready === 'true') return;
+  [
+    '.model-quality-panel',
+    '.provider-audit-panel',
+    '.reminder-health-panel',
+    '.release-monitor-panel',
+    '.rc-panel',
+    '.release-panel',
+    '.production-readiness-panel',
+  ].forEach(selector => {
+    const panel = document.querySelector(selector);
+    if (panel) content.append(panel);
+  });
+  content.dataset.ready = 'true';
+}
+
+async function loadAdvancedAdminTools() {
+  if (!isAdmin()) return;
+  await Promise.allSettled([
+    loadModelQuality(false),
+    loadCalibrationControl(false),
+    loadModelRemediation(false),
+    loadReleaseReadiness(false),
+    loadProductionReadiness(false),
+    loadReleaseMonitor(false),
+    loadReminderHealth(false),
+  ]);
+}
+
 function renderDataCapabilities() {
   const c = state.dataCapabilities || state.profile?.features?.dataCapabilities || {};
   const features = c.features || {};
@@ -1163,6 +1241,7 @@ function renderProfile() {
   if ($('kickoffNotificationToggle')) $('kickoffNotificationToggle').checked = prefs.kickoffNotification !== false;
   if ($('hideYouthToggle')) $('hideYouthToggle').checked = prefs.hideYouth !== false;
   if ($('favoriteFirstToggle')) $('favoriteFirstToggle').checked = prefs.favoriteFirst !== false;
+  applyInterfacePreferences();
   renderFavoriteTeams();
   renderReminderList();
   renderBilling();
@@ -1869,7 +1948,7 @@ async function openProfileView() {
   if (!state.remindersLoaded) essentials.push(loadReminders());
   if (isAdmin()) {
     if (!state.providerLoaded) essentials.push(loadProvider());
-    essentials.push(loadRuntimeControlsAdmin(false), loadModelQuality(false), loadCalibrationControl(false), loadModelRemediation(false), loadReleaseReadiness(false), loadProductionReadiness(false), loadReleaseMonitor(false), loadReminderHealth(false));
+    essentials.push(loadRuntimeControlsAdmin(false));
   }
   await Promise.allSettled(essentials);
 }
@@ -3913,7 +3992,38 @@ async function loadMatches(options = {}) {
 }
 
 function syncFilterButtons() {
-  document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.filter === state.filter));
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    const active = btn.dataset.filter === state.filter;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+  const drawer = document.querySelector('.league-filter-drawer');
+  if (drawer) drawer.classList.toggle('has-active-filter', ['international', 'cups', 'england', 'spain', 'italy', 'germany', 'france'].includes(state.filter));
+}
+
+function renderDailyOverview() {
+  const title = $('dailyOverviewTitle');
+  const text = $('dailyOverviewText');
+  if (!title || !text) return;
+  const favorites = favoriteSet();
+  const visible = state.matches.filter(match => state.preferences?.hideYouth === false || !match.youthReserve);
+  const live = visible.filter(match => match.live).length;
+  const favoriteMatches = visible.filter(match => favorites.has(Number(match.home?.id)) || favorites.has(Number(match.away?.id))).length;
+  if ($('overviewLiveCount')) $('overviewLiveCount').textContent = String(live);
+  if ($('overviewFavoriteCount')) $('overviewFavoriteCount').textContent = String(favoriteMatches);
+  if (live > 0) {
+    title.textContent = `${russianCountLabel(live, 'матч идёт', 'матча идут', 'матчей идут')} прямо сейчас`;
+    text.textContent = favoriteMatches ? `И ещё ${russianCountLabel(favoriteMatches, 'матч любимой команды', 'матча любимых команд', 'матчей любимых команд')} в вашем списке.` : 'Откройте центр матча, чтобы следить за счётом и событиями.';
+  } else if (favoriteMatches > 0) {
+    title.textContent = 'Любимые команды уже собраны';
+    text.textContent = `${russianCountLabel(favoriteMatches, 'важный матч', 'важных матча', 'важных матчей')} — без поиска по всему расписанию.`;
+  } else if (visible.length > 0) {
+    title.textContent = 'Главное без лишнего';
+    text.textContent = `${russianCountLabel(visible.length, 'матч доступен', 'матча доступны', 'матчей доступно')} — самые заметные уже подняты выше.`;
+  } else {
+    title.textContent = 'Собираю ваш футбольный день';
+    text.textContent = 'Свежие матчи появятся здесь сразу после загрузки.';
+  }
 }
 
 function filteredMatches() {
@@ -4040,19 +4150,15 @@ function renderPopularCompetitions() {
 function matchCardHtml(m, { grouped = false } = {}) {
   const interest = Math.max(0, Math.min(100, Number(m.interestScore || 0)));
   const cardState = m.live ? 'is-live' : m.finished ? 'is-finished' : 'is-upcoming';
+  const signal = m.featured ? 'Матч дня' : interest >= 80 ? 'Высокий интерес' : interest >= 65 ? 'Стоит внимания' : '';
   return `
     <article class="match-card ${Number(m.interestScore || 0) >= 50 ? 'top-match' : ''} ${cardState}">
       ${grouped ? '' : `<div class="match-meta"><span class="competition-name">${m.featured ? '<b class="top-tag">ГЛАВНЫЙ</b> ' : ''}${escapeHtml(m.league || 'Турнир')}</span><span>${escapeHtml(m.country || '')}</span></div>`}
       <div class="catalog-row">
         ${m.category ? `<span class="competition-chip ${categoryClass(m.category)}">${escapeHtml(categoryLabel(m.category))}</span>` : ''}
         ${m.roundLabel ? `<span class="round-chip">${escapeHtml(m.roundLabel)}</span>` : ''}
-        <span class="coverage-mini">Покрытие: ${escapeHtml(coverageLabel(m.coverageTier).text)}</span>
-        ${m.integrity?.state === 'warning' ? `<span class="integrity-mini warning" title="${escapeHtml((m.integrity?.issues || []).map(x => x.message).join(' · '))}">⚠ данные</span>` : ''}
-      </div>
-      <div class="interest-row">
-        <span>Интерес</span>
-        <div class="interest-meter" aria-hidden="true"><i style="--interest:${interest}%"></i></div>
-        <strong>${interest}/100 · ${interestLabel(m.interestScore)}</strong>
+        ${signal ? `<span class="match-signal">${m.featured ? '✦' : '🔥'} ${signal}</span>` : ''}
+        ${m.integrity?.state === 'warning' ? '<span class="integrity-mini warning">⚠ проверяем данные</span>' : ''}
       </div>
       <div class="team-row">
         <div class="team">
@@ -4103,17 +4209,15 @@ function renderMatches() {
     `<span class="summary-pill"><b>${list.length}</b> из ${state.matches.length}</span>`,
     groups.length ? `<span class="summary-pill"><b>${groups.length}</b> турниров</span>` : '',
     Number(catalog.live || 0) > 0 ? `<span class="summary-pill live"><b>${Number(catalog.live)}</b> сейчас идут</span>` : '',
-    Number.isFinite(Number(integrity.qualityScore)) ? `<span class="summary-pill quality">данные <b>${Math.round(Number(integrity.qualityScore))}%</b></span>` : '',
     age ? `<span class="summary-pill muted-pill">↻ ${escapeHtml(age)}</span>` : '',
   ].filter(Boolean);
   $('matchesCount').innerHTML = summaryBits.join('');
+  renderDailyOverview();
   renderPopularCompetitions();
   if ($('dataNotice')) {
     const notices = [];
     if (state.matchesMeta?.stale) notices.push(`<div class="data-notice stale">⚠️ ${escapeHtml(state.matchesMeta.warning || 'Показаны последние сохранённые данные.')}</div>`);
-    if (Number(integrity.quarantined || 0) > 0 || Number(integrity.warnings || 0) > 0) {
-      notices.push(`<div class="data-notice integrity-notice">🛡️ Проверка данных: ${Number(integrity.inspected || 0)} проверено · ${Number(integrity.quarantined || 0)} скрыто · ${Number(integrity.warnings || 0)} предупрежд.</div>`);
-    }
+    if (Number(integrity.quarantined || 0) > 0) notices.push('<div class="data-notice integrity-notice">🛡️ Несколько матчей временно скрыты, пока мы проверяем данные.</div>');
     $('dataNotice').innerHTML = notices.join('');
   }
   if (!list.length) {
@@ -6116,6 +6220,35 @@ document.querySelectorAll('.filter-btn').forEach(btn => {
   });
 });
 
+document.querySelectorAll('[data-quick-filter]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    state.filter = btn.dataset.quickFilter || 'top';
+    syncFilterButtons();
+    renderMatches();
+    $('matchesTitle')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+});
+$('overviewSearchBtn')?.addEventListener('click', () => $('navSearch')?.click());
+
+document.querySelectorAll('[data-theme-choice]').forEach(button => {
+  button.addEventListener('click', () => saveInterfacePreference('theme', button.dataset.themeChoice || 'system'));
+});
+document.querySelectorAll('[data-button-style-choice]').forEach(button => {
+  button.addEventListener('click', () => saveInterfacePreference('buttonStyle', button.dataset.buttonStyleChoice || 'soft'));
+});
+
+document.querySelectorAll('[data-admin-target]').forEach(button => {
+  button.addEventListener('click', async () => {
+    const target = $(button.dataset.adminTarget);
+    if (!target) return;
+    if (button.dataset.adminTarget === 'diagnosticsPanel' && !state.diagnosticsLoading) await loadDiagnostics(false);
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+});
+$('adminAdvancedTools')?.addEventListener('toggle', event => {
+  if (event.currentTarget.open) loadAdvancedAdminTools();
+});
+
 $('matchSearch').addEventListener('input', e => {
   state.search = e.target.value || '';
   clearTimeout(matchSearchTimer);
@@ -6209,6 +6342,9 @@ async function scheduleIdle(task) {
 $('favoriteTeams')?.setAttribute('aria-live', 'polite');
 $('reminderList')?.setAttribute('aria-live', 'polite');
 $('history')?.setAttribute('aria-live', 'polite');
+organizeAdminConsole();
+applyInterfacePreferences();
+syncFilterButtons();
 showView('matchesView', { restore: true });
 
 // RC30: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
