@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.18.0-rc26';
+const CLIENT_VERSION = '6.19.0-rc27';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc26';
+const CLIENT_RELEASE_CHANNEL = 'rc27';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -106,9 +106,11 @@ const state = {
   favoritesLoaded: false,
   favoritesLoading: false,
   favoritesLoadError: '',
+  favoritesRevision: 0,
   remindersLoaded: false,
   remindersLoading: false,
   remindersLoadError: '',
+  remindersRevision: 0,
   historyLoaded: false,
   providerLoaded: false,
   viewScroll: {},
@@ -1070,7 +1072,7 @@ function renderModelQuality() {
       <div><span>Жизненный цикл</span><strong>${lifecycleLabel}</strong><small>ревизия ${Number(lifecycle.revision || 0)}</small></div>
       <div><span>Отпечаток активной модели</span><strong>${escapeHtml(String(lifecycle.activeFingerprint || ce.fingerprint || '—').slice(0, 10))}</strong><small>${lifecycle.previousFingerprint ? `откат → ${escapeHtml(String(lifecycle.previousFingerprint).slice(0, 10))}` : 'предыдущей активной модели нет'}</small></div>
     </div>
-    <div class="calibration-promotion-note"><strong>Защита RC26:</strong> кандидат проходит два последовательных окна доверенной отложенной выборки, затем атомарно сравнивается с активной моделью. ${lifecycle.frozen ? `Жизненный цикл заморожен: ${escapeHtml(lifecycle.freezeReason || 'причина указана в административном журнале')}.` : 'После продвижения отдельная когорта может автоматически вернуть предыдущий профиль.'}</div>
+    <div class="calibration-promotion-note"><strong>Защита RC27:</strong> кандидат проходит два последовательных окна доверенной отложенной выборки, затем атомарно сравнивается с активной моделью. ${lifecycle.frozen ? `Жизненный цикл заморожен: ${escapeHtml(lifecycle.freezeReason || 'причина указана в административном журнале')}.` : 'После продвижения отдельная когорта может автоматически вернуть предыдущий профиль.'}</div>
     <div class="calibration-weights">
       ${(ce.signalStats || []).map(x => {
         const base = Number(x.baseWeight || 0) * 100;
@@ -1859,7 +1861,7 @@ function runClientContractSmoke() {
 }
 
 function rcStateText(status) {
-  if (status === 'rc_ready') return 'RC26 ГОТОВ';
+  if (status === 'rc_ready') return 'RC27 ГОТОВ';
   if (status === 'rc_with_holds') return 'RC С ОГРАНИЧЕНИЯМИ';
   if (status === 'blocked') return 'ЗАБЛОКИРОВАНО';
   return 'ОЖИДАНИЕ';
@@ -1893,7 +1895,7 @@ function renderRcRegression() {
   const r = state.rcRegression;
   if (!r) {
     badge.className = 'rc-badge';
-    badge.textContent = 'RC26';
+    badge.textContent = 'RC27';
     status.textContent = 'Полная регрессионная проверка ещё не запускалась.';
     meta.textContent = 'Тест безопасный: без полного анализа, без изменения пользовательских данных и без расхода API-Football.';
     summary.innerHTML = '';
@@ -3035,17 +3037,20 @@ async function runProviderCoverageAudit(fixtureId, force = true) {
 
 async function loadFavorites() {
   if (state.favoritesLoading) return;
+  const revisionAtStart = state.favoritesRevision;
   state.favoritesLoading = true;
   state.favoritesLoadError = '';
   renderFavoriteTeams();
   try {
     const data = await api('/api/favorites');
+    if (revisionAtStart !== state.favoritesRevision) return;
     state.favorites = data.items || [];
     state.favoritesLoaded = true;
     state.favoritesLoadError = '';
     if (state.matches.length) renderMatches();
     renderDiscoveryHome();
   } catch (e) {
+    if (revisionAtStart !== state.favoritesRevision) return;
     state.favoritesLoadError = e.message || 'Не удалось загрузить избранное.';
     if (state.favoritesLoaded) toast('Избранное временно не обновилось — показаны последние данные.');
   } finally {
@@ -3056,15 +3061,18 @@ async function loadFavorites() {
 
 async function loadReminders() {
   if (state.remindersLoading) return;
+  const revisionAtStart = state.remindersRevision;
   state.remindersLoading = true;
   state.remindersLoadError = '';
   renderReminderList();
   try {
     const data = await api('/api/reminders');
+    if (revisionAtStart !== state.remindersRevision) return;
     state.reminders = data.items || [];
     state.remindersLoaded = true;
     state.remindersLoadError = '';
   } catch (e) {
+    if (revisionAtStart !== state.remindersRevision) return;
     state.remindersLoadError = e.message || 'Не удалось загрузить напоминания.';
     if (state.remindersLoaded) toast('Напоминания временно не обновились — показаны последние данные.');
   } finally {
@@ -3094,7 +3102,9 @@ function renderReminderList() {
     return;
   }
   if (!state.reminders.length) {
-    el.innerHTML = '<div class="empty compact-empty">Активных напоминаний пока нет.</div>';
+    el.innerHTML = state.remindersLoadError
+      ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.remindersLoadError)} Последний загруженный список напоминаний был пуст.</div>`
+      : '<div class="empty compact-empty">Активных напоминаний пока нет.</div>';
     return;
   }
   const rows = [...state.reminders].sort((a, b) => Date.parse(a.fixtureDate || 0) - Date.parse(b.fixtureDate || 0));
@@ -3116,6 +3126,8 @@ function renderReminderList() {
     try {
       await api(`/api/reminders?fixtureId=${fixtureId}`, { method: 'DELETE' });
       state.reminders = state.reminders.filter(x => Number(x.fixtureId) !== fixtureId);
+      state.remindersLoaded = true;
+      state.remindersRevision += 1;
       if (state.profile) {
         state.profile = {
           ...state.profile,
@@ -3157,7 +3169,8 @@ async function savePreferencesFromUi() {
     renderProfile();
     toast('Настройки сохранены');
   } catch (e) {
-    toast(e.message);
+    if (state.profile) renderProfile();
+    toast(`${e.message} Настройки на экране возвращены к последней сохранённой версии.`);
   } finally {
     state.preferencesSaving = false;
     if (saveButton) { saveButton.disabled = false; saveButton.textContent = 'Сохранить настройки'; }
@@ -3196,6 +3209,8 @@ async function toggleFavorite(team) {
     if (active) {
       await api(`/api/favorites?teamId=${teamId}`, { method: 'DELETE' });
       state.favorites = state.favorites.filter(x => Number(x.teamId) !== teamId);
+      state.favoritesLoaded = true;
+      state.favoritesRevision += 1;
       toast(`${team.name}: удалено из избранного`);
     } else {
       const data = await api('/api/favorites', {
@@ -3203,6 +3218,8 @@ async function toggleFavorite(team) {
         body: JSON.stringify({ teamId, teamName: team.name, teamLogo: team.logo || '' }),
       });
       state.favorites = [data.item, ...state.favorites.filter(x => Number(x.teamId) !== teamId)];
+      state.favoritesLoaded = true;
+      state.favoritesRevision += 1;
       toast(`${team.name}: добавлено в избранное`);
     }
     if (state.profile) {
@@ -3237,7 +3254,9 @@ function renderFavoriteTeams() {
     return;
   }
   if (!state.favorites.length) {
-    el.innerHTML = '<div class="empty compact-empty">Добавьте любимые команды звёздочкой в списке матчей.</div>';
+    el.innerHTML = state.favoritesLoadError
+      ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.favoritesLoadError)} Последний загруженный список избранного был пуст.</div>`
+      : '<div class="empty compact-empty">Добавьте любимые команды звёздочкой в списке матчей.</div>';
     return;
   }
   const staleNotice = state.favoritesLoadError ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.favoritesLoadError)} Показано последнее загруженное избранное.</div>` : '';
@@ -4953,9 +4972,11 @@ async function toggleReminder(match) {
     if (active) {
       await api(`/api/reminders?fixtureId=${fixtureId}`, { method: 'DELETE' });
       state.reminders = state.reminders.filter(x => Number(x.fixtureId) !== fixtureId);
+      state.remindersLoaded = true;
+      state.remindersRevision += 1;
       toast('Напоминание отключено');
     } else {
-      await api('/api/reminders', {
+      const data = await api('/api/reminders', {
         method: 'POST',
         body: JSON.stringify({
           fixtureId,
@@ -4967,8 +4988,22 @@ async function toggleReminder(match) {
           kickoffNotify: state.preferences?.kickoffNotification !== false,
         }),
       });
-      await loadReminders();
-      toast(`Напомним примерно за ${Number(state.preferences?.reminderMinutes || 30)} минут до матча${state.preferences?.kickoffNotification !== false ? ' и около старта' : ''}`);
+      const item = data?.item || {
+        fixtureId,
+        homeName: match.home?.name || '',
+        awayName: match.away?.name || '',
+        leagueName: match.league || '',
+        fixtureDate: match.date || '',
+        remindBeforeMinutes: Number(state.preferences?.reminderMinutes || 30),
+        kickoffNotify: state.preferences?.kickoffNotification !== false,
+        deliveryStatus: 'scheduled',
+        deliveryAttempts: 0,
+      };
+      state.reminders = [item, ...state.reminders.filter(x => Number(x.fixtureId) !== fixtureId)];
+      state.remindersLoaded = true;
+      state.remindersRevision += 1;
+      renderReminderList();
+      toast(`Напомним примерно за ${Number(item.remindBeforeMinutes || state.preferences?.reminderMinutes || 30)} минут до матча${item.kickoffNotify !== false ? ' и около старта' : ''}`);
     }
     if (state.profile) {
       state.profile = {
@@ -5706,9 +5741,11 @@ async function scheduleIdle(task) {
   return new Promise(resolve => setTimeout(async () => { try { await task(); } finally { resolve(); } }, 250));
 }
 
+$('favoriteTeams')?.setAttribute('aria-live', 'polite');
+$('reminderList')?.setAttribute('aria-live', 'polite');
 showView('matchesView', { restore: true });
 
-// RC26: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
+// RC27: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
 // The boot watchdog never leaves the user behind an endless splash screen.
 const startupWatchdog = setTimeout(() => {
   if (!$('bootGate')?.hidden && !state.compatibilityBlocked) {

@@ -39,7 +39,7 @@ test('favorites and reminders distinguish loading, error, empty and stale data s
   assert.match(app, /Показаны последние загруженные напоминания/);
 });
 
-test('RC26 health exposes async entity and personal-data safety contracts', () => {
+test('RC27 health exposes async entity and personal-data safety contracts', () => {
   assert.match(worker, /entityNavigationSafety:\s*'enabled'/);
   assert.match(worker, /personalDataStateSafety:\s*'enabled'/);
   assert.match(worker, /asyncEntityGuard:\s*'enabled'/);

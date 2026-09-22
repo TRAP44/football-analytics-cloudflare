@@ -1,10 +1,10 @@
-# QA Release Checklist — v6.18.0 RC26
+# QA Release Checklist — v6.19.0 RC27
 
 ## Deploy
 
 - применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql` и `supabase_migration_v6_11_1.sql`;
-- Worker/client = `6.18.0-rc26`;
-- package = `6.18.0`;
+- Worker/client = `6.19.0-rc27`;
+- package = `6.19.0`;
 - cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;
@@ -78,7 +78,7 @@ npm run verify:worker
 
 ## Post-deploy
 
-- `/health` возвращает `6.18.0-rc26`, `RC26` и `devMode=false`;
+- `/health` возвращает `6.19.0-rc27`, `RC27` и `devMode=false`;
 - `cloudflareDeploymentGate=enabled`;
 - `browserSecurityPolicy=enabled` и `failClosedDeployment=enabled`;
 - `/api/app-manifest` соответствует версии Worker;
@@ -89,7 +89,7 @@ npm run verify:worker
 - при ошибке используется `Rollback Production` с предыдущим version ID.
 
 
-## RC26 UI/роль
+## RC27 UI/роль
 - обычный пользователь не видит и не может сфокусировать admin-only элементы;
 - администратор после загрузки профиля видит технические панели;
 - Telegram-фото профиля загружается через безопасный URL, при ошибке остаётся ⚽;
@@ -97,7 +97,7 @@ npm run verify:worker
 - основные подписи админ-панели не смешивают русские фразы с английскими статусами.
 
 
-## RC26 User Flow / Mobile UX
+## RC27 User Flow / Mobile UX
 - BackButton Telegram показан только на вложенных экранах и возвращает к реальному предыдущему экрану;
 - кнопка «Назад» из анализа, открытого из истории/команды/турнира, не отправляет пользователя принудительно на список матчей;
 - открытие записи истории не вызывает POST /api/analyze и не увеличивает дневной счётчик анализа;
@@ -107,7 +107,7 @@ npm run verify:worker
 - touch-target основных мобильных кнопок не меньше 44 px.
 
 
-## RC26 Interaction Safety
+## RC27 Interaction Safety
 - два быстрых нажатия «Предматчевый анализ» не запускают параллельные POST /api/analyze;
 - при быстром открытии двух разных матчей более старый ответ Match Center не заменяет новый;
 - повторное нажатие звезды одной команды блокируется до завершения мутации;
@@ -117,7 +117,7 @@ npm run verify:worker
 - favorite/reminder controls сообщают состояние через disabled/aria-pressed.
 
 
-## RC26 Async Entity / Personal Data
+## RC27 Async Entity / Personal Data
 - быстрый переход Команда A → Команда B не позволяет ответу A перерисовать страницу B;
 - тот же контракт проверяется для вкладок «Статистика» и «Состав»;
 - быстрый переход Турнир A → Турнир B не позволяет таблице A появиться в B;
@@ -125,3 +125,13 @@ npm run verify:worker
 - до первого ответа избранное и напоминания показывают загрузку, а не ложное «пусто»;
 - ошибка первого чтения показывает retry-карточку;
 - ошибка повторного чтения сохраняет последние загруженные данные и показывает stale-предупреждение.
+
+
+## RC27 Personal Data Write Consistency
+- GET избранного, начатый до мутации, не может перезаписать подтверждённое добавление/удаление;
+- то же правило действует для напоминаний;
+- POST /api/reminders возвращает полный нормализованный item и клиент использует его сразу;
+- после успешного POST напоминания не выполняется обязательный второй GET;
+- временная ошибка refresh при ранее пустом списке видна пользователю;
+- при ошибке сохранения настроек UI возвращается к последней подтверждённой версии;
+- favorite/reminder containers используют aria-live=polite.

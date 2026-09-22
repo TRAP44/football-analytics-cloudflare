@@ -8,13 +8,13 @@ const staticHeaders = fs.readFileSync('public/_headers', 'utf8');
 const styles = fs.readFileSync('public/styles.css', 'utf8');
 const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml', 'utf8');
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
-const expected = `${pkg.version}-rc26`;
+const expected = `${pkg.version}-rc27`;
 const failures = [];
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC26'")) failures.push('Worker RC name must be RC26');
+if (!worker.includes("const RC_NAME = 'RC27'")) failures.push('Worker RC name must be RC27');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc26'")) failures.push('Client release channel must be rc26');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc27'")) failures.push('Client release channel must be rc27');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -50,6 +50,10 @@ if (!app.includes('teamHubRequestSeq: 0')) failures.push('Team hub stale-respons
 if (!app.includes('tournamentStandingsRequestSeq: 0')) failures.push('Tournament standings stale-response guard is missing');
 if (!app.includes("favoritesLoading: false")) failures.push('Favorites explicit loading state is missing');
 if (!app.includes("remindersLoading: false")) failures.push('Reminders explicit loading state is missing');
+if (!fs.existsSync('test/personal-data-write-consistency.test.js')) failures.push('Missing personal-data write consistency regression test');
+if (!app.includes('favoritesRevision: 0')) failures.push('Favorites read/write revision guard is missing');
+if (!app.includes('remindersRevision: 0')) failures.push('Reminders read/write revision guard is missing');
+if (!worker.includes('function publicReminder')) failures.push('Reminder write response must expose the normalized reminder item');
 
 const migration = fs.readFileSync('supabase_migration_v6_10.sql', 'utf8');
 if (!migration.includes('transition_model_calibration')) failures.push('Missing atomic calibration transition RPC');
