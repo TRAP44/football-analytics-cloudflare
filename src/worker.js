@@ -287,7 +287,7 @@ async function ensureRuntimeHistoryBaseline(cfg, value, user) {
   await supaInsertIgnore(cfg, 'runtime_control_history', {
     revision: Number(snapshot.revision || 1),
     action: 'baseline',
-    reason: 'Baseline captured before the first runtime-history change.',
+    reason: 'Базовое состояние сохранено перед первым изменением настроек функций.',
     snapshot,
     app_version: APP_VERSION,
     changed_by: Number(user?.id || 0) || null,
@@ -453,7 +453,7 @@ async function saveRuntimeControls(cfg, user, body = {}) {
     source: 'release',
     eventType: 'runtime_controls',
     code: value.maintenanceMode ? 'MAINTENANCE_ENABLED' : 'RUNTIME_CONTROLS_UPDATED',
-    message: `Runtime controls updated to revision ${value.revision}.`,
+    message: `Настройки функций обновлены до версии ${value.revision}.`,
     endpoint: '/api/runtime-controls',
     meta: {
       revision: value.revision,
@@ -1187,7 +1187,7 @@ function telemetrySnapshot() {
     inflightNow: memory.inflight.size,
     routeBucketsNow: memory.routeBurst.size,
     l1CacheEntries: memory.cache.size,
-    note: 'Runtime counters describe the current Cloudflare Worker isolate; provider quota values come from API-Football response headers.',
+    note: 'Счётчики среды относятся к текущему серверному обработчику Cloudflare; квоты источника данных берутся из ответов API-Football.',
   };
 }
 
@@ -2692,7 +2692,7 @@ async function getCalibrationProfile(cfg, { force = false } = {}) {
         console.warn('calibration lifecycle fallback', error?.message || error);
         const baseline = baselineCalibrationProfile(candidate.sample, candidate.signalStats || []);
         baseline.fingerprint = await calibrationPromotionFingerprint(baseline);
-        return { ...baseline, lifecycle: { available: false, status: 'fallback', activeFingerprint: baseline.fingerprint, challengerFingerprint: candidate.fingerprint || null, reason: 'Lifecycle persistence failed; production remains on baseline.' } };
+        return { ...baseline, lifecycle: { available: false, status: 'fallback', activeFingerprint: baseline.fingerprint, challengerFingerprint: candidate.fingerprint || null, reason: 'Не удалось сохранить жизненный цикл модели; рабочая версия остаётся на базовом профиле.' } };
       })
     : { ...candidate, fingerprint: await calibrationPromotionFingerprint(candidate), lifecycle: { available: false, status: 'memory' } };
   try { await setCache(CALIBRATION_CACHE_KEY, 0, profile, cfg, CALIBRATION_CACHE_MINUTES); } catch {}
@@ -3356,7 +3356,7 @@ function buildPredictionIntegrity(settledRows, pendingRows) {
     },
     {
       key: 'snapshot_metadata',
-      label: 'Snapshot timestamps',
+      label: 'Время снимков',
       state: invalidSnapshotMetadata.length ? 'fail' : 'pass',
       count: invalidSnapshotMetadata.length,
       detail: invalidSnapshotMetadata.length
@@ -3365,7 +3365,7 @@ function buildPredictionIntegrity(settledRows, pendingRows) {
     },
     {
       key: 'snapshot_timing',
-      label: 'Pre-match snapshot timing',
+      label: 'Время предматчевых снимков',
       state: snapshotAfterKickoff.length ? 'fail' : 'pass',
       count: snapshotAfterKickoff.length,
       detail: snapshotAfterKickoff.length
@@ -3392,7 +3392,7 @@ function buildPredictionIntegrity(settledRows, pendingRows) {
     },
     {
       key: 'prediction_consistency',
-      label: 'Predicted outcome',
+      label: 'Прогнозируемый исход',
       state: inconsistentPrediction.length ? 'fail' : 'pass',
       count: inconsistentPrediction.length,
       detail: inconsistentPrediction.length
@@ -3401,7 +3401,7 @@ function buildPredictionIntegrity(settledRows, pendingRows) {
     },
     {
       key: 'correct_flag',
-      label: 'Correct flag',
+      label: 'Признак правильности',
       state: invalidCorrectFlag.length ? 'fail' : 'pass',
       count: invalidCorrectFlag.length,
       detail: invalidCorrectFlag.length
@@ -3410,7 +3410,7 @@ function buildPredictionIntegrity(settledRows, pendingRows) {
     },
     {
       key: 'fixture_identity',
-      label: 'Fixture identity',
+      label: 'Идентификатор матча',
       state: invalidFixtureIds.length ? 'fail' : 'pass',
       count: invalidFixtureIds.length,
       detail: invalidFixtureIds.length
@@ -3419,7 +3419,7 @@ function buildPredictionIntegrity(settledRows, pendingRows) {
     },
     {
       key: 'duplicates',
-      label: 'Fixture uniqueness',
+      label: 'Уникальность матчей',
       state: duplicateFixtures.length ? 'fail' : 'pass',
       count: duplicateFixtures.length,
       detail: duplicateFixtures.length
@@ -3437,7 +3437,7 @@ function buildPredictionIntegrity(settledRows, pendingRows) {
     },
     {
       key: 'signal_snapshot',
-      label: 'Signal snapshots',
+      label: 'Снимки отдельных сигналов',
       state: missingSignals.length ? 'info' : 'pass',
       count: missingSignals.length,
       detail: missingSignals.length
@@ -4589,14 +4589,14 @@ async function reconcileInterruptedSettlementActions(cfg) {
   }
   await noteSettlementWatchdogOutcome(cfg, 'failed', {
     actionId: reconciled[reconciled.length - 1]?.action_id || null,
-    error: `${reconciled.length} stale started settlement run(s) reconciled as interrupted`,
+    error: `${reconciled.length} зависших запусков фиксации результата отмечено как прерванные`,
   }).catch(() => null);
   await recordOpsEvent(cfg, {
     severity: 'warning',
     source: 'model',
     eventType: 'settlement_watchdog',
     code: 'SETTLEMENT_RUN_INTERRUPTED',
-    message: `Reconciled ${reconciled.length} stale started settlement run(s) as interrupted.`,
+    message: `Зависших запусков фиксации результата отмечено как прерванные: ${reconciled.length}.`,
     meta: {
       count: reconciled.length,
       staleMinutes: SETTLEMENT_RUN_STALE_MINUTES,
@@ -5082,7 +5082,7 @@ async function runSettlementWatchdog(cfg) {
       source: 'model',
       eventType: 'settlement_watchdog',
       code: 'SETTLEMENT_RUN_IN_PROGRESS',
-      message: 'Settlement watchdog skipped because another started run is still active.',
+      message: 'Проверка фиксации результатов пропущена: другой запуск ещё выполняется.',
       meta: {
         activeRuns: ledgerAfter.active.length,
         staleAfterMinutes: SETTLEMENT_RUN_STALE_MINUTES,
@@ -5164,14 +5164,14 @@ async function runSettlementWatchdog(cfg) {
       source: 'model',
       eventType: 'settlement_watchdog',
       code: 'SETTLEMENT_RETRY_EXHAUSTED',
-      message: 'Settlement retry lineage exhausted for the current exact fixture batch.',
+      message: 'Для текущего пакета матчей исчерпан лимит повторных попыток фиксации результатов.',
       meta: { ...baseMeta, retryOfActionId: retry.retryOfActionId, maxAttempts: SETTLEMENT_RUN_MAX_ATTEMPTS },
     }).catch(() => null);
     await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), ...baseMeta, state: 'retry_exhausted' }, cfg, 1440).catch(() => null);
     return { ok: true, ...baseMeta, state: 'retry_exhausted', retryOfActionId: retry.retryOfActionId };
   }
   const actionId = crypto.randomUUID();
-  const reason = 'RC12 scheduled settlement catch-up';
+  const reason = 'RC30: плановое восстановление ожидающих результатов';
   let auditStarted = false;
   let executionResult = null;
 
@@ -5232,7 +5232,7 @@ async function runSettlementWatchdog(cfg) {
       source: 'model',
       eventType: 'settlement_watchdog',
       code: skippedCount ? 'SETTLEMENT_WATCHDOG_PARTIAL' : 'SETTLEMENT_WATCHDOG_COMPLETED',
-      message: `${reason}: ${settledCount} settled, ${skippedCount} skipped.`,
+      message: `${reason}: завершено ${settledCount}, пропущено ${skippedCount}.`,
       meta: { ...baseMeta, actionId, settledCount, skippedCount },
     }).catch(() => null);
     await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), ...baseMeta, actionId, settledCount, skippedCount, status }, cfg, 1440).catch(() => null);
@@ -5584,7 +5584,7 @@ async function clearStaleReminderClaims(cfg) {
       source: 'reminders',
       eventType: 'reminder_delivery',
       code: 'REMINDER_STALE_CLAIMS',
-      message: `Recovered ${total} stale reminder delivery claims.`,
+      message: `Восстановлено зависших заявок на доставку уведомлений: ${total}.`,
       meta: { prematch, kickoff },
     }).catch(() => {});
   }
@@ -5687,7 +5687,7 @@ async function releaseReminderClaim(row, kind, claimAt, errorMessage, cfg, optio
 
 async function sendTelegramMessage(chatId, text, cfg) {
   if (!cfg.botToken) {
-    return { ok: false, status: 0, errorCode: 0, description: 'Bot token missing.', retryAfter: 0 };
+    return { ok: false, status: 0, errorCode: 0, description: 'Токен Telegram-бота отсутствует.', retryAfter: 0 };
   }
 
   try {
@@ -5883,7 +5883,7 @@ async function processDueReminders(cfg) {
       source: 'reminders',
       eventType: 'reminder_scheduler',
       code: failed ? 'REMINDER_RUN_WITH_FAILURES' : 'REMINDER_RUN_OK',
-      message: `Reminder cron: checked=${rows.length}, prematch=${sent}, kickoff=${kickoffSent}, failed=${failed}.`,
+      message: `Планировщик уведомлений: проверено ${rows.length}, предматчевых отправлено ${sent}, у старта ${kickoffSent}, ошибок ${failed}.`,
       endpoint: 'cron:reminders',
       meta: summary,
     }).catch(() => {});
@@ -7477,8 +7477,8 @@ async function apiReleaseMonitor(request, cfg) {
     policy: {
       noFootballApiCalls: true,
       noUserDataMutation: true,
-      telemetryPrivacy: 'Client telemetry is allowlisted and excludes free-form chat/user content.',
-      note: 'Operational budget counts persisted error/critical ops events; it is a release signal, not a formal availability SLO.',
+      telemetryPrivacy: 'Телеметрия клиента ограничена разрешёнными полями и не содержит свободный текст чата или пользовательский контент.',
+      note: 'Операционный бюджет считает сохранённые ошибки и критические события; это сигнал для выпуска, а не формальный показатель доступности.',
     },
   };
   memory.releaseMonitor ||= {};
