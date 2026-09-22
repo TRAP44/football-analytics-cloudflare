@@ -2133,7 +2133,7 @@ main { position: relative; z-index: 1; }
 .runtime-controls-badge,.reminder-health-badge,.release-monitor-badge,.production-badge,.expanded-gate-badge{min-width:72px}
 
 
-/* RC19 — Backend Security Contract */
-.rc-panel:before{content:"RC19"}
+/* RC20 — Cloudflare Deployment Gate */
+.rc-panel:before{content:"RC20"}
 .calibration-promotion-note{margin-top:9px;padding:9px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font-size:9px;color:var(--hint)}
 .calibration-promotion-note strong{color:var(--text)}

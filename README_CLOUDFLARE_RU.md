@@ -1,6 +1,16 @@
-# Football Analytics Mini App v6.11.0 — RC19
+# Football Analytics Mini App v6.12.0 — RC20
 
 Telegram Mini App для футбольной аналитики на Cloudflare Workers, Supabase и API-Football.
+
+## RC20: Cloudflare Deployment Gate
+
+- production deploy запускается только после успешного workflow `Quality` на `main`;
+- deploy всегда использует точный проверенный commit SHA, Node.js 22 и закреплённые версии GitHub Actions/Wrangler;
+- `wrangler deploy --keep-vars` сохраняет переменные, установленные через Cloudflare Dashboard;
+- post-deploy smoke ждёт распространения версии и проверяет `/health`, app manifest, HTML shell и admin isolation;
+- `DEV_MODE=true`, неверная версия или публичный технический маршрут блокируют workflow;
+- при отсутствии Cloudflare credentials deploy безопасно пропускается с записью в Job Summary;
+- ручной rollback требует конкретный Cloudflare version ID и явное подтверждение `ROLLBACK`.
 
 ## RC19: Backend Security Contract
 
@@ -51,6 +61,7 @@ npm run verify:release
 ```
 
 GitHub Actions выполняет эти проверки для каждого Pull Request и push в `main`.
+После успешного `Quality` workflow `Deploy Production` публикует Worker, если в GitHub настроены `CLOUDFLARE_API_TOKEN` и `CLOUDFLARE_ACCOUNT_ID`.
 
 ## Установка
 
