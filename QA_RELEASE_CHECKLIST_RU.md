@@ -1,10 +1,10 @@
-# QA Release Checklist — v6.45.0 RC53
+# QA Release Checklist — v6.46.0 RC54
 
 ## Deploy
 
 - применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql`, `supabase_migration_v6_11_1.sql`, `supabase_migration_v6_12.sql`, `supabase_migration_v6_13.sql`, `supabase_migration_v6_14.sql` и `supabase_migration_v6_15.sql`;
-- Worker/client = `6.45.0-rc53`;
-- package = `6.45.0`;
+- Worker/client = `6.46.0-rc54`;
+- package = `6.46.0`;
 - cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;
@@ -89,6 +89,22 @@
 - слабое покрытие приводит к «Ждать больше данных»;
 - сломанный сценарий приводит к «Не опираться на предматчевый сигнал»;
 - никаких новых таблиц или внешних провайдеров RC44 не добавляет.
+
+## RC54 — Launch Simulation & Conversion UX
+
+- `/start` сразу объясняет, что клуб можно написать прямо в чат, без slash-команд;
+- кнопка «Найти матч» стоит первой в persistent keyboard;
+- глобальный поиск принимает известные короткие алиасы от 2 символов, backend остаётся fail-closed для неизвестных коротких запросов;
+- high-intent топ-клуб может использовать небольшой резерв поиска при низкой квоте, но не проходит при критическом остатке;
+- team-search cache для top-club intent хранится 24 часа;
+- каталог распознаёт клубы нескольких крупных регионов, при этом provider search остаётся глобальным;
+- при provider/quota degradation распознанный клуб отображается как «Клуб распознан», а не как пустой результат;
+- персональная новость ведёт через `news:match:<fixtureId>` и пишет `news_return` перед `match_open`;
+- launch-funnel использует paged read до 10 000 событий и явно сообщает `truncated`;
+- launch-funnel возвращает `bottleneck` и `returnLoop`, а админка показывает главное место потери конверсии;
+- `LAUNCH_SIMULATION_RC54.md` проходит путь media deep-link → start → search → match → quick AI → full AI → news return;
+- health содержит `launchSimulation`, `conversionUx`, `highIntentSearchFallback`, `newsReturnLoop`;
+- новых таблиц или платёжных функций RC54 нет.
 
 ## RC53 — Launch Package
 

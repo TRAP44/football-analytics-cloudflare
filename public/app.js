@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.45.0-rc53';
+const CLIENT_VERSION = '6.46.0-rc54';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc53';
+const CLIENT_RELEASE_CHANNEL = 'rc54';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -105,7 +105,7 @@ const state = {
   },
   filter: 'top',
   search: '',
-  globalSearch: { query: '', mode: 'all', remoteTeams: [], remoteCompetitions: [], remoteMatches: [], matchSourceTeam: '', loading: false, warning: '', searchedAt: null, requestSeq: 0 },
+  globalSearch: { query: '', mode: 'all', remoteTeams: [], knownTeams: [], remoteCompetitions: [], remoteMatches: [], matchSourceTeam: '', loading: false, warning: '', searchedAt: null, requestSeq: 0 },
   currentAnalysis: null,
   currentAnalysisTab: 'brief',
   analysisBackView: 'matchesView',
@@ -2853,11 +2853,13 @@ function renderLaunchFunnel() {
     <div><span>Входы</span><strong>${Number(first.users || 0)}</strong><small>bot + Mini App</small></div>
     <div><span>Полный AI</span><strong>${Number(last.users || 0)}</strong><small>${launchFunnelPct(last.fromEntryPct)} от входов</small></div>
     <div><span>Кампаний</span><strong>${Number(d.campaigns?.length || 0)}</strong><small>source + campaign</small></div>
-    <div><span>Событий</span><strong>${Number(d.events || 0)}</strong><small>${d.truncated ? 'лимит выборки достигнут' : 'полная выборка периода'}</small></div>
+    <div><span>Возврат из новостей</span><strong>${Number(d.returnLoop?.newsReturn || 0)}</strong><small>${launchFunnelPct(d.returnLoop?.conversionPct)} от открывших новости</small></div>
   </div>`;
 
   const rows=d.funnel || [];
+  const bottleneck=d.bottleneck;
   stages.innerHTML=`<div class="release-monitor-section-head"><strong>Воронка</strong><span>уникальные пользователи</span></div>
+    ${bottleneck ? `<div class="data-notice">🎯 Узкое место: <strong>${escapeHtml(bottleneck.label || '')}</strong> · теряется ${launchFunnelPct(bottleneck.dropPct)} пользователей перехода.</div>` : ''}
     <div class="launch-funnel-stages">${rows.map((x,index)=>`<div>
       <span>${index+1}. ${escapeHtml(x.label || x.key || '')}</span>
       <strong>${Number(x.users || 0)}</strong>
@@ -3759,6 +3761,13 @@ function searchTeamSummaryCard(team) {
   </div>`;
 }
 
+function knownTeamSummaryCard(team) {
+  return `<div class="search-entity-summary known-team-summary">
+    <span class="discovery-team-logo">✓</span>
+    <span><small>КЛУБ РАСПОЗНАН</small><strong>${escapeHtml(team.name || 'Команда')}</strong><em>${escapeHtml(team.country || '')} · ожидаю доступные матчи источника</em></span>
+  </div>`;
+}
+
 function searchCompetitionSummaryCard(comp) {
   return `<div class="search-entity-summary">
     <span class="discovery-team-logo">🏆</span>
@@ -3901,6 +3910,7 @@ function renderGlobalSearch() {
 
   const local = localDiscoveryResults(query);
   const teams = mergeById(local.teams, state.globalSearch.remoteTeams, 'id');
+  const knownTeams = state.globalSearch.knownTeams || [];
   const comps = mergeById(local.competitions, state.globalSearch.remoteCompetitions, 'leagueId');
   const matches = mergeById(local.matches, state.globalSearch.remoteMatches, 'fixtureId');
   const upcoming = matches.filter(x => !x.finished).sort((a,b) => Date.parse(a.date || 0) - Date.parse(b.date || 0));
@@ -3908,7 +3918,7 @@ function renderGlobalSearch() {
   const mode = state.globalSearch.mode || 'all';
 
   wrap.hidden = false;
-  if (meta) meta.textContent = `${russianCountLabel(teams.length, 'команда', 'команды', 'команд')} · ${russianCountLabel(comps.length, 'лига', 'лиги', 'лиг')} · ${russianCountLabel(matches.length, 'матч', 'матча', 'матчей')}`;
+  if (meta) meta.textContent = `${russianCountLabel(teams.length || knownTeams.length, 'команда', 'команды', 'команд')} · ${russianCountLabel(comps.length, 'лига', 'лиги', 'лиг')} · ${russianCountLabel(matches.length, 'матч', 'матча', 'матчей')}`;
   if (status) {
     const resolvedNote = state.globalSearch.resolvedQuery
       ? `<div class="data-notice">🌍 Распознано глобально: <strong>${escapeHtml(state.globalSearch.resolvedQuery)}</strong></div>`
@@ -3916,16 +3926,22 @@ function renderGlobalSearch() {
     const sourceNote = state.globalSearch.matchSourceTeam && matches.length
       ? `<div class="data-notice">⚽ Матчи: ${escapeHtml(state.globalSearch.matchSourceTeam)} · последние и ближайшие игры</div>`
       : '';
+    const knownNote = !teams.length && knownTeams.length
+      ? `<div class="data-notice">✅ Клуб распознан глобальным каталогом. Матчи появятся здесь, как только источник данных вернёт доступный календарь.</div>`
+      : '';
     status.innerHTML = state.globalSearch.loading
       ? '<div class="data-notice">🔎 Ищу команды, лиги и матчи…</div>'
       : state.globalSearch.warning
-        ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.globalSearch.warning)}</div>${resolvedNote}${sourceNote}`
-        : `${resolvedNote}${sourceNote}`;
+        ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.globalSearch.warning)}</div>${resolvedNote}${knownNote}${sourceNote}`
+        : `${resolvedNote}${knownNote}${sourceNote}`;
   }
 
   const sections = [];
   if ((mode === 'all' || mode === 'teams') && teams.length) {
     sections.push(`<section class="panel search-result-block compact-entity-results"><div class="mini-section-head"><strong>Команда</strong><span>${teams.length}</span></div><div class="search-entity-list">${teams.slice(0,5).map(searchTeamSummaryCard).join('')}</div></section>`);
+  }
+  if ((mode === 'all' || mode === 'teams') && !teams.length && knownTeams.length) {
+    sections.push(`<section class="panel search-result-block compact-entity-results"><div class="mini-section-head"><strong>Распознано</strong><span>${knownTeams.length}</span></div><div class="search-entity-list">${knownTeams.slice(0,5).map(knownTeamSummaryCard).join('')}</div></section>`);
   }
   if ((mode === 'all' || mode === 'competitions') && comps.length) {
     sections.push(`<section class="panel search-result-block compact-entity-results"><div class="mini-section-head"><strong>Турнир</strong><span>${comps.length}</span></div><div class="search-entity-list">${comps.slice(0,3).map(searchCompetitionSummaryCard).join('')}</div></section>`);
@@ -3955,9 +3971,10 @@ async function runGlobalSearch() {
   state.globalSearch.warning = '';
   state.globalSearch.resolvedQuery = '';
   state.globalSearch.remoteMatches = [];
+  state.globalSearch.knownTeams = [];
   state.globalSearch.matchSourceTeam = '';
 
-  if (query.length < 3 || !runtimeAllows('searchEnabled')) {
+  if (query.length < 2 || !runtimeAllows('searchEnabled')) {
     state.globalSearch.loading = false;
     state.globalSearch.remoteTeams = [];
     state.globalSearch.remoteCompetitions = [];
@@ -3972,6 +3989,7 @@ async function runGlobalSearch() {
     const data = await api(`/api/search?q=${encodeURIComponent(query)}`);
     if (seq !== state.globalSearch.requestSeq || query !== String(state.globalSearch.query || '').trim()) return;
     state.globalSearch.remoteTeams = data.teams || [];
+    state.globalSearch.knownTeams = data.knownTeams || [];
     state.globalSearch.remoteCompetitions = data.competitions || [];
     state.globalSearch.resolvedQuery = data.resolvedQuery || '';
     state.globalSearch.remoteMatches = data.matches || [];

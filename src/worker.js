@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.45.0-rc53';
+const APP_VERSION = '6.46.0-rc54';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc53';
-const RC_NAME = 'RC53';
+const RELEASE_CHANNEL = 'rc54';
+const RC_NAME = 'RC54';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1533,8 +1533,11 @@ async function apiLaunchFunnel(request,cfg) {
   if (!hasSupabase(cfg)) return json({available:false,reason:'Supabase не настроен.',days});
   const since=new Date(Date.now()-days*86400_000).toISOString();
   let rows=[];
+  let truncated=false;
   try {
-    rows=await supaSelectMany(cfg,'growth_events',{created_at:`gte.${since}`},{limit:1000,order:'created_at.asc'});
+    const page=await supaSelectPaged(cfg,'growth_events',{created_at:`gte.${since}`},{pageSize:1000,maxRows:10000,order:'created_at.asc'});
+    rows=page.rows;
+    truncated=Boolean(page.truncated);
   } catch (error) {
     return json({available:false,reason:'Нужна миграция v6.15 или временно недоступна база.',days,error:redactOpsString(error?.message || error,120)});
   }
@@ -1566,6 +1569,14 @@ async function apiLaunchFunnel(request,cfg) {
     bucket.events+=1;
     campaignMap.set(key,bucket);
   }
+  const newsOpen=setFor(['news_open']);
+  const newsReturn=setFor(['news_return']);
+  const transitions=funnel.slice(1).map((stage,index)=>({
+    from:funnel[index]?.key || '',to:stage.key,label:`${funnel[index]?.label || ''} → ${stage.label || ''}`,
+    fromUsers:Number(funnel[index]?.users || 0),toUsers:Number(stage.users || 0),conversionPct:Number(stage.fromPreviousPct || 0),
+    dropPct:Math.max(0,Math.round((100-Number(stage.fromPreviousPct || 0))*10)/10),
+  }));
+  const bottleneck=[...transitions].filter(x=>x.fromUsers>0).sort((a,b)=>b.dropPct-a.dropPct)[0] || null;
   const campaigns=[...campaignMap.values()].map(x=>({
     source:x.source,campaign:x.campaign,users:x.users.size,entries:x.entry.size,fullAi:x.fullAi.size,events:x.events,
     conversionPct:x.entry.size ? Math.round((x.fullAi.size/x.entry.size)*1000)/10 : 0,
@@ -1576,9 +1587,11 @@ async function apiLaunchFunnel(request,cfg) {
     generatedAt:new Date().toISOString(),
     retentionDays:Number(cfg.growthRetentionDays || 90),
     events:rows.length,
-    truncated:rows.length>=1000,
+    truncated,
     uniqueUsers:new Set(rows.map(x=>Number(x.telegram_id || 0)).filter(Boolean)).size,
     funnel,
+    bottleneck,
+    returnLoop:{newsOpen:newsOpen.size,newsReturn:newsReturn.size,conversionPct:newsOpen.size?Math.round((newsReturn.size/newsOpen.size)*1000)/10:0},
     campaigns,
     privacy:'Ответ содержит только агрегаты; Telegram ID пользователей не возвращаются.',
   });
@@ -1803,10 +1816,10 @@ function publicSiteUrl(request, pathname = '/') {
 function footballBotKeyboard(request) {
   return {
     keyboard: [
-      [{ text: '⚽ Матчи сегодня' }, { text: '🔴 LIVE' }],
-      [{ text: '🧠 AI-подборка' }, { text: '🔎 Найти матч' }],
-      [{ text: '⭐ Мои команды' }, { text: '🕘 Последний разбор' }],
-      [{ text: '📰 Новости' }, { text: '☀️ Утренняя подборка' }],
+      [{ text: '🔎 Найти матч' }, { text: '⚽ Матчи сегодня' }],
+      [{ text: '🧠 AI-подборка' }, { text: '🔴 LIVE' }],
+      [{ text: '📰 Новости' }, { text: '⭐ Мои команды' }],
+      [{ text: '🕘 Последний разбор' }, { text: '☀️ Утренняя подборка' }],
       [{ text: 'ℹ️ Как это работает' }],
     ],
     resize_keyboard: true,
@@ -2144,17 +2157,13 @@ async function sendFootballBotHome(request, cfg, chatId, telegramUser = {}) {
     text: [
       '⚽ <b>FM AI · Футбольный Инструктор</b>',
       '',
-      `${hello} Здесь футбол превращается в понятный контекст, а не в стену статистики.`,
+      `${hello} Напишите клуб прямо в чат — например «Реал», «Арсенал», «Бавария», «Бока Хуниорс» или «Интер Майами».`,
       '',
-      '<b>Как начать:</b>',
-      '1️⃣ Нажмите «Матчи сегодня» или «Найти матч».',
-      '2️⃣ В карточке выберите AI-вердикт, составы, судью или рынок.',
-      '3️⃣ «Полный AI-разбор» откроет минимальный Mini App с глубоким анализом.',
+      '<b>Что будет дальше:</b> я найду ближайший матч и сразу дам кнопки AI-вердикта, составов, судьи и рынка.',
+      '📊 Полный AI-разбор открывается в Mini App только после выбора конкретного матча.',
+      '📰 Новости и 🔴 LIVE остаются здесь, в Telegram.',
       '',
-      '📰 Новости и LIVE остаются здесь, в Telegram.',
-      '⭐ Отмечайте команды прямо в карточке матча — по ним появятся персональные матчи и новости.',
-      '',
-      '<i>Если данных недостаточно или сценарий слабый, FM AI прямо предложит пропустить матч.</i>',
+      '<i>Если данных мало или перевеса нет, FM AI прямо предложит пропустить матч.</i>',
     ].join('\n'),
     reply_markup: footballBotKeyboard(request),
   });
@@ -2480,14 +2489,15 @@ async function botCachedDayMatches(parts, cfg) {
 async function botRemoteTeamMatches(parts, cfg) {
   const query = String(parts.first || '').trim();
   const plan=topTeamSearchPlan(query);
-  if ((query.length < 3 && Number(plan.best?.score || 0) < 280) || !freeQuotaHealthy(10,2)) return [];
+  const highIntent=Number(plan.best?.score || 0)>=170;
+  if ((query.length < 3 && Number(plan.best?.score || 0) < 280) || (!freeQuotaHealthy(10,2) && !(highIntent && freeQuotaHealthy(2,1)))) return [];
   const q = searchText(plan.providerQuery || query);
   const teamCacheKey = `search:teams:${encodeURIComponent(q)}:v2-global`;
   let teams = (await getCache(teamCacheKey,cfg).catch(()=>null))?.teams || [];
   if (!teams.length) {
     const rows = await apiFootball('/teams',{search:plan.providerQuery || query},cfg).catch(()=>[]);
     teams = rows.map(x=>normalizeSearchTeam(x,query,plan.candidates)).filter(x=>x.id&&x.name).sort((a,b)=>b.score-a.score).slice(0,5);
-    if (teams.length) await setCache(teamCacheKey,0,{query,resolvedQuery:plan.resolved?plan.providerQuery:'',teams,warning:'',refreshedAt:new Date().toISOString()},cfg,720).catch(()=>null);
+    if (teams.length) await setCache(teamCacheKey,0,{query,resolvedQuery:plan.resolved?plan.providerQuery:'',teams,warning:'',refreshedAt:new Date().toISOString()},cfg,1440).catch(()=>null);
   }
   const team = teams[0];
   if (!team?.id || !freeQuotaHealthy(8,1)) return [];
@@ -2522,11 +2532,15 @@ async function sendBotFootballSearch(request, cfg, userId, chatId, rawText) {
   if (!matches.length) matches=await botRemoteTeamMatches(parts,cfg);
   const searchUrl=telegramWebAppUrl(request,{view:'search',q:parts.query});
   if (!matches.length) {
+    const recognized=topTeamSearchPlan(parts.first).best;
+    const known=recognized && Number(recognized.score || 0)>=170;
     await telegramApi('sendMessage',cfg,{
       chat_id:chatId,
       parse_mode:'HTML',
-      text:`🔎 По запросу <b>${telegramHtmlEscape(parts.query)}</b> подходящий матч сейчас не найден. Попробуйте полное название клуба или откройте AI-поиск — он ищет команды глобально по разным лигам и странам.`,
-      reply_markup:{inline_keyboard:[[{text:'🔎 Искать в приложении',web_app:{url:searchUrl}}]]},
+      text:known
+        ? `✅ Клуб распознан: <b>${telegramHtmlEscape(recognized.canonical)}</b>. Ближайший матч сейчас не вернулся из источника данных — откройте глобальный поиск, там сохраняется распознанный клуб и доступные матчи из кэша.`
+        : `🔎 По запросу <b>${telegramHtmlEscape(parts.query)}</b> подходящий матч сейчас не найден. Попробуйте полное название клуба или глобальный поиск по лигам и странам.`,
+      reply_markup:{inline_keyboard:[[{text:'🌍 Глобальный поиск',web_app:{url:searchUrl}}]]},
     });
     return;
   }
@@ -2632,6 +2646,14 @@ async function processTelegramUpdate(request, cfg, update) {
     if (callbackChatId && (data === 'news:general' || data === 'news:refresh')) {
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:data==='news:refresh'?'Обновляю новости…':'Открываю новости…'}).catch(()=>null);
       await sendGeneralFootballNews(request,cfg,callbackUserId,callbackChatId,{force:data==='news:refresh'});
+      return json({ok:true});
+    }
+    const newsMatchAction=data.match(/^news:match:(\d+)$/);
+    if (callbackChatId && newsMatchAction) {
+      const fixtureId=Number(newsMatchAction[1]);
+      void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_return',channel:'telegram',fixtureId,metadata:{origin:'team_news'}});
+      await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Открываю матч из новости…'}).catch(()=>null);
+      await sendBotFixtureMenu(request,cfg,callbackUserId,callbackChatId,fixtureId);
       return json({ok:true});
     }
     const newsTeamAction=data.match(/^news:team:(\d+)$/);
@@ -2772,7 +2794,7 @@ async function processTelegramUpdate(request, cfg, update) {
   if (chatId && text === '🔎 Найти матч') {
     await telegramApi('sendMessage', cfg, {
       chat_id:chatId,
-      text:'🔎 Напишите название команды или конкретный матч, например «Арсенал» или «Интер — Милан». Я найду игру и покажу кнопки AI-разбора прямо здесь.',
+      text:'🔎 Напишите клуб или конкретный матч. Можно по-русски: «Реал», «ПСЖ», «Бавария», «Бока Хуниорс», «Аль-Наср», «Интер Майами» или «Интер — Милан». Я ищу глобально, а кнопки разбора покажу прямо здесь.',
     });
     return json({ ok: true });
   }
@@ -9619,7 +9641,7 @@ async function sendFavoriteTeamNews(request,cfg,userId,chatId,teamId,{force=fals
   ]);
   const fixture=(matches || []).find(x=>x.live || (!x.finished && Date.parse(x.date || 0)>=Date.now()-2*60*60*1000)) || null;
   const extra=[];
-  if (fixture?.fixtureId) extra.push([{text:'⚽ Проверить ближайший матч',callback_data:`match:menu:${Number(fixture.fixtureId)}`}]);
+  if (fixture?.fixtureId) extra.push([{text:'⚽ Проверить ближайший матч',callback_data:`news:match:${Number(fixture.fixtureId)}`}]);
   extra.push([{text:'🔄 Обновить',callback_data:`news:team_refresh:${Number(teamId)}`},{text:'📰 Все новости',callback_data:'news:general'}]);
   await telegramApi('sendMessage',cfg,{
     chat_id:chatId,parse_mode:'HTML',
@@ -11612,6 +11634,24 @@ const TOP_TEAM_SEARCH_CATALOG = Object.freeze([
   { canonical:'Al-Ittihad FC', country:'Saudi-Arabia', aliases:['аль иттихад','ал иттихад','al ittihad','al-ittihad'] },
   { canonical:'Inter Miami', country:'USA', aliases:['интер майами','inter miami','майами'] },
   { canonical:'Los Angeles FC', country:'USA', aliases:['лафк','lafc','los angeles fc'] },
+  { canonical:'Flamengo', country:'Brazil', aliases:['фламенго','flamengo'] },
+  { canonical:'Palmeiras', country:'Brazil', aliases:['палмейрас','palmeiras'] },
+  { canonical:'Corinthians', country:'Brazil', aliases:['коринтианс','corinthians'] },
+  { canonical:'Sao Paulo', country:'Brazil', aliases:['сао паулу','сан паулу','sao paulo','são paulo'] },
+  { canonical:'Fluminense', country:'Brazil', aliases:['флуминенсе','fluminense'] },
+  { canonical:'Botafogo', country:'Brazil', aliases:['ботафого','botafogo'] },
+  { canonical:'River Plate', country:'Argentina', aliases:['ривер плейт','ривер','river plate','river'] },
+  { canonical:'Boca Juniors', country:'Argentina', aliases:['бока хуниорс','бока','boca juniors','boca'] },
+  { canonical:'Racing Club', country:'Argentina', aliases:['расинг','racing club','racing'] },
+  { canonical:'Independiente', country:'Argentina', aliases:['индепендьенте','independiente'] },
+  { canonical:'Zenit', country:'Russia', aliases:['зенит','zenit','zenit saint petersburg'] },
+  { canonical:'Spartak Moscow', country:'Russia', aliases:['спартак','спартак москва','spartak','spartak moscow'] },
+  { canonical:'CSKA Moscow', country:'Russia', aliases:['цска','цска москва','cska','cska moscow'] },
+  { canonical:'Dynamo Moscow', country:'Russia', aliases:['динамо москва','dynamo moscow'] },
+  { canonical:'Olympiakos Piraeus', country:'Greece', aliases:['олимпиакос','olympiakos','olympiacos'] },
+  { canonical:'Panathinaikos', country:'Greece', aliases:['панатинаикос','panathinaikos'] },
+  { canonical:'Red Bull Salzburg', country:'Austria', aliases:['зальцбург','salzburg','red bull salzburg'] },
+  { canonical:'FK Crvena Zvezda', country:'Serbia', aliases:['црвена звезда','красная звезда','red star belgrade','crvena zvezda'] },
 ]);
 
 function topTeamSearchCandidates(query = '') {
@@ -11635,6 +11675,18 @@ function topTeamSearchPlan(query = '') {
   const best=candidates[0] || null;
   const providerQuery=best && best.score>=170 ? best.canonical : String(query || '').trim();
   return { providerQuery, candidates, resolved:Boolean(best && searchText(providerQuery)!==searchText(query)), best };
+}
+
+function knownTopTeamFallbacks(query = '') {
+  return topTeamSearchCandidates(query).map(item=>({
+    id:0,
+    name:item.canonical,
+    country:normalizeCountryName(item.country || ''),
+    logo:'',
+    national:false,
+    catalogOnly:true,
+    score:Number(item.score || 0),
+  }));
 }
 
 function searchText(value = '') {
@@ -11780,12 +11832,14 @@ async function apiSearch(request, cfg) {
   const q = searchText(query);
   const competitions = searchKnownCompetitions(query);
   const teamPlan = topTeamSearchPlan(query);
-  if (!q) return json({ query: '', teams: [], competitions, matches: [], matchSource: null, provider: publicDataCapabilities(), hint: 'Введите название команды или турнира.' });
-  if (q.length < 3 && Number(teamPlan.best?.score || 0) < 280) return json({ query, teams: [], competitions, matches: [], matchSource: null, provider: publicDataCapabilities(), hint: 'Введите минимум 3 символа или известное сокращение клуба.' });
+  const highIntentTeam = Number(teamPlan.best?.score || 0) >= 170;
+  const knownTeams = knownTopTeamFallbacks(query);
+  if (!q) return json({ query: '', teams: [], knownTeams: [], competitions, matches: [], matchSource: null, provider: publicDataCapabilities(), hint: 'Введите название команды или турнира.' });
+  if (q.length < 3 && Number(teamPlan.best?.score || 0) < 280) return json({ query, teams: [], knownTeams, competitions, matches: [], matchSource: null, provider: publicDataCapabilities(), hint: 'Введите минимум 3 символа или известное сокращение клуба.' });
 
   if (Number(competitions[0]?.score || 0) >= 120) {
     const fixtureSearch = await loadSearchCompetitionMatches(competitions[0], cfg);
-    return json({ query, teams: [], competitions, ...fixtureSearch, provider: publicDataCapabilities() });
+    return json({ query, teams: [], knownTeams, competitions, ...fixtureSearch, provider: publicDataCapabilities() });
   }
 
   const teamCacheQuery = searchText(teamPlan.providerQuery || query);
@@ -11795,20 +11849,20 @@ async function apiSearch(request, cfg) {
     const fixtureSearch = preferCompetitionSearch(competitions[0], cached.teams)
       ? await loadSearchCompetitionMatches(competitions[0], cfg)
       : { matches: [], matchSource: null, warning: '' };
-    return json({ ...cached, query, resolvedQuery:teamPlan.resolved ? teamPlan.providerQuery : (cached.resolvedQuery || ''), competitions, ...fixtureSearch, warning: mergeSearchWarnings(cached.warning, fixtureSearch.warning), cached: true, provider: publicDataCapabilities() });
+    return json({ ...cached, query, knownTeams, resolvedQuery:teamPlan.resolved ? teamPlan.providerQuery : (cached.resolvedQuery || ''), competitions, ...fixtureSearch, warning: mergeSearchWarnings(cached.warning, fixtureSearch.warning), cached: true, provider: publicDataCapabilities() });
   }
 
   let rows = [];
   let warning = '';
   try {
-    if (!freeQuotaHealthy(8, 2)) {
+    if (!freeQuotaHealthy(8, 2) && !(highIntentTeam && freeQuotaHealthy(2, 1))) {
       const stale = await getStaleCache(cacheKey, cfg);
       const staleTeams = stale?.teams || [];
       const fixtureSearch = preferCompetitionSearch(competitions[0], staleTeams)
         ? await loadSearchCompetitionMatches(competitions[0], cfg)
         : { matches: [], matchSource: null, warning: '' };
       return json({
-        ...(stale || { teams: [] }), query, resolvedQuery:teamPlan.resolved ? teamPlan.providerQuery : (stale?.resolvedQuery || ''), competitions, ...fixtureSearch,
+        ...(stale || { teams: [] }), query, knownTeams, resolvedQuery:teamPlan.resolved ? teamPlan.providerQuery : (stale?.resolvedQuery || ''), competitions, ...fixtureSearch,
         cached: Boolean(stale), stale: Boolean(stale),
         warning: mergeSearchWarnings(
           stale ? 'Поиск показан из сохранённых данных: бережём лимит API-Football.' : 'Поиск команд временно не запущен: бережём остаток бесплатной квоты источника данных.',
@@ -11824,7 +11878,7 @@ async function apiSearch(request, cfg) {
       const fixtureSearch = preferCompetitionSearch(competitions[0], stale.teams)
         ? await loadSearchCompetitionMatches(competitions[0], cfg)
         : { matches: [], matchSource: null, warning: '' };
-      return json({ ...stale, query, resolvedQuery:teamPlan.resolved ? teamPlan.providerQuery : (stale.resolvedQuery || ''), competitions, ...fixtureSearch, cached: true, stale: true, warning: mergeSearchWarnings('Не удалось обновить поиск — показаны сохранённые результаты.', fixtureSearch.warning), provider: publicDataCapabilities() });
+      return json({ ...stale, query, knownTeams, resolvedQuery:teamPlan.resolved ? teamPlan.providerQuery : (stale.resolvedQuery || ''), competitions, ...fixtureSearch, cached: true, stale: true, warning: mergeSearchWarnings('Не удалось обновить поиск — показаны сохранённые результаты.', fixtureSearch.warning), provider: publicDataCapabilities() });
     }
     if (isFootballRateLimitError(error)) warning = 'API-Football временно ограничил поиск команд. Повторите чуть позже.';
     else throw error;
@@ -11837,8 +11891,8 @@ async function apiSearch(request, cfg) {
   const fixtureSearch = preferCompetitionSearch(competitions[0], teams)
     ? await loadSearchCompetitionMatches(competitions[0], cfg)
     : { matches: [], matchSource: null, warning: '' };
-  const payload = { query, resolvedQuery:teamPlan.resolved ? teamPlan.providerQuery : '', teams, warning, refreshedAt: new Date().toISOString() };
-  await setCache(cacheKey, 0, payload, cfg, 720);
+  const payload = { query, resolvedQuery:teamPlan.resolved ? teamPlan.providerQuery : '', teams, knownTeams, warning, refreshedAt: new Date().toISOString() };
+  await setCache(cacheKey, 0, payload, cfg, 1440);
   return json({ ...payload, competitions, ...fixtureSearch, warning: mergeSearchWarnings(warning, fixtureSearch.warning), cached: false, provider: publicDataCapabilities() });
 }
 
@@ -13134,6 +13188,10 @@ export default {
         firstPartyGrowthAnalytics: 'enabled',
         launchFunnelAnalytics: 'enabled',
         launchPrivacyGuard: 'enabled',
+        launchSimulation: 'enabled',
+        conversionUx: 'enabled',
+        highIntentSearchFallback: 'enabled',
+        newsReturnLoop: 'enabled',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',

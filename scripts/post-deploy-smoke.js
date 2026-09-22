@@ -37,6 +37,10 @@ const REQUIRED_HEALTH_FLAGS = [
   'firstPartyGrowthAnalytics',
   'launchFunnelAnalytics',
   'launchPrivacyGuard',
+  'launchSimulation',
+  'conversionUx',
+  'highIntentSearchFallback',
+  'newsReturnLoop',
 ];
 
 function delay(ms) {
@@ -161,7 +165,7 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
     origin: baseUrl.origin,
     version: health.version,
     releaseCandidate: health.releaseCandidate,
-    checks: 18,
+    checks: 19,
   };
 }
 
