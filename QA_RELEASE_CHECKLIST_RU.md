@@ -1,10 +1,10 @@
-# QA Release Checklist — v6.12.0 RC20
+# QA Release Checklist — v6.13.0 RC21
 
 ## Deploy
 
 - применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql` и `supabase_migration_v6_11_1.sql`;
-- Worker/client = `6.12.0-rc20`;
-- package = `6.12.0`;
+- Worker/client = `6.13.0-rc21`;
+- package = `6.13.0`;
 - cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;
@@ -13,6 +13,8 @@
 - Cloudflare token ограничен нужным account и Workers Edit;
 - `Deploy Production` запускается только после успешного `Quality` на `main`;
 - deploy использует `--keep-vars` и не удаляет dashboard variables;
+- отсутствие любого Cloudflare credential завершает deploy workflow ошибкой;
+- `public/_headers` содержит Telegram-compatible CSP и обязательные browser security headers;
 
 ## Champion–Challenger
 
@@ -76,10 +78,12 @@ npm run verify:worker
 
 ## Post-deploy
 
-- `/health` возвращает `6.12.0-rc20`, `RC20` и `devMode=false`;
+- `/health` возвращает `6.13.0-rc21`, `RC21` и `devMode=false`;
 - `cloudflareDeploymentGate=enabled`;
+- `browserSecurityPolicy=enabled` и `failClosedDeployment=enabled`;
 - `/api/app-manifest` соответствует версии Worker;
 - `/`, CSS и JS доступны после обновления asset cache key;
+- `/` содержит CSP с официальным Telegram SDK, `object-src 'none'` и `X-Content-Type-Options: nosniff`;
 - `/api/me`, `/api/release-readiness` и `/api/calibration-control` без Telegram initData возвращают `401`;
 - `/health/supabase` публично недоступен;
 - при ошибке используется `Rollback Production` с предыдущим version ID.

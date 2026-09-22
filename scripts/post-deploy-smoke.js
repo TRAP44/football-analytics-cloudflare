@@ -5,6 +5,8 @@ const REQUIRED_HEALTH_FLAGS = [
   'adminDevModeIsolation',
   'backendSecurityContract',
   'cloudflareDeploymentGate',
+  'browserSecurityPolicy',
+  'failClosedDeployment',
 ];
 
 function delay(ms) {
@@ -70,7 +72,7 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
 
   if (!health) throw new Error(`Deployment did not become ready: ${lastHealthError}`);
   if (health.ok !== true) throw new Error('Health endpoint is not healthy.');
-  if (health.releaseCandidate !== 'RC20') throw new Error(`Expected RC20, received ${health.releaseCandidate || 'unknown'}.`);
+  if (health.releaseCandidate !== 'RC21') throw new Error(`Expected RC21, received ${health.releaseCandidate || 'unknown'}.`);
   if (health.devMode !== false) throw new Error('Production deployment exposes DEV_MODE=true.');
   for (const flag of REQUIRED_HEALTH_FLAGS) {
     if (health[flag] !== 'enabled') throw new Error(`Health flag ${flag} is not enabled.`);
@@ -78,14 +80,21 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
 
   const manifestResponse = await request(fetchImpl, baseUrl, '/api/app-manifest');
   const manifest = await jsonBody(manifestResponse, 'App manifest');
-  if (!manifestResponse.ok || manifest?.version !== expectedVersion || manifest?.releaseCandidate !== 'RC20') {
-    throw new Error('Public app manifest does not match the deployed RC20 release.');
+  if (!manifestResponse.ok || manifest?.version !== expectedVersion || manifest?.releaseCandidate !== 'RC21') {
+    throw new Error('Public app manifest does not match the deployed RC21 release.');
   }
 
   const rootResponse = await request(fetchImpl, baseUrl, '/');
   const rootContentType = String(rootResponse.headers.get('content-type') || '').toLowerCase();
   if (!rootResponse.ok || !rootContentType.includes('text/html')) {
     throw new Error(`Static application shell failed: HTTP ${rootResponse.status}.`);
+  }
+  const contentSecurityPolicy = String(rootResponse.headers.get('content-security-policy') || '');
+  if (!contentSecurityPolicy.includes("script-src 'self' https://telegram.org") || !contentSecurityPolicy.includes("object-src 'none'")) {
+    throw new Error('Static application shell is missing the RC21 Content-Security-Policy.');
+  }
+  if (String(rootResponse.headers.get('x-content-type-options') || '').toLowerCase() !== 'nosniff') {
+    throw new Error('Static application shell is missing X-Content-Type-Options: nosniff.');
   }
 
   for (const path of ['/api/me', '/api/release-readiness', '/api/calibration-control']) {
@@ -101,7 +110,7 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
     origin: baseUrl.origin,
     version: health.version,
     releaseCandidate: health.releaseCandidate,
-    checks: 9,
+    checks: 11,
   };
 }
 

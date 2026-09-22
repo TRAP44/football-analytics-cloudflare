@@ -49,38 +49,33 @@ jobs:
           npm run verify:worker
 
       - name: Check Cloudflare credentials
-        id: credentials
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         shell: bash
         run: |
-          if [[ -n "$CLOUDFLARE_API_TOKEN" && -n "$CLOUDFLARE_ACCOUNT_ID" ]]; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "### Cloudflare deploy skipped" >> "$GITHUB_STEP_SUMMARY"
-            echo "Add CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID to the production environment or repository secrets." >> "$GITHUB_STEP_SUMMARY"
+          if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
+            echo "### Cloudflare deploy blocked" >> "$GITHUB_STEP_SUMMARY"
+            echo "CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are required in the production environment or repository secrets." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
           fi
 
       - name: Deploy Worker
         id: deploy
-        if: steps.credentials.outputs.available == 'true'
         uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: "4.136.1"
-          command: deploy --keep-vars --message "RC20 ${{ env.DEPLOY_SHA }}"
+          command: deploy --keep-vars --message "RC21 ${{ env.DEPLOY_SHA }}"
 
       - name: Verify production deployment
-        if: steps.credentials.outputs.available == 'true'
         env:
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
           CONFIGURED_URL: ${{ vars.CLOUDFLARE_WORKER_URL }}
         shell: bash
         run: |
           SMOKE_URL="${CONFIGURED_URL:-$DEPLOYMENT_URL}"
-          node scripts/post-deploy-smoke.js "$SMOKE_URL" "6.12.0-rc20"
+          node scripts/post-deploy-smoke.js "$SMOKE_URL" "6.13.0-rc21"
           echo "### Cloudflare deploy verified" >> "$GITHUB_STEP_SUMMARY"
-          echo "RC20 post-deploy smoke passed for the production Worker." >> "$GITHUB_STEP_SUMMARY"
+          echo "RC21 post-deploy smoke passed for the production Worker." >> "$GITHUB_STEP_SUMMARY"

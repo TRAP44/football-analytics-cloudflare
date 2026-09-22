@@ -15,45 +15,51 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
       healthCalls += 1;
       return json({
         ok: true,
-        version: staleOnce && healthCalls === 1 ? '6.11.0-rc19' : '6.12.0-rc20',
-        releaseCandidate: 'RC20',
+        version: staleOnce && healthCalls === 1 ? '6.12.0-rc20' : '6.13.0-rc21',
+        releaseCandidate: 'RC21',
         devMode,
         adminSecurity: 'enabled',
         adminDevModeIsolation: 'enabled',
         backendSecurityContract: 'enabled',
         cloudflareDeploymentGate: 'enabled',
+        browserSecurityPolicy: 'enabled',
+        failClosedDeployment: 'enabled',
       });
     }
-    if (url.pathname === '/api/app-manifest') return json({ version: '6.12.0-rc20', releaseCandidate: 'RC20' });
-    if (url.pathname === '/') return new Response('<!doctype html>', { status: 200, headers: { 'content-type': 'text/html; charset=UTF-8' } });
+    if (url.pathname === '/api/app-manifest') return json({ version: '6.13.0-rc21', releaseCandidate: 'RC21' });
+    if (url.pathname === '/') return new Response('<!doctype html>', { status: 200, headers: {
+      'content-type': 'text/html; charset=UTF-8',
+      'content-security-policy': "default-src 'self'; script-src 'self' https://telegram.org; object-src 'none'",
+      'x-content-type-options': 'nosniff',
+    } });
     if (url.pathname === '/health/supabase') return json({ error: 'not found' }, 404);
     if (url.pathname.startsWith('/api/')) return json({ error: 'Telegram auth required' }, 401);
     return json({ error: 'not found' }, 404);
   };
 }
 
-test('post-deploy smoke validates RC20 and protected routes', async () => {
-  const result = await runDeploymentSmoke('https://football.example.test', '6.12.0-rc20', {
+test('post-deploy smoke validates RC21, security headers and protected routes', async () => {
+  const result = await runDeploymentSmoke('https://football.example.test', '6.13.0-rc21', {
     fetchImpl: healthyFetch(),
     retries: 1,
     retryDelayMs: 0,
   });
   assert.equal(result.ok, true);
-  assert.equal(result.checks, 9);
+  assert.equal(result.checks, 11);
 });
 
 test('post-deploy smoke retries while the previous Worker version is propagating', async () => {
-  const result = await runDeploymentSmoke('https://football.example.test/', '6.12.0-rc20', {
+  const result = await runDeploymentSmoke('https://football.example.test/', '6.13.0-rc21', {
     fetchImpl: healthyFetch({ staleOnce: true }),
     retries: 2,
     retryDelayMs: 0,
   });
-  assert.equal(result.version, '6.12.0-rc20');
+  assert.equal(result.version, '6.13.0-rc21');
 });
 
 test('post-deploy smoke rejects DEV_MODE in production', async () => {
   await assert.rejects(
-    runDeploymentSmoke('https://football.example.test', '6.12.0-rc20', {
+    runDeploymentSmoke('https://football.example.test', '6.13.0-rc21', {
       fetchImpl: healthyFetch({ devMode: true }),
       retries: 1,
       retryDelayMs: 0,

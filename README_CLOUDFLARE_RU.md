@@ -1,6 +1,15 @@
-# Football Analytics Mini App v6.12.0 — RC20
+# Football Analytics Mini App v6.13.0 — RC21
 
 Telegram Mini App для футбольной аналитики на Cloudflare Workers, Supabase и API-Football.
+
+## RC21: Release Security Hardening
+
+- отсутствие Cloudflare credentials теперь блокирует production workflow с ошибкой вместо ложного зелёного результата;
+- HTML, CSS и JS получают CSP, HSTS, `nosniff`, `Referrer-Policy`, `Permissions-Policy` и same-origin resource policy;
+- CSP разрешает официальный Telegram Mini App SDK и встраивание из Telegram Web, но запрещает плагины, внешний API-доступ из браузера и небезопасные inline-скрипты;
+- API JSON-ответы получают единый набор защитных заголовков без permissive CORS;
+- versioned CSS/JS кешируются как immutable, а смена версии продолжает принудительно обновлять клиент;
+- post-deploy smoke проверяет браузерную политику безопасности вместе с версией, production mode и admin isolation.
 
 ## RC20: Cloudflare Deployment Gate
 
@@ -61,7 +70,7 @@ npm run verify:release
 ```
 
 GitHub Actions выполняет эти проверки для каждого Pull Request и push в `main`.
-После успешного `Quality` workflow `Deploy Production` публикует Worker, если в GitHub настроены `CLOUDFLARE_API_TOKEN` и `CLOUDFLARE_ACCOUNT_ID`.
+После успешного `Quality` workflow `Deploy Production` публикует Worker. Если `CLOUDFLARE_API_TOKEN` или `CLOUDFLARE_ACCOUNT_ID` отсутствует, workflow завершается ошибкой и не маскирует отсутствие релиза.
 
 ## Установка
 
