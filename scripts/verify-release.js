@@ -66,7 +66,7 @@ if (!worker.includes("aiTenSecondVerdict: 'enabled'") || !worker.includes("daily
 if (!worker.includes('function buildAiInstructor')) failures.push('AI football instructor engine is missing');
 if (!worker.includes("referee: fixture.fixture?.referee || ''")) failures.push('Pre-match referee context is missing');
 if (!app.includes('function aiInstructorHtml')) failures.push('AI instructor UI is missing');
-if (!html.includes('FOOTBALL MANAGER AI') || !html.includes('boot-feature-row')) failures.push('AI startup experience is missing');
+if (!html.includes('FM AI') || !html.includes('AI ФУТБОЛЬНЫЙ ИНСТРУКТОР') || !html.includes('boot-feature-row')) failures.push('AI startup experience is missing');
 if (!worker.includes("telegramBotHub: 'enabled'") || !worker.includes("aiFootballInstructor: 'enabled'")) failures.push('RC41 AI/bot health contract is missing');
 if (!html.includes('id="dailyOverviewKicker"')) failures.push('Contextual overview kicker is missing');
 if (!html.includes('id="quotaText" hidden')) failures.push('Main-screen quota must be hidden by default');
