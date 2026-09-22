@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.38.0-rc46';
+const CLIENT_VERSION = '6.39.0-rc47';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc46';
+const CLIENT_RELEASE_CHANNEL = 'rc47';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -6133,9 +6133,12 @@ function aiInstructorHtml(ai = {}, match = {}) {
 }
 
 let launchIntentHandled = false;
-async function openLaunchFixture(fixtureId, action) {
+async function openLaunchFixture(fixtureId, action, tab = '') {
   const id = Number(fixtureId || 0);
   if (!id) return;
+  const allowedTabs = new Set(['brief','overview','form','comparison','market','squads','context']);
+  const requestedTab = allowedTabs.has(String(tab || '').toLowerCase()) ? String(tab).toLowerCase() : '';
+  if (requestedTab) state.currentAnalysisTab = requestedTab;
   if (action === 'center') return openMatchCenter(id, null);
   if (action === 'analysis') {
     await loadHistory(false);
@@ -6153,6 +6156,7 @@ function applyLaunchIntent() {
   const query = String(params.get('q') || '').trim().slice(0, 60);
   const fixtureId = Number(params.get('fixtureId') || 0);
   const action = String(params.get('action') || '').toLowerCase();
+  const tab = String(params.get('tab') || '').toLowerCase();
   if (['top', 'live', 'favorites', 'all'].includes(filter)) {
     state.filter = filter;
     syncFilterButtons();
@@ -6173,7 +6177,7 @@ function applyLaunchIntent() {
     void loadHistory(false);
   } else {
     showView('matchesView', { restore: true });
-    if (fixtureId > 0 && ['analysis','center'].includes(action)) void openLaunchFixture(fixtureId, action);
+    if (fixtureId > 0 && ['analysis','center'].includes(action)) void openLaunchFixture(fixtureId, action, tab);
   }
 }
 function renderAnalysis(d) {

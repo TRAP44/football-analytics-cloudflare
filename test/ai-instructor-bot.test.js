@@ -28,13 +28,14 @@ test('startup experience identifies the AI role', () => {
   assert.match(app, /Запускаю AI-инструктора/);
 });
 
-test('telegram bot has useful commands and mini-app routes', () => {
+test('telegram bot has a button-first hub and mini-app routes', () => {
   assert.match(worker, /setMyCommands/);
+  assert.match(worker, /commands:\s*\[\]/);
   assert.match(worker, /setChatMenuButton/);
-  assert.match(worker, /command: 'today'/);
-  assert.match(worker, /command: 'live'/);
-  assert.match(worker, /command: 'favorites'/);
   assert.match(worker, /footballBotKeyboard/);
+  assert.match(worker, /⚽ Матчи сегодня/);
+  assert.match(worker, /🔴 LIVE/);
+  assert.match(worker, /⭐ Мои команды/);
   assert.match(app, /function applyLaunchIntent/);
 });
 

@@ -19,11 +19,11 @@ test('analyzed match hub exposes a dedicated skip or caution lane',()=>{
   assert.match(app,/aiSignalCode === 'skip'/);
 });
 
-test('telegram bot accepts natural football search and explicit search command',()=>{
+test('telegram bot accepts natural football search through the shared safe route',()=>{
   assert.match(worker,/function sendBotFootballSearch/);
   assert.match(worker,/function botCachedDayMatches/);
   assert.match(worker,/function botRemoteTeamMatches/);
-  assert.match(worker,/command: 'search'/);
+  assert.match(worker,/function botSearchParts/);
   assert.match(worker,/await sendBotFootballSearch\(request, cfg, chatId, text\)/);
 });
 

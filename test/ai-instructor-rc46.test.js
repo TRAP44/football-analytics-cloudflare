@@ -29,8 +29,8 @@ test('telegram bot understands common football question intents',()=> {
   assert.match(worker,/function botIntentLead/);
 });
 
-test('telegram bot exposes ask command and routes through existing safe search',()=> {
-  assert.match(worker,/command: 'ask'/);
+test('telegram bot routes natural questions through existing safe search',()=> {
+  assert.match(worker,/botSearchParts/);
   assert.match(worker,/sendBotFootballSearch/);
   assert.match(worker,/freeQuotaHealthy\(10,2\)/);
   assert.match(worker,/telegramHtmlEscape/);
