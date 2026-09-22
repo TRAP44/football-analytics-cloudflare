@@ -38,8 +38,10 @@ test('core media funnel events are first party and avoid storing the search quer
   for (const name of ['bot_start','search','match_open','quick_ai','miniapp_open','full_ai','news_open','favorite_add','digest_opt_in']) {
     assert.ok(worker.includes(`eventName:'${name}'`), `missing event ${name}`);
   }
-  assert.match(worker,/metadata:\{intent:parts\.intent\}/);
-  assert.doesNotMatch(worker,/eventName:'search'.*query:/s);
+  const searchEvent=/recordGrowthEvent\(cfg,\{userId,eventName:'search',channel:'telegram',metadata:\{([^}]*)\}\}\)/.exec(worker);
+  assert.ok(searchEvent, 'search growth event payload is missing');
+  assert.match(searchEvent[1],/intent:parts\.intent/);
+  assert.doesNotMatch(searchEvent[1],/query|rawText|parts\.query/);
 });
 
 test('admin funnel returns aggregates and Mini App keeps it admin-only',()=> {
