@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.36.0-rc44';
+const CLIENT_VERSION = '6.37.0-rc45';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc44';
+const CLIENT_RELEASE_CHANNEL = 'rc45';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -4351,27 +4351,50 @@ function renderAiCenterSummary() {
   const signals = analyzed.filter(x => x.history.aiSignalCode !== 'skip');
   const skips = analyzed.filter(x => x.history.aiSignalCode === 'skip');
   const highRisk = analyzed.filter(x => String(x.history.aiRisk || '').toLowerCase() === 'высокий');
-  const strongest = [...signals].sort((a,b) => Number(b.history.aiConfidence || 0) - Number(a.history.aiConfidence || 0))[0] || analyzed[0];
-  const h = strongest.history;
-  const m = strongest.match;
+  const strongest = [...signals].sort((a,b) => Number(b.history.aiConfidence || 0) - Number(a.history.aiConfidence || 0))[0] || null;
+  const cautionPool = [...skips, ...highRisk.filter(x => !skips.some(s => Number(s.match.fixtureId) === Number(x.match.fixtureId)))];
+  const caution = cautionPool.sort((a,b) => {
+    const aSkip = a.history.aiSignalCode === 'skip' ? 1 : 0;
+    const bSkip = b.history.aiSignalCode === 'skip' ? 1 : 0;
+    return bSkip - aSkip || Number(a.history.aiConfidence || 0) - Number(b.history.aiConfidence || 0);
+  })[0] || null;
+  const featureButton = (item, kind) => {
+    if (!item) return '';
+    const h = item.history, m = item.match;
+    const label = kind === 'caution' ? '⚠️ Лучше пропустить' : '🧠 Сильнейший разбор';
+    const detail = kind === 'caution'
+      ? `${escapeHtml(h.aiSignalLabel || 'Высокий риск')} · ${escapeHtml(h.aiRisk || 'риск повышен')}`
+      : `${escapeHtml(h.aiSignalLabel || 'AI-разбор')} · уверенность ${Math.round(Number(h.aiConfidence || 0))}/100`;
+    return `<button class="ai-center-feature ${kind === 'caution' ? 'caution' : ''}" type="button" data-ai-center-history="${Number(m.fixtureId)}"><span>${label}</span><strong>${escapeHtml(m.home?.name || '')} — ${escapeHtml(m.away?.name || '')}</strong><small>${detail}</small></button>`;
+  };
   wrap.hidden = false;
-  wrap.innerHTML = `<div class="ai-center-head"><div><span>AI-ЦЕНТР</span><strong>Уже разобранные матчи</strong></div><small>Повторное открытие не тратит новый анализ</small></div><div class="ai-center-metrics"><div><b>${signals.length}</b><span>сигналов</span></div><div><b>${skips.length}</b><span>пропустить</span></div><div><b>${highRisk.length}</b><span>высокий риск</span></div></div><button class="ai-center-feature" type="button" data-ai-center-history="${Number(m.fixtureId)}"><span>${h.aiSignalCode === 'skip' ? '⚠️ Осторожно' : '🧠 Сильнейший разбор'}</span><strong>${escapeHtml(m.home?.name || '')} — ${escapeHtml(m.away?.name || '')}</strong><small>${escapeHtml(h.aiSignalLabel || 'AI-разбор')} · уверенность ${Math.round(Number(h.aiConfidence || 0))}/100</small></button>`;
-  wrap.querySelector('[data-ai-center-history]')?.addEventListener('click', event => openHistoryAnalysis(Number(event.currentTarget.dataset.aiCenterHistory), event.currentTarget));
+  wrap.innerHTML = `<div class="ai-center-head"><div><span>AI-ЦЕНТР</span><strong>Уже разобранные матчи</strong></div><small>Вердикты сохранены · повторное открытие без нового расхода</small></div><div class="ai-center-metrics"><div><b>${signals.length}</b><span>сигналов</span></div><div><b>${skips.length}</b><span>лучше пропустить</span></div><div><b>${highRisk.length}</b><span>высокий риск</span></div></div><div class="ai-center-features">${featureButton(strongest,'strong')}${featureButton(caution,'caution')}</div>`;
+  wrap.querySelectorAll('[data-ai-center-history]').forEach(button => button.addEventListener('click', event => openHistoryAnalysis(Number(event.currentTarget.dataset.aiCenterHistory), event.currentTarget)));
 }
 function renderAiFocus() {
   const wrap = $('aiFocus');
   if (!wrap) return;
   const signals = personalContextSignals();
-  const candidates = state.matches.filter(m => !m.live && !m.finished && !m.youthReserve).map(m => ({ match:m, insight:personalMatchInsight(m, signals) })).sort((a,b) => b.insight.score - a.insight.score || Number(b.match.interestScore || 0) - Number(a.match.interestScore || 0));
-  const top = candidates[0];
-  if (!top) { wrap.hidden = true; wrap.innerHTML = ''; return; }
-  const recommended = candidates.filter(x => x.insight.recommended).length;
-  const m = top.match;
-  const reason = top.insight.reason || (m.featured ? 'Главный матч дня' : Number(m.interestScore || 0) >= 75 ? 'Высокий интерес' : 'Лучший доступный вариант');
-  const count = recommended || candidates.length;
+  const candidates = state.matches
+    .filter(m => !m.live && !m.finished && !m.youthReserve)
+    .map(m => ({ match:m, insight:personalMatchInsight(m, signals) }))
+    .sort((a,b) => b.insight.score - a.insight.score || Number(b.match.interestScore || 0) - Number(a.match.interestScore || 0));
+  if (!candidates.length) { wrap.hidden = true; wrap.innerHTML = ''; return; }
+  const preferred = candidates.filter(x => x.insight.recommended);
+  const ranked = (preferred.length ? preferred : candidates).slice(0,3);
+  const rowHtml = (item, index) => {
+    const m = item.match;
+    const saved = analysisHistoryForFixture(m.fixtureId);
+    const reason = item.insight.reason || (m.featured ? 'Главный матч дня' : Number(m.interestScore || 0) >= 75 ? 'Высокий интерес' : 'Подходит по контексту');
+    const action = saved
+      ? `<button type="button" data-ai-rank-history="${Number(m.fixtureId)}">Открыть разбор</button>`
+      : `<button type="button" data-ai-rank-fixture="${Number(m.fixtureId)}">Разобрать</button>`;
+    return `<article class="ai-rank-row"><b class="ai-rank-number">${index + 1}</b><div class="ai-rank-teams">${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : '<span>⚽</span>'}<div><strong>${escapeHtml(m.home?.name || '')} — ${escapeHtml(m.away?.name || '')}</strong><small>${escapeHtml(reason)} · ${timeOf(m.date)}${m.league ? ` · ${escapeHtml(m.league)}` : ''}</small></div>${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : '<span>⚽</span>'}</div>${action}</article>`;
+  };
   wrap.hidden = false;
-  wrap.innerHTML = `<div class="ai-focus-copy"><span>AI-ФОКУС ДНЯ</span><strong>${escapeHtml(m.home?.name || '')} — ${escapeHtml(m.away?.name || '')}</strong><p>${escapeHtml(reason)} · ${timeOf(m.date)}${m.league ? ` · ${escapeHtml(m.league)}` : ''}</p><small>AI выделил ${count} ${russianCountLabel(count,'матч','матча','матчей')} по доступным сигналам. Полный вывод появится после анализа.</small></div><div class="ai-focus-teams">${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : '<span>⚽</span>'}<b>vs</b>${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : '<span>⚽</span>'}</div><button class="ai-focus-action" type="button" data-ai-focus-fixture="${Number(m.fixtureId)}">🧠 Разобрать матч</button>`;
-  wrap.querySelector('[data-ai-focus-fixture]')?.addEventListener('click', event => analyzeMatch(Number(event.currentTarget.dataset.aiFocusFixture), event.currentTarget));
+  wrap.innerHTML = `<div class="ai-rank-head"><div><span>AI-РЕЙТИНГ ДНЯ</span><strong>Матчи, которые заслуживают внимания</strong></div><small>Рейтинг по интересу, избранному и вашей истории. Это ещё не прогноз исхода.</small></div><div class="ai-rank-list">${ranked.map(rowHtml).join('')}</div>`;
+  wrap.querySelectorAll('[data-ai-rank-fixture]').forEach(button => button.addEventListener('click', event => analyzeMatch(Number(event.currentTarget.dataset.aiRankFixture), event.currentTarget)));
+  wrap.querySelectorAll('[data-ai-rank-history]').forEach(button => button.addEventListener('click', event => openHistoryAnalysis(Number(event.currentTarget.dataset.aiRankHistory), event.currentTarget)));
 }
 function renderMatches() {
   const list = filteredMatches();
@@ -6096,26 +6119,47 @@ function aiInstructorHtml(ai = {}, match = {}) {
 }
 
 let launchIntentHandled = false;
+async function openLaunchFixture(fixtureId, action) {
+  const id = Number(fixtureId || 0);
+  if (!id) return;
+  if (action === 'center') return openMatchCenter(id, null);
+  if (action === 'analysis') {
+    await loadHistory(false);
+    if (analysisHistoryForFixture(id)) return openHistoryAnalysis(id, null);
+    return analyzeMatch(id, null);
+  }
+}
+
 function applyLaunchIntent() {
   if (launchIntentHandled) return;
   launchIntentHandled = true;
   const params = new URLSearchParams(location.search);
   const filter = String(params.get('filter') || '').toLowerCase();
   const view = String(params.get('view') || '').toLowerCase();
+  const query = String(params.get('q') || '').trim().slice(0, 60);
+  const fixtureId = Number(params.get('fixtureId') || 0);
+  const action = String(params.get('action') || '').toLowerCase();
   if (['top', 'live', 'favorites', 'all'].includes(filter)) {
     state.filter = filter;
     syncFilterButtons();
     if (state.matches.length) renderMatches();
   }
-  if (view === 'search') {
+  if (view === 'search' || query) {
+    if (query) {
+      state.globalSearch.query = query;
+      const input = $('globalSearchInput');
+      if (input) input.value = query;
+    }
     renderDiscoveryHome();
     renderGlobalSearch();
     showView('searchView');
+    if (query) void runGlobalSearch();
   } else if (view === 'history') {
     showView('historyView');
     void loadHistory(false);
   } else {
     showView('matchesView', { restore: true });
+    if (fixtureId > 0 && ['analysis','center'].includes(action)) void openLaunchFixture(fixtureId, action);
   }
 }
 function renderAnalysis(d) {

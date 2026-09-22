@@ -9,15 +9,15 @@ const staticHeaders = fs.readFileSync('public/_headers', 'utf8');
 const styles = fs.readFileSync('public/styles.css', 'utf8');
 const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml', 'utf8');
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
-const expected = `${pkg.version}-rc44`;
+const expected = `${pkg.version}-rc45`;
 const failures = [];
 
 if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) failures.push('package-lock version must match package.json');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC44'")) failures.push('Worker RC name must be RC44');
+if (!worker.includes("const RC_NAME = 'RC45'")) failures.push('Worker RC name must be RC45');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc44'")) failures.push('Client release channel must be rc44');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc45'")) failures.push('Client release channel must be rc45');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -34,8 +34,8 @@ if (!fs.existsSync('.github/workflows/rollback-production.yml')) failures.push('
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
-if (!deployWorkflow.includes('--message "RC44 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC44');
-if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.36.0-rc44"')) failures.push('Production smoke must verify 6.36.0-rc44');
+if (!deployWorkflow.includes('--message "RC45 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC45');
+if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.37.0-rc45"')) failures.push('Production smoke must verify 6.37.0-rc45');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
 if (!/id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden/.test(html)) failures.push('Admin role badge must use the fail-closed admin-only visibility contract');
 if (!/\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i.test(styles)) failures.push('Global hidden elements must remain display:none');
@@ -62,6 +62,7 @@ if (!fs.existsSync('test/main-screen-focus.test.js')) failures.push('Missing RC4
 if (!fs.existsSync('test/ai-instructor-bot.test.js')) failures.push('Missing RC44 AI-instructor/bot regression test');
 if (!fs.existsSync('test/ai-instructor-rc41.test.js')) failures.push('Missing RC41 AI-intelligence regression test');
 if (!fs.existsSync('test/live-ai-rc44.test.js')) failures.push('Missing RC44 AI LIVE regression test');
+if (!fs.existsSync('test/ai-experience-rc45.test.js')) failures.push('Missing RC45 ranking/bot regression test');
 if (!fs.existsSync('test/ai-instructor-rc43.test.js')) failures.push('Missing RC43 persistent-AI regression test');
 if (!fs.existsSync('test/ai-instructor-rc42.test.js')) failures.push('Missing RC42 referee/AI-focus regression test');
 if (!worker.includes('function loadRefereeHistoryProfile')) failures.push('RC44 referee history loader is missing');
@@ -136,3 +137,8 @@ if (!app.includes('function renderAiCenterSummary') || !app.includes('matchAiSna
 if (!worker.includes("aiLiveCoach: 'enabled'") || !worker.includes("prematchLiveComparison: 'enabled'") || !worker.includes("liveScenarioGuard: 'enabled'")) failures.push('RC44 AI LIVE health contract is missing');
 if (!worker.includes('function buildLiveAiCoach') || !worker.includes('v10-ai-live-coach')) failures.push('RC44 AI LIVE engine/cache is missing');
 if (!app.includes('function liveAiCoachHtml') || !app.includes('d.liveAiCoach')) failures.push('RC44 AI LIVE interface is missing');
+
+if (!worker.includes("aiMatchRanking: 'enabled'") || !worker.includes("analyzedSkipLane: 'enabled'")) failures.push('RC45 AI ranking contract is missing');
+if (!worker.includes("botNaturalFootballSearch: 'enabled'") || !worker.includes("botFixtureDeepLinks: 'enabled'")) failures.push('RC45 bot search contract is missing');
+if (!worker.includes('function sendBotFootballSearch') || !worker.includes("command: 'search'")) failures.push('RC45 natural bot search is missing');
+if (!app.includes('AI-РЕЙТИНГ ДНЯ') || !app.includes('openLaunchFixture')) failures.push('RC45 ranked home/deep-link UI is missing');
