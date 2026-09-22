@@ -52,7 +52,7 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
       });
     }
     if (url.pathname === '/api/app-manifest') return json({ version: '6.27.0-rc35', releaseCandidate: 'RC35' });
-    if (url.pathname === '/status') return json({ ok:true, status:'operational', version:'6.27.0-rc35', releaseCandidate:'RC35', services:{telegram:'operational'} });
+    if (url.pathname === '/api/public-status') return json({ ok:true, status:'operational', version:'6.27.0-rc35', releaseCandidate:'RC35', services:{telegram:'operational'} });
     if (['/privacy.html','/terms.html','/status.html'].includes(url.pathname)) return new Response('<!doctype html>', { status:200, headers:{
       'content-type':'text/html; charset=UTF-8',
       'content-security-policy':"default-src 'self'; object-src 'none'",

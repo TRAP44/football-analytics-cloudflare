@@ -185,7 +185,7 @@ if (!worker.includes("telegramSearchAliasParity: 'enabled'") || !worker.includes
 
 if (!worker.includes("mediaLaunchHardening: 'enabled'") || !worker.includes("telegramWebhookDedupe: 'enabled'") || !worker.includes("telegramWebhookBurstGuard: 'enabled'")) failures.push('RC52 webhook hardening contract is missing');
 if (!worker.includes("newsSourceTrustGate: 'enabled'") || !worker.includes('applyNewsTrustGate') || !worker.includes('newsSourceTrust')) failures.push('RC52 news trust gate is missing');
-if (!worker.includes("publicLegalPages: 'enabled'") || !worker.includes("publicStatusPage: 'enabled'") || !worker.includes("url.pathname === '/status'")) failures.push('RC52 public trust contract is missing');
+if (!worker.includes("publicLegalPages: 'enabled'") || !worker.includes("publicStatusPage: 'enabled'") || !worker.includes("url.pathname === '/api/public-status'")) failures.push('RC52 public trust contract is missing');
 if (!fs.existsSync('public/privacy.html') || !fs.existsSync('public/terms.html') || !fs.existsSync('public/status.html') || !fs.existsSync('public/status.js')) failures.push('RC52 public trust pages are missing');
-if (!wrangler.includes('"/telegram/*"') || !wrangler.includes('"/status"')) failures.push('RC52 Worker-first webhook/status routes are missing');
+if (!wrangler.includes('"/telegram/*"') || !wrangler.includes('"/api/*"')) failures.push('RC52 Worker-first webhook/public API routes are missing');
 if (!deployWorkflow.includes('6.44.0-rc52')) failures.push('RC52 production workflow version is missing');

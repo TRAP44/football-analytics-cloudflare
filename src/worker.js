@@ -12831,7 +12831,7 @@ export default {
     const cfg = config(env);
     const url = new URL(request.url);
 
-    if (request.method === 'GET' && url.pathname === '/status') {
+    if (request.method === 'GET' && url.pathname === '/api/public-status') {
       return json(await publicServiceStatus(cfg),200,{'cache-control':'no-store'});
     }
 

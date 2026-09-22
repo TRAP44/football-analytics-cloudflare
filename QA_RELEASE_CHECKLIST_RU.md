@@ -97,15 +97,15 @@
 - message/callback/refresh имеют раздельные burst policies;
 - payment/pre-checkout/subscription updates не блокируются generic Telegram burst guard;
 - webhook без `x-telegram-bot-api-secret-token` получает HTTP 403 в Production;
-- Cloudflare Assets `run_worker_first` содержит `/telegram/*` и `/status`;
-- `/status` не раскрывает ключи, Supabase URL, Telegram ID админа или provider quota;
+- Cloudflare Assets `run_worker_first` содержит `/telegram/*` и `/api/*`;
+- `/api/public-status` не раскрывает ключи, Supabase URL, Telegram ID админа или provider quota;
 - Privacy/Terms/Status доступны как статические HTTPS-страницы с CSP;
 - privacy описывает реально используемые пользовательские данные и внешних провайдеров;
 - terms явно отделяет AI-анализ от гарантии результата и финансовой/букмекерской рекомендации;
 - trust-ссылки видны на основном AI-search экране, но не создают новую продуктовую навигацию Mini App;
 - official/major news source сохраняет исходную impact-категорию;
 - high-impact news из обычного web source понижается до medium и показывает «требуется подтверждение»;
-- production smoke проверяет release version на `/status`, три trust pages и webhook secret enforcement;
+- production smoke проверяет release version на `/api/public-status`, три trust pages и webhook secret enforcement;
 - RC regression содержит blocking check `telegram_webhook_guard`;
 - новых таблиц и миграций RC52 нет.
 

@@ -134,7 +134,7 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
   const hiddenProbe = await request(fetchImpl, baseUrl, '/health/supabase');
   if (hiddenProbe.status !== 404) throw new Error('/health/supabase must remain unavailable publicly.');
 
-  const publicStatusResponse = await request(fetchImpl, baseUrl, '/status');
+  const publicStatusResponse = await request(fetchImpl, baseUrl, '/api/public-status');
   const publicStatus = await jsonBody(publicStatusResponse, 'Public status endpoint');
   if (!publicStatusResponse.ok || publicStatus?.version !== expectedVersion || publicStatus?.releaseCandidate !== expectedReleaseCandidate) {
     throw new Error('Public status endpoint does not match the deployed release.');

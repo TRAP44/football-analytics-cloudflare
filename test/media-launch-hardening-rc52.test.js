@@ -47,9 +47,9 @@ test('public legal and status pages exist without adding a new Mini App content 
 });
 
 test('status and Telegram webhook are forced through the Worker',()=> {
-  assert.match(wrangler,/"\/status"/);
+  assert.match(wrangler,/"\/api\/\*"/);
   assert.match(wrangler,/"\/telegram\/\*"/);
-  assert.match(worker,/url\.pathname === '\/status'/);
+  assert.match(worker,/url\.pathname === '\/api\/public-status'/);
   assert.match(smoke,/Telegram webhook must reject a request without its secret/);
   assert.match(smoke,/\/privacy\.html/);
 });
