@@ -9,15 +9,15 @@ const staticHeaders = fs.readFileSync('public/_headers', 'utf8');
 const styles = fs.readFileSync('public/styles.css', 'utf8');
 const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml', 'utf8');
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
-const expected = `${pkg.version}-rc54`;
+const expected = `${pkg.version}-rc55`;
 const failures = [];
 
 if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) failures.push('package-lock version must match package.json');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC54'")) failures.push('Worker RC name must be RC54');
+if (!worker.includes("const RC_NAME = 'RC55'")) failures.push('Worker RC name must be RC55');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc54'")) failures.push('Client release channel must be rc54');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc55'")) failures.push('Client release channel must be rc55');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -35,8 +35,8 @@ if (!fs.existsSync('.github/workflows/rollback-production.yml')) failures.push('
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
-if (!deployWorkflow.includes('--message "RC54 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC54');
-if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.46.0-rc54"')) failures.push('Production smoke must verify 6.46.0-rc54');
+if (!deployWorkflow.includes('--message "RC55 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC55');
+if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.47.0-rc55"')) failures.push('Production smoke must verify 6.47.0-rc55');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
 if (!/id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden/.test(html)) failures.push('Admin role badge must use the fail-closed admin-only visibility contract');
 if (!/\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i.test(styles)) failures.push('Global hidden elements must remain display:none');
@@ -74,6 +74,8 @@ if (!fs.existsSync('test/media-launch-hardening-rc52.test.js')) failures.push('M
 if (!fs.existsSync('test/media-launch-package-rc53.test.js')) failures.push('Missing RC53 media-launch package regression test');
 if (!fs.existsSync('test/launch-conversion-rc54.test.js')) failures.push('Missing RC54 launch conversion regression test');
 if (!fs.existsSync('LAUNCH_SIMULATION_RC54.md')) failures.push('Missing RC54 launch simulation playbook');
+if (!fs.existsSync('test/launch-search-quality-rc55.test.js')) failures.push('Missing RC55 search-quality regression test');
+if (!fs.existsSync('LAUNCH_SEARCH_DRILL_RC55.md')) failures.push('Missing RC55 launch search drill');
 if (!fs.existsSync('test/ai-instructor-rc43.test.js')) failures.push('Missing RC43 persistent-AI regression test');
 if (!fs.existsSync('test/ai-instructor-rc42.test.js')) failures.push('Missing RC42 referee/AI-focus regression test');
 if (!worker.includes('function loadRefereeHistoryProfile')) failures.push('RC44 referee history loader is missing');
@@ -192,10 +194,11 @@ if (!worker.includes("newsSourceTrustGate: 'enabled'") || !worker.includes('appl
 if (!worker.includes("publicLegalPages: 'enabled'") || !worker.includes("publicStatusPage: 'enabled'") || !worker.includes("url.pathname === '/api/public-status'")) failures.push('RC52 public trust contract is missing');
 if (!fs.existsSync('public/privacy.html') || !fs.existsSync('public/terms.html') || !fs.existsSync('public/status.html') || !fs.existsSync('public/status.js')) failures.push('RC52 public trust pages are missing');
 if (!wrangler.includes('"/telegram/*"') || !wrangler.includes('"/api/*"')) failures.push('RC52 Worker-first webhook/public API routes are missing');
-if (!deployWorkflow.includes('6.46.0-rc54')) failures.push('RC54 production workflow version is missing');
+if (!deployWorkflow.includes('6.47.0-rc55')) failures.push('RC55 production workflow version is missing');
 
 if (!worker.includes("mediaLaunchPackage: 'enabled'") || !worker.includes("mediaDeepLinkAttribution: 'enabled'")) failures.push('RC53 media launch health contract is missing');
 if (!worker.includes("launchSimulation: 'enabled'") || !worker.includes("conversionUx: 'enabled'") || !worker.includes("highIntentSearchFallback: 'enabled'") || !worker.includes("newsReturnLoop: 'enabled'")) failures.push('RC54 launch conversion health contract is missing');
+if (!worker.includes("realLaunchDrill: 'enabled'") || !worker.includes("searchNormalization: 'enabled'") || !worker.includes("searchOutcomeAnalytics: 'enabled'") || !worker.includes("searchRetryUx: 'enabled'") || !worker.includes("searchQualitySelfTest: searchQualityDrill().pass ? 'enabled' : 'failed'")) failures.push('RC55 search quality health contract is missing');
 if (!worker.includes("firstPartyGrowthAnalytics: 'enabled'") || !worker.includes("launchFunnelAnalytics: 'enabled'")) failures.push('RC53 first-party funnel health contract is missing');
 if (!worker.includes('parseLaunchStartParam') || !worker.includes('ensureLaunchAttribution') || !worker.includes('recordGrowthEvent')) failures.push('RC53 attribution engine is missing');
 if (!worker.includes("url.pathname === '/api/launch-funnel'") || !app.includes('function renderLaunchFunnel')) failures.push('RC53 admin launch funnel is missing');
@@ -213,4 +216,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log(`RC53 launch contracts verified for ${expected}.`);
+console.log(`RC55 search-quality contracts verified for ${expected}.`);

@@ -41,6 +41,11 @@ const REQUIRED_HEALTH_FLAGS = [
   'conversionUx',
   'highIntentSearchFallback',
   'newsReturnLoop',
+  'realLaunchDrill',
+  'searchNormalization',
+  'searchOutcomeAnalytics',
+  'searchRetryUx',
+  'searchQualitySelfTest',
 ];
 
 function delay(ms) {

@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.46.0-rc54';
+const CLIENT_VERSION = '6.47.0-rc55';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc54';
+const CLIENT_RELEASE_CHANNEL = 'rc55';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2858,8 +2858,10 @@ function renderLaunchFunnel() {
 
   const rows=d.funnel || [];
   const bottleneck=d.bottleneck;
+  const searchQuality=d.searchQuality || {};
   stages.innerHTML=`<div class="release-monitor-section-head"><strong>Воронка</strong><span>уникальные пользователи</span></div>
     ${bottleneck ? `<div class="data-notice">🎯 Узкое место: <strong>${escapeHtml(bottleneck.label || '')}</strong> · теряется ${launchFunnelPct(bottleneck.dropPct)} пользователей перехода.</div>` : ''}
+    ${Number(searchQuality.attempts || 0) ? `<div class="data-notice">🔎 Качество поиска: <strong>${launchFunnelPct(searchQuality.matchPct)}</strong> поисков сразу дали матч · матч ${Number(searchQuality.match || 0)} · клуб распознан без матча ${Number(searchQuality.recognizedNoMatch || 0)} · не найдено ${Number(searchQuality.notFound || 0)}.</div>` : ''}
     <div class="launch-funnel-stages">${rows.map((x,index)=>`<div>
       <span>${index+1}. ${escapeHtml(x.label || x.key || '')}</span>
       <strong>${Number(x.users || 0)}</strong>
@@ -3762,10 +3764,11 @@ function searchTeamSummaryCard(team) {
 }
 
 function knownTeamSummaryCard(team) {
-  return `<div class="search-entity-summary known-team-summary">
+  return `<button class="search-entity-summary known-team-summary" type="button" data-known-team-query="${escapeHtml(team.name || '')}" aria-label="Повторить поиск ${escapeHtml(team.name || 'команды')}">
     <span class="discovery-team-logo">✓</span>
-    <span><small>КЛУБ РАСПОЗНАН</small><strong>${escapeHtml(team.name || 'Команда')}</strong><em>${escapeHtml(team.country || '')} · ожидаю доступные матчи источника</em></span>
-  </div>`;
+    <span><small>КЛУБ РАСПОЗНАН</small><strong>${escapeHtml(team.name || 'Команда')}</strong><em>${escapeHtml(team.country || '')} · источник пока не вернул календарь</em></span>
+    <b>Повторить →</b>
+  </button>`;
 }
 
 function searchCompetitionSummaryCard(comp) {
@@ -3788,6 +3791,14 @@ function bindDiscoveryActions(root = document) {
   root.querySelectorAll?.('[data-search-competition]').forEach(btn => btn.addEventListener('click', () => openTournamentMeta({
     leagueId: Number(btn.dataset.searchCompetition), season: Number(btn.dataset.season || new Date().getFullYear()), name: btn.dataset.compName || 'Турнир', shortName: btn.dataset.compShort || btn.dataset.compName || 'Турнир', country: btn.dataset.compCountry || '', category: btn.dataset.compCategory || '', tier: btn.dataset.compTier || 'standard', logo: '',
   })));
+  root.querySelectorAll?.('[data-known-team-query]').forEach(btn => btn.addEventListener('click', () => {
+    const query=String(btn.dataset.knownTeamQuery || '').trim();
+    const input=$('globalSearchInput');
+    if (!query || !input) return;
+    input.value=query;
+    state.globalSearch.query=query;
+    void runGlobalSearch();
+  }));
 }
 
 function localDiscoveryResults(query) {

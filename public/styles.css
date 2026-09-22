@@ -2626,7 +2626,7 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
   border-radius:15px;
   background:rgba(255,255,255,.025);
 }
-.search-entity-summary>span:last-child {
+.search-entity-summary>span:nth-child(2) {
   display:grid;
   gap:2px;
   min-width:0;
@@ -2733,3 +2733,26 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 .launch-link-help { padding:12px 0 2px; }
 .launch-link-help code { user-select:all; word-break:break-all; font-size:12px; }
 .launch-link-help p { margin:8px 0 0; font-size:12px; opacity:.72; line-height:1.55; }
+
+
+/* RC55 — launch search quality */
+.known-team-summary {
+  width:100%;
+  color:inherit;
+  text-align:left;
+  font:inherit;
+  cursor:pointer;
+}
+.known-team-summary>b {
+  margin-left:auto;
+  flex:0 0 auto;
+  font-size:11px;
+  font-weight:900;
+  white-space:nowrap;
+  opacity:.72;
+}
+.known-team-summary:hover,
+.known-team-summary:focus-visible {
+  border-color:rgba(56,189,248,.38);
+  background:rgba(56,189,248,.06);
+}

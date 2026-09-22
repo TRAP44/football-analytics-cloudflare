@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.46.0-rc54';
+const APP_VERSION = '6.47.0-rc55';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc54';
-const RC_NAME = 'RC54';
+const RELEASE_CHANNEL = 'rc55';
+const RC_NAME = 'RC55';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -675,6 +675,8 @@ function appManifest(cfg) {
       unifiedSearch: true,
       searchMatchHistory: true,
       searchLeagueFixtures: true,
+      searchQualityDrill: true,
+      searchOutcomeAnalytics: true,
       calibrationChampionChallenger: true,
       calibrationAutomaticRollback: true,
     },
@@ -1571,6 +1573,11 @@ async function apiLaunchFunnel(request,cfg) {
   }
   const newsOpen=setFor(['news_open']);
   const newsReturn=setFor(['news_return']);
+  const searchResultRows=rows.filter(x=>String(x.event_name || '')==='search_result');
+  const searchOutcome=(row)=>String(row?.metadata && typeof row.metadata==='object' ? row.metadata.outcome || '' : '');
+  const searchMatches=searchResultRows.filter(x=>searchOutcome(x)==='match').length;
+  const searchRecognizedNoMatch=searchResultRows.filter(x=>searchOutcome(x)==='recognized_no_match').length;
+  const searchNotFound=searchResultRows.filter(x=>searchOutcome(x)==='not_found').length;
   const transitions=funnel.slice(1).map((stage,index)=>({
     from:funnel[index]?.key || '',to:stage.key,label:`${funnel[index]?.label || ''} → ${stage.label || ''}`,
     fromUsers:Number(funnel[index]?.users || 0),toUsers:Number(stage.users || 0),conversionPct:Number(stage.fromPreviousPct || 0),
@@ -1592,8 +1599,9 @@ async function apiLaunchFunnel(request,cfg) {
     funnel,
     bottleneck,
     returnLoop:{newsOpen:newsOpen.size,newsReturn:newsReturn.size,conversionPct:newsOpen.size?Math.round((newsReturn.size/newsOpen.size)*1000)/10:0},
+    searchQuality:{attempts:searchResultRows.length,match:searchMatches,recognizedNoMatch:searchRecognizedNoMatch,notFound:searchNotFound,matchPct:searchResultRows.length?Math.round((searchMatches/searchResultRows.length)*1000)/10:0},
     campaigns,
-    privacy:'Ответ содержит только агрегаты; Telegram ID пользователей не возвращаются.',
+    privacy:'Ответ содержит только агрегаты; Telegram ID и текст поисковых запросов пользователей не возвращаются.',
   });
 }
 
@@ -2418,7 +2426,7 @@ function botSearchParts(raw = '') {
   const query = cleaned
     .replace(/^(?:что\s+поставить(?:\s+на)?|кто\s+судья(?:\s+на)?|судья(?:\s+на)?|ставка(?:\s+на)?|идея(?:\s+на)?|разбери(?:\s+матч)?|разбор(?:\s+матча)?|анализ(?:\s+матча)?|прогноз(?:\s+на)?|найди(?:\s+матч)?|покажи(?:\s+матч)?)\s*[:—–-]?\s*/i,'')
     .trim().slice(0,60);
-  const parts = query.split(/\s*(?:—|–|-|\bvs\.?\b|\bпротив\b)\s*/i).map(x => x.trim()).filter(Boolean).slice(0,2);
+  const parts = query.split(/(?:\s*[—–]\s*|\s+-\s+|\s+\bvs\.?\b\s+|\s+\bпротив\b\s+)/i).map(x => x.trim()).filter(Boolean).slice(0,2);
   return { query, first: parts[0] || query, second: parts[1] || '', intent };
 }
 
@@ -2528,22 +2536,25 @@ async function sendBotFootballSearch(request, cfg, userId, chatId, rawText) {
     return;
   }
   void recordGrowthEvent(cfg,{userId,eventName:'search',channel:'telegram',metadata:{intent:parts.intent}});
+  const searchPlan=topTeamSearchPlan(parts.first);
+  const recognized=Boolean(searchPlan.best && Number(searchPlan.best.score || 0)>=170);
   let matches=await botCachedDayMatches(parts,cfg);
   if (!matches.length) matches=await botRemoteTeamMatches(parts,cfg);
   const searchUrl=telegramWebAppUrl(request,{view:'search',q:parts.query});
   if (!matches.length) {
-    const recognized=topTeamSearchPlan(parts.first).best;
-    const known=recognized && Number(recognized.score || 0)>=170;
+    const known=recognized;
+    void recordGrowthEvent(cfg,{userId,eventName:'search_result',channel:'telegram',metadata:{intent:parts.intent,outcome:known?'recognized_no_match':'not_found',recognized:known}});
     await telegramApi('sendMessage',cfg,{
       chat_id:chatId,
       parse_mode:'HTML',
       text:known
-        ? `✅ Клуб распознан: <b>${telegramHtmlEscape(recognized.canonical)}</b>. Ближайший матч сейчас не вернулся из источника данных — откройте глобальный поиск, там сохраняется распознанный клуб и доступные матчи из кэша.`
+        ? `✅ Клуб распознан: <b>${telegramHtmlEscape(searchPlan.best.canonical)}</b>. Ближайший матч сейчас не вернулся из источника данных — откройте глобальный поиск, там сохраняется распознанный клуб и доступные матчи из кэша.`
         : `🔎 По запросу <b>${telegramHtmlEscape(parts.query)}</b> подходящий матч сейчас не найден. Попробуйте полное название клуба или глобальный поиск по лигам и странам.`,
       reply_markup:{inline_keyboard:[[{text:'🌍 Глобальный поиск',web_app:{url:searchUrl}}]]},
     });
     return;
   }
+  void recordGrowthEvent(cfg,{userId,eventName:'search_result',channel:'telegram',metadata:{intent:parts.intent,outcome:'match',recognized,count:Math.min(3,matches.length)}});
   await rememberBotFixtureCards(matches, cfg);
   const favorites=await getFavorites(userId,cfg).catch(()=>[]);
   const rows=matches.map((match,index)=>botMatchLine(match,index));
@@ -11690,7 +11701,55 @@ function knownTopTeamFallbacks(query = '') {
 }
 
 function searchText(value = '') {
-  return String(value || '').trim().toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ');
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/[çćč]/g, 'c')
+    .replace(/[şš]/g, 's')
+    .replace(/ğ/g, 'g')
+    .replace(/[üúùû]/g, 'u')
+    .replace(/[öóòôõ]/g, 'o')
+    .replace(/[äáàâãå]/g, 'a')
+    .replace(/[éèêë]/g, 'e')
+    .replace(/[íìîï]/g, 'i')
+    .replace(/ñ/g, 'n')
+    .replace(/ž/g, 'z')
+    .replace(/[‐‑‒–—―\-_/\\|+.,!?;:()[\]{}'"\`´“”„«»]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const SEARCH_QUALITY_DRILL_CASES = Object.freeze([
+  ['МЮ','Manchester United'],
+  ['мю!!!','Manchester United'],
+  ['ПСЖ?','Paris Saint Germain'],
+  ['Барса.','Barcelona'],
+  ['Бока-Хуниорс','Boca Juniors'],
+  ['Ривер-Плейт','River Plate'],
+  ['Al‑Nassr','Al-Nassr'],
+  ['Fenerbahçe','Fenerbahce'],
+  ['Beşiktaş','Besiktas'],
+  ['São Paulo','Sao Paulo'],
+  ['Bayern München','Bayern Munich'],
+  ['Red-Star Belgrade','FK Crvena Zvezda'],
+  ['Crvena Zvezda','FK Crvena Zvezda'],
+  ['Интер-Майами','Inter Miami'],
+  ['ЛАФК','Los Angeles FC'],
+  ['Шахтёр','Shakhtar Donetsk'],
+  ['Олимпиакос!','Olympiakos Piraeus'],
+  ['Динамо Киев','Dynamo Kyiv'],
+]);
+
+function searchQualityDrill() {
+  const failed=[];
+  for (const [query,expected] of SEARCH_QUALITY_DRILL_CASES) {
+    const best=topTeamSearchPlan(query).best;
+    if (!best || best.canonical!==expected || Number(best.score || 0)<170) {
+      failed.push({query,expected,actual:best?.canonical || '',score:Number(best?.score || 0)});
+    }
+  }
+  return {pass:failed.length===0,total:SEARCH_QUALITY_DRILL_CASES.length,failed:failed.length};
 }
 
 function competitionCountryByGroup(group = '') {
@@ -13192,6 +13251,12 @@ export default {
         conversionUx: 'enabled',
         highIntentSearchFallback: 'enabled',
         newsReturnLoop: 'enabled',
+        realLaunchDrill: 'enabled',
+        searchNormalization: 'enabled',
+        searchOutcomeAnalytics: 'enabled',
+        searchRetryUx: 'enabled',
+        searchQualitySelfTest: searchQualityDrill().pass ? 'enabled' : 'failed',
+        searchQualityCases: searchQualityDrill().total,
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',

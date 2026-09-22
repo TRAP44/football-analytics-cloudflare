@@ -1,10 +1,10 @@
-# QA Release Checklist — v6.46.0 RC54
+# QA Release Checklist — v6.47.0 RC55
 
 ## Deploy
 
 - применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql`, `supabase_migration_v6_11_1.sql`, `supabase_migration_v6_12.sql`, `supabase_migration_v6_13.sql`, `supabase_migration_v6_14.sql` и `supabase_migration_v6_15.sql`;
-- Worker/client = `6.46.0-rc54`;
-- package = `6.46.0`;
+- Worker/client = `6.47.0-rc55`;
+- package = `6.47.0`;
 - cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;
@@ -89,6 +89,20 @@
 - слабое покрытие приводит к «Ждать больше данных»;
 - сломанный сценарий приводит к «Не опираться на предматчевый сигнал»;
 - никаких новых таблиц или внешних провайдеров RC44 не добавляет.
+
+## RC55 — Real Launch Drill & Search Quality
+
+- `МЮ`, `мю!!!`, `ПСЖ?`, `Барса.` и другие запросы с пунктуацией резолвятся в ожидаемый клуб;
+- `Fenerbahçe`, `Beşiktaş`, `São Paulo`, `Bayern München` корректно проходят search normalization;
+- `Al-Nassr`, `Бока-Хуниорс` и `Red-Star Belgrade` не разбиваются Telegram-парсером на две команды;
+- матч по-прежнему можно задавать через `Интер — Милан`, `Inter vs Milan` и `Интер против Милана`;
+- `SEARCH_QUALITY_DRILL_CASES` проходит полностью, а `/health.searchQualitySelfTest = enabled`;
+- fallback «Клуб распознан» содержит действие «Повторить», которое запускает канонический поиск;
+- `search_result` не содержит query/rawText/parts.query и сохраняет только безопасный outcome/intent/count/recognized;
+- launch-funnel возвращает `searchQuality.attempts/match/recognizedNoMatch/notFound/matchPct`;
+- админский UI показывает агрегированное качество поиска без Telegram ID и текста запросов;
+- production smoke требует RC55 health-флаги;
+- новых миграций Supabase и платёжных функций RC55 нет.
 
 ## RC54 — Launch Simulation & Conversion UX
 
