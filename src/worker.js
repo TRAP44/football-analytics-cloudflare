@@ -604,10 +604,10 @@ function publicDataCapabilities() {
     note: runtime.maintenanceMode
       ? (runtime.message || 'Часть футбольных функций временно приостановлена.')
       : !expandedAllowed
-        ? 'Расширенные данные провайдера временно отключены администратором.'
+        ? 'Расширенные данные источника временно отключены администратором.'
         : paid
           ? (canEnrich
-              ? 'Расширенный режим активен. Кэш отдельных функций снижает количество повторных запросов.'
+              ? 'Расширенный режим активен. Сохранение данных по функциям снижает количество повторных запросов.'
               : 'Расширенный тариф активен, но сейчас включён защитный режим квоты.')
           : 'Сейчас приложение экономит запросы. После увеличения квоты расширенные данные включатся автоматически.',
   };
@@ -711,7 +711,7 @@ function publicRouteError(error, rateLimited = false) {
     return {
       status: 502,
       body: {
-        error: 'Футбольный источник временно недоступен. Приложение использует кэш там, где он есть.',
+        error: 'Футбольный источник временно недоступен. Приложение использует сохранённые данные там, где они есть.',
         code,
         category: 'provider',
         recoverable: true,
@@ -725,7 +725,7 @@ function publicRouteError(error, rateLimited = false) {
     return {
       status: 503,
       body: {
-        error: 'Сервис хранения данных временно недоступен. Основные футбольные экраны попробуют продолжить работу через кэш.',
+        error: 'Сервис хранения данных временно недоступен. Основные футбольные экраны попробуют продолжить работу через сохранённые данные.',
         code: code === 'SERVER_ERROR' ? 'DATABASE_DEGRADED' : code,
         category: 'database',
         recoverable: true,
@@ -2391,7 +2391,7 @@ async function notifyCalibrationAdmins(cfg, action, detail = '') {
     freeze: 'жизненный цикл заморожен',
     unfreeze: 'жизненный цикл разморожен',
   };
-  const text = `⚙️ Калибровка RC30: ${labels[action] || action}.${detail ? `\n${String(detail).slice(0, 500)}` : ''}`;
+  const text = `⚙️ Калибровка модели: ${labels[action] || action}.${detail ? `\n${String(detail).slice(0, 500)}` : ''}`;
   await Promise.allSettled((cfg.adminTelegramIds || []).map(id => sendTelegramMessage(id, text, cfg)));
 }
 
@@ -2420,7 +2420,7 @@ async function resolveCalibrationLifecycle(cfg, candidate, trustedRows) {
       const state = await saveCalibrationLifecycleState(cfg, lifecycle.state, {
         action: 'initialize',
         targetFingerprint: baseline.fingerprint,
-        reason: 'RC30: инициализация базового жизненного цикла модели.',
+        reason: 'Инициализация базового жизненного цикла модели.',
         metadata: { appVersion: APP_VERSION },
       });
       lifecycle = { state, active: baseline, previous: null };
@@ -2657,9 +2657,9 @@ function buildCalibrationProfile(rows) {
           : 'Кандидат остаётся в режиме наблюдения до достаточной доверенной отложенной выборки.',
     },
     note: active
-      ? 'RC30: кандидат прошёл два окна отложенной выборки; постоянный жизненный цикл решает, можно ли заменить активную модель.'
+      ? 'Кандидат прошёл два окна отложенной выборки; постоянный жизненный цикл решает, можно ли заменить активную модель.'
       : shadow
-        ? 'RC30: кандидат измеряется в режиме наблюдения; рабочая система использует только подтверждённый активный профиль.'
+        ? 'Кандидат измеряется в режиме наблюдения; рабочая система использует только подтверждённый активный профиль.'
         : 'Недостаточно доверенных прогнозов для безопасной автоматической калибровки.',
   };
 }
@@ -3672,7 +3672,7 @@ function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = 
     calibrationDiagnostics: {
       weightedTopCalibrationError: weightedTopCalibrationError(rows),
       label: 'Взвешенная ошибка калибровки максимальной вероятности',
-      note: 'Средневзвешенный абсолютный разрыв между средней максимальной вероятностью и фактической точностью по пяти диапазонам вероятности; меньше — лучше. RC30 не использует эту метрику отдельно: продвижение требует двух окон отложенной выборки и сравнения с активной моделью.',
+      note: 'Средневзвешенный абсолютный разрыв между средней максимальной вероятностью и фактической точностью по пяти диапазонам вероятности; меньше — лучше. Текущая версия не использует эту метрику отдельно: продвижение требует двух окон отложенной выборки и сравнения с активной моделью.',
     },
     calibrationEngine: calibrationProfile || baselineCalibrationProfile(evaluated, signalPerformance),
     calibrationImpact,
@@ -3686,7 +3686,7 @@ function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = 
       outcome: 'Точность исхода = доля матчей, где максимальная вероятность 1X2 совпала с фактическим исходом.',
       brier: 'Ошибка Брайера учитывает все три вероятности 1X2; ниже — лучше. В интерфейсе он показан вместе с размером выборки.',
       versionCohorts: 'Сравнение версий анализа является описательным и не используется для автоматического выбора/продвижения версии.',
-      integrity: 'В качество модели и калибровку входят только доверенные завершённые записи: подтверждённые после двух проверок провайдера либо вручную разобранные администратором. Непроверенные, первично проверенные, записи с расхождением и аннулированные исключаются.',
+      integrity: 'В качество модели и калибровку входят только доверенные завершённые записи: подтверждённые после двух проверок источника данных либо вручную разобранные администратором. Непроверенные, первично проверенные, записи с расхождением и аннулированные исключаются.',
       warning: evaluated < 20 ? 'Выборка пока мала: цифры считаются технической диагностикой, а не доказанной точностью модели.' : '',
     },
   };
@@ -4172,7 +4172,7 @@ async function resolveSettlementDrift(cfg, user, input = {}) {
   const resolution = buildSettlementDriftResolution(row, event, action);
   if (!resolution.valid) {
     const error = new Error(action === 'accept_provider'
-      ? 'Коррекцию провайдера нельзя безопасно принять для этого статуса или счёта. Оставьте сохранённый результат либо аннулируйте запись.'
+      ? 'Исправление источника данных нельзя безопасно принять для этого статуса или счёта. Оставьте сохранённый результат либо аннулируйте запись.'
       : 'Ручное решение не может быть применено.');
     error.code = 'SETTLEMENT_DRIFT_UNSAFE';
     throw error;
@@ -5171,7 +5171,7 @@ async function runSettlementWatchdog(cfg) {
     return { ok: true, ...baseMeta, state: 'retry_exhausted', retryOfActionId: retry.retryOfActionId };
   }
   const actionId = crypto.randomUUID();
-  const reason = 'RC30: плановое восстановление ожидающих результатов';
+  const reason = 'Плановое восстановление ожидающих результатов';
   let auditStarted = false;
   let executionResult = null;
 
@@ -6277,7 +6277,7 @@ function providerBudgetProfile() {
       : mode === 'conserve'
         ? 'Часть дополнительных запросов замедлена или пропускается, чтобы сохранить резерв.'
         : paid
-          ? 'Квота в норме: расширенные данные разрешены с кэшем отдельных функций.'
+          ? 'Квота в норме: расширенные данные разрешены с сохранением по функциям.'
           : 'Бесплатный тариф работает в экономном режиме с приоритетом основных данных матча.',
   };
 }
@@ -6522,7 +6522,7 @@ async function apiProviderE2EValidation(request, cfg) {
       'provider_probe',
       'Связь с API-Football',
       'fail',
-      redactOpsString(error?.message || 'Состояние провайдера недоступно.', 180),
+      redactOpsString(error?.message || 'Состояние источника данных недоступно.', 180),
     ));
   }
 
@@ -6535,7 +6535,7 @@ async function apiProviderE2EValidation(request, cfg) {
       'provider_probe',
       'Связь с API-Football',
       'pass',
-      `Провайдер отвечает. Определён тариф ${transition.plan === 'FREE' ? 'Бесплатный' : transition.plan}.`,
+      `Источник данных отвечает. Определён тариф ${transition.plan === 'FREE' ? 'Бесплатный' : transition.plan}.`,
       { plan: transition.plan },
     ));
   }
@@ -6702,8 +6702,8 @@ async function apiProviderE2EValidation(request, cfg) {
     'Повторный запрос без лишнего API',
     cacheOk ? 'pass' : 'warn',
     cacheOk
-      ? `Повторный запрос центра матча обслужен общим кэшем за ${secondMs} мс.`
-      : 'Повторный ответ не был помечен как кэшированный — стоит проверить общий кэш.',
+      ? `Повторный запрос центра матча обслужен общими сохранёнными данными за ${secondMs} мс.`
+      : 'Повторный ответ не был помечен как сохранённый — стоит проверить общее хранилище.',
     { secondMs, cached: cacheOk },
   ));
 
@@ -6714,7 +6714,7 @@ async function apiProviderE2EValidation(request, cfg) {
     'Expanded feature pipeline',
     !matchCenterOk ? 'fail' : sources.error > 0 ? 'warn' : featureCount > 0 ? 'pass' : 'warn',
     featureCount
-      ? `Источники: API ${sources.api}, кэш ${sources.cache}, встроенные данные матча ${sources.embedded}, резерв ${sources.stale}, пропуск ${sources.skipped}, ошибки ${sources.error}.`
+      ? `Источники: запросы ${sources.api}, сохранённые данные ${sources.cache}, встроенные данные матча ${sources.embedded}, резерв ${sources.stale}, пропуск ${sources.skipped}, ошибки ${sources.error}.`
       : 'Матч не потребовал дополнительных запросов по отдельным функциям либо данные были недоступны.',
     sources,
   ));
@@ -6770,7 +6770,7 @@ async function apiProviderE2EValidation(request, cfg) {
     requestCost: {
       estimatedMax: 16,
       observedDailyDelta,
-      note: 'Изменение расхода берётся из заголовков лимитов и может быть недоступно, если провайдер не прислал оба значения.',
+      note: 'Изменение расхода берётся из заголовков лимитов и может быть недоступно, если источник данных не прислал оба значения.',
     },
     durationMs: Date.now() - startedAt,
     note: status.ready
@@ -6911,7 +6911,7 @@ async function apiProviderProbe(request, cfg) {
     statusOk = true;
     statusNote = 'Тариф и квоты обновлены через /status.';
   } catch (error) {
-    statusNote = redactOpsString(error?.message || 'Не удалось обновить состояние провайдера.', 160);
+    statusNote = redactOpsString(error?.message || 'Не удалось обновить состояние источника данных.', 160);
   }
 
   return json({
@@ -7141,7 +7141,7 @@ async function apiFootballNetwork(path, params, cfg, options = {}) {
         severity: 'warning', source: 'provider', eventType: 'rate_limit', code: 'FOOTBALL_RATE_LIMIT_BODY',
         message, endpoint: path, status: r.status, durationMs,
       });
-      throw footballError('API-Football достиг лимита запросов. Покажем кэш, если он есть.', 'FOOTBALL_RATE_LIMIT', 65);
+      throw footballError('API-Football достиг лимита запросов. Покажем сохранённые данные, если они есть.', 'FOOTBALL_RATE_LIMIT', 65);
     }
     await recordOpsEvent(cfg, {
       severity: 'warning', source: 'provider', eventType: 'api_response', code: 'FOOTBALL_RESPONSE',
@@ -7245,7 +7245,7 @@ async function collectDiagnostics(cfg) {
   const recommendations = [];
   if (supabase.ok && !ops.migrationReady && hasSupabase(cfg)) recommendations.push('Выполните supabase_migration_v3_8.sql, чтобы журнал ошибок сохранялся между перезапусками серверного обработчика.');
   if (!integrity.migrationReady && hasSupabase(cfg)) recommendations.push('Выполните supabase_migration_v3_9.sql, чтобы проверки качества матчей сохранялись и были видны после перезапуска серверного обработчика.');
-  if (provider.cooldownActive) recommendations.push(`API-Football находится на паузе ещё примерно ${footballCooldownRemaining()} сек.; приложение должно использовать сохранённый кэш.`);
+  if (provider.cooldownActive) recommendations.push(`API-Football находится на паузе ещё примерно ${footballCooldownRemaining()} сек.; приложение должно использовать последние сохранённые данные.`);
   if (supabase.configured && !supabase.ok) recommendations.push('Проверьте адрес Supabase, сервисный ключ и доступность интерфейса базы данных.');
   if (Number(provider.dailyUsedPct) >= 90) recommendations.push('Дневная квота API-Football использована более чем на 90%; до сброса лимита работаем в экономном режиме.');
   if (Number(integrity.lastRun?.quarantined || 0) > 0) recommendations.push(`Защита целостности скрыла ${Number(integrity.lastRun.quarantined)} подозрительных матч(а/ей) из последней выборки. Проверьте список кодов проблем ниже.`);
@@ -7543,7 +7543,7 @@ async function apiReleaseReadiness(request, cfg) {
     releaseCheck('backend_security_contract', 'Контракт безопасности Supabase', backendSecurity.ok ? 'pass' : 'fail',
       backendSecurity.ok
         ? 'Все публичные таблицы защищены правилами доступа; анонимный и авторизованный клиент не имеют прямых прав; серверные процедуры закрыты.'
-        : `Контракт безопасности RC30: ${backendSecurity.status || 'ошибка'}.`, true),
+        : `Контракт безопасности текущей версии: ${backendSecurity.status || 'ошибка'}.`, true),
     releaseCheck('model_backtest', 'Схема исторической проверки v3.6+', modelTable.ok ? 'pass' : 'fail', modelTable.ok ? 'Таблица прогнозов модели доступна.' : `model_predictions: ${modelTable.status}.`, true),
     releaseCheck('prediction_integrity', 'Самопроверка целостности прогнозов', modelIntegritySelfTest().pass ? 'pass' : 'fail',
       modelIntegritySelfTest().pass ? 'Вероятности, время снимка и согласованность результата проходят синтетическую самопроверку.' : 'Самопроверка целостности прогнозов не прошла.', true),
@@ -7582,7 +7582,7 @@ async function apiReleaseReadiness(request, cfg) {
     releaseCheck('runtime_controls_state', 'Состояние управления функциями', runtime.maintenanceMode ? 'warn' : 'pass', runtime.maintenanceMode ? `Техническое обслуживание включено${runtime.message ? `: ${runtime.message}` : '.'}` : `Revision ${Number(runtime.revision || 1)} · рабочий режим.`, false),
     releaseCheck('observability', 'Схема журнала событий v3.8', diagnostics.observability?.migrationReady ? 'pass' : 'warn', diagnostics.observability?.migrationReady ? 'Постоянный журнал операционных событий доступен.' : 'Журнал работает только в памяти серверного обработчика.', false),
     releaseCheck('integrity', 'Схема целостности данных v3.9', diagnostics.integrity?.migrationReady ? 'pass' : 'fail', diagnostics.integrity?.migrationReady ? 'История проверок целостности доступна.' : 'Нужна миграция v3.9.', true),
-    releaseCheck('provider_health', 'Состояние API-Football', provider.health === 'critical' ? 'fail' : provider.health === 'warning' || provider.health === 'waiting' ? 'warn' : 'pass', provider.health === 'waiting' ? 'После старта серверного обработчика ещё не было успешного запроса к провайдеру данных.' : `Health: ${provider.health || 'unknown'}.`, provider.health === 'critical'),
+    releaseCheck('provider_health', 'Состояние API-Football', provider.health === 'critical' ? 'fail' : provider.health === 'warning' || provider.health === 'waiting' ? 'warn' : 'pass', provider.health === 'waiting' ? 'После старта серверного обработчика ещё не было успешного запроса к источнику данных.' : `Health: ${provider.health || 'unknown'}.`, provider.health === 'critical'),
     releaseCheck('provider_transition', 'Provider transition', providerTransitionProfile().paid ? 'pass' : 'warn', providerTransitionProfile().paid ? `${providerTransitionProfile().plan}: расширенный режим активен.` : `${providerTransitionProfile().plan}: приложение остаётся в экономном режиме до увеличения квоты.`, false),
     releaseCheck('quota_orchestrator', 'Quota Orchestrator', providerBudgetProfile().mode === 'emergency' ? 'warn' : 'pass', `${providerBudgetProfile().label}; feature cache api/cache=${Number(memory.providerFeatureFetch?.api || 0)}/${Number(memory.providerFeatureFetch?.cache || 0)}.`, false),
     releaseCheck(
@@ -7862,7 +7862,7 @@ async function apiRcRegression(request, cfg, user) {
   const requiredTables = [
     ['users', 'Пользователи', true],
     ['usage_daily', 'Дневные лимиты', true],
-    ['analysis_cache', 'Общий кэш', true],
+    ['analysis_cache', 'Общие сохранённые данные', true],
     ['analysis_history', 'История анализов', true],
     ['favorites', 'Избранное', true],
     ['user_preferences', 'Настройки пользователя', true],
@@ -8005,7 +8005,7 @@ async function apiRcRegression(request, cfg, user) {
   checks.push(rcCheck(
     'provider_mode',
     'provider',
-    'Режим провайдера',
+    'Режим источника данных',
     budget.mode === 'emergency' ? 'warn' : 'pass',
     `${transition.plan} · ${budget.label}.`,
     false
@@ -8067,7 +8067,7 @@ async function apiRcRegression(request, cfg, user) {
     `${Number(safety.burstGuard?.policies?.length || 0)} route policies.`, true));
   checks.push(rcCheck('timeouts', 'safety', 'Тайм-ауты внешних сервисов', 'pass',
     `Supabase ${Number(safety.upstream?.supabaseTimeoutMs || 0)} мс; API-Football ${Number(safety.upstream?.apiFootballTimeoutMs || 0)} мс.`, true));
-  checks.push(rcCheck('l1_bounds', 'safety', 'Ограниченный кэш L1', Number(safety.memory?.cacheEntries || 0) <= 600 ? 'pass' : 'warn',
+  checks.push(rcCheck('l1_bounds', 'safety', 'Ограниченное быстрое хранилище', Number(safety.memory?.cacheEntries || 0) <= 600 ? 'pass' : 'warn',
     `${Number(safety.memory?.cacheEntries || 0)} entries; soft limit ${Number(safety.memory?.cacheSoftLimit || 500)}.`, false));
 
   const blockers = checks.filter(x => x.state === 'fail' && x.blocking);
@@ -8825,7 +8825,7 @@ function buildAnalysisNotes({ probabilities, market, model, homeForm, awayForm, 
   }
   if (market?.probabilities) {
     const leader = outcomeName(market.probabilities, homeName, awayName);
-    factors.push(`Рынок 1X2 сильнее всего оценивает вариант «${leader}».`);
+    factors.push(`Коэффициенты П1 / Н / П2 сильнее всего оценивают вариант «${leader}».`);
   }
   if (model?.winner) factors.push(`Прогноз API-Football указывает: ${model.winner}.`);
   const homeAbs = absences?.home?.length || 0, awayAbs = absences?.away?.length || 0;
@@ -8858,7 +8858,7 @@ function preMatchDriver({ type, icon, side = 'neutral', title, text, strength = 
 
 function signalDisplayName(name) {
   return ({
-    market: 'Рынок 1X2',
+    market: 'Коэффициенты П1 / Н / П2',
     apiPrediction: 'API Prediction',
     recentForm: 'Недавняя форма',
     h2h: 'Очные встречи',
@@ -8972,7 +8972,7 @@ function buildPreMatchIntelligence({
         type: 'h2h_context',
         icon: '🤝',
         side,
-        title: 'Контекст H2H',
+        title: 'Контекст очных встреч',
         text: `${side === 'home' ? homeName : awayName} выиграл больше из последних ${h2hTotal} очных матчей (${hw}:${aw} по победам). Очные встречи имеют небольшой вес и не считаются главным сигналом.`,
         strength: 'low',
         source: 'h2h',
@@ -10011,7 +10011,7 @@ async function apiSearch(request, cfg) {
   try {
     if (!freeQuotaHealthy(8, 2)) {
       const stale = await getStaleCache(cacheKey, cfg);
-      if (stale?.teams) return json({ ...stale, competitions, cached: true, stale: true, warning: 'Поиск показан из кэша: бережём лимит API-Football.', provider: publicDataCapabilities() });
+      if (stale?.teams) return json({ ...stale, competitions, cached: true, stale: true, warning: 'Поиск показан из сохранённых данных: бережём лимит API-Football.', provider: publicDataCapabilities() });
       return json({ query, teams: [], competitions, cached: false, warning: 'Поиск команд временно не запущен: бережём остаток бесплатной квоты источника данных.', provider: publicDataCapabilities() });
     }
     rows = await apiFootball('/teams', { search: query }, cfg);
@@ -10181,7 +10181,7 @@ async function apiTournament(request, cfg) {
   const minuteRemaining = Number(memory.provider?.minuteRemaining);
   if (Number.isFinite(minuteRemaining) && minuteRemaining <= 1) {
     const stale = await getStaleCache(cacheKey, cfg);
-    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Таблица показана из сохранённого кэша: минутная квота источника данных почти исчерпана.', provider: publicDataCapabilities() });
+    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Таблица показана из сохранённых данных: минутная квота источника данных почти исчерпана.', provider: publicDataCapabilities() });
     return json({
       leagueId, season, standings: [], groups: [], available: false,
       reason: 'Таблица временно не запрашивается: бережём последний запрос минутной квоты API-Football.',
@@ -10213,7 +10213,7 @@ async function apiTournament(request, cfg) {
       groups: normalizedGroups,
       standings,
       refreshedAt: new Date().toISOString(),
-      reason: standings.length ? '' : 'Провайдер не вернул таблицу для этого турнира и сезона.',
+      reason: standings.length ? '' : 'Источник данных не вернул таблицу для этого турнира и сезона.',
     };
     await setCache(cacheKey, 0, payload, cfg, 360);
     return json({ ...payload, cached: false, stale: false, provider: publicDataCapabilities() });
@@ -10290,7 +10290,7 @@ async function apiTeam(request, cfg) {
   try { fixtures = await apiFootball('/fixtures', { team:teamId, from, to }, cfg); }
   catch (error) {
     const stale = await getStaleCache(cacheKey, cfg);
-    if (stale && isFootballRateLimitError(error)) return json({ ...stale, standing:await cachedTeamStanding(teamId, stale.primaryCompetition, cfg), cached:true, stale:true, warning:'Страница команды показана из последнего кэша из-за лимита источника данных.', provider:publicDataCapabilities() });
+    if (stale && isFootballRateLimitError(error)) return json({ ...stale, standing:await cachedTeamStanding(teamId, stale.primaryCompetition, cfg), cached:true, stale:true, warning:'Страница команды показана из последних сохранённых данных из-за лимита источника данных.', provider:publicDataCapabilities() });
     throw error;
   }
   const usable = (fixtures||[]).filter(f => !['CANC','ABD','AWD','WO'].includes(String(f.fixture?.status?.short||'')));
@@ -10411,7 +10411,7 @@ async function apiTeamIntelligence(request, cfg) {
   if (cached) return json({ ...cached, cached: true, stale: false, provider: publicDataCapabilities() });
   if (!freeQuotaHealthy(15, 2)) {
     const stale = await getStaleCache(cacheKey, cfg);
-    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Сезонная статистика показана из кэша: бережём лимит API-Football.', provider: publicDataCapabilities() });
+    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Сезонная статистика показана из сохранённых данных: бережём лимит API-Football.', provider: publicDataCapabilities() });
     return json({ available: false, quotaGuard: true, reason: 'Сезонная статистика временно не запрашивается: сохраняем остаток квоты API-Football.', provider: publicDataCapabilities() });
   }
   try {
@@ -10421,7 +10421,7 @@ async function apiTeamIntelligence(request, cfg) {
       teamName: url.searchParams.get('teamName') || '', teamLogo: url.searchParams.get('teamLogo') || '',
       leagueName: url.searchParams.get('leagueName') || '', country: url.searchParams.get('country') || '', leagueLogo: url.searchParams.get('leagueLogo') || '',
     });
-    const payload = { available: stats.available, stats, refreshedAt: new Date().toISOString(), reason: stats.available ? '' : 'Провайдер не вернул сезонную статистику для этой команды.' };
+    const payload = { available: stats.available, stats, refreshedAt: new Date().toISOString(), reason: stats.available ? '' : 'Источник данных не вернул сезонную статистику для этой команды.' };
     await setCache(cacheKey, teamId, payload, cfg, 360);
     return json({ ...payload, cached: false, stale: false, provider: publicDataCapabilities() });
   } catch (error) {
@@ -10482,13 +10482,13 @@ async function apiTeamSquad(request, cfg) {
   if (cached) return json({ ...cached, cached: true, stale: false, provider: publicDataCapabilities() });
   if (!freeQuotaHealthy(10, 2)) {
     const stale = await getStaleCache(cacheKey, cfg);
-    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Состав показан из кэша: бережём лимит API-Football.', provider: publicDataCapabilities() });
+    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Состав показан из сохранённых данных: бережём лимит API-Football.', provider: publicDataCapabilities() });
     return json({ available: false, quotaGuard: true, reason: 'Состав временно не запрашивается: сохраняем остаток квоты API-Football.', provider: publicDataCapabilities() });
   }
   try {
     const rows = await apiFootball('/players/squads', { team: teamId }, cfg);
     const squad = normalizeTeamSquad(rows, teamId);
-    const payload = { ...squad, refreshedAt: new Date().toISOString(), reason: squad.available ? '' : 'Провайдер не вернул текущий состав команды.' };
+    const payload = { ...squad, refreshedAt: new Date().toISOString(), reason: squad.available ? '' : 'Источник данных не вернул текущий состав команды.' };
     await setCache(cacheKey, teamId, payload, cfg, 720);
     return json({ ...payload, cached: false, stale: false, provider: publicDataCapabilities() });
   } catch (error) {
@@ -10514,7 +10514,7 @@ async function apiMatchCenter(request, cfg) {
   } catch (error) {
     const stale = await getStaleCache(baseCacheKey, cfg);
     if (stale && isFootballRateLimitError(error)) {
-      return json({ ...stale, cached: true, stale: true, warning: 'Данные матча в реальном времени временно показаны из последнего кэша из-за лимита источника.', retryAfter: Number(error?.retryAfter || 60) });
+      return json({ ...stale, cached: true, stale: true, warning: 'Данные матча в реальном времени временно показаны из последних сохранённых данных из-за лимита источника.', retryAfter: Number(error?.retryAfter || 60) });
     }
     throw error;
   }
@@ -10694,11 +10694,11 @@ async function apiMatchCenter(request, cfg) {
     note: limitedCoverage
       ? 'Молодёжный или резервный турнир: дополнительные запросы данных ограничены для экономии квоты.'
       : providerBudgetProfile().mode === 'emergency'
-        ? 'Квота источника данных в защитном резерве: часть расширенных данных временно берётся из кэша или пропускается.'
+        ? 'Квота источника данных в защитном резерве: часть расширенных данных временно берётся из сохранённых данных или пропускается.'
         : providerBudgetProfile().mode === 'conserve'
           ? 'Включён сберегающий режим: тяжёлые дополнительные запросы обновляются реже.'
           : (!events.length && !statistics.length)
-            ? 'Для этого турнира или матча провайдер не отдаёт детальные события/статистику.'
+            ? 'Для этого турнира или матча источник данных не отдаёт детальные события/статистику.'
             : '',
   };
 
@@ -10742,13 +10742,13 @@ function buildMatchComparison({ homeName, awayName, homeForm, awayForm, homeStan
   const metrics = [
     comparisonMetric({ key:'form_ppg', label:'Форма · очки/матч', homeValue:hOverall?.ppg, awayValue:aOverall?.ppg, format:'decimal', minGap:.14, note:'Последние 5 завершённых матчей.' }),
     comparisonMetric({ key:'venue_ppg', label:'Дома / в гостях', homeValue:hVenue?.ppg, awayValue:aVenue?.ppg, format:'decimal', minGap:.14, note:'Хозяева дома против гостей на выезде.' }),
-    comparisonMetric({ key:'attack', label:'Атака · гол/матч', homeValue:(hSeason && aSeason) ? hSeason.goalsForPerMatch : hOverall?.gfAvg, awayValue:(hSeason && aSeason) ? aSeason.goalsForPerMatch : aOverall?.gfAvg, format:'decimal', minGap:.14, note:(hSeason && aSeason) ? 'Сезонная статистика из уже загруженного кэша.' : 'Недавняя результативность.' }),
+    comparisonMetric({ key:'attack', label:'Атака · гол/матч', homeValue:(hSeason && aSeason) ? hSeason.goalsForPerMatch : hOverall?.gfAvg, awayValue:(hSeason && aSeason) ? aSeason.goalsForPerMatch : aOverall?.gfAvg, format:'decimal', minGap:.14, note:(hSeason && aSeason) ? 'Сезонная статистика из уже загруженных сохранённых данных.' : 'Недавняя результативность.' }),
     comparisonMetric({ key:'defense', label:'Оборона · пропущено', homeValue:(hSeason && aSeason) ? hSeason.goalsAgainstPerMatch : hOverall?.gaAvg, awayValue:(hSeason && aSeason) ? aSeason.goalsAgainstPerMatch : aOverall?.gaAvg, format:'decimal', better:'lower', minGap:.14, note:'Меньше — лучше.' }),
     comparisonMetric({ key:'clean_sheets', label:'Сухие матчи', homeValue:(hSeason && aSeason) ? hSeason.cleanSheetRate : hOverall?.cleanSheetPct, awayValue:(hSeason && aSeason) ? aSeason.cleanSheetRate : aOverall?.cleanSheetPct, format:'percent', minGap:8, note:(hSeason && aSeason) ? 'Доля матчей сезона без пропущенных.' : 'Доля в последних матчах.' }),
     comparisonMetric({ key:'expected_goals', label:'Голевая оценка модели', homeValue:goalModel?.homeExpected, awayValue:goalModel?.awayExpected, format:'decimal', minGap:.14, note:'Модель Пуассона по доступной форме.' }),
     comparisonMetric({ key:'table_rank', label:'Место в таблице', homeValue:homeStanding?.rank, awayValue:awayStanding?.rank, format:'rank', better:'lower', minGap:0, note:'Показывается только если таблица турнира уже была загружена.' }),
-    ((Number(h2h?.homeWins||0)+Number(h2h?.awayWins||0)+Number(h2h?.draws||0)) > 0) ? comparisonMetric({ key:'h2h', label:'Победы в H2H', homeValue:h2h?.homeWins, awayValue:h2h?.awayWins, format:'integer', minGap:0, note:'Последние доступные очные встречи.' }) : null,
-    hasInjuryData ? comparisonMetric({ key:'absences', label:'Отмеченные потери', homeValue:absences?.home?.length || 0, awayValue:absences?.away?.length || 0, format:'integer', better:'lower', minGap:0, note:'Только подтверждённые провайдером отсутствия.' }) : null,
+    ((Number(h2h?.homeWins||0)+Number(h2h?.awayWins||0)+Number(h2h?.draws||0)) > 0) ? comparisonMetric({ key:'h2h', label:'Победы в очных встречах', homeValue:h2h?.homeWins, awayValue:h2h?.awayWins, format:'integer', minGap:0, note:'Последние доступные очные встречи.' }) : null,
+    hasInjuryData ? comparisonMetric({ key:'absences', label:'Отмеченные потери', homeValue:absences?.home?.length || 0, awayValue:absences?.away?.length || 0, format:'integer', better:'lower', minGap:0, note:'Только подтверждённые источником данных отсутствия.' }) : null,
   ].filter(Boolean);
 
   const descriptions = {
@@ -10769,9 +10769,9 @@ function buildMatchComparison({ homeName, awayName, homeForm, awayForm, homeStan
   else if (awayEdges >= homeEdges + 2) balanceLabel = `${awayName} впереди по большему числу доступных метрик`;
 
   const sources = ['последние матчи', 'дом/выезд'];
-  if (homeSeasonStats && awaySeasonStats) sources.push('кэш сезонной статистики');
-  if (homeStanding && awayStanding) sources.push('кэш таблицы');
-  if ((Number(h2h?.homeWins||0)+Number(h2h?.awayWins||0)+Number(h2h?.draws||0)) > 0) sources.push('H2H');
+  if (homeSeasonStats && awaySeasonStats) sources.push('сохранённая сезонная статистика');
+  if (homeStanding && awayStanding) sources.push('сохранённая таблица');
+  if ((Number(h2h?.homeWins||0)+Number(h2h?.awayWins||0)+Number(h2h?.draws||0)) > 0) sources.push('очные встречи');
   if (hasInjuryData) sources.push('потери состава');
 
   return {
@@ -10784,7 +10784,7 @@ function buildMatchComparison({ homeName, awayName, homeForm, awayForm, homeStan
       seasonStatsCached: Boolean(homeSeasonStats && awaySeasonStats),
       standingsCached: Boolean(homeStanding && awayStanding),
       sources,
-      note: 'Вкладка сравнения сама не делает дополнительных запросов к API-Football: она собирается из данных текущего анализа и уже существующего кэша.',
+      note: 'Вкладка сравнения сама не делает дополнительных запросов к API-Football: она собирается из данных текущего анализа и уже сохранённых данных.',
     },
   };
 }
@@ -10847,9 +10847,9 @@ async function apiAnalyze(request, cfg, user) {
   const canFetchInjuries = paid || !veryLowMinuteBudget;
 
   const skipped = [];
-  if (!canFetchFreshForm && detailedCoverage) skipped.push('Свежая форма команд: бережём лимит источника данных и используем кэш, если он есть.');
+  if (!canFetchFreshForm && detailedCoverage) skipped.push('Свежая форма команд: бережём лимит источника данных и используем сохранённые данные, если они есть.');
   if (!canFetchLineups && detailedCoverage && minutesToKickoff !== null && minutesToKickoff <= 120) skipped.push('Составы: запрос отложен из-за лимита или до публикации стартовых составов.');
-  if (!canFetchH2H && detailedCoverage) skipped.push('H2H временно пропущен: осталось мало запросов в минутном окне.');
+  if (!canFetchH2H && detailedCoverage) skipped.push('Очные встречи временно пропущены: осталось мало запросов в минутном окне.');
   if (!canFetchInjuries) skipped.push('Травмы временно пропущены: осталось критически мало запросов в минутном окне.');
   if (!detailedCoverage) skipped.push('Молодёжный/резервный турнир: расширенные запросы ограничены из-за слабого покрытия.');
 

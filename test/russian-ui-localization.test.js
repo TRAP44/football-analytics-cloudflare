@@ -43,7 +43,7 @@ test('common user-facing mixed English labels are removed from the Mini App', ()
     'Теневой challenger',
   ];
   for (const phrase of forbiddenApp) assert.equal(app.includes(phrase), false, phrase);
-  const rc30Forbidden = [
+  const russianCopyForbidden = [
     'MATCH BRIEF',
     'Вес в blend',
     'signal-level данные',
@@ -63,14 +63,23 @@ test('common user-facing mixed English labels are removed from the Mini App', ()
     'Football Manager',
     'Стартовые XI',
     'Голы, карточки, замены и VAR',
+    'Предматчевый бриф',
+    'ПРЕДМАТЧЕВЫЙ БРИФ',
+    'Устаревший кэш',
+    '⚡ Кэш',
+    'Рынок 1X2',
+    'Защита RC30',
+    "badge.textContent = 'SQL'",
   ];
-  for (const phrase of rc30Forbidden) assert.equal(app.includes(phrase), false, phrase);
+  for (const phrase of russianCopyForbidden) assert.equal(app.includes(phrase), false, phrase);
   assert.match(app, /function publicText\(value\)/);
   assert.match(app, /function dataPolicyModeLabel\(value\)/);
   assert.match(app, /function predictionAdviceLabel\(value\)/);
-  assert.match(app, /Защита RC30/);
+  assert.match(app, /Защитная проверка/);
   assert.match(app, /подтверждено ·/);
   assert.match(app, /первый ответ/);
+  assert.match(app, /Преданализ матча/);
+  assert.match(app, /Сохранённые данные/);
 });
 
 test('admin panels have a display-only technical vocabulary translator', () => {
@@ -119,7 +128,7 @@ test('obsolete release/admin copy is not exposed by the current worker', () => {
   ]) assert.equal(worker.includes(phrase), false, phrase);
 });
 
-test('RC30 health publishes all localization contracts', () => {
+test('RC31 health publishes all localization contracts', () => {
   assert.match(worker, /russianUiLocalization:\s*'enabled'/);
   assert.match(worker, /adminRussianLocalization:\s*'enabled'/);
   assert.match(worker, /prematchRussianLocalization:\s*'enabled'/);

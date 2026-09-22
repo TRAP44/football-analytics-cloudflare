@@ -111,7 +111,7 @@
             <input id="globalSearchInput" class="search-input" type="search" aria-label="Поиск команд и турниров" inputmode="search" placeholder="Например: Арсенал, Барселона, Лига чемпионов" autocomplete="off" />
             <button id="globalSearchBtn" class="global-search-btn" type="button">Найти</button>
           </div>
-          <p class="tiny">Поиск по текущему каталогу мгновенный. Для команды вне сегодняшних матчей нажмите «Найти» — запрос к источнику данных выполняется только после 3 символов и кэшируется.</p>
+          <p class="tiny">Поиск по текущему каталогу мгновенный. Для команды вне сегодняшних матчей нажмите «Найти» — запрос к источнику данных выполняется только после 3 символов и сохраняется на ограниченное время.</p>
         </section>
         <div id="searchStatus"></div>
         <section id="searchResultsWrap" class="search-section" hidden>
@@ -327,7 +327,7 @@
             <div id="modelRemediationDriftQueue" class="model-remediation-drift-queue"></div>
             <label class="runtime-message-field model-remediation-reason">
               <span>Причина действия администратора</span>
-              <input id="modelRemediationReason" maxlength="220" placeholder="Например: подтверждён официальный результат после коррекции провайдера данных">
+              <input id="modelRemediationReason" maxlength="220" placeholder="Например: подтверждён официальный результат после исправления источника данных">
             </label>
             <div class="runtime-controls-actions">
               <button id="modelRemediationDryRunBtn" class="reminder-btn" type="button">Обновить проверку</button>
@@ -350,7 +350,7 @@
           <div class="provider-status-grid">
             <div><span>Тариф источника данных</span><strong id="providerPlan">Определяется</strong></div>
             <div><span>Осталось сегодня</span><strong id="providerDaily">—</strong></div>
-            <div><span>Осталось / мин</span><strong id="providerMinute">—</strong></div>
+            <div><span>Осталось в минуту</span><strong id="providerMinute">—</strong></div>
             <div><span>Коэффициенты во время матча</span><strong id="providerLiveOdds">—</strong></div>
             <div><span>Статистика игроков</span><strong id="providerPlayerStats">—</strong></div>
             <div><span>Движение коэффициентов</span><strong id="providerOddsMovement">—</strong></div>
@@ -376,18 +376,18 @@
           <div class="quota-orchestrator-box">
             <div class="quota-orchestrator-head">
               <div><strong>⚙️ Контроль квоты</strong><span id="quotaBudgetMode">Ожидаем данные</span></div>
-              <small>Кэш отдельных функций</small>
+              <small>Сохранение данных по функциям</small>
             </div>
             <div class="quota-orchestrator-grid">
               <div><span>Остаток на день</span><strong id="quotaBudgetDaily">—</strong></div>
               <div><span>Остаток на минуту</span><strong id="quotaBudgetMinute">—</strong></div>
               <div><span>Запросы к источнику данных</span><strong id="quotaFeatureApi">0</strong></div>
-              <div><span>Из кэша</span><strong id="quotaFeatureCache">0</strong></div>
-              <div><span>Резерв из кэша</span><strong id="quotaFeatureStale">0</strong></div>
+              <div><span>Из сохранённых данных</span><strong id="quotaFeatureCache">0</strong></div>
+              <div><span>Из резервных данных</span><strong id="quotaFeatureStale">0</strong></div>
               <div><span>Пропущено</span><strong id="quotaFeatureSkipped">0</strong></div>
             </div>
             <div id="quotaFeatureList" class="quota-feature-list"></div>
-            <p id="quotaBudgetNote" class="tiny">Кэш отдельных функций активен.</p>
+            <p id="quotaBudgetNote" class="tiny">Сохранение данных по функциям активен.</p>
           </div>
 
           <div class="provider-audit-controls">
@@ -414,7 +414,7 @@
 
           <p id="providerAuditStatus" class="tiny">На бесплатном плане полная проверка не запускается: защита расходует только один запрос матча и останавливается.</p>
           <div id="providerAuditResult" class="provider-audit-result" hidden></div>
-          <p class="tiny diagnostics-privacy">Полная проверка запускается администратором вручную. Результат хранится в кэше 15 минут. Пустой ответ не всегда означает ошибку: доступность данных зависит от турнира и стадии матча.</p>
+          <p class="tiny diagnostics-privacy">Полная проверка запускается администратором вручную. Результат сохраняется на 15 минут. Пустой ответ не всегда означает ошибку: доступность данных зависит от турнира и стадии матча.</p>
         </section>
 
         <section class="panel runtime-controls-panel" data-admin-only hidden>
@@ -434,10 +434,10 @@
           <div class="runtime-control-list">
             <label class="runtime-control-row danger"><div><strong>Техническое обслуживание</strong><small>Останавливает основные футбольные маршруты у обычных пользователей. Администратор сохраняет доступ.</small></div><input id="runtimeMaintenanceToggle" type="checkbox"></label>
             <label class="runtime-control-row"><div><strong>Полный анализ</strong><small>Разрешить полный предматчевый анализ и соответствующие кнопки.</small></div><input id="runtimeAnalysisToggle" type="checkbox" checked></label>
-            <label class="runtime-control-row"><div><strong>Удалённый поиск</strong><small>Локальный каталог остаётся доступен, даже если поиск через провайдера выключен.</small></div><input id="runtimeSearchToggle" type="checkbox" checked></label>
+            <label class="runtime-control-row"><div><strong>Удалённый поиск</strong><small>Локальный каталог остаётся доступен, даже если поиск через источник данных выключен.</small></div><input id="runtimeSearchToggle" type="checkbox" checked></label>
             <label class="runtime-control-row"><div><strong>Автообновление матча</strong><small>Останавливает автоматическое обновление матча, не отключая уже сохранённый центр матча.</small></div><input id="runtimeLiveToggle" type="checkbox" checked></label>
             <label class="runtime-control-row"><div><strong>Новые уведомления</strong><small>Создание новых уведомлений и их доставка по расписанию. Существующие уведомления можно удалять.</small></div><input id="runtimeRemindersToggle" type="checkbox" checked></label>
-            <label class="runtime-control-row"><div><strong>Расширенные данные провайдера</strong><small>Игроки, травмы, коэффициенты во время матча и другие дополнительные данные. Основные события и статистика остаются доступными.</small></div><input id="runtimeExpandedToggle" type="checkbox" checked></label>
+            <label class="runtime-control-row"><div><strong>Расширенные данные источника</strong><small>Игроки, травмы, коэффициенты во время матча и другие дополнительные данные. Основные события и статистика остаются доступными.</small></div><input id="runtimeExpandedToggle" type="checkbox" checked></label>
             <label class="runtime-control-row"><div><strong>Автовосстановление результатов</strong><small>Один безопасный пакет в сутки, до 20 матчей / 5 дат. По умолчанию только наблюдение; ручное восстановление остаётся доступным.</small></div><input id="runtimeAutoSettlementRecoveryToggle" type="checkbox"></label>
           </div>
 
@@ -448,7 +448,7 @@
 
           <label class="runtime-message-field">
             <span>Причина изменения / комментарий</span>
-            <input id="runtimeChangeReason" maxlength="240" placeholder="Например: временно отключаем автообновление матча из-за ошибок провайдера">
+            <input id="runtimeChangeReason" maxlength="240" placeholder="Например: временно отключаем автообновление матча из-за ошибок источника данных">
           </label>
 
           <div class="runtime-controls-actions">
@@ -550,7 +550,7 @@
             <div><strong id="releaseStatus">Откройте профиль, чтобы выполнить проверку.</strong><small id="releaseMeta"></small></div>
           </div>
           <div id="releaseChecks" class="release-checks"></div>
-          <p class="tiny diagnostics-privacy">Проверка не активирует оплату и не тратит запросы API-Football. Она проверяет конфигурацию приложения, Supabase, миграции и состояние провайдера.</p>
+          <p class="tiny diagnostics-privacy">Проверка не активирует оплату и не тратит запросы API-Football. Она проверяет конфигурацию приложения, Supabase, миграции и состояние источника данных.</p>
         </section>
 
         <section class="panel production-readiness-panel" data-admin-only hidden>
@@ -576,7 +576,7 @@
           <div class="section-head profile-section-head diagnostics-head">
             <div>
               <h2>🛠 Диагностика системы</h2>
-              <p>Серверный обработчик, API-Football, Supabase, кэш и журнал ошибок.</p>
+              <p>Серверный обработчик, API-Football, Supabase, сохранённые данные и журнал ошибок.</p>
             </div>
             <button id="diagnosticsRefreshBtn" class="icon-btn" type="button" aria-label="Обновить диагностику">↻</button>
           </div>
