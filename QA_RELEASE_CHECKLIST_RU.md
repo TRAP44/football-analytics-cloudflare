@@ -1,10 +1,10 @@
-# QA Release Checklist — v6.10.0 RC18
+# QA Release Checklist — v6.11.0 RC19
 
 ## Deploy
 
-- применены `supabase_migration_v6_9.sql` и `supabase_migration_v6_10.sql`;
-- Worker/client = `6.10.0-rc18`;
-- package = `6.10.0`;
+- применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql` и `supabase_migration_v6_11_1.sql`;
+- Worker/client = `6.11.0-rc19`;
+- package = `6.11.0`;
 - cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;
@@ -40,8 +40,12 @@
 - все server-only таблицы имеют RLS;
 - `anon` и `authenticated` не имеют прямого доступа;
 - `service_role` имеет необходимые права Data API;
+- `PUBLIC`, `anon` и `authenticated` не имеют прав на backend tables/sequences/RPC;
+- default privileges сохраняют тот же запрет для будущих объектов;
+- `backend_security_contract()` и `backend_default_acl_contract()` возвращают `ok=true` только через `service_role`;
+- Release Readiness и RC Regression блокируются при нарушении security contract;
 - foreign key и filtered-query колонки индексированы;
-- fresh-install baseline v6.9 и migration v6.10 применяются к пустой базе без ручного добавления таблиц.
+- fresh-install baseline v6.9 и migrations v6.10–v6.11.1 применяются к пустой базе без ручного добавления таблиц.
 
 ## Automated checks
 

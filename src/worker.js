@@ -72,11 +72,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.10.0-rc18';
+const APP_VERSION = '6.11.0-rc19';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc18';
-const RC_NAME = 'RC18';
+const RELEASE_CHANNEL = 'rc19';
+const RC_NAME = 'RC19';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1035,6 +1035,37 @@ async function supaRpc(cfg, functionName, payload = {}) {
     throw error;
   }
   return Array.isArray(body) && body.length === 1 ? body[0] : body;
+}
+
+async function readBackendSecurityContract(cfg) {
+  if (!hasSupabase(cfg)) return { ok: false, status: 'not_configured' };
+  try {
+    const [contract, defaultAcl] = await Promise.all([
+      supaRpc(cfg, 'backend_security_contract'),
+      supaRpc(cfg, 'backend_default_acl_contract'),
+    ]);
+    return {
+      ok: Boolean(contract?.ok && defaultAcl?.ok),
+      status: contract?.ok && defaultAcl?.ok ? 'ok' : 'violations',
+      checkedAt: defaultAcl?.checked_at || contract?.checked_at || null,
+      schemaViolations: Array.isArray(contract?.schema_violations) ? contract.schema_violations : [],
+      tableViolations: Array.isArray(contract?.table_violations) ? contract.table_violations : [],
+      sequenceViolations: Array.isArray(contract?.sequence_violations) ? contract.sequence_violations : [],
+      functionViolations: Array.isArray(contract?.function_violations) ? contract.function_violations : [],
+      defaultAclViolations: Array.isArray(defaultAcl?.default_acl_violations) ? defaultAcl.default_acl_violations : [],
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: error?.code || 'error',
+      detail: redactOpsString(error?.message || error, 160),
+      schemaViolations: [],
+      tableViolations: [],
+      sequenceViolations: [],
+      functionViolations: [],
+      defaultAclViolations: [],
+    };
+  }
 }
 
 function bumpTelemetry(key, amount = 1) {
@@ -2090,7 +2121,7 @@ function fitAdaptiveSignalWeightsHoldout(rows) {
   const changedWeightL1 = Object.keys(MODEL_BASE_WEIGHTS)
     .reduce((sum, name) => sum + Math.abs(Number(candidate.weights?.[name] || 0) - Number(MODEL_BASE_WEIGHTS[name] || 0)), 0);
 
-  // RC18 gate: both sequential holdout windows must beat the baseline.
+  // RC19 gate: both sequential holdout windows must beat the baseline.
   const active = changedWeightL1 >= 0.01 && gate.pass;
 
   return {
@@ -2358,7 +2389,7 @@ async function notifyCalibrationAdmins(cfg, action, detail = '') {
     freeze: 'lifecycle заморожен',
     unfreeze: 'lifecycle разморожен',
   };
-  const text = `⚙️ Calibration RC18: ${labels[action] || action}.${detail ? `\n${String(detail).slice(0, 500)}` : ''}`;
+  const text = `⚙️ Calibration RC19: ${labels[action] || action}.${detail ? `\n${String(detail).slice(0, 500)}` : ''}`;
   await Promise.allSettled((cfg.adminTelegramIds || []).map(id => sendTelegramMessage(id, text, cfg)));
 }
 
@@ -2387,7 +2418,7 @@ async function resolveCalibrationLifecycle(cfg, candidate, trustedRows) {
       const state = await saveCalibrationLifecycleState(cfg, lifecycle.state, {
         action: 'initialize',
         targetFingerprint: baseline.fingerprint,
-        reason: 'RC18 baseline lifecycle initialization.',
+        reason: 'RC19 baseline lifecycle initialization.',
         metadata: { appVersion: APP_VERSION },
       });
       lifecycle = { state, active: baseline, previous: null };
@@ -2624,9 +2655,9 @@ function buildCalibrationProfile(rows) {
           : 'Кандидат остаётся в тени до достаточной trusted holdout-выборки.',
     },
     note: active
-      ? 'RC18: кандидат прошёл два holdout-окна; постоянный lifecycle решает продвижение относительно активного champion.'
+      ? 'RC19: кандидат прошёл два holdout-окна; постоянный lifecycle решает продвижение относительно активного champion.'
       : shadow
-        ? 'RC18: challenger измеряется в тени; production использует только постоянный active-профиль.'
+        ? 'RC19: challenger измеряется в тени; production использует только постоянный active-профиль.'
         : 'Недостаточно trusted-прогнозов для безопасной автоматической калибровки.',
   };
 }
@@ -3639,7 +3670,7 @@ function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = 
     calibrationDiagnostics: {
       weightedTopCalibrationError: weightedTopCalibrationError(rows),
       label: 'Weighted top-probability calibration error',
-      note: 'Средневзвешенный абсолютный разрыв между средней top-вероятностью и hit rate по 5 probability buckets; меньше — лучше. RC18 не использует эту метрику отдельно: продвижение требует двух holdout-окон и сравнения с champion.',
+      note: 'Средневзвешенный абсолютный разрыв между средней top-вероятностью и hit rate по 5 probability buckets; меньше — лучше. RC19 не использует эту метрику отдельно: продвижение требует двух holdout-окон и сравнения с champion.',
     },
     calibrationEngine: calibrationProfile || baselineCalibrationProfile(evaluated, signalPerformance),
     calibrationImpact,
@@ -7489,7 +7520,7 @@ async function apiReleaseReadiness(request, cfg) {
     probeOptionalTable(cfg, 'runtime_controls'),
     probeOptionalTable(cfg, 'runtime_control_history'),
   ]);
-  const [runtimeState, watchdogSchema, runLedgerSchema, finalitySchema, adjudicationSchema, trustSchema, calibrationPromotionSchema, calibrationLifecycleSchema] = await Promise.all([
+  const [runtimeState, watchdogSchema, runLedgerSchema, finalitySchema, adjudicationSchema, trustSchema, calibrationPromotionSchema, calibrationLifecycleSchema, backendSecurity] = await Promise.all([
     loadRuntimeControls(cfg, { force: true }),
     probeSettlementWatchdogSchema(cfg),
     probeSettlementRunLedgerSchema(cfg),
@@ -7498,6 +7529,7 @@ async function apiReleaseReadiness(request, cfg) {
     probeSettlementTrustSchema(cfg),
     probeCalibrationPromotionSchema(cfg),
     probeCalibrationLifecycleSchema(cfg),
+    readBackendSecurityContract(cfg),
   ]);
   const runtime = runtimeState.value;
   const provider = diagnostics.provider || {};
@@ -7506,6 +7538,10 @@ async function apiReleaseReadiness(request, cfg) {
     releaseCheck('football_api', 'Ключ API-Football', cfg.apiFootballKey ? 'pass' : 'fail', cfg.apiFootballKey ? 'Ключ доступен Worker.' : 'API_FOOTBALL_KEY отсутствует.', true),
     releaseCheck('supabase_config', 'Настройка Supabase', hasSupabase(cfg) ? 'pass' : 'fail', hasSupabase(cfg) ? 'URL и service key доступны runtime.' : 'Не хватает SUPABASE_URL или service key.', true),
     releaseCheck('supabase_online', 'Supabase/PostgREST', diagnostics.supabase?.ok ? 'pass' : 'fail', diagnostics.supabase?.ok ? `Ответ ${Number(diagnostics.supabase?.latencyMs || 0)} мс.` : `Статус: ${diagnostics.supabase?.status || 'offline'}.`, true),
+    releaseCheck('backend_security_contract', 'Контракт безопасности Supabase', backendSecurity.ok ? 'pass' : 'fail',
+      backendSecurity.ok
+        ? 'Все public-таблицы защищены RLS; anon/authenticated не имеют прямых прав; RPC закрыты.'
+        : `RC19 security contract: ${backendSecurity.status || 'ошибка'}.`, true),
     releaseCheck('model_backtest', 'Схема исторической проверки v3.6+', modelTable.ok ? 'pass' : 'fail', modelTable.ok ? 'Таблица model_predictions доступна.' : `model_predictions: ${modelTable.status}.`, true),
     releaseCheck('prediction_integrity', 'Самопроверка целостности прогнозов', modelIntegritySelfTest().pass ? 'pass' : 'fail',
       modelIntegritySelfTest().pass ? 'Probabilities, captured_at timing и outcome consistency проходят synthetic self-test.' : 'Prediction Integrity self-test не прошёл.', true),
@@ -7777,8 +7813,8 @@ async function apiRcRegression(request, cfg, user) {
   const startedAt = Date.now();
 
   // 1) Core runtime / security configuration.
-  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.10.0-rc18' ? 'pass' : 'fail',
-    `Worker: ${APP_VERSION}; ожидается 6.10.0-rc18.`, true));
+  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.11.0-rc19' ? 'pass' : 'fail',
+    `Worker: ${APP_VERSION}; ожидается 6.11.0-rc19.`, true));
   checks.push(rcCheck('api_contract', 'runtime', 'Контракт API', API_CONTRACT_VERSION === 5 ? 'pass' : 'fail',
     `Contract ${API_CONTRACT_VERSION}; min client ${MIN_CLIENT_VERSION}.`, true));
   checks.push(rcCheck('app_manifest', 'runtime', 'Публичный манифест приложения', appManifest(cfg)?.version === APP_VERSION ? 'pass' : 'fail',
@@ -7793,6 +7829,18 @@ async function apiRcRegression(request, cfg, user) {
     cfg.apiFootballKey ? 'API key доступен Worker.' : 'API_FOOTBALL_KEY отсутствует.', true));
   checks.push(rcCheck('supabase_runtime', 'runtime', 'Supabase runtime', hasSupabase(cfg) ? 'pass' : 'fail',
     hasSupabase(cfg) ? 'URL и service key доступны.' : 'SUPABASE_URL/service key отсутствуют.', true));
+
+  const backendSecurity = await readBackendSecurityContract(cfg);
+  checks.push(rcCheck(
+    'backend_security_contract',
+    'security',
+    'Least-privilege контракт Supabase',
+    backendSecurity.ok ? 'pass' : 'fail',
+    backendSecurity.ok
+      ? 'RLS включён; прямые права anon/authenticated и публичный EXECUTE отсутствуют.'
+      : `Security contract: ${backendSecurity.status || 'ошибка'}; примените supabase_migration_v6_11.sql.`,
+    true
+  ));
 
   const currentAdminOk = isAdminUser(user, cfg);
   const failClosedOk = !cfg.devMode && !isAdminUser({ id: 0 }, cfg);
@@ -11008,6 +11056,7 @@ export default {
         calibrationAtomicTransitions: 'enabled',
         calibrationManualFreeze: 'enabled',
         adminDevModeIsolation: 'enabled',
+        backendSecurityContract: 'enabled',
         runtimeControlsCacheSeconds: 30,
         devMode: cfg.devMode,
       });
