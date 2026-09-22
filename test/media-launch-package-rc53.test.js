@@ -46,7 +46,7 @@ test('core media funnel events are first party and avoid storing the search quer
 
 test('admin funnel returns aggregates and Mini App keeps it admin-only',()=> {
   assert.match(worker,/async function apiLaunchFunnel/);
-  assert.match(worker,/privacy:'Ответ содержит только агрегаты; Telegram ID пользователей не возвращаются\.'/);
+  assert.match(worker,/privacy:'Ответ содержит только агрегаты; Telegram ID и текст поисковых запросов пользователей не возвращаются\.'/);
   assert.match(worker,/url\.pathname === '\/api\/launch-funnel'/);
   assert.match(worker,/if \(!isAdminUser\(user, cfg\)\) return adminForbidden\(\)/);
   assert.match(html,/class="panel launch-funnel-panel" data-admin-only hidden/);
