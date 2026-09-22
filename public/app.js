@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.44.0-rc52';
+const CLIENT_VERSION = '6.45.0-rc53';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc52';
+const CLIENT_RELEASE_CHANNEL = 'rc53';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -67,6 +67,9 @@ const state = {
   releaseMonitor: null,
   releaseMonitorLoading: false,
   releaseMonitorHours: 24,
+  launchFunnel: null,
+  launchFunnelLoading: false,
+  launchFunnelDays: 7,
   reminderHealth: null,
   reminderHealthLoading: false,
   runtimeStatus: null,
@@ -376,6 +379,7 @@ function sendClientTelemetry(event, meta = {}, { once = false } = {}) {
       blocking: meta.blocking,
       reason: meta.reason || '',
       errorKind: meta.errorKind || '',
+      startParam: meta.startParam || '',
     },
   };
 
@@ -683,6 +687,7 @@ function hideBootGate() {
     bootMs: state.clientPerf.bootMs,
     manifestOk: state.startup.manifestOk,
     degraded: state.startup.degraded,
+    startParam: tg?.initDataUnsafe?.start_param || '',
   }, { once: true });
   setTimeout(() => { gate.hidden = true; gate.classList.remove('done'); }, 220);
 }
@@ -965,6 +970,7 @@ function organizeAdminConsole() {
     '.provider-audit-panel',
     '.reminder-health-panel',
     '.release-monitor-panel',
+    '.launch-funnel-panel',
     '.rc-panel',
     '.release-panel',
     '.production-readiness-panel',
@@ -984,6 +990,7 @@ async function loadAdvancedAdminTools() {
     loadReleaseReadiness(false),
     loadProductionReadiness(false),
     loadReleaseMonitor(false),
+    loadLaunchFunnel(false),
     loadReminderHealth(false),
   ]);
 }
@@ -2806,6 +2813,82 @@ async function loadReleaseMonitor(force = false) {
   } finally {
     state.releaseMonitorLoading = false;
     renderReleaseMonitor();
+  }
+}
+
+function launchFunnelPct(value) {
+  const n=Number(value || 0);
+  return Number.isFinite(n) ? `${n.toFixed(n % 1 ? 1 : 0)}%` : '0%';
+}
+
+function renderLaunchFunnel() {
+  if (!isAdmin()) return;
+  const status=$('launchFunnelStatus');
+  const meta=$('launchFunnelMeta');
+  const kpis=$('launchFunnelKpis');
+  const stages=$('launchFunnelStages');
+  const campaigns=$('launchFunnelCampaigns');
+  if (!status || !meta || !kpis || !stages || !campaigns) return;
+
+  if (state.launchFunnelLoading) {
+    status.textContent='Собираю first-party воронку…';
+    meta.textContent='Только агрегированные данные';
+    kpis.innerHTML=stages.innerHTML=campaigns.innerHTML='';
+    return;
+  }
+
+  const d=state.launchFunnel;
+  if (!d?.available) {
+    status.textContent=d?.reason || 'Воронка запуска ещё не загружена.';
+    meta.textContent='Нужна миграция v6.15 и события пользователей.';
+    kpis.innerHTML=stages.innerHTML=campaigns.innerHTML='';
+    return;
+  }
+
+  status.textContent=`Launch funnel · ${Number(d.days || 7)} дн.`;
+  meta.textContent=`${Number(d.uniqueUsers || 0)} пользователей · ${Number(d.events || 0)} событий · хранение ${Number(d.retentionDays || 90)} дней`;
+  const first=d.funnel?.[0] || {};
+  const last=d.funnel?.at?.(-1) || d.funnel?.[d.funnel.length-1] || {};
+  kpis.innerHTML=`<div class="release-monitor-kpis">
+    <div><span>Входы</span><strong>${Number(first.users || 0)}</strong><small>bot + Mini App</small></div>
+    <div><span>Полный AI</span><strong>${Number(last.users || 0)}</strong><small>${launchFunnelPct(last.fromEntryPct)} от входов</small></div>
+    <div><span>Кампаний</span><strong>${Number(d.campaigns?.length || 0)}</strong><small>source + campaign</small></div>
+    <div><span>Событий</span><strong>${Number(d.events || 0)}</strong><small>${d.truncated ? 'лимит выборки достигнут' : 'полная выборка периода'}</small></div>
+  </div>`;
+
+  const rows=d.funnel || [];
+  stages.innerHTML=`<div class="release-monitor-section-head"><strong>Воронка</strong><span>уникальные пользователи</span></div>
+    <div class="launch-funnel-stages">${rows.map((x,index)=>`<div>
+      <span>${index+1}. ${escapeHtml(x.label || x.key || '')}</span>
+      <strong>${Number(x.users || 0)}</strong>
+      <small>${index ? `${launchFunnelPct(x.fromPreviousPct)} от предыдущего · ${launchFunnelPct(x.fromEntryPct)} от входа` : 'точка входа'}</small>
+    </div>`).join('')}</div>`;
+
+  const sources=d.campaigns || [];
+  campaigns.innerHTML=`<div class="release-monitor-section-head"><strong>Источники и кампании</strong><span>без Telegram ID</span></div>
+    ${sources.length ? `<div class="launch-campaign-list">${sources.map(x=>`<div>
+      <span><b>${escapeHtml(x.source || 'telegram')}</b> · ${escapeHtml(x.campaign || 'direct')}</span>
+      <strong>${Number(x.entries || 0)} → ${Number(x.fullAi || 0)}</strong>
+      <small>AI conversion ${launchFunnelPct(x.conversionPct)} · ${Number(x.events || 0)} событий</small>
+    </div>`).join('')}</div>` : '<div class="empty compact-empty">Пока нет атрибутированных входов.</div>'}
+    <p class="tiny">${escapeHtml(d.privacy || '')}</p>`;
+}
+
+async function loadLaunchFunnel(force=false) {
+  if (!isAdmin() || state.launchFunnelLoading) return;
+  if (!force && state.launchFunnel) { renderLaunchFunnel(); return; }
+  state.launchFunnelLoading=true;
+  renderLaunchFunnel();
+  try {
+    const days=Number($('launchFunnelPeriod')?.value || state.launchFunnelDays || 7);
+    state.launchFunnelDays=days;
+    state.launchFunnel=await api(`/api/launch-funnel?days=${days}`,{retry:false,timeoutMs:10000});
+  } catch (e) {
+    state.launchFunnel={available:false,reason:e.message};
+    toast(e.message);
+  } finally {
+    state.launchFunnelLoading=false;
+    renderLaunchFunnel();
   }
 }
 
@@ -5519,7 +5602,7 @@ async function analyzeMatch(fixtureId, btn) {
   const original = btn?.textContent || '';
   if (btn) btn.textContent = '⏳ Собираю данные…';
   try {
-    const data = await api('/api/analyze', { method: 'POST', body: JSON.stringify({ fixtureId }) });
+    const data = await api('/api/analyze', { method: 'POST', body: JSON.stringify({ fixtureId, origin:'miniapp' }) });
     if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
     renderAnalysis(data);
     rememberHistoryAnalysis(data);
@@ -6692,6 +6775,8 @@ $('diagnosticsRefreshBtn')?.addEventListener('click', () => loadDiagnostics(true
 $('productionReadinessRefreshBtn')?.addEventListener('click', () => loadProductionReadiness(true));
 $('releaseMonitorRefreshBtn')?.addEventListener('click', () => loadReleaseMonitor(true));
 $('releaseMonitorPeriod')?.addEventListener('change', () => { state.releaseMonitor = null; loadReleaseMonitor(true); });
+$('launchFunnelRefreshBtn')?.addEventListener('click', () => loadLaunchFunnel(true));
+$('launchFunnelPeriod')?.addEventListener('change', () => { state.launchFunnel = null; loadLaunchFunnel(true); });
 $('reminderHealthRefreshBtn')?.addEventListener('click', () => loadReminderHealth(true));
 $('reminderTestBtn')?.addEventListener('click', () => sendReminderTest());
 $('runtimeControlsRefreshBtn')?.addEventListener('click', () => loadRuntimeControlsAdmin(true));

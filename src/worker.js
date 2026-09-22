@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.44.0-rc52';
+const APP_VERSION = '6.45.0-rc53';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc52';
-const RC_NAME = 'RC52';
+const RELEASE_CHANNEL = 'rc53';
+const RC_NAME = 'RC53';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -186,6 +186,7 @@ function config(env) {
     // а UI оплаты не показывается, пока флаг не включён явно.
     monetizationEnabled: boolEnv(env.MONETIZATION_ENABLED, false),
     opsRetentionDays: intEnv(env.OPS_RETENTION_DAYS, 14),
+    growthRetentionDays: intEnv(env.GROWTH_RETENTION_DAYS, 90),
     limits: {
       FREE: intEnv(env.FREE_DAILY_LIMIT, 3),
       PRO: intEnv(env.PRO_DAILY_LIMIT, 20),
@@ -1411,6 +1412,178 @@ async function getUserRecord(userId, cfg) {
   return memory.users.get(Number(userId)) || { telegram_id: Number(userId), plan: 'FREE' };
 }
 
+function cleanLaunchPart(value = '', max = 48) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9_-]/g,'').replace(/_+/g,'_').replace(/^-+|-+$/g,'').slice(0,max);
+}
+
+function telegramStartPayload(text = '') {
+  const match=String(text || '').match(/^\/start(?:@\w+)?(?:\s+([A-Za-z0-9_-]{1,64}))?/i);
+  return String(match?.[1] || '').slice(0,64);
+}
+
+function parseLaunchStartParam(value = '') {
+  const raw=String(value || '').trim().replace(/[^A-Za-z0-9_-]/g,'').slice(0,64);
+  if (!raw) return {source:'telegram',campaign:'direct',content:'',startParam:''};
+  const lower=raw.toLowerCase();
+  const parts=lower.includes('__') ? lower.split('__').filter(Boolean) : lower.split('_').filter(Boolean);
+  const prefix=cleanLaunchPart(parts.shift() || '',20);
+  if (['media','press','partner','social'].includes(prefix)) {
+    return {
+      source:cleanLaunchPart(parts[0] || prefix,32) || prefix,
+      campaign:cleanLaunchPart(parts[1] || 'launch',40) || 'launch',
+      content:cleanLaunchPart(parts.slice(2).join('_'),48),
+      startParam:raw,
+    };
+  }
+  if (prefix === 'ref' || prefix === 'referral') {
+    return {
+      source:'referral',
+      campaign:cleanLaunchPart(parts[0] || 'invite',40) || 'invite',
+      content:cleanLaunchPart(parts.slice(1).join('_'),48),
+      startParam:raw,
+    };
+  }
+  return {
+    source:'telegram',
+    campaign:cleanLaunchPart(lower,40) || 'direct',
+    content:'',
+    startParam:raw,
+  };
+}
+
+function acquisitionFromUser(row = {}) {
+  return {
+    source:cleanLaunchPart(row?.acquisition_source || 'telegram',32) || 'telegram',
+    campaign:cleanLaunchPart(row?.acquisition_campaign || 'direct',40) || 'direct',
+    content:cleanLaunchPart(row?.acquisition_content || '',48),
+    startParam:String(row?.acquisition_start_param || '').slice(0,64),
+    firstTouchAt:row?.acquisition_first_touch_at || null,
+  };
+}
+
+async function ensureLaunchAttribution(userId, rawStartParam, cfg) {
+  const id=Number(userId || 0);
+  if (!id) return parseLaunchStartParam(rawStartParam);
+  const incoming=parseLaunchStartParam(rawStartParam);
+  const existing=await getUserRecord(id,cfg).catch(()=>null);
+  if (existing?.acquisition_first_touch_at) return acquisitionFromUser(existing);
+  const patch={
+    acquisition_source:incoming.source,
+    acquisition_campaign:incoming.campaign,
+    acquisition_content:incoming.content,
+    acquisition_start_param:incoming.startParam,
+    acquisition_first_touch_at:new Date().toISOString(),
+  };
+  if (hasSupabase(cfg)) {
+    await supaPatch(cfg,'users',{telegram_id:`eq.${id}`,acquisition_first_touch_at:'is.null'},patch).catch(()=>null);
+    const confirmed=await getUserRecord(id,cfg).catch(()=>null);
+    return confirmed?.acquisition_first_touch_at ? acquisitionFromUser(confirmed) : {...incoming,firstTouchAt:patch.acquisition_first_touch_at};
+  }
+  const current=memory.users.get(id) || {telegram_id:id,plan:'FREE'};
+  memory.users.set(id,{...current,...patch});
+  return {...incoming,firstTouchAt:patch.acquisition_first_touch_at};
+}
+
+async function recordGrowthEvent(cfg, {
+  userId,
+  eventName,
+  channel='telegram',
+  fixtureId=null,
+  metadata={},
+  attribution=null,
+} = {}) {
+  const id=Number(userId || 0);
+  const event=cleanLaunchPart(eventName,40);
+  if (!id || !event) return false;
+  try {
+    const attr=attribution || acquisitionFromUser(await getUserRecord(id,cfg).catch(()=>null));
+    const row={
+      telegram_id:id,
+      event_name:event,
+      channel:['telegram','miniapp','system'].includes(channel) ? channel : 'telegram',
+      fixture_id:Number(fixtureId || 0) || null,
+      source:attr.source || 'telegram',
+      campaign:attr.campaign || 'direct',
+      content:attr.content || '',
+      metadata:safeOpsMetadata(metadata || {}),
+      created_at:new Date().toISOString(),
+    };
+    if (hasSupabase(cfg)) await supaUpsert(cfg,'growth_events',row);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function cleanupGrowthEvents(cfg) {
+  if (!hasSupabase(cfg)) return {skipped:true};
+  const days=Math.max(7,Number(cfg.growthRetentionDays || 90));
+  const cutoff=new Date(Date.now()-days*86400_000).toISOString();
+  try {
+    await supaDelete(cfg,'growth_events',{created_at:`lt.${cutoff}`});
+    return {ok:true,cutoff,retentionDays:days};
+  } catch (error) {
+    return {ok:false,error:redactOpsString(error?.message || error,180)};
+  }
+}
+
+async function apiLaunchFunnel(request,cfg) {
+  const url=new URL(request.url);
+  const days=Math.max(1,Math.min(30,Number(url.searchParams.get('days') || 7)));
+  if (!hasSupabase(cfg)) return json({available:false,reason:'Supabase не настроен.',days});
+  const since=new Date(Date.now()-days*86400_000).toISOString();
+  let rows=[];
+  try {
+    rows=await supaSelectMany(cfg,'growth_events',{created_at:`gte.${since}`},{limit:1000,order:'created_at.asc'});
+  } catch (error) {
+    return json({available:false,reason:'Нужна миграция v6.15 или временно недоступна база.',days,error:redactOpsString(error?.message || error,120)});
+  }
+  const setFor=(names)=>new Set(rows.filter(x=>names.includes(String(x.event_name || ''))).map(x=>Number(x.telegram_id || 0)).filter(Boolean));
+  const entry=new Set([...setFor(['bot_start']),...setFor(['miniapp_open'])]);
+  const stages=[
+    ['entry','Вход',entry],
+    ['search','Поиск',setFor(['search'])],
+    ['match_open','Карточка матча',setFor(['match_open'])],
+    ['quick_ai','AI в Telegram',setFor(['quick_ai'])],
+    ['full_ai','Полный AI-разбор',setFor(['full_ai'])],
+  ];
+  const base=Math.max(1,entry.size);
+  const funnel=stages.map(([key,label,set],index)=>({
+    key,label,users:set.size,
+    fromEntryPct:entry.size ? Math.round((set.size/base)*1000)/10 : 0,
+    fromPreviousPct:index===0 ? 100 : stages[index-1][2].size ? Math.round((set.size/stages[index-1][2].size)*1000)/10 : 0,
+  }));
+  const campaignMap=new Map();
+  for (const row of rows) {
+    const source=cleanLaunchPart(row.source || 'telegram',32) || 'telegram';
+    const campaign=cleanLaunchPart(row.campaign || 'direct',40) || 'direct';
+    const key=`${source}|${campaign}`;
+    const bucket=campaignMap.get(key) || {source,campaign,users:new Set(),entry:new Set(),fullAi:new Set(),events:0};
+    const uid=Number(row.telegram_id || 0);
+    if (uid) bucket.users.add(uid);
+    if (uid && ['bot_start','miniapp_open'].includes(String(row.event_name || ''))) bucket.entry.add(uid);
+    if (uid && row.event_name==='full_ai') bucket.fullAi.add(uid);
+    bucket.events+=1;
+    campaignMap.set(key,bucket);
+  }
+  const campaigns=[...campaignMap.values()].map(x=>({
+    source:x.source,campaign:x.campaign,users:x.users.size,entries:x.entry.size,fullAi:x.fullAi.size,events:x.events,
+    conversionPct:x.entry.size ? Math.round((x.fullAi.size/x.entry.size)*1000)/10 : 0,
+  })).sort((a,b)=>b.entries-a.entries || b.fullAi-a.fullAi).slice(0,20);
+  return json({
+    available:true,
+    days,
+    generatedAt:new Date().toISOString(),
+    retentionDays:Number(cfg.growthRetentionDays || 90),
+    events:rows.length,
+    truncated:rows.length>=1000,
+    uniqueUsers:new Set(rows.map(x=>Number(x.telegram_id || 0)).filter(Boolean)).size,
+    funnel,
+    campaigns,
+    privacy:'Ответ содержит только агрегаты; Telegram ID пользователей не возвращаются.',
+  });
+}
+
 async function getUsage(userId, cfg) {
   const date = todayUtc();
   if (hasSupabase(cfg)) {
@@ -1779,6 +1952,7 @@ function botFixtureCardText(match = {}, { aiReady=false } = {}) {
 }
 
 async function sendBotFixtureMenu(request, cfg, userId, chatId, fixtureId) {
+  void recordGrowthEvent(cfg,{userId,eventName:'match_open',channel:'telegram',fixtureId});
   const [match,favorites,analysis] = await Promise.all([
     loadBotFixtureCard(fixtureId,cfg),
     getFavorites(userId,cfg).catch(()=>[]),
@@ -1801,7 +1975,7 @@ async function botAnalyzeFixture(request, cfg, userId, fixtureId) {
   const inner = new Request(request.url, {
     method:'POST',
     headers:{'content-type':'application/json'},
-    body:JSON.stringify({fixtureId:Number(fixtureId)}),
+    body:JSON.stringify({fixtureId:Number(fixtureId),origin:'telegram_quick'}),
   });
   const response = await apiAnalyze(inner, cfg, { id:Number(userId) });
   let payload = {};
@@ -1913,6 +2087,7 @@ async function sendBotFixtureSection(request, cfg, userId, chatId, fixtureId, se
     const match=normalizeBotFixtureCard(data.match);
     await rememberBotFixtureCards([match],cfg);
     const favorites=await getFavorites(userId,cfg).catch(()=>[]);
+    if (section === 'verdict') void recordGrowthEvent(cfg,{userId,eventName:'quick_ai',channel:'telegram',fixtureId,metadata:{section}});
     await telegramApi('sendMessage',cfg,{
       chat_id:chatId,
       parse_mode:'HTML',
@@ -2342,6 +2517,7 @@ async function sendBotFootballSearch(request, cfg, userId, chatId, rawText) {
     await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'Напишите название команды или вопрос о матче. Например: «Арсенал», «что поставить на Арсенал — Челси» или «кто судья Интер — Милан».',reply_markup:{inline_keyboard:[[{text:'🔎 Открыть поиск',web_app:{url:telegramWebAppUrl(request,{view:'search'})}}]]}});
     return;
   }
+  void recordGrowthEvent(cfg,{userId,eventName:'search',channel:'telegram',metadata:{intent:parts.intent}});
   let matches=await botCachedDayMatches(parts,cfg);
   if (!matches.length) matches=await botRemoteTeamMatches(parts,cfg);
   const searchUrl=telegramWebAppUrl(request,{view:'search',q:parts.query});
@@ -2432,6 +2608,7 @@ async function processTelegramUpdate(request, cfg, update) {
     const callbackUserId = Number(cb.from?.id || callbackChatId || 0);
     if (callbackChatId && data === 'digest:on') {
       await setBotDigestSubscription(callbackUserId, callbackChatId, true, cfg, telegramWebAppUrl(request));
+      void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'digest_opt_in',channel:'telegram'});
       await telegramApi('answerCallbackQuery', cfg, { callback_query_id: cb.id, text: 'Утренняя подборка включена' });
       await telegramApi('sendMessage', cfg, { chat_id: callbackChatId, text: '✅ Утренняя подборка включена. Примерно в 07:00 UTC будут приходить матчи дня и короткий блок важных футбольных новостей.', reply_markup: footballBotKeyboard(request) });
       return json({ ok: true });
@@ -2474,6 +2651,7 @@ async function processTelegramUpdate(request, cfg, update) {
       const teamId=Number(favoriteToggle[1]), fixtureId=Number(favoriteToggle[2]);
       try {
         const result=await toggleBotFavorite(callbackUserId,teamId,cfg);
+        if (result.active) void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'favorite_add',channel:'telegram',fixtureId,metadata:{teamId}});
         await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:result.active?`★ ${result.team.name} добавлен в «Мои команды»`:`☆ ${result.team.name} удалён из «Моих команд»`}).catch(()=>null);
         if (fixtureId && cb.message?.message_id) {
           const [match,favorites]=await Promise.all([loadBotFixtureCard(fixtureId,cfg),getFavorites(callbackUserId,cfg)]);
@@ -2551,6 +2729,11 @@ async function processTelegramUpdate(request, cfg, update) {
   const text = String(msg?.text || '').trim();
   const chatId = msg?.chat?.id;
   if (chatId && /^\/start(?:@\w+)?(?:\s|$)/i.test(text)) {
+    const userId=Number(msg.from?.id || chatId);
+    const startParam=telegramStartPayload(text);
+    await upsertUser(msg.from || {id:userId},cfg).catch(()=>null);
+    const attribution=await ensureLaunchAttribution(userId,startParam,cfg);
+    void recordGrowthEvent(cfg,{userId,eventName:'bot_start',channel:'telegram',attribution,metadata:{attributed:Boolean(startParam)}});
     await configureFootballBot(request, cfg, chatId);
     await sendFootballBotHome(request, cfg, chatId, msg.from || {});
     return json({ ok: true });
@@ -8371,6 +8554,7 @@ function clientTelemetryMetadata(body = {}) {
     blocking: typeof meta.blocking === 'boolean' ? meta.blocking : null,
     reason: redactOpsString(meta.reason || '', 80),
     errorKind: redactOpsString(meta.errorKind || '', 60),
+    startParam: String(meta.startParam || '').replace(/[^A-Za-z0-9_-]/g,'').slice(0,64),
   };
   return Object.fromEntries(Object.entries(out).filter(([, value]) => value !== null && value !== ''));
 }
@@ -8393,6 +8577,10 @@ async function apiClientTelemetry(request, cfg, user) {
   memory.clientTelemetryDedupe.set(dedupeKey, Date.now());
   if (memory.clientTelemetryDedupe.size > 1500) pruneMemoryState();
 
+  if (event === 'boot_ok') {
+    const attribution=await ensureLaunchAttribution(user.id,meta.startParam || '',cfg);
+    void recordGrowthEvent(cfg,{userId:user.id,eventName:'miniapp_open',channel:'miniapp',attribution,metadata:{view:meta.view || ''}});
+  }
   const severity = ['compatibility_block', 'client_error'].includes(event) ? 'warning' : 'info';
   await recordOpsEvent(cfg, {
     severity,
@@ -9401,6 +9589,7 @@ function newsSourceKeyboard(items = [], extraRows = []) {
 }
 
 async function sendGeneralFootballNews(request,cfg,userId,chatId,{force=false}={}) {
+  void recordGrowthEvent(cfg,{userId,eventName:'news_open',channel:'telegram',metadata:{refresh:Boolean(force)}});
   const news=await currentGeneralFootballNews(cfg,force);
   const favorites=await getFavorites(userId,cfg).catch(()=>[]);
   const extra=[];
@@ -12566,12 +12755,15 @@ async function apiAnalyze(request, cfg, user) {
   let body = {};
   try { body = await request.json(); } catch {}
   const fixtureId = Number(body?.fixtureId);
+  const analysisOrigin=String(body?.origin || 'miniapp').slice(0,30);
+  const trackFullAi=analysisOrigin !== 'telegram_quick';
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'Некорректный номер матча.' }, 400);
 
   const cacheKey = `fixture:${fixtureId}:v10-ai-instructor`;
   const cached = await getCache(cacheKey, cfg);
   if (cached) {
     await recordHistory(user.id, cached, cfg);
+    if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true}});
     return json({ ...cached, cached: true, stale: false, quota: await getQuota(user.id, cfg) });
   }
 
@@ -12585,6 +12777,7 @@ async function apiAnalyze(request, cfg, user) {
   } catch (error) {
     if (staleBefore && isFootballRateLimitError(error)) {
       await recordHistory(user.id, staleBefore, cfg);
+      if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,stale:true}});
       return json({ ...staleBefore, cached: true, stale: true, warning: 'Показан последний сохранённый анализ: источник футбольных данных временно ограничил запросы.', retryAfter: Number(error?.retryAfter || 60), quota: quotaBefore });
     }
     throw error;
@@ -12638,6 +12831,7 @@ async function apiAnalyze(request, cfg, user) {
   } catch (error) {
     if (staleBefore && isFootballRateLimitError(error)) {
       await recordHistory(user.id, staleBefore, cfg);
+      if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,stale:true}});
       return json({ ...staleBefore, cached: true, stale: true, warning: 'Показан последний сохранённый анализ: источник данных временно достиг лимита.', retryAfter: Number(error?.retryAfter || 60), quota: quotaBefore });
     }
     throw error;
@@ -12797,6 +12991,7 @@ async function apiAnalyze(request, cfg, user) {
   await captureModelPrediction(payload, cfg);
   await incrementUsage(user.id, cfg);
   await recordHistory(user.id, payload, cfg);
+  if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:false}});
   return json({ ...payload, cached: false, stale: false, quota: await getQuota(user.id, cfg) });
 }
 
@@ -12934,6 +13129,11 @@ export default {
         newsSourceTrustGate: 'enabled',
         publicLegalPages: 'enabled',
         publicStatusPage: 'enabled',
+        mediaLaunchPackage: 'enabled',
+        mediaDeepLinkAttribution: 'enabled',
+        firstPartyGrowthAnalytics: 'enabled',
+        launchFunnelAnalytics: 'enabled',
+        launchPrivacyGuard: 'enabled',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
@@ -13103,6 +13303,10 @@ export default {
         if (!isAdminUser(user, cfg)) return adminForbidden();
         return await apiReleaseMonitor(request, cfg);
       }
+      if (request.method === 'GET' && url.pathname === '/api/launch-funnel') {
+        if (!isAdminUser(user, cfg)) return adminForbidden();
+        return await apiLaunchFunnel(request, cfg);
+      }
       if (url.pathname === '/api/reminder-health') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
         return await apiReminderHealth(request, cfg, user);
@@ -13175,6 +13379,7 @@ export default {
     }
     if (scheduledAt.getUTCHours() === 3 && scheduledAt.getUTCMinutes() < 15) {
       tasks.push(['ops_cleanup', cleanupOpsEvents(cfg)]);
+      tasks.push(['growth_cleanup', cleanupGrowthEvents(cfg)]);
       tasks.push(['integrity_cleanup', cleanupIntegrityData(cfg)]);
     }
     if (scheduledAt.getUTCHours() === 4 && scheduledAt.getUTCMinutes() < 15) {

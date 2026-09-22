@@ -32,6 +32,11 @@ const REQUIRED_HEALTH_FLAGS = [
   'newsSourceTrustGate',
   'publicLegalPages',
   'publicStatusPage',
+  'mediaLaunchPackage',
+  'mediaDeepLinkAttribution',
+  'firstPartyGrowthAnalytics',
+  'launchFunnelAnalytics',
+  'launchPrivacyGuard',
 ];
 
 function delay(ms) {
@@ -126,7 +131,7 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
     throw new Error('Static application shell is missing X-Content-Type-Options: nosniff.');
   }
 
-  for (const path of ['/api/me', '/api/release-readiness', '/api/calibration-control']) {
+  for (const path of ['/api/me', '/api/release-readiness', '/api/calibration-control', '/api/launch-funnel']) {
     const response = await request(fetchImpl, baseUrl, path);
     if (response.status !== 401) throw new Error(`${path} must reject missing Telegram auth with HTTP 401.`);
   }
@@ -156,7 +161,7 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
     origin: baseUrl.origin,
     version: health.version,
     releaseCandidate: health.releaseCandidate,
-    checks: 17,
+    checks: 18,
   };
 }
 

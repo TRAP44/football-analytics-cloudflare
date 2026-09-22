@@ -1,10 +1,10 @@
-# QA Release Checklist — v6.44.0 RC52
+# QA Release Checklist — v6.45.0 RC53
 
 ## Deploy
 
-- применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql`, `supabase_migration_v6_11_1.sql` и `supabase_migration_v6_12.sql` и `supabase_migration_v6_13.sql` и `supabase_migration_v6_14.sql`;
-- Worker/client = `6.44.0-rc52`;
-- package = `6.44.0`;
+- применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql`, `supabase_migration_v6_11_1.sql`, `supabase_migration_v6_12.sql`, `supabase_migration_v6_13.sql`, `supabase_migration_v6_14.sql` и `supabase_migration_v6_15.sql`;
+- Worker/client = `6.45.0-rc53`;
+- package = `6.45.0`;
 - cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;
@@ -89,6 +89,28 @@
 - слабое покрытие приводит к «Ждать больше данных»;
 - сломанный сценарий приводит к «Не опираться на предматчевый сигнал»;
 - никаких новых таблиц или внешних провайдеров RC44 не добавляет.
+
+## RC53 — Launch Package
+
+- `/start` с media/press/partner/social/ref payload сохраняет first-touch только один раз;
+- неизвестные символы start payload отбрасываются, длина ограничена 64 символами;
+- повторный `/start` не должен перезаписывать `acquisition_first_touch_at`;
+- `growth_events` имеет RLS и не выдаёт права `anon/authenticated`;
+- `service_role` имеет только backend-доступ, необходимый для записи/агрегации/очистки launch analytics;
+- индексы покрывают event+created_at, source+campaign+created_at и telegram_id+created_at;
+- событие `search` не сохраняет поисковый запрос или пользовательский текст;
+- быстрый AI Telegram пишет `quick_ai`, а `apiAnalyze` с `origin=telegram_quick` не пишет `full_ai`;
+- Mini App передаёт `origin=miniapp` и после успешного cached/stale/fresh результата пишет `full_ai`;
+- воронка: entry → search → match_open → quick_ai → full_ai;
+- `/api/launch-funnel` доступен только администратору и без Telegram init data получает 401;
+- launch-funnel не возвращает Telegram ID и показывает только агрегаты source/campaign;
+- админская launch-панель остаётся под `data-admin-only hidden`;
+- пользовательский Mini App не получает нового launch/media экрана;
+- `GROWTH_RETENTION_DAYS=90`, cron очищает устаревшие события;
+- Privacy v1.1 явно описывает атрибуцию, отсутствие third-party ad SDK/cookies и срок до 90 дней;
+- `MEDIA_LAUNCH_RU.md` не содержит обещаний гарантированного результата/выигрыша;
+- production smoke проверяет пять RC53 health-флагов и защиту `/api/launch-funnel`;
+- миграция v6.15 применена в Production Supabase до публикации Worker.
 
 ## RC52 — Media Launch Hardening
 

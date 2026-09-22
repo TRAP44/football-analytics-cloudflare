@@ -1,6 +1,27 @@
-# Football Analytics Mini App v6.44.0 — RC52
+# Football Analytics Mini App v6.45.0 — RC53
 
 Telegram Mini App для футбольной аналитики на Cloudflare Workers, Supabase, API-Football и Tavily.
+
+## RC53: Launch Package — измеримый запуск в СМИ
+
+- добавлена first-party атрибуция Telegram deep-link без сторонних рекламных SDK, cross-site cookies и device advertising ID;
+- формат start-параметра для публикаций: `media__источник__кампания__материал`; также поддерживаются префиксы `press`, `partner`, `social` и `ref`;
+- параметр очищается до латиницы/цифр/`_`/`-`, ограничивается 64 символами и не должен содержать персональные данные;
+- первый источник пользователя сохраняется один раз и не перезаписывается последующими `/start`;
+- миграция `supabase_migration_v6_15.sql` добавляет first-touch поля в `users` и backend-only таблицу `growth_events`;
+- `growth_events` защищена RLS, права `anon/authenticated` отозваны, доступ к данным есть только у backend `service_role`;
+- продуктовая воронка считает уникальных пользователей по этапам: вход → поиск → карточка матча → быстрый AI в Telegram → полный AI-разбор в Mini App;
+- дополнительно фиксируются открытие новостей, добавление избранной команды и включение утренней подборки;
+- поисковый текст пользователя не сохраняется в growth analytics: событие поиска содержит только безопасный тип intent;
+- быстрый AI в Telegram отделён от полного Mini App анализа через серверный `origin`, поэтому конверсия не завышается;
+- cached/stale полный AI-разбор тоже считается успешным достижением результата без повторного расхода API-квоты;
+- админский `/api/launch-funnel` возвращает только агрегаты по этапам и source/campaign, без Telegram ID;
+- в профиле администратора появился раздел «🚀 Запуск и СМИ» с периодами 24ч/7д/14д/30д;
+- launch-события хранятся до 90 дней и очищаются существующим cron;
+- Privacy обновлена до v1.1 и описывает first-party launch analytics;
+- добавлен `MEDIA_LAUNCH_RU.md` с позиционированием, безопасными заголовками, текстом публикации, deep-link форматом и launch-checklist;
+- новых платёжных функций RC53 не включает;
+- версия Worker/client/production smoke: v6.45.0 RC53.
 
 ## RC52: Media Launch Hardening
 

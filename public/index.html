@@ -6,14 +6,14 @@
   <meta name="theme-color" content="#111827" />
   <title>FM AI · Футбольный инструктор</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=6.44.0" />
+  <link rel="stylesheet" href="/styles.css?v=6.45.0" />
 </head>
 <body class="miniapp-ai-only">
   <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
     <div class="boot-card">
       <div class="boot-orbit" aria-hidden="true"><i></i><i></i><i></i></div>
       <div class="boot-logo"><span>AI</span></div>
-      <div class="boot-kicker">FM AI · ФУТБОЛЬНЫЙ ИНСТРУКТОР · версия 6.44</div>
+      <div class="boot-kicker">FM AI · ФУТБОЛЬНЫЙ ИНСТРУКТОР · версия 6.45</div>
       <h1 id="bootTitle">Запускаю FM AI</h1>
       <p id="bootText">Готовлю глобальный поиск и AI-разбор матча…</p>
       <div class="boot-feature-row" aria-hidden="true"><span>🔎 Поиск</span><span>🧠 AI-вердикт</span><span>🧑‍⚖️ Контекст</span></div>
@@ -353,7 +353,7 @@
             <button type="button" data-admin-target="diagnosticsPanel"><span>🩺</span><strong>Диагностика</strong><small>Проверить систему</small></button>
           </div>
           <details id="adminAdvancedTools" class="admin-advanced-tools">
-            <summary><span><strong>Дополнительные инструменты</strong><small>Модель, выпуск, уведомления и нагрузка</small></span><b>7 разделов</b></summary>
+            <summary><span><strong>Дополнительные инструменты</strong><small>Модель, запуск, выпуск, уведомления и нагрузка</small></span><b>8 разделов</b></summary>
             <div id="adminAdvancedContent" class="admin-advanced-content"></div>
           </details>
         </section>
@@ -596,6 +596,39 @@
           <div id="releaseMonitorIncidents" class="release-monitor-block"></div>
         </section>
 
+        <section class="panel launch-funnel-panel" data-admin-only hidden>
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>🚀 Запуск и СМИ</h2>
+              <p>First-party воронка: от рекламного deep-link до полного AI-разбора.</p>
+            </div>
+            <div class="release-monitor-actions">
+              <select id="launchFunnelPeriod" aria-label="Период воронки запуска">
+                <option value="1">24ч</option>
+                <option value="7" selected>7д</option>
+                <option value="14">14д</option>
+                <option value="30">30д</option>
+              </select>
+              <button id="launchFunnelRefreshBtn" class="icon-btn" type="button" aria-label="Обновить воронку запуска">↻</button>
+            </div>
+          </div>
+          <div class="release-monitor-status">
+            <span class="release-monitor-badge healthy">MEDIA</span>
+            <div><strong id="launchFunnelStatus">Воронка запуска ещё не загружена.</strong><small id="launchFunnelMeta">Без сторонних рекламных SDK.</small></div>
+          </div>
+          <div id="launchFunnelKpis"></div>
+          <div id="launchFunnelStages" class="release-monitor-block"></div>
+          <div id="launchFunnelCampaigns" class="release-monitor-block"></div>
+          <details class="release-incidents">
+            <summary>Формат deep-link кампании</summary>
+            <div class="launch-link-help">
+              <code>media__источник__кампания__материал</code>
+              <p>Пример параметра: <code>media__sports_media__launch__article1</code>. В Telegram он передаётся после <code>?start=</code>. Параметр ограничен 64 символами и не должен содержать персональные данные.</p>
+            </div>
+          </details>
+          <p class="tiny diagnostics-privacy">В админке возвращаются только агрегаты. Telegram ID пользователей в ответе launch-funnel не выдаются.</p>
+        </section>
+
         <section class="panel rc-panel" data-admin-only hidden>
           <div class="section-head profile-section-head">
             <div>
@@ -606,7 +639,7 @@
           </div>
 
           <div class="rc-status-row">
-            <span id="rcBadge" class="rc-badge">Версия 52</span>
+            <span id="rcBadge" class="rc-badge">Версия 53</span>
             <div>
               <strong id="rcStatus">Полная регрессионная проверка ещё не запускалась.</strong>
               <small id="rcMeta">Без полного анализа, без изменения пользовательских данных и без расхода API-Football.</small>
@@ -689,6 +722,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=6.44.0"></script>
+  <script type="module" src="/app.js?v=6.45.0"></script>
 </body>
 </html>

@@ -2376,7 +2376,7 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 
 
 /* RC37 — explainable personal recommendations */
-.rc-panel:before { content:"RC52"; }
+.rc-panel:before { content:"RC53"; }
 .overview-action.recommended b { color:var(--accent); }
 .match-signal.favorite-signal { color:#fbbf24; border-color:rgba(251,191,36,.28); background:rgba(251,191,36,.07); }
 .profile-data-details { margin:0 0 12px; border:1px solid var(--line-soft); border-radius:17px; background:color-mix(in srgb,var(--surface) 72%,transparent); overflow:hidden; }
@@ -2708,3 +2708,28 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
     flex-direction:column;
   }
 }
+
+
+/* RC53 — first-party media launch funnel */
+.launch-funnel-stages,
+.launch-campaign-list { display:grid; gap:8px; }
+.launch-funnel-stages>div,
+.launch-campaign-list>div {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:3px 14px;
+  align-items:center;
+  padding:11px 12px;
+  border:1px solid rgba(148,163,184,.13);
+  border-radius:13px;
+  background:rgba(255,255,255,.025);
+}
+.launch-funnel-stages span,
+.launch-campaign-list span { min-width:0; font-size:13px; }
+.launch-funnel-stages strong,
+.launch-campaign-list strong { font-size:15px; }
+.launch-funnel-stages small,
+.launch-campaign-list small { grid-column:1/-1; opacity:.62; }
+.launch-link-help { padding:12px 0 2px; }
+.launch-link-help code { user-select:all; word-break:break-all; font-size:12px; }
+.launch-link-help p { margin:8px 0 0; font-size:12px; opacity:.72; line-height:1.55; }
