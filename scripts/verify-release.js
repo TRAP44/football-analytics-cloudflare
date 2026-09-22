@@ -8,13 +8,13 @@ const staticHeaders = fs.readFileSync('public/_headers', 'utf8');
 const styles = fs.readFileSync('public/styles.css', 'utf8');
 const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml', 'utf8');
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
-const expected = `${pkg.version}-rc28`;
+const expected = `${pkg.version}-rc29`;
 const failures = [];
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC28'")) failures.push('Worker RC name must be RC28');
+if (!worker.includes("const RC_NAME = 'RC29'")) failures.push('Worker RC name must be RC29');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc28'")) failures.push('Client release channel must be rc28');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc29'")) failures.push('Client release channel must be rc28');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -59,6 +59,14 @@ if (!app.includes('historyOpenRequestSeq: 0')) failures.push('History-open stale
 if (!app.includes('historyRevision: 0')) failures.push('History read/write revision guard is missing');
 if (!app.includes('void Promise.allSettled([loadHistory(false), loadReminders()])')) failures.push('Analysis result must not wait for secondary history/reminder refresh');
 if (app.includes('state.currentAnalysis = data;\n    if (isAdmin()')) failures.push('analyzeMatch must let renderAnalysis compare the previous fixture before assignment');
+if (!fs.existsSync('test/russian-ui-localization.test.js')) failures.push('Missing Russian UI localization regression test');
+if (!html.includes('id="quotaFeatureSkipped"') || html.includes('quotaFeatureПропущено')) failures.push('Provider skipped-counter DOM id is inconsistent');
+if (!app.includes('function humanizeTechnicalText(value)')) failures.push('Admin technical-text localization helper is missing');
+if (!app.includes("const assetVersion = CLIENT_VERSION.split('-')[0]")) failures.push('Client contract smoke must derive the current asset version dynamically');
+if (app.includes('6.14.0-rc22') || worker.includes('6.14.0-rc22')) failures.push('Stale RC22 release checks remain');
+if (!worker.includes("russianUiLocalization: 'enabled'")) failures.push('Russian UI localization health contract is missing');
+if (!worker.includes("adminRussianLocalization: 'enabled'")) failures.push('Admin Russian localization health contract is missing');
+if (!worker.includes("prematchRussianLocalization: 'enabled'")) failures.push('Prematch Russian localization health contract is missing');
 
 const migration = fs.readFileSync('supabase_migration_v6_10.sql', 'utf8');
 if (!migration.includes('transition_model_calibration')) failures.push('Missing atomic calibration transition RPC');

@@ -1,10 +1,10 @@
-# QA Release Checklist — v6.20.0 RC28
+# QA Release Checklist — v6.21.0 RC29
 
 ## Deploy
 
 - применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql` и `supabase_migration_v6_11_1.sql`;
-- Worker/client = `6.20.0-rc28`;
-- package = `6.20.0`;
+- Worker/client = `6.21.0-rc29`;
+- package = `6.21.0`;
 - cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;
@@ -78,7 +78,7 @@ npm run verify:worker
 
 ## Post-deploy
 
-- `/health` возвращает `6.20.0-rc28`, `RC28` и `devMode=false`;
+- `/health` возвращает `6.21.0-rc29`, `RC29` и `devMode=false`;
 - `cloudflareDeploymentGate=enabled`;
 - `browserSecurityPolicy=enabled` и `failClosedDeployment=enabled`;
 - `/api/app-manifest` соответствует версии Worker;
@@ -89,7 +89,7 @@ npm run verify:worker
 - при ошибке используется `Rollback Production` с предыдущим version ID.
 
 
-## RC28 UI/роль
+## RC29 UI/роль
 - обычный пользователь не видит и не может сфокусировать admin-only элементы;
 - администратор после загрузки профиля видит технические панели;
 - Telegram-фото профиля загружается через безопасный URL, при ошибке остаётся ⚽;
@@ -97,7 +97,7 @@ npm run verify:worker
 - основные подписи админ-панели не смешивают русские фразы с английскими статусами.
 
 
-## RC28 User Flow / Mobile UX
+## RC29 User Flow / Mobile UX
 - BackButton Telegram показан только на вложенных экранах и возвращает к реальному предыдущему экрану;
 - кнопка «Назад» из анализа, открытого из истории/команды/турнира, не отправляет пользователя принудительно на список матчей;
 - открытие записи истории не вызывает POST /api/analyze и не увеличивает дневной счётчик анализа;
@@ -107,7 +107,7 @@ npm run verify:worker
 - touch-target основных мобильных кнопок не меньше 44 px.
 
 
-## RC28 Interaction Safety
+## RC29 Interaction Safety
 - два быстрых нажатия «Предматчевый анализ» не запускают параллельные POST /api/analyze;
 - при быстром открытии двух разных матчей более старый ответ Match Center не заменяет новый;
 - повторное нажатие звезды одной команды блокируется до завершения мутации;
@@ -117,7 +117,7 @@ npm run verify:worker
 - favorite/reminder controls сообщают состояние через disabled/aria-pressed.
 
 
-## RC28 Async Entity / Personal Data
+## RC29 Async Entity / Personal Data
 - быстрый переход Команда A → Команда B не позволяет ответу A перерисовать страницу B;
 - тот же контракт проверяется для вкладок «Статистика» и «Состав»;
 - быстрый переход Турнир A → Турнир B не позволяет таблице A появиться в B;
@@ -127,7 +127,7 @@ npm run verify:worker
 - ошибка повторного чтения сохраняет последние загруженные данные и показывает stale-предупреждение.
 
 
-## RC28 Personal Data Write Consistency
+## RC29 Personal Data Write Consistency
 - GET избранного, начатый до мутации, не может перезаписать подтверждённое добавление/удаление;
 - то же правило действует для напоминаний;
 - POST /api/reminders возвращает полный нормализованный item и клиент использует его сразу;
@@ -137,7 +137,7 @@ npm run verify:worker
 - favorite/reminder containers используют aria-live=polite.
 
 
-## RC28 Analysis / History Transition
+## RC29 Analysis / History Transition
 - переход Анализ A → Анализ B сбрасывает вкладку на «Бриф»;
 - после успешного POST /api/analyze экран анализа открывается до фоновой синхронизации истории/напоминаний;
 - новый анализ мгновенно появляется в локальной истории;
@@ -146,3 +146,14 @@ npm run verify:worker
 - уход с вкладки «История» во время загрузки не позволяет позднему ответу вернуть пользователя в анализ;
 - первый load/error/stale/empty состояния истории визуально различаются;
 - relativeAge после 24 часов использует дни.
+
+
+## RC29 Русский интерфейс
+- во вкладках пользователя нет видимых «LIVE», «VS», «player stats», «implied probability» и других смешанных технических подписей;
+- предматчевый анализ показывает понятные русские названия сигналов, качества модели, состава и рынка;
+- административные панели не показывают пользователю сырые holdout/champion/challenger/settlement/drift/dry-run термины;
+- счётчик «Пропущено» обновляется через DOM id `quotaFeatureSkipped`;
+- клиентская регрессионная проверка берёт текущую версию файлов из `CLIENT_VERSION`, а не из старого RC22;
+- серверная RC-регрессия проверяет согласованность текущих APP_VERSION/RELEASE_CHANNEL/RC_NAME динамически;
+- тест уведомлений использует текущую APP_VERSION;
+- health содержит russianUiLocalization/adminRussianLocalization/prematchRussianLocalization=enabled.

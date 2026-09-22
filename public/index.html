@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#111827" />
   <title>Football Manager · Аналитика матчей</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=6.20.0" />
+  <link rel="stylesheet" href="/styles.css?v=6.21.0" />
 </head>
 <body>
   <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
     <div class="boot-card">
       <div class="boot-logo"><span>FM</span></div>
-      <div class="boot-kicker">FOOTBALL MANAGER · RC28</div>
+      <div class="boot-kicker">FOOTBALL MANAGER · версия RC29</div>
       <h1 id="bootTitle">Запускаю Football Manager</h1>
       <p id="bootText">Проверяю совместимость версии…</p>
       <div class="boot-progress" aria-hidden="true"><i id="bootProgressFill"></i></div>
@@ -30,7 +30,7 @@
         <div class="brand-copy">
           <div class="eyebrow">FOOTBALL MANAGER</div>
           <h1 id="topbarTitle">Матчи</h1>
-          <p id="topbarSubtitle">Сегодня, LIVE и предматчевая аналитика</p>
+          <p id="topbarSubtitle">Сегодня, матчи в реальном времени и предматчевая аналитика</p>
         </div>
       </div>
       <button id="profileBtn" class="profile-badge" type="button" aria-label="Открыть профиль"><i></i><span>Бесплатный</span></button>
@@ -64,7 +64,7 @@
 
         <div class="filter-strip" id="filterStrip">
           <button type="button" class="filter-btn active" data-filter="top">🔥 Главные</button>
-          <button type="button" class="filter-btn" data-filter="live">🔴 LIVE</button>
+          <button type="button" class="filter-btn" data-filter="live">🔴 Сейчас</button>
           <button type="button" class="filter-btn" data-filter="favorites">⭐ Избранное</button>
           <button type="button" class="filter-btn" data-filter="international">🌍 Международные</button>
           <button type="button" class="filter-btn" data-filter="cups">🏆 Кубки</button>
@@ -108,7 +108,7 @@
         </div>
         <section class="panel global-search-panel">
           <div class="global-search-box">
-            <input id="globalSearchInput" class="search-input" type="search" aria-label="Поиск команд и турниров" inputmode="search" placeholder="Например: Arsenal, Барселона, Лига чемпионов" autocomplete="off" />
+            <input id="globalSearchInput" class="search-input" type="search" aria-label="Поиск команд и турниров" inputmode="search" placeholder="Например: Арсенал, Барселона, Лига чемпионов" autocomplete="off" />
             <button id="globalSearchBtn" class="global-search-btn" type="button">Найти</button>
           </div>
           <p class="tiny">Поиск по текущему каталогу мгновенный. Для команды вне сегодняшних матчей нажмите «Найти» — запрос к API выполняется только после 3 символов и кэшируется.</p>
@@ -191,7 +191,7 @@
           <div class="plan-card">
             <div>
               <span class="muted">Тариф</span>
-              <strong id="profilePlan">FREE</strong>
+              <strong id="profilePlan">Бесплатный</strong>
             </div>
             <div>
               <span class="muted">Анализы сегодня</span>
@@ -218,10 +218,10 @@
           </div>
           <div class="provider-status-grid public-data-grid">
             <div><span>Режим</span><strong id="dataModeLabel">Стандартное покрытие</strong></div>
-            <div><span>Обновление LIVE</span><strong id="dataModeRefresh">адаптивно</strong></div>
+            <div><span>Обновление матча</span><strong id="dataModeRefresh">адаптивно</strong></div>
             <div><span>Составы</span><strong id="dataModeLineups">По доступности</strong></div>
             <div><span>Статистика игроков</span><strong id="dataModePlayers">По доступности</strong></div>
-            <div><span>Коэффициенты LIVE</span><strong id="dataModeOdds">По доступности</strong></div>
+            <div><span>Коэффициенты во время матча</span><strong id="dataModeOdds">По доступности</strong></div>
           </div>
           <p id="dataModeNote" class="tiny">Покрытие зависит от турнира и доступности данных провайдера.</p>
         </section>
@@ -300,7 +300,7 @@
           <div id="modelQualityCalibration" class="quality-block" hidden></div>
           <div id="modelQualityEngine" class="quality-block" hidden></div>
           <div id="calibrationControl" class="quality-block calibration-control-block">
-            <div class="quality-block-head"><strong>🧭 Управление калибровкой RC28</strong><span>атомарная смена + журнал</span></div>
+            <div class="quality-block-head"><strong>🧭 Управление калибровкой RC29</strong><span>атомарная смена + журнал</span></div>
             <div id="calibrationControlStatus" class="tiny quality-status">Состояние жизненного цикла ещё не загружено.</div>
             <div id="calibrationControlSummary" class="calibration-control-summary"></div>
             <label class="runtime-message-field calibration-control-reason">
@@ -313,7 +313,7 @@
               <button id="calibrationRollbackBtn" class="reminder-btn danger" type="button">Вернуть предыдущий</button>
             </div>
             <div id="calibrationControlHistory" class="model-remediation-history"></div>
-            <p class="tiny quality-method-note">Переход выполняется одной транзакцией Supabase с проверкой revision. Конкурирующее изменение будет отклонено, а не перезаписано.</p>
+            <p class="tiny quality-method-note">Переход выполняется одной транзакцией Supabase с проверкой версии. Конкурирующее изменение будет отклонено, а не перезаписано.</p>
           </div>
           <div id="modelQualityConfidence" class="quality-block" hidden></div>
           <div id="modelQualitySecondary" class="quality-block" hidden></div>
@@ -327,7 +327,7 @@
             <div id="modelRemediationDriftQueue" class="model-remediation-drift-queue"></div>
             <label class="runtime-message-field model-remediation-reason">
               <span>Причина действия администратора</span>
-              <input id="modelRemediationReason" maxlength="220" placeholder="Например: подтверждён официальный результат после provider correction">
+              <input id="modelRemediationReason" maxlength="220" placeholder="Например: подтверждён официальный результат после коррекции провайдера данных">
             </label>
             <div class="runtime-controls-actions">
               <button id="modelRemediationDryRunBtn" class="reminder-btn" type="button">Обновить проверку</button>
@@ -335,7 +335,7 @@
               <button id="modelRemediationCircuitResetBtn" class="reminder-btn" type="button" hidden>Сбросить защиту</button>
             </div>
             <div id="modelRemediationHistory" class="model-remediation-history"></div>
-            <p class="tiny quality-method-note">Удаление и перезапись снимков прогнозов запрещены. Восстановление меняет только ожидающие записи после повторной проверки финального счёта и сохраняет журнал без ID Telegram в интерфейсе.</p>
+            <p class="tiny quality-method-note">Удаление и перезапись снимков прогнозов запрещены. Восстановление меняет только ожидающие записи после повторной проверки финального счёта и сохраняет журнал без идентификатора Telegram в интерфейсе.</p>
           </div>
           <p class="tiny quality-method-note">Для каждого матча сохраняется первый предматчевый расчёт. Поздние перерасчёты не переписывают историю, поэтому статистика не «подгоняется» под результат.</p>
         </section>
@@ -348,10 +348,10 @@
             </div>
           </div>
           <div class="provider-status-grid">
-            <div><span>План API</span><strong id="providerPlan">Определяется</strong></div>
+            <div><span>Тариф источника данных</span><strong id="providerPlan">Определяется</strong></div>
             <div><span>Осталось сегодня</span><strong id="providerDaily">—</strong></div>
             <div><span>Осталось / мин</span><strong id="providerMinute">—</strong></div>
-            <div><span>Коэффициенты LIVE</span><strong id="providerLiveOdds">—</strong></div>
+            <div><span>Коэффициенты во время матча</span><strong id="providerLiveOdds">—</strong></div>
             <div><span>Статистика игроков</span><strong id="providerPlayerStats">—</strong></div>
             <div><span>Движение коэффициентов</span><strong id="providerOddsMovement">—</strong></div>
           </div>
@@ -368,7 +368,7 @@
 
           <div class="provider-transition-grid">
             <div><span>Режим</span><strong id="providerTransitionMode">Ожидаем тариф</strong></div>
-            <div><span>Обновление LIVE</span><strong id="providerRefreshCadence">—</strong></div>
+            <div><span>Обновление матча</span><strong id="providerRefreshCadence">—</strong></div>
             <div><span>Ожидаемый дневной лимит</span><strong id="providerExpectedDaily">—</strong></div>
             <div><span>Ожидаемый лимит / мин.</span><strong id="providerExpectedMinute">—</strong></div>
           </div>
@@ -381,10 +381,10 @@
             <div class="quota-orchestrator-grid">
               <div><span>Остаток на день</span><strong id="quotaBudgetDaily">—</strong></div>
               <div><span>Остаток на минуту</span><strong id="quotaBudgetMinute">—</strong></div>
-              <div><span>Запросы API</span><strong id="quotaFeatureApi">0</strong></div>
+              <div><span>Запросы к источнику данных</span><strong id="quotaFeatureApi">0</strong></div>
               <div><span>Из кэша</span><strong id="quotaFeatureCache">0</strong></div>
               <div><span>Резерв из кэша</span><strong id="quotaFeatureStale">0</strong></div>
-              <div><span>Пропущено</span><strong id="quotaFeatureПропущено">0</strong></div>
+              <div><span>Пропущено</span><strong id="quotaFeatureSkipped">0</strong></div>
             </div>
             <div id="quotaFeatureList" class="quota-feature-list"></div>
             <p id="quotaBudgetNote" class="tiny">Кэш отдельных функций активен.</p>
@@ -393,7 +393,7 @@
           <div class="provider-audit-controls">
             <button id="providerProbeBtn" class="reminder-btn" type="button">1. Обновить тариф · 1 запрос</button>
             <div class="provider-audit-fixture">
-              <input id="providerAuditFixtureId" type="number" min="1" inputmode="numeric" placeholder="ID матча">
+              <input id="providerAuditFixtureId" type="number" min="1" inputmode="numeric" placeholder="Номер матча">
               <button id="providerAuditBtn" class="primary-setting-btn" type="button">Проверить покрытие</button>
             </div>
           </div>
@@ -402,7 +402,7 @@
             <div class="expanded-release-head">
               <div>
                 <span id="expandedGateBadge" class="expanded-gate-badge hold">ОЖИДАНИЕ</span>
-                <div><strong id="expandedGateTitle">Сквозная проверка расширенных данных</strong><small id="expandedGateMeta">Проверка полного пути данных от API до интерфейса</small></div>
+                <div><strong id="expandedGateTitle">Сквозная проверка расширенных данных</strong><small id="expandedGateMeta">Проверка полного пути данных от источника до интерфейса</small></div>
               </div>
               <button id="providerE2EBtn" class="primary-setting-btn" type="button">🚦 Запустить сквозную проверку</button>
             </div>
@@ -433,12 +433,12 @@
 
           <div class="runtime-control-list">
             <label class="runtime-control-row danger"><div><strong>Техническое обслуживание</strong><small>Останавливает основные футбольные маршруты у обычных пользователей. Администратор сохраняет доступ.</small></div><input id="runtimeMaintenanceToggle" type="checkbox"></label>
-            <label class="runtime-control-row"><div><strong>Полный анализ</strong><small>Разрешить `/api/analyze` и кнопки полного предматчевого анализа.</small></div><input id="runtimeAnalysisToggle" type="checkbox" checked></label>
+            <label class="runtime-control-row"><div><strong>Полный анализ</strong><small>Разрешить полный предматчевый анализ и соответствующие кнопки.</small></div><input id="runtimeAnalysisToggle" type="checkbox" checked></label>
             <label class="runtime-control-row"><div><strong>Удалённый поиск</strong><small>Локальный каталог остаётся доступен, даже если поиск через провайдера выключен.</small></div><input id="runtimeSearchToggle" type="checkbox" checked></label>
-            <label class="runtime-control-row"><div><strong>Автообновление LIVE</strong><small>Останавливает автоматическое обновление LIVE, не отключая уже сохранённый центр матча.</small></div><input id="runtimeLiveToggle" type="checkbox" checked></label>
+            <label class="runtime-control-row"><div><strong>Автообновление матча</strong><small>Останавливает автоматическое обновление матча, не отключая уже сохранённый центр матча.</small></div><input id="runtimeLiveToggle" type="checkbox" checked></label>
             <label class="runtime-control-row"><div><strong>Новые уведомления</strong><small>Создание новых уведомлений и их доставка по расписанию. Существующие уведомления можно удалять.</small></div><input id="runtimeRemindersToggle" type="checkbox" checked></label>
-            <label class="runtime-control-row"><div><strong>Расширенные данные провайдера</strong><small>Игроки, травмы, LIVE-коэффициенты и другие дополнительные данные. Основные события и статистика остаются доступными.</small></div><input id="runtimeExpandedToggle" type="checkbox" checked></label>
-            <label class="runtime-control-row"><div><strong>Автовосстановление результатов</strong><small>RC28: один безопасный пакет в сутки, до 20 матчей / 5 дат. По умолчанию только наблюдение; ручное восстановление остаётся доступным.</small></div><input id="runtimeAutoSettlementRecoveryToggle" type="checkbox"></label>
+            <label class="runtime-control-row"><div><strong>Расширенные данные провайдера</strong><small>Игроки, травмы, коэффициенты во время матча и другие дополнительные данные. Основные события и статистика остаются доступными.</small></div><input id="runtimeExpandedToggle" type="checkbox" checked></label>
+            <label class="runtime-control-row"><div><strong>Автовосстановление результатов</strong><small>RC29: один безопасный пакет в сутки, до 20 матчей / 5 дат. По умолчанию только наблюдение; ручное восстановление остаётся доступным.</small></div><input id="runtimeAutoSettlementRecoveryToggle" type="checkbox"></label>
           </div>
 
           <label class="runtime-message-field">
@@ -448,7 +448,7 @@
 
           <label class="runtime-message-field">
             <span>Причина изменения / комментарий</span>
-            <input id="runtimeChangeReason" maxlength="240" placeholder="Например: временно отключаем LIVE из-за ошибок провайдера">
+            <input id="runtimeChangeReason" maxlength="240" placeholder="Например: временно отключаем автообновление матча из-за ошибок провайдера">
           </label>
 
           <div class="runtime-controls-actions">
@@ -517,14 +517,14 @@
         <section class="panel rc-panel" data-admin-only hidden>
           <div class="section-head profile-section-head">
             <div>
-              <h2>🚦 Кандидат на выпуск RC28</h2>
+              <h2>🚦 Кандидат на выпуск RC29</h2>
               <p>Регрессионная проверка: среда выполнения, безопасность, схема базы, пользовательские маршруты и клиентский контракт.</p>
             </div>
             <button id="rcRunBtn" class="primary-setting-btn rc-run-btn" type="button">Запустить проверку</button>
           </div>
 
           <div class="rc-status-row">
-            <span id="rcBadge" class="rc-badge">RC28</span>
+            <span id="rcBadge" class="rc-badge">RC29</span>
             <div>
               <strong id="rcStatus">Полная регрессионная проверка ещё не запускалась.</strong>
               <small id="rcMeta">Без полного анализа, без изменения пользовательских данных и без расхода API-Football.</small>
@@ -607,6 +607,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=6.20.0"></script>
+  <script type="module" src="/app.js?v=6.21.0"></script>
 </body>
 </html>

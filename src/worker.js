@@ -73,11 +73,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.20.0-rc28';
+const APP_VERSION = '6.21.0-rc29';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc28';
-const RC_NAME = 'RC28';
+const RELEASE_CHANNEL = 'rc29';
+const RC_NAME = 'RC29';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -335,7 +335,7 @@ async function rollbackRuntimeControls(cfg, user, body = {}) {
   const historySchema = await probeRuntimeHistorySchema(cfg);
   if (!historySchema.ok) {
     return {
-      error: 'Нужна supabase_migration_v5_8.sql для истории и rollback.',
+      error: 'Нужен файл миграции supabase_migration_v5_8.sql для истории и отката.',
       code: 'RUNTIME_HISTORY_SCHEMA',
       status: 409,
     };
@@ -344,17 +344,17 @@ async function rollbackRuntimeControls(cfg, user, body = {}) {
   const expectedRevision = Number(body.expectedRevision || 0);
   const historyId = Number(body.historyId || 0);
   if (!expectedRevision || !historyId) {
-    return { error: 'Не хватает revision/historyId для rollback.', code: 'RUNTIME_ROLLBACK_INPUT', status: 400 };
+    return { error: 'Не хватает номера текущей версии или идентификатора точки восстановления для отката.', code: 'RUNTIME_ROLLBACK_INPUT', status: 400 };
   }
 
   const row = await supaSelectOne(cfg, 'runtime_control_history', { id: `eq.${historyId}` });
   if (!row?.snapshot) {
-    return { error: 'Снимок Runtime Controls не найден.', code: 'RUNTIME_ROLLBACK_NOT_FOUND', status: 404 };
+    return { error: 'Точка восстановления настроек функций не найдена.', code: 'RUNTIME_ROLLBACK_NOT_FOUND', status: 404 };
   }
 
   const target = normalizeRuntimeControls(row.snapshot);
   if (Number(target.revision || 0) === expectedRevision) {
-    return { error: 'Выбрана уже активная revision.', code: 'RUNTIME_ROLLBACK_SAME_REVISION', status: 409 };
+    return { error: 'Выбрана уже активная версия.', code: 'RUNTIME_ROLLBACK_SAME_REVISION', status: 409 };
   }
 
   return await saveRuntimeControls(cfg, user, {
@@ -376,7 +376,7 @@ async function rollbackRuntimeControls(cfg, user, body = {}) {
 async function saveRuntimeControls(cfg, user, body = {}) {
   const currentState = await loadRuntimeControls(cfg, { force: true });
   if (!currentState.schemaReady) {
-    return { error: 'Нужна supabase_migration_v5_7.sql.', code: 'RUNTIME_CONTROLS_SCHEMA', status: 409 };
+    return { error: 'Нужен файл миграции supabase_migration_v5_7.sql.', code: 'RUNTIME_CONTROLS_SCHEMA', status: 409 };
   }
 
   const current = currentState.value;
@@ -530,8 +530,8 @@ async function apiRuntimeControls(request, cfg, user) {
       controls: publicRuntimeControls(state.value),
       history,
       cacheSeconds: Math.round(RUNTIME_CONTROLS_CACHE_MS / 1000),
-      reason: state.schemaReady ? '' : 'Нужна supabase_migration_v5_7.sql.',
-      historyReason: historySchema.ok ? '' : 'Нужна supabase_migration_v5_8.sql для истории и rollback.',
+      reason: state.schemaReady ? '' : 'Нужен файл миграции supabase_migration_v5_7.sql.',
+      historyReason: historySchema.ok ? '' : 'Нужен файл миграции supabase_migration_v5_8.sql для истории и отката.',
     });
   }
 
@@ -604,10 +604,10 @@ function publicDataCapabilities() {
     note: runtime.maintenanceMode
       ? (runtime.message || 'Часть футбольных функций временно приостановлена.')
       : !expandedAllowed
-        ? 'Расширенные provider-данные временно отключены администратором.'
+        ? 'Расширенные данные провайдера временно отключены администратором.'
         : paid
           ? (canEnrich
-              ? 'Расширенный режим активен. Feature-level cache снижает повторные запросы.'
+              ? 'Расширенный режим активен. Кэш отдельных функций снижает количество повторных запросов.'
               : 'Расширенный тариф активен, но сейчас включён защитный режим квоты.')
           : 'Сейчас приложение экономит запросы. После увеличения квоты расширенные данные включатся автоматически.',
   };
@@ -1916,7 +1916,7 @@ function fitTemperatureCalibration(rows) {
     .sort((a, b) => Date.parse(a.kickoff_at || 0) - Date.parse(b.kickoff_at || 0));
   const split = splitRollingValidation(valid);
   if (!split.ready) {
-    return { active: false, temperature: 1, candidateTemperature: 1, sample: valid.length, trainSample: 0, validationSample: 0, validationWindows: [], baselineLogLoss: null, calibratedLogLoss: null, improvement: null, reason: 'Нужно минимум 80 trusted-матчей для двух последовательных holdout-окон.' };
+    return { active: false, temperature: 1, candidateTemperature: 1, sample: valid.length, trainSample: 0, validationSample: 0, validationWindows: [], baselineLogLoss: null, calibratedLogLoss: null, improvement: null, reason: 'Нужно минимум 80 доверенных матчей для двух последовательных окон отложенной выборки.' };
   }
 
   const { train, windows } = split;
@@ -2063,7 +2063,7 @@ function fitAdaptiveSignalWeightsHoldout(rows) {
       logLossGain: null,
       validationWindows: [],
       changedWeightL1: 0,
-      reason: 'Нужно минимум 80 trusted-матчей для двух последовательных holdout-окон весов.',
+      reason: 'Нужно минимум 80 доверенных матчей для двух последовательных окон проверки весов.',
     };
   }
 
@@ -2123,7 +2123,7 @@ function fitAdaptiveSignalWeightsHoldout(rows) {
   const changedWeightL1 = Object.keys(MODEL_BASE_WEIGHTS)
     .reduce((sum, name) => sum + Math.abs(Number(candidate.weights?.[name] || 0) - Number(MODEL_BASE_WEIGHTS[name] || 0)), 0);
 
-  // RC28 gate: both sequential holdout windows must beat the baseline.
+  // RC29 gate: both sequential holdout windows must beat the baseline.
   const active = changedWeightL1 >= 0.01 && gate.pass;
 
   return {
@@ -2325,7 +2325,7 @@ function probabilitiesForCalibrationProfile(row, profile) {
 function compareCalibrationProfiles(rows, champion, challenger) {
   const valid = (rows || []).filter(row => ['home','draw','away'].includes(String(row?.actual_outcome || '')));
   const split = splitRollingValidation(valid);
-  if (!split.ready) return { pass: false, status: 'shadow', windows: [], reason: 'Недостаточно trusted-матчей для champion–challenger сравнения.' };
+  if (!split.ready) return { pass: false, status: 'shadow', windows: [], reason: 'Недостаточно доверенных матчей для сравнения активной модели и кандидата.' };
   const windows = split.windows.map(window => {
     const evaluated = window.map(row => ({
       row,
@@ -2385,13 +2385,13 @@ async function notifyCalibrationAdmins(cfg, action, detail = '') {
   if (!cfg.botToken || !(cfg.adminTelegramIds || []).length) return;
   const labels = {
     initialize: 'инициализирован',
-    promote: 'продвинут новый champion',
-    rollback: 'выполнен автоматический rollback',
-    manual_rollback: 'выполнен ручной rollback',
-    freeze: 'lifecycle заморожен',
-    unfreeze: 'lifecycle разморожен',
+    promote: 'активирована новая модель',
+    rollback: 'выполнен автоматический откат',
+    manual_rollback: 'выполнен ручной откат',
+    freeze: 'жизненный цикл заморожен',
+    unfreeze: 'жизненный цикл разморожен',
   };
-  const text = `⚙️ Calibration RC28: ${labels[action] || action}.${detail ? `\n${String(detail).slice(0, 500)}` : ''}`;
+  const text = `⚙️ Calibration RC29: ${labels[action] || action}.${detail ? `\n${String(detail).slice(0, 500)}` : ''}`;
   await Promise.allSettled((cfg.adminTelegramIds || []).map(id => sendTelegramMessage(id, text, cfg)));
 }
 
@@ -2404,7 +2404,7 @@ async function resolveCalibrationLifecycle(cfg, candidate, trustedRows) {
     baseline.fingerprint = await calibrationPromotionFingerprint(baseline);
     return {
       ...baseline,
-      lifecycle: { available: false, status: 'blocked', activeFingerprint: baseline.fingerprint, challengerFingerprint: fingerprint, reason: 'Нужна supabase_migration_v6_10.sql; production остаётся на baseline.' },
+      lifecycle: { available: false, status: 'blocked', activeFingerprint: baseline.fingerprint, challengerFingerprint: fingerprint, reason: 'Нужен файл миграции supabase_migration_v6_10.sql; рабочая версия остаётся на базовом профиле.' },
     };
   }
 
@@ -2420,7 +2420,7 @@ async function resolveCalibrationLifecycle(cfg, candidate, trustedRows) {
       const state = await saveCalibrationLifecycleState(cfg, lifecycle.state, {
         action: 'initialize',
         targetFingerprint: baseline.fingerprint,
-        reason: 'RC28 baseline lifecycle initialization.',
+        reason: 'RC29 baseline lifecycle initialization.',
         metadata: { appVersion: APP_VERSION },
       });
       lifecycle = { state, active: baseline, previous: null };
@@ -2544,12 +2544,12 @@ async function apiCalibrationControl(request, cfg, user) {
   try { body = await request.json(); } catch {}
   const action = String(body.action || '').trim().toLowerCase();
   if (!['freeze','unfreeze','manual_rollback'].includes(action)) {
-    return json({ error: 'Действие должно быть freeze, unfreeze или manual_rollback.' }, 400);
+    return json({ error: 'Доступны действия: заморозить, разморозить или выполнить ручной откат.' }, 400);
   }
   const reason = String(body.reason || '').trim();
   if (reason.length < 5) return json({ error: 'Укажите причину действия — минимум 5 символов.' }, 400);
   if (action === 'manual_rollback' && !lifecycle.previous?.fingerprint) {
-    return json({ error: 'Предыдущий champion отсутствует; ручной rollback невозможен.' }, 409);
+    return json({ error: 'Предыдущая активная модель отсутствует; ручной откат невозможен.' }, 409);
   }
 
   try {
@@ -2608,13 +2608,13 @@ function baselineCalibrationProfile(sample = 0, stats = []) {
       brierGain: null,
       logLossGain: null,
       changedWeightL1: 0,
-      reason: 'Недостаточно trusted-матчей для отдельной holdout-проверки весов.',
+      reason: 'Недостаточно доверенных матчей для отдельной проверки весов на отложенной выборке.',
     },
     promotionGate: {
       status: sample >= 20 ? 'shadow' : 'baseline',
       validationReady: false,
       trustedSample: sample,
-      note: sample >= 20 ? 'Кандидат калибровки собирает доказательства в тени.' : 'Сначала нужно накопить trusted settlement.',
+      note: sample >= 20 ? 'Кандидат калибровки собирает доказательства в тени.' : 'Сначала нужно накопить достаточно доверенных завершённых прогнозов.',
     },
     note: sample >= 20 ? 'Калибратор собирает выборку в теневом режиме. Итоговые вероятности пока не меняются.' : 'Сначала нужно накопить завершённые предматчевые прогнозы.',
   };
@@ -2651,16 +2651,16 @@ function buildCalibrationProfile(rows) {
       weightHoldoutSample: Number(weights.validationSample || 0),
       temperatureHoldoutSample: Number(temperature.validationSample || 0),
       note: active
-        ? 'Автокалибровка прошла два последовательных trusted holdout-окна и готова к champion–challenger сравнению.'
+        ? 'Автокалибровка прошла два последовательных окна доверенной отложенной выборки и готова к сравнению с активной моделью.'
         : validationReady
-          ? 'Кандидат удержан в тени: holdout ещё не подтвердил безопасное улучшение.'
-          : 'Кандидат остаётся в тени до достаточной trusted holdout-выборки.',
+          ? 'Кандидат остаётся в режиме наблюдения: отложенная выборка ещё не подтвердила безопасное улучшение.'
+          : 'Кандидат остаётся в режиме наблюдения до достаточной доверенной отложенной выборки.',
     },
     note: active
-      ? 'RC28: кандидат прошёл два holdout-окна; постоянный lifecycle решает продвижение относительно активного champion.'
+      ? 'RC29: кандидат прошёл два окна отложенной выборки; постоянный жизненный цикл решает, можно ли заменить активную модель.'
       : shadow
-        ? 'RC28: challenger измеряется в тени; production использует только постоянный active-профиль.'
-        : 'Недостаточно trusted-прогнозов для безопасной автоматической калибровки.',
+        ? 'RC29: кандидат измеряется в режиме наблюдения; рабочая система использует только подтверждённый активный профиль.'
+        : 'Недостаточно доверенных прогнозов для безопасной автоматической калибровки.',
   };
 }
 
@@ -3044,7 +3044,7 @@ function buildModelDashboardObservations(rows, dashboard) {
     notes.push({
       level: 'info',
       title: 'Выборка ещё небольшая',
-      text: `В периоде ${sample} завершённых прогнозов. Разрезы по лигам и confidence пока нужно читать как диагностику, а не как устойчивые закономерности.`,
+      text: `В периоде ${sample} завершённых прогнозов. Разрезы по лигам и уверенности пока нужно читать как диагностику, а не как устойчивые закономерности.`,
     });
   }
 
@@ -3052,7 +3052,7 @@ function buildModelDashboardObservations(rows, dashboard) {
     notes.push({
       level: 'warn',
       title: 'Модель выглядит переуверенной',
-      text: `Средняя top-вероятность выше фактической точности примерно на ${Number(overall.calibrationGap).toFixed(1)} п.п. Калибровку стоит продолжать проверять на новых матчах.`,
+      text: `Средняя максимальная вероятность выше фактической точности примерно на ${Number(overall.calibrationGap).toFixed(1)} п.п. Калибровку стоит продолжать проверять на новых матчах.`,
     });
   }
 
@@ -3063,7 +3063,7 @@ function buildModelDashboardObservations(rows, dashboard) {
       Number(high.accuracy) <= Number(mid.accuracy)) {
     notes.push({
       level: 'warn',
-      title: 'Высокий confidence пока не даёт прироста',
+      title: 'Высокая уверенность пока не даёт прироста',
       text: `В диапазоне 80+ точность ${Number(high.accuracy).toFixed(1)}%, а в 60–69 — ${Number(mid.accuracy).toFixed(1)}%. Это повод проверить причины, но не менять пороги автоматически.`,
     });
   }
@@ -3078,7 +3078,7 @@ function buildModelDashboardObservations(rows, dashboard) {
     notes.push({
       level: 'watch',
       title: 'Есть лига для дополнительной проверки',
-      text: `${weakLeague.leagueName}: n=${weakLeague.sample}, Brier ${Number(weakLeague.avgBrier).toFixed(3)} против общего ${Number(overall.avgBrier).toFixed(3)}. Возможна специфика турнира или просто шум выборки.`,
+      text: `${weakLeague.leagueName}: n=${weakLeague.sample}, ошибка Брайера ${Number(weakLeague.avgBrier).toFixed(3)} против общего значения ${Number(overall.avgBrier).toFixed(3)}. Возможна специфика турнира или просто шум выборки.`,
     });
   }
 
@@ -3090,8 +3090,8 @@ function buildModelDashboardObservations(rows, dashboard) {
   if (weakSignal) {
     notes.push({
       level: 'watch',
-      title: 'Один источник слабее итогового blend',
-      text: `${weakSignal.label}: собственный Brier ${Number(weakSignal.signalBrier).toFixed(3)}, blend на тех же матчах ${Number(weakSignal.finalBrier).toFixed(3)}. Текущий вес уже ограничен guardrails.`,
+      title: 'Один источник слабее итогового объединённого прогноза',
+      text: `${weakSignal.label}: собственная ошибка Брайера ${Number(weakSignal.signalBrier).toFixed(3)}, итоговый прогноз на тех же матчах ${Number(weakSignal.finalBrier).toFixed(3)}. Текущий вес уже ограничен защитными правилами.`,
     });
   }
 
@@ -3102,8 +3102,8 @@ function buildModelDashboardObservations(rows, dashboard) {
     if (Number.isFinite(first) && Number.isFinite(last) && last <= first - 0.025) {
       notes.push({
         level: 'good',
-        title: 'Последние недели выглядят лучше по Brier',
-        text: `Brier снизился примерно с ${first.toFixed(3)} до ${last.toFixed(3)}. Нужна более длинная серия, чтобы считать это устойчивым улучшением.`,
+        title: 'Последние недели выглядят лучше по ошибке Брайера',
+        text: `Ошибка Брайера снизилась примерно с ${first.toFixed(3)} до ${last.toFixed(3)}. Нужна более длинная серия, чтобы считать это устойчивым улучшением.`,
       });
     }
   }
@@ -3112,7 +3112,7 @@ function buildModelDashboardObservations(rows, dashboard) {
     notes.push({
       level: 'info',
       title: 'Явных диагностических отклонений нет',
-      text: 'Продолжаем накапливать immutable pre-match snapshots. v6.2 добавляет settlement watchdog и runtime-gated catch-up, не меняя веса модели автоматически.',
+      text: 'Продолжаем накапливать неизменяемые предматчевые снимки. Контроль результатов и безопасное восстановление не меняют веса модели автоматически.',
     });
   }
 
@@ -3352,7 +3352,7 @@ function buildPredictionIntegrity(settledRows, pendingRows) {
       count: invalidProbabilities.length,
       detail: invalidProbabilities.length
         ? 'Есть строки с NaN/выходом за 0–100 или суммой, отличающейся от 100 более чем на 1.5 п.п.'
-        : 'Все загруженные 1X2 probability snapshots проходят базовую проверку.',
+        : 'Все загруженные снимки вероятностей 1X2 проходят базовую проверку.',
     },
     {
       key: 'snapshot_metadata',
@@ -3360,8 +3360,8 @@ function buildPredictionIntegrity(settledRows, pendingRows) {
       state: invalidSnapshotMetadata.length ? 'fail' : 'pass',
       count: invalidSnapshotMetadata.length,
       detail: invalidSnapshotMetadata.length
-        ? 'Есть строки без корректного captured_at или kickoff_at; pre-match статус нельзя подтвердить.'
-        : 'captured_at и kickoff_at доступны у всех загруженных snapshots.',
+        ? 'Есть строки без корректного времени снимка или времени начала матча; предматчевый статус нельзя подтвердить.'
+        : 'Время снимка и время начала матча доступны у всех загруженных записей.',
     },
     {
       key: 'snapshot_timing',
@@ -3369,17 +3369,17 @@ function buildPredictionIntegrity(settledRows, pendingRows) {
       state: snapshotAfterKickoff.length ? 'fail' : 'pass',
       count: snapshotAfterKickoff.length,
       detail: snapshotAfterKickoff.length
-        ? 'Есть snapshot, созданные в момент kickoff или позже.'
-        : 'Поздние snapshot в загруженной выборке не обнаружены.',
+        ? 'Есть снимки, созданные в момент начала матча или позже.'
+        : 'Поздние снимки в загруженной выборке не обнаружены.',
     },
     {
       key: 'pending_settlement',
-      label: 'Зависшие pending',
+      label: 'Зависшие ожидания',
       state: stalePending.length ? 'warn' : 'pass',
       count: stalePending.length,
       detail: stalePending.length
-        ? 'Есть pending-прогнозы старше 36 часов после kickoff — нужен контроль daily settlement.'
-        : 'Зависших pending старше 36 часов нет.',
+        ? 'Есть прогнозы в ожидании старше 36 часов после начала матча — нужен контроль ежедневной фиксации результата.'
+        : 'Зависших прогнозов в ожидании старше 36 часов нет.',
     },
     {
       key: 'settled_outcome',
@@ -3387,8 +3387,8 @@ function buildPredictionIntegrity(settledRows, pendingRows) {
       state: invalidSettledOutcome.length ? 'fail' : 'pass',
       count: invalidSettledOutcome.length,
       detail: invalidSettledOutcome.length
-        ? 'Есть settled-строки без корректного счёта либо outcome не совпадает со счётом.'
-        : 'Settled-строки имеют корректный счёт и согласованный 1X2 outcome.',
+        ? 'Есть завершённые записи без корректного счёта либо сохранённый исход не совпадает со счётом.'
+        : 'Завершённые записи имеют корректный счёт и согласованный исход 1X2.',
     },
     {
       key: 'prediction_consistency',
@@ -3396,8 +3396,8 @@ function buildPredictionIntegrity(settledRows, pendingRows) {
       state: inconsistentPrediction.length ? 'fail' : 'pass',
       count: inconsistentPrediction.length,
       detail: inconsistentPrediction.length
-        ? 'Есть строки, где predicted_outcome отсутствует или не совпадает с максимальной 1X2 вероятностью.'
-        : 'predicted_outcome согласован с максимальной 1X2 вероятностью.',
+        ? 'Есть строки, где сохранённый прогноз отсутствует или не совпадает с максимальной вероятностью 1X2.'
+        : 'Сохранённый прогноз согласован с максимальной вероятностью 1X2.',
     },
     {
       key: 'correct_flag',
@@ -3405,8 +3405,8 @@ function buildPredictionIntegrity(settledRows, pendingRows) {
       state: invalidCorrectFlag.length ? 'fail' : 'pass',
       count: invalidCorrectFlag.length,
       detail: invalidCorrectFlag.length
-        ? 'Есть settled-строки, где correct не согласован с predicted_outcome и actual_outcome.'
-        : 'Флаг correct согласован с прогнозом и фактическим исходом.',
+        ? 'Есть завершённые записи, где признак правильности не согласован с прогнозом и фактическим исходом.'
+        : 'Признак правильности согласован с прогнозом и фактическим исходом.',
     },
     {
       key: 'fixture_identity',
@@ -3414,8 +3414,8 @@ function buildPredictionIntegrity(settledRows, pendingRows) {
       state: invalidFixtureIds.length ? 'fail' : 'pass',
       count: invalidFixtureIds.length,
       detail: invalidFixtureIds.length
-        ? 'Есть строки без положительного целочисленного fixture_id.'
-        : 'Все загруженные строки имеют корректный fixture_id.',
+        ? 'Есть строки без корректного номера матча.'
+        : 'Все загруженные строки имеют корректный номер матча.',
     },
     {
       key: 'duplicates',
@@ -3423,8 +3423,8 @@ function buildPredictionIntegrity(settledRows, pendingRows) {
       state: duplicateFixtures.length ? 'fail' : 'pass',
       count: duplicateFixtures.length,
       detail: duplicateFixtures.length
-        ? 'В загруженной выборке повторяется fixture_id.'
-        : 'Дубликаты fixture_id в загруженной выборке не обнаружены.',
+        ? 'В загруженной выборке повторяется номер матча.'
+        : 'Дубликаты номеров матчей в загруженной выборке не обнаружены.',
     },
     {
       key: 'version_metadata',
@@ -3432,8 +3432,8 @@ function buildPredictionIntegrity(settledRows, pendingRows) {
       state: missingVersion.length ? 'info' : 'pass',
       count: missingVersion.length,
       detail: missingVersion.length
-        ? 'У старых snapshots может отсутствовать analysis_version; они показываются как legacy / unknown.'
-        : 'У всех загруженных snapshots есть analysis_version.',
+        ? 'У старых снимков может отсутствовать версия анализа; они показываются как «старая / неизвестная».'
+        : 'У всех загруженных снимков есть версия анализа.',
     },
     {
       key: 'signal_snapshot',
@@ -3441,14 +3441,14 @@ function buildPredictionIntegrity(settledRows, pendingRows) {
       state: missingSignals.length ? 'info' : 'pass',
       count: missingSignals.length,
       detail: missingSignals.length
-        ? 'У части старых версий отсутствует signal_probabilities; это информационное ограничение cohort-аналитики.'
-        : 'Signal probabilities доступны у всей загруженной выборки.',
+        ? 'У части старых версий отсутствуют сохранённые вероятности отдельных сигналов; это информационное ограничение анализа групп версий.'
+        : 'Вероятности отдельных сигналов доступны у всей загруженной выборки.',
     },
   ];
 
   return {
     status: severe ? 'blocked' : warning ? 'watch' : 'clean',
-    label: severe ? 'Есть нарушения integrity' : warning ? 'Есть пункты для проверки' : 'Integrity checks пройдены',
+    label: severe ? 'Есть нарушения целостности' : warning ? 'Есть пункты для проверки' : 'Проверки целостности пройдены',
     loadedRows: all.length,
     settledRows: settled.length,
     pendingRows: pending.length,
@@ -3468,7 +3468,7 @@ function buildPredictionIntegrity(settledRows, pendingRows) {
       invalidFixtureRows: invalidFixtureIds.length,
       duplicateFixtures,
     },
-    note: 'Integrity проверяет только строки, загруженные текущим admin endpoint (до 500 settled + 500 pending). Строки с FAIL исключаются из метрик качества; веса модели автоматически не меняются.',
+    note: 'Проверка целостности анализирует только строки, загруженные текущим административным запросом (до 500 завершённых + 500 ожидающих). Строки с ошибками исключаются из метрик качества; веса модели автоматически не меняются.',
   };
 }
 
@@ -3576,7 +3576,7 @@ function buildModelDashboard(rows, days) {
     calibrationModes: buildCalibrationModeDashboard(valid),
   };
   dashboard.observations = buildModelDashboardObservations(valid, dashboard);
-  dashboard.note = 'Dashboard использует immutable pre-match snapshots и фактические результаты. Version cohorts описательны: система не выбирает «лучшую» версию и ничего не продвигает автоматически.';
+  dashboard.note = 'Панель использует неизменяемые предматчевые снимки и фактические результаты. Группы версий носят описательный характер: система не выбирает «лучшую» версию и ничего не продвигает автоматически.';
   return dashboard;
 }
 
@@ -3672,7 +3672,7 @@ function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = 
     calibrationDiagnostics: {
       weightedTopCalibrationError: weightedTopCalibrationError(rows),
       label: 'Weighted top-probability calibration error',
-      note: 'Средневзвешенный абсолютный разрыв между средней top-вероятностью и hit rate по 5 probability buckets; меньше — лучше. RC28 не использует эту метрику отдельно: продвижение требует двух holdout-окон и сравнения с champion.',
+      note: 'Средневзвешенный абсолютный разрыв между средней максимальной вероятностью и фактической точностью по пяти диапазонам вероятности; меньше — лучше. RC29 не использует эту метрику отдельно: продвижение требует двух окон отложенной выборки и сравнения с активной моделью.',
     },
     calibrationEngine: calibrationProfile || baselineCalibrationProfile(evaluated, signalPerformance),
     calibrationImpact,
@@ -3682,11 +3682,11 @@ function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = 
     },
     recent,
     methodology: {
-      snapshot: 'Для каждого fixture сохраняется первый расчёт, сделанный до стартового свистка. Поздние перерасчёты не перезаписывают его.',
+      snapshot: 'Для каждого матча сохраняется первый расчёт, сделанный до стартового свистка. Поздние перерасчёты не перезаписывают его.',
       outcome: 'Точность исхода = доля матчей, где максимальная вероятность 1X2 совпала с фактическим исходом.',
-      brier: 'Brier score учитывает все три вероятности 1X2; ниже — лучше. В интерфейсе он показан вместе с размером выборки.',
-      versionCohorts: 'Сравнение analysis_version является описательным и не используется для автоматического выбора/продвижения версии.',
-      integrity: 'В model-quality и calibration входят только trusted settlement: confirmed после двух provider-проверок либо adjudicated после явного admin review. unverified, verified-first-pass, drift и void исключаются.',
+      brier: 'Ошибка Брайера учитывает все три вероятности 1X2; ниже — лучше. В интерфейсе он показан вместе с размером выборки.',
+      versionCohorts: 'Сравнение версий анализа является описательным и не используется для автоматического выбора/продвижения версии.',
+      integrity: 'В качество модели и калибровку входят только доверенные завершённые записи: подтверждённые после двух проверок провайдера либо вручную разобранные администратором. Непроверенные, первично проверенные, записи с расхождением и аннулированные исключаются.',
       warning: evaluated < 20 ? 'Выборка пока мала: цифры считаются технической диагностикой, а не доказанной точностью модели.' : '',
     },
   };
@@ -3706,7 +3706,7 @@ async function apiModelQuality(request, cfg) {
         supaSelectMany(cfg, 'model_predictions', { status: 'eq.pending', kickoff_at: `gte.${since}` }, { limit: 500, order: 'kickoff_at.desc' }),
       ]);
     } catch (error) {
-      return json({ available: false, reason: 'Таблица backtest ещё не создана. Выполните supabase_migration_v3_6.sql.', detail: String(error?.message || error).slice(0, 180) });
+      return json({ available: false, reason: 'Таблица исторической проверки ещё не создана. Выполните supabase_migration_v3_6.sql.', detail: String(error?.message || error).slice(0, 180) });
     }
   } else {
     const all = [...memory.modelPredictions.values()].filter(x => Date.parse(x.kickoff_at || '') >= Date.parse(since));
@@ -4122,7 +4122,7 @@ async function loadSettlementDriftReview(cfg, limit = 20) {
 async function resolveSettlementDrift(cfg, user, input = {}) {
   const schema = await probeSettlementAdjudicationSchema(cfg);
   if (!schema.ok) {
-    const error = new Error('Нужна migration v6.6 для Settlement Drift Adjudication.');
+    const error = new Error('Нужна миграция v6.6 для ручного разбора расхождений результатов.');
     error.code = 'SETTLEMENT_ADJUDICATION_SCHEMA';
     throw error;
   }
@@ -4131,24 +4131,24 @@ async function resolveSettlementDrift(cfg, user, input = {}) {
   const action = String(input.resolutionAction || '');
   const reason = redactOpsString(input.reason || '', 220).trim();
   if (!Number.isInteger(fixtureId) || fixtureId <= 0 || !Number.isInteger(eventId) || eventId <= 0) {
-    const error = new Error('Некорректный drift case.');
+    const error = new Error('Некорректная запись расхождения.');
     error.code = 'SETTLEMENT_DRIFT_CASE';
     throw error;
   }
   if (!SETTLEMENT_DRIFT_ACTIONS.has(action)) {
-    const error = new Error('Неизвестное действие adjudication.');
+    const error = new Error('Неизвестное действие ручного разбора.');
     error.code = 'SETTLEMENT_DRIFT_ACTION';
     throw error;
   }
   if (reason.length < 5) {
-    const error = new Error('Укажите причину adjudication — минимум 5 символов.');
+    const error = new Error('Укажите причину ручного решения — минимум 5 символов.');
     error.code = 'SETTLEMENT_DRIFT_REASON';
     throw error;
   }
 
   const row = await supaSelectOne(cfg, 'model_predictions', { fixture_id: `eq.${fixtureId}` });
   if (!row || row.status !== 'settled' || String(row.settlement_verification_state || '') !== 'drift') {
-    const error = new Error('Drift case уже изменён. Обновите dry-run.');
+    const error = new Error('Запись расхождения уже изменилась. Обновите предварительную проверку.');
     error.code = 'SETTLEMENT_DRIFT_STALE';
     throw error;
   }
@@ -4158,13 +4158,13 @@ async function resolveSettlementDrift(cfg, user, input = {}) {
   }, { limit: 1, order: 'observed_at.desc' });
   const event = events?.[0] || null;
   if (!event || Number(event.id) !== eventId) {
-    const error = new Error('Drift event изменился. Обновите dry-run.');
+    const error = new Error('Событие расхождения изменилось. Обновите предварительную проверку.');
     error.code = 'SETTLEMENT_DRIFT_EVENT_STALE';
     throw error;
   }
   const expectedToken = await settlementDriftResolutionToken(row, event);
   if (!input.resolutionToken || String(input.resolutionToken) !== expectedToken) {
-    const error = new Error('Drift snapshot изменился. Обновите dry-run.');
+    const error = new Error('Снимок расхождения изменился. Обновите предварительную проверку.');
     error.code = 'SETTLEMENT_DRIFT_TOKEN_STALE';
     throw error;
   }
@@ -4172,8 +4172,8 @@ async function resolveSettlementDrift(cfg, user, input = {}) {
   const resolution = buildSettlementDriftResolution(row, event, action);
   if (!resolution.valid) {
     const error = new Error(action === 'accept_provider'
-      ? 'Provider-коррекцию нельзя безопасно принять для этого статуса/счёта. Используйте keep stored или void.'
-      : 'Adjudication не может быть применена.');
+      ? 'Коррекцию провайдера нельзя безопасно принять для этого статуса или счёта. Оставьте сохранённый результат либо аннулируйте запись.'
+      : 'Ручное решение не может быть применено.');
     error.code = 'SETTLEMENT_DRIFT_UNSAFE';
     throw error;
   }
@@ -4192,12 +4192,12 @@ async function resolveSettlementDrift(cfg, user, input = {}) {
   await supaInsertIgnore(cfg, 'settlement_drift_resolutions', auditRow, 'source_event_id');
   const persisted = await supaSelectOne(cfg, 'settlement_drift_resolutions', { source_event_id: `eq.${eventId}` });
   if (!persisted) {
-    const error = new Error('Не удалось зафиксировать adjudication audit.');
+    const error = new Error('Не удалось записать журнал ручного решения.');
     error.code = 'SETTLEMENT_DRIFT_AUDIT';
     throw error;
   }
   if (String(persisted.action || '') !== action) {
-    const error = new Error(`Этот drift event уже заблокирован действием ${String(persisted.action || '')}. Обновите dry-run.`);
+    const error = new Error(`Это расхождение уже заблокировано действием ${String(persisted.action || '')}. Обновите предварительную проверку.`);
     error.code = 'SETTLEMENT_DRIFT_ALREADY_LOCKED';
     throw error;
   }
@@ -4793,7 +4793,7 @@ async function finalizeRemediationAction(cfg, actionId, patch = {}) {
 
 async function buildModelRemediationReport(cfg, { maxRows = 5000 } = {}) {
   if (!hasSupabase(cfg) && !cfg.devMode) {
-    return { available: false, reason: 'Supabase не настроен: remediation требует постоянную базу данных.' };
+    return { available: false, reason: 'Supabase не настроен: восстановление требует постоянную базу данных.' };
   }
   const [schema, watchdogSchema, reliabilitySchema, runLedgerSchema, finalitySchema, trustSchema, adjudicationSchema, reliability, runtimeState] = await Promise.all([
     hasSupabase(cfg) ? probeOptionalTable(cfg, 'prediction_integrity_actions') : Promise.resolve({ ok: true, status: 'memory' }),
@@ -4914,7 +4914,7 @@ async function buildModelRemediationReport(cfg, { maxRows = 5000 } = {}) {
       onlySettlesPending: true,
       adminIdExposed: false,
       automaticRecoveryRuntimeGated: true,
-      note: 'GET выполняет read-only dry-run. RC15 вводит trusted metrics gate и two-pass finality: первый matching check даёт verified, повторный спустя 24+ часа — confirmed. Только confirmed/adjudicated участвуют в model-quality и calibration.',
+      note: 'Запрос выполняет только предварительную проверку без изменений. В метрики качества и калибровку попадают только результаты, подтверждённые повторной проверкой спустя 24+ часа, либо явно разобранные администратором.',
     },
   };
 }
@@ -4928,7 +4928,7 @@ async function apiModelRemediation(request, cfg, user) {
   if (reason.length < 5) return json({ error: 'Укажите причину действия (минимум 5 символов).' }, 400);
   if (requestedAction === 'reset_circuit') {
     const schema = await probeSettlementReliabilitySchema(cfg);
-    if (!schema.ok) return json({ error: 'Нужна migration v6.3 для Settlement Circuit Breaker.', code: 'SETTLEMENT_RELIABILITY_SCHEMA' }, 409);
+    if (!schema.ok) return json({ error: 'Нужна миграция v6.3 для защитного контура восстановления результатов.', code: 'SETTLEMENT_RELIABILITY_SCHEMA' }, 409);
     const reset = await resetSettlementCircuit(cfg, user, reason);
     const report = await buildModelRemediationReport(cfg).catch(() => null);
     return json({ ok: true, reset, report });
@@ -4946,19 +4946,19 @@ async function apiModelRemediation(request, cfg, user) {
       return json({ ok: true, resolution, report });
     } catch (error) {
       const status = ['SETTLEMENT_DRIFT_STALE','SETTLEMENT_DRIFT_EVENT_STALE','SETTLEMENT_DRIFT_TOKEN_STALE','SETTLEMENT_DRIFT_ALREADY_LOCKED'].includes(String(error?.code || '')) ? 409 : 400;
-      return json({ error: error?.message || 'Drift adjudication не выполнена.', code: error?.code || 'SETTLEMENT_DRIFT' }, status);
+      return json({ error: error?.message || 'Ручной разбор расхождения не выполнен.', code: error?.code || 'SETTLEMENT_DRIFT' }, status);
     }
   }
-  if (requestedAction !== 'recover') return json({ error: 'Поддерживаются action=recover, action=reset_circuit и action=resolve_drift.' }, 400);
+  if (requestedAction !== 'recover') return json({ error: 'Поддерживаются восстановление ожидающих записей, сброс защиты и ручной разбор расхождения.' }, 400);
 
   const report = await buildModelRemediationReport(cfg);
   if (!report.available) return json(report, 503);
-  if (!report.schemaReady) return json({ error: 'Нужна migration v6.1 для audit trail.', code: 'MODEL_REMEDIATION_SCHEMA', report }, 409);
+  if (!report.schemaReady) return json({ error: 'Нужна миграция v6.1 для журнала действий.', code: 'MODEL_REMEDIATION_SCHEMA', report }, 409);
   const requestedIds = [...new Set((Array.isArray(body?.fixtureIds) ? body.fixtureIds : []).map(Number).filter(x => Number.isInteger(x) && x > 0))].sort((a, b) => a - b);
   const currentIds = [...(report.recovery?.fixtureIds || [])].map(Number).sort((a, b) => a - b);
   if (!report.recovery?.candidateToken || String(body?.candidateToken || '') !== report.recovery.candidateToken ||
       requestedIds.join(',') !== currentIds.join(',')) {
-    return json({ error: 'Список кандидатов изменился. Обновите dry-run перед восстановлением.', code: 'REMEDIATION_STALE', report }, 409);
+    return json({ error: 'Список кандидатов изменился. Обновите предварительную проверку перед восстановлением.', code: 'REMEDIATION_STALE', report }, 409);
   }
   if (!currentIds.length) return json({ ok: true, execution: { status: 'nothing_to_do', settled: 0, skipped: 0 }, report });
   if (!freeQuotaHealthy(10, 3)) {
@@ -5837,7 +5837,7 @@ async function processDueReminders(cfg) {
       // Cron cadence is 5 minutes in v5.6. This window is deliberately wider
       // than one cron interval so a slightly delayed execution still delivers.
       if (kickoffEnabled && !row.kickoff_notified_at && deltaMinutes <= 4 && deltaMinutes >= -7) {
-        const text = `🔴 Матч начинается\n\n${row.home_name} — ${row.away_name}${row.league_name ? `\n${row.league_name}` : ''}\n\nОткройте Football Manager: LIVE-центр появится, когда провайдер обновит статус.`;
+        const text = `🔴 Матч начинается\n\n${row.home_name} — ${row.away_name}${row.league_name ? `\n${row.league_name}` : ''}\n\nОткройте Football Manager: центр матча появится, когда провайдер обновит статус.`;
         const delivery = await deliverClaimedReminder(row, 'kickoff', text, cfg);
         if (delivery.state === 'sent') kickoffSent++;
         else if (delivery.state === 'already_claimed') claimed++;
@@ -5932,7 +5932,7 @@ async function getReminderHealth(cfg) {
     return {
       available: false,
       migrationReady: true,
-      reason: redactOpsString(error?.message || 'Не удалось прочитать reminders.', 180),
+      reason: redactOpsString(error?.message || 'Не удалось прочитать напоминания.', 180),
       scheduler: { cadenceMinutes: 5 },
     };
   }
@@ -6006,7 +6006,7 @@ async function getReminderHealth(cfg) {
     health: staleClaims.length || failed24h.length >= 3
       ? { state: 'watch', label: 'Нужен контроль доставки' }
       : { state: 'healthy', label: 'Доставка выглядит штатно' },
-    note: 'Delivery claims предотвращают параллельную отправку одного уведомления. Telegram 403 отключает конкретное недоставляемое напоминание.',
+    note: 'Блокировка доставки предотвращает параллельную отправку одного уведомления. Если Telegram отклоняет доставку, конкретное недоставляемое напоминание отключается.',
   };
 }
 
@@ -6020,7 +6020,7 @@ async function apiReminderHealth(request, cfg, user) {
 
     const result = await sendTelegramMessage(
       user.id,
-      `✅ Football Manager\n\nТест уведомлений v6.2 RC10 прошёл. Если вы видите это сообщение, Telegram delivery работает.`,
+      `✅ Football Manager\n\nТест уведомлений ${APP_VERSION} прошёл. Если вы видите это сообщение, доставка через Telegram работает.`,
       cfg
     );
 
@@ -6176,8 +6176,8 @@ function providerTransitionProfile() {
       auditMaxCalls: 9,
     },
     note: paid
-      ? 'Повышенная квота обнаружена по rate-limit headers. Расширенные запросы разрешены guardrails приложения.'
-      : 'Полный endpoint-аудит заблокирован на FREE, чтобы не тратить заметную часть дневных 100 запросов.',
+      ? 'Повышенная квота обнаружена по заголовкам лимитов. Расширенные запросы разрешены защитными правилами приложения.'
+      : 'Полная проверка методов API заблокирована на бесплатном тарифе, чтобы не тратить заметную часть дневного лимита.',
   };
 }
 
@@ -6273,12 +6273,12 @@ function providerBudgetProfile() {
       lastUpdatedAt: memory.providerFeatureFetch?.lastUpdatedAt || null,
     },
     note: mode === 'emergency'
-      ? 'Дополнительные enrichment-запросы блокируются, пока квота не восстановится.'
+      ? 'Дополнительные запросы обогащения данных блокируются, пока квота не восстановится.'
       : mode === 'conserve'
-        ? 'Часть enrichment-запросов замедлена или пропускается, чтобы сохранить резерв.'
+        ? 'Часть дополнительных запросов замедлена или пропускается, чтобы сохранить резерв.'
         : paid
-          ? 'Квота здорова: расширенные данные разрешены с feature-level cache.'
-          : 'FREE работает в экономном режиме с приоритетом основных данных матча.',
+          ? 'Квота в норме: расширенные данные разрешены с кэшем отдельных функций.'
+          : 'Бесплатный тариф работает в экономном режиме с приоритетом основных данных матча.',
   };
 }
 
@@ -6506,7 +6506,7 @@ async function saveProviderE2E(result, fixtureId, cfg) {
 async function apiProviderE2EValidation(request, cfg) {
   const url = new URL(request.url);
   const fixtureId = Number(url.searchParams.get('fixtureId') || 0);
-  if (!fixtureId) return json({ error: 'Укажите fixtureId для E2E validation.' }, 400);
+  if (!fixtureId) return json({ error: 'Укажите номер матча для сквозной проверки.' }, 400);
 
   const startedAt = Date.now();
   const steps = [];
@@ -6522,7 +6522,7 @@ async function apiProviderE2EValidation(request, cfg) {
       'provider_probe',
       'Связь с API-Football',
       'fail',
-      redactOpsString(error?.message || 'Provider status недоступен.', 180),
+      redactOpsString(error?.message || 'Состояние провайдера недоступно.', 180),
     ));
   }
 
@@ -6535,7 +6535,7 @@ async function apiProviderE2EValidation(request, cfg) {
       'provider_probe',
       'Связь с API-Football',
       'pass',
-      `Provider отвечает. Определён тариф ${transition.plan}.`,
+      `Провайдер отвечает. Определён тариф ${transition.plan === 'FREE' ? 'Бесплатный' : transition.plan}.`,
       { plan: transition.plan },
     ));
   }
@@ -6546,7 +6546,7 @@ async function apiProviderE2EValidation(request, cfg) {
     transition.paid ? 'pass' : 'hold',
     transition.paid
       ? `${transition.plan}: расширенный режим доступен.`
-      : `${transition.plan}: код v5.0 готов, но полный E2E намеренно не запускается на FREE.`,
+      : `${transition.plan === 'FREE' ? 'Бесплатный тариф' : transition.plan}: полная сквозная проверка намеренно не запускается на бесплатном тарифе.`,
     { plan: transition.plan, paid: transition.paid },
   ));
 
@@ -6563,8 +6563,8 @@ async function apiProviderE2EValidation(request, cfg) {
     'Оплата пользователей',
     cfg.monetizationEnabled ? 'fail' : 'pass',
     cfg.monetizationEnabled
-      ? 'MONETIZATION_ENABLED включён — для текущего этапа это преждевременно.'
-      : 'Монетизация остаётся paused, как запланировано.',
+      ? 'Флаг монетизации включён — для текущего этапа это преждевременно.'
+      : 'Монетизация остаётся на паузе, как запланировано.',
   ));
 
   // Important: FREE / reserve modes stop here. No audit or Match Center burst.
@@ -6592,7 +6592,7 @@ async function apiProviderE2EValidation(request, cfg) {
       },
       durationMs: Date.now() - startedAt,
       note: !transition.paid
-        ? 'На FREE выполнен только /status. Полный E2E будет доступен сразу после обнаружения повышенной квоты.'
+        ? 'На бесплатном тарифе выполняется только проверка состояния. Полная сквозная проверка станет доступна после обнаружения повышенной квоты.'
         : 'E2E остановлен защитным резервом квоты.',
     };
     await saveProviderE2E(result, fixtureId, cfg);
@@ -6612,7 +6612,7 @@ async function apiProviderE2EValidation(request, cfg) {
       'e2e_execution',
       'Полный E2E запуск',
       'warn',
-      'Quota Orchestrator находится в conserve. Проверка продолжится, но результат помечается ограниченным.',
+      'Управление квотой работает в экономном режиме. Проверка продолжится, но результат будет помечен как ограниченный.',
     ));
   }
 
@@ -6631,9 +6631,9 @@ async function apiProviderE2EValidation(request, cfg) {
   if (audit?.blocked) {
     steps.push(providerValidationStep(
       'coverage_audit',
-      'Endpoint Coverage Audit',
+      'Проверка покрытия методов API',
       'hold',
-      audit.note || 'Coverage Audit остановлен guardrail.',
+      audit.note || 'Проверка покрытия остановлена защитным правилом.',
     ));
   } else if (audit?.summary) {
     const errors = Number(audit.summary.errors || 0);
@@ -6641,7 +6641,7 @@ async function apiProviderE2EValidation(request, cfg) {
     const state = errors > 1 || score < 45 ? 'fail' : errors > 0 || score < 75 ? 'warn' : 'pass';
     steps.push(providerValidationStep(
       'coverage_audit',
-      'Endpoint Coverage Audit',
+      'Проверка покрытия методов API',
       state,
       `${audit.summary.label || 'Coverage'} · ${score}% · ошибок ${errors}.`,
       { score, errors, available: Number(audit.summary.available || 0), empty: Number(audit.summary.empty || 0) },
@@ -6649,9 +6649,9 @@ async function apiProviderE2EValidation(request, cfg) {
   } else {
     steps.push(providerValidationStep(
       'coverage_audit',
-      'Endpoint Coverage Audit',
+      'Проверка покрытия методов API',
       'fail',
-      audit?.error || 'Coverage Audit не вернул результат.',
+      audit?.error || 'Проверка покрытия не вернула результат.',
     ));
   }
 
@@ -6688,11 +6688,11 @@ async function apiProviderE2EValidation(request, cfg) {
   );
   steps.push(providerValidationStep(
     'match_center',
-    'Match Center end-to-end',
+    'Сквозная проверка центра матча',
     matchCenterOk ? 'pass' : 'fail',
     matchCenterOk
-      ? `${firstCenter.match.home.name} — ${firstCenter.match.away.name}; mode=${firstCenter.mode}; первый ответ ${firstMs} мс.`
-      : (firstCenter?.error || 'Match Center не вернул корректный payload.'),
+      ? `${firstCenter.match.home.name} — ${firstCenter.match.away.name}; режим=${firstCenter.mode}; первый ответ ${firstMs} мс.`
+      : (firstCenter?.error || 'Центр матча не вернул корректный ответ.'),
     { firstMs, mode: firstCenter?.mode || null },
   ));
 
@@ -6702,8 +6702,8 @@ async function apiProviderE2EValidation(request, cfg) {
     'Повторный запрос без лишнего API',
     cacheOk ? 'pass' : 'warn',
     cacheOk
-      ? `Второй Match Center обслужен общим cache за ${secondMs} мс.`
-      : 'Второй ответ не был помечен cached — стоит проверить общий cache.',
+      ? `Повторный запрос центра матча обслужен общим кэшем за ${secondMs} мс.`
+      : 'Повторный ответ не был помечен как кэшированный — стоит проверить общий кэш.',
     { secondMs, cached: cacheOk },
   ));
 
@@ -6714,8 +6714,8 @@ async function apiProviderE2EValidation(request, cfg) {
     'Expanded feature pipeline',
     !matchCenterOk ? 'fail' : sources.error > 0 ? 'warn' : featureCount > 0 ? 'pass' : 'warn',
     featureCount
-      ? `Источники: API ${sources.api}, cache ${sources.cache}, fixture ${sources.embedded}, stale ${sources.stale}, skip ${sources.skipped}, error ${sources.error}.`
-      : 'Матч не потребовал feature-level enrichment или данные не были доступны.',
+      ? `Источники: API ${sources.api}, кэш ${sources.cache}, встроенные данные матча ${sources.embedded}, резерв ${sources.stale}, пропуск ${sources.skipped}, ошибки ${sources.error}.`
+      : 'Матч не потребовал дополнительных запросов по отдельным функциям либо данные были недоступны.',
     sources,
   ));
 
@@ -6730,7 +6730,7 @@ async function apiProviderE2EValidation(request, cfg) {
     'post_run_quota',
     'Квота после теста',
     budgetAfter.mode === 'emergency' ? 'fail' : budgetAfter.mode === 'conserve' ? 'warn' : 'pass',
-    `${budgetAfter.label}. Остаток daily ${budgetAfter.daily?.remaining ?? '—'}, minute ${budgetAfter.minute?.remaining ?? '—'}.`,
+    `${budgetAfter.label}. Остаток на день ${budgetAfter.daily?.remaining ?? '—'}, на минуту ${budgetAfter.minute?.remaining ?? '—'}.`,
     { mode: budgetAfter.mode },
   ));
 
@@ -6770,12 +6770,12 @@ async function apiProviderE2EValidation(request, cfg) {
     requestCost: {
       estimatedMax: 16,
       observedDailyDelta,
-      note: 'Observed delta берётся из rate-limit headers и может быть недоступна, если провайдер не прислал оба значения.',
+      note: 'Изменение расхода берётся из заголовков лимитов и может быть недоступно, если провайдер не прислал оба значения.',
     },
     durationMs: Date.now() - startedAt,
     note: status.ready
-      ? 'Кодовая часть expanded-data path прошла release gate. Это не включает пользовательскую монетизацию.'
-      : 'Release gate нашёл пункт, который нужно проверить до полноценного expanded режима.',
+      ? 'Путь расширенных данных прошёл проверку релиза. Пользовательская монетизация при этом не включается.'
+      : 'Проверка релиза нашла пункт, который нужно исправить до полноценного расширенного режима.',
   };
 
   await saveProviderE2E(result, fixtureId, cfg);
@@ -6865,8 +6865,8 @@ async function providerAuditCall(item, cfg) {
       note: results > 0
         ? 'Данные возвращены.'
         : item.expectedData
-          ? 'Endpoint ответил без данных. Для этого матча покрытие может быть неполным.'
-          : 'Пустой ответ допустим для этого endpoint/матча.',
+          ? 'Метод API ответил без данных. Для этого матча покрытие может быть неполным.'
+          : 'Пустой ответ допустим для этого метода API и конкретного матча.',
     };
   } catch (error) {
     return {
@@ -6876,7 +6876,7 @@ async function providerAuditCall(item, cfg) {
       results: null,
       latencyMs: Date.now() - startedAt,
       code: String(error?.code || 'ERROR'),
-      note: redactOpsString(error?.message || 'Ошибка endpoint.', 160),
+      note: redactOpsString(error?.message || 'Ошибка метода API.', 160),
     };
   }
 }
@@ -6911,7 +6911,7 @@ async function apiProviderProbe(request, cfg) {
     statusOk = true;
     statusNote = 'Тариф и квоты обновлены через /status.';
   } catch (error) {
-    statusNote = redactOpsString(error?.message || 'Не удалось обновить provider status.', 160);
+    statusNote = redactOpsString(error?.message || 'Не удалось обновить состояние провайдера.', 160);
   }
 
   return json({
@@ -6926,7 +6926,7 @@ async function apiProviderCoverageAudit(request, cfg) {
   const url = new URL(request.url);
   const fixtureId = Number(url.searchParams.get('fixtureId') || 0);
   const force = url.searchParams.get('refresh') === '1';
-  if (!fixtureId) return json({ error: 'Укажите fixtureId для Coverage Audit.' }, 400);
+  if (!fixtureId) return json({ error: 'Укажите номер матча для проверки покрытия.' }, 400);
 
   const cacheKey = `provider-coverage-audit:${fixtureId}:v4.8`;
   if (!force) {
@@ -6940,13 +6940,13 @@ async function apiProviderCoverageAudit(request, cfg) {
     fixture = (await apiFootball('/fixtures', { id: fixtureId }, cfg))[0] || null;
   } catch (error) {
     return json({
-      error: error?.message || 'Не удалось загрузить fixture для аудита.',
+      error: error?.message || 'Не удалось загрузить матч для проверки.',
       code: error?.code || 'AUDIT_FIXTURE',
       provider: providerSnapshot(),
       transition: providerTransitionProfile(),
     }, isFootballRateLimitError(error) ? 429 : 502);
   }
-  if (!fixture) return json({ error: 'Fixture не найден у API-Football.' }, 404);
+  if (!fixture) return json({ error: 'Матч не найден у API-Football.' }, 404);
 
   const transition = providerTransitionProfile();
   const status = String(fixture.fixture?.status?.short || '').toUpperCase();
@@ -6977,8 +6977,8 @@ async function apiProviderCoverageAudit(request, cfg) {
         note: x.applicable ? 'Будет проверен после активации расширенного режима.' : 'Не применяется к текущему статусу матча.',
       })),
       note: transition.paid
-        ? 'Полный аудит не запущен: quota guard считает остаток лимита недостаточным.'
-        : 'На FREE выполнен только fixture-запрос. Полный аудит намеренно не тратит оставшиеся запросы.',
+        ? 'Полная проверка не запущена: защита квоты считает остаток лимита недостаточным.'
+        : 'На бесплатном тарифе выполнен только запрос матча. Полная проверка намеренно не тратит оставшийся лимит.',
     };
     memory.providerAudit.last = preview;
     memory.providerAudit.byFixture.set(fixtureId, preview);
@@ -7010,7 +7010,7 @@ async function apiProviderCoverageAudit(request, cfg) {
     },
     summary: {
       score,
-      label: errors ? 'Есть ошибки endpoint' : score >= 80 ? 'Покрытие хорошее' : score >= 55 ? 'Покрытие частичное' : 'Покрытие ограниченное',
+      label: errors ? 'Есть ошибки методов API' : score >= 80 ? 'Покрытие хорошее' : score >= 55 ? 'Покрытие частичное' : 'Покрытие ограниченное',
       checked: relevant.length,
       available,
       empty,
@@ -7018,7 +7018,7 @@ async function apiProviderCoverageAudit(request, cfg) {
     },
     endpoints: results,
     durationMs: Date.now() - startedAt,
-    note: 'Пустой ответ не всегда означает проблему: lineups, odds, injuries и live odds зависят от турнира, статуса и момента времени.',
+    note: 'Пустой ответ не всегда означает проблему: составы, коэффициенты, травмы и коэффициенты в реальном времени зависят от турнира, статуса и момента времени.',
   };
 
   memory.providerAudit.last = audit;
@@ -7054,8 +7054,8 @@ function freeQuotaHealthy(minDaily = 25, minMinute = 5) {
 
 async function apiFootballNetwork(path, params, cfg, options = {}) {
   if (!cfg.apiFootballKey) {
-    await recordOpsEvent(cfg, { severity: 'critical', source: 'provider', eventType: 'configuration', code: 'FOOTBALL_CONFIG', message: 'API_FOOTBALL_KEY отсутствует.' });
-    throw footballError('API_FOOTBALL_KEY не настроен в Cloudflare.', 'FOOTBALL_CONFIG');
+    await recordOpsEvent(cfg, { severity: 'critical', source: 'provider', eventType: 'configuration', code: 'FOOTBALL_CONFIG', message: 'Ключ API-Football отсутствует.' });
+    throw footballError('Ключ API-Football не настроен в Cloudflare.', 'FOOTBALL_CONFIG');
   }
 
   const cooldown = footballCooldownRemaining();
@@ -7235,20 +7235,20 @@ async function collectDiagnostics(cfg) {
   let overall;
   if (supabase.configured && !supabase.ok) overall = { state: 'critical', label: 'Нужна проверка Supabase' };
   else if (provider.health === 'critical') overall = { state: 'critical', label: 'API-Football временно ограничен' };
-  else if (!ops.migrationReady && hasSupabase(cfg)) overall = { state: 'warning', label: 'Выполните migration v3.8' };
-  else if (!integrity.migrationReady && hasSupabase(cfg)) overall = { state: 'warning', label: 'Выполните migration v3.9' };
+  else if (!ops.migrationReady && hasSupabase(cfg)) overall = { state: 'warning', label: 'Выполните миграцию v3.8' };
+  else if (!integrity.migrationReady && hasSupabase(cfg)) overall = { state: 'warning', label: 'Выполните миграцию v3.9' };
   else if (integrity.lastRun?.health === 'critical') overall = { state: 'warning', label: 'Есть проблемы качества футбольных данных' };
   else if (provider.health === 'warning' || integrity.lastRun?.health === 'warning' || Number(memory.telemetry?.routeErrors || 0) > 0 || Number(memory.telemetry?.cacheWriteErrors || 0) > 0) overall = { state: 'warning', label: 'Есть предупреждения' };
-  else if (provider.health === 'waiting') overall = { state: 'waiting', label: 'Ожидаем первый запрос к API' };
+  else if (provider.health === 'waiting') overall = { state: 'waiting', label: 'Ожидаем первый запрос к источнику данных' };
   else overall = { state: 'ok', label: 'Системы работают штатно' };
 
   const recommendations = [];
-  if (supabase.ok && !ops.migrationReady && hasSupabase(cfg)) recommendations.push('Выполните supabase_migration_v3_8.sql, чтобы журнал ошибок сохранялся между перезапусками Worker.');
-  if (!integrity.migrationReady && hasSupabase(cfg)) recommendations.push('Выполните supabase_migration_v3_9.sql, чтобы проверки качества матчей сохранялись и были видны после перезапуска Worker.');
+  if (supabase.ok && !ops.migrationReady && hasSupabase(cfg)) recommendations.push('Выполните supabase_migration_v3_8.sql, чтобы журнал ошибок сохранялся между перезапусками серверного обработчика.');
+  if (!integrity.migrationReady && hasSupabase(cfg)) recommendations.push('Выполните supabase_migration_v3_9.sql, чтобы проверки качества матчей сохранялись и были видны после перезапуска серверного обработчика.');
   if (provider.cooldownActive) recommendations.push(`API-Football находится на паузе ещё примерно ${footballCooldownRemaining()} сек.; приложение должно использовать сохранённый кэш.`);
-  if (supabase.configured && !supabase.ok) recommendations.push('Проверьте SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY и доступность PostgREST.');
+  if (supabase.configured && !supabase.ok) recommendations.push('Проверьте адрес Supabase, сервисный ключ и доступность интерфейса базы данных.');
   if (Number(provider.dailyUsedPct) >= 90) recommendations.push('Дневная квота API-Football использована более чем на 90%; до сброса лимита работаем в экономном режиме.');
-  if (Number(integrity.lastRun?.quarantined || 0) > 0) recommendations.push(`Integrity Guard скрыл ${Number(integrity.lastRun.quarantined)} подозрительных матч(а/ей) из последней выборки. Проверьте список issue codes ниже.`);
+  if (Number(integrity.lastRun?.quarantined || 0) > 0) recommendations.push(`Защита целостности скрыла ${Number(integrity.lastRun.quarantined)} подозрительных матч(а/ей) из последней выборки. Проверьте список кодов проблем ниже.`);
   if (Number(integrity.lastRun?.warnings || 0) > 0 && !Number(integrity.lastRun?.quarantined || 0)) recommendations.push('В последней выборке есть предупреждения целостности данных; приложение оставило матчи доступными, но пометило их для контроля.');
   if (!recommendations.length) recommendations.push('Критичных действий сейчас не требуется.');
 
@@ -7537,52 +7537,52 @@ async function apiReleaseReadiness(request, cfg) {
   const provider = diagnostics.provider || {};
   const watchdogSelfTest = settlementWatchdogSelfTest();
   const checks = [
-    releaseCheck('football_api', 'Ключ API-Football', cfg.apiFootballKey ? 'pass' : 'fail', cfg.apiFootballKey ? 'Ключ доступен Worker.' : 'API_FOOTBALL_KEY отсутствует.', true),
-    releaseCheck('supabase_config', 'Настройка Supabase', hasSupabase(cfg) ? 'pass' : 'fail', hasSupabase(cfg) ? 'URL и service key доступны runtime.' : 'Не хватает SUPABASE_URL или service key.', true),
+    releaseCheck('football_api', 'Ключ API-Football', cfg.apiFootballKey ? 'pass' : 'fail', cfg.apiFootballKey ? 'Ключ доступен серверному обработчику.' : 'Ключ API-Football отсутствует.', true),
+    releaseCheck('supabase_config', 'Настройка Supabase', hasSupabase(cfg) ? 'pass' : 'fail', hasSupabase(cfg) ? 'Адрес и сервисный ключ доступны серверу.' : 'Не хватает адреса Supabase или сервисного ключа.', true),
     releaseCheck('supabase_online', 'Supabase/PostgREST', diagnostics.supabase?.ok ? 'pass' : 'fail', diagnostics.supabase?.ok ? `Ответ ${Number(diagnostics.supabase?.latencyMs || 0)} мс.` : `Статус: ${diagnostics.supabase?.status || 'offline'}.`, true),
     releaseCheck('backend_security_contract', 'Контракт безопасности Supabase', backendSecurity.ok ? 'pass' : 'fail',
       backendSecurity.ok
-        ? 'Все public-таблицы защищены RLS; anon/authenticated не имеют прямых прав; RPC закрыты.'
-        : `RC28 security contract: ${backendSecurity.status || 'ошибка'}.`, true),
-    releaseCheck('model_backtest', 'Схема исторической проверки v3.6+', modelTable.ok ? 'pass' : 'fail', modelTable.ok ? 'Таблица model_predictions доступна.' : `model_predictions: ${modelTable.status}.`, true),
+        ? 'Все публичные таблицы защищены правилами доступа; анонимный и авторизованный клиент не имеют прямых прав; серверные процедуры закрыты.'
+        : `Контракт безопасности RC29: ${backendSecurity.status || 'ошибка'}.`, true),
+    releaseCheck('model_backtest', 'Схема исторической проверки v3.6+', modelTable.ok ? 'pass' : 'fail', modelTable.ok ? 'Таблица прогнозов модели доступна.' : `model_predictions: ${modelTable.status}.`, true),
     releaseCheck('prediction_integrity', 'Самопроверка целостности прогнозов', modelIntegritySelfTest().pass ? 'pass' : 'fail',
-      modelIntegritySelfTest().pass ? 'Probabilities, captured_at timing и outcome consistency проходят synthetic self-test.' : 'Самопроверка целостности прогнозов не прошла.', true),
+      modelIntegritySelfTest().pass ? 'Вероятности, время снимка и согласованность результата проходят синтетическую самопроверку.' : 'Самопроверка целостности прогнозов не прошла.', true),
     releaseCheck('prediction_remediation', 'Восстановление прогнозов v6.1', remediationTable.ok ? 'pass' : 'fail',
-      remediationTable.ok ? 'Audit trail remediation доступен.' : 'Нужна supabase_migration_v6_1.sql.', true),
+      remediationTable.ok ? 'Журнал действий восстановления доступен.' : 'Нужна supabase_migration_v6_1.sql.', true),
     releaseCheck('settlement_watchdog_schema', 'Схема контроля результатов v6.4', watchdogSchema.ok ? 'pass' : 'fail',
-      watchdogSchema.ok ? 'Runtime switch и cron audit source доступны.' : 'Нужна supabase_migration_v6_2.sql.', true),
+      watchdogSchema.ok ? 'Переключатель автоматического восстановления и источник запуска по расписанию доступны.' : 'Нужна supabase_migration_v6_2.sql.', true),
     releaseCheck('settlement_watchdog_selftest', 'Самопроверка контроля результатов', watchdogSelfTest.pass ? 'pass' : 'fail',
-      watchdogSelfTest.pass ? `shadow=${watchdogSelfTest.shadow}, runtime=${watchdogSelfTest.runtime}, quota=${watchdogSelfTest.quota}, active=${watchdogSelfTest.active}.` : 'Watchdog decision self-test не прошёл.', true),
+      watchdogSelfTest.pass ? `shadow=${watchdogSelfTest.shadow}, runtime=${watchdogSelfTest.runtime}, quota=${watchdogSelfTest.quota}, active=${watchdogSelfTest.active}.` : 'Самопроверка решения контролёра результатов не прошла.', true),
     releaseCheck('settlement_run_ledger_schema', 'Схема журнала запусков v6.4', runLedgerSchema.ok ? 'pass' : 'fail',
-      runLedgerSchema.ok ? 'Interrupted-run timestamps, attempt counter и retry lineage доступны.' : 'Нужна supabase_migration_v6_4.sql.', true),
+      runLedgerSchema.ok ? 'Время прерванных запусков, счётчик попыток и связь повторных запусков доступны.' : 'Нужна supabase_migration_v6_4.sql.', true),
     releaseCheck('settlement_run_ledger_selftest', 'Самопроверка журнала запусков', settlementRunLedgerSelfTest().pass ? 'pass' : 'fail',
-      settlementRunLedgerSelfTest().pass ? 'Fresh=1, interrupted retry=2, attempt 3 exhausts lineage, different batch starts fresh.' : 'Run-ledger self-test не прошёл.', true),
+      settlementRunLedgerSelfTest().pass ? 'Fresh=1, interrupted retry=2, attempt 3 exhausts lineage, different batch starts fresh.' : 'Самопроверка журнала запусков не прошла.', true),
     releaseCheck('settlement_finality_schema', 'Схема подтверждения результата v6.5', finalitySchema.ok ? 'pass' : 'fail',
-      finalitySchema.ok ? 'Verification state и drift audit table доступны.' : 'Нужна supabase_migration_v6_5.sql.', true),
+      finalitySchema.ok ? 'Состояние проверки и журнал расхождений доступны.' : 'Нужна supabase_migration_v6_5.sql.', true),
     releaseCheck('settlement_finality_selftest', 'Самопроверка подтверждения результата', settlementFinalitySelfTest().pass ? 'pass' : 'fail',
-      settlementFinalitySelfTest().pass ? 'First matching pass verifies; second matching pass confirms; late score/status changes become drift.' : 'Settlement Finality self-test не прошёл.', true),
+      settlementFinalitySelfTest().pass ? 'First matching pass verifies; second matching pass confirms; late score/status changes become drift.' : 'Самопроверка окончательности результата не прошла.', true),
     releaseCheck('settlement_adjudication_schema', 'Схема разбора расхождений v6.6', adjudicationSchema.ok ? 'pass' : 'fail',
-      adjudicationSchema.ok ? 'Resolution audit и model resolution fields доступны.' : 'Нужна supabase_migration_v6_6.sql.', true),
+      adjudicationSchema.ok ? 'Журнал решений и поля разрешения модели доступны.' : 'Нужна supabase_migration_v6_6.sql.', true),
     releaseCheck('settlement_adjudication_selftest', 'Самопроверка разбора расхождений', settlementDriftAdjudicationSelfTest().pass ? 'pass' : 'fail',
-      settlementDriftAdjudicationSelfTest().pass ? 'Keep/accept/void transitions valid; unsafe provider acceptance blocked.' : 'Settlement Adjudication self-test не прошёл.', true),
+      settlementDriftAdjudicationSelfTest().pass ? 'Keep/accept/void transitions valid; unsafe provider acceptance blocked.' : 'Самопроверка ручного разбора результатов не прошла.', true),
     releaseCheck('settlement_trust_schema', 'Схема доверенных метрик v6.7', trustSchema.ok ? 'pass' : 'fail',
-      trustSchema.ok ? 'Verification count и first-pass timestamp доступны.' : 'Нужна supabase_migration_v6_7.sql.', true),
+      trustSchema.ok ? 'Количество проверок и время первой проверки доступны.' : 'Нужна supabase_migration_v6_7.sql.', true),
     releaseCheck('trusted_metrics_gate_selftest', 'Самопроверка доверенных метрик', trustedMetricsGateSelfTest().pass ? 'pass' : 'fail',
-      trustedMetricsGateSelfTest().pass ? 'Только confirmed/adjudicated settled rows допускаются в metrics/calibration.' : 'Trusted Metrics Gate self-test не прошёл.', true),
+      trustedMetricsGateSelfTest().pass ? 'В метрики и калибровку допускаются только подтверждённые или вручную разобранные завершённые записи.' : 'Самопроверка допуска доверенных метрик не прошла.', true),
     releaseCheck('calibration_promotion_schema', 'Схема продвижения калибровки v6.8', calibrationPromotionSchema.ok ? 'pass' : 'fail',
-      calibrationPromotionSchema.ok ? 'Аудит holdout-решений доступен.' : 'Нужна supabase_migration_v6_8.sql.', true),
+      calibrationPromotionSchema.ok ? 'Журнал решений по отложенной выборке доступен.' : 'Нужна supabase_migration_v6_8.sql.', true),
     releaseCheck('calibration_promotion_selftest', 'Самопроверка продвижения калибровки', calibrationPromotionSelfTest().pass ? 'pass' : 'fail',
-      calibrationPromotionSelfTest().pass ? 'Устойчивое улучшение проходит gate, synthetic overfit блокируется.' : 'Самопроверка продвижения калибровки не прошла.', true),
+      calibrationPromotionSelfTest().pass ? 'Устойчивое улучшение проходит проверку, синтетическое переобучение блокируется.' : 'Самопроверка продвижения калибровки не прошла.', true),
     releaseCheck('calibration_lifecycle_schema', 'Atomic calibration lifecycle v6.10', calibrationLifecycleSchema.ok ? 'pass' : 'fail',
-      calibrationLifecycleSchema.ok ? 'Atomic state, transition audit и rollback state доступны.' : 'Нужна supabase_migration_v6_10.sql.', true),
+      calibrationLifecycleSchema.ok ? 'Атомарное состояние, журнал переходов и состояние отката доступны.' : 'Нужна supabase_migration_v6_10.sql.', true),
     releaseCheck('automatic_settlement_recovery', 'Автоматическое восстановление результатов', 'pass',
-      runtime.autoSettlementRecoveryEnabled ? 'Runtime switch ON: cron catch-up разрешён guardrails.' : 'Runtime switch OFF: watchdog работает в shadow и только сигнализирует.', false),
-    releaseCheck('runtime_controls_schema', 'Схема управления функциями v5.7', runtimeTable.ok ? 'pass' : 'fail', runtimeTable.ok ? 'Таблица runtime_controls доступна.' : 'Нужна supabase_migration_v5_7.sql.', true),
-    releaseCheck('runtime_history_schema', 'История откатов v5.8', runtimeHistoryTable.ok ? 'pass' : 'fail', runtimeHistoryTable.ok ? 'История Runtime Controls доступна.' : 'Нужна supabase_migration_v5_8.sql.', true),
-    releaseCheck('runtime_controls_state', 'Состояние управления функциями', runtime.maintenanceMode ? 'warn' : 'pass', runtime.maintenanceMode ? `Maintenance включён${runtime.message ? `: ${runtime.message}` : '.'}` : `Revision ${Number(runtime.revision || 1)} · рабочий режим.`, false),
-    releaseCheck('observability', 'Схема журнала событий v3.8', diagnostics.observability?.migrationReady ? 'pass' : 'warn', diagnostics.observability?.migrationReady ? 'Постоянный журнал ops_events доступен.' : 'Журнал работает только в памяти Worker.', false),
-    releaseCheck('integrity', 'Схема целостности данных v3.9', diagnostics.integrity?.migrationReady ? 'pass' : 'fail', diagnostics.integrity?.migrationReady ? 'История integrity-проверок доступна.' : 'Нужна migration v3.9.', true),
-    releaseCheck('provider_health', 'Состояние API-Football', provider.health === 'critical' ? 'fail' : provider.health === 'warning' || provider.health === 'waiting' ? 'warn' : 'pass', provider.health === 'waiting' ? 'Ещё не было успешного provider-запроса после старта Worker.' : `Health: ${provider.health || 'unknown'}.`, provider.health === 'critical'),
+      runtime.autoSettlementRecoveryEnabled ? 'Автовосстановление включено: запуск по расписанию разрешён защитными правилами.' : 'Автовосстановление выключено: контролёр результатов работает в режиме наблюдения и только сигнализирует.', false),
+    releaseCheck('runtime_controls_schema', 'Схема управления функциями v5.7', runtimeTable.ok ? 'pass' : 'fail', runtimeTable.ok ? 'Таблица runtime_controls доступна.' : 'Нужен файл миграции supabase_migration_v5_7.sql.', true),
+    releaseCheck('runtime_history_schema', 'История откатов v5.8', runtimeHistoryTable.ok ? 'pass' : 'fail', runtimeHistoryTable.ok ? 'История управления функциями доступна.' : 'Нужна supabase_migration_v5_8.sql.', true),
+    releaseCheck('runtime_controls_state', 'Состояние управления функциями', runtime.maintenanceMode ? 'warn' : 'pass', runtime.maintenanceMode ? `Техническое обслуживание включено${runtime.message ? `: ${runtime.message}` : '.'}` : `Revision ${Number(runtime.revision || 1)} · рабочий режим.`, false),
+    releaseCheck('observability', 'Схема журнала событий v3.8', diagnostics.observability?.migrationReady ? 'pass' : 'warn', diagnostics.observability?.migrationReady ? 'Постоянный журнал операционных событий доступен.' : 'Журнал работает только в памяти серверного обработчика.', false),
+    releaseCheck('integrity', 'Схема целостности данных v3.9', diagnostics.integrity?.migrationReady ? 'pass' : 'fail', diagnostics.integrity?.migrationReady ? 'История проверок целостности доступна.' : 'Нужна миграция v3.9.', true),
+    releaseCheck('provider_health', 'Состояние API-Football', provider.health === 'critical' ? 'fail' : provider.health === 'warning' || provider.health === 'waiting' ? 'warn' : 'pass', provider.health === 'waiting' ? 'После старта серверного обработчика ещё не было успешного запроса к провайдеру данных.' : `Health: ${provider.health || 'unknown'}.`, provider.health === 'critical'),
     releaseCheck('provider_transition', 'Provider transition', providerTransitionProfile().paid ? 'pass' : 'warn', providerTransitionProfile().paid ? `${providerTransitionProfile().plan}: расширенный режим активен.` : `${providerTransitionProfile().plan}: приложение остаётся в экономном режиме до увеличения квоты.`, false),
     releaseCheck('quota_orchestrator', 'Quota Orchestrator', providerBudgetProfile().mode === 'emergency' ? 'warn' : 'pass', `${providerBudgetProfile().label}; feature cache api/cache=${Number(memory.providerFeatureFetch?.api || 0)}/${Number(memory.providerFeatureFetch?.cache || 0)}.`, false),
     releaseCheck(
@@ -7590,20 +7590,20 @@ async function apiReleaseReadiness(request, cfg) {
       'Сквозная проверка расширенных данных',
       memory.providerE2E?.last?.status?.ready ? 'pass' : memory.providerE2E?.last?.status?.code === 'NEEDS_ATTENTION' ? 'warn' : 'warn',
       memory.providerE2E?.last
-        ? `${memory.providerE2E.last.status?.label || 'Нет статуса'} · fixture ${memory.providerE2E.last.fixtureId || '—'}.`
-        : 'E2E ещё не запускался. На FREE это ожидаемо.',
+        ? `${memory.providerE2E.last.status?.label || 'Нет статуса'} · матч ${memory.providerE2E.last.fixtureId || '—'}.`
+        : 'Сквозная проверка ещё не запускалась. На бесплатном тарифе это ожидаемо.',
       false
     ),
-    releaseCheck('telegram', 'Telegram bot runtime', cfg.botToken ? 'pass' : 'warn', cfg.botToken ? 'TELEGRAM_BOT_TOKEN доступен.' : 'Без bot token не будут работать Telegram-уведомления.', false),
-    releaseCheck('production_mode', 'Production mode', cfg.devMode ? 'warn' : 'pass', cfg.devMode ? 'DEV_MODE=true — перед релизом выключить.' : 'DEV_MODE=false.', false),
+    releaseCheck('telegram', 'Telegram bot runtime', cfg.botToken ? 'pass' : 'warn', cfg.botToken ? 'Токен Telegram-бота доступен.' : 'Без токена бота не будут работать уведомления Telegram.', false),
+    releaseCheck('production_mode', 'Production mode', cfg.devMode ? 'warn' : 'pass', cfg.devMode ? 'Режим разработки включён — перед релизом его нужно выключить.' : 'DEV_MODE=false.', false),
     releaseCheck('load_safety', 'Защита от нагрузки', memory.productionReadiness?.value?.status === 'blocked' ? 'fail' : memory.productionReadiness?.value ? 'pass' : 'warn',
-      memory.productionReadiness?.value ? `${memory.productionReadiness.value.label} · ${memory.productionReadiness.value.score}%.` : 'Production Safety Gate ещё не запускался.', false),
-    releaseCheck('rc_regression', 'RC Regression Smoke', memory.rcRegression?.value?.status === 'blocked' ? 'fail' : memory.rcRegression?.value ? 'pass' : 'warn',
-      memory.rcRegression?.value ? `${memory.rcRegression.value.label} · ${memory.rcRegression.value.score}%.` : 'RC smoke-test ещё не запускался.', false),
-    releaseCheck('release_monitor', 'Release Monitor', memory.releaseMonitor?.h24?.value?.health?.state === 'incident' ? 'warn' : memory.releaseMonitor?.h24?.value ? 'pass' : 'warn',
-      memory.releaseMonitor?.h24?.value ? `${memory.releaseMonitor.h24.value.health.label} · ${memory.releaseMonitor.h24.value.health.score}%.` : 'Release Monitor ещё не запускался.', false),
+      memory.productionReadiness?.value ? `${memory.productionReadiness.value.label} · ${memory.productionReadiness.value.score}%.` : 'Проверка производственной безопасности ещё не запускалась.', false),
+    releaseCheck('rc_regression', 'Регрессионная проверка кандидата на выпуск', memory.rcRegression?.value?.status === 'blocked' ? 'fail' : memory.rcRegression?.value ? 'pass' : 'warn',
+      memory.rcRegression?.value ? `${memory.rcRegression.value.label} · ${memory.rcRegression.value.score}%.` : 'Регрессионная проверка RC ещё не запускалась.', false),
+    releaseCheck('release_monitor', 'Мониторинг релиза', memory.releaseMonitor?.h24?.value?.health?.state === 'incident' ? 'warn' : memory.releaseMonitor?.h24?.value ? 'pass' : 'warn',
+      memory.releaseMonitor?.h24?.value ? `${memory.releaseMonitor.h24.value.health.label} · ${memory.releaseMonitor.h24.value.health.score}%.` : 'Мониторинг релиза ещё не запускался.', false),
     releaseCheck('monetization', 'Монетизация', cfg.monetizationEnabled ? 'warn' : 'pass', cfg.monetizationEnabled ? 'Монетизация включена, хотя текущий план проекта — запускать её в финале.' : 'Оплата корректно остаётся на паузе.', false),
-    releaseCheck('integrity_last_run', 'Последняя проверка матчей', diagnostics.integrity?.lastRun?.health === 'critical' ? 'warn' : 'pass', diagnostics.integrity?.lastRun ? `Health: ${diagnostics.integrity.lastRun.health || 'ok'}, quality ${Number(diagnostics.integrity.lastRun.qualityScore || 0)}%.` : 'Проверка появится после загрузки каталога матчей.', false),
+    releaseCheck('integrity_last_run', 'Последняя проверка матчей', diagnostics.integrity?.lastRun?.health === 'critical' ? 'warn' : 'pass', diagnostics.integrity?.lastRun ? `Состояние: ${diagnostics.integrity.lastRun.health || 'норма'}, качество ${Number(diagnostics.integrity.lastRun.qualityScore || 0)}%.` : 'Проверка появится после загрузки каталога матчей.', false),
   ];
 
   const blockers = checks.filter(x => x.state === 'fail' && x.blocking);
@@ -7611,7 +7611,7 @@ async function apiReleaseReadiness(request, cfg) {
   const passed = checks.filter(x => x.state === 'pass').length;
   const score = Math.round((passed / checks.length) * 100);
   const status = blockers.length ? 'blocked' : warnings.length ? 'warning' : 'ready';
-  const label = blockers.length ? 'Есть блокирующие проверки' : warnings.length ? 'Ядро готово, есть предупреждения' : 'Core release candidate готов';
+  const label = blockers.length ? 'Есть блокирующие проверки' : warnings.length ? 'Ядро готово, есть предупреждения' : 'Ядро кандидата на выпуск готово';
 
   const value = {
     available: true,
@@ -7628,7 +7628,7 @@ async function apiReleaseReadiness(request, cfg) {
       monetizationExpected: 'paused',
       paymentTestingRequiredNow: false,
       providerUpgradeRequiredNow: false,
-      note: 'RC13 добавляет ежедневный settlement watchdog и runtime-gated auto catch-up. Ручной dry-run/recovery RC9 сохраняется; immutable snapshots и пользовательская оплата не меняются.',
+      note: 'Текущая версия использует ежедневный контроль результатов и безопасное восстановление. Предматчевые снимки не перезаписываются, пользовательская оплата остаётся выключенной.',
     },
   };
   memory.releaseReadiness = { at: now, value };
@@ -7672,7 +7672,7 @@ async function apiProductionReadiness(request, cfg) {
     runLedgerSelfTest.pass ? 'pass' : 'fail',
     runLedgerSelfTest.pass
       ? `fresh=${runLedgerSelfTest.fresh}; retry=${runLedgerSelfTest.retry}; exhausted=${runLedgerSelfTest.exhausted}; differentBatch=${runLedgerSelfTest.differentBatch}.`
-      : 'Settlement Run Ledger self-test не прошёл.',
+      : 'Самопроверка журнала запусков фиксации результатов не прошла.',
     true
   ));
 
@@ -7684,7 +7684,7 @@ async function apiProductionReadiness(request, cfg) {
     finalitySelfTest.pass ? 'pass' : 'fail',
     finalitySelfTest.pass
       ? `verified=${finalitySelfTest.verified}; scoreDrift=${finalitySelfTest.scoreDrift}; statusDrift=${finalitySelfTest.statusDrift}; wait=${finalitySelfTest.wait}.`
-      : 'Settlement Finality self-test не прошёл.',
+      : 'Самопроверка окончательности результата не прошла.',
     true
   ));
 
@@ -7696,7 +7696,7 @@ async function apiProductionReadiness(request, cfg) {
     adjudicationSelfTest.pass ? 'pass' : 'fail',
     adjudicationSelfTest.pass
       ? `keep=${adjudicationSelfTest.keep}; accept=${adjudicationSelfTest.accept}; void=${adjudicationSelfTest.void}; unsafeBlocked=${adjudicationSelfTest.unsafeAcceptBlocked}.`
-      : 'Settlement Adjudication self-test не прошёл.',
+      : 'Самопроверка ручного разбора результатов не прошла.',
     true
   ));
 
@@ -7708,7 +7708,7 @@ async function apiProductionReadiness(request, cfg) {
     trustedGateSelfTest.pass ? 'pass' : 'fail',
     trustedGateSelfTest.pass
       ? `confirmed=${trustedGateSelfTest.confirmed}; adjudicated=${trustedGateSelfTest.adjudicated}; verifiedBlocked=${trustedGateSelfTest.verifiedBlocked}; unverifiedBlocked=${trustedGateSelfTest.unverifiedBlocked}; driftBlocked=${trustedGateSelfTest.driftBlocked}; voidBlocked=${trustedGateSelfTest.voidBlocked}.`
-      : 'Trusted Metrics Gate self-test не прошёл.',
+      : 'Самопроверка допуска доверенных метрик не прошла.',
     true
   ));
 
@@ -7720,25 +7720,25 @@ async function apiProductionReadiness(request, cfg) {
   const checks = [
     productionCheck('supabase', 'Supabase отвечает', diagnostics.supabase?.ok ? 'pass' : 'fail',
       diagnostics.supabase?.ok ? `${Number(diagnostics.supabase?.latencyMs || 0)} мс.` : `${diagnostics.supabase?.status || 'offline'}.`, true),
-    productionCheck('singleflight', 'Server-side SingleFlight', singleflightTest.pass ? 'pass' : 'fail',
-      singleflightTest.pass ? `${singleflightTest.callers} параллельных вызовов → ${singleflightTest.executions} выполнение.` : 'Коалесинг параллельных запросов не прошёл self-test.', true),
+    productionCheck('singleflight', 'Объединение одинаковых серверных запросов', singleflightTest.pass ? 'pass' : 'fail',
+      singleflightTest.pass ? `${singleflightTest.callers} параллельных вызовов → ${singleflightTest.executions} выполнение.` : 'Объединение параллельных запросов не прошло самопроверку.', true),
     productionCheck('burst_guard', 'Burst Guard', ROUTE_BURST_POLICIES.length >= 6 ? 'pass' : 'fail',
-      `${ROUTE_BURST_POLICIES.length} политик для дорогих маршрутов; блокировок в isolate: ${Number(memory.telemetry?.burstBlocks || 0)}.`, true),
+      `${ROUTE_BURST_POLICIES.length} политик для дорогих маршрутов; блокировок в экземпляре: ${Number(memory.telemetry?.burstBlocks || 0)}.`, true),
     productionCheck('upstream_timeouts', 'Тайм-ауты внешних сервисов', 'pass',
-      'Supabase 7 сек., API-Football 10 сек.; зависшие upstream не держат Worker бесконечно.', true),
+      'Supabase 7 сек., API-Football 10 сек.; зависшие внешние запросы не удерживают серверный обработчик бесконечно.', true),
     productionCheck('user_sync', 'Telegram user sync cache', 'pass',
-      `Повторная синхронизация users ограничена 1 разом / 10 минут; пропущено записей: ${Number(memory.telemetry?.userSyncSkips || 0)}.`, false),
+      `Повторная синхронизация пользователей ограничена одним запуском в 10 минут; пропущено записей: ${Number(memory.telemetry?.userSyncSkips || 0)}.`, false),
     productionCheck('memory_bounds', 'Bounded L1 memory', memory.cache.size <= 600 ? 'pass' : 'warn',
       `${memory.cache.size} cache entries; soft target 500, prune threshold 600.`, false),
     productionCheck('quota_guard', 'Quota Orchestrator', providerBudget.mode === 'emergency' ? 'warn' : 'pass',
       `${providerBudget.label}; daily reserve ${Number(providerBudget.daily?.reserve || 0)}.`, false),
     productionCheck('expanded_e2e', 'Сквозная проверка расширенных данных', !paidProvider ? 'warn' : lastE2E?.status?.ready ? 'pass' : 'warn',
       !paidProvider
-        ? 'FREE: полноценный E2E отложен до увеличения квоты.'
+        ? 'Бесплатный тариф: полная сквозная проверка отложена до увеличения квоты.'
         : lastE2E?.status?.ready
-          ? `${lastE2E.status.label} · fixture ${lastE2E.fixtureId}.`
-          : 'Расширенный тариф обнаружен, но Release Gate ещё не подтверждён.', false),
-    productionCheck('monetization', 'Монетизация paused', cfg.monetizationEnabled ? 'fail' : 'pass',
+          ? `${lastE2E.status.label} · матч ${lastE2E.fixtureId}.`
+          : 'Расширенный тариф обнаружен, но проверка релиза ещё не подтверждена.', false),
+    productionCheck('monetization', 'Монетизация на паузе', cfg.monetizationEnabled ? 'fail' : 'pass',
       cfg.monetizationEnabled ? 'Монетизация включена раньше финального этапа.' : 'Пользовательские платежи остаются выключены.', true),
   ];
 
@@ -7751,7 +7751,7 @@ async function apiProductionReadiness(request, cfg) {
     version: APP_VERSION,
     generatedAt: new Date().toISOString(),
     status,
-    label: blockers.length ? 'Production gate заблокирован' : warnings.length ? 'Production-ready с ожидаемыми ограничениями' : 'Production safety gate пройден',
+    label: blockers.length ? 'Проверка рабочей среды заблокирована' : warnings.length ? 'Рабочая среда готова с ожидаемыми ограничениями' : 'Проверка производственной безопасности пройдена',
     score: Math.round(passed / checks.length * 100),
     checks,
     blockers: blockers.map(x => x.id),
@@ -7765,7 +7765,7 @@ async function apiProductionReadiness(request, cfg) {
     policy: {
       payments: 'paused',
       externalLoadGenerator: false,
-      note: 'Self-test не создаёт искусственный внешний трафик и не расходует API-Football. Реальный нагрузочный прогон выполняется позже на staging/production traffic.',
+      note: 'Самопроверка не создаёт искусственный внешний трафик и не расходует API-Football. Реальная нагрузочная проверка выполняется отдельно на тестовой или рабочей среде.',
     },
   };
   memory.productionReadiness = { at: now, value };
@@ -7815,22 +7815,23 @@ async function apiRcRegression(request, cfg, user) {
   const startedAt = Date.now();
 
   // 1) Core runtime / security configuration.
-  checks.push(rcCheck('version', 'runtime', 'Версия RC', APP_VERSION === '6.14.0-rc22' ? 'pass' : 'fail',
-    `Worker: ${APP_VERSION}; ожидается 6.14.0-rc22.`, true));
-  checks.push(rcCheck('api_contract', 'runtime', 'Контракт API', API_CONTRACT_VERSION === 5 ? 'pass' : 'fail',
-    `Contract ${API_CONTRACT_VERSION}; min client ${MIN_CLIENT_VERSION}.`, true));
+  const releaseMetadataOk = APP_VERSION.endsWith(`-${RELEASE_CHANNEL}`) && RELEASE_CHANNEL === RC_NAME.toLowerCase();
+  checks.push(rcCheck('version', 'runtime', 'Согласованность версии RC', releaseMetadataOk ? 'pass' : 'fail',
+    `Сервер: ${APP_VERSION}; канал ${RELEASE_CHANNEL}; кандидат ${RC_NAME}.`, true));
+  checks.push(rcCheck('api_contract', 'runtime', 'Контракт обмена данными', API_CONTRACT_VERSION === 5 ? 'pass' : 'fail',
+    `Версия контракта ${API_CONTRACT_VERSION}; минимальный клиент ${MIN_CLIENT_VERSION}.`, true));
   checks.push(rcCheck('app_manifest', 'runtime', 'Публичный манифест приложения', appManifest(cfg)?.version === APP_VERSION ? 'pass' : 'fail',
-    `Release channel ${RELEASE_CHANNEL}; manifest ${appManifest(cfg)?.version || '—'}.`, true));
-  checks.push(rcCheck('production_mode', 'runtime', 'DEV_MODE выключен', cfg.devMode ? 'fail' : 'pass',
-    cfg.devMode ? 'DEV_MODE=true.' : 'DEV_MODE=false.', true));
+    `Канал ${RELEASE_CHANNEL}; версия манифеста ${appManifest(cfg)?.version || '—'}.`, true));
+  checks.push(rcCheck('production_mode', 'runtime', 'Режим разработки выключен', cfg.devMode ? 'fail' : 'pass',
+    cfg.devMode ? 'Режим разработки включён.' : 'Режим разработки выключен.', true));
   checks.push(rcCheck('monetization_paused', 'runtime', 'Монетизация на паузе', cfg.monetizationEnabled ? 'fail' : 'pass',
     cfg.monetizationEnabled ? 'MONETIZATION_ENABLED=true.' : 'Платёжный контур не активирован.', true));
-  checks.push(rcCheck('telegram_runtime', 'runtime', 'Среда Telegram', cfg.botToken ? 'pass' : 'fail',
-    cfg.botToken ? 'Bot token доступен Worker.' : 'TELEGRAM_BOT_TOKEN отсутствует.', true));
-  checks.push(rcCheck('football_key', 'runtime', 'API-Football runtime', cfg.apiFootballKey ? 'pass' : 'fail',
-    cfg.apiFootballKey ? 'API key доступен Worker.' : 'API_FOOTBALL_KEY отсутствует.', true));
-  checks.push(rcCheck('supabase_runtime', 'runtime', 'Supabase runtime', hasSupabase(cfg) ? 'pass' : 'fail',
-    hasSupabase(cfg) ? 'URL и service key доступны.' : 'SUPABASE_URL/service key отсутствуют.', true));
+  checks.push(rcCheck('telegram_runtime', 'runtime', 'Интеграция Telegram', cfg.botToken ? 'pass' : 'fail',
+    cfg.botToken ? 'Токен бота доступен серверному обработчику.' : 'Токен Telegram-бота отсутствует.', true));
+  checks.push(rcCheck('football_key', 'runtime', 'Ключ API-Football', cfg.apiFootballKey ? 'pass' : 'fail',
+    cfg.apiFootballKey ? 'Ключ API доступен серверному обработчику.' : 'Ключ API-Football отсутствует.', true));
+  checks.push(rcCheck('supabase_runtime', 'runtime', 'Подключение Supabase', hasSupabase(cfg) ? 'pass' : 'fail',
+    hasSupabase(cfg) ? 'Адрес и сервисный ключ доступны.' : 'Отсутствует адрес Supabase или сервисный ключ.', true));
 
   const backendSecurity = await readBackendSecurityContract(cfg);
   checks.push(rcCheck(
@@ -7839,8 +7840,8 @@ async function apiRcRegression(request, cfg, user) {
     'Контракт минимальных привилегий Supabase',
     backendSecurity.ok ? 'pass' : 'fail',
     backendSecurity.ok
-      ? 'RLS включён; прямые права anon/authenticated и публичный EXECUTE отсутствуют.'
-      : `Security contract: ${backendSecurity.status || 'ошибка'}; примените supabase_migration_v6_11.sql.`,
+      ? 'Правила доступа включены; прямые права анонимного и авторизованного клиента, а также публичный запуск процедур отсутствуют.'
+      : `Контракт безопасности: ${backendSecurity.status || 'ошибка'}; примените supabase_migration_v6_11.sql.`,
     true
   ));
 
@@ -7849,13 +7850,13 @@ async function apiRcRegression(request, cfg, user) {
   const devIsolationOk = !isAdminUser({ id: 5195504559 }, { ...cfg, devMode: true, adminTelegramIds: [] })
     && isAdminUser({ id: DEVELOPMENT_TELEGRAM_ID, __developmentIdentity: true }, { ...cfg, devMode: true, adminTelegramIds: [] });
   checks.push(rcCheck('admin_current', 'security', 'Текущий пользователь — администратор', currentAdminOk ? 'pass' : 'fail',
-    currentAdminOk ? 'Серверная проверка Telegram initData пройдена, ID разрешён.' : 'Текущий пользователь не проходит проверку администратора.', true));
+    currentAdminOk ? 'Серверная проверка данных запуска Telegram пройдена, идентификатор разрешён.' : 'Текущий пользователь не проходит проверку администратора.', true));
   checks.push(rcCheck('admin_fail_closed', 'security', 'Защита доступа администратора', failClosedOk ? 'pass' : 'fail',
-    failClosedOk ? 'Неизвестный Telegram ID не получает роль администратора.' : 'Проверьте DEV_MODE и проверку администратора.', true));
-  checks.push(rcCheck('admin_dev_isolation', 'security', 'DEV_MODE не повышает реальных пользователей', devIsolationOk ? 'pass' : 'fail',
-    devIsolationOk ? 'Только серверная тестовая учётная запись получает роль администратора в режиме разработки.' : 'Изоляция администратора в DEV_MODE нарушена.', true));
+    failClosedOk ? 'Неизвестный идентификатор Telegram не получает роль администратора.' : 'Проверьте режим разработки и правила доступа администратора.', true));
+  checks.push(rcCheck('admin_dev_isolation', 'security', 'Режим разработки не повышает права реальных пользователей', devIsolationOk ? 'pass' : 'fail',
+    devIsolationOk ? 'Только серверная тестовая учётная запись получает роль администратора в режиме разработки.' : 'Изоляция администратора в режиме разработки нарушена.', true));
   checks.push(rcCheck('admin_list', 'security', 'Список администраторов настроен', cfg.adminTelegramIds?.length ? 'pass' : 'fail',
-    cfg.adminTelegramIds?.length ? `Настроено ID: ${cfg.adminTelegramIds.length}. Значения не раскрываются.` : 'Список администраторов пуст.', true));
+    cfg.adminTelegramIds?.length ? `Настроено идентификаторов: ${cfg.adminTelegramIds.length}. Значения не раскрываются.` : 'Список администраторов пуст.', true));
 
   // 2) Persistence schema regression.
   const requiredTables = [
@@ -7968,8 +7969,8 @@ async function apiRcRegression(request, cfg, user) {
       `${route.label} GET`,
       route.ok ? 'pass' : 'fail',
       route.ok
-        ? `HTTP ${route.status} · ${route.latencyMs} мс · структура: ${route.shape.join(', ') || 'объект'}.`
-        : `HTTP ${route.status || '—'} · ${route.error || 'маршрут не выполнен'}.`,
+        ? `Ответ ${route.status} · ${route.latencyMs} мс · поля: ${route.shape.join(', ') || 'объект'}.`
+        : `Ответ ${route.status || '—'} · ${route.error || 'маршрут не выполнен'}.`,
       true
     ));
   }
@@ -8017,8 +8018,8 @@ async function apiRcRegression(request, cfg, user) {
       ? (lastE2E?.status?.ready ? 'pass' : 'warn')
       : 'warn',
     transition.paid
-      ? (lastE2E?.status?.ready ? `${lastE2E.status.label} · fixture ${lastE2E.fixtureId}.` : 'Расширенный тариф обнаружен, но сквозная проверка ещё не подтверждена.')
-      : 'FREE/HOLD допустим для ядра RC; полная сквозная проверка расширенных данных выполняется после увеличения квоты.',
+      ? (lastE2E?.status?.ready ? `${lastE2E.status.label} · матч ${lastE2E.fixtureId}.` : 'Расширенный тариф обнаружен, но сквозная проверка ещё не подтверждена.')
+      : 'Бесплатный режим с ожиданием допустим для ядра RC; полная сквозная проверка расширенных данных выполняется после увеличения квоты.',
     false
   ));
 
@@ -8055,7 +8056,7 @@ async function apiRcRegression(request, cfg, user) {
     watchdogSelfTest.pass ? 'pass' : 'fail',
     watchdogSelfTest.pass
       ? `shadow=${watchdogSelfTest.shadow}; runtime=${watchdogSelfTest.runtime}; quota=${watchdogSelfTest.quota}; active=${watchdogSelfTest.active}; clean=${watchdogSelfTest.clean}.`
-      : 'Settlement Watchdog decision self-test не прошёл.',
+      : 'Самопроверка решения контролёра результатов не прошла.',
     true
   ));
 
@@ -8090,10 +8091,10 @@ async function apiRcRegression(request, cfg, user) {
     durationMs: Date.now() - startedAt,
     status,
     label: blockers.length
-      ? 'RC заблокирован: есть обязательные ошибки'
+      ? 'Кандидат на выпуск заблокирован: есть обязательные ошибки'
       : warnings.length
-        ? `${RC_NAME} готов к проверке, есть ожидаемые HOLD/WARN`
-        : `${RC_NAME} regression gate пройден`,
+        ? `${RC_NAME} готов к проверке, есть ожидаемые ограничения или предупреждения`
+        : `${RC_NAME}: регрессионная проверка пройдена`,
     score,
     summary: {
       total: checks.length,
@@ -8115,7 +8116,7 @@ async function apiRcRegression(request, cfg, user) {
       consumesFootballApi: false,
       sqlRequired: false,
       payments: 'paused',
-      note: 'RC smoke-test проверяет runtime, schema, read-only user routes, security и safety gates. Он не запускает Analyze и не расходует API-Football.',
+      note: 'Регрессионная проверка RC проверяет среду выполнения, схему базы, пользовательские маршруты только для чтения, безопасность и защитные проверки. Она не запускает полный анализ и не расходует API-Football.',
     },
   };
 
@@ -8832,7 +8833,7 @@ function buildAnalysisNotes({ probabilities, market, model, homeForm, awayForm, 
   const h2hTotal = (h2h?.homeWins || 0) + (h2h?.draws || 0) + (h2h?.awayWins || 0);
   if (h2hTotal >= 3 && Math.abs((h2h.homeWins || 0) - (h2h.awayWins || 0)) >= 2) factors.push(`В последних очных матчах преимущество по победам у ${h2h.homeWins > h2h.awayWins ? homeName : awayName}.`);
   if (!market) risks.push('Нет доступной линии 1X2 — итог сильнее зависит от статистических источников.');
-  if (!model?.probabilities) risks.push('API-Football не отдал процентный prediction для этого матча.');
+  if (!model?.probabilities) risks.push('API-Football не вернул процентный прогноз для этого матча.');
   if ((homeForm?.overall?.sample || 0) < 4 || (awayForm?.overall?.sample || 0) < 4) risks.push('Небольшая выборка недавних матчей одной из команд.');
   if (confidence?.disagreement >= 10) risks.push('Источники заметно расходятся между собой — уверенность модели снижена.');
   if (minutesToKickoff !== null && minutesToKickoff <= 120 && !lineups?.home && !lineups?.away) risks.push('Подтверждённые стартовые составы ещё не доступны.');
@@ -8972,7 +8973,7 @@ function buildPreMatchIntelligence({
         icon: '🤝',
         side,
         title: 'Контекст H2H',
-        text: `${side === 'home' ? homeName : awayName} выиграл больше из последних ${h2hTotal} очных матчей (${hw}:${aw} по победам). H2H имеет небольшой вес и не считается главным сигналом.`,
+        text: `${side === 'home' ? homeName : awayName} выиграл больше из последних ${h2hTotal} очных матчей (${hw}:${aw} по победам). Очные встречи имеют небольшой вес и не считаются главным сигналом.`,
         strength: 'low',
         source: 'h2h',
       }));
@@ -9040,7 +9041,7 @@ function buildPreMatchIntelligence({
         icon: '🔥',
         tone: 'open',
         title: 'Голевой сценарий: более открытая игра',
-        text: `Poisson-эвристика даёт ${goalModel.totalExpected} ожидаемых гола суммарно и ${round1(goalModel.over25)}% на ТБ 2.5. Это вспомогательная модель по недавней результативности.`,
+        text: `Модель Пуассона даёт ${goalModel.totalExpected} ожидаемых гола суммарно и ${round1(goalModel.over25)}% на ТБ 2.5. Это вспомогательная модель по недавней результативности.`,
         relevance: 'Дополнительный',
       });
     } else if (total > 0 && total <= 2.2) {
@@ -9566,10 +9567,10 @@ function validateFixtureIntegrity(fixture, requestedDate = '', previous = null) 
   const awayName = String(fixture?.teams?.away?.name || '').trim();
   const score = fixtureScorePair(fixture);
 
-  if (!Number.isFinite(fixtureId) || fixtureId <= 0) add('error', 'FIXTURE_ID_MISSING', 'Матч не имеет корректного fixture id.');
+  if (!Number.isFinite(fixtureId) || fixtureId <= 0) add('error', 'FIXTURE_ID_MISSING', 'Матч не имеет корректного номера.');
   if (!Number.isFinite(kickoffMs)) add('error', 'KICKOFF_INVALID', 'Некорректное время начала матча.', { date });
   if (!homeName || !awayName) add('error', 'TEAM_NAME_MISSING', 'У одной из команд отсутствует название.');
-  if (homeId <= 0 || awayId <= 0) add('error', 'TEAM_ID_MISSING', 'У одной из команд отсутствует корректный team id.');
+  if (homeId <= 0 || awayId <= 0) add('error', 'TEAM_ID_MISSING', 'У одной из команд отсутствует корректный номер команды.');
   if ((homeId > 0 && homeId === awayId) || (homeName && awayName && homeName.toLowerCase() === awayName.toLowerCase())) add('error', 'SAME_TEAM', 'Хозяева и гости определены как одна команда.');
   if (!leagueId || !leagueName) add('warning', 'LEAGUE_INCOMPLETE', 'Неполные данные турнира.', { leagueId, leagueName });
   if (!status || !KNOWN_FIXTURE_STATUSES.has(status)) add('warning', 'STATUS_UNKNOWN', 'Неизвестный статус матча.', { status });
@@ -9578,9 +9579,9 @@ function validateFixtureIntegrity(fixture, requestedDate = '', previous = null) 
   if (rawScores.some(v => v !== null && v !== undefined && Number.isFinite(Number(v)) && Number(v) < 0)) add('error', 'SCORE_NEGATIVE', 'Обнаружено отрицательное значение счёта.');
 
   if (isLiveStatus(status)) {
-    if (Number.isFinite(kickoffMs) && kickoffMs > Date.now() + 20 * 60000) add('error', 'LIVE_BEFORE_KICKOFF', 'LIVE-статус получен задолго до времени начала.', { minutesAhead: Math.round((kickoffMs - Date.now()) / 60000) });
+    if (Number.isFinite(kickoffMs) && kickoffMs > Date.now() + 20 * 60000) add('error', 'LIVE_BEFORE_KICKOFF', 'Статус «идёт матч» получен задолго до времени начала.', { minutesAhead: Math.round((kickoffMs - Date.now()) / 60000) });
     if (elapsed !== null && (!Number.isFinite(elapsed) || elapsed < 0 || elapsed > 150)) add('warning', 'ELAPSED_INVALID', 'Подозрительное значение игровой минуты.', { elapsed });
-    if (score.home === null || score.away === null) add('warning', 'LIVE_SCORE_MISSING', 'LIVE-матч пришёл без полного текущего счёта.');
+    if (score.home === null || score.away === null) add('warning', 'LIVE_SCORE_MISSING', 'Матч в реальном времени пришёл без полного текущего счёта.');
   }
 
   if (isFinishedStatus(status)) {
@@ -9590,7 +9591,7 @@ function validateFixtureIntegrity(fixture, requestedDate = '', previous = null) 
       const ftHome = finiteNonNegative(fixture?.score?.fulltime?.home);
       const ftAway = finiteNonNegative(fixture?.score?.fulltime?.away);
       if (ftHome !== null && ftAway !== null && score.home !== null && score.away !== null && (ftHome !== score.home || ftAway !== score.away)) {
-        add('warning', 'FINAL_SCORE_CONFLICT', 'Текущий и fulltime счёт не совпадают.', { goals: `${score.home}:${score.away}`, fulltime: `${ftHome}:${ftAway}` });
+        add('warning', 'FINAL_SCORE_CONFLICT', 'Текущий и финальный счёт не совпадают.', { goals: `${score.home}:${score.away}`, fulltime: `${ftHome}:${ftAway}` });
       }
     }
   }
@@ -9616,7 +9617,7 @@ function validateFixtureIntegrity(fixture, requestedDate = '', previous = null) 
     if ((isLiveStatus(prevStatus) || isFinishedStatus(prevStatus)) && ['NS','TBD'].includes(status)) add('warning', 'STATUS_REGRESSION', 'Статус матча откатился к предматчевому.', { previousStatus: prevStatus, currentStatus: status });
     if (isFinishedStatus(prevStatus) && !isFinishedStatus(status)) add('warning', 'FINISHED_STATUS_REGRESSION', 'Ранее завершённый матч вернулся в незавершённый статус.', { previousStatus: prevStatus, currentStatus: status });
     if (isLiveStatus(prevStatus) && isLiveStatus(status) && Number.isFinite(prevElapsed) && Number.isFinite(elapsed) && elapsed + 3 < prevElapsed) add('warning', 'ELAPSED_REGRESSION', 'Игровая минута уменьшилась относительно предыдущего снимка.', { previousElapsed: prevElapsed, currentElapsed: elapsed });
-    if (prevHome !== null && prevAway !== null && score.home !== null && score.away !== null && (score.home < prevHome || score.away < prevAway)) add('warning', 'SCORE_REGRESSION', 'Счёт уменьшился относительно предыдущего снимка; возможна VAR-коррекция или конфликт данных.', { previous: `${prevHome}:${prevAway}`, current: `${score.home}:${score.away}` });
+    if (prevHome !== null && prevAway !== null && score.home !== null && score.away !== null && (score.home < prevHome || score.away < prevAway)) add('warning', 'SCORE_REGRESSION', 'Счёт уменьшился относительно предыдущего снимка; возможна коррекция VAR или конфликт данных.', { previous: `${prevHome}:${prevAway}`, current: `${score.home}:${score.away}` });
   }
 
   const quarantine = issues.some(x => x.severity === 'error');
@@ -9650,13 +9651,13 @@ function runMatchIntegrityGuard(fixtures, requestedDate, previousPayload = null)
     let result = validateFixtureIntegrity(fixture, requestedDate, previous.get(fixtureId));
     if (fixtureId > 0 && seenIds.has(fixtureId)) {
       duplicates++;
-      result = { ...result, state: 'error', quarantine: true, errors: result.errors + 1, qualityScore: 0, issues: [...result.issues, { severity: 'error', code: 'DUPLICATE_FIXTURE_ID', message: 'Повтор fixture id в одном ответе API.', meta: { fixtureId } }] };
+      result = { ...result, state: 'error', quarantine: true, errors: result.errors + 1, qualityScore: 0, issues: [...result.issues, { severity: 'error', code: 'DUPLICATE_FIXTURE_ID', message: 'Повтор номера матча в одном ответе источника данных.', meta: { fixtureId } }] };
     }
     const signature = integritySignature(fixture);
     if (!result.quarantine && signature && seenSignatures.has(signature)) {
       duplicates++;
       const firstId = seenSignatures.get(signature);
-      result = { ...result, state: 'error', quarantine: true, errors: result.errors + 1, qualityScore: 0, issues: [...result.issues, { severity: 'error', code: 'DUPLICATE_MATCH_SIGNATURE', message: 'Найден дубликат того же матча с другим fixture id.', meta: { firstFixtureId: firstId, duplicateFixtureId: fixtureId } }] };
+      result = { ...result, state: 'error', quarantine: true, errors: result.errors + 1, qualityScore: 0, issues: [...result.issues, { severity: 'error', code: 'DUPLICATE_MATCH_SIGNATURE', message: 'Найден дубликат того же матча с другим номером матча.', meta: { firstFixtureId: firstId, duplicateFixtureId: fixtureId } }] };
     }
     if (fixtureId > 0) seenIds.add(fixtureId);
     if (!result.quarantine && signature) seenSignatures.set(signature, fixtureId);
@@ -9799,7 +9800,7 @@ async function apiHistory(request, cfg, user) {
 
 async function apiHistoryAnalysis(request, cfg, user) {
   const fixtureId = Number(new URL(request.url).searchParams.get('fixtureId'));
-  if (!Number.isSafeInteger(fixtureId) || fixtureId <= 0) return json({ error: 'fixtureId обязателен.' }, 400);
+  if (!Number.isSafeInteger(fixtureId) || fixtureId <= 0) return json({ error: 'Номер матча обязателен.' }, 400);
 
   const history = await getHistory(user.id, cfg);
   if (!history.some(row => Number(row.fixture_id) === fixtureId)) {
@@ -9840,7 +9841,7 @@ async function apiFavorites(request, cfg, user) {
   if (request.method === 'DELETE') {
     const url = new URL(request.url);
     const teamId = Number(url.searchParams.get('teamId'));
-    if (!teamId) return json({ error: 'teamId обязателен.' }, 400);
+    if (!teamId) return json({ error: 'Номер команды обязателен.' }, 400);
     await removeFavorite(user.id, teamId, cfg);
     return json({ ok: true });
   }
@@ -9878,7 +9879,7 @@ async function apiReminders(request, cfg, user) {
   if (request.method === 'DELETE') {
     const url = new URL(request.url);
     const fixtureId = Number(url.searchParams.get('fixtureId'));
-    if (!fixtureId) return json({ error: 'fixtureId обязателен.' }, 400);
+    if (!fixtureId) return json({ error: 'Номер матча обязателен.' }, 400);
     await removeReminder(user.id, fixtureId, cfg);
     return json({ ok: true });
   }
@@ -10011,7 +10012,7 @@ async function apiSearch(request, cfg) {
     if (!freeQuotaHealthy(8, 2)) {
       const stale = await getStaleCache(cacheKey, cfg);
       if (stale?.teams) return json({ ...stale, competitions, cached: true, stale: true, warning: 'Поиск показан из кэша: бережём лимит API-Football.', provider: publicDataCapabilities() });
-      return json({ query, teams: [], competitions, cached: false, warning: 'Поиск команд временно не запущен: бережём остаток бесплатной квоты API.', provider: publicDataCapabilities() });
+      return json({ query, teams: [], competitions, cached: false, warning: 'Поиск команд временно не запущен: бережём остаток бесплатной квоты источника данных.', provider: publicDataCapabilities() });
     }
     rows = await apiFootball('/teams', { search: query }, cfg);
   } catch (error) {
@@ -10169,8 +10170,8 @@ async function apiTournament(request, cfg) {
   const url = new URL(request.url);
   const leagueId = Number(url.searchParams.get('leagueId'));
   const season = Number(url.searchParams.get('season'));
-  if (!Number.isFinite(leagueId) || leagueId <= 0) return json({ error: 'leagueId обязателен.' }, 400);
-  if (!Number.isFinite(season) || season < 2000 || season > 2100) return json({ error: 'season обязателен.' }, 400);
+  if (!Number.isFinite(leagueId) || leagueId <= 0) return json({ error: 'Номер турнира обязателен.' }, 400);
+  if (!Number.isFinite(season) || season < 2000 || season > 2100) return json({ error: 'Сезон обязателен.' }, 400);
 
   const cacheKey = `tournament:${leagueId}:${season}:standings:v1`;
   const cached = await getCache(cacheKey, cfg);
@@ -10180,7 +10181,7 @@ async function apiTournament(request, cfg) {
   const minuteRemaining = Number(memory.provider?.minuteRemaining);
   if (Number.isFinite(minuteRemaining) && minuteRemaining <= 1) {
     const stale = await getStaleCache(cacheKey, cfg);
-    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Таблица показана из сохранённого кэша: минутная квота API почти исчерпана.', provider: publicDataCapabilities() });
+    if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Таблица показана из сохранённого кэша: минутная квота источника данных почти исчерпана.', provider: publicDataCapabilities() });
     return json({
       leagueId, season, standings: [], groups: [], available: false,
       reason: 'Таблица временно не запрашивается: бережём последний запрос минутной квоты API-Football.',
@@ -10278,7 +10279,7 @@ async function cachedTeamStanding(teamId, competition, cfg) {
 async function apiTeam(request, cfg) {
   const url = new URL(request.url);
   const teamId = Number(url.searchParams.get('teamId'));
-  if (!Number.isFinite(teamId) || teamId <= 0) return json({ error: 'teamId обязателен.' }, 400);
+  if (!Number.isFinite(teamId) || teamId <= 0) return json({ error: 'Номер команды обязателен.' }, 400);
   const fromDate = new Date(); fromDate.setUTCDate(fromDate.getUTCDate() - 45);
   const toDate = new Date(); toDate.setUTCDate(toDate.getUTCDate() + 45);
   const from = fromDate.toISOString().slice(0,10), to = toDate.toISOString().slice(0,10);
@@ -10289,7 +10290,7 @@ async function apiTeam(request, cfg) {
   try { fixtures = await apiFootball('/fixtures', { team:teamId, from, to }, cfg); }
   catch (error) {
     const stale = await getStaleCache(cacheKey, cfg);
-    if (stale && isFootballRateLimitError(error)) return json({ ...stale, standing:await cachedTeamStanding(teamId, stale.primaryCompetition, cfg), cached:true, stale:true, warning:'Страница команды показана из последнего кэша из-за лимита API.', provider:publicDataCapabilities() });
+    if (stale && isFootballRateLimitError(error)) return json({ ...stale, standing:await cachedTeamStanding(teamId, stale.primaryCompetition, cfg), cached:true, stale:true, warning:'Страница команды показана из последнего кэша из-за лимита источника данных.', provider:publicDataCapabilities() });
     throw error;
   }
   const usable = (fixtures||[]).filter(f => !['CANC','ABD','AWD','WO'].includes(String(f.fixture?.status?.short||'')));
@@ -10404,7 +10405,7 @@ async function apiTeamIntelligence(request, cfg) {
   const teamId = Number(url.searchParams.get('teamId'));
   const leagueId = Number(url.searchParams.get('leagueId'));
   const season = Number(url.searchParams.get('season'));
-  if (!teamId || !leagueId || !season) return json({ error: 'teamId, leagueId и season обязательны.' }, 400);
+  if (!teamId || !leagueId || !season) return json({ error: 'Номер команды, номер турнира и сезон обязательны.' }, 400);
   const cacheKey = `team:intelligence:${teamId}:${leagueId}:${season}:v1`;
   const cached = await getCache(cacheKey, cfg);
   if (cached) return json({ ...cached, cached: true, stale: false, provider: publicDataCapabilities() });
@@ -10475,7 +10476,7 @@ function normalizeTeamSquad(rows, teamId) {
 async function apiTeamSquad(request, cfg) {
   const url = new URL(request.url);
   const teamId = Number(url.searchParams.get('teamId'));
-  if (!teamId) return json({ error: 'teamId обязателен.' }, 400);
+  if (!teamId) return json({ error: 'Номер команды обязателен.' }, 400);
   const cacheKey = `team:squad:${teamId}:v1`;
   const cached = await getCache(cacheKey, cfg);
   if (cached) return json({ ...cached, cached: true, stale: false, provider: publicDataCapabilities() });
@@ -10500,7 +10501,7 @@ async function apiTeamSquad(request, cfg) {
 async function apiMatchCenter(request, cfg) {
   const url = new URL(request.url);
   const fixtureId = Number(url.searchParams.get('fixtureId'));
-  if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'fixtureId обязателен.' }, 400);
+  if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'Номер матча обязателен.' }, 400);
 
   // Shared across all users. During LIVE it expires after 60 seconds.
   const baseCacheKey = `match-center:${fixtureId}:v9-quota-orchestrator`;
@@ -10513,14 +10514,14 @@ async function apiMatchCenter(request, cfg) {
   } catch (error) {
     const stale = await getStaleCache(baseCacheKey, cfg);
     if (stale && isFootballRateLimitError(error)) {
-      return json({ ...stale, cached: true, stale: true, warning: 'LIVE-данные временно показаны из последнего кэша из-за лимита API.', retryAfter: Number(error?.retryAfter || 60) });
+      return json({ ...stale, cached: true, stale: true, warning: 'Данные матча в реальном времени временно показаны из последнего кэша из-за лимита источника.', retryAfter: Number(error?.retryAfter || 60) });
     }
     throw error;
   }
   if (!fixture) return json({ error: 'Матч не найден.' }, 404);
   const centerIntegrity = validateFixtureIntegrity(fixture, '', null);
   if (centerIntegrity.quarantine) {
-    await recordOpsEvent(cfg, { severity: 'warning', source: 'integrity', eventType: 'single_fixture_guard', code: 'MATCH_CENTER_REJECTED', message: 'Match Center отклонил structurally invalid fixture.', meta: { fixtureId, issues: centerIntegrity.issues.filter(x => x.severity === 'error').map(x => x.code) } }).catch(() => {});
+    await recordOpsEvent(cfg, { severity: 'warning', source: 'integrity', eventType: 'single_fixture_guard', code: 'MATCH_CENTER_REJECTED', message: 'Центр матча отклонил структурно некорректные данные матча.', meta: { fixtureId, issues: centerIntegrity.issues.filter(x => x.severity === 'error').map(x => x.code) } }).catch(() => {});
     return json({ error: 'Данные этого матча не прошли проверку целостности. Попробуйте позже.', code: 'MATCH_DATA_INVALID', integrity: centerIntegrity }, 409);
   }
 
@@ -10691,11 +10692,11 @@ async function apiMatchCenter(request, cfg) {
     provider: publicDataCapabilities(),
     refreshSeconds,
     note: limitedCoverage
-      ? 'Молодёжный/резервный турнир: дополнительные enrichment-запросы ограничены для экономии квоты.'
+      ? 'Молодёжный или резервный турнир: дополнительные запросы данных ограничены для экономии квоты.'
       : providerBudgetProfile().mode === 'emergency'
-        ? 'API-квота в защитном резерве: часть расширенных данных временно берётся из кэша или пропускается.'
+        ? 'Квота источника данных в защитном резерве: часть расширенных данных временно берётся из кэша или пропускается.'
         : providerBudgetProfile().mode === 'conserve'
-          ? 'Включён сберегающий режим: тяжёлые enrichment-запросы обновляются реже.'
+          ? 'Включён сберегающий режим: тяжёлые дополнительные запросы обновляются реже.'
           : (!events.length && !statistics.length)
             ? 'Для этого турнира или матча провайдер не отдаёт детальные события/статистику.'
             : '',
@@ -10744,7 +10745,7 @@ function buildMatchComparison({ homeName, awayName, homeForm, awayForm, homeStan
     comparisonMetric({ key:'attack', label:'Атака · гол/матч', homeValue:(hSeason && aSeason) ? hSeason.goalsForPerMatch : hOverall?.gfAvg, awayValue:(hSeason && aSeason) ? aSeason.goalsForPerMatch : aOverall?.gfAvg, format:'decimal', minGap:.14, note:(hSeason && aSeason) ? 'Сезонная статистика из уже загруженного кэша.' : 'Недавняя результативность.' }),
     comparisonMetric({ key:'defense', label:'Оборона · пропущено', homeValue:(hSeason && aSeason) ? hSeason.goalsAgainstPerMatch : hOverall?.gaAvg, awayValue:(hSeason && aSeason) ? aSeason.goalsAgainstPerMatch : aOverall?.gaAvg, format:'decimal', better:'lower', minGap:.14, note:'Меньше — лучше.' }),
     comparisonMetric({ key:'clean_sheets', label:'Сухие матчи', homeValue:(hSeason && aSeason) ? hSeason.cleanSheetRate : hOverall?.cleanSheetPct, awayValue:(hSeason && aSeason) ? aSeason.cleanSheetRate : aOverall?.cleanSheetPct, format:'percent', minGap:8, note:(hSeason && aSeason) ? 'Доля матчей сезона без пропущенных.' : 'Доля в последних матчах.' }),
-    comparisonMetric({ key:'expected_goals', label:'Голевая оценка модели', homeValue:goalModel?.homeExpected, awayValue:goalModel?.awayExpected, format:'decimal', minGap:.14, note:'Poisson-эвристика по доступной форме.' }),
+    comparisonMetric({ key:'expected_goals', label:'Голевая оценка модели', homeValue:goalModel?.homeExpected, awayValue:goalModel?.awayExpected, format:'decimal', minGap:.14, note:'Модель Пуассона по доступной форме.' }),
     comparisonMetric({ key:'table_rank', label:'Место в таблице', homeValue:homeStanding?.rank, awayValue:awayStanding?.rank, format:'rank', better:'lower', minGap:0, note:'Показывается только если таблица турнира уже была загружена.' }),
     ((Number(h2h?.homeWins||0)+Number(h2h?.awayWins||0)+Number(h2h?.draws||0)) > 0) ? comparisonMetric({ key:'h2h', label:'Победы в H2H', homeValue:h2h?.homeWins, awayValue:h2h?.awayWins, format:'integer', minGap:0, note:'Последние доступные очные встречи.' }) : null,
     hasInjuryData ? comparisonMetric({ key:'absences', label:'Отмеченные потери', homeValue:absences?.home?.length || 0, awayValue:absences?.away?.length || 0, format:'integer', better:'lower', minGap:0, note:'Только подтверждённые провайдером отсутствия.' }) : null,
@@ -10792,7 +10793,7 @@ async function apiAnalyze(request, cfg, user) {
   let body = {};
   try { body = await request.json(); } catch {}
   const fixtureId = Number(body?.fixtureId);
-  if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'Некорректный fixtureId.' }, 400);
+  if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'Некорректный номер матча.' }, 400);
 
   const cacheKey = `fixture:${fixtureId}:v8-prematch-intelligence`;
   const cached = await getCache(cacheKey, cfg);
@@ -10811,14 +10812,14 @@ async function apiAnalyze(request, cfg, user) {
   } catch (error) {
     if (staleBefore && isFootballRateLimitError(error)) {
       await recordHistory(user.id, staleBefore, cfg);
-      return json({ ...staleBefore, cached: true, stale: true, warning: 'Показан последний сохранённый анализ: футбольный API временно ограничил запросы.', retryAfter: Number(error?.retryAfter || 60), quota: quotaBefore });
+      return json({ ...staleBefore, cached: true, stale: true, warning: 'Показан последний сохранённый анализ: источник футбольных данных временно ограничил запросы.', retryAfter: Number(error?.retryAfter || 60), quota: quotaBefore });
     }
     throw error;
   }
   if (!fixture) return json({ error: 'Матч не найден.' }, 404);
   const analysisIntegrity = validateFixtureIntegrity(fixture, '', null);
   if (analysisIntegrity.quarantine) {
-    await recordOpsEvent(cfg, { severity: 'warning', source: 'integrity', eventType: 'single_fixture_guard', code: 'ANALYSIS_REJECTED', message: 'Анализ отклонён: fixture не прошёл структурную проверку.', meta: { fixtureId, issues: analysisIntegrity.issues.filter(x => x.severity === 'error').map(x => x.code) } }).catch(() => {});
+    await recordOpsEvent(cfg, { severity: 'warning', source: 'integrity', eventType: 'single_fixture_guard', code: 'ANALYSIS_REJECTED', message: 'Анализ отклонён: данные матча не прошли структурную проверку.', meta: { fixtureId, issues: analysisIntegrity.issues.filter(x => x.severity === 'error').map(x => x.code) } }).catch(() => {});
     return json({ error: 'Данные матча выглядят противоречиво, поэтому анализ временно заблокирован.', code: 'MATCH_DATA_INVALID', integrity: analysisIntegrity, quota: quotaBefore }, 409);
   }
   // If this fixture has already finished, settle any earlier immutable pre-match snapshot without another football API call.
@@ -10846,8 +10847,8 @@ async function apiAnalyze(request, cfg, user) {
   const canFetchInjuries = paid || !veryLowMinuteBudget;
 
   const skipped = [];
-  if (!canFetchFreshForm && detailedCoverage) skipped.push('Свежая форма команд: сохранён API-лимит; используем кэш, если он есть.');
-  if (!canFetchLineups && detailedCoverage && minutesToKickoff !== null && minutesToKickoff <= 120) skipped.push('Составы: запрос отложен из-за лимита или до публикации стартовых XI.');
+  if (!canFetchFreshForm && detailedCoverage) skipped.push('Свежая форма команд: бережём лимит источника данных и используем кэш, если он есть.');
+  if (!canFetchLineups && detailedCoverage && minutesToKickoff !== null && minutesToKickoff <= 120) skipped.push('Составы: запрос отложен из-за лимита или до публикации стартовых составов.');
   if (!canFetchH2H && detailedCoverage) skipped.push('H2H временно пропущен: осталось мало запросов в минутном окне.');
   if (!canFetchInjuries) skipped.push('Травмы временно пропущены: осталось критически мало запросов в минутном окне.');
   if (!detailedCoverage) skipped.push('Молодёжный/резервный турнир: расширенные запросы ограничены из-за слабого покрытия.');
@@ -10864,7 +10865,7 @@ async function apiAnalyze(request, cfg, user) {
   } catch (error) {
     if (staleBefore && isFootballRateLimitError(error)) {
       await recordHistory(user.id, staleBefore, cfg);
-      return json({ ...staleBefore, cached: true, stale: true, warning: 'Показан последний сохранённый анализ: API временно достиг лимита.', retryAfter: Number(error?.retryAfter || 60), quota: quotaBefore });
+      return json({ ...staleBefore, cached: true, stale: true, warning: 'Показан последний сохранённый анализ: источник данных временно достиг лимита.', retryAfter: Number(error?.retryAfter || 60), quota: quotaBefore });
     }
     throw error;
   }
@@ -10918,7 +10919,7 @@ async function apiAnalyze(request, cfg, user) {
     homeName, awayName, minutesToKickoff, confidence,
   });
   if (calibrationProfile.mode === 'active') {
-    notes.factors.unshift(`Калибратор v4.0 active (${String(calibrationProfile.fingerprint || '').slice(0, 8) || 'baseline'}) на базе ${Number(calibrationProfile.sample || 0)} trusted-прогнозов.`);
+    notes.factors.unshift(`Калибратор вероятностей активен (${String(calibrationProfile.fingerprint || '').slice(0, 8) || 'baseline'}) на базе ${Number(calibrationProfile.sample || 0)} доверенных прогнозов.`);
   } else if (calibrationProfile.mode === 'shadow') {
     notes.risks.push('Калибратор пока работает в теневом режиме: выборка собирается, но итоговые вероятности ещё не корректируются автоматически.');
   }
@@ -10991,7 +10992,7 @@ async function apiAnalyze(request, cfg, user) {
     modelBreakdown: {
       weights: blended.weights,
       signals: blended.signals,
-      method: 'Рынок, API prediction, форма и H2H объединяются динамически. v4.0 применяет постоянный active-профиль только после двух holdout-окон и атомарной champion–challenger проверки.',
+      method: 'Рынок, прогноз источника данных, форма и очные встречи объединяются динамически. Активный профиль применяется только после двух окон отложенной выборки и атомарного сравнения кандидата с активной моделью.',
     },
     dataPolicy: {
       dataMode: paid ? 'expanded' : 'standard',
@@ -11070,6 +11071,9 @@ export default {
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
         immediateAnalysisHandoff: 'enabled',
+        russianUiLocalization: 'enabled',
+        adminRussianLocalization: 'enabled',
+        prematchRussianLocalization: 'enabled',
         releaseCandidate: RC_NAME,
         regressionQA: 'enabled',
         rcSmokeTest: 'enabled',
@@ -11140,7 +11144,7 @@ export default {
     if (url.pathname === '/health/supabase') {
       return json({
         ok: false,
-        error: 'Техническая проверка Supabase перенесена в защищённую админ-диагностику Mini App.',
+        error: 'Техническая проверка Supabase перенесена в защищённую диагностику администратора мини-приложения.',
         code: 'ADMIN_DIAGNOSTICS_ONLY',
       }, 404);
     }
@@ -11160,7 +11164,7 @@ export default {
 
     try {
       const user = await getRequestUser(request, cfg);
-      if (!user) return json({ error: 'Откройте приложение внутри Telegram.' }, 401);
+      if (!user) return json({ error: 'Откройте мини-приложение внутри Telegram.' }, 401);
 
       const runtimeState = await loadRuntimeControls(cfg);
       const runtimeResponse = runtimeGuard(request, user, cfg, runtimeState.value);

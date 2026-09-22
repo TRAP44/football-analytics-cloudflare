@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.20.0-rc28';
+const CLIENT_VERSION = '6.21.0-rc29';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc28';
+const CLIENT_RELEASE_CHANNEL = 'rc29';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -137,7 +137,7 @@ const $ = id => document.getElementById(id);
 const views = ['matchesView', 'searchView', 'tournamentView', 'teamView', 'analysisView', 'historyView', 'profileView'];
 
 const VIEW_CHROME = {
-  matchesView: ['Матчи', 'Сегодня, LIVE и предматчевая аналитика'],
+  matchesView: ['Матчи', 'Сегодня, матчи в реальном времени и предматчевая аналитика'],
   searchView: ['Поиск', 'Команды, турниры и быстрый доступ'],
   tournamentView: ['Турнир', 'Матчи, таблица и контекст соревнования'],
   teamView: ['Команда', 'Форма, состав и календарь клуба'],
@@ -473,7 +473,7 @@ function evaluateCompatibility(manifest = state.appManifest, headerContract = nu
 
   if (serverContract && serverContract !== CLIENT_API_CONTRACT) {
     blocked = true;
-    reason = `Нужна новая версия приложения: контракт API ${serverContract}, а интерфейс использует ${CLIENT_API_CONTRACT}.`;
+    reason = `Нужна новая версия приложения: сервер использует версию обмена данными ${serverContract}, а интерфейс — ${CLIENT_API_CONTRACT}.`;
   } else if (minClient && compareVersions(CLIENT_VERSION, minClient) < 0) {
     blocked = true;
     reason = `Версия интерфейса ${CLIENT_VERSION} устарела. Минимальная совместимая версия — ${minClient}.`;
@@ -532,7 +532,7 @@ function runtimeDisabledLabels(runtime = state.runtimeStatus || {}) {
   const items = [];
   if (runtime.analysisEnabled === false) items.push('анализ');
   if (runtime.searchEnabled === false) items.push('поиск');
-  if (runtime.liveEnabled === false) items.push('LIVE-обновления');
+  if (runtime.liveEnabled === false) items.push('обновления матча в реальном времени');
   if (runtime.remindersEnabled === false) items.push('новые уведомления');
   if (runtime.expandedDataEnabled === false) items.push('расширенные данные');
   return items;
@@ -663,7 +663,7 @@ async function runStartupSequence() {
 
   setBootStatus(
     'Подключаю данные',
-    manifest ? `${manifest.releaseCandidate || CLIENT_RELEASE_CHANNEL.toUpperCase()} · контракт API ${manifest.apiContract}` : 'Манифест временно недоступен — продолжаю в безопасном режиме.',
+    manifest ? `${manifest.releaseCandidate || CLIENT_RELEASE_CHANNEL.toUpperCase()} · версия обмена данными ${manifest.apiContract}` : 'Манифест временно недоступен — продолжаю в безопасном режиме.',
     38
   );
 
@@ -915,6 +915,77 @@ function planLabel(plan) {
   return ({ FREE: 'Бесплатный', PRO: 'PRO', PREMIUM: 'PREMIUM', ULTRA: 'ULTRA', MEGA: 'MEGA' })[value] || String(plan || '—');
 }
 
+function technicalStateLabel(value) {
+  const key = String(value || '').toLowerCase();
+  return ({ healthy:'норма', ok:'норма', waiting:'ожидание', warning:'предупреждение', critical:'проблема', online:'в сети', offline:'нет связи', scheduled:'запланировано', prematch_sent:'предматчевое отправлено', kickoff_sent:'старт отправлен', retry_pending:'ожидает повторной доставки', sent:'отправлено', failed:'ошибка' })[key] || String(value || '—');
+}
+
+function humanizeTechnicalText(value) {
+  let text = String(value ?? '');
+  const exact = {
+    PASS: 'ПРОЙДЕНО', FAIL: 'ОШИБКА', WARN: 'ПРЕДУПРЕЖДЕНИЕ', HOLD: 'ОЖИДАНИЕ',
+    READY: 'ГОТОВО', READY_WITH_LIMITATIONS: 'ГОТОВО С ОГРАНИЧЕНИЯМИ',
+    NEEDS_ATTENTION: 'ТРЕБУЕТ ПРОВЕРКИ', NOT_RUN: 'НЕ ЗАПУСКАЛОСЬ',
+  };
+  if (exact[text]) return exact[text];
+  const rules = [
+    [/\bCore release candidate\b/gi, 'ядро кандидата на выпуск'],
+    [/\bRelease Monitor\b/gi, 'мониторинг релиза'],
+    [/\bRelease Gate\b/gi, 'проверка релиза'],
+    [/\bProduction Safety Gate\b/gi, 'проверка производственной безопасности'],
+    [/\bProduction[- ]ready\b/gi, 'рабочая среда готова'],
+    [/\bproduction\b/gi, 'рабочая среда'],
+    [/\bruntime\b/gi, 'среда выполнения'],
+    [/\bschema\b/gi, 'схема данных'],
+    [/\bread-only\b/gi, 'только чтение'],
+    [/\buser routes?\b/gi, 'пользовательские маршруты'],
+    [/\bsafety gates?\b/gi, 'защитные проверки'],
+    [/\bsmoke[- ]test\b/gi, 'регрессионная проверка'],
+    [/\bself[- ]test\b/gi, 'самопроверка'],
+    [/\bCoverage Audit\b/gi, 'проверка покрытия'],
+    [/\bendpoint\b/gi, 'метод API'],
+    [/\bProvider\b/gi, 'провайдер'],
+    [/\bMatch Center\b/gi, 'центр матча'],
+    [/\bSingleFlight\b/gi, 'объединение одинаковых запросов'],
+    [/\bguardrails?\b/gi, 'защитные правила'],
+    [/\bquota guard\b/gi, 'защита квоты'],
+    [/\bfeature-level\b/gi, 'по отдельным функциям'],
+    [/\benrichment\b/gi, 'обогащение данных'],
+    [/\bholdout\b/gi, 'отложенная выборка'],
+    [/\btrusted\b/gi, 'доверенные'],
+    [/\bchampion\b/gi, 'активная модель'],
+    [/\bchallenger\b/gi, 'кандидат'],
+    [/\bbaseline\b/gi, 'базовый профиль'],
+    [/\bshadow\b/gi, 'режим наблюдения'],
+    [/\blifecycle\b/gi, 'жизненный цикл'],
+    [/\brollback\b/gi, 'откат'],
+    [/\brevision\b/gi, 'версия'],
+    [/\bsettlement\b/gi, 'фиксация результата'],
+    [/\bpending\b/gi, 'ожидающие'],
+    [/\bsettled\b/gi, 'завершённые'],
+    [/\bconfirmed\b/gi, 'подтверждённые'],
+    [/\badjudicated\b/gi, 'вручную проверенные'],
+    [/\bunverified\b/gi, 'непроверенные'],
+    [/\bdrift\b/gi, 'расхождение'],
+    [/\bdry-run\b/gi, 'предварительная проверка'],
+    [/\bfixture\b/gi, 'матч'],
+    [/\bstale\b/gi, 'устаревшие данные'],
+    [/\bcache\b/gi, 'кэш'],
+    [/\bworker\b/gi, 'серверный обработчик'],
+    [/\bhealth\b/gi, 'состояние'],
+    [/\bconfidence\b/gi, 'уверенность'],
+    [/\bBrier score\b/gi, 'ошибка Брайера'],
+    [/\bBrier\b/gi, 'ошибка Брайера'],
+    [/\bFREE\b/g, 'Бесплатный'],
+    [/\bHOLD\b/g, 'ОЖИДАНИЕ'],
+    [/\bHTTP\b/g, 'код ответа'],
+    [/\bE2E\b/g, 'сквозная проверка'],
+    [/\banon\/authenticated\b/gi, 'анонимный/авторизованный клиент'],
+  ];
+  for (const [pattern, replacement] of rules) text = text.replace(pattern, replacement);
+  return text;
+}
+
 function renderProfile() {
   if (!state.profile) return;
   const { user, quota, stats = {} } = state.profile;
@@ -974,7 +1045,7 @@ function qualityNum(value, digits = 3) {
 }
 
 function signalLabel(name) {
-  const labels = { market: 'Рынок', apiPrediction: 'Прогноз API', recentForm: 'Форма', h2h: 'Очные встречи' };
+  const labels = { market: 'Рынок', apiPrediction: 'Прогноз источника данных', recentForm: 'Форма', h2h: 'Очные встречи' };
   return labels[String(name || '')] || String(name || 'Сигнал');
 }
 
@@ -1070,43 +1141,43 @@ function renderModelQuality() {
   const signalRows = (q.signalPerformance || []).some(x => Number(x.sample || 0) > 0) ? (q.signalPerformance || []) : (q.signals || []);
   engine.hidden = false;
   engine.innerHTML = `
-    <div class="quality-block-head"><strong>⚙️ Калибратор v4.0</strong><span class="calibration-mode ${escapeHtml(ce.mode || 'baseline')}">${modeLabel}</span></div>
+    <div class="quality-block-head"><strong>⚙️ Калибратор вероятностей</strong><span class="calibration-mode ${escapeHtml(ce.mode || 'baseline')}">${modeLabel}</span></div>
     <div class="calibration-engine-grid">
       <div><span>Режим</span><strong>${modeLabel}</strong><small>${ce.mode === 'active' ? 'коррекции разрешены защитными правилами' : ce.mode === 'shadow' ? 'измеряет, но не меняет прогноз' : 'базовые веса'}</small></div>
       <div><span>Температура</span><strong>${Number.isFinite(Number(ce.temperature)) ? Number(ce.temperature).toFixed(2) : '1.00'}</strong><small>1.00 = без сжатия вероятностей</small></div>
       <div><span>Историческая проверка</span><strong>${Number(ce.sample || 0)}</strong><small>завершённых снимков</small></div>
-      <div><span>Holdout температуры</span><strong>${Number(ce.temperatureValidation?.validationSample || 0)}</strong><small>${Number.isFinite(Number(ce.temperatureValidation?.improvement)) ? `${Number(ce.temperatureValidation.improvement).toFixed(1)}% логарифмической ошибки` : 'ещё нет проверки'}</small></div>
-      <div><span>Holdout весов</span><strong>${Number(weightValidation.validationSample || 0)}</strong><small>${Number.isFinite(Number(weightValidation.brierGain)) ? `Δ Брайер ${Number(weightValidation.brierGain).toFixed(4)}` : 'ещё нет проверки'}</small></div>
+      <div><span>Отложенная выборка температуры</span><strong>${Number(ce.temperatureValidation?.validationSample || 0)}</strong><small>${Number.isFinite(Number(ce.temperatureValidation?.improvement)) ? `${Number(ce.temperatureValidation.improvement).toFixed(1)}% логарифмической ошибки` : 'ещё нет проверки'}</small></div>
+      <div><span>Отложенная выборка весов</span><strong>${Number(weightValidation.validationSample || 0)}</strong><small>${Number.isFinite(Number(weightValidation.brierGain)) ? `Δ Брайер ${Number(weightValidation.brierGain).toFixed(4)}` : 'ещё нет проверки'}</small></div>
       <div><span>Продвижение</span><strong>${promotionLabel}</strong><small>только доверенная отложенная выборка</small></div>
-      <div><span>Жизненный цикл</span><strong>${lifecycleLabel}</strong><small>ревизия ${Number(lifecycle.revision || 0)}</small></div>
+      <div><span>Жизненный цикл</span><strong>${lifecycleLabel}</strong><small>версия ${Number(lifecycle.revision || 0)}</small></div>
       <div><span>Отпечаток активной модели</span><strong>${escapeHtml(String(lifecycle.activeFingerprint || ce.fingerprint || '—').slice(0, 10))}</strong><small>${lifecycle.previousFingerprint ? `откат → ${escapeHtml(String(lifecycle.previousFingerprint).slice(0, 10))}` : 'предыдущей активной модели нет'}</small></div>
     </div>
-    <div class="calibration-promotion-note"><strong>Защита RC28:</strong> кандидат проходит два последовательных окна доверенной отложенной выборки, затем атомарно сравнивается с активной моделью. ${lifecycle.frozen ? `Жизненный цикл заморожен: ${escapeHtml(lifecycle.freezeReason || 'причина указана в административном журнале')}.` : 'После продвижения отдельная когорта может автоматически вернуть предыдущий профиль.'}</div>
+    <div class="calibration-promotion-note"><strong>Защита RC29:</strong> кандидат проходит два последовательных окна доверенной отложенной выборки, затем атомарно сравнивается с активной моделью. ${lifecycle.frozen ? `Жизненный цикл заморожен: ${escapeHtml(lifecycle.freezeReason || 'причина указана в административном журнале')}.` : 'После продвижения отдельная когорта может автоматически вернуть предыдущий профиль.'}</div>
     <div class="calibration-weights">
       ${(ce.signalStats || []).map(x => {
         const base = Number(x.baseWeight || 0) * 100;
         const current = Number(x.currentWeight ?? x.baseWeight ?? 0) * 100;
-        return `<div class="calibration-weight-row"><span>${escapeHtml(signalLabel(x.name))}</span><div><i style="--w:${Math.max(0, Math.min(100, current))}%"></i></div><strong>${base.toFixed(0)} → ${current.toFixed(1)}%</strong><small>n=${Number(x.sample || 0)}${Number.isFinite(Number(x.avgBrier)) ? ` · Brier ${qualityNum(x.avgBrier)}` : ''}</small></div>`;
+        return `<div class="calibration-weight-row"><span>${escapeHtml(signalLabel(x.name))}</span><div><i style="--w:${Math.max(0, Math.min(100, current))}%"></i></div><strong>${base.toFixed(0)} → ${current.toFixed(1)}%</strong><small>n=${Number(x.sample || 0)}${Number.isFinite(Number(x.avgBrier)) ? ` · ошибка Брайера ${qualityNum(x.avgBrier)}` : ''}</small></div>`;
       }).join('')}
     </div>
-    ${Number(impact.sample || 0) ? `<div class="calibration-impact"><span>Проверка v3.7: n=${Number(impact.sample || 0)}</span><strong>Brier ${qualityNum(impact.rawBrier)} → ${qualityNum(impact.finalBrier)}</strong><small>${Number(impact.brierDelta || 0) > 0 ? 'улучшение' : Number(impact.brierDelta || 0) < 0 ? 'ухудшение — автоматика будет видна в исторической проверке' : 'без изменения'}</small></div>` : '<p class="quality-engine-note">Эффект v3.7 появится после завершения первых матчей, рассчитанных этой версией.</p>'}
+    ${Number(impact.sample || 0) ? `<div class="calibration-impact"><span>Проверка v3.7: n=${Number(impact.sample || 0)}</span><strong>Ошибка Брайера ${qualityNum(impact.rawBrier)} → ${qualityNum(impact.finalBrier)}</strong><small>${Number(impact.brierDelta || 0) > 0 ? 'улучшение' : Number(impact.brierDelta || 0) < 0 ? 'ухудшение — автоматика будет видна в исторической проверке' : 'без изменения'}</small></div>` : '<p class="quality-engine-note">Эффект v3.7 появится после завершения первых матчей, рассчитанных этой версией.</p>'}
     <p class="quality-engine-note">${escapeHtml(ce.note || 'Автокалибровка включается только после достаточной выборки.')}</p>`;
 
   confidence.hidden = false;
   confidence.innerHTML = `
     <div class="quality-block-head"><strong>По уверенности модели</strong><span>не рейтинг, а диагностика</span></div>
     <div class="quality-mini-grid">${(q.confidence || []).map(x => `
-      <div><span>${escapeHtml(x.label)}</span><strong>${qualityPct(x.accuracy)}</strong><small>n=${Number(x.sample || 0)} · Brier ${qualityNum(x.avgBrier)}</small></div>`).join('')}</div>
+      <div><span>${escapeHtml(x.label)}</span><strong>${qualityPct(x.accuracy)}</strong><small>матчей: ${Number(x.sample || 0)} · ошибка Брайера ${qualityNum(x.avgBrier)}</small></div>`).join('')}</div>
     <div class="quality-signal-grid">${signalRows.map(x => `
-      <div><span>${escapeHtml(signalLabel(x.name))}</span><strong>${qualityPct(x.accuracy)}</strong><small>n=${Number(x.sample || 0)}${Number.isFinite(Number(x.avgBrier)) ? ` · Brier ${qualityNum(x.avgBrier)}` : ''}</small></div>`).join('')}</div>`;
+      <div><span>${escapeHtml(signalLabel(x.name))}</span><strong>${qualityPct(x.accuracy)}</strong><small>n=${Number(x.sample || 0)}${Number.isFinite(Number(x.avgBrier)) ? ` · ошибка Брайера ${qualityNum(x.avgBrier)}` : ''}</small></div>`).join('')}</div>`;
 
   const sec = q.secondary || {};
   secondary.hidden = false;
   secondary.innerHTML = `
     <div class="quality-block-head"><strong>Дополнительные рынки модели</strong><span>порог 50%</span></div>
     <div class="quality-secondary-grid">
-      <div><span>ТБ 2.5</span><strong>${qualityPct(sec.over25?.accuracy)}</strong><small>n=${Number(sec.over25?.sample || 0)}</small></div>
-      <div><span>Обе забьют</span><strong>${qualityPct(sec.btts?.accuracy)}</strong><small>n=${Number(sec.btts?.sample || 0)}</small></div>
+      <div><span>ТБ 2.5</span><strong>${qualityPct(sec.over25?.accuracy)}</strong><small>матчей: ${Number(sec.over25?.sample || 0)}</small></div>
+      <div><span>Обе забьют</span><strong>${qualityPct(sec.btts?.accuracy)}</strong><small>матчей: ${Number(sec.btts?.sample || 0)}</small></div>
     </div>`;
 
   const db = q.dashboard || {};
@@ -1118,12 +1189,12 @@ function renderModelQuality() {
     const trendMaxSample = Math.max(1, ...(db.trend || []).map(x => Number(x.sample || 0)));
     const leagues = db.leagues || [];
     dashboard.innerHTML = `
-      <div class="quality-block-head"><strong>📊 Панель модели 2.0</strong><span>${Number(db.periodDays || q.periodDays || 90)} дней</span></div>
+      <div class="quality-block-head"><strong>📊 Панель качества модели</strong><span>${Number(db.periodDays || q.periodDays || 90)} дней</span></div>
 
       <div class="model-dash-kpis">
         <div><span>Снимки</span><strong>${Number(ov.sample || 0)}</strong><small>завершено</small></div>
         <div><span>Точность</span><strong>${qualityPct(ov.accuracy)}</strong><small>1X2</small></div>
-        <div><span>Brier</span><strong>${qualityNum(ov.avgBrier)}</strong><small>ниже лучше</small></div>
+        <div><span>Ошибка Брайера</span><strong>${qualityNum(ov.avgBrier)}</strong><small>ниже лучше</small></div>
         <div><span>Разрыв</span><strong>${Number.isFinite(Number(ov.calibrationGap)) ? `${Number(ov.calibrationGap).toFixed(1)} п.п.` : '—'}</strong><small>уверенность − точность</small></div>
         <div><span>Ошибка калибровки</span><strong>${Number.isFinite(Number(q.calibrationDiagnostics?.weightedTopCalibrationError)) ? `${Number(q.calibrationDiagnostics.weightedTopCalibrationError).toFixed(1)} п.п.` : '—'}</strong><small>взвешенно · 5 групп</small></div>
       </div>
@@ -1137,35 +1208,35 @@ function renderModelQuality() {
             <div class="model-trend-bars"><i style="height:${acc}%"></i><b style="height:${sampleH}%"></b></div>
             <strong>${qualityPct(x.accuracy)}</strong>
             <span>${escapeHtml(x.label)}</span>
-            <small>n=${Number(x.sample || 0)} · B ${qualityNum(x.avgBrier)}</small>
+            <small>n=${Number(x.sample || 0)} · Ошибка Брайера ${qualityNum(x.avgBrier)}</small>
           </div>`;
         }).join('')}</div>` : '<div class="empty compact-empty">Пока недостаточно недельных данных.</div>'}
       </div>
 
       <div class="model-dash-section">
-        <div class="model-dash-section-head"><strong>Диапазоны уверенности</strong><span>проверяем, растёт ли качество с confidence</span></div>
+        <div class="model-dash-section-head"><strong>Диапазоны уверенности</strong><span>проверяем, растёт ли качество с уверенностью</span></div>
         <div class="model-band-list">${(db.confidence || []).map(x => `
           <div class="model-band-row">
             <span>${escapeHtml(x.label)}</span>
             <div><i style="--w:${Math.max(0, Math.min(100, Number(x.accuracy || 0)))}%"></i></div>
             <strong>${x.sample ? qualityPct(x.accuracy) : '—'}</strong>
-            <small>n=${Number(x.sample || 0)} · B ${qualityNum(x.avgBrier)}</small>
+            <small>n=${Number(x.sample || 0)} · Ошибка Брайера ${qualityNum(x.avgBrier)}</small>
           </div>`).join('')}</div>
       </div>
 
       <div class="model-dash-section">
         <div class="model-dash-section-head"><strong>Полнота данных</strong><span>влияет ли богатство входных данных</span></div>
         <div class="model-dash-mini-grid">${(db.completeness || []).map(x => `
-          <div><span>${escapeHtml(x.label)}</span><strong>${qualityPct(x.accuracy)}</strong><small>n=${Number(x.sample || 0)} · Brier ${qualityNum(x.avgBrier)}</small></div>`).join('')}</div>
+          <div><span>${escapeHtml(x.label)}</span><strong>${qualityPct(x.accuracy)}</strong><small>матчей: ${Number(x.sample || 0)} · ошибка Брайера ${qualityNum(x.avgBrier)}</small></div>`).join('')}</div>
       </div>
 
       <div class="model-dash-section">
         <div class="model-dash-section-head"><strong>Лиги</strong><span>сортировка по размеру выборки</span></div>
         ${leagues.length ? `<div class="model-league-table">${leagues.map(x => `
           <div class="model-league-row">
-            <div><strong>${escapeHtml(x.leagueName || x.label)}</strong><small>n=${Number(x.sample || 0)} · уверенность ${qualityPct(x.avgConfidence)}</small></div>
+            <div><strong>${escapeHtml(x.leagueName || x.label)}</strong><small>матчей: ${Number(x.sample || 0)} · уверенность ${qualityPct(x.avgConfidence)}</small></div>
             <span>${qualityPct(x.accuracy)}</span>
-            <span>B ${qualityNum(x.avgBrier)}</span>
+            <span>Ошибка Брайера ${qualityNum(x.avgBrier)}</span>
             <em>${Number.isFinite(Number(x.calibrationGap)) ? `${Number(x.calibrationGap) >= 0 ? '+' : ''}${Number(x.calibrationGap).toFixed(1)} п.п.` : '—'}</em>
           </div>`).join('')}</div>` : '<div class="empty compact-empty">Лиг для сравнения пока нет.</div>'}
       </div>
@@ -1176,7 +1247,7 @@ function renderModelQuality() {
           <div>
             <span>${escapeHtml(x.label)}</span>
             <strong>${x.sample ? qualityPct(x.accuracy) : '—'}</strong>
-            <small>n=${Number(x.sample || 0)} · Brier ${qualityNum(x.avgBrier)}</small>
+            <small>матчей: ${Number(x.sample || 0)} · ошибка Брайера ${qualityNum(x.avgBrier)}</small>
           </div>`).join('')}</div>
       </div>
 
@@ -1186,10 +1257,10 @@ function renderModelQuality() {
           <div class="model-version-row">
             <div>
               <strong>${escapeHtml(x.version || 'старая / неизвестная')}</strong>
-              <small>n=${Number(x.sample || 0)} · ${x.firstKickoffAt ? escapeHtml(dateTime(x.firstKickoffAt)) : '—'} → ${x.lastKickoffAt ? escapeHtml(dateTime(x.lastKickoffAt)) : '—'}</small>
+              <small>матчей: ${Number(x.sample || 0)} · ${x.firstKickoffAt ? escapeHtml(dateTime(x.firstKickoffAt)) : '—'} → ${x.lastKickoffAt ? escapeHtml(dateTime(x.lastKickoffAt)) : '—'}</small>
             </div>
             <div><span>Точность</span><b>${qualityPct(x.accuracy)}</b></div>
-            <div><span>Brier</span><b>${qualityNum(x.avgBrier)}</b></div>
+            <div><span>Ошибка Брайера</span><b>${qualityNum(x.avgBrier)}</b></div>
             <div><span>Логарифмическая ошибка</span><b>${qualityNum(x.avgLogLoss)}</b></div>
             <div><span>Ошибка калибровки</span><b>${Number.isFinite(Number(x.calibrationError)) ? `${Number(x.calibrationError).toFixed(1)} п.п.` : '—'}</b></div>
             <div><span>Сигналы</span><b>${qualityPct(x.signalSnapshotCoverage)}</b></div>
@@ -1210,13 +1281,13 @@ function renderModelQuality() {
 
       ${(db.calibrationModes || []).length ? `<div class="model-dash-section">
         <div class="model-dash-section-head"><strong>Режимы калибратора</strong><span>описательный срез, версии модели различаются</span></div>
-        <div class="model-dash-mini-grid">${db.calibrationModes.map(x => `<div><span>${escapeHtml(x.label)}</span><strong>${qualityPct(x.accuracy)}</strong><small>n=${Number(x.sample || 0)} · Brier ${qualityNum(x.avgBrier)}</small></div>`).join('')}</div>
+        <div class="model-dash-mini-grid">${db.calibrationModes.map(x => `<div><span>${escapeHtml(x.label)}</span><strong>${qualityPct(x.accuracy)}</strong><small>матчей: ${Number(x.sample || 0)} · ошибка Брайера ${qualityNum(x.avgBrier)}</small></div>`).join('')}</div>
       </div>` : ''}
 
       <div class="model-dash-section">
         <div class="model-dash-section-head"><strong>🧪 Целостность прогнозов</strong><span>${escapeHtml(q.integrity?.label || 'нет данных')}</span></div>
         <div class="model-integrity-summary ${escapeHtml(q.integrity?.status || 'clean')}">
-          <div><span>Загружено</span><strong>${Number(q.integrity?.loadedRows || 0)}</strong><small>settled + pending</small></div>
+          <div><span>Загружено</span><strong>${Number(q.integrity?.loadedRows || 0)}</strong><small>завершённые + ожидающие</small></div>
           <div><span>Критические</span><strong>${Number(q.integrity?.severeIssues || 0)}</strong><small>вероятности / время / согласованность</small></div>
           <div><span>Предупреждения</span><strong>${Number(q.integrity?.warningIssues || 0)}</strong><small>фиксация результата / исход</small></div>
           <div><span>Информация</span><strong>${Number(q.integrity?.informationalIssues || 0)}</strong><small>устаревшие метаданные</small></div>
@@ -1224,7 +1295,7 @@ function renderModelQuality() {
         <div class="model-integrity-list">${(q.integrity?.checks || []).map(x => `
           <div class="${escapeHtml(x.state || 'info')}">
             <i>${x.state === 'pass' ? '✓' : x.state === 'fail' ? '×' : x.state === 'warn' ? '!' : 'i'}</i>
-            <span><strong>${escapeHtml(x.label || '')}</strong><small>${escapeHtml(x.detail || '')}</small></span>
+            <span><strong>${escapeHtml(humanizeTechnicalText(x.label || ''))}</strong><small>${escapeHtml(humanizeTechnicalText(x.detail || ''))}</small></span>
             <em>${Number(x.count || 0)}</em>
           </div>`).join('')}</div>
         ${q.integrity?.truncatedPotentially ? '<div class="data-notice stale">Выборка достигла лимита административного запроса: проверка целостности относится к загруженным строкам, а не ко всей истории.</div>' : ''}
@@ -1314,11 +1385,11 @@ function renderCalibrationControl() {
       ? `Переходы заморожены${data.freezeReason ? `: ${data.freezeReason}` : '.'}`
       : 'Автоматическое продвижение и откат разрешены.';
     summary.innerHTML = `
-      <div><span>Состояние</span><strong>${data.frozen ? 'ЗАМОРОЖЕНО' : 'АКТИВНО'}</strong><small>revision ${Number(data.revision || 0)}</small></div>
+      <div><span>Состояние</span><strong>${data.frozen ? 'ЗАМОРОЖЕНО' : 'АКТИВНО'}</strong><small>версия ${Number(data.revision || 0)}</small></div>
       <div><span>Активная модель</span><strong>${escapeHtml(shortFingerprint(data.activeFingerprint))}</strong><small>активный отпечаток</small></div>
       <div><span>Предыдущий</span><strong>${escapeHtml(shortFingerprint(data.previousFingerprint))}</strong><small>цель отката</small></div>`;
     history.innerHTML = (data.transitions || []).length
-      ? `<div class="model-remediation-history-head"><strong>Последние переходы</strong><span>actor ID скрыт</span></div>${data.transitions.slice(0, 8).map(row => `
+      ? `<div class="model-remediation-history-head"><strong>Последние переходы</strong><span>идентификатор оператора скрыт</span></div>${data.transitions.slice(0, 8).map(row => `
           <div class="model-remediation-history-row">
             <div><strong>${escapeHtml(calibrationTransitionLabel(row.action))}</strong><span>${escapeHtml(row.reason || '')}</span></div>
             <small>r${Number(row.expectedRevision || 0)} → r${Number(row.resultingRevision || 0)} · ${escapeHtml(relativeAge(row.createdAt))}</small>
@@ -1342,7 +1413,7 @@ async function loadCalibrationControl(force = false) {
   try {
     state.calibrationControl = await api('/api/calibration-control');
   } catch (error) {
-    state.calibrationControl = { available: false, reason: error.message || 'Не удалось загрузить lifecycle.' };
+    state.calibrationControl = { available: false, reason: error.message || 'Не удалось загрузить состояние жизненного цикла.' };
   } finally {
     state.calibrationControlLoading = false;
     renderCalibrationControl();
@@ -1440,7 +1511,7 @@ function renderModelRemediation() {
     resetBtn.disabled = Boolean(state.modelRemediationLoading || state.modelRemediationRunning || !reliability.schemaReady);
   }
   status.textContent = !r.schemaReady
-    ? 'Нужна supabase_migration_v6_1.sql: предварительная проверка доступна, выполнение заблокировано.'
+    ? 'Нужен файл миграции supabase_migration_v6_1.sql: предварительная проверка доступна, выполнение заблокировано.'
     : Number(driftReview.unresolved || 0)
       ? `Требуют ручного разбора: ${Number(driftReview.unresolved)} расхождений. Зависших ожиданий: ${Number(recovery.stalePending || 0)}.`
       : recovery.stalePending
@@ -1449,13 +1520,13 @@ function renderModelRemediation() {
   summary.innerHTML = `
     <div><span>Просканировано</span><strong>${Number(scan.loadedRows || 0)}</strong><small>${scan.truncated ? `лимит ${Number(scan.maxRows || 0)}` : 'полная выборка'}</small></div>
     <div><span>Зависшие ожидания</span><strong>${Number(recovery.stalePending || 0)}</strong><small>старше 36 часов</small></div>
-    <div><span>В пакете</span><strong>${Number(recovery.selectedCount || 0)}</strong><small>до ${Number(recovery.maxFixturesPerRun || 20)} fixture</small></div>
-    <div><span>Запросы API</span><strong>${Number(recovery.estimatedProviderCalls || 0)}</strong><small>по уникальным датам</small></div>
+    <div><span>В пакете</span><strong>${Number(recovery.selectedCount || 0)}</strong><small>до ${Number(recovery.maxFixturesPerRun || 20)} матчей</small></div>
+    <div><span>Запросы к источнику</span><strong>${Number(recovery.estimatedProviderCalls || 0)}</strong><small>по уникальным датам</small></div>
     <div><span>Контроль результатов</span><strong>${watchdog.autoRecoveryEnabled ? 'АВТО' : 'НАБЛЮДЕНИЕ'}</strong><small>${watchdog.schemaReady ? `${escapeHtml(watchdog.scheduleUtc || '04:00')} UTC` : 'нужна миграция v6.2'}</small></div>
     <div><span>Защитный контур</span><strong>${reliability.circuitOpen ? 'ОТКРЫТА' : 'ЗАКРЫТА'}</strong><small>${reliability.schemaReady ? (reliability.circuitOpenUntil ? `до ${escapeHtml(dateTime(reliability.circuitOpenUntil))}` : `${Number(reliability.consecutiveFailures || 0)}/${Number(reliability.failureThreshold || 2)} ошибок`) : 'нужна миграция v6.3'}</small></div>
     <div><span>Журнал запусков</span><strong>${Number(runLedger.activeStarted || 0) ? 'ЗАНЯТО' : Number(runLedger.staleStarted || 0) ? 'ЗАВИСЛО' : 'ЧИСТО'}</strong><small>${runLedger.schemaReady ? `${Number(runLedger.activeStarted || 0)} активных · ${Number(runLedger.staleStarted || 0)} зависших · максимум ${Number(runLedger.maxAttempts || 3)} попытки` : 'нужна миграция v6.4'}</small></div>
     <div><span>Подтверждение результата</span><strong>${Number(finality.drift || 0) ? 'РАСХОЖДЕНИЕ' : Number(finality.unverified || 0) || Number(finality.verified || 0) ? 'ПРОВЕРКА' : 'ПОДТВЕРЖДЕНО'}</strong><small>${finality.schemaReady ? `${Number(finality.confirmed || 0)} confirmed · ${Number(finality.verified || 0)} first-pass · ${Number(finality.unverified || 0)} pending · ${Number(finality.adjudicated || 0)} adjudicated · ${Number(finality.drift || 0)} drift` : 'нужна миграция v6.7'}</small></div>
-    <div><span>Доверенные метрики</span><strong>${Number(finality.trustedForMetrics || 0)}</strong><small>только confirmed + adjudicated</small></div>
+    <div><span>Доверенные метрики</span><strong>${Number(finality.trustedForMetrics || 0)}</strong><small>только подтверждённые и вручную проверенные</small></div>
     <div><span>Разбор расхождений</span><strong>${Number(driftReview.unresolved || 0) ? 'ТРЕБУЕТ ДЕЙСТВИЯ' : 'ЧИСТО'}</strong><small>${driftReview.schemaReady ? `${Number(driftReview.unresolved || 0)} неразобранных · требуется решение администратора` : 'нужна миграция v6.6'}</small></div>`;
 
   candidates.innerHTML = (recovery.candidates || []).length
@@ -1485,7 +1556,7 @@ function renderModelRemediation() {
 
   const actions = r.recentActions || [];
   history.innerHTML = actions.length
-    ? `<div class="model-remediation-history-head"><strong>Последние действия</strong><span>admin ID скрыт</span></div>
+    ? `<div class="model-remediation-history-head"><strong>Последние действия</strong><span>идентификатор администратора скрыт</span></div>
        <div class="model-remediation-action-list">${actions.map(action => `
          <div class="${escapeHtml(action.status || 'failed')}"><span><strong>${escapeHtml(remediationActionLabel(action))}${action.actionType === 'auto_recover' ? ' · АВТО' : action.actionType === 'circuit_reset' ? ' · СБРОС ЗАЩИТЫ' : ''}</strong><small>${escapeHtml(action.reason || 'Без комментария')} · ${action.createdAt ? escapeHtml(dateTime(action.createdAt)) : '—'}${action.triggerSource ? ` · ${escapeHtml(action.triggerSource)}` : ''}${action.attemptNo ? ` · попытка ${Number(action.attemptNo)}` : ''}${action.retryOfActionId ? ' · повтор' : ''}</small></span><em>${Number(action.settledCount || 0)} закрыто · ${Number(action.skippedCount || 0)} пропущено</em></div>`).join('')}</div>`
     : '<p class="tiny quality-method-note">Журнал действий пока пуст.</p>';
@@ -1688,7 +1759,7 @@ function renderReleaseReadiness() {
   checksEl.innerHTML = (r.checks || []).map(x => `
     <div class="release-check ${escapeHtml(x.state || 'warn')}">
       <i>${x.state === 'pass' ? '✓' : x.state === 'fail' ? '×' : '!'}</i>
-      <span><strong>${escapeHtml(x.label || '')}</strong><small>${escapeHtml(x.detail || '')}</small></span>
+      <span><strong>${escapeHtml(humanizeTechnicalText(x.label || ''))}</strong><small>${escapeHtml(humanizeTechnicalText(x.detail || ''))}</small></span>
     </div>`).join('') || '<div class="empty compact-empty">Нет результатов проверки.</div>';
 }
 
@@ -1776,7 +1847,7 @@ function renderProductionReadiness() {
   checks.innerHTML = (r.checks || []).map(x => `
     <div class="production-check ${escapeHtml(x.state || '')}">
       <span>${x.state === 'pass' ? '✓' : x.state === 'fail' ? '×' : '!'}</span>
-      <div><strong>${escapeHtml(x.label || '')}</strong><small>${escapeHtml(x.detail || '')}</small></div>
+      <div><strong>${escapeHtml(humanizeTechnicalText(x.label || ''))}</strong><small>${escapeHtml(humanizeTechnicalText(x.detail || ''))}</small></div>
       <em>${x.blocking ? 'обязательно' : 'защита'}</em>
     </div>`).join('');
 
@@ -1784,13 +1855,13 @@ function renderProductionReadiness() {
   runtime.innerHTML = `
     <div class="production-runtime-grid">
       <div><span>Объединено одинаковых запросов</span><strong>${Number(s.singleflight?.joins || 0)}</strong><small>${Number(s.singleflight?.active || 0)} сейчас</small></div>
-      <div><span>Блокировки частых запросов</span><strong>${Number(s.burstGuard?.blocked || 0)}</strong><small>${Number(s.burstGuard?.activeBuckets || 0)} bucket</small></div>
-      <div><span>Тайм-ауты источников</span><strong>${Number(s.upstream?.timeouts || 0)}</strong><small>DB ${Number(s.upstream?.supabaseTimeoutMs || 0)/1000}с · API ${Number(s.upstream?.apiFootballTimeoutMs || 0)/1000}с</small></div>
-      <div><span>Кэш L1</span><strong>${Number(s.memory?.cacheEntries || 0)}</strong><small>soft limit ${Number(s.memory?.cacheSoftLimit || 0)}</small></div>
-      <div><span>User sync cache</span><strong>${Number(s.memory?.userSyncEntries || 0)}</strong><small>${Math.round(Number(s.memory?.userSyncTtlSeconds || 0)/60)} мин.</small></div>
-      <div><span>Memory prune</span><strong>${Number(s.memory?.pruned || 0)}</strong><small>в этом isolate</small></div>
+      <div><span>Блокировки частых запросов</span><strong>${Number(s.burstGuard?.blocked || 0)}</strong><small>${Number(s.burstGuard?.activeBuckets || 0)} активных групп</small></div>
+      <div><span>Тайм-ауты источников</span><strong>${Number(s.upstream?.timeouts || 0)}</strong><small>БД ${Number(s.upstream?.supabaseTimeoutMs || 0)/1000}с · источник данных ${Number(s.upstream?.apiFootballTimeoutMs || 0)/1000}с</small></div>
+      <div><span>Кэш L1</span><strong>${Number(s.memory?.cacheEntries || 0)}</strong><small>мягкий лимит ${Number(s.memory?.cacheSoftLimit || 0)}</small></div>
+      <div><span>Кэш синхронизации пользователей</span><strong>${Number(s.memory?.userSyncEntries || 0)}</strong><small>${Math.round(Number(s.memory?.userSyncTtlSeconds || 0)/60)} мин.</small></div>
+      <div><span>Очистка памяти</span><strong>${Number(s.memory?.pruned || 0)}</strong><small>в этом экземпляре</small></div>
     </div>
-    <p class="tiny">${escapeHtml(r.policy?.note || '')}</p>`;
+    <p class="tiny">${escapeHtml(humanizeTechnicalText(r.policy?.note || ''))}</p>`;
 }
 
 async function loadProductionReadiness(force = false) {
@@ -1831,21 +1902,23 @@ function runClientContractSmoke() {
     'modelQualityStatus','modelRemediationStatus','modelRemediationDryRunBtn','modelRemediationRunBtn','modelRemediationCircuitResetBtn','modelRemediationDriftQueue','providerAuditStatus','releaseStatus','productionReadinessStatus','diagnosticsStatus',
   ];
   const missing = requiredIds.filter(id => !$(id));
-  add('required_dom', 'Основные DOM-контракты', missing.length === 0, missing.length ? `Нет: ${missing.join(', ')}` : `${requiredIds.length}/${requiredIds.length} элементов.`);
+  add('required_dom', 'Основные элементы интерфейса', missing.length === 0, missing.length ? `Нет: ${missing.join(', ')}` : `${requiredIds.length}/${requiredIds.length} элементов.`);
 
   const allIds = [...document.querySelectorAll('[id]')].map(el => el.id);
   const duplicates = allIds.filter((id, i) => allIds.indexOf(id) !== i);
-  add('unique_ids', 'Уникальные HTML id', duplicates.length === 0, duplicates.length ? `Дубликаты: ${[...new Set(duplicates)].join(', ')}` : `${allIds.length} id без дублей.`);
+  add('unique_ids', 'Уникальные идентификаторы элементов', duplicates.length === 0, duplicates.length ? `Дубликаты: ${[...new Set(duplicates)].join(', ')}` : `${allIds.length} идентификаторов без дублей.`);
 
   const adminSections = [...document.querySelectorAll('[data-admin-only]')];
   add('admin_sections', 'Разметка интерфейса администратора', adminSections.length >= 6, `${adminSections.length} технических секций доступны только администратору.`);
 
-  const cssLink = document.querySelector('link[href*="styles.css?v=6.14.0"]');
-  const appScript = document.querySelector('script[src*="app.js?v=6.14.0"]');
-  add('cache_bust', 'Версии файлов интерфейса', Boolean(cssLink && appScript), `CSS ${cssLink ? 'OK' : 'MISS'} · JS ${appScript ? 'OK' : 'MISS'}.`);
+  const assetVersion = CLIENT_VERSION.split('-')[0];
+  const cssLink = document.querySelector(`link[href*="styles.css?v=${assetVersion}"]`);
+  const appScript = document.querySelector(`script[src*="app.js?v=${assetVersion}"]`);
+  add('cache_bust', 'Версии файлов интерфейса', Boolean(cssLink && appScript), `Стили: ${cssLink ? 'найдены' : 'не найдены'} · скрипт: ${appScript ? 'найден' : 'не найден'}.`);
 
-  add('client_version', 'Версия клиента', CLIENT_VERSION === '6.14.0-rc22', CLIENT_VERSION);
-  add('telegram_sdk', 'Telegram WebApp SDK', Boolean(window.Telegram?.WebApp), window.Telegram?.WebApp ? 'SDK доступен.' : 'В обычном браузере SDK может отсутствовать; в Telegram должен быть доступен.');
+  const versionCoherent = CLIENT_VERSION.endsWith(`-${CLIENT_RELEASE_CHANNEL}`);
+  add('client_version', 'Согласованность версии клиента', versionCoherent, CLIENT_VERSION);
+  add('telegram_sdk', 'Модуль Telegram Mini App', Boolean(window.Telegram?.WebApp), window.Telegram?.WebApp ? 'Модуль доступен.' : 'В обычном браузере модуль может отсутствовать; внутри Telegram он должен быть доступен.');
 
   const navButtons = ['navMatches','navSearch','navHistory','navProfile'].filter(id => $(id));
   add('navigation', 'Нижняя навигация', navButtons.length === 4, `${navButtons.length}/4 кнопки.`);
@@ -1854,10 +1927,10 @@ function runClientContractSmoke() {
   add('recovery_contract', 'Контракт восстановления интерфейса', recoveryIds.every(id => $(id)), `${recoveryIds.filter(id => $(id)).length}/${recoveryIds.length} элементов.`);
 
   const bootIds = ['bootGate','bootTitle','bootText','bootProgressFill','bootReloadBtn','versionBanner','versionReloadBtn'];
-  add('startup_contract', 'Контракт запуска и отката', bootIds.every(id => $(id)), `${bootIds.filter(id => $(id)).length}/${bootIds.length} элементов.`);
+  add('startup_contract', 'Проверка запуска и восстановления', bootIds.every(id => $(id)), `${bootIds.filter(id => $(id)).length}/${bootIds.length} элементов.`);
   const runtimeIds = ['runtimeBanner','runtimeBannerTitle','runtimeBannerText','runtimeControlsStatus','runtimeSaveBtn','runtimeHistoryList','runtimeChangeReason','runtimeAutoSettlementRecoveryToggle'];
-  add('runtime_controls_contract', 'Контракт управления функциями и отката', runtimeIds.every(id => $(id)), `${runtimeIds.filter(id => $(id)).length}/${runtimeIds.length} элементов.`);
-  add('api_contract', 'Клиентский контракт API', CLIENT_API_CONTRACT === 5, `contract ${CLIENT_API_CONTRACT} · ${CLIENT_RELEASE_CHANNEL}`);
+  add('runtime_controls_contract', 'Проверка управления функциями и отката', runtimeIds.every(id => $(id)), `${runtimeIds.filter(id => $(id)).length}/${runtimeIds.length} элементов.`);
+  add('api_contract', 'Контракт обмена данными', CLIENT_API_CONTRACT === 5, `версия ${CLIENT_API_CONTRACT} · канал ${CLIENT_RELEASE_CHANNEL}`);
 
   return {
     version: CLIENT_VERSION,
@@ -1870,8 +1943,8 @@ function runClientContractSmoke() {
 }
 
 function rcStateText(status) {
-  if (status === 'rc_ready') return 'RC28 ГОТОВ';
-  if (status === 'rc_with_holds') return 'RC С ОГРАНИЧЕНИЯМИ';
+  if (status === 'rc_ready') return 'ГОТОВО';
+  if (status === 'rc_with_holds') return 'ЕСТЬ ОГРАНИЧЕНИЯ';
   if (status === 'blocked') return 'ЗАБЛОКИРОВАНО';
   return 'ОЖИДАНИЕ';
 }
@@ -1893,7 +1966,7 @@ function renderRcRegression() {
     badge.className = 'rc-badge running';
     badge.textContent = 'ПРОВЕРКА';
     status.textContent = 'Запускаю безопасную регрессионную проверку…';
-    meta.textContent = 'API-Football не расходуется';
+    meta.textContent = 'Лимит API-Football не расходуется';
     summary.innerHTML = '';
     groups.innerHTML = '';
     client.innerHTML = '';
@@ -1904,7 +1977,7 @@ function renderRcRegression() {
   const r = state.rcRegression;
   if (!r) {
     badge.className = 'rc-badge';
-    badge.textContent = 'RC28';
+    badge.textContent = 'RC29';
     status.textContent = 'Полная регрессионная проверка ещё не запускалась.';
     meta.textContent = 'Тест безопасный: без полного анализа, без изменения пользовательских данных и без расхода API-Football.';
     summary.innerHTML = '';
@@ -1923,9 +1996,9 @@ function renderRcRegression() {
   summary.innerHTML = `
     <div class="rc-summary-grid">
       <div><span>Всего</span><strong>${Number(r.summary?.total || 0)}</strong></div>
-      <div><span>PASS</span><strong>${Number(r.summary?.passed || 0)}</strong></div>
-      <div><span>WARN/HOLD</span><strong>${Number(r.summary?.warnings || 0)}</strong></div>
-      <div><span>BLOCK</span><strong>${Number(r.summary?.blockers || 0)}</strong></div>
+      <div><span>ПРОЙДЕНО</span><strong>${Number(r.summary?.passed || 0)}</strong></div>
+      <div><span>ПРЕДУПРЕЖДЕНИЕ/ОГРАНИЧЕНИЕ</span><strong>${Number(r.summary?.warnings || 0)}</strong></div>
+      <div><span>БЛОКИРОВКА</span><strong>${Number(r.summary?.blockers || 0)}</strong></div>
     </div>`;
 
   const groupLabels = {
@@ -1943,17 +2016,17 @@ function renderRcRegression() {
   client.innerHTML = `
     <div class="rc-client-head"><strong>📱 Проверка клиентского контракта</strong><span>${Number(cs.passed || 0)}/${Number(cs.total || 0)}</span></div>
     <div class="rc-client-checks">${(cs.checks || []).map(x => `
-      <div class="${x.pass ? 'pass' : 'fail'}"><i>${x.pass ? '✓' : '×'}</i><span><strong>${escapeHtml(x.label || '')}</strong><small>${escapeHtml(x.detail || '')}</small></span></div>`).join('')}</div>`;
+      <div class="${x.pass ? 'pass' : 'fail'}"><i>${x.pass ? '✓' : '×'}</i><span><strong>${escapeHtml(humanizeTechnicalText(x.label || ''))}</strong><small>${escapeHtml(humanizeTechnicalText(x.detail || ''))}</small></span></div>`).join('')}</div>`;
 
   checks.innerHTML = `<details class="rc-details"><summary>Все серверные проверки · ${Number(r.summary?.total || 0)}</summary>
     <div class="rc-check-list">${(r.checks || []).map(x => `
       <div class="${escapeHtml(x.state || 'warn')}">
         <i>${x.state === 'pass' ? '✓' : x.state === 'fail' ? '×' : '!'}</i>
-        <span><strong>${escapeHtml(x.label || '')}</strong><small>${escapeHtml(x.detail || '')}</small></span>
+        <span><strong>${escapeHtml(humanizeTechnicalText(x.label || ''))}</strong><small>${escapeHtml(humanizeTechnicalText(x.detail || ''))}</small></span>
         <em>${x.blocking ? 'обязательно' : (groupLabels[x.group] || x.group)}</em>
       </div>`).join('')}</div>
   </details>
-  <p class="tiny">${escapeHtml(r.policy?.note || '')}</p>`;
+  <p class="tiny">${escapeHtml(humanizeTechnicalText(r.policy?.note || ''))}</p>`;
 }
 
 async function loadRcRegression(force = true) {
@@ -2012,7 +2085,7 @@ function runtimeHistorySummary(controls = {}) {
   if (controls.maintenanceMode) disabled.push('обслуживание');
   if (controls.analysisEnabled === false) disabled.push('анализ');
   if (controls.searchEnabled === false) disabled.push('поиск');
-  if (controls.liveEnabled === false) disabled.push('LIVE');
+  if (controls.liveEnabled === false) disabled.push('матч в реальном времени');
   if (controls.remindersEnabled === false) disabled.push('уведомления');
   if (controls.expandedDataEnabled === false) disabled.push('расширенные данные');
   const auto = controls.autoSettlementRecoveryEnabled ? ' · автовосстановление включено' : ' · автовосстановление: наблюдение';
@@ -2033,7 +2106,7 @@ function renderRuntimeHistory() {
   }
 
   if (!panel.historyReady) {
-    status.textContent = panel.historyReason || 'Нужна supabase_migration_v5_8.sql для истории и отката.';
+    status.textContent = panel.historyReason || 'Нужен файл миграции supabase_migration_v5_8.sql для истории и отката.';
     list.innerHTML = '<div class="data-notice stale">История и откат пока недоступны. Основное управление функциями продолжает работать.</div>';
     return;
   }
@@ -2150,7 +2223,7 @@ function renderRuntimeControls() {
   if (!panel.available || !panel.schemaReady) {
     badge.className = 'runtime-controls-badge blocked';
     badge.textContent = 'SQL';
-    status.textContent = panel.reason || 'Нужна supabase_migration_v5_7.sql.';
+    status.textContent = panel.reason || 'Нужен файл миграции supabase_migration_v5_7.sql.';
     revision.textContent = 'схема БД не готова';
     return;
   }
@@ -2346,9 +2419,9 @@ function renderReminderHealth() {
     ? `<div class="reminder-health-list">${r.recent.map(x => `
       <div class="${x.hasError ? 'error' : 'ok'}">
         <div><strong>${escapeHtml(x.match || `Матч #${x.fixtureId}`)}</strong><small>${x.fixtureDate ? dateTime(x.fixtureDate) : ''}</small></div>
-        <span>${escapeHtml(x.state || '')}</span>
+        <span>${escapeHtml(technicalStateLabel(x.state || ''))}</span>
         <em>${Number(x.prematchAttempts || 0)} + ${Number(x.kickoffAttempts || 0)} попыт.</em>
-      </div>`).join('')}</div><p class="tiny">${escapeHtml(r.note || '')}</p>`
+      </div>`).join('')}</div><p class="tiny">${escapeHtml(humanizeTechnicalText(r.note || ''))}</p>`
     : '<div class="empty compact-empty">Недавних попыток доставки пока нет.</div>';
 }
 
@@ -2464,10 +2537,10 @@ function renderReleaseMonitor() {
     <div>${rows.length ? rows.map(x => `<article class="${escapeHtml(x.severity || 'warning')}">
       <div><strong>${escapeHtml(x.code || x.source || '')}</strong><span>${escapeHtml(dateTime(x.createdAt))}</span></div>
       <p>${escapeHtml(x.message || '')}</p>
-      <small>${escapeHtml(x.source || '')}${x.endpoint ? ` · ${escapeHtml(x.endpoint)}` : ''}</small>
+      <small>${escapeHtml(x.source === 'worker' ? 'сервер' : x.source === 'release' ? 'релиз' : x.source || '')}${x.endpoint ? ` · ${escapeHtml(x.endpoint)}` : ''}</small>
     </article>`).join('') : '<div class="empty compact-empty">Нет событий.</div>'}</div>
   </details>
-  <p class="tiny">${escapeHtml(r.policy?.note || '')}</p>`;
+  <p class="tiny">${escapeHtml(humanizeTechnicalText(r.policy?.note || ''))}</p>`;
 }
 
 async function loadReleaseMonitor(force = false) {
@@ -2528,9 +2601,9 @@ function renderDiagnostics() {
   if (provider) {
     provider.hidden = false;
     provider.innerHTML = `
-      <div class="diagnostics-block-head"><strong>API-Football</strong><span>${escapeHtml(p.health || 'waiting')}</span></div>
+      <div class="diagnostics-block-head"><strong>Источник данных API-Football</strong><span>${escapeHtml(technicalStateLabel(p.health || 'waiting'))}</span></div>
       <div class="diagnostics-grid">
-        <div><span>План</span><strong>${escapeHtml(p.plan || 'UNKNOWN')}</strong><small>${p.lastStatus ? `HTTP ${Number(p.lastStatus)}` : 'ответ ещё не получен'}</small></div>
+        <div><span>Тариф</span><strong>${escapeHtml(p.plan && p.plan !== 'UNKNOWN' ? planLabel(p.plan) : 'не определён')}</strong><small>${p.lastStatus ? `HTTP ${Number(p.lastStatus)}` : 'ответ ещё не получен'}</small></div>
         <div><span>Сегодня использовано</span><strong>${Number.isFinite(Number(p.dailyUsed)) && Number.isFinite(Number(p.dailyLimit)) ? `${Number(p.dailyUsed)} / ${Number(p.dailyLimit)}` : '—'}</strong><small>${diagPct(p.dailyUsedPct)}</small></div>
         <div><span>Минутное окно</span><strong>${Number.isFinite(Number(p.minuteUsed)) && Number.isFinite(Number(p.minuteLimit)) ? `${Number(p.minuteUsed)} / ${Number(p.minuteLimit)}` : '—'}</strong><small>${diagPct(p.minuteUsedPct)}</small></div>
         <div><span>Последний ответ</span><strong>${Number.isFinite(Number(p.lastLatencyMs)) ? `${Number(p.lastLatencyMs)} мс` : '—'}</strong><small>${p.lastSuccessAt ? relativeAge(p.lastSuccessAt) : (p.lastError || 'нет данных')}</small></div>
@@ -2544,9 +2617,9 @@ function renderDiagnostics() {
   if (database) {
     database.hidden = false;
     database.innerHTML = `
-      <div class="diagnostics-block-head"><strong>Supabase + кэш</strong><span>${db.ok ? 'online' : escapeHtml(db.status || 'offline')}</span></div>
+      <div class="diagnostics-block-head"><strong>База данных Supabase и кэш</strong><span>${db.ok ? 'в сети' : (String(db.status || '').toLowerCase() === 'offline' ? 'нет связи' : escapeHtml(db.status || 'нет связи'))}</span></div>
       <div class="diagnostics-grid">
-        <div><span>PostgREST</span><strong>${db.ok ? 'OK' : 'Ошибка'}</strong><small>${Number.isFinite(Number(db.latencyMs)) ? `${Number(db.latencyMs)} мс` : '—'}</small></div>
+        <div><span>Доступ к базе данных</span><strong>${db.ok ? 'Норма' : 'Ошибка'}</strong><small>${Number.isFinite(Number(db.latencyMs)) ? `${Number(db.latencyMs)} мс` : '—'}</small></div>
         <div><span>Записей кэша</span><strong>${Number.isFinite(Number(cache.total)) ? Number(cache.total) : '—'}</strong><small>выборка ${Number(cache.sampled || 0)}</small></div>
         <div><span>Свежие / устаревшие</span><strong>${Number(cache.freshInSample || 0)} / ${Number(cache.staleInSample || 0)}</strong><small>в диагностической выборке</small></div>
         <div><span>Журнал ошибок</span><strong>${obs.persistent ? 'Supabase' : 'Память'}</strong><small>${obs.migrationReady ? `хранение ${Number(obs.retentionDays || 14)} дн.` : 'нужна миграция v3.8'}</small></div>
@@ -2557,9 +2630,9 @@ function renderDiagnostics() {
   if (runtime) {
     runtime.hidden = false;
     runtime.innerHTML = `
-      <div class="diagnostics-block-head"><strong>Текущий Worker</strong><span>среда</span></div>
+      <div class="diagnostics-block-head"><strong>Текущий обработчик Cloudflare</strong><span>среда</span></div>
       <div class="diagnostics-grid">
-        <div><span>API запросов</span><strong>${Number(rt.apiRequests || 0)}</strong><small>успех ${diagPct(rt.apiSuccessRate)}</small></div>
+        <div><span>Запросов к серверу</span><strong>${Number(rt.apiRequests || 0)}</strong><small>успех ${diagPct(rt.apiSuccessRate)}</small></div>
         <div><span>Попадания кэша</span><strong>${diagPct(rt.cacheHitRate)}</strong><small>${Number(rt.cacheHits || 0)} попаданий · ${Number(rt.cacheMisses || 0)} промахов</small></div>
         <div><span>Ограничения частоты</span><strong>${Number(rt.rateLimits || 0)}</strong><small>${Number(rt.quotaBlocks || 0)} запроса остановлено защитой квоты</small></div>
         <div><span>Защита от всплесков</span><strong>${Number(rt.burstBlocks || 0)}</strong><small>${Number(rt.singleflightJoins || 0)} объединений запросов</small></div>
@@ -2574,16 +2647,16 @@ function renderDiagnostics() {
     const cp = state.clientPerf || {};
     const avg = Number(cp.completed || 0) > 0 ? Math.round(Number(cp.totalMs || 0) / Number(cp.completed)) : null;
     client.hidden = false;
-    client.innerHTML = `<div class="diagnostics-block-head"><strong>📱 Клиент Mini App</strong><span>v5.1</span></div><div class="diagnostics-grid">
+    client.innerHTML = `<div class="diagnostics-block-head"><strong>📱 Клиент мини-приложения</strong><span>${escapeHtml(CLIENT_VERSION)}</span></div><div class="diagnostics-grid">
       <div><span>Сеть</span><strong>${navigator.onLine === false ? 'Нет сети' : 'В сети'}</strong><small>${navigator.connection?.effectiveType ? escapeHtml(navigator.connection.effectiveType) : 'тип сети —'}</small></div>
-      <div><span>Средний API</span><strong>${avg !== null ? `${avg} мс` : '—'}</strong><small>последний ${cp.lastMs !== null ? `${cp.lastMs} мс` : '—'}</small></div>
+      <div><span>Средний ответ сервера</span><strong>${avg !== null ? `${avg} мс` : '—'}</strong><small>последний ${cp.lastMs !== null ? `${cp.lastMs} мс` : '—'}</small></div>
       <div><span>Запросы</span><strong>${Number(cp.requests || 0)}</strong><small>${Number(cp.completed || 0)} успешно · ${Number(cp.failed || 0)} ошибок</small></div>
-      <div><span>Оптимизация</span><strong>${Number(cp.deduped || 0)} dedupe</strong><small>${Number(cp.retries || 0)} авто-повторов</small></div>
-      <div><span>Защита клиента</span><strong>${Number(cp.rateLimited || 0)} × 429</strong><small>${Number(cp.timeouts || 0)} timeout</small></div>
-      <div><span>Recovery UX</span><strong>${Number(cp.recoveries || 0)} recovery</strong><small>${Number(cp.degradedEvents || 0)} degraded events</small></div>
-      <div><span>Состояние сети</span><strong>${escapeHtml(state.network.mode || 'online')}</strong><small>${state.network.lastRecoveredAt ? `recovered ${escapeHtml(relativeAge(state.network.lastRecoveredAt))}` : 'без восстановлений'}</small></div>
-      <div><span>Startup</span><strong>${Number.isFinite(Number(cp.bootMs)) ? `${Number(cp.bootMs)} мс` : '—'}</strong><small>${state.startup.manifestOk ? 'manifest OK' : `${Number(cp.manifestFailures || 0)} manifest fail`}</small></div>
-      <div><span>API contract</span><strong>${CLIENT_API_CONTRACT}</strong><small>${escapeHtml(state.appManifest?.releaseChannel || CLIENT_RELEASE_CHANNEL)} · min ${escapeHtml(state.appManifest?.minClientVersion || '—')}</small></div>
+      <div><span>Оптимизация</span><strong>${Number(cp.deduped || 0)} объединено</strong><small>${Number(cp.retries || 0)} авто-повторов</small></div>
+      <div><span>Защита клиента</span><strong>${Number(cp.rateLimited || 0)} ограничений</strong><small>${Number(cp.timeouts || 0)} тайм-аутов</small></div>
+      <div><span>Восстановление интерфейса</span><strong>${Number(cp.recoveries || 0)} восстановлений</strong><small>${Number(cp.degradedEvents || 0)} событий ухудшения</small></div>
+      <div><span>Состояние сети</span><strong>${escapeHtml(technicalStateLabel(state.network.mode || 'online'))}</strong><small>${state.network.lastRecoveredAt ? `восстановлено ${escapeHtml(relativeAge(state.network.lastRecoveredAt))}` : 'без восстановлений'}</small></div>
+      <div><span>Запуск</span><strong>${Number.isFinite(Number(cp.bootMs)) ? `${Number(cp.bootMs)} мс` : '—'}</strong><small>${state.startup.manifestOk ? 'манифест загружен' : `ошибок манифеста: ${Number(cp.manifestFailures || 0)}`}</small></div>
+      <div><span>Контракт обмена данными</span><strong>${CLIENT_API_CONTRACT}</strong><small>${escapeHtml(state.appManifest?.releaseChannel || CLIENT_RELEASE_CHANNEL)} · минимум ${escapeHtml(state.appManifest?.minClientVersion || '—')}</small></div>
     </div>`;
   }
 
@@ -2596,8 +2669,8 @@ function renderDiagnostics() {
       <div class="diagnostics-block-head"><strong>Целостность матчей</strong><span>${escapeHtml(integrityRun.health || (integrityData.migrationReady ? 'waiting' : 'migration'))}</span></div>
       <div class="diagnostics-grid">
         <div><span>Проверено</span><strong>${integrityRun.inspected ?? '—'}</strong><small>${integrityRun.observedAt ? relativeAge(integrityRun.observedAt) : 'ещё нет запуска'}</small></div>
-        <div><span>Quality score</span><strong>${Number.isFinite(Number(integrityRun.qualityScore)) ? `${Math.round(Number(integrityRun.qualityScore))}%` : '—'}</strong><small>${Number(integrityRun.clean || 0)} без замечаний</small></div>
-        <div><span>Скрыто guard</span><strong>${Number(integrityRun.quarantined || 0)}</strong><small>${Number(integrityRun.duplicates || 0)} дубликатов</small></div>
+        <div><span>Оценка качества</span><strong>${Number.isFinite(Number(integrityRun.qualityScore)) ? `${Math.round(Number(integrityRun.qualityScore))}%` : '—'}</strong><small>${Number(integrityRun.clean || 0)} без замечаний</small></div>
+        <div><span>Скрыто защитой</span><strong>${Number(integrityRun.quarantined || 0)}</strong><small>${Number(integrityRun.duplicates || 0)} дубликатов</small></div>
         <div><span>Предупреждения</span><strong>${Number(integrityRun.warnings || 0)}</strong><small>${Number(integrityRun.errors || 0)} ошибок</small></div>
       </div>
       ${!integrityData.migrationReady ? '<p class="diagnostics-warning">Нужна миграция v3.9 для постоянного журнала целостности данных.</p>' : ''}
@@ -2611,7 +2684,7 @@ function renderDiagnostics() {
       <div class="diagnostics-block-head"><strong>Последние события</strong><span>${recent.length}</span></div>
       <div class="diagnostics-events">${recent.length ? recent.slice(0, 8).map(item => `
         <div class="diagnostics-event ${escapeHtml(item.severity || 'info')}">
-          <i></i><div><strong>${escapeHtml(item.code || item.event_type || 'EVENT')}</strong><span>${escapeHtml(item.message || 'Без описания')}</span><small>${escapeHtml(item.source || 'worker')}${item.endpoint ? ` · ${escapeHtml(item.endpoint)}` : ''} · ${item.created_at ? escapeHtml(relativeAge(item.created_at)) : ''}</small></div>
+          <i></i><div><strong>${escapeHtml(item.code || item.event_type || 'СОБЫТИЕ')}</strong><span>${escapeHtml(humanizeTechnicalText(item.message || 'Без описания'))}</span><small>${escapeHtml(item.source === 'worker' ? 'сервер' : item.source === 'release' ? 'релиз' : item.source || 'сервер')}${item.endpoint ? ` · ${escapeHtml(item.endpoint)}` : ''} · ${item.created_at ? escapeHtml(relativeAge(item.created_at)) : ''}</small></div>
         </div>`).join('') : '<div class="empty compact-empty">Ошибок и предупреждений пока нет.</div>'}</div>`;
   }
 
@@ -2619,7 +2692,7 @@ function renderDiagnostics() {
     recommendations.hidden = false;
     recommendations.innerHTML = `
       <div class="diagnostics-block-head"><strong>Что делать</strong><span>автопроверка</span></div>
-      <ul class="diagnostics-actions">${(d.recommendations || []).map(x => `<li>${escapeHtml(x)}</li>`).join('')}</ul>`;
+      <ul class="diagnostics-actions">${(d.recommendations || []).map(x => `<li>${escapeHtml(humanizeTechnicalText(x))}</li>`).join('')}</ul>`;
   }
 }
 
@@ -2786,11 +2859,11 @@ function renderProviderAudit() {
     featureList.innerHTML = rows.length ? rows.map(([name, c]) => `
       <div class="quota-feature-row">
         <strong>${escapeHtml(name)}</strong>
-        <span>API ${Number(c.api || 0)}</span>
-        <span>cache ${Number(c.cache || 0)}</span>
-        <span>stale ${Number(c.stale || 0)}</span>
-        <span>skip ${Number(c.skipped || 0)}</span>
-      </div>`).join('') : '<div class="empty compact-empty">Счётчики появятся после Match Center.</div>';
+        <span>источник ${Number(c.api || 0)}</span>
+        <span>кэш ${Number(c.cache || 0)}</span>
+        <span>резерв ${Number(c.stale || 0)}</span>
+        <span>пропуск ${Number(c.skipped || 0)}</span>
+      </div>`).join('') : '<div class="empty compact-empty">Счётчики появятся после открытия центра матча.</div>';
   }
 
   if (runBtn) runBtn.disabled = Boolean(state.providerAuditLoading || state.providerE2ELoading);
@@ -2805,7 +2878,7 @@ function renderProviderAudit() {
   }
   if (!audit) {
     status.textContent = transition.paid
-      ? 'Тариф обнаружен. Укажите ID матча и запустите проверку.'
+      ? 'Тариф обнаружен. Укажите номер матча и запустите проверку.'
       : 'Сначала обновите тариф. На бесплатном плане полная проверка будет заблокирована для экономии квоты.';
     result.hidden = true;
     return;
@@ -2831,7 +2904,7 @@ function renderProviderAudit() {
     </div>
     <div class="provider-endpoint-grid">${endpoints.map(x => `
       <div class="provider-endpoint-row ${escapeHtml(x.state || '')}">
-        <div><strong>${escapeHtml(x.label || x.key || '')}</strong><small>${escapeHtml(x.note || '')}</small></div>
+        <div><strong>${escapeHtml(x.label || x.key || '')}</strong><small>${escapeHtml(humanizeTechnicalText(x.note || ''))}</small></div>
         <span>${providerAuditStateLabel(x.state)}</span>
         <em>${Number.isFinite(Number(x.latencyMs)) ? `${Number(x.latencyMs)} мс` : ''}</em>
       </div>`).join('')}</div>
@@ -2847,7 +2920,7 @@ function e2eStepIcon(stateValue) {
 }
 
 function e2eStepLabel(stateValue) {
-  return stateValue === 'pass' ? 'OK'
+  return stateValue === 'pass' ? 'Готово'
     : stateValue === 'fail' ? 'Ошибка'
       : stateValue === 'warn' ? 'Проверить'
         : stateValue === 'hold' ? 'Ожидание' : '—';
@@ -2909,7 +2982,7 @@ function renderExpandedDataReleaseGate() {
   stepsEl.innerHTML = (result.steps || []).map(step => `
     <div class="expanded-gate-step ${escapeHtml(step.state || '')}">
       <span>${e2eStepIcon(step.state)}</span>
-      <div><strong>${escapeHtml(step.label || '')}</strong><small>${escapeHtml(step.note || '')}</small></div>
+      <div><strong>${escapeHtml(humanizeTechnicalText(step.label || ''))}</strong><small>${escapeHtml(humanizeTechnicalText(step.note || ''))}</small></div>
       <em>${e2eStepLabel(step.state)}</em>
     </div>`).join('');
 
@@ -2923,10 +2996,10 @@ function renderExpandedDataReleaseGate() {
   }, {});
   details.innerHTML = `
     <div class="expanded-gate-metrics">
-      <div><span>План</span><strong>${escapeHtml(result.transition?.plan || '—')}</strong></div>
+      <div><span>Тариф</span><strong>${escapeHtml(planLabel(result.transition?.plan || '—'))}</strong></div>
       <div><span>Покрытие</span><strong>${coverage ? `${Number(coverage.score || 0)}%` : '—'}</strong></div>
-      <div><span>Повтор из кэша</span><strong>${result.cacheVerification?.cached ? 'PASS' : result.blocked ? '—' : 'CHECK'}</strong></div>
-      <div><span>Daily cost</span><strong>${Number.isFinite(Number(result.requestCost?.observedDailyDelta)) ? Number(result.requestCost.observedDailyDelta) : '—'}</strong></div>
+      <div><span>Повтор из кэша</span><strong>${result.cacheVerification?.cached ? 'Да' : result.blocked ? '—' : 'Проверить'}</strong></div>
+      <div><span>Расход за день</span><strong>${Number.isFinite(Number(result.requestCost?.observedDailyDelta)) ? Number(result.requestCost.observedDailyDelta) : '—'}</strong></div>
     </div>
     ${result.matchCenter?.fixture ? `<div class="expanded-gate-fixture">
       <strong>${escapeHtml(result.matchCenter.fixture.home?.name || '')} — ${escapeHtml(result.matchCenter.fixture.away?.name || '')}</strong>
@@ -2939,7 +3012,7 @@ function renderExpandedDataReleaseGate() {
 async function runProviderE2E(fixtureId) {
   if (!isAdmin() || state.providerE2ELoading || state.providerAuditLoading) return;
   const id = Number(fixtureId || $('providerAuditFixtureId')?.value || 0);
-  if (!id) { toast('Укажите ID матча'); return; }
+  if (!id) { toast('Укажите номер матча'); return; }
   if ($('providerAuditFixtureId')) $('providerAuditFixtureId').value = String(id);
 
   state.providerE2ELoading = true;
@@ -2968,7 +3041,7 @@ function renderProvider() {
   if (!isAdmin()) return;
   const p = state.provider || {};
   if (!$('providerPlan')) return;
-  $('providerPlan').textContent = p.plan && p.plan !== 'UNKNOWN' ? p.plan : 'Определяется';
+  $('providerPlan').textContent = p.plan && p.plan !== 'UNKNOWN' ? planLabel(p.plan) : 'Определяется';
   $('providerDaily').textContent = Number.isFinite(Number(p.dailyRemaining)) && Number.isFinite(Number(p.dailyLimit))
     ? `${p.dailyRemaining} / ${p.dailyLimit}` : '—';
   $('providerMinute').textContent = Number.isFinite(Number(p.minuteRemaining)) && Number.isFinite(Number(p.minuteLimit))
@@ -3018,7 +3091,7 @@ async function probeProvider() {
 async function runProviderCoverageAudit(fixtureId, force = true) {
   if (!isAdmin() || state.providerAuditLoading) return;
   const id = Number(fixtureId || $('providerAuditFixtureId')?.value || 0);
-  if (!id) { toast('Укажите ID матча'); return; }
+  if (!id) { toast('Укажите номер матча'); return; }
   if ($('providerAuditFixtureId')) $('providerAuditFixtureId').value = String(id);
   state.providerAuditLoading = true;
   renderProviderAudit();
@@ -3387,7 +3460,7 @@ function renderDiscoveryHome() {
   if (compEl) {
     const seen = new Set();
     const comps = state.matches.filter(m => Number(m.leagueId) > 0 && !m.lowPriority).sort((a,b) => Number(b.competition?.priority||0)-Number(a.competition?.priority||0)).filter(m => { const id=Number(m.leagueId); if(seen.has(id)) return false; seen.add(id); return true; }).slice(0,8);
-    compEl.innerHTML = comps.length ? comps.map(m => `<button class="competition-shortcut" type="button" data-open-tournament="${Number(m.leagueId)}">${m.leagueLogo ? `<img src="${safeUrl(m.leagueLogo)}" alt="">` : '<span class="competition-logo-placeholder">🏆</span>'}<span><strong>${escapeHtml(m.leagueShort || m.league || 'Турнир')}</strong><small>${escapeHtml(m.country || '')}</small></span>${m.live ? '<b>LIVE</b>' : ''}</button>`).join('') : '<div class="empty compact-empty">Сначала загрузите список матчей.</div>';
+    compEl.innerHTML = comps.length ? comps.map(m => `<button class="competition-shortcut" type="button" data-open-tournament="${Number(m.leagueId)}">${m.leagueLogo ? `<img src="${safeUrl(m.leagueLogo)}" alt="">` : '<span class="competition-logo-placeholder">🏆</span>'}<span><strong>${escapeHtml(m.leagueShort || m.league || 'Турнир')}</strong><small>${escapeHtml(m.country || '')}</small></span>${m.live ? '<b>ИДЁТ</b>' : ''}</button>`).join('') : '<div class="empty compact-empty">Сначала загрузите список матчей.</div>';
     compEl.querySelectorAll?.('[data-open-tournament]').forEach(btn => btn.addEventListener('click', () => openTournament(Number(btn.dataset.openTournament))));
   }
   bindDiscoveryActions($('searchRecent'));
@@ -3629,7 +3702,7 @@ function matchCenter(m) {
   if (m.finished && m.score?.home !== null && m.score?.away !== null) return `${m.score.home} : ${m.score.away}`;
   if (m.live) {
     const minute = Number(m.elapsed || 0) > 0 ? ` · ${Number(m.elapsed)}′` : '';
-    return `${m.score?.home ?? 0}:${m.score?.away ?? 0} · LIVE${minute}`;
+    return `${m.score?.home ?? 0}:${m.score?.away ?? 0} · идёт матч${minute}`;
   }
   return timeOf(m.date);
 }
@@ -3693,7 +3766,7 @@ function renderPopularCompetitions() {
     <button class="competition-shortcut" type="button" data-open-tournament="${Number(m.leagueId)}">
       ${m.leagueLogo ? `<img src="${safeUrl(m.leagueLogo)}" alt="">` : '<span class="competition-logo-placeholder">🏆</span>'}
       <span><strong>${escapeHtml(m.leagueShort || m.league || 'Турнир')}</strong><small>${escapeHtml(m.country || '')}</small></span>
-      ${m.live ? '<b>LIVE</b>' : ''}
+      ${m.live ? '<b>ИДЁТ</b>' : ''}
     </button>`).join('');
   el.querySelectorAll('[data-open-tournament]').forEach(btn => btn.addEventListener('click', () => openTournament(Number(btn.dataset.openTournament))));
 }
@@ -3733,7 +3806,7 @@ function matchCardHtml(m, { grouped = false } = {}) {
         </div>
       </div>
       ${m.live
-        ? `<button class="analyze-btn live-center-btn" type="button" data-center="${Number(m.fixtureId)}">${m.youthReserve ? '🔴 LIVE-счёт' : '🔴 LIVE-центр'}</button>`
+        ? `<button class="analyze-btn live-center-btn" type="button" data-center="${Number(m.fixtureId)}">${m.youthReserve ? '🔴 Счёт матча' : '🔴 Центр матча'}</button>`
         : m.finished
           ? `<button class="analyze-btn finished-btn" type="button" data-center="${Number(m.fixtureId)}">📋 Итоги матча</button>`
           : `<button class="analyze-btn" type="button" data-fixture="${Number(m.fixtureId)}">🧠 Предматчевый анализ</button>`}
@@ -4298,7 +4371,7 @@ function startLiveRefresh(fixtureId) {
   if (!runtimeAllows('liveEnabled')) {
     state.liveRefreshWasActive = false;
     const el = $('liveRefreshText');
-    if (el) el.textContent = 'Автообновление LIVE временно приостановлено.';
+    if (el) el.textContent = 'Автообновление матча временно приостановлено.';
     return;
   }
   state.liveRefreshRemaining = Math.max(15, Number(state.currentCenter?.refreshSeconds || 60));
@@ -4336,14 +4409,14 @@ function signedPp(v) {
 }
 
 function oddsMovementHtml(move) {
-  if (!move?.baseline || !move?.probabilityChange) return '<p class="muted">История движения появится после нескольких LIVE-снимков.</p>';
+  if (!move?.baseline || !move?.probabilityChange) return '<p class="muted">История движения появится после нескольких снимков во время матча.</p>';
   const row = (label, key) => {
     const d = Number(move.probabilityChange?.[key] || 0);
     const cls = d > .4 ? 'up' : d < -.4 ? 'down' : 'flat';
     const arrow = d > .4 ? '↑' : d < -.4 ? '↓' : '→';
     return `<div class="odds-move-row ${cls}"><span>${label}</span><strong>${move.baseline?.[key] ?? '—'} → ${move.current?.[key] ?? '—'}</strong><b>${arrow} ${signedPp(d)}</b></div>`;
   };
-  return `<div class="odds-movement-grid">${row('П1','home')}${row('X','draw')}${row('П2','away')}</div><p class="tiny">Сравнение с самым ранним сохранённым LIVE-снимком${move.from ? ` · ${dateTime(move.from)}` : ''}. Изменение указано в расчётной вероятности.</p>`;
+  return `<div class="odds-movement-grid">${row('П1','home')}${row('X','draw')}${row('П2','away')}</div><p class="tiny">Сравнение с самым ранним сохранённым снимком во время матча${move.from ? ` · ${dateTime(move.from)}` : ''}. Изменение указано в расчётной вероятности.</p>`;
 }
 
 function livePressureHtml(p, m) {
@@ -4497,7 +4570,7 @@ function centerCoverageHtml(d) {
 }
 
 function centerMarketHtml(d) {
-  if (!d.liveOdds) return `<div class="empty compact-empty">LIVE-рынок 1X2 сейчас недоступен. Покрытие зависит от турнира и режима данных.</div>`;
+  if (!d.liveOdds) return `<div class="empty compact-empty">Рынок 1X2 в реальном времени сейчас недоступен. Покрытие зависит от турнира и режима данных.</div>`;
   return `<div class="center-market">
     <div class="odds-grid">
       <div><span>П1</span><strong>${d.liveOdds.odds?.home ?? '—'}</strong></div>
@@ -4616,7 +4689,7 @@ function renderMatchCenter(d) {
   const upcoming = d.mode === 'upcoming';
   const score = m.score || {};
   const scoreText = upcoming ? timeOf(m.date) : `${score.home ?? 0} : ${score.away ?? 0}`;
-  const statusText = live ? '● LIVE' : finished ? '✓ ЗАВЕРШЁН' : 'ПРЕДСТОИТ';
+  const statusText = live ? '● ИДЁТ' : finished ? '✓ ЗАВЕРШЁН' : 'ПРЕДСТОИТ';
   const latestEvents = (d.events || []).slice(-3).reverse();
 
   $('analysis').innerHTML = `
@@ -4722,14 +4795,14 @@ function renderMatchCenter(d) {
 
     <div class="center-tab-panel" data-center-panel="players">
       <section class="panel">
-        <div class="center-section-title"><div><h2>⭐ Игроки матча</h2><p>Лучшие доступные player stats и рейтинг</p></div></div>
+        <div class="center-section-title"><div><h2>⭐ Игроки матча</h2><p>Лучшие доступные показатели игроков и рейтинг</p></div></div>
         ${centerPlayersHtml(d.playerLeaders, m)}
       </section>
     </div>
 
     <div class="center-tab-panel" data-center-panel="market">
       <section class="panel">
-        <div class="center-section-title"><div><h2>💹 LIVE-рынок</h2><p>1X2 и движение implied probability</p></div></div>
+        <div class="center-section-title"><div><h2>💹 LIVE-рынок</h2><p>1X2 и движение расчётная рыночная вероятность</p></div></div>
         ${centerMarketHtml(d)}
       </section>
     </div>
@@ -5138,7 +5211,7 @@ async function shareAnalysis(d) {
     `Наиболее вероятно: ${d?.likelyOutcome || '—'}`,
     `Уверенность: ${d?.confidence?.score ?? '—'}/100`,
     '',
-    'Football Analytics · аналитическая оценка, не гарантия результата.'
+    'Аналитическая оценка модели · не гарантия результата.'
   ].join('\n');
   try {
     if (navigator.share) {
@@ -5354,7 +5427,7 @@ function renderAnalysis(d) {
           <small>Хозяева</small>
         </div>
         <div class="experience-vs">
-          <span>VS</span>
+          <span>против</span>
           ${m.venue ? `<small>${escapeHtml(m.venue)}</small>` : ''}
         </div>
         <div class="experience-team">
@@ -5446,7 +5519,7 @@ function renderAnalysis(d) {
           <div><span>ТБ 2.5</span><strong>${pct(goal.over25)}</strong><div class="mini-progress"><i style="width:${clampPercent(goal.over25)}%"></i></div></div>
           <div><span>Обе забьют</span><strong>${pct(goal.btts)}</strong><div class="mini-progress"><i style="width:${clampPercent(goal.btts)}%"></i></div></div>
         </div>
-        <p class="muted">Poisson-эвристика по недавней результативности. Это не официальный xG.</p>` : '<p class="muted">Недостаточно недавних матчей для голевой модели.</p>'}
+        <p class="muted">Модель Пуассона по недавней результативности. Это не официальный xG.</p>` : '<p class="muted">Недостаточно недавних матчей для голевой модели.</p>'}
       </section>
 
       <section class="panel risk-panel">
@@ -5518,9 +5591,9 @@ function renderAnalysis(d) {
         <h2>🧠 Состав модели</h2>
         <p class="muted">${escapeHtml(d.modelBreakdown?.method || 'Модель объединяет доступные статистические сигналы.')}</p>
         <div class="model-weights">${escapeHtml(modelWeightsText(d.modelBreakdown?.weights || {}))}</div>
-      ${d.modelCalibration ? `<div class="analysis-calibration-card ${escapeHtml(d.modelCalibration.mode || 'baseline')}"><span>Калибровка v${escapeHtml(d.modelCalibration.version || '4.0')}</span><strong>${d.modelCalibration.mode === 'active' ? 'Active champion' : d.modelCalibration.mode === 'shadow' ? 'Теневой challenger' : 'Baseline champion'}</strong><small>${escapeHtml(String(d.modelCalibration.fingerprint || '').slice(0, 8) || 'base')} · n=${Number(d.modelCalibration.sample || 0)} · T=${Number(d.modelCalibration.temperature || 1).toFixed(2)}${d.modelCalibration.weightsActive ? ' · адаптивные веса' : ''}</small></div>` : ''}
+      ${d.modelCalibration ? `<div class="analysis-calibration-card ${escapeHtml(d.modelCalibration.mode || 'baseline')}"><span>Калибровка v${escapeHtml(d.modelCalibration.version || '4.0')}</span><strong>${d.modelCalibration.mode === 'active' ? 'Active champion' : d.modelCalibration.mode === 'shadow' ? 'Кандидат в режиме наблюдения' : 'Baseline champion'}</strong><small>${escapeHtml(String(d.modelCalibration.fingerprint || '').slice(0, 8) || 'base')} · n=${Number(d.modelCalibration.sample || 0)} · T=${Number(d.modelCalibration.temperature || 1).toFixed(2)}${d.modelCalibration.weightsActive ? ' · адаптивные веса' : ''}</small></div>` : ''}
         <div class="model-api-card">
-          <span>API-Football</span>
+          <span>Источник API-Football</span>
           <strong>${escapeHtml(pred?.winner || 'Нет данных')}</strong>
           <small>${escapeHtml(pred?.advice || 'Подсказка недоступна')}</small>
         </div>
@@ -5546,7 +5619,7 @@ function renderAnalysis(d) {
 
     <div class="analysis-tab-panel" data-panel="context">
       <section class="panel">
-        <h2>🌐 Свежий веб-контекст</h2>
+        <h2>🌐 Свежий контекст из интернета</h2>
         <p class="context-answer">${escapeHtml(news.answer || 'Tavily не подключён или свежая сводка не найдена.')}</p>
         ${news.results?.length ? `<div class="news-links">${news.results.slice(0, 5).map(r => `<a href="${safeUrl(r.url)}" target="_blank" rel="noopener">↗ ${escapeHtml(r.title || 'Источник')}</a>`).join('')}</div>` : ''}
       </section>
@@ -5804,7 +5877,7 @@ $('reminderList')?.setAttribute('aria-live', 'polite');
 $('history')?.setAttribute('aria-live', 'polite');
 showView('matchesView', { restore: true });
 
-// RC28: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
+// RC29: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
 // The boot watchdog never leaves the user behind an endless splash screen.
 const startupWatchdog = setTimeout(() => {
   if (!$('bootGate')?.hidden && !state.compatibilityBlocked) {
