@@ -2123,7 +2123,7 @@ function fitAdaptiveSignalWeightsHoldout(rows) {
   const changedWeightL1 = Object.keys(MODEL_BASE_WEIGHTS)
     .reduce((sum, name) => sum + Math.abs(Number(candidate.weights?.[name] || 0) - Number(MODEL_BASE_WEIGHTS[name] || 0)), 0);
 
-  // RC29 gate: both sequential holdout windows must beat the baseline.
+  // RC30 gate: both sequential holdout windows must beat the baseline.
   const active = changedWeightL1 >= 0.01 && gate.pass;
 
   return {
@@ -2391,7 +2391,7 @@ async function notifyCalibrationAdmins(cfg, action, detail = '') {
     freeze: 'жизненный цикл заморожен',
     unfreeze: 'жизненный цикл разморожен',
   };
-  const text = `⚙️ Calibration RC29: ${labels[action] || action}.${detail ? `\n${String(detail).slice(0, 500)}` : ''}`;
+  const text = `⚙️ Калибровка RC30: ${labels[action] || action}.${detail ? `\n${String(detail).slice(0, 500)}` : ''}`;
   await Promise.allSettled((cfg.adminTelegramIds || []).map(id => sendTelegramMessage(id, text, cfg)));
 }
 
@@ -2420,11 +2420,11 @@ async function resolveCalibrationLifecycle(cfg, candidate, trustedRows) {
       const state = await saveCalibrationLifecycleState(cfg, lifecycle.state, {
         action: 'initialize',
         targetFingerprint: baseline.fingerprint,
-        reason: 'RC29 baseline lifecycle initialization.',
+        reason: 'RC30: инициализация базового жизненного цикла модели.',
         metadata: { appVersion: APP_VERSION },
       });
       lifecycle = { state, active: baseline, previous: null };
-      await notifyCalibrationAdmins(cfg, 'initialize', `Active: ${baseline.fingerprint.slice(0, 12)}`);
+      await notifyCalibrationAdmins(cfg, 'initialize', `Активный профиль: ${baseline.fingerprint.slice(0, 12)}`);
     } catch (error) {
       if (!isCalibrationRevisionConflict(error)) throw error;
       lifecycle = await loadCalibrationLifecycleState(cfg);
@@ -2657,9 +2657,9 @@ function buildCalibrationProfile(rows) {
           : 'Кандидат остаётся в режиме наблюдения до достаточной доверенной отложенной выборки.',
     },
     note: active
-      ? 'RC29: кандидат прошёл два окна отложенной выборки; постоянный жизненный цикл решает, можно ли заменить активную модель.'
+      ? 'RC30: кандидат прошёл два окна отложенной выборки; постоянный жизненный цикл решает, можно ли заменить активную модель.'
       : shadow
-        ? 'RC29: кандидат измеряется в режиме наблюдения; рабочая система использует только подтверждённый активный профиль.'
+        ? 'RC30: кандидат измеряется в режиме наблюдения; рабочая система использует только подтверждённый активный профиль.'
         : 'Недостаточно доверенных прогнозов для безопасной автоматической калибровки.',
   };
 }
@@ -3671,8 +3671,8 @@ function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = 
     integrity: buildPredictionIntegrity(settledRows, pendingRows),
     calibrationDiagnostics: {
       weightedTopCalibrationError: weightedTopCalibrationError(rows),
-      label: 'Weighted top-probability calibration error',
-      note: 'Средневзвешенный абсолютный разрыв между средней максимальной вероятностью и фактической точностью по пяти диапазонам вероятности; меньше — лучше. RC29 не использует эту метрику отдельно: продвижение требует двух окон отложенной выборки и сравнения с активной моделью.',
+      label: 'Взвешенная ошибка калибровки максимальной вероятности',
+      note: 'Средневзвешенный абсолютный разрыв между средней максимальной вероятностью и фактической точностью по пяти диапазонам вероятности; меньше — лучше. RC30 не использует эту метрику отдельно: продвижение требует двух окон отложенной выборки и сравнения с активной моделью.',
     },
     calibrationEngine: calibrationProfile || baselineCalibrationProfile(evaluated, signalPerformance),
     calibrationImpact,
@@ -7543,7 +7543,7 @@ async function apiReleaseReadiness(request, cfg) {
     releaseCheck('backend_security_contract', 'Контракт безопасности Supabase', backendSecurity.ok ? 'pass' : 'fail',
       backendSecurity.ok
         ? 'Все публичные таблицы защищены правилами доступа; анонимный и авторизованный клиент не имеют прямых прав; серверные процедуры закрыты.'
-        : `Контракт безопасности RC29: ${backendSecurity.status || 'ошибка'}.`, true),
+        : `Контракт безопасности RC30: ${backendSecurity.status || 'ошибка'}.`, true),
     releaseCheck('model_backtest', 'Схема исторической проверки v3.6+', modelTable.ok ? 'pass' : 'fail', modelTable.ok ? 'Таблица прогнозов модели доступна.' : `model_predictions: ${modelTable.status}.`, true),
     releaseCheck('prediction_integrity', 'Самопроверка целостности прогнозов', modelIntegritySelfTest().pass ? 'pass' : 'fail',
       modelIntegritySelfTest().pass ? 'Вероятности, время снимка и согласованность результата проходят синтетическую самопроверку.' : 'Самопроверка целостности прогнозов не прошла.', true),
