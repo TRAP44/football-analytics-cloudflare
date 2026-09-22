@@ -1,0 +1,32 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const app = fs.readFileSync('public/app.js', 'utf8');
+const html = fs.readFileSync('public/index.html', 'utf8');
+const styles = fs.readFileSync('public/styles.css', 'utf8');
+
+test('analysis and match-center tabs expose keyboard and ARIA relationships', () => {
+  assert.match(app, /function bindRovingTabKeyboard\(/);
+  assert.match(app, /ArrowRight/);
+  assert.match(app, /ArrowLeft/);
+  assert.match(app, /aria-controls/);
+  assert.match(app, /aria-labelledby/);
+  assert.match(app, /bindRovingTabKeyboard\(buttons, 'tab'/);
+  assert.match(app, /bindRovingTabKeyboard\(buttons, 'centerTab'/);
+  assert.match(styles, /\.analysis-tab-btn:focus-visible/);
+  assert.match(styles, /\.center-tab-btn:focus-visible/);
+});
+
+test('history empty state gives the user a useful next action', () => {
+  assert.match(app, /historyEmptyMatches/);
+  assert.match(app, /Перейти к матчам/);
+  assert.match(app, /historyEmptyRetry/);
+  assert.match(app, /Обновить историю/);
+  assert.match(app, /aria-label="Открыть анализ матча/);
+});
+
+test('top bar heading can receive programmatic focus', () => {
+  assert.match(html, /id="topbarTitle" tabindex="-1"/);
+  assert.match(app, /options\.focusHeading === true/);
+});

@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.23.0-rc31';
+const CLIENT_VERSION = '6.24.0-rc32';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc31';
+const CLIENT_RELEASE_CHANNEL = 'rc32';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -231,7 +231,10 @@ function showView(id, options = {}) {
   syncBackButtons();
   syncTelegramBackButton(id);
   const top = options.restore ? Number(state.viewScroll[id] || 0) : 0;
-  requestAnimationFrame(() => window.scrollTo({ top, behavior: 'auto' }));
+  requestAnimationFrame(() => {
+    window.scrollTo({ top, behavior: 'auto' });
+    if (options.focusHeading === true) $('topbarTitle')?.focus({ preventScroll: true });
+  });
 }
 
 function toast(message) {
@@ -4739,26 +4742,36 @@ function centerAbsenceSummary(absences, match) {
 
 function setMatchCenterTab(tab, scroll = false) {
   state.currentCenterTab = tab || 'summary';
-  document.querySelectorAll('.center-tab-btn').forEach(btn => {
+  const buttons = [...document.querySelectorAll('.center-tab-btn')];
+  const panels = [...document.querySelectorAll('.center-tab-panel')];
+  buttons.forEach(btn => {
     const active = btn.dataset.centerTab === state.currentCenterTab;
+    const name = btn.dataset.centerTab || 'summary';
+    btn.id = `center-tab-${name}`;
     btn.classList.toggle('active', active);
     btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-controls', `center-panel-${name}`);
     btn.setAttribute('aria-selected', active ? 'true' : 'false');
     btn.tabIndex = active ? 0 : -1;
   });
-  document.querySelectorAll('.center-tab-panel').forEach(panel => {
+  panels.forEach(panel => {
     const active = panel.dataset.centerPanel === state.currentCenterTab;
+    const name = panel.dataset.centerPanel || 'summary';
+    panel.id = `center-panel-${name}`;
     panel.classList.toggle('active', active);
     panel.hidden = !active;
     panel.toggleAttribute('inert', !active);
     panel.setAttribute('role', 'tabpanel');
+    panel.setAttribute('aria-labelledby', `center-tab-${name}`);
     panel.setAttribute('aria-hidden', active ? 'false' : 'true');
   });
   if (scroll) document.querySelector('.center-tabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function bindMatchCenterTabs() {
-  document.querySelectorAll('.center-tab-btn').forEach(btn => btn.addEventListener('click', () => setMatchCenterTab(btn.dataset.centerTab, false)));
+  const buttons = [...document.querySelectorAll('.center-tab-btn')];
+  buttons.forEach(btn => btn.addEventListener('click', () => setMatchCenterTab(btn.dataset.centerTab, false)));
+  bindRovingTabKeyboard(buttons, 'centerTab', value => setMatchCenterTab(value, false));
   setMatchCenterTab(state.currentCenterTab || 'summary');
 }
 
@@ -5144,9 +5157,21 @@ function renderHistory() {
     return;
   }
   if (!state.history.length) {
-    el.innerHTML = state.historyLoadError
-      ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.historyLoadError)} Последняя загруженная история была пустой.</div>`
-      : '<div class="empty">История пока пуста. Сделайте первый полный анализ матча.</div>';
+    const retry = state.historyLoadError
+      ? '<button id="historyEmptyRetry" class="secondary-btn" type="button">Обновить историю</button>'
+      : '';
+    el.innerHTML = `
+      ${state.historyLoadError ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.historyLoadError)} Последняя загруженная история была пустой.</div>` : ''}
+      <div class="empty history-empty-state">
+        <strong>История пока пуста</strong>
+        <p>После первого полного анализа матч появится здесь для быстрого повторного открытия.</p>
+        <div class="empty-actions">
+          ${retry}
+          <button id="historyEmptyMatches" class="primary-setting-btn" type="button">Перейти к матчам</button>
+        </div>
+      </div>`;
+    $('historyEmptyRetry')?.addEventListener('click', () => loadHistory(true));
+    $('historyEmptyMatches')?.addEventListener('click', () => showView('matchesView'));
     return;
   }
   const notice = state.historyLoading
@@ -5165,7 +5190,7 @@ function renderHistory() {
         <strong>${escapeHtml(item.homeName)} — ${escapeHtml(item.awayName)}</strong>
         <span>${escapeHtml(item.leagueName || '')}${item.fixtureDate ? ` · ${dateTime(item.fixtureDate)}` : ''}${item.viewedAt ? ` · открыто ${relativeAge(item.viewedAt)}` : ''}</span>
       </div>
-      <button class="history-open" data-fixture="${Number(item.fixtureId)}" type="button">Открыть</button>
+      <button class="history-open" data-fixture="${Number(item.fixtureId)}" type="button" aria-label="Открыть анализ матча ${escapeHtml(item.homeName)} — ${escapeHtml(item.awayName)}">Открыть</button>
     </article>
   `).join('');
   el.querySelectorAll('.history-open').forEach(btn => btn.addEventListener('click', () => openHistoryAnalysis(Number(btn.dataset.fixture), btn)));
@@ -5370,23 +5395,48 @@ async function shareAnalysis(d) {
   }
 }
 
+function bindRovingTabKeyboard(buttons, dataKey, activate) {
+  const tabs = Array.from(buttons || []);
+  if (!tabs.length) return;
+  tabs.forEach((btn, index) => btn.addEventListener('keydown', event => {
+    if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    let nextIndex = index;
+    if (event.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length;
+    if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = tabs.length - 1;
+    const next = tabs[nextIndex];
+    const value = next?.dataset?.[dataKey];
+    if (!next || !value) return;
+    activate(value);
+    next.focus();
+  }));
+}
+
 function setAnalysisTab(tab, scroll = false) {
   state.currentAnalysisTab = tab || 'brief';
   const buttons = [...document.querySelectorAll('.analysis-tab-btn')];
   const panels = [...document.querySelectorAll('.analysis-tab-panel')];
   buttons.forEach(btn => {
     const active = btn.dataset.tab === state.currentAnalysisTab;
+    const name = btn.dataset.tab || 'overview';
+    btn.id = `analysis-tab-${name}`;
     btn.classList.toggle('active', active);
     btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-controls', `analysis-panel-${name}`);
     btn.setAttribute('aria-selected', active ? 'true' : 'false');
     btn.tabIndex = active ? 0 : -1;
   });
   panels.forEach(panel => {
     const active = panel.dataset.panel === state.currentAnalysisTab;
+    const name = panel.dataset.panel || 'overview';
+    panel.id = `analysis-panel-${name}`;
     panel.classList.toggle('active', active);
     panel.hidden = !active;
     panel.toggleAttribute('inert', !active);
     panel.setAttribute('role', 'tabpanel');
+    panel.setAttribute('aria-labelledby', `analysis-tab-${name}`);
     panel.setAttribute('aria-hidden', active ? 'false' : 'true');
   });
   if (scroll) document.querySelector('.analysis-tabs')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
@@ -5395,6 +5445,7 @@ function setAnalysisTab(tab, scroll = false) {
 function bindAnalysisTabs() {
   const buttons = [...document.querySelectorAll('.analysis-tab-btn')];
   buttons.forEach(btn => btn.addEventListener('click', () => setAnalysisTab(btn.dataset.tab, true)));
+  bindRovingTabKeyboard(buttons, 'tab', value => setAnalysisTab(value, false));
   setAnalysisTab(state.currentAnalysisTab || 'brief', false);
 }
 

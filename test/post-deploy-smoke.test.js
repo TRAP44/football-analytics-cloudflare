@@ -15,8 +15,8 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
       healthCalls += 1;
       return json({
         ok: true,
-        version: staleOnce && healthCalls === 1 ? '6.12.0-rc20' : '6.23.0-rc31',
-        releaseCandidate: 'RC31',
+        version: staleOnce && healthCalls === 1 ? '6.12.0-rc20' : '6.24.0-rc32',
+        releaseCandidate: 'RC32',
         devMode,
         adminSecurity: 'enabled',
         adminDevModeIsolation: 'enabled',
@@ -45,7 +45,7 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         matchCenterRussianLocalization: 'enabled',
       });
     }
-    if (url.pathname === '/api/app-manifest') return json({ version: '6.23.0-rc31', releaseCandidate: 'RC31' });
+    if (url.pathname === '/api/app-manifest') return json({ version: '6.24.0-rc32', releaseCandidate: 'RC32' });
     if (url.pathname === '/') return new Response('<!doctype html>', { status: 200, headers: {
       'content-type': 'text/html; charset=UTF-8',
       'content-security-policy': "default-src 'self'; script-src 'self' https://telegram.org; object-src 'none'",
@@ -57,8 +57,8 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
   };
 }
 
-test('post-deploy smoke validates RC31, security headers and protected routes', async () => {
-  const result = await runDeploymentSmoke('https://football.example.test', '6.23.0-rc31', {
+test('post-deploy smoke validates RC32, security headers and protected routes', async () => {
+  const result = await runDeploymentSmoke('https://football.example.test', '6.24.0-rc32', {
     fetchImpl: healthyFetch(),
     retries: 1,
     retryDelayMs: 0,
@@ -68,17 +68,17 @@ test('post-deploy smoke validates RC31, security headers and protected routes', 
 });
 
 test('post-deploy smoke retries while the previous Worker version is propagating', async () => {
-  const result = await runDeploymentSmoke('https://football.example.test/', '6.23.0-rc31', {
+  const result = await runDeploymentSmoke('https://football.example.test/', '6.24.0-rc32', {
     fetchImpl: healthyFetch({ staleOnce: true }),
     retries: 2,
     retryDelayMs: 0,
   });
-  assert.equal(result.version, '6.23.0-rc31');
+  assert.equal(result.version, '6.24.0-rc32');
 });
 
 test('post-deploy smoke rejects DEV_MODE in production', async () => {
   await assert.rejects(
-    runDeploymentSmoke('https://football.example.test', '6.23.0-rc31', {
+    runDeploymentSmoke('https://football.example.test', '6.24.0-rc32', {
       fetchImpl: healthyFetch({ devMode: true }),
       retries: 1,
       retryDelayMs: 0,
