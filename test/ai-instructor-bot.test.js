@@ -25,7 +25,7 @@ test('startup experience identifies the AI role', () => {
   assert.match(html, /FM AI/);
   assert.match(html, /AI ФУТБОЛЬНЫЙ ИНСТРУКТОР/);
   assert.match(html, /boot-feature-row/);
-  assert.match(app, /Запускаю AI-инструктора/);
+  assert.match(app, /Запускаю FM AI/);
 });
 
 test('telegram bot has a button-first hub and mini-app routes', () => {

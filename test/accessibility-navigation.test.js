@@ -26,7 +26,7 @@ test('all interactive tab groups expose keyboard and ARIA relationships', () => 
 
 test('history empty state gives the user a useful next action', () => {
   assert.match(app, /historyEmptyMatches/);
-  assert.match(app, /Перейти к матчам/);
+  assert.match(app, /Найти матч/);
   assert.match(app, /historyEmptyRetry/);
   assert.match(app, /Обновить историю/);
   assert.match(app, /aria-label="Открыть анализ матча/);

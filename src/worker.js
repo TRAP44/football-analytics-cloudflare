@@ -75,11 +75,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.40.0-rc48';
+const APP_VERSION = '6.41.0-rc49';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc48';
-const RC_NAME = 'RC48';
+const RELEASE_CHANNEL = 'rc49';
+const RC_NAME = 'RC49';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1523,9 +1523,9 @@ function telegramWebAppUrl(request, params = {}) {
 function footballBotKeyboard(request) {
   return {
     keyboard: [
-      [{ text: '⚽ Матчи сегодня', web_app: { url: telegramWebAppUrl(request, { filter: 'top' }) } }, { text: '🔴 LIVE', web_app: { url: telegramWebAppUrl(request, { filter: 'live' }) } }],
+      [{ text: '⚽ Матчи сегодня' }, { text: '🔴 LIVE' }],
       [{ text: '🧠 AI-подборка' }, { text: '🔎 Найти матч' }],
-      [{ text: '⭐ Мои команды', web_app: { url: telegramWebAppUrl(request, { filter: 'favorites' }) } }, { text: '🕘 Последний разбор' }],
+      [{ text: '⭐ Мои команды' }, { text: '🕘 Последний разбор' }],
       [{ text: '☀️ Утренняя подборка' }, { text: 'ℹ️ Как это работает' }],
     ],
     resize_keyboard: true,
@@ -1798,7 +1798,7 @@ async function sendDigestControls(request, cfg, chatId) {
   });
 }
 
-function digestFixtureRows(fixtures = []) {
+function digestFixtureRows(fixtures = [], limit = 3) {
   return (fixtures || []).filter(f => {
     const status = String(f.fixture?.status?.short || '');
     const home = String(f.teams?.home?.name || '');
@@ -1818,7 +1818,7 @@ function digestFixtureRows(fixtures = []) {
     };
   }).filter(x => x.fixtureId)
     .sort((a,b) => Number(b.live)-Number(a.live) || Number(b.featured)-Number(a.featured) || b.score-a.score || b.priority-a.priority || String(a.date).localeCompare(String(b.date)))
-    .slice(0,3);
+    .slice(0, Math.max(1, Math.min(20, Number(limit || 3))));
 }
 
 function digestTime(iso) {
@@ -1863,6 +1863,78 @@ async function currentDailyDigest(cfg) {
   const payload={date,rows:digestFixtureRows(fixtures),generatedAt:new Date().toISOString()};
   await setCache(cacheKey,0,payload,cfg,10);
   return payload;
+}
+
+async function loadBotDayMatches(cfg, { liveOnly = false, limit = 8 } = {}) {
+  const date=todayUtc();
+  const cached=await getCache(`matches:${date}:v6-integrity`,cfg).catch(()=>null);
+  let matches=(cached?.matches || []).map(normalizeBotFixtureCard).filter(x=>x.fixtureId);
+  if (!matches.length && freeQuotaHealthy(8,1)) {
+    const fixtures=await apiFootball('/fixtures',{date},cfg).catch(()=>[]);
+    matches=digestFixtureRows(fixtures,20).map(normalizeBotFixtureCard).filter(x=>x.fixtureId);
+  }
+  if (liveOnly) matches=matches.filter(x=>x.live);
+  matches.sort((a,b)=>Number(b.live)-Number(a.live) || Date.parse(a.date || 0)-Date.parse(b.date || 0));
+  return matches.slice(0,Math.max(1,Math.min(12,Number(limit || 8))));
+}
+
+function botDayMatchesText(matches = [], { liveOnly = false } = {}) {
+  if (!matches.length) return liveOnly
+    ? '🔴 Сейчас в доступных данных нет матчей в прямом эфире.'
+    : '⚽ На сегодня подходящие матчи пока не найдены.';
+  const title=liveOnly ? '🔴 <b>LIVE сейчас</b>' : '⚽ <b>Матчи сегодня</b>';
+  return [title,'',...matches.map((m,i)=>`${i+1}. <b>${telegramHtmlEscape(m.homeName)} — ${telegramHtmlEscape(m.awayName)}</b>\n${telegramHtmlEscape(m.league || 'Турнир')} · ${m.live ? telegramHtmlEscape(m.statusLabel || 'идёт сейчас') : digestTime(m.date)}`),'','Нажмите на матч — откроется карточка и AI-действия.'].join('\n');
+}
+
+async function sendBotDayMatches(request,cfg,chatId,{liveOnly=false}={}) {
+  const matches=await loadBotDayMatches(cfg,{liveOnly,limit:8});
+  await rememberBotFixtureCards(matches,cfg);
+  const rows=matches.map(m=>[{text:`${m.live?'🔴':'⚽'} ${String(m.homeName || '').slice(0,20)} — ${String(m.awayName || '').slice(0,20)}`,callback_data:`match:menu:${Number(m.fixtureId)}`}]);
+  if (!rows.length) rows.push([{text:'🔄 Обновить',callback_data:liveOnly?'feed:live':'feed:today'}]);
+  await telegramApi('sendMessage',cfg,{chat_id:chatId,parse_mode:'HTML',text:botDayMatchesText(matches,{liveOnly}),reply_markup:{inline_keyboard:rows}});
+}
+
+async function botTeamIdMatches(teamId,cfg) {
+  const id=Number(teamId || 0);
+  if (!id) return [];
+  const fromDate=new Date(); fromDate.setUTCDate(fromDate.getUTCDate()-7);
+  const toDate=new Date(); toDate.setUTCDate(toDate.getUTCDate()+30);
+  const from=fromDate.toISOString().slice(0,10), to=toDate.toISOString().slice(0,10);
+  const cacheKey=`bot:team-id-matches:${id}:${from}:${to}:v1`;
+  const cached=await getCache(cacheKey,cfg).catch(()=>null);
+  if (cached?.matches) return cached.matches.map(normalizeBotFixtureCard);
+  if (!freeQuotaHealthy(8,1)) return [];
+  const fixtures=await apiFootball('/fixtures',{team:id,from,to},cfg).catch(()=>[]);
+  const matches=(fixtures || []).filter(f=>!['CANC','PST','ABD','AWD','WO'].includes(String(f.fixture?.status?.short||''))).map(f=>normalizeBotFixtureCard(f)).filter(x=>x.fixtureId)
+    .sort((a,b)=>Number(b.live)-Number(a.live) || Number(a.finished)-Number(b.finished) || Date.parse(a.date||0)-Date.parse(b.date||0)).slice(0,6);
+  await setCache(cacheKey,id,{matches,refreshedAt:new Date().toISOString()},cfg,120).catch(()=>null);
+  await rememberBotFixtureCards(matches,cfg);
+  return matches;
+}
+
+async function sendBotFavoriteTeams(request,cfg,userId,chatId) {
+  const favorites=await getFavorites(userId,cfg);
+  if (!favorites.length) {
+    await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'⭐ Избранных команд пока нет. Добавление клубов в избранное перенесём в Telegram-карточки клуба.',reply_markup:footballBotKeyboard(request)});
+    return;
+  }
+  const rows=favorites.slice(0,12).map(x=>[{text:`⭐ ${String(x.team_name || 'Команда').slice(0,40)}`,callback_data:`favorite:team:${Number(x.team_id)}`}]);
+  await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'⭐ Мои команды\n\nВыберите клуб — покажу его ближайшие матчи прямо в чате.',reply_markup:{inline_keyboard:rows}});
+}
+
+async function sendBotFavoriteTeamMatches(request,cfg,userId,chatId,teamId) {
+  const favorites=await getFavorites(userId,cfg);
+  const team=favorites.find(x=>Number(x.team_id)===Number(teamId));
+  if (!team) {
+    await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'Команда не найдена в вашем избранном.'});
+    return;
+  }
+  const matches=await botTeamIdMatches(teamId,cfg);
+  const rows=matches.map(m=>[{text:botMatchButtonText(m),callback_data:`match:menu:${Number(m.fixtureId)}`}]);
+  const body=matches.length
+    ? matches.map((m,i)=>`${i+1}. <b>${telegramHtmlEscape(m.homeName)} — ${telegramHtmlEscape(m.awayName)}</b> · ${m.live?'LIVE':digestTime(m.date)}`).join('\n')
+    : 'Ближайшие матчи сейчас не найдены или источник данных временно ограничен.';
+  await telegramApi('sendMessage',cfg,{chat_id:chatId,parse_mode:'HTML',text:`⭐ <b>${telegramHtmlEscape(team.team_name || 'Команда')}</b>\n\n${body}`,reply_markup:{inline_keyboard:rows.length?rows:[[{text:'🔄 Повторить',callback_data:`favorite:team:${Number(teamId)}`}]]}});
 }
 
 async function sendDailyPicks(request,cfg,chatId) {
@@ -1997,13 +2069,14 @@ async function botCachedDayMatches(parts, cfg) {
 async function botRemoteTeamMatches(parts, cfg) {
   const query = String(parts.first || '').trim();
   if (query.length < 3 || !freeQuotaHealthy(10,2)) return [];
-  const q = searchText(query);
-  const teamCacheKey = `search:teams:${encodeURIComponent(q)}:v1`;
+  const plan=topTeamSearchPlan(query);
+  const q = searchText(plan.providerQuery || query);
+  const teamCacheKey = `search:teams:${encodeURIComponent(q)}:v2-global`;
   let teams = (await getCache(teamCacheKey,cfg).catch(()=>null))?.teams || [];
   if (!teams.length) {
-    const rows = await apiFootball('/teams',{search:query},cfg).catch(()=>[]);
-    teams = rows.map(x=>normalizeSearchTeam(x,query)).filter(x=>x.id&&x.name).sort((a,b)=>b.score-a.score).slice(0,5);
-    if (teams.length) await setCache(teamCacheKey,0,{query,teams,warning:'',refreshedAt:new Date().toISOString()},cfg,720).catch(()=>null);
+    const rows = await apiFootball('/teams',{search:plan.providerQuery || query},cfg).catch(()=>[]);
+    teams = rows.map(x=>normalizeSearchTeam(x,query,plan.candidates)).filter(x=>x.id&&x.name).sort((a,b)=>b.score-a.score).slice(0,5);
+    if (teams.length) await setCache(teamCacheKey,0,{query,resolvedQuery:plan.resolved?plan.providerQuery:'',teams,warning:'',refreshedAt:new Date().toISOString()},cfg,720).catch(()=>null);
   }
   const team = teams[0];
   if (!team?.id || !freeQuotaHealthy(8,1)) return [];
@@ -2139,6 +2212,22 @@ async function handleTelegramWebhook(request, cfg) {
       await telegramApi('sendMessage', cfg, { chat_id: callbackChatId, text: '🔕 Утренняя AI-подборка отключена.', reply_markup: footballBotKeyboard(request) });
       return json({ ok: true });
     }
+    if (callbackChatId && data === 'feed:today') {
+      await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Обновляю матчи…'}).catch(()=>null);
+      await sendBotDayMatches(request,cfg,callbackChatId,{liveOnly:false});
+      return json({ok:true});
+    }
+    if (callbackChatId && data === 'feed:live') {
+      await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Обновляю LIVE…'}).catch(()=>null);
+      await sendBotDayMatches(request,cfg,callbackChatId,{liveOnly:true});
+      return json({ok:true});
+    }
+    const favoriteAction=data.match(/^favorite:team:(\d+)$/);
+    if (callbackChatId && favoriteAction) {
+      await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Ищу матчи клуба…'}).catch(()=>null);
+      await sendBotFavoriteTeamMatches(request,cfg,callbackUserId,callbackChatId,Number(favoriteAction[1]));
+      return json({ok:true});
+    }
     const matchAction = data.match(/^match:(menu|verdict|referee|squads|market|refresh):(\d+)$/);
     if (callbackChatId && matchAction) {
       const section = matchAction[1];
@@ -2206,18 +2295,18 @@ async function handleTelegramWebhook(request, cfg) {
     return json({ ok: true });
   }
 
-  if (chatId && (/^\/today(?:@\w+)?(?:\s|$)/i.test(text) || /^матчи$/i.test(text))) {
-    await telegramApi('sendMessage', cfg, { chat_id: chatId, text: '⚽ Матчи на сегодня собраны в персональной ленте. Откройте матч — AI-инструктор объяснит сценарий, риски и доступные сигналы.', reply_markup: { inline_keyboard: [[{ text: '🧠 Смотреть матчи сегодня', web_app: { url: telegramWebAppUrl(request, { filter: 'top' }) } }]] } });
+  if (chatId && (/^\/today(?:@\w+)?(?:\s|$)/i.test(text) || /^матчи$/i.test(text) || text === '⚽ Матчи сегодня')) {
+    await sendBotDayMatches(request,cfg,chatId,{liveOnly:false});
     return json({ ok: true });
   }
 
-  if (chatId && (/^\/live(?:@\w+)?(?:\s|$)/i.test(text) || /^live$/i.test(text) || /^лайв$/i.test(text))) {
-    await telegramApi('sendMessage', cfg, { chat_id: chatId, text: '🔴 Открываю AI-центр матча в реальном времени: счёт, минута, давление, xG/удары, ключевые события и сравнение с предматчевым сценарием, если он был сохранён.', reply_markup: { inline_keyboard: [[{ text: '🔴 Открыть матч в эфире', web_app: { url: telegramWebAppUrl(request, { filter: 'live' }) } }]] } });
+  if (chatId && (/^\/live(?:@\w+)?(?:\s|$)/i.test(text) || /^live$/i.test(text) || /^лайв$/i.test(text) || text === '🔴 LIVE')) {
+    await sendBotDayMatches(request,cfg,chatId,{liveOnly:true});
     return json({ ok: true });
   }
 
-  if (chatId && /^\/favorites(?:@\w+)?(?:\s|$)/i.test(text)) {
-    await telegramApi('sendMessage', cfg, { chat_id: chatId, text: '⭐ Здесь будут матчи команд, которые вы отметили звёздочкой в приложении.', reply_markup: { inline_keyboard: [[{ text: '⭐ Мои команды', web_app: { url: telegramWebAppUrl(request, { filter: 'favorites' }) } }]] } });
+  if (chatId && (/^\/favorites(?:@\w+)?(?:\s|$)/i.test(text) || text === '⭐ Мои команды')) {
+    await sendBotFavoriteTeams(request,cfg,Number(msg.from?.id || chatId),chatId);
     return json({ ok: true });
   }
 
@@ -10742,6 +10831,83 @@ const SEARCH_COMPETITION_ALIASES = new Map([
   [848, 'conference league uecl лига конференций лк'],
 ]);
 
+const TOP_TEAM_SEARCH_CATALOG = Object.freeze([
+  { canonical:'Arsenal', country:'England', aliases:['арсенал','arsenal'] },
+  { canonical:'Chelsea', country:'England', aliases:['челси','chelsea'] },
+  { canonical:'Liverpool', country:'England', aliases:['ливерпуль','liverpool'] },
+  { canonical:'Manchester City', country:'England', aliases:['ман сити','манчестер сити','man city','mancity','manchester city','сити'] },
+  { canonical:'Manchester United', country:'England', aliases:['ман юнайтед','манчестер юнайтед','man united','man utd','manchester united','мю'] },
+  { canonical:'Tottenham', country:'England', aliases:['тоттенхэм','тоттенхем','шпоры','tottenham','spurs'] },
+  { canonical:'Newcastle', country:'England', aliases:['ньюкасл','newcastle'] },
+  { canonical:'Aston Villa', country:'England', aliases:['астон вилла','aston villa','вилла'] },
+  { canonical:'Real Madrid', country:'Spain', aliases:['реал','реал мадрид','real madrid','real','rma'] },
+  { canonical:'Barcelona', country:'Spain', aliases:['барселона','барса','barcelona','barca','fcb'] },
+  { canonical:'Atletico Madrid', country:'Spain', aliases:['атлетико','атлетико мадрид','atletico','atletico madrid'] },
+  { canonical:'Athletic Club', country:'Spain', aliases:['атлетик бильбао','атлетик','athletic bilbao','athletic club'] },
+  { canonical:'Sevilla', country:'Spain', aliases:['севилья','sevilla'] },
+  { canonical:'Villarreal', country:'Spain', aliases:['вильярреал','villarreal'] },
+  { canonical:'Real Sociedad', country:'Spain', aliases:['реал сосьедад','сосьедад','real sociedad'] },
+  { canonical:'Inter', country:'Italy', aliases:['интер','интер милан','inter','inter milan','internazionale'] },
+  { canonical:'AC Milan', country:'Italy', aliases:['милан','ac milan','milan'] },
+  { canonical:'Juventus', country:'Italy', aliases:['ювентус','юве','juventus','juve'] },
+  { canonical:'Napoli', country:'Italy', aliases:['наполи','napoli'] },
+  { canonical:'AS Roma', country:'Italy', aliases:['рома','roma','as roma'] },
+  { canonical:'Lazio', country:'Italy', aliases:['лацио','lazio'] },
+  { canonical:'Atalanta', country:'Italy', aliases:['аталанта','atalanta'] },
+  { canonical:'Bayern Munich', country:'Germany', aliases:['бавария','bayern','bayern munich','bayern munchen','бавария мюнхен'] },
+  { canonical:'Borussia Dortmund', country:'Germany', aliases:['боруссия дортмунд','дортмунд','borussia dortmund','dortmund','bvb'] },
+  { canonical:'Bayer Leverkusen', country:'Germany', aliases:['байер','байер леверкузен','bayer leverkusen','leverkusen'] },
+  { canonical:'RB Leipzig', country:'Germany', aliases:['лейпциг','rb leipzig','leipzig'] },
+  { canonical:'Eintracht Frankfurt', country:'Germany', aliases:['айнтрахт','айнтрахт франкфурт','eintracht frankfurt','frankfurt'] },
+  { canonical:'Paris Saint Germain', country:'France', aliases:['псж','пари сен жермен','psg','paris saint germain','paris'] },
+  { canonical:'Marseille', country:'France', aliases:['марсель','marseille','om'] },
+  { canonical:'Monaco', country:'France', aliases:['монако','monaco'] },
+  { canonical:'Lyon', country:'France', aliases:['лион','lyon'] },
+  { canonical:'Lille', country:'France', aliases:['лиль','lille'] },
+  { canonical:'Benfica', country:'Portugal', aliases:['бенфика','benfica'] },
+  { canonical:'FC Porto', country:'Portugal', aliases:['порту','porto','fc porto'] },
+  { canonical:'Sporting CP', country:'Portugal', aliases:['спортинг','sporting','sporting cp','спортинг лиссабон'] },
+  { canonical:'Ajax', country:'Netherlands', aliases:['аякс','ajax'] },
+  { canonical:'PSV Eindhoven', country:'Netherlands', aliases:['псв','psv','psv eindhoven'] },
+  { canonical:'Feyenoord', country:'Netherlands', aliases:['фейеноорд','feyenoord'] },
+  { canonical:'Galatasaray', country:'Turkey', aliases:['галатасарай','galatasaray'] },
+  { canonical:'Fenerbahce', country:'Turkey', aliases:['фенербахче','fenerbahce','fenerbahçe'] },
+  { canonical:'Besiktas', country:'Turkey', aliases:['бешикташ','besiktas','beşiktaş'] },
+  { canonical:'Celtic', country:'Scotland', aliases:['селтик','celtic'] },
+  { canonical:'Rangers', country:'Scotland', aliases:['рейнджерс','rangers'] },
+  { canonical:'Club Brugge', country:'Belgium', aliases:['брюгге','club brugge','brugge'] },
+  { canonical:'Shakhtar Donetsk', country:'Ukraine', aliases:['шахтер','шахтёр','шахтер донецк','shakhtar','shakhtar donetsk'] },
+  { canonical:'Dynamo Kyiv', country:'Ukraine', aliases:['динамо киев','динамо київ','dynamo kyiv','dynamo kiev'] },
+  { canonical:'Al-Hilal Saudi FC', country:'Saudi-Arabia', aliases:['аль хилаль','ал хилаль','al hilal','al-hilal'] },
+  { canonical:'Al-Nassr', country:'Saudi-Arabia', aliases:['аль наср','ал наср','al nassr','al-nassr'] },
+  { canonical:'Al-Ittihad FC', country:'Saudi-Arabia', aliases:['аль иттихад','ал иттихад','al ittihad','al-ittihad'] },
+  { canonical:'Inter Miami', country:'USA', aliases:['интер майами','inter miami','майами'] },
+  { canonical:'Los Angeles FC', country:'USA', aliases:['лафк','lafc','los angeles fc'] },
+]);
+
+function topTeamSearchCandidates(query = '') {
+  const q=searchText(query);
+  if (!q) return [];
+  return TOP_TEAM_SEARCH_CATALOG.map(item=>{
+    const canonical=searchText(item.canonical);
+    const aliases=(item.aliases || []).map(searchText);
+    let score=0;
+    if (canonical===q) score=300;
+    else if (aliases.includes(q)) score=280;
+    else if (q.length>=4 && canonical.startsWith(q)) score=180;
+    else if (q.length>=4 && aliases.some(x=>x.startsWith(q))) score=170;
+    else if (q.length>=5 && (canonical.includes(q) || aliases.some(x=>x.includes(q)))) score=110;
+    return {...item,score};
+  }).filter(x=>x.score>0).sort((a,b)=>b.score-a.score || a.canonical.localeCompare(b.canonical,'en')).slice(0,5);
+}
+
+function topTeamSearchPlan(query = '') {
+  const candidates=topTeamSearchCandidates(query);
+  const best=candidates[0] || null;
+  const providerQuery=best && best.score>=170 ? best.canonical : String(query || '').trim();
+  return { providerQuery, candidates, resolved:Boolean(best && searchText(providerQuery)!==searchText(query)), best };
+}
+
 function searchText(value = '') {
   return String(value || '').trim().toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ');
 }
@@ -10783,7 +10949,7 @@ function searchKnownCompetitions(query = '') {
   return rows.sort((a,b) => b.score - a.score || b.priority - a.priority).slice(0, q ? 8 : 10);
 }
 
-function normalizeSearchTeam(row = {}, query = '') {
+function normalizeSearchTeam(row = {}, query = '', preferred = []) {
   const team = row?.team || row || {};
   const name = String(team.name || '');
   const q = searchText(query);
@@ -10793,6 +10959,14 @@ function normalizeSearchTeam(row = {}, query = '') {
   else if (q && n.startsWith(q)) score += 90;
   else if (q && n.includes(q)) score += 50;
   if (BIG_TEAM_RE.test(name)) score += 25;
+  for (const item of preferred || []) {
+    const canonical=searchText(item?.canonical || '');
+    const country=searchText(item?.country || '');
+    const rawCountry=searchText(team.country || '');
+    if (canonical && n===canonical) score += 120;
+    else if (canonical && (n.includes(canonical) || canonical.includes(n))) score += 60;
+    if (country && rawCountry===country) score += 35;
+  }
   const youthReserve = YOUTH_RESERVE_RE.test(name);
   if (youthReserve) score -= 45;
   if (team.national) score += 10;
@@ -10876,21 +11050,23 @@ async function apiSearch(request, cfg) {
   const query = String(url.searchParams.get('q') || '').trim().slice(0, 60);
   const q = searchText(query);
   const competitions = searchKnownCompetitions(query);
+  const teamPlan = topTeamSearchPlan(query);
   if (!q) return json({ query: '', teams: [], competitions, matches: [], matchSource: null, provider: publicDataCapabilities(), hint: 'Введите название команды или турнира.' });
-  if (q.length < 3) return json({ query, teams: [], competitions, matches: [], matchSource: null, provider: publicDataCapabilities(), hint: 'Для поиска команды введите минимум 3 символа.' });
+  if (q.length < 3 && Number(teamPlan.best?.score || 0) < 280) return json({ query, teams: [], competitions, matches: [], matchSource: null, provider: publicDataCapabilities(), hint: 'Введите минимум 3 символа или известное сокращение клуба.' });
 
   if (Number(competitions[0]?.score || 0) >= 120) {
     const fixtureSearch = await loadSearchCompetitionMatches(competitions[0], cfg);
     return json({ query, teams: [], competitions, ...fixtureSearch, provider: publicDataCapabilities() });
   }
 
-  const cacheKey = `search:teams:${encodeURIComponent(q)}:v1`;
+  const teamCacheQuery = searchText(teamPlan.providerQuery || query);
+  const cacheKey = `search:teams:${encodeURIComponent(teamCacheQuery)}:v2-global`;
   const cached = await getCache(cacheKey, cfg);
   if (cached?.teams) {
     const fixtureSearch = preferCompetitionSearch(competitions[0], cached.teams)
       ? await loadSearchCompetitionMatches(competitions[0], cfg)
       : { matches: [], matchSource: null, warning: '' };
-    return json({ ...cached, competitions, ...fixtureSearch, warning: mergeSearchWarnings(cached.warning, fixtureSearch.warning), cached: true, provider: publicDataCapabilities() });
+    return json({ ...cached, query, resolvedQuery:teamPlan.resolved ? teamPlan.providerQuery : (cached.resolvedQuery || ''), competitions, ...fixtureSearch, warning: mergeSearchWarnings(cached.warning, fixtureSearch.warning), cached: true, provider: publicDataCapabilities() });
   }
 
   let rows = [];
@@ -10903,7 +11079,7 @@ async function apiSearch(request, cfg) {
         ? await loadSearchCompetitionMatches(competitions[0], cfg)
         : { matches: [], matchSource: null, warning: '' };
       return json({
-        ...(stale || { query, teams: [] }), competitions, ...fixtureSearch,
+        ...(stale || { teams: [] }), query, resolvedQuery:teamPlan.resolved ? teamPlan.providerQuery : (stale?.resolvedQuery || ''), competitions, ...fixtureSearch,
         cached: Boolean(stale), stale: Boolean(stale),
         warning: mergeSearchWarnings(
           stale ? 'Поиск показан из сохранённых данных: бережём лимит API-Football.' : 'Поиск команд временно не запущен: бережём остаток бесплатной квоты источника данных.',
@@ -10912,27 +11088,27 @@ async function apiSearch(request, cfg) {
         provider: publicDataCapabilities(),
       });
     }
-    rows = await apiFootball('/teams', { search: query }, cfg);
+    rows = await apiFootball('/teams', { search: teamPlan.providerQuery || query }, cfg);
   } catch (error) {
     const stale = await getStaleCache(cacheKey, cfg);
     if (stale?.teams) {
       const fixtureSearch = preferCompetitionSearch(competitions[0], stale.teams)
         ? await loadSearchCompetitionMatches(competitions[0], cfg)
         : { matches: [], matchSource: null, warning: '' };
-      return json({ ...stale, competitions, ...fixtureSearch, cached: true, stale: true, warning: mergeSearchWarnings('Не удалось обновить поиск — показаны сохранённые результаты.', fixtureSearch.warning), provider: publicDataCapabilities() });
+      return json({ ...stale, query, resolvedQuery:teamPlan.resolved ? teamPlan.providerQuery : (stale.resolvedQuery || ''), competitions, ...fixtureSearch, cached: true, stale: true, warning: mergeSearchWarnings('Не удалось обновить поиск — показаны сохранённые результаты.', fixtureSearch.warning), provider: publicDataCapabilities() });
     }
     if (isFootballRateLimitError(error)) warning = 'API-Football временно ограничил поиск команд. Повторите чуть позже.';
     else throw error;
   }
 
   const seen = new Set();
-  const teams = rows.map(x => normalizeSearchTeam(x, query))
+  const teams = rows.map(x => normalizeSearchTeam(x, query, teamPlan.candidates))
     .filter(x => x.id > 0 && x.name && !seen.has(x.id) && seen.add(x.id))
     .sort((x, y) => y.score - x.score || x.name.localeCompare(y.name, 'ru')).slice(0, 16);
   const fixtureSearch = preferCompetitionSearch(competitions[0], teams)
     ? await loadSearchCompetitionMatches(competitions[0], cfg)
     : { matches: [], matchSource: null, warning: '' };
-  const payload = { query, teams, warning, refreshedAt: new Date().toISOString() };
+  const payload = { query, resolvedQuery:teamPlan.resolved ? teamPlan.providerQuery : '', teams, warning, refreshedAt: new Date().toISOString() };
   await setCache(cacheKey, 0, payload, cfg, 720);
   return json({ ...payload, competitions, ...fixtureSearch, warning: mergeSearchWarnings(warning, fixtureSearch.warning), cached: false, provider: publicDataCapabilities() });
 }
@@ -12168,6 +12344,9 @@ export default {
         botInlineMatchSections: 'enabled',
         botCachedAnalysisReuse: 'enabled',
         botMatchCardCallbacks: 'enabled',
+        globalTopClubSearch: 'enabled',
+        miniAppAiOnlyShell: 'enabled',
+        botContentFirstNavigation: 'enabled',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',

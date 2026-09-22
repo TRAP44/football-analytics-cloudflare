@@ -6,17 +6,17 @@
   <meta name="theme-color" content="#111827" />
   <title>FM AI · Футбольный инструктор</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=6.40.0" />
+  <link rel="stylesheet" href="/styles.css?v=6.41.0" />
 </head>
-<body>
+<body class="miniapp-ai-only">
   <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
     <div class="boot-card">
       <div class="boot-orbit" aria-hidden="true"><i></i><i></i><i></i></div>
       <div class="boot-logo"><span>AI</span></div>
-      <div class="boot-kicker">FM AI · ФУТБОЛЬНЫЙ ИНСТРУКТОР · версия 6.40</div>
-      <h1 id="bootTitle">Запускаю AI-инструктора</h1>
-      <p id="bootText">Проверяю версию и готовлю футбольные данные…</p>
-      <div class="boot-feature-row" aria-hidden="true"><span>⚽ Матчи</span><span>🧠 AI-разбор</span><span>🧑‍⚖️ Контекст</span></div>
+      <div class="boot-kicker">FM AI · ФУТБОЛЬНЫЙ ИНСТРУКТОР · версия 6.41</div>
+      <h1 id="bootTitle">Запускаю FM AI</h1>
+      <p id="bootText">Готовлю глобальный поиск и AI-разбор матча…</p>
+      <div class="boot-feature-row" aria-hidden="true"><span>🔎 Поиск</span><span>🧠 AI-вердикт</span><span>🧑‍⚖️ Контекст</span></div>
       <div class="boot-progress" aria-hidden="true"><i id="bootProgressFill"></i></div>
       <div class="boot-progress-caption"><span>АНАЛИЗИРУЮ</span><b>данные · форма · рынок</b></div>
       <div class="boot-actions">
@@ -32,11 +32,11 @@
         <div class="brand-mark" aria-hidden="true"><span>FM</span></div>
         <div class="brand-copy">
           <div class="eyebrow">AI ФУТБОЛЬНЫЙ ИНСТРУКТОР</div>
-          <h1 id="topbarTitle" tabindex="-1">Матчи</h1>
-          <p id="topbarSubtitle">Матчи, вероятности, составы, судья и риски — в одном разборе</p>
+          <h1 id="topbarTitle" tabindex="-1">AI-анализ матча</h1>
+          <p id="topbarSubtitle">Найдите клуб или матч — FM AI соберёт главное для решения</p>
         </div>
       </div>
-      <button id="profileBtn" class="profile-badge" type="button" aria-label="Открыть профиль"><i></i><span>Бесплатный</span></button>
+      <button id="profileBtn" class="profile-badge" type="button" aria-label="Открыть администрирование" hidden><i></i><span>Admin</span></button>
     </header>
 
     <div id="connectionBanner" class="connection-banner" role="status" aria-live="polite" hidden>
@@ -54,7 +54,7 @@
     </div>
 
     <main>
-      <section id="matchesView" class="view active">
+      <section id="matchesView" class="view" hidden>
         <div class="date-strip">
           <button class="date-btn" type="button" data-offset="-1">Вчера</button>
           <button class="date-btn active" type="button" data-offset="0">Сегодня</button>
@@ -133,21 +133,21 @@
         </div>
       </section>
 
-      <section id="searchView" class="view">
+      <section id="searchView" class="view active">
         <div class="section-head search-page-head">
           <div>
-            <h2>Поиск</h2>
-            <p>Команды, лиги, предстоящие и завершённые матчи</p>
+            <h2>Найти матч для AI-разбора</h2>
+            <p>Клубы из разных стран и лиг · поиск работает и по русским названиям</p>
           </div>
         </div>
         <section class="panel global-search-panel">
           <div class="global-search-box">
-            <input id="globalSearchInput" class="search-input" type="search" aria-label="Поиск команд, лиг и матчей" inputmode="search" placeholder="Команда или лига, например: Барселона" autocomplete="off" />
+            <input id="globalSearchInput" class="search-input" type="search" aria-label="Поиск футбольного клуба или матча" inputmode="search" placeholder="Например: Реал, ПСЖ, Ман Сити, Интер…" autocomplete="off" />
             <button id="globalSearchBtn" class="global-search-btn" type="button">Найти</button>
           </div>
-          <p class="tiny">Начните вводить название. После нажатия «Найти» приложение дополнительно покажет ближайшие и уже сыгранные матчи найденной команды.</p>
+          <p class="tiny">FM AI распознаёт популярные русские, английские и сокращённые названия клубов. Выберите найденный матч, чтобы запустить анализ.</p>
         </section>
-        <div class="search-mode-tabs" role="group" aria-label="Фильтр результатов поиска">
+        <div class="search-mode-tabs" role="group" aria-label="Фильтр результатов поиска" hidden>
           <button class="search-mode-btn active" type="button" data-search-mode="all" aria-pressed="true">Все</button>
           <button class="search-mode-btn" type="button" data-search-mode="teams" aria-pressed="false">Команды</button>
           <button class="search-mode-btn" type="button" data-search-mode="competitions" aria-pressed="false">Лиги</button>
@@ -159,15 +159,15 @@
           <div class="mini-section-head"><strong>Результаты</strong><span id="searchResultsMeta"></span></div>
           <div id="searchResults" class="search-results"></div>
         </section>
-        <section id="searchRecentWrap" class="search-section">
+        <section id="searchRecentWrap" class="search-section" hidden>
           <div class="mini-section-head"><strong>Недавно открывали</strong><button id="clearRecentTeamsBtn" class="text-btn" type="button">Очистить</button></div>
           <div id="searchRecent" class="discovery-grid"></div>
         </section>
-        <section id="searchFavoritesWrap" class="search-section">
+        <section id="searchFavoritesWrap" class="search-section" hidden>
           <div class="mini-section-head"><strong>⭐ Избранные команды</strong><span>Быстрый доступ</span></div>
           <div id="searchFavorites" class="discovery-grid"></div>
         </section>
-        <section id="searchCompetitionsWrap" class="search-section">
+        <section id="searchCompetitionsWrap" class="search-section" hidden>
           <div class="mini-section-head"><strong>Популярные турниры</strong><span>Из текущего каталога</span></div>
           <div id="searchCompetitions" class="competition-shortcuts search-competition-shortcuts"></div>
         </section>
@@ -206,7 +206,7 @@
       </section>
 
       <section id="analysisView" class="view">
-        <button id="backBtn" class="back-btn" type="button">← К матчам</button>
+        <button id="backBtn" class="back-btn" type="button">← К поиску</button>
         <div id="analysis"></div>
       </section>
 
@@ -676,15 +676,15 @@
       </section>
     </main>
 
-    <nav class="bottom-nav" aria-label="Основная навигация">
-      <button id="navMatches" class="nav-item active" type="button"><span>⚽</span><small>Матчи</small></button>
-      <button id="navSearch" class="nav-item" type="button"><span>🔎</span><small>Поиск</small></button>
-      <button id="navHistory" class="nav-item" type="button"><span>🕘</span><small>История</small></button>
-      <button id="navProfile" class="nav-item" type="button"><span>👤</span><small>Профиль</small></button>
+    <nav class="bottom-nav" aria-label="Навигация AI">
+      <button id="navMatches" class="nav-item" type="button" hidden><span>⚽</span><small>Служебное</small></button>
+      <button id="navSearch" class="nav-item active" type="button"><span>🔎</span><small>Найти матч</small></button>
+      <button id="navHistory" class="nav-item" type="button"><span>🧠</span><small>История AI</small></button>
+      <button id="navProfile" class="nav-item" type="button" hidden><span>🔐</span><small>Admin</small></button>
     </nav>
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=6.40.0"></script>
+  <script type="module" src="/app.js?v=6.41.0"></script>
 </body>
 </html>

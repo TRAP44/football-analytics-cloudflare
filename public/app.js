@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.40.0-rc48';
+const CLIENT_VERSION = '6.41.0-rc49';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc48';
+const CLIENT_RELEASE_CHANNEL = 'rc49';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -199,13 +199,13 @@ function saveInterfacePreference(key, value) {
 }
 
 const VIEW_CHROME = {
-  matchesView: ['Матчи', 'Сегодня, матчи в реальном времени и предматчевая аналитика'],
-  searchView: ['Поиск', 'Команды, лиги, предстоящие и завершённые матчи'],
-  tournamentView: ['Турнир', 'Матчи, таблица и контекст соревнования'],
-  teamView: ['Команда', 'Форма, состав и календарь клуба'],
-  analysisView: ['Анализ матча', 'Главное, вероятности, сценарии и ключевые факторы'],
-  historyView: ['История', 'Недавно просмотренные анализы'],
-  profileView: ['Профиль', 'Настройки, избранное и персонализация'],
+  matchesView: ['Служебная лента', 'Матчи и системные данные'],
+  searchView: ['AI-анализ матча', 'Найдите клуб или матч — остальное объяснит FM AI'],
+  tournamentView: ['Турнир', 'Служебный просмотр соревнования'],
+  teamView: ['Команда', 'Служебный просмотр данных клуба'],
+  analysisView: ['AI-разбор', 'Вердикт, причины, составы, судья, рынок и риски'],
+  historyView: ['История AI', 'Ваши последние сохранённые разборы'],
+  profileView: ['Администрирование', 'Служебные настройки проекта'],
 };
 
 function syncTopbar(id) {
@@ -230,17 +230,17 @@ const BACK_VIEW_LABELS = Object.freeze({
 });
 
 function viewBackTarget(id = activeViewId()) {
-  if (id === 'analysisView') return state.analysisBackView || 'matchesView';
-  if (id === 'teamView') return state.teamBackView || 'matchesView';
-  if (id === 'tournamentView') return state.tournamentBackView || 'matchesView';
-  return 'matchesView';
+  if (id === 'analysisView') return state.analysisBackView || 'searchView';
+  if (id === 'teamView') return state.teamBackView || 'searchView';
+  if (id === 'tournamentView') return state.tournamentBackView || 'searchView';
+  return 'searchView';
 }
 
 function syncBackButtons() {
   const bindings = [
-    ['backBtn', state.analysisBackView || 'matchesView'],
-    ['teamBackBtn', state.teamBackView || 'matchesView'],
-    ['tournamentBackBtn', state.tournamentBackView || 'matchesView'],
+    ['backBtn', state.analysisBackView || 'searchView'],
+    ['teamBackBtn', state.teamBackView || 'searchView'],
+    ['tournamentBackBtn', state.tournamentBackView || 'searchView'],
   ];
   bindings.forEach(([id, target]) => {
     const button = $(id);
@@ -264,7 +264,7 @@ function handleBackNavigation() {
 }
 
 function showView(id, options = {}) {
-  if (!views.includes(id) || !$(id)) id = 'matchesView';
+  if (!views.includes(id) || !$(id)) id = 'searchView';
   const current = activeViewId();
   if (current === 'historyView' && id !== 'historyView' && !options.fromHistoryOpen) {
     state.historyOpenRequestSeq += 1;
@@ -714,7 +714,7 @@ async function runStartupSequence() {
   if ($('bootContinueBtn')) $('bootContinueBtn').hidden = true;
   if ($('bootReloadBtn')) $('bootReloadBtn').hidden = true;
 
-  setBootStatus('Запускаю AI-инструктора', 'Проверяю версию и готовлю футбольные данные…', 12);
+  setBootStatus('Запускаю FM AI', 'Проверяю версию и готовлю AI-поиск матчей…', 12);
   const manifest = await loadAppManifest();
 
   if (state.compatibilityBlocked) {
@@ -733,22 +733,16 @@ async function runStartupSequence() {
   );
 
   await loadRuntimeStatus(false);
-  await Promise.allSettled([loadProfile(), loadFavorites()]);
+  await loadProfile().catch(()=>null);
   renderProfile();
   applyRuntimeUi();
+  const admin=isAdmin();
+  if ($('profileBtn')) $('profileBtn').hidden=!admin;
+  if ($('navProfile')) $('navProfile').hidden=!admin;
+  if ($('navMatches')) $('navMatches').hidden=!admin;
+  if (admin) await Promise.allSettled([loadFavorites(), loadMatches()]);
 
-  if (isAdmin() || !state.runtimeStatus?.maintenanceMode) {
-    await Promise.allSettled([loadMatches()]);
-  } else {
-    const snapshot = readMatchSnapshot(localDate(state.offset));
-    if (snapshot) applyMatchPayload(snapshot, { snapshot: true });
-    else if ($('matches')) {
-      $('matches').innerHTML = `<div class="empty">${escapeHtml(state.runtimeStatus?.message || 'Приложение временно находится на техническом обслуживании.')}</div>`;
-      $('matches').setAttribute('aria-busy', 'false');
-    }
-  }
-
-  const usable = Boolean(state.profile || state.matches.length || readMatchSnapshot(localDate(state.offset)));
+  const usable = Boolean(state.profile || admin || navigator.onLine !== false);
   if (!usable && navigator.onLine === false) {
     showBootRecovery({
       blocking: false,
@@ -759,13 +753,13 @@ async function runStartupSequence() {
   }
 
   applyLaunchIntent();
-  setBootStatus('AI-инструктор готов', state.startup.degraded ? 'Основные данные доступны, часть проверок завершится позже.' : 'Матчи, форма, составы, рынок и контекст готовы к разбору.', 100);
+  setBootStatus('FM AI готов', state.startup.degraded ? 'AI-поиск доступен, часть фоновых проверок завершится позже.' : 'Найдите матч — AI соберёт форму, составы, судью, рынок и риски.', 100);
   await new Promise(resolve => setTimeout(resolve, 120));
   hideBootGate();
 
   scheduleIdle(async () => {
-    const tasks = [loadReminders(), loadHistory(false)];
-    if (isAdmin()) tasks.push(loadProvider());
+    const tasks = [loadHistory(false)];
+    if (isAdmin()) tasks.push(loadProvider(),loadReminders());
     await Promise.allSettled(tasks);
   });
   return true;
@@ -3675,6 +3669,20 @@ function discoveryTeamCard(team, badge = '') {
   </button>`;
 }
 
+function searchTeamSummaryCard(team) {
+  return `<div class="search-entity-summary">
+    <span class="discovery-team-logo">${team.logo ? `<img src="${safeUrl(team.logo)}" alt="">` : '⚽'}</span>
+    <span><small>КОМАНДА НАЙДЕНА</small><strong>${escapeHtml(team.name || 'Команда')}</strong><em>${escapeHtml(team.country || '')}${team.national ? ' · сборная' : ''}</em></span>
+  </div>`;
+}
+
+function searchCompetitionSummaryCard(comp) {
+  return `<div class="search-entity-summary">
+    <span class="discovery-team-logo">🏆</span>
+    <span><small>ТУРНИР НАЙДЕН</small><strong>${escapeHtml(comp.shortName || comp.name || 'Турнир')}</strong><em>${escapeHtml(comp.country || '')}</em></span>
+  </div>`;
+}
+
 function discoveryCompetitionCard(comp, badge = '') {
   return `<button class="discovery-competition-card" type="button" data-search-competition="${Number(comp.leagueId)}" data-season="${Number(comp.season || new Date().getFullYear())}" data-comp-name="${escapeHtml(comp.name || comp.shortName || 'Турнир')}" data-comp-short="${escapeHtml(comp.shortName || comp.name || 'Турнир')}" data-comp-country="${escapeHtml(comp.country || '')}" data-comp-category="${escapeHtml(comp.category || '')}" data-comp-tier="${escapeHtml(comp.tier || 'standard')}">
     <span class="discovery-comp-icon">🏆</span><span><strong>${escapeHtml(comp.shortName || comp.name || 'Турнир')}</strong><small>${escapeHtml(comp.country || '')}${badge ? ` · ${escapeHtml(badge)}` : ''}</small></span><b>›</b>
@@ -3819,22 +3827,25 @@ function renderGlobalSearch() {
   wrap.hidden = false;
   if (meta) meta.textContent = `${russianCountLabel(teams.length, 'команда', 'команды', 'команд')} · ${russianCountLabel(comps.length, 'лига', 'лиги', 'лиг')} · ${russianCountLabel(matches.length, 'матч', 'матча', 'матчей')}`;
   if (status) {
+    const resolvedNote = state.globalSearch.resolvedQuery
+      ? `<div class="data-notice">🌍 Распознано глобально: <strong>${escapeHtml(state.globalSearch.resolvedQuery)}</strong></div>`
+      : '';
     const sourceNote = state.globalSearch.matchSourceTeam && matches.length
       ? `<div class="data-notice">⚽ Матчи: ${escapeHtml(state.globalSearch.matchSourceTeam)} · последние и ближайшие игры</div>`
       : '';
     status.innerHTML = state.globalSearch.loading
       ? '<div class="data-notice">🔎 Ищу команды, лиги и матчи…</div>'
       : state.globalSearch.warning
-        ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.globalSearch.warning)}</div>${sourceNote}`
-        : sourceNote;
+        ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.globalSearch.warning)}</div>${resolvedNote}${sourceNote}`
+        : `${resolvedNote}${sourceNote}`;
   }
 
   const sections = [];
   if ((mode === 'all' || mode === 'teams') && teams.length) {
-    sections.push(`<section class="panel search-result-block"><div class="mini-section-head"><strong>Команды</strong><span>${teams.length}</span></div><div class="discovery-grid">${teams.slice(0,16).map(x => discoveryTeamCard(x, x.youthReserve ? 'Молодёжная/резерв' : '')).join('')}</div></section>`);
+    sections.push(`<section class="panel search-result-block compact-entity-results"><div class="mini-section-head"><strong>Команда</strong><span>${teams.length}</span></div><div class="search-entity-list">${teams.slice(0,5).map(searchTeamSummaryCard).join('')}</div></section>`);
   }
   if ((mode === 'all' || mode === 'competitions') && comps.length) {
-    sections.push(`<section class="panel search-result-block"><div class="mini-section-head"><strong>Лиги и турниры</strong><span>${comps.length}</span></div><div class="discovery-grid">${comps.slice(0,10).map(x => discoveryCompetitionCard(x)).join('')}</div></section>`);
+    sections.push(`<section class="panel search-result-block compact-entity-results"><div class="mini-section-head"><strong>Турнир</strong><span>${comps.length}</span></div><div class="search-entity-list">${comps.slice(0,3).map(searchCompetitionSummaryCard).join('')}</div></section>`);
   }
   if ((mode === 'all' || mode === 'upcoming') && upcoming.length) {
     sections.push(`<section class="panel search-result-block"><div class="mini-section-head"><strong>Предстоящие матчи</strong><span>${upcoming.length}</span></div><div class="search-match-list">${upcoming.slice(0,12).map(searchMatchCard).join('')}</div></section>`);
@@ -3859,6 +3870,7 @@ async function runGlobalSearch() {
   const seq = ++state.globalSearch.requestSeq;
   state.globalSearch.query = query;
   state.globalSearch.warning = '';
+  state.globalSearch.resolvedQuery = '';
   state.globalSearch.remoteMatches = [];
   state.globalSearch.matchSourceTeam = '';
 
@@ -3878,6 +3890,7 @@ async function runGlobalSearch() {
     if (seq !== state.globalSearch.requestSeq || query !== String(state.globalSearch.query || '').trim()) return;
     state.globalSearch.remoteTeams = data.teams || [];
     state.globalSearch.remoteCompetitions = data.competitions || [];
+    state.globalSearch.resolvedQuery = data.resolvedQuery || '';
     state.globalSearch.remoteMatches = data.matches || [];
     state.globalSearch.matchSourceTeam = data.matchSource?.name || '';
     state.globalSearch.warning = data.warning || data.hint || '';
@@ -5636,11 +5649,11 @@ function renderHistory() {
         <p>После первого полного анализа матч появится здесь для быстрого повторного открытия.</p>
         <div class="empty-actions">
           ${retry}
-          <button id="historyEmptyMatches" class="primary-setting-btn" type="button">Перейти к матчам</button>
+          <button id="historyEmptyMatches" class="primary-setting-btn" type="button">Найти матч</button>
         </div>
       </div>`;
     $('historyEmptyRetry')?.addEventListener('click', () => loadHistory(true));
-    $('historyEmptyMatches')?.addEventListener('click', () => showView('matchesView'));
+    $('historyEmptyMatches')?.addEventListener('click', () => showView('searchView'));
     return;
   }
   const notice = state.historyLoading
@@ -6159,8 +6172,6 @@ function applyLaunchIntent() {
   const tab = String(params.get('tab') || '').toLowerCase();
   if (['top', 'live', 'favorites', 'all'].includes(filter)) {
     state.filter = filter;
-    syncFilterButtons();
-    if (state.matches.length) renderMatches();
   }
   if (view === 'search' || query) {
     if (query) {
@@ -6175,9 +6186,12 @@ function applyLaunchIntent() {
   } else if (view === 'history') {
     showView('historyView');
     void loadHistory(false);
+  } else if (fixtureId > 0 && ['analysis','center'].includes(action)) {
+    showView('searchView');
+    void openLaunchFixture(fixtureId, action, tab);
   } else {
-    showView('matchesView', { restore: true });
-    if (fixtureId > 0 && ['analysis','center'].includes(action)) void openLaunchFixture(fixtureId, action, tab);
+    renderGlobalSearch();
+    showView('searchView', { restore: true });
   }
 }
 function renderAnalysis(d) {
@@ -6730,3 +6744,5 @@ try {
 } finally {
   clearTimeout(startupWatchdog);
 }
+
+const MINIAPP_PRODUCT_MODE = 'ai-analysis-only';
