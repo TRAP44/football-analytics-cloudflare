@@ -261,7 +261,7 @@ function friendlyErrorMessage(error) {
   const retryAfter = Number(error?.retryAfter || error?.payload?.retryAfter || 0);
   if (category === 'offline') return 'Нет подключения к интернету. Сохранённые данные останутся на экране.';
   if (error?.status === 426 || error?.payload?.category === 'compatibility') return 'Версия приложения устарела. Обновите приложение.';
-  if (error?.payload?.category === 'maintenance') return error?.payload?.error || 'Football Manager временно на техническом обслуживании.';
+  if (error?.payload?.category === 'maintenance') return error?.payload?.error || 'Приложение временно на техническом обслуживании.';
   if (error?.payload?.category === 'feature_disabled') return error?.payload?.error || 'Эта функция временно приостановлена.';
   if (category === 'auth') return 'Сессия Telegram не подтверждена. Закройте приложение и откройте его снова из бота.';
   if (category === 'timeout') return 'Сервис отвечает медленнее обычного. Попробуйте обновить ещё раз.';
@@ -649,7 +649,7 @@ async function runStartupSequence() {
   if ($('bootContinueBtn')) $('bootContinueBtn').hidden = true;
   if ($('bootReloadBtn')) $('bootReloadBtn').hidden = true;
 
-  setBootStatus('Запускаю Football Manager', 'Проверяю совместимость версии…', 12);
+  setBootStatus('Запускаю приложение', 'Проверяю совместимость версии…', 12);
   const manifest = await loadAppManifest();
 
   if (state.compatibilityBlocked) {
@@ -678,7 +678,7 @@ async function runStartupSequence() {
     const snapshot = readMatchSnapshot(localDate(state.offset));
     if (snapshot) applyMatchPayload(snapshot, { snapshot: true });
     else if ($('matches')) {
-      $('matches').innerHTML = `<div class="empty">${escapeHtml(state.runtimeStatus?.message || 'Football Manager временно находится на техническом обслуживании.')}</div>`;
+      $('matches').innerHTML = `<div class="empty">${escapeHtml(state.runtimeStatus?.message || 'Приложение временно находится на техническом обслуживании.')}</div>`;
       $('matches').setAttribute('aria-busy', 'false');
     }
   }
@@ -1206,7 +1206,7 @@ function renderModelQuality() {
         <div class="quality-cal-bars"><i style="--w:${Math.max(0, Math.min(100, Number(x.avgPredicted || 0)))}%"></i><b style="--w:${Math.max(0, Math.min(100, Number(x.hitRate || 0)))}%"></b></div>
         <strong>${x.sample ? `${qualityPct(x.hitRate)} · выборка ${x.sample}` : '—'}</strong>
       </div>`).join('')}</div>
-    ${q.methodology?.warning ? `<p class="quality-warning">⚠️ ${escapeHtml(q.methodology.warning)}</p>` : ''}`;
+    ${q.methodology?.warning ? `<p class="quality-warning">⚠️ ${escapeHtml(humanizeTechnicalText(q.methodology.warning))}</p>` : ''}`;
 
   const ce = q.calibrationEngine || {};
   const impact = q.calibrationImpact || {};
@@ -1257,7 +1257,7 @@ function renderModelQuality() {
       }).join('')}
     </div>
     ${Number(impact.sample || 0) ? `<div class="calibration-impact"><span>Проверка v3.7: выборка ${Number(impact.sample || 0)}</span><strong>Ошибка Брайера ${qualityNum(impact.rawBrier)} → ${qualityNum(impact.finalBrier)}</strong><small>${Number(impact.brierDelta || 0) > 0 ? 'улучшение' : Number(impact.brierDelta || 0) < 0 ? 'ухудшение — автоматика будет видна в исторической проверке' : 'без изменения'}</small></div>` : '<p class="quality-engine-note">Эффект v3.7 появится после завершения первых матчей, рассчитанных этой версией.</p>'}
-    <p class="quality-engine-note">${escapeHtml(ce.note || 'Автокалибровка включается только после достаточной выборки.')}</p>`;
+    <p class="quality-engine-note">${escapeHtml(humanizeTechnicalText(ce.note || 'Автокалибровка включается только после достаточной выборки.'))}</p>`;
 
   confidence.hidden = false;
   confidence.innerHTML = `
@@ -1381,7 +1381,7 @@ function renderModelQuality() {
       </div>` : ''}
 
       <div class="model-dash-section">
-        <div class="model-dash-section-head"><strong>🧪 Целостность прогнозов</strong><span>${escapeHtml(q.integrity?.label || 'нет данных')}</span></div>
+        <div class="model-dash-section-head"><strong>🧪 Целостность прогнозов</strong><span>${escapeHtml(technicalStateLabel(q.integrity?.label || 'нет данных'))}</span></div>
         <div class="model-integrity-summary ${escapeHtml(q.integrity?.status || 'clean')}">
           <div><span>Загружено</span><strong>${Number(q.integrity?.loadedRows || 0)}</strong><small>завершённые + ожидающие</small></div>
           <div><span>Критические</span><strong>${Number(q.integrity?.severeIssues || 0)}</strong><small>вероятности / время / согласованность</small></div>
@@ -1395,14 +1395,14 @@ function renderModelQuality() {
             <em>${Number(x.count || 0)}</em>
           </div>`).join('')}</div>
         ${q.integrity?.truncatedPotentially ? '<div class="data-notice stale">Выборка достигла лимита административного запроса: проверка целостности относится к загруженным строкам, а не ко всей истории.</div>' : ''}
-        <p class="quality-engine-note">${escapeHtml(q.integrity?.note || '')}</p>
+        <p class="quality-engine-note">${escapeHtml(humanizeTechnicalText(q.integrity?.note || ''))}</p>
       </div>
 
       <div class="model-dash-section">
         <div class="model-dash-section-head"><strong>Наблюдения для проверки</strong><span>ничего не меняют автоматически</span></div>
         <div class="model-observations">${(db.observations || []).map(x => `
-          <div class="${escapeHtml(x.level || 'info')}"><span>${x.level === 'good' ? '✓' : x.level === 'warn' ? '!' : x.level === 'watch' ? '↗' : 'i'}</span><div><strong>${escapeHtml(x.title || '')}</strong><p>${escapeHtml(x.text || '')}</p></div></div>`).join('')}</div>
-        <p class="quality-engine-note">${escapeHtml(db.note || '')}</p>
+          <div class="${escapeHtml(x.level || 'info')}"><span>${x.level === 'good' ? '✓' : x.level === 'warn' ? '!' : x.level === 'watch' ? '↗' : 'i'}</span><div><strong>${escapeHtml(humanizeTechnicalText(x.title || ''))}</strong><p>${escapeHtml(humanizeTechnicalText(x.text || ''))}</p></div></div>`).join('')}</div>
+        <p class="quality-engine-note">${escapeHtml(humanizeTechnicalText(db.note || ''))}</p>
       </div>`;
   }
 
@@ -1487,7 +1487,7 @@ function renderCalibrationControl() {
     history.innerHTML = (data.transitions || []).length
       ? `<div class="model-remediation-history-head"><strong>Последние переходы</strong><span>идентификатор оператора скрыт</span></div>${data.transitions.slice(0, 8).map(row => `
           <div class="model-remediation-history-row">
-            <div><strong>${escapeHtml(calibrationTransitionLabel(row.action))}</strong><span>${escapeHtml(row.reason || '')}</span></div>
+            <div><strong>${escapeHtml(calibrationTransitionLabel(row.action))}</strong><span>${escapeHtml(humanizeTechnicalText(row.reason || ''))}</span></div>
             <small>r${Number(row.expectedRevision || 0)} → r${Number(row.resultingRevision || 0)} · ${escapeHtml(relativeAge(row.createdAt))}</small>
           </div>`).join('')}`
       : '<div class="empty compact-empty">Переходов пока нет.</div>';
@@ -1629,7 +1629,7 @@ function renderModelRemediation() {
     <div><span>Зависшие ожидания</span><strong>${Number(recovery.stalePending || 0)}</strong><small>старше 36 часов</small></div>
     <div><span>В пакете</span><strong>${Number(recovery.selectedCount || 0)}</strong><small>до ${Number(recovery.maxFixturesPerRun || 20)} матчей</small></div>
     <div><span>Запросы к источнику</span><strong>${Number(recovery.estimatedProviderCalls || 0)}</strong><small>по уникальным датам</small></div>
-    <div><span>Контроль результатов</span><strong>${watchdog.autoRecoveryEnabled ? 'АВТО' : 'НАБЛЮДЕНИЕ'}</strong><small>${watchdog.schemaReady ? `${escapeHtml(watchdog.scheduleUtc || '04:00')} UTC` : 'нужна миграция v6.2'}</small></div>
+    <div><span>Контроль результатов</span><strong>${watchdog.autoRecoveryEnabled ? 'АВТО' : 'НАБЛЮДЕНИЕ'}</strong><small>${watchdog.schemaReady ? `${escapeHtml(watchdog.scheduleUtc || '04:00')} по всемирному времени` : 'нужна миграция v6.2'}</small></div>
     <div><span>Защитный контур</span><strong>${reliability.circuitOpen ? 'ОТКРЫТА' : 'ЗАКРЫТА'}</strong><small>${reliability.schemaReady ? (reliability.circuitOpenUntil ? `до ${escapeHtml(dateTime(reliability.circuitOpenUntil))}` : `${Number(reliability.consecutiveFailures || 0)}/${Number(reliability.failureThreshold || 2)} ошибок`) : 'нужна миграция v6.3'}</small></div>
     <div><span>Журнал запусков</span><strong>${Number(runLedger.activeStarted || 0) ? 'ЗАНЯТО' : Number(runLedger.staleStarted || 0) ? 'ЗАВИСЛО' : 'ЧИСТО'}</strong><small>${runLedger.schemaReady ? `${Number(runLedger.activeStarted || 0)} активных · ${Number(runLedger.staleStarted || 0)} зависших · максимум ${Number(runLedger.maxAttempts || 3)} попытки` : 'нужна миграция v6.4'}</small></div>
     <div><span>Подтверждение результата</span><strong>${Number(finality.drift || 0) ? 'РАСХОЖДЕНИЕ' : Number(finality.unverified || 0) || Number(finality.verified || 0) ? 'ПРОВЕРКА' : 'ПОДТВЕРЖДЕНО'}</strong><small>${finality.schemaReady ? `${Number(finality.confirmed || 0)} подтверждено · ${Number(finality.verified || 0)} первично проверено · ${Number(finality.unverified || 0)} ожидают проверки · ${Number(finality.adjudicated || 0)} проверено вручную · ${Number(finality.drift || 0)} расхождений` : 'нужна миграция v6.7'}</small></div>
@@ -1694,7 +1694,7 @@ async function runModelRemediation() {
   const reason = String($('modelRemediationReason')?.value || '').trim();
   if (reason.length < 5) return toast('Укажите причину восстановления — минимум 5 символов.');
   if (!report?.schemaReady || !recovery.candidateToken || !(recovery.fixtureIds || []).length) return toast('Сначала выполните актуальную предварительную проверку.');
-  const confirmed = window.confirm(`Повторно проверить ${Number(recovery.selectedCount || 0)} ожидающих прогнозов? Ожидается до ${Number(recovery.estimatedProviderCalls || 0)} запросов API-Football.`);
+  const confirmed = window.confirm(`Повторно проверить ${Number(recovery.selectedCount || 0)} ожидающих прогнозов? Ожидается до ${Number(recovery.estimatedProviderCalls || 0)} запросов к источнику данных.`);
   if (!confirmed) return;
 
   state.modelRemediationRunning = true;
@@ -2710,7 +2710,7 @@ function renderDiagnostics() {
     provider.innerHTML = `
       <div class="diagnostics-block-head"><strong>Источник данных API-Football</strong><span>${escapeHtml(technicalStateLabel(p.health || 'waiting'))}</span></div>
       <div class="diagnostics-grid">
-        <div><span>Тариф</span><strong>${escapeHtml(p.plan && p.plan !== 'UNKNOWN' ? planLabel(p.plan) : 'не определён')}</strong><small>${p.lastStatus ? `HTTP ${Number(p.lastStatus)}` : 'ответ ещё не получен'}</small></div>
+        <div><span>Тариф</span><strong>${escapeHtml(p.plan && p.plan !== 'UNKNOWN' ? planLabel(p.plan) : 'не определён')}</strong><small>${p.lastStatus ? `код ответа ${Number(p.lastStatus)}` : 'ответ ещё не получен'}</small></div>
         <div><span>Сегодня использовано</span><strong>${Number.isFinite(Number(p.dailyUsed)) && Number.isFinite(Number(p.dailyLimit)) ? `${Number(p.dailyUsed)} / ${Number(p.dailyLimit)}` : '—'}</strong><small>${diagPct(p.dailyUsedPct)}</small></div>
         <div><span>Минутное окно</span><strong>${Number.isFinite(Number(p.minuteUsed)) && Number.isFinite(Number(p.minuteLimit)) ? `${Number(p.minuteUsed)} / ${Number(p.minuteLimit)}` : '—'}</strong><small>${diagPct(p.minuteUsedPct)}</small></div>
         <div><span>Последний ответ</span><strong>${Number.isFinite(Number(p.lastLatencyMs)) ? `${Number(p.lastLatencyMs)} мс` : '—'}</strong><small>${p.lastSuccessAt ? relativeAge(p.lastSuccessAt) : humanizeTechnicalText(p.lastError || 'нет данных')}</small></div>
@@ -2747,7 +2747,7 @@ function renderDiagnostics() {
         <div><span>Кэш L1</span><strong>${Number(rt.l1CacheEntries || 0)}</strong><small>${Number(rt.memoryPrunes || 0)} очисток памяти</small></div>
         <div><span>Ошибки маршрутов</span><strong>${Number(rt.routeErrors || 0)}</strong><small>работает ${escapeHtml(diagDuration(rt.uptimeSeconds))}</small></div>
       </div>
-      <p class="tiny diagnostics-note">Счётчики среды выполнения относятся только к текущему экземпляру серверному обработчику Cloudflare. Дневной и минутный расход выше берётся непосредственно из заголовков API-Football.</p>`;
+      <p class="tiny diagnostics-note">Счётчики среды выполнения относятся только к текущему экземпляру серверного обработчика Cloudflare. Дневной и минутный расход выше берётся непосредственно из заголовков API-Football.</p>`;
   }
 
   if (client) {
@@ -4069,7 +4069,7 @@ function renderTournamentStandings(data) {
           <td>${Number(row.goalsFor)}:${Number(row.goalsAgainst)}</td><td class="${Number(row.goalsDiff) > 0 ? 'positive' : Number(row.goalsDiff) < 0 ? 'negative' : ''}">${Number(row.goalsDiff) > 0 ? '+' : ''}${Number(row.goalsDiff)}</td><td><b>${Number(row.points)}</b></td><td>${standingFormHtml(row.form)}</td>
         </tr>`).join('')}</tbody>
       </table></div>
-      <p class="tiny table-note">Таблица загружается только при открытии этой вкладки и кэшируется на 6 часов, чтобы не расходовать бесплатную квоту API.</p>
+      <p class="tiny table-note">Таблица загружается только при открытии этой вкладки и кэшируется на 6 часов, чтобы не расходовать бесплатную квоту источника данных.</p>
     </section>`).join('')}`;
   el.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => openTeam({ id: Number(btn.dataset.openTeam), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '' })));
 }
@@ -4271,7 +4271,7 @@ function renderTeamHub(data) {
   $('teamTournamentBtn')?.addEventListener('click', () => openTournamentFromTeam(false));
   const formHtml = form ? `<section class="panel team-form-panel"><h2>📈 Последние ${Number(form.sample || 0)} матчей</h2><div class="team-form-line">${String(form.form || '').split('').map(teamResultBadge).join('')}</div><div class="team-kpi-grid"><div><span>Победы</span><strong>${Number(form.wins||0)}</strong></div><div><span>Ничьи</span><strong>${Number(form.draws||0)}</strong></div><div><span>Поражения</span><strong>${Number(form.losses||0)}</strong></div><div><span>Забивает</span><strong>${form.gfAvg ?? '—'}</strong></div><div><span>Пропускает</span><strong>${form.gaAvg ?? '—'}</strong></div><div><span>ОЗ</span><strong>${form.bttsPct ?? '—'}%</strong></div></div></section>` : '<section class="panel"><div class="empty compact-empty">Пока недостаточно завершённых матчей для формы.</div></section>';
   const nextHtml = next ? `<section class="panel next-team-match"><div class="mini-section-head"><strong>${next.live ? '🔴 Матч идёт' : '⏭ Ближайший матч'}</strong><span>${escapeHtml(dateTime(next.date))}</span></div>${teamMatchRow(next)}</section>` : '<section class="panel"><div class="empty compact-empty">Ближайший матч в доступном окне не найден.</div></section>';
-  const positionHtml = standing ? `<section class="panel team-standing-card"><h2>🏆 Положение в турнире</h2><div class="team-standing-summary"><strong>${Number(standing.rank)} место</strong><span>${Number(standing.points)} очков · ${Number(standing.played)} матчей · ${Number(standing.goalsFor)}:${Number(standing.goalsAgainst)}</span></div></section>` : `<section class="panel team-standing-card"><h2>🏆 Положение в турнире</h2><p class="muted">Позиция появится после загрузки таблицы турнира. Так мы не расходуем отдельный API-запрос автоматически.</p>${comp ? '<button id="teamStandingTableBtn" class="secondary-btn" type="button">Открыть турнирную таблицу</button>' : ''}</section>`;
+  const positionHtml = standing ? `<section class="panel team-standing-card"><h2>🏆 Положение в турнире</h2><div class="team-standing-summary"><strong>${Number(standing.rank)} место</strong><span>${Number(standing.points)} очков · ${Number(standing.played)} матчей · ${Number(standing.goalsFor)}:${Number(standing.goalsAgainst)}</span></div></section>` : `<section class="panel team-standing-card"><h2>🏆 Положение в турнире</h2><p class="muted">Позиция появится после загрузки таблицы турнира. Так мы не делаем отдельный запрос к источнику данных автоматически.</p>${comp ? '<button id="teamStandingTableBtn" class="secondary-btn" type="button">Открыть турнирную таблицу</button>' : ''}</section>`;
   $('teamOverview').innerHTML = `${nextHtml}${formHtml}${positionHtml}`;
   bindTeamFixtureActions($('teamOverview'));
   $('teamStandingTableBtn')?.addEventListener('click', () => openTournamentFromTeam(true));
@@ -4531,7 +4531,7 @@ function livePressureHtml(p, m) {
   const home = Math.max(0, Math.min(100, Number(p.home || 0)));
   const away = 100 - home;
   const lead = p.leader === 'home' ? m.home?.name : p.leader === 'away' ? m.away?.name : 'Баланс';
-  return `<section class="panel pulse-panel"><h2>⚡ Пульс матча</h2><div class="pulse-names"><span>${escapeHtml(m.home?.name || '')}</span><strong>${escapeHtml(lead || 'Баланс')}</strong><span>${escapeHtml(m.away?.name || '')}</span></div><div class="pulse-bar"><i style="width:${home}%"></i><b style="width:${away}%"></b></div><div class="pulse-values"><span>${home}</span><span>${away}</span></div><p class="tiny">${escapeHtml(p.note || '')}</p></section>`;
+  return `<section class="panel pulse-panel"><h2>⚡ Пульс матча</h2><div class="pulse-names"><span>${escapeHtml(m.home?.name || '')}</span><strong>${escapeHtml(lead || 'Баланс')}</strong><span>${escapeHtml(m.away?.name || '')}</span></div><div class="pulse-bar"><i style="width:${home}%"></i><b style="width:${away}%"></b></div><div class="pulse-values"><span>${home}</span><span>${away}</span></div><p class="tiny">${escapeHtml(publicText(p.note || ''))}</p></section>`;
 }
 
 function playerMetricText(p) {
@@ -4740,8 +4740,8 @@ function smartInsightCardHtml(insight, match) {
     <div class="smart-insight-icon">${escapeHtml(insight.icon || '💡')}</div>
     <div class="smart-insight-body">
       <div class="smart-insight-kicker">${escapeHtml(insightSideLabel(insight.side, match))}</div>
-      <h3>${escapeHtml(insight.title || 'Наблюдение')}</h3>
-      <p>${escapeHtml(insight.text || '')}</p>
+      <h3>${escapeHtml(publicText(insight.title || 'Наблюдение'))}</h3>
+      <p>${escapeHtml(publicText(insight.text || ''))}</p>
       ${metrics}
     </div>
   </article>`;
@@ -4757,10 +4757,10 @@ function smartInsightsHeroHtml(si, match) {
   const first = si.insights?.[0];
   return `<section class="panel smart-story-panel">
     <div class="smart-story-top">
-      <div><span class="smart-story-label">🧠 КАРТИНА МАТЧА</span><h2>${escapeHtml(si.headline || '')}</h2></div>
-      <div class="smart-data-score"><strong>${Number(si.dataScore || 0)}%</strong><span>${escapeHtml(si.dataLabel || 'Покрытие')}</span></div>
+      <div><span class="smart-story-label">🧠 КАРТИНА МАТЧА</span><h2>${escapeHtml(publicText(si.headline || ''))}</h2></div>
+      <div class="smart-data-score"><strong>${Number(si.dataScore || 0)}%</strong><span>${escapeHtml(publicText(si.dataLabel || 'Покрытие'))}</span></div>
     </div>
-    <p class="smart-story-summary">${escapeHtml(si.summary || '')}</p>
+    <p class="smart-story-summary">${escapeHtml(publicText(si.summary || ''))}</p>
     ${first ? `<div class="smart-story-focus"><span>${escapeHtml(first.icon || '💡')}</span><b>${escapeHtml(insightSideLabel(first.side, match))}</b><small>${escapeHtml(first.importance === 'high' ? 'Сильный сигнал' : first.importance === 'medium' ? 'Заметный сигнал' : 'Наблюдение')}</small></div>` : ''}
     <button class="text-btn smart-open-insights" type="button">Все инсайты →</button>
   </section>`;
@@ -4774,12 +4774,12 @@ function smartInsightsFullHtml(si, match) {
     <section class="panel smart-insight-summary-panel">
       <div class="smart-story-top">
         <div><span class="smart-story-label">ТЕКУЩАЯ КАРТИНА</span><h2>${escapeHtml(si.headline || '')}</h2></div>
-        <div class="smart-data-score"><strong>${Number(si.dataScore || 0)}%</strong><span>${escapeHtml(si.dataLabel || '')}</span></div>
+        <div class="smart-data-score"><strong>${Number(si.dataScore || 0)}%</strong><span>${escapeHtml(publicText(si.dataLabel || ''))}</span></div>
       </div>
       <p>${escapeHtml(si.summary || '')}</p>
     </section>
     <div class="smart-insight-list">${(si.insights || []).map(x => smartInsightCardHtml(x, match)).join('')}</div>
-    <section class="panel smart-methodology"><strong>Как это считается</strong><p>${escapeHtml(si.methodology || '')}</p></section>
+    <section class="panel smart-methodology"><strong>Как это считается</strong><p>${escapeHtml(publicText(si.methodology || ''))}</p></section>
   </div>`;
 }
 
@@ -4838,8 +4838,8 @@ function renderMatchCenter(d) {
       </div>
     </section>
 
-    ${d.stale ? `<section class="panel stale-panel"><strong>⚠️ Показан последний сохранённый снимок</strong><p>${escapeHtml(d.warning || 'Провайдер временно ограничил запросы.')}</p></section>` : ''}
-    ${d.note ? `<section class="panel center-note"><p class="tiny warning">${escapeHtml(d.note)}</p></section>` : ''}
+    ${d.stale ? `<section class="panel stale-panel"><strong>⚠️ Показан последний сохранённый снимок</strong><p>${escapeHtml(publicText(d.warning || 'Провайдер временно ограничил запросы.'))}</p></section>` : ''}
+    ${d.note ? `<section class="panel center-note"><p class="tiny warning">${escapeHtml(publicText(d.note))}</p></section>` : ''}
 
     <div class="center-tabs-wrap">
       <div class="center-tabs" role="tablist" aria-label="Разделы матча">
@@ -4857,7 +4857,7 @@ function renderMatchCenter(d) {
       ${smartInsightsHeroHtml(d.smartInsights, m)}
       ${livePressureHtml(d.livePressure, m)}
       <section class="panel">
-        <div class="center-section-title"><div><h2>Ключевые показатели</h2><p>Самые полезные метрики в одном экране</p></div><span class="coverage-badge">${escapeHtml(d.dataCapabilities?.label || 'Покрытие данных')}</span></div>
+        <div class="center-section-title"><div><h2>Ключевые показатели</h2><p>Самые полезные метрики в одном экране</p></div><span class="coverage-badge">${escapeHtml(publicText(d.dataCapabilities?.label || 'Покрытие данных'))}</span></div>
         ${centerKeyStatsHtml(d.statistics)}
       </section>
 
@@ -4869,8 +4869,8 @@ function renderMatchCenter(d) {
         <div class="center-section-title"><div><h2>Покрытие и свежесть</h2><p>${d.cached ? 'Данные из общего кэша' : 'Свежий ответ провайдера'} · ${dateTime(d.generatedAt)}</p></div></div>
         ${centerCoverageHtml(d)}
         ${centerFreshnessHtml(d)}
-        ${d.quotaMode ? `<div class="quota-public-chip">${escapeHtml(d.quotaMode.label || '')} · обновление ${Number(d.quotaMode.liveRefreshSeconds || d.refreshSeconds || 0)} сек.</div>` : ''}
-        ${d.availability?.limitedCoverage ? '<div class="coverage-badge limited">Ограниченное покрытие · экономим API-лимит</div>' : ''}
+        ${d.quotaMode ? `<div class="quota-public-chip">${escapeHtml(publicText(d.quotaMode.label || ''))} · обновление ${Number(d.quotaMode.liveRefreshSeconds || d.refreshSeconds || 0)} сек.</div>` : ''}
+        ${d.availability?.limitedCoverage ? '<div class="coverage-badge limited">Ограниченное покрытие · экономим лимит запросов</div>' : ''}
       </section>
     </div>
 
@@ -4880,7 +4880,7 @@ function renderMatchCenter(d) {
 
     <div class="center-tab-panel" data-center-panel="timeline">
       <section class="panel">
-        <div class="center-section-title"><div><h2>⚡ Хронология матча</h2><p>Голы, карточки, замены и VAR</p></div></div>
+        <div class="center-section-title"><div><h2>⚡ Хронология матча</h2><p>Голы, карточки, замены и видеопросмотры</p></div></div>
         ${timelineEventsHtml(d.events, m)}
       </section>
     </div>
@@ -4894,7 +4894,7 @@ function renderMatchCenter(d) {
 
     <div class="center-tab-panel" data-center-panel="lineups">
       <section class="panel">
-        <div class="center-section-title"><div><h2>👥 Составы и схема</h2><p>Стартовые XI, формации и запасные</p></div></div>
+        <div class="center-section-title"><div><h2>👥 Составы и схема</h2><p>Стартовые составы, схемы и запасные</p></div></div>
         ${lineupLiveHtml(d.lineups, m)}
       </section>
       ${(d.absences?.home?.length || d.absences?.away?.length) ? `<section class="panel"><h2>🩺 Недоступные игроки</h2>${liveAbsencesHtml(d.absences,m)}</section>` : ''}
@@ -5008,7 +5008,7 @@ async function analyzeMatch(fixtureId, btn) {
     void Promise.allSettled([loadHistory(false), loadReminders()]);
   } catch (e) {
     if (e.status === 429 && String(e.payload?.code || '').startsWith('FOOTBALL_')) {
-      toast(e.payload?.retryAfter ? `Футбольный API на паузе. Повторите через ~${e.payload.retryAfter} сек.` : e.message);
+      toast(e.payload?.retryAfter ? `Источник футбольных данных временно на паузе. Повторите через ~${e.payload.retryAfter} сек.` : e.message);
     } else if (e.status === 429) toast('Дневной лимит анализов исчерпан.');
     else toast(e.message);
   } finally {
@@ -5677,7 +5677,7 @@ function renderAnalysis(d) {
       </section>
 
       <section class="panel comparison-reuse-panel">
-        <div class="comparison-section-head"><h2>♻️ Переиспользование данных</h2><span>+${Number(comparison.dataReuse?.separateApiRequests || 0)} API</span></div>
+        <div class="comparison-section-head"><h2>♻️ Переиспользование данных</h2><span>+${Number(comparison.dataReuse?.separateApiRequests || 0)} доп. запросов</span></div>
         <p>${escapeHtml(publicText(comparison.dataReuse?.note || 'Сравнение использует уже загруженные данные.'))}</p>
         <div class="reuse-chips">${(comparison.dataReuse?.sources || []).map(x=>`<span>${escapeHtml(publicText(x))}</span>`).join('')}</div>
         <div class="reuse-status"><span>${comparison.dataReuse?.seasonStatsCached ? '✓' : '—'} Сезонная статистика из кэша</span><span>${comparison.dataReuse?.standingsCached ? '✓' : '—'} Таблица из кэша</span></div>
@@ -5700,7 +5700,7 @@ function renderAnalysis(d) {
         <div class="model-weights">${escapeHtml(modelWeightsText(d.modelBreakdown?.weights || {}))}</div>
       ${d.modelCalibration ? `<div class="analysis-calibration-card ${escapeHtml(d.modelCalibration.mode || 'baseline')}"><span>Калибровка v${escapeHtml(d.modelCalibration.version || '4.0')}</span><strong>${escapeHtml(calibrationModeLabel(d.modelCalibration.mode))}</strong><small>профиль ${escapeHtml(String(d.modelCalibration.fingerprint || '').slice(0, 8) || 'базовый')} · выборка ${Number(d.modelCalibration.sample || 0)} · коэффициент ${Number(d.modelCalibration.temperature || 1).toFixed(2)}${d.modelCalibration.weightsActive ? ' · адаптивные веса' : ''}</small></div>` : ''}
         <div class="model-api-card">
-          <span>Источник API-Football</span>
+          <span>Прогноз источника данных</span>
           <strong>${escapeHtml(pred?.winner || 'Нет данных')}</strong>
           <small>${escapeHtml(predictionAdviceLabel(pred?.advice || 'Подсказка недоступна'))}</small>
         </div>
