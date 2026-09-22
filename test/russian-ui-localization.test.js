@@ -60,6 +60,9 @@ test('common user-facing mixed English labels are removed from the Mini App', ()
     'LIVE сейчас',
     'Tavily не подключён',
     'расширенный API-план',
+    'Football Manager',
+    'Стартовые XI',
+    'Голы, карточки, замены и VAR',
   ];
   for (const phrase of rc30Forbidden) assert.equal(app.includes(phrase), false, phrase);
   assert.match(app, /function publicText\(value\)/);
@@ -112,6 +115,7 @@ test('obsolete release/admin copy is not exposed by the current worker', () => {
     'Settlement watchdog skipped',
     'Reminder cron:',
     'Bot token missing.',
+    'Football Manager',
   ]) assert.equal(worker.includes(phrase), false, phrase);
 });
 
