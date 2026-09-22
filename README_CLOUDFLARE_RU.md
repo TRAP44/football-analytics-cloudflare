@@ -1,6 +1,14 @@
-# Football Analytics Mini App v6.21.0 — RC29
+# Football Analytics Mini App v6.27.0 — RC35
 
 Telegram Mini App для футбольной аналитики на Cloudflare Workers, Supabase и API-Football.
+
+## RC35: Поиск матчей по лигам и очистка миграций
+
+- удалены устаревшие миграции v6.3–v6.8, уже сведённые в baseline v6.9;
+- сохранены обязательные baseline v6.9, переходная v6.9 и актуальные v6.10–v6.11.1;
+- точный поиск по лиге теперь показывает ближайшие и завершённые матчи;
+- добавлены отдельный кэш, fallback на сохранённые данные и регрессионные проверки;
+- версия Worker/client/production smoke: v6.27.0 RC35.
 
 ## RC29: Russian UX & Admin Localization
 

@@ -9,15 +9,15 @@ const staticHeaders = fs.readFileSync('public/_headers', 'utf8');
 const styles = fs.readFileSync('public/styles.css', 'utf8');
 const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml', 'utf8');
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
-const expected = `${pkg.version}-rc34`;
+const expected = `${pkg.version}-rc35`;
 const failures = [];
 
 if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) failures.push('package-lock version must match package.json');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC34'")) failures.push('Worker RC name must be RC34');
+if (!worker.includes("const RC_NAME = 'RC35'")) failures.push('Worker RC name must be RC35');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc34'")) failures.push('Client release channel must be rc34');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc35'")) failures.push('Client release channel must be rc35');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -31,8 +31,8 @@ if (!fs.existsSync('.github/workflows/rollback-production.yml')) failures.push('
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
-if (!deployWorkflow.includes('--message "RC34 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC34');
-if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.26.0-rc34"')) failures.push('Production smoke must verify 6.22.0-rc34');
+if (!deployWorkflow.includes('--message "RC35 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC35');
+if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.27.0-rc35"')) failures.push('Production smoke must verify 6.27.0-rc35');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
 if (!/id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden/.test(html)) failures.push('Admin role badge must use the fail-closed admin-only visibility contract');
 if (!/\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i.test(styles)) failures.push('Global hidden elements must remain display:none');
@@ -46,6 +46,9 @@ if (!fs.existsSync('test/unified-search.test.js')) failures.push('Missing unifie
 if (!worker.includes("url.pathname === '/api/history-analysis'")) failures.push('Missing quota-safe history analysis route');
 if (!app.includes('tg.BackButton.onClick(handleBackNavigation)')) failures.push('Telegram BackButton navigation is not wired');
 if (!app.includes('state.globalSearch.requestSeq')) failures.push('Global search stale-response guard is missing');
+if (!worker.includes('searchLeagueFixtures: true')) failures.push('League fixture search capability is missing');
+if (!worker.includes('loadSearchCompetitionMatches')) failures.push('League fixture search loader is missing');
+if (!app.includes('data.matches || []')) failures.push('Client does not hydrate server-side league matches');
 if (!fs.existsSync('test/interaction-safety.test.js')) failures.push('Missing interaction-safety regression test');
 if (!app.includes('analysisActionPending: false')) failures.push('Analysis duplicate-submit guard is missing');
 if (!app.includes('matchCenterRequestSeq: 0')) failures.push('Match-center stale-response guard is missing');

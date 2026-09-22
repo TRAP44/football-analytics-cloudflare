@@ -73,11 +73,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.26.0-rc34';
+const APP_VERSION = '6.27.0-rc35';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc34';
-const RC_NAME = 'RC34';
+const RELEASE_CHANNEL = 'rc35';
+const RC_NAME = 'RC35';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -667,6 +667,7 @@ function appManifest(cfg) {
       adaptiveWeightsHoldout: true,
       unifiedSearch: true,
       searchMatchHistory: true,
+      searchLeagueFixtures: true,
       calibrationChampionChallenger: true,
       calibrationAutomaticRollback: true,
     },
@@ -9996,30 +9997,122 @@ function normalizeSearchTeam(row = {}, query = '') {
   };
 }
 
+async function loadSearchCompetitionMatches(competition, cfg) {
+  const leagueId = Number(competition?.leagueId || 0);
+  const season = Number(competition?.season || new Date().getUTCFullYear());
+  if (!leagueId || !season) return { matches: [], matchSource: null, warning: '' };
+
+  const fromDate = new Date(); fromDate.setUTCDate(fromDate.getUTCDate() - 45);
+  const toDate = new Date(); toDate.setUTCDate(toDate.getUTCDate() + 45);
+  const from = fromDate.toISOString().slice(0, 10);
+  const to = toDate.toISOString().slice(0, 10);
+  const cacheKey = `search:competition-fixtures:${leagueId}:${season}:${from}:${to}:v1`;
+  const cached = await getCache(cacheKey, cfg);
+  if (cached?.matches) return { ...cached, cached: true, stale: false };
+
+  if (!freeQuotaHealthy(8, 1)) {
+    const stale = await getStaleCache(cacheKey, cfg);
+    if (stale?.matches) return { ...stale, cached: true, stale: true, warning: 'Матчи лиги показаны из сохранённых данных: бережём лимит источника данных.' };
+    return {
+      matches: [],
+      matchSource: { kind: 'competition', id: leagueId, name: competition?.name || 'Лига' },
+      warning: 'Матчи лиги временно не загружаются: бережём остаток лимита источника данных.',
+    };
+  }
+
+  try {
+    const fixtures = await apiFootball('/fixtures', { league: leagueId, season, from, to }, cfg);
+    const normalized = (fixtures || [])
+      .filter(f => !['CANC', 'PST', 'ABD', 'AWD', 'WO'].includes(String(f.fixture?.status?.short || '')))
+      .map(f => normalizeTeamHubMatch(f, 0))
+      .filter(x => x.fixtureId);
+    const now = Date.now();
+    const recent = normalized.filter(x => x.finished)
+      .sort((x, y) => Date.parse(y.date || 0) - Date.parse(x.date || 0)).slice(0, 8);
+    const upcoming = normalized.filter(x => !x.finished && (x.live || Date.parse(x.date || 0) >= now - 3 * 60 * 60 * 1000))
+      .sort((x, y) => (x.live === y.live ? Date.parse(x.date || 0) - Date.parse(y.date || 0) : x.live ? -1 : 1)).slice(0, 8);
+    const payload = {
+      matches: [...upcoming, ...recent],
+      matchSource: { kind: 'competition', id: leagueId, name: competition?.name || normalized[0]?.league || 'Лига' },
+      refreshedAt: new Date().toISOString(),
+      warning: '',
+    };
+    await setCache(cacheKey, 0, payload, cfg, 300);
+    return { ...payload, cached: false, stale: false };
+  } catch (error) {
+    const stale = await getStaleCache(cacheKey, cfg);
+    if (stale?.matches) return { ...stale, cached: true, stale: true, warning: 'Не удалось обновить матчи лиги — показаны последние сохранённые данные.' };
+    return {
+      matches: [],
+      matchSource: { kind: 'competition', id: leagueId, name: competition?.name || 'Лига' },
+      warning: isFootballRateLimitError(error)
+        ? 'Источник данных временно ограничил поиск матчей лиги. Повторите чуть позже.'
+        : 'Матчи выбранной лиги сейчас недоступны.',
+    };
+  }
+}
+
+function preferCompetitionSearch(competition, teams = []) {
+  if (!competition?.leagueId) return false;
+  const competitionScore = Number(competition.score || 0);
+  const teamScore = Number(teams[0]?.score || 0);
+  return competitionScore >= 120 || !teams.length || competitionScore >= teamScore;
+}
+
+function mergeSearchWarnings(...values) {
+  return [...new Set(values.map(x => String(x || '').trim()).filter(Boolean))].join(' ');
+}
+
 async function apiSearch(request, cfg) {
   const url = new URL(request.url);
   const query = String(url.searchParams.get('q') || '').trim().slice(0, 60);
   const q = searchText(query);
   const competitions = searchKnownCompetitions(query);
-  if (!q) return json({ query: '', teams: [], competitions, provider: publicDataCapabilities(), hint: 'Введите название команды или турнира.' });
-  if (q.length < 3) return json({ query, teams: [], competitions, provider: publicDataCapabilities(), hint: 'Для поиска команды введите минимум 3 символа.' });
+  if (!q) return json({ query: '', teams: [], competitions, matches: [], matchSource: null, provider: publicDataCapabilities(), hint: 'Введите название команды или турнира.' });
+  if (q.length < 3) return json({ query, teams: [], competitions, matches: [], matchSource: null, provider: publicDataCapabilities(), hint: 'Для поиска команды введите минимум 3 символа.' });
+
+  if (Number(competitions[0]?.score || 0) >= 120) {
+    const fixtureSearch = await loadSearchCompetitionMatches(competitions[0], cfg);
+    return json({ query, teams: [], competitions, ...fixtureSearch, provider: publicDataCapabilities() });
+  }
 
   const cacheKey = `search:teams:${encodeURIComponent(q)}:v1`;
   const cached = await getCache(cacheKey, cfg);
-  if (cached?.teams) return json({ ...cached, competitions, cached: true, provider: publicDataCapabilities() });
+  if (cached?.teams) {
+    const fixtureSearch = preferCompetitionSearch(competitions[0], cached.teams)
+      ? await loadSearchCompetitionMatches(competitions[0], cfg)
+      : { matches: [], matchSource: null, warning: '' };
+    return json({ ...cached, competitions, ...fixtureSearch, warning: mergeSearchWarnings(cached.warning, fixtureSearch.warning), cached: true, provider: publicDataCapabilities() });
+  }
 
   let rows = [];
   let warning = '';
   try {
     if (!freeQuotaHealthy(8, 2)) {
       const stale = await getStaleCache(cacheKey, cfg);
-      if (stale?.teams) return json({ ...stale, competitions, cached: true, stale: true, warning: 'Поиск показан из сохранённых данных: бережём лимит API-Football.', provider: publicDataCapabilities() });
-      return json({ query, teams: [], competitions, cached: false, warning: 'Поиск команд временно не запущен: бережём остаток бесплатной квоты источника данных.', provider: publicDataCapabilities() });
+      const staleTeams = stale?.teams || [];
+      const fixtureSearch = preferCompetitionSearch(competitions[0], staleTeams)
+        ? await loadSearchCompetitionMatches(competitions[0], cfg)
+        : { matches: [], matchSource: null, warning: '' };
+      return json({
+        ...(stale || { query, teams: [] }), competitions, ...fixtureSearch,
+        cached: Boolean(stale), stale: Boolean(stale),
+        warning: mergeSearchWarnings(
+          stale ? 'Поиск показан из сохранённых данных: бережём лимит API-Football.' : 'Поиск команд временно не запущен: бережём остаток бесплатной квоты источника данных.',
+          fixtureSearch.warning,
+        ),
+        provider: publicDataCapabilities(),
+      });
     }
     rows = await apiFootball('/teams', { search: query }, cfg);
   } catch (error) {
     const stale = await getStaleCache(cacheKey, cfg);
-    if (stale?.teams) return json({ ...stale, competitions, cached: true, stale: true, warning: 'Не удалось обновить поиск — показаны сохранённые результаты.', provider: publicDataCapabilities() });
+    if (stale?.teams) {
+      const fixtureSearch = preferCompetitionSearch(competitions[0], stale.teams)
+        ? await loadSearchCompetitionMatches(competitions[0], cfg)
+        : { matches: [], matchSource: null, warning: '' };
+      return json({ ...stale, competitions, ...fixtureSearch, cached: true, stale: true, warning: mergeSearchWarnings('Не удалось обновить поиск — показаны сохранённые результаты.', fixtureSearch.warning), provider: publicDataCapabilities() });
+    }
     if (isFootballRateLimitError(error)) warning = 'API-Football временно ограничил поиск команд. Повторите чуть позже.';
     else throw error;
   }
@@ -10027,11 +10120,13 @@ async function apiSearch(request, cfg) {
   const seen = new Set();
   const teams = rows.map(x => normalizeSearchTeam(x, query))
     .filter(x => x.id > 0 && x.name && !seen.has(x.id) && seen.add(x.id))
-    .sort((a,b) => b.score - a.score || a.name.localeCompare(b.name, 'ru'))
-    .slice(0, 16);
+    .sort((x, y) => y.score - x.score || x.name.localeCompare(y.name, 'ru')).slice(0, 16);
+  const fixtureSearch = preferCompetitionSearch(competitions[0], teams)
+    ? await loadSearchCompetitionMatches(competitions[0], cfg)
+    : { matches: [], matchSource: null, warning: '' };
   const payload = { query, teams, warning, refreshedAt: new Date().toISOString() };
   await setCache(cacheKey, 0, payload, cfg, 720);
-  return json({ ...payload, competitions, cached: false, provider: publicDataCapabilities() });
+  return json({ ...payload, competitions, ...fixtureSearch, warning: mergeSearchWarnings(warning, fixtureSearch.warning), cached: false, provider: publicDataCapabilities() });
 }
 
 async function apiMatches(request, cfg) {

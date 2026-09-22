@@ -20,6 +20,14 @@ test('search exposes teams, leagues, upcoming and finished modes', () => {
   assert.match(app, /matchSourceTeam/);
 });
 
+test('search enriches league queries with cached upcoming and finished fixtures', () => {
+  assert.match(worker, /async function loadSearchCompetitionMatches\(/);
+  assert.match(worker, /apiFootball\('\/fixtures', \{ league: leagueId, season, from, to \}/);
+  assert.match(worker, /preferCompetitionSearch\(/);
+  assert.match(app, /data\.matches \|\| \[\]/);
+  assert.match(app, /data\.matchSource\?\.name/);
+});
+
 test('search enriches a team query with recent and upcoming fixtures', () => {
   assert.match(app, /\/api\/team\?teamId=/);
   assert.match(app, /\.\.\.\(hub\.upcoming \|\| \[\]\)/);
@@ -40,4 +48,5 @@ test('search match results have direct actions without running analysis automati
 test('server manifest advertises unified search capabilities', () => {
   assert.match(worker, /unifiedSearch:\s*true/);
   assert.match(worker, /searchMatchHistory:\s*true/);
+  assert.match(worker, /searchLeagueFixtures:\s*true/);
 });

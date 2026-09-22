@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.26.0-rc34';
+const CLIENT_VERSION = '6.27.0-rc35';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc34';
+const CLIENT_RELEASE_CHANNEL = 'rc35';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -3774,11 +3774,13 @@ async function runGlobalSearch() {
     if (seq !== state.globalSearch.requestSeq || query !== String(state.globalSearch.query || '').trim()) return;
     state.globalSearch.remoteTeams = data.teams || [];
     state.globalSearch.remoteCompetitions = data.competitions || [];
+    state.globalSearch.remoteMatches = data.matches || [];
+    state.globalSearch.matchSourceTeam = data.matchSource?.name || '';
     state.globalSearch.warning = data.warning || data.hint || '';
     state.globalSearch.searchedAt = data.refreshedAt || new Date().toISOString();
 
     const bestTeam = state.globalSearch.remoteTeams[0] || localDiscoveryResults(query).teams[0] || null;
-    if (bestTeam?.id) {
+    if (!state.globalSearch.remoteMatches.length && bestTeam?.id) {
       try {
         const hub = await api(`/api/team?teamId=${Number(bestTeam.id)}&name=${encodeURIComponent(bestTeam.name || '')}&logo=${encodeURIComponent(bestTeam.logo || '')}`, { timeoutMs: 10000 });
         if (seq !== state.globalSearch.requestSeq || query !== String(state.globalSearch.query || '').trim()) return;

@@ -1,10 +1,10 @@
-# QA Release Checklist — v6.21.0 RC29
+# QA Release Checklist — v6.27.0 RC35
 
 ## Deploy
 
 - применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql` и `supabase_migration_v6_11_1.sql`;
-- Worker/client = `6.21.0-rc29`;
-- package = `6.21.0`;
+- Worker/client = `6.27.0-rc35`;
+- package = `6.27.0`;
 - cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;
@@ -51,7 +51,8 @@
 - `backend_security_contract()` и `backend_default_acl_contract()` возвращают `ok=true` только через `service_role`;
 - Release Readiness и RC Regression блокируются при нарушении security contract;
 - foreign key и filtered-query колонки индексированы;
-- fresh-install baseline v6.9 и migrations v6.10–v6.11.1 применяются к пустой базе без ручного добавления таблиц.
+- fresh-install baseline v6.9 и migrations v6.10–v6.11.1 применяются к пустой базе без ручного добавления таблиц;
+- standalone-миграции v6.3–v6.8 отсутствуют: их итоговая схема уже содержится в baseline v6.9.
 
 ## Automated checks
 
@@ -74,7 +75,8 @@ npm run verify:worker
 - Calibration Lifecycle schema;
 - Production Load Safety;
 - Admin Security.
-- Cloudflare post-deploy smoke.
+- Cloudflare post-deploy smoke;
+- точный поиск по лиге возвращает ближайшие и завершённые матчи без автоматического запуска полного анализа.
 
 ## Post-deploy
 
