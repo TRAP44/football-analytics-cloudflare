@@ -54,6 +54,12 @@ test('common user-facing mixed English labels are removed from the Mini App', ()
     "error: 'error'",
     "liveOdds:'LIVE odds'",
     ' · TTL ',
+    '>LIVE<',
+    ' LIVE</',
+    'LIVE-рынок',
+    'LIVE сейчас',
+    'Tavily не подключён',
+    'расширенный API-план',
   ];
   for (const phrase of rc30Forbidden) assert.equal(app.includes(phrase), false, phrase);
   assert.match(app, /function publicText\(value\)/);
@@ -93,6 +99,20 @@ test('obsolete release/admin copy is not exposed by the current worker', () => {
     'Production-ready с ожидаемыми ограничениями',
   ];
   for (const phrase of forbidden) assert.equal(worker.includes(phrase), false, phrase);
+  assert.doesNotMatch(worker, /\bRC(?:[0-9]|1[0-9]|2[0-9])\b/);
+  for (const phrase of [
+    'Snapshot timestamps',
+    'Pre-match snapshot timing',
+    'Predicted outcome',
+    'Correct flag',
+    'Fixture identity',
+    'Fixture uniqueness',
+    'Signal snapshots',
+    'Lifecycle persistence failed',
+    'Settlement watchdog skipped',
+    'Reminder cron:',
+    'Bot token missing.',
+  ]) assert.equal(worker.includes(phrase), false, phrase);
 });
 
 test('RC30 health publishes all localization contracts', () => {
