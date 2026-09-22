@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.16.0-rc24';
+const CLIENT_VERSION = '6.17.0-rc25';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc24';
+const CLIENT_RELEASE_CHANNEL = 'rc25';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -105,6 +105,12 @@ const state = {
   providerLoaded: false,
   viewScroll: {},
   matchesLoadSeq: 0,
+  matchCenterRequestSeq: 0,
+  analysisActionPending: false,
+  favoriteMutations: new Set(),
+  reminderMutations: new Set(),
+  preferencesSaving: false,
+  profileStale: false,
   clientPerf: { startedAt: new Date().toISOString(), requests: 0, completed: 0, failed: 0, deduped: 0, retries: 0, rateLimited: 0, timeouts: 0, recoveries: 0, degradedEvents: 0, manifestFailures: 0, bootMs: null, totalMs: 0, lastMs: null, clientErrors: 0, lastError: '' },
 };
 
@@ -376,8 +382,8 @@ async function recoverActiveView({ automatic = false } = {}) {
       if ($('tournamentTablePanel')?.classList.contains('active')) await loadTournamentStandings(true);
     } else if (view === 'analysisView' && state.currentCenter?.match?.fixtureId) {
       const fixtureId = Number(state.currentCenter.match.fixtureId);
-      const data = await api(`/api/match-center?fixtureId=${fixtureId}&recovery=${Date.now()}`, { dedupe: false });
-      renderMatchCenter(data);
+      const data = await requestMatchCenter(fixtureId, { recovery: Date.now() }, { dedupe: false });
+      if (data) renderMatchCenter(data);
     } else if (view === 'historyView') {
       await loadHistory(false);
     } else if (view === 'profileView') {
@@ -820,8 +826,10 @@ async function api(path, options = {}) {
 }
 
 async function loadProfile() {
+  const previousProfile = state.profile;
   try {
     state.profile = await api('/api/me');
+    state.profileStale = false;
     state.dataCapabilities = state.profile?.features?.dataCapabilities || state.dataCapabilities;
     if (state.profile?.preferences) {
       state.preferences = { ...state.preferences, ...state.profile.preferences };
@@ -835,7 +843,16 @@ async function loadProfile() {
     renderProfile();
 renderDiscoveryHome();
   } catch (e) {
+    const authFailure = Number(e?.status || 0) === 401 || e?.category === 'auth';
+    if (previousProfile && !authFailure) {
+      state.profile = previousProfile;
+      state.profileStale = true;
+      renderProfile();
+      toast('Профиль временно не обновился — показаны последние данные.');
+      return;
+    }
     state.profile = null;
+    state.profileStale = false;
     applyAdminVisibility();
     toast(e.message);
   }
@@ -885,7 +902,7 @@ function renderProfile() {
   const profilePlanLabel = $('profileBtn')?.querySelector('span');
   if (profilePlanLabel) profilePlanLabel.textContent = planLabel(quota.plan);
   else if ($('profileBtn')) $('profileBtn').textContent = planLabel(quota.plan);
-  $('quotaText').textContent = `Осталось анализов: ${quota.left} из ${quota.limit}`;
+  $('quotaText').textContent = `Осталось анализов: ${quota.left} из ${quota.limit}${state.profileStale ? ' · сохранённые данные' : ''}`;
   $('profileName').textContent = user.firstName || 'Пользователь';
   const avatar = $('avatar');
   if (avatar) {
@@ -1045,7 +1062,7 @@ function renderModelQuality() {
       <div><span>Жизненный цикл</span><strong>${lifecycleLabel}</strong><small>ревизия ${Number(lifecycle.revision || 0)}</small></div>
       <div><span>Отпечаток активной модели</span><strong>${escapeHtml(String(lifecycle.activeFingerprint || ce.fingerprint || '—').slice(0, 10))}</strong><small>${lifecycle.previousFingerprint ? `откат → ${escapeHtml(String(lifecycle.previousFingerprint).slice(0, 10))}` : 'предыдущей активной модели нет'}</small></div>
     </div>
-    <div class="calibration-promotion-note"><strong>Защита RC24:</strong> кандидат проходит два последовательных окна доверенной отложенной выборки, затем атомарно сравнивается с активной моделью. ${lifecycle.frozen ? `Жизненный цикл заморожен: ${escapeHtml(lifecycle.freezeReason || 'причина указана в административном журнале')}.` : 'После продвижения отдельная когорта может автоматически вернуть предыдущий профиль.'}</div>
+    <div class="calibration-promotion-note"><strong>Защита RC25:</strong> кандидат проходит два последовательных окна доверенной отложенной выборки, затем атомарно сравнивается с активной моделью. ${lifecycle.frozen ? `Жизненный цикл заморожен: ${escapeHtml(lifecycle.freezeReason || 'причина указана в административном журнале')}.` : 'После продвижения отдельная когорта может автоматически вернуть предыдущий профиль.'}</div>
     <div class="calibration-weights">
       ${(ce.signalStats || []).map(x => {
         const base = Number(x.baseWeight || 0) * 100;
@@ -1834,7 +1851,7 @@ function runClientContractSmoke() {
 }
 
 function rcStateText(status) {
-  if (status === 'rc_ready') return 'RC24 ГОТОВ';
+  if (status === 'rc_ready') return 'RC25 ГОТОВ';
   if (status === 'rc_with_holds') return 'RC С ОГРАНИЧЕНИЯМИ';
   if (status === 'blocked') return 'ЗАБЛОКИРОВАНО';
   return 'ОЖИДАНИЕ';
@@ -1868,7 +1885,7 @@ function renderRcRegression() {
   const r = state.rcRegression;
   if (!r) {
     badge.className = 'rc-badge';
-    badge.textContent = 'RC24';
+    badge.textContent = 'RC25';
     status.textContent = 'Полная регрессионная проверка ещё не запускалась.';
     meta.textContent = 'Тест безопасный: без полного анализа, без изменения пользовательских данных и без расхода API-Football.';
     summary.innerHTML = '';
@@ -3055,21 +3072,37 @@ function renderReminderList() {
         <span>${dateTime(x.fixtureDate)} · за ${Number(x.remindBeforeMinutes || 30)} мин.${x.kickoffNotify ? ' · + старт' : ''}</span>
         ${reminderDeliveryBadge(x)}
       </div>
-      <button class="reminder-remove" type="button" data-fixture-id="${Number(x.fixtureId)}">Отключить</button>
+      <button class="reminder-remove" type="button" data-fixture-id="${Number(x.fixtureId)}" ${state.reminderMutations.has(Number(x.fixtureId)) ? 'disabled' : ''}>Отключить</button>
     </div>`).join('');
   document.querySelectorAll('.reminder-remove').forEach(btn => btn.addEventListener('click', async () => {
+    const fixtureId = Number(btn.dataset.fixtureId);
+    if (!fixtureId || state.reminderMutations.has(fixtureId)) return;
+    state.reminderMutations.add(fixtureId);
+    syncReminderMutationUi(fixtureId);
     try {
-      await api(`/api/reminders?fixtureId=${Number(btn.dataset.fixtureId)}`, { method: 'DELETE' });
-      state.reminders = state.reminders.filter(x => Number(x.fixtureId) !== Number(btn.dataset.fixtureId));
+      await api(`/api/reminders?fixtureId=${fixtureId}`, { method: 'DELETE' });
+      state.reminders = state.reminders.filter(x => Number(x.fixtureId) !== fixtureId);
+      if (state.profile) {
+        state.profile = {
+          ...state.profile,
+          stats: { ...(state.profile.stats || {}), reminders: state.reminders.length },
+        };
+      }
       renderReminderList();
       if (state.currentAnalysis) renderAnalysis(state.currentAnalysis);
-      await loadProfile();
+      if (state.profile) renderProfile();
       toast('Напоминание отключено');
-    } catch (e) { toast(e.message); }
+    } catch (e) {
+      toast(e.message);
+    } finally {
+      state.reminderMutations.delete(fixtureId);
+      syncReminderMutationUi(fixtureId);
+    }
   }));
 }
 
 async function savePreferencesFromUi() {
+  if (state.preferencesSaving) return;
   const payload = {
     defaultFilter: $('defaultFilterSelect')?.value || 'top',
     reminderMinutes: Number($('reminderMinutesSelect')?.value || 30),
@@ -3077,6 +3110,9 @@ async function savePreferencesFromUi() {
     hideYouth: Boolean($('hideYouthToggle')?.checked),
     favoriteFirst: Boolean($('favoriteFirstToggle')?.checked),
   };
+  state.preferencesSaving = true;
+  const saveButton = $('savePreferencesBtn');
+  if (saveButton) { saveButton.disabled = true; saveButton.textContent = 'Сохраняю…'; }
   try {
     const data = await api('/api/preferences', { method: 'PUT', body: JSON.stringify(payload) });
     state.preferences = { ...state.preferences, ...(data.preferences || payload) };
@@ -3086,7 +3122,12 @@ async function savePreferencesFromUi() {
     renderMatches();
     renderProfile();
     toast('Настройки сохранены');
-  } catch (e) { toast(e.message); }
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    state.preferencesSaving = false;
+    if (saveButton) { saveButton.disabled = false; saveButton.textContent = 'Сохранить настройки'; }
+  }
 }
 
 function favoriteSet() {
@@ -3097,28 +3138,54 @@ function isFavorite(teamId) {
   return favoriteSet().has(Number(teamId));
 }
 
+function favoriteMutationSelector(teamId) {
+  const id = Number(teamId);
+  return `.fav-star[data-team-id="${id}"], .favorite-remove[data-team-id="${id}"], #teamFavoriteBtn[data-team-id="${id}"]`;
+}
+
+function syncFavoriteMutationUi(teamId) {
+  const pending = state.favoriteMutations.has(Number(teamId));
+  document.querySelectorAll(favoriteMutationSelector(teamId)).forEach(button => {
+    button.disabled = pending;
+    button.classList.toggle('is-pending', pending);
+  });
+}
+
 async function toggleFavorite(team) {
-  const active = isFavorite(team.id);
+  const teamId = Number(team?.id || 0);
+  if (!teamId || state.favoriteMutations.has(teamId)) return;
+  const active = isFavorite(teamId);
+  state.favoriteMutations.add(teamId);
+  syncFavoriteMutationUi(teamId);
   try {
     if (active) {
-      await api(`/api/favorites?teamId=${Number(team.id)}`, { method: 'DELETE' });
-      state.favorites = state.favorites.filter(x => Number(x.teamId) !== Number(team.id));
+      await api(`/api/favorites?teamId=${teamId}`, { method: 'DELETE' });
+      state.favorites = state.favorites.filter(x => Number(x.teamId) !== teamId);
       toast(`${team.name}: удалено из избранного`);
     } else {
       const data = await api('/api/favorites', {
         method: 'POST',
-        body: JSON.stringify({ teamId: Number(team.id), teamName: team.name, teamLogo: team.logo || '' }),
+        body: JSON.stringify({ teamId, teamName: team.name, teamLogo: team.logo || '' }),
       });
-      state.favorites = [data.item, ...state.favorites.filter(x => Number(x.teamId) !== Number(team.id))];
+      state.favorites = [data.item, ...state.favorites.filter(x => Number(x.teamId) !== teamId)];
       toast(`${team.name}: добавлено в избранное`);
     }
-    await loadProfile();
+    if (state.profile) {
+      state.profile = {
+        ...state.profile,
+        stats: { ...(state.profile.stats || {}), favorites: state.favorites.length },
+      };
+      renderProfile();
+    }
     renderMatches();
     if (state.currentTournament) renderTournamentMatches();
     renderFavoriteTeams();
     renderDiscoveryHome();
   } catch (e) {
     toast(e.message);
+  } finally {
+    state.favoriteMutations.delete(teamId);
+    syncFavoriteMutationUi(teamId);
   }
 }
 
@@ -3135,7 +3202,7 @@ function renderFavoriteTeams() {
         ${x.teamLogo ? `<img src="${safeUrl(x.teamLogo)}" alt="">` : '<span class="team-placeholder">⚽</span>'}
         <strong>${escapeHtml(x.teamName)}</strong>
       </button>
-      <button class="favorite-remove" type="button" data-team-id="${Number(x.teamId)}" data-team-name="${escapeHtml(x.teamName)}">Удалить</button>
+      <button class="favorite-remove" type="button" data-team-id="${Number(x.teamId)}" data-team-name="${escapeHtml(x.teamName)}" ${state.favoriteMutations.has(Number(x.teamId)) ? 'disabled' : ''}>Удалить</button>
     </div>
   `).join('');
   document.querySelectorAll('.favorite-remove').forEach(btn => btn.addEventListener('click', () => {
@@ -3277,7 +3344,7 @@ function renderGlobalSearch() {
   if (status) {
     status.innerHTML = state.globalSearch.loading ? '<div class="data-notice">🔎 Ищу по футбольному каталогу…</div>' : state.globalSearch.warning ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.globalSearch.warning)}</div>` : '';
   }
-  const teamHtml = teams.length ? `<section class="panel search-result-block"><div class="mini-section-head"><strong>Команды</strong><span>${teams.length}</span></div><div class="discovery-grid">${teams.slice(0,16).map(x => discoveryTeamCard(x, x.youthReserve ? 'Youth/Reserve' : '')).join('')}</div></section>` : '';
+  const teamHtml = teams.length ? `<section class="panel search-result-block"><div class="mini-section-head"><strong>Команды</strong><span>${teams.length}</span></div><div class="discovery-grid">${teams.slice(0,16).map(x => discoveryTeamCard(x, x.youthReserve ? 'Молодёжная/резерв' : '')).join('')}</div></section>` : '';
   const compHtml = comps.length ? `<section class="panel search-result-block"><div class="mini-section-head"><strong>Турниры</strong><span>${comps.length}</span></div><div class="discovery-grid">${comps.slice(0,10).map(x => discoveryCompetitionCard(x)).join('')}</div></section>` : '';
   out.innerHTML = teamHtml + compHtml || `<div class="empty">Ничего не найдено. Для команды вне сегодняшнего списка введите минимум 3 символа и нажмите «Найти».</div>`;
   bindDiscoveryActions(out);
@@ -3577,7 +3644,7 @@ function matchCardHtml(m, { grouped = false } = {}) {
       </div>
       <div class="team-row">
         <div class="team">
-          <button class="fav-star ${isFavorite(m.home?.id) ? 'active' : ''}" type="button" data-team-id="${Number(m.home?.id)}" data-team-name="${escapeHtml(m.home?.name || '')}" data-team-logo="${escapeHtml(m.home?.logo || '')}" aria-label="Избранное">${isFavorite(m.home?.id) ? '★' : '☆'}</button>
+          <button class="fav-star ${isFavorite(m.home?.id) ? 'active' : ''} ${state.favoriteMutations.has(Number(m.home?.id)) ? 'is-pending' : ''}" type="button" data-team-id="${Number(m.home?.id)}" data-team-name="${escapeHtml(m.home?.name || '')}" data-team-logo="${escapeHtml(m.home?.logo || '')}" aria-pressed="${isFavorite(m.home?.id) ? 'true' : 'false'}" aria-label="${isFavorite(m.home?.id) ? 'Удалить из избранного' : 'Добавить в избранное'}: ${escapeHtml(m.home?.name || '')}" ${state.favoriteMutations.has(Number(m.home?.id)) ? 'disabled' : ''}>${isFavorite(m.home?.id) ? '★' : '☆'}</button>
           <button class="team-open-link match-team-open" type="button" data-open-team="${Number(m.home?.id)}" data-team-name="${escapeHtml(m.home?.name || '')}" data-team-logo="${escapeHtml(m.home?.logo || '')}">
             ${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : '<span class="team-logo-fallback">⚽</span>'}
             <span class="match-team-copy"><strong>${escapeHtml(m.home?.name || '')}</strong><small>Хозяева</small></span>
@@ -3589,14 +3656,14 @@ function matchCardHtml(m, { grouped = false } = {}) {
             <span class="match-team-copy"><strong>${escapeHtml(m.away?.name || '')}</strong><small>Гости</small></span>
             ${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : '<span class="team-logo-fallback">⚽</span>'}
           </button>
-          <button class="fav-star ${isFavorite(m.away?.id) ? 'active' : ''}" type="button" data-team-id="${Number(m.away?.id)}" data-team-name="${escapeHtml(m.away?.name || '')}" data-team-logo="${escapeHtml(m.away?.logo || '')}" aria-label="Избранное">${isFavorite(m.away?.id) ? '★' : '☆'}</button>
+          <button class="fav-star ${isFavorite(m.away?.id) ? 'active' : ''} ${state.favoriteMutations.has(Number(m.away?.id)) ? 'is-pending' : ''}" type="button" data-team-id="${Number(m.away?.id)}" data-team-name="${escapeHtml(m.away?.name || '')}" data-team-logo="${escapeHtml(m.away?.logo || '')}" aria-pressed="${isFavorite(m.away?.id) ? 'true' : 'false'}" aria-label="${isFavorite(m.away?.id) ? 'Удалить из избранного' : 'Добавить в избранное'}: ${escapeHtml(m.away?.name || '')}" ${state.favoriteMutations.has(Number(m.away?.id)) ? 'disabled' : ''}>${isFavorite(m.away?.id) ? '★' : '☆'}</button>
         </div>
       </div>
       ${m.live
-        ? `<button class="analyze-btn live-center-btn" data-center="${Number(m.fixtureId)}">${m.youthReserve ? '🔴 LIVE-счёт' : '🔴 LIVE-центр'}</button>`
+        ? `<button class="analyze-btn live-center-btn" type="button" data-center="${Number(m.fixtureId)}">${m.youthReserve ? '🔴 LIVE-счёт' : '🔴 LIVE-центр'}</button>`
         : m.finished
-          ? `<button class="analyze-btn finished-btn" data-center="${Number(m.fixtureId)}">📋 Итоги матча</button>`
-          : `<button class="analyze-btn" data-fixture="${Number(m.fixtureId)}">🧠 Предматчевый анализ</button>`}
+          ? `<button class="analyze-btn finished-btn" type="button" data-center="${Number(m.fixtureId)}">📋 Итоги матча</button>`
+          : `<button class="analyze-btn" type="button" data-fixture="${Number(m.fixtureId)}">🧠 Предматчевый анализ</button>`}
     </article>`;
 }
 
@@ -3918,15 +3985,17 @@ async function loadTeamSquad(force=false) {
 
 function renderTeamHub(data) {
   const team = data?.team || state.currentTeam || {}; state.currentTeam = { ...state.currentTeam, ...team, data };
-  const fav = isFavorite(team.id), comp = data?.primaryCompetition, standing = data?.standing, form = data?.form, next = data?.liveNow || data?.nextMatch;
+  const fav = isFavorite(team.id), favoritePending = state.favoriteMutations.has(Number(team.id)), comp = data?.primaryCompetition, standing = data?.standing, form = data?.form, next = data?.liveNow || data?.nextMatch;
   const stale = data?.stale ? `<div class="data-notice stale">⚠️ ${escapeHtml(data.warning || 'Показаны сохранённые данные команды.')}</div>` : '';
-  $('teamHero').innerHTML = `${stale}<section class="panel team-hero"><div class="team-hero-main"><div class="team-hero-logo">${team.logo ? `<img src="${safeUrl(team.logo)}" alt="">` : '⚽'}</div><div class="team-hero-copy"><span>СТРАНИЦА КОМАНДЫ</span><h2>${escapeHtml(team.name || 'Команда')}</h2><p>${comp ? `${escapeHtml(comp.name)} · ${escapeHtml(comp.country || '')}` : 'Турнир определяется по последним матчам'}</p></div><button id="teamFavoriteBtn" class="team-favorite-big ${fav ? 'active' : ''}" type="button">${fav ? '★' : '☆'}</button></div><div class="team-hero-stats"><div><span>Форма</span><strong>${form?.form ? escapeHtml(form.form.replace(/W/g,'В').replace(/D/g,'Н').replace(/L/g,'П')) : '—'}</strong></div><div><span>Очки / матч</span><strong>${form?.ppg ?? '—'}</strong></div><div><span>Голы</span><strong>${form ? `${form.gfAvg} / ${form.gaAvg}` : '—'}</strong></div><div><span>Место</span><strong>${standing?.rank ? `${standing.rank}` : '—'}</strong></div></div>${comp ? `<button id="teamTournamentBtn" class="secondary-btn team-tournament-btn" type="button">🏆 ${escapeHtml(comp.shortName || comp.name)} · открыть турнир</button>` : ''}</section>`;
+  $('teamHero').innerHTML = `${stale}<section class="panel team-hero"><div class="team-hero-main"><div class="team-hero-logo">${team.logo ? `<img src="${safeUrl(team.logo)}" alt="">` : '⚽'}</div><div class="team-hero-copy"><span>СТРАНИЦА КОМАНДЫ</span><h2>${escapeHtml(team.name || 'Команда')}</h2><p>${comp ? `${escapeHtml(comp.name)} · ${escapeHtml(comp.country || '')}` : 'Турнир определяется по последним матчам'}</p></div><button id="teamFavoriteBtn" class="team-favorite-big ${fav ? 'active' : ''} ${favoritePending ? 'is-pending' : ''}" type="button" data-team-id="${Number(team.id)}" aria-pressed="${fav ? 'true' : 'false'}" aria-label="${fav ? 'Удалить команду из избранного' : 'Добавить команду в избранное'}" ${favoritePending ? 'disabled' : ''}>${fav ? '★' : '☆'}</button></div><div class="team-hero-stats"><div><span>Форма</span><strong>${form?.form ? escapeHtml(form.form.replace(/W/g,'В').replace(/D/g,'Н').replace(/L/g,'П')) : '—'}</strong></div><div><span>Очки / матч</span><strong>${form?.ppg ?? '—'}</strong></div><div><span>Голы</span><strong>${form ? `${form.gfAvg} / ${form.gaAvg}` : '—'}</strong></div><div><span>Место</span><strong>${standing?.rank ? `${standing.rank}` : '—'}</strong></div></div>${comp ? `<button id="teamTournamentBtn" class="secondary-btn team-tournament-btn" type="button">🏆 ${escapeHtml(comp.shortName || comp.name)} · открыть турнир</button>` : ''}</section>`;
   $('teamFavoriteBtn')?.addEventListener('click', async () => { await toggleFavorite({ id:Number(team.id), name:team.name||'', logo:team.logo||'' }); renderTeamHub(state.currentTeam?.data || data); });
-  $('teamTournamentBtn')?.addEventListener('click', openTournamentFromTeam);
+  $('teamTournamentBtn')?.addEventListener('click', () => openTournamentFromTeam(false));
   const formHtml = form ? `<section class="panel team-form-panel"><h2>📈 Последние ${Number(form.sample || 0)} матчей</h2><div class="team-form-line">${String(form.form || '').split('').map(teamResultBadge).join('')}</div><div class="team-kpi-grid"><div><span>Победы</span><strong>${Number(form.wins||0)}</strong></div><div><span>Ничьи</span><strong>${Number(form.draws||0)}</strong></div><div><span>Поражения</span><strong>${Number(form.losses||0)}</strong></div><div><span>Забивает</span><strong>${form.gfAvg ?? '—'}</strong></div><div><span>Пропускает</span><strong>${form.gaAvg ?? '—'}</strong></div><div><span>ОЗ</span><strong>${form.bttsPct ?? '—'}%</strong></div></div></section>` : '<section class="panel"><div class="empty compact-empty">Пока недостаточно завершённых матчей для формы.</div></section>';
   const nextHtml = next ? `<section class="panel next-team-match"><div class="mini-section-head"><strong>${next.live ? '🔴 Матч идёт' : '⏭ Ближайший матч'}</strong><span>${escapeHtml(dateTime(next.date))}</span></div>${teamMatchRow(next)}</section>` : '<section class="panel"><div class="empty compact-empty">Ближайший матч в доступном окне не найден.</div></section>';
-  const positionHtml = standing ? `<section class="panel team-standing-card"><h2>🏆 Положение в турнире</h2><div class="team-standing-summary"><strong>${Number(standing.rank)} место</strong><span>${Number(standing.points)} очков · ${Number(standing.played)} матчей · ${Number(standing.goalsFor)}:${Number(standing.goalsAgainst)}</span></div></section>` : `<section class="panel team-standing-card"><h2>🏆 Положение в турнире</h2><p class="muted">Позиция появится после загрузки таблицы турнира. Так мы не расходуем отдельный API-запрос автоматически.</p>${comp ? '<button class="secondary-btn" type="button" data-open-tournament="1">Открыть турнир и таблицу</button>' : ''}</section>`;
-  $('teamOverview').innerHTML = `${nextHtml}${formHtml}${positionHtml}`; bindTeamFixtureActions($('teamOverview'));
+  const positionHtml = standing ? `<section class="panel team-standing-card"><h2>🏆 Положение в турнире</h2><div class="team-standing-summary"><strong>${Number(standing.rank)} место</strong><span>${Number(standing.points)} очков · ${Number(standing.played)} матчей · ${Number(standing.goalsFor)}:${Number(standing.goalsAgainst)}</span></div></section>` : `<section class="panel team-standing-card"><h2>🏆 Положение в турнире</h2><p class="muted">Позиция появится после загрузки таблицы турнира. Так мы не расходуем отдельный API-запрос автоматически.</p>${comp ? '<button id="teamStandingTableBtn" class="secondary-btn" type="button">Открыть турнирную таблицу</button>' : ''}</section>`;
+  $('teamOverview').innerHTML = `${nextHtml}${formHtml}${positionHtml}`;
+  bindTeamFixtureActions($('teamOverview'));
+  $('teamStandingTableBtn')?.addEventListener('click', () => openTournamentFromTeam(true));
   $('teamResults').innerHTML = data?.recent?.length ? `<div class="team-fixtures-list">${data.recent.map(teamMatchRow).join('')}</div>` : '<div class="empty">Завершённых матчей в доступном окне нет.</div>';
   $('teamSchedule').innerHTML = data?.upcoming?.length ? `<div class="team-fixtures-list">${data.upcoming.map(teamMatchRow).join('')}</div>` : '<div class="empty">Предстоящих матчей в доступном окне нет.</div>';
   bindTeamFixtureActions($('teamResults')); bindTeamFixtureActions($('teamSchedule'));
@@ -3985,12 +4054,21 @@ function setTeamTab(tab) {
   if(tab==='intelligence') loadTeamIntelligence(false);
   if(tab==='squad') loadTeamSquad(false);
 }
-function openTournamentFromTeam() {
+function openTournamentFromTeam(openTable = false) {
   state.tournamentBackView = 'teamView';
-  const comp=state.currentTeam?.data?.primaryCompetition; if(!comp?.leagueId) return toast('Основной турнир команды пока не определён.');
-  const existing=state.matches.find(m=>Number(m.leagueId)===Number(comp.leagueId)); if(existing) return openTournament(Number(comp.leagueId));
+  const comp=state.currentTeam?.data?.primaryCompetition;
+  if(!comp?.leagueId) return toast('Основной турнир команды пока не определён.');
+  const existing=state.matches.find(m=>Number(m.leagueId)===Number(comp.leagueId));
+  if(existing) {
+    openTournament(Number(comp.leagueId));
+    if (openTable) setTournamentTab('table', true);
+    return;
+  }
   state.currentTournament={leagueId:Number(comp.leagueId),season:Number(comp.season||new Date().getFullYear()),name:comp.name||'Турнир',shortName:comp.shortName||comp.name||'Турнир',country:comp.country||'',logo:comp.logo||'',category:comp.category||'',tier:comp.tier||'standard'};
-  renderTournamentHero(); renderTournamentMatches(); setTournamentTab('table',true); showView('tournamentView');
+  renderTournamentHero();
+  renderTournamentMatches();
+  setTournamentTab('table', true);
+  showView('tournamentView');
 }
 
 function statValue(v) {
@@ -4093,6 +4171,16 @@ function lineupLiveHtml(lineups, match) {
   return `<div class="center-lineups-grid">${lineupTeamHtml(home, match.home?.name || 'Хозяева')}${lineupTeamHtml(away, match.away?.name || 'Гости')}</div>`;
 }
 
+async function requestMatchCenter(fixtureId, extraParams = {}, options = {}) {
+  const seq = ++state.matchCenterRequestSeq;
+  const params = new URLSearchParams({ fixtureId: String(Number(fixtureId)) });
+  Object.entries(extraParams || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') params.set(key, String(value));
+  });
+  const data = await api(`/api/match-center?${params.toString()}`, options);
+  return seq === state.matchCenterRequestSeq ? data : null;
+}
+
 function updateLiveCountdown() {
   const el = $('liveRefreshText');
   if (!el || !state.currentCenter || state.currentCenter.mode !== 'live') return;
@@ -4121,7 +4209,8 @@ function startLiveRefresh(fixtureId) {
     if (state.liveRefreshRemaining <= 0) {
       state.liveRefreshRemaining = Math.max(15, Number(state.currentCenter?.refreshSeconds || 60));
       try {
-        const data = await api(`/api/match-center?fixtureId=${Number(fixtureId)}&t=${Date.now()}`);
+        const data = await requestMatchCenter(fixtureId, { t: Date.now() });
+        if (!data) return;
         state.currentCenter = data;
         renderMatchCenter(data);
         if (data.mode !== 'live') stopLiveRefresh();
@@ -4565,7 +4654,8 @@ function renderMatchCenter(d) {
     const btn = $('centerRefreshBtn');
     btn.disabled = true; btn.textContent = '⏳ Обновляю…';
     try {
-      const data = await api(`/api/match-center?fixtureId=${Number(m.fixtureId)}&t=${Date.now()}`);
+      const data = await requestMatchCenter(m.fixtureId, { t: Date.now() });
+      if (!data) return;
       state.currentCenter = data;
       renderMatchCenter(data);
     } catch (e) {
@@ -4584,7 +4674,8 @@ async function openMatchCenter(fixtureId, btn) {
   const original = btn?.textContent || '';
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Загружаю матч…'; }
   try {
-    const data = await api(`/api/match-center?fixtureId=${Number(fixtureId)}`);
+    const data = await requestMatchCenter(fixtureId);
+    if (!data) return;
     renderMatchCenter(data);
     showView('analysisView');
   } catch (e) {
@@ -4594,7 +4685,18 @@ async function openMatchCenter(fixtureId, btn) {
   }
 }
 
+function syncAnalysisBusyUi() {
+  document.querySelectorAll('.analyze-btn[data-fixture], #centerAnalyzeBtn').forEach(button => {
+    button.disabled = Boolean(state.analysisActionPending);
+    button.classList.toggle('is-pending', Boolean(state.analysisActionPending));
+  });
+}
+
 async function analyzeMatch(fixtureId, btn) {
+  if (state.analysisActionPending) {
+    toast('Анализ уже выполняется. Дождитесь завершения текущего запроса.');
+    return;
+  }
   const sourceView = activeViewId();
   if (sourceView !== 'analysisView') state.analysisBackView = sourceView;
   if (!runtimeAllows('analysisEnabled')) {
@@ -4603,8 +4705,10 @@ async function analyzeMatch(fixtureId, btn) {
   }
   stopLiveRefresh();
   state.currentCenter = null;
+  state.analysisActionPending = true;
+  syncAnalysisBusyUi();
   const original = btn?.textContent || '';
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Собираю данные…'; }
+  if (btn) btn.textContent = '⏳ Собираю данные…';
   try {
     const data = await api('/api/analyze', { method: 'POST', body: JSON.stringify({ fixtureId }) });
     state.currentAnalysis = data;
@@ -4622,7 +4726,9 @@ async function analyzeMatch(fixtureId, btn) {
     } else if (e.status === 429) toast('Дневной лимит анализов исчерпан.');
     else toast(e.message);
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = original; }
+    state.analysisActionPending = false;
+    syncAnalysisBusyUi();
+    if (btn) btn.textContent = original;
   }
 }
 
@@ -4657,7 +4763,8 @@ async function openHistoryAnalysis(fixtureId, btn) {
     showView('analysisView');
   } catch (error) {
     if (Number(error?.status || 0) === 404) {
-      const center = await api(`/api/match-center?fixtureId=${Number(fixtureId)}`, { timeoutMs: 9000 });
+      const center = await requestMatchCenter(fixtureId, {}, { timeoutMs: 9000 });
+      if (!center) return;
       renderMatchCenter(center);
       showView('analysisView');
       toast('Сохранённый полный анализ уже недоступен — открыт центр матча.');
@@ -4739,23 +4846,40 @@ function hasReminder(fixtureId) {
   return Boolean(reminderFor(fixtureId));
 }
 
+function syncReminderMutationUi(fixtureId) {
+  const pending = state.reminderMutations.has(Number(fixtureId));
+  const button = $('reminderBtn');
+  if (button && Number(state.currentAnalysis?.match?.fixtureId || 0) === Number(fixtureId)) {
+    button.disabled = pending;
+    button.classList.toggle('is-pending', pending);
+  }
+  document.querySelectorAll(`.reminder-remove[data-fixture-id="${Number(fixtureId)}"]`).forEach(el => {
+    el.disabled = pending;
+    el.classList.toggle('is-pending', pending);
+  });
+}
+
 async function toggleReminder(match) {
   if (!match?.fixtureId) return;
-  const active = hasReminder(match.fixtureId);
+  const fixtureId = Number(match.fixtureId);
+  if (state.reminderMutations.has(fixtureId)) return;
+  const active = hasReminder(fixtureId);
   if (!active && !runtimeAllows('remindersEnabled')) {
     toast('Новые уведомления временно приостановлены.');
     return;
   }
+  state.reminderMutations.add(fixtureId);
+  syncReminderMutationUi(fixtureId);
   try {
     if (active) {
-      await api(`/api/reminders?fixtureId=${Number(match.fixtureId)}`, { method: 'DELETE' });
-      state.reminders = state.reminders.filter(x => Number(x.fixtureId) !== Number(match.fixtureId));
+      await api(`/api/reminders?fixtureId=${fixtureId}`, { method: 'DELETE' });
+      state.reminders = state.reminders.filter(x => Number(x.fixtureId) !== fixtureId);
       toast('Напоминание отключено');
     } else {
       await api('/api/reminders', {
         method: 'POST',
         body: JSON.stringify({
-          fixtureId: Number(match.fixtureId),
+          fixtureId,
           homeName: match.home?.name || '',
           awayName: match.away?.name || '',
           leagueName: match.league || '',
@@ -4767,10 +4891,19 @@ async function toggleReminder(match) {
       await loadReminders();
       toast(`Напомним примерно за ${Number(state.preferences?.reminderMinutes || 30)} минут до матча${state.preferences?.kickoffNotification !== false ? ' и около старта' : ''}`);
     }
-    await loadProfile();
-    renderAnalysis(state.currentAnalysis);
+    if (state.profile) {
+      state.profile = {
+        ...state.profile,
+        stats: { ...(state.profile.stats || {}), reminders: state.reminders.length },
+      };
+      renderProfile();
+    }
+    if (state.currentAnalysis) renderAnalysis(state.currentAnalysis);
   } catch (e) {
     toast(e.message);
+  } finally {
+    state.reminderMutations.delete(fixtureId);
+    syncReminderMutationUi(fixtureId);
   }
 }
 
@@ -5027,6 +5160,7 @@ function renderAnalysis(d) {
   const awayLine = d.lineups?.away;
   const activeReminder = reminderFor(m.fixtureId);
   const reminderActive = Boolean(activeReminder);
+  const reminderPending = state.reminderMutations.has(Number(m.fixtureId));
   const confidence = d.confidence || {};
   const goal = d.goalModel;
   const recent = d.recentForm || {};
@@ -5083,7 +5217,7 @@ function renderAnalysis(d) {
       </div>
 
       <div class="experience-actions">
-        <button id="reminderBtn" class="reminder-btn ${reminderActive ? 'active' : ''}" type="button">${reminderActive ? `🔔 За ${Number(activeReminder?.remindBeforeMinutes || 30)} мин.${activeReminder?.kickoffNotify ? ' + старт' : ''}` : `🔕 Напомнить за ${Number(state.preferences?.reminderMinutes || 30)} минут`}</button>
+        <button id="reminderBtn" class="reminder-btn ${reminderActive ? 'active' : ''} ${reminderPending ? 'is-pending' : ''}" type="button" aria-pressed="${reminderActive ? 'true' : 'false'}" ${reminderPending ? 'disabled' : ''}>${reminderPending ? '⏳ Сохраняю…' : reminderActive ? `🔔 За ${Number(activeReminder?.remindBeforeMinutes || 30)} мин.${activeReminder?.kickoffNotify ? ' + старт' : ''}` : `🔕 Напомнить за ${Number(state.preferences?.reminderMinutes || 30)} минут`}</button>
         <button id="shareAnalysisBtn" class="share-analysis-btn" type="button">↗ Поделиться</button>
       </div>
     </section>
@@ -5495,7 +5629,7 @@ async function scheduleIdle(task) {
 
 showView('matchesView', { restore: true });
 
-// RC24: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
+// RC25: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
 // The boot watchdog never leaves the user behind an endless splash screen.
 const startupWatchdog = setTimeout(() => {
   if (!$('bootGate')?.hidden && !state.compatibilityBlocked) {

@@ -15,8 +15,8 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
       healthCalls += 1;
       return json({
         ok: true,
-        version: staleOnce && healthCalls === 1 ? '6.12.0-rc20' : '6.16.0-rc24',
-        releaseCandidate: 'RC24',
+        version: staleOnce && healthCalls === 1 ? '6.12.0-rc20' : '6.17.0-rc25',
+        releaseCandidate: 'RC25',
         devMode,
         adminSecurity: 'enabled',
         adminDevModeIsolation: 'enabled',
@@ -24,9 +24,13 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         cloudflareDeploymentGate: 'enabled',
         browserSecurityPolicy: 'enabled',
         failClosedDeployment: 'enabled',
+        interactionSafety: 'enabled',
+        actionDeduplication: 'enabled',
+        staleResponseGuard: 'enabled',
+        profileFailSoft: 'enabled',
       });
     }
-    if (url.pathname === '/api/app-manifest') return json({ version: '6.16.0-rc24', releaseCandidate: 'RC24' });
+    if (url.pathname === '/api/app-manifest') return json({ version: '6.17.0-rc25', releaseCandidate: 'RC25' });
     if (url.pathname === '/') return new Response('<!doctype html>', { status: 200, headers: {
       'content-type': 'text/html; charset=UTF-8',
       'content-security-policy': "default-src 'self'; script-src 'self' https://telegram.org; object-src 'none'",
@@ -38,8 +42,8 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
   };
 }
 
-test('post-deploy smoke validates RC24, security headers and protected routes', async () => {
-  const result = await runDeploymentSmoke('https://football.example.test', '6.16.0-rc24', {
+test('post-deploy smoke validates RC25, security headers and protected routes', async () => {
+  const result = await runDeploymentSmoke('https://football.example.test', '6.17.0-rc25', {
     fetchImpl: healthyFetch(),
     retries: 1,
     retryDelayMs: 0,
@@ -49,17 +53,17 @@ test('post-deploy smoke validates RC24, security headers and protected routes', 
 });
 
 test('post-deploy smoke retries while the previous Worker version is propagating', async () => {
-  const result = await runDeploymentSmoke('https://football.example.test/', '6.16.0-rc24', {
+  const result = await runDeploymentSmoke('https://football.example.test/', '6.17.0-rc25', {
     fetchImpl: healthyFetch({ staleOnce: true }),
     retries: 2,
     retryDelayMs: 0,
   });
-  assert.equal(result.version, '6.16.0-rc24');
+  assert.equal(result.version, '6.17.0-rc25');
 });
 
 test('post-deploy smoke rejects DEV_MODE in production', async () => {
   await assert.rejects(
-    runDeploymentSmoke('https://football.example.test', '6.16.0-rc24', {
+    runDeploymentSmoke('https://football.example.test', '6.17.0-rc25', {
       fetchImpl: healthyFetch({ devMode: true }),
       retries: 1,
       retryDelayMs: 0,

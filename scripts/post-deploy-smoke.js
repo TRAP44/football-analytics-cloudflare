@@ -7,6 +7,10 @@ const REQUIRED_HEALTH_FLAGS = [
   'cloudflareDeploymentGate',
   'browserSecurityPolicy',
   'failClosedDeployment',
+  'interactionSafety',
+  'actionDeduplication',
+  'staleResponseGuard',
+  'profileFailSoft',
 ];
 
 function delay(ms) {
@@ -72,7 +76,7 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
 
   if (!health) throw new Error(`Deployment did not become ready: ${lastHealthError}`);
   if (health.ok !== true) throw new Error('Health endpoint is not healthy.');
-  if (health.releaseCandidate !== 'RC24') throw new Error(`Expected RC24, received ${health.releaseCandidate || 'unknown'}.`);
+  if (health.releaseCandidate !== 'RC25') throw new Error(`Expected RC25, received ${health.releaseCandidate || 'unknown'}.`);
   if (health.devMode !== false) throw new Error('Production deployment exposes DEV_MODE=true.');
   for (const flag of REQUIRED_HEALTH_FLAGS) {
     if (health[flag] !== 'enabled') throw new Error(`Health flag ${flag} is not enabled.`);
@@ -80,8 +84,8 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
 
   const manifestResponse = await request(fetchImpl, baseUrl, '/api/app-manifest');
   const manifest = await jsonBody(manifestResponse, 'App manifest');
-  if (!manifestResponse.ok || manifest?.version !== expectedVersion || manifest?.releaseCandidate !== 'RC24') {
-    throw new Error('Public app manifest does not match the deployed RC24 release.');
+  if (!manifestResponse.ok || manifest?.version !== expectedVersion || manifest?.releaseCandidate !== 'RC25') {
+    throw new Error('Public app manifest does not match the deployed RC25 release.');
   }
 
   const rootResponse = await request(fetchImpl, baseUrl, '/');
@@ -91,7 +95,7 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
   }
   const contentSecurityPolicy = String(rootResponse.headers.get('content-security-policy') || '');
   if (!contentSecurityPolicy.includes("script-src 'self' https://telegram.org") || !contentSecurityPolicy.includes("object-src 'none'")) {
-    throw new Error('Static application shell is missing the RC24 Content-Security-Policy.');
+    throw new Error('Static application shell is missing the RC25 Content-Security-Policy.');
   }
   if (String(rootResponse.headers.get('x-content-type-options') || '').toLowerCase() !== 'nosniff') {
     throw new Error('Static application shell is missing X-Content-Type-Options: nosniff.');

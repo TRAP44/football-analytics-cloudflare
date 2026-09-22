@@ -8,13 +8,13 @@ const staticHeaders = fs.readFileSync('public/_headers', 'utf8');
 const styles = fs.readFileSync('public/styles.css', 'utf8');
 const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml', 'utf8');
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
-const expected = `${pkg.version}-rc24`;
+const expected = `${pkg.version}-rc25`;
 const failures = [];
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC24'")) failures.push('Worker RC name must be RC24');
+if (!worker.includes("const RC_NAME = 'RC25'")) failures.push('Worker RC name must be RC25');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc24'")) failures.push('Client release channel must be rc22');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc25'")) failures.push('Client release channel must be rc25');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -39,6 +39,12 @@ if (!fs.existsSync('test/user-flow-contract.test.js')) failures.push('Missing us
 if (!worker.includes("url.pathname === '/api/history-analysis'")) failures.push('Missing quota-safe history analysis route');
 if (!app.includes('tg.BackButton.onClick(handleBackNavigation)')) failures.push('Telegram BackButton navigation is not wired');
 if (!app.includes('state.globalSearch.requestSeq')) failures.push('Global search stale-response guard is missing');
+if (!fs.existsSync('test/interaction-safety.test.js')) failures.push('Missing interaction-safety regression test');
+if (!app.includes('analysisActionPending: false')) failures.push('Analysis duplicate-submit guard is missing');
+if (!app.includes('matchCenterRequestSeq: 0')) failures.push('Match-center stale-response guard is missing');
+if (!app.includes('favoriteMutations: new Set()')) failures.push('Favorite mutation guard is missing');
+if (!app.includes('reminderMutations: new Set()')) failures.push('Reminder mutation guard is missing');
+if (!app.includes('profileStale: false')) failures.push('Profile fail-soft state is missing');
 
 const migration = fs.readFileSync('supabase_migration_v6_10.sql', 'utf8');
 if (!migration.includes('transition_model_calibration')) failures.push('Missing atomic calibration transition RPC');
