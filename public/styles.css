@@ -1,3 +1,6 @@
+/* Global hidden-state integrity */
+[hidden]{display:none!important}
+
 :root {
   --bg: var(--tg-theme-bg-color, #0b1220);
   --surface: var(--tg-theme-secondary-bg-color, #111827);
