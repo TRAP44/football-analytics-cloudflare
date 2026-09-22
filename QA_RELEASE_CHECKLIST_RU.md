@@ -1,10 +1,10 @@
-# QA Release Checklist — v6.29.0 RC37
+# QA Release Checklist — v6.30.0 RC38
 
 ## Deploy
 
 - применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql` и `supabase_migration_v6_11_1.sql`;
-- Worker/client = `6.29.0-rc37`;
-- package = `6.29.0`;
+- Worker/client = `6.30.0-rc38`;
+- package = `6.30.0`;
 - cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;
@@ -15,6 +15,16 @@
 - deploy использует `--keep-vars` и не удаляет dashboard variables;
 - отсутствие любого Cloudflare credential завершает deploy workflow ошибкой;
 - `public/_headers` содержит Telegram-compatible CSP и обязательные browser security headers;
+
+## RC38 — пользовательский интерфейс
+
+- заголовок персональной сводки = «Матчи для вас»;
+- у предстоящего матча видна кнопка «🔔 Напомнить за … мин.»;
+- после включения кнопка меняется на «🔔 Напоминание включено»;
+- повторный клик отключает напоминание без дублирования запросов;
+- одноразовая карточка «Быстрый старт» скрывается после «Понятно»;
+- мобильная карточка матча не переполняется: действия переходят в один столбец;
+- новые миграции Supabase для RC38 не требуются.
 
 ## Champion–Challenger
 

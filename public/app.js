@@ -3,6 +3,7 @@ const CLIENT_API_CONTRACT = 5;
 const CLIENT_RELEASE_CHANNEL = 'rc38';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
+const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
 const DEFAULT_UI_PREFERENCES = { theme: 'system', buttonStyle: 'soft' };
 function readUiPreferences() {
   try {
@@ -175,6 +176,20 @@ function applyInterfacePreferences({ announce = false } = {}) {
     try { tg?.setBackgroundColor(background); } catch {}
   });
   if (announce) toast('Оформление применено');
+}
+
+function renderFirstRunGuide() {
+  const guide = $('firstRunGuide');
+  if (!guide) return;
+  let dismissed = false;
+  try { dismissed = localStorage.getItem(FIRST_RUN_GUIDE_KEY) === '1'; } catch {}
+  guide.hidden = dismissed;
+}
+
+function dismissFirstRunGuide() {
+  const guide = $('firstRunGuide');
+  try { localStorage.setItem(FIRST_RUN_GUIDE_KEY, '1'); } catch {}
+  if (guide) guide.hidden = true;
 }
 
 function saveInterfacePreference(key, value) {
@@ -3388,6 +3403,7 @@ async function loadReminders() {
   } finally {
     state.remindersLoading = false;
     renderReminderList();
+    syncAllQuickReminderButtons();
   }
 }
 
@@ -4072,16 +4088,16 @@ function renderDailyOverview() {
   if ($('overviewFavoriteCount')) $('overviewFavoriteCount').textContent = String(favoriteMatches);
   if ($('overviewRecommendedCount')) $('overviewRecommendedCount').textContent = String(recommended);
   if (live > 0) {
-    title.textContent = 'Сейчас в эфире';
+    title.textContent = `${russianCountLabel(live, 'матч идёт', 'матча идут', 'матчей идут')} прямо сейчас`;
     text.textContent = favoriteMatches ? `И ещё ${russianCountLabel(favoriteMatches, 'матч любимой команды', 'матча любимых команд', 'матчей любимых команд')} в вашем списке.` : `${russianCountLabel(recommended, 'рекомендация собрана', 'рекомендации собраны', 'рекомендаций собрано')} для вас.`;
   } else if (favoriteMatches > 0) {
-    title.textContent = 'Матчи ваших команд';
+    title.textContent = 'Любимые команды уже собраны';
     text.textContent = `${russianCountLabel(favoriteMatches, 'важный матч', 'важных матча', 'важных матчей')} — без поиска по всему расписанию.`;
   } else if (visible.length > 0) {
-    title.textContent = 'Рекомендации для вас';
-    text.textContent = `${russianCountLabel(recommended, 'матч подобран', 'матча подобраны', 'матчей подобрано')} из ${visible.length} доступных — с учётом ваших интересов.`;
+    title.textContent = 'Матчи для вас';
+    text.textContent = `${russianCountLabel(recommended, 'рекомендация собрана', 'рекомендации собраны', 'рекомендаций собрано')} из ${visible.length} доступных матчей.`;
   } else {
-    title.textContent = 'Матчи скоро появятся';
+    title.textContent = 'Собираю ваш футбольный день';
     text.textContent = 'Свежие матчи появятся здесь сразу после загрузки.';
   }
 }
@@ -4220,6 +4236,9 @@ function matchCardHtml(m, { grouped = false } = {}) {
     ? personalInsight.reason
     : m.featured ? 'Матч дня' : interest >= 80 ? 'Высокий интерес' : interest >= 65 ? 'Стоит внимания' : '';
   const signalIcon = personalInsight.favorite ? '★' : personalInsight.viewedTeam ? '↺' : m.live ? '●' : m.featured ? '✦' : '🔥';
+  const reminderActive = hasReminder(m.fixtureId);
+  const reminderPending = state.reminderMutations.has(Number(m.fixtureId));
+  const reminderMinutes = Number(state.preferences?.reminderMinutes || 30);
   return `
     <article class="match-card ${Number(m.interestScore || 0) >= 50 ? 'top-match' : ''} ${cardState}">
       ${grouped ? '' : `<div class="match-meta"><span class="competition-name">${m.featured ? '<b class="top-tag">ГЛАВНЫЙ</b> ' : ''}${escapeHtml(m.league || 'Турнир')}</span><span>${escapeHtml(m.country || '')}</span></div>`}
@@ -4246,11 +4265,14 @@ function matchCardHtml(m, { grouped = false } = {}) {
           <button class="fav-star ${isFavorite(m.away?.id) ? 'active' : ''} ${state.favoriteMutations.has(Number(m.away?.id)) ? 'is-pending' : ''}" type="button" data-team-id="${Number(m.away?.id)}" data-team-name="${escapeHtml(m.away?.name || '')}" data-team-logo="${escapeHtml(m.away?.logo || '')}" aria-pressed="${isFavorite(m.away?.id) ? 'true' : 'false'}" aria-label="${isFavorite(m.away?.id) ? 'Удалить из избранного' : 'Добавить в избранное'}: ${escapeHtml(m.away?.name || '')}" ${state.favoriteMutations.has(Number(m.away?.id)) ? 'disabled' : ''}>${isFavorite(m.away?.id) ? '★' : '☆'}</button>
         </div>
       </div>
-      ${m.live
-        ? `<button class="analyze-btn live-center-btn" type="button" data-center="${Number(m.fixtureId)}">${m.youthReserve ? '🔴 Счёт матча' : '🔴 Центр матча'}</button>`
-        : m.finished
-          ? `<button class="analyze-btn finished-btn" type="button" data-center="${Number(m.fixtureId)}">📋 Итоги матча</button>`
-          : `<button class="analyze-btn" type="button" data-fixture="${Number(m.fixtureId)}">🧠 Предматчевый анализ</button>`}
+      <div class="match-card-actions ${m.live || m.finished ? 'single' : ''}">
+        ${m.live
+          ? `<button class="analyze-btn live-center-btn" type="button" data-center="${Number(m.fixtureId)}">${m.youthReserve ? '🔴 Счёт матча' : '🔴 Центр матча'}</button>`
+          : m.finished
+            ? `<button class="analyze-btn finished-btn" type="button" data-center="${Number(m.fixtureId)}">📋 Итоги матча</button>`
+            : `<button class="analyze-btn" type="button" data-fixture="${Number(m.fixtureId)}">🧠 Предматчевый анализ</button>`}
+        ${!m.live && !m.finished ? `<button class="quick-reminder-btn ${reminderActive ? 'active' : ''} ${reminderPending ? 'is-pending' : ''}" type="button" data-quick-reminder="${Number(m.fixtureId)}" aria-pressed="${reminderActive ? 'true' : 'false'}" ${reminderPending ? 'disabled' : ''}>${reminderActive ? '🔔 Напоминание включено' : `🔔 Напомнить за ${reminderMinutes} мин.`}</button>` : ''}
+      </div>
     </article>`;
 }
 
@@ -4264,6 +4286,11 @@ function bindMatchActions(root = document) {
   root.querySelectorAll('.fav-star').forEach(btn => btn.addEventListener('click', () => toggleFavorite({
     id: Number(btn.dataset.teamId), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '',
   })));
+  root.querySelectorAll('[data-quick-reminder]').forEach(btn => btn.addEventListener('click', () => {
+    const fixtureId = Number(btn.dataset.quickReminder);
+    const match = state.matches.find(item => Number(item.fixtureId) === fixtureId);
+    if (match) toggleReminder(match);
+  }));
   root.querySelectorAll('[data-open-tournament]').forEach(btn => btn.addEventListener('click', () => openTournament(Number(btn.dataset.openTournament))));
   root.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => openTeam({ id: Number(btn.dataset.openTeam), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '' })));
 }
@@ -5550,6 +5577,28 @@ function hasReminder(fixtureId) {
   return Boolean(reminderFor(fixtureId));
 }
 
+function syncQuickReminderButton(button, fixtureId) {
+  if (!button) return;
+  const pending = state.reminderMutations.has(Number(fixtureId));
+  const active = hasReminder(fixtureId);
+  const minutes = Number(state.preferences?.reminderMinutes || 30);
+  button.disabled = pending;
+  button.classList.toggle('is-pending', pending);
+  button.classList.toggle('active', active);
+  button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  button.textContent = pending
+    ? 'Сохраняю…'
+    : active
+      ? '🔔 Напоминание включено'
+      : `🔔 Напомнить за ${minutes} мин.`;
+}
+
+function syncAllQuickReminderButtons() {
+  document.querySelectorAll('.quick-reminder-btn[data-quick-reminder]').forEach(button => {
+    syncQuickReminderButton(button, Number(button.dataset.quickReminder));
+  });
+}
+
 function syncReminderMutationUi(fixtureId) {
   const pending = state.reminderMutations.has(Number(fixtureId));
   const button = $('reminderBtn');
@@ -5560,6 +5609,9 @@ function syncReminderMutationUi(fixtureId) {
   document.querySelectorAll(`.reminder-remove[data-fixture-id="${Number(fixtureId)}"]`).forEach(el => {
     el.disabled = pending;
     el.classList.toggle('is-pending', pending);
+  });
+  document.querySelectorAll(`.quick-reminder-btn[data-quick-reminder="${Number(fixtureId)}"]`).forEach(el => {
+    syncQuickReminderButton(el, fixtureId);
   });
 }
 
@@ -6398,6 +6450,7 @@ $('releaseRefreshBtn')?.addEventListener('click', () => loadReleaseReadiness(tru
 $('bootReloadBtn')?.addEventListener('click', forceFreshReload);
 $('bootRetryBtn')?.addEventListener('click', () => runStartupSequence());
 $('bootContinueBtn')?.addEventListener('click', hideBootGate);
+$('firstRunGuideDismiss')?.addEventListener('click', dismissFirstRunGuide);
 
 if (tg?.BackButton?.onClick) {
   try { tg.BackButton.onClick(handleBackNavigation); } catch {}
@@ -6413,6 +6466,7 @@ $('reminderList')?.setAttribute('aria-live', 'polite');
 $('history')?.setAttribute('aria-live', 'polite');
 organizeAdminConsole();
 applyInterfacePreferences();
+renderFirstRunGuide();
 syncFilterButtons();
 showView('matchesView', { restore: true });
 

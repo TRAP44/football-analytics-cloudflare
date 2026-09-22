@@ -2376,7 +2376,7 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 
 
 /* RC37 — explainable personal recommendations */
-.rc-panel:before { content:"RC38"; }
+.rc-panel:before { content:"RC37"; }
 .overview-action.recommended b { color:var(--accent); }
 .match-signal.favorite-signal { color:#fbbf24; border-color:rgba(251,191,36,.28); background:rgba(251,191,36,.07); }
 .profile-data-details { margin:0 0 12px; border:1px solid var(--line-soft); border-radius:17px; background:color-mix(in srgb,var(--surface) 72%,transparent); overflow:hidden; }
@@ -2402,3 +2402,37 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
   .admin-console-actions button { grid-template-columns:auto 1fr; align-items:center; column-gap:9px; }
   .admin-console-actions button small { grid-column:2; }
 }
+
+
+/* RC38 — быстрые напоминания и одноразовый быстрый старт */
+.first-run-guide {
+  display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:12px;
+  margin:0 0 12px; padding:13px 14px;
+  border:1px solid color-mix(in srgb,var(--accent) 28%,var(--line)); border-radius:17px;
+  background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 8%,var(--surface)),var(--surface));
+}
+.first-run-guide-copy { min-width:0; display:grid; gap:3px; }
+.first-run-guide-copy > span { color:var(--accent); font-size:8px; font-weight:900; letter-spacing:.09em; }
+.first-run-guide-copy > strong { font-size:12px; }
+.first-run-guide-copy > p { margin:0; color:var(--hint); font-size:9px; line-height:1.45; }
+.first-run-guide-dismiss {
+  min-height:38px; border:1px solid color-mix(in srgb,var(--accent) 34%,var(--line)); border-radius:12px;
+  padding:0 12px; background:color-mix(in srgb,var(--accent) 10%,transparent); color:var(--text); font-weight:800; font-size:10px;
+}
+.match-card-actions { display:grid; grid-template-columns:minmax(0,1.25fr) minmax(0,1fr); gap:8px; margin-top:11px; }
+.match-card-actions.single { grid-template-columns:1fr; }
+.match-card-actions .analyze-btn { margin-top:0; }
+.quick-reminder-btn {
+  min-height:42px; border:1px solid var(--line); border-radius:13px; padding:9px 10px;
+  background:color-mix(in srgb,var(--surface-raised) 92%,var(--accent) 8%); color:var(--hint);
+  font-size:10px; font-weight:850; line-height:1.15;
+}
+.quick-reminder-btn.active {
+  border-color:color-mix(in srgb,var(--accent) 48%,var(--line));
+  background:color-mix(in srgb,var(--accent) 11%,var(--surface)); color:var(--text);
+}
+.quick-reminder-btn:disabled,.quick-reminder-btn.is-pending { opacity:.58; }
+:root[data-button-style="compact"] .quick-reminder-btn,
+:root[data-button-style="compact"] .first-run-guide-dismiss { border-radius:7px; }
+@media (max-width:520px) { .match-card-actions { grid-template-columns:1fr; gap:6px; } .quick-reminder-btn { min-height:38px; } }
+@media (max-width:380px) { .first-run-guide { grid-template-columns:1fr; } .first-run-guide-dismiss { width:100%; } }

@@ -54,6 +54,10 @@ if (!app.includes('analysisActionPending: false')) failures.push('Analysis dupli
 if (!app.includes('matchCenterRequestSeq: 0')) failures.push('Match-center stale-response guard is missing');
 if (!app.includes('favoriteMutations: new Set()')) failures.push('Favorite mutation guard is missing');
 if (!app.includes('reminderMutations: new Set()')) failures.push('Reminder mutation guard is missing');
+if (!fs.existsSync('test/quick-reminder-onboarding.test.js')) failures.push('Missing RC38 quick-reminder/onboarding regression test');
+if (!html.includes('id="firstRunGuide"') || !html.includes('id="firstRunGuideDismiss"')) failures.push('First-run guide markup is missing');
+if (!app.includes('data-quick-reminder')) failures.push('Quick reminder action is missing from match cards');
+if (!worker.includes("quickMatchReminders: 'enabled'") || !worker.includes("firstRunGuide: 'enabled'")) failures.push('RC38 health contract is missing');
 if (!app.includes('profileStale: false')) failures.push('Profile fail-soft state is missing');
 if (!fs.existsSync('test/entity-state-safety.test.js')) failures.push('Missing entity-state safety regression test');
 if (!app.includes('teamHubRequestSeq: 0')) failures.push('Team hub stale-response guard is missing');

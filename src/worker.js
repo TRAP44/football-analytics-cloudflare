@@ -11164,6 +11164,8 @@ export default {
         asyncEntityGuard: 'enabled',
         personalDataWriteConsistency: 'enabled',
         reminderWriteConfirmation: 'enabled',
+        quickMatchReminders: 'enabled',
+        firstRunGuide: 'enabled',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
