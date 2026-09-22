@@ -45,6 +45,7 @@ test('RC56 health and playbook describe the release gate',()=> {
   for (const flag of ['zeroResultRecovery','teamFixtureDiscovery','sharedFixtureDiscoveryCache','extendedTeamCalendar','recentMatchFallback']) {
     assert.ok(worker.includes(`${flag}: 'enabled'`), `missing ${flag}`);
   }
-  assert.match(playbook,/30 дней назад и 120 дней вперёд/);
+  assert.match(playbook,/30 дней назад/);
+  assert.match(playbook,/120 дней вперёд/);
   assert.match(playbook,/без параметра `next`/);
 });
