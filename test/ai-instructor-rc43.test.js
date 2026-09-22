@@ -35,7 +35,7 @@ test('history re-open uses the active v10 analysis cache',()=>{
 });
 
 test('telegram bot exposes last saved verdict',()=>{
-  assert.match(worker,/command: 'last'/);
+  assert.match(worker,/🕘 Последний разбор/);
   assert.match(worker,/function lastAiVerdictText/);
   assert.match(worker,/sendLastAiVerdict/);
   assert.match(app,/view === 'history'/);
