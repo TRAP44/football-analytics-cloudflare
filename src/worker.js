@@ -75,11 +75,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.37.0-rc45';
+const APP_VERSION = '6.38.0-rc46';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc45';
-const RC_NAME = 'RC45';
+const RELEASE_CHANNEL = 'rc46';
+const RC_NAME = 'RC46';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1537,6 +1537,7 @@ async function configureFootballBot(request, cfg, chatId) {
       { command: 'favorites', description: 'Матчи любимых команд' },
       { command: 'picks', description: '3 матча дня' },
       { command: 'search', description: 'Найти команду или матч' },
+      { command: 'ask', description: 'Спросить AI о матче' },
       { command: 'last', description: 'Последний AI-разбор' },
       { command: 'digest', description: 'Включить утреннюю подборку' },
       { command: 'digest_off', description: 'Отключить утреннюю подборку' },
@@ -1550,7 +1551,7 @@ async function sendFootballBotHome(request, cfg, chatId) {
   await telegramApi('sendMessage', cfg, {
     chat_id: chatId,
     parse_mode: 'HTML',
-    text: '<b>⚽ FM AI · Футбольный инструктор</b>\n\nЯ ваш AI-инструктор по футболу. Помогаю быстро понять матч до стартового свистка и во время игры.\n\n🧠 вероятности и сценарий матча\n📈 форма и очные встречи\n👥 составы и потери\n🧑‍⚖️ судья и контекст встречи\n💹 рынок, коэффициенты и риски\n🔴 события и статистика по ходу матча\n\nМожно просто написать название команды или матч, например «Арсенал» или «Арсенал — Челси». Если сигнал слабый, я прямо скажу, что матч лучше пропустить.',
+    text: '<b>⚽ FM AI · Футбольный инструктор</b>\n\nЯ ваш AI-инструктор по футболу. Помогаю быстро понять матч до стартового свистка и во время игры.\n\n🧠 вероятности и сценарий матча\n📈 форма и очные встречи\n👥 составы и потери\n🧑‍⚖️ судья и контекст встречи\n💹 рынок, коэффициенты и риски\n🔴 события и статистика по ходу матча\n\nМожно написать обычным языком: «Арсенал», «что поставить на Арсенал — Челси», «кто судья Интер — Милан» или «разбери матч Реала». Если сигнал слабый или данных мало, я прямо скажу, что матч лучше пропустить.',
     reply_markup: footballBotKeyboard(request),
   });
 }
@@ -1665,9 +1666,27 @@ function telegramHtmlEscape(value = '') {
 }
 
 function botSearchParts(raw = '') {
-  const query = String(raw || '').replace(/^\/search(?:@\w+)?(?:\s+|$)/i,'').trim().slice(0,60);
+  const cleaned = String(raw || '').replace(/^\/(?:search|ask)(?:@\w+)?(?:\s+|$)/i,'').trim().slice(0,100);
+  const normalized = searchText(cleaned);
+  const intent = /^(?:кто\s+судья|судья)(?:\s|$)/.test(normalized)
+    ? 'referee'
+    : /^(?:что\s+поставить|ставка|идея)(?:\s|$)/.test(normalized)
+      ? 'pick'
+      : /^(?:разбери|разбор|анализ|прогноз)(?:\s|$)/.test(normalized)
+        ? 'analysis'
+        : 'search';
+  const query = cleaned
+    .replace(/^(?:что\s+поставить(?:\s+на)?|кто\s+судья(?:\s+на)?|судья(?:\s+на)?|ставка(?:\s+на)?|идея(?:\s+на)?|разбери(?:\s+матч)?|разбор(?:\s+матча)?|анализ(?:\s+матча)?|прогноз(?:\s+на)?|найди(?:\s+матч)?|покажи(?:\s+матч)?)\s*[:—–-]?\s*/i,'')
+    .trim().slice(0,60);
   const parts = query.split(/\s*(?:—|–|-|\bvs\.?\b|\bпротив\b)\s*/i).map(x => x.trim()).filter(Boolean).slice(0,2);
-  return { query, first: parts[0] || query, second: parts[1] || '' };
+  return { query, first: parts[0] || query, second: parts[1] || '', intent };
+}
+
+function botIntentLead(parts = {}) {
+  if (parts.intent === 'referee') return '🧑‍⚖️ Нашёл матч. В AI-разборе покажу назначенного судью и доступную историю его матчей.';
+  if (parts.intent === 'pick') return '🧠 Нашёл матч для разбора. Отдельно покажу идею, риск и качество исходных данных.';
+  if (parts.intent === 'analysis') return '🧠 Нашёл матч. Откройте AI-разбор — там будут вероятности, сценарий, риски, составы, рынок и судья.';
+  return '⚽ Нашёл подходящие матчи.';
 }
 
 function botMatchScore(match, parts) {
@@ -1763,7 +1782,7 @@ async function botRemoteTeamMatches(parts, cfg) {
 async function sendBotFootballSearch(request, cfg, chatId, rawText) {
   const parts=botSearchParts(rawText);
   if (parts.query.length < 2) {
-    await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'Напишите название команды или матча. Например: «Арсенал» или «Арсенал — Челси».',reply_markup:{inline_keyboard:[[{text:'🔎 Открыть поиск',web_app:{url:telegramWebAppUrl(request,{view:'search'})}}]]}});
+    await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'Напишите название команды или вопрос о матче. Например: «Арсенал», «что поставить на Арсенал — Челси» или «кто судья Интер — Милан».',reply_markup:{inline_keyboard:[[{text:'🔎 Открыть поиск',web_app:{url:telegramWebAppUrl(request,{view:'search'})}}]]}});
     return;
   }
   let matches=await botCachedDayMatches(parts,cfg);
@@ -1784,7 +1803,7 @@ async function sendBotFootballSearch(request, cfg, chatId, rawText) {
   await telegramApi('sendMessage',cfg,{
     chat_id:chatId,
     parse_mode:'HTML',
-    text:[`⚽ <b>Нашёл по запросу «${telegramHtmlEscape(parts.query)}»</b>`,'',...rows,'','Для предстоящего матча кнопка запускает AI-разбор; для идущего или завершённого — центр матча.'].join('\n'),
+    text:[`<b>${telegramHtmlEscape(botIntentLead(parts))}</b>`,`Запрос: «${telegramHtmlEscape(parts.query)}»`,'',...rows,'','Для предстоящего матча кнопка запускает AI-разбор; для идущего или завершённого — центр матча.'].join('\n'),
     reply_markup:{inline_keyboard:buttons},
   });
 }
@@ -1895,7 +1914,7 @@ async function handleTelegramWebhook(request, cfg) {
   }
 
   if (chatId && /^\/help(?:@\w+)?(?:\s|$)/i.test(text)) {
-    await telegramApi('sendMessage', cfg, { chat_id: chatId, parse_mode: 'HTML', text: '<b>Как пользоваться AI-инструктором</b>\n\n/today — матчи и AI-разбор на сегодня\n/live — матчи, которые идут сейчас\n/favorites — ваши команды\n/picks — 3 матча дня\n/search <команда> — найти команду или матч\n/last — последний AI-разбор\n/digest — включить утреннюю подборку\n/digest_off — отключить её\n/help — эта подсказка\n\nВ мини-приложении выберите матч и нажмите «Предматчевый анализ». AI-инструктор покажет вероятности, идею для рассмотрения, риски, судью, форму, составы и рынок.', reply_markup: footballBotKeyboard(request) });
+    await telegramApi('sendMessage', cfg, { chat_id: chatId, parse_mode: 'HTML', text: '<b>Как пользоваться AI-инструктором</b>\n\n/today — матчи и AI-разбор на сегодня\n/live — матчи, которые идут сейчас\n/favorites — ваши команды\n/picks — 3 матча дня\n/search <команда> — найти команду или матч\n/ask <вопрос> — спросить AI обычным языком\n/last — последний AI-разбор\n/digest — включить утреннюю подборку\n/digest_off — отключить её\n/help — эта подсказка\n\nВ мини-приложении выберите матч и нажмите «Предматчевый анализ». AI-инструктор покажет вероятности, идею для рассмотрения, риски, судью, форму, составы и рынок.', reply_markup: footballBotKeyboard(request) });
     return json({ ok: true });
   }
 
@@ -1919,7 +1938,7 @@ async function handleTelegramWebhook(request, cfg) {
     return json({ ok: true });
   }
 
-  if (chatId && /^\/search(?:@\w+)?(?:\s|$)/i.test(text)) {
+  if (chatId && /^\/(?:search|ask)(?:@\w+)?(?:\s|$)/i.test(text)) {
     await sendBotFootballSearch(request, cfg, chatId, text);
     return json({ ok: true });
   }
@@ -11480,6 +11499,13 @@ function buildAiInstructor({ probabilities, goalModel, confidence, completeness,
   if (confidenceScore < 56 || completenessScore < 6) betSignal = { code:'skip', label:'Пропустить ставку', strength:0, reason: confidenceScore < 56 ? 'Уверенность модели ниже рабочего порога.' : 'Для уверенного сигнала недостаточно данных по матчу.' };
   const riskLabel = confidenceScore >= 74 && completenessScore >= 8 ? 'Умеренный' : confidenceScore >= 60 && completenessScore >= 6 ? 'Повышенный' : 'Высокий';
   const confidenceLabel = confidenceScore >= 74 ? 'Высокая' : confidenceScore >= 60 ? 'Средняя' : 'Низкая';
+  const completenessMax = Math.max(1, Number(completeness?.max || 10));
+  const dataTrustScore = Math.max(0, Math.min(100, Math.round((completenessScore / completenessMax) * 100)));
+  const dataTrust = {
+    score:dataTrustScore,
+    label:dataTrustScore >= 80 ? 'Высокая полнота' : dataTrustScore >= 60 ? 'Рабочая полнота' : 'Ограниченные данные',
+    note:dataTrustScore >= 80 ? 'Большинство ключевых блоков доступны.' : dataTrustScore >= 60 ? 'Для рабочего вывода хватает данных, но есть пробелы.' : 'Не хватает части ключевых данных — вывод нужно трактовать осторожно.',
+  };
   const maxOutcome = [['П1',p.home],['Н',p.draw],['П2',p.away]].sort((a,b)=>b[1]-a[1])[0];
   const over25 = Number(goalModel?.over25 || 0);
   const btts = Number(goalModel?.btts || 0);
@@ -11488,8 +11514,23 @@ function buildAiInstructor({ probabilities, goalModel, confidence, completeness,
     total: !goalModel ? 'Нет данных' : over25 >= 55 ? `ТБ 2.5 · ${Math.round(over25)}%` : over25 <= 45 ? `ТМ 2.5 · ${Math.round(100-over25)}%` : 'Без перевеса',
     btts: !goalModel ? 'Нет данных' : btts >= 55 ? `Да · ${Math.round(btts)}%` : btts <= 45 ? `Нет · ${Math.round(100-btts)}%` : 'Без перевеса',
   };
+  const planChecks = [
+    lineupImpact?.note ? String(lineupImpact.note) : 'Проверить стартовые составы и ключевые потери ближе к началу матча.',
+    marketMovementNote(marketMovement || {}) || 'Сверить движение коэффициентов и убедиться, что рынок не ушёл резко против сценария.',
+    refereeHistory?.available ? `Учесть судью: ${refereeHistory.styleLabel}, среднее ${refereeHistory.avgYellow} жёлтых карточки за матч.` : referee ? 'Судья назначен; проверить, появились ли дополнительные данные по его стилю.' : 'Проверить назначение судьи ближе к стартовому свистку.',
+  ].filter(Boolean).slice(0,3);
+  const firstRisk = String((risks || []).find(Boolean) || '').trim();
+  const matchPlan = {
+    checks:planChecks,
+    cancel:betSignal.code === 'skip'
+      ? 'Рабочего сигнала нет: не форсировать решение до появления новых данных.'
+      : firstRisk || 'Если составы, рынок или доступность ключевых игроков меняют исходный баланс — пересчитать матч.',
+    liveWatch:betSignal.code === 'over25' || betSignal.code === 'btts'
+      ? 'В первые 15–20 минут смотреть на темп, удары из опасных зон и реальное давление обеих команд.'
+      : 'После старта сверять территорию, опасные атаки и качество моментов с предматчевым сценарием.',
+  };
   return {
-    role:'football-ai-instructor', confidenceScore:Math.round(confidenceScore), confidenceLabel, riskLabel, betSignal, verdict,
+    role:'football-ai-instructor', confidenceScore:Math.round(confidenceScore), confidenceLabel, riskLabel, betSignal, verdict, dataTrust, matchPlan,
     riskNote: betSignal.code === 'skip' ? 'Сильного сигнала нет — не форсируйте решение.' : 'Проверяйте составы и изменения коэффициентов ближе к старту.',
     referee:String(referee || ''), refereeProfile:refereeData || refereeProfile(referee), refereeHistory:refereeHistory || null,
     refereeNote: referee ? 'Арбитр назначен; имя учитывается как контекст матча.' : 'Назначение судьи ещё не опубликовано источником данных.',
@@ -11808,6 +11849,10 @@ export default {
         analyzedSkipLane: 'enabled',
         botNaturalFootballSearch: 'enabled',
         botFixtureDeepLinks: 'enabled',
+        aiDataTrust: 'enabled',
+        aiMatchPlan: 'enabled',
+        botFootballIntentUnderstanding: 'enabled',
+        botAskCommand: 'enabled',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',

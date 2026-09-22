@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.37.0-rc45';
+const CLIENT_VERSION = '6.38.0-rc46';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc45';
+const CLIENT_RELEASE_CHANNEL = 'rc46';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -6028,7 +6028,7 @@ function prematchSourceRow(row, match) {
 
 function prematchBriefHtml(pm, match, probabilities) {
   if (!pm) {
-    return `<section class="panel"><div class="empty"><strong>Главное недоступен</strong><p>Пересчитайте анализ после обновления приложения.</p></div></section>`;
+    return `<section class="panel"><div class="empty"><strong>Преданализ недоступен</strong><p>Пересчитайте анализ после обновления приложения.</p></div></section>`;
   }
   const uncertainty = pm.uncertainty || {};
   const leader = pm.leader || {};
@@ -6087,6 +6087,10 @@ function aiInstructorHtml(ai = {}, match = {}) {
   const risks = Array.isArray(ai.risks) ? ai.risks.slice(0, 2) : [];
   const signalClass = signal.code === 'skip' ? 'skip' : signal.code === 'watch' ? 'watch' : 'active';
   const confidenceText = Number.isFinite(Number(ai.confidenceScore)) ? `${Math.round(Number(ai.confidenceScore))}/100` : 'данных мало';
+  const dataTrust = ai.dataTrust || {};
+  const matchPlan = ai.matchPlan || {};
+  const checks = Array.isArray(matchPlan.checks) ? matchPlan.checks.slice(0, 3) : [];
+  const dataTrustScore = Number.isFinite(Number(dataTrust.score)) ? `${Math.round(Number(dataTrust.score))}%` : '—';
   return `
     <section class="panel ai-instructor-card ${signalClass}">
       <div class="ai-instructor-head">
@@ -6111,10 +6115,19 @@ function aiInstructorHtml(ai = {}, match = {}) {
           <div><span>Уверенность</span><strong>${escapeHtml(ai.confidenceLabel || '—')}</strong><small>${confidenceText}</small></div>
           <div><span>Риск</span><strong>${escapeHtml(ai.riskLabel || '—')}</strong><small>${escapeHtml(publicText(ai.riskNote || 'Оценивайте несколько факторов.'))}</small></div>
           <div><span>Судья</span><strong>${escapeHtml(ai.refereeProfile?.name || ai.referee || match.referee || 'Ещё не указан')}</strong><small>${escapeHtml(publicText(ai.refereeHistory?.available ? `${ai.refereeHistory.styleLabel} · ${ai.refereeHistory.avgYellow} жёлт. · ${ai.refereeHistory.avgRed} красн. · выборка ${ai.refereeHistory.sample}` : ai.refereeProfile?.country ? `${ai.refereeProfile.country} · ${ai.refereeNote || ''}` : ai.refereeNote || 'Назначение судьи может появиться ближе к матчу.'))}</small></div>
+          <div class="ai-data-trust"><span>Качество данных</span><strong>${escapeHtml(dataTrust.label || 'Оценивается')}</strong><small>${dataTrustScore} · ${escapeHtml(publicText(dataTrust.note || 'Отдельно от уверенности модели.'))}</small></div>
         </div>
       </div>
       ${factors.length ? `<div class="ai-instructor-reasons"><strong>Почему так</strong><ul>${factors.map(x => `<li>${escapeHtml(publicText(x))}</li>`).join('')}</ul></div>` : ''}
       ${risks.length ? `<div class="ai-instructor-risks"><strong>Что может сломать сценарий</strong><ul>${risks.map(x => `<li>${escapeHtml(publicText(x))}</li>`).join('')}</ul></div>` : ''}
+      <div class="ai-match-plan">
+        <div class="ai-match-plan-head"><span>AI-ПЛАН ДО СТАРТОВОГО СВИСТКА</span><strong>Что проверить перед решением</strong></div>
+        ${checks.length ? `<div class="ai-match-plan-checks">${checks.map((x,i) => `<div><b>${i+1}</b><span>${escapeHtml(publicText(x))}</span></div>`).join('')}</div>` : ''}
+        <div class="ai-match-plan-grid">
+          <div><span>Условие отмены</span><strong>${escapeHtml(publicText(matchPlan.cancel || 'Если ключевые данные изменятся — пересмотреть сценарий.'))}</strong></div>
+          <div><span>Что смотреть дальше</span><strong>${escapeHtml(publicText(matchPlan.liveWatch || 'После стартового свистка сверять фактический рисунок игры с предматчевым сценарием.'))}</strong></div>
+        </div>
+      </div>
       <p class="ai-instructor-disclaimer">Это аналитический сигнал по данным матча, а не гарантия результата. Если сигнал слабый, лучший вариант — пропустить ставку.</p>
     </section>`;
 }
