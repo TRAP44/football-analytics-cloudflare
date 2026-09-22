@@ -70,6 +70,9 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
   const fetchImpl = options.fetchImpl || fetch;
   const retries = Math.max(1, Number(options.retries || 10));
   const retryDelayMs = Math.max(0, Number(options.retryDelayMs ?? 6000));
+  const rcNumber = /-rc(\d+)$/i.exec(String(expectedVersion || ''))?.[1];
+  if (!rcNumber) throw new Error('Expected version must end with -rc<number>.');
+  const expectedReleaseCandidate = `RC${rcNumber}`;
   let health = null;
   let lastHealthError = '';
 
@@ -91,7 +94,7 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
 
   if (!health) throw new Error(`Deployment did not become ready: ${lastHealthError}`);
   if (health.ok !== true) throw new Error('Health endpoint is not healthy.');
-  if (health.releaseCandidate !== 'RC34') throw new Error(`Expected RC34, received ${health.releaseCandidate || 'unknown'}.`);
+  if (health.releaseCandidate !== expectedReleaseCandidate) throw new Error(`Expected ${expectedReleaseCandidate}, received ${health.releaseCandidate || 'unknown'}.`);
   if (health.devMode !== false) throw new Error('Production deployment exposes DEV_MODE=true.');
   for (const flag of REQUIRED_HEALTH_FLAGS) {
     if (health[flag] !== 'enabled') throw new Error(`Health flag ${flag} is not enabled.`);
@@ -99,8 +102,8 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
 
   const manifestResponse = await request(fetchImpl, baseUrl, '/api/app-manifest');
   const manifest = await jsonBody(manifestResponse, 'App manifest');
-  if (!manifestResponse.ok || manifest?.version !== expectedVersion || manifest?.releaseCandidate !== 'RC34') {
-    throw new Error('Public app manifest does not match the deployed RC34 release.');
+  if (!manifestResponse.ok || manifest?.version !== expectedVersion || manifest?.releaseCandidate !== expectedReleaseCandidate) {
+    throw new Error(`Public app manifest does not match the deployed ${expectedReleaseCandidate} release.`);
   }
 
   const rootResponse = await request(fetchImpl, baseUrl, '/');
@@ -110,7 +113,7 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
   }
   const contentSecurityPolicy = String(rootResponse.headers.get('content-security-policy') || '');
   if (!contentSecurityPolicy.includes("script-src 'self' https://telegram.org") || !contentSecurityPolicy.includes("object-src 'none'")) {
-    throw new Error('Static application shell is missing the RC34 Content-Security-Policy.');
+    throw new Error('Static application shell is missing the required Content-Security-Policy.');
   }
   if (String(rootResponse.headers.get('x-content-type-options') || '').toLowerCase() !== 'nosniff') {
     throw new Error('Static application shell is missing X-Content-Type-Options: nosniff.');
