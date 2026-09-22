@@ -497,7 +497,7 @@ function runtimeGuard(request, user, cfg, runtime) {
   if (runtime.maintenanceMode && footballRoutes.has(path)) {
     return runtimeFeatureResponse(
       'MAINTENANCE_MODE',
-      runtime.message || 'Football Manager временно находится на техническом обслуживании. Попробуйте позже.',
+      runtime.message || 'Приложение временно находится на техническом обслуживании. Попробуйте позже.',
       runtime,
       503,
     );
@@ -5837,7 +5837,7 @@ async function processDueReminders(cfg) {
       // Cron cadence is 5 minutes in v5.6. This window is deliberately wider
       // than one cron interval so a slightly delayed execution still delivers.
       if (kickoffEnabled && !row.kickoff_notified_at && deltaMinutes <= 4 && deltaMinutes >= -7) {
-        const text = `🔴 Матч начинается\n\n${row.home_name} — ${row.away_name}${row.league_name ? `\n${row.league_name}` : ''}\n\nОткройте Football Manager: центр матча появится, когда провайдер обновит статус.`;
+        const text = `🔴 Матч начинается\n\n${row.home_name} — ${row.away_name}${row.league_name ? `\n${row.league_name}` : ''}\n\nОткройте приложение: центр матча появится, когда источник данных обновит статус.`;
         const delivery = await deliverClaimedReminder(row, 'kickoff', text, cfg);
         if (delivery.state === 'sent') kickoffSent++;
         else if (delivery.state === 'already_claimed') claimed++;
@@ -5848,7 +5848,7 @@ async function processDueReminders(cfg) {
       const lowerBound = kickoffEnabled ? 5 : 0;
       if (!row.notified_at && deltaMinutes >= lowerBound && deltaMinutes <= remindBefore + 2) {
         const minutes = Math.max(1, Math.round(deltaMinutes));
-        const text = `⚽ Скоро матч\n\n${row.home_name} — ${row.away_name}${row.league_name ? `\n${row.league_name}` : ''}\nСтарт примерно через ${minutes} мин.\n\nОткройте Football Manager для свежего предматчевого анализа.`;
+        const text = `⚽ Скоро матч\n\n${row.home_name} — ${row.away_name}${row.league_name ? `\n${row.league_name}` : ''}\nСтарт примерно через ${minutes} мин.\n\nОткройте приложение для свежего предматчевого анализа.`;
         const delivery = await deliverClaimedReminder(row, 'prematch', text, cfg);
         if (delivery.state === 'sent') sent++;
         else if (delivery.state === 'already_claimed') claimed++;
@@ -6020,7 +6020,7 @@ async function apiReminderHealth(request, cfg, user) {
 
     const result = await sendTelegramMessage(
       user.id,
-      `✅ Football Manager\n\nТест уведомлений ${APP_VERSION} прошёл. Если вы видите это сообщение, доставка через Telegram работает.`,
+      `✅ Футбольная аналитика\n\nТест уведомлений ${APP_VERSION} прошёл. Если вы видите это сообщение, доставка через Telegram работает.`,
       cfg
     );
 
@@ -9229,7 +9229,7 @@ function statusLabel(status, elapsed) {
   const s = String(status || '').toUpperCase();
   const labels = {
     NS: 'Не начался', TBD: 'Время уточняется', '1H': '1-й тайм', HT: 'Перерыв', '2H': '2-й тайм',
-    ET: 'Доп. время', BT: 'Перерыв', P: 'Пенальти', INT: 'Прерван', LIVE: 'LIVE',
+    ET: 'Доп. время', BT: 'Перерыв', P: 'Пенальти', INT: 'Прерван', LIVE: 'Матч идёт',
     FT: 'Завершён', AET: 'Завершён после доп. времени', PEN: 'Завершён по пенальти',
     SUSP: 'Приостановлен', PST: 'Перенесён', CANC: 'Отменён', ABD: 'Прерван', AWD: 'Тех. результат', WO: 'Без игры',
   };
@@ -9292,7 +9292,7 @@ function translateEvent(type, detail) {
     return '🟨 Жёлтая карточка';
   }
   if (t === 'subst') return '🔄 Замена';
-  if (t === 'var') return '📺 VAR';
+  if (t === 'var') return '📺 Видеопросмотр';
   return detail || type || 'Событие';
 }
 
@@ -9617,7 +9617,7 @@ function validateFixtureIntegrity(fixture, requestedDate = '', previous = null) 
     if ((isLiveStatus(prevStatus) || isFinishedStatus(prevStatus)) && ['NS','TBD'].includes(status)) add('warning', 'STATUS_REGRESSION', 'Статус матча откатился к предматчевому.', { previousStatus: prevStatus, currentStatus: status });
     if (isFinishedStatus(prevStatus) && !isFinishedStatus(status)) add('warning', 'FINISHED_STATUS_REGRESSION', 'Ранее завершённый матч вернулся в незавершённый статус.', { previousStatus: prevStatus, currentStatus: status });
     if (isLiveStatus(prevStatus) && isLiveStatus(status) && Number.isFinite(prevElapsed) && Number.isFinite(elapsed) && elapsed + 3 < prevElapsed) add('warning', 'ELAPSED_REGRESSION', 'Игровая минута уменьшилась относительно предыдущего снимка.', { previousElapsed: prevElapsed, currentElapsed: elapsed });
-    if (prevHome !== null && prevAway !== null && score.home !== null && score.away !== null && (score.home < prevHome || score.away < prevAway)) add('warning', 'SCORE_REGRESSION', 'Счёт уменьшился относительно предыдущего снимка; возможна коррекция VAR или конфликт данных.', { previous: `${prevHome}:${prevAway}`, current: `${score.home}:${score.away}` });
+    if (prevHome !== null && prevAway !== null && score.home !== null && score.away !== null && (score.home < prevHome || score.away < prevAway)) add('warning', 'SCORE_REGRESSION', 'Счёт уменьшился относительно предыдущего снимка; возможна коррекция после видеопросмотра или конфликт данных.', { previous: `${prevHome}:${prevAway}`, current: `${score.home}:${score.away}` });
   }
 
   const quarantine = issues.some(x => x.severity === 'error');
