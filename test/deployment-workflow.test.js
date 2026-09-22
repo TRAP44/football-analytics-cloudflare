@@ -20,9 +20,10 @@ test('production deploy is pinned, preserves remote vars and runs smoke checks',
   assert.doesNotMatch(deploy, /cloudflare\/wrangler-action@v\d/);
 });
 
-test('missing credentials skip deployment without exposing values', () => {
-  assert.match(deploy, /steps\.credentials\.outputs\.available == 'true'/);
-  assert.match(deploy, /Cloudflare deploy skipped/);
+test('missing credentials fail closed without exposing values', () => {
+  assert.match(deploy, /Cloudflare deploy blocked/);
+  assert.match(deploy, /exit 1/);
+  assert.doesNotMatch(deploy, /steps\.credentials\.outputs\.available/);
   assert.doesNotMatch(deploy, /echo[^\n]*\$CLOUDFLARE_(?:API_TOKEN|ACCOUNT_ID)/);
 });
 

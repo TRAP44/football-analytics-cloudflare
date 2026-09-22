@@ -4,13 +4,15 @@ const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const worker = fs.readFileSync('src/worker.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
-const expected = `${pkg.version}-rc20`;
+const staticHeaders = fs.readFileSync('public/_headers', 'utf8');
+const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml', 'utf8');
+const expected = `${pkg.version}-rc21`;
 const failures = [];
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC20'")) failures.push('Worker RC name must be RC20');
+if (!worker.includes("const RC_NAME = 'RC21'")) failures.push('Worker RC name must be RC21');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc20'")) failures.push('Client release channel must be rc20');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc21'")) failures.push('Client release channel must be rc21');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -21,6 +23,9 @@ if (!fs.existsSync('src/access-control.js')) failures.push('Missing access-contr
 if (!fs.existsSync('scripts/post-deploy-smoke.js')) failures.push('Missing post-deploy smoke test');
 if (!fs.existsSync('.github/workflows/deploy-production.yml')) failures.push('Missing production deploy workflow');
 if (!fs.existsSync('.github/workflows/rollback-production.yml')) failures.push('Missing production rollback workflow');
+if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
+if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
+if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
 
 const migration = fs.readFileSync('supabase_migration_v6_10.sql', 'utf8');
 if (!migration.includes('transition_model_calibration')) failures.push('Missing atomic calibration transition RPC');
