@@ -59,7 +59,7 @@ test('common user-facing mixed English labels are removed from the Mini App', ()
   assert.match(app, /function publicText\(value\)/);
   assert.match(app, /function dataPolicyModeLabel\(value\)/);
   assert.match(app, /function predictionAdviceLabel\(value\)/);
-  assert.match(app, /Калибровка RC30/);
+  assert.match(app, /Защита RC30/);
   assert.match(app, /подтверждено ·/);
   assert.match(app, /первый ответ/);
 });
