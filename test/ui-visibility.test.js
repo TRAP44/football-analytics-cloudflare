@@ -15,8 +15,10 @@ test('admin badge starts hidden and is gated by server role flags', () => {
   assert.match(app, /state\.profile\?\.features\?\.isAdmin\s*===\s*true/);
   assert.match(app, /state\.profile\?\.features\?\.role\s*===\s*['"]admin['"]/);
   assert.match(app, /badge\.hidden\s*=\s*!admin/);
+  assert.match(app, /el\.toggleAttribute\(['"]inert['"],\s*!admin\)/);
 });
 
 test('admin-only blocks fail closed in the DOM', () => {
   assert.match(css, /\[data-admin-only\]\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i);
+  assert.match(css, /\[data-admin-only\]\[aria-hidden="true"\]/i);
 });

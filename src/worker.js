@@ -73,11 +73,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.14.0-rc22';
+const APP_VERSION = '6.15.0-rc23';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc22';
-const RC_NAME = 'RC22';
+const RELEASE_CHANNEL = 'rc23';
+const RC_NAME = 'RC23';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -2123,7 +2123,7 @@ function fitAdaptiveSignalWeightsHoldout(rows) {
   const changedWeightL1 = Object.keys(MODEL_BASE_WEIGHTS)
     .reduce((sum, name) => sum + Math.abs(Number(candidate.weights?.[name] || 0) - Number(MODEL_BASE_WEIGHTS[name] || 0)), 0);
 
-  // RC22 gate: both sequential holdout windows must beat the baseline.
+  // RC23 gate: both sequential holdout windows must beat the baseline.
   const active = changedWeightL1 >= 0.01 && gate.pass;
 
   return {
@@ -2391,7 +2391,7 @@ async function notifyCalibrationAdmins(cfg, action, detail = '') {
     freeze: 'lifecycle заморожен',
     unfreeze: 'lifecycle разморожен',
   };
-  const text = `⚙️ Calibration RC22: ${labels[action] || action}.${detail ? `\n${String(detail).slice(0, 500)}` : ''}`;
+  const text = `⚙️ Calibration RC23: ${labels[action] || action}.${detail ? `\n${String(detail).slice(0, 500)}` : ''}`;
   await Promise.allSettled((cfg.adminTelegramIds || []).map(id => sendTelegramMessage(id, text, cfg)));
 }
 
@@ -2420,7 +2420,7 @@ async function resolveCalibrationLifecycle(cfg, candidate, trustedRows) {
       const state = await saveCalibrationLifecycleState(cfg, lifecycle.state, {
         action: 'initialize',
         targetFingerprint: baseline.fingerprint,
-        reason: 'RC22 baseline lifecycle initialization.',
+        reason: 'RC23 baseline lifecycle initialization.',
         metadata: { appVersion: APP_VERSION },
       });
       lifecycle = { state, active: baseline, previous: null };
@@ -2657,9 +2657,9 @@ function buildCalibrationProfile(rows) {
           : 'Кандидат остаётся в тени до достаточной trusted holdout-выборки.',
     },
     note: active
-      ? 'RC22: кандидат прошёл два holdout-окна; постоянный lifecycle решает продвижение относительно активного champion.'
+      ? 'RC23: кандидат прошёл два holdout-окна; постоянный lifecycle решает продвижение относительно активного champion.'
       : shadow
-        ? 'RC22: challenger измеряется в тени; production использует только постоянный active-профиль.'
+        ? 'RC23: challenger измеряется в тени; production использует только постоянный active-профиль.'
         : 'Недостаточно trusted-прогнозов для безопасной автоматической калибровки.',
   };
 }
@@ -3672,7 +3672,7 @@ function buildModelQuality(settledRows, pendingRows, days, calibrationProfile = 
     calibrationDiagnostics: {
       weightedTopCalibrationError: weightedTopCalibrationError(rows),
       label: 'Weighted top-probability calibration error',
-      note: 'Средневзвешенный абсолютный разрыв между средней top-вероятностью и hit rate по 5 probability buckets; меньше — лучше. RC22 не использует эту метрику отдельно: продвижение требует двух holdout-окон и сравнения с champion.',
+      note: 'Средневзвешенный абсолютный разрыв между средней top-вероятностью и hit rate по 5 probability buckets; меньше — лучше. RC23 не использует эту метрику отдельно: продвижение требует двух holdout-окон и сравнения с champion.',
     },
     calibrationEngine: calibrationProfile || baselineCalibrationProfile(evaluated, signalPerformance),
     calibrationImpact,
@@ -7543,10 +7543,10 @@ async function apiReleaseReadiness(request, cfg) {
     releaseCheck('backend_security_contract', 'Контракт безопасности Supabase', backendSecurity.ok ? 'pass' : 'fail',
       backendSecurity.ok
         ? 'Все public-таблицы защищены RLS; anon/authenticated не имеют прямых прав; RPC закрыты.'
-        : `RC22 security contract: ${backendSecurity.status || 'ошибка'}.`, true),
+        : `RC23 security contract: ${backendSecurity.status || 'ошибка'}.`, true),
     releaseCheck('model_backtest', 'Схема исторической проверки v3.6+', modelTable.ok ? 'pass' : 'fail', modelTable.ok ? 'Таблица model_predictions доступна.' : `model_predictions: ${modelTable.status}.`, true),
     releaseCheck('prediction_integrity', 'Самопроверка целостности прогнозов', modelIntegritySelfTest().pass ? 'pass' : 'fail',
-      modelIntegritySelfTest().pass ? 'Probabilities, captured_at timing и outcome consistency проходят synthetic self-test.' : 'Prediction Integrity self-test не прошёл.', true),
+      modelIntegritySelfTest().pass ? 'Probabilities, captured_at timing и outcome consistency проходят synthetic self-test.' : 'Самопроверка целостности прогнозов не прошла.', true),
     releaseCheck('prediction_remediation', 'Восстановление прогнозов v6.1', remediationTable.ok ? 'pass' : 'fail',
       remediationTable.ok ? 'Audit trail remediation доступен.' : 'Нужна supabase_migration_v6_1.sql.', true),
     releaseCheck('settlement_watchdog_schema', 'Схема контроля результатов v6.4', watchdogSchema.ok ? 'pass' : 'fail',
@@ -7572,7 +7572,7 @@ async function apiReleaseReadiness(request, cfg) {
     releaseCheck('calibration_promotion_schema', 'Схема продвижения калибровки v6.8', calibrationPromotionSchema.ok ? 'pass' : 'fail',
       calibrationPromotionSchema.ok ? 'Аудит holdout-решений доступен.' : 'Нужна supabase_migration_v6_8.sql.', true),
     releaseCheck('calibration_promotion_selftest', 'Самопроверка продвижения калибровки', calibrationPromotionSelfTest().pass ? 'pass' : 'fail',
-      calibrationPromotionSelfTest().pass ? 'Устойчивое улучшение проходит gate, synthetic overfit блокируется.' : 'Calibration Promotion self-test не прошёл.', true),
+      calibrationPromotionSelfTest().pass ? 'Устойчивое улучшение проходит gate, synthetic overfit блокируется.' : 'Самопроверка продвижения калибровки не прошла.', true),
     releaseCheck('calibration_lifecycle_schema', 'Atomic calibration lifecycle v6.10', calibrationLifecycleSchema.ok ? 'pass' : 'fail',
       calibrationLifecycleSchema.ok ? 'Atomic state, transition audit и rollback state доступны.' : 'Нужна supabase_migration_v6_10.sql.', true),
     releaseCheck('automatic_settlement_recovery', 'Автоматическое восстановление результатов', 'pass',
@@ -7587,7 +7587,7 @@ async function apiReleaseReadiness(request, cfg) {
     releaseCheck('quota_orchestrator', 'Quota Orchestrator', providerBudgetProfile().mode === 'emergency' ? 'warn' : 'pass', `${providerBudgetProfile().label}; feature cache api/cache=${Number(memory.providerFeatureFetch?.api || 0)}/${Number(memory.providerFeatureFetch?.cache || 0)}.`, false),
     releaseCheck(
       'expanded_e2e',
-      'Expanded Data E2E',
+      'Сквозная проверка расширенных данных',
       memory.providerE2E?.last?.status?.ready ? 'pass' : memory.providerE2E?.last?.status?.code === 'NEEDS_ATTENTION' ? 'warn' : 'warn',
       memory.providerE2E?.last
         ? `${memory.providerE2E.last.status?.label || 'Нет статуса'} · fixture ${memory.providerE2E.last.fixtureId || '—'}.`
@@ -7724,7 +7724,7 @@ async function apiProductionReadiness(request, cfg) {
       singleflightTest.pass ? `${singleflightTest.callers} параллельных вызовов → ${singleflightTest.executions} выполнение.` : 'Коалесинг параллельных запросов не прошёл self-test.', true),
     productionCheck('burst_guard', 'Burst Guard', ROUTE_BURST_POLICIES.length >= 6 ? 'pass' : 'fail',
       `${ROUTE_BURST_POLICIES.length} политик для дорогих маршрутов; блокировок в isolate: ${Number(memory.telemetry?.burstBlocks || 0)}.`, true),
-    productionCheck('upstream_timeouts', 'Upstream timeouts', 'pass',
+    productionCheck('upstream_timeouts', 'Тайм-ауты внешних сервисов', 'pass',
       'Supabase 7 сек., API-Football 10 сек.; зависшие upstream не держат Worker бесконечно.', true),
     productionCheck('user_sync', 'Telegram user sync cache', 'pass',
       `Повторная синхронизация users ограничена 1 разом / 10 минут; пропущено записей: ${Number(memory.telemetry?.userSyncSkips || 0)}.`, false),
@@ -7732,7 +7732,7 @@ async function apiProductionReadiness(request, cfg) {
       `${memory.cache.size} cache entries; soft target 500, prune threshold 600.`, false),
     productionCheck('quota_guard', 'Quota Orchestrator', providerBudget.mode === 'emergency' ? 'warn' : 'pass',
       `${providerBudget.label}; daily reserve ${Number(providerBudget.daily?.reserve || 0)}.`, false),
-    productionCheck('expanded_e2e', 'Expanded Data E2E', !paidProvider ? 'warn' : lastE2E?.status?.ready ? 'pass' : 'warn',
+    productionCheck('expanded_e2e', 'Сквозная проверка расширенных данных', !paidProvider ? 'warn' : lastE2E?.status?.ready ? 'pass' : 'warn',
       !paidProvider
         ? 'FREE: полноценный E2E отложен до увеличения квоты.'
         : lastE2E?.status?.ready
@@ -7836,7 +7836,7 @@ async function apiRcRegression(request, cfg, user) {
   checks.push(rcCheck(
     'backend_security_contract',
     'security',
-    'Least-privilege контракт Supabase',
+    'Контракт минимальных привилегий Supabase',
     backendSecurity.ok ? 'pass' : 'fail',
     backendSecurity.ok
       ? 'RLS включён; прямые права anon/authenticated и публичный EXECUTE отсутствуют.'
@@ -7848,37 +7848,37 @@ async function apiRcRegression(request, cfg, user) {
   const failClosedOk = !cfg.devMode && !isAdminUser({ id: 0 }, cfg);
   const devIsolationOk = !isAdminUser({ id: 5195504559 }, { ...cfg, devMode: true, adminTelegramIds: [] })
     && isAdminUser({ id: DEVELOPMENT_TELEGRAM_ID, __developmentIdentity: true }, { ...cfg, devMode: true, adminTelegramIds: [] });
-  checks.push(rcCheck('admin_current', 'security', 'Текущий пользователь — admin', currentAdminOk ? 'pass' : 'fail',
-    currentAdminOk ? 'Server-side Telegram initData подтверждён и ID разрешён.' : 'Текущий user не проходит admin gate.', true));
+  checks.push(rcCheck('admin_current', 'security', 'Текущий пользователь — администратор', currentAdminOk ? 'pass' : 'fail',
+    currentAdminOk ? 'Серверная проверка Telegram initData пройдена, ID разрешён.' : 'Текущий пользователь не проходит проверку администратора.', true));
   checks.push(rcCheck('admin_fail_closed', 'security', 'Защита доступа администратора', failClosedOk ? 'pass' : 'fail',
-    failClosedOk ? 'Неизвестный Telegram ID не получает admin role.' : 'Проверьте DEV_MODE/admin gate.', true));
+    failClosedOk ? 'Неизвестный Telegram ID не получает роль администратора.' : 'Проверьте DEV_MODE и проверку администратора.', true));
   checks.push(rcCheck('admin_dev_isolation', 'security', 'DEV_MODE не повышает реальных пользователей', devIsolationOk ? 'pass' : 'fail',
-    devIsolationOk ? 'Только серверная synthetic dev-identity получает dev admin role.' : 'DEV_MODE admin isolation нарушена.', true));
+    devIsolationOk ? 'Только серверная тестовая учётная запись получает роль администратора в режиме разработки.' : 'Изоляция администратора в DEV_MODE нарушена.', true));
   checks.push(rcCheck('admin_list', 'security', 'Список администраторов настроен', cfg.adminTelegramIds?.length ? 'pass' : 'fail',
     cfg.adminTelegramIds?.length ? `Настроено ID: ${cfg.adminTelegramIds.length}. Значения не раскрываются.` : 'Список администраторов пуст.', true));
 
   // 2) Persistence schema regression.
   const requiredTables = [
-    ['users', 'Users', true],
-    ['usage_daily', 'Usage quota', true],
-    ['analysis_cache', 'Shared cache', true],
-    ['analysis_history', 'Analysis history', true],
-    ['favorites', 'Favorites', true],
-    ['user_preferences', 'Preferences', true],
-    ['match_reminders', 'Reminders', true],
-    ['runtime_controls', 'Runtime controls', true],
-    ['runtime_control_history', 'Runtime rollback history', true],
-    ['model_predictions', 'Model predictions', true],
-    ['model_calibration_validations', 'Calibration promotion audit', true],
-    ['model_calibration_profiles', 'Calibration profile registry', true],
-    ['model_calibration_state', 'Calibration active state', true],
-    ['model_calibration_transitions', 'Atomic calibration transition audit', true],
-    ['prediction_integrity_actions', 'Prediction remediation audit', true],
-    ['ops_events', 'Observability', false],
-    ['match_integrity_runs', 'Integrity runs', true],
-    ['match_integrity_events', 'Integrity events', true],
-    ['odds_snapshots', 'Odds history', false],
-    ['billing_payments', 'Billing storage (paused)', false],
+    ['users', 'Пользователи', true],
+    ['usage_daily', 'Дневные лимиты', true],
+    ['analysis_cache', 'Общий кэш', true],
+    ['analysis_history', 'История анализов', true],
+    ['favorites', 'Избранное', true],
+    ['user_preferences', 'Настройки пользователя', true],
+    ['match_reminders', 'Напоминания', true],
+    ['runtime_controls', 'Управление функциями', true],
+    ['runtime_control_history', 'История откатов функций', true],
+    ['model_predictions', 'Прогнозы модели', true],
+    ['model_calibration_validations', 'Аудит продвижения калибровки', true],
+    ['model_calibration_profiles', 'Реестр профилей калибровки', true],
+    ['model_calibration_state', 'Активное состояние калибровки', true],
+    ['model_calibration_transitions', 'Аудит атомарных переходов калибровки', true],
+    ['prediction_integrity_actions', 'Аудит восстановления прогнозов', true],
+    ['ops_events', 'Операционный журнал', false],
+    ['match_integrity_runs', 'Запуски проверки целостности', true],
+    ['match_integrity_events', 'События целостности', true],
+    ['odds_snapshots', 'История коэффициентов', false],
+    ['billing_payments', 'Хранилище платежей (на паузе)', false],
   ];
 
   const tableResults = await Promise.all(requiredTables.map(async ([table, label, blocking]) => {
@@ -7905,7 +7905,7 @@ async function apiRcRegression(request, cfg, user) {
     'Управление функциями',
     runtimeState.schemaReady ? 'pass' : 'fail',
     runtimeState.schemaReady
-      ? `Revision ${Number(runtimeState.value?.revision || 1)} · ${runtimeState.value?.maintenanceMode ? 'maintenance ON' : 'normal mode'} · auto-settlement ${runtimeState.value?.autoSettlementRecoveryEnabled ? 'ON' : 'shadow'}.`
+      ? `Версия ${Number(runtimeState.value?.revision || 1)} · ${runtimeState.value?.maintenanceMode ? 'обслуживание ВКЛ' : 'обычный режим'} · автовосстановление ${runtimeState.value?.autoSettlementRecoveryEnabled ? 'ВКЛ' : 'наблюдение'}.`
       : 'Запустите supabase_migration_v5_7.sql.',
     true
   ));
@@ -7916,7 +7916,7 @@ async function apiRcRegression(request, cfg, user) {
     'database',
     'Схема контроля результатов v6.4',
     watchdogSchema.ok ? 'pass' : 'fail',
-    watchdogSchema.ok ? 'Runtime switch + trigger_source доступны.' : 'Запустите supabase_migration_v6_2.sql.',
+    watchdogSchema.ok ? 'Переключатель среды и источник запуска доступны.' : 'Запустите supabase_migration_v6_2.sql.',
     true
   ));
 
@@ -7926,7 +7926,7 @@ async function apiRcRegression(request, cfg, user) {
     'database',
     'История откатов v5.8',
     runtimeHistorySchema.ok ? 'pass' : 'fail',
-    runtimeHistorySchema.ok ? 'История revision и rollback доступны.' : 'Запустите supabase_migration_v5_8.sql.',
+    runtimeHistorySchema.ok ? 'История версий и откат доступны.' : 'Запустите supabase_migration_v5_8.sql.',
     true
   ));
 
@@ -7936,7 +7936,7 @@ async function apiRcRegression(request, cfg, user) {
     'database',
     'Схема доставки уведомлений v5.6',
     reminderSchema.ok ? 'pass' : 'fail',
-    reminderSchema.ok ? 'Atomic delivery claim columns доступны.' : 'Запустите supabase_migration_v5_6.sql.',
+    reminderSchema.ok ? 'Поля атомарной блокировки доставки доступны.' : 'Запустите supabase_migration_v5_6.sql.',
     true
   ));
 
@@ -7944,21 +7944,21 @@ async function apiRcRegression(request, cfg, user) {
   checks.push(rcCheck(
     'calibration_promotion_selftest',
     'safety',
-    'Calibration Promotion self-test',
+    'Самопроверка продвижения калибровки',
     calibrationSelfTest.pass ? 'pass' : 'fail',
     calibrationSelfTest.pass
       ? `stableActive=${calibrationSelfTest.stableActive}; holdout=${calibrationSelfTest.stableValidation}; overfitBlocked=${calibrationSelfTest.overfitBlocked}.`
-      : 'Calibration Promotion self-test не прошёл.',
+      : 'Самопроверка продвижения калибровки не прошла.',
     true
   ));
 
   // 3) Read-only user route regression. No mutation and no API-Football usage.
   const readRoutes = await Promise.all([
-    rcReadRoute('Profile', () => apiMe(request, cfg, user)),
-    rcReadRoute('Favorites', () => apiFavorites(new Request(request.url, { method: 'GET', headers: request.headers }), cfg, user)),
-    rcReadRoute('Reminders', () => apiReminders(new Request(request.url, { method: 'GET', headers: request.headers }), cfg, user)),
-    rcReadRoute('Preferences', () => apiPreferences(new Request(request.url, { method: 'GET', headers: request.headers }), cfg, user)),
-    rcReadRoute('History', () => apiHistory(new Request(request.url, { method: 'GET', headers: request.headers }), cfg, user)),
+    rcReadRoute('Профиль', () => apiMe(request, cfg, user)),
+    rcReadRoute('Избранное', () => apiFavorites(new Request(request.url, { method: 'GET', headers: request.headers }), cfg, user)),
+    rcReadRoute('Напоминания', () => apiReminders(new Request(request.url, { method: 'GET', headers: request.headers }), cfg, user)),
+    rcReadRoute('Настройки', () => apiPreferences(new Request(request.url, { method: 'GET', headers: request.headers }), cfg, user)),
+    rcReadRoute('История', () => apiHistory(new Request(request.url, { method: 'GET', headers: request.headers }), cfg, user)),
   ]);
 
   for (const route of readRoutes) {
@@ -7968,8 +7968,8 @@ async function apiRcRegression(request, cfg, user) {
       `${route.label} GET`,
       route.ok ? 'pass' : 'fail',
       route.ok
-        ? `HTTP ${route.status} · ${route.latencyMs} мс · shape: ${route.shape.join(', ') || 'object'}.`
-        : `HTTP ${route.status || '—'} · ${route.error || 'route failed'}.`,
+        ? `HTTP ${route.status} · ${route.latencyMs} мс · структура: ${route.shape.join(', ') || 'объект'}.`
+        : `HTTP ${route.status || '—'} · ${route.error || 'маршрут не выполнен'}.`,
       true
     ));
   }
@@ -7983,9 +7983,9 @@ async function apiRcRegression(request, cfg, user) {
   checks.push(rcCheck(
     'release_gate',
     'gates',
-    'Core Release Readiness',
+    'Готовность ядра к выпуску',
     release?.status === 'blocked' ? 'fail' : release?.available ? (release?.status === 'ready' ? 'pass' : 'warn') : 'fail',
-    release?.available ? `${release.label || release.status} · ${Number(release.score || 0)}%.` : 'Release Readiness недоступен.',
+    release?.available ? `${release.label || release.status} · ${Number(release.score || 0)}%.` : 'Проверка готовности выпуска недоступна.',
     true
   ));
   checks.push(rcCheck(
@@ -7993,7 +7993,7 @@ async function apiRcRegression(request, cfg, user) {
     'gates',
     'Защита от нагрузки',
     production?.status === 'blocked' ? 'fail' : production?.available ? (production?.status === 'ready' ? 'pass' : 'warn') : 'fail',
-    production?.available ? `${production.label || production.status} · ${Number(production.score || 0)}%.` : 'Production Safety Gate недоступен.',
+    production?.available ? `${production.label || production.status} · ${Number(production.score || 0)}%.` : 'Проверка производственной безопасности недоступна.',
     true
   ));
 
@@ -8004,7 +8004,7 @@ async function apiRcRegression(request, cfg, user) {
   checks.push(rcCheck(
     'provider_mode',
     'provider',
-    'Provider mode',
+    'Режим провайдера',
     budget.mode === 'emergency' ? 'warn' : 'pass',
     `${transition.plan} · ${budget.label}.`,
     false
@@ -8012,13 +8012,13 @@ async function apiRcRegression(request, cfg, user) {
   checks.push(rcCheck(
     'expanded_e2e',
     'provider',
-    'Expanded Data E2E',
+    'Сквозная проверка расширенных данных',
     transition.paid
       ? (lastE2E?.status?.ready ? 'pass' : 'warn')
       : 'warn',
     transition.paid
-      ? (lastE2E?.status?.ready ? `${lastE2E.status.label} · fixture ${lastE2E.fixtureId}.` : 'Расширенный тариф обнаружен, но E2E ещё не подтверждён.')
-      : 'FREE/HOLD допустим для RC ядра; полный expanded E2E выполняется после увеличения квоты.',
+      ? (lastE2E?.status?.ready ? `${lastE2E.status.label} · fixture ${lastE2E.fixtureId}.` : 'Расширенный тариф обнаружен, но сквозная проверка ещё не подтверждена.')
+      : 'FREE/HOLD допустим для ядра RC; полная сквозная проверка расширенных данных выполняется после увеличения квоты.',
     false
   ));
 
@@ -8030,8 +8030,8 @@ async function apiRcRegression(request, cfg, user) {
     'Самопроверка целостности прогнозов',
     integritySelfTest.pass ? 'pass' : 'fail',
     integritySelfTest.pass
-      ? 'Synthetic missing/invalid probabilities, captured_at timing, stale pending и outcome consistency обнаруживаются ожидаемо.'
-      : 'Prediction Integrity self-test не прошёл.',
+      ? 'Синтетическая проверка корректно обнаруживает отсутствующие и некорректные вероятности, ошибки времени, зависшие ожидания и несогласованный исход.'
+      : 'Самопроверка целостности прогнозов не прошла.',
     true
   ));
 
@@ -8039,11 +8039,11 @@ async function apiRcRegression(request, cfg, user) {
   checks.push(rcCheck(
     'prediction_remediation_selftest',
     'safety',
-    'Prediction Remediation self-test',
+    'Самопроверка восстановления прогнозов',
     remediationSelfTest.pass ? 'pass' : 'fail',
     remediationSelfTest.pass
       ? `${remediationSelfTest.candidates} stale candidates → ${remediationSelfTest.selected} selected across ${remediationSelfTest.dates} date batch(es).`
-      : 'Prediction Remediation selection self-test не прошёл.',
+      : 'Самопроверка выбора прогнозов для восстановления не прошла.',
     true
   ));
 
@@ -8060,13 +8060,13 @@ async function apiRcRegression(request, cfg, user) {
   ));
 
   const safety = productionSafetySnapshot();
-  checks.push(rcCheck('singleflight', 'safety', 'Server SingleFlight', 'pass',
+  checks.push(rcCheck('singleflight', 'safety', 'Объединение одинаковых запросов', 'pass',
     `${Number(safety.singleflight?.joins || 0)} joins; ${Number(safety.singleflight?.active || 0)} active.`, true));
-  checks.push(rcCheck('burst_guard', 'safety', 'Burst Guard policies', Number(safety.burstGuard?.policies?.length || 0) >= 8 ? 'pass' : 'fail',
+  checks.push(rcCheck('burst_guard', 'safety', 'Защита от всплесков запросов', Number(safety.burstGuard?.policies?.length || 0) >= 8 ? 'pass' : 'fail',
     `${Number(safety.burstGuard?.policies?.length || 0)} route policies.`, true));
-  checks.push(rcCheck('timeouts', 'safety', 'Upstream timeouts', 'pass',
+  checks.push(rcCheck('timeouts', 'safety', 'Тайм-ауты внешних сервисов', 'pass',
     `Supabase ${Number(safety.upstream?.supabaseTimeoutMs || 0)} мс; API-Football ${Number(safety.upstream?.apiFootballTimeoutMs || 0)} мс.`, true));
-  checks.push(rcCheck('l1_bounds', 'safety', 'Bounded L1 cache', Number(safety.memory?.cacheEntries || 0) <= 600 ? 'pass' : 'warn',
+  checks.push(rcCheck('l1_bounds', 'safety', 'Ограниченный кэш L1', Number(safety.memory?.cacheEntries || 0) <= 600 ? 'pass' : 'warn',
     `${Number(safety.memory?.cacheEntries || 0)} entries; soft limit ${Number(safety.memory?.cacheSoftLimit || 500)}.`, false));
 
   const blockers = checks.filter(x => x.state === 'fail' && x.blocking);

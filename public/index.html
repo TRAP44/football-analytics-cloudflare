@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#111827" />
   <title>Football Manager · Аналитика матчей</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=6.14.0" />
+  <link rel="stylesheet" href="/styles.css?v=6.15.0" />
 </head>
 <body>
   <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
     <div class="boot-card">
       <div class="boot-logo"><span>FM</span></div>
-      <div class="boot-kicker">FOOTBALL MANAGER · RC22</div>
+      <div class="boot-kicker">FOOTBALL MANAGER · RC23</div>
       <h1 id="bootTitle">Запускаю Football Manager</h1>
       <p id="bootText">Проверяю совместимость версии…</p>
       <div class="boot-progress" aria-hidden="true"><i id="bootProgressFill"></i></div>
@@ -300,8 +300,8 @@
           <div id="modelQualityCalibration" class="quality-block" hidden></div>
           <div id="modelQualityEngine" class="quality-block" hidden></div>
           <div id="calibrationControl" class="quality-block calibration-control-block">
-            <div class="quality-block-head"><strong>🧭 Управление калибровкой RC22</strong><span>atomic CAS + audit</span></div>
-            <div id="calibrationControlStatus" class="tiny quality-status">Состояние lifecycle ещё не загружено.</div>
+            <div class="quality-block-head"><strong>🧭 Управление калибровкой RC23</strong><span>атомарная смена + журнал</span></div>
+            <div id="calibrationControlStatus" class="tiny quality-status">Состояние жизненного цикла ещё не загружено.</div>
             <div id="calibrationControlSummary" class="calibration-control-summary"></div>
             <label class="runtime-message-field calibration-control-reason">
               <span>Причина административного действия</span>
@@ -438,7 +438,7 @@
             <label class="runtime-control-row"><div><strong>Автообновление LIVE</strong><small>Останавливает автоматическое обновление LIVE, не отключая уже сохранённый центр матча.</small></div><input id="runtimeLiveToggle" type="checkbox" checked></label>
             <label class="runtime-control-row"><div><strong>Новые уведомления</strong><small>Создание новых уведомлений и их доставка по расписанию. Существующие уведомления можно удалять.</small></div><input id="runtimeRemindersToggle" type="checkbox" checked></label>
             <label class="runtime-control-row"><div><strong>Расширенные данные провайдера</strong><small>Игроки, травмы, LIVE-коэффициенты и другие дополнительные данные. Основные события и статистика остаются доступными.</small></div><input id="runtimeExpandedToggle" type="checkbox" checked></label>
-            <label class="runtime-control-row"><div><strong>Автовосстановление результатов</strong><small>RC22: один безопасный пакет в сутки, до 20 матчей / 5 дат. По умолчанию только наблюдение; ручное восстановление остаётся доступным.</small></div><input id="runtimeAutoSettlementRecoveryToggle" type="checkbox"></label>
+            <label class="runtime-control-row"><div><strong>Автовосстановление результатов</strong><small>RC23: один безопасный пакет в сутки, до 20 матчей / 5 дат. По умолчанию только наблюдение; ручное восстановление остаётся доступным.</small></div><input id="runtimeAutoSettlementRecoveryToggle" type="checkbox"></label>
           </div>
 
           <label class="runtime-message-field">
@@ -517,14 +517,14 @@
         <section class="panel rc-panel" data-admin-only hidden>
           <div class="section-head profile-section-head">
             <div>
-              <h2>🚦 Кандидат на выпуск RC22</h2>
+              <h2>🚦 Кандидат на выпуск RC23</h2>
               <p>Регрессионная проверка: среда выполнения, безопасность, схема базы, пользовательские маршруты и клиентский контракт.</p>
             </div>
             <button id="rcRunBtn" class="primary-setting-btn rc-run-btn" type="button">Запустить проверку</button>
           </div>
 
           <div class="rc-status-row">
-            <span id="rcBadge" class="rc-badge">RC22</span>
+            <span id="rcBadge" class="rc-badge">RC23</span>
             <div>
               <strong id="rcStatus">Полная регрессионная проверка ещё не запускалась.</strong>
               <small id="rcMeta">Без полного анализа, без изменения пользовательских данных и без расхода API-Football.</small>
@@ -607,6 +607,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=6.14.0"></script>
+  <script type="module" src="/app.js?v=6.15.0"></script>
 </body>
 </html>

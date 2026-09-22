@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.14.0-rc22';
+const CLIENT_VERSION = '6.15.0-rc23';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc22';
+const CLIENT_RELEASE_CHANNEL = 'rc23';
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
@@ -792,6 +792,7 @@ function applyAdminVisibility() {
   const admin = isAdmin();
   document.querySelectorAll('[data-admin-only]').forEach(el => {
     el.hidden = !admin;
+    el.toggleAttribute('inert', !admin);
     el.setAttribute('aria-hidden', admin ? 'false' : 'true');
   });
   const badge = $('adminRoleBadge');
@@ -828,6 +829,26 @@ function renderProfile() {
   else if ($('profileBtn')) $('profileBtn').textContent = planLabel(quota.plan);
   $('quotaText').textContent = `Осталось анализов: ${quota.left} из ${quota.limit}`;
   $('profileName').textContent = user.firstName || 'Пользователь';
+  const avatar = $('avatar');
+  if (avatar) {
+    const photoUrl = safeUrl(user.photoUrl);
+    avatar.classList.remove('has-photo');
+    avatar.textContent = '⚽';
+    if (photoUrl) {
+      const img = document.createElement('img');
+      img.src = photoUrl;
+      img.alt = user.firstName ? `Фото профиля ${user.firstName}` : 'Фото профиля';
+      img.loading = 'eager';
+      img.decoding = 'async';
+      img.referrerPolicy = 'no-referrer';
+      img.addEventListener('load', () => avatar.classList.add('has-photo'), { once: true });
+      img.addEventListener('error', () => {
+        avatar.classList.remove('has-photo');
+        avatar.textContent = '⚽';
+      }, { once: true });
+      avatar.replaceChildren(img);
+    }
+  }
   $('profileUsername').textContent = user.username ? `@${user.username} · ID Telegram ${user.id}` : `ID Telegram ${user.id}`;
   $('profilePlan').textContent = planLabel(quota.plan);
   $('profileUsage').textContent = `${quota.used} / ${quota.limit}`;
@@ -859,7 +880,7 @@ function qualityNum(value, digits = 3) {
 }
 
 function signalLabel(name) {
-  const labels = { market: 'Рынок', apiPrediction: 'API prediction', recentForm: 'Форма', h2h: 'H2H' };
+  const labels = { market: 'Рынок', apiPrediction: 'Прогноз API', recentForm: 'Форма', h2h: 'Очные встречи' };
   return labels[String(name || '')] || String(name || 'Сигнал');
 }
 
@@ -911,13 +932,13 @@ function renderModelQuality() {
   headline.hidden = false;
   headline.innerHTML = `
     <div><span>Точность 1X2</span><strong>${qualityPct(h.accuracy)}</strong><small>максимальная вероятность</small></div>
-    <div><span>Brier score</span><strong>${qualityNum(h.avgBrier)}</strong><small>ниже — лучше</small></div>
-    <div><span>Log loss</span><strong>${qualityNum(h.avgLogLoss)}</strong><small>штраф за уверенные ошибки</small></div>
-    <div><span>Средний top %</span><strong>${qualityPct(h.avgTopProbability)}</strong><small>уверенность лидера</small></div>`;
+    <div><span>Ошибка Брайера</span><strong>${qualityNum(h.avgBrier)}</strong><small>ниже — лучше</small></div>
+    <div><span>Логарифмическая ошибка</span><strong>${qualityNum(h.avgLogLoss)}</strong><small>штраф за уверенные ошибки</small></div>
+    <div><span>Средняя уверенность</span><strong>${qualityPct(h.avgTopProbability)}</strong><small>уверенность лидера</small></div>`;
 
   calibration.hidden = false;
   calibration.innerHTML = `
-    <div class="quality-block-head"><strong>Калибровка вероятностей</strong><span>прогноз vs факт</span></div>
+    <div class="quality-block-head"><strong>Калибровка вероятностей</strong><span>прогноз и факт</span></div>
     <div class="quality-calibration-list">${(q.calibration || []).map(x => `
       <div class="quality-cal-row">
         <span>${escapeHtml(x.label)}</span>
@@ -933,18 +954,18 @@ function renderModelQuality() {
   const promotion = ce.promotionGate || {};
   const lifecycle = ce.lifecycle || {};
   const lifecycleLabel = lifecycle.status === 'frozen'
-    ? 'FROZEN'
+    ? 'ЗАМОРОЖЕНО'
     : lifecycle.status === 'promoted'
-    ? 'НОВЫЙ CHAMPION'
+    ? 'НОВАЯ АКТИВНАЯ МОДЕЛЬ'
     : lifecycle.status === 'active'
-      ? 'ACTIVE'
+      ? 'АКТИВНА'
       : lifecycle.status === 'held'
-        ? 'CHALLENGER HELD'
+        ? 'КАНДИДАТ УДЕРЖАН'
         : lifecycle.status === 'shadow'
-          ? 'CHALLENGER SHADOW'
+          ? 'КАНДИДАТ В ТЕНИ'
           : lifecycle.available === false
-            ? 'НУЖНА MIGRATION'
-            : 'BASELINE';
+            ? 'НУЖНА МИГРАЦИЯ'
+            : 'БАЗОВАЯ';
   const promotionLabel = promotion.status === 'promoted'
     ? 'РАЗРЕШЕНО'
     : promotion.status === 'held'
@@ -958,15 +979,15 @@ function renderModelQuality() {
     <div class="quality-block-head"><strong>⚙️ Калибратор v4.0</strong><span class="calibration-mode ${escapeHtml(ce.mode || 'baseline')}">${modeLabel}</span></div>
     <div class="calibration-engine-grid">
       <div><span>Режим</span><strong>${modeLabel}</strong><small>${ce.mode === 'active' ? 'коррекции разрешены защитными правилами' : ce.mode === 'shadow' ? 'измеряет, но не меняет прогноз' : 'базовые веса'}</small></div>
-      <div><span>Temperature</span><strong>${Number.isFinite(Number(ce.temperature)) ? Number(ce.temperature).toFixed(2) : '1.00'}</strong><small>1.00 = без сжатия вероятностей</small></div>
-      <div><span>Backtest</span><strong>${Number(ce.sample || 0)}</strong><small>завершённых snapshot</small></div>
-      <div><span>Holdout температуры</span><strong>${Number(ce.temperatureValidation?.validationSample || 0)}</strong><small>${Number.isFinite(Number(ce.temperatureValidation?.improvement)) ? `${Number(ce.temperatureValidation.improvement).toFixed(1)}% log loss` : 'ещё нет проверки'}</small></div>
-      <div><span>Holdout весов</span><strong>${Number(weightValidation.validationSample || 0)}</strong><small>${Number.isFinite(Number(weightValidation.brierGain)) ? `Δ Brier ${Number(weightValidation.brierGain).toFixed(4)}` : 'ещё нет проверки'}</small></div>
-      <div><span>Продвижение</span><strong>${promotionLabel}</strong><small>только trusted holdout</small></div>
-      <div><span>Lifecycle</span><strong>${lifecycleLabel}</strong><small>revision ${Number(lifecycle.revision || 0)}</small></div>
-      <div><span>Active fingerprint</span><strong>${escapeHtml(String(lifecycle.activeFingerprint || ce.fingerprint || '—').slice(0, 10))}</strong><small>${lifecycle.previousFingerprint ? `rollback → ${escapeHtml(String(lifecycle.previousFingerprint).slice(0, 10))}` : 'предыдущего champion нет'}</small></div>
+      <div><span>Температура</span><strong>${Number.isFinite(Number(ce.temperature)) ? Number(ce.temperature).toFixed(2) : '1.00'}</strong><small>1.00 = без сжатия вероятностей</small></div>
+      <div><span>Историческая проверка</span><strong>${Number(ce.sample || 0)}</strong><small>завершённых снимков</small></div>
+      <div><span>Holdout температуры</span><strong>${Number(ce.temperatureValidation?.validationSample || 0)}</strong><small>${Number.isFinite(Number(ce.temperatureValidation?.improvement)) ? `${Number(ce.temperatureValidation.improvement).toFixed(1)}% логарифмической ошибки` : 'ещё нет проверки'}</small></div>
+      <div><span>Holdout весов</span><strong>${Number(weightValidation.validationSample || 0)}</strong><small>${Number.isFinite(Number(weightValidation.brierGain)) ? `Δ Брайер ${Number(weightValidation.brierGain).toFixed(4)}` : 'ещё нет проверки'}</small></div>
+      <div><span>Продвижение</span><strong>${promotionLabel}</strong><small>только доверенная отложенная выборка</small></div>
+      <div><span>Жизненный цикл</span><strong>${lifecycleLabel}</strong><small>ревизия ${Number(lifecycle.revision || 0)}</small></div>
+      <div><span>Отпечаток активной модели</span><strong>${escapeHtml(String(lifecycle.activeFingerprint || ce.fingerprint || '—').slice(0, 10))}</strong><small>${lifecycle.previousFingerprint ? `откат → ${escapeHtml(String(lifecycle.previousFingerprint).slice(0, 10))}` : 'предыдущей активной модели нет'}</small></div>
     </div>
-    <div class="calibration-promotion-note"><strong>Защита RC22:</strong> challenger проходит два последовательных trusted holdout-окна, затем атомарно сравнивается с active champion. ${lifecycle.frozen ? `Lifecycle заморожен: ${escapeHtml(lifecycle.freezeReason || 'причина указана в административном журнале')}.` : 'После продвижения отдельная когорта может автоматически вернуть предыдущий профиль.'}</div>
+    <div class="calibration-promotion-note"><strong>Защита RC23:</strong> кандидат проходит два последовательных окна доверенной отложенной выборки, затем атомарно сравнивается с активной моделью. ${lifecycle.frozen ? `Жизненный цикл заморожен: ${escapeHtml(lifecycle.freezeReason || 'причина указана в административном журнале')}.` : 'После продвижения отдельная когорта может автоматически вернуть предыдущий профиль.'}</div>
     <div class="calibration-weights">
       ${(ce.signalStats || []).map(x => {
         const base = Number(x.baseWeight || 0) * 100;
@@ -1003,18 +1024,18 @@ function renderModelQuality() {
     const trendMaxSample = Math.max(1, ...(db.trend || []).map(x => Number(x.sample || 0)));
     const leagues = db.leagues || [];
     dashboard.innerHTML = `
-      <div class="quality-block-head"><strong>📊 Model Dashboard 2.0</strong><span>${Number(db.periodDays || q.periodDays || 90)} дней</span></div>
+      <div class="quality-block-head"><strong>📊 Панель модели 2.0</strong><span>${Number(db.periodDays || q.periodDays || 90)} дней</span></div>
 
       <div class="model-dash-kpis">
-        <div><span>Snapshot</span><strong>${Number(ov.sample || 0)}</strong><small>settled</small></div>
+        <div><span>Снимки</span><strong>${Number(ov.sample || 0)}</strong><small>завершено</small></div>
         <div><span>Точность</span><strong>${qualityPct(ov.accuracy)}</strong><small>1X2</small></div>
         <div><span>Brier</span><strong>${qualityNum(ov.avgBrier)}</strong><small>ниже лучше</small></div>
-        <div><span>Gap</span><strong>${Number.isFinite(Number(ov.calibrationGap)) ? `${Number(ov.calibrationGap).toFixed(1)} п.п.` : '—'}</strong><small>top % − accuracy</small></div>
-        <div><span>Cal error</span><strong>${Number.isFinite(Number(q.calibrationDiagnostics?.weightedTopCalibrationError)) ? `${Number(q.calibrationDiagnostics.weightedTopCalibrationError).toFixed(1)} п.п.` : '—'}</strong><small>weighted · 5 buckets</small></div>
+        <div><span>Разрыв</span><strong>${Number.isFinite(Number(ov.calibrationGap)) ? `${Number(ov.calibrationGap).toFixed(1)} п.п.` : '—'}</strong><small>уверенность − точность</small></div>
+        <div><span>Ошибка калибровки</span><strong>${Number.isFinite(Number(q.calibrationDiagnostics?.weightedTopCalibrationError)) ? `${Number(q.calibrationDiagnostics.weightedTopCalibrationError).toFixed(1)} п.п.` : '—'}</strong><small>взвешенно · 5 групп</small></div>
       </div>
 
       <div class="model-dash-section">
-        <div class="model-dash-section-head"><strong>Тренд по неделям</strong><span>accuracy + размер выборки; Brier указан текстом</span></div>
+        <div class="model-dash-section-head"><strong>Тренд по неделям</strong><span>точность + размер выборки; ошибка Брайера указана текстом</span></div>
         ${(db.trend || []).length ? `<div class="model-trend-chart">${db.trend.map(x => {
           const acc = Math.max(2, Math.min(100, Number(x.accuracy || 0)));
           const sampleH = Math.max(8, Math.round(Number(x.sample || 0) / trendMaxSample * 100));
@@ -1028,7 +1049,7 @@ function renderModelQuality() {
       </div>
 
       <div class="model-dash-section">
-        <div class="model-dash-section-head"><strong>Confidence bands</strong><span>проверяем, растёт ли качество с confidence</span></div>
+        <div class="model-dash-section-head"><strong>Диапазоны уверенности</strong><span>проверяем, растёт ли качество с confidence</span></div>
         <div class="model-band-list">${(db.confidence || []).map(x => `
           <div class="model-band-row">
             <span>${escapeHtml(x.label)}</span>
@@ -1048,7 +1069,7 @@ function renderModelQuality() {
         <div class="model-dash-section-head"><strong>Лиги</strong><span>сортировка по размеру выборки</span></div>
         ${leagues.length ? `<div class="model-league-table">${leagues.map(x => `
           <div class="model-league-row">
-            <div><strong>${escapeHtml(x.leagueName || x.label)}</strong><small>n=${Number(x.sample || 0)} · confidence ${qualityPct(x.avgConfidence)}</small></div>
+            <div><strong>${escapeHtml(x.leagueName || x.label)}</strong><small>n=${Number(x.sample || 0)} · уверенность ${qualityPct(x.avgConfidence)}</small></div>
             <span>${qualityPct(x.accuracy)}</span>
             <span>B ${qualityNum(x.avgBrier)}</span>
             <em>${Number.isFinite(Number(x.calibrationGap)) ? `${Number(x.calibrationGap) >= 0 ? '+' : ''}${Number(x.calibrationGap).toFixed(1)} п.п.` : '—'}</em>
@@ -1066,29 +1087,29 @@ function renderModelQuality() {
       </div>
 
       <div class="model-dash-section">
-        <div class="model-dash-section-head"><strong>Сравнение версий</strong><span>без рейтинга и автоматического promotion</span></div>
+        <div class="model-dash-section-head"><strong>Сравнение версий</strong><span>без рейтинга и автоматического продвижения</span></div>
         ${(db.versions || []).length ? `<div class="model-version-table">${db.versions.map(x => `
           <div class="model-version-row">
             <div>
-              <strong>${escapeHtml(x.version || 'legacy / unknown')}</strong>
+              <strong>${escapeHtml(x.version || 'старая / неизвестная')}</strong>
               <small>n=${Number(x.sample || 0)} · ${x.firstKickoffAt ? escapeHtml(dateTime(x.firstKickoffAt)) : '—'} → ${x.lastKickoffAt ? escapeHtml(dateTime(x.lastKickoffAt)) : '—'}</small>
             </div>
-            <div><span>Accuracy</span><b>${qualityPct(x.accuracy)}</b></div>
+            <div><span>Точность</span><b>${qualityPct(x.accuracy)}</b></div>
             <div><span>Brier</span><b>${qualityNum(x.avgBrier)}</b></div>
-            <div><span>Log loss</span><b>${qualityNum(x.avgLogLoss)}</b></div>
-            <div><span>Cal error</span><b>${Number.isFinite(Number(x.calibrationError)) ? `${Number(x.calibrationError).toFixed(1)} п.п.` : '—'}</b></div>
+            <div><span>Логарифмическая ошибка</span><b>${qualityNum(x.avgLogLoss)}</b></div>
+            <div><span>Ошибка калибровки</span><b>${Number.isFinite(Number(x.calibrationError)) ? `${Number(x.calibrationError).toFixed(1)} п.п.` : '—'}</b></div>
             <div><span>Сигналы</span><b>${qualityPct(x.signalSnapshotCoverage)}</b></div>
           </div>`).join('')}</div>` : '<div class="empty compact-empty">Сравнение версий пока не сформировано.</div>'}
-        <p class="quality-engine-note">Разрез показывает исторические cohorts версия анализа. Различия могут быть связаны с периодом, лигами и составом данных; интерфейс не выбирает победителя.</p>
+        <p class="quality-engine-note">Разрез показывает исторические когорты версия анализа. Различия могут быть связаны с периодом, лигами и составом данных; интерфейс не выбирает победителя.</p>
       </div>
 
       <div class="model-dash-section">
-        <div class="model-dash-section-head"><strong>Signal-level performance</strong><span>источник сам по себе vs итоговый blend</span></div>
+        <div class="model-dash-section-head"><strong>Качество отдельных сигналов</strong><span>источник отдельно и итоговая смесь</span></div>
         <div class="model-signal-table">${(db.signals || []).map(x => `
           <div class="model-signal-row">
             <div><strong>${escapeHtml(signalLabel(x.name))}</strong><small>n=${Number(x.sample || 0)} · базовый вес ${Number(x.baseWeight || 0).toFixed(0)}%</small></div>
             <div><span>Источник</span><b>${qualityPct(x.signalAccuracy)}</b><small>B ${qualityNum(x.signalBrier)}</small></div>
-            <div><span>Blend</span><b>${qualityPct(x.finalAccuracy)}</b><small>B ${qualityNum(x.finalBrier)}</small></div>
+            <div><span>Итог</span><b>${qualityPct(x.finalAccuracy)}</b><small>B ${qualityNum(x.finalBrier)}</small></div>
             <em class="${Number(x.brierDeltaVsBlend || 0) <= 0 ? 'good' : 'watch'}">${Number.isFinite(Number(x.brierDeltaVsBlend)) ? `${Number(x.brierDeltaVsBlend) >= 0 ? '+' : ''}${Number(x.brierDeltaVsBlend).toFixed(3)}` : '—'}</em>
           </div>`).join('')}</div>
       </div>
@@ -1099,12 +1120,12 @@ function renderModelQuality() {
       </div>` : ''}
 
       <div class="model-dash-section">
-        <div class="model-dash-section-head"><strong>🧪 Prediction Integrity</strong><span>${escapeHtml(q.integrity?.label || 'нет данных')}</span></div>
+        <div class="model-dash-section-head"><strong>🧪 Целостность прогнозов</strong><span>${escapeHtml(q.integrity?.label || 'нет данных')}</span></div>
         <div class="model-integrity-summary ${escapeHtml(q.integrity?.status || 'clean')}">
-          <div><span>Loaded</span><strong>${Number(q.integrity?.loadedRows || 0)}</strong><small>settled + pending</small></div>
-          <div><span>Severe</span><strong>${Number(q.integrity?.severeIssues || 0)}</strong><small>probability / timing / consistency</small></div>
-          <div><span>Warning</span><strong>${Number(q.integrity?.warningIssues || 0)}</strong><small>settlement / outcome</small></div>
-          <div><span>Info</span><strong>${Number(q.integrity?.informationalIssues || 0)}</strong><small>устаревшие метаданные</small></div>
+          <div><span>Загружено</span><strong>${Number(q.integrity?.loadedRows || 0)}</strong><small>settled + pending</small></div>
+          <div><span>Критические</span><strong>${Number(q.integrity?.severeIssues || 0)}</strong><small>вероятности / время / согласованность</small></div>
+          <div><span>Предупреждения</span><strong>${Number(q.integrity?.warningIssues || 0)}</strong><small>фиксация результата / исход</small></div>
+          <div><span>Информация</span><strong>${Number(q.integrity?.informationalIssues || 0)}</strong><small>устаревшие метаданные</small></div>
         </div>
         <div class="model-integrity-list">${(q.integrity?.checks || []).map(x => `
           <div class="${escapeHtml(x.state || 'info')}">
@@ -1163,7 +1184,7 @@ async function loadModelQuality(force = false) {
 function calibrationTransitionLabel(action) {
   return ({
     initialize: 'Инициализация',
-    promote: 'Новый champion',
+    promote: 'Новая активная модель',
     rollback: 'Автооткат',
     manual_rollback: 'Ручной откат',
     freeze: 'Заморозка',
@@ -1187,21 +1208,21 @@ function renderCalibrationControl() {
   const saving = state.calibrationControlSaving;
   const data = state.calibrationControl;
   if (state.calibrationControlLoading) {
-    status.textContent = 'Загружаю атомарное состояние lifecycle…';
+    status.textContent = 'Загружаю состояние жизненного цикла…';
     summary.innerHTML = '';
     history.innerHTML = '';
   } else if (!data?.available) {
-    status.textContent = data?.reason || 'Lifecycle пока недоступен.';
+    status.textContent = data?.reason || 'Жизненный цикл пока недоступен.';
     summary.innerHTML = '';
     history.innerHTML = '';
   } else {
     status.textContent = data.frozen
       ? `Переходы заморожены${data.freezeReason ? `: ${data.freezeReason}` : '.'}`
-      : 'Автоматические promotion и rollback разрешены.';
+      : 'Автоматическое продвижение и откат разрешены.';
     summary.innerHTML = `
       <div><span>Состояние</span><strong>${data.frozen ? 'ЗАМОРОЖЕНО' : 'АКТИВНО'}</strong><small>revision ${Number(data.revision || 0)}</small></div>
-      <div><span>Champion</span><strong>${escapeHtml(shortFingerprint(data.activeFingerprint))}</strong><small>active fingerprint</small></div>
-      <div><span>Предыдущий</span><strong>${escapeHtml(shortFingerprint(data.previousFingerprint))}</strong><small>rollback target</small></div>`;
+      <div><span>Активная модель</span><strong>${escapeHtml(shortFingerprint(data.activeFingerprint))}</strong><small>активный отпечаток</small></div>
+      <div><span>Предыдущий</span><strong>${escapeHtml(shortFingerprint(data.previousFingerprint))}</strong><small>цель отката</small></div>`;
     history.innerHTML = (data.transitions || []).length
       ? `<div class="model-remediation-history-head"><strong>Последние переходы</strong><span>actor ID скрыт</span></div>${data.transitions.slice(0, 8).map(row => `
           <div class="model-remediation-history-row">
@@ -1238,7 +1259,7 @@ async function runCalibrationControlAction(action) {
   if (!isAdmin() || state.calibrationControlSaving) return;
   const reason = String($('calibrationControlReason')?.value || '').trim();
   if (reason.length < 5) return toast('Укажите причину действия — минимум 5 символов.');
-  const labels = { freeze: 'заморозить автоматические переходы', unfreeze: 'разморозить автоматические переходы', manual_rollback: 'вернуть предыдущий champion' };
+  const labels = { freeze: 'заморозить автоматические переходы', unfreeze: 'разморозить автоматические переходы', manual_rollback: 'вернуть предыдущую активную модель' };
   if (!window.confirm(`Подтвердить действие: ${labels[action] || action}?`)) return;
   state.calibrationControlSaving = true;
   renderCalibrationControl();
@@ -1634,7 +1655,7 @@ function renderProductionReadiness() {
 
   if (state.productionReadinessLoading) {
     root.textContent = 'Проверяю объединение запросов, частотную защиту, тайм-ауты и ограничение памяти…';
-    badge.textContent = 'RUN';
+    badge.textContent = 'ПРОВЕРКА';
     badge.className = 'production-badge running';
     score.textContent = '—';
     checks.innerHTML = '';
@@ -1670,8 +1691,8 @@ function renderProductionReadiness() {
     <div class="production-runtime-grid">
       <div><span>Объединено одинаковых запросов</span><strong>${Number(s.singleflight?.joins || 0)}</strong><small>${Number(s.singleflight?.active || 0)} сейчас</small></div>
       <div><span>Блокировки частых запросов</span><strong>${Number(s.burstGuard?.blocked || 0)}</strong><small>${Number(s.burstGuard?.activeBuckets || 0)} bucket</small></div>
-      <div><span>Upstream timeout</span><strong>${Number(s.upstream?.timeouts || 0)}</strong><small>DB ${Number(s.upstream?.supabaseTimeoutMs || 0)/1000}с · API ${Number(s.upstream?.apiFootballTimeoutMs || 0)/1000}с</small></div>
-      <div><span>L1 cache</span><strong>${Number(s.memory?.cacheEntries || 0)}</strong><small>soft limit ${Number(s.memory?.cacheSoftLimit || 0)}</small></div>
+      <div><span>Тайм-ауты источников</span><strong>${Number(s.upstream?.timeouts || 0)}</strong><small>DB ${Number(s.upstream?.supabaseTimeoutMs || 0)/1000}с · API ${Number(s.upstream?.apiFootballTimeoutMs || 0)/1000}с</small></div>
+      <div><span>Кэш L1</span><strong>${Number(s.memory?.cacheEntries || 0)}</strong><small>soft limit ${Number(s.memory?.cacheSoftLimit || 0)}</small></div>
       <div><span>User sync cache</span><strong>${Number(s.memory?.userSyncEntries || 0)}</strong><small>${Math.round(Number(s.memory?.userSyncTtlSeconds || 0)/60)} мин.</small></div>
       <div><span>Memory prune</span><strong>${Number(s.memory?.pruned || 0)}</strong><small>в этом isolate</small></div>
     </div>
@@ -1755,7 +1776,7 @@ function runClientContractSmoke() {
 }
 
 function rcStateText(status) {
-  if (status === 'rc_ready') return 'RC22 ГОТОВ';
+  if (status === 'rc_ready') return 'RC23 ГОТОВ';
   if (status === 'rc_with_holds') return 'RC С ОГРАНИЧЕНИЯМИ';
   if (status === 'blocked') return 'ЗАБЛОКИРОВАНО';
   return 'ОЖИДАНИЕ';
@@ -1776,7 +1797,7 @@ function renderRcRegression() {
   btn.disabled = Boolean(state.rcRegressionLoading);
   if (state.rcRegressionLoading) {
     badge.className = 'rc-badge running';
-    badge.textContent = 'RUN';
+    badge.textContent = 'ПРОВЕРКА';
     status.textContent = 'Запускаю безопасную регрессионную проверку…';
     meta.textContent = 'API-Football не расходуется';
     summary.innerHTML = '';
@@ -1789,7 +1810,7 @@ function renderRcRegression() {
   const r = state.rcRegression;
   if (!r) {
     badge.className = 'rc-badge';
-    badge.textContent = 'RC22';
+    badge.textContent = 'RC23';
     status.textContent = 'Полная регрессионная проверка ещё не запускалась.';
     meta.textContent = 'Тест безопасный: без полного анализа, без изменения пользовательских данных и без расхода API-Football.';
     summary.innerHTML = '';
@@ -1814,8 +1835,8 @@ function renderRcRegression() {
     </div>`;
 
   const groupLabels = {
-    runtime:'Runtime', security:'Security', database:'Supabase schema',
-    user_routes:'User routes', gates:'Release gates', provider:'Провайдер', safety:'Безопасность',
+    runtime:'Среда', security:'Безопасность', database:'Схема Supabase',
+    user_routes:'Маршруты пользователя', gates:'Проверки выпуска', provider:'Провайдер', safety:'Безопасность',
   };
   groups.innerHTML = `<div class="rc-group-grid">${Object.entries(r.groups || {}).map(([key,g]) => `
     <div class="${Number(g.fail || 0) ? 'fail' : Number(g.warn || 0) ? 'warn' : 'pass'}">
@@ -1885,21 +1906,21 @@ function runtimeControlsFormValue(id, fallback = true) {
 
 function runtimeHistoryActionLabel(action) {
   return ({
-    baseline: 'Baseline',
+    baseline: 'Базовое состояние',
     update: 'Изменение',
-    defaults: 'Safe defaults',
-    rollback: 'Rollback',
+    defaults: 'Безопасные настройки',
+    rollback: 'Откат',
   })[String(action || '')] || String(action || 'Изменение');
 }
 
 function runtimeHistorySummary(controls = {}) {
   const disabled = [];
-  if (controls.maintenanceMode) disabled.push('maintenance');
-  if (controls.analysisEnabled === false) disabled.push('analysis');
-  if (controls.searchEnabled === false) disabled.push('search');
-  if (controls.liveEnabled === false) disabled.push('live');
-  if (controls.remindersEnabled === false) disabled.push('reminders');
-  if (controls.expandedDataEnabled === false) disabled.push('expanded');
+  if (controls.maintenanceMode) disabled.push('обслуживание');
+  if (controls.analysisEnabled === false) disabled.push('анализ');
+  if (controls.searchEnabled === false) disabled.push('поиск');
+  if (controls.liveEnabled === false) disabled.push('LIVE');
+  if (controls.remindersEnabled === false) disabled.push('уведомления');
+  if (controls.expandedDataEnabled === false) disabled.push('расширенные данные');
   const auto = controls.autoSettlementRecoveryEnabled ? ' · автовосстановление включено' : ' · автовосстановление: наблюдение';
   return disabled.length ? `Ограничения: ${disabled.join(', ')}${auto}` : `Основные функции включены${auto}`;
 }
@@ -1938,7 +1959,7 @@ function renderRuntimeHistory() {
     const isCurrent = Number(row.revision || 0) === currentRevision;
     return `<div class="runtime-history-row ${isCurrent ? 'current' : ''}">
       <div class="runtime-history-copy">
-        <strong>revision ${Number(row.revision || 0)} · ${escapeHtml(runtimeHistoryActionLabel(row.action))}</strong>
+        <strong>версия ${Number(row.revision || 0)} · ${escapeHtml(runtimeHistoryActionLabel(row.action))}</strong>
         <span>${escapeHtml(runtimeHistorySummary(row.controls || {}))}</span>
         <small>${row.createdAt ? escapeHtml(dateTime(row.createdAt)) : '—'}${row.reason ? ` · ${escapeHtml(row.reason)}` : ''}${row.sourceRevision ? ` · из версии ${Number(row.sourceRevision)}` : ''}</small>
       </div>
@@ -2020,7 +2041,7 @@ function renderRuntimeControls() {
 
   if (busy) {
     badge.className = 'runtime-controls-badge running';
-    badge.textContent = state.runtimeControlsSaving ? 'SAVE' : 'RUN';
+    badge.textContent = state.runtimeControlsSaving ? 'СОХР.' : 'ЗАГР.';
     status.textContent = state.runtimeControlsSaving ? 'Применяю настройки функций…' : 'Загружаю настройки функций…';
     return;
   }
@@ -2036,17 +2057,17 @@ function renderRuntimeControls() {
     badge.className = 'runtime-controls-badge blocked';
     badge.textContent = 'SQL';
     status.textContent = panel.reason || 'Нужна supabase_migration_v5_7.sql.';
-    revision.textContent = 'schema missing';
+    revision.textContent = 'схема БД не готова';
     return;
   }
 
   const c = panel.controls || {};
   badge.className = `runtime-controls-badge ${c.maintenanceMode ? 'maintenance' : 'healthy'}`;
-  badge.textContent = c.maintenanceMode ? 'MAINT' : 'LIVE';
+  badge.textContent = c.maintenanceMode ? 'ОБСЛУЖ.' : 'АКТИВНО';
   status.textContent = c.maintenanceMode
     ? 'Режим технического обслуживания включён для обычных пользователей.'
     : 'Настройки функций активны. Изменения применяются без нового развёртывания.';
-  revision.textContent = `revision ${Number(c.revision || 1)}${c.updatedAt ? ` · ${relativeAge(c.updatedAt)}` : ''}`;
+  revision.textContent = `версия ${Number(c.revision || 1)}${c.updatedAt ? ` · ${relativeAge(c.updatedAt)}` : ''}`;
 
   const map = [
     ['runtimeMaintenanceToggle', 'maintenanceMode'],
@@ -2186,7 +2207,7 @@ function renderReminderHealth() {
 
   if (state.reminderHealthLoading) {
     badge.className = 'reminder-health-badge running';
-    badge.textContent = 'RUN';
+    badge.textContent = 'ПРОВЕРКА';
     status.textContent = 'Проверяю расписание и фиксацию задач доставки…';
     kpis.innerHTML = '';
     recent.innerHTML = '';
@@ -2214,17 +2235,17 @@ function renderReminderHealth() {
 
   const healthy = r.health?.state === 'healthy';
   badge.className = `reminder-health-badge ${healthy ? 'healthy' : 'watch'}`;
-  badge.textContent = healthy ? 'OK' : 'WATCH';
+  badge.textContent = healthy ? 'НОРМА' : 'КОНТРОЛЬ';
   status.textContent = `${r.health?.label || 'Состояние доставки'} · проверка каждые ${Number(r.scheduler?.cadenceMinutes || 5)} мин.`;
 
   const s = r.summary || {};
   kpis.innerHTML = `<div class="reminder-health-grid">
     <div><span>Активные</span><strong>${Number(s.activeUpcoming || 0)}</strong><small>будущие матчи</small></div>
     <div><span>До 90 мин.</span><strong>${Number(s.dueNext90Minutes || 0)}</strong><small>скоро к отправке</small></div>
-    <div><span>Pre-match 24ч</span><strong>${Number(s.prematchSent24h || 0)}</strong><small>доставлено</small></div>
-    <div><span>Kickoff 24ч</span><strong>${Number(s.kickoffSent24h || 0)}</strong><small>доставлено</small></div>
-    <div><span>Ошибки 24ч</span><strong>${Number(s.failed24h || 0)}</strong><small>видны в Monitor</small></div>
-    <div><span>Claims</span><strong>${Number(s.activeClaims || 0)}</strong><small>${Number(s.staleClaims || 0)} stale</small></div>
+    <div><span>До матча · 24ч</span><strong>${Number(s.prematchSent24h || 0)}</strong><small>доставлено</small></div>
+    <div><span>Старт · 24ч</span><strong>${Number(s.kickoffSent24h || 0)}</strong><small>доставлено</small></div>
+    <div><span>Ошибки 24ч</span><strong>${Number(s.failed24h || 0)}</strong><small>видны в мониторинге</small></div>
+    <div><span>В обработке</span><strong>${Number(s.activeClaims || 0)}</strong><small>${Number(s.staleClaims || 0)} зависших</small></div>
   </div>`;
 
   recent.innerHTML = (r.recent || []).length
@@ -2275,7 +2296,7 @@ async function sendReminderTest() {
 }
 
 function releaseMonitorStateLabel(stateValue) {
-  return stateValue === 'healthy' ? 'STABLE' : stateValue === 'watch' ? 'WATCH' : stateValue === 'incident' ? 'INCIDENT' : 'WAIT';
+  return stateValue === 'healthy' ? 'СТАБИЛЬНО' : stateValue === 'watch' ? 'КОНТРОЛЬ' : stateValue === 'incident' ? 'ИНЦИДЕНТ' : 'ОЖИДАНИЕ';
 }
 
 function releaseMonitorDelta(value) {
@@ -2297,7 +2318,7 @@ function renderReleaseMonitor() {
 
   if (state.releaseMonitorLoading) {
     badge.className = 'release-monitor-badge running';
-    badge.textContent = 'RUN';
+    badge.textContent = 'ПРОВЕРКА';
     title.textContent = 'Собираю операционные события…';
     meta.textContent = 'Без API-Football';
     kpis.innerHTML = client.innerHTML = issues.innerHTML = incidents.innerHTML = '';
@@ -2325,23 +2346,23 @@ function renderReleaseMonitor() {
   const budget = c.operationalBudget || {};
   kpis.innerHTML = `<div class="release-monitor-kpis">
     <div><span>Ошибки</span><strong>${Number(c.errorLike || 0)}</strong><small>${releaseMonitorDelta(r.trend?.errorsDelta)} к прошлому периоду</small></div>
-    <div><span>Warnings</span><strong>${Number(c.warningLike || 0)}</strong><small>${releaseMonitorDelta(r.trend?.warningsDelta)} к прошлому периоду</small></div>
-    <div><span>Ops budget</span><strong>${Number(budget.remaining || 0)}/${Number(budget.allowance || 0)}</strong><small>${budget.exhausted ? 'превышен' : 'остаток событий'}</small></div>
+    <div><span>Предупреждения</span><strong>${Number(c.warningLike || 0)}</strong><small>${releaseMonitorDelta(r.trend?.warningsDelta)} к прошлому периоду</small></div>
+    <div><span>Лимит событий</span><strong>${Number(budget.remaining || 0)}/${Number(budget.allowance || 0)}</strong><small>${budget.exhausted ? 'превышен' : 'остаток событий'}</small></div>
     <div><span>Событий</span><strong>${Number(c.total || 0)}</strong><small>предыдущий период ${Number(p.total || 0)}</small></div>
   </div>`;
 
   const cc = c.client || {};
-  client.innerHTML = `<div class="release-monitor-section-head"><strong>📱 Client telemetry</strong><span>allowlist · без пользовательского контента</span></div>
+  client.innerHTML = `<div class="release-monitor-section-head"><strong>📱 Телеметрия клиента</strong><span>только разрешённые поля · без пользовательского контента</span></div>
     <div class="release-client-grid">
-      <div><span>Boot OK</span><strong>${Number(cc.bootOk || 0)}</strong></div>
-      <div><span>Boot recovery</span><strong>${Number(cc.bootRecovery || 0)}</strong></div>
-      <div><span>Compatibility block</span><strong>${Number(cc.compatibilityBlocks || 0)}</strong></div>
-      <div><span>Client errors</span><strong>${Number(cc.clientErrors || 0)}</strong></div>
-      <div><span>Network recovery</span><strong>${Number(cc.networkRecovery || 0)}</strong></div>
+      <div><span>Успешный запуск</span><strong>${Number(cc.bootOk || 0)}</strong></div>
+      <div><span>Восстановление запуска</span><strong>${Number(cc.bootRecovery || 0)}</strong></div>
+      <div><span>Блокировка версии</span><strong>${Number(cc.compatibilityBlocks || 0)}</strong></div>
+      <div><span>Ошибки клиента</span><strong>${Number(cc.clientErrors || 0)}</strong></div>
+      <div><span>Восстановление сети</span><strong>${Number(cc.networkRecovery || 0)}</strong></div>
     </div>`;
 
   const codes = c.topCodes || [];
-  issues.innerHTML = `<div class="release-monitor-section-head"><strong>Главные сигналы</strong><span>warning/error/critical</span></div>
+  issues.innerHTML = `<div class="release-monitor-section-head"><strong>Главные сигналы</strong><span>предупреждение/ошибка/критическая</span></div>
     ${codes.length ? `<div class="release-issue-list">${codes.map(x => `<div><strong>${escapeHtml(x.key)}</strong><span>${Number(x.count || 0)}</span></div>`).join('')}</div>` : '<div class="empty compact-empty">Ошибок и предупреждений за период нет.</div>'}`;
 
   const rows = r.incidents || [];
@@ -2429,12 +2450,12 @@ function renderDiagnostics() {
   if (database) {
     database.hidden = false;
     database.innerHTML = `
-      <div class="diagnostics-block-head"><strong>Supabase + cache</strong><span>${db.ok ? 'online' : escapeHtml(db.status || 'offline')}</span></div>
+      <div class="diagnostics-block-head"><strong>Supabase + кэш</strong><span>${db.ok ? 'online' : escapeHtml(db.status || 'offline')}</span></div>
       <div class="diagnostics-grid">
         <div><span>PostgREST</span><strong>${db.ok ? 'OK' : 'Ошибка'}</strong><small>${Number.isFinite(Number(db.latencyMs)) ? `${Number(db.latencyMs)} мс` : '—'}</small></div>
-        <div><span>Записей cache</span><strong>${Number.isFinite(Number(cache.total)) ? Number(cache.total) : '—'}</strong><small>выборка ${Number(cache.sampled || 0)}</small></div>
-        <div><span>Свежие / stale</span><strong>${Number(cache.freshInSample || 0)} / ${Number(cache.staleInSample || 0)}</strong><small>в диагностической выборке</small></div>
-        <div><span>Журнал ошибок</span><strong>${obs.persistent ? 'Supabase' : 'Memory'}</strong><small>${obs.migrationReady ? `хранение ${Number(obs.retentionDays || 14)} дн.` : 'нужна миграция v3.8'}</small></div>
+        <div><span>Записей кэша</span><strong>${Number.isFinite(Number(cache.total)) ? Number(cache.total) : '—'}</strong><small>выборка ${Number(cache.sampled || 0)}</small></div>
+        <div><span>Свежие / устаревшие</span><strong>${Number(cache.freshInSample || 0)} / ${Number(cache.staleInSample || 0)}</strong><small>в диагностической выборке</small></div>
+        <div><span>Журнал ошибок</span><strong>${obs.persistent ? 'Supabase' : 'Память'}</strong><small>${obs.migrationReady ? `хранение ${Number(obs.retentionDays || 14)} дн.` : 'нужна миграция v3.8'}</small></div>
       </div>`;
   }
 
@@ -2442,17 +2463,17 @@ function renderDiagnostics() {
   if (runtime) {
     runtime.hidden = false;
     runtime.innerHTML = `
-      <div class="diagnostics-block-head"><strong>Текущий Worker</strong><span>runtime</span></div>
+      <div class="diagnostics-block-head"><strong>Текущий Worker</strong><span>среда</span></div>
       <div class="diagnostics-grid">
         <div><span>API запросов</span><strong>${Number(rt.apiRequests || 0)}</strong><small>успех ${diagPct(rt.apiSuccessRate)}</small></div>
-        <div><span>Cache hit</span><strong>${diagPct(rt.cacheHitRate)}</strong><small>${Number(rt.cacheHits || 0)} hit · ${Number(rt.cacheMisses || 0)} miss</small></div>
-        <div><span>Rate limits</span><strong>${Number(rt.rateLimits || 0)}</strong><small>${Number(rt.quotaBlocks || 0)} запроса остановлено quota guard</small></div>
-        <div><span>Burst guard</span><strong>${Number(rt.burstBlocks || 0)}</strong><small>${Number(rt.singleflightJoins || 0)} singleflight joins</small></div>
-        <div><span>Upstream timeout</span><strong>${Number(rt.upstreamTimeouts || 0)}</strong><small>${Number(rt.userSyncSkips || 0)} user sync записей пропущено</small></div>
-        <div><span>L1 cache</span><strong>${Number(rt.l1CacheEntries || 0)}</strong><small>${Number(rt.memoryPrunes || 0)} memory prune</small></div>
-        <div><span>Ошибки маршрутов</span><strong>${Number(rt.routeErrors || 0)}</strong><small>uptime ${escapeHtml(diagDuration(rt.uptimeSeconds))}</small></div>
+        <div><span>Попадания кэша</span><strong>${diagPct(rt.cacheHitRate)}</strong><small>${Number(rt.cacheHits || 0)} попаданий · ${Number(rt.cacheMisses || 0)} промахов</small></div>
+        <div><span>Ограничения частоты</span><strong>${Number(rt.rateLimits || 0)}</strong><small>${Number(rt.quotaBlocks || 0)} запроса остановлено защитой квоты</small></div>
+        <div><span>Защита от всплесков</span><strong>${Number(rt.burstBlocks || 0)}</strong><small>${Number(rt.singleflightJoins || 0)} объединений запросов</small></div>
+        <div><span>Тайм-ауты источников</span><strong>${Number(rt.upstreamTimeouts || 0)}</strong><small>${Number(rt.userSyncSkips || 0)} синхронизаций пользователя пропущено</small></div>
+        <div><span>Кэш L1</span><strong>${Number(rt.l1CacheEntries || 0)}</strong><small>${Number(rt.memoryPrunes || 0)} очисток памяти</small></div>
+        <div><span>Ошибки маршрутов</span><strong>${Number(rt.routeErrors || 0)}</strong><small>работает ${escapeHtml(diagDuration(rt.uptimeSeconds))}</small></div>
       </div>
-      <p class="tiny diagnostics-note">Счётчики runtime относятся только к текущему экземпляру Cloudflare Worker. Дневной и минутный расход выше берётся непосредственно из заголовков API-Football.</p>`;
+      <p class="tiny diagnostics-note">Счётчики среды выполнения относятся только к текущему экземпляру Cloudflare Worker. Дневной и минутный расход выше берётся непосредственно из заголовков API-Football.</p>`;
   }
 
   if (client) {
@@ -2460,7 +2481,7 @@ function renderDiagnostics() {
     const avg = Number(cp.completed || 0) > 0 ? Math.round(Number(cp.totalMs || 0) / Number(cp.completed)) : null;
     client.hidden = false;
     client.innerHTML = `<div class="diagnostics-block-head"><strong>📱 Клиент Mini App</strong><span>v5.1</span></div><div class="diagnostics-grid">
-      <div><span>Сеть</span><strong>${navigator.onLine === false ? 'Offline' : 'Online'}</strong><small>${navigator.connection?.effectiveType ? escapeHtml(navigator.connection.effectiveType) : 'тип сети —'}</small></div>
+      <div><span>Сеть</span><strong>${navigator.onLine === false ? 'Нет сети' : 'В сети'}</strong><small>${navigator.connection?.effectiveType ? escapeHtml(navigator.connection.effectiveType) : 'тип сети —'}</small></div>
       <div><span>Средний API</span><strong>${avg !== null ? `${avg} мс` : '—'}</strong><small>последний ${cp.lastMs !== null ? `${cp.lastMs} мс` : '—'}</small></div>
       <div><span>Запросы</span><strong>${Number(cp.requests || 0)}</strong><small>${Number(cp.completed || 0)} успешно · ${Number(cp.failed || 0)} ошибок</small></div>
       <div><span>Оптимизация</span><strong>${Number(cp.deduped || 0)} dedupe</strong><small>${Number(cp.retries || 0)} авто-повторов</small></div>
@@ -4548,7 +4569,7 @@ function formCard(title, form) {
 }
 
 function modelWeightsText(weights = {}) {
-  const names = { market: 'рынок', apiPrediction: 'API', recentForm: 'форма', h2h: 'H2H' };
+  const names = { market: 'рынок', apiPrediction: 'API', recentForm: 'форма', h2h: 'Очные встречи' };
   const parts = Object.entries(weights).filter(([,v]) => Number(v) > 0).map(([k,v]) => `${names[k] || k} ${Number(v).toFixed(0)}%`);
   return parts.length ? parts.join(' · ') : 'Недостаточно сигналов';
 }
@@ -5299,7 +5320,7 @@ async function scheduleIdle(task) {
 
 syncTopbar('matchesView');
 
-// RC22: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
+// RC23: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
 // The boot watchdog never leaves the user behind an endless splash screen.
 const startupWatchdog = setTimeout(() => {
   if (!$('bootGate')?.hidden && !state.compatibilityBlocked) {

@@ -1,10 +1,10 @@
-# QA Release Checklist — v6.14.0 RC22
+# QA Release Checklist — v6.15.0 RC23
 
 ## Deploy
 
 - применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql` и `supabase_migration_v6_11_1.sql`;
-- Worker/client = `6.14.0-rc22`;
-- package = `6.14.0`;
+- Worker/client = `6.15.0-rc23`;
+- package = `6.15.0`;
 - cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;
@@ -78,7 +78,7 @@ npm run verify:worker
 
 ## Post-deploy
 
-- `/health` возвращает `6.14.0-rc22`, `RC22` и `devMode=false`;
+- `/health` возвращает `6.15.0-rc23`, `RC23` и `devMode=false`;
 - `cloudflareDeploymentGate=enabled`;
 - `browserSecurityPolicy=enabled` и `failClosedDeployment=enabled`;
 - `/api/app-manifest` соответствует версии Worker;
@@ -87,3 +87,11 @@ npm run verify:worker
 - `/api/me`, `/api/release-readiness` и `/api/calibration-control` без Telegram initData возвращают `401`;
 - `/health/supabase` публично недоступен;
 - при ошибке используется `Rollback Production` с предыдущим version ID.
+
+
+## RC23 UI/роль
+- обычный пользователь не видит и не может сфокусировать admin-only элементы;
+- администратор после загрузки профиля видит технические панели;
+- Telegram-фото профиля загружается через безопасный URL, при ошибке остаётся ⚽;
+- на ширине 320–360 px длинные диагностические строки не выходят за карточки;
+- основные подписи админ-панели не смешивают русские фразы с английскими статусами.

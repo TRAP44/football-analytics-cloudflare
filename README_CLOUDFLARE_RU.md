@@ -1,6 +1,15 @@
-# Football Analytics Mini App v6.14.0 — RC22
+# Football Analytics Mini App v6.15.0 — RC23
 
 Telegram Mini App для футбольной аналитики на Cloudflare Workers, Supabase и API-Football.
+
+## RC23: Interface Consistency & Profile Polish
+
+- обычный пользователь получает Telegram-фото в профиле с безопасным URL и fallback на ⚽ при ошибке загрузки;
+- admin-only блоки теперь не только скрываются, но и становятся `inert`, а `aria-hidden` дублирует fail-closed контракт;
+- исправлены смешанные русско-английские подписи в калибровке, RC-проверках, Runtime Controls, Reminder Health, Release Monitor и диагностике;
+- длинные технические строки корректно переносятся на узких экранах;
+- добавлены регрессионные тесты роли, профиля и локализации интерфейса;
+- Worker/client/production smoke переведены на v6.15.0 RC23.
 
 ## RC22: UI Access Integrity
 

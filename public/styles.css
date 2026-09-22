@@ -2137,7 +2137,20 @@ main { position: relative; z-index: 1; }
 .runtime-controls-badge,.reminder-health-badge,.release-monitor-badge,.production-badge,.expanded-gate-badge{min-width:72px}
 
 
-/* RC22 — Release Security Hardening */
-.rc-panel:before{content:"RC22"}
+/* RC23 — Release Security Hardening */
+.rc-panel:before{content:"RC23"}
 .calibration-promotion-note{margin-top:9px;padding:9px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font-size:9px;color:var(--hint)}
 .calibration-promotion-note strong{color:var(--text)}
+
+
+/* RC23 — Interface Consistency & Profile Polish */
+[data-admin-only][aria-hidden="true"],
+[data-admin-only][inert]{display:none!important}
+.avatar{overflow:hidden}
+.avatar img{width:100%;height:100%;display:block;object-fit:cover}
+.avatar.has-photo{font-size:0;background:var(--surface)}
+.profile-panel .muted,
+.diagnostics-block,
+.quality-block,
+.runtime-history-copy,
+.release-incidents{overflow-wrap:anywhere}
