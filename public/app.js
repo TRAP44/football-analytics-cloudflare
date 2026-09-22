@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.33.0-rc41';
+const CLIENT_VERSION = '6.34.0-rc42';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc41';
+const CLIENT_RELEASE_CHANNEL = 'rc42';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -4320,6 +4320,21 @@ function bindMatchActions(root = document) {
   root.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => openTeam({ id: Number(btn.dataset.openTeam), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '' })));
 }
 
+function renderAiFocus() {
+  const wrap = $('aiFocus');
+  if (!wrap) return;
+  const signals = personalContextSignals();
+  const candidates = state.matches.filter(m => !m.live && !m.finished && !m.youthReserve).map(m => ({ match:m, insight:personalMatchInsight(m, signals) })).sort((a,b) => b.insight.score - a.insight.score || Number(b.match.interestScore || 0) - Number(a.match.interestScore || 0));
+  const top = candidates[0];
+  if (!top) { wrap.hidden = true; wrap.innerHTML = ''; return; }
+  const recommended = candidates.filter(x => x.insight.recommended).length;
+  const m = top.match;
+  const reason = top.insight.reason || (m.featured ? 'Главный матч дня' : Number(m.interestScore || 0) >= 75 ? 'Высокий интерес' : 'Лучший доступный вариант');
+  const count = recommended || candidates.length;
+  wrap.hidden = false;
+  wrap.innerHTML = `<div class="ai-focus-copy"><span>AI-ФОКУС ДНЯ</span><strong>${escapeHtml(m.home?.name || '')} — ${escapeHtml(m.away?.name || '')}</strong><p>${escapeHtml(reason)} · ${timeOf(m.date)}${m.league ? ` · ${escapeHtml(m.league)}` : ''}</p><small>AI выделил ${count} ${russianCountLabel(count,'матч','матча','матчей')} по доступным сигналам. Полный вывод появится после анализа.</small></div><div class="ai-focus-teams">${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : '<span>⚽</span>'}<b>vs</b>${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : '<span>⚽</span>'}</div><button class="ai-focus-action" type="button" data-ai-focus-fixture="${Number(m.fixtureId)}">🧠 Разобрать матч</button>`;
+  wrap.querySelector('[data-ai-focus-fixture]')?.addEventListener('click', event => analyzeMatch(Number(event.currentTarget.dataset.aiFocusFixture), event.currentTarget));
+}
 function renderMatches() {
   const list = filteredMatches();
   const age = relativeAge(state.matchesMeta?.refreshedAt);
@@ -4334,6 +4349,7 @@ function renderMatches() {
   ].filter(Boolean);
   $('matchesCount').innerHTML = summaryBits.join('');
   renderDailyOverview();
+  renderAiFocus();
   renderPopularCompetitions();
   if ($('dataNotice')) {
     const notices = [];
@@ -5998,7 +6014,7 @@ function aiInstructorHtml(ai = {}, match = {}) {
         <div class="ai-instructor-facts">
           <div><span>Уверенность</span><strong>${escapeHtml(ai.confidenceLabel || '—')}</strong><small>${confidenceText}</small></div>
           <div><span>Риск</span><strong>${escapeHtml(ai.riskLabel || '—')}</strong><small>${escapeHtml(publicText(ai.riskNote || 'Оценивайте несколько факторов.'))}</small></div>
-          <div><span>Судья</span><strong>${escapeHtml(ai.refereeProfile?.name || ai.referee || match.referee || 'Ещё не указан')}</strong><small>${escapeHtml(publicText(ai.refereeProfile?.country ? `${ai.refereeProfile.country} · ${ai.refereeNote || ''}` : ai.refereeNote || 'Назначение судьи может появиться ближе к матчу.'))}</small></div>
+          <div><span>Судья</span><strong>${escapeHtml(ai.refereeProfile?.name || ai.referee || match.referee || 'Ещё не указан')}</strong><small>${escapeHtml(publicText(ai.refereeHistory?.available ? `${ai.refereeHistory.styleLabel} · ${ai.refereeHistory.avgYellow} жёлт. · ${ai.refereeHistory.avgRed} красн. · выборка ${ai.refereeHistory.sample}` : ai.refereeProfile?.country ? `${ai.refereeProfile.country} · ${ai.refereeNote || ''}` : ai.refereeNote || 'Назначение судьи может появиться ближе к матчу.'))}</small></div>
         </div>
       </div>
       ${factors.length ? `<div class="ai-instructor-reasons"><strong>Почему так</strong><ul>${factors.map(x => `<li>${escapeHtml(publicText(x))}</li>`).join('')}</ul></div>` : ''}

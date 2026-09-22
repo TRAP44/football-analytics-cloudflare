@@ -6,14 +6,14 @@
   <meta name="theme-color" content="#111827" />
   <title>FM AI · Футбольный инструктор</title>
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=6.33.0" />
+  <link rel="stylesheet" href="/styles.css?v=6.34.0" />
 </head>
 <body>
   <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
     <div class="boot-card">
       <div class="boot-orbit" aria-hidden="true"><i></i><i></i><i></i></div>
       <div class="boot-logo"><span>AI</span></div>
-      <div class="boot-kicker">FM AI · ФУТБОЛЬНЫЙ ИНСТРУКТОР · версия 6.33</div>
+      <div class="boot-kicker">FM AI · ФУТБОЛЬНЫЙ ИНСТРУКТОР · версия 6.34</div>
       <h1 id="bootTitle">Запускаю AI-инструктора</h1>
       <p id="bootText">Проверяю версию и готовлю футбольные данные…</p>
       <div class="boot-feature-row" aria-hidden="true"><span>⚽ Матчи</span><span>🧠 AI-разбор</span><span>🧑‍⚖️ Контекст</span></div>
@@ -73,6 +73,8 @@
             <button type="button" class="overview-action recommended" data-quick-filter="top"><b id="overviewRecommendedCount">0</b><span>Для вас</span></button>
           </div>
         </section>
+
+        <section id="aiFocus" class="ai-focus-card" hidden aria-live="polite"></section>
 
         <section id="firstRunGuide" class="first-run-guide" hidden aria-label="Быстрый старт">
           <div class="first-run-guide-copy">
@@ -598,7 +600,7 @@
           </div>
 
           <div class="rc-status-row">
-            <span id="rcBadge" class="rc-badge">Версия 41</span>
+            <span id="rcBadge" class="rc-badge">Версия 42</span>
             <div>
               <strong id="rcStatus">Полная регрессионная проверка ещё не запускалась.</strong>
               <small id="rcMeta">Без полного анализа, без изменения пользовательских данных и без расхода API-Football.</small>
@@ -681,6 +683,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=6.33.0"></script>
+  <script type="module" src="/app.js?v=6.34.0"></script>
 </body>
 </html>

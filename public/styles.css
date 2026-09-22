@@ -2376,7 +2376,7 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 
 
 /* RC37 — explainable personal recommendations */
-.rc-panel:before { content:"RC41"; }
+.rc-panel:before { content:"RC42"; }
 .overview-action.recommended b { color:var(--accent); }
 .match-signal.favorite-signal { color:#fbbf24; border-color:rgba(251,191,36,.28); background:rgba(251,191,36,.07); }
 .profile-data-details { margin:0 0 12px; border:1px solid var(--line-soft); border-radius:17px; background:color-mix(in srgb,var(--surface) 72%,transparent); overflow:hidden; }
@@ -2495,3 +2495,11 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 .ai-verdict-grid .skip{border-color:color-mix(in srgb,var(--warn) 38%,var(--line));background:color-mix(in srgb,var(--warn) 7%,var(--surface))}
 .ai-market-note,.ai-lineup-note{margin-top:8px;border-top:1px solid var(--line);padding-top:7px;color:var(--hint);font-size:9px;line-height:1.4}
 @media(max-width:520px){.ai-verdict-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+
+/* RC42 — AI focus and verified referee history */
+.ai-focus-card{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"copy teams" "action action";gap:10px;margin:0 0 12px;padding:14px;border:1px solid color-mix(in srgb,var(--accent) 32%,var(--line));border-radius:19px;background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 8%,var(--surface)),var(--surface));box-shadow:0 12px 34px rgba(0,0,0,.10)}
+.ai-focus-copy{grid-area:copy;min-width:0}.ai-focus-copy>span{display:block;color:var(--accent);font-size:8px;font-weight:950;letter-spacing:.12em;margin-bottom:4px}.ai-focus-copy>strong{display:block;font-size:14px;line-height:1.25}.ai-focus-copy>p{margin:5px 0;color:var(--hint);font-size:10px}.ai-focus-copy>small{display:block;color:var(--hint);font-size:8px;line-height:1.45}
+.ai-focus-teams{grid-area:teams;display:flex;align-items:center;gap:6px}.ai-focus-teams img,.ai-focus-teams span{width:30px;height:30px;object-fit:contain;display:grid;place-items:center}.ai-focus-teams b{font-size:8px;color:var(--hint);text-transform:uppercase}
+.ai-focus-action{grid-area:action;border:0;border-radius:12px;padding:10px 12px;background:var(--accent);color:var(--accent-text);font-size:10px;font-weight:900}
+@media(max-width:390px){.ai-focus-card{grid-template-columns:1fr;grid-template-areas:"copy" "teams" "action"}.ai-focus-teams{justify-content:flex-start}}

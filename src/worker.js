@@ -21,6 +21,7 @@ const memory = {
   reminders: new Map(),
   preferences: new Map(),
   oddsSnapshots: new Map(),
+  refereeMatchHistory: new Map(),
   botDigestSubscriptions: new Map(),
   billingPayments: new Map(),
   modelPredictions: new Map(),
@@ -74,11 +75,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.33.0-rc41';
+const APP_VERSION = '6.34.0-rc42';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc41';
-const RC_NAME = 'RC41';
+const RELEASE_CHANNEL = 'rc42';
+const RC_NAME = 'RC42';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -10916,6 +10917,7 @@ async function apiMatchCenter(request, cfg) {
   const absences = formatAbsences(injuryRows, homeId, awayId);
   const pressure = (live || finished) ? livePressure(formattedStatistics) : null;
   const formattedEvents = formatLiveEvents(events, homeId, awayId);
+  if (finished && fixture.fixture?.referee) await saveRefereeMatchHistory({ fixtureId, referee:fixture.fixture.referee, kickoffAt:fixture.fixture?.date || null, leagueId:Number(fixture.league?.id || 0), events:formattedEvents, statistics:formattedStatistics }, cfg).catch(() => false);
   const smartInsights = (live || finished) ? buildSmartMatchInsights({
     statistics: formattedStatistics,
     events: formattedEvents,
@@ -11106,7 +11108,52 @@ function marketMovementNote(movement={}) {
   return `Рынок сместился к ${label}: ${value>0?'+':''}${value.toFixed(1)} п.п. по подразумеваемой вероятности.`;
 }
 
-function buildAiInstructor({ probabilities, goalModel, confidence, completeness, factors = [], risks = [], referee = '', refereeData = null, lineupImpact = null, marketMovement = null } = {}) {
+function refereeHistoryKey(value = '') {
+  const profile = refereeProfile(value);
+  return String(profile.name || '').trim().toLocaleLowerCase('en-US').replace(/\s+/g,' ');
+}
+
+function refereeCardSummary(events = [], statistics = null) {
+  let yellow = 0, red = 0;
+  for (const event of events || []) {
+    if (String(event?.type || '').toLowerCase() !== 'card') continue;
+    const detail = String(event?.detail || '').toLowerCase();
+    if (detail.includes('red') || detail.includes('second yellow')) red += 1;
+    else if (detail.includes('yellow')) yellow += 1;
+  }
+  const foulRow = (statistics?.items || []).find(x => x.key === 'Fouls');
+  const homeFouls = numericValue(foulRow?.home) || 0;
+  const awayFouls = numericValue(foulRow?.away) || 0;
+  return { yellow, red, fouls: Math.max(0, Math.round(homeFouls + awayFouls)) };
+}
+
+async function saveRefereeMatchHistory({ fixtureId, referee, kickoffAt, leagueId, events, statistics } = {}, cfg) {
+  const profile = refereeProfile(referee);
+  const key = refereeHistoryKey(referee);
+  if (!fixtureId || !profile.available || !key) return false;
+  const cards = refereeCardSummary(events, statistics);
+  if (!cards.yellow && !cards.red && !cards.fouls) return false;
+  const row = { fixture_id:Number(fixtureId), referee_key:key, referee_name:profile.name, referee_country:profile.country || '', kickoff_at:kickoffAt || null, league_id:Number(leagueId || 0) || null, yellow_cards:cards.yellow, red_cards:cards.red, fouls:cards.fouls, updated_at:new Date().toISOString() };
+  if (hasSupabase(cfg)) await supaUpsert(cfg,'referee_match_history',row,'fixture_id');
+  else memory.refereeMatchHistory.set(Number(fixtureId), { ...row, created_at:new Date().toISOString() });
+  return true;
+}
+
+async function loadRefereeHistoryProfile(referee, cfg, limit = 30) {
+  const profile = refereeProfile(referee);
+  const key = refereeHistoryKey(referee);
+  if (!profile.available || !key) return { available:false, sample:0, name:profile.name || '', country:profile.country || '' };
+  let rows=[];
+  try { rows = hasSupabase(cfg) ? await supaSelectMany(cfg,'referee_match_history',{ referee_key:`eq.${key}` },{ limit:Math.max(3,Math.min(50,Number(limit || 30))), order:'kickoff_at.desc' }) : [...memory.refereeMatchHistory.values()].filter(x=>x.referee_key===key).sort((a,b)=>Date.parse(b.kickoff_at || 0)-Date.parse(a.kickoff_at || 0)).slice(0,limit); } catch { rows=[]; }
+  const sample=rows.length;
+  if (!sample) return { available:false, sample:0, name:profile.name, country:profile.country || '' };
+  const avg=field=>Math.round((rows.reduce((sum,row)=>sum+Number(row?.[field] || 0),0)/sample)*10)/10;
+  const avgYellow=avg('yellow_cards'), avgRed=avg('red_cards'), avgFouls=avg('fouls');
+  const avgCards=Math.round((avgYellow+avgRed)*10)/10;
+  const styleLabel=avgCards>=5.5?'Строгий стиль':avgCards<=3.5?'Сдержанный стиль':'Средняя строгость';
+  return { available:sample>=3, sample, name:profile.name, country:profile.country || '', avgYellow, avgRed, avgFouls, avgCards, styleLabel, source:'verified-match-history' };
+}
+function buildAiInstructor({ probabilities, goalModel, confidence, completeness, factors = [], risks = [], referee = '', refereeData = null, refereeHistory = null, lineupImpact = null, marketMovement = null } = {}) {
   const p = { home: Number(probabilities?.home || 0), draw: Number(probabilities?.draw || 0), away: Number(probabilities?.away || 0) };
   const confidenceScore = Math.max(0, Math.min(100, Number(confidence?.score || 0)));
   const completenessScore = Number(completeness?.score || 0);
@@ -11135,7 +11182,7 @@ function buildAiInstructor({ probabilities, goalModel, confidence, completeness,
   return {
     role:'football-ai-instructor', confidenceScore:Math.round(confidenceScore), confidenceLabel, riskLabel, betSignal, verdict,
     riskNote: betSignal.code === 'skip' ? 'Сильного сигнала нет — не форсируйте решение.' : 'Проверяйте составы и изменения коэффициентов ближе к старту.',
-    referee:String(referee || ''), refereeProfile:refereeData || refereeProfile(referee),
+    referee:String(referee || ''), refereeProfile:refereeData || refereeProfile(referee), refereeHistory:refereeHistory || null,
     refereeNote: referee ? 'Арбитр назначен; имя учитывается как контекст матча.' : 'Назначение судьи ещё не опубликовано источником данных.',
     lineupImpact:lineupImpact || null,
     marketNote:marketMovementNote(marketMovement || {}),
@@ -11230,7 +11277,8 @@ async function apiAnalyze(request, cfg, user) {
   const awayFormPromise = detailedCoverage
     ? getRecentTeamForm(awayId, 'away', fixture.fixture?.date, fixtureId, cfg, { allowNetwork: canFetchFreshForm }).catch(() => null)
     : Promise.resolve(null);
-  const [web, homeForm, awayForm] = await Promise.all([webPromise, homeFormPromise, awayFormPromise]);
+  const refereeHistoryPromise = loadRefereeHistoryProfile(fixture.fixture?.referee || '', cfg).catch(() => ({ available:false, sample:0 }));
+  const [web, homeForm, awayForm, refereeHistory] = await Promise.all([webPromise, homeFormPromise, awayFormPromise, refereeHistoryPromise]);
 
   // v3.5 Match Comparison: reuse only already cached deep team data.
   // This adds Supabase cache reads but deliberately makes zero extra API-Football calls.
@@ -11361,7 +11409,7 @@ async function apiAnalyze(request, cfg, user) {
     dataCapabilities: publicDataCapabilities(),
     market, marketMovement, apiPrediction, recentForm: { home: homeForm, away: awayForm }, goalModel, comparison, absences, lineups, lineupImpact, h2h,
     preMatchIntelligence,
-    aiInstructor: buildAiInstructor({ probabilities, goalModel, confidence, completeness: completenessPreview, factors: notes.factors, risks: [...(notes.risks || []), ...skipped], referee: fixture.fixture?.referee || '', refereeData: refereeProfile(fixture.fixture?.referee || ''), lineupImpact, marketMovement }),
+    aiInstructor: buildAiInstructor({ probabilities, goalModel, confidence, completeness: completenessPreview, factors: notes.factors, risks: [...(notes.risks || []), ...skipped], referee: fixture.fixture?.referee || '', refereeData: refereeProfile(fixture.fixture?.referee || ''), refereeHistory, lineupImpact, marketMovement }),
     insights: notes.factors, risks: [...(notes.risks || []), ...skipped], news: web,
     completeness: completenessPreview,
     provider: publicDataCapabilities(),
@@ -11438,6 +11486,8 @@ export default {
         preMatchMarketMovement: 'enabled',
         lineupImpactBrief: 'enabled',
         dailyBotDigest: 'enabled',
+        verifiedRefereeHistory: 'enabled',
+        aiFocusOfDay: 'enabled',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',

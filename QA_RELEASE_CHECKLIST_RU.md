@@ -1,10 +1,10 @@
-# QA Release Checklist — v6.33.0 RC41
+# QA Release Checklist — v6.34.0 RC42
 
 ## Deploy
 
-- применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql`, `supabase_migration_v6_11_1.sql` и `supabase_migration_v6_12.sql`;
-- Worker/client = `6.33.0-rc41`;
-- package = `6.33.0`;
+- применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql`, `supabase_migration_v6_11_1.sql` и `supabase_migration_v6_12.sql` и `supabase_migration_v6_13.sql`;
+- Worker/client = `6.34.0-rc42`;
+- package = `6.34.0`;
 - cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;
@@ -59,6 +59,15 @@
 - cron не дублирует доставку в один UTC-день благодаря last_sent_date;
 - таблица bot_digest_subscriptions закрыта от anon/authenticated и доступна service_role.
 
+
+## RC42 — AI-фокус и история судей
+
+- главный экран показывает один AI-фокус дня при наличии предстоящих матчей;
+- AI-фокус запускает существующий защищённый предматчевый анализ и не тратит лимит до клика;
+- завершённый Match Center сохраняет историю судьи только при наличии реальных событий/статистики;
+- карточки и фолы агрегируются без дополнительных запросов поставщику;
+- профиль судьи доступен только с выборки >= 3 матчей;
+- таблица referee_match_history закрыта от anon/authenticated и доступна service_role.
 
 ## Champion–Challenger
 
