@@ -40,7 +40,7 @@ test('digest is managed with buttons and callback queries',()=> {
 test('mini app deep links can open an exact analysis tab',()=> {
   assert.match(app,/params\.get\('tab'\)/);
   assert.match(app,/allowedTabs/);
-  assert.match(app,/openLaunchFixture\(fixtureId, action, tab, handoff, newsImpactDecision, newsImpactAction\)/);
+  assert.match(app,/openLaunchFixture\(fixtureId, action, tab, handoff, newsImpactDecision, newsImpactAction, newsImpactRecoveryCode, newsImpactRecoveryFrom\)/);
 });
 
 test('RC47 health exposes button-first contracts',()=> {
