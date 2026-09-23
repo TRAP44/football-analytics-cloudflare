@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.53.0-rc61';
+const CLIENT_VERSION = '6.54.0-rc62';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc61';
+const CLIENT_RELEASE_CHANNEL = 'rc62';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -5425,6 +5425,42 @@ function liveAiCoachHtml(ai, match) {
     <p class="live-ai-disclaimer">Оценка по ходу матча перестраивается при каждом обновлении счёта, событий и статистики. Это объяснение сценария, а не гарантия результата.</p>
   </section>`;
 }
+
+function postMatchReviewHtml(review = {}, match = {}) {
+  if (!review || !Object.keys(review).length) return '';
+  if (!review.available) {
+    return `<section class="panel post-match-review unavailable">
+      <div class="post-match-review-head"><div><span>🧠 ПОСЛЕ МАТЧА</span><h2>${escapeHtml(review.headline || 'Итог AI недоступен')}</h2></div><b>архив</b></div>
+      <p>${escapeHtml(publicText(review.summary || 'Для честного сравнения нужен сохранённый предматчевый снимок.'))}</p>
+    </section>`;
+  }
+  const outcome=review.outcome || {};
+  const score=review.score || {};
+  const hit=Boolean(outcome.correct);
+  const markets=Array.isArray(review.markets)?review.markets:[];
+  const evidence=Array.isArray(review.evidence)?review.evidence.slice(0,3):[];
+  const quality=review.quality || {};
+  return `<section class="panel post-match-review ${hit?'hit':'miss'}">
+    <div class="post-match-review-head">
+      <div><span>🧠 POST-MATCH AI REVIEW</span><h2>${escapeHtml(review.headline || 'Разбор завершён')}</h2></div>
+      <b>${hit?'✓ исход':'✕ исход'}</b>
+    </div>
+    <p class="post-match-summary">${escapeHtml(publicText(review.summary || ''))}</p>
+    <div class="post-match-compare">
+      <div><span>До матча</span><strong>${escapeHtml(outcome.predictedLabel || '—')}${Number.isFinite(Number(outcome.probability))?` · ${Number(outcome.probability)}%`:''}</strong><small>максимальная вероятность модели</small></div>
+      <div><span>Факт</span><strong>${escapeHtml(outcome.actualLabel || '—')} · ${Number(score.home)}:${Number(score.away)}</strong><small>финальный результат</small></div>
+    </div>
+    ${markets.length?`<div class="post-match-markets">${markets.map(x=>`<div class="${x.correct?'hit':'miss'}"><span>${x.correct?'✓':'✕'} ${escapeHtml(x.label || '')}</span><strong>${escapeHtml(x.predicted || '—')} → ${escapeHtml(x.actual || '—')}</strong><small>${Number.isFinite(Number(x.probability))?`до матча ${Number(x.probability)}%`:''}</small></div>`).join('')}</div>`:''}
+    ${evidence.length?`<div class="post-match-evidence"><strong>Что видно по матчу</strong>${evidence.map(x=>`<div><span>${escapeHtml(x.icon || '•')}</span><p><b>${escapeHtml(x.title || '')}</b><small>${escapeHtml(publicText(x.text || ''))}</small></p></div>`).join('')}</div>`:''}
+    <div class="post-match-calibration">
+      <span>Калибровка</span>
+      <p>${escapeHtml(publicText(review.calibration?.note || ''))}</p>
+      ${Number.isFinite(Number(quality.brier))?`<small>Brier: ${Number(quality.brier).toFixed(3)} · чем меньше, тем точнее были вероятности</small>`:''}
+    </div>
+    <p class="tiny warning">${escapeHtml(publicText(review.disclaimer || ''))}</p>
+  </section>`;
+}
+
 function renderMatchCenter(d) {
   const previousFixture = Number(state.currentCenter?.match?.fixtureId || 0);
   state.currentCenter = d;
@@ -5496,6 +5532,7 @@ function renderMatchCenter(d) {
     </div>
 
     <div class="center-tab-panel" data-center-panel="summary">
+      ${finished ? postMatchReviewHtml(d.postMatchReview || {}, m) : ''}
       ${live ? liveAiCoachHtml(d.liveAiCoach, m) : ''}
       ${smartInsightsHeroHtml(d.smartInsights, m)}
       ${livePressureHtml(d.livePressure, m)}
