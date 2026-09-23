@@ -14592,11 +14592,12 @@ async function apiAnalyze(request, cfg, user) {
     && Number.isFinite(newsPublishedMs)
     && previousGeneratedMs < newsPublishedMs
   );
-  const needsFreshnessRecheck=Boolean(recheckRequested && staleBefore && (previousFreshness?.needsRecheck || newsImpactEligible));
+  const needsFreshnessRecheck=Boolean(recheckRequested && staleBefore && previousFreshness?.needsRecheck);
+  const shouldPerformRecheck=Boolean(needsFreshnessRecheck || newsImpactEligible);
   const recheckReasonCode=newsImpactEligible ? 'news_impact' : (previousFreshness?.reasonCode || 'fresh');
   let freeRecheck=false;
-  if (needsFreshnessRecheck) freeRecheck=await userHasAnalyzedFixture(user.id,fixtureId,cfg);
-  if (cached && !needsFreshnessRecheck) {
+  if (shouldPerformRecheck) freeRecheck=await userHasAnalyzedFixture(user.id,fixtureId,cfg);
+  if (cached && !shouldPerformRecheck) {
     await recordHistory(user.id, cached, cfg);
     if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,freshness:previousFreshness?.state || 'fresh'}});
     const newsImpact=newsImpactDeltaStatus(staleBefore,cached,null,{requested:newsImpactRecheck,eligible:newsImpactEligible,performed:false,publishedAt:newsPublishedAt});
@@ -14612,7 +14613,7 @@ async function apiAnalyze(request, cfg, user) {
     if (joined) {
       await recordHistory(user.id,joined,cfg);
       if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,sharedJoin:true}});
-      return json(analysisResponsePayload(joined,{cached:true,stale:false,sharedJoin:true,recheck:{requested:recheckRequested,performed:needsFreshnessRecheck,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_shared' : (previousFreshness?.reasonCode || 'shared_compute')},quota:await getQuota(user.id,cfg)}));
+      return json(analysisResponsePayload(joined,{cached:true,stale:false,sharedJoin:true,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_shared' : (previousFreshness?.reasonCode || 'shared_compute')},quota:await getQuota(user.id,cfg)}));
     }
     if (staleBefore) {
       await recordHistory(user.id,staleBefore,cfg);
@@ -14841,15 +14842,15 @@ async function apiAnalyze(request, cfg, user) {
   else if (minutesToKickoff !== null && minutesToKickoff <= 120) ttl = 10;
   else if (minutesToKickoff !== null && minutesToKickoff <= 360) ttl = 20;
   else if (minutesToKickoff !== null && minutesToKickoff > 360) ttl = 45;
-  const recheckDelta=needsFreshnessRecheck ? analysisRecheckDelta(staleBefore,payload) : null;
-  const newsImpact=newsImpactDeltaStatus(staleBefore,payload,recheckDelta,{requested:newsImpactRecheck,eligible:newsImpactEligible,performed:needsFreshnessRecheck,publishedAt:newsPublishedAt});
+  const recheckDelta=shouldPerformRecheck ? analysisRecheckDelta(staleBefore,payload) : null;
+  const newsImpact=newsImpactDeltaStatus(staleBefore,payload,recheckDelta,{requested:newsImpactRecheck,eligible:newsImpactEligible,performed:shouldPerformRecheck,publishedAt:newsPublishedAt});
   await setCache(cacheKey, fixtureId, payload, cfg, ttl);
   await captureModelPrediction(payload, cfg);
   if (!freeRecheck) await incrementUsage(user.id, cfg);
   await recordHistory(user.id, payload, cfg);
-  if (needsFreshnessRecheck) void recordGrowthEvent(cfg,{userId:user.id,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:recheckReasonCode,material:Boolean(recheckDelta?.material),stable:Boolean(recheckDelta?.stable),changeCount:Number(recheckDelta?.items?.length || 0),codes:(recheckDelta?.codes || []).slice(0,6)}});
-  if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:false,recheck:needsFreshnessRecheck}});
-  return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:needsFreshnessRecheck,free:freeRecheck,reasonCode:recheckReasonCode,delta:recheckDelta},newsImpact,quota:await getQuota(user.id,cfg)}));
+  if (shouldPerformRecheck) void recordGrowthEvent(cfg,{userId:user.id,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:recheckReasonCode,material:Boolean(recheckDelta?.material),stable:Boolean(recheckDelta?.stable),changeCount:Number(recheckDelta?.items?.length || 0),codes:(recheckDelta?.codes || []).slice(0,6)}});
+  if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:false,recheck:shouldPerformRecheck}});
+  return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:recheckReasonCode,delta:recheckDelta},newsImpact,quota:await getQuota(user.id,cfg)}));
   } finally {
     await releaseDistributedAnalysisLock(analysisLock,cfg);
   }
