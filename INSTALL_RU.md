@@ -1,27 +1,29 @@
-# Установка Football Analytics v6.90.0 RC98
+# Установка Football Analytics v6.91.0 RC99
 
 ## Новый Supabase-проект
 
 1. Откройте Supabase SQL Editor.
-2. Выполните `supabase_baseline_v6_9.sql` целиком.
-3. Затем примените миграции строго по порядку:
-   - `supabase_migration_v6_10.sql`
-   - `supabase_migration_v6_11.sql`
-   - `supabase_migration_v6_11_1.sql`
-   - `supabase_migration_v6_12.sql`
-   - `supabase_migration_v6_13.sql`
-   - `supabase_migration_v6_14.sql`
-   - `supabase_migration_v6_15.sql`
-4. Не запускайте после baseline исторические миграции v6.3–v6.9: их изменения уже включены в baseline.
-5. В Supabase Data API убедитесь, что backend-таблицы доступны `service_role`, а прямой доступ `anon` и `authenticated` закрыт.
+2. Выполните **только** `supabase/baseline.sql` целиком.
+3. Не запускайте после него файлы из `supabase/migrations/`: все изменения до v6.15 уже включены в baseline.
+4. Проверьте backend security contract и убедитесь, что прямой доступ `anon` / `authenticated` к backend-таблицам закрыт.
 
 ## Обновление существующего проекта
 
 1. Сделайте резервную копию базы.
-2. Примените только отсутствующие миграции, сохраняя порядок версий: v6.9 → v6.10 → v6.11 → v6.11.1 → v6.12 → v6.13 → v6.14 → v6.15.
-3. Для существующей базы не запускайте `supabase_baseline_v6_9.sql`.
-4. Не удаляйте и не переигрывайте уже применённые миграции без отдельного плана rollback.
-5. После обновления запустите защищённый RC Regression и проверьте least-privilege контракт Supabase.
+2. **Не запускайте** `supabase/baseline.sql` поверх рабочей базы.
+3. Применяйте только отсутствующие миграции из `supabase/migrations/` в порядке:
+   - `v6_9.sql`
+   - `v6_10.sql`
+   - `v6_11.sql`
+   - `v6_11_1.sql`
+   - `v6_12.sql`
+   - `v6_13.sql`
+   - `v6_14.sql`
+   - `v6_15.sql`
+4. Уже применённую миграцию повторно не запускайте без отдельного rollback-плана.
+5. После обновления запустите RC Regression и проверьте least-privilege контракт Supabase.
+
+Подробности: `supabase/README_RU.md`.
 
 ## Cloudflare Secrets
 
@@ -49,13 +51,9 @@ CLOUDFLARE_API_TOKEN
 CLOUDFLARE_ACCOUNT_ID
 ```
 
-API token должен быть ограничен нужным Cloudflare account и правом редактирования Workers. Не добавляйте эти значения в `.env`, `.dev.vars` или файлы репозитория.
-
-Опционально задайте Repository Variable `CLOUDFLARE_WORKER_URL`, если smoke-проверка должна использовать custom domain вместо URL, возвращённого Wrangler.
-
 Рабочий release-процесс:
 
-`PR → Quality → merge в main → Deploy Production → RC98 smoke`.
+`PR → Quality → merge в main → Deploy Production → RC99 smoke`.
 
 ## Локальная проверка
 
@@ -67,22 +65,18 @@ npm run verify:release
 npm run verify:worker
 ```
 
-Все команды должны завершиться без ошибок до merge.
-
 ## После deploy
 
 Проверьте:
 
-1. `/health` возвращает `ok=true`, версию `6.90.0-rc98` и `releaseCandidate=RC98`.
+1. `/health` возвращает `ok=true`, версию `6.91.0-rc99` и `releaseCandidate=RC99`.
 2. RC Regression не содержит blocking failures.
 3. `DEV_MODE=false` и `MONETIZATION_ENABLED=false`.
 4. Обычный пользователь не видит административные controls.
 5. `/health/supabase` не доступен публично.
-6. CSP, HSTS, `X-Content-Type-Options: nosniff` и остальные security headers присутствуют.
-7. Production smoke подтверждает обязательные RC98 feature/self-test flags.
+6. CSP, HSTS и `X-Content-Type-Options: nosniff` присутствуют.
+7. Production smoke подтверждает обязательные feature/self-test flags.
 
 ## Rollback
 
-Для аварийного возврата используйте workflow `Rollback Production`: укажите Cloudflare version ID и подтвердите действие значением `ROLLBACK`.
-
-Rollback меняет версию Worker, но не откатывает состояние Supabase. Изменения базы требуют отдельного SQL rollback-плана.
+Workflow `Rollback Production` откатывает Worker, но **не откатывает Supabase**. Для изменений базы нужен отдельный SQL rollback-план.
