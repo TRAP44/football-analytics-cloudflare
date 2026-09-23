@@ -80,11 +80,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.90.0-rc98';
+const APP_VERSION = '6.91.0-rc99';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc98';
-const RC_NAME = 'RC98';
+const RELEASE_CHANNEL = 'rc99';
+const RC_NAME = 'RC99';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -8276,7 +8276,7 @@ async function resolveCalibrationLifecycle(cfg, candidate, trustedRows) {
     baseline.fingerprint = await calibrationPromotionFingerprint(baseline);
     return {
       ...baseline,
-      lifecycle: { available: false, status: 'blocked', activeFingerprint: baseline.fingerprint, challengerFingerprint: fingerprint, reason: 'Нужен файл миграции supabase_migration_v6_10.sql; рабочая версия остаётся на базовом профиле.' },
+      lifecycle: { available: false, status: 'blocked', activeFingerprint: baseline.fingerprint, challengerFingerprint: fingerprint, reason: 'Нужен файл миграции supabase/migrations/v6_10.sql; рабочая версия остаётся на базовом профиле.' },
     };
   }
 
@@ -8403,7 +8403,7 @@ function publicCalibrationControlState(lifecycle, transitions = []) {
 
 async function apiCalibrationControl(request, cfg, user) {
   const schema = await probeCalibrationLifecycleSchema(cfg);
-  if (!schema.ok) return json({ available: false, reason: 'Нужна supabase_migration_v6_10.sql.' }, 503);
+  if (!schema.ok) return json({ available: false, reason: 'Нужна supabase/migrations/v6_10.sql.' }, 503);
 
   let lifecycle = await loadCalibrationLifecycleState(cfg);
   if (request.method === 'GET') {
@@ -13950,7 +13950,7 @@ async function apiReleaseReadiness(request, cfg) {
     releaseCheck('calibration_promotion_selftest', 'Самопроверка продвижения калибровки', calibrationPromotionSelfTest().pass ? 'pass' : 'fail',
       calibrationPromotionSelfTest().pass ? 'Устойчивое улучшение проходит проверку, синтетическое переобучение блокируется.' : 'Самопроверка продвижения калибровки не прошла.', true),
     releaseCheck('calibration_lifecycle_schema', 'Atomic calibration lifecycle v6.10', calibrationLifecycleSchema.ok ? 'pass' : 'fail',
-      calibrationLifecycleSchema.ok ? 'Атомарное состояние, журнал переходов и состояние отката доступны.' : 'Нужна supabase_migration_v6_10.sql.', true),
+      calibrationLifecycleSchema.ok ? 'Атомарное состояние, журнал переходов и состояние отката доступны.' : 'Нужна supabase/migrations/v6_10.sql.', true),
     releaseCheck('automatic_settlement_recovery', 'Автоматическое восстановление результатов', 'pass',
       runtime.autoSettlementRecoveryEnabled ? 'Автовосстановление включено: запуск по расписанию разрешён защитными правилами.' : 'Автовосстановление выключено: контролёр результатов работает в режиме наблюдения и только сигнализирует.', false),
     releaseCheck('runtime_controls_schema', 'Схема управления функциями v5.7', runtimeTable.ok ? 'pass' : 'fail', runtimeTable.ok ? 'Таблица runtime_controls доступна.' : 'Нужен файл миграции supabase_migration_v5_7.sql.', true),
@@ -14219,7 +14219,7 @@ async function apiRcRegression(request, cfg, user) {
     backendSecurity.ok ? 'pass' : 'fail',
     backendSecurity.ok
       ? 'Правила доступа включены; прямые права анонимного и авторизованного клиента, а также публичный запуск процедур отсутствуют.'
-      : `Контракт безопасности: ${backendSecurity.status || 'ошибка'}; примените supabase_migration_v6_11.sql.`,
+      : `Контракт безопасности: ${backendSecurity.status || 'ошибка'}; примените supabase/migrations/v6_11.sql.`,
     true
   ));
 
