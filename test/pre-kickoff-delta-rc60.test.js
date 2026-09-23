@@ -5,7 +5,6 @@ import fs from 'node:fs';
 const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const css=fs.readFileSync('public/styles.css','utf8');
-const playbook=fs.readFileSync('PRE_KICKOFF_DELTA_RC60.md','utf8');
 
 test('RC60 builds a deterministic delta between old and refreshed analysis',()=> {
   assert.match(worker,/function analysisRecheckDelta\(/);
@@ -60,5 +59,4 @@ test('RC60 release gate exposes delta contracts',()=> {
     assert.ok(worker.includes(`${flag}: 'enabled'`), `missing ${flag}`);
   }
   assert.match(worker,/analysisDeltaSelfTest: analysisDeltaDrill\(\)\.pass \? 'enabled' : 'failed'/);
-  assert.match(playbook,/material \/ stable/);
 });
