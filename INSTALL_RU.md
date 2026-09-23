@@ -4,28 +4,24 @@
 
 1. Откройте Supabase SQL Editor.
 2. Выполните `supabase_baseline_v6_9.sql` целиком.
-3. Затем выполните `supabase_migration_v6_10.sql`.
-4. Затем выполните `supabase_migration_v6_11.sql`.
-5. Затем выполните `supabase_migration_v6_11_1.sql`.
-6. Не запускайте после baseline миграции v6.3–v6.9: их изменения уже включены.
-7. В Supabase Data API убедитесь, что таблицы схемы `public` доступны роли `service_role`. Прямой доступ `anon` и `authenticated` миграция отзывает.
+3. Затем примените миграции строго по порядку:
+   - `supabase_migration_v6_10.sql`
+   - `supabase_migration_v6_11.sql`
+   - `supabase_migration_v6_11_1.sql`
+   - `supabase_migration_v6_12.sql`
+   - `supabase_migration_v6_13.sql`
+   - `supabase_migration_v6_14.sql`
+   - `supabase_migration_v6_15.sql`
+4. Не запускайте после baseline исторические миграции v6.3–v6.9: их изменения уже включены в baseline.
+5. В Supabase Data API убедитесь, что backend-таблицы доступны `service_role`, а прямой доступ `anon` и `authenticated` закрыт.
 
 ## Обновление существующего проекта
 
 1. Сделайте резервную копию базы.
-2. Для v6.8 выполните сначала `supabase_migration_v6_9.sql`.
-3. Выполните `supabase_migration_v6_10.sql`.
-4. Выполните `supabase_migration_v6_11.sql`.
-5. Выполните `supabase_migration_v6_11_1.sql`.
-6. Не запускайте `supabase_baseline_v6_9.sql` на существующей базе.
-7. После deploy откройте защищённую RC Regression панель и убедитесь, что доступны:
-   - `model_calibration_profiles`;
-   - `model_calibration_state`;
-   - `model_calibration_transitions`;
-   - `model_predictions.calibration_profile_fingerprint`.
-   - проверка `Least-privilege контракт Supabase` имеет статус PASS.
-
-Если установка старее v6.8, сначала примените отсутствующие исторические миграции в порядке версий. Не удаляйте уже применённые записи миграций из Supabase.
+2. Примените только отсутствующие миграции, сохраняя порядок версий: v6.9 → v6.10 → v6.11 → v6.11.1 → v6.12 → v6.13 → v6.14 → v6.15.
+3. Для существующей базы не запускайте `supabase_baseline_v6_9.sql`.
+4. Не удаляйте и не переигрывайте уже применённые миграции без отдельного плана rollback.
+5. После обновления запустите защищённый RC Regression и проверьте least-privilege контракт Supabase.
 
 ## Cloudflare Secrets
 
@@ -40,11 +36,11 @@ SUPABASE_URL
 SUPABASE_SECRET_KEY
 ```
 
-`SUPABASE_SERVICE_ROLE_KEY` поддерживается для совместимости. Секретный ключ никогда не должен попадать в `public/` или Telegram-клиент.
+`SUPABASE_SERVICE_ROLE_KEY` поддерживается для совместимости. Секретные значения никогда не должны попадать в `public/`, Git history или Telegram-клиент.
 
 Опциональные переменные перечислены в `.env.example`.
 
-## Проверка и deploy
+## GitHub / Cloudflare production
 
 Для автоматического production deploy добавьте в GitHub Environment `production` или Repository Secrets:
 
@@ -57,7 +53,11 @@ API token должен быть ограничен нужным Cloudflare accou
 
 Опционально задайте Repository Variable `CLOUDFLARE_WORKER_URL`, если smoke-проверка должна использовать custom domain вместо URL, возвращённого Wrangler.
 
-Обычный процесс: PR → `Quality` → merge в `main` → `Deploy Production` → RC98 smoke. Отсутствующие Cloudflare credentials блокируют workflow с ошибкой. Локальный ручной deploy остаётся доступен:
+Рабочий release-процесс:
+
+`PR → Quality → merge в main → Deploy Production → RC98 smoke`.
+
+## Локальная проверка
 
 ```bash
 npm ci
@@ -65,16 +65,24 @@ npm run check
 npm test
 npm run verify:release
 npm run verify:worker
-npm run deploy
 ```
 
-После deploy:
+Все команды должны завершиться без ошибок до merge.
 
-1. `/health` сообщает `6.90.0-rc98` и `RC98`.
+## После deploy
+
+Проверьте:
+
+1. `/health` возвращает `ok=true`, версию `6.90.0-rc98` и `releaseCandidate=RC98`.
 2. RC Regression не содержит blocking failures.
-3. В разделе качества модели показаны active fingerprint и состояние challenger.
-4. Обычный аккаунт не показывает бейдж «Администратор» и не видит технические панели.
-5. До накопления нужной выборки production остаётся на baseline champion.
-6. HTML-ответ содержит актуальный CSP и `X-Content-Type-Options: nosniff`.
+3. `DEV_MODE=false` и `MONETIZATION_ENABLED=false`.
+4. Обычный пользователь не видит административные controls.
+5. `/health/supabase` не доступен публично.
+6. CSP, HSTS, `X-Content-Type-Options: nosniff` и остальные security headers присутствуют.
+7. Production smoke подтверждает обязательные RC98 feature/self-test flags.
 
-Для аварийного возврата откройте workflow `Rollback Production`, укажите version ID из Cloudflare Deployments и введите `ROLLBACK`. Rollback меняет только версию Worker; состояние Supabase он не откатывает.
+## Rollback
+
+Для аварийного возврата используйте workflow `Rollback Production`: укажите Cloudflare version ID и подтвердите действие значением `ROLLBACK`.
+
+Rollback меняет версию Worker, но не откатывает состояние Supabase. Изменения базы требуют отдельного SQL rollback-плана.
