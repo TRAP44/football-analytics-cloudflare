@@ -58,7 +58,8 @@ test('RC88 admin renders weekly trend and recurring issues without changing rout
 test('RC88 dashboard is exposed from the shared runtime loader',()=>{
   assert.match(worker,/incidentEpisodeHistory=buildNewsImpactRecoveryIncidentEpisodeHistory\(failures,incidentAckRows\)/);
   assert.match(worker,/newsImpactRecoveryStrategyLoaded\.incidentEpisodeHistory/);
-  assert.match(worker,/newsImpactRecoveryIncidentSloDashboard=newsImpactRecoveryStrategyLoaded\.available/);\n  assert.match(worker,/buildNewsImpactRecoveryIncidentSloDashboard\(/);
+  assert.match(worker,/newsImpactRecoveryIncidentSloDashboard=newsImpactRecoveryStrategyLoaded\.available/);
+  assert.match(worker,/buildNewsImpactRecoveryIncidentSloDashboard\(/);
   assert.match(worker,/newsImpactRecoveryIncidentSloDashboard,/);
 });
 
