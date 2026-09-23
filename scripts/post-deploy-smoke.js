@@ -112,6 +112,11 @@ const REQUIRED_HEALTH_FLAGS = [
   'mediaCopyGenerator',
   'adminPublisherOnly',
   'mediaPublisherSelfTest',
+  'mediaCampaignControlRoom',
+  'contentLevelMediaAttribution',
+  'mediaCampaignConversion',
+  'publisherOutcomeTracking',
+  'mediaCampaignControlSelfTest',
 ];
 
 function delay(ms) {
