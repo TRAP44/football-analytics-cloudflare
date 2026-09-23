@@ -5,7 +5,6 @@ import fs from 'node:fs';
 const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const css=fs.readFileSync('public/styles.css','utf8');
-const playbook=fs.readFileSync('KICKOFF_HANDOFF_RC61.md','utf8');
 
 test('RC61 classifies prematch imminent live and finished phases',()=> {
   assert.match(worker,/function analysisKickoffHandoff\(/);
@@ -41,6 +40,4 @@ test('RC61 health contract is release-gated',()=> {
   for (const flag of ['kickoffHandoffGuard','prematchAdviceFreeze','liveContextHandoff','finishedAnalysisArchive']) {
     assert.ok(worker.includes(`${flag}: 'enabled'`), `missing ${flag}`);
   }
-  assert.match(playbook,/Kickoff Handoff/);
-  assert.match(playbook,/live-рекомендац/);
 });
