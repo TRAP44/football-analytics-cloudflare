@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.72.0 RC80
+# QA Release Checklist — v6.73.0 RC81
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.72.0`.
-- Worker и client: `6.72.0-rc80`.
-- Release candidate: `RC80`.
+- `package.json` и `package-lock.json`: `6.73.0`.
+- Worker и client: `6.73.0-rc81`.
+- Release candidate: `RC81`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,21 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC81 — News Impact Recovery Strategy Guard
+
+- Fixed recovery из RC79 остаётся базовым и используется по умолчанию.
+- Adaptive override строится только по событиям той же причины сбоя и того же действия; перенос статистики между разными failure/action запрещён.
+- Для базового и альтернативного recovery требуется минимум 30 зрелых попыток.
+- Альтернатива должна давать минимум +5 процентных пунктов success rate, а нижняя граница её 95% Wilson-интервала должна быть выше верхней границы baseline.
+- Если baseline не набрал выборку, интервалы пересекаются, evidence загрузить не удалось или выборка Supabase усечена — runtime использует fixed fallback.
+- Историческое evidence грузится только на failure-path, кэшируется 5 минут и ограничено 30-дневным окном.
+- Failure event сохраняет только категориальный `strategy=fixed|adaptive`; raw error по-прежнему не сохраняется.
+- Admin Launch Funnel показывает fixed → selected recovery, sample size, success %, lift и причину guard-решения.
+- Primary `open_full_ai` recovery теперь действительно открывает Mini App, а не эмулирует retry исходного Telegram action.
+- Новая Supabase migration не требуется; используется существующая `growth_events.metadata`.
+- Regression: `test/news-impact-recovery-strategy-guard-rc81.test.js`.
+- Production smoke требует `newsImpactRecoveryStrategySelfTest=enabled`.
 
 ## RC80 — News Impact Recovery Effectiveness Funnel
 
@@ -157,8 +172,8 @@ npm run verify:worker
 
 `scripts/post-deploy-smoke.js` должен подтвердить:
 - `/health.ok = true`;
-- `version = 6.72.0-rc80`;
-- `releaseCandidate = RC80`;
+- `version = 6.73.0-rc81`;
+- `releaseCandidate = RC81`;
 - `devMode = false`;
 - обязательные self-test/feature flags = `enabled`;
 - `/health/supabase` не доступен публично;

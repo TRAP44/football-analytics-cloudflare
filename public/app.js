@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.72.0-rc80';
+const CLIENT_VERSION = '6.73.0-rc81';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc80';
+const CLIENT_RELEASE_CHANNEL = 'rc81';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2936,6 +2936,9 @@ function renderLaunchFunnel() {
   const impactRecoveryEffectiveness=Array.isArray(d.newsImpactRecoveryEffectiveness) ? d.newsImpactRecoveryEffectiveness : [];
   const impactRecoveryBest=d.newsImpactRecoveryBestStrategy || null;
   const impactRecoveryGuard=d.newsImpactRecoveryGuard || {windowMinutes:5,minimumSample:10};
+  const impactRecoveryStrategySummary=d.newsImpactRecoveryStrategySummary || {};
+  const impactRecoveryStrategyMatrix=Array.isArray(d.newsImpactRecoveryStrategyMatrix) ? d.newsImpactRecoveryStrategyMatrix : [];
+  const impactRecoveryStrategyGuard=d.newsImpactRecoveryStrategyGuard || {minAttempts:30,minLiftPctPoints:5,lookbackDays:30};
   const impactFunnel=Array.isArray(d.newsImpactActionFunnel) ? d.newsImpactActionFunnel : [];
   const impactBottleneck=d.newsImpactActionBottleneck || null;
   const impactConfidenceGuard=d.newsImpactActionConfidenceGuard || {minUsers:10,stableUsers:30};
@@ -2949,7 +2952,7 @@ function renderLaunchFunnel() {
     <div><span>Материалов СМИ</span><strong>${Number(d.mediaSummary?.materials || 0)}</strong><small>${Number(d.mediaSummary?.linksCreated || 0)} ссылок создано</small></div>
     <div><span>One‑tap → полный AI</span><strong>${Number(handoff.fullAiUsers || 0)}</strong><small>${launchFunnelPct(handoff.conversionPct)} от AI-handoff</small></div>
     <div><span>AI перепроверки</span><strong>${Number(rechecks.total || 0)}</strong><small>${Number(rechecks.free || 0)} без списания · ${Number(rechecks.material || 0)} со значимыми изменениями</small></div>
-    <div><span>Новости → AI</span><strong>${Number(d.returnLoop?.aiIntent || 0)}</strong><small>${launchFunnelPct(d.returnLoop?.intentPct)} нажали AI · ${Number(d.returnLoop?.smartFixtureIntent || 0)} через smart fixture · News Impact: ${Number(d.returnLoop?.impactCompared || 0)} сравнений / ${Number(d.returnLoop?.impactMaterial || 0)} существенных · решения: 🔴 ${Number(d.newsImpactDecisionSummary?.material || 0)} · 🟡 ${Number(d.newsImpactDecisionSummary?.detail || 0)} · 🟢 ${Number(d.newsImpactDecisionSummary?.stable || 0)} · действия: полный AI ${Number(impactActions.fullAi || 0)} · составы ${Number(impactActions.squads || 0)} · рынок ${Number(impactActions.market || 0)} · перепроверка ${Number(impactActions.recheck || 0)} · новости ${Number(impactActions.news || 0)} · поделились ${Number(impactActions.share || 0)} · подтверждённых результатов ${Number(impactOutcomeSummary.confirmed || 0)}/${Number(impactOutcomeSummary.attempts || 0)} · сбоев доставки ${Number(impactFailureSummary.total || 0)} · recovery ${Number(impactRecoverySummary.recovered || 0)}/${Number(impactRecoverySummary.attempts || 0)} · Возврат из новостей: ${Number(d.returnLoop?.newsReturn || 0)} до матча</small></div>
+    <div><span>Новости → AI</span><strong>${Number(d.returnLoop?.aiIntent || 0)}</strong><small>${launchFunnelPct(d.returnLoop?.intentPct)} нажали AI · ${Number(d.returnLoop?.smartFixtureIntent || 0)} через smart fixture · News Impact: ${Number(d.returnLoop?.impactCompared || 0)} сравнений / ${Number(d.returnLoop?.impactMaterial || 0)} существенных · решения: 🔴 ${Number(d.newsImpactDecisionSummary?.material || 0)} · 🟡 ${Number(d.newsImpactDecisionSummary?.detail || 0)} · 🟢 ${Number(d.newsImpactDecisionSummary?.stable || 0)} · действия: полный AI ${Number(impactActions.fullAi || 0)} · составы ${Number(impactActions.squads || 0)} · рынок ${Number(impactActions.market || 0)} · перепроверка ${Number(impactActions.recheck || 0)} · новости ${Number(impactActions.news || 0)} · поделились ${Number(impactActions.share || 0)} · подтверждённых результатов ${Number(impactOutcomeSummary.confirmed || 0)}/${Number(impactOutcomeSummary.attempts || 0)} · сбоев доставки ${Number(impactFailureSummary.total || 0)} · recovery ${Number(impactRecoverySummary.recovered || 0)}/${Number(impactRecoverySummary.attempts || 0)} · adaptive rules ${Number(impactRecoveryStrategySummary.adaptive || 0)} · Возврат из новостей: ${Number(d.returnLoop?.newsReturn || 0)} до матча</small></div>
     <div><span>Media deep-link → AI</span><strong>${Number(media.aiUsers || 0)}</strong><small>${Number(media.deepLinkUsers || 0)} открыли · ${launchFunnelPct(media.conversionPct)} получили AI</small></div>
   </div>`;
 
@@ -2999,6 +3002,21 @@ function renderLaunchFunnel() {
         <small>${launchFunnelPct(x.successPct)} восстановлено · 95% ДИ ${launchFunnelPct(x.confidence?.lowerPct)}–${launchFunnelPct(x.confidence?.upperPct)} · ${escapeHtml(x.confidence?.label || 'мало данных')} · ${Number(x.pending || 0) ? `${Number(x.pending || 0)} ещё ожидают · ` : ''}${Number(x.failed || 0)} без подтверждённой доставки</small>
       </div>`).join('')}</div>
       <p class="tiny">Recovery считается успешным только после подтверждённой сервером доставки результата в течение ${Number(impactRecoveryGuard.windowMinutes || 5)} минут. Сам показ fallback или повторной кнопки успехом не считается.</p>` : ''}
+    ${impactRecoveryStrategyMatrix.length ? `<div class="release-monitor-section-head"><strong>Recovery Strategy Guard</strong><span>fixed fallback → adaptive только при доказательстве</span></div>
+      <div class="data-notice">🛡 Adaptive override требует минимум <strong>${Number(impactRecoveryStrategyGuard.minAttempts || 30)}</strong> зрелых попыток у базового и альтернативного recovery, прирост ≥ ${Number(impactRecoveryStrategyGuard.minLiftPctPoints || 5)} п.п. и непересекающиеся 95% Wilson-интервалы. Иначе остаётся fixed fallback.</div>
+      <div class="launch-campaign-list">${impactRecoveryStrategyMatrix.map(x=>{
+        const adaptive=x.strategy==='adaptive';
+        const guard=x.guardReason==='baseline_sample' ? 'недостаточно данных по базовому правилу'
+          : x.guardReason==='no_significant_better' ? 'нет статистически подтверждённой лучшей альтернативы'
+            : x.guardReason==='significant_better' ? 'подтверждённый adaptive override'
+              : 'fixed fallback';
+        return `<div>
+          <span><b>${escapeHtml(x.reasonLabel || x.reason || '')}</b> · ${escapeHtml(x.actionLabel || x.action || '')}</span>
+          <strong>${escapeHtml(x.fixedRecoveryLabel || x.fixedRecovery || '')} → ${escapeHtml(x.selectedRecoveryLabel || x.selectedRecovery || '')}</strong>
+          <small>${adaptive?'🧠 adaptive':'🛡 fixed'} · ${escapeHtml(guard)} · base ${Number(x.fixedAttempts || 0)} / ${launchFunnelPct(x.fixedSuccessPct)} · selected ${Number(x.selectedAttempts || 0)} / ${launchFunnelPct(x.selectedSuccessPct)}${adaptive ? ` · +${Number(x.liftPctPoints || 0).toFixed(1)} п.п.` : ''}</small>
+        </div>`;
+      }).join('')}</div>
+      <p class="tiny">Стратегия строится на агрегированных delivery outcomes за ${Number(impactRecoveryStrategyGuard.lookbackDays || 30)} дней. При ошибке загрузки, усечённой выборке или недостаточной статистике runtime автоматически использует fixed fallback.</p>` : ''}
     ${impactTrend.some(x=>Number(x.currentUsers || 0)>0 || Number(x.previousUsers || 0)>0) ? `<div class="release-monitor-section-head"><strong>Динамика News Impact</strong><span>текущие ${Number(impactTrendGuard.comparisonDays || d.days || 7)} дн. vs предыдущие</span></div>
       <div class="launch-campaign-list">${impactTrend.filter(x=>Number(x.currentUsers || 0)>0 || Number(x.previousUsers || 0)>0).map(x=>{
         const signal=x.signal==='improved' ? '↗ подтверждённый рост'
