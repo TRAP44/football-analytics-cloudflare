@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.96.0 RC104
+# QA Release Checklist — v6.97.0 RC105
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.96.0`.
-- Worker и client: `6.96.0-rc104`.
-- Release candidate: `RC104`.
+- `package.json` и `package-lock.json`: `6.97.0`.
+- Worker и client: `6.97.0-rc105`.
+- Release candidate: `RC105`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -34,20 +34,21 @@ npm run verify:worker
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
 
-## RC104 — API-Football Data Reliability
+## RC105 — AI Analysis Quality Gate
 
-- Предматчевые optional-запросы больше не используют `catch(() => [])`.
-- Для injuries, predictions, odds, H2H и lineups сохраняется отдельное состояние: `available`, `empty_response`, `skipped`, `plan_limited`, `rate_limited`, `timeout`, `network_error` или `provider_error`.
-- Пустой ответ injuries не считается доказательством отсутствия травм.
-- Неизвестные данные по составу не превращаются в `0:0` подтверждённых потерь.
-- Недоступный market/prediction сигнал исключается из probability blend вместо подстановки значения.
-- При серьёзной деградации provider reliability ограничивает `dataTrust`; ниже рабочего порога AI возвращает `skip` вместо уверенного сигнала.
-- Match Center использует ту же явную metadata-модель для cache/stale/skipped/error feature data.
-- `/health` обязан публиковать `providerDataReliability=enabled` и `providerDataReliabilitySelfTest=enabled`.
-- Release Readiness содержит blocking self-test `provider_data_reliability_selftest`.
-- Regression: `test/provider-data-reliability-rc104.test.js`.
-- Новая Supabase migration не требуется.
-## Исторические RC72–RC103
+- Confidence coverage считается по каноническим весам: market 42%, API prediction 24%, recent form 26%, H2H 8%; наличие слабого H2H больше не равно наличию рынка.
+- Confidence учитывает weighted coverage, agreement лидера, disagreement, выборку формы и margin между первым/вторым исходом.
+- Goal model публикует `qualityScore`, `qualityLabel` и размер overall/venue sample.
+- ТБ 2.5 и BTTS не могут стать рабочим bet signal при `goalModel.qualityScore < 65`.
+- Quality Gate удерживает сигнал при недостатке независимых источников, confidence/dataTrust ниже порога, сильном disagreement или слишком тонком margin.
+- В финальные 15 минут без двух подтверждённых стартовых составов рабочий signal удерживается.
+- Provider degradation учитывается в том же gate.
+- `aiInstructor.qualityGate` объясняет причины `ready/caution/hold/blocked`.
+- `/health`: `aiAnalysisQualityGate=enabled` и `aiAnalysisQualityGateSelfTest=enabled`.
+- Release Readiness содержит blocking self-test `ai_analysis_quality_gate_selftest`.
+- Regression: `test/ai-analysis-quality-rc105.test.js`.
+- Supabase migration не требуется.
+## Исторические RC72–RC104
 
 Детальные исторические release-контракты удалены из текущего checklist, чтобы не дублировать Git history и regression-тесты. Их поведение продолжает проверяться соответствующими файлами `test/*-rcXX.test.js`, а продуктовая сводка сохранена в `README_CLOUDFLARE_RU.md`.
 
@@ -69,8 +70,8 @@ npm run verify:worker
 
 `scripts/post-deploy-smoke.js` должен подтвердить:
 - `/health.ok = true`;
-- `version = 6.96.0-rc104`;
-- `releaseCandidate = RC104`;
+- `version = 6.97.0-rc105`;
+- `releaseCandidate = RC105`;
 - `devMode = false`;
 - обязательные self-test/feature flags = `enabled`;
 - `/health/supabase` не доступен публично;
