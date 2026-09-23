@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.62.0-rc70';
+const APP_VERSION = '6.63.0-rc71';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc70';
-const RC_NAME = 'RC70';
+const RELEASE_CHANNEL = 'rc71';
+const RC_NAME = 'RC71';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1680,6 +1680,9 @@ async function apiLaunchFunnel(request,cfg) {
   const smartNewsAiRows=rows.filter(x=>String(x.event_name || '')==='news_ai_intent' && String(x?.metadata && typeof x.metadata==='object' ? x.metadata.linking || '' : '')==='smart_fixture');
   const smartNewsAiUsers=new Set(smartNewsAiRows.map(x=>Number(x.telegram_id || 0)).filter(Boolean));
   const newsReturn=setFor(['news_return']);
+  const newsImpactRows=rows.filter(x=>String(x.event_name || '')==='news_impact_delta');
+  const newsImpactCompared=new Set(newsImpactRows.filter(x=>Boolean(x?.metadata && typeof x.metadata==='object' ? x.metadata.compared : false)).map(x=>Number(x.telegram_id || 0)).filter(Boolean));
+  const newsImpactMaterial=new Set(newsImpactRows.filter(x=>Boolean(x?.metadata && typeof x.metadata==='object' ? x.metadata.material : false)).map(x=>Number(x.telegram_id || 0)).filter(Boolean));
   const shareRows=rows.filter(x=>['share_link_created','share_card_created'].includes(String(x.event_name || '')));
   const deepLinkRows=rows.filter(x=>String(x.event_name || '')==='fixture_deep_link_open');
   const deepLinkUsers=new Set(deepLinkRows.map(x=>Number(x.telegram_id || 0)).filter(Boolean));
@@ -1724,7 +1727,7 @@ async function apiLaunchFunnel(request,cfg) {
     bottleneck,
     handoff:{users:handoffUsers.size,fullAiUsers:handoffToFull.size,conversionPct:handoffUsers.size?Math.round((handoffToFull.size/handoffUsers.size)*1000)/10:0},
     rechecks:{total:recheckRows.length,free:recheckFree,charged:Math.max(0,recheckRows.length-recheckFree),material:recheckMaterial,stable:recheckStable},
-    returnLoop:{newsOpen:newsOpen.size,newsReturn:newsReturn.size,aiIntent:newsAiIntent.size,smartFixtureIntent:smartNewsAiUsers.size,intentPct:newsOpen.size?Math.round((newsAiIntent.size/newsOpen.size)*1000)/10:0,conversionPct:newsOpen.size?Math.round((newsReturn.size/newsOpen.size)*1000)/10:0},
+    returnLoop:{newsOpen:newsOpen.size,newsReturn:newsReturn.size,aiIntent:newsAiIntent.size,smartFixtureIntent:smartNewsAiUsers.size,impactChecks:newsImpactRows.length,impactCompared:newsImpactCompared.size,impactMaterial:newsImpactMaterial.size,intentPct:newsOpen.size?Math.round((newsAiIntent.size/newsOpen.size)*1000)/10:0,conversionPct:newsOpen.size?Math.round((newsReturn.size/newsOpen.size)*1000)/10:0},
     mediaLoop:{shareEvents:shareRows.length,shareUsers:shareUsers.size,deepLinkOpens:deepLinkRows.length,deepLinkUsers:deepLinkUsers.size,aiUsers:deepLinkAiUsers.size,conversionPct:deepLinkUsers.size?Math.round((deepLinkAiUsers.size/deepLinkUsers.size)*1000)/10:0},
     searchQuality:{attempts:searchResultRows.length,match:searchMatches,recognizedNoMatch:searchRecognizedNoMatch,notFound:searchNotFound,recoveredRecent:searchRecoveredRecent,matchPct:searchResultRows.length?Math.round((searchMatches/searchResultRows.length)*1000)/10:0},
     campaigns,
@@ -2333,10 +2336,22 @@ async function sendBotFixtureMenu(request, cfg, userId, chatId, fixtureId, optio
     return;
   }
   try {
-    const data=await botAnalyzeFixture(request,cfg,userId,fixtureId);
+    const data=await botAnalyzeFixture(request,cfg,userId,fixtureId,{
+      newsImpactRecheck:Boolean(options.newsImpactDelta),
+      newsPublishedAt:options.newsPublishedAt || '',
+    });
     const analyzedMatch=normalizeBotFixtureCard(data.match || match);
     await rememberBotFixtureCards([analyzedMatch],cfg);
     void recordGrowthEvent(cfg,{userId,eventName:'quick_ai',channel:'telegram',fixtureId,attribution:options.attribution || null,metadata:{section:'handoff',cached:Boolean(data.cached),source:options.source || 'match_select'}});
+    if (options.newsImpactDelta) {
+      void recordGrowthEvent(cfg,{userId,eventName:'news_impact_delta',channel:'telegram',fixtureId,metadata:{
+        compared:Boolean(data?.newsImpact?.compared),
+        material:Boolean(data?.newsImpact?.material),
+        stable:Boolean(data?.newsImpact?.stable),
+        reason:String(data?.newsImpact?.reasonCode || '').slice(0,32),
+        changeCount:Number(data?.newsImpact?.items?.length || 0),
+      }});
+    }
     if (options.attribution) {
       void recordGrowthEvent(cfg,{userId,eventName:'ai_handoff',channel:'telegram',fixtureId,attribution:options.attribution,metadata:{cached:Boolean(data.cached),source:options.source || 'deep_link'}});
     } else {
@@ -2363,11 +2378,17 @@ async function sendBotFixtureMenu(request, cfg, userId, chatId, fixtureId, optio
     });
   }
 }
-async function botAnalyzeFixture(request, cfg, userId, fixtureId) {
+async function botAnalyzeFixture(request, cfg, userId, fixtureId, options = {}) {
   const inner = new Request(request.url, {
     method:'POST',
     headers:{'content-type':'application/json'},
-    body:JSON.stringify({fixtureId:Number(fixtureId),origin:'telegram_quick',recheck:true}),
+    body:JSON.stringify({
+      fixtureId:Number(fixtureId),
+      origin:'telegram_quick',
+      recheck:true,
+      newsImpactRecheck:Boolean(options.newsImpactRecheck),
+      newsPublishedAt:String(options.newsPublishedAt || '').slice(0,40),
+    }),
   });
   const response = await apiAnalyze(inner, cfg, { id:Number(userId) });
   let payload = {};
@@ -2428,7 +2449,17 @@ function botAiHandoffText(data = {}) {
   const handoffLocked=Boolean(handoff?.locked);
   const freshIcon=freshness.needsRecheck?'🟠':freshness.state==='started'?'⚪':'🟢';
   const delta=data?.recheck?.performed ? data?.recheck?.delta : null;
-  const deltaLines=delta?.available ? [delta.summary,...(delta.items || []).slice(0,3).map(item=>`• ${item.title}${item.after?`: ${item.after}`:''}`)] : [];
+  const newsImpact=data?.newsImpact || null;
+  const deltaLines=!newsImpact?.requested && delta?.available ? [delta.summary,...(delta.items || []).slice(0,3).map(item=>`• ${item.title}${item.after?`: ${item.after}`:''}`)] : [];
+  const newsImpactLines=newsImpact?.requested
+    ? [
+        newsImpact.summary || 'Новостной контекст проверен.',
+        newsImpact.compared
+          ? `Существенность: ${newsImpact.material ? 'есть существенные изменения' : newsImpact.stable ? 'значимых изменений нет' : 'изменились отдельные детали'}.`
+          : 'Сравнение до/после не выполнено.',
+        ...(newsImpact.items || []).slice(0,3).map(item=>`• ${item.title}${item.before&&item.after?`: ${item.before} → ${item.after}`:item.after?`: ${item.after}`:''}`),
+      ]
+    : [];
   return [
     '🧠 <b>FM AI · короткая оценка</b>',
     `<b>${telegramHtmlEscape(match.home?.name || 'Хозяева')} — ${telegramHtmlEscape(match.away?.name || 'Гости')}</b>`,
@@ -2448,6 +2479,7 @@ function botAiHandoffText(data = {}) {
     freshness.reason ? `Свежесть: ${telegramHtmlEscape(freshness.reason)}` : '',
     handoff?.state==='imminent' ? `⏳ ${telegramHtmlEscape(handoff.label)}: ${telegramHtmlEscape(handoff.reason)}` : '',
     handoffLocked ? `➡️ ${telegramHtmlEscape(handoff.reason)}` : '',
+    ...(newsImpactLines.length ? ['',`📰 <b>News Impact Delta</b>`,...newsImpactLines.map(telegramHtmlEscape)] : []),
     ...(deltaLines.length ? ['',`🔄 <b>Что изменилось после перепроверки</b>`,...deltaLines.map(telegramHtmlEscape)] : []),
     '',
     handoffLocked
@@ -3149,13 +3181,16 @@ async function processTelegramUpdate(request, cfg, update) {
       await sendGeneralFootballNews(request,cfg,callbackUserId,callbackChatId,{force:data==='news:refresh'});
       return json({ok:true});
     }
-    const newsAiMatchAction=data.match(/^news:ai_match:(\d+)$/);
+    const datedNewsAiMatchAction=data.match(/^news:ai_match:(\d+):(\d{8})$/);
+    const legacyNewsAiMatchAction=data.match(/^news:ai_match:(\d+)$/);
+    const newsAiMatchAction=datedNewsAiMatchAction || legacyNewsAiMatchAction;
     if (callbackChatId && newsAiMatchAction) {
       const fixtureId=Number(newsAiMatchAction[1]);
+      const newsPublishedAt=newsPublishedAtFromDayToken(datedNewsAiMatchAction?.[2] || '');
       void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_ai_intent',channel:'telegram',fixtureId,metadata:{mode:'direct_fixture',linking:'smart_fixture'}});
       void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_return',channel:'telegram',fixtureId,metadata:{origin:'news_ai_cta'}});
-      await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Проверяю новость в контексте матча…'}).catch(()=>null);
-      await sendBotFixtureMenu(request,cfg,callbackUserId,callbackChatId,fixtureId);
+      await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Сравниваю AI до и после новости…'}).catch(()=>null);
+      await sendBotFixtureMenu(request,cfg,callbackUserId,callbackChatId,fixtureId,{source:'news_impact',newsImpactDelta:Boolean(newsPublishedAt),newsPublishedAt});
       return json({ok:true});
     }
     const datedNewsAiTeamAction=data.match(/^news:ai_team:([a-z0-9]{2,32}):(\d{8})$/);
@@ -3177,7 +3212,7 @@ async function processTelegramUpdate(request, cfg, update) {
           void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_ai_intent',channel:'telegram',fixtureId,metadata:{mode:'team_smart_link',team:newsTeamToken(team),linking:'smart_fixture'}});
           void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_return',channel:'telegram',fixtureId,metadata:{origin:'news_ai_smart_link'}});
           await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:`Нашёл релевантный матч ${team.canonical}`}).catch(()=>null);
-          await sendBotFixtureMenu(request,cfg,callbackUserId,callbackChatId,fixtureId);
+          await sendBotFixtureMenu(request,cfg,callbackUserId,callbackChatId,fixtureId,{source:'news_impact',newsImpactDelta:true,newsPublishedAt:publishedAt});
           return json({ok:true});
         }
       }
@@ -10825,7 +10860,8 @@ function newsConversionKeyboard(items = [], extraRows = [], { fixtureId=0, fixtu
     const smartLink=(fixtures || []).length ? newsRelevantFixture(item,fixtures) : null;
     const linkedFixtureId=Number(smartLink?.fixture?.fixtureId || fixtureId || 0);
     if (linkedFixtureId>0) {
-      row.push({text:'🧠 Проверить с AI',callback_data:`news:ai_match:${linkedFixtureId}`});
+      const dayToken=newsPublishedDayToken(item);
+      row.push({text:'🧠 Проверить с AI',callback_data:`news:ai_match:${linkedFixtureId}${dayToken ? `:${dayToken}` : ''}`});
     } else {
       const hint=newsTeamHint(item);
       if (hint?.token) {
@@ -14476,6 +14512,52 @@ function analysisRecheckDelta(previous = {}, next = {}) {
   return {available:true,material,stable,codes,items:items.slice(0,6),summary};
 }
 
+function newsImpactDeltaStatus(previous = {}, next = {}, delta = null, { requested=false, eligible=false, performed=false, publishedAt='' } = {}) {
+  if (!requested) return null;
+  if (!previous?.match?.fixtureId) {
+    return {requested:true,eligible:false,performed:false,compared:false,material:false,stable:false,publishedAt,reasonCode:'baseline_missing',summary:'До новости не было сохранённого AI-снимка: текущий анализ станет базовой точкой для следующего сравнения.',items:[]};
+  }
+  if (!eligible) {
+    return {requested:true,eligible:false,performed:false,compared:false,material:false,stable:true,publishedAt,reasonCode:'snapshot_not_before_news',summary:'Сохранённый AI-снимок не старше новости, поэтому приписывать ей изменение прогноза нельзя.',items:[]};
+  }
+  if (!performed || !delta?.available) {
+    return {requested:true,eligible:true,performed:false,compared:false,material:false,stable:false,publishedAt,reasonCode:'recheck_unavailable',summary:'Новость привязана к матчу, но свежую перепроверку сейчас выполнить не удалось.',items:[]};
+  }
+  return {
+    requested:true,
+    eligible:true,
+    performed:true,
+    compared:true,
+    material:Boolean(delta.material),
+    stable:Boolean(delta.stable),
+    publishedAt,
+    reasonCode:delta.material?'material_change':delta.stable?'stable':'detail_change',
+    summary:delta.material
+      ? 'После новости и свежей перепроверки обнаружены существенные изменения во входных данных AI.'
+      : delta.stable
+        ? 'После новости свежая перепроверка не обнаружила значимых изменений в AI-входах.'
+        : 'После новости изменились отдельные детали, но существенного сдвига AI-сценария не обнаружено.',
+    items:(delta.items || []).slice(0,6),
+    codes:(delta.codes || []).slice(0,6),
+  };
+}
+
+function newsImpactDeltaDrill() {
+  const previous={match:{fixtureId:71},probabilities:{home:45,draw:30,away:25},market:{probabilities:{home:44,draw:31,away:25}},lineupImpact:{homeConfirmed:false,awayConfirmed:false},absences:{home:[],away:[]},aiInstructor:{betSignal:{code:'skip',label:'Пропустить ставку'},confidenceScore:54}};
+  const next={match:{fixtureId:71},probabilities:{home:53,draw:27,away:20},market:{probabilities:{home:50,draw:29,away:21}},lineupImpact:{homeConfirmed:true,awayConfirmed:true},absences:{home:[{name:'X'}],away:[]},aiInstructor:{betSignal:{code:'home',label:'П1'},confidenceScore:68}};
+  const delta=analysisRecheckDelta(previous,next);
+  const impact=newsImpactDeltaStatus(previous,next,delta,{requested:true,eligible:true,performed:true,publishedAt:'2026-09-23T12:00:00Z'});
+  const guarded=newsImpactDeltaStatus(previous,next,null,{requested:true,eligible:false,performed:false,publishedAt:'2026-09-23T12:00:00Z'});
+  return {
+    pass:impact?.compared===true
+      && impact?.material===true
+      && impact?.codes?.includes('signal')
+      && guarded?.reasonCode==='snapshot_not_before_news'
+      && guarded?.compared===false,
+    cases:5,
+  };
+}
+
 function analysisDeltaDrill() {
   const previous={match:{fixtureId:7,referee:''},probabilities:{home:44,draw:29,away:27},market:{probabilities:{home:43,draw:30,away:27}},lineupImpact:{homeConfirmed:false,awayConfirmed:false},absences:{home:[],away:[]},aiInstructor:{betSignal:{code:'skip',label:'Пропустить ставку'},confidenceScore:55}};
   const next={match:{fixtureId:7,referee:'A. Ref'},probabilities:{home:53,draw:26,away:21},market:{probabilities:{home:49,draw:28,away:23}},lineupImpact:{homeConfirmed:true,awayConfirmed:true},absences:{home:[{name:'Player'}],away:[]},aiInstructor:{betSignal:{code:'home',label:'П1'},confidenceScore:69}};
@@ -14491,6 +14573,8 @@ async function apiAnalyze(request, cfg, user) {
   const fixtureId = Number(body?.fixtureId);
   const analysisOrigin=String(body?.origin || 'miniapp').slice(0,30);
   const recheckRequested=Boolean(body?.recheck);
+  const newsImpactRecheck=Boolean(body?.newsImpactRecheck);
+  const newsPublishedAt=Number.isFinite(Date.parse(String(body?.newsPublishedAt || ''))) ? new Date(Date.parse(String(body.newsPublishedAt))).toISOString() : '';
   const trackFullAi=analysisOrigin !== 'telegram_quick';
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'Некорректный номер матча.' }, 400);
 
@@ -14498,13 +14582,25 @@ async function apiAnalyze(request, cfg, user) {
   const cached = await getCache(cacheKey, cfg);
   const staleBefore = cached || await getStaleCache(cacheKey, cfg);
   const previousFreshness = staleBefore ? analysisFreshness(staleBefore) : null;
-  const needsFreshnessRecheck=Boolean(recheckRequested && staleBefore && previousFreshness?.needsRecheck);
+  const previousGeneratedMs=Date.parse(String(staleBefore?.generatedAt || ''));
+  const newsPublishedMs=Date.parse(String(newsPublishedAt || ''));
+  const newsImpactEligible=Boolean(
+    recheckRequested
+    && newsImpactRecheck
+    && staleBefore
+    && Number.isFinite(previousGeneratedMs)
+    && Number.isFinite(newsPublishedMs)
+    && previousGeneratedMs < newsPublishedMs
+  );
+  const needsFreshnessRecheck=Boolean(recheckRequested && staleBefore && (previousFreshness?.needsRecheck || newsImpactEligible));
+  const recheckReasonCode=newsImpactEligible ? 'news_impact' : (previousFreshness?.reasonCode || 'fresh');
   let freeRecheck=false;
   if (needsFreshnessRecheck) freeRecheck=await userHasAnalyzedFixture(user.id,fixtureId,cfg);
   if (cached && !needsFreshnessRecheck) {
     await recordHistory(user.id, cached, cfg);
     if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,freshness:previousFreshness?.state || 'fresh'}});
-    return json(analysisResponsePayload(cached,{cached:true,stale:false,recheck:{requested:recheckRequested,performed:false,free:false,reasonCode:previousFreshness?.reasonCode || 'fresh'},quota:await getQuota(user.id,cfg)}));
+    const newsImpact=newsImpactDeltaStatus(staleBefore,cached,null,{requested:newsImpactRecheck,eligible:newsImpactEligible,performed:false,publishedAt:newsPublishedAt});
+    return json(analysisResponsePayload(cached,{cached:true,stale:false,recheck:{requested:recheckRequested,performed:false,free:false,reasonCode:recheckReasonCode},newsImpact,quota:await getQuota(user.id,cfg)}));
   }
 
   const quotaBefore = await getQuota(user.id, cfg);
@@ -14516,7 +14612,7 @@ async function apiAnalyze(request, cfg, user) {
     if (joined) {
       await recordHistory(user.id,joined,cfg);
       if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,sharedJoin:true}});
-      return json(analysisResponsePayload(joined,{cached:true,stale:false,sharedJoin:true,recheck:{requested:recheckRequested,performed:needsFreshnessRecheck,free:freeRecheck,reasonCode:previousFreshness?.reasonCode || 'shared_compute'},quota:await getQuota(user.id,cfg)}));
+      return json(analysisResponsePayload(joined,{cached:true,stale:false,sharedJoin:true,recheck:{requested:recheckRequested,performed:needsFreshnessRecheck,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_shared' : (previousFreshness?.reasonCode || 'shared_compute')},quota:await getQuota(user.id,cfg)}));
     }
     if (staleBefore) {
       await recordHistory(user.id,staleBefore,cfg);
@@ -14533,7 +14629,7 @@ async function apiAnalyze(request, cfg, user) {
     if (staleBefore && isFootballRateLimitError(error)) {
       await recordHistory(user.id, staleBefore, cfg);
       if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,stale:true}});
-      return json(analysisResponsePayload(staleBefore,{cached:true,stale:true,warning:'Показан последний сохранённый анализ: источник футбольных данных временно ограничил запросы.',retryAfter:Number(error?.retryAfter || 60),recheck:{requested:recheckRequested,performed:false,free:freeRecheck,reasonCode:previousFreshness?.reasonCode || 'provider_limit'},quota:quotaBefore}));
+      return json(analysisResponsePayload(staleBefore,{cached:true,stale:true,warning:'Показан последний сохранённый анализ: источник футбольных данных временно ограничил запросы.',retryAfter:Number(error?.retryAfter || 60),recheck:{requested:recheckRequested,performed:false,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_provider_limit' : (previousFreshness?.reasonCode || 'provider_limit')},quota:quotaBefore}));
     }
     throw error;
   }
@@ -14587,7 +14683,7 @@ async function apiAnalyze(request, cfg, user) {
     if (staleBefore && isFootballRateLimitError(error)) {
       await recordHistory(user.id, staleBefore, cfg);
       if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,stale:true}});
-      return json(analysisResponsePayload(staleBefore,{cached:true,stale:true,warning:'Показан последний сохранённый анализ: источник данных временно достиг лимита.',retryAfter:Number(error?.retryAfter || 60),recheck:{requested:recheckRequested,performed:false,free:freeRecheck,reasonCode:previousFreshness?.reasonCode || 'provider_limit'},quota:quotaBefore}));
+      return json(analysisResponsePayload(staleBefore,{cached:true,stale:true,warning:'Показан последний сохранённый анализ: источник данных временно достиг лимита.',retryAfter:Number(error?.retryAfter || 60),recheck:{requested:recheckRequested,performed:false,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_provider_limit' : (previousFreshness?.reasonCode || 'provider_limit')},quota:quotaBefore}));
     }
     throw error;
   }
@@ -14746,13 +14842,14 @@ async function apiAnalyze(request, cfg, user) {
   else if (minutesToKickoff !== null && minutesToKickoff <= 360) ttl = 20;
   else if (minutesToKickoff !== null && minutesToKickoff > 360) ttl = 45;
   const recheckDelta=needsFreshnessRecheck ? analysisRecheckDelta(staleBefore,payload) : null;
+  const newsImpact=newsImpactDeltaStatus(staleBefore,payload,recheckDelta,{requested:newsImpactRecheck,eligible:newsImpactEligible,performed:needsFreshnessRecheck,publishedAt:newsPublishedAt});
   await setCache(cacheKey, fixtureId, payload, cfg, ttl);
   await captureModelPrediction(payload, cfg);
   if (!freeRecheck) await incrementUsage(user.id, cfg);
   await recordHistory(user.id, payload, cfg);
-  if (needsFreshnessRecheck) void recordGrowthEvent(cfg,{userId:user.id,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:previousFreshness?.reasonCode || 'age_window',material:Boolean(recheckDelta?.material),stable:Boolean(recheckDelta?.stable),changeCount:Number(recheckDelta?.items?.length || 0),codes:(recheckDelta?.codes || []).slice(0,6)}});
+  if (needsFreshnessRecheck) void recordGrowthEvent(cfg,{userId:user.id,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:recheckReasonCode,material:Boolean(recheckDelta?.material),stable:Boolean(recheckDelta?.stable),changeCount:Number(recheckDelta?.items?.length || 0),codes:(recheckDelta?.codes || []).slice(0,6)}});
   if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:false,recheck:needsFreshnessRecheck}});
-  return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:needsFreshnessRecheck,free:freeRecheck,reasonCode:previousFreshness?.reasonCode || 'fresh',delta:recheckDelta},quota:await getQuota(user.id,cfg)}));
+  return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:needsFreshnessRecheck,free:freeRecheck,reasonCode:recheckReasonCode,delta:recheckDelta},newsImpact,quota:await getQuota(user.id,cfg)}));
   } finally {
     await releaseDistributedAnalysisLock(analysisLock,cfg);
   }
@@ -14995,6 +15092,11 @@ export default {
         perNewsFixtureCta: 'enabled',
         newsImpactDeltaGuide: 'enabled',
         smartNewsLinkSelfTest: smartNewsMatchLinkDrill().pass ? 'enabled' : 'failed',
+        newsImpactDelta: 'enabled',
+        preNewsSnapshotGuard: 'enabled',
+        explicitNewsRecheck: 'enabled',
+        newsImpactMateriality: 'enabled',
+        newsImpactDeltaSelfTest: newsImpactDeltaDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
