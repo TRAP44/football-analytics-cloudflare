@@ -9,15 +9,15 @@ const staticHeaders = fs.readFileSync('public/_headers', 'utf8');
 const styles = fs.readFileSync('public/styles.css', 'utf8');
 const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml', 'utf8');
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
-const expected = `${pkg.version}-rc67`;
+const expected = `${pkg.version}-rc68`;
 const failures = [];
 
 if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) failures.push('package-lock version must match package.json');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC67'")) failures.push('Worker RC name must be RC67');
+if (!worker.includes("const RC_NAME = 'RC68'")) failures.push('Worker RC name must be RC67');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc67'")) failures.push('Client release channel must be rc67');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc68'")) failures.push('Client release channel must be rc67');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -235,6 +235,9 @@ if (!worker.includes("publicAiTrackRecord: 'enabled'") || !worker.includes("veri
 if (!worker.includes("mediaFixtureDeepLinks: 'enabled'") || !worker.includes("shareableMatchCards: 'enabled'") || !worker.includes("shareAttribution: 'enabled'") || !worker.includes("deepLinkAutoAnalysis: 'enabled'") || !worker.includes("telegramNativeShare: 'enabled'") || !worker.includes("fixtureDeepLinkSelfTest: fixtureDeepLinkDrill().pass ? 'enabled' : 'failed'")) failures.push('RC65 media share health contract is missing');
 if (!worker.includes("distributedAnalysisLock: 'enabled'") || !worker.includes("viralFixtureCollapse: 'enabled'") || !worker.includes("crossInstanceAnalysisDedupe: 'enabled'") || !worker.includes("analysisLockFailOpen: 'enabled'") || !worker.includes("sharedAnalysisWaitFallback: 'enabled'") || !worker.includes("distributedAnalysisLockSelfTest: distributedAnalysisLockDrill().pass ? 'enabled' : 'failed'")) failures.push('RC66 media traffic guard health contract is missing');
 if (!worker.includes("mediaPublisherKit: 'enabled'") || !worker.includes("campaignTaggedFixtureLinks: 'enabled'") || !worker.includes("mediaCopyGenerator: 'enabled'") || !worker.includes("adminPublisherOnly: 'enabled'") || !worker.includes("mediaPublisherSelfTest: mediaPublisherDrill().pass ? 'enabled' : 'failed'")) failures.push('RC67 media publisher health contract is missing');
+if (!worker.includes("mediaCampaignControlRoom: 'enabled'") || !worker.includes("contentLevelMediaAttribution: 'enabled'") || !worker.includes("mediaCampaignConversion: 'enabled'") || !worker.includes("publisherOutcomeTracking: 'enabled'") || !worker.includes("mediaCampaignControlSelfTest: mediaCampaignControlDrill().pass ? 'enabled' : 'failed'")) failures.push('RC68 media campaign control health contract is missing');
+if (!worker.includes('buildMediaCampaignPerformance') || !app.includes('launchFunnelMediaCampaigns') || !html.includes('id="launchFunnelMediaCampaigns"')) failures.push('RC68 media campaign analytics UI contract is missing');
+if (!fs.existsSync('MEDIA_CAMPAIGN_CONTROL_RC68.md') || !fs.existsSync('test/media-campaign-control-rc68.test.js')) failures.push('RC68 documentation or regression test is missing');
 if (!worker.includes("firstPartyGrowthAnalytics: 'enabled'") || !worker.includes("launchFunnelAnalytics: 'enabled'")) failures.push('RC53 first-party funnel health contract is missing');
 if (!worker.includes('parseLaunchStartParam') || !worker.includes('ensureLaunchAttribution') || !worker.includes('recordGrowthEvent')) failures.push('RC53 attribution engine is missing');
 if (!worker.includes("url.pathname === '/api/launch-funnel'") || !app.includes('function renderLaunchFunnel')) failures.push('RC53 admin launch funnel is missing');
@@ -252,4 +255,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log(`RC60 pre-kickoff delta contracts verified for ${expected}.`);
+console.log(`RC68 media campaign control contracts verified for ${expected}.`);
