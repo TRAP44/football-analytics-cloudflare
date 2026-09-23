@@ -3037,7 +3037,7 @@ function renderLaunchFunnel() {
           ${x.status==='active' && x.currentOnly && !x.canAcknowledge ? '<small>Подтверждение станет доступно после первого фактического failure-события этого инцидента.</small>' : ''}
         </div>`;
       }).join('')}</div>
-      <p class="tiny">RC87 рассчитывает SLO и эскалацию из фактических timestamps: время до просмотра, возраст активного эпизода и время до восстановления. Просрочка повышает только административный приоритет; fixed/adaptive routing остаётся под RC81–RC86 guard-логикой. В Incident Center нет Telegram ID и raw error.</p>` : ''}
+      <p class="tiny">RC87 рассчитывает SLO и эскалацию из фактических timestamps: время до просмотра, возраст активного эпизода и время до восстановления. Просрочка повышает только административный приоритет; fixed/adaptive routing остаётся под RC81–RC86 guard-логикой. После acknowledgement новый failure автоматически снова требует внимания. В Incident Center нет Telegram ID и raw error.</p>` : ''}
     ${impactRecoveryStrategyAlerts.length ? `<div class="release-monitor-section-head"><strong>Recovery: предупреждения</strong><span>${Number(impactRecoveryAlertSummary.critical || 0)} critical · ${Number(impactRecoveryAlertSummary.warnings || 0)} warning · ${Number(impactRecoveryAlertSummary.info || 0)} info</span></div>
       <div class="launch-campaign-list">${impactRecoveryStrategyAlerts.map(x=>`<div>
         <span><b>${x.severity==='critical'?'🚨':x.severity==='warning'?'⚠️':'ℹ️'} ${escapeHtml(x.reasonLabel || 'Recovery Strategy')}</b>${x.actionLabel ? ` · ${escapeHtml(x.actionLabel)}` : ''}</span>
