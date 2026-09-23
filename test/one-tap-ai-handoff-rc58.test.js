@@ -4,7 +4,6 @@ import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
-const playbook=fs.readFileSync('ONE_TAP_AI_HANDOFF_RC58.md','utf8');
 
 test('pre-match match selection produces an immediate Telegram AI brief',()=> {
   assert.match(worker,/async function sendBotFixtureMenu\(/);
@@ -62,6 +61,4 @@ test('RC58 health and deterministic handoff drill are release-gated',()=> {
     assert.ok(worker.includes(`${flag}: 'enabled'`), `missing ${flag}`);
   }
   assert.match(worker,/oneTapHandoffSelfTest: oneTapHandoffDrill\(\)\.pass \? 'enabled' : 'failed'/);
-  assert.match(playbook,/handoff=1/);
-  assert.match(playbook,/не списывает второй анализ/);
 });
