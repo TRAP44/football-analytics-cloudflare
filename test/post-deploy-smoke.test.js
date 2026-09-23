@@ -134,6 +134,11 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         mediaCampaignConversion: 'enabled',
         publisherOutcomeTracking: 'enabled',
         mediaCampaignControlSelfTest: 'enabled',
+        telegramNewsConversionEngine: 'enabled',
+        newsPerItemAiCta: 'enabled',
+        newsTeamIntentResolution: 'enabled',
+        newsConversionTracking: 'enabled',
+        newsConversionSelfTest: 'enabled',
       });
     }
     if (url.pathname === '/api/app-manifest') return json({ version: '6.27.0-rc35', releaseCandidate: 'RC35' });
