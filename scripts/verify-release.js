@@ -11,15 +11,15 @@ const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml'
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
 const readme = fs.readFileSync('README_CLOUDFLARE_RU.md', 'utf8');
 const qaChecklist = fs.readFileSync('QA_RELEASE_CHECKLIST_RU.md', 'utf8');
-const expected = `${pkg.version}-rc84`;
+const expected = `${pkg.version}-rc85`;
 const failures = [];
 
 if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) failures.push('package-lock version must match package.json');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC84'")) failures.push('Worker RC name must be RC84');
+if (!worker.includes("const RC_NAME = 'RC85'")) failures.push('Worker RC name must be RC85');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc84'")) failures.push('Client release channel must be rc84');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc85'")) failures.push('Client release channel must be rc85');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -37,8 +37,8 @@ if (!fs.existsSync('.github/workflows/rollback-production.yml')) failures.push('
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
-if (!deployWorkflow.includes('--message "RC84 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC84');
-if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.76.0-rc84"')) failures.push('Production smoke must verify 6.76.0-rc84');
+if (!deployWorkflow.includes('--message "RC85 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC85');
+if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.77.0-rc85"')) failures.push('Production smoke must verify 6.77.0-rc85');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
 if (!/id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden/.test(html)) failures.push('Admin role badge must use the fail-closed admin-only visibility contract');
 if (!/\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i.test(styles)) failures.push('Global hidden elements must remain display:none');
@@ -266,6 +266,10 @@ if (!worker.includes("newsImpactRecoveryStrategyGuard: 'enabled'") || !worker.in
 if (!worker.includes("newsImpactRecoveryStrategyParity: 'enabled'") || !worker.includes("newsImpactRecoveryStabilityGuard: 'enabled'") || !worker.includes("newsImpactRecoveryStabilitySelfTest: newsImpactRecoveryStabilityDrill().pass ? 'enabled' : 'failed'")) failures.push('RC82 recovery stability health contract is missing');
 if (!worker.includes("newsImpactRecoveryDriftGuard: 'enabled'") || !worker.includes("newsImpactRecoveryDriftAudit: 'enabled'") || !worker.includes("newsImpactRecoveryDriftSelfTest: newsImpactRecoveryDriftDrill().pass ? 'enabled' : 'failed'")) failures.push('RC83 recovery drift health contract is missing');
 if (!worker.includes("newsImpactRecoveryTransitionHistory: 'enabled'") || !worker.includes("newsImpactRecoveryAdminAlerts: 'enabled'") || !worker.includes("newsImpactRecoveryTransitionPrivacyGuard: 'enabled'") || !worker.includes("newsImpactRecoveryTransitionSelfTest: newsImpactRecoveryTransitionDrill().pass ? 'enabled' : 'failed'")) failures.push('RC84 recovery transition health contract is missing');
+if (!worker.includes("newsImpactRecoveryIncidentCenter: 'enabled'") || !worker.includes("newsImpactRecoveryIncidentLifecycle: 'enabled'") || !worker.includes("newsImpactRecoveryIncidentPrivacyGuard: 'enabled'") || !worker.includes("newsImpactRecoveryIncidentSelfTest: newsImpactRecoveryIncidentDrill().pass ? 'enabled' : 'failed'")) failures.push('RC85 recovery incident health contract is missing');
+if (!worker.includes('function buildNewsImpactRecoveryIncidentEvents') || !worker.includes('function buildNewsImpactRecoveryIncidentCenter') || !worker.includes('function summarizeNewsImpactRecoveryIncidents')) failures.push('RC85 recovery incident lifecycle engine is missing');
+if (!worker.includes('incidentEvents=buildNewsImpactRecoveryIncidentEvents(failures') || !worker.includes('newsImpactRecoveryStrategyLoaded.incidentEvents') || !worker.includes('newsImpactRecoveryIncidents=buildNewsImpactRecoveryIncidentCenter') || !worker.includes('newsImpactRecoveryIncidentSummary=summarizeNewsImpactRecoveryIncidents')) failures.push('RC85 shared-loader incident contract is missing');
+if (!app.includes('Recovery Incident Center') || !app.includes('Recovery-инциденты') || !app.includes('В Incident Center нет Telegram ID и raw error') || !fs.existsSync('test/news-impact-recovery-incident-center-rc85.test.js')) failures.push('RC85 admin incident center/privacy regression contract is missing');
 if (!worker.includes('function buildNewsImpactRecoveryTransitionHistory') || !worker.includes('function summarizeNewsImpactRecoveryTransitions') || !worker.includes('function buildNewsImpactRecoveryAdminAlerts') || !worker.includes('function summarizeNewsImpactRecoveryAlerts')) failures.push('RC84 transition history/alerts engine is missing');
 if (!worker.includes('transitionHistory=buildNewsImpactRecoveryTransitionHistory(failures') || !worker.includes('newsImpactRecoveryStrategyLoaded.transitionHistory') || !worker.includes('newsImpactRecoveryTransitionSummary') || !worker.includes('newsImpactRecoveryAlertSummary')) failures.push('RC84 shared-loader transition contract is missing');
 if (!app.includes('Recovery: предупреждения') || !app.includes('История Recovery Strategy') || !app.includes('Telegram ID в API истории не возвращаются') || !fs.existsSync('test/news-impact-recovery-transition-alerts-rc84.test.js')) failures.push('RC84 admin transition UI/privacy regression contract is missing');
@@ -281,8 +285,8 @@ if (!worker.includes("firstPartyGrowthAnalytics: 'enabled'") || !worker.includes
 if (!worker.includes('parseLaunchStartParam') || !worker.includes('ensureLaunchAttribution') || !worker.includes('recordGrowthEvent')) failures.push('RC53 attribution engine is missing');
 if (!worker.includes("url.pathname === '/api/launch-funnel'") || !app.includes('function renderLaunchFunnel')) failures.push('RC53 admin launch funnel is missing');
 if (!app.includes("origin:'miniapp'") || !worker.includes("origin:'telegram_quick'")) failures.push('RC53 full-vs-quick AI conversion split is missing');
-if (!readme.includes('v6.76.0 — RC84') || !readme.includes('News Impact Recovery Transition History & Admin Alerts')) failures.push('README must describe the current RC84 release');
-if (!qaChecklist.includes('v6.76.0 RC84') || !qaChecklist.includes('npm run verify:release')) failures.push('QA checklist must describe the current RC84 release gate');
+if (!readme.includes('v6.77.0 — RC85') || !readme.includes('News Impact Recovery Incident Center')) failures.push('README must describe the current RC85 release');
+if (!qaChecklist.includes('v6.77.0 RC85') || !qaChecklist.includes('npm run verify:release')) failures.push('QA checklist must describe the current RC85 release gate');
 if (!fs.existsSync('MEDIA_LAUNCH_RU.md')) failures.push('Missing RC53 media launch kit');
 if (!fs.readFileSync('public/privacy.html','utf8').includes('События launch-аналитики хранятся до 90 дней')) failures.push('RC53 privacy attribution disclosure is missing');
 
@@ -296,4 +300,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log(`RC84 News Impact recovery transition history/admin alert contracts verified for ${expected}.`);
+console.log(`RC85 News Impact recovery incident-center contracts verified for ${expected}.`);
