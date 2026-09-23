@@ -1,477 +1,78 @@
-# QA Release Checklist — v6.52.0 RC60
+# QA Release Checklist — v6.64.0 RC72
 
-## Deploy
+Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
-- применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql`, `supabase_migration_v6_11_1.sql`, `supabase_migration_v6_12.sql`, `supabase_migration_v6_13.sql`, `supabase_migration_v6_14.sql` и `supabase_migration_v6_15.sql`;
-- Worker/client = `6.52.0-rc60`;
-- package = `6.52.0`;
-- cache generation = `4.0-atomic1`;
-- Secrets проверены по `.env.example`;
-- `DEV_MODE=false`;
-- `MONETIZATION_ENABLED=false` до отдельного решения о запуске оплаты.
-- production environment содержит `CLOUDFLARE_API_TOKEN` и `CLOUDFLARE_ACCOUNT_ID`;
-- Cloudflare token ограничен нужным account и Workers Edit;
-- `Deploy Production` запускается только после успешного `Quality` на `main`;
-- deploy использует `--keep-vars` и не удаляет dashboard variables;
-- отсутствие любого Cloudflare credential завершает deploy workflow ошибкой;
-- `public/_headers` содержит Telegram-compatible CSP и обязательные browser security headers;
-
-## RC38 — пользовательский интерфейс
-
-- заголовок персональной сводки = «Рекомендации для вас»;
-- у предстоящего матча видна кнопка «🔔 Напомнить за … мин.»;
-- после включения кнопка меняется на «🔔 Напоминание включено»;
-- повторный клик отключает напоминание без дублирования запросов;
-- одноразовая карточка «Быстрый старт» скрывается после «Понятно»;
-- мобильная карточка матча не переполняется: действия переходят в один столбец;
-- новые миграции Supabase для RC38 не требуются.
-
-## RC39 — фокус главного экрана
-
-- «Популярные турниры» отображаются только внутри раскрываемого блока «Лиги и турниры»;
-- активный фильтр лиги/страны показан в summary блока;
-- выбор фильтра автоматически закрывает drawer;
-- лимит анализов скрыт при нормальном остатке и виден при `left <= 3`;
-- над сводкой корректно отображается «ВЧЕРА ДЛЯ ВАС» / «СЕГОДНЯ ДЛЯ ВАС» / «ЗАВТРА ДЛЯ ВАС»;
-- новых миграций Supabase нет.
-
-## RC40 — AI-инструктор, запуск и Telegram-бот
-
-- предматчевый анализ содержит карточку «AI футбольный инструктор»;
-- слабая уверенность или низкая полнота данных приводит к сигналу «Пропустить ставку»;
-- имя судьи передаётся из fixture и отображается в интерфейсе;
-- AI-карточка показывает идею, уверенность, риск, причины и ограничения;
-- экран запуска содержит AI-брендинг, feature chips и прогресс;
-- `/start` настраивает команды и Web App menu button;
-- `/today`, `/live`, `/favorites` и `/help` возвращают полезные сообщения и быстрые кнопки;
-- неизвестный обычный текст возвращает главное меню, а не игнорируется;
-- новых миграций Supabase нет.
-
-## RC41 — AI-вердикт и Telegram-дайджест
-
-- AI-карточка содержит исход, тотал 2.5, обе забьют и действие;
-- слабый сигнал остаётся «Пропустить ставку»;
-- рынок показывает объяснение движения 1X2 только при наличии истории;
-- составы показывают количество потерь и статус публикации стартовых XI;
-- судья отображается как имя/страна без неподтверждённой статистики;
-- /picks возвращает 3 заметных матча дня;
-- /digest включает, /digest_off отключает добровольную утреннюю подборку;
-- cron не дублирует доставку в один UTC-день благодаря last_sent_date;
-- таблица bot_digest_subscriptions закрыта от anon/authenticated и доступна service_role.
-
-
-## RC42 — AI-фокус и история судей
-
-- главный экран показывает один AI-фокус дня при наличии предстоящих матчей;
-- AI-фокус запускает существующий защищённый предматчевый анализ и не тратит лимит до клика;
-- завершённый Match Center сохраняет историю судьи только при наличии реальных событий/статистики;
-- карточки и фолы агрегируются без дополнительных запросов поставщику;
-- профиль судьи доступен только с выборки >= 3 матчей;
-- таблица referee_match_history закрыта от anon/authenticated и доступна service_role.
-
-## RC43 — постоянный AI-вердикт
-
-- после анализа history row содержит AI signal/risk/confidence/verdict snapshot;
-- карточка матча показывает сохранённый AI-вердикт без автоматического нового анализа;
-- повторное открытие использует `/api/history-analysis` и cache v10;
-- AI-центр скрыт до появления хотя бы одного сохранённого разбора предстоящего матча;
-- `/last` показывает последний AI-вердикт и ведёт в историю приложения;
-- новые поля analysis_history доступны только backend/service-role через существующий закрытый контур;
-- старые строки истории без AI-полей продолжают отображаться.
-
-## RC44 — AI-инструктор в реальном времени
-
-- LIVE-центр показывает AI-блок только при режиме `live`;
-- live-карточка использует текущие официальные события/статистику и не называет индекс давления вероятностью победы;
-- при наличии cached v10 предматчевого анализа сценарий сравнивается с LIVE-данными;
-- при отсутствии предматчевого снимка UI честно сообщает, что читает только LIVE;
-- удаление, свежий гол и сильный рыночный сдвиг повышают волатильность;
-- слабое покрытие приводит к «Ждать больше данных»;
-- сломанный сценарий приводит к «Не опираться на предматчевый сигнал»;
-- никаких новых таблиц или внешних провайдеров RC44 не добавляет.
-
-## RC60 — Pre-Kickoff Change Detection
-
-- `analysisRecheckDelta(previous,next)` сравнивает только два готовых analysis payload и не делает дополнительных API-Football вызовов;
-- изменение `betSignal.code` создаёт high-importance `signal` delta;
-- сдвиг вероятности ≥3 п.п. создаёт `probability` delta; ≥7 п.п. считается high-importance;
-- сдвиг рынка ≥2.5 п.п. создаёт `market` delta; ≥5 п.п. считается high-importance;
-- изменение confidence ≥8 пунктов фиксируется отдельно;
-- появление стартовых составов после recheck создаёт `lineups` delta;
-- изменение количества подтверждённых потерь и появление судьи тоже отражаются в delta;
-- если изменений нет, `stable=true`, `material=false`, `items=[]`; интерфейс показывает «Прогноз стабилен»;
-- `analysis_recheck` metadata хранит только `free/reason/material/stable/changeCount/codes`, без query/rawText;
-- Telegram показывает максимум 3 delta-item, Mini App — максимум 6;
-- `/api/launch-funnel` агрегирует `rechecks.material` и `rechecks.stable`;
-- `/health.analysisDeltaSelfTest = enabled`; production smoke требует все RC60 health-флаги;
-- новых миграций Supabase и новых provider endpoints нет.
-## RC59 — AI Freshness Guard & Pre-Kickoff Recheck
-
-- `analysisFreshness()` возвращает `state/label/ageMinutes/minutesToKickoff/maxAgeMinutes/needsRecheck/reasonCode/reason`;
-- deterministic drill проверяет: 8-минутный AI за 30 минут до старта без составов требует recheck, 2-минутный — свежий, 30-минутный за 8 часов до игры — свежий;
-- cached analysis возвращается без сети, если freshness ещё рабочий;
-- `recheck=true` обходит даже формально неистёкший cache, когда динамическое окно уже считает AI устаревшим;
-- бесплатный recheck разрешён только через `userHasAnalyzedFixture()` и существующий `analysis_history`;
-- `incrementUsage` не вызывается при `freeRecheck`, но первый fresh calculation продолжает учитывать дневную квоту;
-- provider rate-limit fallback возвращает старый snapshot с честным `freshness.needsRecheck`, а не маскирует его как свежий;
-- adaptive cache TTL соответствует 45/20/10/5/3 минутам по расстоянию до kickoff;
-- Telegram quick brief вызывает анализ с `recheck:true` и показывает freshness;
-- Mini App `analyzeMatch` по умолчанию отправляет `recheck:true`; History freshness-card имеет явную кнопку обновления;
-- `/api/launch-funnel.rechecks` содержит только агрегаты total/free/charged;
-- production smoke требует `aiFreshnessGuard/preKickoffRecheck/userScopedFreeRecheck/lineupFreshnessWindow/adaptiveAnalysisTtl/analysisFreshnessSelfTest`;
-- миграция Supabase не требуется.
-## RC58 — One-Tap AI Handoff
-
-- `match:menu:<fixtureId>` для pre-match вызывает `sendBotFixtureMenu`, который сразу строит `botAiHandoffText` через защищённый `botAnalyzeFixture`;
-- LIVE/finished не запускают pre-match анализ автоматически и остаются на match-center пути;
-- `footballQuickAiHandoffKeyboard` ставит `Полный AI-разбор` первой кнопкой;
-- `telegramAnalysisHandoffParams` всегда задаёт `fixtureId/action=analysis/tab=brief/handoff=1`;
-- single-result search использует `footballSearchHandoffKeyboard`, а multi-result/daily/favorites продолжают вести через один `match:menu` tap;
-- Mini App читает `handoff=1` и сразу вызывает `analyzeMatch`, минуя history shortcut;
-- cached ветка `apiAnalyze` возвращается до `incrementUsage`, поэтому Telegram brief → full Mini App не расходует квоту дважды;
-- `quick_ai` и новый `ai_handoff` не содержат search query/rawText;
-- `/api/launch-funnel` агрегирует `handoff.users/fullAiUsers/conversionPct`; admin UI показывает one-tap conversion;
-- production smoke требует `oneTapAiHandoff/telegramAutoQuickBrief/cachedFullAnalysisHandoff/directFixtureDeepLink/handoffFunnelTracking/oneTapHandoffSelfTest`;
-- новых миграций Supabase и платёжных функций RC58 нет.
-## RC57 — Match Selection Intelligence
-
-- `matchSelectionProfile` различает LIVE, официальный upcoming, прочий upcoming, официальный recent и прочий recent;
-- `rankTeamDiscoveryMatches` ставит ближайший официальный матч основной команды выше более раннего friendly/youth;
-- deterministic drill выбирает fixture 2 (кубок через 3 дня) выше friendly завтра и лиги через 5 дней;
-- `teamSearchFixturePayload` возвращает `primaryFixtureId`, а `matchDiscovery` — `primaryFixtureId/primaryReason`;
-- Mini App делает merge remote matches перед local matches, чтобы не потерять server selection metadata;
-- сортировка upcoming/finished учитывает `selection.rank` до даты;
-- основной match card имеет `is-primary`, badge `ОСНОВНОЙ МАТЧ` и reason;
-- Telegram multi-result search отмечает основной fixture звездой и ставит его первым;
-- `search_result` не получает query/rawText; допускается только numeric `primaryFixtureId`;
-- `/health.matchSelectionSelfTest = enabled`; production smoke требует RC57 health-флаги;
-- новых миграций Supabase, новых API-Football вызовов и платёжных функций RC57 нет.
-## RC56 — Match Discovery & Zero-Result Recovery
-
-- поиск команды вызывает `loadSearchTeamMatches` на backend и не запускает скрытый второй `/api/team` запрос из Mini App;
-- Telegram и Mini App используют cache `search:team-fixtures:<teamId>:<from>:<to>:v2`;
-- календарь discovery работает в окне -30 / +120 дней через `from/to`, без `next`;
-- live и upcoming имеют приоритет; если их нет, возвращаются последние завершённые матчи;
-- postponed/cancelled/abandoned/awarded fixtures не используются для discovery;
-- Team Hub использует тот же selector и cache generation `teamhub:*:v2`;
-- remote team result кликабелен и открывает Team Hub только по явному действию пользователя;
-- `matchDiscovery.mode` различает `upcoming / recent / empty`;
-- UI объясняет `recent` как fallback, а `empty` как отсутствие календаря в окне;
-- Telegram `search_result` добавляет только безопасное поле recovery и не сохраняет query;
-- launch-funnel возвращает `searchQuality.recoveredRecent`;
-- production smoke требует `zeroResultRecovery/teamFixtureDiscovery/sharedFixtureDiscoveryCache/extendedTeamCalendar/recentMatchFallback`;
-- новых миграций Supabase и платёжных функций RC56 нет.
-## RC55 — Real Launch Drill & Search Quality
-
-- `МЮ`, `мю!!!`, `ПСЖ?`, `Барса.` и другие запросы с пунктуацией резолвятся в ожидаемый клуб;
-- `Fenerbahçe`, `Beşiktaş`, `São Paulo`, `Bayern München` корректно проходят search normalization;
-- `Al-Nassr`, `Бока-Хуниорс` и `Red-Star Belgrade` не разбиваются Telegram-парсером на две команды;
-- матч по-прежнему можно задавать через `Интер — Милан`, `Inter vs Milan` и `Интер против Милана`;
-- `SEARCH_QUALITY_DRILL_CASES` проходит полностью, а `/health.searchQualitySelfTest = enabled`;
-- fallback «Клуб распознан» содержит действие «Повторить», которое запускает канонический поиск;
-- `search_result` не содержит query/rawText/parts.query и сохраняет только безопасный outcome/intent/count/recognized;
-- launch-funnel возвращает `searchQuality.attempts/match/recognizedNoMatch/notFound/matchPct`;
-- админский UI показывает агрегированное качество поиска без Telegram ID и текста запросов;
-- production smoke требует RC55 health-флаги;
-- новых миграций Supabase и платёжных функций RC55 нет.
-
-## RC54 — Launch Simulation & Conversion UX
-
-- `/start` сразу объясняет, что клуб можно написать прямо в чат, без slash-команд;
-- кнопка «Найти матч» стоит первой в persistent keyboard;
-- глобальный поиск принимает известные короткие алиасы от 2 символов, backend остаётся fail-closed для неизвестных коротких запросов;
-- high-intent топ-клуб может использовать небольшой резерв поиска при низкой квоте, но не проходит при критическом остатке;
-- team-search cache для top-club intent хранится 24 часа;
-- каталог распознаёт клубы нескольких крупных регионов, при этом provider search остаётся глобальным;
-- при provider/quota degradation распознанный клуб отображается как «Клуб распознан», а не как пустой результат;
-- персональная новость ведёт через `news:match:<fixtureId>` и пишет `news_return` перед `match_open`;
-- launch-funnel использует paged read до 10 000 событий и явно сообщает `truncated`;
-- launch-funnel возвращает `bottleneck` и `returnLoop`, а админка показывает главное место потери конверсии;
-- `LAUNCH_SIMULATION_RC54.md` проходит путь media deep-link → start → search → match → quick AI → full AI → news return;
-- health содержит `launchSimulation`, `conversionUx`, `highIntentSearchFallback`, `newsReturnLoop`;
-- новых таблиц или платёжных функций RC54 нет.
-
-## RC53 — Launch Package
-
-- `/start` с media/press/partner/social/ref payload сохраняет first-touch только один раз;
-- неизвестные символы start payload отбрасываются, длина ограничена 64 символами;
-- повторный `/start` не должен перезаписывать `acquisition_first_touch_at`;
-- `growth_events` имеет RLS и не выдаёт права `anon/authenticated`;
-- `service_role` имеет только backend-доступ, необходимый для записи/агрегации/очистки launch analytics;
-- индексы покрывают event+created_at, source+campaign+created_at и telegram_id+created_at;
-- событие `search` не сохраняет поисковый запрос или пользовательский текст;
-- быстрый AI Telegram пишет `quick_ai`, а `apiAnalyze` с `origin=telegram_quick` не пишет `full_ai`;
-- Mini App передаёт `origin=miniapp` и после успешного cached/stale/fresh результата пишет `full_ai`;
-- воронка: entry → search → match_open → quick_ai → full_ai;
-- `/api/launch-funnel` доступен только администратору и без Telegram init data получает 401;
-- launch-funnel не возвращает Telegram ID и показывает только агрегаты source/campaign;
-- админская launch-панель остаётся под `data-admin-only hidden`;
-- пользовательский Mini App не получает нового launch/media экрана;
-- `GROWTH_RETENTION_DAYS=90`, cron очищает устаревшие события;
-- Privacy v1.1 явно описывает атрибуцию, отсутствие third-party ad SDK/cookies и срок до 90 дней;
-- `MEDIA_LAUNCH_RU.md` не содержит обещаний гарантированного результата/выигрыша;
-- production smoke проверяет пять RC53 health-флагов и защиту `/api/launch-funnel`;
-- миграция v6.15 применена в Production Supabase до публикации Worker.
-
-## RC52 — Media Launch Hardening
-
-- повторный Telegram update не должен повторно выполнять favorite toggle или AI callback;
-- при исключении во время обработки dedupe-claim должен освобождаться;
-- message/callback/refresh имеют раздельные burst policies;
-- payment/pre-checkout/subscription updates не блокируются generic Telegram burst guard;
-- webhook без `x-telegram-bot-api-secret-token` получает HTTP 403 в Production;
-- Cloudflare Assets `run_worker_first` содержит `/telegram/*` и `/api/*`;
-- `/api/public-status` не раскрывает ключи, Supabase URL, Telegram ID админа или provider quota;
-- Privacy/Terms/Status доступны как статические HTTPS-страницы с CSP;
-- privacy описывает реально используемые пользовательские данные и внешних провайдеров;
-- terms явно отделяет AI-анализ от гарантии результата и финансовой/букмекерской рекомендации;
-- trust-ссылки видны на основном AI-search экране, но не создают новую продуктовую навигацию Mini App;
-- official/major news source сохраняет исходную impact-категорию;
-- high-impact news из обычного web source понижается до medium и показывает «требуется подтверждение»;
-- production smoke проверяет release version на `/api/public-status`, три trust pages и webhook secret enforcement;
-- RC regression содержит blocking check `telegram_webhook_guard`;
-- новых таблиц и миграций RC52 нет.
-
-## RC51 — Public Telegram UX
-
-- новый /start не показывает slash-меню и объясняет продукт через кнопочный сценарий;
-- Telegram first_name экранируется перед вставкой в HTML-приветствие;
-- match card отображает «FM AI · MATCH», турнир, UTC-время/статус и состояние сохранённого AI-разбора;
-- нормализованная Telegram-карточка сохраняет реальные home/away team IDs и logos;
-- ☆/★ доступны непосредственно в карточке выбранного матча;
-- favorite callback содержит только числовые teamId/fixtureId и укладывается в лимит callback_data Telegram;
-- добавление/удаление использует существующие `addFavorite/removeFavorite`, то есть единый Supabase-источник с Mini App;
-- после toggle клавиатура обновляется через `editMessageReplyMarkup`, без спама новыми сообщениями;
-- если team card устарел, favorite toggle завершается понятным alert и не создаёт выдуманный клуб;
-- «Мои команды» при пустом состоянии объясняет, как добавить первую команду;
-- короткий алиас «МЮ» разрешается только если глобальный каталог дал точное известное совпадение;
-- кнопки AI-разбора, новости клуба и ближайшие матчи продолжают использовать тот же favorite state;
-- новых таблиц и миграций RC51 нет.
-
-## RC50 — FM AI News
-
-- «📰 Новости» доступна из постоянной Telegram-клавиатуры;
-- новости не создают новый экран Mini App;
-- Tavily вызывается с `topic=news`, ограничением давности и базовой глубиной;
-- новостные URL допускают только http/https;
-- social/video/betting-tips домены отсекаются до показа пользователю;
-- новостные элементы дедуплицируются по URL и нормализованному заголовку;
-- пользователь видит источник каждой новости и может открыть оригинальную публикацию;
-- классификация новости не выдаётся за подтверждённое изменение прогноза;
-- сильное влияние маркируется только как возможное и предлагает перепроверить AI-анализ;
-- персональные новости клуба доступны только для реально сохранённых избранных команд пользователя;
-- ближайший матч в клубных новостях берётся из футбольного провайдера/кеша, а не угадывается по тексту статьи;
-- утренняя подборка остаётся opt-in и теперь отправляет отдельный блок из максимум двух новостей;
-- общий и утренний news-feed кешируются и не создают по одному Tavily-запросу на подписчика;
-- при отсутствии TAVILY_KEY новостной блок корректно возвращает пустое состояние;
-- новых таблиц и миграций RC50 нет.
-
-## RC49 — публичная архитектура и глобальный поиск клубов
-
-- обычный пользователь Mini App видит только «Найти матч» и «История AI»;
-- служебные «Матчи» и «Профиль/Admin» скрыты из пользовательской нижней навигации;
-- без deep-link Mini App открывается на поиске, а deep-link конкретного матча сразу запускает нужный AI-разбор;
-- запуск обычного пользователя не вызывает `loadMatches()`; общая лента загружается только для администратора;
-- поисковые результаты команды отображаются как подтверждение найденного клуба, а основное действие остаётся на карточках матчей;
-- глобальный каталог алиасов покрывает топ-клубы Англии, Испании, Италии, Германии, Франции, Португалии, Нидерландов, Турции, Шотландии, Бельгии, Украины, Саудовской Аравии и MLS;
-- алиас используется только для определения канонического поискового запроса; ID клуба не хардкодится и подтверждается API-Football;
-- короткий известный алиас вроде «МЮ» допускается даже при длине меньше трёх символов;
-- Telegram-поиск использует тот же `topTeamSearchPlan`;
-- «Матчи сегодня», LIVE и «Мои команды» работают в чате и не отправляют пользователя в Mini App;
-- пользовательские списки матчей в Telegram используют callback-карточки матча и существующие AI-действия;
-- новых таблиц и миграций RC49 нет.
-
-## RC48 — AI-вердикт прямо в Telegram
-
-- у предстоящего матча есть callback-кнопки «AI-вердикт», «Судья», «Составы и потери», «Рынок и риски»;
-- callback подтверждается до запуска тяжёлого анализа, чтобы Telegram не показывал зависшую кнопку;
-- первый запрос использует существующий `apiAnalyze` и обычный пользовательский лимит;
-- cache v10 повторно используется без нового расхода анализа;
-- слабый сигнал явно отображается как «Лучше пропустить»;
-- AI-вердикт показывает уверенность отдельно от качества данных;
-- судейская статистика показывается только при доступной подтверждённой выборке;
-- составы честно маркируются как подтверждённые/неподтверждённые;
-- рынок показывает доступные 1X2 и объяснение движения, без выдуманных данных;
-- несколько найденных матчей выбираются callback-кнопкой и открывают карточку матча;
-- «Найти матч» работает как обычная Telegram-кнопка и приглашает пользователя ввести текст;
-- новых таблиц и миграций RC48 нет.
-
-## RC47 — Telegram без slash-команд
-
-- `setMyCommands` очищает видимый список slash-команд;
-- после запуска бот показывает постоянную нижнюю клавиатуру с основными действиями;
-- Web App-кнопки напрямую открывают матчи сегодня, LIVE, поиск и избранное;
-- AI-подборка, последний разбор, утренний дайджест и помощь доступны обычными кнопками;
-- профиль бота получает имя «FM AI • Футбольный Инструктор» и новые описания;
-- одиночный найденный матч показывает отдельные action-кнопки для AI-идеи, судьи, составов, рынка и полного разбора;
-- deep-link `tab` открывает нужную вкладку анализа без дополнительной навигации;
-- утренний дайджест управляется callback-кнопками «Включить/Выключить»;
-- старые slash-маршруты сохранены скрыто для совместимости;
-- новых таблиц и миграций RC47 нет.
-
-## RC46 — качество данных, AI-план и вопросы обычным языком
-
-- AI-инструктор отдельно показывает «Качество данных», не смешивая его с уверенностью модели;
-- блок «AI-план до стартового свистка» содержит до трёх проверок, условие отмены сценария и ориентир для LIVE;
-- «что поставить на …», «кто судья …», «разбери матч …» очищаются до названия команды/матча и используют существующий безопасный поиск;
-- `/ask <вопрос>` зарегистрирован в Telegram-командах и ведёт в тот же маршрут;
-- пользовательский ввод продолжает HTML-экранироваться;
-- внешние запросы по-прежнему защищены `freeQuotaHealthy`;
-- новых таблиц и миграций RC46 нет.
-
-## RC45 — AI-рейтинг и поиск из Telegram
-
-- главный экран показывает до трёх матчей в AI-рейтинге без автоматического расхода анализа;
-- текст под рейтингом явно сообщает, что это рейтинг внимания, а не прогноз исхода;
-- разобранные `skip`/высокорисковые матчи могут попасть в «Лучше пропустить» только после реального AI-разбора;
-- `/search Арсенал` и обычный текст `Арсенал` используют один безопасный поисковый маршрут;
-- бот сначала ищет в кэше матчей дня и бережёт квоту поставщика;
-- Telegram HTML экранирует пользовательский ввод и названия команд;
-- кнопка предстоящего матча запускает анализ только после явного нажатия пользователя;
-- если анализ уже есть в истории, deep-link открывает его read-only;
-- deep-link поиска передаёт максимум 60 символов;
-- новых таблиц и миграций RC45 не добавляет.
-
-## Champion–Challenger
-
-- в `model_calibration_state` существует строка `global`;
-- задан ровно один `active_fingerprint`;
-- fingerprint зависит только от production-параметров профиля;
-- challenger не меняет прогноз до двух успешных holdout-окон;
-- каждое окно содержит минимум 20 trusted матчей;
-- на каждом окне Brier gain >= 0.001 и log loss не ухудшается;
-- новый прогноз сохраняет `calibration_profile_fingerprint`;
-- post-promotion guard ждёт минимум 20 trusted матчей;
-- rollback возвращает `previous_fingerprint` и создаёт `ops_events` audit.
-- transition RPC блокирует stale revision с SQLSTATE `40001`;
-- promotion/rollback и смена статусов профилей атомарны;
-- freeze блокирует автоматические переходы;
-- manual rollback разрешён только на `previous_fingerprint`;
-- каждый переход записан в `model_calibration_transitions`.
-
-## Admin Access
-
-- реальный Telegram-пользователь без allowlist не получает admin даже при `DEV_MODE=true`;
-- синтетический dev-admin помечается сервером и имеет ID `999001`;
-- PREMIUM и другие тарифы не дают admin-права;
-- клиент показывает бейдж только когда сервер одновременно вернул `isAdmin=true` и `role=admin`;
-- `/api/calibration-control` возвращает `403` обычному пользователю.
-
-## Database
-
-- все server-only таблицы имеют RLS;
-- `anon` и `authenticated` не имеют прямого доступа;
-- `service_role` имеет необходимые права Data API;
-- `PUBLIC`, `anon` и `authenticated` не имеют прав на backend tables/sequences/RPC;
-- default privileges сохраняют тот же запрет для будущих объектов;
-- `backend_security_contract()` и `backend_default_acl_contract()` возвращают `ok=true` только через `service_role`;
-- Release Readiness и RC Regression блокируются при нарушении security contract;
-- foreign key и filtered-query колонки индексированы;
-- fresh-install baseline v6.9 и migrations v6.10–v6.11.1 применяются к пустой базе без ручного добавления таблиц;
-- standalone-миграции v6.3–v6.8 отсутствуют: их итоговая схема уже содержится в baseline v6.9.
-
-## Automated checks
-
-Обязательный PASS:
+## Перед merge/deploy
 
 ```bash
-npm run check
+npm ci
 npm test
 npm run verify:release
 npm run verify:worker
 ```
 
-Также обязательны встроенные проверки:
+Все команды должны завершиться без ошибок.
 
-- Prediction Integrity;
-- Trusted Metrics Gate;
-- Two-Pass Settlement Finality;
-- Settlement Adjudication;
-- Calibration Promotion self-test;
-- Calibration Lifecycle schema;
-- Production Load Safety;
-- Admin Security.
-- Cloudflare post-deploy smoke;
-- точный поиск по лиге возвращает ближайшие и завершённые матчи без автоматического запуска полного анализа.
+## Версия и release contract
 
-## Post-deploy
+- `package.json` и `package-lock.json`: `6.64.0`.
+- Worker и client: `6.64.0-rc72`.
+- Release candidate: `RC72`.
+- Production workflow запускается только после успешного Quality.
+- Post-deploy smoke проверяет ту же версию и RC.
 
-- `/health` возвращает `6.21.0-rc29`, `RC29` и `devMode=false`;
-- `cloudflareDeploymentGate=enabled`;
-- `browserSecurityPolicy=enabled` и `failClosedDeployment=enabled`;
-- `/api/app-manifest` соответствует версии Worker;
-- `/`, CSS и JS доступны после обновления asset cache key;
-- `/` содержит CSP с официальным Telegram SDK, `object-src 'none'` и `X-Content-Type-Options: nosniff`;
-- `/api/me`, `/api/release-readiness` и `/api/calibration-control` без Telegram initData возвращают `401`;
-- `/health/supabase` публично недоступен;
-- при ошибке используется `Rollback Production` с предыдущим version ID.
+## Supabase
 
+Для существующей базы должны быть применены:
+`supabase_migration_v6_9.sql`, `v6_10`, `v6_11`, `v6_11_1`, `v6_12`, `v6_13`, `v6_14`, `v6_15`.
 
-## RC29 UI/роль
-- обычный пользователь не видит и не может сфокусировать admin-only элементы;
-- администратор после загрузки профиля видит технические панели;
-- Telegram-фото профиля загружается через безопасный URL, при ошибке остаётся ⚽;
-- на ширине 320–360 px длинные диагностические строки не выходят за карточки;
-- основные подписи админ-панели не смешивают русские фразы с английскими статусами.
+Проверить:
+- RLS и закрытые backend-only таблицы не открыты для `anon/authenticated`;
+- service-role ключ не попадает в клиент;
+- `MONETIZATION_ENABLED=false`;
+- `DEV_MODE=false`.
 
+## RC72 — News Impact Decision Card
 
-## RC29 User Flow / Mobile UX
-- BackButton Telegram показан только на вложенных экранах и возвращает к реальному предыдущему экрану;
-- кнопка «Назад» из анализа, открытого из истории/команды/турнира, не отправляет пользователя принудительно на список матчей;
-- открытие записи истории не вызывает POST /api/analyze и не увеличивает дневной счётчик анализа;
-- устаревший ответ поиска не может заменить результаты более нового запроса;
-- на мобильном открытие вкладки «Поиск» не вызывает клавиатуру без действия пользователя;
-- неактивные view/tab panels скрыты, inert и aria-hidden;
-- touch-target основных мобильных кнопок не меньше 44 px.
+- News Impact запускается только после явного пользовательского действия.
+- Для причинностного сравнения предыдущий AI snapshot должен быть старше новости.
+- Decision Card различает material / partial / stable / causality-unavailable состояния.
+- Telegram-кнопки зависят от decision state.
+- Analytics сохраняет безопасный decision code без текста новости, URL и пользовательского запроса.
+- Новость сама по себе не переписывает AI-прогноз.
+- Regression: `test/news-impact-decision-card-rc72.test.js`.
 
+## Критический regression-контур
 
-## RC29 Interaction Safety
-- два быстрых нажатия «Предматчевый анализ» не запускают параллельные POST /api/analyze;
-- при быстром открытии двух разных матчей более старый ответ Match Center не заменяет новый;
-- повторное нажатие звезды одной команды блокируется до завершения мутации;
-- повторное включение/отключение одного напоминания блокируется до завершения мутации;
-- временный сбой /api/me после уже успешной авторизации не скрывает подтверждённый профиль и admin UI;
-- кнопка «Открыть турнирную таблицу» со страницы команды открывает таблицу текущего primaryCompetition;
-- favorite/reminder controls сообщают состояние через disabled/aria-pressed.
+Обязательно должны оставаться зелёными тесты:
+- поиск и выбор матча;
+- Telegram quick AI → Mini App handoff;
+- freshness/recheck/delta;
+- kickoff handoff;
+- post-match review/return;
+- AI track record;
+- fixture deep-link + distributed lock;
+- media publisher/control room;
+- news conversion → smart fixture → impact delta → decision card;
+- русская локализация и access/security contracts.
 
+## Production smoke
 
-## RC29 Async Entity / Personal Data
-- быстрый переход Команда A → Команда B не позволяет ответу A перерисовать страницу B;
-- тот же контракт проверяется для вкладок «Статистика» и «Состав»;
-- быстрый переход Турнир A → Турнир B не позволяет таблице A появиться в B;
-- кнопка перехода в турнир из строки матча команды вызывает openTournamentFromTeam(false), а не передаёт click event;
-- до первого ответа избранное и напоминания показывают загрузку, а не ложное «пусто»;
-- ошибка первого чтения показывает retry-карточку;
-- ошибка повторного чтения сохраняет последние загруженные данные и показывает stale-предупреждение.
+`scripts/post-deploy-smoke.js` должен подтвердить:
+- `/health.ok = true`;
+- `version = 6.64.0-rc72`;
+- `releaseCandidate = RC72`;
+- `devMode = false`;
+- обязательные self-test/feature flags = `enabled`;
+- `/health/supabase` не доступен публично;
+- public status/manifest возвращают текущую версию.
 
+## Ручная проверка Telegram / Mini App
 
-## RC29 Personal Data Write Consistency
-- GET избранного, начатый до мутации, не может перезаписать подтверждённое добавление/удаление;
-- то же правило действует для напоминаний;
-- POST /api/reminders возвращает полный нормализованный item и клиент использует его сразу;
-- после успешного POST напоминания не выполняется обязательный второй GET;
-- временная ошибка refresh при ранее пустом списке видна пользователю;
-- при ошибке сохранения настроек UI возвращается к последней подтверждённой версии;
-- favorite/reminder containers используют aria-live=polite.
-
-
-## RC29 Analysis / History Transition
-- переход Анализ A → Анализ B сбрасывает вкладку на «Бриф»;
-- после успешного POST /api/analyze экран анализа открывается до фоновой синхронизации истории/напоминаний;
-- новый анализ мгновенно появляется в локальной истории;
-- GET истории, начатый до локального обновления, не перезаписывает более новую запись;
-- быстрые клики История A → История B не позволяют ответу A открыть старый матч;
-- уход с вкладки «История» во время загрузки не позволяет позднему ответу вернуть пользователя в анализ;
-- первый load/error/stale/empty состояния истории визуально различаются;
-- relativeAge после 24 часов использует дни.
-
-
-## RC29 Русский интерфейс
-- во вкладках пользователя нет видимых «LIVE», «VS», «player stats», «implied probability» и других смешанных технических подписей;
-- предматчевый анализ показывает понятные русские названия сигналов, качества модели, состава и рынка;
-- административные панели не показывают пользователю сырые holdout/champion/challenger/settlement/drift/dry-run термины;
-- счётчик «Пропущено» обновляется через DOM id `quotaFeatureSkipped`;
-- клиентская регрессионная проверка берёт текущую версию файлов из `CLIENT_VERSION`, а не из старого RC22;
-- серверная RC-регрессия проверяет согласованность текущих APP_VERSION/RELEASE_CHANNEL/RC_NAME динамически;
-- тест уведомлений использует текущую APP_VERSION;
-- health содержит russianUiLocalization/adminRussianLocalization/prematchRussianLocalization=enabled.
+1. Найти клуб и открыть основной матч.
+2. Получить Quick AI в Telegram и открыть полный анализ без повторного списания.
+3. Проверить freshness/recheck перед стартом.
+4. Проверить корректный handoff после начала матча.
+5. Открыть новость клуба → AI-проверку → News Impact Decision Card.
+6. Убедиться, что профиль обычного пользователя не показывает админские controls.
+7. Убедиться, что весь пользовательский и административный интерфейс остаётся русскоязычным.
