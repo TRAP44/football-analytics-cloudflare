@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.83.0-rc91';
+const CLIENT_VERSION = '6.84.0-rc92';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc91';
+const CLIENT_RELEASE_CHANNEL = 'rc92';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2962,6 +2962,10 @@ function renderLaunchFunnel() {
   const impactRecoveryIncidentSloBreachTriage=d.newsImpactRecoveryIncidentSloBreachTriage || {available:false,summary:{},items:[]};
   const impactRecoveryTriageSummary=impactRecoveryIncidentSloBreachTriage.summary || {};
   const impactRecoveryTriageItems=Array.isArray(impactRecoveryIncidentSloBreachTriage.items) ? impactRecoveryIncidentSloBreachTriage.items : [];
+  const impactRecoveryIncidentSloBreachTriageTrend=d.newsImpactRecoveryIncidentSloBreachTriageTrend || {available:false,summary:{},weekly:[],stuck:[]};
+  const impactRecoveryTriageTrendSummary=impactRecoveryIncidentSloBreachTriageTrend.summary || {};
+  const impactRecoveryTriageTrendWeekly=Array.isArray(impactRecoveryIncidentSloBreachTriageTrend.weekly) ? impactRecoveryIncidentSloBreachTriageTrend.weekly : [];
+  const impactRecoveryTriageTrendStuck=Array.isArray(impactRecoveryIncidentSloBreachTriageTrend.stuck) ? impactRecoveryIncidentSloBreachTriageTrend.stuck : [];
   const impactFunnel=Array.isArray(d.newsImpactActionFunnel) ? d.newsImpactActionFunnel : [];
   const impactBottleneck=d.newsImpactActionBottleneck || null;
   const impactConfidenceGuard=d.newsImpactActionConfidenceGuard || {minUsers:10,stableUsers:30};
@@ -3093,6 +3097,12 @@ function renderLaunchFunnel() {
       '<div class="release-monitor-section-head"><strong>SLO Breach Triage Queue</strong><span>recovery overdue ' + Number(impactRecoveryTriageSummary.recoveryOverdue || 0) + ' · ACK critical ' + Number(impactRecoveryTriageSummary.ackCritical || 0) + ' · ACK overdue ' + Number(impactRecoveryTriageSummary.ackOverdue || 0) + '</span></div>' +
       (impactRecoveryTriageItems.length ? '<div class="launch-campaign-list">' + impactRecoveryTriageItems.map(x=>'<div><span><b>' + (x.triageStage==='recovery_overdue'?'🚨':x.triageStage==='ack_critical'?'⚠️':'⏱️') + ' ' + escapeHtml(x.reasonLabel || x.reason || '') + '</b> · ' + escapeHtml(x.actionLabel || x.action || '') + '</span><strong>' + escapeHtml(x.triageLabel || x.triageStage || '') + '</strong><small>age ' + Number(x.ageMinutes || 0) + ' мин · ' + escapeHtml((x.breachTypes || []).join(' + ') || 'breach') + ' · started ' + escapeHtml(x.startedAt || '—') + '</small></div>').join('') + '</div>' : '<div class="data-notice">✅ Активных SLO breach-инцидентов для triage нет.</div>') +
       '<p class="tiny">RC91 — triage использует только существующие пороги RC87: ACK 30 мин, critical ACK 120 мин, Recovery 360 мин. Это административная группировка, без новых SLO-порогов, persistence и изменений recovery-routing.</p>'
+    ) : ''}
+    ${impactRecoveryIncidentSloBreachTriageTrend.available !== false ? (
+      '<div class="release-monitor-section-head"><strong>Triage Trend · 4 недели</strong><span>active ' + Number(impactRecoveryTriageTrendSummary.currentTotal || 0) + ' · Δ ' + (Number(impactRecoveryTriageTrendSummary.totalDelta || 0)>=0?'+':'') + Number(impactRecoveryTriageTrendSummary.totalDelta || 0) + ' · stuck pairs ' + Number(impactRecoveryTriageTrendSummary.stuckPairs || 0) + '</span></div>' +
+      (impactRecoveryTriageTrendWeekly.length ? '<div class="launch-campaign-list">' + impactRecoveryTriageTrendWeekly.map(x=>'<div><span><b>' + escapeHtml(String(x.snapshotAt || '').slice(0,10)) + '</b></span><strong>' + Number(x.total || 0) + ' active</strong><small>Recovery overdue ' + Number(x.recoveryOverdue || 0) + ' · ACK critical ' + Number(x.ackCritical || 0) + ' · ACK overdue ' + Number(x.ackOverdue || 0) + '</small></div>').join('') + '</div>' : '<div class="data-notice">Нет недельных triage-снимков.</div>') +
+      (impactRecoveryTriageTrendStuck.length ? '<div class="data-notice">🧭 Пары, остающиеся в triage минимум 2 недельных снимка: ' + impactRecoveryTriageTrendStuck.map(x=>escapeHtml(x.reasonLabel || x.reason || '') + ' / ' + escapeHtml(x.actionLabel || x.action || '') + ': ' + Number(x.weeksPresent || 0) + ' нед.').join(' · ') + '</div>' : '<div class="data-notice">✅ Пар, застрявших в triage минимум на двух недельных снимках, нет.</div>') +
+      '<p class="tiny">RC92 — trend строится из фактических incident episodes на конец каждой недели. Используются только существующие пороги RC87; производные trend-данные не сохраняются и recovery-routing не меняется.</p>'
     ) : ''}
     ${impactRecoveryStrategyAlerts.length ? `<div class="release-monitor-section-head"><strong>Recovery: предупреждения</strong><span>${Number(impactRecoveryAlertSummary.critical || 0)} critical · ${Number(impactRecoveryAlertSummary.warnings || 0)} warning · ${Number(impactRecoveryAlertSummary.info || 0)} info</span></div>
       <div class="launch-campaign-list">${impactRecoveryStrategyAlerts.map(x=>`<div>
