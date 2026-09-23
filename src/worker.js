@@ -2179,7 +2179,11 @@ async function sendBotFixtureMenu(request, cfg, userId, chatId, fixtureId, optio
     const analyzedMatch=normalizeBotFixtureCard(data.match || match);
     await rememberBotFixtureCards([analyzedMatch],cfg);
     void recordGrowthEvent(cfg,{userId,eventName:'quick_ai',channel:'telegram',fixtureId,attribution:options.attribution || null,metadata:{section:'handoff',cached:Boolean(data.cached),source:options.source || 'match_select'}});
-    void recordGrowthEvent(cfg,{userId,eventName:'ai_handoff',channel:'telegram',fixtureId,attribution:options.attribution || null,metadata:{cached:Boolean(data.cached),source:options.source || 'match_select'}});
+    if (options.attribution) {
+      void recordGrowthEvent(cfg,{userId,eventName:'ai_handoff',channel:'telegram',fixtureId,attribution:options.attribution,metadata:{cached:Boolean(data.cached),source:options.source || 'deep_link'}});
+    } else {
+      void recordGrowthEvent(cfg,{userId,eventName:'ai_handoff',channel:'telegram',fixtureId,metadata:{cached:Boolean(data.cached),source:'match_select'}});
+    }
     await telegramApi('sendMessage',cfg,{
       chat_id:chatId,
       parse_mode:'HTML',
