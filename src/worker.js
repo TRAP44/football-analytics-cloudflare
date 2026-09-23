@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.55.0-rc63';
+const APP_VERSION = '6.56.0-rc64';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc63';
-const RC_NAME = 'RC63';
+const RELEASE_CHANNEL = 'rc64';
+const RC_NAME = 'RC64';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1860,8 +1860,8 @@ function footballBotKeyboard(request) {
       [{ text: '🔎 Найти матч' }, { text: '⚽ Матчи сегодня' }],
       [{ text: '🧠 AI-подборка' }, { text: '🔴 LIVE' }],
       [{ text: '📰 Новости' }, { text: '⭐ Мои команды' }],
-      [{ text: '🕘 Последний разбор' }, { text: '☀️ Утренняя подборка' }],
-      [{ text: 'ℹ️ Как это работает' }],
+      [{ text: '🕘 Последний разбор' }, { text: '📈 Протокол AI' }],
+      [{ text: '☀️ Утренняя подборка' }, { text: 'ℹ️ Как это работает' }],
     ],
     resize_keyboard: true,
     is_persistent: true,
@@ -2383,6 +2383,7 @@ async function sendFootballBotHelp(request, cfg, chatId) {
       '🔎 <b>Найти матч</b> — бот попросит написать команду или игру.',
       '⭐ <b>Мои команды</b> — избранное.',
       '🕘 <b>Последний разбор</b> — сохранённый AI-вердикт.',
+      '📈 <b>Протокол AI</b> — подтверждённая история прогнозов без рекламного «процента побед».',
       '📰 <b>Новости</b> — важные события с источниками и объяснением контекста.',
       '☀️ <b>Утренняя подборка</b> — матчи дня и главное за утро.',
       '',
@@ -2763,6 +2764,41 @@ function lastAiVerdictText(row = {}) {
   return `🧠 Последний AI-разбор\n${teams}\n${row.ai_signal_label}${confidence}${risk}${outcome}`;
 }
 
+
+function botAiTrackRecordText(record = {}) {
+  if (!record?.available) return '📈 Протокол AI временно недоступен.';
+  const sample=record.sample || {};
+  const brier=record.probabilityQuality?.avgBrier;
+  const recent=(record.recent || []).slice(0,5);
+  const recentLines=recent.map(row=>`${row.matched?'✅':'❌'} ${telegramHtmlEscape(row.home)} — ${telegramHtmlEscape(row.away)} · ${telegramHtmlEscape(row.score)}\n   AI: ${telegramHtmlEscape(row.predictedLabel)}${Number.isFinite(Number(row.topProbability))?` · ${Number(row.topProbability)}%`:''} → факт ${telegramHtmlEscape(row.actualLabel)}`);
+  return [
+    '📈 <b>Протокол FM AI</b>',
+    `Период: последние ${Number(record.periodDays || 180)} дней`,
+    '',
+    `Проверенных матчей: <b>${Number(sample.verified || 0)}</b>`,
+    `Совпало / не совпало: <b>${Number(sample.matched || 0)} / ${Number(sample.missed || 0)}</b>`,
+    `Статус выборки: <b>${telegramHtmlEscape(sample.label || '—')}</b>`,
+    telegramHtmlEscape(sample.message || ''),
+    Number.isFinite(Number(brier)) ? `Ошибка Брайера: <b>${Number(brier).toFixed(3)}</b> · ниже лучше` : 'Ошибка Брайера: пока недостаточно данных',
+    ...(recentLines.length ? ['', '<b>Последние подтверждённые:</b>', ...recentLines] : []),
+    '',
+    '<i>Это история вероятностей модели, а не «винрейт» и не показатель доходности ставок. Прошлые результаты не гарантируют будущие.</i>',
+  ].filter(Boolean).join('\n');
+}
+
+async function sendBotAiTrackRecord(request, cfg, chatId) {
+  const record=await loadPublicAiTrackRecord(cfg,180).catch(()=>({available:false}));
+  await telegramApi('sendMessage',cfg,{
+    chat_id:chatId,
+    parse_mode:'HTML',
+    text:botAiTrackRecordText(record),
+    reply_markup:{inline_keyboard:[
+      [{text:'🧠 Открыть историю AI',web_app:{url:telegramWebAppUrl(request,{view:'history'})}}],
+      [{text:'⚽ Матчи сегодня',callback_data:'feed:today'}],
+    ]},
+  });
+}
+
 async function sendLastAiVerdict(request, cfg, userId, chatId) {
   const rows = await getHistory(userId, cfg);
   const row = rows[0];
@@ -3020,6 +3056,11 @@ async function processTelegramUpdate(request, cfg, update) {
   if (chatId && (/^\/last(?:@\w+)?(?:\s|$)/i.test(text) || text === '🕘 Последний разбор')) {
     await sendLastAiVerdict(request, cfg, Number(msg.from?.id || chatId), chatId);
     return json({ ok: true });
+  }
+
+  if (chatId && (/^\/track(?:@\w+)?(?:\s|$)/i.test(text) || text === '📈 Протокол AI')) {
+    await sendBotAiTrackRecord(request,cfg,chatId);
+    return json({ok:true});
   }
 
   if (chatId && text === '☀️ Утренняя подборка') {
@@ -5341,6 +5382,117 @@ async function apiModelQuality(request, cfg) {
   }
   const calibrationProfile = await getCalibrationProfile(cfg, { force: forceCalibration }).catch(() => baselineCalibrationProfile(settled.length));
   return json({ available: true, ...buildModelQuality(settled, pending, days, calibrationProfile) });
+}
+
+
+function publicTrackRecordSampleState(sample = 0) {
+  const n=Math.max(0,Number(sample || 0));
+  if (!n) return {code:'empty',label:'Данных пока нет',message:'Подтверждённая история модели только формируется.'};
+  if (n<20) return {code:'early',label:'Малая выборка',message:'Матчей пока мало — цифры показывают только раннюю историю и могут заметно меняться.'};
+  if (n<50) return {code:'forming',label:'Выборка формируется',message:'История уже полезна для проверки модели, но всё ещё чувствительна к каждому новому матчу.'};
+  return {code:'informative',label:'Выборка информативнее',message:'Накоплено больше подтверждённых матчей, но прошлые результаты всё равно не гарантируют будущие.'};
+}
+
+function buildPublicAiTrackRecord(settledRows = [], pendingRows = [], days = 180) {
+  const rows=verifiedSettledRows(settledRows,pendingRows);
+  const matched=rows.filter(row=>row.correct===true).length;
+  const missed=rows.filter(row=>row.correct===false).length;
+  const brierValues=rows.map(verifiedBrierScore).filter(Number.isFinite);
+  const avgBrier=brierValues.length ? Math.round((average(brierValues) || 0)*1000)/1000 : null;
+  const overRows=rows.filter(row=>typeof row.over25_correct==='boolean');
+  const bttsRows=rows.filter(row=>typeof row.btts_correct==='boolean');
+  const sampleState=publicTrackRecordSampleState(rows.length);
+  const recent=rows.slice(0,8).map(row=>({
+    fixtureId:Number(row.fixture_id || 0),
+    kickoffAt:row.kickoff_at || null,
+    league:String(row.league_name || ''),
+    home:String(row.home_name || ''),
+    away:String(row.away_name || ''),
+    score:`${Number(row.actual_home_goals)}:${Number(row.actual_away_goals)}`,
+    predictedOutcome:String(row.predicted_outcome || ''),
+    predictedLabel:predictionOutcomeLabel(row.predicted_outcome,row.home_name,row.away_name),
+    actualOutcome:String(row.actual_outcome || ''),
+    actualLabel:predictionOutcomeLabel(row.actual_outcome,row.home_name,row.away_name),
+    topProbability:Math.round(topProbabilityValue(row)*10)/10,
+    matched:row.correct===true,
+    brier:Number.isFinite(verifiedBrierScore(row)) ? Math.round(verifiedBrierScore(row)*1000)/1000 : null,
+  }));
+  return {
+    available:true,
+    periodDays:Number(days || 180),
+    generatedAt:new Date().toISOString(),
+    sample:{
+      verified:rows.length,
+      matched,
+      missed,
+      pending:Number((pendingRows || []).length),
+      excluded:Math.max(0,Number((settledRows || []).length)-rows.length),
+      state:sampleState.code,
+      label:sampleState.label,
+      message:sampleState.message,
+    },
+    probabilityQuality:{
+      avgBrier,
+      label:'Ошибка Брайера',
+      explanation:'Показывает качество всех вероятностей П1 / Н / П2 одновременно. Ниже — лучше; размер выборки всегда показывается рядом.',
+    },
+    secondary:{
+      over25:{sample:overRows.length,matched:overRows.filter(row=>row.over25_correct===true).length,missed:overRows.filter(row=>row.over25_correct===false).length},
+      btts:{sample:bttsRows.length,matched:bttsRows.filter(row=>row.btts_correct===true).length,missed:bttsRows.filter(row=>row.btts_correct===false).length},
+    },
+    recent,
+    methodology:{
+      immutablePrematch:true,
+      verifiedOnly:true,
+      profitabilityMetric:false,
+      note:'Используются только неизменяемые предматчевые снимки с подтверждённым или административно разобранным финальным результатом.',
+      disclaimer:'Совпадение исхода не равно доходности ставки. FM AI показывает историю модели и качество вероятностей, а не обещание будущего результата.',
+    },
+  };
+}
+
+async function loadPublicAiTrackRecord(cfg, days = 180, options = {}) {
+  const allowed=[90,180,365];
+  const period=allowed.includes(Number(days))?Number(days):180;
+  const cacheKey=`public:ai-track-record:${period}:v1`;
+  if (!options.force) {
+    const cached=await getCache(cacheKey,cfg).catch(()=>null);
+    if (cached?.available) return {...cached,cached:true};
+  }
+  const since=new Date(Date.now()-period*86400_000).toISOString();
+  let settled=[],pending=[];
+  if (hasSupabase(cfg)) {
+    [settled,pending]=await Promise.all([
+      supaSelectMany(cfg,'model_predictions',{status:'eq.settled',kickoff_at:`gte.${since}`},{limit:500,order:'kickoff_at.desc'}),
+      supaSelectMany(cfg,'model_predictions',{status:'eq.pending',kickoff_at:`gte.${since}`},{limit:500,order:'kickoff_at.desc'}),
+    ]);
+  } else {
+    const all=[...memory.modelPredictions.values()].filter(row=>Date.parse(row.kickoff_at || '')>=Date.parse(since));
+    settled=all.filter(row=>row.status==='settled').sort((a,b)=>Date.parse(b.kickoff_at || 0)-Date.parse(a.kickoff_at || 0));
+    pending=all.filter(row=>row.status==='pending');
+  }
+  const result=buildPublicAiTrackRecord(settled,pending,period);
+  await setCache(cacheKey,0,result,cfg,10).catch(()=>null);
+  return result;
+}
+
+async function apiAiTrackRecord(request, cfg) {
+  const url=new URL(request.url);
+  const days=Number(url.searchParams.get('days') || 180);
+  try {
+    return json(await loadPublicAiTrackRecord(cfg,days,{force:url.searchParams.get('refresh')==='1'}));
+  } catch (error) {
+    return json({available:false,reason:'История качества AI временно недоступна.',detail:redactOpsString(error?.message || error,160)},503);
+  }
+}
+
+function publicAiTrackRecordDrill() {
+  const base={status:'settled',settlement_verification_state:'confirmed',captured_at:'2026-09-22T17:00:00Z',kickoff_at:'2026-09-22T18:00:00Z',home_prob:55,draw_prob:25,away_prob:20,predicted_outcome:'home',home_name:'Home',away_name:'Away',league_name:'League',over25_prob:60,btts_prob:52};
+  const hit={...base,fixture_id:1,actual_home_goals:2,actual_away_goals:1,actual_outcome:'home',correct:true,over25_correct:true,btts_correct:true};
+  const miss={...base,fixture_id:2,kickoff_at:'2026-09-21T18:00:00Z',captured_at:'2026-09-21T17:00:00Z',actual_home_goals:0,actual_away_goals:1,actual_outcome:'away',correct:false,over25_correct:false,btts_correct:false};
+  const unverified={...hit,fixture_id:3,settlement_verification_state:'unverified'};
+  const result=buildPublicAiTrackRecord([hit,miss,unverified],[],180);
+  return {pass:result.sample.verified===2 && result.sample.matched===1 && result.sample.missed===1 && result.sample.state==='early' && result.recent.length===2 && result.methodology.profitabilityMetric===false,cases:6};
 }
 
 
@@ -14161,6 +14313,13 @@ export default {
         postMatchReturnQuotaGuard: 'enabled',
         postMatchReturnSelfTest: postMatchReturnDrill().pass ? 'enabled' : 'failed',
         postMatchReturnCases: postMatchReturnDrill().cases,
+        publicAiTrackRecord: 'enabled',
+        verifiedTrackRecordOnly: 'enabled',
+        smallSampleTrustGuard: 'enabled',
+        noWinRateTrustUx: 'enabled',
+        telegramAiTrackRecord: 'enabled',
+        aiTrackRecordSelfTest: publicAiTrackRecordDrill().pass ? 'enabled' : 'failed',
+        aiTrackRecordCases: publicAiTrackRecordDrill().cases,
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
@@ -14346,6 +14505,7 @@ export default {
         if (!isAdminUser(user, cfg)) return adminForbidden();
         return await apiModelQuality(request, cfg);
       }
+      if (request.method === 'GET' && url.pathname === '/api/ai-track-record') return await apiAiTrackRecord(request, cfg);
       if (url.pathname === '/api/calibration-control') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
         return await apiCalibrationControl(request, cfg, user);
