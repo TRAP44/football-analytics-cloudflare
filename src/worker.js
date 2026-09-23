@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.61.0-rc69';
+const APP_VERSION = '6.62.0-rc70';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc69';
-const RC_NAME = 'RC69';
+const RELEASE_CHANNEL = 'rc70';
+const RC_NAME = 'RC70';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1677,6 +1677,8 @@ async function apiLaunchFunnel(request,cfg) {
   const handoffToFull=new Set([...handoffUsers].filter(uid=>fullAiUsers.has(uid)));
   const newsOpen=setFor(['news_open']);
   const newsAiIntent=setFor(['news_ai_intent']);
+  const smartNewsAiRows=rows.filter(x=>String(x.event_name || '')==='news_ai_intent' && String(x?.metadata && typeof x.metadata==='object' ? x.metadata.linking || '' : '')==='smart_fixture');
+  const smartNewsAiUsers=new Set(smartNewsAiRows.map(x=>Number(x.telegram_id || 0)).filter(Boolean));
   const newsReturn=setFor(['news_return']);
   const shareRows=rows.filter(x=>['share_link_created','share_card_created'].includes(String(x.event_name || '')));
   const deepLinkRows=rows.filter(x=>String(x.event_name || '')==='fixture_deep_link_open');
@@ -1722,7 +1724,7 @@ async function apiLaunchFunnel(request,cfg) {
     bottleneck,
     handoff:{users:handoffUsers.size,fullAiUsers:handoffToFull.size,conversionPct:handoffUsers.size?Math.round((handoffToFull.size/handoffUsers.size)*1000)/10:0},
     rechecks:{total:recheckRows.length,free:recheckFree,charged:Math.max(0,recheckRows.length-recheckFree),material:recheckMaterial,stable:recheckStable},
-    returnLoop:{newsOpen:newsOpen.size,newsReturn:newsReturn.size,aiIntent:newsAiIntent.size,intentPct:newsOpen.size?Math.round((newsAiIntent.size/newsOpen.size)*1000)/10:0,conversionPct:newsOpen.size?Math.round((newsReturn.size/newsOpen.size)*1000)/10:0},
+    returnLoop:{newsOpen:newsOpen.size,newsReturn:newsReturn.size,aiIntent:newsAiIntent.size,smartFixtureIntent:smartNewsAiUsers.size,intentPct:newsOpen.size?Math.round((newsAiIntent.size/newsOpen.size)*1000)/10:0,conversionPct:newsOpen.size?Math.round((newsReturn.size/newsOpen.size)*1000)/10:0},
     mediaLoop:{shareEvents:shareRows.length,shareUsers:shareUsers.size,deepLinkOpens:deepLinkRows.length,deepLinkUsers:deepLinkUsers.size,aiUsers:deepLinkAiUsers.size,conversionPct:deepLinkUsers.size?Math.round((deepLinkAiUsers.size/deepLinkUsers.size)*1000)/10:0},
     searchQuality:{attempts:searchResultRows.length,match:searchMatches,recognizedNoMatch:searchRecognizedNoMatch,notFound:searchNotFound,recoveredRecent:searchRecoveredRecent,matchPct:searchResultRows.length?Math.round((searchMatches/searchResultRows.length)*1000)/10:0},
     campaigns,
@@ -3150,7 +3152,7 @@ async function processTelegramUpdate(request, cfg, update) {
     const newsAiMatchAction=data.match(/^news:ai_match:(\d+)$/);
     if (callbackChatId && newsAiMatchAction) {
       const fixtureId=Number(newsAiMatchAction[1]);
-      void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_ai_intent',channel:'telegram',fixtureId,metadata:{mode:'direct_fixture'}});
+      void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_ai_intent',channel:'telegram',fixtureId,metadata:{mode:'direct_fixture',linking:'smart_fixture'}});
       void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_return',channel:'telegram',fixtureId,metadata:{origin:'news_ai_cta'}});
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Проверяю новость в контексте матча…'}).catch(()=>null);
       await sendBotFixtureMenu(request,cfg,callbackUserId,callbackChatId,fixtureId);
@@ -10675,10 +10677,106 @@ function newsTeamHint(item = {}) {
   return best;
 }
 
-function newsConversionHook(item = {}, { fixtureId=0, teamName='' } = {}) {
+function newsPublishedMs(item = {}) {
+  const value=Date.parse(String(item?.publishedAt || item?.published_date || ''));
+  return Number.isFinite(value) ? value : null;
+}
+
+function newsFixtureRelevance(item = {}, fixture = {}) {
+  const match=normalizeBotFixtureCard(fixture);
+  const fixtureMs=Date.parse(match.date || '');
+  if (!match.fixtureId || !Number.isFinite(fixtureMs)) return {score:-Infinity,fixture:match,timing:'invalid',hoursFromNews:null};
+  const publishedMs=newsPublishedMs(item);
+  const now=Date.now();
+  const baseMs=publishedMs ?? now;
+  const hours=(fixtureMs-baseMs)/3600000;
+  let score=0;
+  let timing='next_match';
+
+  if (match.live) {
+    score=520;
+    timing='live';
+  } else if (!match.finished && hours>=-3) {
+    if (hours<=24) { score=460-Math.max(0,hours)*2; timing='pre_match'; }
+    else if (hours<=72) { score=390-(hours-24); timing='near_match'; }
+    else if (hours<=24*14) { score=310-(hours/24)*5; timing='next_match'; }
+    else { score=190-Math.min(120,hours/24); timing='future'; }
+  } else if (!match.finished && publishedMs===null) {
+    const hoursFromNow=(fixtureMs-now)/3600000;
+    score=hoursFromNow>=-3 ? 260-Math.min(180,Math.max(0,hoursFromNow)/2) : 20;
+    timing='next_match';
+  } else {
+    const ageHours=Math.abs(hours);
+    score=Math.max(5,80-Math.min(75,ageHours/3));
+    timing='past_match';
+  }
+
+  const category=String(item?.category?.code || '');
+  if (['lineup','injury','suspension','referee','weather'].includes(category) && !match.finished) score+=35;
+  if (category==='coach' && !match.finished) score+=20;
+  return {score,fixture:match,timing,hoursFromNews:Number.isFinite(hours)?hours:null};
+}
+
+function newsRelevantFixture(item = {}, fixtures = []) {
+  const ranked=(fixtures || [])
+    .map(fixture=>newsFixtureRelevance(item,fixture))
+    .filter(x=>Number.isFinite(x.score) && x.fixture?.fixtureId)
+    .sort((a,b)=>b.score-a.score || Date.parse(a.fixture.date||0)-Date.parse(b.fixture.date||0));
+  const best=ranked[0] || null;
+  if (!best) return null;
+  if (best.timing==='past_match' && ranked.some(x=>x.timing!=='past_match')) return ranked.find(x=>x.timing!=='past_match') || best;
+  return best;
+}
+
+function newsFixtureTimingLabel(link = {}) {
+  if (!link?.fixture?.fixtureId) return '';
+  if (link.timing==='live') return 'LIVE';
+  const hours=Number(link.hoursFromNews);
+  if (!Number.isFinite(hours)) return 'ближайший матч';
+  if (hours>=0 && hours<2) return 'в течение 2 часов после новости';
+  if (hours>=0 && hours<24) return `через ${Math.max(1,Math.round(hours))} ч после новости`;
+  if (hours>=24) return `через ${Math.max(1,Math.round(hours/24))} дн. после новости`;
+  return 'матч рядом по времени с новостью';
+}
+
+function newsFixtureChangeGuide(item = {}, link = null) {
+  const category=String(item?.category?.code || '');
+  if (!link?.fixture?.fixtureId) return '';
+  if (category==='injury' || category==='suspension') return 'состав · глубина скамейки · баланс сил · рынок';
+  if (category==='lineup') return 'стартовый состав · роли игроков · вероятности · рынок';
+  if (category==='referee') return 'карточки · фолы · пенальти · темп';
+  if (category==='weather') return 'темп · качество поля · интенсивность · тоталы';
+  if (category==='coach') return 'схема · стиль · неопределённость · форма';
+  if (category==='transfer') return 'доступность игрока · ротация · глубина состава';
+  return 'состав · форма · рынок · AI-оценка';
+}
+
+function smartNewsMatchLinkDrill() {
+  const item={publishedAt:'2026-09-20T12:00:00Z',category:{code:'injury'}};
+  const fixtures=[
+    {fixtureId:1,date:'2026-09-19T18:00:00Z',status:'FT',finished:true,homeName:'A',awayName:'B'},
+    {fixtureId:2,date:'2026-09-21T18:00:00Z',status:'NS',homeName:'A',awayName:'C'},
+    {fixtureId:3,date:'2026-09-28T18:00:00Z',status:'NS',homeName:'A',awayName:'D'},
+  ];
+  const best=newsRelevantFixture(item,fixtures);
+  const label=newsFixtureTimingLabel(best);
+  const guide=newsFixtureChangeGuide(item,best);
+  return {
+    pass:best?.fixture?.fixtureId===2
+      && best?.timing==='near_match'
+      && label.includes('дн.')
+      && guide.includes('состав')
+      && newsFixtureRelevance(item,fixtures[0]).score<newsFixtureRelevance(item,fixtures[1]).score,
+    cases:5,
+  };
+}
+
+function newsConversionHook(item = {}, { fixtureId=0, teamName='', fixtureLink=null } = {}) {
   const category=item?.category || {};
   const team=String(teamName || newsTeamHint(item)?.canonical || '').trim();
-  if (fixtureId) {
+  if (fixtureId || fixtureLink?.fixture?.fixtureId) {
+    const guide=newsFixtureChangeGuide(item,fixtureLink);
+    if (guide) return `Перепроверить: ${guide}.`;
     if (category.code==='injury' || category.code==='suspension' || category.code==='lineup') return 'Проверить, меняет ли это состав, рынок и AI-оценку ближайшего матча.';
     if (category.code==='referee') return 'Проверить судью, карточки и темп в AI-контексте ближайшего матча.';
     if (category.code==='coach') return 'Проверить, изменился ли игровой контекст и уровень неопределённости перед матчем.';
@@ -10688,12 +10786,14 @@ function newsConversionHook(item = {}, { fixtureId=0, teamName='' } = {}) {
   return 'Сначала сверяем источник; без привязки к конкретному матчу AI-оценку не меняем.';
 }
 
-function newsConversionKeyboard(items = [], extraRows = [], { fixtureId=0 } = {}) {
+function newsConversionKeyboard(items = [], extraRows = [], { fixtureId=0, fixtures=[] } = {}) {
   const rows=[];
   for (const [index,item] of (items || []).slice(0,4).entries()) {
     const row=[{text:`↗ Источник ${index+1}`,url:item.url}];
-    if (Number(fixtureId || 0)>0) {
-      row.push({text:'🧠 Проверить с AI',callback_data:`news:ai_match:${Number(fixtureId)}`});
+    const smartLink=(fixtures || []).length ? newsRelevantFixture(item,fixtures) : null;
+    const linkedFixtureId=Number(smartLink?.fixture?.fixtureId || fixtureId || 0);
+    if (linkedFixtureId>0) {
+      row.push({text:'🧠 Проверить с AI',callback_data:`news:ai_match:${linkedFixtureId}`});
     } else {
       const hint=newsTeamHint(item);
       if (hint?.token) row.push({text:`🧠 ${String(hint.canonical).slice(0,18)}`,callback_data:`news:ai_team:${hint.token}`});
@@ -10811,16 +10911,20 @@ function newsImpactBadge(impact = 'low') {
   return '⚪ контекст';
 }
 
-function newsFeedText(items = [], { title='FM AI News', teamName='', fixture=null } = {}) {
+function newsFeedText(items = [], { title='FM AI News', teamName='', fixture=null, fixtures=[] } = {}) {
   if (!items.length) return `📰 <b>${telegramHtmlEscape(title)}</b>\n\nСвежих новостей по этому запросу сейчас не найдено или источник новостей временно недоступен.`;
   const rows=items.slice(0,4).map((item,index)=>{
-    const why=footballNewsImpactText(item.category,Boolean(fixture?.fixtureId));
+    const smartLink=(fixtures || []).length ? newsRelevantFixture(item,fixtures) : null;
+    const linkedFixture=smartLink?.fixture || fixture || null;
+    const why=footballNewsImpactText(item.category,Boolean(linkedFixture?.fixtureId));
     const hint=newsTeamHint(item);
-    const hook=newsConversionHook(item,{fixtureId:Number(fixture?.fixtureId || 0),teamName:teamName || hint?.canonical || ''});
+    const hook=newsConversionHook(item,{fixtureId:Number(linkedFixture?.fixtureId || 0),teamName:teamName || hint?.canonical || '',fixtureLink:smartLink});
+    const timing=smartLink ? newsFixtureTimingLabel(smartLink) : '';
     return [
       `${index+1}. ${item.category.icon} <b>${telegramHtmlEscape(item.title)}</b>`,
       `${telegramHtmlEscape(item.category.label)} · ${newsImpactBadge(item.category.impact)}`,
       `Почему важно: ${telegramHtmlEscape(why)}`,
+      ...(linkedFixture?.fixtureId ? [`🎯 Матч: ${telegramHtmlEscape(linkedFixture.homeName || '')} — ${telegramHtmlEscape(linkedFixture.awayName || '')}${timing ? ` · ${telegramHtmlEscape(timing)}` : ''}`] : []),
       `🧠 Что проверить: ${telegramHtmlEscape(hook)}`,
       `Источник: ${telegramHtmlEscape(item.source || 'веб-источник')} · ${telegramHtmlEscape(item.trust?.label || 'Веб-источник')}`,
       ...(item.verification==='needs_confirmation' ? ['Проверка: требуется подтверждение ещё одним надёжным источником.'] : []),
@@ -10864,14 +10968,16 @@ async function sendFavoriteTeamNews(request,cfg,userId,chatId,teamId,{force=fals
     favoriteTeamFootballNews(team,cfg,force),
     botTeamIdMatches(teamId,cfg).catch(()=>[]),
   ]);
-  const fixture=(matches || []).find(x=>x.live || (!x.finished && Date.parse(x.date || 0)>=Date.now()-2*60*60*1000)) || null;
+  const fixture=newsRelevantFixture(news.items?.[0] || {},matches || [])?.fixture
+    || (matches || []).find(x=>x.live || (!x.finished && Date.parse(x.date || 0)>=Date.now()-2*60*60*1000))
+    || null;
   const extra=[];
   if (fixture?.fixtureId) extra.push([{text:'⚽ Проверить ближайший матч',callback_data:`news:match:${Number(fixture.fixtureId)}`}]);
   extra.push([{text:'🔄 Обновить',callback_data:`news:team_refresh:${Number(teamId)}`},{text:'📰 Все новости',callback_data:'news:general'}]);
   await telegramApi('sendMessage',cfg,{
     chat_id:chatId,parse_mode:'HTML',
-    text:newsFeedText(news.items,{title:'FM AI News',teamName:team.team_name || '',fixture}),
-    reply_markup:newsConversionKeyboard(news.items,extra,{fixtureId:Number(fixture?.fixtureId || 0)}),
+    text:newsFeedText(news.items,{title:'FM AI News',teamName:team.team_name || '',fixture,fixtures:matches || []}),
+    reply_markup:newsConversionKeyboard(news.items,extra,{fixtureId:Number(fixture?.fixtureId || 0),fixtures:matches || []}),
     disable_web_page_preview:true,
   });
 }
@@ -14849,6 +14955,11 @@ export default {
         newsTeamIntentResolution: 'enabled',
         newsConversionTracking: 'enabled',
         newsConversionSelfTest: newsConversionDrill().pass ? 'enabled' : 'failed',
+        smartNewsFixtureLinking: 'enabled',
+        newsTimeRelevanceGuard: 'enabled',
+        perNewsFixtureCta: 'enabled',
+        newsImpactDeltaGuide: 'enabled',
+        smartNewsLinkSelfTest: smartNewsMatchLinkDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
