@@ -83,6 +83,12 @@ const REQUIRED_HEALTH_FLAGS = [
   'calibrationFeedbackReview',
   'telegramPostMatchReview',
   'postMatchReviewSelfTest',
+  'postMatchReturnLoop',
+  'analyzedMatchReturn',
+  'postMatchReturnDedupe',
+  'postMatchReturnOptOut',
+  'postMatchReturnQuotaGuard',
+  'postMatchReturnSelfTest',
 ];
 
 function delay(ms) {
