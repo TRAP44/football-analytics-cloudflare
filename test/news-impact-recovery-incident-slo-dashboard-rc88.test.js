@@ -18,7 +18,7 @@ test('RC88 keeps full acknowledgement history for first-review latency',()=>{
   assert.match(worker,/firstAcknowledgedAt/);
   assert.match(worker,/incidentSeenAt/);
   const start=worker.indexOf('function buildNewsImpactRecoveryIncidentAcknowledgementHistory');
-  const end=worker.indexOf('function buildNewsImpactRecoveryIncidentCenter',start);
+  const end=worker.indexOf('function buildNewsImpactRecoveryIncidentEpisodeHistory',start);
   const block=worker.slice(start,end);
   assert.doesNotMatch(block,/telegram_id\s*:/);
   assert.doesNotMatch(block,/rawError|error\.message|stack|query/);
@@ -58,7 +58,7 @@ test('RC88 admin renders weekly trend and recurring issues without changing rout
 test('RC88 dashboard is exposed from the shared runtime loader',()=>{
   assert.match(worker,/incidentEpisodeHistory=buildNewsImpactRecoveryIncidentEpisodeHistory\(failures,incidentAckRows\)/);
   assert.match(worker,/newsImpactRecoveryStrategyLoaded\.incidentEpisodeHistory/);
-  assert.match(worker,/newsImpactRecoveryIncidentSloDashboard=buildNewsImpactRecoveryIncidentSloDashboard/);
+  assert.match(worker,/newsImpactRecoveryIncidentSloDashboard=newsImpactRecoveryStrategyLoaded\.available/);\n  assert.match(worker,/buildNewsImpactRecoveryIncidentSloDashboard\(/);
   assert.match(worker,/newsImpactRecoveryIncidentSloDashboard,/);
 });
 
