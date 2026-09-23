@@ -80,11 +80,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.91.0-rc99';
+const APP_VERSION = '6.92.0-rc100';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc99';
-const RC_NAME = 'RC99';
+const RELEASE_CHANNEL = 'rc100';
+const RC_NAME = 'RC100';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -13880,6 +13880,70 @@ async function probeOptionalTable(cfg, table) {
   }
 }
 
+
+async function probeTableColumns(cfg, table, columns = []) {
+  if (!hasSupabase(cfg)) return { ok: false, status: 'not_configured' };
+  try {
+    const url = new URL(`${cfg.supabaseUrl}/rest/v1/${table}`);
+    url.searchParams.set('select', columns.join(','));
+    url.searchParams.set('limit', '1');
+    const r = await fetchWithTimeout(url, { headers: supaHeaders(cfg) }, 7000, `Supabase schema probe ${table}`);
+    return { ok: r.ok, status: r.ok ? 'ok' : `http_${r.status}` };
+  } catch (error) {
+    return { ok: false, status: 'network_error', detail: redactOpsString(error?.message || error, 120) };
+  }
+}
+
+function summarizeSupabaseSchemaChecks(checks = []) {
+  const normalized = (checks || []).map(item => ({
+    id: String(item?.id || ''),
+    table: String(item?.table || ''),
+    columns: Array.isArray(item?.columns) ? item.columns.map(String) : [],
+    ok: Boolean(item?.ok),
+    status: String(item?.status || (item?.ok ? 'ok' : 'unknown')),
+  }));
+  const missing = normalized.filter(item => !item.ok).map(item => item.id);
+  return {
+    ok: missing.length === 0,
+    status: missing.length === 0 ? 'ok' : 'drift',
+    checked: normalized.length,
+    missing,
+    checks: normalized,
+  };
+}
+
+async function probeSupabaseSchemaDrift(cfg) {
+  const specs = [
+    { id: 'users_acquisition', table: 'users', columns: ['telegram_id','acquisition_source','acquisition_campaign','acquisition_content'] },
+    { id: 'analysis_history_ai', table: 'analysis_history', columns: ['telegram_id','fixture_id','ai_signal_code','analysis_version'] },
+    { id: 'calibration_transitions', table: 'model_calibration_transitions', columns: ['id','action','resulting_revision','created_at'] },
+    { id: 'digest_subscriptions', table: 'bot_digest_subscriptions', columns: ['telegram_id','enabled','hour_utc'] },
+    { id: 'referee_history', table: 'referee_match_history', columns: ['fixture_id','referee_key','yellow_cards'] },
+    { id: 'growth_events', table: 'growth_events', columns: ['id','event_name','metadata','created_at'] },
+  ];
+  const checks = await Promise.all(specs.map(async spec => ({
+    ...spec,
+    ...(await probeTableColumns(cfg, spec.table, spec.columns)),
+  })));
+  return summarizeSupabaseSchemaChecks(checks);
+}
+
+function supabaseSchemaDriftSelfTest() {
+  const healthy = summarizeSupabaseSchemaChecks([
+    { id: 'users_acquisition', table: 'users', columns: ['acquisition_source'], ok: true, status: 'ok' },
+    { id: 'growth_events', table: 'growth_events', columns: ['event_name'], ok: true, status: 'ok' },
+  ]);
+  const drift = summarizeSupabaseSchemaChecks([
+    { id: 'users_acquisition', table: 'users', columns: ['acquisition_source'], ok: true, status: 'ok' },
+    { id: 'growth_events', table: 'growth_events', columns: ['event_name'], ok: false, status: 'http_400' },
+  ]);
+  return {
+    pass: healthy.ok && !drift.ok && drift.status === 'drift' && drift.missing.length === 1 && drift.missing[0] === 'growth_events',
+    healthy: healthy.ok,
+    missing: drift.missing,
+  };
+}
+
 function releaseCheck(id, label, state, detail, blocking = false) {
   return { id, label, state, detail, blocking: Boolean(blocking) };
 }
@@ -13898,7 +13962,7 @@ async function apiReleaseReadiness(request, cfg) {
     probeOptionalTable(cfg, 'runtime_controls'),
     probeOptionalTable(cfg, 'runtime_control_history'),
   ]);
-  const [runtimeState, watchdogSchema, runLedgerSchema, finalitySchema, adjudicationSchema, trustSchema, calibrationPromotionSchema, calibrationLifecycleSchema, backendSecurity] = await Promise.all([
+  const [runtimeState, watchdogSchema, runLedgerSchema, finalitySchema, adjudicationSchema, trustSchema, calibrationPromotionSchema, calibrationLifecycleSchema, backendSecurity, schemaDrift] = await Promise.all([
     loadRuntimeControls(cfg, { force: true }),
     probeSettlementWatchdogSchema(cfg),
     probeSettlementRunLedgerSchema(cfg),
@@ -13908,14 +13972,22 @@ async function apiReleaseReadiness(request, cfg) {
     probeCalibrationPromotionSchema(cfg),
     probeCalibrationLifecycleSchema(cfg),
     readBackendSecurityContract(cfg),
+    probeSupabaseSchemaDrift(cfg),
   ]);
   const runtime = runtimeState.value;
   const provider = diagnostics.provider || {};
   const watchdogSelfTest = settlementWatchdogSelfTest();
+  const schemaDriftSelfTest = supabaseSchemaDriftSelfTest();
   const checks = [
     releaseCheck('football_api', 'Ключ API-Football', cfg.apiFootballKey ? 'pass' : 'fail', cfg.apiFootballKey ? 'Ключ доступен серверному обработчику.' : 'Ключ API-Football отсутствует.', true),
     releaseCheck('supabase_config', 'Настройка Supabase', hasSupabase(cfg) ? 'pass' : 'fail', hasSupabase(cfg) ? 'Адрес и сервисный ключ доступны серверу.' : 'Не хватает адреса Supabase или сервисного ключа.', true),
     releaseCheck('supabase_online', 'Supabase/PostgREST', diagnostics.supabase?.ok ? 'pass' : 'fail', diagnostics.supabase?.ok ? `Ответ ${Number(diagnostics.supabase?.latencyMs || 0)} мс.` : `Статус: ${diagnostics.supabase?.status || 'offline'}.`, true),
+    releaseCheck('supabase_schema_drift', 'Контракт актуальной схемы Supabase', schemaDrift.ok ? 'pass' : 'fail',
+      schemaDrift.ok
+        ? `Проверено ${schemaDrift.checked} обязательных участков схемы v6.15; drift не обнаружен.`
+        : `Schema drift: отсутствуют или несовместимы ${schemaDrift.missing.join(', ') || 'обязательные объекты'}.`, true),
+    releaseCheck('supabase_schema_drift_selftest', 'Самопроверка Schema Drift Guard', schemaDriftSelfTest.pass ? 'pass' : 'fail',
+      schemaDriftSelfTest.pass ? 'Drift корректно переводит release gate в блокирующее состояние.' : 'Самопроверка Schema Drift Guard не прошла.', true),
     releaseCheck('backend_security_contract', 'Контракт безопасности Supabase', backendSecurity.ok ? 'pass' : 'fail',
       backendSecurity.ok
         ? 'Все публичные таблицы защищены правилами доступа; анонимный и авторизованный клиент не имеют прямых прав; серверные процедуры закрыты.'
@@ -19184,6 +19256,8 @@ export default {
         calibrationManualFreeze: 'enabled',
         adminDevModeIsolation: 'enabled',
         backendSecurityContract: 'enabled',
+        supabaseSchemaDriftGuard: 'enabled',
+        supabaseSchemaDriftSelfTest: supabaseSchemaDriftSelfTest().pass ? 'enabled' : 'failed',
         cloudflareDeploymentGate: 'enabled',
         browserSecurityPolicy: 'enabled',
         failClosedDeployment: 'enabled',

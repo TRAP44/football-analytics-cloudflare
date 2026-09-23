@@ -4,6 +4,8 @@ const REQUIRED_HEALTH_FLAGS = [
   'adminSecurity',
   'adminDevModeIsolation',
   'backendSecurityContract',
+  'supabaseSchemaDriftGuard',
+  'supabaseSchemaDriftSelfTest',
   'cloudflareDeploymentGate',
   'browserSecurityPolicy',
   'failClosedDeployment',
