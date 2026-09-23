@@ -51,7 +51,7 @@ test('RC80 sample-aware recovery ranking and health contract',()=>{
 });
 
 test('RC80 needs no new Supabase migration',()=>{
-  const files=fs.readdirSync('.').filter(x=>/^supabase_migration_v6_\d/.test(x));
+  const files=fs.readdirSync('supabase/migrations').filter(x=>/^supabase_migration_v6_\d/.test(x));
   assert.ok(files.includes('supabase_migration_v6_15.sql'));
   assert.ok(!files.some(x=>/v6_16|v6_17|rc80/i.test(x)));
 });
