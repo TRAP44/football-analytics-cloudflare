@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
+const app=fs.readFileSync('public/app.js','utf8');
 
 test('RC105 confidence uses weighted signal coverage instead of raw source count',()=>{
   assert.match(worker,/function signalCanonicalCoverage\(/);
@@ -58,4 +59,13 @@ test('RC105 exposes a deterministic quality-gate self-test and health contract',
 
 test('RC105 persists the quality-gate analysis version',()=>{
   assert.ok(worker.includes("analysisVersion: '4.8.0-quality-gate'"));
+});
+
+
+test('RC105 UI explains quality-gate and goal-sample quality',()=>{
+  assert.match(app,/Quality Gate/);
+  assert.match(app,/qualityGate\.label/);
+  assert.match(app,/gateReasons\[0\]\?\.text/);
+  assert.match(app,/Качество выборки:/);
+  assert.match(app,/goal\.qualityScore/);
 });
