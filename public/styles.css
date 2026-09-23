@@ -2792,3 +2792,19 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 .kickoff-handoff>div:first-child{display:flex;align-items:center;gap:10px}.kickoff-handoff>div:first-child>span{font-size:20px}.kickoff-handoff strong{display:block}.kickoff-handoff small{display:block;opacity:.72;margin-top:2px}
 .kickoff-handoff p{margin:0;font-size:13px;line-height:1.45;opacity:.9}.kickoff-handoff.locked{border-color:rgba(148,163,184,.3);background:rgba(148,163,184,.07)}
 .kickoff-center-btn{min-height:42px;border-radius:12px;font-weight:800}.ai-instructor-card.archived{border-color:rgba(148,163,184,.28);filter:saturate(.78)}.ai-verdict-grid .archived{opacity:.82}
+
+
+/* RC62 — post-match AI review */
+.post-match-review{display:grid;gap:12px;border-color:rgba(56,189,248,.22)}
+.post-match-review.hit{border-color:rgba(34,197,94,.24);background:rgba(34,197,94,.035)}
+.post-match-review.miss{border-color:rgba(248,113,113,.24);background:rgba(248,113,113,.035)}
+.post-match-review.unavailable{opacity:.88}
+.post-match-review-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.post-match-review-head span{font-size:10px;font-weight:800;letter-spacing:.08em;opacity:.66}.post-match-review-head h2{margin:4px 0 0}.post-match-review-head>b{font-size:12px;white-space:nowrap;padding:5px 8px;border-radius:999px;background:rgba(148,163,184,.1)}
+.post-match-summary{margin:0;line-height:1.5}
+.post-match-compare{display:grid;grid-template-columns:1fr 1fr;gap:8px}.post-match-compare>div,.post-match-markets>div{padding:10px;border:1px solid rgba(148,163,184,.12);border-radius:12px;background:rgba(148,163,184,.045)}
+.post-match-compare span,.post-match-markets span{display:block;font-size:11px;opacity:.68}.post-match-compare strong,.post-match-markets strong{display:block;margin-top:4px}.post-match-compare small,.post-match-markets small{display:block;margin-top:3px;opacity:.64}
+.post-match-markets{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.post-match-markets .hit{border-color:rgba(34,197,94,.18)}.post-match-markets .miss{border-color:rgba(248,113,113,.18)}
+.post-match-evidence{display:grid;gap:8px}.post-match-evidence>strong{font-size:13px}.post-match-evidence>div{display:flex;gap:9px;padding-top:8px;border-top:1px solid rgba(148,163,184,.1)}.post-match-evidence>div>span{font-size:18px}.post-match-evidence p{margin:0}.post-match-evidence b,.post-match-evidence small{display:block}.post-match-evidence small{margin-top:2px;line-height:1.4;opacity:.72}
+.post-match-calibration{padding:10px;border-radius:12px;background:rgba(56,189,248,.05);border:1px solid rgba(56,189,248,.12)}.post-match-calibration>span{font-size:10px;font-weight:800;letter-spacing:.06em;opacity:.68}.post-match-calibration p{margin:4px 0 0;font-size:12px;line-height:1.45}.post-match-calibration small{display:block;margin-top:4px;opacity:.66}
+@media(max-width:520px){.post-match-compare,.post-match-markets{grid-template-columns:1fr}.post-match-review-head{align-items:flex-start}}
