@@ -1,4 +1,4 @@
-# Football Analytics Mini App v6.77.0 — RC85
+# Football Analytics Mini App v6.78.0 — RC86
 
 Telegram-бот и Mini App для футбольной аналитики на Cloudflare Workers + Supabase. Основные источники данных: API-Football и Tavily. Интерфейс и админ-панель — на русском языке. Монетизация пока отключена.
 
@@ -12,7 +12,7 @@ Telegram-бот и Mini App для футбольной аналитики на 
 - Публичный AI Track Record строится только по подтверждённым settled-прогнозам и не выдаёт совпадение исхода за прибыльность ставок.
 - Защита от вирусной нагрузки: distributed fixture lock, shared cache и безопасный fallback.
 - Медиа deep-link на fixture, publisher kit и агрегированная first-party аналитика source / campaign / content.
-- Новостной контур RC69–RC85: новость → релевантный матч → явная AI-перепроверка → News Impact Delta → **News Impact Decision Card** → **News Impact Action Tracking** → **News Impact Action Funnel** → **News Impact Funnel Confidence Guard** → **News Impact Funnel Trend Guard** → **News Impact Temporal Attribution Guard** → **News Impact Action Outcome Quality** → **News Impact Outcome Failure Diagnostics & Recovery** → **News Impact Recovery Effectiveness Funnel** → **News Impact Recovery Strategy Guard** → **News Impact Recovery Stability & Parity Guard** → **News Impact Recovery Drift Circuit Breaker** → **News Impact Recovery Transition History & Admin Alerts** → **News Impact Recovery Incident Center**.
+- Новостной контур RC69–RC86: новость → релевантный матч → явная AI-перепроверка → News Impact Delta → **News Impact Decision Card** → **News Impact Action Tracking** → **News Impact Action Funnel** → **News Impact Funnel Confidence Guard** → **News Impact Funnel Trend Guard** → **News Impact Temporal Attribution Guard** → **News Impact Action Outcome Quality** → **News Impact Outcome Failure Diagnostics & Recovery** → **News Impact Recovery Effectiveness Funnel** → **News Impact Recovery Strategy Guard** → **News Impact Recovery Stability & Parity Guard** → **News Impact Recovery Drift Circuit Breaker** → **News Impact Recovery Transition History & Admin Alerts** → **News Impact Recovery Incident Center** → **News Impact Recovery Incident Acknowledgement & Runbook**.
 - News Impact не утверждает причинность по заголовку: сравнение разрешено только с корректным AI-снимком, созданным до публикации новости.
 - RC73 считает только категориальные действия после Decision Card: полный AI, составы, рынок, повторная проверка, возврат к новостям и share. Текст новости, URL и пользовательский запрос в эту аналитику не записываются.
 - RC74 агрегирует эти действия по типу News Impact-решения, считает долю пользователей, которые продолжили сценарий, показывает наиболее частое следующее действие и состояние с самой низкой конверсией. Telegram ID наружу не возвращаются.
@@ -27,6 +27,7 @@ Telegram-бот и Mini App для футбольной аналитики на 
 - RC83 добавляет drift circuit breaker поверх RC82. Для реально выбранного adaptive recovery сравнивается свежая 7-дневная выборка с предыдущей частью 30-дневного окна. При минимум 20 зрелых попытках в prior, 10 в recent, падении минимум на 15 п.п. и непересекающихся 95% Wilson-интервалах adaptive автоматически отключается и routing возвращается на fixed fallback. В growth_events для аудита сохраняется только категориальная причина strategy_guard без raw error.
 - RC84 строит приватную историю фактически применённых переключений recovery по failure-событиям за 30 дней: fixed → adaptive, adaptive → fixed и смены recovery. Admin Launch Funnel показывает активные warning/info состояния для performance drift, recent regression, недостаточной stability-выборки и недоступного evidence. Telegram ID в историю и предупреждения не возвращаются; новая таблица и миграция не требуются.
 - RC85 объединяет подтверждённые `performance_drift` и `recent_regression` в Recovery Incident Center. Инциденты агрегируются по failure reason + action + guard, получают приоритет high/medium, число проявлений и последнее зафиксированное время. Текущий guard определяет lifecycle: инцидент остаётся активным, пока проблема подтверждается, и автоматически помечается восстановленным после нормализации. Incident Center не возвращает Telegram ID, raw error, URL или query и использует существующий 30-дневный `growth_events` loader.
+- RC86 добавляет администраторское acknowledgement и встроенный runbook. «Просмотрено» сохраняется как категориальное `news_impact_recovery_incident_ack` событие, привязанное к точному `lastSeenAt` инцидента. Пока новых проявлений нет, соответствующий warning подавляется, но сам активный инцидент остаётся видимым; следующий failure автоматически делает acknowledgement устаревшим и снова требует внимания. Runbook для drift/regression объясняет безопасные проверки и явно сохраняет fixed fallback. Telegram ID и произвольные заметки в Incident Center API не возвращаются.
 
 ## Архитектура
 
@@ -57,7 +58,7 @@ npm run verify:release
 npm run verify:worker
 ```
 
-Production smoke дополнительно проверяет `/health`, версию `6.77.0-rc85`, `releaseCandidate=RC85`, отключённый `DEV_MODE` и обязательные health/self-test флаги.
+Production smoke дополнительно проверяет `/health`, версию `6.78.0-rc86`, `releaseCandidate=RC86`, отключённый `DEV_MODE` и обязательные health/self-test флаги.
 
 ## Документация
 

@@ -160,6 +160,11 @@ const REQUIRED_HEALTH_FLAGS = [
   'newsImpactRecoveryIncidentLifecycle',
   'newsImpactRecoveryIncidentPrivacyGuard',
   'newsImpactRecoveryIncidentSelfTest',
+  'newsImpactRecoveryIncidentAcknowledgement',
+  'newsImpactRecoveryIncidentRunbook',
+  'newsImpactRecoveryIncidentAlertSuppression',
+  'newsImpactRecoveryIncidentAckPrivacyGuard',
+  'newsImpactRecoveryIncidentAckSelfTest',
 ];
 
 function delay(ms) {

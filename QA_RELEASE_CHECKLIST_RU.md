@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.77.0 RC85
+# QA Release Checklist — v6.78.0 RC86
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.77.0`.
-- Worker и client: `6.77.0-rc85`.
-- Release candidate: `RC85`.
+- `package.json` и `package-lock.json`: `6.78.0`.
+- Worker и client: `6.78.0-rc86`.
+- Release candidate: `RC86`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,20 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC86 — News Impact Recovery Incident Acknowledgement & Runbook
+
+- Admin может отметить фактический active drift/regression incident как «Просмотрено»; current-only инцидент без failure-event подтверждать нельзя.
+- Acknowledgement пишется в существующий `growth_events` как `news_impact_recovery_incident_ack` с только категориальными `reason`, `action`, `incident_guard`, `incident_seen_at`, `ack_state`.
+- API acknowledgement доступен только администратору и перед записью повторно проверяет, что incident всё ещё active и `lastSeenAt` не изменился; stale запрос получает HTTP 409.
+- Ack действует только для точного occurrence: следующий новый failure с более новым `lastSeenAt` автоматически снимает suppression и снова требует внимания.
+- Просмотренный active incident не скрывается из Incident Center; подавляется только дублирующий warning.
+- Runbook фиксирован в коде и не содержит произвольного пользовательского текста: отдельные шаги для `performance_drift`, `recent_regression` и недоступного strategy evidence.
+- Fixed fallback и RC81–RC85 routing guard-логика не изменяются acknowledgement-действием.
+- Telegram ID, raw error, URL, query, stack и свободная admin-note не возвращаются в Incident Center API.
+- Regression: `test/news-impact-recovery-incident-ack-rc86.test.js`.
+- Production smoke требует `newsImpactRecoveryIncidentAcknowledgement=enabled`, `newsImpactRecoveryIncidentRunbook=enabled`, `newsImpactRecoveryIncidentAlertSuppression=enabled`, `newsImpactRecoveryIncidentAckPrivacyGuard=enabled`, `newsImpactRecoveryIncidentAckSelfTest=enabled`.
+- Новая Supabase migration не требуется; используется существующая backend-only `growth_events`.
 
 ## RC85 — News Impact Recovery Incident Center
 

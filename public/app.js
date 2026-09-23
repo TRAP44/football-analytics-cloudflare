@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.77.0-rc85';
+const CLIENT_VERSION = '6.78.0-rc86';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc85';
+const CLIENT_RELEASE_CHANNEL = 'rc86';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -70,6 +70,7 @@ const state = {
   launchFunnel: null,
   launchFunnelLoading: false,
   launchFunnelDays: 7,
+  recoveryIncidentAckPending: new Set(),
   reminderHealth: null,
   reminderHealthLoading: false,
   runtimeStatus: null,
@@ -3009,22 +3010,30 @@ function renderLaunchFunnel() {
         <small>${launchFunnelPct(x.successPct)} восстановлено · 95% ДИ ${launchFunnelPct(x.confidence?.lowerPct)}–${launchFunnelPct(x.confidence?.upperPct)} · ${escapeHtml(x.confidence?.label || 'мало данных')} · ${Number(x.pending || 0) ? `${Number(x.pending || 0)} ещё ожидают · ` : ''}${Number(x.failed || 0)} без подтверждённой доставки</small>
       </div>`).join('')}</div>
       <p class="tiny">Recovery считается успешным только после подтверждённой сервером доставки результата в течение ${Number(impactRecoveryGuard.windowMinutes || 5)} минут. Сам показ fallback или повторной кнопки успехом не считается.</p>` : ''}
-    ${impactRecoveryIncidents.length ? `<div class="release-monitor-section-head"><strong>Recovery Incident Center</strong><span>активных ${Number(impactRecoveryIncidentSummary.active || 0)} · восстановлено ${Number(impactRecoveryIncidentSummary.recovered || 0)} · high ${Number(impactRecoveryIncidentSummary.highActive || 0)}</span></div>
+    ${impactRecoveryIncidents.length ? `<div class="release-monitor-section-head"><strong>Recovery Incident Center</strong><span>активных ${Number(impactRecoveryIncidentSummary.active || 0)} · требуют внимания ${Number(impactRecoveryIncidentSummary.unacknowledgedActive || 0)} · просмотрено ${Number(impactRecoveryIncidentSummary.acknowledgedActive || 0)} · восстановлено ${Number(impactRecoveryIncidentSummary.recovered || 0)}</span></div>
       <div class="launch-campaign-list">${impactRecoveryIncidents.map(x=>{
         const priority=x.priority==='high' ? '🔴 high' : x.priority==='medium' ? '🟠 medium' : '🟡 low';
-        const stateLabel=x.status==='active' ? 'активен' : 'восстановлен';
+        const stateLabel=x.status==='active'
+          ? (x.acknowledged ? 'активен · просмотрен' : 'активен · требует внимания')
+          : 'восстановлен';
         const codeLabel=x.code==='performance_drift' ? 'performance drift'
           : x.code==='recent_regression' ? 'recent regression'
             : x.code==='strategy_evidence_unavailable' ? 'evidence недоступно'
               : x.code || 'incident';
         const when=x.lastSeenAt || (x.currentOnly ? 'текущее состояние' : 'время не зафиксировано');
+        const runbookSteps=Array.isArray(x.runbook?.steps) ? x.runbook.steps : [];
+        const ackKey=`${x.reason || ''}|${x.action || ''}|${x.code || ''}|${x.lastSeenAt || ''}`;
+        const ackBusy=state.recoveryIncidentAckPending.has(ackKey);
         return `<div>
           <span><b>${priority} · ${escapeHtml(x.reasonLabel || 'Recovery Strategy')}</b>${x.actionLabel ? ` · ${escapeHtml(x.actionLabel)}` : ''}</span>
           <strong>${escapeHtml(stateLabel)} · ${escapeHtml(codeLabel)}</strong>
-          <small>${Number(x.occurrences || 0)} событий · последнее: ${escapeHtml(when)}${x.currentRecoveryLabel ? ` · сейчас: ${escapeHtml(x.currentStrategy || 'fixed')} / ${escapeHtml(x.currentRecoveryLabel)}` : ''}</small>
+          <small>${Number(x.occurrences || 0)} событий · последнее: ${escapeHtml(when)}${x.currentRecoveryLabel ? ` · сейчас: ${escapeHtml(x.currentStrategy || 'fixed')} / ${escapeHtml(x.currentRecoveryLabel)}` : ''}${x.acknowledgedAt ? ` · просмотрено: ${escapeHtml(dateTime(x.acknowledgedAt) || x.acknowledgedAt)}` : ''}</small>
+          ${runbookSteps.length ? `<small><b>${escapeHtml(x.runbook?.title || 'Runbook')}:</b> ${runbookSteps.map(step=>escapeHtml(step)).join(' → ')} · Автозащита: ${escapeHtml(x.runbook?.automaticSafety || 'fixed fallback')}</small>` : ''}
+          ${x.status==='active' && x.canAcknowledge && !x.acknowledged ? `<button class="reminder-btn recovery-incident-ack-btn" type="button" data-reason="${escapeHtml(x.reason || '')}" data-action="${escapeHtml(x.action || '')}" data-code="${escapeHtml(x.code || '')}" data-last-seen-at="${escapeHtml(x.lastSeenAt || '')}" ${ackBusy?'disabled':''}>${ackBusy?'Сохраняю…':'✓ Просмотрено'}</button>` : ''}
+          ${x.status==='active' && x.currentOnly && !x.canAcknowledge ? '<small>Подтверждение станет доступно после первого фактического failure-события этого инцидента.</small>' : ''}
         </div>`;
       }).join('')}</div>
-      <p class="tiny">RC85 объединяет drift/regression в lifecycle-инциденты: одинаковые reason + action + guard агрегируются, текущий guard определяет состояние «активен / восстановлен». В Incident Center нет Telegram ID и raw error.</p>` : ''}
+      <p class="tiny">RC86 добавляет acknowledgement и runbook. Просмотренный активный инцидент остаётся видимым, но его повторное warning подавляется только до следующего нового проявления; новый failure автоматически снова требует внимания. В Incident Center нет Telegram ID и raw error.</p>` : ''}
     ${impactRecoveryStrategyAlerts.length ? `<div class="release-monitor-section-head"><strong>Recovery: предупреждения</strong><span>${Number(impactRecoveryAlertSummary.warnings || 0)} warning · ${Number(impactRecoveryAlertSummary.info || 0)} info</span></div>
       <div class="launch-campaign-list">${impactRecoveryStrategyAlerts.map(x=>`<div>
         <span><b>${x.severity==='warning'?'⚠️':'ℹ️'} ${escapeHtml(x.reasonLabel || 'Recovery Strategy')}</b>${x.actionLabel ? ` · ${escapeHtml(x.actionLabel)}` : ''}</span>
@@ -3071,6 +3080,15 @@ function renderLaunchFunnel() {
         </div>`;
       }).join('')}</div>` : (!d.trendAvailable ? '<div class="data-notice">Динамика News Impact временно недоступна; текущий период продолжает работать.</div>' : '')}`;
 
+  stages.querySelectorAll('.recovery-incident-ack-btn').forEach(button=>{
+    button.addEventListener('click',()=>acknowledgeRecoveryIncident({
+      reason:String(button.dataset.reason || ''),
+      action:String(button.dataset.action || ''),
+      code:String(button.dataset.code || ''),
+      lastSeenAt:String(button.dataset.lastSeenAt || ''),
+    }));
+  });
+
   const sources=d.campaigns || [];
   campaigns.innerHTML=`<div class="release-monitor-section-head"><strong>Источники и кампании</strong><span>без Telegram ID</span></div>
     ${sources.length ? `<div class="launch-campaign-list">${sources.map(x=>`<div>
@@ -3097,6 +3115,31 @@ function renderLaunchFunnel() {
     </div>`).join('')}</div>` : '<div class="empty compact-empty">Пока нет данных по отдельным материалам СМИ.</div>'}
     <p class="tiny">Статистика агрегируется по first-party attribution. Telegram ID пользователей не отображаются.</p>`;
 
+}
+
+async function acknowledgeRecoveryIncident({reason='',action='',code='',lastSeenAt=''}={}) {
+  if (!isAdmin() || !reason || !action || !code || !lastSeenAt) return;
+  const key=`${reason}|${action}|${code}|${lastSeenAt}`;
+  if (state.recoveryIncidentAckPending.has(key)) return;
+  state.recoveryIncidentAckPending.add(key);
+  renderLaunchFunnel();
+  try {
+    await api('/api/recovery-incident-ack',{
+      method:'POST',
+      body:JSON.stringify({reason,action,code,lastSeenAt}),
+      retry:false,
+      dedupe:false,
+      timeoutMs:10000,
+    });
+    toast('Инцидент отмечен как просмотренный.');
+    await loadLaunchFunnel(true);
+  } catch (e) {
+    toast(e.message);
+    if (Number(e?.status || 0)===409) await loadLaunchFunnel(true);
+  } finally {
+    state.recoveryIncidentAckPending.delete(key);
+    renderLaunchFunnel();
+  }
 }
 
 async function loadLaunchFunnel(force=false) {
