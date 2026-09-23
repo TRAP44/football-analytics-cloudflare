@@ -475,7 +475,7 @@ async function recoverActiveView({ automatic = false } = {}) {
       const data = await requestMatchCenter(fixtureId, { recovery: Date.now() }, { dedupe: false });
       if (data) renderMatchCenter(data);
     } else if (view === 'historyView') {
-      await loadHistory(false);
+      await Promise.allSettled([loadHistory(false),loadAiTrackRecord(false)]);
     } else if (view === 'profileView') {
       await loadProfile();
     } else {
@@ -2153,7 +2153,7 @@ function runClientContractSmoke() {
 
   const requiredIds = [
     'matchesView','searchView','tournamentView','teamView','analysisView','historyView','profileView',
-    'navMatches','navSearch','navHistory','navProfile',
+    'navMatches','navSearch','navHistory','navProfile','aiTrackRecord',
     'connectionBanner','connectionRetryBtn','toast',
     'modelQualityStatus','modelRemediationStatus','modelRemediationDryRunBtn','modelRemediationRunBtn','modelRemediationCircuitResetBtn','modelRemediationDriftQueue','providerAuditStatus','releaseStatus','productionReadinessStatus','diagnosticsStatus',
   ];
@@ -6423,7 +6423,7 @@ function applyLaunchIntent() {
     if (query) void runGlobalSearch();
   } else if (view === 'history') {
     showView('historyView');
-    void loadHistory(false);
+    void Promise.allSettled([loadHistory(false),loadAiTrackRecord(false)]);
   } else if (fixtureId > 0 && ['analysis','center'].includes(action)) {
     showView('searchView');
     void openLaunchFixture(fixtureId, action, tab, handoff);
