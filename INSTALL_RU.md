@@ -1,4 +1,4 @@
-# Установка Football Analytics v6.94.0 RC102
+# Установка Football Analytics v6.95.0 RC103
 
 ## Новый Supabase-проект
 
@@ -31,7 +31,7 @@ SUPABASE_URL
 SUPABASE_SECRET_KEY
 ```
 
-`SUPABASE_SERVICE_ROLE_KEY` поддерживается для совместимости. Секретные значения никогда не должны попадать в `public/`, Git history или Telegram-клиент. RC102 автоматически блокирует release, если распознаваемый секрет попал в отслеживаемый Git-файл.
+`SUPABASE_SERVICE_ROLE_KEY` поддерживается для совместимости. Секретные значения никогда не должны попадать в `public/`, Git history или Telegram-клиент. RC102+ автоматически блокирует release, если распознаваемый секрет попал в отслеживаемый Git-файл.
 
 Опциональные переменные перечислены в `.env.example`.
 
@@ -46,16 +46,17 @@ CLOUDFLARE_ACCOUNT_ID
 
 API token должен быть ограничен нужным Cloudflare account и правом редактирования Workers. Не добавляйте эти значения в `.env`, `.dev.vars` или файлы репозитория.
 
-Опционально задайте Repository Variable `CLOUDFLARE_WORKER_URL`, если smoke-проверка должна использовать custom domain вместо URL, возвращённого Wrangler.
+Рекомендуется задать Repository/Environment Variable `CLOUDFLARE_WORKER_URL`. Для обычного deploy это запасной стабильный URL, а для защищённого rollback RC103 эта переменная обязательна, потому что после отката нужно независимо проверить восстановленную версию.
 
 Рабочий release-процесс:
 
-`PR → Quality → merge в main → Deploy Production → RC102 smoke`.
+`PR → Quality → merge в main → Deploy Production → RC103 smoke`.
 
 ## Локальная проверка
 
 ```bash
 npm ci
+npm run security:scan
 npm run check
 npm test
 npm run verify:release
@@ -68,16 +69,22 @@ npm run verify:worker
 
 Проверьте:
 
-1. `/health` возвращает `ok=true`, версию `6.94.0-rc102` и `releaseCandidate=RC102`.
+1. `/health` возвращает `ok=true`, версию `6.95.0-rc103` и `releaseCandidate=RC103`.
 2. RC Regression не содержит blocking failures.
 3. `DEV_MODE=false` и `MONETIZATION_ENABLED=false`.
 4. Обычный пользователь не видит административные controls.
 5. `/health/supabase` не доступен публично.
 6. CSP, HSTS, `X-Content-Type-Options: nosniff` и остальные security headers присутствуют.
-7. Production smoke подтверждает обязательные RC102 release/self-test flags.
+7. Production smoke подтверждает обязательные RC103 release/self-test flags.
 
 ## Rollback
 
-Для аварийного возврата используйте workflow `Rollback Production`: укажите Cloudflare version ID и подтвердите действие значением `ROLLBACK`.
+Для аварийного возврата используйте workflow `Rollback Production`:
 
-Rollback меняет версию Worker, но не откатывает состояние Supabase. Изменения базы требуют отдельного SQL rollback-плана.
+1. Укажите Cloudflare Worker `version_id`, который нужно восстановить.
+2. Укажите `expected_version` в формате вроде `6.94.0-rc102`.
+3. Подтвердите действие значением `ROLLBACK`.
+4. Workflow до отката проверит credentials, формат version ID, expected version и наличие HTTPS `CLOUDFLARE_WORKER_URL`.
+5. После отката `scripts/rollback-smoke.js` подтвердит точную восстановленную версию, `DEV_MODE=false` и отсутствие публичного технического Supabase health.
+
+Rollback меняет только версию Worker и **не откатывает состояние Supabase**. Изменения базы требуют отдельного SQL rollback-плана/резервной копии; RC103 не выполняет автоматический SQL rollback.
