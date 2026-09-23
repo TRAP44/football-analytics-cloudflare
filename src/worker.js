@@ -80,11 +80,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.79.0-rc87';
+const APP_VERSION = '6.80.0-rc88';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc87';
-const RC_NAME = 'RC87';
+const RELEASE_CHANNEL = 'rc88';
+const RC_NAME = 'RC88';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1844,6 +1844,10 @@ async function apiLaunchFunnel(request,cfg) {
     {asOfMs:analyticsNowMs},
   );
   const newsImpactRecoveryIncidentSummary=summarizeNewsImpactRecoveryIncidents(newsImpactRecoveryIncidents);
+  const newsImpactRecoveryIncidentSloDashboard=buildNewsImpactRecoveryIncidentSloDashboard(
+    newsImpactRecoveryStrategyLoaded.available ? (newsImpactRecoveryStrategyLoaded.incidentEpisodeHistory || []) : [],
+    {asOfMs:analyticsNowMs,weeks:4},
+  );
   const newsImpactRecoveryIncidentSloGuard={
     ackTargetMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,
     ackCriticalMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,
@@ -1961,6 +1965,7 @@ async function apiLaunchFunnel(request,cfg) {
     newsImpactRecoveryIncidents,
     newsImpactRecoveryIncidentSummary,
     newsImpactRecoveryIncidentSloGuard,
+    newsImpactRecoveryIncidentSloDashboard,
     newsImpactActionFunnel,
     newsImpactActionBottleneck,
     newsImpactActionConfidenceGuard,
@@ -3957,6 +3962,254 @@ function buildNewsImpactRecoveryIncidentAcknowledgements(rows = []) {
   return [...latest.values()];
 }
 
+
+function buildNewsImpactRecoveryIncidentAcknowledgementHistory(rows = []) {
+  return (rows || []).map(row=>{
+    const meta=row?.metadata && typeof row.metadata==='object' ? row.metadata : {};
+    const reason=NEWS_IMPACT_FAILURE_CODES.has(String(meta.reason || '')) ? String(meta.reason) : '';
+    const action=cleanNewsImpactActionCode(meta.action);
+    const code=NEWS_IMPACT_RECOVERY_INCIDENT_CODES.has(String(meta.incident_guard || '')) ? String(meta.incident_guard) : '';
+    const acknowledgedAt=newsImpactEventTime(row);
+    const seenAt=Date.parse(String(meta.incident_seen_at || ''));
+    if (!reason || !action || !code || !Number.isFinite(acknowledgedAt) || !Number.isFinite(seenAt)) return null;
+    return {
+      reason,
+      action,
+      code,
+      acknowledgedAt:new Date(acknowledgedAt).toISOString(),
+      incidentSeenAt:new Date(seenAt).toISOString(),
+    };
+  }).filter(Boolean).sort((a,b)=>Date.parse(a.acknowledgedAt)-Date.parse(b.acknowledgedAt));
+}
+
+function buildNewsImpactRecoveryIncidentEpisodeHistory(failureRows = [], acknowledgementRows = []) {
+  const normalized=(failureRows || []).map(row=>{
+    const meta=row?.metadata && typeof row.metadata==='object' ? row.metadata : {};
+    const at=newsImpactEventTime(row);
+    const reason=NEWS_IMPACT_FAILURE_CODES.has(String(meta.reason || '')) ? String(meta.reason) : 'server_error';
+    const action=cleanNewsImpactActionCode(meta.action);
+    const guardReason=NEWS_IMPACT_RECOVERY_STRATEGY_GUARD_CODES.has(String(meta.strategy_guard || ''))
+      ? String(meta.strategy_guard)
+      : '';
+    if (!Number.isFinite(at) || !action) return null;
+    return {
+      at,
+      reason,
+      reasonLabel:NEWS_IMPACT_FAILURE_LABELS[reason] || reason,
+      action,
+      actionLabel:NEWS_IMPACT_ACTION_LABELS[action] || action,
+      guardReason,
+    };
+  }).filter(Boolean).sort((a,b)=>a.at-b.at);
+
+  const openByPair=new Map();
+  const episodes=[];
+  for (const event of normalized) {
+    const key=`${event.reason}|${event.action}`;
+    const adverse=NEWS_IMPACT_RECOVERY_INCIDENT_CODES.has(event.guardReason);
+    let episode=openByPair.get(key) || null;
+    if (!adverse) {
+      if (episode) {
+        episode.recoveredAt=new Date(event.at).toISOString();
+        episode.closedByGuard=event.guardReason || 'safe';
+        openByPair.delete(key);
+      }
+      continue;
+    }
+    if (!episode) {
+      episode={
+        reason:event.reason,
+        reasonLabel:event.reasonLabel,
+        action:event.action,
+        actionLabel:event.actionLabel,
+        startedAt:new Date(event.at).toISOString(),
+        lastSeenAt:new Date(event.at).toISOString(),
+        recoveredAt:null,
+        closedByGuard:'',
+        occurrences:0,
+        guardCodes:[],
+      };
+      episodes.push(episode);
+      openByPair.set(key,episode);
+    }
+    episode.lastSeenAt=new Date(event.at).toISOString();
+    episode.occurrences+=1;
+    if (!episode.guardCodes.includes(event.guardReason)) episode.guardCodes.push(event.guardReason);
+  }
+
+  const ackHistory=buildNewsImpactRecoveryIncidentAcknowledgementHistory(acknowledgementRows);
+  return episodes.map(episode=>{
+    const startMs=Date.parse(episode.startedAt);
+    const lastSeenMs=Date.parse(episode.lastSeenAt);
+    const recoveredMs=Date.parse(String(episode.recoveredAt || ''));
+    const ack=ackHistory.find(item=>{
+      if (item.reason!==episode.reason || item.action!==episode.action) return false;
+      if (!episode.guardCodes.includes(item.code)) return false;
+      const seenMs=Date.parse(item.incidentSeenAt);
+      const ackMs=Date.parse(item.acknowledgedAt);
+      return Number.isFinite(seenMs)
+        && Number.isFinite(ackMs)
+        && seenMs>=startMs
+        && seenMs<=lastSeenMs
+        && ackMs>=startMs
+        && (!Number.isFinite(recoveredMs) || ackMs<=recoveredMs);
+    }) || null;
+    return {
+      ...episode,
+      firstAcknowledgedAt:ack?.acknowledgedAt || null,
+      firstAcknowledgedGuard:ack?.code || '',
+      active:!episode.recoveredAt,
+    };
+  }).sort((a,b)=>Date.parse(b.startedAt)-Date.parse(a.startedAt));
+}
+
+function newsImpactRecoveryEpisodeSloState(episode = null, asOfMs = Date.now()) {
+  if (!episode) return null;
+  const startMs=Date.parse(String(episode.startedAt || ''));
+  if (!Number.isFinite(startMs)) return null;
+  const recoveredMs=Date.parse(String(episode.recoveredAt || ''));
+  const ackMs=Date.parse(String(episode.firstAcknowledgedAt || ''));
+  const terminalMs=Number.isFinite(recoveredMs) ? recoveredMs : asOfMs;
+  const elapsedMinutes=Math.max(0,Math.round((terminalMs-startMs)/60000));
+  const ackLatencyMinutes=Number.isFinite(ackMs) ? Math.max(0,Math.round((ackMs-startMs)/60000)) : null;
+  const recoveryLatencyMinutes=Number.isFinite(recoveredMs) ? elapsedMinutes : null;
+  const ackEligible=Number.isFinite(ackMs) || elapsedMinutes>=NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES;
+  const ackMet=ackEligible && Number.isFinite(ackLatencyMinutes) && ackLatencyMinutes<=NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES;
+  const ackBreached=ackEligible && !ackMet;
+  const recoveryEligible=Number.isFinite(recoveredMs) || elapsedMinutes>=NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES;
+  const recoveryMet=recoveryEligible && Number.isFinite(recoveryLatencyMinutes) && recoveryLatencyMinutes<=NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES;
+  const recoveryBreached=recoveryEligible && !recoveryMet;
+  return {
+    elapsedMinutes,
+    ackLatencyMinutes,
+    recoveryLatencyMinutes,
+    ackEligible,
+    ackMet,
+    ackBreached,
+    ackStatus:ackMet ? 'met' : ackBreached ? 'breached' : 'pending',
+    recoveryEligible,
+    recoveryMet,
+    recoveryBreached,
+    recoveryStatus:recoveryMet ? 'met' : recoveryBreached ? 'breached' : 'pending',
+  };
+}
+
+function newsImpactRecoverySloPct(met = 0, eligible = 0) {
+  return eligible>0 ? Math.round((Number(met || 0)/Number(eligible))*1000)/10 : null;
+}
+
+function buildNewsImpactRecoveryIncidentSloDashboard(episodeRows = [], {asOfMs = Date.now(), weeks = 4} = {}) {
+  const safeWeeks=Math.max(2,Math.min(4,Number(weeks || 4)));
+  const weekMs=7*86400_000;
+  const earliestMs=asOfMs-safeWeeks*weekMs;
+  const episodes=(episodeRows || []).map(episode=>({
+    ...episode,
+    slo:newsImpactRecoveryEpisodeSloState(episode,asOfMs),
+  })).filter(x=>x.slo && Date.parse(x.startedAt)>=earliestMs && Date.parse(x.startedAt)<=asOfMs);
+
+  const summarize=(rows=[])=>{
+    const ackEligible=rows.filter(x=>x.slo.ackEligible).length;
+    const ackMet=rows.filter(x=>x.slo.ackMet).length;
+    const ackBreached=rows.filter(x=>x.slo.ackBreached).length;
+    const recoveryEligible=rows.filter(x=>x.slo.recoveryEligible).length;
+    const recoveryMet=rows.filter(x=>x.slo.recoveryMet).length;
+    const recoveryBreached=rows.filter(x=>x.slo.recoveryBreached).length;
+    const ackLatencies=rows.map(x=>x.slo.ackLatencyMinutes).filter(Number.isFinite);
+    const recoveryLatencies=rows.map(x=>x.slo.recoveryLatencyMinutes).filter(Number.isFinite);
+    return {
+      episodes:rows.length,
+      active:rows.filter(x=>x.active).length,
+      recovered:rows.filter(x=>!x.active).length,
+      ackEligible,
+      ackMet,
+      ackBreached,
+      ackSloPct:newsImpactRecoverySloPct(ackMet,ackEligible),
+      recoveryEligible,
+      recoveryMet,
+      recoveryBreached,
+      recoverySloPct:newsImpactRecoverySloPct(recoveryMet,recoveryEligible),
+      avgAckMinutes:ackLatencies.length ? Math.round((ackLatencies.reduce((a,b)=>a+b,0)/ackLatencies.length)*10)/10 : null,
+      avgRecoveryMinutes:recoveryLatencies.length ? Math.round((recoveryLatencies.reduce((a,b)=>a+b,0)/recoveryLatencies.length)*10)/10 : null,
+    };
+  };
+
+  const weekly=[];
+  for (let offset=safeWeeks-1; offset>=0; offset-=1) {
+    const startMs=asOfMs-(offset+1)*weekMs;
+    const endMs=asOfMs-offset*weekMs;
+    const rows=episodes.filter(x=>{
+      const at=Date.parse(x.startedAt);
+      return at>=startMs && at<endMs;
+    });
+    weekly.push({
+      startAt:new Date(startMs).toISOString(),
+      endAt:new Date(endMs).toISOString(),
+      label:`${new Date(startMs).toISOString().slice(0,10)} → ${new Date(endMs).toISOString().slice(0,10)}`,
+      ...summarize(rows),
+    });
+  }
+
+  const recurrence=new Map();
+  for (const episode of episodes) {
+    const key=`${episode.reason}|${episode.action}`;
+    const bucket=recurrence.get(key) || {
+      reason:episode.reason,
+      reasonLabel:episode.reasonLabel || episode.reason,
+      action:episode.action,
+      actionLabel:episode.actionLabel || episode.action,
+      episodes:0,
+      active:0,
+      ackBreaches:0,
+      recoveryBreaches:0,
+      lastStartedAt:episode.startedAt,
+      guards:new Set(),
+    };
+    bucket.episodes+=1;
+    if (episode.active) bucket.active+=1;
+    if (episode.slo.ackBreached) bucket.ackBreaches+=1;
+    if (episode.slo.recoveryBreached) bucket.recoveryBreaches+=1;
+    if (Date.parse(episode.startedAt)>Date.parse(bucket.lastStartedAt)) bucket.lastStartedAt=episode.startedAt;
+    for (const code of episode.guardCodes || []) bucket.guards.add(code);
+    recurrence.set(key,bucket);
+  }
+  const repeated=[...recurrence.values()].map(x=>({
+    reason:x.reason,
+    reasonLabel:x.reasonLabel,
+    action:x.action,
+    actionLabel:x.actionLabel,
+    episodes:x.episodes,
+    active:x.active,
+    ackBreaches:x.ackBreaches,
+    recoveryBreaches:x.recoveryBreaches,
+    lastStartedAt:x.lastStartedAt,
+    guards:[...x.guards].sort(),
+  })).filter(x=>x.episodes>=2)
+    .sort((a,b)=>b.episodes-a.episodes || b.recoveryBreaches-a.recoveryBreaches || b.ackBreaches-a.ackBreaches || Date.parse(b.lastStartedAt)-Date.parse(a.lastStartedAt))
+    .slice(0,10);
+
+  const summary=summarize(episodes);
+  const current=weekly[weekly.length-1] || null;
+  const previous=weekly[weekly.length-2] || null;
+  const delta=(a,b)=>Number.isFinite(Number(a)) && Number.isFinite(Number(b))
+    ? Math.round((Number(a)-Number(b))*10)/10
+    : null;
+  return {
+    available:true,
+    windowDays:safeWeeks*7,
+    weeks:safeWeeks,
+    generatedAt:new Date(asOfMs).toISOString(),
+    summary:{
+      ...summary,
+      recurringPairs:repeated.length,
+      ackDeltaPctPoints:delta(current?.ackSloPct,previous?.ackSloPct),
+      recoveryDeltaPctPoints:delta(current?.recoverySloPct,previous?.recoverySloPct),
+    },
+    weekly,
+    repeated,
+    privacy:{telegramIdsExposed:false,rawErrorsExposed:false},
+  };
+}
+
 function buildNewsImpactRecoveryIncidentCenter(strategyRows = [], incidentEvents = [], acknowledgements = [], evidenceReason = 'ok', options = {}) {
   const priorityRank={critical:0,high:1,medium:2,low:3};
   const asOfMs=Number.isFinite(Number(options?.asOfMs)) ? Number(options.asOfMs) : Date.now();
@@ -4190,7 +4443,7 @@ async function loadNewsImpactRecoveryStrategyEvidence(cfg) {
   const cached=memory.newsImpactRecoveryStrategy || {value:null,loadedAt:0};
   if (cached.value && now-Number(cached.loadedAt || 0)<NEWS_IMPACT_RECOVERY_STRATEGY_CACHE_MS) return cached.value;
   if (!hasSupabase(cfg)) {
-    const value={available:false,truncated:false,reason:'supabase_unavailable',evidence:[],recentEvidence:[],priorEvidence:[],transitionHistory:[],incidentEvents:[],incidentAcknowledgements:[]};
+    const value={available:false,truncated:false,reason:'supabase_unavailable',evidence:[],recentEvidence:[],priorEvidence:[],transitionHistory:[],incidentEvents:[],incidentAcknowledgements:[],incidentEpisodeHistory:[]};
     memory.newsImpactRecoveryStrategy={value,loadedAt:now};
     return value;
   }
@@ -4220,11 +4473,12 @@ async function loadNewsImpactRecoveryStrategyEvidence(cfg) {
     const transitionHistory=buildNewsImpactRecoveryTransitionHistory(failures,{limit:20});
     const incidentEvents=buildNewsImpactRecoveryIncidentEvents(failures,{limit:100});
     const incidentAcknowledgements=buildNewsImpactRecoveryIncidentAcknowledgements(incidentAckRows);
-    const value={available:!page.truncated,truncated:Boolean(page.truncated),reason:page.truncated?'truncated':'ok',evidence,recentEvidence,priorEvidence,transitionHistory,incidentEvents,incidentAcknowledgements};
+    const incidentEpisodeHistory=buildNewsImpactRecoveryIncidentEpisodeHistory(failures,incidentAckRows);
+    const value={available:!page.truncated,truncated:Boolean(page.truncated),reason:page.truncated?'truncated':'ok',evidence,recentEvidence,priorEvidence,transitionHistory,incidentEvents,incidentAcknowledgements,incidentEpisodeHistory};
     memory.newsImpactRecoveryStrategy={value,loadedAt:now};
     return value;
   } catch {
-    const value={available:false,truncated:false,reason:'load_failed',evidence:[],recentEvidence:[],priorEvidence:[],transitionHistory:[],incidentEvents:[],incidentAcknowledgements:[]};
+    const value={available:false,truncated:false,reason:'load_failed',evidence:[],recentEvidence:[],priorEvidence:[],transitionHistory:[],incidentEvents:[],incidentAcknowledgements:[],incidentEpisodeHistory:[]};
     memory.newsImpactRecoveryStrategy={value,loadedAt:now};
     return value;
   }
@@ -4365,6 +4619,43 @@ function newsImpactRecoveryIncidentDrill() {
       && incidents.some(x=>x.reason==='provider_unavailable' && x.status==='active' && x.currentOnly===true)
       && !Object.prototype.hasOwnProperty.call(incidents[0] || {},'telegram_id'),
     cases:8,
+  };
+}
+
+function newsImpactRecoveryIncidentSloDashboardDrill() {
+  const asOfMs=Date.parse('2026-09-23T18:00:00.000Z');
+  const failures=[
+    {created_at:'2026-09-02T10:00:00.000Z',metadata:{reason:'server_error',action:'full_ai',strategy_guard:'performance_drift'}},
+    {created_at:'2026-09-02T10:20:00.000Z',metadata:{reason:'server_error',action:'full_ai',strategy_guard:'fixed_default'}},
+    {created_at:'2026-09-10T10:00:00.000Z',metadata:{reason:'timeout',action:'share',strategy_guard:'recent_regression'}},
+    {created_at:'2026-09-10T17:00:00.000Z',metadata:{reason:'timeout',action:'share',strategy_guard:'fixed_default'}},
+    {created_at:'2026-09-17T10:00:00.000Z',metadata:{reason:'provider_unavailable',action:'full_ai',strategy_guard:'performance_drift'}},
+    {created_at:'2026-09-22T10:00:00.000Z',metadata:{reason:'server_error',action:'full_ai',strategy_guard:'recent_regression'}},
+    {created_at:'2026-09-22T10:15:00.000Z',metadata:{reason:'server_error',action:'full_ai',strategy_guard:'fixed_default'}},
+  ];
+  const acknowledgements=[
+    {created_at:'2026-09-02T10:10:00.000Z',metadata:{reason:'server_error',action:'full_ai',incident_guard:'performance_drift',incident_seen_at:'2026-09-02T10:00:00.000Z'}},
+    {created_at:'2026-09-10T10:40:00.000Z',metadata:{reason:'timeout',action:'share',incident_guard:'recent_regression',incident_seen_at:'2026-09-10T10:00:00.000Z'}},
+    {created_at:'2026-09-17T10:10:00.000Z',metadata:{reason:'provider_unavailable',action:'full_ai',incident_guard:'performance_drift',incident_seen_at:'2026-09-17T10:00:00.000Z'}},
+    {created_at:'2026-09-22T10:05:00.000Z',metadata:{reason:'server_error',action:'full_ai',incident_guard:'recent_regression',incident_seen_at:'2026-09-22T10:00:00.000Z'}},
+  ];
+  const episodes=buildNewsImpactRecoveryIncidentEpisodeHistory(failures,acknowledgements);
+  const dashboard=buildNewsImpactRecoveryIncidentSloDashboard(episodes,{asOfMs,weeks:4});
+  const serverRepeat=dashboard.repeated.find(x=>x.reason==='server_error' && x.action==='full_ai');
+  return {
+    pass:episodes.length===4
+      && dashboard.weekly.length===4
+      && dashboard.summary.episodes===4
+      && dashboard.summary.ackEligible===4
+      && dashboard.summary.ackMet===3
+      && dashboard.summary.recoveryEligible===4
+      && dashboard.summary.recoveryMet===2
+      && dashboard.summary.recurringPairs===1
+      && serverRepeat?.episodes===2
+      && dashboard.summary.ackDeltaPctPoints===100
+      && dashboard.privacy.telegramIdsExposed===false
+      && dashboard.privacy.rawErrorsExposed===false,
+    cases:11,
   };
 }
 
@@ -17406,6 +17697,10 @@ export default {
         newsImpactRecoveryIncidentEscalation: 'enabled',
         newsImpactRecoveryIncidentLatencyMetrics: 'enabled',
         newsImpactRecoveryIncidentSloSelfTest: newsImpactRecoveryIncidentSloDrill().pass ? 'enabled' : 'failed',
+        newsImpactRecoveryIncidentSloDashboard: 'enabled',
+        newsImpactRecoveryIncidentWeeklyTrend: 'enabled',
+        newsImpactRecoveryIncidentRecurrence: 'enabled',
+        newsImpactRecoveryIncidentSloDashboardSelfTest: newsImpactRecoveryIncidentSloDashboardDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
