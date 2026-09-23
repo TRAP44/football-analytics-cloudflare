@@ -138,6 +138,7 @@ const REQUIRED_HEALTH_FLAGS = [
   'newsImpactDecisionAnalytics',
   'newsImpactDecisionSelfTest',
   'newsImpactActionSelfTest',
+  'newsImpactActionFunnelSelfTest',
 ];
 
 function delay(ms) {
