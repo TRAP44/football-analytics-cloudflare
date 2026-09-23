@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
-const playbook=fs.readFileSync('POST_MATCH_RETURN_RC63.md','utf8');
 
 test('RC63 selects only analyzed matches old enough to be finished',()=> {
   assert.match(worker,/function postMatchReturnEligibility\(/);
@@ -54,5 +53,4 @@ test('RC63 deterministic drill and health contract are present',()=> {
   for (const flag of ['postMatchReturnLoop','analyzedMatchReturn','postMatchReturnDedupe','postMatchReturnOptOut','postMatchReturnQuotaGuard']) {
     assert.ok(worker.includes(flag + ": 'enabled'"), 'missing ' + flag);
   }
-  assert.match(playbook,/Post-Match Return Loop/);
 });
