@@ -78,6 +78,11 @@ const REQUIRED_HEALTH_FLAGS = [
   'liveContextHandoff',
   'finishedAnalysisArchive',
   'kickoffHandoffSelfTest',
+  'postMatchAiReview',
+  'immutablePrematchComparison',
+  'calibrationFeedbackReview',
+  'telegramPostMatchReview',
+  'postMatchReviewSelfTest',
 ];
 
 function delay(ms) {
