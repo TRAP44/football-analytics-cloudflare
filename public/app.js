@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.65.0-rc73';
+const CLIENT_VERSION = '6.66.0-rc74';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc73';
+const CLIENT_RELEASE_CHANNEL = 'rc74';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2925,6 +2925,8 @@ function renderLaunchFunnel() {
   const rechecks=d.rechecks || {};
   const media=d.mediaLoop || {};
   const impactActions=d.newsImpactActionSummary || {};
+  const impactFunnel=Array.isArray(d.newsImpactActionFunnel) ? d.newsImpactActionFunnel : [];
+  const impactBottleneck=d.newsImpactActionBottleneck || null;
   kpis.innerHTML=`<div class="release-monitor-kpis">
     <div><span>Входы</span><strong>${Number(first.users || 0)}</strong><small>bot + Mini App</small></div>
     <div><span>Полный AI</span><strong>${Number(last.users || 0)}</strong><small>${launchFunnelPct(last.fromEntryPct)} от входов</small></div>
@@ -2941,6 +2943,7 @@ function renderLaunchFunnel() {
   const searchQuality=d.searchQuality || {};
   stages.innerHTML=`<div class="release-monitor-section-head"><strong>Воронка</strong><span>уникальные пользователи</span></div>
     ${bottleneck ? `<div class="data-notice">🎯 Узкое место: <strong>${escapeHtml(bottleneck.label || '')}</strong> · теряется ${launchFunnelPct(bottleneck.dropPct)} пользователей перехода.</div>` : ''}
+    ${impactBottleneck && Number(impactBottleneck.users || 0) ? `<div class="data-notice">🧭 После News Impact: самая низкая конверсия у состояния <strong>${escapeHtml(impactBottleneck.label || impactBottleneck.code || '')}</strong> · ${Number(impactBottleneck.actedUsers || 0)} из ${Number(impactBottleneck.users || 0)} пользователей сделали следующее действие · ${launchFunnelPct(impactBottleneck.conversionPct)}.</div>` : ''}
     ${Number(rechecks.total || 0) ? `<div class="data-notice">🕒 Freshness guard: <strong>${Number(rechecks.total || 0)}</strong> перепроверок · ${Number(rechecks.material || 0)} со значимыми изменениями · ${Number(rechecks.stable || 0)} без значимых изменений.</div>` : ''}
     ${Number(handoff.users || 0) ? `<div class="data-notice">⚡ One‑tap AI: <strong>${Number(handoff.users || 0)}</strong> пользователей получили Telegram‑бриф · ${Number(handoff.fullAiUsers || 0)} дошли до полного AI · конверсия ${launchFunnelPct(handoff.conversionPct)}.</div>` : ''}
     ${Number(media.deepLinkOpens || 0) ? `<div class="data-notice">📣 Media loop: <strong>${Number(media.shareEvents || 0)}</strong> созданных share-ссылок · ${Number(media.deepLinkOpens || 0)} открытий fixture deep-link · ${Number(media.aiUsers || 0)} пользователей получили AI без повторного поиска.</div>` : ''}
@@ -2949,7 +2952,13 @@ function renderLaunchFunnel() {
       <span>${index+1}. ${escapeHtml(x.label || x.key || '')}</span>
       <strong>${Number(x.users || 0)}</strong>
       <small>${index ? `${launchFunnelPct(x.fromPreviousPct)} от предыдущего · ${launchFunnelPct(x.fromEntryPct)} от входа` : 'точка входа'}</small>
-    </div>`).join('')}</div>`;
+    </div>`).join('')}</div>
+    ${impactFunnel.some(x=>Number(x.users || 0)>0) ? `<div class="release-monitor-section-head"><strong>News Impact → действие</strong><span>по состояниям решения</span></div>
+      <div class="launch-campaign-list">${impactFunnel.filter(x=>Number(x.users || 0)>0).map(x=>`<div>
+        <span><b>${escapeHtml(x.label || x.code || '')}</b></span>
+        <strong>${Number(x.actedUsers || 0)} / ${Number(x.users || 0)}</strong>
+        <small>${launchFunnelPct(x.conversionPct)} продолжили · чаще: ${escapeHtml(x.topAction?.label || 'нет действий')}</small>
+      </div>`).join('')}</div>` : ''}`;
 
   const sources=d.campaigns || [];
   campaigns.innerHTML=`<div class="release-monitor-section-head"><strong>Источники и кампании</strong><span>без Telegram ID</span></div>
