@@ -1,4 +1,4 @@
-# Football Analytics Mini App v6.90.0 — RC98
+# Football Analytics Mini App v6.91.0 — RC99
 
 Telegram-бот и Mini App для футбольной аналитики на Cloudflare Workers + Supabase. Основные источники данных: API-Football и Tavily. Интерфейс и админ-панель — на русском языке. Монетизация пока отключена.
 
@@ -12,6 +12,7 @@ Telegram-бот и Mini App для футбольной аналитики на 
 - Публичный AI Track Record строится только по подтверждённым settled-прогнозам и не выдаёт совпадение исхода за прибыльность ставок.
 - Защита от вирусной нагрузки: distributed fixture lock, shared cache и безопасный fallback.
 - Медиа deep-link на fixture, publisher kit и агрегированная first-party аналитика source / campaign / content.
+- RC99 — Supabase Schema Consolidation: новая установка выполняется одним `supabase/baseline.sql`; исторические обновления сохранены в `supabase/migrations/`, а SQL-файлы удалены из корня репозитория. RC99 не вводит новую production-схему поверх v6.15 — он объединяет и проверяет уже существующий schema contract.
 - Новостной контур RC69–RC98: новость → релевантный матч → явная AI-перепроверка → News Impact Delta → **News Impact Decision Card** → **News Impact Action Tracking** → **News Impact Action Funnel** → **News Impact Funnel Confidence Guard** → **News Impact Funnel Trend Guard** → **News Impact Temporal Attribution Guard** → **News Impact Action Outcome Quality** → **News Impact Outcome Failure Diagnostics & Recovery** → **News Impact Recovery Effectiveness Funnel** → **News Impact Recovery Strategy Guard** → **News Impact Recovery Stability & Parity Guard** → **News Impact Recovery Drift Circuit Breaker** → **News Impact Recovery Transition History & Admin Alerts** → **News Impact Recovery Incident Center** → **News Impact Recovery Incident Acknowledgement & Runbook** → **News Impact Recovery Incident Escalation & SLO** → **News Impact Recovery Incident SLO Dashboard & Trend** → **News Impact Recovery Incident SLO Breach Feed & Drilldown** → **News Impact Recovery Incident SLO Breach Watchlist & Aging** → **News Impact Recovery Incident SLO Breach Triage Queue** → **News Impact Recovery Incident SLO Triage Trend & Recurrence** → **News Impact Recovery Incident SLO Breach Impact Ranking** → **News Impact Recovery Incident SLO Impact Trend** → **News Impact Recovery Incident SLO Impact Concentration** → **News Impact Recovery Incident SLO Impact Concentration Trend** → **News Impact Recovery Incident SLO Impact Executive Summary** → **News Impact Recovery Incident SLO Impact Focus Queue**.
 - News Impact не утверждает причинность по заголовку: сравнение разрешено только с корректным AI-снимком, созданным до публикации новости.
 - RC73 считает только категориальные действия после Decision Card: полный AI, составы, рынок, повторная проверка, возврат к новостям и share. Текст новости, URL и пользовательский запрос в эту аналитику не записываются.
@@ -57,9 +58,9 @@ Telegram-бот и Mini App для футбольной аналитики на 
 
 Для уже существующего production-проекта миграции сохраняются как история схемы и применяются по порядку:
 
-`supabase_migration_v6_9.sql` → `v6_10` → `v6_11` → `v6_11_1` → `v6_12` → `v6_13` → `v6_14` → `v6_15`.
+`supabase/migrations/v6_9.sql` → `v6_10.sql` → `v6_11.sql` → `v6_11_1.sql` → `v6_12.sql` → `v6_13.sql` → `v6_14.sql` → `v6_15.sql`.
 
-`supabase_baseline_v6_9.sql` оставлен как отдельный baseline/bootstrap-файл и не заменяет историю миграций существующей базы.
+Для нового проекта используется только `supabase/baseline.sql`. Исторический baseline v6.9 сохранён в `supabase/history/`, а существующие базы обновляются только файлами из `supabase/migrations/`.
 
 ## Проверка релиза
 
@@ -70,11 +71,12 @@ npm run verify:release
 npm run verify:worker
 ```
 
-Production smoke дополнительно проверяет `/health`, версию `6.90.0-rc98`, `releaseCandidate=RC98`, отключённый `DEV_MODE` и обязательные health/self-test флаги.
+Production smoke дополнительно проверяет `/health`, версию `6.91.0-rc99`, `releaseCandidate=RC99`, отключённый `DEV_MODE` и обязательные health/self-test флаги.
 
 ## Документация
 
 - `INSTALL_RU.md` — установка и конфигурация.
+- `supabase/README_RU.md` — baseline, миграции и безопасный порядок обновления Supabase.
 - `QA_RELEASE_CHECKLIST_RU.md` — актуальный release checklist.
 - `MEDIA_LAUNCH_RU.md` — запуск через СМИ/Telegram и правила атрибуции.
 - `.env.example` — список переменных окружения без секретов.
