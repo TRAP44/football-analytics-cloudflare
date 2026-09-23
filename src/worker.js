@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.52.0-rc60';
+const APP_VERSION = '6.53.0-rc61';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc60';
-const RC_NAME = 'RC60';
+const RELEASE_CHANNEL = 'rc61';
+const RC_NAME = 'RC61';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -2147,6 +2147,8 @@ function botAiHandoffText(data = {}) {
   const trustScore=Number.isFinite(Number(trust.score)) ? `${Math.round(Number(trust.score))}%` : '—';
   const skip=signal.code==='skip';
   const freshness=data.freshness || analysisFreshness(data);
+  const handoff=data.kickoffHandoff || analysisKickoffHandoff(data);
+  const handoffLocked=Boolean(handoff?.locked);
   const freshIcon=freshness.needsRecheck?'🟠':freshness.state==='started'?'⚪':'🟢';
   const delta=data?.recheck?.performed ? data?.recheck?.delta : null;
   const deltaLines=delta?.available ? [delta.summary,...(delta.items || []).slice(0,3).map(item=>`• ${item.title}${item.after?`: ${item.after}`:''}`)] : [];
@@ -2154,18 +2156,26 @@ function botAiHandoffText(data = {}) {
     '🧠 <b>FM AI · короткая оценка</b>',
     `<b>${telegramHtmlEscape(match.home?.name || 'Хозяева')} — ${telegramHtmlEscape(match.away?.name || 'Гости')}</b>`,
     '',
-    `🎯 ${skip ? '<b>Сигнала нет — матч лучше пропустить</b>' : `<b>${telegramHtmlEscape(signal.label || 'Изучить матч')}</b>`}`,
+    handoffLocked
+      ? `⏱ <b>Предматчевый сигнал зафиксирован: ${telegramHtmlEscape(signal.label || 'без сигнала')}</b>`
+      : `🎯 ${skip ? '<b>Сигнала нет — матч лучше пропустить</b>' : `<b>${telegramHtmlEscape(signal.label || 'Изучить матч')}</b>`}`,
     `📊 Исход: ${telegramHtmlEscape(verdict.outcome || '—')}`,
     `🧠 Уверенность: ${telegramHtmlEscape(ai.confidenceLabel || '—')} · ${confidence}`,
     `⚠️ Риск: ${telegramHtmlEscape(ai.riskLabel || '—')}`,
     `🗂 Данные: ${telegramHtmlEscape(trust.label || '—')} · ${trustScore}`,
     `${freshIcon} Свежесть: <b>${telegramHtmlEscape(freshness.label || '—')}</b> · ${Number(freshness.ageMinutes || 0)} мин.`,
     '',
-    `Почему: ${telegramHtmlEscape(signal.reason || ai.riskNote || 'Оцениваю доступные данные матча.')}`,
+    handoffLocked
+      ? `До старта AI объяснял сигнал так: ${telegramHtmlEscape(signal.reason || ai.riskNote || 'по доступным предматчевым данным')}`
+      : `Почему: ${telegramHtmlEscape(signal.reason || ai.riskNote || 'Оцениваю доступные данные матча.')}`,
     freshness.reason ? `Свежесть: ${telegramHtmlEscape(freshness.reason)}` : '',
+    handoff?.state==='imminent' ? `⏳ ${telegramHtmlEscape(handoff.label)}: ${telegramHtmlEscape(handoff.reason)}` : '',
+    handoffLocked ? `➡️ ${telegramHtmlEscape(handoff.reason)}` : '',
     ...(deltaLines.length ? ['',`🔄 <b>Что изменилось после перепроверки</b>`,...deltaLines.map(telegramHtmlEscape)] : []),
     '',
-    '<i>Полный AI-разбор откроется сразу на этом матче — повторно искать его не нужно.</i>',
+    handoffLocked
+      ? '<i>После стартового свистка FM AI не превращает предматчевый сигнал в live-рекомендацию. Используйте центр матча для счёта, событий и статистики.</i>'
+      : '<i>Полный AI-разбор откроется сразу на этом матче — повторно искать его не нужно.</i>',
   ].join('\n');
 }
 
@@ -13132,6 +13142,35 @@ function analysisFreshness(payload = {}, now = Date.now()) {
   return {state:needsRecheck?'recheck':'fresh',label:needsRecheck?'Нужна перепроверка':'AI свежий',ageMinutes,minutesToKickoff,maxAgeMinutes,needsRecheck,lineupsConfirmed,marketAvailable,reasonCode,reason};
 }
 
+
+function analysisKickoffHandoff(payload = {}, now = Date.now()) {
+  const status=String(payload?.match?.status || '');
+  const kickoffMs=Date.parse(payload?.match?.date || '');
+  const minutesToKickoff=Number.isFinite(kickoffMs) ? Math.round((kickoffMs-now)/60000) : null;
+  const finished=isFinishedStatus(status);
+  const liveByStatus=isLiveStatus(status);
+  const liveByClock=!finished && minutesToKickoff!==null && minutesToKickoff < -5;
+  if (finished) {
+    return {state:'finished',locked:true,minutesToKickoff,label:'Матч завершён',actionLabel:'Открыть итог матча',reason:'Предматчевый AI сохранён как архивный снимок. Для результата, событий и статистики используйте центр матча.'};
+  }
+  if (liveByStatus || liveByClock) {
+    return {state:'live',locked:true,minutesToKickoff,label:'Матч уже идёт',actionLabel:'Открыть центр матча',reason:'Предматчевый сигнал зафиксирован и больше не обновляется как live-рекомендация. Смотрите счёт, события и статистику в центре матча.'};
+  }
+  if (minutesToKickoff!==null && minutesToKickoff<=10) {
+    return {state:'imminent',locked:false,minutesToKickoff,label:'Финальное окно до старта',actionLabel:'Перепроверить перед стартом',reason:'До матча осталось мало времени: финально проверьте составы, потери и движение рынка.'};
+  }
+  return {state:'prematch',locked:false,minutesToKickoff,label:'Предматчевый режим',actionLabel:'',reason:''};
+}
+
+const ANALYSIS_KICKOFF_HANDOFF_DRILL_NOW=Date.parse('2026-09-23T18:00:00Z');
+function analysisKickoffHandoffDrill() {
+  const pre=analysisKickoffHandoff({match:{date:'2026-09-23T20:00:00Z',status:'NS'}},ANALYSIS_KICKOFF_HANDOFF_DRILL_NOW);
+  const imminent=analysisKickoffHandoff({match:{date:'2026-09-23T18:08:00Z',status:'NS'}},ANALYSIS_KICKOFF_HANDOFF_DRILL_NOW);
+  const live=analysisKickoffHandoff({match:{date:'2026-09-23T17:55:00Z',status:'1H'}},ANALYSIS_KICKOFF_HANDOFF_DRILL_NOW);
+  const finished=analysisKickoffHandoff({match:{date:'2026-09-23T15:00:00Z',status:'FT'}},ANALYSIS_KICKOFF_HANDOFF_DRILL_NOW);
+  return {pass:pre.state==='prematch' && !pre.locked && imminent.state==='imminent' && !imminent.locked && live.state==='live' && live.locked && finished.state==='finished' && finished.locked,cases:4};
+}
+
 async function userHasAnalyzedFixture(userId, fixtureId, cfg) {
   const uid=Number(userId || 0), id=Number(fixtureId || 0);
   if (!uid || !id) return false;
@@ -13209,7 +13248,7 @@ function analysisDeltaDrill() {
   return {pass:delta.available && delta.material && delta.codes.includes('signal') && delta.codes.includes('probability') && delta.codes.includes('lineups') && delta.codes.includes('market'),count:delta.items.length};
 }
 function analysisResponsePayload(payload = {}, extra = {}) {
-  return {...payload,freshness:analysisFreshness(payload),...extra};
+  return {...payload,freshness:analysisFreshness(payload),kickoffHandoff:analysisKickoffHandoff(payload),...extra};
 }
 async function apiAnalyze(request, cfg, user) {
   let body = {};
@@ -13644,6 +13683,12 @@ export default {
         telegramRecheckDelta: 'enabled',
         analysisDeltaSelfTest: analysisDeltaDrill().pass ? 'enabled' : 'failed',
         analysisDeltaCases: analysisDeltaDrill().count,
+        kickoffHandoffGuard: 'enabled',
+        prematchAdviceFreeze: 'enabled',
+        liveContextHandoff: 'enabled',
+        finishedAnalysisArchive: 'enabled',
+        kickoffHandoffSelfTest: analysisKickoffHandoffDrill().pass ? 'enabled' : 'failed',
+        kickoffHandoffCases: analysisKickoffHandoffDrill().cases,
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
