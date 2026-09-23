@@ -241,6 +241,9 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         newsImpactRecoveryIncidentSloBreachImpactTrend: 'enabled',
         newsImpactRecoveryIncidentWeeklyOverdueBurden: 'enabled',
         newsImpactRecoveryIncidentSloBreachImpactTrendSelfTest: 'enabled',
+        newsImpactRecoveryIncidentSloImpactConcentration: 'enabled',
+        newsImpactRecoveryIncidentTopContributionShares: 'enabled',
+        newsImpactRecoveryIncidentSloImpactConcentrationSelfTest: 'enabled',
       });
     }
     if (url.pathname === '/api/app-manifest') return json({ version: '6.27.0-rc35', releaseCandidate: 'RC35' });

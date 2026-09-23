@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.86.0-rc94';
+const CLIENT_VERSION = '6.87.0-rc95';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc94';
+const CLIENT_RELEASE_CHANNEL = 'rc95';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2973,6 +2973,9 @@ function renderLaunchFunnel() {
   const impactRecoveryImpactTrendSummary=impactRecoveryIncidentSloBreachImpactTrend.summary || {};
   const impactRecoveryImpactTrendWeekly=Array.isArray(impactRecoveryIncidentSloBreachImpactTrend.weekly) ? impactRecoveryIncidentSloBreachImpactTrend.weekly : [];
   const impactRecoveryImpactTrendPairs=Array.isArray(impactRecoveryIncidentSloBreachImpactTrend.pairs) ? impactRecoveryIncidentSloBreachImpactTrend.pairs : [];
+  const impactRecoveryIncidentSloImpactConcentration=d.newsImpactRecoveryIncidentSloImpactConcentration || {available:false,summary:{},rows:[]};
+  const impactRecoveryConcentrationSummary=impactRecoveryIncidentSloImpactConcentration.summary || {};
+  const impactRecoveryConcentrationRows=Array.isArray(impactRecoveryIncidentSloImpactConcentration.rows) ? impactRecoveryIncidentSloImpactConcentration.rows : [];
   const impactFunnel=Array.isArray(d.newsImpactActionFunnel) ? d.newsImpactActionFunnel : [];
   const impactBottleneck=d.newsImpactActionBottleneck || null;
   const impactConfidenceGuard=d.newsImpactActionConfidenceGuard || {minUsers:10,stableUsers:30};
@@ -3121,6 +3124,12 @@ function renderLaunchFunnel() {
       (impactRecoveryImpactTrendWeekly.length ? '<div class="launch-campaign-list">' + impactRecoveryImpactTrendWeekly.map(x=>'<div><span><b>' + escapeHtml(String(x.windowEnd || '').slice(0,10)) + '</b></span><strong>' + Number(x.totalOverdueMinutes || 0) + ' мин</strong><small>ACK ' + Number(x.ackOverdueMinutes || 0) + ' · Recovery ' + Number(x.recoveryOverdueMinutes || 0) + ' · pairs ' + Number(x.pairs || 0) + (x.top?' · top '+escapeHtml(x.top.reasonLabel || x.top.reason || '')+' / '+escapeHtml(x.top.actionLabel || x.top.action || '')+' '+Number(x.top.contributionPct || 0)+'%':'') + '</small></div>').join('') + '</div>' : '<div class="data-notice">Нет недельных impact-снимков.</div>') +
       (impactRecoveryImpactTrendPairs.length ? '<div class="launch-campaign-list">' + impactRecoveryImpactTrendPairs.map(x=>'<div><span><b>' + (x.direction==='increased'?'↗️':x.direction==='decreased'?'↘️':'→') + ' ' + escapeHtml(x.reasonLabel || x.reason || '') + '</b> · ' + escapeHtml(x.actionLabel || x.action || '') + '</span><strong>' + (Number(x.deltaMinutes || 0)>=0?'+':'') + Number(x.deltaMinutes || 0) + ' мин</strong><small>текущая неделя ' + Number(x.currentOverdueMinutes || 0) + ' · предыдущая ' + Number(x.previousOverdueMinutes || 0) + ' · вклад сейчас ' + Number(x.currentContributionPct || 0) + '%</small></div>').join('') + '</div>' : '') +
       '<p class="tiny">RC94 — недельный trend считает только минуты просрочки, фактически возникшие внутри каждой недели. Направление — точный знак разницы с предыдущей неделей, без нового score или threshold; используются RC87 30/120/360 минут, persistence и recovery-routing не меняются.</p>'
+    ) : ''}
+    ${impactRecoveryIncidentSloImpactConcentration.available !== false ? (
+      '<div class="release-monitor-section-head"><strong>SLO Impact Concentration</strong><span>top1 ' + Number(impactRecoveryConcentrationSummary.top1ContributionPct || 0) + '% · top3 ' + Number(impactRecoveryConcentrationSummary.top3ContributionPct || 0) + '% · top5 ' + Number(impactRecoveryConcentrationSummary.top5ContributionPct || 0) + '%</span></div>' +
+      (impactRecoveryConcentrationRows.length ? '<div class="launch-campaign-list">' + impactRecoveryConcentrationRows.map(x=>'<div><span><b>#' + Number(x.rank || 0) + ' ' + escapeHtml(x.reasonLabel || x.reason || '') + '</b> · ' + escapeHtml(x.actionLabel || x.action || '') + '</span><strong>' + Number(x.contributionPct || 0) + '%</strong><small>накопленно ' + Number(x.cumulativeContributionPct || 0) + '% · ' + Number(x.totalOverdueMinutes || 0) + ' мин сверх SLO · active episodes ' + Number(x.activeEpisodes || 0) + '</small></div>').join('') + '</div>' : '<div class="data-notice">✅ Концентрация отсутствует: накопленной SLO-просрочки нет.</div>') +
+      '<div class="data-notice">Остаток вне top-5: ' + Number(impactRecoveryConcentrationSummary.residualAfterTop5Pct || 0) + '% · всего пар: ' + Number(impactRecoveryConcentrationSummary.pairs || 0) + '</div>' +
+      '<p class="tiny">RC95 — концентрация является только кумулятивной долей фактических overdue minutes из RC93 ranking. Новых SLO-порогов или score нет; используются RC87 30/120/360 минут, persistence и recovery-routing не меняются.</p>'
     ) : ''}
     ${impactRecoveryStrategyAlerts.length ? `<div class="release-monitor-section-head"><strong>Recovery: предупреждения</strong><span>${Number(impactRecoveryAlertSummary.critical || 0)} critical · ${Number(impactRecoveryAlertSummary.warnings || 0)} warning · ${Number(impactRecoveryAlertSummary.info || 0)} info</span></div>
       <div class="launch-campaign-list">${impactRecoveryStrategyAlerts.map(x=>`<div>

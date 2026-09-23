@@ -80,11 +80,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.86.0-rc94';
+const APP_VERSION = '6.87.0-rc95';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc94';
-const RC_NAME = 'RC94';
+const RELEASE_CHANNEL = 'rc95';
+const RC_NAME = 'RC95';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1952,6 +1952,9 @@ async function apiLaunchFunnel(request,cfg) {
         routingChanged:false,
         persistence:'none',
       };
+  const newsImpactRecoveryIncidentSloImpactConcentration=buildNewsImpactRecoveryIncidentSloImpactConcentration(
+    newsImpactRecoveryIncidentSloBreachImpactRanking,
+  );
   const newsImpactRecoveryIncidentSloGuard={
     ackTargetMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,
     ackCriticalMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,
@@ -2076,6 +2079,7 @@ async function apiLaunchFunnel(request,cfg) {
     newsImpactRecoveryIncidentSloBreachTriageTrend,
     newsImpactRecoveryIncidentSloBreachImpactRanking,
     newsImpactRecoveryIncidentSloBreachImpactTrend,
+    newsImpactRecoveryIncidentSloImpactConcentration,
     newsImpactActionFunnel,
     newsImpactActionBottleneck,
     newsImpactActionConfidenceGuard,
@@ -4855,6 +4859,51 @@ function buildNewsImpactRecoveryIncidentSloBreachImpactTrend(episodeRows = [], {
   };
 }
 
+
+function buildNewsImpactRecoveryIncidentSloImpactConcentration(impactRanking = {}) {
+  const ranking=Array.isArray(impactRanking?.ranking) ? impactRanking.ranking : [];
+  const totalPairs=Math.max(0,Number(impactRanking?.summary?.pairs || ranking.length));
+  const cumulativePct=(count)=>Math.round(ranking.slice(0,count).reduce((sum,row)=>sum+Number(row?.contributionPct || 0),0)*10)/10;
+  const top1Pct=cumulativePct(1);
+  const top3Pct=cumulativePct(3);
+  const top5Pct=cumulativePct(5);
+  const concentrationRows=ranking.slice(0,5).map((row,index)=>({
+    rank:index+1,
+    reason:String(row?.reason || ''),
+    reasonLabel:String(row?.reasonLabel || row?.reason || ''),
+    action:String(row?.action || ''),
+    actionLabel:String(row?.actionLabel || row?.action || ''),
+    contributionPct:Number(row?.contributionPct || 0),
+    cumulativeContributionPct:cumulativePct(index+1),
+    totalOverdueMinutes:Number(row?.totalOverdueMinutes || 0),
+    activeEpisodes:Number(row?.activeEpisodes || 0),
+  }));
+  return {
+    available:impactRanking?.available!==false,
+    generatedAt:impactRanking?.generatedAt || null,
+    summary:{
+      pairs:totalPairs,
+      totalOverdueMinutes:Number(impactRanking?.summary?.totalOverdueMinutes || 0),
+      top1ContributionPct:top1Pct,
+      top3ContributionPct:top3Pct,
+      top5ContributionPct:top5Pct,
+      residualAfterTop5Pct:Math.max(0,Math.round((100-top5Pct)*10)/10),
+      coveredPairs:Math.min(5,totalPairs),
+    },
+    rows:concentrationRows,
+    methodology:'cumulative_share_of_total_overdue_minutes',
+    thresholds:{
+      ackMinutes:Number(impactRanking?.thresholds?.ackMinutes || NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES),
+      criticalAckMinutes:Number(impactRanking?.thresholds?.criticalAckMinutes || NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES),
+      recoveryMinutes:Number(impactRanking?.thresholds?.recoveryMinutes || NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES),
+      source:'rc87_existing_slo',
+    },
+    privacy:{telegramIdsExposed:false,rawErrorsExposed:false,freeTextExposed:false},
+    routingChanged:false,
+    persistence:'none',
+  };
+}
+
 function buildNewsImpactRecoveryIncidentCenter(strategyRows = [], incidentEvents = [], acknowledgements = [], evidenceReason = 'ok', options = {}) {
   const priorityRank={critical:0,high:1,medium:2,low:3};
   const asOfMs=Number.isFinite(Number(options?.asOfMs)) ? Number(options.asOfMs) : Date.now();
@@ -5542,6 +5591,42 @@ function newsImpactRecoveryIncidentSloBreachImpactTrendDrill() {
       && trend.persistence==='none'
       && trend.privacy.telegramIdsExposed===false,
     cases:18,
+  };
+}
+
+
+function newsImpactRecoveryIncidentSloImpactConcentrationDrill() {
+  const ranking={
+    available:true,
+    generatedAt:'2026-09-23T18:00:00.000Z',
+    summary:{pairs:6,totalOverdueMinutes:1000},
+    thresholds:{ackMinutes:30,criticalAckMinutes:120,recoveryMinutes:360,source:'rc87_existing_slo'},
+    ranking:[
+      {reason:'server_error',action:'full_ai',contributionPct:40,totalOverdueMinutes:400,activeEpisodes:1},
+      {reason:'timeout',action:'share',contributionPct:25,totalOverdueMinutes:250,activeEpisodes:1},
+      {reason:'provider_unavailable',action:'full_ai',contributionPct:15,totalOverdueMinutes:150,activeEpisodes:0},
+      {reason:'match_missing',action:'news',contributionPct:10,totalOverdueMinutes:100,activeEpisodes:1},
+      {reason:'data_invalid',action:'recheck',contributionPct:5,totalOverdueMinutes:50,activeEpisodes:0},
+      {reason:'other',action:'market',contributionPct:5,totalOverdueMinutes:50,activeEpisodes:0},
+    ],
+  };
+  const result=buildNewsImpactRecoveryIncidentSloImpactConcentration(ranking);
+  return {
+    pass:result.summary.pairs===6
+      && result.summary.totalOverdueMinutes===1000
+      && result.summary.top1ContributionPct===40
+      && result.summary.top3ContributionPct===80
+      && result.summary.top5ContributionPct===95
+      && result.summary.residualAfterTop5Pct===5
+      && result.summary.coveredPairs===5
+      && result.rows.length===5
+      && result.rows[2]?.cumulativeContributionPct===80
+      && result.methodology==='cumulative_share_of_total_overdue_minutes'
+      && result.thresholds.source==='rc87_existing_slo'
+      && result.routingChanged===false
+      && result.persistence==='none'
+      && result.privacy.telegramIdsExposed===false,
+    cases:13,
   };
 }
 
@@ -18606,6 +18691,9 @@ export default {
         newsImpactRecoveryIncidentSloBreachImpactTrend: 'enabled',
         newsImpactRecoveryIncidentWeeklyOverdueBurden: 'enabled',
         newsImpactRecoveryIncidentSloBreachImpactTrendSelfTest: newsImpactRecoveryIncidentSloBreachImpactTrendDrill().pass ? 'enabled' : 'failed',
+        newsImpactRecoveryIncidentSloImpactConcentration: 'enabled',
+        newsImpactRecoveryIncidentTopContributionShares: 'enabled',
+        newsImpactRecoveryIncidentSloImpactConcentrationSelfTest: newsImpactRecoveryIncidentSloImpactConcentrationDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
