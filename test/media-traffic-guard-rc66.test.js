@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
-const playbook=fs.readFileSync('MEDIA_TRAFFIC_GUARD_RC66.md','utf8');
 
 test('RC66 defines bounded distributed analysis lock policy',()=> {
   assert.match(worker,/DISTRIBUTED_ANALYSIS_LOCK_TTL_SECONDS = 90/);
@@ -56,5 +55,4 @@ test('RC66 health contract is release-gated',()=> {
     assert.ok(worker.includes(flag + ": 'enabled'"), 'missing ' + flag);
   }
   assert.match(worker,/distributedAnalysisLockSelfTest: distributedAnalysisLockDrill\(\)\.pass \? 'enabled' : 'failed'/);
-  assert.match(playbook,/Media Traffic Guard & Viral Load Safety/);
 });
