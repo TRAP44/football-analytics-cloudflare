@@ -152,6 +152,10 @@ const REQUIRED_HEALTH_FLAGS = [
   'newsImpactRecoveryDriftGuard',
   'newsImpactRecoveryDriftAudit',
   'newsImpactRecoveryDriftSelfTest',
+  'newsImpactRecoveryTransitionHistory',
+  'newsImpactRecoveryAdminAlerts',
+  'newsImpactRecoveryTransitionPrivacyGuard',
+  'newsImpactRecoveryTransitionSelfTest',
 ];
 
 function delay(ms) {
