@@ -80,11 +80,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.81.0-rc89';
+const APP_VERSION = '6.82.0-rc90';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc89';
-const RC_NAME = 'RC89';
+const RELEASE_CHANNEL = 'rc90';
+const RC_NAME = 'RC90';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1875,6 +1875,10 @@ async function apiLaunchFunnel(request,cfg) {
         privacy:{telegramIdsExposed:false,rawErrorsExposed:false,freeTextExposed:false},
         routingChanged:false,
       };
+  const newsImpactRecoveryIncidentSloBreachWatchlist=buildNewsImpactRecoveryIncidentSloBreachWatchlist(
+    newsImpactRecoveryIncidentSloBreachFeed,
+    {limit:10},
+  );
   const newsImpactRecoveryIncidentSloGuard={
     ackTargetMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,
     ackCriticalMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,
@@ -1994,6 +1998,7 @@ async function apiLaunchFunnel(request,cfg) {
     newsImpactRecoveryIncidentSloGuard,
     newsImpactRecoveryIncidentSloDashboard,
     newsImpactRecoveryIncidentSloBreachFeed,
+    newsImpactRecoveryIncidentSloBreachWatchlist,
     newsImpactActionFunnel,
     newsImpactActionBottleneck,
     newsImpactActionConfidenceGuard,
@@ -4322,6 +4327,47 @@ function buildNewsImpactRecoveryIncidentSloBreachFeed(episodeRows = [], {asOfMs 
   };
 }
 
+
+function buildNewsImpactRecoveryIncidentSloBreachWatchlist(feed = {}, {limit = 10} = {}) {
+  const safeLimit=Math.max(1,Math.min(25,Number(limit || 10)));
+  const items=Array.isArray(feed?.items) ? feed.items : [];
+  const repeated=Array.isArray(feed?.repeated) ? feed.repeated : [];
+  const active=items.filter(x=>x?.active);
+  const activeSorted=[...active].sort((a,b)=>
+    Number(b?.severity==='critical')-Number(a?.severity==='critical')
+    || Number(b?.ageMinutes || 0)-Number(a?.ageMinutes || 0)
+    || Date.parse(String(a?.startedAt || 0))-Date.parse(String(b?.startedAt || 0))
+  );
+  const activeRepeatedPairs=repeated
+    .filter(x=>Number(x?.activeBreaches || 0)>0)
+    .sort((a,b)=>Number(b.activeBreaches || 0)-Number(a.activeBreaches || 0)
+      || Number(b.breachEpisodes || 0)-Number(a.breachEpisodes || 0))
+    .slice(0,10);
+  return {
+    available:feed?.available!==false,
+    generatedAt:feed?.generatedAt || null,
+    summary:{
+      active:active.length,
+      criticalActive:active.filter(x=>x?.severity==='critical').length,
+      ackActive:active.filter(x=>Array.isArray(x?.breachTypes) && x.breachTypes.includes('ack')).length,
+      recoveryActive:active.filter(x=>Array.isArray(x?.breachTypes) && x.breachTypes.includes('recovery')).length,
+      oldestActiveMinutes:active.length ? Math.max(...active.map(x=>Number(x?.ageMinutes || 0))) : null,
+      repeatedActivePairs:activeRepeatedPairs.length,
+    },
+    items:activeSorted.slice(0,safeLimit),
+    repeated:activeRepeatedPairs,
+    thresholds:{
+      ackMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,
+      criticalAckMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,
+      recoveryMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,
+      source:'rc87_existing_slo',
+    },
+    privacy:{telegramIdsExposed:false,rawErrorsExposed:false,freeTextExposed:false},
+    routingChanged:false,
+    persistence:'none',
+  };
+}
+
 function buildNewsImpactRecoveryIncidentCenter(strategyRows = [], incidentEvents = [], acknowledgements = [], evidenceReason = 'ok', options = {}) {
   const priorityRank={critical:0,high:1,medium:2,low:3};
   const asOfMs=Number.isFinite(Number(options?.asOfMs)) ? Number(options.asOfMs) : Date.now();
@@ -4805,6 +4851,40 @@ function newsImpactRecoveryIncidentSloBreachFeedDrill() {
       && feed.privacy.rawErrorsExposed===false
       && feed.privacy.freeTextExposed===false,
     cases:10,
+  };
+}
+
+
+function newsImpactRecoveryIncidentSloBreachWatchlistDrill() {
+  const feed={
+    available:true,
+    generatedAt:'2026-09-23T18:00:00.000Z',
+    items:[
+      {reason:'server_error',action:'full_ai',active:true,severity:'critical',ageMinutes:610,breachTypes:['ack','recovery'],startedAt:'2026-09-23T08:00:00.000Z'},
+      {reason:'timeout',action:'share',active:true,severity:'high',ageMinutes:70,breachTypes:['ack'],startedAt:'2026-09-23T16:50:00.000Z'},
+      {reason:'timeout',action:'share',active:false,severity:'high',ageMinutes:450,breachTypes:['recovery'],startedAt:'2026-09-20T08:00:00.000Z'},
+    ],
+    repeated:[
+      {reason:'server_error',action:'full_ai',breachEpisodes:3,activeBreaches:1},
+      {reason:'timeout',action:'share',breachEpisodes:2,activeBreaches:0},
+    ],
+  };
+  const watchlist=buildNewsImpactRecoveryIncidentSloBreachWatchlist(feed,{limit:10});
+  return {
+    pass:watchlist.summary.active===2
+      && watchlist.summary.criticalActive===1
+      && watchlist.summary.ackActive===2
+      && watchlist.summary.recoveryActive===1
+      && watchlist.summary.oldestActiveMinutes===610
+      && watchlist.summary.repeatedActivePairs===1
+      && watchlist.items[0]?.reason==='server_error'
+      && watchlist.thresholds.source==='rc87_existing_slo'
+      && watchlist.routingChanged===false
+      && watchlist.persistence==='none'
+      && watchlist.privacy.telegramIdsExposed===false
+      && watchlist.privacy.rawErrorsExposed===false
+      && watchlist.privacy.freeTextExposed===false,
+    cases:13,
   };
 }
 
@@ -17854,6 +17934,9 @@ export default {
         newsImpactRecoveryIncidentBreachDrilldown: 'enabled',
         newsImpactRecoveryIncidentBreachPrivacyGuard: 'enabled',
         newsImpactRecoveryIncidentSloBreachFeedSelfTest: newsImpactRecoveryIncidentSloBreachFeedDrill().pass ? 'enabled' : 'failed',
+        newsImpactRecoveryIncidentSloBreachWatchlist: 'enabled',
+        newsImpactRecoveryIncidentBreachAging: 'enabled',
+        newsImpactRecoveryIncidentSloBreachWatchlistSelfTest: newsImpactRecoveryIncidentSloBreachWatchlistDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
