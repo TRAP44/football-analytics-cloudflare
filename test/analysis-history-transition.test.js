@@ -24,7 +24,7 @@ test('a completed analysis is shown before secondary history and reminder refres
   const analyze = app.match(/async function analyzeMatch\(fixtureId, btn, options = \{\}\)[\s\S]*?\n}\n\nfunction historyItemFromAnalysis/);
   assert.ok(analyze, 'analyzeMatch must exist');
   const showIndex = analyze[0].indexOf("showView('analysisView')");
-  const secondaryIndex = analyze[0].indexOf('void Promise.allSettled([loadHistory(false), loadReminders()])');
+  const secondaryIndex = analyze[0].indexOf('void Promise.allSettled([loadHistory(false), loadReminders(), loadFavorites()])');
   assert.ok(showIndex >= 0 && secondaryIndex > showIndex, 'analysis screen must be shown before secondary refresh starts');
   assert.doesNotMatch(analyze[0], /await Promise\.all\(\[loadHistory\(false\), loadReminders\(\)\]\)/);
 });
