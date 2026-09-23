@@ -1,11 +1,12 @@
-# QA Release Checklist — v6.90.0 RC98
+# QA Release Checklist — v6.91.0 RC99
 
-Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
+Этот файл содержит актуальный release gate. Исторические продуктовые RC-контракты остаются в regression-тестах и Git history.
 
 ## Перед merge/deploy
 
 ```bash
 npm ci
+npm run check
 npm test
 npm run verify:release
 npm run verify:worker
@@ -15,70 +16,59 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.90.0`.
-- Worker и client: `6.90.0-rc98`.
-- Release candidate: `RC98`.
+- `package.json` и `package-lock.json`: `6.91.0`.
+- Worker и client: `6.91.0-rc99`.
+- Release candidate: `RC99`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
-## Supabase
+## RC99 — Supabase Schema Consolidation
 
-Для существующей базы должны быть применены:
-`supabase_migration_v6_9.sql`, `v6_10`, `v6_11`, `v6_11_1`, `v6_12`, `v6_13`, `v6_14`, `v6_15`.
+- Новый проект использует один `supabase/baseline.sql`.
+- Baseline содержит historical baseline v6.9 и миграции v6.10 → v6.15 в release-порядке.
+- Для существующей базы используются только `supabase/migrations/`.
+- Исторический baseline v6.9 сохранён в `supabase/history/` для аудита.
+- В корне репозитория не должно оставаться `supabase_baseline_*.sql` или `supabase_migration_*.sql`.
+- Regression `test/supabase-baseline-rc99.test.js` проверяет состав, порядок и security-контракты baseline.
+- RC99 не добавляет новую таблицу/поле поверх v6.15 и не требует миграции production-базы, если v6.15 уже применена.
+
+## Supabase security
 
 Проверить:
-- RLS и закрытые backend-only таблицы не открыты для `anon/authenticated`;
-- service-role ключ не попадает в клиент;
+- RLS и backend-only объекты не открыты для `anon/authenticated`;
+- `backend_security_contract` и `backend_default_acl_contract` доступны только backend/service role;
+- service-role/secret key не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
 
-## RC98 — News Impact Recovery Incident SLO Impact Focus Queue
-
-- Focus Queue объединяет RC93 cumulative ranking, RC94 weekly pair trend и RC97 Executive Summary; новые incident metrics не создаются.
-- Очередь ограничена 5 строками и сортируется строго по factual порядку: current week overdue minutes → week delta → cumulative overdue minutes.
-- Каждая строка содержит reason/action labels, weekly overdue, week delta, cumulative overdue, contribution %, active episodes и week direction.
-- Очередь не вводит severity-score, priority threshold или автоматическое recovery-routing решение.
-- Summary показывает queued pairs, breach/active pairs, current week overdue, week delta и число increased/decreased/unchanged строк.
-- Privacy: Telegram ID, raw error и произвольный free text не возвращаются.
-- RC98 использует существующие RC87 30 / 120 / 360 минут, не создаёт derived persistence и не требует новой Supabase migration.
-- Regression: `test/news-impact-recovery-incident-impact-focus-queue-rc98.test.js`.
-- Production smoke требует `newsImpactRecoveryIncidentSloImpactFocusQueue=enabled`, `newsImpactRecoveryIncidentSloImpactFocusOrdering=enabled`, `newsImpactRecoveryIncidentSloImpactFocusQueueSelfTest=enabled`.
-
-## Исторические RC72–RC97
-
-Детальные исторические release-контракты удалены из текущего checklist, чтобы не дублировать Git history и regression-тесты. Их поведение продолжает проверяться соответствующими файлами `test/*-rcXX.test.js`, а продуктовая сводка сохранена в `README_CLOUDFLARE_RU.md`.
-
 ## Критический regression-контур
 
-Обязательно должны оставаться зелёными тесты:
-- поиск и выбор матча;
-- Telegram quick AI → Mini App handoff;
-- freshness/recheck/delta;
-- kickoff handoff;
+Обязательно зелёные:
+- поиск/выбор матча и Quick AI → Mini App;
+- freshness/recheck/kickoff handoff;
 - post-match review/return;
 - AI track record;
-- fixture deep-link + distributed lock;
-- media publisher/control room;
-- news conversion → smart fixture → impact delta → decision card;
-- русская локализация и access/security contracts.
+- media/deep-link и news impact RC69–RC98;
+- русская локализация;
+- access/security contracts;
+- RC99 consolidated Supabase baseline.
 
 ## Production smoke
 
 `scripts/post-deploy-smoke.js` должен подтвердить:
 - `/health.ok = true`;
-- `version = 6.90.0-rc98`;
-- `releaseCandidate = RC98`;
+- `version = 6.91.0-rc99`;
+- `releaseCandidate = RC99`;
 - `devMode = false`;
 - обязательные self-test/feature flags = `enabled`;
 - `/health/supabase` не доступен публично;
 - public status/manifest возвращают текущую версию.
 
-## Ручная проверка Telegram / Mini App
+## Ручная проверка
 
-1. Найти клуб и открыть основной матч.
-2. Получить Quick AI в Telegram и открыть полный анализ без повторного списания.
-3. Проверить freshness/recheck перед стартом.
-4. Проверить корректный handoff после начала матча.
-5. Открыть новость клуба → AI-проверку → News Impact Decision Card.
-6. Убедиться, что профиль обычного пользователя не показывает админские controls.
-7. Убедиться, что весь пользовательский и административный интерфейс остаётся русскоязычным.
+1. Найти клуб и открыть матч.
+2. Получить Quick AI и открыть полный анализ.
+3. Проверить freshness/recheck и kickoff handoff.
+4. Проверить News Impact Decision Card / RC98 Focus Queue в админке.
+5. Убедиться, что обычный пользователь не видит admin controls.
+6. Убедиться, что интерфейс и админ-панель русскоязычные.
