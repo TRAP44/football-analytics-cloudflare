@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.97.0 RC105
+# QA Release Checklist — v6.98.0 RC106
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.97.0`.
-- Worker и client: `6.97.0-rc105`.
-- Release candidate: `RC105`.
+- `package.json` и `package-lock.json`: `6.98.0`.
+- Worker и client: `6.98.0-rc106`.
+- Release candidate: `RC106`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -34,21 +34,23 @@ npm run verify:worker
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
 
-## RC105 — AI Analysis Quality Gate
+## RC106 — Telegram + Mini App E2E
 
-- Confidence coverage считается по каноническим весам: market 42%, API prediction 24%, recent form 26%, H2H 8%; наличие слабого H2H больше не равно наличию рынка.
-- Confidence учитывает weighted coverage, agreement лидера, disagreement, выборку формы и margin между первым/вторым исходом.
-- Goal model публикует `qualityScore`, `qualityLabel` и размер overall/venue sample.
-- ТБ 2.5 и BTTS не могут стать рабочим bet signal при `goalModel.qualityScore < 65`.
-- Quality Gate удерживает сигнал при недостатке независимых источников, confidence/dataTrust ниже порога, сильном disagreement или слишком тонком margin.
-- В финальные 15 минут без двух подтверждённых стартовых составов рабочий signal удерживается.
-- Provider degradation учитывается в том же gate.
-- `aiInstructor.qualityGate` объясняет причины `ready/caution/hold/blocked`.
-- `/health`: `aiAnalysisQualityGate=enabled` и `aiAnalysisQualityGateSelfTest=enabled`.
-- Release Readiness содержит blocking self-test `ai_analysis_quality_gate_selftest`.
-- Regression: `test/ai-analysis-quality-rc105.test.js`.
+- Persistent Telegram keyboard сохраняет вход через «🔎 Найти матч».
+- Результат поиска открывает тот же fixture через callback `match:menu:<fixtureId>`.
+- Quick AI и полный Mini App handoff сохраняют `fixtureId`, `action=analysis`, `tab=brief`, `handoff=1`.
+- Перед Telegram handoff Mini App синхронизирует избранное и напоминания пользователя.
+- После полного AI локальная история обновляется сразу, а history/reminders/favorites синхронизируются в фоне.
+- Cached Quick AI → полный анализ не должен повторно списывать дневной лимит.
+- Полный анализ позволяет добавить обе команды в избранное, управлять напоминанием и вернуться в Telegram через `Telegram.WebApp.close()`.
+- История открывает сохранённый анализ read-only и не вызывает `incrementUsage`.
+- Worker self-test: `telegramMiniAppE2EDrill()`.
+- Release Readiness содержит blocking check `telegram_miniapp_e2e_selftest`.
+- `/health`: `telegramMiniAppE2E=enabled` и `telegramMiniAppE2ESelfTest=enabled`.
+- Regression: `test/telegram-miniapp-e2e-rc106.test.js`.
 - Supabase migration не требуется.
-## Исторические RC72–RC104
+
+## Исторические RC72–RC105
 
 Детальные исторические release-контракты удалены из текущего checklist, чтобы не дублировать Git history и regression-тесты. Их поведение продолжает проверяться соответствующими файлами `test/*-rcXX.test.js`, а продуктовая сводка сохранена в `README_CLOUDFLARE_RU.md`.
 
@@ -70,8 +72,8 @@ npm run verify:worker
 
 `scripts/post-deploy-smoke.js` должен подтвердить:
 - `/health.ok = true`;
-- `version = 6.97.0-rc105`;
-- `releaseCandidate = RC105`;
+- `version = 6.98.0-rc106`;
+- `releaseCandidate = RC106`;
 - `devMode = false`;
 - обязательные self-test/feature flags = `enabled`;
 - `/health/supabase` не доступен публично;
