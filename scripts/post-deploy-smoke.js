@@ -149,6 +149,9 @@ const REQUIRED_HEALTH_FLAGS = [
   'newsImpactRecoveryStrategyParity',
   'newsImpactRecoveryStabilityGuard',
   'newsImpactRecoveryStabilitySelfTest',
+  'newsImpactRecoveryDriftGuard',
+  'newsImpactRecoveryDriftAudit',
+  'newsImpactRecoveryDriftSelfTest',
 ];
 
 function delay(ms) {

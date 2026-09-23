@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.74.0-rc82';
+const CLIENT_VERSION = '6.75.0-rc83';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc82';
+const CLIENT_RELEASE_CHANNEL = 'rc83';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2938,7 +2938,7 @@ function renderLaunchFunnel() {
   const impactRecoveryGuard=d.newsImpactRecoveryGuard || {windowMinutes:5,minimumSample:10};
   const impactRecoveryStrategySummary=d.newsImpactRecoveryStrategySummary || {};
   const impactRecoveryStrategyMatrix=Array.isArray(d.newsImpactRecoveryStrategyMatrix) ? d.newsImpactRecoveryStrategyMatrix : [];
-  const impactRecoveryStrategyGuard=d.newsImpactRecoveryStrategyGuard || {minAttempts:30,minLiftPctPoints:5,lookbackDays:30,stabilityWindowDays:7,stabilityMinAttempts:10};
+  const impactRecoveryStrategyGuard=d.newsImpactRecoveryStrategyGuard || {minAttempts:30,minLiftPctPoints:5,lookbackDays:30,stabilityWindowDays:7,stabilityMinAttempts:10,driftPriorMinAttempts:20,driftRecentMinAttempts:10,driftDropPctPoints:15};
   const impactFunnel=Array.isArray(d.newsImpactActionFunnel) ? d.newsImpactActionFunnel : [];
   const impactBottleneck=d.newsImpactActionBottleneck || null;
   const impactConfidenceGuard=d.newsImpactActionConfidenceGuard || {minUsers:10,stableUsers:30};
@@ -3003,23 +3003,25 @@ function renderLaunchFunnel() {
       </div>`).join('')}</div>
       <p class="tiny">Recovery считается успешным только после подтверждённой сервером доставки результата в течение ${Number(impactRecoveryGuard.windowMinutes || 5)} минут. Сам показ fallback или повторной кнопки успехом не считается.</p>` : ''}
     ${impactRecoveryStrategyMatrix.length ? `<div class="release-monitor-section-head"><strong>Recovery Strategy Guard</strong><span>fixed fallback → adaptive только при доказательстве</span></div>
-      <div class="data-notice">🛡 Adaptive override требует минимум <strong>${Number(impactRecoveryStrategyGuard.minAttempts || 30)}</strong> зрелых попыток у baseline и кандидата за ${Number(impactRecoveryStrategyGuard.lookbackDays || 30)} дней, прирост ≥ ${Number(impactRecoveryStrategyGuard.minLiftPctPoints || 5)} п.п. и непересекающиеся 95% Wilson-интервалы. RC82 дополнительно требует минимум ${Number(impactRecoveryStrategyGuard.stabilityMinAttempts || 10)} зрелых попыток у обоих вариантов за свежие ${Number(impactRecoveryStrategyGuard.stabilityWindowDays || 7)} дней без ухудшения кандидата.</div>
+      <div class="data-notice">🛡 Adaptive override требует минимум <strong>${Number(impactRecoveryStrategyGuard.minAttempts || 30)}</strong> зрелых попыток у baseline и кандидата за ${Number(impactRecoveryStrategyGuard.lookbackDays || 30)} дней, прирост ≥ ${Number(impactRecoveryStrategyGuard.minLiftPctPoints || 5)} п.п. и непересекающиеся 95% Wilson-интервалы. RC82 требует минимум ${Number(impactRecoveryStrategyGuard.stabilityMinAttempts || 10)} зрелых попыток у обоих вариантов за свежие ${Number(impactRecoveryStrategyGuard.stabilityWindowDays || 7)} дней. RC83 отключает adaptive, если recent recovery просел минимум на ${Number(impactRecoveryStrategyGuard.driftDropPctPoints || 15)} п.п. против предыдущего окна и 95% Wilson-интервалы подтверждают drift.</div>
+      ${Number(impactRecoveryStrategySummary.driftBlocked || 0)>0 ? `<div class="data-notice">🚨 Drift circuit breaker: <strong>${Number(impactRecoveryStrategySummary.driftBlocked || 0)}</strong> adaptive-правил автоматически возвращены на fixed fallback.</div>` : ''}
       <div class="launch-campaign-list">${impactRecoveryStrategyMatrix.map(x=>{
         const adaptive=x.strategy==='adaptive';
         const guard=x.guardReason==='baseline_sample' ? 'недостаточно данных по базовому правилу'
           : x.guardReason==='no_significant_better' ? 'нет статистически подтверждённой лучшей альтернативы'
             : x.guardReason==='stability_sample' ? 'кандидат ждёт подтверждения на свежем окне'
               : x.guardReason==='recent_regression' ? 'свежие данные не подтверждают override'
-                : x.guardReason==='stable_significant_better' ? 'adaptive подтверждён на длинном и свежем окне'
-                  : x.guardReason==='significant_better' ? 'подтверждённый adaptive override'
-                    : 'fixed fallback';
+                : x.guardReason==='performance_drift' ? 'adaptive отключён: подтверждён performance drift'
+                  : x.guardReason==='stable_significant_better' ? 'adaptive подтверждён на длинном и свежем окне'
+                    : x.guardReason==='significant_better' ? 'подтверждённый adaptive override'
+                      : 'fixed fallback';
         return `<div>
           <span><b>${escapeHtml(x.reasonLabel || x.reason || '')}</b> · ${escapeHtml(x.actionLabel || x.action || '')}</span>
           <strong>${escapeHtml(x.fixedRecoveryLabel || x.fixedRecovery || '')} → ${escapeHtml(x.selectedRecoveryLabel || x.selectedRecovery || '')}</strong>
-          <small>${adaptive?'🧠 adaptive':'🛡 fixed'} · ${escapeHtml(guard)} · 30д base ${Number(x.fixedAttempts || 0)} / ${launchFunnelPct(x.fixedSuccessPct)} · selected ${Number(x.selectedAttempts || 0)} / ${launchFunnelPct(x.selectedSuccessPct)}${Number(x.liftPctPoints || 0) ? ` · Δ ${Number(x.liftPctPoints || 0)>0?'+':''}${Number(x.liftPctPoints || 0).toFixed(1)} п.п.` : ''}${x.proposedRecovery && !adaptive ? ` · кандидат: ${escapeHtml(x.proposedRecoveryLabel || x.proposedRecovery)}` : ''}${Number(x.recentFixedAttempts || 0) || Number(x.recentSelectedAttempts || 0) ? ` · 7д ${Number(x.recentFixedAttempts || 0)}/${launchFunnelPct(x.recentFixedSuccessPct)} → ${Number(x.recentSelectedAttempts || 0)}/${launchFunnelPct(x.recentSelectedSuccessPct)}` : ''}</small>
+          <small>${adaptive?'🧠 adaptive':'🛡 fixed'} · ${escapeHtml(guard)} · 30д base ${Number(x.fixedAttempts || 0)} / ${launchFunnelPct(x.fixedSuccessPct)} · selected ${Number(x.selectedAttempts || 0)} / ${launchFunnelPct(x.selectedSuccessPct)}${Number(x.liftPctPoints || 0) ? ` · Δ ${Number(x.liftPctPoints || 0)>0?'+':''}${Number(x.liftPctPoints || 0).toFixed(1)} п.п.` : ''}${x.proposedRecovery && !adaptive ? ` · кандидат: ${escapeHtml(x.proposedRecoveryLabel || x.proposedRecovery)}` : ''}${Number(x.recentFixedAttempts || 0) || Number(x.recentSelectedAttempts || 0) ? ` · 7д ${Number(x.recentFixedAttempts || 0)}/${launchFunnelPct(x.recentFixedSuccessPct)} → ${Number(x.recentSelectedAttempts || 0)}/${launchFunnelPct(x.recentSelectedSuccessPct)}` : ''}${Number(x.priorSelectedAttempts || 0) || Number(x.recentDriftAttempts || 0) ? ` · drift ${Number(x.priorSelectedAttempts || 0)}/${launchFunnelPct(x.priorSelectedSuccessPct)} → ${Number(x.recentDriftAttempts || 0)}/${launchFunnelPct(x.recentDriftSuccessPct)}${Number(x.driftDropPctPoints || 0)>0 ? ` · −${Number(x.driftDropPctPoints || 0).toFixed(1)} п.п.` : ''}` : ''}</small>
         </div>`;
       }).join('')}</div>
-      <p class="tiny">Admin и runtime используют один и тот же 30-дневный evidence loader. Свежий ${Number(impactRecoveryStrategyGuard.stabilityWindowDays || 7)}-дневный guard блокирует переключение при недостатке данных или недавнем ухудшении. При ошибке загрузки или усечённой выборке runtime автоматически использует fixed fallback.</p>` : (!impactRecoveryStrategySummary.available ? '<div class="data-notice">Recovery Strategy временно недоступна: runtime остаётся на fixed fallback.</div>' : '')}
+      <p class="tiny">Admin и runtime используют один и тот же 30-дневный evidence loader. Свежий ${Number(impactRecoveryStrategyGuard.stabilityWindowDays || 7)}-дневный guard блокирует переключение при недостатке данных или недавнем ухудшении. RC83 сравнивает recent окно с предыдущей частью 30-дневного периода и при статистически подтверждённом падении переводит routing на fixed fallback. В growth_events сохраняется только категориальная причина strategy_guard; raw error не сохраняется.</p>` : (!impactRecoveryStrategySummary.available ? '<div class="data-notice">Recovery Strategy временно недоступна: runtime остаётся на fixed fallback.</div>' : '')}
     ${impactTrend.some(x=>Number(x.currentUsers || 0)>0 || Number(x.previousUsers || 0)>0) ? `<div class="release-monitor-section-head"><strong>Динамика News Impact</strong><span>текущие ${Number(impactTrendGuard.comparisonDays || d.days || 7)} дн. vs предыдущие</span></div>
       <div class="launch-campaign-list">${impactTrend.filter(x=>Number(x.currentUsers || 0)>0 || Number(x.previousUsers || 0)>0).map(x=>{
         const signal=x.signal==='improved' ? '↗ подтверждённый рост'
