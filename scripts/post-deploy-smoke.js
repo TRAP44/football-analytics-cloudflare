@@ -95,6 +95,12 @@ const REQUIRED_HEALTH_FLAGS = [
   'noWinRateTrustUx',
   'telegramAiTrackRecord',
   'aiTrackRecordSelfTest',
+  'mediaFixtureDeepLinks',
+  'shareableMatchCards',
+  'shareAttribution',
+  'deepLinkAutoAnalysis',
+  'telegramNativeShare',
+  'fixtureDeepLinkSelfTest',
 ];
 
 function delay(ms) {
