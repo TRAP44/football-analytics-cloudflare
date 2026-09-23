@@ -25,9 +25,9 @@ test('full analysis handoff deep-links to the same fixture and brief tab',()=> {
 
 test('Mini App handoff records full AI through analyze instead of history shortcut',()=> {
   assert.match(app,/const handoff = params\.get\('handoff'\) === '1'/);
-  assert.match(app,/openLaunchFixture\(fixtureId, action, tab, handoff, newsImpactDecision, newsImpactAction\)/);
-  assert.match(app,/if \(handoff\) return analyzeMatch\(id, null, \{ recheck:true, newsImpactDecision, newsImpactAction \}\)/);
-  const handoffIndex=app.indexOf('if (handoff) return analyzeMatch(id, null, { recheck:true, newsImpactDecision, newsImpactAction })');
+  assert.match(app,/openLaunchFixture\(fixtureId, action, tab, handoff, newsImpactDecision, newsImpactAction, newsImpactRecoveryCode, newsImpactRecoveryFrom\)/);
+  assert.match(app,/if \(handoff\) return analyzeMatch\(id, null, \{ recheck:true, newsImpactDecision, newsImpactAction, newsImpactRecoveryCode, newsImpactRecoveryFrom \}\)/);
+  const handoffIndex=app.indexOf('if (handoff) return analyzeMatch(id, null, { recheck:true, newsImpactDecision, newsImpactAction, newsImpactRecoveryCode, newsImpactRecoveryFrom })');
   const historyIndex=app.indexOf('await loadHistory(false);',handoffIndex);
   assert.ok(handoffIndex>=0 && historyIndex>handoffIndex);
 });
