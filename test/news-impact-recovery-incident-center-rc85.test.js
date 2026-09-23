@@ -11,7 +11,7 @@ test('RC85 derives privacy-safe recovery incident events from categorical guards
   assert.match(worker,/guardReason,/);
   assert.match(worker,/priority:(?:guardReason|event\.guardReason)==='performance_drift' \? 'high' : 'medium'/);
   const start=worker.indexOf('function buildNewsImpactRecoveryIncidentEvents');
-  const end=worker.indexOf('function buildNewsImpactRecoveryIncidentCenter',start);
+  const end=worker.indexOf('function newsImpactRecoveryIncidentKey',start);
   const block=worker.slice(start,end);
   assert.doesNotMatch(block,/telegram_id\s*:/);
   assert.doesNotMatch(block,/rawError|error\.message|stack|query/);
