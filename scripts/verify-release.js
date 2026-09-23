@@ -16,7 +16,7 @@ const readme = fs.readFileSync('README_CLOUDFLARE_RU.md', 'utf8');
 const qaChecklist = fs.readFileSync('QA_RELEASE_CHECKLIST_RU.md', 'utf8');
 const baselinePath = 'supabase/baseline/supabase_baseline_v6_15.sql';
 const baseline = fs.existsSync(baselinePath) ? fs.readFileSync(baselinePath, 'utf8') : '';
-const expected = `${pkg.version}-rc105`;
+const expected = `${pkg.version}-rc106`;
 const failures = [];
 const rootSql = fs.readdirSync('.').filter(name => /^supabase_(?:baseline|migration)_.*\.sql$/i.test(name));
 if (rootSql.length) failures.push(`Supabase SQL must live under supabase/: ${rootSql.join(', ')}`);
@@ -25,9 +25,9 @@ if (rootSql.length) failures.push(`Supabase SQL must live under supabase/: ${roo
 if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) failures.push('package-lock version must match package.json');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC105'")) failures.push('Worker RC name must be RC105');
+if (!worker.includes("const RC_NAME = 'RC106'")) failures.push('Worker RC name must be RC106');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc105'")) failures.push('Client release channel must be rc105');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc106'")) failures.push('Client release channel must be rc106');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -58,8 +58,8 @@ if (!fs.existsSync('.github/workflows/rollback-production.yml')) failures.push('
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
-if (!deployWorkflow.includes('--message "RC105 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC105');
-if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.97.0-rc105"')) failures.push('Production smoke must verify 6.97.0-rc105');
+if (!deployWorkflow.includes('--message "RC106 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC106');
+if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.98.0-rc106"')) failures.push('Production smoke must verify 6.98.0-rc106');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
 if (!/id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden/.test(html)) failures.push('Admin role badge must use the fail-closed admin-only visibility contract');
 if (!/\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i.test(styles)) failures.push('Global hidden elements must remain display:none');
@@ -143,7 +143,7 @@ if (!worker.includes('function publicReminder')) failures.push('Reminder write r
 if (!fs.existsSync('test/analysis-history-transition.test.js')) failures.push('Missing analysis/history transition regression test');
 if (!app.includes('historyOpenRequestSeq: 0')) failures.push('History-open stale response guard is missing');
 if (!app.includes('historyRevision: 0')) failures.push('History read/write revision guard is missing');
-if (!app.includes('void Promise.allSettled([loadHistory(false), loadReminders()])')) failures.push('Analysis result must not wait for secondary history/reminder refresh');
+if (!app.includes('void Promise.allSettled([loadHistory(false), loadReminders(), loadFavorites()])')) failures.push('Analysis result must not wait for secondary history/reminder/favorites refresh');
 if (app.includes('state.currentAnalysis = data;\n    if (isAdmin()')) failures.push('analyzeMatch must let renderAnalysis compare the previous fixture before assignment');
 if (!fs.existsSync('test/russian-ui-localization.test.js')) failures.push('Missing Russian UI localization regression test');
 if (!html.includes('id="quotaFeatureSkipped"') || html.includes('quotaFeatureПропущено')) failures.push('Provider skipped-counter DOM id is inconsistent');
@@ -227,7 +227,7 @@ if (!worker.includes("newsSourceTrustGate: 'enabled'") || !worker.includes('appl
 if (!worker.includes("publicLegalPages: 'enabled'") || !worker.includes("publicStatusPage: 'enabled'") || !worker.includes("url.pathname === '/api/public-status'")) failures.push('RC52 public trust contract is missing');
 if (!fs.existsSync('public/privacy.html') || !fs.existsSync('public/terms.html') || !fs.existsSync('public/status.html') || !fs.existsSync('public/status.js')) failures.push('RC52 public trust pages are missing');
 if (!wrangler.includes('"/telegram/*"') || !wrangler.includes('"/api/*"')) failures.push('RC52 Worker-first webhook/public API routes are missing');
-if (!deployWorkflow.includes('6.97.0-rc105')) failures.push('RC105 production workflow version is missing');
+if (!deployWorkflow.includes('6.98.0-rc106')) failures.push('RC106 production workflow version is missing');
 
 if (!worker.includes("mediaLaunchPackage: 'enabled'") || !worker.includes("mediaDeepLinkAttribution: 'enabled'")) failures.push('RC53 media launch health contract is missing');
 if (!worker.includes("launchSimulation: 'enabled'") || !worker.includes("conversionUx: 'enabled'") || !worker.includes("highIntentSearchFallback: 'enabled'") || !worker.includes("newsReturnLoop: 'enabled'")) failures.push('RC54 launch conversion health contract is missing');
@@ -335,8 +335,8 @@ if (!worker.includes("firstPartyGrowthAnalytics: 'enabled'") || !worker.includes
 if (!worker.includes('parseLaunchStartParam') || !worker.includes('ensureLaunchAttribution') || !worker.includes('recordGrowthEvent')) failures.push('RC53 attribution engine is missing');
 if (!worker.includes("url.pathname === '/api/launch-funnel'") || !app.includes('function renderLaunchFunnel')) failures.push('RC53 admin launch funnel is missing');
 if (!app.includes("origin:'miniapp'") || !worker.includes("origin:'telegram_quick'")) failures.push('RC53 full-vs-quick AI conversion split is missing');
-if (!readme.includes('v6.97.0 — RC105') || !readme.includes('AI Analysis Quality Gate')) failures.push('README must describe the current RC105 release');
-if (!qaChecklist.includes('v6.97.0 RC105') || !qaChecklist.includes('AI Analysis Quality Gate') || !qaChecklist.includes('npm run verify:release')) failures.push('QA checklist must describe the current RC105 release gate');
+if (!readme.includes('v6.98.0 — RC106') || !readme.includes('Telegram + Mini App E2E')) failures.push('README must describe the current RC106 release');
+if (!qaChecklist.includes('v6.98.0 RC106') || !qaChecklist.includes('Telegram + Mini App E2E') || !qaChecklist.includes('npm run verify:release')) failures.push('QA checklist must describe the current RC106 release gate');
 if (!fs.existsSync('test/supabase-schema-drift-rc100.test.js')) failures.push('Missing RC100 Supabase schema drift regression test');
 if (!fs.existsSync('test/supabase-directory-hardening-rc101.test.js')) failures.push('Missing RC101 Supabase directory hardening regression test');
 if (!fs.existsSync('scripts/security-scan.js')) failures.push('Missing RC102 Secret Leak Guard scanner');
@@ -370,6 +370,15 @@ if (!worker.includes("releaseCheck('ai_analysis_quality_gate_selftest'")) failur
 if (!worker.includes("analysisVersion: '4.8.0-quality-gate'")) failures.push('RC105 analysis version contract is missing');
 if (!worker.includes("goalModel?.qualityScore || 0) >= 65")) failures.push('RC105 goal-market signal must require a working form sample');
 if (!postDeploySmoke.includes("'aiAnalysisQualityGate'") || !postDeploySmoke.includes("'aiAnalysisQualityGateSelfTest'")) failures.push('RC105 production smoke AI quality flags are missing');
+if (!fs.existsSync('test/telegram-miniapp-e2e-rc106.test.js')) failures.push('Missing RC106 Telegram Mini App E2E regression test');
+if (!worker.includes('function telegramMiniAppE2EDrill')) failures.push('RC106 Telegram Mini App E2E drill is missing');
+if (!worker.includes("releaseCheck('telegram_miniapp_e2e_selftest'")) failures.push('RC106 blocking E2E release check is missing');
+if (!worker.includes("telegramMiniAppE2E: 'enabled'") || !worker.includes("telegramMiniAppE2ESelfTest: telegramMiniAppE2EDrill().pass ? 'enabled' : 'failed'")) failures.push('RC106 E2E health flags are missing');
+if (!worker.includes('telegramMiniAppE2E: true')) failures.push('RC106 E2E manifest feature is missing');
+if (!app.includes('function returnToTelegram()') || !app.includes("id=\"returnToTelegramBtn\"")) failures.push('RC106 Mini App return-to-Telegram action is missing');
+if (!app.includes('data-analysis-favorite=') || !app.includes("loadHistory(false), loadReminders(), loadFavorites()")) failures.push('RC106 Mini App user-state synchronization is incomplete');
+if (!postDeploySmoke.includes("'telegramMiniAppE2E'") || !postDeploySmoke.includes("'telegramMiniAppE2ESelfTest'")) failures.push('RC106 production smoke E2E flags are missing');
+
 
 
 
@@ -396,4 +405,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log(`RC105 AI Analysis Quality Gate contracts verified for ${expected}.`);
+console.log(`RC106 Telegram + Mini App E2E contracts verified for ${expected}.`);

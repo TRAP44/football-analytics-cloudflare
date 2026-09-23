@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.97.0-rc105';
+const CLIENT_VERSION = '6.98.0-rc106';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc105';
+const CLIENT_RELEASE_CHANNEL = 'rc106';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -4052,6 +4052,7 @@ async function toggleFavorite(team) {
     if (state.currentTournament) renderTournamentMatches();
     renderFavoriteTeams();
     renderDiscoveryHome();
+    if (state.currentAnalysis) renderAnalysis(state.currentAnalysis);
   } catch (e) {
     toast(e.message);
   } finally {
@@ -6081,7 +6082,7 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
       renderProfile();
     }
     showView('analysisView');
-    void Promise.allSettled([loadHistory(false), loadReminders()]);
+    void Promise.allSettled([loadHistory(false), loadReminders(), loadFavorites()]);
   } catch (e) {
     const recovery=e.payload?.newsImpactRecovery || null;
     if (recovery?.message) {
@@ -6812,6 +6813,15 @@ function aiInstructorHtml(ai = {}, match = {}, kickoffHandoff = {}) {
 }
 
 let launchIntentHandled = false;
+function returnToTelegram() {
+  if (tg?.close) {
+    tg.close();
+    return true;
+  }
+  showView(state.analysisBackView || 'searchView');
+  return false;
+}
+
 async function openLaunchFixture(fixtureId, action, tab = '', handoff = false, newsImpactDecision = '', newsImpactAction = '', newsImpactRecoveryCode = '', newsImpactRecoveryFrom = '') {
   const id = Number(fixtureId || 0);
   if (!id) return;
@@ -6820,7 +6830,10 @@ async function openLaunchFixture(fixtureId, action, tab = '', handoff = false, n
   if (requestedTab) state.currentAnalysisTab = requestedTab;
   if (action === 'center') return openMatchCenter(id, null);
   if (action === 'analysis') {
-    if (handoff) return analyzeMatch(id, null, { recheck:true, newsImpactDecision, newsImpactAction, newsImpactRecoveryCode, newsImpactRecoveryFrom });
+    if (handoff) {
+      await Promise.allSettled([loadFavorites(), loadReminders()]);
+      return analyzeMatch(id, null, { recheck:true, newsImpactDecision, newsImpactAction, newsImpactRecoveryCode, newsImpactRecoveryFrom });
+    }
     await loadHistory(false);
     if (analysisHistoryForFixture(id)) return openHistoryAnalysis(id, null);
     return analyzeMatch(id, null);
@@ -6921,6 +6934,8 @@ function renderAnalysis(d) {
   const activeReminder = reminderFor(m.fixtureId);
   const reminderActive = Boolean(activeReminder);
   const reminderPending = state.reminderMutations.has(Number(m.fixtureId));
+  const homeFavorite = isFavorite(Number(m.home?.id || 0));
+  const awayFavorite = isFavorite(Number(m.away?.id || 0));
   const confidence = d.confidence || {};
   const goal = d.goalModel;
   const recent = d.recentForm || {};
@@ -6980,6 +6995,9 @@ function renderAnalysis(d) {
       <div class="experience-actions">
         <button id="reminderBtn" class="reminder-btn ${reminderActive ? 'active' : ''} ${reminderPending ? 'is-pending' : ''}" type="button" aria-pressed="${reminderActive ? 'true' : 'false'}" ${reminderPending ? 'disabled' : ''}>${reminderPending ? '⏳ Сохраняю…' : reminderActive ? `🔔 За ${Number(activeReminder?.remindBeforeMinutes || 30)} мин.${activeReminder?.kickoffNotify ? ' + старт' : ''}` : `🔕 Напомнить за ${Number(state.preferences?.reminderMinutes || 30)} минут`}</button>
         <button id="shareAnalysisBtn" class="share-analysis-btn" type="button">↗ Поделиться матчем</button>
+        ${Number(m.home?.id || 0) ? `<button class="secondary-btn analysis-favorite-btn" type="button" data-analysis-favorite="${Number(m.home.id)}" data-team-name="${escapeHtml(m.home?.name || '')}" data-team-logo="${escapeHtml(m.home?.logo || '')}">${homeFavorite ? '★' : '☆'} ${escapeHtml(m.home?.name || 'Хозяева')}</button>` : ''}
+        ${Number(m.away?.id || 0) ? `<button class="secondary-btn analysis-favorite-btn" type="button" data-analysis-favorite="${Number(m.away.id)}" data-team-name="${escapeHtml(m.away?.name || '')}" data-team-logo="${escapeHtml(m.away?.logo || '')}">${awayFavorite ? '★' : '☆'} ${escapeHtml(m.away?.name || 'Гости')}</button>` : ''}
+        ${tg ? '<button id="returnToTelegramBtn" class="secondary-btn" type="button">↩ Вернуться в Telegram</button>' : ''}
       </div>
     </section>
 
@@ -7163,6 +7181,12 @@ function renderAnalysis(d) {
   $('kickoffMatchCenterBtn')?.addEventListener('click', e => openMatchCenter(Number(m.fixtureId), e.currentTarget));
   $('reminderBtn')?.addEventListener('click', () => toggleReminder(m));
   $('shareAnalysisBtn')?.addEventListener('click', () => shareAnalysis(d));
+  $('analysis')?.querySelectorAll('[data-analysis-favorite]').forEach(btn => btn.addEventListener('click', () => toggleFavorite({
+    id:Number(btn.dataset.analysisFavorite || 0),
+    name:btn.dataset.teamName || '',
+    logo:btn.dataset.teamLogo || '',
+  })));
+  $('returnToTelegramBtn')?.addEventListener('click', returnToTelegram);
   $('openPrematchBrief')?.addEventListener('click', () => setAnalysisTab('brief', true));
   $('analysis')?.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => openTeam({
     id: Number(btn.dataset.openTeam), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '',

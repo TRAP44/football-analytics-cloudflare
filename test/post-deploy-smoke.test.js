@@ -30,6 +30,8 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         providerDataReliabilitySelfTest: 'enabled',
         aiAnalysisQualityGate: 'enabled',
         aiAnalysisQualityGateSelfTest: 'enabled',
+        telegramMiniAppE2E: 'enabled',
+        telegramMiniAppE2ESelfTest: 'enabled',
         cloudflareDeploymentGate: 'enabled',
         browserSecurityPolicy: 'enabled',
         failClosedDeployment: 'enabled',

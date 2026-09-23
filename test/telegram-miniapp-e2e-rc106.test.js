@@ -1,0 +1,72 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const worker=fs.readFileSync('src/worker.js','utf8');
+const app=fs.readFileSync('public/app.js','utf8');
+
+test('RC106 locks the Telegram to Mini App handoff contract',()=>{
+  assert.match(worker,/function telegramMiniAppE2EDrill\(/);
+  assert.match(worker,/mainButtons\.includes\('🔎 Найти матч'\)/);
+  assert.match(worker,/match:menu:\$\{match\.fixtureId\}/);
+  assert.match(worker,/u\.searchParams\.get\('action'\)==='analysis'/);
+  assert.match(worker,/u\.searchParams\.get\('handoff'\)==='1'/);
+  assert.match(worker,/favorite:toggle:101:12345/);
+  assert.match(worker,/favorite:toggle:202:12345/);
+});
+
+test('RC106 synchronizes user state before a Telegram handoff analysis',()=>{
+  const start=app.indexOf('async function openLaunchFixture');
+  const end=app.indexOf('\nfunction applyLaunchIntent',start);
+  assert.ok(start>=0 && end>start);
+  const block=app.slice(start,end);
+  assert.match(block,/if \(handoff\) \{/);
+  assert.match(block,/Promise\.allSettled\(\[loadFavorites\(\), loadReminders\(\)\]\)/);
+  assert.match(block,/return analyzeMatch\(id, null, \{ recheck:true/);
+});
+
+test('RC106 keeps history reminders and favorites synchronized after full AI',()=>{
+  const start=app.indexOf('async function analyzeMatch');
+  const end=app.indexOf('\nfunction historyItemFromAnalysis',start);
+  assert.ok(start>=0 && end>start);
+  const block=app.slice(start,end);
+  assert.match(block,/rememberHistoryAnalysis\(data\)/);
+  assert.match(block,/Promise\.allSettled\(\[loadHistory\(false\), loadReminders\(\), loadFavorites\(\)\]\)/);
+});
+
+test('RC106 full analysis exposes favorite actions and return to Telegram',()=>{
+  assert.match(app,/data-analysis-favorite=/);
+  assert.match(app,/analysis-favorite-btn/);
+  assert.match(app,/id="returnToTelegramBtn"/);
+  assert.match(app,/function returnToTelegram\(\)/);
+  assert.match(app,/tg\?\.close/);
+  assert.match(app,/\$\('returnToTelegramBtn'\)\?\.addEventListener\('click', returnToTelegram\)/);
+});
+
+test('RC106 favorite mutation rerenders an open analysis',()=>{
+  const start=app.indexOf('async function toggleFavorite');
+  const end=app.indexOf('\nfunction renderFavoriteTeams',start);
+  assert.ok(start>=0 && end>start);
+  assert.match(app.slice(start,end),/if \(state\.currentAnalysis\) renderAnalysis\(state\.currentAnalysis\)/);
+});
+
+test('RC106 keeps cached Telegram brief to full analysis quota-safe and history read-only',()=>{
+  const analyzeStart=worker.indexOf('async function apiAnalyze');
+  const cached=worker.indexOf('if (cached && !needsFreshnessRecheck)',analyzeStart);
+  const cachedReturn=worker.indexOf('return json(analysisResponsePayload(cached',cached);
+  const increment=worker.indexOf('if (!freeRecheck) await incrementUsage(user.id, cfg);',analyzeStart);
+  assert.ok(cached>analyzeStart && cachedReturn>cached && increment>cachedReturn);
+
+  const historyStart=worker.indexOf('async function apiHistoryAnalysis');
+  const historyEnd=worker.indexOf('\nasync function apiFavorites',historyStart);
+  const historyBlock=worker.slice(historyStart,historyEnd);
+  assert.match(historyBlock,/historyReadOnly:true/);
+  assert.doesNotMatch(historyBlock,/incrementUsage/);
+});
+
+test('RC106 exposes blocking E2E release and health contracts',()=>{
+  assert.match(worker,/releaseCheck\('telegram_miniapp_e2e_selftest'/);
+  assert.match(worker,/telegramMiniAppE2E: 'enabled'/);
+  assert.match(worker,/telegramMiniAppE2ESelfTest: telegramMiniAppE2EDrill\(\)\.pass \? 'enabled' : 'failed'/);
+  assert.match(worker,/telegramMiniAppE2E: true/);
+});
