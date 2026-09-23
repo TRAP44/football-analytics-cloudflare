@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.64.0 RC72
+# QA Release Checklist — v6.65.0 RC73
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.64.0`.
-- Worker и client: `6.64.0-rc72`.
-- Release candidate: `RC72`.
+- `package.json` и `package-lock.json`: `6.65.0`.
+- Worker и client: `6.65.0-rc73`.
+- Release candidate: `RC73`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,17 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC73 — News Impact Action Tracking
+
+- Decision Card использует tracked callback только с категориальными `decision` и `action`.
+- Поддерживаются действия: `full_ai`, `squads`, `market`, `recheck`, `news`, `share`.
+- Mini App получает только безопасные query-параметры `newsImpactDecision` и `newsImpactAction`.
+- `growth_events` получает `news_impact_action` без заголовка новости, URL, query и произвольного текста.
+- Launch Funnel возвращает `newsImpactActionSummary` и показывает действия после решения.
+- Новая Supabase migration не требуется.
+- Regression: `test/news-impact-action-tracking-rc73.test.js`.
+- Production smoke требует `newsImpactActionSelfTest=enabled`.
 
 ## RC72 — News Impact Decision Card
 
@@ -60,8 +71,8 @@ npm run verify:worker
 
 `scripts/post-deploy-smoke.js` должен подтвердить:
 - `/health.ok = true`;
-- `version = 6.64.0-rc72`;
-- `releaseCandidate = RC72`;
+- `version = 6.65.0-rc73`;
+- `releaseCandidate = RC73`;
 - `devMode = false`;
 - обязательные self-test/feature flags = `enabled`;
 - `/health/supabase` не доступен публично;
