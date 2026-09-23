@@ -28,6 +28,8 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         rollbackVerification: 'enabled',
         providerDataReliability: 'enabled',
         providerDataReliabilitySelfTest: 'enabled',
+        aiAnalysisQualityGate: 'enabled',
+        aiAnalysisQualityGateSelfTest: 'enabled',
         cloudflareDeploymentGate: 'enabled',
         browserSecurityPolicy: 'enabled',
         failClosedDeployment: 'enabled',
