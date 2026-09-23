@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.71.0 RC79
+# QA Release Checklist — v6.72.0 RC80
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.71.0`.
-- Worker и client: `6.71.0-rc79`.
-- Release candidate: `RC79`.
+- `package.json` и `package-lock.json`: `6.72.0`.
+- Worker и client: `6.72.0-rc80`.
+- Release candidate: `RC80`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,20 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC80 — News Impact Recovery Effectiveness Funnel
+
+- `news_impact_recovery_attempt` создаётся только после реальной retry-попытки или запуска полного AI через recovery-fallback.
+- Retry callback содержит decision, action и категориальный recovery-код; сырой текст ошибки в callback/analytics не переносится.
+- Для каждой уникальной комбинации user + fixture + decision + action + recovery учитывается последняя попытка, чтобы многократные клики не раздували выборку.
+- Recovery считается успешным только если после попытки в течение 5 минут появился подтверждённый `news_impact_outcome`.
+- Повторный `news_impact_outcome_failure` в том же окне фиксирует неуспешное восстановление; истёкшая без outcome попытка также считается failed.
+- Свежая попытка остаётся pending и не снижает success rate до окончания окна.
+- Admin Launch Funnel показывает recovered / matured attempts, pending, failed, success %, 95% Wilson-интервал и наиболее результативную стратегию только при достаточной выборке.
+- Показ fallback-сообщения сам по себе не считается попыткой или успехом.
+- Новая Supabase migration не требуется; используется существующая `growth_events.metadata`.
+- Regression: `test/news-impact-recovery-effectiveness-rc80.test.js`.
+- Production smoke требует `newsImpactRecoveryEffectivenessSelfTest=enabled`.
 
 ## RC79 — News Impact Outcome Failure Diagnostics & Recovery
 
@@ -143,8 +157,8 @@ npm run verify:worker
 
 `scripts/post-deploy-smoke.js` должен подтвердить:
 - `/health.ok = true`;
-- `version = 6.71.0-rc79`;
-- `releaseCandidate = RC79`;
+- `version = 6.72.0-rc80`;
+- `releaseCandidate = RC80`;
 - `devMode = false`;
 - обязательные self-test/feature flags = `enabled`;
 - `/health/supabase` не доступен публично;

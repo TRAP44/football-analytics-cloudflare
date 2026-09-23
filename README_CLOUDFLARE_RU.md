@@ -1,4 +1,4 @@
-# Football Analytics Mini App v6.71.0 — RC79
+# Football Analytics Mini App v6.72.0 — RC80
 
 Telegram-бот и Mini App для футбольной аналитики на Cloudflare Workers + Supabase. Основные источники данных: API-Football и Tavily. Интерфейс и админ-панель — на русском языке. Монетизация пока отключена.
 
@@ -12,7 +12,7 @@ Telegram-бот и Mini App для футбольной аналитики на 
 - Публичный AI Track Record строится только по подтверждённым settled-прогнозам и не выдаёт совпадение исхода за прибыльность ставок.
 - Защита от вирусной нагрузки: distributed fixture lock, shared cache и безопасный fallback.
 - Медиа deep-link на fixture, publisher kit и агрегированная first-party аналитика source / campaign / content.
-- Новостной контур RC69–RC79: новость → релевантный матч → явная AI-перепроверка → News Impact Delta → **News Impact Decision Card** → **News Impact Action Tracking** → **News Impact Action Funnel** → **News Impact Funnel Confidence Guard** → **News Impact Funnel Trend Guard** → **News Impact Temporal Attribution Guard** → **News Impact Action Outcome Quality** → **News Impact Outcome Failure Diagnostics & Recovery**.
+- Новостной контур RC69–RC80: новость → релевантный матч → явная AI-перепроверка → News Impact Delta → **News Impact Decision Card** → **News Impact Action Tracking** → **News Impact Action Funnel** → **News Impact Funnel Confidence Guard** → **News Impact Funnel Trend Guard** → **News Impact Temporal Attribution Guard** → **News Impact Action Outcome Quality** → **News Impact Outcome Failure Diagnostics & Recovery** → **News Impact Recovery Effectiveness Funnel**.
 - News Impact не утверждает причинность по заголовку: сравнение разрешено только с корректным AI-снимком, созданным до публикации новости.
 - RC73 считает только категориальные действия после Decision Card: полный AI, составы, рынок, повторная проверка, возврат к новостям и share. Текст новости, URL и пользовательский запрос в эту аналитику не записываются.
 - RC74 агрегирует эти действия по типу News Impact-решения, считает долю пользователей, которые продолжили сценарий, показывает наиболее частое следующее действие и состояние с самой низкой конверсией. Telegram ID наружу не возвращаются.
@@ -21,6 +21,7 @@ Telegram-бот и Mini App для футбольной аналитики на 
 - RC77 связывает действие только с предшествующей Decision Card в 30-минутном окне. Решения младше 30 минут исключаются из знаменателя до завершения окна; действия сразу после границы предыдущего периода всё равно могут корректно атрибутироваться к решению.
 - RC78 отделяет попытку от подтверждённого результата: `news_impact_outcome` записывается только после успешной доставки полного AI, раздела, перепроверки, новостей или share-карточки. Админка показывает completion по действиям с 95% Wilson-интервалом; это метрика доставки, а не удовлетворённости или точности прогноза.
 - RC79 фиксирует только категориальные причины недоставки (`provider_rate_limit`, `quota_exhausted`, `analysis_warming`, `match_missing`, `data_invalid`, `telegram_delivery`, `timeout`, `server_error` и др.), предлагает безопасный recovery и показывает агрегированную диагностику. Сырой текст исключения в growth_events не сохраняется.
+- RC80 измеряет только реальные recovery-попытки: retry-кнопка и переход на полный AI получают отдельную атрибуцию. Успех засчитывается лишь при подтверждённой доставке в 5-минутном окне; свежие попытки остаются pending, а сравнение стратегий разрешается только при достаточной выборке.
 
 ## Архитектура
 
@@ -51,7 +52,7 @@ npm run verify:release
 npm run verify:worker
 ```
 
-Production smoke дополнительно проверяет `/health`, версию `6.71.0-rc79`, `releaseCandidate=RC79`, отключённый `DEV_MODE` и обязательные health/self-test флаги.
+Production smoke дополнительно проверяет `/health`, версию `6.72.0-rc80`, `releaseCandidate=RC80`, отключённый `DEV_MODE` и обязательные health/self-test флаги.
 
 ## Документация
 

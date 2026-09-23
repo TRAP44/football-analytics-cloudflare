@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.71.0-rc79';
+const CLIENT_VERSION = '6.72.0-rc80';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc79';
+const CLIENT_RELEASE_CHANNEL = 'rc80';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2932,6 +2932,10 @@ function renderLaunchFunnel() {
   const impactFailureSummary=d.newsImpactFailureSummary || {};
   const impactFailureDiagnostics=Array.isArray(d.newsImpactFailureDiagnostics) ? d.newsImpactFailureDiagnostics : [];
   const impactFailureGuard=d.newsImpactFailureGuard || {rawErrorsStored:false};
+  const impactRecoverySummary=d.newsImpactRecoverySummary || {};
+  const impactRecoveryEffectiveness=Array.isArray(d.newsImpactRecoveryEffectiveness) ? d.newsImpactRecoveryEffectiveness : [];
+  const impactRecoveryBest=d.newsImpactRecoveryBestStrategy || null;
+  const impactRecoveryGuard=d.newsImpactRecoveryGuard || {windowMinutes:5,minimumSample:10};
   const impactFunnel=Array.isArray(d.newsImpactActionFunnel) ? d.newsImpactActionFunnel : [];
   const impactBottleneck=d.newsImpactActionBottleneck || null;
   const impactConfidenceGuard=d.newsImpactActionConfidenceGuard || {minUsers:10,stableUsers:30};
@@ -2945,7 +2949,7 @@ function renderLaunchFunnel() {
     <div><span>Материалов СМИ</span><strong>${Number(d.mediaSummary?.materials || 0)}</strong><small>${Number(d.mediaSummary?.linksCreated || 0)} ссылок создано</small></div>
     <div><span>One‑tap → полный AI</span><strong>${Number(handoff.fullAiUsers || 0)}</strong><small>${launchFunnelPct(handoff.conversionPct)} от AI-handoff</small></div>
     <div><span>AI перепроверки</span><strong>${Number(rechecks.total || 0)}</strong><small>${Number(rechecks.free || 0)} без списания · ${Number(rechecks.material || 0)} со значимыми изменениями</small></div>
-    <div><span>Новости → AI</span><strong>${Number(d.returnLoop?.aiIntent || 0)}</strong><small>${launchFunnelPct(d.returnLoop?.intentPct)} нажали AI · ${Number(d.returnLoop?.smartFixtureIntent || 0)} через smart fixture · News Impact: ${Number(d.returnLoop?.impactCompared || 0)} сравнений / ${Number(d.returnLoop?.impactMaterial || 0)} существенных · решения: 🔴 ${Number(d.newsImpactDecisionSummary?.material || 0)} · 🟡 ${Number(d.newsImpactDecisionSummary?.detail || 0)} · 🟢 ${Number(d.newsImpactDecisionSummary?.stable || 0)} · действия: полный AI ${Number(impactActions.fullAi || 0)} · составы ${Number(impactActions.squads || 0)} · рынок ${Number(impactActions.market || 0)} · перепроверка ${Number(impactActions.recheck || 0)} · новости ${Number(impactActions.news || 0)} · поделились ${Number(impactActions.share || 0)} · подтверждённых результатов ${Number(impactOutcomeSummary.confirmed || 0)}/${Number(impactOutcomeSummary.attempts || 0)} · сбоев доставки ${Number(impactFailureSummary.total || 0)} · Возврат из новостей: ${Number(d.returnLoop?.newsReturn || 0)} до матча</small></div>
+    <div><span>Новости → AI</span><strong>${Number(d.returnLoop?.aiIntent || 0)}</strong><small>${launchFunnelPct(d.returnLoop?.intentPct)} нажали AI · ${Number(d.returnLoop?.smartFixtureIntent || 0)} через smart fixture · News Impact: ${Number(d.returnLoop?.impactCompared || 0)} сравнений / ${Number(d.returnLoop?.impactMaterial || 0)} существенных · решения: 🔴 ${Number(d.newsImpactDecisionSummary?.material || 0)} · 🟡 ${Number(d.newsImpactDecisionSummary?.detail || 0)} · 🟢 ${Number(d.newsImpactDecisionSummary?.stable || 0)} · действия: полный AI ${Number(impactActions.fullAi || 0)} · составы ${Number(impactActions.squads || 0)} · рынок ${Number(impactActions.market || 0)} · перепроверка ${Number(impactActions.recheck || 0)} · новости ${Number(impactActions.news || 0)} · поделились ${Number(impactActions.share || 0)} · подтверждённых результатов ${Number(impactOutcomeSummary.confirmed || 0)}/${Number(impactOutcomeSummary.attempts || 0)} · сбоев доставки ${Number(impactFailureSummary.total || 0)} · recovery ${Number(impactRecoverySummary.recovered || 0)}/${Number(impactRecoverySummary.attempts || 0)} · Возврат из новостей: ${Number(d.returnLoop?.newsReturn || 0)} до матча</small></div>
     <div><span>Media deep-link → AI</span><strong>${Number(media.aiUsers || 0)}</strong><small>${Number(media.deepLinkUsers || 0)} открыли · ${launchFunnelPct(media.conversionPct)} получили AI</small></div>
   </div>`;
 
@@ -2987,6 +2991,14 @@ function renderLaunchFunnel() {
         <small>${Number(x.users || 0)} пользователей · действия: ${escapeHtml((x.actions || []).slice(0,3).map(a=>`${a.label} ${a.count}`).join(' · ') || '—')} · восстановление: ${escapeHtml((x.recoveries || []).slice(0,2).map(r=>`${r.label} ${r.count}`).join(' · ') || '—')}</small>
       </div>`).join('')}</div>
       <p class="tiny">Сбой доставки не означает, что пользователь недоволен. В growth_events сохраняются только категориальные reason/recovery/status; сырой текст ошибки не сохраняется.</p>` : ''}
+    ${impactRecoveryEffectiveness.some(x=>Number(x.observed || 0)>0) ? `<div class="release-monitor-section-head"><strong>Recovery → подтверждённый результат</strong><span>только реальные повторные попытки</span></div>
+      ${impactRecoveryBest && Number(impactRecoveryBest.attempts || 0)>=Number(impactRecoveryGuard.minimumSample || 10) ? `<div class="data-notice">🧯 При достаточной выборке наиболее результативный recovery: <strong>${escapeHtml(impactRecoveryBest.label || impactRecoveryBest.recovery || '')}</strong> · ${Number(impactRecoveryBest.recovered || 0)}/${Number(impactRecoveryBest.attempts || 0)} · ${launchFunnelPct(impactRecoveryBest.successPct)}.</div>` : '<div class="data-notice">🧪 Recovery-данных пока недостаточно для сравнения стратегий.</div>'}
+      <div class="launch-campaign-list">${impactRecoveryEffectiveness.filter(x=>Number(x.observed || 0)>0).map(x=>`<div>
+        <span><b>${escapeHtml(x.label || x.recovery || '')}</b></span>
+        <strong>${Number(x.recovered || 0)} / ${Number(x.attempts || 0)}</strong>
+        <small>${launchFunnelPct(x.successPct)} восстановлено · 95% ДИ ${launchFunnelPct(x.confidence?.lowerPct)}–${launchFunnelPct(x.confidence?.upperPct)} · ${escapeHtml(x.confidence?.label || 'мало данных')} · ${Number(x.pending || 0) ? `${Number(x.pending || 0)} ещё ожидают · ` : ''}${Number(x.failed || 0)} без подтверждённой доставки</small>
+      </div>`).join('')}</div>
+      <p class="tiny">Recovery считается успешным только после подтверждённой сервером доставки результата в течение ${Number(impactRecoveryGuard.windowMinutes || 5)} минут. Сам показ fallback или повторной кнопки успехом не считается.</p>` : ''}
     ${impactTrend.some(x=>Number(x.currentUsers || 0)>0 || Number(x.previousUsers || 0)>0) ? `<div class="release-monitor-section-head"><strong>Динамика News Impact</strong><span>текущие ${Number(impactTrendGuard.comparisonDays || d.days || 7)} дн. vs предыдущие</span></div>
       <div class="launch-campaign-list">${impactTrend.filter(x=>Number(x.currentUsers || 0)>0 || Number(x.previousUsers || 0)>0).map(x=>{
         const signal=x.signal==='improved' ? '↗ подтверждённый рост'
@@ -5826,6 +5838,8 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
       recheck: options.recheck !== false,
       newsImpactDecision:String(options.newsImpactDecision || '').toLowerCase().slice(0,24),
       newsImpactAction:String(options.newsImpactAction || '').toLowerCase().slice(0,24),
+      newsImpactRecoveryCode:String(options.newsImpactRecoveryCode || '').toLowerCase().slice(0,24),
+      newsImpactRecoveryFrom:String(options.newsImpactRecoveryFrom || '').toLowerCase().slice(0,24),
     }) });
     if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
     renderAnalysis(data);
@@ -6563,7 +6577,7 @@ function aiInstructorHtml(ai = {}, match = {}, kickoffHandoff = {}) {
 }
 
 let launchIntentHandled = false;
-async function openLaunchFixture(fixtureId, action, tab = '', handoff = false, newsImpactDecision = '', newsImpactAction = '') {
+async function openLaunchFixture(fixtureId, action, tab = '', handoff = false, newsImpactDecision = '', newsImpactAction = '', newsImpactRecoveryCode = '', newsImpactRecoveryFrom = '') {
   const id = Number(fixtureId || 0);
   if (!id) return;
   const allowedTabs = new Set(['brief','overview','form','comparison','market','squads','context']);
@@ -6571,7 +6585,7 @@ async function openLaunchFixture(fixtureId, action, tab = '', handoff = false, n
   if (requestedTab) state.currentAnalysisTab = requestedTab;
   if (action === 'center') return openMatchCenter(id, null);
   if (action === 'analysis') {
-    if (handoff) return analyzeMatch(id, null, { recheck:true, newsImpactDecision, newsImpactAction });
+    if (handoff) return analyzeMatch(id, null, { recheck:true, newsImpactDecision, newsImpactAction, newsImpactRecoveryCode, newsImpactRecoveryFrom });
     await loadHistory(false);
     if (analysisHistoryForFixture(id)) return openHistoryAnalysis(id, null);
     return analyzeMatch(id, null);
@@ -6591,6 +6605,8 @@ function applyLaunchIntent() {
   const handoff = params.get('handoff') === '1';
   const newsImpactDecision = String(params.get('newsImpactDecision') || '').toLowerCase().slice(0,24);
   const newsImpactAction = String(params.get('newsImpactAction') || '').toLowerCase().slice(0,24);
+  const newsImpactRecoveryCode = String(params.get('newsImpactRecoveryCode') || '').toLowerCase().slice(0,24);
+  const newsImpactRecoveryFrom = String(params.get('newsImpactRecoveryFrom') || '').toLowerCase().slice(0,24);
   if (['top', 'live', 'favorites', 'all'].includes(filter)) {
     state.filter = filter;
   }
@@ -6609,7 +6625,7 @@ function applyLaunchIntent() {
     void Promise.allSettled([loadHistory(false),loadAiTrackRecord(false)]);
   } else if (fixtureId > 0 && ['analysis','center'].includes(action)) {
     showView('searchView');
-    void openLaunchFixture(fixtureId, action, tab, handoff, newsImpactDecision, newsImpactAction);
+    void openLaunchFixture(fixtureId, action, tab, handoff, newsImpactDecision, newsImpactAction, newsImpactRecoveryCode, newsImpactRecoveryFrom);
   } else {
     renderGlobalSearch();
     showView('searchView', { restore: true });

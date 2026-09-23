@@ -144,6 +144,7 @@ const REQUIRED_HEALTH_FLAGS = [
   'newsImpactTemporalAttributionSelfTest',
   'newsImpactOutcomeQualitySelfTest',
   'newsImpactFailureDiagnosticsSelfTest',
+  'newsImpactRecoveryEffectivenessSelfTest',
 ];
 
 function delay(ms) {

@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.71.0-rc79';
+const APP_VERSION = '6.72.0-rc80';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc79';
-const RC_NAME = 'RC79';
+const RELEASE_CHANNEL = 'rc80';
+const RC_NAME = 'RC80';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1745,6 +1745,21 @@ async function apiLaunchFunnel(request,cfg) {
     topReason:newsImpactFailureDiagnostics[0] || null,
   };
   const newsImpactFailureGuard={rawErrorsStored:false,meaning:'delivery_failure_not_user_dissatisfaction',taxonomy:[...NEWS_IMPACT_FAILURE_CODES]};
+  const newsImpactRecoveryAttemptRows=rows.filter(x=>String(x.event_name || '')==='news_impact_recovery_attempt');
+  const newsImpactRecoveryEffectiveness=buildNewsImpactRecoveryEffectiveness(newsImpactRecoveryAttemptRows,newsImpactOutcomeRows,newsImpactFailureRows,{asOfMs:analyticsNowMs});
+  const newsImpactRecoveryBestStrategy=newsImpactRecoveryBest(newsImpactRecoveryEffectiveness);
+  const newsImpactRecoverySummary=newsImpactRecoveryEffectiveness.reduce((acc,row)=>{
+    acc.observed+=Number(row.observed || 0);
+    acc.attempts+=Number(row.attempts || 0);
+    acc.pending+=Number(row.pending || 0);
+    acc.recovered+=Number(row.recovered || 0);
+    acc.failed+=Number(row.failed || 0);
+    return acc;
+  },{observed:0,attempts:0,pending:0,recovered:0,failed:0,successPct:0});
+  newsImpactRecoverySummary.successPct=newsImpactRecoverySummary.attempts
+    ? Math.round((newsImpactRecoverySummary.recovered/newsImpactRecoverySummary.attempts)*1000)/10
+    : 0;
+  const newsImpactRecoveryGuard={windowMinutes:NEWS_IMPACT_RECOVERY_WINDOW_MINUTES,minimumSample:NEWS_IMPACT_FUNNEL_MIN_USERS,latestAttemptPerJourney:true,meaning:'confirmed_delivery_after_real_recovery_attempt'};
   const newsImpactActionFunnel=buildNewsImpactActionFunnel(newsImpactRows,newsImpactActionRows,{asOfMs:analyticsNowMs});
   const newsImpactActionBottleneck=newsImpactActionFunnelBottleneck(newsImpactActionFunnel);
   const newsImpactActionConfidenceGuard={minUsers:NEWS_IMPACT_FUNNEL_MIN_USERS,stableUsers:NEWS_IMPACT_FUNNEL_STABLE_USERS,interval:'wilson_95'};
@@ -1808,6 +1823,10 @@ async function apiLaunchFunnel(request,cfg) {
     newsImpactFailureSummary,
     newsImpactFailureDiagnostics,
     newsImpactFailureGuard,
+    newsImpactRecoverySummary,
+    newsImpactRecoveryEffectiveness,
+    newsImpactRecoveryBestStrategy,
+    newsImpactRecoveryGuard,
     newsImpactActionFunnel,
     newsImpactActionBottleneck,
     newsImpactActionConfidenceGuard,
@@ -2603,6 +2622,31 @@ function newsImpactTrackedAnalysisUrl(request, fixtureId, decision) {
   });
 }
 
+function cleanNewsImpactRecoveryCode(value = '') {
+  const code=String(value || '').toLowerCase().trim();
+  return NEWS_IMPACT_RECOVERY_CODES.has(code) ? code : '';
+}
+
+function newsImpactRecoveryCallback(decision, action, recovery, fixtureId) {
+  const d=cleanNewsImpactDecisionCode(decision);
+  const a=cleanNewsImpactActionCode(action);
+  const r=cleanNewsImpactRecoveryCode(recovery);
+  const id=Number(fixtureId || 0);
+  return d && a && r && Number.isSafeInteger(id) && id>0 ? `ni:r:${d}:${a}:${r}:${id}` : '';
+}
+
+function newsImpactRecoveryAnalysisUrl(request, fixtureId, decision, sourceAction = '', recovery = 'open_full_ai') {
+  const d=cleanNewsImpactDecisionCode(decision);
+  const source=cleanNewsImpactActionCode(sourceAction);
+  const r=cleanNewsImpactRecoveryCode(recovery) || 'open_full_ai';
+  return telegramWebAppUrl(request,{
+    ...telegramAnalysisHandoffParams(fixtureId,'brief'),
+    ...(d ? {newsImpactDecision:d,newsImpactAction:'full_ai'} : {}),
+    newsImpactRecoveryCode:r,
+    ...(source ? {newsImpactRecoveryFrom:source} : {}),
+  });
+}
+
 function newsImpactActionDrill() {
   const callback=newsImpactActionCallback('material','market',12345);
   return {
@@ -3071,9 +3115,166 @@ function newsImpactFailureDiagnosticsDrill() {
   };
 }
 
-function newsImpactRecoveryKeyboard(request, decision, action, fixtureId) {
-  const rows=[[{text:'🔄 Повторить',callback_data:newsImpactActionCallback(decision,action,fixtureId)}]];
-  if (action!=='full_ai') rows.push([{text:'📊 Открыть полный AI',web_app:{url:newsImpactTrackedAnalysisUrl(request,fixtureId,decision)}}]);
+const NEWS_IMPACT_RECOVERY_WINDOW_MINUTES = 5;
+const NEWS_IMPACT_RECOVERY_WINDOW_MS = NEWS_IMPACT_RECOVERY_WINDOW_MINUTES * 60_000;
+
+async function recordNewsImpactRecoveryAttempt(cfg,{
+  userId,
+  fixtureId,
+  decision,
+  action,
+  recovery,
+  sourceAction='',
+  channel='telegram',
+}={}) {
+  const safeDecision=cleanNewsImpactDecisionCode(decision);
+  const safeAction=cleanNewsImpactActionCode(action);
+  const safeRecovery=cleanNewsImpactRecoveryCode(recovery);
+  const safeSource=cleanNewsImpactActionCode(sourceAction);
+  if (!safeDecision || !safeAction || !safeRecovery) return false;
+  return await recordGrowthEvent(cfg,{
+    userId,
+    eventName:'news_impact_recovery_attempt',
+    channel,
+    fixtureId,
+    metadata:{
+      decision:safeDecision,
+      action:safeAction,
+      recovery:safeRecovery,
+      ...(safeSource ? {sourceAction:safeSource} : {}),
+    },
+  });
+}
+
+function newsImpactRecoveryJourneyKey(row = {}) {
+  const base=newsImpactJourneyKey(row);
+  const recovery=cleanNewsImpactRecoveryCode(row?.metadata && typeof row.metadata==='object' ? row.metadata.recovery : '');
+  return base && recovery ? `${base}|${recovery}` : '';
+}
+
+function buildNewsImpactRecoveryEffectiveness(attemptRows = [], outcomeRows = [], failureRows = [], options = {}) {
+  const asOfMs=Number.isFinite(Number(options?.asOfMs)) ? Number(options.asOfMs) : Date.now();
+  const windowMinutes=Math.max(1,Math.min(30,Number(options?.windowMinutes || NEWS_IMPACT_RECOVERY_WINDOW_MINUTES)));
+  const windowMs=windowMinutes*60_000;
+  const latestAttempts=new Map();
+  for (const row of attemptRows || []) {
+    const key=newsImpactRecoveryJourneyKey(row);
+    const attemptAt=newsImpactEventTime(row);
+    if (!key || !Number.isFinite(attemptAt)) continue;
+    const previous=latestAttempts.get(key);
+    if (!previous || attemptAt>previous.attemptAt) latestAttempts.set(key,{row,attemptAt});
+  }
+  const outcomesByJourney=new Map();
+  for (const row of outcomeRows || []) {
+    const key=newsImpactJourneyKey(row);
+    const at=newsImpactEventTime(row);
+    if (!key || !Number.isFinite(at)) continue;
+    const list=outcomesByJourney.get(key) || [];
+    list.push({row,at});
+    outcomesByJourney.set(key,list);
+  }
+  const failuresByJourney=new Map();
+  for (const row of failureRows || []) {
+    const key=newsImpactJourneyKey(row);
+    const at=newsImpactEventTime(row);
+    if (!key || !Number.isFinite(at)) continue;
+    const list=failuresByJourney.get(key) || [];
+    list.push({row,at});
+    failuresByJourney.set(key,list);
+  }
+  const states=[...latestAttempts.values()].map(item=>{
+    const journey=newsImpactJourneyKey(item.row);
+    const recovery=cleanNewsImpactRecoveryCode(item.row?.metadata?.recovery);
+    const after=(list)=>[...(list || [])]
+      .filter(event=>event.at>=item.attemptAt && event.at<=item.attemptAt+windowMs)
+      .sort((a,b)=>a.at-b.at)[0] || null;
+    const outcome=after(outcomesByJourney.get(journey));
+    const failure=after(failuresByJourney.get(journey));
+    let state='pending';
+    let terminalAt=null;
+    if (outcome && (!failure || outcome.at<=failure.at)) { state='recovered'; terminalAt=outcome.at; }
+    else if (failure) { state='failed'; terminalAt=failure.at; }
+    else if (item.attemptAt<=asOfMs-windowMs) state='failed';
+    return {row:item.row,recovery,state,attemptAt:item.attemptAt,terminalAt};
+  });
+  return [...NEWS_IMPACT_RECOVERY_CODES].map(recovery=>{
+    const observed=states.filter(x=>x.recovery===recovery);
+    const matured=observed.filter(x=>x.state!=='pending');
+    const recovered=matured.filter(x=>x.state==='recovered').length;
+    const failed=matured.filter(x=>x.state==='failed').length;
+    const attempts=matured.length;
+    const pending=observed.length-attempts;
+    const successPct=attempts ? Math.round((recovered/attempts)*1000)/10 : 0;
+    const confidence=newsImpactConversionConfidence(recovered,attempts);
+    const actionCounts={};
+    for (const item of observed) {
+      const action=newsImpactRowAction(item.row);
+      if (action) actionCounts[action]=(actionCounts[action] || 0)+1;
+    }
+    return {
+      recovery,
+      label:NEWS_IMPACT_RECOVERY_LABELS[recovery] || recovery,
+      observed:observed.length,
+      attempts,
+      pending,
+      recovered,
+      failed,
+      successPct,
+      confidence,
+      actions:Object.entries(actionCounts).map(([action,count])=>({action,label:NEWS_IMPACT_ACTION_LABELS[action] || action,count})).sort((a,b)=>b.count-a.count || a.action.localeCompare(b.action)),
+    };
+  });
+}
+
+function newsImpactRecoveryBest(rows = []) {
+  const eligible=(rows || []).filter(x=>Boolean(x?.confidence?.eligibleForBottleneck));
+  if (!eligible.length) return null;
+  return [...eligible].sort((a,b)=>Number(b.successPct || 0)-Number(a.successPct || 0) || Number(b.attempts || 0)-Number(a.attempts || 0))[0] || null;
+}
+
+function newsImpactRecoveryEffectivenessDrill() {
+  const asOfMs=Date.parse('2026-09-23T12:00:00Z');
+  const attempts=[
+    ...Array.from({length:10},(_,i)=>({telegram_id:i+1,fixture_id:200+i,created_at:'2026-09-23T10:00:00Z',metadata:{decision:'material',action:'full_ai',recovery:'retry'}})),
+    ...Array.from({length:5},(_,i)=>({telegram_id:30+i,fixture_id:300+i,created_at:'2026-09-23T11:58:00Z',metadata:{decision:'detail',action:'full_ai',recovery:'open_full_ai'}})),
+  ];
+  const outcomes=[
+    ...Array.from({length:7},(_,i)=>({telegram_id:i+1,fixture_id:200+i,created_at:'2026-09-23T10:02:00Z',metadata:{decision:'material',action:'full_ai',outcome:'analysis_delivered'}})),
+    ...Array.from({length:2},(_,i)=>({telegram_id:30+i,fixture_id:300+i,created_at:'2026-09-23T11:59:00Z',metadata:{decision:'detail',action:'full_ai',outcome:'analysis_delivered'}})),
+  ];
+  const failures=[
+    {telegram_id:8,fixture_id:207,created_at:'2026-09-23T10:03:00Z',metadata:{decision:'material',action:'full_ai',reason:'provider_rate_limit',recovery:'retry_later'}},
+    {telegram_id:9,fixture_id:208,created_at:'2026-09-23T10:03:00Z',metadata:{decision:'material',action:'full_ai',reason:'server_error',recovery:'retry'}},
+  ];
+  const rows=buildNewsImpactRecoveryEffectiveness(attempts,outcomes,failures,{asOfMs});
+  const retry=rows.find(x=>x.recovery==='retry');
+  const fullAi=rows.find(x=>x.recovery==='open_full_ai');
+  return {
+    pass:retry?.attempts===10
+      && retry?.recovered===7
+      && retry?.failed===3
+      && retry?.successPct===70
+      && retry?.confidence?.status==='early'
+      && fullAi?.recovered===2
+      && fullAi?.pending===3
+      && newsImpactRecoveryBest(rows)?.recovery==='retry',
+    cases:8,
+  };
+}
+
+function newsImpactRecoveryKeyboard(request, decision, action, fixtureId, recovery = 'retry') {
+  const r=cleanNewsImpactRecoveryCode(recovery) || 'retry';
+  const retryLabel=r==='retry_soon' ? '🔄 Повторить через несколько секунд'
+    : r==='retry_later' ? '🕒 Повторить позже'
+      : r==='wait_quota_reset' ? '⏳ Повторить после обновления лимита'
+        : '🔄 Повторить';
+  const rows=[];
+  if (r==='open_search') {
+    rows.push([{text:'🔎 Выбрать другой матч',web_app:{url:telegramWebAppUrl(request,{view:'search'})}}]);
+  } else {
+    rows.push([{text:retryLabel,callback_data:newsImpactRecoveryCallback(decision,action,r,fixtureId)}]);
+  }
+  if (action!=='full_ai') rows.push([{text:'📊 Открыть полный AI',web_app:{url:newsImpactRecoveryAnalysisUrl(request,fixtureId,decision,action,'open_full_ai')}}]);
   return {inline_keyboard:rows};
 }
 
@@ -3086,7 +3287,7 @@ async function sendNewsImpactRecoveryMessage(request,cfg,{userId,chatId,fixtureI
   await telegramApi('sendMessage',cfg,{
     chat_id:chatId,
     text:`⚠️ ${recovery.message}`,
-    reply_markup:newsImpactRecoveryKeyboard(request,decision,action,fixtureId),
+    reply_markup:newsImpactRecoveryKeyboard(request,decision,action,fixtureId,recovery.code),
   }).catch(()=>null);
   return {reason,recovery};
 }
@@ -3943,11 +4144,15 @@ async function processTelegramUpdate(request, cfg, update) {
       return json({ok:true});
     }
     const newsImpactAction=data.match(/^news:impact:(material|detail|stable|guarded|baseline_missing|unavailable):(squads|market|recheck|news|share):(\d+)$/);
-    if (callbackChatId && newsImpactAction) {
-      const decision=cleanNewsImpactDecisionCode(newsImpactAction[1]);
-      const action=cleanNewsImpactActionCode(newsImpactAction[2]);
-      const fixtureId=Number(newsImpactAction[3]);
-      void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_impact_action',channel:'telegram',fixtureId,metadata:{decision,action}});
+    const newsImpactRecoveryAction=data.match(/^ni:r:(material|detail|stable|guarded|baseline_missing|unavailable):(squads|market|recheck|news|share):(retry|retry_soon|retry_later|wait_quota_reset|open_full_ai):(\d+)$/);
+    if (callbackChatId && (newsImpactAction || newsImpactRecoveryAction)) {
+      const matched=newsImpactRecoveryAction || newsImpactAction;
+      const decision=cleanNewsImpactDecisionCode(matched[1]);
+      const action=cleanNewsImpactActionCode(matched[2]);
+      const recoveryCode=newsImpactRecoveryAction ? cleanNewsImpactRecoveryCode(matched[3]) : '';
+      const fixtureId=Number(matched[newsImpactRecoveryAction ? 4 : 3]);
+      if (recoveryCode) await recordNewsImpactRecoveryAttempt(cfg,{userId:callbackUserId,fixtureId,decision,action,recovery:recoveryCode,channel:'telegram'});
+      void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_impact_action',channel:'telegram',fixtureId,metadata:{decision,action,...(recoveryCode ? {recovery:recoveryCode} : {})}});
       if (action==='news') {
         await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Открываю новости…'}).catch(()=>null);
         try {
@@ -15384,6 +15589,8 @@ async function apiAnalyze(request, cfg, user) {
   const newsPublishedAt=Number.isFinite(Date.parse(String(body?.newsPublishedAt || ''))) ? new Date(Date.parse(String(body.newsPublishedAt))).toISOString() : '';
   const newsImpactDecision=cleanNewsImpactDecisionCode(body?.newsImpactDecision);
   const newsImpactAction=cleanNewsImpactActionCode(body?.newsImpactAction);
+  const newsImpactRecoveryCode=cleanNewsImpactRecoveryCode(body?.newsImpactRecoveryCode);
+  const newsImpactRecoveryFrom=cleanNewsImpactActionCode(body?.newsImpactRecoveryFrom);
   const trackFullAi=analysisOrigin !== 'telegram_quick';
   const recordTrackedFullAiOutcome=async (delivery='analysis')=>{
     if (trackFullAi && newsImpactDecision && newsImpactAction==='full_ai') {
@@ -15391,7 +15598,10 @@ async function apiAnalyze(request, cfg, user) {
     }
   };
   if (trackFullAi && newsImpactDecision && newsImpactAction==='full_ai') {
-    void recordGrowthEvent(cfg,{userId:user.id,eventName:'news_impact_action',channel:'miniapp',fixtureId,metadata:{decision:newsImpactDecision,action:'full_ai'}});
+    if (newsImpactRecoveryCode) {
+      await recordNewsImpactRecoveryAttempt(cfg,{userId:user.id,fixtureId,decision:newsImpactDecision,action:'full_ai',recovery:newsImpactRecoveryCode,sourceAction:newsImpactRecoveryFrom,channel:'miniapp'});
+    }
+    void recordGrowthEvent(cfg,{userId:user.id,eventName:'news_impact_action',channel:'miniapp',fixtureId,metadata:{decision:newsImpactDecision,action:'full_ai',...(newsImpactRecoveryCode ? {recovery:newsImpactRecoveryCode} : {})}});
   }
   const recordTrackedFullAiFailure=async (reason='server_error',status=0)=>{
     if (!(trackFullAi && newsImpactDecision && newsImpactAction==='full_ai')) return null;
@@ -15982,6 +16192,11 @@ export default {
         newsImpactRecoveryUx: 'enabled',
         newsImpactFailurePrivacyGuard: 'enabled',
         newsImpactFailureDiagnosticsSelfTest: newsImpactFailureDiagnosticsDrill().pass ? 'enabled' : 'failed',
+        newsImpactRecoveryAttemptTracking: 'enabled',
+        newsImpactRecoveryEffectiveness: 'enabled',
+        newsImpactRecoveryMaturityGuard: 'enabled',
+        newsImpactRecoverySampleGuard: 'enabled',
+        newsImpactRecoveryEffectivenessSelfTest: newsImpactRecoveryEffectivenessDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
