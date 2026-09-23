@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const sql = fs.readFileSync(new URL('../supabase_migration_v6_10.sql', import.meta.url), 'utf8').toLowerCase();
+const sql = fs.readFileSync(new URL('../supabase/migrations/v6_10.sql', import.meta.url), 'utf8').toLowerCase();
 
 test('RC18 transition function uses invoker security and least privilege', () => {
   assert.match(sql, /create or replace function public\.transition_model_calibration/);
