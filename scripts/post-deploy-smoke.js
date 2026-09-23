@@ -186,6 +186,9 @@ const REQUIRED_HEALTH_FLAGS = [
   'newsImpactRecoveryIncidentSloBreachTriageTrend',
   'newsImpactRecoveryIncidentTriageRecurrence',
   'newsImpactRecoveryIncidentSloBreachTriageTrendSelfTest',
+  'newsImpactRecoveryIncidentSloBreachImpactRanking',
+  'newsImpactRecoveryIncidentOverdueContribution',
+  'newsImpactRecoveryIncidentSloBreachImpactRankingSelfTest',
 ];
 
 function delay(ms) {

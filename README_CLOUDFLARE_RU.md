@@ -1,4 +1,4 @@
-# Football Analytics Mini App v6.84.0 — RC92
+# Football Analytics Mini App v6.85.0 — RC93
 
 Telegram-бот и Mini App для футбольной аналитики на Cloudflare Workers + Supabase. Основные источники данных: API-Football и Tavily. Интерфейс и админ-панель — на русском языке. Монетизация пока отключена.
 
@@ -12,7 +12,7 @@ Telegram-бот и Mini App для футбольной аналитики на 
 - Публичный AI Track Record строится только по подтверждённым settled-прогнозам и не выдаёт совпадение исхода за прибыльность ставок.
 - Защита от вирусной нагрузки: distributed fixture lock, shared cache и безопасный fallback.
 - Медиа deep-link на fixture, publisher kit и агрегированная first-party аналитика source / campaign / content.
-- Новостной контур RC69–RC92: новость → релевантный матч → явная AI-перепроверка → News Impact Delta → **News Impact Decision Card** → **News Impact Action Tracking** → **News Impact Action Funnel** → **News Impact Funnel Confidence Guard** → **News Impact Funnel Trend Guard** → **News Impact Temporal Attribution Guard** → **News Impact Action Outcome Quality** → **News Impact Outcome Failure Diagnostics & Recovery** → **News Impact Recovery Effectiveness Funnel** → **News Impact Recovery Strategy Guard** → **News Impact Recovery Stability & Parity Guard** → **News Impact Recovery Drift Circuit Breaker** → **News Impact Recovery Transition History & Admin Alerts** → **News Impact Recovery Incident Center** → **News Impact Recovery Incident Acknowledgement & Runbook** → **News Impact Recovery Incident Escalation & SLO** → **News Impact Recovery Incident SLO Dashboard & Trend** → **News Impact Recovery Incident SLO Breach Feed & Drilldown** → **News Impact Recovery Incident SLO Breach Watchlist & Aging** → **News Impact Recovery Incident SLO Breach Triage Queue** → **News Impact Recovery Incident SLO Triage Trend & Recurrence**.
+- Новостной контур RC69–RC93: новость → релевантный матч → явная AI-перепроверка → News Impact Delta → **News Impact Decision Card** → **News Impact Action Tracking** → **News Impact Action Funnel** → **News Impact Funnel Confidence Guard** → **News Impact Funnel Trend Guard** → **News Impact Temporal Attribution Guard** → **News Impact Action Outcome Quality** → **News Impact Outcome Failure Diagnostics & Recovery** → **News Impact Recovery Effectiveness Funnel** → **News Impact Recovery Strategy Guard** → **News Impact Recovery Stability & Parity Guard** → **News Impact Recovery Drift Circuit Breaker** → **News Impact Recovery Transition History & Admin Alerts** → **News Impact Recovery Incident Center** → **News Impact Recovery Incident Acknowledgement & Runbook** → **News Impact Recovery Incident Escalation & SLO** → **News Impact Recovery Incident SLO Dashboard & Trend** → **News Impact Recovery Incident SLO Breach Feed & Drilldown** → **News Impact Recovery Incident SLO Breach Watchlist & Aging** → **News Impact Recovery Incident SLO Breach Triage Queue** → **News Impact Recovery Incident SLO Triage Trend & Recurrence** → **News Impact Recovery Incident SLO Breach Impact Ranking**.
 - News Impact не утверждает причинность по заголовку: сравнение разрешено только с корректным AI-снимком, созданным до публикации новости.
 - RC73 считает только категориальные действия после Decision Card: полный AI, составы, рынок, повторная проверка, возврат к новостям и share. Текст новости, URL и пользовательский запрос в эту аналитику не записываются.
 - RC74 агрегирует эти действия по типу News Impact-решения, считает долю пользователей, которые продолжили сценарий, показывает наиболее частое следующее действие и состояние с самой низкой конверсией. Telegram ID наружу не возвращаются.
@@ -34,6 +34,7 @@ Telegram-бот и Mini App для футбольной аналитики на 
 - RC90 добавляет SLO Breach Watchlist & Aging поверх RC89 feed: отдельный список только активных breach-эпизодов, critical/ACK/Recovery счётчики, возраст самого старого активного эпизода и повторяющиеся активные пары. Watchlist использует те же пороги RC87 (30/120/360 минут), ничего не сохраняет в Supabase и не меняет recovery-routing.
 - RC91 добавляет SLO Breach Triage Queue поверх RC90 watchlist. Активные breach-эпизоды распределяются только по уже существующим стадиям RC87: ACK overdue, ACK critical и Recovery overdue. Очередь сортируется сначала по стадии, затем по возрасту; новых SLO-порогов, persistence и изменений recovery-routing нет.
 - RC92 добавляет 4-недельный Triage Trend & Recurrence. На конец каждой недели восстанавливается фактическое состояние активных incident episodes и считаются Recovery overdue / ACK critical / ACK overdue; отдельно показываются пары `reason + action`, которые остаются в triage минимум в двух недельных снимках. Используются только существующие пороги RC87, производные trend-данные не сохраняются и recovery-routing не меняется.
+- RC93 добавляет SLO Breach Impact Ranking. Для каждой пары `reason + action` суммируются фактические минуты сверх существующего ACK SLO и Recovery SLO по incident episodes; показываются общий вклад, доля от всей SLO-просрочки, число breach-эпизодов, active episodes и раздельные ACK/Recovery overdue minutes. Это производная аналитика на существующих порогах RC87, без нового score, persistence и изменений recovery-routing.
 
 ## Архитектура
 
@@ -64,7 +65,7 @@ npm run verify:release
 npm run verify:worker
 ```
 
-Production smoke дополнительно проверяет `/health`, версию `6.84.0-rc92`, `releaseCandidate=RC92`, отключённый `DEV_MODE` и обязательные health/self-test флаги.
+Production smoke дополнительно проверяет `/health`, версию `6.85.0-rc93`, `releaseCandidate=RC93`, отключённый `DEV_MODE` и обязательные health/self-test флаги.
 
 ## Документация
 
