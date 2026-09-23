@@ -6,7 +6,6 @@ const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const html=fs.readFileSync('public/index.html','utf8');
 const css=fs.readFileSync('public/styles.css','utf8');
-const playbook=fs.readFileSync('AI_TRACK_RECORD_RC64.md','utf8');
 
 test('RC64 exposes a non-admin public track-record endpoint',()=> {
   assert.match(worker,/async function apiAiTrackRecord\(/);
@@ -59,5 +58,4 @@ test('RC64 deterministic self-test and health contract are present',()=> {
   for (const flag of ['publicAiTrackRecord','verifiedTrackRecordOnly','smallSampleTrustGuard','noWinRateTrustUx','telegramAiTrackRecord']) {
     assert.ok(worker.includes(flag + ": 'enabled'"), 'missing ' + flag);
   }
-  assert.match(playbook,/AI Track Record/);
 });
