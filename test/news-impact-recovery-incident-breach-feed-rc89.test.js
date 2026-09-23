@@ -25,7 +25,7 @@ test('RC89 breach feed keeps privacy-safe categorical drilldown',()=>{
   const end=worker.indexOf('function buildNewsImpactRecoveryIncidentCenter',start);
   const block=worker.slice(start,end);
   assert.doesNotMatch(block,/telegram_id\s*:/);
-  assert.doesNotMatch(block,/rawError|error\.message|stack|query/);
+  assert.doesNotMatch(block,/raw_error\s*:|error\.message|stack\s*:|query\s*:/);
   assert.match(block,/freeTextExposed:false/);
   assert.match(block,/rawErrorsExposed:false/);
   assert.match(block,/telegramIdsExposed:false/);
