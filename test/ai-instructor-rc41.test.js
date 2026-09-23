@@ -5,7 +5,7 @@ import fs from 'node:fs';
 const app = fs.readFileSync('public/app.js', 'utf8');
 const worker = fs.readFileSync('src/worker.js', 'utf8');
 const css = fs.readFileSync('public/styles.css', 'utf8');
-const migration = fs.readFileSync('supabase_migration_v6_12.sql', 'utf8');
+const migration = fs.readFileSync('supabase/migrations/v6_12.sql', 'utf8');
 
 test('AI verdict summarizes outcome total btts and action', () => {
   assert.match(worker, /const verdict =/);
