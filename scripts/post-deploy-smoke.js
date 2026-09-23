@@ -9,6 +9,8 @@ const REQUIRED_HEALTH_FLAGS = [
   'productionMonitor',
   'productionMonitorSelfTest',
   'rollbackVerification',
+  'providerDataReliability',
+  'providerDataReliabilitySelfTest',
   'cloudflareDeploymentGate',
   'browserSecurityPolicy',
   'failClosedDeployment',
