@@ -129,6 +129,11 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         mediaCopyGenerator: 'enabled',
         adminPublisherOnly: 'enabled',
         mediaPublisherSelfTest: 'enabled',
+        mediaCampaignControlRoom: 'enabled',
+        contentLevelMediaAttribution: 'enabled',
+        mediaCampaignConversion: 'enabled',
+        publisherOutcomeTracking: 'enabled',
+        mediaCampaignControlSelfTest: 'enabled',
       });
     }
     if (url.pathname === '/api/app-manifest') return json({ version: '6.27.0-rc35', releaseCandidate: 'RC35' });
