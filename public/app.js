@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.82.0-rc90';
+const CLIENT_VERSION = '6.83.0-rc91';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc90';
+const CLIENT_RELEASE_CHANNEL = 'rc91';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2959,6 +2959,9 @@ function renderLaunchFunnel() {
   const impactRecoveryWatchSummary=impactRecoveryIncidentSloBreachWatchlist.summary || {};
   const impactRecoveryWatchItems=Array.isArray(impactRecoveryIncidentSloBreachWatchlist.items) ? impactRecoveryIncidentSloBreachWatchlist.items : [];
   const impactRecoveryWatchRepeated=Array.isArray(impactRecoveryIncidentSloBreachWatchlist.repeated) ? impactRecoveryIncidentSloBreachWatchlist.repeated : [];
+  const impactRecoveryIncidentSloBreachTriage=d.newsImpactRecoveryIncidentSloBreachTriage || {available:false,summary:{},items:[]};
+  const impactRecoveryTriageSummary=impactRecoveryIncidentSloBreachTriage.summary || {};
+  const impactRecoveryTriageItems=Array.isArray(impactRecoveryIncidentSloBreachTriage.items) ? impactRecoveryIncidentSloBreachTriage.items : [];
   const impactFunnel=Array.isArray(d.newsImpactActionFunnel) ? d.newsImpactActionFunnel : [];
   const impactBottleneck=d.newsImpactActionBottleneck || null;
   const impactConfidenceGuard=d.newsImpactActionConfidenceGuard || {minUsers:10,stableUsers:30};
@@ -3085,6 +3088,11 @@ function renderLaunchFunnel() {
       (impactRecoveryWatchItems.length ? '<div class="launch-campaign-list">' + impactRecoveryWatchItems.map(x=>'<div><span><b>' + (x.severity==='critical'?'🚨':'⚠️') + ' ' + escapeHtml(x.reasonLabel || x.reason || '') + '</b> · ' + escapeHtml(x.actionLabel || x.action || '') + '</span><strong>' + escapeHtml((x.breachTypes || []).join(' + ') || 'breach') + '</strong><small>active · age ' + Number(x.ageMinutes || 0) + ' мин · occurrences ' + Number(x.occurrences || 0) + ' · started ' + escapeHtml(x.startedAt || '—') + '</small></div>').join('') + '</div>' : '<div class="data-notice">✅ Активных SLO breach-инцидентов для watchlist нет.</div>') +
       (impactRecoveryWatchRepeated.length ? '<div class="data-notice">🔁 Активные повторяющиеся пары: ' + impactRecoveryWatchRepeated.map(x=>escapeHtml(x.reasonLabel || x.reason || '') + ' / ' + escapeHtml(x.actionLabel || x.action || '') + ': ' + Number(x.activeBreaches || 0)).join(' · ') + '</div>' : '') +
       '<p class="tiny">RC90 — watchlist и aging считаются только из RC89 breach feed. Пороги остаются RC87 (30/120/360 минут), новые данные не сохраняются и recovery-routing не меняется.</p>'
+    ) : ''}
+    ${impactRecoveryIncidentSloBreachTriage.available !== false ? (
+      '<div class="release-monitor-section-head"><strong>SLO Breach Triage Queue</strong><span>recovery overdue ' + Number(impactRecoveryTriageSummary.recoveryOverdue || 0) + ' · ACK critical ' + Number(impactRecoveryTriageSummary.ackCritical || 0) + ' · ACK overdue ' + Number(impactRecoveryTriageSummary.ackOverdue || 0) + '</span></div>' +
+      (impactRecoveryTriageItems.length ? '<div class="launch-campaign-list">' + impactRecoveryTriageItems.map(x=>'<div><span><b>' + (x.triageStage==='recovery_overdue'?'🚨':x.triageStage==='ack_critical'?'⚠️':'⏱️') + ' ' + escapeHtml(x.reasonLabel || x.reason || '') + '</b> · ' + escapeHtml(x.actionLabel || x.action || '') + '</span><strong>' + escapeHtml(x.triageLabel || x.triageStage || '') + '</strong><small>age ' + Number(x.ageMinutes || 0) + ' мин · ' + escapeHtml((x.breachTypes || []).join(' + ') || 'breach') + ' · started ' + escapeHtml(x.startedAt || '—') + '</small></div>').join('') + '</div>' : '<div class="data-notice">✅ Активных SLO breach-инцидентов для triage нет.</div>') +
+      '<p class="tiny">RC91 — triage использует только существующие пороги RC87: ACK 30 мин, critical ACK 120 мин, Recovery 360 мин. Это административная группировка, без новых SLO-порогов, persistence и изменений recovery-routing.</p>'
     ) : ''}
     ${impactRecoveryStrategyAlerts.length ? `<div class="release-monitor-section-head"><strong>Recovery: предупреждения</strong><span>${Number(impactRecoveryAlertSummary.critical || 0)} critical · ${Number(impactRecoveryAlertSummary.warnings || 0)} warning · ${Number(impactRecoveryAlertSummary.info || 0)} info</span></div>
       <div class="launch-campaign-list">${impactRecoveryStrategyAlerts.map(x=>`<div>
