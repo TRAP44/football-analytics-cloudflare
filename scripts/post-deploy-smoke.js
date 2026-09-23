@@ -107,6 +107,11 @@ const REQUIRED_HEALTH_FLAGS = [
   'analysisLockFailOpen',
   'sharedAnalysisWaitFallback',
   'distributedAnalysisLockSelfTest',
+  'mediaPublisherKit',
+  'campaignTaggedFixtureLinks',
+  'mediaCopyGenerator',
+  'adminPublisherOnly',
+  'mediaPublisherSelfTest',
 ];
 
 function delay(ms) {
