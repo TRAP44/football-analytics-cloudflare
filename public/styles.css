@@ -2785,3 +2785,10 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 .analysis-delta-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.analysis-delta-head span{font-size:11px;opacity:.68}.analysis-delta>p{margin:0}
 .analysis-delta-list{display:grid;gap:6px}.analysis-delta-list>div{display:flex;justify-content:space-between;gap:12px;padding-top:6px;border-top:1px solid rgba(148,163,184,.1);font-size:12px}.analysis-delta-list span{opacity:.74}.analysis-delta-list strong{text-align:right}
 @media(max-width:520px){.analysis-delta-list>div{align-items:flex-start;flex-direction:column}.analysis-delta-list strong{text-align:left}}
+
+
+/* RC61 — kickoff handoff */
+.kickoff-handoff{display:grid;gap:9px;border-color:rgba(56,189,248,.24);background:rgba(56,189,248,.045)}
+.kickoff-handoff>div:first-child{display:flex;align-items:center;gap:10px}.kickoff-handoff>div:first-child>span{font-size:20px}.kickoff-handoff strong{display:block}.kickoff-handoff small{display:block;opacity:.72;margin-top:2px}
+.kickoff-handoff p{margin:0;font-size:13px;line-height:1.45;opacity:.9}.kickoff-handoff.locked{border-color:rgba(148,163,184,.3);background:rgba(148,163,184,.07)}
+.kickoff-center-btn{min-height:42px;border-radius:12px;font-weight:800}.ai-instructor-card.archived{border-color:rgba(148,163,184,.28);filter:saturate(.78)}.ai-verdict-grid .archived{opacity:.82}
