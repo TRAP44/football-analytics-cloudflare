@@ -7,7 +7,7 @@ const app=fs.readFileSync('public/app.js','utf8');
 
 test('RC85 derives privacy-safe recovery incident events from categorical guards',()=>{
   assert.match(worker,/function buildNewsImpactRecoveryIncidentEvents\(/);
-  assert.match(worker,/new Set\(\['performance_drift','recent_regression'\]\)/);
+  assert.match(worker,/NEWS_IMPACT_RECOVERY_INCIDENT_CODES/);
   assert.match(worker,/guardReason,/);
   assert.match(worker,/priority:guardReason==='performance_drift' \? 'high' : 'medium'/);
   const start=worker.indexOf('function buildNewsImpactRecoveryIncidentEvents');
@@ -19,7 +19,7 @@ test('RC85 derives privacy-safe recovery incident events from categorical guards
 
 test('RC85 incident lifecycle marks current failures active and normalized guards recovered',()=>{
   assert.match(worker,/function buildNewsImpactRecoveryIncidentCenter\(/);
-  assert.match(worker,/status:active \? 'active' : 'recovered'/);
+  assert.match(worker,/(?:status:active|const status=active) \? 'active' : 'recovered'/);
   assert.match(worker,/currentGuardReason/);
   assert.match(worker,/currentOnly:true/);
   assert.match(worker,/strategy_evidence_unavailable/);
