@@ -11,10 +11,13 @@ const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml'
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
 const readme = fs.readFileSync('README_CLOUDFLARE_RU.md', 'utf8');
 const qaChecklist = fs.readFileSync('QA_RELEASE_CHECKLIST_RU.md', 'utf8');
-const baselinePath = 'supabase_baseline_v6_15.sql';
+const baselinePath = 'supabase/baseline/supabase_baseline_v6_15.sql';
 const baseline = fs.existsSync(baselinePath) ? fs.readFileSync(baselinePath, 'utf8') : '';
 const expected = `${pkg.version}-rc100`;
 const failures = [];
+const rootSql = fs.readdirSync('.').filter(name => /^supabase_(?:baseline|migration)_.*\.sql$/i.test(name));
+if (rootSql.length) failures.push(`Supabase SQL must live under supabase/: ${rootSql.join(', ')}`);
+
 
 if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) failures.push('package-lock version must match package.json');
 
@@ -23,16 +26,16 @@ if (!worker.includes("const RC_NAME = 'RC100'")) failures.push('Worker RC name m
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
 if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc100'")) failures.push('Client release channel must be rc100');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
-if (!fs.existsSync('supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
-if (!fs.existsSync('supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
-if (!fs.existsSync('supabase_migration_v6_11.sql')) failures.push('Missing v6.11 migration');
-if (!fs.existsSync('supabase_migration_v6_11_1.sql')) failures.push('Missing v6.11.1 default-ACL migration');
-if (!fs.existsSync('supabase_migration_v6_12.sql')) failures.push('Missing v6.12 bot-digest migration');
-if (!fs.existsSync('supabase_migration_v6_13.sql')) failures.push('Missing v6.13 referee-history migration');
-if (!fs.existsSync('supabase_migration_v6_14.sql')) failures.push('Missing v6.14 persistent-AI-history migration');
-if (!fs.existsSync('supabase_migration_v6_15.sql')) failures.push('Missing v6.15 media-launch attribution migration');
+if (!fs.existsSync('supabase/migrations/supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
+if (!fs.existsSync('supabase/migrations/supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
+if (!fs.existsSync('supabase/migrations/supabase_migration_v6_11.sql')) failures.push('Missing v6.11 migration');
+if (!fs.existsSync('supabase/migrations/supabase_migration_v6_11_1.sql')) failures.push('Missing v6.11.1 default-ACL migration');
+if (!fs.existsSync('supabase/migrations/supabase_migration_v6_12.sql')) failures.push('Missing v6.12 bot-digest migration');
+if (!fs.existsSync('supabase/migrations/supabase_migration_v6_13.sql')) failures.push('Missing v6.13 referee-history migration');
+if (!fs.existsSync('supabase/migrations/supabase_migration_v6_14.sql')) failures.push('Missing v6.14 persistent-AI-history migration');
+if (!fs.existsSync('supabase/migrations/supabase_migration_v6_15.sql')) failures.push('Missing v6.15 media-launch attribution migration');
 if (!fs.existsSync(baselinePath)) failures.push('Missing unified v6.15 baseline');
-if (fs.existsSync('supabase_baseline_v6_9.sql')) failures.push('Obsolete v6.9 fresh-install baseline must be removed');
+if (fs.existsSync('supabase/baseline/supabase_baseline_v6_9.sql')) failures.push('Obsolete v6.9 fresh-install baseline must be removed');
 if (!fs.existsSync('test/supabase-baseline-rc99.test.js')) failures.push('Missing RC99 Supabase baseline regression test');
 for (const marker of [
   'create table if not exists public.model_calibration_transitions',
@@ -151,15 +154,15 @@ if (!worker.includes("dynamicRussianLocalization: 'enabled'")) failures.push('Dy
 if (!worker.includes("adminTextHumanization: 'enabled'")) failures.push('Admin text humanization health contract is missing');
 if (!worker.includes("matchCenterRussianLocalization: 'enabled'")) failures.push('Match-center Russian localization health contract is missing');
 
-const migration = fs.readFileSync('supabase_migration_v6_10.sql', 'utf8');
+const migration = fs.readFileSync('supabase/migrations/supabase_migration_v6_10.sql', 'utf8');
 if (!migration.includes('transition_model_calibration')) failures.push('Missing atomic calibration transition RPC');
 if (!migration.includes('alter table public.model_calibration_validations enable row level security')) failures.push('Missing validation-table RLS remediation');
 
-const securityMigration = fs.readFileSync('supabase_migration_v6_11.sql', 'utf8');
+const securityMigration = fs.readFileSync('supabase/migrations/supabase_migration_v6_11.sql', 'utf8');
 if (!securityMigration.includes('backend_security_contract')) failures.push('Missing backend security contract RPC');
 if (!securityMigration.includes('revoke all privileges on all tables in schema public')) failures.push('Missing backend-table privilege lockdown');
 
-const defaultAclMigration = fs.readFileSync('supabase_migration_v6_11_1.sql', 'utf8');
+const defaultAclMigration = fs.readFileSync('supabase/migrations/supabase_migration_v6_11_1.sql', 'utf8');
 if (!defaultAclMigration.includes('application_owners')) failures.push('Missing application-owner default ACL audit');
 if (!defaultAclMigration.includes('backend_default_acl_contract')) failures.push('Missing default ACL security contract RPC');
 
@@ -340,7 +343,7 @@ if (!postDeploySmoke.includes("'supabaseSchemaDriftGuard'") || !postDeploySmoke.
 if (!fs.existsSync('MEDIA_LAUNCH_RU.md')) failures.push('Missing RC53 media launch kit');
 if (!fs.readFileSync('public/privacy.html','utf8').includes('События launch-аналитики хранятся до 90 дней')) failures.push('RC53 privacy attribution disclosure is missing');
 
-const launchMigration = fs.readFileSync('supabase_migration_v6_15.sql','utf8');
+const launchMigration = fs.readFileSync('supabase/migrations/supabase_migration_v6_15.sql','utf8');
 if (!launchMigration.includes('create table if not exists public.growth_events')) failures.push('RC53 growth_events table is missing');
 if (!launchMigration.includes('alter table public.growth_events enable row level security')) failures.push('RC53 growth_events RLS is missing');
 if (!launchMigration.includes('revoke all on table public.growth_events from anon, authenticated')) failures.push('RC53 growth_events anon/auth lockdown is missing');
