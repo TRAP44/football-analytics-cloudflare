@@ -1,4 +1,4 @@
-# Football Analytics Mini App v6.68.0 — RC76
+# Football Analytics Mini App v6.69.0 — RC77
 
 Telegram-бот и Mini App для футбольной аналитики на Cloudflare Workers + Supabase. Основные источники данных: API-Football и Tavily. Интерфейс и админ-панель — на русском языке. Монетизация пока отключена.
 
@@ -12,12 +12,13 @@ Telegram-бот и Mini App для футбольной аналитики на 
 - Публичный AI Track Record строится только по подтверждённым settled-прогнозам и не выдаёт совпадение исхода за прибыльность ставок.
 - Защита от вирусной нагрузки: distributed fixture lock, shared cache и безопасный fallback.
 - Медиа deep-link на fixture, publisher kit и агрегированная first-party аналитика source / campaign / content.
-- Новостной контур RC69–RC76: новость → релевантный матч → явная AI-перепроверка → News Impact Delta → **News Impact Decision Card** → **News Impact Action Tracking** → **News Impact Action Funnel** → **News Impact Funnel Confidence Guard** → **News Impact Funnel Trend Guard**.
+- Новостной контур RC69–RC77: новость → релевантный матч → явная AI-перепроверка → News Impact Delta → **News Impact Decision Card** → **News Impact Action Tracking** → **News Impact Action Funnel** → **News Impact Funnel Confidence Guard** → **News Impact Funnel Trend Guard** → **News Impact Temporal Attribution Guard**.
 - News Impact не утверждает причинность по заголовку: сравнение разрешено только с корректным AI-снимком, созданным до публикации новости.
 - RC73 считает только категориальные действия после Decision Card: полный AI, составы, рынок, повторная проверка, возврат к новостям и share. Текст новости, URL и пользовательский запрос в эту аналитику не записываются.
 - RC74 агрегирует эти действия по типу News Impact-решения, считает долю пользователей, которые продолжили сценарий, показывает наиболее частое следующее действие и состояние с самой низкой конверсией. Telegram ID наружу не возвращаются.
 - RC75 не объявляет состояние «узким местом» на микровыборке: нужен минимум 10 уникальных пользователей, при 30+ выборка помечается устойчивой; для каждой конверсии показывается 95% Wilson-интервал.
 - RC76 сравнивает текущий период с предыдущим периодом той же длины. Рост/снижение помечается подтверждённым только при достаточной выборке в обоих периодах и непересекающихся 95% Wilson-интервалах; иначе показывается «изменение не подтверждено».
+- RC77 связывает действие только с предшествующей Decision Card в 30-минутном окне. Решения младше 30 минут исключаются из знаменателя до завершения окна; действия сразу после границы предыдущего периода всё равно могут корректно атрибутироваться к решению.
 
 ## Архитектура
 
@@ -48,7 +49,7 @@ npm run verify:release
 npm run verify:worker
 ```
 
-Production smoke дополнительно проверяет `/health`, версию `6.68.0-rc76`, `releaseCandidate=RC76`, отключённый `DEV_MODE` и обязательные health/self-test флаги.
+Production smoke дополнительно проверяет `/health`, версию `6.69.0-rc77`, `releaseCandidate=RC77`, отключённый `DEV_MODE` и обязательные health/self-test флаги.
 
 ## Документация
 

@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.68.0-rc76';
+const CLIENT_VERSION = '6.69.0-rc77';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc76';
+const CLIENT_RELEASE_CHANNEL = 'rc77';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2928,6 +2928,7 @@ function renderLaunchFunnel() {
   const impactFunnel=Array.isArray(d.newsImpactActionFunnel) ? d.newsImpactActionFunnel : [];
   const impactBottleneck=d.newsImpactActionBottleneck || null;
   const impactConfidenceGuard=d.newsImpactActionConfidenceGuard || {minUsers:10,stableUsers:30};
+  const impactAttributionGuard=d.newsImpactActionAttributionGuard || {actionWindowMinutes:30,maturationMinutes:30};
   const impactTrend=Array.isArray(d.newsImpactActionTrend) ? d.newsImpactActionTrend : [];
   const impactTrendGuard=d.newsImpactActionTrendGuard || {comparisonDays:Number(d.days || 7)};
   kpis.innerHTML=`<div class="release-monitor-kpis">
@@ -2947,6 +2948,7 @@ function renderLaunchFunnel() {
   stages.innerHTML=`<div class="release-monitor-section-head"><strong>Воронка</strong><span>уникальные пользователи</span></div>
     ${bottleneck ? `<div class="data-notice">🎯 Узкое место: <strong>${escapeHtml(bottleneck.label || '')}</strong> · теряется ${launchFunnelPct(bottleneck.dropPct)} пользователей перехода.</div>` : ''}
     ${impactBottleneck && Number(impactBottleneck.users || 0) ? `<div class="data-notice">🧭 После News Impact: самая низкая конверсия при достаточной выборке у состояния <strong>${escapeHtml(impactBottleneck.label || impactBottleneck.code || '')}</strong> · ${Number(impactBottleneck.actedUsers || 0)} из ${Number(impactBottleneck.users || 0)} продолжили · ${launchFunnelPct(impactBottleneck.conversionPct)} · 95% ДИ ${launchFunnelPct(impactBottleneck.confidence?.lowerPct)}–${launchFunnelPct(impactBottleneck.confidence?.upperPct)}.</div>` : impactFunnel.some(x=>Number(x.users || 0)>0) ? `<div class="data-notice">🧪 News Impact: данных пока мало для определения узкого места. Нужно минимум <strong>${Number(impactConfidenceGuard.minUsers || 10)}</strong> пользователей в одном состоянии решения.</div>` : ''}
+    ${impactFunnel.some(x=>Number(x.observedUsers || 0)>0) ? `<div class="data-notice">⏱ Атрибуция действий: действие считается только после Decision Card и в течение <strong>${Number(impactAttributionGuard.actionWindowMinutes || 30)} мин.</strong>; решения младше ${Number(impactAttributionGuard.maturationMinutes || 30)} мин. ещё не входят в конверсию.</div>` : ''}
     ${Number(rechecks.total || 0) ? `<div class="data-notice">🕒 Freshness guard: <strong>${Number(rechecks.total || 0)}</strong> перепроверок · ${Number(rechecks.material || 0)} со значимыми изменениями · ${Number(rechecks.stable || 0)} без значимых изменений.</div>` : ''}
     ${Number(handoff.users || 0) ? `<div class="data-notice">⚡ One‑tap AI: <strong>${Number(handoff.users || 0)}</strong> пользователей получили Telegram‑бриф · ${Number(handoff.fullAiUsers || 0)} дошли до полного AI · конверсия ${launchFunnelPct(handoff.conversionPct)}.</div>` : ''}
     ${Number(media.deepLinkOpens || 0) ? `<div class="data-notice">📣 Media loop: <strong>${Number(media.shareEvents || 0)}</strong> созданных share-ссылок · ${Number(media.deepLinkOpens || 0)} открытий fixture deep-link · ${Number(media.aiUsers || 0)} пользователей получили AI без повторного поиска.</div>` : ''}
@@ -2960,7 +2962,7 @@ function renderLaunchFunnel() {
       <div class="launch-campaign-list">${impactFunnel.filter(x=>Number(x.users || 0)>0).map(x=>`<div>
         <span><b>${escapeHtml(x.label || x.code || '')}</b></span>
         <strong>${Number(x.actedUsers || 0)} / ${Number(x.users || 0)}</strong>
-        <small>${launchFunnelPct(x.conversionPct)} продолжили · 95% ДИ ${launchFunnelPct(x.confidence?.lowerPct)}–${launchFunnelPct(x.confidence?.upperPct)} · ${escapeHtml(x.confidence?.label || 'мало данных')} · чаще: ${escapeHtml(x.topAction?.label || 'нет действий')}</small>
+        <small>${launchFunnelPct(x.conversionPct)} продолжили · 95% ДИ ${launchFunnelPct(x.confidence?.lowerPct)}–${launchFunnelPct(x.confidence?.upperPct)} · ${escapeHtml(x.confidence?.label || 'мало данных')} · ${Number(x.immatureUsers || 0) ? `${Number(x.immatureUsers || 0)} свежих решений ещё не вошли · ` : ''}чаще: ${escapeHtml(x.topAction?.label || 'нет действий')}</small>
       </div>`).join('')}</div>` : ''}
     ${impactTrend.some(x=>Number(x.currentUsers || 0)>0 || Number(x.previousUsers || 0)>0) ? `<div class="release-monitor-section-head"><strong>Динамика News Impact</strong><span>текущие ${Number(impactTrendGuard.comparisonDays || d.days || 7)} дн. vs предыдущие</span></div>
       <div class="launch-campaign-list">${impactTrend.filter(x=>Number(x.currentUsers || 0)>0 || Number(x.previousUsers || 0)>0).map(x=>{

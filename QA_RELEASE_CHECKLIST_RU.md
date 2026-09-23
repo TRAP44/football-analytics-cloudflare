@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.68.0 RC76
+# QA Release Checklist — v6.69.0 RC77
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.68.0`.
-- Worker и client: `6.68.0-rc76`.
-- Release candidate: `RC76`.
+- `package.json` и `package-lock.json`: `6.69.0`.
+- Worker и client: `6.69.0-rc77`.
+- Release candidate: `RC77`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,18 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC77 — News Impact Temporal Attribution Guard
+
+- Действие считается конверсией только если оно произошло после News Impact Decision Card.
+- Окно атрибуции — 30 минут после решения; более поздние действия не приписываются старому решению.
+- Решения младше 30 минут временно исключаются из знаменателя, чтобы не создавать right-censoring и искусственно низкую конверсию.
+- Для каждого decision state API возвращает observedUsers, matured users и immatureUsers.
+- Для предыдущего периода разрешено учитывать действие, которое произошло сразу после границы периода, если оно попадает в 30-минутное окно соответствующего решения.
+- Действие до решения никогда не засчитывается.
+- Новая Supabase migration не требуется; используется существующий created_at в growth_events.
+- Regression: `test/news-impact-temporal-attribution-rc77.test.js`.
+- Production smoke требует `newsImpactTemporalAttributionSelfTest=enabled`.
 
 ## RC76 — News Impact Funnel Trend Guard
 
@@ -105,8 +117,8 @@ npm run verify:worker
 
 `scripts/post-deploy-smoke.js` должен подтвердить:
 - `/health.ok = true`;
-- `version = 6.68.0-rc76`;
-- `releaseCandidate = RC76`;
+- `version = 6.69.0-rc77`;
+- `releaseCandidate = RC77`;
 - `devMode = false`;
 - обязательные self-test/feature flags = `enabled`;
 - `/health/supabase` не доступен публично;

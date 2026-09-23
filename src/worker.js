@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.68.0-rc76';
+const APP_VERSION = '6.69.0-rc77';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc76';
-const RC_NAME = 'RC76';
+const RELEASE_CHANNEL = 'rc77';
+const RC_NAME = 'RC77';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1630,9 +1630,11 @@ async function apiLaunchFunnel(request,cfg) {
   const url=new URL(request.url);
   const days=Math.max(1,Math.min(30,Number(url.searchParams.get('days') || 7)));
   if (!hasSupabase(cfg)) return json({available:false,reason:'Supabase не настроен.',days});
-  const since=new Date(Date.now()-days*86400_000).toISOString();
-  const previousSince=new Date(Date.now()-days*2*86400_000).toISOString();
+  const analyticsNowMs=Date.now();
+  const since=new Date(analyticsNowMs-days*86400_000).toISOString();
+  const previousSince=new Date(analyticsNowMs-days*2*86400_000).toISOString();
   let rows=[];
+  let comparisonRows=[];
   let previousWindowRows=[];
   let truncated=false;
   let trendTruncated=false;
@@ -1646,13 +1648,15 @@ async function apiLaunchFunnel(request,cfg) {
   }
   try {
     const comparisonPage=await supaSelectPaged(cfg,'growth_events',{created_at:`gte.${previousSince}`},{pageSize:1000,maxRows:10000,order:'created_at.asc'});
-    previousWindowRows=(comparisonPage.rows || []).filter(row=>{
+    comparisonRows=comparisonPage.rows || [];
+    previousWindowRows=comparisonRows.filter(row=>{
       const createdAt=Date.parse(String(row?.created_at || ''));
       return Number.isFinite(createdAt) && createdAt<Date.parse(since);
     });
     trendTruncated=Boolean(comparisonPage.truncated);
   } catch {
     trendAvailable=false;
+    comparisonRows=[];
     previousWindowRows=[];
   }
   const setFor=(names)=>new Set(rows.filter(x=>names.includes(String(x.event_name || ''))).map(x=>Number(x.telegram_id || 0)).filter(Boolean));
@@ -1719,12 +1723,13 @@ async function apiLaunchFunnel(request,cfg) {
     news:newsImpactActionRows.filter(x=>newsImpactAction(x)==='news').length,
     share:newsImpactActionRows.filter(x=>newsImpactAction(x)==='share').length,
   };
-  const newsImpactActionFunnel=buildNewsImpactActionFunnel(newsImpactRows,newsImpactActionRows);
+  const newsImpactActionFunnel=buildNewsImpactActionFunnel(newsImpactRows,newsImpactActionRows,{asOfMs:analyticsNowMs});
   const newsImpactActionBottleneck=newsImpactActionFunnelBottleneck(newsImpactActionFunnel);
   const newsImpactActionConfidenceGuard={minUsers:NEWS_IMPACT_FUNNEL_MIN_USERS,stableUsers:NEWS_IMPACT_FUNNEL_STABLE_USERS,interval:'wilson_95'};
+  const newsImpactActionAttributionGuard={actionWindowMinutes:NEWS_IMPACT_ACTION_WINDOW_MINUTES,maturationMinutes:NEWS_IMPACT_ACTION_WINDOW_MINUTES,requiresActionAfterDecision:true,allowsBoundaryFollowup:true};
   const previousNewsImpactRows=previousWindowRows.filter(x=>String(x.event_name || '')==='news_impact_delta');
-  const previousNewsImpactActionRows=previousWindowRows.filter(x=>String(x.event_name || '')==='news_impact_action');
-  const previousNewsImpactActionFunnel=buildNewsImpactActionFunnel(previousNewsImpactRows,previousNewsImpactActionRows);
+  const previousNewsImpactActionRows=comparisonRows.filter(x=>String(x.event_name || '')==='news_impact_action');
+  const previousNewsImpactActionFunnel=buildNewsImpactActionFunnel(previousNewsImpactRows,previousNewsImpactActionRows,{asOfMs:analyticsNowMs});
   const newsImpactActionTrend=trendAvailable ? buildNewsImpactActionTrend(newsImpactActionFunnel,previousNewsImpactActionFunnel) : [];
   const newsImpactActionTrendGuard={comparisonDays:days,requiresBothPeriods:true,signalRule:'non_overlapping_wilson_95'};
   const shareRows=rows.filter(x=>['share_link_created','share_card_created'].includes(String(x.event_name || '')));
@@ -1777,6 +1782,7 @@ async function apiLaunchFunnel(request,cfg) {
     newsImpactActionFunnel,
     newsImpactActionBottleneck,
     newsImpactActionConfidenceGuard,
+    newsImpactActionAttributionGuard,
     newsImpactActionTrend,
     newsImpactActionTrendGuard,
     trendAvailable,
@@ -2636,21 +2642,46 @@ function newsImpactConversionConfidence(actedUsers = 0, users = 0) {
   };
 }
 
-function buildNewsImpactActionFunnel(decisionRows = [], actionRows = []) {
+const NEWS_IMPACT_ACTION_WINDOW_MINUTES = 30;
+const NEWS_IMPACT_ACTION_WINDOW_MS = NEWS_IMPACT_ACTION_WINDOW_MINUTES * 60_000;
+
+function newsImpactEventTime(row = {}) {
+  const at=Date.parse(String(row?.created_at || ''));
+  return Number.isFinite(at) ? at : NaN;
+}
+
+function buildNewsImpactActionFunnel(decisionRows = [], actionRows = [], options = {}) {
+  const asOfMs=Number.isFinite(Number(options?.asOfMs)) ? Number(options.asOfMs) : Date.now();
+  const actionWindowMinutes=Math.max(1,Math.min(180,Number(options?.actionWindowMinutes || NEWS_IMPACT_ACTION_WINDOW_MINUTES)));
+  const actionWindowMs=actionWindowMinutes*60_000;
+  const maturityCutoff=asOfMs-actionWindowMs;
   return NEWS_IMPACT_FUNNEL_DECISIONS.map(([code,label])=>{
-    const decisionUsers=new Set(
-      decisionRows
-        .filter(row=>newsImpactRowDecision(row)===code)
-        .map(row=>Number(row.telegram_id || 0))
-        .filter(Boolean)
-    );
+    const observedDecisionUsers=new Set();
+    const decisionTimesByUser=new Map();
+    for (const row of decisionRows) {
+      if (newsImpactRowDecision(row)!==code) continue;
+      const uid=Number(row.telegram_id || 0);
+      const decisionAt=newsImpactEventTime(row);
+      if (!uid) continue;
+      observedDecisionUsers.add(uid);
+      if (!Number.isFinite(decisionAt) || decisionAt>maturityCutoff) continue;
+      const times=decisionTimesByUser.get(uid) || [];
+      times.push(decisionAt);
+      decisionTimesByUser.set(uid,times);
+    }
+    const decisionUsers=new Set(decisionTimesByUser.keys());
+    const immatureUsers=[...observedDecisionUsers].filter(uid=>!decisionUsers.has(uid)).length;
     const actionUsersByCode={};
     for (const action of NEWS_IMPACT_ACTION_CODES) actionUsersByCode[action]=new Set();
     for (const row of actionRows) {
       if (newsImpactRowDecision(row)!==code) continue;
       const uid=Number(row.telegram_id || 0);
       const action=newsImpactRowAction(row);
-      if (!uid || !action || !decisionUsers.has(uid)) continue;
+      const actionAt=newsImpactEventTime(row);
+      if (!uid || !action || !decisionUsers.has(uid) || !Number.isFinite(actionAt)) continue;
+      const decisionTimes=decisionTimesByUser.get(uid) || [];
+      const attributed=decisionTimes.some(decisionAt=>actionAt>=decisionAt && actionAt<=decisionAt+actionWindowMs);
+      if (!attributed) continue;
       actionUsersByCode[action].add(uid);
     }
     const actedUsers=new Set();
@@ -2663,8 +2694,14 @@ function buildNewsImpactActionFunnel(decisionRows = [], actionRows = []) {
     const conversionPct=users ? Math.round((actedUsers.size/users)*1000)/10 : 0;
     const confidence=newsImpactConversionConfidence(actedUsers.size,users);
     return {
-      code,label,users,actedUsers:actedUsers.size,conversionPct,
+      code,label,
+      observedUsers:observedDecisionUsers.size,
+      users,
+      immatureUsers,
+      actedUsers:actedUsers.size,
+      conversionPct,
       dropPct:users ? Math.max(0,Math.round((100-conversionPct)*10)/10) : 0,
+      actionWindowMinutes,
       topAction:actionBreakdown[0] || null,
       actions:actionBreakdown,
       confidence,
@@ -2679,16 +2716,19 @@ function newsImpactActionFunnelBottleneck(rows = []) {
 }
 
 function newsImpactActionFunnelDrill() {
+  const asOfMs=Date.parse('2026-09-23T12:00:00Z');
+  const matureAt='2026-09-23T10:00:00Z';
+  const actionsAt='2026-09-23T10:10:00Z';
   const decisions=[
-    ...Array.from({length:10},(_,i)=>({telegram_id:i+1,metadata:{decision:'material'}})),
-    ...Array.from({length:30},(_,i)=>({telegram_id:i+11,metadata:{decision:'stable'}})),
+    ...Array.from({length:10},(_,i)=>({telegram_id:i+1,created_at:matureAt,metadata:{decision:'material'}})),
+    ...Array.from({length:30},(_,i)=>({telegram_id:i+11,created_at:matureAt,metadata:{decision:'stable'}})),
   ];
   const actions=[
-    ...Array.from({length:5},(_,i)=>({telegram_id:i+1,metadata:{decision:'material',action:'market'}})),
-    ...Array.from({length:30},(_,i)=>({telegram_id:i+11,metadata:{decision:'stable',action:'full_ai'}})),
-    {telegram_id:999,metadata:{decision:'material',action:'share'}},
+    ...Array.from({length:5},(_,i)=>({telegram_id:i+1,created_at:actionsAt,metadata:{decision:'material',action:'market'}})),
+    ...Array.from({length:30},(_,i)=>({telegram_id:i+11,created_at:actionsAt,metadata:{decision:'stable',action:'full_ai'}})),
+    {telegram_id:999,created_at:actionsAt,metadata:{decision:'material',action:'share'}},
   ];
-  const rows=buildNewsImpactActionFunnel(decisions,actions);
+  const rows=buildNewsImpactActionFunnel(decisions,actions,{asOfMs});
   const material=rows.find(x=>x.code==='material');
   const stable=rows.find(x=>x.code==='stable');
   const bottleneck=newsImpactActionFunnelBottleneck(rows);
@@ -2702,6 +2742,32 @@ function newsImpactActionFunnelDrill() {
       && stable?.confidence?.status==='stable'
       && bottleneck?.code==='material',
     cases:8,
+  };
+}
+
+function newsImpactTemporalAttributionDrill() {
+  const asOfMs=Date.parse('2026-09-23T12:00:00Z');
+  const decisions=[
+    {telegram_id:1,created_at:'2026-09-23T10:00:00Z',metadata:{decision:'material'}},
+    {telegram_id:2,created_at:'2026-09-23T10:00:00Z',metadata:{decision:'material'}},
+    {telegram_id:3,created_at:'2026-09-23T11:50:00Z',metadata:{decision:'material'}},
+  ];
+  const actions=[
+    {telegram_id:1,created_at:'2026-09-23T09:59:00Z',metadata:{decision:'material',action:'market'}},
+    {telegram_id:1,created_at:'2026-09-23T10:10:00Z',metadata:{decision:'material',action:'market'}},
+    {telegram_id:2,created_at:'2026-09-23T10:45:00Z',metadata:{decision:'material',action:'full_ai'}},
+    {telegram_id:3,created_at:'2026-09-23T11:55:00Z',metadata:{decision:'material',action:'share'}},
+  ];
+  const row=buildNewsImpactActionFunnel(decisions,actions,{asOfMs}).find(x=>x.code==='material');
+  return {
+    pass:row?.observedUsers===3
+      && row?.users===2
+      && row?.immatureUsers===1
+      && row?.actedUsers===1
+      && row?.market===undefined
+      && row?.topAction?.action==='market'
+      && row?.actionWindowMinutes===30,
+    cases:7,
   };
 }
 
@@ -15532,6 +15598,11 @@ export default {
         newsImpactPeriodComparison: 'enabled',
         newsImpactTrendSignificanceGuard: 'enabled',
         newsImpactActionTrendSelfTest: newsImpactActionTrendDrill().pass ? 'enabled' : 'failed',
+        newsImpactTemporalAttribution: 'enabled',
+        newsImpactActionWindowGuard: 'enabled',
+        newsImpactMaturityGuard: 'enabled',
+        newsImpactBoundaryAttribution: 'enabled',
+        newsImpactTemporalAttributionSelfTest: newsImpactTemporalAttributionDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
