@@ -1891,7 +1891,11 @@ function footballMatchActionKeyboard(request, match = {}, searchUrl = '', favori
   if (match?.live || match?.finished) {
     const rows = [];
     if (favoriteRow.length) rows.push(favoriteRow);
-    rows.push([{ text: match.live ? '🔴 Открыть LIVE-центр' : '📋 Открыть центр матча', web_app: { url: telegramWebAppUrl(request, { fixtureId, action: 'center' }) } }]);
+    if (match.finished) rows.push([
+      { text: '🧠 Итог AI', callback_data: `match:review:${fixtureId}` },
+      { text: '📋 Центр матча', web_app: { url: telegramWebAppUrl(request, { fixtureId, action: 'center' }) } },
+    ]);
+    else rows.push([{ text: '🔴 Открыть LIVE-центр', web_app: { url: telegramWebAppUrl(request, { fixtureId, action: 'center' }) } }]);
     if (searchUrl) rows.push([{ text: '🔎 Вернуться к поиску', web_app: { url: searchUrl } }]);
     return { inline_keyboard: rows };
   }
@@ -2234,17 +2238,70 @@ function botMarketRiskText(data = {}) {
   ].join('\n');
 }
 
+
+async function botMatchCenterFixture(request, cfg, fixtureId) {
+  const url=new URL(request.url);
+  url.pathname='/api/match-center';
+  url.search='';
+  url.searchParams.set('fixtureId',String(Number(fixtureId || 0)));
+  const response=await apiMatchCenter(new Request(url.toString(),{method:'GET'}),cfg);
+  let payload={};
+  try { payload=await response.json(); } catch {}
+  if (!response.ok) {
+    const error=new Error(payload?.error || 'Не удалось открыть центр матча.');
+    error.status=response.status;
+    error.payload=payload;
+    throw error;
+  }
+  return payload;
+}
+
+function botPostMatchReviewText(data = {}) {
+  const match=data.match || {};
+  const review=data.postMatchReview || {};
+  if (!review.available) {
+    return [
+      `🧠 <b>Итог AI · ${telegramHtmlEscape(match.home?.name || '')} — ${telegramHtmlEscape(match.away?.name || '')}</b>`,
+      '',
+      telegramHtmlEscape(review.summary || 'Для этого матча нет сохранённого предматчевого снимка, поэтому честное сравнение с AI-прогнозом недоступно.'),
+      '',
+      '<i>Фактические события и статистика доступны в центре матча.</i>',
+    ].join('\n');
+  }
+  const outcome=review.outcome || {};
+  const score=review.score || {};
+  const marketLines=(review.markets || []).map(x=>`${x.correct?'✓':'✕'} ${x.label}: ${x.predicted}${Number.isFinite(Number(x.probability))?` (${Number(x.probability)}%)`:''} → ${x.actual}`);
+  const evidence=(review.evidence || []).slice(0,3).map(x=>`• ${x.icon || '•'} ${x.title}: ${x.text}`);
+  return [
+    `🧠 <b>Итог AI · ${telegramHtmlEscape(match.home?.name || '')} — ${telegramHtmlEscape(match.away?.name || '')}</b>`,
+    `Счёт: <b>${Number(score.home)}:${Number(score.away)}</b>`,
+    '',
+    `${outcome.correct?'✅':'❌'} <b>${telegramHtmlEscape(review.headline || '')}</b>`,
+    `До матча: ${telegramHtmlEscape(outcome.predictedLabel || '—')}${Number.isFinite(Number(outcome.probability))?` · ${Number(outcome.probability)}%`:''}`,
+    `Факт: ${telegramHtmlEscape(outcome.actualLabel || '—')}`,
+    ...(marketLines.length ? ['', '<b>Дополнительные рынки:</b>', ...marketLines.map(telegramHtmlEscape)] : []),
+    ...(evidence.length ? ['', '<b>Что видно по матчу:</b>', ...evidence.map(telegramHtmlEscape)] : []),
+    '',
+    telegramHtmlEscape(review.calibration?.note || ''),
+    '<i>Наблюдаемые факторы не доказывают причинность результата.</i>',
+  ].filter(Boolean).join('\n');
+}
+
 async function sendBotFixtureSection(request, cfg, userId, chatId, fixtureId, section = 'verdict') {
   try {
-    const data = await botAnalyzeFixture(request, cfg, userId, fixtureId);
-    const text = section === 'referee' ? botRefereeText(data)
-      : section === 'squads' ? botSquadsText(data)
-        : section === 'market' ? botMarketRiskText(data)
-          : botAiVerdictText(data);
+    const data = section === 'review'
+      ? await botMatchCenterFixture(request, cfg, fixtureId)
+      : await botAnalyzeFixture(request, cfg, userId, fixtureId);
+    const text = section === 'review' ? botPostMatchReviewText(data)
+      : section === 'referee' ? botRefereeText(data)
+        : section === 'squads' ? botSquadsText(data)
+          : section === 'market' ? botMarketRiskText(data)
+            : botAiVerdictText(data);
     const match=normalizeBotFixtureCard(data.match);
     await rememberBotFixtureCards([match],cfg);
     const favorites=await getFavorites(userId,cfg).catch(()=>[]);
     if (section === 'verdict') void recordGrowthEvent(cfg,{userId,eventName:'quick_ai',channel:'telegram',fixtureId,metadata:{section}});
+    if (section === 'review') void recordGrowthEvent(cfg,{userId,eventName:'post_match_review',channel:'telegram',fixtureId,metadata:{available:Boolean(data?.postMatchReview?.available)}});
     await telegramApi('sendMessage',cfg,{
       chat_id:chatId,
       parse_mode:'HTML',
@@ -2829,13 +2886,13 @@ async function processTelegramUpdate(request, cfg, update) {
       await sendBotFavoriteTeamMatches(request,cfg,callbackUserId,callbackChatId,Number(favoriteAction[1]));
       return json({ok:true});
     }
-    const matchAction = data.match(/^match:(menu|verdict|referee|squads|market|refresh):(\d+)$/);
+    const matchAction = data.match(/^match:(menu|verdict|referee|squads|market|refresh|review):(\d+)$/);
     if (callbackChatId && matchAction) {
       const section = matchAction[1];
       const fixtureId = Number(matchAction[2]);
       await telegramApi('answerCallbackQuery', cfg, {
         callback_query_id: cb.id,
-        text: section === 'menu' ? 'Готовлю короткую AI-оценку…' : 'Собираю футбольные данные…',
+        text: section === 'menu' ? 'Готовлю короткую AI-оценку…' : section === 'review' ? 'Сверяю прогноз с фактом…' : 'Собираю футбольные данные…',
       }).catch(()=>null);
       if (section === 'menu') await sendBotFixtureMenu(request, cfg, callbackUserId, callbackChatId, fixtureId);
       else await sendBotFixtureSection(request, cfg, callbackUserId, callbackChatId, fixtureId, section === 'refresh' ? 'verdict' : section);
