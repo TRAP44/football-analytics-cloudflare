@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const sql = fs.readFileSync(new URL('../supabase_migration_v6_11.sql', import.meta.url), 'utf8').toLowerCase();
-const defaultsSql = fs.readFileSync(new URL('../supabase_migration_v6_11_1.sql', import.meta.url), 'utf8').toLowerCase();
+const sql = fs.readFileSync(new URL('../supabase/migrations/v6_11.sql', import.meta.url), 'utf8').toLowerCase();
+const defaultsSql = fs.readFileSync(new URL('../supabase/migrations/v6_11_1.sql', import.meta.url), 'utf8').toLowerCase();
 const worker = fs.readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8');
 
 test('RC19 removes direct browser-role access to backend objects', () => {
