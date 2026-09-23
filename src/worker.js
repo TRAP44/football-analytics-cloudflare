@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.57.0-rc65';
+const APP_VERSION = '6.58.0-rc66';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc65';
-const RC_NAME = 'RC65';
+const RELEASE_CHANNEL = 'rc66';
+const RC_NAME = 'RC66';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -3430,6 +3430,104 @@ async function setCache(cacheKey, fixtureId, payload, cfg, minutes = cfg.cacheMi
     // Cache persistence is an optimization. Do not fail a successful user request
     // only because the shared cache could not be written.
   }
+}
+
+
+const DISTRIBUTED_ANALYSIS_LOCK_TTL_SECONDS = 90;
+const DISTRIBUTED_ANALYSIS_WAIT_ATTEMPTS = 4;
+const DISTRIBUTED_ANALYSIS_WAIT_MS = 1600;
+
+function distributedAnalysisLockKey(fixtureId) {
+  return `analysis:compute-lock:${Number(fixtureId || 0)}:v1`;
+}
+
+function distributedAnalysisLockPolicy() {
+  return {
+    ttlSeconds:DISTRIBUTED_ANALYSIS_LOCK_TTL_SECONDS,
+    waitAttempts:DISTRIBUTED_ANALYSIS_WAIT_ATTEMPTS,
+    waitMs:DISTRIBUTED_ANALYSIS_WAIT_MS,
+    maxWaitMs:DISTRIBUTED_ANALYSIS_WAIT_ATTEMPTS*DISTRIBUTED_ANALYSIS_WAIT_MS,
+  };
+}
+
+async function claimDistributedAnalysisLock(fixtureId,cfg) {
+  const id=Number(fixtureId || 0);
+  const key=distributedAnalysisLockKey(id);
+  if (!hasSupabase(cfg)) return {claimed:true,key,claimId:'local-only',shared:false,degraded:false};
+  try {
+    const existing=await getCacheEntry(key,cfg,true).catch(()=>null);
+    if (existing && !existing.expired) {
+      bumpTelemetry('analysisLockJoins');
+      return {claimed:false,key,claimId:'',shared:true,degraded:false};
+    }
+    if (existing?.expired) {
+      memory.cache.delete(key);
+      await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${key}`}).catch(()=>null);
+    }
+
+    const claimId=crypto.randomUUID();
+    const expiresAt=new Date(Date.now()+DISTRIBUTED_ANALYSIS_LOCK_TTL_SECONDS*1000).toISOString();
+    const payload={state:'computing',fixtureId:id,claimId,claimedAt:new Date().toISOString(),version:APP_VERSION};
+    const url=new URL(`${cfg.supabaseUrl}/rest/v1/analysis_cache`);
+    url.searchParams.set('on_conflict','cache_key');
+    const r=await fetchWithTimeout(url,{
+      method:'POST',
+      headers:supaHeaders(cfg,{Prefer:'resolution=ignore-duplicates,return=representation'}),
+      body:JSON.stringify([{cache_key:key,fixture_id:id,payload,expires_at:expiresAt}]),
+    },7000,'Supabase analysis compute lock');
+    if (!r.ok) throw new Error(`analysis lock HTTP ${r.status}`);
+    const rows=await r.json().catch(()=>[]);
+    if (Array.isArray(rows) && rows.length===1) {
+      memory.cache.set(key,{payload,expiresAt:Date.parse(expiresAt)});
+      bumpTelemetry('analysisLockClaims');
+      return {claimed:true,key,claimId,shared:true,degraded:false};
+    }
+    bumpTelemetry('analysisLockJoins');
+    return {claimed:false,key,claimId:'',shared:true,degraded:false};
+  } catch (error) {
+    bumpTelemetry('analysisLockFailOpen');
+    void recordOpsEvent(cfg,{
+      severity:'warning',
+      source:'analysis_lock',
+      eventType:'analysis_lock_degraded',
+      code:'ANALYSIS_LOCK_FAIL_OPEN',
+      message:error?.message || error,
+      endpoint:'/api/analyze',
+      meta:{fixtureId:id},
+    }).catch(()=>null);
+    return {claimed:true,key,claimId:'fail-open',shared:false,degraded:true};
+  }
+}
+
+async function releaseDistributedAnalysisLock(lock,cfg) {
+  if (!lock?.shared || !lock?.claimId) return;
+  try {
+    const row=await supaSelectOne(cfg,'analysis_cache',{cache_key:`eq.${lock.key}`});
+    if (String(row?.payload?.claimId || '')!==String(lock.claimId)) return;
+    memory.cache.delete(lock.key);
+    await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${lock.key}`});
+  } catch {
+    // TTL is the final safety net if cleanup fails.
+  }
+}
+
+async function waitForSharedAnalysis(cacheKey,cfg) {
+  for (let attempt=0;attempt<DISTRIBUTED_ANALYSIS_WAIT_ATTEMPTS;attempt++) {
+    await sleepMs(DISTRIBUTED_ANALYSIS_WAIT_MS);
+    const ready=await getCache(cacheKey,cfg).catch(()=>null);
+    if (ready) {
+      bumpTelemetry('analysisLockJoinHits');
+      return ready;
+    }
+  }
+  bumpTelemetry('analysisLockTimeouts');
+  return null;
+}
+
+function distributedAnalysisLockDrill() {
+  const p=distributedAnalysisLockPolicy();
+  const key=distributedAnalysisLockKey(12345);
+  return {pass:key==='analysis:compute-lock:12345:v1' && p.ttlSeconds>=60 && p.maxWaitMs>=5000 && p.maxWaitMs<15000,ttlSeconds:p.ttlSeconds,maxWaitMs:p.maxWaitMs};
 }
 
 function predictionOutcomeKey(probabilities) {
@@ -14017,6 +14115,22 @@ async function apiAnalyze(request, cfg, user) {
   const quotaBefore = await getQuota(user.id, cfg);
   if (!freeRecheck && quotaBefore.left <= 0) return json({ error: `Лимит исчерпан: ${quotaBefore.used}/${quotaBefore.limit} анализов сегодня.`, quota: quotaBefore }, 429);
 
+  const analysisLock=await claimDistributedAnalysisLock(fixtureId,cfg);
+  if (!analysisLock.claimed) {
+    const joined=await waitForSharedAnalysis(cacheKey,cfg);
+    if (joined) {
+      await recordHistory(user.id,joined,cfg);
+      if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,sharedJoin:true}});
+      return json(analysisResponsePayload(joined,{cached:true,stale:false,sharedJoin:true,recheck:{requested:recheckRequested,performed:needsFreshnessRecheck,free:freeRecheck,reasonCode:previousFreshness?.reasonCode || 'shared_compute'},quota:await getQuota(user.id,cfg)}));
+    }
+    if (staleBefore) {
+      await recordHistory(user.id,staleBefore,cfg);
+      return json(analysisResponsePayload(staleBefore,{cached:true,stale:true,sharedJoinPending:true,warning:'Свежий расчёт этого матча уже выполняется. Пока показан последний сохранённый анализ.',retryAfter:5,recheck:{requested:recheckRequested,performed:false,free:freeRecheck,reasonCode:'shared_compute_pending'},quota:quotaBefore}));
+    }
+    return json({error:'AI-разбор этого матча уже рассчитывается для других пользователей. Повторите через несколько секунд.',code:'ANALYSIS_WARMING',retryAfter:5,quota:quotaBefore},429,{'retry-after':'5'});
+  }
+
+  try {
   let fixture;
   try {
     fixture = (await apiFootball('/fixtures', { id: fixtureId }, cfg))[0];
@@ -14244,6 +14358,9 @@ async function apiAnalyze(request, cfg, user) {
   if (needsFreshnessRecheck) void recordGrowthEvent(cfg,{userId:user.id,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:previousFreshness?.reasonCode || 'age_window',material:Boolean(recheckDelta?.material),stable:Boolean(recheckDelta?.stable),changeCount:Number(recheckDelta?.items?.length || 0),codes:(recheckDelta?.codes || []).slice(0,6)}});
   if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:false,recheck:needsFreshnessRecheck}});
   return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:needsFreshnessRecheck,free:freeRecheck,reasonCode:previousFreshness?.reasonCode || 'fresh',delta:recheckDelta},quota:await getQuota(user.id,cfg)}));
+  } finally {
+    await releaseDistributedAnalysisLock(analysisLock,cfg);
+  }
 }
 
 async function publicServiceStatus(cfg) {
@@ -14457,6 +14574,12 @@ export default {
         deepLinkAutoAnalysis: 'enabled',
         telegramNativeShare: 'enabled',
         fixtureDeepLinkSelfTest: fixtureDeepLinkDrill().pass ? 'enabled' : 'failed',
+        distributedAnalysisLock: 'enabled',
+        viralFixtureCollapse: 'enabled',
+        crossInstanceAnalysisDedupe: 'enabled',
+        analysisLockFailOpen: 'enabled',
+        sharedAnalysisWaitFallback: 'enabled',
+        distributedAnalysisLockSelfTest: distributedAnalysisLockDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
