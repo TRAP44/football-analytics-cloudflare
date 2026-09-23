@@ -73,6 +73,9 @@ const memory = {
     burstBlocks: 0,
     telegramBurstBlocks: 0,
     telegramDuplicateUpdates: 0,
+    userAnalysisLeaseClaims: 0,
+    userAnalysisLeaseBlocks: 0,
+    userAnalysisLeaseFailOpen: 0,
     upstreamTimeouts: 0,
     userSyncSkips: 0,
     memoryPrunes: 0,
@@ -81,11 +84,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.98.0-rc106';
+const APP_VERSION = '6.99.0-rc107';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc106';
-const RC_NAME = 'RC106';
+const RELEASE_CHANNEL = 'rc107';
+const RC_NAME = 'RC107';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -689,6 +692,7 @@ function appManifest(cfg) {
       primaryMatchRecommendation: true,
       oneTapAiHandoff: true,
       telegramMiniAppE2E: true,
+      multiUserAnalysisAdmission: true,
       cachedFullAnalysisHandoff: true,
       aiFreshnessGuard: true,
       preKickoffRecheck: true,
@@ -1015,6 +1019,12 @@ function productionSafetySnapshot() {
       timeouts:Number(memory.telemetry?.analysisLockTimeouts || 0),
       failOpen:Number(memory.telemetry?.analysisLockFailOpen || 0),
       policy:distributedAnalysisLockPolicy(),
+    },
+    userAnalysisAdmission: {
+      claims:Number(memory.telemetry?.userAnalysisLeaseClaims || 0),
+      blocked:Number(memory.telemetry?.userAnalysisLeaseBlocks || 0),
+      failOpen:Number(memory.telemetry?.userAnalysisLeaseFailOpen || 0),
+      policy:userAnalysisLeasePolicy(),
     },
     burstGuard: {
       activeBuckets: memory.routeBurst.size,
@@ -7692,6 +7702,121 @@ function distributedAnalysisLockDrill() {
   return {pass:key==='analysis:compute-lock:12345:v1' && p.ttlSeconds>=60 && p.maxWaitMs>=5000 && p.maxWaitMs<15000,ttlSeconds:p.ttlSeconds,maxWaitMs:p.maxWaitMs};
 }
 
+const USER_ANALYSIS_LEASE_TTL_SECONDS = 120;
+
+function userAnalysisLeaseKey(userId) {
+  return `analysis:user-lease:${Number(userId || 0)}:v1`;
+}
+
+function userAnalysisLeasePolicy() {
+  return {
+    ttlSeconds:USER_ANALYSIS_LEASE_TTL_SECONDS,
+    maxConcurrentFreshAnalysesPerUser:1,
+    scope:'distributed',
+  };
+}
+
+async function claimUserAnalysisLease(userId, fixtureId, cfg) {
+  const uid=Number(userId || 0);
+  const id=Number(fixtureId || 0);
+  const key=userAnalysisLeaseKey(uid);
+  if (!uid || !id) return {claimed:false,key,claimId:'',shared:false,degraded:false,reason:'invalid_identity'};
+
+  if (!hasSupabase(cfg)) {
+    const current=memory.cache.get(key);
+    if (current && Number(current.expiresAt || 0)>Date.now()) {
+      bumpTelemetry('userAnalysisLeaseBlocks');
+      return {claimed:false,key,claimId:'',shared:false,degraded:false,activeFixtureId:Number(current?.payload?.fixtureId || 0)};
+    }
+    const claimId=crypto.randomUUID();
+    const expiresAt=Date.now()+USER_ANALYSIS_LEASE_TTL_SECONDS*1000;
+    memory.cache.set(key,{payload:{state:'computing',fixtureId:id,claimId},expiresAt});
+    bumpTelemetry('userAnalysisLeaseClaims');
+    return {claimed:true,key,claimId,shared:false,degraded:false,local:true};
+  }
+
+  try {
+    const existing=await getCacheEntry(key,cfg,true).catch(()=>null);
+    if (existing && !existing.expired) {
+      bumpTelemetry('userAnalysisLeaseBlocks');
+      return {claimed:false,key,claimId:'',shared:true,degraded:false,activeFixtureId:Number(existing?.payload?.fixtureId || 0)};
+    }
+    if (existing?.expired) {
+      memory.cache.delete(key);
+      await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${key}`}).catch(()=>null);
+    }
+
+    const claimId=crypto.randomUUID();
+    const expiresAt=new Date(Date.now()+USER_ANALYSIS_LEASE_TTL_SECONDS*1000).toISOString();
+    const payload={state:'computing',fixtureId:id,claimId,claimedAt:new Date().toISOString(),version:APP_VERSION};
+    const url=new URL(`${cfg.supabaseUrl}/rest/v1/analysis_cache`);
+    url.searchParams.set('on_conflict','cache_key');
+    const r=await fetchWithTimeout(url,{
+      method:'POST',
+      headers:supaHeaders(cfg,{Prefer:'resolution=ignore-duplicates,return=representation'}),
+      body:JSON.stringify([{cache_key:key,fixture_id:id,payload,expires_at:expiresAt}]),
+    },7000,'Supabase user analysis lease');
+    if (!r.ok) throw new Error(`user analysis lease HTTP ${r.status}`);
+    const rows=await r.json().catch(()=>[]);
+    if (Array.isArray(rows) && rows.length===1) {
+      memory.cache.set(key,{payload,expiresAt:Date.parse(expiresAt)});
+      bumpTelemetry('userAnalysisLeaseClaims');
+      return {claimed:true,key,claimId,shared:true,degraded:false};
+    }
+    bumpTelemetry('userAnalysisLeaseBlocks');
+    const winner=await getCacheEntry(key,cfg,true).catch(()=>null);
+    return {claimed:false,key,claimId:'',shared:true,degraded:false,activeFixtureId:Number(winner?.payload?.fixtureId || 0)};
+  } catch (error) {
+    bumpTelemetry('userAnalysisLeaseFailOpen');
+    void recordOpsEvent(cfg,{
+      severity:'warning',
+      source:'analysis_admission',
+      eventType:'user_analysis_lease_degraded',
+      code:'USER_ANALYSIS_LEASE_FAIL_OPEN',
+      message:error?.message || error,
+      endpoint:'/api/analyze',
+      meta:{fixtureId:id},
+    }).catch(()=>null);
+    return {claimed:true,key,claimId:'fail-open',shared:false,degraded:true};
+  }
+}
+
+async function releaseUserAnalysisLease(lease,cfg) {
+  if (!lease?.claimId) return;
+  if (!lease?.shared) {
+    const current=memory.cache.get(lease.key);
+    if (String(current?.payload?.claimId || '')===String(lease.claimId)) memory.cache.delete(lease.key);
+    return;
+  }
+  try {
+    const row=await supaSelectOne(cfg,'analysis_cache',{cache_key:`eq.${lease.key}`});
+    if (String(row?.payload?.claimId || '')!==String(lease.claimId)) return;
+    memory.cache.delete(lease.key);
+    await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${lease.key}`});
+  } catch {
+    // TTL is the final safety net if cleanup fails.
+  }
+}
+
+function publicAdmissionSelfTest() {
+  const lease=userAnalysisLeasePolicy();
+  const analysis=routeBurstPolicy('/api/analyze');
+  const search=routeBurstPolicy('/api/search');
+  const fixtureLock=distributedAnalysisLockPolicy();
+  return {
+    pass:userAnalysisLeaseKey(42)==='analysis:user-lease:42:v1'
+      && lease.maxConcurrentFreshAnalysesPerUser===1
+      && lease.ttlSeconds>=60 && lease.ttlSeconds<=180
+      && Number(analysis?.limit || 0)>0 && Number(analysis?.limit || 0)<=3
+      && Number(search?.limit || 0)>0 && Number(search?.limit || 0)<=10
+      && fixtureLock.maxWaitMs<15000,
+    userConcurrency:lease.maxConcurrentFreshAnalysesPerUser,
+    analysisBurst:Number(analysis?.limit || 0),
+    searchBurst:Number(search?.limit || 0),
+    leaseTtlSeconds:lease.ttlSeconds,
+  };
+}
+
 function predictionOutcomeKey(probabilities) {
   if (!probabilities) return '';
   const rows = [
@@ -14318,6 +14443,7 @@ async function apiReleaseReadiness(request, cfg) {
   const providerReliabilitySelfTest = providerDataReliabilitySelfTest();
   const aiQualityGateSelfTest = analysisQualityGateSelfTest();
   const telegramMiniAppE2ESelfTest = telegramMiniAppE2EDrill();
+  const publicAdmissionSelfTestResult = publicAdmissionSelfTest();
   const checks = [
     releaseCheck('football_api', 'Ключ API-Football', cfg.apiFootballKey ? 'pass' : 'fail', cfg.apiFootballKey ? 'Ключ доступен серверному обработчику.' : 'Ключ API-Football отсутствует.', true),
     releaseCheck('supabase_config', 'Настройка Supabase', hasSupabase(cfg) ? 'pass' : 'fail', hasSupabase(cfg) ? 'Адрес и сервисный ключ доступны серверу.' : 'Не хватает адреса Supabase или сервисного ключа.', true),
@@ -14340,6 +14466,10 @@ async function apiReleaseReadiness(request, cfg) {
       telegramMiniAppE2ESelfTest.pass
         ? `Проверено ${telegramMiniAppE2ESelfTest.cases} переходов: поиск → матч → Quick AI → полный анализ → избранное.`
         : 'Серверный Telegram/Mini App handoff-контракт нарушен.', true),
+    releaseCheck('public_multi_user_admission_selftest', 'Multi-user analysis admission', publicAdmissionSelfTestResult.pass ? 'pass' : 'fail',
+      publicAdmissionSelfTestResult.pass
+        ? `На пользователя одновременно разрешён ${publicAdmissionSelfTestResult.userConcurrency} fresh-анализ; burst /analyze=${publicAdmissionSelfTestResult.analysisBurst}, /search=${publicAdmissionSelfTestResult.searchBurst}.`
+        : 'Public admission guard не удерживает конкурентные дорогие запросы.', true),
     releaseCheck('backend_security_contract', 'Контракт безопасности Supabase', backendSecurity.ok ? 'pass' : 'fail',
       backendSecurity.ok
         ? 'Все публичные таблицы защищены правилами доступа; анонимный и авторизованный клиент не имеют прямых прав; серверные процедуры закрыты.'
@@ -19105,6 +19235,17 @@ async function apiAnalyze(request, cfg, user) {
     return await trackedFullAiFailureResponse({error:'AI-разбор этого матча уже рассчитывается для других пользователей. Повторите через несколько секунд.',code:'ANALYSIS_WARMING',retryAfter:5,quota:quotaBefore},429,'analysis_warming',{'retry-after':'5'});
   }
 
+  const userAnalysisLease=await claimUserAnalysisLease(user.id,fixtureId,cfg);
+  if (!userAnalysisLease.claimed) {
+    await releaseDistributedAnalysisLock(analysisLock,cfg);
+    return await trackedFullAiFailureResponse({
+      error:'У вас уже выполняется другой свежий AI-разбор. Дождитесь его завершения и повторите запрос.',
+      code:'ANALYSIS_USER_BUSY',
+      retryAfter:8,
+      quota:quotaBefore,
+    },429,'analysis_user_busy',{'retry-after':'8'});
+  }
+
   try {
   let fixture;
   try {
@@ -19369,6 +19510,7 @@ async function apiAnalyze(request, cfg, user) {
   await recordTrackedFullAiOutcome('fresh');
   return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:recheckReasonCode,delta:recheckDelta},newsImpact,quota:await getQuota(user.id,cfg)}));
   } finally {
+    await releaseUserAnalysisLease(userAnalysisLease,cfg);
     await releaseDistributedAnalysisLock(analysisLock,cfg);
   }
   } catch (error) {
@@ -19547,6 +19689,8 @@ export default {
         oneTapHandoffSelfTest: oneTapHandoffDrill().pass ? 'enabled' : 'failed',
         telegramMiniAppE2E: 'enabled',
         telegramMiniAppE2ESelfTest: telegramMiniAppE2EDrill().pass ? 'enabled' : 'failed',
+        multiUserAnalysisAdmission: 'enabled',
+        multiUserAnalysisAdmissionSelfTest: publicAdmissionSelfTest().pass ? 'enabled' : 'failed',
         aiFreshnessGuard: 'enabled',
         preKickoffRecheck: 'enabled',
         userScopedFreeRecheck: 'enabled',
