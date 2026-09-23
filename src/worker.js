@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.67.0-rc75';
+const APP_VERSION = '6.68.0-rc76';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc75';
-const RC_NAME = 'RC75';
+const RELEASE_CHANNEL = 'rc76';
+const RC_NAME = 'RC76';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1631,14 +1631,29 @@ async function apiLaunchFunnel(request,cfg) {
   const days=Math.max(1,Math.min(30,Number(url.searchParams.get('days') || 7)));
   if (!hasSupabase(cfg)) return json({available:false,reason:'Supabase не настроен.',days});
   const since=new Date(Date.now()-days*86400_000).toISOString();
+  const previousSince=new Date(Date.now()-days*2*86400_000).toISOString();
   let rows=[];
+  let previousWindowRows=[];
   let truncated=false;
+  let trendTruncated=false;
+  let trendAvailable=true;
   try {
     const page=await supaSelectPaged(cfg,'growth_events',{created_at:`gte.${since}`},{pageSize:1000,maxRows:10000,order:'created_at.asc'});
     rows=page.rows;
     truncated=Boolean(page.truncated);
   } catch (error) {
     return json({available:false,reason:'Нужна миграция v6.15 или временно недоступна база.',days,error:redactOpsString(error?.message || error,120)});
+  }
+  try {
+    const comparisonPage=await supaSelectPaged(cfg,'growth_events',{created_at:`gte.${previousSince}`},{pageSize:1000,maxRows:10000,order:'created_at.asc'});
+    previousWindowRows=(comparisonPage.rows || []).filter(row=>{
+      const createdAt=Date.parse(String(row?.created_at || ''));
+      return Number.isFinite(createdAt) && createdAt<Date.parse(since);
+    });
+    trendTruncated=Boolean(comparisonPage.truncated);
+  } catch {
+    trendAvailable=false;
+    previousWindowRows=[];
   }
   const setFor=(names)=>new Set(rows.filter(x=>names.includes(String(x.event_name || ''))).map(x=>Number(x.telegram_id || 0)).filter(Boolean));
   const entry=new Set([...setFor(['bot_start']),...setFor(['miniapp_open'])]);
@@ -1707,6 +1722,11 @@ async function apiLaunchFunnel(request,cfg) {
   const newsImpactActionFunnel=buildNewsImpactActionFunnel(newsImpactRows,newsImpactActionRows);
   const newsImpactActionBottleneck=newsImpactActionFunnelBottleneck(newsImpactActionFunnel);
   const newsImpactActionConfidenceGuard={minUsers:NEWS_IMPACT_FUNNEL_MIN_USERS,stableUsers:NEWS_IMPACT_FUNNEL_STABLE_USERS,interval:'wilson_95'};
+  const previousNewsImpactRows=previousWindowRows.filter(x=>String(x.event_name || '')==='news_impact_delta');
+  const previousNewsImpactActionRows=previousWindowRows.filter(x=>String(x.event_name || '')==='news_impact_action');
+  const previousNewsImpactActionFunnel=buildNewsImpactActionFunnel(previousNewsImpactRows,previousNewsImpactActionRows);
+  const newsImpactActionTrend=trendAvailable ? buildNewsImpactActionTrend(newsImpactActionFunnel,previousNewsImpactActionFunnel) : [];
+  const newsImpactActionTrendGuard={comparisonDays:days,requiresBothPeriods:true,signalRule:'non_overlapping_wilson_95'};
   const shareRows=rows.filter(x=>['share_link_created','share_card_created'].includes(String(x.event_name || '')));
   const deepLinkRows=rows.filter(x=>String(x.event_name || '')==='fixture_deep_link_open');
   const deepLinkUsers=new Set(deepLinkRows.map(x=>Number(x.telegram_id || 0)).filter(Boolean));
@@ -1757,6 +1777,10 @@ async function apiLaunchFunnel(request,cfg) {
     newsImpactActionFunnel,
     newsImpactActionBottleneck,
     newsImpactActionConfidenceGuard,
+    newsImpactActionTrend,
+    newsImpactActionTrendGuard,
+    trendAvailable,
+    trendTruncated,
     mediaLoop:{shareEvents:shareRows.length,shareUsers:shareUsers.size,deepLinkOpens:deepLinkRows.length,deepLinkUsers:deepLinkUsers.size,aiUsers:deepLinkAiUsers.size,conversionPct:deepLinkUsers.size?Math.round((deepLinkAiUsers.size/deepLinkUsers.size)*1000)/10:0},
     searchQuality:{attempts:searchResultRows.length,match:searchMatches,recognizedNoMatch:searchRecognizedNoMatch,notFound:searchNotFound,recoveredRecent:searchRecoveredRecent,matchPct:searchResultRows.length?Math.round((searchMatches/searchResultRows.length)*1000)/10:0},
     campaigns,
@@ -2695,6 +2719,61 @@ function newsImpactFunnelConfidenceDrill() {
       && stable.status==='stable'
       && stable.stable===true,
     cases:8,
+  };
+}
+
+function newsImpactTrendSignal(current = {}, previous = {}) {
+  const currentConfidence=current?.confidence || {};
+  const previousConfidence=previous?.confidence || {};
+  if (!currentConfidence.eligibleForBottleneck || !previousConfidence.eligibleForBottleneck) return 'insufficient';
+  if (Number(currentConfidence.lowerPct || 0)>Number(previousConfidence.upperPct || 0)) return 'improved';
+  if (Number(currentConfidence.upperPct || 0)<Number(previousConfidence.lowerPct || 0)) return 'weakened';
+  return 'uncertain';
+}
+
+function buildNewsImpactActionTrend(currentRows = [], previousRows = []) {
+  const previousByCode=new Map((previousRows || []).map(row=>[String(row.code || ''),row]));
+  return (currentRows || []).map(current=>{
+    const previous=previousByCode.get(String(current.code || '')) || {
+      code:String(current.code || ''),label:String(current.label || ''),
+      users:0,actedUsers:0,conversionPct:0,
+      confidence:newsImpactConversionConfidence(0,0),
+    };
+    const signal=newsImpactTrendSignal(current,previous);
+    const deltaPctPoints=Math.round((Number(current.conversionPct || 0)-Number(previous.conversionPct || 0))*10)/10;
+    return {
+      code:String(current.code || ''),
+      label:String(current.label || ''),
+      signal,
+      deltaPctPoints,
+      currentUsers:Number(current.users || 0),
+      previousUsers:Number(previous.users || 0),
+      currentPct:Number(current.conversionPct || 0),
+      previousPct:Number(previous.conversionPct || 0),
+      currentConfidence:current.confidence || newsImpactConversionConfidence(0,0),
+      previousConfidence:previous.confidence || newsImpactConversionConfidence(0,0),
+    };
+  });
+}
+
+function newsImpactActionTrendDrill() {
+  const current=[
+    {code:'material',label:'material',users:30,conversionPct:66.7,confidence:newsImpactConversionConfidence(20,30)},
+    {code:'stable',label:'stable',users:30,conversionPct:50,confidence:newsImpactConversionConfidence(15,30)},
+    {code:'detail',label:'detail',users:5,conversionPct:40,confidence:newsImpactConversionConfidence(2,5)},
+  ];
+  const previous=[
+    {code:'material',label:'material',users:30,conversionPct:16.7,confidence:newsImpactConversionConfidence(5,30)},
+    {code:'stable',label:'stable',users:30,conversionPct:46.7,confidence:newsImpactConversionConfidence(14,30)},
+    {code:'detail',label:'detail',users:5,conversionPct:20,confidence:newsImpactConversionConfidence(1,5)},
+  ];
+  const trend=buildNewsImpactActionTrend(current,previous);
+  return {
+    pass:trend.find(x=>x.code==='material')?.signal==='improved'
+      && trend.find(x=>x.code==='stable')?.signal==='uncertain'
+      && trend.find(x=>x.code==='detail')?.signal==='insufficient'
+      && trend.find(x=>x.code==='material')?.deltaPctPoints===50,
+    cases:4,
   };
 }
 
@@ -15449,6 +15528,10 @@ export default {
         newsImpactWilsonInterval: 'enabled',
         newsImpactSampleGate: 'enabled',
         newsImpactFunnelConfidenceSelfTest: newsImpactFunnelConfidenceDrill().pass ? 'enabled' : 'failed',
+        newsImpactFunnelTrend: 'enabled',
+        newsImpactPeriodComparison: 'enabled',
+        newsImpactTrendSignificanceGuard: 'enabled',
+        newsImpactActionTrendSelfTest: newsImpactActionTrendDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',

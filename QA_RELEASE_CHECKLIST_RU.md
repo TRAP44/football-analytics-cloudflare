@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.67.0 RC75
+# QA Release Checklist — v6.68.0 RC76
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.67.0`.
-- Worker и client: `6.67.0-rc75`.
-- Release candidate: `RC75`.
+- `package.json` и `package-lock.json`: `6.68.0`.
+- Worker и client: `6.68.0-rc76`.
+- Release candidate: `RC76`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,18 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC76 — News Impact Funnel Trend Guard
+
+- Launch Funnel сравнивает текущие N дней с предыдущими N днями.
+- Для каждого News Impact decision state показываются previous %, current %, Δ в процентных пунктах и размер выборки обоих периодов.
+- «Подтверждённый рост» / «подтверждённое снижение» разрешены только при минимум 10 пользователях в обоих периодах и непересекающихся 95% Wilson-интервалах.
+- При пересекающихся интервалах показывается «изменение не подтверждено», даже если точечный процент изменился.
+- При недостаточной выборке показывается «мало данных».
+- Ошибка загрузки предыдущего периода не ломает текущую аналитику: trend деградирует отдельно.
+- Новая Supabase migration не требуется.
+- Regression: `test/news-impact-funnel-trend-rc76.test.js`.
+- Production smoke требует `newsImpactActionTrendSelfTest=enabled`.
 
 ## RC75 — News Impact Funnel Confidence Guard
 
@@ -93,8 +105,8 @@ npm run verify:worker
 
 `scripts/post-deploy-smoke.js` должен подтвердить:
 - `/health.ok = true`;
-- `version = 6.67.0-rc75`;
-- `releaseCandidate = RC75`;
+- `version = 6.68.0-rc76`;
+- `releaseCandidate = RC76`;
 - `devMode = false`;
 - обязательные self-test/feature flags = `enabled`;
 - `/health/supabase` не доступен публично;

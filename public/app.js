@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.67.0-rc75';
+const CLIENT_VERSION = '6.68.0-rc76';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc75';
+const CLIENT_RELEASE_CHANNEL = 'rc76';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2928,6 +2928,8 @@ function renderLaunchFunnel() {
   const impactFunnel=Array.isArray(d.newsImpactActionFunnel) ? d.newsImpactActionFunnel : [];
   const impactBottleneck=d.newsImpactActionBottleneck || null;
   const impactConfidenceGuard=d.newsImpactActionConfidenceGuard || {minUsers:10,stableUsers:30};
+  const impactTrend=Array.isArray(d.newsImpactActionTrend) ? d.newsImpactActionTrend : [];
+  const impactTrendGuard=d.newsImpactActionTrendGuard || {comparisonDays:Number(d.days || 7)};
   kpis.innerHTML=`<div class="release-monitor-kpis">
     <div><span>Входы</span><strong>${Number(first.users || 0)}</strong><small>bot + Mini App</small></div>
     <div><span>Полный AI</span><strong>${Number(last.users || 0)}</strong><small>${launchFunnelPct(last.fromEntryPct)} от входов</small></div>
@@ -2959,7 +2961,19 @@ function renderLaunchFunnel() {
         <span><b>${escapeHtml(x.label || x.code || '')}</b></span>
         <strong>${Number(x.actedUsers || 0)} / ${Number(x.users || 0)}</strong>
         <small>${launchFunnelPct(x.conversionPct)} продолжили · 95% ДИ ${launchFunnelPct(x.confidence?.lowerPct)}–${launchFunnelPct(x.confidence?.upperPct)} · ${escapeHtml(x.confidence?.label || 'мало данных')} · чаще: ${escapeHtml(x.topAction?.label || 'нет действий')}</small>
-      </div>`).join('')}</div>` : ''}`;
+      </div>`).join('')}</div>` : ''}
+    ${impactTrend.some(x=>Number(x.currentUsers || 0)>0 || Number(x.previousUsers || 0)>0) ? `<div class="release-monitor-section-head"><strong>Динамика News Impact</strong><span>текущие ${Number(impactTrendGuard.comparisonDays || d.days || 7)} дн. vs предыдущие</span></div>
+      <div class="launch-campaign-list">${impactTrend.filter(x=>Number(x.currentUsers || 0)>0 || Number(x.previousUsers || 0)>0).map(x=>{
+        const signal=x.signal==='improved' ? '↗ подтверждённый рост'
+          : x.signal==='weakened' ? '↘ подтверждённое снижение'
+            : x.signal==='insufficient' ? '◌ мало данных'
+              : '≈ изменение не подтверждено';
+        return `<div>
+          <span><b>${escapeHtml(x.label || x.code || '')}</b></span>
+          <strong>${launchFunnelPct(x.previousPct)} → ${launchFunnelPct(x.currentPct)}</strong>
+          <small>${escapeHtml(signal)} · Δ ${Number(x.deltaPctPoints || 0)>0?'+':''}${Number(x.deltaPctPoints || 0).toFixed(1)} п.п. · выборка ${Number(x.previousUsers || 0)} → ${Number(x.currentUsers || 0)}</small>
+        </div>`;
+      }).join('')}</div>` : (!d.trendAvailable ? '<div class="data-notice">Динамика News Impact временно недоступна; текущий период продолжает работать.</div>' : '')}`;
 
   const sources=d.campaigns || [];
   campaigns.innerHTML=`<div class="release-monitor-section-head"><strong>Источники и кампании</strong><span>без Telegram ID</span></div>
