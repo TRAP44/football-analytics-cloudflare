@@ -117,6 +117,11 @@ const REQUIRED_HEALTH_FLAGS = [
   'mediaCampaignConversion',
   'publisherOutcomeTracking',
   'mediaCampaignControlSelfTest',
+  'telegramNewsConversionEngine',
+  'newsPerItemAiCta',
+  'newsTeamIntentResolution',
+  'newsConversionTracking',
+  'newsConversionSelfTest',
 ];
 
 function delay(ms) {
