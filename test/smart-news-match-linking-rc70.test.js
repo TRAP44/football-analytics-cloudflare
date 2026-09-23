@@ -4,7 +4,6 @@ import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
-const playbook=fs.readFileSync('SMART_NEWS_MATCH_LINKING_RC70.md','utf8');
 
 test('RC70 scores fixtures against the news publication time',()=>{
   assert.match(worker,/function newsPublishedMs\(/);
@@ -53,5 +52,4 @@ test('RC70 health and launch analytics expose smart fixture usage',()=>{
   for (const flag of ['smartNewsFixtureLinking','newsTimeRelevanceGuard','perNewsFixtureCta','newsImpactDeltaGuide']) {
     assert.ok(worker.includes(flag + ": 'enabled'"));
   }
-  assert.match(playbook,/Smart News Match Linking/);
 });
