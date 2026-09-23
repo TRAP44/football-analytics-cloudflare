@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.83.0 RC91
+# QA Release Checklist — v6.84.0 RC92
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.83.0`.
-- Worker и client: `6.83.0-rc91`.
-- Release candidate: `RC91`.
+- `package.json` и `package-lock.json`: `6.84.0`.
+- Worker и client: `6.84.0-rc92`.
+- Release candidate: `RC92`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,18 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC92 — News Impact Recovery Incident SLO Triage Trend & Recurrence
+
+- Trend использует существующий `incidentEpisodeHistory` и строит 4 недельных снимка состояния triage на конец каждой недели.
+- В снимок попадают только эпизоды, которые на этот момент ещё активны; уже восстановленные эпизоды не считаются активными.
+- Стадии полностью наследуют RC87: ACK overdue 30 минут, ACK critical 120 минут, Recovery overdue 360 минут.
+- Summary показывает текущий active total и дельты к предыдущему недельному снимку по total / Recovery overdue / ACK critical / ACK overdue.
+- Recurrence показывает пары `reason + action`, присутствующие в triage минимум в двух недельных снимках, с числом недель по каждой стадии.
+- Telegram ID, raw error и произвольный free text не возвращаются; производные trend-данные не сохраняются.
+- RC92 не меняет recovery-routing, acknowledgement semantics или incident lifecycle и не требует новой Supabase migration.
+- Regression: `test/news-impact-recovery-incident-triage-trend-rc92.test.js`.
+- Production smoke требует `newsImpactRecoveryIncidentSloBreachTriageTrend=enabled`, `newsImpactRecoveryIncidentTriageRecurrence=enabled`, `newsImpactRecoveryIncidentSloBreachTriageTrendSelfTest=enabled`.
 
 ## RC91 — News Impact Recovery Incident SLO Breach Triage Queue
 
