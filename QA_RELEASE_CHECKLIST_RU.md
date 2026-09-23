@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.79.0 RC87
+# QA Release Checklist — v6.80.0 RC88
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.79.0`.
-- Worker и client: `6.79.0-rc87`.
-- Release candidate: `RC87`.
+- `package.json` и `package-lock.json`: `6.80.0`.
+- Worker и client: `6.80.0-rc88`.
+- Release candidate: `RC88`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,21 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC88 — News Impact Recovery Incident SLO Dashboard & Trend
+
+- Dashboard использует только фактические adverse episodes из 30-дневного shared recovery loader; один episode может содержать несколько failure-событий и закрывается первым последующим non-adverse guard для той же `reason + action`.
+- История acknowledgement сохраняется в памяти ответа только как санитизированные `reason`, `action`, `incident_guard`, `incident_seen_at`, `acknowledgedAt`; Telegram ID и raw error не попадают в dashboard.
+- First-review latency считается от начала episode до первого acknowledgement, относящегося к любому adverse occurrence этого episode.
+- 4-недельный trend разбит на четыре последовательных 7-дневных окна по `startedAt`.
+- ACK compliance denominator включает acknowledged episodes и episodes, которые прожили ≥30 минут. Автоматически восстановившийся менее чем за 30 минут episode без acknowledgement не считается ACK breach.
+- Recovery compliance denominator включает recovered episodes и active episodes возрастом ≥360 минут.
+- Weekly строки показывают episodes, active/recovered, eligible/met/breached, ACK %, Recovery %, avg ACK и avg recovery.
+- Recurrence группирует episodes по `reason + action`; в список попадают пары минимум с двумя episodes за 28 дней, с числом active, ACK breaches, Recovery breaches и guard codes.
+- Weekly/recurrence — только аналитика; они не меняют acknowledgement state, `effectivePriority`, strategy или selected recovery.
+- Производные SLO dashboard-метрики не сохраняются в Supabase и новая migration не требуется.
+- Regression: `test/news-impact-recovery-incident-slo-dashboard-rc88.test.js`.
+- Production smoke требует `newsImpactRecoveryIncidentSloDashboard=enabled`, `newsImpactRecoveryIncidentWeeklyTrend=enabled`, `newsImpactRecoveryIncidentRecurrence=enabled`, `newsImpactRecoveryIncidentSloDashboardSelfTest=enabled`.
 
 ## RC87 — News Impact Recovery Incident Escalation & SLO
 
