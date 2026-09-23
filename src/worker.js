@@ -80,11 +80,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.76.0-rc84';
+const APP_VERSION = '6.77.0-rc85';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc84';
-const RC_NAME = 'RC84';
+const RELEASE_CHANNEL = 'rc85';
+const RC_NAME = 'RC85';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1775,6 +1775,15 @@ async function apiLaunchFunnel(request,cfg) {
   const newsImpactRecoveryTransitionSummary=summarizeNewsImpactRecoveryTransitions(newsImpactRecoveryTransitionHistory);
   const newsImpactRecoveryStrategyAlerts=buildNewsImpactRecoveryAdminAlerts(newsImpactRecoveryStrategyMatrix,newsImpactRecoveryStrategyLoaded.reason);
   const newsImpactRecoveryAlertSummary=summarizeNewsImpactRecoveryAlerts(newsImpactRecoveryStrategyAlerts);
+  const newsImpactRecoveryIncidentEvents=newsImpactRecoveryStrategyLoaded.available
+    ? (newsImpactRecoveryStrategyLoaded.incidentEvents || [])
+    : [];
+  const newsImpactRecoveryIncidents=buildNewsImpactRecoveryIncidentCenter(
+    newsImpactRecoveryStrategyMatrix,
+    newsImpactRecoveryIncidentEvents,
+    newsImpactRecoveryStrategyLoaded.reason,
+  );
+  const newsImpactRecoveryIncidentSummary=summarizeNewsImpactRecoveryIncidents(newsImpactRecoveryIncidents);
   const newsImpactRecoveryStrategySummary={
     available:Boolean(newsImpactRecoveryStrategyLoaded.available),
     evidenceReason:String(newsImpactRecoveryStrategyLoaded.reason || 'unknown'),
@@ -1876,6 +1885,8 @@ async function apiLaunchFunnel(request,cfg) {
     newsImpactRecoveryTransitionSummary,
     newsImpactRecoveryStrategyAlerts,
     newsImpactRecoveryAlertSummary,
+    newsImpactRecoveryIncidents,
+    newsImpactRecoveryIncidentSummary,
     newsImpactActionFunnel,
     newsImpactActionBottleneck,
     newsImpactActionConfidenceGuard,
@@ -3710,12 +3721,159 @@ function summarizeNewsImpactRecoveryAlerts(rows = []) {
   };
 }
 
+
+function buildNewsImpactRecoveryIncidentEvents(failureRows = [], {limit = 100} = {}) {
+  const incidentCodes=new Set(['performance_drift','recent_regression']);
+  return (failureRows || []).map(row=>{
+    const meta=row?.metadata && typeof row.metadata==='object' ? row.metadata : {};
+    const guardReason=NEWS_IMPACT_RECOVERY_STRATEGY_GUARD_CODES.has(String(meta.strategy_guard || ''))
+      ? String(meta.strategy_guard)
+      : '';
+    if (!incidentCodes.has(guardReason)) return null;
+    const at=newsImpactEventTime(row);
+    const reason=NEWS_IMPACT_FAILURE_CODES.has(String(meta.reason || '')) ? String(meta.reason) : 'server_error';
+    const action=cleanNewsImpactActionCode(meta.action);
+    if (!Number.isFinite(at) || !action) return null;
+    const recovery=NEWS_IMPACT_RECOVERY_CODES.has(String(meta.recovery || ''))
+      ? String(meta.recovery)
+      : newsImpactRecoveryForFailure(reason,action).code;
+    return {
+      at:new Date(at).toISOString(),
+      reason,
+      reasonLabel:NEWS_IMPACT_FAILURE_LABELS[reason] || reason,
+      action,
+      actionLabel:NEWS_IMPACT_ACTION_LABELS[action] || action,
+      strategy:String(meta.strategy || '')==='adaptive' ? 'adaptive' : 'fixed',
+      recovery,
+      recoveryLabel:NEWS_IMPACT_RECOVERY_LABELS[recovery] || recovery,
+      guardReason,
+      priority:guardReason==='performance_drift' ? 'high' : 'medium',
+    };
+  }).filter(Boolean)
+    .sort((a,b)=>Date.parse(b.at)-Date.parse(a.at))
+    .slice(0,Math.max(1,Math.min(250,Number(limit || 100))));
+}
+
+function buildNewsImpactRecoveryIncidentCenter(strategyRows = [], incidentEvents = [], evidenceReason = 'ok') {
+  const priorityRank={high:0,medium:1,low:2};
+  const current=new Map((strategyRows || []).map(row=>[`${row.reason}|${row.action}`,row]));
+  const groups=new Map();
+  for (const event of incidentEvents || []) {
+    const key=`${event.reason}|${event.action}|${event.guardReason}`;
+    const bucket=groups.get(key) || {
+      code:event.guardReason,
+      priority:event.priority || (event.guardReason==='performance_drift' ? 'high' : 'medium'),
+      reason:event.reason,
+      reasonLabel:event.reasonLabel || event.reason,
+      action:event.action,
+      actionLabel:event.actionLabel || event.action,
+      firstSeenAt:event.at,
+      lastSeenAt:event.at,
+      occurrences:0,
+      lastStrategy:event.strategy || 'fixed',
+      lastRecovery:event.recovery || '',
+      lastRecoveryLabel:event.recoveryLabel || event.recovery || '',
+    };
+    bucket.occurrences+=1;
+    if (Date.parse(event.at)<Date.parse(bucket.firstSeenAt)) bucket.firstSeenAt=event.at;
+    if (Date.parse(event.at)>Date.parse(bucket.lastSeenAt)) {
+      bucket.lastSeenAt=event.at;
+      bucket.lastStrategy=event.strategy || bucket.lastStrategy;
+      bucket.lastRecovery=event.recovery || bucket.lastRecovery;
+      bucket.lastRecoveryLabel=event.recoveryLabel || bucket.lastRecoveryLabel;
+    }
+    groups.set(key,bucket);
+  }
+
+  const rows=[...groups.values()].map(item=>{
+    const now=current.get(`${item.reason}|${item.action}`) || null;
+    const active=Boolean(now && now.guardReason===item.code);
+    return {
+      ...item,
+      status:active ? 'active' : 'recovered',
+      currentStrategy:now?.strategy || '',
+      currentRecovery:now?.selectedRecovery || '',
+      currentRecoveryLabel:now?.selectedRecoveryLabel || now?.selectedRecovery || '',
+      currentGuardReason:now?.guardReason || '',
+      currentOnly:false,
+    };
+  });
+
+  for (const now of strategyRows || []) {
+    if (!['performance_drift','recent_regression'].includes(String(now.guardReason || ''))) continue;
+    const exists=rows.some(x=>x.reason===now.reason && x.action===now.action && x.code===now.guardReason && x.status==='active');
+    if (exists) continue;
+    rows.push({
+      code:now.guardReason,
+      priority:now.guardReason==='performance_drift' ? 'high' : 'medium',
+      reason:now.reason,
+      reasonLabel:now.reasonLabel || now.reason,
+      action:now.action,
+      actionLabel:now.actionLabel || now.action,
+      firstSeenAt:null,
+      lastSeenAt:null,
+      occurrences:0,
+      lastStrategy:now.strategy || 'fixed',
+      lastRecovery:now.selectedRecovery || '',
+      lastRecoveryLabel:now.selectedRecoveryLabel || now.selectedRecovery || '',
+      status:'active',
+      currentStrategy:now.strategy || '',
+      currentRecovery:now.selectedRecovery || '',
+      currentRecoveryLabel:now.selectedRecoveryLabel || now.selectedRecovery || '',
+      currentGuardReason:now.guardReason || '',
+      currentOnly:true,
+    });
+  }
+
+  if (String(evidenceReason || 'ok')!=='ok') {
+    rows.unshift({
+      code:'strategy_evidence_unavailable',
+      priority:'medium',
+      reason:'',
+      reasonLabel:'Recovery Strategy',
+      action:'',
+      actionLabel:'',
+      firstSeenAt:null,
+      lastSeenAt:null,
+      occurrences:0,
+      lastStrategy:'fixed',
+      lastRecovery:'',
+      lastRecoveryLabel:'',
+      status:'active',
+      currentStrategy:'fixed',
+      currentRecovery:'',
+      currentRecoveryLabel:'',
+      currentGuardReason:String(evidenceReason || 'evidence_unavailable'),
+      currentOnly:true,
+    });
+  }
+
+  return rows.sort((a,b)=>(a.status==='active'?0:1)-(b.status==='active'?0:1)
+    || (priorityRank[a.priority] ?? 9)-(priorityRank[b.priority] ?? 9)
+    || (Date.parse(b.lastSeenAt || 0)-Date.parse(a.lastSeenAt || 0))
+    || String(a.reason || '').localeCompare(String(b.reason || ''))
+    || String(a.action || '').localeCompare(String(b.action || '')))
+    .slice(0,30);
+}
+
+function summarizeNewsImpactRecoveryIncidents(rows = []) {
+  const list=Array.isArray(rows) ? rows : [];
+  return {
+    total:list.length,
+    active:list.filter(x=>x.status==='active').length,
+    recovered:list.filter(x=>x.status==='recovered').length,
+    highActive:list.filter(x=>x.status==='active' && x.priority==='high').length,
+    mediumActive:list.filter(x=>x.status==='active' && x.priority==='medium').length,
+    latest:list.filter(x=>x.lastSeenAt).sort((a,b)=>Date.parse(b.lastSeenAt)-Date.parse(a.lastSeenAt))[0] || null,
+  };
+}
+
 async function loadNewsImpactRecoveryStrategyEvidence(cfg) {
   const now=Date.now();
   const cached=memory.newsImpactRecoveryStrategy || {value:null,loadedAt:0};
   if (cached.value && now-Number(cached.loadedAt || 0)<NEWS_IMPACT_RECOVERY_STRATEGY_CACHE_MS) return cached.value;
   if (!hasSupabase(cfg)) {
-    const value={available:false,truncated:false,reason:'supabase_unavailable',evidence:[],recentEvidence:[],priorEvidence:[],transitionHistory:[]};
+    const value={available:false,truncated:false,reason:'supabase_unavailable',evidence:[],recentEvidence:[],priorEvidence:[],transitionHistory:[],incidentEvents:[]};
     memory.newsImpactRecoveryStrategy={value,loadedAt:now};
     return value;
   }
@@ -3742,11 +3900,12 @@ async function loadNewsImpactRecoveryStrategyEvidence(cfg) {
     const recentEvidence=buildNewsImpactRecoveryStrategyEvidence(recentAttempts,outcomes,failures,{asOfMs:now});
     const priorEvidence=buildNewsImpactRecoveryStrategyEvidence(priorAttempts,outcomes,failures,{asOfMs:now});
     const transitionHistory=buildNewsImpactRecoveryTransitionHistory(failures,{limit:20});
-    const value={available:!page.truncated,truncated:Boolean(page.truncated),reason:page.truncated?'truncated':'ok',evidence,recentEvidence,priorEvidence,transitionHistory};
+    const incidentEvents=buildNewsImpactRecoveryIncidentEvents(failures,{limit:100});
+    const value={available:!page.truncated,truncated:Boolean(page.truncated),reason:page.truncated?'truncated':'ok',evidence,recentEvidence,priorEvidence,transitionHistory,incidentEvents};
     memory.newsImpactRecoveryStrategy={value,loadedAt:now};
     return value;
   } catch {
-    const value={available:false,truncated:false,reason:'load_failed',evidence:[],recentEvidence:[],priorEvidence:[],transitionHistory:[]};
+    const value={available:false,truncated:false,reason:'load_failed',evidence:[],recentEvidence:[],priorEvidence:[],transitionHistory:[],incidentEvents:[]};
     memory.newsImpactRecoveryStrategy={value,loadedAt:now};
     return value;
   }
@@ -3860,6 +4019,32 @@ function newsImpactRecoveryTransitionDrill() {
       && alerts.filter(x=>x.severity==='warning').length===1
       && alerts.filter(x=>x.severity==='info').length===1
       && summarizeNewsImpactRecoveryAlerts(alerts).total===2,
+    cases:8,
+  };
+}
+
+function newsImpactRecoveryIncidentDrill() {
+  const events=[
+    {at:'2026-09-10T10:00:00.000Z',reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',strategy:'fixed',recovery:'retry',recoveryLabel:'повторить',guardReason:'performance_drift',priority:'high'},
+    {at:'2026-09-11T10:00:00.000Z',reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',strategy:'fixed',recovery:'retry',recoveryLabel:'повторить',guardReason:'performance_drift',priority:'high'},
+    {at:'2026-09-12T10:00:00.000Z',reason:'timeout',reasonLabel:'Тайм-аут',action:'share',actionLabel:'Поделиться',strategy:'fixed',recovery:'retry_soon',recoveryLabel:'повторить скоро',guardReason:'recent_regression',priority:'medium'},
+  ];
+  const current=[
+    {reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',strategy:'adaptive',selectedRecovery:'open_full_ai',selectedRecoveryLabel:'открыть полный AI',guardReason:'stable_significant_better'},
+    {reason:'timeout',reasonLabel:'Тайм-аут',action:'share',actionLabel:'Поделиться',strategy:'fixed',selectedRecovery:'retry_soon',selectedRecoveryLabel:'повторить скоро',guardReason:'recent_regression'},
+    {reason:'provider_unavailable',reasonLabel:'Провайдер временно недоступен',action:'full_ai',actionLabel:'Полный AI',strategy:'fixed',selectedRecovery:'retry_later',selectedRecoveryLabel:'повторить позже',guardReason:'performance_drift'},
+  ];
+  const incidents=buildNewsImpactRecoveryIncidentCenter(current,events,'ok');
+  const summary=summarizeNewsImpactRecoveryIncidents(incidents);
+  return {
+    pass:incidents.length===3
+      && summary.active===2
+      && summary.recovered===1
+      && summary.highActive===1
+      && summary.mediumActive===1
+      && incidents.some(x=>x.reason==='server_error' && x.status==='recovered' && x.occurrences===2)
+      && incidents.some(x=>x.reason==='provider_unavailable' && x.status==='active' && x.currentOnly===true)
+      && !Object.prototype.hasOwnProperty.call(incidents[0] || {},'telegram_id'),
     cases:8,
   };
 }
@@ -16816,6 +17001,10 @@ export default {
         newsImpactRecoveryAdminAlerts: 'enabled',
         newsImpactRecoveryTransitionPrivacyGuard: 'enabled',
         newsImpactRecoveryTransitionSelfTest: newsImpactRecoveryTransitionDrill().pass ? 'enabled' : 'failed',
+        newsImpactRecoveryIncidentCenter: 'enabled',
+        newsImpactRecoveryIncidentLifecycle: 'enabled',
+        newsImpactRecoveryIncidentPrivacyGuard: 'enabled',
+        newsImpactRecoveryIncidentSelfTest: newsImpactRecoveryIncidentDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
