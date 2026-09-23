@@ -6,7 +6,8 @@ const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 
 test('RC76 loads an equal previous period without changing the current funnel window',()=>{
-  assert.match(worker,/const previousSince=new Date\(Date\.now\(\)-days\*2\*86400_000\)\.toISOString\(\)/);
+  assert.match(worker,/const analyticsNowMs=Date\.now\(\)/);
+  assert.match(worker,/const previousSince=new Date\(analyticsNowMs-days\*2\*86400_000\)\.toISOString\(\)/);
   assert.match(worker,/previousWindowRows=/);
   assert.match(worker,/createdAt<Date\.parse\(since\)/);
   assert.match(worker,/trendAvailable=false/);
