@@ -90,6 +90,11 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         recheckMateriality: 'enabled',
         telegramRecheckDelta: 'enabled',
         analysisDeltaSelfTest: 'enabled',
+        kickoffHandoffGuard: 'enabled',
+        prematchAdviceFreeze: 'enabled',
+        liveContextHandoff: 'enabled',
+        finishedAnalysisArchive: 'enabled',
+        kickoffHandoffSelfTest: 'enabled',
       });
     }
     if (url.pathname === '/api/app-manifest') return json({ version: '6.27.0-rc35', releaseCandidate: 'RC35' });
