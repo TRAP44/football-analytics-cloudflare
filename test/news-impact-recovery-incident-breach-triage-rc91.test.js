@@ -13,8 +13,8 @@ test('RC91 derives triage only from RC90 active watchlist',()=>{
 });
 
 test('RC91 uses only existing RC87 ACK critical and recovery thresholds',()=>{
-  assert.match(worker,/criticalAckMinutes:Number\(thresholds\.criticalAckMinutes \|\| NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES\)/);
-  assert.match(worker,/recoveryMinutes:Number\(thresholds\.recoveryMinutes \|\| NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES\)/);
+  assert.match(worker,/const criticalAckMinutes=Number\(thresholds\.criticalAckMinutes \|\| NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES\)/);
+  assert.match(worker,/const recoveryMinutes=Number\(thresholds\.recoveryMinutes \|\| NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES\)/);
   assert.match(worker,/source:'rc87_existing_slo'/);
   assert.match(worker,/routingChanged:false/);
   assert.match(worker,/persistence:'none'/);
@@ -32,8 +32,8 @@ test('RC91 exposes factual stage buckets without sensitive fields',()=>{
 
 test('RC91 admin renders triage queue and existing threshold meaning',()=>{
   assert.match(app,/SLO Breach Triage Queue/);
-  assert.match(app,/Recovery просрочен/);
-  assert.match(app,/ACK критически просрочен/);
+  assert.match(app,/recovery overdue/);
+  assert.match(app,/ACK critical/);
   assert.match(app,/RC91 — triage использует только существующие пороги RC87/);
 });
 
