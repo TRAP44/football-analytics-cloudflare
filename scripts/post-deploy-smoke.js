@@ -68,6 +68,11 @@ const REQUIRED_HEALTH_FLAGS = [
   'lineupFreshnessWindow',
   'adaptiveAnalysisTtl',
   'analysisFreshnessSelfTest',
+  'preKickoffChangeDetection',
+  'analysisDeltaSummary',
+  'recheckMateriality',
+  'telegramRecheckDelta',
+  'analysisDeltaSelfTest',
 ];
 
 function delay(ms) {

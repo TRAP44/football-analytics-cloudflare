@@ -85,6 +85,11 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         lineupFreshnessWindow: 'enabled',
         adaptiveAnalysisTtl: 'enabled',
         analysisFreshnessSelfTest: 'enabled',
+        preKickoffChangeDetection: 'enabled',
+        analysisDeltaSummary: 'enabled',
+        recheckMateriality: 'enabled',
+        telegramRecheckDelta: 'enabled',
+        analysisDeltaSelfTest: 'enabled',
       });
     }
     if (url.pathname === '/api/app-manifest') return json({ version: '6.27.0-rc35', releaseCandidate: 'RC35' });

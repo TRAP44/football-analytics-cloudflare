@@ -1,7 +1,21 @@
-# Football Analytics Mini App v6.51.0 — RC59
+# Football Analytics Mini App v6.52.0 — RC60
 
 Telegram Mini App для футбольной аналитики на Cloudflare Workers, Supabase, API-Football и Tavily.
 
+## RC60: Pre-Kickoff Change Detection
+
+- после freshness-recheck FM AI сравнивает новый расчёт с предыдущим snapshot и показывает delta вместо простого статуса «обновлено»;
+- сравнение покрывает AI-сигнал, вероятности П1/Н/П2, уверенность, подтверждение стартовых составов, потери, рынок и назначение судьи;
+- изменения делятся на `material / stable`: значимые сдвиги выделяются отдельно, а при отсутствии изменений пользователь получает явное «прогноз стабилен»;
+- probability delta попадает в список только при сдвиге ≥3 п.п., market delta — при сдвиге ≥2.5 п.п., confidence — при изменении ≥8 пунктов;
+- появление одного/двух стартовых составов после старого snapshot считается важным pre-kickoff изменением;
+- новый `recheck.delta` возвращается только для фактически выполненной перепроверки и не сохраняется в shared analysis cache как постоянный state;
+- Telegram short brief после recheck показывает блок `Что изменилось после перепроверки` с максимум тремя изменениями;
+- Mini App freshness-card показывает delta list с `before → after` и отдельным stable-state;
+- launch funnel для `analysis_recheck` теперь агрегирует `material / stable` без текста запросов или пользовательского ввода;
+- deterministic `analysisDeltaDrill` проверяет смену `skip → П1`, рост вероятности, появление обоих составов и движение рынка;
+- новых таблиц Supabase, новых API-Football endpoints и платёжной логики RC60 не добавляет;
+- версия Worker/client/production smoke: v6.52.0 RC60.
 ## RC59: AI Freshness Guard & Pre-Kickoff Recheck
 
 - каждый полный/короткий AI-ответ теперь получает динамический `freshness` со статусом `fresh / recheck / started`;

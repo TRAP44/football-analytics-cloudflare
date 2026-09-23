@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.51.0-rc59';
+const APP_VERSION = '6.52.0-rc60';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc59';
-const RC_NAME = 'RC59';
+const RELEASE_CHANNEL = 'rc60';
+const RC_NAME = 'RC60';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -685,6 +685,8 @@ function appManifest(cfg) {
       cachedFullAnalysisHandoff: true,
       aiFreshnessGuard: true,
       preKickoffRecheck: true,
+      preKickoffChangeDetection: true,
+      analysisDeltaSummary: true,
       calibrationChampionChallenger: true,
       calibrationAutomaticRollback: true,
     },
@@ -1581,6 +1583,8 @@ async function apiLaunchFunnel(request,cfg) {
   }
   const recheckRows=rows.filter(x=>String(x.event_name || '')==='analysis_recheck');
   const recheckFree=recheckRows.filter(x=>Boolean(x?.metadata && typeof x.metadata==='object' ? x.metadata.free : false)).length;
+  const recheckMaterial=recheckRows.filter(x=>Boolean(x?.metadata && typeof x.metadata==='object' ? x.metadata.material : false)).length;
+  const recheckStable=recheckRows.filter(x=>Boolean(x?.metadata && typeof x.metadata==='object' ? x.metadata.stable : false)).length;
   const handoffUsers=setFor(['ai_handoff']);
   const fullAiUsers=setFor(['full_ai']);
   const handoffToFull=new Set([...handoffUsers].filter(uid=>fullAiUsers.has(uid)));
@@ -1613,7 +1617,7 @@ async function apiLaunchFunnel(request,cfg) {
     funnel,
     bottleneck,
     handoff:{users:handoffUsers.size,fullAiUsers:handoffToFull.size,conversionPct:handoffUsers.size?Math.round((handoffToFull.size/handoffUsers.size)*1000)/10:0},
-    rechecks:{total:recheckRows.length,free:recheckFree,charged:Math.max(0,recheckRows.length-recheckFree)},
+    rechecks:{total:recheckRows.length,free:recheckFree,charged:Math.max(0,recheckRows.length-recheckFree),material:recheckMaterial,stable:recheckStable},
     returnLoop:{newsOpen:newsOpen.size,newsReturn:newsReturn.size,conversionPct:newsOpen.size?Math.round((newsReturn.size/newsOpen.size)*1000)/10:0},
     searchQuality:{attempts:searchResultRows.length,match:searchMatches,recognizedNoMatch:searchRecognizedNoMatch,notFound:searchNotFound,recoveredRecent:searchRecoveredRecent,matchPct:searchResultRows.length?Math.round((searchMatches/searchResultRows.length)*1000)/10:0},
     campaigns,
@@ -2144,6 +2148,8 @@ function botAiHandoffText(data = {}) {
   const skip=signal.code==='skip';
   const freshness=data.freshness || analysisFreshness(data);
   const freshIcon=freshness.needsRecheck?'🟠':freshness.state==='started'?'⚪':'🟢';
+  const delta=data?.recheck?.performed ? data?.recheck?.delta : null;
+  const deltaLines=delta?.available ? [delta.summary,...(delta.items || []).slice(0,3).map(item=>`• ${item.title}${item.after?`: ${item.after}`:''}`)] : [];
   return [
     '🧠 <b>FM AI · короткая оценка</b>',
     `<b>${telegramHtmlEscape(match.home?.name || 'Хозяева')} — ${telegramHtmlEscape(match.away?.name || 'Гости')}</b>`,
@@ -2157,6 +2163,7 @@ function botAiHandoffText(data = {}) {
     '',
     `Почему: ${telegramHtmlEscape(signal.reason || ai.riskNote || 'Оцениваю доступные данные матча.')}`,
     freshness.reason ? `Свежесть: ${telegramHtmlEscape(freshness.reason)}` : '',
+    ...(deltaLines.length ? ['',`🔄 <b>Что изменилось после перепроверки</b>`,...deltaLines.map(telegramHtmlEscape)] : []),
     '',
     '<i>Полный AI-разбор откроется сразу на этом матче — повторно искать его не нужно.</i>',
   ].join('\n');
@@ -13146,6 +13153,61 @@ function analysisFreshnessDrill() {
   return {pass:stale.needsRecheck && stale.reasonCode==='lineups_window' && !fresh.needsRecheck && !far.needsRecheck,cases:3};
 }
 
+function analysisDeltaProbabilityLabel(key = '') {
+  return key==='home'?'П1':key==='draw'?'Н':key==='away'?'П2':String(key || '');
+}
+
+function analysisRecheckDelta(previous = {}, next = {}) {
+  if (!previous?.match?.fixtureId || !next?.match?.fixtureId) return {available:false,material:false,stable:true,codes:[],items:[],summary:'Нет предыдущего полного снимка для сравнения.'};
+  const items=[];
+  const add=(code,title,before='',after='',importance='medium')=>items.push({code,title,before:String(before || ''),after:String(after || ''),importance});
+  const oldSignal=String(previous?.aiInstructor?.betSignal?.code || '');
+  const newSignal=String(next?.aiInstructor?.betSignal?.code || '');
+  const oldSignalLabel=String(previous?.aiInstructor?.betSignal?.label || oldSignal || '—');
+  const newSignalLabel=String(next?.aiInstructor?.betSignal?.label || newSignal || '—');
+  if (oldSignal && newSignal && oldSignal!==newSignal) add('signal','AI-сигнал изменился',oldSignalLabel,newSignalLabel,'high');
+
+  const probRows=['home','draw','away'].map(key=>({key,delta:Math.round((Number(next?.probabilities?.[key] || 0)-Number(previous?.probabilities?.[key] || 0))*10)/10})).sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
+  const maxProb=probRows[0];
+  if (maxProb && Math.abs(maxProb.delta)>=3) add('probability','Вероятности заметно сдвинулись','',`${analysisDeltaProbabilityLabel(maxProb.key)} ${maxProb.delta>0?'+':''}${maxProb.delta.toFixed(1)} п.п.`,Math.abs(maxProb.delta)>=7?'high':'medium');
+
+  const oldConf=Number(previous?.aiInstructor?.confidenceScore ?? previous?.confidence?.score);
+  const newConf=Number(next?.aiInstructor?.confidenceScore ?? next?.confidence?.score);
+  if (Number.isFinite(oldConf)&&Number.isFinite(newConf)&&Math.abs(newConf-oldConf)>=8) add('confidence','Уверенность модели изменилась',`${Math.round(oldConf)}/100`,`${Math.round(newConf)}/100`,Math.abs(newConf-oldConf)>=15?'high':'medium');
+
+  const oldHome=Boolean(previous?.lineupImpact?.homeConfirmed), oldAway=Boolean(previous?.lineupImpact?.awayConfirmed);
+  const newHome=Boolean(next?.lineupImpact?.homeConfirmed), newAway=Boolean(next?.lineupImpact?.awayConfirmed);
+  const oldLineups=Number(oldHome)+Number(oldAway), newLineups=Number(newHome)+Number(newAway);
+  if (newLineups>oldLineups) add('lineups','Появились стартовые составы',oldLineups===0?'Не подтверждены':`${oldLineups}/2 подтверждены`,newLineups===2?'Оба состава подтверждены':`${newLineups}/2 подтверждены`,'high');
+
+  const absenceCount=p=>Number(p?.absences?.home?.length || 0)+Number(p?.absences?.away?.length || 0);
+  const oldAbs=absenceCount(previous), newAbs=absenceCount(next);
+  if (oldAbs!==newAbs) add('absences','Изменились подтверждённые потери',`${oldAbs}`,`${newAbs}`,Math.abs(newAbs-oldAbs)>=2?'high':'medium');
+
+  const marketRows=['home','draw','away'].map(key=>({key,delta:Math.round((Number(next?.market?.probabilities?.[key] || 0)-Number(previous?.market?.probabilities?.[key] || 0))*10)/10})).sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
+  const maxMarket=marketRows[0];
+  if (maxMarket && Math.abs(maxMarket.delta)>=2.5) add('market','Рынок заметно изменился','',`${analysisDeltaProbabilityLabel(maxMarket.key)} ${maxMarket.delta>0?'+':''}${maxMarket.delta.toFixed(1)} п.п.`,Math.abs(maxMarket.delta)>=5?'high':'medium');
+
+  const oldRef=String(previous?.match?.referee || '').trim(), newRef=String(next?.match?.referee || '').trim();
+  if (!oldRef && newRef) add('referee','Назначен судья','Не был указан',newRef,'medium');
+
+  const codes=[...new Set(items.map(x=>x.code))];
+  const material=items.some(x=>x.importance==='high') || codes.some(code=>['signal','probability','lineups','market'].includes(code));
+  const stable=items.length===0;
+  const summary=stable
+    ? 'Значимых изменений после перепроверки не найдено.'
+    : material
+      ? `После перепроверки есть значимые изменения: ${items.slice(0,3).map(x=>x.title.toLocaleLowerCase('ru-RU')).join(', ')}.`
+      : `Обновились детали матча: ${items.slice(0,3).map(x=>x.title.toLocaleLowerCase('ru-RU')).join(', ')}.`;
+  return {available:true,material,stable,codes,items:items.slice(0,6),summary};
+}
+
+function analysisDeltaDrill() {
+  const previous={match:{fixtureId:7,referee:''},probabilities:{home:44,draw:29,away:27},market:{probabilities:{home:43,draw:30,away:27}},lineupImpact:{homeConfirmed:false,awayConfirmed:false},absences:{home:[],away:[]},aiInstructor:{betSignal:{code:'skip',label:'Пропустить ставку'},confidenceScore:55}};
+  const next={match:{fixtureId:7,referee:'A. Ref'},probabilities:{home:53,draw:26,away:21},market:{probabilities:{home:49,draw:28,away:23}},lineupImpact:{homeConfirmed:true,awayConfirmed:true},absences:{home:[{name:'Player'}],away:[]},aiInstructor:{betSignal:{code:'home',label:'П1'},confidenceScore:69}};
+  const delta=analysisRecheckDelta(previous,next);
+  return {pass:delta.available && delta.material && delta.codes.includes('signal') && delta.codes.includes('probability') && delta.codes.includes('lineups') && delta.codes.includes('market'),count:delta.items.length};
+}
 function analysisResponsePayload(payload = {}, extra = {}) {
   return {...payload,freshness:analysisFreshness(payload),...extra};
 }
@@ -13393,13 +13455,14 @@ async function apiAnalyze(request, cfg, user) {
   else if (minutesToKickoff !== null && minutesToKickoff <= 120) ttl = 10;
   else if (minutesToKickoff !== null && minutesToKickoff <= 360) ttl = 20;
   else if (minutesToKickoff !== null && minutesToKickoff > 360) ttl = 45;
+  const recheckDelta=needsFreshnessRecheck ? analysisRecheckDelta(staleBefore,payload) : null;
   await setCache(cacheKey, fixtureId, payload, cfg, ttl);
   await captureModelPrediction(payload, cfg);
   if (!freeRecheck) await incrementUsage(user.id, cfg);
   await recordHistory(user.id, payload, cfg);
-  if (needsFreshnessRecheck) void recordGrowthEvent(cfg,{userId:user.id,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:previousFreshness?.reasonCode || 'age_window'}});
+  if (needsFreshnessRecheck) void recordGrowthEvent(cfg,{userId:user.id,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:previousFreshness?.reasonCode || 'age_window',material:Boolean(recheckDelta?.material),stable:Boolean(recheckDelta?.stable),changeCount:Number(recheckDelta?.items?.length || 0),codes:(recheckDelta?.codes || []).slice(0,6)}});
   if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:false,recheck:needsFreshnessRecheck}});
-  return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:needsFreshnessRecheck,free:freeRecheck,reasonCode:previousFreshness?.reasonCode || 'fresh'},quota:await getQuota(user.id,cfg)}));
+  return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:needsFreshnessRecheck,free:freeRecheck,reasonCode:previousFreshness?.reasonCode || 'fresh',delta:recheckDelta},quota:await getQuota(user.id,cfg)}));
 }
 
 async function publicServiceStatus(cfg) {
@@ -13575,6 +13638,12 @@ export default {
         adaptiveAnalysisTtl: 'enabled',
         analysisFreshnessSelfTest: analysisFreshnessDrill().pass ? 'enabled' : 'failed',
         analysisFreshnessCases: analysisFreshnessDrill().cases,
+        preKickoffChangeDetection: 'enabled',
+        analysisDeltaSummary: 'enabled',
+        recheckMateriality: 'enabled',
+        telegramRecheckDelta: 'enabled',
+        analysisDeltaSelfTest: analysisDeltaDrill().pass ? 'enabled' : 'failed',
+        analysisDeltaCases: analysisDeltaDrill().count,
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',

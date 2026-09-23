@@ -1,10 +1,10 @@
-# QA Release Checklist — v6.51.0 RC59
+# QA Release Checklist — v6.52.0 RC60
 
 ## Deploy
 
 - применены `supabase_migration_v6_9.sql`, `supabase_migration_v6_10.sql`, `supabase_migration_v6_11.sql`, `supabase_migration_v6_11_1.sql`, `supabase_migration_v6_12.sql`, `supabase_migration_v6_13.sql`, `supabase_migration_v6_14.sql` и `supabase_migration_v6_15.sql`;
-- Worker/client = `6.51.0-rc59`;
-- package = `6.51.0`;
+- Worker/client = `6.52.0-rc60`;
+- package = `6.52.0`;
 - cache generation = `4.0-atomic1`;
 - Secrets проверены по `.env.example`;
 - `DEV_MODE=false`;
@@ -90,6 +90,21 @@
 - сломанный сценарий приводит к «Не опираться на предматчевый сигнал»;
 - никаких новых таблиц или внешних провайдеров RC44 не добавляет.
 
+## RC60 — Pre-Kickoff Change Detection
+
+- `analysisRecheckDelta(previous,next)` сравнивает только два готовых analysis payload и не делает дополнительных API-Football вызовов;
+- изменение `betSignal.code` создаёт high-importance `signal` delta;
+- сдвиг вероятности ≥3 п.п. создаёт `probability` delta; ≥7 п.п. считается high-importance;
+- сдвиг рынка ≥2.5 п.п. создаёт `market` delta; ≥5 п.п. считается high-importance;
+- изменение confidence ≥8 пунктов фиксируется отдельно;
+- появление стартовых составов после recheck создаёт `lineups` delta;
+- изменение количества подтверждённых потерь и появление судьи тоже отражаются в delta;
+- если изменений нет, `stable=true`, `material=false`, `items=[]`; интерфейс показывает «Прогноз стабилен»;
+- `analysis_recheck` metadata хранит только `free/reason/material/stable/changeCount/codes`, без query/rawText;
+- Telegram показывает максимум 3 delta-item, Mini App — максимум 6;
+- `/api/launch-funnel` агрегирует `rechecks.material` и `rechecks.stable`;
+- `/health.analysisDeltaSelfTest = enabled`; production smoke требует все RC60 health-флаги;
+- новых миграций Supabase и новых provider endpoints нет.
 ## RC59 — AI Freshness Guard & Pre-Kickoff Recheck
 
 - `analysisFreshness()` возвращает `state/label/ageMinutes/minutesToKickoff/maxAgeMinutes/needsRecheck/reasonCode/reason`;

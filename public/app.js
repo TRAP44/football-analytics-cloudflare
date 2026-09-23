@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.51.0-rc59';
+const CLIENT_VERSION = '6.52.0-rc60';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc59';
+const CLIENT_RELEASE_CHANNEL = 'rc60';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2856,7 +2856,7 @@ function renderLaunchFunnel() {
     <div><span>Полный AI</span><strong>${Number(last.users || 0)}</strong><small>${launchFunnelPct(last.fromEntryPct)} от входов</small></div>
     <div><span>Кампаний</span><strong>${Number(d.campaigns?.length || 0)}</strong><small>source + campaign</small></div>
     <div><span>One‑tap → полный AI</span><strong>${Number(handoff.fullAiUsers || 0)}</strong><small>${launchFunnelPct(handoff.conversionPct)} от AI-handoff</small></div>
-    <div><span>AI перепроверки</span><strong>${Number(rechecks.total || 0)}</strong><small>${Number(rechecks.free || 0)} без повторного списания</small></div>
+    <div><span>AI перепроверки</span><strong>${Number(rechecks.total || 0)}</strong><small>${Number(rechecks.free || 0)} без списания · ${Number(rechecks.material || 0)} со значимыми изменениями</small></div>
     <div><span>Возврат из новостей</span><strong>${Number(d.returnLoop?.newsReturn || 0)}</strong><small>${launchFunnelPct(d.returnLoop?.conversionPct)} от открывших новости</small></div>
   </div>`;
 
@@ -2865,7 +2865,7 @@ function renderLaunchFunnel() {
   const searchQuality=d.searchQuality || {};
   stages.innerHTML=`<div class="release-monitor-section-head"><strong>Воронка</strong><span>уникальные пользователи</span></div>
     ${bottleneck ? `<div class="data-notice">🎯 Узкое место: <strong>${escapeHtml(bottleneck.label || '')}</strong> · теряется ${launchFunnelPct(bottleneck.dropPct)} пользователей перехода.</div>` : ''}
-    ${Number(rechecks.total || 0) ? `<div class="data-notice">🕒 Freshness guard: <strong>${Number(rechecks.total || 0)}</strong> перепроверок · ${Number(rechecks.free || 0)} бесплатных повторных · ${Number(rechecks.charged || 0)} первых анализов.</div>` : ''}
+    ${Number(rechecks.total || 0) ? `<div class="data-notice">🕒 Freshness guard: <strong>${Number(rechecks.total || 0)}</strong> перепроверок · ${Number(rechecks.material || 0)} со значимыми изменениями · ${Number(rechecks.stable || 0)} без значимых изменений.</div>` : ''}
     ${Number(handoff.users || 0) ? `<div class="data-notice">⚡ One‑tap AI: <strong>${Number(handoff.users || 0)}</strong> пользователей получили Telegram‑бриф · ${Number(handoff.fullAiUsers || 0)} дошли до полного AI · конверсия ${launchFunnelPct(handoff.conversionPct)}.</div>` : ''}
     ${Number(searchQuality.attempts || 0) ? `<div class="data-notice">🔎 Качество поиска: <strong>${launchFunnelPct(searchQuality.matchPct)}</strong> поисков сразу дали матч · матч ${Number(searchQuality.match || 0)} · клуб распознан без матча ${Number(searchQuality.recognizedNoMatch || 0)} · не найдено ${Number(searchQuality.notFound || 0)} · спасено последним матчем ${Number(searchQuality.recoveredRecent || 0)}.</div>` : ''}
     <div class="launch-funnel-stages">${rows.map((x,index)=>`<div>
@@ -6325,10 +6325,17 @@ function analysisFreshnessHtml(freshness = {}, recheck = {}) {
   const kickoffText=kickoff===null?'':kickoff>0?` · до старта ${kickoff} мин.`:' · матч уже начался';
   const action=freshness.needsRecheck ? '<button id="analysisRecheckBtn" class="freshness-recheck-btn" type="button">↻ Перепроверить AI сейчас</button>' : '';
   const rechecked=recheck?.performed ? `<small class="freshness-recheck-meta">${recheck.free ? 'Перепроверено без повторного списания лимита' : 'Выполнена свежая перепроверка'}</small>` : '';
+  const delta=recheck?.performed ? recheck?.delta : null;
+  const deltaItems=Array.isArray(delta?.items) ? delta.items.slice(0,6) : [];
+  const deltaHtml=delta?.available ? `<div class="analysis-delta ${delta.material ? 'material' : delta.stable ? 'stable' : ''}">
+    <div class="analysis-delta-head"><strong>${delta.material ? '🔄 Что изменилось' : delta.stable ? '✓ Прогноз стабилен' : '↻ Обновились детали'}</strong><span>${deltaItems.length} изменений</span></div>
+    <p>${escapeHtml(publicText(delta.summary || ''))}</p>
+    ${deltaItems.length ? `<div class="analysis-delta-list">${deltaItems.map(item=>`<div><span>${escapeHtml(item.title || item.code || '')}</span><strong>${item.before && item.after ? `${escapeHtml(item.before)} → ${escapeHtml(item.after)}` : escapeHtml(item.after || item.before || '')}</strong></div>`).join('')}</div>` : ''}
+  </div>` : '';
   return `<section class="panel analysis-freshness ${escapeHtml(state)}">
     <div><span>${icon}</span><div><strong>${escapeHtml(freshness.label)}</strong><small>Расчёту ${mins} мин.${escapeHtml(kickoffText)}</small></div></div>
     <p>${escapeHtml(publicText(freshness.reason || ''))}</p>
-    ${rechecked}${action}
+    ${rechecked}${deltaHtml}${action}
   </section>`;
 }
 function renderAnalysis(d) {
