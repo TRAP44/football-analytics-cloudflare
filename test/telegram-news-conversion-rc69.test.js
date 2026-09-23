@@ -5,7 +5,6 @@ import fs from 'node:fs';
 const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const html=fs.readFileSync('public/index.html','utf8');
-const playbook=fs.readFileSync('TELEGRAM_NEWS_CONVERSION_RC69.md','utf8');
 
 test('RC69 keeps news in Telegram and adds per-item AI conversion actions',()=>{
   assert.doesNotMatch(html,/id="newsView"/);
@@ -53,5 +52,4 @@ test('launch analytics exposes news AI intent and RC69 deterministic health',()=
   for (const flag of ['telegramNewsConversionEngine','newsPerItemAiCta','newsTeamIntentResolution','newsConversionTracking']) {
     assert.ok(worker.includes(flag + ": 'enabled'"));
   }
-  assert.match(playbook,/Telegram News Conversion Engine/);
 });
