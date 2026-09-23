@@ -58,7 +58,7 @@ if (!fs.existsSync('.github/workflows/rollback-production.yml')) failures.push('
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
-if (!deployWorkflow.includes('--message "RC103 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC103');
+if (!deployWorkflow.includes('--message "RC104 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC104');
 if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.96.0-rc104"')) failures.push('Production smoke must verify 6.96.0-rc104');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
 if (!/id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden/.test(html)) failures.push('Admin role badge must use the fail-closed admin-only visibility contract');
