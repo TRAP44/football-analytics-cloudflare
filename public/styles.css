@@ -2832,3 +2832,16 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 .ai-track-record-error,.ai-track-record-empty{padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}.ai-track-record-error p,.ai-track-record-empty p{margin:5px 0 0;color:var(--hint);font-size:12px}
 .history-personal-head{display:flex;justify-content:space-between;align-items:end;gap:12px;margin:0 2px 9px}.history-personal-head strong{font-size:13px}.history-personal-head span{font-size:10px;color:var(--hint);text-align:right}
 @media(max-width:520px){.ai-track-kpis{grid-template-columns:1fr 1fr}.ai-track-row{grid-template-columns:24px minmax(0,1fr)}.ai-track-outcome{grid-column:2;text-align:left;max-width:none}.history-personal-head{align-items:flex-start;flex-direction:column;gap:2px}.history-personal-head span{text-align:left}}
+
+
+/* RC67 — media publisher kit */
+.media-publisher-kit{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.media-publisher-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.media-publisher-grid label{display:grid;gap:5px}.media-publisher-grid label>span{font-size:10px;color:var(--hint);font-weight:700}
+.media-publisher-grid input{width:100%;min-height:40px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text);padding:0 10px}
+.media-publisher-actions,.media-publisher-result-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.media-publisher-result{display:grid;gap:8px;margin-top:10px;padding:10px;border:1px solid rgba(56,189,248,.16);border-radius:12px;background:rgba(56,189,248,.035)}
+.media-publisher-link-row{display:grid;gap:4px}.media-publisher-link-row>span{font-size:10px;color:var(--hint)}.media-publisher-link-row code{display:block;overflow-wrap:anywhere}
+.media-publisher-copy{width:100%;min-height:150px;resize:vertical;border:1px solid var(--line);border-radius:10px;background:rgba(148,163,184,.04);color:var(--text);padding:10px;line-height:1.45}
+@media(max-width:760px){.media-publisher-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:480px){.media-publisher-grid{grid-template-columns:1fr}}
