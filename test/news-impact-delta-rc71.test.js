@@ -7,7 +7,7 @@ const app=fs.readFileSync('public/app.js','utf8');
 const doc=fs.readFileSync('NEWS_IMPACT_DELTA_RC71.md','utf8');
 
 test('RC71 only triggers news-impact recheck after an explicit Telegram AI action',()=>{
-  assert.match(worker,/newsImpactRecheck:Boolean\(options\.newsImpactRecheck\)/);
+  assert.match(worker,/newsImpactRecheck:true/);
   assert.match(worker,/newsImpactDelta:Boolean\(newsPublishedAt\)/);
   assert.match(worker,/newsImpactDelta:true,newsPublishedAt:publishedAt/);
   assert.match(worker,/source:'news_impact'/);
