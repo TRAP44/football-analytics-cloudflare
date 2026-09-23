@@ -3158,12 +3158,28 @@ async function processTelegramUpdate(request, cfg, update) {
       await sendBotFixtureMenu(request,cfg,callbackUserId,callbackChatId,fixtureId);
       return json({ok:true});
     }
-    const newsAiTeamAction=data.match(/^news:ai_team:([a-z0-9]{2,32})$/);
+    const datedNewsAiTeamAction=data.match(/^news:ai_team:([a-z0-9]{2,32}):(\d{8})$/);
+    const legacyNewsAiTeamAction=data.match(/^news:ai_team:([a-z0-9]{2,32})$/);
+    const newsAiTeamAction=datedNewsAiTeamAction || legacyNewsAiTeamAction;
     if (callbackChatId && newsAiTeamAction) {
       const team=newsTeamByToken(newsAiTeamAction[1]);
       if (!team) {
         await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Не удалось определить клуб',show_alert:true}).catch(()=>null);
         return json({ok:true});
+      }
+      const publishedAt=newsPublishedAtFromDayToken(datedNewsAiTeamAction?.[2] || '');
+      if (publishedAt) {
+        const parts={first:team.canonical,second:'',query:team.canonical,intent:'analysis'};
+        const matches=await botRemoteTeamMatches(parts,cfg).catch(()=>[]);
+        const link=newsRelevantFixture({publishedAt,category:{code:'general'}},matches || []);
+        if (link?.fixture?.fixtureId) {
+          const fixtureId=Number(link.fixture.fixtureId);
+          void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_ai_intent',channel:'telegram',fixtureId,metadata:{mode:'team_smart_link',team:newsTeamToken(team),linking:'smart_fixture'}});
+          void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_return',channel:'telegram',fixtureId,metadata:{origin:'news_ai_smart_link'}});
+          await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:`Нашёл релевантный матч ${team.canonical}`}).catch(()=>null);
+          await sendBotFixtureMenu(request,cfg,callbackUserId,callbackChatId,fixtureId);
+          return json({ok:true});
+        }
       }
       void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_ai_intent',channel:'telegram',metadata:{mode:'team_search',team:newsTeamToken(team)}});
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:`Ищу ближайший матч ${team.canonical}…`}).catch(()=>null);
@@ -10660,6 +10676,19 @@ function newsTeamByToken(token = '') {
   return TOP_TEAM_SEARCH_CATALOG.find(team=>newsTeamToken(team)===clean) || null;
 }
 
+function newsPublishedDayToken(item = {}) {
+  const ms=newsPublishedMs(item);
+  if (!Number.isFinite(ms)) return '';
+  return new Date(ms).toISOString().slice(0,10).replace(/-/g,'');
+}
+
+function newsPublishedAtFromDayToken(token = '') {
+  const value=String(token || '');
+  if (!/^\d{8}$/.test(value)) return '';
+  const iso=`${value.slice(0,4)}-${value.slice(4,6)}-${value.slice(6,8)}T12:00:00Z`;
+  return Number.isFinite(Date.parse(iso)) ? iso : '';
+}
+
 function newsTeamHint(item = {}) {
   const hay=` ${searchText(`${item?.title || ''} ${item?.content || ''}`)} `;
   if (!hay.trim()) return null;
@@ -10761,13 +10790,16 @@ function smartNewsMatchLinkDrill() {
   const best=newsRelevantFixture(item,fixtures);
   const label=newsFixtureTimingLabel(best);
   const guide=newsFixtureChangeGuide(item,best);
+  const dayToken=newsPublishedDayToken(item);
   return {
     pass:best?.fixture?.fixtureId===2
       && best?.timing==='near_match'
       && label.includes('дн.')
       && guide.includes('состав')
+      && dayToken==='20260920'
+      && newsPublishedAtFromDayToken(dayToken)==='2026-09-20T12:00:00Z'
       && newsFixtureRelevance(item,fixtures[0]).score<newsFixtureRelevance(item,fixtures[1]).score,
-    cases:5,
+    cases:7,
   };
 }
 
@@ -10796,7 +10828,10 @@ function newsConversionKeyboard(items = [], extraRows = [], { fixtureId=0, fixtu
       row.push({text:'🧠 Проверить с AI',callback_data:`news:ai_match:${linkedFixtureId}`});
     } else {
       const hint=newsTeamHint(item);
-      if (hint?.token) row.push({text:`🧠 ${String(hint.canonical).slice(0,18)}`,callback_data:`news:ai_team:${hint.token}`});
+      if (hint?.token) {
+        const dayToken=newsPublishedDayToken(item);
+        row.push({text:`🧠 ${String(hint.canonical).slice(0,18)}`,callback_data:`news:ai_team:${hint.token}${dayToken ? `:${dayToken}` : ''}`});
+      }
     }
     rows.push(row);
   }
