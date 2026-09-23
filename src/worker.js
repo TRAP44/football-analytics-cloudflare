@@ -7092,6 +7092,12 @@ async function refreshPostMatchSettlement(candidates = [], predictions = [], cfg
 async function claimPostMatchReturnDelivery(userId, fixtureId, cfg) {
   const key=postMatchReturnDeliveryKey(userId,fixtureId);
   if (!hasSupabase(cfg)) return {claimed:false,key};
+  const prior=await getCacheEntry(key,cfg,true).catch(()=>null);
+  const priorClaimedAt=Date.parse(prior?.payload?.claimedAt || '');
+  if (prior?.payload?.state==='claimed' && Number.isFinite(priorClaimedAt) && priorClaimedAt < Date.now()-15*60_000) {
+    memory.cache.delete(key);
+    await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${key}`}).catch(()=>null);
+  }
   const expiresAt=new Date(Date.now()+POST_MATCH_RETURN_MARKER_DAYS*86400_000).toISOString();
   const url=new URL(`${cfg.supabaseUrl}/rest/v1/analysis_cache`);
   url.searchParams.set('on_conflict','cache_key');
@@ -7108,6 +7114,14 @@ async function claimPostMatchReturnDelivery(userId, fixtureId, cfg) {
     return {claimed:true,key};
   }
   return {claimed:false,key};
+}
+
+async function finishPostMatchReturnClaim(key, userId, fixtureId, cfg) {
+  if (!key) return;
+  const payload={state:'sent',userId:Number(userId),fixtureId:Number(fixtureId),sentAt:new Date().toISOString(),version:APP_VERSION};
+  const expiresAt=Date.now()+POST_MATCH_RETURN_MARKER_DAYS*86400_000;
+  memory.cache.set(key,{payload,expiresAt});
+  if (hasSupabase(cfg)) await supaPatch(cfg,'analysis_cache',{cache_key:`eq.${key}`},{payload,expires_at:new Date(expiresAt).toISOString()}).catch(()=>null);
 }
 
 async function releasePostMatchReturnClaim(key, cfg) {
@@ -7160,6 +7174,7 @@ async function processPostMatchReturns(cfg) {
       if (result.ok) {
         sent++;
         sentUsers.add(userId);
+        await finishPostMatchReturnClaim(claim.key,userId,fixtureId,cfg);
         await setCache(postMatchReturnCooldownKey(userId),fixtureId,{sentAt:new Date().toISOString(),fixtureId},cfg,POST_MATCH_RETURN_COOLDOWN_MINUTES);
         void recordGrowthEvent(cfg,{userId,eventName:'post_match_return_sent',channel:'telegram',fixtureId,metadata:{correct:Boolean(message.correct)}});
       } else {
