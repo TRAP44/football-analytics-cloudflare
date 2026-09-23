@@ -1001,6 +1001,14 @@ function productionSafetySnapshot() {
       active: memory.inflight.size,
       joins: Number(memory.telemetry?.singleflightJoins || 0),
     },
+    distributedAnalysis: {
+      claims:Number(memory.telemetry?.analysisLockClaims || 0),
+      joins:Number(memory.telemetry?.analysisLockJoins || 0),
+      joinHits:Number(memory.telemetry?.analysisLockJoinHits || 0),
+      timeouts:Number(memory.telemetry?.analysisLockTimeouts || 0),
+      failOpen:Number(memory.telemetry?.analysisLockFailOpen || 0),
+      policy:distributedAnalysisLockPolicy(),
+    },
     burstGuard: {
       activeBuckets: memory.routeBurst.size,
       blocked: Number(memory.telemetry?.burstBlocks || 0),
@@ -9985,6 +9993,8 @@ async function apiProductionReadiness(request, cfg) {
       diagnostics.supabase?.ok ? `${Number(diagnostics.supabase?.latencyMs || 0)} мс.` : `${diagnostics.supabase?.status || 'offline'}.`, true),
     productionCheck('singleflight', 'Объединение одинаковых серверных запросов', singleflightTest.pass ? 'pass' : 'fail',
       singleflightTest.pass ? `${singleflightTest.callers} параллельных вызовов → ${singleflightTest.executions} выполнение.` : 'Объединение параллельных запросов не прошло самопроверку.', true),
+    productionCheck('distributed_analysis_lock', 'Cross-instance защита AI', distributedAnalysisLockDrill().pass ? 'pass' : 'fail',
+      `TTL ${distributedAnalysisLockPolicy().ttlSeconds} сек. · ожидание до ${Math.round(distributedAnalysisLockPolicy().maxWaitMs/1000)} сек. · fail-open при недоступности lock storage.`, true),
     productionCheck('burst_guard', 'Burst Guard', ROUTE_BURST_POLICIES.length >= 6 ? 'pass' : 'fail',
       `${ROUTE_BURST_POLICIES.length} политик для дорогих маршрутов; блокировок в экземпляре: ${Number(memory.telemetry?.burstBlocks || 0)}.`, true),
     productionCheck('upstream_timeouts', 'Тайм-ауты внешних сервисов', 'pass',
