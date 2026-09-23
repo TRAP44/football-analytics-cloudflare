@@ -80,11 +80,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.75.0-rc83';
+const APP_VERSION = '6.76.0-rc84';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc83';
-const RC_NAME = 'RC83';
+const RELEASE_CHANNEL = 'rc84';
+const RC_NAME = 'RC84';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1769,6 +1769,12 @@ async function apiLaunchFunnel(request,cfg) {
     ? buildNewsImpactRecoveryStrategyMatrix(newsImpactRecoveryStrategyEvidence,newsImpactRecoveryStrategyRecentEvidence)
     : [];
   const newsImpactRecoveryStrategyMatrix=buildNewsImpactRecoveryDriftMatrix(newsImpactRecoveryStrategyBaseMatrix,newsImpactRecoveryStrategyPriorEvidence,newsImpactRecoveryStrategyRecentEvidence);
+  const newsImpactRecoveryTransitionHistory=newsImpactRecoveryStrategyLoaded.available
+    ? (newsImpactRecoveryStrategyLoaded.transitionHistory || [])
+    : [];
+  const newsImpactRecoveryTransitionSummary=summarizeNewsImpactRecoveryTransitions(newsImpactRecoveryTransitionHistory);
+  const newsImpactRecoveryStrategyAlerts=buildNewsImpactRecoveryAdminAlerts(newsImpactRecoveryStrategyMatrix,newsImpactRecoveryStrategyLoaded.reason);
+  const newsImpactRecoveryAlertSummary=summarizeNewsImpactRecoveryAlerts(newsImpactRecoveryStrategyAlerts);
   const newsImpactRecoveryStrategySummary={
     available:Boolean(newsImpactRecoveryStrategyLoaded.available),
     evidenceReason:String(newsImpactRecoveryStrategyLoaded.reason || 'unknown'),
@@ -1866,6 +1872,10 @@ async function apiLaunchFunnel(request,cfg) {
     newsImpactRecoveryStrategySummary,
     newsImpactRecoveryStrategyMatrix,
     newsImpactRecoveryStrategyGuard,
+    newsImpactRecoveryTransitionHistory,
+    newsImpactRecoveryTransitionSummary,
+    newsImpactRecoveryStrategyAlerts,
+    newsImpactRecoveryAlertSummary,
     newsImpactActionFunnel,
     newsImpactActionBottleneck,
     newsImpactActionConfidenceGuard,
@@ -3583,12 +3593,129 @@ function buildNewsImpactRecoveryDriftMatrix(strategyRows = [], priorEvidenceRows
       || String(a.action || '').localeCompare(String(b.action || '')));
 }
 
+
+function buildNewsImpactRecoveryTransitionHistory(failureRows = [], {limit = 20} = {}) {
+  const ordered=[...(failureRows || [])]
+    .map(row=>({row,at:newsImpactEventTime(row)}))
+    .filter(x=>Number.isFinite(x.at))
+    .sort((a,b)=>a.at-b.at);
+  const state=new Map();
+  const transitions=[];
+  for (const item of ordered) {
+    const row=item.row;
+    const meta=row?.metadata && typeof row.metadata==='object' ? row.metadata : {};
+    const reason=NEWS_IMPACT_FAILURE_CODES.has(String(meta.reason || '')) ? String(meta.reason) : 'server_error';
+    const action=cleanNewsImpactActionCode(meta.action);
+    if (!action) continue;
+    const fixed=newsImpactRecoveryForFailure(reason,action);
+    const recovery=NEWS_IMPACT_RECOVERY_CODES.has(String(meta.recovery || '')) ? String(meta.recovery) : fixed.code;
+    const strategy=String(meta.strategy || '')==='adaptive' ? 'adaptive' : 'fixed';
+    const guardReason=NEWS_IMPACT_RECOVERY_STRATEGY_GUARD_CODES.has(String(meta.strategy_guard || ''))
+      ? String(meta.strategy_guard)
+      : '';
+    const key=`${reason}|${action}`;
+    const current={strategy,recovery,guardReason,at:item.at};
+    const previous=state.get(key) || null;
+    if (previous && (previous.strategy!==strategy || previous.recovery!==recovery)) {
+      transitions.push({
+        at:new Date(item.at).toISOString(),
+        reason,
+        reasonLabel:NEWS_IMPACT_FAILURE_LABELS[reason] || reason,
+        action,
+        actionLabel:NEWS_IMPACT_ACTION_LABELS[action] || action,
+        fromStrategy:previous.strategy,
+        fromRecovery:previous.recovery,
+        fromRecoveryLabel:NEWS_IMPACT_RECOVERY_LABELS[previous.recovery] || previous.recovery,
+        toStrategy:strategy,
+        toRecovery:recovery,
+        toRecoveryLabel:NEWS_IMPACT_RECOVERY_LABELS[recovery] || recovery,
+        guardReason,
+      });
+    }
+    state.set(key,current);
+  }
+  return transitions
+    .sort((a,b)=>Date.parse(b.at)-Date.parse(a.at))
+    .slice(0,Math.max(1,Math.min(50,Number(limit || 20))));
+}
+
+function summarizeNewsImpactRecoveryTransitions(rows = []) {
+  const list=Array.isArray(rows) ? rows : [];
+  return {
+    total:list.length,
+    fixedToAdaptive:list.filter(x=>x.fromStrategy==='fixed' && x.toStrategy==='adaptive').length,
+    adaptiveToFixed:list.filter(x=>x.fromStrategy==='adaptive' && x.toStrategy==='fixed').length,
+    recoveryChanged:list.filter(x=>x.fromRecovery!==x.toRecovery).length,
+    last:list[0] || null,
+  };
+}
+
+function buildNewsImpactRecoveryAdminAlerts(strategyRows = [], evidenceReason = 'ok') {
+  const alerts=[];
+  if (String(evidenceReason || 'ok')!=='ok') {
+    alerts.push({
+      severity:'warning',
+      code:'strategy_evidence_unavailable',
+      reason:'',
+      action:'',
+      reasonLabel:'Recovery Strategy',
+      actionLabel:'',
+      message:'Историческое evidence временно недоступно; runtime использует fixed fallback.',
+    });
+    return alerts;
+  }
+  for (const row of strategyRows || []) {
+    if (row.guardReason==='performance_drift') {
+      alerts.push({
+        severity:'warning',
+        code:'performance_drift',
+        reason:row.reason,
+        action:row.action,
+        reasonLabel:row.reasonLabel || row.reason,
+        actionLabel:row.actionLabel || row.action,
+        message:`Adaptive recovery отключён после подтверждённого падения на ${Number(row.driftDropPctPoints || 0).toFixed(1)} п.п.; включён fixed fallback.`,
+      });
+    } else if (row.guardReason==='recent_regression') {
+      alerts.push({
+        severity:'warning',
+        code:'recent_regression',
+        reason:row.reason,
+        action:row.action,
+        reasonLabel:row.reasonLabel || row.reason,
+        actionLabel:row.actionLabel || row.action,
+        message:'Свежая выборка не подтверждает adaptive recovery; используется fixed fallback.',
+      });
+    } else if (row.guardReason==='stability_sample' && row.proposedRecovery) {
+      alerts.push({
+        severity:'info',
+        code:'stability_sample',
+        reason:row.reason,
+        action:row.action,
+        reasonLabel:row.reasonLabel || row.reason,
+        actionLabel:row.actionLabel || row.action,
+        message:'Есть adaptive-кандидат, но свежей выборки пока недостаточно для безопасного переключения.',
+      });
+    }
+  }
+  return alerts.slice(0,12);
+}
+
+function summarizeNewsImpactRecoveryAlerts(rows = []) {
+  const list=Array.isArray(rows) ? rows : [];
+  return {
+    total:list.length,
+    warnings:list.filter(x=>x.severity==='warning').length,
+    info:list.filter(x=>x.severity==='info').length,
+    critical:0,
+  };
+}
+
 async function loadNewsImpactRecoveryStrategyEvidence(cfg) {
   const now=Date.now();
   const cached=memory.newsImpactRecoveryStrategy || {value:null,loadedAt:0};
   if (cached.value && now-Number(cached.loadedAt || 0)<NEWS_IMPACT_RECOVERY_STRATEGY_CACHE_MS) return cached.value;
   if (!hasSupabase(cfg)) {
-    const value={available:false,truncated:false,reason:'supabase_unavailable',evidence:[],recentEvidence:[],priorEvidence:[]};
+    const value={available:false,truncated:false,reason:'supabase_unavailable',evidence:[],recentEvidence:[],priorEvidence:[],transitionHistory:[]};
     memory.newsImpactRecoveryStrategy={value,loadedAt:now};
     return value;
   }
@@ -3614,11 +3741,12 @@ async function loadNewsImpactRecoveryStrategyEvidence(cfg) {
     const evidence=buildNewsImpactRecoveryStrategyEvidence(attempts,outcomes,failures,{asOfMs:now});
     const recentEvidence=buildNewsImpactRecoveryStrategyEvidence(recentAttempts,outcomes,failures,{asOfMs:now});
     const priorEvidence=buildNewsImpactRecoveryStrategyEvidence(priorAttempts,outcomes,failures,{asOfMs:now});
-    const value={available:!page.truncated,truncated:Boolean(page.truncated),reason:page.truncated?'truncated':'ok',evidence,recentEvidence,priorEvidence};
+    const transitionHistory=buildNewsImpactRecoveryTransitionHistory(failures,{limit:20});
+    const value={available:!page.truncated,truncated:Boolean(page.truncated),reason:page.truncated?'truncated':'ok',evidence,recentEvidence,priorEvidence,transitionHistory};
     memory.newsImpactRecoveryStrategy={value,loadedAt:now};
     return value;
   } catch {
-    const value={available:false,truncated:false,reason:'load_failed',evidence:[],recentEvidence:[],priorEvidence:[]};
+    const value={available:false,truncated:false,reason:'load_failed',evidence:[],recentEvidence:[],priorEvidence:[],transitionHistory:[]};
     memory.newsImpactRecoveryStrategy={value,loadedAt:now};
     return value;
   }
@@ -3705,6 +3833,33 @@ function newsImpactRecoveryDriftDrill() {
       && stable.driftStatus==='stable'
       && insufficient.strategy==='adaptive'
       && insufficient.driftStatus==='insufficient',
+    cases:8,
+  };
+}
+
+function newsImpactRecoveryTransitionDrill() {
+  const rows=[
+    {telegram_id:1,created_at:'2026-09-01T10:00:00Z',metadata:{reason:'server_error',action:'full_ai',recovery:'retry',strategy:'fixed',strategy_guard:'baseline_sample'}},
+    {telegram_id:2,created_at:'2026-09-05T10:00:00Z',metadata:{reason:'server_error',action:'full_ai',recovery:'open_full_ai',strategy:'adaptive',strategy_guard:'stable_significant_better'}},
+    {telegram_id:3,created_at:'2026-09-10T10:00:00Z',metadata:{reason:'server_error',action:'full_ai',recovery:'open_full_ai',strategy:'adaptive',strategy_guard:'stable_significant_better'}},
+    {telegram_id:4,created_at:'2026-09-15T10:00:00Z',metadata:{reason:'server_error',action:'full_ai',recovery:'retry',strategy:'fixed',strategy_guard:'performance_drift'}},
+    {telegram_id:5,created_at:'2026-09-16T10:00:00Z',metadata:{reason:'timeout',action:'share',recovery:'retry_soon',strategy:'fixed',strategy_guard:'fixed_default'}},
+  ];
+  const history=buildNewsImpactRecoveryTransitionHistory(rows);
+  const summary=summarizeNewsImpactRecoveryTransitions(history);
+  const alerts=buildNewsImpactRecoveryAdminAlerts([
+    {reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',guardReason:'performance_drift',driftDropPctPoints:22.5},
+    {reason:'timeout',reasonLabel:'Тайм-аут',action:'share',actionLabel:'Поделиться',guardReason:'stability_sample',proposedRecovery:'retry_soon'},
+  ],'ok');
+  return {
+    pass:history.length===2
+      && summary.fixedToAdaptive===1
+      && summary.adaptiveToFixed===1
+      && history[0]?.guardReason==='performance_drift'
+      && !Object.prototype.hasOwnProperty.call(history[0] || {},'telegram_id')
+      && alerts.filter(x=>x.severity==='warning').length===1
+      && alerts.filter(x=>x.severity==='info').length===1
+      && summarizeNewsImpactRecoveryAlerts(alerts).total===2,
     cases:8,
   };
 }
@@ -16657,6 +16812,10 @@ export default {
         newsImpactRecoveryDriftGuard: 'enabled',
         newsImpactRecoveryDriftAudit: 'enabled',
         newsImpactRecoveryDriftSelfTest: newsImpactRecoveryDriftDrill().pass ? 'enabled' : 'failed',
+        newsImpactRecoveryTransitionHistory: 'enabled',
+        newsImpactRecoveryAdminAlerts: 'enabled',
+        newsImpactRecoveryTransitionPrivacyGuard: 'enabled',
+        newsImpactRecoveryTransitionSelfTest: newsImpactRecoveryTransitionDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
