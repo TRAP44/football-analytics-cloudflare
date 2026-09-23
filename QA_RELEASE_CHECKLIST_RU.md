@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.81.0 RC89
+# QA Release Checklist — v6.82.0 RC90
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.81.0`.
-- Worker и client: `6.81.0-rc89`.
-- Release candidate: `RC89`.
+- `package.json` и `package-lock.json`: `6.82.0`.
+- Worker и client: `6.82.0-rc90`.
+- Release candidate: `RC90`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,17 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC90 — News Impact Recovery Incident SLO Breach Watchlist & Aging
+
+- Watchlist строится только из RC89 SLO Breach Feed и показывает только активные breach-эпизоды.
+- Сводка включает active, critical, active ACK breaches, active Recovery breaches, возраст самого старого активного breach и число повторяющихся активных пар.
+- Сортировка приоритизирует critical, затем более старые активные эпизоды.
+- Aging не вводит новых порогов: используются RC87 30 / 120 / 360 минут.
+- Данные не сохраняются отдельно, Supabase migration не требуется, recovery-routing не меняется.
+- Privacy: Telegram ID, raw error и произвольный free text не возвращаются.
+- Regression: `test/news-impact-recovery-incident-breach-watchlist-rc90.test.js`.
+- Production smoke требует `newsImpactRecoveryIncidentSloBreachWatchlist=enabled`, `newsImpactRecoveryIncidentBreachAging=enabled`, `newsImpactRecoveryIncidentSloBreachWatchlistSelfTest=enabled`.
 
 ## RC89 — News Impact Recovery Incident SLO Breach Feed & Drilldown
 
