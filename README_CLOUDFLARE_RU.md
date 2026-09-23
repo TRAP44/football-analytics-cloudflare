@@ -1,4 +1,4 @@
-# Football Analytics Mini App v6.96.0 — RC104
+# Football Analytics Mini App v6.97.0 — RC105
 
 Telegram-бот и Mini App для футбольной аналитики на Cloudflare Workers + Supabase. Основные источники данных: API-Football и Tavily. Интерфейс и админ-панель — на русском языке. Монетизация пока отключена.
 
@@ -18,6 +18,7 @@ Telegram-бот и Mini App для футбольной аналитики на 
 - RC102: **Secret Leak Guard** — Quality и production deploy сканируют только отслеживаемые Git-файлы и блокируют `.env`, `.dev.vars`, приватные ключи и высокоуверенные форматы токенов; значения секретов в лог не выводятся.
 - RC103: **Production Monitoring & Recovery** — Cloudflare cron каждые 15 минут без расхода API-Football проверяет Supabase, schema drift и operational error budget; состояние `incident` блокирует Release Readiness. Rollback теперь требует ожидаемую версию и после отката подтверждает `/health`, `DEV_MODE=false` и закрытый `/health/supabase`. Также исправлена ошибка инициализации `Production Readiness`.
 - RC104: **API-Football Data Reliability** — пустой ответ, пропуск из-за квоты, ограничение тарифа, timeout, rate limit и ошибка провайдера больше не сводятся к одному `[]`. AI использует только подтверждённые сигналы, понижает data trust при деградации и не трактует недоступные травмы как «0 потерь».
+- RC105: **AI Analysis Quality Gate** — confidence учитывает реальный вес доступных источников, agreement, disagreement, размер выборки формы и разрыв между первым/вторым исходом. Тоталы/BTTS требуют рабочую выборку goal model, а слабый или противоречивый анализ принудительно становится `skip`.
 - Новостной контур RC69–RC98: новость → релевантный матч → явная AI-перепроверка → News Impact Delta → **News Impact Decision Card** → **News Impact Action Tracking** → **News Impact Action Funnel** → **News Impact Funnel Confidence Guard** → **News Impact Funnel Trend Guard** → **News Impact Temporal Attribution Guard** → **News Impact Action Outcome Quality** → **News Impact Outcome Failure Diagnostics & Recovery** → **News Impact Recovery Effectiveness Funnel** → **News Impact Recovery Strategy Guard** → **News Impact Recovery Stability & Parity Guard** → **News Impact Recovery Drift Circuit Breaker** → **News Impact Recovery Transition History & Admin Alerts** → **News Impact Recovery Incident Center** → **News Impact Recovery Incident Acknowledgement & Runbook** → **News Impact Recovery Incident Escalation & SLO** → **News Impact Recovery Incident SLO Dashboard & Trend** → **News Impact Recovery Incident SLO Breach Feed & Drilldown** → **News Impact Recovery Incident SLO Breach Watchlist & Aging** → **News Impact Recovery Incident SLO Breach Triage Queue** → **News Impact Recovery Incident SLO Triage Trend & Recurrence** → **News Impact Recovery Incident SLO Breach Impact Ranking** → **News Impact Recovery Incident SLO Impact Trend** → **News Impact Recovery Incident SLO Impact Concentration** → **News Impact Recovery Incident SLO Impact Concentration Trend** → **News Impact Recovery Incident SLO Impact Executive Summary** → **News Impact Recovery Incident SLO Impact Focus Queue**.
 - News Impact не утверждает причинность по заголовку: сравнение разрешено только с корректным AI-снимком, созданным до публикации новости.
 - RC73 считает только категориальные действия после Decision Card: полный AI, составы, рынок, повторная проверка, возврат к новостям и share. Текст новости, URL и пользовательский запрос в эту аналитику не записываются.
@@ -82,7 +83,7 @@ npm run verify:release
 npm run verify:worker
 ```
 
-Production smoke дополнительно проверяет `/health`, версию `6.96.0-rc104`, `releaseCandidate=RC104`, отключённый `DEV_MODE` и обязательные health/self-test флаги.
+Production smoke дополнительно проверяет `/health`, версию `6.97.0-rc105`, `releaseCandidate=RC105`, отключённый `DEV_MODE` и обязательные health/self-test флаги.
 
 ## Документация
 
