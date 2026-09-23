@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.84.0 RC92
+# QA Release Checklist — v6.85.0 RC93
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.84.0`.
-- Worker и client: `6.84.0-rc92`.
-- Release candidate: `RC92`.
+- `package.json` и `package-lock.json`: `6.85.0`.
+- Worker и client: `6.85.0-rc93`.
+- Release candidate: `RC93`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,19 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC93 — News Impact Recovery Incident SLO Breach Impact Ranking
+
+- Ranking строится только из существующего `incidentEpisodeHistory`; новые события и таблицы не создаются.
+- Для каждого episode считается ACK overdue minutes: минуты сверх существующего ACK SLO 30 минут до acknowledgement или до окончания/текущего времени, если acknowledgement не было.
+- Recovery overdue minutes считаются как минуты сверх существующего Recovery SLO 360 минут до восстановления или текущего времени.
+- По `reason + action` агрегируются ACK overdue, Recovery overdue, total overdue, breach episodes, active episodes и самый старый активный episode.
+- Contribution % — фактическая доля пары в общей сумме overdue minutes; это не новый operational score и не новый SLO-порог.
+- Сортировка: total overdue minutes → Recovery overdue minutes → ACK overdue minutes → число episodes.
+- Privacy: Telegram ID, raw error и произвольный free text не возвращаются.
+- RC93 не меняет recovery-routing, acknowledgement semantics или incident lifecycle и не требует новой Supabase migration.
+- Regression: `test/news-impact-recovery-incident-impact-ranking-rc93.test.js`.
+- Production smoke требует `newsImpactRecoveryIncidentSloBreachImpactRanking=enabled`, `newsImpactRecoveryIncidentOverdueContribution=enabled`, `newsImpactRecoveryIncidentSloBreachImpactRankingSelfTest=enabled`.
 
 ## RC92 — News Impact Recovery Incident SLO Triage Trend & Recurrence
 
