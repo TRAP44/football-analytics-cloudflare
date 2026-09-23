@@ -21,6 +21,8 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         adminSecurity: 'enabled',
         adminDevModeIsolation: 'enabled',
         backendSecurityContract: 'enabled',
+        supabaseSchemaDriftGuard: 'enabled',
+        supabaseSchemaDriftSelfTest: 'enabled',
         cloudflareDeploymentGate: 'enabled',
         browserSecurityPolicy: 'enabled',
         failClosedDeployment: 'enabled',
