@@ -7,6 +7,10 @@ on:
         description: Cloudflare Worker version ID to restore
         required: true
         type: string
+      expected_version:
+        description: Expected app version after rollback, for example 6.94.0-rc102
+        required: true
+        type: string
       confirm:
         description: Type ROLLBACK to confirm
         required: true
@@ -23,16 +27,58 @@ jobs:
   rollback:
     if: inputs.confirm == 'ROLLBACK'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     environment: production
+    env:
+      VERSION_ID: ${{ inputs.version_id }}
+      EXPECTED_VERSION: ${{ inputs.expected_version }}
+      ROLLBACK_URL: ${{ vars.CLOUDFLARE_WORKER_URL }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      WRANGLER_SEND_METRICS: "false"
+      WRANGLER_SEND_ERROR_REPORTS: "false"
+
     steps:
       - name: Checkout main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Roll back Worker
-        uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
+      - name: Use Node.js 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: "4.136.1"
-          command: rollback ${{ inputs.version_id }} --yes --message "Manual rollback from GitHub Actions"
+          node-version: 22
+          cache: npm
+
+      - name: Install pinned dependencies
+        run: npm ci
+
+      - name: Rollback preflight
+        shell: bash
+        run: |
+          if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
+            echo "Cloudflare credentials are required for rollback." >&2
+            exit 1
+          fi
+          if [[ -z "$ROLLBACK_URL" || "$ROLLBACK_URL" != https://* ]]; then
+            echo "CLOUDFLARE_WORKER_URL must be configured as an HTTPS repository/environment variable before rollback." >&2
+            exit 1
+          fi
+          if [[ ! "$EXPECTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$ ]]; then
+            echo "expected_version must look like 6.94.0-rc102." >&2
+            exit 1
+          fi
+          if [[ ! "$VERSION_ID" =~ ^[A-Za-z0-9-]{20,80}$ ]]; then
+            echo "version_id format is invalid." >&2
+            exit 1
+          fi
+
+      - name: Roll back Worker
+        shell: bash
+        run: |
+          npx wrangler rollback "$VERSION_ID" --yes --message "Manual rollback to $EXPECTED_VERSION from GitHub Actions"
+
+      - name: Verify restored production
+        shell: bash
+        run: |
+          node scripts/rollback-smoke.js "$ROLLBACK_URL" "$EXPECTED_VERSION"
+          echo "### Cloudflare rollback verified" >> "$GITHUB_STEP_SUMMARY"
+          echo "Restored and verified: $EXPECTED_VERSION" >> "$GITHUB_STEP_SUMMARY"
