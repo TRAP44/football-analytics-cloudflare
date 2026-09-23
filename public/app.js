@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.88.0-rc96';
+const CLIENT_VERSION = '6.89.0-rc97';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc96';
+const CLIENT_RELEASE_CHANNEL = 'rc97';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2979,6 +2979,9 @@ function renderLaunchFunnel() {
   const impactRecoveryIncidentSloImpactConcentrationTrend=d.newsImpactRecoveryIncidentSloImpactConcentrationTrend || {available:false,summary:{},weekly:[]};
   const impactRecoveryConcentrationTrendSummary=impactRecoveryIncidentSloImpactConcentrationTrend.summary || {};
   const impactRecoveryConcentrationTrendWeekly=Array.isArray(impactRecoveryIncidentSloImpactConcentrationTrend.weekly) ? impactRecoveryIncidentSloImpactConcentrationTrend.weekly : [];
+  const impactRecoveryIncidentSloImpactExecutiveSummary=d.newsImpactRecoveryIncidentSloImpactExecutiveSummary || {available:false,summary:{},topPair:null};
+  const impactRecoveryExecutiveSummary=impactRecoveryIncidentSloImpactExecutiveSummary.summary || {};
+  const impactRecoveryExecutiveTopPair=impactRecoveryIncidentSloImpactExecutiveSummary.topPair || null;
   const impactFunnel=Array.isArray(d.newsImpactActionFunnel) ? d.newsImpactActionFunnel : [];
   const impactBottleneck=d.newsImpactActionBottleneck || null;
   const impactConfidenceGuard=d.newsImpactActionConfidenceGuard || {minUsers:10,stableUsers:30};
@@ -3116,6 +3119,18 @@ function renderLaunchFunnel() {
       (impactRecoveryTriageTrendWeekly.length ? '<div class="launch-campaign-list">' + impactRecoveryTriageTrendWeekly.map(x=>'<div><span><b>' + escapeHtml(String(x.snapshotAt || '').slice(0,10)) + '</b></span><strong>' + Number(x.total || 0) + ' active</strong><small>Recovery overdue ' + Number(x.recoveryOverdue || 0) + ' · ACK critical ' + Number(x.ackCritical || 0) + ' · ACK overdue ' + Number(x.ackOverdue || 0) + '</small></div>').join('') + '</div>' : '<div class="data-notice">Нет недельных triage-снимков.</div>') +
       (impactRecoveryTriageTrendStuck.length ? '<div class="data-notice">🧭 Пары, остающиеся в triage минимум 2 недельных снимка: ' + impactRecoveryTriageTrendStuck.map(x=>escapeHtml(x.reasonLabel || x.reason || '') + ' / ' + escapeHtml(x.actionLabel || x.action || '') + ': ' + Number(x.weeksPresent || 0) + ' нед.').join(' · ') + '</div>' : '<div class="data-notice">✅ Пар, застрявших в triage минимум на двух недельных снимках, нет.</div>') +
       '<p class="tiny">RC92 — trend строится из фактических incident episodes на конец каждой недели. Используются только существующие пороги RC87; производные trend-данные не сохраняются и recovery-routing не меняется.</p>'
+    ) : ''}
+    ${impactRecoveryIncidentSloImpactExecutiveSummary.available !== false ? (
+      '<div class="release-monitor-section-head"><strong>SLO Impact Executive Summary</strong><span>накоплено ' + Number(impactRecoveryExecutiveSummary.cumulativeOverdueMinutes || 0) + ' мин · неделя ' + Number(impactRecoveryExecutiveSummary.currentWeekOverdueMinutes || 0) + ' мин · Δ ' + (Number(impactRecoveryExecutiveSummary.weekDeltaMinutes || 0)>=0?'+':'') + Number(impactRecoveryExecutiveSummary.weekDeltaMinutes || 0) + ' мин</span></div>' +
+      '<div class="release-monitor-kpis">' +
+        '<div><span>ACK сверх SLO</span><strong>' + Number(impactRecoveryExecutiveSummary.cumulativeAckOverdueMinutes || 0) + ' мин</strong><small>накоплено по breach episodes</small></div>' +
+        '<div><span>Recovery сверх SLO</span><strong>' + Number(impactRecoveryExecutiveSummary.cumulativeRecoveryOverdueMinutes || 0) + ' мин</strong><small>накоплено по breach episodes</small></div>' +
+        '<div><span>Активных пар</span><strong>' + Number(impactRecoveryExecutiveSummary.activePairs || 0) + '</strong><small>из ' + Number(impactRecoveryExecutiveSummary.breachPairs || 0) + ' breach-пар</small></div>' +
+        '<div><span>Концентрация</span><strong>top1 ' + Number(impactRecoveryExecutiveSummary.top1ContributionPct || 0) + '%</strong><small>top3 ' + Number(impactRecoveryExecutiveSummary.top3ContributionPct || 0) + '% · top5 ' + Number(impactRecoveryExecutiveSummary.top5ContributionPct || 0) + '%</small></div>' +
+      '</div>' +
+      (impactRecoveryExecutiveTopPair ? '<div class="data-notice">🎯 Ведущая пара: <strong>' + escapeHtml(impactRecoveryExecutiveTopPair.reasonLabel || impactRecoveryExecutiveTopPair.reason || '') + ' / ' + escapeHtml(impactRecoveryExecutiveTopPair.actionLabel || impactRecoveryExecutiveTopPair.action || '') + '</strong> · ' + Number(impactRecoveryExecutiveTopPair.totalOverdueMinutes || 0) + ' мин · ' + Number(impactRecoveryExecutiveTopPair.contributionPct || 0) + '% общего overdue · active episodes ' + Number(impactRecoveryExecutiveTopPair.activeEpisodes || 0) + '</div>' : '<div class="data-notice">✅ Ведущей breach-пары нет: накопленная SLO-просрочка отсутствует.</div>') +
+      '<div class="data-notice">Неделя: ↗ ' + Number(impactRecoveryExecutiveSummary.weeklyIncreasedPairs || 0) + ' · ↘ ' + Number(impactRecoveryExecutiveSummary.weeklyDecreasedPairs || 0) + ' · → ' + Number(impactRecoveryExecutiveSummary.weeklyUnchangedPairs || 0) + ' · концентрация top1 ' + (impactRecoveryExecutiveSummary.top1WeeklyDirection==='increased'?'↗️':impactRecoveryExecutiveSummary.top1WeeklyDirection==='decreased'?'↘️':'→') + ' ' + (Number(impactRecoveryExecutiveSummary.top1WeeklyDeltaPctPoints || 0)>=0?'+':'') + Number(impactRecoveryExecutiveSummary.top1WeeklyDeltaPctPoints || 0) + ' п.п. · top3 ' + (impactRecoveryExecutiveSummary.top3WeeklyDirection==='increased'?'↗️':impactRecoveryExecutiveSummary.top3WeeklyDirection==='decreased'?'↘️':'→') + ' ' + (Number(impactRecoveryExecutiveSummary.top3WeeklyDeltaPctPoints || 0)>=0?'+':'') + Number(impactRecoveryExecutiveSummary.top3WeeklyDeltaPctPoints || 0) + ' п.п.</div>' +
+      '<p class="tiny">RC97 — единая сводка только объединяет уже рассчитанные RC93–RC96 factual SLO impact views. Новых score, SLO-порогов, persistence или изменений recovery-routing нет.</p>'
     ) : ''}
     ${impactRecoveryIncidentSloBreachImpactRanking.available !== false ? (
       '<div class="release-monitor-section-head"><strong>SLO Breach Impact Ranking</strong><span>' + Number(impactRecoveryImpactSummary.totalOverdueMinutes || 0) + ' мин сверх SLO · top ' + Number(impactRecoveryImpactSummary.topContributionPct || 0) + '%</span></div>' +
