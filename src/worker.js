@@ -80,11 +80,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.77.0-rc85';
+const APP_VERSION = '6.78.0-rc86';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc85';
-const RC_NAME = 'RC85';
+const RELEASE_CHANNEL = 'rc86';
+const RC_NAME = 'RC86';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1627,6 +1627,63 @@ function mediaCampaignControlDrill() {
   };
 }
 
+async function apiNewsImpactRecoveryIncidentAck(request,cfg,user) {
+  if (request.method!=='POST') return json({error:'Метод не поддерживается.'},405);
+  if (!hasSupabase(cfg)) return json({error:'Supabase не настроен.'},503);
+  let body={};
+  try { body=await request.json(); } catch {}
+  const reason=NEWS_IMPACT_FAILURE_CODES.has(String(body?.reason || '')) ? String(body.reason) : '';
+  const action=cleanNewsImpactActionCode(body?.action);
+  const code=NEWS_IMPACT_RECOVERY_INCIDENT_CODES.has(String(body?.code || '')) ? String(body.code) : '';
+  const lastSeenAt=String(body?.lastSeenAt || '');
+  if (!reason || !action || !code || !Number.isFinite(Date.parse(lastSeenAt))) {
+    return json({error:'Некорректный recovery-инцидент.'},400);
+  }
+
+  const loaded=await loadNewsImpactRecoveryStrategyEvidence(cfg);
+  if (!loaded.available) return json({error:'Recovery evidence временно недоступно. Подтверждение не сохранено.'},503);
+  const base=buildNewsImpactRecoveryStrategyMatrix(loaded.evidence,loaded.recentEvidence);
+  const matrix=buildNewsImpactRecoveryDriftMatrix(base,loaded.priorEvidence,loaded.recentEvidence);
+  const incidents=buildNewsImpactRecoveryIncidentCenter(
+    matrix,
+    loaded.incidentEvents || [],
+    loaded.incidentAcknowledgements || [],
+    loaded.reason,
+  );
+  const incident=incidents.find(x=>x.status==='active'
+    && x.reason===reason
+    && x.action===action
+    && x.code===code
+    && x.canAcknowledge
+    && String(x.lastSeenAt || '')===lastSeenAt);
+  if (!incident) {
+    return json({error:'Инцидент уже изменился или больше не активен. Обновите Incident Center.'},409);
+  }
+  if (incident.acknowledged) {
+    return json({ok:true,alreadyAcknowledged:true,acknowledgedAt:incident.acknowledgedAt || null});
+  }
+
+  const ok=await recordGrowthEvent(cfg,{
+    userId:user.id,
+    eventName:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_EVENT,
+    channel:'system',
+    metadata:{
+      reason,
+      action,
+      incident_guard:code,
+      incident_seen_at:lastSeenAt,
+      ack_state:'acknowledged',
+    },
+  });
+  if (!ok) return json({error:'Не удалось сохранить подтверждение инцидента.'},503);
+  memory.newsImpactRecoveryStrategy={value:null,loadedAt:0};
+  return json({
+    ok:true,
+    acknowledgedAt:new Date().toISOString(),
+    incident:{reason,action,code,lastSeenAt},
+  });
+}
+
 async function apiLaunchFunnel(request,cfg) {
   const url=new URL(request.url);
   const days=Math.max(1,Math.min(30,Number(url.searchParams.get('days') || 7)));
@@ -1773,17 +1830,25 @@ async function apiLaunchFunnel(request,cfg) {
     ? (newsImpactRecoveryStrategyLoaded.transitionHistory || [])
     : [];
   const newsImpactRecoveryTransitionSummary=summarizeNewsImpactRecoveryTransitions(newsImpactRecoveryTransitionHistory);
-  const newsImpactRecoveryStrategyAlerts=buildNewsImpactRecoveryAdminAlerts(newsImpactRecoveryStrategyMatrix,newsImpactRecoveryStrategyLoaded.reason);
-  const newsImpactRecoveryAlertSummary=summarizeNewsImpactRecoveryAlerts(newsImpactRecoveryStrategyAlerts);
   const newsImpactRecoveryIncidentEvents=newsImpactRecoveryStrategyLoaded.available
     ? (newsImpactRecoveryStrategyLoaded.incidentEvents || [])
+    : [];
+  const newsImpactRecoveryIncidentAcknowledgements=newsImpactRecoveryStrategyLoaded.available
+    ? (newsImpactRecoveryStrategyLoaded.incidentAcknowledgements || [])
     : [];
   const newsImpactRecoveryIncidents=buildNewsImpactRecoveryIncidentCenter(
     newsImpactRecoveryStrategyMatrix,
     newsImpactRecoveryIncidentEvents,
+    newsImpactRecoveryIncidentAcknowledgements,
     newsImpactRecoveryStrategyLoaded.reason,
   );
   const newsImpactRecoveryIncidentSummary=summarizeNewsImpactRecoveryIncidents(newsImpactRecoveryIncidents);
+  const newsImpactRecoveryStrategyAlerts=buildNewsImpactRecoveryAdminAlerts(
+    newsImpactRecoveryStrategyMatrix,
+    newsImpactRecoveryStrategyLoaded.reason,
+    newsImpactRecoveryIncidents,
+  );
+  const newsImpactRecoveryAlertSummary=summarizeNewsImpactRecoveryAlerts(newsImpactRecoveryStrategyAlerts);
   const newsImpactRecoveryStrategySummary={
     available:Boolean(newsImpactRecoveryStrategyLoaded.available),
     evidenceReason:String(newsImpactRecoveryStrategyLoaded.reason || 'unknown'),
@@ -3198,6 +3263,8 @@ const NEWS_IMPACT_RECOVERY_STABILITY_MIN_ATTEMPTS = 10;
 const NEWS_IMPACT_RECOVERY_DRIFT_PRIOR_MIN_ATTEMPTS = 20;
 const NEWS_IMPACT_RECOVERY_DRIFT_RECENT_MIN_ATTEMPTS = 10;
 const NEWS_IMPACT_RECOVERY_DRIFT_DROP_PCT_POINTS = 15;
+const NEWS_IMPACT_RECOVERY_INCIDENT_ACK_EVENT = 'news_impact_recovery_incident_ack';
+const NEWS_IMPACT_RECOVERY_INCIDENT_CODES = new Set(['performance_drift','recent_regression']);
 const NEWS_IMPACT_RECOVERY_STRATEGY_CACHE_MS = 300_000;
 const NEWS_IMPACT_RECOVERY_SOURCE_WINDOW_MINUTES = 30;
 
@@ -3661,8 +3728,11 @@ function summarizeNewsImpactRecoveryTransitions(rows = []) {
   };
 }
 
-function buildNewsImpactRecoveryAdminAlerts(strategyRows = [], evidenceReason = 'ok') {
+function buildNewsImpactRecoveryAdminAlerts(strategyRows = [], evidenceReason = 'ok', incidentRows = []) {
   const alerts=[];
+  const suppressed=new Set((incidentRows || [])
+    .filter(x=>x.status==='active' && x.acknowledged && x.alertSuppressed)
+    .map(x=>newsImpactRecoveryIncidentKey(x.reason,x.action,x.code)));
   if (String(evidenceReason || 'ok')!=='ok') {
     alerts.push({
       severity:'warning',
@@ -3676,6 +3746,8 @@ function buildNewsImpactRecoveryAdminAlerts(strategyRows = [], evidenceReason = 
     return alerts;
   }
   for (const row of strategyRows || []) {
+    if (NEWS_IMPACT_RECOVERY_INCIDENT_CODES.has(String(row.guardReason || ''))
+      && suppressed.has(newsImpactRecoveryIncidentKey(row.reason,row.action,row.guardReason))) continue;
     if (row.guardReason==='performance_drift') {
       alerts.push({
         severity:'warning',
@@ -3754,12 +3826,73 @@ function buildNewsImpactRecoveryIncidentEvents(failureRows = [], {limit = 100} =
     .slice(0,Math.max(1,Math.min(250,Number(limit || 100))));
 }
 
-function buildNewsImpactRecoveryIncidentCenter(strategyRows = [], incidentEvents = [], evidenceReason = 'ok') {
+
+function newsImpactRecoveryIncidentKey(reason = '', action = '', code = '') {
+  return `${String(reason || '')}|${String(action || '')}|${String(code || '')}`;
+}
+
+function newsImpactRecoveryIncidentRunbook(code = '') {
+  if (code==='performance_drift') return {
+    title:'Performance drift',
+    steps:[
+      'Проверить prior → recent success rate и достаточность выборки.',
+      'Проверить API-Football, Supabase и runtime controls на совпадающую деградацию.',
+      'Не форсировать adaptive: circuit breaker уже держит fixed fallback.',
+      'Снять инцидент только после новой устойчивой выборки и нормализации guard.',
+    ],
+    automaticSafety:'fixed fallback уже включён автоматически',
+  };
+  if (code==='recent_regression') return {
+    title:'Recent regression',
+    steps:[
+      'Проверить свежую 7-дневную выборку baseline и adaptive-кандидата.',
+      'Сверить падение с provider/rate-limit и delivery-событиями.',
+      'Оставить fixed fallback до восстановления подтверждённой статистики.',
+    ],
+    automaticSafety:'adaptive не включается, пока свежая выборка не восстановится',
+  };
+  return {
+    title:'Strategy evidence unavailable',
+    steps:[
+      'Проверить доступность Supabase и shared recovery loader.',
+      'Проверить, не усечена ли 30-дневная выборка.',
+      'Не менять routing вручную до восстановления evidence.',
+    ],
+    automaticSafety:'runtime остаётся на fixed fallback',
+  };
+}
+
+function buildNewsImpactRecoveryIncidentAcknowledgements(rows = []) {
+  const latest=new Map();
+  for (const row of rows || []) {
+    const meta=row?.metadata && typeof row.metadata==='object' ? row.metadata : {};
+    const reason=NEWS_IMPACT_FAILURE_CODES.has(String(meta.reason || '')) ? String(meta.reason) : '';
+    const action=cleanNewsImpactActionCode(meta.action);
+    const code=NEWS_IMPACT_RECOVERY_INCIDENT_CODES.has(String(meta.incident_guard || '')) ? String(meta.incident_guard) : '';
+    const acknowledgedAt=newsImpactEventTime(row);
+    const seenAt=Date.parse(String(meta.incident_seen_at || ''));
+    if (!reason || !action || !code || !Number.isFinite(acknowledgedAt) || !Number.isFinite(seenAt)) continue;
+    const key=newsImpactRecoveryIncidentKey(reason,action,code);
+    const value={
+      reason,
+      action,
+      code,
+      acknowledgedAt:new Date(acknowledgedAt).toISOString(),
+      incidentSeenAt:new Date(seenAt).toISOString(),
+    };
+    const previous=latest.get(key);
+    if (!previous || Date.parse(value.acknowledgedAt)>Date.parse(previous.acknowledgedAt)) latest.set(key,value);
+  }
+  return [...latest.values()];
+}
+
+function buildNewsImpactRecoveryIncidentCenter(strategyRows = [], incidentEvents = [], acknowledgements = [], evidenceReason = 'ok') {
   const priorityRank={high:0,medium:1,low:2};
   const current=new Map((strategyRows || []).map(row=>[`${row.reason}|${row.action}`,row]));
+  const ackMap=new Map((acknowledgements || []).map(row=>[newsImpactRecoveryIncidentKey(row.reason,row.action,row.code),row]));
   const groups=new Map();
   for (const event of incidentEvents || []) {
-    const key=`${event.reason}|${event.action}|${event.guardReason}`;
+    const key=newsImpactRecoveryIncidentKey(event.reason,event.action,event.guardReason);
     const bucket=groups.get(key) || {
       code:event.guardReason,
       priority:event.priority || (event.guardReason==='performance_drift' ? 'high' : 'medium'),
@@ -3785,25 +3918,45 @@ function buildNewsImpactRecoveryIncidentCenter(strategyRows = [], incidentEvents
     groups.set(key,bucket);
   }
 
-  const rows=[...groups.values()].map(item=>{
-    const now=current.get(`${item.reason}|${item.action}`) || null;
-    const active=Boolean(now && now.guardReason===item.code);
+  const withAcknowledgement=(item,active,currentOnly=false)=>{
+    const ack=ackMap.get(newsImpactRecoveryIncidentKey(item.reason,item.action,item.code)) || null;
+    const acknowledged=Boolean(
+      active
+      && !currentOnly
+      && item.lastSeenAt
+      && ack
+      && String(ack.incidentSeenAt || '')===String(item.lastSeenAt || '')
+      && Date.parse(ack.acknowledgedAt)>=Date.parse(item.lastSeenAt),
+    );
     return {
       ...item,
       status:active ? 'active' : 'recovered',
+      acknowledged,
+      acknowledgedAt:acknowledged ? ack.acknowledgedAt : null,
+      alertSuppressed:acknowledged,
+      canAcknowledge:Boolean(active && !currentOnly && item.lastSeenAt && NEWS_IMPACT_RECOVERY_INCIDENT_CODES.has(item.code)),
+      runbook:newsImpactRecoveryIncidentRunbook(item.code),
+      currentOnly:Boolean(currentOnly),
+    };
+  };
+
+  const rows=[...groups.values()].map(item=>{
+    const now=current.get(`${item.reason}|${item.action}`) || null;
+    const active=Boolean(now && now.guardReason===item.code);
+    return withAcknowledgement({
+      ...item,
       currentStrategy:now?.strategy || '',
       currentRecovery:now?.selectedRecovery || '',
       currentRecoveryLabel:now?.selectedRecoveryLabel || now?.selectedRecovery || '',
       currentGuardReason:now?.guardReason || '',
-      currentOnly:false,
-    };
+    },active,false);
   });
 
   for (const now of strategyRows || []) {
-    if (!['performance_drift','recent_regression'].includes(String(now.guardReason || ''))) continue;
+    if (!NEWS_IMPACT_RECOVERY_INCIDENT_CODES.has(String(now.guardReason || ''))) continue;
     const exists=rows.some(x=>x.reason===now.reason && x.action===now.action && x.code===now.guardReason && x.status==='active');
     if (exists) continue;
-    rows.push({
+    rows.push(withAcknowledgement({
       code:now.guardReason,
       priority:now.guardReason==='performance_drift' ? 'high' : 'medium',
       reason:now.reason,
@@ -3816,13 +3969,11 @@ function buildNewsImpactRecoveryIncidentCenter(strategyRows = [], incidentEvents
       lastStrategy:now.strategy || 'fixed',
       lastRecovery:now.selectedRecovery || '',
       lastRecoveryLabel:now.selectedRecoveryLabel || now.selectedRecovery || '',
-      status:'active',
       currentStrategy:now.strategy || '',
       currentRecovery:now.selectedRecovery || '',
       currentRecoveryLabel:now.selectedRecoveryLabel || now.selectedRecovery || '',
       currentGuardReason:now.guardReason || '',
-      currentOnly:true,
-    });
+    },true,true));
   }
 
   if (String(evidenceReason || 'ok')!=='ok') {
@@ -3845,17 +3996,22 @@ function buildNewsImpactRecoveryIncidentCenter(strategyRows = [], incidentEvents
       currentRecoveryLabel:'',
       currentGuardReason:String(evidenceReason || 'evidence_unavailable'),
       currentOnly:true,
+      acknowledged:false,
+      acknowledgedAt:null,
+      alertSuppressed:false,
+      canAcknowledge:false,
+      runbook:newsImpactRecoveryIncidentRunbook('strategy_evidence_unavailable'),
     });
   }
 
   return rows.sort((a,b)=>(a.status==='active'?0:1)-(b.status==='active'?0:1)
+    || (a.acknowledged?1:0)-(b.acknowledged?1:0)
     || (priorityRank[a.priority] ?? 9)-(priorityRank[b.priority] ?? 9)
     || (Date.parse(b.lastSeenAt || 0)-Date.parse(a.lastSeenAt || 0))
     || String(a.reason || '').localeCompare(String(b.reason || ''))
     || String(a.action || '').localeCompare(String(b.action || '')))
     .slice(0,30);
 }
-
 function summarizeNewsImpactRecoveryIncidents(rows = []) {
   const list=Array.isArray(rows) ? rows : [];
   return {
@@ -3864,6 +4020,9 @@ function summarizeNewsImpactRecoveryIncidents(rows = []) {
     recovered:list.filter(x=>x.status==='recovered').length,
     highActive:list.filter(x=>x.status==='active' && x.priority==='high').length,
     mediumActive:list.filter(x=>x.status==='active' && x.priority==='medium').length,
+    acknowledgedActive:list.filter(x=>x.status==='active' && x.acknowledged).length,
+    unacknowledgedActive:list.filter(x=>x.status==='active' && !x.acknowledged).length,
+    suppressedAlerts:list.filter(x=>x.status==='active' && x.alertSuppressed).length,
     latest:list.filter(x=>x.lastSeenAt).sort((a,b)=>Date.parse(b.lastSeenAt)-Date.parse(a.lastSeenAt))[0] || null,
   };
 }
@@ -3873,7 +4032,7 @@ async function loadNewsImpactRecoveryStrategyEvidence(cfg) {
   const cached=memory.newsImpactRecoveryStrategy || {value:null,loadedAt:0};
   if (cached.value && now-Number(cached.loadedAt || 0)<NEWS_IMPACT_RECOVERY_STRATEGY_CACHE_MS) return cached.value;
   if (!hasSupabase(cfg)) {
-    const value={available:false,truncated:false,reason:'supabase_unavailable',evidence:[],recentEvidence:[],priorEvidence:[],transitionHistory:[],incidentEvents:[]};
+    const value={available:false,truncated:false,reason:'supabase_unavailable',evidence:[],recentEvidence:[],priorEvidence:[],transitionHistory:[],incidentEvents:[],incidentAcknowledgements:[]};
     memory.newsImpactRecoveryStrategy={value,loadedAt:now};
     return value;
   }
@@ -3881,12 +4040,13 @@ async function loadNewsImpactRecoveryStrategyEvidence(cfg) {
     const since=new Date(now-NEWS_IMPACT_RECOVERY_STRATEGY_LOOKBACK_DAYS*86400_000).toISOString();
     const page=await supaSelectPaged(cfg,'growth_events',{
       created_at:`gte.${since}`,
-      event_name:'in.(news_impact_outcome_failure,news_impact_recovery_attempt,news_impact_outcome)',
+      event_name:`in.(news_impact_outcome_failure,news_impact_recovery_attempt,news_impact_outcome,${NEWS_IMPACT_RECOVERY_INCIDENT_ACK_EVENT})`,
     },{pageSize:1000,maxRows:10000,order:'created_at.asc'});
     const rows=page.rows || [];
     const attempts=rows.filter(x=>String(x.event_name || '')==='news_impact_recovery_attempt');
     const outcomes=rows.filter(x=>String(x.event_name || '')==='news_impact_outcome');
     const failures=rows.filter(x=>String(x.event_name || '')==='news_impact_outcome_failure');
+    const incidentAckRows=rows.filter(x=>String(x.event_name || '')===NEWS_IMPACT_RECOVERY_INCIDENT_ACK_EVENT);
     const recentCutoffMs=now-NEWS_IMPACT_RECOVERY_STABILITY_WINDOW_DAYS*86400_000;
     const recentAttempts=attempts.filter(row=>{
       const at=newsImpactEventTime(row);
@@ -3901,11 +4061,12 @@ async function loadNewsImpactRecoveryStrategyEvidence(cfg) {
     const priorEvidence=buildNewsImpactRecoveryStrategyEvidence(priorAttempts,outcomes,failures,{asOfMs:now});
     const transitionHistory=buildNewsImpactRecoveryTransitionHistory(failures,{limit:20});
     const incidentEvents=buildNewsImpactRecoveryIncidentEvents(failures,{limit:100});
-    const value={available:!page.truncated,truncated:Boolean(page.truncated),reason:page.truncated?'truncated':'ok',evidence,recentEvidence,priorEvidence,transitionHistory,incidentEvents};
+    const incidentAcknowledgements=buildNewsImpactRecoveryIncidentAcknowledgements(incidentAckRows);
+    const value={available:!page.truncated,truncated:Boolean(page.truncated),reason:page.truncated?'truncated':'ok',evidence,recentEvidence,priorEvidence,transitionHistory,incidentEvents,incidentAcknowledgements};
     memory.newsImpactRecoveryStrategy={value,loadedAt:now};
     return value;
   } catch {
-    const value={available:false,truncated:false,reason:'load_failed',evidence:[],recentEvidence:[],priorEvidence:[],transitionHistory:[],incidentEvents:[]};
+    const value={available:false,truncated:false,reason:'load_failed',evidence:[],recentEvidence:[],priorEvidence:[],transitionHistory:[],incidentEvents:[],incidentAcknowledgements:[]};
     memory.newsImpactRecoveryStrategy={value,loadedAt:now};
     return value;
   }
@@ -4045,6 +4206,37 @@ function newsImpactRecoveryIncidentDrill() {
       && incidents.some(x=>x.reason==='server_error' && x.status==='recovered' && x.occurrences===2)
       && incidents.some(x=>x.reason==='provider_unavailable' && x.status==='active' && x.currentOnly===true)
       && !Object.prototype.hasOwnProperty.call(incidents[0] || {},'telegram_id'),
+    cases:8,
+  };
+}
+
+function newsImpactRecoveryIncidentAckDrill() {
+  const events=[
+    {at:'2026-09-10T10:00:00.000Z',reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',strategy:'fixed',recovery:'retry',recoveryLabel:'повторить',guardReason:'performance_drift',priority:'high'},
+    {at:'2026-09-12T10:00:00.000Z',reason:'timeout',reasonLabel:'Тайм-аут',action:'share',actionLabel:'Поделиться',strategy:'fixed',recovery:'retry_soon',recoveryLabel:'повторить скоро',guardReason:'recent_regression',priority:'medium'},
+  ];
+  const ackRows=[
+    {created_at:'2026-09-10T10:05:00.000Z',metadata:{reason:'server_error',action:'full_ai',incident_guard:'performance_drift',incident_seen_at:'2026-09-10T10:00:00.000Z'}},
+    {created_at:'2026-09-12T09:00:00.000Z',metadata:{reason:'timeout',action:'share',incident_guard:'recent_regression',incident_seen_at:'2026-09-11T10:00:00.000Z'}},
+  ];
+  const acknowledgements=buildNewsImpactRecoveryIncidentAcknowledgements(ackRows);
+  const current=[
+    {reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',strategy:'fixed',selectedRecovery:'retry',selectedRecoveryLabel:'повторить',guardReason:'performance_drift'},
+    {reason:'timeout',reasonLabel:'Тайм-аут',action:'share',actionLabel:'Поделиться',strategy:'fixed',selectedRecovery:'retry_soon',selectedRecoveryLabel:'повторить скоро',guardReason:'recent_regression'},
+  ];
+  const incidents=buildNewsImpactRecoveryIncidentCenter(current,events,acknowledgements,'ok');
+  const alerts=buildNewsImpactRecoveryAdminAlerts(current,'ok',incidents);
+  const drift=incidents.find(x=>x.code==='performance_drift');
+  const regression=incidents.find(x=>x.code==='recent_regression');
+  return {
+    pass:drift?.acknowledged===true
+      && drift?.alertSuppressed===true
+      && drift?.canAcknowledge===true
+      && regression?.acknowledged===false
+      && alerts.some(x=>x.code==='recent_regression')
+      && !alerts.some(x=>x.code==='performance_drift')
+      && newsImpactRecoveryIncidentRunbook('performance_drift').steps.length>=3
+      && !Object.prototype.hasOwnProperty.call(drift || {},'telegram_id'),
     cases:8,
   };
 }
@@ -17005,6 +17197,11 @@ export default {
         newsImpactRecoveryIncidentLifecycle: 'enabled',
         newsImpactRecoveryIncidentPrivacyGuard: 'enabled',
         newsImpactRecoveryIncidentSelfTest: newsImpactRecoveryIncidentDrill().pass ? 'enabled' : 'failed',
+        newsImpactRecoveryIncidentAcknowledgement: 'enabled',
+        newsImpactRecoveryIncidentRunbook: 'enabled',
+        newsImpactRecoveryIncidentAlertSuppression: 'enabled',
+        newsImpactRecoveryIncidentAckPrivacyGuard: 'enabled',
+        newsImpactRecoveryIncidentAckSelfTest: newsImpactRecoveryIncidentAckDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
@@ -17177,6 +17374,10 @@ export default {
       if (request.method === 'GET' && url.pathname === '/api/launch-funnel') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
         return await apiLaunchFunnel(request, cfg);
+      }
+      if (url.pathname === '/api/recovery-incident-ack') {
+        if (!isAdminUser(user, cfg)) return adminForbidden();
+        return await apiNewsImpactRecoveryIncidentAck(request, cfg, user);
       }
       if (url.pathname === '/api/reminder-health') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
