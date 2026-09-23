@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.79.0-rc87';
+const CLIENT_VERSION = '6.80.0-rc88';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc87';
+const CLIENT_RELEASE_CHANNEL = 'rc88';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2947,6 +2947,10 @@ function renderLaunchFunnel() {
   const impactRecoveryIncidents=Array.isArray(d.newsImpactRecoveryIncidents) ? d.newsImpactRecoveryIncidents : [];
   const impactRecoveryIncidentSummary=d.newsImpactRecoveryIncidentSummary || {};
   const impactRecoveryIncidentSloGuard=d.newsImpactRecoveryIncidentSloGuard || {ackTargetMinutes:30,ackCriticalMinutes:120,recoveryTargetMinutes:360};
+  const impactRecoveryIncidentSloDashboard=d.newsImpactRecoveryIncidentSloDashboard || {summary:{},weekly:[],repeated:[],windowDays:28};
+  const impactRecoverySloSummary=impactRecoveryIncidentSloDashboard.summary || {};
+  const impactRecoverySloWeekly=Array.isArray(impactRecoveryIncidentSloDashboard.weekly) ? impactRecoveryIncidentSloDashboard.weekly : [];
+  const impactRecoverySloRepeated=Array.isArray(impactRecoveryIncidentSloDashboard.repeated) ? impactRecoveryIncidentSloDashboard.repeated : [];
   const impactFunnel=Array.isArray(d.newsImpactActionFunnel) ? d.newsImpactActionFunnel : [];
   const impactBottleneck=d.newsImpactActionBottleneck || null;
   const impactConfidenceGuard=d.newsImpactActionConfidenceGuard || {minUsers:10,stableUsers:30};
@@ -2962,6 +2966,7 @@ function renderLaunchFunnel() {
     <div><span>AI перепроверки</span><strong>${Number(rechecks.total || 0)}</strong><small>${Number(rechecks.free || 0)} без списания · ${Number(rechecks.material || 0)} со значимыми изменениями</small></div>
     <div><span>Новости → AI</span><strong>${Number(d.returnLoop?.aiIntent || 0)}</strong><small>${launchFunnelPct(d.returnLoop?.intentPct)} нажали AI · ${Number(d.returnLoop?.smartFixtureIntent || 0)} через smart fixture · News Impact: ${Number(d.returnLoop?.impactCompared || 0)} сравнений / ${Number(d.returnLoop?.impactMaterial || 0)} существенных · решения: 🔴 ${Number(d.newsImpactDecisionSummary?.material || 0)} · 🟡 ${Number(d.newsImpactDecisionSummary?.detail || 0)} · 🟢 ${Number(d.newsImpactDecisionSummary?.stable || 0)} · действия: полный AI ${Number(impactActions.fullAi || 0)} · составы ${Number(impactActions.squads || 0)} · рынок ${Number(impactActions.market || 0)} · перепроверка ${Number(impactActions.recheck || 0)} · новости ${Number(impactActions.news || 0)} · поделились ${Number(impactActions.share || 0)} · подтверждённых результатов ${Number(impactOutcomeSummary.confirmed || 0)}/${Number(impactOutcomeSummary.attempts || 0)} · сбоев доставки ${Number(impactFailureSummary.total || 0)} · recovery ${Number(impactRecoverySummary.recovered || 0)}/${Number(impactRecoverySummary.attempts || 0)} · adaptive rules ${Number(impactRecoveryStrategySummary.adaptive || 0)} · Возврат из новостей: ${Number(d.returnLoop?.newsReturn || 0)} до матча</small></div>
     <div><span>Recovery-инциденты</span><strong>${Number(impactRecoveryIncidentSummary.active || 0)}</strong><small>активных · эскалаций ${Number(impactRecoveryIncidentSummary.escalatedActive || 0)} · critical ${Number(impactRecoveryIncidentSummary.criticalActive || 0)} · восстановлено ${Number(impactRecoveryIncidentSummary.recovered || 0)}</small></div>
+    <div><span>SLO · 4 недели</span><strong>${impactRecoverySloSummary.ackSloPct==null?'—':launchFunnelPct(impactRecoverySloSummary.ackSloPct)}</strong><small>ACK вовремя · recovery ${impactRecoverySloSummary.recoverySloPct==null?'—':launchFunnelPct(impactRecoverySloSummary.recoverySloPct)} · повторов ${Number(impactRecoverySloSummary.recurringPairs || 0)}</small></div>
     <div><span>Media deep-link → AI</span><strong>${Number(media.aiUsers || 0)}</strong><small>${Number(media.deepLinkUsers || 0)} открыли · ${launchFunnelPct(media.conversionPct)} получили AI</small></div>
   </div>`;
 
@@ -3038,6 +3043,28 @@ function renderLaunchFunnel() {
         </div>`;
       }).join('')}</div>
       <p class="tiny">RC87 рассчитывает SLO и эскалацию из фактических timestamps: время до просмотра, возраст активного эпизода и время до восстановления. Просрочка повышает только административный приоритет; fixed/adaptive routing остаётся под RC81–RC86 guard-логикой. После acknowledgement новый failure автоматически снова требует внимания. В Incident Center нет Telegram ID и raw error.</p>` : ''}
+    ${impactRecoverySloWeekly.length ? `<div class="release-monitor-section-head"><strong>Incident SLO Dashboard · 4 недели</strong><span>${Number(impactRecoverySloSummary.episodes || 0)} эпизодов · ACK ${impactRecoverySloSummary.ackSloPct==null?'—':launchFunnelPct(impactRecoverySloSummary.ackSloPct)} · Recovery ${impactRecoverySloSummary.recoverySloPct==null?'—':launchFunnelPct(impactRecoverySloSummary.recoverySloPct)}</span></div>
+      <div class="data-notice">📈 Динамика считается по отдельным incident episodes, а не по каждому failure-событию. Доля SLO использует только эпизоды, для которых целевое время уже можно объективно оценить; короткий auto-recovery до ACK-порога не считается нарушением просмотра.</div>
+      <div class="launch-campaign-list">${impactRecoverySloWeekly.map((x,index)=>{
+        const ackDelta=index>0 && x.ackSloPct!=null && impactRecoverySloWeekly[index-1]?.ackSloPct!=null
+          ? Math.round((Number(x.ackSloPct)-Number(impactRecoverySloWeekly[index-1].ackSloPct))*10)/10
+          : null;
+        const recoveryDelta=index>0 && x.recoverySloPct!=null && impactRecoverySloWeekly[index-1]?.recoverySloPct!=null
+          ? Math.round((Number(x.recoverySloPct)-Number(impactRecoverySloWeekly[index-1].recoverySloPct))*10)/10
+          : null;
+        return `<div>
+          <span><b>${escapeHtml(x.label || '')}</b></span>
+          <strong>ACK ${x.ackSloPct==null?'—':launchFunnelPct(x.ackSloPct)} · Recovery ${x.recoverySloPct==null?'—':launchFunnelPct(x.recoverySloPct)}</strong>
+          <small>${Number(x.episodes || 0)} эпизодов · active ${Number(x.active || 0)} · ACK ${Number(x.ackMet || 0)}/${Number(x.ackEligible || 0)}${ackDelta==null?'':` · Δ ${ackDelta>0?'+':''}${ackDelta.toFixed(1)} п.п.`} · Recovery ${Number(x.recoveryMet || 0)}/${Number(x.recoveryEligible || 0)}${recoveryDelta==null?'':` · Δ ${recoveryDelta>0?'+':''}${recoveryDelta.toFixed(1)} п.п.`}${Number.isFinite(Number(x.avgAckMinutes)) ? ` · avg ACK ${Number(x.avgAckMinutes)} мин` : ''}${Number.isFinite(Number(x.avgRecoveryMinutes)) ? ` · avg recovery ${Number(x.avgRecoveryMinutes)} мин` : ''}</small>
+        </div>`;
+      }).join('')}</div>
+      ${impactRecoverySloRepeated.length ? `<div class="release-monitor-section-head"><strong>Повторяющиеся Recovery-проблемы</strong><span>reason + action · минимум 2 эпизода</span></div>
+        <div class="launch-campaign-list">${impactRecoverySloRepeated.map(x=>`<div>
+          <span><b>${escapeHtml(x.reasonLabel || x.reason || '')}</b> · ${escapeHtml(x.actionLabel || x.action || '')}</span>
+          <strong>${Number(x.episodes || 0)} эпизода</strong>
+          <small>active ${Number(x.active || 0)} · ACK breaches ${Number(x.ackBreaches || 0)} · Recovery breaches ${Number(x.recoveryBreaches || 0)} · guards: ${escapeHtml((x.guards || []).join(' → ') || '—')} · последнее: ${escapeHtml(x.lastStartedAt || '—')}</small>
+        </div>`).join('')}</div>` : '<div class="data-notice">Повторяющихся reason + action за 4 недели пока нет.</div>'}
+      <p class="tiny">RC88 — аналитический слой: weekly trend и recurrence выводятся из существующего backend-only growth_events. Telegram ID, raw error и произвольные тексты в SLO Dashboard не возвращаются; routing не меняется.</p>` : ''}
     ${impactRecoveryStrategyAlerts.length ? `<div class="release-monitor-section-head"><strong>Recovery: предупреждения</strong><span>${Number(impactRecoveryAlertSummary.critical || 0)} critical · ${Number(impactRecoveryAlertSummary.warnings || 0)} warning · ${Number(impactRecoveryAlertSummary.info || 0)} info</span></div>
       <div class="launch-campaign-list">${impactRecoveryStrategyAlerts.map(x=>`<div>
         <span><b>${x.severity==='critical'?'🚨':x.severity==='warning'?'⚠️':'ℹ️'} ${escapeHtml(x.reasonLabel || 'Recovery Strategy')}</b>${x.actionLabel ? ` · ${escapeHtml(x.actionLabel)}` : ''}</span>
