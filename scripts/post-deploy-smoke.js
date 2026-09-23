@@ -73,6 +73,11 @@ const REQUIRED_HEALTH_FLAGS = [
   'recheckMateriality',
   'telegramRecheckDelta',
   'analysisDeltaSelfTest',
+  'kickoffHandoffGuard',
+  'prematchAdviceFreeze',
+  'liveContextHandoff',
+  'finishedAnalysisArchive',
+  'kickoffHandoffSelfTest',
 ];
 
 function delay(ms) {
