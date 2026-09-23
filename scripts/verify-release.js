@@ -11,15 +11,15 @@ const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml'
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
 const readme = fs.readFileSync('README_CLOUDFLARE_RU.md', 'utf8');
 const qaChecklist = fs.readFileSync('QA_RELEASE_CHECKLIST_RU.md', 'utf8');
-const expected = `${pkg.version}-rc74`;
+const expected = `${pkg.version}-rc75`;
 const failures = [];
 
 if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) failures.push('package-lock version must match package.json');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC74'")) failures.push('Worker RC name must be RC74');
+if (!worker.includes("const RC_NAME = 'RC75'")) failures.push('Worker RC name must be RC75');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc74'")) failures.push('Client release channel must be rc74');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc75'")) failures.push('Client release channel must be rc75');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -37,8 +37,8 @@ if (!fs.existsSync('.github/workflows/rollback-production.yml')) failures.push('
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
-if (!deployWorkflow.includes('--message "RC74 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC74');
-if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.66.0-rc74"')) failures.push('Production smoke must verify 6.66.0-rc74');
+if (!deployWorkflow.includes('--message "RC75 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC75');
+if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.67.0-rc75"')) failures.push('Production smoke must verify 6.67.0-rc75');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
 if (!/id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden/.test(html)) failures.push('Admin role badge must use the fail-closed admin-only visibility contract');
 if (!/\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i.test(styles)) failures.push('Global hidden elements must remain display:none');
@@ -206,7 +206,7 @@ if (!worker.includes("newsSourceTrustGate: 'enabled'") || !worker.includes('appl
 if (!worker.includes("publicLegalPages: 'enabled'") || !worker.includes("publicStatusPage: 'enabled'") || !worker.includes("url.pathname === '/api/public-status'")) failures.push('RC52 public trust contract is missing');
 if (!fs.existsSync('public/privacy.html') || !fs.existsSync('public/terms.html') || !fs.existsSync('public/status.html') || !fs.existsSync('public/status.js')) failures.push('RC52 public trust pages are missing');
 if (!wrangler.includes('"/telegram/*"') || !wrangler.includes('"/api/*"')) failures.push('RC52 Worker-first webhook/public API routes are missing');
-if (!deployWorkflow.includes('6.66.0-rc74')) failures.push('RC74 production workflow version is missing');
+if (!deployWorkflow.includes('6.67.0-rc75')) failures.push('RC75 production workflow version is missing');
 
 if (!worker.includes("mediaLaunchPackage: 'enabled'") || !worker.includes("mediaDeepLinkAttribution: 'enabled'")) failures.push('RC53 media launch health contract is missing');
 if (!worker.includes("launchSimulation: 'enabled'") || !worker.includes("conversionUx: 'enabled'") || !worker.includes("highIntentSearchFallback: 'enabled'") || !worker.includes("newsReturnLoop: 'enabled'")) failures.push('RC54 launch conversion health contract is missing');
@@ -244,12 +244,15 @@ if (!app.includes('const impactActions=d.newsImpactActionSummary || {}') || !app
 if (!worker.includes("newsImpactActionFunnel: 'enabled'") || !worker.includes("newsImpactDecisionConversion: 'enabled'") || !worker.includes("newsImpactActionBottleneck: 'enabled'") || !worker.includes("newsImpactActionFunnelSelfTest: newsImpactActionFunnelDrill().pass ? 'enabled' : 'failed'")) failures.push('RC74 News Impact action funnel health contract is missing');
 if (!worker.includes('function buildNewsImpactActionFunnel') || !worker.includes('function newsImpactActionFunnelBottleneck') || !worker.includes('const newsImpactActionFunnel=') || !worker.includes('newsImpactActionBottleneck,')) failures.push('RC74 News Impact action funnel engine is missing');
 if (!app.includes('const impactFunnel=Array.isArray(d.newsImpactActionFunnel)') || !app.includes('News Impact → действие') || !app.includes('самая низкая конверсия') || !fs.existsSync('test/news-impact-action-funnel-rc74.test.js')) failures.push('RC74 action funnel UI or regression test is missing');
+if (!worker.includes("newsImpactFunnelConfidenceGuard: 'enabled'") || !worker.includes("newsImpactWilsonInterval: 'enabled'") || !worker.includes("newsImpactSampleGate: 'enabled'") || !worker.includes("newsImpactFunnelConfidenceSelfTest: newsImpactFunnelConfidenceDrill().pass ? 'enabled' : 'failed'")) failures.push('RC75 funnel confidence health contract is missing');
+if (!worker.includes('function newsImpactConversionConfidence') || !worker.includes('NEWS_IMPACT_FUNNEL_MIN_USERS = 10') || !worker.includes("interval:'wilson_95'") || !worker.includes('confidence:new') && !worker.includes('const confidence=newsImpactConversionConfidence')) failures.push('RC75 confidence engine is missing');
+if (!app.includes('const impactConfidenceGuard=d.newsImpactActionConfidenceGuard') || !app.includes('95% ДИ') || !app.includes('данных пока мало для определения узкого места') || !fs.existsSync('test/news-impact-funnel-confidence-rc75.test.js')) failures.push('RC75 confidence UI or regression test is missing');
 if (!worker.includes("firstPartyGrowthAnalytics: 'enabled'") || !worker.includes("launchFunnelAnalytics: 'enabled'")) failures.push('RC53 first-party funnel health contract is missing');
 if (!worker.includes('parseLaunchStartParam') || !worker.includes('ensureLaunchAttribution') || !worker.includes('recordGrowthEvent')) failures.push('RC53 attribution engine is missing');
 if (!worker.includes("url.pathname === '/api/launch-funnel'") || !app.includes('function renderLaunchFunnel')) failures.push('RC53 admin launch funnel is missing');
 if (!app.includes("origin:'miniapp'") || !worker.includes("origin:'telegram_quick'")) failures.push('RC53 full-vs-quick AI conversion split is missing');
-if (!readme.includes('v6.66.0 — RC74') || !readme.includes('News Impact Action Funnel')) failures.push('README must describe the current RC74 release');
-if (!qaChecklist.includes('v6.66.0 RC74') || !qaChecklist.includes('npm run verify:release')) failures.push('QA checklist must describe the current RC74 release gate');
+if (!readme.includes('v6.67.0 — RC75') || !readme.includes('News Impact Funnel Confidence Guard')) failures.push('README must describe the current RC75 release');
+if (!qaChecklist.includes('v6.67.0 RC75') || !qaChecklist.includes('npm run verify:release')) failures.push('QA checklist must describe the current RC75 release gate');
 if (!fs.existsSync('MEDIA_LAUNCH_RU.md')) failures.push('Missing RC53 media launch kit');
 if (!fs.readFileSync('public/privacy.html','utf8').includes('События launch-аналитики хранятся до 90 дней')) failures.push('RC53 privacy attribution disclosure is missing');
 
@@ -263,4 +266,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log(`RC74 News Impact action funnel contracts verified for ${expected}.`);
+console.log(`RC75 News Impact funnel confidence contracts verified for ${expected}.`);

@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.66.0-rc74';
+const APP_VERSION = '6.67.0-rc75';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc74';
-const RC_NAME = 'RC74';
+const RELEASE_CHANNEL = 'rc75';
+const RC_NAME = 'RC75';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1706,6 +1706,7 @@ async function apiLaunchFunnel(request,cfg) {
   };
   const newsImpactActionFunnel=buildNewsImpactActionFunnel(newsImpactRows,newsImpactActionRows);
   const newsImpactActionBottleneck=newsImpactActionFunnelBottleneck(newsImpactActionFunnel);
+  const newsImpactActionConfidenceGuard={minUsers:NEWS_IMPACT_FUNNEL_MIN_USERS,stableUsers:NEWS_IMPACT_FUNNEL_STABLE_USERS,interval:'wilson_95'};
   const shareRows=rows.filter(x=>['share_link_created','share_card_created'].includes(String(x.event_name || '')));
   const deepLinkRows=rows.filter(x=>String(x.event_name || '')==='fixture_deep_link_open');
   const deepLinkUsers=new Set(deepLinkRows.map(x=>Number(x.telegram_id || 0)).filter(Boolean));
@@ -1755,6 +1756,7 @@ async function apiLaunchFunnel(request,cfg) {
     newsImpactActionSummary,
     newsImpactActionFunnel,
     newsImpactActionBottleneck,
+    newsImpactActionConfidenceGuard,
     mediaLoop:{shareEvents:shareRows.length,shareUsers:shareUsers.size,deepLinkOpens:deepLinkRows.length,deepLinkUsers:deepLinkUsers.size,aiUsers:deepLinkAiUsers.size,conversionPct:deepLinkUsers.size?Math.round((deepLinkAiUsers.size/deepLinkUsers.size)*1000)/10:0},
     searchQuality:{attempts:searchResultRows.length,match:searchMatches,recognizedNoMatch:searchRecognizedNoMatch,notFound:searchNotFound,recoveredRecent:searchRecoveredRecent,matchPct:searchResultRows.length?Math.round((searchMatches/searchResultRows.length)*1000)/10:0},
     campaigns,
@@ -2580,6 +2582,36 @@ function newsImpactRowAction(row = {}) {
   return cleanNewsImpactActionCode(row?.metadata && typeof row.metadata==='object' ? row.metadata.action : '');
 }
 
+const NEWS_IMPACT_FUNNEL_MIN_USERS = 10;
+const NEWS_IMPACT_FUNNEL_STABLE_USERS = 30;
+
+function newsImpactConversionConfidence(actedUsers = 0, users = 0) {
+  const n=Math.max(0,Math.trunc(Number(users || 0)));
+  const k=Math.min(n,Math.max(0,Math.trunc(Number(actedUsers || 0))));
+  if (!n) return {
+    status:'empty',label:'нет данных',users:0,actedUsers:0,
+    lowerPct:0,upperPct:0,eligibleForBottleneck:false,stable:false,
+  };
+  const z=1.96;
+  const p=k/n;
+  const denominator=1+(z*z/n);
+  const center=(p+(z*z/(2*n)))/denominator;
+  const margin=(z*Math.sqrt((p*(1-p)+(z*z/(4*n)))/n))/denominator;
+  const lowerPct=Math.round(Math.max(0,center-margin)*1000)/10;
+  const upperPct=Math.round(Math.min(1,center+margin)*1000)/10;
+  const status=n>=NEWS_IMPACT_FUNNEL_STABLE_USERS ? 'stable'
+    : n>=NEWS_IMPACT_FUNNEL_MIN_USERS ? 'early'
+      : 'insufficient';
+  const label=status==='stable' ? 'устойчивая выборка'
+    : status==='early' ? 'ранний сигнал'
+      : 'мало данных';
+  return {
+    status,label,users:n,actedUsers:k,lowerPct,upperPct,
+    eligibleForBottleneck:n>=NEWS_IMPACT_FUNNEL_MIN_USERS,
+    stable:n>=NEWS_IMPACT_FUNNEL_STABLE_USERS,
+  };
+}
+
 function buildNewsImpactActionFunnel(decisionRows = [], actionRows = []) {
   return NEWS_IMPACT_FUNNEL_DECISIONS.map(([code,label])=>{
     const decisionUsers=new Set(
@@ -2605,44 +2637,64 @@ function buildNewsImpactActionFunnel(decisionRows = [], actionRows = []) {
       .sort((a,b)=>b.users-a.users || a.action.localeCompare(b.action));
     const users=decisionUsers.size;
     const conversionPct=users ? Math.round((actedUsers.size/users)*1000)/10 : 0;
+    const confidence=newsImpactConversionConfidence(actedUsers.size,users);
     return {
       code,label,users,actedUsers:actedUsers.size,conversionPct,
       dropPct:users ? Math.max(0,Math.round((100-conversionPct)*10)/10) : 0,
       topAction:actionBreakdown[0] || null,
       actions:actionBreakdown,
+      confidence,
     };
   });
 }
 
 function newsImpactActionFunnelBottleneck(rows = []) {
-  const eligible=(rows || []).filter(x=>Number(x.users || 0)>0);
+  const eligible=(rows || []).filter(x=>Boolean(x?.confidence?.eligibleForBottleneck));
   if (!eligible.length) return null;
   return [...eligible].sort((a,b)=>Number(a.conversionPct || 0)-Number(b.conversionPct || 0) || Number(b.users || 0)-Number(a.users || 0))[0] || null;
 }
 
 function newsImpactActionFunnelDrill() {
   const decisions=[
-    {telegram_id:1,metadata:{decision:'material'}},
-    {telegram_id:2,metadata:{decision:'material'}},
-    {telegram_id:3,metadata:{decision:'stable'}},
+    ...Array.from({length:10},(_,i)=>({telegram_id:i+1,metadata:{decision:'material'}})),
+    ...Array.from({length:30},(_,i)=>({telegram_id:i+11,metadata:{decision:'stable'}})),
   ];
   const actions=[
-    {telegram_id:1,metadata:{decision:'material',action:'market'}},
-    {telegram_id:3,metadata:{decision:'stable',action:'full_ai'}},
-    {telegram_id:99,metadata:{decision:'material',action:'share'}},
+    ...Array.from({length:5},(_,i)=>({telegram_id:i+1,metadata:{decision:'material',action:'market'}})),
+    ...Array.from({length:30},(_,i)=>({telegram_id:i+11,metadata:{decision:'stable',action:'full_ai'}})),
+    {telegram_id:999,metadata:{decision:'material',action:'share'}},
   ];
   const rows=buildNewsImpactActionFunnel(decisions,actions);
   const material=rows.find(x=>x.code==='material');
   const stable=rows.find(x=>x.code==='stable');
   const bottleneck=newsImpactActionFunnelBottleneck(rows);
   return {
-    pass:material?.users===2
-      && material?.actedUsers===1
+    pass:material?.users===10
+      && material?.actedUsers===5
       && material?.conversionPct===50
       && material?.topAction?.action==='market'
+      && material?.confidence?.status==='early'
       && stable?.conversionPct===100
+      && stable?.confidence?.status==='stable'
       && bottleneck?.code==='material',
-    cases:6,
+    cases:8,
+  };
+}
+
+function newsImpactFunnelConfidenceDrill() {
+  const insufficient=newsImpactConversionConfidence(1,3);
+  const early=newsImpactConversionConfidence(5,10);
+  const stable=newsImpactConversionConfidence(24,30);
+  return {
+    pass:insufficient.status==='insufficient'
+      && insufficient.eligibleForBottleneck===false
+      && early.status==='early'
+      && early.eligibleForBottleneck===true
+      && early.lowerPct<50
+      && early.upperPct>50
+      && stable.status==='stable'
+      && stable.stable===true,
+    cases:8,
   };
 }
 
@@ -15393,6 +15445,10 @@ export default {
         newsImpactDecisionConversion: 'enabled',
         newsImpactActionBottleneck: 'enabled',
         newsImpactActionFunnelSelfTest: newsImpactActionFunnelDrill().pass ? 'enabled' : 'failed',
+        newsImpactFunnelConfidenceGuard: 'enabled',
+        newsImpactWilsonInterval: 'enabled',
+        newsImpactSampleGate: 'enabled',
+        newsImpactFunnelConfidenceSelfTest: newsImpactFunnelConfidenceDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',

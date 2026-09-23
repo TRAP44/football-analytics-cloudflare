@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.66.0 RC74
+# QA Release Checklist — v6.67.0 RC75
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.66.0`.
-- Worker и client: `6.66.0-rc74`.
-- Release candidate: `RC74`.
+- `package.json` и `package-lock.json`: `6.67.0`.
+- Worker и client: `6.67.0-rc75`.
+- Release candidate: `RC75`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,17 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC75 — News Impact Funnel Confidence Guard
+
+- Узкое место News Impact не выбирается, пока конкретное decision state не набрало минимум 10 уникальных пользователей.
+- 10–29 пользователей помечаются как «ранний сигнал»; 30+ — как «устойчивая выборка».
+- Для conversion показывается 95% Wilson-интервал, чтобы не выдавать точечный процент за точное знание.
+- Повторные действия одного пользователя по-прежнему не увеличивают conversion.
+- Если выборка мала, админка прямо сообщает, сколько пользователей требуется до включения bottleneck.
+- Новая Supabase migration не требуется.
+- Regression: `test/news-impact-funnel-confidence-rc75.test.js`.
+- Production smoke требует `newsImpactFunnelConfidenceSelfTest=enabled`.
 
 ## RC74 — News Impact Action Funnel
 
@@ -82,8 +93,8 @@ npm run verify:worker
 
 `scripts/post-deploy-smoke.js` должен подтвердить:
 - `/health.ok = true`;
-- `version = 6.66.0-rc74`;
-- `releaseCandidate = RC74`;
+- `version = 6.67.0-rc75`;
+- `releaseCandidate = RC75`;
 - `devMode = false`;
 - обязательные self-test/feature flags = `enabled`;
 - `/health/supabase` не доступен публично;
