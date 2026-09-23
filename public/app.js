@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.59.0-rc67';
+const CLIENT_VERSION = '6.60.0-rc68';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc67';
+const CLIENT_RELEASE_CHANNEL = 'rc68';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2899,12 +2899,13 @@ function renderLaunchFunnel() {
   const kpis=$('launchFunnelKpis');
   const stages=$('launchFunnelStages');
   const campaigns=$('launchFunnelCampaigns');
-  if (!status || !meta || !kpis || !stages || !campaigns) return;
+  const mediaCampaigns=$('launchFunnelMediaCampaigns');
+  if (!status || !meta || !kpis || !stages || !campaigns || !mediaCampaigns) return;
 
   if (state.launchFunnelLoading) {
     status.textContent='Собираю first-party воронку…';
     meta.textContent='Только агрегированные данные';
-    kpis.innerHTML=stages.innerHTML=campaigns.innerHTML='';
+    kpis.innerHTML=stages.innerHTML=campaigns.innerHTML=mediaCampaigns.innerHTML='';
     return;
   }
 
@@ -2912,7 +2913,7 @@ function renderLaunchFunnel() {
   if (!d?.available) {
     status.textContent=d?.reason || 'Воронка запуска ещё не загружена.';
     meta.textContent='Нужна миграция v6.15 и события пользователей.';
-    kpis.innerHTML=stages.innerHTML=campaigns.innerHTML='';
+    kpis.innerHTML=stages.innerHTML=campaigns.innerHTML=mediaCampaigns.innerHTML='';
     return;
   }
 
@@ -2927,6 +2928,7 @@ function renderLaunchFunnel() {
     <div><span>Входы</span><strong>${Number(first.users || 0)}</strong><small>bot + Mini App</small></div>
     <div><span>Полный AI</span><strong>${Number(last.users || 0)}</strong><small>${launchFunnelPct(last.fromEntryPct)} от входов</small></div>
     <div><span>Кампаний</span><strong>${Number(d.campaigns?.length || 0)}</strong><small>source + campaign</small></div>
+    <div><span>Материалов СМИ</span><strong>${Number(d.mediaSummary?.materials || 0)}</strong><small>${Number(d.mediaSummary?.linksCreated || 0)} ссылок создано</small></div>
     <div><span>One‑tap → полный AI</span><strong>${Number(handoff.fullAiUsers || 0)}</strong><small>${launchFunnelPct(handoff.conversionPct)} от AI-handoff</small></div>
     <div><span>AI перепроверки</span><strong>${Number(rechecks.total || 0)}</strong><small>${Number(rechecks.free || 0)} без списания · ${Number(rechecks.material || 0)} со значимыми изменениями</small></div>
     <div><span>Возврат из новостей</span><strong>${Number(d.returnLoop?.newsReturn || 0)}</strong><small>${launchFunnelPct(d.returnLoop?.conversionPct)} от открывших новости</small></div>
@@ -2956,6 +2958,24 @@ function renderLaunchFunnel() {
       <small>AI conversion ${launchFunnelPct(x.conversionPct)} · ${Number(x.events || 0)} событий</small>
     </div>`).join('')}</div>` : '<div class="empty compact-empty">Пока нет атрибутированных входов.</div>'}
     <p class="tiny">${escapeHtml(d.privacy || '')}</p>`;
+
+  const mediaRows=d.mediaCampaigns || [];
+  const mediaSummary=d.mediaSummary || {};
+  mediaCampaigns.innerHTML=`<div class="release-monitor-section-head"><strong>Материалы СМИ</strong><span>source · campaign · content</span></div>
+    <div class="media-campaign-summary">
+      <span>Создано ссылок <strong>${Number(mediaSummary.linksCreated || 0)}</strong></span>
+      <span>Входы <strong>${Number(mediaSummary.entries || 0)}</strong></span>
+      <span>Quick AI <strong>${Number(mediaSummary.quickAi || 0)}</strong></span>
+      <span>Полный AI <strong>${Number(mediaSummary.fullAi || 0)}</strong></span>
+      <span>Конверсия <strong>${launchFunnelPct(mediaSummary.conversionPct)}</strong></span>
+    </div>
+    ${mediaRows.length ? `<div class="media-campaign-list">${mediaRows.map(x=>`<div class="media-campaign-row">
+      <div class="media-campaign-name"><strong>${escapeHtml(x.content || 'default')}</strong><small>${escapeHtml(x.source || 'media')} · ${escapeHtml(x.campaign || 'launch')}</small></div>
+      <div class="media-campaign-flow"><span>${Number(x.entries || 0)} входов</span><b>→</b><span>${Number(x.fullAi || 0)} полный AI</span></div>
+      <div class="media-campaign-metrics"><span>${Number(x.deepLinkOpens || 0)} deep-link</span><span>${Number(x.quickAi || 0)} quick AI</span><span>${launchFunnelPct(x.fullAiConversionPct)} конверсия</span><span>${Number(x.linksCreated || 0)} ссылок</span></div>
+    </div>`).join('')}</div>` : '<div class="empty compact-empty">Пока нет данных по отдельным материалам СМИ.</div>'}
+    <p class="tiny">Статистика агрегируется по first-party attribution. Telegram ID пользователей не отображаются.</p>`;
+
 }
 
 async function loadLaunchFunnel(force=false) {
