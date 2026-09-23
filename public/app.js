@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.89.0-rc97';
+const CLIENT_VERSION = '6.90.0-rc98';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc97';
+const CLIENT_RELEASE_CHANNEL = 'rc98';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2982,6 +2982,9 @@ function renderLaunchFunnel() {
   const impactRecoveryIncidentSloImpactExecutiveSummary=d.newsImpactRecoveryIncidentSloImpactExecutiveSummary || {available:false,summary:{},topPair:null};
   const impactRecoveryExecutiveSummary=impactRecoveryIncidentSloImpactExecutiveSummary.summary || {};
   const impactRecoveryExecutiveTopPair=impactRecoveryIncidentSloImpactExecutiveSummary.topPair || null;
+  const impactRecoveryIncidentSloImpactFocusQueue=d.newsImpactRecoveryIncidentSloImpactFocusQueue || {available:false,summary:{},rows:[]};
+  const impactRecoveryFocusSummary=impactRecoveryIncidentSloImpactFocusQueue.summary || {};
+  const impactRecoveryFocusRows=Array.isArray(impactRecoveryIncidentSloImpactFocusQueue.rows) ? impactRecoveryIncidentSloImpactFocusQueue.rows : [];
   const impactFunnel=Array.isArray(d.newsImpactActionFunnel) ? d.newsImpactActionFunnel : [];
   const impactBottleneck=d.newsImpactActionBottleneck || null;
   const impactConfidenceGuard=d.newsImpactActionConfidenceGuard || {minUsers:10,stableUsers:30};
@@ -3131,6 +3134,12 @@ function renderLaunchFunnel() {
       (impactRecoveryExecutiveTopPair ? '<div class="data-notice">🎯 Ведущая пара: <strong>' + escapeHtml(impactRecoveryExecutiveTopPair.reasonLabel || impactRecoveryExecutiveTopPair.reason || '') + ' / ' + escapeHtml(impactRecoveryExecutiveTopPair.actionLabel || impactRecoveryExecutiveTopPair.action || '') + '</strong> · ' + Number(impactRecoveryExecutiveTopPair.totalOverdueMinutes || 0) + ' мин · ' + Number(impactRecoveryExecutiveTopPair.contributionPct || 0) + '% общего overdue · active episodes ' + Number(impactRecoveryExecutiveTopPair.activeEpisodes || 0) + '</div>' : '<div class="data-notice">✅ Ведущей breach-пары нет: накопленная SLO-просрочка отсутствует.</div>') +
       '<div class="data-notice">Неделя: ↗ ' + Number(impactRecoveryExecutiveSummary.weeklyIncreasedPairs || 0) + ' · ↘ ' + Number(impactRecoveryExecutiveSummary.weeklyDecreasedPairs || 0) + ' · → ' + Number(impactRecoveryExecutiveSummary.weeklyUnchangedPairs || 0) + ' · концентрация top1 ' + (impactRecoveryExecutiveSummary.top1WeeklyDirection==='increased'?'↗️':impactRecoveryExecutiveSummary.top1WeeklyDirection==='decreased'?'↘️':'→') + ' ' + (Number(impactRecoveryExecutiveSummary.top1WeeklyDeltaPctPoints || 0)>=0?'+':'') + Number(impactRecoveryExecutiveSummary.top1WeeklyDeltaPctPoints || 0) + ' п.п. · top3 ' + (impactRecoveryExecutiveSummary.top3WeeklyDirection==='increased'?'↗️':impactRecoveryExecutiveSummary.top3WeeklyDirection==='decreased'?'↘️':'→') + ' ' + (Number(impactRecoveryExecutiveSummary.top3WeeklyDeltaPctPoints || 0)>=0?'+':'') + Number(impactRecoveryExecutiveSummary.top3WeeklyDeltaPctPoints || 0) + ' п.п.</div>' +
       '<p class="tiny">RC97 — единая сводка только объединяет уже рассчитанные RC93–RC96 factual SLO impact views. Новых score, SLO-порогов, persistence или изменений recovery-routing нет.</p>'
+    ) : ''}
+    ${impactRecoveryIncidentSloImpactFocusQueue.available !== false ? (
+      '<div class="release-monitor-section-head"><strong>SLO Impact Focus Queue</strong><span>' + Number(impactRecoveryFocusSummary.queuedPairs || 0) + ' в фокусе · неделя ' + Number(impactRecoveryFocusSummary.currentWeekOverdueMinutes || 0) + ' мин · Δ ' + (Number(impactRecoveryFocusSummary.weekDeltaMinutes || 0)>=0?'+':'') + Number(impactRecoveryFocusSummary.weekDeltaMinutes || 0) + ' мин</span></div>' +
+      (impactRecoveryFocusRows.length ? '<div class="launch-campaign-list">' + impactRecoveryFocusRows.map(x=>'<div><span><b>#' + Number(x.queuePosition || 0) + ' ' + (x.weekDirection==='increased'?'↗️':x.weekDirection==='decreased'?'↘️':'→') + ' ' + escapeHtml(x.reasonLabel || x.reason || '') + '</b> · ' + escapeHtml(x.actionLabel || x.action || '') + '</span><strong>' + Number(x.currentWeekOverdueMinutes || 0) + ' мин за неделю</strong><small>Δ ' + (Number(x.weekDeltaMinutes || 0)>=0?'+':'') + Number(x.weekDeltaMinutes || 0) + ' мин · накоплено ' + Number(x.totalOverdueMinutes || 0) + ' мин · вклад ' + Number(x.contributionPct || 0) + '% · active episodes ' + Number(x.activeEpisodes || 0) + '</small></div>').join('') + '</div>' : '<div class="data-notice">✅ Focus Queue пуст: фактической SLO-просрочки нет.</div>') +
+      '<div class="data-notice">В очереди: ↗ ' + Number(impactRecoveryFocusSummary.increasingQueuedPairs || 0) + ' · ↘ ' + Number(impactRecoveryFocusSummary.decreasingQueuedPairs || 0) + ' · → ' + Number(impactRecoveryFocusSummary.unchangedQueuedPairs || 0) + ' · active pairs ' + Number(impactRecoveryFocusSummary.activePairs || 0) + ' / breach pairs ' + Number(impactRecoveryFocusSummary.breachPairs || 0) + '</div>' +
+      '<p class="tiny">RC98 — Focus Queue сортирует только по фактам: текущие недельные overdue minutes → недельная дельта → накопленные overdue minutes. Это не severity-score и не автоматический routing; используются существующие RC87 SLO, persistence не добавляется.</p>'
     ) : ''}
     ${impactRecoveryIncidentSloBreachImpactRanking.available !== false ? (
       '<div class="release-monitor-section-head"><strong>SLO Breach Impact Ranking</strong><span>' + Number(impactRecoveryImpactSummary.totalOverdueMinutes || 0) + ' мин сверх SLO · top ' + Number(impactRecoveryImpactSummary.topContributionPct || 0) + '%</span></div>' +
