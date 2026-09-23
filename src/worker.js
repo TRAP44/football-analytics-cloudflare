@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.59.0-rc67';
+const APP_VERSION = '6.60.0-rc68';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc67';
-const RC_NAME = 'RC67';
+const RELEASE_CHANNEL = 'rc68';
+const RC_NAME = 'RC68';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1554,6 +1554,78 @@ async function cleanupGrowthEvents(cfg) {
   }
 }
 
+function buildMediaCampaignPerformance(rows = []) {
+  const map=new Map();
+  for (const row of rows || []) {
+    const event=String(row?.event_name || '');
+    const source=cleanLaunchPart(row?.source || 'telegram',32) || 'telegram';
+    const campaign=cleanLaunchPart(row?.campaign || 'direct',40) || 'direct';
+    const content=cleanLaunchPart(row?.content || '',48);
+    const mediaRelevant=Boolean(content)
+      || event==='media_link_created'
+      || event==='fixture_deep_link_open'
+      || ['media','press','partner','social'].includes(source);
+    if (!mediaRelevant) continue;
+    const key=`${source}|${campaign}|${content || 'default'}`;
+    const bucket=map.get(key) || {
+      source,campaign,content:content || 'default',
+      users:new Set(),entries:new Set(),matchOpens:new Set(),quickAi:new Set(),fullAi:new Set(),
+      deepLinkOpens:0,linksCreated:0,events:0,
+    };
+    const uid=Number(row?.telegram_id || 0);
+    if (uid) bucket.users.add(uid);
+    if (uid && ['bot_start','miniapp_open'].includes(event)) bucket.entries.add(uid);
+    if (uid && event==='match_open') bucket.matchOpens.add(uid);
+    if (uid && event==='quick_ai') bucket.quickAi.add(uid);
+    if (uid && event==='full_ai') bucket.fullAi.add(uid);
+    if (event==='fixture_deep_link_open') bucket.deepLinkOpens+=1;
+    if (event==='media_link_created') bucket.linksCreated+=1;
+    bucket.events+=1;
+    map.set(key,bucket);
+  }
+  return [...map.values()].map(x=>({
+    source:x.source,
+    campaign:x.campaign,
+    content:x.content,
+    users:x.users.size,
+    entries:x.entries.size,
+    matchOpens:x.matchOpens.size,
+    quickAi:x.quickAi.size,
+    fullAi:x.fullAi.size,
+    deepLinkOpens:x.deepLinkOpens,
+    linksCreated:x.linksCreated,
+    events:x.events,
+    matchOpenPct:x.entries.size ? Math.round((x.matchOpens.size/x.entries.size)*1000)/10 : 0,
+    quickAiPct:x.entries.size ? Math.round((x.quickAi.size/x.entries.size)*1000)/10 : 0,
+    fullAiConversionPct:x.entries.size ? Math.round((x.fullAi.size/x.entries.size)*1000)/10 : 0,
+  })).sort((a,b)=>b.entries-a.entries || b.fullAi-a.fullAi || b.linksCreated-a.linksCreated || b.events-a.events).slice(0,30);
+}
+
+function mediaCampaignControlDrill() {
+  const rows=[
+    {telegram_id:1,event_name:'bot_start',source:'press',campaign:'ucl_launch',content:'article1'},
+    {telegram_id:1,event_name:'fixture_deep_link_open',source:'press',campaign:'ucl_launch',content:'article1'},
+    {telegram_id:1,event_name:'quick_ai',source:'press',campaign:'ucl_launch',content:'article1'},
+    {telegram_id:1,event_name:'full_ai',source:'press',campaign:'ucl_launch',content:'article1'},
+    {telegram_id:9,event_name:'media_link_created',source:'press',campaign:'ucl_launch',content:'article1'},
+    {telegram_id:2,event_name:'bot_start',source:'press',campaign:'ucl_launch',content:'article2'},
+  ];
+  const result=buildMediaCampaignPerformance(rows);
+  const article1=result.find(x=>x.content==='article1');
+  const article2=result.find(x=>x.content==='article2');
+  return {
+    pass:result.length===2
+      && article1?.entries===1
+      && article1?.deepLinkOpens===1
+      && article1?.quickAi===1
+      && article1?.fullAi===1
+      && article1?.linksCreated===1
+      && article1?.fullAiConversionPct===100
+      && article2?.entries===1,
+    cases:8,
+  };
+}
+
 async function apiLaunchFunnel(request,cfg) {
   const url=new URL(request.url);
   const days=Math.max(1,Math.min(30,Number(url.searchParams.get('days') || 7)));
@@ -1627,6 +1699,16 @@ async function apiLaunchFunnel(request,cfg) {
     source:x.source,campaign:x.campaign,users:x.users.size,entries:x.entry.size,fullAi:x.fullAi.size,events:x.events,
     conversionPct:x.entry.size ? Math.round((x.fullAi.size/x.entry.size)*1000)/10 : 0,
   })).sort((a,b)=>b.entries-a.entries || b.fullAi-a.fullAi).slice(0,20);
+  const mediaCampaigns=buildMediaCampaignPerformance(rows);
+  const mediaSummary=mediaCampaigns.reduce((acc,x)=>{
+    acc.linksCreated+=Number(x.linksCreated || 0);
+    acc.entries+=Number(x.entries || 0);
+    acc.deepLinkOpens+=Number(x.deepLinkOpens || 0);
+    acc.quickAi+=Number(x.quickAi || 0);
+    acc.fullAi+=Number(x.fullAi || 0);
+    return acc;
+  },{materials:mediaCampaigns.length,linksCreated:0,entries:0,deepLinkOpens:0,quickAi:0,fullAi:0,conversionPct:0});
+  mediaSummary.conversionPct=mediaSummary.entries ? Math.round((mediaSummary.fullAi/mediaSummary.entries)*1000)/10 : 0;
   return json({
     available:true,
     days,
@@ -1643,6 +1725,8 @@ async function apiLaunchFunnel(request,cfg) {
     mediaLoop:{shareEvents:shareRows.length,shareUsers:shareUsers.size,deepLinkOpens:deepLinkRows.length,deepLinkUsers:deepLinkUsers.size,aiUsers:deepLinkAiUsers.size,conversionPct:deepLinkUsers.size?Math.round((deepLinkAiUsers.size/deepLinkUsers.size)*1000)/10:0},
     searchQuality:{attempts:searchResultRows.length,match:searchMatches,recognizedNoMatch:searchRecognizedNoMatch,notFound:searchNotFound,recoveredRecent:searchRecoveredRecent,matchPct:searchResultRows.length?Math.round((searchMatches/searchResultRows.length)*1000)/10:0},
     campaigns,
+    mediaCampaigns,
+    mediaSummary,
     privacy:'Ответ содержит только агрегаты; Telegram ID и текст поисковых запросов пользователей не возвращаются.',
   });
 }
@@ -2000,7 +2084,14 @@ async function apiMediaPublisherLink(request,cfg,user) {
   const analyzed=await getCache(`fixture:${fixtureId}:v10-ai-instructor`,cfg).catch(()=>null);
   const match=normalizeBotFixtureCard(cached?.match || analyzed?.match || {fixtureId,homeName:'Матч',awayName:String(fixtureId),league:'Футбол'});
   const copy=mediaPublisherCopy(match,link.url,{source,campaign,content});
-  void recordGrowthEvent(cfg,{userId:user.id,eventName:'media_link_created',channel:'miniapp',fixtureId,metadata:{source,campaign,content,admin:true}});
+  void recordGrowthEvent(cfg,{
+    userId:user.id,
+    eventName:'media_link_created',
+    channel:'miniapp',
+    fixtureId,
+    metadata:{source,campaign,content,admin:true},
+    attribution:{source,campaign,content,startParam:link.startParam},
+  });
   return json({
     ok:true,
     fixtureId,
@@ -14651,6 +14742,11 @@ export default {
         mediaCopyGenerator: 'enabled',
         adminPublisherOnly: 'enabled',
         mediaPublisherSelfTest: mediaPublisherDrill().pass ? 'enabled' : 'failed',
+        mediaCampaignControlRoom: 'enabled',
+        contentLevelMediaAttribution: 'enabled',
+        mediaCampaignConversion: 'enabled',
+        publisherOutcomeTracking: 'enabled',
+        mediaCampaignControlSelfTest: mediaCampaignControlDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
