@@ -5107,7 +5107,7 @@ function newsImpactRecoveryIncidentSloBreachTriageTrendDrill() {
   const episodes=[
     {
       reason:'server_error',reasonLabel:'Ошибка сервера',action:'full_ai',actionLabel:'Полный AI',
-      startedAt:'2026-09-02T08:00:00.000Z',recoveredAt:null,firstAcknowledgedAt:null,
+      startedAt:'2026-09-03T08:00:00.000Z',recoveredAt:null,firstAcknowledgedAt:null,
     },
     {
       reason:'timeout',reasonLabel:'Таймаут',action:'share',actionLabel:'Поделиться',
@@ -5132,8 +5132,8 @@ function newsImpactRecoveryIncidentSloBreachTriageTrendDrill() {
       && trend.weekly[2].total===2
       && trend.weekly[3].recoveryOverdue===2
       && trend.summary.totalDelta===1
-      && trend.summary.recoveryOverdueDelta===1
-      && trend.summary.stuckPairs===1
+      && trend.summary.recoveryOverdueDelta===0
+      && trend.summary.stuckPairs===2
       && server?.weeksPresent===3
       && server?.recoveryOverdueWeeks===3
       && trend.thresholds.source==='rc87_existing_slo'
