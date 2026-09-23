@@ -137,6 +137,7 @@ const REQUIRED_HEALTH_FLAGS = [
   'newsImpactCausalityGuardUx',
   'newsImpactDecisionAnalytics',
   'newsImpactDecisionSelfTest',
+  'newsImpactActionSelfTest',
 ];
 
 function delay(ms) {
