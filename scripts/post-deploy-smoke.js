@@ -132,6 +132,11 @@ const REQUIRED_HEALTH_FLAGS = [
   'explicitNewsRecheck',
   'newsImpactMateriality',
   'newsImpactDeltaSelfTest',
+  'newsImpactDecisionCard',
+  'newsImpactActionRouting',
+  'newsImpactCausalityGuardUx',
+  'newsImpactDecisionAnalytics',
+  'newsImpactDecisionSelfTest',
 ];
 
 function delay(ms) {
