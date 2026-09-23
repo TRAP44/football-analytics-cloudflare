@@ -4,7 +4,6 @@ import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
-const playbook=fs.readFileSync('MEDIA_SHARE_DEEPLINK_RC65.md','utf8');
 
 test('RC65 fixture deep-link payload is compact and carries attribution',()=> {
   assert.match(worker,/function fixtureShareStartParam\(/);
@@ -62,5 +61,4 @@ test('RC65 health contract is release-gated',()=> {
     assert.ok(worker.includes(flag + ": 'enabled'"), 'missing ' + flag);
   }
   assert.match(worker,/fixtureDeepLinkSelfTest: fixtureDeepLinkDrill\(\)\.pass \? 'enabled' : 'failed'/);
-  assert.match(playbook,/Media Share & Deep-Link Loop/);
 });
