@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.73.0 RC81
+# QA Release Checklist — v6.74.0 RC82
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.73.0`.
-- Worker и client: `6.73.0-rc81`.
-- Release candidate: `RC81`.
+- `package.json` и `package-lock.json`: `6.74.0`.
+- Worker и client: `6.74.0-rc82`.
+- Release candidate: `RC82`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,19 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC82 — News Impact Recovery Stability & Parity Guard
+
+- Runtime и Admin Launch Funnel используют один shared loader 30-дневного recovery evidence; UI больше не строит стратегию из произвольного выбранного периода.
+- RC81 strict guard остаётся обязательным: минимум 30 зрелых попыток у baseline и кандидата, +5 п.п. lift и непересекающиеся 95% Wilson-интервалы.
+- После RC81 кандидат проходит свежий 7-дневный stability guard: минимум по 10 зрелых попыток у baseline и кандидата.
+- Если свежий кандидат хуже baseline по success rate или его нижняя граница Wilson ниже baseline, adaptive override блокируется как `recent_regression`.
+- Если свежей выборки недостаточно, runtime остаётся на fixed fallback с `stability_sample`; потенциальный кандидат показывается только как proposed.
+- При доступном подтверждении guard возвращает `stable_significant_better` и только тогда включает adaptive routing.
+- Admin показывает 30-дневные и свежие показатели, причину блокировки и proposed recovery без раскрытия Telegram ID.
+- Новая Supabase migration не требуется; используются существующие `growth_events`.
+- Regression: `test/news-impact-recovery-stability-parity-rc82.test.js`.
+- Production smoke требует `newsImpactRecoveryStrategyParity=enabled`, `newsImpactRecoveryStabilityGuard=enabled` и `newsImpactRecoveryStabilitySelfTest=enabled`.
 
 ## RC81 — News Impact Recovery Strategy Guard
 
