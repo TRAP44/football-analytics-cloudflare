@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.64.0-rc72';
+const APP_VERSION = '6.65.0-rc73';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc72';
-const RC_NAME = 'RC72';
+const RELEASE_CHANNEL = 'rc73';
+const RC_NAME = 'RC73';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -968,7 +968,7 @@ function releaseTelegramUpdate(key='') {
 function telegramBurstKind(update = {}) {
   if (update?.pre_checkout_query || update?.subscription || update?.message?.successful_payment || update?.message?.refunded_payment) return '';
   const callback=String(update?.callback_query?.data || '');
-  if (/^(?:news:refresh|news:team_refresh:|match:refresh:)/.test(callback)) return 'refresh';
+  if (/^(?:news:refresh|news:team_refresh:|match:refresh:)/.test(callback) || /^news:impact:[^:]+:recheck:/.test(callback)) return 'refresh';
   if (update?.callback_query) return 'callback';
   if (update?.message?.text) return 'message';
   return '';
@@ -1692,6 +1692,18 @@ async function apiLaunchFunnel(request,cfg) {
     guarded:newsImpactRows.filter(x=>['guarded','baseline_missing'].includes(newsImpactDecision(x))).length,
     unavailable:newsImpactRows.filter(x=>newsImpactDecision(x)==='unavailable').length,
   };
+  const newsImpactActionRows=rows.filter(x=>String(x.event_name || '')==='news_impact_action');
+  const newsImpactAction=(row)=>String(row?.metadata && typeof row.metadata==='object' ? row.metadata.action || '' : '');
+  const newsImpactActionSummary={
+    total:newsImpactActionRows.length,
+    users:new Set(newsImpactActionRows.map(x=>Number(x.telegram_id || 0)).filter(Boolean)).size,
+    fullAi:newsImpactActionRows.filter(x=>newsImpactAction(x)==='full_ai').length,
+    squads:newsImpactActionRows.filter(x=>newsImpactAction(x)==='squads').length,
+    market:newsImpactActionRows.filter(x=>newsImpactAction(x)==='market').length,
+    recheck:newsImpactActionRows.filter(x=>newsImpactAction(x)==='recheck').length,
+    news:newsImpactActionRows.filter(x=>newsImpactAction(x)==='news').length,
+    share:newsImpactActionRows.filter(x=>newsImpactAction(x)==='share').length,
+  };
   const shareRows=rows.filter(x=>['share_link_created','share_card_created'].includes(String(x.event_name || '')));
   const deepLinkRows=rows.filter(x=>String(x.event_name || '')==='fixture_deep_link_open');
   const deepLinkUsers=new Set(deepLinkRows.map(x=>Number(x.telegram_id || 0)).filter(Boolean));
@@ -1738,6 +1750,7 @@ async function apiLaunchFunnel(request,cfg) {
     rechecks:{total:recheckRows.length,free:recheckFree,charged:Math.max(0,recheckRows.length-recheckFree),material:recheckMaterial,stable:recheckStable},
     returnLoop:{newsOpen:newsOpen.size,newsReturn:newsReturn.size,aiIntent:newsAiIntent.size,smartFixtureIntent:smartNewsAiUsers.size,impactChecks:newsImpactRows.length,impactCompared:newsImpactCompared.size,impactMaterial:newsImpactMaterial.size,intentPct:newsOpen.size?Math.round((newsAiIntent.size/newsOpen.size)*1000)/10:0,conversionPct:newsOpen.size?Math.round((newsReturn.size/newsOpen.size)*1000)/10:0},
     newsImpactDecisionSummary,
+    newsImpactActionSummary,
     mediaLoop:{shareEvents:shareRows.length,shareUsers:shareUsers.size,deepLinkOpens:deepLinkRows.length,deepLinkUsers:deepLinkUsers.size,aiUsers:deepLinkAiUsers.size,conversionPct:deepLinkUsers.size?Math.round((deepLinkAiUsers.size/deepLinkUsers.size)*1000)/10:0},
     searchQuality:{attempts:searchResultRows.length,match:searchMatches,recognizedNoMatch:searchRecognizedNoMatch,notFound:searchNotFound,recoveredRecent:searchRecoveredRecent,matchPct:searchResultRows.length?Math.round((searchMatches/searchResultRows.length)*1000)/10:0},
     campaigns,
@@ -2497,28 +2510,70 @@ function newsImpactDecisionCard(newsImpact = {}) {
   };
 }
 
+const NEWS_IMPACT_DECISION_CODES = new Set(['material','detail','stable','guarded','baseline_missing','unavailable']);
+const NEWS_IMPACT_ACTION_CODES = new Set(['full_ai','squads','market','recheck','news','share']);
+
+function cleanNewsImpactDecisionCode(value = '') {
+  const code=String(value || '').toLowerCase().trim();
+  return NEWS_IMPACT_DECISION_CODES.has(code) ? code : '';
+}
+
+function cleanNewsImpactActionCode(value = '') {
+  const code=String(value || '').toLowerCase().trim();
+  return NEWS_IMPACT_ACTION_CODES.has(code) ? code : '';
+}
+
+function newsImpactActionCallback(decision, action, fixtureId) {
+  const d=cleanNewsImpactDecisionCode(decision);
+  const a=cleanNewsImpactActionCode(action);
+  const id=Number(fixtureId || 0);
+  return d && a && Number.isSafeInteger(id) && id>0 ? `news:impact:${d}:${a}:${id}` : '';
+}
+
+function newsImpactTrackedAnalysisUrl(request, fixtureId, decision) {
+  const d=cleanNewsImpactDecisionCode(decision);
+  return telegramWebAppUrl(request,{
+    ...telegramAnalysisHandoffParams(fixtureId,'brief'),
+    ...(d ? {newsImpactDecision:d,newsImpactAction:'full_ai'} : {}),
+  });
+}
+
+function newsImpactActionDrill() {
+  const callback=newsImpactActionCallback('material','market',12345);
+  return {
+    pass:callback==='news:impact:material:market:12345'
+      && cleanNewsImpactDecisionCode('stable')==='stable'
+      && cleanNewsImpactDecisionCode('other')===''
+      && cleanNewsImpactActionCode('full_ai')==='full_ai'
+      && cleanNewsImpactActionCode('raw_text')==='',
+    cases:5,
+  };
+}
+
 function newsImpactDecisionKeyboard(request, match = {}, favorites = [], newsImpact = null) {
   const fixtureId=Number(match?.fixtureId || 0);
   if (!fixtureId) return footballBotKeyboard(request);
   const card=newsImpactDecisionCard(newsImpact);
+  const decision=cleanNewsImpactDecisionCode(card?.code) || 'unavailable';
+  const tracked=(action,text)=>({text,callback_data:newsImpactActionCallback(decision,action,fixtureId)});
+  const fullAi=(text)=>({text,web_app:{url:newsImpactTrackedAnalysisUrl(request,fixtureId,decision)}});
   const rows=[];
-  if (card?.code==='material') {
-    rows.push([{text:'📊 Открыть обновлённый AI-разбор',web_app:{url:telegramFullAnalysisUrl(request,fixtureId,'brief')}}]);
-    rows.push([{text:'👥 Проверить составы',callback_data:`match:squads:${fixtureId}`},{text:'💹 Проверить рынок',callback_data:`match:market:${fixtureId}`}]);
-  } else if (card?.code==='detail') {
-    rows.push([{text:'🧠 Открыть полный разбор',web_app:{url:telegramFullAnalysisUrl(request,fixtureId,'brief')}}]);
-    rows.push([{text:'🔄 Перепроверить AI',callback_data:`match:refresh:${fixtureId}`}]);
-  } else if (card?.code==='stable') {
-    rows.push([{text:'📰 Ещё новости',callback_data:'news:general'},{text:'📊 Полный AI-разбор',web_app:{url:telegramFullAnalysisUrl(request,fixtureId,'brief')}}]);
+  if (decision==='material') {
+    rows.push([fullAi('📊 Открыть обновлённый AI-разбор')]);
+    rows.push([tracked('squads','👥 Проверить составы'),tracked('market','💹 Проверить рынок')]);
+  } else if (decision==='detail') {
+    rows.push([fullAi('🧠 Открыть полный разбор')]);
+    rows.push([tracked('recheck','🔄 Перепроверить AI')]);
+  } else if (decision==='stable') {
+    rows.push([tracked('news','📰 Ещё новости'),fullAi('📊 Полный AI-разбор')]);
   } else {
-    rows.push([{text:'🔄 Повторить AI-проверку',callback_data:`match:refresh:${fixtureId}`},{text:'📊 Полный AI-разбор',web_app:{url:telegramFullAnalysisUrl(request,fixtureId,'brief')}}]);
+    rows.push([tracked('recheck','🔄 Повторить AI-проверку'),fullAi('📊 Полный AI-разбор')]);
   }
   const favoriteRow=favoriteMatchTeamRow(match,favorites);
   if (favoriteRow.length) rows.push(favoriteRow);
-  rows.push([{text:'↗ Поделиться матчем',callback_data:`match:share:${fixtureId}`}]);
+  rows.push([tracked('share','↗ Поделиться матчем')]);
   return {inline_keyboard:rows};
 }
-
 function newsImpactDecisionDrill() {
   const material=newsImpactDecisionCard({requested:true,compared:true,material:true,stable:false,reasonCode:'material_change'});
   const stable=newsImpactDecisionCard({requested:true,compared:true,material:false,stable:true,reasonCode:'stable'});
@@ -3268,6 +3323,30 @@ async function processTelegramUpdate(request, cfg, update) {
     if (callbackChatId && data === 'feed:live') {
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Обновляю LIVE…'}).catch(()=>null);
       await sendBotDayMatches(request,cfg,callbackChatId,{liveOnly:true});
+      return json({ok:true});
+    }
+    const newsImpactAction=data.match(/^news:impact:(material|detail|stable|guarded|baseline_missing|unavailable):(squads|market|recheck|news|share):(\d+)$/);
+    if (callbackChatId && newsImpactAction) {
+      const decision=cleanNewsImpactDecisionCode(newsImpactAction[1]);
+      const action=cleanNewsImpactActionCode(newsImpactAction[2]);
+      const fixtureId=Number(newsImpactAction[3]);
+      void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_impact_action',channel:'telegram',fixtureId,metadata:{decision,action}});
+      if (action==='news') {
+        await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Открываю новости…'}).catch(()=>null);
+        await sendGeneralFootballNews(request,cfg,callbackUserId,callbackChatId,{force:false});
+        return json({ok:true});
+      }
+      if (action==='share') {
+        await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Готовлю ссылку…'}).catch(()=>null);
+        try { await sendBotFixtureShareCard(request,cfg,callbackUserId,callbackChatId,fixtureId); }
+        catch { await telegramApi('sendMessage',cfg,{chat_id:callbackChatId,text:'Не удалось подготовить ссылку на этот матч.'}).catch(()=>null); }
+        return json({ok:true});
+      }
+      await telegramApi('answerCallbackQuery',cfg,{
+        callback_query_id:cb.id,
+        text:action==='recheck'?'Перепроверяю AI…':'Собираю футбольные данные…',
+      }).catch(()=>null);
+      await sendBotFixtureSection(request,cfg,callbackUserId,callbackChatId,fixtureId,action==='recheck'?'verdict':action);
       return json({ok:true});
     }
     if (callbackChatId && (data === 'news:general' || data === 'news:refresh')) {
@@ -14669,7 +14748,12 @@ async function apiAnalyze(request, cfg, user) {
   const recheckRequested=Boolean(body?.recheck);
   const newsImpactRecheck=Boolean(body?.newsImpactRecheck);
   const newsPublishedAt=Number.isFinite(Date.parse(String(body?.newsPublishedAt || ''))) ? new Date(Date.parse(String(body.newsPublishedAt))).toISOString() : '';
+  const newsImpactDecision=cleanNewsImpactDecisionCode(body?.newsImpactDecision);
+  const newsImpactAction=cleanNewsImpactActionCode(body?.newsImpactAction);
   const trackFullAi=analysisOrigin !== 'telegram_quick';
+  if (trackFullAi && newsImpactDecision && newsImpactAction==='full_ai') {
+    void recordGrowthEvent(cfg,{userId:user.id,eventName:'news_impact_action',channel:'miniapp',fixtureId,metadata:{decision:newsImpactDecision,action:'full_ai'}});
+  }
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'Некорректный номер матча.' }, 400);
 
   const cacheKey = `fixture:${fixtureId}:v10-ai-instructor`;
@@ -15205,6 +15289,10 @@ export default {
         newsImpactCausalityGuardUx: 'enabled',
         newsImpactDecisionAnalytics: 'enabled',
         newsImpactDecisionSelfTest: newsImpactDecisionDrill().pass ? 'enabled' : 'failed',
+        newsImpactActionTracking: 'enabled',
+        newsImpactActionAttribution: 'enabled',
+        newsImpactActionAnalytics: 'enabled',
+        newsImpactActionSelfTest: newsImpactActionDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
