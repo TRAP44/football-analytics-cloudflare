@@ -15,6 +15,8 @@ const REQUIRED_HEALTH_FLAGS = [
   'aiAnalysisQualityGateSelfTest',
   'telegramMiniAppE2E',
   'telegramMiniAppE2ESelfTest',
+  'multiUserAnalysisAdmission',
+  'multiUserAnalysisAdmissionSelfTest',
   'cloudflareDeploymentGate',
   'browserSecurityPolicy',
   'failClosedDeployment',
