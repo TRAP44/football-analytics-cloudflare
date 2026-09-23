@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.94.0 RC102
+# QA Release Checklist — v6.95.0 RC103
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.94.0`.
-- Worker и client: `6.94.0-rc102`.
-- Release candidate: `RC102`.
+- `package.json` и `package-lock.json`: `6.95.0`.
+- Worker и client: `6.95.0-rc103`.
+- Release candidate: `RC103`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -34,17 +34,21 @@ npm run verify:worker
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
 
-## RC102 — Secret Leak Guard
+## RC103 — Production Monitoring & Recovery
 
-- Перед тестами Quality выполняется `npm run security:scan`.
-- Та же проверка повторяется непосредственно перед production deploy.
-- Запрещены отслеживаемые `.env`, `.dev.vars`, `*.pem`, `*.key` и приватные SSH key-файлы.
-- Сканер распознаёт high-confidence Telegram bot token, Supabase secret key, GitHub PAT, Tavily key, JWT и private-key header.
-- `.env.example` с безопасными placeholder-значениями разрешён.
-- Логи содержат только путь и тип нарушения, но не найденное секретное значение.
-- Regression: `test/security-scan-rc102.test.js`.
-
-## Исторические RC72–RC101
+- Cloudflare cron запускает production monitor каждые 15 минут.
+- Monitor не расходует API-Football и не меняет пользовательские данные или runtime controls.
+- Проверяются Supabase, актуальная схема v6.15 и operational errors за последний час.
+- `incident` становится блокирующим `production_monitor` в Release Readiness.
+- Monitor записывает только изменение состояния или редкий heartbeat; собственные monitor-события исключены из error budget.
+- `/api/production-monitor` доступен только администратору.
+- Исправлен `apiProductionReadiness`: `checks` объявляется до любых добавлений self-test результатов.
+- `/health` обязан публиковать `productionMonitor=enabled`, `productionMonitorSelfTest=enabled`, `rollbackVerification=enabled`.
+- `Rollback Production` требует Cloudflare version ID, ожидаемую app version и настроенный `CLOUDFLARE_WORKER_URL`.
+- После rollback обязательна независимая проверка точной версии, `DEV_MODE=false` и закрытого `/health/supabase`.
+- Автоматический rollback намеренно не включён: восстановление остаётся подтверждаемым ручным действием.
+- Regression: `test/production-monitor-recovery-rc103.test.js`.
+## Исторические RC72–RC102
 
 Детальные исторические release-контракты удалены из текущего checklist, чтобы не дублировать Git history и regression-тесты. Их поведение продолжает проверяться соответствующими файлами `test/*-rcXX.test.js`, а продуктовая сводка сохранена в `README_CLOUDFLARE_RU.md`.
 
@@ -66,8 +70,8 @@ npm run verify:worker
 
 `scripts/post-deploy-smoke.js` должен подтвердить:
 - `/health.ok = true`;
-- `version = 6.94.0-rc102`;
-- `releaseCandidate = RC102`;
+- `version = 6.95.0-rc103`;
+- `releaseCandidate = RC103`;
 - `devMode = false`;
 - обязательные self-test/feature flags = `enabled`;
 - `/health/supabase` не доступен публично;
