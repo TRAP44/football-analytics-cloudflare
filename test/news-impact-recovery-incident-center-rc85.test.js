@@ -9,7 +9,7 @@ test('RC85 derives privacy-safe recovery incident events from categorical guards
   assert.match(worker,/function buildNewsImpactRecoveryIncidentEvents\(/);
   assert.match(worker,/NEWS_IMPACT_RECOVERY_INCIDENT_CODES/);
   assert.match(worker,/guardReason,/);
-  assert.match(worker,/priority:guardReason==='performance_drift' \? 'high' : 'medium'/);
+  assert.match(worker,/priority:(?:guardReason|event\.guardReason)==='performance_drift' \? 'high' : 'medium'/);
   const start=worker.indexOf('function buildNewsImpactRecoveryIncidentEvents');
   const end=worker.indexOf('function buildNewsImpactRecoveryIncidentCenter',start);
   const block=worker.slice(start,end);
