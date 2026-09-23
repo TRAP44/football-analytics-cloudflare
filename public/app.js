@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.76.0-rc84';
+const CLIENT_VERSION = '6.77.0-rc85';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc84';
+const CLIENT_RELEASE_CHANNEL = 'rc85';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2943,6 +2943,8 @@ function renderLaunchFunnel() {
   const impactRecoveryTransitionSummary=d.newsImpactRecoveryTransitionSummary || {};
   const impactRecoveryStrategyAlerts=Array.isArray(d.newsImpactRecoveryStrategyAlerts) ? d.newsImpactRecoveryStrategyAlerts : [];
   const impactRecoveryAlertSummary=d.newsImpactRecoveryAlertSummary || {};
+  const impactRecoveryIncidents=Array.isArray(d.newsImpactRecoveryIncidents) ? d.newsImpactRecoveryIncidents : [];
+  const impactRecoveryIncidentSummary=d.newsImpactRecoveryIncidentSummary || {};
   const impactFunnel=Array.isArray(d.newsImpactActionFunnel) ? d.newsImpactActionFunnel : [];
   const impactBottleneck=d.newsImpactActionBottleneck || null;
   const impactConfidenceGuard=d.newsImpactActionConfidenceGuard || {minUsers:10,stableUsers:30};
@@ -2957,6 +2959,7 @@ function renderLaunchFunnel() {
     <div><span>One‑tap → полный AI</span><strong>${Number(handoff.fullAiUsers || 0)}</strong><small>${launchFunnelPct(handoff.conversionPct)} от AI-handoff</small></div>
     <div><span>AI перепроверки</span><strong>${Number(rechecks.total || 0)}</strong><small>${Number(rechecks.free || 0)} без списания · ${Number(rechecks.material || 0)} со значимыми изменениями</small></div>
     <div><span>Новости → AI</span><strong>${Number(d.returnLoop?.aiIntent || 0)}</strong><small>${launchFunnelPct(d.returnLoop?.intentPct)} нажали AI · ${Number(d.returnLoop?.smartFixtureIntent || 0)} через smart fixture · News Impact: ${Number(d.returnLoop?.impactCompared || 0)} сравнений / ${Number(d.returnLoop?.impactMaterial || 0)} существенных · решения: 🔴 ${Number(d.newsImpactDecisionSummary?.material || 0)} · 🟡 ${Number(d.newsImpactDecisionSummary?.detail || 0)} · 🟢 ${Number(d.newsImpactDecisionSummary?.stable || 0)} · действия: полный AI ${Number(impactActions.fullAi || 0)} · составы ${Number(impactActions.squads || 0)} · рынок ${Number(impactActions.market || 0)} · перепроверка ${Number(impactActions.recheck || 0)} · новости ${Number(impactActions.news || 0)} · поделились ${Number(impactActions.share || 0)} · подтверждённых результатов ${Number(impactOutcomeSummary.confirmed || 0)}/${Number(impactOutcomeSummary.attempts || 0)} · сбоев доставки ${Number(impactFailureSummary.total || 0)} · recovery ${Number(impactRecoverySummary.recovered || 0)}/${Number(impactRecoverySummary.attempts || 0)} · adaptive rules ${Number(impactRecoveryStrategySummary.adaptive || 0)} · Возврат из новостей: ${Number(d.returnLoop?.newsReturn || 0)} до матча</small></div>
+    <div><span>Recovery-инциденты</span><strong>${Number(impactRecoveryIncidentSummary.active || 0)}</strong><small>активных · high ${Number(impactRecoveryIncidentSummary.highActive || 0)} · восстановлено ${Number(impactRecoveryIncidentSummary.recovered || 0)}</small></div>
     <div><span>Media deep-link → AI</span><strong>${Number(media.aiUsers || 0)}</strong><small>${Number(media.deepLinkUsers || 0)} открыли · ${launchFunnelPct(media.conversionPct)} получили AI</small></div>
   </div>`;
 
@@ -3006,6 +3009,22 @@ function renderLaunchFunnel() {
         <small>${launchFunnelPct(x.successPct)} восстановлено · 95% ДИ ${launchFunnelPct(x.confidence?.lowerPct)}–${launchFunnelPct(x.confidence?.upperPct)} · ${escapeHtml(x.confidence?.label || 'мало данных')} · ${Number(x.pending || 0) ? `${Number(x.pending || 0)} ещё ожидают · ` : ''}${Number(x.failed || 0)} без подтверждённой доставки</small>
       </div>`).join('')}</div>
       <p class="tiny">Recovery считается успешным только после подтверждённой сервером доставки результата в течение ${Number(impactRecoveryGuard.windowMinutes || 5)} минут. Сам показ fallback или повторной кнопки успехом не считается.</p>` : ''}
+    ${impactRecoveryIncidents.length ? `<div class="release-monitor-section-head"><strong>Recovery Incident Center</strong><span>активных ${Number(impactRecoveryIncidentSummary.active || 0)} · восстановлено ${Number(impactRecoveryIncidentSummary.recovered || 0)} · high ${Number(impactRecoveryIncidentSummary.highActive || 0)}</span></div>
+      <div class="launch-campaign-list">${impactRecoveryIncidents.map(x=>{
+        const priority=x.priority==='high' ? '🔴 high' : x.priority==='medium' ? '🟠 medium' : '🟡 low';
+        const stateLabel=x.status==='active' ? 'активен' : 'восстановлен';
+        const codeLabel=x.code==='performance_drift' ? 'performance drift'
+          : x.code==='recent_regression' ? 'recent regression'
+            : x.code==='strategy_evidence_unavailable' ? 'evidence недоступно'
+              : x.code || 'incident';
+        const when=x.lastSeenAt || (x.currentOnly ? 'текущее состояние' : 'время не зафиксировано');
+        return `<div>
+          <span><b>${priority} · ${escapeHtml(x.reasonLabel || 'Recovery Strategy')}</b>${x.actionLabel ? ` · ${escapeHtml(x.actionLabel)}` : ''}</span>
+          <strong>${escapeHtml(stateLabel)} · ${escapeHtml(codeLabel)}</strong>
+          <small>${Number(x.occurrences || 0)} событий · последнее: ${escapeHtml(when)}${x.currentRecoveryLabel ? ` · сейчас: ${escapeHtml(x.currentStrategy || 'fixed')} / ${escapeHtml(x.currentRecoveryLabel)}` : ''}</small>
+        </div>`;
+      }).join('')}</div>
+      <p class="tiny">RC85 объединяет drift/regression в lifecycle-инциденты: одинаковые reason + action + guard агрегируются, текущий guard определяет состояние «активен / восстановлен». В Incident Center нет Telegram ID и raw error.</p>` : ''}
     ${impactRecoveryStrategyAlerts.length ? `<div class="release-monitor-section-head"><strong>Recovery: предупреждения</strong><span>${Number(impactRecoveryAlertSummary.warnings || 0)} warning · ${Number(impactRecoveryAlertSummary.info || 0)} info</span></div>
       <div class="launch-campaign-list">${impactRecoveryStrategyAlerts.map(x=>`<div>
         <span><b>${x.severity==='warning'?'⚠️':'ℹ️'} ${escapeHtml(x.reasonLabel || 'Recovery Strategy')}</b>${x.actionLabel ? ` · ${escapeHtml(x.actionLabel)}` : ''}</span>
