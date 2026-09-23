@@ -68,7 +68,7 @@ test('RC86 deterministic ack self-test and health contract',()=>{
 test('RC86 reuses growth_events and needs no Supabase migration',()=>{
   assert.match(worker,/NEWS_IMPACT_RECOVERY_INCIDENT_ACK_EVENT/);
   assert.match(worker,/incidentAckRows=rows\.filter/);
-  const files=fs.readdirSync('.').filter(x=>/^supabase_migration_v6_\d/.test(x));
-  assert.ok(files.includes('supabase_migration_v6_15.sql'));
+  const files=fs.readdirSync('supabase/migrations').filter(x=>/^v6_\d/.test(x));
+  assert.ok(files.includes('v6_15.sql'));
   assert.ok(!files.some(x=>/v6_16|v6_17|v6_18|v6_19|v6_20|v6_21|v6_22|rc86/i.test(x)));
 });
