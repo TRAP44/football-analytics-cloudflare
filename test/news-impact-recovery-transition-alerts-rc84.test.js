@@ -44,7 +44,7 @@ test('RC84 builds actionable admin alerts without changing runtime routing',()=>
 });
 
 test('RC84 uses the same 30-day strategy loader for history and alerts',()=>{
-  assert.match(worker,/transitionHistory: \[\]/);
+  assert.match(worker,/transitionHistory:\s*\[\]/);
   assert.match(worker,/newsImpactRecoveryStrategyLoaded\.transitionHistory/);
   assert.match(worker,/buildNewsImpactRecoveryAdminAlerts\(newsImpactRecoveryStrategyMatrix,newsImpactRecoveryStrategyLoaded\.reason\)/);
   assert.match(app,/История строится по фактически применённой стратегии в failure-событиях за 30 дней/);
