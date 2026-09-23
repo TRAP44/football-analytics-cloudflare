@@ -165,6 +165,10 @@ const REQUIRED_HEALTH_FLAGS = [
   'newsImpactRecoveryIncidentAlertSuppression',
   'newsImpactRecoveryIncidentAckPrivacyGuard',
   'newsImpactRecoveryIncidentAckSelfTest',
+  'newsImpactRecoveryIncidentSlo',
+  'newsImpactRecoveryIncidentEscalation',
+  'newsImpactRecoveryIncidentLatencyMetrics',
+  'newsImpactRecoveryIncidentSloSelfTest',
 ];
 
 function delay(ms) {
