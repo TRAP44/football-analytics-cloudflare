@@ -4195,7 +4195,7 @@ function newsImpactRecoveryIncidentDrill() {
     {reason:'timeout',reasonLabel:'Тайм-аут',action:'share',actionLabel:'Поделиться',strategy:'fixed',selectedRecovery:'retry_soon',selectedRecoveryLabel:'повторить скоро',guardReason:'recent_regression'},
     {reason:'provider_unavailable',reasonLabel:'Провайдер временно недоступен',action:'full_ai',actionLabel:'Полный AI',strategy:'fixed',selectedRecovery:'retry_later',selectedRecoveryLabel:'повторить позже',guardReason:'performance_drift'},
   ];
-  const incidents=buildNewsImpactRecoveryIncidentCenter(current,events,'ok');
+  const incidents=buildNewsImpactRecoveryIncidentCenter(current,events,[],'ok');
   const summary=summarizeNewsImpactRecoveryIncidents(incidents);
   return {
     pass:incidents.length===3
