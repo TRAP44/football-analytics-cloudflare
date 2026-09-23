@@ -37,7 +37,7 @@ test('RC104 reliability caps AI data trust instead of inventing confidence',()=>
   assert.match(worker,/const reliabilityCap = Math\.max/);
   assert.match(worker,/const dataTrustScore = Math\.min\(baseDataTrustScore, reliabilityCap\)/);
   assert.match(worker,/Надёжность входных данных ниже рабочего порога/);
-  assert.match(worker,/unknown.*нулев/i);
+  assert.match(worker,/Неизвестность не преобразуется в нулевые значения/);
 });
 
 test('RC104 exposes reliability metadata and release health contracts',()=>{
