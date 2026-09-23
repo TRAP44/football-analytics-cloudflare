@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runRollbackSmoke } from '../scripts/rollback-smoke.js';
@@ -65,4 +66,44 @@ test('RC103 rejects public technical Supabase health', async () => {
     runRollbackSmoke('https://example.com', '6.94.0-rc102', { fetchImpl, retries: 1, retryDelayMs: 0 }),
     /must not be public/
   );
+});
+
+
+test('RC103 schedules a read-only production monitor every 15 minutes', () => {
+  const worker=fs.readFileSync('src/worker.js','utf8');
+  assert.match(worker,/async function runProductionMonitor\(/);
+  assert.match(worker,/scheduledAt\.getUTCMinutes\(\) % 15 === 0/);
+  assert.match(worker,/consumesFootballApi: false/);
+  assert.match(worker,/autoRollback: false/);
+  assert.match(worker,/source: 'monitor'/);
+  assert.match(worker,/eventType: 'production_monitor'/);
+});
+
+test('RC103 production readiness declares checks before any push', () => {
+  const worker=fs.readFileSync('src/worker.js','utf8');
+  const start=worker.indexOf('async function apiProductionReadiness');
+  const end=worker.indexOf('\nfunction rcCheck',start);
+  assert.ok(start>=0 && end>start);
+  const block=worker.slice(start,end);
+  const declaration=block.indexOf('const checks = [');
+  const firstPush=block.indexOf('checks.push(');
+  assert.ok(declaration>=0);
+  assert.ok(firstPush<0 || firstPush>declaration, 'checks.push must never run before const checks');
+});
+
+test('RC103 exposes protected monitor route and health contracts', () => {
+  const worker=fs.readFileSync('src/worker.js','utf8');
+  assert.match(worker,/url\.pathname === '\/api\/production-monitor'/);
+  assert.match(worker,/productionMonitor: 'enabled'/);
+  assert.match(worker,/productionMonitorSelfTest: productionMonitorSelfTest\(\)\.pass \? 'enabled' : 'failed'/);
+  assert.match(worker,/rollbackVerification: 'enabled'/);
+});
+
+test('RC103 rollback workflow validates target and verifies restored production', () => {
+  const workflow=fs.readFileSync('.github/workflows/rollback-production.yml','utf8');
+  assert.match(workflow,/expected_version:/);
+  assert.match(workflow,/Rollback preflight/);
+  assert.match(workflow,/npx wrangler rollback "\$VERSION_ID"/);
+  assert.match(workflow,/node scripts\/rollback-smoke\.js "\$ROLLBACK_URL" "\$EXPECTED_VERSION"/);
+  assert.match(workflow,/CLOUDFLARE_WORKER_URL/);
 });
