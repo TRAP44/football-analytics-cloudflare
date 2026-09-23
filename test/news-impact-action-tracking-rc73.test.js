@@ -13,11 +13,12 @@ test('RC73 creates tracked callbacks and a tracked full-AI handoff',()=>{
   for (const action of ['squads','market','recheck','news','share']) assert.ok(worker.includes(`tracked('${action}'`));
 });
 
-test('Telegram action tracking stores only categorical decision and action',()=>{
+test('Telegram action tracking stores categorical decision/action and optional recovery only',()=>{
   assert.match(worker,/eventName:'news_impact_action',channel:'telegram'/);
-  const event=/eventName:'news_impact_action',channel:'telegram'[\s\S]{0,260}?metadata:\{decision,action\}/.exec(worker);
+  const event=/eventName:'news_impact_action',channel:'telegram'[\s\S]{0,360}?metadata:\{decision,action,[\s\S]{0,180}?\}\}/.exec(worker);
   assert.ok(event,'Telegram News Impact action event missing');
-  assert.doesNotMatch(event[0],/title|headline|url|query|content/);
+  assert.match(event[0],/decision,action/);
+  assert.doesNotMatch(event[0],/title|headline|url|query|content|error\.message|stack/);
 });
 
 test('Mini App carries decision attribution into full AI without article text',()=>{
@@ -26,7 +27,9 @@ test('Mini App carries decision attribution into full AI without article text',(
   assert.match(app,/params\.get\('newsImpactDecision'\)/);
   assert.match(app,/params\.get\('newsImpactAction'\)/);
   assert.match(worker,/newsImpactAction==='full_ai'/);
-  assert.match(worker,/channel:'miniapp'.*metadata:\{decision:newsImpactDecision,action:'full_ai'\}/s);
+  const fullAiEvent=/eventName:'news_impact_action',channel:'miniapp'[\s\S]{0,360}?metadata:\{decision:newsImpactDecision,action:'full_ai',[\s\S]{0,180}?\}\}/.exec(worker);
+  assert.ok(fullAiEvent,'Mini App News Impact action event missing');
+  assert.doesNotMatch(fullAiEvent[0],/title|headline|url|query|content|error\.message|stack/);
 });
 
 test('launch analytics exposes News Impact follow-up actions',()=>{
