@@ -80,11 +80,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.88.0-rc96';
+const APP_VERSION = '6.89.0-rc97';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc96';
-const RC_NAME = 'RC96';
+const RELEASE_CHANNEL = 'rc97';
+const RC_NAME = 'RC97';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1983,6 +1983,12 @@ async function apiLaunchFunnel(request,cfg) {
         routingChanged:false,
         persistence:'none',
       };
+  const newsImpactRecoveryIncidentSloImpactExecutiveSummary=buildNewsImpactRecoveryIncidentSloImpactExecutiveSummary(
+    newsImpactRecoveryIncidentSloBreachImpactRanking,
+    newsImpactRecoveryIncidentSloBreachImpactTrend,
+    newsImpactRecoveryIncidentSloImpactConcentration,
+    newsImpactRecoveryIncidentSloImpactConcentrationTrend,
+  );
   const newsImpactRecoveryIncidentSloGuard={
     ackTargetMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,
     ackCriticalMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,
@@ -2109,6 +2115,7 @@ async function apiLaunchFunnel(request,cfg) {
     newsImpactRecoveryIncidentSloBreachImpactTrend,
     newsImpactRecoveryIncidentSloImpactConcentration,
     newsImpactRecoveryIncidentSloImpactConcentrationTrend,
+    newsImpactRecoveryIncidentSloImpactExecutiveSummary,
     newsImpactActionFunnel,
     newsImpactActionBottleneck,
     newsImpactActionConfidenceGuard,
@@ -5026,6 +5033,70 @@ function buildNewsImpactRecoveryIncidentSloImpactConcentrationTrend(episodeRows 
   };
 }
 
+
+function buildNewsImpactRecoveryIncidentSloImpactExecutiveSummary(
+  impactRanking = {},
+  impactTrend = {},
+  concentration = {},
+  concentrationTrend = {},
+) {
+  const topPair=Array.isArray(impactRanking?.ranking) && impactRanking.ranking.length ? impactRanking.ranking[0] : null;
+  const rankingSummary=impactRanking?.summary || {};
+  const trendSummary=impactTrend?.summary || {};
+  const concentrationSummary=concentration?.summary || {};
+  const concentrationTrendSummary=concentrationTrend?.summary || {};
+  const available=[impactRanking,impactTrend,concentration,concentrationTrend].every(x=>x?.available!==false);
+  return {
+    available,
+    generatedAt:impactRanking?.generatedAt || impactTrend?.generatedAt || concentrationTrend?.generatedAt || concentration?.generatedAt || null,
+    summary:{
+      cumulativeOverdueMinutes:Number(rankingSummary.totalOverdueMinutes || 0),
+      cumulativeAckOverdueMinutes:Number(rankingSummary.ackOverdueMinutes || 0),
+      cumulativeRecoveryOverdueMinutes:Number(rankingSummary.recoveryOverdueMinutes || 0),
+      breachPairs:Number(rankingSummary.pairs || 0),
+      activePairs:Number(rankingSummary.activePairs || 0),
+      breachEpisodes:Number(rankingSummary.breachEpisodes || 0),
+      currentWeekOverdueMinutes:Number(trendSummary.currentOverdueMinutes || 0),
+      previousWeekOverdueMinutes:Number(trendSummary.previousOverdueMinutes || 0),
+      weekDeltaMinutes:Number(trendSummary.deltaMinutes || 0),
+      weeklyIncreasedPairs:Number(trendSummary.increasedPairs || 0),
+      weeklyDecreasedPairs:Number(trendSummary.decreasedPairs || 0),
+      weeklyUnchangedPairs:Number(trendSummary.unchangedPairs || 0),
+      top1ContributionPct:Number(concentrationSummary.top1ContributionPct || 0),
+      top3ContributionPct:Number(concentrationSummary.top3ContributionPct || 0),
+      top5ContributionPct:Number(concentrationSummary.top5ContributionPct || 0),
+      top1WeeklyDeltaPctPoints:Number(concentrationTrendSummary.top1DeltaPctPoints || 0),
+      top3WeeklyDeltaPctPoints:Number(concentrationTrendSummary.top3DeltaPctPoints || 0),
+      top5WeeklyDeltaPctPoints:Number(concentrationTrendSummary.top5DeltaPctPoints || 0),
+      top1WeeklyDirection:String(concentrationTrendSummary.top1Direction || 'unchanged'),
+      top3WeeklyDirection:String(concentrationTrendSummary.top3Direction || 'unchanged'),
+      top5WeeklyDirection:String(concentrationTrendSummary.top5Direction || 'unchanged'),
+    },
+    topPair:topPair ? {
+      reason:String(topPair.reason || ''),
+      reasonLabel:String(topPair.reasonLabel || topPair.reason || ''),
+      action:String(topPair.action || ''),
+      actionLabel:String(topPair.actionLabel || topPair.action || ''),
+      totalOverdueMinutes:Number(topPair.totalOverdueMinutes || 0),
+      contributionPct:Number(topPair.contributionPct || 0),
+      activeEpisodes:Number(topPair.activeEpisodes || 0),
+      ackOverdueMinutes:Number(topPair.ackOverdueMinutes || 0),
+      recoveryOverdueMinutes:Number(topPair.recoveryOverdueMinutes || 0),
+    } : null,
+    sourceReleases:['RC93','RC94','RC95','RC96'],
+    methodology:'summary_of_existing_slo_impact_views',
+    thresholds:{
+      ackMinutes:Number(impactRanking?.thresholds?.ackMinutes || NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES),
+      criticalAckMinutes:Number(impactRanking?.thresholds?.criticalAckMinutes || NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES),
+      recoveryMinutes:Number(impactRanking?.thresholds?.recoveryMinutes || NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES),
+      source:'rc87_existing_slo',
+    },
+    privacy:{telegramIdsExposed:false,rawErrorsExposed:false,freeTextExposed:false},
+    routingChanged:false,
+    persistence:'none',
+  };
+}
+
 function buildNewsImpactRecoveryIncidentCenter(strategyRows = [], incidentEvents = [], acknowledgements = [], evidenceReason = 'ok', options = {}) {
   const priorityRank={critical:0,high:1,medium:2,low:3};
   const asOfMs=Number.isFinite(Number(options?.asOfMs)) ? Number(options.asOfMs) : Date.now();
@@ -5797,6 +5868,64 @@ function newsImpactRecoveryIncidentSloImpactConcentrationTrendDrill() {
       && result.persistence==='none'
       && result.privacy.telegramIdsExposed===false,
     cases:18,
+  };
+}
+
+
+function newsImpactRecoveryIncidentSloImpactExecutiveSummaryDrill() {
+  const ranking={
+    available:true,
+    generatedAt:'2026-09-23T18:00:00.000Z',
+    summary:{pairs:4,activePairs:2,breachEpisodes:7,totalOverdueMinutes:1000,ackOverdueMinutes:650,recoveryOverdueMinutes:350},
+    thresholds:{ackMinutes:30,criticalAckMinutes:120,recoveryMinutes:360,source:'rc87_existing_slo'},
+    ranking:[
+      {reason:'server_error',reasonLabel:'Ошибка сервера',action:'full_ai',actionLabel:'Полный AI',totalOverdueMinutes:400,contributionPct:40,activeEpisodes:1,ackOverdueMinutes:250,recoveryOverdueMinutes:150},
+    ],
+  };
+  const trend={
+    available:true,
+    generatedAt:'2026-09-23T18:00:00.000Z',
+    summary:{currentOverdueMinutes:300,previousOverdueMinutes:220,deltaMinutes:80,increasedPairs:2,decreasedPairs:1,unchangedPairs:1},
+  };
+  const concentration={
+    available:true,
+    generatedAt:'2026-09-23T18:00:00.000Z',
+    summary:{top1ContributionPct:40,top3ContributionPct:85,top5ContributionPct:100},
+  };
+  const concentrationTrend={
+    available:true,
+    generatedAt:'2026-09-23T18:00:00.000Z',
+    summary:{
+      top1DeltaPctPoints:5,
+      top3DeltaPctPoints:-2,
+      top5DeltaPctPoints:0,
+      top1Direction:'increased',
+      top3Direction:'decreased',
+      top5Direction:'unchanged',
+    },
+  };
+  const result=buildNewsImpactRecoveryIncidentSloImpactExecutiveSummary(ranking,trend,concentration,concentrationTrend);
+  return {
+    pass:result.available===true
+      && result.summary.cumulativeOverdueMinutes===1000
+      && result.summary.cumulativeAckOverdueMinutes===650
+      && result.summary.cumulativeRecoveryOverdueMinutes===350
+      && result.summary.currentWeekOverdueMinutes===300
+      && result.summary.weekDeltaMinutes===80
+      && result.summary.activePairs===2
+      && result.summary.top1ContributionPct===40
+      && result.summary.top3ContributionPct===85
+      && result.summary.top1WeeklyDeltaPctPoints===5
+      && result.summary.top3WeeklyDirection==='decreased'
+      && result.topPair?.reason==='server_error'
+      && result.topPair?.totalOverdueMinutes===400
+      && result.sourceReleases.join(',')==='RC93,RC94,RC95,RC96'
+      && result.methodology==='summary_of_existing_slo_impact_views'
+      && result.thresholds.source==='rc87_existing_slo'
+      && result.routingChanged===false
+      && result.persistence==='none'
+      && result.privacy.telegramIdsExposed===false,
+    cases:19,
   };
 }
 
@@ -18867,6 +18996,9 @@ export default {
         newsImpactRecoveryIncidentSloImpactConcentrationTrend: 'enabled',
         newsImpactRecoveryIncidentWeeklyConcentrationShares: 'enabled',
         newsImpactRecoveryIncidentSloImpactConcentrationTrendSelfTest: newsImpactRecoveryIncidentSloImpactConcentrationTrendDrill().pass ? 'enabled' : 'failed',
+        newsImpactRecoveryIncidentSloImpactExecutiveSummary: 'enabled',
+        newsImpactRecoveryIncidentSloImpactUnifiedView: 'enabled',
+        newsImpactRecoveryIncidentSloImpactExecutiveSummarySelfTest: newsImpactRecoveryIncidentSloImpactExecutiveSummaryDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
