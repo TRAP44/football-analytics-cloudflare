@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.65.0-rc73';
+const APP_VERSION = '6.66.0-rc74';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc73';
-const RC_NAME = 'RC73';
+const RELEASE_CHANNEL = 'rc74';
+const RC_NAME = 'RC74';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1704,6 +1704,8 @@ async function apiLaunchFunnel(request,cfg) {
     news:newsImpactActionRows.filter(x=>newsImpactAction(x)==='news').length,
     share:newsImpactActionRows.filter(x=>newsImpactAction(x)==='share').length,
   };
+  const newsImpactActionFunnel=buildNewsImpactActionFunnel(newsImpactRows,newsImpactActionRows);
+  const newsImpactActionBottleneck=newsImpactActionFunnelBottleneck(newsImpactActionFunnel);
   const shareRows=rows.filter(x=>['share_link_created','share_card_created'].includes(String(x.event_name || '')));
   const deepLinkRows=rows.filter(x=>String(x.event_name || '')==='fixture_deep_link_open');
   const deepLinkUsers=new Set(deepLinkRows.map(x=>Number(x.telegram_id || 0)).filter(Boolean));
@@ -1751,6 +1753,8 @@ async function apiLaunchFunnel(request,cfg) {
     returnLoop:{newsOpen:newsOpen.size,newsReturn:newsReturn.size,aiIntent:newsAiIntent.size,smartFixtureIntent:smartNewsAiUsers.size,impactChecks:newsImpactRows.length,impactCompared:newsImpactCompared.size,impactMaterial:newsImpactMaterial.size,intentPct:newsOpen.size?Math.round((newsAiIntent.size/newsOpen.size)*1000)/10:0,conversionPct:newsOpen.size?Math.round((newsReturn.size/newsOpen.size)*1000)/10:0},
     newsImpactDecisionSummary,
     newsImpactActionSummary,
+    newsImpactActionFunnel,
+    newsImpactActionBottleneck,
     mediaLoop:{shareEvents:shareRows.length,shareUsers:shareUsers.size,deepLinkOpens:deepLinkRows.length,deepLinkUsers:deepLinkUsers.size,aiUsers:deepLinkAiUsers.size,conversionPct:deepLinkUsers.size?Math.round((deepLinkAiUsers.size/deepLinkUsers.size)*1000)/10:0},
     searchQuality:{attempts:searchResultRows.length,match:searchMatches,recognizedNoMatch:searchRecognizedNoMatch,notFound:searchNotFound,recoveredRecent:searchRecoveredRecent,matchPct:searchResultRows.length?Math.round((searchMatches/searchResultRows.length)*1000)/10:0},
     campaigns,
@@ -2547,6 +2551,98 @@ function newsImpactActionDrill() {
       && cleanNewsImpactActionCode('full_ai')==='full_ai'
       && cleanNewsImpactActionCode('raw_text')==='',
     cases:5,
+  };
+}
+
+const NEWS_IMPACT_FUNNEL_DECISIONS = [
+  ['material','🔴 Существенное изменение'],
+  ['detail','🟡 Изменились детали'],
+  ['stable','🟢 Сценарий стабилен'],
+  ['guarded','🟦 Причинность не подтверждается'],
+  ['baseline_missing','⚪ Нет базового снимка'],
+  ['unavailable','🟠 Перепроверка недоступна'],
+];
+
+const NEWS_IMPACT_ACTION_LABELS = {
+  full_ai:'Полный AI',
+  squads:'Составы',
+  market:'Рынок',
+  recheck:'Перепроверка',
+  news:'Новости',
+  share:'Поделиться',
+};
+
+function newsImpactRowDecision(row = {}) {
+  return cleanNewsImpactDecisionCode(row?.metadata && typeof row.metadata==='object' ? row.metadata.decision : '');
+}
+
+function newsImpactRowAction(row = {}) {
+  return cleanNewsImpactActionCode(row?.metadata && typeof row.metadata==='object' ? row.metadata.action : '');
+}
+
+function buildNewsImpactActionFunnel(decisionRows = [], actionRows = []) {
+  return NEWS_IMPACT_FUNNEL_DECISIONS.map(([code,label])=>{
+    const decisionUsers=new Set(
+      decisionRows
+        .filter(row=>newsImpactRowDecision(row)===code)
+        .map(row=>Number(row.telegram_id || 0))
+        .filter(Boolean)
+    );
+    const actionUsersByCode={};
+    for (const action of NEWS_IMPACT_ACTION_CODES) actionUsersByCode[action]=new Set();
+    for (const row of actionRows) {
+      if (newsImpactRowDecision(row)!==code) continue;
+      const uid=Number(row.telegram_id || 0);
+      const action=newsImpactRowAction(row);
+      if (!uid || !action || !decisionUsers.has(uid)) continue;
+      actionUsersByCode[action].add(uid);
+    }
+    const actedUsers=new Set();
+    for (const set of Object.values(actionUsersByCode)) for (const uid of set) actedUsers.add(uid);
+    const actionBreakdown=Object.entries(actionUsersByCode)
+      .map(([action,set])=>({action,label:NEWS_IMPACT_ACTION_LABELS[action] || action,users:set.size}))
+      .filter(x=>x.users>0)
+      .sort((a,b)=>b.users-a.users || a.action.localeCompare(b.action));
+    const users=decisionUsers.size;
+    const conversionPct=users ? Math.round((actedUsers.size/users)*1000)/10 : 0;
+    return {
+      code,label,users,actedUsers:actedUsers.size,conversionPct,
+      dropPct:users ? Math.max(0,Math.round((100-conversionPct)*10)/10) : 0,
+      topAction:actionBreakdown[0] || null,
+      actions:actionBreakdown,
+    };
+  });
+}
+
+function newsImpactActionFunnelBottleneck(rows = []) {
+  const eligible=(rows || []).filter(x=>Number(x.users || 0)>0);
+  if (!eligible.length) return null;
+  return [...eligible].sort((a,b)=>Number(a.conversionPct || 0)-Number(b.conversionPct || 0) || Number(b.users || 0)-Number(a.users || 0))[0] || null;
+}
+
+function newsImpactActionFunnelDrill() {
+  const decisions=[
+    {telegram_id:1,metadata:{decision:'material'}},
+    {telegram_id:2,metadata:{decision:'material'}},
+    {telegram_id:3,metadata:{decision:'stable'}},
+  ];
+  const actions=[
+    {telegram_id:1,metadata:{decision:'material',action:'market'}},
+    {telegram_id:3,metadata:{decision:'stable',action:'full_ai'}},
+    {telegram_id:99,metadata:{decision:'material',action:'share'}},
+  ];
+  const rows=buildNewsImpactActionFunnel(decisions,actions);
+  const material=rows.find(x=>x.code==='material');
+  const stable=rows.find(x=>x.code==='stable');
+  const bottleneck=newsImpactActionFunnelBottleneck(rows);
+  return {
+    pass:material?.users===2
+      && material?.actedUsers===1
+      && material?.conversionPct===50
+      && material?.topAction?.action==='market'
+      && stable?.conversionPct===100
+      && bottleneck?.code==='material',
+    cases:6,
   };
 }
 
@@ -15293,6 +15389,10 @@ export default {
         newsImpactActionAttribution: 'enabled',
         newsImpactActionAnalytics: 'enabled',
         newsImpactActionSelfTest: newsImpactActionDrill().pass ? 'enabled' : 'failed',
+        newsImpactActionFunnel: 'enabled',
+        newsImpactDecisionConversion: 'enabled',
+        newsImpactActionBottleneck: 'enabled',
+        newsImpactActionFunnelSelfTest: newsImpactActionFunnelDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
