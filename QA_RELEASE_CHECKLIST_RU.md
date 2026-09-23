@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.78.0 RC86
+# QA Release Checklist — v6.79.0 RC87
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.78.0`.
-- Worker и client: `6.78.0-rc86`.
-- Release candidate: `RC86`.
+- `package.json` и `package-lock.json`: `6.79.0`.
+- Worker и client: `6.79.0-rc87`.
+- Release candidate: `RC87`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,21 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC87 — News Impact Recovery Incident Escalation & SLO
+
+- ACK SLO: active factual incident должен быть просмотрен в пределах 30 минут от начала текущего adverse episode.
+- Если active incident не просмотрен 30 минут, административный приоритет повышается на один уровень; после 120 минут без acknowledgement он становится critical.
+- Recovery SLO: active episode должен нормализоваться в пределах 360 минут; превышение автоматически даёт critical administrative priority даже после acknowledgement.
+- Эскалация не изменяет `selectedRecovery`, strategy или RC81–RC86 routing; это только observability/admin layer.
+- Episode timestamps выводятся из фактической хронологии `news_impact_outcome_failure.metadata.strategy_guard`: adverse guard открывает/продолжает episode, следующий non-adverse guard для той же reason + action закрывает его.
+- Для recovered episode показывается фактическое время до восстановления только когда есть последующее failure-событие, подтверждающее смену guard; timestamp не выдумывается.
+- Для current-only incident без фактического failure timestamp SLO имеет состояние unavailable и не эскалируется по времени.
+- Admin показывает age, ACK latency, recovery latency, SLO status, base → effective priority, число escalated/critical incidents и SLO breaches.
+- `incident_ack_slo_breach` и `incident_recovery_slo_breach` — производные admin-alerts; они не сохраняются отдельными growth_events.
+- Regression: `test/news-impact-recovery-incident-slo-rc87.test.js`.
+- Production smoke требует `newsImpactRecoveryIncidentSlo=enabled`, `newsImpactRecoveryIncidentEscalation=enabled`, `newsImpactRecoveryIncidentLatencyMetrics=enabled`, `newsImpactRecoveryIncidentSloSelfTest=enabled`.
+- Новая Supabase migration не требуется; используются существующие backend-only `growth_events`.
 
 ## RC86 — News Impact Recovery Incident Acknowledgement & Runbook
 
