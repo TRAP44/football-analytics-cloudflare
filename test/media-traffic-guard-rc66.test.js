@@ -37,7 +37,7 @@ test('non-owner waits for shared fixture analysis instead of recomputing',()=> {
 
 test('analysis owner always releases persistent lock',()=> {
   assert.match(worker,/try \{\n  let fixture;/);
-  assert.match(worker,/finally \{\n    await releaseDistributedAnalysisLock\(analysisLock,cfg\);\n  \}/);
+  assert.match(worker,/finally \{\n    await releaseUserAnalysisLease\(userAnalysisLease,cfg\);\n    await releaseDistributedAnalysisLock\(analysisLock,cfg\);\n  \}/);
   assert.match(worker,/async function releaseDistributedAnalysisLock\(/);
   assert.match(worker,/row\?\.payload\?\.claimId/);
 });
