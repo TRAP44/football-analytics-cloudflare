@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.56.0-rc64';
+const CLIENT_VERSION = '6.57.0-rc65';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc64';
+const CLIENT_RELEASE_CHANNEL = 'rc65';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -6115,26 +6115,53 @@ function lineupBlock(title, lineup) {
 }
 
 async function shareAnalysis(d) {
-  const m = d?.match || {};
-  const p = d?.probabilities || {};
-  const text = [
-    `⚽ ${m.home?.name || ''} — ${m.away?.name || ''}`,
+  const m=d?.match || {};
+  const p=d?.probabilities || {};
+  const fixtureId=Number(m.fixtureId || 0);
+  const signal=d?.aiInstructor?.betSignal || {};
+  const title=`${m.home?.name || ''} — ${m.away?.name || ''}`;
+  const lines=[
+    `⚽ ${title}`,
     `${m.league || ''}${m.date ? ` · ${dateTime(m.date)}` : ''}`,
     `П1 ${pct(p.home)} · Н ${pct(p.draw)} · П2 ${pct(p.away)}`,
-    `Наиболее вероятно: ${d?.likelyOutcome || '—'}`,
-    `Уверенность: ${d?.confidence?.score ?? '—'}/100`,
+    signal.label ? `FM AI: ${signal.label}` : `Наиболее вероятно: ${d?.likelyOutcome || '—'}`,
+    `Уверенность: ${d?.confidence?.score ?? d?.aiInstructor?.confidenceScore ?? '—'}/100`,
     '',
-    'Аналитическая оценка модели · не гарантия результата.'
-  ].join('\n');
+    'Открой матч в FM AI — ссылка сразу приведёт к этому разбору.',
+    'Аналитическая оценка модели · не гарантия результата.',
+  ];
+  let shareUrl='';
+  let telegramShareUrl='';
   try {
-    if (navigator.share) {
-      await navigator.share({ title: `${m.home?.name || ''} — ${m.away?.name || ''}`, text });
+    if (fixtureId) {
+      const share=await api(`/api/share-link?fixtureId=${fixtureId}&source=social&campaign=match_share&content=miniapp`,{retry:false,timeoutMs:7000});
+      shareUrl=String(share?.url || '');
+      telegramShareUrl=String(share?.telegramShareUrl || '');
+    }
+  } catch {}
+  const text=lines.join('\n');
+  const fullText=shareUrl ? `${text}\n\n${shareUrl}` : text;
+  try {
+    if (telegramShareUrl && tg?.openTelegramLink) {
+      tg.openTelegramLink(telegramShareUrl);
+      toast('Открыто окно отправки матча');
       return;
     }
-    await navigator.clipboard.writeText(text);
-    toast('Краткий анализ скопирован');
+    if (navigator.share) {
+      await navigator.share({title,text,...(shareUrl?{url:shareUrl}:{})});
+      return;
+    }
+    await navigator.clipboard.writeText(fullText);
+    toast(shareUrl ? 'Ссылка на матч скопирована' : 'Краткий анализ скопирован');
   } catch (e) {
-    if (e?.name !== 'AbortError') toast('Не удалось поделиться анализом');
+    if (e?.name !== 'AbortError') {
+      try {
+        await navigator.clipboard.writeText(fullText);
+        toast(shareUrl ? 'Ссылка на матч скопирована' : 'Краткий анализ скопирован');
+      } catch {
+        toast('Не удалось поделиться анализом');
+      }
+    }
   }
 }
 
@@ -6545,7 +6572,7 @@ function renderAnalysis(d) {
 
       <div class="experience-actions">
         <button id="reminderBtn" class="reminder-btn ${reminderActive ? 'active' : ''} ${reminderPending ? 'is-pending' : ''}" type="button" aria-pressed="${reminderActive ? 'true' : 'false'}" ${reminderPending ? 'disabled' : ''}>${reminderPending ? '⏳ Сохраняю…' : reminderActive ? `🔔 За ${Number(activeReminder?.remindBeforeMinutes || 30)} мин.${activeReminder?.kickoffNotify ? ' + старт' : ''}` : `🔕 Напомнить за ${Number(state.preferences?.reminderMinutes || 30)} минут`}</button>
-        <button id="shareAnalysisBtn" class="share-analysis-btn" type="button">↗ Поделиться</button>
+        <button id="shareAnalysisBtn" class="share-analysis-btn" type="button">↗ Поделиться матчем</button>
       </div>
     </section>
 
