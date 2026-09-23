@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.64.0-rc72';
+const CLIENT_VERSION = '6.65.0-rc73';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc72';
+const CLIENT_RELEASE_CHANNEL = 'rc73';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2924,6 +2924,7 @@ function renderLaunchFunnel() {
   const handoff=d.handoff || {};
   const rechecks=d.rechecks || {};
   const media=d.mediaLoop || {};
+  const impactActions=d.newsImpactActionSummary || {};
   kpis.innerHTML=`<div class="release-monitor-kpis">
     <div><span>Входы</span><strong>${Number(first.users || 0)}</strong><small>bot + Mini App</small></div>
     <div><span>Полный AI</span><strong>${Number(last.users || 0)}</strong><small>${launchFunnelPct(last.fromEntryPct)} от входов</small></div>
@@ -2931,7 +2932,7 @@ function renderLaunchFunnel() {
     <div><span>Материалов СМИ</span><strong>${Number(d.mediaSummary?.materials || 0)}</strong><small>${Number(d.mediaSummary?.linksCreated || 0)} ссылок создано</small></div>
     <div><span>One‑tap → полный AI</span><strong>${Number(handoff.fullAiUsers || 0)}</strong><small>${launchFunnelPct(handoff.conversionPct)} от AI-handoff</small></div>
     <div><span>AI перепроверки</span><strong>${Number(rechecks.total || 0)}</strong><small>${Number(rechecks.free || 0)} без списания · ${Number(rechecks.material || 0)} со значимыми изменениями</small></div>
-    <div><span>Новости → AI</span><strong>${Number(d.returnLoop?.aiIntent || 0)}</strong><small>${launchFunnelPct(d.returnLoop?.intentPct)} нажали AI · ${Number(d.returnLoop?.smartFixtureIntent || 0)} через smart fixture · News Impact: ${Number(d.returnLoop?.impactCompared || 0)} сравнений / ${Number(d.returnLoop?.impactMaterial || 0)} существенных · решения: 🔴 ${Number(d.newsImpactDecisionSummary?.material || 0)} · 🟡 ${Number(d.newsImpactDecisionSummary?.detail || 0)} · 🟢 ${Number(d.newsImpactDecisionSummary?.stable || 0)} · Возврат из новостей: ${Number(d.returnLoop?.newsReturn || 0)} до матча</small></div>
+    <div><span>Новости → AI</span><strong>${Number(d.returnLoop?.aiIntent || 0)}</strong><small>${launchFunnelPct(d.returnLoop?.intentPct)} нажали AI · ${Number(d.returnLoop?.smartFixtureIntent || 0)} через smart fixture · News Impact: ${Number(d.returnLoop?.impactCompared || 0)} сравнений / ${Number(d.returnLoop?.impactMaterial || 0)} существенных · решения: 🔴 ${Number(d.newsImpactDecisionSummary?.material || 0)} · 🟡 ${Number(d.newsImpactDecisionSummary?.detail || 0)} · 🟢 ${Number(d.newsImpactDecisionSummary?.stable || 0)} · действия: полный AI ${Number(impactActions.fullAi || 0)} · составы ${Number(impactActions.squads || 0)} · рынок ${Number(impactActions.market || 0)} · перепроверка ${Number(impactActions.recheck || 0)} · новости ${Number(impactActions.news || 0)} · поделились ${Number(impactActions.share || 0)} · Возврат из новостей: ${Number(d.returnLoop?.newsReturn || 0)} до матча</small></div>
     <div><span>Media deep-link → AI</span><strong>${Number(media.aiUsers || 0)}</strong><small>${Number(media.deepLinkUsers || 0)} открыли · ${launchFunnelPct(media.conversionPct)} получили AI</small></div>
   </div>`;
 
@@ -5770,7 +5771,13 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
   const original = btn?.textContent || '';
   if (btn) btn.textContent = '⏳ Собираю данные…';
   try {
-    const data = await api('/api/analyze', { method: 'POST', body: JSON.stringify({ fixtureId, origin:'miniapp', recheck: options.recheck !== false }) });
+    const data = await api('/api/analyze', { method: 'POST', body: JSON.stringify({
+      fixtureId,
+      origin:'miniapp',
+      recheck: options.recheck !== false,
+      newsImpactDecision:String(options.newsImpactDecision || '').toLowerCase().slice(0,24),
+      newsImpactAction:String(options.newsImpactAction || '').toLowerCase().slice(0,24),
+    }) });
     if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
     renderAnalysis(data);
     rememberHistoryAnalysis(data);
@@ -6499,7 +6506,7 @@ function aiInstructorHtml(ai = {}, match = {}, kickoffHandoff = {}) {
 }
 
 let launchIntentHandled = false;
-async function openLaunchFixture(fixtureId, action, tab = '', handoff = false) {
+async function openLaunchFixture(fixtureId, action, tab = '', handoff = false, newsImpactDecision = '', newsImpactAction = '') {
   const id = Number(fixtureId || 0);
   if (!id) return;
   const allowedTabs = new Set(['brief','overview','form','comparison','market','squads','context']);
@@ -6507,7 +6514,7 @@ async function openLaunchFixture(fixtureId, action, tab = '', handoff = false) {
   if (requestedTab) state.currentAnalysisTab = requestedTab;
   if (action === 'center') return openMatchCenter(id, null);
   if (action === 'analysis') {
-    if (handoff) return analyzeMatch(id, null, { recheck:true });
+    if (handoff) return analyzeMatch(id, null, { recheck:true, newsImpactDecision, newsImpactAction });
     await loadHistory(false);
     if (analysisHistoryForFixture(id)) return openHistoryAnalysis(id, null);
     return analyzeMatch(id, null);
@@ -6525,6 +6532,8 @@ function applyLaunchIntent() {
   const action = String(params.get('action') || '').toLowerCase();
   const tab = String(params.get('tab') || '').toLowerCase();
   const handoff = params.get('handoff') === '1';
+  const newsImpactDecision = String(params.get('newsImpactDecision') || '').toLowerCase().slice(0,24);
+  const newsImpactAction = String(params.get('newsImpactAction') || '').toLowerCase().slice(0,24);
   if (['top', 'live', 'favorites', 'all'].includes(filter)) {
     state.filter = filter;
   }
@@ -6543,7 +6552,7 @@ function applyLaunchIntent() {
     void Promise.allSettled([loadHistory(false),loadAiTrackRecord(false)]);
   } else if (fixtureId > 0 && ['analysis','center'].includes(action)) {
     showView('searchView');
-    void openLaunchFixture(fixtureId, action, tab, handoff);
+    void openLaunchFixture(fixtureId, action, tab, handoff, newsImpactDecision, newsImpactAction);
   } else {
     renderGlobalSearch();
     showView('searchView', { restore: true });
