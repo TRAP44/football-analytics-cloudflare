@@ -14,9 +14,12 @@ test('RC102 blocks secret-bearing tracked filenames', () => {
 });
 
 test('RC102 detects high-confidence credential formats', () => {
-  assert.deepEqual(scanTextForSecrets('token=123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi'), ['telegram_bot_token']);
-  assert.deepEqual(scanTextForSecrets('key=sb_secret_abcdefghijklmnopqrstuvwx'), ['supabase_secret_key']);
-  assert.ok(scanTextForSecrets('-----BEGIN PRIVATE KEY-----').includes('private_key'));
+  const telegramToken='123456789:' + 'A'.repeat(35);
+  const supabaseToken='sb_' + 'secret_' + 'a'.repeat(24);
+  const privateKeyHeader='-----BEGIN ' + 'PRIVATE KEY-----';
+  assert.deepEqual(scanTextForSecrets('token=' + telegramToken), ['telegram_bot_token']);
+  assert.deepEqual(scanTextForSecrets('key=' + supabaseToken), ['supabase_secret_key']);
+  assert.ok(scanTextForSecrets(privateKeyHeader).includes('private_key'));
 });
 
 test('RC102 allows safe example placeholders', () => {
@@ -28,12 +31,12 @@ test('RC102 reports file and content violations without exposing secret values',
   const files=['.env','safe.txt','token.txt'];
   const contents={
     'safe.txt':'PASTE_TOKEN_HERE',
-    'token.txt':'sb_secret_abcdefghijklmnopqrstuvwx',
+    'token.txt':'sb_' + 'secret_' + 'a'.repeat(24),
   };
   const findings=scanTrackedFiles(files,path=>contents[path] || '');
   assert.deepEqual(findings,[
     {path:'.env',type:'forbidden_tracked_file'},
     {path:'token.txt',type:'supabase_secret_key'},
   ]);
-  assert.equal(JSON.stringify(findings).includes('abcdefghijklmnopqrstuvwx'), false);
+  assert.equal(JSON.stringify(findings).includes('a'.repeat(24)), false);
 });
