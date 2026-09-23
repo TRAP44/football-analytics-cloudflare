@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.54.0-rc62';
+const APP_VERSION = '6.55.0-rc63';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc62';
-const RC_NAME = 'RC62';
+const RELEASE_CHANNEL = 'rc63';
+const RC_NAME = 'RC63';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -2884,6 +2884,27 @@ async function processTelegramUpdate(request, cfg, update) {
     if (callbackChatId && favoriteAction) {
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Ищу матчи клуба…'}).catch(()=>null);
       await sendBotFavoriteTeamMatches(request,cfg,callbackUserId,callbackChatId,Number(favoriteAction[1]));
+      return json({ok:true});
+    }
+    if (callbackChatId && data === 'postmatch:return:off') {
+      await setCache(postMatchReturnDisabledKey(callbackUserId),0,{disabledAt:new Date().toISOString(),source:'telegram'},cfg,525600);
+      await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Итоги после матчей отключены'}).catch(()=>null);
+      await telegramApi('sendMessage',cfg,{chat_id:callbackChatId,text:'🔕 Автоматические итоги после проанализированных матчей отключены.',reply_markup:{inline_keyboard:[[{text:'🔔 Включить обратно',callback_data:'postmatch:return:on'}]]}}).catch(()=>null);
+      return json({ok:true});
+    }
+    if (callbackChatId && data === 'postmatch:return:on') {
+      memory.cache.delete(postMatchReturnDisabledKey(callbackUserId));
+      if (hasSupabase(cfg)) await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${postMatchReturnDisabledKey(callbackUserId)}`}).catch(()=>null);
+      await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Итоги после матчей включены'}).catch(()=>null);
+      await telegramApi('sendMessage',cfg,{chat_id:callbackChatId,text:'🔔 Автоматические итоги после проанализированных матчей снова включены.'}).catch(()=>null);
+      return json({ok:true});
+    }
+    const returnReview=data.match(/^match:return_review:(\d+)$/);
+    if (callbackChatId && returnReview) {
+      const fixtureId=Number(returnReview[1]);
+      void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'post_match_return_open',channel:'telegram',fixtureId});
+      await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Открываю итог AI…'}).catch(()=>null);
+      await sendBotFixtureSection(request,cfg,callbackUserId,callbackChatId,fixtureId,'review');
       return json({ok:true});
     }
     const matchAction = data.match(/^match:(menu|verdict|referee|squads|market|refresh|review):(\d+)$/);
@@ -6939,6 +6960,225 @@ async function settleBacktestDaily(cfg) {
   }
 }
 
+
+const POST_MATCH_RETURN_MIN_DELAY_MINUTES = 105;
+const POST_MATCH_RETURN_MAX_AGE_HOURS = 18;
+const POST_MATCH_RETURN_COOLDOWN_MINUTES = 30;
+const POST_MATCH_RETURN_MARKER_DAYS = 30;
+
+function postMatchReturnDisabledKey(userId) {
+  return `postmatch:return:disabled:${Number(userId || 0)}:v1`;
+}
+function postMatchReturnCooldownKey(userId) {
+  return `postmatch:return:cooldown:${Number(userId || 0)}:v1`;
+}
+function postMatchReturnDeliveryKey(userId, fixtureId) {
+  return `postmatch:return:delivery:${Number(userId || 0)}:${Number(fixtureId || 0)}:v1`;
+}
+
+function postMatchReturnEligibility(history = {}, prediction = {}, now = Date.now()) {
+  const userId=Number(history.telegram_id || 0);
+  const fixtureId=Number(history.fixture_id || 0);
+  const kickoffMs=Date.parse(history.fixture_date || '');
+  const settled=String(prediction?.status || '')==='settled';
+  const homeGoals=Number(prediction?.actual_home_goals);
+  const awayGoals=Number(prediction?.actual_away_goals);
+  if (!userId || !fixtureId || !Number.isFinite(kickoffMs)) return {eligible:false,reason:'identity'};
+  if (kickoffMs > now-POST_MATCH_RETURN_MIN_DELAY_MINUTES*60_000) return {eligible:false,reason:'too_early'};
+  if (kickoffMs < now-POST_MATCH_RETURN_MAX_AGE_HOURS*3600_000) return {eligible:false,reason:'too_old'};
+  if (!settled || !Number.isFinite(homeGoals) || !Number.isFinite(awayGoals)) return {eligible:false,reason:'not_settled'};
+  return {eligible:true,reason:'settled',userId,fixtureId,kickoffMs};
+}
+
+function postMatchReturnMessage(history = {}, prediction = {}) {
+  const fixtureId=Number(history.fixture_id || prediction.fixture_id || 0);
+  const home=String(history.home_name || prediction.home_name || 'Хозяева');
+  const away=String(history.away_name || prediction.away_name || 'Гости');
+  const homeGoals=Number(prediction.actual_home_goals);
+  const awayGoals=Number(prediction.actual_away_goals);
+  const predicted=String(prediction.predicted_outcome || '');
+  const actual=String(prediction.actual_outcome || actualOutcomeFromGoals(homeGoals,awayGoals));
+  const predictedLabel=postMatchOutcomeLabel(predicted);
+  const actualLabel=postMatchOutcomeLabel(actual);
+  const probability=postMatchPredictionProbability(prediction,predicted);
+  const correct=prediction.correct===true || (predicted && predicted===actual);
+  const signal=String(history.ai_signal_label || '').trim();
+  const text=[
+    '🏁 <b>Матч завершён · FM AI</b>',
+    `<b>${telegramHtmlEscape(home)} — ${telegramHtmlEscape(away)} · ${homeGoals}:${awayGoals}</b>`,
+    history.league_name ? telegramHtmlEscape(history.league_name) : '',
+    '',
+    signal ? `🧠 До матча: <b>${telegramHtmlEscape(signal)}</b>` : '',
+    `📊 Исход модели: <b>${telegramHtmlEscape(predictedLabel)}</b>${probability===null?'':` · ${probability}%`} → факт <b>${telegramHtmlEscape(actualLabel)}</b>`,
+    correct ? '✅ Главный исход совпал.' : '❌ Главный исход не совпал.',
+    '',
+    'Откройте итог AI — сверю исход, тотал, обе забьют и фактический контекст матча.',
+  ].filter(Boolean).join('\n');
+  return {
+    text,
+    replyMarkup:{inline_keyboard:[
+      [{text:'🧠 Открыть итог AI',callback_data:`match:return_review:${fixtureId}`}],
+      [{text:'⚽ Матчи сегодня',callback_data:'feed:today'},{text:'🔕 Не присылать итоги',callback_data:'postmatch:return:off'}],
+    ]},
+    correct,
+  };
+}
+
+function postMatchReturnDrill() {
+  const now=Date.parse('2026-09-23T22:00:00Z');
+  const history={telegram_id:10,fixture_id:77,fixture_date:'2026-09-23T19:30:00Z',home_name:'Home',away_name:'Away',league_name:'League',ai_signal_label:'П1 осторожно'};
+  const settled={fixture_id:77,status:'settled',predicted_outcome:'home',home_prob:58,draw_prob:24,away_prob:18,actual_home_goals:2,actual_away_goals:0,actual_outcome:'home',correct:true};
+  const pending={...settled,status:'pending'};
+  const eligible=postMatchReturnEligibility(history,settled,now);
+  const blockedPending=postMatchReturnEligibility(history,pending,now);
+  const blockedEarly=postMatchReturnEligibility({...history,fixture_date:'2026-09-23T21:00:00Z'},settled,now);
+  const message=postMatchReturnMessage(history,settled);
+  return {pass:eligible.eligible && !blockedPending.eligible && !blockedEarly.eligible && message.correct && message.text.includes('2:0') && message.replyMarkup.inline_keyboard[0][0].callback_data==='match:return_review:77',cases:4};
+}
+
+async function loadPostMatchReturnCandidates(cfg, now = Date.now()) {
+  if (!hasSupabase(cfg)) return [];
+  const since=new Date(now-POST_MATCH_RETURN_MAX_AGE_HOURS*3600_000).toISOString();
+  const cutoff=now-POST_MATCH_RETURN_MIN_DELAY_MINUTES*60_000;
+  const rows=await supaSelectMany(cfg,'analysis_history',{fixture_date:`gte.${since}`},{limit:300,order:'fixture_date.desc'});
+  return (rows || []).filter(row=>{
+    const kickoff=Date.parse(row.fixture_date || '');
+    return Number(row.telegram_id || 0)>0 && Number(row.fixture_id || 0)>0 && Number.isFinite(kickoff) && kickoff<=cutoff;
+  });
+}
+
+async function loadPostMatchReturnPredictions(fixtureIds = [], cfg) {
+  const ids=[...new Set((fixtureIds || []).map(Number).filter(x=>Number.isSafeInteger(x)&&x>0))];
+  const rows=[];
+  for (let i=0;i<ids.length;i+=60) {
+    const chunk=ids.slice(i,i+60);
+    const page=await supaSelectMany(cfg,'model_predictions',{fixture_id:`in.(${chunk.join(',')})`},{limit:chunk.length+5});
+    rows.push(...(page || []));
+  }
+  return rows;
+}
+
+async function refreshPostMatchSettlement(candidates = [], predictions = [], cfg) {
+  const byId=new Map((predictions || []).map(row=>[Number(row.fixture_id),row]));
+  const pendingIds=new Set((candidates || [])
+    .map(row=>Number(row.fixture_id || 0))
+    .filter(id=>id && String(byId.get(id)?.status || '')==='pending'));
+  if (!pendingIds.size) return {probed:0,settled:0,skipped:'no_pending'};
+  if (!freeQuotaHealthy(15,2)) return {probed:0,settled:0,skipped:'quota_guard'};
+
+  const dates=[...new Set((candidates || [])
+    .filter(row=>pendingIds.has(Number(row.fixture_id || 0)))
+    .map(row=>String(row.fixture_date || '').slice(0,10))
+    .filter(Boolean))].slice(0,2);
+  let probed=0, settled=0;
+  for (const date of dates) {
+    const markerKey=`postmatch:return:probe:${date}:v1`;
+    if (await getCache(markerKey,cfg)) continue;
+    await setCache(markerKey,0,{state:'probing',at:new Date().toISOString()},cfg,30);
+    try {
+      const fixtures=await apiFootball('/fixtures',{date},cfg);
+      const relevant=(fixtures || []).filter(f=>pendingIds.has(fixtureIdentity(f)));
+      const result=await settlePredictionsFromFixtures(relevant,cfg);
+      probed++;
+      settled+=Number(result.settled || 0);
+      await setCache(markerKey,0,{state:'done',at:new Date().toISOString(),checked:result.checked,settled:result.settled},cfg,30);
+    } catch (error) {
+      await setCache(markerKey,0,{state:'failed',at:new Date().toISOString(),error:redactOpsString(error?.message || error,120)},cfg,10);
+    }
+  }
+  return {probed,settled};
+}
+
+async function claimPostMatchReturnDelivery(userId, fixtureId, cfg) {
+  const key=postMatchReturnDeliveryKey(userId,fixtureId);
+  if (!hasSupabase(cfg)) return {claimed:false,key};
+  const expiresAt=new Date(Date.now()+POST_MATCH_RETURN_MARKER_DAYS*86400_000).toISOString();
+  const url=new URL(`${cfg.supabaseUrl}/rest/v1/analysis_cache`);
+  url.searchParams.set('on_conflict','cache_key');
+  const payload={state:'claimed',userId:Number(userId),fixtureId:Number(fixtureId),claimedAt:new Date().toISOString(),version:APP_VERSION};
+  const r=await fetchWithTimeout(url,{
+    method:'POST',
+    headers:supaHeaders(cfg,{Prefer:'resolution=ignore-duplicates,return=representation'}),
+    body:JSON.stringify([{cache_key:key,fixture_id:Number(fixtureId),payload,expires_at:expiresAt}]),
+  },7000,'Supabase post-match return claim');
+  if (!r.ok) throw new Error(`Supabase post-match return claim: HTTP ${r.status}`);
+  const rows=await r.json().catch(()=>[]);
+  if (Array.isArray(rows) && rows.length===1) {
+    memory.cache.set(key,{payload,expiresAt:Date.parse(expiresAt)});
+    return {claimed:true,key};
+  }
+  return {claimed:false,key};
+}
+
+async function releasePostMatchReturnClaim(key, cfg) {
+  if (!key) return;
+  memory.cache.delete(key);
+  if (hasSupabase(cfg)) await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${key}`}).catch(()=>null);
+}
+
+async function processPostMatchReturns(cfg) {
+  return await withSingleFlight('cron:post-match-return', async()=>{
+    if (!hasSupabase(cfg) || !cfg.botToken) return {checked:0,eligible:0,sent:0,failed:0,skipped:'not_configured'};
+    const runtime=await loadRuntimeControls(cfg);
+    if (runtime.value?.remindersEnabled===false) return {checked:0,eligible:0,sent:0,failed:0,skipped:'notifications_disabled'};
+
+    const now=Date.now();
+    let candidates=[];
+    try { candidates=await loadPostMatchReturnCandidates(cfg,now); }
+    catch (error) {
+      await recordOpsEvent(cfg,{severity:'warning',source:'post_match_return',eventType:'post_match_return',code:'RETURN_HISTORY_READ_FAILED',message:error?.message || error,endpoint:'cron:post-match-return'}).catch(()=>null);
+      return {checked:0,eligible:0,sent:0,failed:1};
+    }
+    if (!candidates.length) return {checked:0,eligible:0,sent:0,failed:0};
+
+    const ids=[...new Set(candidates.map(row=>Number(row.fixture_id || 0)).filter(Boolean))];
+    let predictions=await loadPostMatchReturnPredictions(ids,cfg).catch(()=>[]);
+    const refresh=await refreshPostMatchSettlement(candidates,predictions,cfg);
+    if (Number(refresh.settled || 0)>0) predictions=await loadPostMatchReturnPredictions(ids,cfg).catch(()=>predictions);
+    const predictionMap=new Map(predictions.map(row=>[Number(row.fixture_id),row]));
+
+    let eligible=0,sent=0,failed=0,deduped=0,disabled=0,cooldown=0;
+    const sentUsers=new Set();
+    for (const history of candidates) {
+      const userId=Number(history.telegram_id || 0);
+      const fixtureId=Number(history.fixture_id || 0);
+      const prediction=predictionMap.get(fixtureId);
+      const state=postMatchReturnEligibility(history,prediction,now);
+      if (!state.eligible) continue;
+      eligible++;
+      if (sentUsers.has(userId)) { cooldown++; continue; }
+      if (await getCache(postMatchReturnDisabledKey(userId),cfg)) { disabled++; continue; }
+      if (await getCache(postMatchReturnCooldownKey(userId),cfg)) { cooldown++; continue; }
+
+      let claim;
+      try { claim=await claimPostMatchReturnDelivery(userId,fixtureId,cfg); }
+      catch (error) { failed++; continue; }
+      if (!claim.claimed) { deduped++; continue; }
+
+      const message=postMatchReturnMessage(history,prediction);
+      const result=await sendTelegramMessage(userId,message.text,cfg,{parseMode:'HTML',replyMarkup:message.replyMarkup});
+      if (result.ok) {
+        sent++;
+        sentUsers.add(userId);
+        await setCache(postMatchReturnCooldownKey(userId),fixtureId,{sentAt:new Date().toISOString(),fixtureId},cfg,POST_MATCH_RETURN_COOLDOWN_MINUTES);
+        void recordGrowthEvent(cfg,{userId,eventName:'post_match_return_sent',channel:'telegram',fixtureId,metadata:{correct:Boolean(message.correct)}});
+      } else {
+        failed++;
+        const forbidden=Number(result.status)===403 || Number(result.errorCode)===403;
+        if (forbidden) {
+          await setCache(postMatchReturnDisabledKey(userId),fixtureId,{reason:'telegram_forbidden',at:new Date().toISOString()},cfg,525600);
+        } else {
+          await releasePostMatchReturnClaim(claim.key,cfg);
+        }
+      }
+    }
+
+    const summary={checked:candidates.length,eligible,sent,failed,deduped,disabled,cooldown,providerProbes:Number(refresh.probed || 0),newlySettled:Number(refresh.settled || 0)};
+    if (sent || failed) await recordOpsEvent(cfg,{severity:failed?'warning':'info',source:'post_match_return',eventType:'post_match_return',code:failed?'RETURN_RUN_WITH_FAILURES':'RETURN_RUN_OK',message:`Post-match return: отправлено ${sent}, ошибок ${failed}.`,endpoint:'cron:post-match-return',meta:summary}).catch(()=>null);
+    return summary;
+  },{countTelemetry:false});
+}
+
 async function recordHistory(userId, payload, cfg) {
   const match = payload?.match;
   const instructor = payload?.aiInstructor || {};
@@ -7301,7 +7541,7 @@ async function releaseReminderClaim(row, kind, claimAt, errorMessage, cfg, optio
   if (!r.ok) throw new Error(`Supabase reminder release: HTTP ${r.status}`);
 }
 
-async function sendTelegramMessage(chatId, text, cfg) {
+async function sendTelegramMessage(chatId, text, cfg, options = {}) {
   if (!cfg.botToken) {
     return { ok: false, status: 0, errorCode: 0, description: 'Токен Telegram-бота отсутствует.', retryAfter: 0 };
   }
@@ -7310,7 +7550,13 @@ async function sendTelegramMessage(chatId, text, cfg) {
     const r = await fetchWithTimeout(`https://api.telegram.org/bot${cfg.botToken}/sendMessage`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ chat_id: Number(chatId), text, disable_web_page_preview: true }),
+      body: JSON.stringify({
+        chat_id: Number(chatId),
+        text,
+        disable_web_page_preview: options.disableWebPagePreview !== false,
+        ...(options.parseMode ? { parse_mode: String(options.parseMode) } : {}),
+        ...(options.replyMarkup ? { reply_markup: options.replyMarkup } : {}),
+      }),
     }, 7000, 'Telegram sendMessage');
 
     const body = await r.json().catch(() => null);
@@ -13893,6 +14139,13 @@ export default {
         telegramPostMatchReview: 'enabled',
         postMatchReviewSelfTest: postMatchReviewDrill().pass ? 'enabled' : 'failed',
         postMatchReviewCases: postMatchReviewDrill().cases,
+        postMatchReturnLoop: 'enabled',
+        analyzedMatchReturn: 'enabled',
+        postMatchReturnDedupe: 'enabled',
+        postMatchReturnOptOut: 'enabled',
+        postMatchReturnQuotaGuard: 'enabled',
+        postMatchReturnSelfTest: postMatchReturnDrill().pass ? 'enabled' : 'failed',
+        postMatchReturnCases: postMatchReturnDrill().cases,
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
@@ -14132,6 +14385,7 @@ export default {
     const tasks = [
       ['reminders', processDueReminders(cfg)],
       ['backtest', backtestTask],
+      ['post_match_return', backtestTask.then(() => processPostMatchReturns(cfg))],
     ];
     if (scheduledAt.getUTCHours() === 7 && scheduledAt.getUTCMinutes() < 10) {
       tasks.push(['daily_digest', processDailyDigests(cfg, scheduledAt)]);
