@@ -1,4 +1,4 @@
-# Football Analytics Mini App v6.92.0 — RC100
+# Football Analytics Mini App v6.93.0 — RC101
 
 Telegram-бот и Mini App для футбольной аналитики на Cloudflare Workers + Supabase. Основные источники данных: API-Football и Tavily. Интерфейс и админ-панель — на русском языке. Монетизация пока отключена.
 
@@ -14,6 +14,7 @@ Telegram-бот и Mini App для футбольной аналитики на 
 - Медиа deep-link на fixture, publisher kit и агрегированная first-party аналитика source / campaign / content.
 - RC99: единый fresh-install Supabase baseline `supabase/baseline/supabase_baseline_v6_15.sql`; numbered migrations v6.9–v6.15 сохранены только для безопасного обновления существующих баз.
 - RC100: защищённый **Supabase Schema Drift Guard** проверяет обязательные таблицы и колонки через server-side PostgREST и блокирует Release Readiness при несовместимой схеме; production DDL не меняется.
+- RC101: **Supabase Directory Hardening** — все SQL вынесены из корня в `supabase/baseline/` и `supabase/migrations/`; fresh-install baseline теперь отказывается запускаться поверх уже существующей рабочей схемы.
 - Новостной контур RC69–RC98: новость → релевантный матч → явная AI-перепроверка → News Impact Delta → **News Impact Decision Card** → **News Impact Action Tracking** → **News Impact Action Funnel** → **News Impact Funnel Confidence Guard** → **News Impact Funnel Trend Guard** → **News Impact Temporal Attribution Guard** → **News Impact Action Outcome Quality** → **News Impact Outcome Failure Diagnostics & Recovery** → **News Impact Recovery Effectiveness Funnel** → **News Impact Recovery Strategy Guard** → **News Impact Recovery Stability & Parity Guard** → **News Impact Recovery Drift Circuit Breaker** → **News Impact Recovery Transition History & Admin Alerts** → **News Impact Recovery Incident Center** → **News Impact Recovery Incident Acknowledgement & Runbook** → **News Impact Recovery Incident Escalation & SLO** → **News Impact Recovery Incident SLO Dashboard & Trend** → **News Impact Recovery Incident SLO Breach Feed & Drilldown** → **News Impact Recovery Incident SLO Breach Watchlist & Aging** → **News Impact Recovery Incident SLO Breach Triage Queue** → **News Impact Recovery Incident SLO Triage Trend & Recurrence** → **News Impact Recovery Incident SLO Breach Impact Ranking** → **News Impact Recovery Incident SLO Impact Trend** → **News Impact Recovery Incident SLO Impact Concentration** → **News Impact Recovery Incident SLO Impact Concentration Trend** → **News Impact Recovery Incident SLO Impact Executive Summary** → **News Impact Recovery Incident SLO Impact Focus Queue**.
 - News Impact не утверждает причинность по заголовку: сравнение разрешено только с корректным AI-снимком, созданным до публикации новости.
 - RC73 считает только категориальные действия после Decision Card: полный AI, составы, рынок, повторная проверка, возврат к новостям и share. Текст новости, URL и пользовательский запрос в эту аналитику не записываются.
@@ -77,7 +78,7 @@ npm run verify:release
 npm run verify:worker
 ```
 
-Production smoke дополнительно проверяет `/health`, версию `6.92.0-rc100`, `releaseCandidate=RC100`, отключённый `DEV_MODE` и обязательные health/self-test флаги.
+Production smoke дополнительно проверяет `/health`, версию `6.93.0-rc101`, `releaseCandidate=RC101`, отключённый `DEV_MODE` и обязательные health/self-test флаги.
 
 ## Документация
 
