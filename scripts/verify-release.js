@@ -11,15 +11,17 @@ const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml'
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
 const readme = fs.readFileSync('README_CLOUDFLARE_RU.md', 'utf8');
 const qaChecklist = fs.readFileSync('QA_RELEASE_CHECKLIST_RU.md', 'utf8');
-const expected = `${pkg.version}-rc98`;
+const baselinePath = 'supabase_baseline_v6_15.sql';
+const baseline = fs.existsSync(baselinePath) ? fs.readFileSync(baselinePath, 'utf8') : '';
+const expected = `${pkg.version}-rc99`;
 const failures = [];
 
 if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) failures.push('package-lock version must match package.json');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC98'")) failures.push('Worker RC name must be RC98');
+if (!worker.includes("const RC_NAME = 'RC99'")) failures.push('Worker RC name must be RC99');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc98'")) failures.push('Client release channel must be rc98');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc99'")) failures.push('Client release channel must be rc99');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -29,7 +31,20 @@ if (!fs.existsSync('supabase_migration_v6_12.sql')) failures.push('Missing v6.12
 if (!fs.existsSync('supabase_migration_v6_13.sql')) failures.push('Missing v6.13 referee-history migration');
 if (!fs.existsSync('supabase_migration_v6_14.sql')) failures.push('Missing v6.14 persistent-AI-history migration');
 if (!fs.existsSync('supabase_migration_v6_15.sql')) failures.push('Missing v6.15 media-launch attribution migration');
-if (!fs.existsSync('supabase_baseline_v6_9.sql')) failures.push('Missing v6.9 baseline');
+if (!fs.existsSync(baselinePath)) failures.push('Missing unified v6.15 baseline');
+if (fs.existsSync('supabase_baseline_v6_9.sql')) failures.push('Obsolete v6.9 fresh-install baseline must be removed');
+if (!fs.existsSync('test/supabase-baseline-rc99.test.js')) failures.push('Missing RC99 Supabase baseline regression test');
+for (const marker of [
+  'create table if not exists public.model_calibration_transitions',
+  'create or replace function public.backend_security_contract()',
+  'create or replace function public.backend_default_acl_contract()',
+  'create table if not exists public.bot_digest_subscriptions',
+  'create table if not exists public.referee_match_history',
+  'add column if not exists ai_signal_code',
+  'create table if not exists public.growth_events'
+]) {
+  if (!baseline.toLowerCase().includes(marker.toLowerCase())) failures.push(`RC99 unified baseline is missing: ${marker}`);
+}
 if (!fs.existsSync('src/access-control.js')) failures.push('Missing access-control module');
 if (!fs.existsSync('scripts/post-deploy-smoke.js')) failures.push('Missing post-deploy smoke test');
 if (!fs.existsSync('.github/workflows/deploy-production.yml')) failures.push('Missing production deploy workflow');
@@ -38,7 +53,7 @@ if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing 
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
 if (!deployWorkflow.includes('--message "RC98 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC98');
-if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.90.0-rc98"')) failures.push('Production smoke must verify 6.90.0-rc98');
+if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.91.0-rc99"')) failures.push('Production smoke must verify 6.91.0-rc99');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
 if (!/id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden/.test(html)) failures.push('Admin role badge must use the fail-closed admin-only visibility contract');
 if (!/\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i.test(styles)) failures.push('Global hidden elements must remain display:none');
@@ -206,7 +221,7 @@ if (!worker.includes("newsSourceTrustGate: 'enabled'") || !worker.includes('appl
 if (!worker.includes("publicLegalPages: 'enabled'") || !worker.includes("publicStatusPage: 'enabled'") || !worker.includes("url.pathname === '/api/public-status'")) failures.push('RC52 public trust contract is missing');
 if (!fs.existsSync('public/privacy.html') || !fs.existsSync('public/terms.html') || !fs.existsSync('public/status.html') || !fs.existsSync('public/status.js')) failures.push('RC52 public trust pages are missing');
 if (!wrangler.includes('"/telegram/*"') || !wrangler.includes('"/api/*"')) failures.push('RC52 Worker-first webhook/public API routes are missing');
-if (!deployWorkflow.includes('6.90.0-rc98')) failures.push('RC98 production workflow version is missing');
+if (!deployWorkflow.includes('6.91.0-rc99')) failures.push('RC99 production workflow version is missing');
 
 if (!worker.includes("mediaLaunchPackage: 'enabled'") || !worker.includes("mediaDeepLinkAttribution: 'enabled'")) failures.push('RC53 media launch health contract is missing');
 if (!worker.includes("launchSimulation: 'enabled'") || !worker.includes("conversionUx: 'enabled'") || !worker.includes("highIntentSearchFallback: 'enabled'") || !worker.includes("newsReturnLoop: 'enabled'")) failures.push('RC54 launch conversion health contract is missing');
@@ -314,8 +329,8 @@ if (!worker.includes("firstPartyGrowthAnalytics: 'enabled'") || !worker.includes
 if (!worker.includes('parseLaunchStartParam') || !worker.includes('ensureLaunchAttribution') || !worker.includes('recordGrowthEvent')) failures.push('RC53 attribution engine is missing');
 if (!worker.includes("url.pathname === '/api/launch-funnel'") || !app.includes('function renderLaunchFunnel')) failures.push('RC53 admin launch funnel is missing');
 if (!app.includes("origin:'miniapp'") || !worker.includes("origin:'telegram_quick'")) failures.push('RC53 full-vs-quick AI conversion split is missing');
-if (!readme.includes('v6.90.0 — RC98') || !readme.includes('News Impact Recovery Incident SLO Impact Focus Queue')) failures.push('README must describe the current RC98 release');
-if (!qaChecklist.includes('v6.90.0 RC98') || !qaChecklist.includes('npm run verify:release')) failures.push('QA checklist must describe the current RC98 release gate');
+if (!readme.includes('v6.91.0 — RC99') || !readme.includes('supabase_baseline_v6_15.sql')) failures.push('README must describe the current RC99 release');
+if (!qaChecklist.includes('v6.91.0 RC99') || !qaChecklist.includes('supabase_baseline_v6_15.sql') || !qaChecklist.includes('npm run verify:release')) failures.push('QA checklist must describe the current RC99 release gate');
 if (!fs.existsSync('MEDIA_LAUNCH_RU.md')) failures.push('Missing RC53 media launch kit');
 if (!fs.readFileSync('public/privacy.html','utf8').includes('События launch-аналитики хранятся до 90 дней')) failures.push('RC53 privacy attribution disclosure is missing');
 
@@ -329,4 +344,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log(`RC98 News Impact recovery incident SLO impact focus queue contracts verified for ${expected}.`);
+console.log(`RC99 unified Supabase baseline and release contracts verified for ${expected}.`);
