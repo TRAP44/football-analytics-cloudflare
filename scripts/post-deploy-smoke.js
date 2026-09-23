@@ -122,6 +122,11 @@ const REQUIRED_HEALTH_FLAGS = [
   'newsTeamIntentResolution',
   'newsConversionTracking',
   'newsConversionSelfTest',
+  'smartNewsFixtureLinking',
+  'newsTimeRelevanceGuard',
+  'perNewsFixtureCta',
+  'newsImpactDeltaGuide',
+  'smartNewsLinkSelfTest',
 ];
 
 function delay(ms) {
