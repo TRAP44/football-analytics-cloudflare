@@ -38,8 +38,7 @@ test('search outcome analytics remains query-text free',()=> {
   assert.ok(app.includes('Качество поиска:'));
 });
 
-test('RC55 launch search drill is documented and health-gated',()=> {
+test('RC55 launch search drill remains health-gated',()=> {
   for (const flag of ['realLaunchDrill','searchNormalization','searchOutcomeAnalytics','searchRetryUx']) assert.ok(worker.includes(`${flag}: 'enabled'`));
-  assert.ok(drill.includes('match / recognized_no_match / not_found'));
-  assert.ok(drill.includes('Al-Nassr'));
+  assert.match(worker,/searchQualitySelfTest: searchQualityDrill\(\)\.pass \? 'enabled' : 'failed'/);
 });
