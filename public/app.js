@@ -6764,6 +6764,8 @@ function aiInstructorHtml(ai = {}, match = {}, kickoffHandoff = {}) {
   const signalClass = handoffLocked ? 'archived' : signal.code === 'skip' ? 'skip' : signal.code === 'watch' ? 'watch' : 'active';
   const confidenceText = Number.isFinite(Number(ai.confidenceScore)) ? `${Math.round(Number(ai.confidenceScore))}/100` : 'данных мало';
   const dataTrust = ai.dataTrust || {};
+  const qualityGate = ai.qualityGate || {};
+  const gateReasons = Array.isArray(qualityGate.reasons) ? qualityGate.reasons.slice(0, 2) : [];
   const matchPlan = ai.matchPlan || {};
   const checks = Array.isArray(matchPlan.checks) ? matchPlan.checks.slice(0, 3) : [];
   const dataTrustScore = Number.isFinite(Number(dataTrust.score)) ? `${Math.round(Number(dataTrust.score))}%` : '—';
@@ -6792,6 +6794,7 @@ function aiInstructorHtml(ai = {}, match = {}, kickoffHandoff = {}) {
           <div><span>Риск</span><strong>${escapeHtml(ai.riskLabel || '—')}</strong><small>${escapeHtml(publicText(ai.riskNote || 'Оценивайте несколько факторов.'))}</small></div>
           <div><span>Судья</span><strong>${escapeHtml(ai.refereeProfile?.name || ai.referee || match.referee || 'Ещё не указан')}</strong><small>${escapeHtml(publicText(ai.refereeHistory?.available ? `${ai.refereeHistory.styleLabel} · ${ai.refereeHistory.avgYellow} жёлт. · ${ai.refereeHistory.avgRed} красн. · выборка ${ai.refereeHistory.sample}` : ai.refereeProfile?.country ? `${ai.refereeProfile.country} · ${ai.refereeNote || ''}` : ai.refereeNote || 'Назначение судьи может появиться ближе к матчу.'))}</small></div>
           <div class="ai-data-trust"><span>Качество данных</span><strong>${escapeHtml(dataTrust.label || 'Оценивается')}</strong><small>${dataTrustScore} · ${escapeHtml(publicText(dataTrust.note || 'Отдельно от уверенности модели.'))}</small></div>
+          <div class="ai-data-trust"><span>Quality Gate</span><strong>${escapeHtml(qualityGate.label || 'Оценивается')}</strong><small>${escapeHtml(publicText(gateReasons[0]?.text || 'Проверка качества сигнала пройдена без блокирующих причин.'))}</small></div>
         </div>
       </div>
       ${factors.length ? `<div class="ai-instructor-reasons"><strong>Почему так</strong><ul>${factors.map(x => `<li>${escapeHtml(publicText(x))}</li>`).join('')}</ul></div>` : ''}
@@ -7038,7 +7041,7 @@ function renderAnalysis(d) {
           <div><span>ТБ 2.5</span><strong>${pct(goal.over25)}</strong><div class="mini-progress"><i style="width:${clampPercent(goal.over25)}%"></i></div></div>
           <div><span>Обе забьют</span><strong>${pct(goal.btts)}</strong><div class="mini-progress"><i style="width:${clampPercent(goal.btts)}%"></i></div></div>
         </div>
-        <p class="muted">Модель Пуассона по недавней результативности. Это не официальный показатель ожидаемых голов.</p>` : '<p class="muted">Недостаточно недавних матчей для голевой модели.</p>'}
+        <p class="muted">Модель Пуассона по недавней результативности. Качество выборки: <b>${escapeHtml(goal.qualityLabel || 'Оценивается')}</b>${Number.isFinite(Number(goal.qualityScore)) ? ` · ${Math.round(Number(goal.qualityScore))}/100` : ''}. Это не официальный показатель ожидаемых голов.</p>` : '<p class="muted">Недостаточно недавних матчей для голевой модели.</p>'}
       </section>
 
       <section class="panel risk-panel">
