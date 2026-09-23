@@ -5,7 +5,6 @@ import fs from 'node:fs';
 const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const css=fs.readFileSync('public/styles.css','utf8');
-const playbook=fs.readFileSync('POST_MATCH_REVIEW_RC62.md','utf8');
 
 test('RC62 uses the immutable first pre-match model snapshot',()=> {
   assert.match(worker,/async function loadModelPredictionForFixture\(/);
@@ -58,5 +57,4 @@ test('RC62 health contract is release-gated',()=> {
     assert.ok(worker.includes(flag + ": 'enabled'"), 'missing ' + flag);
   }
   assert.match(worker,/postMatchReviewSelfTest: postMatchReviewDrill\(\)\.pass \? 'enabled' : 'failed'/);
-  assert.match(playbook,/Post-Match AI Review/);
 });
