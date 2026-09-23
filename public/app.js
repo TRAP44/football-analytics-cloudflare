@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.58.0-rc66';
+const CLIENT_VERSION = '6.59.0-rc67';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc66';
+const CLIENT_RELEASE_CHANNEL = 'rc67';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2155,7 +2155,7 @@ function runClientContractSmoke() {
     'matchesView','searchView','tournamentView','teamView','analysisView','historyView','profileView',
     'navMatches','navSearch','navHistory','navProfile','aiTrackRecord',
     'connectionBanner','connectionRetryBtn','toast',
-    'modelQualityStatus','modelRemediationStatus','modelRemediationDryRunBtn','modelRemediationRunBtn','modelRemediationCircuitResetBtn','modelRemediationDriftQueue','providerAuditStatus','releaseStatus','productionReadinessStatus','diagnosticsStatus',
+    'modelQualityStatus','modelRemediationStatus','modelRemediationDryRunBtn','modelRemediationRunBtn','modelRemediationCircuitResetBtn','modelRemediationDriftQueue','providerAuditStatus','releaseStatus','productionReadinessStatus','diagnosticsStatus','mediaPublisherFixtureId','mediaPublisherGenerateBtn','mediaPublisherResult',
   ];
   const missing = requiredIds.filter(id => !$(id));
   add('required_dom', 'Основные элементы интерфейса', missing.length === 0, missing.length ? `Нет: ${missing.join(', ')}` : `${requiredIds.length}/${requiredIds.length} элементов.`);
@@ -2817,6 +2817,73 @@ async function loadReleaseMonitor(force = false) {
   } finally {
     state.releaseMonitorLoading = false;
     renderReleaseMonitor();
+  }
+}
+
+
+let mediaPublisherPayload = null;
+
+function mediaPublisherValue(id, fallback = '') {
+  return String($(id)?.value || fallback).trim();
+}
+
+async function generateMediaPublisherLink() {
+  if (!isAdmin()) return;
+  const fixtureId=Number(mediaPublisherValue('mediaPublisherFixtureId'));
+  if (!Number.isSafeInteger(fixtureId) || fixtureId<=0) return toast('Укажите корректный fixture ID.');
+  const button=$('mediaPublisherGenerateBtn');
+  const result=$('mediaPublisherResult');
+  if (button) button.disabled=true;
+  if (result) {
+    result.hidden=false;
+    result.innerHTML='<div class="loader compact-loader">Создаю ссылку и текст публикации…</div>';
+  }
+  try {
+    mediaPublisherPayload=await api('/api/media-publisher-link',{
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify({
+        fixtureId,
+        source:mediaPublisherValue('mediaPublisherSource','media'),
+        campaign:mediaPublisherValue('mediaPublisherCampaign','launch'),
+        content:mediaPublisherValue('mediaPublisherContent','article1'),
+      }),
+      retry:false,
+      dedupe:false,
+      timeoutMs:9000,
+    });
+    if (result) result.innerHTML=`
+      <div class="media-publisher-link-row"><span>Deep-link</span><code>${escapeHtml(mediaPublisherPayload.deepLink || '')}</code></div>
+      <div class="media-publisher-link-row"><span>Start param</span><code>${escapeHtml(mediaPublisherPayload.startParam || '')}</code></div>
+      <textarea class="media-publisher-copy" readonly>${escapeHtml(mediaPublisherPayload.copy?.body || '')}</textarea>
+      <div class="media-publisher-result-actions">
+        <button id="mediaPublisherTelegramBtn" class="secondary-btn" type="button">Открыть Telegram Share</button>
+      </div>`;
+    if ($('mediaPublisherCopyBtn')) $('mediaPublisherCopyBtn').disabled=false;
+    $('mediaPublisherTelegramBtn')?.addEventListener('click',()=>{
+      const url=String(mediaPublisherPayload?.telegramShareUrl || '');
+      if (!url) return;
+      if (tg?.openTelegramLink) tg.openTelegramLink(url);
+      else window.open(url,'_blank','noopener,noreferrer');
+    });
+    toast('Ссылка для публикации готова');
+  } catch (error) {
+    mediaPublisherPayload=null;
+    if (result) result.innerHTML=`<div class="data-notice error">Не удалось создать ссылку: ${escapeHtml(error.message || 'ошибка')}</div>`;
+    if ($('mediaPublisherCopyBtn')) $('mediaPublisherCopyBtn').disabled=true;
+  } finally {
+    if (button) button.disabled=false;
+  }
+}
+
+async function copyMediaPublisherPost() {
+  const text=String(mediaPublisherPayload?.copy?.body || '');
+  if (!text) return toast('Сначала создайте ссылку.');
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('Текст публикации скопирован');
+  } catch {
+    toast('Не удалось скопировать текст');
   }
 }
 
@@ -7012,6 +7079,9 @@ $('releaseMonitorRefreshBtn')?.addEventListener('click', () => loadReleaseMonito
 $('releaseMonitorPeriod')?.addEventListener('change', () => { state.releaseMonitor = null; loadReleaseMonitor(true); });
 $('launchFunnelRefreshBtn')?.addEventListener('click', () => loadLaunchFunnel(true));
 $('launchFunnelPeriod')?.addEventListener('change', () => { state.launchFunnel = null; loadLaunchFunnel(true); });
+$('mediaPublisherGenerateBtn')?.addEventListener('click', generateMediaPublisherLink);
+$('mediaPublisherCopyBtn')?.addEventListener('click', copyMediaPublisherPost);
+$('mediaPublisherFixtureId')?.addEventListener('keydown', e => { if (e.key === 'Enter') generateMediaPublisherLink(); });
 $('reminderHealthRefreshBtn')?.addEventListener('click', () => loadReminderHealth(true));
 $('reminderTestBtn')?.addEventListener('click', () => sendReminderTest());
 $('runtimeControlsRefreshBtn')?.addEventListener('click', () => loadRuntimeControlsAdmin(true));
