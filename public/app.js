@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.80.0-rc88';
+const CLIENT_VERSION = '6.81.0-rc89';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc88';
+const CLIENT_RELEASE_CHANNEL = 'rc89';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2951,6 +2951,10 @@ function renderLaunchFunnel() {
   const impactRecoverySloSummary=impactRecoveryIncidentSloDashboard.summary || {};
   const impactRecoverySloWeekly=Array.isArray(impactRecoveryIncidentSloDashboard.weekly) ? impactRecoveryIncidentSloDashboard.weekly : [];
   const impactRecoverySloRepeated=Array.isArray(impactRecoveryIncidentSloDashboard.repeated) ? impactRecoveryIncidentSloDashboard.repeated : [];
+  const impactRecoveryIncidentSloBreachFeed=d.newsImpactRecoveryIncidentSloBreachFeed || {available:false,summary:{},items:[],repeated:[]};
+  const impactRecoveryBreachSummary=impactRecoveryIncidentSloBreachFeed.summary || {};
+  const impactRecoveryBreachItems=Array.isArray(impactRecoveryIncidentSloBreachFeed.items) ? impactRecoveryIncidentSloBreachFeed.items : [];
+  const impactRecoveryBreachRepeated=Array.isArray(impactRecoveryIncidentSloBreachFeed.repeated) ? impactRecoveryIncidentSloBreachFeed.repeated : [];
   const impactFunnel=Array.isArray(d.newsImpactActionFunnel) ? d.newsImpactActionFunnel : [];
   const impactBottleneck=d.newsImpactActionBottleneck || null;
   const impactConfidenceGuard=d.newsImpactActionConfidenceGuard || {minUsers:10,stableUsers:30};
@@ -2967,6 +2971,7 @@ function renderLaunchFunnel() {
     <div><span>Новости → AI</span><strong>${Number(d.returnLoop?.aiIntent || 0)}</strong><small>${launchFunnelPct(d.returnLoop?.intentPct)} нажали AI · ${Number(d.returnLoop?.smartFixtureIntent || 0)} через smart fixture · News Impact: ${Number(d.returnLoop?.impactCompared || 0)} сравнений / ${Number(d.returnLoop?.impactMaterial || 0)} существенных · решения: 🔴 ${Number(d.newsImpactDecisionSummary?.material || 0)} · 🟡 ${Number(d.newsImpactDecisionSummary?.detail || 0)} · 🟢 ${Number(d.newsImpactDecisionSummary?.stable || 0)} · действия: полный AI ${Number(impactActions.fullAi || 0)} · составы ${Number(impactActions.squads || 0)} · рынок ${Number(impactActions.market || 0)} · перепроверка ${Number(impactActions.recheck || 0)} · новости ${Number(impactActions.news || 0)} · поделились ${Number(impactActions.share || 0)} · подтверждённых результатов ${Number(impactOutcomeSummary.confirmed || 0)}/${Number(impactOutcomeSummary.attempts || 0)} · сбоев доставки ${Number(impactFailureSummary.total || 0)} · recovery ${Number(impactRecoverySummary.recovered || 0)}/${Number(impactRecoverySummary.attempts || 0)} · adaptive rules ${Number(impactRecoveryStrategySummary.adaptive || 0)} · Возврат из новостей: ${Number(d.returnLoop?.newsReturn || 0)} до матча</small></div>
     <div><span>Recovery-инциденты</span><strong>${Number(impactRecoveryIncidentSummary.active || 0)}</strong><small>активных · эскалаций ${Number(impactRecoveryIncidentSummary.escalatedActive || 0)} · critical ${Number(impactRecoveryIncidentSummary.criticalActive || 0)} · восстановлено ${Number(impactRecoveryIncidentSummary.recovered || 0)}</small></div>
     <div><span>SLO · 4 недели</span><strong>${impactRecoverySloSummary.ackSloPct==null?'—':launchFunnelPct(impactRecoverySloSummary.ackSloPct)}</strong><small>ACK вовремя · recovery ${impactRecoverySloSummary.recoverySloPct==null?'—':launchFunnelPct(impactRecoverySloSummary.recoverySloPct)} · повторов ${Number(impactRecoverySloSummary.recurringPairs || 0)}</small></div>
+    <div><span>SLO breaches</span><strong>${Number(impactRecoveryBreachSummary.activeBreaches || 0)}</strong><small>активных · critical ${Number(impactRecoveryBreachSummary.critical || 0)} · ACK ${Number(impactRecoveryBreachSummary.ackBreaches || 0)} · recovery ${Number(impactRecoveryBreachSummary.recoveryBreaches || 0)}</small></div>
     <div><span>Media deep-link → AI</span><strong>${Number(media.aiUsers || 0)}</strong><small>${Number(media.deepLinkUsers || 0)} открыли · ${launchFunnelPct(media.conversionPct)} получили AI</small></div>
   </div>`;
 
@@ -3065,6 +3070,12 @@ function renderLaunchFunnel() {
           <small>active ${Number(x.active || 0)} · ACK breaches ${Number(x.ackBreaches || 0)} · Recovery breaches ${Number(x.recoveryBreaches || 0)} · guards: ${escapeHtml((x.guards || []).join(' → ') || '—')} · последнее: ${escapeHtml(x.lastStartedAt || '—')}</small>
         </div>`).join('')}</div>` : '<div class="data-notice">Повторяющихся reason + action за 4 недели пока нет.</div>'}
       <p class="tiny">RC88 — аналитический слой: weekly trend и recurrence выводятся из существующего backend-only growth_events. Telegram ID, raw error и произвольные тексты в SLO Dashboard не возвращаются; routing не меняется.</p>` : ''}
+    ${impactRecoveryIncidentSloBreachFeed.available !== false ? (
+      '<div class="release-monitor-section-head"><strong>SLO Breach Feed</strong><span>' + Number(impactRecoveryBreachSummary.breachEpisodes || 0) + ' эпизодов · active ' + Number(impactRecoveryBreachSummary.activeBreaches || 0) + ' · critical ' + Number(impactRecoveryBreachSummary.critical || 0) + '</span></div>' +
+      (impactRecoveryBreachItems.length ? '<div class="launch-campaign-list">' + impactRecoveryBreachItems.map(x=>'<div><span><b>' + (x.severity==='critical'?'🚨':x.severity==='high'?'⚠️':'ℹ️') + ' ' + escapeHtml(x.reasonLabel || x.reason || '') + '</b> · ' + escapeHtml(x.actionLabel || x.action || '') + '</span><strong>' + escapeHtml((x.breachTypes || []).join(' + ') || 'breach') + '</strong><small>' + (x.active?'active':'recovered') + ' · ACK ' + escapeHtml(x.ackStatus || '—') + ' · Recovery ' + escapeHtml(x.recoveryStatus || '—') + ' · age ' + Number(x.ageMinutes || 0) + ' мин · ACK latency ' + (x.ackLatencyMinutes==null?'—':Number(x.ackLatencyMinutes)+' мин') + ' · recovery latency ' + (x.recoveryLatencyMinutes==null?'—':Number(x.recoveryLatencyMinutes)+' мин') + ' · occurrences ' + Number(x.occurrences || 0) + ' · ' + escapeHtml(x.startedAt || '—') + '</small></div>').join('') + '</div>' : '<div class="data-notice">✅ За текущую 4-недельную выборку подтверждённых SLO breach-эпизодов нет.</div>') +
+      (impactRecoveryBreachRepeated.length ? '<div class="data-notice">🔁 Повторяющиеся breach-пары: ' + impactRecoveryBreachRepeated.map(x=>escapeHtml(x.reasonLabel || x.reason || '') + ' / ' + escapeHtml(x.actionLabel || x.action || '') + ': ' + Number(x.breachEpisodes || 0)).join(' · ') + '</div>' : '') +
+      '<p class="tiny">RC89 — drilldown только по уже подтверждённым ACK/Recovery SLO breaches. Используются существующие incident episodes и пороги RC87; новые пороги, Supabase-таблицы и routing-решения не добавляются. Telegram ID, raw error и произвольный free text не возвращаются.</p>'
+    ) : ''}
     ${impactRecoveryStrategyAlerts.length ? `<div class="release-monitor-section-head"><strong>Recovery: предупреждения</strong><span>${Number(impactRecoveryAlertSummary.critical || 0)} critical · ${Number(impactRecoveryAlertSummary.warnings || 0)} warning · ${Number(impactRecoveryAlertSummary.info || 0)} info</span></div>
       <div class="launch-campaign-list">${impactRecoveryStrategyAlerts.map(x=>`<div>
         <span><b>${x.severity==='critical'?'🚨':x.severity==='warning'?'⚠️':'ℹ️'} ${escapeHtml(x.reasonLabel || 'Recovery Strategy')}</b>${x.actionLabel ? ` · ${escapeHtml(x.actionLabel)}` : ''}</span>

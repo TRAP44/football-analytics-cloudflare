@@ -173,6 +173,10 @@ const REQUIRED_HEALTH_FLAGS = [
   'newsImpactRecoveryIncidentWeeklyTrend',
   'newsImpactRecoveryIncidentRecurrence',
   'newsImpactRecoveryIncidentSloDashboardSelfTest',
+  'newsImpactRecoveryIncidentSloBreachFeed',
+  'newsImpactRecoveryIncidentBreachDrilldown',
+  'newsImpactRecoveryIncidentBreachPrivacyGuard',
+  'newsImpactRecoveryIncidentSloBreachFeedSelfTest',
 ];
 
 function delay(ms) {

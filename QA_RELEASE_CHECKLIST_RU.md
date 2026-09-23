@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.80.0 RC88
+# QA Release Checklist — v6.81.0 RC89
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.80.0`.
-- Worker и client: `6.80.0-rc88`.
-- Release candidate: `RC88`.
+- `package.json` и `package-lock.json`: `6.81.0`.
+- Worker и client: `6.81.0-rc89`.
+- Release candidate: `RC89`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,17 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC89 — News Impact Recovery Incident SLO Breach Feed & Drilldown
+
+- Breach Feed строится только из существующего `incidentEpisodeHistory` и использует те же ACK/Recovery SLO-пороги RC87: 30 / 120 / 360 минут.
+- В feed попадают только эпизоды с подтверждённым `ackBreached` и/или `recoveryBreached`; pending и короткий auto-recovery не считаются breach.
+- Severity является административным представлением: active Recovery breach и active ACK ≥120 минут → critical; active ACK breach → high; recovered Recovery breach → high.
+- Drilldown показывает только санитизированные reason/action, timestamps, occurrences, guard-коды и latency. Telegram ID, raw error и произвольный free text не возвращаются.
+- Repeated breach pairs агрегируются по `reason + action` при минимум двух breach-эпизодах.
+- RC89 не меняет recovery routing, acknowledgement semantics или incident lifecycle и не добавляет Supabase migration.
+- Regression: `test/news-impact-recovery-incident-breach-feed-rc89.test.js`.
+- Production smoke требует `newsImpactRecoveryIncidentSloBreachFeed=enabled`, `newsImpactRecoveryIncidentBreachDrilldown=enabled`, `newsImpactRecoveryIncidentBreachPrivacyGuard=enabled`, `newsImpactRecoveryIncidentSloBreachFeedSelfTest=enabled`.
 
 ## RC88 — News Impact Recovery Incident SLO Dashboard & Trend
 
