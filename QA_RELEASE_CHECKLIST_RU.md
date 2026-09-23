@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.92.0 RC100
+# QA Release Checklist — v6.93.0 RC101
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.92.0`.
-- Worker и client: `6.92.0-rc100`.
-- Release candidate: `RC100`.
+- `package.json` и `package-lock.json`: `6.93.0`.
+- Worker и client: `6.93.0-rc101`.
+- Release candidate: `RC101`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -34,17 +34,17 @@ npm run verify:worker
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
 
-## RC100 — Supabase Schema Drift Guard
+## RC101 — Supabase Directory Hardening
 
-- Release Readiness проверяет 6 обязательных schema slices через service-role PostgREST.
-- Проверяются acquisition columns пользователей, persistent AI history, calibration transitions, digest subscriptions, referee history и growth events.
-- Отсутствующая таблица или колонка создаёт blocking failure `supabase_schema_drift`.
-- В `/health` обязательны `supabaseSchemaDriftGuard=enabled` и `supabaseSchemaDriftSelfTest=enabled`.
-- Guard выполняет только чтение схемы и не меняет production Supabase.
-- Regression: `test/supabase-schema-drift-rc100.test.js`.
-- Production smoke требует оба RC100 health flags.
+- Все SQL-файлы находятся только внутри `supabase/`.
+- Fresh install: `supabase/baseline/supabase_baseline_v6_15.sql`.
+- Existing production upgrades: `supabase/migrations/`.
+- Release gate блокирует возврат `supabase_*.sql` в корень репозитория.
+- Fresh-install baseline fail-closed: при обнаружении существующих `users + runtime_controls + model_predictions` выполнение прекращается до DDL.
+- Production Supabase этим релизом не изменяется.
+- Regression: `test/supabase-directory-hardening-rc101.test.js`.
 
-## Исторические RC72–RC99
+## Исторические RC72–RC100
 
 Детальные исторические release-контракты удалены из текущего checklist, чтобы не дублировать Git history и regression-тесты. Их поведение продолжает проверяться соответствующими файлами `test/*-rcXX.test.js`, а продуктовая сводка сохранена в `README_CLOUDFLARE_RU.md`.
 
@@ -66,8 +66,8 @@ npm run verify:worker
 
 `scripts/post-deploy-smoke.js` должен подтвердить:
 - `/health.ok = true`;
-- `version = 6.92.0-rc100`;
-- `releaseCandidate = RC100`;
+- `version = 6.93.0-rc101`;
+- `releaseCandidate = RC101`;
 - `devMode = false`;
 - обязательные self-test/feature flags = `enabled`;
 - `/health/supabase` не доступен публично;
