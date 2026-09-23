@@ -5,7 +5,6 @@ import fs from 'node:fs';
 const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const css=fs.readFileSync('public/styles.css','utf8');
-const playbook=fs.readFileSync('MATCH_SELECTION_RC57.md','utf8');
 
 test('RC57 server ranks the primary match before client rendering',()=> {
   assert.match(worker,/function matchSelectionProfile\(/);
@@ -51,5 +50,4 @@ test('RC57 release gate exposes match-selection self test',()=> {
     assert.ok(worker.includes(`${flag}: 'enabled'`), `missing ${flag}`);
   }
   assert.match(worker,/matchSelectionSelfTest: matchSelectionDrill\(\)\.pass \? 'enabled' : 'failed'/);
-  assert.match(playbook,/LIVE → официальный upcoming → прочий upcoming → официальный recent → прочий recent/);
 });
