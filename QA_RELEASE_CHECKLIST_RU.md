@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.85.0 RC93
+# QA Release Checklist — v6.86.0 RC94
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.85.0`.
-- Worker и client: `6.85.0-rc93`.
-- Release candidate: `RC93`.
+- `package.json` и `package-lock.json`: `6.86.0`.
+- Worker и client: `6.86.0-rc94`.
+- Release candidate: `RC94`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,19 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC94 — News Impact Recovery Incident SLO Impact Trend
+
+- Trend строится только из существующего `incidentEpisodeHistory` и делит последние 4 недели на отдельные непересекающиеся недельные окна.
+- ACK overdue minutes для недели — только пересечение окна с периодом после ACK SLO 30 минут до acknowledgement / recovery / конца окна.
+- Recovery overdue minutes для недели — только пересечение окна с периодом после Recovery SLO 360 минут до recovery / конца окна.
+- Weekly summary показывает total / ACK / Recovery overdue minutes, число затронутых пар и top pair по фактическим overdue minutes.
+- Pair trend сравнивает текущую неделю с предыдущей: `increased` при положительной дельте, `decreased` при отрицательной, `unchanged` только при точном равенстве. Дополнительного порога стабильности нет.
+- Пары сортируются по абсолютной величине недельной дельты, затем по текущим overdue minutes.
+- Privacy: Telegram ID, raw error и произвольный free text не возвращаются.
+- RC94 не меняет SLO, recovery-routing, acknowledgement semantics или incident lifecycle и не требует новой Supabase migration.
+- Regression: `test/news-impact-recovery-incident-impact-trend-rc94.test.js`.
+- Production smoke требует `newsImpactRecoveryIncidentSloBreachImpactTrend=enabled`, `newsImpactRecoveryIncidentWeeklyOverdueBurden=enabled`, `newsImpactRecoveryIncidentSloBreachImpactTrendSelfTest=enabled`.
 
 ## RC93 — News Impact Recovery Incident SLO Breach Impact Ranking
 

@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.85.0-rc93';
+const CLIENT_VERSION = '6.86.0-rc94';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc93';
+const CLIENT_RELEASE_CHANNEL = 'rc94';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2969,6 +2969,10 @@ function renderLaunchFunnel() {
   const impactRecoveryIncidentSloBreachImpactRanking=d.newsImpactRecoveryIncidentSloBreachImpactRanking || {available:false,summary:{},ranking:[]};
   const impactRecoveryImpactSummary=impactRecoveryIncidentSloBreachImpactRanking.summary || {};
   const impactRecoveryImpactRanking=Array.isArray(impactRecoveryIncidentSloBreachImpactRanking.ranking) ? impactRecoveryIncidentSloBreachImpactRanking.ranking : [];
+  const impactRecoveryIncidentSloBreachImpactTrend=d.newsImpactRecoveryIncidentSloBreachImpactTrend || {available:false,summary:{},weekly:[],pairs:[]};
+  const impactRecoveryImpactTrendSummary=impactRecoveryIncidentSloBreachImpactTrend.summary || {};
+  const impactRecoveryImpactTrendWeekly=Array.isArray(impactRecoveryIncidentSloBreachImpactTrend.weekly) ? impactRecoveryIncidentSloBreachImpactTrend.weekly : [];
+  const impactRecoveryImpactTrendPairs=Array.isArray(impactRecoveryIncidentSloBreachImpactTrend.pairs) ? impactRecoveryIncidentSloBreachImpactTrend.pairs : [];
   const impactFunnel=Array.isArray(d.newsImpactActionFunnel) ? d.newsImpactActionFunnel : [];
   const impactBottleneck=d.newsImpactActionBottleneck || null;
   const impactConfidenceGuard=d.newsImpactActionConfidenceGuard || {minUsers:10,stableUsers:30};
@@ -3111,6 +3115,12 @@ function renderLaunchFunnel() {
       '<div class="release-monitor-section-head"><strong>SLO Breach Impact Ranking</strong><span>' + Number(impactRecoveryImpactSummary.totalOverdueMinutes || 0) + ' мин сверх SLO · top ' + Number(impactRecoveryImpactSummary.topContributionPct || 0) + '%</span></div>' +
       (impactRecoveryImpactRanking.length ? '<div class="launch-campaign-list">' + impactRecoveryImpactRanking.map(x=>'<div><span><b>#' + Number(x.rank || 0) + ' ' + escapeHtml(x.reasonLabel || x.reason || '') + '</b> · ' + escapeHtml(x.actionLabel || x.action || '') + '</span><strong>' + Number(x.totalOverdueMinutes || 0) + ' мин · ' + Number(x.contributionPct || 0) + '%</strong><small>ACK сверх SLO ' + Number(x.ackOverdueMinutes || 0) + ' мин · Recovery сверх SLO ' + Number(x.recoveryOverdueMinutes || 0) + ' мин · эпизодов ' + Number(x.episodes || 0) + ' · active ' + Number(x.activeEpisodes || 0) + (x.oldestActiveMinutes==null?'':' · oldest '+Number(x.oldestActiveMinutes)+' мин') + '</small></div>').join('') + '</div>' : '<div class="data-notice">✅ Накопленной SLO-просрочки для impact ranking нет.</div>') +
       '<p class="tiny">RC93 — ranking показывает фактическую долю минут сверх существующих ACK/Recovery SLO по каждой паре reason + action. Это не новый score и не новый порог: используются RC87 30/120/360 минут, данные не сохраняются и recovery-routing не меняется.</p>'
+    ) : ''}
+    ${impactRecoveryIncidentSloBreachImpactTrend.available !== false ? (
+      '<div class="release-monitor-section-head"><strong>SLO Impact Trend · 4 недели</strong><span>current ' + Number(impactRecoveryImpactTrendSummary.currentOverdueMinutes || 0) + ' мин · Δ ' + (Number(impactRecoveryImpactTrendSummary.deltaMinutes || 0)>=0?'+':'') + Number(impactRecoveryImpactTrendSummary.deltaMinutes || 0) + ' мин</span></div>' +
+      (impactRecoveryImpactTrendWeekly.length ? '<div class="launch-campaign-list">' + impactRecoveryImpactTrendWeekly.map(x=>'<div><span><b>' + escapeHtml(String(x.windowEnd || '').slice(0,10)) + '</b></span><strong>' + Number(x.totalOverdueMinutes || 0) + ' мин</strong><small>ACK ' + Number(x.ackOverdueMinutes || 0) + ' · Recovery ' + Number(x.recoveryOverdueMinutes || 0) + ' · pairs ' + Number(x.pairs || 0) + (x.top?' · top '+escapeHtml(x.top.reasonLabel || x.top.reason || '')+' / '+escapeHtml(x.top.actionLabel || x.top.action || '')+' '+Number(x.top.contributionPct || 0)+'%':'') + '</small></div>').join('') + '</div>' : '<div class="data-notice">Нет недельных impact-снимков.</div>') +
+      (impactRecoveryImpactTrendPairs.length ? '<div class="launch-campaign-list">' + impactRecoveryImpactTrendPairs.map(x=>'<div><span><b>' + (x.direction==='increased'?'↗️':x.direction==='decreased'?'↘️':'→') + ' ' + escapeHtml(x.reasonLabel || x.reason || '') + '</b> · ' + escapeHtml(x.actionLabel || x.action || '') + '</span><strong>' + (Number(x.deltaMinutes || 0)>=0?'+':'') + Number(x.deltaMinutes || 0) + ' мин</strong><small>текущая неделя ' + Number(x.currentOverdueMinutes || 0) + ' · предыдущая ' + Number(x.previousOverdueMinutes || 0) + ' · вклад сейчас ' + Number(x.currentContributionPct || 0) + '%</small></div>').join('') + '</div>' : '') +
+      '<p class="tiny">RC94 — недельный trend считает только минуты просрочки, фактически возникшие внутри каждой недели. Направление — точный знак разницы с предыдущей неделей, без нового score или threshold; используются RC87 30/120/360 минут, persistence и recovery-routing не меняются.</p>'
     ) : ''}
     ${impactRecoveryStrategyAlerts.length ? `<div class="release-monitor-section-head"><strong>Recovery: предупреждения</strong><span>${Number(impactRecoveryAlertSummary.critical || 0)} critical · ${Number(impactRecoveryAlertSummary.warnings || 0)} warning · ${Number(impactRecoveryAlertSummary.info || 0)} info</span></div>
       <div class="launch-campaign-list">${impactRecoveryStrategyAlerts.map(x=>`<div>
