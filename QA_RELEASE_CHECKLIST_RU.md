@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.74.0 RC82
+# QA Release Checklist — v6.75.0 RC83
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.74.0`.
-- Worker и client: `6.74.0-rc82`.
-- Release candidate: `RC82`.
+- `package.json` и `package-lock.json`: `6.75.0`.
+- Worker и client: `6.75.0-rc83`.
+- Release candidate: `RC83`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,19 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC83 — News Impact Recovery Drift Circuit Breaker
+
+- RC82 остаётся первым gate: adaptive должен сначала пройти 30-дневный strict guard и свежий 7-дневный stability guard.
+- RC83 проверяет деградацию уже выбранного adaptive recovery относительно предыдущей части того же 30-дневного окна.
+- Drift-анализ требует минимум 20 зрелых попыток кандидата в prior-окне и минимум 10 в recent-окне.
+- Circuit breaker срабатывает только если success rate упал минимум на 15 п.п. и верхняя граница 95% Wilson recent ниже нижней границы prior.
+- При подтверждённом drift runtime немедленно возвращается на fixed recovery; proposed adaptive остаётся видимым только для диагностики.
+- Admin Launch Funnel показывает prior → recent recovery success, величину падения и число автоматически заблокированных adaptive-правил.
+- `news_impact_outcome_failure.metadata.strategy_guard` хранит только разрешённый категориальный guard-код; raw error, URL, query и stack не сохраняются.
+- Новая Supabase migration не требуется; используются существующие `growth_events.metadata`.
+- Regression: `test/news-impact-recovery-drift-guard-rc83.test.js`.
+- Production smoke требует `newsImpactRecoveryDriftGuard=enabled`, `newsImpactRecoveryDriftAudit=enabled`, `newsImpactRecoveryDriftSelfTest=enabled`.
 
 ## RC82 — News Impact Recovery Stability & Parity Guard
 
