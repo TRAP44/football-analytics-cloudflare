@@ -38,7 +38,7 @@ test('RC74 deterministic health contract is present',()=>{
 });
 
 test('RC74 needs no new Supabase migration',()=>{
-  const files=fs.readdirSync('.').filter(x=>/^supabase_migration_v6_\d/.test(x));
+  const files=fs.readdirSync('supabase/migrations').filter(x=>/^supabase_migration_v6_\d/.test(x));
   assert.ok(files.includes('supabase_migration_v6_15.sql'));
   assert.ok(!files.some(x=>/v6_16|v6_17|rc74/i.test(x)));
 });
