@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.88.0 RC96
+# QA Release Checklist — v6.89.0 RC97
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.88.0`.
-- Worker и client: `6.88.0-rc96`.
-- Release candidate: `RC96`.
+- `package.json` и `package-lock.json`: `6.89.0`.
+- Worker и client: `6.89.0-rc97`.
+- Release candidate: `RC97`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,19 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC97 — News Impact Recovery Incident SLO Impact Executive Summary
+
+- Executive Summary не пересчитывает incident episodes самостоятельно: он объединяет уже готовые RC93 Ranking, RC94 Impact Trend, RC95 Concentration и RC96 Concentration Trend.
+- Summary показывает cumulative total / ACK / Recovery overdue minutes, breach pairs, active pairs и breach episode count.
+- Недельный блок показывает current / previous overdue minutes, точную week delta и число increased / decreased / unchanged пар из RC94.
+- Concentration блок показывает текущие top-1 / top-3 / top-5 доли из RC95 и недельные percentage-point deltas / directions из RC96.
+- Top pair берётся из RC93 ranking и содержит только reason/action labels, factual overdue minutes, contribution %, active episode count и ACK/Recovery overdue minutes.
+- `sourceReleases` должен оставаться `RC93, RC94, RC95, RC96`; новых score, thresholds или routing semantics нет.
+- Privacy: Telegram ID, raw error и произвольный free text не возвращаются.
+- RC97 не создаёт derived persistence и не требует новой Supabase migration.
+- Regression: `test/news-impact-recovery-incident-impact-executive-summary-rc97.test.js`.
+- Production smoke требует `newsImpactRecoveryIncidentSloImpactExecutiveSummary=enabled`, `newsImpactRecoveryIncidentSloImpactUnifiedView=enabled`, `newsImpactRecoveryIncidentSloImpactExecutiveSummarySelfTest=enabled`.
 
 ## RC96 — News Impact Recovery Incident SLO Impact Concentration Trend
 
