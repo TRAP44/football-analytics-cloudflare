@@ -24,9 +24,9 @@ test('finished Match Center settles existing prediction and builds review',()=> 
 test('review checks outcome total and BTTS and adds observed evidence',()=> {
   assert.match(worker,/label:'Тотал 2\.5'/);
   assert.match(worker,/label:'Обе забьют'/);
-  assert.match(worker,/code:'xg'/);
-  assert.match(worker,/code:'shots_on_goal'/);
-  assert.match(worker,/code:'red_card'/);
+  assert.match(worker,/add\('xg'/);
+  assert.match(worker,/add\('shots_on_goal'/);
+  assert.match(worker,/add\('red_card'/);
   assert.match(worker,/не доказывают причинность/);
 });
 
