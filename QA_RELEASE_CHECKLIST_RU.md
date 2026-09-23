@@ -23,10 +23,10 @@ npm run verify:worker
 
 ## Supabase
 
-Для нового проекта используется только `supabase_baseline_v6_15.sql`.
+Для нового проекта используется только `supabase/baseline/supabase_baseline_v6_15.sql`.
 
 Для существующей базы должны быть применены:
-`supabase_migration_v6_9.sql`, `v6_10`, `v6_11`, `v6_11_1`, `v6_12`, `v6_13`, `v6_14`, `v6_15`.
+`supabase/migrations/supabase_migration_v6_9.sql`, `v6_10`, `v6_11`, `v6_11_1`, `v6_12`, `v6_13`, `v6_14`, `v6_15`.
 
 Проверить:
 - RLS и закрытые backend-only таблицы не открыты для `anon/authenticated`;
