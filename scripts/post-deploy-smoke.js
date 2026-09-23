@@ -11,6 +11,8 @@ const REQUIRED_HEALTH_FLAGS = [
   'rollbackVerification',
   'providerDataReliability',
   'providerDataReliabilitySelfTest',
+  'aiAnalysisQualityGate',
+  'aiAnalysisQualityGateSelfTest',
   'cloudflareDeploymentGate',
   'browserSecurityPolicy',
   'failClosedDeployment',

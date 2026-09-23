@@ -1,4 +1,4 @@
-# Установка Football Analytics v6.96.0 RC104
+# Установка Football Analytics v6.97.0 RC105
 
 ## Новый Supabase-проект
 
@@ -50,7 +50,7 @@ API token должен быть ограничен нужным Cloudflare accou
 
 Рабочий release-процесс:
 
-`PR → Quality → merge в main → Deploy Production → RC104 smoke`.
+`PR → Quality → merge в main → Deploy Production → RC105 smoke`.
 
 ## Локальная проверка
 
@@ -69,13 +69,13 @@ npm run verify:worker
 
 Проверьте:
 
-1. `/health` возвращает `ok=true`, версию `6.96.0-rc104` и `releaseCandidate=RC104`.
+1. `/health` возвращает `ok=true`, версию `6.97.0-rc105` и `releaseCandidate=RC105`.
 2. RC Regression не содержит blocking failures.
 3. `DEV_MODE=false` и `MONETIZATION_ENABLED=false`.
 4. Обычный пользователь не видит административные controls.
 5. `/health/supabase` не доступен публично.
 6. CSP, HSTS, `X-Content-Type-Options: nosniff` и остальные security headers присутствуют.
-7. Production smoke подтверждает обязательные RC104 release/self-test flags, включая `providerDataReliability` и `providerDataReliabilitySelfTest`.
+7. Production smoke подтверждает обязательные RC105 release/self-test flags, включая `providerDataReliability`, `providerDataReliabilitySelfTest`, `aiAnalysisQualityGate` и `aiAnalysisQualityGateSelfTest`.
 
 ## Rollback
 
