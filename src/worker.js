@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.70.0-rc78';
+const APP_VERSION = '6.71.0-rc79';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc78';
-const RC_NAME = 'RC78';
+const RELEASE_CHANNEL = 'rc79';
+const RC_NAME = 'RC79';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1737,6 +1737,14 @@ async function apiLaunchFunnel(request,cfg) {
     ? Math.round((newsImpactOutcomeSummary.confirmed/newsImpactOutcomeSummary.attempts)*1000)/10
     : 0;
   const newsImpactOutcomeGuard={outcomeWindowMinutes:NEWS_IMPACT_OUTCOME_WINDOW_MINUTES,minimumSample:NEWS_IMPACT_FUNNEL_MIN_USERS,meaning:'confirmed_delivery_not_satisfaction'};
+  const newsImpactFailureRows=rows.filter(x=>String(x.event_name || '')==='news_impact_outcome_failure');
+  const newsImpactFailureDiagnostics=buildNewsImpactFailureDiagnostics(newsImpactFailureRows);
+  const newsImpactFailureSummary={
+    total:newsImpactFailureRows.length,
+    users:new Set(newsImpactFailureRows.map(x=>Number(x.telegram_id || 0)).filter(Boolean)).size,
+    topReason:newsImpactFailureDiagnostics[0] || null,
+  };
+  const newsImpactFailureGuard={rawErrorsStored:false,meaning:'delivery_failure_not_user_dissatisfaction',taxonomy:[...NEWS_IMPACT_FAILURE_CODES]};
   const newsImpactActionFunnel=buildNewsImpactActionFunnel(newsImpactRows,newsImpactActionRows,{asOfMs:analyticsNowMs});
   const newsImpactActionBottleneck=newsImpactActionFunnelBottleneck(newsImpactActionFunnel);
   const newsImpactActionConfidenceGuard={minUsers:NEWS_IMPACT_FUNNEL_MIN_USERS,stableUsers:NEWS_IMPACT_FUNNEL_STABLE_USERS,interval:'wilson_95'};
@@ -1797,6 +1805,9 @@ async function apiLaunchFunnel(request,cfg) {
     newsImpactActionOutcomeQuality,
     newsImpactOutcomeBottleneck,
     newsImpactOutcomeGuard,
+    newsImpactFailureSummary,
+    newsImpactFailureDiagnostics,
+    newsImpactFailureGuard,
     newsImpactActionFunnel,
     newsImpactActionBottleneck,
     newsImpactActionConfidenceGuard,
@@ -2925,6 +2936,161 @@ function newsImpactOutcomeQualityDrill() {
   };
 }
 
+const NEWS_IMPACT_FAILURE_CODES = new Set([
+  'provider_rate_limit','provider_unavailable','quota_exhausted','analysis_warming',
+  'match_missing','invalid_fixture','data_invalid','telegram_delivery','timeout','server_error',
+]);
+const NEWS_IMPACT_RECOVERY_CODES = new Set([
+  'retry','retry_soon','retry_later','wait_quota_reset','open_search','open_full_ai',
+]);
+const NEWS_IMPACT_FAILURE_LABELS = {
+  provider_rate_limit:'Лимит источника данных',
+  provider_unavailable:'Источник данных недоступен',
+  quota_exhausted:'Дневной лимит AI',
+  analysis_warming:'AI уже рассчитывается',
+  match_missing:'Матч недоступен',
+  invalid_fixture:'Некорректный матч',
+  data_invalid:'Данные матча противоречивы',
+  telegram_delivery:'Доставка в Telegram',
+  timeout:'Тайм-аут',
+  server_error:'Временная серверная ошибка',
+};
+const NEWS_IMPACT_RECOVERY_LABELS = {
+  retry:'повторить',
+  retry_soon:'повторить через несколько секунд',
+  retry_later:'повторить позже',
+  wait_quota_reset:'дождаться обновления лимита',
+  open_search:'вернуться к поиску',
+  open_full_ai:'открыть полный AI',
+};
+
+function newsImpactFailureCode(error = null, fallback = 'server_error') {
+  const status=Number(error?.status || error?.statusCode || error?.payload?.status || 0);
+  const code=String(error?.code || error?.payload?.code || '').toLowerCase();
+  const message=String(error?.message || error?.payload?.error || '').toLowerCase();
+  const text=`${code} ${message}`;
+  if (isFootballRateLimitError(error) || /football.*(?:rate|limit)|provider.*(?:rate|limit)/.test(text)) return 'provider_rate_limit';
+  if (/provider|api-football|upstream/.test(text) && /unavailable|failed|error|503|502/.test(text)) return 'provider_unavailable';
+  if (/analysis_warming|warming|already.*calculat|уже рассчитывается/.test(text)) return 'analysis_warming';
+  if (status===408 || /timeout|timed out|тайм-аут/.test(text)) return 'timeout';
+  if (/match_data_invalid|data_invalid|противоречив/.test(text) || status===409) return 'data_invalid';
+  if (/invalid.*fixture|некорректн.*матч/.test(text)) return 'invalid_fixture';
+  if (/match.*not.*found|матч не найден|fixture.*not.*found/.test(text) || status===404) return 'match_missing';
+  if (status===429) return 'quota_exhausted';
+  if (/telegram/.test(text) || ([400,403].includes(status) && fallback==='telegram_delivery')) return 'telegram_delivery';
+  return NEWS_IMPACT_FAILURE_CODES.has(String(fallback || '')) ? String(fallback) : 'server_error';
+}
+
+function newsImpactRecoveryForFailure(reason = 'server_error', action = '') {
+  const code=NEWS_IMPACT_FAILURE_CODES.has(String(reason || '')) ? String(reason) : 'server_error';
+  const safeAction=cleanNewsImpactActionCode(action);
+  if (code==='quota_exhausted') return {code:'wait_quota_reset',action:'wait',message:'Дневной лимит AI исчерпан. Повторите после обновления лимита.'};
+  if (code==='provider_rate_limit') return {code:'retry_later',action:'retry',message:'Источник футбольных данных временно ограничил запросы. Повторите позже.'};
+  if (code==='provider_unavailable') return {code:'retry_later',action:'retry',message:'Источник данных временно недоступен. Попробуйте позже.'};
+  if (code==='analysis_warming') return {code:'retry_soon',action:'retry',message:'AI-разбор уже рассчитывается. Повторите через несколько секунд.'};
+  if (code==='match_missing' || code==='invalid_fixture') return {code:'open_search',action:'search',message:'Этот матч сейчас недоступен. Вернитесь к поиску и выберите актуальный матч.'};
+  if (code==='data_invalid') return {code:'retry_later',action:'retry',message:'Данные матча сейчас противоречивы. Анализ безопаснее повторить позже.'};
+  if (code==='timeout') return {code:'retry_soon',action:'retry',message:'Ответ занял слишком много времени. Повторите запрос.'};
+  if (code==='telegram_delivery') return {code:safeAction==='full_ai'?'open_full_ai':'retry',action:safeAction==='full_ai'?'open_full_ai':'retry',message:'Не удалось доставить результат в Telegram. Можно повторить действие или открыть полный AI.'};
+  return {code:'retry',action:'retry',message:'Результат временно не доставлен. Повторите действие.'};
+}
+
+async function recordNewsImpactFailure(cfg,{
+  userId,
+  fixtureId,
+  decision,
+  action,
+  channel='telegram',
+  reason='server_error',
+  recovery='',
+  status=0,
+}={}) {
+  const safeDecision=cleanNewsImpactDecisionCode(decision);
+  const safeAction=cleanNewsImpactActionCode(action);
+  const safeReason=NEWS_IMPACT_FAILURE_CODES.has(String(reason || '')) ? String(reason) : 'server_error';
+  const recommended=newsImpactRecoveryForFailure(safeReason,safeAction);
+  const safeRecovery=NEWS_IMPACT_RECOVERY_CODES.has(String(recovery || '')) ? String(recovery) : recommended.code;
+  if (!safeDecision || !safeAction) return false;
+  return await recordGrowthEvent(cfg,{
+    userId,
+    eventName:'news_impact_outcome_failure',
+    channel,
+    fixtureId,
+    metadata:{
+      decision:safeDecision,
+      action:safeAction,
+      reason:safeReason,
+      recovery:safeRecovery,
+      ...(Number(status || 0)>0 ? {status:Number(status)} : {}),
+    },
+  });
+}
+
+function buildNewsImpactFailureDiagnostics(rows = []) {
+  const byReason=new Map();
+  for (const row of rows || []) {
+    const meta=row?.metadata && typeof row.metadata==='object' ? row.metadata : {};
+    const reason=NEWS_IMPACT_FAILURE_CODES.has(String(meta.reason || '')) ? String(meta.reason) : 'server_error';
+    const action=cleanNewsImpactActionCode(meta.action);
+    const recovery=NEWS_IMPACT_RECOVERY_CODES.has(String(meta.recovery || '')) ? String(meta.recovery) : newsImpactRecoveryForFailure(reason,action).code;
+    const bucket=byReason.get(reason) || {
+      reason,label:NEWS_IMPACT_FAILURE_LABELS[reason] || reason,events:0,users:new Set(),actions:{},recoveries:{},
+    };
+    bucket.events+=1;
+    const uid=Number(row.telegram_id || 0);
+    if (uid) bucket.users.add(uid);
+    if (action) bucket.actions[action]=(bucket.actions[action] || 0)+1;
+    if (recovery) bucket.recoveries[recovery]=(bucket.recoveries[recovery] || 0)+1;
+    byReason.set(reason,bucket);
+  }
+  return [...byReason.values()].map(x=>({
+    reason:x.reason,label:x.label,events:x.events,users:x.users.size,
+    actions:Object.entries(x.actions).map(([action,count])=>({action,label:NEWS_IMPACT_ACTION_LABELS[action] || action,count})).sort((a,b)=>b.count-a.count || a.action.localeCompare(b.action)),
+    recoveries:Object.entries(x.recoveries).map(([recovery,count])=>({recovery,label:NEWS_IMPACT_RECOVERY_LABELS[recovery] || recovery,count})).sort((a,b)=>b.count-a.count || a.recovery.localeCompare(b.recovery)),
+  })).sort((a,b)=>b.events-a.events || a.reason.localeCompare(b.reason));
+}
+
+function newsImpactFailureDiagnosticsDrill() {
+  const rows=[
+    {telegram_id:1,metadata:{decision:'material',action:'full_ai',reason:'provider_rate_limit',recovery:'retry_later'}},
+    {telegram_id:2,metadata:{decision:'material',action:'full_ai',reason:'provider_rate_limit',recovery:'retry_later'}},
+    {telegram_id:1,metadata:{decision:'stable',action:'share',reason:'telegram_delivery',recovery:'retry'}},
+  ];
+  const diagnostics=buildNewsImpactFailureDiagnostics(rows);
+  const provider=diagnostics.find(x=>x.reason==='provider_rate_limit');
+  const telegram=diagnostics.find(x=>x.reason==='telegram_delivery');
+  const recovery=newsImpactRecoveryForFailure('analysis_warming','full_ai');
+  return {
+    pass:provider?.events===2
+      && provider?.users===2
+      && provider?.actions?.[0]?.action==='full_ai'
+      && telegram?.events===1
+      && recovery?.code==='retry_soon'
+      && newsImpactFailureCode({status:429,code:'ANALYSIS_WARMING'},'server_error')==='analysis_warming',
+    cases:6,
+  };
+}
+
+function newsImpactRecoveryKeyboard(request, decision, action, fixtureId) {
+  const rows=[[{text:'🔄 Повторить',callback_data:newsImpactActionCallback(decision,action,fixtureId)}]];
+  if (action!=='full_ai') rows.push([{text:'📊 Открыть полный AI',web_app:{url:newsImpactTrackedAnalysisUrl(request,fixtureId,decision)}}]);
+  return {inline_keyboard:rows};
+}
+
+async function sendNewsImpactRecoveryMessage(request,cfg,{userId,chatId,fixtureId,decision,action,error,fallback='server_error'}={}) {
+  const reason=newsImpactFailureCode(error,fallback);
+  const recovery=newsImpactRecoveryForFailure(reason,action);
+  await recordNewsImpactFailure(cfg,{
+    userId,fixtureId,decision,action,channel:'telegram',reason,recovery:recovery.code,status:Number(error?.status || 0),
+  });
+  await telegramApi('sendMessage',cfg,{
+    chat_id:chatId,
+    text:`⚠️ ${recovery.message}`,
+    reply_markup:newsImpactRecoveryKeyboard(request,decision,action,fixtureId),
+  }).catch(()=>null);
+  return {reason,recovery};
+}
+
 function newsImpactFunnelConfidenceDrill() {
   const insufficient=newsImpactConversionConfidence(1,3);
   const early=newsImpactConversionConfidence(5,10);
@@ -3188,7 +3354,7 @@ function botPostMatchReviewText(data = {}) {
   ].filter(Boolean).join('\n');
 }
 
-async function sendBotFixtureSection(request, cfg, userId, chatId, fixtureId, section = 'verdict') {
+async function sendBotFixtureSection(request, cfg, userId, chatId, fixtureId, section = 'verdict', options = {}) {
   try {
     const data = section === 'review'
       ? await botMatchCenterFixture(request, cfg, fixtureId)
@@ -3209,6 +3375,7 @@ async function sendBotFixtureSection(request, cfg, userId, chatId, fixtureId, se
       text,
       reply_markup:footballMatchActionKeyboard(request, match, '', favorites),
     });
+    return {ok:true,status:200};
   } catch (error) {
     const status=Number(error?.status || 0);
     const message=status===429
@@ -3216,11 +3383,14 @@ async function sendBotFixtureSection(request, cfg, userId, chatId, fixtureId, se
       : status===409
         ? 'Данные матча сейчас противоречивы, поэтому AI-разбор временно заблокирован.'
         : error?.message || 'Не удалось получить AI-разбор матча.';
-    await telegramApi('sendMessage',cfg,{
-      chat_id:chatId,
-      text:`⚠️ ${message}`,
-      reply_markup:{inline_keyboard:[[{text:'📊 Открыть матч',web_app:{url:telegramFullAnalysisUrl(request,Number(fixtureId),'brief')}}]]},
-    });
+    if (!options.suppressFallback) {
+      await telegramApi('sendMessage',cfg,{
+        chat_id:chatId,
+        text:`⚠️ ${message}`,
+        reply_markup:{inline_keyboard:[[{text:'📊 Открыть матч',web_app:{url:telegramFullAnalysisUrl(request,Number(fixtureId),'brief')}}]]},
+      }).catch(()=>null);
+    }
+    return {ok:false,status,code:String(error?.code || error?.payload?.code || ''),message};
   }
 }
 
@@ -3780,8 +3950,13 @@ async function processTelegramUpdate(request, cfg, update) {
       void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_impact_action',channel:'telegram',fixtureId,metadata:{decision,action}});
       if (action==='news') {
         await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Открываю новости…'}).catch(()=>null);
-        await sendGeneralFootballNews(request,cfg,callbackUserId,callbackChatId,{force:false});
-        await recordNewsImpactOutcome(cfg,{userId:callbackUserId,fixtureId,decision,action,channel:'telegram'});
+        try {
+          await sendGeneralFootballNews(request,cfg,callbackUserId,callbackChatId,{force:false});
+          await recordNewsImpactOutcome(cfg,{userId:callbackUserId,fixtureId,decision,action,channel:'telegram'});
+        } catch (error) {
+          await sendNewsImpactRecoveryMessage(request,cfg,{userId:callbackUserId,chatId:callbackChatId,fixtureId,decision,action,error,fallback:'provider_unavailable'});
+          return json({ok:true,recovered:true});
+        }
         return json({ok:true});
       }
       if (action==='share') {
@@ -3789,15 +3964,22 @@ async function processTelegramUpdate(request, cfg, update) {
         try {
           await sendBotFixtureShareCard(request,cfg,callbackUserId,callbackChatId,fixtureId);
           await recordNewsImpactOutcome(cfg,{userId:callbackUserId,fixtureId,decision,action,channel:'telegram'});
+        } catch (error) {
+          await sendNewsImpactRecoveryMessage(request,cfg,{userId:callbackUserId,chatId:callbackChatId,fixtureId,decision,action,error,fallback:'telegram_delivery'});
+          return json({ok:true,recovered:true});
         }
-        catch { await telegramApi('sendMessage',cfg,{chat_id:callbackChatId,text:'Не удалось подготовить ссылку на этот матч.'}).catch(()=>null); }
         return json({ok:true});
       }
       await telegramApi('answerCallbackQuery',cfg,{
         callback_query_id:cb.id,
         text:action==='recheck'?'Перепроверяю AI…':'Собираю футбольные данные…',
       }).catch(()=>null);
-      await sendBotFixtureSection(request,cfg,callbackUserId,callbackChatId,fixtureId,action==='recheck'?'verdict':action);
+      const delivery=await sendBotFixtureSection(request,cfg,callbackUserId,callbackChatId,fixtureId,action==='recheck'?'verdict':action,{suppressFallback:true});
+      if (!delivery?.ok) {
+        const error=Object.assign(new Error(delivery?.message || 'delivery_failed'),{status:Number(delivery?.status || 0),code:String(delivery?.code || '')});
+        await sendNewsImpactRecoveryMessage(request,cfg,{userId:callbackUserId,chatId:callbackChatId,fixtureId,decision,action,error,fallback:'server_error'});
+        return json({ok:true,recovered:true});
+      }
       await recordNewsImpactOutcome(cfg,{userId:callbackUserId,fixtureId,decision,action,channel:'telegram'});
       return json({ok:true});
     }
@@ -14572,7 +14754,7 @@ async function apiMatchCenter(request, cfg) {
     }
     throw error;
   }
-  if (!fixture) return json({ error: 'Матч не найден.' }, 404);
+  if (!fixture) return await trackedFullAiFailureResponse({ error: 'Матч не найден.' },404,'match_missing');
   const centerIntegrity = validateFixtureIntegrity(fixture, '', null);
   if (centerIntegrity.quarantine) {
     await recordOpsEvent(cfg, { severity: 'warning', source: 'integrity', eventType: 'single_fixture_guard', code: 'MATCH_CENTER_REJECTED', message: 'Центр матча отклонил структурно некорректные данные матча.', meta: { fixtureId, issues: centerIntegrity.issues.filter(x => x.severity === 'error').map(x => x.code) } }).catch(() => {});
@@ -15211,7 +15393,18 @@ async function apiAnalyze(request, cfg, user) {
   if (trackFullAi && newsImpactDecision && newsImpactAction==='full_ai') {
     void recordGrowthEvent(cfg,{userId:user.id,eventName:'news_impact_action',channel:'miniapp',fixtureId,metadata:{decision:newsImpactDecision,action:'full_ai'}});
   }
-  if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'Некорректный номер матча.' }, 400);
+  const recordTrackedFullAiFailure=async (reason='server_error',status=0)=>{
+    if (!(trackFullAi && newsImpactDecision && newsImpactAction==='full_ai')) return null;
+    const recovery=newsImpactRecoveryForFailure(reason,'full_ai');
+    await recordNewsImpactFailure(cfg,{userId:user.id,fixtureId,decision:newsImpactDecision,action:'full_ai',channel:'miniapp',reason,recovery:recovery.code,status});
+    return recovery;
+  };
+  const trackedFullAiFailureResponse=async (payload,status,reason,headers={})=>{
+    const recovery=await recordTrackedFullAiFailure(reason,status);
+    return json({...payload,...(recovery ? {newsImpactRecovery:recovery} : {})},status,headers);
+  };
+  try {
+  if (!Number.isFinite(fixtureId) || fixtureId <= 0) return await trackedFullAiFailureResponse({ error: 'Некорректный номер матча.' },400,'invalid_fixture');
 
   const cacheKey = `fixture:${fixtureId}:v10-ai-instructor`;
   const cached = await getCache(cacheKey, cfg);
@@ -15244,7 +15437,7 @@ async function apiAnalyze(request, cfg, user) {
   }
 
   const quotaBefore = await getQuota(user.id, cfg);
-  if (!freeRecheck && quotaBefore.left <= 0) return json({ error: `Лимит исчерпан: ${quotaBefore.used}/${quotaBefore.limit} анализов сегодня.`, quota: quotaBefore }, 429);
+  if (!freeRecheck && quotaBefore.left <= 0) return await trackedFullAiFailureResponse({ error: `Лимит исчерпан: ${quotaBefore.used}/${quotaBefore.limit} анализов сегодня.`, quota: quotaBefore },429,'quota_exhausted');
 
   const analysisLock=await claimDistributedAnalysisLock(fixtureId,cfg);
   if (!analysisLock.claimed) {
@@ -15260,7 +15453,7 @@ async function apiAnalyze(request, cfg, user) {
       await recordTrackedFullAiOutcome('stale_pending');
       return json(analysisResponsePayload(staleBefore,{cached:true,stale:true,sharedJoinPending:true,warning:'Свежий расчёт этого матча уже выполняется. Пока показан последний сохранённый анализ.',retryAfter:5,recheck:{requested:recheckRequested,performed:false,free:freeRecheck,reasonCode:'shared_compute_pending'},quota:quotaBefore}));
     }
-    return json({error:'AI-разбор этого матча уже рассчитывается для других пользователей. Повторите через несколько секунд.',code:'ANALYSIS_WARMING',retryAfter:5,quota:quotaBefore},429,{'retry-after':'5'});
+    return await trackedFullAiFailureResponse({error:'AI-разбор этого матча уже рассчитывается для других пользователей. Повторите через несколько секунд.',code:'ANALYSIS_WARMING',retryAfter:5,quota:quotaBefore},429,'analysis_warming',{'retry-after':'5'});
   }
 
   try {
@@ -15280,7 +15473,7 @@ async function apiAnalyze(request, cfg, user) {
   const analysisIntegrity = validateFixtureIntegrity(fixture, '', null);
   if (analysisIntegrity.quarantine) {
     await recordOpsEvent(cfg, { severity: 'warning', source: 'integrity', eventType: 'single_fixture_guard', code: 'ANALYSIS_REJECTED', message: 'Анализ отклонён: данные матча не прошли структурную проверку.', meta: { fixtureId, issues: analysisIntegrity.issues.filter(x => x.severity === 'error').map(x => x.code) } }).catch(() => {});
-    return json({ error: 'Данные матча выглядят противоречиво, поэтому анализ временно заблокирован.', code: 'MATCH_DATA_INVALID', integrity: analysisIntegrity, quota: quotaBefore }, 409);
+    return await trackedFullAiFailureResponse({ error: 'Данные матча выглядят противоречиво, поэтому анализ временно заблокирован.', code: 'MATCH_DATA_INVALID', integrity: analysisIntegrity, quota: quotaBefore },409,'data_invalid');
   }
   // If this fixture has already finished, settle any earlier immutable pre-match snapshot without another football API call.
   if (isFinishedStatus(fixture.fixture?.status?.short)) await settlePredictionsFromFixtures([fixture], cfg).catch(() => null);
@@ -15502,6 +15695,12 @@ async function apiAnalyze(request, cfg, user) {
   return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:recheckReasonCode,delta:recheckDelta},newsImpact,quota:await getQuota(user.id,cfg)}));
   } finally {
     await releaseDistributedAnalysisLock(analysisLock,cfg);
+  }
+  } catch (error) {
+    const reason=newsImpactFailureCode(error,'server_error');
+    const recovery=await recordTrackedFullAiFailure(reason,Number(error?.status || 0));
+    if (recovery) error.newsImpactRecovery=recovery;
+    throw error;
   }
 }
 
@@ -15778,6 +15977,11 @@ export default {
         newsImpactOutcomeQualityAnalytics: 'enabled',
         newsImpactOutcomeMeaningGuard: 'enabled',
         newsImpactOutcomeQualitySelfTest: newsImpactOutcomeQualityDrill().pass ? 'enabled' : 'failed',
+        newsImpactOutcomeFailureTracking: 'enabled',
+        newsImpactFailureTaxonomy: 'enabled',
+        newsImpactRecoveryUx: 'enabled',
+        newsImpactFailurePrivacyGuard: 'enabled',
+        newsImpactFailureDiagnosticsSelfTest: newsImpactFailureDiagnosticsDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
@@ -16008,6 +16212,7 @@ export default {
       }
       return json({
         ...publicError.body,
+        ...(error?.newsImpactRecovery ? {newsImpactRecovery:error.newsImpactRecovery} : {}),
         provider: publicDataCapabilities(),
       }, publicError.status, publicError.body.retryAfter ? { 'retry-after': String(publicError.body.retryAfter) } : {});
     }

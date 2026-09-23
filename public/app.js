@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.70.0-rc78';
+const CLIENT_VERSION = '6.71.0-rc79';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc78';
+const CLIENT_RELEASE_CHANNEL = 'rc79';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2929,6 +2929,9 @@ function renderLaunchFunnel() {
   const impactOutcomeQuality=Array.isArray(d.newsImpactActionOutcomeQuality) ? d.newsImpactActionOutcomeQuality : [];
   const impactOutcomeBottleneck=d.newsImpactOutcomeBottleneck || null;
   const impactOutcomeGuard=d.newsImpactOutcomeGuard || {outcomeWindowMinutes:5,minimumSample:10};
+  const impactFailureSummary=d.newsImpactFailureSummary || {};
+  const impactFailureDiagnostics=Array.isArray(d.newsImpactFailureDiagnostics) ? d.newsImpactFailureDiagnostics : [];
+  const impactFailureGuard=d.newsImpactFailureGuard || {rawErrorsStored:false};
   const impactFunnel=Array.isArray(d.newsImpactActionFunnel) ? d.newsImpactActionFunnel : [];
   const impactBottleneck=d.newsImpactActionBottleneck || null;
   const impactConfidenceGuard=d.newsImpactActionConfidenceGuard || {minUsers:10,stableUsers:30};
@@ -2942,7 +2945,7 @@ function renderLaunchFunnel() {
     <div><span>Материалов СМИ</span><strong>${Number(d.mediaSummary?.materials || 0)}</strong><small>${Number(d.mediaSummary?.linksCreated || 0)} ссылок создано</small></div>
     <div><span>One‑tap → полный AI</span><strong>${Number(handoff.fullAiUsers || 0)}</strong><small>${launchFunnelPct(handoff.conversionPct)} от AI-handoff</small></div>
     <div><span>AI перепроверки</span><strong>${Number(rechecks.total || 0)}</strong><small>${Number(rechecks.free || 0)} без списания · ${Number(rechecks.material || 0)} со значимыми изменениями</small></div>
-    <div><span>Новости → AI</span><strong>${Number(d.returnLoop?.aiIntent || 0)}</strong><small>${launchFunnelPct(d.returnLoop?.intentPct)} нажали AI · ${Number(d.returnLoop?.smartFixtureIntent || 0)} через smart fixture · News Impact: ${Number(d.returnLoop?.impactCompared || 0)} сравнений / ${Number(d.returnLoop?.impactMaterial || 0)} существенных · решения: 🔴 ${Number(d.newsImpactDecisionSummary?.material || 0)} · 🟡 ${Number(d.newsImpactDecisionSummary?.detail || 0)} · 🟢 ${Number(d.newsImpactDecisionSummary?.stable || 0)} · действия: полный AI ${Number(impactActions.fullAi || 0)} · составы ${Number(impactActions.squads || 0)} · рынок ${Number(impactActions.market || 0)} · перепроверка ${Number(impactActions.recheck || 0)} · новости ${Number(impactActions.news || 0)} · поделились ${Number(impactActions.share || 0)} · подтверждённых результатов ${Number(impactOutcomeSummary.confirmed || 0)}/${Number(impactOutcomeSummary.attempts || 0)} · Возврат из новостей: ${Number(d.returnLoop?.newsReturn || 0)} до матча</small></div>
+    <div><span>Новости → AI</span><strong>${Number(d.returnLoop?.aiIntent || 0)}</strong><small>${launchFunnelPct(d.returnLoop?.intentPct)} нажали AI · ${Number(d.returnLoop?.smartFixtureIntent || 0)} через smart fixture · News Impact: ${Number(d.returnLoop?.impactCompared || 0)} сравнений / ${Number(d.returnLoop?.impactMaterial || 0)} существенных · решения: 🔴 ${Number(d.newsImpactDecisionSummary?.material || 0)} · 🟡 ${Number(d.newsImpactDecisionSummary?.detail || 0)} · 🟢 ${Number(d.newsImpactDecisionSummary?.stable || 0)} · действия: полный AI ${Number(impactActions.fullAi || 0)} · составы ${Number(impactActions.squads || 0)} · рынок ${Number(impactActions.market || 0)} · перепроверка ${Number(impactActions.recheck || 0)} · новости ${Number(impactActions.news || 0)} · поделились ${Number(impactActions.share || 0)} · подтверждённых результатов ${Number(impactOutcomeSummary.confirmed || 0)}/${Number(impactOutcomeSummary.attempts || 0)} · сбоев доставки ${Number(impactFailureSummary.total || 0)} · Возврат из новостей: ${Number(d.returnLoop?.newsReturn || 0)} до матча</small></div>
     <div><span>Media deep-link → AI</span><strong>${Number(media.aiUsers || 0)}</strong><small>${Number(media.deepLinkUsers || 0)} открыли · ${launchFunnelPct(media.conversionPct)} получили AI</small></div>
   </div>`;
 
@@ -2976,6 +2979,14 @@ function renderLaunchFunnel() {
         <small>${launchFunnelPct(x.completionPct)} подтверждено · 95% ДИ ${launchFunnelPct(x.confidence?.lowerPct)}–${launchFunnelPct(x.confidence?.upperPct)} · ${escapeHtml(x.confidence?.label || 'мало данных')} · ${Number(x.pending || 0) ? `${Number(x.pending || 0)} ещё в окне ожидания · ` : ''}окно ${Number(impactOutcomeGuard.outcomeWindowMinutes || 5)} мин.</small>
       </div>`).join('')}</div>
       <p class="tiny">Подтверждённый результат означает успешную доставку запрошенного экрана/раздела. Это не оценка удовлетворённости пользователя и не доказательство качества прогноза.</p>` : ''}
+    ${impactFailureDiagnostics.length ? `<div class="release-monitor-section-head"><strong>News Impact: диагностика сбоев</strong><span>категориальные причины без raw error</span></div>
+      ${impactFailureSummary.topReason ? `<div class="data-notice">🛠 Чаще всего доставка прерывалась по причине <strong>${escapeHtml(impactFailureSummary.topReason.label || impactFailureSummary.topReason.reason || '')}</strong> · ${Number(impactFailureSummary.topReason.events || 0)} событий.</div>` : ''}
+      <div class="launch-campaign-list">${impactFailureDiagnostics.map(x=>`<div>
+        <span><b>${escapeHtml(x.label || x.reason || '')}</b></span>
+        <strong>${Number(x.events || 0)}</strong>
+        <small>${Number(x.users || 0)} пользователей · действия: ${escapeHtml((x.actions || []).slice(0,3).map(a=>`${a.label} ${a.count}`).join(' · ') || '—')} · восстановление: ${escapeHtml((x.recoveries || []).slice(0,2).map(r=>`${r.label} ${r.count}`).join(' · ') || '—')}</small>
+      </div>`).join('')}</div>
+      <p class="tiny">Сбой доставки не означает, что пользователь недоволен. В growth_events сохраняются только категориальные reason/recovery/status; сырой текст ошибки не сохраняется.</p>` : ''}
     ${impactTrend.some(x=>Number(x.currentUsers || 0)>0 || Number(x.previousUsers || 0)>0) ? `<div class="release-monitor-section-head"><strong>Динамика News Impact</strong><span>текущие ${Number(impactTrendGuard.comparisonDays || d.days || 7)} дн. vs предыдущие</span></div>
       <div class="launch-campaign-list">${impactTrend.filter(x=>Number(x.currentUsers || 0)>0 || Number(x.previousUsers || 0)>0).map(x=>{
         const signal=x.signal==='improved' ? '↗ подтверждённый рост'
@@ -5826,7 +5837,15 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
     showView('analysisView');
     void Promise.allSettled([loadHistory(false), loadReminders()]);
   } catch (e) {
-    if (e.status === 429 && String(e.payload?.code || '').startsWith('FOOTBALL_')) {
+    const recovery=e.payload?.newsImpactRecovery || null;
+    if (recovery?.message) {
+      toast(recovery.message);
+      if (recovery.action==='search') {
+        renderDiscoveryHome();
+        renderGlobalSearch();
+        showView('searchView');
+      }
+    } else if (e.status === 429 && String(e.payload?.code || '').startsWith('FOOTBALL_')) {
       toast(e.payload?.retryAfter ? `Источник футбольных данных временно на паузе. Повторите через ~${e.payload.retryAfter} сек.` : e.message);
     } else if (e.status === 429) toast('Дневной лимит анализов исчерпан.');
     else toast(e.message);

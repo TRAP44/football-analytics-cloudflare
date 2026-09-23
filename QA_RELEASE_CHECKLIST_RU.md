@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.70.0 RC78
+# QA Release Checklist — v6.71.0 RC79
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.70.0`.
-- Worker и client: `6.70.0-rc78`.
-- Release candidate: `RC78`.
+- `package.json` и `package-lock.json`: `6.71.0`.
+- Worker и client: `6.71.0-rc79`.
+- Release candidate: `RC79`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,19 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC79 — News Impact Outcome Failure Diagnostics & Recovery
+
+- `news_impact_outcome_failure` записывается после уже зафиксированного News Impact action, если запрошенный результат не был доставлен.
+- Разрешены только категориальные причины: provider rate limit/unavailable, quota exhausted, analysis warming, missing/invalid fixture, data invalid, Telegram delivery, timeout, server error.
+- В `growth_events.metadata` сохраняются только decision, action, reason, recovery и числовой HTTP status; сырой текст исключения, URL и пользовательский запрос не сохраняются.
+- Telegram получает recovery-кнопку «Повторить» и fallback на полный AI; Mini App получает `newsImpactRecovery` с безопасным сообщением и действием.
+- `sendBotFixtureSection` теперь возвращает явный delivery result, поэтому RC78 больше не считает outcome успешным после внутренне обработанной ошибки.
+- Admin Launch Funnel показывает частоту причин, число затронутых пользователей, действия и recovery-коды.
+- Сбой доставки не трактуется как недовольство пользователя.
+- Новая Supabase migration не требуется; используется существующая `growth_events.metadata`.
+- Regression: `test/news-impact-outcome-failure-recovery-rc79.test.js`.
+- Production smoke требует `newsImpactFailureDiagnosticsSelfTest=enabled`.
 
 ## RC78 — News Impact Action Outcome Quality
 
@@ -130,8 +143,8 @@ npm run verify:worker
 
 `scripts/post-deploy-smoke.js` должен подтвердить:
 - `/health.ok = true`;
-- `version = 6.70.0-rc78`;
-- `releaseCandidate = RC78`;
+- `version = 6.71.0-rc79`;
+- `releaseCandidate = RC79`;
 - `devMode = false`;
 - обязательные self-test/feature flags = `enabled`;
 - `/health/supabase` не доступен публично;
