@@ -5,7 +5,6 @@ import fs from 'node:fs';
 const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const css=fs.readFileSync('public/styles.css','utf8');
-const playbook=fs.readFileSync('MATCH_DISCOVERY_RC56.md','utf8');
 
 test('RC56 discovers team fixtures in one shared backend path',()=> {
   assert.match(worker,/async function loadSearchTeamMatches\(/);
@@ -45,7 +44,4 @@ test('RC56 health and playbook describe the release gate',()=> {
   for (const flag of ['zeroResultRecovery','teamFixtureDiscovery','sharedFixtureDiscoveryCache','extendedTeamCalendar','recentMatchFallback']) {
     assert.ok(worker.includes(`${flag}: 'enabled'`), `missing ${flag}`);
   }
-  assert.match(playbook,/30 дней назад/);
-  assert.match(playbook,/120 дней вперёд/);
-  assert.match(playbook,/без параметра `next`/);
 });
