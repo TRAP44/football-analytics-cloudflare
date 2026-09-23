@@ -10,6 +10,7 @@ const styles = fs.readFileSync('public/styles.css', 'utf8');
 const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml', 'utf8');
 const rollbackWorkflow = fs.readFileSync('.github/workflows/rollback-production.yml', 'utf8');
 const rollbackSmoke = fs.readFileSync('scripts/rollback-smoke.js', 'utf8');
+const postDeploySmoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
 const readme = fs.readFileSync('README_CLOUDFLARE_RU.md', 'utf8');
 const qaChecklist = fs.readFileSync('QA_RELEASE_CHECKLIST_RU.md', 'utf8');
@@ -364,7 +365,6 @@ if (!fs.existsSync('supabase/README.md')) failures.push('Missing Supabase direct
 if (!worker.includes('function probeSupabaseSchemaDrift') || !worker.includes('function probeTableColumns') || !worker.includes('function supabaseSchemaDriftSelfTest')) failures.push('RC100 Supabase schema drift engine is missing');
 if (!worker.includes("releaseCheck('supabase_schema_drift'") || !worker.includes("releaseCheck('supabase_schema_drift_selftest'")) failures.push('RC100 Release Readiness schema drift gates are missing');
 if (!worker.includes("supabaseSchemaDriftGuard: 'enabled'") || !worker.includes("supabaseSchemaDriftSelfTest: supabaseSchemaDriftSelfTest().pass ? 'enabled' : 'failed'")) failures.push('RC100 health schema drift flags are missing');
-const postDeploySmoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 if (!postDeploySmoke.includes("'supabaseSchemaDriftGuard'") || !postDeploySmoke.includes("'supabaseSchemaDriftSelfTest'")) failures.push('RC100 production smoke schema drift flags are missing');
 if (!fs.existsSync('MEDIA_LAUNCH_RU.md')) failures.push('Missing RC53 media launch kit');
 if (!fs.readFileSync('public/privacy.html','utf8').includes('События launch-аналитики хранятся до 90 дней')) failures.push('RC53 privacy attribution disclosure is missing');
