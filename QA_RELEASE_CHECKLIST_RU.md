@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.86.0 RC94
+# QA Release Checklist — v6.87.0 RC95
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.86.0`.
-- Worker и client: `6.86.0-rc94`.
-- Release candidate: `RC94`.
+- `package.json` и `package-lock.json`: `6.87.0`.
+- Worker и client: `6.87.0-rc95`.
+- Release candidate: `RC95`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,18 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC95 — News Impact Recovery Incident SLO Impact Concentration
+
+- Concentration строится только из RC93 SLO Breach Impact Ranking; новые события и таблицы не создаются.
+- Показываются кумулятивные доли общей SLO-просрочки для top-1, top-3 и top-5 пар `reason + action`.
+- Для top-5 дополнительно отображается остаток нагрузки вне top-5 и число покрытых пар.
+- Каждая строка сохраняет factual contribution %, cumulative contribution %, total overdue minutes и active episode count.
+- Это не новый score, severity или SLO-порог: расчёт использует существующие RC87 30 / 120 / 360 минут.
+- Privacy: Telegram ID, raw error и произвольный free text не возвращаются.
+- RC95 не меняет recovery-routing, acknowledgement semantics или incident lifecycle и не требует новой Supabase migration.
+- Regression: `test/news-impact-recovery-incident-impact-concentration-rc95.test.js`.
+- Production smoke требует `newsImpactRecoveryIncidentSloImpactConcentration=enabled`, `newsImpactRecoveryIncidentTopContributionShares=enabled`, `newsImpactRecoveryIncidentSloImpactConcentrationSelfTest=enabled`.
 
 ## RC94 — News Impact Recovery Incident SLO Impact Trend
 
