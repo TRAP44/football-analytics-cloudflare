@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.76.0 RC84
+# QA Release Checklist — v6.77.0 RC85
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.76.0`.
-- Worker и client: `6.76.0-rc84`.
-- Release candidate: `RC84`.
+- `package.json` и `package-lock.json`: `6.77.0`.
+- Worker и client: `6.77.0-rc85`.
+- Release candidate: `RC85`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,20 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC85 — News Impact Recovery Incident Center
+
+- Incident Center использует тот же 30-дневный shared recovery loader; отдельная таблица и дублирующий источник состояния не создаются.
+- В журнал попадают только категориальные `performance_drift` и `recent_regression`; raw error, stack, URL, query и Telegram ID исключены.
+- Инциденты агрегируются по failure reason + action + guard и содержат first/last seen, количество проявлений, текущую strategy/recovery и priority.
+- `performance_drift` получает priority=high, `recent_regression` — priority=medium.
+- Инцидент считается active, пока текущий strategy matrix возвращает тот же guard; после нормализации этой пары reason + action исторический инцидент становится recovered.
+- Текущий adverse guard без исторического failure-события всё равно отображается как current-only active incident, без выдуманного timestamp.
+- При недоступном strategy evidence Incident Center показывает отдельный active medium incident, а runtime сохраняет fixed fallback.
+- Admin показывает число активных, high и восстановленных инцидентов и lifecycle каждой записи.
+- Regression: `test/news-impact-recovery-incident-center-rc85.test.js`.
+- Production smoke требует `newsImpactRecoveryIncidentCenter=enabled`, `newsImpactRecoveryIncidentLifecycle=enabled`, `newsImpactRecoveryIncidentPrivacyGuard=enabled`, `newsImpactRecoveryIncidentSelfTest=enabled`.
+- Новая Supabase migration не требуется; используются существующие `growth_events` и `metadata`.
 
 ## RC84 — News Impact Recovery Transition History & Admin Alerts
 
