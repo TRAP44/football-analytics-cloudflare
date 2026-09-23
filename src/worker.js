@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.56.0-rc64';
+const APP_VERSION = '6.57.0-rc65';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc64';
-const RC_NAME = 'RC64';
+const RELEASE_CHANNEL = 'rc65';
+const RC_NAME = 'RC65';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1439,6 +1439,13 @@ function parseLaunchStartParam(value = '') {
   const lower=raw.toLowerCase();
   const parts=lower.includes('__') ? lower.split('__').filter(Boolean) : lower.split('_').filter(Boolean);
   const prefix=cleanLaunchPart(parts.shift() || '',20);
+  if (/^fx\d{1,12}$/.test(prefix)) {
+    const fixtureId=Number(prefix.slice(2));
+    const source=cleanLaunchPart(parts.shift() || 'social',24) || 'social';
+    const campaign=cleanLaunchPart(parts.shift() || 'match_share',32) || 'match_share';
+    const content=cleanLaunchPart(parts.join('_'),40);
+    return {source,campaign,content,startParam:raw,fixtureId,action:'fixture'};
+  }
   if (['media','press','partner','social'].includes(prefix)) {
     return {
       source:cleanLaunchPart(parts[0] || prefix,32) || prefix,
@@ -1846,6 +1853,100 @@ function oneTapHandoffDrill() {
   return {pass:p.fixtureId===12345 && p.action==='analysis' && p.tab==='brief' && p.handoff==='1',fixtureId:p.fixtureId};
 }
 
+
+function fixtureShareStartParam(fixtureId, { source='social', campaign='match_share', content='analysis' } = {}) {
+  const id=Number(fixtureId || 0);
+  if (!Number.isSafeInteger(id) || id<=0) return '';
+  const src=cleanLaunchPart(source,14) || 'social';
+  const cmp=cleanLaunchPart(campaign,22) || 'match_share';
+  const cnt=cleanLaunchPart(content,16) || 'analysis';
+  return `fx${id}__${src}__${cmp}__${cnt}`.slice(0,64);
+}
+
+async function telegramBotUsername(cfg) {
+  const cacheKey='telegram:bot-username:v1';
+  const cached=await getCache(cacheKey,cfg).catch(()=>null);
+  if (cached?.username) return String(cached.username).replace(/^@/,'');
+  const me=await telegramApi('getMe',cfg);
+  const username=String(me?.username || '').replace(/^@/,'');
+  if (!username) throw new Error('Telegram bot username is unavailable.');
+  await setCache(cacheKey,0,{username,refreshedAt:new Date().toISOString()},cfg,1440).catch(()=>null);
+  return username;
+}
+
+async function fixtureTelegramDeepLink(cfg, fixtureId, options = {}) {
+  const startParam=fixtureShareStartParam(fixtureId,options);
+  if (!startParam) throw new Error('Некорректный матч для ссылки.');
+  const username=await telegramBotUsername(cfg);
+  return {url:`https://t.me/${username}?start=${encodeURIComponent(startParam)}`,startParam,username};
+}
+
+function telegramShareComposerUrl(url, text = '') {
+  const q=new URLSearchParams();
+  q.set('url',String(url || ''));
+  if (text) q.set('text',String(text).slice(0,700));
+  return `https://t.me/share/url?${q.toString()}`;
+}
+
+async function apiFixtureShareLink(request, cfg, user) {
+  const url=new URL(request.url);
+  const fixtureId=Number(url.searchParams.get('fixtureId') || 0);
+  if (!Number.isSafeInteger(fixtureId) || fixtureId<=0) return json({error:'Номер матча обязателен.'},400);
+  const source=cleanLaunchPart(url.searchParams.get('source') || 'social',14) || 'social';
+  const campaign=cleanLaunchPart(url.searchParams.get('campaign') || 'match_share',22) || 'match_share';
+  const content=cleanLaunchPart(url.searchParams.get('content') || 'miniapp',16) || 'miniapp';
+  try {
+    const link=await fixtureTelegramDeepLink(cfg,fixtureId,{source,campaign,content});
+    void recordGrowthEvent(cfg,{userId:user.id,eventName:'share_link_created',channel:'miniapp',fixtureId,metadata:{source,campaign,content}});
+    return json({ok:true,fixtureId,url:link.url,startParam:link.startParam,telegramShareUrl:telegramShareComposerUrl(link.url,'Открой матч в FM AI — ссылка сразу приведёт к AI-разбору.')});
+  } catch (error) {
+    return json({error:'Не удалось подготовить ссылку на матч.',detail:redactOpsString(error?.message || error,120)},503);
+  }
+}
+
+function fixtureShareCardText(match = {}, analysis = null) {
+  const card=normalizeBotFixtureCard(match || {});
+  const ai=analysis?.aiInstructor || {};
+  const signal=ai.betSignal || {};
+  const confidence=Number.isFinite(Number(ai.confidenceScore)) ? `${Math.round(Number(ai.confidenceScore))}/100` : '';
+  return [
+    '⚽ <b>FM AI · МАТЧ</b>',
+    '',
+    `<b>${telegramHtmlEscape(card.homeName)} — ${telegramHtmlEscape(card.awayName)}</b>`,
+    telegramHtmlEscape(card.league || 'Футбол'),
+    card.date ? `🗓 ${telegramHtmlEscape(botFixtureDateTime(card.date))}` : '',
+    signal.label ? `🧠 AI: <b>${telegramHtmlEscape(signal.label)}</b>${confidence?` · ${confidence}`:''}` : '🧠 AI-разбор откроется сразу по ссылке.',
+    '',
+    '<i>Информационная аналитика, не гарантия результата.</i>',
+  ].filter(Boolean).join('\n');
+}
+
+async function sendBotFixtureShareCard(request,cfg,userId,chatId,fixtureId) {
+  const [match,analysis,link]=await Promise.all([
+    loadBotFixtureCard(fixtureId,cfg),
+    getCache(`fixture:${Number(fixtureId)}:v10-ai-instructor`,cfg).catch(()=>null),
+    fixtureTelegramDeepLink(cfg,fixtureId,{source:'social',campaign:'match_share',content:'telegram'}),
+  ]);
+  if (!match) throw new Error('Матч не найден.');
+  const plain=`${match.homeName} — ${match.awayName}\nFM AI: открыть матч и AI-разбор`;
+  void recordGrowthEvent(cfg,{userId,eventName:'share_card_created',channel:'telegram',fixtureId,metadata:{surface:'match_card'}});
+  await telegramApi('sendMessage',cfg,{
+    chat_id:chatId,
+    parse_mode:'HTML',
+    text:fixtureShareCardText(match,analysis),
+    reply_markup:{inline_keyboard:[
+      [{text:'↗ Отправить другу / в канал',url:telegramShareComposerUrl(link.url,plain)}],
+      [{text:'🧠 Открыть самому',web_app:{url:telegramFullAnalysisUrl(request,fixtureId,'brief')}}],
+    ]},
+  });
+}
+
+function fixtureDeepLinkDrill() {
+  const p=fixtureShareStartParam(123456,{source:'media',campaign:'launch',content:'sportnews'});
+  const parsed=parseLaunchStartParam(p);
+  return {pass:p.length<=64 && parsed.fixtureId===123456 && parsed.source==='media' && parsed.campaign==='launch' && parsed.content==='sportnews',length:p.length};
+}
+
 function publicSiteUrl(request, pathname = '/') {
   const url=new URL(request.url);
   url.pathname=pathname.startsWith('/') ? pathname : `/${pathname}`;
@@ -1896,6 +1997,7 @@ function footballMatchActionKeyboard(request, match = {}, searchUrl = '', favori
       { text: '📋 Центр матча', web_app: { url: telegramWebAppUrl(request, { fixtureId, action: 'center' }) } },
     ]);
     else rows.push([{ text: '🔴 Открыть LIVE-центр', web_app: { url: telegramWebAppUrl(request, { fixtureId, action: 'center' }) } }]);
+    rows.push([{text:'↗ Поделиться матчем',callback_data:`match:share:${fixtureId}`}]);
     if (searchUrl) rows.push([{ text: '🔎 Вернуться к поиску', web_app: { url: searchUrl } }]);
     return { inline_keyboard: rows };
   }
@@ -1914,6 +2016,7 @@ function footballMatchActionKeyboard(request, match = {}, searchUrl = '', favori
       { text: '🔄 Обновить AI', callback_data: `match:refresh:${fixtureId}` },
       { text: '📊 Полный AI-разбор', web_app: { url: telegramFullAnalysisUrl(request, fixtureId, 'brief') } },
     ],
+    [{text:'↗ Поделиться матчем',callback_data:`match:share:${fixtureId}`}],
   );
   if (searchUrl) rows.push([{ text: '🔎 Другие результаты', web_app: { url: searchUrl } }]);
   return { inline_keyboard: rows };
@@ -1934,6 +2037,7 @@ function footballQuickAiHandoffKeyboard(request, match = {}, favorites = [], sea
       {text:'💹 Рынок и риски',callback_data:`match:market:${fixtureId}`},
       {text:'🔄 Обновить AI',callback_data:`match:refresh:${fixtureId}`},
     ],
+    [{text:'↗ Поделиться матчем',callback_data:`match:share:${fixtureId}`}],
   );
   if (searchUrl) rows.push([{text:'🔎 Другие результаты',web_app:{url:searchUrl}}]);
   return {inline_keyboard:rows};
@@ -2042,8 +2146,8 @@ function botFixtureCardText(match = {}, { aiReady=false } = {}) {
   ].join('\n');
 }
 
-async function sendBotFixtureMenu(request, cfg, userId, chatId, fixtureId) {
-  void recordGrowthEvent(cfg,{userId,eventName:'match_open',channel:'telegram',fixtureId});
+async function sendBotFixtureMenu(request, cfg, userId, chatId, fixtureId, options = {}) {
+  void recordGrowthEvent(cfg,{userId,eventName:'match_open',channel:'telegram',fixtureId,attribution:options.attribution || null,metadata:{source:options.source || 'match_select'}});
   const [match,favorites] = await Promise.all([
     loadBotFixtureCard(fixtureId,cfg),
     getFavorites(userId,cfg).catch(()=>[]),
@@ -2067,8 +2171,8 @@ async function sendBotFixtureMenu(request, cfg, userId, chatId, fixtureId) {
     const data=await botAnalyzeFixture(request,cfg,userId,fixtureId);
     const analyzedMatch=normalizeBotFixtureCard(data.match || match);
     await rememberBotFixtureCards([analyzedMatch],cfg);
-    void recordGrowthEvent(cfg,{userId,eventName:'quick_ai',channel:'telegram',fixtureId,metadata:{section:'handoff',cached:Boolean(data.cached)}});
-    void recordGrowthEvent(cfg,{userId,eventName:'ai_handoff',channel:'telegram',fixtureId,metadata:{cached:Boolean(data.cached),source:'match_select'}});
+    void recordGrowthEvent(cfg,{userId,eventName:'quick_ai',channel:'telegram',fixtureId,attribution:options.attribution || null,metadata:{section:'handoff',cached:Boolean(data.cached),source:options.source || 'match_select'}});
+    void recordGrowthEvent(cfg,{userId,eventName:'ai_handoff',channel:'telegram',fixtureId,attribution:options.attribution || null,metadata:{cached:Boolean(data.cached),source:options.source || 'match_select'}});
     await telegramApi('sendMessage',cfg,{
       chat_id:chatId,
       parse_mode:'HTML',
@@ -2943,6 +3047,14 @@ async function processTelegramUpdate(request, cfg, update) {
       await sendBotFixtureSection(request,cfg,callbackUserId,callbackChatId,fixtureId,'review');
       return json({ok:true});
     }
+    const shareAction=data.match(/^match:share:(\d+)$/);
+    if (callbackChatId && shareAction) {
+      const fixtureId=Number(shareAction[1]);
+      await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Готовлю ссылку…'}).catch(()=>null);
+      try { await sendBotFixtureShareCard(request,cfg,callbackUserId,callbackChatId,fixtureId); }
+      catch { await telegramApi('sendMessage',cfg,{chat_id:callbackChatId,text:'Не удалось подготовить ссылку на этот матч.'}).catch(()=>null); }
+      return json({ok:true});
+    }
     const matchAction = data.match(/^match:(menu|verdict|referee|squads|market|refresh|review):(\d+)$/);
     if (callbackChatId && matchAction) {
       const section = matchAction[1];
@@ -3003,9 +3115,17 @@ async function processTelegramUpdate(request, cfg, update) {
     const userId=Number(msg.from?.id || chatId);
     const startParam=telegramStartPayload(text);
     await upsertUser(msg.from || {id:userId},cfg).catch(()=>null);
+    const launchIntent=parseLaunchStartParam(startParam);
     const attribution=await ensureLaunchAttribution(userId,startParam,cfg);
-    void recordGrowthEvent(cfg,{userId,eventName:'bot_start',channel:'telegram',attribution,metadata:{attributed:Boolean(startParam)}});
+    const eventAttribution=startParam ? launchIntent : attribution;
+    void recordGrowthEvent(cfg,{userId,eventName:'bot_start',channel:'telegram',attribution:eventAttribution,fixtureId:Number(launchIntent.fixtureId || 0) || null,metadata:{attributed:Boolean(startParam),fixtureDeepLink:Boolean(launchIntent.fixtureId)}});
     await configureFootballBot(request, cfg, chatId);
+    if (Number(launchIntent.fixtureId || 0)>0) {
+      void recordGrowthEvent(cfg,{userId,eventName:'fixture_deep_link_open',channel:'telegram',fixtureId:Number(launchIntent.fixtureId),attribution:launchIntent,metadata:{startParam}});
+      await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'⚡ Ссылка ведёт прямо на матч. Загружаю AI-разбор без повторного поиска…'}).catch(()=>null);
+      await sendBotFixtureMenu(request,cfg,userId,chatId,Number(launchIntent.fixtureId),{attribution:launchIntent,source:'deep_link'});
+      return json({ok:true});
+    }
     await sendFootballBotHome(request, cfg, chatId, msg.from || {});
     return json({ ok: true });
   }
@@ -14320,6 +14440,12 @@ export default {
         telegramAiTrackRecord: 'enabled',
         aiTrackRecordSelfTest: publicAiTrackRecordDrill().pass ? 'enabled' : 'failed',
         aiTrackRecordCases: publicAiTrackRecordDrill().cases,
+        mediaFixtureDeepLinks: 'enabled',
+        shareableMatchCards: 'enabled',
+        shareAttribution: 'enabled',
+        deepLinkAutoAnalysis: 'enabled',
+        telegramNativeShare: 'enabled',
+        fixtureDeepLinkSelfTest: fixtureDeepLinkDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
@@ -14506,6 +14632,7 @@ export default {
         return await apiModelQuality(request, cfg);
       }
       if (request.method === 'GET' && url.pathname === '/api/ai-track-record') return await apiAiTrackRecord(request, cfg);
+      if (request.method === 'GET' && url.pathname === '/api/share-link') return await apiFixtureShareLink(request,cfg,user);
       if (url.pathname === '/api/calibration-control') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
         return await apiCalibrationControl(request, cfg, user);
