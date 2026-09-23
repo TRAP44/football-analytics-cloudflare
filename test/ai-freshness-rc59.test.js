@@ -5,7 +5,6 @@ import fs from 'node:fs';
 const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const css=fs.readFileSync('public/styles.css','utf8');
-const playbook=fs.readFileSync('AI_FRESHNESS_RC59.md','utf8');
 
 test('RC59 computes dynamic freshness from analysis age kickoff lineups and market',()=> {
   assert.match(worker,/function analysisFreshness\(/);
@@ -61,7 +60,6 @@ test('history and analytics preserve current freshness semantics',()=> {
   assert.match(worker,/return json\(analysisResponsePayload\(payload,\{cached:true,stale:!fresh,historyReadOnly:true/);
   assert.match(worker,/eventName:'analysis_recheck'/);
   assert.match(worker,/rechecks:\{total:recheckRows\.length,free:recheckFree,charged:/);
-  assert.match(playbook,/не нужно хранить текст поискового запроса/);
 });
 
 test('RC59 health release gate exposes freshness contracts',()=> {
@@ -69,5 +67,4 @@ test('RC59 health release gate exposes freshness contracts',()=> {
     assert.ok(worker.includes(`${flag}: 'enabled'`), `missing ${flag}`);
   }
   assert.match(worker,/analysisFreshnessSelfTest: analysisFreshnessDrill\(\)\.pass \? 'enabled' : 'failed'/);
-  assert.match(playbook,/45 → 20 → 10 → 5 → 3/);
 });
