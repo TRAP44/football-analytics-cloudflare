@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.65.0 RC73
+# QA Release Checklist — v6.66.0 RC74
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.65.0`.
-- Worker и client: `6.65.0-rc73`.
-- Release candidate: `RC73`.
+- `package.json` и `package-lock.json`: `6.66.0`.
+- Worker и client: `6.66.0-rc74`.
+- Release candidate: `RC74`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,17 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC74 — News Impact Action Funnel
+
+- Для каждого decision state считаются уникальные пользователи, которые увидели решение.
+- Дальнейшие действия считаются только для пользователей с тем же decision state в выбранном окне аналитики.
+- Показываются `actedUsers / users`, conversion %, наиболее частое следующее действие и action breakdown.
+- Admin Launch Funnel показывает состояние с самой низкой конверсией без Telegram ID.
+- Повторные действия одного пользователя не раздувают conversion: используется unique-user aggregation.
+- Новая Supabase migration не требуется; используются существующие `growth_events`.
+- Regression: `test/news-impact-action-funnel-rc74.test.js`.
+- Production smoke требует `newsImpactActionFunnelSelfTest=enabled`.
 
 ## RC73 — News Impact Action Tracking
 
@@ -71,8 +82,8 @@ npm run verify:worker
 
 `scripts/post-deploy-smoke.js` должен подтвердить:
 - `/health.ok = true`;
-- `version = 6.65.0-rc73`;
-- `releaseCandidate = RC73`;
+- `version = 6.66.0-rc74`;
+- `releaseCandidate = RC74`;
 - `devMode = false`;
 - обязательные self-test/feature flags = `enabled`;
 - `/health/supabase` не доступен публично;
