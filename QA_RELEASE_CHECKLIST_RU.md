@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.82.0 RC90
+# QA Release Checklist — v6.83.0 RC91
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.82.0`.
-- Worker и client: `6.82.0-rc90`.
-- Release candidate: `RC90`.
+- `package.json` и `package-lock.json`: `6.83.0`.
+- Worker и client: `6.83.0-rc91`.
+- Release candidate: `RC91`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,17 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC91 — News Impact Recovery Incident SLO Breach Triage Queue
+
+- Triage Queue строится только из RC90 watchlist и включает только активные breach-эпизоды.
+- Стадии не вводят новых правил: `ack_overdue` использует ACK breach после 30 минут, `ack_critical` — существующий critical ACK 120 минут, `recovery_overdue` — существующий Recovery SLO 360 минут.
+- Recovery overdue имеет более высокий приоритет сортировки, затем ACK critical, затем ACK overdue; внутри стадии старые эпизоды идут первыми.
+- Triage — только административное представление; recovery-routing, acknowledgement semantics и incident lifecycle не меняются.
+- Производные triage-данные не сохраняются, Supabase migration не требуется.
+- Privacy: Telegram ID, raw error и произвольный free text не возвращаются.
+- Regression: `test/news-impact-recovery-incident-breach-triage-rc91.test.js`.
+- Production smoke требует `newsImpactRecoveryIncidentSloBreachTriage=enabled`, `newsImpactRecoveryIncidentBreachStageBuckets=enabled`, `newsImpactRecoveryIncidentSloBreachTriageSelfTest=enabled`.
 
 ## RC90 — News Impact Recovery Incident SLO Breach Watchlist & Aging
 
