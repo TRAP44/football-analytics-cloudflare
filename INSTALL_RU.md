@@ -2,8 +2,11 @@
 
 ## Новый Supabase-проект
 
+Все SQL находятся в каталоге `supabase/`: fresh-install baseline — в `baseline/`, последовательные обновления — в `migrations/`.
+
+
 1. Откройте Supabase SQL Editor.
-2. Выполните **только** `supabase_baseline_v6_15.sql` целиком.
+2. Выполните **только** `supabase/baseline/supabase_baseline_v6_15.sql` целиком.
 3. Не запускайте после него numbered migrations v6.9–v6.15: они уже включены в unified baseline.
 4. В Supabase Data API убедитесь, что backend-таблицы доступны `service_role`, а прямой доступ `anon` и `authenticated` закрыт.
 
@@ -11,7 +14,7 @@
 
 1. Сделайте резервную копию базы.
 2. Примените только отсутствующие миграции, сохраняя порядок версий: v6.9 → v6.10 → v6.11 → v6.11.1 → v6.12 → v6.13 → v6.14 → v6.15.
-3. Для существующей базы не запускайте `supabase_baseline_v6_15.sql`: он предназначен только для fresh install.
+3. Для существующей базы не запускайте `supabase/baseline/supabase_baseline_v6_15.sql`: он предназначен только для fresh install.
 4. Не удаляйте и не переигрывайте уже применённые миграции без отдельного плана rollback.
 5. После обновления запустите защищённый RC Regression и проверьте least-privilege контракт Supabase.
 
