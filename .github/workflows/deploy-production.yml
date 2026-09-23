@@ -67,7 +67,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: "4.136.1"
-          command: deploy --keep-vars --message "RC89 ${{ env.DEPLOY_SHA }}"
+          command: deploy --keep-vars --message "RC90 ${{ env.DEPLOY_SHA }}"
 
       - name: Verify production deployment
         env:
@@ -76,6 +76,6 @@ jobs:
         shell: bash
         run: |
           SMOKE_URL="${CONFIGURED_URL:-$DEPLOYMENT_URL}"
-          node scripts/post-deploy-smoke.js "$SMOKE_URL" "6.81.0-rc89"
+          node scripts/post-deploy-smoke.js "$SMOKE_URL" "6.82.0-rc90"
           echo "### Cloudflare deploy verified" >> "$GITHUB_STEP_SUMMARY"
-          echo "RC89 post-deploy smoke passed for the production Worker." >> "$GITHUB_STEP_SUMMARY"
+          echo "RC90 post-deploy smoke passed for the production Worker." >> "$GITHUB_STEP_SUMMARY"
