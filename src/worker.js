@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.60.0-rc68';
+const APP_VERSION = '6.61.0-rc69';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc68';
-const RC_NAME = 'RC68';
+const RELEASE_CHANNEL = 'rc69';
+const RC_NAME = 'RC69';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1676,6 +1676,7 @@ async function apiLaunchFunnel(request,cfg) {
   const fullAiUsers=setFor(['full_ai']);
   const handoffToFull=new Set([...handoffUsers].filter(uid=>fullAiUsers.has(uid)));
   const newsOpen=setFor(['news_open']);
+  const newsAiIntent=setFor(['news_ai_intent']);
   const newsReturn=setFor(['news_return']);
   const shareRows=rows.filter(x=>['share_link_created','share_card_created'].includes(String(x.event_name || '')));
   const deepLinkRows=rows.filter(x=>String(x.event_name || '')==='fixture_deep_link_open');
@@ -1721,7 +1722,13 @@ async function apiLaunchFunnel(request,cfg) {
     bottleneck,
     handoff:{users:handoffUsers.size,fullAiUsers:handoffToFull.size,conversionPct:handoffUsers.size?Math.round((handoffToFull.size/handoffUsers.size)*1000)/10:0},
     rechecks:{total:recheckRows.length,free:recheckFree,charged:Math.max(0,recheckRows.length-recheckFree),material:recheckMaterial,stable:recheckStable},
-    returnLoop:{newsOpen:newsOpen.size,newsReturn:newsReturn.size,conversionPct:newsOpen.size?Math.round((newsReturn.size/newsOpen.size)*1000)/10:0},
+    returnLoop:{
+      newsOpen:newsOpen.size,
+      aiIntent:newsAiIntent.size,
+      newsReturn:newsReturn.size,
+      intentPct:newsOpen.size?Math.round((newsAiIntent.size/newsOpen.size)*1000)/10:0,
+      conversionPct:newsOpen.size?Math.round((newsReturn.size/newsOpen.size)*1000)/10:0,
+    },
     mediaLoop:{shareEvents:shareRows.length,shareUsers:shareUsers.size,deepLinkOpens:deepLinkRows.length,deepLinkUsers:deepLinkUsers.size,aiUsers:deepLinkAiUsers.size,conversionPct:deepLinkUsers.size?Math.round((deepLinkAiUsers.size/deepLinkUsers.size)*1000)/10:0},
     searchQuality:{attempts:searchResultRows.length,match:searchMatches,recognizedNoMatch:searchRecognizedNoMatch,notFound:searchNotFound,recoveredRecent:searchRecoveredRecent,matchPct:searchResultRows.length?Math.round((searchMatches/searchResultRows.length)*1000)/10:0},
     campaigns,
@@ -2860,7 +2867,7 @@ async function processDailyDigests(cfg,scheduledAt=new Date()) {
       if (morningNews.items?.length) {
         await telegramApi('sendMessage',cfg,{
           chat_id:Number(row.chat_id),parse_mode:'HTML',text:morningNewsText(morningNews.items),
-          reply_markup:newsSourceKeyboard(morningNews.items,[[{text:'📰 Новости FM AI',callback_data:'news:general'}]]),
+          reply_markup:newsConversionKeyboard(morningNews.items,[[{text:'📰 Новости FM AI',callback_data:'news:general'}]]),
           disable_web_page_preview:true,
         });
       }
@@ -3144,6 +3151,27 @@ async function processTelegramUpdate(request, cfg, update) {
     if (callbackChatId && (data === 'news:general' || data === 'news:refresh')) {
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:data==='news:refresh'?'Обновляю новости…':'Открываю новости…'}).catch(()=>null);
       await sendGeneralFootballNews(request,cfg,callbackUserId,callbackChatId,{force:data==='news:refresh'});
+      return json({ok:true});
+    }
+    const newsAiMatchAction=data.match(/^news:ai_match:(\d+)$/);
+    if (callbackChatId && newsAiMatchAction) {
+      const fixtureId=Number(newsAiMatchAction[1]);
+      void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_ai_intent',channel:'telegram',fixtureId,metadata:{mode:'direct_fixture'}});
+      void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_return',channel:'telegram',fixtureId,metadata:{origin:'news_ai_cta'}});
+      await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Проверяю новость в контексте матча…'}).catch(()=>null);
+      await sendBotFixtureMenu(request,cfg,callbackUserId,callbackChatId,fixtureId);
+      return json({ok:true});
+    }
+    const newsAiTeamAction=data.match(/^news:ai_team:([a-z0-9]{2,32})$/);
+    if (callbackChatId && newsAiTeamAction) {
+      const team=newsTeamByToken(newsAiTeamAction[1]);
+      if (!team) {
+        await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Не удалось определить клуб',show_alert:true}).catch(()=>null);
+        return json({ok:true});
+      }
+      void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_ai_intent',channel:'telegram',metadata:{mode:'team_search',team:newsTeamToken(team)}});
+      await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:`Ищу ближайший матч ${team.canonical}…`}).catch(()=>null);
+      await sendBotFootballSearch(request,cfg,callbackUserId,callbackChatId,team.canonical);
       return json({ok:true});
     }
     const newsMatchAction=data.match(/^news:match:(\d+)$/);
@@ -10625,6 +10653,78 @@ function footballNewsImpactText(category = {}, hasUpcomingMatch = false) {
   return 'Проверяем, меняет ли новость входные данные AI-разбора ближайшего матча.';
 }
 
+
+function newsTeamToken(team = {}) {
+  return String(team?.canonical || '').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,32);
+}
+
+function newsTeamByToken(token = '') {
+  const clean=String(token || '').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,32);
+  if (!clean) return null;
+  return TOP_TEAM_SEARCH_CATALOG.find(team=>newsTeamToken(team)===clean) || null;
+}
+
+function newsTeamHint(item = {}) {
+  const hay=` ${searchText(`${item?.title || ''} ${item?.content || ''}`)} `;
+  if (!hay.trim()) return null;
+  let best=null;
+  for (const team of TOP_TEAM_SEARCH_CATALOG) {
+    const terms=[team.canonical,...(team.aliases || [])]
+      .map(searchText)
+      .filter(term=>term && (term.length>=4 || ['psg','bvb','psv','ajax','juve','lafc','rma','fcb'].includes(term)));
+    for (const term of terms) {
+      if (!hay.includes(` ${term} `)) continue;
+      const score=(term.includes(' ')?120:60)+Math.min(80,term.length*4);
+      if (!best || score>best.score) best={canonical:team.canonical,country:team.country,token:newsTeamToken(team),score};
+    }
+  }
+  return best;
+}
+
+function newsConversionHook(item = {}, { fixtureId=0, teamName='' } = {}) {
+  const category=item?.category || {};
+  const team=String(teamName || newsTeamHint(item)?.canonical || '').trim();
+  if (fixtureId) {
+    if (category.code==='injury' || category.code==='suspension' || category.code==='lineup') return 'Проверить, меняет ли это состав, рынок и AI-оценку ближайшего матча.';
+    if (category.code==='referee') return 'Проверить судью, карточки и темп в AI-контексте ближайшего матча.';
+    if (category.code==='coach') return 'Проверить, изменился ли игровой контекст и уровень неопределённости перед матчем.';
+    return 'Сверить новость с данными ближайшего матча и получить короткую AI-оценку.';
+  }
+  if (team) return `Найти ближайший матч ${team} и проверить, влияет ли новость на AI-разбор.`;
+  return 'Сначала сверяем источник; без привязки к конкретному матчу AI-оценку не меняем.';
+}
+
+function newsConversionKeyboard(items = [], extraRows = [], { fixtureId=0 } = {}) {
+  const rows=[];
+  for (const [index,item] of (items || []).slice(0,4).entries()) {
+    const row=[{text:`↗ Источник ${index+1}`,url:item.url}];
+    if (Number(fixtureId || 0)>0) {
+      row.push({text:'🧠 Проверить с AI',callback_data:`news:ai_match:${Number(fixtureId)}`});
+    } else {
+      const hint=newsTeamHint(item);
+      if (hint?.token) row.push({text:`🧠 ${String(hint.canonical).slice(0,18)}`,callback_data:`news:ai_team:${hint.token}`});
+    }
+    rows.push(row);
+  }
+  return {inline_keyboard:[...rows,...extraRows]};
+}
+
+function newsConversionDrill() {
+  const arsenal=newsTeamHint({title:'Arsenal injury update before Champions League match',content:''});
+  const barca=newsTeamHint({title:'Барселона объявила состав на матч',content:''});
+  const keyboard=newsConversionKeyboard([{title:'Arsenal team news',url:'https://example.com/a',content:'',category:{code:'lineup'}}],[],{});
+  const callback=keyboard.inline_keyboard?.[0]?.[1]?.callback_data || '';
+  const direct=newsConversionKeyboard([{title:'Club update',url:'https://example.com/b',content:'',category:{code:'club'}}],[],{fixtureId:998877});
+  return {
+    pass:arsenal?.canonical==='Arsenal'
+      && barca?.canonical==='Barcelona'
+      && callback==='news:ai_team:arsenal'
+      && direct.inline_keyboard?.[0]?.[1]?.callback_data==='news:ai_match:998877'
+      && newsTeamByToken('arsenal')?.canonical==='Arsenal',
+    cases:5,
+  };
+}
+
 function normalizeFootballNewsResult(row = {}) {
   const url=externalNewsUrl(row.url);
   const title=String(row.title || '').trim().slice(0,220);
@@ -10721,10 +10821,13 @@ function newsFeedText(items = [], { title='FM AI News', teamName='', fixture=nul
   if (!items.length) return `📰 <b>${telegramHtmlEscape(title)}</b>\n\nСвежих новостей по этому запросу сейчас не найдено или источник новостей временно недоступен.`;
   const rows=items.slice(0,4).map((item,index)=>{
     const why=footballNewsImpactText(item.category,Boolean(fixture?.fixtureId));
+    const hint=newsTeamHint(item);
+    const hook=newsConversionHook(item,{fixtureId:Number(fixture?.fixtureId || 0),teamName:teamName || hint?.canonical || ''});
     return [
       `${index+1}. ${item.category.icon} <b>${telegramHtmlEscape(item.title)}</b>`,
       `${telegramHtmlEscape(item.category.label)} · ${newsImpactBadge(item.category.impact)}`,
       `Почему важно: ${telegramHtmlEscape(why)}`,
+      `🧠 Что проверить: ${telegramHtmlEscape(hook)}`,
       `Источник: ${telegramHtmlEscape(item.source || 'веб-источник')} · ${telegramHtmlEscape(item.trust?.label || 'Веб-источник')}`,
       ...(item.verification==='needs_confirmation' ? ['Проверка: требуется подтверждение ещё одним надёжным источником.'] : []),
     ].join('\n');
@@ -10751,7 +10854,7 @@ async function sendGeneralFootballNews(request,cfg,userId,chatId,{force=false}={
   await telegramApi('sendMessage',cfg,{
     chat_id:chatId,parse_mode:'HTML',
     text:newsFeedText(news.items,{title:'FM AI News'}),
-    reply_markup:newsSourceKeyboard(news.items,extra),
+    reply_markup:newsConversionKeyboard(news.items,extra),
     disable_web_page_preview:true,
   });
 }
@@ -10774,7 +10877,7 @@ async function sendFavoriteTeamNews(request,cfg,userId,chatId,teamId,{force=fals
   await telegramApi('sendMessage',cfg,{
     chat_id:chatId,parse_mode:'HTML',
     text:newsFeedText(news.items,{title:'FM AI News',teamName:team.team_name || '',fixture}),
-    reply_markup:newsSourceKeyboard(news.items,extra),
+    reply_markup:newsConversionKeyboard(news.items,extra,{fixtureId:Number(fixture?.fixtureId || 0)}),
     disable_web_page_preview:true,
   });
 }
@@ -14747,6 +14850,11 @@ export default {
         mediaCampaignConversion: 'enabled',
         publisherOutcomeTracking: 'enabled',
         mediaCampaignControlSelfTest: mediaCampaignControlDrill().pass ? 'enabled' : 'failed',
+        telegramNewsConversionEngine: 'enabled',
+        newsPerItemAiCta: 'enabled',
+        newsTeamIntentResolution: 'enabled',
+        newsConversionTracking: 'enabled',
+        newsConversionSelfTest: newsConversionDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
