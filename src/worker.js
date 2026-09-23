@@ -81,11 +81,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.95.0-rc103';
+const APP_VERSION = '6.96.0-rc104';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc103';
-const RC_NAME = 'RC103';
+const RELEASE_CHANNEL = 'rc104';
+const RC_NAME = 'RC104';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -650,6 +650,7 @@ function appManifest(cfg) {
       releaseMonitor: true,
       productionMonitor: true,
       rollbackVerification: true,
+      providerDataReliability: true,
       clientTelemetry: true,
       notificationReliability: true,
       reminderDeliveryClaims: true,
@@ -12736,6 +12737,133 @@ function featureCacheAgeSeconds(payload) {
   return Number.isFinite(t) ? Math.max(0, Math.floor((Date.now() - t) / 1000)) : null;
 }
 
+
+function providerFailureState(error) {
+  const code = String(error?.code || '');
+  const message = String(error?.message || '');
+  if (isFootballRateLimitError(error)) return 'rate_limited';
+  if (code === 'UPSTREAM_TIMEOUT') return 'timeout';
+  if (code === 'FOOTBALL_CONFIG') return 'configuration';
+  if (/free plans? do not have access|plan|subscription|not have access|access denied|forbidden/i.test(message)) return 'plan_limited';
+  if (code === 'FOOTBALL_NETWORK') return 'network_error';
+  if (code.startsWith('FOOTBALL_')) return 'provider_error';
+  return 'error';
+}
+
+function providerDataState(data, options = {}) {
+  const rows = Array.isArray(data) ? data : data == null ? [] : [data];
+  const attempted = options.attempted !== false;
+  const reason = String(options.reason || '');
+  const error = options.error || null;
+  const state = !attempted
+    ? 'skipped'
+    : error
+      ? providerFailureState(error)
+      : rows.length
+        ? 'available'
+        : 'empty_response';
+  return {
+    state,
+    available: state === 'available',
+    observed: state === 'available' || state === 'empty_response',
+    usable: rows.length > 0,
+    degraded: ['rate_limited','timeout','configuration','plan_limited','network_error','provider_error','error'].includes(state),
+    reason: reason || (error ? String(error?.code || state) : state === 'empty_response' ? 'empty_response' : ''),
+    retryAfter: Number(error?.retryAfter || 0) || null,
+    count: rows.length,
+  };
+}
+
+function providerDataReliabilitySummary(featureMeta = {}, context = {}) {
+  const entries = Object.entries(featureMeta || {}).map(([feature, meta]) => ({
+    feature,
+    state: String(meta?.state || 'unknown'),
+    available: Boolean(meta?.available),
+    observed: Boolean(meta?.observed),
+    degraded: Boolean(meta?.degraded),
+    reason: String(meta?.reason || ''),
+    count: Number(meta?.count || 0),
+  }));
+  const hardFailures = entries.filter(x => x.degraded);
+  const missing = entries.filter(x => !x.available);
+  const byFeature = Object.fromEntries(entries.map(x => [x.feature, x]));
+  let trustCap = 100;
+  const probabilitySources = ['odds','predictions'].map(key => byFeature[key]).filter(Boolean);
+  if (probabilitySources.length === 2 && probabilitySources.every(x => x.degraded)) trustCap = 60;
+  else if (probabilitySources.some(x => x.degraded)) trustCap = Math.min(trustCap, 80);
+  const minutesToKickoff = Number.isFinite(Number(context.minutesToKickoff)) ? Number(context.minutesToKickoff) : null;
+  if (minutesToKickoff !== null && minutesToKickoff <= 90 && !byFeature.lineups?.available) trustCap = Math.min(trustCap, 80);
+  if (byFeature.injuries?.degraded) trustCap = Math.min(trustCap, 90);
+
+  const warnings = [];
+  if (byFeature.injuries && !byFeature.injuries.available) {
+    warnings.push(byFeature.injuries.state === 'empty_response'
+      ? 'Источник не вернул записей о травмах; это не подтверждает отсутствие потерь состава.'
+      : 'Данные о травмах сейчас не подтверждены источником и не трактуются как «потерь нет».');
+  }
+  if (byFeature.lineups && !byFeature.lineups.available && minutesToKickoff !== null && minutesToKickoff <= 120) {
+    warnings.push('Стартовые составы не подтверждены источником; пустой или недоступный ответ не считается опубликованным составом.');
+  }
+  if (byFeature.odds && !byFeature.odds.available) warnings.push('Линия 1X2 не подтверждена источником; рыночный сигнал исключён из расчёта.');
+  if (byFeature.predictions && !byFeature.predictions.available) warnings.push('Процентный прогноз API-Football недоступен; этот сигнал исключён из расчёта.');
+
+  return {
+    state: hardFailures.length ? 'degraded' : missing.length ? 'partial' : 'healthy',
+    trustCap,
+    checked: entries.length,
+    available: entries.filter(x => x.available).length,
+    empty: entries.filter(x => x.state === 'empty_response').length,
+    skipped: entries.filter(x => x.state === 'skipped').length,
+    degraded: hardFailures.length,
+    features: byFeature,
+    warnings: [...new Set(warnings)].slice(0, 6),
+    note: hardFailures.length
+      ? 'Часть данных источника недоступна. Неизвестность не преобразуется в нулевые значения или подтверждённое отсутствие событий.'
+      : missing.length
+        ? 'Часть дополнительных данных пока не опубликована или сознательно пропущена; AI использует только подтверждённые сигналы.'
+        : 'Все запрошенные блоки данных получены от источника.',
+  };
+}
+
+function providerDataReliabilitySelfTest() {
+  const empty = providerDataState([], { attempted: true });
+  const skipped = providerDataState([], { attempted: false, reason: 'quota_reserve' });
+  const limited = providerDataState([], { attempted: true, error: Object.assign(new Error('Free plans do not have access to this endpoint'), { code: 'FOOTBALL_RESPONSE' }) });
+  const summary = providerDataReliabilitySummary({
+    injuries: empty,
+    lineups: skipped,
+    odds: limited,
+    predictions: limited,
+  }, { minutesToKickoff: 45 });
+  return {
+    pass: empty.state === 'empty_response'
+      && skipped.state === 'skipped'
+      && limited.state === 'plan_limited'
+      && summary.state === 'degraded'
+      && summary.trustCap === 60
+      && summary.warnings.some(x => x.includes('не подтверждает отсутствие потерь')),
+    empty: empty.state,
+    skipped: skipped.state,
+    limited: limited.state,
+    trustCap: summary.trustCap,
+  };
+}
+
+async function analysisProviderFetch({ feature, path, params, cfg, allowed = true, skipReason = '' }) {
+  if (!allowed) {
+    const meta = providerDataState([], { attempted: false, reason: skipReason || 'policy' });
+    return { data: [], meta: { feature, ...meta } };
+  }
+  try {
+    const data = await apiFootball(path, params, cfg);
+    const meta = providerDataState(data, { attempted: true });
+    return { data: Array.isArray(data) ? data : [], meta: { feature, ...meta } };
+  } catch (error) {
+    const meta = providerDataState([], { attempted: true, error });
+    return { data: [], meta: { feature, ...meta } };
+  }
+}
+
 async function providerFeatureFetch({ feature, path, params, fixtureId, cfg, context = {} }) {
   const policy = providerFeaturePolicy(feature, context);
   const cacheKey = `provider-feature:${feature}:${Number(fixtureId || 0)}:v4.9`;
@@ -12751,6 +12879,7 @@ async function providerFeatureFetch({ feature, path, params, fixtureId, cfg, con
         ageSeconds: featureCacheAgeSeconds(freshEntry.payload),
         expiresAt: freshEntry.expiresAt || null,
         policy,
+        ...providerDataState(freshEntry.payload.data ?? [], { attempted: true }),
       },
     };
   }
@@ -12770,6 +12899,8 @@ async function providerFeatureFetch({ feature, path, params, fixtureId, cfg, con
           ageSeconds: featureCacheAgeSeconds(staleEntry.payload),
           expiresAt: staleEntry.expiresAt || null,
           policy,
+          ...providerDataState(staleEntry.payload.data ?? [], { attempted: true, reason: policy.reason }),
+          state: 'stale',
           reason: policy.reason,
         },
       };
@@ -12783,6 +12914,7 @@ async function providerFeatureFetch({ feature, path, params, fixtureId, cfg, con
         ageSeconds: null,
         expiresAt: null,
         policy,
+        ...providerDataState([], { attempted: false, reason: policy.reason }),
         reason: policy.reason,
       },
     };
@@ -12802,6 +12934,7 @@ async function providerFeatureFetch({ feature, path, params, fixtureId, cfg, con
         ageSeconds: 0,
         expiresAt: new Date(Date.now() + policy.ttlSeconds * 1000).toISOString(),
         policy,
+        ...providerDataState(data, { attempted: true }),
       },
     };
   } catch (error) {
@@ -12816,6 +12949,8 @@ async function providerFeatureFetch({ feature, path, params, fixtureId, cfg, con
           ageSeconds: featureCacheAgeSeconds(staleEntry.payload),
           expiresAt: staleEntry.expiresAt || null,
           policy,
+          ...providerDataState(staleEntry.payload.data ?? [], { attempted: true, error }),
+          state: 'stale',
           reason: String(error?.code || 'api_error'),
         },
       };
@@ -12830,6 +12965,7 @@ async function providerFeatureFetch({ feature, path, params, fixtureId, cfg, con
         ageSeconds: null,
         expiresAt: null,
         policy,
+        ...providerDataState([], { attempted: true, error }),
         reason: String(error?.code || 'api_error'),
       },
     };
@@ -14134,6 +14270,7 @@ async function apiReleaseReadiness(request, cfg) {
   const provider = diagnostics.provider || {};
   const watchdogSelfTest = settlementWatchdogSelfTest();
   const schemaDriftSelfTest = supabaseSchemaDriftSelfTest();
+  const providerReliabilitySelfTest = providerDataReliabilitySelfTest();
   const checks = [
     releaseCheck('football_api', 'Ключ API-Football', cfg.apiFootballKey ? 'pass' : 'fail', cfg.apiFootballKey ? 'Ключ доступен серверному обработчику.' : 'Ключ API-Football отсутствует.', true),
     releaseCheck('supabase_config', 'Настройка Supabase', hasSupabase(cfg) ? 'pass' : 'fail', hasSupabase(cfg) ? 'Адрес и сервисный ключ доступны серверу.' : 'Не хватает адреса Supabase или сервисного ключа.', true),
@@ -14144,6 +14281,10 @@ async function apiReleaseReadiness(request, cfg) {
         : `Schema drift: отсутствуют или несовместимы ${schemaDrift.missing.join(', ') || 'обязательные объекты'}.`, true),
     releaseCheck('supabase_schema_drift_selftest', 'Самопроверка Schema Drift Guard', schemaDriftSelfTest.pass ? 'pass' : 'fail',
       schemaDriftSelfTest.pass ? 'Drift корректно переводит release gate в блокирующее состояние.' : 'Самопроверка Schema Drift Guard не прошла.', true),
+    releaseCheck('provider_data_reliability_selftest', 'Самопроверка надёжности API-Football', providerReliabilitySelfTest.pass ? 'pass' : 'fail',
+      providerReliabilitySelfTest.pass
+        ? `empty=${providerReliabilitySelfTest.empty}; skipped=${providerReliabilitySelfTest.skipped}; plan=${providerReliabilitySelfTest.limited}; trustCap=${providerReliabilitySelfTest.trustCap}.`
+        : 'Классификация пустых, ограниченных и ошибочных ответов API-Football не прошла самопроверку.', true),
     releaseCheck('backend_security_contract', 'Контракт безопасности Supabase', backendSecurity.ok ? 'pass' : 'fail',
       backendSecurity.ok
         ? 'Все публичные таблицы защищены правилами доступа; анонимный и авторизованный клиент не имеют прямых прав; серверные процедуры закрыты.'
@@ -18332,20 +18473,29 @@ function refereeProfile(value = '') {
   return {name:parts[0] || raw,country:parts.slice(1).join(', '),available:true};
 }
 
-function buildLineupImpact({absences,lineups,homeName='Хозяева',awayName='Гости'}={}) {
+function buildLineupImpact({absences,lineups,homeName='Хозяева',awayName='Гости',reliability=null}={}) {
   const homeAbs=Array.isArray(absences?.home)?absences.home.length:0;
   const awayAbs=Array.isArray(absences?.away)?absences.away.length:0;
   const homeConfirmed=Number(lineups?.home?.startXI?.length || 0)>=10;
   const awayConfirmed=Number(lineups?.away?.startXI?.length || 0)>=10;
+  const injuryState=String(reliability?.features?.injuries?.state || (homeAbs || awayAbs ? 'available' : 'unknown'));
+  const lineupState=String(reliability?.features?.lineups?.state || (homeConfirmed || awayConfirmed ? 'available' : 'unknown'));
+  const injuryUsable=injuryState==='available';
   const diff=homeAbs-awayAbs;
-  let label='Баланс потерь близкий';
-  let note=`Потери: ${homeName} — ${homeAbs}, ${awayName} — ${awayAbs}.`;
-  if(diff>=2){label=`Потерь больше у ${homeName}`;note+=` У ${homeName} заметно больше подтверждённых отсутствий.`;}
-  else if(diff<=-2){label=`Потерь больше у ${awayName}`;note+=` У ${awayName} заметно больше подтверждённых отсутствий.`;}
+  let label=injuryUsable?'Баланс подтверждённых потерь близкий':'Данные о потерях требуют проверки';
+  let note=injuryUsable
+    ? `Подтверждённые потери: ${homeName} — ${homeAbs}, ${awayName} — ${awayAbs}.`
+    : injuryState==='empty_response'
+      ? 'Источник не вернул записей о травмах; это не считается подтверждением полного состава.'
+      : 'Источник не подтвердил данные о травмах; нулевые потери не предполагаются.';
+  if(injuryUsable&&diff>=2){label=`Потерь больше у ${homeName}`;note+=` У ${homeName} заметно больше подтверждённых отсутствий.`;}
+  else if(injuryUsable&&diff<=-2){label=`Потерь больше у ${awayName}`;note+=` У ${awayName} заметно больше подтверждённых отсутствий.`;}
   if(homeConfirmed&&awayConfirmed) note+=' Стартовые составы подтверждены.';
   else if(homeConfirmed||awayConfirmed) note+=' Подтверждён состав только одной команды.';
-  else note+=' Стартовые составы ещё не подтверждены.';
-  return {homeAbsences:homeAbs,awayAbsences:awayAbs,homeConfirmed,awayConfirmed,label,note};
+  else if(lineupState==='empty_response') note+=' Источник пока не вернул опубликованные стартовые составы.';
+  else if(lineupState==='skipped') note+=' Проверка составов сейчас пропущена по политике квоты/времени.';
+  else note+=' Стартовые составы источником не подтверждены.';
+  return {homeAbsences:homeAbs,awayAbsences:awayAbs,homeConfirmed,awayConfirmed,label,note,injuryState,lineupState};
 }
 
 function marketMovementNote(movement={}) {
@@ -18402,7 +18552,7 @@ async function loadRefereeHistoryProfile(referee, cfg, limit = 30) {
   const styleLabel=avgCards>=5.5?'Строгий стиль':avgCards<=3.5?'Сдержанный стиль':'Средняя строгость';
   return { available:sample>=3, sample, name:profile.name, country:profile.country || '', avgYellow, avgRed, avgFouls, avgCards, styleLabel, source:'verified-match-history' };
 }
-function buildAiInstructor({ probabilities, goalModel, confidence, completeness, factors = [], risks = [], referee = '', refereeData = null, refereeHistory = null, lineupImpact = null, marketMovement = null } = {}) {
+function buildAiInstructor({ probabilities, goalModel, confidence, completeness, factors = [], risks = [], referee = '', refereeData = null, refereeHistory = null, lineupImpact = null, marketMovement = null, providerReliability = null } = {}) {
   const p = { home: Number(probabilities?.home || 0), draw: Number(probabilities?.draw || 0), away: Number(probabilities?.away || 0) };
   const confidenceScore = Math.max(0, Math.min(100, Number(confidence?.score || 0)));
   const completenessScore = Number(completeness?.score || 0);
@@ -18421,11 +18571,20 @@ function buildAiInstructor({ probabilities, goalModel, confidence, completeness,
   const riskLabel = confidenceScore >= 74 && completenessScore >= 8 ? 'Умеренный' : confidenceScore >= 60 && completenessScore >= 6 ? 'Повышенный' : 'Высокий';
   const confidenceLabel = confidenceScore >= 74 ? 'Высокая' : confidenceScore >= 60 ? 'Средняя' : 'Низкая';
   const completenessMax = Math.max(1, Number(completeness?.max || 10));
-  const dataTrustScore = Math.max(0, Math.min(100, Math.round((completenessScore / completenessMax) * 100)));
+  const baseDataTrustScore = Math.max(0, Math.min(100, Math.round((completenessScore / completenessMax) * 100)));
+  const reliabilityCap = Math.max(0, Math.min(100, Number(providerReliability?.trustCap ?? 100)));
+  const dataTrustScore = Math.min(baseDataTrustScore, reliabilityCap);
+  if (dataTrustScore < 60 && betSignal.code !== 'skip') {
+    betSignal = { code:'skip', label:'Пропустить ставку', strength:0, reason:'Надёжность входных данных ниже рабочего порога.' };
+  }
   const dataTrust = {
     score:dataTrustScore,
+    baseScore:baseDataTrustScore,
+    reliabilityCap,
     label:dataTrustScore >= 80 ? 'Высокая полнота' : dataTrustScore >= 60 ? 'Рабочая полнота' : 'Ограниченные данные',
-    note:dataTrustScore >= 80 ? 'Большинство ключевых блоков доступны.' : dataTrustScore >= 60 ? 'Для рабочего вывода хватает данных, но есть пробелы.' : 'Не хватает части ключевых данных — вывод нужно трактовать осторожно.',
+    note:providerReliability?.state === 'degraded'
+      ? 'Часть данных источника недоступна или ограничена тарифом; неизвестные значения не подменяются нулями.'
+      : dataTrustScore >= 80 ? 'Большинство ключевых блоков доступны.' : dataTrustScore >= 60 ? 'Для рабочего вывода хватает данных, но есть пробелы.' : 'Не хватает части ключевых данных — вывод нужно трактовать осторожно.',
   };
   const maxOutcome = [['П1',p.home],['Н',p.draw],['П2',p.away]].sort((a,b)=>b[1]-a[1])[0];
   const over25 = Number(goalModel?.over25 || 0);
@@ -18790,24 +18949,39 @@ async function apiAnalyze(request, cfg, user) {
   if (!canFetchInjuries) skipped.push('Травмы временно пропущены: осталось критически мало запросов в минутном окне.');
   if (!detailedCoverage) skipped.push('Молодёжный/резервный турнир: расширенные запросы ограничены из-за слабого покрытия.');
 
-  let injuries = [], predictions = [], odds = [], h2hRows = [], lineupsRows = [];
-  try {
-    [injuries, predictions, odds, h2hRows] = await Promise.all([
-      canFetchInjuries ? apiFootball('/injuries', { fixture: fixtureId }, cfg).catch(() => []) : Promise.resolve([]),
-      apiFootball('/predictions', { fixture: fixtureId }, cfg).catch(() => []),
-      apiFootball('/odds', { fixture: fixtureId }, cfg).catch(() => []),
-      canFetchH2H ? apiFootball('/fixtures/headtohead', { h2h: `${homeId}-${awayId}`, last: 5 }, cfg).catch(() => []) : Promise.resolve([]),
-    ]);
-    if (canFetchLineups) lineupsRows = await apiFootball('/fixtures/lineups', { fixture: fixtureId }, cfg).catch(() => []);
-  } catch (error) {
-    if (staleBefore && isFootballRateLimitError(error)) {
-      await recordHistory(user.id, staleBefore, cfg);
-      if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,stale:true}});
-      await recordTrackedFullAiOutcome('stale');
-      return json(analysisResponsePayload(staleBefore,{cached:true,stale:true,warning:'Показан последний сохранённый анализ: источник данных временно достиг лимита.',retryAfter:Number(error?.retryAfter || 60),recheck:{requested:recheckRequested,performed:false,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_provider_limit' : (previousFreshness?.reasonCode || 'provider_limit')},quota:quotaBefore}));
-    }
-    throw error;
-  }
+  const injurySkipReason = !detailedCoverage ? 'limited_coverage' : canFetchInjuries ? '' : 'quota_reserve';
+  const h2hSkipReason = !detailedCoverage ? 'limited_coverage' : canFetchH2H ? '' : 'quota_reserve';
+  const lineupSkipReason = !detailedCoverage
+    ? 'limited_coverage'
+    : minutesToKickoff === null || (!isLiveStatus(status) && (minutesToKickoff > 90 || minutesToKickoff < -240))
+      ? 'publication_window'
+      : canFetchLineups ? '' : 'quota_reserve';
+
+  const [injuryResult, predictionResult, oddsResult, h2hResult] = await Promise.all([
+    analysisProviderFetch({ feature:'injuries', path:'/injuries', params:{ fixture:fixtureId }, cfg, allowed:canFetchInjuries, skipReason:injurySkipReason }),
+    analysisProviderFetch({ feature:'predictions', path:'/predictions', params:{ fixture:fixtureId }, cfg }),
+    analysisProviderFetch({ feature:'odds', path:'/odds', params:{ fixture:fixtureId }, cfg }),
+    analysisProviderFetch({ feature:'h2h', path:'/fixtures/headtohead', params:{ h2h:`${homeId}-${awayId}`, last:5 }, cfg, allowed:canFetchH2H, skipReason:h2hSkipReason }),
+  ]);
+  const lineupResult = await analysisProviderFetch({
+    feature:'lineups', path:'/fixtures/lineups', params:{ fixture:fixtureId }, cfg,
+    allowed:canFetchLineups, skipReason:lineupSkipReason,
+  });
+
+  const injuries = injuryResult.data;
+  const predictions = predictionResult.data;
+  const odds = oddsResult.data;
+  const h2hRows = h2hResult.data;
+  const lineupsRows = lineupResult.data;
+  const analysisFeatureMeta = {
+    injuries: injuryResult.meta,
+    predictions: predictionResult.meta,
+    odds: oddsResult.meta,
+    h2h: h2hResult.meta,
+    lineups: lineupResult.meta,
+  };
+  const providerReliability = providerDataReliabilitySummary(analysisFeatureMeta, { minutesToKickoff });
+  skipped.push(...providerReliability.warnings);
 
   const webPromise = tavilySearch(`${homeName} ${awayName} injuries team news probable lineups latest`, cfg);
   const homeFormPromise = detailedCoverage
@@ -18839,7 +19013,7 @@ async function apiAnalyze(request, cfg, user) {
   const h2h = formatH2H(h2hRows, homeId, awayId);
   const absences = formatAbsences(injuries, homeId, awayId);
   const lineups = formatLineups(lineupsRows, homeId, awayId);
-  const lineupImpact = buildLineupImpact({ absences, lineups, homeName, awayName });
+  const lineupImpact = buildLineupImpact({ absences, lineups, homeName, awayName, reliability:providerReliability });
   const recentFormProb = formProbabilities(homeForm, awayForm);
   const h2hProb = h2hProbabilities(h2h);
   const calibrationProfile = await getCalibrationProfile(cfg).catch(() => baselineCalibrationProfile());
@@ -18855,13 +19029,15 @@ async function apiAnalyze(request, cfg, user) {
   const goalModel = poissonGoalModel(homeForm, awayForm);
   const comparison = buildMatchComparison({
     homeName, awayName, homeForm, awayForm, homeStanding, awayStanding, homeSeasonStats, awaySeasonStats,
-    goalModel, h2h, absences, hasInjuryData: injuries.length > 0,
+    goalModel, h2h, absences, hasInjuryData: Boolean(providerReliability.features?.injuries?.available),
   });
   const confidence = confidenceModel(blended.signals, probabilities, homeForm, awayForm);
   const notes = buildAnalysisNotes({
     probabilities, market, model: apiPrediction, homeForm, awayForm, h2h, absences, lineups, news: web,
     homeName, awayName, minutesToKickoff, confidence,
   });
+  notes.risks.push(...providerReliability.warnings);
+  notes.risks = [...new Set(notes.risks)].slice(0, 7);
   if (calibrationProfile.mode === 'active') {
     notes.factors.unshift(`Калибратор вероятностей активен (${String(calibrationProfile.fingerprint || '').slice(0, 8) || 'базовый'}) на базе ${Number(calibrationProfile.sample || 0)} доверенных прогнозов.`);
   } else if (calibrationProfile.mode === 'shadow') {
@@ -18881,6 +19057,12 @@ async function apiAnalyze(request, cfg, user) {
   const completenessPreview = {
     score: [fixture, market, apiPrediction, injuries.length, h2hRows.length, lineupsRows.length, web.answer, homeForm?.overall, awayForm?.overall, goalModel].filter(Boolean).length,
     max: 10,
+    providerReliability: {
+      state: providerReliability.state,
+      trustCap: providerReliability.trustCap,
+      available: providerReliability.available,
+      checked: providerReliability.checked,
+    },
   };
   const preMatchIntelligence = buildPreMatchIntelligence({
     probabilities,
@@ -18943,14 +19125,17 @@ async function apiAnalyze(request, cfg, user) {
       dataMode: paid ? 'expanded' : 'standard',
       mode: paid ? 'full' : healthyFree ? 'balanced-free' : 'quota-saver',
       availableSignals,
-      skipped,
+      skipped: [...new Set(skipped)],
+      featureReliability: analysisFeatureMeta,
+      reliability: providerReliability,
     },
     dataCapabilities: publicDataCapabilities(),
     market, marketMovement, apiPrediction, recentForm: { home: homeForm, away: awayForm }, goalModel, comparison, absences, lineups, lineupImpact, h2h,
     preMatchIntelligence,
-    aiInstructor: buildAiInstructor({ probabilities, goalModel, confidence, completeness: completenessPreview, factors: notes.factors, risks: [...(notes.risks || []), ...skipped], referee: fixture.fixture?.referee || '', refereeData: refereeProfile(fixture.fixture?.referee || ''), refereeHistory, lineupImpact, marketMovement }),
+    aiInstructor: buildAiInstructor({ probabilities, goalModel, confidence, completeness: completenessPreview, factors: notes.factors, risks: [...(notes.risks || []), ...skipped], referee: fixture.fixture?.referee || '', refereeData: refereeProfile(fixture.fixture?.referee || ''), refereeHistory, lineupImpact, marketMovement, providerReliability }),
     insights: notes.factors, risks: [...(notes.risks || []), ...skipped], news: web,
     completeness: completenessPreview,
+    providerReliability,
     provider: publicDataCapabilities(),
     disclaimer: 'Расчёт основан на доступных статистических сигналах и не гарантирует исход матча. Это не финансовая рекомендация.',
   };
@@ -19390,6 +19575,8 @@ export default {
         calibrationManualFreeze: 'enabled',
         adminDevModeIsolation: 'enabled',
         backendSecurityContract: 'enabled',
+        providerDataReliability: 'enabled',
+        providerDataReliabilitySelfTest: providerDataReliabilitySelfTest().pass ? 'enabled' : 'failed',
         supabaseSchemaDriftGuard: 'enabled',
         supabaseSchemaDriftSelfTest: supabaseSchemaDriftSelfTest().pass ? 'enabled' : 'failed',
         cloudflareDeploymentGate: 'enabled',

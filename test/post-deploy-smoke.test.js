@@ -26,6 +26,8 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         productionMonitor: 'enabled',
         productionMonitorSelfTest: 'enabled',
         rollbackVerification: 'enabled',
+        providerDataReliability: 'enabled',
+        providerDataReliabilitySelfTest: 'enabled',
         cloudflareDeploymentGate: 'enabled',
         browserSecurityPolicy: 'enabled',
         failClosedDeployment: 'enabled',

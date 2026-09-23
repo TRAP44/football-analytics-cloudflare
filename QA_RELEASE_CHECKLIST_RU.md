@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.95.0 RC103
+# QA Release Checklist — v6.96.0 RC104
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.95.0`.
-- Worker и client: `6.95.0-rc103`.
-- Release candidate: `RC103`.
+- `package.json` и `package-lock.json`: `6.96.0`.
+- Worker и client: `6.96.0-rc104`.
+- Release candidate: `RC104`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -34,21 +34,20 @@ npm run verify:worker
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
 
-## RC103 — Production Monitoring & Recovery
+## RC104 — API-Football Data Reliability
 
-- Cloudflare cron запускает production monitor каждые 15 минут.
-- Monitor не расходует API-Football и не меняет пользовательские данные или runtime controls.
-- Проверяются Supabase, актуальная схема v6.15 и operational errors за последний час.
-- `incident` становится блокирующим `production_monitor` в Release Readiness.
-- Monitor записывает только изменение состояния или редкий heartbeat; собственные monitor-события исключены из error budget.
-- `/api/production-monitor` доступен только администратору.
-- Исправлен `apiProductionReadiness`: `checks` объявляется до любых добавлений self-test результатов.
-- `/health` обязан публиковать `productionMonitor=enabled`, `productionMonitorSelfTest=enabled`, `rollbackVerification=enabled`.
-- `Rollback Production` требует Cloudflare version ID, ожидаемую app version и настроенный `CLOUDFLARE_WORKER_URL`.
-- После rollback обязательна независимая проверка точной версии, `DEV_MODE=false` и закрытого `/health/supabase`.
-- Автоматический rollback намеренно не включён: восстановление остаётся подтверждаемым ручным действием.
-- Regression: `test/production-monitor-recovery-rc103.test.js`.
-## Исторические RC72–RC102
+- Предматчевые optional-запросы больше не используют `catch(() => [])`.
+- Для injuries, predictions, odds, H2H и lineups сохраняется отдельное состояние: `available`, `empty_response`, `skipped`, `plan_limited`, `rate_limited`, `timeout`, `network_error` или `provider_error`.
+- Пустой ответ injuries не считается доказательством отсутствия травм.
+- Неизвестные данные по составу не превращаются в `0:0` подтверждённых потерь.
+- Недоступный market/prediction сигнал исключается из probability blend вместо подстановки значения.
+- При серьёзной деградации provider reliability ограничивает `dataTrust`; ниже рабочего порога AI возвращает `skip` вместо уверенного сигнала.
+- Match Center использует ту же явную metadata-модель для cache/stale/skipped/error feature data.
+- `/health` обязан публиковать `providerDataReliability=enabled` и `providerDataReliabilitySelfTest=enabled`.
+- Release Readiness содержит blocking self-test `provider_data_reliability_selftest`.
+- Regression: `test/provider-data-reliability-rc104.test.js`.
+- Новая Supabase migration не требуется.
+## Исторические RC72–RC103
 
 Детальные исторические release-контракты удалены из текущего checklist, чтобы не дублировать Git history и regression-тесты. Их поведение продолжает проверяться соответствующими файлами `test/*-rcXX.test.js`, а продуктовая сводка сохранена в `README_CLOUDFLARE_RU.md`.
 
@@ -70,8 +69,8 @@ npm run verify:worker
 
 `scripts/post-deploy-smoke.js` должен подтвердить:
 - `/health.ok = true`;
-- `version = 6.95.0-rc103`;
-- `releaseCandidate = RC103`;
+- `version = 6.96.0-rc104`;
+- `releaseCandidate = RC104`;
 - `devMode = false`;
 - обязательные self-test/feature flags = `enabled`;
 - `/health/supabase` не доступен публично;

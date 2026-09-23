@@ -16,7 +16,7 @@ const readme = fs.readFileSync('README_CLOUDFLARE_RU.md', 'utf8');
 const qaChecklist = fs.readFileSync('QA_RELEASE_CHECKLIST_RU.md', 'utf8');
 const baselinePath = 'supabase/baseline/supabase_baseline_v6_15.sql';
 const baseline = fs.existsSync(baselinePath) ? fs.readFileSync(baselinePath, 'utf8') : '';
-const expected = `${pkg.version}-rc103`;
+const expected = `${pkg.version}-rc104`;
 const failures = [];
 const rootSql = fs.readdirSync('.').filter(name => /^supabase_(?:baseline|migration)_.*\.sql$/i.test(name));
 if (rootSql.length) failures.push(`Supabase SQL must live under supabase/: ${rootSql.join(', ')}`);
@@ -25,9 +25,9 @@ if (rootSql.length) failures.push(`Supabase SQL must live under supabase/: ${roo
 if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) failures.push('package-lock version must match package.json');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC103'")) failures.push('Worker RC name must be RC103');
+if (!worker.includes("const RC_NAME = 'RC104'")) failures.push('Worker RC name must be RC104');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc103'")) failures.push('Client release channel must be rc103');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc104'")) failures.push('Client release channel must be rc104');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -58,8 +58,8 @@ if (!fs.existsSync('.github/workflows/rollback-production.yml')) failures.push('
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
-if (!deployWorkflow.includes('--message "RC103 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC103');
-if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.95.0-rc103"')) failures.push('Production smoke must verify 6.95.0-rc103');
+if (!deployWorkflow.includes('--message "RC104 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC104');
+if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.96.0-rc104"')) failures.push('Production smoke must verify 6.96.0-rc104');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
 if (!/id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden/.test(html)) failures.push('Admin role badge must use the fail-closed admin-only visibility contract');
 if (!/\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i.test(styles)) failures.push('Global hidden elements must remain display:none');
@@ -227,7 +227,7 @@ if (!worker.includes("newsSourceTrustGate: 'enabled'") || !worker.includes('appl
 if (!worker.includes("publicLegalPages: 'enabled'") || !worker.includes("publicStatusPage: 'enabled'") || !worker.includes("url.pathname === '/api/public-status'")) failures.push('RC52 public trust contract is missing');
 if (!fs.existsSync('public/privacy.html') || !fs.existsSync('public/terms.html') || !fs.existsSync('public/status.html') || !fs.existsSync('public/status.js')) failures.push('RC52 public trust pages are missing');
 if (!wrangler.includes('"/telegram/*"') || !wrangler.includes('"/api/*"')) failures.push('RC52 Worker-first webhook/public API routes are missing');
-if (!deployWorkflow.includes('6.95.0-rc103')) failures.push('RC103 production workflow version is missing');
+if (!deployWorkflow.includes('6.96.0-rc104')) failures.push('RC104 production workflow version is missing');
 
 if (!worker.includes("mediaLaunchPackage: 'enabled'") || !worker.includes("mediaDeepLinkAttribution: 'enabled'")) failures.push('RC53 media launch health contract is missing');
 if (!worker.includes("launchSimulation: 'enabled'") || !worker.includes("conversionUx: 'enabled'") || !worker.includes("highIntentSearchFallback: 'enabled'") || !worker.includes("newsReturnLoop: 'enabled'")) failures.push('RC54 launch conversion health contract is missing');
@@ -335,8 +335,8 @@ if (!worker.includes("firstPartyGrowthAnalytics: 'enabled'") || !worker.includes
 if (!worker.includes('parseLaunchStartParam') || !worker.includes('ensureLaunchAttribution') || !worker.includes('recordGrowthEvent')) failures.push('RC53 attribution engine is missing');
 if (!worker.includes("url.pathname === '/api/launch-funnel'") || !app.includes('function renderLaunchFunnel')) failures.push('RC53 admin launch funnel is missing');
 if (!app.includes("origin:'miniapp'") || !worker.includes("origin:'telegram_quick'")) failures.push('RC53 full-vs-quick AI conversion split is missing');
-if (!readme.includes('v6.95.0 — RC103') || !readme.includes('Production Monitoring & Recovery')) failures.push('README must describe the current RC103 release');
-if (!qaChecklist.includes('v6.95.0 RC103') || !qaChecklist.includes('Production Monitoring & Recovery') || !qaChecklist.includes('npm run verify:release')) failures.push('QA checklist must describe the current RC103 release gate');
+if (!readme.includes('v6.96.0 — RC104') || !readme.includes('API-Football Data Reliability')) failures.push('README must describe the current RC104 release');
+if (!qaChecklist.includes('v6.96.0 RC104') || !qaChecklist.includes('API-Football Data Reliability') || !qaChecklist.includes('npm run verify:release')) failures.push('QA checklist must describe the current RC104 release gate');
 if (!fs.existsSync('test/supabase-schema-drift-rc100.test.js')) failures.push('Missing RC100 Supabase schema drift regression test');
 if (!fs.existsSync('test/supabase-directory-hardening-rc101.test.js')) failures.push('Missing RC101 Supabase directory hardening regression test');
 if (!fs.existsSync('scripts/security-scan.js')) failures.push('Missing RC102 Secret Leak Guard scanner');
@@ -355,6 +355,14 @@ if (!rollbackWorkflow.includes('expected_version:') || !rollbackWorkflow.include
 if (!rollbackWorkflow.includes('npx wrangler rollback "$VERSION_ID"') || !rollbackWorkflow.includes('node scripts/rollback-smoke.js "$ROLLBACK_URL" "$EXPECTED_VERSION"')) failures.push('RC103 rollback verification workflow is incomplete');
 if (!rollbackSmoke.includes('runRollbackSmoke') || !rollbackSmoke.includes('/health/supabase')) failures.push('RC103 rollback smoke contract is incomplete');
 if (!postDeploySmoke.includes("'productionMonitor'") || !postDeploySmoke.includes("'productionMonitorSelfTest'") || !postDeploySmoke.includes("'rollbackVerification'")) failures.push('RC103 post-deploy smoke monitoring flags are missing');
+if (!fs.existsSync('test/provider-data-reliability-rc104.test.js')) failures.push('Missing RC104 API-Football reliability regression test');
+if (!worker.includes('function providerDataState') || !worker.includes('function providerDataReliabilitySummary') || !worker.includes('async function analysisProviderFetch')) failures.push('RC104 provider reliability engine is missing');
+if (!worker.includes("providerDataReliability: 'enabled'") || !worker.includes("providerDataReliabilitySelfTest: providerDataReliabilitySelfTest().pass ? 'enabled' : 'failed'")) failures.push('RC104 provider reliability health flags are missing');
+if (!worker.includes("releaseCheck('provider_data_reliability_selftest'")) failures.push('RC104 provider reliability release gate is missing');
+if (!worker.includes('featureReliability: analysisFeatureMeta') || !worker.includes('providerReliability,')) failures.push('RC104 analysis payload reliability metadata is missing');
+if (!worker.includes('не трактуются как «потерь нет»') || !worker.includes('нулевые потери не предполагаются')) failures.push('RC104 unknown injury data must not be represented as zero absences');
+if (!postDeploySmoke.includes("'providerDataReliability'") || !postDeploySmoke.includes("'providerDataReliabilitySelfTest'")) failures.push('RC104 production smoke provider reliability flags are missing');
+
 
 const gitignore = fs.readFileSync('.gitignore','utf8');
 for (const item of ['.env','.dev.vars','*.pem','*.key']) if (!gitignore.includes(item)) failures.push(`Git ignore is missing secret pattern: ${item}`);
@@ -379,4 +387,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log(`RC103 Production Monitoring & Recovery contracts verified for ${expected}.`);
+console.log(`RC104 API-Football Data Reliability contracts verified for ${expected}.`);
