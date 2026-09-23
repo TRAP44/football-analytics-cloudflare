@@ -1,4 +1,4 @@
-# Football Analytics Mini App v6.81.0 — RC89
+# Football Analytics Mini App v6.82.0 — RC90
 
 Telegram-бот и Mini App для футбольной аналитики на Cloudflare Workers + Supabase. Основные источники данных: API-Football и Tavily. Интерфейс и админ-панель — на русском языке. Монетизация пока отключена.
 
@@ -12,7 +12,7 @@ Telegram-бот и Mini App для футбольной аналитики на 
 - Публичный AI Track Record строится только по подтверждённым settled-прогнозам и не выдаёт совпадение исхода за прибыльность ставок.
 - Защита от вирусной нагрузки: distributed fixture lock, shared cache и безопасный fallback.
 - Медиа deep-link на fixture, publisher kit и агрегированная first-party аналитика source / campaign / content.
-- Новостной контур RC69–RC89: новость → релевантный матч → явная AI-перепроверка → News Impact Delta → **News Impact Decision Card** → **News Impact Action Tracking** → **News Impact Action Funnel** → **News Impact Funnel Confidence Guard** → **News Impact Funnel Trend Guard** → **News Impact Temporal Attribution Guard** → **News Impact Action Outcome Quality** → **News Impact Outcome Failure Diagnostics & Recovery** → **News Impact Recovery Effectiveness Funnel** → **News Impact Recovery Strategy Guard** → **News Impact Recovery Stability & Parity Guard** → **News Impact Recovery Drift Circuit Breaker** → **News Impact Recovery Transition History & Admin Alerts** → **News Impact Recovery Incident Center** → **News Impact Recovery Incident Acknowledgement & Runbook** → **News Impact Recovery Incident Escalation & SLO** → **News Impact Recovery Incident SLO Dashboard & Trend** → **News Impact Recovery Incident SLO Breach Feed & Drilldown**.
+- Новостной контур RC69–RC90: новость → релевантный матч → явная AI-перепроверка → News Impact Delta → **News Impact Decision Card** → **News Impact Action Tracking** → **News Impact Action Funnel** → **News Impact Funnel Confidence Guard** → **News Impact Funnel Trend Guard** → **News Impact Temporal Attribution Guard** → **News Impact Action Outcome Quality** → **News Impact Outcome Failure Diagnostics & Recovery** → **News Impact Recovery Effectiveness Funnel** → **News Impact Recovery Strategy Guard** → **News Impact Recovery Stability & Parity Guard** → **News Impact Recovery Drift Circuit Breaker** → **News Impact Recovery Transition History & Admin Alerts** → **News Impact Recovery Incident Center** → **News Impact Recovery Incident Acknowledgement & Runbook** → **News Impact Recovery Incident Escalation & SLO** → **News Impact Recovery Incident SLO Dashboard & Trend** → **News Impact Recovery Incident SLO Breach Feed & Drilldown** → **News Impact Recovery Incident SLO Breach Watchlist & Aging**.
 - News Impact не утверждает причинность по заголовку: сравнение разрешено только с корректным AI-снимком, созданным до публикации новости.
 - RC73 считает только категориальные действия после Decision Card: полный AI, составы, рынок, повторная проверка, возврат к новостям и share. Текст новости, URL и пользовательский запрос в эту аналитику не записываются.
 - RC74 агрегирует эти действия по типу News Impact-решения, считает долю пользователей, которые продолжили сценарий, показывает наиболее частое следующее действие и состояние с самой низкой конверсией. Telegram ID наружу не возвращаются.
@@ -31,6 +31,7 @@ Telegram-бот и Mini App для футбольной аналитики на 
 - RC87 добавляет временные SLO поверх Incident Center: целевой просмотр ≤ 30 минут, критическая непросмотренная просрочка после 120 минут и целевое восстановление ≤ 360 минут. Worker восстанавливает episode timestamps только из фактической последовательности failure guard-событий: начало эпизода, последнее проявление и первое последующее безопасное состояние. На этой базе рассчитываются возраст, время до acknowledgement и время до recovery. Просрочка повышает только административный `effectivePriority` и создаёт SLO-alert; recovery-routing RC81–RC86 не меняется. SLO не записывается отдельными строками и не требует новой таблицы.
 - RC88 строит 4-недельный Incident SLO Dashboard по отдельным adverse episodes, а не по каждому failure-событию. Для каждой 7-дневной корзины считаются ACK/Recovery SLO compliance, eligible/met/breached, среднее время до первого просмотра и восстановления. Эпизоды моложе ACK-порога, которые автоматически восстановились до 30 минут без acknowledgement, не считаются ACK breach. Recurrence-блок агрегирует минимум два эпизода одной пары `reason + action`, показывает active, ACK/Recovery breaches и guard-коды. Dashboard использует тот же backend-only 30-дневный `growth_events` loader, не сохраняет производные метрики и не меняет routing.
 - RC89 добавляет SLO Breach Feed и drilldown по уже подтверждённым breach-эпизодам. Для каждого эпизода показываются ACK/Recovery breach-типы, активность, severity, возраст, latency, occurrences и безопасные guard-коды; повторяющиеся breach-пары агрегируются по `reason + action`. RC89 использует существующие пороги 30/120/360 минут, не вводит новые SLO-пороги, не пишет производные метрики в Supabase и не меняет recovery-routing.
+- RC90 добавляет SLO Breach Watchlist & Aging поверх RC89 feed: отдельный список только активных breach-эпизодов, critical/ACK/Recovery счётчики, возраст самого старого активного эпизода и повторяющиеся активные пары. Watchlist использует те же пороги RC87 (30/120/360 минут), ничего не сохраняет в Supabase и не меняет recovery-routing.
 
 ## Архитектура
 
@@ -61,7 +62,7 @@ npm run verify:release
 npm run verify:worker
 ```
 
-Production smoke дополнительно проверяет `/health`, версию `6.81.0-rc89`, `releaseCandidate=RC89`, отключённый `DEV_MODE` и обязательные health/self-test флаги.
+Production smoke дополнительно проверяет `/health`, версию `6.82.0-rc90`, `releaseCandidate=RC90`, отключённый `DEV_MODE` и обязательные health/self-test флаги.
 
 ## Документация
 
