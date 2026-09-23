@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.87.0 RC95
+# QA Release Checklist — v6.88.0 RC96
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.87.0`.
-- Worker и client: `6.87.0-rc95`.
-- Release candidate: `RC95`.
+- `package.json` и `package-lock.json`: `6.88.0`.
+- Worker и client: `6.88.0-rc96`.
+- Release candidate: `RC96`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,18 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC96 — News Impact Recovery Incident SLO Impact Concentration Trend
+
+- Trend строится из существующего `incidentEpisodeHistory` по 4 непересекающимся недельным окнам.
+- В каждом окне пары `reason + action` агрегируются по фактическим ACK + Recovery overdue minutes, возникшим только внутри этого окна.
+- Для каждой недели считаются top-1 / top-3 / top-5 contribution %, residual after top-5, число затронутых пар и total overdue minutes.
+- Текущая неделя сравнивается с предыдущей по точной дельте top-1 / top-3 / top-5 в процентных пунктах.
+- `increased`, `decreased`, `unchanged` определяются только знаком дельты; дополнительного порога концентрации или stability threshold нет.
+- Privacy: Telegram ID, raw error и произвольный free text не возвращаются.
+- RC96 не меняет SLO, recovery-routing, acknowledgement semantics или incident lifecycle и не требует новой Supabase migration.
+- Regression: `test/news-impact-recovery-incident-impact-concentration-trend-rc96.test.js`.
+- Production smoke требует `newsImpactRecoveryIncidentSloImpactConcentrationTrend=enabled`, `newsImpactRecoveryIncidentWeeklyConcentrationShares=enabled`, `newsImpactRecoveryIncidentSloImpactConcentrationTrendSelfTest=enabled`.
 
 ## RC95 — News Impact Recovery Incident SLO Impact Concentration
 

@@ -195,6 +195,9 @@ const REQUIRED_HEALTH_FLAGS = [
   'newsImpactRecoveryIncidentSloImpactConcentration',
   'newsImpactRecoveryIncidentTopContributionShares',
   'newsImpactRecoveryIncidentSloImpactConcentrationSelfTest',
+  'newsImpactRecoveryIncidentSloImpactConcentrationTrend',
+  'newsImpactRecoveryIncidentWeeklyConcentrationShares',
+  'newsImpactRecoveryIncidentSloImpactConcentrationTrendSelfTest',
 ];
 
 function delay(ms) {
