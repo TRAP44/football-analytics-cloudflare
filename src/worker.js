@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.58.0-rc66';
+const APP_VERSION = '6.59.0-rc67';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc66';
-const RC_NAME = 'RC66';
+const RELEASE_CHANNEL = 'rc67';
+const RC_NAME = 'RC67';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1960,6 +1960,62 @@ function fixtureDeepLinkDrill() {
   const p=fixtureShareStartParam(123456,{source:'media',campaign:'launch',content:'sportnews'});
   const parsed=parseLaunchStartParam(p);
   return {pass:p.length<=64 && parsed.fixtureId===123456 && parsed.source==='media' && parsed.campaign==='launch' && parsed.content==='sportnews',length:p.length};
+}
+
+
+function mediaPublisherCopy(match = {}, deepLink = '', attribution = {}) {
+  const card=normalizeBotFixtureCard(match || {});
+  const title=card.fixtureId && card.homeName && card.awayName
+    ? `${card.homeName} — ${card.awayName}`
+    : `Матч #${Number(card.fixtureId || 0) || '—'}`;
+  const meta=[card.league,card.date ? botFixtureDateTime(card.date) : ''].filter(Boolean).join(' · ');
+  const body=[
+    `⚽ ${title}`,
+    meta,
+    '',
+    'FM AI: составы, судья, рынок, риски и AI-разбор матча.',
+    deepLink ? `Открыть матч: ${deepLink}` : '',
+    '',
+    'Информационная аналитика. Не гарантия результата.',
+  ].filter(Boolean).join('\n');
+  return {
+    title,
+    body,
+    source:String(attribution.source || ''),
+    campaign:String(attribution.campaign || ''),
+    content:String(attribution.content || ''),
+  };
+}
+
+async function apiMediaPublisherLink(request,cfg,user) {
+  if (!isAdminUser(user,cfg)) return adminForbidden();
+  const body=await readJson(request);
+  const fixtureId=Number(body?.fixtureId || 0);
+  if (!Number.isSafeInteger(fixtureId) || fixtureId<=0) return json({error:'Укажите корректный fixture ID.'},400);
+  const source=cleanLaunchPart(body?.source || 'media',14) || 'media';
+  const campaign=cleanLaunchPart(body?.campaign || 'launch',22) || 'launch';
+  const content=cleanLaunchPart(body?.content || 'article',16) || 'article';
+  const link=await fixtureTelegramDeepLink(cfg,fixtureId,{source,campaign,content});
+  const cached=await getCache(`bot:fixture-card:${fixtureId}:v2`,cfg).catch(()=>null);
+  const analyzed=await getCache(`fixture:${fixtureId}:v10-ai-instructor`,cfg).catch(()=>null);
+  const match=normalizeBotFixtureCard(cached?.match || analyzed?.match || {fixtureId,homeName:'Матч',awayName:String(fixtureId),league:'Футбол'});
+  const copy=mediaPublisherCopy(match,link.url,{source,campaign,content});
+  void recordGrowthEvent(cfg,{userId:user.id,eventName:'media_link_created',channel:'miniapp',fixtureId,metadata:{source,campaign,content,admin:true}});
+  return json({
+    ok:true,
+    fixtureId,
+    startParam:link.startParam,
+    deepLink:link.url,
+    telegramShareUrl:telegramShareComposerUrl(link.url,copy.title),
+    copy,
+  });
+}
+
+function mediaPublisherDrill() {
+  const param=fixtureShareStartParam(998877,{source:'press',campaign:'ucl_launch',content:'article1'});
+  const parsed=parseLaunchStartParam(param);
+  const copy=mediaPublisherCopy({fixtureId:998877,homeName:'A',awayName:'B',league:'Cup'},'https://t.me/test?start='+param,{source:'press',campaign:'ucl_launch',content:'article1'});
+  return {pass:parsed.fixtureId===998877 && parsed.source==='press' && parsed.campaign==='ucl_launch' && copy.body.includes('A — B') && copy.body.includes('https://t.me/test'),cases:4};
 }
 
 function publicSiteUrl(request, pathname = '/') {
@@ -14590,6 +14646,11 @@ export default {
         analysisLockFailOpen: 'enabled',
         sharedAnalysisWaitFallback: 'enabled',
         distributedAnalysisLockSelfTest: distributedAnalysisLockDrill().pass ? 'enabled' : 'failed',
+        mediaPublisherKit: 'enabled',
+        campaignTaggedFixtureLinks: 'enabled',
+        mediaCopyGenerator: 'enabled',
+        adminPublisherOnly: 'enabled',
+        mediaPublisherSelfTest: mediaPublisherDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
@@ -14777,6 +14838,7 @@ export default {
       }
       if (request.method === 'GET' && url.pathname === '/api/ai-track-record') return await apiAiTrackRecord(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/share-link') return await apiFixtureShareLink(request,cfg,user);
+      if (request.method === 'POST' && url.pathname === '/api/media-publisher-link') return await apiMediaPublisherLink(request,cfg,user);
       if (url.pathname === '/api/calibration-control') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
         return await apiCalibrationControl(request, cfg, user);
