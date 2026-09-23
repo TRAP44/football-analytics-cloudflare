@@ -11,15 +11,15 @@ const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml'
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
 const readme = fs.readFileSync('README_CLOUDFLARE_RU.md', 'utf8');
 const qaChecklist = fs.readFileSync('QA_RELEASE_CHECKLIST_RU.md', 'utf8');
-const expected = `${pkg.version}-rc94`;
+const expected = `${pkg.version}-rc95`;
 const failures = [];
 
 if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) failures.push('package-lock version must match package.json');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC94'")) failures.push('Worker RC name must be RC94');
+if (!worker.includes("const RC_NAME = 'RC95'")) failures.push('Worker RC name must be RC95');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc94'")) failures.push('Client release channel must be rc94');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc95'")) failures.push('Client release channel must be rc95');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -37,8 +37,8 @@ if (!fs.existsSync('.github/workflows/rollback-production.yml')) failures.push('
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
-if (!deployWorkflow.includes('--message "RC94 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC94');
-if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.86.0-rc94"')) failures.push('Production smoke must verify 6.86.0-rc94');
+if (!deployWorkflow.includes('--message "RC95 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC95');
+if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.87.0-rc95"')) failures.push('Production smoke must verify 6.87.0-rc95');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
 if (!/id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden/.test(html)) failures.push('Admin role badge must use the fail-closed admin-only visibility contract');
 if (!/\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i.test(styles)) failures.push('Global hidden elements must remain display:none');
@@ -206,7 +206,7 @@ if (!worker.includes("newsSourceTrustGate: 'enabled'") || !worker.includes('appl
 if (!worker.includes("publicLegalPages: 'enabled'") || !worker.includes("publicStatusPage: 'enabled'") || !worker.includes("url.pathname === '/api/public-status'")) failures.push('RC52 public trust contract is missing');
 if (!fs.existsSync('public/privacy.html') || !fs.existsSync('public/terms.html') || !fs.existsSync('public/status.html') || !fs.existsSync('public/status.js')) failures.push('RC52 public trust pages are missing');
 if (!wrangler.includes('"/telegram/*"') || !wrangler.includes('"/api/*"')) failures.push('RC52 Worker-first webhook/public API routes are missing');
-if (!deployWorkflow.includes('6.86.0-rc94')) failures.push('RC94 production workflow version is missing');
+if (!deployWorkflow.includes('6.87.0-rc95')) failures.push('RC95 production workflow version is missing');
 
 if (!worker.includes("mediaLaunchPackage: 'enabled'") || !worker.includes("mediaDeepLinkAttribution: 'enabled'")) failures.push('RC53 media launch health contract is missing');
 if (!worker.includes("launchSimulation: 'enabled'") || !worker.includes("conversionUx: 'enabled'") || !worker.includes("highIntentSearchFallback: 'enabled'") || !worker.includes("newsReturnLoop: 'enabled'")) failures.push('RC54 launch conversion health contract is missing');
@@ -276,6 +276,8 @@ if (!worker.includes("newsImpactRecoveryIncidentSloBreachTriage: 'enabled'") || 
 if (!worker.includes("newsImpactRecoveryIncidentSloBreachTriageTrend: 'enabled'") || !worker.includes("newsImpactRecoveryIncidentTriageRecurrence: 'enabled'") || !worker.includes("newsImpactRecoveryIncidentSloBreachTriageTrendSelfTest: newsImpactRecoveryIncidentSloBreachTriageTrendDrill().pass ? 'enabled' : 'failed'")) failures.push('RC92 recovery incident triage trend health contract is missing');
 if (!worker.includes("newsImpactRecoveryIncidentSloBreachImpactRanking: 'enabled'") || !worker.includes("newsImpactRecoveryIncidentOverdueContribution: 'enabled'") || !worker.includes("newsImpactRecoveryIncidentSloBreachImpactRankingSelfTest: newsImpactRecoveryIncidentSloBreachImpactRankingDrill().pass ? 'enabled' : 'failed'")) failures.push('RC93 recovery incident breach impact ranking health contract is missing');
 if (!worker.includes("newsImpactRecoveryIncidentSloBreachImpactTrend: 'enabled'") || !worker.includes("newsImpactRecoveryIncidentWeeklyOverdueBurden: 'enabled'") || !worker.includes("newsImpactRecoveryIncidentSloBreachImpactTrendSelfTest: newsImpactRecoveryIncidentSloBreachImpactTrendDrill().pass ? 'enabled' : 'failed'")) failures.push('RC94 recovery incident breach impact trend health contract is missing');
+if (!worker.includes("newsImpactRecoveryIncidentSloImpactConcentration: 'enabled'") || !worker.includes("newsImpactRecoveryIncidentTopContributionShares: 'enabled'") || !worker.includes("newsImpactRecoveryIncidentSloImpactConcentrationSelfTest: newsImpactRecoveryIncidentSloImpactConcentrationDrill().pass ? 'enabled' : 'failed'")) failures.push('RC95 recovery incident impact concentration health contract is missing');
+if (!worker.includes('function buildNewsImpactRecoveryIncidentSloImpactConcentration') || !worker.includes('newsImpactRecoveryIncidentSloImpactConcentration=buildNewsImpactRecoveryIncidentSloImpactConcentration') || !worker.includes('newsImpactRecoveryIncidentSloImpactConcentration,') || !app.includes('SLO Impact Concentration') || !app.includes('RC95 — концентрация') || !fs.existsSync('test/news-impact-recovery-incident-impact-concentration-rc95.test.js')) failures.push('RC95 impact concentration regression contract is missing');
 if (!worker.includes('function newsImpactRecoveryIncidentOverdueWithinWindow') || !worker.includes('function buildNewsImpactRecoveryIncidentSloBreachImpactTrend') || !worker.includes('newsImpactRecoveryIncidentSloBreachImpactTrend=newsImpactRecoveryStrategyLoaded.available') || !worker.includes('newsImpactRecoveryIncidentSloBreachImpactTrend,') || !app.includes('SLO Impact Trend · 4 недели') || !app.includes('RC94 — недельный trend') || !fs.existsSync('test/news-impact-recovery-incident-impact-trend-rc94.test.js')) failures.push('RC94 breach impact trend regression contract is missing');
 if (!worker.includes('function newsImpactRecoveryIncidentSloBurden') || !worker.includes('function buildNewsImpactRecoveryIncidentSloBreachImpactRanking') || !worker.includes('newsImpactRecoveryIncidentSloBreachImpactRanking=newsImpactRecoveryStrategyLoaded.available') || !worker.includes('newsImpactRecoveryIncidentSloBreachImpactRanking,') || !app.includes('SLO Breach Impact Ranking') || !app.includes('RC93 — ranking') || !fs.existsSync('test/news-impact-recovery-incident-impact-ranking-rc93.test.js')) failures.push('RC93 breach impact ranking regression contract is missing');
 if (!worker.includes('function newsImpactRecoveryIncidentTriageStageAt') || !worker.includes('function buildNewsImpactRecoveryIncidentSloBreachTriageTrend') || !worker.includes('newsImpactRecoveryIncidentSloBreachTriageTrend=newsImpactRecoveryStrategyLoaded.available') || !worker.includes('newsImpactRecoveryIncidentSloBreachTriageTrend,') || !app.includes('Triage Trend · 4 недели') || !app.includes('RC92 — trend') || !fs.existsSync('test/news-impact-recovery-incident-triage-trend-rc92.test.js')) failures.push('RC92 triage trend/recurrence regression contract is missing');
@@ -306,8 +308,8 @@ if (!worker.includes("firstPartyGrowthAnalytics: 'enabled'") || !worker.includes
 if (!worker.includes('parseLaunchStartParam') || !worker.includes('ensureLaunchAttribution') || !worker.includes('recordGrowthEvent')) failures.push('RC53 attribution engine is missing');
 if (!worker.includes("url.pathname === '/api/launch-funnel'") || !app.includes('function renderLaunchFunnel')) failures.push('RC53 admin launch funnel is missing');
 if (!app.includes("origin:'miniapp'") || !worker.includes("origin:'telegram_quick'")) failures.push('RC53 full-vs-quick AI conversion split is missing');
-if (!readme.includes('v6.86.0 — RC94') || !readme.includes('News Impact Recovery Incident SLO Impact Trend')) failures.push('README must describe the current RC94 release');
-if (!qaChecklist.includes('v6.86.0 RC94') || !qaChecklist.includes('npm run verify:release')) failures.push('QA checklist must describe the current RC94 release gate');
+if (!readme.includes('v6.87.0 — RC95') || !readme.includes('News Impact Recovery Incident SLO Impact Concentration')) failures.push('README must describe the current RC95 release');
+if (!qaChecklist.includes('v6.87.0 RC95') || !qaChecklist.includes('npm run verify:release')) failures.push('QA checklist must describe the current RC95 release gate');
 if (!fs.existsSync('MEDIA_LAUNCH_RU.md')) failures.push('Missing RC53 media launch kit');
 if (!fs.readFileSync('public/privacy.html','utf8').includes('События launch-аналитики хранятся до 90 дней')) failures.push('RC53 privacy attribution disclosure is missing');
 
@@ -321,4 +323,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log(`RC94 News Impact recovery incident SLO impact trend contracts verified for ${expected}.`);
+console.log(`RC95 News Impact recovery incident SLO impact concentration contracts verified for ${expected}.`);
