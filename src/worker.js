@@ -650,6 +650,7 @@ function appManifest(cfg) {
       releaseMonitor: true,
       productionMonitor: true,
       rollbackVerification: true,
+      providerDataReliability: true,
       clientTelemetry: true,
       notificationReliability: true,
       reminderDeliveryClaims: true,
@@ -14269,6 +14270,7 @@ async function apiReleaseReadiness(request, cfg) {
   const provider = diagnostics.provider || {};
   const watchdogSelfTest = settlementWatchdogSelfTest();
   const schemaDriftSelfTest = supabaseSchemaDriftSelfTest();
+  const providerReliabilitySelfTest = providerDataReliabilitySelfTest();
   const checks = [
     releaseCheck('football_api', 'Ключ API-Football', cfg.apiFootballKey ? 'pass' : 'fail', cfg.apiFootballKey ? 'Ключ доступен серверному обработчику.' : 'Ключ API-Football отсутствует.', true),
     releaseCheck('supabase_config', 'Настройка Supabase', hasSupabase(cfg) ? 'pass' : 'fail', hasSupabase(cfg) ? 'Адрес и сервисный ключ доступны серверу.' : 'Не хватает адреса Supabase или сервисного ключа.', true),
@@ -14279,6 +14281,10 @@ async function apiReleaseReadiness(request, cfg) {
         : `Schema drift: отсутствуют или несовместимы ${schemaDrift.missing.join(', ') || 'обязательные объекты'}.`, true),
     releaseCheck('supabase_schema_drift_selftest', 'Самопроверка Schema Drift Guard', schemaDriftSelfTest.pass ? 'pass' : 'fail',
       schemaDriftSelfTest.pass ? 'Drift корректно переводит release gate в блокирующее состояние.' : 'Самопроверка Schema Drift Guard не прошла.', true),
+    releaseCheck('provider_data_reliability_selftest', 'Самопроверка надёжности API-Football', providerReliabilitySelfTest.pass ? 'pass' : 'fail',
+      providerReliabilitySelfTest.pass
+        ? `empty=${providerReliabilitySelfTest.empty}; skipped=${providerReliabilitySelfTest.skipped}; plan=${providerReliabilitySelfTest.limited}; trustCap=${providerReliabilitySelfTest.trustCap}.`
+        : 'Классификация пустых, ограниченных и ошибочных ответов API-Football не прошла самопроверку.', true),
     releaseCheck('backend_security_contract', 'Контракт безопасности Supabase', backendSecurity.ok ? 'pass' : 'fail',
       backendSecurity.ok
         ? 'Все публичные таблицы защищены правилами доступа; анонимный и авторизованный клиент не имеют прямых прав; серверные процедуры закрыты.'
