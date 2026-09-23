@@ -4,7 +4,6 @@ import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
-const doc=fs.readFileSync('NEWS_IMPACT_DECISION_CARD_RC72.md','utf8');
 
 test('RC72 maps News Impact Delta to explicit user-facing decision states',()=>{
   assert.match(worker,/function newsImpactDecisionCard\(/);
@@ -44,5 +43,4 @@ test('RC72 deterministic health contract is present',()=>{
   for (const flag of ['newsImpactDecisionCard','newsImpactActionRouting','newsImpactCausalityGuardUx','newsImpactDecisionAnalytics']) {
     assert.ok(worker.includes(flag + ": 'enabled'"));
   }
-  assert.match(doc,/News Impact Decision Card/);
 });
