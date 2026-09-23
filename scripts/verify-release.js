@@ -13,7 +13,7 @@ const readme = fs.readFileSync('README_CLOUDFLARE_RU.md', 'utf8');
 const qaChecklist = fs.readFileSync('QA_RELEASE_CHECKLIST_RU.md', 'utf8');
 const baselinePath = 'supabase/baseline/supabase_baseline_v6_15.sql';
 const baseline = fs.existsSync(baselinePath) ? fs.readFileSync(baselinePath, 'utf8') : '';
-const expected = `${pkg.version}-rc101`;
+const expected = `${pkg.version}-rc102`;
 const failures = [];
 const rootSql = fs.readdirSync('.').filter(name => /^supabase_(?:baseline|migration)_.*\.sql$/i.test(name));
 if (rootSql.length) failures.push(`Supabase SQL must live under supabase/: ${rootSql.join(', ')}`);
@@ -22,9 +22,9 @@ if (rootSql.length) failures.push(`Supabase SQL must live under supabase/: ${roo
 if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) failures.push('package-lock version must match package.json');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC101'")) failures.push('Worker RC name must be RC101');
+if (!worker.includes("const RC_NAME = 'RC102'")) failures.push('Worker RC name must be RC102');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc101'")) failures.push('Client release channel must be rc101');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc102'")) failures.push('Client release channel must be rc102');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -56,7 +56,7 @@ if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing 
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
 if (!deployWorkflow.includes('--message "RC101 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC101');
-if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.93.0-rc101"')) failures.push('Production smoke must verify 6.93.0-rc101');
+if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.94.0-rc102"')) failures.push('Production smoke must verify 6.94.0-rc102');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
 if (!/id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden/.test(html)) failures.push('Admin role badge must use the fail-closed admin-only visibility contract');
 if (!/\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i.test(styles)) failures.push('Global hidden elements must remain display:none');
@@ -224,7 +224,7 @@ if (!worker.includes("newsSourceTrustGate: 'enabled'") || !worker.includes('appl
 if (!worker.includes("publicLegalPages: 'enabled'") || !worker.includes("publicStatusPage: 'enabled'") || !worker.includes("url.pathname === '/api/public-status'")) failures.push('RC52 public trust contract is missing');
 if (!fs.existsSync('public/privacy.html') || !fs.existsSync('public/terms.html') || !fs.existsSync('public/status.html') || !fs.existsSync('public/status.js')) failures.push('RC52 public trust pages are missing');
 if (!wrangler.includes('"/telegram/*"') || !wrangler.includes('"/api/*"')) failures.push('RC52 Worker-first webhook/public API routes are missing');
-if (!deployWorkflow.includes('6.93.0-rc101')) failures.push('RC101 production workflow version is missing');
+if (!deployWorkflow.includes('6.94.0-rc102')) failures.push('RC102 production workflow version is missing');
 
 if (!worker.includes("mediaLaunchPackage: 'enabled'") || !worker.includes("mediaDeepLinkAttribution: 'enabled'")) failures.push('RC53 media launch health contract is missing');
 if (!worker.includes("launchSimulation: 'enabled'") || !worker.includes("conversionUx: 'enabled'") || !worker.includes("highIntentSearchFallback: 'enabled'") || !worker.includes("newsReturnLoop: 'enabled'")) failures.push('RC54 launch conversion health contract is missing');
@@ -332,10 +332,19 @@ if (!worker.includes("firstPartyGrowthAnalytics: 'enabled'") || !worker.includes
 if (!worker.includes('parseLaunchStartParam') || !worker.includes('ensureLaunchAttribution') || !worker.includes('recordGrowthEvent')) failures.push('RC53 attribution engine is missing');
 if (!worker.includes("url.pathname === '/api/launch-funnel'") || !app.includes('function renderLaunchFunnel')) failures.push('RC53 admin launch funnel is missing');
 if (!app.includes("origin:'miniapp'") || !worker.includes("origin:'telegram_quick'")) failures.push('RC53 full-vs-quick AI conversion split is missing');
-if (!readme.includes('v6.93.0 — RC101') || !readme.includes('Supabase Directory Hardening')) failures.push('README must describe the current RC101 release');
-if (!qaChecklist.includes('v6.93.0 RC101') || !qaChecklist.includes('Supabase Directory Hardening') || !qaChecklist.includes('npm run verify:release')) failures.push('QA checklist must describe the current RC101 release gate');
+if (!readme.includes('v6.94.0 — RC102') || !readme.includes('Secret Leak Guard')) failures.push('README must describe the current RC102 release');
+if (!qaChecklist.includes('v6.94.0 RC102') || !qaChecklist.includes('Secret Leak Guard') || !qaChecklist.includes('npm run verify:release')) failures.push('QA checklist must describe the current RC102 release gate');
 if (!fs.existsSync('test/supabase-schema-drift-rc100.test.js')) failures.push('Missing RC100 Supabase schema drift regression test');
 if (!fs.existsSync('test/supabase-directory-hardening-rc101.test.js')) failures.push('Missing RC101 Supabase directory hardening regression test');
+if (!fs.existsSync('scripts/security-scan.js')) failures.push('Missing RC102 Secret Leak Guard scanner');
+if (!fs.existsSync('test/security-scan-rc102.test.js')) failures.push('Missing RC102 Secret Leak Guard regression test');
+if (pkg.scripts?.['security:scan'] !== 'node scripts/security-scan.js') failures.push('RC102 security:scan npm contract is missing');
+const qualityWorkflow = fs.readFileSync('.github/workflows/quality.yml','utf8');
+if (!qualityWorkflow.includes('npm run security:scan')) failures.push('Quality must run Secret Leak Guard');
+if (!deployWorkflow.includes('npm run security:scan')) failures.push('Production deploy must re-run Secret Leak Guard');
+const gitignore = fs.readFileSync('.gitignore','utf8');
+for (const item of ['.env','.dev.vars','*.pem','*.key']) if (!gitignore.includes(item)) failures.push(`Git ignore is missing secret pattern: ${item}`);
+
 if (!baseline.includes('Fresh-install baseline refused: existing Football Analytics schema detected.')) failures.push('RC101 baseline existing-schema refusal guard is missing');
 if (!fs.existsSync('supabase/README.md')) failures.push('Missing Supabase directory documentation');
 
@@ -357,4 +366,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log(`RC101 Supabase directory hardening and baseline safety contracts verified for ${expected}.`);
+console.log(`RC102 Secret Leak Guard and release contracts verified for ${expected}.`);
