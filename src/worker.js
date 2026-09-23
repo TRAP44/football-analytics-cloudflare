@@ -81,11 +81,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.96.0-rc104';
+const APP_VERSION = '6.97.0-rc105';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc104';
-const RC_NAME = 'RC104';
+const RELEASE_CHANNEL = 'rc105';
+const RC_NAME = 'RC105';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -651,6 +651,7 @@ function appManifest(cfg) {
       productionMonitor: true,
       rollbackVerification: true,
       providerDataReliability: true,
+      aiAnalysisQualityGate: true,
       clientTelemetry: true,
       notificationReliability: true,
       reminderDeliveryClaims: true,
@@ -14271,6 +14272,7 @@ async function apiReleaseReadiness(request, cfg) {
   const watchdogSelfTest = settlementWatchdogSelfTest();
   const schemaDriftSelfTest = supabaseSchemaDriftSelfTest();
   const providerReliabilitySelfTest = providerDataReliabilitySelfTest();
+  const aiQualityGateSelfTest = analysisQualityGateSelfTest();
   const checks = [
     releaseCheck('football_api', 'Ключ API-Football', cfg.apiFootballKey ? 'pass' : 'fail', cfg.apiFootballKey ? 'Ключ доступен серверному обработчику.' : 'Ключ API-Football отсутствует.', true),
     releaseCheck('supabase_config', 'Настройка Supabase', hasSupabase(cfg) ? 'pass' : 'fail', hasSupabase(cfg) ? 'Адрес и сервисный ключ доступны серверу.' : 'Не хватает адреса Supabase или сервисного ключа.', true),
@@ -14285,6 +14287,10 @@ async function apiReleaseReadiness(request, cfg) {
       providerReliabilitySelfTest.pass
         ? `empty=${providerReliabilitySelfTest.empty}; skipped=${providerReliabilitySelfTest.skipped}; plan=${providerReliabilitySelfTest.limited}; trustCap=${providerReliabilitySelfTest.trustCap}.`
         : 'Классификация пустых, ограниченных и ошибочных ответов API-Football не прошла самопроверку.', true),
+    releaseCheck('ai_analysis_quality_gate_selftest', 'Самопроверка AI Quality Gate', aiQualityGateSelfTest.pass ? 'pass' : 'fail',
+      aiQualityGateSelfTest.pass
+        ? `ready=${aiQualityGateSelfTest.ready}; hold=${aiQualityGateSelfTest.hold}; причины hold: ${aiQualityGateSelfTest.holdReasons.join(', ')}.`
+        : 'AI Quality Gate не удерживает слабый сигнал fail-closed.', true),
     releaseCheck('backend_security_contract', 'Контракт безопасности Supabase', backendSecurity.ok ? 'pass' : 'fail',
       backendSecurity.ok
         ? 'Все публичные таблицы защищены правилами доступа; анонимный и авторизованный клиент не имеют прямых прав; серверные процедуры закрыты.'
@@ -16038,20 +16044,31 @@ function applyAbsenceAdjustment(probabilities, absences) {
 function poissonGoalModel(homeForm, awayForm) {
   const h = homeForm?.overall, a = awayForm?.overall;
   if (!h?.sample || !a?.sample || h.sample < 3 || a.sample < 3) return null;
-  const hv = homeForm?.venue?.sample >= 2 ? homeForm.venue : h;
-  const av = awayForm?.venue?.sample >= 2 ? awayForm.venue : a;
+  const homeVenueSample = Number(homeForm?.venue?.sample || 0);
+  const awayVenueSample = Number(awayForm?.venue?.sample || 0);
+  const hv = homeVenueSample >= 2 ? homeForm.venue : h;
+  const av = awayVenueSample >= 2 ? awayForm.venue : a;
   const homeLambda = clamp(((h.gfAvg + a.gaAvg + hv.gfAvg + av.gaAvg) / 4) + 0.12, 0.35, 3.4);
   const awayLambda = clamp(((a.gfAvg + h.gaAvg + av.gfAvg + hv.gaAvg) / 4) - 0.03, 0.25, 3.2);
   const total = homeLambda + awayLambda;
   const underOrEqual2 = Math.exp(-total) * (1 + total + (total * total) / 2);
   const over25 = clamp((1 - underOrEqual2) * 100, 0, 100);
   const btts = clamp((1 - Math.exp(-homeLambda)) * (1 - Math.exp(-awayLambda)) * 100, 0, 100);
+  const overallSample = Math.min(Number(h.sample || 0), Number(a.sample || 0));
+  const venueSample = Math.min(homeVenueSample, awayVenueSample);
+  const qualityScore = Math.round(clamp(
+    Math.min(1, overallSample / 5) * 70 + Math.min(1, venueSample / 3) * 30,
+    0, 100,
+  ));
   return {
     homeExpected: round1(homeLambda),
     awayExpected: round1(awayLambda),
     totalExpected: round1(total),
     over25: round1(over25),
     btts: round1(btts),
+    qualityScore,
+    qualityLabel: qualityScore >= 80 ? 'Высокая выборка' : qualityScore >= 65 ? 'Рабочая выборка' : 'Ограниченная выборка',
+    sample: { overall: overallSample, venue: venueSample },
   };
 }
 
@@ -16075,16 +16092,62 @@ function signalDisagreement(signals, finalP) {
   return round1(values.reduce((a, b) => a + b, 0) / values.length);
 }
 
+function signalCanonicalCoverage(signals = []) {
+  const names = new Set((signals || []).map(x => String(x?.name || '')));
+  return clamp(Object.entries(MODEL_BASE_WEIGHTS).reduce((sum,[name,weight]) => sum + (names.has(name) ? Number(weight || 0) : 0), 0), 0, 1);
+}
+
+function signalLeaderAgreement(signals = [], finalP = null) {
+  if (!finalP || !signals.length) return 0;
+  const finalLeader = probabilityRanking(finalP, 'home', 'away')[0]?.key || '';
+  if (!finalLeader) return 0;
+  let agree = 0, total = 0;
+  for (const signal of signals) {
+    const weight = Math.max(0, Number(signal?.weight || 0));
+    const leader = probabilityRanking(signal?.probabilities, 'home', 'away')[0]?.key || '';
+    total += weight;
+    if (leader === finalLeader) agree += weight;
+  }
+  return total > 0 ? round1(clamp(agree / total * 100, 0, 100)) : 0;
+}
+
+function probabilityLeaderMargin(probabilities = null) {
+  const rows = probabilityRanking(probabilities, 'home', 'away');
+  if (rows.length < 2) return 0;
+  return round1(Math.max(0, Number(rows[0].value || 0) - Number(rows[1].value || 0)));
+}
+
 function confidenceModel(signals, finalP, homeForm, awayForm) {
-  const coverage = clamp((signals?.length || 0) / 4, 0, 1);
+  const coverage = signalCanonicalCoverage(signals);
+  const signalCount = Number(signals?.length || 0);
   const formSample = Math.min(1, Math.min(homeForm?.overall?.sample || 0, awayForm?.overall?.sample || 0) / 5);
   const disagreement = signalDisagreement(signals, finalP) ?? 18;
-  const score = Math.round(clamp(38 + coverage * 34 + formSample * 12 - disagreement * 0.65, 30, 88));
+  const agreement = signalLeaderAgreement(signals || [], finalP);
+  const margin = probabilityLeaderMargin(finalP);
+  const marginFactor = Math.min(1, margin / 15);
+  const score = Math.round(clamp(
+    28
+      + coverage * 32
+      + formSample * 10
+      + (agreement / 100) * 10
+      + marginFactor * 10
+      - disagreement * 0.75,
+    25, 90,
+  ));
   return {
     score,
     label: score >= 72 ? 'Высокая' : score >= 55 ? 'Средняя' : 'Низкая',
     disagreement,
     coverage: round1(coverage * 100),
+    signalCount,
+    agreement,
+    margin,
+    diagnostics: {
+      weightedCoveragePct: round1(coverage * 100),
+      formSamplePct: round1(formSample * 100),
+      leaderAgreementPct: agreement,
+      leaderMarginPctPoints: margin,
+    },
   };
 }
 
@@ -18552,7 +18615,84 @@ async function loadRefereeHistoryProfile(referee, cfg, limit = 30) {
   const styleLabel=avgCards>=5.5?'Строгий стиль':avgCards<=3.5?'Сдержанный стиль':'Средняя строгость';
   return { available:sample>=3, sample, name:profile.name, country:profile.country || '', avgYellow, avgRed, avgFouls, avgCards, styleLabel, source:'verified-match-history' };
 }
-function buildAiInstructor({ probabilities, goalModel, confidence, completeness, factors = [], risks = [], referee = '', refereeData = null, refereeHistory = null, lineupImpact = null, marketMovement = null, providerReliability = null } = {}) {
+
+function analysisQualityGate({ probabilities, confidence, dataTrustScore, providerReliability = null, lineupImpact = null, minutesToKickoff = null } = {}) {
+  const reasons = [];
+  const signalCount = Number(confidence?.signalCount || 0);
+  const confidenceScore = Number(confidence?.score || 0);
+  const disagreement = Number(confidence?.disagreement || 0);
+  const agreement = Number(confidence?.agreement || 0);
+  const margin = probabilityLeaderMargin(probabilities);
+  const trust = Number(dataTrustScore || 0);
+  const nearKickoff = Number.isFinite(Number(minutesToKickoff)) && Number(minutesToKickoff) <= 15 && Number(minutesToKickoff) >= -5;
+  const lineupsConfirmed = Boolean(lineupImpact?.homeConfirmed && lineupImpact?.awayConfirmed);
+
+  if (!probabilities) reasons.push({ code:'probabilities_missing', level:'block', text:'Недостаточно подтверждённых данных для расчёта исхода.' });
+  if (signalCount < 2) reasons.push({ code:'signal_count', level:'hold', text:'Нужны как минимум два независимых модельных сигнала.' });
+  if (confidenceScore < 56) reasons.push({ code:'confidence', level:'hold', text:'Уверенность модели ниже рабочего порога 56/100.' });
+  if (trust < 60) reasons.push({ code:'data_trust', level:'hold', text:'Полнота и надёжность входных данных ниже рабочего порога 60/100.' });
+  if (disagreement >= 14) reasons.push({ code:'disagreement', level:'hold', text:'Источники слишком сильно расходятся между собой.' });
+  if (agreement > 0 && agreement < 55) reasons.push({ code:'leader_agreement', level:'hold', text:'Большинство весов источников не поддерживает итогового лидера.' });
+  if (margin < 5 && confidenceScore < 68) reasons.push({ code:'thin_margin', level:'hold', text:'Разрыв между первым и вторым исходом слишком мал для рабочего сигнала.' });
+  if (nearKickoff && !lineupsConfirmed) reasons.push({ code:'lineups_final_window', level:'hold', text:'До старта осталось мало времени, но оба стартовых состава ещё не подтверждены.' });
+  else if (Number.isFinite(Number(minutesToKickoff)) && Number(minutesToKickoff) <= 90 && !lineupsConfirmed) reasons.push({ code:'lineups_pending', level:'caution', text:'Стартовые составы ещё могут изменить оценку матча.' });
+  if (providerReliability?.state === 'degraded') reasons.push({
+    code:'provider_degraded',
+    level:Number(providerReliability?.trustCap || 100) < 70 ? 'hold' : 'caution',
+    text:'Часть входных данных провайдера недоступна или ограничена.',
+  });
+
+  const blocked = reasons.some(x => x.level === 'block');
+  const held = reasons.some(x => x.level === 'hold');
+  const state = blocked ? 'blocked' : held ? 'hold' : reasons.length ? 'caution' : 'ready';
+  return {
+    state,
+    allowSignal: state === 'ready' || state === 'caution',
+    label: state === 'ready' ? 'Рабочее качество'
+      : state === 'caution' ? 'Нужна осторожность'
+        : state === 'hold' ? 'Сигнал удержан'
+          : 'Анализ заблокирован',
+    reasons,
+    metrics: {
+      confidenceScore,
+      dataTrustScore: trust,
+      signalCount,
+      disagreement,
+      agreement,
+      leaderMargin: margin,
+      lineupsConfirmed,
+    },
+  };
+}
+
+function analysisQualityGateSelfTest() {
+  const ready = analysisQualityGate({
+    probabilities:{home:55,draw:25,away:20},
+    confidence:{score:75,signalCount:3,disagreement:5,agreement:82},
+    dataTrustScore:85,
+    providerReliability:{state:'healthy',trustCap:100},
+    lineupImpact:{homeConfirmed:true,awayConfirmed:true},
+    minutesToKickoff:120,
+  });
+  const hold = analysisQualityGate({
+    probabilities:{home:41,draw:31,away:28},
+    confidence:{score:52,signalCount:1,disagreement:16,agreement:40},
+    dataTrustScore:55,
+    providerReliability:{state:'degraded',trustCap:60},
+    lineupImpact:{homeConfirmed:false,awayConfirmed:false},
+    minutesToKickoff:10,
+  });
+  return {
+    pass: ready.state === 'ready' && ready.allowSignal && hold.state === 'hold' && !hold.allowSignal
+      && hold.reasons.some(x => x.code === 'lineups_final_window')
+      && hold.reasons.some(x => x.code === 'data_trust'),
+    ready: ready.state,
+    hold: hold.state,
+    holdReasons: hold.reasons.map(x => x.code),
+  };
+}
+
+function buildAiInstructor({ probabilities, goalModel, confidence, completeness, factors = [], risks = [], referee = '', refereeData = null, refereeHistory = null, lineupImpact = null, marketMovement = null, providerReliability = null, minutesToKickoff = null } = {}) {
   const p = { home: Number(probabilities?.home || 0), draw: Number(probabilities?.draw || 0), away: Number(probabilities?.away || 0) };
   const confidenceScore = Math.max(0, Math.min(100, Number(confidence?.score || 0)));
   const completenessScore = Number(completeness?.score || 0);
@@ -18561,8 +18701,8 @@ function buildAiInstructor({ probabilities, goalModel, confidence, completeness,
   const awayDouble = p.away + p.draw;
   if (homeDouble >= 74 && p.home >= p.away + 7) candidates.push({ code:'double_home', label:'1X · хозяева не проиграют', strength:homeDouble, reason:'Суммарная модельная вероятность П1 или ничьей около ' + Math.round(homeDouble) + '%.' });
   if (awayDouble >= 74 && p.away >= p.home + 7) candidates.push({ code:'double_away', label:'X2 · гости не проиграют', strength:awayDouble, reason:'Суммарная модельная вероятность ничьей или П2 около ' + Math.round(awayDouble) + '%.' });
-  if (Number(goalModel?.over25 || 0) >= 64) candidates.push({ code:'over25', label:'ТБ 2.5', strength:Number(goalModel.over25), reason:'Голевая модель даёт около ' + Math.round(Number(goalModel.over25)) + '% на тотал больше 2.5.' });
-  if (Number(goalModel?.btts || 0) >= 64) candidates.push({ code:'btts', label:'Обе забьют · да', strength:Number(goalModel.btts), reason:'Голевая модель даёт около ' + Math.round(Number(goalModel.btts)) + '% на голы обеих команд.' });
+  if (Number(goalModel?.qualityScore || 0) >= 65 && Number(goalModel?.over25 || 0) >= 64) candidates.push({ code:'over25', label:'ТБ 2.5', strength:Number(goalModel.over25), reason:'Голевая модель даёт около ' + Math.round(Number(goalModel.over25)) + '% на тотал больше 2.5.' });
+  if (Number(goalModel?.qualityScore || 0) >= 65 && Number(goalModel?.btts || 0) >= 64) candidates.push({ code:'btts', label:'Обе забьют · да', strength:Number(goalModel.btts), reason:'Голевая модель даёт около ' + Math.round(Number(goalModel.btts)) + '% на голы обеих команд.' });
   if (p.home >= 58 && p.home >= p.away + 14) candidates.push({ code:'home', label:'П1', strength:p.home, reason:'Победа хозяев имеет наибольшую модельную вероятность — около ' + Math.round(p.home) + '%.' });
   if (p.away >= 58 && p.away >= p.home + 14) candidates.push({ code:'away', label:'П2', strength:p.away, reason:'Победа гостей имеет наибольшую модельную вероятность — около ' + Math.round(p.away) + '%.' });
   candidates.sort((a,b) => b.strength - a.strength);
@@ -18586,6 +18726,23 @@ function buildAiInstructor({ probabilities, goalModel, confidence, completeness,
       ? 'Часть данных источника недоступна или ограничена тарифом; неизвестные значения не подменяются нулями.'
       : dataTrustScore >= 80 ? 'Большинство ключевых блоков доступны.' : dataTrustScore >= 60 ? 'Для рабочего вывода хватает данных, но есть пробелы.' : 'Не хватает части ключевых данных — вывод нужно трактовать осторожно.',
   };
+  const qualityGate = analysisQualityGate({
+    probabilities,
+    confidence,
+    dataTrustScore,
+    providerReliability,
+    lineupImpact,
+    minutesToKickoff,
+  });
+  if (!qualityGate.allowSignal && betSignal.code !== 'skip') {
+    const primaryReason = qualityGate.reasons.find(x => x.level === 'block' || x.level === 'hold');
+    betSignal = {
+      code:'skip',
+      label:'Пропустить ставку',
+      strength:0,
+      reason:primaryReason?.text || 'Качество входных данных не прошло рабочий gate.',
+    };
+  }
   const maxOutcome = [['П1',p.home],['Н',p.draw],['П2',p.away]].sort((a,b)=>b[1]-a[1])[0];
   const over25 = Number(goalModel?.over25 || 0);
   const btts = Number(goalModel?.btts || 0);
@@ -18610,7 +18767,7 @@ function buildAiInstructor({ probabilities, goalModel, confidence, completeness,
       : 'После старта сверять территорию, опасные атаки и качество моментов с предматчевым сценарием.',
   };
   return {
-    role:'football-ai-instructor', confidenceScore:Math.round(confidenceScore), confidenceLabel, riskLabel, betSignal, verdict, dataTrust, matchPlan,
+    role:'football-ai-instructor', confidenceScore:Math.round(confidenceScore), confidenceLabel, riskLabel, betSignal, verdict, dataTrust, qualityGate, matchPlan,
     riskNote: betSignal.code === 'skip' ? 'Сильного сигнала нет — не форсируйте решение.' : 'Проверяйте составы и изменения коэффициентов ближе к старту.',
     referee:String(referee || ''), refereeProfile:refereeData || refereeProfile(referee), refereeHistory:refereeHistory || null,
     refereeNote: referee ? 'Арбитр назначен; имя учитывается как контекст матча.' : 'Назначение судьи ещё не опубликовано источником данных.',
@@ -19087,7 +19244,7 @@ async function apiAnalyze(request, cfg, user) {
 
   const payload = {
     generatedAt: new Date().toISOString(),
-    analysisVersion: '4.7.0-model-dashboard',
+    analysisVersion: '4.8.0-quality-gate',
     match: {
       fixtureId, date: fixture.fixture?.date || '', status: fixture.fixture?.status?.short || '',
       venue: fixture.fixture?.venue?.name || '', city: fixture.fixture?.venue?.city || '',
@@ -19132,7 +19289,7 @@ async function apiAnalyze(request, cfg, user) {
     dataCapabilities: publicDataCapabilities(),
     market, marketMovement, apiPrediction, recentForm: { home: homeForm, away: awayForm }, goalModel, comparison, absences, lineups, lineupImpact, h2h,
     preMatchIntelligence,
-    aiInstructor: buildAiInstructor({ probabilities, goalModel, confidence, completeness: completenessPreview, factors: notes.factors, risks: [...(notes.risks || []), ...skipped], referee: fixture.fixture?.referee || '', refereeData: refereeProfile(fixture.fixture?.referee || ''), refereeHistory, lineupImpact, marketMovement, providerReliability }),
+    aiInstructor: buildAiInstructor({ probabilities, goalModel, confidence, completeness: completenessPreview, factors: notes.factors, risks: [...(notes.risks || []), ...skipped], referee: fixture.fixture?.referee || '', refereeData: refereeProfile(fixture.fixture?.referee || ''), refereeHistory, lineupImpact, marketMovement, providerReliability, minutesToKickoff }),
     insights: notes.factors, risks: [...(notes.risks || []), ...skipped], news: web,
     completeness: completenessPreview,
     providerReliability,
@@ -19577,6 +19734,8 @@ export default {
         backendSecurityContract: 'enabled',
         providerDataReliability: 'enabled',
         providerDataReliabilitySelfTest: providerDataReliabilitySelfTest().pass ? 'enabled' : 'failed',
+        aiAnalysisQualityGate: 'enabled',
+        aiAnalysisQualityGateSelfTest: analysisQualityGateSelfTest().pass ? 'enabled' : 'failed',
         supabaseSchemaDriftGuard: 'enabled',
         supabaseSchemaDriftSelfTest: supabaseSchemaDriftSelfTest().pass ? 'enabled' : 'failed',
         cloudflareDeploymentGate: 'enabled',
