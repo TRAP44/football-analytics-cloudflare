@@ -5,7 +5,6 @@ import fs from 'node:fs';
 const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const readme=fs.readFileSync('README_CLOUDFLARE_RU.md','utf8');
-const simulation=fs.readFileSync('LAUNCH_SIMULATION_RC54.md','utf8');
 
 test('RC54 shortens first-session path and prioritizes search',()=> {
   assert.ok(worker.includes('Напишите клуб прямо в чат'));
