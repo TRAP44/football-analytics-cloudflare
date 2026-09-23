@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.63.0-rc71';
+const APP_VERSION = '6.64.0-rc72';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc71';
-const RC_NAME = 'RC71';
+const RELEASE_CHANNEL = 'rc72';
+const RC_NAME = 'RC72';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1683,6 +1683,15 @@ async function apiLaunchFunnel(request,cfg) {
   const newsImpactRows=rows.filter(x=>String(x.event_name || '')==='news_impact_delta');
   const newsImpactCompared=new Set(newsImpactRows.filter(x=>Boolean(x?.metadata && typeof x.metadata==='object' ? x.metadata.compared : false)).map(x=>Number(x.telegram_id || 0)).filter(Boolean));
   const newsImpactMaterial=new Set(newsImpactRows.filter(x=>Boolean(x?.metadata && typeof x.metadata==='object' ? x.metadata.material : false)).map(x=>Number(x.telegram_id || 0)).filter(Boolean));
+  const newsImpactDecision=(row)=>String(row?.metadata && typeof row.metadata==='object' ? row.metadata.decision || '' : '');
+  const newsImpactDecisionSummary={
+    total:newsImpactRows.length,
+    material:newsImpactRows.filter(x=>newsImpactDecision(x)==='material').length,
+    detail:newsImpactRows.filter(x=>newsImpactDecision(x)==='detail').length,
+    stable:newsImpactRows.filter(x=>newsImpactDecision(x)==='stable').length,
+    guarded:newsImpactRows.filter(x=>['guarded','baseline_missing'].includes(newsImpactDecision(x))).length,
+    unavailable:newsImpactRows.filter(x=>newsImpactDecision(x)==='unavailable').length,
+  };
   const shareRows=rows.filter(x=>['share_link_created','share_card_created'].includes(String(x.event_name || '')));
   const deepLinkRows=rows.filter(x=>String(x.event_name || '')==='fixture_deep_link_open');
   const deepLinkUsers=new Set(deepLinkRows.map(x=>Number(x.telegram_id || 0)).filter(Boolean));
@@ -1728,6 +1737,7 @@ async function apiLaunchFunnel(request,cfg) {
     handoff:{users:handoffUsers.size,fullAiUsers:handoffToFull.size,conversionPct:handoffUsers.size?Math.round((handoffToFull.size/handoffUsers.size)*1000)/10:0},
     rechecks:{total:recheckRows.length,free:recheckFree,charged:Math.max(0,recheckRows.length-recheckFree),material:recheckMaterial,stable:recheckStable},
     returnLoop:{newsOpen:newsOpen.size,newsReturn:newsReturn.size,aiIntent:newsAiIntent.size,smartFixtureIntent:smartNewsAiUsers.size,impactChecks:newsImpactRows.length,impactCompared:newsImpactCompared.size,impactMaterial:newsImpactMaterial.size,intentPct:newsOpen.size?Math.round((newsAiIntent.size/newsOpen.size)*1000)/10:0,conversionPct:newsOpen.size?Math.round((newsReturn.size/newsOpen.size)*1000)/10:0},
+    newsImpactDecisionSummary,
     mediaLoop:{shareEvents:shareRows.length,shareUsers:shareUsers.size,deepLinkOpens:deepLinkRows.length,deepLinkUsers:deepLinkUsers.size,aiUsers:deepLinkAiUsers.size,conversionPct:deepLinkUsers.size?Math.round((deepLinkAiUsers.size/deepLinkUsers.size)*1000)/10:0},
     searchQuality:{attempts:searchResultRows.length,match:searchMatches,recognizedNoMatch:searchRecognizedNoMatch,notFound:searchNotFound,recoveredRecent:searchRecoveredRecent,matchPct:searchResultRows.length?Math.round((searchMatches/searchResultRows.length)*1000)/10:0},
     campaigns,
@@ -2351,11 +2361,13 @@ async function sendBotFixtureMenu(request, cfg, userId, chatId, fixtureId, optio
     await rememberBotFixtureCards([analyzedMatch],cfg);
     void recordGrowthEvent(cfg,{userId,eventName:'quick_ai',channel:'telegram',fixtureId,attribution:options.attribution || null,metadata:{section:'handoff',cached:Boolean(data.cached),source:options.source || 'match_select'}});
     if (options.newsImpactDelta) {
+      const decision=newsImpactDecisionCard(data?.newsImpact || null);
       void recordGrowthEvent(cfg,{userId,eventName:'news_impact_delta',channel:'telegram',fixtureId,metadata:{
         compared:Boolean(data?.newsImpact?.compared),
         material:Boolean(data?.newsImpact?.material),
         stable:Boolean(data?.newsImpact?.stable),
         reason:String(data?.newsImpact?.reasonCode || '').slice(0,32),
+        decision:String(decision?.code || '').slice(0,24),
         changeCount:Number(data?.newsImpact?.items?.length || 0),
       }});
     }
@@ -2368,7 +2380,9 @@ async function sendBotFixtureMenu(request, cfg, userId, chatId, fixtureId, optio
       chat_id:chatId,
       parse_mode:'HTML',
       text:botAiHandoffText(data),
-      reply_markup:footballQuickAiHandoffKeyboard(request,analyzedMatch,favorites),
+      reply_markup:options.newsImpactDelta
+        ? newsImpactDecisionKeyboard(request,analyzedMatch,favorites,data?.newsImpact || null)
+        : footballQuickAiHandoffKeyboard(request,analyzedMatch,favorites),
     });
   } catch (error) {
     const status=Number(error?.status || 0);
@@ -2448,6 +2462,70 @@ function botAiVerdictText(data = {}) {
   ].join('\n');
 }
 
+function newsImpactDecisionCard(newsImpact = {}) {
+  if (!newsImpact?.requested) return null;
+  const reason=String(newsImpact.reasonCode || '');
+  if (newsImpact.compared && newsImpact.material) return {
+    code:'material',icon:'🔴',label:'Существенное изменение',
+    headline:'После новости свежая проверка обнаружила заметный сдвиг во входных данных AI.',
+    action:'Открыть полный разбор и проверить обновлённый сценарий матча.',priority:4,
+  };
+  if (newsImpact.compared && newsImpact.stable) return {
+    code:'stable',icon:'🟢',label:'Сценарий стабилен',
+    headline:'После новости значимых изменений в AI-входах не найдено.',
+    action:'Срочного действия нет; продолжайте следить за составами и рынком.',priority:1,
+  };
+  if (newsImpact.compared) return {
+    code:'detail',icon:'🟡',label:'Изменились детали',
+    headline:'Изменились отдельные данные, но основной AI-сценарий не сдвинулся существенно.',
+    action:'Проверить изменившиеся блоки перед стартом матча.',priority:2,
+  };
+  if (reason==='snapshot_not_before_news') return {
+    code:'guarded',icon:'🟦',label:'Причинность не подтверждается',
+    headline:'Сохранённый AI-снимок не был сделан до новости, поэтому сравнение «до/после» нельзя трактовать как влияние новости.',
+    action:'Текущий анализ станет новой базовой точкой.',priority:0,
+  };
+  if (reason==='baseline_missing') return {
+    code:'baseline_missing',icon:'⚪',label:'Нет базового снимка',
+    headline:'До новости не было сохранённого анализа для честного сравнения.',
+    action:'Текущий анализ станет базой для следующей News Impact проверки.',priority:0,
+  };
+  return {
+    code:'unavailable',icon:'🟠',label:'Перепроверка недоступна',
+    headline:'Новость связана с матчем, но сравнительный расчёт сейчас не завершён.',
+    action:'Повторить обновление AI позже.',priority:0,
+  };
+}
+
+function newsImpactDecisionKeyboard(request, match = {}, favorites = [], newsImpact = null) {
+  const fixtureId=Number(match?.fixtureId || 0);
+  if (!fixtureId) return footballBotKeyboard(request);
+  const card=newsImpactDecisionCard(newsImpact);
+  const rows=[];
+  if (card?.code==='material') {
+    rows.push([{text:'📊 Открыть обновлённый AI-разбор',web_app:{url:telegramFullAnalysisUrl(request,fixtureId,'brief')}}]);
+    rows.push([{text:'👥 Проверить составы',callback_data:`match:squads:${fixtureId}`},{text:'💹 Проверить рынок',callback_data:`match:market:${fixtureId}`}]);
+  } else if (card?.code==='detail') {
+    rows.push([{text:'🧠 Открыть полный разбор',web_app:{url:telegramFullAnalysisUrl(request,fixtureId,'brief')}}]);
+    rows.push([{text:'🔄 Перепроверить AI',callback_data:`match:refresh:${fixtureId}`}]);
+  } else if (card?.code==='stable') {
+    rows.push([{text:'📰 Ещё новости',callback_data:'news:general'},{text:'📊 Полный AI-разбор',web_app:{url:telegramFullAnalysisUrl(request,fixtureId,'brief')}}]);
+  } else {
+    rows.push([{text:'🔄 Повторить AI-проверку',callback_data:`match:refresh:${fixtureId}`},{text:'📊 Полный AI-разбор',web_app:{url:telegramFullAnalysisUrl(request,fixtureId,'brief')}}]);
+  }
+  const favoriteRow=favoriteMatchTeamRow(match,favorites);
+  if (favoriteRow.length) rows.push(favoriteRow);
+  rows.push([{text:'↗ Поделиться матчем',callback_data:`match:share:${fixtureId}`}]);
+  return {inline_keyboard:rows};
+}
+
+function newsImpactDecisionDrill() {
+  const material=newsImpactDecisionCard({requested:true,compared:true,material:true,stable:false,reasonCode:'material_change'});
+  const stable=newsImpactDecisionCard({requested:true,compared:true,material:false,stable:true,reasonCode:'stable'});
+  const guarded=newsImpactDecisionCard({requested:true,compared:false,material:false,stable:true,reasonCode:'snapshot_not_before_news'});
+  return {pass:material?.code==='material' && material?.priority===4 && stable?.code==='stable' && guarded?.code==='guarded' && guarded?.label==='Причинность не подтверждается',cases:5};
+}
+
 function botAiHandoffText(data = {}) {
   const match=data.match || {};
   const ai=data.aiInstructor || {};
@@ -2464,14 +2542,14 @@ function botAiHandoffText(data = {}) {
   const delta=data?.recheck?.performed ? data?.recheck?.delta : null;
   const newsImpact=data?.newsImpact || null;
   const deltaLines=!newsImpact?.requested && delta?.available ? [delta.summary,...(delta.items || []).slice(0,3).map(item=>`• ${item.title}${item.after?`: ${item.after}`:''}`)] : [];
+  const newsDecision=newsImpactDecisionCard(newsImpact);
   const newsImpactLines=newsImpact?.requested
     ? [
-        newsImpact.summary || 'Новостной контекст проверен.',
-        newsImpact.compared
-          ? `Существенность: ${newsImpact.material ? 'есть существенные изменения' : newsImpact.stable ? 'значимых изменений нет' : 'изменились отдельные детали'}.`
-          : 'Сравнение до/после не выполнено.',
+        newsDecision ? `${newsDecision.icon} ${newsDecision.label}` : 'Новостной контекст проверен.',
+        newsDecision?.headline || newsImpact.summary || 'Новостной контекст проверен.',
         ...(newsImpact.items || []).slice(0,3).map(item=>`• ${item.title}${item.before&&item.after?`: ${item.before} → ${item.after}`:item.after?`: ${item.after}`:''}`),
-      ]
+        newsDecision?.action ? `Что делать: ${newsDecision.action}` : '',
+      ].filter(Boolean)
     : [];
   return [
     '🧠 <b>FM AI · короткая оценка</b>',
@@ -15119,6 +15197,11 @@ export default {
         explicitNewsRecheck: 'enabled',
         newsImpactMateriality: 'enabled',
         newsImpactDeltaSelfTest: newsImpactDeltaDrill().pass ? 'enabled' : 'failed',
+        newsImpactDecisionCard: 'enabled',
+        newsImpactActionRouting: 'enabled',
+        newsImpactCausalityGuardUx: 'enabled',
+        newsImpactDecisionAnalytics: 'enabled',
+        newsImpactDecisionSelfTest: newsImpactDecisionDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
