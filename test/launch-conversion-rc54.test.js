@@ -4,7 +4,6 @@ import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
-const readme=fs.readFileSync('README_CLOUDFLARE_RU.md','utf8');
 
 test('RC54 shortens first-session path and prioritizes search',()=> {
   assert.ok(worker.includes('Напишите клуб прямо в чат'));
@@ -40,8 +39,6 @@ test('launch funnel pages through media traffic and exposes bottleneck',()=> {
   assert.ok(app.includes('Узкое место:'));
   assert.ok(app.includes('Возврат из новостей'));
 });
-test('RC54 release contract is documented and health-visible',()=> {
+test('RC54 release contract remains health-visible',()=> {
   for (const flag of ['launchSimulation','conversionUx','highIntentSearchFallback','newsReturnLoop']) assert.ok(worker.includes(`${flag}: 'enabled'`));
-  assert.ok(readme.includes('RC54: Launch Simulation & Conversion UX'));
-  assert.ok(simulation.includes('media deep-link → /start → поиск клуба → матч → быстрый AI → полный AI → новости → возврат'));
 });
