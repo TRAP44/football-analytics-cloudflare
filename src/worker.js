@@ -2547,6 +2547,9 @@ function botAiHandoffText(data = {}) {
     ? [
         newsDecision ? `${newsDecision.icon} ${newsDecision.label}` : 'Новостной контекст проверен.',
         newsDecision?.headline || newsImpact.summary || 'Новостной контекст проверен.',
+        newsImpact.compared
+          ? `Существенность: ${newsImpact.material ? 'есть существенные изменения' : newsImpact.stable ? 'значимых изменений нет' : 'изменились отдельные детали'}.`
+          : 'Существенность: сравнение до/после не выполнено.',
         ...(newsImpact.items || []).slice(0,3).map(item=>`• ${item.title}${item.before&&item.after?`: ${item.before} → ${item.after}`:item.after?`: ${item.after}`:''}`),
         newsDecision?.action ? `Что делать: ${newsDecision.action}` : '',
       ].filter(Boolean)
