@@ -1844,10 +1844,22 @@ async function apiLaunchFunnel(request,cfg) {
     {asOfMs:analyticsNowMs},
   );
   const newsImpactRecoveryIncidentSummary=summarizeNewsImpactRecoveryIncidents(newsImpactRecoveryIncidents);
-  const newsImpactRecoveryIncidentSloDashboard=buildNewsImpactRecoveryIncidentSloDashboard(
-    newsImpactRecoveryStrategyLoaded.available ? (newsImpactRecoveryStrategyLoaded.incidentEpisodeHistory || []) : [],
-    {asOfMs:analyticsNowMs,weeks:4},
-  );
+  const newsImpactRecoveryIncidentSloDashboard=newsImpactRecoveryStrategyLoaded.available
+    ? buildNewsImpactRecoveryIncidentSloDashboard(
+        newsImpactRecoveryStrategyLoaded.incidentEpisodeHistory || [],
+        {asOfMs:analyticsNowMs,weeks:4},
+      )
+    : {
+        available:false,
+        reason:String(newsImpactRecoveryStrategyLoaded.reason || 'evidence_unavailable'),
+        windowDays:28,
+        weeks:4,
+        generatedAt:new Date(analyticsNowMs).toISOString(),
+        summary:{episodes:0,recurringPairs:0,ackSloPct:null,recoverySloPct:null},
+        weekly:[],
+        repeated:[],
+        privacy:{telegramIdsExposed:false,rawErrorsExposed:false},
+      };
   const newsImpactRecoveryIncidentSloGuard={
     ackTargetMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,
     ackCriticalMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,
@@ -4172,7 +4184,7 @@ function buildNewsImpactRecoveryIncidentSloDashboard(episodeRows = [], {asOfMs =
     for (const code of episode.guardCodes || []) bucket.guards.add(code);
     recurrence.set(key,bucket);
   }
-  const repeated=[...recurrence.values()].map(x=>({
+  const repeatedAll=[...recurrence.values()].map(x=>({
     reason:x.reason,
     reasonLabel:x.reasonLabel,
     action:x.action,
@@ -4184,8 +4196,8 @@ function buildNewsImpactRecoveryIncidentSloDashboard(episodeRows = [], {asOfMs =
     lastStartedAt:x.lastStartedAt,
     guards:[...x.guards].sort(),
   })).filter(x=>x.episodes>=2)
-    .sort((a,b)=>b.episodes-a.episodes || b.recoveryBreaches-a.recoveryBreaches || b.ackBreaches-a.ackBreaches || Date.parse(b.lastStartedAt)-Date.parse(a.lastStartedAt))
-    .slice(0,10);
+    .sort((a,b)=>b.episodes-a.episodes || b.recoveryBreaches-a.recoveryBreaches || b.ackBreaches-a.ackBreaches || Date.parse(b.lastStartedAt)-Date.parse(a.lastStartedAt));
+  const repeated=repeatedAll.slice(0,10);
 
   const summary=summarize(episodes);
   const current=weekly[weekly.length-1] || null;
@@ -4200,7 +4212,7 @@ function buildNewsImpactRecoveryIncidentSloDashboard(episodeRows = [], {asOfMs =
     generatedAt:new Date(asOfMs).toISOString(),
     summary:{
       ...summary,
-      recurringPairs:repeated.length,
+      recurringPairs:repeatedAll.length,
       ackDeltaPctPoints:delta(current?.ackSloPct,previous?.ackSloPct),
       recoveryDeltaPctPoints:delta(current?.recoverySloPct,previous?.recoverySloPct),
     },
