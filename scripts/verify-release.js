@@ -143,7 +143,7 @@ if (!worker.includes('function publicReminder')) failures.push('Reminder write r
 if (!fs.existsSync('test/analysis-history-transition.test.js')) failures.push('Missing analysis/history transition regression test');
 if (!app.includes('historyOpenRequestSeq: 0')) failures.push('History-open stale response guard is missing');
 if (!app.includes('historyRevision: 0')) failures.push('History read/write revision guard is missing');
-if (!app.includes('void Promise.allSettled([loadHistory(false), loadReminders()])')) failures.push('Analysis result must not wait for secondary history/reminder refresh');
+if (!app.includes('void Promise.allSettled([loadHistory(false), loadReminders(), loadFavorites()])')) failures.push('Analysis result must not wait for secondary history/reminder/favorites refresh');
 if (app.includes('state.currentAnalysis = data;\n    if (isAdmin()')) failures.push('analyzeMatch must let renderAnalysis compare the previous fixture before assignment');
 if (!fs.existsSync('test/russian-ui-localization.test.js')) failures.push('Missing Russian UI localization regression test');
 if (!html.includes('id="quotaFeatureSkipped"') || html.includes('quotaFeatureПропущено')) failures.push('Provider skipped-counter DOM id is inconsistent');
