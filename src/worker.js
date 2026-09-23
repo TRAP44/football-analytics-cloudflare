@@ -34,6 +34,7 @@ const memory = {
   productionReadiness: null,
   rcRegression: null,
   releaseMonitor: null,
+  productionMonitor: null,
   runtimeControls: { value: null, loadedAt: 0, source: 'defaults', schemaReady: null },
   newsImpactRecoveryStrategy: { value: null, loadedAt: 0 },
   clientTelemetryDedupe: new Map(),
@@ -80,11 +81,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.94.0-rc102';
+const APP_VERSION = '6.95.0-rc103';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc102';
-const RC_NAME = 'RC102';
+const RELEASE_CHANNEL = 'rc103';
+const RC_NAME = 'RC103';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -647,6 +648,8 @@ function appManifest(cfg) {
       productionLoadSafety: true,
       regressionQA: true,
       releaseMonitor: true,
+      productionMonitor: true,
+      rollbackVerification: true,
       clientTelemetry: true,
       notificationReliability: true,
       reminderDeliveryClaims: true,
@@ -890,7 +893,7 @@ const ROUTE_BURST_POLICIES = Object.freeze([
   { test: p => p === '/api/runtime-controls', limit: 6, windowMs: 30000, label: 'runtime-controls' },
   { test: p => p === '/api/runtime-controls/rollback', limit: 3, windowMs: 30000, label: 'runtime-rollback' },
   { test: p => p === '/api/model-remediation', limit: 4, windowMs: 60000, label: 'model-remediation' },
-  { test: p => p === '/api/diagnostics' || p === '/api/release-readiness' || p === '/api/production-readiness' || p === '/api/rc-regression' || p === '/api/release-monitor', limit: 6, windowMs: 30000, label: 'admin-diagnostics' },
+  { test: p => p === '/api/diagnostics' || p === '/api/release-readiness' || p === '/api/production-readiness' || p === '/api/rc-regression' || p === '/api/release-monitor' || p === '/api/production-monitor', limit: 6, windowMs: 30000, label: 'admin-diagnostics' },
 ]);
 
 function routeBurstPolicy(pathname) {
@@ -13797,6 +13800,158 @@ function releaseMonitorHealth(current, persistent) {
   return { state, label, score };
 }
 
+
+function productionMonitorState(input = {}) {
+  const supabaseOk = Boolean(input.supabaseOk);
+  const schemaOk = Boolean(input.schemaOk);
+  const releaseState = String(input.releaseState || 'healthy');
+  const providerHealth = String(input.providerHealth || 'waiting');
+  const persistent = input.persistent !== false;
+
+  if (!supabaseOk || !schemaOk || releaseState === 'incident') {
+    return { state: 'incident', label: 'Production требует немедленной проверки' };
+  }
+  if (releaseState === 'watch' || !persistent || ['critical','warning'].includes(providerHealth)) {
+    return { state: 'watch', label: 'Production работает, но нужен контроль' };
+  }
+  return { state: 'healthy', label: 'Production monitor не видит блокирующих сигналов' };
+}
+
+function productionMonitorSelfTest() {
+  const healthy = productionMonitorState({
+    supabaseOk: true, schemaOk: true, releaseState: 'healthy', providerHealth: 'ok', persistent: true,
+  });
+  const drift = productionMonitorState({
+    supabaseOk: true, schemaOk: false, releaseState: 'healthy', providerHealth: 'ok', persistent: true,
+  });
+  const watch = productionMonitorState({
+    supabaseOk: true, schemaOk: true, releaseState: 'watch', providerHealth: 'ok', persistent: true,
+  });
+  return {
+    pass: healthy.state === 'healthy' && drift.state === 'incident' && watch.state === 'watch',
+    healthy: healthy.state,
+    drift: drift.state,
+    watch: watch.state,
+  };
+}
+
+async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {}) {
+  const now = scheduledAt instanceof Date && Number.isFinite(scheduledAt.getTime()) ? scheduledAt : new Date();
+  const currentStart = new Date(now.getTime() - 60 * 60_000);
+  const historyStart = new Date(now.getTime() - 6 * 60 * 60_000);
+
+  const [supabase, schemaDrift, source] = await Promise.all([
+    probeSupabase(cfg),
+    probeSupabaseSchemaDrift(cfg),
+    readOpsEventsRange(cfg, historyStart.toISOString(), now.toISOString(), 1000),
+  ]);
+
+  const releaseItems = source.items.filter(item => {
+    const created = Date.parse(item?.created_at || '');
+    return item?.source !== 'monitor' && Number.isFinite(created) && created >= currentStart.getTime();
+  });
+  const current = summarizeReleaseWindow(releaseItems, 1);
+  const releaseHealth = releaseMonitorHealth(current, source.persistent);
+  const provider = providerSnapshot();
+  const health = productionMonitorState({
+    supabaseOk: supabase.ok,
+    schemaOk: schemaDrift.ok,
+    releaseState: releaseHealth.state,
+    providerHealth: provider.health,
+    persistent: source.persistent,
+  });
+
+  const previousMonitor = source.items.find(item =>
+    item?.source === 'monitor' && item?.event_type === 'production_monitor'
+  ) || null;
+  const previousState = String(previousMonitor?.metadata?.state || '');
+  const previousAt = Date.parse(previousMonitor?.created_at || '');
+  const heartbeatDue = !Number.isFinite(previousAt) || now.getTime() - previousAt >= 6 * 60 * 60_000;
+  const stateChanged = previousState && previousState !== health.state;
+
+  const value = {
+    available: true,
+    version: APP_VERSION,
+    releaseCandidate: RC_NAME,
+    generatedAt: now.toISOString(),
+    cadenceMinutes: 15,
+    state: health.state,
+    label: health.label,
+    supabase: {
+      ok: Boolean(supabase.ok),
+      status: supabase.status || (supabase.ok ? 'ok' : 'unknown'),
+      latencyMs: Number(supabase.latencyMs || 0) || null,
+    },
+    schema: {
+      ok: Boolean(schemaDrift.ok),
+      checked: Number(schemaDrift.checked || 0),
+      missing: Array.isArray(schemaDrift.missing) ? schemaDrift.missing : [],
+    },
+    release: {
+      state: releaseHealth.state,
+      score: Number(releaseHealth.score || 0),
+      errors: Number(current.errorLike || 0),
+      warnings: Number(current.warningLike || 0),
+    },
+    provider: {
+      health: provider.health || 'waiting',
+      plan: provider.plan || 'UNKNOWN',
+      cooldownActive: Boolean(provider.cooldownActive),
+    },
+    observability: {
+      persistent: Boolean(source.persistent),
+      migrationReady: Boolean(source.migrationReady),
+    },
+    policy: {
+      consumesFootballApi: false,
+      mutatesUserData: false,
+      changesRuntimeControls: false,
+      autoRollback: false,
+      note: 'Монитор только наблюдает и записывает изменение состояния. Автоматический rollback намеренно не выполняется.',
+    },
+  };
+  memory.productionMonitor = { at: Date.now(), value };
+
+  if (options.record !== false && (!previousState || stateChanged || heartbeatDue)) {
+    const recovered = previousState && previousState !== 'healthy' && health.state === 'healthy';
+    const severity = health.state === 'incident' ? 'critical' : health.state === 'watch' ? 'warning' : 'info';
+    const code = recovered
+      ? 'PRODUCTION_MONITOR_RECOVERED'
+      : health.state === 'incident'
+        ? 'PRODUCTION_MONITOR_INCIDENT'
+        : health.state === 'watch'
+          ? 'PRODUCTION_MONITOR_WATCH'
+          : 'PRODUCTION_MONITOR_HEALTHY';
+    await recordOpsEvent(cfg, {
+      severity,
+      source: 'monitor',
+      eventType: 'production_monitor',
+      code,
+      message: recovered ? 'Production monitor returned to healthy state.' : health.label,
+      endpoint: 'cron:production-monitor',
+      meta: {
+        state: health.state,
+        previousState: previousState || null,
+        supabaseOk: Boolean(supabase.ok),
+        schemaOk: Boolean(schemaDrift.ok),
+        releaseState: releaseHealth.state,
+        releaseScore: Number(releaseHealth.score || 0),
+        providerHealth: provider.health || 'waiting',
+      },
+    }).catch(() => {});
+  }
+
+  return value;
+}
+
+async function apiProductionMonitor(request, cfg) {
+  const force = new URL(request.url).searchParams.get('refresh') === '1';
+  if (!force && memory.productionMonitor?.value && Date.now() - Number(memory.productionMonitor.at || 0) < 30000) {
+    return json({ ...memory.productionMonitor.value, cached: true });
+  }
+  return json(await runProductionMonitor(cfg, new Date(), { record: false }));
+}
+
 async function apiReleaseMonitor(request, cfg) {
   const url = new URL(request.url);
   const hours = Math.max(1, Math.min(168, Number(url.searchParams.get('hours') || 24)));
@@ -13974,6 +14129,7 @@ async function apiReleaseReadiness(request, cfg) {
     readBackendSecurityContract(cfg),
     probeSupabaseSchemaDrift(cfg),
   ]);
+  const productionMonitor = await runProductionMonitor(cfg, new Date(), { record: false });
   const runtime = runtimeState.value;
   const provider = diagnostics.provider || {};
   const watchdogSelfTest = settlementWatchdogSelfTest();
@@ -14050,6 +14206,8 @@ async function apiReleaseReadiness(request, cfg) {
       memory.rcRegression?.value ? `${memory.rcRegression.value.label} · ${memory.rcRegression.value.score}%.` : 'Регрессионная проверка RC ещё не запускалась.', false),
     releaseCheck('release_monitor', 'Мониторинг релиза', memory.releaseMonitor?.h24?.value?.health?.state === 'incident' ? 'warn' : memory.releaseMonitor?.h24?.value ? 'pass' : 'warn',
       memory.releaseMonitor?.h24?.value ? `${memory.releaseMonitor.h24.value.health.label} · ${memory.releaseMonitor.h24.value.health.score}%.` : 'Мониторинг релиза ещё не запускался.', false),
+    releaseCheck('production_monitor', 'Production monitor', productionMonitor.state === 'incident' ? 'fail' : productionMonitor.state === 'watch' ? 'warn' : 'pass',
+      `${productionMonitor.label} · release score ${Number(productionMonitor.release?.score || 0)}%.`, productionMonitor.state === 'incident'),
     releaseCheck('monetization', 'Монетизация', cfg.monetizationEnabled ? 'warn' : 'pass', cfg.monetizationEnabled ? 'Монетизация включена, хотя текущий план проекта — запускать её в финале.' : 'Оплата корректно остаётся на паузе.', false),
     releaseCheck('integrity_last_run', 'Последняя проверка матчей', diagnostics.integrity?.lastRun?.health === 'critical' ? 'warn' : 'pass', diagnostics.integrity?.lastRun ? `Состояние: ${diagnostics.integrity.lastRun.health || 'норма'}, качество ${Number(diagnostics.integrity.lastRun.qualityScore || 0)}%.` : 'Проверка появится после загрузки каталога матчей.', false),
   ];
@@ -14113,52 +14271,9 @@ async function apiProductionReadiness(request, cfg) {
     runSingleFlightSelfTest(),
   ]);
   const runLedgerSelfTest = settlementRunLedgerSelfTest();
-  checks.push(rcCheck(
-    'settlement_run_ledger_selftest',
-    'safety',
-    'Самопроверка журнала запусков',
-    runLedgerSelfTest.pass ? 'pass' : 'fail',
-    runLedgerSelfTest.pass
-      ? `fresh=${runLedgerSelfTest.fresh}; retry=${runLedgerSelfTest.retry}; exhausted=${runLedgerSelfTest.exhausted}; differentBatch=${runLedgerSelfTest.differentBatch}.`
-      : 'Самопроверка журнала запусков фиксации результатов не прошла.',
-    true
-  ));
-
   const finalitySelfTest = settlementFinalitySelfTest();
-  checks.push(rcCheck(
-    'settlement_finality_selftest',
-    'safety',
-    'Самопроверка подтверждения результата',
-    finalitySelfTest.pass ? 'pass' : 'fail',
-    finalitySelfTest.pass
-      ? `verified=${finalitySelfTest.verified}; scoreDrift=${finalitySelfTest.scoreDrift}; statusDrift=${finalitySelfTest.statusDrift}; wait=${finalitySelfTest.wait}.`
-      : 'Самопроверка окончательности результата не прошла.',
-    true
-  ));
-
   const adjudicationSelfTest = settlementDriftAdjudicationSelfTest();
-  checks.push(rcCheck(
-    'settlement_adjudication_selftest',
-    'safety',
-    'Самопроверка разбора расхождений',
-    adjudicationSelfTest.pass ? 'pass' : 'fail',
-    adjudicationSelfTest.pass
-      ? `keep=${adjudicationSelfTest.keep}; accept=${adjudicationSelfTest.accept}; void=${adjudicationSelfTest.void}; unsafeBlocked=${adjudicationSelfTest.unsafeAcceptBlocked}.`
-      : 'Самопроверка ручного разбора результатов не прошла.',
-    true
-  ));
-
   const trustedGateSelfTest = trustedMetricsGateSelfTest();
-  checks.push(rcCheck(
-    'trusted_metrics_gate_selftest',
-    'safety',
-    'Самопроверка доверенных метрик',
-    trustedGateSelfTest.pass ? 'pass' : 'fail',
-    trustedGateSelfTest.pass
-      ? `confirmed=${trustedGateSelfTest.confirmed}; adjudicated=${trustedGateSelfTest.adjudicated}; verifiedBlocked=${trustedGateSelfTest.verifiedBlocked}; unverifiedBlocked=${trustedGateSelfTest.unverifiedBlocked}; driftBlocked=${trustedGateSelfTest.driftBlocked}; voidBlocked=${trustedGateSelfTest.voidBlocked}.`
-      : 'Самопроверка допуска доверенных метрик не прошла.',
-    true
-  ));
 
   const safety = productionSafetySnapshot();
   const providerBudget = providerBudgetProfile();
@@ -14166,6 +14281,22 @@ async function apiProductionReadiness(request, cfg) {
   const lastE2E = await loadLastProviderE2E(cfg);
 
   const checks = [
+    productionCheck('settlement_run_ledger_selftest', 'Самопроверка журнала запусков', runLedgerSelfTest.pass ? 'pass' : 'fail',
+      runLedgerSelfTest.pass
+        ? `fresh=${runLedgerSelfTest.fresh}; retry=${runLedgerSelfTest.retry}; exhausted=${runLedgerSelfTest.exhausted}; differentBatch=${runLedgerSelfTest.differentBatch}.`
+        : 'Самопроверка журнала запусков фиксации результатов не прошла.', true),
+    productionCheck('settlement_finality_selftest', 'Самопроверка подтверждения результата', finalitySelfTest.pass ? 'pass' : 'fail',
+      finalitySelfTest.pass
+        ? `verified=${finalitySelfTest.verified}; scoreDrift=${finalitySelfTest.scoreDrift}; statusDrift=${finalitySelfTest.statusDrift}; wait=${finalitySelfTest.wait}.`
+        : 'Самопроверка окончательности результата не прошла.', true),
+    productionCheck('settlement_adjudication_selftest', 'Самопроверка разбора расхождений', adjudicationSelfTest.pass ? 'pass' : 'fail',
+      adjudicationSelfTest.pass
+        ? `keep=${adjudicationSelfTest.keep}; accept=${adjudicationSelfTest.accept}; void=${adjudicationSelfTest.void}; unsafeBlocked=${adjudicationSelfTest.unsafeAcceptBlocked}.`
+        : 'Самопроверка ручного разбора результатов не прошла.', true),
+    productionCheck('trusted_metrics_gate_selftest', 'Самопроверка доверенных метрик', trustedGateSelfTest.pass ? 'pass' : 'fail',
+      trustedGateSelfTest.pass
+        ? `confirmed=${trustedGateSelfTest.confirmed}; adjudicated=${trustedGateSelfTest.adjudicated}; verifiedBlocked=${trustedGateSelfTest.verifiedBlocked}; unverifiedBlocked=${trustedGateSelfTest.unverifiedBlocked}; driftBlocked=${trustedGateSelfTest.driftBlocked}; voidBlocked=${trustedGateSelfTest.voidBlocked}.`
+        : 'Самопроверка допуска доверенных метрик не прошла.', true),
     productionCheck('supabase', 'Supabase отвечает', diagnostics.supabase?.ok ? 'pass' : 'fail',
       diagnostics.supabase?.ok ? `${Number(diagnostics.supabase?.latencyMs || 0)} мс.` : `${diagnostics.supabase?.status || 'offline'}.`, true),
     productionCheck('singleflight', 'Объединение одинаковых серверных запросов', singleflightTest.pass ? 'pass' : 'fail',
@@ -19222,6 +19353,9 @@ export default {
         startupSafety: 'enabled',
         rollbackSafety: 'enabled',
         releaseMonitor: 'enabled',
+        productionMonitor: 'enabled',
+        productionMonitorSelfTest: productionMonitorSelfTest().pass ? 'enabled' : 'failed',
+        rollbackVerification: 'enabled',
         clientTelemetry: 'enabled',
         operationalBudget: 'enabled',
         notificationReliability: 'enabled',
@@ -19374,6 +19508,10 @@ export default {
         if (!isAdminUser(user, cfg)) return adminForbidden();
         return await apiReleaseMonitor(request, cfg);
       }
+      if (request.method === 'GET' && url.pathname === '/api/production-monitor') {
+        if (!isAdminUser(user, cfg)) return adminForbidden();
+        return await apiProductionMonitor(request, cfg);
+      }
       if (request.method === 'GET' && url.pathname === '/api/launch-funnel') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
         return await apiLaunchFunnel(request, cfg);
@@ -19454,6 +19592,9 @@ export default {
       ['backtest', backtestTask],
       ['post_match_return', backtestTask.then(() => processPostMatchReturns(cfg))],
     ];
+    if (scheduledAt.getUTCMinutes() % 15 === 0) {
+      tasks.push(['production_monitor', runProductionMonitor(cfg, scheduledAt)]);
+    }
     if (scheduledAt.getUTCHours() === 7 && scheduledAt.getUTCMinutes() < 10) {
       tasks.push(['daily_digest', processDailyDigests(cfg, scheduledAt)]);
     }
