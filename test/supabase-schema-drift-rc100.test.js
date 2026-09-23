@@ -40,7 +40,7 @@ test('RC100 exposes and smoke-tests schema drift health flags', () => {
 });
 
 test('RC100 does not require a new Supabase migration', () => {
-  const files=fs.readdirSync('.').filter(x=>/^supabase_migration_v6_\d/.test(x));
+  const files=fs.readdirSync('supabase/migrations').filter(x=>/^supabase_migration_v6_\d/.test(x));
   assert.ok(files.includes('supabase_migration_v6_15.sql'));
   assert.ok(!files.some(x=>/v6_16|rc100/i.test(x)));
 });

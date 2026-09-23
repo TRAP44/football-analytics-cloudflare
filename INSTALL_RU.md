@@ -1,9 +1,12 @@
-# Установка Football Analytics v6.92.0 RC100
+# Установка Football Analytics v6.93.0 RC101
 
 ## Новый Supabase-проект
 
+Все SQL находятся в каталоге `supabase/`: fresh-install baseline — в `baseline/`, последовательные обновления — в `migrations/`.
+
+
 1. Откройте Supabase SQL Editor.
-2. Выполните **только** `supabase_baseline_v6_15.sql` целиком.
+2. Выполните **только** `supabase/baseline/supabase_baseline_v6_15.sql` целиком.
 3. Не запускайте после него numbered migrations v6.9–v6.15: они уже включены в unified baseline.
 4. В Supabase Data API убедитесь, что backend-таблицы доступны `service_role`, а прямой доступ `anon` и `authenticated` закрыт.
 
@@ -11,7 +14,7 @@
 
 1. Сделайте резервную копию базы.
 2. Примените только отсутствующие миграции, сохраняя порядок версий: v6.9 → v6.10 → v6.11 → v6.11.1 → v6.12 → v6.13 → v6.14 → v6.15.
-3. Для существующей базы не запускайте `supabase_baseline_v6_15.sql`: он предназначен только для fresh install.
+3. Для существующей базы не запускайте `supabase/baseline/supabase_baseline_v6_15.sql`: он предназначен только для fresh install.
 4. Не удаляйте и не переигрывайте уже применённые миграции без отдельного плана rollback.
 5. После обновления запустите защищённый RC Regression и проверьте least-privilege контракт Supabase.
 
@@ -47,7 +50,7 @@ API token должен быть ограничен нужным Cloudflare accou
 
 Рабочий release-процесс:
 
-`PR → Quality → merge в main → Deploy Production → RC100 smoke`.
+`PR → Quality → merge в main → Deploy Production → RC101 smoke`.
 
 ## Локальная проверка
 
@@ -65,13 +68,13 @@ npm run verify:worker
 
 Проверьте:
 
-1. `/health` возвращает `ok=true`, версию `6.92.0-rc100` и `releaseCandidate=RC100`.
+1. `/health` возвращает `ok=true`, версию `6.93.0-rc101` и `releaseCandidate=RC101`.
 2. RC Regression не содержит blocking failures.
 3. `DEV_MODE=false` и `MONETIZATION_ENABLED=false`.
 4. Обычный пользователь не видит административные controls.
 5. `/health/supabase` не доступен публично.
 6. CSP, HSTS, `X-Content-Type-Options: nosniff` и остальные security headers присутствуют.
-7. Production smoke подтверждает обязательные RC100 release/self-test flags.
+7. Production smoke подтверждает обязательные RC101 release/self-test flags.
 
 ## Rollback
 

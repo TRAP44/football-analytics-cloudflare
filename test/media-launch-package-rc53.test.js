@@ -5,7 +5,7 @@ import fs from 'node:fs';
 const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const html=fs.readFileSync('public/index.html','utf8');
-const migration=fs.readFileSync('supabase_migration_v6_15.sql','utf8');
+const migration=fs.readFileSync('supabase/migrations/supabase_migration_v6_15.sql','utf8');
 const privacy=fs.readFileSync('public/privacy.html','utf8');
 const media=fs.readFileSync('MEDIA_LAUNCH_RU.md','utf8');
 

@@ -5,6 +5,20 @@
 -- apply only missing numbered migrations. Do not run this baseline on production.
 -- RC99 intentionally changes no production schema; it consolidates bootstrap only.
 
+-- RC101 safety guard: refuse to bootstrap over an established application schema.
+-- This is intentionally read-only and runs before any CREATE/ALTER statements.
+do $
+begin
+  if to_regclass('public.users') is not null
+     and to_regclass('public.runtime_controls') is not null
+     and to_regclass('public.model_predictions') is not null then
+    raise exception using
+      errcode = '55000',
+      message = 'Fresh-install baseline refused: existing Football Analytics schema detected. Use supabase/migrations/ instead.';
+  end if;
+end;
+$;
+
 -- =====================================================================
 -- Base schema through v6.9 / RC17
 -- =====================================================================

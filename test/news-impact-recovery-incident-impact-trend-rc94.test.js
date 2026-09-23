@@ -49,7 +49,7 @@ test('RC94 keeps privacy, storage and routing boundaries unchanged',()=>{
   assert.match(worker,/privacy:\{telegramIdsExposed:false,rawErrorsExposed:false,freeTextExposed:false\}/);
   assert.match(worker,/routingChanged:false/);
   assert.match(worker,/persistence:'none'/);
-  const files=fs.readdirSync('.').filter(x=>/^supabase_migration_v6_\d/.test(x));
+  const files=fs.readdirSync('supabase/migrations').filter(x=>/^supabase_migration_v6_\d/.test(x));
   assert.ok(files.includes('supabase_migration_v6_15.sql'));
   assert.ok(!files.some(x=>/v6_16|v6_17|v6_18|v6_19|v6_20|v6_21|v6_22|v6_23|v6_24|rc94/i.test(x)));
 });
