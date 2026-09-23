@@ -11,15 +11,15 @@ const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml'
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
 const readme = fs.readFileSync('README_CLOUDFLARE_RU.md', 'utf8');
 const qaChecklist = fs.readFileSync('QA_RELEASE_CHECKLIST_RU.md', 'utf8');
-const expected = `${pkg.version}-rc83`;
+const expected = `${pkg.version}-rc84`;
 const failures = [];
 
 if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) failures.push('package-lock version must match package.json');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC83'")) failures.push('Worker RC name must be RC83');
+if (!worker.includes("const RC_NAME = 'RC84'")) failures.push('Worker RC name must be RC84');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc83'")) failures.push('Client release channel must be rc83');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc84'")) failures.push('Client release channel must be rc84');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -37,8 +37,8 @@ if (!fs.existsSync('.github/workflows/rollback-production.yml')) failures.push('
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
-if (!deployWorkflow.includes('--message "RC83 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC83');
-if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.75.0-rc83"')) failures.push('Production smoke must verify 6.75.0-rc83');
+if (!deployWorkflow.includes('--message "RC84 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC84');
+if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.76.0-rc84"')) failures.push('Production smoke must verify 6.76.0-rc84');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
 if (!/id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden/.test(html)) failures.push('Admin role badge must use the fail-closed admin-only visibility contract');
 if (!/\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i.test(styles)) failures.push('Global hidden elements must remain display:none');
@@ -206,7 +206,7 @@ if (!worker.includes("newsSourceTrustGate: 'enabled'") || !worker.includes('appl
 if (!worker.includes("publicLegalPages: 'enabled'") || !worker.includes("publicStatusPage: 'enabled'") || !worker.includes("url.pathname === '/api/public-status'")) failures.push('RC52 public trust contract is missing');
 if (!fs.existsSync('public/privacy.html') || !fs.existsSync('public/terms.html') || !fs.existsSync('public/status.html') || !fs.existsSync('public/status.js')) failures.push('RC52 public trust pages are missing');
 if (!wrangler.includes('"/telegram/*"') || !wrangler.includes('"/api/*"')) failures.push('RC52 Worker-first webhook/public API routes are missing');
-if (!deployWorkflow.includes('6.75.0-rc83')) failures.push('RC83 production workflow version is missing');
+if (!deployWorkflow.includes('6.76.0-rc84')) failures.push('RC84 production workflow version is missing');
 
 if (!worker.includes("mediaLaunchPackage: 'enabled'") || !worker.includes("mediaDeepLinkAttribution: 'enabled'")) failures.push('RC53 media launch health contract is missing');
 if (!worker.includes("launchSimulation: 'enabled'") || !worker.includes("conversionUx: 'enabled'") || !worker.includes("highIntentSearchFallback: 'enabled'") || !worker.includes("newsReturnLoop: 'enabled'")) failures.push('RC54 launch conversion health contract is missing');
@@ -265,6 +265,10 @@ if (!worker.includes('function newsImpactRecoveryCallback') || !worker.includes(
 if (!worker.includes("newsImpactRecoveryStrategyGuard: 'enabled'") || !worker.includes("newsImpactAdaptiveRecovery: 'enabled'") || !worker.includes("newsImpactFixedFallbackGuard: 'enabled'") || !worker.includes("newsImpactRecoveryStrategyCache: 'enabled'") || !worker.includes("newsImpactRecoveryStrategySelfTest: newsImpactRecoveryStrategyDrill().pass ? 'enabled' : 'failed'")) failures.push('RC81 recovery strategy health contract is missing');
 if (!worker.includes("newsImpactRecoveryStrategyParity: 'enabled'") || !worker.includes("newsImpactRecoveryStabilityGuard: 'enabled'") || !worker.includes("newsImpactRecoveryStabilitySelfTest: newsImpactRecoveryStabilityDrill().pass ? 'enabled' : 'failed'")) failures.push('RC82 recovery stability health contract is missing');
 if (!worker.includes("newsImpactRecoveryDriftGuard: 'enabled'") || !worker.includes("newsImpactRecoveryDriftAudit: 'enabled'") || !worker.includes("newsImpactRecoveryDriftSelfTest: newsImpactRecoveryDriftDrill().pass ? 'enabled' : 'failed'")) failures.push('RC83 recovery drift health contract is missing');
+if (!worker.includes("newsImpactRecoveryTransitionHistory: 'enabled'") || !worker.includes("newsImpactRecoveryAdminAlerts: 'enabled'") || !worker.includes("newsImpactRecoveryTransitionPrivacyGuard: 'enabled'") || !worker.includes("newsImpactRecoveryTransitionSelfTest: newsImpactRecoveryTransitionDrill().pass ? 'enabled' : 'failed'")) failures.push('RC84 recovery transition health contract is missing');
+if (!worker.includes('function buildNewsImpactRecoveryTransitionHistory') || !worker.includes('function summarizeNewsImpactRecoveryTransitions') || !worker.includes('function buildNewsImpactRecoveryAdminAlerts') || !worker.includes('function summarizeNewsImpactRecoveryAlerts')) failures.push('RC84 transition history/alerts engine is missing');
+if (!worker.includes('transitionHistory=buildNewsImpactRecoveryTransitionHistory(failures') || !worker.includes('newsImpactRecoveryStrategyLoaded.transitionHistory') || !worker.includes('newsImpactRecoveryTransitionSummary') || !worker.includes('newsImpactRecoveryAlertSummary')) failures.push('RC84 shared-loader transition contract is missing');
+if (!app.includes('Recovery: предупреждения') || !app.includes('История Recovery Strategy') || !app.includes('Telegram ID в API истории не возвращаются') || !fs.existsSync('test/news-impact-recovery-transition-alerts-rc84.test.js')) failures.push('RC84 admin transition UI/privacy regression contract is missing');
 if (!worker.includes('NEWS_IMPACT_RECOVERY_DRIFT_PRIOR_MIN_ATTEMPTS = 20') || !worker.includes('NEWS_IMPACT_RECOVERY_DRIFT_RECENT_MIN_ATTEMPTS = 10') || !worker.includes('NEWS_IMPACT_RECOVERY_DRIFT_DROP_PCT_POINTS = 15') || !worker.includes("guardReason:'performance_drift'")) failures.push('RC83 recovery drift circuit breaker is missing');
 if (!worker.includes('function buildNewsImpactRecoveryDriftMatrix') || !worker.includes('priorEvidence=buildNewsImpactRecoveryStrategyEvidence') || !worker.includes('newsImpactRecoveryDriftDecision(decision,loaded.priorEvidence,loaded.recentEvidence)')) failures.push('RC83 recovery drift evidence routing is missing');
 if (!worker.includes('strategy_guard:safeStrategyReason') || !worker.includes('strategyReason:recovery.guardReason') || !app.includes('Drift circuit breaker') || !fs.existsSync('test/news-impact-recovery-drift-guard-rc83.test.js')) failures.push('RC83 recovery drift audit/UI regression contract is missing');
@@ -277,8 +281,8 @@ if (!worker.includes("firstPartyGrowthAnalytics: 'enabled'") || !worker.includes
 if (!worker.includes('parseLaunchStartParam') || !worker.includes('ensureLaunchAttribution') || !worker.includes('recordGrowthEvent')) failures.push('RC53 attribution engine is missing');
 if (!worker.includes("url.pathname === '/api/launch-funnel'") || !app.includes('function renderLaunchFunnel')) failures.push('RC53 admin launch funnel is missing');
 if (!app.includes("origin:'miniapp'") || !worker.includes("origin:'telegram_quick'")) failures.push('RC53 full-vs-quick AI conversion split is missing');
-if (!readme.includes('v6.75.0 — RC83') || !readme.includes('News Impact Recovery Drift Circuit Breaker')) failures.push('README must describe the current RC83 release');
-if (!qaChecklist.includes('v6.75.0 RC83') || !qaChecklist.includes('npm run verify:release')) failures.push('QA checklist must describe the current RC83 release gate');
+if (!readme.includes('v6.76.0 — RC84') || !readme.includes('News Impact Recovery Transition History & Admin Alerts')) failures.push('README must describe the current RC84 release');
+if (!qaChecklist.includes('v6.76.0 RC84') || !qaChecklist.includes('npm run verify:release')) failures.push('QA checklist must describe the current RC84 release gate');
 if (!fs.existsSync('MEDIA_LAUNCH_RU.md')) failures.push('Missing RC53 media launch kit');
 if (!fs.readFileSync('public/privacy.html','utf8').includes('События launch-аналитики хранятся до 90 дней')) failures.push('RC53 privacy attribution disclosure is missing');
 
@@ -292,4 +296,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log(`RC83 News Impact recovery drift circuit-breaker contracts verified for ${expected}.`);
+console.log(`RC84 News Impact recovery transition history/admin alert contracts verified for ${expected}.`);

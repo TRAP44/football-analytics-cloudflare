@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.75.0 RC83
+# QA Release Checklist — v6.76.0 RC84
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.75.0`.
-- Worker и client: `6.75.0-rc83`.
-- Release candidate: `RC83`.
+- `package.json` и `package-lock.json`: `6.76.0`.
+- Worker и client: `6.76.0-rc84`.
+- Release candidate: `RC84`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,18 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC84 — News Impact Recovery Transition History & Admin Alerts
+
+- История строится по фактически применённым `news_impact_outcome_failure` событиям из того же 30-дневного shared strategy loader.
+- Переключение фиксируется только при реальном изменении strategy или recovery для одинаковой пары failure reason + action.
+- Admin показывает fixed → adaptive, adaptive → fixed, смену recovery, guard-причину и timestamp; Telegram ID наружу не возвращается.
+- Active alerts строятся из текущего strategy matrix: `performance_drift` и `recent_regression` — warning, `stability_sample` — info.
+- Если strategy evidence недоступен или усечён, админ получает warning, а runtime остаётся на fixed fallback.
+- RC84 не меняет routing-логику RC81–RC83; это слой наблюдаемости и объяснимости.
+- Новая Supabase migration не требуется; используются существующие `growth_events` и `metadata`.
+- Regression: `test/news-impact-recovery-transition-alerts-rc84.test.js`.
+- Production smoke требует `newsImpactRecoveryTransitionHistory=enabled`, `newsImpactRecoveryAdminAlerts=enabled`, `newsImpactRecoveryTransitionPrivacyGuard=enabled`, `newsImpactRecoveryTransitionSelfTest=enabled`.
 
 ## RC83 — News Impact Recovery Drift Circuit Breaker
 
