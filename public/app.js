@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.52.0-rc60';
+const CLIENT_VERSION = '6.53.0-rc61';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc60';
+const CLIENT_RELEASE_CHANNEL = 'rc61';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -6213,12 +6213,13 @@ function prematchBriefHtml(pm, match, probabilities) {
     </section>`;
 }
 
-function aiInstructorHtml(ai = {}, match = {}) {
+function aiInstructorHtml(ai = {}, match = {}, kickoffHandoff = {}) {
   const signal = ai.betSignal || {};
   const verdict = ai.verdict || {};
   const factors = Array.isArray(ai.factors) ? ai.factors.slice(0, 3) : [];
   const risks = Array.isArray(ai.risks) ? ai.risks.slice(0, 2) : [];
-  const signalClass = signal.code === 'skip' ? 'skip' : signal.code === 'watch' ? 'watch' : 'active';
+  const handoffLocked = Boolean(kickoffHandoff?.locked);
+  const signalClass = handoffLocked ? 'archived' : signal.code === 'skip' ? 'skip' : signal.code === 'watch' ? 'watch' : 'active';
   const confidenceText = Number.isFinite(Number(ai.confidenceScore)) ? `${Math.round(Number(ai.confidenceScore))}/100` : 'данных мало';
   const dataTrust = ai.dataTrust || {};
   const matchPlan = ai.matchPlan || {};
@@ -6227,18 +6228,18 @@ function aiInstructorHtml(ai = {}, match = {}) {
   return `
     <section class="panel ai-instructor-card ${signalClass}">
       <div class="ai-instructor-head">
-        <div><span>AI ФУТБОЛЬНЫЙ ИНСТРУКТОР</span><h2>Мой разбор перед матчем</h2></div>
+        <div><span>AI ФУТБОЛЬНЫЙ ИНСТРУКТОР</span><h2>${handoffLocked ? 'Предматчевый разбор зафиксирован' : 'Мой разбор перед матчем'}</h2></div>
         <b>AI</b>
       </div>
       <div class="ai-verdict-grid" aria-label="Вердикт AI за 10 секунд">
         <div><span>Исход</span><strong>${escapeHtml(verdict.outcome || '—')}</strong></div>
         <div><span>Тотал 2.5</span><strong>${escapeHtml(verdict.total || '—')}</strong></div>
         <div><span>Обе забьют</span><strong>${escapeHtml(verdict.btts || '—')}</strong></div>
-        <div class="${signal.code === 'skip' ? 'skip' : 'action'}"><span>Решение</span><strong>${escapeHtml(signal.label || 'Изучить матч')}</strong></div>
+        <div class="${handoffLocked ? 'archived' : signal.code === 'skip' ? 'skip' : 'action'}"><span>${handoffLocked ? 'Сигнал до старта' : 'Решение'}</span><strong>${escapeHtml(signal.label || 'Изучить матч')}</strong></div>
       </div>
       <div class="ai-instructor-main">
         <div class="ai-instructor-pick">
-          <span>Главная идея</span>
+          <span>${handoffLocked ? 'Архивная идея до старта' : 'Главная идея'}</span>
           <strong>${escapeHtml(signal.label || 'Сначала изучить матч')}</strong>
           <small>${escapeHtml(publicText(signal.reason || 'Собираю доступные сигналы и риски.'))}</small>
           ${ai.marketNote ? `<div class="ai-market-note">💹 ${escapeHtml(publicText(ai.marketNote))}</div>` : ''}
@@ -6338,6 +6339,22 @@ function analysisFreshnessHtml(freshness = {}, recheck = {}) {
     ${rechecked}${deltaHtml}${action}
   </section>`;
 }
+
+function kickoffHandoffHtml(handoff = {}, match = {}) {
+  const state=String(handoff?.state || 'prematch');
+  if (state==='prematch') return '';
+  const locked=Boolean(handoff?.locked);
+  const icon=state==='imminent'?'⏳':state==='finished'?'✓':'●';
+  const action=locked && Number(match?.fixtureId || 0)
+    ? `<button id="kickoffMatchCenterBtn" class="kickoff-center-btn" type="button">${escapeHtml(handoff.actionLabel || (state==='finished'?'Открыть итог матча':'Открыть центр матча'))}</button>`
+    : '';
+  return `<section class="panel kickoff-handoff ${locked?'locked':state}">
+    <div><span>${icon}</span><div><strong>${escapeHtml(handoff.label || '')}</strong><small>${locked?'Предматчевый AI переведён в архивный режим':'Последняя проверка перед стартом'}</small></div></div>
+    <p>${escapeHtml(publicText(handoff.reason || ''))}</p>
+    ${action}
+  </section>`;
+}
+
 function renderAnalysis(d) {
   if (!d) return;
   const previousFixture = Number(state.currentAnalysis?.match?.fixtureId || 0);
@@ -6421,7 +6438,9 @@ function renderAnalysis(d) {
 
     ${analysisFreshnessHtml(d.freshness || {}, d.recheck || {})}
 
-    ${aiInstructorHtml(d.aiInstructor || {}, m)}
+    ${kickoffHandoffHtml(d.kickoffHandoff || {}, m)}
+
+    ${aiInstructorHtml(d.aiInstructor || {}, m, d.kickoffHandoff || {})}
 
     <div class="analysis-tabs" role="tablist">
       <button class="analysis-tab-btn" data-tab="brief" type="button">Главное</button>
@@ -6592,6 +6611,7 @@ function renderAnalysis(d) {
   `;
 
   $('analysisRecheckBtn')?.addEventListener('click', e => analyzeMatch(Number(m.fixtureId), e.currentTarget, { recheck:true }));
+  $('kickoffMatchCenterBtn')?.addEventListener('click', e => openMatchCenter(Number(m.fixtureId), e.currentTarget));
   $('reminderBtn')?.addEventListener('click', () => toggleReminder(m));
   $('shareAnalysisBtn')?.addEventListener('click', () => shareAnalysis(d));
   $('openPrematchBrief')?.addEventListener('click', () => setAnalysisTab('brief', true));
