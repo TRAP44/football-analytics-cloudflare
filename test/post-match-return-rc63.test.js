@@ -24,7 +24,7 @@ test('delivery is persistent, deduped and can recover stale claims',()=> {
   assert.match(worker,/function postMatchReturnDeliveryKey\(/);
   assert.match(worker,/async function claimPostMatchReturnDelivery\(/);
   assert.match(worker,/resolution=ignore-duplicates,return=representation/);
-  assert.match(worker,/prior\.payload\?\.state==='claimed'/);
+  assert.match(worker,/prior\?\.payload\?\.state==='claimed'/);
   assert.match(worker,/async function finishPostMatchReturnClaim\(/);
 });
 
