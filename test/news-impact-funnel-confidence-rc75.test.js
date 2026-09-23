@@ -35,7 +35,7 @@ test('RC75 admin UI exposes uncertainty instead of overclaiming',()=>{
 });
 
 test('RC75 needs no new Supabase migration',()=>{
-  const files=fs.readdirSync('.').filter(x=>/^supabase_migration_v6_\d/.test(x));
-  assert.ok(files.includes('supabase_migration_v6_15.sql'));
+  const files=fs.readdirSync('supabase/migrations').filter(x=>/^v6_\d/.test(x));
+  assert.ok(files.includes('v6_15.sql'));
   assert.ok(!files.some(x=>/v6_16|v6_17|rc75/i.test(x)));
 });
