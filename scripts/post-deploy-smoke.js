@@ -127,6 +127,11 @@ const REQUIRED_HEALTH_FLAGS = [
   'perNewsFixtureCta',
   'newsImpactDeltaGuide',
   'smartNewsLinkSelfTest',
+  'newsImpactDelta',
+  'preNewsSnapshotGuard',
+  'explicitNewsRecheck',
+  'newsImpactMateriality',
+  'newsImpactDeltaSelfTest',
 ];
 
 function delay(ms) {
