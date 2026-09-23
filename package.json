@@ -1,6 +1,6 @@
 {
   "name": "football-analytics-miniapp-cloudflare",
-  "version": "6.78.0",
+  "version": "6.79.0",
   "private": true,
   "type": "module",
   "scripts": {

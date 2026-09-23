@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.78.0-rc86';
+const CLIENT_VERSION = '6.79.0-rc87';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc86';
+const CLIENT_RELEASE_CHANNEL = 'rc87';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2946,6 +2946,7 @@ function renderLaunchFunnel() {
   const impactRecoveryAlertSummary=d.newsImpactRecoveryAlertSummary || {};
   const impactRecoveryIncidents=Array.isArray(d.newsImpactRecoveryIncidents) ? d.newsImpactRecoveryIncidents : [];
   const impactRecoveryIncidentSummary=d.newsImpactRecoveryIncidentSummary || {};
+  const impactRecoveryIncidentSloGuard=d.newsImpactRecoveryIncidentSloGuard || {ackTargetMinutes:30,ackCriticalMinutes:120,recoveryTargetMinutes:360};
   const impactFunnel=Array.isArray(d.newsImpactActionFunnel) ? d.newsImpactActionFunnel : [];
   const impactBottleneck=d.newsImpactActionBottleneck || null;
   const impactConfidenceGuard=d.newsImpactActionConfidenceGuard || {minUsers:10,stableUsers:30};
@@ -2960,7 +2961,7 @@ function renderLaunchFunnel() {
     <div><span>One‑tap → полный AI</span><strong>${Number(handoff.fullAiUsers || 0)}</strong><small>${launchFunnelPct(handoff.conversionPct)} от AI-handoff</small></div>
     <div><span>AI перепроверки</span><strong>${Number(rechecks.total || 0)}</strong><small>${Number(rechecks.free || 0)} без списания · ${Number(rechecks.material || 0)} со значимыми изменениями</small></div>
     <div><span>Новости → AI</span><strong>${Number(d.returnLoop?.aiIntent || 0)}</strong><small>${launchFunnelPct(d.returnLoop?.intentPct)} нажали AI · ${Number(d.returnLoop?.smartFixtureIntent || 0)} через smart fixture · News Impact: ${Number(d.returnLoop?.impactCompared || 0)} сравнений / ${Number(d.returnLoop?.impactMaterial || 0)} существенных · решения: 🔴 ${Number(d.newsImpactDecisionSummary?.material || 0)} · 🟡 ${Number(d.newsImpactDecisionSummary?.detail || 0)} · 🟢 ${Number(d.newsImpactDecisionSummary?.stable || 0)} · действия: полный AI ${Number(impactActions.fullAi || 0)} · составы ${Number(impactActions.squads || 0)} · рынок ${Number(impactActions.market || 0)} · перепроверка ${Number(impactActions.recheck || 0)} · новости ${Number(impactActions.news || 0)} · поделились ${Number(impactActions.share || 0)} · подтверждённых результатов ${Number(impactOutcomeSummary.confirmed || 0)}/${Number(impactOutcomeSummary.attempts || 0)} · сбоев доставки ${Number(impactFailureSummary.total || 0)} · recovery ${Number(impactRecoverySummary.recovered || 0)}/${Number(impactRecoverySummary.attempts || 0)} · adaptive rules ${Number(impactRecoveryStrategySummary.adaptive || 0)} · Возврат из новостей: ${Number(d.returnLoop?.newsReturn || 0)} до матча</small></div>
-    <div><span>Recovery-инциденты</span><strong>${Number(impactRecoveryIncidentSummary.active || 0)}</strong><small>активных · high ${Number(impactRecoveryIncidentSummary.highActive || 0)} · восстановлено ${Number(impactRecoveryIncidentSummary.recovered || 0)}</small></div>
+    <div><span>Recovery-инциденты</span><strong>${Number(impactRecoveryIncidentSummary.active || 0)}</strong><small>активных · эскалаций ${Number(impactRecoveryIncidentSummary.escalatedActive || 0)} · critical ${Number(impactRecoveryIncidentSummary.criticalActive || 0)} · восстановлено ${Number(impactRecoveryIncidentSummary.recovered || 0)}</small></div>
     <div><span>Media deep-link → AI</span><strong>${Number(media.aiUsers || 0)}</strong><small>${Number(media.deepLinkUsers || 0)} открыли · ${launchFunnelPct(media.conversionPct)} получили AI</small></div>
   </div>`;
 
@@ -3010,9 +3011,11 @@ function renderLaunchFunnel() {
         <small>${launchFunnelPct(x.successPct)} восстановлено · 95% ДИ ${launchFunnelPct(x.confidence?.lowerPct)}–${launchFunnelPct(x.confidence?.upperPct)} · ${escapeHtml(x.confidence?.label || 'мало данных')} · ${Number(x.pending || 0) ? `${Number(x.pending || 0)} ещё ожидают · ` : ''}${Number(x.failed || 0)} без подтверждённой доставки</small>
       </div>`).join('')}</div>
       <p class="tiny">Recovery считается успешным только после подтверждённой сервером доставки результата в течение ${Number(impactRecoveryGuard.windowMinutes || 5)} минут. Сам показ fallback или повторной кнопки успехом не считается.</p>` : ''}
-    ${impactRecoveryIncidents.length ? `<div class="release-monitor-section-head"><strong>Recovery Incident Center</strong><span>активных ${Number(impactRecoveryIncidentSummary.active || 0)} · требуют внимания ${Number(impactRecoveryIncidentSummary.unacknowledgedActive || 0)} · просмотрено ${Number(impactRecoveryIncidentSummary.acknowledgedActive || 0)} · восстановлено ${Number(impactRecoveryIncidentSummary.recovered || 0)}</span></div>
+    ${impactRecoveryIncidents.length ? `<div class="release-monitor-section-head"><strong>Recovery Incident Center</strong><span>активных ${Number(impactRecoveryIncidentSummary.active || 0)} · эскалаций ${Number(impactRecoveryIncidentSummary.escalatedActive || 0)} · ACK SLO просрочено ${Number(impactRecoveryIncidentSummary.ackSloBreached || 0)} · Recovery SLO просрочено ${Number(impactRecoveryIncidentSummary.recoverySloBreached || 0)}</span></div>
+      <div class="data-notice">⏱ SLO: просмотр ≤ <strong>${Number(impactRecoveryIncidentSloGuard.ackTargetMinutes || 30)} мин</strong>, критическая просрочка без просмотра — ${Number(impactRecoveryIncidentSloGuard.ackCriticalMinutes || 120)} мин, восстановление ≤ <strong>${Math.round(Number(impactRecoveryIncidentSloGuard.recoveryTargetMinutes || 360)/60)} ч</strong>. Эскалация меняет только административный приоритет, а не recovery-routing.</div>
       <div class="launch-campaign-list">${impactRecoveryIncidents.map(x=>{
-        const priority=x.priority==='high' ? '🔴 high' : x.priority==='medium' ? '🟠 medium' : '🟡 low';
+        const shownPriority=x.effectivePriority || x.priority || 'medium';
+        const priority=shownPriority==='critical' ? '🚨 critical' : shownPriority==='high' ? '🔴 high' : shownPriority==='medium' ? '🟠 medium' : '🟡 low';
         const stateLabel=x.status==='active'
           ? (x.acknowledged ? 'активен · просмотрен' : 'активен · требует внимания')
           : 'восстановлен';
@@ -3028,15 +3031,16 @@ function renderLaunchFunnel() {
           <span><b>${priority} · ${escapeHtml(x.reasonLabel || 'Recovery Strategy')}</b>${x.actionLabel ? ` · ${escapeHtml(x.actionLabel)}` : ''}</span>
           <strong>${escapeHtml(stateLabel)} · ${escapeHtml(codeLabel)}</strong>
           <small>${Number(x.occurrences || 0)} событий · последнее: ${escapeHtml(when)}${x.currentRecoveryLabel ? ` · сейчас: ${escapeHtml(x.currentStrategy || 'fixed')} / ${escapeHtml(x.currentRecoveryLabel)}` : ''}${x.acknowledgedAt ? ` · просмотрено: ${escapeHtml(dateTime(x.acknowledgedAt) || x.acknowledgedAt)}` : ''}</small>
+          ${x.slo ? `<small><b>SLO:</b> ${Number.isFinite(Number(x.slo.ageMinutes)) ? `возраст ${Number(x.slo.ageMinutes)} мин · ` : ''}просмотр: ${x.slo.ackStatus==='met' ? '✅ в норме' : x.slo.ackStatus==='breached' ? '🚨 просрочен' : x.slo.ackStatus==='pending' ? '⏳ ожидается' : '—'}${Number.isFinite(Number(x.slo.ackLatencyMinutes)) ? ` (${Number(x.slo.ackLatencyMinutes)} мин)` : ''} · восстановление: ${x.slo.recoveryStatus==='met' ? '✅ в норме' : x.slo.recoveryStatus==='breached' ? '🚨 просрочено' : x.slo.recoveryStatus==='pending' ? '⏳ в работе' : '—'}${Number.isFinite(Number(x.slo.recoveryLatencyMinutes)) ? ` (${Number(x.slo.recoveryLatencyMinutes)} мин)` : ''}${x.escalated ? ` · приоритет повышен: ${escapeHtml(x.priority || 'medium')} → ${escapeHtml(x.effectivePriority || '')}` : ''}</small>` : ''}
           ${runbookSteps.length ? `<small><b>${escapeHtml(x.runbook?.title || 'Runbook')}:</b> ${runbookSteps.map(step=>escapeHtml(step)).join(' → ')} · Автозащита: ${escapeHtml(x.runbook?.automaticSafety || 'fixed fallback')}</small>` : ''}
           ${x.status==='active' && x.canAcknowledge && !x.acknowledged ? `<button class="reminder-btn recovery-incident-ack-btn" type="button" data-reason="${escapeHtml(x.reason || '')}" data-action="${escapeHtml(x.action || '')}" data-code="${escapeHtml(x.code || '')}" data-last-seen-at="${escapeHtml(x.lastSeenAt || '')}" ${ackBusy?'disabled':''}>${ackBusy?'Сохраняю…':'✓ Просмотрено'}</button>` : ''}
           ${x.status==='active' && x.currentOnly && !x.canAcknowledge ? '<small>Подтверждение станет доступно после первого фактического failure-события этого инцидента.</small>' : ''}
         </div>`;
       }).join('')}</div>
-      <p class="tiny">RC86 добавляет acknowledgement и runbook. Просмотренный активный инцидент остаётся видимым, но его повторное warning подавляется только до следующего нового проявления; новый failure автоматически снова требует внимания. В Incident Center нет Telegram ID и raw error.</p>` : ''}
-    ${impactRecoveryStrategyAlerts.length ? `<div class="release-monitor-section-head"><strong>Recovery: предупреждения</strong><span>${Number(impactRecoveryAlertSummary.warnings || 0)} warning · ${Number(impactRecoveryAlertSummary.info || 0)} info</span></div>
+      <p class="tiny">RC87 рассчитывает SLO и эскалацию из фактических timestamps: время до просмотра, возраст активного эпизода и время до восстановления. Просрочка повышает только административный приоритет; fixed/adaptive routing остаётся под RC81–RC86 guard-логикой. После acknowledgement новый failure автоматически снова требует внимания. В Incident Center нет Telegram ID и raw error.</p>` : ''}
+    ${impactRecoveryStrategyAlerts.length ? `<div class="release-monitor-section-head"><strong>Recovery: предупреждения</strong><span>${Number(impactRecoveryAlertSummary.critical || 0)} critical · ${Number(impactRecoveryAlertSummary.warnings || 0)} warning · ${Number(impactRecoveryAlertSummary.info || 0)} info</span></div>
       <div class="launch-campaign-list">${impactRecoveryStrategyAlerts.map(x=>`<div>
-        <span><b>${x.severity==='warning'?'⚠️':'ℹ️'} ${escapeHtml(x.reasonLabel || 'Recovery Strategy')}</b>${x.actionLabel ? ` · ${escapeHtml(x.actionLabel)}` : ''}</span>
+        <span><b>${x.severity==='critical'?'🚨':x.severity==='warning'?'⚠️':'ℹ️'} ${escapeHtml(x.reasonLabel || 'Recovery Strategy')}</b>${x.actionLabel ? ` · ${escapeHtml(x.actionLabel)}` : ''}</span>
         <strong>${escapeHtml(x.code || '')}</strong>
         <small>${escapeHtml(x.message || '')}</small>
       </div>`).join('')}</div>` : ''}

@@ -80,11 +80,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.78.0-rc86';
+const APP_VERSION = '6.79.0-rc87';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc86';
-const RC_NAME = 'RC86';
+const RELEASE_CHANNEL = 'rc87';
+const RC_NAME = 'RC87';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1841,8 +1841,16 @@ async function apiLaunchFunnel(request,cfg) {
     newsImpactRecoveryIncidentEvents,
     newsImpactRecoveryIncidentAcknowledgements,
     newsImpactRecoveryStrategyLoaded.reason,
+    {asOfMs:analyticsNowMs},
   );
   const newsImpactRecoveryIncidentSummary=summarizeNewsImpactRecoveryIncidents(newsImpactRecoveryIncidents);
+  const newsImpactRecoveryIncidentSloGuard={
+    ackTargetMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,
+    ackCriticalMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,
+    recoveryTargetMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,
+    escalation:'derived_from_incident_age_and_ack_state',
+    persistence:'none',
+  };
   const newsImpactRecoveryStrategyAlerts=buildNewsImpactRecoveryAdminAlerts(
     newsImpactRecoveryStrategyMatrix,
     newsImpactRecoveryStrategyLoaded.reason,
@@ -1952,6 +1960,7 @@ async function apiLaunchFunnel(request,cfg) {
     newsImpactRecoveryAlertSummary,
     newsImpactRecoveryIncidents,
     newsImpactRecoveryIncidentSummary,
+    newsImpactRecoveryIncidentSloGuard,
     newsImpactActionFunnel,
     newsImpactActionBottleneck,
     newsImpactActionConfidenceGuard,
@@ -3265,6 +3274,9 @@ const NEWS_IMPACT_RECOVERY_DRIFT_RECENT_MIN_ATTEMPTS = 10;
 const NEWS_IMPACT_RECOVERY_DRIFT_DROP_PCT_POINTS = 15;
 const NEWS_IMPACT_RECOVERY_INCIDENT_ACK_EVENT = 'news_impact_recovery_incident_ack';
 const NEWS_IMPACT_RECOVERY_INCIDENT_CODES = new Set(['performance_drift','recent_regression']);
+const NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES = 30;
+const NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES = 120;
+const NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES = 360;
 const NEWS_IMPACT_RECOVERY_STRATEGY_CACHE_MS = 300_000;
 const NEWS_IMPACT_RECOVERY_SOURCE_WINDOW_MINUTES = 30;
 
@@ -3780,6 +3792,23 @@ function buildNewsImpactRecoveryAdminAlerts(strategyRows = [], evidenceReason = 
       });
     }
   }
+  for (const incident of incidentRows || []) {
+    if (incident.status!=='active' || !incident.escalated) continue;
+    const recoveryBreach=incident?.slo?.recoveryStatus==='breached';
+    const ackBreach=incident?.slo?.ackStatus==='breached' && !incident.acknowledged;
+    if (!recoveryBreach && !ackBreach) continue;
+    alerts.push({
+      severity:incident.effectivePriority==='critical' ? 'critical' : 'warning',
+      code:recoveryBreach ? 'incident_recovery_slo_breach' : 'incident_ack_slo_breach',
+      reason:incident.reason,
+      action:incident.action,
+      reasonLabel:incident.reasonLabel || incident.reason,
+      actionLabel:incident.actionLabel || incident.action,
+      message:recoveryBreach
+        ? `Recovery-инцидент не восстановлен в пределах ${NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES} минут; приоритет повышен.`
+        : `Recovery-инцидент не просмотрен в пределах ${NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES} минут; приоритет повышен.`,
+    });
+  }
   return alerts.slice(0,12);
 }
 
@@ -3789,19 +3818,17 @@ function summarizeNewsImpactRecoveryAlerts(rows = []) {
     total:list.length,
     warnings:list.filter(x=>x.severity==='warning').length,
     info:list.filter(x=>x.severity==='info').length,
-    critical:0,
+    critical:list.filter(x=>x.severity==='critical').length,
   };
 }
 
 
 function buildNewsImpactRecoveryIncidentEvents(failureRows = [], {limit = 100} = {}) {
-  const incidentCodes=new Set(['performance_drift','recent_regression']);
-  return (failureRows || []).map(row=>{
+  const normalized=(failureRows || []).map(row=>{
     const meta=row?.metadata && typeof row.metadata==='object' ? row.metadata : {};
     const guardReason=NEWS_IMPACT_RECOVERY_STRATEGY_GUARD_CODES.has(String(meta.strategy_guard || ''))
       ? String(meta.strategy_guard)
       : '';
-    if (!incidentCodes.has(guardReason)) return null;
     const at=newsImpactEventTime(row);
     const reason=NEWS_IMPACT_FAILURE_CODES.has(String(meta.reason || '')) ? String(meta.reason) : 'server_error';
     const action=cleanNewsImpactActionCode(meta.action);
@@ -3810,7 +3837,7 @@ function buildNewsImpactRecoveryIncidentEvents(failureRows = [], {limit = 100} =
       ? String(meta.recovery)
       : newsImpactRecoveryForFailure(reason,action).code;
     return {
-      at:new Date(at).toISOString(),
+      at,
       reason,
       reasonLabel:NEWS_IMPACT_FAILURE_LABELS[reason] || reason,
       action,
@@ -3819,13 +3846,57 @@ function buildNewsImpactRecoveryIncidentEvents(failureRows = [], {limit = 100} =
       recovery,
       recoveryLabel:NEWS_IMPACT_RECOVERY_LABELS[recovery] || recovery,
       guardReason,
-      priority:guardReason==='performance_drift' ? 'high' : 'medium',
     };
-  }).filter(Boolean)
-    .sort((a,b)=>Date.parse(b.at)-Date.parse(a.at))
+  }).filter(Boolean).sort((a,b)=>a.at-b.at);
+
+  const openByPair=new Map();
+  const incidentEvents=[];
+  for (const event of normalized) {
+    const pairKey=`${event.reason}|${event.action}`;
+    const adverse=NEWS_IMPACT_RECOVERY_INCIDENT_CODES.has(event.guardReason);
+    let open=openByPair.get(pairKey) || null;
+    if (!adverse) {
+      if (open) {
+        open.episode.recoveredAt=new Date(event.at).toISOString();
+        openByPair.delete(pairKey);
+      }
+      continue;
+    }
+    if (!open || open.episode.guardReason!==event.guardReason) {
+      if (open) open.episode.recoveredAt=new Date(event.at).toISOString();
+      const episode={
+        guardReason:event.guardReason,
+        startedAt:new Date(event.at).toISOString(),
+        lastSeenAt:new Date(event.at).toISOString(),
+        recoveredAt:null,
+        occurrences:0,
+      };
+      open={episode};
+      openByPair.set(pairKey,open);
+    }
+    open.episode.lastSeenAt=new Date(event.at).toISOString();
+    open.episode.occurrences+=1;
+    incidentEvents.push({...event,episode:open.episode});
+  }
+
+  return incidentEvents.map(event=>({
+    at:new Date(event.at).toISOString(),
+    reason:event.reason,
+    reasonLabel:event.reasonLabel,
+    action:event.action,
+    actionLabel:event.actionLabel,
+    strategy:event.strategy,
+    recovery:event.recovery,
+    recoveryLabel:event.recoveryLabel,
+    guardReason:event.guardReason,
+    priority:event.guardReason==='performance_drift' ? 'high' : 'medium',
+    episodeStartedAt:event.episode.startedAt,
+    episodeLastSeenAt:event.episode.lastSeenAt,
+    episodeRecoveredAt:event.episode.recoveredAt,
+    episodeOccurrences:event.episode.occurrences,
+  })).sort((a,b)=>Date.parse(b.at)-Date.parse(a.at))
     .slice(0,Math.max(1,Math.min(250,Number(limit || 100))));
 }
-
 
 function newsImpactRecoveryIncidentKey(reason = '', action = '', code = '') {
   return `${String(reason || '')}|${String(action || '')}|${String(code || '')}`;
@@ -3886,8 +3957,9 @@ function buildNewsImpactRecoveryIncidentAcknowledgements(rows = []) {
   return [...latest.values()];
 }
 
-function buildNewsImpactRecoveryIncidentCenter(strategyRows = [], incidentEvents = [], acknowledgements = [], evidenceReason = 'ok') {
-  const priorityRank={high:0,medium:1,low:2};
+function buildNewsImpactRecoveryIncidentCenter(strategyRows = [], incidentEvents = [], acknowledgements = [], evidenceReason = 'ok', options = {}) {
+  const priorityRank={critical:0,high:1,medium:2,low:3};
+  const asOfMs=Number.isFinite(Number(options?.asOfMs)) ? Number(options.asOfMs) : Date.now();
   const current=new Map((strategyRows || []).map(row=>[`${row.reason}|${row.action}`,row]));
   const ackMap=new Map((acknowledgements || []).map(row=>[newsImpactRecoveryIncidentKey(row.reason,row.action,row.code),row]));
   const groups=new Map();
@@ -3906,6 +3978,10 @@ function buildNewsImpactRecoveryIncidentCenter(strategyRows = [], incidentEvents
       lastStrategy:event.strategy || 'fixed',
       lastRecovery:event.recovery || '',
       lastRecoveryLabel:event.recoveryLabel || event.recovery || '',
+      episodeStartedAt:event.episodeStartedAt || event.at,
+      episodeLastSeenAt:event.episodeLastSeenAt || event.at,
+      episodeRecoveredAt:event.episodeRecoveredAt || null,
+      episodeOccurrences:Number(event.episodeOccurrences || 1),
     };
     bucket.occurrences+=1;
     if (Date.parse(event.at)<Date.parse(bucket.firstSeenAt)) bucket.firstSeenAt=event.at;
@@ -3914,6 +3990,10 @@ function buildNewsImpactRecoveryIncidentCenter(strategyRows = [], incidentEvents
       bucket.lastStrategy=event.strategy || bucket.lastStrategy;
       bucket.lastRecovery=event.recovery || bucket.lastRecovery;
       bucket.lastRecoveryLabel=event.recoveryLabel || bucket.lastRecoveryLabel;
+      bucket.episodeStartedAt=event.episodeStartedAt || event.at;
+      bucket.episodeLastSeenAt=event.episodeLastSeenAt || event.at;
+      bucket.episodeRecoveredAt=event.episodeRecoveredAt || null;
+      bucket.episodeOccurrences=Number(event.episodeOccurrences || 1);
     }
     groups.set(key,bucket);
   }
@@ -3928,15 +4008,73 @@ function buildNewsImpactRecoveryIncidentCenter(strategyRows = [], incidentEvents
       && String(ack.incidentSeenAt || '')===String(item.lastSeenAt || '')
       && Date.parse(ack.acknowledgedAt)>=Date.parse(item.lastSeenAt),
     );
+    const status=active ? 'active' : 'recovered';
+    const startedAt=item.episodeStartedAt || item.firstSeenAt || null;
+    const lastEpisodeSeenAt=item.episodeLastSeenAt || item.lastSeenAt || null;
+    const recoveredAt=!active ? (item.episodeRecoveredAt || null) : null;
+    const startedMs=Date.parse(String(startedAt || ''));
+    const recoveredMs=Date.parse(String(recoveredAt || ''));
+    const acknowledgedMs=Date.parse(String(acknowledged ? ack?.acknowledgedAt || '' : ''));
+    const ageMinutes=active && Number.isFinite(startedMs)
+      ? Math.max(0,Math.floor((asOfMs-startedMs)/60000))
+      : null;
+    const ackLatencyMinutes=acknowledged && Number.isFinite(startedMs) && Number.isFinite(acknowledgedMs)
+      ? Math.max(0,Math.round((acknowledgedMs-startedMs)/60000))
+      : null;
+    const recoveryLatencyMinutes=!active && Number.isFinite(startedMs) && Number.isFinite(recoveredMs)
+      ? Math.max(0,Math.round((recoveredMs-startedMs)/60000))
+      : null;
+    const ackStatus=currentOnly || !Number.isFinite(startedMs)
+      ? 'unavailable'
+      : acknowledged
+        ? (Number(ackLatencyMinutes || 0)<=NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES ? 'met' : 'breached')
+        : active
+          ? (Number(ageMinutes || 0)>=NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES ? 'breached' : 'pending')
+          : 'unavailable';
+    const recoveryStatus=currentOnly || !Number.isFinite(startedMs)
+      ? 'unavailable'
+      : active
+        ? (Number(ageMinutes || 0)>=NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES ? 'breached' : 'pending')
+        : Number.isFinite(recoveredMs)
+          ? (Number(recoveryLatencyMinutes || 0)<=NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES ? 'met' : 'breached')
+          : 'unavailable';
+    let effectivePriority=item.priority || 'medium';
+    let escalationReason='';
+    if (active && recoveryStatus==='breached') {
+      effectivePriority='critical';
+      escalationReason='recovery_slo_breach';
+    } else if (active && !acknowledged && Number(ageMinutes || 0)>=NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES) {
+      effectivePriority='critical';
+      escalationReason='ack_critical_overdue';
+    } else if (active && !acknowledged && ackStatus==='breached') {
+      effectivePriority=effectivePriority==='medium' ? 'high' : 'critical';
+      escalationReason='ack_slo_breach';
+    }
     return {
       ...item,
-      status:active ? 'active' : 'recovered',
+      status,
       acknowledged,
       acknowledgedAt:acknowledged ? ack.acknowledgedAt : null,
       alertSuppressed:acknowledged,
       canAcknowledge:Boolean(active && !currentOnly && item.lastSeenAt && NEWS_IMPACT_RECOVERY_INCIDENT_CODES.has(item.code)),
       runbook:newsImpactRecoveryIncidentRunbook(item.code),
       currentOnly:Boolean(currentOnly),
+      effectivePriority,
+      escalated:effectivePriority!==(item.priority || 'medium'),
+      escalationReason,
+      slo:{
+        startedAt,
+        lastSeenAt:lastEpisodeSeenAt,
+        recoveredAt,
+        ageMinutes,
+        ackTargetMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,
+        ackCriticalMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,
+        recoveryTargetMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,
+        ackLatencyMinutes,
+        recoveryLatencyMinutes,
+        ackStatus,
+        recoveryStatus,
+      },
     };
   };
 
@@ -4001,12 +4139,22 @@ function buildNewsImpactRecoveryIncidentCenter(strategyRows = [], incidentEvents
       alertSuppressed:false,
       canAcknowledge:false,
       runbook:newsImpactRecoveryIncidentRunbook('strategy_evidence_unavailable'),
+      effectivePriority:'medium',
+      escalated:false,
+      escalationReason:'',
+      slo:{
+        startedAt:null,lastSeenAt:null,recoveredAt:null,ageMinutes:null,
+        ackTargetMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,
+        ackCriticalMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,
+        recoveryTargetMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,
+        ackLatencyMinutes:null,recoveryLatencyMinutes:null,ackStatus:'unavailable',recoveryStatus:'unavailable',
+      },
     });
   }
 
   return rows.sort((a,b)=>(a.status==='active'?0:1)-(b.status==='active'?0:1)
     || (a.acknowledged?1:0)-(b.acknowledged?1:0)
-    || (priorityRank[a.priority] ?? 9)-(priorityRank[b.priority] ?? 9)
+    || (priorityRank[a.effectivePriority || a.priority] ?? 9)-(priorityRank[b.effectivePriority || b.priority] ?? 9)
     || (Date.parse(b.lastSeenAt || 0)-Date.parse(a.lastSeenAt || 0))
     || String(a.reason || '').localeCompare(String(b.reason || ''))
     || String(a.action || '').localeCompare(String(b.action || '')))
@@ -4014,6 +4162,8 @@ function buildNewsImpactRecoveryIncidentCenter(strategyRows = [], incidentEvents
 }
 function summarizeNewsImpactRecoveryIncidents(rows = []) {
   const list=Array.isArray(rows) ? rows : [];
+  const ackLatencies=list.map(x=>Number(x?.slo?.ackLatencyMinutes)).filter(Number.isFinite);
+  const recoveryLatencies=list.map(x=>Number(x?.slo?.recoveryLatencyMinutes)).filter(Number.isFinite);
   return {
     total:list.length,
     active:list.filter(x=>x.status==='active').length,
@@ -4023,6 +4173,14 @@ function summarizeNewsImpactRecoveryIncidents(rows = []) {
     acknowledgedActive:list.filter(x=>x.status==='active' && x.acknowledged).length,
     unacknowledgedActive:list.filter(x=>x.status==='active' && !x.acknowledged).length,
     suppressedAlerts:list.filter(x=>x.status==='active' && x.alertSuppressed).length,
+    escalatedActive:list.filter(x=>x.status==='active' && x.escalated).length,
+    criticalActive:list.filter(x=>x.status==='active' && x.effectivePriority==='critical').length,
+    ackSloBreached:list.filter(x=>x.status==='active' && x?.slo?.ackStatus==='breached').length,
+    recoverySloBreached:list.filter(x=>x.status==='active' && x?.slo?.recoveryStatus==='breached').length,
+    ackMeasured:ackLatencies.length,
+    recoveryMeasured:recoveryLatencies.length,
+    avgAckMinutes:ackLatencies.length ? Math.round((ackLatencies.reduce((a,b)=>a+b,0)/ackLatencies.length)*10)/10 : null,
+    avgRecoveryMinutes:recoveryLatencies.length ? Math.round((recoveryLatencies.reduce((a,b)=>a+b,0)/recoveryLatencies.length)*10)/10 : null,
     latest:list.filter(x=>x.lastSeenAt).sort((a,b)=>Date.parse(b.lastSeenAt)-Date.parse(a.lastSeenAt))[0] || null,
   };
 }
@@ -4207,6 +4365,48 @@ function newsImpactRecoveryIncidentDrill() {
       && incidents.some(x=>x.reason==='provider_unavailable' && x.status==='active' && x.currentOnly===true)
       && !Object.prototype.hasOwnProperty.call(incidents[0] || {},'telegram_id'),
     cases:8,
+  };
+}
+
+function newsImpactRecoveryIncidentSloDrill() {
+  const asOfMs=Date.parse('2026-09-23T18:00:00.000Z');
+  const failures=[
+    {created_at:'2026-09-23T15:00:00.000Z',metadata:{reason:'server_error',action:'full_ai',recovery:'retry',strategy:'fixed',strategy_guard:'performance_drift'}},
+    {created_at:'2026-09-23T15:10:00.000Z',metadata:{reason:'server_error',action:'full_ai',recovery:'retry',strategy:'fixed',strategy_guard:'performance_drift'}},
+    {created_at:'2026-09-23T16:00:00.000Z',metadata:{reason:'timeout',action:'share',recovery:'retry_soon',strategy:'fixed',strategy_guard:'recent_regression'}},
+    {created_at:'2026-09-23T16:40:00.000Z',metadata:{reason:'timeout',action:'share',recovery:'retry_soon',strategy:'fixed',strategy_guard:'fixed_default'}},
+    {created_at:'2026-09-23T11:00:00.000Z',metadata:{reason:'provider_unavailable',action:'full_ai',recovery:'retry_later',strategy:'fixed',strategy_guard:'performance_drift'}},
+  ];
+  const events=buildNewsImpactRecoveryIncidentEvents(failures);
+  const acknowledgements=buildNewsImpactRecoveryIncidentAcknowledgements([
+    {created_at:'2026-09-23T11:20:00.000Z',metadata:{reason:'provider_unavailable',action:'full_ai',incident_guard:'performance_drift',incident_seen_at:'2026-09-23T11:00:00.000Z'}},
+  ]);
+  const current=[
+    {reason:'server_error',reasonLabel:'Временная серверная ошибка',action:'full_ai',actionLabel:'Полный AI',strategy:'fixed',selectedRecovery:'retry',selectedRecoveryLabel:'повторить',guardReason:'performance_drift'},
+    {reason:'timeout',reasonLabel:'Тайм-аут',action:'share',actionLabel:'Поделиться',strategy:'fixed',selectedRecovery:'retry_soon',selectedRecoveryLabel:'повторить скоро',guardReason:'fixed_default'},
+    {reason:'provider_unavailable',reasonLabel:'Источник данных недоступен',action:'full_ai',actionLabel:'Полный AI',strategy:'fixed',selectedRecovery:'retry_later',selectedRecoveryLabel:'повторить позже',guardReason:'performance_drift'},
+  ];
+  const incidents=buildNewsImpactRecoveryIncidentCenter(current,events,acknowledgements,'ok',{asOfMs});
+  const summary=summarizeNewsImpactRecoveryIncidents(incidents);
+  const server=incidents.find(x=>x.reason==='server_error');
+  const timeout=incidents.find(x=>x.reason==='timeout');
+  const provider=incidents.find(x=>x.reason==='provider_unavailable');
+  return {
+    pass:server?.status==='active'
+      && server?.slo?.ageMinutes===180
+      && server?.slo?.ackStatus==='breached'
+      && server?.effectivePriority==='critical'
+      && timeout?.status==='recovered'
+      && timeout?.slo?.recoveryLatencyMinutes===40
+      && timeout?.slo?.recoveryStatus==='met'
+      && provider?.acknowledged===true
+      && provider?.slo?.ackLatencyMinutes===20
+      && provider?.slo?.recoveryStatus==='breached'
+      && provider?.effectivePriority==='critical'
+      && summary.criticalActive===2
+      && summary.ackSloBreached===1
+      && summary.recoverySloBreached===1,
+    cases:14,
   };
 }
 
@@ -17202,6 +17402,10 @@ export default {
         newsImpactRecoveryIncidentAlertSuppression: 'enabled',
         newsImpactRecoveryIncidentAckPrivacyGuard: 'enabled',
         newsImpactRecoveryIncidentAckSelfTest: newsImpactRecoveryIncidentAckDrill().pass ? 'enabled' : 'failed',
+        newsImpactRecoveryIncidentSlo: 'enabled',
+        newsImpactRecoveryIncidentEscalation: 'enabled',
+        newsImpactRecoveryIncidentLatencyMetrics: 'enabled',
+        newsImpactRecoveryIncidentSloSelfTest: newsImpactRecoveryIncidentSloDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
