@@ -5,7 +5,6 @@ import fs from 'node:fs';
 const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const css=fs.readFileSync('public/styles.css','utf8');
-const drill=fs.readFileSync('LAUNCH_SEARCH_DRILL_RC55.md','utf8');
 
 test('RC55 search normalization handles punctuation hyphens and latin variants',()=> {
   for (const sample of ["['МЮ','Manchester United']","['мю!!!','Manchester United']","['Бока-Хуниорс','Boca Juniors']","['Al‑Nassr','Al-Nassr']","['Fenerbahçe','Fenerbahce']","['São Paulo','Sao Paulo']","['Bayern München','Bayern Munich']"]) {
