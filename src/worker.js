@@ -79,11 +79,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.69.0-rc77';
+const APP_VERSION = '6.70.0-rc78';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc77';
-const RC_NAME = 'RC77';
+const RELEASE_CHANNEL = 'rc78';
+const RC_NAME = 'RC78';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1723,6 +1723,20 @@ async function apiLaunchFunnel(request,cfg) {
     news:newsImpactActionRows.filter(x=>newsImpactAction(x)==='news').length,
     share:newsImpactActionRows.filter(x=>newsImpactAction(x)==='share').length,
   };
+  const newsImpactOutcomeRows=rows.filter(x=>String(x.event_name || '')==='news_impact_outcome');
+  const newsImpactActionOutcomeQuality=buildNewsImpactActionOutcomeQuality(newsImpactActionRows,newsImpactOutcomeRows,{asOfMs:analyticsNowMs});
+  const newsImpactOutcomeBottleneck=newsImpactOutcomeBottleneck(newsImpactActionOutcomeQuality);
+  const newsImpactOutcomeSummary=newsImpactActionOutcomeQuality.reduce((acc,row)=>{
+    acc.observed+=Number(row.observed || 0);
+    acc.attempts+=Number(row.attempts || 0);
+    acc.pending+=Number(row.pending || 0);
+    acc.confirmed+=Number(row.confirmed || 0);
+    return acc;
+  },{observed:0,attempts:0,pending:0,confirmed:0,completionPct:0});
+  newsImpactOutcomeSummary.completionPct=newsImpactOutcomeSummary.attempts
+    ? Math.round((newsImpactOutcomeSummary.confirmed/newsImpactOutcomeSummary.attempts)*1000)/10
+    : 0;
+  const newsImpactOutcomeGuard={outcomeWindowMinutes:NEWS_IMPACT_OUTCOME_WINDOW_MINUTES,minimumSample:NEWS_IMPACT_FUNNEL_MIN_USERS,meaning:'confirmed_delivery_not_satisfaction'};
   const newsImpactActionFunnel=buildNewsImpactActionFunnel(newsImpactRows,newsImpactActionRows,{asOfMs:analyticsNowMs});
   const newsImpactActionBottleneck=newsImpactActionFunnelBottleneck(newsImpactActionFunnel);
   const newsImpactActionConfidenceGuard={minUsers:NEWS_IMPACT_FUNNEL_MIN_USERS,stableUsers:NEWS_IMPACT_FUNNEL_STABLE_USERS,interval:'wilson_95'};
@@ -1779,6 +1793,10 @@ async function apiLaunchFunnel(request,cfg) {
     returnLoop:{newsOpen:newsOpen.size,newsReturn:newsReturn.size,aiIntent:newsAiIntent.size,smartFixtureIntent:smartNewsAiUsers.size,impactChecks:newsImpactRows.length,impactCompared:newsImpactCompared.size,impactMaterial:newsImpactMaterial.size,intentPct:newsOpen.size?Math.round((newsAiIntent.size/newsOpen.size)*1000)/10:0,conversionPct:newsOpen.size?Math.round((newsReturn.size/newsOpen.size)*1000)/10:0},
     newsImpactDecisionSummary,
     newsImpactActionSummary,
+    newsImpactOutcomeSummary,
+    newsImpactActionOutcomeQuality,
+    newsImpactOutcomeBottleneck,
+    newsImpactOutcomeGuard,
     newsImpactActionFunnel,
     newsImpactActionBottleneck,
     newsImpactActionConfidenceGuard,
@@ -2771,6 +2789,142 @@ function newsImpactTemporalAttributionDrill() {
   };
 }
 
+const NEWS_IMPACT_OUTCOME_WINDOW_MINUTES = 5;
+const NEWS_IMPACT_OUTCOME_WINDOW_MS = NEWS_IMPACT_OUTCOME_WINDOW_MINUTES * 60_000;
+
+const NEWS_IMPACT_OUTCOME_CODES = {
+  full_ai:'analysis_delivered',
+  squads:'section_delivered',
+  market:'section_delivered',
+  recheck:'recheck_delivered',
+  news:'news_delivered',
+  share:'share_card_delivered',
+};
+
+function newsImpactOutcomeCode(action = '') {
+  return NEWS_IMPACT_OUTCOME_CODES[cleanNewsImpactActionCode(action)] || '';
+}
+
+async function recordNewsImpactOutcome(cfg,{
+  userId,
+  fixtureId,
+  decision,
+  action,
+  channel='telegram',
+  delivery='',
+}={}) {
+  const safeDecision=cleanNewsImpactDecisionCode(decision);
+  const safeAction=cleanNewsImpactActionCode(action);
+  const outcome=newsImpactOutcomeCode(safeAction);
+  if (!safeDecision || !safeAction || !outcome) return false;
+  return await recordGrowthEvent(cfg,{
+    userId,
+    eventName:'news_impact_outcome',
+    channel,
+    fixtureId,
+    metadata:{
+      decision:safeDecision,
+      action:safeAction,
+      outcome,
+      ...(delivery ? {delivery:String(delivery).slice(0,24)} : {}),
+    },
+  });
+}
+
+function newsImpactJourneyKey(row = {}) {
+  const uid=Number(row.telegram_id || 0);
+  const fixtureId=Number(row.fixture_id || 0);
+  const decision=newsImpactRowDecision(row);
+  const action=newsImpactRowAction(row);
+  return uid && fixtureId && decision && action ? `${uid}|${fixtureId}|${decision}|${action}` : '';
+}
+
+function buildNewsImpactActionOutcomeQuality(actionRows = [], outcomeRows = [], options = {}) {
+  const asOfMs=Number.isFinite(Number(options?.asOfMs)) ? Number(options.asOfMs) : Date.now();
+  const outcomeWindowMinutes=Math.max(1,Math.min(30,Number(options?.outcomeWindowMinutes || NEWS_IMPACT_OUTCOME_WINDOW_MINUTES)));
+  const outcomeWindowMs=outcomeWindowMinutes*60_000;
+  const actionByKey=new Map();
+  for (const row of actionRows || []) {
+    const key=newsImpactJourneyKey(row);
+    const actionAt=newsImpactEventTime(row);
+    if (!key || !Number.isFinite(actionAt)) continue;
+    const existing=actionByKey.get(key);
+    if (!existing || actionAt<existing.actionAt) actionByKey.set(key,{row,actionAt});
+  }
+  const confirmed=new Set();
+  const outcomeCodesByKey=new Map();
+  for (const row of outcomeRows || []) {
+    const key=newsImpactJourneyKey(row);
+    const outcomeAt=newsImpactEventTime(row);
+    const action=actionByKey.get(key);
+    if (!key || !action || !Number.isFinite(outcomeAt)) continue;
+    if (outcomeAt<action.actionAt || outcomeAt>action.actionAt+outcomeWindowMs) continue;
+    confirmed.add(key);
+    const code=String(row?.metadata && typeof row.metadata==='object' ? row.metadata.outcome || '' : '').slice(0,32);
+    if (code) outcomeCodesByKey.set(key,code);
+  }
+  return [...NEWS_IMPACT_ACTION_CODES].map(actionCode=>{
+    const observed=[...actionByKey.entries()].filter(([,value])=>newsImpactRowAction(value.row)===actionCode);
+    const eligible=observed.filter(([key,value])=>confirmed.has(key) || value.actionAt<=asOfMs-outcomeWindowMs);
+    const confirmedKeys=eligible.filter(([key])=>confirmed.has(key)).map(([key])=>key);
+    const attempts=eligible.length;
+    const confirmedOutcomes=confirmedKeys.length;
+    const pending=Math.max(0,observed.length-attempts);
+    const completionPct=attempts ? Math.round((confirmedOutcomes/attempts)*1000)/10 : 0;
+    const confidence=newsImpactConversionConfidence(confirmedOutcomes,attempts);
+    const outcomes={};
+    for (const key of confirmedKeys) {
+      const code=outcomeCodesByKey.get(key) || newsImpactOutcomeCode(actionCode);
+      outcomes[code]=(outcomes[code] || 0)+1;
+    }
+    return {
+      action:actionCode,
+      label:NEWS_IMPACT_ACTION_LABELS[actionCode] || actionCode,
+      observed:observed.length,
+      attempts,
+      pending,
+      confirmed:confirmedOutcomes,
+      completionPct,
+      confidence,
+      outcomes,
+    };
+  });
+}
+
+function newsImpactOutcomeBottleneck(rows = []) {
+  const eligible=(rows || []).filter(x=>Boolean(x?.confidence?.eligibleForBottleneck));
+  if (!eligible.length) return null;
+  return [...eligible].sort((a,b)=>Number(a.completionPct || 0)-Number(b.completionPct || 0) || Number(b.attempts || 0)-Number(a.attempts || 0))[0] || null;
+}
+
+function newsImpactOutcomeQualityDrill() {
+  const asOfMs=Date.parse('2026-09-23T12:00:00Z');
+  const actions=[
+    ...Array.from({length:10},(_,i)=>({telegram_id:i+1,fixture_id:100+i,created_at:'2026-09-23T10:00:00Z',metadata:{decision:'material',action:'full_ai'}})),
+    {telegram_id:50,fixture_id:500,created_at:'2026-09-23T11:58:00Z',metadata:{decision:'stable',action:'share'}},
+  ];
+  const outcomes=[
+    ...Array.from({length:8},(_,i)=>({telegram_id:i+1,fixture_id:100+i,created_at:'2026-09-23T10:01:00Z',metadata:{decision:'material',action:'full_ai',outcome:'analysis_delivered'}})),
+    {telegram_id:9,fixture_id:108,created_at:'2026-09-23T09:59:00Z',metadata:{decision:'material',action:'full_ai',outcome:'analysis_delivered'}},
+    {telegram_id:10,fixture_id:109,created_at:'2026-09-23T10:08:00Z',metadata:{decision:'material',action:'full_ai',outcome:'analysis_delivered'}},
+    {telegram_id:50,fixture_id:500,created_at:'2026-09-23T11:59:00Z',metadata:{decision:'stable',action:'share',outcome:'share_card_delivered'}},
+  ];
+  const quality=buildNewsImpactActionOutcomeQuality(actions,outcomes,{asOfMs});
+  const fullAi=quality.find(x=>x.action==='full_ai');
+  const share=quality.find(x=>x.action==='share');
+  return {
+    pass:fullAi?.attempts===10
+      && fullAi?.confirmed===8
+      && fullAi?.completionPct===80
+      && fullAi?.confidence?.status==='early'
+      && share?.attempts===1
+      && share?.confirmed===1
+      && share?.pending===0
+      && newsImpactOutcomeBottleneck(quality)?.action==='full_ai',
+    cases:8,
+  };
+}
+
 function newsImpactFunnelConfidenceDrill() {
   const insufficient=newsImpactConversionConfidence(1,3);
   const early=newsImpactConversionConfidence(5,10);
@@ -3627,11 +3781,15 @@ async function processTelegramUpdate(request, cfg, update) {
       if (action==='news') {
         await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Открываю новости…'}).catch(()=>null);
         await sendGeneralFootballNews(request,cfg,callbackUserId,callbackChatId,{force:false});
+        await recordNewsImpactOutcome(cfg,{userId:callbackUserId,fixtureId,decision,action,channel:'telegram'});
         return json({ok:true});
       }
       if (action==='share') {
         await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Готовлю ссылку…'}).catch(()=>null);
-        try { await sendBotFixtureShareCard(request,cfg,callbackUserId,callbackChatId,fixtureId); }
+        try {
+          await sendBotFixtureShareCard(request,cfg,callbackUserId,callbackChatId,fixtureId);
+          await recordNewsImpactOutcome(cfg,{userId:callbackUserId,fixtureId,decision,action,channel:'telegram'});
+        }
         catch { await telegramApi('sendMessage',cfg,{chat_id:callbackChatId,text:'Не удалось подготовить ссылку на этот матч.'}).catch(()=>null); }
         return json({ok:true});
       }
@@ -3640,6 +3798,7 @@ async function processTelegramUpdate(request, cfg, update) {
         text:action==='recheck'?'Перепроверяю AI…':'Собираю футбольные данные…',
       }).catch(()=>null);
       await sendBotFixtureSection(request,cfg,callbackUserId,callbackChatId,fixtureId,action==='recheck'?'verdict':action);
+      await recordNewsImpactOutcome(cfg,{userId:callbackUserId,fixtureId,decision,action,channel:'telegram'});
       return json({ok:true});
     }
     if (callbackChatId && (data === 'news:general' || data === 'news:refresh')) {
@@ -15044,6 +15203,11 @@ async function apiAnalyze(request, cfg, user) {
   const newsImpactDecision=cleanNewsImpactDecisionCode(body?.newsImpactDecision);
   const newsImpactAction=cleanNewsImpactActionCode(body?.newsImpactAction);
   const trackFullAi=analysisOrigin !== 'telegram_quick';
+  const recordTrackedFullAiOutcome=async (delivery='analysis')=>{
+    if (trackFullAi && newsImpactDecision && newsImpactAction==='full_ai') {
+      await recordNewsImpactOutcome(cfg,{userId:user.id,fixtureId,decision:newsImpactDecision,action:'full_ai',channel:'miniapp',delivery});
+    }
+  };
   if (trackFullAi && newsImpactDecision && newsImpactAction==='full_ai') {
     void recordGrowthEvent(cfg,{userId:user.id,eventName:'news_impact_action',channel:'miniapp',fixtureId,metadata:{decision:newsImpactDecision,action:'full_ai'}});
   }
@@ -15074,6 +15238,7 @@ async function apiAnalyze(request, cfg, user) {
       await recordHistory(user.id, cached, cfg);
       if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,freshness:previousFreshness?.state || 'fresh'}});
       const newsImpact=newsImpactDeltaStatus(staleBefore,cached,null,{requested:newsImpactRecheck,eligible:newsImpactEligible,performed:false,publishedAt:newsPublishedAt});
+      await recordTrackedFullAiOutcome('cached');
       return json(analysisResponsePayload(cached,{cached:true,stale:false,recheck:{requested:recheckRequested,performed:false,free:false,reasonCode:recheckReasonCode},newsImpact,quota:await getQuota(user.id,cfg)}));
     }
   }
@@ -15087,10 +15252,12 @@ async function apiAnalyze(request, cfg, user) {
     if (joined) {
       await recordHistory(user.id,joined,cfg);
       if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,sharedJoin:true}});
+      await recordTrackedFullAiOutcome('shared');
       return json(analysisResponsePayload(joined,{cached:true,stale:false,sharedJoin:true,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_shared' : (previousFreshness?.reasonCode || 'shared_compute')},quota:await getQuota(user.id,cfg)}));
     }
     if (staleBefore) {
       await recordHistory(user.id,staleBefore,cfg);
+      await recordTrackedFullAiOutcome('stale_pending');
       return json(analysisResponsePayload(staleBefore,{cached:true,stale:true,sharedJoinPending:true,warning:'Свежий расчёт этого матча уже выполняется. Пока показан последний сохранённый анализ.',retryAfter:5,recheck:{requested:recheckRequested,performed:false,free:freeRecheck,reasonCode:'shared_compute_pending'},quota:quotaBefore}));
     }
     return json({error:'AI-разбор этого матча уже рассчитывается для других пользователей. Повторите через несколько секунд.',code:'ANALYSIS_WARMING',retryAfter:5,quota:quotaBefore},429,{'retry-after':'5'});
@@ -15104,6 +15271,7 @@ async function apiAnalyze(request, cfg, user) {
     if (staleBefore && isFootballRateLimitError(error)) {
       await recordHistory(user.id, staleBefore, cfg);
       if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,stale:true}});
+      await recordTrackedFullAiOutcome('stale');
       return json(analysisResponsePayload(staleBefore,{cached:true,stale:true,warning:'Показан последний сохранённый анализ: источник футбольных данных временно ограничил запросы.',retryAfter:Number(error?.retryAfter || 60),recheck:{requested:recheckRequested,performed:false,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_provider_limit' : (previousFreshness?.reasonCode || 'provider_limit')},quota:quotaBefore}));
     }
     throw error;
@@ -15158,6 +15326,7 @@ async function apiAnalyze(request, cfg, user) {
     if (staleBefore && isFootballRateLimitError(error)) {
       await recordHistory(user.id, staleBefore, cfg);
       if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,stale:true}});
+      await recordTrackedFullAiOutcome('stale');
       return json(analysisResponsePayload(staleBefore,{cached:true,stale:true,warning:'Показан последний сохранённый анализ: источник данных временно достиг лимита.',retryAfter:Number(error?.retryAfter || 60),recheck:{requested:recheckRequested,performed:false,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_provider_limit' : (previousFreshness?.reasonCode || 'provider_limit')},quota:quotaBefore}));
     }
     throw error;
@@ -15329,6 +15498,7 @@ async function apiAnalyze(request, cfg, user) {
   }
   if (needsFreshnessRecheck) void recordGrowthEvent(cfg,{userId:user.id,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:previousFreshness?.reasonCode || 'age_window',material:Boolean(recheckDelta?.material),stable:Boolean(recheckDelta?.stable),changeCount:Number(recheckDelta?.items?.length || 0),codes:(recheckDelta?.codes || []).slice(0,6)}});
   if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:false,recheck:shouldPerformRecheck}});
+  await recordTrackedFullAiOutcome('fresh');
   return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:recheckReasonCode,delta:recheckDelta},newsImpact,quota:await getQuota(user.id,cfg)}));
   } finally {
     await releaseDistributedAnalysisLock(analysisLock,cfg);
@@ -15603,6 +15773,11 @@ export default {
         newsImpactMaturityGuard: 'enabled',
         newsImpactBoundaryAttribution: 'enabled',
         newsImpactTemporalAttributionSelfTest: newsImpactTemporalAttributionDrill().pass ? 'enabled' : 'failed',
+        newsImpactActionOutcomeTracking: 'enabled',
+        newsImpactOutcomeTemporalGuard: 'enabled',
+        newsImpactOutcomeQualityAnalytics: 'enabled',
+        newsImpactOutcomeMeaningGuard: 'enabled',
+        newsImpactOutcomeQualitySelfTest: newsImpactOutcomeQualityDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',

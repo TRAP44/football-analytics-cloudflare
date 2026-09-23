@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.69.0 RC77
+# QA Release Checklist — v6.70.0 RC78
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.69.0`.
-- Worker и client: `6.69.0-rc77`.
-- Release candidate: `RC77`.
+- `package.json` и `package-lock.json`: `6.70.0`.
+- Worker и client: `6.70.0-rc78`.
+- Release candidate: `RC78`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,19 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC78 — News Impact Action Outcome Quality
+
+- `news_impact_action` означает попытку пользователя продолжить сценарий; `news_impact_outcome` создаётся только после успешной серверной доставки результата.
+- Outcome отслеживается для `full_ai`, `squads`, `market`, `recheck`, `news`, `share`.
+- Для каждого действия считаются observed journeys, зрелые attempts, pending и confirmed outcomes.
+- Outcome должен идти после соответствующего action и не позднее 5 минут; действие и outcome совпадают по пользователю, fixture, decision и action.
+- Недавняя незавершённая попытка не считается неуспехом, пока не закончилось 5-минутное окно.
+- Admin Launch Funnel показывает confirmed / attempts, completion %, 95% Wilson-интервал и слабое место только при достаточной выборке.
+- «Confirmed outcome» означает успешную доставку запрошенного результата, а не удовлетворённость пользователя и не качество/точность AI-прогноза.
+- Новая Supabase migration не требуется; используется существующая `growth_events.metadata`.
+- Regression: `test/news-impact-action-outcome-quality-rc78.test.js`.
+- Production smoke требует `newsImpactOutcomeQualitySelfTest=enabled`.
 
 ## RC77 — News Impact Temporal Attribution Guard
 
@@ -117,8 +130,8 @@ npm run verify:worker
 
 `scripts/post-deploy-smoke.js` должен подтвердить:
 - `/health.ok = true`;
-- `version = 6.69.0-rc77`;
-- `releaseCandidate = RC77`;
+- `version = 6.70.0-rc78`;
+- `releaseCandidate = RC78`;
 - `devMode = false`;
 - обязательные self-test/feature flags = `enabled`;
 - `/health/supabase` не доступен публично;

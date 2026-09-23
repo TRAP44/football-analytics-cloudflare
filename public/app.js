@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.69.0-rc77';
+const CLIENT_VERSION = '6.70.0-rc78';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc77';
+const CLIENT_RELEASE_CHANNEL = 'rc78';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2925,6 +2925,10 @@ function renderLaunchFunnel() {
   const rechecks=d.rechecks || {};
   const media=d.mediaLoop || {};
   const impactActions=d.newsImpactActionSummary || {};
+  const impactOutcomeSummary=d.newsImpactOutcomeSummary || {};
+  const impactOutcomeQuality=Array.isArray(d.newsImpactActionOutcomeQuality) ? d.newsImpactActionOutcomeQuality : [];
+  const impactOutcomeBottleneck=d.newsImpactOutcomeBottleneck || null;
+  const impactOutcomeGuard=d.newsImpactOutcomeGuard || {outcomeWindowMinutes:5,minimumSample:10};
   const impactFunnel=Array.isArray(d.newsImpactActionFunnel) ? d.newsImpactActionFunnel : [];
   const impactBottleneck=d.newsImpactActionBottleneck || null;
   const impactConfidenceGuard=d.newsImpactActionConfidenceGuard || {minUsers:10,stableUsers:30};
@@ -2938,7 +2942,7 @@ function renderLaunchFunnel() {
     <div><span>Материалов СМИ</span><strong>${Number(d.mediaSummary?.materials || 0)}</strong><small>${Number(d.mediaSummary?.linksCreated || 0)} ссылок создано</small></div>
     <div><span>One‑tap → полный AI</span><strong>${Number(handoff.fullAiUsers || 0)}</strong><small>${launchFunnelPct(handoff.conversionPct)} от AI-handoff</small></div>
     <div><span>AI перепроверки</span><strong>${Number(rechecks.total || 0)}</strong><small>${Number(rechecks.free || 0)} без списания · ${Number(rechecks.material || 0)} со значимыми изменениями</small></div>
-    <div><span>Новости → AI</span><strong>${Number(d.returnLoop?.aiIntent || 0)}</strong><small>${launchFunnelPct(d.returnLoop?.intentPct)} нажали AI · ${Number(d.returnLoop?.smartFixtureIntent || 0)} через smart fixture · News Impact: ${Number(d.returnLoop?.impactCompared || 0)} сравнений / ${Number(d.returnLoop?.impactMaterial || 0)} существенных · решения: 🔴 ${Number(d.newsImpactDecisionSummary?.material || 0)} · 🟡 ${Number(d.newsImpactDecisionSummary?.detail || 0)} · 🟢 ${Number(d.newsImpactDecisionSummary?.stable || 0)} · действия: полный AI ${Number(impactActions.fullAi || 0)} · составы ${Number(impactActions.squads || 0)} · рынок ${Number(impactActions.market || 0)} · перепроверка ${Number(impactActions.recheck || 0)} · новости ${Number(impactActions.news || 0)} · поделились ${Number(impactActions.share || 0)} · Возврат из новостей: ${Number(d.returnLoop?.newsReturn || 0)} до матча</small></div>
+    <div><span>Новости → AI</span><strong>${Number(d.returnLoop?.aiIntent || 0)}</strong><small>${launchFunnelPct(d.returnLoop?.intentPct)} нажали AI · ${Number(d.returnLoop?.smartFixtureIntent || 0)} через smart fixture · News Impact: ${Number(d.returnLoop?.impactCompared || 0)} сравнений / ${Number(d.returnLoop?.impactMaterial || 0)} существенных · решения: 🔴 ${Number(d.newsImpactDecisionSummary?.material || 0)} · 🟡 ${Number(d.newsImpactDecisionSummary?.detail || 0)} · 🟢 ${Number(d.newsImpactDecisionSummary?.stable || 0)} · действия: полный AI ${Number(impactActions.fullAi || 0)} · составы ${Number(impactActions.squads || 0)} · рынок ${Number(impactActions.market || 0)} · перепроверка ${Number(impactActions.recheck || 0)} · новости ${Number(impactActions.news || 0)} · поделились ${Number(impactActions.share || 0)} · подтверждённых результатов ${Number(impactOutcomeSummary.confirmed || 0)}/${Number(impactOutcomeSummary.attempts || 0)} · Возврат из новостей: ${Number(d.returnLoop?.newsReturn || 0)} до матча</small></div>
     <div><span>Media deep-link → AI</span><strong>${Number(media.aiUsers || 0)}</strong><small>${Number(media.deepLinkUsers || 0)} открыли · ${launchFunnelPct(media.conversionPct)} получили AI</small></div>
   </div>`;
 
@@ -2964,6 +2968,14 @@ function renderLaunchFunnel() {
         <strong>${Number(x.actedUsers || 0)} / ${Number(x.users || 0)}</strong>
         <small>${launchFunnelPct(x.conversionPct)} продолжили · 95% ДИ ${launchFunnelPct(x.confidence?.lowerPct)}–${launchFunnelPct(x.confidence?.upperPct)} · ${escapeHtml(x.confidence?.label || 'мало данных')} · ${Number(x.immatureUsers || 0) ? `${Number(x.immatureUsers || 0)} свежих решений ещё не вошли · ` : ''}чаще: ${escapeHtml(x.topAction?.label || 'нет действий')}</small>
       </div>`).join('')}</div>` : ''}
+    ${impactOutcomeQuality.some(x=>Number(x.observed || 0)>0) ? `<div class="release-monitor-section-head"><strong>News Impact: действие → результат</strong><span>подтверждённая сервером доставка</span></div>
+      ${impactOutcomeBottleneck && Number(impactOutcomeBottleneck.attempts || 0)>=Number(impactOutcomeGuard.minimumSample || 10) ? `<div class="data-notice">🧩 Самая низкая подтверждённая доставка при достаточной выборке: <strong>${escapeHtml(impactOutcomeBottleneck.label || impactOutcomeBottleneck.action || '')}</strong> · ${Number(impactOutcomeBottleneck.confirmed || 0)}/${Number(impactOutcomeBottleneck.attempts || 0)} · ${launchFunnelPct(impactOutcomeBottleneck.completionPct)}.</div>` : ''}
+      <div class="launch-campaign-list">${impactOutcomeQuality.filter(x=>Number(x.observed || 0)>0).map(x=>`<div>
+        <span><b>${escapeHtml(x.label || x.action || '')}</b></span>
+        <strong>${Number(x.confirmed || 0)} / ${Number(x.attempts || 0)}</strong>
+        <small>${launchFunnelPct(x.completionPct)} подтверждено · 95% ДИ ${launchFunnelPct(x.confidence?.lowerPct)}–${launchFunnelPct(x.confidence?.upperPct)} · ${escapeHtml(x.confidence?.label || 'мало данных')} · ${Number(x.pending || 0) ? `${Number(x.pending || 0)} ещё в окне ожидания · ` : ''}окно ${Number(impactOutcomeGuard.outcomeWindowMinutes || 5)} мин.</small>
+      </div>`).join('')}</div>
+      <p class="tiny">Подтверждённый результат означает успешную доставку запрошенного экрана/раздела. Это не оценка удовлетворённости пользователя и не доказательство качества прогноза.</p>` : ''}
     ${impactTrend.some(x=>Number(x.currentUsers || 0)>0 || Number(x.previousUsers || 0)>0) ? `<div class="release-monitor-section-head"><strong>Динамика News Impact</strong><span>текущие ${Number(impactTrendGuard.comparisonDays || d.days || 7)} дн. vs предыдущие</span></div>
       <div class="launch-campaign-list">${impactTrend.filter(x=>Number(x.currentUsers || 0)>0 || Number(x.previousUsers || 0)>0).map(x=>{
         const signal=x.signal==='improved' ? '↗ подтверждённый рост'
