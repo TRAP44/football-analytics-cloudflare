@@ -101,6 +101,12 @@ const REQUIRED_HEALTH_FLAGS = [
   'deepLinkAutoAnalysis',
   'telegramNativeShare',
   'fixtureDeepLinkSelfTest',
+  'distributedAnalysisLock',
+  'viralFixtureCollapse',
+  'crossInstanceAnalysisDedupe',
+  'analysisLockFailOpen',
+  'sharedAnalysisWaitFallback',
+  'distributedAnalysisLockSelfTest',
 ];
 
 function delay(ms) {
