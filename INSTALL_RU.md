@@ -1,4 +1,4 @@
-# Установка Football Analytics v6.93.0 RC101
+# Установка Football Analytics v6.94.0 RC102
 
 ## Новый Supabase-проект
 
@@ -31,7 +31,7 @@ SUPABASE_URL
 SUPABASE_SECRET_KEY
 ```
 
-`SUPABASE_SERVICE_ROLE_KEY` поддерживается для совместимости. Секретные значения никогда не должны попадать в `public/`, Git history или Telegram-клиент.
+`SUPABASE_SERVICE_ROLE_KEY` поддерживается для совместимости. Секретные значения никогда не должны попадать в `public/`, Git history или Telegram-клиент. RC102 автоматически блокирует release, если распознаваемый секрет попал в отслеживаемый Git-файл.
 
 Опциональные переменные перечислены в `.env.example`.
 
@@ -50,7 +50,7 @@ API token должен быть ограничен нужным Cloudflare accou
 
 Рабочий release-процесс:
 
-`PR → Quality → merge в main → Deploy Production → RC101 smoke`.
+`PR → Quality → merge в main → Deploy Production → RC102 smoke`.
 
 ## Локальная проверка
 
@@ -68,13 +68,13 @@ npm run verify:worker
 
 Проверьте:
 
-1. `/health` возвращает `ok=true`, версию `6.93.0-rc101` и `releaseCandidate=RC101`.
+1. `/health` возвращает `ok=true`, версию `6.94.0-rc102` и `releaseCandidate=RC102`.
 2. RC Regression не содержит blocking failures.
 3. `DEV_MODE=false` и `MONETIZATION_ENABLED=false`.
 4. Обычный пользователь не видит административные controls.
 5. `/health/supabase` не доступен публично.
 6. CSP, HSTS, `X-Content-Type-Options: nosniff` и остальные security headers присутствуют.
-7. Production smoke подтверждает обязательные RC101 release/self-test flags.
+7. Production smoke подтверждает обязательные RC102 release/self-test flags.
 
 ## Rollback
 
