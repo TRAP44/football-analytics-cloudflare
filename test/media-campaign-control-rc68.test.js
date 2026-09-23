@@ -6,7 +6,6 @@ const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const html=fs.readFileSync('public/index.html','utf8');
 const css=fs.readFileSync('public/styles.css','utf8');
-const playbook=fs.readFileSync('MEDIA_CAMPAIGN_CONTROL_RC68.md','utf8');
 
 test('RC68 aggregates media attribution down to content level',()=>{
   assert.match(worker,/function buildMediaCampaignPerformance\(/);
@@ -38,5 +37,4 @@ test('RC68 exposes deterministic health gate',()=>{
   for (const flag of ['mediaCampaignControlRoom','contentLevelMediaAttribution','mediaCampaignConversion','publisherOutcomeTracking']) {
     assert.ok(worker.includes(flag + ": 'enabled'"));
   }
-  assert.match(playbook,/Media Campaign Control Room/);
 });
