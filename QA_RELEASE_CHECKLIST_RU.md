@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.89.0 RC97
+# QA Release Checklist — v6.90.0 RC98
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.89.0`.
-- Worker и client: `6.89.0-rc97`.
-- Release candidate: `RC97`.
+- `package.json` и `package-lock.json`: `6.90.0`.
+- Worker и client: `6.90.0-rc98`.
+- Release candidate: `RC98`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -31,6 +31,18 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC98 — News Impact Recovery Incident SLO Impact Focus Queue
+
+- Focus Queue объединяет RC93 cumulative ranking, RC94 weekly pair trend и RC97 Executive Summary; новые incident metrics не создаются.
+- Очередь ограничена 5 строками и сортируется строго по factual порядку: current week overdue minutes → week delta → cumulative overdue minutes.
+- Каждая строка содержит reason/action labels, weekly overdue, week delta, cumulative overdue, contribution %, active episodes и week direction.
+- Очередь не вводит severity-score, priority threshold или автоматическое recovery-routing решение.
+- Summary показывает queued pairs, breach/active pairs, current week overdue, week delta и число increased/decreased/unchanged строк.
+- Privacy: Telegram ID, raw error и произвольный free text не возвращаются.
+- RC98 использует существующие RC87 30 / 120 / 360 минут, не создаёт derived persistence и не требует новой Supabase migration.
+- Regression: `test/news-impact-recovery-incident-impact-focus-queue-rc98.test.js`.
+- Production smoke требует `newsImpactRecoveryIncidentSloImpactFocusQueue=enabled`, `newsImpactRecoveryIncidentSloImpactFocusOrdering=enabled`, `newsImpactRecoveryIncidentSloImpactFocusQueueSelfTest=enabled`.
 
 ## RC97 — News Impact Recovery Incident SLO Impact Executive Summary
 
