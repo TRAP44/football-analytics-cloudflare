@@ -80,11 +80,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.82.0-rc90';
+const APP_VERSION = '6.83.0-rc91';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc90';
-const RC_NAME = 'RC90';
+const RELEASE_CHANNEL = 'rc91';
+const RC_NAME = 'RC91';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1879,6 +1879,10 @@ async function apiLaunchFunnel(request,cfg) {
     newsImpactRecoveryIncidentSloBreachFeed,
     {limit:10},
   );
+  const newsImpactRecoveryIncidentSloBreachTriage=buildNewsImpactRecoveryIncidentSloBreachTriage(
+    newsImpactRecoveryIncidentSloBreachWatchlist,
+    {limit:10},
+  );
   const newsImpactRecoveryIncidentSloGuard={
     ackTargetMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,
     ackCriticalMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,
@@ -1999,6 +2003,7 @@ async function apiLaunchFunnel(request,cfg) {
     newsImpactRecoveryIncidentSloDashboard,
     newsImpactRecoveryIncidentSloBreachFeed,
     newsImpactRecoveryIncidentSloBreachWatchlist,
+    newsImpactRecoveryIncidentSloBreachTriage,
     newsImpactActionFunnel,
     newsImpactActionBottleneck,
     newsImpactActionConfidenceGuard,
@@ -4368,6 +4373,54 @@ function buildNewsImpactRecoveryIncidentSloBreachWatchlist(feed = {}, {limit = 1
   };
 }
 
+
+function buildNewsImpactRecoveryIncidentSloBreachTriage(watchlist = {}, {limit = 10} = {}) {
+  const safeLimit=Math.max(1,Math.min(25,Number(limit || 10)));
+  const items=Array.isArray(watchlist?.items) ? watchlist.items : [];
+  const thresholds=watchlist?.thresholds || {};
+  const criticalAckMinutes=Number(thresholds.criticalAckMinutes || NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES);
+  const recoveryMinutes=Number(thresholds.recoveryMinutes || NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES);
+  const stageRank={recovery_overdue:0,ack_critical:1,ack_overdue:2};
+  const triageItems=items.filter(x=>x?.active).map(item=>{
+    const breachTypes=Array.isArray(item?.breachTypes) ? item.breachTypes : [];
+    const ageMinutes=Number(item?.ageMinutes || 0);
+    let triageStage='ack_overdue';
+    let triageLabel='ACK просрочен';
+    if (breachTypes.includes('recovery') || ageMinutes>=recoveryMinutes) {
+      triageStage='recovery_overdue';
+      triageLabel='Recovery просрочен';
+    } else if (breachTypes.includes('ack') && ageMinutes>=criticalAckMinutes) {
+      triageStage='ack_critical';
+      triageLabel='ACK критически просрочен';
+    }
+    return {...item,triageStage,triageLabel};
+  }).sort((a,b)=>
+    (stageRank[a.triageStage] ?? 9)-(stageRank[b.triageStage] ?? 9)
+    || Number(b.ageMinutes || 0)-Number(a.ageMinutes || 0)
+    || Date.parse(String(a.startedAt || 0))-Date.parse(String(b.startedAt || 0))
+  );
+  return {
+    available:watchlist?.available!==false,
+    generatedAt:watchlist?.generatedAt || null,
+    summary:{
+      total:triageItems.length,
+      recoveryOverdue:triageItems.filter(x=>x.triageStage==='recovery_overdue').length,
+      ackCritical:triageItems.filter(x=>x.triageStage==='ack_critical').length,
+      ackOverdue:triageItems.filter(x=>x.triageStage==='ack_overdue').length,
+    },
+    items:triageItems.slice(0,safeLimit),
+    thresholds:{
+      ackMinutes:Number(thresholds.ackMinutes || NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES),
+      criticalAckMinutes,
+      recoveryMinutes,
+      source:'rc87_existing_slo',
+    },
+    privacy:{telegramIdsExposed:false,rawErrorsExposed:false,freeTextExposed:false},
+    routingChanged:false,
+    persistence:'none',
+  };
+}
+
 function buildNewsImpactRecoveryIncidentCenter(strategyRows = [], incidentEvents = [], acknowledgements = [], evidenceReason = 'ok', options = {}) {
   const priorityRank={critical:0,high:1,medium:2,low:3};
   const asOfMs=Number.isFinite(Number(options?.asOfMs)) ? Number(options.asOfMs) : Date.now();
@@ -4884,6 +4937,37 @@ function newsImpactRecoveryIncidentSloBreachWatchlistDrill() {
       && watchlist.privacy.telegramIdsExposed===false
       && watchlist.privacy.rawErrorsExposed===false
       && watchlist.privacy.freeTextExposed===false,
+    cases:13,
+  };
+}
+
+
+function newsImpactRecoveryIncidentSloBreachTriageDrill() {
+  const watchlist={
+    available:true,
+    generatedAt:'2026-09-23T18:00:00.000Z',
+    thresholds:{ackMinutes:30,criticalAckMinutes:120,recoveryMinutes:360,source:'rc87_existing_slo'},
+    items:[
+      {reason:'server_error',action:'full_ai',active:true,severity:'critical',ageMinutes:610,breachTypes:['ack','recovery'],startedAt:'2026-09-23T08:00:00.000Z'},
+      {reason:'provider_unavailable',action:'full_ai',active:true,severity:'critical',ageMinutes:180,breachTypes:['ack'],startedAt:'2026-09-23T15:00:00.000Z'},
+      {reason:'timeout',action:'share',active:true,severity:'high',ageMinutes:70,breachTypes:['ack'],startedAt:'2026-09-23T16:50:00.000Z'},
+    ],
+  };
+  const triage=buildNewsImpactRecoveryIncidentSloBreachTriage(watchlist,{limit:10});
+  return {
+    pass:triage.summary.total===3
+      && triage.summary.recoveryOverdue===1
+      && triage.summary.ackCritical===1
+      && triage.summary.ackOverdue===1
+      && triage.items[0]?.triageStage==='recovery_overdue'
+      && triage.items[1]?.triageStage==='ack_critical'
+      && triage.items[2]?.triageStage==='ack_overdue'
+      && triage.thresholds.source==='rc87_existing_slo'
+      && triage.routingChanged===false
+      && triage.persistence==='none'
+      && triage.privacy.telegramIdsExposed===false
+      && triage.privacy.rawErrorsExposed===false
+      && triage.privacy.freeTextExposed===false,
     cases:13,
   };
 }
@@ -17937,6 +18021,9 @@ export default {
         newsImpactRecoveryIncidentSloBreachWatchlist: 'enabled',
         newsImpactRecoveryIncidentBreachAging: 'enabled',
         newsImpactRecoveryIncidentSloBreachWatchlistSelfTest: newsImpactRecoveryIncidentSloBreachWatchlistDrill().pass ? 'enabled' : 'failed',
+        newsImpactRecoveryIncidentSloBreachTriage: 'enabled',
+        newsImpactRecoveryIncidentBreachStageBuckets: 'enabled',
+        newsImpactRecoveryIncidentSloBreachTriageSelfTest: newsImpactRecoveryIncidentSloBreachTriageDrill().pass ? 'enabled' : 'failed',
         readWriteRaceGuard: 'enabled',
         analysisHistoryTransition: 'enabled',
         historyStaleGuard: 'enabled',
