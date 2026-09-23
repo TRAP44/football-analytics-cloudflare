@@ -89,6 +89,12 @@ const REQUIRED_HEALTH_FLAGS = [
   'postMatchReturnOptOut',
   'postMatchReturnQuotaGuard',
   'postMatchReturnSelfTest',
+  'publicAiTrackRecord',
+  'verifiedTrackRecordOnly',
+  'smallSampleTrustGuard',
+  'noWinRateTrustUx',
+  'telegramAiTrackRecord',
+  'aiTrackRecordSelfTest',
 ];
 
 function delay(ms) {
