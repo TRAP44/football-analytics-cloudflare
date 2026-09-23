@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.98.0-rc106';
+const CLIENT_VERSION = '6.99.0-rc107';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc106';
+const CLIENT_RELEASE_CHANNEL = 'rc107';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -6094,6 +6094,8 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
       }
     } else if (e.status === 429 && String(e.payload?.code || '').startsWith('FOOTBALL_')) {
       toast(e.payload?.retryAfter ? `Источник футбольных данных временно на паузе. Повторите через ~${e.payload.retryAfter} сек.` : e.message);
+    } else if (e.status === 429 && ['ANALYSIS_USER_BUSY','ANALYSIS_WARMING','BURST_GUARD'].includes(String(e.payload?.code || ''))) {
+      toast(e.message);
     } else if (e.status === 429) toast('Дневной лимит анализов исчерпан.');
     else toast(e.message);
   } finally {
