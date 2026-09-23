@@ -9,15 +9,15 @@ const staticHeaders = fs.readFileSync('public/_headers', 'utf8');
 const styles = fs.readFileSync('public/styles.css', 'utf8');
 const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml', 'utf8');
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
-const expected = `${pkg.version}-rc65`;
+const expected = `${pkg.version}-rc66`;
 const failures = [];
 
 if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) failures.push('package-lock version must match package.json');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC65'")) failures.push('Worker RC name must be RC65');
+if (!worker.includes("const RC_NAME = 'RC66'")) failures.push('Worker RC name must be RC66');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc65'")) failures.push('Client release channel must be rc65');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc66'")) failures.push('Client release channel must be rc66');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -35,8 +35,8 @@ if (!fs.existsSync('.github/workflows/rollback-production.yml')) failures.push('
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
-if (!deployWorkflow.includes('--message "RC65 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC65');
-if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.57.0-rc65"')) failures.push('Production smoke must verify 6.57.0-rc65');
+if (!deployWorkflow.includes('--message "RC66 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC66');
+if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.58.0-rc66"')) failures.push('Production smoke must verify 6.58.0-rc66');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
 if (!/id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden/.test(html)) failures.push('Admin role badge must use the fail-closed admin-only visibility contract');
 if (!/\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i.test(styles)) failures.push('Global hidden elements must remain display:none');
@@ -96,6 +96,8 @@ if (!fs.existsSync('test/ai-track-record-rc64.test.js')) failures.push('Missing 
 if (!fs.existsSync('AI_TRACK_RECORD_RC64.md')) failures.push('Missing RC64 AI track record playbook');
 if (!fs.existsSync('test/media-share-deeplink-rc65.test.js')) failures.push('Missing RC65 media share regression test');
 if (!fs.existsSync('MEDIA_SHARE_DEEPLINK_RC65.md')) failures.push('Missing RC65 media share playbook');
+if (!fs.existsSync('test/media-traffic-guard-rc66.test.js')) failures.push('Missing RC66 media traffic guard regression test');
+if (!fs.existsSync('MEDIA_TRAFFIC_GUARD_RC66.md')) failures.push('Missing RC66 media traffic guard playbook');
 if (!fs.existsSync('test/ai-instructor-rc43.test.js')) failures.push('Missing RC43 persistent-AI regression test');
 if (!fs.existsSync('test/ai-instructor-rc42.test.js')) failures.push('Missing RC42 referee/AI-focus regression test');
 if (!worker.includes('function loadRefereeHistoryProfile')) failures.push('RC44 referee history loader is missing');
@@ -214,7 +216,7 @@ if (!worker.includes("newsSourceTrustGate: 'enabled'") || !worker.includes('appl
 if (!worker.includes("publicLegalPages: 'enabled'") || !worker.includes("publicStatusPage: 'enabled'") || !worker.includes("url.pathname === '/api/public-status'")) failures.push('RC52 public trust contract is missing');
 if (!fs.existsSync('public/privacy.html') || !fs.existsSync('public/terms.html') || !fs.existsSync('public/status.html') || !fs.existsSync('public/status.js')) failures.push('RC52 public trust pages are missing');
 if (!wrangler.includes('"/telegram/*"') || !wrangler.includes('"/api/*"')) failures.push('RC52 Worker-first webhook/public API routes are missing');
-if (!deployWorkflow.includes('6.57.0-rc65')) failures.push('RC65 production workflow version is missing');
+if (!deployWorkflow.includes('6.58.0-rc66')) failures.push('RC66 production workflow version is missing');
 
 if (!worker.includes("mediaLaunchPackage: 'enabled'") || !worker.includes("mediaDeepLinkAttribution: 'enabled'")) failures.push('RC53 media launch health contract is missing');
 if (!worker.includes("launchSimulation: 'enabled'") || !worker.includes("conversionUx: 'enabled'") || !worker.includes("highIntentSearchFallback: 'enabled'") || !worker.includes("newsReturnLoop: 'enabled'")) failures.push('RC54 launch conversion health contract is missing');
@@ -229,6 +231,7 @@ if (!worker.includes("postMatchAiReview: 'enabled'") || !worker.includes("immuta
 if (!worker.includes("postMatchReturnLoop: 'enabled'") || !worker.includes("analyzedMatchReturn: 'enabled'") || !worker.includes("postMatchReturnDedupe: 'enabled'") || !worker.includes("postMatchReturnOptOut: 'enabled'") || !worker.includes("postMatchReturnQuotaGuard: 'enabled'") || !worker.includes("postMatchReturnSelfTest: postMatchReturnDrill().pass ? 'enabled' : 'failed'")) failures.push('RC63 post-match return health contract is missing');
 if (!worker.includes("publicAiTrackRecord: 'enabled'") || !worker.includes("verifiedTrackRecordOnly: 'enabled'") || !worker.includes("smallSampleTrustGuard: 'enabled'") || !worker.includes("noWinRateTrustUx: 'enabled'") || !worker.includes("telegramAiTrackRecord: 'enabled'") || !worker.includes("aiTrackRecordSelfTest: publicAiTrackRecordDrill().pass ? 'enabled' : 'failed'")) failures.push('RC64 AI track record health contract is missing');
 if (!worker.includes("mediaFixtureDeepLinks: 'enabled'") || !worker.includes("shareableMatchCards: 'enabled'") || !worker.includes("shareAttribution: 'enabled'") || !worker.includes("deepLinkAutoAnalysis: 'enabled'") || !worker.includes("telegramNativeShare: 'enabled'") || !worker.includes("fixtureDeepLinkSelfTest: fixtureDeepLinkDrill().pass ? 'enabled' : 'failed'")) failures.push('RC65 media share health contract is missing');
+if (!worker.includes("distributedAnalysisLock: 'enabled'") || !worker.includes("viralFixtureCollapse: 'enabled'") || !worker.includes("crossInstanceAnalysisDedupe: 'enabled'") || !worker.includes("analysisLockFailOpen: 'enabled'") || !worker.includes("sharedAnalysisWaitFallback: 'enabled'") || !worker.includes("distributedAnalysisLockSelfTest: distributedAnalysisLockDrill().pass ? 'enabled' : 'failed'")) failures.push('RC66 media traffic guard health contract is missing');
 if (!worker.includes("firstPartyGrowthAnalytics: 'enabled'") || !worker.includes("launchFunnelAnalytics: 'enabled'")) failures.push('RC53 first-party funnel health contract is missing');
 if (!worker.includes('parseLaunchStartParam') || !worker.includes('ensureLaunchAttribution') || !worker.includes('recordGrowthEvent')) failures.push('RC53 attribution engine is missing');
 if (!worker.includes("url.pathname === '/api/launch-funnel'") || !app.includes('function renderLaunchFunnel')) failures.push('RC53 admin launch funnel is missing');
