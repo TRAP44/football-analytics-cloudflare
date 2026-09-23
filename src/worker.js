@@ -81,11 +81,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.97.0-rc105';
+const APP_VERSION = '6.98.0-rc106';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc105';
-const RC_NAME = 'RC105';
+const RELEASE_CHANNEL = 'rc106';
+const RC_NAME = 'RC106';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -688,6 +688,7 @@ function appManifest(cfg) {
       matchSelectionIntelligence: true,
       primaryMatchRecommendation: true,
       oneTapAiHandoff: true,
+      telegramMiniAppE2E: true,
       cachedFullAnalysisHandoff: true,
       aiFreshnessGuard: true,
       preKickoffRecheck: true,
@@ -2364,6 +2365,49 @@ function telegramFullAnalysisUrl(request, fixtureId, tab = 'brief') {
 function oneTapHandoffDrill() {
   const p=telegramAnalysisHandoffParams(12345);
   return {pass:p.fixtureId===12345 && p.action==='analysis' && p.tab==='brief' && p.handoff==='1',fixtureId:p.fixtureId};
+}
+
+function telegramMiniAppE2EDrill() {
+  const request=new Request('https://app.example/');
+  const match={
+    fixtureId:12345,
+    status:'NS',
+    home:{id:101,name:'Home FC',logo:''},
+    away:{id:202,name:'Away FC',logo:''},
+    league:'Test League',
+  };
+  const mainKeyboard=footballBotKeyboard(request);
+  const searchKeyboard=footballSearchHandoffKeyboard(request,match,'https://app.example/?view=search');
+  const quickKeyboard=footballQuickAiHandoffKeyboard(request,match,[], '');
+  const actionKeyboard=footballMatchActionKeyboard(request,match,'',[]);
+  const flatten=keyboard=>(keyboard?.inline_keyboard || keyboard?.keyboard || []).flat();
+  const mainButtons=flatten(mainKeyboard).map(x=>String(x?.text || ''));
+  const searchButtons=flatten(searchKeyboard);
+  const quickButtons=flatten(quickKeyboard);
+  const actionButtons=flatten(actionKeyboard);
+  const searchSelect=searchButtons.find(x=>String(x?.callback_data || '')===`match:menu:${match.fixtureId}`);
+  const fullButton=quickButtons.find(x=>String(x?.text || '').includes('Полный AI'));
+  const fullUrl=String(fullButton?.web_app?.url || '');
+  let handoffOk=false;
+  try {
+    const u=new URL(fullUrl);
+    handoffOk=Number(u.searchParams.get('fixtureId'))===match.fixtureId
+      && u.searchParams.get('action')==='analysis'
+      && u.searchParams.get('tab')==='brief'
+      && u.searchParams.get('handoff')==='1';
+  } catch {}
+  const favoriteCallbacks=new Set(actionButtons.map(x=>String(x?.callback_data || '')).filter(x=>x.startsWith('favorite:toggle:')));
+  return {
+    pass:mainButtons.includes('🔎 Найти матч')
+      && Boolean(searchSelect)
+      && handoffOk
+      && favoriteCallbacks.has('favorite:toggle:101:12345')
+      && favoriteCallbacks.has('favorite:toggle:202:12345'),
+    cases:5,
+    search:Boolean(searchSelect),
+    handoff:handoffOk,
+    favorites:favoriteCallbacks.size,
+  };
 }
 
 
@@ -14273,6 +14317,7 @@ async function apiReleaseReadiness(request, cfg) {
   const schemaDriftSelfTest = supabaseSchemaDriftSelfTest();
   const providerReliabilitySelfTest = providerDataReliabilitySelfTest();
   const aiQualityGateSelfTest = analysisQualityGateSelfTest();
+  const telegramMiniAppE2ESelfTest = telegramMiniAppE2EDrill();
   const checks = [
     releaseCheck('football_api', 'Ключ API-Football', cfg.apiFootballKey ? 'pass' : 'fail', cfg.apiFootballKey ? 'Ключ доступен серверному обработчику.' : 'Ключ API-Football отсутствует.', true),
     releaseCheck('supabase_config', 'Настройка Supabase', hasSupabase(cfg) ? 'pass' : 'fail', hasSupabase(cfg) ? 'Адрес и сервисный ключ доступны серверу.' : 'Не хватает адреса Supabase или сервисного ключа.', true),
@@ -14291,6 +14336,10 @@ async function apiReleaseReadiness(request, cfg) {
       aiQualityGateSelfTest.pass
         ? `ready=${aiQualityGateSelfTest.ready}; hold=${aiQualityGateSelfTest.hold}; причины hold: ${aiQualityGateSelfTest.holdReasons.join(', ')}.`
         : 'AI Quality Gate не удерживает слабый сигнал fail-closed.', true),
+    releaseCheck('telegram_miniapp_e2e_selftest', 'Telegram → Mini App E2E', telegramMiniAppE2ESelfTest.pass ? 'pass' : 'fail',
+      telegramMiniAppE2ESelfTest.pass
+        ? `Проверено ${telegramMiniAppE2ESelfTest.cases} переходов: поиск → матч → Quick AI → полный анализ → избранное.`
+        : 'Серверный Telegram/Mini App handoff-контракт нарушен.', true),
     releaseCheck('backend_security_contract', 'Контракт безопасности Supabase', backendSecurity.ok ? 'pass' : 'fail',
       backendSecurity.ok
         ? 'Все публичные таблицы защищены правилами доступа; анонимный и авторизованный клиент не имеют прямых прав; серверные процедуры закрыты.'
@@ -19496,6 +19545,8 @@ export default {
         directFixtureDeepLink: 'enabled',
         handoffFunnelTracking: 'enabled',
         oneTapHandoffSelfTest: oneTapHandoffDrill().pass ? 'enabled' : 'failed',
+        telegramMiniAppE2E: 'enabled',
+        telegramMiniAppE2ESelfTest: telegramMiniAppE2EDrill().pass ? 'enabled' : 'failed',
         aiFreshnessGuard: 'enabled',
         preKickoffRecheck: 'enabled',
         userScopedFreeRecheck: 'enabled',
