@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.93.0 RC101
+# QA Release Checklist — v6.94.0 RC102
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.93.0`.
-- Worker и client: `6.93.0-rc101`.
-- Release candidate: `RC101`.
+- `package.json` и `package-lock.json`: `6.94.0`.
+- Worker и client: `6.94.0-rc102`.
+- Release candidate: `RC102`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -34,17 +34,17 @@ npm run verify:worker
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
 
-## RC101 — Supabase Directory Hardening
+## RC102 — Secret Leak Guard
 
-- Все SQL-файлы находятся только внутри `supabase/`.
-- Fresh install: `supabase/baseline/supabase_baseline_v6_15.sql`.
-- Existing production upgrades: `supabase/migrations/`.
-- Release gate блокирует возврат `supabase_*.sql` в корень репозитория.
-- Fresh-install baseline fail-closed: при обнаружении существующих `users + runtime_controls + model_predictions` выполнение прекращается до DDL.
-- Production Supabase этим релизом не изменяется.
-- Regression: `test/supabase-directory-hardening-rc101.test.js`.
+- Перед тестами Quality выполняется `npm run security:scan`.
+- Та же проверка повторяется непосредственно перед production deploy.
+- Запрещены отслеживаемые `.env`, `.dev.vars`, `*.pem`, `*.key` и приватные SSH key-файлы.
+- Сканер распознаёт high-confidence Telegram bot token, Supabase secret key, GitHub PAT, Tavily key, JWT и private-key header.
+- `.env.example` с безопасными placeholder-значениями разрешён.
+- Логи содержат только путь и тип нарушения, но не найденное секретное значение.
+- Regression: `test/security-scan-rc102.test.js`.
 
-## Исторические RC72–RC100
+## Исторические RC72–RC101
 
 Детальные исторические release-контракты удалены из текущего checklist, чтобы не дублировать Git history и regression-тесты. Их поведение продолжает проверяться соответствующими файлами `test/*-rcXX.test.js`, а продуктовая сводка сохранена в `README_CLOUDFLARE_RU.md`.
 
@@ -66,8 +66,8 @@ npm run verify:worker
 
 `scripts/post-deploy-smoke.js` должен подтвердить:
 - `/health.ok = true`;
-- `version = 6.93.0-rc101`;
-- `releaseCandidate = RC101`;
+- `version = 6.94.0-rc102`;
+- `releaseCandidate = RC102`;
 - `devMode = false`;
 - обязательные self-test/feature flags = `enabled`;
 - `/health/supabase` не доступен публично;
