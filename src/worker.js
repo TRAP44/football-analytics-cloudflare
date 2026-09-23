@@ -2336,10 +2336,12 @@ async function sendBotFixtureMenu(request, cfg, userId, chatId, fixtureId, optio
     return;
   }
   try {
-    const data=await botAnalyzeFixture(request,cfg,userId,fixtureId,{
-      newsImpactRecheck:Boolean(options.newsImpactDelta),
-      newsPublishedAt:options.newsPublishedAt || '',
-    });
+    const data=options.newsImpactDelta
+      ? await botAnalyzeFixture(request,cfg,userId,fixtureId,{
+          newsImpactRecheck:true,
+          newsPublishedAt:options.newsPublishedAt || '',
+        })
+      : await botAnalyzeFixture(request,cfg,userId,fixtureId);
     const analyzedMatch=normalizeBotFixtureCard(data.match || match);
     await rememberBotFixtureCards([analyzedMatch],cfg);
     void recordGrowthEvent(cfg,{userId,eventName:'quick_ai',channel:'telegram',fixtureId,attribution:options.attribution || null,metadata:{section:'handoff',cached:Boolean(data.cached),source:options.source || 'match_select'}});
@@ -14848,7 +14850,13 @@ async function apiAnalyze(request, cfg, user) {
   await captureModelPrediction(payload, cfg);
   if (!freeRecheck) await incrementUsage(user.id, cfg);
   await recordHistory(user.id, payload, cfg);
-  if (shouldPerformRecheck) void recordGrowthEvent(cfg,{userId:user.id,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:recheckReasonCode,material:Boolean(recheckDelta?.material),stable:Boolean(recheckDelta?.stable),changeCount:Number(recheckDelta?.items?.length || 0),codes:(recheckDelta?.codes || []).slice(0,6)}});
+  if (shouldPerformRecheck) {
+    if (newsImpactEligible) {
+      void recordGrowthEvent(cfg,{userId:user.id,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:'news_impact',material:Boolean(recheckDelta?.material),stable:Boolean(recheckDelta?.stable),changeCount:Number(recheckDelta?.items?.length || 0),codes:(recheckDelta?.codes || []).slice(0,6)}});
+    } else {
+      void recordGrowthEvent(cfg,{userId:user.id,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:previousFreshness?.reasonCode || 'age_window',material:Boolean(recheckDelta?.material),stable:Boolean(recheckDelta?.stable),changeCount:Number(recheckDelta?.items?.length || 0),codes:(recheckDelta?.codes || []).slice(0,6)}});
+    }
+  }
   if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:false,recheck:shouldPerformRecheck}});
   return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:recheckReasonCode,delta:recheckDelta},newsImpact,quota:await getQuota(user.id,cfg)}));
   } finally {
