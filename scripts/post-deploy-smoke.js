@@ -201,6 +201,9 @@ const REQUIRED_HEALTH_FLAGS = [
   'newsImpactRecoveryIncidentSloImpactExecutiveSummary',
   'newsImpactRecoveryIncidentSloImpactUnifiedView',
   'newsImpactRecoveryIncidentSloImpactExecutiveSummarySelfTest',
+  'newsImpactRecoveryIncidentSloImpactFocusQueue',
+  'newsImpactRecoveryIncidentSloImpactFocusOrdering',
+  'newsImpactRecoveryIncidentSloImpactFocusQueueSelfTest',
 ];
 
 function delay(ms) {
