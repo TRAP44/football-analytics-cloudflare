@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.81.0-rc89';
+const CLIENT_VERSION = '6.82.0-rc90';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc89';
+const CLIENT_RELEASE_CHANNEL = 'rc90';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2955,6 +2955,10 @@ function renderLaunchFunnel() {
   const impactRecoveryBreachSummary=impactRecoveryIncidentSloBreachFeed.summary || {};
   const impactRecoveryBreachItems=Array.isArray(impactRecoveryIncidentSloBreachFeed.items) ? impactRecoveryIncidentSloBreachFeed.items : [];
   const impactRecoveryBreachRepeated=Array.isArray(impactRecoveryIncidentSloBreachFeed.repeated) ? impactRecoveryIncidentSloBreachFeed.repeated : [];
+  const impactRecoveryIncidentSloBreachWatchlist=d.newsImpactRecoveryIncidentSloBreachWatchlist || {available:false,summary:{},items:[],repeated:[]};
+  const impactRecoveryWatchSummary=impactRecoveryIncidentSloBreachWatchlist.summary || {};
+  const impactRecoveryWatchItems=Array.isArray(impactRecoveryIncidentSloBreachWatchlist.items) ? impactRecoveryIncidentSloBreachWatchlist.items : [];
+  const impactRecoveryWatchRepeated=Array.isArray(impactRecoveryIncidentSloBreachWatchlist.repeated) ? impactRecoveryIncidentSloBreachWatchlist.repeated : [];
   const impactFunnel=Array.isArray(d.newsImpactActionFunnel) ? d.newsImpactActionFunnel : [];
   const impactBottleneck=d.newsImpactActionBottleneck || null;
   const impactConfidenceGuard=d.newsImpactActionConfidenceGuard || {minUsers:10,stableUsers:30};
@@ -3075,6 +3079,12 @@ function renderLaunchFunnel() {
       (impactRecoveryBreachItems.length ? '<div class="launch-campaign-list">' + impactRecoveryBreachItems.map(x=>'<div><span><b>' + (x.severity==='critical'?'🚨':x.severity==='high'?'⚠️':'ℹ️') + ' ' + escapeHtml(x.reasonLabel || x.reason || '') + '</b> · ' + escapeHtml(x.actionLabel || x.action || '') + '</span><strong>' + escapeHtml((x.breachTypes || []).join(' + ') || 'breach') + '</strong><small>' + (x.active?'active':'recovered') + ' · ACK ' + escapeHtml(x.ackStatus || '—') + ' · Recovery ' + escapeHtml(x.recoveryStatus || '—') + ' · age ' + Number(x.ageMinutes || 0) + ' мин · ACK latency ' + (x.ackLatencyMinutes==null?'—':Number(x.ackLatencyMinutes)+' мин') + ' · recovery latency ' + (x.recoveryLatencyMinutes==null?'—':Number(x.recoveryLatencyMinutes)+' мин') + ' · occurrences ' + Number(x.occurrences || 0) + ' · ' + escapeHtml(x.startedAt || '—') + '</small></div>').join('') + '</div>' : '<div class="data-notice">✅ За текущую 4-недельную выборку подтверждённых SLO breach-эпизодов нет.</div>') +
       (impactRecoveryBreachRepeated.length ? '<div class="data-notice">🔁 Повторяющиеся breach-пары: ' + impactRecoveryBreachRepeated.map(x=>escapeHtml(x.reasonLabel || x.reason || '') + ' / ' + escapeHtml(x.actionLabel || x.action || '') + ': ' + Number(x.breachEpisodes || 0)).join(' · ') + '</div>' : '') +
       '<p class="tiny">RC89 — drilldown только по уже подтверждённым ACK/Recovery SLO breaches. Используются существующие incident episodes и пороги RC87; новые пороги, Supabase-таблицы и routing-решения не добавляются. Telegram ID, raw error и произвольный free text не возвращаются.</p>'
+    ) : ''}
+    ${impactRecoveryIncidentSloBreachWatchlist.available !== false ? (
+      '<div class="release-monitor-section-head"><strong>SLO Breach Watchlist</strong><span>active ' + Number(impactRecoveryWatchSummary.active || 0) + ' · critical ' + Number(impactRecoveryWatchSummary.criticalActive || 0) + ' · oldest ' + (impactRecoveryWatchSummary.oldestActiveMinutes==null?'—':Number(impactRecoveryWatchSummary.oldestActiveMinutes)+' мин') + '</span></div>' +
+      (impactRecoveryWatchItems.length ? '<div class="launch-campaign-list">' + impactRecoveryWatchItems.map(x=>'<div><span><b>' + (x.severity==='critical'?'🚨':'⚠️') + ' ' + escapeHtml(x.reasonLabel || x.reason || '') + '</b> · ' + escapeHtml(x.actionLabel || x.action || '') + '</span><strong>' + escapeHtml((x.breachTypes || []).join(' + ') || 'breach') + '</strong><small>active · age ' + Number(x.ageMinutes || 0) + ' мин · occurrences ' + Number(x.occurrences || 0) + ' · started ' + escapeHtml(x.startedAt || '—') + '</small></div>').join('') + '</div>' : '<div class="data-notice">✅ Активных SLO breach-инцидентов для watchlist нет.</div>') +
+      (impactRecoveryWatchRepeated.length ? '<div class="data-notice">🔁 Активные повторяющиеся пары: ' + impactRecoveryWatchRepeated.map(x=>escapeHtml(x.reasonLabel || x.reason || '') + ' / ' + escapeHtml(x.actionLabel || x.action || '') + ': ' + Number(x.activeBreaches || 0)).join(' · ') + '</div>' : '') +
+      '<p class="tiny">RC90 — watchlist и aging считаются только из RC89 breach feed. Пороги остаются RC87 (30/120/360 минут), новые данные не сохраняются и recovery-routing не меняется.</p>'
     ) : ''}
     ${impactRecoveryStrategyAlerts.length ? `<div class="release-monitor-section-head"><strong>Recovery: предупреждения</strong><span>${Number(impactRecoveryAlertSummary.critical || 0)} critical · ${Number(impactRecoveryAlertSummary.warnings || 0)} warning · ${Number(impactRecoveryAlertSummary.info || 0)} info</span></div>
       <div class="launch-campaign-list">${impactRecoveryStrategyAlerts.map(x=>`<div>
