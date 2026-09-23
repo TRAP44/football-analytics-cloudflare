@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.55.0-rc63';
+const CLIENT_VERSION = '6.56.0-rc64';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc63';
+const CLIENT_RELEASE_CHANNEL = 'rc64';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -137,6 +137,10 @@ const state = {
   historyLoading: false,
   historyLoadError: '',
   historyRevision: 0,
+  aiTrackRecord: null,
+  aiTrackRecordLoaded: false,
+  aiTrackRecordLoading: false,
+  aiTrackRecordError: '',
   historyOpenRequestSeq: 0,
   providerLoaded: false,
   viewScroll: {},
@@ -5733,6 +5737,80 @@ function rememberHistoryAnalysis(data) {
   if (state.matches.length) renderMatches();
 }
 
+
+async function loadAiTrackRecord(force = false) {
+  if (state.aiTrackRecordLoading) return;
+  state.aiTrackRecordLoading=true;
+  state.aiTrackRecordError='';
+  renderAiTrackRecord();
+  try {
+    const data=await api(`/api/ai-track-record?days=180${force?'&refresh=1':''}`,{retry:false,timeoutMs:9000});
+    state.aiTrackRecord=data;
+    state.aiTrackRecordLoaded=true;
+  } catch (error) {
+    state.aiTrackRecordError=error.message || 'Не удалось загрузить протокол AI.';
+  } finally {
+    state.aiTrackRecordLoading=false;
+    renderAiTrackRecord();
+  }
+}
+
+function renderAiTrackRecord() {
+  const el=$('aiTrackRecord');
+  if (!el) return;
+  if (state.aiTrackRecordLoading && !state.aiTrackRecordLoaded) {
+    el.innerHTML='<div class="loader compact-loader">Проверяю подтверждённую историю AI…</div>';
+    return;
+  }
+  if (state.aiTrackRecordError && !state.aiTrackRecordLoaded) {
+    el.innerHTML=`<div class="ai-track-record-error"><strong>Протокол AI временно недоступен</strong><p>${escapeHtml(state.aiTrackRecordError)}</p><button id="aiTrackRetry" class="secondary-btn" type="button">Повторить</button></div>`;
+    $('aiTrackRetry')?.addEventListener('click',()=>loadAiTrackRecord(true));
+    return;
+  }
+  const r=state.aiTrackRecord;
+  if (!r?.available) {
+    el.innerHTML='<div class="ai-track-record-empty"><strong>Протокол AI формируется</strong><p>Подтверждённые результаты появятся здесь после проверки завершённых матчей.</p></div>';
+    return;
+  }
+  const sample=r.sample || {};
+  const quality=r.probabilityQuality || {};
+  const recent=Array.isArray(r.recent)?r.recent:[];
+  const brier=Number.isFinite(Number(quality.avgBrier))?Number(quality.avgBrier).toFixed(3):'—';
+  const sampleClass=sample.state==='early'?'early':sample.state==='forming'?'forming':sample.state==='informative'?'informative':'empty';
+  const notice=state.aiTrackRecordError
+    ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.aiTrackRecordError)} Показана последняя загруженная версия.</div>`
+    : '';
+  el.innerHTML=`
+    ${notice}
+    <section class="panel ai-track-card">
+      <div class="ai-track-head">
+        <div><span>📈 ПРОТОКОЛ FM AI</span><h2>Проверенная история модели</h2></div>
+        <b class="ai-track-sample ${sampleClass}">${escapeHtml(sample.label || '—')}</b>
+      </div>
+      <p class="ai-track-intro">Только неизменяемые предматчевые прогнозы с подтверждённым финальным результатом. Здесь нет рекламного «процента побед».</p>
+      <div class="ai-track-kpis">
+        <div><span>Проверено</span><strong>${Number(sample.verified || 0)}</strong><small>матчей</small></div>
+        <div><span>Совпало</span><strong>${Number(sample.matched || 0)}</strong><small>основной исход</small></div>
+        <div><span>Не совпало</span><strong>${Number(sample.missed || 0)}</strong><small>основной исход</small></div>
+        <div><span>Брайер</span><strong>${brier}</strong><small>ниже — лучше</small></div>
+      </div>
+      <p class="ai-track-sample-note">${escapeHtml(sample.message || '')}</p>
+      ${recent.length?`<div class="ai-track-recent">
+        <div class="ai-track-block-head"><strong>Последние подтверждённые прогнозы</strong><span>${Number(r.periodDays || 180)} дней</span></div>
+        ${recent.map(row=>`<div class="ai-track-row">
+          <span class="ai-track-result ${row.matched?'hit':'miss'}">${row.matched?'✓':'✕'}</span>
+          <div><strong>${escapeHtml(row.home)} — ${escapeHtml(row.away)}</strong><small>${escapeHtml(row.league || '')}${row.kickoffAt?` · ${dateTime(row.kickoffAt)}`:''}</small></div>
+          <div class="ai-track-outcome"><strong>${escapeHtml(row.score)}</strong><small>AI: ${escapeHtml(row.predictedLabel || '—')}${Number.isFinite(Number(row.topProbability))?` · ${Number(row.topProbability)}%`:''} → ${escapeHtml(row.actualLabel || '—')}</small></div>
+        </div>`).join('')}
+      </div>`:''}
+      <div class="ai-track-method">
+        <strong>Что означает Брайер?</strong>
+        <p>${escapeHtml(quality.explanation || '')}</p>
+        <small>${escapeHtml(r.methodology?.disclaimer || '')}</small>
+      </div>
+    </section>`;
+}
+
 async function loadHistory(showLoader = true) {
   if (state.historyLoading) return;
   const revisionAtStart = state.historyRevision;
@@ -6852,7 +6930,7 @@ $('globalSearchInput')?.addEventListener('keydown', e => { if (e.key === 'Enter'
 document.querySelectorAll('[data-search-mode]').forEach(btn => btn.addEventListener('click', () => setGlobalSearchMode(btn.dataset.searchMode || 'all')));
 $('clearRecentTeamsBtn')?.addEventListener('click', clearRecentTeams);
 $('refreshBtn').addEventListener('click', () => loadMatches({ force: true }));
-$('historyRefreshBtn').addEventListener('click', () => loadHistory(true));
+$('historyRefreshBtn').addEventListener('click', () => Promise.allSettled([loadHistory(true), loadAiTrackRecord(true)]));
 $('backBtn').addEventListener('click', handleBackNavigation);
 $('tournamentBackBtn')?.addEventListener('click', handleBackNavigation);
 $('teamBackBtn')?.addEventListener('click', handleBackNavigation);
@@ -6872,7 +6950,13 @@ $('navSearch')?.addEventListener('click', () => {
     setTimeout(() => $('globalSearchInput')?.focus({ preventScroll: true }), 80);
   }
 });
-$('navHistory').addEventListener('click', async () => { showView('historyView'); if (!state.historyLoaded) await loadHistory(true); else renderHistory(); });
+$('navHistory').addEventListener('click', async () => {
+  showView('historyView');
+  const tasks=[];
+  if (!state.historyLoaded) tasks.push(loadHistory(true)); else renderHistory();
+  if (!state.aiTrackRecordLoaded) tasks.push(loadAiTrackRecord(false)); else renderAiTrackRecord();
+  if (tasks.length) await Promise.allSettled(tasks);
+});
 $('navProfile').addEventListener('click', openProfileView);
 $('proBtn')?.addEventListener('click', () => buyPlan('PRO'));
 $('premiumBtn')?.addEventListener('click', () => buyPlan('PREMIUM'));
