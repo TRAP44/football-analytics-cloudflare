@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.101.0 RC109
+# QA Release Checklist — v6.102.0 RC110
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.101.0`.
-- Worker и client: `6.101.0-rc109`.
-- Release candidate: `RC109`.
+- `package.json` и `package-lock.json`: `6.102.0`.
+- Worker и client: `6.102.0-rc110`.
+- Release candidate: `RC110`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -34,22 +34,22 @@ npm run verify:worker
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
 
-## RC109 — Supabase Probe Confirmation Guard
+## RC110 — Schema Drift Confirmation Guard
 
-- Диагностика и Production Monitor используют `probeSupabaseConfirmed()`.
-- Если первый Supabase probe успешен, второго запроса нет.
-- Если первый probe не прошёл, выполняется один подтверждающий retry с короткой задержкой.
-- Успешный retry сохраняет `ok=true`, `attempts=2`, `recovered=true` и не создаёт ложный production incident.
-- Два последовательных отказа остаются fail-closed: `confirmedFailure=true` и блокирующий статус сохраняется.
-- Transient recovery записывается отдельно как `SUPABASE_PROBE_RECOVERED`, поэтому нестабильность не скрывается.
-- Runtime telemetry считает `supabaseProbeRecoveries` и `supabaseProbeConfirmedFailures`.
-- Release Readiness и Production Readiness содержат blocking check `supabase_probe_confirmation`.
-- Админская диагностика показывает число попыток, recoveries и confirmed failures.
-- `/health`: `supabaseProbeConfirmation=enabled` и `supabaseProbeConfirmationSelfTest=enabled`.
-- Regression: `test/supabase-probe-confirmation-rc109.test.js`.
+- Production Monitor и Release Readiness используют `probeSupabaseSchemaDriftConfirmed()`.
+- Если первая полная schema-проверка проходит, повторных запросов нет.
+- Если первая проверка видит drift, через короткую задержку выполняется одна повторная полная проверка обязательных таблиц/колонок.
+- Если повторная проверка проходит, результат становится `recovered=true`, `attempts=2`, а ложный production incident не создаётся.
+- Если drift повторяется, `confirmedFailure=true`; release/production остаются fail-closed и blocking.
+- Первоначальный список missing сохраняется как `initialMissing`, чтобы transient ошибка не скрывалась.
+- Восстановившийся schema probe записывается отдельным событием `SUPABASE_SCHEMA_PROBE_RECOVERED`.
+- Runtime telemetry считает `schemaDriftProbeRecoveries` и `schemaDriftConfirmedFailures`.
+- Release Readiness и Production Readiness содержат blocking check `schema_drift_confirmation`.
+- `/health`: `schemaDriftConfirmation=enabled` и `schemaDriftConfirmationSelfTest=enabled`.
+- Regression: `test/schema-drift-confirmation-rc110.test.js`.
 - Новая Supabase migration не требуется; production schema остаётся v6.17.
 
-## Исторические RC72–RC108
+## Исторические RC72–RC109
 
 Детальные исторические release-контракты удалены из текущего checklist, чтобы не дублировать Git history и regression-тесты. Их поведение продолжает проверяться соответствующими файлами `test/*-rcXX.test.js`, а продуктовая сводка сохранена в `README_CLOUDFLARE_RU.md`.
 
@@ -71,8 +71,8 @@ npm run verify:worker
 
 `scripts/post-deploy-smoke.js` должен подтвердить:
 - `/health.ok = true`;
-- `version = 6.101.0-rc109`;
-- `releaseCandidate = RC109`;
+- `version = 6.102.0-rc110`;
+- `releaseCandidate = RC110`;
 - `devMode = false`;
 - обязательные self-test/feature flags = `enabled`;
 - `/health/supabase` не доступен публично;
