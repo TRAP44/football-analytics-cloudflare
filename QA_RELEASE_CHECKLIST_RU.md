@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.104.0 RC128
+# QA Release Checklist — v6.105.0 RC129
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.104.0`.
-- Worker и client: `6.104.0-rc128`.
-- Release candidate: `RC128`.
+- `package.json` и `package-lock.json`: `6.105.0`.
+- Worker и client: `6.105.0-rc129`.
+- Release candidate: `RC129`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -33,6 +33,16 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC129 — Model Trust & Entity Reconciliation
+
+- Невзвешенное количество потерь состава не меняет проценты исхода напрямую.
+- Травмы/дисквалификации остаются в quality/risk/confidence и пользовательском объяснении.
+- Mini App показывает effective weights, режим калибровки и политику потерь состава.
+- Cross-provider standings сначала сопоставляются по canonical API-Football ID; fallback по нормализованному имени разрешён только при единственном однозначном совпадении.
+- Provider-specific team ID не используется для перехода в API-Football team routes.
+- Supabase DDL не меняется; fingerprint остаётся `c2c22ec25aacfcf1b9938b0850cebf49`.
+- Regression: `test/model-trust-rc129.test.js`.
 
 ## RC128 — Multi-Provider Data Service & Provenance
 
