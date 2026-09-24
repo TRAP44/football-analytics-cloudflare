@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.107.0 RC131
+# QA Release Checklist — v6.108.0 RC132
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.107.0`.
-- Worker и client: `6.107.0-rc131`.
-- Release candidate: `RC131`.
+- `package.json` и `package-lock.json`: `6.108.0`.
+- Worker и client: `6.108.0-rc132`.
+- Release candidate: `RC132`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -33,6 +33,19 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC132 — OpenLigaDB Event Fallback
+
+- API-Football остаётся основным источником live/finished событий матча.
+- OpenLigaDB вызывается только если подтверждённый блок `events` пуст или основной запрос не дал пригодных событий.
+- Fallback ограничен явно поддерживаемыми лигами OpenLigaDB и использует существующий distributed minute guard.
+- Запрос OpenLigaDB сужается по команде; матч принимается только при совпадении обеих команд и kickoff в пределах безопасного окна.
+- Из OpenLigaDB нормализуются только голы и их авторы/минуты; карточки, замены, статистика, составы и травмы не синтезируются.
+- Неоднозначная сторона гола отбрасывается вместо догадки.
+- Provider provenance сохраняется в `dataFreshness.events`; UI может отличить fallback от API-Football.
+- Новых секретов и Supabase DDL нет.
+- Regression: `test/openligadb-events-rc132.test.js`.
+- Post-deploy smoke требует health-флаг `openLigaDbEventFallback`.
 
 ## RC131 — Match at a Glance
 
