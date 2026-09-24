@@ -15,6 +15,11 @@ on:
         description: Type ROLLBACK:<expected_version>:<version_id> to confirm the exact rollback target
         required: true
         type: string
+      allow_legacy_unverified:
+        description: Permit a legacy rollback target without RC116 release identity metadata
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -32,6 +37,7 @@ jobs:
     env:
       VERSION_ID: ${{ inputs.version_id }}
       EXPECTED_VERSION: ${{ inputs.expected_version }}
+      ALLOW_LEGACY_UNVERIFIED: ${{ inputs.allow_legacy_unverified }}
       ROLLBACK_URL: ${{ vars.CLOUDFLARE_WORKER_URL }}
       ROLLBACK_WORKFLOW_SHA: ${{ github.sha }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -107,9 +113,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npx wrangler versions view "$VERSION_ID" --json > /dev/null
+          npx wrangler versions view "$VERSION_ID" --json > "$RUNNER_TEMP/rollback-version.json"
           echo "### RC115 rollback target preflight passed" >> "$GITHUB_STEP_SUMMARY"
           echo "Cloudflare resolved rollback target version ID $VERSION_ID before any rollback mutation." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: RC117 verify rollback release identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/verify-rollback-target.js "$RUNNER_TEMP/rollback-version.json" "$EXPECTED_VERSION" "$VERSION_ID" "$ALLOW_LEGACY_UNVERIFIED"
+          echo "### RC117 rollback release identity guard passed" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$ALLOW_LEGACY_UNVERIFIED" == "true" ]]; then
+            echo "Legacy override was explicitly enabled; stamped targets still require an exact release match." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Rollback target metadata matches expected release $EXPECTED_VERSION." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Roll back Worker
         shell: bash
