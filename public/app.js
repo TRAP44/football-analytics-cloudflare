@@ -6933,6 +6933,26 @@ function dataProvenanceHtml(provenance = {}) {
   </section>`;
 }
 
+function modelMethodologyHtml(methodology = {}) {
+  if (!methodology?.version) return '';
+  const labels = { market:'Рынок', apiPrediction:'Прогноз источника', recentForm:'Форма', h2h:'Очные встречи' };
+  const weights = Object.entries(methodology.effectiveWeights || {}).filter(([,value]) => Number(value) > 0);
+  const weightText = weights.length
+    ? weights.map(([key,value]) => `${labels[key] || key} ${Number(value).toFixed(1)}%`).join(' · ')
+    : 'Активные веса недоступны';
+  const calibration = methodology.calibration || {};
+  const absence = methodology.absencePolicy || {};
+  return `<section class="panel model-methodology-panel">
+    <div class="prematch-section-head"><div><h2>🧮 Как рассчитаны проценты</h2><p>Метод, активные сигналы и ограничения модели</p></div></div>
+    <div class="methodology-summary">
+      <div><span>Активные веса</span><strong>${escapeHtml(weightText)}</strong></div>
+      <div><span>Калибровка</span><strong>${escapeHtml(String(calibration.mode || 'baseline'))} · выборка ${Number(calibration.sample || 0)}</strong></div>
+      <div><span>Потери состава</span><strong>${absence.probabilityShiftApplied ? 'учтены численно' : 'только риск / уверенность'}</strong></div>
+    </div>
+    <p class="tiny warning">${escapeHtml(publicText(absence.reason || methodology.note || ''))}</p>
+  </section>`;
+}
+
 function renderAnalysis(d) {
   if (!d) return;
   const previousFixture = Number(state.currentAnalysis?.match?.fixtureId || 0);
@@ -7181,6 +7201,7 @@ function renderAnalysis(d) {
         <p class="context-answer">${escapeHtml(news.answer || 'Источник свежего веб-контекста не подключён или сводка не найдена.')}</p>
         ${news.results?.length ? `<div class="news-links">${news.results.slice(0, 5).map(r => `<a href="${safeUrl(r.url)}" target="_blank" rel="noopener">↗ ${escapeHtml(r.title || 'Источник')}</a>`).join('')}</div>` : ''}
       </section>
+      ${modelMethodologyHtml(d.modelMethodology || {})}
       ${dataProvenanceHtml(d.dataProvenance || {})}
       <section class="panel data-transparency-panel">
         <h2>🔎 Прозрачность данных</h2>
