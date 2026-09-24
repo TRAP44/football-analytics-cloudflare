@@ -609,7 +609,7 @@ async function apiRuntimeControls(request, cfg, user) {
 
   if (request.method === 'PATCH' || request.method === 'POST') {
     let body = {};
-    try { body = await request.json(); } catch {}
+    body = await readJson(request);
     const result = await saveRuntimeControls(cfg, user, body);
     if (result.error) return json({ error: result.error, code: result.code, current: result.current }, result.status || 400);
 
@@ -630,7 +630,7 @@ async function apiRuntimeRollback(request, cfg, user) {
   if (request.method !== 'POST') return json({ error: 'Метод не поддерживается.' }, 405);
 
   let body = {};
-  try { body = await request.json(); } catch {}
+  body = await readJson(request);
   const result = await rollbackRuntimeControls(cfg, user, body);
   if (result.error) {
     return json({
@@ -959,6 +959,12 @@ const ROUTE_BURST_POLICIES = Object.freeze([
   { test: p => p === '/api/provider/coverage-audit', limit: 2, windowMs: 30000, label: 'coverage-audit' },
   { test: p => p === '/api/provider/probe', limit: 3, windowMs: 30000, label: 'provider-probe' },
   { test: p => p === '/api/client-telemetry', limit: 12, windowMs: 60000, label: 'client-telemetry' },
+  { test: p => p === '/api/favorites', limit: 12, windowMs: 60000, label: 'favorites-write' },
+  { test: p => p === '/api/reminders', limit: 10, windowMs: 60000, label: 'reminders-write' },
+  { test: p => p === '/api/preferences', limit: 8, windowMs: 60000, label: 'preferences-write' },
+  { test: p => p === '/api/share-link', limit: 12, windowMs: 60000, label: 'share-link' },
+  { test: p => p === '/api/media-publisher-link', limit: 6, windowMs: 30000, label: 'media-publisher' },
+  { test: p => ['/api/launch-funnel','/api/data-integrity','/api/model-quality','/api/calibration-control','/api/recovery-incident-ack'].includes(p), limit: 6, windowMs: 30000, label: 'admin-heavy' },
   { test: p => p === '/api/reminder-health', limit: 6, windowMs: 30000, label: 'reminder-health' },
   { test: p => p === '/api/runtime-controls', limit: 6, windowMs: 30000, label: 'runtime-controls' },
   { test: p => p === '/api/runtime-controls/rollback', limit: 3, windowMs: 30000, label: 'runtime-rollback' },
@@ -1498,8 +1504,11 @@ function telemetrySnapshot() {
     memoryPrunes: Number(t.memoryPrunes || 0),
     providerDistributedBlocks: Number(t.providerDistributedBlocks || 0),
     providerDistributedFallbacks: Number(t.providerDistributedFallbacks || 0),
+    providerDistributedLocalBlocks: Number(t.providerDistributedLocalBlocks || 0),
     quotaReservations: Number(t.quotaReservations || 0),
     quotaRefunds: Number(t.quotaRefunds || 0),
+    quotaRefundFailures: Number(t.quotaRefundFailures || 0),
+    analysisLockFailClosed: Number(t.analysisLockFailClosed || 0),
     digestDeliveryClaims: Number(t.digestDeliveryClaims || 0),
     digestDeliveryDuplicates: Number(t.digestDeliveryDuplicates || 0),
     inflightNow: memory.inflight.size,
@@ -7699,7 +7708,8 @@ async function handleTelegramWebhook(request, cfg) {
   if (!constantTimeEqual(String(provided),String(cfg.webhookSecret))) return json({ok:false},403);
 
   let update={};
-  try { update=await request.json(); } catch { return json({ok:false},400); }
+  try { update=await readJson(request,{maxBytes:MAX_TELEGRAM_JSON_BODY_BYTES,strict:true}); }
+  catch (error) { return json({ok:false,error:error?.code || 'INVALID_JSON'},Number(error?.status || 400)); }
 
   const claim=claimTelegramUpdate(update);
   if (claim.duplicate) return json({ok:true,deduped:true});
@@ -7762,7 +7772,7 @@ async function apiBillingInvoice(request, cfg, user) {
   if (!webhook.ready) return json({ error: 'Оплата ещё не активирована: Telegram webhook не настроен.', webhook }, 503);
 
   let body = {};
-  try { body = await request.json(); } catch {}
+  body = await readJson(request);
   const plan = String(body.plan || '').toUpperCase();
   const planCfg = billingPlanConfig(plan, cfg);
   if (!planCfg) return json({ error: 'Неизвестный тариф.' }, 400);
@@ -7792,7 +7802,7 @@ async function apiBillingSync(request, cfg, user) {
 
 async function apiBillingSubscription(request, cfg, user) {
   let body = {};
-  try { body = await request.json(); } catch {}
+  body = await readJson(request);
   const action = body.action === 'resume' ? 'resume' : 'cancel';
   const record = await getUserRecord(user.id, cfg);
   const chargeId = String(record?.telegram_payment_charge_id || '');
@@ -8778,7 +8788,7 @@ async function apiCalibrationControl(request, cfg, user) {
   if (request.method !== 'POST') return json({ error: 'Метод не поддерживается.' }, 405);
 
   let body = {};
-  try { body = await request.json(); } catch {}
+  body = await readJson(request);
   const action = String(body.action || '').trim().toLowerCase();
   if (!['freeze','unfreeze','manual_rollback'].includes(action)) {
     return json({ error: 'Доступны действия: заморозить, разморозить или выполнить ручной откат.' }, 400);
@@ -11407,7 +11417,7 @@ async function buildModelRemediationReport(cfg, { maxRows = 5000 } = {}) {
 async function apiModelRemediation(request, cfg, user) {
   if (request.method === 'GET') return json(await buildModelRemediationReport(cfg));
   if (request.method !== 'POST') return json({ error: 'Метод не поддерживается.' }, 405);
-  const body = await request.json().catch(() => ({}));
+  const body = await readJson(request);
   const requestedAction = String(body?.action || '');
   const reason = redactOpsString(body?.reason || '', 220).trim();
   if (reason.length < 5) return json({ error: 'Укажите причину действия (минимум 5 символов).' }, 400);
@@ -12117,17 +12127,24 @@ async function addFavorite(userId, team, cfg) {
   const row = {
     telegram_id: Number(userId),
     team_id: Number(team.id),
-    team_name: String(team.name || ''),
-    team_logo: String(team.logo || ''),
+    team_name: String(team.name || '').trim().slice(0,80),
+    team_logo: externalNewsUrl(String(team.logo || '')).slice(0,500),
     created_at: new Date().toISOString(),
   };
-  if (!Number.isFinite(row.team_id) || row.team_id <= 0 || !row.team_name) throw new Error('Некорректная команда.');
+  if (!Number.isSafeInteger(row.team_id) || row.team_id <= 0 || !row.team_name) throw validationError('Некорректная команда.');
+  const list=await getFavorites(userId,cfg);
+  const exists=list.some(x=>Number(x.team_id)===row.team_id);
+  if (!exists && list.length>=50) {
+    const error=new Error('Можно сохранить не более 50 избранных команд.');
+    error.code='FAVORITES_LIMIT';
+    error.status=409;
+    throw error;
+  }
   if (hasSupabase(cfg)) {
     await supaUpsert(cfg, 'favorites', row, 'telegram_id,team_id');
     return row;
   }
   const key = Number(userId);
-  const list = memory.favorites.get(key) || [];
   memory.favorites.set(key, [row, ...list.filter(x => Number(x.team_id) !== row.team_id)].slice(0, 50));
   return row;
 }
@@ -12214,14 +12231,15 @@ async function addReminder(userId, input, cfg) {
   const prefs = await getPreferences(userId, cfg);
   const requestedMinutes = Number(input.reminderMinutes ?? prefs.reminderMinutes);
   const reminderMinutes = [15, 30, 60].includes(requestedMinutes) ? requestedMinutes : 30;
-  const kickoffNotify = input.kickoffNotify === undefined ? Boolean(prefs.kickoffNotification) : Boolean(input.kickoffNotify);
+  const kickoffNotify = input.kickoffNotify === undefined ? Boolean(prefs.kickoffNotification) : input.kickoffNotify === true;
+  const fixtureDateMs=Date.parse(String(input.fixtureDate || ''));
   const row = {
     telegram_id: Number(userId),
     fixture_id: Number(input.fixtureId),
-    home_name: String(input.homeName || ''),
-    away_name: String(input.awayName || ''),
-    league_name: String(input.leagueName || ''),
-    fixture_date: input.fixtureDate ? new Date(input.fixtureDate).toISOString() : null,
+    home_name: String(input.homeName || '').trim().slice(0,80),
+    away_name: String(input.awayName || '').trim().slice(0,80),
+    league_name: String(input.leagueName || '').trim().slice(0,120),
+    fixture_date: Number.isFinite(fixtureDateMs) ? new Date(fixtureDateMs).toISOString() : null,
     enabled: true,
     remind_before_minutes: reminderMinutes,
     kickoff_notify: kickoffNotify,
@@ -12238,16 +12256,23 @@ async function addReminder(userId, input, cfg) {
     delivery_retry_after: null,
     created_at: new Date().toISOString(),
   };
-  if (!Number.isFinite(row.fixture_id) || row.fixture_id <= 0 || !row.fixture_date || !row.home_name || !row.away_name) {
-    throw new Error('Некорректные данные напоминания.');
+  if (!Number.isSafeInteger(row.fixture_id) || row.fixture_id <= 0 || !row.fixture_date || !row.home_name || !row.away_name) {
+    throw validationError('Некорректные данные напоминания.');
   }
-  if (Date.parse(row.fixture_date) <= Date.now() + 5 * 60_000) throw new Error('Матч уже начинается или начался.');
+  if (Date.parse(row.fixture_date) <= Date.now() + 5 * 60_000) throw validationError('Матч уже начинается или начался.');
+  const list=await getReminders(userId,cfg);
+  const exists=list.some(x=>Number(x.fixture_id)===row.fixture_id);
+  if (!exists && list.length>=50) {
+    const error=new Error('Можно сохранить не более 50 активных напоминаний.');
+    error.code='REMINDERS_LIMIT';
+    error.status=409;
+    throw error;
+  }
   if (hasSupabase(cfg)) {
     await supaUpsert(cfg, 'match_reminders', row, 'telegram_id,fixture_id');
     return row;
   }
   const key = Number(userId);
-  const list = memory.reminders.get(key) || [];
   memory.reminders.set(key, [row, ...list.filter(x => Number(x.fixture_id) !== row.fixture_id)].slice(0, 50));
   return row;
 }
@@ -12751,7 +12776,7 @@ async function apiReminderHealth(request, cfg, user) {
 
   if (request.method === 'POST') {
     let body = {};
-    try { body = await request.json(); } catch {}
+    body = await readJson(request);
     if (body?.action !== 'test') return json({ error: 'Неизвестное действие.' }, 400);
 
     const result = await sendTelegramMessage(
@@ -14297,7 +14322,7 @@ function clientTelemetryMetadata(body = {}) {
 
 async function apiClientTelemetry(request, cfg, user) {
   let body = {};
-  try { body = await request.json(); } catch {}
+  body = await readJson(request);
   const event = String(body?.event || '').trim().toLowerCase();
   if (!CLIENT_TELEMETRY_EVENTS.has(event)) {
     return json({ ok: false, error: 'Unsupported telemetry event.' }, 400);
@@ -17887,7 +17912,7 @@ async function apiFavorites(request, cfg, user) {
   }
   if (request.method === 'POST') {
     let body = {};
-    try { body = await request.json(); } catch {}
+    body = await readJson(request);
     const row = await addFavorite(user.id, { id: body.teamId, name: body.teamName, logo: body.teamLogo }, cfg);
     return json({ ok: true, item: { teamId: row.team_id, teamName: row.team_name, teamLogo: row.team_logo } });
   }
@@ -17925,7 +17950,7 @@ async function apiReminders(request, cfg, user) {
   }
   if (request.method === 'POST') {
     let body = {};
-    try { body = await request.json(); } catch {}
+    body = await readJson(request);
     const row = await addReminder(user.id, body, cfg);
     return json({ ok: true, item: publicReminder(row) });
   }
@@ -17943,7 +17968,7 @@ async function apiPreferences(request, cfg, user) {
   if (request.method === 'GET') return json({ preferences: await getPreferences(user.id, cfg) });
   if (request.method === 'PUT' || request.method === 'POST') {
     let body = {};
-    try { body = await request.json(); } catch {}
+    body = await readJson(request);
     const preferences = await savePreferences(user.id, body, cfg);
     return json({ ok: true, preferences });
   }
@@ -19687,7 +19712,7 @@ function analysisResponsePayload(payload = {}, extra = {}) {
 }
 async function apiAnalyze(request, cfg, user) {
   let body = {};
-  try { body = await request.json(); } catch {}
+  body = await readJson(request);
   const fixtureId = Number(body?.fixtureId);
   const analysisOrigin=String(body?.origin || 'miniapp').slice(0,30);
   const recheckRequested=Boolean(body?.recheck);
