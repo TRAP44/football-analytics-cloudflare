@@ -66,6 +66,10 @@ if (!fs.existsSync('.github/workflows/rollback-production.yml')) failures.push('
 if (!rollbackWorkflow.includes('allow_legacy_unverified:')) failures.push('Rollback workflow must keep the legacy target override explicit and default-off');
 if (!rollbackWorkflow.includes('scripts/verify-rollback-target.js')) failures.push('Rollback workflow must verify release identity before rollback');
 if (!rollbackTargetVerifier.includes("annotations?.['workers/message']")) failures.push('Rollback target verifier must read Cloudflare version release metadata');
+if (!fs.existsSync('test/rollback-legacy-confirmation-rc118.test.js')) failures.push('Missing RC118 legacy rollback confirmation regression test');
+if (!rollbackWorkflow.includes('legacy_confirm:') || !rollbackWorkflow.includes('LEGACY_CONFIRM: ${{ inputs.legacy_confirm }}')) failures.push('RC118 rollback workflow must collect exact legacy acknowledgement');
+if (!rollbackWorkflow.includes('"$ALLOW_LEGACY_UNVERIFIED" "$LEGACY_CONFIRM"')) failures.push('RC118 rollback workflow must pass legacy acknowledgement to the target verifier');
+if (!rollbackTargetVerifier.includes('LEGACY-UNVERIFIED:${expectedVersion}:${expectedId}')) failures.push('RC118 verifier must bind legacy acknowledgement to expected release and version ID');
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
