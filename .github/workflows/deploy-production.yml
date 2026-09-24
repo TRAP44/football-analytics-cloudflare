@@ -24,6 +24,7 @@ jobs:
     environment: production
     env:
       DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      RELEASE_VERSION: "6.101.0-rc109"
       WRANGLER_SEND_METRICS: "false"
       WRANGLER_SEND_ERROR_REPORTS: "false"
     steps:
@@ -98,7 +99,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: "4.136.1"
-          command: deploy --keep-vars --message "RC109 ${{ env.DEPLOY_SHA }}"
+          command: deploy --keep-vars --message "release=${{ env.RELEASE_VERSION }} sha=${{ env.DEPLOY_SHA }}"
 
       - name: Verify production deployment
         env:
@@ -107,6 +108,6 @@ jobs:
         shell: bash
         run: |
           SMOKE_URL="${CONFIGURED_URL:-$DEPLOYMENT_URL}"
-          node scripts/post-deploy-smoke.js "$SMOKE_URL" "6.101.0-rc109"
+          node scripts/post-deploy-smoke.js "$SMOKE_URL" "${{ env.RELEASE_VERSION }}"
           echo "### Cloudflare deploy verified" >> "$GITHUB_STEP_SUMMARY"
-          echo "RC109 post-deploy smoke passed for the production Worker." >> "$GITHUB_STEP_SUMMARY"
+          echo "Release ${{ env.RELEASE_VERSION }} post-deploy smoke passed for the production Worker." >> "$GITHUB_STEP_SUMMARY"
