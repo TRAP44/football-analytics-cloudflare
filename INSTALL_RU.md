@@ -1,4 +1,4 @@
-# Установка Football Analytics v6.99.0 RC107
+# Установка Football Analytics v6.100.0 RC108
 
 ## Новый Supabase-проект
 
@@ -6,18 +6,18 @@
 
 
 1. Откройте Supabase SQL Editor.
-2. Выполните **только** `supabase/baseline/supabase_baseline_v6_16.sql` целиком.
-3. Не запускайте после него numbered migrations v6.9–v6.16: они уже включены в unified baseline.
+2. Выполните **только** `supabase/baseline/supabase_baseline_v6_17.sql` целиком.
+3. Не запускайте после него numbered migrations v6.9–v6.17: они уже включены в unified baseline.
 4. В Supabase Data API убедитесь, что backend-таблицы доступны `service_role`, а прямой доступ `anon` и `authenticated` закрыт.
 
 ## Обновление существующего проекта
 
 1. Сделайте резервную копию базы.
-2. Примените только отсутствующие миграции, сохраняя порядок версий: v6.9 → v6.10 → v6.11 → v6.11.1 → v6.12 → v6.13 → v6.14 → v6.15 → v6.16.
-3. Для существующей базы не запускайте `supabase/baseline/supabase_baseline_v6_16.sql`: он предназначен только для fresh install.
+2. Примените только отсутствующие миграции, сохраняя порядок версий: v6.9 → v6.10 → v6.11 → v6.11.1 → v6.12 → v6.13 → v6.14 → v6.15 → v6.16 → v6.17.
+3. Для существующей базы не запускайте `supabase/baseline/supabase_baseline_v6_17.sql`: он предназначен только для fresh install.
 4. Не удаляйте и не переигрывайте уже применённые миграции без отдельного плана rollback.
 5. После обновления запустите защищённый RC Regression и проверьте least-privilege контракт Supabase.
-6. RC107 требует `supabase_migration_v6_16.sql`: она добавляет backend-only ledger для атомарной дедупликации Telegram webhook между Cloudflare isolates.
+6. RC107 требует `supabase_migration_v6_16.sql`: она добавляет backend-only ledger для атомарной дедупликации Telegram webhook между Cloudflare isolates.\n7. RC108 требует `supabase_migration_v6_17.sql`: она добавляет агрегированные счётчики дублей и service-role-only health RPC для production monitoring.
 
 ## Cloudflare Secrets
 
@@ -51,7 +51,7 @@ API token должен быть ограничен нужным Cloudflare accou
 
 Рабочий release-процесс:
 
-`PR → Quality → merge в main → Deploy Production → RC107 smoke`.
+`PR → Quality → merge в main → Deploy Production → RC108 smoke`.
 
 ## Локальная проверка
 
@@ -70,13 +70,13 @@ npm run verify:worker
 
 Проверьте:
 
-1. `/health` возвращает `ok=true`, версию `6.99.0-rc107` и `releaseCandidate=RC107`.
+1. `/health` возвращает `ok=true`, версию `6.100.0-rc108` и `releaseCandidate=RC108`.
 2. RC Regression не содержит blocking failures.
 3. `DEV_MODE=false` и `MONETIZATION_ENABLED=false`.
 4. Обычный пользователь не видит административные controls.
 5. `/health/supabase` не доступен публично.
 6. CSP, HSTS, `X-Content-Type-Options: nosniff` и остальные security headers присутствуют.
-7. Production smoke подтверждает обязательные RC107 release/self-test flags, включая `providerDataReliability`, `aiAnalysisQualityGate`, `telegramMiniAppE2E`, `telegramWebhookPersistentDedupe` и `telegramWebhookPersistentDedupeSelfTest`.
+7. Production smoke подтверждает обязательные RC108 release/self-test flags, включая `providerDataReliability`, `aiAnalysisQualityGate`, `telegramWebhookPersistentDedupe`, `telegramWebhookDedupeObservability` и `telegramWebhookDedupeObservabilitySelfTest`.
 
 ## Rollback
 
