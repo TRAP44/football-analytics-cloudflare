@@ -36,6 +36,8 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         telegramWebhookPersistentDedupeSelfTest: 'enabled',
         telegramWebhookDedupeObservability: 'enabled',
         telegramWebhookDedupeObservabilitySelfTest: 'enabled',
+        supabaseProbeConfirmation: 'enabled',
+        supabaseProbeConfirmationSelfTest: 'enabled',
         cloudflareDeploymentGate: 'enabled',
         browserSecurityPolicy: 'enabled',
         failClosedDeployment: 'enabled',
