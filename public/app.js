@@ -207,10 +207,10 @@ function saveInterfacePreference(key, value) {
 }
 
 const VIEW_CHROME = {
-  matchesView: ['Служебная лента', 'Матчи и системные данные'],
+  matchesView: ['Матчи', 'Сегодня, LIVE и ближайшие игры для AI-разбора'],
   searchView: ['AI-анализ матча', 'Найдите клуб или матч — остальное объяснит FM AI'],
-  tournamentView: ['Турнир', 'Служебный просмотр соревнования'],
-  teamView: ['Команда', 'Служебный просмотр данных клуба'],
+  tournamentView: ['Турнир', 'Матчи и таблица соревнования'],
+  teamView: ['Команда', 'Матчи и данные клуба'],
   analysisView: ['AI-разбор', 'Вердикт, причины, составы, судья, рынок и риски'],
   historyView: ['История AI', 'Ваши последние сохранённые разборы'],
   profileView: ['Администрирование', 'Служебные настройки проекта'],
@@ -749,8 +749,10 @@ async function runStartupSequence() {
   const admin=isAdmin();
   if ($('profileBtn')) $('profileBtn').hidden=!admin;
   if ($('navProfile')) $('navProfile').hidden=!admin;
-  if ($('navMatches')) $('navMatches').hidden=!admin;
-  if (admin) await Promise.allSettled([loadFavorites(), loadMatches()]);
+  if ($('navMatches')) $('navMatches').hidden=false;
+  const startupTasks = [loadFavorites(), loadMatches()];
+  if (admin) startupTasks.push(loadReminders());
+  await Promise.allSettled(startupTasks);
 
   const usable = Boolean(state.profile || admin || navigator.onLine !== false);
   if (!usable && navigator.onLine === false) {
