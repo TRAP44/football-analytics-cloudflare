@@ -12,6 +12,7 @@ const rollbackWorkflow = fs.readFileSync('.github/workflows/rollback-production.
 const rollbackSmoke = fs.readFileSync('scripts/rollback-smoke.js', 'utf8');
 const rollbackTargetVerifier = fs.readFileSync('scripts/verify-rollback-target.js', 'utf8');
 const rollbackDeploymentVerifier = fs.readFileSync('scripts/verify-rollback-deployment.js', 'utf8');
+const productionReleasePostconditionVerifier = fs.readFileSync('scripts/verify-production-release-postcondition.js', 'utf8');
 const postDeploySmoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
 const readme = fs.readFileSync('README_CLOUDFLARE_RU.md', 'utf8');
@@ -76,6 +77,11 @@ if (!rollbackWorkflow.includes('RC119 verify exact rollback deployment target'))
 if (!rollbackWorkflow.includes('npx wrangler deployments status --json')) failures.push('RC119 rollback workflow must read current Cloudflare deployment state');
 if (!rollbackWorkflow.includes('verify-rollback-deployment.js "$DEPLOYMENT_STATUS_JSON" "$VERSION_ID"')) failures.push('RC119 rollback workflow must verify the requested version ID after mutation');
 if (!rollbackDeploymentVerifier.includes('must serve 100% of production traffic')) failures.push('RC119 verifier must require exclusive 100% traffic on the requested rollback version');
+if (!fs.existsSync('test/production-release-postcondition-rc120.test.js')) failures.push('Missing RC120 production release postcondition regression test');
+if (!deployWorkflow.includes('RC120 verify active production release identity')) failures.push('RC120 production control-plane identity gate is missing');
+if (!deployWorkflow.includes('npx wrangler deployments status --json') || !deployWorkflow.includes('npx wrangler versions list --json')) failures.push('RC120 deploy workflow must read active deployment and version metadata');
+if (!deployWorkflow.includes('verify-production-release-postcondition.js "$DEPLOYMENT_STATUS_JSON" "$VERSIONS_JSON" "$RELEASE_VERSION" "$DEPLOY_SHA"')) failures.push('RC120 deploy workflow must bind active production identity to release and deploy SHA');
+if (!productionReleasePostconditionVerifier.includes('Production deployment must have one version at 100% traffic') || !productionReleasePostconditionVerifier.includes("annotations?.['workers/message']")) failures.push('RC120 verifier must require exclusive traffic and stamped release identity');
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
