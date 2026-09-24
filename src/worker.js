@@ -1875,8 +1875,7 @@ function mediaCampaignControlDrill() {
 async function apiNewsImpactRecoveryIncidentAck(request,cfg,user) {
   if (request.method!=='POST') return json({error:'Метод не поддерживается.'},405);
   if (!hasSupabase(cfg)) return json({error:'Supabase не настроен.'},503);
-  let body={};
-  try { body=await request.json(); } catch {}
+  const body=await readJson(request);
   const reason=NEWS_IMPACT_FAILURE_CODES.has(String(body?.reason || '')) ? String(body.reason) : '';
   const action=cleanNewsImpactActionCode(body?.action);
   const code=NEWS_IMPACT_RECOVERY_INCIDENT_CODES.has(String(body?.code || '')) ? String(body.code) : '';
@@ -16080,7 +16079,7 @@ function morningNewsText(items = []) {
 async function tavilySearch(query, cfg) {
   if (!cfg.tavilyKey) return { answer: '', results: [] };
   try {
-    const r = await fetch('https://api.tavily.com/search', {
+    const r = await fetchWithTimeout('https://api.tavily.com/search', {
       method: 'POST',
       headers: { Authorization: `Bearer ${cfg.tavilyKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
