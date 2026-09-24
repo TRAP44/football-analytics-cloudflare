@@ -271,18 +271,25 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
   const rcNumber = /-rc(\d+)$/i.exec(String(expectedVersion || ''))?.[1];
   if (!rcNumber) throw new Error('Expected version must end with -rc<number>.');
   const expectedReleaseCandidate = `RC${rcNumber}`;
+  let readiness = null;
   let health = null;
   let lastHealthError = '';
 
   for (let attempt = 1; attempt <= retries; attempt += 1) {
     try {
-      const response = await request(fetchImpl, baseUrl, '/health');
-      const body = await jsonBody(response, 'Health endpoint');
-      if (!response.ok) throw new Error(`Health endpoint returned HTTP ${response.status}.`);
+      const response = await request(fetchImpl, baseUrl, '/health/ready');
+      const body = await jsonBody(response, 'Readiness endpoint');
+      if (!response.ok) throw new Error(`Readiness endpoint returned HTTP ${response.status}.`);
       if (body?.version !== expectedVersion) {
         throw new Error(`Expected ${expectedVersion}, received ${body?.version || 'unknown'}.`);
       }
-      health = body;
+      if (body?.ok !== true || body?.status !== 'ready') throw new Error('Readiness contract is not ready.');
+      if (body?.checks?.supabase?.ok !== true) throw new Error('Readiness Supabase probe failed.');
+      if (body?.checks?.schema?.ok !== true) throw new Error('Readiness schema fingerprint failed.');
+      if (body?.checks?.backendSecurity?.ok !== true) throw new Error('Readiness backend security contract failed.');
+      if (body?.checks?.telegramConfigured !== true) throw new Error('Readiness Telegram configuration failed.');
+      if (Number(body?.checks?.recentSupabaseAuthFailures || 0) !== 0) throw new Error('Readiness detected recent Supabase authentication failures.');
+      readiness = body;
       break;
     } catch (error) {
       lastHealthError = error?.message || String(error);
@@ -290,10 +297,15 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
     }
   }
 
-  if (!health) throw new Error(`Deployment did not become ready: ${lastHealthError}`);
-  if (health.ok !== true) throw new Error('Health endpoint is not healthy.');
+  if (!readiness) throw new Error(`Deployment did not become ready: ${lastHealthError}`);
+  if (readiness.releaseCandidate !== expectedReleaseCandidate) throw new Error(`Expected ${expectedReleaseCandidate}, received ${readiness.releaseCandidate || 'unknown'}.`);
+
+  const healthResponse = await request(fetchImpl, baseUrl, '/health');
+  health = await jsonBody(healthResponse, 'Health endpoint');
+  if (!healthResponse.ok || health?.ok !== true) throw new Error('Health endpoint is not healthy.');
   if (health.releaseCandidate !== expectedReleaseCandidate) throw new Error(`Expected ${expectedReleaseCandidate}, received ${health.releaseCandidate || 'unknown'}.`);
   if (health.devMode !== false) throw new Error('Production deployment exposes DEV_MODE=true.');
+  if (health?.readiness?.ok !== true) throw new Error('Legacy health endpoint must embed a passing readiness snapshot.');
   for (const flag of REQUIRED_HEALTH_FLAGS) {
     if (health[flag] !== 'enabled') throw new Error(`Health flag ${flag} is not enabled.`);
   }
@@ -347,7 +359,7 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
     origin: baseUrl.origin,
     version: health.version,
     releaseCandidate: health.releaseCandidate,
-    checks: 19,
+    checks: 25,
   };
 }
 
