@@ -123,7 +123,7 @@ const REQUIRED_HEALTH_FLAGS = [
   'distributedAnalysisLock',
   'viralFixtureCollapse',
   'crossInstanceAnalysisDedupe',
-  'analysisLockFailOpen',
+  'analysisLockFailClosed',
   'sharedAnalysisWaitFallback',
   'distributedAnalysisLockSelfTest',
   'mediaPublisherKit',
