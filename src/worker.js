@@ -2482,6 +2482,21 @@ async function getQuota(userId, cfg) {
   return { plan, used, limit, left: Math.max(0, limit - used) };
 }
 
+function quotaSnapshotFromReservation(reservation, fallback = null) {
+  if (!reservation?.reserved) return fallback;
+  return {
+    plan:String(reservation.plan || fallback?.plan || 'FREE'),
+    used:Number(reservation.used || 0),
+    limit:Number(reservation.limit || 0),
+    left:Math.max(0,Number(reservation.left || 0)),
+  };
+}
+
+async function safeGetQuota(userId, cfg, fallback = null) {
+  try { return await getQuota(userId,cfg); }
+  catch { return fallback; }
+}
+
 function billingPlanConfig(plan, cfg) {
   const key = String(plan || '').toUpperCase();
   if (!BILLING_PLANS[key]) return null;
@@ -17920,7 +17935,7 @@ async function apiHistoryAnalysis(request, cfg, user) {
     }, 404);
   }
 
-  return json(analysisResponsePayload(payload,{cached:true,stale:!fresh,historyReadOnly:true,recheck:{requested:false,performed:false,free:false,reasonCode:analysisFreshness(payload).reasonCode},quota:await getQuota(user.id,cfg)}));
+  return json(analysisResponsePayload(payload,{cached:true,stale:!fresh,historyReadOnly:true,recheck:{requested:false,performed:false,free:false,reasonCode:analysisFreshness(payload).reasonCode},quota:await safeGetQuota(user.id,cfg,null)}));
 }
 
 
@@ -19792,7 +19807,7 @@ async function apiAnalyze(request, cfg, user) {
       if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,freshness:previousFreshness?.state || 'fresh'}});
       const newsImpact=newsImpactDeltaStatus(staleBefore,cached,null,{requested:newsImpactRecheck,eligible:newsImpactEligible,performed:false,publishedAt:newsPublishedAt});
       await recordTrackedFullAiOutcome('cached');
-      return json(analysisResponsePayload(cached,{cached:true,stale:false,recheck:{requested:recheckRequested,performed:false,free:false,reasonCode:recheckReasonCode},newsImpact,quota:await getQuota(user.id,cfg)}));
+      return json(analysisResponsePayload(cached,{cached:true,stale:false,recheck:{requested:recheckRequested,performed:false,free:false,reasonCode:recheckReasonCode},newsImpact,quota:await safeGetQuota(user.id,cfg,null)}));
     }
   }
 
@@ -19813,7 +19828,7 @@ async function apiAnalyze(request, cfg, user) {
       await recordHistory(user.id,joined,cfg);
       if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,sharedJoin:true}});
       await recordTrackedFullAiOutcome('shared');
-      return json(analysisResponsePayload(joined,{cached:true,stale:false,sharedJoin:true,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_shared' : (previousFreshness?.reasonCode || 'shared_compute')},quota:await getQuota(user.id,cfg)}));
+      return json(analysisResponsePayload(joined,{cached:true,stale:false,sharedJoin:true,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_shared' : (previousFreshness?.reasonCode || 'shared_compute')},quota:await safeGetQuota(user.id,cfg,null)}));
     }
     if (staleBefore) {
       await recordHistory(user.id,staleBefore,cfg);
@@ -20093,7 +20108,7 @@ async function apiAnalyze(request, cfg, user) {
   if (needsFreshnessRecheck) void recordGrowthEvent(cfg,{userId:user.id,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:previousFreshness?.reasonCode || 'age_window',material:Boolean(recheckDelta?.material),stable:Boolean(recheckDelta?.stable),changeCount:Number(recheckDelta?.items?.length || 0),codes:(recheckDelta?.codes || []).slice(0,6)}});
   if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:false,recheck:shouldPerformRecheck}});
   await recordTrackedFullAiOutcome('fresh');
-  return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:recheckReasonCode,delta:recheckDelta},newsImpact,quota:await getQuota(user.id,cfg)}));
+  return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:recheckReasonCode,delta:recheckDelta},newsImpact,quota:quotaSnapshotFromReservation(usageReservation,quotaBefore)}));
   } finally {
     if (usageReservation?.reserved && !usageCommitted) await refundAnalysisQuota(user.id,usageReservation,cfg);
     await releaseDistributedAnalysisLock(analysisLock,cfg);
