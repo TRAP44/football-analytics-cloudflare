@@ -12,6 +12,7 @@ import {
 } from './access-control.js';
 import { apiSecurityHeaders } from './security-headers.js';
 import { createSupabaseClient } from './supabase-client.js';
+import { resolveStandingTeamRow } from './entity-reconciliation.js';
 import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
 import { normalizeOpenLigaStandings, openLigaCompetition, openLigaTableUrls } from './providers/openligadb.js';
 import { footballDataStandingsUrl, normalizeFootballDataStandings } from './providers/football-data.js';
@@ -16479,12 +16480,21 @@ function blendProbabilitySignals({ market, model, form, h2h, weightOverrides = n
   return { probabilities: normalizeThree(home, draw, away), weights, signals };
 }
 
-function applyAbsenceAdjustment(probabilities, absences) {
-  if (!probabilities) return null;
-  const homeCount = Math.min(6, absences?.home?.length || 0);
-  const awayCount = Math.min(6, absences?.away?.length || 0);
-  const shift = clamp((awayCount - homeCount) * 0.55, -3.3, 3.3);
-  return normalizeThree(probabilities.home + shift, probabilities.draw, probabilities.away - shift);
+function absenceContextPolicy(absences = {}, reliability = {}) {
+  const homeCount = Math.max(0, Number(absences?.home?.length || 0));
+  const awayCount = Math.max(0, Number(absences?.away?.length || 0));
+  const sourceAvailable = Boolean(reliability?.features?.injuries?.available);
+  return {
+    mode:'context_only',
+    sourceAvailable,
+    homeCount,
+    awayCount,
+    difference:homeCount-awayCount,
+    probabilityShiftApplied:false,
+    reason:sourceAvailable
+      ? 'Потери состава учитываются в рисках, качестве данных и объяснении, но не сдвигают проценты без валидированной оценки значимости конкретных игроков.'
+      : 'Источник потерь не подтверждён; отсутствие записей не трактуется как отсутствие потерь и не влияет на проценты.',
+  };
 }
 
 function poissonGoalModel(homeForm, awayForm) {
@@ -16736,7 +16746,7 @@ function buildPreMatchIntelligence({
         icon: '🩺',
         side: burdened,
         title: 'Потери состава',
-        text: `${burdened === 'home' ? homeName : awayName} имеет больше подтверждённых потерь: ${homeAbs}:${awayAbs}. Модель делает только ограниченную числовую поправку и не оценивает качество каждого отсутствующего игрока.`,
+        text: `${burdened === 'home' ? homeName : awayName} имеет больше подтверждённых потерь: ${homeAbs}:${awayAbs}. Потери повышают риск и неопределённость, но не сдвигают проценты напрямую без валидированной оценки значимости игроков.`,
         strength: Math.abs(diff) >= 4 ? 'high' : 'medium',
         source: 'injuries',
         values: { home: homeAbs, away: awayAbs },
@@ -16945,7 +16955,7 @@ function buildPreMatchIntelligence({
       confirmed: Boolean(lineups?.home && lineups?.away),
     },
     absences: { home: homeAbs, away: awayAbs },
-    methodology: 'Бриф объясняет уже рассчитанные вероятности через веса источников, форму, очные встречи, потери и голевую эвристику. Он не добавляет новый прогноз и не является рекомендацией для ставок.',
+    methodology: 'Вероятности формируются из рыночного сигнала, прогноза поставщика, формы и очных встреч с динамической перенормировкой доступных весов. Потери состава влияют на риск и уверенность, но не сдвигают проценты напрямую без валидированной оценки значимости игрока. Бриф не добавляет новый прогноз и не является рекомендацией для ставок.',
   };
 }
 function formatAbsences(rows, homeId, awayId) {
@@ -18575,12 +18585,20 @@ function choosePrimaryTeamCompetition(matches = []) {
   return { leagueId:Number(m.leagueId), season:Number(m.season || new Date().getFullYear()), name:m.league||'Турнир', shortName:m.leagueShort||m.league||'Турнир', logo:m.leagueLogo||'', country:m.country||'', category:m.competition?.category||'', tier:m.competition?.tier||'standard', priority:Number(m.competition?.priority||0) };
 }
 
-async function cachedTeamStanding(teamId, competition, cfg) {
+async function cachedTeamStanding(teamId, competition, cfg, teamName = '') {
   if (!competition?.leagueId || !competition?.season) return null;
   const cached = await getCache(`tournament:${Number(competition.leagueId)}:${Number(competition.season)}:standings:v1`, cfg);
-  const row = cached?.standings?.find?.(x => Number(x.team?.id) === Number(teamId));
+  const resolved = resolveStandingTeamRow(cached?.standings || [], { teamId, teamName });
+  const row = resolved.row;
   if (!row) return null;
-  return { rank:Number(row.rank||0), points:Number(row.points||0), played:Number(row.played||0), win:Number(row.win||0), draw:Number(row.draw||0), lose:Number(row.lose||0), goalsFor:Number(row.goalsFor||0), goalsAgainst:Number(row.goalsAgainst||0), goalsDiff:Number(row.goalsDiff||0), form:String(row.form||'') };
+  return {
+    rank:Number(row.rank||0), points:Number(row.points||0), played:Number(row.played||0),
+    win:Number(row.win||0), draw:Number(row.draw||0), lose:Number(row.lose||0),
+    goalsFor:Number(row.goalsFor||0), goalsAgainst:Number(row.goalsAgainst||0),
+    goalsDiff:Number(row.goalsDiff||0), form:String(row.form||''),
+    provider:String(cached?.sourceMeta?.provider || 'api-football'),
+    matchedBy:resolved.matchedBy,
+  };
 }
 
 async function apiTeam(request, cfg) {
@@ -18590,12 +18608,12 @@ async function apiTeam(request, cfg) {
   const {from,to}=teamDiscoveryWindow();
   const cacheKey = `teamhub:${teamId}:${from}:${to}:v2`;
   const cached = await getCache(cacheKey, cfg);
-  if (cached) return json({ ...cached, standing: await cachedTeamStanding(teamId, cached.primaryCompetition, cfg), sourceMeta: markCachedSourceMeta(cached.sourceMeta || sourceMeta({ provider:'api-football', label:'API-Football' })), cached:true, stale:false, provider:publicDataCapabilities() });
+  if (cached) return json({ ...cached, standing: await cachedTeamStanding(teamId, cached.primaryCompetition, cfg, cached.team?.name || ''), sourceMeta: markCachedSourceMeta(cached.sourceMeta || sourceMeta({ provider:'api-football', label:'API-Football' })), cached:true, stale:false, provider:publicDataCapabilities() });
   let fixtures;
   try { fixtures = await apiFootball('/fixtures', { team:teamId, from, to }, cfg); }
   catch (error) {
     const stale = await getStaleCache(cacheKey, cfg);
-    if (stale && isFootballRateLimitError(error)) return json({ ...stale, standing:await cachedTeamStanding(teamId, stale.primaryCompetition, cfg), sourceMeta:markCachedSourceMeta(stale.sourceMeta || sourceMeta({ provider:'api-football', label:'API-Football' }),{stale:true}), cached:true, stale:true, warning:'Страница команды показана из последних сохранённых данных из-за лимита источника данных.', provider:publicDataCapabilities() });
+    if (stale && isFootballRateLimitError(error)) return json({ ...stale, standing:await cachedTeamStanding(teamId, stale.primaryCompetition, cfg, stale.team?.name || ''), sourceMeta:markCachedSourceMeta(stale.sourceMeta || sourceMeta({ provider:'api-football', label:'API-Football' }),{stale:true}), cached:true, stale:true, warning:'Страница команды показана из последних сохранённых данных из-за лимита источника данных.', provider:publicDataCapabilities() });
     throw error;
   }
   const usable = (fixtures||[]).filter(f => !['CANC','PST','ABD','AWD','WO'].includes(String(f.fixture?.status?.short||'')));
@@ -18612,7 +18630,7 @@ async function apiTeam(request, cfg) {
   const completedRaw = usable.filter(f => isFinishedStatus(f.fixture?.status?.short));
   const form = summarizeFormRows(completedRaw, teamId, 'home')?.overall || null;
   const primaryCompetition = choosePrimaryTeamCompetition(normalized);
-  const standing = await cachedTeamStanding(teamId, primaryCompetition, cfg);
+  const standing = await cachedTeamStanding(teamId, primaryCompetition, cfg, team.name);
   const payload = { team, primaryCompetition, standing, form, recent, upcoming, primaryFixtureId:Number(discovery.primary?.fixtureId || 0) || null, discovery:{mode:discovery.mode,primaryFixtureId:Number(discovery.primary?.fixtureId || 0) || null,primaryReason:String(discovery.primary?.selection?.reason || ''),windowPastDays:TEAM_DISCOVERY_PAST_DAYS,windowFutureDays:TEAM_DISCOVERY_FUTURE_DAYS}, liveNow:upcoming.find(x=>x.live)||null, nextMatch:upcoming.find(x=>!x.live)||upcoming[0]||null, refreshedAt:new Date().toISOString(), sourceMeta:sourceMeta({provider:'api-football',label:'API-Football'}) };
   await setCache(cacheKey, teamId, payload, cfg, 120);
   return json({ ...payload, cached:false, stale:false, provider:publicDataCapabilities() });
@@ -19757,8 +19775,8 @@ async function apiAnalyze(request, cfg, user) {
   const season = Number(fixture.league?.season || 0) || null;
   const comparisonCompetition = { leagueId, season };
   const [homeStanding, awayStanding, homeSeasonStats, awaySeasonStats] = await Promise.all([
-    cachedTeamStanding(homeId, comparisonCompetition, cfg).catch(() => null),
-    cachedTeamStanding(awayId, comparisonCompetition, cfg).catch(() => null),
+    cachedTeamStanding(homeId, comparisonCompetition, cfg, homeName).catch(() => null),
+    cachedTeamStanding(awayId, comparisonCompetition, cfg, awayName).catch(() => null),
     cachedSeasonStatsForComparison(homeId, leagueId, season, cfg).catch(() => null),
     cachedSeasonStatsForComparison(awayId, leagueId, season, cfg).catch(() => null),
   ]);
@@ -19779,8 +19797,9 @@ async function apiAnalyze(request, cfg, user) {
   const blended = calibrationProfile.weightsActive
     ? blendProbabilitySignals({ market, model: apiPrediction, form: recentFormProb, h2h: h2hProb, weightOverrides: calibrationProfile.signalWeights })
     : baselineBlend;
-  const rawProbabilities = applyAbsenceAdjustment(baselineBlend.probabilities, absences);
-  const weightedProbabilities = applyAbsenceAdjustment(blended.probabilities, absences);
+  const absencePolicy = absenceContextPolicy(absences, providerReliability);
+  const rawProbabilities = baselineBlend.probabilities;
+  const weightedProbabilities = blended.probabilities;
   const probabilities = calibrationProfile.temperatureActive
     ? temperatureScaleProbabilities(weightedProbabilities, calibrationProfile.temperature)
     : weightedProbabilities;
@@ -19878,6 +19897,26 @@ async function apiAnalyze(request, cfg, user) {
       weights: blended.weights,
       signals: blended.signals,
       method: 'Рынок, прогноз источника данных, форма и очные встречи объединяются динамически. Активный профиль применяется только после двух окон отложенной выборки и атомарного сравнения кандидата с активной моделью.',
+    },
+    modelMethodology: {
+      version:'rc129-trust-v1',
+      baseWeights:{ ...MODEL_BASE_WEIGHTS },
+      effectiveWeights:{ ...blended.weights },
+      activeSignals:blended.signals.map(signal => String(signal.name || '')).filter(Boolean),
+      absencePolicy,
+      calibration:{
+        mode:String(calibrationProfile.mode || 'baseline'),
+        sample:Number(calibrationProfile.sample || 0),
+        temperatureActive:Boolean(calibrationProfile.temperatureActive),
+        weightsActive:Boolean(calibrationProfile.weightsActive),
+      },
+      confidenceInputs:{
+        weightedCoveragePct:Number(confidence?.coverage || 0),
+        leaderAgreementPct:Number(confidence?.agreement || 0),
+        disagreementPctPoints:Number(confidence?.disagreement || 0),
+        leaderMarginPctPoints:Number(confidence?.margin || 0),
+      },
+      note:'Недоступный сигнал исключается из объединения, оставшиеся веса перенормируются. Невалидированные эвристики не должны напрямую менять вероятность исхода.',
     },
     dataPolicy: {
       dataMode: paid ? 'expanded' : 'standard',
@@ -20417,6 +20456,9 @@ export default {
         openLigaDbStandingsFallback: 'enabled',
         footballDataStandingsFallback: cfg.footballDataToken ? 'enabled' : 'available_when_configured',
         sourceProvenance: 'enabled',
+        crossProviderStandingReconciliation: 'enabled',
+        modelMethodologyTransparency: 'enabled',
+        unvalidatedAbsenceProbabilityShift: 'disabled',
         aiAnalysisQualityGate: 'enabled',
         aiAnalysisQualityGateSelfTest: analysisQualityGateSelfTest().pass ? 'enabled' : 'failed',
         supabaseSchemaDriftGuard: 'enabled',
