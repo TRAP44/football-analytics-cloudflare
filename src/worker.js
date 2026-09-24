@@ -82,17 +82,24 @@ const memory = {
     upstreamTimeouts: 0,
     userSyncSkips: 0,
     memoryPrunes: 0,
+    providerDistributedBlocks: 0,
+    providerDistributedFallbacks: 0,
+    quotaReservations: 0,
+    quotaRefunds: 0,
+    digestDeliveryClaims: 0,
+    digestDeliveryDuplicates: 0,
   },
   provider: { name: 'API-Football', plan: 'UNKNOWN', dailyLimit: null, dailyRemaining: null, minuteLimit: null, minuteRemaining: null, updatedAt: null, cooldownUntil: null, lastError: '', lastStatus: null, lastLatencyMs: null, lastRequestAt: null, lastSuccessAt: null },
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.102.0-rc126';
+const APP_VERSION = '6.103.0-rc127';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc126';
-const RC_NAME = 'RC126';
+const RELEASE_CHANNEL = 'rc127';
+const RC_NAME = 'RC127';
 const MAX_MEMORY_OPS_EVENTS = 50;
+const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49';
 
 const DEFAULT_PREFERENCES = Object.freeze({
   defaultFilter: 'top',
@@ -1364,7 +1371,7 @@ async function recordOpsEvent(cfg, event = {}) {
     endpoint: redactOpsString(event.endpoint || '', 160),
     status: Number.isFinite(Number(event.status)) ? Number(event.status) : null,
     duration_ms: Number.isFinite(Number(event.durationMs)) ? Math.max(0, Math.round(Number(event.durationMs))) : null,
-    metadata: safeOpsMetadata(event.meta || {}),
+    metadata: safeOpsMetadata({ appVersion: APP_VERSION, releaseCandidate: RC_NAME, ...(event.meta || {}) }),
   };
   memory.opsEvents.unshift(row);
   memory.opsEvents = memory.opsEvents.slice(0, MAX_MEMORY_OPS_EVENTS);
@@ -1467,7 +1474,7 @@ async function hmacSha256(keyBytes, message) {
   return crypto.subtle.sign('HMAC', key, enc.encode(message));
 }
 
-async function validateTelegramInitData(initData, botToken) {
+async function validateTelegramInitData(initData, botToken, maxAgeSeconds = 24 * 60 * 60) {
   if (!initData || !botToken) return null;
   const params = new URLSearchParams(initData);
   const receivedHash = params.get('hash');
@@ -1484,7 +1491,8 @@ async function validateTelegramInitData(initData, botToken) {
   if (!constantTimeEqual(calculated.toLowerCase(), receivedHash.toLowerCase())) return null;
 
   const authDate = Number(params.get('auth_date') || 0);
-  if (!authDate || Math.abs(Date.now() / 1000 - authDate) > 24 * 60 * 60) return null;
+  const ageLimit = Math.max(60, Math.min(24 * 60 * 60, Number(maxAgeSeconds || 0)));
+  if (!authDate || Math.abs(Date.now() / 1000 - authDate) > ageLimit) return null;
 
   try {
     const user = JSON.parse(params.get('user') || '{}');
@@ -1496,7 +1504,13 @@ async function validateTelegramInitData(initData, botToken) {
 
 async function getRequestUser(request, cfg) {
   const initData = request.headers.get('x-telegram-init-data') || '';
-  let user = await validateTelegramInitData(initData, cfg.botToken);
+  const requestUrl = new URL(request.url);
+  const adminSensitive = requestUrl.pathname.startsWith('/api/runtime-controls')
+    || requestUrl.pathname.startsWith('/api/provider/')
+    || ['/api/diagnostics','/api/release-readiness','/api/production-readiness','/api/rc-regression','/api/release-monitor','/api/production-monitor','/api/calibration-control','/api/model-remediation','/api/media-publisher-link'].includes(requestUrl.pathname);
+  const mutation = !['GET','HEAD','OPTIONS'].includes(String(request.method || 'GET').toUpperCase());
+  const initDataMaxAgeSeconds = adminSensitive ? 15 * 60 : mutation ? 2 * 60 * 60 : 24 * 60 * 60;
+  let user = await validateTelegramInitData(initData, cfg.botToken, initDataMaxAgeSeconds);
   if (!user && cfg.devMode) {
     user = {
       id: DEVELOPMENT_TELEGRAM_ID,
@@ -2294,6 +2308,55 @@ async function incrementUsage(userId, cfg) {
     memory.usage.set(`${userId}:${date}`, next);
   }
   return next;
+}
+
+async function reserveAnalysisQuota(userId, cfg) {
+  const date = todayUtc();
+  const user = await getUserRecord(userId, cfg);
+  let plan = user?.plan || 'FREE';
+  if (plan !== 'FREE' && user?.subscription_until && new Date(user.subscription_until) < new Date()) plan = 'FREE';
+  const limit = Number(cfg.limits[plan] || cfg.limits.FREE);
+
+  if (hasSupabase(cfg)) {
+    const result = await supaRpc(cfg, 'consume_analysis_quota', {
+      p_telegram_id: Number(userId),
+      p_usage_date: date,
+      p_limit: limit,
+    });
+    const used = Number(result?.used || 0);
+    if (result?.allowed) bumpTelemetry('quotaReservations');
+    return {
+      reserved: Boolean(result?.allowed),
+      allowed: Boolean(result?.allowed),
+      date,
+      plan,
+      used,
+      limit,
+      left: Math.max(0, limit - used),
+      reason: String(result?.reason || ''),
+    };
+  }
+
+  const used = await getUsage(userId, cfg);
+  if (used >= limit) return { reserved:false, allowed:false, date, plan, used, limit, left:0, reason:'quota_exhausted' };
+  const next = used + 1;
+  memory.usage.set(`${userId}:${date}`, next);
+  bumpTelemetry('quotaReservations');
+  return { reserved:true, allowed:true, date, plan, used:next, limit, left:Math.max(0,limit-next), reason:'reserved_local' };
+}
+
+async function refundAnalysisQuota(userId, reservation, cfg) {
+  if (!reservation?.reserved) return;
+  if (hasSupabase(cfg)) {
+    await supaRpc(cfg, 'refund_analysis_quota', {
+      p_telegram_id: Number(userId),
+      p_usage_date: reservation.date || todayUtc(),
+    }).catch(()=>null);
+  } else {
+    const key=`${userId}:${reservation.date || todayUtc()}`;
+    memory.usage.set(key, Math.max(0, Number(memory.usage.get(key) || 0) - 1));
+  }
+  bumpTelemetry('quotaRefunds');
 }
 
 async function getQuota(userId, cfg) {
@@ -6775,9 +6838,32 @@ async function loadBotDigestSubscriptions(cfg) {
   return [...memory.botDigestSubscriptions.values()].filter(x=>x.enabled);
 }
 
+async function claimDigestDelivery(row,date,cfg) {
+  if (hasSupabase(cfg)) {
+    const claimed=Boolean(await supaRpc(cfg,'claim_daily_digest',{p_telegram_id:Number(row.telegram_id),p_delivery_date:date,p_lease_seconds:180},2500));
+    if (claimed) bumpTelemetry('digestDeliveryClaims'); else bumpTelemetry('digestDeliveryDuplicates');
+    return claimed;
+  }
+  const current=memory.botDigestSubscriptions.get(Number(row.telegram_id)) || row;
+  if (String(current.last_sent_date || '')===date || String(current.delivery_claim_date || '')===date) {
+    bumpTelemetry('digestDeliveryDuplicates');
+    return false;
+  }
+  memory.botDigestSubscriptions.set(Number(row.telegram_id),{...current,delivery_claim_date:date,delivery_locked_until:new Date(Date.now()+180000).toISOString()});
+  bumpTelemetry('digestDeliveryClaims');
+  return true;
+}
+
 async function markDigestSent(row, date, cfg) {
-  if (hasSupabase(cfg)) return await supaPatch(cfg,'bot_digest_subscriptions',{telegram_id:`eq.${Number(row.telegram_id)}`},{last_sent_date:date,updated_at:new Date().toISOString()});
-  memory.botDigestSubscriptions.set(Number(row.telegram_id),{...row,last_sent_date:date,updated_at:new Date().toISOString()});
+  if (hasSupabase(cfg)) return await supaRpc(cfg,'complete_daily_digest',{p_telegram_id:Number(row.telegram_id),p_delivery_date:date},2500);
+  memory.botDigestSubscriptions.set(Number(row.telegram_id),{...row,last_sent_date:date,delivery_claim_date:null,delivery_locked_until:null,updated_at:new Date().toISOString()});
+}
+
+async function releaseDigestDelivery(row,date,cfg) {
+  if (hasSupabase(cfg)) return await supaRpc(cfg,'release_daily_digest',{p_telegram_id:Number(row.telegram_id),p_delivery_date:date},2500).catch(()=>false);
+  const current=memory.botDigestSubscriptions.get(Number(row.telegram_id)) || row;
+  memory.botDigestSubscriptions.set(Number(row.telegram_id),{...current,delivery_claim_date:null,delivery_locked_until:null});
+  return true;
 }
 
 async function currentDailyDigest(cfg) {
@@ -6895,23 +6981,30 @@ async function processDailyDigests(cfg,scheduledAt=new Date()) {
   for (let i=0;i<subscriptions.length;i+=20) {
     const batch=subscriptions.slice(i,i+20);
     const results=await Promise.allSettled(batch.map(async row=>{
-      const matchButtons=(digest.rows || []).slice(0,3).map(match=>[{text:`⚽ ${String(match.homeName || '').slice(0,18)} — ${String(match.awayName || '').slice(0,18)}`,callback_data:`match:menu:${Number(match.fixtureId)}`}]);
-      matchButtons.push([{text:'⚽ Все матчи сегодня',callback_data:'feed:today'}]);
-      await telegramApi('sendMessage',cfg,{
-        chat_id:Number(row.chat_id), parse_mode:'HTML', text:dailyDigestText(digest.rows),
-        reply_markup:{inline_keyboard:matchButtons},
-      });
-      if (morningNews.items?.length) {
+      const claimed=await claimDigestDelivery(row,date,cfg);
+      if (!claimed) return false;
+      try {
+        const matchButtons=(digest.rows || []).slice(0,3).map(match=>[{text:`⚽ ${String(match.homeName || '').slice(0,18)} — ${String(match.awayName || '').slice(0,18)}`,callback_data:`match:menu:${Number(match.fixtureId)}`}]);
+        matchButtons.push([{text:'⚽ Все матчи сегодня',callback_data:'feed:today'}]);
         await telegramApi('sendMessage',cfg,{
-          chat_id:Number(row.chat_id),parse_mode:'HTML',text:morningNewsText(morningNews.items),
-          reply_markup:newsConversionKeyboard(morningNews.items,[[{text:'📰 Новости FM AI',callback_data:'news:general'}]]),
-          disable_web_page_preview:true,
+          chat_id:Number(row.chat_id), parse_mode:'HTML', text:dailyDigestText(digest.rows),
+          reply_markup:{inline_keyboard:matchButtons},
         });
+        if (morningNews.items?.length) {
+          await telegramApi('sendMessage',cfg,{
+            chat_id:Number(row.chat_id),parse_mode:'HTML',text:morningNewsText(morningNews.items),
+            reply_markup:newsConversionKeyboard(morningNews.items,[[{text:'📰 Новости FM AI',callback_data:'news:general'}]]),
+            disable_web_page_preview:true,
+          });
+        }
+        await markDigestSent(row,date,cfg);
+        return true;
+      } catch (error) {
+        await releaseDigestDelivery(row,date,cfg);
+        throw error;
       }
-      await markDigestSent(row,date,cfg);
-      return true;
     }));
-    sent+=results.filter(x=>x.status==='fulfilled').length;
+    sent+=results.filter(x=>x.status==='fulfilled' && x.value===true).length;
     if (i+20<subscriptions.length) await sleepMs(1000);
   }
   return {sent,eligible:subscriptions.length,date,news:Number(morningNews.items?.length || 0)};
@@ -7780,15 +7873,15 @@ async function claimDistributedAnalysisLock(fixtureId,cfg) {
   } catch (error) {
     bumpTelemetry('analysisLockFailOpen');
     void recordOpsEvent(cfg,{
-      severity:'warning',
+      severity:'error',
       source:'analysis_lock',
       eventType:'analysis_lock_degraded',
-      code:'ANALYSIS_LOCK_FAIL_OPEN',
+      code:'ANALYSIS_LOCK_FAIL_CLOSED',
       message:error?.message || error,
       endpoint:'/api/analyze',
       meta:{fixtureId:id},
     }).catch(()=>null);
-    return {claimed:true,key,claimId:'fail-open',shared:false,degraded:true};
+    return {claimed:false,key,claimId:'',shared:false,degraded:true,unavailable:true};
   }
 }
 
@@ -13738,6 +13831,34 @@ function freeQuotaHealthy(minDaily = 25, minMinute = 5) {
   return !providerSnapshot().cooldownActive;
 }
 
+function distributedProviderMinuteLimit() {
+  const plan=String(memory.provider?.plan || 'UNKNOWN').toUpperCase();
+  const expected=PROVIDER_PLAN_LIMITS[plan]?.minute || Number(memory.provider?.minuteLimit) || PROVIDER_PLAN_LIMITS.FREE.minute;
+  const floors=PROVIDER_BUDGET_FLOORS[plan] || PROVIDER_BUDGET_FLOORS.FREE;
+  return Math.max(1, Math.floor(Number(expected) - Number(floors.minuteReserve || 1)));
+}
+
+async function claimDistributedProviderBudget(cfg) {
+  if (!hasSupabase(cfg)) return {allowed:true,degraded:true,reason:'supabase_not_configured'};
+  const limit=distributedProviderMinuteLimit();
+  try {
+    const result=await supaRpc(cfg,'claim_provider_request',{
+      p_bucket_key:'api-football:minute',
+      p_limit:limit,
+      p_window_seconds:60,
+    },2500);
+    if (!result?.allowed) bumpTelemetry('providerDistributedBlocks');
+    return {allowed:Boolean(result?.allowed),limit,retryAfter:Number(result?.retryAfter || 0),count:Number(result?.count || 0),degraded:false};
+  } catch (error) {
+    bumpTelemetry('providerDistributedFallbacks');
+    await recordOpsEvent(cfg,{
+      severity:'warning',source:'provider',eventType:'distributed_rate_guard',code:'PROVIDER_RATE_GUARD_DEGRADED',
+      message:error?.message || error,endpoint:'api-football',
+    }).catch(()=>null);
+    return {allowed:true,limit,degraded:true,reason:'guard_unavailable'};
+  }
+}
+
 async function apiFootballNetwork(path, params, cfg, options = {}) {
   if (!cfg.apiFootballKey) {
     await recordOpsEvent(cfg, { severity: 'critical', source: 'provider', eventType: 'configuration', code: 'FOOTBALL_CONFIG', message: 'Ключ API-Football отсутствует.' });
@@ -13757,6 +13878,14 @@ async function apiFootballNetwork(path, params, cfg, options = {}) {
       bumpTelemetry('quotaBlocks');
       throw footballError(`Минутная квота API-Football исчерпана. Повторите примерно через ${waitSec} сек.`, 'FOOTBALL_COOLDOWN', waitSec);
     }
+  }
+
+  const distributedBudget=await claimDistributedProviderBudget(cfg);
+  if (!distributedBudget.allowed) {
+    const retryAfter=Math.max(1,Number(distributedBudget.retryAfter || 60));
+    memory.provider.cooldownUntil = new Date(Date.now() + retryAfter * 1000).toISOString();
+    bumpTelemetry('quotaBlocks');
+    throw footballError(`Глобальная минутная квота API-Football защищена. Повторите примерно через ${retryAfter} сек.`, 'FOOTBALL_COOLDOWN', retryAfter);
   }
 
   const url = new URL(`https://v3.football.api-sports.io${path}`);
@@ -14513,21 +14642,49 @@ function summarizeSupabaseSchemaChecks(checks = []) {
   };
 }
 
+async function readSupabaseSchemaFingerprint(cfg) {
+  if (!hasSupabase(cfg)) return { ok:false, status:'not_configured', fingerprint:'', expected:EXPECTED_SCHEMA_FINGERPRINT };
+  try {
+    const raw=await supaRpc(cfg,'backend_schema_fingerprint',{},4000);
+    const fingerprint=String(raw?.fingerprint || '');
+    return {
+      ok:Boolean(raw?.ok) && fingerprint===EXPECTED_SCHEMA_FINGERPRINT,
+      status:fingerprint===EXPECTED_SCHEMA_FINGERPRINT ? 'ok' : 'fingerprint_mismatch',
+      fingerprint,
+      expected:EXPECTED_SCHEMA_FINGERPRINT,
+      parts:Number(raw?.parts || 0),
+      checkedAt:raw?.checked_at || null,
+    };
+  } catch (error) {
+    return {ok:false,status:error?.code || 'error',fingerprint:'',expected:EXPECTED_SCHEMA_FINGERPRINT,detail:redactOpsString(error?.message || error,160)};
+  }
+}
+
 async function probeSupabaseSchemaDrift(cfg) {
   const specs = [
     { id: 'users_acquisition', table: 'users', columns: ['telegram_id','acquisition_source','acquisition_campaign','acquisition_content'] },
     { id: 'analysis_history_ai', table: 'analysis_history', columns: ['telegram_id','fixture_id','ai_signal_code','analysis_version'] },
     { id: 'calibration_transitions', table: 'model_calibration_transitions', columns: ['id','action','resulting_revision','created_at'] },
-    { id: 'digest_subscriptions', table: 'bot_digest_subscriptions', columns: ['telegram_id','enabled','hour_utc'] },
+    { id: 'digest_subscriptions', table: 'bot_digest_subscriptions', columns: ['telegram_id','enabled','hour_utc','delivery_claim_date','delivery_locked_until'] },
     { id: 'referee_history', table: 'referee_match_history', columns: ['fixture_id','referee_key','yellow_cards'] },
     { id: 'growth_events', table: 'growth_events', columns: ['id','event_name','metadata','created_at'] },
     { id: 'telegram_update_claims', table: 'telegram_update_claims', columns: ['update_key','status','locked_until','expires_at','duplicate_count','last_duplicate_at'] },
+    { id: 'provider_rate_windows', table: 'provider_rate_windows', columns: ['bucket_key','window_started_at','request_count','updated_at'] },
   ];
-  const checks = await Promise.all(specs.map(async spec => ({
-    ...spec,
-    ...(await probeTableColumns(cfg, spec.table, spec.columns)),
-  })));
-  return summarizeSupabaseSchemaChecks(checks);
+  const [checks,fingerprint] = await Promise.all([
+    Promise.all(specs.map(async spec => ({ ...spec, ...(await probeTableColumns(cfg, spec.table, spec.columns)) }))),
+    readSupabaseSchemaFingerprint(cfg),
+  ]);
+  const summary=summarizeSupabaseSchemaChecks(checks);
+  const missing=[...(summary.missing || [])];
+  if (!fingerprint.ok) missing.push('schema_fingerprint');
+  return {
+    ...summary,
+    ok:Boolean(summary.ok && fingerprint.ok),
+    status:summary.ok && fingerprint.ok ? 'ok' : 'drift',
+    missing:[...new Set(missing)],
+    fingerprint,
+  };
 }
 
 
@@ -19476,6 +19633,13 @@ async function apiAnalyze(request, cfg, user) {
   if (!freeRecheck && quotaBefore.left <= 0) return await trackedFullAiFailureResponse({ error: `Лимит исчерпан: ${quotaBefore.used}/${quotaBefore.limit} анализов сегодня.`, quota: quotaBefore },429,'quota_exhausted');
 
   const analysisLock=await claimDistributedAnalysisLock(fixtureId,cfg);
+  if (!analysisLock.claimed && analysisLock.unavailable) {
+    if (staleBefore) {
+      await recordHistory(user.id,staleBefore,cfg);
+      return json(analysisResponsePayload(staleBefore,{cached:true,stale:true,warning:'Координация нового AI-расчёта временно недоступна. Показан последний сохранённый анализ.',retryAfter:5,quota:quotaBefore}));
+    }
+    return await trackedFullAiFailureResponse({error:'Координация AI-расчёта временно недоступна. Повторите через несколько секунд.',code:'ANALYSIS_COORDINATION_DEGRADED',retryAfter:5,quota:quotaBefore},503,'analysis_coordination_degraded',{'retry-after':'5'});
+  }
   if (!analysisLock.claimed) {
     const joined=await waitForSharedAnalysis(cacheKey,cfg);
     if (joined) {
@@ -19492,7 +19656,15 @@ async function apiAnalyze(request, cfg, user) {
     return await trackedFullAiFailureResponse({error:'AI-разбор этого матча уже рассчитывается для других пользователей. Повторите через несколько секунд.',code:'ANALYSIS_WARMING',retryAfter:5,quota:quotaBefore},429,'analysis_warming',{'retry-after':'5'});
   }
 
+  let usageReservation=null;
+  let usageCommitted=false;
   try {
+  if (!freeRecheck) {
+    usageReservation=await reserveAnalysisQuota(user.id,cfg);
+    if (!usageReservation.allowed) {
+      return await trackedFullAiFailureResponse({error:`Лимит исчерпан: ${usageReservation.used}/${usageReservation.limit} анализов сегодня.`,quota:{plan:usageReservation.plan,used:usageReservation.used,limit:usageReservation.limit,left:usageReservation.left}},429,'quota_exhausted');
+    }
+  }
   let fixture;
   try {
     fixture = (await apiFootball('/fixtures', { id: fixtureId }, cfg))[0];
@@ -19746,7 +19918,7 @@ async function apiAnalyze(request, cfg, user) {
   const newsImpact=newsImpactDeltaStatus(staleBefore,payload,effectiveRecheckDelta,{requested:newsImpactRecheck,eligible:newsImpactEligible,performed:shouldPerformRecheck,publishedAt:newsPublishedAt});
   await setCache(cacheKey, fixtureId, payload, cfg, ttl);
   await captureModelPrediction(payload, cfg);
-  if (!freeRecheck) await incrementUsage(user.id, cfg);
+  usageCommitted=true;
   await recordHistory(user.id, payload, cfg);
   if (newsImpactEligible && !needsFreshnessRecheck) {
     void recordGrowthEvent(cfg,{userId:user.id,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:'news_impact',material:Boolean(effectiveRecheckDelta?.material),stable:Boolean(effectiveRecheckDelta?.stable),changeCount:Number(effectiveRecheckDelta?.items?.length || 0),codes:(effectiveRecheckDelta?.codes || []).slice(0,6)}});
@@ -19756,6 +19928,7 @@ async function apiAnalyze(request, cfg, user) {
   await recordTrackedFullAiOutcome('fresh');
   return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:recheckReasonCode,delta:recheckDelta},newsImpact,quota:await getQuota(user.id,cfg)}));
   } finally {
+    if (usageReservation?.reserved && !usageCommitted) await refundAnalysisQuota(user.id,usageReservation,cfg);
     await releaseDistributedAnalysisLock(analysisLock,cfg);
   }
   } catch (error) {
