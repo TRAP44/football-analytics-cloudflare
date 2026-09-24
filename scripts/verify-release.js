@@ -65,8 +65,9 @@ if (!fs.existsSync('.github/workflows/rollback-production.yml')) failures.push('
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
-if (!deployWorkflow.includes('--message "RC109 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC109');
-if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.101.0-rc109"')) failures.push('Production smoke must verify 6.101.0-rc109');
+if (!deployWorkflow.includes('RELEASE_VERSION: "6.101.0-rc109"')) failures.push('Production deploy must pin the verified release version');
+if (!deployWorkflow.includes('--message "release=${{ env.RELEASE_VERSION }} sha=${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must bind release version and deploy SHA');
+if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "${{ env.RELEASE_VERSION }}"')) failures.push('Production smoke must verify the same release identity used for deployment');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
 if (!/id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden/.test(html)) failures.push('Admin role badge must use the fail-closed admin-only visibility contract');
 if (!/\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i.test(styles)) failures.push('Global hidden elements must remain display:none');
