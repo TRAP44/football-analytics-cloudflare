@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.100.0-rc108';
+const CLIENT_VERSION = '6.101.0-rc109';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc108';
+const CLIENT_RELEASE_CHANNEL = 'rc109';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -3348,7 +3348,7 @@ function renderDiagnostics() {
     database.innerHTML = `
       <div class="diagnostics-block-head"><strong>База данных Supabase и сохранённые данные</strong><span>${db.ok ? 'в сети' : (String(db.status || '').toLowerCase() === 'offline' ? 'нет связи' : escapeHtml(technicalStateLabel(db.status || 'offline')))}</span></div>
       <div class="diagnostics-grid">
-        <div><span>Доступ к базе данных</span><strong>${db.ok ? 'Норма' : 'Ошибка'}</strong><small>${Number.isFinite(Number(db.latencyMs)) ? `${Number(db.latencyMs)} мс` : '—'}</small></div>
+        <div><span>Доступ к базе данных</span><strong>${db.ok ? (db.recovered ? 'Восстановлено' : 'Норма') : 'Ошибка'}</strong><small>${Number.isFinite(Number(db.latencyMs)) ? `${Number(db.latencyMs)} мс` : '—'} · попыток ${Number(db.attempts || 1)}${db.recovered ? ' · первый probe не прошёл' : ''}</small></div>
         <div><span>Сохранённых записей</span><strong>${Number.isFinite(Number(cache.total)) ? Number(cache.total) : '—'}</strong><small>выборка ${Number(cache.sampled || 0)}</small></div>
         <div><span>Свежие / устаревшие</span><strong>${Number(cache.freshInSample || 0)} / ${Number(cache.staleInSample || 0)}</strong><small>в диагностической выборке</small></div>
         <div><span>Журнал ошибок</span><strong>${obs.persistent ? 'Supabase' : 'Память'}</strong><small>${obs.migrationReady ? `хранение ${Number(obs.retentionDays || 14)} дн.` : 'нужна миграция v3.8'}</small></div>
@@ -3367,6 +3367,7 @@ function renderDiagnostics() {
         <div><span>Ограничения частоты</span><strong>${Number(rt.rateLimits || 0)}</strong><small>${Number(rt.quotaBlocks || 0)} запроса остановлено защитой квоты</small></div>
         <div><span>Защита от всплесков</span><strong>${Number(rt.burstBlocks || 0)}</strong><small>${Number(rt.singleflightJoins || 0)} объединений запросов</small></div>
         <div><span>Тайм-ауты источников</span><strong>${Number(rt.upstreamTimeouts || 0)}</strong><small>${Number(rt.userSyncSkips || 0)} синхронизаций пользователя пропущено</small></div>
+        <div><span>Подтверждение Supabase probe</span><strong>${Number(rt.supabaseProbeRecoveries || 0)}</strong><small>восстановлений · ${Number(rt.supabaseProbeConfirmedFailures || 0)} подтверждённых сбоев</small></div>
         <div><span>Быстрые сохранённые данные</span><strong>${Number(rt.l1CacheEntries || 0)}</strong><small>${Number(rt.memoryPrunes || 0)} очисток памяти</small></div>
         <div><span>Ошибки маршрутов</span><strong>${Number(rt.routeErrors || 0)}</strong><small>работает ${escapeHtml(diagDuration(rt.uptimeSeconds))}</small></div>
       </div>
