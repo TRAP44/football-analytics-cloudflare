@@ -10,12 +10,12 @@ const deploy=fs.readFileSync('.github/workflows/deploy-production.yml','utf8');
 const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));
 const app=fs.readFileSync('public/app.js','utf8');
 
-test('RC131 has a single production identity while preserving RC127 hardening',()=>{
-  assert.equal(pkg.version,'6.107.0');
-  assert.match(worker,/const APP_VERSION = '6\.107\.0-rc131'/);
-  assert.match(worker,/const RC_NAME = 'RC131'/);
-  assert.match(app,/const CLIENT_VERSION = '6\.107\.0-rc131'/);
-  assert.match(deploy,/RELEASE_VERSION: "6\.107\.0-rc131"/);
+test('RC132 has a single production identity while preserving RC127 hardening',()=>{
+  assert.equal(pkg.version,'6.108.0');
+  assert.match(worker,/const APP_VERSION = '6\.108\.0-rc132'/);
+  assert.match(worker,/const RC_NAME = 'RC132'/);
+  assert.match(app,/const CLIENT_VERSION = '6\.108\.0-rc132'/);
+  assert.match(deploy,/RELEASE_VERSION: "6\.108\.0-rc132"/);
 });
 
 test('RC127 atomically reserves and refunds analysis quota',()=>{
