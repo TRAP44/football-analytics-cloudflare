@@ -101,6 +101,34 @@ jobs:
           wranglerVersion: "4.136.1"
           command: deploy --keep-vars --message "release=${{ env.RELEASE_VERSION }} sha=${{ env.DEPLOY_SHA }}"
 
+      - name: RC120 verify active production release identity
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOYMENT_STATUS_JSON="$RUNNER_TEMP/production-deployment-status.json"
+          VERSIONS_JSON="$RUNNER_TEMP/production-versions.json"
+          verified=false
+          for attempt in 1 2 3 4 5; do
+            if npx wrangler deployments status --json > "$DEPLOYMENT_STATUS_JSON" \
+              && npx wrangler versions list --json > "$VERSIONS_JSON" \
+              && node scripts/verify-production-release-postcondition.js "$DEPLOYMENT_STATUS_JSON" "$VERSIONS_JSON" "$RELEASE_VERSION" "$DEPLOY_SHA"; then
+              verified=true
+              break
+            fi
+            if [[ "$attempt" -lt 5 ]]; then
+              sleep 3
+            fi
+          done
+          if [[ "$verified" != "true" ]]; then
+            echo "Cloudflare did not confirm the expected production release identity." >&2
+            exit 1
+          fi
+          echo "### RC120 active production release identity verified" >> "$GITHUB_STEP_SUMMARY"
+          echo "Cloudflare control plane confirms release $RELEASE_VERSION for deploy SHA $DEPLOY_SHA at 100% traffic." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Verify production deployment
         env:
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
