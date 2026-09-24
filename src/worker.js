@@ -12,6 +12,12 @@ import {
 } from './access-control.js';
 import { apiSecurityHeaders } from './security-headers.js';
 import { createSupabaseClient } from './supabase-client.js';
+import {
+  bytesToHex,
+  constantTimeEqual,
+  hmacSha256,
+  validateTelegramInitData,
+} from './crypto-utils.js';
 
 const memory = {
   users: new Map(),
@@ -1365,56 +1371,6 @@ function telemetrySnapshot() {
     l1CacheEntries: memory.cache.size,
     note: 'Счётчики среды относятся к текущему серверному обработчику Cloudflare; квоты источника данных берутся из ответов API-Football.',
   };
-}
-
-function bytesToHex(bytes) {
-  return [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-function constantTimeEqual(a, b) {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
-
-async function hmacSha256(keyBytes, message) {
-  const key = await crypto.subtle.importKey(
-    'raw',
-    keyBytes,
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-  return crypto.subtle.sign('HMAC', key, enc.encode(message));
-}
-
-async function validateTelegramInitData(initData, botToken, maxAgeSeconds = 24 * 60 * 60) {
-  if (!initData || !botToken) return null;
-  const params = new URLSearchParams(initData);
-  const receivedHash = params.get('hash');
-  if (!receivedHash || !/^[0-9a-f]{64}$/i.test(receivedHash)) return null;
-
-  params.delete('hash');
-  const dataCheckString = [...params.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, value]) => `${key}=${value}`)
-    .join('\n');
-
-  const secretKey = await hmacSha256(enc.encode('WebAppData'), botToken);
-  const calculated = bytesToHex(await hmacSha256(new Uint8Array(secretKey), dataCheckString));
-  if (!constantTimeEqual(calculated.toLowerCase(), receivedHash.toLowerCase())) return null;
-
-  const authDate = Number(params.get('auth_date') || 0);
-  const ageLimit = Math.max(60, Math.min(24 * 60 * 60, Number(maxAgeSeconds || 0)));
-  if (!authDate || Math.abs(Date.now() / 1000 - authDate) > ageLimit) return null;
-
-  try {
-    const user = JSON.parse(params.get('user') || '{}');
-    return user?.id ? user : null;
-  } catch {
-    return null;
-  }
 }
 
 async function getRequestUser(request, cfg) {
