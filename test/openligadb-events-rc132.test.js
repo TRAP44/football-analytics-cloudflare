@@ -8,7 +8,13 @@ import {
 test('RC132 builds keyless OpenLigaDB match-data URLs only for supported competitions', () => {
   assert.deepEqual(openLigaMatchDataUrls(78, 2026), [{
     shortcut: 'bl1',
+    teamFilter: '',
     url: 'https://api.openligadb.de/getmatchdata/bl1/2026',
+  }]);
+  assert.deepEqual(openLigaMatchDataUrls(78, 2026, 'Bayern Munich'), [{
+    shortcut: 'bl1',
+    teamFilter: 'bayern',
+    url: 'https://api.openligadb.de/getmatchdata/bl1/2026/bayern',
   }]);
   assert.deepEqual(openLigaMatchDataUrls(39, 2026), []);
 });
