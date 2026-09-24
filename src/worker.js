@@ -65,6 +65,8 @@ const memory = {
     supabaseErrors: 0,
     supabaseProbeRecoveries: 0,
     supabaseProbeConfirmedFailures: 0,
+    schemaDriftProbeRecoveries: 0,
+    schemaDriftConfirmedFailures: 0,
     routeErrors: 0,
     integrityRuns: 0,
     integrityWarnings: 0,
@@ -85,11 +87,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.101.0-rc109';
+const APP_VERSION = '6.102.0-rc110';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc109';
-const RC_NAME = 'RC109';
+const RELEASE_CHANNEL = 'rc110';
+const RC_NAME = 'RC110';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1424,6 +1426,8 @@ function telemetrySnapshot() {
     supabaseErrors: Number(t.supabaseErrors || 0),
     supabaseProbeRecoveries: Number(t.supabaseProbeRecoveries || 0),
     supabaseProbeConfirmedFailures: Number(t.supabaseProbeConfirmedFailures || 0),
+    schemaDriftProbeRecoveries: Number(t.schemaDriftProbeRecoveries || 0),
+    schemaDriftConfirmedFailures: Number(t.schemaDriftConfirmedFailures || 0),
     routeErrors: Number(t.routeErrors || 0),
     integrityRuns: Number(t.integrityRuns || 0),
     integrityWarnings: Number(t.integrityWarnings || 0),
@@ -14231,7 +14235,7 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
 
   const [supabase, schemaDrift, source, telegramWebhook] = await Promise.all([
     probeSupabaseConfirmed(cfg),
-    probeSupabaseSchemaDrift(cfg),
+    probeSupabaseSchemaDriftConfirmed(cfg),
     readOpsEventsRange(cfg, historyStart.toISOString(), now.toISOString(), 1000),
     readTelegramDedupeHealth(cfg,60),
   ]);
@@ -14282,6 +14286,10 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
       ok: Boolean(schemaDrift.ok),
       checked: Number(schemaDrift.checked || 0),
       missing: Array.isArray(schemaDrift.missing) ? schemaDrift.missing : [],
+      attempts: Number(schemaDrift.attempts || 1),
+      recovered: Boolean(schemaDrift.recovered),
+      confirmedFailure: Boolean(schemaDrift.confirmedFailure),
+      initialMissing: Array.isArray(schemaDrift.initialMissing) ? schemaDrift.initialMissing : [],
     },
     release: {
       state: releaseHealth.state,
@@ -14308,6 +14316,21 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     },
   };
   memory.productionMonitor = { at: Date.now(), value };
+
+  if (options.record !== false && schemaDrift.recovered) {
+    await recordOpsEvent(cfg, {
+      severity:'warning',
+      source:'monitor',
+      eventType:'schema_probe',
+      code:'SUPABASE_SCHEMA_PROBE_RECOVERED',
+      message:'Initial Supabase schema probe reported drift but the confirmation probe passed.',
+      endpoint:'cron:production-monitor',
+      meta:{
+        initialMissing:Array.isArray(schemaDrift.initialMissing) ? schemaDrift.initialMissing : [],
+        attempts:Number(schemaDrift.attempts || 2),
+      },
+    }).catch(()=>{});
+  }
 
   if (options.record !== false && supabase.recovered) {
     await recordOpsEvent(cfg, {
@@ -14350,6 +14373,9 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
         supabaseProbeRecovered: Boolean(supabase.recovered),
         supabaseProbeConfirmedFailure: Boolean(supabase.confirmedFailure),
         schemaOk: Boolean(schemaDrift.ok),
+        schemaProbeAttempts: Number(schemaDrift.attempts || 1),
+        schemaProbeRecovered: Boolean(schemaDrift.recovered),
+        schemaProbeConfirmedFailure: Boolean(schemaDrift.confirmedFailure),
         releaseState: releaseHealth.state,
         releaseScore: Number(releaseHealth.score || 0),
         providerHealth: provider.health || 'waiting',
@@ -14503,6 +14529,72 @@ async function probeSupabaseSchemaDrift(cfg) {
   return summarizeSupabaseSchemaChecks(checks);
 }
 
+function combineSchemaDriftAttempts(first = {}, second = null) {
+  if (first?.ok) {
+    return {
+      ...first,
+      attempts:1,
+      recovered:false,
+      confirmedFailure:false,
+      initialMissing:Array.isArray(first?.missing) ? first.missing : [],
+    };
+  }
+
+  if (second?.ok) {
+    return {
+      ...second,
+      attempts:2,
+      recovered:true,
+      confirmedFailure:false,
+      initialMissing:Array.isArray(first?.missing) ? first.missing : [],
+      initialChecks:Array.isArray(first?.checks) ? first.checks : [],
+    };
+  }
+
+  const final=second || first;
+  return {
+    ...final,
+    attempts:second ? 2 : 1,
+    recovered:false,
+    confirmedFailure:true,
+    initialMissing:Array.isArray(first?.missing) ? first.missing : [],
+    initialChecks:Array.isArray(first?.checks) ? first.checks : [],
+  };
+}
+
+async function probeSupabaseSchemaDriftConfirmed(cfg, options = {}) {
+  const first=await probeSupabaseSchemaDrift(cfg);
+  if (first.ok || !hasSupabase(cfg)) return combineSchemaDriftAttempts(first);
+  const retryDelayMs=Math.max(0,Math.min(1500,Number(options.retryDelayMs ?? 250)));
+  if (retryDelayMs) await sleepMs(retryDelayMs);
+  const second=await probeSupabaseSchemaDrift(cfg);
+  const combined=combineSchemaDriftAttempts(first,second);
+  if (combined.recovered) bumpTelemetry('schemaDriftProbeRecoveries');
+  if (combined.confirmedFailure) bumpTelemetry('schemaDriftConfirmedFailures');
+  return combined;
+}
+
+function schemaDriftConfirmationSelfTest() {
+  const healthy=combineSchemaDriftAttempts({ok:true,status:'ok',checked:2,missing:[],checks:[]});
+  const firstDrift={ok:false,status:'drift',checked:2,missing:['calibration_transitions'],checks:[
+    {id:'users_acquisition',ok:true,status:'ok'},
+    {id:'calibration_transitions',ok:false,status:'http_401'},
+  ]};
+  const recovered=combineSchemaDriftAttempts(firstDrift,{ok:true,status:'ok',checked:2,missing:[],checks:[]});
+  const confirmed=combineSchemaDriftAttempts(firstDrift,{
+    ok:false,status:'drift',checked:2,missing:['calibration_transitions'],checks:firstDrift.checks,
+  });
+  return {
+    pass:healthy.ok && healthy.attempts===1
+      && recovered.ok && recovered.recovered && recovered.attempts===2
+      && !confirmed.ok && confirmed.confirmedFailure && confirmed.attempts===2
+      && confirmed.missing?.[0]==='calibration_transitions',
+    recovered:recovered.recovered,
+    confirmedFailure:confirmed.confirmedFailure,
+    confirmedMissing:confirmed.missing || [],
+  };
+}
+
 function supabaseSchemaDriftSelfTest() {
   const healthy = summarizeSupabaseSchemaChecks([
     { id: 'users_acquisition', table: 'users', columns: ['acquisition_source'], ok: true, status: 'ok' },
@@ -14549,7 +14641,7 @@ async function apiReleaseReadiness(request, cfg) {
     probeCalibrationPromotionSchema(cfg),
     probeCalibrationLifecycleSchema(cfg),
     readBackendSecurityContract(cfg),
-    probeSupabaseSchemaDrift(cfg),
+    probeSupabaseSchemaDriftConfirmed(cfg),
   ]);
   const productionMonitor = await runProductionMonitor(cfg, new Date(), { record: false });
   const runtime = runtimeState.value;
