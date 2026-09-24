@@ -12,7 +12,7 @@ on:
         required: true
         type: string
       confirm:
-        description: Type ROLLBACK to confirm
+        description: Type ROLLBACK:<expected_version>:<version_id> to confirm the exact rollback target
         required: true
         type: string
 
@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   rollback:
-    if: inputs.confirm == 'ROLLBACK'
+    if: ${{ inputs.confirm == format('ROLLBACK:{0}:{1}', inputs.expected_version, inputs.version_id) }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     environment: production
@@ -100,6 +100,8 @@ jobs:
             echo "version_id format is invalid." >&2
             exit 1
           fi
+          echo "### RC114 rollback target confirmation verified" >> "$GITHUB_STEP_SUMMARY"
+          echo "Operator confirmation is bound to expected version $EXPECTED_VERSION and version ID $VERSION_ID." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Roll back Worker
         shell: bash
