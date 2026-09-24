@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.103.0-rc127';
+const CLIENT_VERSION = '6.104.0-rc128';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc127';
+const CLIENT_RELEASE_CHANNEL = 'rc128';
 const SUPABASE_SCHEMA_HINT = 'проверьте актуальную схему Supabase (baseline v6.18 / миграции до v6.18.1)';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
@@ -5037,12 +5037,14 @@ function renderTournamentStandings(data) {
         <thead><tr><th>#</th><th>Команда</th><th>И</th><th class="wide-stat">В</th><th class="wide-stat">Н</th><th class="wide-stat">П</th><th>М</th><th>+/-</th><th>О</th><th>Форма</th></tr></thead>
         <tbody>${group.rows.map(row => `<tr class="${currentIds.has(Number(row.team?.id)) ? 'today-team' : ''}">
           <td><b>${Number(row.rank)}</b></td>
-          <td><button class="standing-team team-open-link" type="button" data-open-team="${Number(row.team?.id)}" data-team-name="${escapeHtml(row.team?.name || '')}" data-team-logo="${escapeHtml(row.team?.logo || '')}">${row.team?.logo ? `<img src="${safeUrl(row.team.logo)}" alt="">` : ''}<strong>${escapeHtml(row.team?.name || '')}</strong></button></td>
+          <td>${Number(row.team?.id || 0) > 0
+            ? `<button class="standing-team team-open-link" type="button" data-open-team="${Number(row.team.id)}" data-team-name="${escapeHtml(row.team?.name || '')}" data-team-logo="${escapeHtml(row.team?.logo || '')}">${row.team?.logo ? `<img src="${safeUrl(row.team.logo)}" alt="">` : ''}<strong>${escapeHtml(row.team?.name || '')}</strong></button>`
+            : `<span class="standing-team standing-team-readonly"><strong>${escapeHtml(row.team?.name || '')}</strong></span>`}</td>
           <td>${Number(row.played)}</td><td class="wide-stat">${Number(row.win)}</td><td class="wide-stat">${Number(row.draw)}</td><td class="wide-stat">${Number(row.lose)}</td>
           <td>${Number(row.goalsFor)}:${Number(row.goalsAgainst)}</td><td class="${Number(row.goalsDiff) > 0 ? 'positive' : Number(row.goalsDiff) < 0 ? 'negative' : ''}">${Number(row.goalsDiff) > 0 ? '+' : ''}${Number(row.goalsDiff)}</td><td><b>${Number(row.points)}</b></td><td>${standingFormHtml(row.form)}</td>
         </tr>`).join('')}</tbody>
       </table></div>
-      <p class="tiny table-note">Таблица загружается только при открытии этой вкладки и сохраняется на 6 часов, чтобы не расходовать бесплатную квоту источника данных.</p>
+      <p class="tiny table-note">Источник: ${escapeHtml(data.sourceMeta?.label || 'API-Football')}${data.sourceMeta?.fallback ? ' · резервный источник' : ''}. ${data.sourceMeta?.attribution ? escapeHtml(data.sourceMeta.attribution) + '. ' : ''}Свежие данные сохраняются в общем кэше; резервные таблицы перепроверяются чаще основного источника.</p>
     </section>`).join('')}`;
   el.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => openTeam({ id: Number(btn.dataset.openTeam), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '' })));
 }
@@ -6904,6 +6906,33 @@ function kickoffHandoffHtml(handoff = {}, match = {}) {
   </section>`;
 }
 
+function dataProvenanceHtml(provenance = {}) {
+  const features = provenance?.features || {};
+  const labels = {
+    injuries:'Травмы и дисквалификации',
+    predictions:'Прогноз источника',
+    odds:'Коэффициенты',
+    h2h:'Очные встречи',
+    lineups:'Стартовые составы',
+  };
+  const stateLabels = {
+    available:'получено', empty_response:'пустой подтверждённый ответ', skipped:'пропущено политикой',
+    rate_limited:'лимит источника', plan_limited:'ограничено тарифом', timeout:'тайм-аут',
+    network_error:'ошибка сети', provider_error:'ошибка источника', error:'недоступно', unknown:'неизвестно',
+  };
+  const rows = Object.entries(labels).filter(([key]) => features[key]).map(([key,label]) => {
+    const meta = features[key] || {};
+    const provider = meta.provider === 'api-football' ? 'API-Football' : String(meta.provider || '—');
+    const age = Number.isFinite(Number(meta.ageSeconds)) ? ` · возраст ${Math.max(0,Math.round(Number(meta.ageSeconds)))} сек.` : '';
+    return `<div class="provenance-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(provider)}</strong><small>${escapeHtml(stateLabels[meta.state] || meta.state || '—')}${escapeHtml(age)}</small></div>`;
+  });
+  if (!rows.length) return '';
+  return `<section class="panel data-provenance-panel">
+    <div class="prematch-section-head"><div><h2>🛰️ Паспорт данных</h2><p>Откуда пришли ключевые входы и насколько они свежие</p></div></div>
+    <div class="provenance-grid">${rows.join('')}</div>
+  </section>`;
+}
+
 function renderAnalysis(d) {
   if (!d) return;
   const previousFixture = Number(state.currentAnalysis?.match?.fixtureId || 0);
@@ -7152,6 +7181,7 @@ function renderAnalysis(d) {
         <p class="context-answer">${escapeHtml(news.answer || 'Источник свежего веб-контекста не подключён или сводка не найдена.')}</p>
         ${news.results?.length ? `<div class="news-links">${news.results.slice(0, 5).map(r => `<a href="${safeUrl(r.url)}" target="_blank" rel="noopener">↗ ${escapeHtml(r.title || 'Источник')}</a>`).join('')}</div>` : ''}
       </section>
+      ${dataProvenanceHtml(d.dataProvenance || {})}
       <section class="panel data-transparency-panel">
         <h2>🔎 Прозрачность данных</h2>
         <div class="transparency-grid">

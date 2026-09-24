@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.103.0 RC127
+# QA Release Checklist — v6.104.0 RC128
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.103.0`.
-- Worker и client: `6.103.0-rc127`.
-- Release candidate: `RC127`.
+- `package.json` и `package-lock.json`: `6.104.0`.
+- Worker и client: `6.104.0-rc128`.
+- Release candidate: `RC128`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -33,6 +33,18 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC128 — Multi-Provider Data Service & Provenance
+
+- API-Football остаётся primary provider; резервный источник не заменяет рабочий primary без причины.
+- Турнирные таблицы используют единый provider chain и нормализованный внутренний формат.
+- OpenLigaDB разрешён только для явно поддерживаемых соревнований; provider IDs не выдаются за API-Football team IDs.
+- football-data.org не вызывается без `FOOTBALL_DATA_TOKEN`; токен остаётся только в Worker secrets.
+- OpenLigaDB и football-data.org проходят через distributed minute guard `claim_provider_request`.
+- Fallback-таблица сохраняется на 30 минут, primary-таблица — на 6 часов; stale cache остаётся последним безопасным слоем.
+- Mini App показывает provider attribution и data provenance; неизвестность источника не преобразуется в нулевые аналитические сигналы.
+- RC128 не требует DDL: schema fingerprint остаётся `c2c22ec25aacfcf1b9938b0850cebf49`.
+- Regression: `test/data-service-rc128.test.js`.
 
 ## RC127 — Production Hardening
 

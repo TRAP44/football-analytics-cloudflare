@@ -2870,3 +2870,14 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 .provider-coverage-row.degraded>span{color:#f59e0b}.provider-coverage-row.available>span{color:#22c55e}
 .provider-coverage-card>p{margin:10px 0 0;font-size:11px;line-height:1.45;opacity:.72}
 @media(max-width:560px){.provider-coverage-grid{grid-template-columns:1fr}}
+
+
+/* RC128 — multi-provider data provenance */
+.standing-team-readonly{display:flex;align-items:center;gap:8px;min-height:34px;color:var(--text)}
+.data-provenance-panel{overflow:hidden}
+.provenance-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}
+.provenance-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 10px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:10px 11px;background:rgba(148,163,184,.035)}
+.provenance-row>span{min-width:0;color:var(--hint);font-size:12px}
+.provenance-row>strong{font-size:12px;text-align:right}
+.provenance-row>small{grid-column:1/-1;color:var(--hint);font-size:11px}
+@media (max-width:640px){.provenance-grid{grid-template-columns:1fr}}
