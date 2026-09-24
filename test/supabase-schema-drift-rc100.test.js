@@ -28,7 +28,7 @@ test('RC100 drift summary fails closed when a required slice is missing', () => 
 
 test('RC100 blocks Release Readiness on Supabase schema drift', () => {
   assert.match(worker, /releaseCheck\('supabase_schema_drift'/);
-  assert.match(worker, /Schema drift: отсутствуют или несовместимы/);
+  assert.match(worker, /Schema drift подтверждён после/);
   assert.match(worker, /releaseCheck\('supabase_schema_drift_selftest'/);
 });
 
