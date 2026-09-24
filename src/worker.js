@@ -1188,7 +1188,8 @@ function productionSafetySnapshot() {
       joins:Number(memory.telemetry?.analysisLockJoins || 0),
       joinHits:Number(memory.telemetry?.analysisLockJoinHits || 0),
       timeouts:Number(memory.telemetry?.analysisLockTimeouts || 0),
-      failOpen:Number(memory.telemetry?.analysisLockFailOpen || 0),
+      failOpen:0,
+      failClosed:Number(memory.telemetry?.analysisLockFailClosed || 0),
       policy:distributedAnalysisLockPolicy(),
     },
     burstGuard: {
@@ -2426,17 +2427,28 @@ async function reserveAnalysisQuota(userId, cfg) {
 }
 
 async function refundAnalysisQuota(userId, reservation, cfg) {
-  if (!reservation?.reserved) return;
-  if (hasSupabase(cfg)) {
-    await supaRpc(cfg, 'refund_analysis_quota', {
-      p_telegram_id: Number(userId),
-      p_usage_date: reservation.date || todayUtc(),
+  if (!reservation?.reserved) return false;
+  try {
+    if (hasSupabase(cfg)) {
+      const result=await supaRpc(cfg, 'refund_analysis_quota', {
+        p_telegram_id: Number(userId),
+        p_usage_date: reservation.date || todayUtc(),
+      });
+      if (result?.refunded !== true) throw new Error('Quota refund RPC did not confirm refund.');
+    } else {
+      const key=`${userId}:${reservation.date || todayUtc()}`;
+      memory.usage.set(key, Math.max(0, Number(memory.usage.get(key) || 0) - 1));
+    }
+    bumpTelemetry('quotaRefunds');
+    return true;
+  } catch (error) {
+    bumpTelemetry('quotaRefundFailures');
+    await recordOpsEvent(cfg,{
+      severity:'warning',source:'quota',eventType:'quota_refund',code:'QUOTA_REFUND_FAILED',
+      message:error?.message || error,endpoint:'/api/analyze',meta:{usageDate:reservation.date || todayUtc()},
     }).catch(()=>null);
-  } else {
-    const key=`${userId}:${reservation.date || todayUtc()}`;
-    memory.usage.set(key, Math.max(0, Number(memory.usage.get(key) || 0) - 1));
+    return false;
   }
-  bumpTelemetry('quotaRefunds');
 }
 
 async function getQuota(userId, cfg) {
@@ -2485,11 +2497,11 @@ async function parseInvoicePayload(payload, botToken) {
 
 async function telegramApi(method, cfg, body = {}) {
   if (!cfg.botToken) throw new Error('TELEGRAM_BOT_TOKEN не настроен.');
-  const r = await fetch(`https://api.telegram.org/bot${cfg.botToken}/${method}`, {
+  const r = await fetchWithTimeout(`https://api.telegram.org/bot${cfg.botToken}/${method}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body || {}),
-  });
+  }, 10_000, `Telegram ${method}`);
   const data = await r.json().catch(() => ({}));
   if (!r.ok || !data?.ok) throw new Error(data?.description || `Telegram ${method}: HTTP ${r.status}`);
   return data.result;
@@ -7951,7 +7963,7 @@ async function claimDistributedAnalysisLock(fixtureId,cfg) {
     bumpTelemetry('analysisLockJoins');
     return {claimed:false,key,claimId:'',shared:true,degraded:false};
   } catch (error) {
-    bumpTelemetry('analysisLockFailOpen');
+    bumpTelemetry('analysisLockFailClosed');
     void recordOpsEvent(cfg,{
       severity:'error',
       source:'analysis_lock',
@@ -15861,7 +15873,7 @@ function dedupeFootballNews(rows = [], limit = 6) {
 async function tavilyNewsSearch(query, cfg, { days = 3, maxResults = 7 } = {}) {
   if (!cfg.tavilyKey) return { results:[], available:false, reason:'tavily_missing' };
   try {
-    const r=await fetch('https://api.tavily.com/search',{
+    const r=await fetchWithTimeout('https://api.tavily.com/search',{
       method:'POST',
       headers:{Authorization:`Bearer ${cfg.tavilyKey}`,'Content-Type':'application/json'},
       body:JSON.stringify({
@@ -15872,7 +15884,7 @@ async function tavilyNewsSearch(query, cfg, { days = 3, maxResults = 7 } = {}) {
         days:Math.max(1,Math.min(14,Number(days || 3))),
         include_answer:false,
       }),
-    });
+    },9000,'Tavily news');
     if (!r.ok) return {results:[],available:false,reason:`http_${r.status}`};
     const body=await r.json();
     return {results:dedupeFootballNews(body.results || [],maxResults),available:true,reason:''};
@@ -16019,7 +16031,7 @@ async function tavilySearch(query, cfg) {
         max_results: 5,
         include_answer: true,
       }),
-    });
+    },9000,'Tavily search');
     if (!r.ok) return { answer: '', results: [] };
     const body = await r.json();
     return {
