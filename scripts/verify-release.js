@@ -10,6 +10,7 @@ const styles = fs.readFileSync('public/styles.css', 'utf8');
 const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml', 'utf8');
 const rollbackWorkflow = fs.readFileSync('.github/workflows/rollback-production.yml', 'utf8');
 const rollbackSmoke = fs.readFileSync('scripts/rollback-smoke.js', 'utf8');
+const rollbackTargetVerifier = fs.readFileSync('scripts/verify-rollback-target.js', 'utf8');
 const postDeploySmoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
 const readme = fs.readFileSync('README_CLOUDFLARE_RU.md', 'utf8');
@@ -62,6 +63,9 @@ if (!fs.existsSync('src/access-control.js')) failures.push('Missing access-contr
 if (!fs.existsSync('scripts/post-deploy-smoke.js')) failures.push('Missing post-deploy smoke test');
 if (!fs.existsSync('.github/workflows/deploy-production.yml')) failures.push('Missing production deploy workflow');
 if (!fs.existsSync('.github/workflows/rollback-production.yml')) failures.push('Missing production rollback workflow');
+if (!rollbackWorkflow.includes('allow_legacy_unverified:')) failures.push('Rollback workflow must keep the legacy target override explicit and default-off');
+if (!rollbackWorkflow.includes('scripts/verify-rollback-target.js')) failures.push('Rollback workflow must verify release identity before rollback');
+if (!rollbackTargetVerifier.includes("annotations?.['workers/message']")) failures.push('Rollback target verifier must read Cloudflare version release metadata');
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
