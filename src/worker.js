@@ -14680,7 +14680,7 @@ async function apiReleaseReadiness(request, cfg) {
     releaseCheck('supabase_schema_drift', 'Контракт актуальной схемы Supabase', schemaDrift.ok ? 'pass' : 'fail',
       schemaDrift.ok
         ? `Проверено ${schemaDrift.checked} обязательных участков схемы v6.17; drift не обнаружен · attempts=${Number(schemaDrift.attempts || 1)}${schemaDrift.recovered ? ' · transient recovered' : ''}.`
-        : `Schema drift подтверждён после ${Number(schemaDrift.attempts || 1)} probe: отсутствуют или несовместимы ${schemaDrift.missing.join(', ') || 'обязательные объекты'}.`, true),
+        : `Schema drift: отсутствуют или несовместимы ${schemaDrift.missing.join(', ') || 'обязательные объекты'}; подтверждено после ${Number(schemaDrift.attempts || 1)} probe.`, true),
     releaseCheck('supabase_schema_drift_selftest', 'Самопроверка Schema Drift Guard', schemaDriftSelfTest.pass ? 'pass' : 'fail',
       schemaDriftSelfTest.pass ? 'Drift корректно переводит release gate в блокирующее состояние.' : 'Самопроверка Schema Drift Guard не прошла.', true),
     releaseCheck('provider_data_reliability_selftest', 'Самопроверка надёжности API-Football', providerReliabilitySelfTest.pass ? 'pass' : 'fail',
