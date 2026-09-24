@@ -13918,9 +13918,25 @@ function distributedProviderMinuteLimit() {
   return Math.max(1, Math.floor(Number(expected) - Number(floors.minuteReserve || 1)));
 }
 
+function claimLocalProviderFallbackBudget(limit = 2, windowMs = 60_000) {
+  const now=Date.now();
+  const safeLimit=Math.max(1,Math.min(4,Number(limit || 2)));
+  let bucket=memory.providerFallbackWindow || {startedAt:0,count:0};
+  if (!bucket.startedAt || now-bucket.startedAt>=windowMs) bucket={startedAt:now,count:0};
+  if (bucket.count>=safeLimit) {
+    memory.providerFallbackWindow=bucket;
+    const retryAfter=Math.max(1,Math.ceil((windowMs-(now-bucket.startedAt))/1000));
+    bumpTelemetry('providerDistributedLocalBlocks');
+    return {allowed:false,count:bucket.count,limit:safeLimit,retryAfter,degraded:true,reason:'local_fallback_limit'};
+  }
+  bucket.count+=1;
+  memory.providerFallbackWindow=bucket;
+  return {allowed:true,count:bucket.count,limit:safeLimit,retryAfter:0,degraded:true,reason:'local_fallback'};
+}
+
 async function claimDistributedProviderBudget(cfg) {
-  if (!hasSupabase(cfg)) return {allowed:true,degraded:true,reason:'supabase_not_configured'};
   const limit=distributedProviderMinuteLimit();
+  if (!hasSupabase(cfg)) return claimLocalProviderFallbackBudget(Math.min(2,limit));
   try {
     const result=await supaRpc(cfg,'claim_provider_request',{
       p_bucket_key:'api-football:minute',
@@ -13931,11 +13947,14 @@ async function claimDistributedProviderBudget(cfg) {
     return {allowed:Boolean(result?.allowed),limit,retryAfter:Number(result?.retryAfter || 0),count:Number(result?.count || 0),degraded:false};
   } catch (error) {
     bumpTelemetry('providerDistributedFallbacks');
+    const fallback=claimLocalProviderFallbackBudget(Math.min(2,limit));
     await recordOpsEvent(cfg,{
-      severity:'warning',source:'provider',eventType:'distributed_rate_guard',code:'PROVIDER_RATE_GUARD_DEGRADED',
+      severity:fallback.allowed?'warning':'error',source:'provider',eventType:'distributed_rate_guard',
+      code:fallback.allowed?'PROVIDER_RATE_GUARD_DEGRADED':'PROVIDER_RATE_GUARD_LOCAL_BLOCK',
       message:error?.message || error,endpoint:'api-football',
+      meta:{localFallback:true,allowed:fallback.allowed,retryAfter:fallback.retryAfter || 0},
     }).catch(()=>null);
-    return {allowed:true,limit,degraded:true,reason:'guard_unavailable'};
+    return fallback;
   }
 }
 
@@ -20032,14 +20051,17 @@ async function apiAnalyze(request, cfg, user) {
 }
 
 async function publicServiceStatus(cfg) {
-  const runtimeState=await loadRuntimeControls(cfg);
+  const [runtimeState,readiness]=await Promise.all([
+    loadRuntimeControls(cfg),
+    readinessSnapshot(cfg),
+  ]);
   const runtime=publicRuntimeControls(runtimeState.value);
-  const providerCooldown=Number(memory.provider?.cooldownUntil || 0)>Date.now();
+  const providerCooldown=footballCooldownRemaining()>0;
   const maintenance=Boolean(runtime.maintenanceMode);
-  const coreLimited=maintenance || !runtime.analysisEnabled || !runtime.searchEnabled;
+  const coreLimited=maintenance || !runtime.analysisEnabled || !runtime.searchEnabled || !readiness.ok;
   const status=maintenance ? 'maintenance' : providerCooldown || coreLimited ? 'degraded' : 'operational';
   return {
-    ok:status!=='maintenance',
+    ok:status!=='maintenance' && readiness.ok,
     status,
     label:status==='operational'?'Все основные системы работают':status==='maintenance'?'Техническое обслуживание':'Часть функций работает с ограничениями',
     version:APP_VERSION,
@@ -20048,9 +20070,10 @@ async function publicServiceStatus(cfg) {
     services:{
       telegram:cfg.botToken && cfg.webhookSecret ? 'operational' : 'configuration_required',
       miniApp:'operational',
-      aiAnalysis:runtime.analysisEnabled ? (cfg.apiFootballKey ? 'operational' : 'configuration_required') : 'paused',
-      search:runtime.searchEnabled ? (cfg.apiFootballKey ? 'operational' : 'configuration_required') : 'paused',
-      live:runtime.liveEnabled ? (cfg.apiFootballKey ? 'operational' : 'configuration_required') : 'paused',
+      dataStore:readiness.checks?.supabase?.ok && readiness.checks?.schema?.ok ? 'operational' : 'degraded',
+      aiAnalysis:runtime.analysisEnabled ? (cfg.apiFootballKey ? (providerCooldown?'limited':'operational') : 'configuration_required') : 'paused',
+      search:runtime.searchEnabled ? (cfg.apiFootballKey ? (providerCooldown?'limited':'operational') : 'configuration_required') : 'paused',
+      live:runtime.liveEnabled ? (cfg.apiFootballKey ? (providerCooldown?'limited':'operational') : 'configuration_required') : 'paused',
       news:cfg.tavilyKey ? 'operational' : 'limited',
     },
     notice:runtime.message || '',
@@ -20062,36 +20085,52 @@ async function readRecentSupabaseAuthFailures(cfg, minutes = 5) {
   if (!hasSupabase(cfg)) return { available:false, count:0, items:[] };
   const since=new Date(Date.now()-Math.max(1,Number(minutes || 5))*60_000).toISOString();
   try {
-    const rows=await supaSelectMany(cfg,'ops_events',{created_at:`gte.${since}`},{limit:100,order:'created_at.desc'});
-    const items=(rows || []).filter(row => /HTTP 401|PGRST303|invalid.*jwt|invalid.*api.?key/i.test(String(row?.message || '')));
-    return {available:true,count:items.length,items:items.slice(0,10)};
+    const rows=await supaSelectMany(cfg,'ops_events',{
+      created_at:`gte.${since}`,
+      or:'(message.ilike.*HTTP 401*,message.ilike.*PGRST303*,message.ilike.*invalid*jwt*,message.ilike.*invalid*api*key*)',
+    },{limit:50,order:'created_at.desc'});
+    return {available:true,count:(rows || []).length,items:(rows || []).slice(0,10)};
   } catch {
     return {available:false,count:0,items:[]};
   }
 }
 
-async function readinessSnapshot(cfg) {
-  const [supabase,schema,security,authFailures]=await Promise.all([
-    probeSupabaseConfirmed(cfg),
-    probeSupabaseSchemaDriftConfirmed(cfg),
-    readBackendSecurityContract(cfg),
-    readRecentSupabaseAuthFailures(cfg,5),
-  ]);
-  const telegramConfigured=Boolean(cfg.botToken && cfg.webhookSecret);
-  const ok=Boolean(supabase.ok && schema.ok && security.ok && telegramConfigured && (!authFailures.available || authFailures.count===0));
-  return {
-    ok,
-    status:ok?'ready':'not_ready',
-    version:APP_VERSION,
-    releaseCandidate:RC_NAME,
-    checks:{
-      supabase:{ok:Boolean(supabase.ok),status:supabase.status || 'unknown',attempts:Number(supabase.attempts || 1)},
-      schema:{ok:Boolean(schema.ok),status:schema.status || 'unknown',fingerprint:schema?.fingerprint?.fingerprint || '',expectedFingerprint:EXPECTED_SCHEMA_FINGERPRINT},
-      backendSecurity:{ok:Boolean(security.ok),status:security.status || 'unknown'},
-      telegramConfigured,
-      recentSupabaseAuthFailures:authFailures.available ? Number(authFailures.count || 0) : null,
-    },
-  };
+async function readinessSnapshot(cfg, options = {}) {
+  const force=Boolean(options.force);
+  const cached=memory.readiness || {value:null,loadedAt:0};
+  if (!force && cached.value && Date.now()-Number(cached.loadedAt || 0)<READINESS_CACHE_MS) {
+    return {...cached.value,cached:true};
+  }
+  return await withSingleFlight('system:readiness',async()=>{
+    const current=memory.readiness || {value:null,loadedAt:0};
+    if (!force && current.value && Date.now()-Number(current.loadedAt || 0)<READINESS_CACHE_MS) {
+      return {...current.value,cached:true};
+    }
+    const [supabase,schema,security,authFailures]=await Promise.all([
+      probeSupabaseConfirmed(cfg),
+      probeSupabaseSchemaDriftConfirmed(cfg),
+      readBackendSecurityContract(cfg),
+      readRecentSupabaseAuthFailures(cfg,5),
+    ]);
+    const telegramConfigured=Boolean(cfg.botToken && cfg.webhookSecret);
+    const ok=Boolean(supabase.ok && schema.ok && security.ok && telegramConfigured && (!authFailures.available || authFailures.count===0));
+    const value={
+      ok,
+      status:ok?'ready':'not_ready',
+      version:APP_VERSION,
+      releaseCandidate:RC_NAME,
+      cached:false,
+      checks:{
+        supabase:{ok:Boolean(supabase.ok),status:supabase.status || 'unknown',attempts:Number(supabase.attempts || 1)},
+        schema:{ok:Boolean(schema.ok),status:schema.status || 'unknown',fingerprint:schema?.fingerprint?.fingerprint || '',expectedFingerprint:EXPECTED_SCHEMA_FINGERPRINT},
+        backendSecurity:{ok:Boolean(security.ok),status:security.status || 'unknown'},
+        telegramConfigured,
+        recentSupabaseAuthFailures:authFailures.available ? Number(authFailures.count || 0) : null,
+      },
+    };
+    memory.readiness={value,loadedAt:Date.now()};
+    return value;
+  });
 }
 
 export default {
