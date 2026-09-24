@@ -13,7 +13,7 @@ import {
 import { apiSecurityHeaders } from './security-headers.js';
 import { createSupabaseClient } from './supabase-client.js';
 import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
-import { normalizeOpenLigaStandings, openLigaCompetition, openLigaTableUrls } from './providers/openligadb.js';
+import { normalizeOpenLigaMatchEvents, normalizeOpenLigaStandings, openLigaCompetition, openLigaMatchDataUrls, openLigaTableUrls } from './providers/openligadb.js';
 import { footballDataStandingsUrl, normalizeFootballDataStandings } from './providers/football-data.js';
 import { normalizeTheOddsApiMarket, theOddsApiUrl } from './providers/the-odds-api.js';
 import {
@@ -18485,6 +18485,92 @@ async function openLigaStandingsProvider(leagueId, season, cfg) {
   return { available:false, reason:'openligadb_empty' };
 }
 
+function openLigaEventFeatureMeta(events, sourceMeta = {}, { source = 'network', fetchedAt = null, expiresAt = null, context = {} } = {}) {
+  return {
+    feature:'events',
+    provider:'openligadb',
+    source,
+    fetchedAt,
+    ageSeconds:fetchedAt && Number.isFinite(Date.parse(String(fetchedAt)))
+      ? Math.max(0, Math.floor((Date.now() - Date.parse(String(fetchedAt))) / 1000))
+      : null,
+    expiresAt,
+    policy:providerFeaturePolicy('events', context),
+    fallback:true,
+    attribution:String(sourceMeta?.attribution || 'OpenLigaDB · ODbL'),
+    ...providerDataState(events, { attempted:true }),
+  };
+}
+
+async function secondaryOpenLigaEvents(fixture, cfg, context = {}) {
+  const fixtureId=Number(fixture?.fixture?.id || 0);
+  const leagueId=Number(fixture?.league?.id || 0);
+  const season=Number(fixture?.league?.season || 0);
+  const homeName=String(fixture?.teams?.home?.name || '');
+  const awayName=String(fixture?.teams?.away?.name || '');
+  const urls=openLigaMatchDataUrls(leagueId, season, homeName);
+  if (!fixtureId || !urls.length) return { available:false, reason:'competition_not_supported', events:[], meta:null };
+
+  const cacheKey=`secondary-events:${fixtureId}:openligadb:v1`;
+  const fresh=await getCacheEntry(cacheKey, cfg, false).catch(() => null);
+  if (fresh?.payload?.events?.length) {
+    return {
+      available:true,
+      events:fresh.payload.events,
+      meta:openLigaEventFeatureMeta(fresh.payload.events, fresh.payload.sourceMeta || {}, {
+        source:'cache',
+        fetchedAt:fresh.payload.fetchedAt || null,
+        expiresAt:fresh.expiresAt || null,
+        context,
+      }),
+    };
+  }
+
+  const budget=await claimSecondaryProviderBudget(cfg, 'openligadb', 50);
+  if (!budget.allowed) return { available:false, reason:budget.reason || 'secondary_rate_limit', events:[], meta:null };
+
+  for (const candidate of urls) {
+    try {
+      const rows=await secondaryProviderJson(candidate.url, cfg, { provider:'OpenLigaDB', timeoutMs:6500 });
+      const normalized=normalizeOpenLigaMatchEvents(rows, {
+        homeId:Number(fixture?.teams?.home?.id || 0),
+        awayId:Number(fixture?.teams?.away?.id || 0),
+        homeName,
+        awayName,
+        kickoffAt:fixture?.fixture?.date || '',
+      });
+      if (!normalized.available) continue;
+      const fetchedAt=normalized.updatedAt && Number.isFinite(Date.parse(String(normalized.updatedAt)))
+        ? String(normalized.updatedAt)
+        : new Date().toISOString();
+      const policy=providerFeaturePolicy('events', context);
+      const ttlSeconds=Math.max(45, Number(policy.ttlSeconds || 60));
+      await setCache(cacheKey, fixtureId, {
+        events:normalized.events,
+        sourceMeta:normalized.sourceMeta,
+        fetchedAt,
+      }, cfg, ttlSeconds / 60).catch(() => null);
+      return {
+        available:true,
+        events:normalized.events,
+        meta:openLigaEventFeatureMeta(normalized.events, normalized.sourceMeta, {
+          source:'network',
+          fetchedAt,
+          expiresAt:new Date(Date.now() + ttlSeconds * 1000).toISOString(),
+          context,
+        }),
+      };
+    } catch (error) {
+      await recordOpsEvent(cfg, {
+        severity:'info', source:'provider', eventType:'fallback_provider_failure',
+        code:'OPENLIGADB_EVENTS', message:error?.message || error,
+        meta:{ fixtureId, leagueId, season, shortcut:candidate.shortcut },
+      }).catch(() => null);
+    }
+  }
+  return { available:false, reason:'openligadb_events_unavailable', events:[], meta:null };
+}
+
 async function footballDataStandingsProvider(leagueId, season, cfg) {
   const url = footballDataStandingsUrl(leagueId, season);
   if (!cfg.footballDataToken) return { available:false, reason:'token_not_configured' };
@@ -19036,14 +19122,24 @@ async function apiMatchCenter(request, cfg) {
   let injuryRows = [];
 
   if (events.length) {
-    featureMeta.events = { feature: 'events', source: 'embedded', ageSeconds: 0, policy: providerFeaturePolicy('events', { mode: centerMode, limitedCoverage }) };
+    featureMeta.events = { feature: 'events', provider:'api-football', source: 'embedded', ageSeconds: 0, fallback:false, policy: providerFeaturePolicy('events', { mode: centerMode, limitedCoverage }), ...providerDataState(events, { attempted:true }) };
   } else if (live || finished) {
+    const eventContext={ mode:centerMode, limitedCoverage };
     const result = await providerFeatureFetch({
       feature: 'events', path: '/fixtures/events', params: { fixture: fixtureId },
-      fixtureId, cfg, context: { mode: centerMode, limitedCoverage },
+      fixtureId, cfg, context: eventContext,
     });
     events = result.data;
     featureMeta.events = result.meta;
+    if (!events.length && result.meta?.policy?.allowed !== false) {
+      const secondaryEvents=await secondaryOpenLigaEvents(fixture, cfg, eventContext);
+      if (secondaryEvents.available) {
+        events=secondaryEvents.events;
+        featureMeta.events=secondaryEvents.meta;
+      } else {
+        featureMeta.events={ ...result.meta, fallbackProvider:'openligadb', fallbackReason:String(secondaryEvents.reason || '') };
+      }
+    }
   }
 
   if (statistics.length) {
