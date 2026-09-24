@@ -65,6 +65,8 @@ const memory = {
     supabaseErrors: 0,
     supabaseProbeRecoveries: 0,
     supabaseProbeConfirmedFailures: 0,
+    supabaseSchemaProbeRecoveries: 0,
+    supabaseSchemaProbeConfirmedFailures: 0,
     routeErrors: 0,
     integrityRuns: 0,
     integrityWarnings: 0,
@@ -85,11 +87,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.101.0-rc109';
+const APP_VERSION = '6.102.0-rc126';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc109';
-const RC_NAME = 'RC109';
+const RELEASE_CHANNEL = 'rc126';
+const RC_NAME = 'RC126';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -696,6 +698,7 @@ function appManifest(cfg) {
       telegramWebhookPersistentDedupe: true,
       telegramWebhookDedupeObservability: true,
       supabaseProbeConfirmation: true,
+      supabaseSchemaProbeConfirmation: true,
       cachedFullAnalysisHandoff: true,
       aiFreshnessGuard: true,
       preKickoffRecheck: true,
@@ -14231,7 +14234,7 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
 
   const [supabase, schemaDrift, source, telegramWebhook] = await Promise.all([
     probeSupabaseConfirmed(cfg),
-    probeSupabaseSchemaDrift(cfg),
+    probeSupabaseSchemaDriftConfirmed(cfg),
     readOpsEventsRange(cfg, historyStart.toISOString(), now.toISOString(), 1000),
     readTelegramDedupeHealth(cfg,60),
   ]);
@@ -14282,6 +14285,10 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
       ok: Boolean(schemaDrift.ok),
       checked: Number(schemaDrift.checked || 0),
       missing: Array.isArray(schemaDrift.missing) ? schemaDrift.missing : [],
+      attempts: Number(schemaDrift.attempts || 1),
+      recovered: Boolean(schemaDrift.recovered),
+      confirmedFailure: Boolean(schemaDrift.confirmedFailure),
+      initialMissing: Array.isArray(schemaDrift.initialMissing) ? schemaDrift.initialMissing : [],
     },
     release: {
       state: releaseHealth.state,
@@ -14308,6 +14315,22 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     },
   };
   memory.productionMonitor = { at: Date.now(), value };
+
+  if (options.record !== false && schemaDrift.recovered) {
+    await recordOpsEvent(cfg, {
+      severity:'warning',
+      source:'monitor',
+      eventType:'schema_probe',
+      code:'SCHEMA_PROBE_RECOVERED',
+      message:'Initial Supabase schema probe failed but the confirmation probe succeeded.',
+      endpoint:'cron:production-monitor',
+      meta:{
+        attempts:Number(schemaDrift.attempts || 2),
+        initialMissing:Array.isArray(schemaDrift.initialMissing) ? schemaDrift.initialMissing : [],
+        finalMissing:Array.isArray(schemaDrift.missing) ? schemaDrift.missing : [],
+      },
+    }).catch(()=>{});
+  }
 
   if (options.record !== false && supabase.recovered) {
     await recordOpsEvent(cfg, {
@@ -14350,6 +14373,10 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
         supabaseProbeRecovered: Boolean(supabase.recovered),
         supabaseProbeConfirmedFailure: Boolean(supabase.confirmedFailure),
         schemaOk: Boolean(schemaDrift.ok),
+        schemaProbeAttempts: Number(schemaDrift.attempts || 1),
+        schemaProbeRecovered: Boolean(schemaDrift.recovered),
+        schemaProbeConfirmedFailure: Boolean(schemaDrift.confirmedFailure),
+        schemaInitialMissing: Array.isArray(schemaDrift.initialMissing) ? schemaDrift.initialMissing : [],
         releaseState: releaseHealth.state,
         releaseScore: Number(releaseHealth.score || 0),
         providerHealth: provider.health || 'waiting',
@@ -14503,6 +14530,76 @@ async function probeSupabaseSchemaDrift(cfg) {
   return summarizeSupabaseSchemaChecks(checks);
 }
 
+
+function combineSupabaseSchemaProbeAttempts(first = {}, second = null) {
+  const firstOk = Boolean(first?.ok);
+  const initialMissing = Array.isArray(first?.missing) ? first.missing.map(String) : [];
+  if (firstOk) {
+    return {
+      ...first,
+      attempts: 1,
+      recovered: false,
+      confirmedFailure: false,
+      initialMissing,
+    };
+  }
+
+  if (second && second.ok) {
+    return {
+      ...second,
+      attempts: 2,
+      recovered: true,
+      confirmedFailure: false,
+      initialMissing,
+    };
+  }
+
+  const final = second || first;
+  return {
+    ...final,
+    attempts: second ? 2 : 1,
+    recovered: false,
+    confirmedFailure: true,
+    initialMissing,
+  };
+}
+
+async function probeSupabaseSchemaDriftConfirmed(cfg, options = {}) {
+  const first = await probeSupabaseSchemaDrift(cfg);
+  if (first.ok || !hasSupabase(cfg)) return combineSupabaseSchemaProbeAttempts(first);
+
+  const retryDelayMs = Math.max(0, Math.min(1500, Number(options.retryDelayMs ?? 250)));
+  if (retryDelayMs) await sleepMs(retryDelayMs);
+
+  const second = await probeSupabaseSchemaDrift(cfg);
+  const combined = combineSupabaseSchemaProbeAttempts(first, second);
+  if (combined.recovered) bumpTelemetry('supabaseSchemaProbeRecoveries');
+  if (combined.confirmedFailure) bumpTelemetry('supabaseSchemaProbeConfirmedFailures');
+  return combined;
+}
+
+function supabaseSchemaProbeConfirmationSelfTest() {
+  const direct = combineSupabaseSchemaProbeAttempts({
+    ok: true, status: 'ok', checked: 7, missing: [],
+  });
+  const recovered = combineSupabaseSchemaProbeAttempts(
+    { ok: false, status: 'drift', checked: 7, missing: ['growth_events'] },
+    { ok: true, status: 'ok', checked: 7, missing: [] }
+  );
+  const confirmed = combineSupabaseSchemaProbeAttempts(
+    { ok: false, status: 'drift', checked: 7, missing: ['growth_events'] },
+    { ok: false, status: 'drift', checked: 7, missing: ['growth_events'] }
+  );
+  return {
+    pass: direct.ok && direct.attempts === 1
+      && recovered.ok && recovered.attempts === 2 && recovered.recovered && !recovered.confirmedFailure
+      && !confirmed.ok && confirmed.attempts === 2 && confirmed.confirmedFailure,
+    direct: direct.ok,
+    recovered: recovered.recovered,
+    confirmedFailure: confirmed.confirmedFailure,
+  };
+}
+
 function supabaseSchemaDriftSelfTest() {
   const healthy = summarizeSupabaseSchemaChecks([
     { id: 'users_acquisition', table: 'users', columns: ['acquisition_source'], ok: true, status: 'ok' },
@@ -14549,7 +14646,7 @@ async function apiReleaseReadiness(request, cfg) {
     probeCalibrationPromotionSchema(cfg),
     probeCalibrationLifecycleSchema(cfg),
     readBackendSecurityContract(cfg),
-    probeSupabaseSchemaDrift(cfg),
+    probeSupabaseSchemaDriftConfirmed(cfg),
   ]);
   const productionMonitor = await runProductionMonitor(cfg, new Date(), { record: false });
   const runtime = runtimeState.value;
@@ -14562,6 +14659,7 @@ async function apiReleaseReadiness(request, cfg) {
   const telegramPersistentDedupeCheck = telegramPersistentDedupeSelfTest();
   const telegramDedupeObservabilityCheck = telegramDedupeObservabilitySelfTest();
   const supabaseProbeConfirmationCheck = supabaseProbeConfirmationSelfTest();
+  const supabaseSchemaProbeConfirmationCheck = supabaseSchemaProbeConfirmationSelfTest();
   const checks = [
     releaseCheck('football_api', 'Ключ API-Football', cfg.apiFootballKey ? 'pass' : 'fail', cfg.apiFootballKey ? 'Ключ доступен серверному обработчику.' : 'Ключ API-Football отсутствует.', true),
     releaseCheck('supabase_config', 'Настройка Supabase', hasSupabase(cfg) ? 'pass' : 'fail', hasSupabase(cfg) ? 'Адрес и сервисный ключ доступны серверу.' : 'Не хватает адреса Supabase или сервисного ключа.', true),
@@ -14574,10 +14672,15 @@ async function apiReleaseReadiness(request, cfg) {
       supabaseProbeConfirmationCheck.pass
         ? 'Одиночный сбой подтверждается вторым probe; восстановившийся retry не создаёт ложный incident.'
         : 'Самопроверка confirmation guard не прошла.', true),
+    releaseCheck('supabase_schema_probe_confirmation', 'Подтверждение schema drift',
+      supabaseSchemaProbeConfirmationCheck.pass ? 'pass' : 'fail',
+      supabaseSchemaProbeConfirmationCheck.pass
+        ? 'Одиночный сбой schema probe подтверждается повторной проверкой; transient recovery не блокирует релиз.'
+        : 'Самопроверка schema confirmation guard не прошла.', true),
     releaseCheck('supabase_schema_drift', 'Контракт актуальной схемы Supabase', schemaDrift.ok ? 'pass' : 'fail',
       schemaDrift.ok
-        ? `Проверено ${schemaDrift.checked} обязательных участков схемы v6.17; drift не обнаружен.`
-        : `Schema drift: отсутствуют или несовместимы ${schemaDrift.missing.join(', ') || 'обязательные объекты'}.`, true),
+        ? `Проверено ${schemaDrift.checked} обязательных участков схемы v6.17; drift не обнаружен · attempts=${Number(schemaDrift.attempts || 1)}${schemaDrift.recovered ? ' · transient recovered' : ''}.`
+        : `Schema drift подтверждён после ${Number(schemaDrift.attempts || 1)} probe: отсутствуют или несовместимы ${schemaDrift.missing.join(', ') || 'обязательные объекты'}.`, true),
     releaseCheck('supabase_schema_drift_selftest', 'Самопроверка Schema Drift Guard', schemaDriftSelfTest.pass ? 'pass' : 'fail',
       schemaDriftSelfTest.pass ? 'Drift корректно переводит release gate в блокирующее состояние.' : 'Самопроверка Schema Drift Guard не прошла.', true),
     releaseCheck('provider_data_reliability_selftest', 'Самопроверка надёжности API-Football', providerReliabilitySelfTest.pass ? 'pass' : 'fail',
@@ -20035,6 +20138,8 @@ export default {
         productionMonitorSelfTest: productionMonitorSelfTest().pass ? 'enabled' : 'failed',
         supabaseProbeConfirmation: 'enabled',
         supabaseProbeConfirmationSelfTest: supabaseProbeConfirmationSelfTest().pass ? 'enabled' : 'failed',
+        supabaseSchemaProbeConfirmation: 'enabled',
+        supabaseSchemaProbeConfirmationSelfTest: supabaseSchemaProbeConfirmationSelfTest().pass ? 'enabled' : 'failed',
         rollbackVerification: 'enabled',
         clientTelemetry: 'enabled',
         operationalBudget: 'enabled',
