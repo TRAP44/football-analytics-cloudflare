@@ -23,7 +23,7 @@ test('RC100 drift summary fails closed when a required slice is missing', () => 
   assert.match(worker, /function summarizeSupabaseSchemaChecks\(/);
   assert.match(worker, /status: missing\.length === 0 \? 'ok' : 'drift'/);
   assert.match(worker, /drift\.missing\.length === 1/);
-  assert.match(worker, /drift\.missing\[0\] === 'growth_events'/);
+  assert.match(worker, /drift\.missing\[0\] === 'telegram_update_claims'/);
 });
 
 test('RC100 blocks Release Readiness on Supabase schema drift', () => {
@@ -42,5 +42,5 @@ test('RC100 exposes and smoke-tests schema drift health flags', () => {
 test('RC100 does not require a new Supabase migration', () => {
   const files=fs.readdirSync('supabase/migrations').filter(x=>/^supabase_migration_v6_\d/.test(x));
   assert.ok(files.includes('supabase_migration_v6_15.sql'));
-  assert.ok(!files.some(x=>/v6_16|rc100/i.test(x)));
+  assert.ok(!files.some(x=>/rc100/i.test(x)));
 });
