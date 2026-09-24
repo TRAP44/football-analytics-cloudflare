@@ -19965,6 +19965,43 @@ async function publicServiceStatus(cfg) {
   };
 }
 
+
+async function readRecentSupabaseAuthFailures(cfg, minutes = 5) {
+  if (!hasSupabase(cfg)) return { available:false, count:0, items:[] };
+  const since=new Date(Date.now()-Math.max(1,Number(minutes || 5))*60_000).toISOString();
+  try {
+    const rows=await supaSelectMany(cfg,'ops_events',{created_at:`gte.${since}`},{limit:100,order:'created_at.desc'});
+    const items=(rows || []).filter(row => /HTTP 401|PGRST303|invalid.*jwt|invalid.*api.?key/i.test(String(row?.message || '')));
+    return {available:true,count:items.length,items:items.slice(0,10)};
+  } catch {
+    return {available:false,count:0,items:[]};
+  }
+}
+
+async function readinessSnapshot(cfg) {
+  const [supabase,schema,security,authFailures]=await Promise.all([
+    probeSupabaseConfirmed(cfg),
+    probeSupabaseSchemaDriftConfirmed(cfg),
+    readBackendSecurityContract(cfg),
+    readRecentSupabaseAuthFailures(cfg,5),
+  ]);
+  const telegramConfigured=Boolean(cfg.botToken && cfg.webhookSecret);
+  const ok=Boolean(supabase.ok && schema.ok && security.ok && telegramConfigured && (!authFailures.available || authFailures.count===0));
+  return {
+    ok,
+    status:ok?'ready':'not_ready',
+    version:APP_VERSION,
+    releaseCandidate:RC_NAME,
+    checks:{
+      supabase:{ok:Boolean(supabase.ok),status:supabase.status || 'unknown',attempts:Number(supabase.attempts || 1)},
+      schema:{ok:Boolean(schema.ok),status:schema.status || 'unknown',fingerprint:schema?.fingerprint?.fingerprint || '',expectedFingerprint:EXPECTED_SCHEMA_FINGERPRINT},
+      backendSecurity:{ok:Boolean(security.ok),status:security.status || 'unknown'},
+      telegramConfigured,
+      recentSupabaseAuthFailures:authFailures.available ? Number(authFailures.count || 0) : null,
+    },
+  };
+}
+
 export default {
   async fetch(request, env) {
     const cfg = config(env);
@@ -19974,9 +20011,21 @@ export default {
       return json(await publicServiceStatus(cfg),200,{'cache-control':'no-store'});
     }
 
+    if (url.pathname === '/health/live') {
+      return json({ok:true,status:'alive',version:APP_VERSION,releaseCandidate:RC_NAME},200);
+    }
+
+    if (url.pathname === '/health/ready') {
+      const readiness=await readinessSnapshot(cfg);
+      return json(readiness,readiness.ok?200:503);
+    }
+
     if (url.pathname === '/health' || url.pathname === '/api/health') {
+      const readiness=await readinessSnapshot(cfg);
       return json({
-        ok: true,
+        ok: readiness.ok,
+        readiness,
+
         version: APP_VERSION,
         database: hasSupabase(cfg) ? 'supabase' : 'memory',
         monetization: cfg.monetizationEnabled ? 'enabled' : 'paused',
@@ -20362,7 +20411,8 @@ export default {
         failClosedDeployment: 'enabled',
         runtimeControlsCacheSeconds: 30,
         devMode: cfg.devMode,
-      });
+
+      },readiness.ok?200:503);
     }
 
     if (request.method === 'GET' && url.pathname === '/api/app-manifest') {
