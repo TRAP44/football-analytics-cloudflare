@@ -60,8 +60,18 @@ test('RC117 blocks legacy targets by default and requires an explicit override',
     () => verifyRollbackTarget(legacy, '6.101.0-rc109', legacy.id, false),
     /allow_legacy_unverified=true/
   );
+  assert.throws(
+    () => verifyRollbackTarget(legacy, '6.101.0-rc109', legacy.id, true),
+    /requires exact confirmation/
+  );
   assert.deepEqual(
-    verifyRollbackTarget(legacy, '6.101.0-rc109', legacy.id, true),
+    verifyRollbackTarget(
+      legacy,
+      '6.101.0-rc109',
+      legacy.id,
+      true,
+      `LEGACY-UNVERIFIED:6.101.0-rc109:${legacy.id}`
+    ),
     { mode: 'legacy-unverified', releaseVersion: null, deploySha: null }
   );
 });
