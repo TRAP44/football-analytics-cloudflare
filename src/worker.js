@@ -692,6 +692,7 @@ function appManifest(cfg) {
       oneTapAiHandoff: true,
       telegramMiniAppE2E: true,
       telegramWebhookPersistentDedupe: true,
+      telegramWebhookDedupeObservability: true,
       cachedFullAnalysisHandoff: true,
       aiFreshnessGuard: true,
       preKickoffRecheck: true,
@@ -14461,13 +14462,14 @@ async function apiReleaseReadiness(request, cfg) {
   const aiQualityGateSelfTest = analysisQualityGateSelfTest();
   const telegramMiniAppE2ESelfTest = telegramMiniAppE2EDrill();
   const telegramPersistentDedupeCheck = telegramPersistentDedupeSelfTest();
+  const telegramDedupeObservabilityCheck = telegramDedupeObservabilitySelfTest();
   const checks = [
     releaseCheck('football_api', 'Ключ API-Football', cfg.apiFootballKey ? 'pass' : 'fail', cfg.apiFootballKey ? 'Ключ доступен серверному обработчику.' : 'Ключ API-Football отсутствует.', true),
     releaseCheck('supabase_config', 'Настройка Supabase', hasSupabase(cfg) ? 'pass' : 'fail', hasSupabase(cfg) ? 'Адрес и сервисный ключ доступны серверу.' : 'Не хватает адреса Supabase или сервисного ключа.', true),
     releaseCheck('supabase_online', 'Supabase/PostgREST', diagnostics.supabase?.ok ? 'pass' : 'fail', diagnostics.supabase?.ok ? `Ответ ${Number(diagnostics.supabase?.latencyMs || 0)} мс.` : `Статус: ${diagnostics.supabase?.status || 'offline'}.`, true),
     releaseCheck('supabase_schema_drift', 'Контракт актуальной схемы Supabase', schemaDrift.ok ? 'pass' : 'fail',
       schemaDrift.ok
-        ? `Проверено ${schemaDrift.checked} обязательных участков схемы v6.16; drift не обнаружен.`
+        ? `Проверено ${schemaDrift.checked} обязательных участков схемы v6.17; drift не обнаружен.`
         : `Schema drift: отсутствуют или несовместимы ${schemaDrift.missing.join(', ') || 'обязательные объекты'}.`, true),
     releaseCheck('supabase_schema_drift_selftest', 'Самопроверка Schema Drift Guard', schemaDriftSelfTest.pass ? 'pass' : 'fail',
       schemaDriftSelfTest.pass ? 'Drift корректно переводит release gate в блокирующее состояние.' : 'Самопроверка Schema Drift Guard не прошла.', true),
@@ -14488,6 +14490,18 @@ async function apiReleaseReadiness(request, cfg) {
       telegramPersistentDedupeCheck.pass && !schemaDrift.missing.includes('telegram_update_claims')
         ? 'Update ID защищён атомарным claim в Supabase; memory-dedupe остаётся быстрым первым слоем и fallback.'
         : 'Не готова таблица/RPC persistent dedupe Telegram webhook.', true),
+    releaseCheck('telegram_webhook_dedupe_observability', 'Наблюдаемость Telegram webhook dedupe',
+      !telegramDedupeObservabilityCheck.pass || !diagnostics.telegramWebhook?.available
+        ? 'fail'
+        : diagnostics.telegramWebhook?.state === 'incident'
+          ? 'fail'
+          : diagnostics.telegramWebhook?.state === 'watch'
+            ? 'warn'
+            : 'pass',
+      diagnostics.telegramWebhook?.available
+        ? `state=${diagnostics.telegramWebhook.state}; claims=${Number(diagnostics.telegramWebhook.claimsRecent || 0)}; duplicates=${Number(diagnostics.telegramWebhook.duplicateAttemptsRetained || 0)}; stale=${Number(diagnostics.telegramWebhook.staleProcessing || 0)}; failed=${Number(diagnostics.telegramWebhook.failedCurrent || 0)}.`
+        : 'Health RPC недоступен; примените supabase_migration_v6_17.sql.',
+      true),
     releaseCheck('backend_security_contract', 'Контракт безопасности Supabase', backendSecurity.ok ? 'pass' : 'fail',
       backendSecurity.ok
         ? 'Все публичные таблицы защищены правилами доступа; анонимный и авторизованный клиент не имеют прямых прав; серверные процедуры закрыты.'
@@ -19704,6 +19718,8 @@ export default {
         telegramMiniAppE2ESelfTest: telegramMiniAppE2EDrill().pass ? 'enabled' : 'failed',
         telegramWebhookPersistentDedupe: 'enabled',
         telegramWebhookPersistentDedupeSelfTest: telegramPersistentDedupeSelfTest().pass ? 'enabled' : 'failed',
+        telegramWebhookDedupeObservability: 'enabled',
+        telegramWebhookDedupeObservabilitySelfTest: telegramDedupeObservabilitySelfTest().pass ? 'enabled' : 'failed',
         aiFreshnessGuard: 'enabled',
         preKickoffRecheck: 'enabled',
         userScopedFreeRecheck: 'enabled',
