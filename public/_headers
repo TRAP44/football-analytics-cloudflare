@@ -11,3 +11,6 @@
 
 /styles.css
   Cache-Control: public, max-age=0, must-revalidate
+
+/status.js
+  Cache-Control: public, max-age=0, must-revalidate
