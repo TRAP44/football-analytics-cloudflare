@@ -4,9 +4,12 @@ import { pathToFileURL } from 'node:url';
 
 const TRACKED_SECRET_FILES = [
   /^\.env$/i,
+  /^\.env\.(?!example$)[^/]+$/i,
   /^\.dev\.vars$/i,
   /\.pem$/i,
   /\.key$/i,
+  /\.p12$/i,
+  /\.pfx$/i,
   /(?:^|\/)id_(?:rsa|dsa|ecdsa|ed25519)$/i,
 ];
 

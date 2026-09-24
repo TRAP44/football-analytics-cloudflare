@@ -8,6 +8,7 @@ const sourceFiles=walk('src').filter(file=>file.endsWith('.js'));
 const sourceText=sourceFiles.map(file=>fs.readFileSync(file,'utf8')).join('\n');
 const app=fs.readFileSync('public/app.js','utf8');
 const envExample=fs.readFileSync('.env.example','utf8');
+const assetHeaders=fs.readFileSync('public/_headers','utf8');
 
 function walk(dir){
   return fs.readdirSync(dir,{withFileTypes:true}).flatMap(entry=>{
@@ -63,4 +64,14 @@ test('audit: Worker external requests use the shared timeout transport',()=>{
   assert.equal(directAwaitFetches.length,1,'External Worker fetch must go through fetchWithTimeout');
   assert.match(worker,/fetchWithTimeout\(\`https:\/\/api\.telegram\.org/);
   assert.match(worker,/fetchWithTimeout\('https:\/\/api\.tavily\.com\/search'/);
+});
+
+
+test('audit: mutable entrypoint assets are never cached as immutable',()=>{
+  const appBlock=assetHeaders.match(/\/app\.js\n([\s\S]*?)(?:\n\n|$)/)?.[1] || '';
+  const cssBlock=assetHeaders.match(/\/styles\.css\n([\s\S]*?)(?:\n\n|$)/)?.[1] || '';
+  assert.doesNotMatch(appBlock,/immutable/i);
+  assert.doesNotMatch(cssBlock,/immutable/i);
+  assert.match(appBlock,/must-revalidate/i);
+  assert.match(cssBlock,/must-revalidate/i);
 });

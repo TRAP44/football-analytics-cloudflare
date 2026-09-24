@@ -9,7 +9,10 @@ import {
 test('RC102 blocks secret-bearing tracked filenames', () => {
   assert.equal(forbiddenTrackedFile('.env'), true);
   assert.equal(forbiddenTrackedFile('.dev.vars'), true);
+  assert.equal(forbiddenTrackedFile('.env.local'), true);
+  assert.equal(forbiddenTrackedFile('.env.production'), true);
   assert.equal(forbiddenTrackedFile('certs/prod.pem'), true);
+  assert.equal(forbiddenTrackedFile('certs/prod.p12'), true);
   assert.equal(forbiddenTrackedFile('.env.example'), false);
 });
 
