@@ -12125,12 +12125,13 @@ async function recordHistory(userId, payload, cfg) {
   memory.history.set(key, next);
 }
 
-async function getHistory(userId, cfg) {
+async function getHistory(userId, cfg, options = {}) {
   if (hasSupabase(cfg)) {
     try {
       return await supaSelectMany(cfg, 'analysis_history', { telegram_id: `eq.${Number(userId)}` }, { limit: 20, order: 'viewed_at.desc' });
     } catch (e) {
       console.warn('history read skipped', e?.message || e);
+      if (options.strict) throw e;
       return [];
     }
   }
@@ -12138,12 +12139,13 @@ async function getHistory(userId, cfg) {
 }
 
 
-async function getFavorites(userId, cfg) {
+async function getFavorites(userId, cfg, options = {}) {
   if (hasSupabase(cfg)) {
     try {
       return await supaSelectMany(cfg, 'favorites', { telegram_id: `eq.${Number(userId)}` }, { limit: 50, order: 'created_at.desc' });
     } catch (e) {
       console.warn('favorites read skipped', e?.message || e);
+      if (options.strict) throw e;
       return [];
     }
   }
@@ -12209,13 +12211,14 @@ function normalizePreferences(row = {}) {
   };
 }
 
-async function getPreferences(userId, cfg) {
+async function getPreferences(userId, cfg, options = {}) {
   if (hasSupabase(cfg)) {
     try {
       const row = await supaSelectOne(cfg, 'user_preferences', { telegram_id: `eq.${Number(userId)}` });
       return normalizePreferences(row || {});
     } catch (e) {
       console.warn('preferences read skipped', e?.message || e);
+      if (options.strict) throw e;
       return { ...DEFAULT_PREFERENCES };
     }
   }
@@ -12248,12 +12251,13 @@ async function savePreferences(userId, input, cfg) {
   return next;
 }
 
-async function getReminders(userId, cfg) {
+async function getReminders(userId, cfg, options = {}) {
   if (hasSupabase(cfg)) {
     try {
       return await supaSelectMany(cfg, 'match_reminders', { telegram_id: `eq.${Number(userId)}`, enabled: 'eq.true' }, { limit: 50, order: 'fixture_date.asc' });
     } catch (e) {
       console.warn('reminders read skipped', e?.message || e);
+      if (options.strict) throw e;
       return [];
     }
   }
@@ -17892,7 +17896,7 @@ async function apiMe(request, cfg, user) {
 }
 
 async function apiHistory(request, cfg, user) {
-  const rows = await getHistory(user.id, cfg);
+  const rows = await getHistory(user.id, cfg, {strict:true});
   return json({
     items: rows.map(x => ({
       fixtureId: Number(x.fixture_id),
@@ -17919,7 +17923,7 @@ async function apiHistoryAnalysis(request, cfg, user) {
   const fixtureId = Number(new URL(request.url).searchParams.get('fixtureId'));
   if (!Number.isSafeInteger(fixtureId) || fixtureId <= 0) return json({ error: 'Номер матча обязателен.' }, 400);
 
-  const history = await getHistory(user.id, cfg);
+  const history = await getHistory(user.id, cfg, {strict:true});
   if (!history.some(row => Number(row.fixture_id) === fixtureId)) {
     return json({ error: 'Этот матч отсутствует в вашей истории анализов.', code: 'HISTORY_ANALYSIS_NOT_FOUND' }, 404);
   }
@@ -17940,7 +17944,7 @@ async function apiHistoryAnalysis(request, cfg, user) {
 
 async function apiFavorites(request, cfg, user) {
   if (request.method === 'GET') {
-    const rows = await getFavorites(user.id, cfg);
+    const rows = await getFavorites(user.id, cfg, {strict:true});
     return json({ items: rows.map(x => ({ teamId: Number(x.team_id), teamName: x.team_name || '', teamLogo: x.team_logo || '' })) });
   }
   if (request.method === 'POST') {
@@ -17978,7 +17982,7 @@ function publicReminder(row = {}) {
 
 async function apiReminders(request, cfg, user) {
   if (request.method === 'GET') {
-    const rows = await getReminders(user.id, cfg);
+    const rows = await getReminders(user.id, cfg, {strict:true});
     return json({ items: rows.map(publicReminder) });
   }
   if (request.method === 'POST') {
@@ -17998,7 +18002,7 @@ async function apiReminders(request, cfg, user) {
 }
 
 async function apiPreferences(request, cfg, user) {
-  if (request.method === 'GET') return json({ preferences: await getPreferences(user.id, cfg) });
+  if (request.method === 'GET') return json({ preferences: await getPreferences(user.id, cfg, {strict:true}) });
   if (request.method === 'PUT' || request.method === 'POST') {
     let body = {};
     body = await readJson(request);
