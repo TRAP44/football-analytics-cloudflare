@@ -1,0 +1,1379 @@
+-- Football Analytics v6.17 unified fresh-install baseline / RC108
+-- Generated from the proven v6.9 baseline plus migrations v6.10 through v6.17.
+-- USE ONLY FOR A NEW SUPABASE PROJECT.
+-- Existing production databases must keep their applied migration history and
+-- apply only missing numbered migrations. Do not run this baseline on production.
+-- RC108 baseline includes persistent Telegram webhook dedupe plus service-role observability for fresh installs.
+
+-- RC101 safety guard: refuse to bootstrap over an established application schema.
+-- This is intentionally read-only and runs before any CREATE/ALTER statements.
+do $
+begin
+  if to_regclass('public.users') is not null
+     and to_regclass('public.runtime_controls') is not null
+     and to_regclass('public.model_predictions') is not null then
+    raise exception using
+      errcode = '55000',
+      message = 'Fresh-install baseline refused: existing Football Analytics schema detected. Use supabase/migrations/ instead.';
+  end if;
+end;
+$;
+
+-- =====================================================================
+-- Base schema through v6.9 / RC17
+-- =====================================================================
+
+create table if not exists public.users (
+  telegram_id bigint primary key,
+  username text,
+  first_name text,
+  last_name text,
+  photo_url text,
+  plan text not null default 'FREE' check (plan in ('FREE','PRO','PREMIUM')),
+  subscription_until timestamptz,
+  subscription_canceled boolean not null default false,
+  telegram_payment_charge_id text,
+  plan_updated_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.usage_daily (
+  telegram_id bigint not null references public.users(telegram_id) on delete cascade,
+  usage_date date not null,
+  analyses integer not null default 0 check (analyses >= 0),
+  updated_at timestamptz not null default now(),
+  primary key (telegram_id, usage_date)
+);
+
+create table if not exists public.analysis_cache (
+  cache_key text primary key,
+  fixture_id bigint not null default 0,
+  payload jsonb not null,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists analysis_cache_expires_at_idx on public.analysis_cache(expires_at);
+
+create table if not exists public.analysis_history (
+  telegram_id bigint not null references public.users(telegram_id) on delete cascade,
+  fixture_id bigint not null,
+  home_name text not null default '',
+  away_name text not null default '',
+  league_name text not null default '',
+  fixture_date timestamptz,
+  home_logo text,
+  away_logo text,
+  viewed_at timestamptz not null default now(),
+  primary key (telegram_id, fixture_id)
+);
+create index if not exists analysis_history_user_viewed_idx on public.analysis_history(telegram_id, viewed_at desc);
+
+create table if not exists public.favorites (
+  telegram_id bigint not null references public.users(telegram_id) on delete cascade,
+  team_id bigint not null,
+  team_name text not null,
+  team_logo text not null default '',
+  created_at timestamptz not null default now(),
+  primary key (telegram_id, team_id)
+);
+
+create table if not exists public.user_preferences (
+  telegram_id bigint primary key references public.users(telegram_id) on delete cascade,
+  default_filter text not null default 'top' check (default_filter in ('top','favorites','all')),
+  reminder_minutes integer not null default 30 check (reminder_minutes in (15,30,60)),
+  kickoff_notification boolean not null default true,
+  hide_youth boolean not null default true,
+  favorite_first boolean not null default true,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.match_reminders (
+  telegram_id bigint not null references public.users(telegram_id) on delete cascade,
+  fixture_id bigint not null,
+  home_name text not null,
+  away_name text not null,
+  league_name text not null default '',
+  fixture_date timestamptz not null,
+  enabled boolean not null default true,
+  remind_before_minutes integer not null default 30 check (remind_before_minutes in (15,30,60)),
+  kickoff_notify boolean not null default true,
+  notified_at timestamptz,
+  kickoff_notified_at timestamptz,
+  prematch_claimed_at timestamptz,
+  kickoff_claimed_at timestamptz,
+  prematch_attempts integer not null default 0,
+  kickoff_attempts integer not null default 0,
+  delivery_last_error text,
+  delivery_last_attempt_at timestamptz,
+  delivery_last_success_at timestamptz,
+  delivery_disabled_reason text,
+  delivery_retry_after timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (telegram_id, fixture_id)
+);
+create index if not exists match_reminders_due_idx on public.match_reminders(enabled, fixture_date);
+
+create table if not exists public.runtime_controls (
+  id text primary key default 'global' check (id = 'global'),
+  maintenance_mode boolean not null default false,
+  analysis_enabled boolean not null default true,
+  search_enabled boolean not null default true,
+  live_enabled boolean not null default true,
+  reminders_enabled boolean not null default true,
+  expanded_data_enabled boolean not null default true,
+  auto_settlement_recovery_enabled boolean not null default false,
+  message text not null default '',
+  revision integer not null default 1 check (revision > 0),
+  updated_at timestamptz not null default now(),
+  updated_by bigint
+);
+insert into public.runtime_controls (id) values ('global') on conflict (id) do nothing;
+
+create table if not exists public.runtime_control_history (
+  id bigint generated by default as identity primary key,
+  revision integer not null unique,
+  action text not null,
+  reason text not null default '',
+  snapshot jsonb not null,
+  app_version text not null,
+  changed_by bigint,
+  source_revision integer,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.model_predictions (
+  fixture_id bigint primary key,
+  analysis_version text not null,
+  captured_at timestamptz not null,
+  kickoff_at timestamptz not null,
+  league_id bigint,
+  league_name text not null default '',
+  home_id bigint,
+  away_id bigint,
+  home_name text not null default '',
+  away_name text not null default '',
+  home_prob double precision not null,
+  draw_prob double precision not null,
+  away_prob double precision not null,
+  predicted_outcome text not null check (predicted_outcome in ('home','draw','away')),
+  confidence_score double precision,
+  signal_names text[] not null default '{}',
+  signal_weights jsonb not null default '{}'::jsonb,
+  signal_probabilities jsonb not null default '{}'::jsonb,
+  raw_home_prob double precision,
+  raw_draw_prob double precision,
+  raw_away_prob double precision,
+  calibration_mode text not null default 'baseline',
+  calibration_profile_fingerprint text,
+  calibration_temperature double precision not null default 1,
+  calibration_sample integer not null default 0,
+  calibration_weights jsonb not null default '{}'::jsonb,
+  data_mode text not null default '',
+  completeness_score integer not null default 0,
+  completeness_max integer not null default 0,
+  home_expected_goals double precision,
+  away_expected_goals double precision,
+  over25_prob double precision,
+  btts_prob double precision,
+  status text not null default 'pending' check (status in ('pending','settled','void')),
+  settled_at timestamptz,
+  actual_home_goals integer,
+  actual_away_goals integer,
+  actual_outcome text check (actual_outcome is null or actual_outcome in ('home','draw','away')),
+  correct boolean,
+  brier_score double precision,
+  over25_actual boolean,
+  over25_correct boolean,
+  btts_actual boolean,
+  btts_correct boolean,
+  settlement_verification_state text not null default 'unverified'
+    check (settlement_verification_state in ('unverified','verified','confirmed','drift','adjudicated')),
+  settlement_verified_at timestamptz,
+  settlement_verified_status text,
+  settlement_verification_count integer not null default 0 check (settlement_verification_count between 0 and 2),
+  settlement_first_verified_at timestamptz,
+  settlement_resolved_at timestamptz,
+  settlement_resolution_action text check (settlement_resolution_action is null or settlement_resolution_action in ('keep_stored','accept_provider','void_prediction')),
+  settlement_resolution_event_id bigint,
+  created_at timestamptz not null default now()
+);
+create index if not exists model_predictions_status_kickoff_idx on public.model_predictions(status, kickoff_at desc);
+create index if not exists model_predictions_finality_idx on public.model_predictions(settlement_verification_state, kickoff_at desc) where status = 'settled';
+create index if not exists model_predictions_calibration_profile_idx on public.model_predictions(calibration_profile_fingerprint, kickoff_at desc) where calibration_profile_fingerprint is not null;
+
+create table if not exists public.model_calibration_validations (
+  candidate_fingerprint text primary key,
+  created_at timestamptz not null default now(),
+  profile_version text not null,
+  decision text not null check (decision in ('baseline','shadow','held','promoted')),
+  trusted_sample integer not null default 0,
+  train_sample integer not null default 0,
+  validation_sample integer not null default 0,
+  temperature_candidate double precision,
+  temperature_active boolean not null default false,
+  candidate_weights jsonb not null default '{}'::jsonb,
+  weights_active boolean not null default false,
+  baseline_brier double precision,
+  candidate_brier double precision,
+  baseline_log_loss double precision,
+  candidate_log_loss double precision,
+  brier_gain double precision,
+  log_loss_gain double precision,
+  detail jsonb not null default '{}'::jsonb
+);
+
+create table if not exists public.model_calibration_profiles (
+  fingerprint text primary key,
+  profile_version text not null,
+  status text not null default 'challenger' check (status in ('baseline','challenger','held','active','retired','rolled_back')),
+  temperature double precision not null default 1 check (temperature between 0.8 and 1.35),
+  temperature_active boolean not null default false,
+  signal_weights jsonb not null default '{}'::jsonb,
+  weights_active boolean not null default false,
+  trusted_sample integer not null default 0,
+  train_sample integer not null default 0,
+  validation_sample integer not null default 0,
+  validation_windows jsonb not null default '[]'::jsonb,
+  baseline_brier double precision,
+  candidate_brier double precision,
+  baseline_log_loss double precision,
+  candidate_log_loss double precision,
+  source_cutoff timestamptz,
+  activated_at timestamptz,
+  retired_at timestamptz,
+  rollback_reason text,
+  detail jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists model_calibration_profiles_status_idx on public.model_calibration_profiles(status, created_at desc);
+
+create table if not exists public.model_calibration_state (
+  id text primary key default 'global' check (id = 'global'),
+  active_fingerprint text references public.model_calibration_profiles(fingerprint) on delete restrict,
+  previous_fingerprint text references public.model_calibration_profiles(fingerprint) on delete restrict,
+  activated_at timestamptz,
+  last_evaluated_at timestamptz,
+  last_rollback_at timestamptz,
+  revision integer not null default 0,
+  updated_at timestamptz not null default now(),
+  check (active_fingerprint is null or active_fingerprint is distinct from previous_fingerprint)
+);
+create index if not exists model_calibration_state_active_idx on public.model_calibration_state(active_fingerprint) where active_fingerprint is not null;
+create index if not exists model_calibration_state_previous_idx on public.model_calibration_state(previous_fingerprint) where previous_fingerprint is not null;
+insert into public.model_calibration_state (id) values ('global') on conflict (id) do nothing;
+
+create table if not exists public.prediction_integrity_actions (
+  action_id uuid primary key,
+  action_type text not null check (action_type in ('dry_run','recover','auto_recover','circuit_reset')),
+  trigger_source text not null default 'admin',
+  status text not null check (status in ('started','completed','partial','failed','interrupted')),
+  reason text not null default '',
+  admin_telegram_id bigint,
+  candidate_count integer not null default 0,
+  inspected_count integer not null default 0,
+  settled_count integer not null default 0,
+  skipped_count integer not null default 0,
+  fixture_ids bigint[] not null default '{}',
+  detail jsonb not null default '{}'::jsonb,
+  attempt_no integer not null default 1 check (attempt_no between 1 and 3),
+  retry_of_action_id uuid,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  finished_at timestamptz
+);
+create index if not exists prediction_integrity_actions_created_idx on public.prediction_integrity_actions(created_at desc);
+
+create table if not exists public.settlement_watchdog_state (
+  id text primary key default 'global' check (id = 'global'),
+  consecutive_failures integer not null default 0,
+  circuit_open_until timestamptz,
+  last_run_at timestamptz,
+  last_status text not null default 'never',
+  last_action_id text,
+  last_error text not null default '',
+  updated_at timestamptz not null default now()
+);
+insert into public.settlement_watchdog_state(id) values ('global') on conflict (id) do nothing;
+
+create table if not exists public.settlement_verification_events (
+  id bigint generated by default as identity primary key,
+  observed_at timestamptz not null default now(),
+  fixture_id bigint not null,
+  state text not null default 'drift' check (state = 'drift'),
+  reason text not null default '',
+  stored_home_goals integer,
+  stored_away_goals integer,
+  stored_outcome text not null default '',
+  provider_home_goals integer,
+  provider_away_goals integer,
+  provider_outcome text not null default '',
+  provider_status text not null default '',
+  detail jsonb not null default '{}'::jsonb
+);
+create index if not exists settlement_verification_events_fixture_idx on public.settlement_verification_events(fixture_id, observed_at desc);
+
+create table if not exists public.settlement_drift_resolutions (
+  source_event_id bigint primary key references public.settlement_verification_events(id) on delete restrict,
+  fixture_id bigint not null,
+  action text not null check (action in ('keep_stored','accept_provider','void_prediction')),
+  reason text not null,
+  admin_telegram_id bigint,
+  before_snapshot jsonb not null default '{}'::jsonb,
+  provider_snapshot jsonb not null default '{}'::jsonb,
+  after_snapshot jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.ops_events (
+  id bigint generated by default as identity primary key,
+  created_at timestamptz not null default now(),
+  severity text not null check (severity in ('info','warning','error','critical')),
+  source text not null,
+  event_type text not null,
+  code text not null default '',
+  message text not null default '',
+  endpoint text not null default '',
+  status integer,
+  duration_ms integer,
+  metadata jsonb not null default '{}'::jsonb
+);
+create index if not exists ops_events_created_idx on public.ops_events(created_at desc);
+
+create table if not exists public.match_integrity_runs (
+  run_id uuid primary key,
+  observed_at timestamptz not null,
+  fixture_date date,
+  inspected integer not null default 0,
+  accepted integer not null default 0,
+  clean integer not null default 0,
+  incomplete integer not null default 0,
+  warning_matches integer not null default 0,
+  quarantined integer not null default 0,
+  duplicates integer not null default 0,
+  repaired integer not null default 0,
+  warning_count integer not null default 0,
+  error_count integer not null default 0,
+  quality_score double precision not null default 0,
+  health text not null default 'ok',
+  metadata jsonb not null default '{}'::jsonb
+);
+
+create table if not exists public.match_integrity_events (
+  id bigint generated by default as identity primary key,
+  run_id uuid references public.match_integrity_runs(run_id) on delete cascade,
+  observed_at timestamptz not null,
+  fixture_date date,
+  fixture_id bigint,
+  severity text not null,
+  issue_code text not null,
+  message text not null,
+  home_name text not null default '',
+  away_name text not null default '',
+  league_name text not null default '',
+  metadata jsonb not null default '{}'::jsonb
+);
+create index if not exists match_integrity_events_observed_idx on public.match_integrity_events(observed_at desc);
+create index if not exists match_integrity_events_run_idx on public.match_integrity_events(run_id) where run_id is not null;
+
+create table if not exists public.odds_snapshots (
+  fixture_id bigint not null,
+  market text not null,
+  snapshot_time timestamptz not null,
+  home_odd double precision not null,
+  draw_odd double precision not null,
+  away_odd double precision not null,
+  home_prob double precision not null,
+  draw_prob double precision not null,
+  away_prob double precision not null,
+  source_count integer not null default 0,
+  primary key (fixture_id, market, snapshot_time)
+);
+
+create table if not exists public.billing_payments (
+  telegram_payment_charge_id text primary key,
+  telegram_id bigint not null references public.users(telegram_id) on delete cascade,
+  plan text not null check (plan in ('PRO','PREMIUM')),
+  stars_amount integer not null,
+  currency text not null default 'XTR',
+  invoice_payload text not null,
+  provider_payment_charge_id text,
+  subscription_expiration_date timestamptz,
+  is_recurring boolean not null default false,
+  is_first_recurring boolean not null default false,
+  status text not null default 'paid',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists billing_payments_user_idx on public.billing_payments(telegram_id, created_at desc);
+
+-- All data is accessed by the Worker with a Supabase secret/service-role key.
+-- The Telegram client never receives database credentials.
+do $$
+declare table_name text;
+begin
+  foreach table_name in array array[
+    'users','usage_daily','analysis_cache','analysis_history','favorites','user_preferences','match_reminders',
+    'runtime_controls','runtime_control_history','model_predictions','model_calibration_validations',
+    'model_calibration_profiles','model_calibration_state','prediction_integrity_actions','settlement_watchdog_state',
+    'settlement_verification_events','settlement_drift_resolutions','ops_events','match_integrity_runs',
+    'match_integrity_events','odds_snapshots','billing_payments'
+  ] loop
+    execute format('alter table public.%I enable row level security', table_name);
+    execute format('revoke all on table public.%I from anon, authenticated', table_name);
+    execute format('grant select, insert, update, delete on table public.%I to service_role', table_name);
+  end loop;
+end $$;
+
+grant usage, select on all sequences in schema public to service_role;
+
+
+-- =====================================================================
+-- Consolidated source: supabase_migration_v6_10.sql
+-- =====================================================================
+
+-- Football Analytics v6.10 / RC18
+-- Atomic calibration transitions, manual freeze controls, immutable audit,
+-- and remediation of the RC16 validation-table RLS gap.
+
+alter table public.model_calibration_state
+  add column if not exists frozen boolean not null default false,
+  add column if not exists freeze_reason text,
+  add column if not exists frozen_at timestamptz,
+  add column if not exists frozen_by bigint,
+  add column if not exists last_transition text,
+  add column if not exists last_transition_reason text;
+
+create table if not exists public.model_calibration_transitions (
+  id bigint generated by default as identity primary key,
+  action text not null check (action in ('initialize','promote','rollback','manual_rollback','freeze','unfreeze')),
+  from_active_fingerprint text,
+  to_active_fingerprint text,
+  from_previous_fingerprint text,
+  to_previous_fingerprint text,
+  expected_revision integer not null check (expected_revision >= 0),
+  resulting_revision integer not null check (resulting_revision > expected_revision),
+  reason text not null,
+  actor_telegram_id bigint,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists model_calibration_transitions_created_idx
+  on public.model_calibration_transitions (created_at desc);
+
+alter table public.model_calibration_validations enable row level security;
+alter table public.model_calibration_profiles enable row level security;
+alter table public.model_calibration_state enable row level security;
+alter table public.model_calibration_transitions enable row level security;
+
+revoke all on table public.model_calibration_validations from anon, authenticated;
+revoke all on table public.model_calibration_profiles from anon, authenticated;
+revoke all on table public.model_calibration_state from anon, authenticated;
+revoke all on table public.model_calibration_transitions from anon, authenticated;
+
+grant select, insert, update, delete on table public.model_calibration_validations to service_role;
+grant select, insert, update, delete on table public.model_calibration_profiles to service_role;
+grant select, insert, update, delete on table public.model_calibration_state to service_role;
+grant select, insert on table public.model_calibration_transitions to service_role;
+grant usage, select on sequence public.model_calibration_transitions_id_seq to service_role;
+
+create or replace function public.transition_model_calibration(
+  p_expected_revision integer,
+  p_action text,
+  p_target_fingerprint text default null,
+  p_reason text default '',
+  p_actor_telegram_id bigint default null,
+  p_metadata jsonb default '{}'::jsonb
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = pg_catalog, public
+as $$
+declare
+  v_state public.model_calibration_state%rowtype;
+  v_action text := lower(trim(coalesce(p_action, '')));
+  v_reason text := left(trim(coalesce(p_reason, '')), 500);
+  v_target text := nullif(trim(coalesce(p_target_fingerprint, '')), '');
+  v_from_active text;
+  v_from_previous text;
+  v_to_active text;
+  v_to_previous text;
+  v_now timestamptz := now();
+begin
+  if coalesce(p_expected_revision, -1) < 0 then
+    raise exception using errcode = '22023', message = 'expected revision must be non-negative';
+  end if;
+  if v_action not in ('initialize','promote','rollback','manual_rollback','freeze','unfreeze') then
+    raise exception using errcode = '22023', message = 'unsupported calibration transition';
+  end if;
+  if length(v_reason) < 3 then
+    raise exception using errcode = '22023', message = 'transition reason is required';
+  end if;
+
+  select * into v_state
+  from public.model_calibration_state
+  where id = 'global'
+  for update;
+
+  if not found then
+    insert into public.model_calibration_state (id) values ('global')
+    on conflict (id) do nothing;
+    select * into v_state
+    from public.model_calibration_state
+    where id = 'global'
+    for update;
+  end if;
+
+  if v_state.revision <> p_expected_revision then
+    raise exception using
+      errcode = '40001',
+      message = format('calibration revision conflict: expected %s, current %s', p_expected_revision, v_state.revision);
+  end if;
+
+  if v_state.frozen and v_action not in ('unfreeze','manual_rollback') then
+    raise exception using errcode = '55000', message = 'calibration lifecycle is frozen';
+  end if;
+
+  v_from_active := v_state.active_fingerprint;
+  v_from_previous := v_state.previous_fingerprint;
+  v_to_active := v_from_active;
+  v_to_previous := v_from_previous;
+
+  if v_action in ('initialize','promote','rollback','manual_rollback') then
+    if v_action in ('rollback','manual_rollback') and v_target is null then
+      v_target := v_state.previous_fingerprint;
+    end if;
+    if v_target is null or not exists (
+      select 1 from public.model_calibration_profiles where fingerprint = v_target
+    ) then
+      raise exception using errcode = '23503', message = 'target calibration profile does not exist';
+    end if;
+  end if;
+
+  case v_action
+    when 'initialize' then
+      if v_state.active_fingerprint is not null then
+        raise exception using errcode = '55000', message = 'calibration lifecycle is already initialized';
+      end if;
+      v_to_active := v_target;
+      v_to_previous := null;
+      update public.model_calibration_profiles
+      set status = 'active', activated_at = v_now, retired_at = null, rollback_reason = null, updated_at = v_now
+      where fingerprint = v_target;
+
+    when 'promote' then
+      if v_target = v_state.active_fingerprint then
+        raise exception using errcode = '55000', message = 'target profile is already active';
+      end if;
+      v_to_active := v_target;
+      v_to_previous := v_state.active_fingerprint;
+      update public.model_calibration_profiles
+      set status = 'retired', retired_at = v_now, updated_at = v_now
+      where fingerprint = v_state.active_fingerprint;
+      update public.model_calibration_profiles
+      set status = 'active', activated_at = v_now, retired_at = null, rollback_reason = null, updated_at = v_now
+      where fingerprint = v_target;
+
+    when 'rollback' then
+      if v_state.previous_fingerprint is null or v_target <> v_state.previous_fingerprint then
+        raise exception using errcode = '55000', message = 'automatic rollback target must be the previous champion';
+      end if;
+      v_to_active := v_target;
+      v_to_previous := null;
+      update public.model_calibration_profiles
+      set status = 'rolled_back', retired_at = v_now, rollback_reason = v_reason, updated_at = v_now
+      where fingerprint = v_state.active_fingerprint;
+      update public.model_calibration_profiles
+      set status = 'active', activated_at = v_now, retired_at = null, rollback_reason = null, updated_at = v_now
+      where fingerprint = v_target;
+
+    when 'manual_rollback' then
+      if v_state.previous_fingerprint is null or v_target <> v_state.previous_fingerprint then
+        raise exception using errcode = '55000', message = 'manual rollback target must be the previous champion';
+      end if;
+      v_to_active := v_target;
+      v_to_previous := null;
+      update public.model_calibration_profiles
+      set status = 'rolled_back', retired_at = v_now, rollback_reason = v_reason, updated_at = v_now
+      where fingerprint = v_state.active_fingerprint;
+      update public.model_calibration_profiles
+      set status = 'active', activated_at = v_now, retired_at = null, rollback_reason = null, updated_at = v_now
+      where fingerprint = v_target;
+
+    when 'freeze' then
+      if v_state.frozen then
+        raise exception using errcode = '55000', message = 'calibration lifecycle is already frozen';
+      end if;
+
+    when 'unfreeze' then
+      if not v_state.frozen then
+        raise exception using errcode = '55000', message = 'calibration lifecycle is not frozen';
+      end if;
+  end case;
+
+  update public.model_calibration_state
+  set active_fingerprint = v_to_active,
+      previous_fingerprint = v_to_previous,
+      activated_at = case when v_action in ('initialize','promote','rollback','manual_rollback') then v_now else activated_at end,
+      last_evaluated_at = v_now,
+      last_rollback_at = case when v_action in ('rollback','manual_rollback') then v_now else last_rollback_at end,
+      frozen = case when v_action = 'freeze' then true when v_action = 'unfreeze' then false else frozen end,
+      freeze_reason = case when v_action = 'freeze' then v_reason when v_action = 'unfreeze' then null else freeze_reason end,
+      frozen_at = case when v_action = 'freeze' then v_now when v_action = 'unfreeze' then null else frozen_at end,
+      frozen_by = case when v_action = 'freeze' then p_actor_telegram_id when v_action = 'unfreeze' then null else frozen_by end,
+      last_transition = v_action,
+      last_transition_reason = v_reason,
+      revision = revision + 1,
+      updated_at = v_now
+  where id = 'global'
+  returning * into v_state;
+
+  insert into public.model_calibration_transitions (
+    action, from_active_fingerprint, to_active_fingerprint,
+    from_previous_fingerprint, to_previous_fingerprint,
+    expected_revision, resulting_revision, reason, actor_telegram_id, metadata, created_at
+  ) values (
+    v_action, v_from_active, v_to_active,
+    v_from_previous, v_to_previous,
+    p_expected_revision, v_state.revision, v_reason, p_actor_telegram_id,
+    coalesce(p_metadata, '{}'::jsonb), v_now
+  );
+
+  return jsonb_build_object(
+    'id', v_state.id,
+    'active_fingerprint', v_state.active_fingerprint,
+    'previous_fingerprint', v_state.previous_fingerprint,
+    'activated_at', v_state.activated_at,
+    'last_evaluated_at', v_state.last_evaluated_at,
+    'last_rollback_at', v_state.last_rollback_at,
+    'frozen', v_state.frozen,
+    'freeze_reason', v_state.freeze_reason,
+    'frozen_at', v_state.frozen_at,
+    'revision', v_state.revision,
+    'last_transition', v_state.last_transition,
+    'last_transition_reason', v_state.last_transition_reason,
+    'updated_at', v_state.updated_at
+  );
+end;
+$$;
+
+revoke all on function public.transition_model_calibration(integer, text, text, text, bigint, jsonb) from public, anon, authenticated;
+grant execute on function public.transition_model_calibration(integer, text, text, text, bigint, jsonb) to service_role;
+
+comment on function public.transition_model_calibration(integer, text, text, text, bigint, jsonb) is
+  'RC18 atomic compare-and-swap transition for the singleton calibration lifecycle. Callable only by the backend service role.';
+
+comment on table public.model_calibration_transitions is
+  'RC18 immutable audit for calibration initialization, promotion, rollback, freeze and unfreeze transitions.';
+
+notify pgrst, 'reload schema';
+
+-- =====================================================================
+-- Consolidated source: supabase_migration_v6_11.sql
+-- =====================================================================
+
+-- Football Analytics v6.11 / RC19
+-- Locks the public schema to the Cloudflare Worker service role and exposes a
+-- machine-readable security contract for release gates.
+
+-- The browser never talks to Supabase directly. Keep schema discovery usable,
+-- but prevent public object creation and all direct data access.
+revoke create on schema public from public, anon, authenticated;
+grant usage on schema public to anon, authenticated, service_role;
+
+do $$
+declare
+  relation record;
+begin
+  for relation in
+    select n.nspname, c.relname
+    from pg_catalog.pg_class c
+    join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public'
+      and c.relkind in ('r', 'p')
+  loop
+    execute format('alter table %I.%I enable row level security', relation.nspname, relation.relname);
+  end loop;
+end;
+$$;
+
+revoke all privileges on all tables in schema public from public, anon, authenticated;
+revoke all privileges on all sequences in schema public from public, anon, authenticated;
+revoke execute on all functions in schema public from public, anon, authenticated;
+
+grant select, insert, update, delete on all tables in schema public to service_role;
+grant usage, select on all sequences in schema public to service_role;
+grant execute on all functions in schema public to service_role;
+
+-- Stop future migrations from silently recreating the old broad grants.
+alter default privileges in schema public
+  revoke all privileges on tables from public, anon, authenticated;
+alter default privileges in schema public
+  revoke all privileges on sequences from public, anon, authenticated;
+alter default privileges in schema public
+  revoke execute on functions from public, anon, authenticated;
+alter default privileges in schema public
+  grant select, insert, update, delete on tables to service_role;
+alter default privileges in schema public
+  grant usage, select on sequences to service_role;
+alter default privileges in schema public
+  grant execute on functions to service_role;
+
+create or replace function public.backend_security_contract()
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = pg_catalog, public
+as $$
+with schema_violations as (
+  select
+    n.nspname::text as object_name,
+    format('grant:%s:%s', coalesce(r.rolname, 'PUBLIC'), acl.privilege_type)::text as reason
+  from pg_catalog.pg_namespace n
+  cross join lateral pg_catalog.aclexplode(
+    coalesce(n.nspacl, pg_catalog.acldefault('n'::"char", n.nspowner))
+  ) acl
+  left join pg_catalog.pg_roles r on r.oid = acl.grantee
+  where n.nspname = 'public'
+    and acl.privilege_type = 'CREATE'
+    and (acl.grantee = 0 or r.rolname in ('anon', 'authenticated'))
+),
+table_violations as (
+  select
+    format('%I.%I', n.nspname, c.relname)::text as object_name,
+    'rls_disabled'::text as reason
+  from pg_catalog.pg_class c
+  join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public'
+    and c.relkind in ('r', 'p')
+    and not c.relrowsecurity
+
+  union
+
+  select
+    format('%I.%I', n.nspname, c.relname)::text as object_name,
+    'view_not_security_invoker'::text as reason
+  from pg_catalog.pg_class c
+  join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public'
+    and c.relkind = 'v'
+    and not (coalesce(c.reloptions, array[]::text[]) @> array['security_invoker=true'])
+
+  union
+
+  select
+    format('%I.%I', n.nspname, c.relname)::text as object_name,
+    format('grant:%s:%s', coalesce(r.rolname, 'PUBLIC'), acl.privilege_type)::text as reason
+  from pg_catalog.pg_class c
+  join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+  cross join lateral pg_catalog.aclexplode(
+    coalesce(c.relacl, pg_catalog.acldefault('r'::"char", c.relowner))
+  ) acl
+  left join pg_catalog.pg_roles r on r.oid = acl.grantee
+  where n.nspname = 'public'
+    and c.relkind in ('r', 'p', 'v', 'm', 'f')
+    and (acl.grantee = 0 or r.rolname in ('anon', 'authenticated'))
+),
+sequence_violations as (
+  select
+    format('%I.%I', n.nspname, c.relname)::text as object_name,
+    format('grant:%s:%s', coalesce(r.rolname, 'PUBLIC'), acl.privilege_type)::text as reason
+  from pg_catalog.pg_class c
+  join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+  cross join lateral pg_catalog.aclexplode(
+    coalesce(c.relacl, pg_catalog.acldefault('S'::"char", c.relowner))
+  ) acl
+  left join pg_catalog.pg_roles r on r.oid = acl.grantee
+  where n.nspname = 'public'
+    and c.relkind = 'S'
+    and (acl.grantee = 0 or r.rolname in ('anon', 'authenticated'))
+),
+function_violations as (
+  select
+    format('%I.%I(%s)', n.nspname, p.proname, pg_catalog.pg_get_function_identity_arguments(p.oid))::text as object_name,
+    'security_definer'::text as reason
+  from pg_catalog.pg_proc p
+  join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+  where n.nspname = 'public'
+    and p.prokind in ('f', 'p')
+    and p.prosecdef
+
+  union
+
+  select
+    format('%I.%I(%s)', n.nspname, p.proname, pg_catalog.pg_get_function_identity_arguments(p.oid))::text as object_name,
+    format('grant:%s:%s', coalesce(r.rolname, 'PUBLIC'), acl.privilege_type)::text as reason
+  from pg_catalog.pg_proc p
+  join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+  cross join lateral pg_catalog.aclexplode(
+    coalesce(p.proacl, pg_catalog.acldefault('f'::"char", p.proowner))
+  ) acl
+  left join pg_catalog.pg_roles r on r.oid = acl.grantee
+  where n.nspname = 'public'
+    and p.prokind in ('f', 'p')
+    and (acl.grantee = 0 or r.rolname in ('anon', 'authenticated'))
+),
+contract as (
+  select
+    coalesce((select jsonb_agg(jsonb_build_object('object', object_name, 'reason', reason) order by object_name, reason) from schema_violations), '[]'::jsonb) as schema_items,
+    coalesce((select jsonb_agg(jsonb_build_object('object', object_name, 'reason', reason) order by object_name, reason) from table_violations), '[]'::jsonb) as table_items,
+    coalesce((select jsonb_agg(jsonb_build_object('object', object_name, 'reason', reason) order by object_name, reason) from sequence_violations), '[]'::jsonb) as sequence_items,
+    coalesce((select jsonb_agg(jsonb_build_object('object', object_name, 'reason', reason) order by object_name, reason) from function_violations), '[]'::jsonb) as function_items
+)
+select jsonb_build_object(
+  'ok', jsonb_array_length(schema_items) = 0
+    and jsonb_array_length(table_items) = 0
+    and jsonb_array_length(sequence_items) = 0
+    and jsonb_array_length(function_items) = 0,
+  'checked_at', current_timestamp,
+  'schema_violations', schema_items,
+  'table_violations', table_items,
+  'sequence_violations', sequence_items,
+  'function_violations', function_items
+)
+from contract;
+$$;
+
+revoke all on function public.backend_security_contract() from public, anon, authenticated;
+grant execute on function public.backend_security_contract() to service_role;
+
+comment on function public.backend_security_contract() is
+  'RC19 service-role-only audit of public-schema RLS, relation grants, sequence grants and RPC execution security.';
+
+notify pgrst, 'reload schema';
+
+-- =====================================================================
+-- Consolidated source: supabase_migration_v6_11_1.sql
+-- =====================================================================
+
+-- Football Analytics v6.11.1 / RC19
+-- Verifies default privileges for the roles that own application relations.
+-- Supabase platform-owned defaults are intentionally outside this contract.
+
+create or replace function public.backend_default_acl_contract()
+returns jsonb
+language sql
+stable
+security invoker
+set search_path = pg_catalog, public
+as $$
+with application_owners as (
+  select distinct c.relowner as owner_oid
+  from pg_catalog.pg_class c
+  join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public'
+    and c.relkind in ('r', 'p', 'v', 'm', 'f', 'S')
+),
+violations as (
+  select
+    pg_catalog.pg_get_userbyid(d.defaclrole)::text as owner_role,
+    case d.defaclobjtype
+      when 'r' then 'table'
+      when 'S' then 'sequence'
+      when 'f' then 'function'
+      else d.defaclobjtype::text
+    end as object_type,
+    coalesce(r.rolname, 'PUBLIC')::text as grantee,
+    acl.privilege_type::text as privilege_type
+  from pg_catalog.pg_default_acl d
+  join application_owners owners on owners.owner_oid = d.defaclrole
+  join pg_catalog.pg_namespace n on n.oid = d.defaclnamespace
+  cross join lateral pg_catalog.aclexplode(d.defaclacl) acl
+  left join pg_catalog.pg_roles r on r.oid = acl.grantee
+  where n.nspname = 'public'
+    and d.defaclobjtype in ('r', 'S', 'f')
+    and (acl.grantee = 0 or r.rolname in ('anon', 'authenticated'))
+),
+contract as (
+  select coalesce(
+    jsonb_agg(
+      jsonb_build_object(
+        'owner_role', owner_role,
+        'object_type', object_type,
+        'grantee', grantee,
+        'privilege', privilege_type
+      )
+      order by owner_role, object_type, grantee, privilege_type
+    ),
+    '[]'::jsonb
+  ) as items
+  from violations
+)
+select jsonb_build_object(
+  'ok', jsonb_array_length(items) = 0,
+  'checked_at', current_timestamp,
+  'default_acl_violations', items
+)
+from contract;
+$$;
+
+revoke all on function public.backend_default_acl_contract() from public, anon, authenticated;
+grant execute on function public.backend_default_acl_contract() to service_role;
+
+comment on function public.backend_default_acl_contract() is
+  'RC19 service-role-only audit of default ACLs for roles that own public application relations.';
+
+notify pgrst, 'reload schema';
+
+-- =====================================================================
+-- Consolidated source: supabase_migration_v6_12.sql
+-- =====================================================================
+
+-- Football Analytics v6.12 / RC41
+-- Opt-in Telegram morning digest subscriptions. Only the Worker service role
+-- has table privileges; the browser never accesses this table directly.
+
+create table if not exists public.bot_digest_subscriptions (
+  telegram_id bigint primary key,
+  chat_id bigint not null,
+  enabled boolean not null default true,
+  hour_utc smallint not null default 7 check (hour_utc between 0 and 23),
+  app_url text not null default '',
+  last_sent_date date,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists bot_digest_subscriptions_enabled_hour_idx
+  on public.bot_digest_subscriptions (enabled, hour_utc)
+  where enabled = true;
+
+alter table public.bot_digest_subscriptions enable row level security;
+
+revoke all privileges on table public.bot_digest_subscriptions from public, anon, authenticated;
+grant select, insert, update, delete on table public.bot_digest_subscriptions to service_role;
+
+comment on table public.bot_digest_subscriptions is
+  'RC41 opt-in Telegram AI football digest subscriptions, Worker service-role only.';
+
+notify pgrst, 'reload schema';
+
+-- =====================================================================
+-- Consolidated source: supabase_migration_v6_13.sql
+-- =====================================================================
+
+-- Football Analytics v6.13 / RC42
+-- Verified referee history collected only from completed match-center data.
+
+create table if not exists public.referee_match_history (
+  fixture_id bigint primary key,
+  referee_key text not null,
+  referee_name text not null,
+  referee_country text not null default '',
+  kickoff_at timestamptz,
+  league_id bigint,
+  yellow_cards integer not null default 0 check (yellow_cards >= 0),
+  red_cards integer not null default 0 check (red_cards >= 0),
+  fouls integer not null default 0 check (fouls >= 0),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists referee_match_history_referee_idx on public.referee_match_history (referee_key, kickoff_at desc);
+alter table public.referee_match_history enable row level security;
+revoke all privileges on table public.referee_match_history from public, anon, authenticated;
+grant select, insert, update, delete on table public.referee_match_history to service_role;
+comment on table public.referee_match_history is 'RC42 verified referee discipline history collected from completed match-center payloads, Worker service-role only.';
+notify pgrst, 'reload schema';
+
+-- =====================================================================
+-- Consolidated source: supabase_migration_v6_14.sql
+-- =====================================================================
+
+-- Football Analytics v6.14 / RC43
+-- Persist compact AI verdict snapshots in the user's backend-only analysis history.
+
+alter table public.analysis_history
+  add column if not exists ai_signal_code text not null default '',
+  add column if not exists ai_signal_label text not null default '',
+  add column if not exists ai_confidence integer,
+  add column if not exists ai_risk text not null default '',
+  add column if not exists ai_outcome text not null default '',
+  add column if not exists ai_total text not null default '',
+  add column if not exists ai_btts text not null default '',
+  add column if not exists analysis_version text not null default '';
+
+alter table public.analysis_history
+  drop constraint if exists analysis_history_ai_confidence_check;
+
+alter table public.analysis_history
+  add constraint analysis_history_ai_confidence_check
+  check (ai_confidence is null or (ai_confidence >= 0 and ai_confidence <= 100));
+
+comment on column public.analysis_history.ai_signal_label is
+  'RC43 compact AI instructor action snapshot shown on already analyzed match cards.';
+
+notify pgrst, 'reload schema';
+
+-- =====================================================================
+-- Consolidated source: supabase_migration_v6_15.sql
+-- =====================================================================
+
+-- Football Analytics v6.15 / RC53
+-- First-party media-launch attribution and conversion funnel.
+
+alter table public.users
+  add column if not exists acquisition_source text not null default '',
+  add column if not exists acquisition_campaign text not null default '',
+  add column if not exists acquisition_content text not null default '',
+  add column if not exists acquisition_start_param text not null default '',
+  add column if not exists acquisition_first_touch_at timestamptz;
+
+create table if not exists public.growth_events (
+  id bigint generated by default as identity primary key,
+  telegram_id bigint not null references public.users(telegram_id) on delete cascade,
+  event_name text not null,
+  channel text not null default 'telegram',
+  fixture_id bigint,
+  source text not null default '',
+  campaign text not null default '',
+  content text not null default '',
+  event_key text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  constraint growth_events_event_name_check
+    check (event_name ~ '^[a-z0-9_]{2,40}$'),
+  constraint growth_events_channel_check
+    check (channel in ('telegram','miniapp','system')),
+  constraint growth_events_metadata_object_check
+    check (jsonb_typeof(metadata) = 'object')
+);
+
+create unique index if not exists growth_events_event_key_uidx
+  on public.growth_events(event_key)
+  where event_key is not null and event_key <> '';
+
+create index if not exists growth_events_event_created_idx
+  on public.growth_events(event_name, created_at desc);
+
+create index if not exists growth_events_campaign_created_idx
+  on public.growth_events(source, campaign, created_at desc);
+
+create index if not exists growth_events_user_created_idx
+  on public.growth_events(telegram_id, created_at desc);
+
+alter table public.growth_events enable row level security;
+
+revoke all on table public.growth_events from anon, authenticated;
+revoke all on sequence public.growth_events_id_seq from anon, authenticated;
+grant select, insert, delete on table public.growth_events to service_role;
+grant usage, select on sequence public.growth_events_id_seq to service_role;
+
+comment on table public.growth_events is
+  'RC53 backend-only first-party acquisition and product-funnel events. No third-party advertising identifiers.';
+comment on column public.users.acquisition_first_touch_at is
+  'RC53 immutable first attributed entry into FM AI; subsequent starts must not overwrite it.';
+
+notify pgrst, 'reload schema';
+
+
+-- =====================================================================
+-- v6.16 / RC107 — Persistent Telegram webhook dedupe
+-- =====================================================================
+
+-- Football Analytics v6.16 / RC107
+-- Persistent Telegram webhook dedupe across Cloudflare Worker isolates.
+-- The browser never reads this table directly; service_role is the only data-plane role.
+
+create table if not exists public.telegram_update_claims (
+  update_key text primary key,
+  status text not null default 'processing' check (status in ('processing', 'done', 'failed')),
+  claimed_at timestamptz not null default now(),
+  locked_until timestamptz not null default now() + interval '90 seconds',
+  completed_at timestamptz,
+  expires_at timestamptz not null default now() + interval '24 hours'
+);
+
+create index if not exists telegram_update_claims_expires_idx
+  on public.telegram_update_claims (expires_at);
+
+alter table public.telegram_update_claims enable row level security;
+revoke all on table public.telegram_update_claims from public, anon, authenticated;
+grant select, insert, update, delete on table public.telegram_update_claims to service_role;
+
+create or replace function public.claim_telegram_update(
+  p_update_key text,
+  p_lease_seconds integer default 90
+)
+returns boolean
+language plpgsql
+security invoker
+set search_path = pg_catalog, public
+as $$
+declare
+  v_rows integer := 0;
+  v_lease_seconds integer := greatest(15, least(300, coalesce(p_lease_seconds, 90)));
+begin
+  if p_update_key is null
+     or length(btrim(p_update_key)) = 0
+     or length(p_update_key) > 180 then
+    return false;
+  end if;
+
+  delete from public.telegram_update_claims
+  where update_key in (
+    select update_key
+    from public.telegram_update_claims
+    where expires_at < now()
+    order by expires_at
+    limit 200
+  );
+
+  insert into public.telegram_update_claims (
+    update_key,
+    status,
+    claimed_at,
+    locked_until,
+    completed_at,
+    expires_at
+  )
+  values (
+    p_update_key,
+    'processing',
+    now(),
+    now() + (v_lease_seconds * interval '1 second'),
+    null,
+    now() + interval '24 hours'
+  )
+  on conflict (update_key) do update
+  set status = 'processing',
+      claimed_at = excluded.claimed_at,
+      locked_until = excluded.locked_until,
+      completed_at = null,
+      expires_at = greatest(public.telegram_update_claims.expires_at, excluded.expires_at)
+  where public.telegram_update_claims.status <> 'done'
+    and public.telegram_update_claims.locked_until <= now();
+
+  get diagnostics v_rows = row_count;
+  return v_rows = 1;
+end;
+$$;
+
+create or replace function public.complete_telegram_update(p_update_key text)
+returns boolean
+language plpgsql
+security invoker
+set search_path = pg_catalog, public
+as $$
+declare
+  v_rows integer := 0;
+begin
+  update public.telegram_update_claims
+  set status = 'done',
+      completed_at = now(),
+      locked_until = now(),
+      expires_at = greatest(expires_at, now() + interval '24 hours')
+  where update_key = p_update_key;
+
+  get diagnostics v_rows = row_count;
+  return v_rows = 1;
+end;
+$$;
+
+create or replace function public.release_telegram_update(p_update_key text)
+returns boolean
+language plpgsql
+security invoker
+set search_path = pg_catalog, public
+as $$
+declare
+  v_rows integer := 0;
+begin
+  update public.telegram_update_claims
+  set status = 'failed',
+      completed_at = null,
+      locked_until = now() + interval '5 seconds',
+      expires_at = greatest(expires_at, now() + interval '1 hour')
+  where update_key = p_update_key
+    and status <> 'done';
+
+  get diagnostics v_rows = row_count;
+  return v_rows = 1;
+end;
+$$;
+
+revoke all on function public.claim_telegram_update(text, integer) from public, anon, authenticated;
+revoke all on function public.complete_telegram_update(text) from public, anon, authenticated;
+revoke all on function public.release_telegram_update(text) from public, anon, authenticated;
+
+grant execute on function public.claim_telegram_update(text, integer) to service_role;
+grant execute on function public.complete_telegram_update(text) to service_role;
+grant execute on function public.release_telegram_update(text) to service_role;
+
+comment on table public.telegram_update_claims is
+  'RC107 persistent Telegram update claim ledger for cross-isolate webhook deduplication.';
+
+comment on function public.claim_telegram_update(text, integer) is
+  'RC107 atomically claims one Telegram update key; duplicate completed or active claims return false.';
+
+notify pgrst, 'reload schema';
+
+
+-- =====================================================================
+-- v6.17 / RC108 — Telegram webhook dedupe observability
+-- =====================================================================
+
+-- Football Analytics v6.17 / RC108
+-- Persistent Telegram webhook dedupe observability.
+-- Adds aggregate duplicate counters and a service-role-only read health RPC.
+
+alter table public.telegram_update_claims
+  add column if not exists duplicate_count integer not null default 0,
+  add column if not exists last_duplicate_at timestamptz;
+
+create or replace function public.claim_telegram_update(
+  p_update_key text,
+  p_lease_seconds integer default 90
+)
+returns boolean
+language plpgsql
+security invoker
+set search_path = pg_catalog, public
+as $$
+declare
+  v_rows integer := 0;
+  v_lease_seconds integer := greatest(15, least(300, coalesce(p_lease_seconds, 90)));
+begin
+  if p_update_key is null
+     or length(btrim(p_update_key)) = 0
+     or length(p_update_key) > 180 then
+    return false;
+  end if;
+
+  delete from public.telegram_update_claims
+  where update_key in (
+    select update_key
+    from public.telegram_update_claims
+    where expires_at < now()
+    order by expires_at
+    limit 200
+  );
+
+  insert into public.telegram_update_claims (
+    update_key,
+    status,
+    claimed_at,
+    locked_until,
+    completed_at,
+    expires_at,
+    duplicate_count,
+    last_duplicate_at
+  )
+  values (
+    p_update_key,
+    'processing',
+    now(),
+    now() + (v_lease_seconds * interval '1 second'),
+    null,
+    now() + interval '24 hours',
+    0,
+    null
+  )
+  on conflict (update_key) do update
+  set status = 'processing',
+      claimed_at = excluded.claimed_at,
+      locked_until = excluded.locked_until,
+      completed_at = null,
+      expires_at = greatest(public.telegram_update_claims.expires_at, excluded.expires_at)
+  where public.telegram_update_claims.status <> 'done'
+    and public.telegram_update_claims.locked_until <= now();
+
+  get diagnostics v_rows = row_count;
+  if v_rows = 1 then
+    return true;
+  end if;
+
+  update public.telegram_update_claims
+  set duplicate_count = duplicate_count + 1,
+      last_duplicate_at = now(),
+      expires_at = greatest(expires_at, now() + interval '24 hours')
+  where update_key = p_update_key;
+
+  return false;
+end;
+$$;
+
+create or replace function public.telegram_webhook_dedupe_health(
+  p_window_minutes integer default 60
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = pg_catalog, public
+as $$
+declare
+  v_window integer := greatest(5, least(1440, coalesce(p_window_minutes, 60)));
+  v_since timestamptz := now() - (greatest(5, least(1440, coalesce(p_window_minutes, 60))) * interval '1 minute');
+  v_ledger_rows bigint := 0;
+  v_claims_recent bigint := 0;
+  v_completed_recent bigint := 0;
+  v_failed_recent bigint := 0;
+  v_failed_current bigint := 0;
+  v_active_processing bigint := 0;
+  v_stale_processing bigint := 0;
+  v_duplicate_attempts_retained bigint := 0;
+  v_duplicate_rows_recent bigint := 0;
+  v_last_duplicate_at timestamptz;
+  v_oldest_stale_seconds bigint := 0;
+begin
+  select
+    count(*),
+    count(*) filter (where claimed_at >= v_since),
+    count(*) filter (where completed_at >= v_since),
+    count(*) filter (where status = 'failed' and claimed_at >= v_since),
+    count(*) filter (where status = 'failed'),
+    count(*) filter (where status = 'processing' and locked_until > now()),
+    count(*) filter (where status = 'processing' and locked_until <= now()),
+    coalesce(sum(duplicate_count), 0),
+    count(*) filter (where last_duplicate_at >= v_since),
+    max(last_duplicate_at),
+    coalesce(max(extract(epoch from (now() - locked_until))) filter (
+      where status = 'processing' and locked_until <= now()
+    ), 0)::bigint
+  into
+    v_ledger_rows,
+    v_claims_recent,
+    v_completed_recent,
+    v_failed_recent,
+    v_failed_current,
+    v_active_processing,
+    v_stale_processing,
+    v_duplicate_attempts_retained,
+    v_duplicate_rows_recent,
+    v_last_duplicate_at,
+    v_oldest_stale_seconds
+  from public.telegram_update_claims
+  where expires_at > now();
+
+  return jsonb_build_object(
+    'window_minutes', v_window,
+    'ledger_rows', v_ledger_rows,
+    'claims_recent', v_claims_recent,
+    'completed_recent', v_completed_recent,
+    'failed_recent', v_failed_recent,
+    'failed_current', v_failed_current,
+    'active_processing', v_active_processing,
+    'stale_processing', v_stale_processing,
+    'duplicate_attempts_retained', v_duplicate_attempts_retained,
+    'duplicate_rows_recent', v_duplicate_rows_recent,
+    'last_duplicate_at', v_last_duplicate_at,
+    'oldest_stale_seconds', v_oldest_stale_seconds,
+    'generated_at', now()
+  );
+end;
+$$;
+
+revoke all on function public.claim_telegram_update(text, integer) from public, anon, authenticated;
+revoke all on function public.telegram_webhook_dedupe_health(integer) from public, anon, authenticated;
+
+grant execute on function public.claim_telegram_update(text, integer) to service_role;
+grant execute on function public.telegram_webhook_dedupe_health(integer) to service_role;
+
+comment on function public.telegram_webhook_dedupe_health(integer) is
+  'RC108 service-role-only aggregate health for the retained Telegram webhook dedupe ledger.';
+
+notify pgrst, 'reload schema';
