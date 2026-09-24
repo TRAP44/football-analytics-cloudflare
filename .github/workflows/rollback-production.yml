@@ -33,14 +33,44 @@ jobs:
       VERSION_ID: ${{ inputs.version_id }}
       EXPECTED_VERSION: ${{ inputs.expected_version }}
       ROLLBACK_URL: ${{ vars.CLOUDFLARE_WORKER_URL }}
+      ROLLBACK_WORKFLOW_SHA: ${{ github.sha }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       WRANGLER_SEND_METRICS: "false"
       WRANGLER_SEND_ERROR_REPORTS: "false"
 
     steps:
-      - name: Checkout main
+      - name: Checkout verified rollback workflow revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.ROLLBACK_WORKFLOW_SHA }}
+          fetch-depth: 0
+
+      - name: RC113 verify rollback workflow provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "### Rollback provenance check failed" >> "$GITHUB_STEP_SUMMARY"
+            echo "Rollback must be dispatched from main; got ${GITHUB_REF}." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          git fetch --no-tags origin main
+          CURRENT_MAIN_SHA="$(git rev-parse origin/main)"
+          VERIFIED_SHA="$(git rev-parse HEAD)"
+          if [[ "$ROLLBACK_WORKFLOW_SHA" != "$VERIFIED_SHA" ]]; then
+            echo "### Rollback provenance check failed" >> "$GITHUB_STEP_SUMMARY"
+            echo "Dispatch SHA $ROLLBACK_WORKFLOW_SHA does not match checked-out revision $VERIFIED_SHA." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          if [[ "$ROLLBACK_WORKFLOW_SHA" != "$CURRENT_MAIN_SHA" ]]; then
+            echo "### Stale rollback workflow blocked" >> "$GITHUB_STEP_SUMMARY"
+            echo "Dispatch SHA $ROLLBACK_WORKFLOW_SHA is no longer current main ($CURRENT_MAIN_SHA)." >> "$GITHUB_STEP_SUMMARY"
+            echo "Re-dispatch rollback from the current main revision." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "### Rollback workflow revision confirmed" >> "$GITHUB_STEP_SUMMARY"
+          echo "Checked-out rollback workflow matches current main: $ROLLBACK_WORKFLOW_SHA" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Use Node.js 22
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
