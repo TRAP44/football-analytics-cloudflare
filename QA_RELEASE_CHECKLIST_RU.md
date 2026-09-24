@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.105.0 RC129
+# QA Release Checklist — v6.106.0 RC130
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.105.0`.
-- Worker и client: `6.105.0-rc129`.
-- Release candidate: `RC129`.
+- `package.json` и `package-lock.json`: `6.106.0`.
+- Worker и client: `6.106.0-rc130`.
+- Release candidate: `RC130`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -33,6 +33,20 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC130 — Licensed Odds Fallback
+
+- API-Football остаётся primary provider 1X2; резервный odds provider вызывается только после отсутствия пригодного нормализованного рынка.
+- `THE_ODDS_API_KEY` опционален, server-side only и по умолчанию пуст; без него поведение production не меняется.
+- Поддерживаются только явно сопоставленные competition → sport key; неизвестные турниры не угадываются.
+- Fixture matching требует совпадения обеих команд и разумной близости kickoff; другой матч не принимается только из-за похожего времени.
+- The Odds API запросы используют shared secondary-provider rate guard, single-flight, timeout и короткий cache TTL.
+- 1X2 из резервного источника нормализуется в общий `market` contract; model/frontend не зависят от формата provider.
+- Если raw odds существуют, но пригодного 1X2 нет, reliability metadata отмечает рынок как недоступный вместо ложного `available`.
+- Снимки движения коэффициентов продолжают использовать существующий `odds_snapshots` и сохраняют provider/bookmaker provenance.
+- Новая DDL-миграция не требуется: необходимые provenance-колонки уже добавлены в v6.19.
+- Regression: `test/odds-fallback-rc130.test.js`.
+- Licensed Odds Fallback отражён в health contract как `enabled` либо `available_when_configured`.
 
 ## RC129 — Persistent Data Provenance & Transport Resilience
 

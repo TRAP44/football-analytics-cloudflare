@@ -15,6 +15,7 @@ import { createSupabaseClient } from './supabase-client.js';
 import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
 import { normalizeOpenLigaStandings, openLigaCompetition, openLigaTableUrls } from './providers/openligadb.js';
 import { footballDataStandingsUrl, normalizeFootballDataStandings } from './providers/football-data.js';
+import { normalizeTheOddsApiMarket, theOddsApiUrl } from './providers/the-odds-api.js';
 import {
   bytesToHex,
   constantTimeEqual,
@@ -103,11 +104,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.105.0-rc129';
+const APP_VERSION = '6.106.0-rc130';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc129';
-const RC_NAME = 'RC129';
+const RELEASE_CHANNEL = 'rc130';
+const RC_NAME = 'RC130';
 const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.18; для существующей примените все доступные миграции из supabase/migrations до v6.19.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49';
@@ -200,6 +201,7 @@ function config(env) {
     devMode: boolEnv(env.DEV_MODE, false),
     apiFootballKey: env.API_FOOTBALL_KEY || '',
     footballDataToken: env.FOOTBALL_DATA_TOKEN || '',
+    theOddsApiKey: env.THE_ODDS_API_KEY || '',
     tavilyKey: env.TAVILY_KEY || '',
     botToken: env.TELEGRAM_BOT_TOKEN || '',
     webhookSecret: env.TELEGRAM_WEBHOOK_SECRET || '',
@@ -15857,7 +15859,7 @@ function extractMarket(oddsRows) {
   if (!samples.length) return null;
   const avg = key => samples.reduce((s, x) => s + x[key], 0) / samples.length;
   const odds = { home: round1(avg('home')), draw: round1(avg('draw')), away: round1(avg('away')) };
-  return { odds, probabilities: normalizeThree(1 / odds.home, 1 / odds.draw, 1 / odds.away), bookmakers: samples.length };
+  return { odds, probabilities: normalizeThree(1 / odds.home, 1 / odds.draw, 1 / odds.away), bookmakers: samples.length, sources: samples.length, provider: 'api-football' };
 }
 function extractLiveMarket(rows) {
   const candidates = [];
@@ -15885,7 +15887,7 @@ function extractLiveMarket(rows) {
   if (!candidates.length) return null;
   const avg = key => candidates.reduce((sum, x) => sum + x[key], 0) / candidates.length;
   const odds = { home: round1(avg('home')), draw: round1(avg('draw')), away: round1(avg('away')) };
-  return { odds, probabilities: normalizeThree(1 / odds.home, 1 / odds.draw, 1 / odds.away), sources: candidates.length, updatedAt: candidates.find(x => x.update)?.update || '' };
+  return { odds, probabilities: normalizeThree(1 / odds.home, 1 / odds.draw, 1 / odds.away), sources: candidates.length, provider: 'api-football', updatedAt: candidates.find(x => x.update)?.update || '' };
 }
 
 
@@ -18498,6 +18500,132 @@ async function footballDataStandingsProvider(leagueId, season, cfg) {
   return normalizeFootballDataStandings(payload, { leagueId, season });
 }
 
+function oddsFallbackMeta(feature, market, { source = 'network', fetchedAt = null, expiresAt = null } = {}) {
+  return {
+    feature,
+    provider: 'the-odds-api',
+    source,
+    fetchedAt,
+    ageSeconds: fetchedAt && Number.isFinite(Date.parse(String(fetchedAt)))
+      ? Math.max(0, Math.floor((Date.now() - Date.parse(String(fetchedAt))) / 1000))
+      : null,
+    expiresAt,
+    fallback: true,
+    ...providerDataState(market ? [market] : [], { attempted:true }),
+  };
+}
+
+function usableOddsFeatureMeta(meta = {}, market = null, fallbackReason = '') {
+  if (market) {
+    return {
+      ...meta,
+      provider: String(market.provider || meta?.provider || 'api-football'),
+      state: 'available',
+      available: true,
+      observed: true,
+      usable: true,
+      degraded: false,
+      reason: '',
+      count: Number(market.sources || market.bookmakers || 1),
+    };
+  }
+  if (meta?.degraded) return { ...meta, usable:false, fallbackReason:String(fallbackReason || '') };
+  return {
+    ...meta,
+    state: 'empty_response',
+    available: false,
+    observed: Boolean(meta?.observed ?? true),
+    usable: false,
+    degraded: false,
+    reason: String(meta?.reason || '1x2_market_missing'),
+    count: 0,
+    fallbackReason: String(fallbackReason || ''),
+  };
+}
+
+async function secondaryOddsMarket(fixture, cfg, { mode = 'prematch' } = {}) {
+  const fixtureId = Number(fixture?.fixture?.id || 0);
+  const leagueId = Number(fixture?.league?.id || 0);
+  const feature = mode === 'live' ? 'liveOdds' : 'odds';
+  if (!cfg.theOddsApiKey) return { available:false, reason:'token_not_configured', market:null, meta:null };
+
+  const baseUrl = theOddsApiUrl(leagueId);
+  if (!baseUrl) return { available:false, reason:'competition_not_supported', market:null, meta:null };
+
+  const cacheKey = `secondary-odds:${fixtureId}:the-odds-api:v1`;
+  const fresh = await getCacheEntry(cacheKey, cfg, false).catch(() => null);
+  if (fresh?.payload?.market) {
+    return {
+      available:true,
+      market:fresh.payload.market,
+      meta:oddsFallbackMeta(feature, fresh.payload.market, {
+        source:'cache',
+        fetchedAt:fresh.payload.fetchedAt || null,
+        expiresAt:fresh.expiresAt || null,
+      }),
+    };
+  }
+
+  const budget = await claimSecondaryProviderBudget(cfg, 'the-odds-api', 8);
+  if (!budget.allowed) {
+    return { available:false, reason:budget.reason || 'secondary_rate_limit', market:null, meta:null };
+  }
+
+  try {
+    const url = new URL(baseUrl);
+    url.searchParams.set('apiKey', cfg.theOddsApiKey);
+    const rows = await secondaryProviderJson(url.toString(), cfg, {
+      provider:'The Odds API',
+      timeoutMs:6500,
+    });
+    const market = normalizeTheOddsApiMarket(rows, {
+      homeName:fixture?.teams?.home?.name || '',
+      awayName:fixture?.teams?.away?.name || '',
+      kickoffAt:fixture?.fixture?.date || '',
+    });
+    if (!market) return { available:false, reason:'fixture_not_matched', market:null, meta:null };
+
+    const fetchedAt = new Date().toISOString();
+    const kickoffMs = Date.parse(String(fixture?.fixture?.date || ''));
+    const minutesToKickoff = Number.isFinite(kickoffMs) ? Math.round((kickoffMs - Date.now()) / 60000) : null;
+    const ttlMinutes = mode === 'live' ? 1 : minutesToKickoff !== null && minutesToKickoff <= 120 ? 3 : 5;
+    const expiresAt = new Date(Date.now() + ttlMinutes * 60000).toISOString();
+    const payload = {
+      market,
+      provider:'the-odds-api',
+      fetchedAt,
+      sourceMeta:sourceMeta({
+        provider:'the-odds-api',
+        label:'The Odds API',
+        fetchedAt,
+        freshness:'fresh',
+        fallback:true,
+      }),
+    };
+    await setCache(cacheKey, fixtureId, payload, cfg, ttlMinutes).catch(() => null);
+    await recordOpsEvent(cfg, {
+      severity:'info', source:'provider', eventType:'provider_fallback',
+      code:'ODDS_FALLBACK_USED',
+      message:'Для рынка 1X2 использован разрешённый резервный источник.',
+      meta:{ fixtureId, leagueId, mode, provider:'the-odds-api' },
+    }).catch(() => null);
+
+    return {
+      available:true,
+      market,
+      meta:oddsFallbackMeta(feature, market, { source:'network', fetchedAt, expiresAt }),
+    };
+  } catch (error) {
+    await recordOpsEvent(cfg, {
+      severity:'info', source:'provider', eventType:'fallback_provider_failure',
+      code:'THE_ODDS_API_ODDS',
+      message:error?.message || error,
+      meta:{ fixtureId, leagueId, mode },
+    }).catch(() => null);
+    return { available:false, reason:String(error?.code || 'provider_error'), market:null, meta:null };
+  }
+}
+
 async function resolveTournamentStandings(leagueId, season, cfg, { skipPrimary = false } = {}) {
   const result = await resolveProviderChain({
     feature:'standings',
@@ -18975,8 +19103,18 @@ async function apiMatchCenter(request, cfg) {
       feature: 'liveOdds', path: '/odds/live', params: { fixture: fixtureId },
       fixtureId, cfg, context: { mode: centerMode, limitedCoverage },
     });
-    featureMeta.liveOdds = result.meta;
     liveOdds = extractLiveMarket(result.data);
+    if (!liveOdds) {
+      const secondaryOdds = await secondaryOddsMarket(fixture, cfg, { mode:'live' });
+      if (secondaryOdds?.available) {
+        liveOdds = secondaryOdds.market;
+        featureMeta.liveOdds = usableOddsFeatureMeta(secondaryOdds.meta, liveOdds);
+      } else {
+        featureMeta.liveOdds = usableOddsFeatureMeta(result.meta, null, secondaryOdds?.reason || '');
+      }
+    } else {
+      featureMeta.liveOdds = usableOddsFeatureMeta(result.meta, liveOdds);
+    }
     if (liveOdds) {
       await saveOddsSnapshot(fixtureId, liveOdds, cfg);
       const snapshots = await getOddsSnapshots(fixtureId, cfg, 12);
@@ -19784,10 +19922,16 @@ async function apiAnalyze(request, cfg, user) {
   const odds = oddsResult.data;
   const h2hRows = h2hResult.data;
   const lineupsRows = lineupResult.data;
+  const primaryMarket = extractMarket(odds);
+  const secondaryOdds = primaryMarket ? null : await secondaryOddsMarket(fixture, cfg, { mode:'prematch' });
+  const market = primaryMarket || secondaryOdds?.market || null;
+  const resolvedOddsMeta = secondaryOdds?.available
+    ? usableOddsFeatureMeta(secondaryOdds.meta, market)
+    : usableOddsFeatureMeta(oddsResult.meta, primaryMarket, secondaryOdds?.reason || '');
   const analysisFeatureMeta = {
     injuries: injuryResult.meta,
     predictions: predictionResult.meta,
-    odds: oddsResult.meta,
+    odds: resolvedOddsMeta,
     h2h: h2hResult.meta,
     lineups: lineupResult.meta,
   };
@@ -19816,7 +19960,6 @@ async function apiAnalyze(request, cfg, user) {
     cachedSeasonStatsForComparison(awayId, leagueId, season, cfg).catch(() => null),
   ]);
 
-  const market = extractMarket(odds);
   const previousMarketSnapshots = market ? await getOddsSnapshots(fixtureId, cfg, 8).catch(() => []) : [];
   const marketMovement = buildOddsMovement(previousMarketSnapshots, market);
   if (market) await saveOddsSnapshot(fixtureId, market, cfg).catch(() => false);
@@ -20469,6 +20612,7 @@ export default {
         multiProviderDataService: 'enabled',
         openLigaDbStandingsFallback: 'enabled',
         footballDataStandingsFallback: cfg.footballDataToken ? 'enabled' : 'available_when_configured',
+        theOddsApiOddsFallback: cfg.theOddsApiKey ? 'enabled' : 'available_when_configured',
         sourceProvenance: 'enabled',
         persistentDataProvenance: 'enabled',
         transientProviderRetry: 'enabled',

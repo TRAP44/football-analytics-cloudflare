@@ -50,9 +50,7 @@ test('RC129 keeps provider xG and internal expected-goal model semantically sepa
   assert.match(worker,/methodology: 'Автоматические выводы строятся только из текущего счёта, событий и официальной статистики матча\./);
 });
 
-test('RC129 advertises the new reliability contract in health metadata',()=>{
+test('RC129 reliability flags remain present in later release candidates',()=>{
   assert.match(worker,/persistentDataProvenance: 'enabled'/);
   assert.match(worker,/transientProviderRetry: 'enabled'/);
-  assert.match(worker,/const APP_VERSION = '6\.105\.0-rc129'/);
-  assert.match(worker,/const RC_NAME = 'RC129'/);
 });

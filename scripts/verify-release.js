@@ -20,7 +20,7 @@ const qaChecklist = fs.readFileSync('QA_RELEASE_CHECKLIST_RU.md', 'utf8');
 const envExample = fs.readFileSync('.env.example', 'utf8');
 const baselinePath = 'supabase/baseline/supabase_baseline_v6_18.sql';
 const baseline = fs.existsSync(baselinePath) ? fs.readFileSync(baselinePath, 'utf8') : '';
-const expected = `${pkg.version}-rc129`;
+const expected = `${pkg.version}-rc130`;
 const failures = [];
 const rootSql = fs.readdirSync('.').filter(name => /^supabase_(?:baseline|migration)_.*\.sql$/i.test(name));
 if (rootSql.length) failures.push(`Supabase SQL must live under supabase/: ${rootSql.join(', ')}`);
@@ -29,9 +29,9 @@ if (rootSql.length) failures.push(`Supabase SQL must live under supabase/: ${roo
 if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) failures.push('package-lock version must match package.json');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC129'")) failures.push('Worker RC name must be RC129');
+if (!worker.includes("const RC_NAME = 'RC130'")) failures.push('Worker RC name must be RC130');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc129'")) failures.push('Client release channel must be rc129');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc130'")) failures.push('Client release channel must be rc130');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -91,7 +91,7 @@ if (!rollbackSmoke.includes("'/api/me', '/api/release-readiness', '/api/calibrat
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
-if (!deployWorkflow.includes('RELEASE_VERSION: \"6.105.0-rc129\"')) failures.push('Production deploy must pin the verified release version');
+if (!deployWorkflow.includes('RELEASE_VERSION: \"6.106.0-rc130\"')) failures.push('Production deploy must pin the verified release version');
 if (!deployWorkflow.includes('--message "release=${{ env.RELEASE_VERSION }} sha=${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must bind release version and deploy SHA');
 if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "${{ env.RELEASE_VERSION }}"')) failures.push('Production smoke must verify the same release identity used for deployment');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
@@ -261,7 +261,7 @@ if (!worker.includes("newsSourceTrustGate: 'enabled'") || !worker.includes('appl
 if (!worker.includes("publicLegalPages: 'enabled'") || !worker.includes("publicStatusPage: 'enabled'") || !worker.includes("url.pathname === '/api/public-status'")) failures.push('RC52 public trust contract is missing');
 if (!fs.existsSync('public/privacy.html') || !fs.existsSync('public/terms.html') || !fs.existsSync('public/status.html') || !fs.existsSync('public/status.js')) failures.push('RC52 public trust pages are missing');
 if (!wrangler.includes('"/telegram/*"') || !wrangler.includes('"/api/*"')) failures.push('RC52 Worker-first webhook/public API routes are missing');
-if (!deployWorkflow.includes('6.105.0-rc129')) failures.push('RC129 production workflow version is missing');
+if (!deployWorkflow.includes('6.106.0-rc130')) failures.push('RC130 production workflow version is missing');
 
 if (!worker.includes("mediaLaunchPackage: 'enabled'") || !worker.includes("mediaDeepLinkAttribution: 'enabled'")) failures.push('RC53 media launch health contract is missing');
 if (!worker.includes("launchSimulation: 'enabled'") || !worker.includes("conversionUx: 'enabled'") || !worker.includes("highIntentSearchFallback: 'enabled'") || !worker.includes("newsReturnLoop: 'enabled'")) failures.push('RC54 launch conversion health contract is missing');
@@ -369,8 +369,8 @@ if (!worker.includes("firstPartyGrowthAnalytics: 'enabled'") || !worker.includes
 if (!worker.includes('parseLaunchStartParam') || !worker.includes('ensureLaunchAttribution') || !worker.includes('recordGrowthEvent')) failures.push('RC53 attribution engine is missing');
 if (!worker.includes("url.pathname === '/api/launch-funnel'") || !app.includes('function renderLaunchFunnel')) failures.push('RC53 admin launch funnel is missing');
 if (!app.includes("origin:'miniapp'") || !worker.includes("origin:'telegram_quick'")) failures.push('RC53 full-vs-quick AI conversion split is missing');
-if (!readme.includes('v6.105.0 — RC129') || !readme.includes('Persistent Data Provenance') || !readme.includes('Multi-Provider Data Service') || !readme.includes('Production Hardening')) failures.push('README must describe the current RC129 release');
-if (!qaChecklist.includes('v6.105.0 RC129') || !qaChecklist.includes('Persistent Data Provenance') || !qaChecklist.includes('Multi-Provider Data Service') || !qaChecklist.includes('Production Hardening') || !qaChecklist.includes('npm run verify:release')) failures.push('QA checklist must describe the current RC129 release gate');
+if (!readme.includes('v6.106.0 — RC130') || !readme.includes('Licensed Odds Fallback') || !readme.includes('Persistent Data Provenance') || !readme.includes('Multi-Provider Data Service') || !readme.includes('Production Hardening')) failures.push('README must describe the current RC130 release');
+if (!qaChecklist.includes('v6.106.0 RC130') || !qaChecklist.includes('Licensed Odds Fallback') || !qaChecklist.includes('Persistent Data Provenance') || !qaChecklist.includes('Multi-Provider Data Service') || !qaChecklist.includes('Production Hardening') || !qaChecklist.includes('npm run verify:release')) failures.push('QA checklist must describe the current RC130 release gate');
 if (!fs.existsSync('test/supabase-schema-drift-rc100.test.js')) failures.push('Missing RC100 Supabase schema drift regression test');
 if (!fs.existsSync('test/supabase-directory-hardening-rc101.test.js')) failures.push('Missing RC101 Supabase directory hardening regression test');
 if (!fs.existsSync('scripts/security-scan.js')) failures.push('Missing RC102 Secret Leak Guard scanner');
@@ -397,6 +397,10 @@ if (!fs.existsSync('test/data-service-rc128.test.js')) failures.push('Missing RC
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_19.sql')) failures.push('Missing v6.19 persistent provenance migration');
 if (!fs.existsSync('test/data-quality-rc129.test.js')) failures.push('Missing RC129 data-quality regression test');
 if (!worker.includes("persistentDataProvenance: 'enabled'") || !worker.includes("transientProviderRetry: 'enabled'")) failures.push('RC129 provenance/retry health contract is missing');
+if (!fs.existsSync('src/providers/the-odds-api.js')) failures.push('Missing RC130 The Odds API adapter');
+if (!fs.existsSync('test/odds-fallback-rc130.test.js')) failures.push('Missing RC130 odds fallback regression test');
+if (!envExample.includes('THE_ODDS_API_KEY=')) failures.push('RC130 optional The Odds API secret contract is missing');
+if (!worker.includes('async function secondaryOddsMarket') || !worker.includes("theOddsApiOddsFallback: cfg.theOddsApiKey ? 'enabled' : 'available_when_configured'")) failures.push('RC130 licensed odds fallback contract is missing');
 if (!worker.includes('async function resolveTournamentStandings') || !worker.includes("multiProviderDataService: 'enabled'") || !worker.includes("openLigaDbStandingsFallback: 'enabled'") || !worker.includes("sourceProvenance: 'enabled'")) failures.push('RC128 multi-provider routing contract is missing');
 if (!worker.includes('footballDataToken: env.FOOTBALL_DATA_TOKEN') || !envExample.includes('FOOTBALL_DATA_TOKEN=')) failures.push('RC128 optional football-data.org secret contract is missing');
 if (!app.includes('function dataProvenanceHtml') || !app.includes('Паспорт данных') || !app.includes('standing-team-readonly')) failures.push('RC128 provenance UX contract is missing');
