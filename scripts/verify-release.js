@@ -459,6 +459,11 @@ if (!html.includes('id="navMatches" class="nav-item" type="button"><span>⚽</sp
 if (!app.includes('const startupTasks = [loadFavorites(), loadMatches()]')) failures.push('RC123 public match feed startup path is missing');
 if (!app.includes("matchesView: ['Матчи', 'Сегодня, LIVE и ближайшие игры для AI-разбора']")) failures.push('RC123 public match feed chrome is missing');
 
+if (!fs.existsSync('test/provider-coverage-transparency-rc124.test.js')) failures.push('Missing RC124 provider coverage transparency regression test');
+if (!app.includes('function providerCoverageHtml(reliability = {})')) failures.push('RC124 provider coverage UI is missing');
+if (!app.includes("plan_limited:['!','Недоступно на текущем тарифе источника']")) failures.push('RC124 provider plan-limit explanation is missing');
+if (!app.includes('providerCoverageHtml(d.providerReliability || d.dataPolicy?.reliability || {})')) failures.push('RC124 analysis does not render provider coverage');
+
 const gitignore = fs.readFileSync('.gitignore','utf8');
 for (const item of ['.env','.dev.vars','*.pem','*.key']) if (!gitignore.includes(item)) failures.push(`Git ignore is missing secret pattern: ${item}`);
 
