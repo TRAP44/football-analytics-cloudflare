@@ -1,0 +1,55 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const worker=fs.readFileSync('src/worker.js','utf8');
+const app=fs.readFileSync('public/app.js','utf8');
+const envExample=fs.readFileSync('.env.example','utf8');
+
+function walk(dir){
+  return fs.readdirSync(dir,{withFileTypes:true}).flatMap(entry=>{
+    const full=path.join(dir,entry.name);
+    return entry.isDirectory()?walk(full):[full];
+  });
+}
+
+test('audit: frontend literal API routes are implemented by the Worker',()=>{
+  const routes=[...app.matchAll(/[\x22\x27\x60](\/api\/[A-Za-z0-9_?=&/.\-:]*)/g)]
+    .map(match=>match[1].split('?')[0].replace(/\/$/,''));
+  for(const route of new Set(routes)){
+    assert.ok(worker.includes(route), `Worker route missing: ${route}`);
+  }
+});
+
+test('audit: every Worker env variable is documented in .env.example',()=>{
+  const used=new Set([...worker.matchAll(/\benv\.([A-Z][A-Z0-9_]*)\b/g)].map(match=>match[1]));
+  const documented=new Set([...envExample.matchAll(/^([A-Z][A-Z0-9_]*)=/gm)].map(match=>match[1]));
+  assert.deepEqual([...used].filter(name=>!documented.has(name)).sort(),[]);
+});
+
+test('audit: shipped source does not instruct operators to run removed migration files',()=>{
+  const files=[
+    ...walk('src').filter(file=>file.endsWith('.js')),
+    ...walk('public').filter(file=>/\.(?:js|html)$/.test(file)),
+    ...walk('supabase/migrations').filter(file=>file.endsWith('.sql')),
+    ...fs.readdirSync('.').filter(file=>file.endsWith('.md')),
+  ];
+  const missing=[];
+  for(const file of files){
+    const text=fs.readFileSync(file,'utf8');
+    for(const match of text.matchAll(/supabase_migration_(v\d+(?:_\d+)*)\.sql/g)){
+      const expected=path.join('supabase','migrations',`supabase_migration_${match[1]}.sql`);
+      if(!fs.existsSync(expected)) missing.push(`${file}: ${match[0]}`);
+    }
+  }
+  assert.deepEqual(missing,[]);
+});
+
+test('audit: operational metadata recursively removes secrets and direct user identifiers',()=>{
+  assert.match(worker,/function sensitiveOpsMetadataKey/);
+  assert.match(worker,/telegram\.\?id\|user\.\?id\|chat\.\?id\|username/);
+  assert.match(worker,/function sanitizeOpsMetadataValue/);
+  assert.doesNotMatch(worker,/JSON\.parse\(redactOpsString\(JSON\.stringify\(value\)/);
+  assert.doesNotMatch(worker,/meta:\s*\{\s*telegramId:\s*Number\(user\.id\)/);
+});

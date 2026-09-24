@@ -98,6 +98,7 @@ const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
 const RELEASE_CHANNEL = 'rc127';
 const RC_NAME = 'RC127';
+const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.18; для существующей примените все доступные миграции из supabase/migrations до v6.18.1.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49';
 
@@ -357,7 +358,7 @@ async function rollbackRuntimeControls(cfg, user, body = {}) {
   const historySchema = await probeRuntimeHistorySchema(cfg);
   if (!historySchema.ok) {
     return {
-      error: 'Нужен файл миграции supabase_migration_v5_8.sql для истории и отката.',
+      error: SUPABASE_SCHEMA_GUIDANCE,
       code: 'RUNTIME_HISTORY_SCHEMA',
       status: 409,
     };
@@ -398,7 +399,7 @@ async function rollbackRuntimeControls(cfg, user, body = {}) {
 async function saveRuntimeControls(cfg, user, body = {}) {
   const currentState = await loadRuntimeControls(cfg, { force: true });
   if (!currentState.schemaReady) {
-    return { error: 'Нужен файл миграции supabase_migration_v5_7.sql.', code: 'RUNTIME_CONTROLS_SCHEMA', status: 409 };
+    return { error: SUPABASE_SCHEMA_GUIDANCE, code: 'RUNTIME_CONTROLS_SCHEMA', status: 409 };
   }
 
   const current = currentState.value;
@@ -552,8 +553,8 @@ async function apiRuntimeControls(request, cfg, user) {
       controls: publicRuntimeControls(state.value),
       history,
       cacheSeconds: Math.round(RUNTIME_CONTROLS_CACHE_MS / 1000),
-      reason: state.schemaReady ? '' : 'Нужен файл миграции supabase_migration_v5_7.sql.',
-      historyReason: historySchema.ok ? '' : 'Нужен файл миграции supabase_migration_v5_8.sql для истории и отката.',
+      reason: state.schemaReady ? '' : SUPABASE_SCHEMA_GUIDANCE,
+      historyReason: historySchema.ok ? '' : SUPABASE_SCHEMA_GUIDANCE,
     });
   }
 
@@ -1344,18 +1345,37 @@ function redactOpsString(value, max = 500) {
     .slice(0, max);
 }
 
+function sensitiveOpsMetadataKey(key = '') {
+  return /token|secret|password|authorization|api.?key|init.?data|telegram.?id|user.?id|chat.?id|username|first.?name|last.?name|photo.?url/i.test(String(key));
+}
+
+function sanitizeOpsMetadataValue(value, depth = 0) {
+  if (value === null || value === undefined || depth > 3) return undefined;
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+  if (typeof value === 'string') return redactOpsString(value, depth === 0 ? 240 : 160);
+  if (Array.isArray(value)) {
+    return value.slice(0, 12)
+      .map(item => sanitizeOpsMetadataValue(item, depth + 1))
+      .filter(item => item !== undefined);
+  }
+  if (typeof value === 'object') {
+    const out = {};
+    for (const [key, nested] of Object.entries(value).slice(0, 24)) {
+      if (sensitiveOpsMetadataKey(key)) continue;
+      const clean = sanitizeOpsMetadataValue(nested, depth + 1);
+      if (clean !== undefined) out[key] = clean;
+    }
+    return out;
+  }
+  return redactOpsString(String(value), 160);
+}
+
 function safeOpsMetadata(meta = {}) {
   const out = {};
-  for (const [key, value] of Object.entries(meta || {})) {
-    if (/token|secret|password|authorization|api.?key|init.?data/i.test(key)) continue;
-    if (value === null || value === undefined) continue;
-    if (typeof value === 'number' || typeof value === 'boolean') out[key] = value;
-    else if (typeof value === 'string') out[key] = redactOpsString(value, 240);
-    else if (Array.isArray(value)) out[key] = value.slice(0, 12).map(x => typeof x === 'string' ? redactOpsString(x, 120) : x);
-    else if (typeof value === 'object') {
-      try { out[key] = JSON.parse(redactOpsString(JSON.stringify(value), 600)); }
-      catch { out[key] = redactOpsString(String(value), 240); }
-    }
+  for (const [key, value] of Object.entries(meta || {}).slice(0, 32)) {
+    if (sensitiveOpsMetadataKey(key)) continue;
+    const clean = sanitizeOpsMetadataValue(value, 0);
+    if (clean !== undefined) out[key] = clean;
   }
   return out;
 }
@@ -1535,7 +1555,7 @@ async function getRequestUser(request, cfg) {
     bumpTelemetry('supabaseErrors');
     recordOpsEvent(cfg, {
       severity: 'warning', source: 'auth', eventType: 'user_sync', code: 'USER_SYNC_DEGRADED',
-      message: error?.message || error, meta: { telegramId: Number(user.id) },
+      message: error?.message || error, meta: { userSync: 'degraded' },
     }).catch(() => {});
   }
   return user;
@@ -9994,7 +10014,7 @@ async function apiModelQuality(request, cfg) {
         supaSelectMany(cfg, 'model_predictions', { status: 'eq.pending', kickoff_at: `gte.${since}` }, { limit: 500, order: 'kickoff_at.desc' }),
       ]);
     } catch (error) {
-      return json({ available: false, reason: 'Таблица исторической проверки ещё не создана. Выполните supabase_migration_v3_6.sql.', detail: String(error?.message || error).slice(0, 180) });
+      return json({ available: false, reason: `Таблица исторической проверки ещё не создана. ${SUPABASE_SCHEMA_GUIDANCE}`, detail: redactOpsString(error?.message || error, 180) });
     }
   } else {
     const all = [...memory.modelPredictions.values()].filter(x => Date.parse(x.kickoff_at || '') >= Date.parse(since));
@@ -10521,7 +10541,7 @@ async function loadSettlementDriftReview(cfg, limit = 20) {
 async function resolveSettlementDrift(cfg, user, input = {}) {
   const schema = await probeSettlementAdjudicationSchema(cfg);
   if (!schema.ok) {
-    const error = new Error('Нужна миграция v6.6 для ручного разбора расхождений результатов.');
+    const error = new Error(SUPABASE_SCHEMA_GUIDANCE);
     error.code = 'SETTLEMENT_ADJUDICATION_SCHEMA';
     throw error;
   }
@@ -11327,7 +11347,7 @@ async function apiModelRemediation(request, cfg, user) {
   if (reason.length < 5) return json({ error: 'Укажите причину действия (минимум 5 символов).' }, 400);
   if (requestedAction === 'reset_circuit') {
     const schema = await probeSettlementReliabilitySchema(cfg);
-    if (!schema.ok) return json({ error: 'Нужна миграция v6.3 для защитного контура восстановления результатов.', code: 'SETTLEMENT_RELIABILITY_SCHEMA' }, 409);
+    if (!schema.ok) return json({ error: SUPABASE_SCHEMA_GUIDANCE, code: 'SETTLEMENT_RELIABILITY_SCHEMA' }, 409);
     const reset = await resetSettlementCircuit(cfg, user, reason);
     const report = await buildModelRemediationReport(cfg).catch(() => null);
     return json({ ok: true, reset, report });
@@ -11352,7 +11372,7 @@ async function apiModelRemediation(request, cfg, user) {
 
   const report = await buildModelRemediationReport(cfg);
   if (!report.available) return json(report, 503);
-  if (!report.schemaReady) return json({ error: 'Нужна миграция v6.1 для журнала действий.', code: 'MODEL_REMEDIATION_SCHEMA', report }, 409);
+  if (!report.schemaReady) return json({ error: SUPABASE_SCHEMA_GUIDANCE, code: 'MODEL_REMEDIATION_SCHEMA', report }, 409);
   const requestedIds = [...new Set((Array.isArray(body?.fixtureIds) ? body.fixtureIds : []).map(Number).filter(x => Number.isInteger(x) && x > 0))].sort((a, b) => a - b);
   const currentIds = [...(report.recovery?.fixtureIds || [])].map(Number).sort((a, b) => a - b);
   if (!report.recovery?.candidateToken || String(body?.candidateToken || '') !== report.recovery.candidateToken ||
@@ -12565,7 +12585,7 @@ async function getReminderHealth(cfg) {
     return {
       available: false,
       migrationReady: false,
-      reason: 'Нужна supabase_migration_v5_6.sql.',
+      reason: SUPABASE_SCHEMA_GUIDANCE,
       scheduler: { cadenceMinutes: 5 },
     };
   }
@@ -14125,8 +14145,8 @@ async function collectDiagnostics(cfg) {
   if (supabase.configured && !supabase.ok) overall = { state: 'critical', label: 'Нужна проверка Supabase' };
   else if (supabase.recovered) overall = { state:'warning', label:'Supabase ответил после подтверждающего probe' };
   else if (provider.health === 'critical') overall = { state: 'critical', label: 'API-Football временно ограничен' };
-  else if (!ops.migrationReady && hasSupabase(cfg)) overall = { state: 'warning', label: 'Выполните миграцию v3.8' };
-  else if (!integrity.migrationReady && hasSupabase(cfg)) overall = { state: 'warning', label: 'Выполните миграцию v3.9' };
+  else if (!ops.migrationReady && hasSupabase(cfg)) overall = { state: 'warning', label: 'Проверьте актуальную схему Supabase' };
+  else if (!integrity.migrationReady && hasSupabase(cfg)) overall = { state: 'warning', label: 'Проверьте актуальную схему Supabase' };
   else if (!telegramWebhook.available && hasSupabase(cfg)) overall = { state:'warning', label:'Нужна миграция наблюдаемости Telegram webhook' };
   else if (telegramWebhook.state === 'incident') overall = { state:'warning', label:'Persistent Telegram dedupe требует проверки' };
   else if (integrity.lastRun?.health === 'critical') overall = { state: 'warning', label: 'Есть проблемы качества футбольных данных' };
@@ -14135,8 +14155,8 @@ async function collectDiagnostics(cfg) {
   else overall = { state: 'ok', label: 'Системы работают штатно' };
 
   const recommendations = [];
-  if (supabase.ok && !ops.migrationReady && hasSupabase(cfg)) recommendations.push('Выполните supabase_migration_v3_8.sql, чтобы журнал ошибок сохранялся между перезапусками серверного обработчика.');
-  if (!integrity.migrationReady && hasSupabase(cfg)) recommendations.push('Выполните supabase_migration_v3_9.sql, чтобы проверки качества матчей сохранялись и были видны после перезапуска серверного обработчика.');
+  if (supabase.ok && !ops.migrationReady && hasSupabase(cfg)) recommendations.push(`Схема постоянного журнала событий недоступна. ${SUPABASE_SCHEMA_GUIDANCE}`);
+  if (!integrity.migrationReady && hasSupabase(cfg)) recommendations.push(`Схема постоянного журнала целостности недоступна. ${SUPABASE_SCHEMA_GUIDANCE}`);
   if (!telegramWebhook.available && hasSupabase(cfg)) recommendations.push('Примените supabase_migration_v6_17.sql: она добавляет read-only health RPC для persistent Telegram dedupe.');
   if (Number(telegramWebhook.staleProcessing || 0) > 0 || Number(telegramWebhook.failedCurrent || 0) > 0) recommendations.push(`Проверьте Telegram webhook claims: stale=${Number(telegramWebhook.staleProcessing || 0)}, failed=${Number(telegramWebhook.failedCurrent || 0)}.`);
   if (provider.cooldownActive) recommendations.push(`API-Football находится на паузе ещё примерно ${footballCooldownRemaining()} сек.; приложение должно использовать последние сохранённые данные.`);
@@ -14891,44 +14911,44 @@ async function apiReleaseReadiness(request, cfg) {
       backendSecurity.ok
         ? 'Все публичные таблицы защищены правилами доступа; анонимный и авторизованный клиент не имеют прямых прав; серверные процедуры закрыты.'
         : `Контракт безопасности текущей версии: ${backendSecurity.status || 'ошибка'}.`, true),
-    releaseCheck('model_backtest', 'Схема исторической проверки v3.6+', modelTable.ok ? 'pass' : 'fail', modelTable.ok ? 'Таблица прогнозов модели доступна.' : `model_predictions: ${modelTable.status}.`, true),
+    releaseCheck('model_backtest', 'Схема исторической проверки', modelTable.ok ? 'pass' : 'fail', modelTable.ok ? 'Таблица прогнозов модели доступна.' : `model_predictions: ${modelTable.status}.`, true),
     releaseCheck('prediction_integrity', 'Самопроверка целостности прогнозов', modelIntegritySelfTest().pass ? 'pass' : 'fail',
       modelIntegritySelfTest().pass ? 'Вероятности, время снимка и согласованность результата проходят синтетическую самопроверку.' : 'Самопроверка целостности прогнозов не прошла.', true),
     releaseCheck('prediction_remediation', 'Восстановление прогнозов v6.1', remediationTable.ok ? 'pass' : 'fail',
-      remediationTable.ok ? 'Журнал действий восстановления доступен.' : 'Нужна supabase_migration_v6_1.sql.', true),
+      remediationTable.ok ? 'Журнал действий восстановления доступен.' : SUPABASE_SCHEMA_GUIDANCE, true),
     releaseCheck('settlement_watchdog_schema', 'Схема контроля результатов v6.4', watchdogSchema.ok ? 'pass' : 'fail',
-      watchdogSchema.ok ? 'Переключатель автоматического восстановления и источник запуска по расписанию доступны.' : 'Нужна supabase_migration_v6_2.sql.', true),
+      watchdogSchema.ok ? 'Переключатель автоматического восстановления и источник запуска по расписанию доступны.' : SUPABASE_SCHEMA_GUIDANCE, true),
     releaseCheck('settlement_watchdog_selftest', 'Самопроверка контроля результатов', watchdogSelfTest.pass ? 'pass' : 'fail',
       watchdogSelfTest.pass ? `shadow=${watchdogSelfTest.shadow}, runtime=${watchdogSelfTest.runtime}, quota=${watchdogSelfTest.quota}, active=${watchdogSelfTest.active}.` : 'Самопроверка решения контролёра результатов не прошла.', true),
     releaseCheck('settlement_run_ledger_schema', 'Схема журнала запусков v6.4', runLedgerSchema.ok ? 'pass' : 'fail',
-      runLedgerSchema.ok ? 'Время прерванных запусков, счётчик попыток и связь повторных запусков доступны.' : 'Нужна supabase_migration_v6_4.sql.', true),
+      runLedgerSchema.ok ? 'Время прерванных запусков, счётчик попыток и связь повторных запусков доступны.' : SUPABASE_SCHEMA_GUIDANCE, true),
     releaseCheck('settlement_run_ledger_selftest', 'Самопроверка журнала запусков', settlementRunLedgerSelfTest().pass ? 'pass' : 'fail',
       settlementRunLedgerSelfTest().pass ? 'Fresh=1, interrupted retry=2, attempt 3 exhausts lineage, different batch starts fresh.' : 'Самопроверка журнала запусков не прошла.', true),
     releaseCheck('settlement_finality_schema', 'Схема подтверждения результата v6.5', finalitySchema.ok ? 'pass' : 'fail',
-      finalitySchema.ok ? 'Состояние проверки и журнал расхождений доступны.' : 'Нужна supabase_migration_v6_5.sql.', true),
+      finalitySchema.ok ? 'Состояние проверки и журнал расхождений доступны.' : SUPABASE_SCHEMA_GUIDANCE, true),
     releaseCheck('settlement_finality_selftest', 'Самопроверка подтверждения результата', settlementFinalitySelfTest().pass ? 'pass' : 'fail',
       settlementFinalitySelfTest().pass ? 'First matching pass verifies; second matching pass confirms; late score/status changes become drift.' : 'Самопроверка окончательности результата не прошла.', true),
     releaseCheck('settlement_adjudication_schema', 'Схема разбора расхождений v6.6', adjudicationSchema.ok ? 'pass' : 'fail',
-      adjudicationSchema.ok ? 'Журнал решений и поля разрешения модели доступны.' : 'Нужна supabase_migration_v6_6.sql.', true),
+      adjudicationSchema.ok ? 'Журнал решений и поля разрешения модели доступны.' : SUPABASE_SCHEMA_GUIDANCE, true),
     releaseCheck('settlement_adjudication_selftest', 'Самопроверка разбора расхождений', settlementDriftAdjudicationSelfTest().pass ? 'pass' : 'fail',
       settlementDriftAdjudicationSelfTest().pass ? 'Keep/accept/void transitions valid; unsafe provider acceptance blocked.' : 'Самопроверка ручного разбора результатов не прошла.', true),
     releaseCheck('settlement_trust_schema', 'Схема доверенных метрик v6.7', trustSchema.ok ? 'pass' : 'fail',
-      trustSchema.ok ? 'Количество проверок и время первой проверки доступны.' : 'Нужна supabase_migration_v6_7.sql.', true),
+      trustSchema.ok ? 'Количество проверок и время первой проверки доступны.' : SUPABASE_SCHEMA_GUIDANCE, true),
     releaseCheck('trusted_metrics_gate_selftest', 'Самопроверка доверенных метрик', trustedMetricsGateSelfTest().pass ? 'pass' : 'fail',
       trustedMetricsGateSelfTest().pass ? 'В метрики и калибровку допускаются только подтверждённые или вручную разобранные завершённые записи.' : 'Самопроверка допуска доверенных метрик не прошла.', true),
     releaseCheck('calibration_promotion_schema', 'Схема продвижения калибровки v6.8', calibrationPromotionSchema.ok ? 'pass' : 'fail',
-      calibrationPromotionSchema.ok ? 'Журнал решений по отложенной выборке доступен.' : 'Нужна supabase_migration_v6_8.sql.', true),
+      calibrationPromotionSchema.ok ? 'Журнал решений по отложенной выборке доступен.' : SUPABASE_SCHEMA_GUIDANCE, true),
     releaseCheck('calibration_promotion_selftest', 'Самопроверка продвижения калибровки', calibrationPromotionSelfTest().pass ? 'pass' : 'fail',
       calibrationPromotionSelfTest().pass ? 'Устойчивое улучшение проходит проверку, синтетическое переобучение блокируется.' : 'Самопроверка продвижения калибровки не прошла.', true),
     releaseCheck('calibration_lifecycle_schema', 'Atomic calibration lifecycle v6.10', calibrationLifecycleSchema.ok ? 'pass' : 'fail',
       calibrationLifecycleSchema.ok ? 'Атомарное состояние, журнал переходов и состояние отката доступны.' : 'Нужна supabase_migration_v6_10.sql.', true),
     releaseCheck('automatic_settlement_recovery', 'Автоматическое восстановление результатов', 'pass',
       runtime.autoSettlementRecoveryEnabled ? 'Автовосстановление включено: запуск по расписанию разрешён защитными правилами.' : 'Автовосстановление выключено: контролёр результатов работает в режиме наблюдения и только сигнализирует.', false),
-    releaseCheck('runtime_controls_schema', 'Схема управления функциями v5.7', runtimeTable.ok ? 'pass' : 'fail', runtimeTable.ok ? 'Таблица runtime_controls доступна.' : 'Нужен файл миграции supabase_migration_v5_7.sql.', true),
-    releaseCheck('runtime_history_schema', 'История откатов v5.8', runtimeHistoryTable.ok ? 'pass' : 'fail', runtimeHistoryTable.ok ? 'История управления функциями доступна.' : 'Нужна supabase_migration_v5_8.sql.', true),
+    releaseCheck('runtime_controls_schema', 'Схема управления функциями', runtimeTable.ok ? 'pass' : 'fail', runtimeTable.ok ? 'Таблица runtime_controls доступна.' : SUPABASE_SCHEMA_GUIDANCE, true),
+    releaseCheck('runtime_history_schema', 'История откатов', runtimeHistoryTable.ok ? 'pass' : 'fail', runtimeHistoryTable.ok ? 'История управления функциями доступна.' : SUPABASE_SCHEMA_GUIDANCE, true),
     releaseCheck('runtime_controls_state', 'Состояние управления функциями', runtime.maintenanceMode ? 'warn' : 'pass', runtime.maintenanceMode ? `Техническое обслуживание включено${runtime.message ? `: ${runtime.message}` : '.'}` : `Revision ${Number(runtime.revision || 1)} · рабочий режим.`, false),
-    releaseCheck('observability', 'Схема журнала событий v3.8', diagnostics.observability?.migrationReady ? 'pass' : 'warn', diagnostics.observability?.migrationReady ? 'Постоянный журнал операционных событий доступен.' : 'Журнал работает только в памяти серверного обработчика.', false),
-    releaseCheck('integrity', 'Схема целостности данных v3.9', diagnostics.integrity?.migrationReady ? 'pass' : 'fail', diagnostics.integrity?.migrationReady ? 'История проверок целостности доступна.' : 'Нужна миграция v3.9.', true),
+    releaseCheck('observability', 'Схема журнала событий', diagnostics.observability?.migrationReady ? 'pass' : 'warn', diagnostics.observability?.migrationReady ? 'Постоянный журнал операционных событий доступен.' : 'Журнал работает только в памяти серверного обработчика.', false),
+    releaseCheck('integrity', 'Схема целостности данных', diagnostics.integrity?.migrationReady ? 'pass' : 'fail', diagnostics.integrity?.migrationReady ? 'История проверок целостности доступна.' : SUPABASE_SCHEMA_GUIDANCE, true),
     releaseCheck('provider_health', 'Состояние API-Football', provider.health === 'critical' ? 'fail' : provider.health === 'warning' || provider.health === 'waiting' ? 'warn' : 'pass', provider.health === 'waiting' ? 'После старта серверного обработчика ещё не было успешного запроса к источнику данных.' : `Health: ${provider.health || 'unknown'}.`, provider.health === 'critical'),
     releaseCheck('provider_transition', 'Provider transition', providerTransitionProfile().paid ? 'pass' : 'warn', providerTransitionProfile().paid ? `${providerTransitionProfile().plan}: расширенный режим активен.` : `${providerTransitionProfile().plan}: приложение остаётся в экономном режиме до увеличения квоты.`, false),
     releaseCheck('quota_orchestrator', 'Quota Orchestrator', providerBudgetProfile().mode === 'emergency' ? 'warn' : 'pass', `${providerBudgetProfile().label}; feature cache api/cache=${Number(memory.providerFeatureFetch?.api || 0)}/${Number(memory.providerFeatureFetch?.cache || 0)}.`, false),
@@ -15246,7 +15266,7 @@ async function apiRcRegression(request, cfg, user) {
     runtimeState.schemaReady ? 'pass' : 'fail',
     runtimeState.schemaReady
       ? `Версия ${Number(runtimeState.value?.revision || 1)} · ${runtimeState.value?.maintenanceMode ? 'обслуживание ВКЛ' : 'обычный режим'} · автовосстановление ${runtimeState.value?.autoSettlementRecoveryEnabled ? 'ВКЛ' : 'наблюдение'}.`
-      : 'Запустите supabase_migration_v5_7.sql.',
+      : SUPABASE_SCHEMA_GUIDANCE,
     true
   ));
 
@@ -15256,7 +15276,7 @@ async function apiRcRegression(request, cfg, user) {
     'database',
     'Схема контроля результатов v6.4',
     watchdogSchema.ok ? 'pass' : 'fail',
-    watchdogSchema.ok ? 'Переключатель среды и источник запуска доступны.' : 'Запустите supabase_migration_v6_2.sql.',
+    watchdogSchema.ok ? 'Переключатель среды и источник запуска доступны.' : SUPABASE_SCHEMA_GUIDANCE,
     true
   ));
 
@@ -15264,9 +15284,9 @@ async function apiRcRegression(request, cfg, user) {
   checks.push(rcCheck(
     'runtime_history_schema',
     'database',
-    'История откатов v5.8',
+    'История откатов',
     runtimeHistorySchema.ok ? 'pass' : 'fail',
-    runtimeHistorySchema.ok ? 'История версий и откат доступны.' : 'Запустите supabase_migration_v5_8.sql.',
+    runtimeHistorySchema.ok ? 'История версий и откат доступны.' : SUPABASE_SCHEMA_GUIDANCE,
     true
   ));
 
@@ -15274,9 +15294,9 @@ async function apiRcRegression(request, cfg, user) {
   checks.push(rcCheck(
     'reminder_delivery_schema',
     'database',
-    'Схема доставки уведомлений v5.6',
+    'Схема доставки уведомлений',
     reminderSchema.ok ? 'pass' : 'fail',
-    reminderSchema.ok ? 'Поля атомарной блокировки доставки доступны.' : 'Запустите supabase_migration_v5_6.sql.',
+    reminderSchema.ok ? 'Поля атомарной блокировки доставки доступны.' : SUPABASE_SCHEMA_GUIDANCE,
     true
   ));
 

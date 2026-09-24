@@ -1,6 +1,7 @@
 const CLIENT_VERSION = '6.103.0-rc127';
 const CLIENT_API_CONTRACT = 5;
 const CLIENT_RELEASE_CHANNEL = 'rc127';
+const SUPABASE_SCHEMA_HINT = 'проверьте актуальную схему Supabase (baseline v6.18 / миграции до v6.18.1)';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -1770,7 +1771,7 @@ function renderModelRemediation() {
     resetBtn.disabled = Boolean(state.modelRemediationLoading || state.modelRemediationRunning || !reliability.schemaReady);
   }
   status.textContent = !r.schemaReady
-    ? 'Нужен файл миграции supabase_migration_v6_1.sql: предварительная проверка доступна, выполнение заблокировано.'
+    ? `Предварительная проверка доступна, выполнение заблокировано: ${SUPABASE_SCHEMA_HINT}.`
     : Number(driftReview.unresolved || 0)
       ? `Требуют ручного разбора: ${Number(driftReview.unresolved)} расхождений. Зависших ожиданий: ${Number(recovery.stalePending || 0)}.`
       : recovery.stalePending
@@ -1781,12 +1782,12 @@ function renderModelRemediation() {
     <div><span>Зависшие ожидания</span><strong>${Number(recovery.stalePending || 0)}</strong><small>старше 36 часов</small></div>
     <div><span>В пакете</span><strong>${Number(recovery.selectedCount || 0)}</strong><small>до ${Number(recovery.maxFixturesPerRun || 20)} матчей</small></div>
     <div><span>Запросы к источнику</span><strong>${Number(recovery.estimatedProviderCalls || 0)}</strong><small>по уникальным датам</small></div>
-    <div><span>Контроль результатов</span><strong>${watchdog.autoRecoveryEnabled ? 'АВТО' : 'НАБЛЮДЕНИЕ'}</strong><small>${watchdog.schemaReady ? `${escapeHtml(watchdog.scheduleUtc || '04:00')} по всемирному времени` : 'нужна миграция v6.2'}</small></div>
-    <div><span>Защитный контур</span><strong>${reliability.circuitOpen ? 'ОТКРЫТА' : 'ЗАКРЫТА'}</strong><small>${reliability.schemaReady ? (reliability.circuitOpenUntil ? `до ${escapeHtml(dateTime(reliability.circuitOpenUntil))}` : `${Number(reliability.consecutiveFailures || 0)}/${Number(reliability.failureThreshold || 2)} ошибок`) : 'нужна миграция v6.3'}</small></div>
-    <div><span>Журнал запусков</span><strong>${Number(runLedger.activeStarted || 0) ? 'ЗАНЯТО' : Number(runLedger.staleStarted || 0) ? 'ЗАВИСЛО' : 'ЧИСТО'}</strong><small>${runLedger.schemaReady ? `${Number(runLedger.activeStarted || 0)} активных · ${Number(runLedger.staleStarted || 0)} зависших · максимум ${Number(runLedger.maxAttempts || 3)} попытки` : 'нужна миграция v6.4'}</small></div>
-    <div><span>Подтверждение результата</span><strong>${Number(finality.drift || 0) ? 'РАСХОЖДЕНИЕ' : Number(finality.unverified || 0) || Number(finality.verified || 0) ? 'ПРОВЕРКА' : 'ПОДТВЕРЖДЕНО'}</strong><small>${finality.schemaReady ? `${Number(finality.confirmed || 0)} подтверждено · ${Number(finality.verified || 0)} первично проверено · ${Number(finality.unverified || 0)} ожидают проверки · ${Number(finality.adjudicated || 0)} проверено вручную · ${Number(finality.drift || 0)} расхождений` : 'нужна миграция v6.7'}</small></div>
+    <div><span>Контроль результатов</span><strong>${watchdog.autoRecoveryEnabled ? 'АВТО' : 'НАБЛЮДЕНИЕ'}</strong><small>${watchdog.schemaReady ? `${escapeHtml(watchdog.scheduleUtc || '04:00')} по всемирному времени` : SUPABASE_SCHEMA_HINT}</small></div>
+    <div><span>Защитный контур</span><strong>${reliability.circuitOpen ? 'ОТКРЫТА' : 'ЗАКРЫТА'}</strong><small>${reliability.schemaReady ? (reliability.circuitOpenUntil ? `до ${escapeHtml(dateTime(reliability.circuitOpenUntil))}` : `${Number(reliability.consecutiveFailures || 0)}/${Number(reliability.failureThreshold || 2)} ошибок`) : SUPABASE_SCHEMA_HINT}</small></div>
+    <div><span>Журнал запусков</span><strong>${Number(runLedger.activeStarted || 0) ? 'ЗАНЯТО' : Number(runLedger.staleStarted || 0) ? 'ЗАВИСЛО' : 'ЧИСТО'}</strong><small>${runLedger.schemaReady ? `${Number(runLedger.activeStarted || 0)} активных · ${Number(runLedger.staleStarted || 0)} зависших · максимум ${Number(runLedger.maxAttempts || 3)} попытки` : SUPABASE_SCHEMA_HINT}</small></div>
+    <div><span>Подтверждение результата</span><strong>${Number(finality.drift || 0) ? 'РАСХОЖДЕНИЕ' : Number(finality.unverified || 0) || Number(finality.verified || 0) ? 'ПРОВЕРКА' : 'ПОДТВЕРЖДЕНО'}</strong><small>${finality.schemaReady ? `${Number(finality.confirmed || 0)} подтверждено · ${Number(finality.verified || 0)} первично проверено · ${Number(finality.unverified || 0)} ожидают проверки · ${Number(finality.adjudicated || 0)} проверено вручную · ${Number(finality.drift || 0)} расхождений` : SUPABASE_SCHEMA_HINT}</small></div>
     <div><span>Доверенные метрики</span><strong>${Number(finality.trustedForMetrics || 0)}</strong><small>только подтверждённые и вручную проверенные</small></div>
-    <div><span>Разбор расхождений</span><strong>${Number(driftReview.unresolved || 0) ? 'ТРЕБУЕТ ДЕЙСТВИЯ' : 'ЧИСТО'}</strong><small>${driftReview.schemaReady ? `${Number(driftReview.unresolved || 0)} неразобранных · требуется решение администратора` : 'нужна миграция v6.6'}</small></div>`;
+    <div><span>Разбор расхождений</span><strong>${Number(driftReview.unresolved || 0) ? 'ТРЕБУЕТ ДЕЙСТВИЯ' : 'ЧИСТО'}</strong><small>${driftReview.schemaReady ? `${Number(driftReview.unresolved || 0)} неразобранных · требуется решение администратора` : SUPABASE_SCHEMA_HINT}</small></div>`;
 
   candidates.innerHTML = (recovery.candidates || []).length
     ? `<div class="model-remediation-list">${recovery.candidates.map(item => `
@@ -2367,7 +2368,7 @@ function renderRuntimeHistory() {
   }
 
   if (!panel.historyReady) {
-    status.textContent = panel.historyReason || 'Нужен файл миграции supabase_migration_v5_8.sql для истории и отката.';
+    status.textContent = panel.historyReason || SUPABASE_SCHEMA_HINT;
     list.innerHTML = '<div class="data-notice stale">История и откат пока недоступны. Основное управление функциями продолжает работать.</div>';
     return;
   }
@@ -2484,7 +2485,7 @@ function renderRuntimeControls() {
   if (!panel.available || !panel.schemaReady) {
     badge.className = 'runtime-controls-badge blocked';
     badge.textContent = 'БД';
-    status.textContent = panel.reason || 'Нужен файл миграции supabase_migration_v5_7.sql.';
+    status.textContent = panel.reason || SUPABASE_SCHEMA_HINT;
     revision.textContent = 'схема БД не готова';
     return;
   }
@@ -2655,8 +2656,8 @@ function renderReminderHealth() {
   if (!r.available) {
     badge.className = 'reminder-health-badge blocked';
     badge.textContent = 'БД';
-    status.textContent = r.reason || 'Нужна миграция v5.6.';
-    kpis.innerHTML = '<div class="data-notice stale">Перед проверкой уведомлений запустите <b>supabase_migration_v5_6.sql</b>.</div>';
+    status.textContent = r.reason || SUPABASE_SCHEMA_HINT;
+    kpis.innerHTML = `<div class="data-notice stale">Перед проверкой уведомлений ${escapeHtml(SUPABASE_SCHEMA_HINT)}.</div>`;
     recent.innerHTML = '';
     return;
   }
@@ -3353,7 +3354,7 @@ function renderDiagnostics() {
         <div><span>Доступ к базе данных</span><strong>${db.ok ? (db.recovered ? 'Восстановлено' : 'Норма') : 'Ошибка'}</strong><small>${Number.isFinite(Number(db.latencyMs)) ? `${Number(db.latencyMs)} мс` : '—'} · попыток ${Number(db.attempts || 1)}${db.recovered ? ' · первый probe не прошёл' : ''}</small></div>
         <div><span>Сохранённых записей</span><strong>${Number.isFinite(Number(cache.total)) ? Number(cache.total) : '—'}</strong><small>выборка ${Number(cache.sampled || 0)}</small></div>
         <div><span>Свежие / устаревшие</span><strong>${Number(cache.freshInSample || 0)} / ${Number(cache.staleInSample || 0)}</strong><small>в диагностической выборке</small></div>
-        <div><span>Журнал ошибок</span><strong>${obs.persistent ? 'Supabase' : 'Память'}</strong><small>${obs.migrationReady ? `хранение ${Number(obs.retentionDays || 14)} дн.` : 'нужна миграция v3.8'}</small></div>
+        <div><span>Журнал ошибок</span><strong>${obs.persistent ? 'Supabase' : 'Память'}</strong><small>${obs.migrationReady ? `хранение ${Number(obs.retentionDays || 14)} дн.` : SUPABASE_SCHEMA_HINT}</small></div>
         <div><span>Telegram webhook dedupe</span><strong>${telegramWebhook.available ? (telegramWebhook.state === 'healthy' ? 'Норма' : telegramWebhook.state === 'incident' ? 'Проблема' : 'Проверить') : 'Нет данных'}</strong><small>claims ${Number(telegramWebhook.claimsRecent || 0)} · дубли ${Number(telegramWebhook.duplicateAttemptsRetained || 0)} · stale ${Number(telegramWebhook.staleProcessing || 0)}</small></div>
       </div>`;
   }
@@ -3406,7 +3407,7 @@ function renderDiagnostics() {
         <div><span>Скрыто защитой</span><strong>${Number(integrityRun.quarantined || 0)}</strong><small>${Number(integrityRun.duplicates || 0)} дубликатов</small></div>
         <div><span>Предупреждения</span><strong>${Number(integrityRun.warnings || 0)}</strong><small>${Number(integrityRun.errors || 0)} ошибок</small></div>
       </div>
-      ${!integrityData.migrationReady ? '<p class="diagnostics-warning">Нужна миграция v3.9 для постоянного журнала целостности данных.</p>' : ''}
+      ${!integrityData.migrationReady ? `<p class="diagnostics-warning">${escapeHtml(SUPABASE_SCHEMA_HINT)} для постоянного журнала целостности данных.</p>` : ''}
       ${integrityIssues.length ? `<div class="integrity-issue-list">${integrityIssues.slice(0,5).map(item => `<div><b>${escapeHtml(humanizeTechnicalText(item.issue_code || item.code || 'ДАННЫЕ'))}</b><span>${escapeHtml(humanizeTechnicalText(item.message || ''))}</span><small>${escapeHtml([item.home_name || item.home, item.away_name || item.away].filter(Boolean).join(' — '))}${item.fixture_id || item.fixtureId ? ` · #${Number(item.fixture_id || item.fixtureId)}` : ''}</small></div>`).join('')}</div>` : ''}`;
   }
 
