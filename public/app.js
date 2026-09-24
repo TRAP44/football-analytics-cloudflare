@@ -826,12 +826,6 @@ function relativeAge(iso) {
   return `${days} дн. назад`;
 }
 
-function coverageLabel(tier) {
-  if (tier === 'enhanced') return { text: 'Расширенное', cls: 'enhanced' };
-  if (tier === 'basic') return { text: 'Базовое', cls: 'basic' };
-  return { text: 'Стандартное', cls: 'standard' };
-}
-
 async function api(path, options = {}) {
   const method = String(options.method || 'GET').toUpperCase();
   const isGet = method === 'GET';
@@ -4182,12 +4176,6 @@ function searchCompetitionSummaryCard(comp) {
   </div>`;
 }
 
-function discoveryCompetitionCard(comp, badge = '') {
-  return `<button class="discovery-competition-card" type="button" data-search-competition="${Number(comp.leagueId)}" data-season="${Number(comp.season || new Date().getFullYear())}" data-comp-name="${escapeHtml(comp.name || comp.shortName || 'Турнир')}" data-comp-short="${escapeHtml(comp.shortName || comp.name || 'Турнир')}" data-comp-country="${escapeHtml(comp.country || '')}" data-comp-category="${escapeHtml(comp.category || '')}" data-comp-tier="${escapeHtml(comp.tier || 'standard')}">
-    <span class="discovery-comp-icon">🏆</span><span><strong>${escapeHtml(comp.shortName || comp.name || 'Турнир')}</strong><small>${escapeHtml(comp.country || '')}${badge ? ` · ${escapeHtml(badge)}` : ''}</small></span><b>›</b>
-  </button>`;
-}
-
 function bindDiscoveryActions(root = document) {
   root.querySelectorAll?.('[data-search-team]').forEach(btn => btn.addEventListener('click', () => openTeam({
     id: Number(btn.dataset.searchTeam), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '', country: btn.dataset.teamCountry || '',
@@ -4717,14 +4705,6 @@ function matchCenter(m) {
     return `${m.score?.home ?? 0}:${m.score?.away ?? 0} · идёт матч${minute}`;
   }
   return timeOf(m.date);
-}
-
-function interestLabel(score) {
-  const n = Number(score || 0);
-  if (n >= 80) return '🔥 Очень высокий';
-  if (n >= 65) return '⭐ Высокий';
-  if (n >= 45) return 'Средний';
-  return 'Обычный';
 }
 
 function competitionGroups(list) {
@@ -5387,15 +5367,6 @@ function liveEventsHtml(events = []) {
     </div>`).join('')}</div>`;
 }
 
-function liveStatsHtml(stats, match) {
-  const items = stats?.items || [];
-  if (!items.length) return '<div class="empty compact-empty">Детальная статистика недоступна для этого матча.</div>';
-  return `<div class="live-stats">
-    <div class="live-stat-head"><strong>${escapeHtml(match.home?.name || '')}</strong><span></span><strong>${escapeHtml(match.away?.name || '')}</strong></div>
-    ${items.map(x => `<div class="live-stat-row"><strong>${statValue(x.home)}</strong><span>${escapeHtml(publicText(x.label))}</span><strong>${statValue(x.away)}</strong></div>`).join('')}
-  </div>`;
-}
-
 function lineupPlayerName(p) {
   return typeof p === 'string' ? p : (p?.name || 'Игрок');
 }
@@ -5549,11 +5520,6 @@ function playerMetricText(p) {
   if (Number(p.keyPasses)) bits.push(`${p.keyPasses} ключ. пас`);
   if (!bits.length && Number(p.minutes)) bits.push(`${p.minutes} мин`);
   return bits.join(' · ') || '—';
-}
-
-function playerLeadersHtml(leaders, m) {
-  const side = (title, list) => `<div class="player-leader-side"><h3>${escapeHtml(title)}</h3>${list?.length ? list.map((p,i) => `<div class="player-leader-row">${p.photo ? `<img src="${safeUrl(p.photo)}" alt="">` : '<span class="player-photo-placeholder">👤</span>'}<div><strong>${i+1}. ${escapeHtml(p.name)}</strong><small>${escapeHtml(playerMetricText(p))}</small></div><b>${p.rating ? p.rating.toFixed(1) : '—'}</b></div>`).join('') : '<p class="muted">Статистика игроков недоступна.</p>'}</div>`;
-  return `<div class="player-leaders-grid">${side(m.home?.name || 'Хозяева', leaders?.home || [])}${side(m.away?.name || 'Гости', leaders?.away || [])}</div>`;
 }
 
 function liveAbsencesHtml(absences, match) {
@@ -6358,11 +6324,6 @@ function bullets(items = [], empty = 'Нет существенных факто
   return `<ul class="list analysis-list">${items.map(x => `<li>${escapeHtml(publicText(x))}</li>`).join('')}</ul>`;
 }
 
-function absenceList(title, items) {
-  if (!items?.length) return `<div class="data-card"><span>${escapeHtml(title)}</span><strong>Нет данных</strong></div>`;
-  return `<div class="panel"><h2>${escapeHtml(title)}</h2><ul class="list">${items.slice(0, 10).map(x => `<li><strong>${escapeHtml(x.name)}</strong>${x.reason ? ` — ${escapeHtml(publicText(x.reason))}` : ''}${x.type ? ` (${escapeHtml(publicText(x.type))})` : ''}</li>`).join('')}</ul></div>`;
-}
-
 function reminderFor(fixtureId) {
   return state.reminders.find(x => Number(x.fixtureId) === Number(fixtureId)) || null;
 }
@@ -6667,10 +6628,6 @@ function prematchOutcomeName(key, match) {
   if (key === 'away') return match.away?.name || 'П2';
   if (key === 'draw') return 'Ничья';
   return '—';
-}
-
-function prematchUncertaintyClass(level) {
-  return level === 'low' ? 'good' : level === 'high' ? 'low' : 'medium';
 }
 
 function prematchDriverCard(driver, match) {
@@ -7528,4 +7485,3 @@ try {
   clearTimeout(startupWatchdog);
 }
 
-const MINIAPP_PRODUCT_MODE = 'ai-analysis-only';

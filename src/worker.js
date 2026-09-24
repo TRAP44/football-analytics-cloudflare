@@ -2177,22 +2177,6 @@ async function getUsage(userId, cfg) {
   return Number(memory.usage.get(`${userId}:${date}`) || 0);
 }
 
-async function incrementUsage(userId, cfg) {
-  const date = todayUtc();
-  const next = (await getUsage(userId, cfg)) + 1;
-  if (hasSupabase(cfg)) {
-    await supaUpsert(cfg, 'usage_daily', {
-      telegram_id: Number(userId),
-      usage_date: date,
-      analyses: next,
-      updated_at: new Date().toISOString(),
-    }, 'telegram_id,usage_date');
-  } else {
-    memory.usage.set(`${userId}:${date}`, next);
-  }
-  return next;
-}
-
 async function reserveAnalysisQuota(userId, cfg) {
   const date = todayUtc();
   const user = await getUserRecord(userId, cfg);
@@ -3129,7 +3113,6 @@ function newsImpactConversionConfidence(actedUsers = 0, users = 0) {
 }
 
 const NEWS_IMPACT_ACTION_WINDOW_MINUTES = 30;
-const NEWS_IMPACT_ACTION_WINDOW_MS = NEWS_IMPACT_ACTION_WINDOW_MINUTES * 60_000;
 
 function newsImpactEventTime(row = {}) {
   const at=Date.parse(String(row?.created_at || ''));
@@ -3258,7 +3241,6 @@ function newsImpactTemporalAttributionDrill() {
 }
 
 const NEWS_IMPACT_OUTCOME_WINDOW_MINUTES = 5;
-const NEWS_IMPACT_OUTCOME_WINDOW_MS = NEWS_IMPACT_OUTCOME_WINDOW_MINUTES * 60_000;
 
 const NEWS_IMPACT_OUTCOME_CODES = {
   full_ai:'analysis_delivered',
@@ -3542,7 +3524,6 @@ function newsImpactFailureDiagnosticsDrill() {
 }
 
 const NEWS_IMPACT_RECOVERY_WINDOW_MINUTES = 5;
-const NEWS_IMPACT_RECOVERY_WINDOW_MS = NEWS_IMPACT_RECOVERY_WINDOW_MINUTES * 60_000;
 const NEWS_IMPACT_RECOVERY_STRATEGY_MIN_ATTEMPTS = 30;
 const NEWS_IMPACT_RECOVERY_STRATEGY_MIN_LIFT_PCT_POINTS = 5;
 const NEWS_IMPACT_RECOVERY_STRATEGY_LOOKBACK_DAYS = 30;
@@ -6848,10 +6829,6 @@ async function sendDailyPicks(request,cfg,chatId) {
   });
 }
 
-function digestAppUrl(base) {
-  try { const u=new URL(String(base || '')); u.searchParams.set('filter','top'); return u.toString(); } catch { return ''; }
-}
-
 async function processDailyDigests(cfg,scheduledAt=new Date()) {
   if (!cfg.botToken) return {sent:0,skipped:'bot_token_missing'};
   const hour=scheduledAt.getUTCHours();
@@ -6946,10 +6923,6 @@ function botMatchScore(match, parts) {
   if (!match?.finished) score += 24;
   if (match?.featured) score += 12;
   return score;
-}
-
-function botMatchAction(match) {
-  return match?.live || match?.finished ? 'center' : 'analysis';
 }
 
 function botMatchButtonText(match) {
@@ -12057,19 +12030,6 @@ async function removeReminder(userId, fixtureId, cfg) {
   memory.reminders.set(key, (memory.reminders.get(key) || []).filter(x => Number(x.fixture_id) !== id));
 }
 
-async function patchReminder(row, patch, cfg) {
-  if (!hasSupabase(cfg)) return;
-  const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
-  url.searchParams.set('telegram_id', `eq.${Number(row.telegram_id)}`);
-  url.searchParams.set('fixture_id', `eq.${Number(row.fixture_id)}`);
-  const r = await fetchWithTimeout(url, {
-    method: 'PATCH',
-    headers: supaHeaders(cfg, { Prefer: 'return=minimal' }),
-    body: JSON.stringify(patch),
-  }, 7000, 'Supabase reminders patch');
-  if (!r.ok) throw new Error(`Supabase reminders patch: HTTP ${r.status}`);
-}
-
 function reminderDeliveryStatus(row) {
   if (row?.kickoff_notified_at) return 'kickoff_sent';
   if (row?.notified_at) return 'prematch_sent';
@@ -15726,11 +15686,6 @@ function newsFeedText(items = [], { title='FM AI News', teamName='', fixture=nul
   return [`📰 <b>${telegramHtmlEscape(title)}</b>`,intro,'',...rows.map(x=>x+'\n'),'FM AI не меняет прогноз только из-за заголовка: новость учитывается в анализе лишь вместе с подтверждёнными футбольными данными.'].join('\n');
 }
 
-function newsSourceKeyboard(items = [], extraRows = []) {
-  const rows=(items || []).slice(0,4).map((item,index)=>[{text:`↗ Источник ${index+1} · ${String(item.source || 'новость').slice(0,28)}`,url:item.url}]);
-  return {inline_keyboard:[...rows,...extraRows]};
-}
-
 async function sendGeneralFootballNews(request,cfg,userId,chatId,{force=false}={}) {
   void recordGrowthEvent(cfg,{userId,eventName:'news_open',channel:'telegram',metadata:{refresh:Boolean(force)}});
   const news=await currentGeneralFootballNews(cfg,force);
@@ -16387,12 +16342,6 @@ function extractPrediction(rows) {
     goals: p.goals || null,
   };
 }
-function combineProbabilities(market, model) {
-  const m = market?.probabilities, p = model?.probabilities;
-  if (m && p) return normalizeThree(m.home * 0.55 + p.home * 0.45, m.draw * 0.55 + p.draw * 0.45, m.away * 0.55 + p.away * 0.45);
-  return m || p || null;
-}
-
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, Number(value)));
 }
