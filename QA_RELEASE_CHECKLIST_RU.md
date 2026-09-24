@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.100.0 RC108
+# QA Release Checklist — v6.101.0 RC109
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.100.0`.
-- Worker и client: `6.100.0-rc108`.
-- Release candidate: `RC108`.
+- `package.json` и `package-lock.json`: `6.101.0`.
+- Worker и client: `6.101.0-rc109`.
+- Release candidate: `RC109`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -34,20 +34,22 @@ npm run verify:worker
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
 
-## RC108 — Telegram Webhook Dedupe Observability
+## RC109 — Supabase Probe Confirmation Guard
 
-- `telegram_update_claims` хранит `duplicate_count` и `last_duplicate_at`, не сохраняя текст сообщений пользователя.
-- Повторный активный/завершённый claim увеличивает только агрегированный счётчик и остаётся заблокированным.
-- Service-role-only RPC `telegram_webhook_dedupe_health` возвращает claims, completed, failed, stale и агрегированные duplicate counters.
-- Нормальные Telegram retry/delivery duplicates считаются метрикой, а не инцидентом.
-- Один stale/failed claim переводит dedupe health в `watch`; 5+ stale или recent failed — в `incident`.
-- Production Monitor учитывает dedupe health; Release Readiness блокируется, если health RPC отсутствует или observability self-test не проходит.
-- Админская диагностика показывает claims / duplicates / stale / failed.
-- `/health`: `telegramWebhookDedupeObservability=enabled` и `telegramWebhookDedupeObservabilitySelfTest=enabled`.
-- Regression: `test/telegram-webhook-observability-rc108.test.js`.
-- Для существующей базы обязательна миграция `supabase_migration_v6_17.sql`.
+- Диагностика и Production Monitor используют `probeSupabaseConfirmed()`.
+- Если первый Supabase probe успешен, второго запроса нет.
+- Если первый probe не прошёл, выполняется один подтверждающий retry с короткой задержкой.
+- Успешный retry сохраняет `ok=true`, `attempts=2`, `recovered=true` и не создаёт ложный production incident.
+- Два последовательных отказа остаются fail-closed: `confirmedFailure=true` и блокирующий статус сохраняется.
+- Transient recovery записывается отдельно как `SUPABASE_PROBE_RECOVERED`, поэтому нестабильность не скрывается.
+- Runtime telemetry считает `supabaseProbeRecoveries` и `supabaseProbeConfirmedFailures`.
+- Release Readiness и Production Readiness содержат blocking check `supabase_probe_confirmation`.
+- Админская диагностика показывает число попыток, recoveries и confirmed failures.
+- `/health`: `supabaseProbeConfirmation=enabled` и `supabaseProbeConfirmationSelfTest=enabled`.
+- Regression: `test/supabase-probe-confirmation-rc109.test.js`.
+- Новая Supabase migration не требуется; production schema остаётся v6.17.
 
-## Исторические RC72–RC107
+## Исторические RC72–RC108
 
 Детальные исторические release-контракты удалены из текущего checklist, чтобы не дублировать Git history и regression-тесты. Их поведение продолжает проверяться соответствующими файлами `test/*-rcXX.test.js`, а продуктовая сводка сохранена в `README_CLOUDFLARE_RU.md`.
 
@@ -69,8 +71,8 @@ npm run verify:worker
 
 `scripts/post-deploy-smoke.js` должен подтвердить:
 - `/health.ok = true`;
-- `version = 6.100.0-rc108`;
-- `releaseCandidate = RC108`;
+- `version = 6.101.0-rc109`;
+- `releaseCandidate = RC109`;
 - `devMode = false`;
 - обязательные self-test/feature flags = `enabled`;
 - `/health/supabase` не доступен публично;
