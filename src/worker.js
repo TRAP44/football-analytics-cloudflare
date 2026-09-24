@@ -1548,7 +1548,8 @@ async function validateTelegramInitData(initData, botToken, maxAgeSeconds = 24 *
 
   const authDate = Number(params.get('auth_date') || 0);
   const ageLimit = Math.max(60, Math.min(24 * 60 * 60, Number(maxAgeSeconds || 0)));
-  if (!authDate || Math.abs(Date.now() / 1000 - authDate) > ageLimit) return null;
+  const nowSeconds = Date.now() / 1000;
+  if (!authDate || authDate > nowSeconds + 120 || nowSeconds - authDate > ageLimit) return null;
 
   try {
     const user = JSON.parse(params.get('user') || '{}');
@@ -1558,12 +1559,35 @@ async function validateTelegramInitData(initData, botToken, maxAgeSeconds = 24 *
   }
 }
 
+const ADMIN_SENSITIVE_PATHS = new Set([
+  '/api/diagnostics',
+  '/api/release-readiness',
+  '/api/production-readiness',
+  '/api/rc-regression',
+  '/api/release-monitor',
+  '/api/production-monitor',
+  '/api/launch-funnel',
+  '/api/recovery-incident-ack',
+  '/api/reminder-health',
+  '/api/data-integrity',
+  '/api/model-quality',
+  '/api/calibration-control',
+  '/api/model-remediation',
+  '/api/media-publisher-link',
+]);
+
+function isAdminSensitivePath(pathname = '') {
+  const path=String(pathname || '');
+  return path.startsWith('/api/runtime-controls')
+    || path === '/api/provider'
+    || path.startsWith('/api/provider/')
+    || ADMIN_SENSITIVE_PATHS.has(path);
+}
+
 async function getRequestUser(request, cfg) {
   const initData = request.headers.get('x-telegram-init-data') || '';
   const requestUrl = new URL(request.url);
-  const adminSensitive = requestUrl.pathname.startsWith('/api/runtime-controls')
-    || requestUrl.pathname.startsWith('/api/provider/')
-    || ['/api/diagnostics','/api/release-readiness','/api/production-readiness','/api/rc-regression','/api/release-monitor','/api/production-monitor','/api/calibration-control','/api/model-remediation','/api/media-publisher-link'].includes(requestUrl.pathname);
+  const adminSensitive = isAdminSensitivePath(requestUrl.pathname);
   const mutation = !['GET','HEAD','OPTIONS'].includes(String(request.method || 'GET').toUpperCase());
   const initDataMaxAgeSeconds = adminSensitive ? 15 * 60 : mutation ? 2 * 60 * 60 : 24 * 60 * 60;
   let user = await validateTelegramInitData(initData, cfg.botToken, initDataMaxAgeSeconds);
