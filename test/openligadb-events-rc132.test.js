@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   normalizeOpenLigaMatchEvents,
   openLigaMatchDataUrls,
 } from '../src/providers/openligadb.js';
+
+const worker = fs.readFileSync('src/worker.js', 'utf8');
 
 test('RC132 builds keyless OpenLigaDB match-data URLs only for supported competitions', () => {
   assert.deepEqual(openLigaMatchDataUrls(78, 2026), [{
@@ -101,4 +104,24 @@ test('RC132 drops goals when the scoring side cannot be inferred safely', () => 
   assert.equal(result.available, false);
   assert.equal(result.events.length, 0);
   assert.equal(result.reason, 'goals_not_available');
+});
+
+
+test('RC132 Match Center keeps API-Football primary and calls OpenLigaDB only after empty events', () => {
+  assert.match(worker, /async function secondaryOpenLigaEvents\(/);
+  assert.match(worker, /openLigaMatchDataUrls\(leagueId, season, homeName\)/);
+  assert.match(worker, /claimSecondaryProviderBudget\(cfg, 'openligadb', 50\)/);
+  assert.match(worker, /if \(!events\.length && result\.meta\?\.policy\?\.allowed !== false\)/);
+  assert.match(worker, /const secondaryEvents=await secondaryOpenLigaEvents\(fixture, cfg, eventContext\)/);
+  assert.match(worker, /if \(secondaryEvents\.available\) \{\s*events=secondaryEvents\.events;\s*featureMeta\.events=secondaryEvents\.meta;/);
+  assert.match(worker, /fallbackProvider:'openligadb'/);
+});
+
+test('RC132 fallback does not impersonate unsupported event types or expanded datasets', () => {
+  const helperStart = worker.indexOf('async function secondaryOpenLigaEvents');
+  const helperEnd = worker.indexOf('async function footballDataStandingsProvider', helperStart);
+  const helper = worker.slice(helperStart, helperEnd);
+  assert.ok(helperStart > 0 && helperEnd > helperStart);
+  assert.doesNotMatch(helper, /fixtures\/statistics|fixtures\/players|fixtures\/lineups|\/injuries/);
+  assert.match(helper, /normalizeOpenLigaMatchEvents/);
 });
