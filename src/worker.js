@@ -776,6 +776,19 @@ function publicRouteError(error, rateLimited = false) {
   const code = String(error?.code || (rateLimited ? 'FOOTBALL_RATE_LIMIT' : 'SERVER_ERROR'));
   const retryAfter = Number(error?.retryAfter || 0) || undefined;
 
+  if (['REQUEST_BODY_TOO_LARGE','INVALID_JSON','VALIDATION_ERROR','FAVORITES_LIMIT','REMINDERS_LIMIT'].includes(code)) {
+    const status=Math.max(400,Math.min(499,Number(error?.status || (code.endsWith('_LIMIT') ? 409 : code==='REQUEST_BODY_TOO_LARGE' ? 413 : 400))));
+    return {
+      status,
+      body:{
+        error:String(error?.message || 'Некорректный запрос.').slice(0,240),
+        code,
+        category:'request',
+        recoverable:status!==413,
+      },
+    };
+  }
+
   if (rateLimited || ['FOOTBALL_RATE_LIMIT', 'FOOTBALL_COOLDOWN'].includes(code)) {
     return {
       status: 429,
@@ -12170,9 +12183,15 @@ function normalizePreferences(row = {}) {
   return {
     defaultFilter: allowedFilters.has(String(rawFilter)) ? String(rawFilter) : DEFAULT_PREFERENCES.defaultFilter,
     reminderMinutes: [15, 30, 60].includes(reminder) ? reminder : DEFAULT_PREFERENCES.reminderMinutes,
-    kickoffNotification: row.kickoff_notification ?? row.kickoffNotification ?? DEFAULT_PREFERENCES.kickoffNotification,
-    hideYouth: row.hide_youth ?? row.hideYouth ?? DEFAULT_PREFERENCES.hideYouth,
-    favoriteFirst: row.favorite_first ?? row.favoriteFirst ?? DEFAULT_PREFERENCES.favoriteFirst,
+    kickoffNotification: typeof (row.kickoff_notification ?? row.kickoffNotification) === 'boolean'
+      ? (row.kickoff_notification ?? row.kickoffNotification)
+      : DEFAULT_PREFERENCES.kickoffNotification,
+    hideYouth: typeof (row.hide_youth ?? row.hideYouth) === 'boolean'
+      ? (row.hide_youth ?? row.hideYouth)
+      : DEFAULT_PREFERENCES.hideYouth,
+    favoriteFirst: typeof (row.favorite_first ?? row.favoriteFirst) === 'boolean'
+      ? (row.favorite_first ?? row.favoriteFirst)
+      : DEFAULT_PREFERENCES.favoriteFirst,
   };
 }
 
