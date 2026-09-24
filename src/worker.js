@@ -73,6 +73,8 @@ const memory = {
     burstBlocks: 0,
     telegramBurstBlocks: 0,
     telegramDuplicateUpdates: 0,
+    telegramPersistentDuplicateUpdates: 0,
+    telegramDedupeFallbacks: 0,
     upstreamTimeouts: 0,
     userSyncSkips: 0,
     memoryPrunes: 0,
@@ -81,11 +83,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.98.0-rc106';
+const APP_VERSION = '6.99.0-rc107';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc106';
-const RC_NAME = 'RC106';
+const RELEASE_CHANNEL = 'rc107';
+const RC_NAME = 'RC107';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -689,6 +691,7 @@ function appManifest(cfg) {
       primaryMatchRecommendation: true,
       oneTapAiHandoff: true,
       telegramMiniAppE2E: true,
+      telegramWebhookPersistentDedupe: true,
       cachedFullAnalysisHandoff: true,
       aiFreshnessGuard: true,
       preKickoffRecheck: true,
@@ -972,6 +975,53 @@ function releaseTelegramUpdate(key='') {
   if (key) memory.telegramUpdateDedupe.delete(key);
 }
 
+async function claimTelegramUpdatePersistent(cfg, key='') {
+  if (!key || !hasSupabase(cfg)) return { persistent:false, claimed:true, duplicate:false, status:'fallback' };
+  try {
+    const claimed=Boolean(await supaRpc(cfg,'claim_telegram_update',{p_update_key:key,p_lease_seconds:90},1800));
+    if (!claimed) {
+      bumpTelemetry('telegramPersistentDuplicateUpdates');
+      return { persistent:true, claimed:false, duplicate:true, status:'duplicate' };
+    }
+    return { persistent:true, claimed:true, duplicate:false, status:'claimed' };
+  } catch {
+    bumpTelemetry('telegramDedupeFallbacks');
+    return { persistent:false, claimed:true, duplicate:false, status:'fallback' };
+  }
+}
+
+async function completeTelegramUpdatePersistent(cfg, key='') {
+  if (!key || !hasSupabase(cfg)) return false;
+  try {
+    await supaRpc(cfg,'complete_telegram_update',{p_update_key:key},1200);
+    return true;
+  } catch {
+    bumpTelemetry('telegramDedupeFallbacks');
+    return false;
+  }
+}
+
+async function releaseTelegramUpdatePersistent(cfg, key='') {
+  if (!key || !hasSupabase(cfg)) return false;
+  try {
+    await supaRpc(cfg,'release_telegram_update',{p_update_key:key},1200);
+    return true;
+  } catch {
+    bumpTelemetry('telegramDedupeFallbacks');
+    return false;
+  }
+}
+
+function telegramPersistentDedupeSelfTest() {
+  const byUpdate=telegramUpdateDedupeKey({update_id:123456});
+  const byCallback=telegramUpdateDedupeKey({callback_query:{id:'cb-123'}});
+  const byMessage=telegramUpdateDedupeKey({message:{chat:{id:77},message_id:88}});
+  return {
+    pass:byUpdate==='u:123456' && byCallback==='c:cb-123' && byMessage==='m:77:88',
+    cases:3,
+  };
+}
+
 function telegramBurstKind(update = {}) {
   if (update?.pre_checkout_query || update?.subscription || update?.message?.successful_payment || update?.message?.refunded_payment) return '';
   const callback=String(update?.callback_query?.data || '');
@@ -1025,6 +1075,8 @@ function productionSafetySnapshot() {
       activeBuckets: memory.telegramBurst.size,
       blocked: Number(memory.telemetry?.telegramBurstBlocks || 0),
       duplicateUpdates: Number(memory.telemetry?.telegramDuplicateUpdates || 0),
+      persistentDuplicateUpdates: Number(memory.telemetry?.telegramPersistentDuplicateUpdates || 0),
+      persistentFallbacks: Number(memory.telemetry?.telegramDedupeFallbacks || 0),
       dedupeEntries: memory.telegramUpdateDedupe.size,
       policies: Object.values(TELEGRAM_BURST_POLICIES).map(x=>({label:x.label,limit:x.limit,windowMs:x.windowMs})),
     },
@@ -1154,13 +1206,13 @@ async function supaDelete(cfg, table, filters = {}) {
   }
 }
 
-async function supaRpc(cfg, functionName, payload = {}) {
+async function supaRpc(cfg, functionName, payload = {}, timeoutMs = 7000) {
   const url = new URL(`${cfg.supabaseUrl}/rest/v1/rpc/${functionName}`);
   const r = await fetchWithTimeout(url, {
     method: 'POST',
     headers: supaHeaders(cfg),
     body: JSON.stringify(payload || {}),
-  }, 7000, `Supabase RPC ${functionName}`);
+  }, Math.max(500, Number(timeoutMs || 7000)), `Supabase RPC ${functionName}`);
   const body = await r.json().catch(() => null);
   if (!r.ok) {
     const error = new Error(`Supabase RPC ${functionName}: HTTP ${r.status}${body?.message ? ` — ${redactOpsString(body.message, 180)}` : ''}`);
@@ -7397,9 +7449,16 @@ async function handleTelegramWebhook(request, cfg) {
   const claim=claimTelegramUpdate(update);
   if (claim.duplicate) return json({ok:true,deduped:true});
 
+  const persistentClaim=await claimTelegramUpdatePersistent(cfg,claim.key);
+  if (persistentClaim.duplicate) {
+    completeTelegramUpdate(claim.key);
+    return json({ok:true,deduped:true,persistent:true});
+  }
+
   const burst=enforceTelegramBurst(update);
   if (burst?.blocked) {
     completeTelegramUpdate(claim.key);
+    await completeTelegramUpdatePersistent(cfg,claim.key);
     const callbackId=String(update?.callback_query?.id || '');
     if (callbackId) {
       await telegramApi('answerCallbackQuery',cfg,{
@@ -7413,9 +7472,11 @@ async function handleTelegramWebhook(request, cfg) {
   try {
     const response=await processTelegramUpdate(request,cfg,update);
     completeTelegramUpdate(claim.key);
+    await completeTelegramUpdatePersistent(cfg,claim.key);
     return response;
   } catch (error) {
     releaseTelegramUpdate(claim.key);
+    await releaseTelegramUpdatePersistent(cfg,claim.key);
     throw error;
   }
 }
@@ -14256,6 +14317,7 @@ async function probeSupabaseSchemaDrift(cfg) {
     { id: 'digest_subscriptions', table: 'bot_digest_subscriptions', columns: ['telegram_id','enabled','hour_utc'] },
     { id: 'referee_history', table: 'referee_match_history', columns: ['fixture_id','referee_key','yellow_cards'] },
     { id: 'growth_events', table: 'growth_events', columns: ['id','event_name','metadata','created_at'] },
+    { id: 'telegram_update_claims', table: 'telegram_update_claims', columns: ['update_key','status','locked_until','expires_at'] },
   ];
   const checks = await Promise.all(specs.map(async spec => ({
     ...spec,
@@ -14268,13 +14330,15 @@ function supabaseSchemaDriftSelfTest() {
   const healthy = summarizeSupabaseSchemaChecks([
     { id: 'users_acquisition', table: 'users', columns: ['acquisition_source'], ok: true, status: 'ok' },
     { id: 'growth_events', table: 'growth_events', columns: ['event_name'], ok: true, status: 'ok' },
+    { id: 'telegram_update_claims', table: 'telegram_update_claims', columns: ['status'], ok: true, status: 'ok' },
   ]);
   const drift = summarizeSupabaseSchemaChecks([
     { id: 'users_acquisition', table: 'users', columns: ['acquisition_source'], ok: true, status: 'ok' },
-    { id: 'growth_events', table: 'growth_events', columns: ['event_name'], ok: false, status: 'http_400' },
+    { id: 'growth_events', table: 'growth_events', columns: ['event_name'], ok: true, status: 'ok' },
+    { id: 'telegram_update_claims', table: 'telegram_update_claims', columns: ['status'], ok: false, status: 'http_400' },
   ]);
   return {
-    pass: healthy.ok && !drift.ok && drift.status === 'drift' && drift.missing.length === 1 && drift.missing[0] === 'growth_events',
+    pass: healthy.ok && !drift.ok && drift.status === 'drift' && drift.missing.length === 1 && drift.missing[0] === 'telegram_update_claims',
     healthy: healthy.ok,
     missing: drift.missing,
   };
@@ -14318,13 +14382,14 @@ async function apiReleaseReadiness(request, cfg) {
   const providerReliabilitySelfTest = providerDataReliabilitySelfTest();
   const aiQualityGateSelfTest = analysisQualityGateSelfTest();
   const telegramMiniAppE2ESelfTest = telegramMiniAppE2EDrill();
+  const telegramPersistentDedupeCheck = telegramPersistentDedupeSelfTest();
   const checks = [
     releaseCheck('football_api', 'Ключ API-Football', cfg.apiFootballKey ? 'pass' : 'fail', cfg.apiFootballKey ? 'Ключ доступен серверному обработчику.' : 'Ключ API-Football отсутствует.', true),
     releaseCheck('supabase_config', 'Настройка Supabase', hasSupabase(cfg) ? 'pass' : 'fail', hasSupabase(cfg) ? 'Адрес и сервисный ключ доступны серверу.' : 'Не хватает адреса Supabase или сервисного ключа.', true),
     releaseCheck('supabase_online', 'Supabase/PostgREST', diagnostics.supabase?.ok ? 'pass' : 'fail', diagnostics.supabase?.ok ? `Ответ ${Number(diagnostics.supabase?.latencyMs || 0)} мс.` : `Статус: ${diagnostics.supabase?.status || 'offline'}.`, true),
     releaseCheck('supabase_schema_drift', 'Контракт актуальной схемы Supabase', schemaDrift.ok ? 'pass' : 'fail',
       schemaDrift.ok
-        ? `Проверено ${schemaDrift.checked} обязательных участков схемы v6.15; drift не обнаружен.`
+        ? `Проверено ${schemaDrift.checked} обязательных участков схемы v6.16; drift не обнаружен.`
         : `Schema drift: отсутствуют или несовместимы ${schemaDrift.missing.join(', ') || 'обязательные объекты'}.`, true),
     releaseCheck('supabase_schema_drift_selftest', 'Самопроверка Schema Drift Guard', schemaDriftSelfTest.pass ? 'pass' : 'fail',
       schemaDriftSelfTest.pass ? 'Drift корректно переводит release gate в блокирующее состояние.' : 'Самопроверка Schema Drift Guard не прошла.', true),
@@ -14340,6 +14405,11 @@ async function apiReleaseReadiness(request, cfg) {
       telegramMiniAppE2ESelfTest.pass
         ? `Проверено ${telegramMiniAppE2ESelfTest.cases} переходов: поиск → матч → Quick AI → полный анализ → избранное.`
         : 'Серверный Telegram/Mini App handoff-контракт нарушен.', true),
+    releaseCheck('telegram_webhook_persistent_dedupe', 'Persistent dedupe Telegram webhook',
+      telegramPersistentDedupeCheck.pass && !schemaDrift.missing.includes('telegram_update_claims') ? 'pass' : 'fail',
+      telegramPersistentDedupeCheck.pass && !schemaDrift.missing.includes('telegram_update_claims')
+        ? 'Update ID защищён атомарным claim в Supabase; memory-dedupe остаётся быстрым первым слоем и fallback.'
+        : 'Не готова таблица/RPC persistent dedupe Telegram webhook.', true),
     releaseCheck('backend_security_contract', 'Контракт безопасности Supabase', backendSecurity.ok ? 'pass' : 'fail',
       backendSecurity.ok
         ? 'Все публичные таблицы защищены правилами доступа; анонимный и авторизованный клиент не имеют прямых прав; серверные процедуры закрыты.'
@@ -19547,6 +19617,8 @@ export default {
         oneTapHandoffSelfTest: oneTapHandoffDrill().pass ? 'enabled' : 'failed',
         telegramMiniAppE2E: 'enabled',
         telegramMiniAppE2ESelfTest: telegramMiniAppE2EDrill().pass ? 'enabled' : 'failed',
+        telegramWebhookPersistentDedupe: 'enabled',
+        telegramWebhookPersistentDedupeSelfTest: telegramPersistentDedupeSelfTest().pass ? 'enabled' : 'failed',
         aiFreshnessGuard: 'enabled',
         preKickoffRecheck: 'enabled',
         userScopedFreeRecheck: 'enabled',
