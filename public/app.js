@@ -7025,7 +7025,7 @@ function matchCockpitHtml(d = {}) {
         injuryConfirmed ? `${homeAbs} — ${awayAbs}` : 'Не подтверждены',
         injuryText,
         injuryConfirmed)}
-      ${card('squads','👥','Стартовые XI',
+      ${card('squads','👥','Стартовые составы',
         confirmedCount===2 ? '2 / 2 подтверждены' : confirmedCount===1 ? '1 / 2 подтверждён' : 'Ожидаются',
         lineupText,
         confirmedCount>0)}
