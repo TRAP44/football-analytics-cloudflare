@@ -34,14 +34,15 @@ test('main Telegram navigation keeps content in chat',()=> {
   assert.match(worker,/text === '⭐ Мои команды'/);
 });
 
-test('mini app exposes an AI-only public shell',()=> {
-  assert.match(html,/body class="miniapp-ai-only"/);
+test('mini app exposes the current public football shell',()=> {
+  assert.match(html,/body class="miniapp-public-shell"/);
   assert.match(html,/id="searchView" class="view active"/);
   assert.match(html,/id="navMatches" class="nav-item" type="button"><span>⚽<\/span><small>Матчи<\/small>/);
+  assert.match(html,/id="navHistory" class="nav-item" type="button"><span>🧠<\/span><small>История AI<\/small>/);
   assert.match(html,/id="navProfile"[^>]*hidden/);
   assert.match(html,/id="navSearch" class="nav-item active"/);
-  assert.match(app,/MINIAPP_PRODUCT_MODE = 'ai-analysis-only'/);
-  assert.match(css,/RC49 — AI-only Mini App shell/);
+  assert.doesNotMatch(app,/MINIAPP_PRODUCT_MODE = 'ai-analysis-only'/);
+  assert.match(css,/RC49 — public Mini App shell/);
 });
 
 test('normal mini app startup prepares the public match feed without changing search-first launch',()=> {
@@ -52,6 +53,6 @@ test('normal mini app startup prepares the public match feed without changing se
 
 test('RC49 health exposes public-product contracts',()=> {
   assert.match(worker,/globalTopClubSearch:\s*'enabled'/);
-  assert.match(worker,/miniAppAiOnlyShell:\s*'enabled'/);
+  assert.match(worker,/miniAppPublicShell:\s*'enabled'/);
   assert.match(worker,/botContentFirstNavigation:\s*'enabled'/);
 });

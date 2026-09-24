@@ -2574,42 +2574,42 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 }
 
 
-/* RC49 — AI-only Mini App shell */
-.miniapp-ai-only .bottom-nav {
+/* RC49 — public Mini App shell */
+.miniapp-public-shell .bottom-nav {
   grid-template-columns:repeat(2,minmax(0,1fr));
   max-width:520px;
   margin-inline:auto;
 }
-.miniapp-ai-only .search-mode-tabs,
-.miniapp-ai-only #searchRecentWrap,
-.miniapp-ai-only #searchFavoritesWrap,
-.miniapp-ai-only #searchCompetitionsWrap {
+.miniapp-public-shell .search-mode-tabs,
+.miniapp-public-shell #searchRecentWrap,
+.miniapp-public-shell #searchFavoritesWrap,
+.miniapp-public-shell #searchCompetitionsWrap {
   display:none !important;
 }
-.miniapp-ai-only .search-page-head {
+.miniapp-public-shell .search-page-head {
   margin-bottom:10px;
 }
-.miniapp-ai-only .global-search-panel {
+.miniapp-public-shell .global-search-panel {
   max-width:760px;
   margin-inline:auto;
   padding:18px;
   border-radius:22px;
 }
-.miniapp-ai-only .global-search-box {
+.miniapp-public-shell .global-search-box {
   gap:10px;
 }
-.miniapp-ai-only .global-search-box .search-input {
+.miniapp-public-shell .global-search-box .search-input {
   min-height:50px;
   font-size:16px;
 }
-.miniapp-ai-only .global-search-btn {
+.miniapp-public-shell .global-search-btn {
   min-height:50px;
   min-width:104px;
   font-weight:800;
 }
-.miniapp-ai-only .search-results,
-.miniapp-ai-only #searchStatus,
-.miniapp-ai-only #searchResultsWrap {
+.miniapp-public-shell .search-results,
+.miniapp-public-shell #searchStatus,
+.miniapp-public-shell #searchResultsWrap {
   max-width:820px;
   margin-inline:auto;
 }
@@ -2645,29 +2645,29 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
   font-style:normal;
   opacity:.65;
 }
-.miniapp-ai-only .compact-entity-results {
+.miniapp-public-shell .compact-entity-results {
   padding:14px;
 }
-.miniapp-ai-only .search-match-list {
+.miniapp-public-shell .search-match-list {
   display:grid;
   gap:10px;
 }
-.miniapp-ai-only .search-match-card {
+.miniapp-public-shell .search-match-card {
   border-radius:17px;
 }
-.miniapp-ai-only #analysisView {
+.miniapp-public-shell #analysisView {
   max-width:920px;
   margin-inline:auto;
 }
-.miniapp-ai-only .topbar {
+.miniapp-public-shell .topbar {
   max-width:1040px;
   margin-inline:auto;
 }
 @media (max-width:640px) {
-  .miniapp-ai-only .global-search-box {
+  .miniapp-public-shell .global-search-box {
     grid-template-columns:1fr;
   }
-  .miniapp-ai-only .global-search-btn {
+  .miniapp-public-shell .global-search-btn {
     width:100%;
   }
 }
