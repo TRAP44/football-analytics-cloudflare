@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const baselineUrl = new URL('../supabase/baseline/supabase_baseline_v6_15.sql', import.meta.url);
+const baselineUrl = new URL('../supabase/baseline/supabase_baseline_v6_16.sql', import.meta.url);
 const baseline = fs.readFileSync(baselineUrl, 'utf8').toLowerCase();
 
 test('RC99 exposes one current fresh-install Supabase baseline', () => {
@@ -19,7 +19,9 @@ test('RC99 unified baseline includes every post-v6.9 schema layer', () => {
     'create table if not exists public.bot_digest_subscriptions',
     'create table if not exists public.referee_match_history',
     'add column if not exists ai_signal_code',
-    'create table if not exists public.growth_events'
+    'create table if not exists public.growth_events',
+    'create table if not exists public.telegram_update_claims',
+    'create or replace function public.claim_telegram_update'
   ];
   for (const marker of required) assert.ok(baseline.includes(marker), marker);
 });
@@ -33,7 +35,8 @@ test('RC99 keeps numbered migrations for existing production upgrades', () => {
     'supabase/migrations/supabase_migration_v6_12.sql',
     'supabase/migrations/supabase_migration_v6_13.sql',
     'supabase/migrations/supabase_migration_v6_14.sql',
-    'supabase/migrations/supabase_migration_v6_15.sql'
+    'supabase/migrations/supabase_migration_v6_15.sql',
+    'supabase/migrations/supabase_migration_v6_16.sql'
   ]) {
     assert.equal(fs.existsSync(new URL('../' + name, import.meta.url)), true, name);
   }

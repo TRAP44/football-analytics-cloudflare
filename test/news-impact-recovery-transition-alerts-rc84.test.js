@@ -61,5 +61,5 @@ test('RC84 deterministic transition drill and health contract',()=>{
 test('RC84 needs no new Supabase migration',()=>{
   const files=fs.readdirSync('supabase/migrations').filter(x=>/^supabase_migration_v6_\d/.test(x));
   assert.ok(files.includes('supabase_migration_v6_15.sql'));
-  assert.ok(!files.some(x=>/v6_16|v6_17|v6_18|v6_19|v6_20|rc84/i.test(x)));
+  assert.ok(!files.some(x=>/rc84/i.test(x)));
 });
