@@ -6,7 +6,7 @@ const workflow = fs.readFileSync('.github/workflows/rollback-production.yml', 'u
 
 test('RC115 verifies the Cloudflare rollback target before mutation', () => {
   assert.match(workflow, /RC115 verify rollback target exists/);
-  assert.match(workflow, /npx wrangler versions view "\$VERSION_ID" --json > \/dev\/null/);
+  assert.match(workflow, /npx wrangler versions view "\$VERSION_ID" --json > "\$RUNNER_TEMP\/rollback-version\.json"/);
   assert.match(workflow, /RC115 rollback target preflight passed/);
   assert.match(workflow, /Cloudflare resolved rollback target version ID \$VERSION_ID before any rollback mutation/);
 });
