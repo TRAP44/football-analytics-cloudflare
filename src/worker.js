@@ -104,11 +104,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.107.0-rc131';
+const APP_VERSION = '6.108.0-rc132';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc131';
-const RC_NAME = 'RC131';
+const RELEASE_CHANNEL = 'rc132';
+const RC_NAME = 'RC132';
 const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.18; для существующей примените все доступные миграции из supabase/migrations до v6.19.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49';
@@ -527,7 +527,7 @@ function runtimeGuard(request, user, cfg, runtime) {
 
   const footballRoutes = new Set([
     '/api/matches', '/api/search', '/api/tournament', '/api/team', '/api/team/intelligence',
-    '/api/team/squad', '/api/match-center', '/api/analyze'
+    '/api/team/squad', '/api/team/transfers', '/api/match-center', '/api/analyze'
   ]);
 
   if (runtime.maintenanceMode && footballRoutes.has(path)) {
@@ -18959,6 +18959,98 @@ function normalizeTeamSquad(rows, teamId) {
   };
 }
 
+function transferTypeLabel(value = '') {
+  const raw=String(value || '').trim();
+  const lower=raw.toLowerCase();
+  if (!raw || lower==='n/a' || lower==='unknown') return 'Условия не раскрыты';
+  if (lower.includes('end of loan') || lower.includes('loan end') || lower.includes('return')) return 'Возврат из аренды';
+  if (lower.includes('loan')) return 'Аренда';
+  if (lower.includes('free')) return 'Свободный агент';
+  if (lower.includes('undisclosed')) return 'Сумма не раскрыта';
+  if (lower==='permanent' || lower==='transfer') return 'Переход';
+  if (/^[€$£¥₽]|\d/.test(raw)) return raw;
+  return 'Переход';
+}
+
+function normalizeTeamTransfers(rows, teamId) {
+  const id=Number(teamId || 0);
+  const items=[];
+  const seen=new Set();
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const player={ id:Number(row?.player?.id || 0), name:String(row?.player?.name || '') };
+    for (const transfer of Array.isArray(row?.transfers) ? row.transfers : []) {
+      const inTeam=transfer?.teams?.in || {};
+      const outTeam=transfer?.teams?.out || {};
+      const inId=Number(inTeam?.id || 0), outId=Number(outTeam?.id || 0);
+      const direction=inId===id ? 'in' : outId===id ? 'out' : '';
+      if (!direction) continue;
+      const date=String(transfer?.date || '');
+      const rawType=String(transfer?.type || '');
+      const dedupe=[player.id,player.name,date,inId,outId,rawType].join('|');
+      if (seen.has(dedupe)) continue;
+      seen.add(dedupe);
+      items.push({
+        player,
+        date,
+        direction,
+        type:transferTypeLabel(rawType),
+        rawType,
+        from:{ id:outId, name:String(outTeam?.name || ''), logo:String(outTeam?.logo || '') },
+        to:{ id:inId, name:String(inTeam?.name || ''), logo:String(inTeam?.logo || '') },
+      });
+    }
+  }
+  items.sort((a,b)=>{
+    const dateDiff=Date.parse(String(b.date || ''))-Date.parse(String(a.date || ''));
+    if (Number.isFinite(dateDiff) && dateDiff!==0) return dateDiff;
+    return String(a.player?.name || '').localeCompare(String(b.player?.name || ''),'ru');
+  });
+  const recent=items.slice(0,60);
+  return {
+    available: recent.length>0,
+    transfers: recent,
+    summary:{
+      total:recent.length,
+      incoming:recent.filter(x=>x.direction==='in').length,
+      outgoing:recent.filter(x=>x.direction==='out').length,
+      loans:recent.filter(x=>x.type==='Аренда' || x.type==='Возврат из аренды').length,
+      latestDate:recent[0]?.date || null,
+    },
+  };
+}
+
+async function apiTeamTransfers(request, cfg) {
+  const url=new URL(request.url);
+  const teamId=Number(url.searchParams.get('teamId'));
+  if (!teamId) return json({ error:'Номер команды обязателен.' },400);
+  const cacheKey=`team:transfers:${teamId}:v1`;
+  const cached=await getCache(cacheKey,cfg);
+  if (cached) return json({ ...cached, cached:true, stale:false, provider:publicDataCapabilities() });
+
+  if (!freeQuotaHealthy(12,2)) {
+    const stale=await getStaleCache(cacheKey,cfg);
+    if (stale) return json({ ...stale, cached:true, stale:true, warning:'Трансферы показаны из сохранённых данных: бережём лимит API-Football.', provider:publicDataCapabilities() });
+    return json({ available:false, quotaGuard:true, reason:'Трансферы временно не запрашиваются: сохраняем остаток квоты API-Football.', provider:publicDataCapabilities() });
+  }
+
+  try {
+    const rows=await apiFootball('/transfers',{ team:teamId },cfg);
+    const normalized=normalizeTeamTransfers(rows,teamId);
+    const payload={
+      ...normalized,
+      refreshedAt:new Date().toISOString(),
+      reason:normalized.available ? '' : 'Источник данных не вернул трансферную активность для этой команды.',
+      sourceMeta:sourceMeta({provider:'api-football',label:'API-Football'}),
+    };
+    await setCache(cacheKey,teamId,payload,cfg,720);
+    return json({ ...payload, cached:false, stale:false, provider:publicDataCapabilities() });
+  } catch (error) {
+    const stale=await getStaleCache(cacheKey,cfg);
+    if (stale) return json({ ...stale, cached:true, stale:true, warning:'Не удалось обновить трансферы — показана сохранённая версия.', provider:publicDataCapabilities() });
+    return json({ available:false, reason:`Трансферы сейчас недоступны: ${String(error?.message || error).slice(0,180)}`, provider:publicDataCapabilities() });
+  }
+}
+
 async function apiTeamSquad(request, cfg) {
   const url = new URL(request.url);
   const teamId = Number(url.searchParams.get('teamId'));
@@ -20614,6 +20706,7 @@ export default {
         footballDataStandingsFallback: cfg.footballDataToken ? 'enabled' : 'available_when_configured',
         theOddsApiOddsFallback: cfg.theOddsApiKey ? 'enabled' : 'available_when_configured',
         matchAtAGlanceCockpit: 'enabled',
+        teamTransfersOnDemand: 'enabled',
         sourceProvenance: 'enabled',
         persistentDataProvenance: 'enabled',
         transientProviderRetry: 'enabled',
@@ -20786,6 +20879,7 @@ export default {
       if (request.method === 'GET' && url.pathname === '/api/team') return await apiTeam(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/team/intelligence') return await apiTeamIntelligence(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/team/squad') return await apiTeamSquad(request, cfg);
+      if (request.method === 'GET' && url.pathname === '/api/team/transfers') return await apiTeamTransfers(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/match-center') return await apiMatchCenter(request, cfg);
       if (request.method === 'GET' && url.pathname === '/api/history') return await apiHistory(request, cfg, user);
       if (request.method === 'GET' && url.pathname === '/api/history-analysis') return await apiHistoryAnalysis(request, cfg, user);
