@@ -63,6 +63,8 @@ const memory = {
     cacheWrites: 0,
     cacheWriteErrors: 0,
     supabaseErrors: 0,
+    supabaseProbeRecoveries: 0,
+    supabaseProbeConfirmedFailures: 0,
     routeErrors: 0,
     integrityRuns: 0,
     integrityWarnings: 0,
@@ -83,11 +85,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.100.0-rc108';
+const APP_VERSION = '6.101.0-rc109';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc108';
-const RC_NAME = 'RC108';
+const RELEASE_CHANNEL = 'rc109';
+const RC_NAME = 'RC109';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -1419,6 +1421,8 @@ function telemetrySnapshot() {
     cacheWriteErrors: Number(t.cacheWriteErrors || 0),
     cacheHitRate: cacheLookups ? Math.round((hits / cacheLookups) * 1000) / 10 : null,
     supabaseErrors: Number(t.supabaseErrors || 0),
+    supabaseProbeRecoveries: Number(t.supabaseProbeRecoveries || 0),
+    supabaseProbeConfirmedFailures: Number(t.supabaseProbeConfirmedFailures || 0),
     routeErrors: Number(t.routeErrors || 0),
     integrityRuns: Number(t.integrityRuns || 0),
     integrityWarnings: Number(t.integrityWarnings || 0),
@@ -13886,6 +13890,73 @@ async function probeSupabase(cfg) {
   }
 }
 
+function combineSupabaseProbeAttempts(first = {}, second = null) {
+  const firstOk=Boolean(first?.ok);
+  if (firstOk) {
+    return {
+      ...first,
+      attempts:1,
+      recovered:false,
+      confirmedFailure:false,
+      initialStatus:first?.status || 'ok',
+      initialLatencyMs:Number(first?.latencyMs || 0) || null,
+    };
+  }
+
+  if (second && second.ok) {
+    return {
+      ...second,
+      attempts:2,
+      recovered:true,
+      confirmedFailure:false,
+      initialStatus:first?.status || 'unknown',
+      initialLatencyMs:Number(first?.latencyMs || 0) || null,
+    };
+  }
+
+  const final=second || first;
+  return {
+    ...final,
+    attempts:second ? 2 : 1,
+    recovered:false,
+    confirmedFailure:true,
+    initialStatus:first?.status || 'unknown',
+    initialLatencyMs:Number(first?.latencyMs || 0) || null,
+  };
+}
+
+async function probeSupabaseConfirmed(cfg, options = {}) {
+  const first=await probeSupabase(cfg);
+  if (first.ok || !first.configured) return combineSupabaseProbeAttempts(first);
+  const retryDelayMs=Math.max(0,Math.min(1500,Number(options.retryDelayMs ?? 250)));
+  if (retryDelayMs) await sleepMs(retryDelayMs);
+  const second=await probeSupabase(cfg);
+  const combined=combineSupabaseProbeAttempts(first,second);
+  if (combined.recovered) bumpTelemetry('supabaseProbeRecoveries');
+  if (combined.confirmedFailure) bumpTelemetry('supabaseProbeConfirmedFailures');
+  return combined;
+}
+
+function supabaseProbeConfirmationSelfTest() {
+  const direct=combineSupabaseProbeAttempts({configured:true,ok:true,status:'ok',latencyMs:40});
+  const recovered=combineSupabaseProbeAttempts(
+    {configured:true,ok:false,status:'network_error',latencyMs:7000},
+    {configured:true,ok:true,status:'ok',latencyMs:52}
+  );
+  const confirmed=combineSupabaseProbeAttempts(
+    {configured:true,ok:false,status:'network_error',latencyMs:7000},
+    {configured:true,ok:false,status:'http_503',latencyMs:120}
+  );
+  return {
+    pass:direct.ok && direct.attempts===1
+      && recovered.ok && recovered.attempts===2 && recovered.recovered && !recovered.confirmedFailure
+      && !confirmed.ok && confirmed.attempts===2 && confirmed.confirmedFailure,
+    direct:direct.ok,
+    recovered:recovered.recovered,
+    confirmedFailure:confirmed.confirmedFailure,
+  };
+}
+
 async function readRecentOpsEvents(cfg, limit = 10) {
   const fallback = () => ({ persistent: false, migrationReady: false, items: memory.opsEvents.slice(0, limit) });
   if (!hasSupabase(cfg)) return fallback();
@@ -13905,7 +13976,7 @@ async function readRecentOpsEvents(cfg, limit = 10) {
 
 async function collectDiagnostics(cfg) {
   const [supabase, ops, integrity, telegramWebhook] = await Promise.all([
-    probeSupabase(cfg),
+    probeSupabaseConfirmed(cfg),
     readRecentOpsEvents(cfg, 12),
     readIntegrityDiagnostics(cfg, 12),
     readTelegramDedupeHealth(cfg,60),
@@ -13913,6 +13984,7 @@ async function collectDiagnostics(cfg) {
   const provider = providerSnapshot();
   let overall;
   if (supabase.configured && !supabase.ok) overall = { state: 'critical', label: 'Нужна проверка Supabase' };
+  else if (supabase.recovered) overall = { state:'warning', label:'Supabase ответил после подтверждающего probe' };
   else if (provider.health === 'critical') overall = { state: 'critical', label: 'API-Football временно ограничен' };
   else if (!ops.migrationReady && hasSupabase(cfg)) overall = { state: 'warning', label: 'Выполните миграцию v3.8' };
   else if (!integrity.migrationReady && hasSupabase(cfg)) overall = { state: 'warning', label: 'Выполните миграцию v3.9' };
@@ -13930,6 +14002,7 @@ async function collectDiagnostics(cfg) {
   if (Number(telegramWebhook.staleProcessing || 0) > 0 || Number(telegramWebhook.failedCurrent || 0) > 0) recommendations.push(`Проверьте Telegram webhook claims: stale=${Number(telegramWebhook.staleProcessing || 0)}, failed=${Number(telegramWebhook.failedCurrent || 0)}.`);
   if (provider.cooldownActive) recommendations.push(`API-Football находится на паузе ещё примерно ${footballCooldownRemaining()} сек.; приложение должно использовать последние сохранённые данные.`);
   if (supabase.configured && !supabase.ok) recommendations.push('Проверьте адрес Supabase, сервисный ключ и доступность интерфейса базы данных.');
+  if (supabase.recovered) recommendations.push(`Первый Supabase probe не прошёл (${supabase.initialStatus || 'unknown'}), подтверждающий запрос успешно восстановился. Наблюдайте частоту transient recoveries.`);
   if (Number(provider.dailyUsedPct) >= 90) recommendations.push('Дневная квота API-Football использована более чем на 90%; до сброса лимита работаем в экономном режиме.');
   if (Number(integrity.lastRun?.quarantined || 0) > 0) recommendations.push(`Защита целостности скрыла ${Number(integrity.lastRun.quarantined)} подозрительных матч(а/ей) из последней выборки. Проверьте список кодов проблем ниже.`);
   if (Number(integrity.lastRun?.warnings || 0) > 0 && !Number(integrity.lastRun?.quarantined || 0)) recommendations.push('В последней выборке есть предупреждения целостности данных; приложение оставило матчи доступными, но пометило их для контроля.');
@@ -14156,7 +14229,7 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
   const historyStart = new Date(now.getTime() - 6 * 60 * 60_000);
 
   const [supabase, schemaDrift, source, telegramWebhook] = await Promise.all([
-    probeSupabase(cfg),
+    probeSupabaseConfirmed(cfg),
     probeSupabaseSchemaDrift(cfg),
     readOpsEventsRange(cfg, historyStart.toISOString(), now.toISOString(), 1000),
     readTelegramDedupeHealth(cfg,60),
@@ -14198,6 +14271,11 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
       ok: Boolean(supabase.ok),
       status: supabase.status || (supabase.ok ? 'ok' : 'unknown'),
       latencyMs: Number(supabase.latencyMs || 0) || null,
+      attempts: Number(supabase.attempts || 1),
+      recovered: Boolean(supabase.recovered),
+      confirmedFailure: Boolean(supabase.confirmedFailure),
+      initialStatus: supabase.initialStatus || null,
+      initialLatencyMs: Number(supabase.initialLatencyMs || 0) || null,
     },
     schema: {
       ok: Boolean(schemaDrift.ok),
@@ -14230,6 +14308,22 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
   };
   memory.productionMonitor = { at: Date.now(), value };
 
+  if (options.record !== false && supabase.recovered) {
+    await recordOpsEvent(cfg, {
+      severity:'warning',
+      source:'monitor',
+      eventType:'supabase_probe',
+      code:'SUPABASE_PROBE_RECOVERED',
+      message:'Initial Supabase probe failed but the confirmation probe succeeded.',
+      endpoint:'cron:production-monitor',
+      meta:{
+        initialStatus:supabase.initialStatus || 'unknown',
+        attempts:Number(supabase.attempts || 2),
+        finalLatencyMs:Number(supabase.latencyMs || 0) || null,
+      },
+    }).catch(()=>{});
+  }
+
   if (options.record !== false && (!previousState || stateChanged || heartbeatDue)) {
     const recovered = previousState && previousState !== 'healthy' && health.state === 'healthy';
     const severity = health.state === 'incident' ? 'critical' : health.state === 'watch' ? 'warning' : 'info';
@@ -14251,6 +14345,9 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
         state: health.state,
         previousState: previousState || null,
         supabaseOk: Boolean(supabase.ok),
+        supabaseProbeAttempts: Number(supabase.attempts || 1),
+        supabaseProbeRecovered: Boolean(supabase.recovered),
+        supabaseProbeConfirmedFailure: Boolean(supabase.confirmedFailure),
         schemaOk: Boolean(schemaDrift.ok),
         releaseState: releaseHealth.state,
         releaseScore: Number(releaseHealth.score || 0),
