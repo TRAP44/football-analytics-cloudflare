@@ -33,7 +33,7 @@ jobs:
           ref: ${{ env.DEPLOY_SHA }}
           fetch-depth: 0
 
-      - name: RC111 verify deployment provenance
+      - name: RC110 guard against stale production deploy / RC111 verify deployment provenance
         shell: bash
         run: |
           set -euo pipefail
