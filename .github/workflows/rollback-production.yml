@@ -147,8 +147,8 @@ jobs:
           DEPLOYMENT_STATUS_JSON="$RUNNER_TEMP/rollback-deployment-status.json"
           verified=false
           for attempt in 1 2 3 4 5; do
-            npx wrangler deployments status --json > "$DEPLOYMENT_STATUS_JSON"
-            if node scripts/verify-rollback-deployment.js "$DEPLOYMENT_STATUS_JSON" "$VERSION_ID"; then
+            if npx wrangler deployments status --json > "$DEPLOYMENT_STATUS_JSON" \
+              && node scripts/verify-rollback-deployment.js "$DEPLOYMENT_STATUS_JSON" "$VERSION_ID"; then
               verified=true
               break
             fi
