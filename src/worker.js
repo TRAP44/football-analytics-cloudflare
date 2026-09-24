@@ -12,6 +12,9 @@ import {
 } from './access-control.js';
 import { apiSecurityHeaders } from './security-headers.js';
 import { createSupabaseClient } from './supabase-client.js';
+import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
+import { normalizeOpenLigaStandings, openLigaCompetition, openLigaTableUrls } from './providers/openligadb.js';
+import { footballDataStandingsUrl, normalizeFootballDataStandings } from './providers/football-data.js';
 import {
   bytesToHex,
   constantTimeEqual,
@@ -196,6 +199,7 @@ function config(env) {
   return {
     devMode: boolEnv(env.DEV_MODE, false),
     apiFootballKey: env.API_FOOTBALL_KEY || '',
+    footballDataToken: env.FOOTBALL_DATA_TOKEN || '',
     tavilyKey: env.TAVILY_KEY || '',
     botToken: env.TELEGRAM_BOT_TOKEN || '',
     webhookSecret: env.TELEGRAM_WEBHOOK_SECRET || '',
@@ -12964,15 +12968,15 @@ function providerDataReliabilitySelfTest() {
 async function analysisProviderFetch({ feature, path, params, cfg, allowed = true, skipReason = '' }) {
   if (!allowed) {
     const meta = providerDataState([], { attempted: false, reason: skipReason || 'policy' });
-    return { data: [], meta: { feature, ...meta } };
+    return { data: [], meta: { feature, provider: 'api-football', source: 'skipped', fetchedAt: null, ...meta } };
   }
   try {
     const data = await apiFootball(path, params, cfg);
     const meta = providerDataState(data, { attempted: true });
-    return { data: Array.isArray(data) ? data : [], meta: { feature, ...meta } };
+    return { data: Array.isArray(data) ? data : [], meta: { feature, provider: 'api-football', source: 'network', fetchedAt: new Date().toISOString(), ...meta } };
   } catch (error) {
     const meta = providerDataState([], { attempted: true, error });
-    return { data: [], meta: { feature, ...meta } };
+    return { data: [], meta: { feature, provider: 'api-football', source: 'error', fetchedAt: null, ...meta } };
   }
 }
 
@@ -12986,6 +12990,7 @@ async function providerFeatureFetch({ feature, path, params, fixtureId, cfg, con
       data: freshEntry.payload.data ?? [],
       meta: {
         feature,
+        provider: freshEntry.payload.provider || 'api-football',
         source: 'cache',
         fetchedAt: freshEntry.payload.fetchedAt || null,
         ageSeconds: featureCacheAgeSeconds(freshEntry.payload),
@@ -13006,6 +13011,7 @@ async function providerFeatureFetch({ feature, path, params, fixtureId, cfg, con
         data: staleEntry.payload.data ?? [],
         meta: {
           feature,
+          provider: staleEntry.payload.provider || 'api-football',
           source: 'stale',
           fetchedAt: staleEntry.payload.fetchedAt || null,
           ageSeconds: featureCacheAgeSeconds(staleEntry.payload),
@@ -13034,14 +13040,15 @@ async function providerFeatureFetch({ feature, path, params, fixtureId, cfg, con
 
   try {
     const data = await apiFootball(path, params, cfg);
-    const wrapped = { data, fetchedAt: new Date().toISOString() };
+    const wrapped = { data, provider: 'api-football', fetchedAt: new Date().toISOString() };
     await setCache(cacheKey, fixtureId, wrapped, cfg, policy.ttlSeconds / 60).catch(() => null);
     providerFeatureCounter(feature, 'api');
     return {
       data,
       meta: {
         feature,
-        source: 'api',
+        provider: 'api-football',
+        source: 'network',
         fetchedAt: wrapped.fetchedAt,
         ageSeconds: 0,
         expiresAt: new Date(Date.now() + policy.ttlSeconds * 1000).toISOString(),
@@ -13056,6 +13063,7 @@ async function providerFeatureFetch({ feature, path, params, fixtureId, cfg, con
         data: staleEntry.payload.data ?? [],
         meta: {
           feature,
+          provider: staleEntry.payload.provider || 'api-football',
           source: 'stale',
           fetchedAt: staleEntry.payload.fetchedAt || null,
           ageSeconds: featureCacheAgeSeconds(staleEntry.payload),
@@ -13072,6 +13080,7 @@ async function providerFeatureFetch({ feature, path, params, fixtureId, cfg, con
       data: [],
       meta: {
         feature,
+        provider: 'api-football',
         source: 'error',
         fetchedAt: null,
         ageSeconds: null,
@@ -18200,7 +18209,7 @@ async function apiMatches(request, cfg) {
   const cacheKey = `matches:${date}:v6-integrity`;
 
   const cached = await getCache(cacheKey, cfg);
-  if (cached?.matches) return json({ ...cached, cached: true, stale: false });
+  if (cached?.matches) return json({ ...cached, sourceMeta: markCachedSourceMeta(cached.sourceMeta || sourceMeta({ provider:'api-football', label:'API-Football' })), cached: true, stale: false });
   const previousPayload = await getStaleCache(cacheKey, cfg).catch(() => null);
 
   let fixtures;
@@ -18212,6 +18221,7 @@ async function apiMatches(request, cfg) {
       return json({
         ...stale, cached: true, stale: true,
         warning: 'Показаны последние сохранённые данные: API-Football временно ограничил частоту запросов.',
+        sourceMeta: markCachedSourceMeta(stale.sourceMeta || sourceMeta({ provider:'api-football', label:'API-Football' }), { stale:true }),
         retryAfter: Number(error?.retryAfter || 60),
       });
     }
@@ -18294,7 +18304,7 @@ async function apiMatches(request, cfg) {
     international: matches.filter(x => ['continental','national','international'].includes(x.category)).length,
     hiddenLowPriority: matches.filter(x => x.lowPriority).length,
   };
-  const payload = { date, matches, catalog, integrity: integrityRun.report, refreshedAt: new Date().toISOString(), provider: publicDataCapabilities() };
+  const payload = { date, matches, catalog, integrity: integrityRun.report, refreshedAt: new Date().toISOString(), sourceMeta: sourceMeta({ provider:'api-football', label:'API-Football' }), provider: publicDataCapabilities() };
   const ttl = isToday ? 1 : isYesterday ? 720 : cfg.cacheMinutes;
   await setCache(cacheKey, 0, payload, cfg, ttl);
   return json({ ...payload, cached: false, stale: false });
@@ -18441,12 +18451,12 @@ async function apiTeam(request, cfg) {
   const {from,to}=teamDiscoveryWindow();
   const cacheKey = `teamhub:${teamId}:${from}:${to}:v2`;
   const cached = await getCache(cacheKey, cfg);
-  if (cached) return json({ ...cached, standing: await cachedTeamStanding(teamId, cached.primaryCompetition, cfg), cached:true, stale:false, provider:publicDataCapabilities() });
+  if (cached) return json({ ...cached, standing: await cachedTeamStanding(teamId, cached.primaryCompetition, cfg), sourceMeta: markCachedSourceMeta(cached.sourceMeta || sourceMeta({ provider:'api-football', label:'API-Football' })), cached:true, stale:false, provider:publicDataCapabilities() });
   let fixtures;
   try { fixtures = await apiFootball('/fixtures', { team:teamId, from, to }, cfg); }
   catch (error) {
     const stale = await getStaleCache(cacheKey, cfg);
-    if (stale && isFootballRateLimitError(error)) return json({ ...stale, standing:await cachedTeamStanding(teamId, stale.primaryCompetition, cfg), cached:true, stale:true, warning:'Страница команды показана из последних сохранённых данных из-за лимита источника данных.', provider:publicDataCapabilities() });
+    if (stale && isFootballRateLimitError(error)) return json({ ...stale, standing:await cachedTeamStanding(teamId, stale.primaryCompetition, cfg), sourceMeta:markCachedSourceMeta(stale.sourceMeta || sourceMeta({ provider:'api-football', label:'API-Football' }),{stale:true}), cached:true, stale:true, warning:'Страница команды показана из последних сохранённых данных из-за лимита источника данных.', provider:publicDataCapabilities() });
     throw error;
   }
   const usable = (fixtures||[]).filter(f => !['CANC','PST','ABD','AWD','WO'].includes(String(f.fixture?.status?.short||'')));
@@ -18464,7 +18474,7 @@ async function apiTeam(request, cfg) {
   const form = summarizeFormRows(completedRaw, teamId, 'home')?.overall || null;
   const primaryCompetition = choosePrimaryTeamCompetition(normalized);
   const standing = await cachedTeamStanding(teamId, primaryCompetition, cfg);
-  const payload = { team, primaryCompetition, standing, form, recent, upcoming, primaryFixtureId:Number(discovery.primary?.fixtureId || 0) || null, discovery:{mode:discovery.mode,primaryFixtureId:Number(discovery.primary?.fixtureId || 0) || null,primaryReason:String(discovery.primary?.selection?.reason || ''),windowPastDays:TEAM_DISCOVERY_PAST_DAYS,windowFutureDays:TEAM_DISCOVERY_FUTURE_DAYS}, liveNow:upcoming.find(x=>x.live)||null, nextMatch:upcoming.find(x=>!x.live)||upcoming[0]||null, refreshedAt:new Date().toISOString() };
+  const payload = { team, primaryCompetition, standing, form, recent, upcoming, primaryFixtureId:Number(discovery.primary?.fixtureId || 0) || null, discovery:{mode:discovery.mode,primaryFixtureId:Number(discovery.primary?.fixtureId || 0) || null,primaryReason:String(discovery.primary?.selection?.reason || ''),windowPastDays:TEAM_DISCOVERY_PAST_DAYS,windowFutureDays:TEAM_DISCOVERY_FUTURE_DAYS}, liveNow:upcoming.find(x=>x.live)||null, nextMatch:upcoming.find(x=>!x.live)||upcoming[0]||null, refreshedAt:new Date().toISOString(), sourceMeta:sourceMeta({provider:'api-football',label:'API-Football'}) };
   await setCache(cacheKey, teamId, payload, cfg, 120);
   return json({ ...payload, cached:false, stale:false, provider:publicDataCapabilities() });
 }
