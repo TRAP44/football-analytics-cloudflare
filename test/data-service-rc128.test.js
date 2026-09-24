@@ -89,7 +89,7 @@ test('RC128 Mini App exposes provider attribution and data provenance',()=>{
   assert.match(app,/standing-team-readonly/);
 });
 
-test('RC128 requires no Supabase DDL and preserves the proven schema fingerprint',()=>{
+test('RC128 base provider contract keeps the proven schema fingerprint through additive RC129 metadata',()=>{
   assert.match(worker,/const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49'/);
-  assert.ok(!fs.existsSync('supabase/migrations/supabase_migration_v6_19.sql'));
+  assert.ok(fs.existsSync('supabase/migrations/supabase_migration_v6_19.sql'));
 });

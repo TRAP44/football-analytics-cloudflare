@@ -103,12 +103,12 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.104.0-rc128';
+const APP_VERSION = '6.105.0-rc129';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc128';
-const RC_NAME = 'RC128';
-const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.18; для существующей примените все доступные миграции из supabase/migrations до v6.18.1.';
+const RELEASE_CHANNEL = 'rc129';
+const RC_NAME = 'RC129';
+const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.18; для существующей примените все доступные миграции из supabase/migrations до v6.19.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49';
 
@@ -7650,10 +7650,34 @@ async function getStaleCache(cacheKey, cfg) {
   return (await getCacheEntry(cacheKey, cfg, true))?.payload || null;
 }
 
+function cacheSourceProvenance(payload = {}) {
+  const meta = payload?.sourceMeta || {};
+  const provider = String(
+    meta?.provider
+    || payload?.provider
+    || payload?.dataProvenance?.primaryProvider
+    || ''
+  ).slice(0, 80);
+  const timestampCandidates = [
+    meta?.fetchedAt,
+    payload?.refreshedAt,
+    payload?.generatedAt,
+    payload?.fetchedAt,
+  ];
+  const sourceUpdatedAt = timestampCandidates.find(value => Number.isFinite(Date.parse(String(value || '')))) || null;
+  const freshness = String(
+    payload?.stale ? 'stale'
+      : meta?.freshness
+        || (provider ? 'fresh' : 'unknown')
+  ).slice(0, 40);
+  return { provider, sourceUpdatedAt, freshness };
+}
+
 async function setCache(cacheKey, fixtureId, payload, cfg, minutes = cfg.cacheMinutes) {
   const ttlMinutes = Number.isFinite(Number(minutes)) ? Math.max(1 / 6, Number(minutes)) : cfg.cacheMinutes;
   const expiresAt = new Date(Date.now() + ttlMinutes * 60_000).toISOString();
   const expiresAtMs = Date.parse(expiresAt);
+  const provenance = cacheSourceProvenance(payload);
   // Always keep an L1 copy. Supabase remains the persistent/shared cache.
   memory.cache.set(cacheKey, { payload, expiresAt: expiresAtMs });
   if (memory.cache.size > 600) pruneMemoryState();
@@ -7665,13 +7689,17 @@ async function setCache(cacheKey, fixtureId, payload, cfg, minutes = cfg.cacheMi
       fixture_id: Number(fixtureId),
       payload,
       expires_at: expiresAt,
+      provider: provenance.provider,
+      source_updated_at: provenance.sourceUpdatedAt,
+      freshness_status: provenance.freshness,
+      updated_at: new Date().toISOString(),
     }, 'cache_key');
   } catch (error) {
     bumpTelemetry('cacheWriteErrors');
     bumpTelemetry('supabaseErrors');
     recordOpsEvent(cfg, {
       severity: 'warning', source: 'cache', eventType: 'supabase_cache_write_fallback', code: 'CACHE_DB_WRITE',
-      message: error?.message || error, meta: { cacheKey, fixtureId: Number(fixtureId || 0) },
+      message: error?.message || error, meta: { cacheKey, fixtureId: Number(fixtureId || 0), provider: provenance.provider },
     }).catch(() => {});
     // Cache persistence is an optimization. Do not fail a successful user request
     // only because the shared cache could not be written.
@@ -8751,6 +8779,8 @@ async function captureModelPrediction(payload, cfg) {
     away_expected_goals: Number.isFinite(Number(payload.goalModel?.awayExpected)) ? Number(payload.goalModel.awayExpected) : null,
     over25_prob: Number.isFinite(Number(payload.goalModel?.over25)) ? Number(payload.goalModel.over25) : null,
     btts_prob: Number.isFinite(Number(payload.goalModel?.btts)) ? Number(payload.goalModel.btts) : null,
+    data_provenance: payload.dataProvenance || {},
+    model_inputs_version: String(payload.analysisVersion || ''),
     status: 'pending',
   };
 
@@ -8763,7 +8793,7 @@ async function captureModelPrediction(payload, cfg) {
       // Keep v3.6 installations functional until the optional v3.7 ALTER migration is applied.
       try {
         const legacyRow = { ...row };
-        for (const key of ['signal_probabilities','raw_home_prob','raw_draw_prob','raw_away_prob','calibration_mode','calibration_profile_fingerprint','calibration_temperature','calibration_sample','calibration_weights']) delete legacyRow[key];
+        for (const key of ['signal_probabilities','raw_home_prob','raw_draw_prob','raw_away_prob','calibration_mode','calibration_profile_fingerprint','calibration_temperature','calibration_sample','calibration_weights','data_provenance','model_inputs_version']) delete legacyRow[key];
         await supaInsertIgnore(cfg, 'model_predictions', legacyRow, 'fixture_id');
         console.warn('v3.7 calibration columns are not available yet; prediction stored in legacy format');
         return true;
@@ -13833,10 +13863,27 @@ function providerRequestKey(path, params, options = {}) {
   return `football:${path}?${pairs}:type=${options.responseType || 'array'}`;
 }
 
+function isRetryableFootballTransportError(error) {
+  return String(error?.code || '') === 'FOOTBALL_NETWORK';
+}
+
 async function apiFootball(path, params, cfg, options = {}) {
   return await withSingleFlight(
     providerRequestKey(path, params, options),
-    () => apiFootballNetwork(path, params, cfg, options),
+    async () => {
+      const retries = Math.max(0, Math.min(1, Number(options.transportRetries ?? 1)));
+      let lastError = null;
+      for (let attempt = 0; attempt <= retries; attempt += 1) {
+        try {
+          return await apiFootballNetwork(path, params, cfg, options);
+        } catch (error) {
+          lastError = error;
+          if (attempt >= retries || !isRetryableFootballTransportError(error)) throw error;
+          await sleepMs(180 * (attempt + 1));
+        }
+      }
+      throw lastError;
+    },
   );
 }
 
@@ -14534,6 +14581,9 @@ async function probeSupabaseSchemaDrift(cfg) {
     { id: 'growth_events', table: 'growth_events', columns: ['id','event_name','metadata','created_at'] },
     { id: 'telegram_update_claims', table: 'telegram_update_claims', columns: ['update_key','status','locked_until','expires_at','duplicate_count','last_duplicate_at'] },
     { id: 'provider_rate_windows', table: 'provider_rate_windows', columns: ['bucket_key','window_started_at','request_count','updated_at'] },
+    { id: 'cache_provenance', table: 'analysis_cache', columns: ['cache_key','provider','source_updated_at','freshness_status','updated_at'] },
+    { id: 'odds_provenance', table: 'odds_snapshots', columns: ['fixture_id','provider','bookmaker_count','source_updated_at'] },
+    { id: 'model_provenance', table: 'model_predictions', columns: ['fixture_id','data_provenance','model_inputs_version'] },
   ];
   const [checks,fingerprint] = await Promise.all([
     Promise.all(specs.map(async spec => ({ ...spec, ...(await probeTableColumns(cfg, spec.table, spec.columns)) }))),
@@ -16309,6 +16359,9 @@ async function saveOddsSnapshot(fixtureId, market, cfg) {
     home_odd: Number(market.odds.home), draw_odd: Number(market.odds.draw), away_odd: Number(market.odds.away),
     home_prob: Number(p.home || 0), draw_prob: Number(p.draw || 0), away_prob: Number(p.away || 0),
     source_count: Number(market.sources || market.bookmakers || 0),
+    provider: String(market.provider || 'api-football').slice(0, 80),
+    bookmaker_count: Number(market.sources || market.bookmakers || 0),
+    source_updated_at: Number.isFinite(Date.parse(String(market.updatedAt || ''))) ? String(market.updatedAt) : now.toISOString(),
   };
   if (hasSupabase(cfg)) {
     try { await supaUpsert(cfg, 'odds_snapshots', row); return true; } catch { return false; }
@@ -18823,7 +18876,7 @@ async function apiMatchCenter(request, cfg) {
     }
     throw error;
   }
-  if (!fixture) return await trackedFullAiFailureResponse({ error: 'Матч не найден.' },404,'match_missing');
+  if (!fixture) return json({ error: 'Матч не найден.' }, 404);
   const centerIntegrity = validateFixtureIntegrity(fixture, '', null);
   if (centerIntegrity.quarantine) {
     await recordOpsEvent(cfg, { severity: 'warning', source: 'integrity', eventType: 'single_fixture_guard', code: 'MATCH_CENTER_REJECTED', message: 'Центр матча отклонил структурно некорректные данные матча.', meta: { fixtureId, issues: centerIntegrity.issues.filter(x => x.severity === 'error').map(x => x.code) } }).catch(() => {});
@@ -20417,6 +20470,8 @@ export default {
         openLigaDbStandingsFallback: 'enabled',
         footballDataStandingsFallback: cfg.footballDataToken ? 'enabled' : 'available_when_configured',
         sourceProvenance: 'enabled',
+        persistentDataProvenance: 'enabled',
+        transientProviderRetry: 'enabled',
         aiAnalysisQualityGate: 'enabled',
         aiAnalysisQualityGateSelfTest: analysisQualityGateSelfTest().pass ? 'enabled' : 'failed',
         supabaseSchemaDriftGuard: 'enabled',

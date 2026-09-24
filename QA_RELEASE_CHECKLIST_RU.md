@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.104.0 RC128
+# QA Release Checklist — v6.105.0 RC129
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.104.0`.
-- Worker и client: `6.104.0-rc128`.
-- Release candidate: `RC128`.
+- `package.json` и `package-lock.json`: `6.105.0`.
+- Worker и client: `6.105.0-rc129`.
+- Release candidate: `RC129`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -33,6 +33,19 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC129 — Persistent Data Provenance & Transport Resilience
+
+- Supabase v6.19 расширяет существующие `analysis_cache`, `odds_snapshots` и `model_predictions`; новые предметные таблицы не создаются.
+- Cache rows сохраняют `provider`, `source_updated_at`, `freshness_status` и `updated_at`.
+- Odds snapshots сохраняют provider, число bookmaker samples и upstream timestamp.
+- Immutable model snapshots сохраняют `data_provenance` и `model_inputs_version`.
+- Schema drift guard отдельно проверяет все новые provenance-колонки.
+- API-Football получает не более одного retry и только для `FOOTBALL_NETWORK`; 429/cooldown/configuration не ретраятся.
+- Match Center корректно возвращает 404 при пустом fixture без обращения к helper полного AI.
+- Provider xG из match statistics остаётся отдельным сигналом; внутренние expected goals модели не выдаются за фактический xG провайдера.
+- Regression: `test/data-quality-rc129.test.js`.
+- Persistent Data Provenance включён в health contract.
 
 ## RC128 — Multi-Provider Data Service & Provenance
 
