@@ -14,6 +14,8 @@ const REQUIRED_HEALTH_FLAGS = [
   'multiProviderDataService',
   'openLigaDbStandingsFallback',
   'sourceProvenance',
+  'crossProviderStandingReconciliation',
+  'modelMethodologyTransparency',
   'aiAnalysisQualityGate',
   'aiAnalysisQualityGateSelfTest',
   'telegramMiniAppE2E',
@@ -311,6 +313,9 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
   if (health?.readiness?.ok !== true) throw new Error('Legacy health endpoint must embed a passing readiness snapshot.');
   for (const flag of REQUIRED_HEALTH_FLAGS) {
     if (health[flag] !== 'enabled') throw new Error(`Health flag ${flag} is not enabled.`);
+  }
+  if (health.unvalidatedAbsenceProbabilityShift !== 'disabled') {
+    throw new Error('Unvalidated absence probability shift must remain disabled in production.');
   }
 
   const manifestResponse = await request(fetchImpl, baseUrl, '/api/app-manifest');
