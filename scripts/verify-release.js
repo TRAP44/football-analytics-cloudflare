@@ -11,6 +11,7 @@ const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml'
 const rollbackWorkflow = fs.readFileSync('.github/workflows/rollback-production.yml', 'utf8');
 const rollbackSmoke = fs.readFileSync('scripts/rollback-smoke.js', 'utf8');
 const rollbackTargetVerifier = fs.readFileSync('scripts/verify-rollback-target.js', 'utf8');
+const rollbackDeploymentVerifier = fs.readFileSync('scripts/verify-rollback-deployment.js', 'utf8');
 const postDeploySmoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
 const readme = fs.readFileSync('README_CLOUDFLARE_RU.md', 'utf8');
@@ -70,6 +71,11 @@ if (!fs.existsSync('test/rollback-legacy-confirmation-rc118.test.js')) failures.
 if (!rollbackWorkflow.includes('legacy_confirm:') || !rollbackWorkflow.includes('LEGACY_CONFIRM: ${{ inputs.legacy_confirm }}')) failures.push('RC118 rollback workflow must collect exact legacy acknowledgement');
 if (!rollbackWorkflow.includes('"$ALLOW_LEGACY_UNVERIFIED" "$LEGACY_CONFIRM"')) failures.push('RC118 rollback workflow must pass legacy acknowledgement to the target verifier');
 if (!rollbackTargetVerifier.includes('LEGACY-UNVERIFIED:${expectedVersion}:${expectedId}')) failures.push('RC118 verifier must bind legacy acknowledgement to expected release and version ID');
+if (!fs.existsSync('test/rollback-deployment-postcondition-rc119.test.js')) failures.push('Missing RC119 rollback deployment postcondition regression test');
+if (!rollbackWorkflow.includes('RC119 verify exact rollback deployment target')) failures.push('RC119 exact rollback deployment postcondition gate is missing');
+if (!rollbackWorkflow.includes('npx wrangler deployments status --json')) failures.push('RC119 rollback workflow must read current Cloudflare deployment state');
+if (!rollbackWorkflow.includes('verify-rollback-deployment.js "$DEPLOYMENT_STATUS_JSON" "$VERSION_ID"')) failures.push('RC119 rollback workflow must verify the requested version ID after mutation');
+if (!rollbackDeploymentVerifier.includes('must serve 100% of production traffic')) failures.push('RC119 verifier must require exclusive 100% traffic on the requested rollback version');
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
