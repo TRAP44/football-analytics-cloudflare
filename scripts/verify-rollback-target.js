@@ -7,7 +7,7 @@ function legacyAllowed(value) {
   return value === true || String(value || '').toLowerCase() === 'true';
 }
 
-export function verifyRollbackTarget(version, expectedVersion, expectedId, allowLegacyUnverified = false) {
+export function verifyRollbackTarget(version, expectedVersion, expectedId, allowLegacyUnverified = false, legacyConfirmation = '') {
   if (!version || typeof version !== 'object' || Array.isArray(version)) {
     throw new Error('Cloudflare rollback target metadata must be a JSON object.');
   }
@@ -32,19 +32,26 @@ export function verifyRollbackTarget(version, expectedVersion, expectedId, allow
     );
   }
 
+  const expectedLegacyConfirmation = `LEGACY-UNVERIFIED:${expectedVersion}:${expectedId}`;
+  if (legacyConfirmation !== expectedLegacyConfirmation) {
+    throw new Error(
+      `Legacy rollback override requires exact confirmation ${expectedLegacyConfirmation}.`
+    );
+  }
+
   return { mode: 'legacy-unverified', releaseVersion: null, deploySha: null };
 }
 
 function main() {
-  const [metadataPath, expectedVersion, expectedId, allowLegacyUnverified = 'false'] = process.argv.slice(2);
+  const [metadataPath, expectedVersion, expectedId, allowLegacyUnverified = 'false', legacyConfirmation = ''] = process.argv.slice(2);
   if (!metadataPath || !expectedVersion || !expectedId) {
     throw new Error(
-      'Usage: node scripts/verify-rollback-target.js <metadata-json> <expected-version> <version-id> [allow-legacy-unverified]'
+      'Usage: node scripts/verify-rollback-target.js <metadata-json> <expected-version> <version-id> [allow-legacy-unverified] [legacy-confirmation]'
     );
   }
 
   const version = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
-  const result = verifyRollbackTarget(version, expectedVersion, expectedId, allowLegacyUnverified);
+  const result = verifyRollbackTarget(version, expectedVersion, expectedId, allowLegacyUnverified, legacyConfirmation);
   if (result.mode === 'stamped') {
     console.log(`Verified rollback target release=${result.releaseVersion} sha=${result.deploySha}.`);
   } else {
