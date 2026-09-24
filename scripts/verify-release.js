@@ -240,7 +240,7 @@ if (!worker.includes("callback_data: `match:verdict:") || !worker.includes("call
 if (!worker.includes("globalTopClubSearch: 'enabled'") || !worker.includes('TOP_TEAM_SEARCH_CATALOG')) failures.push('RC49 global top-club search contract is missing');
 if (!worker.includes('topTeamSearchPlan') || !worker.includes("v2-global")) failures.push('RC49 canonical team-search plan is missing');
 if (!worker.includes("botContentFirstNavigation: 'enabled'") || !worker.includes('sendBotDayMatches') || !worker.includes('sendBotFavoriteTeams')) failures.push('RC49 chat content navigation is missing');
-if (!html.includes('class="miniapp-ai-only"') || !app.includes("const MINIAPP_PRODUCT_MODE = 'ai-analysis-only'")) failures.push('RC49 AI-only Mini App shell is missing');
+if (!html.includes('class="miniapp-public-shell"') || !app.includes('const startupTasks = [loadFavorites(), loadMatches()]') || !worker.includes("miniAppPublicShell: 'enabled'")) failures.push('RC49 public Mini App shell contract is missing');
 if (!html.includes('id="navMatches"') || !html.includes('id="navProfile"') || !html.includes('id="navSearch" class="nav-item active"')) failures.push('RC49 minimal navigation contract is missing');
 
 if (!worker.includes("fmAiNews: 'enabled'") || !worker.includes("newsSourceLinks: 'enabled'")) failures.push('RC50 FM AI News health contract is missing');
