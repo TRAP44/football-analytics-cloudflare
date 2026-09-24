@@ -350,7 +350,7 @@ h2 { margin: 0; font-size: 20px; }
 
 
 /* v2.6 provider / paid API readiness */
-.provider-status-grid, .provider-live-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:12px; }
+.provider-status-grid, .provider-live-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:12px; }
 .provider-status-grid > div, .provider-live-grid > div { border:1px solid var(--line); border-radius:12px; padding:10px 11px; background:rgba(148,163,184,.035); }
 .provider-status-grid span, .provider-live-grid span { display:block; color:var(--hint); font-size:11px; margin-bottom:4px; }
 .provider-status-grid strong, .provider-live-grid strong { display:block; font-size:13px; }
