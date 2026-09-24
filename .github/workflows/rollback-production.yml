@@ -140,15 +140,18 @@ jobs:
         run: |
           npx wrangler rollback "$VERSION_ID" --yes --message "Manual rollback to $EXPECTED_VERSION from GitHub Actions"
 
-      - name: RC119 verify exact rollback deployment target
+      - name: RC119 verify exact rollback deployment target / RC122 verify rollback release identity
         shell: bash
         run: |
           set -euo pipefail
           DEPLOYMENT_STATUS_JSON="$RUNNER_TEMP/rollback-deployment-status.json"
+          ROLLBACK_VERSION_JSON="$RUNNER_TEMP/rollback-version-postcondition.json"
           verified=false
           for attempt in 1 2 3 4 5; do
             if npx wrangler deployments status --json > "$DEPLOYMENT_STATUS_JSON" \
-              && node scripts/verify-rollback-deployment.js "$DEPLOYMENT_STATUS_JSON" "$VERSION_ID"; then
+              && npx wrangler versions view "$VERSION_ID" --json > "$ROLLBACK_VERSION_JSON" \
+              && node scripts/verify-rollback-deployment.js "$DEPLOYMENT_STATUS_JSON" "$VERSION_ID" \
+              && node scripts/verify-rollback-target.js "$ROLLBACK_VERSION_JSON" "$EXPECTED_VERSION" "$VERSION_ID" "$ALLOW_LEGACY_UNVERIFIED" "$LEGACY_CONFIRM"; then
               verified=true
               break
             fi
@@ -157,11 +160,11 @@ jobs:
             fi
           done
           if [[ "$verified" != "true" ]]; then
-            echo "Cloudflare did not confirm 100% production traffic on rollback target $VERSION_ID." >&2
+            echo "Cloudflare did not confirm 100% production traffic on rollback target $VERSION_ID or its exact release identity." >&2
             exit 1
           fi
-          echo "### RC119 exact rollback deployment verified" >> "$GITHUB_STEP_SUMMARY"
-          echo "Cloudflare production is serving 100% from rollback target version ID $VERSION_ID." >> "$GITHUB_STEP_SUMMARY"
+          echo "### RC122 exact rollback release postcondition verified" >> "$GITHUB_STEP_SUMMARY"
+          echo "Cloudflare production is serving 100% from rollback target $VERSION_ID and its release identity matches $EXPECTED_VERSION." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify restored production
         shell: bash
