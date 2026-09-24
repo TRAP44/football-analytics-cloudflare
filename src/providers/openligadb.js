@@ -137,12 +137,21 @@ function openLigaGoalNumber(goal = {}, key) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export function openLigaMatchDataUrls(leagueId, season) {
+function openLigaTeamFilter(value) {
+  const tokens = openLigaTextKey(value).split(' ').filter(token => token.length >= 4);
+  return tokens[0] || '';
+}
+
+export function openLigaMatchDataUrls(leagueId, season, teamName = '') {
   const competition = openLigaCompetition(leagueId, season);
   if (!competition) return [];
+  const teamFilter = openLigaTeamFilter(teamName);
   return competition.shortcuts.map(shortcut => ({
     shortcut,
-    url: `https://api.openligadb.de/getmatchdata/${encodeURIComponent(shortcut)}/${competition.season}`,
+    teamFilter,
+    url: teamFilter
+      ? `https://api.openligadb.de/getmatchdata/${encodeURIComponent(shortcut)}/${competition.season}/${encodeURIComponent(teamFilter)}`
+      : `https://api.openligadb.de/getmatchdata/${encodeURIComponent(shortcut)}/${competition.season}`,
   }));
 }
 
