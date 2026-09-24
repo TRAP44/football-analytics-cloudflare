@@ -83,6 +83,22 @@ test('RC132 rejects a different or time-distant fixture instead of guessing', ()
   });
   assert.equal(wrongTeams.available, false);
   assert.equal(wrongTeams.reason, 'fixture_not_matched');
+
+  const genericNameTrap = normalizeOpenLigaMatchEvents([{
+    matchID: 92,
+    matchDateTimeUTC: '2026-09-27T18:30:00Z',
+    team1: { teamName: 'Manchester City' },
+    team2: { teamName: 'Liverpool' },
+    goals: [{ scoreTeam1: 1, scoreTeam2: 0, matchMinute: 5, goalGetterName: 'Player' }],
+  }], {
+    homeId: 33,
+    awayId: 40,
+    homeName: 'Manchester United',
+    awayName: 'Liverpool',
+    kickoffAt: '2026-09-27T18:30:00Z',
+  });
+  assert.equal(genericNameTrap.available, false);
+  assert.equal(genericNameTrap.reason, 'fixture_not_matched');
 });
 
 test('RC132 drops goals when the scoring side cannot be inferred safely', () => {
