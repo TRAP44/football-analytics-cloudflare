@@ -1276,6 +1276,12 @@ function safeOpsMetadata(meta = {}) {
 }
 
 async function recordOpsEvent(cfg, event = {}) {
+  const task = recordOpsEventTask(cfg, event);
+  if (typeof cfg?.waitUntil === 'function') cfg.waitUntil(task);
+  return await task;
+}
+
+async function recordOpsEventTask(cfg, event = {}) {
   const row = {
     created_at: new Date().toISOString(),
     severity: ['info','warning','error','critical'].includes(String(event.severity || '')) ? String(event.severity) : 'info',
@@ -1525,7 +1531,13 @@ async function ensureLaunchAttribution(userId, rawStartParam, cfg) {
   return {...incoming,firstTouchAt:patch.acquisition_first_touch_at};
 }
 
-async function recordGrowthEvent(cfg, {
+async function recordGrowthEvent(cfg, event = {}) {
+  const task = recordGrowthEventTask(cfg, event);
+  if (typeof cfg?.waitUntil === 'function') cfg.waitUntil(task);
+  return await task;
+}
+
+async function recordGrowthEventTask(cfg, {
   userId,
   eventName,
   channel='telegram',
@@ -19886,8 +19898,9 @@ async function readinessSnapshot(cfg) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const cfg = config(env);
+    if (ctx?.waitUntil) cfg.waitUntil = promise => ctx.waitUntil(Promise.resolve(promise));
     const url = new URL(request.url);
 
     if (request.method === 'GET' && url.pathname === '/api/public-status') {
@@ -20327,7 +20340,7 @@ export default {
       try {
         return await handleTelegramWebhook(request, cfg);
       } catch (error) {
-        console.error('telegram webhook', error);
+        console.error('telegram webhook', redactOpsString(error?.message || error, 240));
         bumpTelemetry('routeErrors');
         await recordOpsEvent(cfg, { severity: 'error', source: 'telegram', eventType: 'webhook', code: 'TELEGRAM_WEBHOOK', message: error?.message || error, endpoint: '/telegram/webhook' });
         return json({ ok: false }, 200);
@@ -20464,7 +20477,7 @@ export default {
       if (request.method === 'POST' && url.pathname === '/api/analyze') return await apiAnalyze(request, cfg, user);
       return json({ error: 'Маршрут не найден.' }, 404);
     } catch (error) {
-      console.error(error);
+      console.error('api route', redactOpsString(error?.message || error, 240));
       const rateLimited = isFootballRateLimitError(error);
       const publicError = publicRouteError(error, rateLimited);
       if (!rateLimited) {

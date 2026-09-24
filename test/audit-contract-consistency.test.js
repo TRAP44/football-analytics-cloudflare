@@ -75,3 +75,17 @@ test('audit: mutable entrypoint assets are never cached as immutable',()=>{
   assert.match(appBlock,/must-revalidate/i);
   assert.match(cssBlock,/must-revalidate/i);
 });
+
+
+test('audit: fire-and-forget observability is anchored to Cloudflare waitUntil',()=>{
+  assert.match(worker,/async fetch\(request, env, ctx\)/);
+  assert.match(worker,/cfg\.waitUntil = promise => ctx\.waitUntil\(Promise\.resolve\(promise\)\)/);
+  assert.match(worker,/async function recordGrowthEvent\(cfg, event = \{\}\)[\s\S]{0,240}cfg\?\.waitUntil/);
+  assert.match(worker,/async function recordOpsEvent\(cfg, event = \{\}\)[\s\S]{0,240}cfg\?\.waitUntil/);
+});
+
+test('audit: top-level route errors are redacted before console logging',()=>{
+  assert.doesNotMatch(worker,/console\.error\(error\)/);
+  assert.doesNotMatch(worker,/console\.error\('telegram webhook', error\)/);
+  assert.match(worker,/console\.error\('api route', redactOpsString/);
+});
