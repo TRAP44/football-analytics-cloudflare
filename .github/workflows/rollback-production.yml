@@ -110,6 +110,15 @@ jobs:
           npx wrangler versions view "$VERSION_ID" --json > /dev/null
           echo "### RC115 rollback target preflight passed" >> "$GITHUB_STEP_SUMMARY"
           echo "Cloudflare resolved rollback target version ID $VERSION_ID before any rollback mutation." >> "$GITHUB_STEP_SUMMARY"
+      - name: RC117 verify rollback target release identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET_VERSION_JSON="$RUNNER_TEMP/rollback-target-version.json"
+          npx wrangler versions view "$VERSION_ID" --json > "$TARGET_VERSION_JSON"
+          node scripts/verify-rollback-target-identity.js "$TARGET_VERSION_JSON" "$EXPECTED_VERSION" "$VERSION_ID"
+          echo "### RC117 rollback target identity verified" >> "$GITHUB_STEP_SUMMARY"
+          echo "Rollback target version ID $VERSION_ID is stamped for release $EXPECTED_VERSION." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Roll back Worker
         shell: bash
