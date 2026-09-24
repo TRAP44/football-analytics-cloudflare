@@ -31,6 +31,22 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.DEPLOY_SHA }}
+          fetch-depth: 0
+
+      - name: RC110 guard against stale production deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          CURRENT_MAIN_SHA="$(git rev-parse origin/main)"
+          if [[ "$DEPLOY_SHA" != "$CURRENT_MAIN_SHA" ]]; then
+            echo "### Stale production deploy blocked" >> "$GITHUB_STEP_SUMMARY"
+            echo "Verified revision $DEPLOY_SHA is no longer current main ($CURRENT_MAIN_SHA)." >> "$GITHUB_STEP_SUMMARY"
+            echo "A newer Quality run must deploy the current main revision." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "### Production revision confirmed" >> "$GITHUB_STEP_SUMMARY"
+          echo "Deploy SHA matches current main: $DEPLOY_SHA" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Use Node.js 22
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
