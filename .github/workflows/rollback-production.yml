@@ -140,7 +140,7 @@ jobs:
         run: |
           npx wrangler rollback "$VERSION_ID" --yes --message "Manual rollback to $EXPECTED_VERSION from GitHub Actions"
 
-      - name: RC122 verify exact rollback release postcondition
+      - name: RC119 verify exact rollback deployment target / RC122 verify rollback release identity
         shell: bash
         run: |
           set -euo pipefail
@@ -160,7 +160,7 @@ jobs:
             fi
           done
           if [[ "$verified" != "true" ]]; then
-            echo "Cloudflare did not confirm the exact rollback release identity and 100% traffic on target $VERSION_ID." >&2
+            echo "Cloudflare did not confirm 100% production traffic on rollback target $VERSION_ID or its exact release identity." >&2
             exit 1
           fi
           echo "### RC122 exact rollback release postcondition verified" >> "$GITHUB_STEP_SUMMARY"
