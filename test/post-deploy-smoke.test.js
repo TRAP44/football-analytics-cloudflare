@@ -38,6 +38,8 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         telegramWebhookDedupeObservabilitySelfTest: 'enabled',
         supabaseProbeConfirmation: 'enabled',
         supabaseProbeConfirmationSelfTest: 'enabled',
+        schemaDriftConfirmation: 'enabled',
+        schemaDriftConfirmationSelfTest: 'enabled',
         cloudflareDeploymentGate: 'enabled',
         browserSecurityPolicy: 'enabled',
         failClosedDeployment: 'enabled',
