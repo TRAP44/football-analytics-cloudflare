@@ -19948,7 +19948,7 @@ export default {
         botCachedAnalysisReuse: 'enabled',
         botMatchCardCallbacks: 'enabled',
         globalTopClubSearch: 'enabled',
-        miniAppAiOnlyShell: 'enabled',
+        miniAppPublicShell: 'enabled',
         botContentFirstNavigation: 'enabled',
         fmAiNews: 'enabled',
         newsSourceLinks: 'enabled',
