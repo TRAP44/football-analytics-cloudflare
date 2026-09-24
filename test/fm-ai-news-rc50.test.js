@@ -17,7 +17,7 @@ test('news search uses Tavily news mode and source links',()=> {
   assert.match(worker,/topic:'news'/);
   assert.match(worker,/include_answer:false/);
   assert.match(worker,/function externalNewsUrl/);
-  assert.match(worker,/function newsSourceKeyboard/);
+  assert.match(worker,/function newsConversionKeyboard/);
   assert.match(worker,/NEWS_BLOCKED_HOST_RE/);
 });
 
