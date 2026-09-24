@@ -24,7 +24,7 @@ test('RC113 rollback fails closed when checked out or current main provenance dr
 });
 
 test('RC113 preserves explicit rollback confirmation and existing production safety gates', () => {
-  assert.match(workflow, /if: inputs\.confirm == 'ROLLBACK'/);
+  assert.match(workflow, /if: \$\{\{ inputs\.confirm == /);
   assert.match(workflow, /group: cloudflare-production/);
   assert.match(workflow, /cancel-in-progress: false/);
   assert.match(workflow, /environment: production/);

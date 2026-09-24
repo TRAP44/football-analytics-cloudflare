@@ -28,10 +28,10 @@ test('missing credentials fail closed without exposing values', () => {
   assert.doesNotMatch(deploy, /echo[^\n]*\$CLOUDFLARE_(?:API_TOKEN|ACCOUNT_ID)/);
 });
 
-test('rollback requires explicit target confirmation and verifies restored production', () => {
+test('rollback requires exact target confirmation and verifies restored production', () => {
   assert.match(rollback, /version_id:/);
   assert.match(rollback, /expected_version:/);
-  assert.match(rollback, /if: inputs\.confirm == 'ROLLBACK'/);
+  assert.match(rollback, /inputs\.confirm == format\('ROLLBACK:\{0\}:\{1\}', inputs\.expected_version, inputs\.version_id\)/);
   assert.match(rollback, /npx wrangler rollback "\$VERSION_ID" --yes/);
   assert.match(rollback, /CLOUDFLARE_WORKER_URL/);
   assert.match(rollback, /scripts\/rollback-smoke\.js "\$ROLLBACK_URL" "\$EXPECTED_VERSION"/);
