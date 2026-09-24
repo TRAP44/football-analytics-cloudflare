@@ -32,7 +32,7 @@ test('RC110 retries the full schema contract only after initial drift',()=>{
 
 test('RC110 production and release paths use confirmed schema drift',()=>{
   const monitor=worker.slice(worker.indexOf('async function runProductionMonitor'),worker.indexOf('async function apiProductionMonitor'));
-  const release=worker.slice(worker.indexOf('async function apiReleaseReadiness'),worker.indexOf('async function responseJsonSafe'));
+  const release=worker.slice(worker.indexOf('async function apiReleaseReadiness'),worker.indexOf('async function runSingleFlightSelfTest'));
   assert.match(monitor,/probeSupabaseSchemaDriftConfirmed\(cfg\)/);
   assert.match(monitor,/schemaProbeAttempts/);
   assert.match(monitor,/schemaProbeRecovered/);
