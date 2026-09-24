@@ -454,6 +454,11 @@ if (!postDeploySmoke.includes("'supabaseProbeConfirmation'") || !postDeploySmoke
 
 
 
+if (!fs.existsSync('test/public-match-journey-rc123.test.js')) failures.push('Missing RC123 public match journey regression test');
+if (!html.includes('id="navMatches" class="nav-item" type="button"><span>⚽</span><small>Матчи</small>')) failures.push('RC123 public matches navigation is missing');
+if (!app.includes('const startupTasks = [loadFavorites(), loadMatches()]')) failures.push('RC123 public match feed startup path is missing');
+if (!app.includes("matchesView: ['Матчи', 'Сегодня, LIVE и ближайшие игры для AI-разбора']")) failures.push('RC123 public match feed chrome is missing');
+
 const gitignore = fs.readFileSync('.gitignore','utf8');
 for (const item of ['.env','.dev.vars','*.pem','*.key']) if (!gitignore.includes(item)) failures.push(`Git ignore is missing secret pattern: ${item}`);
 
