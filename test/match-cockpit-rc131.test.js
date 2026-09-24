@@ -13,7 +13,7 @@ test('RC131 adds one at-a-glance cockpit without making new data requests',()=>{
   assert.match(app,/Дома \/ в гостях/);
   assert.match(app,/Положение в таблице/);
   assert.match(app,/Потери состава/);
-  assert.match(app,/Стартовые XI/);
+  assert.match(app,/Стартовые составы/);
   assert.match(app,/Очные встречи/);
   assert.match(app,/Рынок 1X2/);
   assert.match(app,/Качество оценки/);
