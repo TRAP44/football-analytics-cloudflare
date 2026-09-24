@@ -43,7 +43,7 @@ test('RC126 keeps confirmed drift fail-closed in release and production readines
   assert.match(worker,/function supabaseSchemaProbeConfirmationSelfTest/);
   assert.match(worker,/releaseCheck\('supabase_schema_probe_confirmation'/);
   assert.match(worker,/productionCheck\('supabase_schema_probe_confirmation'/);
-  assert.match(worker,/Schema drift подтверждён после/);
+  assert.match(worker,/Schema drift: отсутствуют или несовместимы/);
 });
 
 test('RC126 exposes and smoke-tests schema confirmation health flags',()=>{
