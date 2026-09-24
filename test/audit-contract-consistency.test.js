@@ -9,6 +9,9 @@ const sourceText=sourceFiles.map(file=>fs.readFileSync(file,'utf8')).join('\n');
 const app=fs.readFileSync('public/app.js','utf8');
 const envExample=fs.readFileSync('.env.example','utf8');
 const assetHeaders=fs.readFileSync('public/_headers','utf8');
+const packageMeta=JSON.parse(fs.readFileSync('package.json','utf8'));
+const indexHtml=fs.readFileSync('public/index.html','utf8');
+const statusHtml=fs.readFileSync('public/status.html','utf8');
 
 function walk(dir){
   return fs.readdirSync(dir,{withFileTypes:true}).flatMap(entry=>{
@@ -88,4 +91,12 @@ test('audit: top-level route errors are redacted before console logging',()=>{
   assert.doesNotMatch(worker,/console\.error\(error\)/);
   assert.doesNotMatch(worker,/console\.error\('telegram webhook', error\)/);
   assert.match(worker,/console\.error\('api route', redactOpsString/);
+});
+
+
+test('audit: public entrypoint asset revisions track the package release',()=>{
+  const version=packageMeta.version;
+  assert.ok(indexHtml.includes('/app.js?v='+version+'"') || indexHtml.includes("/app.js?v="+version+"'"));
+  assert.ok(indexHtml.includes('/styles.css?v='+version+'"') || indexHtml.includes("/styles.css?v="+version+"'"));
+  assert.ok(statusHtml.includes('/status.js?v='+version+'"') || statusHtml.includes("/status.js?v="+version+"'"));
 });
