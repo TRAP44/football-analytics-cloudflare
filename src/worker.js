@@ -695,6 +695,7 @@ function appManifest(cfg) {
       telegramMiniAppE2E: true,
       telegramWebhookPersistentDedupe: true,
       telegramWebhookDedupeObservability: true,
+      supabaseProbeConfirmation: true,
       cachedFullAnalysisHandoff: true,
       aiFreshnessGuard: true,
       preKickoffRecheck: true,
@@ -14560,10 +14561,19 @@ async function apiReleaseReadiness(request, cfg) {
   const telegramMiniAppE2ESelfTest = telegramMiniAppE2EDrill();
   const telegramPersistentDedupeCheck = telegramPersistentDedupeSelfTest();
   const telegramDedupeObservabilityCheck = telegramDedupeObservabilitySelfTest();
+  const supabaseProbeConfirmationCheck = supabaseProbeConfirmationSelfTest();
   const checks = [
     releaseCheck('football_api', 'Ключ API-Football', cfg.apiFootballKey ? 'pass' : 'fail', cfg.apiFootballKey ? 'Ключ доступен серверному обработчику.' : 'Ключ API-Football отсутствует.', true),
     releaseCheck('supabase_config', 'Настройка Supabase', hasSupabase(cfg) ? 'pass' : 'fail', hasSupabase(cfg) ? 'Адрес и сервисный ключ доступны серверу.' : 'Не хватает адреса Supabase или сервисного ключа.', true),
-    releaseCheck('supabase_online', 'Supabase/PostgREST', diagnostics.supabase?.ok ? 'pass' : 'fail', diagnostics.supabase?.ok ? `Ответ ${Number(diagnostics.supabase?.latencyMs || 0)} мс.` : `Статус: ${diagnostics.supabase?.status || 'offline'}.`, true),
+    releaseCheck('supabase_online', 'Supabase/PostgREST', diagnostics.supabase?.ok ? 'pass' : 'fail',
+      diagnostics.supabase?.ok
+        ? `Ответ ${Number(diagnostics.supabase?.latencyMs || 0)} мс · attempts=${Number(diagnostics.supabase?.attempts || 1)}${diagnostics.supabase?.recovered ? ' · transient recovered' : ''}.`
+        : `Статус: ${diagnostics.supabase?.status || 'offline'} · attempts=${Number(diagnostics.supabase?.attempts || 1)}.`, true),
+    releaseCheck('supabase_probe_confirmation', 'Подтверждение сбоя Supabase probe',
+      supabaseProbeConfirmationCheck.pass ? 'pass' : 'fail',
+      supabaseProbeConfirmationCheck.pass
+        ? 'Одиночный сбой подтверждается вторым probe; восстановившийся retry не создаёт ложный incident.'
+        : 'Самопроверка confirmation guard не прошла.', true),
     releaseCheck('supabase_schema_drift', 'Контракт актуальной схемы Supabase', schemaDrift.ok ? 'pass' : 'fail',
       schemaDrift.ok
         ? `Проверено ${schemaDrift.checked} обязательных участков схемы v6.17; drift не обнаружен.`
@@ -14753,7 +14763,12 @@ async function apiProductionReadiness(request, cfg) {
         ? `confirmed=${trustedGateSelfTest.confirmed}; adjudicated=${trustedGateSelfTest.adjudicated}; verifiedBlocked=${trustedGateSelfTest.verifiedBlocked}; unverifiedBlocked=${trustedGateSelfTest.unverifiedBlocked}; driftBlocked=${trustedGateSelfTest.driftBlocked}; voidBlocked=${trustedGateSelfTest.voidBlocked}.`
         : 'Самопроверка допуска доверенных метрик не прошла.', true),
     productionCheck('supabase', 'Supabase отвечает', diagnostics.supabase?.ok ? 'pass' : 'fail',
-      diagnostics.supabase?.ok ? `${Number(diagnostics.supabase?.latencyMs || 0)} мс.` : `${diagnostics.supabase?.status || 'offline'}.`, true),
+      diagnostics.supabase?.ok
+        ? `${Number(diagnostics.supabase?.latencyMs || 0)} мс · attempts=${Number(diagnostics.supabase?.attempts || 1)}${diagnostics.supabase?.recovered ? ' · transient recovered' : ''}.`
+        : `${diagnostics.supabase?.status || 'offline'} · attempts=${Number(diagnostics.supabase?.attempts || 1)}.`, true),
+    productionCheck('supabase_probe_confirmation', 'Supabase Probe Confirmation Guard',
+      supabaseProbeConfirmationSelfTest().pass ? 'pass' : 'fail',
+      'Первичный сбой становится блокирующим только после подтверждающего запроса; повтор выполняется только при ошибке.', true),
     productionCheck('singleflight', 'Объединение одинаковых серверных запросов', singleflightTest.pass ? 'pass' : 'fail',
       singleflightTest.pass ? `${singleflightTest.callers} параллельных вызовов → ${singleflightTest.executions} выполнение.` : 'Объединение параллельных запросов не прошло самопроверку.', true),
     productionCheck('distributed_analysis_lock', 'Cross-instance защита AI', distributedAnalysisLockDrill().pass ? 'pass' : 'fail',
@@ -20018,6 +20033,8 @@ export default {
         releaseMonitor: 'enabled',
         productionMonitor: 'enabled',
         productionMonitorSelfTest: productionMonitorSelfTest().pass ? 'enabled' : 'failed',
+        supabaseProbeConfirmation: 'enabled',
+        supabaseProbeConfirmationSelfTest: supabaseProbeConfirmationSelfTest().pass ? 'enabled' : 'failed',
         rollbackVerification: 'enabled',
         clientTelemetry: 'enabled',
         operationalBudget: 'enabled',
