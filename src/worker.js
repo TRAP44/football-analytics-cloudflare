@@ -698,6 +698,7 @@ function appManifest(cfg) {
       telegramWebhookPersistentDedupe: true,
       telegramWebhookDedupeObservability: true,
       supabaseProbeConfirmation: true,
+      schemaDriftConfirmation: true,
       cachedFullAnalysisHandoff: true,
       aiFreshnessGuard: true,
       preKickoffRecheck: true,
@@ -14654,6 +14655,7 @@ async function apiReleaseReadiness(request, cfg) {
   const telegramPersistentDedupeCheck = telegramPersistentDedupeSelfTest();
   const telegramDedupeObservabilityCheck = telegramDedupeObservabilitySelfTest();
   const supabaseProbeConfirmationCheck = supabaseProbeConfirmationSelfTest();
+  const schemaDriftConfirmationCheck = schemaDriftConfirmationSelfTest();
   const checks = [
     releaseCheck('football_api', 'Ключ API-Football', cfg.apiFootballKey ? 'pass' : 'fail', cfg.apiFootballKey ? 'Ключ доступен серверному обработчику.' : 'Ключ API-Football отсутствует.', true),
     releaseCheck('supabase_config', 'Настройка Supabase', hasSupabase(cfg) ? 'pass' : 'fail', hasSupabase(cfg) ? 'Адрес и сервисный ключ доступны серверу.' : 'Не хватает адреса Supabase или сервисного ключа.', true),
@@ -14668,8 +14670,13 @@ async function apiReleaseReadiness(request, cfg) {
         : 'Самопроверка confirmation guard не прошла.', true),
     releaseCheck('supabase_schema_drift', 'Контракт актуальной схемы Supabase', schemaDrift.ok ? 'pass' : 'fail',
       schemaDrift.ok
-        ? `Проверено ${schemaDrift.checked} обязательных участков схемы v6.17; drift не обнаружен.`
-        : `Schema drift: отсутствуют или несовместимы ${schemaDrift.missing.join(', ') || 'обязательные объекты'}.`, true),
+        ? `Проверено ${schemaDrift.checked} обязательных участков схемы v6.17 · attempts=${Number(schemaDrift.attempts || 1)}${schemaDrift.recovered ? ' · transient recovered' : ''}; drift не обнаружен.`
+        : `Schema drift подтверждён после ${Number(schemaDrift.attempts || 1)} попыток: ${schemaDrift.missing.join(', ') || 'обязательные объекты'}.`, true),
+    releaseCheck('schema_drift_confirmation', 'Подтверждение Schema Drift',
+      schemaDriftConfirmationCheck.pass ? 'pass' : 'fail',
+      schemaDriftConfirmationCheck.pass
+        ? 'Первичный drift перепроверяется один раз; recovered probe не создаёт ложный incident, подтверждённый drift остаётся blocking.'
+        : 'Самопроверка Schema Drift Confirmation Guard не прошла.', true),
     releaseCheck('supabase_schema_drift_selftest', 'Самопроверка Schema Drift Guard', schemaDriftSelfTest.pass ? 'pass' : 'fail',
       schemaDriftSelfTest.pass ? 'Drift корректно переводит release gate в блокирующее состояние.' : 'Самопроверка Schema Drift Guard не прошла.', true),
     releaseCheck('provider_data_reliability_selftest', 'Самопроверка надёжности API-Football', providerReliabilitySelfTest.pass ? 'pass' : 'fail',
@@ -14861,6 +14868,9 @@ async function apiProductionReadiness(request, cfg) {
     productionCheck('supabase_probe_confirmation', 'Supabase Probe Confirmation Guard',
       supabaseProbeConfirmationSelfTest().pass ? 'pass' : 'fail',
       'Первичный сбой становится блокирующим только после подтверждающего запроса; повтор выполняется только при ошибке.', true),
+    productionCheck('schema_drift_confirmation', 'Schema Drift Confirmation Guard',
+      schemaDriftConfirmationSelfTest().pass ? 'pass' : 'fail',
+      'Первичный schema drift подтверждается повторной полной проверкой; реальный drift остаётся fail-closed.', true),
     productionCheck('singleflight', 'Объединение одинаковых серверных запросов', singleflightTest.pass ? 'pass' : 'fail',
       singleflightTest.pass ? `${singleflightTest.callers} параллельных вызовов → ${singleflightTest.executions} выполнение.` : 'Объединение параллельных запросов не прошло самопроверку.', true),
     productionCheck('distributed_analysis_lock', 'Cross-instance защита AI', distributedAnalysisLockDrill().pass ? 'pass' : 'fail',
@@ -20127,6 +20137,8 @@ export default {
         productionMonitorSelfTest: productionMonitorSelfTest().pass ? 'enabled' : 'failed',
         supabaseProbeConfirmation: 'enabled',
         supabaseProbeConfirmationSelfTest: supabaseProbeConfirmationSelfTest().pass ? 'enabled' : 'failed',
+        schemaDriftConfirmation: 'enabled',
+        schemaDriftConfirmationSelfTest: schemaDriftConfirmationSelfTest().pass ? 'enabled' : 'failed',
         rollbackVerification: 'enabled',
         clientTelemetry: 'enabled',
         operationalBudget: 'enabled',
