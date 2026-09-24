@@ -21,10 +21,11 @@ test('lock claim uses persistent analysis_cache conflict dedupe',()=> {
   assert.match(worker,/analysisLockJoins/);
 });
 
-test('lock degrades fail-open rather than taking analysis offline',()=> {
+test('lock degradation now fails closed before expensive recompute',()=> {
   assert.match(worker,/analysisLockFailOpen/);
-  assert.match(worker,/ANALYSIS_LOCK_FAIL_OPEN/);
-  assert.match(worker,/claimed:true,key,claimId:'fail-open',shared:false,degraded:true/);
+  assert.match(worker,/ANALYSIS_LOCK_FAIL_CLOSED/);
+  assert.match(worker,/claimed:false,key,claimId:'',shared:false,degraded:true,unavailable:true/);
+  assert.match(worker,/ANALYSIS_COORDINATION_DEGRADED/);
 });
 
 test('non-owner waits for shared fixture analysis instead of recomputing',()=> {
@@ -36,8 +37,8 @@ test('non-owner waits for shared fixture analysis instead of recomputing',()=> {
 });
 
 test('analysis owner always releases persistent lock',()=> {
-  assert.match(worker,/try \{\n  let fixture;/);
-  assert.match(worker,/finally \{\n    await releaseDistributedAnalysisLock\(analysisLock,cfg\);\n  \}/);
+  assert.match(worker,/let usageReservation=null;/);
+  assert.match(worker,/finally \{\n    if \(usageReservation\?\.reserved && !usageCommitted\) await refundAnalysisQuota\(user\.id,usageReservation,cfg\);\n    await releaseDistributedAnalysisLock\(analysisLock,cfg\);\n  \}/);
   assert.match(worker,/async function releaseDistributedAnalysisLock\(/);
   assert.match(worker,/row\?\.payload\?\.claimId/);
 });
@@ -51,8 +52,9 @@ test('production safety exposes cross-instance collapse telemetry',()=> {
 });
 
 test('RC66 health contract is release-gated',()=> {
-  for (const flag of ['distributedAnalysisLock','viralFixtureCollapse','crossInstanceAnalysisDedupe','analysisLockFailOpen','sharedAnalysisWaitFallback']) {
+  for (const flag of ['distributedAnalysisLock','viralFixtureCollapse','crossInstanceAnalysisDedupe','analysisLockFailClosed','sharedAnalysisWaitFallback']) {
     assert.ok(worker.includes(flag + ": 'enabled'"), 'missing ' + flag);
   }
+  assert.ok(worker.includes("analysisLockFailOpen: 'disabled'"));
   assert.match(worker,/distributedAnalysisLockSelfTest: distributedAnalysisLockDrill\(\)\.pass \? 'enabled' : 'failed'/);
 });
