@@ -15,6 +15,6 @@ test('RC122 verifies rollback traffic and release identity after mutation', () =
 test('RC122 remains fail closed and preserves restored-runtime smoke', () => {
   assert.match(workflow, /verified=false/);
   assert.match(workflow, /if \[\[ \"\$verified\" != \"true\" \]\]; then/);
-  assert.match(workflow, /exact rollback release identity and 100% traffic/);
+  assert.match(workflow, /100% production traffic on rollback target \$VERSION_ID or its exact release identity/);
   assert.match(workflow, /rollback-smoke\.js \"\$ROLLBACK_URL\" \"\$EXPECTED_VERSION\"/);
 });
