@@ -14324,8 +14324,9 @@ function productionMonitorState(input = {}) {
   const providerHealth = String(input.providerHealth || 'waiting');
   const telegramDedupeState = String(input.telegramDedupeState || 'healthy');
   const persistent = input.persistent !== false;
+  const supabaseAuthFailures = Number(input.supabaseAuthFailures || 0);
 
-  if (!supabaseOk || !schemaOk || releaseState === 'incident' || telegramDedupeState === 'incident') {
+  if (!supabaseOk || !schemaOk || supabaseAuthFailures > 0 || releaseState === 'incident' || telegramDedupeState === 'incident') {
     return { state: 'incident', label: 'Production требует немедленной проверки' };
   }
   if (releaseState === 'watch' || telegramDedupeState === 'watch' || !persistent || ['critical','warning'].includes(providerHealth)) {
@@ -14347,12 +14348,16 @@ function productionMonitorSelfTest() {
   const telegramIncident = productionMonitorState({
     supabaseOk: true, schemaOk: true, releaseState: 'healthy', providerHealth: 'ok', telegramDedupeState:'incident', persistent: true,
   });
+  const authIncident = productionMonitorState({
+    supabaseOk: true, schemaOk: true, supabaseAuthFailures:1, releaseState:'healthy', providerHealth:'ok', telegramDedupeState:'healthy', persistent:true,
+  });
   return {
-    pass: healthy.state === 'healthy' && drift.state === 'incident' && watch.state === 'watch' && telegramIncident.state === 'incident',
+    pass: healthy.state === 'healthy' && drift.state === 'incident' && watch.state === 'watch' && telegramIncident.state === 'incident' && authIncident.state === 'incident',
     healthy: healthy.state,
     drift: drift.state,
     watch: watch.state,
     telegramIncident: telegramIncident.state,
+    authIncident: authIncident.state,
   };
 }
 
@@ -14374,10 +14379,15 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
   });
   const current = summarizeReleaseWindow(releaseItems, 1);
   const releaseHealth = releaseMonitorHealth(current, source.persistent);
+  const supabaseAuthFailures = releaseItems.filter(item =>
+    String(item?.metadata?.appVersion || '') === APP_VERSION
+    && /HTTP 401|PGRST303|invalid.*jwt|invalid.*api.?key/i.test(String(item?.message || ''))
+  ).length;
   const provider = providerSnapshot();
   const health = productionMonitorState({
     supabaseOk: supabase.ok,
     schemaOk: schemaDrift.ok,
+    supabaseAuthFailures,
     releaseState: releaseHealth.state,
     providerHealth: provider.health,
     telegramDedupeState: telegramWebhook.state,
@@ -14434,6 +14444,7 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     observability: {
       persistent: Boolean(source.persistent),
       migrationReady: Boolean(source.migrationReady),
+      supabaseAuthFailuresCurrentRelease: supabaseAuthFailures,
     },
     policy: {
       consumesFootballApi: false,
@@ -14506,6 +14517,7 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
         schemaProbeRecovered: Boolean(schemaDrift.recovered),
         schemaProbeConfirmedFailure: Boolean(schemaDrift.confirmedFailure),
         schemaInitialMissing: Array.isArray(schemaDrift.initialMissing) ? schemaDrift.initialMissing : [],
+        supabaseAuthFailuresCurrentRelease: supabaseAuthFailures,
         releaseState: releaseHealth.state,
         releaseScore: Number(releaseHealth.score || 0),
         providerHealth: provider.health || 'waiting',
