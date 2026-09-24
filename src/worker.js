@@ -11,6 +11,7 @@ import {
   telegramIdList,
 } from './access-control.js';
 import { apiSecurityHeaders } from './security-headers.js';
+import { createSupabaseClient } from './supabase-client.js';
 
 const memory = {
   users: new Map(),
@@ -1171,134 +1172,6 @@ function productionSafetySnapshot() {
   };
 }
 
-function hasSupabase(cfg) {
-  return Boolean(cfg.supabaseUrl && cfg.supabaseKey);
-}
-
-function supaHeaders(cfg, extra = {}) {
-  // New Supabase sb_secret_* keys are opaque API keys, not JWTs.
-  // Send them only in the apikey header. Putting sb_secret_* in
-  // Authorization: Bearer makes PostgREST try to parse it as a JWT
-  // and can produce PGRST303 / JWT validation errors.
-  return {
-    apikey: cfg.supabaseKey,
-    'content-type': 'application/json',
-    ...extra,
-  };
-}
-
-async function supaSelectOne(cfg, table, params) {
-  const url = new URL(`${cfg.supabaseUrl}/rest/v1/${table}`);
-  url.searchParams.set('select', '*');
-  url.searchParams.set('limit', '1');
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const r = await fetchWithTimeout(url, { headers: supaHeaders(cfg) }, 7000, `Supabase ${table}`);
-  if (!r.ok) throw new Error(`Supabase ${table}: HTTP ${r.status}`);
-  const rows = await r.json();
-  return rows?.[0] || null;
-}
-
-async function supaSelectMany(cfg, table, params = {}, { limit = 20, order = '' } = {}) {
-  const url = new URL(`${cfg.supabaseUrl}/rest/v1/${table}`);
-  url.searchParams.set('select', '*');
-  url.searchParams.set('limit', String(limit));
-  if (order) url.searchParams.set('order', order);
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const r = await fetchWithTimeout(url, { headers: supaHeaders(cfg) }, 7000, `Supabase ${table}`);
-  if (!r.ok) {
-    const text = await r.text().catch(() => '');
-    throw new Error(`Supabase ${table}: HTTP ${r.status}${text ? ` — ${text.slice(0, 160)}` : ''}`);
-  }
-  return await r.json();
-}
-
-async function supaSelectPaged(cfg, table, params = {}, { pageSize = 500, maxRows = 5000, order = '' } = {}) {
-  const rows = [];
-  const size = Math.max(1, Math.min(1000, Number(pageSize || 500)));
-  const cap = Math.max(size, Math.min(10000, Number(maxRows || 5000)));
-  for (let offset = 0; offset < cap; offset += size) {
-    const page = await supaSelectMany(cfg, table, { ...params, offset: String(offset) }, {
-      limit: Math.min(size, cap - offset),
-      order,
-    });
-    rows.push(...page);
-    if (page.length < Math.min(size, cap - offset)) return { rows, truncated: false };
-  }
-  return { rows, truncated: rows.length >= cap };
-}
-
-async function supaUpsert(cfg, table, rows, onConflict) {
-  const url = new URL(`${cfg.supabaseUrl}/rest/v1/${table}`);
-  if (onConflict) url.searchParams.set('on_conflict', onConflict);
-  const r = await fetchWithTimeout(url, {
-    method: 'POST',
-    headers: supaHeaders(cfg, { Prefer: 'resolution=merge-duplicates,return=minimal' }),
-    body: JSON.stringify(Array.isArray(rows) ? rows : [rows]),
-  }, 7000, `Supabase ${table}`);
-  if (!r.ok) {
-    const text = await r.text().catch(() => '');
-    throw new Error(`Supabase ${table}: HTTP ${r.status}${text ? ` — ${text.slice(0, 180)}` : ''}`);
-  }
-}
-
-async function supaInsertIgnore(cfg, table, rows, onConflict) {
-  const url = new URL(`${cfg.supabaseUrl}/rest/v1/${table}`);
-  if (onConflict) url.searchParams.set('on_conflict', onConflict);
-  const r = await fetchWithTimeout(url, {
-    method: 'POST',
-    headers: supaHeaders(cfg, { Prefer: 'resolution=ignore-duplicates,return=minimal' }),
-    body: JSON.stringify(Array.isArray(rows) ? rows : [rows]),
-  }, 7000, `Supabase ${table}`);
-  if (!r.ok) {
-    const text = await r.text().catch(() => '');
-    throw new Error(`Supabase ${table}: HTTP ${r.status}${text ? ` — ${text.slice(0, 180)}` : ''}`);
-  }
-}
-
-async function supaPatch(cfg, table, filters, patch) {
-  const url = new URL(`${cfg.supabaseUrl}/rest/v1/${table}`);
-  for (const [k, v] of Object.entries(filters || {})) url.searchParams.set(k, v);
-  const r = await fetchWithTimeout(url, {
-    method: 'PATCH',
-    headers: supaHeaders(cfg, { Prefer: 'return=minimal' }),
-    body: JSON.stringify(patch || {}),
-  }, 7000, `Supabase ${table}`);
-  if (!r.ok) {
-    const text = await r.text().catch(() => '');
-    throw new Error(`Supabase ${table}: HTTP ${r.status}${text ? ` — ${text.slice(0, 180)}` : ''}`);
-  }
-}
-
-async function supaDelete(cfg, table, filters = {}) {
-  const url = new URL(`${cfg.supabaseUrl}/rest/v1/${table}`);
-  for (const [k, v] of Object.entries(filters || {})) url.searchParams.set(k, v);
-  const r = await fetchWithTimeout(url, {
-    method: 'DELETE',
-    headers: supaHeaders(cfg, { Prefer: 'return=minimal' }),
-  }, 7000, `Supabase ${table}`);
-  if (!r.ok) {
-    const text = await r.text().catch(() => '');
-    throw new Error(`Supabase ${table}: HTTP ${r.status}${text ? ` — ${text.slice(0, 180)}` : ''}`);
-  }
-}
-
-async function supaRpc(cfg, functionName, payload = {}, timeoutMs = 7000) {
-  const url = new URL(`${cfg.supabaseUrl}/rest/v1/rpc/${functionName}`);
-  const r = await fetchWithTimeout(url, {
-    method: 'POST',
-    headers: supaHeaders(cfg),
-    body: JSON.stringify(payload || {}),
-  }, Math.max(500, Number(timeoutMs || 7000)), `Supabase RPC ${functionName}`);
-  const body = await r.json().catch(() => null);
-  if (!r.ok) {
-    const error = new Error(`Supabase RPC ${functionName}: HTTP ${r.status}${body?.message ? ` — ${redactOpsString(body.message, 180)}` : ''}`);
-    error.code = String(body?.code || `HTTP_${r.status}`);
-    error.detail = body?.details || null;
-    throw error;
-  }
-  return Array.isArray(body) && body.length === 1 ? body[0] : body;
-}
-
 async function readBackendSecurityContract(cfg) {
   if (!hasSupabase(cfg)) return { ok: false, status: 'not_configured' };
   try {
@@ -1344,6 +1217,22 @@ function redactOpsString(value, max = 500) {
     .replace(/x-apisports-key\s*[:=]\s*[^\s,;]+/gi, 'x-apisports-key=[redacted]')
     .slice(0, max);
 }
+
+const {
+  hasSupabase,
+  supaHeaders,
+  supaSelectOne,
+  supaSelectMany,
+  supaSelectPaged,
+  supaUpsert,
+  supaInsertIgnore,
+  supaPatch,
+  supaDelete,
+  supaRpc,
+} = createSupabaseClient({
+  fetchWithTimeout,
+  redactMessage: redactOpsString,
+});
 
 function sensitiveOpsMetadataKey(key = '') {
   return /token|secret|password|authorization|api.?key|init.?data|telegram.?id|user.?id|chat.?id|username|first.?name|last.?name|photo.?url/i.test(String(key));
