@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.106.0-rc130';
+const CLIENT_VERSION = '6.107.0-rc131';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc130';
+const CLIENT_RELEASE_CHANNEL = 'rc131';
 const SUPABASE_SCHEMA_HINT = 'проверьте актуальную схему Supabase (baseline v6.18 / миграции до v6.19)';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
@@ -6933,6 +6933,119 @@ function dataProvenanceHtml(provenance = {}) {
   </section>`;
 }
 
+function cockpitProviderLabel(provider = '') {
+  const key=String(provider || '').toLowerCase();
+  if (key==='api-football') return 'API-Football';
+  if (key==='the-odds-api') return 'The Odds API';
+  return provider ? String(provider) : '—';
+}
+
+function matchCockpitHtml(d = {}) {
+  const m=d.match || {};
+  const recent=d.recentForm || {};
+  const comparison=d.comparison || {};
+  const metrics=Array.isArray(comparison.metrics) ? comparison.metrics : [];
+  const metric=key=>metrics.find(x=>x?.key===key) || null;
+  const formMetric=metric('form_ppg');
+  const venueMetric=metric('venue_ppg');
+  const tableMetric=metric('table_rank');
+  const injuriesMeta=d.providerReliability?.features?.injuries || d.dataPolicy?.reliability?.features?.injuries || {};
+  const lineupMeta=d.providerReliability?.features?.lineups || d.dataPolicy?.reliability?.features?.lineups || {};
+  const injuryConfirmed=Boolean(injuriesMeta.available);
+  const homeAbs=Array.isArray(d.absences?.home) ? d.absences.home.length : 0;
+  const awayAbs=Array.isArray(d.absences?.away) ? d.absences.away.length : 0;
+  const homeConfirmed=Boolean(d.lineupImpact?.homeConfirmed || Number(d.lineups?.home?.startXI?.length || 0)>=10);
+  const awayConfirmed=Boolean(d.lineupImpact?.awayConfirmed || Number(d.lineups?.away?.startXI?.length || 0)>=10);
+  const confirmedCount=Number(homeConfirmed)+Number(awayConfirmed);
+  const h2h=d.h2h || {};
+  const h2hSample=Number(h2h.homeWins || 0)+Number(h2h.draws || 0)+Number(h2h.awayWins || 0);
+  const market=d.market || null;
+  const oddsProvider=d.dataProvenance?.features?.odds?.provider || market?.provider || '';
+  const confidence=Number.isFinite(Number(d.confidence?.score)) ? Math.round(Number(d.confidence.score)) : null;
+  const completeness=Number.isFinite(Number(d.completeness?.score)) ? Number(d.completeness.score) : null;
+  const completenessMax=Number.isFinite(Number(d.completeness?.max)) ? Number(d.completeness.max) : null;
+  const homeName=m.home?.name || 'Хозяева';
+  const awayName=m.away?.name || 'Гости';
+  const fmt=value=>Number.isFinite(Number(value)) ? Number(value).toFixed(1) : '—';
+  const rank=value=>Number.isFinite(Number(value)) ? `${Math.round(Number(value))} место` : '—';
+  const formAvailable=Boolean(recent.home?.overall?.sample && recent.away?.overall?.sample);
+  const venueAvailable=Boolean(recent.home?.venue?.sample && recent.away?.venue?.sample);
+  const marketAvailable=Boolean(market?.odds && Number(market.odds.home)>1 && Number(market.odds.draw)>1 && Number(market.odds.away)>1);
+  const tableAvailable=Boolean(tableMetric && Number.isFinite(Number(tableMetric.homeValue)) && Number.isFinite(Number(tableMetric.awayValue)));
+  const movement=d.marketMovement || {};
+  const movementDelta=movement?.probabilityChange || {};
+  const movementSample=Number(movement?.sample || 0);
+  const movementRows=[['П1',Number(movementDelta.home || 0)],['Н',Number(movementDelta.draw || 0)],['П2',Number(movementDelta.away || 0)]]
+    .sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
+  const strongestMove=movementRows[0];
+  const movementText=movementSample>=2 && Math.abs(strongestMove?.[1] || 0)>=1
+    ? `Рынок: ${strongestMove[0]} ${strongestMove[1]>0?'+':''}${strongestMove[1].toFixed(1)} п.п.`
+    : '';
+  const lineupText=confirmedCount===2
+    ? 'Оба стартовых состава подтверждены'
+    : confirmedCount===1
+      ? 'Подтверждён состав одной команды'
+      : lineupMeta.state==='empty_response'
+        ? 'Составы ещё не опубликованы источником'
+        : 'Стартовые составы пока не подтверждены';
+  const injuryText=injuryConfirmed
+    ? `${homeName}: ${homeAbs} · ${awayName}: ${awayAbs}`
+    : injuriesMeta.state==='empty_response'
+      ? 'Источник вернул пустой ответ — это не означает «потерь нет»'
+      : 'Данные о потерях сейчас не подтверждены';
+  const qualityText=confidence===null
+    ? 'Оценивается'
+    : `${confidence}/100${completeness!==null&&completenessMax!==null ? ` · данные ${completeness}/${completenessMax}` : ''}`;
+
+  const card=(tab,icon,title,value,note,available=true)=>`<button class="match-cockpit-card ${available?'':'is-missing'}" type="button" data-cockpit-tab="${escapeHtml(tab)}">
+    <span class="match-cockpit-icon">${icon}</span>
+    <span class="match-cockpit-copy"><small>${escapeHtml(title)}</small><strong>${escapeHtml(value)}</strong><em>${escapeHtml(publicText(note || ''))}</em></span>
+    <span class="match-cockpit-arrow">→</span>
+  </button>`;
+
+  return `<section class="panel match-cockpit-panel">
+    <div class="match-cockpit-head">
+      <div><span>⚡ МАТЧ ЗА 15 СЕКУНД</span><h2>Ключевые факторы перед стартом</h2></div>
+      <small>${escapeHtml(publicText(comparison.balanceLabel || 'Сводка строится только по доступным подтверждённым данным'))}</small>
+    </div>
+    <div class="match-cockpit-grid">
+      ${card('form','📈','Текущая форма',
+        formAvailable ? `${fmt(formMetric?.homeValue ?? recent.home?.overall?.ppg)} — ${fmt(formMetric?.awayValue ?? recent.away?.overall?.ppg)} очка/матч` : 'Недостаточно данных',
+        formAvailable ? `${homeName} / ${awayName}, последние матчи` : 'Форма не включается в вывод без достаточной выборки',
+        formAvailable)}
+      ${card('form','🏟️','Дома / в гостях',
+        venueAvailable ? `${fmt(venueMetric?.homeValue ?? recent.home?.venue?.ppg)} — ${fmt(venueMetric?.awayValue ?? recent.away?.venue?.ppg)} очка/матч` : 'Недостаточно данных',
+        venueAvailable ? 'Хозяева дома против гостей на выезде' : 'Профиль площадки пока неполный',
+        venueAvailable)}
+      ${card('comparison','🏆','Положение в таблице',
+        tableAvailable ? `${rank(tableMetric.homeValue)} — ${rank(tableMetric.awayValue)}` : 'Нет в сохранённых данных',
+        tableAvailable ? `${homeName} / ${awayName}` : 'Таблица не запрашивается дополнительно только ради этой карточки',
+        tableAvailable)}
+      ${card('squads','🚑','Потери состава',
+        injuryConfirmed ? `${homeAbs} — ${awayAbs}` : 'Не подтверждены',
+        injuryText,
+        injuryConfirmed)}
+      ${card('squads','👥','Стартовые составы',
+        confirmedCount===2 ? '2 / 2 подтверждены' : confirmedCount===1 ? '1 / 2 подтверждён' : 'Ожидаются',
+        lineupText,
+        confirmedCount>0)}
+      ${card('form','🤝','Очные встречи',
+        h2hSample ? `${Number(h2h.homeWins||0)} — ${Number(h2h.draws||0)} — ${Number(h2h.awayWins||0)}` : 'Нет выборки',
+        h2hSample ? `${homeName} · ничьи · ${awayName}, выборка ${h2hSample}` : 'H2H не используется, если источник не вернул выборку',
+        h2hSample>0)}
+      ${card('market','💹','Коэффициенты П1 / Н / П2',
+        marketAvailable ? `${market.odds.home} · ${market.odds.draw} · ${market.odds.away}` : 'Недоступен',
+        marketAvailable ? `${cockpitProviderLabel(oddsProvider)}${movementText ? ` · ${movementText}` : ''}` : 'Рыночный сигнал исключён из модели',
+        marketAvailable)}
+      ${card('overview','🧠','Качество оценки',
+        qualityText,
+        d.confidence?.label || 'Уверенность модели и полнота входных данных считаются отдельно',
+        confidence!==null)}
+    </div>
+    ${d.lineupImpact?.note ? `<div class="match-cockpit-note"><span>👥</span><p>${escapeHtml(publicText(d.lineupImpact.note))}</p></div>` : ''}
+  </section>`;
+}
+
 function renderAnalysis(d) {
   if (!d) return;
   const previousFixture = Number(state.currentAnalysis?.match?.fixtureId || 0);
@@ -7022,6 +7135,8 @@ function renderAnalysis(d) {
     ${analysisFreshnessHtml(d.freshness || {}, d.recheck || {})}
 
     ${kickoffHandoffHtml(d.kickoffHandoff || {}, m)}
+
+    ${matchCockpitHtml(d)}
 
     ${providerCoverageHtml(d.providerReliability || d.dataPolicy?.reliability || {})}
 
@@ -7207,6 +7322,7 @@ function renderAnalysis(d) {
   })));
   $('returnToTelegramBtn')?.addEventListener('click', returnToTelegram);
   $('openPrematchBrief')?.addEventListener('click', () => setAnalysisTab('brief', true));
+  $('analysis')?.querySelectorAll('[data-cockpit-tab]').forEach(btn => btn.addEventListener('click', () => setAnalysisTab(btn.dataset.cockpitTab || 'overview', true)));
   $('analysis')?.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => openTeam({
     id: Number(btn.dataset.openTeam), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '',
   })));
