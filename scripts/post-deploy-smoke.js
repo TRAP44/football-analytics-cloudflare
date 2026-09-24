@@ -21,6 +21,8 @@ const REQUIRED_HEALTH_FLAGS = [
   'telegramWebhookDedupeObservabilitySelfTest',
   'supabaseProbeConfirmation',
   'supabaseProbeConfirmationSelfTest',
+  'supabaseSchemaProbeConfirmation',
+  'supabaseSchemaProbeConfirmationSelfTest',
   'cloudflareDeploymentGate',
   'browserSecurityPolicy',
   'failClosedDeployment',
