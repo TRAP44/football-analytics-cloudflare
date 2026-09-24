@@ -7033,7 +7033,7 @@ function matchCockpitHtml(d = {}) {
         h2hSample ? `${Number(h2h.homeWins||0)} — ${Number(h2h.draws||0)} — ${Number(h2h.awayWins||0)}` : 'Нет выборки',
         h2hSample ? `${homeName} · ничьи · ${awayName}, выборка ${h2hSample}` : 'H2H не используется, если источник не вернул выборку',
         h2hSample>0)}
-      ${card('market','💹','Рынок 1X2',
+      ${card('market','💹','Коэффициенты П1 / Н / П2',
         marketAvailable ? `${market.odds.home} · ${market.odds.draw} · ${market.odds.away}` : 'Недоступен',
         marketAvailable ? `${cockpitProviderLabel(oddsProvider)}${movementText ? ` · ${movementText}` : ''}` : 'Рыночный сигнал исключён из модели',
         marketAvailable)}
