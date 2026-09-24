@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.98.0 RC106
+# QA Release Checklist — v6.99.0 RC107
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,18 +15,18 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.98.0`.
-- Worker и client: `6.98.0-rc106`.
-- Release candidate: `RC106`.
+- `package.json` и `package-lock.json`: `6.99.0`.
+- Worker и client: `6.99.0-rc107`.
+- Release candidate: `RC107`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
 ## Supabase
 
-Для нового проекта используется только `supabase/baseline/supabase_baseline_v6_15.sql`.
+Для нового проекта используется только `supabase/baseline/supabase_baseline_v6_16.sql`.
 
 Для существующей базы должны быть применены:
-`supabase/migrations/supabase_migration_v6_9.sql`, `v6_10`, `v6_11`, `v6_11_1`, `v6_12`, `v6_13`, `v6_14`, `v6_15`.
+`supabase/migrations/supabase_migration_v6_9.sql`, `v6_10`, `v6_11`, `v6_11_1`, `v6_12`, `v6_13`, `v6_14`, `v6_15`, `v6_16`.
 
 Проверить:
 - RLS и закрытые backend-only таблицы не открыты для `anon/authenticated`;
@@ -34,23 +34,20 @@ npm run verify:worker
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
 
-## RC106 — Telegram + Mini App E2E
+## RC107 — Persistent Telegram Webhook Dedupe
 
-- Persistent Telegram keyboard сохраняет вход через «🔎 Найти матч».
-- Результат поиска открывает тот же fixture через callback `match:menu:<fixtureId>`.
-- Quick AI и полный Mini App handoff сохраняют `fixtureId`, `action=analysis`, `tab=brief`, `handoff=1`.
-- Перед Telegram handoff Mini App синхронизирует избранное и напоминания пользователя.
-- После полного AI локальная история обновляется сразу, а history/reminders/favorites синхронизируются в фоне.
-- Cached Quick AI → полный анализ не должен повторно списывать дневной лимит.
-- Полный анализ позволяет добавить обе команды в избранное, управлять напоминанием и вернуться в Telegram через `Telegram.WebApp.close()`.
-- История открывает сохранённый анализ read-only и не вызывает `incrementUsage`.
-- Worker self-test: `telegramMiniAppE2EDrill()`.
-- Release Readiness содержит blocking check `telegram_miniapp_e2e_selftest`.
-- `/health`: `telegramMiniAppE2E=enabled` и `telegramMiniAppE2ESelfTest=enabled`.
-- Regression: `test/telegram-miniapp-e2e-rc106.test.js`.
-- Supabase migration не требуется.
+- Быстрый in-memory dedupe остаётся первым слоем защиты.
+- После него Worker атомарно резервирует Telegram update через Supabase RPC `claim_telegram_update`, поэтому повторная доставка не обрабатывается повторно даже другим Cloudflare isolate.
+- Завершённый update фиксируется как `done` и хранится 24 часа; незавершённый/ошибочный claim можно повторить после короткого lease.
+- При временной недоступности Supabase webhook работает fail-open через существующий memory-dedupe, чтобы бот не переставал отвечать.
+- `telegram_update_claims` защищена RLS, недоступна `anon/authenticated`; RPC — `SECURITY INVOKER` и разрешены только `service_role`.
+- Supabase Schema Drift Guard проверяет обязательный объект `telegram_update_claims`.
+- Release Readiness содержит blocking check `telegram_webhook_persistent_dedupe`.
+- `/health`: `telegramWebhookPersistentDedupe=enabled` и `telegramWebhookPersistentDedupeSelfTest=enabled`.
+- Regression: `test/telegram-webhook-persistent-dedupe-rc107.test.js`.
+- Для существующей базы обязательна миграция `supabase_migration_v6_16.sql`.
 
-## Исторические RC72–RC105
+## Исторические RC72–RC106
 
 Детальные исторические release-контракты удалены из текущего checklist, чтобы не дублировать Git history и regression-тесты. Их поведение продолжает проверяться соответствующими файлами `test/*-rcXX.test.js`, а продуктовая сводка сохранена в `README_CLOUDFLARE_RU.md`.
 
@@ -72,8 +69,8 @@ npm run verify:worker
 
 `scripts/post-deploy-smoke.js` должен подтвердить:
 - `/health.ok = true`;
-- `version = 6.98.0-rc106`;
-- `releaseCandidate = RC106`;
+- `version = 6.99.0-rc107`;
+- `releaseCandidate = RC107`;
 - `devMode = false`;
 - обязательные self-test/feature flags = `enabled`;
 - `/health/supabase` не доступен публично;
