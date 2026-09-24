@@ -13,6 +13,7 @@ const REQUIRED_HEALTH_FLAGS = [
   'providerDataReliabilitySelfTest',
   'multiProviderDataService',
   'openLigaDbStandingsFallback',
+  'openLigaDbEventFallback',
   'sourceProvenance',
   'aiAnalysisQualityGate',
   'aiAnalysisQualityGateSelfTest',
