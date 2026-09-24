@@ -17,6 +17,7 @@ const postDeploySmoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
 const readme = fs.readFileSync('README_CLOUDFLARE_RU.md', 'utf8');
 const qaChecklist = fs.readFileSync('QA_RELEASE_CHECKLIST_RU.md', 'utf8');
+const envExample = fs.readFileSync('.env.example', 'utf8');
 const baselinePath = 'supabase/baseline/supabase_baseline_v6_18.sql';
 const baseline = fs.existsSync(baselinePath) ? fs.readFileSync(baselinePath, 'utf8') : '';
 const expected = `${pkg.version}-rc128`;
