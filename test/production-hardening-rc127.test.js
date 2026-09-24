@@ -10,10 +10,10 @@ const deploy=fs.readFileSync('.github/workflows/deploy-production.yml','utf8');
 const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));
 const app=fs.readFileSync('public/app.js','utf8');
 
-test('RC127 has a single production identity',()=>{
-  assert.equal(pkg.version,'6.103.0');
+test('RC128 has a single production identity while preserving RC127 hardening',()=>{
+  assert.equal(pkg.version,'6.104.0');
   assert.match(worker,/const APP_VERSION = '6\.103\.0-rc127'/);
-  assert.match(worker,/const RC_NAME = 'RC127'/);
+  assert.match(worker,/const RC_NAME = 'RC128'/);
   assert.match(app,/const CLIENT_VERSION = '6\.103\.0-rc127'/);
   assert.match(deploy,/RELEASE_VERSION: "6\.103\.0-rc127"/);
 });
