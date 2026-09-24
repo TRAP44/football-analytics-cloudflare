@@ -7,7 +7,7 @@
 
 -- RC101 safety guard: refuse to bootstrap over an established application schema.
 -- This is intentionally read-only and runs before any CREATE/ALTER statements.
-do $
+do $$
 begin
   if to_regclass('public.users') is not null
      and to_regclass('public.runtime_controls') is not null
@@ -17,7 +17,7 @@ begin
       message = 'Fresh-install baseline refused: existing Football Analytics schema detected. Use supabase/migrations/ instead.';
   end if;
 end;
-$;
+$$;
 
 -- =====================================================================
 -- Base schema through v6.9 / RC17
@@ -1411,7 +1411,7 @@ returns jsonb
 language plpgsql
 security invoker
 set search_path = public, pg_temp
-as $
+as $$
 declare
   v_used integer;
 begin
@@ -1452,7 +1452,7 @@ begin
     'reason', 'reserved'
   );
 end;
-$;
+$$;
 
 create or replace function public.refund_analysis_quota(
   p_telegram_id bigint,
