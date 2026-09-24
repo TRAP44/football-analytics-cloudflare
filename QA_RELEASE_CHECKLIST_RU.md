@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.106.0 RC130
+# QA Release Checklist — v6.107.0 RC131
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.106.0`.
-- Worker и client: `6.106.0-rc130`.
-- Release candidate: `RC130`.
+- `package.json` и `package-lock.json`: `6.107.0`.
+- Worker и client: `6.107.0-rc131`.
+- Release candidate: `RC131`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -33,6 +33,19 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC131 — Match at a Glance
+
+- В полном анализе есть единый блок «Матч за 15 секунд» перед детальными вкладками.
+- Карточки показывают форму, дома/в гостях, таблицу, потери, стартовые XI, H2H, 1X2 и качество оценки.
+- Блок переиспользует уже полученные `recentForm`, `comparison`, `lineupImpact`, `h2h`, `market` и provenance; новых API-вызовов не создаёт.
+- При недоступных injuries интерфейс пишет «не подтверждены», а не превращает отсутствие данных в нулевые потери.
+- При неполных составах показывается 0/2 или 1/2 подтверждений с пояснением статуса provider.
+- Рынок отображает фактического provider после fallback.
+- Карточки работают как быстрые переходы к соответствующим вкладкам подробного анализа.
+- Мобильный layout сворачивается в одну колонку.
+- Regression: `test/match-cockpit-rc131.test.js`.
+- Match at a Glance включён в health contract.
 
 ## RC130 — Licensed Odds Fallback
 
