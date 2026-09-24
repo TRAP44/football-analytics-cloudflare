@@ -15,7 +15,7 @@ test('RC131 adds one at-a-glance cockpit without making new data requests',()=>{
   assert.match(app,/Потери состава/);
   assert.match(app,/Стартовые составы/);
   assert.match(app,/Очные встречи/);
-  assert.match(app,/Рынок 1X2/);
+  assert.match(app,/Коэффициенты П1 \/ Н \/ П2/);
   assert.match(app,/Качество оценки/);
   const start=app.indexOf('function matchCockpitHtml');
   const end=app.indexOf('function renderAnalysis',start);
