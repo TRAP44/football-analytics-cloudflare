@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.99.0 RC107
+# QA Release Checklist — v6.100.0 RC108
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,18 +15,18 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.99.0`.
-- Worker и client: `6.99.0-rc107`.
-- Release candidate: `RC107`.
+- `package.json` и `package-lock.json`: `6.100.0`.
+- Worker и client: `6.100.0-rc108`.
+- Release candidate: `RC108`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
 ## Supabase
 
-Для нового проекта используется только `supabase/baseline/supabase_baseline_v6_16.sql`.
+Для нового проекта используется только `supabase/baseline/supabase_baseline_v6_17.sql`.
 
 Для существующей базы должны быть применены:
-`supabase/migrations/supabase_migration_v6_9.sql`, `v6_10`, `v6_11`, `v6_11_1`, `v6_12`, `v6_13`, `v6_14`, `v6_15`, `v6_16`.
+`supabase/migrations/supabase_migration_v6_9.sql`, `v6_10`, `v6_11`, `v6_11_1`, `v6_12`, `v6_13`, `v6_14`, `v6_15`, `v6_16`, `v6_17`.
 
 Проверить:
 - RLS и закрытые backend-only таблицы не открыты для `anon/authenticated`;
@@ -34,20 +34,20 @@ npm run verify:worker
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
 
-## RC107 — Persistent Telegram Webhook Dedupe
+## RC108 — Telegram Webhook Dedupe Observability
 
-- Быстрый in-memory dedupe остаётся первым слоем защиты.
-- После него Worker атомарно резервирует Telegram update через Supabase RPC `claim_telegram_update`, поэтому повторная доставка не обрабатывается повторно даже другим Cloudflare isolate.
-- Завершённый update фиксируется как `done` и хранится 24 часа; незавершённый/ошибочный claim можно повторить после короткого lease.
-- При временной недоступности Supabase webhook работает fail-open через существующий memory-dedupe, чтобы бот не переставал отвечать.
-- `telegram_update_claims` защищена RLS, недоступна `anon/authenticated`; RPC — `SECURITY INVOKER` и разрешены только `service_role`.
-- Supabase Schema Drift Guard проверяет обязательный объект `telegram_update_claims`.
-- Release Readiness содержит blocking check `telegram_webhook_persistent_dedupe`.
-- `/health`: `telegramWebhookPersistentDedupe=enabled` и `telegramWebhookPersistentDedupeSelfTest=enabled`.
-- Regression: `test/telegram-webhook-persistent-dedupe-rc107.test.js`.
-- Для существующей базы обязательна миграция `supabase_migration_v6_16.sql`.
+- `telegram_update_claims` хранит `duplicate_count` и `last_duplicate_at`, не сохраняя текст сообщений пользователя.
+- Повторный активный/завершённый claim увеличивает только агрегированный счётчик и остаётся заблокированным.
+- Service-role-only RPC `telegram_webhook_dedupe_health` возвращает claims, completed, failed, stale и агрегированные duplicate counters.
+- Нормальные Telegram retry/delivery duplicates считаются метрикой, а не инцидентом.
+- Один stale/failed claim переводит dedupe health в `watch`; 5+ stale или recent failed — в `incident`.
+- Production Monitor учитывает dedupe health; Release Readiness блокируется, если health RPC отсутствует или observability self-test не проходит.
+- Админская диагностика показывает claims / duplicates / stale / failed.
+- `/health`: `telegramWebhookDedupeObservability=enabled` и `telegramWebhookDedupeObservabilitySelfTest=enabled`.
+- Regression: `test/telegram-webhook-observability-rc108.test.js`.
+- Для существующей базы обязательна миграция `supabase_migration_v6_17.sql`.
 
-## Исторические RC72–RC106
+## Исторические RC72–RC107
 
 Детальные исторические release-контракты удалены из текущего checklist, чтобы не дублировать Git history и regression-тесты. Их поведение продолжает проверяться соответствующими файлами `test/*-rcXX.test.js`, а продуктовая сводка сохранена в `README_CLOUDFLARE_RU.md`.
 
@@ -69,8 +69,8 @@ npm run verify:worker
 
 `scripts/post-deploy-smoke.js` должен подтвердить:
 - `/health.ok = true`;
-- `version = 6.99.0-rc107`;
-- `releaseCandidate = RC107`;
+- `version = 6.100.0-rc108`;
+- `releaseCandidate = RC108`;
 - `devMode = false`;
 - обязательные self-test/feature flags = `enabled`;
 - `/health/supabase` не доступен публично;

@@ -14,9 +14,9 @@ const postDeploySmoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
 const readme = fs.readFileSync('README_CLOUDFLARE_RU.md', 'utf8');
 const qaChecklist = fs.readFileSync('QA_RELEASE_CHECKLIST_RU.md', 'utf8');
-const baselinePath = 'supabase/baseline/supabase_baseline_v6_16.sql';
+const baselinePath = 'supabase/baseline/supabase_baseline_v6_17.sql';
 const baseline = fs.existsSync(baselinePath) ? fs.readFileSync(baselinePath, 'utf8') : '';
-const expected = `${pkg.version}-rc107`;
+const expected = `${pkg.version}-rc108`;
 const failures = [];
 const rootSql = fs.readdirSync('.').filter(name => /^supabase_(?:baseline|migration)_.*\.sql$/i.test(name));
 if (rootSql.length) failures.push(`Supabase SQL must live under supabase/: ${rootSql.join(', ')}`);
@@ -25,9 +25,9 @@ if (rootSql.length) failures.push(`Supabase SQL must live under supabase/: ${roo
 if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) failures.push('package-lock version must match package.json');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC107'")) failures.push('Worker RC name must be RC107');
+if (!worker.includes("const RC_NAME = 'RC108'")) failures.push('Worker RC name must be RC108');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc107'")) failures.push('Client release channel must be rc107');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc108'")) failures.push('Client release channel must be rc108');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -38,7 +38,9 @@ if (!fs.existsSync('supabase/migrations/supabase_migration_v6_13.sql')) failures
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_14.sql')) failures.push('Missing v6.14 persistent-AI-history migration');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_15.sql')) failures.push('Missing v6.15 media-launch attribution migration');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_16.sql')) failures.push('Missing v6.16 persistent Telegram dedupe migration');
-if (!fs.existsSync(baselinePath)) failures.push('Missing unified v6.16 baseline');
+if (!fs.existsSync('supabase/migrations/supabase_migration_v6_17.sql')) failures.push('Missing v6.17 Telegram dedupe observability migration');
+if (!fs.existsSync(baselinePath)) failures.push('Missing unified v6.17 baseline');
+if (fs.existsSync('supabase/baseline/supabase_baseline_v6_16.sql')) failures.push('Obsolete v6.16 fresh-install baseline must be removed');
 if (fs.existsSync('supabase/baseline/supabase_baseline_v6_15.sql')) failures.push('Obsolete v6.15 fresh-install baseline must be removed');
 if (fs.existsSync('supabase/baseline/supabase_baseline_v6_9.sql')) failures.push('Obsolete v6.9 fresh-install baseline must be removed');
 if (!fs.existsSync('test/supabase-baseline-rc99.test.js')) failures.push('Missing RC99 Supabase baseline regression test');
@@ -51,7 +53,8 @@ for (const marker of [
   'add column if not exists ai_signal_code',
   'create table if not exists public.growth_events',
   'create table if not exists public.telegram_update_claims',
-  'create or replace function public.claim_telegram_update'
+  'create or replace function public.claim_telegram_update',
+  'create or replace function public.telegram_webhook_dedupe_health'
 ]) {
   if (!baseline.toLowerCase().includes(marker.toLowerCase())) failures.push(`RC99 unified baseline is missing: ${marker}`);
 }
@@ -62,8 +65,8 @@ if (!fs.existsSync('.github/workflows/rollback-production.yml')) failures.push('
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
-if (!deployWorkflow.includes('--message "RC107 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC107');
-if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.99.0-rc107"')) failures.push('Production smoke must verify 6.99.0-rc107');
+if (!deployWorkflow.includes('--message "RC108 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC108');
+if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.100.0-rc108"')) failures.push('Production smoke must verify 6.100.0-rc108');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
 if (!/id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden/.test(html)) failures.push('Admin role badge must use the fail-closed admin-only visibility contract');
 if (!/\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i.test(styles)) failures.push('Global hidden elements must remain display:none');
@@ -231,7 +234,7 @@ if (!worker.includes("newsSourceTrustGate: 'enabled'") || !worker.includes('appl
 if (!worker.includes("publicLegalPages: 'enabled'") || !worker.includes("publicStatusPage: 'enabled'") || !worker.includes("url.pathname === '/api/public-status'")) failures.push('RC52 public trust contract is missing');
 if (!fs.existsSync('public/privacy.html') || !fs.existsSync('public/terms.html') || !fs.existsSync('public/status.html') || !fs.existsSync('public/status.js')) failures.push('RC52 public trust pages are missing');
 if (!wrangler.includes('"/telegram/*"') || !wrangler.includes('"/api/*"')) failures.push('RC52 Worker-first webhook/public API routes are missing');
-if (!deployWorkflow.includes('6.99.0-rc107')) failures.push('RC107 production workflow version is missing');
+if (!deployWorkflow.includes('6.100.0-rc108')) failures.push('RC108 production workflow version is missing');
 
 if (!worker.includes("mediaLaunchPackage: 'enabled'") || !worker.includes("mediaDeepLinkAttribution: 'enabled'")) failures.push('RC53 media launch health contract is missing');
 if (!worker.includes("launchSimulation: 'enabled'") || !worker.includes("conversionUx: 'enabled'") || !worker.includes("highIntentSearchFallback: 'enabled'") || !worker.includes("newsReturnLoop: 'enabled'")) failures.push('RC54 launch conversion health contract is missing');
@@ -339,8 +342,8 @@ if (!worker.includes("firstPartyGrowthAnalytics: 'enabled'") || !worker.includes
 if (!worker.includes('parseLaunchStartParam') || !worker.includes('ensureLaunchAttribution') || !worker.includes('recordGrowthEvent')) failures.push('RC53 attribution engine is missing');
 if (!worker.includes("url.pathname === '/api/launch-funnel'") || !app.includes('function renderLaunchFunnel')) failures.push('RC53 admin launch funnel is missing');
 if (!app.includes("origin:'miniapp'") || !worker.includes("origin:'telegram_quick'")) failures.push('RC53 full-vs-quick AI conversion split is missing');
-if (!readme.includes('v6.99.0 — RC107') || !readme.includes('Persistent Telegram Webhook Dedupe')) failures.push('README must describe the current RC107 release');
-if (!qaChecklist.includes('v6.99.0 RC107') || !qaChecklist.includes('Persistent Telegram Webhook Dedupe') || !qaChecklist.includes('npm run verify:release')) failures.push('QA checklist must describe the current RC107 release gate');
+if (!readme.includes('v6.100.0 — RC108') || !readme.includes('Telegram Webhook Dedupe Observability')) failures.push('README must describe the current RC108 release');
+if (!qaChecklist.includes('v6.100.0 RC108') || !qaChecklist.includes('Telegram Webhook Dedupe Observability') || !qaChecklist.includes('npm run verify:release')) failures.push('QA checklist must describe the current RC108 release gate');
 if (!fs.existsSync('test/supabase-schema-drift-rc100.test.js')) failures.push('Missing RC100 Supabase schema drift regression test');
 if (!fs.existsSync('test/supabase-directory-hardening-rc101.test.js')) failures.push('Missing RC101 Supabase directory hardening regression test');
 if (!fs.existsSync('scripts/security-scan.js')) failures.push('Missing RC102 Secret Leak Guard scanner');
@@ -398,6 +401,21 @@ if (!worker.includes("telegramWebhookPersistentDedupe: 'enabled'") || !worker.in
 if (!worker.includes("{ id: 'telegram_update_claims', table: 'telegram_update_claims'")) failures.push('RC107 Schema Drift Guard does not cover Telegram update claims');
 if (!postDeploySmoke.includes("'telegramWebhookPersistentDedupe'") || !postDeploySmoke.includes("'telegramWebhookPersistentDedupeSelfTest'")) failures.push('RC107 production smoke persistent dedupe flags are missing');
 
+if (!fs.existsSync('test/telegram-webhook-observability-rc108.test.js')) failures.push('Missing RC108 Telegram dedupe observability regression test');
+const dedupeObservabilityMigration = fs.readFileSync('supabase/migrations/supabase_migration_v6_17.sql','utf8');
+if (!dedupeObservabilityMigration.includes('add column if not exists duplicate_count')) failures.push('RC108 duplicate counter column is missing');
+if (!dedupeObservabilityMigration.includes('add column if not exists last_duplicate_at')) failures.push('RC108 last-duplicate timestamp is missing');
+if (!dedupeObservabilityMigration.includes('create or replace function public.telegram_webhook_dedupe_health')) failures.push('RC108 dedupe health RPC is missing');
+if (!dedupeObservabilityMigration.includes('security invoker')) failures.push('RC108 dedupe observability RPC must remain SECURITY INVOKER');
+if (!dedupeObservabilityMigration.includes('grant execute on function public.telegram_webhook_dedupe_health(integer) to service_role')) failures.push('RC108 dedupe health RPC service-role grant is missing');
+if (!worker.includes('async function readTelegramDedupeHealth')) failures.push('RC108 Worker dedupe health reader is missing');
+if (!worker.includes('function telegramDedupeObservabilitySelfTest')) failures.push('RC108 dedupe observability self-test is missing');
+if (!worker.includes("releaseCheck('telegram_webhook_dedupe_observability'")) failures.push('RC108 release observability gate is missing');
+if (!worker.includes("productionCheck('telegram_dedupe_observability'")) failures.push('RC108 production observability gate is missing');
+if (!worker.includes("telegramWebhookDedupeObservability: 'enabled'") || !worker.includes("telegramWebhookDedupeObservabilitySelfTest: telegramDedupeObservabilitySelfTest().pass ? 'enabled' : 'failed'")) failures.push('RC108 health observability flags are missing');
+if (!app.includes('Telegram webhook dedupe') || !app.includes('duplicateAttemptsRetained')) failures.push('RC108 admin dedupe diagnostics are missing');
+if (!postDeploySmoke.includes("'telegramWebhookDedupeObservability'") || !postDeploySmoke.includes("'telegramWebhookDedupeObservabilitySelfTest'")) failures.push('RC108 production smoke observability flags are missing');
+
 
 
 
@@ -424,4 +442,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log(`RC107 Persistent Telegram Webhook Dedupe contracts verified for ${expected}.`);
+console.log(`RC108 Telegram Webhook Dedupe Observability contracts verified for ${expected}.`);

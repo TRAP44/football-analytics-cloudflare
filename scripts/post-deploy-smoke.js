@@ -17,6 +17,8 @@ const REQUIRED_HEALTH_FLAGS = [
   'telegramMiniAppE2ESelfTest',
   'telegramWebhookPersistentDedupe',
   'telegramWebhookPersistentDedupeSelfTest',
+  'telegramWebhookDedupeObservability',
+  'telegramWebhookDedupeObservabilitySelfTest',
   'cloudflareDeploymentGate',
   'browserSecurityPolicy',
   'failClosedDeployment',

@@ -1,4 +1,4 @@
-# Football Analytics Mini App v6.99.0 — RC107
+# Football Analytics Mini App v6.100.0 — RC108
 
 Telegram-бот и Mini App для футбольной аналитики на Cloudflare Workers + Supabase. Основные источники данных: API-Football и Tavily. Интерфейс и админ-панель — на русском языке. Монетизация пока отключена.
 
@@ -12,7 +12,7 @@ Telegram-бот и Mini App для футбольной аналитики на 
 - Публичный AI Track Record строится только по подтверждённым settled-прогнозам и не выдаёт совпадение исхода за прибыльность ставок.
 - Защита от вирусной нагрузки: distributed fixture lock, shared cache и безопасный fallback.
 - Медиа deep-link на fixture, publisher kit и агрегированная first-party аналитика source / campaign / content.
-- RC99 положил начало единому fresh-install Supabase baseline; текущий baseline — `supabase/baseline/supabase_baseline_v6_16.sql`, numbered migrations v6.9–v6.16 сохранены для безопасного обновления существующих баз.
+- RC99 положил начало единому fresh-install Supabase baseline; текущий baseline — `supabase/baseline/supabase_baseline_v6_17.sql`, numbered migrations v6.9–v6.17 сохранены для безопасного обновления существующих баз.
 - RC100: защищённый **Supabase Schema Drift Guard** проверяет обязательные таблицы и колонки через server-side PostgREST и блокирует Release Readiness при несовместимой схеме; production DDL не меняется.
 - RC101: **Supabase Directory Hardening** — все SQL вынесены из корня в `supabase/baseline/` и `supabase/migrations/`; fresh-install baseline теперь отказывается запускаться поверх уже существующей рабочей схемы.
 - RC102: **Secret Leak Guard** — Quality и production deploy сканируют только отслеживаемые Git-файлы и блокируют `.env`, `.dev.vars`, приватные ключи и высокоуверенные форматы токенов; значения секретов в лог не выводятся.
@@ -20,7 +20,7 @@ Telegram-бот и Mini App для футбольной аналитики на 
 - RC104: **API-Football Data Reliability** — пустой ответ, пропуск из-за квоты, ограничение тарифа, timeout, rate limit и ошибка провайдера больше не сводятся к одному `[]`. AI использует только подтверждённые сигналы, понижает data trust при деградации и не трактует недоступные травмы как «0 потерь».
 - RC105: **AI Analysis Quality Gate** — confidence учитывает реальный вес доступных источников, agreement, disagreement, размер выборки формы и разрыв между первым/вторым исходом. Тоталы/BTTS требуют рабочую выборку goal model, а слабый или противоречивый анализ принудительно становится `skip`.
 - RC106: **Telegram + Mini App E2E** — один release-контракт проверяет путь «поиск в Telegram → выбор матча → Quick AI → полный анализ в Mini App → история/напоминания/избранное → возврат в Telegram». Handoff синхронизирует пользовательское состояние до открытия анализа, повторное открытие cached AI не списывает лимит второй раз.
-- RC107: **Persistent Telegram Webhook Dedupe** — повторный Telegram update теперь атомарно резервируется в Supabase и не обрабатывается повторно другим Cloudflare isolate. In-memory dedupe остаётся быстрым первым слоем; при временной проблеме Supabase бот fail-open продолжает работу через memory-защиту.
+- RC107: **Persistent Telegram Webhook Dedupe** — повторный Telegram update теперь атомарно резервируется в Supabase и не обрабатывается повторно другим Cloudflare isolate. In-memory dedupe остаётся быстрым первым слоем; при временной проблеме Supabase бот fail-open продолжает работу через memory-защиту.\n- RC108: **Telegram Webhook Dedupe Observability** — persistent ledger считает повторные доставки без хранения текста сообщений, service-role health RPC показывает stale/failed claims и duplicate counters, а Production Monitor и админская диагностика поднимают watch/incident при деградации.
 - Новостной контур RC69–RC98: новость → релевантный матч → явная AI-перепроверка → News Impact Delta → **News Impact Decision Card** → **News Impact Action Tracking** → **News Impact Action Funnel** → **News Impact Funnel Confidence Guard** → **News Impact Funnel Trend Guard** → **News Impact Temporal Attribution Guard** → **News Impact Action Outcome Quality** → **News Impact Outcome Failure Diagnostics & Recovery** → **News Impact Recovery Effectiveness Funnel** → **News Impact Recovery Strategy Guard** → **News Impact Recovery Stability & Parity Guard** → **News Impact Recovery Drift Circuit Breaker** → **News Impact Recovery Transition History & Admin Alerts** → **News Impact Recovery Incident Center** → **News Impact Recovery Incident Acknowledgement & Runbook** → **News Impact Recovery Incident Escalation & SLO** → **News Impact Recovery Incident SLO Dashboard & Trend** → **News Impact Recovery Incident SLO Breach Feed & Drilldown** → **News Impact Recovery Incident SLO Breach Watchlist & Aging** → **News Impact Recovery Incident SLO Breach Triage Queue** → **News Impact Recovery Incident SLO Triage Trend & Recurrence** → **News Impact Recovery Incident SLO Breach Impact Ranking** → **News Impact Recovery Incident SLO Impact Trend** → **News Impact Recovery Incident SLO Impact Concentration** → **News Impact Recovery Incident SLO Impact Concentration Trend** → **News Impact Recovery Incident SLO Impact Executive Summary** → **News Impact Recovery Incident SLO Impact Focus Queue**.
 - News Impact не утверждает причинность по заголовку: сравнение разрешено только с корректным AI-снимком, созданным до публикации новости.
 - RC73 считает только категориальные действия после Decision Card: полный AI, составы, рынок, повторная проверка, возврат к новостям и share. Текст новости, URL и пользовательский запрос в эту аналитику не записываются.
@@ -72,9 +72,9 @@ SQL-файлы вынесены из корня репозитория:
 
 Для уже существующего production-проекта миграции сохраняются как история схемы и применяются по порядку:
 
-`supabase/migrations/supabase_migration_v6_9.sql` → `v6_10` → `v6_11` → `v6_11_1` → `v6_12` → `v6_13` → `v6_14` → `v6_15` → `v6_16`.
+`supabase/migrations/supabase_migration_v6_9.sql` → `v6_10` → `v6_11` → `v6_11_1` → `v6_12` → `v6_13` → `v6_14` → `v6_15` → `v6_16` → `v6_17`.
 
-Для нового проекта используется только `supabase/baseline/supabase_baseline_v6_16.sql`. Старые fresh-install baseline удаляются при каждом roll-forward, чтобы новая установка использовала один актуальный SQL.
+Для нового проекта используется только `supabase/baseline/supabase_baseline_v6_17.sql`. Старые fresh-install baseline удаляются при каждом roll-forward, чтобы новая установка использовала один актуальный SQL.
 
 ## Проверка релиза
 
@@ -85,7 +85,7 @@ npm run verify:release
 npm run verify:worker
 ```
 
-Production smoke дополнительно проверяет `/health`, версию `6.99.0-rc107`, `releaseCandidate=RC107`, отключённый `DEV_MODE` и обязательные health/self-test флаги.
+Production smoke дополнительно проверяет `/health`, версию `6.100.0-rc108`, `releaseCandidate=RC108`, отключённый `DEV_MODE` и обязательные health/self-test флаги.
 
 ## Документация
 

@@ -83,11 +83,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.99.0-rc107';
+const APP_VERSION = '6.100.0-rc108';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc107';
-const RC_NAME = 'RC107';
+const RELEASE_CHANNEL = 'rc108';
+const RC_NAME = 'RC108';
 const MAX_MEMORY_OPS_EVENTS = 50;
 
 const DEFAULT_PREFERENCES = Object.freeze({
@@ -692,6 +692,7 @@ function appManifest(cfg) {
       oneTapAiHandoff: true,
       telegramMiniAppE2E: true,
       telegramWebhookPersistentDedupe: true,
+      telegramWebhookDedupeObservability: true,
       cachedFullAnalysisHandoff: true,
       aiFreshnessGuard: true,
       preKickoffRecheck: true,
@@ -1019,6 +1020,67 @@ function telegramPersistentDedupeSelfTest() {
   return {
     pass:byUpdate==='u:123456' && byCallback==='c:cb-123' && byMessage==='m:77:88',
     cases:3,
+  };
+}
+
+function telegramDedupeHealthState(health = {}) {
+  if (!health.available) return { state:'watch', label:'Persistent dedupe observability недоступна' };
+  const stale=Number(health.staleProcessing || 0);
+  const failedRecent=Number(health.failedRecent || 0);
+  const failedCurrent=Number(health.failedCurrent || 0);
+  if (stale >= 5 || failedRecent >= 5) {
+    return { state:'incident', label:'Telegram webhook dedupe требует немедленной проверки' };
+  }
+  if (stale > 0 || failedRecent > 0 || failedCurrent > 0) {
+    return { state:'watch', label:'Есть незавершённые Telegram webhook claims' };
+  }
+  return { state:'healthy', label:'Persistent Telegram dedupe работает штатно' };
+}
+
+function normalizeTelegramDedupeHealth(raw = {}, available = true, detail = '') {
+  const value={
+    available:Boolean(available),
+    windowMinutes:Number(raw?.window_minutes ?? raw?.windowMinutes ?? 60) || 60,
+    ledgerRows:Number(raw?.ledger_rows ?? raw?.ledgerRows ?? 0) || 0,
+    claimsRecent:Number(raw?.claims_recent ?? raw?.claimsRecent ?? 0) || 0,
+    completedRecent:Number(raw?.completed_recent ?? raw?.completedRecent ?? 0) || 0,
+    failedRecent:Number(raw?.failed_recent ?? raw?.failedRecent ?? 0) || 0,
+    failedCurrent:Number(raw?.failed_current ?? raw?.failedCurrent ?? 0) || 0,
+    activeProcessing:Number(raw?.active_processing ?? raw?.activeProcessing ?? 0) || 0,
+    staleProcessing:Number(raw?.stale_processing ?? raw?.staleProcessing ?? 0) || 0,
+    duplicateAttemptsRetained:Number(raw?.duplicate_attempts_retained ?? raw?.duplicateAttemptsRetained ?? 0) || 0,
+    duplicateRowsRecent:Number(raw?.duplicate_rows_recent ?? raw?.duplicateRowsRecent ?? 0) || 0,
+    lastDuplicateAt:raw?.last_duplicate_at ?? raw?.lastDuplicateAt ?? null,
+    oldestStaleSeconds:Number(raw?.oldest_stale_seconds ?? raw?.oldestStaleSeconds ?? 0) || 0,
+    generatedAt:raw?.generated_at ?? raw?.generatedAt ?? new Date().toISOString(),
+    detail:redactOpsString(detail || '',160),
+  };
+  return { ...value, ...telegramDedupeHealthState(value) };
+}
+
+async function readTelegramDedupeHealth(cfg, windowMinutes = 60) {
+  if (!hasSupabase(cfg)) return normalizeTelegramDedupeHealth({},false,'supabase_not_configured');
+  try {
+    const raw=await supaRpc(cfg,'telegram_webhook_dedupe_health',{
+      p_window_minutes:Math.max(5,Math.min(1440,Number(windowMinutes || 60))),
+    },1800);
+    return normalizeTelegramDedupeHealth(raw || {},true,'');
+  } catch (error) {
+    return normalizeTelegramDedupeHealth({},false,error?.code || error?.message || 'dedupe_health_unavailable');
+  }
+}
+
+function telegramDedupeObservabilitySelfTest() {
+  const healthy=telegramDedupeHealthState({available:true,staleProcessing:0,failedRecent:0,failedCurrent:0});
+  const watch=telegramDedupeHealthState({available:true,staleProcessing:1,failedRecent:0,failedCurrent:0});
+  const incident=telegramDedupeHealthState({available:true,staleProcessing:5,failedRecent:0,failedCurrent:0});
+  const unavailable=telegramDedupeHealthState({available:false});
+  return {
+    pass:healthy.state==='healthy' && watch.state==='watch' && incident.state==='incident' && unavailable.state==='watch',
+    healthy:healthy.state,
+    watch:watch.state,
+    incident:incident.state,
+    unavailable:unavailable.state,
   };
 }
 
@@ -13842,10 +13904,11 @@ async function readRecentOpsEvents(cfg, limit = 10) {
 }
 
 async function collectDiagnostics(cfg) {
-  const [supabase, ops, integrity] = await Promise.all([
+  const [supabase, ops, integrity, telegramWebhook] = await Promise.all([
     probeSupabase(cfg),
     readRecentOpsEvents(cfg, 12),
     readIntegrityDiagnostics(cfg, 12),
+    readTelegramDedupeHealth(cfg,60),
   ]);
   const provider = providerSnapshot();
   let overall;
@@ -13853,14 +13916,18 @@ async function collectDiagnostics(cfg) {
   else if (provider.health === 'critical') overall = { state: 'critical', label: 'API-Football временно ограничен' };
   else if (!ops.migrationReady && hasSupabase(cfg)) overall = { state: 'warning', label: 'Выполните миграцию v3.8' };
   else if (!integrity.migrationReady && hasSupabase(cfg)) overall = { state: 'warning', label: 'Выполните миграцию v3.9' };
+  else if (!telegramWebhook.available && hasSupabase(cfg)) overall = { state:'warning', label:'Нужна миграция наблюдаемости Telegram webhook' };
+  else if (telegramWebhook.state === 'incident') overall = { state:'warning', label:'Persistent Telegram dedupe требует проверки' };
   else if (integrity.lastRun?.health === 'critical') overall = { state: 'warning', label: 'Есть проблемы качества футбольных данных' };
-  else if (provider.health === 'warning' || integrity.lastRun?.health === 'warning' || Number(memory.telemetry?.routeErrors || 0) > 0 || Number(memory.telemetry?.cacheWriteErrors || 0) > 0) overall = { state: 'warning', label: 'Есть предупреждения' };
+  else if (telegramWebhook.state === 'watch' || provider.health === 'warning' || integrity.lastRun?.health === 'warning' || Number(memory.telemetry?.routeErrors || 0) > 0 || Number(memory.telemetry?.cacheWriteErrors || 0) > 0) overall = { state: 'warning', label: 'Есть предупреждения' };
   else if (provider.health === 'waiting') overall = { state: 'waiting', label: 'Ожидаем первый запрос к источнику данных' };
   else overall = { state: 'ok', label: 'Системы работают штатно' };
 
   const recommendations = [];
   if (supabase.ok && !ops.migrationReady && hasSupabase(cfg)) recommendations.push('Выполните supabase_migration_v3_8.sql, чтобы журнал ошибок сохранялся между перезапусками серверного обработчика.');
   if (!integrity.migrationReady && hasSupabase(cfg)) recommendations.push('Выполните supabase_migration_v3_9.sql, чтобы проверки качества матчей сохранялись и были видны после перезапуска серверного обработчика.');
+  if (!telegramWebhook.available && hasSupabase(cfg)) recommendations.push('Примените supabase_migration_v6_17.sql: она добавляет read-only health RPC для persistent Telegram dedupe.');
+  if (Number(telegramWebhook.staleProcessing || 0) > 0 || Number(telegramWebhook.failedCurrent || 0) > 0) recommendations.push(`Проверьте Telegram webhook claims: stale=${Number(telegramWebhook.staleProcessing || 0)}, failed=${Number(telegramWebhook.failedCurrent || 0)}.`);
   if (provider.cooldownActive) recommendations.push(`API-Football находится на паузе ещё примерно ${footballCooldownRemaining()} сек.; приложение должно использовать последние сохранённые данные.`);
   if (supabase.configured && !supabase.ok) recommendations.push('Проверьте адрес Supabase, сервисный ключ и доступность интерфейса базы данных.');
   if (Number(provider.dailyUsedPct) >= 90) recommendations.push('Дневная квота API-Football использована более чем на 90%; до сброса лимита работаем в экономном режиме.');
@@ -13877,6 +13944,7 @@ async function collectDiagnostics(cfg) {
     supabase,
     runtime: telemetrySnapshot(),
     observability: { persistent: ops.persistent, migrationReady: ops.migrationReady, retentionDays: cfg.opsRetentionDays, recentEvents: ops.items },
+    telegramWebhook,
     integrity,
     recommendations,
   };
@@ -14048,12 +14116,13 @@ function productionMonitorState(input = {}) {
   const schemaOk = Boolean(input.schemaOk);
   const releaseState = String(input.releaseState || 'healthy');
   const providerHealth = String(input.providerHealth || 'waiting');
+  const telegramDedupeState = String(input.telegramDedupeState || 'healthy');
   const persistent = input.persistent !== false;
 
-  if (!supabaseOk || !schemaOk || releaseState === 'incident') {
+  if (!supabaseOk || !schemaOk || releaseState === 'incident' || telegramDedupeState === 'incident') {
     return { state: 'incident', label: 'Production требует немедленной проверки' };
   }
-  if (releaseState === 'watch' || !persistent || ['critical','warning'].includes(providerHealth)) {
+  if (releaseState === 'watch' || telegramDedupeState === 'watch' || !persistent || ['critical','warning'].includes(providerHealth)) {
     return { state: 'watch', label: 'Production работает, но нужен контроль' };
   }
   return { state: 'healthy', label: 'Production monitor не видит блокирующих сигналов' };
@@ -14061,19 +14130,23 @@ function productionMonitorState(input = {}) {
 
 function productionMonitorSelfTest() {
   const healthy = productionMonitorState({
-    supabaseOk: true, schemaOk: true, releaseState: 'healthy', providerHealth: 'ok', persistent: true,
+    supabaseOk: true, schemaOk: true, releaseState: 'healthy', providerHealth: 'ok', telegramDedupeState:'healthy', persistent: true,
   });
   const drift = productionMonitorState({
-    supabaseOk: true, schemaOk: false, releaseState: 'healthy', providerHealth: 'ok', persistent: true,
+    supabaseOk: true, schemaOk: false, releaseState: 'healthy', providerHealth: 'ok', telegramDedupeState:'healthy', persistent: true,
   });
   const watch = productionMonitorState({
-    supabaseOk: true, schemaOk: true, releaseState: 'watch', providerHealth: 'ok', persistent: true,
+    supabaseOk: true, schemaOk: true, releaseState: 'healthy', providerHealth: 'ok', telegramDedupeState:'watch', persistent: true,
+  });
+  const telegramIncident = productionMonitorState({
+    supabaseOk: true, schemaOk: true, releaseState: 'healthy', providerHealth: 'ok', telegramDedupeState:'incident', persistent: true,
   });
   return {
-    pass: healthy.state === 'healthy' && drift.state === 'incident' && watch.state === 'watch',
+    pass: healthy.state === 'healthy' && drift.state === 'incident' && watch.state === 'watch' && telegramIncident.state === 'incident',
     healthy: healthy.state,
     drift: drift.state,
     watch: watch.state,
+    telegramIncident: telegramIncident.state,
   };
 }
 
@@ -14082,10 +14155,11 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
   const currentStart = new Date(now.getTime() - 60 * 60_000);
   const historyStart = new Date(now.getTime() - 6 * 60 * 60_000);
 
-  const [supabase, schemaDrift, source] = await Promise.all([
+  const [supabase, schemaDrift, source, telegramWebhook] = await Promise.all([
     probeSupabase(cfg),
     probeSupabaseSchemaDrift(cfg),
     readOpsEventsRange(cfg, historyStart.toISOString(), now.toISOString(), 1000),
+    readTelegramDedupeHealth(cfg,60),
   ]);
 
   const releaseItems = source.items.filter(item => {
@@ -14100,6 +14174,7 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     schemaOk: schemaDrift.ok,
     releaseState: releaseHealth.state,
     providerHealth: provider.health,
+    telegramDedupeState: telegramWebhook.state,
     persistent: source.persistent,
   });
 
@@ -14140,6 +14215,7 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
       plan: provider.plan || 'UNKNOWN',
       cooldownActive: Boolean(provider.cooldownActive),
     },
+    telegramWebhook,
     observability: {
       persistent: Boolean(source.persistent),
       migrationReady: Boolean(source.migrationReady),
@@ -14179,6 +14255,9 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
         releaseState: releaseHealth.state,
         releaseScore: Number(releaseHealth.score || 0),
         providerHealth: provider.health || 'waiting',
+        telegramDedupeState: telegramWebhook.state,
+        telegramStaleClaims: Number(telegramWebhook.staleProcessing || 0),
+        telegramFailedClaims: Number(telegramWebhook.failedCurrent || 0),
       },
     }).catch(() => {});
   }
@@ -14317,7 +14396,7 @@ async function probeSupabaseSchemaDrift(cfg) {
     { id: 'digest_subscriptions', table: 'bot_digest_subscriptions', columns: ['telegram_id','enabled','hour_utc'] },
     { id: 'referee_history', table: 'referee_match_history', columns: ['fixture_id','referee_key','yellow_cards'] },
     { id: 'growth_events', table: 'growth_events', columns: ['id','event_name','metadata','created_at'] },
-    { id: 'telegram_update_claims', table: 'telegram_update_claims', columns: ['update_key','status','locked_until','expires_at'] },
+    { id: 'telegram_update_claims', table: 'telegram_update_claims', columns: ['update_key','status','locked_until','expires_at','duplicate_count','last_duplicate_at'] },
   ];
   const checks = await Promise.all(specs.map(async spec => ({
     ...spec,
@@ -14383,13 +14462,14 @@ async function apiReleaseReadiness(request, cfg) {
   const aiQualityGateSelfTest = analysisQualityGateSelfTest();
   const telegramMiniAppE2ESelfTest = telegramMiniAppE2EDrill();
   const telegramPersistentDedupeCheck = telegramPersistentDedupeSelfTest();
+  const telegramDedupeObservabilityCheck = telegramDedupeObservabilitySelfTest();
   const checks = [
     releaseCheck('football_api', 'Ключ API-Football', cfg.apiFootballKey ? 'pass' : 'fail', cfg.apiFootballKey ? 'Ключ доступен серверному обработчику.' : 'Ключ API-Football отсутствует.', true),
     releaseCheck('supabase_config', 'Настройка Supabase', hasSupabase(cfg) ? 'pass' : 'fail', hasSupabase(cfg) ? 'Адрес и сервисный ключ доступны серверу.' : 'Не хватает адреса Supabase или сервисного ключа.', true),
     releaseCheck('supabase_online', 'Supabase/PostgREST', diagnostics.supabase?.ok ? 'pass' : 'fail', diagnostics.supabase?.ok ? `Ответ ${Number(diagnostics.supabase?.latencyMs || 0)} мс.` : `Статус: ${diagnostics.supabase?.status || 'offline'}.`, true),
     releaseCheck('supabase_schema_drift', 'Контракт актуальной схемы Supabase', schemaDrift.ok ? 'pass' : 'fail',
       schemaDrift.ok
-        ? `Проверено ${schemaDrift.checked} обязательных участков схемы v6.16; drift не обнаружен.`
+        ? `Проверено ${schemaDrift.checked} обязательных участков схемы v6.17; drift не обнаружен.`
         : `Schema drift: отсутствуют или несовместимы ${schemaDrift.missing.join(', ') || 'обязательные объекты'}.`, true),
     releaseCheck('supabase_schema_drift_selftest', 'Самопроверка Schema Drift Guard', schemaDriftSelfTest.pass ? 'pass' : 'fail',
       schemaDriftSelfTest.pass ? 'Drift корректно переводит release gate в блокирующее состояние.' : 'Самопроверка Schema Drift Guard не прошла.', true),
@@ -14410,6 +14490,18 @@ async function apiReleaseReadiness(request, cfg) {
       telegramPersistentDedupeCheck.pass && !schemaDrift.missing.includes('telegram_update_claims')
         ? 'Update ID защищён атомарным claim в Supabase; memory-dedupe остаётся быстрым первым слоем и fallback.'
         : 'Не готова таблица/RPC persistent dedupe Telegram webhook.', true),
+    releaseCheck('telegram_webhook_dedupe_observability', 'Наблюдаемость Telegram webhook dedupe',
+      !telegramDedupeObservabilityCheck.pass || !diagnostics.telegramWebhook?.available
+        ? 'fail'
+        : diagnostics.telegramWebhook?.state === 'incident'
+          ? 'fail'
+          : diagnostics.telegramWebhook?.state === 'watch'
+            ? 'warn'
+            : 'pass',
+      diagnostics.telegramWebhook?.available
+        ? `state=${diagnostics.telegramWebhook.state}; claims=${Number(diagnostics.telegramWebhook.claimsRecent || 0)}; duplicates=${Number(diagnostics.telegramWebhook.duplicateAttemptsRetained || 0)}; stale=${Number(diagnostics.telegramWebhook.staleProcessing || 0)}; failed=${Number(diagnostics.telegramWebhook.failedCurrent || 0)}.`
+        : 'Health RPC недоступен; примените supabase_migration_v6_17.sql.',
+      true),
     releaseCheck('backend_security_contract', 'Контракт безопасности Supabase', backendSecurity.ok ? 'pass' : 'fail',
       backendSecurity.ok
         ? 'Все публичные таблицы защищены правилами доступа; анонимный и авторизованный клиент не имеют прямых прав; серверные процедуры закрыты.'
@@ -14571,6 +14663,12 @@ async function apiProductionReadiness(request, cfg) {
       `TTL ${distributedAnalysisLockPolicy().ttlSeconds} сек. · ожидание до ${Math.round(distributedAnalysisLockPolicy().maxWaitMs/1000)} сек. · fail-open при недоступности lock storage.`, true),
     productionCheck('burst_guard', 'Burst Guard', ROUTE_BURST_POLICIES.length >= 6 ? 'pass' : 'fail',
       `${ROUTE_BURST_POLICIES.length} политик для дорогих маршрутов; блокировок в экземпляре: ${Number(memory.telemetry?.burstBlocks || 0)}.`, true),
+    productionCheck('telegram_dedupe_observability', 'Persistent Telegram dedupe',
+      !diagnostics.telegramWebhook?.available ? 'fail' : diagnostics.telegramWebhook?.state === 'incident' ? 'fail' : diagnostics.telegramWebhook?.state === 'watch' ? 'warn' : 'pass',
+      diagnostics.telegramWebhook?.available
+        ? `claims=${Number(diagnostics.telegramWebhook.claimsRecent || 0)} · duplicates=${Number(diagnostics.telegramWebhook.duplicateAttemptsRetained || 0)} · stale=${Number(diagnostics.telegramWebhook.staleProcessing || 0)} · failed=${Number(diagnostics.telegramWebhook.failedCurrent || 0)}.`
+        : 'Health RPC persistent Telegram dedupe недоступен; примените supabase_migration_v6_17.sql.',
+      true),
     productionCheck('upstream_timeouts', 'Тайм-ауты внешних сервисов', 'pass',
       'Supabase 7 сек., API-Football 10 сек.; зависшие внешние запросы не удерживают серверный обработчик бесконечно.', true),
     productionCheck('user_sync', 'Telegram user sync cache', 'pass',
@@ -14608,6 +14706,7 @@ async function apiProductionReadiness(request, cfg) {
       supabase: diagnostics.supabase,
       provider: diagnostics.provider,
       runtime: diagnostics.runtime,
+      telegramWebhook: diagnostics.telegramWebhook,
     },
     policy: {
       payments: 'paused',
@@ -19619,6 +19718,8 @@ export default {
         telegramMiniAppE2ESelfTest: telegramMiniAppE2EDrill().pass ? 'enabled' : 'failed',
         telegramWebhookPersistentDedupe: 'enabled',
         telegramWebhookPersistentDedupeSelfTest: telegramPersistentDedupeSelfTest().pass ? 'enabled' : 'failed',
+        telegramWebhookDedupeObservability: 'enabled',
+        telegramWebhookDedupeObservabilitySelfTest: telegramDedupeObservabilitySelfTest().pass ? 'enabled' : 'failed',
         aiFreshnessGuard: 'enabled',
         preKickoffRecheck: 'enabled',
         userScopedFreeRecheck: 'enabled',

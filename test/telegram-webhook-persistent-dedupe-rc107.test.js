@@ -4,7 +4,7 @@ import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
 const migration=fs.readFileSync('supabase/migrations/supabase_migration_v6_16.sql','utf8');
-const baseline=fs.readFileSync('supabase/baseline/supabase_baseline_v6_16.sql','utf8');
+const baseline=fs.readFileSync('supabase/baseline/supabase_baseline_v6_17.sql','utf8');
 const smoke=fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
 
 test('RC107 migration creates a backend-only persistent Telegram update ledger',()=>{
@@ -64,7 +64,7 @@ test('RC107 release and schema gates require persistent Telegram dedupe',()=>{
 });
 
 test('RC107 fresh-install baseline includes the persistent dedupe schema',()=>{
-  assert.match(baseline,/v6\.16 unified fresh-install baseline/);
+  assert.match(baseline,/unified fresh-install baseline/);
   assert.match(baseline,/create table if not exists public\.telegram_update_claims/);
   assert.match(baseline,/create or replace function public\.claim_telegram_update/);
 });
