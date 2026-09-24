@@ -1,4 +1,4 @@
-# Установка Football Analytics v6.100.0 RC108
+# Установка Football Analytics v6.101.0 RC109
 
 ## Новый Supabase-проект
 
@@ -17,7 +17,7 @@
 3. Для существующей базы не запускайте `supabase/baseline/supabase_baseline_v6_17.sql`: он предназначен только для fresh install.
 4. Не удаляйте и не переигрывайте уже применённые миграции без отдельного плана rollback.
 5. После обновления запустите защищённый RC Regression и проверьте least-privilege контракт Supabase.
-6. RC107 требует `supabase_migration_v6_16.sql`: она добавляет backend-only ledger для атомарной дедупликации Telegram webhook между Cloudflare isolates.\n7. RC108 требует `supabase_migration_v6_17.sql`: она добавляет агрегированные счётчики дублей и service-role-only health RPC для production monitoring.
+6. RC107 требует `supabase_migration_v6_16.sql`: она добавляет backend-only ledger для атомарной дедупликации Telegram webhook между Cloudflare isolates.\n7. RC108 требует `supabase_migration_v6_17.sql`: она добавляет агрегированные счётчики дублей и service-role-only health RPC для production monitoring.\n8. RC109 не требует новой миграции: одиночный сбой Supabase probe подтверждается вторым запросом перед аварийным статусом.
 
 ## Cloudflare Secrets
 
@@ -51,7 +51,7 @@ API token должен быть ограничен нужным Cloudflare accou
 
 Рабочий release-процесс:
 
-`PR → Quality → merge в main → Deploy Production → RC108 smoke`.
+`PR → Quality → merge в main → Deploy Production → RC109 smoke`.
 
 ## Локальная проверка
 
@@ -70,13 +70,13 @@ npm run verify:worker
 
 Проверьте:
 
-1. `/health` возвращает `ok=true`, версию `6.100.0-rc108` и `releaseCandidate=RC108`.
+1. `/health` возвращает `ok=true`, версию `6.101.0-rc109` и `releaseCandidate=RC109`.
 2. RC Regression не содержит blocking failures.
 3. `DEV_MODE=false` и `MONETIZATION_ENABLED=false`.
 4. Обычный пользователь не видит административные controls.
 5. `/health/supabase` не доступен публично.
 6. CSP, HSTS, `X-Content-Type-Options: nosniff` и остальные security headers присутствуют.
-7. Production smoke подтверждает обязательные RC108 release/self-test flags, включая `providerDataReliability`, `aiAnalysisQualityGate`, `telegramWebhookPersistentDedupe`, `telegramWebhookDedupeObservability` и `telegramWebhookDedupeObservabilitySelfTest`.
+7. Production smoke подтверждает обязательные RC109 release/self-test flags, включая `providerDataReliability`, `telegramWebhookDedupeObservability`, `supabaseProbeConfirmation` и `supabaseProbeConfirmationSelfTest`.
 
 ## Rollback
 
