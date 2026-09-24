@@ -104,11 +104,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.106.0-rc130';
+const APP_VERSION = '6.107.0-rc131';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc130';
-const RC_NAME = 'RC130';
+const RELEASE_CHANNEL = 'rc131';
+const RC_NAME = 'RC131';
 const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.18; для существующей примените все доступные миграции из supabase/migrations до v6.19.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49';
@@ -20613,6 +20613,7 @@ export default {
         openLigaDbStandingsFallback: 'enabled',
         footballDataStandingsFallback: cfg.footballDataToken ? 'enabled' : 'available_when_configured',
         theOddsApiOddsFallback: cfg.theOddsApiKey ? 'enabled' : 'available_when_configured',
+        matchAtAGlanceCockpit: 'enabled',
         sourceProvenance: 'enabled',
         persistentDataProvenance: 'enabled',
         transientProviderRetry: 'enabled',
