@@ -100,3 +100,8 @@ test('audit: public entrypoint asset revisions track the package release',()=>{
   assert.ok(indexHtml.includes('/styles.css?v='+version+'"') || indexHtml.includes("/styles.css?v="+version+"'"));
   assert.ok(statusHtml.includes('/status.js?v='+version+'"') || statusHtml.includes("/status.js?v="+version+"'"));
 });
+
+
+test('audit: scheduled telemetry is anchored to the cron lifecycle',()=>{
+  assert.match(worker,/async scheduled\(controller, env, ctx\)[\s\S]{0,180}cfg\.waitUntil = promise => ctx\.waitUntil\(Promise\.resolve\(promise\)\)/);
+});

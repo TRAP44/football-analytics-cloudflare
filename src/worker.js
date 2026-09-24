@@ -20497,6 +20497,7 @@ export default {
 
   async scheduled(controller, env, ctx) {
     const cfg = config(env);
+    if (ctx?.waitUntil) cfg.waitUntil = promise => ctx.waitUntil(Promise.resolve(promise));
     const scheduledAt = new Date(Number(controller?.scheduledTime || Date.now()));
     const backtestTask = settleBacktestDaily(cfg);
     const tasks = [
