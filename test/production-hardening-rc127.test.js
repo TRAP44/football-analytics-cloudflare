@@ -9,14 +9,12 @@ const deploy=fs.readFileSync('.github/workflows/deploy-production.yml','utf8');
 const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));
 const app=fs.readFileSync('public/app.js','utf8');
 
-test('RC127 has a single production identity',()=>{
-  assert.equal(pkg.version,'6.103.0');
-  assert.match(worker,/const APP_VERSION = '6\.103\.0-rc127'/);
-  assert.match(worker,/const RC_NAME = 'RC127'/);
-  assert.match(app,/const CLIENT_VERSION = '6\.103\.0-rc127'/);
-  assert.match(deploy,/RELEASE_VERSION: "6\.103\.0-rc127"/);
+test('RC127 hardening remains present after later release bumps',()=>{
+  assert.match(worker,/async function reserveAnalysisQuota/);
+  assert.match(worker,/async function claimDistributedProviderBudget/);
+  assert.match(worker,/async function readinessSnapshot/);
+  assert.match(deploy,/post-deploy-smoke\\.js/);
 });
-
 test('RC127 atomically reserves and refunds analysis quota',()=>{
   assert.match(migration,/create or replace function public\.consume_analysis_quota/);
   assert.match(migration,/on conflict \(telegram_id, usage_date\)/);
