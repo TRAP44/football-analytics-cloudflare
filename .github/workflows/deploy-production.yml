@@ -33,12 +33,18 @@ jobs:
           ref: ${{ env.DEPLOY_SHA }}
           fetch-depth: 0
 
-      - name: RC110 guard against stale production deploy
+      - name: RC110 guard against stale production deploy / RC111 verify deployment provenance
         shell: bash
         run: |
           set -euo pipefail
           git fetch --no-tags origin main
           CURRENT_MAIN_SHA="$(git rev-parse origin/main)"
+          VERIFIED_SHA="$(git rev-parse HEAD)"
+          if [[ "$DEPLOY_SHA" != "$VERIFIED_SHA" ]]; then
+            echo "### Production provenance check failed" >> "$GITHUB_STEP_SUMMARY"
+            echo "DEPLOY_SHA $DEPLOY_SHA does not match checked-out revision $VERIFIED_SHA." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
           if [[ "$DEPLOY_SHA" != "$CURRENT_MAIN_SHA" ]]; then
             echo "### Stale production deploy blocked" >> "$GITHUB_STEP_SUMMARY"
             echo "Verified revision $DEPLOY_SHA is no longer current main ($CURRENT_MAIN_SHA)." >> "$GITHUB_STEP_SUMMARY"
@@ -47,6 +53,7 @@ jobs:
           fi
           echo "### Production revision confirmed" >> "$GITHUB_STEP_SUMMARY"
           echo "Deploy SHA matches current main: $DEPLOY_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "Checked-out SHA and current main both match deploy SHA: $DEPLOY_SHA" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Use Node.js 22
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
