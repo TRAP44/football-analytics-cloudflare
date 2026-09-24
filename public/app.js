@@ -6763,6 +6763,28 @@ function prematchBriefHtml(pm, match, probabilities) {
     </section>`;
 }
 
+function providerCoverageHtml(reliability = {}) {
+  const features = reliability?.features || {};
+  const labels = { injuries:'Травмы', lineups:'Составы', odds:'Коэффициенты', predictions:'Прогноз API', h2h:'Очные встречи' };
+  const states = {
+    available:['✓','Получено'], empty_response:['○','Источник вернул пустой ответ'], skipped:['○','Запрос отложен'],
+    rate_limited:['!','Лимит запросов'], plan_limited:['!','Недоступно на текущем тарифе источника'],
+    timeout:['!','Тайм-аут источника'], network_error:['!','Ошибка сети источника'], provider_error:['!','Ошибка источника'],
+    configuration:['!','Источник не настроен'], error:['!','Временно недоступно'],
+  };
+  const rows = Object.entries(labels).filter(([key]) => features[key]).map(([key,label]) => {
+    const item = features[key] || {};
+    const state = String(item.state || 'unknown');
+    const [icon,text] = states[state] || ['○','Статус не определён'];
+    const cls = item.available ? 'available' : item.degraded ? 'degraded' : 'missing';
+    return `<div class="provider-coverage-row ${cls}"><span>${icon}</span><strong>${label}</strong><small>${escapeHtml(text)}</small></div>`;
+  }).join('');
+  if (!rows) return '';
+  const state = String(reliability.state || 'partial');
+  const title = state === 'healthy' ? 'Данные источника получены' : state === 'degraded' ? 'Часть данных ограничена' : 'Часть данных ещё недоступна';
+  return `<section class="provider-coverage-card ${escapeHtml(state)}"><div class="provider-coverage-head"><strong>${escapeHtml(title)}</strong><span>доверие ≤ ${Math.round(Number(reliability.trustCap || 100))}%</span></div><div class="provider-coverage-grid">${rows}</div><p>${escapeHtml(publicText(reliability.note || 'AI использует только подтверждённые сигналы.'))}</p></section>`;
+}
+
 function aiInstructorHtml(ai = {}, match = {}, kickoffHandoff = {}) {
   const signal = ai.betSignal || {};
   const verdict = ai.verdict || {};
@@ -7013,6 +7035,8 @@ function renderAnalysis(d) {
     ${analysisFreshnessHtml(d.freshness || {}, d.recheck || {})}
 
     ${kickoffHandoffHtml(d.kickoffHandoff || {}, m)}
+
+    ${providerCoverageHtml(d.providerReliability || d.dataPolicy?.reliability || {})}
 
     ${aiInstructorHtml(d.aiInstructor || {}, m, d.kickoffHandoff || {})}
 
