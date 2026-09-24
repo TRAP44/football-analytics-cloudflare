@@ -82,6 +82,9 @@ if (!deployWorkflow.includes('RC120 verify active production release identity'))
 if (!deployWorkflow.includes('npx wrangler deployments status --json') || !deployWorkflow.includes('npx wrangler versions list --json')) failures.push('RC120 deploy workflow must read active deployment and version metadata');
 if (!deployWorkflow.includes('verify-production-release-postcondition.js "$DEPLOYMENT_STATUS_JSON" "$VERSIONS_JSON" "$RELEASE_VERSION" "$DEPLOY_SHA"')) failures.push('RC120 deploy workflow must bind active production identity to release and deploy SHA');
 if (!productionReleasePostconditionVerifier.includes('Production deployment must have one version at 100% traffic') || !productionReleasePostconditionVerifier.includes("annotations?.['workers/message']")) failures.push('RC120 verifier must require exclusive traffic and stamped release identity');
+if (!fs.existsSync('test/rollback-runtime-parity-rc121.test.js')) failures.push('Missing RC121 rollback runtime parity regression test');
+if (!rollbackSmoke.includes("'/api/app-manifest'") || !rollbackSmoke.includes("'/api/public-status'")) failures.push('RC121 rollback smoke must verify restored public release metadata');
+if (!rollbackSmoke.includes("'/api/me', '/api/release-readiness', '/api/calibration-control', '/api/launch-funnel'")) failures.push('RC121 rollback smoke must re-verify protected route auth boundaries');
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
