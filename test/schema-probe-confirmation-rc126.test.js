@@ -9,18 +9,12 @@ const html=fs.readFileSync('public/index.html','utf8');
 const deploy=fs.readFileSync('.github/workflows/deploy-production.yml','utf8');
 const smoke=fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
 
-test('RC126 assigns one unique production release identity',()=>{
-  assert.equal(pkg.version,'6.102.0');
-  assert.match(worker,/const APP_VERSION = '6\.102\.0-rc126'/);
-  assert.match(worker,/const RELEASE_CHANNEL = 'rc126'/);
-  assert.match(worker,/const RC_NAME = 'RC126'/);
-  assert.match(app,/const CLIENT_VERSION = '6\.102\.0-rc126'/);
-  assert.match(app,/const CLIENT_RELEASE_CHANNEL = 'rc126'/);
-  assert.match(html,/\/app\.js\?v=6\.102\.0/);
-  assert.match(html,/\/styles\.css\?v=6\.102\.0/);
-  assert.match(deploy,/RELEASE_VERSION: "6\.102\.0-rc126"/);
+test('RC126 schema confirmation remains present after later release bumps',()=>{
+  assert.match(worker,/function combineSupabaseSchemaProbeAttempts/);
+  assert.match(worker,/async function probeSupabaseSchemaDriftConfirmed/);
+  assert.match(smoke,/'supabaseSchemaProbeConfirmation'/);
+  assert.match(smoke,/'supabaseSchemaProbeConfirmationSelfTest'/);
 });
-
 test('RC126 confirms transient schema probe failures before incident',()=>{
   assert.match(worker,/function combineSupabaseSchemaProbeAttempts/);
   assert.match(worker,/async function probeSupabaseSchemaDriftConfirmed/);
@@ -53,7 +47,7 @@ test('RC126 exposes and smoke-tests schema confirmation health flags',()=>{
   assert.match(smoke,/'supabaseSchemaProbeConfirmationSelfTest'/);
 });
 
-test('RC126 needs no new Supabase migration',()=>{
-  assert.equal(fs.existsSync('supabase/migrations/supabase_migration_v6_18.sql'),false);
-  assert.equal(fs.existsSync('supabase/baseline/supabase_baseline_v6_17.sql'),true);
+test('RC126 confirmation guard coexists with the later RC127 schema migration',()=>{
+  assert.equal(fs.existsSync('supabase/migrations/supabase_migration_v6_18.sql'),true);
+  assert.equal(fs.existsSync('supabase/baseline/supabase_baseline_v6_18.sql'),true);
 });

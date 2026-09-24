@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const baselineUrl = new URL('../supabase/baseline/supabase_baseline_v6_17.sql', import.meta.url);
+const baselineUrl = new URL('../supabase/baseline/supabase_baseline_v6_18.sql', import.meta.url);
 const baseline = fs.readFileSync(baselineUrl, 'utf8').toLowerCase();
 
 test('RC99 exposes one current fresh-install Supabase baseline', () => {
@@ -38,7 +38,8 @@ test('RC99 keeps numbered migrations for existing production upgrades', () => {
     'supabase/migrations/supabase_migration_v6_14.sql',
     'supabase/migrations/supabase_migration_v6_15.sql',
     'supabase/migrations/supabase_migration_v6_16.sql',
-    'supabase/migrations/supabase_migration_v6_17.sql'
+    'supabase/migrations/supabase_migration_v6_17.sql',
+    'supabase/migrations/supabase_migration_v6_18.sql'
   ]) {
     assert.equal(fs.existsSync(new URL('../' + name, import.meta.url)), true, name);
   }

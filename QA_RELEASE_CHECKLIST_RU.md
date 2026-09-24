@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.102.0 RC126
+# QA Release Checklist — v6.103.0 RC127
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,18 +15,18 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.102.0`.
-- Worker и client: `6.102.0-rc126`.
-- Release candidate: `RC126`.
+- `package.json` и `package-lock.json`: `6.103.0`.
+- Worker и client: `6.103.0-rc127`.
+- Release candidate: `RC127`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
 ## Supabase
 
-Для нового проекта используется только `supabase/baseline/supabase_baseline_v6_17.sql`.
+Для нового проекта используется только `supabase/baseline/supabase_baseline_v6_18.sql`.
 
 Для существующей базы должны быть применены:
-`supabase/migrations/supabase_migration_v6_9.sql`, `v6_10`, `v6_11`, `v6_11_1`, `v6_12`, `v6_13`, `v6_14`, `v6_15`, `v6_16`, `v6_17`.
+`supabase/migrations/supabase_migration_v6_9.sql`, `v6_10`, `v6_11`, `v6_11_1`, `v6_12`, `v6_13`, `v6_14`, `v6_15`, `v6_16`, `v6_17`, `v6_18`.
 
 Проверить:
 - RLS и закрытые backend-only таблицы не открыты для `anon/authenticated`;
@@ -34,21 +34,22 @@ npm run verify:worker
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
 
-## RC126 — Schema Probe Confirmation Guard + Release Identity
+## RC127 — Production Hardening
 
-- Worker, Mini App, static assets и production deploy используют одну release identity `6.102.0-rc126`.
-- Production Monitor использует `probeSupabaseSchemaDriftConfirmed()`.
-- Если первый schema probe успешен, второй запрос не выполняется.
-- Если первый schema probe не прошёл, выполняется один подтверждающий retry с короткой задержкой.
-- Успешный retry сохраняет `ok=true`, `attempts=2`, `recovered=true` и не создаёт ложный critical incident.
-- Два последовательных неуспешных schema probe остаются fail-closed и блокируют Release/Production Readiness.
-- Transient recovery записывается как `SCHEMA_PROBE_RECOVERED`, без сокрытия нестабильности.
-- Runtime telemetry считает `supabaseSchemaProbeRecoveries` и `supabaseSchemaProbeConfirmedFailures`.
-- `/health`: `supabaseSchemaProbeConfirmation=enabled` и `supabaseSchemaProbeConfirmationSelfTest=enabled`.
-- Regression: `test/schema-probe-confirmation-rc126.test.js`.
-- Новая Supabase migration не требуется; production schema остаётся v6.17.
+- AI-квота списывается через atomic RPC `consume_analysis_quota`; два параллельных запроса не могут оба пройти последний слот.
+- Неуспешный свежий расчёт возвращает зарезервированный слот через `refund_analysis_quota`.
+- API-Football получает distributed minute guard `claim_provider_request`, общий для Cloudflare isolates.
+- Daily digest использует `claim_daily_digest → complete_daily_digest/release_daily_digest`, поэтому retry/parallel cron не отправляет дубли.
+- Полный schema fingerprint `backend_schema_fingerprint` дополняет точечные compatibility probes. Ожидаемый fingerprint: `c2c22ec25aacfcf1b9938b0850cebf49`.
+- `/health/live` проверяет только Worker liveness; `/health/ready` проверяет Supabase, schema fingerprint, backend ACL, Telegram config и свежие Supabase auth failures.
+- Production smoke обязан пройти `/health/ready`; старый декларативный `ok=true` больше недостаточен.
+- Supabase `HTTP 401/PGRST303` текущей release identity считается incident.
+- Distributed analysis lock при ошибке coordination работает fail-closed и отдаёт stale cache/503 вместо параллельного дорогого compute.
+- Telegram initData: admin-sensitive запросы — максимум 15 минут; mutations — 2 часа; read-only — до 24 часов.
+- Backend RPC доступны только `service_role`; у service-role сняты ненужные `TRUNCATE/REFERENCES/TRIGGER`.
+- Supabase schema: v6.18; regression: `test/production-hardening-rc127.test.js`.
 
-## Исторические RC72–RC125
+## Исторические RC72–RC126
 
 Детальные исторические release-контракты удалены из текущего checklist, чтобы не дублировать Git history и regression-тесты. Их поведение продолжает проверяться соответствующими файлами `test/*-rcXX.test.js`, а продуктовая сводка сохранена в `README_CLOUDFLARE_RU.md`.
 
@@ -69,11 +70,12 @@ npm run verify:worker
 ## Production smoke
 
 `scripts/post-deploy-smoke.js` должен подтвердить:
-- `/health.ok = true`;
-- `version = 6.102.0-rc126`;
-- `releaseCandidate = RC126`;
+- `/health/ready` возвращает `ok=true`, `status=ready`;
+- `version = 6.103.0-rc127`;
+- `releaseCandidate = RC127`;
 - `devMode = false`;
-- обязательные self-test/feature flags = `enabled`;
+- Supabase/PostgREST, schema fingerprint и backend security checks = `ok`;
+- свежих Supabase auth failures текущей версии нет;
 - `/health/supabase` не доступен публично;
 - public status/manifest возвращают текущую версию.
 

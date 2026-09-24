@@ -54,8 +54,8 @@ test('RC106 keeps cached Telegram brief to full analysis quota-safe and history 
   const analyzeStart=worker.indexOf('async function apiAnalyze');
   const cached=worker.indexOf('if (cached && !needsFreshnessRecheck)',analyzeStart);
   const cachedReturn=worker.indexOf('return json(analysisResponsePayload(cached',cached);
-  const increment=worker.indexOf('if (!freeRecheck) await incrementUsage(user.id, cfg);',analyzeStart);
-  assert.ok(cached>analyzeStart && cachedReturn>cached && increment>cachedReturn);
+  const reserve=worker.indexOf('usageReservation=await reserveAnalysisQuota(user.id,cfg);',analyzeStart);
+  assert.ok(cached>analyzeStart && cachedReturn>cached && reserve>cachedReturn);
 
   const historyStart=worker.indexOf('async function apiHistoryAnalysis');
   const historyEnd=worker.indexOf('\nasync function apiFavorites',historyStart);

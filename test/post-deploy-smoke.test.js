@@ -11,10 +11,24 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
   let healthCalls = 0;
   return async input => {
     const url = new URL(input);
+    if (url.pathname === '/health/ready') {
+      healthCalls += 1;
+      const version=staleOnce && healthCalls===1 ? '6.12.0-rc20' : '6.27.0-rc35';
+      return json({
+        ok:true,status:'ready',version,releaseCandidate:'RC35',checks:{
+          supabase:{ok:true,status:'ok',attempts:1},
+          schema:{ok:true,status:'ok',fingerprint:'abc',expectedFingerprint:'abc'},
+          backendSecurity:{ok:true,status:'ok'},
+          telegramConfigured:true,
+          recentSupabaseAuthFailures:0,
+        },
+      });
+    }
     if (url.pathname === '/health') {
       healthCalls += 1;
       return json({
         ok: true,
+        readiness:{ok:true,status:'ready'},
         version: staleOnce && healthCalls === 1 ? '6.12.0-rc20' : '6.27.0-rc35',
         releaseCandidate: 'RC35',
         devMode,
@@ -140,7 +154,7 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         distributedAnalysisLock: 'enabled',
         viralFixtureCollapse: 'enabled',
         crossInstanceAnalysisDedupe: 'enabled',
-        analysisLockFailOpen: 'enabled',
+        analysisLockFailClosed: 'enabled',
         sharedAnalysisWaitFallback: 'enabled',
         distributedAnalysisLockSelfTest: 'enabled',
         mediaPublisherKit: 'enabled',
@@ -299,7 +313,7 @@ test('post-deploy smoke validates RC35, security headers and protected routes', 
     retryDelayMs: 0,
   });
   assert.equal(result.ok, true);
-  assert.equal(result.checks, 19);
+  assert.equal(result.checks, 25);
 });
 
 test('post-deploy smoke retries while the previous Worker version is propagating', async () => {

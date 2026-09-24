@@ -5,7 +5,7 @@ import fs from 'node:fs';
 const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const migration=fs.readFileSync('supabase/migrations/supabase_migration_v6_17.sql','utf8');
-const baseline=fs.readFileSync('supabase/baseline/supabase_baseline_v6_17.sql','utf8');
+const baseline=fs.readFileSync('supabase/baseline/supabase_baseline_v6_18.sql','utf8');
 const smoke=fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
 
 test('RC108 persists duplicate counters without weakening webhook claim semantics',()=>{
@@ -55,7 +55,7 @@ test('RC108 admin diagnostics expose claims duplicates stale and failed counts',
 });
 
 test('RC108 fresh-install baseline contains v6.17 observability',()=>{
-  assert.match(baseline,/v6\.17 unified fresh-install baseline/);
+  assert.match(baseline,/unified fresh-install baseline/);
   assert.match(baseline,/add column if not exists duplicate_count/);
   assert.match(baseline,/create or replace function public\.telegram_webhook_dedupe_health/);
 });

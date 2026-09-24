@@ -24,7 +24,7 @@ test('security header factory returns an isolated copy', () => {
 });
 
 test('Worker JSON responses include API security headers without permissive CORS', async () => {
-  const response = await worker.fetch(new Request('https://football.example.test/health'), {});
+  const response = await worker.fetch(new Request('https://football.example.test/health/live'), {});
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
   assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
