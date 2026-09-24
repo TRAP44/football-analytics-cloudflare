@@ -35,6 +35,8 @@ const memory = {
   rcRegression: null,
   releaseMonitor: null,
   productionMonitor: null,
+  readiness: { value: null, loadedAt: 0 },
+  providerFallbackWindow: { startedAt: 0, count: 0 },
   runtimeControls: { value: null, loadedAt: 0, source: 'defaults', schemaReady: null },
   newsImpactRecoveryStrategy: { value: null, loadedAt: 0 },
   clientTelemetryDedupe: new Map(),
@@ -84,8 +86,11 @@ const memory = {
     memoryPrunes: 0,
     providerDistributedBlocks: 0,
     providerDistributedFallbacks: 0,
+    providerDistributedLocalBlocks: 0,
     quotaReservations: 0,
     quotaRefunds: 0,
+    quotaRefundFailures: 0,
+    analysisLockFailClosed: 0,
     digestDeliveryClaims: 0,
     digestDeliveryDuplicates: 0,
   },
@@ -93,13 +98,16 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.103.0-rc127';
+const APP_VERSION = '6.104.0-rc128';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc127';
-const RC_NAME = 'RC127';
+const RELEASE_CHANNEL = 'rc128';
+const RC_NAME = 'RC128';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49';
+const READINESS_CACHE_MS = 15_000;
+const MAX_API_JSON_BODY_BYTES = 256 * 1024;
+const MAX_TELEGRAM_JSON_BODY_BYTES = 1024 * 1024;
 
 const DEFAULT_PREFERENCES = Object.freeze({
   defaultFilter: 'top',
@@ -168,6 +176,48 @@ function json(data, status = 200, extraHeaders = {}) {
       ...extraHeaders,
     },
   });
+}
+
+
+function requestContentLength(request) {
+  const raw=String(request?.headers?.get?.('content-length') || '').trim();
+  const value=Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+async function readJson(request, { maxBytes = MAX_API_JSON_BODY_BYTES, strict = false } = {}) {
+  const limit=Math.max(1024,Number(maxBytes || MAX_API_JSON_BODY_BYTES));
+  const declared=requestContentLength(request);
+  if (declared !== null && declared > limit) {
+    const error=new Error(`Тело запроса превышает допустимый размер ${limit} байт.`);
+    error.code='REQUEST_BODY_TOO_LARGE';
+    error.status=413;
+    throw error;
+  }
+  const text=await request.text();
+  if (new TextEncoder().encode(text).byteLength > limit) {
+    const error=new Error(`Тело запроса превышает допустимый размер ${limit} байт.`);
+    error.code='REQUEST_BODY_TOO_LARGE';
+    error.status=413;
+    throw error;
+  }
+  if (!text.trim()) return {};
+  try { return JSON.parse(text); }
+  catch (cause) {
+    if (!strict) return {};
+    const error=new Error('Некорректный JSON.');
+    error.code='INVALID_JSON';
+    error.status=400;
+    error.cause=cause;
+    throw error;
+  }
+}
+
+function validationError(message, code = 'VALIDATION_ERROR') {
+  const error=new Error(String(message || 'Некорректные данные.'));
+  error.code=code;
+  error.status=400;
+  return error;
 }
 
 function todayUtc() {
