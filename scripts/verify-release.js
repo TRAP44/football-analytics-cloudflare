@@ -16,7 +16,7 @@ const readme = fs.readFileSync('README_CLOUDFLARE_RU.md', 'utf8');
 const qaChecklist = fs.readFileSync('QA_RELEASE_CHECKLIST_RU.md', 'utf8');
 const baselinePath = 'supabase/baseline/supabase_baseline_v6_17.sql';
 const baseline = fs.existsSync(baselinePath) ? fs.readFileSync(baselinePath, 'utf8') : '';
-const expected = `${pkg.version}-rc109`;
+const expected = `${pkg.version}-rc110`;
 const failures = [];
 const rootSql = fs.readdirSync('.').filter(name => /^supabase_(?:baseline|migration)_.*\.sql$/i.test(name));
 if (rootSql.length) failures.push(`Supabase SQL must live under supabase/: ${rootSql.join(', ')}`);
@@ -25,9 +25,9 @@ if (rootSql.length) failures.push(`Supabase SQL must live under supabase/: ${roo
 if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) failures.push('package-lock version must match package.json');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC109'")) failures.push('Worker RC name must be RC109');
+if (!worker.includes("const RC_NAME = 'RC110'")) failures.push('Worker RC name must be RC110');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc109'")) failures.push('Client release channel must be rc109');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc110'")) failures.push('Client release channel must be rc110');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -65,8 +65,8 @@ if (!fs.existsSync('.github/workflows/rollback-production.yml')) failures.push('
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
-if (!deployWorkflow.includes('--message "RC109 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC109');
-if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.101.0-rc109"')) failures.push('Production smoke must verify 6.101.0-rc109');
+if (!deployWorkflow.includes('--message "RC110 ${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must identify RC110');
+if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "6.102.0-rc110"')) failures.push('Production smoke must verify 6.102.0-rc110');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
 if (!/id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden/.test(html)) failures.push('Admin role badge must use the fail-closed admin-only visibility contract');
 if (!/\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i.test(styles)) failures.push('Global hidden elements must remain display:none');
@@ -234,7 +234,7 @@ if (!worker.includes("newsSourceTrustGate: 'enabled'") || !worker.includes('appl
 if (!worker.includes("publicLegalPages: 'enabled'") || !worker.includes("publicStatusPage: 'enabled'") || !worker.includes("url.pathname === '/api/public-status'")) failures.push('RC52 public trust contract is missing');
 if (!fs.existsSync('public/privacy.html') || !fs.existsSync('public/terms.html') || !fs.existsSync('public/status.html') || !fs.existsSync('public/status.js')) failures.push('RC52 public trust pages are missing');
 if (!wrangler.includes('"/telegram/*"') || !wrangler.includes('"/api/*"')) failures.push('RC52 Worker-first webhook/public API routes are missing');
-if (!deployWorkflow.includes('6.101.0-rc109')) failures.push('RC109 production workflow version is missing');
+if (!deployWorkflow.includes('6.102.0-rc110')) failures.push('RC110 production workflow version is missing');
 
 if (!worker.includes("mediaLaunchPackage: 'enabled'") || !worker.includes("mediaDeepLinkAttribution: 'enabled'")) failures.push('RC53 media launch health contract is missing');
 if (!worker.includes("launchSimulation: 'enabled'") || !worker.includes("conversionUx: 'enabled'") || !worker.includes("highIntentSearchFallback: 'enabled'") || !worker.includes("newsReturnLoop: 'enabled'")) failures.push('RC54 launch conversion health contract is missing');
@@ -342,8 +342,8 @@ if (!worker.includes("firstPartyGrowthAnalytics: 'enabled'") || !worker.includes
 if (!worker.includes('parseLaunchStartParam') || !worker.includes('ensureLaunchAttribution') || !worker.includes('recordGrowthEvent')) failures.push('RC53 attribution engine is missing');
 if (!worker.includes("url.pathname === '/api/launch-funnel'") || !app.includes('function renderLaunchFunnel')) failures.push('RC53 admin launch funnel is missing');
 if (!app.includes("origin:'miniapp'") || !worker.includes("origin:'telegram_quick'")) failures.push('RC53 full-vs-quick AI conversion split is missing');
-if (!readme.includes('v6.101.0 — RC109') || !readme.includes('Supabase Probe Confirmation Guard')) failures.push('README must describe the current RC109 release');
-if (!qaChecklist.includes('v6.101.0 RC109') || !qaChecklist.includes('Supabase Probe Confirmation Guard') || !qaChecklist.includes('npm run verify:release')) failures.push('QA checklist must describe the current RC109 release gate');
+if (!readme.includes('v6.102.0 — RC110') || !readme.includes('Schema Drift Confirmation Guard')) failures.push('README must describe the current RC110 release');
+if (!qaChecklist.includes('v6.102.0 RC110') || !qaChecklist.includes('Schema Drift Confirmation Guard') || !qaChecklist.includes('npm run verify:release')) failures.push('QA checklist must describe the current RC110 release gate');
 if (!fs.existsSync('test/supabase-schema-drift-rc100.test.js')) failures.push('Missing RC100 Supabase schema drift regression test');
 if (!fs.existsSync('test/supabase-directory-hardening-rc101.test.js')) failures.push('Missing RC101 Supabase directory hardening regression test');
 if (!fs.existsSync('scripts/security-scan.js')) failures.push('Missing RC102 Secret Leak Guard scanner');
@@ -427,6 +427,17 @@ if (!worker.includes("code:'SUPABASE_PROBE_RECOVERED'")) failures.push('RC109 tr
 if (!app.includes('Подтверждение Supabase probe') || !app.includes('supabaseProbeConfirmedFailures')) failures.push('RC109 admin probe diagnostics are missing');
 if (!postDeploySmoke.includes("'supabaseProbeConfirmation'") || !postDeploySmoke.includes("'supabaseProbeConfirmationSelfTest'")) failures.push('RC109 production smoke confirmation flags are missing');
 
+if (!fs.existsSync('test/schema-drift-confirmation-rc110.test.js')) failures.push('Missing RC110 schema drift confirmation regression test');
+if (!worker.includes('function combineSchemaDriftAttempts')) failures.push('RC110 schema drift attempt combiner is missing');
+if (!worker.includes('async function probeSupabaseSchemaDriftConfirmed')) failures.push('RC110 confirmed schema drift probe is missing');
+if (!worker.includes('function schemaDriftConfirmationSelfTest')) failures.push('RC110 schema drift confirmation self-test is missing');
+if (!worker.includes("releaseCheck('schema_drift_confirmation'")) failures.push('RC110 release schema confirmation gate is missing');
+if (!worker.includes("productionCheck('schema_drift_confirmation'")) failures.push('RC110 production schema confirmation gate is missing');
+if (!worker.includes("schemaDriftConfirmation: 'enabled'") || !worker.includes("schemaDriftConfirmationSelfTest: schemaDriftConfirmationSelfTest().pass ? 'enabled' : 'failed'")) failures.push('RC110 schema confirmation health flags are missing');
+if (!worker.includes("code:'SUPABASE_SCHEMA_PROBE_RECOVERED'")) failures.push('RC110 transient schema recovery event is missing');
+if (!app.includes('Подтверждение Schema Drift') || !app.includes('schemaDriftConfirmedFailures')) failures.push('RC110 admin schema diagnostics are missing');
+if (!postDeploySmoke.includes("'schemaDriftConfirmation'") || !postDeploySmoke.includes("'schemaDriftConfirmationSelfTest'")) failures.push('RC110 production smoke schema confirmation flags are missing');
+
 
 
 
@@ -453,4 +464,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log(`RC109 Supabase Probe Confirmation Guard contracts verified for ${expected}.`);
+console.log(`RC110 Schema Drift Confirmation Guard contracts verified for ${expected}.`);
