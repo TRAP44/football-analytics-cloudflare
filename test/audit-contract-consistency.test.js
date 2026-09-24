@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
+const sourceFiles=walk('src').filter(file=>file.endsWith('.js'));
+const sourceText=sourceFiles.map(file=>fs.readFileSync(file,'utf8')).join('\n');
 const app=fs.readFileSync('public/app.js','utf8');
 const envExample=fs.readFileSync('.env.example','utf8');
 
@@ -23,7 +25,7 @@ test('audit: frontend literal API routes are implemented by the Worker',()=>{
 });
 
 test('audit: every Worker env variable is documented in .env.example',()=>{
-  const used=new Set([...worker.matchAll(/\benv\.([A-Z][A-Z0-9_]*)\b/g)].map(match=>match[1]));
+  const used=new Set([...sourceText.matchAll(/\benv\.([A-Z][A-Z0-9_]*)\b/g)].map(match=>match[1]));
   const documented=new Set([...envExample.matchAll(/^([A-Z][A-Z0-9_]*)=/gm)].map(match=>match[1]));
   assert.deepEqual([...used].filter(name=>!documented.has(name)).sort(),[]);
 });
@@ -52,4 +54,13 @@ test('audit: operational metadata recursively removes secrets and direct user id
   assert.match(worker,/function sanitizeOpsMetadataValue/);
   assert.doesNotMatch(worker,/JSON\.parse\(redactOpsString\(JSON\.stringify\(value\)/);
   assert.doesNotMatch(worker,/meta:\s*\{\s*telegramId:\s*Number\(user\.id\)/);
+});
+
+
+test('audit: Worker external requests use the shared timeout transport',()=>{
+  assert.match(worker,/async function fetchWithTimeout/);
+  const directAwaitFetches=[...worker.matchAll(/await\s+fetch\s*\(/g)];
+  assert.equal(directAwaitFetches.length,1,'External Worker fetch must go through fetchWithTimeout');
+  assert.match(worker,/fetchWithTimeout\(\`https:\/\/api\.telegram\.org/);
+  assert.match(worker,/fetchWithTimeout\('https:\/\/api\.tavily\.com\/search'/);
 });

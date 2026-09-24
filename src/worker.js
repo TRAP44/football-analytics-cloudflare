@@ -2276,11 +2276,11 @@ async function parseInvoicePayload(payload, botToken) {
 
 async function telegramApi(method, cfg, body = {}) {
   if (!cfg.botToken) throw new Error('TELEGRAM_BOT_TOKEN не настроен.');
-  const r = await fetch(`https://api.telegram.org/bot${cfg.botToken}/${method}`, {
+  const r = await fetchWithTimeout(`https://api.telegram.org/bot${cfg.botToken}/${method}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body || {}),
-  });
+  }, 8000, `Telegram ${method}`);
   const data = await r.json().catch(() => ({}));
   if (!r.ok || !data?.ok) throw new Error(data?.description || `Telegram ${method}: HTTP ${r.status}`);
   return data.result;
@@ -15633,7 +15633,7 @@ function dedupeFootballNews(rows = [], limit = 6) {
 async function tavilyNewsSearch(query, cfg, { days = 3, maxResults = 7 } = {}) {
   if (!cfg.tavilyKey) return { results:[], available:false, reason:'tavily_missing' };
   try {
-    const r=await fetch('https://api.tavily.com/search',{
+    const r=await fetchWithTimeout('https://api.tavily.com/search',{
       method:'POST',
       headers:{Authorization:`Bearer ${cfg.tavilyKey}`,'Content-Type':'application/json'},
       body:JSON.stringify({
@@ -15644,7 +15644,7 @@ async function tavilyNewsSearch(query, cfg, { days = 3, maxResults = 7 } = {}) {
         days:Math.max(1,Math.min(14,Number(days || 3))),
         include_answer:false,
       }),
-    });
+    }, 8000, 'Tavily news');
     if (!r.ok) return {results:[],available:false,reason:`http_${r.status}`};
     const body=await r.json();
     return {results:dedupeFootballNews(body.results || [],maxResults),available:true,reason:''};
@@ -15781,7 +15781,7 @@ function morningNewsText(items = []) {
 async function tavilySearch(query, cfg) {
   if (!cfg.tavilyKey) return { answer: '', results: [] };
   try {
-    const r = await fetch('https://api.tavily.com/search', {
+    const r = await fetchWithTimeout('https://api.tavily.com/search', {
       method: 'POST',
       headers: { Authorization: `Bearer ${cfg.tavilyKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -15791,7 +15791,7 @@ async function tavilySearch(query, cfg) {
         max_results: 5,
         include_answer: true,
       }),
-    });
+    }, 8000, 'Tavily search');
     if (!r.ok) return { answer: '', results: [] };
     const body = await r.json();
     return {
