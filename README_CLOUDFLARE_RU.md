@@ -25,7 +25,7 @@ Telegram-бот и Mini App для футбольной аналитики на 
 - RC109: **Supabase Probe Confirmation Guard** — одиночный неуспешный health probe подтверждается одним retry перед аварийным состоянием. Восстановившийся retry фиксируется как transient recovery, а двойной отказ остаётся fail-closed; админка показывает attempts/recoveries/confirmed failures.
 - RC123–RC125: публичная лента матчей стала частью обычного Mini App journey, UI показывает реальное покрытие API-Football и сохраняет последний snapshot при сетевой/provider-деградации.
 - RC126: **Schema Probe Confirmation Guard + Release Identity Reset** — transient сбой отдельного PostgREST schema probe подтверждается повторной проверкой перед critical incident, а текущая ревизия получает уникальную release identity `6.102.0-rc126` для корректного deploy/rollback аудита.
-- RC127: **Production Hardening** — дневная AI-квота резервируется атомарным Supabase RPC и автоматически возвращается при неуспешном расчёте; API-Football защищён распределённым минутным budget между Cloudflare isolates; ежедневный Telegram digest использует atomic delivery claim; schema guard дополнен полным структурным fingerprint; `/health/live` отделён от `/health/ready`; повторный Supabase auth failure текущего релиза становится incident; distributed analysis coordination работает fail-closed; чувствительные Telegram initData имеют сокращённый срок; service-role ограничен реально используемыми CRUD/RPC правами.
+- RC127: **Production Hardening** — дневная AI-квота резервируется атомарным Supabase RPC и автоматически возвращается при неуспешном расчёте; API-Football защищён распределённым минутным budget между Cloudflare isolates; ежедневный Telegram digest использует atomic delivery claim; schema guard дополнен полным структурным fingerprint; `/health/live` отделён от `/health/ready`; повторный Supabase auth failure текущего релиза становится incident; distributed analysis coordination работает fail-closed; чувствительные Telegram initData имеют сокращённый срок; service-role ограничен реально используемыми CRUD/RPC правами. Hotfix v6.18.1 устраняет FK-race первого анализа: quota RPC атомарно создаёт минимальную запись пользователя до записи `usage_daily`, поэтому параллельный первый запрос больше не падает с `usage_daily_telegram_id_fkey`.
 - Новостной контур RC69–RC98: новость → релевантный матч → явная AI-перепроверка → News Impact Delta → **News Impact Decision Card** → **News Impact Action Tracking** → **News Impact Action Funnel** → **News Impact Funnel Confidence Guard** → **News Impact Funnel Trend Guard** → **News Impact Temporal Attribution Guard** → **News Impact Action Outcome Quality** → **News Impact Outcome Failure Diagnostics & Recovery** → **News Impact Recovery Effectiveness Funnel** → **News Impact Recovery Strategy Guard** → **News Impact Recovery Stability & Parity Guard** → **News Impact Recovery Drift Circuit Breaker** → **News Impact Recovery Transition History & Admin Alerts** → **News Impact Recovery Incident Center** → **News Impact Recovery Incident Acknowledgement & Runbook** → **News Impact Recovery Incident Escalation & SLO** → **News Impact Recovery Incident SLO Dashboard & Trend** → **News Impact Recovery Incident SLO Breach Feed & Drilldown** → **News Impact Recovery Incident SLO Breach Watchlist & Aging** → **News Impact Recovery Incident SLO Breach Triage Queue** → **News Impact Recovery Incident SLO Triage Trend & Recurrence** → **News Impact Recovery Incident SLO Breach Impact Ranking** → **News Impact Recovery Incident SLO Impact Trend** → **News Impact Recovery Incident SLO Impact Concentration** → **News Impact Recovery Incident SLO Impact Concentration Trend** → **News Impact Recovery Incident SLO Impact Executive Summary** → **News Impact Recovery Incident SLO Impact Focus Queue**.
 - News Impact не утверждает причинность по заголовку: сравнение разрешено только с корректным AI-снимком, созданным до публикации новости.
 - RC73 считает только категориальные действия после Decision Card: полный AI, составы, рынок, повторная проверка, возврат к новостям и share. Текст новости, URL и пользовательский запрос в эту аналитику не записываются.
@@ -77,9 +77,9 @@ SQL-файлы вынесены из корня репозитория:
 
 Для уже существующего production-проекта миграции сохраняются как история схемы и применяются по порядку:
 
-`supabase/migrations/supabase_migration_v6_9.sql` → `v6_10` → `v6_11` → `v6_11_1` → `v6_12` → `v6_13` → `v6_14` → `v6_15` → `v6_16` → `v6_17`.
+`supabase/migrations/supabase_migration_v6_9.sql` → `v6_10` → `v6_11` → `v6_11_1` → `v6_12` → `v6_13` → `v6_14` → `v6_15` → `v6_16` → `v6_17` → `v6_18` → `v6_18_1`.
 
-Для нового проекта используется только `supabase/baseline/supabase_baseline_v6_17.sql`. Старые fresh-install baseline удаляются при каждом roll-forward, чтобы новая установка использовала один актуальный SQL.
+Для нового проекта используется только `supabase/baseline/supabase_baseline_v6_18.sql`. Он уже включает v6.18 и исправление v6.18.1; старые fresh-install baseline удаляются при каждом roll-forward, чтобы новая установка использовала один актуальный SQL.
 
 ## Проверка релиза
 
@@ -90,7 +90,7 @@ npm run verify:release
 npm run verify:worker
 ```
 
-Production smoke дополнительно проверяет `/health`, версию `6.102.0-rc126`, `releaseCandidate=RC126`, отключённый `DEV_MODE` и обязательные health/self-test флаги.
+Production smoke дополнительно проверяет `/health/ready`, версию `6.103.0-rc127`, `releaseCandidate=RC127`, отключённый `DEV_MODE`, Supabase schema fingerprint, backend ACL и обязательные readiness-флаги.
 
 ## Документация
 

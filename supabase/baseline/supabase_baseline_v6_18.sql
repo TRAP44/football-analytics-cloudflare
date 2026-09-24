@@ -1,5 +1,5 @@
 -- Football Analytics v6.18 unified fresh-install baseline / RC127
--- Generated from the proven v6.9 baseline plus migrations v6.10 through v6.17.
+-- Generated from the proven v6.9 baseline plus migrations v6.10 through v6.18 and the v6.18.1 quota hotfix.
 -- USE ONLY FOR A NEW SUPABASE PROJECT.
 -- Existing production databases must keep their applied migration history and
 -- apply only missing numbered migrations. Do not run this baseline on production.
@@ -1411,13 +1411,17 @@ returns jsonb
 language plpgsql
 security invoker
 set search_path = public, pg_temp
-as $$
+as $
 declare
   v_used integer;
 begin
-  if p_telegram_id is null or p_usage_date is null or p_limit is null or p_limit < 1 then
+  if p_telegram_id is null or p_telegram_id <= 0 or p_usage_date is null or p_limit is null or p_limit < 1 then
     return jsonb_build_object('allowed', false, 'used', 0, 'limit', greatest(coalesce(p_limit,0),0), 'reason', 'invalid_input');
   end if;
+
+  insert into public.users(telegram_id)
+  values (p_telegram_id)
+  on conflict (telegram_id) do nothing;
 
   insert into public.usage_daily(telegram_id, usage_date, analyses, updated_at)
   values (p_telegram_id, p_usage_date, 1, now())
@@ -1448,7 +1452,7 @@ begin
     'reason', 'reserved'
   );
 end;
-$$;
+$;
 
 create or replace function public.refund_analysis_quota(
   p_telegram_id bigint,

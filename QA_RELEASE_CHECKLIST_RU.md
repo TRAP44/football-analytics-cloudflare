@@ -26,7 +26,7 @@ npm run verify:worker
 Для нового проекта используется только `supabase/baseline/supabase_baseline_v6_18.sql`.
 
 Для существующей базы должны быть применены:
-`supabase/migrations/supabase_migration_v6_9.sql`, `v6_10`, `v6_11`, `v6_11_1`, `v6_12`, `v6_13`, `v6_14`, `v6_15`, `v6_16`, `v6_17`, `v6_18`.
+`supabase/migrations/supabase_migration_v6_9.sql`, `v6_10`, `v6_11`, `v6_11_1`, `v6_12`, `v6_13`, `v6_14`, `v6_15`, `v6_16`, `v6_17`, `v6_18`, `v6_18_1`.
 
 Проверить:
 - RLS и закрытые backend-only таблицы не открыты для `anon/authenticated`;
@@ -36,7 +36,7 @@ npm run verify:worker
 
 ## RC127 — Production Hardening
 
-- AI-квота списывается через atomic RPC `consume_analysis_quota`; два параллельных запроса не могут оба пройти последний слот.
+- AI-квота списывается через atomic RPC `consume_analysis_quota`; два параллельных запроса не могут оба пройти последний слот. Hotfix v6.18.1 дополнительно создаёт минимальную строку `users` до `usage_daily`, закрывая FK-race первого анализа.
 - Неуспешный свежий расчёт возвращает зарезервированный слот через `refund_analysis_quota`.
 - API-Football получает distributed minute guard `claim_provider_request`, общий для Cloudflare isolates.
 - Daily digest использует `claim_daily_digest → complete_daily_digest/release_daily_digest`, поэтому retry/parallel cron не отправляет дубли.

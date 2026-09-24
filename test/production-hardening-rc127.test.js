@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
 const migration=fs.readFileSync('supabase/migrations/supabase_migration_v6_18.sql','utf8');
+const hotfix=fs.readFileSync('supabase/migrations/supabase_migration_v6_18_1.sql','utf8');
 const smoke=fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
 const deploy=fs.readFileSync('.github/workflows/deploy-production.yml','utf8');
 const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));
@@ -25,6 +26,9 @@ test('RC127 atomically reserves and refunds analysis quota',()=>{
   assert.match(worker,/async function reserveAnalysisQuota/);
   assert.match(worker,/supaRpc\(cfg, 'consume_analysis_quota'/);
   assert.match(worker,/refundAnalysisQuota\(user\.id,usageReservation,cfg\)/);
+  assert.match(hotfix,/insert into public\.users\(telegram_id\)/);
+  assert.match(hotfix,/on conflict \(telegram_id\) do nothing/);
+  assert.match(hotfix,/p_telegram_id <= 0/);
   assert.doesNotMatch(worker,/if \(!freeRecheck\) await incrementUsage\(user\.id, cfg\)/);
 });
 
