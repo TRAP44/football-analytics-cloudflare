@@ -5,7 +5,7 @@ import fs from 'node:fs';
 const workflow = fs.readFileSync('.github/workflows/rollback-production.yml', 'utf8');
 
 test('RC122 verifies rollback traffic and release identity after mutation', () => {
-  assert.match(workflow, /RC122 verify exact rollback release postcondition/);
+  assert.match(workflow, /RC122 verify rollback release identity/);
   assert.match(workflow, /wrangler deployments status --json/);
   assert.match(workflow, /wrangler versions view \"\$VERSION_ID\" --json/);
   assert.match(workflow, /verify-rollback-deployment\.js \"\$DEPLOYMENT_STATUS_JSON\" \"\$VERSION_ID\"/);
