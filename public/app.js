@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.99.0-rc107';
+const CLIENT_VERSION = '6.100.0-rc108';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc107';
+const CLIENT_RELEASE_CHANNEL = 'rc108';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
@@ -2109,10 +2109,12 @@ function renderProductionReadiness() {
     </div>`).join('');
 
   const s = r.safety || {};
+  const telegramWebhook = r.diagnostics?.telegramWebhook || {};
   runtime.innerHTML = `
     <div class="production-runtime-grid">
       <div><span>Объединено одинаковых запросов</span><strong>${Number(s.singleflight?.joins || 0)}</strong><small>${Number(s.singleflight?.active || 0)} сейчас</small></div>
       <div><span>Блокировки частых запросов</span><strong>${Number(s.burstGuard?.blocked || 0)}</strong><small>${Number(s.burstGuard?.activeBuckets || 0)} активных групп</small></div>
+      <div><span>Telegram dedupe</span><strong>${telegramWebhook.available ? (telegramWebhook.state === 'healthy' ? 'Норма' : telegramWebhook.state === 'incident' ? 'Проблема' : 'Проверить') : 'Нет данных'}</strong><small>дубли ${Number(telegramWebhook.duplicateAttemptsRetained || 0)} · stale ${Number(telegramWebhook.staleProcessing || 0)} · failed ${Number(telegramWebhook.failedCurrent || 0)}</small></div>
       <div><span>Тайм-ауты источников</span><strong>${Number(s.upstream?.timeouts || 0)}</strong><small>БД ${Number(s.upstream?.supabaseTimeoutMs || 0)/1000}с · источник данных ${Number(s.upstream?.apiFootballTimeoutMs || 0)/1000}с</small></div>
       <div><span>Быстрые сохранённые данные</span><strong>${Number(s.memory?.cacheEntries || 0)}</strong><small>мягкий лимит ${Number(s.memory?.cacheSoftLimit || 0)}</small></div>
       <div><span>Сохранённые данные профилей</span><strong>${Number(s.memory?.userSyncEntries || 0)}</strong><small>${Math.round(Number(s.memory?.userSyncTtlSeconds || 0)/60)} мин.</small></div>
@@ -3340,6 +3342,7 @@ function renderDiagnostics() {
   const db = d.supabase || {};
   const cache = db.cache || {};
   const obs = d.observability || {};
+  const telegramWebhook = d.telegramWebhook || {};
   if (database) {
     database.hidden = false;
     database.innerHTML = `
@@ -3349,6 +3352,7 @@ function renderDiagnostics() {
         <div><span>Сохранённых записей</span><strong>${Number.isFinite(Number(cache.total)) ? Number(cache.total) : '—'}</strong><small>выборка ${Number(cache.sampled || 0)}</small></div>
         <div><span>Свежие / устаревшие</span><strong>${Number(cache.freshInSample || 0)} / ${Number(cache.staleInSample || 0)}</strong><small>в диагностической выборке</small></div>
         <div><span>Журнал ошибок</span><strong>${obs.persistent ? 'Supabase' : 'Память'}</strong><small>${obs.migrationReady ? `хранение ${Number(obs.retentionDays || 14)} дн.` : 'нужна миграция v3.8'}</small></div>
+        <div><span>Telegram webhook dedupe</span><strong>${telegramWebhook.available ? (telegramWebhook.state === 'healthy' ? 'Норма' : telegramWebhook.state === 'incident' ? 'Проблема' : 'Проверить') : 'Нет данных'}</strong><small>claims ${Number(telegramWebhook.claimsRecent || 0)} · дубли ${Number(telegramWebhook.duplicateAttemptsRetained || 0)} · stale ${Number(telegramWebhook.staleProcessing || 0)}</small></div>
       </div>`;
   }
 
