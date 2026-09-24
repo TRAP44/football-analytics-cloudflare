@@ -54,11 +54,33 @@ export async function runRollbackSmoke(rawBaseUrl, expectedVersion, options = {}
         throw new Error(`/health/supabase must not be public; got HTTP ${privateProbe.status}.`);
       }
 
+      const manifestResponse = await request(fetchImpl, baseUrl, '/api/app-manifest');
+      if (!manifestResponse.ok) throw new Error(`/api/app-manifest returned HTTP ${manifestResponse.status}.`);
+      const manifest = await manifestResponse.json();
+      if (manifest?.version !== expectedVersion || manifest?.releaseCandidate !== expectedRc) {
+        throw new Error('Public app manifest does not match the restored rollback release.');
+      }
+
+      const publicStatusResponse = await request(fetchImpl, baseUrl, '/api/public-status');
+      if (!publicStatusResponse.ok) throw new Error(`/api/public-status returned HTTP ${publicStatusResponse.status}.`);
+      const publicStatus = await publicStatusResponse.json();
+      if (publicStatus?.version !== expectedVersion || publicStatus?.releaseCandidate !== expectedRc) {
+        throw new Error('Public status endpoint does not match the restored rollback release.');
+      }
+
+      for (const path of ['/api/me', '/api/release-readiness', '/api/calibration-control', '/api/launch-funnel']) {
+        const protectedResponse = await request(fetchImpl, baseUrl, path);
+        if (protectedResponse.status !== 401) {
+          throw new Error(`${path} must reject missing Telegram auth with HTTP 401 after rollback.`);
+        }
+      }
+
       return {
         ok: true,
         version: health.version,
         releaseCandidate: health.releaseCandidate,
         attempt,
+        checks: 9,
       };
     } catch (error) {
       lastError = String(error?.message || error);

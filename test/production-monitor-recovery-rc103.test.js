@@ -22,6 +22,12 @@ test('RC103 verifies exact rollback version and private Supabase probe', async (
       });
     }
     if (url.pathname === '/health/supabase') return response(404, { ok: false });
+    if (url.pathname === '/api/app-manifest' || url.pathname === '/api/public-status') {
+      return response(200, { version: '6.94.0-rc102', releaseCandidate: 'RC102' });
+    }
+    if (['/api/me','/api/release-readiness','/api/calibration-control','/api/launch-funnel'].includes(url.pathname)) {
+      return response(401);
+    }
     return response(404);
   };
   const result = await runRollbackSmoke('https://example.com', '6.94.0-rc102', {
