@@ -13,6 +13,7 @@ import {
 import { apiSecurityHeaders } from './security-headers.js';
 import { createSupabaseClient } from './supabase-client.js';
 import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
+import { applyFeatureFreshness, applyFeatureFreshnessMap } from './data-freshness.js';
 import { enrichFixtureAbsencesWithSeasonRole, normalizeFixtureAbsences } from './availability.js';
 import { annotateLineupReliability, assessLineupQuality, assessMatchLineups } from './lineup-quality.js';
 import { normalizeOpenLigaMatchEvents, normalizeOpenLigaStandings, openLigaCompetition, openLigaMatchDataUrls, openLigaTableUrls } from './providers/openligadb.js';
@@ -106,11 +107,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.114.0-rc138';
+const APP_VERSION = '6.115.0-rc139';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc138';
-const RC_NAME = 'RC138';
+const RELEASE_CHANNEL = 'rc139';
+const RC_NAME = 'RC139';
 const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.18; для существующей примените все доступные миграции из supabase/migrations до v6.19.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49';
@@ -2599,7 +2600,7 @@ async function apiMediaPublisherLink(request,cfg,user) {
   const content=cleanLaunchPart(body?.content || 'article',16) || 'article';
   const link=await fixtureTelegramDeepLink(cfg,fixtureId,{source,campaign,content});
   const cached=await getCache(`bot:fixture-card:${fixtureId}:v2`,cfg).catch(()=>null);
-  const analyzed=await getCache(`fixture:${fixtureId}:v12-lineup-reliability`,cfg).catch(()=>null);
+  const analyzed=await getCache(`fixture:${fixtureId}:v13-freshness-trust`,cfg).catch(()=>null);
   const match=normalizeBotFixtureCard(cached?.match || analyzed?.match || {fixtureId,homeName:'Матч',awayName:String(fixtureId),league:'Футбол'});
   const copy=mediaPublisherCopy(match,link.url,{source,campaign,content});
   void recordGrowthEvent(cfg,{
@@ -12936,49 +12937,72 @@ function providerDataReliabilitySummary(featureMeta = {}, context = {}) {
     semanticState: String(meta?.semanticState || ''),
     confirmed: Boolean(meta?.confirmed),
     partial: Boolean(meta?.partial),
+    freshnessState: String(meta?.freshnessState || ''),
+    provenanceState: String(meta?.provenanceState || ''),
+    confidenceBearing: meta?.confidenceBearing === undefined ? Boolean(meta?.available) : Boolean(meta.confidenceBearing),
+    stale: Boolean(meta?.stale),
+    ageSeconds: Number.isFinite(Number(meta?.ageSeconds)) ? Number(meta.ageSeconds) : null,
+    freshnessLimitSeconds: Number.isFinite(Number(meta?.freshnessLimitSeconds)) ? Number(meta.freshnessLimitSeconds) : null,
   }));
   const hardFailures = entries.filter(x => x.degraded);
-  const missing = entries.filter(x => !x.available);
+  const missing = entries.filter(x => !x.confidenceBearing);
   const byFeature = Object.fromEntries(entries.map(x => [x.feature, x]));
   let trustCap = 100;
   const probabilitySources = ['odds','predictions'].map(key => byFeature[key]).filter(Boolean);
-  if (probabilitySources.length === 2 && probabilitySources.every(x => x.degraded)) trustCap = 60;
-  else if (probabilitySources.some(x => x.degraded)) trustCap = Math.min(trustCap, 80);
+  if (probabilitySources.length === 2 && probabilitySources.every(x => !x.confidenceBearing)) trustCap = 60;
+  else if (probabilitySources.some(x => !x.confidenceBearing)) trustCap = Math.min(trustCap, 80);
   const minutesToKickoff = Number.isFinite(Number(context.minutesToKickoff)) ? Number(context.minutesToKickoff) : null;
-  if (minutesToKickoff !== null && minutesToKickoff <= 90 && !byFeature.lineups?.available) {
+  if (minutesToKickoff !== null && minutesToKickoff <= 90 && !byFeature.lineups?.confidenceBearing) {
     trustCap = Math.min(trustCap, byFeature.lineups?.partial ? 75 : 80);
   }
-  if (byFeature.injuries?.degraded) trustCap = Math.min(trustCap, 90);
+  if (byFeature.injuries?.degraded || (byFeature.injuries?.observed && !byFeature.injuries?.confidenceBearing)) {
+    trustCap = Math.min(trustCap, 90);
+  }
+  if (String(context.mode || '') === 'live') {
+    const liveCore = ['events','statistics'].map(key => byFeature[key]).filter(Boolean);
+    if (liveCore.some(x => x.observed && !x.confidenceBearing)) trustCap = Math.min(trustCap, 70);
+  }
 
   const warnings = [];
-  if (byFeature.injuries && !byFeature.injuries.available) {
+  const featureLabels = {
+    events:'События матча', statistics:'Статистика матча', players:'Статистика игроков',
+    lineups:'Стартовые составы', injuries:'Потери состава', liveOdds:'Live-коэффициенты',
+    odds:'Линия 1X2', predictions:'Процентный прогноз', h2h:'Очные встречи', match:'Статус матча',
+  };
+  for (const entry of entries) {
+    const label = featureLabels[entry.feature] || entry.feature;
+    if (entry.observed && entry.stale) warnings.push(`${label}: данные устарели и исключены из доверенных сигналов.`);
+    else if (entry.observed && entry.provenanceState === 'unknown') warnings.push(`${label}: источник не подтверждён, поэтому блок исключён из доверенных сигналов.`);
+    else if (entry.observed && entry.freshnessState === 'unknown' && !entry.confidenceBearing) warnings.push(`${label}: свежесть не подтверждена, поэтому блок исключён из доверенных сигналов.`);
+  }
+  if (byFeature.injuries && !byFeature.injuries.confidenceBearing) {
     warnings.push(byFeature.injuries.state === 'empty_response'
       ? 'Источник не вернул записей о травмах; это не подтверждает отсутствие потерь состава.'
       : 'Данные о травмах сейчас не подтверждены источником и не трактуются как «потерь нет».');
   }
   if (byFeature.lineups?.partial) {
     warnings.push('Источник вернул неполный стартовый XI: он не считается подтверждённым модельным сигналом и не повышает полноту данных.');
-  } else if (byFeature.lineups && !byFeature.lineups.available && minutesToKickoff !== null && minutesToKickoff <= 120) {
-    warnings.push('Стартовые составы не подтверждены источником; пустой или недоступный ответ не считается опубликованным составом.');
+  } else if (byFeature.lineups && !byFeature.lineups.confidenceBearing && minutesToKickoff !== null && minutesToKickoff <= 120) {
+    warnings.push('Стартовые составы не подтверждены свежим атрибутированным источником; они исключены из модельного сигнала.');
   }
-  if (byFeature.odds && !byFeature.odds.available) warnings.push('Линия 1X2 не подтверждена источником; рыночный сигнал исключён из расчёта.');
-  if (byFeature.predictions && !byFeature.predictions.available) warnings.push('Процентный прогноз API-Football недоступен; этот сигнал исключён из расчёта.');
+  if (byFeature.odds && !byFeature.odds.confidenceBearing) warnings.push('Линия 1X2 не подтверждена свежим источником; рыночный сигнал исключён из расчёта.');
+  if (byFeature.predictions && !byFeature.predictions.confidenceBearing) warnings.push('Процентный прогноз API-Football недоступен или не прошёл проверку свежести; этот сигнал исключён из расчёта.');
 
   return {
     state: hardFailures.length ? 'degraded' : missing.length ? 'partial' : 'healthy',
     trustCap,
     checked: entries.length,
-    available: entries.filter(x => x.available).length,
+    available: entries.filter(x => x.confidenceBearing).length,
     empty: entries.filter(x => x.state === 'empty_response').length,
     skipped: entries.filter(x => x.state === 'skipped').length,
     degraded: hardFailures.length,
     features: byFeature,
-    warnings: [...new Set(warnings)].slice(0, 6),
+    warnings: [...new Set(warnings)].slice(0, 8),
     note: hardFailures.length
-      ? 'Часть данных источника недоступна. Неизвестность не преобразуется в нулевые значения или подтверждённое отсутствие событий.'
+      ? 'Часть данных источника недоступна, устарела или не имеет подтверждённого provenance. Неизвестность не преобразуется в нулевые значения; неподтверждённые блоки не используются как доверенные сигналы.'
       : missing.length
-        ? 'Часть дополнительных данных пока не опубликована или сознательно пропущена; AI использует только подтверждённые сигналы.'
-        : 'Все запрошенные блоки данных получены от источника.',
+        ? 'Часть дополнительных данных пока не опубликована или сознательно пропущена; AI использует только подтверждённые свежие сигналы.'
+        : 'Все запрошенные блоки данных получены из свежих атрибутированных источников.',
   };
 }
 
@@ -17678,7 +17702,7 @@ async function apiHistoryAnalysis(request, cfg, user) {
     return json({ error: 'Этот матч отсутствует в вашей истории анализов.', code: 'HISTORY_ANALYSIS_NOT_FOUND' }, 404);
   }
 
-  const cacheKey = `fixture:${fixtureId}:v12-lineup-reliability`;
+  const cacheKey = `fixture:${fixtureId}:v13-freshness-trust`;
   const fresh = await getCache(cacheKey, cfg);
   const payload = fresh || await getStaleCache(cacheKey, cfg);
   if (!payload) {
@@ -18614,13 +18638,16 @@ async function footballDataStandingsProvider(leagueId, season, cfg) {
 }
 
 function oddsFallbackMeta(feature, market, { source = 'network', fetchedAt = null, expiresAt = null } = {}) {
+  const sourceUpdatedAt = Number.isFinite(Date.parse(String(market?.updatedAt || ''))) ? String(market.updatedAt) : null;
+  const ageAnchor = sourceUpdatedAt || fetchedAt;
   return {
     feature,
     provider: 'the-odds-api',
     source,
     fetchedAt,
-    ageSeconds: fetchedAt && Number.isFinite(Date.parse(String(fetchedAt)))
-      ? Math.max(0, Math.floor((Date.now() - Date.parse(String(fetchedAt))) / 1000))
+    sourceUpdatedAt,
+    ageSeconds: ageAnchor && Number.isFinite(Date.parse(String(ageAnchor)))
+      ? Math.max(0, Math.floor((Date.now() - Date.parse(String(ageAnchor))) / 1000))
       : null,
     expiresAt,
     fallback: true,
@@ -18630,9 +18657,11 @@ function oddsFallbackMeta(feature, market, { source = 'network', fetchedAt = nul
 
 function usableOddsFeatureMeta(meta = {}, market = null, fallbackReason = '') {
   if (market) {
+    const sourceUpdatedAt = Number.isFinite(Date.parse(String(market?.updatedAt || ''))) ? String(market.updatedAt) : (meta?.sourceUpdatedAt || null);
     return {
       ...meta,
       provider: String(market.provider || meta?.provider || 'api-football'),
+      sourceUpdatedAt,
       state: 'available',
       available: true,
       observed: true,
@@ -19349,9 +19378,19 @@ async function apiMatchCenter(request, cfg) {
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'Номер матча обязателен.' }, 400);
 
   // Shared across all users. During LIVE it expires after 60 seconds.
-  const baseCacheKey = `match-center:${fixtureId}:v10-ai-live-coach-postmatch-rc62`;
+  const baseCacheKey = `match-center:${fixtureId}:v11-freshness-trust-rc139`;
   const cached = await getCache(baseCacheKey, cfg);
-  if (cached) return json({ ...cached, cached: true });
+  if (cached) {
+    const cachedMode = String(cached.mode || 'upcoming');
+    const cachedMeta = {
+      ...(cached.dataFreshness || {}),
+      match: cached.dataFreshness?.match || {
+        feature:'match', provider:'api-football', source:'cache', state:'available',
+        available:true, usable:true, observed:true, fetchedAt:cached.generatedAt || null,
+      },
+    };
+    return json({ ...cached, dataFreshness:applyFeatureFreshnessMap(cachedMeta, { mode:cachedMode }), cached: true });
+  }
 
   let fixture;
   try {
@@ -19359,7 +19398,28 @@ async function apiMatchCenter(request, cfg) {
   } catch (error) {
     const stale = await getStaleCache(baseCacheKey, cfg);
     if (stale && isFootballRateLimitError(error)) {
-      return json({ ...stale, cached: true, stale: true, warning: 'Данные матча в реальном времени временно показаны из последних сохранённых данных из-за лимита источника.', retryAfter: Number(error?.retryAfter || 60) });
+      const staleMode = String(stale.mode || 'upcoming');
+      const staleMeta = {
+        ...(stale.dataFreshness || {}),
+        match: stale.dataFreshness?.match || {
+          feature:'match', provider:'api-football', source:'stale-cache', state:'available',
+          available:true, usable:true, observed:true, fetchedAt:stale.generatedAt || null,
+        },
+      };
+      const staleFreshness = applyFeatureFreshnessMap(staleMeta, { mode:staleMode, forceStale:true });
+      const suppressLiveSignals = staleMode === 'live';
+      return json({
+        ...stale,
+        dataFreshness:staleFreshness,
+        ...(suppressLiveSignals ? {
+          livePressure:null, smartInsights:null, liveAiCoach:null, liveOdds:null, oddsMovement:null,
+          availability:{ ...(stale.availability || {}), events:false, statistics:false, players:false, injuries:false, lineupsConfirmed:false, lineupsTrusted:false },
+        } : {}),
+        cached:true,
+        stale:true,
+        warning:'Данные матча показаны из последнего сохранённого снимка. Устаревшие live-сигналы исключены из аналитики.',
+        retryAfter:Number(error?.retryAfter || 60),
+      });
     }
     throw error;
   }
@@ -19382,7 +19442,13 @@ async function apiMatchCenter(request, cfg) {
   const awayName = fixture.teams?.away?.name || '';
   const limitedCoverage = isYouthReserveMatch(leagueName, homeName, awayName);
   const centerMode = live ? 'live' : finished ? 'finished' : 'upcoming';
-  const featureMeta = {};
+  const fixtureFetchedAt = new Date().toISOString();
+  const featureMeta = {
+    match: applyFeatureFreshness({
+      feature:'match', provider:'api-football', source:'network', fetchedAt:fixtureFetchedAt, ageSeconds:0,
+      ...providerDataState([fixture], { attempted:true }),
+    }, { feature:'match', mode:centerMode }),
+  };
 
   // v4.9: every expensive enrichment feature gets its own cache + quota policy.
   // Do not burn extra /events + /statistics calls when coverage is predictably low.
@@ -19395,7 +19461,7 @@ async function apiMatchCenter(request, cfg) {
   let injuryRows = [];
 
   if (events.length) {
-    featureMeta.events = { feature: 'events', provider:'api-football', source: 'embedded', ageSeconds: 0, fallback:false, policy: providerFeaturePolicy('events', { mode: centerMode, limitedCoverage }), ...providerDataState(events, { attempted:true }) };
+    featureMeta.events = { feature:'events', provider:'api-football', source:'embedded', fetchedAt:fixtureFetchedAt, ageSeconds:0, fallback:false, policy:providerFeaturePolicy('events', { mode:centerMode, limitedCoverage }), ...providerDataState(events, { attempted:true }) };
   } else if (live || finished) {
     const eventContext={ mode:centerMode, limitedCoverage };
     const result = await providerFeatureFetch({
@@ -19416,7 +19482,7 @@ async function apiMatchCenter(request, cfg) {
   }
 
   if (statistics.length) {
-    featureMeta.statistics = { feature: 'statistics', source: 'embedded', ageSeconds: 0, policy: providerFeaturePolicy('statistics', { mode: centerMode, limitedCoverage }) };
+    featureMeta.statistics = { feature:'statistics', provider:'api-football', source:'embedded', fetchedAt:fixtureFetchedAt, ageSeconds:0, fallback:false, policy:providerFeaturePolicy('statistics', { mode:centerMode, limitedCoverage }), ...providerDataState(statistics, { attempted:true }) };
   } else if (live || finished) {
     const result = await providerFeatureFetch({
       feature: 'statistics', path: '/fixtures/statistics', params: { fixture: fixtureId },
@@ -19427,7 +19493,7 @@ async function apiMatchCenter(request, cfg) {
   }
 
   if (playerRows.length) {
-    featureMeta.players = { feature: 'players', source: 'embedded', ageSeconds: 0, policy: providerFeaturePolicy('players', { mode: centerMode, limitedCoverage }) };
+    featureMeta.players = { feature:'players', provider:'api-football', source:'embedded', fetchedAt:fixtureFetchedAt, ageSeconds:0, fallback:false, policy:providerFeaturePolicy('players', { mode:centerMode, limitedCoverage }), ...providerDataState(playerRows, { attempted:true }) };
   } else if (live || finished) {
     const result = await providerFeatureFetch({
       feature: 'players', path: '/fixtures/players', params: { fixture: fixtureId },
@@ -19446,7 +19512,7 @@ async function apiMatchCenter(request, cfg) {
   );
 
   if (lineupRows.length) {
-    featureMeta.lineups = { feature: 'lineups', source: 'embedded', ageSeconds: 0, policy: providerFeaturePolicy('lineups', { mode: centerMode, limitedCoverage }) };
+    featureMeta.lineups = { feature:'lineups', provider:'api-football', source:'embedded', fetchedAt:fixtureFetchedAt, ageSeconds:0, fallback:false, policy:providerFeaturePolicy('lineups', { mode:centerMode, limitedCoverage }), ...providerDataState(lineupRows, { attempted:true }) };
   } else if (lineupsWindow) {
     const result = await providerFeatureFetch({
       feature: 'lineups', path: '/fixtures/lineups', params: { fixture: fixtureId },
@@ -19484,15 +19550,25 @@ async function apiMatchCenter(request, cfg) {
     } else {
       featureMeta.liveOdds = usableOddsFeatureMeta(result.meta, liveOdds);
     }
-    if (liveOdds) {
-      await saveOddsSnapshot(fixtureId, liveOdds, cfg);
-      const snapshots = await getOddsSnapshots(fixtureId, cfg, 12);
-      oddsMovement = buildOddsMovement(snapshots, liveOdds);
-    }
   }
+
+  for (const feature of ['events','statistics','players','lineups','injuries','liveOdds']) {
+    if (featureMeta[feature]) featureMeta[feature] = applyFeatureFreshness(featureMeta[feature], { feature, mode:centerMode });
+  }
+  if (liveOdds && featureMeta.liveOdds?.confidenceBearing === false) liveOdds = null;
+  if (liveOdds) {
+    await saveOddsSnapshot(fixtureId, liveOdds, cfg);
+    const snapshots = await getOddsSnapshots(fixtureId, cfg, 12);
+    oddsMovement = buildOddsMovement(snapshots, liveOdds);
+  }
+
   const refreshSeconds = live && runtimeControlsSnapshot().liveEnabled !== false ? providerBudgetProfile().liveRefreshSeconds : 0;
-  const formattedStatistics = formatLiveStatistics(statistics, homeId, awayId);
-  const playerLeaders = formatPlayerLeaders(playerRows, homeId, awayId);
+  const trustedStatistics = featureMeta.statistics?.confidenceBearing === false ? [] : statistics;
+  const trustedPlayerRows = featureMeta.players?.confidenceBearing === false ? [] : playerRows;
+  const trustedEvents = featureMeta.events?.confidenceBearing === false ? [] : events;
+  const trustedInjuryRows = featureMeta.injuries?.confidenceBearing === false ? [] : injuryRows;
+  const formattedStatistics = formatLiveStatistics(trustedStatistics, homeId, awayId);
+  const playerLeaders = formatPlayerLeaders(trustedPlayerRows, homeId, awayId);
   const lineups = formatLineups(lineupRows, homeId, awayId);
   const lineupQuality=assessMatchLineups(lineups);
   if (featureMeta.lineups || lineupQuality.anyPublished) {
@@ -19501,9 +19577,10 @@ async function apiMatchCenter(request, cfg) {
       lineupQuality,
     );
   }
-  const absences = formatAbsences(injuryRows, homeId, awayId, lineups);
-  const pressure = (live || finished) ? livePressure(formattedStatistics) : null;
-  const formattedEvents = formatLiveEvents(events, homeId, awayId);
+  const lineupSourceTrusted = featureMeta.lineups?.stale !== true && featureMeta.lineups?.provenanceState !== 'unknown';
+  const absences = formatAbsences(trustedInjuryRows, homeId, awayId, lineupSourceTrusted ? lineups : null);
+  const pressure = (live || finished) && featureMeta.statistics?.confidenceBearing !== false ? livePressure(formattedStatistics) : null;
+  const formattedEvents = formatLiveEvents(trustedEvents, homeId, awayId);
   if (finished) await settlePredictionsFromFixtures([fixture], cfg).catch(() => null);
   const postMatchPrediction = finished ? await loadModelPredictionForFixture(fixtureId, cfg) : null;
   const postMatchReview = finished ? buildPostMatchReview({prediction:postMatchPrediction,fixture,statistics:formattedStatistics,events:formattedEvents,homeName,awayName}) : null;
@@ -19521,7 +19598,7 @@ async function apiMatchCenter(request, cfg) {
     absences,
   }) : null;
 
-  const prematchAnalysis = live ? await getStaleCache(`fixture:${fixtureId}:v12-lineup-reliability`, cfg).catch(() => null) : null;
+  const prematchAnalysis = live ? await getStaleCache(`fixture:${fixtureId}:v13-freshness-trust`, cfg).catch(() => null) : null;
   const liveAiCoach = live ? buildLiveAiCoach({
     statistics: formattedStatistics,
     events: formattedEvents,
@@ -19572,13 +19649,14 @@ async function apiMatchCenter(request, cfg) {
     dataFreshness: featureMeta,
     quotaMode: providerPublicBudgetMode(),
     availability: {
-      events: events.length > 0,
-      statistics: statistics.length > 0,
+      events: Boolean(featureMeta.events?.confidenceBearing && formattedEvents.length > 0),
+      statistics: Boolean(featureMeta.statistics?.confidenceBearing && formattedStatistics),
       lineups: lineupQuality.anyPublished,
+      lineupsTrusted: Boolean(featureMeta.lineups?.confidenceBearing),
       lineupsConfirmed: lineupQuality.bothConfirmed,
       lineupsPartial: lineupQuality.partialSides > 0,
-      players: playerLeaders.home.length > 0 || playerLeaders.away.length > 0,
-      injuries: injuryRows.length > 0,
+      players: Boolean(featureMeta.players?.confidenceBearing && (playerLeaders.home.length > 0 || playerLeaders.away.length > 0)),
+      injuries: Boolean(featureMeta.injuries?.confidenceBearing && trustedInjuryRows.length > 0),
       limitedCoverage,
     },
     dataCapabilities: publicDataCapabilities(),
@@ -20216,7 +20294,7 @@ async function apiAnalyze(request, cfg, user) {
   try {
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return await trackedFullAiFailureResponse({ error: 'Некорректный номер матча.' },400,'invalid_fixture');
 
-  const cacheKey = `fixture:${fixtureId}:v12-lineup-reliability`;
+  const cacheKey = `fixture:${fixtureId}:v13-freshness-trust`;
   const cached = await getCache(cacheKey, cfg);
   const staleBefore = cached || await getStaleCache(cacheKey, cfg);
   const previousFreshness = staleBefore ? analysisFreshness(staleBefore) : null;
@@ -20364,14 +20442,15 @@ async function apiAnalyze(request, cfg, user) {
   const resolvedOddsMeta = secondaryOdds?.available
     ? usableOddsFeatureMeta(secondaryOdds.meta, market)
     : usableOddsFeatureMeta(oddsResult.meta, primaryMarket, secondaryOdds?.reason || '');
-  const analysisFeatureMeta = {
+  const analysisFeatureMeta = applyFeatureFreshnessMap({
     injuries: injuryResult.meta,
     predictions: predictionResult.meta,
     odds: resolvedOddsMeta,
     h2h: h2hResult.meta,
     lineups: lineupMeta,
-  };
-  const providerReliability = providerDataReliabilitySummary(analysisFeatureMeta, { minutesToKickoff });
+  }, { mode:'upcoming' });
+  const analysisMarket = analysisFeatureMeta.odds?.confidenceBearing === false ? null : market;
+  const providerReliability = providerDataReliabilitySummary(analysisFeatureMeta, { minutesToKickoff, mode:'upcoming' });
   skipped.push(...providerReliability.warnings);
 
   const webPromise = tavilySearch(`${homeName} ${awayName} injuries team news probable lineups latest`, cfg);
@@ -20400,9 +20479,9 @@ async function apiAnalyze(request, cfg, user) {
   const cachedHomePlayerStats = homeTeamIntelligence?.playerStats || null;
   const cachedAwayPlayerStats = awayTeamIntelligence?.playerStats || null;
 
-  const previousMarketSnapshots = market ? await getOddsSnapshots(fixtureId, cfg, 8).catch(() => []) : [];
-  const marketMovement = buildOddsMovement(previousMarketSnapshots, market);
-  if (market) await saveOddsSnapshot(fixtureId, market, cfg).catch(() => false);
+  const previousMarketSnapshots = analysisMarket ? await getOddsSnapshots(fixtureId, cfg, 8).catch(() => []) : [];
+  const marketMovement = buildOddsMovement(previousMarketSnapshots, analysisMarket);
+  if (analysisMarket) await saveOddsSnapshot(fixtureId, analysisMarket, cfg).catch(() => false);
   const apiPrediction = extractPrediction(predictions);
   const h2h = formatH2H(h2hRows, homeId, awayId);
   const baseAbsences = formatAbsences(injuries, homeId, awayId, lineups);
@@ -20420,9 +20499,9 @@ async function apiAnalyze(request, cfg, user) {
   const recentFormProb = formProbabilities(homeForm, awayForm);
   const h2hProb = h2hProbabilities(h2h);
   const calibrationProfile = await getCalibrationProfile(cfg).catch(() => baselineCalibrationProfile());
-  const baselineBlend = blendProbabilitySignals({ market, model: apiPrediction, form: recentFormProb, h2h: h2hProb, weightOverrides: MODEL_BASE_WEIGHTS });
+  const baselineBlend = blendProbabilitySignals({ market:analysisMarket, model: apiPrediction, form: recentFormProb, h2h: h2hProb, weightOverrides: MODEL_BASE_WEIGHTS });
   const blended = calibrationProfile.weightsActive
-    ? blendProbabilitySignals({ market, model: apiPrediction, form: recentFormProb, h2h: h2hProb, weightOverrides: calibrationProfile.signalWeights })
+    ? blendProbabilitySignals({ market:analysisMarket, model: apiPrediction, form: recentFormProb, h2h: h2hProb, weightOverrides: calibrationProfile.signalWeights })
     : baselineBlend;
   const rawProbabilities = applyAbsenceAdjustment(baselineBlend.probabilities, absences);
   const weightedProbabilities = applyAbsenceAdjustment(blended.probabilities, absences);
@@ -20436,7 +20515,7 @@ async function apiAnalyze(request, cfg, user) {
   });
   const confidence = confidenceModel(blended.signals, probabilities, homeForm, awayForm);
   const notes = buildAnalysisNotes({
-    probabilities, market, model: apiPrediction, homeForm, awayForm, h2h, absences, lineups, news: web,
+    probabilities, market:analysisMarket, model: apiPrediction, homeForm, awayForm, h2h, absences, lineups, news: web,
     homeName, awayName, minutesToKickoff, confidence,
   });
   notes.risks.push(...providerReliability.warnings);
@@ -20448,7 +20527,7 @@ async function apiAnalyze(request, cfg, user) {
   }
 
   const availableSignals = [
-    market && 'market',
+    analysisMarket && 'market',
     apiPrediction && 'apiPrediction',
     homeForm?.overall && awayForm?.overall && 'recentForm',
     h2hRows.length && 'h2h',
@@ -20458,7 +20537,7 @@ async function apiAnalyze(request, cfg, user) {
   ].filter(Boolean);
 
   const completenessPreview = {
-    score: [fixture, market, apiPrediction, injuries.length, h2hRows.length, lineupQuality.bothConfirmed, web.answer, homeForm?.overall, awayForm?.overall, goalModel].filter(Boolean).length,
+    score: [fixture, analysisMarket, apiPrediction, injuries.length, h2hRows.length, lineupQuality.bothConfirmed, web.answer, homeForm?.overall, awayForm?.overall, goalModel].filter(Boolean).length,
     max: 10,
     providerReliability: {
       state: providerReliability.state,
@@ -20470,7 +20549,7 @@ async function apiAnalyze(request, cfg, user) {
   const preMatchIntelligence = buildPreMatchIntelligence({
     probabilities,
     rawProbabilities,
-    market,
+    market:analysisMarket,
     apiPrediction,
     homeForm,
     awayForm,
@@ -20490,7 +20569,7 @@ async function apiAnalyze(request, cfg, user) {
 
   const payload = {
     generatedAt: new Date().toISOString(),
-    analysisVersion: '4.12.0-lineup-reliability',
+    analysisVersion: '4.13.0-freshness-trust',
     match: {
       fixtureId, date: fixture.fixture?.date || '', status: fixture.fixture?.status?.short || '',
       venue: fixture.fixture?.venue?.name || '', city: fixture.fixture?.venue?.city || '',
@@ -20542,6 +20621,12 @@ async function apiAnalyze(request, cfg, user) {
         state:String(meta?.state || 'unknown'),
         fetchedAt:meta?.fetchedAt || null,
         ageSeconds:Number.isFinite(Number(meta?.ageSeconds)) ? Number(meta.ageSeconds) : null,
+        sourceUpdatedAt:meta?.sourceUpdatedAt || null,
+        freshnessState:String(meta?.freshnessState || 'unknown'),
+        provenanceState:String(meta?.provenanceState || 'unknown'),
+        freshnessLimitSeconds:Number.isFinite(Number(meta?.freshnessLimitSeconds)) ? Number(meta.freshnessLimitSeconds) : null,
+        confidenceBearing:Boolean(meta?.confidenceBearing),
+        stale:Boolean(meta?.stale),
       }])),
       playerRoleHydration:{
         home:{source:homeRoleHydration.source,network:Boolean(homeRoleHydration.network),stale:Boolean(homeRoleHydration.stale),reason:String(homeRoleHydration.reason || '')},
@@ -20553,7 +20638,7 @@ async function apiAnalyze(request, cfg, user) {
         state:web?.answer || web?.results?.length ? 'available' : 'unavailable',
       },
     },
-    market, marketMovement, apiPrediction, recentForm: { home: homeForm, away: awayForm }, goalModel, comparison, absences, lineups, lineupQuality, lineupImpact, h2h,
+    market:analysisMarket, marketMovement, apiPrediction, recentForm: { home: homeForm, away: awayForm }, goalModel, comparison, absences, lineups, lineupQuality, lineupImpact, h2h,
     preMatchIntelligence,
     aiInstructor: buildAiInstructor({ probabilities, goalModel, confidence, completeness: completenessPreview, factors: notes.factors, risks: [...(notes.risks || []), ...skipped], referee: fixture.fixture?.referee || '', refereeData: refereeProfile(fixture.fixture?.referee || ''), refereeHistory, lineupImpact, marketMovement, providerReliability, minutesToKickoff }),
     insights: notes.factors, risks: [...(notes.risks || []), ...skipped], news: web,
@@ -21071,6 +21156,7 @@ export default {
         playerRoleHydration: 'enabled',
         lineupQualityGuard: 'enabled',
         lineupSemanticReliability: 'enabled',
+        freshnessAwareDataTrust: 'enabled',
         footballDataScorersFallback: cfg.footballDataToken ? 'enabled' : 'available_when_configured',
         footballDataStandingsFallback: cfg.footballDataToken ? 'enabled' : 'available_when_configured',
         theOddsApiOddsFallback: cfg.theOddsApiKey ? 'enabled' : 'available_when_configured',

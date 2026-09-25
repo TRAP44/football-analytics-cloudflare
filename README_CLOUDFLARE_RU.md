@@ -1,4 +1,6 @@
-# Football Analytics Mini App v6.114.0 — RC138
+# Football Analytics Mini App v6.115.0 — RC139
+
+- RC139: **Freshness-aware Data Trust** — live status/events/statistics/players/injuries/odds получают единый verdict по возрасту, stale-state и provenance; устаревшие данные остаются наблюдаемыми, но исключаются из live pressure/AI/market blend и odds snapshots. The Odds API учитывает upstream `updatedAt`, а stale Match Center failover не возвращает старые live-сигналы как актуальные. Analysis cache переведён на `v13-freshness-trust`, model-input contract — `4.13.0-freshness-trust`. Новых API-ключей и Supabase DDL не требуется.
 
 Telegram-бот и Mini App для футбольной аналитики на Cloudflare Workers + Supabase. Основные источники данных: API-Football и Tavily. Интерфейс и админ-панель — на русском языке. Монетизация пока отключена.
 

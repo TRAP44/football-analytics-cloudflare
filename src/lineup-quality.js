@@ -136,6 +136,7 @@ export function annotateLineupReliability(meta = {}, matchQuality = {}) {
       confirmed: false,
       partial: false,
       stale: sourceReliability.stale,
+      confidenceBearing: false,
       lineupQuality: quality,
     };
   }
@@ -157,6 +158,7 @@ export function annotateLineupReliability(meta = {}, matchQuality = {}) {
       confirmed: false,
       partial: false,
       stale: true,
+      confidenceBearing: false,
       reason: 'lineup_stale',
       lineupQuality: quality,
     };
@@ -179,6 +181,7 @@ export function annotateLineupReliability(meta = {}, matchQuality = {}) {
       confirmed: false,
       partial: false,
       stale: false,
+      confidenceBearing: false,
       reason: 'lineup_provenance_missing',
       lineupQuality: quality,
     };
@@ -197,6 +200,7 @@ export function annotateLineupReliability(meta = {}, matchQuality = {}) {
       confirmed: true,
       partial: false,
       stale: false,
+      confidenceBearing: Boolean(originalAvailable && originalUsable),
       lineupQuality: quality,
     };
   }
@@ -214,6 +218,7 @@ export function annotateLineupReliability(meta = {}, matchQuality = {}) {
     confirmed: false,
     partial: true,
     stale: sourceReliability.stale,
+    confidenceBearing: false,
     reason: 'lineup_incomplete',
     lineupQuality: quality,
   };

@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.114.0-rc138';
+const CLIENT_VERSION = '6.115.0-rc139';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc138';
+const CLIENT_RELEASE_CHANNEL = 'rc139';
 const SUPABASE_SCHEMA_HINT = 'проверьте актуальную схему Supabase (baseline v6.18 / миграции до v6.19)';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
@@ -7009,6 +7009,7 @@ function dataProvenanceHtml(provenance = {}) {
     available:'получено', empty_response:'пустой подтверждённый ответ', skipped:'пропущено политикой',
     rate_limited:'лимит источника', plan_limited:'ограничено тарифом', timeout:'тайм-аут',
     network_error:'ошибка сети', provider_error:'ошибка источника', error:'недоступно', unknown:'неизвестно',
+    stale_data:'устарело — исключено из расчёта', unverified_source:'источник не подтверждён', unverified_freshness:'свежесть не подтверждена',
   };
   const rows = Object.entries(labels).filter(([key]) => features[key]).map(([key,label]) => {
     const meta = features[key] || {};

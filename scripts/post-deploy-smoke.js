@@ -20,6 +20,7 @@ const REQUIRED_HEALTH_FLAGS = [
   'playerRoleHydration',
   'lineupQualityGuard',
   'lineupSemanticReliability',
+  'freshnessAwareDataTrust',
   'sourceProvenance',
   'aiAnalysisQualityGate',
   'aiAnalysisQualityGateSelfTest',
