@@ -137,7 +137,7 @@ test('RC133 feature remains part of the RC136 release health contract', () => {
   assert.match(worker, /teamPlayerSeasonStats: 'enabled'/);
   assert.match(worker, /footballDataScorersFallback: cfg\.footballDataToken \? 'enabled' : 'available_when_configured'/);
   assert.match(worker, /const APP_VERSION = '6\.114\.0-rc138'/);
-  assert.match(worker, /const RC_NAME = 'RC138'/);
+  assert.match(worker, /const RC_NAME = 'RC139'/);
   assert.match(app, /const CLIENT_VERSION = '6\.114\.0-rc138'/);
 });
 

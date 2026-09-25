@@ -114,3 +114,17 @@ test('RC139 lineup semantics align confidence-bearing state with structural conf
   assert.match(lineup, /confidenceBearing: Boolean\(originalAvailable && originalUsable\)/);
   assert.match(lineup, /partial: true,[\s\S]{0,100}confidenceBearing: false/);
 });
+
+
+const smoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
+const app = fs.readFileSync('public/app.js', 'utf8');
+
+test('RC139 is part of the production release health contract', () => {
+  assert.match(worker, /const APP_VERSION = '6\.115\.0-rc139'/);
+  assert.match(worker, /const RC_NAME = 'RC139'/);
+  assert.match(worker, /freshnessAwareDataTrust: 'enabled'/);
+  assert.match(worker, /analysisVersion: '4\.13\.0-freshness-trust'/);
+  assert.match(worker, /fixture:\$\{fixtureId\}:v13-freshness-trust/);
+  assert.match(app, /const CLIENT_VERSION = '6\.115\.0-rc139'/);
+  assert.match(smoke, /'freshnessAwareDataTrust'/);
+});
