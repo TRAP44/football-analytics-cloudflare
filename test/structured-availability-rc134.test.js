@@ -112,7 +112,7 @@ test('RC134 Match Center renders structured absence categories and doubt status'
   assert.match(app, /function absenceKindLabel\(row = \{\}\)/);
   assert.match(app, /Дисквалификация/);
   assert.match(app, /Под вопросом/);
-  assert.match(app, /Травмы, болезни, дисквалификации и сомнения по данным источника/);
+  assert.match(app, /🩺 Потери состава/);
   assert.match(app, /Сверка с опубликованными составами сняла устаревших отметок/);
 });
 

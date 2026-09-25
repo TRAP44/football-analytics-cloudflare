@@ -107,7 +107,7 @@ const state = {
   },
   filter: 'top',
   search: '',
-  globalSearch: { query: '', mode: 'all', remoteTeams: [], knownTeams: [], remoteCompetitions: [], remoteMatches: [], matchSourceTeam: '', matchDiscovery: null, primaryFixtureId: null, loading: false, warning: '', searchedAt: null, requestSeq: 0 },
+  globalSearch: { query: '', mode: 'all', remoteTeams: [], knownTeams: [], remoteCompetitions: [], remoteMatches: [], matchSourceTeam: '', matchDiscovery: null, primaryFixtureId: null, loading: false, status: 'idle', warning: '', searchedAt: null, requestSeq: 0 },
   currentAnalysis: null,
   currentAnalysisTab: 'brief',
   analysisBackView: 'matchesView',
@@ -214,7 +214,7 @@ const VIEW_CHROME = {
   teamView: ['Команда', 'Матчи и данные клуба'],
   analysisView: ['AI-разбор', 'Вердикт, причины, составы, судья, рынок и риски'],
   historyView: ['История AI', 'Ваши последние сохранённые разборы'],
-  profileView: ['Администрирование', 'Служебные настройки проекта'],
+  profileView: ['Профиль', 'Оформление, избранное и настройки'],
 };
 
 function syncTopbar(id) {
@@ -748,8 +748,8 @@ async function runStartupSequence() {
   renderProfile();
   applyRuntimeUi();
   const admin=isAdmin();
-  if ($('profileBtn')) $('profileBtn').hidden=!admin;
-  if ($('navProfile')) $('navProfile').hidden=!admin;
+  if ($('profileBtn')) $('profileBtn').hidden=false;
+  if ($('navProfile')) $('navProfile').hidden=false;
   if ($('navMatches')) $('navMatches').hidden=false;
   const startupTasks = [loadFavorites(), loadMatches()];
   if (admin) startupTasks.push(loadReminders());
@@ -4325,29 +4325,29 @@ function renderGlobalSearch() {
   wrap.hidden = false;
   if (meta) meta.textContent = `${russianCountLabel(teams.length || knownTeams.length, 'команда', 'команды', 'команд')} · ${russianCountLabel(comps.length, 'лига', 'лиги', 'лиг')} · ${russianCountLabel(matches.length, 'матч', 'матча', 'матчей')}`;
   if (status) {
-    const resolvedNote = state.globalSearch.resolvedQuery
-      ? `<div class="data-notice">🌍 Распознано глобально: <strong>${escapeHtml(state.globalSearch.resolvedQuery)}</strong></div>`
+    const localCount = local.teams.length + local.competitions.length + local.matches.length;
+    const stateName = String(state.globalSearch.status || (state.globalSearch.loading ? 'searching' : 'idle'));
+    const resolved = state.globalSearch.resolvedQuery
+      ? `<small class="search-state-note">Понял запрос: <strong>${escapeHtml(state.globalSearch.resolvedQuery)}</strong></small>`
       : '';
-    const discovery=state.globalSearch.matchDiscovery;
-    const sourceNote = state.globalSearch.matchSourceTeam && matches.length
-      ? discovery?.mode === 'recent'
-        ? `<div class="data-notice">🕘 ${escapeHtml(state.globalSearch.matchSourceTeam)}: ближайших матчей сейчас нет — показываю последние завершённые игры.</div>`
-        : `<div class="data-notice">⚽ Матчи: ${escapeHtml(state.globalSearch.matchSourceTeam)} · ближайшие и последние игры</div>`
-      : '';
-    const selectionNote = Number(state.globalSearch.primaryFixtureId || 0) && discovery?.primaryReason
-      ? `<div class="data-notice primary-selection-note">⭐ FM AI выбрал основной матч: <strong>${escapeHtml(discovery.primaryReason)}</strong>.</div>`
-      : '';
-    const emptyCalendarNote = state.globalSearch.matchSourceTeam && discovery?.mode === 'empty'
-      ? `<div class="data-notice">🗓 ${escapeHtml(state.globalSearch.matchSourceTeam)} найден. В окне ${Number(discovery.windowPastDays || 30)} дней назад / ${Number(discovery.windowFutureDays || 120)} дней вперёд календарь не вернулся — откройте карточку команды или повторите поиск позже.</div>`
-      : '';
-    const knownNote = !teams.length && knownTeams.length
-      ? `<div class="data-notice">✅ Клуб распознан глобальным каталогом. Матчи появятся здесь, как только источник данных вернёт доступный календарь.</div>`
-      : '';
-    status.innerHTML = state.globalSearch.loading
-      ? '<div class="data-notice">🔎 Ищу команды, лиги и матчи…</div>'
-      : state.globalSearch.warning
-        ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.globalSearch.warning)}</div>${resolvedNote}${knownNote}${selectionNote}${emptyCalendarNote}${sourceNote}`
-        : `${resolvedNote}${knownNote}${selectionNote}${emptyCalendarNote}${sourceNote}`;
+    if (state.globalSearch.loading) {
+      status.innerHTML = localCount
+        ? `<div class="search-state is-refreshing"><span>↻</span><div><strong>Обновляем результаты</strong><small>Найденное уже можно открывать.</small></div></div>`
+        : `<div class="search-state is-searching"><span>🔎</span><div><strong>Ищем</strong><small>Проверяем доступные матчи и команды.</small></div></div>`;
+    } else if (stateName === 'timeout') {
+      status.innerHTML = `<div class="search-state is-warning"><span>⏱</span><div><strong>Источник отвечает слишком долго</strong><small>Показали всё, что уже было доступно. Приложением можно пользоваться дальше.</small></div><button id="searchRetryBtn" class="secondary-btn" type="button">Повторить</button></div>`;
+    } else if (stateName === 'error') {
+      status.innerHTML = `<div class="search-state is-warning"><span>↻</span><div><strong>Не удалось обновить поиск</strong><small>${escapeHtml(state.globalSearch.warning || 'Показаны доступные локальные результаты.')}</small></div><button id="searchRetryBtn" class="secondary-btn" type="button">Повторить</button></div>`;
+    } else if (matches.length) {
+      status.innerHTML = `<div class="search-state is-success"><span>✓</span><div><strong>Матч найден</strong><small>${matches.length > 1 ? `Найдено матчей: ${matches.length}` : 'Можно открыть карточку или запустить анализ.'}</small>${resolved}</div></div>`;
+    } else if (teams.length || knownTeams.length || comps.length) {
+      status.innerHTML = `<div class="search-state is-success"><span>✓</span><div><strong>Команда или турнир найден</strong><small>Откройте результат — доступные матчи появятся внутри.</small>${resolved}</div></div>`;
+    } else if (query.length >= 2 && ['empty','done'].includes(stateName)) {
+      status.innerHTML = '<div class="search-state"><span>—</span><div><strong>Матчей сейчас нет</strong><small>Попробуйте другое название или повторите поиск позже.</small></div></div>';
+    } else {
+      status.innerHTML = '';
+    }
+    $('searchRetryBtn')?.addEventListener('click', () => runGlobalSearch({ manual:true }));
   }
 
   const sections = [];
@@ -4367,17 +4367,17 @@ function renderGlobalSearch() {
     sections.push(`<section class="panel search-result-block"><div class="mini-section-head"><strong>Завершённые матчи</strong><span>${finished.length}</span></div><div class="search-match-list">${finished.slice(0,12).map(searchMatchCard).join('')}</div></section>`);
   }
 
-  out.innerHTML = sections.join('') || `<div class="empty search-empty-state">
+  out.innerHTML = sections.join('') || (state.globalSearch.loading ? '' : `<div class="empty search-empty-state">
     <strong>Ничего не найдено в этом разделе</strong>
     <p>Попробуйте другое название команды или лиги либо переключите фильтр поиска.</p>
     <div class="empty-actions"><button id="searchEmptyAll" class="secondary-btn" type="button">Показать всё</button></div>
-  </div>`;
+  </div>`);
   bindDiscoveryActions(out);
   bindSearchMatchActions(out);
   $('searchEmptyAll')?.addEventListener('click', () => setGlobalSearchMode('all'));
 }
 
-async function runGlobalSearch() {
+async function runGlobalSearch({ manual = false } = {}) {
   const input = $('globalSearchInput');
   const query = String(input?.value || '').trim();
   const seq = ++state.globalSearch.requestSeq;
@@ -4392,17 +4392,26 @@ async function runGlobalSearch() {
 
   if (query.length < 2 || !runtimeAllows('searchEnabled')) {
     state.globalSearch.loading = false;
+    state.globalSearch.status = query.length < 2 ? 'idle' : 'done';
     state.globalSearch.remoteTeams = [];
     state.globalSearch.remoteCompetitions = [];
-    if (!runtimeAllows('searchEnabled')) state.globalSearch.warning = 'Удалённый поиск временно приостановлен. Поиск по уже загруженным матчам остаётся доступен.';
+    if (!runtimeAllows('searchEnabled')) state.globalSearch.warning = 'Удалённый поиск временно недоступен. Уже загруженные матчи остаются доступны.';
     renderGlobalSearch();
     return;
   }
 
+  const local = localDiscoveryResults(query);
+  const localCount = local.teams.length + local.competitions.length + local.matches.length;
   state.globalSearch.loading = true;
+  state.globalSearch.status = localCount ? 'refreshing' : 'searching';
   renderGlobalSearch();
+
   try {
-    const data = await api(`/api/search?q=${encodeURIComponent(query)}`);
+    const data = await api(`/api/search?q=${encodeURIComponent(query)}`, {
+      timeoutMs: 6500,
+      retry: false,
+      dedupe: false,
+    });
     if (seq !== state.globalSearch.requestSeq || query !== String(state.globalSearch.query || '').trim()) return;
     state.globalSearch.remoteTeams = data.teams || [];
     state.globalSearch.knownTeams = data.knownTeams || [];
@@ -4414,10 +4423,21 @@ async function runGlobalSearch() {
     state.globalSearch.primaryFixtureId = Number(data.primaryFixtureId || data.matchDiscovery?.primaryFixtureId || 0) || null;
     state.globalSearch.warning = data.warning || data.hint || '';
     state.globalSearch.searchedAt = data.refreshedAt || new Date().toISOString();
+    const merged = localDiscoveryResults(query);
+    const totalMatches = mergeById(state.globalSearch.remoteMatches, merged.matches, 'fixtureId').length;
+    const totalEntities = mergeById(merged.teams, state.globalSearch.remoteTeams, 'id').length
+      + mergeById(merged.competitions, state.globalSearch.remoteCompetitions, 'leagueId').length
+      + state.globalSearch.knownTeams.length;
+    state.globalSearch.status = totalMatches ? 'found' : totalEntities ? 'done' : 'empty';
     if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
   } catch (e) {
     if (seq !== state.globalSearch.requestSeq) return;
-    state.globalSearch.warning = e.message;
+    const category = apiErrorCategory(e);
+    state.globalSearch.status = category === 'timeout' ? 'timeout' : 'error';
+    state.globalSearch.warning = category === 'timeout'
+      ? 'Источник отвечает слишком долго.'
+      : friendlyErrorMessage(e);
+    if (manual && category !== 'timeout') toast(state.globalSearch.warning);
   } finally {
     if (seq === state.globalSearch.requestSeq) {
       state.globalSearch.loading = false;
@@ -4468,23 +4488,24 @@ function writeMatchSnapshot(date, data) {
   } catch {}
 }
 
-function applyMatchPayload(data, { snapshot = false } = {}) {
+function applyMatchPayload(data, { snapshot = false, refreshing = false } = {}) {
   state.matches = data.matches || [];
   state.matchesMeta = {
     refreshedAt: data.refreshedAt || null,
     stale: Boolean(data.stale || snapshot),
-    warning: data.warning || (snapshot ? 'Мгновенно показана сохранённая копия. Идёт фоновое обновление.' : ''),
+    warning: data.warning || '',
     retryAfter: Number(data.retryAfter || 0),
     catalog: data.catalog || {},
     integrity: data.integrity || null,
     localSnapshot: snapshot,
+    refreshing: Boolean(refreshing),
   };
   if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
   if (state.filter === 'top' && !state.matches.some(x => personalMatchInsight(x).recommended)) state.filter = 'all';
   syncFilterButtons();
   renderMatches();
   renderDiscoveryHome();
-  $('matches')?.setAttribute('aria-busy', snapshot ? 'true' : 'false');
+  $('matches')?.setAttribute('aria-busy', 'false');
 }
 
 async function loadMatches(options = {}) {
@@ -4494,33 +4515,42 @@ async function loadMatches(options = {}) {
   const date = localDate(state.offset);
   const labels = { '-1': 'Матчи вчера', '0': 'Матчи сегодня', '1': 'Матчи завтра' };
   $('matchesTitle').textContent = labels[String(state.offset)] || 'Матчи';
-  $('matches')?.setAttribute('aria-busy', 'true');
 
-  let snapshot = null;
-  if (!force) snapshot = readMatchSnapshot(date);
-  const canReuseCurrent = state.matches.length && state.matchesMeta?.date === date;
+  const snapshot = !force ? readMatchSnapshot(date) : null;
+  const canReuseCurrent = Boolean(state.matches.length && state.matchesMeta?.date === date);
+
   if (snapshot && !canReuseCurrent) {
-    applyMatchPayload(snapshot, { snapshot: true });
+    applyMatchPayload(snapshot, { snapshot: true, refreshing: true });
     state.matchesMeta.date = date;
-  } else if (!silent && !canReuseCurrent) {
+  } else if (canReuseCurrent) {
+    state.matchesMeta.refreshing = true;
+    renderMatches();
+    $('matches')?.setAttribute('aria-busy', 'false');
+  } else if (!silent) {
     state.matches = [];
+    $('matches')?.setAttribute('aria-busy', 'true');
     $('matches').innerHTML = matchSkeletonHtml();
     $('matchesCount').textContent = '';
     if ($('dataNotice')) $('dataNotice').innerHTML = '';
   }
 
   try {
-    const data = await api(`/api/matches?date=${date}`, { timeoutMs: 10000 });
+    const data = await api(`/api/matches?date=${date}`, {
+      timeoutMs: 6500,
+      retry: false,
+      dedupe: false,
+    });
     if (seq !== state.matchesLoadSeq) return;
     data.refreshedAt ||= new Date().toISOString();
     writeMatchSnapshot(date, data);
-    applyMatchPayload(data, { snapshot: false });
+    applyMatchPayload(data, { snapshot: false, refreshing: false });
     state.matchesMeta.date = date;
   } catch (e) {
     if (seq !== state.matchesLoadSeq) return;
     const retry = Number(e.payload?.retryAfter || 0);
     if (state.matches.length && (snapshot || state.matchesMeta?.date === date)) {
       state.matchesMeta.stale = true;
+      state.matchesMeta.refreshing = false;
       state.matchesMeta.warning = e.message || 'Не удалось обновить данные. Показана последняя сохранённая версия.';
       state.matchesMeta.retryAfter = retry;
       renderMatches();
@@ -4528,7 +4558,7 @@ async function loadMatches(options = {}) {
       return;
     }
     const suffix = retry ? `<br><span class="tiny">Повторите примерно через ${retry} сек.</span>` : '';
-    $('matches').innerHTML = `<div class="empty error-state"><strong>Не удалось загрузить матчи</strong><span>${escapeHtml(e.message)}${suffix}</span><button id="matchesRetryBtn" class="secondary-btn" type="button">Повторить</button></div>`;
+    $('matches').innerHTML = `<div class="empty error-state"><strong>Матчи сейчас не обновились</strong><span>${escapeHtml(e.message)}${suffix}</span><button id="matchesRetryBtn" class="secondary-btn" type="button">Повторить</button></div>`;
     $('matchesRetryBtn')?.addEventListener('click', () => loadMatches({ force: true }));
     $('matches')?.setAttribute('aria-busy', 'false');
   }
@@ -4764,54 +4794,49 @@ function renderPopularCompetitions() {
 }
 
 function matchCardHtml(m, { grouped = false } = {}) {
-  const interest = Math.max(0, Math.min(100, Number(m.interestScore || 0)));
   const aiHistory = analysisHistoryForFixture(m.fixtureId);
   const cardState = m.live ? 'is-live' : m.finished ? 'is-finished' : 'is-upcoming';
   const personalInsight = personalMatchInsight(m);
-  const signal = state.filter === 'top' && personalInsight.reason
-    ? personalInsight.reason
-    : m.featured ? 'Матч дня' : interest >= 80 ? 'Высокий интерес' : interest >= 65 ? 'Стоит внимания' : '';
-  const signalIcon = personalInsight.favorite ? '★' : personalInsight.viewedTeam ? '↺' : m.live ? '●' : m.featured ? '✦' : '🔥';
+  const personalReason = state.filter === 'top' ? personalInsight.reason : '';
   const reminderActive = hasReminder(m.fixtureId);
   const reminderPending = state.reminderMutations.has(Number(m.fixtureId));
   const reminderMinutes = Number(state.preferences?.reminderMinutes || 30);
+  const statusLabel = m.live ? '<b class="match-live-label">🔴 ИДЁТ</b>' : m.finished ? '<span class="match-finished-label">Завершён</span>' : '';
+  const primaryAction = m.live
+    ? `<button class="analyze-btn live-center-btn" type="button" data-center="${Number(m.fixtureId)}">Смотреть матч</button>`
+    : m.finished
+      ? `<button class="analyze-btn finished-btn" type="button" data-center="${Number(m.fixtureId)}">Итоги матча</button>`
+      : aiHistory
+        ? `<button class="analyze-btn analyzed-btn" type="button" data-history-analysis="${Number(m.fixtureId)}">Открыть AI-разбор</button>`
+        : `<button class="analyze-btn" type="button" data-fixture="${Number(m.fixtureId)}">AI-анализ</button>`;
+
   return `
-    <article class="match-card ${Number(m.interestScore || 0) >= 50 ? 'top-match' : ''} ${cardState}">
-      ${grouped ? '' : `<div class="match-meta"><span class="competition-name">${m.featured ? '<b class="top-tag">ГЛАВНЫЙ</b> ' : ''}${escapeHtml(m.league || 'Турнир')}</span><span>${escapeHtml(m.country || '')}</span></div>`}
-      <div class="catalog-row">
-        ${m.category ? `<span class="competition-chip ${categoryClass(m.category)}">${escapeHtml(categoryLabel(m.category))}</span>` : ''}
-        ${m.roundLabel ? `<span class="round-chip">${escapeHtml(m.roundLabel)}</span>` : ''}
-        ${signal ? `<span class="match-signal ${personalInsight.favorite ? 'favorite-signal' : ''}">${signalIcon} ${signal}</span>` : ''}
-        ${m.integrity?.state === 'warning' ? '<span class="integrity-mini warning">⚠ проверяем данные</span>' : ''}
-      </div>
-      ${matchAiSnapshotHtml(m)}
+    <article class="match-card ${cardState}">
+      ${grouped ? '' : `<div class="match-meta"><span class="competition-name">${escapeHtml(m.league || 'Турнир')}</span><span>${statusLabel || escapeHtml(m.country || '')}</span></div>`}
       <div class="team-row">
         <div class="team">
           <button class="fav-star ${isFavorite(m.home?.id) ? 'active' : ''} ${state.favoriteMutations.has(Number(m.home?.id)) ? 'is-pending' : ''}" type="button" data-team-id="${Number(m.home?.id)}" data-team-name="${escapeHtml(m.home?.name || '')}" data-team-logo="${escapeHtml(m.home?.logo || '')}" aria-pressed="${isFavorite(m.home?.id) ? 'true' : 'false'}" aria-label="${isFavorite(m.home?.id) ? 'Удалить из избранного' : 'Добавить в избранное'}: ${escapeHtml(m.home?.name || '')}" ${state.favoriteMutations.has(Number(m.home?.id)) ? 'disabled' : ''}>${isFavorite(m.home?.id) ? '★' : '☆'}</button>
           <button class="team-open-link match-team-open" type="button" data-open-team="${Number(m.home?.id)}" data-team-name="${escapeHtml(m.home?.name || '')}" data-team-logo="${escapeHtml(m.home?.logo || '')}">
             ${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : '<span class="team-logo-fallback">⚽</span>'}
-            <span class="match-team-copy"><strong>${escapeHtml(m.home?.name || '')}</strong><small>Хозяева</small></span>
+            <span class="match-team-copy"><strong>${escapeHtml(m.home?.name || '')}</strong></span>
           </button>
         </div>
         <div class="kickoff ${m.live ? 'live-kickoff' : ''}">${escapeHtml(matchCenter(m))}</div>
         <div class="team away">
           <button class="team-open-link match-team-open away-open" type="button" data-open-team="${Number(m.away?.id)}" data-team-name="${escapeHtml(m.away?.name || '')}" data-team-logo="${escapeHtml(m.away?.logo || '')}">
-            <span class="match-team-copy"><strong>${escapeHtml(m.away?.name || '')}</strong><small>Гости</small></span>
+            <span class="match-team-copy"><strong>${escapeHtml(m.away?.name || '')}</strong></span>
             ${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : '<span class="team-logo-fallback">⚽</span>'}
           </button>
           <button class="fav-star ${isFavorite(m.away?.id) ? 'active' : ''} ${state.favoriteMutations.has(Number(m.away?.id)) ? 'is-pending' : ''}" type="button" data-team-id="${Number(m.away?.id)}" data-team-name="${escapeHtml(m.away?.name || '')}" data-team-logo="${escapeHtml(m.away?.logo || '')}" aria-pressed="${isFavorite(m.away?.id) ? 'true' : 'false'}" aria-label="${isFavorite(m.away?.id) ? 'Удалить из избранного' : 'Добавить в избранное'}: ${escapeHtml(m.away?.name || '')}" ${state.favoriteMutations.has(Number(m.away?.id)) ? 'disabled' : ''}>${isFavorite(m.away?.id) ? '★' : '☆'}</button>
         </div>
       </div>
-      <div class="match-card-actions ${m.live || m.finished ? 'single' : ''}">
-        ${m.live
-          ? `<button class="analyze-btn live-center-btn" type="button" data-center="${Number(m.fixtureId)}">${m.youthReserve ? '🔴 Счёт матча' : '🔴 Центр матча'}</button>`
-          : m.finished
-            ? `<button class="analyze-btn finished-btn" type="button" data-center="${Number(m.fixtureId)}">📋 Итоги матча</button>`
-            : aiHistory
-              ? `<button class="analyze-btn analyzed-btn" type="button" data-history-analysis="${Number(m.fixtureId)}">🧠 Открыть AI-разбор</button>`
-              : `<button class="analyze-btn" type="button" data-fixture="${Number(m.fixtureId)}">🧠 Предматчевый анализ</button>`}
-        ${!m.live && !m.finished ? `<button class="quick-reminder-btn ${reminderActive ? 'active' : ''} ${reminderPending ? 'is-pending' : ''}" type="button" data-quick-reminder="${Number(m.fixtureId)}" aria-pressed="${reminderActive ? 'true' : 'false'}" ${reminderPending ? 'disabled' : ''}>${reminderActive ? '🔔 Напоминание включено' : `🔔 Напомнить за ${reminderMinutes} мин.`}</button>` : ''}
-      </div>
+      <div class="match-card-actions single">${primaryAction}</div>
+      ${!m.live && !m.finished ? `<details class="match-card-more">
+        <summary>Ещё</summary>
+        ${personalReason ? `<div class="match-signal ${personalInsight.favorite ? 'favorite-signal' : ''}">Почему здесь: ${escapeHtml(personalReason)}</div>` : ''}
+        ${aiHistory ? matchAiSnapshotHtml(m) : ''}
+        <button class="quick-reminder-btn ${reminderActive ? 'active' : ''} ${reminderPending ? 'is-pending' : ''}" type="button" data-quick-reminder="${Number(m.fixtureId)}" aria-pressed="${reminderActive ? 'true' : 'false'}" ${reminderPending ? 'disabled' : ''}>${reminderActive ? '🔔 Напоминание включено' : `🔔 Напомнить за ${reminderMinutes} мин.`}</button>
+      </details>` : ''}
     </article>`;
 }
 
@@ -4917,7 +4942,7 @@ function renderMatches() {
     `<span class="summary-pill"><b>${list.length}</b> из ${state.matches.length}</span>`,
     groups.length ? `<span class="summary-pill"><b>${groups.length}</b> турниров</span>` : '',
     Number(catalog.live || 0) > 0 ? `<span class="summary-pill live"><b>${Number(catalog.live)}</b> сейчас идут</span>` : '',
-    age ? `<span class="summary-pill muted-pill">↻ ${escapeHtml(age)}</span>` : '',
+    state.matchesMeta?.refreshing ? '<span class="summary-pill muted-pill refreshing">↻ обновляем</span>' : age ? `<span class="summary-pill muted-pill">↻ ${escapeHtml(age)}</span>` : '',
   ].filter(Boolean);
   $('matchesCount').innerHTML = summaryBits.join('');
   renderDailyOverview();
@@ -4926,7 +4951,7 @@ function renderMatches() {
   renderPopularCompetitions();
   if ($('dataNotice')) {
     const notices = [];
-    if (state.matchesMeta?.stale) notices.push(`<div class="data-notice stale">⚠️ ${escapeHtml(state.matchesMeta.warning || 'Показаны последние сохранённые данные.')}</div>`);
+    if (state.matchesMeta?.stale && !state.matchesMeta?.refreshing) notices.push(`<div class="data-notice stale">⚠️ ${escapeHtml(state.matchesMeta.warning || 'Показаны последние сохранённые данные.')}</div>`);
     if (Number(integrity.quarantined || 0) > 0) notices.push('<div class="data-notice integrity-notice">🛡️ Несколько матчей временно скрыты, пока мы проверяем данные.</div>');
     $('dataNotice').innerHTML = notices.join('');
   }
@@ -5650,7 +5675,7 @@ function availabilityQualityHintHtml(quality = {}) {
     : quality.state === 'sanitized'
       ? `очищено перед аналитикой · исключено: ${Number(quality.rejectedCount || 0)}`
       : quality.state === 'source_untrusted'
-        ? 'источник не прошёл freshness/provenance guard'
+        ? 'данные источника недостаточно свежие или подтверждённые'
         : 'некорректные записи исключены из модели';
   const limited = ['verified','sanitized'].includes(quality.state) ? '' : 'limited';
   return `<div class="coverage-badge ${limited}">Потери · ${escapeHtml(label)} · ${escapeHtml(detail)}</div>`;
@@ -5666,10 +5691,10 @@ function xgQualityHintHtml(quality = {}) {
     : quality.state === 'partial'
       ? `доступно сторон: ${validSides}/2 · не используется для сравнения`
       : quality.state === 'source_untrusted'
-        ? 'источник статистики не прошёл freshness/provenance guard'
+        ? 'статистика источника недостаточно свежая или подтверждённая'
         : quality.state === 'invalid'
           ? 'некорректное значение исключено из аналитики'
-          : 'провайдер не отдал полную пару xG';
+          : 'полная пара xG сейчас недоступна';
   return `<div class="coverage-badge ${trusted ? '' : 'limited'}">xG · ${escapeHtml(label)} · ${escapeHtml(detail)}</div>`;
 }
 
@@ -5682,7 +5707,7 @@ function eventQualityHintHtml(quality = {}) {
     : quality.state === 'sanitized'
       ? `очищено перед аналитикой · проблем: ${issues}`
       : quality.state === 'source_untrusted'
-        ? 'источник не прошёл freshness/provenance guard'
+        ? 'данные источника недостаточно свежие или подтверждённые'
         : 'некорректные записи исключены';
   const limited = quality.state === 'verified' ? '' : 'limited';
   return `<div class="coverage-badge ${limited}">События · ${escapeHtml(label)} · ${escapeHtml(detail)}</div>`;
@@ -5698,7 +5723,7 @@ function statisticsQualityHintHtml(quality = {}) {
     : quality.state === 'sanitized'
       ? `очищено перед аналитикой · ошибок: ${issues} · неполных пар: ${partial}`
       : quality.state === 'source_untrusted'
-        ? 'источник не прошёл freshness/provenance guard'
+        ? 'данные источника недостаточно свежие или подтверждённые'
         : 'некорректные значения исключены';
   const limited = quality.state === 'verified' ? '' : 'limited';
   return `<div class="coverage-badge ${limited}">Статистика · ${escapeHtml(label)} · ${escapeHtml(detail)}</div>`;
@@ -5712,7 +5737,7 @@ function oddsQualityHintHtml(quality = {}) {
     : quality.state === 'sanitized'
       ? 'вероятности пересчитаны из валидных коэффициентов'
       : quality.state === 'source_untrusted'
-        ? 'источник не прошёл freshness/provenance guard'
+        ? 'данные источника недостаточно свежие или подтверждённые'
         : 'некорректный рынок исключён из аналитики';
   const limited = ['verified','sanitized'].includes(quality.state) ? '' : 'limited';
   return `<div class="coverage-badge ${limited}">Рынок · ${escapeHtml(label)} · ${escapeHtml(detail)}</div>`;
@@ -6066,23 +6091,25 @@ function renderMatchCenter(d) {
       ${smartInsightsHeroHtml(d.smartInsights, m)}
       ${livePressureHtml(d.livePressure, m)}
       <section class="panel">
-        <div class="center-section-title"><div><h2>Ключевые показатели</h2><p>Самые полезные метрики в одном экране</p></div><span class="coverage-badge">${escapeHtml(publicText(d.dataCapabilities?.label || 'Покрытие данных'))}</span></div>
+        <div class="center-section-title"><div><h2>Ключевые показатели</h2><p>Самые полезные метрики</p></div></div>
         ${centerKeyStatsHtml(d.statistics)}
-        ${statisticsQualityHintHtml(d.statisticsQuality)}
-        ${xgQualityHintHtml(d.xgQuality)}
       </section>
 
-      ${latestEvents.length ? `<section class="panel"><div class="center-section-title"><div><h2>Последние события</h2><p>Что произошло недавно</p></div></div>${eventQualityHintHtml(d.eventQuality)}${liveEventsHtml(latestEvents)}</section>` : ''}
+      ${latestEvents.length ? `<section class="panel"><div class="center-section-title"><div><h2>Последние события</h2></div></div>${liveEventsHtml(latestEvents)}</section>` : ''}
 
-      ${(d.availabilityQuality?.observed || d.absences?.home?.length || d.absences?.away?.length) ? `<section class="panel"><div class="center-section-title"><div><h2>🩺 Потери состава</h2><p>Травмы, болезни, дисквалификации и сомнения по данным источника</p></div></div>${availabilityQualityHintHtml(d.availabilityQuality)}${centerAbsenceSummary(d.absences,m)}${liveAbsencesHtml(d.absences,m)}</section>` : ''}
+      ${(d.availabilityQuality?.observed || d.absences?.home?.length || d.absences?.away?.length) ? `<section class="panel"><div class="center-section-title"><div><h2>🩺 Потери состава</h2></div></div>${centerAbsenceSummary(d.absences,m)}${liveAbsencesHtml(d.absences,m)}</section>` : ''}
 
-      <section class="panel coverage-panel">
+      <details class="panel analysis-disclosure coverage-panel">
+        <summary>Подробнее о данных</summary>
+        <div class="analysis-disclosure-body">
         <div class="center-section-title"><div><h2>Покрытие и свежесть</h2><p>${d.cached ? 'Данные из сохранённой версии' : 'Свежие данные источника'} · ${dateTime(d.generatedAt)}</p></div></div>
         ${centerCoverageHtml(d)}
         ${centerFreshnessHtml(d)}
         ${d.quotaMode ? `<div class="quota-public-chip">${escapeHtml(publicText(d.quotaMode.label || ''))} · обновление ${Number(d.quotaMode.liveRefreshSeconds || d.refreshSeconds || 0)} сек.</div>` : ''}
         ${d.availability?.limitedCoverage ? '<div class="coverage-badge limited">Ограниченное покрытие · экономим лимит запросов</div>' : ''}
-      </section>
+
+        </div>
+      </details>
     </div>
 
     <div class="center-tab-panel" data-center-panel="insights">
@@ -6092,6 +6119,7 @@ function renderMatchCenter(d) {
     <div class="center-tab-panel" data-center-panel="timeline">
       <section class="panel">
         <div class="center-section-title"><div><h2>⚡ Хронология матча</h2><p>Голы, карточки, замены и видеопросмотры</p></div></div>
+        ${eventQualityHintHtml(d.eventQuality)}
         ${timelineEventsHtml(d.events, m)}
       </section>
     </div>
@@ -7220,6 +7248,22 @@ function matchCockpitHtml(d = {}) {
   </section>`;
 }
 
+function analysisGlanceHtml(d = {}) {
+  const factors = (Array.isArray(d.insights) ? d.insights : []).filter(Boolean).slice(0, 5);
+  const risks = (Array.isArray(d.risks) ? d.risks : []).filter(Boolean).slice(0, 3);
+  const score = Number.isFinite(Number(d.confidence?.score)) ? Math.round(Number(d.confidence.score)) : null;
+  return `<section class="panel analysis-glance">
+    <div class="analysis-glance-head">
+      <div><span>ГЛАВНОЕ</span><h2>Что важно перед матчем</h2></div>
+      <div class="analysis-confidence-simple"><span>Уверенность</span><strong>${score === null ? '—' : `${score}/100`}</strong><small>${escapeHtml(publicText(d.confidence?.label || 'Оценивается'))}</small></div>
+    </div>
+    <div class="analysis-glance-grid">
+      <div><h3>Главные факторы</h3>${factors.length ? `<ol>${factors.map(x => `<li>${escapeHtml(publicText(x))}</li>`).join('')}</ol>` : '<p>Сильных отдельных факторов пока нет.</p>'}</div>
+      <div class="analysis-glance-risks"><h3>Основные риски</h3>${risks.length ? `<ul>${risks.map(x => `<li>${escapeHtml(publicText(x))}</li>`).join('')}</ul>` : '<p>Критичных ограничений не найдено.</p>'}</div>
+    </div>
+  </section>`;
+}
+
 function renderAnalysis(d) {
   if (!d) return;
   const previousFixture = Number(state.currentAnalysis?.match?.fixtureId || 0);
@@ -7252,8 +7296,6 @@ function renderAnalysis(d) {
         <span>${escapeHtml(m.league || 'Турнир')}${m.country ? ` · ${escapeHtml(m.country)}` : ''}</span>
         <span>${dateTime(m.date)}</span>
       </div>
-      ${m.referee ? `<div class="analysis-referee-line"><span>🧑‍⚖️ Судья</span><strong>${escapeHtml(m.referee)}</strong></div>` : ''}
-
       <div class="match-experience-teams">
         <div class="experience-team">
           ${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : '<div class="experience-logo-placeholder">⚽</div>'}
@@ -7276,12 +7318,6 @@ function renderAnalysis(d) {
         <strong>${escapeHtml(d.likelyOutcome || 'Недостаточно данных')}</strong>
       </div>
 
-      ${d.preMatchIntelligence ? `<button class="prematch-brief-jump" id="openPrematchBrief" type="button">
-        <span>🧠 Преданализ матча</span>
-        <strong>${escapeHtml(publicText(d.preMatchIntelligence.headline || ''))}</strong>
-        <small>Открыть причины, сценарии и риски →</small>
-      </button>` : ''}
-
       <div class="experience-prob-labels">
         <div><span>П1</span><strong>${pct(p.home)}</strong></div>
         <div><span>Н</span><strong>${pct(p.draw)}</strong></div>
@@ -7290,9 +7326,9 @@ function renderAnalysis(d) {
       ${probabilityStrip(p)}
 
       <div class="experience-health-row">
-        <span class="quality-pill ${quality.cls}">● ${quality.label}</span>
-        <span>${d.stale ? '⚠️ Последние сохранённые данные' : d.cached ? '⚡ Сохранённые данные' : '🆕 Свежий'} · ${d.completeness?.score ?? 0}/${d.completeness?.max ?? 10}</span>
-        <span>Обновлено ${d.generatedAt ? `${timeOf(d.generatedAt)} · ${relativeAge(d.generatedAt)}` : '—'}</span>
+        <span class="quality-pill ${quality.cls}">● ${escapeHtml(publicText(confidence.label || quality.label || 'Оценивается'))}</span>
+        <span>${confidence.score ?? '—'}/100 уверенность</span>
+        ${d.stale ? '<span>⚠️ Показана последняя доступная версия</span>' : ''}
       </div>
 
       <div class="experience-actions">
@@ -7306,15 +7342,9 @@ function renderAnalysis(d) {
 
     ${d.stale ? `<section class="panel stale-panel"><strong>⚠️ Использован последний сохранённый анализ</strong><p>${escapeHtml(d.warning || 'Свежие данные временно недоступны из-за ограничения источника данных.')}</p></section>` : ''}
 
-    ${analysisFreshnessHtml(d.freshness || {}, d.recheck || {})}
-
     ${kickoffHandoffHtml(d.kickoffHandoff || {}, m)}
 
-    ${matchCockpitHtml(d)}
-
-    ${providerCoverageHtml(d.providerReliability || d.dataPolicy?.reliability || {})}
-
-    ${aiInstructorHtml(d.aiInstructor || {}, m, d.kickoffHandoff || {})}
+    ${analysisGlanceHtml(d)}
 
     <div class="analysis-tabs" role="tablist">
       <button class="analysis-tab-btn" data-tab="brief" type="button">Главное</button>
@@ -7328,27 +7358,12 @@ function renderAnalysis(d) {
 
     <div class="analysis-tab-panel" data-panel="brief">
       ${prematchBriefHtml(d.preMatchIntelligence, m, p)}
+      ${aiInstructorHtml(d.aiInstructor || {}, m, d.kickoffHandoff || {})}
     </div>
 
     <div class="analysis-tab-panel" data-panel="overview">
-      <section class="panel experience-dashboard">
-        <div class="dashboard-metric confidence-metric">
-          <span>Уверенность модели</span>
-          <strong>${confidence.score ?? '—'}/100</strong>
-          <small>${escapeHtml(publicText(confidence.label || '—'))}</small>
-          <div class="confidence-bar"><span style="width:${confidenceScore}%"></span></div>
-        </div>
-        <div class="dashboard-metric">
-          <span>Источники</span>
-          <strong>${escapeHtml(analysisSourceStatus(d))}</strong>
-          <small>Сигналы объединяются динамически</small>
-        </div>
-        <div class="dashboard-metric">
-          <span>Расхождение</span>
-          <strong>${Number.isFinite(Number(confidence.disagreement)) ? `${Number(confidence.disagreement).toFixed(1)} п.п.` : '—'}</strong>
-          <small>Чем меньше, тем согласованнее источники</small>
-        </div>
-      </section>
+      ${matchCockpitHtml(d)}
+
 
       <section class="panel">
         <h2>🧩 Почему такая оценка</h2>
@@ -7416,12 +7431,7 @@ function renderAnalysis(d) {
         </div>
       </section>
 
-      <section class="panel comparison-reuse-panel">
-        <div class="comparison-section-head"><h2>♻️ Переиспользование данных</h2><span>+${Number(comparison.dataReuse?.separateApiRequests || 0)} доп. запросов</span></div>
-        <p>${escapeHtml(publicText(comparison.dataReuse?.note || 'Сравнение использует уже загруженные данные.'))}</p>
-        <div class="reuse-chips">${(comparison.dataReuse?.sources || []).map(x=>`<span>${escapeHtml(publicText(x))}</span>`).join('')}</div>
-        <div class="reuse-status"><span>${comparison.dataReuse?.seasonStatsCached ? '✓' : '—'} Сезонная статистика из сохранённых данных</span><span>${comparison.dataReuse?.standingsCached ? '✓' : '—'} Таблица из сохранённых данных</span></div>
-      </section>
+
     </div>
 
     <div class="analysis-tab-panel" data-panel="market">
@@ -7435,7 +7445,9 @@ function renderAnalysis(d) {
         </div>
         <p class="muted">Букмекеров в выборке: ${market?.bookmakers ?? '—'}. Коэффициенты отражают рынок, а не гарантированный исход.</p>
       </section>
-      <section class="panel">
+      <details class="panel analysis-disclosure">
+        <summary>Подробнее о расчёте</summary>
+        <div class="analysis-disclosure-body">
         <h2>🧠 Состав модели</h2>
         <p class="muted">${escapeHtml(publicText(d.modelBreakdown?.method || 'Модель объединяет доступные статистические сигналы.'))}</p>
         <div class="model-weights">${escapeHtml(modelWeightsText(d.modelBreakdown?.weights || {}))}</div>
@@ -7445,7 +7457,9 @@ function renderAnalysis(d) {
           <strong>${escapeHtml(pred?.winner || 'Нет данных')}</strong>
           <small>${escapeHtml(predictionAdviceLabel(pred?.advice || 'Подсказка недоступна'))}</small>
         </div>
-      </section>
+
+        </div>
+      </details>
     </div>
 
     <div class="analysis-tab-panel" data-panel="squads">
@@ -7472,9 +7486,14 @@ function renderAnalysis(d) {
         <p class="context-answer">${escapeHtml(news.answer || 'Источник свежего веб-контекста не подключён или сводка не найдена.')}</p>
         ${news.results?.length ? `<div class="news-links">${news.results.slice(0, 5).map(r => `<a href="${safeUrl(r.url)}" target="_blank" rel="noopener">↗ ${escapeHtml(r.title || 'Источник')}</a>`).join('')}</div>` : ''}
       </section>
-      ${dataProvenanceHtml(d.dataProvenance || {})}
-      <section class="panel data-transparency-panel">
-        <h2>🔎 Прозрачность данных</h2>
+      <details class="panel analysis-disclosure data-details-disclosure">
+        <summary>Подробнее о данных</summary>
+        <div class="analysis-disclosure-body">
+          ${analysisFreshnessHtml(d.freshness || {}, d.recheck || {})}
+          ${providerCoverageHtml(d.providerReliability || d.dataPolicy?.reliability || {})}
+          ${dataProvenanceHtml(d.dataProvenance || {})}
+          <section class="data-transparency-panel">
+        <h2>Техническая информация</h2>
         <div class="transparency-grid">
           <div><span>Полнота</span><strong>${d.completeness?.score ?? 0}/${d.completeness?.max ?? 10}</strong></div>
           <div><span>Анализ</span><strong>v${escapeHtml(d.analysisVersion || '—')}</strong></div>
@@ -7483,7 +7502,10 @@ function renderAnalysis(d) {
         </div>
         ${d.dataPolicy?.skipped?.length ? `<div class="policy-list"><strong>Что было пропущено для экономии/качества:</strong><ul>${d.dataPolicy.skipped.map(x => `<li>${escapeHtml(publicText(x))}</li>`).join('')}</ul></div>` : ''}
         <p class="tiny warning">${escapeHtml(publicText(d.disclaimer || ''))}</p>
-      </section>
+          </section>
+        </div>
+      </details>
+      ${m.referee ? `<section class="panel analysis-referee-line"><h2>🧑‍⚖️ Судья</h2><p>${escapeHtml(m.referee)}</p></section>` : ''}
     </div>
   `;
 
@@ -7630,6 +7652,7 @@ $('connectionRetryBtn')?.addEventListener('click', () => recoverActiveView({ aut
 updateConnectionBanner();
 
 let matchSearchTimer = null;
+let globalSearchTimer = null;
 
 document.querySelectorAll('.date-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -7683,19 +7706,33 @@ $('matchSearch').addEventListener('input', e => {
   matchSearchTimer = setTimeout(renderMatches, 110);
 });
 
-$('globalSearchBtn')?.addEventListener('click', runGlobalSearch);
+$('globalSearchBtn')?.addEventListener('click', () => {
+  clearTimeout(globalSearchTimer);
+  runGlobalSearch({ manual:true });
+});
 $('globalSearchInput')?.addEventListener('input', e => {
+  clearTimeout(globalSearchTimer);
   state.globalSearch.requestSeq += 1;
   state.globalSearch.loading = false;
   state.globalSearch.query = e.target.value || '';
+  state.globalSearch.status = state.globalSearch.query.trim().length >= 2 ? 'local' : 'idle';
   state.globalSearch.remoteTeams = [];
   state.globalSearch.remoteCompetitions = [];
   state.globalSearch.remoteMatches = [];
   state.globalSearch.matchSourceTeam = '';
   state.globalSearch.warning = '';
   renderGlobalSearch();
+  if (state.globalSearch.query.trim().length >= 2) {
+    globalSearchTimer = setTimeout(() => runGlobalSearch(), 280);
+  }
 });
-$('globalSearchInput')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); runGlobalSearch(); } });
+$('globalSearchInput')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    clearTimeout(globalSearchTimer);
+    runGlobalSearch({ manual:true });
+  }
+});
 document.querySelectorAll('[data-search-mode]').forEach(btn => btn.addEventListener('click', () => setGlobalSearchMode(btn.dataset.searchMode || 'all')));
 $('clearRecentTeamsBtn')?.addEventListener('click', clearRecentTeams);
 $('refreshBtn').addEventListener('click', () => loadMatches({ force: true }));

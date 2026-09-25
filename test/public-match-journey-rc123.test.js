@@ -10,7 +10,7 @@ test('RC123 exposes today matches as a public Mini App destination',()=>{
   assert.match(html,/id="navMatches" class="nav-item" type="button"><span>⚽<\/span><small>Матчи<\/small>/);
   assert.doesNotMatch(html,/id="navMatches"[^>]*hidden/);
   assert.match(app,/matchesView: \['Матчи', 'Сегодня, LIVE и ближайшие игры для AI-разбора'\]/);
-  assert.match(css,/grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
+  assert.match(css,/grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/);
 });
 
 test('RC123 prepares the public match journey during startup',()=>{
@@ -19,9 +19,10 @@ test('RC123 prepares the public match journey during startup',()=>{
   assert.match(app,/if \(\$\('navMatches'\)\) \$\('navMatches'\)\.hidden=false/);
 });
 
-test('RC123 keeps search-first launch and admin-only profile separation',()=>{
+test('search-first launch exposes the user profile while admin panels remain gated',()=>{
   assert.match(html,/id="searchView" class="view active"/);
-  assert.match(html,/id="navProfile"[^>]*hidden/);
+  assert.match(html,/id="navProfile" class="nav-item" type="button"><span>👤<\/span><small>Профиль<\/small>/);
+  assert.match(html,/class="panel admin-console" data-admin-only hidden/);
   assert.match(app,/showView\('searchView', \{ restore: true \}\)/);
-  assert.match(app,/if \(\$\('navProfile'\)\) \$\('navProfile'\)\.hidden=!admin/);
+  assert.match(app,/if \(\$\('navProfile'\)\) \$\('navProfile'\)\.hidden=false/);
 });
