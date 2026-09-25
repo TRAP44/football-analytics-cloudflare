@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeFixtureAbsences } from '../src/availability.js';
@@ -78,4 +79,26 @@ test('RC134 can reconcile by normalized player name when provider id is absent',
 
   assert.equal(data.away.length, 0);
   assert.equal(data.resolvedByLineup.away.length, 1);
+});
+
+
+const worker = fs.readFileSync('src/worker.js', 'utf8');
+
+test('RC134 both Match Center and AI analysis reconcile absences against lineups', () => {
+  assert.match(worker, /const absences = formatAbsences\(injuryRows, homeId, awayId, lineups\)/);
+  assert.match(worker, /const absences = formatAbsences\(injuries, homeId, awayId, lineups\)/);
+  assert.match(worker, /return normalizeFixtureAbsences\(rows, \{ homeId, awayId, lineups \}\)/);
+});
+
+test('RC134 doubtful players have reduced model adjustment instead of full confirmed-out weight', () => {
+  assert.match(worker, /row\?\.status === 'doubtful' \? 0\.5 : 1/);
+  assert.match(worker, /absenceAdjustmentUnits\(absences\?\.home\)/);
+  assert.match(worker, /absenceAdjustmentUnits\(absences\?\.away\)/);
+});
+
+test('RC134 lineup impact exposes injuries, suspensions, doubts and reconciled rows separately', () => {
+  assert.match(worker, /categories:\{home:\{injuryOrIllness:hi,suspension:hs,doubtful:hd\}/);
+  assert.match(worker, /resolvedByLineup:reconciled/);
+  assert.match(worker, /дисквалификации \$\{hs\}:\$\{as\}/);
+  assert.doesNotMatch(worker, /Баланс подтверждённых потерь близкий/);
 });
