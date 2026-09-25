@@ -14235,7 +14235,9 @@ async function apiClientTelemetry(request, cfg, user) {
     if (memory.clientTelemetryDedupe.size > 1500) pruneMemoryState();
   }
 
-  const betaMeta = isClosedBetaUser(user, cfg) ? { betaCohort: CLOSED_BETA_COHORT } : {};
+  const betaMeta = isClosedBetaUser(user, cfg)
+    ? { betaCohort: CLOSED_BETA_COHORT, betaMembershipVerified: true }
+    : {};
   if (event === 'boot_ok') {
     const attribution=await ensureLaunchAttribution(user.id,meta.startParam || '',cfg);
     void recordGrowthEvent(cfg,{userId:user.id,eventName:'miniapp_open',channel:'miniapp',attribution,metadata:{view:meta.view || '',clientVersion:meta.clientVersion || '',releaseChannel:meta.releaseChannel || '',...betaMeta}});
@@ -14350,7 +14352,7 @@ async function apiBetaFeedback(request, cfg, user) {
     code:'BETA_FEEDBACK',
     message:`Beta feedback: ${note}`,
     endpoint:'/api/beta-feedback',
-    meta:{category,betaSeverity,explicitUserFeedback:true,betaCohort:CLOSED_BETA_COHORT},
+    meta:{category,betaSeverity,explicitUserFeedback:true,betaCohort:CLOSED_BETA_COHORT,betaMembershipVerified:true},
   });
   return json({ok:true});
 }
@@ -14443,7 +14445,7 @@ async function apiBetaDashboard(request,cfg) {
   let growthTruncated=false;
   try {
     const page=await supaSelectPaged(cfg,'growth_events',{created_at:`gte.${since}`},{pageSize:1000,maxRows:10000,order:'created_at.asc'});
-    growthRows=(page.rows || []).filter(row=>String(row?.metadata?.betaCohort || '')===CLOSED_BETA_COHORT);
+    growthRows=(page.rows || []).filter(row=>String(row?.metadata?.betaCohort || '')===CLOSED_BETA_COHORT && row?.metadata?.betaMembershipVerified===true);
     growthTruncated=Boolean(page.truncated);
   } catch (error) {
     return json({available:false,reason:'Не удалось прочитать privacy-safe beta telemetry.',days});
@@ -14452,7 +14454,7 @@ async function apiBetaDashboard(request,cfg) {
     readOpsEventsRange(cfg,since,end,1000),
     collectDiagnostics(cfg).catch(()=>({})),
   ]);
-  const opsRows=(opsResult.items || []).filter(row=>String(row?.metadata?.betaCohort || '')===CLOSED_BETA_COHORT);
+  const opsRows=(opsResult.items || []).filter(row=>String(row?.metadata?.betaCohort || '')===CLOSED_BETA_COHORT && row?.metadata?.betaMembershipVerified===true);
 
   const metricDefs={
     miniAppLaunch:'miniapp_open',
@@ -14523,6 +14525,7 @@ async function apiBetaDashboard(request,cfg) {
     generatedAt:new Date().toISOString(),
     periodDays:days,
     cohort:CLOSED_BETA_COHORT,
+    membershipBoundary:'server_allowlist_verified',
     privacy:{
       aggregatedOnly:true,
       telegramIdsReturned:false,
