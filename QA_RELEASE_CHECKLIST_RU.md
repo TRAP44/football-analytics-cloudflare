@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.111.0 RC135
+# QA Release Checklist — v6.112.0 RC136
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.111.0`.
-- Worker и client: `6.111.0-rc135`.
-- Release candidate: `RC135`.
+- `package.json` и `package-lock.json`: `6.112.0`.
+- Worker и client: `6.112.0-rc136`.
+- Release candidate: `RC136`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -33,6 +33,20 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC136 — On-demand Player-role Hydration
+
+- Предматчевый анализ сначала переиспользует `Team Intelligence cache v2`, как в RC135.
+- Если у конкретной стороны есть реальные активные потери, но сезонной статистики игроков в Team Intelligence cache нет, выполняется точечная hydration только для этой команды.
+- Для hydration используется существующий provider chain RC133: API-Football primary и уже настроенный football-data.org fallback; новый внешний сервис и новый secret не добавляются.
+- Бесплатный/стандартный режим ограничен одной страницей `/players` на команду за анализ; expanded режим — максимум двумя. Общий helper по-прежнему жёстко ограничен тремя страницами.
+- Hydration не запускается для команды без активных потерь и блокируется `freeQuotaHealthy` guard при низком остатке квоты.
+- Результат хранится в отдельном shared cache `analysis:player-role:*:v1` на 6 часов и может быть использован как stale fallback при временной деградации провайдера.
+- В `dataProvenance.playerRoleHydration` явно фиксируется источник: Team Intelligence cache, analysis cache, network hydration, stale cache или unavailable.
+- Если роль уточнить нельзя, модель сохраняет нейтральный вес и явно добавляет риск о неполных сезонных данных.
+- Версия model-input contract: `4.10.0-role-hydration`.
+- Новых Supabase DDL и обязательных секретов нет.
+- Regression: `test/player-role-hydration-rc136.test.js`.
 
 ## RC135 — Player-role Weighted Availability
 

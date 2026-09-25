@@ -133,9 +133,9 @@ test('RC134 UI has distinct category badges without introducing a new API reques
 });
 
 
-test('RC134 feature remains part of the RC135 release health contract', () => {
+test('RC134 feature remains part of the RC136 release health contract', () => {
   assert.match(worker, /structuredAvailability: 'enabled'/);
-  assert.match(worker, /const APP_VERSION = '6\.111\.0-rc135'/);
+  assert.match(worker, /const APP_VERSION = '6\.112\.0-rc136'/);
   assert.match(worker, /const RC_NAME = 'RC135'/);
-  assert.match(app, /const CLIENT_VERSION = '6\.111\.0-rc135'/);
+  assert.match(app, /const CLIENT_VERSION = '6\.112\.0-rc136'/);
 });

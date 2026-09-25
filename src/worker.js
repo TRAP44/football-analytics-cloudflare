@@ -105,11 +105,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.111.0-rc135';
+const APP_VERSION = '6.112.0-rc136';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc135';
-const RC_NAME = 'RC135';
+const RELEASE_CHANNEL = 'rc136';
+const RC_NAME = 'RC136';
 const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.18; для существующей примените все доступные миграции из supabase/migrations до v6.19.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49';
@@ -19094,7 +19094,7 @@ async function apiFootballTeamSeasonPlayers(teamId, leagueId, season, cfg, conte
   let totalPages=1;
   let currentPage=0;
   let stopReason='';
-  const maxPages=3;
+  const maxPages=Math.max(1,Math.min(3,Number(context.maxPages || 3)));
 
   for (let page=1; page<=maxPages; page+=1) {
     if (page>1 && !freeQuotaHealthy(8,1)) {
@@ -19168,10 +19168,10 @@ async function footballDataTeamScorersProvider(teamId, teamName, leagueId, leagu
   }
 }
 
-async function resolveTeamSeasonPlayers(teamId, teamName, leagueId, leagueName, season, cfg) {
+async function resolveTeamSeasonPlayers(teamId, teamName, leagueId, leagueName, season, cfg, options = {}) {
   const attempts=[];
   try {
-    const primary=await apiFootballTeamSeasonPlayers(teamId, leagueId, season, cfg, { teamName, leagueName });
+    const primary=await apiFootballTeamSeasonPlayers(teamId, leagueId, season, cfg, { ...options, teamName, leagueName });
     attempts.push({provider:'api-football',state:primary.available?'available':'unavailable',reason:String(primary.reason || '')});
     if (primary.available) {
       primary.sourceMeta={...(primary.sourceMeta || {}),attempts};
@@ -19588,6 +19588,32 @@ async function cachedTeamIntelligenceForAnalysis(teamId, leagueId, season, cfg) 
     stats: cached?.stats?.available ? cached.stats : null,
     playerStats: cached?.playerStats?.available ? cached.playerStats : null,
   };
+}
+
+async function hydratePlayerRolesForAnalysis({
+  teamId, teamName, leagueId, leagueName, season, cachedPlayerStats, needed, cfg, maxPages = 1,
+} = {}) {
+  if (cachedPlayerStats?.available) return { playerStats:cachedPlayerStats, source:'team-intelligence-cache', network:false, stale:false, reason:'' };
+  if (!needed || !teamId || !leagueId || !season) return { playerStats:null, source:'not-needed', network:false, stale:false, reason:'not_needed' };
+  const cacheKey=`analysis:player-role:${Number(teamId)}:${Number(leagueId)}:${Number(season)}:v1`;
+  const cached=await getCache(cacheKey,cfg).catch(()=>null);
+  if (cached?.playerStats?.available) return { playerStats:cached.playerStats, source:'analysis-cache', network:false, stale:false, reason:'' };
+  const stale=await getStaleCache(cacheKey,cfg).catch(()=>null);
+  if (!freeQuotaHealthy(12,1)) return stale?.playerStats?.available
+    ? { playerStats:stale.playerStats, source:'analysis-stale-cache', network:false, stale:true, reason:'quota_guard' }
+    : { playerStats:null, source:'unavailable', network:false, stale:false, reason:'quota_guard' };
+  try {
+    const playerStats=await resolveTeamSeasonPlayers(teamId,teamName,leagueId,leagueName,season,cfg,{ maxPages:Math.max(1,Math.min(2,Number(maxPages || 1))) });
+    if (playerStats?.available) {
+      await setCache(cacheKey,teamId,{playerStats,refreshedAt:new Date().toISOString()},cfg,360).catch(()=>false);
+      return { playerStats, source:'analysis-hydration', network:true, stale:false, reason:String(playerStats.reason || '') };
+    }
+    if (stale?.playerStats?.available) return { playerStats:stale.playerStats, source:'analysis-stale-cache', network:true, stale:true, reason:String(playerStats?.reason || 'provider_unavailable') };
+    return { playerStats:null, source:'unavailable', network:true, stale:false, reason:String(playerStats?.reason || 'provider_unavailable') };
+  } catch (error) {
+    if (stale?.playerStats?.available) return { playerStats:stale.playerStats, source:'analysis-stale-cache', network:true, stale:true, reason:String(error?.code || 'provider_error') };
+    return { playerStats:null, source:'unavailable', network:true, stale:false, reason:String(error?.code || 'provider_error') };
+  }
 }
 
 function comparisonNumber(value) {
@@ -20344,8 +20370,8 @@ async function apiAnalyze(request, cfg, user) {
   ]);
   const homeSeasonStats = homeTeamIntelligence?.stats || null;
   const awaySeasonStats = awayTeamIntelligence?.stats || null;
-  const homePlayerStats = homeTeamIntelligence?.playerStats || null;
-  const awayPlayerStats = awayTeamIntelligence?.playerStats || null;
+  const cachedHomePlayerStats = homeTeamIntelligence?.playerStats || null;
+  const cachedAwayPlayerStats = awayTeamIntelligence?.playerStats || null;
 
   const previousMarketSnapshots = market ? await getOddsSnapshots(fixtureId, cfg, 8).catch(() => []) : [];
   const marketMovement = buildOddsMovement(previousMarketSnapshots, market);
@@ -20353,7 +20379,17 @@ async function apiAnalyze(request, cfg, user) {
   const apiPrediction = extractPrediction(predictions);
   const h2h = formatH2H(h2hRows, homeId, awayId);
   const lineups = formatLineups(lineupsRows, homeId, awayId);
-  const absences = enrichFixtureAbsencesWithSeasonRole(formatAbsences(injuries, homeId, awayId, lineups), { homePlayerStats, awayPlayerStats });
+  const baseAbsences = formatAbsences(injuries, homeId, awayId, lineups);
+  const roleHydrationMaxPages = paid ? 2 : 1;
+  const [homeRoleHydration, awayRoleHydration] = await Promise.all([
+    hydratePlayerRolesForAnalysis({ teamId:homeId, teamName:homeName, leagueId, leagueName, season, cachedPlayerStats:cachedHomePlayerStats, needed:baseAbsences.home.length>0, cfg, maxPages:roleHydrationMaxPages }),
+    hydratePlayerRolesForAnalysis({ teamId:awayId, teamName:awayName, leagueId, leagueName, season, cachedPlayerStats:cachedAwayPlayerStats, needed:baseAbsences.away.length>0, cfg, maxPages:roleHydrationMaxPages }),
+  ]);
+  const homePlayerStats = homeRoleHydration.playerStats;
+  const awayPlayerStats = awayRoleHydration.playerStats;
+  if (baseAbsences.home.length && !homePlayerStats?.available) skipped.push('Роль отсутствующих игроков хозяев не уточнена: сезонная статистика недоступна или сохранена квота.');
+  if (baseAbsences.away.length && !awayPlayerStats?.available) skipped.push('Роль отсутствующих игроков гостей не уточнена: сезонная статистика недоступна или сохранена квота.');
+  const absences = enrichFixtureAbsencesWithSeasonRole(baseAbsences, { homePlayerStats, awayPlayerStats });
   const lineupImpact = buildLineupImpact({ absences, lineups, homeName, awayName, reliability:providerReliability });
   const recentFormProb = formProbabilities(homeForm, awayForm);
   const h2hProb = h2hProbabilities(h2h);
@@ -20428,7 +20464,7 @@ async function apiAnalyze(request, cfg, user) {
 
   const payload = {
     generatedAt: new Date().toISOString(),
-    analysisVersion: '4.9.0-player-role',
+    analysisVersion: '4.10.0-role-hydration',
     match: {
       fixtureId, date: fixture.fixture?.date || '', status: fixture.fixture?.status?.short || '',
       venue: fixture.fixture?.venue?.name || '', city: fixture.fixture?.venue?.city || '',
@@ -20460,7 +20496,7 @@ async function apiAnalyze(request, cfg, user) {
     modelBreakdown: {
       weights: blended.weights,
       signals: blended.signals,
-      method: 'Рынок, прогноз источника данных, форма и очные встречи объединяются динамически. Активный профиль применяется только после двух окон отложенной выборки и атомарного сравнения кандидата с активной моделью. Потери состава корректируют итог ограниченно: при наличии уже сохранённой сезонной статистики учитываются игровая нагрузка и результативные действия, а сомнительный статус даёт половинный вклад.',
+      method: 'Рынок, прогноз источника данных, форма и очные встречи объединяются динамически. Активный профиль применяется только после двух окон отложенной выборки и атомарного сравнения кандидата с активной моделью. Потери состава корректируют итог ограниченно: роль игрока сначала берётся из Team Intelligence cache, а при реальной потере может точечно гидратироваться из сезонной статистики с отдельным кешем и quota guard; сомнительный статус даёт половинный вклад.',
     },
     dataPolicy: {
       dataMode: paid ? 'expanded' : 'standard',
@@ -20481,6 +20517,10 @@ async function apiAnalyze(request, cfg, user) {
         fetchedAt:meta?.fetchedAt || null,
         ageSeconds:Number.isFinite(Number(meta?.ageSeconds)) ? Number(meta.ageSeconds) : null,
       }])),
+      playerRoleHydration:{
+        home:{source:homeRoleHydration.source,network:Boolean(homeRoleHydration.network),stale:Boolean(homeRoleHydration.stale),reason:String(homeRoleHydration.reason || '')},
+        away:{source:awayRoleHydration.source,network:Boolean(awayRoleHydration.network),stale:Boolean(awayRoleHydration.stale),reason:String(awayRoleHydration.reason || '')},
+      },
       news:{
         provider:'tavily',
         source:web?.answer || web?.results?.length ? 'network-or-cache' : 'unavailable',
@@ -21002,6 +21042,7 @@ export default {
         teamPlayerSeasonStats: 'enabled',
         structuredAvailability: 'enabled',
         playerRoleAvailability: 'enabled',
+        playerRoleHydration: 'enabled',
         footballDataScorersFallback: cfg.footballDataToken ? 'enabled' : 'available_when_configured',
         footballDataStandingsFallback: cfg.footballDataToken ? 'enabled' : 'available_when_configured',
         theOddsApiOddsFallback: cfg.theOddsApiKey ? 'enabled' : 'available_when_configured',

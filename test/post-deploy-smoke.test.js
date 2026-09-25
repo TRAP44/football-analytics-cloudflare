@@ -48,6 +48,7 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         teamPlayerSeasonStats: 'enabled',
         structuredAvailability: 'enabled',
         playerRoleAvailability: 'enabled',
+        playerRoleHydration: 'enabled',
         sourceProvenance: 'enabled',
         aiAnalysisQualityGate: 'enabled',
         aiAnalysisQualityGateSelfTest: 'enabled',

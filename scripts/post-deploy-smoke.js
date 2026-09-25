@@ -17,6 +17,7 @@ const REQUIRED_HEALTH_FLAGS = [
   'teamPlayerSeasonStats',
   'structuredAvailability',
   'playerRoleAvailability',
+  'playerRoleHydration',
   'sourceProvenance',
   'aiAnalysisQualityGate',
   'aiAnalysisQualityGateSelfTest',
