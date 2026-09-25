@@ -84,7 +84,7 @@ test('RC133 API-Football player stats preserve paging metadata and bound user-fa
   assert.match(worker, /options\.responseType === 'envelope'/);
   assert.match(worker, /paging:\s*\{\s*current:/);
   assert.match(worker, /async function apiFootballTeamSeasonPlayers\(/);
-  assert.match(worker, /const maxPages=3/);
+  assert.match(worker, /const maxPages=Math\.max\(1,Math\.min\(3,Number\(context\.maxPages \|\| 3\)\)\)/);
   assert.match(worker, /if \(page>1 && !freeQuotaHealthy\(8,1\)\)/);
   assert.match(worker, /responseType:'envelope'/);
   assert.match(worker, /complete=currentPage>=totalPages/);
@@ -137,7 +137,7 @@ test('RC133 feature remains part of the RC136 release health contract', () => {
   assert.match(worker, /teamPlayerSeasonStats: 'enabled'/);
   assert.match(worker, /footballDataScorersFallback: cfg\.footballDataToken \? 'enabled' : 'available_when_configured'/);
   assert.match(worker, /const APP_VERSION = '6\.112\.0-rc136'/);
-  assert.match(worker, /const RC_NAME = 'RC135'/);
+  assert.match(worker, /const RC_NAME = 'RC136'/);
   assert.match(app, /const CLIENT_VERSION = '6\.112\.0-rc136'/);
 });
 

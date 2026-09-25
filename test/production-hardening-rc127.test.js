@@ -13,7 +13,7 @@ const app=fs.readFileSync('public/app.js','utf8');
 test('RC136 has a single production identity while preserving RC127 hardening',()=>{
   assert.equal(pkg.version,'6.112.0');
   assert.match(worker,/const APP_VERSION = '6\.112\.0-rc136'/);
-  assert.match(worker,/const RC_NAME = 'RC135'/);
+  assert.match(worker,/const RC_NAME = 'RC136'/);
   assert.match(app,/const CLIENT_VERSION = '6\.112\.0-rc136'/);
   assert.match(deploy,/RELEASE_VERSION: "6\.112\.0-rc136"/);
 });
