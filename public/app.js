@@ -4803,7 +4803,7 @@ function matchCardHtml(m, { grouped = false } = {}) {
   const reminderMinutes = Number(state.preferences?.reminderMinutes || 30);
   const statusLabel = m.live ? '<b class="match-live-label">🔴 ИДЁТ</b>' : m.finished ? '<span class="match-finished-label">Завершён</span>' : '';
   const primaryAction = m.live
-    ? `<button class="analyze-btn live-center-btn" type="button" data-center="${Number(m.fixtureId)}">Открыть LIVE</button>`
+    ? `<button class="analyze-btn live-center-btn" type="button" data-center="${Number(m.fixtureId)}">Смотреть матч</button>`
     : m.finished
       ? `<button class="analyze-btn finished-btn" type="button" data-center="${Number(m.fixtureId)}">Итоги матча</button>`
       : aiHistory
