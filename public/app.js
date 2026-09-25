@@ -1125,17 +1125,30 @@ function renderBetaDashboard() {
   }
 
   const health=data.health || {};
+  const launch=data.launchReadiness || {};
   badge.textContent=betaHealthLabel(health.state).toUpperCase();
   badge.className=`beta-health-badge ${escapeHtml(health.state || '')}`;
   const topBreak=health.topBreak?.count ? `${betaActionLabel(health.topBreak.action)} · ${Number(health.topBreak.count)}` : 'нет';
+  const betaAssigned=Number(launch.betaAssignments?.assigned || 0);
+  const betaRequired=Number(launch.betaAssignments?.required || 2);
+  const providerQuota=launch.providerQuota || {};
+  const quotaLabel=providerQuota.confirmed
+    ? `${providerQuota.plan || 'OK'} · day ${Number(providerQuota.dailyRemaining || 0)} · min ${Number(providerQuota.minuteRemaining || 0)}`
+    : 'Не подтверждена';
   healthRoot.innerHTML=[
     ['Основной сбой',topBreak],
+    ['Beta-01/Beta-02',`${betaAssigned}/${betaRequired}`],
+    ['Закрытый доступ',launch.strictBetaAccess?'Включён':'Не подтверждён'],
+    ['Telegram webhook',launch.telegramWebhook?.confirmed?'Подтверждён':'Не подтверждён'],
+    ['API-Football quota',quotaLabel],
     ['Provider rate-limit',String(Number(health.providerRateLimit || 0))],
     ['Timeout',String(Number(health.timeout || 0))],
+    ['UI/client errors',String(Number(health.clientErrors || 0))],
     ['Supabase',health.supabase==='ok'?'Норма':'Проблема'],
-    ['Telegram',humanizeTechnicalText(health.telegram || 'нет данных')],
+    ['Telegram dedupe',humanizeTechnicalText(health.telegram || 'нет данных')],
     ['Release',`${health.currentRelease?.version || CLIENT_VERSION} · ${health.currentRelease?.candidate || CLIENT_RELEASE_CHANNEL}`],
     ['Активные проблемы',String(Number(health.activeProblems || 0))],
+    ['Нужно больше доказательств',String(Number(health.needsMoreEvidence || 0))],
   ].map(([label,value])=>`<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
 
   metricsRoot.innerHTML=Object.entries(data.metrics || {}).map(([key,value])=>`
@@ -1164,7 +1177,7 @@ function renderBetaDashboard() {
 
   const journey=data.journey || {};
   if ($('betaJourneySummary')) $('betaJourneySummary').textContent=
-    `${Number(journey.coreCompleted || 0)} из ${Number(journey.betaUsers || 0)} прошли путь запуск → поиск → матч → AI (${Number(journey.coreCompletionPct || 0)}%).`;
+    `${Number(journey.fullCompleted || 0)} из ${Number(journey.betaUsers || 0)} прошли полный путь запуск → поиск → найденный матч → матч → AI start → AI complete → история → повторный вход (${Number(journey.fullCompletionPct || 0)}%). До AI complete дошли ${Number(journey.analysisCompleted || 0)}.`;
   if (meta) meta.textContent=`${Number(data.periodDays || 7)} дн. · обновлено ${relativeAge(data.generatedAt)}`;
 }
 
