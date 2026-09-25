@@ -1,4 +1,6 @@
-# Football Analytics Mini App v6.115.0 — RC139
+# Football Analytics Mini App v6.116.0 — RC140
+
+- RC140: **Provider xG Semantic Quality Guard** — provider xG отделён от общей «доступности статистики»: live/post-match аналитика использует xG только при полной паре home/away, валидных числовых значениях и свежем подтверждённом источнике статистики. Partial/invalid/untrusted xG остаётся наблюдаемым в Match Center, но исключается из AI LIVE, smart insights и post-match evidence; UI отдельно показывает статус xG. Одновременно исправлен false-positive `availability.statistics` при пустом `items`. Match Center cache поднят до `v12-xg-quality-rc140`. Новых API-ключей и Supabase DDL нет.
 
 - RC139: **Freshness-aware Data Trust** — live status/events/statistics/players/injuries/odds получают единый verdict по возрасту, stale-state и provenance; устаревшие данные остаются наблюдаемыми, но исключаются из live pressure/AI/market blend и odds snapshots. The Odds API учитывает upstream `updatedAt`, а stale Match Center failover не возвращает старые live-сигналы как актуальные. Analysis cache переведён на `v13-freshness-trust`, model-input contract — `4.13.0-freshness-trust`. Новых API-ключей и Supabase DDL не требуется.
 
