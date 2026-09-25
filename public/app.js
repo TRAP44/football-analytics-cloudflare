@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.112.0-rc136';
+const CLIENT_VERSION = '6.113.0-rc137';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc136';
+const CLIENT_RELEASE_CHANNEL = 'rc137';
 const SUPABASE_SCHEMA_HINT = 'проверьте актуальную схему Supabase (baseline v6.18 / миграции до v6.19)';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
@@ -5462,11 +5462,23 @@ function lineupPitchHtml(lineup, title) {
   </div>`;
 }
 
+function lineupQualityLabel(lineup) {
+  const quality = lineup?.quality || {};
+  if (lineup?.quality?.confirmed === true) return `Подтверждён · ${Number(quality.startCount || 11)}/11`;
+  if (quality.partial) return `Неполный состав · ${Number(quality.uniqueStartCount || quality.startCount || 0)}/11`;
+  return 'Состав не подтверждён';
+}
+
 function lineupTeamHtml(lineup, title) {
   if (!lineup) return `<div class="center-lineup-team"><h3>${escapeHtml(title)}</h3><div class="empty compact-empty">Состав не опубликован.</div></div>`;
   const subs = lineup.substitutes || [];
+  const quality = lineup.quality || {};
+  const qualityNotice = quality.partial
+    ? `<div class="data-notice">⚠️ Неполный состав источника: ${Number(quality.uniqueStartCount || quality.startCount || 0)}/11 уникальных игроков старта. До полного XI он не считается подтверждённым.</div>`
+    : '';
   return `<div class="center-lineup-team">
-    <div class="center-lineup-head"><div><h3>${escapeHtml(title)}</h3><span>${escapeHtml(lineup.formation || 'Схема —')}</span></div><div class="coach-chip">👔 ${escapeHtml(lineup.coach || 'Тренер —')}</div></div>
+    <div class="center-lineup-head"><div><h3>${escapeHtml(title)}</h3><span>${escapeHtml(lineup.formation || 'Схема —')} · ${escapeHtml(lineupQualityLabel(lineup))}</span></div><div class="coach-chip">👔 ${escapeHtml(lineup.coach || 'Тренер —')}</div></div>
+    ${qualityNotice}
     ${lineupPitchHtml(lineup, title)}
     <details class="bench-details"><summary>Запасные · ${subs.length}</summary>
       <div class="bench-grid">${subs.length ? subs.map(p => `<span><b>${lineupPlayerNumber(p) || '•'}</b>${escapeHtml(lineupPlayerName(p))}</span>`).join('') : '<i>Нет данных</i>'}</div>
@@ -7032,8 +7044,8 @@ function matchCockpitHtml(d = {}) {
   const injuryConfirmed=Boolean(injuriesMeta.available);
   const homeAbs=Array.isArray(d.absences?.home) ? d.absences.home.length : 0;
   const awayAbs=Array.isArray(d.absences?.away) ? d.absences.away.length : 0;
-  const homeConfirmed=Boolean(d.lineupImpact?.homeConfirmed || Number(d.lineups?.home?.startXI?.length || 0)>=10);
-  const awayConfirmed=Boolean(d.lineupImpact?.awayConfirmed || Number(d.lineups?.away?.startXI?.length || 0)>=10);
+  const homeConfirmed=Boolean(d.lineupImpact?.homeConfirmed || d.lineups?.home?.quality?.confirmed === true);
+  const awayConfirmed=Boolean(d.lineupImpact?.awayConfirmed || d.lineups?.away?.quality?.confirmed === true);
   const confirmedCount=Number(homeConfirmed)+Number(awayConfirmed);
   const h2h=d.h2h || {};
   const h2hSample=Number(h2h.homeWins || 0)+Number(h2h.draws || 0)+Number(h2h.awayWins || 0);
