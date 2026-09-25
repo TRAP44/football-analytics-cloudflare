@@ -131,3 +131,11 @@ test('RC134 UI has distinct category badges without introducing a new API reques
   assert.doesNotMatch(helper,/\bapi\s*\(/);
   assert.doesNotMatch(helper,/fetch\s*\(/);
 });
+
+
+test('RC134 is part of the release health contract', () => {
+  assert.match(worker, /structuredAvailability: 'enabled'/);
+  assert.match(worker, /const APP_VERSION = '6\.110\.0-rc134'/);
+  assert.match(worker, /const RC_NAME = 'RC134'/);
+  assert.match(app, /const CLIENT_VERSION = '6\.110\.0-rc134'/);
+});
