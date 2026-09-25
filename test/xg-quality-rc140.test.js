@@ -84,7 +84,7 @@ const app = fs.readFileSync('public/app.js', 'utf8');
 const smoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 
 test('RC140 routes xG through the semantic guard before live AI and post-match evidence', () => {
-  assert.match(worker, /assessExpectedGoalsQuality\(formattedStatistics/);
+  assert.match(worker, /assessExpectedGoalsQuality\(rawFormattedStatistics/);
   assert.match(worker, /statisticsForTrustedExpectedGoals\(publicStatistics, xgQuality\)/);
   assert.match(worker, /buildSmartMatchInsights\(\{[\s\S]{0,260}statistics: analyticalStatistics/);
   assert.match(worker, /buildLiveAiCoach\(\{[\s\S]{0,260}statistics: analyticalStatistics/);
