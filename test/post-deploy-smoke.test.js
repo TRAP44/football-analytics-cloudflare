@@ -53,6 +53,7 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         lineupSemanticReliability: 'enabled',
         freshnessAwareDataTrust: 'enabled',
         xgSemanticQualityGuard: 'enabled',
+        eventSemanticQualityGuard: 'enabled',
         sourceProvenance: 'enabled',
         aiAnalysisQualityGate: 'enabled',
         aiAnalysisQualityGateSelfTest: 'enabled',
