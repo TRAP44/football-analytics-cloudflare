@@ -14484,6 +14484,69 @@ function betaCoverageSummary(rows = []) {
   return {samples:coverageRows.length,missing,byMode};
 }
 
+function betaExpansionDecision({
+  launchBlockers=[],
+  metrics={},
+  journey={},
+  timings={},
+  coverage={},
+  issues=[],
+  opsSampleLimited=false,
+  providerEvidence='insufficient_evidence',
+} = {}) {
+  const betaUsers=Number(journey.betaUsers || 0);
+  const sessionStarts=Number(metrics.miniAppLaunch?.events || 0);
+  const fullJourneys=Number(journey.fullCompleted || 0);
+  const blockerCount=(issues || []).filter(issue=>issue?.classification==='BLOCKER').length;
+  const majorCount=(issues || []).filter(issue=>issue?.classification==='MAJOR').length;
+  const needsMoreEvidence=(issues || []).filter(issue=>issue?.classification==='NEEDS_MORE_EVIDENCE').length;
+  const coreTimingSamples={
+    search:Number(timings?.search?.samples || 0),
+    match:Number(timings?.match?.samples || 0),
+    ai:Number(timings?.ai?.samples || 0),
+  };
+  const requirements={
+    verifiedUsers:{required:5,actual:betaUsers,pass:betaUsers>=5},
+    verifiedSessionStarts:{required:7,actual:sessionStarts,pass:sessionStarts>=7},
+    fullJourneys:{required:2,actual:fullJourneys,pass:fullJourneys>=2},
+    searchTimingSamples:{required:3,actual:coreTimingSamples.search,pass:coreTimingSamples.search>=3},
+    matchTimingSamples:{required:3,actual:coreTimingSamples.match,pass:coreTimingSamples.match>=3},
+    aiTimingSamples:{required:3,actual:coreTimingSamples.ai,pass:coreTimingSamples.ai>=3},
+    coverageSamples:{required:10,actual:Number(coverage?.samples || 0),pass:Number(coverage?.samples || 0)>=10},
+  };
+  const evidenceComplete=Object.values(requirements).every(item=>item.pass);
+  const hardBlockers=[
+    ...(launchBlockers || []),
+    ...(opsSampleLimited ? ['beta_ops_sample_truncated'] : []),
+    ...(blockerCount>0 ? ['confirmed_blocker'] : []),
+    ...(majorCount>0 ? ['confirmed_major'] : []),
+  ];
+  const dataCoverageDecision=Number(coverage?.samples || 0)<10
+    ? 'collect_more_coverage'
+    : providerEvidence==='review_provider_options'
+      ? 'review_new_or_paid_provider'
+      : 'keep_current_provider';
+  let status='collecting_verified_beta';
+  if (hardBlockers.length) status='hold';
+  else if (evidenceComplete && dataCoverageDecision==='review_new_or_paid_provider') status='expand_with_data_limitations';
+  else if (evidenceComplete) status='ready_to_expand';
+  const expansionAllowed=['ready_to_expand','expand_with_data_limitations'].includes(status);
+  return {
+    status,
+    expansionAllowed,
+    closedBetaLaunchStageComplete:expansionAllowed,
+    requirements,
+    hardBlockers,
+    blockerCount,
+    majorCount,
+    needsMoreEvidence,
+    dataCoverageDecision,
+    providerEvidence,
+    decisionRule:'Expansion requires real verified beta users/sessions, repeated full journeys, core latency evidence, coverage evidence, zero BLOCKER/MAJOR and no launch/runtime blocker.',
+    sessionDefinition:'One verified beta session start equals an accepted server-side closed_beta_v1 BOOT_OK event after telemetry dedupe.',
+  };
+}
+
 function buildBetaIssueGroups({metrics,errorRows,feedbackRows,timings,clientErrorRows=[]}) {
   const configs=[
     {category:'search',errors:betaErrorCountByAction(errorRows,'search'),attempts:Number(metrics.searchUsed?.events || 0)},
@@ -14687,8 +14750,6 @@ async function apiBetaDashboard(request,cfg) {
     providerSignals>=5
     || (coverage.samples>=10 && systematicMissingCategories>=2 && dataSourceFeedback>=2)
   ) ? 'review_provider_options' : 'insufficient_evidence';
-  const expansionStatus=entrySize<5 ? 'collecting_data' : blockerCount>0 ? 'hold' : majorCount>0 ? 'review_issues' : 'candidate_for_expansion';
-
   const adminIds=new Set((cfg.adminTelegramIds || []).map(Number));
   const betaIds=[...new Set((cfg.betaTelegramIds || []).map(Number).filter(id=>Number.isSafeInteger(id)&&id>0))];
   const betaAdminOverlap=betaIds.filter(id=>adminIds.has(id)).length;
@@ -14714,6 +14775,17 @@ async function apiBetaDashboard(request,cfg) {
   if (!cfg.betaAccessEnabled) launchBlockers.push('strict_beta_access_disabled');
   if (!telegramWebhookProbe?.ready) launchBlockers.push('telegram_webhook_unconfirmed');
   if (!providerQuota.confirmed) launchBlockers.push('provider_quota_unconfirmed');
+
+  const expansionDecision=betaExpansionDecision({
+    launchBlockers,
+    metrics,
+    journey,
+    timings,
+    coverage,
+    issues,
+    opsSampleLimited:opsRows.length>=1000,
+    providerEvidence,
+  });
 
   return json({
     available:true,
@@ -14745,6 +14817,7 @@ async function apiBetaDashboard(request,cfg) {
     },
     metrics,
     journey,
+    expansionDecision,
     actionErrors:{total:errorRows.length,byCategory:errorKinds,byAction:errorActions,clientErrors:clientErrorRows.length},
     dataCoverage:coverage,
     timings,
@@ -14783,7 +14856,17 @@ async function apiBetaDashboard(request,cfg) {
         odds:coverage.missing?.odds || {samples:0,missing:0,missingPct:0},
       },
       providerExpansionEvidence:{status:providerEvidence,signals:providerSignals,betaUsers:entrySize,systematicMissingCategories},
-      betaExpansionReadiness:{status:expansionStatus,blockers:blockerCount,majors:majorCount,needsMoreEvidence:evidencePending.length},
+      betaExpansionReadiness:{
+        status:expansionDecision.status,
+        expansionAllowed:expansionDecision.expansionAllowed,
+        closedBetaLaunchStageComplete:expansionDecision.closedBetaLaunchStageComplete,
+        blockers:blockerCount,
+        majors:majorCount,
+        needsMoreEvidence:evidencePending.length,
+        dataCoverageDecision:expansionDecision.dataCoverageDecision,
+        requirements:expansionDecision.requirements,
+        hardBlockers:expansionDecision.hardBlockers,
+      },
     },
     sample:{
       clientEvents:betaClientRows.length,
