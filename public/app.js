@@ -1162,6 +1162,18 @@ function renderBetaDashboard() {
 
   const health=data.health || {};
   const launch=data.launchReadiness || {};
+  const expansion=data.expansionDecision || {};
+  const expansionLabel={
+    collecting_verified_beta:'Собираем verified beta',
+    hold:'HOLD',
+    expand_with_data_limitations:'Расширять с ограничениями',
+    ready_to_expand:'Готово к расширению',
+  }[String(expansion.status || '')] || 'Нет решения';
+  const coverageDecisionLabel={
+    collect_more_coverage:'Нужно больше coverage-данных',
+    review_new_or_paid_provider:'Проверить новый/платный provider',
+    keep_current_provider:'Текущий provider оставить',
+  }[String(expansion.dataCoverageDecision || '')] || 'Нет решения';
   badge.textContent=betaHealthLabel(health.state).toUpperCase();
   badge.className=`beta-health-badge ${escapeHtml(health.state || '')}`;
   const topBreak=health.topBreak?.count ? `${betaActionLabel(health.topBreak.action)} · ${Number(health.topBreak.count)}` : 'нет';
@@ -1177,6 +1189,11 @@ function renderBetaDashboard() {
     ['Закрытый доступ',launch.strictBetaAccess?'Включён':'Не подтверждён'],
     ['Telegram webhook',launch.telegramWebhook?.confirmed?'Подтверждён':'Не подтверждён'],
     ['API-Football quota',quotaLabel],
+    ['Решение по расширению',expansionLabel],
+    ['Closed Beta Launch завершён',expansion.closedBetaLaunchStageComplete?'Да':'Нет'],
+    ['Verified beta sessions',`${Number(expansion.requirements?.verifiedSessionStarts?.actual || 0)}/${Number(expansion.requirements?.verifiedSessionStarts?.required || 7)}`],
+    ['Full journeys',`${Number(expansion.requirements?.fullJourneys?.actual || 0)}/${Number(expansion.requirements?.fullJourneys?.required || 2)}`],
+    ['Data coverage decision',coverageDecisionLabel],
     ['Provider rate-limit',String(Number(health.providerRateLimit || 0))],
     ['Timeout',String(Number(health.timeout || 0))],
     ['UI/client errors',String(Number(health.clientErrors || 0))],
@@ -1217,8 +1234,9 @@ function renderBetaDashboard() {
   `).join('') : '<div class="beta-empty">Подтверждённых beta-проблем пока нет.</div>';
 
   const journey=data.journey || {};
+  const unmet=Object.entries(expansion.requirements || {}).filter(([,value])=>!value?.pass).map(([key])=>key);
   if ($('betaJourneySummary')) $('betaJourneySummary').textContent=
-    `${Number(journey.fullCompleted || 0)} из ${Number(journey.betaUsers || 0)} прошли полный путь запуск → поиск → найденный матч → матч → AI start → AI complete → история → повторный вход (${Number(journey.fullCompletionPct || 0)}%). До AI complete дошли ${Number(journey.analysisCompleted || 0)}.`;
+    `${Number(journey.fullCompleted || 0)} из ${Number(journey.betaUsers || 0)} прошли полный путь запуск → поиск → найденный матч → матч → AI start → AI complete → история → повторный вход (${Number(journey.fullCompletionPct || 0)}%). До AI complete дошли ${Number(journey.analysisCompleted || 0)}. Expansion gate: ${expansionLabel}${unmet.length ? ` · не закрыто: ${unmet.join(', ')}` : ''}.`;
   if (meta) meta.textContent=`${Number(data.periodDays || 7)} дн. · обновлено ${relativeAge(data.generatedAt)}`;
 }
 
