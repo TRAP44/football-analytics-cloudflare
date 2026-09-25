@@ -89,7 +89,7 @@ test('closed beta dashboard requires verified server-side membership and exclude
   assert.match(worker,/const CLOSED_BETA_COHORT = 'closed_beta_v1'/);
   const telemetry=block(worker,'async function apiClientTelemetry','const BETA_FEEDBACK_CATEGORIES');
   assert.match(telemetry,/isClosedBetaUser\(user, cfg\)/);
-  assert.match(telemetry,/betaMembershipVerified: true/);
+  assert.match(telemetry,/betaMembershipVerified:\\s*true/);
   const feedback=block(worker,'async function apiBetaFeedback','function betaMetricSummary');
   assert.match(feedback,/isClosedBetaUser\(user,cfg\)/);
   assert.match(feedback,/betaMembershipVerified:true/);
