@@ -124,10 +124,10 @@ const app = fs.readFileSync('public/app.js', 'utf8');
 
 test('RC139 is part of the production release health contract', () => {
   assert.match(worker, /const APP_VERSION = '6\.119\.0-rc143'/);
-  assert.match(worker, /const RC_NAME = 'RC143'/);
+  assert.match(worker, /const RC_NAME = 'RC144'/);
   assert.match(worker, /freshnessAwareDataTrust: 'enabled'/);
   assert.match(worker, /analysisVersion: '4\.14\.0-odds-quality'/);
-  assert.match(worker, /fixture:\$\{fixtureId\}:v14-odds-quality-rc143/);
+  assert.match(worker, /fixture:\$\{fixtureId\}:v15-availability-quality-rc144/);
   assert.match(app, /const CLIENT_VERSION = '6\.119\.0-rc143'/);
   assert.match(smoke, /'freshnessAwareDataTrust'/);
 });
