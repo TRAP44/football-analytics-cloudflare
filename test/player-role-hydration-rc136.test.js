@@ -12,7 +12,7 @@ test('RC136 bounds player pagination for analysis hydration',()=>{
 });
 
 test('RC136 hydrates roles only for sides with active reconciled absences',()=>{
-  assert.match(worker,/const baseAbsences = formatAbsences\(injuries, homeId, awayId, lineups\)/);
+  assert.match(worker,/const baseAbsences = formatAbsences\(trustedInjuries, homeId, awayId, lineups\)/);
   assert.match(worker,/needed:baseAbsences\.home\.length>0/);
   assert.match(worker,/needed:baseAbsences\.away\.length>0/);
   assert.match(worker,/if \(!needed \|\| !teamId \|\| !leagueId \|\| !season\)/);
@@ -29,12 +29,12 @@ test('RC136 exposes hydration provenance and neutral fallback',()=>{
   assert.match(worker,/playerRoleHydration:\{/);
   assert.match(worker,/home:\{source:homeRoleHydration\.source/);
   assert.match(worker,/Роль отсутствующих игроков хозяев не уточнена/);
-  assert.match(worker,/analysisVersion: '4\.14\.0-odds-quality'/);
+  assert.match(worker,/analysisVersion: '4\.15\.0-availability-quality'/);
 });
 
 test('RC136 is part of release health contract',()=>{
   assert.match(worker,/playerRoleHydration: 'enabled'/);
-  assert.match(worker,/const APP_VERSION = '6\.119\.0-rc143'/);
+  assert.match(worker,/const APP_VERSION = '6\.120\.0-rc144'/);
   assert.match(worker,/const RC_NAME = 'RC144'/);
   assert.match(smoke,/'playerRoleHydration'/);
 });
