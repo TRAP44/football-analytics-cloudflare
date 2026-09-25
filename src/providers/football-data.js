@@ -84,7 +84,7 @@ function footballDataTeamMatches(providerName, expectedName) {
   const short = left.length <= right.length ? left : right;
   const long = short === left ? right : left;
   if (short.length >= 7 && long.includes(short)) return true;
-  const generic = new Set(['united','city','real','sporting','athletic','club','team']);
+  const generic = new Set(['united','city','real','sporting','athletic','club','team','manchester','madrid','milan','munich','munchen']);
   const leftTokens = left.split(' ').filter(token => token.length >= 5 && !generic.has(token));
   const rightTokens = new Set(right.split(' ').filter(token => token.length >= 5 && !generic.has(token)));
   return leftTokens.some(token => rightTokens.has(token));
