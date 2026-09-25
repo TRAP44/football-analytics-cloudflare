@@ -102,3 +102,32 @@ test('RC134 lineup impact exposes injuries, suspensions, doubts and reconciled r
   assert.match(worker, /дисквалификации \$\{hs\}:\$\{as\}/);
   assert.doesNotMatch(worker, /Баланс подтверждённых потерь близкий/);
 });
+
+
+const app = fs.readFileSync('public/app.js', 'utf8');
+const styles = fs.readFileSync('public/styles.css', 'utf8');
+
+test('RC134 Match Center renders structured absence categories and doubt status', () => {
+  assert.match(app, /function absenceKindLabel\(row = \{\}\)/);
+  assert.match(app, /Дисквалификация/);
+  assert.match(app, /Под вопросом/);
+  assert.match(app, /Травмы, болезни, дисквалификации и сомнения по данным источника/);
+  assert.match(app, /Сверка с опубликованными составами сняла устаревших отметок/);
+});
+
+test('RC134 analysis and Match Center copy no longer overstates provider absences as confirmed', () => {
+  assert.doesNotMatch(app, /Подтверждённые недоступные игроки/);
+  assert.doesNotMatch(app, /Нет подтверждённых данных\./);
+  assert.match(app, /Активных отметок о потерях нет или данные недоступны/);
+});
+
+test('RC134 UI has distinct category badges without introducing a new API request', () => {
+  assert.match(styles, /\.absence-kind\.suspension/);
+  assert.match(styles, /\.absence-kind\.injury/);
+  assert.match(styles, /\.absence-kind\.illness/);
+  const start=app.indexOf('function liveAbsencesHtml');
+  const end=app.indexOf('function centerStatNumber',start);
+  const helper=app.slice(start,end);
+  assert.doesNotMatch(helper,/\bapi\s*\(/);
+  assert.doesNotMatch(helper,/fetch\s*\(/);
+});
