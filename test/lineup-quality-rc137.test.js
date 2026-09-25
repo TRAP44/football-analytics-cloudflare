@@ -53,13 +53,14 @@ const app = fs.readFileSync('public/app.js', 'utf8');
 const smoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 
 test('RC137 uses lineup quality in Match Center and AI quality gate', () => {
-  assert.match(worker, /quality: assessLineupQuality\(lineup\)/);
+  assert.match(worker, /lineup\.quality = assessLineupQuality\(lineup\)/);
   assert.match(worker, /const lineupQuality=assessMatchLineups\(lineups\)/);
   assert.match(worker, /homeConfirmed=Boolean\(lineupQuality\.home\.confirmed\)/);
   assert.match(worker, /awayConfirmed=Boolean\(lineupQuality\.away\.confirmed\)/);
   assert.match(worker, /lineupQuality,/);
   assert.match(worker, /lineupQualityGuard: 'enabled'/);
   assert.match(worker, /analysisVersion: '4\.11\.0-lineup-quality'/);
+  assert.match(worker, /fixture:\$\{fixtureId\}:v11-lineup-quality/);
 });
 
 test('RC137 frontend and Telegram no longer treat a 10-player XI as confirmed', () => {
