@@ -4518,6 +4518,7 @@ async function runGlobalSearch({ manual = false } = {}) {
 
   const local = localDiscoveryResults(query);
   const localCount = local.teams.length + local.competitions.length + local.matches.length;
+  sendProductAction('search_used', 'searchView');
   state.globalSearch.loading = true;
   state.globalSearch.status = localCount ? 'refreshing' : 'searching';
   renderGlobalSearch();
@@ -4545,6 +4546,7 @@ async function runGlobalSearch({ manual = false } = {}) {
       + mergeById(merged.competitions, state.globalSearch.remoteCompetitions, 'leagueId').length
       + state.globalSearch.knownTeams.length;
     state.globalSearch.status = totalMatches ? 'found' : totalEntities ? 'done' : 'empty';
+    sendProductAction(totalMatches || totalEntities ? 'search_found' : 'search_empty', 'searchView');
     if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
   } catch (e) {
     if (seq !== state.globalSearch.requestSeq) return;
@@ -4553,6 +4555,7 @@ async function runGlobalSearch({ manual = false } = {}) {
     state.globalSearch.warning = category === 'timeout'
       ? 'Источник отвечает слишком долго.'
       : friendlyErrorMessage(e);
+    sendActionError('search', e, 'searchView');
     if (manual && category !== 'timeout') toast(state.globalSearch.warning);
   } finally {
     if (seq === state.globalSearch.requestSeq) {
@@ -4663,6 +4666,7 @@ async function loadMatches(options = {}) {
     state.matchesMeta.date = date;
   } catch (e) {
     if (seq !== state.matchesLoadSeq) return;
+    sendActionError('matches', e, 'matchesView');
     const retry = Number(e.payload?.retryAfter || 0);
     if (state.matches.length && (snapshot || state.matchesMeta?.date === date)) {
       state.matchesMeta.stale = true;
@@ -5072,9 +5076,20 @@ function renderMatches() {
     $('dataNotice').innerHTML = notices.join('');
   }
   if (!list.length) {
-    const extra = state.filter !== 'all' ? '<button id="showAllBtn" class="secondary-btn" type="button">Показать все матчи</button>' : '';
-    $('matches').innerHTML = `<div class="empty">По выбранному фильтру матчей не найдено.${extra}</div>`;
+    const filtered = state.filter !== 'all';
+    const extra = filtered ? '<button id="showAllBtn" class="secondary-btn" type="button">Показать все матчи</button>' : '';
+    $('matches').innerHTML = `<div class="empty match-empty-state">
+      <strong>${filtered ? 'По этому фильтру матчей нет' : 'Матчей на эту дату пока нет'}</strong>
+      <p>${filtered ? 'Снимите фильтр или найдите нужную команду через поиск.' : 'Попробуйте поиск по команде или выберите соседнюю дату.'}</p>
+      <div class="empty-actions">${extra}<button id="matchesEmptySearch" class="primary-setting-btn" type="button">Найти матч</button></div>
+    </div>`;
     $('showAllBtn')?.addEventListener('click', () => { state.filter = 'all'; syncFilterButtons(); renderMatches(); });
+    $('matchesEmptySearch')?.addEventListener('click', () => {
+      renderDiscoveryHome();
+      renderGlobalSearch();
+      showView('searchView');
+      setTimeout(() => $('globalSearchInput')?.focus({ preventScroll: true }), 80);
+    });
     return;
   }
 
@@ -5679,7 +5694,9 @@ function startLiveRefresh(fixtureId) {
         if (data.mode !== 'live') stopLiveRefresh();
       } catch (e) {
         state.liveRefreshRemaining = Math.max(15, Number(state.currentCenter?.refreshSeconds || 60));
-        toast(e.message);
+        const el = $('liveRefreshText');
+        if (el) el.textContent = 'Не удалось обновить. Повторим автоматически.';
+        sendActionError('live_refresh', e, 'analysisView');
       }
     }
   }, 1000);
@@ -6132,6 +6149,7 @@ function postMatchReviewHtml(review = {}, match = {}) {
 }
 
 function renderMatchCenter(d) {
+  $('analysis')?.setAttribute('aria-busy', 'false');
   const previousFixture = Number(state.currentCenter?.match?.fixtureId || 0);
   state.currentCenter = d;
   if (isAdmin() && d?.provider?.visibility === 'admin') { state.provider = d.provider; renderProvider(); }
@@ -6316,13 +6334,24 @@ async function openMatchCenter(fixtureId, btn) {
   if (Number(state.currentCenter?.match?.fixtureId || 0) !== Number(fixtureId)) state.currentCenterTab = 'summary';
   const original = btn?.textContent || '';
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Загружаю матч…'; }
+  showView('analysisView');
+  renderAnalysisRequestState('loading', {
+    title: 'Открываем матч',
+    message: 'Загружаем счёт, события и доступную статистику.',
+  });
   try {
     const data = await requestMatchCenter(fixtureId);
     if (!data) return;
     renderMatchCenter(data);
-    showView('analysisView');
+    sendProductAction('match_open', sourceView);
+    if (data.mode === 'live') sendProductAction('live_open', sourceView);
   } catch (e) {
-    toast(e.message);
+    sendActionError('match', e, sourceView);
+    renderAnalysisRequestState('error', {
+      title: 'Матч временно не открылся',
+      message: e.message || 'Не удалось получить данные матча.',
+      retry: () => openMatchCenter(fixtureId, null),
+    });
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = original; }
   }
@@ -6350,6 +6379,15 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
   state.currentCenter = null;
   state.analysisActionPending = true;
   syncAnalysisBusyUi();
+  sendProductAction('ai_start', sourceView);
+  const movedToAnalysis = sourceView !== 'analysisView';
+  if (movedToAnalysis) {
+    showView('analysisView');
+    renderAnalysisRequestState('loading', {
+      title: 'Готовим AI-анализ',
+      message: 'Собираем данные матча и проверяем основные факторы.',
+    });
+  }
   const original = btn?.textContent || '';
   if (btn) btn.textContent = '⏳ Собираю данные…';
   try {
@@ -6365,6 +6403,7 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
     if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
     renderAnalysis(data);
     rememberHistoryAnalysis(data);
+    sendProductAction('ai_complete', sourceView);
     if (state.profile && data.quota) {
       state.profile.quota = data.quota;
       renderProfile();
@@ -6384,6 +6423,14 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
       toast(e.payload?.retryAfter ? `Источник футбольных данных временно на паузе. Повторите через ~${e.payload.retryAfter} сек.` : e.message);
     } else if (e.status === 429) toast('Дневной лимит анализов исчерпан.');
     else toast(e.message);
+    sendActionError('ai', e, sourceView);
+    if (movedToAnalysis && recovery?.action !== 'search') {
+      renderAnalysisRequestState('error', {
+        title: 'AI-анализ временно недоступен',
+        message: e.status === 429 ? 'Лимит анализов на сегодня исчерпан или источник временно ограничил запросы.' : (e.message || 'Не удалось подготовить анализ.'),
+        retry: () => analyzeMatch(fixtureId, null, options),
+      });
+    }
   } finally {
     state.analysisActionPending = false;
     syncAnalysisBusyUi();
@@ -6516,6 +6563,7 @@ async function loadHistory(showLoader = true) {
   } catch (e) {
     if (revisionAtStart !== state.historyRevision) return;
     state.historyLoadError = e.message || 'Не удалось загрузить историю.';
+    sendActionError('history', e, 'historyView');
   } finally {
     state.historyLoading = false;
     renderHistory();
@@ -6534,6 +6582,7 @@ async function openHistoryAnalysis(fixtureId, btn) {
     state.currentCenter = null;
     renderAnalysis(data);
     showView('analysisView', { fromHistoryOpen: true });
+    sendProductAction('history_item_open', 'historyView');
   } catch (error) {
     if (seq !== state.historyOpenRequestSeq) return;
     if (Number(error?.status || 0) === 404) {
@@ -6543,6 +6592,7 @@ async function openHistoryAnalysis(fixtureId, btn) {
       showView('analysisView', { fromHistoryOpen: true });
       toast('Сохранённый полный анализ уже недоступен — открыт центр матча.');
     } else {
+      sendActionError('history', error, 'historyView');
       toast(error.message);
     }
   } finally {
@@ -7381,6 +7431,7 @@ function analysisGlanceHtml(d = {}) {
 }
 
 function renderAnalysis(d) {
+  $('analysis')?.setAttribute('aria-busy', 'false');
   if (!d) return;
   const previousFixture = Number(state.currentAnalysis?.match?.fixtureId || 0);
   const nextFixture = Number(d?.match?.fixtureId || 0);
