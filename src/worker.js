@@ -14110,22 +14110,84 @@ const CLIENT_TELEMETRY_EVENTS = new Set([
   'compatibility_block',
   'network_recovery',
   'client_error',
+  'product_action',
+  'action_error',
 ]);
 
-function clientTelemetryMetadata(body = {}) {
+const CLIENT_PRODUCT_ACTIONS = new Set([
+  'matches_open',
+  'search_used',
+  'search_found',
+  'search_empty',
+  'match_open',
+  'live_open',
+  'ai_start',
+  'ai_complete',
+  'history_open',
+  'history_item_open',
+  'profile_open',
+]);
+
+const CLIENT_ACTION_ERROR_REASONS = new Set([
+  'matches',
+  'search',
+  'match',
+  'live_refresh',
+  'ai',
+  'history',
+  'profile',
+]);
+
+const CLIENT_ACTION_ERROR_KINDS = new Set([
+  'offline',
+  'maintenance',
+  'feature_disabled',
+  'auth',
+  'timeout',
+  'rate_limit',
+  'integrity',
+  'database',
+  'provider',
+  'service',
+  'unknown',
+]);
+
+const CLIENT_TELEMETRY_VIEWS = new Set([
+  'matchesView',
+  'searchView',
+  'tournamentView',
+  'teamView',
+  'analysisView',
+  'historyView',
+  'profileView',
+  'unknown',
+]);
+
+function clientTelemetryMetadata(body = {}, event = '') {
   const meta = body?.meta && typeof body.meta === 'object' ? body.meta : {};
+  const rawReason = String(meta.reason || '').trim().toLowerCase();
+  const rawErrorKind = String(meta.errorKind || '').trim().toLowerCase();
+  const rawView = String(meta.view || '').trim();
+  const reason = event === 'product_action'
+    ? (CLIENT_PRODUCT_ACTIONS.has(rawReason) ? rawReason : '')
+    : event === 'action_error'
+      ? (CLIENT_ACTION_ERROR_REASONS.has(rawReason) ? rawReason : '')
+      : redactOpsString(rawReason, 80);
+  const errorKind = event === 'action_error'
+    ? (CLIENT_ACTION_ERROR_KINDS.has(rawErrorKind) ? rawErrorKind : 'unknown')
+    : redactOpsString(rawErrorKind, 60);
   const out = {
     clientVersion: redactOpsString(meta.clientVersion || '', 40),
     apiContract: Number.isFinite(Number(meta.apiContract)) ? Number(meta.apiContract) : null,
     releaseChannel: redactOpsString(meta.releaseChannel || '', 30),
-    view: redactOpsString(meta.view || '', 40),
+    view: CLIENT_TELEMETRY_VIEWS.has(rawView) ? rawView : 'unknown',
     networkMode: redactOpsString(meta.networkMode || '', 30),
     bootMs: Number.isFinite(Number(meta.bootMs)) ? Math.max(0, Math.min(60000, Math.round(Number(meta.bootMs)))) : null,
     manifestOk: typeof meta.manifestOk === 'boolean' ? meta.manifestOk : null,
     degraded: typeof meta.degraded === 'boolean' ? meta.degraded : null,
     blocking: typeof meta.blocking === 'boolean' ? meta.blocking : null,
-    reason: redactOpsString(meta.reason || '', 80),
-    errorKind: redactOpsString(meta.errorKind || '', 60),
+    reason,
+    errorKind,
     startParam: String(meta.startParam || '').replace(/[^A-Za-z0-9_-]/g,'').slice(0,64),
   };
   return Object.fromEntries(Object.entries(out).filter(([, value]) => value !== null && value !== ''));
@@ -14139,7 +14201,9 @@ async function apiClientTelemetry(request, cfg, user) {
     return json({ ok: false, error: 'Unsupported telemetry event.' }, 400);
   }
 
-  const meta = clientTelemetryMetadata(body);
+  const meta = clientTelemetryMetadata(body, event);
+  if (event === 'product_action' && !meta.reason) return json({ ok: false, error: 'Unsupported product action.' }, 400);
+  if (event === 'action_error' && !meta.reason) return json({ ok: false, error: 'Unsupported action error.' }, 400);
   const dedupePart = meta.reason || meta.errorKind || meta.view || '';
   const dedupeKey = `${Number(user.id)}:${event}:${meta.clientVersion || ''}:${dedupePart}`;
   const last = Number(memory.clientTelemetryDedupe.get(dedupeKey) || 0);
@@ -14153,7 +14217,26 @@ async function apiClientTelemetry(request, cfg, user) {
     const attribution=await ensureLaunchAttribution(user.id,meta.startParam || '',cfg);
     void recordGrowthEvent(cfg,{userId:user.id,eventName:'miniapp_open',channel:'miniapp',attribution,metadata:{view:meta.view || ''}});
   }
-  const severity = ['compatibility_block', 'client_error'].includes(event) ? 'warning' : 'info';
+  if (event === 'product_action') {
+    void recordGrowthEvent(cfg,{
+      userId:user.id,
+      eventName:`miniapp_${meta.reason}`,
+      channel:'miniapp',
+      metadata:{view:meta.view || 'unknown'},
+    });
+  }
+  if (event === 'action_error') {
+    void recordGrowthEvent(cfg,{
+      userId:user.id,
+      eventName:'miniapp_error',
+      channel:'miniapp',
+      metadata:{action:meta.reason,errorKind:meta.errorKind || 'unknown',view:meta.view || 'unknown'},
+    });
+  }
+  const severity = ['compatibility_block', 'client_error'].includes(event)
+    || (event === 'action_error' && !['offline','rate_limit'].includes(meta.errorKind))
+    ? 'warning'
+    : 'info';
   await recordOpsEvent(cfg, {
     severity,
     source: 'client',
@@ -14230,6 +14313,8 @@ function summarizeReleaseWindow(items = [], hours = 24) {
       compatibilityBlocks,
       clientErrors,
       networkRecovery,
+      productActions: Number(clientCounts.PRODUCT_ACTION || 0),
+      actionErrors: Number(clientCounts.ACTION_ERROR || 0),
     },
     topSources: releaseTopGroups(items, x => x.source, 8),
     topCodes: releaseTopGroups(items.filter(x => x.severity !== 'info'), x => x.code || x.event_type, 10),
