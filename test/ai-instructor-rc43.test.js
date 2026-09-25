@@ -29,8 +29,8 @@ test('AI center summarizes analyzed upcoming matches',()=>{
   assert.match(app,/Повторное открытие не тратит новый анализ/);
 });
 
-test('history re-open uses the active v10 analysis cache',()=>{
-  assert.match(worker,/const cacheKey = `fixture:\$\{fixtureId\}:v10-ai-instructor`/);
+test('history re-open uses the active v11 lineup-quality analysis cache',()=>{
+  assert.match(worker,/const cacheKey = `fixture:\$\{fixtureId\}:v11-lineup-quality`/);
   assert.match(worker,/historyAnalysisCacheFix:\s*'enabled'/);
 });
 
