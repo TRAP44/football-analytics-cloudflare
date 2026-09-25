@@ -66,9 +66,9 @@ test('RC135 exposes methodology without a player quality score', () => {
 });
 
 test('RC135 updates model-input and health identity', () => {
-  assert.match(worker,/analysisVersion: '4\.10\.0-role-hydration'/);
+  assert.match(worker,/analysisVersion: '4\.11\.0-lineup-quality'/);
   assert.match(worker,/playerRoleAvailability: 'enabled'/);
-  assert.match(worker,/const APP_VERSION = '6\.112\.0-rc136'/);
-  assert.match(worker,/const RC_NAME = 'RC136'/);
-  assert.match(app,/const CLIENT_VERSION = '6\.112\.0-rc136'/);
+  assert.match(worker,/const APP_VERSION = '6\.113\.0-rc137'/);
+  assert.match(worker,/const RC_NAME = 'RC137'/);
+  assert.match(app,/const CLIENT_VERSION = '6\.113\.0-rc137'/);
 });

@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.112.0 RC136
+# QA Release Checklist — v6.113.0 RC137
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.112.0`.
-- Worker и client: `6.112.0-rc136`.
-- Release candidate: `RC136`.
+- `package.json` и `package-lock.json`: `6.113.0`.
+- Worker и client: `6.113.0-rc137`.
+- Release candidate: `RC137`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -33,6 +33,18 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC137 — Starting XI Quality Guard
+
+- Стартовый состав считается подтверждённым только при наличии ровно 11 уникальных игроков в `startXI`; неполный или дублированный ответ провайдера остаётся состоянием `partial`.
+- Единый модуль `src/lineup-quality.js` используется в Match Center и предматчевом AI-анализе, поэтому frontend, Telegram и Quality Gate получают одинаковый статус состава.
+- Final-window gate больше не может считать ответ из 10 игроков подтверждённым и не выдаёт рабочий сигнал на основании неполного XI.
+- Сверка травм/дисквалификаций RC134 сохраняется, но статус публикации состава отделён от его полноты.
+- Match Center отдаёт `lineupQuality` и `availability.lineupsConfirmed`; UI явно показывает `Неполный состав X/11`.
+- Analysis cache contract поднят до `v11-lineup-quality`, чтобы старые RC136 snapshots с прежней семантикой подтверждения не переиспользовались.
+- Версия model-input contract: `4.11.0-lineup-quality`.
+- Новых внешних API, секретов и Supabase DDL нет.
+- Regression: `test/lineup-quality-rc137.test.js`; post-deploy smoke требует health-флаг `lineupQualityGuard`.
 
 ## RC136 — On-demand Player-role Hydration
 

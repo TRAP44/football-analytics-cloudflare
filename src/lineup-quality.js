@@ -1,0 +1,81 @@
+function compactText(value = '') {
+  return String(value || '').trim().replace(/\s+/g, ' ');
+}
+
+function normalizedPlayerKey(player = {}) {
+  const id = Number(player?.id || 0);
+  if (id > 0) return `id:${id}`;
+  const name = compactText(player?.name || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9а-яё]+/giu, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+  return name ? `name:${name}` : '';
+}
+
+function validGrid(value = '') {
+  return /^\d+:\d+$/.test(compactText(value));
+}
+
+function boundedScore(value) {
+  return Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+}
+
+export function assessLineupQuality(lineup = null) {
+  const starters = Array.isArray(lineup?.startXI) ? lineup.startXI : [];
+  const substitutes = Array.isArray(lineup?.substitutes) ? lineup.substitutes : [];
+  const keys = starters.map(normalizedPlayerKey).filter(Boolean);
+  const uniqueStarters = new Set(keys).size;
+  const duplicateStarters = Math.max(0, keys.length - uniqueStarters);
+  const gridKnown = starters.filter(player => validGrid(player?.grid)).length;
+  const published = starters.length > 0;
+  const confirmed = starters.length === 11 && uniqueStarters === 11 && duplicateStarters === 0;
+  const partial = published && !confirmed;
+  const starterCoverage = Math.min(1, uniqueStarters / 11);
+  const gridCoverage = starters.length ? gridKnown / starters.length : 0;
+  const score = boundedScore(
+    starterCoverage * 75
+    + (compactText(lineup?.formation) ? 10 : 0)
+    + (compactText(lineup?.coach) ? 5 : 0)
+    + gridCoverage * 5
+    + (substitutes.length ? 5 : 0)
+  );
+
+  const warnings = [];
+  if (partial) warnings.push(`Ожидалось 11 уникальных игроков старта, получено ${uniqueStarters}.`);
+  if (duplicateStarters > 0) warnings.push(`В стартовом составе обнаружены дубли: ${duplicateStarters}.`);
+
+  return {
+    state: confirmed ? 'confirmed' : partial ? 'partial' : 'unavailable',
+    label: confirmed ? 'Подтверждён' : partial ? 'Неполный состав' : 'Не опубликован',
+    published,
+    confirmed,
+    partial,
+    score,
+    startCount: starters.length,
+    uniqueStartCount: uniqueStarters,
+    duplicateStartCount: duplicateStarters,
+    substituteCount: substitutes.length,
+    gridKnown,
+    formationKnown: Boolean(compactText(lineup?.formation)),
+    coachKnown: Boolean(compactText(lineup?.coach)),
+    warnings,
+  };
+}
+
+export function assessMatchLineups(lineups = {}) {
+  const home = assessLineupQuality(lineups?.home || null);
+  const away = assessLineupQuality(lineups?.away || null);
+  return {
+    home,
+    away,
+    anyPublished: home.published || away.published,
+    bothPublished: home.published && away.published,
+    bothConfirmed: home.confirmed && away.confirmed,
+    confirmedSides: Number(home.confirmed) + Number(away.confirmed),
+    partialSides: Number(home.partial) + Number(away.partial),
+    methodology: 'Состав считается подтверждённым только при 11 уникальных игроках стартового XI. Наличие неполного объекта состава не повышает статус до подтверждённого.',
+  };
+}
