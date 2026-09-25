@@ -9,7 +9,7 @@ const css=fs.readFileSync('public/styles.css','utf8');
 test('match center builds a dedicated AI LIVE coach',()=>{
   assert.match(worker,/function buildLiveAiCoach/);
   assert.match(worker,/liveAiCoach = live \?/);
-  assert.match(worker,/v13-event-quality-rc141/);
+  assert.match(worker,/v14-statistics-quality-rc142/);
   assert.match(app,/function liveAiCoachHtml/);
   assert.match(app,/d\.liveAiCoach/);
   assert.match(css,/\.live-ai-coach/);

@@ -85,7 +85,8 @@ const smoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 
 test('RC140 routes xG through the semantic guard before live AI and post-match evidence', () => {
   assert.match(worker, /assessExpectedGoalsQuality\(rawFormattedStatistics/);
-  assert.match(worker, /statisticsForTrustedExpectedGoals\(publicStatistics, xgQuality\)/);
+  assert.match(worker, /statisticsForTrustedAnalytics\(publicStatistics, statisticsQuality\)/);
+  assert.match(worker, /statisticsForTrustedExpectedGoals\(comparativeStatistics, xgQuality\)/);
   assert.match(worker, /buildSmartMatchInsights\(\{[\s\S]{0,260}statistics: analyticalStatistics/);
   assert.match(worker, /buildLiveAiCoach\(\{[\s\S]{0,260}statistics: analyticalStatistics/);
   assert.match(worker, /buildPostMatchReview\(\{prediction:postMatchPrediction,fixture,statistics:analyticalStatistics/);
@@ -94,10 +95,10 @@ test('RC140 routes xG through the semantic guard before live AI and post-match e
 });
 
 test('RC140 exposes xG quality in Match Center and production health contracts', () => {
-  assert.match(worker, /match-center:\$\{fixtureId\}:v13-event-quality-rc141/);
-  assert.match(worker, /const APP_VERSION = '6\.117\.0-rc141'/);
-  assert.match(worker, /const RC_NAME = 'RC141'/);
-  assert.match(app, /const CLIENT_VERSION = '6\.117\.0-rc141'/);
+  assert.match(worker, /match-center:\$\{fixtureId\}:v14-statistics-quality-rc142/);
+  assert.match(worker, /const APP_VERSION = '6\.118\.0-rc142'/);
+  assert.match(worker, /const RC_NAME = 'RC142'/);
+  assert.match(app, /const CLIENT_VERSION = '6\.118\.0-rc142'/);
   assert.match(app, /xgQualityHintHtml/);
   assert.match(app, /\['xG', d\.availability\?\.xg\]/);
   assert.match(smoke, /'xgSemanticQualityGuard'/);

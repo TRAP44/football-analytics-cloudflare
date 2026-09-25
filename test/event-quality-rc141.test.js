@@ -74,7 +74,7 @@ test('RC141 routes sanitized events into live and post-match analytics', () => {
 });
 
 test('RC141 exposes event quality in Match Center UI and rolls the cache contract', () => {
-  assert.match(worker, /match-center:\$\{fixtureId\}:v13-event-quality-rc141/);
+  assert.match(worker, /match-center:\$\{fixtureId\}:v14-statistics-quality-rc142/);
   assert.match(app, /function eventQualityHintHtml/);
   assert.match(app, /eventQualityHintHtml\(d\.eventQuality\)/);
 });

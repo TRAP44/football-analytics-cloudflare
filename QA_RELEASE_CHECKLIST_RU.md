@@ -1,4 +1,13 @@
-# QA Release Checklist — v6.117.0 RC141
+# QA Release Checklist — v6.118.0 RC142
+
+## RC142 — Live Statistics Semantic Consistency Guard
+- Проверить `npm test`, включая `test/statistics-quality-rc142.test.js`: валидные парные метрики проходят, некорректные диапазоны/форматы, противоречивые удары, передачи и владение очищаются.
+- Односторонняя валидная метрика может отображаться пользователю, но не должна попадать в сравнительные `livePressure`, Smart Insights, Live AI и post-match evidence до появления второй валидной стороны.
+- Stale/unverified statistics source должен fail-closed; xG остаётся под отдельным RC140 guard и не дублируется RC142.
+- Match Center должен вернуть `statisticsQuality`; `availability.statistics` отражает наличие доверенных сравнительных метрик.
+- Release gate: Worker/client `6.118.0-rc142`, Match Center cache `v14-statistics-quality-rc142`, health/smoke flag `statisticsSemanticQualityGuard`.
+- RC139 freshness/provenance, RC140 xG guard и RC141 event guard остаются обязательными нижележащими слоями.
+- Supabase: новых миграций, таблиц или колонок для RC142 нет; актуальная production-схема остаётся на миграции `v6.19`.
 
 ## RC141 — Live Event Semantic Quality Guard
 - Проверить `npm test`, включая `test/event-quality-rc141.test.js`: валидные события trusted source проходят, точные дубли удаляются, события из невозможной/слишком будущей минуты отбрасываются.
@@ -33,9 +42,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.117.0`.
-- Worker и client: `6.117.0-rc141`.
-- Release candidate: `RC141`.
+- `package.json` и `package-lock.json`: `6.118.0`.
+- Worker и client: `6.118.0-rc142`.
+- Release candidate: `RC142`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
