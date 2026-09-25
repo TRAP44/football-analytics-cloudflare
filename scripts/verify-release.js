@@ -20,7 +20,7 @@ const qaChecklist = fs.readFileSync('QA_RELEASE_CHECKLIST_RU.md', 'utf8');
 const envExample = fs.readFileSync('.env.example', 'utf8');
 const baselinePath = 'supabase/baseline/supabase_baseline_v6_18.sql';
 const baseline = fs.existsSync(baselinePath) ? fs.readFileSync(baselinePath, 'utf8') : '';
-const expected = `${pkg.version}-rc141`;
+const expected = `${pkg.version}-rc142`;
 const failures = [];
 const rootSql = fs.readdirSync('.').filter(name => /^supabase_(?:baseline|migration)_.*\.sql$/i.test(name));
 if (rootSql.length) failures.push(`Supabase SQL must live under supabase/: ${rootSql.join(', ')}`);
@@ -29,9 +29,9 @@ if (rootSql.length) failures.push(`Supabase SQL must live under supabase/: ${roo
 if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) failures.push('package-lock version must match package.json');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC141'")) failures.push('Worker RC name must be RC141');
+if (!worker.includes("const RC_NAME = 'RC142'")) failures.push('Worker RC name must be RC142');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc141'")) failures.push('Client release channel must be rc141');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc142'")) failures.push('Client release channel must be rc142');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -91,7 +91,7 @@ if (!rollbackSmoke.includes("'/api/me', '/api/release-readiness', '/api/calibrat
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
-if (!deployWorkflow.includes('RELEASE_VERSION: \"6.117.0-rc141\"')) failures.push('Production deploy must pin the verified release version');
+if (!deployWorkflow.includes('RELEASE_VERSION: \"6.118.0-rc142\"')) failures.push('Production deploy must pin the verified release version');
 if (!deployWorkflow.includes('--message "release=${{ env.RELEASE_VERSION }} sha=${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must bind release version and deploy SHA');
 if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "${{ env.RELEASE_VERSION }}"')) failures.push('Production smoke must verify the same release identity used for deployment');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
@@ -215,7 +215,7 @@ if (!worker.includes("historyAnalysisCacheFix: 'enabled'") || !worker.includes("
 if (!app.includes('function renderAiCenterSummary') || !app.includes('matchAiSnapshotHtml')) failures.push('RC44 analyzed-match UI is missing');
 
 if (!worker.includes("aiLiveCoach: 'enabled'") || !worker.includes("prematchLiveComparison: 'enabled'") || !worker.includes("liveScenarioGuard: 'enabled'")) failures.push('RC44 AI LIVE health contract is missing');
-if (!worker.includes('function buildLiveAiCoach') || !worker.includes('v13-event-quality-rc141')) failures.push('RC44 AI LIVE engine/current cache contract is missing');
+if (!worker.includes('function buildLiveAiCoach') || !worker.includes('v14-statistics-quality-rc142')) failures.push('RC44 AI LIVE engine/current cache contract is missing');
 if (!app.includes('function liveAiCoachHtml') || !app.includes('d.liveAiCoach')) failures.push('RC44 AI LIVE interface is missing');
 
 if (!worker.includes("aiMatchRanking: 'enabled'") || !worker.includes("analyzedSkipLane: 'enabled'")) failures.push('RC45 AI ranking contract is missing');
@@ -261,7 +261,7 @@ if (!worker.includes("newsSourceTrustGate: 'enabled'") || !worker.includes('appl
 if (!worker.includes("publicLegalPages: 'enabled'") || !worker.includes("publicStatusPage: 'enabled'") || !worker.includes("url.pathname === '/api/public-status'")) failures.push('RC52 public trust contract is missing');
 if (!fs.existsSync('public/privacy.html') || !fs.existsSync('public/terms.html') || !fs.existsSync('public/status.html') || !fs.existsSync('public/status.js')) failures.push('RC52 public trust pages are missing');
 if (!wrangler.includes('"/telegram/*"') || !wrangler.includes('"/api/*"')) failures.push('RC52 Worker-first webhook/public API routes are missing');
-if (!deployWorkflow.includes('6.117.0-rc141')) failures.push('RC141 production workflow version is missing');
+if (!deployWorkflow.includes('6.118.0-rc142')) failures.push('RC142 production workflow version is missing');
 
 if (!worker.includes("mediaLaunchPackage: 'enabled'") || !worker.includes("mediaDeepLinkAttribution: 'enabled'")) failures.push('RC53 media launch health contract is missing');
 if (!worker.includes("launchSimulation: 'enabled'") || !worker.includes("conversionUx: 'enabled'") || !worker.includes("highIntentSearchFallback: 'enabled'") || !worker.includes("newsReturnLoop: 'enabled'")) failures.push('RC54 launch conversion health contract is missing');
@@ -369,8 +369,8 @@ if (!worker.includes("firstPartyGrowthAnalytics: 'enabled'") || !worker.includes
 if (!worker.includes('parseLaunchStartParam') || !worker.includes('ensureLaunchAttribution') || !worker.includes('recordGrowthEvent')) failures.push('RC53 attribution engine is missing');
 if (!worker.includes("url.pathname === '/api/launch-funnel'") || !app.includes('function renderLaunchFunnel')) failures.push('RC53 admin launch funnel is missing');
 if (!app.includes("origin:'miniapp'") || !worker.includes("origin:'telegram_quick'")) failures.push('RC53 full-vs-quick AI conversion split is missing');
-if (!readme.includes('v6.117.0 — RC141') || !readme.includes('Live Event Semantic Quality Guard') || !readme.includes('Provider xG Semantic Quality Guard') || !readme.includes('Freshness-aware Data Trust') || !readme.includes('Starting XI Quality Guard') || !readme.includes('On-demand Player-role Hydration') || !readme.includes('Player-role Weighted Availability') || !readme.includes('Structured Availability & Suspensions') || !readme.includes('Team Player Season Stats') || !readme.includes('OpenLigaDB Event Fallback') || !readme.includes('Match at a Glance') || !readme.includes('Licensed Odds Fallback') || !readme.includes('Persistent Data Provenance') || !readme.includes('Multi-Provider Data Service') || !readme.includes('Production Hardening')) failures.push('README must describe the current RC141 release');
-if (!qaChecklist.includes('v6.117.0 RC141') || !qaChecklist.includes('Live Event Semantic Quality Guard') || !qaChecklist.includes('Provider xG Semantic Quality Guard') || !qaChecklist.includes('Freshness-aware Data Trust') || !qaChecklist.includes('Starting XI Quality Guard') || !qaChecklist.includes('On-demand Player-role Hydration') || !qaChecklist.includes('Player-role Weighted Availability') || !qaChecklist.includes('Structured Availability & Suspensions') || !qaChecklist.includes('Team Player Season Stats') || !qaChecklist.includes('OpenLigaDB Event Fallback') || !qaChecklist.includes('Match at a Glance') || !qaChecklist.includes('Licensed Odds Fallback') || !qaChecklist.includes('Persistent Data Provenance') || !qaChecklist.includes('Multi-Provider Data Service') || !qaChecklist.includes('Production Hardening') || !qaChecklist.includes('npm run verify:release')) failures.push('QA checklist must describe the current RC141 release gate');
+if (!readme.includes('v6.118.0 — RC142') || !readme.includes('Live Statistics Semantic Consistency Guard') || !readme.includes('Live Event Semantic Quality Guard') || !readme.includes('Provider xG Semantic Quality Guard') || !readme.includes('Freshness-aware Data Trust') || !readme.includes('Starting XI Quality Guard') || !readme.includes('On-demand Player-role Hydration') || !readme.includes('Player-role Weighted Availability') || !readme.includes('Structured Availability & Suspensions') || !readme.includes('Team Player Season Stats') || !readme.includes('OpenLigaDB Event Fallback') || !readme.includes('Match at a Glance') || !readme.includes('Licensed Odds Fallback') || !readme.includes('Persistent Data Provenance') || !readme.includes('Multi-Provider Data Service') || !readme.includes('Production Hardening')) failures.push('README must describe the current RC142 release');
+if (!qaChecklist.includes('v6.118.0 RC142') || !qaChecklist.includes('Live Statistics Semantic Consistency Guard') || !qaChecklist.includes('Live Event Semantic Quality Guard') || !qaChecklist.includes('Provider xG Semantic Quality Guard') || !qaChecklist.includes('Freshness-aware Data Trust') || !qaChecklist.includes('Starting XI Quality Guard') || !qaChecklist.includes('On-demand Player-role Hydration') || !qaChecklist.includes('Player-role Weighted Availability') || !qaChecklist.includes('Structured Availability & Suspensions') || !qaChecklist.includes('Team Player Season Stats') || !qaChecklist.includes('OpenLigaDB Event Fallback') || !qaChecklist.includes('Match at a Glance') || !qaChecklist.includes('Licensed Odds Fallback') || !qaChecklist.includes('Persistent Data Provenance') || !qaChecklist.includes('Multi-Provider Data Service') || !qaChecklist.includes('Production Hardening') || !qaChecklist.includes('npm run verify:release')) failures.push('QA checklist must describe the current RC142 release gate');
 if (!fs.existsSync('test/supabase-schema-drift-rc100.test.js')) failures.push('Missing RC100 Supabase schema drift regression test');
 if (!fs.existsSync('test/supabase-directory-hardening-rc101.test.js')) failures.push('Missing RC101 Supabase directory hardening regression test');
 if (!fs.existsSync('scripts/security-scan.js')) failures.push('Missing RC102 Secret Leak Guard scanner');
@@ -418,7 +418,8 @@ if (!worker.includes("lineupQualityGuard: 'enabled'") || !worker.includes('asses
 if (!fs.existsSync('test/lineup-semantic-reliability-rc138.test.js') || !worker.includes("lineupSemanticReliability: 'enabled'") || !worker.includes('annotateLineupReliability') || !postDeploySmoke.includes("'lineupSemanticReliability'")) failures.push('RC138 lineup semantic reliability contract is missing');
 if (!fs.existsSync('test/data-freshness-rc139.test.js') || !fs.existsSync('src/data-freshness.js') || !worker.includes("freshnessAwareDataTrust: 'enabled'") || !worker.includes('applyFeatureFreshnessMap') || !worker.includes("analysisVersion: '4.13.0-freshness-trust'") || !worker.includes('v13-freshness-trust') || !postDeploySmoke.includes("'freshnessAwareDataTrust'")) failures.push('RC139 freshness-aware data trust contract is missing');
 if (!fs.existsSync('test/xg-quality-rc140.test.js') || !fs.existsSync('src/xg-quality.js') || !worker.includes("xgSemanticQualityGuard: 'enabled'") || !worker.includes('assessExpectedGoalsQuality') || !worker.includes('statisticsForTrustedExpectedGoals') || !postDeploySmoke.includes("'xgSemanticQualityGuard'")) failures.push('RC140 provider xG semantic quality guard contract is missing');
-if (!fs.existsSync('test/event-quality-rc141.test.js') || !fs.existsSync('src/event-quality.js') || !worker.includes("eventSemanticQualityGuard: 'enabled'") || !worker.includes('assessMatchEventQuality') || !worker.includes('eventsForTrustedAnalytics') || !worker.includes('v13-event-quality-rc141') || !app.includes('eventQualityHintHtml') || !postDeploySmoke.includes("'eventSemanticQualityGuard'")) failures.push('RC141 live event semantic quality guard contract is missing');
+if (!fs.existsSync('test/event-quality-rc141.test.js') || !fs.existsSync('src/event-quality.js') || !worker.includes("eventSemanticQualityGuard: 'enabled'") || !worker.includes('assessMatchEventQuality') || !worker.includes('eventsForTrustedAnalytics') || !app.includes('eventQualityHintHtml') || !postDeploySmoke.includes("'eventSemanticQualityGuard'")) failures.push('RC141 live event semantic quality guard contract is missing');
+if (!fs.existsSync('test/statistics-quality-rc142.test.js') || !fs.existsSync('src/statistics-quality.js') || !worker.includes("statisticsSemanticQualityGuard: 'enabled'") || !worker.includes('assessMatchStatisticsQuality') || !worker.includes('statisticsForTrustedAnalytics') || !worker.includes('v14-statistics-quality-rc142') || !app.includes('statisticsQualityHintHtml') || !postDeploySmoke.includes("'statisticsSemanticQualityGuard'")) failures.push('RC142 live statistics semantic consistency guard contract is missing');
 if (!worker.includes('async function resolveTournamentStandings') || !worker.includes("multiProviderDataService: 'enabled'") || !worker.includes("openLigaDbStandingsFallback: 'enabled'") || !worker.includes("sourceProvenance: 'enabled'")) failures.push('RC128 multi-provider routing contract is missing');
 if (!worker.includes('footballDataToken: env.FOOTBALL_DATA_TOKEN') || !envExample.includes('FOOTBALL_DATA_TOKEN=')) failures.push('RC128 optional football-data.org secret contract is missing');
 if (!app.includes('function dataProvenanceHtml') || !app.includes('Паспорт данных') || !app.includes('standing-team-readonly')) failures.push('RC128 provenance UX contract is missing');
@@ -431,7 +432,7 @@ if (!worker.includes('function signalCanonicalCoverage') || !worker.includes('fu
 if (!worker.includes('function analysisQualityGate') || !worker.includes('function analysisQualityGateSelfTest')) failures.push('RC105 AI quality gate engine is missing');
 if (!worker.includes("aiAnalysisQualityGate: 'enabled'") || !worker.includes("aiAnalysisQualityGateSelfTest: analysisQualityGateSelfTest().pass ? 'enabled' : 'failed'")) failures.push('RC105 AI quality gate health flags are missing');
 if (!worker.includes("releaseCheck('ai_analysis_quality_gate_selftest'")) failures.push('RC105 AI quality release gate is missing');
-if (!worker.includes("analysisVersion: '4.13.0-freshness-trust'")) failures.push('Current RC141 analysis version contract is missing');
+if (!worker.includes("analysisVersion: '4.13.0-freshness-trust'")) failures.push('Current RC142 analysis version contract is missing');
 if (!worker.includes("goalModel?.qualityScore || 0) >= 65")) failures.push('RC105 goal-market signal must require a working form sample');
 if (!postDeploySmoke.includes("'aiAnalysisQualityGate'") || !postDeploySmoke.includes("'aiAnalysisQualityGateSelfTest'")) failures.push('RC105 production smoke AI quality flags are missing');
 if (!fs.existsSync('test/telegram-miniapp-e2e-rc106.test.js')) failures.push('Missing RC106 Telegram Mini App E2E regression test');
