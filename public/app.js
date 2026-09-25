@@ -427,6 +427,12 @@ function sendClientTelemetry(event, meta = {}, { once = false } = {}) {
       networkMode: meta.networkMode || state.network.mode || 'online',
       bootMs: meta.bootMs,
       durationMs: meta.durationMs,
+      matchMode: meta.matchMode,
+      lineupsAvailable: meta.lineupsAvailable,
+      injuriesAvailable: meta.injuriesAvailable,
+      statisticsAvailable: meta.statisticsAvailable,
+      xgAvailable: meta.xgAvailable,
+      oddsAvailable: meta.oddsAvailable,
       manifestOk: meta.manifestOk,
       degraded: meta.degraded,
       blocking: meta.blocking,
@@ -466,6 +472,36 @@ function sendOperationTiming(reason, startedAt, view = telemetryViewName()) {
   const durationMs = Math.max(0, Math.round(performance.now() - Number(startedAt || performance.now())));
   if (!['search', 'match', 'ai', 'live'].includes(String(reason || '')) || !Number.isFinite(durationMs)) return;
   sendClientTelemetry('operation_timing', { reason, durationMs, view }, { once: false });
+}
+
+function sendMatchDataCoverage(data, view = telemetryViewName()) {
+  if (!data || typeof data !== 'object') return;
+  const lineupsObserved=Boolean(
+    data?.lineupQuality?.observed
+    || (Array.isArray(data?.lineups) && data.lineups.length>0)
+    || data?.lineups?.home?.startXI?.length
+    || data?.lineups?.away?.startXI?.length
+  );
+  const injuriesObserved=Boolean(
+    data?.availabilityQuality?.observed
+    || data?.absences?.home?.length
+    || data?.absences?.away?.length
+  );
+  const statisticsObserved=Boolean(
+    data?.statisticsQuality?.observed
+    || (Array.isArray(data?.statistics) && data.statistics.length>0)
+  );
+  const xgObserved=Boolean(data?.xgQuality?.observed);
+  const oddsObserved=Boolean(data?.liveOddsQuality?.observed || data?.liveOdds);
+  sendClientTelemetry('data_coverage',{
+    view,
+    matchMode:['upcoming','live','finished'].includes(String(data?.mode || '')) ? String(data.mode) : 'upcoming',
+    lineupsAvailable:lineupsObserved,
+    injuriesAvailable:injuriesObserved,
+    statisticsAvailable:statisticsObserved,
+    xgAvailable:xgObserved,
+    oddsAvailable:oddsObserved,
+  },{once:false});
 }
 
 function renderJourneyState(kind, { title = '', message = '', retry = null } = {}) {
@@ -1125,17 +1161,35 @@ function renderBetaDashboard() {
   }
 
   const health=data.health || {};
+  const launch=data.launchReadiness || {};
   badge.textContent=betaHealthLabel(health.state).toUpperCase();
   badge.className=`beta-health-badge ${escapeHtml(health.state || '')}`;
   const topBreak=health.topBreak?.count ? `${betaActionLabel(health.topBreak.action)} · ${Number(health.topBreak.count)}` : 'нет';
+  const betaAssigned=Number(launch.betaAssignments?.assigned || 0);
+  const betaRequired=Number(launch.betaAssignments?.required || 2);
+  const providerQuota=launch.providerQuota || {};
+  const quotaLabel=providerQuota.confirmed
+    ? `${providerQuota.plan || 'OK'} · day ${Number(providerQuota.dailyRemaining || 0)} · min ${Number(providerQuota.minuteRemaining || 0)}`
+    : 'Не подтверждена';
   healthRoot.innerHTML=[
     ['Основной сбой',topBreak],
+    ['Beta-01/Beta-02',`${betaAssigned}/${betaRequired}`],
+    ['Закрытый доступ',launch.strictBetaAccess?'Включён':'Не подтверждён'],
+    ['Telegram webhook',launch.telegramWebhook?.confirmed?'Подтверждён':'Не подтверждён'],
+    ['API-Football quota',quotaLabel],
     ['Provider rate-limit',String(Number(health.providerRateLimit || 0))],
     ['Timeout',String(Number(health.timeout || 0))],
+    ['UI/client errors',String(Number(health.clientErrors || 0))],
+    ['Нет составов',String(Number(data.dataCoverage?.missing?.lineups?.missing || 0))],
+    ['Нет данных о травмах',String(Number(data.dataCoverage?.missing?.injuries?.missing || 0))],
+    ['Нет статистики',String(Number(data.dataCoverage?.missing?.statistics?.missing || 0))],
+    ['Нет xG',String(Number(data.dataCoverage?.missing?.xg?.missing || 0))],
+    ['Нет коэффициентов',String(Number(data.dataCoverage?.missing?.odds?.missing || 0))],
     ['Supabase',health.supabase==='ok'?'Норма':'Проблема'],
-    ['Telegram',humanizeTechnicalText(health.telegram || 'нет данных')],
+    ['Telegram dedupe',humanizeTechnicalText(health.telegram || 'нет данных')],
     ['Release',`${health.currentRelease?.version || CLIENT_VERSION} · ${health.currentRelease?.candidate || CLIENT_RELEASE_CHANNEL}`],
     ['Активные проблемы',String(Number(health.activeProblems || 0))],
+    ['Нужно больше доказательств',String(Number(health.needsMoreEvidence || 0))],
   ].map(([label,value])=>`<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
 
   metricsRoot.innerHTML=Object.entries(data.metrics || {}).map(([key,value])=>`
@@ -1164,7 +1218,7 @@ function renderBetaDashboard() {
 
   const journey=data.journey || {};
   if ($('betaJourneySummary')) $('betaJourneySummary').textContent=
-    `${Number(journey.coreCompleted || 0)} из ${Number(journey.betaUsers || 0)} прошли путь запуск → поиск → матч → AI (${Number(journey.coreCompletionPct || 0)}%).`;
+    `${Number(journey.fullCompleted || 0)} из ${Number(journey.betaUsers || 0)} прошли полный путь запуск → поиск → найденный матч → матч → AI start → AI complete → история → повторный вход (${Number(journey.fullCompletionPct || 0)}%). До AI complete дошли ${Number(journey.analysisCompleted || 0)}.`;
   if (meta) meta.textContent=`${Number(data.periodDays || 7)} дн. · обновлено ${relativeAge(data.generatedAt)}`;
 }
 
@@ -6548,6 +6602,7 @@ async function openMatchCenter(fixtureId, btn) {
     if (!data) return;
     renderMatchCenter(data);
     sendProductAction('match_open', sourceView);
+    sendMatchDataCoverage(data, sourceView);
     sendOperationTiming('match', timingStartedAt, sourceView);
     if (data.mode === 'live') {
       sendProductAction('live_open', sourceView);
