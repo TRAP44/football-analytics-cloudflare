@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.110.0 RC134
+# QA Release Checklist — v6.111.0 RC135
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.110.0`.
-- Worker и client: `6.110.0-rc134`.
-- Release candidate: `RC134`.
+- `package.json` и `package-lock.json`: `6.111.0`.
+- Worker и client: `6.111.0-rc135`.
+- Release candidate: `RC135`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -33,6 +33,19 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC135 — Player-role Weighted Availability
+
+- AI-анализ переиспользует уже сохранённый Team Intelligence cache v2 и не делает дополнительных `/players` запросов.
+- Активные потери RC134 сопоставляются с сезонной статистикой игрока сначала по ID, затем только по однозначно нормализованному имени.
+- Вес сезонной роли учитывает наблюдаемые старты, минуты и результативные действия, сжимается к нейтральному значению на малой выборке и жёстко ограничен диапазоном 0.85–1.60.
+- Сомнительный статус по-прежнему уменьшает вклад вдвое; общий probability shift остаётся ограничен прежним максимумом.
+- Если сезонной статистики в shared cache нет, модель сохраняет прежний нейтральный вес 1.0 и не делает вид, что знает значимость игрока.
+- UI показывает словесную игровую нагрузку только для реально сопоставленных игроков; числовой «рейтинг качества игрока» не вводится.
+- Версия model-input contract поднята до `4.9.0-player-role`, поэтому новые immutable prediction snapshots фиксируют новый метод.
+- Новых внешних API, секретов и Supabase DDL нет.
+- Regression: `test/player-role-availability-rc135.test.js`.
+- Post-deploy smoke требует health-флаг `playerRoleAvailability`.
 
 ## RC134 — Structured Availability & Suspensions
 
