@@ -14156,6 +14156,7 @@ const CLIENT_ACTION_ERROR_KINDS = new Set([
 ]);
 
 const CLIENT_TIMING_OPERATIONS = new Set(['search', 'match', 'ai', 'live']);
+const CLOSED_BETA_COHORT = 'closed_beta_v1';
 
 const CLIENT_TELEMETRY_VIEWS = new Set([
   'matchesView',
@@ -14230,14 +14231,14 @@ async function apiClientTelemetry(request, cfg, user) {
 
   if (event === 'boot_ok') {
     const attribution=await ensureLaunchAttribution(user.id,meta.startParam || '',cfg);
-    void recordGrowthEvent(cfg,{userId:user.id,eventName:'miniapp_open',channel:'miniapp',attribution,metadata:{view:meta.view || ''}});
+    void recordGrowthEvent(cfg,{userId:user.id,eventName:'miniapp_open',channel:'miniapp',attribution,metadata:{view:meta.view || '',clientVersion:meta.clientVersion || '',releaseChannel:meta.releaseChannel || '',betaCohort:CLOSED_BETA_COHORT}});
   }
   if (event === 'product_action') {
     void recordGrowthEvent(cfg,{
       userId:user.id,
       eventName:`miniapp_${meta.reason}`,
       channel:'miniapp',
-      metadata:{view:meta.view || 'unknown'},
+      metadata:{view:meta.view || 'unknown',clientVersion:meta.clientVersion || '',releaseChannel:meta.releaseChannel || '',betaCohort:CLOSED_BETA_COHORT},
     });
   }
   if (event === 'action_error') {
@@ -14245,7 +14246,7 @@ async function apiClientTelemetry(request, cfg, user) {
       userId:user.id,
       eventName:'miniapp_error',
       channel:'miniapp',
-      metadata:{action:meta.reason,errorKind:meta.errorKind || 'unknown',view:meta.view || 'unknown'},
+      metadata:{action:meta.reason,errorKind:meta.errorKind || 'unknown',view:meta.view || 'unknown',clientVersion:meta.clientVersion || '',releaseChannel:meta.releaseChannel || '',betaCohort:CLOSED_BETA_COHORT},
     });
   }
   const severity = ['compatibility_block', 'client_error'].includes(event)
@@ -14260,7 +14261,7 @@ async function apiClientTelemetry(request, cfg, user) {
     message: `Client event: ${event}`,
     endpoint: '/api/client-telemetry',
     durationMs: event === 'operation_timing' ? meta.durationMs : null,
-    meta,
+    meta:{...meta,betaCohort:CLOSED_BETA_COHORT},
   });
   return json({ ok: true, deduped: false });
 }
@@ -14339,7 +14340,7 @@ async function apiBetaFeedback(request, cfg) {
     code:'BETA_FEEDBACK',
     message:`Beta feedback: ${note}`,
     endpoint:'/api/beta-feedback',
-    meta:{category,betaSeverity,explicitUserFeedback:true},
+    meta:{category,betaSeverity,explicitUserFeedback:true,betaCohort:CLOSED_BETA_COHORT},
   });
   return json({ok:true});
 }
@@ -14432,7 +14433,7 @@ async function apiBetaDashboard(request,cfg) {
   let growthTruncated=false;
   try {
     const page=await supaSelectPaged(cfg,'growth_events',{created_at:`gte.${since}`},{pageSize:1000,maxRows:10000,order:'created_at.asc'});
-    growthRows=page.rows || [];
+    growthRows=(page.rows || []).filter(row=>String(row?.metadata?.betaCohort || '')===CLOSED_BETA_COHORT);
     growthTruncated=Boolean(page.truncated);
   } catch (error) {
     return json({available:false,reason:'Не удалось прочитать privacy-safe beta telemetry.',days});
@@ -14441,7 +14442,7 @@ async function apiBetaDashboard(request,cfg) {
     readOpsEventsRange(cfg,since,end,1000),
     collectDiagnostics(cfg).catch(()=>({})),
   ]);
-  const opsRows=opsResult.items || [];
+  const opsRows=(opsResult.items || []).filter(row=>String(row?.metadata?.betaCohort || '')===CLOSED_BETA_COHORT);
 
   const metricDefs={
     miniAppLaunch:'miniapp_open',
@@ -14511,6 +14512,7 @@ async function apiBetaDashboard(request,cfg) {
     available:true,
     generatedAt:new Date().toISOString(),
     periodDays:days,
+    cohort:CLOSED_BETA_COHORT,
     privacy:{
       aggregatedOnly:true,
       telegramIdsReturned:false,

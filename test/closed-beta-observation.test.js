@@ -83,3 +83,14 @@ test('beta dashboard is admin-only while feedback remains available to beta user
   assert.match(worker,/url\.pathname === '\/api\/beta-feedback'/);
   assert.doesNotMatch(html,/beta-feedback-panel" data-admin-only/);
 });
+
+
+test('closed beta dashboard has a hard cohort boundary and never mixes pre-beta telemetry',()=>{
+  assert.match(worker,/const CLOSED_BETA_COHORT = 'closed_beta_v1'/);
+  const telemetry=block(worker,'async function apiClientTelemetry','const BETA_FEEDBACK_CATEGORIES');
+  assert.match(telemetry,/betaCohort:CLOSED_BETA_COHORT/);
+  const dashboard=block(worker,'async function apiBetaDashboard','async function readOpsEventsRange');
+  assert.match(dashboard,/metadata\?\.betaCohort/);
+  assert.match(dashboard,/===CLOSED_BETA_COHORT/);
+  assert.match(dashboard,/cohort:CLOSED_BETA_COHORT/);
+});
