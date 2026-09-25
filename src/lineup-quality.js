@@ -65,6 +65,47 @@ export function assessLineupQuality(lineup = null) {
   };
 }
 
+export function annotateLineupReliability(meta = {}, matchQuality = {}) {
+  const quality = matchQuality && typeof matchQuality === 'object' ? matchQuality : {};
+  const anyPublished = Boolean(quality.anyPublished);
+  const bothConfirmed = Boolean(quality.bothConfirmed);
+  const originalState = String(meta?.state || (anyPublished ? 'available' : 'empty_response'));
+  const originalAvailable = meta?.available === undefined ? anyPublished : Boolean(meta.available);
+  const originalUsable = meta?.usable === undefined ? originalAvailable : Boolean(meta.usable);
+  const originalObserved = meta?.observed === undefined ? anyPublished : Boolean(meta.observed);
+
+  if (!anyPublished) {
+    return { ...meta, semanticState: 'unavailable', confirmed: false, partial: false, lineupQuality: quality };
+  }
+
+  if (bothConfirmed) {
+    return {
+      ...meta,
+      available: originalAvailable,
+      usable: originalUsable,
+      observed: originalObserved || originalAvailable,
+      semanticState: 'confirmed',
+      confirmed: true,
+      partial: false,
+      lineupQuality: quality,
+    };
+  }
+
+  return {
+    ...meta,
+    transportState: originalState,
+    state: 'partial_data',
+    available: false,
+    usable: false,
+    observed: true,
+    semanticState: 'partial',
+    confirmed: false,
+    partial: true,
+    reason: 'lineup_incomplete',
+    lineupQuality: quality,
+  };
+}
+
 export function assessMatchLineups(lineups = {}) {
   const home = assessLineupQuality(lineups?.home || null);
   const away = assessLineupQuality(lineups?.away || null);

@@ -50,6 +50,7 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         playerRoleAvailability: 'enabled',
         playerRoleHydration: 'enabled',
         lineupQualityGuard: 'enabled',
+        lineupSemanticReliability: 'enabled',
         sourceProvenance: 'enabled',
         aiAnalysisQualityGate: 'enabled',
         aiAnalysisQualityGateSelfTest: 'enabled',

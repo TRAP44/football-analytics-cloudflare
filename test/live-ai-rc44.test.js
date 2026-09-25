@@ -16,7 +16,7 @@ test('match center builds a dedicated AI LIVE coach',()=>{
 });
 
 test('AI LIVE compares the current match with the cached pre-match AI snapshot',()=>{
-  assert.match(worker,/fixture:\$\{fixtureId\}:v11-lineup-quality/);
+  assert.match(worker,/fixture:\$\{fixtureId\}:v12-lineup-reliability/);
   assert.match(worker,/prematchAnalysis/);
   assert.match(worker,/Сценарий сломан/);
   assert.match(worker,/Сценарий подтверждается/);

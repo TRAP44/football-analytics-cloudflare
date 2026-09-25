@@ -30,7 +30,7 @@ test('AI center summarizes analyzed upcoming matches',()=>{
 });
 
 test('history re-open uses the active v11 lineup-quality analysis cache',()=>{
-  assert.match(worker,/const cacheKey = `fixture:\$\{fixtureId\}:v11-lineup-quality`/);
+  assert.match(worker,/const cacheKey = `fixture:\$\{fixtureId\}:v12-lineup-reliability`/);
   assert.match(worker,/historyAnalysisCacheFix:\s*'enabled'/);
 });
 
