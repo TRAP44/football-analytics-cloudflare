@@ -129,13 +129,18 @@ Screenshot/video: при наличии
 
 BLOCKER: Mini App не открывается; невозможно найти/открыть матч; AI-путь не завершается; данные другого пользователя; admin UI/endpoint доступен non-admin; бесконечная загрузка без recovery.
 
-## 8. Нужен ли server-side beta allowlist
+## 8. Server-side beta allowlist
 
-Текущее normal-user access control принимает любого пользователя с валидным Telegram initData. Скрытие frontend admin-кнопок **не является** ограничением beta-аудитории.
+Механизм подготовлен полностью, но production-список не заполнен фиктивными значениями.
 
-- Если «закрытая beta» означает только **не публиковать ссылку и приглашать вручную**, текущий серверный доступ допустим для первой cohort из 2 человек.
-- Если «закрытая beta» означает **технически запретить доступ всем, кроме приглашённых Telegram ID**, перед приглашением нужен server-side allowlist. Он должен проверяться после Telegram signature validation на сервере, применяться ко всем normal-user API routes, разрешать admin bypass и возвращать понятный closed-beta response. Frontend allowlist недостаточен.
-- Allowlist не добавляется в этом этапе без фактических Telegram ID и явного решения владельца проекта, чтобы не заблокировать production ошибочной конфигурацией.
+- `BETA_TELEGRAM_IDS` — server-side список фактически приглашённых Telegram ID. Он используется только после успешной Telegram initData signature validation.
+- `BETA_ACCESS_ENABLED=false` — безопасное значение по умолчанию. При таком состоянии приложение не блокирует остальных валидных Telegram-пользователей, но Beta Dashboard помечает `closed_beta_v1` только для реальных ID из `BETA_TELEGRAM_IDS`.
+- `BETA_ACCESS_ENABLED=true` — strict closed beta: после Telegram validation все normal-user API routes доступны только участникам `BETA_TELEGRAM_IDS`; admin проходит через server-side bypass.
+- Admin никогда не получает `closed_beta_v1` и не загрязняет Beta Dashboard.
+- Beta metadata содержит только cohort/membership flags; Telegram ID allowlist не возвращается в UI, Beta Dashboard или ops logs.
+- События со старой одной меткой `closed_beta_v1` без `betaMembershipVerified=true` Dashboard игнорирует.
+
+До реального назначения Beta-01/Beta-02 оставить `BETA_TELEGRAM_IDS` пустым и `BETA_ACCESS_ENABLED=false`. После получения реальных ID владелец задаёт их только в server-side environment, затем отдельно принимает решение, включать ли strict access.
 
 ## 9. Go / no-go
 
@@ -147,7 +152,7 @@ GO возможен только когда:
 5. фактические provider remaining/limits подтверждены;
 6. Telegram getWebhookInfo подтверждён;
 7. cohort и feedback channel реально созданы;
-8. принято решение: invite-only operational beta или strict server-side allowlist.
+8. реальные Beta-01/Beta-02 внесены в server-side `BETA_TELEGRAM_IDS`, а режим доступа (`BETA_ACCESS_ENABLED`) выбран владельцем.
 
 
 ## 10. Снимок повторной автоматической проверки 25 сентября 2026, 15:18 UTC

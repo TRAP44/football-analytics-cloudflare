@@ -44,4 +44,8 @@ Beta Dashboard уже рассчитывает основу будущего о�
 
 ## Closed-beta cohort boundary
 
-Dashboard учитывает только события с серверной меткой `closed_beta_v1`. События, записанные до включения этого этапа, не входят в beta-метрики даже при выборе окна 7/14/30 дней. Cohort ставится сервером на growth/ops telemetry и beta feedback, поэтому пользователь не может подменить его из клиента.
+Dashboard учитывает только события с серверной меткой `closed_beta_v1` **и** `betaMembershipVerified=true`. Эта вторая метка ставится только после успешной Telegram initData signature validation и точного совпадения с server-side `BETA_TELEGRAM_IDS`. Администратор намеренно не считается beta-участником, даже если его ID ошибочно попал в beta allowlist.
+
+Это исключает из Beta Dashboard как pre-beta telemetry, так и события, которые могли получить раннюю метку `closed_beta_v1` до введения membership boundary. Сами Telegram ID не возвращаются в Beta Dashboard и не добавляются в beta metadata/ops logs.
+
+Строгий API-доступ подготовлен отдельно через `BETA_ACCESS_ENABLED`. По умолчанию он выключен; при включении normal-user API после Telegram validation доступны только участникам `BETA_TELEGRAM_IDS`, а администратор имеет server-side bypass. Реальные Beta-01/Beta-02 значения в репозиторий не добавляются.

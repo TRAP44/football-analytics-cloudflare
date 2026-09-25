@@ -7,7 +7,9 @@ import {
 } from './calibration-lifecycle.js';
 import {
   DEVELOPMENT_TELEGRAM_ID,
+  closedBetaAccessDecision,
   isAdminUser,
+  isClosedBetaUser,
   telegramIdList,
 } from './access-control.js';
 import { apiSecurityHeaders } from './security-headers.js';
@@ -213,6 +215,8 @@ function config(env) {
     botToken: env.TELEGRAM_BOT_TOKEN || '',
     webhookSecret: env.TELEGRAM_WEBHOOK_SECRET || '',
     adminTelegramIds: telegramIdList(env.ADMIN_TELEGRAM_IDS),
+    betaTelegramIds: telegramIdList(env.BETA_TELEGRAM_IDS),
+    betaAccessEnabled: boolEnv(env.BETA_ACCESS_ENABLED, false),
     supabaseUrl: String(env.SUPABASE_URL || '').replace(/\/$/, ''),
     supabaseKey: env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY || '',
     cacheMinutes: intEnv(env.CACHE_MINUTES, 20),
@@ -1403,6 +1407,7 @@ async function getRequestUser(request, cfg) {
   const mutation = !['GET','HEAD','OPTIONS'].includes(String(request.method || 'GET').toUpperCase());
   const initDataMaxAgeSeconds = adminSensitive ? 15 * 60 : mutation ? 2 * 60 * 60 : 24 * 60 * 60;
   let user = await validateTelegramInitData(initData, cfg.botToken, initDataMaxAgeSeconds);
+  const telegramValidated = Boolean(user);
   if (!user && cfg.devMode) {
     user = {
       id: DEVELOPMENT_TELEGRAM_ID,
@@ -1413,6 +1418,7 @@ async function getRequestUser(request, cfg) {
     };
   }
   if (!user) return null;
+  user.__telegramValidated = telegramValidated;
   try {
     await upsertUser(user, cfg);
   } catch (error) {
@@ -14229,16 +14235,19 @@ async function apiClientTelemetry(request, cfg, user) {
     if (memory.clientTelemetryDedupe.size > 1500) pruneMemoryState();
   }
 
+  const betaMeta = isClosedBetaUser(user, cfg)
+    ? { betaCohort: CLOSED_BETA_COHORT, betaMembershipVerified: true }
+    : {};
   if (event === 'boot_ok') {
     const attribution=await ensureLaunchAttribution(user.id,meta.startParam || '',cfg);
-    void recordGrowthEvent(cfg,{userId:user.id,eventName:'miniapp_open',channel:'miniapp',attribution,metadata:{view:meta.view || '',clientVersion:meta.clientVersion || '',releaseChannel:meta.releaseChannel || '',betaCohort:CLOSED_BETA_COHORT}});
+    void recordGrowthEvent(cfg,{userId:user.id,eventName:'miniapp_open',channel:'miniapp',attribution,metadata:{view:meta.view || '',clientVersion:meta.clientVersion || '',releaseChannel:meta.releaseChannel || '',...betaMeta}});
   }
   if (event === 'product_action') {
     void recordGrowthEvent(cfg,{
       userId:user.id,
       eventName:`miniapp_${meta.reason}`,
       channel:'miniapp',
-      metadata:{view:meta.view || 'unknown',clientVersion:meta.clientVersion || '',releaseChannel:meta.releaseChannel || '',betaCohort:CLOSED_BETA_COHORT},
+      metadata:{view:meta.view || 'unknown',clientVersion:meta.clientVersion || '',releaseChannel:meta.releaseChannel || '',...betaMeta},
     });
   }
   if (event === 'action_error') {
@@ -14246,7 +14255,7 @@ async function apiClientTelemetry(request, cfg, user) {
       userId:user.id,
       eventName:'miniapp_error',
       channel:'miniapp',
-      metadata:{action:meta.reason,errorKind:meta.errorKind || 'unknown',view:meta.view || 'unknown',clientVersion:meta.clientVersion || '',releaseChannel:meta.releaseChannel || '',betaCohort:CLOSED_BETA_COHORT},
+      metadata:{action:meta.reason,errorKind:meta.errorKind || 'unknown',view:meta.view || 'unknown',clientVersion:meta.clientVersion || '',releaseChannel:meta.releaseChannel || '',...betaMeta},
     });
   }
   const severity = ['compatibility_block', 'client_error'].includes(event)
@@ -14261,7 +14270,7 @@ async function apiClientTelemetry(request, cfg, user) {
     message: `Client event: ${event}`,
     endpoint: '/api/client-telemetry',
     durationMs: event === 'operation_timing' ? meta.durationMs : null,
-    meta:{...meta,betaCohort:CLOSED_BETA_COHORT},
+    meta:{...meta,...betaMeta},
   });
   return json({ ok: true, deduped: false });
 }
@@ -14322,8 +14331,11 @@ function betaIssueMeta(category = '') {
   return map[category] || map.ux;
 }
 
-async function apiBetaFeedback(request, cfg) {
+async function apiBetaFeedback(request, cfg, user) {
   if (request.method !== 'POST') return json({error:'Метод не поддерживается.'},405);
+  if (!isClosedBetaUser(user,cfg)) {
+    return json({error:'Обратная связь закрытой beta доступна только приглашённым тестировщикам.',code:'BETA_MEMBERSHIP_REQUIRED'},403);
+  }
   let body={};
   try { body=await request.json(); } catch {}
   const category=String(body?.category || '').trim().toLowerCase();
@@ -14340,7 +14352,7 @@ async function apiBetaFeedback(request, cfg) {
     code:'BETA_FEEDBACK',
     message:`Beta feedback: ${note}`,
     endpoint:'/api/beta-feedback',
-    meta:{category,betaSeverity,explicitUserFeedback:true,betaCohort:CLOSED_BETA_COHORT},
+    meta:{category,betaSeverity,explicitUserFeedback:true,betaCohort:CLOSED_BETA_COHORT,betaMembershipVerified:true},
   });
   return json({ok:true});
 }
@@ -14433,7 +14445,7 @@ async function apiBetaDashboard(request,cfg) {
   let growthTruncated=false;
   try {
     const page=await supaSelectPaged(cfg,'growth_events',{created_at:`gte.${since}`},{pageSize:1000,maxRows:10000,order:'created_at.asc'});
-    growthRows=(page.rows || []).filter(row=>String(row?.metadata?.betaCohort || '')===CLOSED_BETA_COHORT);
+    growthRows=(page.rows || []).filter(row=>String(row?.metadata?.betaCohort || '')===CLOSED_BETA_COHORT && row?.metadata?.betaMembershipVerified===true);
     growthTruncated=Boolean(page.truncated);
   } catch (error) {
     return json({available:false,reason:'Не удалось прочитать privacy-safe beta telemetry.',days});
@@ -14442,7 +14454,7 @@ async function apiBetaDashboard(request,cfg) {
     readOpsEventsRange(cfg,since,end,1000),
     collectDiagnostics(cfg).catch(()=>({})),
   ]);
-  const opsRows=(opsResult.items || []).filter(row=>String(row?.metadata?.betaCohort || '')===CLOSED_BETA_COHORT);
+  const opsRows=(opsResult.items || []).filter(row=>String(row?.metadata?.betaCohort || '')===CLOSED_BETA_COHORT && row?.metadata?.betaMembershipVerified===true);
 
   const metricDefs={
     miniAppLaunch:'miniapp_open',
@@ -14513,6 +14525,7 @@ async function apiBetaDashboard(request,cfg) {
     generatedAt:new Date().toISOString(),
     periodDays:days,
     cohort:CLOSED_BETA_COHORT,
+    membershipBoundary:'server_allowlist_verified',
     privacy:{
       aggregatedOnly:true,
       telegramIdsReturned:false,
@@ -21715,6 +21728,11 @@ export default {
       const user = await getRequestUser(request, cfg);
       if (!user) return json({ error: 'Откройте мини-приложение внутри Telegram.' }, 401);
 
+      const betaAccess = closedBetaAccessDecision(user, cfg);
+      if (!betaAccess.allowed) {
+        return json({ error: 'Доступ к закрытой beta пока не выдан.', code: 'CLOSED_BETA_ACCESS_REQUIRED' }, 403);
+      }
+
       const runtimeState = await loadRuntimeControls(cfg);
       const runtimeResponse = runtimeGuard(request, user, cfg, runtimeState.value);
       if (runtimeResponse) return runtimeResponse;
@@ -21725,7 +21743,7 @@ export default {
       if (request.method === 'GET' && url.pathname === '/api/me') return await apiMe(request, cfg, user);
       if (request.method === 'GET' && url.pathname === '/api/data-capabilities') return json({ dataCapabilities: publicDataCapabilities() });
       if (request.method === 'POST' && url.pathname === '/api/client-telemetry') return await apiClientTelemetry(request, cfg, user);
-      if (request.method === 'POST' && url.pathname === '/api/beta-feedback') return await apiBetaFeedback(request, cfg);
+      if (request.method === 'POST' && url.pathname === '/api/beta-feedback') return await apiBetaFeedback(request, cfg, user);
       if (request.method === 'GET' && url.pathname === '/api/beta-dashboard') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
         return await apiBetaDashboard(request, cfg);

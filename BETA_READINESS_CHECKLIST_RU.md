@@ -80,7 +80,8 @@ Privacy contract:
 - [ ] Подтвердить текущую **квоту/тариф** API-Football и фактические plan / dailyRemaining / minuteRemaining непосредственно перед приглашением. В production уже наблюдалось достижение минутного rate limit, поэтому до проверки первая cohort ограничена двумя пользователями.
 - [ ] Реально назначить Beta-01 и Beta-02 и создать приватный feedback channel по шаблону из `PRE_BETA_VALIDATION_RU.md`. Runbook и формат обратной связи подготовлены, но личности/Telegram ID тестировщиков в репозиторий не записываются.
 - [ ] Подтвердить Telegram `getWebhookInfo`: production URL совпадает с `/telegram/webhook`, нет устойчивой очереди pending updates и актуальной ошибки.
-- [ ] Принять решение по строгости доступа: invite-only operational beta либо server-side Telegram ID allowlist. Оценка выполнена: если «закрытая beta» означает технический запрет доступа всем, кроме приглашённых Telegram ID, server-side allowlist обязателен после проверки Telegram-подписи и должен применяться ко всем обычным user API routes; frontend-скрытия недостаточно. Без реальных Beta-01/Beta-02 ID и явного решения владельца allowlist намеренно не включён, чтобы не заблокировать production.
+- [x] Server-side механизм строгой beta-границы реализован: membership определяется только после успешной Telegram signature validation по `BETA_TELEGRAM_IDS`; admin имеет bypass, но исключён из beta cohort; frontend-скрытия не используются как access control. `BETA_ACCESS_ENABLED` по умолчанию выключен, реальные ID в репозиторий не записаны.
+- [ ] После фактического назначения Beta-01/Beta-02 вне репозитория задать реальные `BETA_TELEGRAM_IDS` в server-side environment и принять операционное решение о включении `BETA_ACCESS_ENABLED=true`. До появления реальных значений строгий allowlist намеренно не включать.
 
 До выполнения этих пунктов автоматическая часть готовности завершена, но приглашение реальных пользователей остаётся **MANUAL FIELD CHECKS PENDING**.
 
@@ -94,7 +95,7 @@ Privacy contract:
 - встроенная кнопка «Сообщить о проблеме»;
 - автоматические beta alerts по росту action_error;
 - улучшение пустых экранов на основании реальных beta-паттернов;
-- отдельный серверный invite allowlist, если beta должна оставаться технически закрытой после расширения аудитории.
+- расширение/ротация server-side beta allowlist после подтверждённой необходимости; базовый механизм уже реализован.
 
 ## 6. Release gate
 
