@@ -4367,11 +4367,11 @@ function renderGlobalSearch() {
     sections.push(`<section class="panel search-result-block"><div class="mini-section-head"><strong>Завершённые матчи</strong><span>${finished.length}</span></div><div class="search-match-list">${finished.slice(0,12).map(searchMatchCard).join('')}</div></section>`);
   }
 
-  out.innerHTML = sections.join('') || `<div class="empty search-empty-state">
+  out.innerHTML = sections.join('') || (state.globalSearch.loading ? '' : `<div class="empty search-empty-state">
     <strong>Ничего не найдено в этом разделе</strong>
     <p>Попробуйте другое название команды или лиги либо переключите фильтр поиска.</p>
     <div class="empty-actions"><button id="searchEmptyAll" class="secondary-btn" type="button">Показать всё</button></div>
-  </div>`;
+  </div>`);
   bindDiscoveryActions(out);
   bindSearchMatchActions(out);
   $('searchEmptyAll')?.addEventListener('click', () => setGlobalSearchMode('all'));
@@ -7722,7 +7722,13 @@ $('globalSearchInput')?.addEventListener('input', e => {
     globalSearchTimer = setTimeout(() => runGlobalSearch(), 280);
   }
 });
-$('globalSearchInput')?.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); runGlobalSearch(); } });
+$('globalSearchInput')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    clearTimeout(globalSearchTimer);
+    runGlobalSearch({ manual:true });
+  }
+});
 document.querySelectorAll('[data-search-mode]').forEach(btn => btn.addEventListener('click', () => setGlobalSearchMode(btn.dataset.searchMode || 'all')));
 $('clearRecentTeamsBtn')?.addEventListener('click', clearRecentTeams);
 $('refreshBtn').addEventListener('click', () => loadMatches({ force: true }));
