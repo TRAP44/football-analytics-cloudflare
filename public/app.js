@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.110.0-rc134';
+const CLIENT_VERSION = '6.111.0-rc135';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc134';
+const CLIENT_RELEASE_CHANNEL = 'rc135';
 const SUPABASE_SCHEMA_HINT = 'проверьте актуальную схему Supabase (baseline v6.18 / миграции до v6.19)';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
@@ -6553,7 +6553,8 @@ function compactAbsence(title, items) {
   if (!items?.length) return `<div class="squad-block"><div class="squad-title">${escapeHtml(title)}</div><p class="muted">Активных отметок о потерях нет или данные недоступны.</p></div>`;
   return `<div class="squad-block"><div class="squad-title">${escapeHtml(title)}</div><ul class="compact-list">${items.slice(0, 10).map(x => {
     const status=absenceStatusLabel(x);
-    const detail=[absenceKindLabel(x),x.reason || x.type,status].filter(Boolean).map(publicText).join(' · ');
+    const role=x.seasonRole?.matched ? x.seasonRole.label : '';
+    const detail=[absenceKindLabel(x),x.reason || x.type,status,role].filter(Boolean).map(publicText).join(' · ');
     return `<li><strong>${escapeHtml(x.name)}</strong><span>${escapeHtml(detail)}</span></li>`;
   }).join('')}</ul></div>`;
 }

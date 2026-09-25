@@ -171,3 +171,121 @@ export function normalizeFixtureAbsences(rows = [], { homeId = 0, awayId = 0, li
     methodology: 'Потери нормализуются из fixture-level /injuries; игрок, присутствующий в опубликованном стартовом составе или запасе, исключается из активных потерь.',
   };
 }
+
+
+function bounded(value, min, max) {
+  return Math.max(min, Math.min(max, Number(value) || 0));
+}
+
+function roundRoleWeight(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function seasonPlayerIndex(playerStats = null) {
+  const players = Array.isArray(playerStats?.players) ? playerStats.players : [];
+  const byId = new Map();
+  const byNameCandidates = new Map();
+  for (const player of players) {
+    const ids = [...new Set([Number(player?.id || 0), Number(player?.providerId || 0)].filter(id => id > 0))];
+    for (const id of ids) if (!byId.has(id)) byId.set(id, player);
+    const name = normalizedName(player?.name || '');
+    if (name) {
+      const candidates = byNameCandidates.get(name) || [];
+      candidates.push(player);
+      byNameCandidates.set(name, candidates);
+    }
+  }
+  const byName = new Map();
+  for (const [name, candidates] of byNameCandidates) {
+    if (candidates.length === 1) byName.set(name, candidates[0]);
+  }
+  return { byId, byName };
+}
+
+function matchSeasonPlayer(absence = {}, index = {}) {
+  const id = Number(absence?.id || 0);
+  if (id > 0 && index.byId?.has(id)) return index.byId.get(id);
+  const name = normalizedName(absence?.name || '');
+  return name && index.byName?.has(name) ? index.byName.get(name) : null;
+}
+
+function seasonRoleProfile(player = {}) {
+  const appearances = Math.max(0, Number(player?.games?.appearances || 0));
+  const lineups = Math.max(0, Number(player?.games?.lineups || 0));
+  const minutes = Math.max(0, Number(player?.games?.minutes || 0));
+  const goals = Math.max(0, Number(player?.goals?.total || 0));
+  const assists = Math.max(0, Number(player?.goals?.assists || 0));
+  if (!appearances && !lineups && !minutes && !goals && !assists) return null;
+
+  const starterRate = appearances ? bounded(lineups / appearances, 0, 1) : 0;
+  const minutesPerAppearance = appearances ? bounded(minutes / appearances, 0, 90) : 0;
+  const contributionRate = appearances ? bounded((goals + assists) / appearances, 0, 0.6) / 0.6 : 0;
+  const usageKnown = lineups > 0 || minutes > 0;
+  const rawWeight = usageKnown
+    ? 0.85 + 0.30 * starterRate + 0.30 * (minutesPerAppearance / 90) + 0.15 * contributionRate
+    : 1 + 0.20 * contributionRate;
+  const sampleStrength = bounded(appearances / 8, 0, 1);
+  const weight = roundRoleWeight(bounded(1 + (rawWeight - 1) * sampleStrength, 0.85, 1.60));
+  const label = weight >= 1.35
+    ? 'Высокая игровая нагрузка'
+    : weight >= 1.12
+      ? 'Заметная игровая нагрузка'
+      : weight <= 0.92
+        ? 'Ограниченная игровая нагрузка'
+        : 'Обычная игровая нагрузка';
+
+  return {
+    matched: true,
+    weight,
+    label,
+    appearances,
+    lineups,
+    minutes,
+    goals,
+    assists,
+    position: compactText(player?.games?.position || ''),
+    source: compactText(player?.source || ''),
+    methodology: 'Вес ограниченно учитывает только наблюдаемую сезонную игровую нагрузку и результативные действия; это не рейтинг качества игрока.',
+  };
+}
+
+function enrichAbsenceSide(rows = [], playerStats = null) {
+  const index = seasonPlayerIndex(playerStats);
+  let matched = 0;
+  const enriched = (Array.isArray(rows) ? rows : []).map(row => {
+    const player = matchSeasonPlayer(row, index);
+    const seasonRole = player ? seasonRoleProfile(player) : null;
+    if (!seasonRole) return row;
+    matched += 1;
+    return { ...row, seasonRole };
+  });
+  return {
+    rows: enriched,
+    coverage: {
+      matched,
+      total: enriched.length,
+      complete: Boolean(playerStats?.complete),
+      partial: Boolean(playerStats?.partial),
+      scope: compactText(playerStats?.scope || ''),
+      provider: compactText(playerStats?.sourceMeta?.provider || ''),
+    },
+  };
+}
+
+export function enrichFixtureAbsencesWithSeasonRole(absences = {}, { homePlayerStats = null, awayPlayerStats = null } = {}) {
+  const home = enrichAbsenceSide(absences?.home, homePlayerStats);
+  const away = enrichAbsenceSide(absences?.away, awayPlayerStats);
+  return {
+    ...absences,
+    home: home.rows,
+    away: away.rows,
+    summary: {
+      ...(absences?.summary || {}),
+      seasonRole: { home: home.coverage, away: away.coverage },
+    },
+    methodology: [
+      compactText(absences?.methodology || ''),
+      'Если в shared Team Intelligence cache уже есть сезонная статистика игрока, активная потеря получает ограниченный вес по минутам, стартам и результативным действиям без дополнительного внешнего запроса.',
+    ].filter(Boolean).join(' '),
+  };
+}

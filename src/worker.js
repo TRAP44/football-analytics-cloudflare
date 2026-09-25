@@ -13,7 +13,7 @@ import {
 import { apiSecurityHeaders } from './security-headers.js';
 import { createSupabaseClient } from './supabase-client.js';
 import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
-import { normalizeFixtureAbsences } from './availability.js';
+import { enrichFixtureAbsencesWithSeasonRole, normalizeFixtureAbsences } from './availability.js';
 import { normalizeOpenLigaMatchEvents, normalizeOpenLigaStandings, openLigaCompetition, openLigaMatchDataUrls, openLigaTableUrls } from './providers/openligadb.js';
 import { footballDataScorersUrl, footballDataStandingsUrl, normalizeFootballDataStandings, normalizeFootballDataTeamScorers } from './providers/football-data.js';
 import { normalizeTheOddsApiMarket, theOddsApiUrl } from './providers/the-odds-api.js';
@@ -105,11 +105,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.110.0-rc134';
+const APP_VERSION = '6.111.0-rc135';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc134';
-const RC_NAME = 'RC134';
+const RELEASE_CHANNEL = 'rc135';
+const RC_NAME = 'RC135';
 const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.18; для существующей примените все доступные миграции из supabase/migrations до v6.19.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49';
@@ -16545,9 +16545,12 @@ function blendProbabilitySignals({ market, model, form, h2h, weightOverrides = n
 }
 
 function absenceAdjustmentUnits(rows = []) {
-  return (Array.isArray(rows) ? rows : []).reduce((sum, row) => (
-    sum + (row?.status === 'doubtful' ? 0.5 : 1)
-  ), 0);
+  return (Array.isArray(rows) ? rows : []).reduce((sum, row) => {
+    const roleWeightRaw = Number(row?.seasonRole?.weight);
+    const roleWeight = Number.isFinite(roleWeightRaw) ? clamp(roleWeightRaw, 0.85, 1.60) : 1;
+    const statusWeight = row?.status === 'doubtful' ? 0.5 : 1;
+    return sum + roleWeight * statusWeight;
+  }, 0);
 }
 
 function applyAbsenceAdjustment(probabilities, absences) {
@@ -19578,10 +19581,13 @@ async function apiMatchCenter(request, cfg) {
 }
 
 
-async function cachedSeasonStatsForComparison(teamId, leagueId, season, cfg) {
-  if (!teamId || !leagueId || !season) return null;
+async function cachedTeamIntelligenceForAnalysis(teamId, leagueId, season, cfg) {
+  if (!teamId || !leagueId || !season) return { stats: null, playerStats: null };
   const cached = await getStaleCache(`team:intelligence:${Number(teamId)}:${Number(leagueId)}:${Number(season)}:v2`, cfg);
-  return cached?.stats?.available ? cached.stats : null;
+  return {
+    stats: cached?.stats?.available ? cached.stats : null,
+    playerStats: cached?.playerStats?.available ? cached.playerStats : null,
+  };
 }
 
 function comparisonNumber(value) {
@@ -19669,8 +19675,10 @@ function refereeProfile(value = '') {
 }
 
 function buildLineupImpact({absences,lineups,homeName='Хозяева',awayName='Гости',reliability=null}={}) {
-  const homeAbs=Array.isArray(absences?.home)?absences.home.length:0;
-  const awayAbs=Array.isArray(absences?.away)?absences.away.length:0;
+  const homeRows=Array.isArray(absences?.home)?absences.home:[];
+  const awayRows=Array.isArray(absences?.away)?absences.away:[];
+  const homeAbs=homeRows.length;
+  const awayAbs=awayRows.length;
   const homeConfirmed=Number(lineups?.home?.startXI?.length || 0)>=10;
   const awayConfirmed=Number(lineups?.away?.startXI?.length || 0)>=10;
   const injuryState=String(reliability?.features?.injuries?.state || (homeAbs || awayAbs ? 'available' : 'unknown'));
@@ -19682,6 +19690,10 @@ function buildLineupImpact({absences,lineups,homeName='Хозяева',awayName=
   const ai=Number(absences?.summary?.away?.injury || 0)+Number(absences?.summary?.away?.illness || 0);
   const hd=Number(absences?.summary?.home?.doubtful || 0), ad=Number(absences?.summary?.away?.doubtful || 0);
   const reconciled=Number(absences?.summary?.resolvedByLineup || 0);
+  const homeRoleMatched=homeRows.filter(row=>row?.seasonRole?.matched).length;
+  const awayRoleMatched=awayRows.filter(row=>row?.seasonRole?.matched).length;
+  const homeUnits=Math.round(absenceAdjustmentUnits(homeRows)*10)/10;
+  const awayUnits=Math.round(absenceAdjustmentUnits(awayRows)*10)/10;
   let label=injuryUsable?'Баланс отмеченных потерь близкий':'Данные о потерях требуют проверки';
   let note=injuryUsable
     ? `По данным источника после сверки с составом: ${homeName} — ${homeAbs}, ${awayName} — ${awayAbs}. Травмы/болезни ${hi}:${ai}, дисквалификации ${hs}:${as}, под вопросом ${hd}:${ad}.`
@@ -19689,6 +19701,7 @@ function buildLineupImpact({absences,lineups,homeName='Хозяева',awayName=
       ? 'Источник не вернул записей о травмах или дисквалификациях; это не считается подтверждением полного состава.'
       : 'Источник не подтвердил данные о потерях; нулевые потери не предполагаются.';
   if(reconciled>0) note+=` ${reconciled} устаревших отметок исключено, потому что игрок уже указан в опубликованном составе.`;
+  if(homeRoleMatched+awayRoleMatched>0) note+=` Сезонная игровая нагрузка сопоставлена для ${homeRoleMatched+awayRoleMatched} отмеченных игроков; ограниченная взвешенная нагрузка потерь ${homeUnits}:${awayUnits}. Это не рейтинг качества игрока.`;
   if(injuryUsable&&diff>=2){label=`Потерь больше у ${homeName}`;note+=` У ${homeName} больше актуальных отметок о возможном отсутствии.`;}
   else if(injuryUsable&&diff<=-2){label=`Потерь больше у ${awayName}`;note+=` У ${awayName} больше актуальных отметок о возможном отсутствии.`;}
   if(homeConfirmed&&awayConfirmed) note+=' Стартовые составы опубликованы для обеих команд.';
@@ -19700,8 +19713,11 @@ function buildLineupImpact({absences,lineups,homeName='Хозяева',awayName=
     homeAbsences:homeAbs,awayAbsences:awayAbs,homeConfirmed,awayConfirmed,label,note,
     injuryState,lineupState,
     availabilityState:injuryState,
+    availabilityUnits:{home:homeUnits,away:awayUnits},
+    seasonRoleCoverage:{home:{matched:homeRoleMatched,total:homeAbs},away:{matched:awayRoleMatched,total:awayAbs}},
     categories:{home:{injuryOrIllness:hi,suspension:hs,doubtful:hd},away:{injuryOrIllness:ai,suspension:as,doubtful:ad}},
     resolvedByLineup:reconciled,
+    methodology:'Сезонная роль используется только при точном ID или однозначном совпадении имени из уже сохранённой Team Intelligence статистики; вес ограничен 0.85–1.60, сомнительный статус дополнительно уменьшает вклад вдвое.',
   };
 }
 
@@ -20320,12 +20336,16 @@ async function apiAnalyze(request, cfg, user) {
   const leagueId = Number(fixture.league?.id || 0);
   const season = Number(fixture.league?.season || 0) || null;
   const comparisonCompetition = { leagueId, season };
-  const [homeStanding, awayStanding, homeSeasonStats, awaySeasonStats] = await Promise.all([
+  const [homeStanding, awayStanding, homeTeamIntelligence, awayTeamIntelligence] = await Promise.all([
     cachedTeamStanding(homeId, comparisonCompetition, cfg).catch(() => null),
     cachedTeamStanding(awayId, comparisonCompetition, cfg).catch(() => null),
-    cachedSeasonStatsForComparison(homeId, leagueId, season, cfg).catch(() => null),
-    cachedSeasonStatsForComparison(awayId, leagueId, season, cfg).catch(() => null),
+    cachedTeamIntelligenceForAnalysis(homeId, leagueId, season, cfg).catch(() => ({ stats:null, playerStats:null })),
+    cachedTeamIntelligenceForAnalysis(awayId, leagueId, season, cfg).catch(() => ({ stats:null, playerStats:null })),
   ]);
+  const homeSeasonStats = homeTeamIntelligence?.stats || null;
+  const awaySeasonStats = awayTeamIntelligence?.stats || null;
+  const homePlayerStats = homeTeamIntelligence?.playerStats || null;
+  const awayPlayerStats = awayTeamIntelligence?.playerStats || null;
 
   const previousMarketSnapshots = market ? await getOddsSnapshots(fixtureId, cfg, 8).catch(() => []) : [];
   const marketMovement = buildOddsMovement(previousMarketSnapshots, market);
@@ -20333,7 +20353,7 @@ async function apiAnalyze(request, cfg, user) {
   const apiPrediction = extractPrediction(predictions);
   const h2h = formatH2H(h2hRows, homeId, awayId);
   const lineups = formatLineups(lineupsRows, homeId, awayId);
-  const absences = formatAbsences(injuries, homeId, awayId, lineups);
+  const absences = enrichFixtureAbsencesWithSeasonRole(formatAbsences(injuries, homeId, awayId, lineups), { homePlayerStats, awayPlayerStats });
   const lineupImpact = buildLineupImpact({ absences, lineups, homeName, awayName, reliability:providerReliability });
   const recentFormProb = formProbabilities(homeForm, awayForm);
   const h2hProb = h2hProbabilities(h2h);
@@ -20408,7 +20428,7 @@ async function apiAnalyze(request, cfg, user) {
 
   const payload = {
     generatedAt: new Date().toISOString(),
-    analysisVersion: '4.8.0-quality-gate',
+    analysisVersion: '4.9.0-player-role',
     match: {
       fixtureId, date: fixture.fixture?.date || '', status: fixture.fixture?.status?.short || '',
       venue: fixture.fixture?.venue?.name || '', city: fixture.fixture?.venue?.city || '',
@@ -20440,7 +20460,7 @@ async function apiAnalyze(request, cfg, user) {
     modelBreakdown: {
       weights: blended.weights,
       signals: blended.signals,
-      method: 'Рынок, прогноз источника данных, форма и очные встречи объединяются динамически. Активный профиль применяется только после двух окон отложенной выборки и атомарного сравнения кандидата с активной моделью.',
+      method: 'Рынок, прогноз источника данных, форма и очные встречи объединяются динамически. Активный профиль применяется только после двух окон отложенной выборки и атомарного сравнения кандидата с активной моделью. Потери состава корректируют итог ограниченно: при наличии уже сохранённой сезонной статистики учитываются игровая нагрузка и результативные действия, а сомнительный статус даёт половинный вклад.',
     },
     dataPolicy: {
       dataMode: paid ? 'expanded' : 'standard',
@@ -20981,6 +21001,7 @@ export default {
         openLigaDbEventFallback: 'enabled',
         teamPlayerSeasonStats: 'enabled',
         structuredAvailability: 'enabled',
+        playerRoleAvailability: 'enabled',
         footballDataScorersFallback: cfg.footballDataToken ? 'enabled' : 'available_when_configured',
         footballDataStandingsFallback: cfg.footballDataToken ? 'enabled' : 'available_when_configured',
         theOddsApiOddsFallback: cfg.theOddsApiKey ? 'enabled' : 'available_when_configured',
