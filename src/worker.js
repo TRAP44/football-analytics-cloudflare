@@ -19645,7 +19645,7 @@ async function apiMatchCenter(request, cfg) {
     events: formattedEvents,
     statistics: publicStatistics,
     xgQuality,
-    livePressure: pressure;
+    livePressure: pressure,
     smartInsights,
     liveAiCoach,
     postMatchReview,
