@@ -89,7 +89,8 @@ test('RC139 Match Center rejects stale live data from derived analytics', () => 
   assert.match(worker, /sanitizeStatisticsForDisplay\(rawFormattedStatistics, statisticsQuality\)/);
   assert.match(worker, /const eventQuality = assessMatchEventQuality\(rawFormattedEvents, \{ eventsMeta:featureMeta\.events \|\| \{\}, mode:centerMode, elapsed \}\)/);
   assert.match(worker, /const analyticalEvents = eventsForTrustedAnalytics\(rawFormattedEvents, eventQuality\)/);
-  assert.match(worker, /const trustedInjuryRows = featureMeta\.injuries\?\.confidenceBearing === false \? \[\] : injuryRows/);
+  assert.match(worker, /assessFixtureAvailabilityQuality\(injuryRows,/);
+  assert.match(worker, /const trustedInjuryRows = sanitizeAvailabilityRows\(injuryRows, availabilityQuality\)/);
 });
 
 test('RC139 embedded Match Center data carries provider and fetch provenance', () => {
@@ -123,11 +124,11 @@ const smoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
 
 test('RC139 is part of the production release health contract', () => {
-  assert.match(worker, /const APP_VERSION = '6\.119\.0-rc143'/);
+  assert.match(worker, /const APP_VERSION = '6\.120\.0-rc144'/);
   assert.match(worker, /const RC_NAME = 'RC144'/);
   assert.match(worker, /freshnessAwareDataTrust: 'enabled'/);
-  assert.match(worker, /analysisVersion: '4\.14\.0-odds-quality'/);
+  assert.match(worker, /analysisVersion: '4\.15\.0-availability-quality'/);
   assert.match(worker, /fixture:\$\{fixtureId\}:v15-availability-quality-rc144/);
-  assert.match(app, /const CLIENT_VERSION = '6\.119\.0-rc143'/);
+  assert.match(app, /const CLIENT_VERSION = '6\.120\.0-rc144'/);
   assert.match(smoke, /'freshnessAwareDataTrust'/);
 });
