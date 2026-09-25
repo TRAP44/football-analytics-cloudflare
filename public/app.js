@@ -4796,10 +4796,12 @@ function renderPopularCompetitions() {
 function matchCardHtml(m, { grouped = false } = {}) {
   const aiHistory = analysisHistoryForFixture(m.fixtureId);
   const cardState = m.live ? 'is-live' : m.finished ? 'is-finished' : 'is-upcoming';
+  const personalInsight = personalMatchInsight(m);
+  const personalReason = state.filter === 'top' ? personalInsight.reason : '';
   const reminderActive = hasReminder(m.fixtureId);
   const reminderPending = state.reminderMutations.has(Number(m.fixtureId));
   const reminderMinutes = Number(state.preferences?.reminderMinutes || 30);
-  const statusLabel = m.live ? '<b class="match-live-label">LIVE</b>' : m.finished ? '<span class="match-finished-label">Завершён</span>' : '';
+  const statusLabel = m.live ? '<b class="match-live-label">● LIVE</b>' : m.finished ? '<span class="match-finished-label">Завершён</span>' : '';
   const primaryAction = m.live
     ? `<button class="analyze-btn live-center-btn" type="button" data-center="${Number(m.fixtureId)}">Открыть LIVE</button>`
     : m.finished
@@ -4831,6 +4833,7 @@ function matchCardHtml(m, { grouped = false } = {}) {
       <div class="match-card-actions single">${primaryAction}</div>
       ${!m.live && !m.finished ? `<details class="match-card-more">
         <summary>Ещё</summary>
+        ${personalReason ? `<div class="match-signal ${personalInsight.favorite ? 'favorite-signal' : ''}">Почему здесь: ${escapeHtml(personalReason)}</div>` : ''}
         ${aiHistory ? matchAiSnapshotHtml(m) : ''}
         <button class="quick-reminder-btn ${reminderActive ? 'active' : ''} ${reminderPending ? 'is-pending' : ''}" type="button" data-quick-reminder="${Number(m.fixtureId)}" aria-pressed="${reminderActive ? 'true' : 'false'}" ${reminderPending ? 'disabled' : ''}>${reminderActive ? '🔔 Напоминание включено' : `🔔 Напомнить за ${reminderMinutes} мин.`}</button>
       </details>` : ''}
@@ -6116,6 +6119,7 @@ function renderMatchCenter(d) {
     <div class="center-tab-panel" data-center-panel="timeline">
       <section class="panel">
         <div class="center-section-title"><div><h2>⚡ Хронология матча</h2><p>Голы, карточки, замены и видеопросмотры</p></div></div>
+        ${eventQualityHintHtml(d.eventQuality)}
         ${timelineEventsHtml(d.events, m)}
       </section>
     </div>
@@ -7501,7 +7505,7 @@ function renderAnalysis(d) {
           </section>
         </div>
       </details>
-      ${m.referee ? `<section class="panel"><h2>🧑‍⚖️ Судья</h2><p>${escapeHtml(m.referee)}</p></section>` : ''}
+      ${m.referee ? `<section class="panel analysis-referee-line"><h2>🧑‍⚖️ Судья</h2><p>${escapeHtml(m.referee)}</p></section>` : ''}
     </div>
   `;
 
