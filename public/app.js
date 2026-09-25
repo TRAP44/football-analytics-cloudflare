@@ -5675,7 +5675,7 @@ function availabilityQualityHintHtml(quality = {}) {
     : quality.state === 'sanitized'
       ? `очищено перед аналитикой · исключено: ${Number(quality.rejectedCount || 0)}`
       : quality.state === 'source_untrusted'
-        ? 'источник не прошёл freshness/provenance guard'
+        ? 'данные источника недостаточно свежие или подтверждённые'
         : 'некорректные записи исключены из модели';
   const limited = ['verified','sanitized'].includes(quality.state) ? '' : 'limited';
   return `<div class="coverage-badge ${limited}">Потери · ${escapeHtml(label)} · ${escapeHtml(detail)}</div>`;
@@ -5691,10 +5691,10 @@ function xgQualityHintHtml(quality = {}) {
     : quality.state === 'partial'
       ? `доступно сторон: ${validSides}/2 · не используется для сравнения`
       : quality.state === 'source_untrusted'
-        ? 'источник статистики не прошёл freshness/provenance guard'
+        ? 'статистика источника недостаточно свежая или подтверждённая'
         : quality.state === 'invalid'
           ? 'некорректное значение исключено из аналитики'
-          : 'провайдер не отдал полную пару xG';
+          : 'полная пара xG сейчас недоступна';
   return `<div class="coverage-badge ${trusted ? '' : 'limited'}">xG · ${escapeHtml(label)} · ${escapeHtml(detail)}</div>`;
 }
 
@@ -5707,7 +5707,7 @@ function eventQualityHintHtml(quality = {}) {
     : quality.state === 'sanitized'
       ? `очищено перед аналитикой · проблем: ${issues}`
       : quality.state === 'source_untrusted'
-        ? 'источник не прошёл freshness/provenance guard'
+        ? 'данные источника недостаточно свежие или подтверждённые'
         : 'некорректные записи исключены';
   const limited = quality.state === 'verified' ? '' : 'limited';
   return `<div class="coverage-badge ${limited}">События · ${escapeHtml(label)} · ${escapeHtml(detail)}</div>`;
@@ -5723,7 +5723,7 @@ function statisticsQualityHintHtml(quality = {}) {
     : quality.state === 'sanitized'
       ? `очищено перед аналитикой · ошибок: ${issues} · неполных пар: ${partial}`
       : quality.state === 'source_untrusted'
-        ? 'источник не прошёл freshness/provenance guard'
+        ? 'данные источника недостаточно свежие или подтверждённые'
         : 'некорректные значения исключены';
   const limited = quality.state === 'verified' ? '' : 'limited';
   return `<div class="coverage-badge ${limited}">Статистика · ${escapeHtml(label)} · ${escapeHtml(detail)}</div>`;
@@ -5737,7 +5737,7 @@ function oddsQualityHintHtml(quality = {}) {
     : quality.state === 'sanitized'
       ? 'вероятности пересчитаны из валидных коэффициентов'
       : quality.state === 'source_untrusted'
-        ? 'источник не прошёл freshness/provenance guard'
+        ? 'данные источника недостаточно свежие или подтверждённые'
         : 'некорректный рынок исключён из аналитики';
   const limited = ['verified','sanitized'].includes(quality.state) ? '' : 'limited';
   return `<div class="coverage-badge ${limited}">Рынок · ${escapeHtml(label)} · ${escapeHtml(detail)}</div>`;
