@@ -7,7 +7,7 @@ const json = (body, status = 200) => new Response(JSON.stringify(body), {
   headers: { 'content-type': 'application/json' },
 });
 
-function healthyFetch({ staleOnce = false, devMode = false } = {}) {
+function healthyFetch({ staleOnce = false, devMode = false, monetization = 'paused', database = 'supabase', serviceOverrides = {} } = {}) {
   let healthCalls = 0;
   return async input => {
     const url = new URL(input);
@@ -32,6 +32,8 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         version: staleOnce && healthCalls === 1 ? '6.12.0-rc20' : '6.27.0-rc35',
         releaseCandidate: 'RC35',
         devMode,
+        database,
+        monetization,
         adminSecurity: 'enabled',
         adminDevModeIsolation: 'enabled',
         backendSecurityContract: 'enabled',
@@ -305,7 +307,20 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
       });
     }
     if (url.pathname === '/api/app-manifest') return json({ version: '6.27.0-rc35', releaseCandidate: 'RC35' });
-    if (url.pathname === '/api/public-status') return json({ ok:true, status:'operational', version:'6.27.0-rc35', releaseCandidate:'RC35', services:{telegram:'operational'} });
+    if (url.pathname === '/api/public-status') return json({
+      ok:true,
+      status:'operational',
+      version:'6.27.0-rc35',
+      releaseCandidate:'RC35',
+      services:{
+        telegram:'operational',
+        miniApp:'operational',
+        aiAnalysis:'operational',
+        search:'operational',
+        live:'operational',
+        ...serviceOverrides,
+      },
+    });
     if (['/privacy.html','/terms.html','/status.html'].includes(url.pathname)) return new Response('<!doctype html>', { status:200, headers:{
       'content-type':'text/html; charset=UTF-8',
       'content-security-policy':"default-src 'self'; object-src 'none'",
@@ -349,5 +364,28 @@ test('post-deploy smoke rejects DEV_MODE in production', async () => {
       retryDelayMs: 0,
     }),
     /DEV_MODE=true/,
+  );
+});
+
+
+test('post-deploy smoke rejects enabled monetization before closed beta', async () => {
+  await assert.rejects(
+    runDeploymentSmoke('https://football.example.test', '6.27.0-rc35', {
+      fetchImpl: healthyFetch({ monetization: 'enabled' }),
+      retries: 1,
+      retryDelayMs: 0,
+    }),
+    /MONETIZATION_ENABLED=false/,
+  );
+});
+
+test('post-deploy smoke requires API-Football-backed public services to be operational', async () => {
+  await assert.rejects(
+    runDeploymentSmoke('https://football.example.test', '6.27.0-rc35', {
+      fetchImpl: healthyFetch({ serviceOverrides: { aiAnalysis: 'configuration_required' } }),
+      retries: 1,
+      retryDelayMs: 0,
+    }),
+    /aiAnalysis must be operational/,
   );
 });
