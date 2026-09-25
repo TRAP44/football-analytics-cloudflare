@@ -109,9 +109,9 @@ Privacy contract:
 - [x] `npm run verify:release`
 - [x] `npm run verify:worker`
 - [x] post-merge Quality на `main` — повторно запущен и пройден
-- [x] production deploy SHA/provenance guard — текущий production перед этим этапом подтверждён на SHA `3893248eaa4f01272c5ae06a4a6459ae8a885b18`
-- [x] active release identity verification — `6.120.0-rc144 / RC144`, 100% traffic на подтверждённой Cloudflare version
-- [x] production smoke — 25 проверок пройдены; этот этап дополнительно усиливает smoke проверками Supabase persistence, paused monetization и operational Telegram/AI/search/LIVE
+- [x] production deploy SHA/provenance guard — Pre-Beta Operational Validation подтверждён в production на SHA `6d11b140024523ace49fc6995a320e45b7770dfe`
+- [x] active release identity verification — `6.120.0-rc144 / RC144`, 100% traffic на Cloudflare version `fa999461-83af-44b9-898e-d0b9f71fad0a`
+- [x] production smoke — 25 проверок пройдены на SHA `6d11b140024523ace49fc6995a320e45b7770dfe`; дополнительно фактически подтверждены `database=supabase`, `monetization=paused` и operational Telegram/Mini App/AI/search/LIVE
 
 
 ## 7. Pre-Beta Operational Validation
@@ -129,6 +129,6 @@ Privacy contract:
 - [x] Rollback workflow и его target/provenance/release/postcondition/smoke regression-контракты прошли release gate.
 - [x] Последние 15 минут operational-проверки не содержали новых Supabase auth failures или error/critical non-monitor events.
 - [ ] Production monitor должен вернуться из текущего `watch` в `healthy` либо причина `watch` должна быть подтверждена как transient перед приглашением. Прямой Telegram dedupe RPC на момент проверки показал 0 stale/failed claims.
-- [ ] Новый усиленный production smoke этого этапа должен пройти после merge/deploy и подтвердить фактические `database=supabase`, `monetization=paused` и operational Telegram/Mini App/AI/search/LIVE.
+- [x] Усиленный production smoke после merge/deploy прошёл и подтвердил фактические `database=supabase`, `monetization=paused` и operational Telegram/Mini App/AI/search/LIVE.
 
 Полный ручной сценарий, LIVE protocol, quota gate, cohort и feedback runbook: `PRE_BETA_VALIDATION_RU.md`.
