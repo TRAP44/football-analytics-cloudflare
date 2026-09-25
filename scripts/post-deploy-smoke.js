@@ -21,6 +21,7 @@ const REQUIRED_HEALTH_FLAGS = [
   'lineupQualityGuard',
   'lineupSemanticReliability',
   'freshnessAwareDataTrust',
+  'xgSemanticQualityGuard',
   'sourceProvenance',
   'aiAnalysisQualityGate',
   'aiAnalysisQualityGateSelfTest',

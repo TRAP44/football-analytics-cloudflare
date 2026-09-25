@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.115.0-rc139';
+const CLIENT_VERSION = '6.116.0-rc140';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc139';
+const CLIENT_RELEASE_CHANNEL = 'rc140';
 const SUPABASE_SCHEMA_HINT = 'проверьте актуальную схему Supabase (baseline v6.18 / миграции до v6.19)';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
@@ -5642,6 +5642,23 @@ function centerKeyStatsHtml(stats) {
   return `<div class="center-key-stats">${rows.slice(0,5).map(([r,l]) => centerCompareRow(l,r.home,r.away)).join('')}</div>`;
 }
 
+function xgQualityHintHtml(quality = {}) {
+  if (!quality?.state) return '';
+  const trusted = Boolean(quality.confidenceBearing);
+  const label = publicText(quality.label || (trusted ? 'xG подтверждён' : 'xG не используется'));
+  const validSides = Number(quality.validSides || 0);
+  const detail = trusted
+    ? 'используется в live-инсайтах'
+    : quality.state === 'partial'
+      ? `доступно сторон: ${validSides}/2 · не используется для сравнения`
+      : quality.state === 'source_untrusted'
+        ? 'источник статистики не прошёл freshness/provenance guard'
+        : quality.state === 'invalid'
+          ? 'некорректное значение исключено из аналитики'
+          : 'провайдер не отдал полную пару xG';
+  return `<div class="coverage-badge ${trusted ? '' : 'limited'}">xG · ${escapeHtml(label)} · ${escapeHtml(detail)}</div>`;
+}
+
 function centerAllStatsHtml(stats) {
   const items = stats?.items || [];
   if (!items.length) return '<div class="empty compact-empty">Детальная статистика пока недоступна.</div>';
@@ -5717,6 +5734,7 @@ function centerCoverageHtml(d) {
   const cells = [
     ['События', d.availability?.events],
     ['Статистика', d.availability?.statistics],
+    ['xG', d.availability?.xg],
     ['Составы', d.availability?.lineups],
     ['Игроки', d.availability?.players],
     ['Потери', d.availability?.injuries],
@@ -5859,6 +5877,7 @@ function liveAiCoachHtml(ai, match) {
   const xg = ai.current?.xg || {};
   const pressureText = Number.isFinite(Number(pressure.home)) && Number.isFinite(Number(pressure.away)) ? `${pressure.home}:${pressure.away}` : '—';
   const xgText = Number.isFinite(Number(xg.home)) && Number.isFinite(Number(xg.away)) ? `${Number(xg.home).toFixed(2)}:${Number(xg.away).toFixed(2)}` : '—';
+  const xgQualityLabel = publicText(ai.current?.xgQuality?.label || '');
   const watch = Array.isArray(ai.watchNext) ? ai.watchNext.slice(0,3) : [];
   return `<section class="panel live-ai-coach ${tone}">
     <div class="live-ai-head"><div><span>AI В ЭФИРЕ · ${Number(match.elapsed || 0) ? `${Number(match.elapsed)}′` : 'сейчас'}</span><h2>${escapeHtml(publicText(ai.headline || 'Читаю матч в реальном времени'))}</h2></div><b>${Math.round(Number(ai.confidence || 0))}%</b></div>
@@ -5867,7 +5886,7 @@ function liveAiCoachHtml(ai, match) {
     <div class="live-ai-grid">
       <div><span>Счёт</span><strong>${match.score?.home ?? 0}:${match.score?.away ?? 0}</strong><small>${Number(match.elapsed || 0) ? `${Number(match.elapsed)} мин.` : 'Матч идёт'}</small></div>
       <div><span>Давление</span><strong>${pressureText}</strong><small>${escapeHtml(publicText(ai.current?.pressureLeaderLabel || 'Баланс'))}</small></div>
-      <div><span>xG</span><strong>${xgText}</strong><small>${escapeHtml(publicText(ai.current?.chanceLabel || 'По доступным данным'))}</small></div>
+      <div><span>xG</span><strong>${xgText}</strong><small>${escapeHtml(publicText(ai.current?.chanceLabel || 'По доступным данным'))}${xgQualityLabel ? ` · ${escapeHtml(xgQualityLabel)}` : ''}</small></div>
       <div><span>Риск сценария</span><strong>${escapeHtml(publicText(ai.volatility?.label || 'Средний'))}</strong><small>${escapeHtml(publicText(ai.volatility?.reason || 'Матч может быстро измениться.'))}</small></div>
     </div>
     ${ai.prematch?.available ? `<div class="live-ai-prematch"><span>До матча</span><strong>${escapeHtml(publicText(ai.prematch.signal || ai.prematch.outcome || 'AI-разбор'))}</strong><b>${escapeHtml(publicText(ai.prematch.stateLabel || 'сравниваю'))}</b></div>` : `<div class="live-ai-prematch muted"><span>До матча</span><strong>Сохранённого AI-разбора нет</strong><b>читаю только текущий матч</b></div>`}
@@ -5989,6 +6008,7 @@ function renderMatchCenter(d) {
       <section class="panel">
         <div class="center-section-title"><div><h2>Ключевые показатели</h2><p>Самые полезные метрики в одном экране</p></div><span class="coverage-badge">${escapeHtml(publicText(d.dataCapabilities?.label || 'Покрытие данных'))}</span></div>
         ${centerKeyStatsHtml(d.statistics)}
+        ${xgQualityHintHtml(d.xgQuality)}
       </section>
 
       ${latestEvents.length ? `<section class="panel"><div class="center-section-title"><div><h2>Последние события</h2><p>Что произошло недавно</p></div></div>${liveEventsHtml(latestEvents)}</section>` : ''}
