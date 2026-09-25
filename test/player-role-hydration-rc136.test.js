@@ -29,12 +29,12 @@ test('RC136 exposes hydration provenance and neutral fallback',()=>{
   assert.match(worker,/playerRoleHydration:\{/);
   assert.match(worker,/home:\{source:homeRoleHydration\.source/);
   assert.match(worker,/Роль отсутствующих игроков хозяев не уточнена/);
-  assert.match(worker,/analysisVersion: '4\.10\.0-role-hydration'/);
+  assert.match(worker,/analysisVersion: '4\.11\.0-lineup-quality'/);
 });
 
 test('RC136 is part of release health contract',()=>{
   assert.match(worker,/playerRoleHydration: 'enabled'/);
-  assert.match(worker,/const APP_VERSION = '6\.112\.0-rc136'/);
-  assert.match(worker,/const RC_NAME = 'RC136'/);
+  assert.match(worker,/const APP_VERSION = '6\.113\.0-rc137'/);
+  assert.match(worker,/const RC_NAME = 'RC137'/);
   assert.match(smoke,/'playerRoleHydration'/);
 });
