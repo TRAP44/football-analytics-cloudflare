@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.108.0 RC132
+# QA Release Checklist — v6.109.0 RC133
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.108.0`.
-- Worker и client: `6.108.0-rc132`.
-- Release candidate: `RC132`.
+- `package.json` и `package-lock.json`: `6.109.0`.
+- Worker и client: `6.109.0-rc133`.
+- Release candidate: `RC133`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -33,6 +33,19 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC133 — Team Player Season Stats
+
+- Вкладка команды «Статистика» получает сезонные показатели игроков без отдельного frontend-запроса.
+- API-Football `/players` остаётся primary и обрабатывается с обязательным `paging.current / paging.total`.
+- User-facing загрузка ограничена максимум тремя страницами и перед каждой дополнительной страницей повторно проверяет запас квоты.
+- Полная и частичная выборка различаются явно; неполная pagination не выдаётся за полный состав.
+- Нормализуются матчи, минуты, голы, ассисты, рейтинг, передачи, отборы, дуэли, дриблинг и карточки без искусственного player score.
+- football-data.org `/scorers` подготовлен как опциональный fallback по существующему `FOOTBALL_DATA_TOKEN`; он явно помечается как частичный список бомбардиров, а не полный roster stats.
+- Ошибка player endpoint не ломает уже рабочую сезонную статистику команды.
+- Team Intelligence cache contract поднят до v2; новых таблиц Supabase и новых секретов нет.
+- Regression: `test/team-player-stats-rc133.test.js`.
+- Post-deploy smoke требует health-флаг `teamPlayerSeasonStats`.
 
 ## RC132 — OpenLigaDB Event Fallback
 

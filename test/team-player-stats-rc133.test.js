@@ -131,3 +131,12 @@ test('RC133 player stats UI makes partial provider coverage explicit', () => {
   assert.match(styles, /overflow-x:auto/);
   assert.match(styles, /@media\(max-width:560px\)[\s\S]*\.player-season-head/);
 });
+
+
+test('RC133 is part of the release health contract', () => {
+  assert.match(worker, /teamPlayerSeasonStats: 'enabled'/);
+  assert.match(worker, /footballDataScorersFallback: cfg\.footballDataToken \? 'enabled' : 'available_when_configured'/);
+  assert.match(worker, /const APP_VERSION = '6\.109\.0-rc133'/);
+  assert.match(worker, /const RC_NAME = 'RC133'/);
+  assert.match(app, /const CLIENT_VERSION = '6\.109\.0-rc133'/);
+});
