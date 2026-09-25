@@ -457,7 +457,7 @@ function sendActionError(reason, error, view = telemetryViewName()) {
   }, { once: true });
 }
 
-function renderAnalysisRequestState(kind, { title = '', message = '', retry = null } = {}) {
+function renderJourneyState(kind, { title = '', message = '', retry = null } = {}) {
   const root = $('analysis');
   if (!root) return;
   const loading = kind === 'loading';
@@ -484,7 +484,7 @@ function renderProfileAccessState(kind = 'ready', message = '') {
     <div><strong>${loading ? 'Загружаем профиль' : 'Профиль временно недоступен'}</strong><p>${escapeHtml(message || (loading ? 'Получаем ваши настройки и избранное.' : 'Не удалось обновить профиль.'))}</p></div>
     ${loading ? '' : '<button id="profileRecoveryRetry" class="primary-setting-btn" type="button">Повторить</button>'}
   </section>`;
-  if (!loading) $('profileRecoveryRetry')?.addEventListener('click', () => openProfileView({ force: true }), { once: true });
+  if (!loading) $('profileRecoveryRetry')?.addEventListener('click', () => openProfileView(), { once: true });
 }
 
 function setNetworkMode(mode, options = {}) {
@@ -2070,10 +2070,10 @@ async function resetSettlementCircuitFromUi() {
   }
 }
 
-async function openProfileView(options = {}) {
+async function openProfileView() {
   showView('profileView');
   sendProductAction('profile_open', 'profileView');
-  if (!state.profile || options.force) {
+  if (!state.profile) {
     renderProfileAccessState('loading');
     await loadProfile();
   }
@@ -4556,7 +4556,8 @@ async function runGlobalSearch({ manual = false } = {}) {
       + mergeById(merged.competitions, state.globalSearch.remoteCompetitions, 'leagueId').length
       + state.globalSearch.knownTeams.length;
     state.globalSearch.status = totalMatches ? 'found' : totalEntities ? 'done' : 'empty';
-    sendProductAction(totalMatches || totalEntities ? 'search_found' : 'search_empty', 'searchView');
+    if (totalMatches || totalEntities) sendProductAction('search_found', 'searchView');
+    else sendProductAction('search_empty', 'searchView');
     if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
   } catch (e) {
     if (seq !== state.globalSearch.requestSeq) return;
@@ -6345,7 +6346,7 @@ async function openMatchCenter(fixtureId, btn) {
   const original = btn?.textContent || '';
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Загружаю матч…'; }
   showView('analysisView');
-  renderAnalysisRequestState('loading', {
+  renderJourneyState('loading', {
     title: 'Открываем матч',
     message: 'Загружаем счёт, события и доступную статистику.',
   });
@@ -6357,7 +6358,7 @@ async function openMatchCenter(fixtureId, btn) {
     if (data.mode === 'live') sendProductAction('live_open', sourceView);
   } catch (e) {
     sendActionError('match', e, sourceView);
-    renderAnalysisRequestState('error', {
+    renderJourneyState('error', {
       title: 'Матч временно не открылся',
       message: e.message || 'Не удалось получить данные матча.',
       retry: () => openMatchCenter(fixtureId, null),
@@ -6393,7 +6394,7 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
   const movedToAnalysis = sourceView !== 'analysisView';
   if (movedToAnalysis) {
     showView('analysisView');
-    renderAnalysisRequestState('loading', {
+    renderJourneyState('loading', {
       title: 'Готовим AI-анализ',
       message: 'Собираем данные матча и проверяем основные факторы.',
     });
@@ -6435,7 +6436,7 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
     else toast(e.message);
     sendActionError('ai', e, sourceView);
     if (movedToAnalysis && recovery?.action !== 'search') {
-      renderAnalysisRequestState('error', {
+      renderJourneyState('error', {
         title: 'AI-анализ временно недоступен',
         message: e.status === 429 ? 'Лимит анализов на сегодня исчерпан или источник временно ограничил запросы.' : (e.message || 'Не удалось подготовить анализ.'),
         retry: () => analyzeMatch(fixtureId, null, options),
