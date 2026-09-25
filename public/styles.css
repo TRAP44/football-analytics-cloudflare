@@ -2919,3 +2919,14 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 .player-season-name{min-width:0;display:grid;gap:3px}.player-season-name strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}.player-season-name small{color:var(--hint);font-size:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .player-season-alert{display:inline-block;margin-left:5px;padding:2px 5px;border:1px solid var(--line);border-radius:999px;font-size:7px;font-weight:800;color:var(--hint)}
 @media(max-width:560px){.player-season-table{margin-inline:-2px}.player-season-head,.player-season-row{min-width:520px}}
+
+
+/* RC134 — structured availability */
+.absence-live-title{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.absence-live-title strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.absence-kind{flex:0 0 auto;border:1px solid var(--line);border-radius:999px;padding:3px 6px;font-size:8px!important;font-weight:850;color:var(--hint)!important}
+.absence-kind.suspension{border-color:rgba(239,68,68,.35)}
+.absence-kind.injury{border-color:rgba(245,158,11,.35)}
+.absence-kind.illness{border-color:rgba(59,130,246,.35)}
+.absence-live-row small{color:var(--hint);font-size:9px}
+.center-absence-summary p{margin:6px 0 0;color:var(--hint);font-size:10px}
