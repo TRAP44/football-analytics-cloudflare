@@ -85,12 +85,30 @@ test('beta dashboard is admin-only while feedback remains available to beta user
 });
 
 
-test('closed beta dashboard has a hard cohort boundary and never mixes pre-beta telemetry',()=>{
+test('closed beta dashboard requires verified server-side membership and excludes pre-boundary cohort rows',()=>{
   assert.match(worker,/const CLOSED_BETA_COHORT = 'closed_beta_v1'/);
   const telemetry=block(worker,'async function apiClientTelemetry','const BETA_FEEDBACK_CATEGORIES');
-  assert.match(telemetry,/betaCohort:CLOSED_BETA_COHORT/);
+  assert.match(telemetry,/isClosedBetaUser\(user, cfg\)/);
+  assert.match(telemetry,/betaMembershipVerified: true/);
+  const feedback=block(worker,'async function apiBetaFeedback','function betaMetricSummary');
+  assert.match(feedback,/isClosedBetaUser\(user,cfg\)/);
+  assert.match(feedback,/betaMembershipVerified:true/);
   const dashboard=block(worker,'async function apiBetaDashboard','async function readOpsEventsRange');
   assert.match(dashboard,/metadata\?\.betaCohort/);
-  assert.match(dashboard,/===CLOSED_BETA_COHORT/);
+  assert.match(dashboard,/betaMembershipVerified===true/);
   assert.match(dashboard,/cohort:CLOSED_BETA_COHORT/);
+  assert.match(dashboard,/membershipBoundary:'server_allowlist_verified'/);
+});
+
+test('strict beta API gate runs only after Telegram initData validation and before normal API routing',()=>{
+  const auth=block(worker,'async function getRequestUser','async function upsertUser');
+  assert.match(auth,/validateTelegramInitData/);
+  assert.match(auth,/const telegramValidated = Boolean\(user\)/);
+  assert.match(auth,/user\.__telegramValidated = telegramValidated/);
+  const userAt=worker.indexOf('const user = await getRequestUser(request, cfg)');
+  const betaAt=worker.indexOf('const betaAccess = closedBetaAccessDecision(user, cfg)',userAt);
+  const runtimeAt=worker.indexOf('const runtimeState = await loadRuntimeControls(cfg)',userAt);
+  assert.ok(userAt>=0 && betaAt>userAt && runtimeAt>betaAt);
+  assert.match(worker,/CLOSED_BETA_ACCESS_REQUIRED/);
+  assert.match(worker,/apiBetaFeedback\(request, cfg, user\)/);
 });
