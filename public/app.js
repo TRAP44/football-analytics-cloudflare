@@ -4801,7 +4801,7 @@ function matchCardHtml(m, { grouped = false } = {}) {
   const reminderActive = hasReminder(m.fixtureId);
   const reminderPending = state.reminderMutations.has(Number(m.fixtureId));
   const reminderMinutes = Number(state.preferences?.reminderMinutes || 30);
-  const statusLabel = m.live ? '<b class="match-live-label">● LIVE</b>' : m.finished ? '<span class="match-finished-label">Завершён</span>' : '';
+  const statusLabel = m.live ? '<b class="match-live-label">🔴 ИДЁТ</b>' : m.finished ? '<span class="match-finished-label">Завершён</span>' : '';
   const primaryAction = m.live
     ? `<button class="analyze-btn live-center-btn" type="button" data-center="${Number(m.fixtureId)}">Открыть LIVE</button>`
     : m.finished
