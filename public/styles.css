@@ -2576,14 +2576,11 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 
 /* RC49 — public Mini App shell */
 .miniapp-public-shell .bottom-nav {
-  grid-template-columns:repeat(2,minmax(0,1fr));
-  max-width:520px;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  max-width:730px;
   margin-inline:auto;
 }
-.miniapp-public-shell .search-mode-tabs,
-.miniapp-public-shell #searchRecentWrap,
-.miniapp-public-shell #searchFavoritesWrap,
-.miniapp-public-shell #searchCompetitionsWrap {
+.miniapp-public-shell .search-mode-tabs {
   display:none !important;
 }
 .miniapp-public-shell .search-page-head {
@@ -3269,4 +3266,128 @@ html {
   .nav-item small {
     font-size: 10px;
   }
+}
+
+
+/* UX hotfix — public shell conflict resolution and profile/admin separation */
+.profile-zone-kicker {
+  display: inline-flex;
+  margin: 0 auto 10px;
+  color: var(--hint);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .14em;
+}
+.accent-options {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 7px;
+}
+.accent-option {
+  min-width: 0;
+  min-height: 48px;
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  align-content: center;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px 4px;
+  background: rgba(148,163,184,.035);
+  color: var(--hint);
+  font-size: 9px;
+}
+.accent-option.active {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.accent-swatch {
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  border: 1px solid rgba(127,127,127,.24);
+  box-shadow: inset 0 0 0 4px rgba(255,255,255,.12);
+}
+.accent-swatch.system { background: linear-gradient(135deg, #57e389 25%, #60a5fa 25% 50%, #c084fc 50% 75%, #fbbf24 75%); }
+.accent-swatch.green { background: #57e389; }
+.accent-swatch.blue { background: #60a5fa; }
+.accent-swatch.violet { background: #c084fc; }
+.accent-swatch.amber { background: #fbbf24; }
+.appearance-help {
+  display: block;
+  margin-top: 8px;
+  color: var(--hint);
+  font-size: 9px;
+  line-height: 1.4;
+}
+.admin-zone-heading {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.admin-zone-heading > span {
+  color: var(--accent);
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: .14em;
+}
+.admin-zone-heading h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.admin-zone-heading p {
+  margin: 4px 0 0;
+  color: var(--hint);
+  font-size: 10px;
+  line-height: 1.4;
+}
+.admin-system-overview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0,1fr));
+  gap: 7px;
+  margin-bottom: 12px;
+}
+.admin-system-overview > div {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 9px;
+  background: rgba(148,163,184,.025);
+}
+.admin-system-overview span,
+.admin-system-overview strong {
+  display: block;
+}
+.admin-system-overview span {
+  color: var(--hint);
+  font-size: 8px;
+}
+.admin-system-overview strong {
+  margin-top: 4px;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.miniapp-public-shell #searchRecentWrap,
+.miniapp-public-shell #searchFavoritesWrap,
+.miniapp-public-shell #searchCompetitionsWrap {
+  display: block;
+}
+.miniapp-public-shell #searchRecentWrap[hidden],
+.miniapp-public-shell #searchFavoritesWrap[hidden],
+.miniapp-public-shell #searchCompetitionsWrap[hidden] {
+  display: none !important;
+}
+
+@media (max-width: 560px) {
+  .accent-options { grid-template-columns: repeat(3, minmax(0,1fr)); }
+  .admin-system-overview { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+@media (max-width: 390px) {
+  .accent-options { grid-template-columns: repeat(2, minmax(0,1fr)); }
 }
