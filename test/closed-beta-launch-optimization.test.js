@@ -76,3 +76,28 @@ test('beta admin UI shows launch blockers and the full evidence-based journey',(
   assert.match(app,/Нужно больше доказательств/);
   assert.match(app,/полный путь запуск → поиск → найденный матч → матч → AI start → AI complete → история → повторный вход/);
 });
+
+
+test('beta data coverage stays inside existing privacy-safe telemetry and tracks required football gaps',()=>{
+  const telemetry=block(worker,'const CLIENT_TELEMETRY_EVENTS','const BETA_FEEDBACK_CATEGORIES');
+  assert.match(telemetry,/'data_coverage'/);
+  for (const key of ['lineupsAvailable','injuriesAvailable','statisticsAvailable','xgAvailable','oddsAvailable']) {
+    assert.match(telemetry,new RegExp(key));
+  }
+  assert.doesNotMatch(telemetry,/fixtureId.*data_coverage|teamName.*data_coverage|searchText.*data_coverage/);
+  const dashboard=block(worker,'async function apiBetaDashboard','async function readOpsEventsRange');
+  assert.match(dashboard,/dataCoverage:coverage/);
+  for (const key of ['lineups','injuries','statistics','xg','odds']) {
+    assert.match(dashboard,new RegExp(key));
+  }
+  assert.match(app,/sendMatchDataCoverage\(data, sourceView\)/);
+  assert.match(app,/sendClientTelemetry\('data_coverage'/);
+});
+
+test('new provider review still requires systematic beta evidence rather than one missing field',()=>{
+  const dashboard=block(worker,'async function apiBetaDashboard','async function readOpsEventsRange');
+  assert.match(dashboard,/coverage\.samples>=10/);
+  assert.match(dashboard,/systematicMissingCategories>=2/);
+  assert.match(dashboard,/dataSourceFeedback>=2/);
+  assert.match(dashboard,/insufficient_evidence/);
+});
