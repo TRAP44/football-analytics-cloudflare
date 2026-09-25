@@ -121,7 +121,7 @@ const app = fs.readFileSync('public/app.js', 'utf8');
 
 test('RC139 is part of the production release health contract', () => {
   assert.match(worker, /const APP_VERSION = '6\.115\.0-rc139'/);
-  assert.match(worker, /const RC_NAME = 'RC139'/);
+  assert.match(worker, /const RC_NAME = 'RC140'/);
   assert.match(worker, /freshnessAwareDataTrust: 'enabled'/);
   assert.match(worker, /analysisVersion: '4\.13\.0-freshness-trust'/);
   assert.match(worker, /fixture:\$\{fixtureId\}:v13-freshness-trust/);
