@@ -49,6 +49,7 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         structuredAvailability: 'enabled',
         playerRoleAvailability: 'enabled',
         playerRoleHydration: 'enabled',
+        lineupQualityGuard: 'enabled',
         sourceProvenance: 'enabled',
         aiAnalysisQualityGate: 'enabled',
         aiAnalysisQualityGateSelfTest: 'enabled',
