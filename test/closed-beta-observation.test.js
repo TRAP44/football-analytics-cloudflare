@@ -88,8 +88,8 @@ test('beta dashboard is admin-only while feedback remains available to beta user
 test('closed beta dashboard requires verified server-side membership and excludes pre-boundary cohort rows',()=>{
   assert.match(worker,/const CLOSED_BETA_COHORT = 'closed_beta_v1'/);
   const telemetry=block(worker,'async function apiClientTelemetry','const BETA_FEEDBACK_CATEGORIES');
-  assert.match(telemetry,/isClosedBetaUser\(user, cfg\)/);
-  assert.match(telemetry,/betaMembershipVerified: true/);
+  assert.match(telemetry,/closedBetaTelemetryMetadata\(user, cfg\)/);
+  assert.match(telemetry,/betaMembershipVerified===true/);
   const feedback=block(worker,'async function apiBetaFeedback','function betaMetricSummary');
   assert.match(feedback,/isClosedBetaUser\(user,cfg\)/);
   assert.match(feedback,/betaMembershipVerified:true/);
@@ -98,6 +98,28 @@ test('closed beta dashboard requires verified server-side membership and exclude
   assert.match(dashboard,/betaMembershipVerified===true/);
   assert.match(dashboard,/cohort:CLOSED_BETA_COHORT/);
   assert.match(dashboard,/membershipBoundary:'server_allowlist_verified'/);
+});
+
+
+test('beta telemetry stores no raw Telegram ID and dashboard counts only server-pseudonymized participants',()=>{
+  const identity=block(worker,'async function closedBetaTelemetryMetadata','function betaProductEventName');
+  assert.match(identity,/hmacSha256/);
+  assert.match(identity,/betaParticipantKey/);
+  assert.match(identity,/betaMembershipVerified:true/);
+
+  const telemetry=block(worker,'async function apiClientTelemetry','const BETA_FEEDBACK_CATEGORIES');
+  assert.match(telemetry,/const betaParticipant = betaMeta\.betaMembershipVerified===true/);
+  assert.match(telemetry,/event === 'product_action' && !betaParticipant/);
+  assert.match(telemetry,/event === 'action_error' && !betaParticipant/);
+
+  const metric=block(worker,'function betaMetricSummary','function betaTimingSummary');
+  assert.match(metric,/betaProductEventName/);
+  assert.match(metric,/betaParticipantKey/);
+  assert.doesNotMatch(metric,/telegram_id/);
+
+  const dashboard=block(worker,'async function apiBetaDashboard','async function readOpsEventsRange');
+  assert.doesNotMatch(dashboard,/growth_events|telegram_id/);
+  assert.match(dashboard,/participantKeysReturned:false/);
 });
 
 test('strict beta API gate runs only after Telegram initData validation and before normal API routing',()=>{

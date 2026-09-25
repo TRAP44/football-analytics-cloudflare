@@ -14164,6 +14164,37 @@ const CLIENT_ACTION_ERROR_KINDS = new Set([
 const CLIENT_TIMING_OPERATIONS = new Set(['search', 'match', 'ai', 'live']);
 const CLOSED_BETA_COHORT = 'closed_beta_v1';
 
+async function closedBetaTelemetryMetadata(user, cfg) {
+  if (!isClosedBetaUser(user, cfg) || !cfg?.botToken) return {};
+  const userId=Number(user?.id || 0);
+  const digest=await hmacSha256(
+    enc.encode(String(cfg.botToken)),
+    `${CLOSED_BETA_COHORT}:${userId}`,
+  );
+  return {
+    betaCohort:CLOSED_BETA_COHORT,
+    betaMembershipVerified:true,
+    betaParticipantKey:bytesToHex(new Uint8Array(digest)).slice(0,32),
+  };
+}
+
+function betaProductEventName(row = {}) {
+  if (row?.source!=='client' || row?.event_type!=='client_telemetry') return '';
+  const code=String(row?.code || '').toUpperCase();
+  if (code==='BOOT_OK') return 'miniapp_open';
+  if (code==='PRODUCT_ACTION') {
+    const action=String(row?.metadata?.reason || '');
+    return CLIENT_PRODUCT_ACTIONS.has(action) ? `miniapp_${action}` : '';
+  }
+  if (code==='ACTION_ERROR') return 'miniapp_error';
+  return '';
+}
+
+function betaParticipantKey(row = {}) {
+  const key=String(row?.metadata?.betaParticipantKey || '');
+  return /^[0-9a-f]{32}$/i.test(key) ? key : '';
+}
+
 const CLIENT_TELEMETRY_VIEWS = new Set([
   'matchesView',
   'searchView',
@@ -14235,27 +14266,28 @@ async function apiClientTelemetry(request, cfg, user) {
     if (memory.clientTelemetryDedupe.size > 1500) pruneMemoryState();
   }
 
-  const betaMeta = isClosedBetaUser(user, cfg)
-    ? { betaCohort: CLOSED_BETA_COHORT, betaMembershipVerified: true }
-    : {};
+  const betaMeta = await closedBetaTelemetryMetadata(user, cfg);
+  const betaParticipant = betaMeta.betaMembershipVerified===true;
   if (event === 'boot_ok') {
     const attribution=await ensureLaunchAttribution(user.id,meta.startParam || '',cfg);
-    void recordGrowthEvent(cfg,{userId:user.id,eventName:'miniapp_open',channel:'miniapp',attribution,metadata:{view:meta.view || '',clientVersion:meta.clientVersion || '',releaseChannel:meta.releaseChannel || '',...betaMeta}});
+    if (!betaParticipant) {
+      void recordGrowthEvent(cfg,{userId:user.id,eventName:'miniapp_open',channel:'miniapp',attribution,metadata:{view:meta.view || '',clientVersion:meta.clientVersion || '',releaseChannel:meta.releaseChannel || ''}});
+    }
   }
-  if (event === 'product_action') {
+  if (event === 'product_action' && !betaParticipant) {
     void recordGrowthEvent(cfg,{
       userId:user.id,
       eventName:`miniapp_${meta.reason}`,
       channel:'miniapp',
-      metadata:{view:meta.view || 'unknown',clientVersion:meta.clientVersion || '',releaseChannel:meta.releaseChannel || '',...betaMeta},
+      metadata:{view:meta.view || 'unknown',clientVersion:meta.clientVersion || '',releaseChannel:meta.releaseChannel || ''},
     });
   }
-  if (event === 'action_error') {
+  if (event === 'action_error' && !betaParticipant) {
     void recordGrowthEvent(cfg,{
       userId:user.id,
       eventName:'miniapp_error',
       channel:'miniapp',
-      metadata:{action:meta.reason,errorKind:meta.errorKind || 'unknown',view:meta.view || 'unknown',clientVersion:meta.clientVersion || '',releaseChannel:meta.releaseChannel || '',...betaMeta},
+      metadata:{action:meta.reason,errorKind:meta.errorKind || 'unknown',view:meta.view || 'unknown',clientVersion:meta.clientVersion || '',releaseChannel:meta.releaseChannel || ''},
     });
   }
   const severity = ['compatibility_block', 'client_error'].includes(event)
@@ -14358,8 +14390,8 @@ async function apiBetaFeedback(request, cfg, user) {
 }
 
 function betaMetricSummary(rows = [], eventName = '') {
-  const matched=rows.filter(row=>String(row?.event_name || '')===eventName);
-  const users=new Set(matched.map(row=>Number(row?.telegram_id || 0)).filter(Boolean));
+  const matched=rows.filter(row=>betaProductEventName(row)===eventName);
+  const users=new Set(matched.map(betaParticipantKey).filter(Boolean));
   return {events:matched.length,users:users.size};
 }
 
@@ -14441,20 +14473,12 @@ async function apiBetaDashboard(request,cfg) {
   const now=Date.now();
   const since=new Date(now-days*86400_000).toISOString();
   const end=new Date(now+1000).toISOString();
-  let growthRows=[];
-  let growthTruncated=false;
-  try {
-    const page=await supaSelectPaged(cfg,'growth_events',{created_at:`gte.${since}`},{pageSize:1000,maxRows:10000,order:'created_at.asc'});
-    growthRows=(page.rows || []).filter(row=>String(row?.metadata?.betaCohort || '')===CLOSED_BETA_COHORT && row?.metadata?.betaMembershipVerified===true);
-    growthTruncated=Boolean(page.truncated);
-  } catch (error) {
-    return json({available:false,reason:'Не удалось прочитать privacy-safe beta telemetry.',days});
-  }
   const [opsResult,diagnostics]=await Promise.all([
     readOpsEventsRange(cfg,since,end,1000),
     collectDiagnostics(cfg).catch(()=>({})),
   ]);
   const opsRows=(opsResult.items || []).filter(row=>String(row?.metadata?.betaCohort || '')===CLOSED_BETA_COHORT && row?.metadata?.betaMembershipVerified===true);
+  const productRows=opsRows.filter(row=>Boolean(betaProductEventName(row)));
 
   const metricDefs={
     miniAppLaunch:'miniapp_open',
@@ -14469,16 +14493,16 @@ async function apiBetaDashboard(request,cfg) {
     profileOpen:'miniapp_profile_open',
   };
   const metrics={};
-  for (const [key,eventName] of Object.entries(metricDefs)) metrics[key]=betaMetricSummary(growthRows,eventName);
+  for (const [key,eventName] of Object.entries(metricDefs)) metrics[key]=betaMetricSummary(productRows,eventName);
 
-  const userSet=(eventName)=>new Set(growthRows.filter(row=>String(row?.event_name || '')===eventName).map(row=>Number(row?.telegram_id || 0)).filter(Boolean));
+  const userSet=(eventName)=>new Set(productRows.filter(row=>betaProductEventName(row)===eventName).map(betaParticipantKey).filter(Boolean));
   const entry=userSet('miniapp_open');
   const search=userSet('miniapp_search_used');
   const match=userSet('miniapp_match_open');
   const ai=userSet('miniapp_ai_complete');
-  const coreCompleted=new Set([...entry].filter(id=>search.has(id)&&match.has(id)&&ai.has(id))).size;
+  const coreCompleted=new Set([...entry].filter(key=>search.has(key)&&match.has(key)&&ai.has(key))).size;
 
-  const errorRows=growthRows.filter(row=>String(row?.event_name || '')==='miniapp_error');
+  const errorRows=productRows.filter(row=>betaProductEventName(row)==='miniapp_error');
   const errorKinds={};
   const errorActions={};
   for (const row of errorRows) {
@@ -14529,6 +14553,7 @@ async function apiBetaDashboard(request,cfg) {
     privacy:{
       aggregatedOnly:true,
       telegramIdsReturned:false,
+      participantKeysReturned:false,
       searchQueriesReturned:false,
       errorTextsReturned:false,
       feedbackTextsReturned:false,
@@ -14572,9 +14597,8 @@ async function apiBetaDashboard(request,cfg) {
       betaExpansionReadiness:{status:expansionStatus,blockers:blockerCount,majors:majorCount},
     },
     sample:{
-      growthEvents:growthRows.length,
+      productEvents:productRows.length,
       opsEvents:opsRows.length,
-      growthTruncated,
       opsPersistent:Boolean(opsResult.persistent),
       opsSampleLimited:opsRows.length>=1000,
     },
