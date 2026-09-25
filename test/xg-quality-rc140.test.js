@@ -95,10 +95,10 @@ test('RC140 routes xG through the semantic guard before live AI and post-match e
 });
 
 test('RC140 exposes xG quality in Match Center and production health contracts', () => {
-  assert.match(worker, /match-center:\$\{fixtureId\}:v14-statistics-quality-rc142/);
-  assert.match(worker, /const APP_VERSION = '6\.118\.0-rc142'/);
-  assert.match(worker, /const RC_NAME = 'RC142'/);
-  assert.match(app, /const CLIENT_VERSION = '6\.118\.0-rc142'/);
+  assert.match(worker, /match-center:\$\{fixtureId\}:v15-odds-quality-rc143/);
+  assert.match(worker, /const APP_VERSION = '6\.119\.0-rc143'/);
+  assert.match(worker, /const RC_NAME = 'RC143'/);
+  assert.match(app, /const CLIENT_VERSION = '6\.119\.0-rc143'/);
   assert.match(app, /xgQualityHintHtml/);
   assert.match(app, /\['xG', d\.availability\?\.xg\]/);
   assert.match(smoke, /'xgSemanticQualityGuard'/);

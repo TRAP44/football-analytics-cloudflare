@@ -9,14 +9,14 @@ const css=fs.readFileSync('public/styles.css','utf8');
 test('match center builds a dedicated AI LIVE coach',()=>{
   assert.match(worker,/function buildLiveAiCoach/);
   assert.match(worker,/liveAiCoach = live \?/);
-  assert.match(worker,/v14-statistics-quality-rc142/);
+  assert.match(worker,/v15-odds-quality-rc143/);
   assert.match(app,/function liveAiCoachHtml/);
   assert.match(app,/d\.liveAiCoach/);
   assert.match(css,/\.live-ai-coach/);
 });
 
 test('AI LIVE compares the current match with the cached pre-match AI snapshot',()=>{
-  assert.match(worker,/fixture:\$\{fixtureId\}:v13-freshness-trust/);
+  assert.match(worker,/fixture:\$\{fixtureId\}:v14-odds-quality-rc143/);
   assert.match(worker,/prematchAnalysis/);
   assert.match(worker,/Сценарий сломан/);
   assert.match(worker,/Сценарий подтверждается/);

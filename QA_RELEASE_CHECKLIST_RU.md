@@ -1,4 +1,14 @@
-# QA Release Checklist — v6.118.0 RC142
+# QA Release Checklist — v6.119.0 RC143
+
+## RC143 — Odds Market Semantic Quality Guard
+- Проверить `npm test`, включая `test/odds-quality-rc143.test.js`: валидный 1X2 проходит, некорректные/неполные коэффициенты, невозможная сумма implied probabilities, неверный source count и provider mismatch отклоняются.
+- Несогласованные provider probabilities не должны использоваться напрямую: при валидных odds они пересчитываются из десятичных коэффициентов перед моделью и UI.
+- Stale/unverified/semantic-invalid рынок должен fail-closed до `saveOddsSnapshot`, `buildOddsMovement`, probability blend и Live AI; исторические snapshots проходят отдельную semantic-фильтрацию.
+- Структурно некорректный primary 1X2 может перейти на уже существующий лицензированный fallback; новый внешний provider не добавляется.
+- Match Center должен вернуть `liveOddsQuality` и `availability.liveOdds`; полный анализ — `oddsQuality`. UI показывает статус semantic guard.
+- Release gate: Worker/client `6.119.0-rc143`, Analysis cache `v14-odds-quality-rc143`, Match Center cache `v15-odds-quality-rc143`, health/smoke flag `oddsSemanticQualityGuard`.
+- RC139 freshness/provenance и RC140–RC142 специализированные semantic guards остаются обязательными нижележащими слоями.
+- Supabase: новых миграций, таблиц или колонок для RC143 нет; актуальная production-схема остаётся на миграции `v6.19`.
 
 ## RC142 — Live Statistics Semantic Consistency Guard
 - Проверить `npm test`, включая `test/statistics-quality-rc142.test.js`: валидные парные метрики проходят, некорректные диапазоны/форматы, противоречивые удары, передачи и владение очищаются.
@@ -42,9 +52,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.118.0`.
-- Worker и client: `6.118.0-rc142`.
-- Release candidate: `RC142`.
+- `package.json` и `package-lock.json`: `6.119.0`.
+- Worker и client: `6.119.0-rc143`.
+- Release candidate: `RC143`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 

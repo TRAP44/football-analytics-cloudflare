@@ -131,7 +131,7 @@ test('RC142 routes sanitized statistics into comparative live analytics', () => 
 });
 
 test('RC142 exposes statistics quality in Match Center and release health contracts', () => {
-  assert.match(worker,/match-center:\$\{fixtureId\}:v14-statistics-quality-rc142/);
+  assert.match(worker,/match-center:\$\{fixtureId\}:v15-odds-quality-rc143/);
   assert.match(app,/function statisticsQualityHintHtml/);
   assert.match(app,/statisticsQualityHintHtml\(d\.statisticsQuality\)/);
   assert.match(smoke,/'statisticsSemanticQualityGuard'/);

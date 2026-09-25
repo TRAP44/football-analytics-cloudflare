@@ -59,8 +59,8 @@ test('RC137 uses lineup quality in Match Center and AI quality gate', () => {
   assert.match(worker, /awayConfirmed=Boolean\(lineupQuality\.away\.confirmed\)/);
   assert.match(worker, /lineupQuality,/);
   assert.match(worker, /lineupQualityGuard: 'enabled'/);
-  assert.match(worker, /analysisVersion: '4\.13\.0-freshness-trust'/);
-  assert.match(worker, /fixture:\$\{fixtureId\}:v13-freshness-trust/);
+  assert.match(worker, /analysisVersion: '4\.14\.0-odds-quality'/);
+  assert.match(worker, /fixture:\$\{fixtureId\}:v14-odds-quality-rc143/);
 });
 
 test('RC137 frontend and Telegram no longer treat a 10-player XI as confirmed', () => {
@@ -72,8 +72,8 @@ test('RC137 frontend and Telegram no longer treat a 10-player XI as confirmed', 
 });
 
 test('RC137 is part of the release health contract', () => {
-  assert.match(worker, /const APP_VERSION = '6\.118\.0-rc142'/);
-  assert.match(worker, /const RC_NAME = 'RC142'/);
-  assert.match(app, /const CLIENT_VERSION = '6\.118\.0-rc142'/);
+  assert.match(worker, /const APP_VERSION = '6\.119\.0-rc143'/);
+  assert.match(worker, /const RC_NAME = 'RC143'/);
+  assert.match(app, /const CLIENT_VERSION = '6\.119\.0-rc143'/);
   assert.match(smoke, /'lineupQualityGuard'/);
 });

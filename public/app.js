@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.118.0-rc142';
+const CLIENT_VERSION = '6.119.0-rc143';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc142';
+const CLIENT_RELEASE_CHANNEL = 'rc143';
 const SUPABASE_SCHEMA_HINT = 'проверьте актуальную схему Supabase (baseline v6.18 / миграции до v6.19)';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
@@ -5690,6 +5690,20 @@ function statisticsQualityHintHtml(quality = {}) {
   return `<div class="coverage-badge ${limited}">Статистика · ${escapeHtml(label)} · ${escapeHtml(detail)}</div>`;
 }
 
+function oddsQualityHintHtml(quality = {}) {
+  if (!quality?.state || quality.state === 'unavailable') return '';
+  const label = publicText(quality.label || 'Качество рынка');
+  const detail = quality.state === 'verified'
+    ? `источников: ${Number(quality.sourceCount || 0)}`
+    : quality.state === 'sanitized'
+      ? 'вероятности пересчитаны из валидных коэффициентов'
+      : quality.state === 'source_untrusted'
+        ? 'источник не прошёл freshness/provenance guard'
+        : 'некорректный рынок исключён из аналитики';
+  const limited = ['verified','sanitized'].includes(quality.state) ? '' : 'limited';
+  return `<div class="coverage-badge ${limited}">Рынок · ${escapeHtml(label)} · ${escapeHtml(detail)}</div>`;
+}
+
 function centerAllStatsHtml(stats) {
   const items = stats?.items || [];
   if (!items.length) return '<div class="empty compact-empty">Детальная статистика пока недоступна.</div>';
@@ -5769,14 +5783,15 @@ function centerCoverageHtml(d) {
     ['Составы', d.availability?.lineups],
     ['Игроки', d.availability?.players],
     ['Потери', d.availability?.injuries],
-    ['Рынок', Boolean(d.liveOdds)],
+    ['Рынок', Boolean(d.availability?.liveOdds)],
   ];
   return `<div class="center-coverage">${cells.map(([label,ok])=>`<span class="${ok?'ok':''}">${ok?'✓':'·'} ${label}</span>`).join('')}</div>`;
 }
 
 function centerMarketHtml(d) {
-  if (!d.liveOdds) return `<div class="empty compact-empty">Коэффициенты П1 / Н / П2 в реальном времени сейчас недоступны. Покрытие зависит от турнира и режима данных.</div>`;
-  return `<div class="center-market">
+  const quality = oddsQualityHintHtml(d.liveOddsQuality);
+  if (!d.liveOdds) return `${quality}<div class="empty compact-empty">Коэффициенты П1 / Н / П2 в реальном времени сейчас недоступны. Покрытие зависит от турнира и режима данных.</div>`;
+  return `${quality}<div class="center-market">
     <div class="odds-grid">
       <div><span>П1</span><strong>${d.liveOdds.odds?.home ?? '—'}</strong></div>
       <div><span>Н</span><strong>${d.liveOdds.odds?.draw ?? '—'}</strong></div>
@@ -7398,6 +7413,7 @@ function renderAnalysis(d) {
     <div class="analysis-tab-panel" data-panel="market">
       <section class="panel">
         <h2>💹 Коэффициенты П1 / Н / П2</h2>
+        ${oddsQualityHintHtml(d.oddsQuality)}
         <div class="odds-grid">
           <div><span>П1</span><strong>${market?.odds?.home ?? '—'}</strong></div>
           <div><span>Н</span><strong>${market?.odds?.draw ?? '—'}</strong></div>

@@ -24,6 +24,7 @@ const REQUIRED_HEALTH_FLAGS = [
   'xgSemanticQualityGuard',
   'eventSemanticQualityGuard',
   'statisticsSemanticQualityGuard',
+  'oddsSemanticQualityGuard',
   'sourceProvenance',
   'aiAnalysisQualityGate',
   'aiAnalysisQualityGateSelfTest',

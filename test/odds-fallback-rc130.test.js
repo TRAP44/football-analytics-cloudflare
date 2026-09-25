@@ -77,11 +77,12 @@ test('RC130 configures The Odds API only as an optional server-side fallback',()
   assert.match(worker,/claimSecondaryProviderBudget\(cfg, 'the-odds-api', 8\)/);
 });
 
-test('RC130 uses the secondary market only when the primary normalized 1X2 market is missing',()=>{
+test('RC130 keeps the secondary market as fallback and RC143 also allows it after a structurally invalid primary market',()=>{
   assert.match(worker,/const primaryMarket = extractMarket\(odds\)/);
-  assert.match(worker,/const secondaryOdds = primaryMarket \? null : await secondaryOddsMarket/);
-  assert.match(worker,/const market = primaryMarket \|\| secondaryOdds\?\.market \|\| null/);
-  assert.match(worker,/if \(!liveOdds\) \{[\s\S]*secondaryOddsMarket\(fixture, cfg, \{ mode:'live' \}\)/);
+  assert.match(worker,/const primaryMarketShape = assessOddsMarketQuality\(primaryMarket/);
+  assert.match(worker,/const secondaryOdds = primaryMarket && primaryMarketShape\.marketValid/);
+  assert.match(worker,/const market = secondaryOdds\?\.available \? secondaryOdds\.market : primaryMarket \|\| null/);
+  assert.match(worker,/if \(!primaryLiveOdds \|\| !primaryLiveShape\.marketValid\) \{[\s\S]*secondaryOddsMarket\(fixture, cfg, \{ mode:'live' \}\)/);
   assert.match(worker,/provider: String\(market\.provider \|\| 'api-football'\)/);
 });
 
