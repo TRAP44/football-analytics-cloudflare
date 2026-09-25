@@ -52,9 +52,10 @@ test('beta dashboard returns aggregate product metrics health timings and classi
   assert.match(endpoint,/providerRateLimit/);
   assert.match(endpoint,/timeout/);
   assert.match(endpoint,/activeProblems/);
-  assert.match(endpoint,/BLOCKER/);
-  assert.match(endpoint,/MAJOR/);
-  assert.match(endpoint,/MINOR/);
+  const classifications=block(worker,'function buildBetaIssueGroups','async function apiBetaDashboard');
+  assert.match(classifications,/BLOCKER/);
+  assert.match(classifications,/MAJOR/);
+  assert.match(classifications,/MINOR/);
 });
 
 test('single subjective feedback is not automatically promoted to an active beta issue',()=>{
