@@ -69,6 +69,6 @@ test('RC135 updates model-input and health identity', () => {
   assert.match(worker,/analysisVersion: '4\.14\.0-odds-quality'/);
   assert.match(worker,/playerRoleAvailability: 'enabled'/);
   assert.match(worker,/const APP_VERSION = '6\.119\.0-rc143'/);
-  assert.match(worker,/const RC_NAME = 'RC143'/);
+  assert.match(worker,/const RC_NAME = 'RC144'/);
   assert.match(app,/const CLIENT_VERSION = '6\.119\.0-rc143'/);
 });
