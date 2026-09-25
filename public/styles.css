@@ -3391,3 +3391,54 @@ html {
 @media (max-width: 390px) {
   .accent-options { grid-template-columns: repeat(2, minmax(0,1fr)); }
 }
+
+
+/* Closed beta readiness — resilient journey states */
+.journey-state {
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 18px;
+}
+.journey-state.is-loading {
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
+}
+.journey-state.is-error {
+  border-color: color-mix(in srgb, #f59e0b 28%, var(--line));
+}
+.journey-state-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(148,163,184,.08);
+  font-size: 18px;
+}
+.journey-state strong,
+.journey-state p {
+  display: block;
+}
+.journey-state p {
+  margin: 5px 0 0;
+  color: var(--hint);
+  line-height: 1.45;
+  font-size: 12px;
+}
+.journey-state .primary-setting-btn {
+  grid-column: 1 / -1;
+  margin-top: 0;
+}
+.profile-unavailable > :not(#profileRecovery) {
+  display: none !important;
+}
+#profileRecovery {
+  margin-top: 8px;
+}
+.match-empty-state p {
+  margin: 7px 0 0;
+}
+.match-empty-state .empty-actions {
+  margin-top: 12px;
+}
