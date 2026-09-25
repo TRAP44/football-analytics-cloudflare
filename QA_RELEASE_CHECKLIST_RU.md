@@ -1,4 +1,12 @@
-# QA Release Checklist — v6.114.0 RC138
+# QA Release Checklist — v6.115.0 RC139
+
+## RC139 — Freshness-aware Data Trust
+- Проверить `npm test`, включая `test/data-freshness-rc139.test.js`: stale/non-attributed данные не являются confidence-bearing.
+- Match Center: stale failover не должен питать `livePressure`, `smartInsights`, `liveAiCoach`, live odds и movement.
+- AI analysis: устаревшая линия исключается до probability blend и не сохраняется как новый odds snapshot.
+- Data provenance: API возвращает `freshnessState`, `provenanceState`, `sourceUpdatedAt`, `freshnessLimitSeconds`, `confidenceBearing` и `stale`.
+- Release gate: Worker/client `6.115.0-rc139`, analysis contract `4.13.0-freshness-trust`, cache `v13-freshness-trust`, health/smoke flag `freshnessAwareDataTrust`.
+- Supabase: новых миграций для RC139 нет.
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 

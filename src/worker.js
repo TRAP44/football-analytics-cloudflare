@@ -107,11 +107,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.114.0-rc138';
+const APP_VERSION = '6.115.0-rc139';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc138';
-const RC_NAME = 'RC138';
+const RELEASE_CHANNEL = 'rc139';
+const RC_NAME = 'RC139';
 const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.18; для существующей примените все доступные миграции из supabase/migrations до v6.19.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49';
@@ -2600,7 +2600,7 @@ async function apiMediaPublisherLink(request,cfg,user) {
   const content=cleanLaunchPart(body?.content || 'article',16) || 'article';
   const link=await fixtureTelegramDeepLink(cfg,fixtureId,{source,campaign,content});
   const cached=await getCache(`bot:fixture-card:${fixtureId}:v2`,cfg).catch(()=>null);
-  const analyzed=await getCache(`fixture:${fixtureId}:v12-lineup-reliability`,cfg).catch(()=>null);
+  const analyzed=await getCache(`fixture:${fixtureId}:v13-freshness-trust`,cfg).catch(()=>null);
   const match=normalizeBotFixtureCard(cached?.match || analyzed?.match || {fixtureId,homeName:'Матч',awayName:String(fixtureId),league:'Футбол'});
   const copy=mediaPublisherCopy(match,link.url,{source,campaign,content});
   void recordGrowthEvent(cfg,{
@@ -17702,7 +17702,7 @@ async function apiHistoryAnalysis(request, cfg, user) {
     return json({ error: 'Этот матч отсутствует в вашей истории анализов.', code: 'HISTORY_ANALYSIS_NOT_FOUND' }, 404);
   }
 
-  const cacheKey = `fixture:${fixtureId}:v12-lineup-reliability`;
+  const cacheKey = `fixture:${fixtureId}:v13-freshness-trust`;
   const fresh = await getCache(cacheKey, cfg);
   const payload = fresh || await getStaleCache(cacheKey, cfg);
   if (!payload) {
@@ -19378,7 +19378,7 @@ async function apiMatchCenter(request, cfg) {
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'Номер матча обязателен.' }, 400);
 
   // Shared across all users. During LIVE it expires after 60 seconds.
-  const baseCacheKey = `match-center:${fixtureId}:v10-ai-live-coach-postmatch-rc62`;
+  const baseCacheKey = `match-center:${fixtureId}:v11-freshness-trust-rc139`;
   const cached = await getCache(baseCacheKey, cfg);
   if (cached) {
     const cachedMode = String(cached.mode || 'upcoming');
@@ -19598,7 +19598,7 @@ async function apiMatchCenter(request, cfg) {
     absences,
   }) : null;
 
-  const prematchAnalysis = live ? await getStaleCache(`fixture:${fixtureId}:v12-lineup-reliability`, cfg).catch(() => null) : null;
+  const prematchAnalysis = live ? await getStaleCache(`fixture:${fixtureId}:v13-freshness-trust`, cfg).catch(() => null) : null;
   const liveAiCoach = live ? buildLiveAiCoach({
     statistics: formattedStatistics,
     events: formattedEvents,
@@ -20294,7 +20294,7 @@ async function apiAnalyze(request, cfg, user) {
   try {
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return await trackedFullAiFailureResponse({ error: 'Некорректный номер матча.' },400,'invalid_fixture');
 
-  const cacheKey = `fixture:${fixtureId}:v12-lineup-reliability`;
+  const cacheKey = `fixture:${fixtureId}:v13-freshness-trust`;
   const cached = await getCache(cacheKey, cfg);
   const staleBefore = cached || await getStaleCache(cacheKey, cfg);
   const previousFreshness = staleBefore ? analysisFreshness(staleBefore) : null;
@@ -20569,7 +20569,7 @@ async function apiAnalyze(request, cfg, user) {
 
   const payload = {
     generatedAt: new Date().toISOString(),
-    analysisVersion: '4.12.0-lineup-reliability',
+    analysisVersion: '4.13.0-freshness-trust',
     match: {
       fixtureId, date: fixture.fixture?.date || '', status: fixture.fixture?.status?.short || '',
       venue: fixture.fixture?.venue?.name || '', city: fixture.fixture?.venue?.city || '',
@@ -21156,6 +21156,7 @@ export default {
         playerRoleHydration: 'enabled',
         lineupQualityGuard: 'enabled',
         lineupSemanticReliability: 'enabled',
+        freshnessAwareDataTrust: 'enabled',
         footballDataScorersFallback: cfg.footballDataToken ? 'enabled' : 'available_when_configured',
         footballDataStandingsFallback: cfg.footballDataToken ? 'enabled' : 'available_when_configured',
         theOddsApiOddsFallback: cfg.theOddsApiKey ? 'enabled' : 'available_when_configured',
