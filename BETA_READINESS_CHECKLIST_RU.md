@@ -24,7 +24,7 @@
 
 ## 2. Безопасная продуктовая аналитика beta
 
-Используется существующий endpoint `/api/client-telemetry` и существующая таблица `growth_events`. Новая таблица или сторонний SDK не добавляются.
+Используется существующий endpoint `/api/client-telemetry`. Для участников `closed_beta_v1` client telemetry сохраняется в backend-only `ops_events` без Telegram ID: уникальность пользователя считается по HMAC-псевдониму `betaSubject`, сформированному на сервере после подтверждённой beta-membership и не возвращаемому в API/UI. Beta-пользователи намеренно не записываются этим telemetry-путём в legacy `growth_events`, где требуется сырой `telegram_id`. Новая таблица или сторонний SDK не добавляются.
 
 Фиксируются только allowlisted события:
 
@@ -80,20 +80,18 @@ Privacy contract:
 - [ ] Подтвердить текущую **квоту/тариф** API-Football и фактические plan / dailyRemaining / minuteRemaining непосредственно перед приглашением. В production уже наблюдалось достижение минутного rate limit, поэтому до проверки первая cohort ограничена двумя пользователями.
 - [ ] Реально назначить Beta-01 и Beta-02 и создать приватный feedback channel по шаблону из `PRE_BETA_VALIDATION_RU.md`. Runbook и формат обратной связи подготовлены, но личности/Telegram ID тестировщиков в репозиторий не записываются.
 - [ ] Подтвердить Telegram `getWebhookInfo`: production URL совпадает с `/telegram/webhook`, нет устойчивой очереди pending updates и актуальной ошибки.
-- [x] Server-side механизм строгой beta-границы реализован: membership определяется только после успешной Telegram signature validation по `BETA_TELEGRAM_IDS`; admin имеет bypass, но исключён из beta cohort; frontend-скрытия не используются как access control. `BETA_ACCESS_ENABLED` по умолчанию выключен, реальные ID в репозиторий не записаны.
+- [x] Server-side механизм строгой beta-границы реализован: membership определяется только после успешной Telegram signature validation по `BETA_TELEGRAM_IDS`; admin имеет bypass, но исключён из beta cohort; frontend-скрытия не используются как access control. Beta client telemetry не сохраняет Telegram ID: для уникальности используется server-side HMAC-псевдоним, а Dashboard учитывает только verified membership + валидный pseudonymous subject. `BETA_ACCESS_ENABLED` по умолчанию выключен, реальные ID в репозиторий не записаны.
 - [ ] После фактического назначения Beta-01/Beta-02 вне репозитория задать реальные `BETA_TELEGRAM_IDS` в server-side environment и принять операционное решение о включении `BETA_ACCESS_ENABLED=true`. До появления реальных значений строгий allowlist намеренно не включать.
 
 До выполнения этих пунктов автоматическая часть готовности завершена, но приглашение реальных пользователей остаётся **MANUAL FIELD CHECKS PENDING**.
 
-## 5. Improvements after beta
+## 5. Observation-контур и улучшения после beta
+
+Уже реализованы и **не повторяются** на этапе Field Validation: агрегированный Beta Dashboard, feedback endpoint/UI, latency telemetry и cohort `closed_beta_v1` с проверенной server-side membership.
 
 Не являются блокерами первого закрытого запуска:
 
-- агрегированный admin-виджет конверсии по beta-пути;
-- latency percentiles по search / match / AI / LIVE;
-- сегментация по cohort/build без персональных данных;
-- встроенная кнопка «Сообщить о проблеме»;
-- автоматические beta alerts по росту action_error;
+- автоматические beta alerts по росту `action_error`;
 - улучшение пустых экранов на основании реальных beta-паттернов;
 - расширение/ротация server-side beta allowlist после подтверждённой необходимости; базовый механизм уже реализован.
 
@@ -106,7 +104,7 @@ Privacy contract:
 - [x] `npm run security:scan`
 - [x] `npm run lint`
 - [x] `npm run check`
-- [x] `npm test` — 756/756, fail 0
+- [x] `npm test` — 767/767, fail 0
 - [x] `npm run verify:release`
 - [x] `npm run verify:worker`
 - [x] post-merge Quality на `main` — повторно запущен и пройден
@@ -150,3 +148,15 @@ Privacy contract:
 - [ ] Два реальных non-admin smoke и реальный LIVE protocol требуют живых Telegram-аккаунтов/идущего матча.
 - [ ] Beta-01/Beta-02 и приватный feedback channel должны быть реально назначены владельцем вне репозитория.
 
+
+### Closed Beta Access & Field Validation — privacy hardening
+
+- [x] PR #92 Quality на privacy-hardening SHA прошёл полностью: 767/767 tests, fail 0; audit/security/lint/check/release/worker — PASS.
+- [x] Beta Dashboard client metrics больше не зависят от `growth_events.telegram_id`; источник beta client metrics — verified `ops_events` с HMAC-псевдонимом.
+- [x] Admin и non-beta пользователи не получают `betaMembershipVerified=true` и не входят в client metrics `closed_beta_v1`.
+- [x] Исторические client rows без privacy-boundary `betaSubject` не входят в уникальные beta-user/journey метрики.
+- [ ] Два non-admin Telegram smoke — требуется реальное выполнение.
+- [ ] Реальный LIVE validation — требуется идущий матч.
+- [ ] Свежие API-Football plan / dailyRemaining / minuteRemaining — требуется свежий успешный provider response.
+- [ ] Telegram `getWebhookInfo` — требуется доверенная среда с bot token.
+- [ ] Beta-01/Beta-02 и feedback channel — требуется фактическое назначение владельцем.
