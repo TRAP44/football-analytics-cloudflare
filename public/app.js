@@ -161,6 +161,7 @@ const state = {
   reminderMutations: new Set(),
   preferencesSaving: false,
   profileStale: false,
+  profileLoadError: '',
   clientPerf: { startedAt: new Date().toISOString(), requests: 0, completed: 0, failed: 0, deduped: 0, retries: 0, rateLimited: 0, timeouts: 0, recoveries: 0, degradedEvents: 0, manifestFailures: 0, bootMs: null, totalMs: 0, lastMs: null, clientErrors: 0, lastError: '' },
 };
 
@@ -442,6 +443,48 @@ function sendClientTelemetry(event, meta = {}, { once = false } = {}) {
     keepalive: true,
     signal: controller.signal,
   }).catch(() => {}).finally(() => clearTimeout(timer));
+}
+
+function sendProductAction(reason, view = telemetryViewName()) {
+  sendClientTelemetry('product_action', { reason: String(reason || '').slice(0, 40), view }, { once: true });
+}
+
+function sendActionError(reason, error, view = telemetryViewName()) {
+  sendClientTelemetry('action_error', {
+    reason: String(reason || '').slice(0, 40),
+    errorKind: String(error?.category || apiErrorCategory(error) || 'unknown').slice(0, 40),
+    view,
+  }, { once: true });
+}
+
+function renderAnalysisRequestState(kind, { title = '', message = '', retry = null } = {}) {
+  const root = $('analysis');
+  if (!root) return;
+  const loading = kind === 'loading';
+  root.setAttribute('aria-busy', loading ? 'true' : 'false');
+  root.innerHTML = `<section class="panel journey-state ${loading ? 'is-loading' : 'is-error'}" role="status" aria-live="polite">
+    <span class="journey-state-icon">${loading ? '⏳' : '↻'}</span>
+    <div><strong>${escapeHtml(title || (loading ? 'Загружаем…' : 'Не удалось открыть раздел'))}</strong><p>${escapeHtml(message || (loading ? 'Подготавливаем данные матча.' : 'Попробуйте ещё раз.'))}</p></div>
+    ${!loading && retry ? '<button id="analysisStateRetry" class="primary-setting-btn" type="button">Повторить</button>' : ''}
+  </section>`;
+  if (!loading && retry) $('analysisStateRetry')?.addEventListener('click', retry, { once: true });
+}
+
+function renderProfileAccessState(kind = 'ready', message = '') {
+  const view = $('profileView');
+  const root = $('profileRecovery');
+  if (!view || !root) return;
+  const unavailable = kind !== 'ready';
+  view.classList.toggle('profile-unavailable', unavailable);
+  root.hidden = !unavailable;
+  if (!unavailable) { root.innerHTML = ''; return; }
+  const loading = kind === 'loading';
+  root.innerHTML = `<section class="panel journey-state ${loading ? 'is-loading' : 'is-error'}" role="status" aria-live="polite">
+    <span class="journey-state-icon">${loading ? '⏳' : '↻'}</span>
+    <div><strong>${loading ? 'Загружаем профиль' : 'Профиль временно недоступен'}</strong><p>${escapeHtml(message || (loading ? 'Получаем ваши настройки и избранное.' : 'Не удалось обновить профиль.'))}</p></div>
+    ${loading ? '' : '<button id="profileRecoveryRetry" class="primary-setting-btn" type="button">Повторить</button>'}
+  </section>`;
+  if (!loading) $('profileRecoveryRetry')?.addEventListener('click', () => openProfileView({ force: true }), { once: true });
 }
 
 function setNetworkMode(mode, options = {}) {
@@ -957,6 +1000,7 @@ async function loadProfile() {
   try {
     state.profile = await api('/api/me');
     state.profileStale = false;
+    state.profileLoadError = '';
     state.dataCapabilities = state.profile?.features?.dataCapabilities || state.dataCapabilities;
     if (state.profile?.preferences) {
       state.preferences = { ...state.preferences, ...state.profile.preferences };
@@ -974,13 +1018,16 @@ renderDiscoveryHome();
     if (previousProfile && !authFailure) {
       state.profile = previousProfile;
       state.profileStale = true;
+      state.profileLoadError = '';
       renderProfile();
       toast('Профиль временно не обновился — показаны последние данные.');
       return;
     }
     state.profile = null;
     state.profileStale = false;
+    state.profileLoadError = e.message || 'Не удалось загрузить профиль.';
     applyAdminVisibility();
+    sendActionError('profile', e, 'profileView');
     toast(e.message);
   }
 }
