@@ -5136,6 +5136,49 @@ function teamFormBadges(form='') {
 function seasonSplitCard(label, played, wins, draws, losses, ppg, gf, ga) {
   return `<div class="season-split-card"><div class="mini-section-head"><strong>${escapeHtml(label)}</strong><span>${Number(played || 0)} игр</span></div><div class="season-split-line"><span>В / Н / П</span><b>${Number(wins||0)} / ${Number(draws||0)} / ${Number(losses||0)}</b></div><div class="season-split-line"><span>Очки / матч</span><b>${teamDecimal(ppg)}</b></div><div class="season-split-line"><span>Голы</span><b>${Number(gf||0)} : ${Number(ga||0)}</b></div></div>`;
 }
+function teamPlayerSeasonStatsHtml(data = {}) {
+  const p=data?.playerStats || {};
+  const players=Array.isArray(p.players) ? p.players : [];
+  const sourceLabel=String(p.sourceMeta?.label || p.sourceMeta?.provider || '');
+  if (!p.available || !players.length) {
+    const reason=String(p.reason || 'Статистика игроков сезона сейчас недоступна.');
+    return `<section class="panel team-player-season-panel">
+      <div class="mini-section-head"><strong>👤 Игроки сезона</strong><span>${escapeHtml(sourceLabel || 'по доступности')}</span></div>
+      <div class="empty compact-empty">${escapeHtml(reason==='all_player_sources_unavailable' ? 'Статистика игроков сезона сейчас недоступна в настроенных источниках.' : reason==='quota_guard' ? 'Статистика игроков не запрашивается сейчас: сохраняем квоту источника данных.' : reason)}</div>
+    </section>`;
+  }
+
+  const rows=players.slice(0,10);
+  const scopeNote=p.complete
+    ? `Полная доступная выборка команды · ${Number(p.summary?.count || players.length)} игроков`
+    : p.scope==='competition-scorers'
+      ? 'Резервный источник: показаны только игроки команды, присутствующие в таблице бомбардиров турнира.'
+      : `Частичная выборка · загружено ${Number(p.summary?.pagesLoaded || 0)} из ${Number(p.summary?.pagesTotal || 0)} страниц`;
+  const rowHtml=rows.map(player => {
+    const yellow=Number(player.cards?.yellow || 0);
+    const red=Number(player.cards?.red || 0)+Number(player.cards?.yellowRed || 0);
+    const rating=player.games?.rating===null || player.games?.rating===undefined ? '—' : teamDecimal(player.games.rating);
+    const availability=player.injured===true ? '<span class="player-season-alert">травмирован</span>' : '';
+    return `<div class="player-season-row">
+      <div class="player-season-name"><strong>${escapeHtml(player.name || 'Игрок')}</strong><small>${escapeHtml(player.games?.position || player.nationality || '—')} ${availability}</small></div>
+      <span><small>Матчи</small><b>${Number(player.games?.appearances || 0)}</b></span>
+      <span><small>Голы</small><b>${Number(player.goals?.total || 0)}</b></span>
+      <span><small>Ассисты</small><b>${Number(player.goals?.assists || 0)}</b></span>
+      <span><small>Рейтинг</small><b>${rating}</b></span>
+      <span><small>Карточки</small><b>${yellow} / ${red}</b></span>
+    </div>`;
+  }).join('');
+
+  return `<section class="panel team-player-season-panel">
+    <div class="mini-section-head"><strong>👤 Игроки сезона</strong><span>${escapeHtml(sourceLabel || 'источник данных')}</span></div>
+    <div class="player-season-table">
+      <div class="player-season-head"><span>Игрок</span><span>М</span><span>Г</span><span>А</span><span>R</span><span>Ж / К</span></div>
+      ${rowHtml}
+    </div>
+    <p class="tiny">${escapeHtml(scopeNote)}. Сортировка: голы, ассисты, матчи, минуты — без искусственного рейтинга.</p>
+  </section>`;
+}
+
 function renderTeamIntelligence(data) {
   const el = $('teamIntelligence'); if (!el) return;
   if (!data?.available || !data?.stats?.available) {
@@ -5143,6 +5186,7 @@ function renderTeamIntelligence(data) {
     return;
   }
   const s=data.stats, f=s.fixtures||{}, d=s.derived||{}, g=s.goals||{}, b=s.biggest||{};
+  const playerStatsHtml=teamPlayerSeasonStatsHtml(data);
   const warning=data.stale ? `<div class="data-notice stale">⚠️ ${escapeHtml(data.warning || 'Показана сохранённая сезонная статистика.')}</div>` : '';
   const leagueTitle=[s.league?.name, s.league?.season].filter(Boolean).join(' · ');
   const goalDiff=Number(g.difference||0);
@@ -5175,6 +5219,7 @@ function renderTeamIntelligence(data) {
         <div><span>Схема</span><strong>${escapeHtml(s.mostUsedLineup?.formation || '—')}</strong></div>
       </div>
     </section>
+    ${playerStatsHtml}
     <section class="panel season-records">
       <h2>📌 Максимумы сезона</h2>
       <div class="season-record-grid">
