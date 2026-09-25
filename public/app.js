@@ -427,6 +427,12 @@ function sendClientTelemetry(event, meta = {}, { once = false } = {}) {
       networkMode: meta.networkMode || state.network.mode || 'online',
       bootMs: meta.bootMs,
       durationMs: meta.durationMs,
+      matchMode: meta.matchMode,
+      lineupsAvailable: meta.lineupsAvailable,
+      injuriesAvailable: meta.injuriesAvailable,
+      statisticsAvailable: meta.statisticsAvailable,
+      xgAvailable: meta.xgAvailable,
+      oddsAvailable: meta.oddsAvailable,
       manifestOk: meta.manifestOk,
       degraded: meta.degraded,
       blocking: meta.blocking,
@@ -466,6 +472,36 @@ function sendOperationTiming(reason, startedAt, view = telemetryViewName()) {
   const durationMs = Math.max(0, Math.round(performance.now() - Number(startedAt || performance.now())));
   if (!['search', 'match', 'ai', 'live'].includes(String(reason || '')) || !Number.isFinite(durationMs)) return;
   sendClientTelemetry('operation_timing', { reason, durationMs, view }, { once: false });
+}
+
+function sendMatchDataCoverage(data, view = telemetryViewName()) {
+  if (!data || typeof data !== 'object') return;
+  const lineupsObserved=Boolean(
+    data?.lineupQuality?.observed
+    || (Array.isArray(data?.lineups) && data.lineups.length>0)
+    || data?.lineups?.home?.startXI?.length
+    || data?.lineups?.away?.startXI?.length
+  );
+  const injuriesObserved=Boolean(
+    data?.availabilityQuality?.observed
+    || data?.absences?.home?.length
+    || data?.absences?.away?.length
+  );
+  const statisticsObserved=Boolean(
+    data?.statisticsQuality?.observed
+    || (Array.isArray(data?.statistics) && data.statistics.length>0)
+  );
+  const xgObserved=Boolean(data?.xgQuality?.observed);
+  const oddsObserved=Boolean(data?.liveOddsQuality?.observed || data?.liveOdds);
+  sendClientTelemetry('data_coverage',{
+    view,
+    matchMode:['upcoming','live','finished'].includes(String(data?.mode || '')) ? String(data.mode) : 'upcoming',
+    lineupsAvailable:lineupsObserved,
+    injuriesAvailable:injuriesObserved,
+    statisticsAvailable:statisticsObserved,
+    xgAvailable:xgObserved,
+    oddsAvailable:oddsObserved,
+  },{once:false});
 }
 
 function renderJourneyState(kind, { title = '', message = '', retry = null } = {}) {
@@ -1144,6 +1180,11 @@ function renderBetaDashboard() {
     ['Provider rate-limit',String(Number(health.providerRateLimit || 0))],
     ['Timeout',String(Number(health.timeout || 0))],
     ['UI/client errors',String(Number(health.clientErrors || 0))],
+    ['Нет составов',String(Number(data.dataCoverage?.missing?.lineups?.missing || 0))],
+    ['Нет данных о травмах',String(Number(data.dataCoverage?.missing?.injuries?.missing || 0))],
+    ['Нет статистики',String(Number(data.dataCoverage?.missing?.statistics?.missing || 0))],
+    ['Нет xG',String(Number(data.dataCoverage?.missing?.xg?.missing || 0))],
+    ['Нет коэффициентов',String(Number(data.dataCoverage?.missing?.odds?.missing || 0))],
     ['Supabase',health.supabase==='ok'?'Норма':'Проблема'],
     ['Telegram dedupe',humanizeTechnicalText(health.telegram || 'нет данных')],
     ['Release',`${health.currentRelease?.version || CLIENT_VERSION} · ${health.currentRelease?.candidate || CLIENT_RELEASE_CHANNEL}`],
@@ -6561,6 +6602,7 @@ async function openMatchCenter(fixtureId, btn) {
     if (!data) return;
     renderMatchCenter(data);
     sendProductAction('match_open', sourceView);
+    sendMatchDataCoverage(data, sourceView);
     sendOperationTiming('match', timingStartedAt, sourceView);
     if (data.mode === 'live') {
       sendProductAction('live_open', sourceView);
