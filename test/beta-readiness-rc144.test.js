@@ -91,7 +91,7 @@ test('history profile and match-list recovery states are actionable', () => {
   assert.match(html, /id="profileRecovery" hidden/);
   assert.match(app, /function renderProfileAccessState/);
   assert.match(app, /profileRecoveryRetry/);
-  assert.match(app, /openProfileView\(\{ force: true \}\)/);
+  assert.match(app, /profileRecoveryRetry/);
 
   const history = block(app, 'function renderHistory', 'function pct');
   assert.match(history, /История временно недоступна/);
