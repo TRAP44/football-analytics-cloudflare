@@ -358,6 +358,48 @@
           <div id="favoriteTeams" class="favorite-teams"></div>
         </section>
 
+
+        <section class="panel beta-feedback-panel">
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>🧪 Closed beta</h2>
+              <p>Если что-то работает непонятно или нестабильно, сообщите об этом без отправки лишних данных.</p>
+            </div>
+            <button id="betaFeedbackOpenBtn" class="secondary-btn beta-feedback-open" type="button" aria-expanded="false">Сообщить о проблеме</button>
+          </div>
+          <div id="betaFeedbackForm" class="beta-feedback-form" hidden>
+            <div class="beta-feedback-fields">
+              <label>Раздел
+                <select id="betaFeedbackCategory">
+                  <option value="search">Поиск</option>
+                  <option value="matches">Матчи</option>
+                  <option value="ai">AI</option>
+                  <option value="live">LIVE</option>
+                  <option value="ux">UX / интерфейс</option>
+                  <option value="data_sources">Источники данных</option>
+                  <option value="performance">Производительность</option>
+                </select>
+              </label>
+              <label>Важность
+                <select id="betaFeedbackSeverity">
+                  <option value="MAJOR">MAJOR — нестабильно или непонятно</option>
+                  <option value="BLOCKER">BLOCKER — основной функцией невозможно пользоваться</option>
+                  <option value="MINOR">MINOR — визуальный или некритичный UX-недочёт</option>
+                </select>
+              </label>
+            </div>
+            <label class="beta-feedback-note">Что произошло
+              <textarea id="betaFeedbackNote" maxlength="600" rows="4" placeholder="Опишите шаги и результат. Не указывайте пароли, токены и другие личные данные."></textarea>
+            </label>
+            <p class="tiny beta-feedback-privacy"><strong>Что будет передано:</strong> выбранный раздел, важность и только текст, который вы введёте. К записи добавляется текущая версия сервера. Telegram используется для проверки сессии, но Telegram ID, поисковые запросы, введённые названия команд и технические логи к beta-сообщению не прикладываются и в Beta Dashboard не показываются.</p>
+            <div class="beta-feedback-actions">
+              <button id="betaFeedbackSendBtn" class="primary-setting-btn" type="button">Отправить</button>
+              <button id="betaFeedbackCancelBtn" class="secondary-btn" type="button">Отмена</button>
+              <span id="betaFeedbackStatus" class="tiny" role="status" aria-live="polite"></span>
+            </div>
+          </div>
+        </section>
+
         <section class="panel admin-console" data-admin-only hidden>
           <div class="admin-zone-heading">
             <span>АДМИНИСТРИРОВАНИЕ</span>
@@ -366,6 +408,37 @@
               <p>Профиль пользователя выше; служебные инструменты собраны отдельно.</p>
             </div>
           </div>
+          <section id="betaHealthPanel" class="beta-health-panel" aria-live="polite">
+            <div class="beta-section-head">
+              <div><span>CLOSED BETA</span><h3>Beta Health</h3><p>Состояние реального пользовательского пути без персональных данных.</p></div>
+              <span id="betaHealthBadge" class="beta-health-badge">НЕТ ДАННЫХ</span>
+            </div>
+            <div id="betaHealthSummary" class="beta-health-grid"><div class="beta-empty">Откройте профиль, чтобы загрузить состояние beta.</div></div>
+          </section>
+          <section id="betaDashboardPanel" class="beta-dashboard-panel">
+            <div class="beta-section-head">
+              <div><span>ПРОДУКТОВЫЕ СИГНАЛЫ</span><h3>Beta Dashboard</h3><p id="betaJourneySummary">Путь запуск → поиск → матч → AI ещё не рассчитан.</p></div>
+              <div class="beta-dashboard-controls">
+                <select id="betaDashboardPeriod" aria-label="Период Beta Dashboard">
+                  <option value="1">24 часа</option>
+                  <option value="7" selected>7 дней</option>
+                  <option value="14">14 дней</option>
+                  <option value="30">30 дней</option>
+                </select>
+                <button id="betaDashboardRefreshBtn" class="icon-btn" type="button" aria-label="Обновить Beta Dashboard">↻</button>
+              </div>
+            </div>
+            <div id="betaDashboardMeta" class="tiny"></div>
+            <div id="betaMetrics" class="beta-metrics-grid"></div>
+            <div class="beta-subhead"><strong>Время ответа</strong><span>P50 при n≥3 · P90 при n≥10</span></div>
+            <div id="betaTimings" class="beta-timings-grid"></div>
+            <div class="beta-subhead"><strong>action_error по категориям</strong><span>без текстов ошибок</span></div>
+            <div id="betaErrorCategories" class="beta-error-list"></div>
+            <details class="beta-issues-details">
+              <summary><span><strong>Beta-проблемы</strong><small>BLOCKER → MAJOR → MINOR; единичный feedback не считается подтверждённой проблемой</small></span></summary>
+              <div id="betaIssueList" class="beta-issue-list"></div>
+            </details>
+          </section>
           <div class="admin-system-overview" aria-label="Краткое состояние системы">
             <div><span>Сервис</span><strong id="adminOverviewService">Проверяется</strong></div>
             <div><span>Функции</span><strong id="adminOverviewFeatures">—</strong></div>
@@ -373,12 +446,10 @@
             <div><span>Версия</span><strong id="adminOverviewVersion">—</strong></div>
           </div>
           <div class="admin-console-actions">
-            <button type="button" data-admin-target="runtimeControlsPanel"><span>🧯</span><strong>Функции</strong><small>Включить или остановить</small></button>
-            <button type="button" data-admin-target="providerStatusPanel"><span>📡</span><strong>Источник</strong><small>Тариф и лимиты</small></button>
-            <button type="button" data-admin-target="diagnosticsPanel"><span>🩺</span><strong>Диагностика</strong><small>Проверить систему</small></button>
+            <button type="button" data-admin-target="adminAdvancedTools"><span>🛠</span><strong>Технические разделы</strong><small>Runtime, Provider, Diagnostics, Release и Model Quality</small></button>
           </div>
           <details id="adminAdvancedTools" class="admin-advanced-tools">
-            <summary><span><strong>Дополнительные инструменты</strong><small>Модель, запуск, выпуск, уведомления и нагрузка</small></span><b>8 разделов</b></summary>
+            <summary><span><strong>Технические разделы</strong><small>Второй уровень: Runtime, Provider, Diagnostics, Model Quality, Release и служебные проверки</small></span><b>11 разделов</b></summary>
             <div id="adminAdvancedContent" class="admin-advanced-content"></div>
           </details>
         </section>

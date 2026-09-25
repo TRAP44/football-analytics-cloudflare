@@ -76,6 +76,10 @@ const state = {
   releaseMonitor: null,
   releaseMonitorLoading: false,
   releaseMonitorHours: 24,
+  betaDashboard: null,
+  betaDashboardLoading: false,
+  betaDashboardDays: 7,
+  betaFeedbackSending: false,
   launchFunnel: null,
   launchFunnelLoading: false,
   launchFunnelDays: 7,
@@ -422,6 +426,7 @@ function sendClientTelemetry(event, meta = {}, { once = false } = {}) {
       view: meta.view || telemetryViewName(),
       networkMode: meta.networkMode || state.network.mode || 'online',
       bootMs: meta.bootMs,
+      durationMs: meta.durationMs,
       manifestOk: meta.manifestOk,
       degraded: meta.degraded,
       blocking: meta.blocking,
@@ -455,6 +460,12 @@ function sendActionError(reason, error, view = telemetryViewName()) {
     errorKind: String(error?.category || apiErrorCategory(error) || 'unknown').slice(0, 40),
     view,
   }, { once: true });
+}
+
+function sendOperationTiming(reason, startedAt, view = telemetryViewName()) {
+  const durationMs = Math.max(0, Math.round(performance.now() - Number(startedAt || performance.now())));
+  if (!['search', 'match', 'ai', 'live'].includes(String(reason || '')) || !Number.isFinite(durationMs)) return;
+  sendClientTelemetry('operation_timing', { reason, durationMs, view }, { once: false });
 }
 
 function renderJourneyState(kind, { title = '', message = '', retry = null } = {}) {
@@ -1037,6 +1048,176 @@ function isAdmin() {
     && state.profile?.features?.role === 'admin';
 }
 
+
+function betaHealthLabel(value = '') {
+  return ({healthy:'Ошибок нет',watch:'Нужно наблюдение',incident:'Есть проблемы'})[String(value || '')] || 'Нет данных';
+}
+
+function betaActionLabel(value = '') {
+  return ({
+    search:'поиск',
+    match:'открытие матча',
+    ai:'AI-анализ',
+    live_refresh:'LIVE',
+    history:'история',
+    profile:'профиль',
+  })[String(value || '')] || String(value || 'нет');
+}
+
+function betaMetricLabel(key = '') {
+  return ({
+    miniAppLaunch:'Запуск Mini App',
+    searchUsed:'Использование поиска',
+    searchFound:'Успешный поиск',
+    searchEmpty:'Пустой поиск',
+    matchOpen:'Открытие матча',
+    aiStart:'Запуск AI',
+    aiComplete:'AI завершён',
+    liveOpen:'Открытие LIVE',
+    historyOpen:'История',
+    profileOpen:'Профиль',
+  })[key] || key;
+}
+
+function betaTimingLabel(key = '') {
+  return ({search:'Поиск',match:'Открытие матча',ai:'AI-анализ',live:'LIVE'})[key] || key;
+}
+
+function betaMs(value) {
+  const ms=Number(value);
+  if (!Number.isFinite(ms)) return '—';
+  return ms>=1000 ? `${(ms/1000).toFixed(ms>=10000?1:2)} с` : `${Math.round(ms)} мс`;
+}
+
+function renderBetaDashboard() {
+  if (!isAdmin()) return;
+  const data=state.betaDashboard;
+  const healthRoot=$('betaHealthSummary');
+  const metricsRoot=$('betaMetrics');
+  const timingsRoot=$('betaTimings');
+  const errorsRoot=$('betaErrorCategories');
+  const issuesRoot=$('betaIssueList');
+  const meta=$('betaDashboardMeta');
+  const badge=$('betaHealthBadge');
+  if (!healthRoot || !metricsRoot || !timingsRoot || !errorsRoot || !issuesRoot || !badge) return;
+
+  if (state.betaDashboardLoading) {
+    badge.textContent='ПРОВЕРКА';
+    badge.className='beta-health-badge watch';
+    healthRoot.innerHTML='<div class="beta-empty">Собираю агрегированные beta-сигналы…</div>';
+    metricsRoot.innerHTML='';
+    timingsRoot.innerHTML='';
+    errorsRoot.innerHTML='';
+    issuesRoot.innerHTML='';
+    if (meta) meta.textContent='';
+    return;
+  }
+
+  if (!data?.available) {
+    badge.textContent='НЕТ ДАННЫХ';
+    badge.className='beta-health-badge';
+    healthRoot.innerHTML=`<div class="beta-empty">${escapeHtml(data?.reason || 'Beta telemetry ещё не загружена.')}</div>`;
+    metricsRoot.innerHTML='';
+    timingsRoot.innerHTML='';
+    errorsRoot.innerHTML='';
+    issuesRoot.innerHTML='';
+    return;
+  }
+
+  const health=data.health || {};
+  badge.textContent=betaHealthLabel(health.state).toUpperCase();
+  badge.className=`beta-health-badge ${escapeHtml(health.state || '')}`;
+  const topBreak=health.topBreak?.count ? `${betaActionLabel(health.topBreak.action)} · ${Number(health.topBreak.count)}` : 'нет';
+  healthRoot.innerHTML=[
+    ['Основной сбой',topBreak],
+    ['Provider rate-limit',String(Number(health.providerRateLimit || 0))],
+    ['Timeout',String(Number(health.timeout || 0))],
+    ['Supabase',health.supabase==='ok'?'Норма':'Проблема'],
+    ['Telegram',humanizeTechnicalText(health.telegram || 'нет данных')],
+    ['Release',`${health.currentRelease?.version || CLIENT_VERSION} · ${health.currentRelease?.candidate || CLIENT_RELEASE_CHANNEL}`],
+    ['Активные проблемы',String(Number(health.activeProblems || 0))],
+  ].map(([label,value])=>`<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
+
+  metricsRoot.innerHTML=Object.entries(data.metrics || {}).map(([key,value])=>`
+    <div class="beta-metric"><span>${escapeHtml(betaMetricLabel(key))}</span><strong>${Number(value?.events || 0)}</strong><small>${Number(value?.users || 0)} beta-польз.</small></div>
+  `).join('');
+
+  timingsRoot.innerHTML=Object.entries(data.timings || {}).map(([key,value])=>{
+    const p50=value?.medianMs===null || value?.medianMs===undefined ? 'мало данных' : betaMs(value.medianMs);
+    const p90=value?.p90Ms===null || value?.p90Ms===undefined ? 'мало данных' : betaMs(value.p90Ms);
+    return `<div class="beta-timing"><span>${escapeHtml(betaTimingLabel(key))}</span><strong>P50 · ${escapeHtml(p50)}</strong><small>P90 · ${escapeHtml(p90)} · n=${Number(value?.samples || 0)}</small></div>`;
+  }).join('');
+
+  const categories=Object.entries(data.actionErrors?.byCategory || {}).sort((a,b)=>Number(b[1])-Number(a[1]));
+  errorsRoot.innerHTML=categories.length
+    ? categories.map(([key,count])=>`<span class="beta-error-chip"><b>${escapeHtml(humanizeTechnicalText(key))}</b> ${Number(count || 0)}</span>`).join('')
+    : '<span class="tiny">action_error за период не зафиксированы.</span>';
+
+  const issueRows=(data.issues || []).filter(item=>Number(item.frequency || 0)>0);
+  issuesRoot.innerHTML=issueRows.length ? issueRows.map(issue=>`
+    <article class="beta-issue ${issue.active ? 'active' : 'unconfirmed'}">
+      <div><span class="beta-severity ${escapeHtml(String(issue.classification || '').toLowerCase())}">${escapeHtml(issue.classification || 'НУЖНЫ ДАННЫЕ')}</span><strong>${escapeHtml(issue.label || '')}</strong><small>Частота: ${Number(issue.frequency || 0)} · evidence: ${escapeHtml(issue.evidence || '')}</small></div>
+      <p>${escapeHtml(issue.userImpact || '')}</p>
+      <p><b>Рекомендуемое исправление:</b> ${escapeHtml(issue.recommendedFix || '')}</p>
+    </article>
+  `).join('') : '<div class="beta-empty">Подтверждённых beta-проблем пока нет.</div>';
+
+  const journey=data.journey || {};
+  if ($('betaJourneySummary')) $('betaJourneySummary').textContent=
+    `${Number(journey.coreCompleted || 0)} из ${Number(journey.betaUsers || 0)} прошли путь запуск → поиск → матч → AI (${Number(journey.coreCompletionPct || 0)}%).`;
+  if (meta) meta.textContent=`${Number(data.periodDays || 7)} дн. · обновлено ${relativeAge(data.generatedAt)}`;
+}
+
+async function loadBetaDashboard(force = false) {
+  if (!isAdmin() || state.betaDashboardLoading) return;
+  if (!force && state.betaDashboard) { renderBetaDashboard(); return; }
+  state.betaDashboardLoading=true;
+  renderBetaDashboard();
+  try {
+    state.betaDashboard=await api(`/api/beta-dashboard?days=${Number(state.betaDashboardDays || 7)}`,{timeoutMs:10000,retry:false,dedupe:false});
+  } catch (error) {
+    state.betaDashboard={available:false,reason:error.message || 'Не удалось загрузить Beta Dashboard.'};
+  } finally {
+    state.betaDashboardLoading=false;
+    renderBetaDashboard();
+  }
+}
+
+function setBetaFeedbackOpen(open) {
+  const form=$('betaFeedbackForm');
+  const button=$('betaFeedbackOpenBtn');
+  if (!form || !button) return;
+  form.hidden=!open;
+  button.setAttribute('aria-expanded',open?'true':'false');
+  if (open) $('betaFeedbackNote')?.focus();
+}
+
+async function submitBetaFeedback() {
+  if (state.betaFeedbackSending) return;
+  const category=String($('betaFeedbackCategory')?.value || '');
+  const severity=String($('betaFeedbackSeverity')?.value || '');
+  const note=String($('betaFeedbackNote')?.value || '').trim();
+  const status=$('betaFeedbackStatus');
+  if (note.length<5) {
+    if (status) status.textContent='Кратко опишите, что произошло.';
+    return;
+  }
+  state.betaFeedbackSending=true;
+  if ($('betaFeedbackSendBtn')) $('betaFeedbackSendBtn').disabled=true;
+  if (status) status.textContent='Отправляю…';
+  try {
+    await api('/api/beta-feedback',{method:'POST',body:JSON.stringify({category,severity,note}),timeoutMs:6500,retry:false,dedupe:false});
+    if (status) status.textContent='Спасибо. Сообщение добавлено в beta-наблюдение.';
+    if ($('betaFeedbackNote')) $('betaFeedbackNote').value='';
+    setTimeout(()=>setBetaFeedbackOpen(false),900);
+  } catch (error) {
+    if (status) status.textContent=error.message || 'Не удалось отправить сообщение.';
+  } finally {
+    state.betaFeedbackSending=false;
+    if ($('betaFeedbackSendBtn')) $('betaFeedbackSendBtn').disabled=false;
+  }
+}
+
 function renderAdminOverview() {
   if (!isAdmin()) return;
   const runtime = state.runtimeControlsAdmin?.controls || state.runtimeStatus || {};
@@ -1071,6 +1252,9 @@ function organizeAdminConsole() {
   const content = $('adminAdvancedContent');
   if (!content || content.dataset.ready === 'true') return;
   [
+    '.runtime-controls-panel',
+    '.provider-status-panel',
+    '.diagnostics-panel',
     '.model-quality-panel',
     '.provider-audit-panel',
     '.reminder-health-panel',
@@ -1089,6 +1273,9 @@ function organizeAdminConsole() {
 async function loadAdvancedAdminTools() {
   if (!isAdmin()) return;
   await Promise.allSettled([
+    loadProvider(),
+    loadRuntimeControlsAdmin(false),
+    loadDiagnostics(false),
     loadModelQuality(false),
     loadCalibrationControl(false),
     loadModelRemediation(false),
@@ -2090,6 +2277,7 @@ async function openProfileView() {
   if (isAdmin()) {
     if (!state.providerLoaded) essentials.push(loadProvider());
     essentials.push(loadRuntimeControlsAdmin(false));
+    essentials.push(loadBetaDashboard(false));
   }
   await Promise.allSettled(essentials);
 }
@@ -4529,6 +4717,7 @@ async function runGlobalSearch({ manual = false } = {}) {
   const local = localDiscoveryResults(query);
   const localCount = local.teams.length + local.competitions.length + local.matches.length;
   sendProductAction('search_used', 'searchView');
+  const timingStartedAt = performance.now();
   state.globalSearch.loading = true;
   state.globalSearch.status = localCount ? 'refreshing' : 'searching';
   renderGlobalSearch();
@@ -4558,6 +4747,7 @@ async function runGlobalSearch({ manual = false } = {}) {
     state.globalSearch.status = totalMatches ? 'found' : totalEntities ? 'done' : 'empty';
     if (totalMatches || totalEntities) sendProductAction('search_found', 'searchView');
     else sendProductAction('search_empty', 'searchView');
+    sendOperationTiming('search', timingStartedAt, 'searchView');
     if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
   } catch (e) {
     if (seq !== state.globalSearch.requestSeq) return;
@@ -5698,8 +5888,10 @@ function startLiveRefresh(fixtureId) {
     if (state.liveRefreshRemaining <= 0) {
       state.liveRefreshRemaining = Math.max(15, Number(state.currentCenter?.refreshSeconds || 60));
       try {
+        const timingStartedAt = performance.now();
         const data = await requestMatchCenter(fixtureId, { t: Date.now() });
         if (!data) return;
+        sendOperationTiming('live', timingStartedAt, 'analysisView');
         state.currentCenter = data;
         renderMatchCenter(data);
         if (data.mode !== 'live') stopLiveRefresh();
@@ -6344,6 +6536,7 @@ async function openMatchCenter(fixtureId, btn) {
   if (sourceView !== 'analysisView') state.analysisBackView = sourceView;
   if (Number(state.currentCenter?.match?.fixtureId || 0) !== Number(fixtureId)) state.currentCenterTab = 'summary';
   const original = btn?.textContent || '';
+  const timingStartedAt = performance.now();
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Загружаю матч…'; }
   showView('analysisView');
   renderJourneyState('loading', {
@@ -6355,7 +6548,11 @@ async function openMatchCenter(fixtureId, btn) {
     if (!data) return;
     renderMatchCenter(data);
     sendProductAction('match_open', sourceView);
-    if (data.mode === 'live') sendProductAction('live_open', sourceView);
+    sendOperationTiming('match', timingStartedAt, sourceView);
+    if (data.mode === 'live') {
+      sendProductAction('live_open', sourceView);
+      sendOperationTiming('live', timingStartedAt, sourceView);
+    }
   } catch (e) {
     sendActionError('match', e, sourceView);
     renderJourneyState('error', {
@@ -6391,6 +6588,7 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
   state.analysisActionPending = true;
   syncAnalysisBusyUi();
   sendProductAction('ai_start', sourceView);
+  const timingStartedAt = performance.now();
   const movedToAnalysis = sourceView !== 'analysisView';
   if (movedToAnalysis) {
     showView('analysisView');
@@ -6415,6 +6613,7 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
     renderAnalysis(data);
     rememberHistoryAnalysis(data);
     sendProductAction('ai_complete', sourceView);
+    sendOperationTiming('ai', timingStartedAt, sourceView);
     if (state.profile && data.quota) {
       state.profile.quota = data.quota;
       renderProfile();
@@ -7873,6 +8072,10 @@ document.querySelectorAll('[data-admin-target]').forEach(button => {
   button.addEventListener('click', async () => {
     const target = $(button.dataset.adminTarget);
     if (!target) return;
+    if (target.tagName === 'DETAILS') {
+      target.open = true;
+      await loadAdvancedAdminTools();
+    }
     if (button.dataset.adminTarget === 'diagnosticsPanel' && !state.diagnosticsLoading) await loadDiagnostics(false);
     target.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
@@ -7880,6 +8083,15 @@ document.querySelectorAll('[data-admin-target]').forEach(button => {
 $('adminAdvancedTools')?.addEventListener('toggle', event => {
   if (event.currentTarget.open) loadAdvancedAdminTools();
 });
+$('betaDashboardRefreshBtn')?.addEventListener('click', () => loadBetaDashboard(true));
+$('betaDashboardPeriod')?.addEventListener('change', event => {
+  state.betaDashboardDays=Number(event.target.value || 7);
+  state.betaDashboard=null;
+  loadBetaDashboard(true);
+});
+$('betaFeedbackOpenBtn')?.addEventListener('click', () => setBetaFeedbackOpen(true));
+$('betaFeedbackCancelBtn')?.addEventListener('click', () => setBetaFeedbackOpen(false));
+$('betaFeedbackSendBtn')?.addEventListener('click', submitBetaFeedback);
 
 $('matchSearch').addEventListener('input', e => {
   state.search = e.target.value || '';
