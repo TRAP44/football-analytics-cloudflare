@@ -34,12 +34,15 @@ function expectedGoalsRow(statistics = {}) {
 }
 
 function sourceIsTrusted(meta = {}) {
-  if (meta?.confidenceBearing === false || meta?.available === false || meta?.usable === false || meta?.stale === true) return false;
+  if (
+    meta?.confidenceBearing !== true
+    || meta?.available !== true
+    || meta?.usable !== true
+    || meta?.stale === true
+  ) return false;
   const freshnessState = compactState(meta?.freshnessState);
   const provenanceState = compactState(meta?.provenanceState);
-  if (freshnessState === 'stale' || freshnessState === 'unknown') return false;
-  if (provenanceState === 'unknown' || provenanceState === 'unverified') return false;
-  return true;
+  return ['fresh', 'cached'].includes(freshnessState) && provenanceState === 'verified';
 }
 
 export function assessExpectedGoalsQuality(statistics = {}, { statisticsMeta = {}, mode = 'live' } = {}) {
