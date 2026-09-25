@@ -1,6 +1,6 @@
 # Closed Beta Readiness — FM AI
 
-Статус кода: **READY FOR CLOSED BETA / OPS CHECKS PENDING**  
+Статус кода: **PRE-BETA VALIDATED / MANUAL FIELD CHECKS PENDING**  
 Базовая версия клиента: **6.120.0-rc144**  
 Цель этапа: подготовить существующий продукт к небольшой группе реальных пользователей без добавления новых аналитических функций.
 
@@ -75,12 +75,14 @@ Privacy contract:
 
 Эти пункты требуют реальной среды/операционного решения и не могут быть честно закрыты только CI:
 
-- [ ] Провести smoke на реальном Telegram минимум с двумя **не-админскими** аккаунтами: открыть Mini App → поиск → матч → AI → история → профиль.
-- [ ] Проверить LIVE на реальном идущем матче: первичная загрузка, ручное обновление, один успешный авто-refresh и поведение при временном сетевом сбое.
-- [ ] Проверить текущую квоту/тариф футбольного провайдера непосредственно перед приглашением группы и ограничить размер beta-когорты так, чтобы глобальный provider limit не сделал продукт недоступным.
-- [ ] Зафиксировать список beta-пользователей и способ обратной связи/поддержки. Для строго технически закрытого доступа нужен отдельный allowlist/gate; текущий этап не вводит новый access-control механизм автоматически.
+- [ ] Провести smoke на реальном Telegram минимум с двумя **не-админскими** аккаунтами по сценарию из `PRE_BETA_VALIDATION_RU.md`: Telegram → Mini App → Матчи → поиск → матч → AI → история → профиль → тема/акцент → избранное → напоминание.
+- [ ] Проверить LIVE на реальном идущем матче: первичная загрузка, счёт, события, статистика, составы/потери, ручное обновление, минимум один успешный auto-refresh, временная потеря сети и восстановление с сохранением последнего snapshot.
+- [ ] Подтвердить **фактические** API-Football plan / dailyRemaining / minuteRemaining непосредственно перед приглашением. В production уже наблюдалось достижение минутного rate limit, поэтому до проверки первая cohort ограничена двумя пользователями.
+- [ ] Реально назначить Beta-01 и Beta-02 и создать приватный feedback channel по шаблону из `PRE_BETA_VALIDATION_RU.md`. Runbook и формат обратной связи подготовлены, но личности/Telegram ID тестировщиков в репозиторий не записываются.
+- [ ] Подтвердить Telegram `getWebhookInfo`: production URL совпадает с `/telegram/webhook`, нет устойчивой очереди pending updates и актуальной ошибки.
+- [ ] Принять решение по строгости доступа: invite-only operational beta либо server-side Telegram ID allowlist. Для технически закрытой beta frontend-скрытия недостаточно.
 
-До выполнения этих пунктов код готов к beta, но rollout реальным пользователям следует считать **OPS-PENDING**.
+До выполнения этих пунктов автоматическая часть готовности завершена, но приглашение реальных пользователей остаётся **MANUAL FIELD CHECKS PENDING**.
 
 ## 5. Improvements after beta
 
@@ -98,15 +100,35 @@ Privacy contract:
 
 Перед merge/deploy должны пройти:
 
-- [ ] `npm ci`
-- [ ] `npm audit --audit-level=high`
-- [ ] `npm run security:scan`
-- [ ] `npm run lint`
-- [ ] `npm run check`
-- [ ] `npm test`
-- [ ] `npm run verify:release`
-- [ ] `npm run verify:worker`
-- [ ] post-merge Quality на `main`
-- [ ] production deploy SHA/provenance guard
-- [ ] active release identity verification
-- [ ] production smoke
+- [x] `npm ci`
+- [x] `npm audit --audit-level=high`
+- [x] `npm run security:scan`
+- [x] `npm run lint`
+- [x] `npm run check`
+- [x] `npm test` — 754/754, fail 0
+- [x] `npm run verify:release`
+- [x] `npm run verify:worker`
+- [x] post-merge Quality на `main` — повторно запущен и пройден
+- [x] production deploy SHA/provenance guard — текущий production перед этим этапом подтверждён на SHA `3893248eaa4f01272c5ae06a4a6459ae8a885b18`
+- [x] active release identity verification — `6.120.0-rc144 / RC144`, 100% traffic на подтверждённой Cloudflare version
+- [x] production smoke — 25 проверок пройдены; этот этап дополнительно усиливает smoke проверками Supabase persistence, paused monetization и operational Telegram/AI/search/LIVE
+
+
+## 7. Pre-Beta Operational Validation
+
+Подтверждено напрямую 25 сентября 2026:
+
+- [x] UX Hotfix (#82) и Beta Readiness (#83) присутствуют в текущем `main`.
+- [x] Worker и client используют одну версию `6.120.0-rc144`; RC identity — `RC144`.
+- [x] Supabase project находится в `ACTIVE_HEALTHY`.
+- [x] Supabase schema v6.19 / RC129 подтверждена по обязательным provenance-колонкам.
+- [x] Schema fingerprint `c2c22ec25aacfcf1b9938b0850cebf49` совпадает с Worker contract.
+- [x] Backend security contract и default ACL contract — `ok=true`, violations отсутствуют.
+- [x] Runtime controls: analysis/search/live/reminders включены, maintenance выключен.
+- [x] `DEV_MODE=false` уже является blocking production smoke condition.
+- [x] Rollback workflow и его target/provenance/release/postcondition/smoke regression-контракты прошли release gate.
+- [x] Последние 15 минут operational-проверки не содержали новых Supabase auth failures или error/critical non-monitor events.
+- [ ] Production monitor должен вернуться из текущего `watch` в `healthy` либо причина `watch` должна быть подтверждена как transient перед приглашением. Прямой Telegram dedupe RPC на момент проверки показал 0 stale/failed claims.
+- [ ] Новый усиленный production smoke этого этапа должен пройти после merge/deploy и подтвердить фактические `database=supabase`, `monetization=paused` и operational Telegram/Mini App/AI/search/LIVE.
+
+Полный ручной сценарий, LIVE protocol, quota gate, cohort и feedback runbook: `PRE_BETA_VALIDATION_RU.md`.
