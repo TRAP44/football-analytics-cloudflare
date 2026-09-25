@@ -29,11 +29,11 @@ test('selection metadata is part of search and team discovery payloads',()=> {
   assert.match(worker,/primaryFixtureId:Number\(discovery\.primary\?\.fixtureId \|\| 0\) \|\| null/);
 });
 
-test('Mini App preserves server ranking and explains the primary match',()=> {
+test('Mini App preserves server ranking without adding a second explanatory banner',()=> {
   assert.match(app,/mergeById\(state\.globalSearch\.remoteMatches, local\.matches, 'fixtureId'\)/);
   assert.match(app,/selection\?\.rank \|\| 999/);
   assert.match(app,/ОСНОВНОЙ МАТЧ/);
-  assert.match(app,/FM AI выбрал основной матч/);
+  assert.doesNotMatch(app,/FM AI выбрал основной матч/);
   assert.match(css,/\.search-match-card\.is-primary/);
 });
 
