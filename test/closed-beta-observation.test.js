@@ -46,8 +46,9 @@ test('beta dashboard returns aggregate product metrics health timings and classi
   assert.match(endpoint,/searchQueriesReturned:false/);
   assert.match(endpoint,/errorTextsReturned:false/);
   assert.match(endpoint,/feedbackTextsReturned:false/);
-  assert.match(endpoint,/medianMs/);
-  assert.match(endpoint,/p90Ms/);
+  const timing=block(worker,'function betaTimingSummary','function betaFeedbackCounts');
+  assert.match(timing,/medianMs/);
+  assert.match(timing,/p90Ms/);
   assert.match(endpoint,/providerRateLimit/);
   assert.match(endpoint,/timeout/);
   assert.match(endpoint,/activeProblems/);
