@@ -7,9 +7,23 @@ function side(count, offset = 0) {
   return { startXI: Array.from({ length: count }, (_, i) => ({ id: offset + i + 1, name: `P ${offset + i + 1}` })) };
 }
 
+function sourceMeta(overrides = {}) {
+  return {
+    feature:'lineups',
+    provider:'api-football',
+    source:'network',
+    state:'available',
+    freshness:'fresh',
+    available:true,
+    usable:true,
+    observed:true,
+    ...overrides,
+  };
+}
+
 test('RC138 marks a non-empty incomplete XI as semantic partial data', () => {
   const quality = assessMatchLineups({ home: side(11), away: side(10, 100) });
-  const meta = annotateLineupReliability({ feature:'lineups', state:'available', available:true, usable:true, observed:true, source:'network' }, quality);
+  const meta = annotateLineupReliability(sourceMeta(), quality);
   assert.equal(meta.state, 'partial_data');
   assert.equal(meta.transportState, 'available');
   assert.equal(meta.semanticState, 'partial');
@@ -20,24 +34,79 @@ test('RC138 marks a non-empty incomplete XI as semantic partial data', () => {
   assert.equal(meta.reason, 'lineup_incomplete');
 });
 
-test('RC138 keeps a complete 11v11 lineup available', () => {
+test('RC138 keeps a complete 11v11 lineup available from a fresh attributed source', () => {
   const quality = assessMatchLineups({ home: side(11), away: side(11, 100) });
-  const meta = annotateLineupReliability({ feature:'lineups', state:'available', available:true, usable:true, observed:true, source:'embedded' }, quality);
+  const meta = annotateLineupReliability(sourceMeta({ source:'embedded' }), quality);
   assert.equal(meta.state, 'available');
   assert.equal(meta.semanticState, 'confirmed');
+  assert.equal(meta.freshnessState, 'fresh');
+  assert.equal(meta.provenanceState, 'verified');
   assert.equal(meta.available, true);
   assert.equal(meta.confirmed, true);
   assert.equal(meta.partial, false);
+  assert.equal(quality.bothConfirmed, true);
 });
 
 test('RC138 preserves provider failure semantics when no lineup was published', () => {
   const quality = assessMatchLineups({});
-  const meta = annotateLineupReliability({ feature:'lineups', state:'rate_limited', available:false, usable:false, observed:false, degraded:true, reason:'rate_limited' }, quality);
+  const meta = annotateLineupReliability(sourceMeta({
+    state:'rate_limited',
+    available:false,
+    usable:false,
+    observed:false,
+    degraded:true,
+    reason:'rate_limited',
+  }), quality);
   assert.equal(meta.state, 'rate_limited');
   assert.equal(meta.semanticState, 'unavailable');
   assert.equal(meta.available, false);
   assert.equal(meta.degraded, true);
   assert.equal(meta.reason, 'rate_limited');
+});
+
+test('RC138 hardening rejects stale 11v11 data as a confidence-bearing signal', () => {
+  const quality = assessMatchLineups({ home: side(11), away: side(11, 100) });
+  const meta = annotateLineupReliability(sourceMeta({
+    state:'stale',
+    source:'stale-cache',
+    freshness:'stale',
+  }), quality);
+  assert.equal(meta.state, 'stale_data');
+  assert.equal(meta.semanticState, 'confirmed');
+  assert.equal(meta.freshnessState, 'stale');
+  assert.equal(meta.available, false);
+  assert.equal(meta.usable, false);
+  assert.equal(meta.confirmed, false);
+  assert.equal(meta.structurallyConfirmed, true);
+  assert.equal(meta.reason, 'lineup_stale');
+  assert.equal(quality.structuralBothConfirmed, true);
+  assert.equal(quality.bothConfirmed, false);
+  assert.equal(quality.home.confirmed, false);
+  assert.equal(quality.away.confirmed, false);
+});
+
+test('RC138 hardening rejects complete XI without provider provenance', () => {
+  const quality = assessMatchLineups({ home: side(11), away: side(11, 100) });
+  const meta = annotateLineupReliability(sourceMeta({ provider:'unknown' }), quality);
+  assert.equal(meta.state, 'unverified_source');
+  assert.equal(meta.provenanceState, 'unknown');
+  assert.equal(meta.available, false);
+  assert.equal(meta.confirmed, false);
+  assert.equal(meta.reason, 'lineup_provenance_missing');
+  assert.equal(quality.bothConfirmed, false);
+});
+
+test('RC138 hardening accepts non-stale cached XI when provenance is preserved', () => {
+  const quality = assessMatchLineups({ home: side(11), away: side(11, 100) });
+  const meta = annotateLineupReliability(sourceMeta({
+    source:'cache',
+    freshness:'cached',
+  }), quality);
+  assert.equal(meta.freshnessState, 'cached');
+  assert.equal(meta.provenanceState, 'verified');
+  assert.equal(meta.available, true);
+  assert.equal(meta.confirmed, true);
+  assert.equal(quality.bothConfirmed, true);
 });
 
 const worker = fs.readFileSync('src/worker.js', 'utf8');

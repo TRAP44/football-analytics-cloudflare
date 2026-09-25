@@ -23,6 +23,58 @@ function boundedScore(value) {
   return Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
 }
 
+function compactState(value = '') {
+  return compactText(value).toLowerCase().replace(/\s+/g, '_');
+}
+
+function explicitLineupStale(meta = {}) {
+  const state = compactState(meta?.state);
+  const freshness = compactState(meta?.freshness);
+  const source = compactState(meta?.source);
+  return state === 'stale' || state === 'stale_data' || freshness === 'stale' || source === 'stale-cache';
+}
+
+function lineupProvenanceKnown(meta = {}) {
+  const provider = compactState(meta?.provider);
+  const source = compactState(meta?.source);
+  const providerKnown = Boolean(provider && provider !== 'unknown' && provider !== 'none');
+  const sourceKnown = Boolean(source && source !== 'unknown' && source !== 'none');
+  return providerKnown && sourceKnown;
+}
+
+function lineupSourceReliability(meta = {}) {
+  const stale = explicitLineupStale(meta);
+  const provenanceKnown = lineupProvenanceKnown(meta);
+  const source = compactState(meta?.source);
+  const freshness = compactState(meta?.freshness);
+  const cached = !stale && (source === 'cache' || freshness === 'cached');
+  return {
+    stale,
+    cached,
+    provenanceKnown,
+    freshnessState: stale ? 'stale' : cached ? 'cached' : 'fresh',
+    provenanceState: provenanceKnown ? 'verified' : 'unknown',
+  };
+}
+
+function downgradeConfirmedMatchQuality(quality = {}, reason = '') {
+  if (!quality || typeof quality !== 'object' || !quality.bothConfirmed) return quality;
+  quality.structuralBothConfirmed = true;
+  quality.reliabilityConfirmed = false;
+  quality.reliabilityReason = reason;
+  quality.bothConfirmed = false;
+  quality.confirmedSides = 0;
+  for (const sideName of ['home', 'away']) {
+    const side = quality?.[sideName];
+    if (!side || typeof side !== 'object') continue;
+    side.structurallyConfirmed = Boolean(side.confirmed);
+    side.confirmed = false;
+    side.reliabilityConfirmed = false;
+    side.reliabilityReason = reason;
+  }
+  return quality;
+}
+
 export function assessLineupQuality(lineup = null) {
   const starters = Array.isArray(lineup?.startXI) ? lineup.startXI : [];
   const substitutes = Array.isArray(lineup?.substitutes) ? lineup.substitutes : [];
@@ -73,9 +125,63 @@ export function annotateLineupReliability(meta = {}, matchQuality = {}) {
   const originalAvailable = meta?.available === undefined ? anyPublished : Boolean(meta.available);
   const originalUsable = meta?.usable === undefined ? originalAvailable : Boolean(meta.usable);
   const originalObserved = meta?.observed === undefined ? anyPublished : Boolean(meta.observed);
+  const sourceReliability = lineupSourceReliability(meta);
 
   if (!anyPublished) {
-    return { ...meta, semanticState: 'unavailable', confirmed: false, partial: false, lineupQuality: quality };
+    return {
+      ...meta,
+      semanticState: 'unavailable',
+      freshnessState: sourceReliability.freshnessState,
+      provenanceState: sourceReliability.provenanceState,
+      confirmed: false,
+      partial: false,
+      stale: sourceReliability.stale,
+      lineupQuality: quality,
+    };
+  }
+
+  if (bothConfirmed && sourceReliability.stale) {
+    downgradeConfirmedMatchQuality(quality, 'lineup_stale');
+    return {
+      ...meta,
+      transportState: originalState,
+      state: 'stale_data',
+      available: false,
+      usable: false,
+      observed: true,
+      degraded: true,
+      semanticState: 'confirmed',
+      freshnessState: 'stale',
+      provenanceState: sourceReliability.provenanceState,
+      structurallyConfirmed: true,
+      confirmed: false,
+      partial: false,
+      stale: true,
+      reason: 'lineup_stale',
+      lineupQuality: quality,
+    };
+  }
+
+  if (bothConfirmed && !sourceReliability.provenanceKnown) {
+    downgradeConfirmedMatchQuality(quality, 'lineup_provenance_missing');
+    return {
+      ...meta,
+      transportState: originalState,
+      state: 'unverified_source',
+      available: false,
+      usable: false,
+      observed: true,
+      degraded: true,
+      semanticState: 'confirmed',
+      freshnessState: sourceReliability.freshnessState,
+      provenanceState: 'unknown',
+      structurallyConfirmed: true,
+      confirmed: false,
+      partial: false,
+      stale: false,
+      reason: 'lineup_provenance_missing',
+      lineupQuality: quality,
+    };
   }
 
   if (bothConfirmed) {
@@ -85,8 +191,12 @@ export function annotateLineupReliability(meta = {}, matchQuality = {}) {
       usable: originalUsable,
       observed: originalObserved || originalAvailable,
       semanticState: 'confirmed',
+      freshnessState: sourceReliability.freshnessState,
+      provenanceState: sourceReliability.provenanceState,
+      structurallyConfirmed: true,
       confirmed: true,
       partial: false,
+      stale: false,
       lineupQuality: quality,
     };
   }
@@ -99,8 +209,11 @@ export function annotateLineupReliability(meta = {}, matchQuality = {}) {
     usable: false,
     observed: true,
     semanticState: 'partial',
+    freshnessState: sourceReliability.freshnessState,
+    provenanceState: sourceReliability.provenanceState,
     confirmed: false,
     partial: true,
+    stale: sourceReliability.stale,
     reason: 'lineup_incomplete',
     lineupQuality: quality,
   };
@@ -117,6 +230,7 @@ export function assessMatchLineups(lineups = {}) {
     bothConfirmed: home.confirmed && away.confirmed,
     confirmedSides: Number(home.confirmed) + Number(away.confirmed),
     partialSides: Number(home.partial) + Number(away.partial),
-    methodology: 'Состав считается подтверждённым только при 11 уникальных игроках стартового XI. Наличие неполного объекта состава не повышает статус до подтверждённого.',
+    reliabilityConfirmed: home.confirmed && away.confirmed,
+    methodology: 'Состав считается подтверждённым только при 11 уникальных игроках стартового XI и надёжном свежем источнике. Stale-кэш или неизвестный provenance не повышают статус до подтверждённого.',
   };
 }
