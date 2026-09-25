@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DEVELOPMENT_TELEGRAM_ID,
+  closedBetaAccessDecision,
   isAdminUser,
+  isClosedBetaUser,
+  isTelegramValidatedUser,
   telegramIdList,
 } from '../src/access-control.js';
 
@@ -29,4 +32,52 @@ test('production admin access requires an exact allowlist match', () => {
 
 test('billing plan never grants administrative access', () => {
   assert.equal(isAdminUser({ id: 77, plan: 'PREMIUM' }, { devMode: false, adminTelegramIds: [] }), false);
+});
+
+
+test('closed beta membership requires a signed Telegram identity and exact beta allowlist match', () => {
+  const cfg = {
+    devMode: false,
+    adminTelegramIds: [9001],
+    betaTelegramIds: [101, 202],
+    betaAccessEnabled: true,
+  };
+  assert.equal(isTelegramValidatedUser({ id: 101 }), false);
+  assert.equal(isClosedBetaUser({ id: 101 }, cfg), false);
+  assert.equal(isClosedBetaUser({ id: 101, __telegramValidated: true }, cfg), true);
+  assert.equal(isClosedBetaUser({ id: 303, __telegramValidated: true }, cfg), false);
+  assert.equal(isClosedBetaUser({ id: 9001, __telegramValidated: true }, cfg), false);
+});
+
+test('strict beta access is fail-closed for normal users and keeps admin bypass outside beta metrics', () => {
+  const cfg = {
+    devMode: false,
+    adminTelegramIds: [9001],
+    betaTelegramIds: [101, 202],
+    betaAccessEnabled: true,
+  };
+  assert.deepEqual(
+    closedBetaAccessDecision({ id: 101, __telegramValidated: true }, cfg),
+    { allowed: true, adminBypass: false, betaParticipant: true },
+  );
+  assert.deepEqual(
+    closedBetaAccessDecision({ id: 303, __telegramValidated: true }, cfg),
+    { allowed: false, adminBypass: false, betaParticipant: false },
+  );
+  assert.deepEqual(
+    closedBetaAccessDecision({ id: 9001, __telegramValidated: true }, cfg),
+    { allowed: true, adminBypass: true, betaParticipant: false },
+  );
+});
+
+test('beta membership can be measured before strict access is enabled without granting unsigned membership', () => {
+  const cfg = {
+    devMode: false,
+    adminTelegramIds: [],
+    betaTelegramIds: [101],
+    betaAccessEnabled: false,
+  };
+  assert.equal(closedBetaAccessDecision({ id: 303, __telegramValidated: true }, cfg).allowed, true);
+  assert.equal(closedBetaAccessDecision({ id: 101, __telegramValidated: true }, cfg).betaParticipant, true);
+  assert.equal(closedBetaAccessDecision({ id: 101 }, cfg).betaParticipant, false);
 });
