@@ -186,8 +186,10 @@ function seasonPlayerIndex(playerStats = null) {
   const byId = new Map();
   const byNameCandidates = new Map();
   for (const player of players) {
-    const ids = [...new Set([Number(player?.id || 0), Number(player?.providerId || 0)].filter(id => id > 0))];
-    for (const id of ids) if (!byId.has(id)) byId.set(id, player);
+    const source = compactText(player?.source || playerStats?.sourceMeta?.provider || '').toLowerCase();
+    const ids = [Number(player?.id || 0)];
+    if (source === 'api-football') ids.push(Number(player?.providerId || 0));
+    for (const id of [...new Set(ids.filter(value => value > 0))]) if (!byId.has(id)) byId.set(id, player);
     const name = normalizedName(player?.name || '');
     if (name) {
       const candidates = byNameCandidates.get(name) || [];

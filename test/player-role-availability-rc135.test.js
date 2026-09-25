@@ -22,6 +22,11 @@ test('RC135 unique normalized name fallback works across providers', () => {
   assert.ok(data.home[0].seasonRole.weight>=1 && data.home[0].seasonRole.weight<=1.20);
 });
 
+test('RC135 foreign provider ids cannot collide with API-Football absence ids', () => {
+  const data=enrichFixtureAbsencesWithSeasonRole(baseAbsence(999,'Different Player'), {homePlayerStats:{available:true,partial:true,sourceMeta:{provider:'football-data'},players:[{id:0,providerId:999,name:'Another Player',source:'football-data',games:{appearances:12},goals:{total:5,assists:1}}]}});
+  assert.equal(data.home[0].seasonRole,undefined);
+});
+
 test('RC135 ambiguous names are not force-matched', () => {
   const data=enrichFixtureAbsencesWithSeasonRole(baseAbsence(0,'Alex Silva'), {homePlayerStats:{available:true,players:[{id:101,name:'Alex Silva',games:{appearances:10,lineups:8,minutes:700},goals:{total:1,assists:1}},{id:102,name:'Alex Silva',games:{appearances:9,lineups:7,minutes:620},goals:{total:2,assists:0}}]}});
   assert.equal(data.home[0].seasonRole,undefined);
