@@ -19677,20 +19677,32 @@ function buildLineupImpact({absences,lineups,homeName='Хозяева',awayName=
   const lineupState=String(reliability?.features?.lineups?.state || (homeConfirmed || awayConfirmed ? 'available' : 'unknown'));
   const injuryUsable=injuryState==='available';
   const diff=homeAbs-awayAbs;
-  let label=injuryUsable?'Баланс подтверждённых потерь близкий':'Данные о потерях требуют проверки';
+  const hs=Number(absences?.summary?.home?.suspension || 0), as=Number(absences?.summary?.away?.suspension || 0);
+  const hi=Number(absences?.summary?.home?.injury || 0)+Number(absences?.summary?.home?.illness || 0);
+  const ai=Number(absences?.summary?.away?.injury || 0)+Number(absences?.summary?.away?.illness || 0);
+  const hd=Number(absences?.summary?.home?.doubtful || 0), ad=Number(absences?.summary?.away?.doubtful || 0);
+  const reconciled=Number(absences?.summary?.resolvedByLineup || 0);
+  let label=injuryUsable?'Баланс отмеченных потерь близкий':'Данные о потерях требуют проверки';
   let note=injuryUsable
-    ? `Подтверждённые потери: ${homeName} — ${homeAbs}, ${awayName} — ${awayAbs}.`
+    ? `По данным источника после сверки с составом: ${homeName} — ${homeAbs}, ${awayName} — ${awayAbs}. Травмы/болезни ${hi}:${ai}, дисквалификации ${hs}:${as}, под вопросом ${hd}:${ad}.`
     : injuryState==='empty_response'
-      ? 'Источник не вернул записей о травмах; это не считается подтверждением полного состава.'
-      : 'Источник не подтвердил данные о травмах; нулевые потери не предполагаются.';
-  if(injuryUsable&&diff>=2){label=`Потерь больше у ${homeName}`;note+=` У ${homeName} заметно больше подтверждённых отсутствий.`;}
-  else if(injuryUsable&&diff<=-2){label=`Потерь больше у ${awayName}`;note+=` У ${awayName} заметно больше подтверждённых отсутствий.`;}
-  if(homeConfirmed&&awayConfirmed) note+=' Стартовые составы подтверждены.';
-  else if(homeConfirmed||awayConfirmed) note+=' Подтверждён состав только одной команды.';
+      ? 'Источник не вернул записей о травмах или дисквалификациях; это не считается подтверждением полного состава.'
+      : 'Источник не подтвердил данные о потерях; нулевые потери не предполагаются.';
+  if(reconciled>0) note+=` ${reconciled} устаревших отметок исключено, потому что игрок уже указан в опубликованном составе.`;
+  if(injuryUsable&&diff>=2){label=`Потерь больше у ${homeName}`;note+=` У ${homeName} больше актуальных отметок о возможном отсутствии.`;}
+  else if(injuryUsable&&diff<=-2){label=`Потерь больше у ${awayName}`;note+=` У ${awayName} больше актуальных отметок о возможном отсутствии.`;}
+  if(homeConfirmed&&awayConfirmed) note+=' Стартовые составы опубликованы для обеих команд.';
+  else if(homeConfirmed||awayConfirmed) note+=' Опубликован состав только одной команды.';
   else if(lineupState==='empty_response') note+=' Источник пока не вернул опубликованные стартовые составы.';
   else if(lineupState==='skipped') note+=' Проверка составов сейчас пропущена по политике квоты/времени.';
-  else note+=' Стартовые составы источником не подтверждены.';
-  return {homeAbsences:homeAbs,awayAbsences:awayAbs,homeConfirmed,awayConfirmed,label,note,injuryState,lineupState};
+  else note+=' Стартовые составы источником пока не подтверждены.';
+  return {
+    homeAbsences:homeAbs,awayAbsences:awayAbs,homeConfirmed,awayConfirmed,label,note,
+    injuryState,lineupState,
+    availabilityState:injuryState,
+    categories:{home:{injuryOrIllness:hi,suspension:hs,doubtful:hd},away:{injuryOrIllness:ai,suspension:as,doubtful:ad}},
+    resolvedByLineup:reconciled,
+  };
 }
 
 function marketMovementNote(movement={}) {
