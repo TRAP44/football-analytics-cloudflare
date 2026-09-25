@@ -73,6 +73,10 @@ test('RC140 rejects structurally valid xG from stale or unverified statistics', 
   });
   assert.equal(unknown.state, 'source_untrusted');
   assert.equal(unknown.confidenceBearing, false);
+
+  const missingMeta = assessExpectedGoalsQuality(stats(1.2, 0.8));
+  assert.equal(missingMeta.state, 'source_untrusted');
+  assert.equal(missingMeta.confidenceBearing, false);
 });
 
 const worker = fs.readFileSync('src/worker.js', 'utf8');
@@ -82,8 +86,8 @@ const smoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 test('RC140 routes xG through the semantic guard before live AI and post-match evidence', () => {
   assert.match(worker, /assessExpectedGoalsQuality\(formattedStatistics/);
   assert.match(worker, /statisticsForTrustedExpectedGoals\(publicStatistics, xgQuality\)/);
-  assert.match(worker, /statistics: analyticalStatistics,[\s\S]{0,260}buildSmartMatchInsights/);
-  assert.match(worker, /statistics: analyticalStatistics,[\s\S]{0,260}buildLiveAiCoach/);
+  assert.match(worker, /buildSmartMatchInsights\(\{[\s\S]{0,260}statistics: analyticalStatistics/);
+  assert.match(worker, /buildLiveAiCoach\(\{[\s\S]{0,260}statistics: analyticalStatistics/);
   assert.match(worker, /buildPostMatchReview\(\{prediction:postMatchPrediction,fixture,statistics:analyticalStatistics/);
   assert.match(worker, /xgQuality,/);
   assert.match(worker, /xgSemanticQualityGuard: 'enabled'/);
