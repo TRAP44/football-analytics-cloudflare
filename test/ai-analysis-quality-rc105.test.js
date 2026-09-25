@@ -58,7 +58,7 @@ test('RC105 exposes a deterministic quality-gate self-test and health contract',
 });
 
 test('RC105 persists the quality-gate analysis version',()=>{
-  assert.ok(worker.includes("analysisVersion: '4.12.0-lineup-reliability'"));
+  assert.ok(worker.includes("analysisVersion: '4.13.0-freshness-trust'"));
 });
 
 
