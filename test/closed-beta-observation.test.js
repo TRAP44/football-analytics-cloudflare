@@ -89,7 +89,7 @@ test('closed beta dashboard requires verified server-side membership and exclude
   assert.match(worker,/const CLOSED_BETA_COHORT = 'closed_beta_v1'/);
   const telemetry=block(worker,'async function apiClientTelemetry','const BETA_FEEDBACK_CATEGORIES');
   assert.match(telemetry,/isClosedBetaUser\(user, cfg\)/);
-  assert.match(telemetry,/betaMembershipVerified: true/);
+  assert.match(telemetry,/betaMembershipVerified:\s*true/);
   const feedback=block(worker,'async function apiBetaFeedback','function betaMetricSummary');
   assert.match(feedback,/isClosedBetaUser\(user,cfg\)/);
   assert.match(feedback,/betaMembershipVerified:true/);
@@ -98,6 +98,17 @@ test('closed beta dashboard requires verified server-side membership and exclude
   assert.match(dashboard,/betaMembershipVerified===true/);
   assert.match(dashboard,/cohort:CLOSED_BETA_COHORT/);
   assert.match(dashboard,/membershipBoundary:'server_allowlist_verified'/);
+  const subject=block(worker,'async function closedBetaTelemetrySubject','const CLIENT_TELEMETRY_VIEWS');
+  assert.match(subject,/hmacSha256/);
+  assert.match(subject,/cfg\.botToken/);
+  assert.match(subject,/slice\(0,32\)/);
+  assert.match(telemetry,/!betaParticipant && event === 'boot_ok'/);
+  assert.match(telemetry,/!betaParticipant && event === 'product_action'/);
+  assert.match(telemetry,/!betaParticipant && event === 'action_error'/);
+  assert.match(dashboard,/betaClientRows/);
+  assert.match(dashboard,/betaSubject/);
+  assert.match(dashboard,/telegramIdsStoredInBetaTelemetry:false/);
+  assert.doesNotMatch(dashboard,/growth_events|telegram_id/);
 });
 
 test('strict beta API gate runs only after Telegram initData validation and before normal API routing',()=>{

@@ -14164,6 +14164,16 @@ const CLIENT_ACTION_ERROR_KINDS = new Set([
 const CLIENT_TIMING_OPERATIONS = new Set(['search', 'match', 'ai', 'live']);
 const CLOSED_BETA_COHORT = 'closed_beta_v1';
 
+async function closedBetaTelemetrySubject(user, cfg = {}) {
+  if (!isClosedBetaUser(user, cfg) || !cfg.botToken) return '';
+  try {
+    const digest=await hmacSha256(enc.encode(cfg.botToken),`${CLOSED_BETA_COHORT}:${Number(user.id)}`);
+    return bytesToHex(digest).slice(0,32);
+  } catch {
+    return '';
+  }
+}
+
 const CLIENT_TELEMETRY_VIEWS = new Set([
   'matchesView',
   'searchView',
@@ -14235,27 +14245,32 @@ async function apiClientTelemetry(request, cfg, user) {
     if (memory.clientTelemetryDedupe.size > 1500) pruneMemoryState();
   }
 
-  const betaMeta = isClosedBetaUser(user, cfg)
-    ? { betaCohort: CLOSED_BETA_COHORT, betaMembershipVerified: true }
+  const betaParticipant=isClosedBetaUser(user, cfg);
+  const betaSubject=betaParticipant ? await closedBetaTelemetrySubject(user,cfg) : '';
+  const betaMeta=betaParticipant && betaSubject
+    ? { betaCohort:CLOSED_BETA_COHORT,betaMembershipVerified:true,betaSubject }
     : {};
-  if (event === 'boot_ok') {
+  // Closed-beta client telemetry is kept out of growth_events because that legacy
+  // table requires a raw Telegram ID. The privacy-safe beta view is sourced from
+  // ops_events with an HMAC-derived subject that is never returned by the API.
+  if (!betaParticipant && event === 'boot_ok') {
     const attribution=await ensureLaunchAttribution(user.id,meta.startParam || '',cfg);
-    void recordGrowthEvent(cfg,{userId:user.id,eventName:'miniapp_open',channel:'miniapp',attribution,metadata:{view:meta.view || '',clientVersion:meta.clientVersion || '',releaseChannel:meta.releaseChannel || '',...betaMeta}});
+    void recordGrowthEvent(cfg,{userId:user.id,eventName:'miniapp_open',channel:'miniapp',attribution,metadata:{view:meta.view || '',clientVersion:meta.clientVersion || '',releaseChannel:meta.releaseChannel || ''}});
   }
-  if (event === 'product_action') {
+  if (!betaParticipant && event === 'product_action') {
     void recordGrowthEvent(cfg,{
       userId:user.id,
       eventName:`miniapp_${meta.reason}`,
       channel:'miniapp',
-      metadata:{view:meta.view || 'unknown',clientVersion:meta.clientVersion || '',releaseChannel:meta.releaseChannel || '',...betaMeta},
+      metadata:{view:meta.view || 'unknown',clientVersion:meta.clientVersion || '',releaseChannel:meta.releaseChannel || ''},
     });
   }
-  if (event === 'action_error') {
+  if (!betaParticipant && event === 'action_error') {
     void recordGrowthEvent(cfg,{
       userId:user.id,
       eventName:'miniapp_error',
       channel:'miniapp',
-      metadata:{action:meta.reason,errorKind:meta.errorKind || 'unknown',view:meta.view || 'unknown',clientVersion:meta.clientVersion || '',releaseChannel:meta.releaseChannel || '',...betaMeta},
+      metadata:{action:meta.reason,errorKind:meta.errorKind || 'unknown',view:meta.view || 'unknown',clientVersion:meta.clientVersion || '',releaseChannel:meta.releaseChannel || ''},
     });
   }
   const severity = ['compatibility_block', 'client_error'].includes(event)
@@ -14357,9 +14372,23 @@ async function apiBetaFeedback(request, cfg, user) {
   return json({ok:true});
 }
 
+function betaClientEventRows(rows = [], eventName = '') {
+  const target=String(eventName || '');
+  return (rows || []).filter(row=>{
+    if (row?.source!=='client' || row?.event_type!=='client_telemetry') return false;
+    const code=String(row?.code || '');
+    if (target==='miniapp_open') return code==='BOOT_OK';
+    if (target==='miniapp_error') return code==='ACTION_ERROR';
+    if (!target.startsWith('miniapp_')) return false;
+    return code==='PRODUCT_ACTION' && String(row?.metadata?.reason || '')===target.slice('miniapp_'.length);
+  });
+}
+
 function betaMetricSummary(rows = [], eventName = '') {
-  const matched=rows.filter(row=>String(row?.event_name || '')===eventName);
-  const users=new Set(matched.map(row=>Number(row?.telegram_id || 0)).filter(Boolean));
+  const matched=betaClientEventRows(rows,eventName);
+  const users=new Set(matched
+    .map(row=>String(row?.metadata?.betaSubject || ''))
+    .filter(subject=>/^[0-9a-f]{32}$/.test(subject)));
   return {events:matched.length,users:users.size};
 }
 
@@ -14388,7 +14417,7 @@ function betaFeedbackCounts(feedbackRows = [], category = '') {
 }
 
 function betaErrorCountByAction(errorRows = [], action = '') {
-  return errorRows.filter(row=>String(row?.metadata?.action || '')===action).length;
+  return errorRows.filter(row=>String(row?.metadata?.action || row?.metadata?.reason || '')===action).length;
 }
 
 function betaErrorCountByKind(errorRows = [], kinds = []) {
@@ -14441,20 +14470,13 @@ async function apiBetaDashboard(request,cfg) {
   const now=Date.now();
   const since=new Date(now-days*86400_000).toISOString();
   const end=new Date(now+1000).toISOString();
-  let growthRows=[];
-  let growthTruncated=false;
-  try {
-    const page=await supaSelectPaged(cfg,'growth_events',{created_at:`gte.${since}`},{pageSize:1000,maxRows:10000,order:'created_at.asc'});
-    growthRows=(page.rows || []).filter(row=>String(row?.metadata?.betaCohort || '')===CLOSED_BETA_COHORT && row?.metadata?.betaMembershipVerified===true);
-    growthTruncated=Boolean(page.truncated);
-  } catch (error) {
-    return json({available:false,reason:'Не удалось прочитать privacy-safe beta telemetry.',days});
-  }
   const [opsResult,diagnostics]=await Promise.all([
     readOpsEventsRange(cfg,since,end,1000),
     collectDiagnostics(cfg).catch(()=>({})),
   ]);
   const opsRows=(opsResult.items || []).filter(row=>String(row?.metadata?.betaCohort || '')===CLOSED_BETA_COHORT && row?.metadata?.betaMembershipVerified===true);
+  const betaClientRows=opsRows.filter(row=>row?.source==='client' && row?.event_type==='client_telemetry'
+    && /^[0-9a-f]{32}$/.test(String(row?.metadata?.betaSubject || '')));
 
   const metricDefs={
     miniAppLaunch:'miniapp_open',
@@ -14469,30 +14491,30 @@ async function apiBetaDashboard(request,cfg) {
     profileOpen:'miniapp_profile_open',
   };
   const metrics={};
-  for (const [key,eventName] of Object.entries(metricDefs)) metrics[key]=betaMetricSummary(growthRows,eventName);
+  for (const [key,eventName] of Object.entries(metricDefs)) metrics[key]=betaMetricSummary(betaClientRows,eventName);
 
-  const userSet=(eventName)=>new Set(growthRows.filter(row=>String(row?.event_name || '')===eventName).map(row=>Number(row?.telegram_id || 0)).filter(Boolean));
+  const userSet=(eventName)=>new Set(betaClientEventRows(betaClientRows,eventName).map(row=>String(row?.metadata?.betaSubject || '')).filter(Boolean));
   const entry=userSet('miniapp_open');
   const search=userSet('miniapp_search_used');
   const match=userSet('miniapp_match_open');
   const ai=userSet('miniapp_ai_complete');
   const coreCompleted=new Set([...entry].filter(id=>search.has(id)&&match.has(id)&&ai.has(id))).size;
 
-  const errorRows=growthRows.filter(row=>String(row?.event_name || '')==='miniapp_error');
+  const errorRows=betaClientEventRows(betaClientRows,'miniapp_error');
   const errorKinds={};
   const errorActions={};
   for (const row of errorRows) {
     const kind=String(row?.metadata?.errorKind || 'unknown');
-    const action=String(row?.metadata?.action || 'unknown');
+    const action=String(row?.metadata?.action || row?.metadata?.reason || 'unknown');
     errorKinds[kind]=Number(errorKinds[kind] || 0)+1;
     errorActions[action]=Number(errorActions[action] || 0)+1;
   }
 
   const timings={
-    search:betaTimingSummary(opsRows,'search'),
-    match:betaTimingSummary(opsRows,'match'),
-    ai:betaTimingSummary(opsRows,'ai'),
-    live:betaTimingSummary(opsRows,'live'),
+    search:betaTimingSummary(betaClientRows,'search'),
+    match:betaTimingSummary(betaClientRows,'match'),
+    ai:betaTimingSummary(betaClientRows,'ai'),
+    live:betaTimingSummary(betaClientRows,'live'),
   };
   const feedbackRows=opsRows.filter(row=>row?.source==='beta' && row?.event_type==='beta_feedback' && row?.code==='BETA_FEEDBACK');
   const issues=buildBetaIssueGroups({metrics,errorRows,feedbackRows,timings});
@@ -14528,6 +14550,8 @@ async function apiBetaDashboard(request,cfg) {
     membershipBoundary:'server_allowlist_verified',
     privacy:{
       aggregatedOnly:true,
+      telegramIdsStoredInBetaTelemetry:false,
+      pseudonymousSubjectOnly:true,
       telegramIdsReturned:false,
       searchQueriesReturned:false,
       errorTextsReturned:false,
@@ -14572,9 +14596,9 @@ async function apiBetaDashboard(request,cfg) {
       betaExpansionReadiness:{status:expansionStatus,blockers:blockerCount,majors:majorCount},
     },
     sample:{
-      growthEvents:growthRows.length,
+      clientEvents:betaClientRows.length,
       opsEvents:opsRows.length,
-      growthTruncated,
+      identityMode:'hmac_pseudonym',
       opsPersistent:Boolean(opsResult.persistent),
       opsSampleLimited:opsRows.length>=1000,
     },

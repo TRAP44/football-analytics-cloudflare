@@ -14,7 +14,7 @@
 ## 2. Что уже подтверждено автоматически
 
 - `main` содержит UX Hotfix (#82) и Beta Readiness (#83).
-- Полный Quality на текущем `main` повторно пройден: 756/756 тестов, fail 0.
+- Полный Quality текущего release-контура повторно пройден: 767/767 тестов, fail 0. Privacy-hardening PR #92 отдельно прошёл тот же audit/security/lint/check/test/release/worker gate.
 - Supabase project: ACTIVE_HEALTHY.
 - Текущий schema fingerprint: `c2c22ec25aacfcf1b9938b0850cebf49`, совпадает с Worker contract.
 - v6.19 / RC129 provenance-колонки присутствуют.
@@ -137,8 +137,9 @@ BLOCKER: Mini App не открывается; невозможно найти/�
 - `BETA_ACCESS_ENABLED=false` — безопасное значение по умолчанию. При таком состоянии приложение не блокирует остальных валидных Telegram-пользователей, но Beta Dashboard помечает `closed_beta_v1` только для реальных ID из `BETA_TELEGRAM_IDS`.
 - `BETA_ACCESS_ENABLED=true` — strict closed beta: после Telegram validation все normal-user API routes доступны только участникам `BETA_TELEGRAM_IDS`; admin проходит через server-side bypass.
 - Admin никогда не получает `closed_beta_v1` и не загрязняет Beta Dashboard.
-- Beta metadata содержит только cohort/membership flags; Telegram ID allowlist не возвращается в UI, Beta Dashboard или ops logs.
-- События со старой одной меткой `closed_beta_v1` без `betaMembershipVerified=true` Dashboard игнорирует.
+- Beta client telemetry не содержит Telegram ID: после verified membership сервер вычисляет HMAC-псевдоним `betaSubject`; исходный ID и allowlist не возвращаются в UI/Beta Dashboard и не добавляются в ops logs.
+- Для beta client telemetry legacy `growth_events` не используется, потому что его схема требует сырой `telegram_id`; Beta Dashboard считает client metrics из verified `ops_events` и никогда не возвращает `betaSubject`.
+- События со старой одной меткой `closed_beta_v1` без `betaMembershipVerified=true`, а также старые client telemetry rows без валидного `betaSubject`, в beta-user/journey метрики не входят.
 
 До реального назначения Beta-01/Beta-02 оставить `BETA_TELEGRAM_IDS` пустым и `BETA_ACCESS_ENABLED=false`. После получения реальных ID владелец задаёт их только в server-side environment, затем отдельно принимает решение, включать ли strict access.
 
@@ -170,3 +171,15 @@ GO возможен только когда:
 - Persisted production monitor ещё содержит `watch` от 15:00 UTC; текущие проверенные входы соответствуют healthy, но это не отмечается как PASS до следующего фактического monitor run.
 
 Остаются только полевые/секрет-зависимые проверки: два non-admin Telegram smoke, реальный LIVE, свежие provider quota headers, Telegram `getWebhookInfo`, фактическое назначение Beta-01/Beta-02 и создание feedback channel.
+
+## 11. Closed Beta Access & Field Validation — privacy boundary
+
+Подтверждено автоматическим gate PR #92 без изменения футбольной аналитики, providers или монетизации:
+
+- server-side allowlist применяется только к Telegram-пользователю с успешно проверенной initData signature;
+- admin bypass остаётся server-side и admin не считается участником `closed_beta_v1`;
+- Beta Dashboard client metrics требуют `betaMembershipVerified=true` и HMAC `betaSubject`, поэтому admin/non-beta и старые pre-boundary client rows не загрязняют cohort;
+- beta client telemetry не пишет сырой Telegram ID в `growth_events` и не возвращает pseudonymous subject через Dashboard API;
+- Quality: 767/767 tests, fail 0; audit/security/lint/check/release/worker — PASS.
+
+Ручные пункты ниже **не подтверждены** и остаются blocker до фактического выполнения: два non-admin Telegram smoke, реальный LIVE validation, свежие API-Football plan/dailyRemaining/minuteRemaining, Telegram `getWebhookInfo`, фактическое назначение Beta-01/Beta-02, создание feedback channel и финальное GO/NO-GO после этих подтверждений.
