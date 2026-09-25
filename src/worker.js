@@ -13618,6 +13618,25 @@ async function apiProviderProbe(request, cfg) {
     await apiFootball('/status', {}, cfg, { responseType: 'any' });
     statusOk = true;
     statusNote = 'Тариф и квоты обновлены через /status.';
+    const snapshot=providerSnapshot();
+    const quotaComplete=String(snapshot.plan || 'UNKNOWN')!=='UNKNOWN'
+      && [snapshot.dailyLimit,snapshot.dailyRemaining,snapshot.minuteLimit,snapshot.minuteRemaining]
+        .every(value=>Number.isFinite(Number(value)));
+    await recordOpsEvent(cfg,{
+      severity:quotaComplete ? 'info' : 'warning',
+      source:'provider',
+      eventType:'quota_probe',
+      code:quotaComplete ? 'PROVIDER_QUOTA_CONFIRMED' : 'PROVIDER_QUOTA_INCOMPLETE',
+      message:quotaComplete ? 'API-Football quota headers confirmed.' : 'API-Football /status responded without complete quota headers.',
+      endpoint:'/status',
+      meta:{
+        plan:String(snapshot.plan || 'UNKNOWN').slice(0,20),
+        dailyLimit:Number.isFinite(Number(snapshot.dailyLimit)) ? Number(snapshot.dailyLimit) : null,
+        dailyRemaining:Number.isFinite(Number(snapshot.dailyRemaining)) ? Number(snapshot.dailyRemaining) : null,
+        minuteLimit:Number.isFinite(Number(snapshot.minuteLimit)) ? Number(snapshot.minuteLimit) : null,
+        minuteRemaining:Number.isFinite(Number(snapshot.minuteRemaining)) ? Number(snapshot.minuteRemaining) : null,
+      },
+    }).catch(()=>null);
   } catch (error) {
     statusNote = redactOpsString(error?.message || 'Не удалось обновить состояние источника данных.', 160);
   }
@@ -14425,13 +14444,13 @@ function betaErrorCountByKind(errorRows = [], kinds = []) {
   return errorRows.filter(row=>allowed.has(String(row?.metadata?.errorKind || ''))).length;
 }
 
-function buildBetaIssueGroups({metrics,errorRows,feedbackRows,timings}) {
+function buildBetaIssueGroups({metrics,errorRows,feedbackRows,timings,clientErrorRows=[]}) {
   const configs=[
     {category:'search',errors:betaErrorCountByAction(errorRows,'search'),attempts:Number(metrics.searchUsed?.events || 0)},
     {category:'matches',errors:betaErrorCountByAction(errorRows,'match'),attempts:Number(metrics.matchOpen?.events || 0)+betaErrorCountByAction(errorRows,'match')},
     {category:'ai',errors:betaErrorCountByAction(errorRows,'ai'),attempts:Number(metrics.aiStart?.events || 0)},
     {category:'live',errors:betaErrorCountByAction(errorRows,'live_refresh'),attempts:Number(metrics.liveOpen?.events || 0)+betaErrorCountByAction(errorRows,'live_refresh')},
-    {category:'ux',errors:betaErrorCountByAction(errorRows,'history')+betaErrorCountByAction(errorRows,'profile'),attempts:Number(metrics.historyOpen?.events || 0)+Number(metrics.profileOpen?.events || 0)},
+    {category:'ux',errors:betaErrorCountByAction(errorRows,'history')+betaErrorCountByAction(errorRows,'profile')+Number(clientErrorRows.length || 0),attempts:Number(metrics.miniAppLaunch?.events || 0)+Number(metrics.historyOpen?.events || 0)+Number(metrics.profileOpen?.events || 0)},
     {category:'data_sources',errors:betaErrorCountByKind(errorRows,['provider','rate_limit']),attempts:0},
     {category:'performance',errors:betaErrorCountByKind(errorRows,['timeout']),attempts:0},
   ];
@@ -14444,13 +14463,14 @@ function buildBetaIssueGroups({metrics,errorRows,feedbackRows,timings}) {
     if ((item.attempts>=4 && Number(failureRatePct || 0)>=50) || feedback.severity.BLOCKER>=2) classification='BLOCKER';
     else if (Number(item.errors || 0)>=2 || feedback.severity.MAJOR>=2 || correlated) classification='MAJOR';
     else if (feedback.severity.MINOR>=2) classification='MINOR';
+    else if (frequency>0) classification='NEEDS_MORE_EVIDENCE';
     const meta=betaIssueMeta(item.category);
     const timing=timings?.[item.category==='matches'?'match':item.category] || null;
     return {
       category:item.category,
       label:meta.label,
       classification,
-      active:Boolean(classification),
+      active:['BLOCKER','MAJOR','MINOR'].includes(classification),
       frequency,
       telemetryErrors:Number(item.errors || 0),
       feedback:Number(feedback.total || 0),
@@ -14463,6 +14483,86 @@ function buildBetaIssueGroups({metrics,errorRows,feedbackRows,timings}) {
   });
 }
 
+function betaJourneyEventName(row = {}) {
+  if (row?.source!=='client' || row?.event_type!=='client_telemetry') return '';
+  const code=String(row?.code || '');
+  if (code==='BOOT_OK') return 'miniapp_open';
+  if (code!=='PRODUCT_ACTION') return '';
+  const reason=String(row?.metadata?.reason || '');
+  return reason ? `miniapp_${reason}` : '';
+}
+
+function betaJourneySummary(rows = []) {
+  const stages=[
+    'miniapp_open',
+    'miniapp_search_used',
+    'miniapp_search_found',
+    'miniapp_match_open',
+    'miniapp_ai_start',
+    'miniapp_ai_complete',
+    'miniapp_history_open',
+    'miniapp_open',
+  ];
+  const subjects=new Map();
+  for (const row of rows || []) {
+    const subject=String(row?.metadata?.betaSubject || '');
+    if (!/^[0-9a-f]{32}$/.test(subject)) continue;
+    if (!subjects.has(subject)) subjects.set(subject,[]);
+    subjects.get(subject).push(row);
+  }
+  const reached=Array(stages.length).fill(0);
+  let fullCompleted=0;
+  let analysisCompleted=0;
+  for (const subjectRows of subjects.values()) {
+    const ordered=[...subjectRows].sort((a,b)=>Date.parse(a?.created_at || 0)-Date.parse(b?.created_at || 0));
+    let index=0;
+    for (const row of ordered) {
+      const eventName=betaJourneyEventName(row);
+      if (eventName && eventName===stages[index]) {
+        reached[index]+=1;
+        index+=1;
+        if (index>=stages.length) break;
+      }
+    }
+    if (index>=6) analysisCompleted+=1;
+    if (index>=stages.length) fullCompleted+=1;
+  }
+  const labels=['launch','searchUsed','searchFound','matchOpen','aiStart','aiComplete','historyOpen','reentry'];
+  return {
+    betaUsers:subjects.size,
+    analysisCompleted,
+    analysisCompletionPct:subjects.size ? Math.round((analysisCompleted/subjects.size)*1000)/10 : 0,
+    fullCompleted,
+    fullCompletionPct:subjects.size ? Math.round((fullCompleted/subjects.size)*1000)/10 : 0,
+    stages:Object.fromEntries(labels.map((label,index)=>[label,reached[index]])),
+    definition:'open -> search_used -> search_found -> match_open -> ai_start -> ai_complete -> history_open -> reopen',
+  };
+}
+
+function latestConfirmedProviderQuota(rows = [], nowMs = Date.now()) {
+  const candidates=(rows || [])
+    .filter(row=>row?.source==='provider' && row?.event_type==='quota_probe' && row?.code==='PROVIDER_QUOTA_CONFIRMED')
+    .filter(row=>{
+      const at=Date.parse(row?.created_at || '');
+      return Number.isFinite(at) && nowMs-at<=24*60*60_000;
+    })
+    .sort((a,b)=>Date.parse(b?.created_at || 0)-Date.parse(a?.created_at || 0));
+  const row=candidates[0] || null;
+  if (!row) return {confirmed:false,source:'none',confirmedAt:null};
+  const meta=row.metadata || {};
+  const complete=String(meta.plan || 'UNKNOWN')!=='UNKNOWN'
+    && [meta.dailyLimit,meta.dailyRemaining,meta.minuteLimit,meta.minuteRemaining]
+      .every(value=>Number.isFinite(Number(value)));
+  return {
+    confirmed:complete,
+    source:'provider_monitor',
+    confirmedAt:complete ? row.created_at : null,
+    plan:complete ? String(meta.plan || '') : '',
+    dailyRemaining:complete ? Number(meta.dailyRemaining) : null,
+    minuteRemaining:complete ? Number(meta.minuteRemaining) : null,
+  };
+}
+
 async function apiBetaDashboard(request,cfg) {
   const url=new URL(request.url);
   const days=Math.max(1,Math.min(30,Number(url.searchParams.get('days') || 7)));
@@ -14470,11 +14570,13 @@ async function apiBetaDashboard(request,cfg) {
   const now=Date.now();
   const since=new Date(now-days*86400_000).toISOString();
   const end=new Date(now+1000).toISOString();
-  const [opsResult,diagnostics]=await Promise.all([
+  const [opsResult,diagnostics,telegramWebhookProbe]=await Promise.all([
     readOpsEventsRange(cfg,since,end,1000),
     collectDiagnostics(cfg).catch(()=>({})),
+    billingWebhookStatus(request,cfg).catch(()=>({ready:false,reason:'webhook_check_failed'})),
   ]);
-  const opsRows=(opsResult.items || []).filter(row=>String(row?.metadata?.betaCohort || '')===CLOSED_BETA_COHORT && row?.metadata?.betaMembershipVerified===true);
+  const allOpsRows=opsResult.items || [];
+  const opsRows=allOpsRows.filter(row=>String(row?.metadata?.betaCohort || '')===CLOSED_BETA_COHORT && row?.metadata?.betaMembershipVerified===true);
   const betaClientRows=opsRows.filter(row=>row?.source==='client' && row?.event_type==='client_telemetry'
     && /^[0-9a-f]{32}$/.test(String(row?.metadata?.betaSubject || '')));
 
@@ -14493,14 +14595,11 @@ async function apiBetaDashboard(request,cfg) {
   const metrics={};
   for (const [key,eventName] of Object.entries(metricDefs)) metrics[key]=betaMetricSummary(betaClientRows,eventName);
 
-  const userSet=(eventName)=>new Set(betaClientEventRows(betaClientRows,eventName).map(row=>String(row?.metadata?.betaSubject || '')).filter(Boolean));
-  const entry=userSet('miniapp_open');
-  const search=userSet('miniapp_search_used');
-  const match=userSet('miniapp_match_open');
-  const ai=userSet('miniapp_ai_complete');
-  const coreCompleted=new Set([...entry].filter(id=>search.has(id)&&match.has(id)&&ai.has(id))).size;
+  const journey=betaJourneySummary(betaClientRows);
+  const entrySize=Number(journey.betaUsers || 0);
 
   const errorRows=betaClientEventRows(betaClientRows,'miniapp_error');
+  const clientErrorRows=betaClientRows.filter(row=>String(row?.code || '')==='CLIENT_ERROR');
   const errorKinds={};
   const errorActions={};
   for (const row of errorRows) {
@@ -14517,8 +14616,9 @@ async function apiBetaDashboard(request,cfg) {
     live:betaTimingSummary(betaClientRows,'live'),
   };
   const feedbackRows=opsRows.filter(row=>row?.source==='beta' && row?.event_type==='beta_feedback' && row?.code==='BETA_FEEDBACK');
-  const issues=buildBetaIssueGroups({metrics,errorRows,feedbackRows,timings});
+  const issues=buildBetaIssueGroups({metrics,errorRows,feedbackRows,timings,clientErrorRows});
   const activeIssues=issues.filter(issue=>issue.active);
+  const evidencePending=issues.filter(issue=>issue.classification==='NEEDS_MORE_EVIDENCE');
   const topBreak=Object.entries(errorActions).sort((a,b)=>b[1]-a[1] || a[0].localeCompare(b[0]))[0] || null;
   const providerRateLimit=Number(errorKinds.rate_limit || 0);
   const providerErrors=Number(errorKinds.provider || 0);
@@ -14530,17 +14630,43 @@ async function apiBetaDashboard(request,cfg) {
   const telegramProblem=['incident','critical','failed','not_configured'].includes(telegramState);
   const healthState=blockerCount>0 || !supabaseOk || telegramProblem
     ? 'incident'
-    : activeIssues.length>0 || providerRateLimit>0 || timeouts>0
+    : activeIssues.length>0 || providerRateLimit>0 || timeouts>0 || clientErrorRows.length>0
       ? 'watch'
       : 'healthy';
 
   const usedFeatures=Object.entries(metrics)
     .map(([key,value])=>({key,events:Number(value.events || 0),users:Number(value.users || 0)}))
     .sort((a,b)=>b.events-a.events || a.key.localeCompare(b.key));
-  const lowUsageFeatures=usedFeatures.filter(item=>item.events===0 || (entry.size>=5 && item.users<=Math.max(1,Math.floor(entry.size*0.1))));
+  const lowUsageFeatures=usedFeatures.filter(item=>item.events===0 || (entrySize>=5 && item.users<=Math.max(1,Math.floor(entrySize*0.1))));
   const providerSignals=providerRateLimit+providerErrors+Number(issues.find(issue=>issue.category==='data_sources')?.feedback || 0);
-  const providerEvidence=entry.size>=5 && providerSignals>=5 ? 'review_provider_options' : 'insufficient_evidence';
-  const expansionStatus=entry.size<5 ? 'collecting_data' : blockerCount>0 ? 'hold' : majorCount>0 ? 'review_issues' : 'candidate_for_expansion';
+  const providerEvidence=entrySize>=5 && providerSignals>=5 ? 'review_provider_options' : 'insufficient_evidence';
+  const expansionStatus=entrySize<5 ? 'collecting_data' : blockerCount>0 ? 'hold' : majorCount>0 ? 'review_issues' : 'candidate_for_expansion';
+
+  const adminIds=new Set((cfg.adminTelegramIds || []).map(Number));
+  const betaIds=[...new Set((cfg.betaTelegramIds || []).map(Number).filter(id=>Number.isSafeInteger(id)&&id>0))];
+  const betaAdminOverlap=betaIds.filter(id=>adminIds.has(id)).length;
+  const assignedBetaUsers=betaIds.filter(id=>!adminIds.has(id)).length;
+  const persistedQuota=latestConfirmedProviderQuota(allOpsRows,now);
+  const providerNow=providerSnapshot();
+  const providerNowFresh=Boolean(providerNow.updatedAt && now-Date.parse(providerNow.updatedAt)<=10*60_000);
+  const providerNowComplete=providerNowFresh
+    && String(providerNow.plan || 'UNKNOWN')!=='UNKNOWN'
+    && [providerNow.dailyLimit,providerNow.dailyRemaining,providerNow.minuteLimit,providerNow.minuteRemaining]
+      .every(value=>Number.isFinite(Number(value)));
+  const providerQuota=providerNowComplete ? {
+    confirmed:true,
+    source:'provider_runtime',
+    confirmedAt:providerNow.updatedAt,
+    plan:String(providerNow.plan || ''),
+    dailyRemaining:Number(providerNow.dailyRemaining),
+    minuteRemaining:Number(providerNow.minuteRemaining),
+  } : persistedQuota;
+  const launchBlockers=[];
+  if (assignedBetaUsers<2) launchBlockers.push('beta_accounts_not_assigned');
+  if (betaAdminOverlap>0) launchBlockers.push('beta_admin_overlap');
+  if (!cfg.betaAccessEnabled) launchBlockers.push('strict_beta_access_disabled');
+  if (!telegramWebhookProbe?.ready) launchBlockers.push('telegram_webhook_unconfirmed');
+  if (!providerQuota.confirmed) launchBlockers.push('provider_quota_unconfirmed');
 
   return json({
     available:true,
@@ -14557,19 +14683,22 @@ async function apiBetaDashboard(request,cfg) {
       errorTextsReturned:false,
       feedbackTextsReturned:false,
     },
-    metrics,
-    journey:{
-      betaUsers:entry.size,
-      coreCompleted,
-      coreCompletionPct:entry.size ? Math.round((coreCompleted/entry.size)*1000)/10 : 0,
-      stages:{
-        launch:entry.size,
-        search:search.size,
-        match:match.size,
-        aiComplete:ai.size,
+    launchReadiness:{
+      status:launchBlockers.length ? 'blocked' : 'runtime_prerequisites_confirmed',
+      blockers:launchBlockers,
+      betaAssignments:{required:2,assigned:assignedBetaUsers,adminOverlap:betaAdminOverlap,idsReturned:false},
+      strictBetaAccess:Boolean(cfg.betaAccessEnabled),
+      telegramWebhook:{
+        confirmed:Boolean(telegramWebhookProbe?.ready),
+        pendingUpdates:Number(telegramWebhookProbe?.pendingUpdates || 0),
+        reason:String(telegramWebhookProbe?.reason || ''),
       },
+      providerQuota,
+      note:'LIVE field validation and CI/release evidence remain separate evidence gates and are not inferred from this runtime snapshot.',
     },
-    actionErrors:{total:errorRows.length,byCategory:errorKinds,byAction:errorActions},
+    metrics,
+    journey,
+    actionErrors:{total:errorRows.length,byCategory:errorKinds,byAction:errorActions,clientErrors:clientErrorRows.length},
     timings,
     health:{
       state:healthState,
@@ -14577,23 +14706,27 @@ async function apiBetaDashboard(request,cfg) {
       topBreak:{action:topBreak?.[0] || '',count:Number(topBreak?.[1] || 0)},
       providerRateLimit,
       timeout:timeouts,
+      clientErrors:clientErrorRows.length,
       supabase:supabaseOk ? 'ok' : String(diagnostics?.supabase?.status || 'problem'),
       telegram:telegramState,
       currentRelease:{version:APP_VERSION,candidate:RC_NAME,channel:RELEASE_CHANNEL},
       activeProblems:activeIssues.length,
+      needsMoreEvidence:evidencePending.length,
       blockerCount,
       majorCount,
     },
     issues,
     report:{
-      betaUsers:entry.size,
-      coreJourneyCompleted:coreCompleted,
+      betaUsers:entrySize,
+      fullJourneyCompleted:Number(journey.fullCompleted || 0),
+      fullJourneyCompletionPct:Number(journey.fullCompletionPct || 0),
+      analysisJourneyCompleted:Number(journey.analysisCompleted || 0),
       mainDropoff:topBreak ? {action:topBreak[0],count:Number(topBreak[1] || 0)} : null,
       usedFeatures,
       lowUsageFeatures,
       missingDataSignals:{searchEmpty:Number(metrics.searchEmpty?.events || 0),providerErrors,providerRateLimit},
-      providerExpansionEvidence:{status:providerEvidence,signals:providerSignals,betaUsers:entry.size},
-      betaExpansionReadiness:{status:expansionStatus,blockers:blockerCount,majors:majorCount},
+      providerExpansionEvidence:{status:providerEvidence,signals:providerSignals,betaUsers:entrySize},
+      betaExpansionReadiness:{status:expansionStatus,blockers:blockerCount,majors:majorCount,needsMoreEvidence:evidencePending.length},
     },
     sample:{
       clientEvents:betaClientRows.length,
