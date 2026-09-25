@@ -32,12 +32,12 @@ test('Mini App no longer performs an automatic second team-hub fetch',()=> {
   assert.match(css,/\.search-team-summary/);
 });
 
-test('zero-result UX distinguishes recent recovery from a truly empty calendar',()=> {
-  assert.match(app,/ближайших матчей сейчас нет — показываю последние завершённые игры/);
-  assert.match(app,/календарь не вернулся — откройте карточку команды/);
+test('zero-result UX stays simple while backend preserves recent-match recovery',()=> {
+  assert.match(app,/Матчей сейчас нет/);
+  assert.match(app,/Матч найден/);
+  assert.match(app,/Источник отвечает слишком долго/);
   assert.match(worker,/recovery=matches\.some\(match=>!match\.finished\)\?'upcoming':'recent'/);
   assert.match(worker,/recoveredRecent:searchRecoveredRecent/);
-  assert.match(app,/спасено последним матчем/);
 });
 
 test('RC56 health and playbook describe the release gate',()=> {
