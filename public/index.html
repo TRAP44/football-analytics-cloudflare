@@ -36,7 +36,7 @@
           <p id="topbarSubtitle">Найдите клуб или матч — FM AI соберёт главное для решения</p>
         </div>
       </div>
-      <button id="profileBtn" class="profile-badge" type="button" aria-label="Открыть администрирование" hidden><i></i><span>Админ</span></button>
+      <button id="profileBtn" class="profile-badge" type="button" aria-label="Открыть профиль"><i></i><span>Профиль</span></button>
     </header>
 
     <div id="connectionBanner" class="connection-banner" role="status" aria-live="polite" hidden>
@@ -61,6 +61,10 @@
           <button class="date-btn" type="button" data-offset="1">Завтра</button>
         </div>
 
+        <div class="search-row">
+          <input id="matchSearch" class="search-input" type="search" aria-label="Поиск по матчам" inputmode="search" enterkeyhint="search" placeholder="🔎 Команда, турнир или страна" autocomplete="off" />
+        </div>
+
         <section id="dailyOverview" class="daily-overview" aria-live="polite">
           <div class="daily-overview-copy">
             <span id="dailyOverviewKicker">СЕГОДНЯ ДЛЯ ВАС</span>
@@ -74,22 +78,9 @@
           </div>
         </section>
 
-        <section id="aiFocus" class="ai-focus-card" hidden aria-live="polite"></section>
+        <section id="aiFocus" class="ai-focus-card secondary-home-insight" hidden aria-live="polite"></section>
+        <section id="aiCenterSummary" class="ai-center-summary secondary-home-insight" hidden aria-live="polite"></section>
 
-        <section id="aiCenterSummary" class="ai-center-summary" hidden aria-live="polite"></section>
-
-        <section id="firstRunGuide" class="first-run-guide" hidden aria-label="Быстрый старт">
-          <div class="first-run-guide-copy">
-            <span>БЫСТРЫЙ СТАРТ</span>
-            <strong>Настройте ленту под себя</strong>
-            <p>Нажмите ☆ рядом с командой — раздел «Для вас» станет точнее. Кнопка 🔔 в карточке матча включит напоминание.</p>
-          </div>
-          <button id="firstRunGuideDismiss" class="first-run-guide-dismiss" type="button">Понятно</button>
-        </section>
-
-        <div class="search-row">
-          <input id="matchSearch" class="search-input" type="search" aria-label="Поиск по матчам" inputmode="search" placeholder="🔎 Команда, турнир или страна" autocomplete="off" />
-        </div>
 
         <div class="filter-strip" id="filterStrip">
           <button type="button" class="filter-btn active" data-filter="top">✨ Для вас</button>
@@ -136,16 +127,16 @@
       <section id="searchView" class="view active">
         <div class="section-head search-page-head">
           <div>
-            <h2>Найти матч для AI-разбора</h2>
-            <p>Клубы из разных стран и лиг · поиск работает и по русским названиям</p>
+            <h2>Найти матч</h2>
+            <p>Введите команду или турнир.</p>
           </div>
         </div>
         <section class="panel global-search-panel">
           <div class="global-search-box">
-            <input id="globalSearchInput" class="search-input" type="search" aria-label="Поиск футбольного клуба или матча" inputmode="search" placeholder="Например: Реал, ПСЖ, Ман Сити, Интер…" autocomplete="off" />
+            <input id="globalSearchInput" class="search-input" type="search" aria-label="Поиск футбольного клуба или матча" inputmode="search" enterkeyhint="search" placeholder="Например: Реал, ПСЖ, Ман Сити, Интер…" autocomplete="off" />
             <button id="globalSearchBtn" class="global-search-btn" type="button">Найти</button>
           </div>
-          <p class="tiny">FM AI распознаёт популярные русские, английские и сокращённые названия клубов. Выберите найденный матч, чтобы запустить анализ.</p>
+          <p class="tiny search-helper">Результаты из уже загруженных матчей появятся сразу.</p>
         </section>
         <div class="public-trust-strip" aria-label="Информация о сервисе">
           <span>FM AI объясняет футбольные данные и не гарантирует исход матча.</span>
@@ -282,8 +273,8 @@
         <section class="panel preferences-panel">
           <div class="section-head profile-section-head">
             <div>
-              <h2>⚙️ Персонализация</h2>
-              <p>Настройки списка матчей и уведомлений.</p>
+              <h2>⚙️ Оформление и настройки</h2>
+              <p>Цвет интерфейса применяется сразу.</p>
             </div>
           </div>
           <div class="preferences-grid">
@@ -348,8 +339,8 @@
         <section class="panel admin-console" data-admin-only hidden>
           <div class="section-head profile-section-head">
             <div>
-              <h2>🛠 Центр управления</h2>
-              <p>Ежедневные действия на виду, редкие проверки убраны в отдельный раздел.</p>
+              <h2>🛠 Администрирование</h2>
+              <p>Доступно только администратору.</p>
             </div>
           </div>
           <div class="admin-console-actions">
@@ -737,7 +728,7 @@
       <button id="navMatches" class="nav-item" type="button"><span>⚽</span><small>Матчи</small></button>
       <button id="navSearch" class="nav-item active" type="button"><span>🔎</span><small>Найти матч</small></button>
       <button id="navHistory" class="nav-item" type="button"><span>🧠</span><small>История AI</small></button>
-      <button id="navProfile" class="nav-item" type="button" hidden><span>🔐</span><small>Админ</small></button>
+      <button id="navProfile" class="nav-item" type="button"><span>👤</span><small>Профиль</small></button>
     </nav>
   </div>
 
