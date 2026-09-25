@@ -56,6 +56,6 @@ test('RC131 cockpit is responsive and uses the existing visual tokens',()=>{
 
 test('RC131 cockpit remains part of the RC136 release health contract',()=>{
   assert.match(worker,/matchAtAGlanceCockpit: 'enabled'/);
-  assert.match(worker,/const APP_VERSION = '6\.116\.0-rc140'/);
-  assert.match(worker,/const RC_NAME = 'RC140'/);
+  assert.match(worker,/const APP_VERSION = '6\.117\.0-rc141'/);
+  assert.match(worker,/const RC_NAME = 'RC141'/);
 });
