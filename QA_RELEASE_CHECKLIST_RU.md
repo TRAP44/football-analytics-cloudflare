@@ -1,4 +1,13 @@
-# QA Release Checklist — v6.119.0 RC143
+# QA Release Checklist — v6.120.0 RC144
+
+## RC144 — Availability Semantic Quality Guard
+- Проверить `npm test`, включая `test/availability-quality-rc144.test.js`: валидные записи обеих команд проходят, строки чужой команды и без идентификации игрока исключаются.
+- Один и тот же player ID/однозначное имя не должен одновременно считаться активной потерей обеих команд: такой конфликт fail-closed исключается целиком.
+- Stale/unverified injury source должен давать `source_untrusted`; такие записи не участвуют в lineup reconciliation, player-role hydration, absence adjustment, completeness и AI.
+- Match Center и полный анализ должны вернуть `availabilityQuality`; UI должен явно показывать verified/sanitized/invalid/source-untrusted состояние.
+- Release gate: Worker/client `6.120.0-rc144`, Analysis cache `v15-availability-quality-rc144`, Match Center cache `v16-availability-quality-rc144`, model-input contract `4.15.0-availability-quality`, health/smoke flag `availabilitySemanticQualityGuard`.
+- RC134 normalization/reconciliation, RC135–RC138 role/lineup guards и RC139 freshness/provenance остаются нижележащими слоями и не дублируются.
+- Supabase: новых миграций, таблиц или колонок для RC144 нет; актуальная production-схема остаётся на миграции `v6.19`.
 
 ## RC143 — Odds Market Semantic Quality Guard
 - Проверить `npm test`, включая `test/odds-quality-rc143.test.js`: валидный 1X2 проходит, некорректные/неполные коэффициенты, невозможная сумма implied probabilities, неверный source count и provider mismatch отклоняются.
@@ -52,9 +61,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.119.0`.
-- Worker и client: `6.119.0-rc143`.
-- Release candidate: `RC143`.
+- `package.json` и `package-lock.json`: `6.120.0`.
+- Worker и client: `6.120.0-rc144`.
+- Release candidate: `RC144`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 

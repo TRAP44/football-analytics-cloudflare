@@ -56,6 +56,7 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         eventSemanticQualityGuard: 'enabled',
         statisticsSemanticQualityGuard: 'enabled',
         oddsSemanticQualityGuard: 'enabled',
+        availabilitySemanticQualityGuard: 'enabled',
         sourceProvenance: 'enabled',
         aiAnalysisQualityGate: 'enabled',
         aiAnalysisQualityGateSelfTest: 'enabled',

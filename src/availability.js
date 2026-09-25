@@ -173,6 +173,190 @@ export function normalizeFixtureAbsences(rows = [], { homeId = 0, awayId = 0, li
 }
 
 
+function compactState(value = '') {
+  return compactText(value).toLowerCase().replace(/\s+/g, '_');
+}
+
+function availabilitySourceTrusted(meta = {}) {
+  return meta?.confidenceBearing === true
+    && meta?.available === true
+    && meta?.usable === true
+    && meta?.stale !== true
+    && ['fresh', 'cached'].includes(compactState(meta?.freshnessState))
+    && compactState(meta?.provenanceState) === 'verified';
+}
+
+function rawAbsenceIdentity(item = {}) {
+  const player = item?.player || {};
+  const id = Number(player?.id || 0);
+  if (Number.isInteger(id) && id > 0) return `id:${id}`;
+  const name = normalizedName(player?.name || '');
+  return name ? `name:${name}` : '';
+}
+
+export function assessFixtureAvailabilityQuality(rows = [], {
+  homeId = 0,
+  awayId = 0,
+  injuriesMeta = {},
+  mode = 'upcoming',
+} = {}) {
+  const list = Array.isArray(rows) ? rows : [];
+  const sourceTrusted = availabilitySourceTrusted(injuriesMeta);
+  const accepted = new Set();
+  const rejected = new Set();
+  const issues = [];
+  const identitySides = new Map();
+  const identityRows = new Map();
+
+  for (let index = 0; index < list.length; index += 1) {
+    const item = list[index] || {};
+    const teamId = Number(item?.team?.id || 0);
+    const side = teamId === Number(homeId) ? 'home' : teamId === Number(awayId) ? 'away' : '';
+    const identity = rawAbsenceIdentity(item);
+
+    if (!side) {
+      rejected.add(index);
+      issues.push({ code:'team_mismatch', index, teamId:Number.isFinite(teamId) ? teamId : 0 });
+      continue;
+    }
+    if (!identity) {
+      rejected.add(index);
+      issues.push({ code:'player_identity_missing', index, side });
+      continue;
+    }
+
+    accepted.add(index);
+    if (!identitySides.has(identity)) identitySides.set(identity, new Set());
+    identitySides.get(identity).add(side);
+    const indices = identityRows.get(identity) || [];
+    indices.push(index);
+    identityRows.set(identity, indices);
+  }
+
+  let crossTeamConflictCount = 0;
+  for (const [identity, sides] of identitySides) {
+    if (sides.size <= 1) continue;
+    crossTeamConflictCount += 1;
+    for (const index of identityRows.get(identity) || []) {
+      accepted.delete(index);
+      rejected.add(index);
+    }
+    issues.push({ code:'cross_team_player_conflict', identity, sides:[...sides] });
+  }
+
+  const observed = list.length > 0;
+  const acceptedIndices = [...accepted].sort((a, b) => a - b);
+  const rejectedIndices = [...rejected].sort((a, b) => a - b);
+  const acceptedCount = acceptedIndices.length;
+  const rejectedCount = rejectedIndices.length;
+
+  let state = 'unavailable';
+  let label = 'Данные о потерях недоступны';
+  let reason = 'no_absence_rows';
+  if (observed && !sourceTrusted) {
+    state = 'source_untrusted';
+    label = 'Потери не используются';
+    reason = 'injuries_source_untrusted';
+  } else if (observed && acceptedCount === 0) {
+    state = 'invalid';
+    label = 'Потери отклонены';
+    reason = 'no_valid_absence_rows';
+  } else if (observed && rejectedCount > 0) {
+    state = 'sanitized';
+    label = 'Потери очищены';
+    reason = 'invalid_absence_rows_removed';
+  } else if (observed) {
+    state = 'verified';
+    label = 'Потери подтверждены источником';
+    reason = 'verified_absence_rows';
+  }
+
+  return {
+    state,
+    label,
+    reason,
+    mode:String(mode || 'upcoming'),
+    observed,
+    sourceTrusted,
+    rawCount:list.length,
+    acceptedCount,
+    rejectedCount,
+    crossTeamConflictCount,
+    confidenceBearing:Boolean(sourceTrusted && acceptedCount > 0),
+    acceptedIndices,
+    rejectedIndices,
+    issues,
+    provider:String(injuriesMeta?.provider || ''),
+    source:String(injuriesMeta?.source || ''),
+    freshnessState:String(injuriesMeta?.freshnessState || 'unknown'),
+    provenanceState:String(injuriesMeta?.provenanceState || 'unknown'),
+    warnings:[
+      ...(rejectedCount ? [`Исключены некорректные записи о потерях: ${rejectedCount}.`] : []),
+      ...(crossTeamConflictCount ? [`Обнаружены конфликты принадлежности игрока к командам: ${crossTeamConflictCount}.`] : []),
+      ...(observed && !sourceTrusted ? ['Источник потерь не прошёл freshness/provenance guard.'] : []),
+    ],
+    methodology:'Записи о травмах, болезнях и дисквалификациях участвуют в модели только при подтверждённом источнике, принадлежности одной из команд матча и однозначной идентификации игрока. Конфликты одной личности между обеими сторонами fail-closed исключаются.',
+  };
+}
+
+export function sanitizeAvailabilityRows(rows = [], quality = {}) {
+  if (!quality?.sourceTrusted) return [];
+  const accepted = new Set(Array.isArray(quality?.acceptedIndices) ? quality.acceptedIndices.map(Number) : []);
+  return (Array.isArray(rows) ? rows : []).filter((_, index) => accepted.has(index));
+}
+
+export function annotateAvailabilityReliability(meta = {}, quality = {}) {
+  const originalState = String(meta?.state || (quality?.observed ? 'available' : 'empty_response'));
+  const base = {
+    ...meta,
+    semanticState:String(quality?.state || 'unavailable'),
+    availabilityQuality:quality,
+    rawCount:Number(quality?.rawCount || 0),
+    count:Number(quality?.acceptedCount || 0),
+    partial:Boolean(quality?.state === 'sanitized'),
+  };
+
+  if (!quality?.observed) {
+    return { ...base, available:false, usable:false, confidenceBearing:false };
+  }
+  if (!quality?.sourceTrusted) {
+    return {
+      ...base,
+      transportState:originalState,
+      available:false,
+      usable:false,
+      observed:true,
+      degraded:true,
+      confidenceBearing:false,
+      reason:'injuries_source_untrusted',
+    };
+  }
+  if (!quality?.acceptedCount) {
+    return {
+      ...base,
+      transportState:originalState,
+      state:'invalid_data',
+      available:false,
+      usable:false,
+      observed:true,
+      degraded:true,
+      confidenceBearing:false,
+      reason:'no_valid_absence_rows',
+    };
+  }
+  return {
+    ...base,
+    state:'available',
+    available:true,
+    usable:true,
+    observed:true,
+    degraded:quality?.state === 'sanitized',
+    confidenceBearing:true,
+    reason:quality?.state === 'sanitized' ? 'injuries_sanitized' : '',
+  };
+}
+
+
 function bounded(value, min, max) {
   return Math.max(min, Math.min(max, Number(value) || 0));
 }

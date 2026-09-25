@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.119.0-rc143';
+const CLIENT_VERSION = '6.120.0-rc144';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc143';
+const CLIENT_RELEASE_CHANNEL = 'rc144';
 const SUPABASE_SCHEMA_HINT = 'проверьте актуальную схему Supabase (baseline v6.18 / миграции до v6.19)';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
@@ -5642,6 +5642,20 @@ function centerKeyStatsHtml(stats) {
   return `<div class="center-key-stats">${rows.slice(0,5).map(([r,l]) => centerCompareRow(l,r.home,r.away)).join('')}</div>`;
 }
 
+function availabilityQualityHintHtml(quality = {}) {
+  if (!quality?.state || quality.state === 'unavailable') return '';
+  const label = publicText(quality.label || 'Качество данных о потерях');
+  const detail = quality.state === 'verified'
+    ? `проверено записей: ${Number(quality.acceptedCount || 0)}`
+    : quality.state === 'sanitized'
+      ? `очищено перед аналитикой · исключено: ${Number(quality.rejectedCount || 0)}`
+      : quality.state === 'source_untrusted'
+        ? 'источник не прошёл freshness/provenance guard'
+        : 'некорректные записи исключены из модели';
+  const limited = ['verified','sanitized'].includes(quality.state) ? '' : 'limited';
+  return `<div class="coverage-badge ${limited}">Потери · ${escapeHtml(label)} · ${escapeHtml(detail)}</div>`;
+}
+
 function xgQualityHintHtml(quality = {}) {
   if (!quality?.state) return '';
   const trusted = Boolean(quality.confidenceBearing);
@@ -6060,7 +6074,7 @@ function renderMatchCenter(d) {
 
       ${latestEvents.length ? `<section class="panel"><div class="center-section-title"><div><h2>Последние события</h2><p>Что произошло недавно</p></div></div>${eventQualityHintHtml(d.eventQuality)}${liveEventsHtml(latestEvents)}</section>` : ''}
 
-      ${(d.absences?.home?.length || d.absences?.away?.length) ? `<section class="panel"><div class="center-section-title"><div><h2>🩺 Потери состава</h2><p>Травмы, болезни, дисквалификации и сомнения по данным источника</p></div></div>${centerAbsenceSummary(d.absences,m)}${liveAbsencesHtml(d.absences,m)}</section>` : ''}
+      ${(d.availabilityQuality?.observed || d.absences?.home?.length || d.absences?.away?.length) ? `<section class="panel"><div class="center-section-title"><div><h2>🩺 Потери состава</h2><p>Травмы, болезни, дисквалификации и сомнения по данным источника</p></div></div>${availabilityQualityHintHtml(d.availabilityQuality)}${centerAbsenceSummary(d.absences,m)}${liveAbsencesHtml(d.absences,m)}</section>` : ''}
 
       <section class="panel coverage-panel">
         <div class="center-section-title"><div><h2>Покрытие и свежесть</h2><p>${d.cached ? 'Данные из сохранённой версии' : 'Свежие данные источника'} · ${dateTime(d.generatedAt)}</p></div></div>
@@ -6096,7 +6110,7 @@ function renderMatchCenter(d) {
         <div class="center-section-title"><div><h2>👥 Составы и схема</h2><p>Стартовые составы, схемы и запасные</p></div></div>
         ${lineupLiveHtml(d.lineups, m)}
       </section>
-      ${(d.absences?.home?.length || d.absences?.away?.length) ? `<section class="panel"><h2>🩺 Потери и сомнения</h2>${liveAbsencesHtml(d.absences,m)}</section>` : ''}
+      ${(d.availabilityQuality?.observed || d.absences?.home?.length || d.absences?.away?.length) ? `<section class="panel"><h2>🩺 Потери и сомнения</h2>${availabilityQualityHintHtml(d.availabilityQuality)}${liveAbsencesHtml(d.absences,m)}</section>` : ''}
     </div>
 
     <div class="center-tab-panel" data-center-panel="players">
@@ -7437,6 +7451,7 @@ function renderAnalysis(d) {
     <div class="analysis-tab-panel" data-panel="squads">
       <section class="panel">
         <h2>🚑 Потери</h2>
+        ${availabilityQualityHintHtml(d.availabilityQuality)}
         <div class="squad-grid">
           ${compactAbsence(m.home?.name || 'Хозяева', d.absences?.home)}
           ${compactAbsence(m.away?.name || 'Гости', d.absences?.away)}
