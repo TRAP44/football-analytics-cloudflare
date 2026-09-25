@@ -85,7 +85,7 @@ Privacy contract:
 
 До выполнения этих пунктов автоматическая часть готовности завершена, но приглашение реальных пользователей остаётся **MANUAL FIELD CHECKS PENDING**.
 
-## 5. Observation-контур и улучшения после beta
+## 5. Improvements after beta — observation-контур уже реализован
 
 Уже реализованы и **не повторяются** на этапе Field Validation: агрегированный Beta Dashboard, feedback endpoint/UI, latency telemetry и cohort `closed_beta_v1` с проверенной server-side membership.
 
