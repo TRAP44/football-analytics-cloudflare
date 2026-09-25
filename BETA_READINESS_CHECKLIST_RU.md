@@ -105,13 +105,13 @@ Privacy contract:
 - [x] `npm run security:scan`
 - [x] `npm run lint`
 - [x] `npm run check`
-- [x] `npm test` — 754/754, fail 0
+- [x] `npm test` — 756/756, fail 0
 - [x] `npm run verify:release`
 - [x] `npm run verify:worker`
 - [x] post-merge Quality на `main` — повторно запущен и пройден
-- [x] production deploy SHA/provenance guard — Pre-Beta Operational Validation подтверждён в production на SHA `6d11b140024523ace49fc6995a320e45b7770dfe`
-- [x] active release identity verification — `6.120.0-rc144 / RC144`, 100% traffic на Cloudflare version `fa999461-83af-44b9-898e-d0b9f71fad0a`
-- [x] production smoke — 25 проверок пройдены на SHA `6d11b140024523ace49fc6995a320e45b7770dfe`; дополнительно фактически подтверждены `database=supabase`, `monetization=paused` и operational Telegram/Mini App/AI/search/LIVE
+- [x] production deploy SHA/provenance guard — повторно подтверждён на актуальном `main` SHA `5519b98049ae6a74212897cf261ef2d8bc550a5c`
+- [x] active release identity verification — `6.120.0-rc144 / RC144`, 100% traffic на Cloudflare version `8c922e24-4e4d-431a-9515-47d649606f15`
+- [x] production smoke — 25 проверок пройдены на актуальном SHA `5519b98049ae6a74212897cf261ef2d8bc550a5c`; подтверждены `database=supabase`, `monetization=paused`, `DEV_MODE=false` и operational Telegram/Mini App/AI/search/LIVE
 
 
 ## 7. Pre-Beta Operational Validation
@@ -128,7 +128,23 @@ Privacy contract:
 - [x] `DEV_MODE=false` уже является blocking production smoke condition.
 - [x] Rollback workflow и его target/provenance/release/postcondition/smoke regression-контракты прошли release gate.
 - [x] Последние 15 минут operational-проверки не содержали новых Supabase auth failures или error/critical non-monitor events.
-- [ ] Production monitor должен вернуться из текущего `watch` в `healthy` либо причина `watch` должна быть подтверждена как transient перед приглашением. Прямой Telegram dedupe RPC на момент проверки показал 0 stale/failed claims.
+- [ ] Последнее **persisted** состояние production monitor остаётся `watch` (15:00 UTC). Причина предыдущего инцидента — transient Supabase auth failure текущего релиза; на повторной проверке 15:18 UTC: Supabase/security/schema проходят, non-monitor warning/error/critical событий за последний час нет, Telegram dedupe RPC показывает 0 stale/failed claims. Текущие входы monitor соответствуют `healthy`, но чек не отмечается до фактического следующего monitor run / persisted recovery.
 - [x] Усиленный production smoke после merge/deploy прошёл и подтвердил фактические `database=supabase`, `monetization=paused` и operational Telegram/Mini App/AI/search/LIVE.
 
 Полный ручной сценарий, LIVE protocol, quota gate, cohort и feedback runbook: `PRE_BETA_VALIDATION_RU.md`.
+
+### Повторная валидация актуального main — 25 сентября 2026, 15:18 UTC
+
+- [x] Текущий `main`: `5519b98049ae6a74212897cf261ef2d8bc550a5c`.
+- [x] Quality на этом SHA: 756/756 tests, audit/security/lint/check/release/worker — PASS.
+- [x] Cloudflare production version: `8c922e24-4e4d-431a-9515-47d649606f15`; release identity и 100% traffic postcondition — PASS.
+- [x] Post-deploy smoke на production: 25/25.
+- [x] Supabase project `ACTIVE_HEALTHY`; schema fingerprint `c2c22ec25aacfcf1b9938b0850cebf49`.
+- [x] `backend_security_contract()` и `backend_default_acl_contract()`: `ok=true`, violations отсутствуют.
+- [x] Runtime controls: analysis/search/live/reminders=true, maintenance=false.
+- [x] Telegram persistent dedupe health RPC: stale=0, failedCurrent=0, failedRecent=0.
+- [ ] Фактические provider plan / dailyRemaining / minuteRemaining не подтверждены свежими provider headers; `provider_rate_windows` не заменяет provider quota headers.
+- [ ] Telegram `getWebhookInfo` не подтверждён напрямую, так как bot token намеренно недоступен через CI/репозиторий.
+- [ ] Два реальных non-admin smoke и реальный LIVE protocol требуют живых Telegram-аккаунтов/идущего матча.
+- [ ] Beta-01/Beta-02 и приватный feedback channel должны быть реально назначены владельцем вне репозитория.
+
