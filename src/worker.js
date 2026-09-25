@@ -14140,6 +14140,7 @@ const CLIENT_TELEMETRY_EVENTS = new Set([
   'product_action',
   'action_error',
   'operation_timing',
+  'data_coverage',
 ]);
 
 const CLIENT_PRODUCT_ACTIONS = new Set([
@@ -14228,6 +14229,14 @@ function clientTelemetryMetadata(body = {}, event = '') {
     networkMode: redactOpsString(meta.networkMode || '', 30),
     bootMs: Number.isFinite(Number(meta.bootMs)) ? Math.max(0, Math.min(60000, Math.round(Number(meta.bootMs)))) : null,
     durationMs: event === 'operation_timing' && Number.isFinite(rawDurationMs) ? Math.max(0, Math.min(120000, Math.round(rawDurationMs))) : null,
+    matchMode: event === 'data_coverage' && ['upcoming','live','finished'].includes(String(meta.matchMode || '').toLowerCase())
+      ? String(meta.matchMode || '').toLowerCase()
+      : null,
+    lineupsAvailable: event === 'data_coverage' && typeof meta.lineupsAvailable === 'boolean' ? meta.lineupsAvailable : null,
+    injuriesAvailable: event === 'data_coverage' && typeof meta.injuriesAvailable === 'boolean' ? meta.injuriesAvailable : null,
+    statisticsAvailable: event === 'data_coverage' && typeof meta.statisticsAvailable === 'boolean' ? meta.statisticsAvailable : null,
+    xgAvailable: event === 'data_coverage' && typeof meta.xgAvailable === 'boolean' ? meta.xgAvailable : null,
+    oddsAvailable: event === 'data_coverage' && typeof meta.oddsAvailable === 'boolean' ? meta.oddsAvailable : null,
     manifestOk: typeof meta.manifestOk === 'boolean' ? meta.manifestOk : null,
     degraded: typeof meta.degraded === 'boolean' ? meta.degraded : null,
     blocking: typeof meta.blocking === 'boolean' ? meta.blocking : null,
@@ -14252,9 +14261,18 @@ async function apiClientTelemetry(request, cfg, user) {
   if (event === 'operation_timing' && (!meta.reason || !Number.isFinite(Number(meta.durationMs)))) {
     return json({ ok: false, error: 'Unsupported operation timing.' }, 400);
   }
+  if (event === 'data_coverage' && (
+    !meta.matchMode
+    || ['lineupsAvailable','injuriesAvailable','statisticsAvailable','xgAvailable','oddsAvailable']
+      .some(key=>typeof meta[key] !== 'boolean')
+  )) {
+    return json({ ok: false, error: 'Unsupported data coverage telemetry.' }, 400);
+  }
   const shouldDedupe = event !== 'operation_timing';
   if (shouldDedupe) {
-    const dedupePart = meta.reason || meta.errorKind || meta.view || '';
+    const dedupePart = event === 'data_coverage'
+      ? `${meta.matchMode}:${Number(meta.lineupsAvailable)}${Number(meta.injuriesAvailable)}${Number(meta.statisticsAvailable)}${Number(meta.xgAvailable)}${Number(meta.oddsAvailable)}`
+      : (meta.reason || meta.errorKind || meta.view || '');
     const dedupeKey = `${Number(user.id)}:${event}:${meta.clientVersion || ''}:${dedupePart}`;
     const last = Number(memory.clientTelemetryDedupe.get(dedupeKey) || 0);
     if (last && Date.now() - last < 5 * 60 * 1000) {
@@ -14444,6 +14462,28 @@ function betaErrorCountByKind(errorRows = [], kinds = []) {
   return errorRows.filter(row=>allowed.has(String(row?.metadata?.errorKind || ''))).length;
 }
 
+function betaCoverageSummary(rows = []) {
+  const coverageRows=(rows || []).filter(row=>row?.source==='client' && row?.event_type==='client_telemetry' && row?.code==='DATA_COVERAGE');
+  const keys=['lineups','injuries','statistics','xg','odds'];
+  const missing={};
+  for (const key of keys) {
+    const field=`${key}Available`;
+    const observed=coverageRows.filter(row=>typeof row?.metadata?.[field] === 'boolean');
+    const missingCount=observed.filter(row=>row.metadata[field]===false).length;
+    missing[key]={
+      samples:observed.length,
+      missing:missingCount,
+      missingPct:observed.length ? Math.round((missingCount/observed.length)*1000)/10 : 0,
+    };
+  }
+  const byMode={};
+  for (const row of coverageRows) {
+    const mode=String(row?.metadata?.matchMode || 'unknown');
+    byMode[mode]=Number(byMode[mode] || 0)+1;
+  }
+  return {samples:coverageRows.length,missing,byMode};
+}
+
 function buildBetaIssueGroups({metrics,errorRows,feedbackRows,timings,clientErrorRows=[]}) {
   const configs=[
     {category:'search',errors:betaErrorCountByAction(errorRows,'search'),attempts:Number(metrics.searchUsed?.events || 0)},
@@ -14616,6 +14656,7 @@ async function apiBetaDashboard(request,cfg) {
     live:betaTimingSummary(betaClientRows,'live'),
   };
   const feedbackRows=opsRows.filter(row=>row?.source==='beta' && row?.event_type==='beta_feedback' && row?.code==='BETA_FEEDBACK');
+  const coverage=betaCoverageSummary(betaClientRows);
   const issues=buildBetaIssueGroups({metrics,errorRows,feedbackRows,timings,clientErrorRows});
   const activeIssues=issues.filter(issue=>issue.active);
   const evidencePending=issues.filter(issue=>issue.classification==='NEEDS_MORE_EVIDENCE');
@@ -14638,8 +14679,14 @@ async function apiBetaDashboard(request,cfg) {
     .map(([key,value])=>({key,events:Number(value.events || 0),users:Number(value.users || 0)}))
     .sort((a,b)=>b.events-a.events || a.key.localeCompare(b.key));
   const lowUsageFeatures=usedFeatures.filter(item=>item.events===0 || (entrySize>=5 && item.users<=Math.max(1,Math.floor(entrySize*0.1))));
-  const providerSignals=providerRateLimit+providerErrors+Number(issues.find(issue=>issue.category==='data_sources')?.feedback || 0);
-  const providerEvidence=entrySize>=5 && providerSignals>=5 ? 'review_provider_options' : 'insufficient_evidence';
+  const dataSourceFeedback=Number(issues.find(issue=>issue.category==='data_sources')?.feedback || 0);
+  const providerSignals=providerRateLimit+providerErrors+dataSourceFeedback;
+  const systematicMissingCategories=Object.values(coverage.missing || {})
+    .filter(item=>Number(item.samples || 0)>=10 && Number(item.missingPct || 0)>=70).length;
+  const providerEvidence=entrySize>=5 && (
+    providerSignals>=5
+    || (coverage.samples>=10 && systematicMissingCategories>=2 && dataSourceFeedback>=2)
+  ) ? 'review_provider_options' : 'insufficient_evidence';
   const expansionStatus=entrySize<5 ? 'collecting_data' : blockerCount>0 ? 'hold' : majorCount>0 ? 'review_issues' : 'candidate_for_expansion';
 
   const adminIds=new Set((cfg.adminTelegramIds || []).map(Number));
@@ -14699,6 +14746,7 @@ async function apiBetaDashboard(request,cfg) {
     metrics,
     journey,
     actionErrors:{total:errorRows.length,byCategory:errorKinds,byAction:errorActions,clientErrors:clientErrorRows.length},
+    dataCoverage:coverage,
     timings,
     health:{
       state:healthState,
@@ -14724,8 +14772,17 @@ async function apiBetaDashboard(request,cfg) {
       mainDropoff:topBreak ? {action:topBreak[0],count:Number(topBreak[1] || 0)} : null,
       usedFeatures,
       lowUsageFeatures,
-      missingDataSignals:{searchEmpty:Number(metrics.searchEmpty?.events || 0),providerErrors,providerRateLimit},
-      providerExpansionEvidence:{status:providerEvidence,signals:providerSignals,betaUsers:entrySize},
+      missingDataSignals:{
+        searchEmpty:Number(metrics.searchEmpty?.events || 0),
+        providerErrors,
+        providerRateLimit,
+        lineups:coverage.missing?.lineups || {samples:0,missing:0,missingPct:0},
+        injuries:coverage.missing?.injuries || {samples:0,missing:0,missingPct:0},
+        statistics:coverage.missing?.statistics || {samples:0,missing:0,missingPct:0},
+        xg:coverage.missing?.xg || {samples:0,missing:0,missingPct:0},
+        odds:coverage.missing?.odds || {samples:0,missing:0,missingPct:0},
+      },
+      providerExpansionEvidence:{status:providerEvidence,signals:providerSignals,betaUsers:entrySize,systematicMissingCategories},
       betaExpansionReadiness:{status:expansionStatus,blockers:blockerCount,majors:majorCount,needsMoreEvidence:evidencePending.length},
     },
     sample:{
