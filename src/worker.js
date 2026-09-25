@@ -2599,7 +2599,7 @@ async function apiMediaPublisherLink(request,cfg,user) {
   const content=cleanLaunchPart(body?.content || 'article',16) || 'article';
   const link=await fixtureTelegramDeepLink(cfg,fixtureId,{source,campaign,content});
   const cached=await getCache(`bot:fixture-card:${fixtureId}:v2`,cfg).catch(()=>null);
-  const analyzed=await getCache(`fixture:${fixtureId}:v10-ai-instructor`,cfg).catch(()=>null);
+  const analyzed=await getCache(`fixture:${fixtureId}:v11-lineup-quality`,cfg).catch(()=>null);
   const match=normalizeBotFixtureCard(cached?.match || analyzed?.match || {fixtureId,homeName:'Матч',awayName:String(fixtureId),league:'Футбол'});
   const copy=mediaPublisherCopy(match,link.url,{source,campaign,content});
   void recordGrowthEvent(cfg,{
@@ -17671,7 +17671,7 @@ async function apiHistoryAnalysis(request, cfg, user) {
     return json({ error: 'Этот матч отсутствует в вашей истории анализов.', code: 'HISTORY_ANALYSIS_NOT_FOUND' }, 404);
   }
 
-  const cacheKey = `fixture:${fixtureId}:v10-ai-instructor`;
+  const cacheKey = `fixture:${fixtureId}:v11-lineup-quality`;
   const fresh = await getCache(cacheKey, cfg);
   const payload = fresh || await getStaleCache(cacheKey, cfg);
   if (!payload) {
@@ -19508,7 +19508,7 @@ async function apiMatchCenter(request, cfg) {
     absences,
   }) : null;
 
-  const prematchAnalysis = live ? await getStaleCache(`fixture:${fixtureId}:v10-ai-instructor`, cfg).catch(() => null) : null;
+  const prematchAnalysis = live ? await getStaleCache(`fixture:${fixtureId}:v11-lineup-quality`, cfg).catch(() => null) : null;
   const liveAiCoach = live ? buildLiveAiCoach({
     statistics: formattedStatistics,
     events: formattedEvents,
@@ -20202,7 +20202,7 @@ async function apiAnalyze(request, cfg, user) {
   try {
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return await trackedFullAiFailureResponse({ error: 'Некорректный номер матча.' },400,'invalid_fixture');
 
-  const cacheKey = `fixture:${fixtureId}:v10-ai-instructor`;
+  const cacheKey = `fixture:${fixtureId}:v11-lineup-quality`;
   const cached = await getCache(cacheKey, cfg);
   const staleBefore = cached || await getStaleCache(cacheKey, cfg);
   const previousFreshness = staleBefore ? analysisFreshness(staleBefore) : null;
