@@ -46,6 +46,7 @@ function healthyFetch({ staleOnce = false, devMode = false } = {}) {
         openLigaDbStandingsFallback: 'enabled',
         openLigaDbEventFallback: 'enabled',
         teamPlayerSeasonStats: 'enabled',
+        structuredAvailability: 'enabled',
         sourceProvenance: 'enabled',
         aiAnalysisQualityGate: 'enabled',
         aiAnalysisQualityGateSelfTest: 'enabled',

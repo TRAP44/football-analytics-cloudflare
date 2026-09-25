@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.109.0 RC133
+# QA Release Checklist — v6.110.0 RC134
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.109.0`.
-- Worker и client: `6.109.0-rc133`.
-- Release candidate: `RC133`.
+- `package.json` и `package-lock.json`: `6.110.0`.
+- Worker и client: `6.110.0-rc134`.
+- Release candidate: `RC134`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -33,6 +33,20 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC134 — Structured Availability & Suspensions
+
+- Fixture-level `/injuries` нормализуется единым модулем `src/availability.js`.
+- Раздельные категории: травма, болезнь, дисквалификация, другая причина; сомнения отмечаются отдельным статусом.
+- Повторные строки одного игрока дедуплицируются до одной активной записи.
+- Если игрок уже присутствует в опубликованном стартовом составе или запасе, старая запись о потере исключается из активных потерь и сохраняется в `resolvedByLineup`.
+- Match Center и AI-анализ используют один и тот же нормализованный результат.
+- Сомнительный игрок даёт половинный вклад в уже существующую эвристику absence adjustment вместо полного confirmed-out веса.
+- UI отдельно показывает травмы/болезни, дисквалификации и сомнения и не называет fixture-level injury feed «подтверждёнными отсутствиями».
+- Исправлен RC133 cache regression: Match Comparison читает Team Intelligence cache `v2`.
+- Новых внешних API, секретов и Supabase DDL нет.
+- Regression: `test/structured-availability-rc134.test.js`.
+- Post-deploy smoke требует health-флаг `structuredAvailability`.
 
 ## RC133 — Team Player Season Stats
 
