@@ -2906,3 +2906,16 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
   .match-cockpit-head>small{text-align:left;max-width:none}
   .match-cockpit-grid{grid-template-columns:1fr}
 }
+
+
+/* RC133 — team player season statistics */
+.team-player-season-panel{display:grid;gap:10px}
+.player-season-table{display:grid;gap:6px;overflow-x:auto}
+.player-season-head,.player-season-row{min-width:560px;display:grid;grid-template-columns:minmax(170px,1.7fr) repeat(5,minmax(58px,.55fr));gap:8px;align-items:center}
+.player-season-head{padding:0 10px;color:var(--hint);font-size:8px;font-weight:800;text-transform:uppercase;letter-spacing:.05em}
+.player-season-head span:not(:first-child){text-align:center}
+.player-season-row{border:1px solid var(--line);border-radius:12px;padding:9px 10px;background:rgba(148,163,184,.025)}
+.player-season-row>span{display:grid;gap:2px;text-align:center}.player-season-row>span small{color:var(--hint);font-size:8px}.player-season-row>span b{font-size:11px}
+.player-season-name{min-width:0;display:grid;gap:3px}.player-season-name strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}.player-season-name small{color:var(--hint);font-size:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.player-season-alert{display:inline-block;margin-left:5px;padding:2px 5px;border:1px solid var(--line);border-radius:999px;font-size:7px;font-weight:800;color:var(--hint)}
+@media(max-width:560px){.player-season-table{margin-inline:-2px}.player-season-head,.player-season-row{min-width:520px}}

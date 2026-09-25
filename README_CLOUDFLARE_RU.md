@@ -1,4 +1,4 @@
-# Football Analytics Mini App v6.108.0 — RC132
+# Football Analytics Mini App v6.109.0 — RC133
 
 Telegram-бот и Mini App для футбольной аналитики на Cloudflare Workers + Supabase. Основные источники данных: API-Football и Tavily. Интерфейс и админ-панель — на русском языке. Монетизация пока отключена.
 
@@ -26,6 +26,7 @@ Telegram-бот и Mini App для футбольной аналитики на 
 - RC123–RC125: публичная лента матчей стала частью обычного Mini App journey, UI показывает реальное покрытие API-Football и сохраняет последний snapshot при сетевой/provider-деградации.
 - RC126: **Schema Probe Confirmation Guard + Release Identity Reset** — transient сбой отдельного PostgREST schema probe подтверждается повторной проверкой перед critical incident, а текущая ревизия получает уникальную release identity `6.102.0-rc126` для корректного deploy/rollback аудита.
 - RC127: **Production Hardening** — дневная AI-квота резервируется атомарным Supabase RPC и автоматически возвращается при неуспешном расчёте; API-Football защищён распределённым минутным budget между Cloudflare isolates; ежедневный Telegram digest использует atomic delivery claim; schema guard дополнен полным структурным fingerprint; `/health/live` отделён от `/health/ready`; повторный Supabase auth failure текущего релиза становится incident; distributed analysis coordination работает fail-closed; чувствительные Telegram initData имеют сокращённый срок; service-role ограничен реально используемыми CRUD/RPC правами. Hotfix v6.18.1 устраняет FK-race первого анализа: quota RPC атомарно создаёт минимальную запись пользователя до записи `usage_daily`, поэтому параллельный первый запрос больше не падает с `usage_daily_telegram_id_fkey`.
+- RC133: **Team Player Season Stats** — Team Intelligence теперь дополнен сезонной статистикой игроков. API-Football `/players` загружается pagination-aware и ограничен максимум тремя страницами на пользовательский запрос с повторной защитой квоты; результат кэшируется вместе с сезонной статистикой команды. UI показывает матчи, голы, ассисты, рейтинг и дисциплину, а полную и частичную выборку различает явно. При недоступности primary может использоваться уже подготовленный `football-data.org /scorers` через существующий `FOOTBALL_DATA_TOKEN`; этот fallback честно помечается как частичный. Новых секретов и Supabase DDL нет.
 - RC132: **OpenLigaDB Event Fallback** — Match Center сохраняет API-Football основным источником live/finished событий, но при пустом или недоступном `events` может получить подтверждённые голы из OpenLigaDB для явно поддерживаемых соревнований. Резервный запрос ограничен shared minute guard, сужается по команде и принимает матч только при совпадении обеих команд и времени старта. OpenLigaDB не используется для выдумывания карточек, замен, статистики, составов или травм; неоднозначные голы отбрасываются. Новых секретов и Supabase DDL нет.
 - RC131: **Match at a Glance** — в полном анализе появился компактный блок «Матч за 15 секунд»: текущая форма, профиль дома/в гостях, место в таблице, подтверждённые потери, статус стартовых составов, H2H, 1X2 и качество оценки. Блок не делает дополнительных внешних запросов, а собирается только из уже нормализованных данных анализа. Если injuries/lineups не подтверждены источником, интерфейс показывает неизвестность, а не ложный ноль. Каждая карточка ведёт в соответствующую детальную вкладку.
 - RC130: **Licensed Odds Fallback** — предматчевый и live 1X2 сначала используют API-Football; только если нормализованный рынок отсутствует, приложение может обратиться к опциональному The Odds API adapter. Интеграция выключена без `THE_ODDS_API_KEY`, ключ остаётся только на сервере, запросы проходят через shared rate guard и кэш. Резервный рынок нормализуется в тот же внутренний формат и сохраняется в существующем `odds_snapshots` с provider provenance. Сырые odds-строки не перепродаются и fallback не используется как основной фид.
@@ -95,7 +96,7 @@ npm run verify:release
 npm run verify:worker
 ```
 
-Production smoke дополнительно проверяет `/health/ready`, версию `6.108.0-rc132`, `releaseCandidate=RC132`, отключённый `DEV_MODE`, Supabase schema fingerprint, backend ACL и обязательные readiness-флаги.
+Production smoke дополнительно проверяет `/health/ready`, версию `6.109.0-rc133`, `releaseCandidate=RC133`, отключённый `DEV_MODE`, Supabase schema fingerprint, backend ACL и обязательные readiness-флаги.
 
 ## Документация
 

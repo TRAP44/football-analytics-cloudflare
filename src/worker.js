@@ -14,7 +14,7 @@ import { apiSecurityHeaders } from './security-headers.js';
 import { createSupabaseClient } from './supabase-client.js';
 import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
 import { normalizeOpenLigaMatchEvents, normalizeOpenLigaStandings, openLigaCompetition, openLigaMatchDataUrls, openLigaTableUrls } from './providers/openligadb.js';
-import { footballDataStandingsUrl, normalizeFootballDataStandings } from './providers/football-data.js';
+import { footballDataScorersUrl, footballDataStandingsUrl, normalizeFootballDataStandings, normalizeFootballDataTeamScorers } from './providers/football-data.js';
 import { normalizeTheOddsApiMarket, theOddsApiUrl } from './providers/the-odds-api.js';
 import {
   bytesToHex,
@@ -104,11 +104,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.108.0-rc132';
+const APP_VERSION = '6.109.0-rc133';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc132';
-const RC_NAME = 'RC132';
+const RELEASE_CHANNEL = 'rc133';
+const RC_NAME = 'RC133';
 const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.18; для существующей примените все доступные миграции из supabase/migrations до v6.19.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49';
@@ -13852,6 +13852,15 @@ async function apiFootballNetwork(path, params, cfg, options = {}) {
   memory.provider.lastError = '';
   memory.provider.lastSuccessAt = new Date().toISOString();
   bumpTelemetry('apiSuccess');
+  if (options.responseType === 'envelope') {
+    return {
+      response: Array.isArray(body.response) ? body.response : [],
+      paging: {
+        current: Math.max(1, Number(body?.paging?.current || 1) || 1),
+        total: Math.max(1, Number(body?.paging?.total || 1) || 1),
+      },
+    };
+  }
   if (options.responseType === 'any') return body.response ?? null;
   return Array.isArray(body.response) ? body.response : [];
 }
@@ -18972,13 +18981,231 @@ function normalizeTeamSeasonStatistics(row, fallback = {}) {
   };
 }
 
+function playerStatNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function playerStatNullable(value) {
+  const cleaned = String(value ?? '').replace('%', '').trim();
+  if (!cleaned) return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : null;
+}
+
+function normalizeApiFootballTeamPlayers(rows = [], context = {}) {
+  const teamId=Number(context.teamId || 0);
+  const leagueId=Number(context.leagueId || 0);
+  const season=Number(context.season || 0);
+  const players=(Array.isArray(rows) ? rows : []).map(row => {
+    const stats=(Array.isArray(row?.statistics) ? row.statistics : []).find(s =>
+      (!teamId || Number(s?.team?.id || 0)===teamId)
+      && (!leagueId || Number(s?.league?.id || 0)===leagueId)
+    ) || (Array.isArray(row?.statistics) ? row.statistics[0] : null);
+    if (!stats) return null;
+    const p=row?.player || {};
+    return {
+      id:Number(p.id || 0),
+      providerId:Number(p.id || 0) || null,
+      name:String(p.name || [p.firstname,p.lastname].filter(Boolean).join(' ') || ''),
+      age:Number(p.age || 0) || null,
+      nationality:String(p.nationality || ''),
+      photo:String(p.photo || ''),
+      injured:Boolean(p.injured),
+      team:{
+        id:Number(stats?.team?.id || teamId || 0),
+        providerId:Number(stats?.team?.id || 0) || null,
+        name:String(stats?.team?.name || context.teamName || ''),
+      },
+      league:{
+        id:Number(stats?.league?.id || leagueId || 0),
+        name:String(stats?.league?.name || context.leagueName || ''),
+        season:Number(stats?.league?.season || season || 0) || null,
+      },
+      games:{
+        appearances:playerStatNumber(stats?.games?.appearences),
+        lineups:playerStatNumber(stats?.games?.lineups),
+        minutes:playerStatNumber(stats?.games?.minutes),
+        rating:playerStatNullable(stats?.games?.rating),
+        position:String(stats?.games?.position || ''),
+      },
+      goals:{
+        total:playerStatNumber(stats?.goals?.total),
+        assists:playerStatNumber(stats?.goals?.assists),
+        conceded:playerStatNumber(stats?.goals?.conceded),
+        saves:playerStatNumber(stats?.goals?.saves),
+        penalties:playerStatNumber(stats?.penalty?.scored),
+      },
+      shots:{
+        total:playerStatNumber(stats?.shots?.total),
+        on:playerStatNumber(stats?.shots?.on),
+      },
+      passes:{
+        total:playerStatNumber(stats?.passes?.total),
+        key:playerStatNumber(stats?.passes?.key),
+        accuracy:playerStatNullable(stats?.passes?.accuracy),
+      },
+      tackles:{
+        total:playerStatNumber(stats?.tackles?.total),
+        blocks:playerStatNumber(stats?.tackles?.blocks),
+        interceptions:playerStatNumber(stats?.tackles?.interceptions),
+      },
+      duels:{
+        total:playerStatNumber(stats?.duels?.total),
+        won:playerStatNumber(stats?.duels?.won),
+      },
+      dribbles:{
+        attempts:playerStatNumber(stats?.dribbles?.attempts),
+        success:playerStatNumber(stats?.dribbles?.success),
+      },
+      fouls:{
+        drawn:playerStatNumber(stats?.fouls?.drawn),
+        committed:playerStatNumber(stats?.fouls?.committed),
+      },
+      cards:{
+        yellow:playerStatNumber(stats?.cards?.yellow),
+        yellowRed:playerStatNumber(stats?.cards?.yellowred),
+        red:playerStatNumber(stats?.cards?.red),
+      },
+      source:'api-football',
+    };
+  }).filter(row => row?.name);
+
+  players.sort((a,b) =>
+    Number(b.goals.total || 0) - Number(a.goals.total || 0)
+    || Number(b.goals.assists || 0) - Number(a.goals.assists || 0)
+    || Number(b.games.appearances || 0) - Number(a.games.appearances || 0)
+    || Number(b.games.minutes || 0) - Number(a.games.minutes || 0)
+    || a.name.localeCompare(b.name)
+  );
+
+  return players;
+}
+
+async function apiFootballTeamSeasonPlayers(teamId, leagueId, season, cfg, context = {}) {
+  const rows=[];
+  let totalPages=1;
+  let currentPage=0;
+  let stopReason='';
+  const maxPages=3;
+
+  for (let page=1; page<=maxPages; page+=1) {
+    if (page>1 && !freeQuotaHealthy(8,1)) {
+      stopReason='quota_guard';
+      break;
+    }
+    const envelope=await apiFootball('/players', { team:teamId, league:leagueId, season, page }, cfg, { responseType:'envelope' });
+    const pageRows=Array.isArray(envelope?.response) ? envelope.response : [];
+    rows.push(...pageRows);
+    currentPage=Math.max(page, Number(envelope?.paging?.current || page));
+    totalPages=Math.max(currentPage, Number(envelope?.paging?.total || currentPage));
+    if (currentPage>=totalPages || !pageRows.length) break;
+  }
+
+  const players=normalizeApiFootballTeamPlayers(rows, { teamId, leagueId, season, ...context });
+  const complete=currentPage>=totalPages;
+  if (!complete && !stopReason && totalPages>maxPages) stopReason='page_cap';
+  return {
+    available:players.length>0,
+    complete,
+    partial:players.length>0 && !complete,
+    scope:'team-season',
+    players,
+    summary:{
+      count:players.length,
+      complete,
+      pagesLoaded:currentPage,
+      pagesTotal:totalPages,
+      sourceScope:'team-season',
+    },
+    reason:players.length ? (complete ? '' : stopReason || 'partial_pagination') : 'api_football_players_empty',
+    sourceMeta:sourceMeta({
+      provider:'api-football',
+      label:'API-Football',
+      freshness:'fresh',
+      fallback:false,
+    }),
+  };
+}
+
+async function footballDataTeamScorersProvider(teamId, teamName, leagueId, leagueName, season, cfg) {
+  if (!cfg.footballDataToken) return { available:false, reason:'token_not_configured', players:[], sourceMeta:null };
+  const url=footballDataScorersUrl(leagueId, season, { limit:50 });
+  if (!url) return { available:false, reason:'competition_not_supported', players:[], sourceMeta:null };
+  const budget=await claimSecondaryProviderBudget(cfg, 'football-data', 9);
+  if (!budget.allowed) return { available:false, reason:budget.reason || 'secondary_rate_limit', players:[], sourceMeta:null };
+  try {
+    const payload=await secondaryProviderJson(url, cfg, {
+      provider:'football-data.org',
+      timeoutMs:6500,
+      headers:{ 'x-auth-token':cfg.footballDataToken },
+    });
+    const normalized=normalizeFootballDataTeamScorers(payload, { teamId, teamName, leagueId, leagueName, season });
+    return {
+      ...normalized,
+      sourceMeta:sourceMeta({
+        ...(normalized.sourceMeta || {}),
+        provider:'football-data',
+        label:'football-data.org',
+        freshness:'fresh',
+        fallback:true,
+      }),
+    };
+  } catch (error) {
+    await recordOpsEvent(cfg, {
+      severity:'info', source:'provider', eventType:'fallback_provider_failure',
+      code:'FOOTBALL_DATA_SCORERS', message:error?.message || error,
+      meta:{ teamId:Number(teamId), leagueId:Number(leagueId), season:Number(season) },
+    }).catch(() => null);
+    return { available:false, reason:String(error?.code || 'provider_error'), players:[], sourceMeta:null };
+  }
+}
+
+async function resolveTeamSeasonPlayers(teamId, teamName, leagueId, leagueName, season, cfg) {
+  const attempts=[];
+  try {
+    const primary=await apiFootballTeamSeasonPlayers(teamId, leagueId, season, cfg, { teamName, leagueName });
+    attempts.push({provider:'api-football',state:primary.available?'available':'unavailable',reason:String(primary.reason || '')});
+    if (primary.available) {
+      primary.sourceMeta={...(primary.sourceMeta || {}),attempts};
+      return primary;
+    }
+  } catch (error) {
+    const compact=compactProviderError(error);
+    attempts.push({provider:'api-football',state:'error',reason:compact.code,status:compact.status});
+  }
+
+  const fallback=await footballDataTeamScorersProvider(teamId, teamName, leagueId, leagueName, season, cfg);
+  attempts.push({provider:'football-data',state:fallback.available?'available':'unavailable',reason:String(fallback.reason || '')});
+  if (fallback.available) {
+    fallback.sourceMeta={...(fallback.sourceMeta || {}),attempts};
+    return fallback;
+  }
+
+  return {
+    available:false,
+    complete:false,
+    partial:false,
+    scope:'team-season',
+    players:[],
+    summary:{count:0,complete:false,pagesLoaded:0,pagesTotal:0,sourceScope:'team-season'},
+    reason:'all_player_sources_unavailable',
+    sourceMeta:sourceMeta({
+      provider:'none',
+      label:'Нет доступного источника',
+      freshness:'unavailable',
+      attempts,
+    }),
+  };
+}
+
 async function apiTeamIntelligence(request, cfg) {
   const url = new URL(request.url);
   const teamId = Number(url.searchParams.get('teamId'));
   const leagueId = Number(url.searchParams.get('leagueId'));
   const season = Number(url.searchParams.get('season'));
   if (!teamId || !leagueId || !season) return json({ error: 'Номер команды, номер турнира и сезон обязательны.' }, 400);
-  const cacheKey = `team:intelligence:${teamId}:${leagueId}:${season}:v1`;
+  const cacheKey = `team:intelligence:${teamId}:${leagueId}:${season}:v2`;
   const cached = await getCache(cacheKey, cfg);
   if (cached) return json({ ...cached, cached: true, stale: false, provider: publicDataCapabilities() });
   if (!freeQuotaHealthy(15, 2)) {
@@ -18987,13 +19214,41 @@ async function apiTeamIntelligence(request, cfg) {
     return json({ available: false, quotaGuard: true, reason: 'Сезонная статистика временно не запрашивается: сохраняем остаток квоты API-Football.', provider: publicDataCapabilities() });
   }
   try {
+    const teamName=url.searchParams.get('teamName') || '';
+    const leagueName=url.searchParams.get('leagueName') || '';
     const row = await apiFootball('/teams/statistics', { team: teamId, league: leagueId, season }, cfg, { responseType: 'any' });
     const stats = normalizeTeamSeasonStatistics(row, {
       teamId, leagueId, season,
-      teamName: url.searchParams.get('teamName') || '', teamLogo: url.searchParams.get('teamLogo') || '',
-      leagueName: url.searchParams.get('leagueName') || '', country: url.searchParams.get('country') || '', leagueLogo: url.searchParams.get('leagueLogo') || '',
+      teamName, teamLogo: url.searchParams.get('teamLogo') || '',
+      leagueName, country: url.searchParams.get('country') || '', leagueLogo: url.searchParams.get('leagueLogo') || '',
     });
-    const payload = { available: stats.available, stats, refreshedAt: new Date().toISOString(), reason: stats.available ? '' : 'Источник данных не вернул сезонную статистику для этой команды.' };
+
+    let playerStats={
+      available:false,complete:false,partial:false,players:[],
+      summary:{count:0,complete:false,pagesLoaded:0,pagesTotal:0,sourceScope:'team-season'},
+      reason:'quota_guard',
+      sourceMeta:sourceMeta({provider:'none',label:'Не запрашивалось',freshness:'unavailable'}),
+    };
+    if (freeQuotaHealthy(10,1)) {
+      try {
+        playerStats=await resolveTeamSeasonPlayers(teamId, teamName || stats.team?.name || '', leagueId, leagueName || stats.league?.name || '', season, cfg);
+      } catch (playerError) {
+        const compact=compactProviderError(playerError);
+        playerStats={
+          ...playerStats,
+          reason:compact.code,
+          sourceMeta:sourceMeta({provider:'none',label:'Нет доступного источника',freshness:'unavailable',attempts:[{provider:'api-football',state:'error',reason:compact.code,status:compact.status}]}),
+        };
+      }
+    }
+
+    const payload = {
+      available: stats.available,
+      stats,
+      playerStats,
+      refreshedAt: new Date().toISOString(),
+      reason: stats.available ? '' : 'Источник данных не вернул сезонную статистику для этой команды.',
+    };
     await setCache(cacheKey, teamId, payload, cfg, 360);
     return json({ ...payload, cached: false, stale: false, provider: publicDataCapabilities() });
   } catch (error) {
@@ -20708,6 +20963,8 @@ export default {
         multiProviderDataService: 'enabled',
         openLigaDbStandingsFallback: 'enabled',
         openLigaDbEventFallback: 'enabled',
+        teamPlayerSeasonStats: 'enabled',
+        footballDataScorersFallback: cfg.footballDataToken ? 'enabled' : 'available_when_configured',
         footballDataStandingsFallback: cfg.footballDataToken ? 'enabled' : 'available_when_configured',
         theOddsApiOddsFallback: cfg.theOddsApiKey ? 'enabled' : 'available_when_configured',
         matchAtAGlanceCockpit: 'enabled',
