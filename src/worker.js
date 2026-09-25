@@ -19576,7 +19576,7 @@ async function apiMatchCenter(request, cfg) {
 
 async function cachedSeasonStatsForComparison(teamId, leagueId, season, cfg) {
   if (!teamId || !leagueId || !season) return null;
-  const cached = await getStaleCache(`team:intelligence:${Number(teamId)}:${Number(leagueId)}:${Number(season)}:v1`, cfg);
+  const cached = await getStaleCache(`team:intelligence:${Number(teamId)}:${Number(leagueId)}:${Number(season)}:v2`, cfg);
   return cached?.stats?.available ? cached.stats : null;
 }
 
