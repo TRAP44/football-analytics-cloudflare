@@ -140,3 +140,9 @@ test('RC133 is part of the release health contract', () => {
   assert.match(worker, /const RC_NAME = 'RC133'/);
   assert.match(app, /const CLIENT_VERSION = '6\.109\.0-rc133'/);
 });
+
+
+test('RC133 comparison reuses the v2 Team Intelligence cache contract', () => {
+  assert.match(worker, /getStaleCache\(\`team:intelligence:\$\{Number\(teamId\)\}:\$\{Number\(leagueId\)\}:\$\{Number\(season\)\}:v2\`/);
+  assert.doesNotMatch(worker, /team:intelligence:\$\{Number\(teamId\)\}:\$\{Number\(leagueId\)\}:\$\{Number\(season\)\}:v1/);
+});
