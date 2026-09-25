@@ -930,6 +930,8 @@ const ROUTE_BURST_POLICIES = Object.freeze([
   { test: p => p === '/api/provider/coverage-audit', limit: 2, windowMs: 30000, label: 'coverage-audit' },
   { test: p => p === '/api/provider/probe', limit: 3, windowMs: 30000, label: 'provider-probe' },
   { test: p => p === '/api/client-telemetry', limit: 12, windowMs: 60000, label: 'client-telemetry' },
+  { test: p => p === '/api/beta-feedback', limit: 4, windowMs: 60000, label: 'beta-feedback' },
+  { test: p => p === '/api/beta-dashboard', limit: 6, windowMs: 30000, label: 'beta-dashboard' },
   { test: p => p === '/api/reminder-health', limit: 6, windowMs: 30000, label: 'reminder-health' },
   { test: p => p === '/api/runtime-controls', limit: 6, windowMs: 30000, label: 'runtime-controls' },
   { test: p => p === '/api/runtime-controls/rollback', limit: 3, windowMs: 30000, label: 'runtime-rollback' },
@@ -1397,7 +1399,7 @@ async function getRequestUser(request, cfg) {
   const requestUrl = new URL(request.url);
   const adminSensitive = requestUrl.pathname.startsWith('/api/runtime-controls')
     || requestUrl.pathname.startsWith('/api/provider/')
-    || ['/api/diagnostics','/api/release-readiness','/api/production-readiness','/api/rc-regression','/api/release-monitor','/api/production-monitor','/api/calibration-control','/api/model-remediation','/api/media-publisher-link'].includes(requestUrl.pathname);
+    || ['/api/diagnostics','/api/release-readiness','/api/production-readiness','/api/rc-regression','/api/release-monitor','/api/production-monitor','/api/beta-dashboard','/api/calibration-control','/api/model-remediation','/api/media-publisher-link'].includes(requestUrl.pathname);
   const mutation = !['GET','HEAD','OPTIONS'].includes(String(request.method || 'GET').toUpperCase());
   const initDataMaxAgeSeconds = adminSensitive ? 15 * 60 : mutation ? 2 * 60 * 60 : 24 * 60 * 60;
   let user = await validateTelegramInitData(initData, cfg.botToken, initDataMaxAgeSeconds);
@@ -14112,6 +14114,7 @@ const CLIENT_TELEMETRY_EVENTS = new Set([
   'client_error',
   'product_action',
   'action_error',
+  'operation_timing',
 ]);
 
 const CLIENT_PRODUCT_ACTIONS = new Set([
@@ -14152,6 +14155,8 @@ const CLIENT_ACTION_ERROR_KINDS = new Set([
   'unknown',
 ]);
 
+const CLIENT_TIMING_OPERATIONS = new Set(['search', 'match', 'ai', 'live']);
+
 const CLIENT_TELEMETRY_VIEWS = new Set([
   'matchesView',
   'searchView',
@@ -14168,11 +14173,14 @@ function clientTelemetryMetadata(body = {}, event = '') {
   const rawReason = String(meta.reason || '').trim().toLowerCase();
   const rawErrorKind = String(meta.errorKind || '').trim().toLowerCase();
   const rawView = String(meta.view || '').trim();
+  const rawDurationMs = Number(meta.durationMs);
   const reason = event === 'product_action'
     ? (CLIENT_PRODUCT_ACTIONS.has(rawReason) ? rawReason : '')
     : event === 'action_error'
       ? (CLIENT_ACTION_ERROR_REASONS.has(rawReason) ? rawReason : '')
-      : redactOpsString(rawReason, 80);
+      : event === 'operation_timing'
+        ? (CLIENT_TIMING_OPERATIONS.has(rawReason) ? rawReason : '')
+        : redactOpsString(rawReason, 80);
   const errorKind = event === 'action_error'
     ? (CLIENT_ACTION_ERROR_KINDS.has(rawErrorKind) ? rawErrorKind : 'unknown')
     : redactOpsString(rawErrorKind, 60);
@@ -14183,6 +14191,7 @@ function clientTelemetryMetadata(body = {}, event = '') {
     view: CLIENT_TELEMETRY_VIEWS.has(rawView) ? rawView : 'unknown',
     networkMode: redactOpsString(meta.networkMode || '', 30),
     bootMs: Number.isFinite(Number(meta.bootMs)) ? Math.max(0, Math.min(60000, Math.round(Number(meta.bootMs)))) : null,
+    durationMs: event === 'operation_timing' && Number.isFinite(rawDurationMs) ? Math.max(0, Math.min(120000, Math.round(rawDurationMs))) : null,
     manifestOk: typeof meta.manifestOk === 'boolean' ? meta.manifestOk : null,
     degraded: typeof meta.degraded === 'boolean' ? meta.degraded : null,
     blocking: typeof meta.blocking === 'boolean' ? meta.blocking : null,
@@ -14204,14 +14213,20 @@ async function apiClientTelemetry(request, cfg, user) {
   const meta = clientTelemetryMetadata(body, event);
   if (event === 'product_action' && !meta.reason) return json({ ok: false, error: 'Unsupported product action.' }, 400);
   if (event === 'action_error' && !meta.reason) return json({ ok: false, error: 'Unsupported action error.' }, 400);
-  const dedupePart = meta.reason || meta.errorKind || meta.view || '';
-  const dedupeKey = `${Number(user.id)}:${event}:${meta.clientVersion || ''}:${dedupePart}`;
-  const last = Number(memory.clientTelemetryDedupe.get(dedupeKey) || 0);
-  if (last && Date.now() - last < 5 * 60 * 1000) {
-    return json({ ok: true, deduped: true });
+  if (event === 'operation_timing' && (!meta.reason || !Number.isFinite(Number(meta.durationMs)))) {
+    return json({ ok: false, error: 'Unsupported operation timing.' }, 400);
   }
-  memory.clientTelemetryDedupe.set(dedupeKey, Date.now());
-  if (memory.clientTelemetryDedupe.size > 1500) pruneMemoryState();
+  const shouldDedupe = event !== 'operation_timing';
+  if (shouldDedupe) {
+    const dedupePart = meta.reason || meta.errorKind || meta.view || '';
+    const dedupeKey = `${Number(user.id)}:${event}:${meta.clientVersion || ''}:${dedupePart}`;
+    const last = Number(memory.clientTelemetryDedupe.get(dedupeKey) || 0);
+    if (last && Date.now() - last < 5 * 60 * 1000) {
+      return json({ ok: true, deduped: true });
+    }
+    memory.clientTelemetryDedupe.set(dedupeKey, Date.now());
+    if (memory.clientTelemetryDedupe.size > 1500) pruneMemoryState();
+  }
 
   if (event === 'boot_ok') {
     const attribution=await ensureLaunchAttribution(user.id,meta.startParam || '',cfg);
@@ -14244,9 +14259,311 @@ async function apiClientTelemetry(request, cfg, user) {
     code: event.toUpperCase(),
     message: `Client event: ${event}`,
     endpoint: '/api/client-telemetry',
+    durationMs: event === 'operation_timing' ? meta.durationMs : null,
     meta,
   });
   return json({ ok: true, deduped: false });
+}
+
+
+const BETA_FEEDBACK_CATEGORIES = new Set(['search','matches','ai','live','ux','data_sources','performance']);
+const BETA_FEEDBACK_SEVERITIES = new Set(['BLOCKER','MAJOR','MINOR']);
+
+function betaPercentileMs(values = [], percentile = 0.5) {
+  const sorted = values.map(Number).filter(Number.isFinite).sort((a,b)=>a-b);
+  if (!sorted.length) return null;
+  const pos = (sorted.length - 1) * Math.max(0, Math.min(1, Number(percentile || 0)));
+  const lower = Math.floor(pos);
+  const upper = Math.ceil(pos);
+  if (lower === upper) return Math.round(sorted[lower]);
+  const value = sorted[lower] + (sorted[upper] - sorted[lower]) * (pos - lower);
+  return Math.round(value);
+}
+
+function betaIssueMeta(category = '') {
+  const map = {
+    search: {
+      label:'Поиск',
+      impact:'Пользователь не находит нужный матч или не может продолжить основной путь.',
+      fix:'Проверить воспроизводимость поиска, ответ источника и состояние пустой выдачи; исправлять только подтверждённую причину.',
+    },
+    matches: {
+      label:'Матчи',
+      impact:'Карточка или центр матча открывается нестабильно либо не открывается.',
+      fix:'Сопоставить ошибки открытия с логами match-center, доступностью данных и повторным воспроизведением.',
+    },
+    ai: {
+      label:'AI',
+      impact:'AI-анализ не запускается либо не завершается после явного действия пользователя.',
+      fix:'Сверить ai_start/ai_complete, категорию ошибки и серверные события; не менять модель ради улучшения процента.',
+    },
+    live: {
+      label:'LIVE',
+      impact:'LIVE-экран или его обновление работает нестабильно.',
+      fix:'Проверить refresh-путь, timeout/rate-limit и доступность live-данных; сохранить fail-soft поведение.',
+    },
+    ux: {
+      label:'UX',
+      impact:'Интерфейс непонятен или мешает пройти основной сценарий без технического сбоя.',
+      fix:'Подтвердить повторяемость жалобы и путь пользователя; менять интерфейс после нескольких согласованных сигналов.',
+    },
+    data_sources: {
+      label:'Источники данных',
+      impact:'Нужные футбольные данные отсутствуют или источник ограничивает запросы.',
+      fix:'Сопоставить provider/rate-limit с частотой отсутствующих данных; платный или новый provider рассматривать только при устойчивом подтверждённом дефиците.',
+    },
+    performance: {
+      label:'Производительность',
+      impact:'Основные операции отвечают слишком долго или завершаются timeout.',
+      fix:'Сопоставить P50/P90 с timeout-событиями и серверной диагностикой; оптимизировать подтверждённое узкое место.',
+    },
+  };
+  return map[category] || map.ux;
+}
+
+async function apiBetaFeedback(request, cfg) {
+  if (request.method !== 'POST') return json({error:'Метод не поддерживается.'},405);
+  let body={};
+  try { body=await request.json(); } catch {}
+  const category=String(body?.category || '').trim().toLowerCase();
+  const betaSeverity=String(body?.severity || '').trim().toUpperCase();
+  const note=redactOpsString(String(body?.note || '').trim(),600);
+  if (!BETA_FEEDBACK_CATEGORIES.has(category)) return json({error:'Выберите раздел проблемы.'},400);
+  if (!BETA_FEEDBACK_SEVERITIES.has(betaSeverity)) return json({error:'Выберите важность проблемы.'},400);
+  if (note.length < 5) return json({error:'Кратко опишите, что произошло.'},400);
+  const severity=betaSeverity==='BLOCKER' ? 'critical' : betaSeverity==='MAJOR' ? 'warning' : 'info';
+  await recordOpsEvent(cfg,{
+    severity,
+    source:'beta',
+    eventType:'beta_feedback',
+    code:'BETA_FEEDBACK',
+    message:`Beta feedback: ${note}`,
+    endpoint:'/api/beta-feedback',
+    meta:{category,betaSeverity,explicitUserFeedback:true},
+  });
+  return json({ok:true});
+}
+
+function betaMetricSummary(rows = [], eventName = '') {
+  const matched=rows.filter(row=>String(row?.event_name || '')===eventName);
+  const users=new Set(matched.map(row=>Number(row?.telegram_id || 0)).filter(Boolean));
+  return {events:matched.length,users:users.size};
+}
+
+function betaTimingSummary(opsRows = [], operation = '') {
+  const values=(opsRows || [])
+    .filter(row=>row?.source==='client' && row?.event_type==='client_telemetry' && row?.code==='OPERATION_TIMING'
+      && String(row?.metadata?.reason || '')===operation)
+    .map(row=>Number(row?.duration_ms))
+    .filter(value=>Number.isFinite(value) && value>=0 && value<=120000);
+  return {
+    samples:values.length,
+    medianMs:values.length>=3 ? betaPercentileMs(values,0.5) : null,
+    p90Ms:values.length>=10 ? betaPercentileMs(values,0.9) : null,
+    percentileRule:'median>=3 samples; p90>=10 samples',
+  };
+}
+
+function betaFeedbackCounts(feedbackRows = [], category = '') {
+  const rows=feedbackRows.filter(row=>String(row?.metadata?.category || '')===category);
+  const severity={BLOCKER:0,MAJOR:0,MINOR:0};
+  for (const row of rows) {
+    const key=String(row?.metadata?.betaSeverity || '').toUpperCase();
+    if (key in severity) severity[key]+=1;
+  }
+  return {total:rows.length,severity};
+}
+
+function betaErrorCountByAction(errorRows = [], action = '') {
+  return errorRows.filter(row=>String(row?.metadata?.action || '')===action).length;
+}
+
+function betaErrorCountByKind(errorRows = [], kinds = []) {
+  const allowed=new Set(kinds);
+  return errorRows.filter(row=>allowed.has(String(row?.metadata?.errorKind || ''))).length;
+}
+
+function buildBetaIssueGroups({metrics,errorRows,feedbackRows,timings}) {
+  const configs=[
+    {category:'search',errors:betaErrorCountByAction(errorRows,'search'),attempts:Number(metrics.searchUsed?.events || 0)},
+    {category:'matches',errors:betaErrorCountByAction(errorRows,'match'),attempts:Number(metrics.matchOpen?.events || 0)+betaErrorCountByAction(errorRows,'match')},
+    {category:'ai',errors:betaErrorCountByAction(errorRows,'ai'),attempts:Number(metrics.aiStart?.events || 0)},
+    {category:'live',errors:betaErrorCountByAction(errorRows,'live_refresh'),attempts:Number(metrics.liveOpen?.events || 0)+betaErrorCountByAction(errorRows,'live_refresh')},
+    {category:'ux',errors:betaErrorCountByAction(errorRows,'history')+betaErrorCountByAction(errorRows,'profile'),attempts:Number(metrics.historyOpen?.events || 0)+Number(metrics.profileOpen?.events || 0)},
+    {category:'data_sources',errors:betaErrorCountByKind(errorRows,['provider','rate_limit']),attempts:0},
+    {category:'performance',errors:betaErrorCountByKind(errorRows,['timeout']),attempts:0},
+  ];
+  return configs.map(item=>{
+    const feedback=betaFeedbackCounts(feedbackRows,item.category);
+    const frequency=Number(item.errors || 0)+Number(feedback.total || 0);
+    const failureRatePct=item.attempts>0 ? Math.round((Number(item.errors || 0)/Math.max(1,item.attempts))*1000)/10 : null;
+    const correlated=Number(item.errors || 0)>0 && Number(feedback.total || 0)>0;
+    let classification=null;
+    if ((item.attempts>=4 && Number(failureRatePct || 0)>=50) || feedback.severity.BLOCKER>=2) classification='BLOCKER';
+    else if (Number(item.errors || 0)>=2 || feedback.severity.MAJOR>=2 || correlated) classification='MAJOR';
+    else if (feedback.severity.MINOR>=2) classification='MINOR';
+    const meta=betaIssueMeta(item.category);
+    const timing=timings?.[item.category==='matches'?'match':item.category] || null;
+    return {
+      category:item.category,
+      label:meta.label,
+      classification,
+      active:Boolean(classification),
+      frequency,
+      telemetryErrors:Number(item.errors || 0),
+      feedback:Number(feedback.total || 0),
+      failureRatePct,
+      timing,
+      evidence:correlated ? 'feedback+telemetry' : Number(item.errors || 0)>=2 ? 'repeated_telemetry' : Number(feedback.total || 0)>=2 ? 'repeated_feedback' : frequency ? 'needs_more_evidence' : 'no_signal',
+      userImpact:meta.impact,
+      recommendedFix:meta.fix,
+    };
+  });
+}
+
+async function apiBetaDashboard(request,cfg) {
+  const url=new URL(request.url);
+  const days=Math.max(1,Math.min(30,Number(url.searchParams.get('days') || 7)));
+  if (!hasSupabase(cfg)) return json({available:false,reason:'Для наблюдения closed beta нужен Supabase.',days});
+  const now=Date.now();
+  const since=new Date(now-days*86400_000).toISOString();
+  const end=new Date(now+1000).toISOString();
+  let growthRows=[];
+  let growthTruncated=false;
+  try {
+    const page=await supaSelectPaged(cfg,'growth_events',{created_at:`gte.${since}`},{pageSize:1000,maxRows:10000,order:'created_at.asc'});
+    growthRows=page.rows || [];
+    growthTruncated=Boolean(page.truncated);
+  } catch (error) {
+    return json({available:false,reason:'Не удалось прочитать privacy-safe beta telemetry.',days});
+  }
+  const [opsResult,diagnostics]=await Promise.all([
+    readOpsEventsRange(cfg,since,end,1000),
+    collectDiagnostics(cfg).catch(()=>({})),
+  ]);
+  const opsRows=opsResult.items || [];
+
+  const metricDefs={
+    miniAppLaunch:'miniapp_open',
+    searchUsed:'miniapp_search_used',
+    searchFound:'miniapp_search_found',
+    searchEmpty:'miniapp_search_empty',
+    matchOpen:'miniapp_match_open',
+    aiStart:'miniapp_ai_start',
+    aiComplete:'miniapp_ai_complete',
+    liveOpen:'miniapp_live_open',
+    historyOpen:'miniapp_history_open',
+    profileOpen:'miniapp_profile_open',
+  };
+  const metrics={};
+  for (const [key,eventName] of Object.entries(metricDefs)) metrics[key]=betaMetricSummary(growthRows,eventName);
+
+  const userSet=(eventName)=>new Set(growthRows.filter(row=>String(row?.event_name || '')===eventName).map(row=>Number(row?.telegram_id || 0)).filter(Boolean));
+  const entry=userSet('miniapp_open');
+  const search=userSet('miniapp_search_used');
+  const match=userSet('miniapp_match_open');
+  const ai=userSet('miniapp_ai_complete');
+  const coreCompleted=new Set([...entry].filter(id=>search.has(id)&&match.has(id)&&ai.has(id))).size;
+
+  const errorRows=growthRows.filter(row=>String(row?.event_name || '')==='miniapp_error');
+  const errorKinds={};
+  const errorActions={};
+  for (const row of errorRows) {
+    const kind=String(row?.metadata?.errorKind || 'unknown');
+    const action=String(row?.metadata?.action || 'unknown');
+    errorKinds[kind]=Number(errorKinds[kind] || 0)+1;
+    errorActions[action]=Number(errorActions[action] || 0)+1;
+  }
+
+  const timings={
+    search:betaTimingSummary(opsRows,'search'),
+    match:betaTimingSummary(opsRows,'match'),
+    ai:betaTimingSummary(opsRows,'ai'),
+    live:betaTimingSummary(opsRows,'live'),
+  };
+  const feedbackRows=opsRows.filter(row=>row?.source==='beta' && row?.event_type==='beta_feedback' && row?.code==='BETA_FEEDBACK');
+  const issues=buildBetaIssueGroups({metrics,errorRows,feedbackRows,timings});
+  const activeIssues=issues.filter(issue=>issue.active);
+  const topBreak=Object.entries(errorActions).sort((a,b)=>b[1]-a[1] || a[0].localeCompare(b[0]))[0] || null;
+  const providerRateLimit=Number(errorKinds.rate_limit || 0);
+  const providerErrors=Number(errorKinds.provider || 0);
+  const timeouts=Number(errorKinds.timeout || 0);
+  const supabaseOk=Boolean(diagnostics?.supabase?.ok);
+  const telegramState=String(diagnostics?.telegramWebhook?.state || (cfg.botToken ? 'configured' : 'not_configured'));
+  const blockerCount=activeIssues.filter(issue=>issue.classification==='BLOCKER').length;
+  const majorCount=activeIssues.filter(issue=>issue.classification==='MAJOR').length;
+  const telegramProblem=['incident','critical','failed','not_configured'].includes(telegramState);
+  const healthState=blockerCount>0 || !supabaseOk || telegramProblem
+    ? 'incident'
+    : activeIssues.length>0 || providerRateLimit>0 || timeouts>0
+      ? 'watch'
+      : 'healthy';
+
+  const usedFeatures=Object.entries(metrics)
+    .map(([key,value])=>({key,events:Number(value.events || 0),users:Number(value.users || 0)}))
+    .sort((a,b)=>b.events-a.events || a.key.localeCompare(b.key));
+  const lowUsageFeatures=usedFeatures.filter(item=>item.events===0 || (entry.size>=5 && item.users<=Math.max(1,Math.floor(entry.size*0.1))));
+  const providerSignals=providerRateLimit+providerErrors+Number(issues.find(issue=>issue.category==='data_sources')?.feedback || 0);
+  const providerEvidence=entry.size>=5 && providerSignals>=5 ? 'review_provider_options' : 'insufficient_evidence';
+  const expansionStatus=entry.size<5 ? 'collecting_data' : blockerCount>0 ? 'hold' : majorCount>0 ? 'review_issues' : 'candidate_for_expansion';
+
+  return json({
+    available:true,
+    generatedAt:new Date().toISOString(),
+    periodDays:days,
+    privacy:{
+      aggregatedOnly:true,
+      telegramIdsReturned:false,
+      searchQueriesReturned:false,
+      errorTextsReturned:false,
+      feedbackTextsReturned:false,
+    },
+    metrics,
+    journey:{
+      betaUsers:entry.size,
+      coreCompleted,
+      coreCompletionPct:entry.size ? Math.round((coreCompleted/entry.size)*1000)/10 : 0,
+      stages:{
+        launch:entry.size,
+        search:search.size,
+        match:match.size,
+        aiComplete:ai.size,
+      },
+    },
+    actionErrors:{total:errorRows.length,byCategory:errorKinds,byAction:errorActions},
+    timings,
+    health:{
+      state:healthState,
+      label:healthState==='healthy' ? 'Ошибок нет' : healthState==='incident' ? 'Есть проблемы' : 'Нужно наблюдение',
+      topBreak:{action:topBreak?.[0] || '',count:Number(topBreak?.[1] || 0)},
+      providerRateLimit,
+      timeout:timeouts,
+      supabase:supabaseOk ? 'ok' : String(diagnostics?.supabase?.status || 'problem'),
+      telegram:telegramState,
+      currentRelease:{version:APP_VERSION,candidate:RC_NAME,channel:RELEASE_CHANNEL},
+      activeProblems:activeIssues.length,
+      blockerCount,
+      majorCount,
+    },
+    issues,
+    report:{
+      betaUsers:entry.size,
+      coreJourneyCompleted:coreCompleted,
+      mainDropoff:topBreak ? {action:topBreak[0],count:Number(topBreak[1] || 0)} : null,
+      usedFeatures,
+      lowUsageFeatures,
+      missingDataSignals:{searchEmpty:Number(metrics.searchEmpty?.events || 0),providerErrors,providerRateLimit},
+      providerExpansionEvidence:{status:providerEvidence,signals:providerSignals,betaUsers:entry.size},
+      betaExpansionReadiness:{status:expansionStatus,blockers:blockerCount,majors:majorCount},
+    },
+    sample:{
+      growthEvents:growthRows.length,
+      opsEvents:opsRows.length,
+      growthTruncated,
+      opsPersistent:Boolean(opsResult.persistent),
+      opsSampleLimited:opsRows.length>=1000,
+    },
+  });
 }
 
 async function readOpsEventsRange(cfg, startIso, endIso, limit = 600) {
@@ -21406,6 +21723,11 @@ export default {
       if (request.method === 'GET' && url.pathname === '/api/me') return await apiMe(request, cfg, user);
       if (request.method === 'GET' && url.pathname === '/api/data-capabilities') return json({ dataCapabilities: publicDataCapabilities() });
       if (request.method === 'POST' && url.pathname === '/api/client-telemetry') return await apiClientTelemetry(request, cfg, user);
+      if (request.method === 'POST' && url.pathname === '/api/beta-feedback') return await apiBetaFeedback(request, cfg);
+      if (request.method === 'GET' && url.pathname === '/api/beta-dashboard') {
+        if (!isAdminUser(user, cfg)) return adminForbidden();
+        return await apiBetaDashboard(request, cfg);
+      }
       if (url.pathname === '/api/runtime-controls') {
         if (!isAdminUser(user, cfg)) return adminForbidden();
         return await apiRuntimeControls(request, cfg, user);
