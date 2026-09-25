@@ -2070,8 +2070,18 @@ async function resetSettlementCircuitFromUi() {
   }
 }
 
-async function openProfileView() {
+async function openProfileView(options = {}) {
   showView('profileView');
+  sendProductAction('profile_open', 'profileView');
+  if (!state.profile || options.force) {
+    renderProfileAccessState('loading');
+    await loadProfile();
+  }
+  if (!state.profile) {
+    renderProfileAccessState('error', state.profileLoadError || 'Не удалось загрузить профиль. Проверьте соединение и повторите.');
+    return;
+  }
+  renderProfileAccessState('ready');
   const lastFixture = Number(state.currentCenter?.match?.fixtureId || state.currentAnalysis?.match?.fixtureId || 0);
   if (lastFixture && $('providerAuditFixtureId') && !$('providerAuditFixtureId').value) $('providerAuditFixtureId').value = String(lastFixture);
   const essentials = [];
@@ -7917,7 +7927,10 @@ const teamTabs = [...document.querySelectorAll('.team-tab')];
 teamTabs.forEach(btn => btn.addEventListener('click', () => setTeamTab(btn.dataset.teamTab || 'overview')));
 bindRovingTabKeyboard(teamTabs, 'teamTab', value => setTeamTab(value));
 $('profileBtn').addEventListener('click', openProfileView);
-$('navMatches').addEventListener('click', () => showView('matchesView'));
+$('navMatches').addEventListener('click', () => {
+  sendProductAction('matches_open', 'matchesView');
+  showView('matchesView');
+});
 $('navSearch')?.addEventListener('click', () => {
   renderDiscoveryHome();
   renderGlobalSearch();
@@ -7927,6 +7940,7 @@ $('navSearch')?.addEventListener('click', () => {
   }
 });
 $('navHistory').addEventListener('click', async () => {
+  sendProductAction('history_open', 'historyView');
   showView('historyView');
   const tasks=[];
   if (!state.historyLoaded) tasks.push(loadHistory(true)); else renderHistory();
