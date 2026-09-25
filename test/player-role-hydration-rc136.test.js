@@ -35,6 +35,6 @@ test('RC136 exposes hydration provenance and neutral fallback',()=>{
 test('RC136 is part of release health contract',()=>{
   assert.match(worker,/playerRoleHydration: 'enabled'/);
   assert.match(worker,/const APP_VERSION = '6\.119\.0-rc143'/);
-  assert.match(worker,/const RC_NAME = 'RC143'/);
+  assert.match(worker,/const RC_NAME = 'RC144'/);
   assert.match(smoke,/'playerRoleHydration'/);
 });
