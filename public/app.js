@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.116.0-rc140';
+const CLIENT_VERSION = '6.117.0-rc141';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc140';
+const CLIENT_RELEASE_CHANNEL = 'rc141';
 const SUPABASE_SCHEMA_HINT = 'проверьте актуальную схему Supabase (baseline v6.18 / миграции до v6.19)';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';

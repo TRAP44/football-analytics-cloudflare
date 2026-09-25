@@ -24,7 +24,7 @@ jobs:
     environment: production
     env:
       DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
-      RELEASE_VERSION: "6.116.0-rc140"
+      RELEASE_VERSION: "6.117.0-rc141"
       WRANGLER_SEND_METRICS: "false"
       WRANGLER_SEND_ERROR_REPORTS: "false"
     steps:

@@ -109,11 +109,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.116.0-rc140';
+const APP_VERSION = '6.117.0-rc141';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc140';
-const RC_NAME = 'RC140';
+const RELEASE_CHANNEL = 'rc141';
+const RC_NAME = 'RC141';
 const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.18; для существующей примените все доступные миграции из supabase/migrations до v6.19.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49';
