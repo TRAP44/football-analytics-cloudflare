@@ -4,17 +4,17 @@
 
 ## 1. Зафиксированная release identity
 
-- GitHub base до этого этапа: `3893248eaa4f01272c5ae06a4a6459ae8a885b18`.
+- Актуальный GitHub `main` на повторной проверке: `5519b98049ae6a74212897cf261ef2d8bc550a5c`.
 - Версия клиента/Worker: `6.120.0-rc144`.
 - Release candidate: `RC144`.
-- Последняя подтверждённая production Cloudflare version перед этим этапом: `1618339d-e1de-4bd5-ac88-2f26ad25a920`.
+- Актуальная подтверждённая production Cloudflare version: `8c922e24-4e4d-431a-9515-47d649606f15`.
 - Production URL: `https://football-analytics-cloudflare.wok-side.workers.dev`.
-- После merge этого этапа production SHA/version ID должны быть заново подтверждены deploy workflow.
+- Production SHA/version ID повторно подтверждены deploy workflow; post-deploy smoke прошёл 25/25.
 
 ## 2. Что уже подтверждено автоматически
 
 - `main` содержит UX Hotfix (#82) и Beta Readiness (#83).
-- Полный Quality на текущем `main` повторно запущен: 754/754 теста, fail 0.
+- Полный Quality на текущем `main` повторно пройден: 756/756 тестов, fail 0.
 - Supabase project: ACTIVE_HEALTHY.
 - Текущий schema fingerprint: `c2c22ec25aacfcf1b9938b0850cebf49`, совпадает с Worker contract.
 - v6.19 / RC129 provenance-колонки присутствуют.
@@ -148,3 +148,20 @@ GO возможен только когда:
 6. Telegram getWebhookInfo подтверждён;
 7. cohort и feedback channel реально созданы;
 8. принято решение: invite-only operational beta или strict server-side allowlist.
+
+
+## 10. Результат повторной автоматической проверки 25 сентября 2026
+
+Подтверждено без изменения аналитической логики:
+
+- GitHub main / production deploy SHA согласованы.
+- Cloudflare release identity: `6.120.0-rc144 / RC144`, 100% traffic на version `8c922e24-4e4d-431a-9515-47d649606f15`.
+- Full Quality: 756/756 tests; audit/security/lint/check/release/worker PASS.
+- Supabase: `ACTIVE_HEALTHY`; v6.19/RC129 migration присутствует; fingerprint совпадает.
+- Backend security/default ACL contracts: PASS, violations=0.
+- Runtime controls: analysis/search/live/reminders включены, maintenance выключен.
+- Telegram dedupe persistence: stale=0, failedCurrent=0, failedRecent=0.
+- За последний час на момент проверки нет новых non-monitor warning/error/critical ops events.
+- Persisted production monitor ещё содержит `watch` от 15:00 UTC; текущие проверенные входы соответствуют healthy, но это не отмечается как PASS до следующего фактического monitor run.
+
+Остаются только полевые/секрет-зависимые проверки: два non-admin Telegram smoke, реальный LIVE, свежие provider quota headers, Telegram `getWebhookInfo`, фактическое назначение Beta-01/Beta-02 и создание feedback channel.
