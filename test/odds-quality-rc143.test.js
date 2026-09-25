@@ -107,7 +107,7 @@ test('RC143 gates prematch and live odds before snapshots, movement and model bl
 test('RC143 exposes odds quality through Match Center, analysis and production health contracts', () => {
   assert.match(worker,/match-center:\$\{fixtureId\}:v16-availability-quality-rc144/);
   assert.match(worker,/fixture:\$\{fixtureId\}:v15-availability-quality-rc144/);
-  assert.match(worker,/analysisVersion: '4\.14\.0-odds-quality'/);
+  assert.match(worker,/analysisVersion: '4\.15\.0-availability-quality'/);
   assert.match(worker,/liveOddsQuality,/);
   assert.match(worker,/oddsQuality,/);
   assert.match(worker,/oddsSemanticQualityGuard: 'enabled'/);
