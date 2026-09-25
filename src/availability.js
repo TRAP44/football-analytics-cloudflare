@@ -12,11 +12,17 @@ function normalizedName(value = '') {
     .replace(/\s+/g, ' ');
 }
 
-function absencePlayerKey(player = {}) {
+function absenceMatchKeys(player = {}) {
+  const keys = [];
   const id = Number(player?.id || 0);
-  if (id > 0) return `id:${id}`;
+  if (id > 0) keys.push(`id:${id}`);
   const name = normalizedName(player?.name || '');
-  return name ? `name:${name}` : '';
+  if (name) keys.push(`name:${name}`);
+  return keys;
+}
+
+function absencePlayerKey(player = {}) {
+  return absenceMatchKeys(player)[0] || '';
 }
 
 function categoryFromText(type = '', reason = '') {
@@ -93,8 +99,7 @@ function normalizeAbsenceRow(item = {}) {
 function lineupKeys(lineup = null) {
   const keys = new Set();
   for (const entry of [...(lineup?.startXI || []), ...(lineup?.substitutes || [])]) {
-    const key = absencePlayerKey(entry);
-    if (key) keys.add(key);
+    for (const key of absenceMatchKeys(entry)) keys.add(key);
   }
   return keys;
 }
@@ -134,8 +139,9 @@ export function normalizeFixtureAbsences(rows = [], { homeId = 0, awayId = 0, li
   const resolvedByLineup = { home: [], away: [] };
   for (const side of ['home', 'away']) {
     const published = lineupKeys(lineups?.[side] || null);
-    for (const [key, item] of bySide[side]) {
-      if (published.has(key)) {
+    for (const [, item] of bySide[side]) {
+      const listed = absenceMatchKeys(item).some(key => published.has(key));
+      if (listed) {
         resolvedByLineup[side].push({
           ...item,
           reconciled: true,
