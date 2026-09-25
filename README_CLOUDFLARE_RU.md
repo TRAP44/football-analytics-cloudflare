@@ -1,4 +1,6 @@
-# Football Analytics Mini App v6.116.0 — RC140
+# Football Analytics Mini App v6.117.0 — RC141
+
+- RC141: **Live Event Semantic Quality Guard** — live/finished события теперь проходят отдельную semantic-проверку поверх RC139 freshness/provenance: контролируются минута и добавленное время, слишком будущие live-события, сторона команды и точные дубли provider feed. Публичная хронология получает очищенный набор, а Live AI, Smart Insights, post-match evidence и история судьи используют только аналитически доверенные события. Match Center публикует `eventQuality`, UI показывает статус очистки, cache поднят до `v13-event-quality-rc141`. Новых внешних API-ключей и Supabase DDL нет.
 
 - RC140: **Provider xG Semantic Quality Guard** — provider xG отделён от общей «доступности статистики»: live/post-match аналитика использует xG только при полной паре home/away, валидных числовых значениях и свежем подтверждённом источнике статистики. Partial/invalid/untrusted xG остаётся наблюдаемым в Match Center, но исключается из AI LIVE, smart insights и post-match evidence; UI отдельно показывает статус xG. Одновременно исправлен false-positive `availability.statistics` при пустом `items`. Match Center cache поднят до `v12-xg-quality-rc140`. Новых API-ключей и Supabase DDL нет.
 

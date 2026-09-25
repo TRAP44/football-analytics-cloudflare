@@ -1,4 +1,13 @@
-# QA Release Checklist — v6.116.0 RC140
+# QA Release Checklist — v6.117.0 RC141
+
+## RC141 — Live Event Semantic Quality Guard
+- Проверить `npm test`, включая `test/event-quality-rc141.test.js`: валидные события trusted source проходят, точные дубли удаляются, события из невозможной/слишком будущей минуты отбрасываются.
+- Goal/Card/VAR/Subst без подтверждённой стороны могут оставаться наблюдаемыми только после общей проверки, но не должны попадать в Live AI, Smart Insights, post-match evidence и историю судьи.
+- Stale/unverified source должен fail-closed: публичная лента и аналитический набор не используют такие события как актуальные.
+- Match Center должен вернуть `eventQuality`; публичная хронология использует sanitized events, аналитика — отдельный trusted subset.
+- Release gate: Worker/client `6.117.0-rc141`, Match Center cache `v13-event-quality-rc141`, health/smoke flag `eventSemanticQualityGuard`.
+- RC139 freshness/provenance и RC140 xG semantic quality остаются обязательными нижележащими guard.
+- Supabase: новых миграций, таблиц или колонок для RC141 нет; актуальная production-схема остаётся на миграции `v6.19`.
 
 ## RC140 — Provider xG Semantic Quality Guard
 - Проверить `npm test`, включая `test/xg-quality-rc140.test.js`: xG считается confidence-bearing только при полной валидной паре home/away и trusted statistics source.
@@ -24,9 +33,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.116.0`.
-- Worker и client: `6.116.0-rc140`.
-- Release candidate: `RC140`.
+- `package.json` и `package-lock.json`: `6.117.0`.
+- Worker и client: `6.117.0-rc141`.
+- Release candidate: `RC141`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
