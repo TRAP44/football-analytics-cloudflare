@@ -106,3 +106,28 @@ test('RC133 normalizes useful season fields without inventing missing data', () 
   assert.match(worker, /yellowRed:playerStatNumber\(stats\?\.cards\?\.yellowred\)/);
   assert.doesNotMatch(worker, /playerImpactScore|playerQualityScore/);
 });
+
+
+const app = fs.readFileSync('public/app.js', 'utf8');
+const styles = fs.readFileSync('public/styles.css', 'utf8');
+
+test('RC133 Team Intelligence renders player season data without extra frontend requests', () => {
+  assert.match(app, /function teamPlayerSeasonStatsHtml\(data = \{\}\)/);
+  assert.match(app, /👤 Игроки сезона/);
+  assert.match(app, /Сортировка: голы, ассисты, матчи, минуты — без искусственного рейтинга/);
+  assert.match(app, /playerStatsHtml=teamPlayerSeasonStatsHtml\(data\)/);
+  const start=app.indexOf('function teamPlayerSeasonStatsHtml');
+  const end=app.indexOf('function renderTeamIntelligence', start);
+  const helper=app.slice(start,end);
+  assert.doesNotMatch(helper, /\bapi\s*\(/);
+  assert.doesNotMatch(helper, /fetch\s*\(/);
+});
+
+test('RC133 player stats UI makes partial provider coverage explicit', () => {
+  assert.match(app, /Резервный источник: показаны только игроки команды, присутствующие в таблице бомбардиров турнира/);
+  assert.match(app, /Частичная выборка/);
+  assert.match(app, /травмирован/);
+  assert.match(styles, /\.player-season-table\{display:grid/);
+  assert.match(styles, /overflow-x:auto/);
+  assert.match(styles, /@media\(max-width:560px\)[\s\S]*\.player-season-head/);
+});
