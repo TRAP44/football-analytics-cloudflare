@@ -4,12 +4,12 @@
 
 ## 1. Зафиксированная release identity
 
-- Актуальный GitHub `main` на повторной проверке: `5519b98049ae6a74212897cf261ef2d8bc550a5c`.
+- Validation snapshot GitHub `main` от 15:18 UTC: `5519b98049ae6a74212897cf261ef2d8bc550a5c`. Последующие docs-only merges обязаны повторно пройти Quality + production provenance gate.
 - Версия клиента/Worker: `6.120.0-rc144`.
 - Release candidate: `RC144`.
-- Актуальная подтверждённая production Cloudflare version: `8c922e24-4e4d-431a-9515-47d649606f15`.
+- Cloudflare version в этом validation snapshot: `8c922e24-4e4d-431a-9515-47d649606f15`. Актуальный version ID генерируется на каждом deploy и берётся из latest successful `Deploy Production`.
 - Production URL: `https://football-analytics-cloudflare.wok-side.workers.dev`.
-- Production SHA/version ID повторно подтверждены deploy workflow; post-deploy smoke прошёл 25/25.
+- Production SHA/version ID подтверждаются deploy workflow для текущего `main`; RC120 требует 100% traffic на ожидаемую release identity, post-deploy smoke — 25/25.
 
 ## 2. Что уже подтверждено автоматически
 
@@ -150,7 +150,7 @@ GO возможен только когда:
 8. принято решение: invite-only operational beta или strict server-side allowlist.
 
 
-## 10. Результат повторной автоматической проверки 25 сентября 2026
+## 10. Снимок повторной автоматической проверки 25 сентября 2026, 15:18 UTC
 
 Подтверждено без изменения аналитической логики:
 
