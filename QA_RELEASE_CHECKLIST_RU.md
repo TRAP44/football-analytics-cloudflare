@@ -6,6 +6,7 @@
 - Match Center должен вернуть `xgQuality`, `availability.xg` и не отмечать `availability.statistics=true` при пустом `statistics.items`.
 - UI должен явно показывать статус xG и отличать «подтверждён», «неполный», «отклонён» и «источник не прошёл guard».
 - Release gate: Worker/client `6.116.0-rc140`, Match Center cache `v12-xg-quality-rc140`, health/smoke flag `xgSemanticQualityGuard`.
+- RC139 **Freshness-aware Data Trust** остаётся обязательным нижележащим guard: xG доверяется только после его freshness/provenance verdict.
 - Supabase: новых миграций для RC140 нет; существующая provenance-миграция `v6.19` остаётся обязательной для обновляемой production-базы.
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
