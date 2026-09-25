@@ -121,11 +121,11 @@ const smoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
 
 test('RC139 is part of the production release health contract', () => {
-  assert.match(worker, /const APP_VERSION = '6\.117\.0-rc141'/);
-  assert.match(worker, /const RC_NAME = 'RC141'/);
+  assert.match(worker, /const APP_VERSION = '6\.118\.0-rc142'/);
+  assert.match(worker, /const RC_NAME = 'RC142'/);
   assert.match(worker, /freshnessAwareDataTrust: 'enabled'/);
   assert.match(worker, /analysisVersion: '4\.13\.0-freshness-trust'/);
   assert.match(worker, /fixture:\$\{fixtureId\}:v13-freshness-trust/);
-  assert.match(app, /const CLIENT_VERSION = '6\.117\.0-rc141'/);
+  assert.match(app, /const CLIENT_VERSION = '6\.118\.0-rc142'/);
   assert.match(smoke, /'freshnessAwareDataTrust'/);
 });
