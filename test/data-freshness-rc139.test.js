@@ -85,7 +85,8 @@ const lineup = fs.readFileSync('src/lineup-quality.js', 'utf8');
 test('RC139 Match Center rejects stale live data from derived analytics', () => {
   assert.match(worker, /applyFeatureFreshnessMap\(staleMeta, \{ mode:staleMode, forceStale:true \}\)/);
   assert.match(worker, /livePressure:null, smartInsights:null, liveAiCoach:null, liveOdds:null, oddsMovement:null/);
-  assert.match(worker, /const statisticsQuality = assessMatchStatisticsQuality\(rawFormattedStatistics/);\n  assert.match(worker, /sanitizeStatisticsForDisplay\(rawFormattedStatistics, statisticsQuality\)/);
+  assert.match(worker, /const statisticsQuality = assessMatchStatisticsQuality\(rawFormattedStatistics/);
+  assert.match(worker, /sanitizeStatisticsForDisplay\(rawFormattedStatistics, statisticsQuality\)/);
   assert.match(worker, /const eventQuality = assessMatchEventQuality\(rawFormattedEvents, \{ eventsMeta:featureMeta\.events \|\| \{\}, mode:centerMode, elapsed \}\)/);
   assert.match(worker, /const analyticalEvents = eventsForTrustedAnalytics\(rawFormattedEvents, eventQuality\)/);
   assert.match(worker, /const trustedInjuryRows = featureMeta\.injuries\?\.confidenceBearing === false \? \[\] : injuryRows/);
