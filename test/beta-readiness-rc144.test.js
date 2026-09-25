@@ -60,7 +60,7 @@ test('main action failures are measured by category, not free-form error text', 
   for (const action of ['matches','search','match','live_refresh','ai','history','profile']) {
     assert.ok(app.includes("sendActionError('" + action + "'"), action);
   }
-  const helper = block(app, 'function sendActionError', 'function renderAnalysisRequestState');
+  const helper = block(app, 'function sendActionError', 'function renderJourneyState');
   assert.match(helper, /apiErrorCategory\(error\)/);
   assert.doesNotMatch(helper, /error\?\.message/);
 });
@@ -68,15 +68,15 @@ test('main action failures are measured by category, not free-form error text', 
 test('match and AI transitions have explicit loading error and retry states', () => {
   const center = block(app, 'async function openMatchCenter', 'function syncAnalysisBusyUi');
   assert.match(center, /showView\('analysisView'\)/);
-  assert.match(center, /renderAnalysisRequestState\('loading'/);
-  assert.match(center, /renderAnalysisRequestState\('error'/);
+  assert.match(center, /renderJourneyState\('loading'/);
+  assert.match(center, /renderJourneyState\('error'/);
   assert.match(center, /retry: \(\) => openMatchCenter/);
 
   const analysis = block(app, 'async function analyzeMatch', 'function historyItemFromAnalysis');
   assert.match(analysis, /sendProductAction\('ai_start'/);
   assert.match(analysis, /sendProductAction\('ai_complete'/);
-  assert.match(analysis, /renderAnalysisRequestState\('loading'/);
-  assert.match(analysis, /renderAnalysisRequestState\('error'/);
+  assert.match(analysis, /renderJourneyState\('loading'/);
+  assert.match(analysis, /renderJourneyState\('error'/);
   assert.match(analysis, /retry: \(\) => analyzeMatch/);
 });
 
