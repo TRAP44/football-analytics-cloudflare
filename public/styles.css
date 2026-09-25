@@ -2930,3 +2930,343 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 .absence-kind.illness{border-color:rgba(59,130,246,.35)}
 .absence-live-row small{color:var(--hint);font-size:9px}
 .center-absence-summary p{margin:6px 0 0;color:var(--hint);font-size:10px}
+
+
+/* UX public flow — compact Telegram-first experience */
+html {
+  scroll-padding-top: calc(12px + env(safe-area-inset-top));
+  scroll-padding-bottom: calc(104px + env(safe-area-inset-bottom));
+}
+.app-shell {
+  padding-top: max(12px, env(safe-area-inset-top));
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+  padding-bottom: calc(104px + env(safe-area-inset-bottom));
+}
+.bottom-nav {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding-left: max(10px, env(safe-area-inset-left));
+  padding-right: max(10px, env(safe-area-inset-right));
+}
+.nav-item,
+.global-search-btn,
+.analyze-btn,
+.primary-btn,
+.primary-setting-btn,
+.back-btn,
+.connection-retry-btn {
+  min-height: 44px;
+}
+.profile-badge {
+  min-height: 40px;
+}
+.search-input {
+  min-height: 46px;
+  font-size: 16px;
+}
+.secondary-home-insight {
+  display: none !important;
+}
+
+.search-state {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+}
+.search-state > span {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: rgba(148,163,184,.08);
+}
+.search-state strong,
+.search-state small {
+  display: block;
+}
+.search-state small {
+  margin-top: 2px;
+  color: var(--hint);
+  line-height: 1.35;
+}
+.search-state-note {
+  margin-top: 4px !important;
+}
+.search-state .secondary-btn {
+  margin: 0;
+  min-height: 40px;
+}
+.search-state.is-success {
+  border-color: color-mix(in srgb, #22c55e 26%, var(--line));
+}
+.search-state.is-warning {
+  border-color: color-mix(in srgb, #f59e0b 28%, var(--line));
+}
+.search-state.is-refreshing > span,
+.summary-pill.refreshing {
+  animation: ux-soft-pulse 1.4s ease-in-out infinite;
+}
+@keyframes ux-soft-pulse {
+  50% { opacity: .55; }
+}
+
+.match-card {
+  padding: 13px;
+}
+.match-card .team-row {
+  margin-top: 4px;
+}
+.match-card .match-team-copy small,
+.match-card .catalog-row {
+  display: none;
+}
+.match-card-actions.single {
+  display: block;
+}
+.match-card-actions.single .analyze-btn {
+  width: 100%;
+}
+.match-card-more {
+  margin-top: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+}
+.match-card-more > summary {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--hint);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+.match-card-more > summary::-webkit-details-marker {
+  display: none;
+}
+.match-card-more .quick-reminder-btn {
+  width: 100%;
+  min-height: 42px;
+  margin-top: 7px;
+}
+.match-live-label {
+  color: #fff;
+  background: #ef4444;
+  border-radius: 999px;
+  padding: 3px 7px;
+  font-size: 10px;
+  letter-spacing: .06em;
+}
+.match-finished-label {
+  color: var(--hint);
+  font-size: 11px;
+}
+
+.analysis-glance {
+  overflow: hidden;
+}
+.analysis-glance-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.analysis-glance-head > div:first-child > span {
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .1em;
+}
+.analysis-glance-head h2 {
+  margin-top: 4px;
+}
+.analysis-confidence-simple {
+  flex: 0 0 auto;
+  min-width: 108px;
+  text-align: right;
+}
+.analysis-confidence-simple span,
+.analysis-confidence-simple small {
+  display: block;
+  color: var(--hint);
+  font-size: 10px;
+}
+.analysis-confidence-simple strong {
+  display: block;
+  margin: 2px 0;
+  font-size: 20px;
+}
+.analysis-glance-grid {
+  display: grid;
+  grid-template-columns: 1.15fr .85fr;
+  gap: 10px;
+}
+.analysis-glance-grid > div {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(148,163,184,.035);
+}
+.analysis-glance-grid h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+.analysis-glance-grid ol,
+.analysis-glance-grid ul {
+  margin: 0;
+  padding-left: 19px;
+}
+.analysis-glance-grid li {
+  margin: 7px 0;
+  line-height: 1.35;
+  font-size: 12px;
+}
+.analysis-glance-risks {
+  border-color: color-mix(in srgb, #f59e0b 22%, var(--line)) !important;
+}
+
+.analysis-disclosure {
+  padding: 0;
+  overflow: hidden;
+}
+.analysis-disclosure > summary {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  padding: 0 15px;
+  cursor: pointer;
+  font-weight: 850;
+  list-style: none;
+}
+.analysis-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.analysis-disclosure > summary::after {
+  content: '›';
+  margin-left: auto;
+  color: var(--hint);
+  transform: rotate(90deg);
+  transition: transform .18s ease;
+}
+.analysis-disclosure[open] > summary::after {
+  transform: rotate(-90deg);
+}
+.analysis-disclosure-body {
+  padding: 0 15px 15px;
+}
+.analysis-disclosure-body > .panel {
+  margin-bottom: 8px;
+}
+.center-tabs-wrap,
+.analysis-tabs {
+  position: sticky;
+  top: env(safe-area-inset-top);
+  z-index: 9;
+}
+.center-tabs-wrap {
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
+  backdrop-filter: blur(14px);
+}
+.center-tab-btn,
+.analysis-tab-btn,
+.tournament-tab,
+.team-tab {
+  min-height: 40px;
+}
+.theme-option,
+.button-style-options button {
+  min-height: 48px;
+}
+
+@media (max-width: 430px) {
+  .app-shell {
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+  }
+  .topbar {
+    gap: 8px;
+  }
+  .brand-copy .eyebrow,
+  .brand-copy > p {
+    display: none;
+  }
+  .profile-badge span {
+    max-width: 74px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .daily-overview {
+    padding: 12px;
+  }
+  .daily-overview-copy p {
+    display: none;
+  }
+  .daily-overview-actions {
+    gap: 5px;
+  }
+  .global-search-box {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .global-search-btn {
+    padding-left: 13px;
+    padding-right: 13px;
+  }
+  .search-state {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .search-state .secondary-btn {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+  .fav-star {
+    width: 40px;
+    height: 40px;
+  }
+  .analysis-glance-head {
+    display: block;
+  }
+  .analysis-confidence-simple {
+    margin-top: 10px;
+    text-align: left;
+  }
+  .analysis-glance-grid {
+    grid-template-columns: 1fr;
+  }
+  .match-experience-meta {
+    font-size: 10px;
+  }
+  .experience-actions {
+    grid-template-columns: 1fr;
+  }
+  .experience-actions > button {
+    width: 100%;
+    margin: 0;
+    min-height: 44px;
+  }
+  .center-scoreboard {
+    gap: 8px;
+  }
+  .center-team-card {
+    min-width: 0;
+  }
+  .bottom-nav {
+    gap: 2px;
+  }
+  .nav-item {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+  .nav-item small {
+    font-size: 10px;
+  }
+}
