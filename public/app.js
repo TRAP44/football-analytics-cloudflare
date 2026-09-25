@@ -5,12 +5,19 @@ const SUPABASE_SCHEMA_HINT = 'проверьте актуальную схему
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
-const DEFAULT_UI_PREFERENCES = { theme: 'system', buttonStyle: 'soft' };
+const DEFAULT_UI_PREFERENCES = { theme: 'system', accent: 'system', buttonStyle: 'soft' };
+const ACCENT_PALETTES = {
+  green: { dark: { accent: '#57e389', text: '#041009' }, light: { accent: '#147a3d', text: '#ffffff' } },
+  blue: { dark: { accent: '#60a5fa', text: '#07111f' }, light: { accent: '#1d4ed8', text: '#ffffff' } },
+  violet: { dark: { accent: '#c084fc', text: '#160624' }, light: { accent: '#6d28d9', text: '#ffffff' } },
+  amber: { dark: { accent: '#fbbf24', text: '#1c1200' }, light: { accent: '#92400e', text: '#ffffff' } },
+};
 function readUiPreferences() {
   try {
     const saved = JSON.parse(localStorage.getItem(UI_PREFERENCES_KEY) || '{}');
     return {
       theme: ['system', 'dark', 'light', 'ocean'].includes(saved.theme) ? saved.theme : DEFAULT_UI_PREFERENCES.theme,
+      accent: ['system', 'green', 'blue', 'violet', 'amber'].includes(saved.accent) ? saved.accent : DEFAULT_UI_PREFERENCES.accent,
       buttonStyle: ['soft', 'compact'].includes(saved.buttonStyle) ? saved.buttonStyle : DEFAULT_UI_PREFERENCES.buttonStyle,
     };
   } catch {
@@ -19,6 +26,7 @@ function readUiPreferences() {
 }
 const initialUiPreferences = readUiPreferences();
 document.documentElement.dataset.theme = initialUiPreferences.theme;
+document.documentElement.dataset.accent = initialUiPreferences.accent;
 document.documentElement.dataset.buttonStyle = initialUiPreferences.buttonStyle;
 
 const tg = window.Telegram?.WebApp;
@@ -164,10 +172,38 @@ const MATCH_SNAPSHOT_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const $ = id => document.getElementById(id);
 const views = ['matchesView', 'searchView', 'tournamentView', 'teamView', 'analysisView', 'historyView', 'profileView'];
 
+function preferredAccentMode(theme) {
+  if (theme === 'light') return 'light';
+  if (theme === 'dark' || theme === 'ocean') return 'dark';
+  if (tg?.colorScheme === 'light') return 'light';
+  if (tg?.colorScheme === 'dark') return 'dark';
+  return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
+function applyAccentPreference(prefs = state.uiPreferences || DEFAULT_UI_PREFERENCES) {
+  const root = document.documentElement;
+  const choice = String(prefs.accent || 'system');
+  root.dataset.accent = choice;
+  if (choice === 'system' || !ACCENT_PALETTES[choice]) {
+    root.style.removeProperty('--accent');
+    root.style.removeProperty('--accent-text');
+    return;
+  }
+  const pair = ACCENT_PALETTES[choice][preferredAccentMode(prefs.theme)] || ACCENT_PALETTES[choice].dark;
+  root.style.setProperty('--accent', pair.accent);
+  root.style.setProperty('--accent-text', pair.text);
+}
+
+function syncBootVersion() {
+  const el = $('bootVersion');
+  if (el) el.textContent = CLIENT_VERSION.split('-')[0];
+}
+
 function applyInterfacePreferences({ announce = false } = {}) {
   const prefs = state.uiPreferences || DEFAULT_UI_PREFERENCES;
   document.documentElement.dataset.theme = prefs.theme;
   document.documentElement.dataset.buttonStyle = prefs.buttonStyle;
+  applyAccentPreference(prefs);
   document.querySelectorAll('[data-theme-choice]').forEach(button => {
     const active = button.dataset.themeChoice === prefs.theme;
     button.classList.toggle('active', active);
@@ -175,6 +211,11 @@ function applyInterfacePreferences({ announce = false } = {}) {
   });
   document.querySelectorAll('[data-button-style-choice]').forEach(button => {
     const active = button.dataset.buttonStyleChoice === prefs.buttonStyle;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  });
+  document.querySelectorAll('[data-accent-choice]').forEach(button => {
+    const active = button.dataset.accentChoice === prefs.accent;
     button.classList.toggle('active', active);
     button.setAttribute('aria-pressed', active ? 'true' : 'false');
   });
@@ -949,6 +990,19 @@ function isAdmin() {
     && state.profile?.features?.role === 'admin';
 }
 
+function renderAdminOverview() {
+  if (!isAdmin()) return;
+  const runtime = state.runtimeControlsAdmin?.controls || state.runtimeStatus || {};
+  const provider = state.provider || {};
+  const enabled = ['analysisEnabled', 'searchEnabled', 'liveEnabled'].filter(key => runtime[key] !== false).length;
+  if ($('adminOverviewService')) $('adminOverviewService').textContent = runtime.maintenanceMode ? 'Обслуживание' : 'Работает';
+  if ($('adminOverviewFeatures')) $('adminOverviewFeatures').textContent = enabled + '/3 основных функций';
+  if ($('adminOverviewSource')) $('adminOverviewSource').textContent = provider.plan && provider.plan !== 'UNKNOWN'
+    ? planLabel(provider.plan) + ' · подключён'
+    : state.providerLoaded ? 'Доступен' : 'Проверяется';
+  if ($('adminOverviewVersion')) $('adminOverviewVersion').textContent = CLIENT_VERSION;
+}
+
 function applyAdminVisibility() {
   const admin = isAdmin();
   document.querySelectorAll('[data-admin-only]').forEach(el => {
@@ -962,6 +1016,7 @@ function applyAdminVisibility() {
     badge.setAttribute('aria-hidden', admin ? 'false' : 'true');
     badge.textContent = admin ? '🔐 Администратор' : '';
   }
+  if (admin) renderAdminOverview();
 }
 
 function organizeAdminConsole() {
@@ -1000,15 +1055,15 @@ async function loadAdvancedAdminTools() {
 function renderDataCapabilities() {
   const c = state.dataCapabilities || state.profile?.features?.dataCapabilities || {};
   const features = c.features || {};
-  if ($('dataModeLabel')) $('dataModeLabel').textContent = c.label || (c.mode === 'expanded' ? 'Расширенное покрытие' : 'Стандартное покрытие');
-  if ($('dataModeSummary')) $('dataModeSummary').textContent = c.mode === 'expanded' ? 'Расширенный режим' : 'Стандартный режим';
+  if ($('dataModeLabel')) $('dataModeLabel').textContent = c.mode === 'expanded' ? 'Больше данных' : 'Обычное';
+  if ($('dataModeSummary')) $('dataModeSummary').textContent = c.mode === 'expanded' ? 'Больше данных' : 'Обычное';
   if ($('dataModeRefresh')) $('dataModeRefresh').textContent = features.liveRefresh === false || Number(c.refreshSeconds) === 0
-    ? 'пауза'
-    : Number(c.refreshSeconds || 60) <= 30 ? `${Number(c.refreshSeconds || 60)} сек.` : 'адаптивно';
-  if ($('dataModeLineups')) $('dataModeLineups').textContent = features.lineupsFallback ? 'Расширенно' : 'По доступности';
-  if ($('dataModePlayers')) $('dataModePlayers').textContent = features.playerStats ? 'Расширенно' : 'По доступности';
-  if ($('dataModeOdds')) $('dataModeOdds').textContent = features.liveOdds ? 'Расширенно' : 'По доступности';
-  if ($('dataModeNote')) $('dataModeNote').textContent = c.note || 'Покрытие зависит от турнира и доступности источника данных.';
+    ? 'временно приостановлены'
+    : Number(c.refreshSeconds || 60) <= 30 ? 'частые' : 'автоматические';
+  if ($('dataModeLineups')) $('dataModeLineups').textContent = features.lineupsFallback ? 'Чаще доступны' : 'По наличию';
+  if ($('dataModePlayers')) $('dataModePlayers').textContent = features.playerStats ? 'Чаще доступны' : 'По наличию';
+  if ($('dataModeOdds')) $('dataModeOdds').textContent = features.liveOdds ? 'Чаще доступны' : 'По наличию';
+  if ($('dataModeNote')) $('dataModeNote').textContent = 'Доступность зависит от турнира и конкретного матча.';
 }
 
 function planLabel(plan) {
@@ -1224,9 +1279,9 @@ function predictionAdviceLabel(value) {
 function renderProfile() {
   if (!state.profile) return;
   const { user, quota, stats = {} } = state.profile;
-  const profilePlanLabel = $('profileBtn')?.querySelector('span');
-  if (profilePlanLabel) profilePlanLabel.textContent = planLabel(quota.plan);
-  else if ($('profileBtn')) $('profileBtn').textContent = planLabel(quota.plan);
+  const profileButtonLabel = $('profileBtn')?.querySelector('span');
+  if (profileButtonLabel) profileButtonLabel.textContent = 'Профиль';
+  else if ($('profileBtn')) $('profileBtn').textContent = 'Профиль';
   const quotaText = $('quotaText');
   if (quotaText) {
     const showQuota = Number(quota.left) <= 3 || state.profileStale;
@@ -1276,6 +1331,7 @@ function renderProfile() {
   if (state.profile?.features?.runtime) state.runtimeStatus = state.profile.features.runtime;
   renderDataCapabilities();
   applyRuntimeUi();
+  renderAdminOverview();
 }
 
 
@@ -2481,6 +2537,7 @@ function renderRuntimeControls() {
     badge.textContent = 'БД';
     status.textContent = panel.reason || SUPABASE_SCHEMA_HINT;
     revision.textContent = 'схема БД не готова';
+    renderAdminOverview();
     return;
   }
 
@@ -2504,6 +2561,7 @@ function renderRuntimeControls() {
   for (const [id, key] of map) if ($(id)) $(id).checked = Boolean(c[key]);
   if ($('runtimeMessage')) $('runtimeMessage').value = c.message || '';
   renderRuntimeHistory();
+  renderAdminOverview();
 }
 
 async function loadRuntimeControlsAdmin(force = false) {
@@ -3779,6 +3837,7 @@ function renderProvider() {
   if ($('providerOddsMovement')) $('providerOddsMovement').textContent = p.oddsMovementReady ? 'История включена' : 'Экономный режим';
   renderProviderAudit();
   renderExpandedDataReleaseGate();
+  renderAdminOverview();
 }
 
 async function loadProvider() {
@@ -4223,10 +4282,18 @@ function mergeById(first = [], second = [], idKey = 'id') {
   return out;
 }
 
+function setDiscoveryHomeVisibility(visible) {
+  ['searchRecentWrap', 'searchFavoritesWrap', 'searchCompetitionsWrap'].forEach(id => {
+    const el = $(id);
+    if (el) el.hidden = !visible;
+  });
+}
+
 function renderDiscoveryHome() {
   const recentEl = $('searchRecent');
   const favEl = $('searchFavorites');
   const compEl = $('searchCompetitions');
+  setDiscoveryHomeVisibility(!String(state.globalSearch.query || '').trim());
   if (recentEl) {
     const rows = getRecentTeams();
     recentEl.innerHTML = rows.length ? rows.map(x => discoveryTeamCard(x, 'Недавно')).join('') : '<div class="empty compact-empty">Открытые команды появятся здесь.</div>';
@@ -4295,6 +4362,7 @@ function setGlobalSearchMode(mode) {
 function renderGlobalSearch() {
   const query = String(state.globalSearch.query || '').trim();
   const wrap = $('searchResultsWrap'), out = $('searchResults'), meta = $('searchResultsMeta'), status = $('searchStatus');
+  setDiscoveryHomeVisibility(!query);
   const searchButton = $('globalSearchBtn');
   if (searchButton) {
     searchButton.disabled = Boolean(state.globalSearch.loading);
@@ -7684,6 +7752,9 @@ document.querySelectorAll('[data-quick-filter]').forEach(btn => {
 document.querySelectorAll('[data-theme-choice]').forEach(button => {
   button.addEventListener('click', () => saveInterfacePreference('theme', button.dataset.themeChoice || 'system'));
 });
+document.querySelectorAll('[data-accent-choice]').forEach(button => {
+  button.addEventListener('click', () => saveInterfacePreference('accent', button.dataset.accentChoice || 'system'));
+});
 document.querySelectorAll('[data-button-style-choice]').forEach(button => {
   button.addEventListener('click', () => saveInterfacePreference('buttonStyle', button.dataset.buttonStyleChoice || 'soft'));
 });
@@ -7820,6 +7891,7 @@ $('favoriteTeams')?.setAttribute('aria-live', 'polite');
 $('reminderList')?.setAttribute('aria-live', 'polite');
 $('history')?.setAttribute('aria-live', 'polite');
 organizeAdminConsole();
+syncBootVersion();
 applyInterfacePreferences();
 renderFirstRunGuide();
 syncFilterButtons();
