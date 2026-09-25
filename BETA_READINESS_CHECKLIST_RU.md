@@ -109,9 +109,9 @@ Privacy contract:
 - [x] `npm run verify:release`
 - [x] `npm run verify:worker`
 - [x] post-merge Quality на `main` — повторно запущен и пройден
-- [x] production deploy SHA/provenance guard — повторно подтверждён на актуальном `main` SHA `5519b98049ae6a74212897cf261ef2d8bc550a5c`
-- [x] active release identity verification — `6.120.0-rc144 / RC144`, 100% traffic на Cloudflare version `8c922e24-4e4d-431a-9515-47d649606f15`
-- [x] production smoke — 25 проверок пройдены на актуальном SHA `5519b98049ae6a74212897cf261ef2d8bc550a5c`; подтверждены `database=supabase`, `monetization=paused`, `DEV_MODE=false` и operational Telegram/Mini App/AI/search/LIVE
+- [x] production deploy SHA/provenance guard — latest successful `Deploy Production` после каждого merge обязан подтвердить `DEPLOY_SHA == current main`; точный SHA фиксируется в соответствующем GitHub Actions run, поэтому checklist не привязан к устаревающему docs-only SHA.
+- [x] active release identity verification — `6.120.0-rc144 / RC144`; RC120 подтверждает активную Cloudflare version на 100% traffic после каждого production deploy. Version ID создаётся заново на deploy и берётся из latest successful run.
+- [x] production smoke — 25 проверок проходят на latest deployed `main`; подтверждаются `database=supabase`, `monetization=paused`, `DEV_MODE=false` и operational Telegram/Mini App/AI/search/LIVE.
 
 
 ## 7. Pre-Beta Operational Validation
@@ -134,11 +134,11 @@ Privacy contract:
 
 Полный ручной сценарий, LIVE protocol, quota gate, cohort и feedback runbook: `PRE_BETA_VALIDATION_RU.md`.
 
-### Повторная валидация актуального main — 25 сентября 2026, 15:18 UTC
+### Снимок повторной валидации — 25 сентября 2026, 15:18 UTC
 
-- [x] Текущий `main`: `5519b98049ae6a74212897cf261ef2d8bc550a5c`.
+- [x] На момент этого validation snapshot `main`: `5519b98049ae6a74212897cf261ef2d8bc550a5c`. Последующие docs-only merges повторно проходят тот же Quality/deploy provenance gate.
 - [x] Quality на этом SHA: 756/756 tests, audit/security/lint/check/release/worker — PASS.
-- [x] Cloudflare production version: `8c922e24-4e4d-431a-9515-47d649606f15`; release identity и 100% traffic postcondition — PASS.
+- [x] Cloudflare production version на этом snapshot: `8c922e24-4e4d-431a-9515-47d649606f15`; release identity и 100% traffic postcondition — PASS. Актуальный version ID берётся из latest successful `Deploy Production`.
 - [x] Post-deploy smoke на production: 25/25.
 - [x] Supabase project `ACTIVE_HEALTHY`; schema fingerprint `c2c22ec25aacfcf1b9938b0850cebf49`.
 - [x] `backend_security_contract()` и `backend_default_acl_contract()`: `ok=true`, violations отсутствуют.
