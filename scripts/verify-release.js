@@ -215,7 +215,7 @@ if (!worker.includes("historyAnalysisCacheFix: 'enabled'") || !worker.includes("
 if (!app.includes('function renderAiCenterSummary') || !app.includes('matchAiSnapshotHtml')) failures.push('RC44 analyzed-match UI is missing');
 
 if (!worker.includes("aiLiveCoach: 'enabled'") || !worker.includes("prematchLiveComparison: 'enabled'") || !worker.includes("liveScenarioGuard: 'enabled'")) failures.push('RC44 AI LIVE health contract is missing');
-if (!worker.includes('function buildLiveAiCoach') || !worker.includes('v10-ai-live-coach')) failures.push('RC44 AI LIVE engine/cache is missing');
+if (!worker.includes('function buildLiveAiCoach') || !worker.includes('v11-freshness-trust-rc139')) failures.push('RC44 AI LIVE engine/current cache contract is missing');
 if (!app.includes('function liveAiCoachHtml') || !app.includes('d.liveAiCoach')) failures.push('RC44 AI LIVE interface is missing');
 
 if (!worker.includes("aiMatchRanking: 'enabled'") || !worker.includes("analyzedSkipLane: 'enabled'")) failures.push('RC45 AI ranking contract is missing');
