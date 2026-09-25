@@ -15,6 +15,7 @@ import { createSupabaseClient } from './supabase-client.js';
 import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
 import { applyFeatureFreshness, applyFeatureFreshnessMap } from './data-freshness.js';
 import { assessExpectedGoalsQuality, sanitizeExpectedGoalsForDisplay, statisticsForTrustedExpectedGoals } from './xg-quality.js';
+import { annotateStatisticsReliability, assessMatchStatisticsQuality, sanitizeStatisticsForDisplay, statisticsForTrustedAnalytics } from './statistics-quality.js';
 import { annotateEventReliability, assessMatchEventQuality, eventsForTrustedAnalytics, sanitizeEventsForDisplay } from './event-quality.js';
 import { enrichFixtureAbsencesWithSeasonRole, normalizeFixtureAbsences } from './availability.js';
 import { annotateLineupReliability, assessLineupQuality, assessMatchLineups } from './lineup-quality.js';
@@ -109,11 +110,11 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.117.0-rc141';
+const APP_VERSION = '6.118.0-rc142';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc141';
-const RC_NAME = 'RC141';
+const RELEASE_CHANNEL = 'rc142';
+const RC_NAME = 'RC142';
 const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.18; для существующей примените все доступные миграции из supabase/migrations до v6.19.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49';
@@ -19390,7 +19391,7 @@ async function apiMatchCenter(request, cfg) {
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'Номер матча обязателен.' }, 400);
 
   // Shared across all users. During LIVE it expires after 60 seconds.
-  const baseCacheKey = `match-center:${fixtureId}:v13-event-quality-rc141`;
+  const baseCacheKey = `match-center:${fixtureId}:v14-statistics-quality-rc142`;
   const cached = await getCache(baseCacheKey, cfg);
   if (cached) {
     const cachedMode = String(cached.mode || 'upcoming');
@@ -19576,7 +19577,14 @@ async function apiMatchCenter(request, cfg) {
 
   const refreshSeconds = live && runtimeControlsSnapshot().liveEnabled !== false ? providerBudgetProfile().liveRefreshSeconds : 0;
   const rawFormattedStatistics = formatLiveStatistics(statistics, homeId, awayId);
+  const statisticsQuality = assessMatchStatisticsQuality(rawFormattedStatistics, { statisticsMeta:featureMeta.statistics || {}, mode:centerMode });
   const xgQuality = assessExpectedGoalsQuality(rawFormattedStatistics, { statisticsMeta:featureMeta.statistics || {}, mode:centerMode });
+  if (featureMeta.statistics || statisticsQuality.observed) {
+    featureMeta.statistics = annotateStatisticsReliability(
+      featureMeta.statistics || { feature:'statistics', provider:'api-football', source:'embedded', ageSeconds:0 },
+      statisticsQuality,
+    );
+  }
   const rawFormattedEvents = formatLiveEvents(events, homeId, awayId);
   const eventQuality = assessMatchEventQuality(rawFormattedEvents, { eventsMeta:featureMeta.events || {}, mode:centerMode, elapsed });
   if (featureMeta.events || eventQuality.observed) {
@@ -19585,12 +19593,12 @@ async function apiMatchCenter(request, cfg) {
       eventQuality,
     );
   }
-  const trustedStatistics = featureMeta.statistics?.confidenceBearing === false ? [] : statistics;
   const trustedPlayerRows = featureMeta.players?.confidenceBearing === false ? [] : playerRows;
   const trustedInjuryRows = featureMeta.injuries?.confidenceBearing === false ? [] : injuryRows;
-  const formattedStatistics = formatLiveStatistics(trustedStatistics, homeId, awayId);
-  const publicStatistics = sanitizeExpectedGoalsForDisplay(formattedStatistics, xgQuality);
-  const analyticalStatistics = statisticsForTrustedExpectedGoals(publicStatistics, xgQuality);
+  const statisticsForDisplay = sanitizeStatisticsForDisplay(rawFormattedStatistics, statisticsQuality);
+  const publicStatistics = sanitizeExpectedGoalsForDisplay(statisticsForDisplay, xgQuality);
+  const comparativeStatistics = statisticsForTrustedAnalytics(publicStatistics, statisticsQuality);
+  const analyticalStatistics = statisticsForTrustedExpectedGoals(comparativeStatistics, xgQuality);
   const playerLeaders = formatPlayerLeaders(trustedPlayerRows, homeId, awayId);
   const lineups = formatLineups(lineupRows, homeId, awayId);
   const lineupQuality=assessMatchLineups(lineups);
@@ -19602,13 +19610,13 @@ async function apiMatchCenter(request, cfg) {
   }
   const lineupSourceTrusted = featureMeta.lineups?.stale !== true && featureMeta.lineups?.provenanceState !== 'unknown';
   const absences = formatAbsences(trustedInjuryRows, homeId, awayId, lineupSourceTrusted ? lineups : null);
-  const pressure = (live || finished) && featureMeta.statistics?.confidenceBearing !== false ? livePressure(publicStatistics) : null;
+  const pressure = (live || finished) ? livePressure(analyticalStatistics) : null;
   const formattedEvents = sanitizeEventsForDisplay(rawFormattedEvents, eventQuality);
   const analyticalEvents = eventsForTrustedAnalytics(rawFormattedEvents, eventQuality);
   if (finished) await settlePredictionsFromFixtures([fixture], cfg).catch(() => null);
   const postMatchPrediction = finished ? await loadModelPredictionForFixture(fixtureId, cfg) : null;
   const postMatchReview = finished ? buildPostMatchReview({prediction:postMatchPrediction,fixture,statistics:analyticalStatistics,events:analyticalEvents,homeName,awayName}) : null;
-  if (finished && fixture.fixture?.referee) await saveRefereeMatchHistory({ fixtureId, referee:fixture.fixture.referee, kickoffAt:fixture.fixture?.date || null, leagueId:Number(fixture.league?.id || 0), events:analyticalEvents, statistics:publicStatistics }, cfg).catch(() => false);
+  if (finished && fixture.fixture?.referee) await saveRefereeMatchHistory({ fixtureId, referee:fixture.fixture.referee, kickoffAt:fixture.fixture?.date || null, leagueId:Number(fixture.league?.id || 0), events:analyticalEvents, statistics:analyticalStatistics }, cfg).catch(() => false);
   const smartInsights = (live || finished) ? buildSmartMatchInsights({
     statistics: analyticalStatistics,
     events: analyticalEvents,
@@ -19664,6 +19672,7 @@ async function apiMatchCenter(request, cfg) {
     events: formattedEvents,
     eventQuality,
     statistics: publicStatistics,
+    statisticsQuality,
     xgQuality,
     livePressure: pressure,
     smartInsights,
@@ -19677,7 +19686,7 @@ async function apiMatchCenter(request, cfg) {
     quotaMode: providerPublicBudgetMode(),
     availability: {
       events: Boolean(eventQuality?.confidenceBearing && formattedEvents.length > 0),
-      statistics: Boolean(featureMeta.statistics?.confidenceBearing && publicStatistics?.items?.length > 0),
+      statistics: Boolean(statisticsQuality?.confidenceBearing),
       xg: Boolean(xgQuality?.confidenceBearing),
       lineups: lineupQuality.anyPublished,
       lineupsTrusted: Boolean(featureMeta.lineups?.confidenceBearing),
@@ -21187,6 +21196,7 @@ export default {
         freshnessAwareDataTrust: 'enabled',
         xgSemanticQualityGuard: 'enabled',
         eventSemanticQualityGuard: 'enabled',
+        statisticsSemanticQualityGuard: 'enabled',
         footballDataScorersFallback: cfg.footballDataToken ? 'enabled' : 'available_when_configured',
         footballDataStandingsFallback: cfg.footballDataToken ? 'enabled' : 'available_when_configured',
         theOddsApiOddsFallback: cfg.theOddsApiKey ? 'enabled' : 'available_when_configured',
