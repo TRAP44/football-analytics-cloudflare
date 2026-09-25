@@ -5569,11 +5569,29 @@ function playerMetricText(p) {
   return bits.join(' · ') || '—';
 }
 
+function absenceKindLabel(row = {}) {
+  if (row.categoryLabel) return String(row.categoryLabel);
+  return ({ suspension:'Дисквалификация', injury:'Травма', illness:'Болезнь', other:'Другая причина' })[String(row.category || '')] || 'Потеря состава';
+}
+
+function absenceStatusLabel(row = {}) {
+  if (row.statusLabel) return String(row.statusLabel);
+  return row.status === 'doubtful' ? 'Под вопросом' : '';
+}
+
 function liveAbsencesHtml(absences, match) {
   const side = (title, rows = []) => `<div class="absence-live-side"><h3>${escapeHtml(title)}</h3>${rows.length
-    ? rows.map(x => `<div class="absence-live-row"><strong>${escapeHtml(x.name || 'Игрок')}</strong><span>${escapeHtml(publicText(x.reason || x.type || 'Недоступен'))}</span></div>`).join('')
-    : '<p class="muted">Нет подтверждённых данных.</p>'}</div>`;
-  return `<div class="absence-live-grid">${side(match.home?.name || 'Хозяева', absences?.home || [])}${side(match.away?.name || 'Гости', absences?.away || [])}</div>`;
+    ? rows.map(x => {
+      const status=absenceStatusLabel(x);
+      return `<div class="absence-live-row">
+        <div class="absence-live-title"><strong>${escapeHtml(x.name || 'Игрок')}</strong><span class="absence-kind ${escapeHtml(String(x.category || 'other'))}">${escapeHtml(absenceKindLabel(x))}</span></div>
+        <span>${escapeHtml(publicText(x.reason || x.type || status || 'Есть отметка о доступности'))}</span>
+        ${status ? `<small>${escapeHtml(status)}</small>` : ''}
+      </div>`;
+    }).join('')
+    : '<p class="muted">Активных отметок о потерях нет или данные недоступны.</p>'}</div>`;
+  const reconciled=Number(absences?.summary?.resolvedByLineup || 0);
+  return `<div class="absence-live-grid">${side(match.home?.name || 'Хозяева', absences?.home || [])}${side(match.away?.name || 'Гости', absences?.away || [])}</div>${reconciled ? `<p class="tiny">Сверка с опубликованными составами сняла устаревших отметок: ${reconciled}.</p>` : ''}`;
 }
 
 
@@ -5709,12 +5727,22 @@ function centerMarketHtml(d) {
 }
 
 function centerAbsenceSummary(absences, match) {
+  const side = (name, rows = [], summary = {}) => {
+    const total=rows.length;
+    const injury=Number(summary.injury || 0)+Number(summary.illness || 0);
+    const suspension=Number(summary.suspension || 0);
+    const doubtful=Number(summary.doubtful || 0);
+    return `<div>
+      <span>${escapeHtml(name)}</span><strong>${total}</strong><small>активных отметок</small>
+      <p>${injury ? `🚑 ${injury}` : ''}${suspension ? `${injury ? ' · ' : ''}🟥 ${suspension}` : ''}${doubtful ? `${injury || suspension ? ' · ' : ''}❔ ${doubtful}` : ''}</p>
+    </div>`;
+  };
   const hc = absences?.home?.length || 0;
   const ac = absences?.away?.length || 0;
   if (!hc && !ac) return '';
   return `<div class="center-absence-summary">
-    <div><span>${escapeHtml(match.home?.name || 'Хозяева')}</span><strong>${hc}</strong><small>потерь</small></div>
-    <div><span>${escapeHtml(match.away?.name || 'Гости')}</span><strong>${ac}</strong><small>потерь</small></div>
+    ${side(match.home?.name || 'Хозяева', absences?.home || [], absences?.summary?.home || {})}
+    ${side(match.away?.name || 'Гости', absences?.away || [], absences?.summary?.away || {})}
   </div>`;
 }
 
@@ -5953,7 +5981,7 @@ function renderMatchCenter(d) {
 
       ${latestEvents.length ? `<section class="panel"><div class="center-section-title"><div><h2>Последние события</h2><p>Что произошло недавно</p></div></div>${liveEventsHtml(latestEvents)}</section>` : ''}
 
-      ${(d.absences?.home?.length || d.absences?.away?.length) ? `<section class="panel"><div class="center-section-title"><div><h2>🩺 Потери состава</h2><p>Подтверждённые недоступные игроки</p></div></div>${centerAbsenceSummary(d.absences,m)}${liveAbsencesHtml(d.absences,m)}</section>` : ''}
+      ${(d.absences?.home?.length || d.absences?.away?.length) ? `<section class="panel"><div class="center-section-title"><div><h2>🩺 Потери состава</h2><p>Травмы, болезни, дисквалификации и сомнения по данным источника</p></div></div>${centerAbsenceSummary(d.absences,m)}${liveAbsencesHtml(d.absences,m)}</section>` : ''}
 
       <section class="panel coverage-panel">
         <div class="center-section-title"><div><h2>Покрытие и свежесть</h2><p>${d.cached ? 'Данные из сохранённой версии' : 'Свежие данные источника'} · ${dateTime(d.generatedAt)}</p></div></div>
@@ -5987,7 +6015,7 @@ function renderMatchCenter(d) {
         <div class="center-section-title"><div><h2>👥 Составы и схема</h2><p>Стартовые составы, схемы и запасные</p></div></div>
         ${lineupLiveHtml(d.lineups, m)}
       </section>
-      ${(d.absences?.home?.length || d.absences?.away?.length) ? `<section class="panel"><h2>🩺 Недоступные игроки</h2>${liveAbsencesHtml(d.absences,m)}</section>` : ''}
+      ${(d.absences?.home?.length || d.absences?.away?.length) ? `<section class="panel"><h2>🩺 Потери и сомнения</h2>${liveAbsencesHtml(d.absences,m)}</section>` : ''}
     </div>
 
     <div class="center-tab-panel" data-center-panel="players">
@@ -6522,8 +6550,12 @@ function analysisSourceStatus(d) {
 }
 
 function compactAbsence(title, items) {
-  if (!items?.length) return `<div class="squad-block"><div class="squad-title">${escapeHtml(title)}</div><p class="muted">Заявленных потерь нет или данные недоступны.</p></div>`;
-  return `<div class="squad-block"><div class="squad-title">${escapeHtml(title)}</div><ul class="compact-list">${items.slice(0, 10).map(x => `<li><strong>${escapeHtml(x.name)}</strong><span>${escapeHtml([x.reason, x.type].filter(Boolean).map(publicText).join(' · '))}</span></li>`).join('')}</ul></div>`;
+  if (!items?.length) return `<div class="squad-block"><div class="squad-title">${escapeHtml(title)}</div><p class="muted">Активных отметок о потерях нет или данные недоступны.</p></div>`;
+  return `<div class="squad-block"><div class="squad-title">${escapeHtml(title)}</div><ul class="compact-list">${items.slice(0, 10).map(x => {
+    const status=absenceStatusLabel(x);
+    const detail=[absenceKindLabel(x),x.reason || x.type,status].filter(Boolean).map(publicText).join(' · ');
+    return `<li><strong>${escapeHtml(x.name)}</strong><span>${escapeHtml(detail)}</span></li>`;
+  }).join('')}</ul></div>`;
 }
 
 function lineupBlock(title, lineup) {
