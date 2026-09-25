@@ -22,3 +22,28 @@ export function isAdminUser(user, cfg = {}) {
     && user.__developmentIdentity === true
   );
 }
+
+
+export function isTelegramValidatedUser(user) {
+  const userId = Number(user?.id || 0);
+  return Number.isSafeInteger(userId) && userId > 0 && user?.__telegramValidated === true;
+}
+
+export function isClosedBetaUser(user, cfg = {}) {
+  const userId = Number(user?.id || 0);
+  if (!Number.isSafeInteger(userId) || userId <= 0) return false;
+  if (isAdminUser(user, cfg)) return false;
+  if (!isTelegramValidatedUser(user)) return false;
+  return (cfg.betaTelegramIds || []).some(id => Number(id) === userId);
+}
+
+export function closedBetaAccessDecision(user, cfg = {}) {
+  if (isAdminUser(user, cfg)) {
+    return { allowed: true, adminBypass: true, betaParticipant: false };
+  }
+  const betaParticipant = isClosedBetaUser(user, cfg);
+  if (!cfg.betaAccessEnabled) {
+    return { allowed: true, adminBypass: false, betaParticipant };
+  }
+  return { allowed: betaParticipant, adminBypass: false, betaParticipant };
+}
