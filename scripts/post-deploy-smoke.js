@@ -321,6 +321,8 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
   if (!healthResponse.ok || health?.ok !== true) throw new Error('Health endpoint is not healthy.');
   if (health.releaseCandidate !== expectedReleaseCandidate) throw new Error(`Expected ${expectedReleaseCandidate}, received ${health.releaseCandidate || 'unknown'}.`);
   if (health.devMode !== false) throw new Error('Production deployment exposes DEV_MODE=true.');
+  if (health.database !== 'supabase') throw new Error('Production deployment must use Supabase persistence.');
+  if (health.monetization !== 'paused') throw new Error('Production deployment must keep MONETIZATION_ENABLED=false before beta.');
   if (health?.readiness?.ok !== true) throw new Error('Legacy health endpoint must embed a passing readiness snapshot.');
   for (const flag of REQUIRED_HEALTH_FLAGS) {
     if (health[flag] !== 'enabled') throw new Error(`Health flag ${flag} is not enabled.`);
@@ -357,6 +359,12 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
   const publicStatus = await jsonBody(publicStatusResponse, 'Public status endpoint');
   if (!publicStatusResponse.ok || publicStatus?.version !== expectedVersion || publicStatus?.releaseCandidate !== expectedReleaseCandidate) {
     throw new Error('Public status endpoint does not match the deployed release.');
+  }
+  const requiredServices = ['telegram','miniApp','aiAnalysis','search','live'];
+  for (const service of requiredServices) {
+    if (publicStatus?.services?.[service] !== 'operational') {
+      throw new Error(`Public status service ${service} must be operational before beta.`);
+    }
   }
 
   for (const path of ['/privacy.html','/terms.html','/status.html']) {
