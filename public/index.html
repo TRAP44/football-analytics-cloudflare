@@ -13,7 +13,7 @@
     <div class="boot-card">
       <div class="boot-orbit" aria-hidden="true"><i></i><i></i><i></i></div>
       <div class="boot-logo"><span>AI</span></div>
-      <div class="boot-kicker">FM AI · ФУТБОЛЬНЫЙ ИНСТРУКТОР · версия 6.103</div>
+      <div class="boot-kicker">FM AI · ФУТБОЛЬНЫЙ ИНСТРУКТОР · версия <span id="bootVersion">6.120.0</span></div>
       <h1 id="bootTitle">Запускаю FM AI</h1>
       <p id="bootText">Готовлю глобальный поиск и AI-разбор матча…</p>
       <div class="boot-feature-row" aria-hidden="true"><span>🔎 Поиск</span><span>🧠 AI-вердикт</span><span>🧑‍⚖️ Контекст</span></div>
@@ -232,6 +232,7 @@
 
       <section id="profileView" class="view">
         <div class="panel profile-panel">
+          <span class="profile-zone-kicker">ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ</span>
           <div id="avatar" class="avatar">⚽</div>
           <h2 id="profileName">Профиль</h2>
           <p id="profileUsername" class="muted"></p>
@@ -260,22 +261,22 @@
 
 
         <details class="profile-data-details">
-          <summary><span><strong>О данных и возможностях</strong><small>Покрытие матчей и доступность статистики</small></span><b id="dataModeSummary">Стандартный режим</b></summary>
+          <summary><span><strong>Доступность данных</strong><small>Что обычно доступно по матчам</small></span><b id="dataModeSummary">Обычное</b></summary>
         <section class="panel data-mode-panel">
           <div class="section-head profile-section-head">
             <div>
-              <h2>⚽ Покрытие футбольных данных</h2>
-              <p>Пользователь видит только режим сервиса — технические лимиты скрыты.</p>
+              <h2>⚽ Данные по матчам</h2>
+              <p>Составы, статистика и коэффициенты доступны не для всех турниров.</p>
             </div>
           </div>
           <div class="provider-status-grid public-data-grid">
-            <div><span>Режим</span><strong id="dataModeLabel">Стандартное покрытие</strong></div>
-            <div><span>Обновление матча</span><strong id="dataModeRefresh">адаптивно</strong></div>
-            <div><span>Составы</span><strong id="dataModeLineups">По доступности</strong></div>
-            <div><span>Статистика игроков</span><strong id="dataModePlayers">По доступности</strong></div>
-            <div><span>Коэффициенты во время матча</span><strong id="dataModeOdds">По доступности</strong></div>
+            <div><span>Объём</span><strong id="dataModeLabel">Обычное</strong></div>
+            <div><span>Обновления</span><strong id="dataModeRefresh">автоматические</strong></div>
+            <div><span>Составы</span><strong id="dataModeLineups">По наличию</strong></div>
+            <div><span>Игроки</span><strong id="dataModePlayers">По наличию</strong></div>
+            <div><span>Коэффициенты</span><strong id="dataModeOdds">По наличию</strong></div>
           </div>
-          <p id="dataModeNote" class="tiny">Покрытие зависит от турнира и доступности данных источника.</p>
+          <p id="dataModeNote" class="tiny">Доступность зависит от турнира и конкретного матча.</p>
         </section>
         </details>
 
@@ -295,6 +296,17 @@
                 <button type="button" class="theme-option" data-theme-choice="light" aria-pressed="false"><i class="theme-preview light"></i><span>Белый</span></button>
                 <button type="button" class="theme-option" data-theme-choice="ocean" aria-pressed="false"><i class="theme-preview ocean"></i><span>Океан</span></button>
               </div>
+            </fieldset>
+            <fieldset class="appearance-fieldset">
+              <legend>Акцентный цвет</legend>
+              <div class="accent-options" role="radiogroup" aria-label="Акцентный цвет">
+                <button type="button" class="accent-option" data-accent-choice="system" aria-pressed="false"><i class="accent-swatch system"></i><span>Как в теме</span></button>
+                <button type="button" class="accent-option" data-accent-choice="green" aria-pressed="false"><i class="accent-swatch green"></i><span>Зелёный</span></button>
+                <button type="button" class="accent-option" data-accent-choice="blue" aria-pressed="false"><i class="accent-swatch blue"></i><span>Синий</span></button>
+                <button type="button" class="accent-option" data-accent-choice="violet" aria-pressed="false"><i class="accent-swatch violet"></i><span>Фиолетовый</span></button>
+                <button type="button" class="accent-option" data-accent-choice="amber" aria-pressed="false"><i class="accent-swatch amber"></i><span>Янтарный</span></button>
+              </div>
+              <small class="appearance-help">Оттенок подбирается отдельно для светлого и тёмного фона, чтобы сохранить читаемость.</small>
             </fieldset>
             <fieldset class="appearance-fieldset">
               <legend>Форма кнопок</legend>
@@ -346,11 +358,18 @@
         </section>
 
         <section class="panel admin-console" data-admin-only hidden>
-          <div class="section-head profile-section-head">
+          <div class="admin-zone-heading">
+            <span>АДМИНИСТРИРОВАНИЕ</span>
             <div>
-              <h2>🛠 Администрирование</h2>
-              <p>Доступно только администратору.</p>
+              <h2>Состояние и управление</h2>
+              <p>Профиль пользователя выше; служебные инструменты собраны отдельно.</p>
             </div>
+          </div>
+          <div class="admin-system-overview" aria-label="Краткое состояние системы">
+            <div><span>Сервис</span><strong id="adminOverviewService">Проверяется</strong></div>
+            <div><span>Функции</span><strong id="adminOverviewFeatures">—</strong></div>
+            <div><span>Данные</span><strong id="adminOverviewSource">Проверяется</strong></div>
+            <div><span>Версия</span><strong id="adminOverviewVersion">—</strong></div>
           </div>
           <div class="admin-console-actions">
             <button type="button" data-admin-target="runtimeControlsPanel"><span>🧯</span><strong>Функции</strong><small>Включить или остановить</small></button>
