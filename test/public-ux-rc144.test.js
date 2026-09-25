@@ -89,3 +89,29 @@ test('Telegram mobile UX includes safe areas, four-item navigation and touch tar
   assert.match(css, /\.center-tabs-wrap,[\s\S]*\.analysis-tabs[\s\S]*position:\s*sticky/);
   assert.match(html, /enterkeyhint="search"/);
 });
+
+
+test('normal user journey keeps search, matches, history, favorites and settings reachable', () => {
+  assert.match(html, /id="navSearch" class="nav-item active"/);
+  assert.match(html, /id="navMatches" class="nav-item"/);
+  assert.match(html, /id="navHistory" class="nav-item"/);
+  assert.match(html, /id="navProfile" class="nav-item"/);
+  assert.match(app, /\$\('navHistory'\)\.addEventListener/);
+  assert.match(app, /async function openProfileView\(\)/);
+  const profileOpen = functionBody('openProfileView', 'releaseStateLabel');
+  assert.match(profileOpen, /loadFavorites\(\)/);
+  assert.match(profileOpen, /loadReminders\(\)/);
+  assert.match(app, /data-team-id=/);
+  assert.match(html, /id="favoriteTeams"/);
+  assert.match(html, /id="reminderList"/);
+});
+
+test('admin journey keeps operational tools gated without hiding the user profile', () => {
+  assert.match(html, /id="adminRoleBadge"[^>]*data-admin-only hidden/);
+  assert.match(html, /class="panel admin-console" data-admin-only hidden/);
+  assert.match(html, /id="modelQualityRefreshBtn"/);
+  assert.match(app, /if \(isAdmin\(\)\) \{/);
+  assert.match(app, /loadProvider\(\)/);
+  assert.match(app, /loadRuntimeControlsAdmin\(false\)/);
+  assert.match(app, /function applyAdminVisibility\(\)/);
+});
