@@ -1,6 +1,6 @@
 # Beta Expansion & Data Coverage Decision
 
-Дата снимка: 2026-09-25  
+Дата снимка: 2026-09-26  
 Источник истины: текущий `main`, `closed_beta_v1`, существующий `ops_events` / Beta Dashboard.
 
 ## Статус входа в этап
@@ -9,12 +9,14 @@
 
 Предыдущий этап **Closed Beta Launch & Evidence-Based Optimization** считается завершённым только когда система видит достаточно реальных verified beta-данных и разрешает контролируемое расширение когорты.
 
-На текущем production snapshot:
+На текущем production snapshot (проверка Supabase после merge gate):
 
 - verified beta users: **0**;
-- verified beta events: **0**;
+- `closed_beta_v1` rows за последние 14 дней: **0**;
 - verified beta feedback: **0**;
-- подтверждённый provider quota probe: **0**.
+- подтверждённый provider quota probe: **0**;
+- после merge commit `c8ad8c6b9f6ad492e59aec5d588025732b18a32b` client/beta telemetry не поступала; были только production-monitor события;
+- за предыдущие 14 дней есть **45** `FOOTBALL_RATE_LIMIT_BODY` сигналов, но без verified coverage sample это ещё не основание менять provider.
 
 Поэтому реальное расширение когорты сейчас запрещено.
 
@@ -22,9 +24,11 @@
 
 Решение использует только существующий privacy-safe beta-контур. Новый analytics pipeline не создаётся.
 
+Важно: первоначальная закрытая когорта определена как Beta-01/Beta-02. Поэтому первый expansion gate требует 2 уникальных verified beta users, а не 5. Требование 5 пользователей до разрешения самого расширения создавало бы логический deadlock: стартовую когорту нельзя расширить, пока она уже не расширена.
+
 Минимальная доказательная база перед расширением:
 
-- не менее **5** verified beta users;
+- не менее **2** verified beta users из исходной когорты Beta-01/Beta-02;
 - не менее **7** принятых server-side beta session starts;
 - не менее **2** полностью пройденных последовательных journeys;
 - не менее **3** timing samples для search;
@@ -80,4 +84,4 @@
 
 **BETA HOLD — FIXES REQUIRED**
 
-Следующее фактическое действие — получить реальные verified beta sessions от первоначальной маленькой когорты. После этого Dashboard автоматически пересчитает expansion gate и data coverage decision.
+Следующее фактическое действие — получить реальные verified beta sessions от Beta-01/Beta-02. Для первого решения об expansion нужны оба verified пользователя, суммарно не менее 7 принятых `BOOT_OK`, минимум 2 полных journeys, по 3 timing samples для search/match/AI и не менее 10 coverage samples. После этого Dashboard автоматически пересчитает expansion gate и data coverage decision.

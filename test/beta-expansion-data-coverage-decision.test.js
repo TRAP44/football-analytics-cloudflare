@@ -15,7 +15,8 @@ function block(source,start,end){
 
 test('beta expansion is fail-closed until real verified evidence is sufficient',()=>{
   const decision=block(worker,'function betaExpansionDecision','function buildBetaIssueGroups');
-  assert.match(decision,/verifiedUsers:\{required:5/);
+  assert.match(decision,/verifiedUsers:\{required:2,actual:betaUsers,pass:betaUsers>=2\}/);
+  assert.doesNotMatch(decision,/verifiedUsers:\{required:5/);
   assert.match(decision,/verifiedSessionStarts:\{required:7/);
   assert.match(decision,/fullJourneys:\{required:2/);
   assert.match(decision,/searchTimingSamples:\{required:3/);

@@ -14506,7 +14506,7 @@ function betaExpansionDecision({
     ai:Number(timings?.ai?.samples || 0),
   };
   const requirements={
-    verifiedUsers:{required:5,actual:betaUsers,pass:betaUsers>=5},
+    verifiedUsers:{required:2,actual:betaUsers,pass:betaUsers>=2},
     verifiedSessionStarts:{required:7,actual:sessionStarts,pass:sessionStarts>=7},
     fullJourneys:{required:2,actual:fullJourneys,pass:fullJourneys>=2},
     searchTimingSamples:{required:3,actual:coreTimingSamples.search,pass:coreTimingSamples.search>=3},
