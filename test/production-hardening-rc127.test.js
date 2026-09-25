@@ -12,10 +12,10 @@ const app=fs.readFileSync('public/app.js','utf8');
 
 test('RC136 has a single production identity while preserving RC127 hardening',()=>{
   assert.equal(pkg.version,'6.116.0');
-  assert.match(worker,/const APP_VERSION = '6\.115\.0-rc139'/);
+  assert.match(worker,/const APP_VERSION = '6\.116\.0-rc140'/);
   assert.match(worker,/const RC_NAME = 'RC140'/);
-  assert.match(app,/const CLIENT_VERSION = '6\.115\.0-rc139'/);
-  assert.match(deploy,/RELEASE_VERSION: "6\.115\.0-rc139"/);
+  assert.match(app,/const CLIENT_VERSION = '6\.116\.0-rc140'/);
+  assert.match(deploy,/RELEASE_VERSION: "6\.116\.0-rc140"/);
 });
 
 test('RC127 atomically reserves and refunds analysis quota',()=>{
