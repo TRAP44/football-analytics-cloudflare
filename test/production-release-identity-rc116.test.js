@@ -6,7 +6,7 @@ const workflow = fs.readFileSync('.github/workflows/deploy-production.yml', 'utf
 const verifier = fs.readFileSync('scripts/verify-release.js', 'utf8');
 
 test('RC116 defines one production release identity for deployment and smoke', () => {
-  assert.match(workflow, /RELEASE_VERSION: "6\.110\.0-rc134"/);
+  assert.match(workflow, /RELEASE_VERSION: "6\.111\.0-rc135"/);
   assert.match(
     workflow,
     /command: deploy --keep-vars --message "release=\$\{\{ env\.RELEASE_VERSION \}\} sha=\$\{\{ env\.DEPLOY_SHA \}\}"/

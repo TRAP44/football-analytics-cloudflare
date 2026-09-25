@@ -86,7 +86,7 @@ const worker = fs.readFileSync('src/worker.js', 'utf8');
 
 test('RC134 both Match Center and AI analysis reconcile absences against lineups', () => {
   assert.match(worker, /const absences = formatAbsences\(injuryRows, homeId, awayId, lineups\)/);
-  assert.match(worker, /const absences = formatAbsences\(injuries, homeId, awayId, lineups\)/);
+  assert.match(worker, /const absences = enrichFixtureAbsencesWithSeasonRole\(formatAbsences\(injuries, homeId, awayId, lineups\), \{ homePlayerStats, awayPlayerStats \}\)/);
   assert.match(worker, /return normalizeFixtureAbsences\(rows, \{ homeId, awayId, lineups \}\)/);
 });
 
@@ -133,9 +133,9 @@ test('RC134 UI has distinct category badges without introducing a new API reques
 });
 
 
-test('RC134 is part of the release health contract', () => {
+test('RC134 feature remains part of the RC135 release health contract', () => {
   assert.match(worker, /structuredAvailability: 'enabled'/);
-  assert.match(worker, /const APP_VERSION = '6\.110\.0-rc134'/);
-  assert.match(worker, /const RC_NAME = 'RC134'/);
-  assert.match(app, /const CLIENT_VERSION = '6\.110\.0-rc134'/);
+  assert.match(worker, /const APP_VERSION = '6\.111\.0-rc135'/);
+  assert.match(worker, /const RC_NAME = 'RC135'/);
+  assert.match(app, /const CLIENT_VERSION = '6\.111\.0-rc135'/);
 });
