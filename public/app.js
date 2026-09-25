@@ -1,6 +1,6 @@
-const CLIENT_VERSION = '6.117.0-rc141';
+const CLIENT_VERSION = '6.118.0-rc142';
 const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc141';
+const CLIENT_RELEASE_CHANNEL = 'rc142';
 const SUPABASE_SCHEMA_HINT = 'проверьте актуальную схему Supabase (baseline v6.18 / миграции до v6.19)';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
@@ -5674,6 +5674,22 @@ function eventQualityHintHtml(quality = {}) {
   return `<div class="coverage-badge ${limited}">События · ${escapeHtml(label)} · ${escapeHtml(detail)}</div>`;
 }
 
+function statisticsQualityHintHtml(quality = {}) {
+  if (!quality?.state || quality.state === 'unavailable') return '';
+  const label = publicText(quality.label || 'Качество статистики');
+  const issues = Number(quality.invalidCellCount || 0);
+  const partial = Number(quality.partialPairCount || 0);
+  const detail = quality.state === 'verified'
+    ? `сравнимых метрик: ${Number(quality.analyticalRowCount || 0)}`
+    : quality.state === 'sanitized'
+      ? `очищено перед аналитикой · ошибок: ${issues} · неполных пар: ${partial}`
+      : quality.state === 'source_untrusted'
+        ? 'источник не прошёл freshness/provenance guard'
+        : 'некорректные значения исключены';
+  const limited = quality.state === 'verified' ? '' : 'limited';
+  return `<div class="coverage-badge ${limited}">Статистика · ${escapeHtml(label)} · ${escapeHtml(detail)}</div>`;
+}
+
 function centerAllStatsHtml(stats) {
   const items = stats?.items || [];
   if (!items.length) return '<div class="empty compact-empty">Детальная статистика пока недоступна.</div>';
@@ -6023,6 +6039,7 @@ function renderMatchCenter(d) {
       <section class="panel">
         <div class="center-section-title"><div><h2>Ключевые показатели</h2><p>Самые полезные метрики в одном экране</p></div><span class="coverage-badge">${escapeHtml(publicText(d.dataCapabilities?.label || 'Покрытие данных'))}</span></div>
         ${centerKeyStatsHtml(d.statistics)}
+        ${statisticsQualityHintHtml(d.statisticsQuality)}
         ${xgQualityHintHtml(d.xgQuality)}
       </section>
 
@@ -6053,6 +6070,8 @@ function renderMatchCenter(d) {
     <div class="center-tab-panel" data-center-panel="stats">
       <section class="panel">
         <div class="center-section-title"><div><h2>📊 Статистика матча</h2><p>Сравнение команд по доступным показателям</p></div></div>
+        ${statisticsQualityHintHtml(d.statisticsQuality)}
+        ${xgQualityHintHtml(d.xgQuality)}
         ${centerAllStatsHtml(d.statistics)}
       </section>
     </div>
