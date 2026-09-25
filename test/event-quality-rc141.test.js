@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   annotateEventReliability,
   assessMatchEventQuality,
@@ -55,4 +56,25 @@ test('RC141 fails closed when freshness/provenance is not trusted', () => {
   const meta=annotateEventReliability({...trustedMeta,stale:true,confidenceBearing:false,freshnessState:'stale'},quality);
   assert.equal(meta.available,false);
   assert.equal(meta.confidenceBearing,false);
+});
+
+
+const worker = fs.readFileSync('src/worker.js', 'utf8');
+const app = fs.readFileSync('public/app.js', 'utf8');
+
+test('RC141 routes sanitized events into live and post-match analytics', () => {
+  assert.match(worker, /assessMatchEventQuality\(rawFormattedEvents/);
+  assert.match(worker, /sanitizeEventsForDisplay\(rawFormattedEvents, eventQuality\)/);
+  assert.match(worker, /eventsForTrustedAnalytics\(rawFormattedEvents, eventQuality\)/);
+  assert.match(worker, /buildPostMatchReview\(\{prediction:postMatchPrediction,fixture,statistics:analyticalStatistics,events:analyticalEvents/);
+  assert.match(worker, /buildSmartMatchInsights\(\{[\s\S]{0,320}events: analyticalEvents/);
+  assert.match(worker, /buildLiveAiCoach\(\{[\s\S]{0,320}events: analyticalEvents/);
+  assert.match(worker, /eventQuality,/);
+  assert.match(worker, /eventSemanticQualityGuard: 'enabled'/);
+});
+
+test('RC141 exposes event quality in Match Center UI and rolls the cache contract', () => {
+  assert.match(worker, /match-center:\$\{fixtureId\}:v13-event-quality-rc141/);
+  assert.match(app, /function eventQualityHintHtml/);
+  assert.match(app, /eventQualityHintHtml\(d\.eventQuality\)/);
 });

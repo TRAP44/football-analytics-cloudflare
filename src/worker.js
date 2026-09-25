@@ -15,6 +15,7 @@ import { createSupabaseClient } from './supabase-client.js';
 import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
 import { applyFeatureFreshness, applyFeatureFreshnessMap } from './data-freshness.js';
 import { assessExpectedGoalsQuality, sanitizeExpectedGoalsForDisplay, statisticsForTrustedExpectedGoals } from './xg-quality.js';
+import { annotateEventReliability, assessMatchEventQuality, eventsForTrustedAnalytics, sanitizeEventsForDisplay } from './event-quality.js';
 import { enrichFixtureAbsencesWithSeasonRole, normalizeFixtureAbsences } from './availability.js';
 import { annotateLineupReliability, assessLineupQuality, assessMatchLineups } from './lineup-quality.js';
 import { normalizeOpenLigaMatchEvents, normalizeOpenLigaStandings, openLigaCompetition, openLigaMatchDataUrls, openLigaTableUrls } from './providers/openligadb.js';
@@ -17185,20 +17186,30 @@ function translateEvent(type, detail) {
 }
 
 function formatLiveEvents(rows, homeId, awayId) {
-  return (rows || []).map((event, index) => ({
-    id: `${event.time?.elapsed || 0}-${event.time?.extra || 0}-${index}`,
-    minute: Number(event.time?.elapsed || 0),
-    extra: Number(event.time?.extra || 0),
-    teamId: Number(event.team?.id || 0),
-    side: Number(event.team?.id) === Number(homeId) ? 'home' : Number(event.team?.id) === Number(awayId) ? 'away' : '',
-    teamName: event.team?.name || '',
-    player: event.player?.name || '',
-    assist: event.assist?.name || '',
-    type: event.type || '',
-    detail: event.detail || '',
-    label: translateEvent(event.type, event.detail),
-    comments: event.comments || '',
-  })).sort((a, b) => a.minute - b.minute || a.extra - b.extra);
+  return (rows || []).map((event, index) => {
+    const rawMinute = event.time?.elapsed;
+    const rawExtra = event.time?.extra;
+    const minute = rawMinute === null || rawMinute === undefined || rawMinute === '' ? null : Number(rawMinute);
+    const extra = rawExtra === null || rawExtra === undefined || rawExtra === '' ? 0 : Number(rawExtra);
+    return {
+      id: `${Number.isFinite(minute) ? minute : '?'}-${Number.isFinite(extra) ? extra : '?'}-${index}`,
+      minute,
+      extra,
+      teamId: Number(event.team?.id || 0),
+      side: Number(event.team?.id) === Number(homeId) ? 'home' : Number(event.team?.id) === Number(awayId) ? 'away' : '',
+      teamName: event.team?.name || '',
+      player: event.player?.name || '',
+      assist: event.assist?.name || '',
+      type: event.type || '',
+      detail: event.detail || '',
+      label: translateEvent(event.type, event.detail),
+      comments: event.comments || '',
+    };
+  }).sort((a, b) => {
+    const am = Number.isFinite(Number(a.minute)) ? Number(a.minute) : Number.MAX_SAFE_INTEGER;
+    const bm = Number.isFinite(Number(b.minute)) ? Number(b.minute) : Number.MAX_SAFE_INTEGER;
+    return am - bm || Number(a.extra || 0) - Number(b.extra || 0);
+  });
 }
 
 function scoreSnapshot(fixture) {
@@ -19379,7 +19390,7 @@ async function apiMatchCenter(request, cfg) {
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'Номер матча обязателен.' }, 400);
 
   // Shared across all users. During LIVE it expires after 60 seconds.
-  const baseCacheKey = `match-center:${fixtureId}:v12-xg-quality-rc140`;
+  const baseCacheKey = `match-center:${fixtureId}:v13-event-quality-rc141`;
   const cached = await getCache(baseCacheKey, cfg);
   if (cached) {
     const cachedMode = String(cached.mode || 'upcoming');
@@ -19566,9 +19577,16 @@ async function apiMatchCenter(request, cfg) {
   const refreshSeconds = live && runtimeControlsSnapshot().liveEnabled !== false ? providerBudgetProfile().liveRefreshSeconds : 0;
   const rawFormattedStatistics = formatLiveStatistics(statistics, homeId, awayId);
   const xgQuality = assessExpectedGoalsQuality(rawFormattedStatistics, { statisticsMeta:featureMeta.statistics || {}, mode:centerMode });
+  const rawFormattedEvents = formatLiveEvents(events, homeId, awayId);
+  const eventQuality = assessMatchEventQuality(rawFormattedEvents, { eventsMeta:featureMeta.events || {}, mode:centerMode, elapsed });
+  if (featureMeta.events || eventQuality.observed) {
+    featureMeta.events = annotateEventReliability(
+      featureMeta.events || { feature:'events', provider:'api-football', source:'embedded', ageSeconds:0 },
+      eventQuality,
+    );
+  }
   const trustedStatistics = featureMeta.statistics?.confidenceBearing === false ? [] : statistics;
   const trustedPlayerRows = featureMeta.players?.confidenceBearing === false ? [] : playerRows;
-  const trustedEvents = featureMeta.events?.confidenceBearing === false ? [] : events;
   const trustedInjuryRows = featureMeta.injuries?.confidenceBearing === false ? [] : injuryRows;
   const formattedStatistics = formatLiveStatistics(trustedStatistics, homeId, awayId);
   const publicStatistics = sanitizeExpectedGoalsForDisplay(formattedStatistics, xgQuality);
@@ -19585,14 +19603,15 @@ async function apiMatchCenter(request, cfg) {
   const lineupSourceTrusted = featureMeta.lineups?.stale !== true && featureMeta.lineups?.provenanceState !== 'unknown';
   const absences = formatAbsences(trustedInjuryRows, homeId, awayId, lineupSourceTrusted ? lineups : null);
   const pressure = (live || finished) && featureMeta.statistics?.confidenceBearing !== false ? livePressure(publicStatistics) : null;
-  const formattedEvents = formatLiveEvents(trustedEvents, homeId, awayId);
+  const formattedEvents = sanitizeEventsForDisplay(rawFormattedEvents, eventQuality);
+  const analyticalEvents = eventsForTrustedAnalytics(rawFormattedEvents, eventQuality);
   if (finished) await settlePredictionsFromFixtures([fixture], cfg).catch(() => null);
   const postMatchPrediction = finished ? await loadModelPredictionForFixture(fixtureId, cfg) : null;
-  const postMatchReview = finished ? buildPostMatchReview({prediction:postMatchPrediction,fixture,statistics:analyticalStatistics,events:formattedEvents,homeName,awayName}) : null;
-  if (finished && fixture.fixture?.referee) await saveRefereeMatchHistory({ fixtureId, referee:fixture.fixture.referee, kickoffAt:fixture.fixture?.date || null, leagueId:Number(fixture.league?.id || 0), events:formattedEvents, statistics:publicStatistics }, cfg).catch(() => false);
+  const postMatchReview = finished ? buildPostMatchReview({prediction:postMatchPrediction,fixture,statistics:analyticalStatistics,events:analyticalEvents,homeName,awayName}) : null;
+  if (finished && fixture.fixture?.referee) await saveRefereeMatchHistory({ fixtureId, referee:fixture.fixture.referee, kickoffAt:fixture.fixture?.date || null, leagueId:Number(fixture.league?.id || 0), events:analyticalEvents, statistics:publicStatistics }, cfg).catch(() => false);
   const smartInsights = (live || finished) ? buildSmartMatchInsights({
     statistics: analyticalStatistics,
-    events: formattedEvents,
+    events: analyticalEvents,
     pressure,
     score: scoreSnapshot(fixture),
     elapsed,
@@ -19606,7 +19625,7 @@ async function apiMatchCenter(request, cfg) {
   const prematchAnalysis = live ? await getStaleCache(`fixture:${fixtureId}:v13-freshness-trust`, cfg).catch(() => null) : null;
   const liveAiCoach = live ? buildLiveAiCoach({
     statistics: analyticalStatistics,
-    events: formattedEvents,
+    events: analyticalEvents,
     pressure,
     score: scoreSnapshot(fixture),
     elapsed,
@@ -19643,6 +19662,7 @@ async function apiMatchCenter(request, cfg) {
       away: { id: awayId, name: awayName, logo: fixture.teams?.away?.logo || '' },
     },
     events: formattedEvents,
+    eventQuality,
     statistics: publicStatistics,
     xgQuality,
     livePressure: pressure,
@@ -19656,7 +19676,7 @@ async function apiMatchCenter(request, cfg) {
     dataFreshness: featureMeta,
     quotaMode: providerPublicBudgetMode(),
     availability: {
-      events: Boolean(featureMeta.events?.confidenceBearing && formattedEvents.length > 0),
+      events: Boolean(eventQuality?.confidenceBearing && formattedEvents.length > 0),
       statistics: Boolean(featureMeta.statistics?.confidenceBearing && publicStatistics?.items?.length > 0),
       xg: Boolean(xgQuality?.confidenceBearing),
       lineups: lineupQuality.anyPublished,
@@ -21166,6 +21186,7 @@ export default {
         lineupSemanticReliability: 'enabled',
         freshnessAwareDataTrust: 'enabled',
         xgSemanticQualityGuard: 'enabled',
+        eventSemanticQualityGuard: 'enabled',
         footballDataScorersFallback: cfg.footballDataToken ? 'enabled' : 'available_when_configured',
         footballDataStandingsFallback: cfg.footballDataToken ? 'enabled' : 'available_when_configured',
         theOddsApiOddsFallback: cfg.theOddsApiKey ? 'enabled' : 'available_when_configured',

@@ -5659,6 +5659,21 @@ function xgQualityHintHtml(quality = {}) {
   return `<div class="coverage-badge ${trusted ? '' : 'limited'}">xG · ${escapeHtml(label)} · ${escapeHtml(detail)}</div>`;
 }
 
+function eventQualityHintHtml(quality = {}) {
+  if (!quality?.state || quality.state === 'unavailable') return '';
+  const label = publicText(quality.label || 'Качество событий');
+  const issues = Number(quality.rejectedCount || 0) + Number(quality.duplicateCount || 0) + Number(quality.unknownSideCount || 0);
+  const detail = quality.state === 'verified'
+    ? `проверено событий: ${Number(quality.displayCount || 0)}`
+    : quality.state === 'sanitized'
+      ? `очищено перед аналитикой · проблем: ${issues}`
+      : quality.state === 'source_untrusted'
+        ? 'источник не прошёл freshness/provenance guard'
+        : 'некорректные записи исключены';
+  const limited = quality.state === 'verified' ? '' : 'limited';
+  return `<div class="coverage-badge ${limited}">События · ${escapeHtml(label)} · ${escapeHtml(detail)}</div>`;
+}
+
 function centerAllStatsHtml(stats) {
   const items = stats?.items || [];
   if (!items.length) return '<div class="empty compact-empty">Детальная статистика пока недоступна.</div>';
@@ -6011,7 +6026,7 @@ function renderMatchCenter(d) {
         ${xgQualityHintHtml(d.xgQuality)}
       </section>
 
-      ${latestEvents.length ? `<section class="panel"><div class="center-section-title"><div><h2>Последние события</h2><p>Что произошло недавно</p></div></div>${liveEventsHtml(latestEvents)}</section>` : ''}
+      ${latestEvents.length ? `<section class="panel"><div class="center-section-title"><div><h2>Последние события</h2><p>Что произошло недавно</p></div></div>${eventQualityHintHtml(d.eventQuality)}${liveEventsHtml(latestEvents)}</section>` : ''}
 
       ${(d.absences?.home?.length || d.absences?.away?.length) ? `<section class="panel"><div class="center-section-title"><div><h2>🩺 Потери состава</h2><p>Травмы, болезни, дисквалификации и сомнения по данным источника</p></div></div>${centerAbsenceSummary(d.absences,m)}${liveAbsencesHtml(d.absences,m)}</section>` : ''}
 
