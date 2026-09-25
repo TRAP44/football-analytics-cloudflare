@@ -1,12 +1,12 @@
-# QA Release Checklist — v6.115.0 RC139
+# QA Release Checklist — v6.116.0 RC140
 
-## RC139 — Freshness-aware Data Trust
-- Проверить `npm test`, включая `test/data-freshness-rc139.test.js`: stale/non-attributed данные не являются confidence-bearing.
-- Match Center: stale failover не должен питать `livePressure`, `smartInsights`, `liveAiCoach`, live odds и movement.
-- AI analysis: устаревшая линия исключается до probability blend и не сохраняется как новый odds snapshot.
-- Data provenance: API возвращает `freshnessState`, `provenanceState`, `sourceUpdatedAt`, `freshnessLimitSeconds`, `confidenceBearing` и `stale`.
-- Release gate: Worker/client `6.115.0-rc139`, analysis contract `4.13.0-freshness-trust`, cache `v13-freshness-trust`, health/smoke flag `freshnessAwareDataTrust`.
-- Supabase: новых миграций для RC139 нет.
+## RC140 — Provider xG Semantic Quality Guard
+- Проверить `npm test`, включая `test/xg-quality-rc140.test.js`: xG считается confidence-bearing только при полной валидной паре home/away и trusted statistics source.
+- Partial/invalid/untrusted xG не должен участвовать в `smartInsights`, `liveAiCoach` и post-match xG evidence; остальные валидные match statistics продолжают работать.
+- Match Center должен вернуть `xgQuality`, `availability.xg` и не отмечать `availability.statistics=true` при пустом `statistics.items`.
+- UI должен явно показывать статус xG и отличать «подтверждён», «неполный», «отклонён» и «источник не прошёл guard».
+- Release gate: Worker/client `6.116.0-rc140`, Match Center cache `v12-xg-quality-rc140`, health/smoke flag `xgSemanticQualityGuard`.
+- Supabase: новых миграций для RC140 нет; существующая provenance-миграция `v6.19` остаётся обязательной для обновляемой production-базы.
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -23,9 +23,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.114.0`.
-- Worker и client: `6.114.0-rc138`.
-- Release candidate: `RC138`.
+- `package.json` и `package-lock.json`: `6.116.0`.
+- Worker и client: `6.116.0-rc140`.
+- Release candidate: `RC140`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -34,7 +34,7 @@ npm run verify:worker
 Для нового проекта используется только `supabase/baseline/supabase_baseline_v6_18.sql`.
 
 Для существующей базы должны быть применены:
-`supabase/migrations/supabase_migration_v6_9.sql`, `v6_10`, `v6_11`, `v6_11_1`, `v6_12`, `v6_13`, `v6_14`, `v6_15`, `v6_16`, `v6_17`, `v6_18`, `v6_18_1`.
+`supabase/migrations/supabase_migration_v6_9.sql`, `v6_10`, `v6_11`, `v6_11_1`, `v6_12`, `v6_13`, `v6_14`, `v6_15`, `v6_16`, `v6_17`, `v6_18`, `v6_18_1`, `v6_19`.
 
 Проверить:
 - RLS и закрытые backend-only таблицы не открыты для `anon/authenticated`;
