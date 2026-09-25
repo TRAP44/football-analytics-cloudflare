@@ -99,7 +99,8 @@ test('RC139 embedded Match Center data carries provider and fetch provenance', (
 });
 
 test('RC139 excludes stale market data before probability blending and snapshots', () => {
-  assert.match(worker, /const analysisMarket = analysisFeatureMeta\.odds\?\.confidenceBearing === false \? null : market/);
+  assert.match(worker, /analysisFeatureMeta\.odds = annotateOddsReliability/);
+  assert.match(worker, /const analysisMarket = oddsMarketForTrustedAnalytics\(market, oddsQuality\)/);
   assert.match(worker, /blendProbabilitySignals\(\{ market:analysisMarket/);
   assert.match(worker, /if \(analysisMarket\) await saveOddsSnapshot/);
   assert.match(worker, /market:analysisMarket, marketMovement/);
