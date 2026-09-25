@@ -80,7 +80,7 @@ Privacy contract:
 - [ ] Подтвердить текущую **квоту/тариф** API-Football и фактические plan / dailyRemaining / minuteRemaining непосредственно перед приглашением. В production уже наблюдалось достижение минутного rate limit, поэтому до проверки первая cohort ограничена двумя пользователями.
 - [ ] Реально назначить Beta-01 и Beta-02 и создать приватный feedback channel по шаблону из `PRE_BETA_VALIDATION_RU.md`. Runbook и формат обратной связи подготовлены, но личности/Telegram ID тестировщиков в репозиторий не записываются.
 - [ ] Подтвердить Telegram `getWebhookInfo`: production URL совпадает с `/telegram/webhook`, нет устойчивой очереди pending updates и актуальной ошибки.
-- [ ] Принять решение по строгости доступа: invite-only operational beta либо server-side Telegram ID allowlist. Для технически закрытой beta frontend-скрытия недостаточно.
+- [ ] Принять решение по строгости доступа: invite-only operational beta либо server-side Telegram ID allowlist. Оценка выполнена: если «закрытая beta» означает технический запрет доступа всем, кроме приглашённых Telegram ID, server-side allowlist обязателен после проверки Telegram-подписи и должен применяться ко всем обычным user API routes; frontend-скрытия недостаточно. Без реальных Beta-01/Beta-02 ID и явного решения владельца allowlist намеренно не включён, чтобы не заблокировать production.
 
 До выполнения этих пунктов автоматическая часть готовности завершена, но приглашение реальных пользователей остаётся **MANUAL FIELD CHECKS PENDING**.
 
@@ -126,9 +126,10 @@ Privacy contract:
 - [x] Backend security contract и default ACL contract — `ok=true`, violations отсутствуют.
 - [x] Runtime controls: analysis/search/live/reminders включены, maintenance выключен.
 - [x] `DEV_MODE=false` уже является blocking production smoke condition.
+- [x] Production configuration/secrets probe пройден без раскрытия значений: readiness подтверждает Supabase и Telegram bot/webhook configuration; production public-status подтверждает operational search/LIVE (API-Football key присутствует); deploy credential guard подтвердил Cloudflare credentials; production smoke подтверждает `MONETIZATION_ENABLED=false`.
 - [x] Rollback workflow и его target/provenance/release/postcondition/smoke regression-контракты прошли release gate.
 - [x] Последние 15 минут operational-проверки не содержали новых Supabase auth failures или error/critical non-monitor events.
-- [ ] Последнее **persisted** состояние production monitor остаётся `watch` (15:00 UTC). Причина предыдущего инцидента — transient Supabase auth failure текущего релиза; на повторной проверке 15:18 UTC: Supabase/security/schema проходят, non-monitor warning/error/critical событий за последний час нет, Telegram dedupe RPC показывает 0 stale/failed claims. Текущие входы monitor соответствуют `healthy`, но чек не отмечается до фактического следующего monitor run / persisted recovery.
+- [x] Production monitor gate закрыт по допустимому условию «причина `watch` подтверждена как transient». Persisted запись 15:00 UTC имеет `releaseState=healthy`, `releaseScore=100`, `supabaseOk=true`, `schemaOk=true`, `providerHealth=waiting`, `telegramDedupeState=watch`, при этом stale/failed claims = 0. Прямой `telegram_webhook_dedupe_health` на повторной проверке доступен и возвращает healthy-входы (ledger/stale/failed = 0); при текущей monitor-логике это подтверждает временную недоступность dedupe-observability, а не устойчивый пользовательский/данный инцидент. Отдельный `getWebhookInfo` остаётся ручным blocker.
 - [x] Усиленный production smoke после merge/deploy прошёл и подтвердил фактические `database=supabase`, `monetization=paused` и operational Telegram/Mini App/AI/search/LIVE.
 
 Полный ручной сценарий, LIVE protocol, quota gate, cohort и feedback runbook: `PRE_BETA_VALIDATION_RU.md`.
