@@ -14245,7 +14245,7 @@ async function apiClientTelemetry(request, cfg, user) {
     if (memory.clientTelemetryDedupe.size > 1500) pruneMemoryState();
   }
 
-  const betaParticipant=isClosedBetaUser(user,cfg);
+  const betaParticipant=isClosedBetaUser(user, cfg);
   const betaSubject=betaParticipant ? await closedBetaTelemetrySubject(user,cfg) : '';
   const betaMeta=betaParticipant && betaSubject
     ? { betaCohort:CLOSED_BETA_COHORT,betaMembershipVerified:true,betaSubject }
