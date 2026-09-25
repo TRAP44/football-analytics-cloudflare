@@ -20,7 +20,7 @@ const qaChecklist = fs.readFileSync('QA_RELEASE_CHECKLIST_RU.md', 'utf8');
 const envExample = fs.readFileSync('.env.example', 'utf8');
 const baselinePath = 'supabase/baseline/supabase_baseline_v6_18.sql';
 const baseline = fs.existsSync(baselinePath) ? fs.readFileSync(baselinePath, 'utf8') : '';
-const expected = `${pkg.version}-rc136`;
+const expected = `${pkg.version}-rc137`;
 const failures = [];
 const rootSql = fs.readdirSync('.').filter(name => /^supabase_(?:baseline|migration)_.*\.sql$/i.test(name));
 if (rootSql.length) failures.push(`Supabase SQL must live under supabase/: ${rootSql.join(', ')}`);
@@ -29,9 +29,9 @@ if (rootSql.length) failures.push(`Supabase SQL must live under supabase/: ${roo
 if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) failures.push('package-lock version must match package.json');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC136'")) failures.push('Worker RC name must be RC136');
+if (!worker.includes("const RC_NAME = 'RC137'")) failures.push('Worker RC name must be RC137');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc136'")) failures.push('Client release channel must be rc136');
+if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc137'")) failures.push('Client release channel must be rc137');
 if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
@@ -91,7 +91,7 @@ if (!rollbackSmoke.includes("'/api/me', '/api/release-readiness', '/api/calibrat
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
-if (!deployWorkflow.includes('RELEASE_VERSION: \"6.112.0-rc136\"')) failures.push('Production deploy must pin the verified release version');
+if (!deployWorkflow.includes('RELEASE_VERSION: \"6.113.0-rc137\"')) failures.push('Production deploy must pin the verified release version');
 if (!deployWorkflow.includes('--message "release=${{ env.RELEASE_VERSION }} sha=${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must bind release version and deploy SHA');
 if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "${{ env.RELEASE_VERSION }}"')) failures.push('Production smoke must verify the same release identity used for deployment');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
@@ -412,7 +412,9 @@ if (!fs.existsSync('src/availability.js') || !worker.includes("structuredAvailab
 if (!fs.existsSync('test/player-role-availability-rc135.test.js')) failures.push('Missing RC135 player-role availability regression test');
 if (!worker.includes("playerRoleAvailability: 'enabled'") || !worker.includes('enrichFixtureAbsencesWithSeasonRole') || !postDeploySmoke.includes("'playerRoleAvailability'")) failures.push('RC135 player-role availability contract is missing');
 if (!fs.existsSync('test/player-role-hydration-rc136.test.js')) failures.push('Missing RC136 player-role hydration regression test');
-if (!worker.includes("playerRoleHydration: 'enabled'") || !worker.includes('hydratePlayerRolesForAnalysis') || !worker.includes('analysis:player-role:') || !worker.includes("analysisVersion: '4.10.0-role-hydration'") || !postDeploySmoke.includes("'playerRoleHydration'")) failures.push('RC136 player-role hydration contract is missing');
+if (!worker.includes("playerRoleHydration: 'enabled'") || !worker.includes('hydratePlayerRolesForAnalysis') || !worker.includes('analysis:player-role:') || !postDeploySmoke.includes("'playerRoleHydration'")) failures.push('RC136 player-role hydration contract is missing');
+if (!fs.existsSync('src/lineup-quality.js') || !fs.existsSync('test/lineup-quality-rc137.test.js')) failures.push('Missing RC137 lineup-quality implementation or regression test');
+if (!worker.includes("lineupQualityGuard: 'enabled'") || !worker.includes('assessMatchLineups') || !worker.includes("analysisVersion: '4.11.0-lineup-quality'") || !worker.includes('v11-lineup-quality') || !postDeploySmoke.includes("'lineupQualityGuard'")) failures.push('RC137 lineup-quality contract is missing');
 if (!worker.includes('async function resolveTournamentStandings') || !worker.includes("multiProviderDataService: 'enabled'") || !worker.includes("openLigaDbStandingsFallback: 'enabled'") || !worker.includes("sourceProvenance: 'enabled'")) failures.push('RC128 multi-provider routing contract is missing');
 if (!worker.includes('footballDataToken: env.FOOTBALL_DATA_TOKEN') || !envExample.includes('FOOTBALL_DATA_TOKEN=')) failures.push('RC128 optional football-data.org secret contract is missing');
 if (!app.includes('function dataProvenanceHtml') || !app.includes('Паспорт данных') || !app.includes('standing-team-readonly')) failures.push('RC128 provenance UX contract is missing');
