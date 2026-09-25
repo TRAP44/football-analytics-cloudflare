@@ -1,4 +1,4 @@
-# QA Release Checklist — v6.113.0 RC137
+# QA Release Checklist — v6.114.0 RC138
 
 Этот файл содержит только актуальный gate. Исторические RC-контракты проверяются regression-тестами и Git history.
 
@@ -15,9 +15,9 @@ npm run verify:worker
 
 ## Версия и release contract
 
-- `package.json` и `package-lock.json`: `6.113.0`.
-- Worker и client: `6.113.0-rc137`.
-- Release candidate: `RC137`.
+- `package.json` и `package-lock.json`: `6.114.0`.
+- Worker и client: `6.114.0-rc138`.
+- Release candidate: `RC138`.
 - Production workflow запускается только после успешного Quality.
 - Post-deploy smoke проверяет ту же версию и RC.
 
@@ -33,6 +33,16 @@ npm run verify:worker
 - service-role ключ не попадает в клиент;
 - `MONETIZATION_ENABLED=false`;
 - `DEV_MODE=false`.
+
+## RC138 — Lineup Semantic Reliability
+
+- Непустой ответ `/fixtures/lineups` больше не считается качественным сигналом сам по себе: после нормализации он проходит единый `lineupQuality` guard.
+- Неполный или дублированный XI получает `state=partial_data`, `available=false`, `semanticState=partial`; transport/source metadata сохраняется.
+- Partial XI не входит в `availableSignals` и не увеличивает `completenessPreview`; в последние 90 минут provider reliability дополнительно ограничивает data-trust.
+- Match Center публикует согласованные `dataFreshness.lineups`, `lineupsConfirmed` и `lineupsPartial`.
+- Analysis cache: `v12-lineup-reliability`; model-input contract: `4.12.0-lineup-reliability`.
+- Новых внешних API, секретов и Supabase DDL нет.
+- Regression: `test/lineup-semantic-reliability-rc138.test.js`; post-deploy smoke требует `lineupSemanticReliability`.
 
 ## RC137 — Starting XI Quality Guard
 
