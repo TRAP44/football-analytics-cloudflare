@@ -20,5 +20,5 @@ test('public match navigation and user profile stay independent from admin conso
   assert.match(app,/if \(\$\('profileBtn'\)\) \$\('profileBtn'\)\.hidden=false/);
   assert.match(app,/if \(\$\('navProfile'\)\) \$\('navProfile'\)\.hidden=false/);
   assert.match(app,/profileView: \['Профиль', 'Команды, напоминания и настройки'\]/);
-  assert.match(app,/matchesView: \['Главная', 'Понимай матч глубже\\.'\]/);
+  assert.ok(app.includes("matchesView: ['Главная', 'Понимай матч глубже.']"));
 });
