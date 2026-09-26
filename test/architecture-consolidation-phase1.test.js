@@ -22,7 +22,7 @@ test('release contract is the documented source of truth',()=>{
 
 test('public feedback hides internal beta and severity terminology',()=>{
   const html=read('public/index.html');
-  const start=html.indexOf('<section class="panel beta-feedback-panel">');
+  const start=html.indexOf('<section class="panel profile-about-service">');
   const end=html.indexOf('<section class="panel admin-console"',start);
   const publicFeedback=html.slice(start,end);
   assert.match(publicFeedback,/Сообщить о проблеме/);
