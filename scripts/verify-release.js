@@ -6,7 +6,7 @@ const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync
 const app = fs.readFileSync('public/app.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const staticHeaders = fs.readFileSync('public/_headers', 'utf8');
-const styles = fs.readFileSync('public/styles.css', 'utf8');
+const styles = fs.readFileSync('public/styles.css', 'utf8');\nconst publicShellStyles = fs.readFileSync('public/styles/public-shell.css', 'utf8');
 const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml', 'utf8');
 const rollbackWorkflow = fs.readFileSync('.github/workflows/rollback-production.yml', 'utf8');
 const rollbackSmoke = fs.readFileSync('scripts/rollback-smoke.js', 'utf8');
@@ -32,7 +32,9 @@ if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker
 if (!worker.includes("const RC_NAME = 'RC144'")) failures.push('Worker RC name must be RC144');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
 if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc144'")) failures.push('Client release channel must be rc144');
-if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
+const frontendAssetRevision = /<meta name="frontend-asset-revision" content="([^"]+)" \/>/.exec(html)?.[1] || '';
+if (!frontendAssetRevision || frontendAssetRevision === pkg.version || !frontendAssetRevision.startsWith(`${pkg.version}-`)) failures.push('Frontend asset revision must cache-bust the package version');
+if (!html.includes(`/app.js?v=${frontendAssetRevision}`) || !html.includes(`/styles.css?v=${frontendAssetRevision}`) || !html.includes(`/styles/public-shell.css?v=${frontendAssetRevision}`)) failures.push('Frontend JS/CSS cache-bust tokens must be coherent');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_11.sql')) failures.push('Missing v6.11 migration');
@@ -565,3 +567,5 @@ if (failures.length) {
   process.exit(1);
 }
 console.log(`RC109 Supabase Probe Confirmation Guard contracts verified for ${expected}.`);
+
+if (!publicShellStyles.includes('Bottom Navigation Visibility Hotfix') || !publicShellStyles.includes('grid-template-columns:repeat(4,minmax(0,1fr))')) failures.push('Bottom navigation final four-column cascade guard is missing');
