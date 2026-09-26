@@ -1133,7 +1133,7 @@ function renderBetaDashboard() {
 
   if ($('betaJourneySummary')) $('betaJourneySummary').textContent=
     `${Number(users.completedJourneys || 0)} full journeys · ${Number(users.verifiedNormalUsers || 0)} verified normal users · ${Number(users.sessions || 0)} sessions. ${status}.`;
-  if (meta) meta.textContent=`${Number(data.periodDays || 7)} дн. · cohort ${escapeHtml(data.cohort || 'phase5_public_v1')} · обновлено ${relativeAge(data.generatedAt)}`;
+  if (meta) meta.textContent=`${Number(data.periodDays || 7)} дн. · cohort ${escapeHtml(data.cohort || 'phase5_public_v2')} · обновлено ${relativeAge(data.generatedAt)}`;
 }
 
 async function loadBetaDashboard(force = false) {
