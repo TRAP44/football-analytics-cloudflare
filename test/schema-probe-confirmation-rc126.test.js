@@ -49,5 +49,5 @@ test('RC126 exposes and smoke-tests schema confirmation health flags',()=>{
 
 test('RC126 confirmation guard coexists with the later RC127 schema migration',()=>{
   assert.equal(fs.existsSync('supabase/migrations/supabase_migration_v6_18.sql'),true);
-  assert.equal(fs.existsSync('supabase/baseline/supabase_baseline_v6_18.sql'),true);
+  assert.equal(fs.existsSync('supabase/baseline/supabase_baseline_v6_19.sql'),true);
 });
