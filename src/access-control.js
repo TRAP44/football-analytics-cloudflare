@@ -42,9 +42,11 @@ export function closedBetaAccessDecision(user, cfg = {}) {
     return { allowed: true, adminBypass: true, betaParticipant: false };
   }
 
-  // Strict closed beta is a production safety invariant. Legacy/missing
-  // betaAccessEnabled values are configuration evidence only and never bypass
-  // the server-side allowlist for normal users.
+  // Public access is the default. Strict closed beta is an explicit temporary
+  // mode and is enforced server-side only when BETA_ACCESS_ENABLED=true.
   const betaParticipant = isClosedBetaUser(user, cfg);
+  if (!cfg.betaAccessEnabled) {
+    return { allowed: isTelegramValidatedUser(user), adminBypass: false, betaParticipant };
+  }
   return { allowed: betaParticipant, adminBypass: false, betaParticipant };
 }
