@@ -1004,7 +1004,7 @@ async function api(path, options = {}) {
             showBootRecovery({
               blocking: true,
               title: 'Доступ временно ограничен',
-              text: 'Этот Telegram-аккаунт пока не входит в список приглашённых тестировщиков.',
+              text: 'Для этого аккаунта доступ временно ограничен.',
             });
           }
           const error = Object.assign(new Error(data.error || `HTTP ${response.status}`), {
