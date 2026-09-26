@@ -4173,14 +4173,14 @@ function renderMyTeams() {
     const upcoming = related.filter(match => !isFinishedMatch(match) && !isLiveMatch(match)).sort((a,b) => Date.parse(a.date||0)-Date.parse(b.date||0))[0];
     const recent = related.filter(match => isFinishedMatch(match)).sort((a,b) => Date.parse(b.date||0)-Date.parse(a.date||0))[0];
     const focus = live || upcoming || recent;
-    const status = live ? '🔴 LIVE сейчас' : upcoming ? 'Ближайший матч' : recent ? 'Последний матч' : 'Матчи пока не найдены';
+    const status = live ? '🔴 Матч идёт' : upcoming ? 'Ближайший матч' : recent ? 'Последний матч' : 'Матчи пока не найдены';
     return `<article class="panel my-team-card">
       <button class="my-team-head team-open-link" type="button" data-open-team="${id}" data-team-name="${escapeHtml(team.teamName || '')}" data-team-logo="${escapeHtml(team.teamLogo || '')}">
         ${team.teamLogo ? `<img src="${safeUrl(team.teamLogo)}" alt="">` : '<span class="team-placeholder">⚽</span>'}
         <span><strong>${escapeHtml(team.teamName || 'Команда')}</strong><small>${status}</small></span>
         <b>Открыть →</b>
       </button>
-      ${focus ? `<button class="my-team-match" type="button" data-team-fixture="${Number(focus.fixtureId)}"><span>${escapeHtml(focus.home?.name || '')} — ${escapeHtml(focus.away?.name || '')}</span><strong>${isLiveMatch(focus) ? escapeHtml(scoreText(focus)) : timeOf(focus.date)}</strong><small>Match Center →</small></button>` : '<div class="empty compact-empty">Данные по ближайшему матчу пока недоступны.</div>'}
+      ${focus ? `<button class="my-team-match" type="button" data-team-fixture="${Number(focus.fixtureId)}"><span>${escapeHtml(focus.home?.name || '')} — ${escapeHtml(focus.away?.name || '')}</span><strong>${isLiveMatch(focus) ? escapeHtml(scoreText(focus)) : timeOf(focus.date)}</strong><small>Открыть матч →</small></button>` : '<div class="empty compact-empty">Данные по ближайшему матчу пока недоступны.</div>'}
     </article>`;
   }).join('');
   root.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => openTeam({ id:Number(btn.dataset.openTeam), name:btn.dataset.teamName || '', logo:btn.dataset.teamLogo || '' })));
@@ -7959,11 +7959,11 @@ teamTabs.forEach(btn => btn.addEventListener('click', () => setTeamTab(btn.datas
 bindRovingTabKeyboard(teamTabs, 'teamTab', value => setTeamTab(value));
 $('profileBtn').addEventListener('click', openProfileView);
 $('navMatches').addEventListener('click', () => {
-  sendProductAction('home_open', 'matchesView');
+  sendProductAction('matches_open', 'matchesView');
   showView('matchesView');
 });
 $('navMyTeams')?.addEventListener('click', () => {
-  sendProductAction('favorite_team_open', 'myTeamsView');
+  sendProductAction('matches_open', 'myTeamsView');
   renderMyTeams();
   showView('myTeamsView');
 });
