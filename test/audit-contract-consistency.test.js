@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const worker=fs.readFileSync('src/worker.js','utf8');
+const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/router.js','utf8');
 const sourceFiles=walk('src').filter(file=>file.endsWith('.js'));
 const sourceText=sourceFiles.map(file=>fs.readFileSync(file,'utf8')).join('\n');
 const app=fs.readFileSync('public/app.js','utf8');

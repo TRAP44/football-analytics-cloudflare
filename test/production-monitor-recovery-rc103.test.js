@@ -76,7 +76,7 @@ test('RC103 rejects public technical Supabase health', async () => {
 
 
 test('RC103 schedules a read-only production monitor every 15 minutes', () => {
-  const worker=fs.readFileSync('src/worker.js','utf8');
+  const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/router.js','utf8');
   assert.match(worker,/async function runProductionMonitor\(/);
   assert.match(worker,/scheduledAt\.getUTCMinutes\(\) % 15 === 0/);
   assert.match(worker,/consumesFootballApi: false/);
@@ -86,7 +86,7 @@ test('RC103 schedules a read-only production monitor every 15 minutes', () => {
 });
 
 test('RC103 production readiness declares checks before any push', () => {
-  const worker=fs.readFileSync('src/worker.js','utf8');
+  const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/router.js','utf8');
   const start=worker.indexOf('async function apiProductionReadiness');
   const end=worker.indexOf('\nfunction rcCheck',start);
   assert.ok(start>=0 && end>start);
@@ -98,7 +98,7 @@ test('RC103 production readiness declares checks before any push', () => {
 });
 
 test('RC103 exposes protected monitor route and health contracts', () => {
-  const worker=fs.readFileSync('src/worker.js','utf8');
+  const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/router.js','utf8');
   assert.match(worker,/url\.pathname === '\/api\/production-monitor'/);
   assert.match(worker,/productionMonitor: 'enabled'/);
   assert.match(worker,/productionMonitorSelfTest: productionMonitorSelfTest\(\)\.pass \? 'enabled' : 'failed'/);
