@@ -1,4 +1,4 @@
-import { createApiClient, initTelegramWebApp, localDate, safeDate, timeOf, dateTime, dateOnly, relativeAge } from './modules/client-core.js';
+import { createApiClient, initTelegramWebApp, localDate, safeDate, timeOf, dateTime, dateOnly, relativeAge, phase5SessionToken } from './modules/client-core.js';
 const CLIENT_VERSION = '6.120.0-rc144';
 const CLIENT_API_CONTRACT = 5;
 const CLIENT_RELEASE_CHANNEL = 'rc144';
@@ -31,6 +31,7 @@ document.documentElement.dataset.accent = initialUiPreferences.accent;
 document.documentElement.dataset.buttonStyle = initialUiPreferences.buttonStyle;
 
 const tg = initTelegramWebApp(window);
+const PHASE5_SESSION_TOKEN = phase5SessionToken(window);
 
 const state = {
   profile: null,
@@ -447,6 +448,7 @@ function sendClientTelemetry(event, meta = {}, { once = false } = {}) {
     headers: {
       'content-type': 'application/json',
       'x-telegram-init-data': tg.initData,
+      ...(PHASE5_SESSION_TOKEN ? { 'x-phase5-session': PHASE5_SESSION_TOKEN } : {}),
     },
     body: JSON.stringify(payload),
     keepalive: true,
