@@ -41,7 +41,7 @@ test('unauthorized Mini App stops before favorites and match loading',()=>{
   const api=block(app,'async function api(path','async function loadProfile');
   assert.match(api,/CLOSED_BETA_ACCESS_REQUIRED/);
   assert.match(api,/state\.closedBetaBlocked = true/);
-  assert.match(api,/title: 'Закрытая beta'/);
+  assert.match(api,/title: 'Доступ временно ограничен'/);
 
   const startup=block(app,'async function runStartupSequence','function localDate');
   const blockAt=startup.indexOf('if (state.closedBetaBlocked) return false;');
