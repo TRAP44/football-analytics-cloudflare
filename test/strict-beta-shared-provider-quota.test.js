@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
+const workerCore=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
+const router=readFileSync(new URL('../src/router.js',import.meta.url),'utf8');
+const worker=workerCore+'\n'+router;
 const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
 
 function block(source,start,end){
@@ -28,7 +30,7 @@ test('production beta mode defaults public and becomes strict only on explicit t
   assert.match(cfg,/betaAccessConfigured:\s*boolEnvState\(env\.BETA_ACCESS_ENABLED\)/);
   assert.match(cfg,/betaAccessEnabled:\s*boolEnv\(env\.BETA_ACCESS_ENABLED, false\)/);
 
-  const routes=block(worker,"if (!url.pathname.startsWith('/api/'))","async scheduled(controller");
+  const routes=block(workerCore,"if (!url.pathname.startsWith('/api/'))","async scheduled(controller")+'\n'+router;
   const guard=routes.indexOf('closedBetaAccessDecision(user, cfg)');
   const matches=routes.indexOf("url.pathname === '/api/matches'");
   assert.ok(guard>=0 && matches>guard);
