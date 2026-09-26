@@ -77,7 +77,7 @@ Privacy contract:
 
 - [ ] Провести smoke на реальном Telegram минимум с двумя **не-админскими** аккаунтами по сценарию из `PRE_BETA_VALIDATION_RU.md`: Telegram → Mini App → Матчи → поиск → матч → AI → история → профиль → тема/акцент → избранное → напоминание.
 - [ ] Проверить LIVE на реальном идущем матче: первичная загрузка, счёт, события, статистика, составы/потери, ручное обновление, минимум один успешный auto-refresh, временная потеря сети и восстановление с сохранением последнего snapshot.
-- [x] Квоту/тариф API-Football подтверждает production evidence: plan=FREE, dailyLimit=100, dailyRemaining=97, minuteLimit=10, minuteRemaining=9, cooldown=false, evidenceSource=controlled_release_probe (26 сентября 2026, 11:41:13 UTC).
+- [x] Текущую квоту/тариф API-Football подтверждает production evidence: plan=FREE, dailyLimit=100, dailyRemaining=97, minuteLimit=10, minuteRemaining=9, cooldown=false, evidenceSource=controlled_release_probe (26 сентября 2026, 11:41:13 UTC).
 - [ ] Реально назначить Beta-01 и Beta-02 и создать приватный feedback channel по шаблону из `PRE_BETA_VALIDATION_RU.md`. Runbook и формат обратной связи подготовлены, но личности/Telegram ID тестировщиков в репозиторий не записываются.
 - [ ] Подтвердить Telegram `getWebhookInfo`: production URL совпадает с `/telegram/webhook`, нет устойчивой очереди pending updates и актуальной ошибки.
 - [x] Server-side strict beta — fail-closed invariant: membership определяется только после успешной Telegram signature validation по `BETA_TELEGRAM_IDS`; admin имеет bypass, но исключён из beta cohort; frontend-скрытия не используются как access control. `BETA_ACCESS_ENABLED=false` или missing **не открывает** normal-user routes.
