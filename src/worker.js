@@ -224,10 +224,10 @@ function config(env) {
     webhookSecret: env.TELEGRAM_WEBHOOK_SECRET || '',
     adminTelegramIds: telegramIdList(env.ADMIN_TELEGRAM_IDS),
     betaTelegramIds: telegramIdList(env.BETA_TELEGRAM_IDS),
-    // Closed beta is fail-closed in this release. Keep the raw env state only
-    // as production evidence so a missing/false binding cannot open user APIs.
+    // Public normal-user access is the default. Strict closed beta is an
+    // explicit temporary mode enabled only by BETA_ACCESS_ENABLED=true.
     betaAccessConfigured: boolEnvState(env.BETA_ACCESS_ENABLED),
-    betaAccessEnabled: true,
+    betaAccessEnabled: boolEnv(env.BETA_ACCESS_ENABLED, false),
     supabaseUrl: String(env.SUPABASE_URL || '').replace(/\/$/, ''),
     supabaseKey: env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY || '',
     cacheMinutes: intEnv(env.CACHE_MINUTES, 20),
