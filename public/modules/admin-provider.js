@@ -2,6 +2,13 @@
 // Loaded lazily only after the server-authenticated profile reports admin role.
 // Server-side authorization remains authoritative.
 export function createAdminProviderModule(deps) {
+  if (!document.querySelector('link[data-admin-styles]')) {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = '/styles/admin.css?v=6.120.0';
+    link.dataset.adminStyles = 'true';
+    document.head.append(link);
+  }
   const { state, $, isAdmin, humanizeTechnicalText, escapeHtml, planLabel, dateTime, technicalStateLabel, freshnessSourceLabel, toast, api, renderAdminOverview } = deps;
 
   function providerAuditStateLabel(stateValue) {
