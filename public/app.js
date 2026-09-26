@@ -1,3 +1,4 @@
+import { createApiClient, initTelegramWebApp, localDate, safeDate, timeOf, dateTime, dateOnly, relativeAge } from './modules/client-core.js';
 const CLIENT_VERSION = '6.120.0-rc144';
 const CLIENT_API_CONTRACT = 5;
 const CLIENT_RELEASE_CHANNEL = 'rc144';
@@ -29,12 +30,7 @@ document.documentElement.dataset.theme = initialUiPreferences.theme;
 document.documentElement.dataset.accent = initialUiPreferences.accent;
 document.documentElement.dataset.buttonStyle = initialUiPreferences.buttonStyle;
 
-const tg = window.Telegram?.WebApp;
-if (tg) {
-  tg.ready();
-  tg.expand();
-  try { tg.setHeaderColor('secondary_bg_color'); } catch {}
-}
+const tg = initTelegramWebApp(window);
 
 const state = {
   profile: null,
@@ -913,54 +909,19 @@ async function runStartupSequence() {
 }
 
 
-function localDate(offset = 0) {
-  const d = new Date();
-  d.setDate(d.getDate() + offset);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
 
-function safeDate(iso) {
-  if (!iso) return null;
-  const d = new Date(iso);
-  return Number.isFinite(d.getTime()) ? d : null;
-}
 
-function timeOf(iso) {
-  const d = safeDate(iso);
-  if (!d) return '—';
-  try { return new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' }).format(d); } catch { return '—'; }
-}
 
-function dateTime(iso) {
-  const d = safeDate(iso);
-  if (!d) return '';
-  try { return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(d); } catch { return ''; }
-}
 
-function dateOnly(iso) {
-  const d = safeDate(iso);
-  if (!d) return '';
-  try { return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' }).format(d); } catch { return ''; }
-}
 
-function relativeAge(iso) {
-  const ms = Date.now() - Date.parse(iso || '');
-  if (!Number.isFinite(ms) || ms < 0) return '';
-  const sec = Math.floor(ms / 1000);
-  if (sec < 15) return 'только что';
-  if (sec < 60) return `${sec} сек. назад`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min} мин. назад`;
-  const h = Math.floor(min / 60);
-  if (h < 24) return `${h} ч. назад`;
-  const days = Math.floor(h / 24);
-  return `${days} дн. назад`;
-}
 
-async function api(path, options = {}) {
+
+
+
+
+
+
+) {
   const method = String(options.method || 'GET').toUpperCase();
   const isGet = method === 'GET';
   const timeoutMs = Number(options.timeoutMs || 12000);
@@ -1052,6 +1013,18 @@ async function api(path, options = {}) {
   try { return await task; }
   finally { if (dedupe && inflightGetRequests.get(requestKey) === task) inflightGetRequests.delete(requestKey); }
 }
+
+const api = createApiClient({
+  state,
+  tg,
+  inflightGetRequests,
+  observeServerVersion,
+  showBootRecovery,
+  applyRuntimeUi,
+  normalizeApiError,
+  noteRequestSuccess,
+  noteRequestFailure,
+});
 
 async function loadProfile() {
   const previousProfile = state.profile;
