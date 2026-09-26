@@ -19,6 +19,6 @@ test('RC125 keeps match feed usable during provider or network degradation',()=>
 test('public match navigation and user profile stay independent from admin console',()=>{
   assert.match(app,/if \(\$\('profileBtn'\)\) \$\('profileBtn'\)\.hidden=false/);
   assert.match(app,/if \(\$\('navProfile'\)\) \$\('navProfile'\)\.hidden=false/);
-  assert.match(app,/profileView: \['Профиль', 'Оформление, избранное и настройки'\]/);
-  assert.match(app,/matchesView: \['Матчи', 'Сегодня, LIVE и ближайшие игры для AI-разбора'\]/);
+  assert.match(app,/profileView: \['Профиль', 'Команды, напоминания и настройки'\]/);
+  assert.match(app,/matchesView: \['Главная', 'Ваш футбол — в одном месте'\]/);
 });
