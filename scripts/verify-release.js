@@ -156,12 +156,12 @@ if (!worker.includes("aiTenSecondVerdict: 'enabled'") || !worker.includes("daily
 if (!worker.includes('function buildAiInstructor')) failures.push('AI football instructor engine is missing');
 if (!worker.includes("referee: fixture.fixture?.referee || ''")) failures.push('Pre-match referee context is missing');
 if (!app.includes('function aiInstructorHtml')) failures.push('AI instructor UI is missing');
-if (!html.includes('FM AI') || !html.includes('AI ФУТБОЛЬНЫЙ ИНСТРУКТОР') || !html.includes('boot-feature-row')) failures.push('AI startup experience is missing');
+if (!html.includes('boot-card boot-card-simple') || !html.includes('Ваш футбол — в одном месте') || !html.includes('Загружаем матчи…') || html.includes('id="bootVersion"')) failures.push('Phase 4.1 minimal public startup is missing');
 if (!worker.includes("telegramBotHub: 'enabled'") || !worker.includes("aiFootballInstructor: 'enabled'")) failures.push('RC44 AI/bot health contract is missing');
-if (!html.includes('id="dailyOverviewKicker"')) failures.push('Contextual overview kicker is missing');
+if (!html.includes('id="homeLiveCard"') || !html.includes('id="homeTeamsBtn"') || !html.includes('id="homeFavoriteBtn"')) failures.push('Phase 4.1 contextual Home priority cards are missing');
 if (!html.includes('id="quotaText" hidden')) failures.push('Main-screen quota must be hidden by default');
 if (!worker.includes("focusedMatchHome: 'enabled'") || !worker.includes("contextualLeagueFilter: 'enabled'")) failures.push('RC44 focused-home health contract is missing');
-if (!html.includes('id="firstRunGuide"') || !html.includes('id="firstRunGuideDismiss"')) failures.push('First-run guide markup is missing');
+if (!html.includes('id="homeFavoriteBtn"') || !app.includes('onboarding.hidden = favoriteCount > 0')) failures.push('Phase 4.1 favorite onboarding is missing');
 if (!app.includes('data-quick-reminder')) failures.push('Quick reminder action is missing from match cards');
 if (!worker.includes("quickMatchReminders: 'enabled'") || !worker.includes("firstRunGuide: 'enabled'")) failures.push('RC44 health contract is missing');
 if (!app.includes('profileStale: false')) failures.push('Profile fail-soft state is missing');
@@ -526,6 +526,7 @@ if (!postDeploySmoke.includes("'supabaseProbeConfirmation'") || !postDeploySmoke
 
 
 
+if (!fs.existsSync('test/phase4-1-public-visual-simplification.test.js')) failures.push('Missing Phase 4.1 public visual simplification regression test');
 if (!fs.existsSync('test/public-match-journey-rc123.test.js')) failures.push('Missing RC123 public match journey regression test');
 if (!html.includes('id="navMatches" class="nav-item active" type="button"><span>⚽</span><small>Главная</small>') || !html.includes('id="homeSearchBtn"')) failures.push('Phase 4 home-first public navigation is missing');
 if (!app.includes('const startupTasks = [loadFavorites(), loadMatches()]')) failures.push('RC123 public match feed startup path is missing');
