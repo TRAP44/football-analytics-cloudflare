@@ -105,7 +105,7 @@ Privacy contract:
 - [x] `npm run security:scan`
 - [x] `npm run lint`
 - [x] `npm run check`
-- [x] `npm test` — 798/798, fail 0 на deployed baseline #100
+- [x] `npm test` — 799/799, fail 0 на post-change deployed baseline #101
 - [x] `npm run verify:release`
 - [x] `npm run verify:worker`
 - [x] post-merge Quality на `main` — повторно запущен и пройден
@@ -134,16 +134,16 @@ Privacy contract:
 
 Полный ручной сценарий, LIVE protocol, quota gate, cohort и feedback runbook: `PRE_BETA_VALIDATION_RU.md`.
 
-### Strict Beta Post-Deploy snapshot — 26 сентября 2026, 11:41 UTC
+### Strict Beta Post-Deploy snapshot — 26 сентября 2026, 12:25 UTC
 
-- [x] GitHub `main` baseline: `d19fc80f1f5c3c42a4761e8c9e51096b32c310ae` (#100).
-- [x] Quality #641: PASS.
-- [x] Deploy Production #348: PASS; provenance guard подтвердил exact current-main SHA.
-- [x] Cloudflare version `f629f925-fdc5-4f5b-b43f-3d0cb1da3962`, release `6.120.0-rc144 / RC144`, 100% traffic.
+- [x] GitHub `main` post-change baseline: `5e8be483a8722574877047bb8a96952ebdebc649` (PR #101 merged).
+- [x] Quality #645: PASS.
+- [x] Deploy Production #349: PASS; provenance guard подтвердил exact current-main SHA.
+- [x] Cloudflare version `6797b5c9-4a3b-40db-8a1b-b967b979fbf9`, release `6.120.0-rc144 / RC144`, 100% traffic.
 - [x] Post-deploy smoke: 25/25.
-- [x] Deploy re-verification: 798 tests passed, 0 failed.
-- [x] Provider evidence: FREE; daily 97/100 remaining; minute 9/10 remaining; cooldown=false.
-- [x] Strict access effective=true даже при raw `BETA_ACCESS_ENABLED=missing`.
+- [x] Deploy re-verification: 799 tests passed, 0 failed.
+- [x] Latest provider evidence for the unchanged `6.120.0-rc144` release: FREE; daily 97/100 remaining; minute 9/10 remaining; cooldown=false; captured 11:41:13 UTC.
+- [x] Latest server-side configuration evidence (11:41:13 UTC): strict access effective=true даже при raw `BETA_ACCESS_ENABLED=missing`.
 - [ ] Operational env reconciliation: выставить `BETA_ACCESS_ENABLED=true`.
 - [ ] Beta allowlist reconciliation: сейчас `betaAllowlistCount=0`; требуются реальные Beta-01/Beta-02, overlap с admin должен остаться 0.
 - [ ] Новый denied non-admin post-deploy smoke ещё не зафиксирован в `CLOSED_BETA_ACCESS_DENIED`.
