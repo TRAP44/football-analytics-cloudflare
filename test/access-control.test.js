@@ -70,7 +70,7 @@ test('strict beta access is fail-closed for normal users and keeps admin bypass 
   );
 });
 
-test('legacy false or missing beta flag never opens normal-user routes', () => {
+test('public mode allows any signed Telegram user while preserving beta membership metadata', () => {
   const falseCfg = {
     devMode: false,
     adminTelegramIds: [],
@@ -85,15 +85,21 @@ test('legacy false or missing beta flag never opens normal-user routes', () => {
 
   assert.deepEqual(
     closedBetaAccessDecision({ id: 303, __telegramValidated: true }, falseCfg),
-    { allowed: false, adminBypass: false, betaParticipant: false },
+    { allowed: true, adminBypass: false, betaParticipant: false },
   );
   assert.deepEqual(
     closedBetaAccessDecision({ id: 303, __telegramValidated: true }, missingCfg),
-    { allowed: false, adminBypass: false, betaParticipant: false },
+    { allowed: true, adminBypass: false, betaParticipant: false },
   );
   assert.deepEqual(
     closedBetaAccessDecision({ id: 101, __telegramValidated: true }, falseCfg),
     { allowed: true, adminBypass: false, betaParticipant: true },
   );
   assert.equal(closedBetaAccessDecision({ id: 101 }, missingCfg).allowed, false);
+});
+
+test('strict beta remains an explicit allowlist when enabled', () => {
+  const cfg = { devMode:false, adminTelegramIds:[], betaTelegramIds:[101], betaAccessEnabled:true };
+  assert.equal(closedBetaAccessDecision({ id:101, __telegramValidated:true }, cfg).allowed, true);
+  assert.equal(closedBetaAccessDecision({ id:303, __telegramValidated:true }, cfg).allowed, false);
 });
