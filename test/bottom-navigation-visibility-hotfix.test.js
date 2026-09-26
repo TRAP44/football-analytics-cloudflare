@@ -87,5 +87,5 @@ test('render regression covers the required Telegram mobile widths', () => {
   assert.match(renderSmoke, /getBoundingClientRect/);
   assert.match(renderSmoke, /getComputedStyle/);
   assert.match(renderSmoke, /gridTemplateColumns/);
-  assert.match(renderSmoke, /documentElement\.scrollWidth/);
+  assert.match(renderSmoke, /nav\.scrollWidth/);
 });
