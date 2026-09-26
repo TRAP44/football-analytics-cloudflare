@@ -1,4 +1,4 @@
-# Установка Football Analytics v6.103.0 RC127
+# Установка Football Analytics
 
 ## Новый Supabase-проект
 
@@ -6,15 +6,15 @@
 
 
 1. Откройте Supabase SQL Editor.
-2. Выполните **только** `supabase/baseline/supabase_baseline_v6_18.sql` целиком.
-3. Не запускайте после него numbered migrations v6.9–v6.18: они уже включены в unified baseline.
+2. Выполните **только** `supabase/baseline/supabase_baseline_v6_19.sql` целиком.
+3. Не запускайте после него numbered migrations v6.9–v6.19: они уже включены в unified baseline.
 4. В Supabase Data API убедитесь, что backend-таблицы доступны `service_role`, а прямой доступ `anon` и `authenticated` закрыт.
 
 ## Обновление существующего проекта
 
 1. Сделайте резервную копию базы.
-2. Примените только отсутствующие миграции, сохраняя порядок версий: v6.9 → v6.10 → v6.11 → v6.11.1 → v6.12 → v6.13 → v6.14 → v6.15 → v6.16 → v6.17 → v6.18 → v6.18.1.
-3. Для существующей базы не запускайте `supabase/baseline/supabase_baseline_v6_18.sql`: он предназначен только для fresh install.
+2. Примените только отсутствующие миграции, сохраняя порядок версий: v6.9 → v6.10 → v6.11 → v6.11.1 → v6.12 → v6.13 → v6.14 → v6.15 → v6.16 → v6.17 → v6.18 → v6.18.1 → v6.19.
+3. Для существующей базы не запускайте `supabase/baseline/supabase_baseline_v6_19.sql`: он предназначен только для fresh install.
 4. Не удаляйте и не переигрывайте уже применённые миграции без отдельного плана rollback.
 5. После обновления запустите защищённый RC Regression и проверьте least-privilege контракт Supabase.
 6. RC107 требует `supabase_migration_v6_16.sql`: она добавляет backend-only ledger для атомарной дедупликации Telegram webhook между Cloudflare isolates.
@@ -22,7 +22,7 @@
 8. RC109 не требует новой миграции: одиночный сбой Supabase probe подтверждается вторым запросом перед аварийным статусом.
 9. RC126 не требует новой миграции: Schema Drift Guard подтверждает первый неуспешный schema probe повторной проверкой перед блокирующим incident.
 10. RC127 требует `supabase_migration_v6_18.sql`: atomic AI quota, distributed provider budget, digest delivery claims, full schema fingerprint и least-privilege service-role. Production schema становится v6.18.
-11. После v6.18 примените `supabase_migration_v6_18_1.sql`: hotfix устраняет FK-race первого анализа, когда `usage_daily` мог записываться раньше строки `users`. Для нового проекта это исправление уже включено в baseline v6.18.
+11. После v6.18 примените `supabase_migration_v6_18_1.sql`: hotfix устраняет FK-race первого анализа.\n12. Затем примените `supabase_migration_v6_19.sql`: source provenance/freshness metadata для analysis cache, odds snapshots и model predictions. Для нового проекта v6.18.1 и v6.19 уже включены в baseline v6.19.
 
 ## Cloudflare Secrets
 
@@ -54,9 +54,7 @@ API token должен быть ограничен нужным Cloudflare accou
 
 Рекомендуется задать Repository/Environment Variable `CLOUDFLARE_WORKER_URL`. Для обычного deploy это запасной стабильный URL, а для защищённого rollback RC103 эта переменная обязательна, потому что после отката нужно независимо проверить восстановленную версию.
 
-Рабочий release-процесс:
-
-`PR → Quality → merge в main → Deploy Production → RC127 readiness smoke`.
+Единый источник истины для текущей версии, schema requirement и production contract: `release-contract.json`.\n\nРабочий release-процесс:\n\n`PR → Quality → merge в main → Deploy Production → production smoke`.
 
 ## Локальная проверка
 
@@ -75,8 +73,8 @@ npm run verify:worker
 
 Проверьте:
 
-1. `/health/live` возвращает `ok=true`; `/health/ready` возвращает `ok=true`, `status=ready`, версию `6.103.0-rc127` и `releaseCandidate=RC127`.
-2. RC Regression не содержит blocking failures.
+1. `/health/live` возвращает `ok=true`; `/health/ready` возвращает `ok=true`, `status=ready`, версию, совпадающую с `release-contract.json`.
+2. Regression gate не содержит blocking failures.
 3. `DEV_MODE=false` и `MONETIZATION_ENABLED=false`.
 4. Обычный пользователь не видит административные controls.
 5. `/health/supabase` не доступен публично.
