@@ -9,7 +9,7 @@ test('pre-match match selection produces an immediate Telegram AI brief',()=> {
   assert.match(worker,/async function sendBotFixtureMenu\(/);
   assert.match(worker,/const data=await botAnalyzeFixture\(request,cfg,userId,fixtureId\)/);
   assert.match(worker,/function botAiHandoffText\(/);
-  assert.match(worker,/FM AI · короткая оценка/);
+  assert.match(worker,/MatchRadar AI · короткая оценка/);
   assert.match(worker,/footballQuickAiHandoffKeyboard\(request,analyzedMatch,favorites\)/);
   assert.match(worker,/if \(match\.live \|\| match\.finished\)/);
 });
