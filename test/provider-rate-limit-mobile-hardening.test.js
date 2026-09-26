@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
-const css=readFileSync(new URL('../public/styles.css',import.meta.url),'utf8');
+const css=readFileSync(new URL('../public/styles.css',import.meta.url),'utf8') + '\n' + readFileSync(new URL('../public/styles/public-shell.css', import.meta.url), 'utf8');
 
 function block(source,start,end){
   const a=source.indexOf(start);
