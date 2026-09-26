@@ -57,8 +57,27 @@ export function relativeAge(iso) {
   return `${days} дн. назад`;
 }
 
+const PHASE5_SESSION_KEY = 'football-analytics:phase5-session:v1';
+
+export function phase5SessionToken(scope = globalThis) {
+  try {
+    const storage = scope?.sessionStorage;
+    const existing = String(storage?.getItem(PHASE5_SESSION_KEY) || '').toLowerCase();
+    if (/^[0-9a-f]{32}$/.test(existing)) return existing;
+    const bytes = new Uint8Array(16);
+    if (scope?.crypto?.getRandomValues) scope.crypto.getRandomValues(bytes);
+    else for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+    const token = [...bytes].map(value => value.toString(16).padStart(2, '0')).join('');
+    storage?.setItem(PHASE5_SESSION_KEY, token);
+    return token;
+  } catch {
+    return '';
+  }
+}
+
 export function createApiClient(deps) {
   const { state, tg, inflightGetRequests, observeServerVersion, showBootRecovery, applyRuntimeUi, normalizeApiError, noteRequestSuccess, noteRequestFailure } = deps;
+  const validationSession = phase5SessionToken();
   return async function api(path, options = {}) {
   const method = String(options.method || 'GET').toUpperCase();
   const isGet = method === 'GET';
@@ -82,6 +101,7 @@ export function createApiClient(deps) {
       const headers = new Headers(options.headers || {});
       headers.set('Content-Type', 'application/json');
       if (tg?.initData) headers.set('x-telegram-init-data', tg.initData);
+      if (validationSession) headers.set('x-phase5-session', validationSession);
       try {
         const { timeoutMs: _timeoutMs, retry: _retry, dedupe: _dedupe, ...fetchOptions } = options;
         const response = await fetch(path, { ...fetchOptions, method, headers, signal: controller.signal });
