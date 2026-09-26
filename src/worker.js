@@ -2664,15 +2664,25 @@ function publicSiteUrl(request, pathname = '/') {
 function footballBotKeyboard(request) {
   return {
     keyboard: [
-      [{ text: '🔎 Найти матч' }, { text: '⚽ Матчи сегодня' }],
-      [{ text: '🧠 AI-подборка' }, { text: '🔴 LIVE' }],
-      [{ text: '📰 Новости' }, { text: '⭐ Мои команды' }],
-      [{ text: '🕘 Последний разбор' }, { text: '📈 Протокол AI' }],
-      [{ text: '☀️ Утренняя подборка' }, { text: 'ℹ️ Как это работает' }],
+      [{ text: '⚽ Матчи' }, { text: '🔎 Найти матч' }],
+      [{ text: '🔴 LIVE' }, { text: '⭐ Мои команды' }],
+      [{ text: '🤖 AI-подборка' }, { text: '••• Ещё' }],
     ],
     resize_keyboard: true,
     is_persistent: true,
     input_field_placeholder: 'Команда, матч или вопрос…',
+  };
+}
+
+function footballBotMoreKeyboard(request) {
+  return {
+    keyboard: [
+      [{ text: '🕘 Последний разбор' }, { text: '📰 Новости' }],
+      [{ text: '📈 Протокол AI' }, { text: '☀️ Утренняя подборка' }],
+      [{ text: 'ℹ️ Как это работает' }, { text: '← Главное меню' }],
+    ],
+    resize_keyboard: true,
+    is_persistent: true,
   };
 }
 
@@ -7408,12 +7418,22 @@ async function processTelegramUpdate(request, cfg, update) {
     return json({ ok: true });
   }
 
+  if (chatId && text === '••• Ещё') {
+    await telegramApi('sendMessage', cfg, { chat_id:chatId, text:'Дополнительные функции:', reply_markup:footballBotMoreKeyboard(request) });
+    return json({ ok: true });
+  }
+
+  if (chatId && text === '← Главное меню') {
+    await telegramApi('sendMessage', cfg, { chat_id:chatId, text:'Главное меню', reply_markup:footballBotKeyboard(request) });
+    return json({ ok: true });
+  }
+
   if (chatId && (/^\/help(?:@\w+)?(?:\s|$)/i.test(text) || text === 'ℹ️ Как это работает')) {
     await sendFootballBotHelp(request, cfg, chatId);
     return json({ ok: true });
   }
 
-  if (chatId && (/^\/today(?:@\w+)?(?:\s|$)/i.test(text) || /^матчи$/i.test(text) || text === '⚽ Матчи сегодня')) {
+  if (chatId && (/^\/today(?:@\w+)?(?:\s|$)/i.test(text) || /^матчи$/i.test(text) || (text === '⚽ Матчи сегодня' || text === '⚽ Матчи'))) {
     await sendBotDayMatches(request,cfg,chatId,{liveOnly:false});
     return json({ ok: true });
   }
@@ -7433,7 +7453,7 @@ async function processTelegramUpdate(request, cfg, update) {
     return json({ ok: true });
   }
 
-  if (chatId && (/^\/picks(?:@\w+)?(?:\s|$)/i.test(text) || text === '🧠 AI-подборка')) {
+  if (chatId && (/^\/picks(?:@\w+)?(?:\s|$)/i.test(text) || (text === '🧠 AI-подборка' || text === '🤖 AI-подборка'))) {
     await sendDailyPicks(request, cfg, chatId);
     return json({ ok: true });
   }

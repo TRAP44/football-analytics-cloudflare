@@ -242,7 +242,7 @@ if (!worker.includes("globalTopClubSearch: 'enabled'") || !worker.includes('TOP_
 if (!worker.includes('topTeamSearchPlan') || !worker.includes("v2-global")) failures.push('RC49 canonical team-search plan is missing');
 if (!worker.includes("botContentFirstNavigation: 'enabled'") || !worker.includes('sendBotDayMatches') || !worker.includes('sendBotFavoriteTeams')) failures.push('RC49 chat content navigation is missing');
 if (!html.includes('class="miniapp-public-shell"') || !app.includes('const startupTasks = [loadFavorites(), loadMatches()]') || !worker.includes("miniAppPublicShell: 'enabled'")) failures.push('RC49 public Mini App shell contract is missing');
-if (!html.includes('id="navMatches"') || !html.includes('id="navProfile"') || !html.includes('id="navSearch" class="nav-item active"')) failures.push('RC49 minimal navigation contract is missing');
+if (!html.includes('id="navMatches"') || !html.includes('id="navMyTeams"') || !html.includes('id="navHistory"') || !html.includes('id="navProfile"') || html.includes('id="navSearch"')) failures.push('Phase 4 minimal public navigation contract is missing');
 
 if (!worker.includes("fmAiNews: 'enabled'") || !worker.includes("newsSourceLinks: 'enabled'")) failures.push('RC50 FM AI News health contract is missing');
 if (!worker.includes('tavilyNewsSearch') || !worker.includes("topic:'news'")) failures.push('RC50 news provider route is missing');
@@ -527,7 +527,7 @@ if (!postDeploySmoke.includes("'supabaseProbeConfirmation'") || !postDeploySmoke
 
 
 if (!fs.existsSync('test/public-match-journey-rc123.test.js')) failures.push('Missing RC123 public match journey regression test');
-if (!html.includes('id="navMatches" class="nav-item" type="button"><span>⚽</span><small>Матчи</small>')) failures.push('RC123 public matches navigation is missing');
+if (!html.includes('id="navMatches" class="nav-item active" type="button"><span>⚽</span><small>Главная</small>') || !html.includes('id="homeSearchBtn"')) failures.push('Phase 4 home-first public navigation is missing');
 if (!app.includes('const startupTasks = [loadFavorites(), loadMatches()]')) failures.push('RC123 public match feed startup path is missing');
 if (!app.includes("matchesView: ['Матчи', 'Сегодня, LIVE и ближайшие игры для AI-разбора']")) failures.push('RC123 public match feed chrome is missing');
 

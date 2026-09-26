@@ -7,7 +7,7 @@ const app=fs.readFileSync('public/app.js','utf8');
 
 test('RC54 shortens first-session path and prioritizes search',()=> {
   assert.ok(worker.includes('Напишите клуб прямо в чат'));
-  assert.ok(worker.includes("[{ text: '🔎 Найти матч' }, { text: '⚽ Матчи сегодня' }]"));
+  assert.ok(worker.includes("[{ text: '⚽ Матчи' }, { text: '🔎 Найти матч' }]"));
   assert.ok(worker.includes('Можно по-русски: «Реал»'));
   assert.ok(!worker.includes("'<b>Как начать:</b>'"));
 });

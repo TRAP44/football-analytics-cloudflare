@@ -173,7 +173,7 @@ const MATCH_SNAPSHOT_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 
 
 const $ = id => document.getElementById(id);
-const views = ['matchesView', 'searchView', 'tournamentView', 'teamView', 'analysisView', 'historyView', 'profileView'];
+const views = ['matchesView', 'searchView', 'myTeamsView', 'tournamentView', 'teamView', 'analysisView', 'historyView', 'profileView'];
 
 function preferredAccentMode(theme) {
   if (theme === 'light') return 'light';
@@ -317,7 +317,7 @@ function handleBackNavigation() {
 }
 
 function showView(id, options = {}) {
-  if (!views.includes(id) || !$(id)) id = 'searchView';
+  if (!views.includes(id) || !$(id)) id = 'matchesView';
   const current = activeViewId();
   if (current === 'historyView' && id !== 'historyView' && !options.fromHistoryOpen) {
     state.historyOpenRequestSeq += 1;
@@ -335,12 +335,12 @@ function showView(id, options = {}) {
     view.setAttribute('aria-hidden', active ? 'false' : 'true');
   });
   $('navMatches').classList.toggle('active', id === 'matchesView' || id === 'tournamentView' || id === 'teamView' || id === 'analysisView');
-  $('navSearch')?.classList.toggle('active', id === 'searchView');
+  $('navMyTeams')?.classList.toggle('active', id === 'myTeamsView');
   $('navHistory').classList.toggle('active', id === 'historyView');
   $('navProfile').classList.toggle('active', id === 'profileView');
   document.querySelectorAll('.nav-item').forEach(btn => btn.removeAttribute('aria-current'));
   if (id === 'matchesView' || id === 'tournamentView' || id === 'teamView' || id === 'analysisView') $('navMatches')?.setAttribute('aria-current', 'page');
-  if (id === 'searchView') $('navSearch')?.setAttribute('aria-current', 'page');
+  if (id === 'myTeamsView') $('navMyTeams')?.setAttribute('aria-current', 'page');
   if (id === 'historyView') $('navHistory')?.setAttribute('aria-current', 'page');
   if (id === 'profileView') $('navProfile')?.setAttribute('aria-current', 'page');
   syncBackButtons();
@@ -775,8 +775,7 @@ function applyRuntimeUi() {
   }
 
   const searchDisabled = !runtimeAllows('searchEnabled');
-  $('navSearch')?.classList.remove('feature-disabled');
-  $('navSearch')?.removeAttribute('aria-disabled');
+
   if ($('globalSearchBtn')) {
     $('globalSearchBtn').disabled = searchDisabled || Boolean(state.globalSearch.loading);
     $('globalSearchBtn').textContent = state.globalSearch.loading ? 'Ищу…' : 'Найти';
@@ -896,6 +895,8 @@ async function runStartupSequence() {
   }
 
   applyLaunchIntent();
+  if (!tg?.initDataUnsafe?.start_param) showView('matchesView');
+  sendProductAction('open', 'matchesView');
   setBootStatus('FM AI готов', state.startup.degraded ? 'AI-поиск доступен, часть фоновых проверок завершится позже.' : 'Найдите матч — AI соберёт форму, составы, судью, рынок и риски.', 100);
   await new Promise(resolve => setTimeout(resolve, 120));
   hideBootGate();
@@ -1571,6 +1572,7 @@ function renderProfile() {
   if ($('favoriteFirstToggle')) $('favoriteFirstToggle').checked = prefs.favoriteFirst !== false;
   applyInterfacePreferences();
   renderFavoriteTeams();
+  renderMyTeams();
   renderReminderList();
   renderBilling();
   applyAdminVisibility();
@@ -3898,6 +3900,7 @@ async function loadFavorites() {
     state.favoritesLoadError = '';
     if (state.matches.length) renderMatches();
     renderDiscoveryHome();
+    renderMyTeams();
   } catch (e) {
     if (revisionAtStart !== state.favoritesRevision) return;
     state.favoritesLoadError = e.message || 'Не удалось загрузить избранное.';
@@ -4093,6 +4096,7 @@ async function toggleFavorite(team) {
     if (state.currentTournament) renderTournamentMatches();
     renderFavoriteTeams();
     renderDiscoveryHome();
+    renderMyTeams();
     if (state.currentAnalysis) renderAnalysis(state.currentAnalysis);
   } catch (e) {
     toast(e.message);
@@ -4145,6 +4149,42 @@ function renderFavoriteTeams() {
     if (item) toggleFavorite({ id: item.teamId, name: item.teamName, logo: item.teamLogo });
   }));
   el.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => openTeam({ id: Number(btn.dataset.openTeam), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '' })));
+}
+
+function renderMyTeams() {
+  const root = $('myTeamsList');
+  const onboarding = $('myTeamsOnboarding');
+  if (!root) return;
+  if (state.favoritesLoading && !state.favoritesLoaded) {
+    root.innerHTML = '<div class="loader compact-loader">Загружаю ваши команды…</div>';
+    if (onboarding) onboarding.hidden = true;
+    return;
+  }
+  if (!state.favorites.length) {
+    root.innerHTML = '';
+    if (onboarding) onboarding.hidden = false;
+    return;
+  }
+  if (onboarding) onboarding.hidden = true;
+  root.innerHTML = state.favorites.map(team => {
+    const id = Number(team.teamId || 0);
+    const related = state.matches.filter(match => [Number(match.home?.id), Number(match.away?.id)].includes(id));
+    const live = related.find(match => isLiveMatch(match));
+    const upcoming = related.filter(match => !isFinishedMatch(match) && !isLiveMatch(match)).sort((a,b) => Date.parse(a.date||0)-Date.parse(b.date||0))[0];
+    const recent = related.filter(match => isFinishedMatch(match)).sort((a,b) => Date.parse(b.date||0)-Date.parse(a.date||0))[0];
+    const focus = live || upcoming || recent;
+    const status = live ? '🔴 Матч идёт' : upcoming ? 'Ближайший матч' : recent ? 'Последний матч' : 'Матчи пока не найдены';
+    return `<article class="panel my-team-card">
+      <button class="my-team-head team-open-link" type="button" data-open-team="${id}" data-team-name="${escapeHtml(team.teamName || '')}" data-team-logo="${escapeHtml(team.teamLogo || '')}">
+        ${team.teamLogo ? `<img src="${safeUrl(team.teamLogo)}" alt="">` : '<span class="team-placeholder">⚽</span>'}
+        <span><strong>${escapeHtml(team.teamName || 'Команда')}</strong><small>${status}</small></span>
+        <b>Открыть →</b>
+      </button>
+      ${focus ? `<button class="my-team-match" type="button" data-team-fixture="${Number(focus.fixtureId)}"><span>${escapeHtml(focus.home?.name || '')} — ${escapeHtml(focus.away?.name || '')}</span><strong>${isLiveMatch(focus) ? escapeHtml(scoreText(focus)) : timeOf(focus.date)}</strong><small>Открыть матч →</small></button>` : '<div class="empty compact-empty">Данные по ближайшему матчу пока недоступны.</div>'}
+    </article>`;
+  }).join('');
+  root.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => openTeam({ id:Number(btn.dataset.openTeam), name:btn.dataset.teamName || '', logo:btn.dataset.teamLogo || '' })));
+  root.querySelectorAll('[data-team-fixture]').forEach(btn => btn.addEventListener('click', () => analyzeMatch(Number(btn.dataset.teamFixture), btn)));
 }
 
 
@@ -7395,13 +7435,14 @@ function matchCockpitHtml(d = {}) {
 }
 
 function analysisGlanceHtml(d = {}) {
-  const factors = (Array.isArray(d.insights) ? d.insights : []).filter(Boolean).slice(0, 5);
+  const factors = (Array.isArray(d.insights) ? d.insights : []).filter(Boolean).slice(0, 3);
   const risks = (Array.isArray(d.risks) ? d.risks : []).filter(Boolean).slice(0, 3);
   const score = Number.isFinite(Number(d.confidence?.score)) ? Math.round(Number(d.confidence.score)) : null;
+  const dataQuality = qualityInfo(d.completeness);
   return `<section class="panel analysis-glance">
     <div class="analysis-glance-head">
       <div><span>ГЛАВНОЕ</span><h2>Что важно перед матчем</h2></div>
-      <div class="analysis-confidence-simple"><span>Уверенность</span><strong>${score === null ? '—' : `${score}/100`}</strong><small>${escapeHtml(publicText(d.confidence?.label || 'Оценивается'))}</small></div>
+      <div class="analysis-confidence-simple"><span>Уверенность AI</span><strong>${score === null ? '—' : `${score}/100`}</strong><small>${escapeHtml(publicText(d.confidence?.label || 'Оценивается'))}</small><small>Данные: ${escapeHtml(dataQuality.label || 'пока неполные')}</small></div>
     </div>
     <div class="analysis-glance-grid">
       <div><h3>Главные факторы</h3>${factors.length ? `<ol>${factors.map(x => `<li>${escapeHtml(publicText(x))}</li>`).join('')}</ol>` : '<p>Сильных отдельных факторов пока нет.</p>'}</div>
@@ -7921,13 +7962,10 @@ $('navMatches').addEventListener('click', () => {
   sendProductAction('matches_open', 'matchesView');
   showView('matchesView');
 });
-$('navSearch')?.addEventListener('click', () => {
-  renderDiscoveryHome();
-  renderGlobalSearch();
-  showView('searchView');
-  if (window.matchMedia?.('(pointer: fine)').matches) {
-    setTimeout(() => $('globalSearchInput')?.focus({ preventScroll: true }), 80);
-  }
+$('navMyTeams')?.addEventListener('click', () => {
+  sendProductAction('matches_open', 'myTeamsView');
+  renderMyTeams();
+  showView('myTeamsView');
 });
 $('navHistory').addEventListener('click', async () => {
   sendProductAction('history_open', 'historyView');
@@ -7938,6 +7976,8 @@ $('navHistory').addEventListener('click', async () => {
   if (tasks.length) await Promise.allSettled(tasks);
 });
 $('navProfile').addEventListener('click', openProfileView);
+$('myTeamsFindBtn')?.addEventListener('click', () => { showView('matchesView'); setTimeout(() => $('matchSearch')?.focus({ preventScroll:true }), 80); });
+$('homeSearchBtn')?.addEventListener('click', () => { const q=String($('matchSearch')?.value || '').trim(); state.globalSearch.query=q; if ($('globalSearchInput')) $('globalSearchInput').value=q; renderGlobalSearch(); showView('searchView'); if (q) runGlobalSearch(); });
 $('proBtn')?.addEventListener('click', () => buyPlan('PRO'));
 $('premiumBtn')?.addEventListener('click', () => buyPlan('PREMIUM'));
 $('billingSyncBtn')?.addEventListener('click', () => syncBilling(true));

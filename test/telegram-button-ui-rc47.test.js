@@ -8,10 +8,11 @@ const worker=fs.readFileSync('src/worker.js','utf8');
 test('telegram uses a persistent button-first keyboard instead of a slash command menu',()=> {
   assert.match(worker,/commands:\s*\[\]/);
   assert.match(worker,/is_persistent:\s*true/);
-  assert.match(worker,/⚽ Матчи сегодня/);
-  assert.match(worker,/🧠 AI-подборка/);
+  assert.match(worker,/⚽ Матчи/);
+  assert.match(worker,/🤖 AI-подборка/);
   assert.match(worker,/🕘 Последний разбор/);
-  assert.match(worker,/☀️ Утренняя подборка/);
+  assert.match(worker,/••• Ещё/);
+  assert.match(worker,/function footballBotMoreKeyboard/);
 });
 
 test('bot profile is branded as FM AI',()=> {

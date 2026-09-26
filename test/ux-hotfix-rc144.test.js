@@ -48,7 +48,8 @@ test('public shell has no stronger two-column navigation rule overriding four it
   assert.ok(columns.length > 0);
   assert.equal(columns.some(value => /repeat\(\s*2\s*,/i.test(value)), false, columns.join(' | '));
   assert.ok(columns.some(value => /repeat\(\s*4\s*,/i.test(value)), columns.join(' | '));
-  assert.match(html, /id="navMatches"[\s\S]*id="navSearch"[\s\S]*id="navHistory"[\s\S]*id="navProfile"/);
+  assert.match(html, /id="navMatches"[\s\S]*id="navMyTeams"[\s\S]*id="navHistory"[\s\S]*id="navProfile"/);
+  assert.doesNotMatch(html, /id="navSearch"/);
 });
 
 test('quick discovery sections are not permanently suppressed by public-shell CSS', () => {
