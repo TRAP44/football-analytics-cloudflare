@@ -4,7 +4,7 @@ import fs from 'node:fs';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
-const css = fs.readFileSync('public/styles.css', 'utf8') + '\n' + readFileSync(new URL('../public/styles/public-shell.css', import.meta.url), 'utf8');
+const css = fs.readFileSync('public/styles.css', 'utf8') + '\n' + fs.readFileSync('public/styles/public-shell.css', 'utf8');
 
 function functionBody(name, nextName) {
   const start = app.indexOf(`function ${name}`);
