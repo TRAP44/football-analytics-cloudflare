@@ -35,7 +35,7 @@ import {
   hmacSha256,
   validateTelegramInitData,
 } from './crypto-utils.js';
-import { resolvePrimaryTelegramBotUsername, telegramBotStartUrl } from './telegram-primary-identity.js';
+import { primaryTelegramUpdateDedupeKey, resolvePrimaryTelegramBotUsername, telegramBotStartUrl } from './telegram-primary-identity.js';
 
 const memory = {
   users: new Map(),
@@ -1000,18 +1000,12 @@ const TELEGRAM_BURST_POLICIES = Object.freeze({
   refresh: { limit: 4, windowMs: 30000, label: 'refresh' },
 });
 
-function telegramUpdateDedupeKey(update = {}) {
-  const updateId=Number(update?.update_id);
-  if (Number.isSafeInteger(updateId) && updateId >= 0) return `u:${updateId}`;
-  const callbackId=String(update?.callback_query?.id || '');
-  if (callbackId) return `c:${callbackId.slice(0,120)}`;
-  const chatId=Number(update?.message?.chat?.id || 0);
-  const messageId=Number(update?.message?.message_id || 0);
-  return chatId && messageId ? `m:${chatId}:${messageId}` : '';
+function telegramUpdateDedupeKey(update = {}, cfg = {}) {
+  return primaryTelegramUpdateDedupeKey(cfg.botToken, update);
 }
 
-function claimTelegramUpdate(update = {}) {
-  const key=telegramUpdateDedupeKey(update);
+function claimTelegramUpdate(update = {}, cfg = {}) {
+  const key=telegramUpdateDedupeKey(update,cfg);
   if (!key) return {key:'',duplicate:false};
   const now=Date.now();
   const prior=memory.telegramUpdateDedupe.get(key);
@@ -1072,12 +1066,21 @@ async function releaseTelegramUpdatePersistent(cfg, key='') {
 }
 
 function telegramPersistentDedupeSelfTest() {
-  const byUpdate=telegramUpdateDedupeKey({update_id:123456});
-  const byCallback=telegramUpdateDedupeKey({callback_query:{id:'cb-123'}});
-  const byMessage=telegramUpdateDedupeKey({message:{chat:{id:77},message_id:88}});
+  const botA={botToken:'100000001:self-test-primary-a'};
+  const botB={botToken:'200000002:self-test-primary-b'};
+  const byUpdateA=telegramUpdateDedupeKey({update_id:123456},botA);
+  const byUpdateB=telegramUpdateDedupeKey({update_id:123456},botB);
+  const byCallback=telegramUpdateDedupeKey({callback_query:{id:'cb-123'}},botB);
+  const byMessage=telegramUpdateDedupeKey({message:{chat:{id:77},message_id:88}},botB);
   return {
-    pass:byUpdate==='u:123456' && byCallback==='c:cb-123' && byMessage==='m:77:88',
-    cases:3,
+    pass:byUpdateA==='b:id-100000001:u:123456'
+      && byUpdateB==='b:id-200000002:u:123456'
+      && byUpdateA!==byUpdateB
+      && byCallback==='b:id-200000002:c:cb-123'
+      && byMessage==='b:id-200000002:m:77:88'
+      && !byUpdateA.includes(botA.botToken)
+      && !byUpdateB.includes(botB.botToken),
+    cases:7,
   };
 }
 

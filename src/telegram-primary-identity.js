@@ -1,6 +1,7 @@
 const CACHE_PREFIX = 'telegram:bot-username:v2:';
 const USERNAME_PATTERN = /^[A-Za-z0-9_]{5,32}$/;
 const START_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+const BOT_ID_PATTERN = /^[1-9]\d{4,19}$/;
 const encoder = new TextEncoder();
 
 function normalizeUsername(value = '') {
@@ -21,6 +22,32 @@ async function primaryTokenFingerprint(botToken) {
 
 export async function primaryTelegramBotIdentityCacheKey(botToken) {
   return `${CACHE_PREFIX}${await primaryTokenFingerprint(botToken)}`;
+}
+
+export function primaryTelegramBotStableIdentity(botToken = '') {
+  const token = String(botToken || '').trim();
+  const separator = token.indexOf(':');
+  if (separator <= 0) return '';
+  const botId = token.slice(0, separator);
+  const secretPart = token.slice(separator + 1);
+  if (!BOT_ID_PATTERN.test(botId) || !secretPart) return '';
+  return `id-${botId}`;
+}
+
+export function primaryTelegramUpdateDedupeKey(botToken, update = {}) {
+  const identity = primaryTelegramBotStableIdentity(botToken);
+  if (!identity) return '';
+  const prefix = `b:${identity}`;
+
+  const updateId = Number(update?.update_id);
+  if (Number.isSafeInteger(updateId) && updateId >= 0) return `${prefix}:u:${updateId}`;
+
+  const callbackId = String(update?.callback_query?.id || '');
+  if (callbackId) return `${prefix}:c:${callbackId.slice(0, 120)}`;
+
+  const chatId = Number(update?.message?.chat?.id || 0);
+  const messageId = Number(update?.message?.message_id || 0);
+  return chatId && messageId ? `${prefix}:m:${chatId}:${messageId}` : '';
 }
 
 export async function resolvePrimaryTelegramBotUsername({
