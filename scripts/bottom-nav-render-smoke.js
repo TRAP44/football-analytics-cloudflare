@@ -201,13 +201,14 @@ async function main() {
     await cdp.call('Runtime.enable');
     await cdp.call('Network.enable');
     await cdp.call('Network.setUserAgentOverride', { userAgent: TELEGRAM_WEBVIEW_UA });
+    await cdp.call('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
 
     for (const width of WIDTHS) {
       await cdp.call('Emulation.setDeviceMetricsOverride', {
         width,
         height: 844,
         deviceScaleFactor: 1,
-        mobile: true,
+        mobile: false,
         screenWidth: width,
         screenHeight: 844,
       });
