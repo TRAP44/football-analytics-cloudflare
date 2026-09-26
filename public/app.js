@@ -4986,7 +4986,6 @@ async function loadMatches(options = {}) {
     const data = await api(`/api/matches?date=${date}`, {
       timeoutMs: 6500,
       retry: false,
-      dedupe: false,
     });
     if (seq !== state.matchesLoadSeq) return;
     data.refreshedAt ||= new Date().toISOString();

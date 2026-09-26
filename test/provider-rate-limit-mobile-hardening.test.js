@@ -77,6 +77,9 @@ test('client deduplicates match center refreshes and keeps provider cooldown non
 
   const search=block(app,'async function runGlobalSearch','function openTournamentMeta');
   assert.doesNotMatch(search,/dedupe:\s*false/);
+
+  const matches=block(app,'async function loadMatches','function syncFilterButtons');
+  assert.doesNotMatch(matches,/dedupe:\s*false/);
   assert.match(app,/query\.trim\(\)\.length >= 3/);
   assert.match(app,/setTimeout\(\(\) => runGlobalSearch\(\), 500\)/);
 });
