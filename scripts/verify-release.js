@@ -534,7 +534,7 @@ if (!fs.existsSync('test/phase4-1-public-visual-simplification.test.js')) failur
 if (!fs.existsSync('test/public-match-journey-rc123.test.js')) failures.push('Missing RC123 public match journey regression test');
 if (!html.includes('id="navMatches" class="nav-item active"') || !html.includes('<small>Главная</small>') || !html.includes('id="homeSearchBtn"')) failures.push('Phase 4 home-first public navigation is missing');
 if (!app.includes('const startupTasks = [loadFavorites(), loadMatches()]')) failures.push('RC123 public match feed startup path is missing');
-if (!app.includes("matchesView: ['Главная', 'Понимай матч глубже.']")) failures.push('Phase 4.1/4.2 public Home chrome is missing');
+if (!app.includes("matchesView: ['Главная', 'Видим, что меняет матч.']")) failures.push('Phase 4.1/MatchRadar public Home chrome is missing');
 
 if (!fs.existsSync('test/provider-coverage-transparency-rc124.test.js')) failures.push('Missing RC124 provider coverage transparency regression test');
 if (!app.includes('function providerCoverageHtml(reliability = {})')) failures.push('RC124 provider coverage UI is missing');
