@@ -13972,10 +13972,7 @@ async function claimDistributedProviderBudget(cfg) {
       p_limit:limit,
       p_window_seconds:60,
     },2500);
-    if (!result?.allowed) {
-      bumpTelemetry('providerDistributedBlocks');
-      phase5ProviderUsage(cfg,'quotaBlocks',1);
-    }
+    if (!result?.allowed) bumpTelemetry('providerDistributedBlocks');
     return {allowed:Boolean(result?.allowed),limit,retryAfter:Number(result?.retryAfter || 0),count:Number(result?.count || 0),degraded:false};
   } catch (error) {
     bumpTelemetry('providerDistributedFallbacks');
@@ -23062,9 +23059,6 @@ export default {
     }
 
     if (request.method === 'GET' && url.pathname === '/api/runtime-status') {
-      cfg.phase5Validation = await phase5ValidationContext(request,user,cfg,url);
-      cfg.phase5ProviderUsage = {networkRequests:0,cacheHits:0,staleCacheHits:0,quotaBlocks:0,sharedCooldowns:0};
-
       const runtimeState = await loadRuntimeControls(cfg);
       return json({
         ok: true,
@@ -23120,6 +23114,9 @@ export default {
         }).catch(()=>null);
         return json({ error: 'Доступ к закрытой beta пока не выдан.', code: 'CLOSED_BETA_ACCESS_REQUIRED' }, 403);
       }
+
+      cfg.phase5Validation = await phase5ValidationContext(request,user,cfg,url);
+      cfg.phase5ProviderUsage = {networkRequests:0,cacheHits:0,staleCacheHits:0,quotaBlocks:0,sharedCooldowns:0};
 
       const runtimeState = await loadRuntimeControls(cfg);
       const runtimeResponse = runtimeGuard(request, user, cfg, runtimeState.value);
