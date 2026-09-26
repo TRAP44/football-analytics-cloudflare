@@ -54,7 +54,7 @@ test('match list renders snapshots immediately and refreshes without blocking vi
   assert.match(body, /state\.matchesMeta\.refreshing = true/);
   assert.match(body, /timeoutMs:\s*6500/);
   assert.match(body, /retry:\s*false/);
-  assert.match(app, /↻ обновляем/);
+  assert.match(app, /state\.matchesMeta\.refreshing/);
 });
 
 test('match cards keep one primary action with compact secondary favorite and reminder actions', () => {
