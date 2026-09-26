@@ -14,9 +14,9 @@ test('Phase 4 public navigation is Home My Teams History Profile with search on 
   assert.doesNotMatch(html,/id="navSearch"/);
   assert.match(html,/id="homeSearchBtn"/);
 });
-test('new users get favorite-team onboarding without profile setup',()=>{
-  assert.match(html,/Добавьте любимые команды — покажем их матчи первыми/);
-  assert.match(html,/Профиль настраивать не нужно/);
+test('new users get a simple favorite-team CTA on Home without profile setup',()=>{
+  assert.match(html,/id="homeFavoriteBtn"/);
+  assert.match(html,/Добавить любимую команду/);
   assert.match(app,/function renderMyTeams\(\)/);
 });
 test('My Teams reuses favorites and existing match catalog',()=>{
