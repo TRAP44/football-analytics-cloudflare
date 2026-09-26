@@ -5,7 +5,7 @@ import fs from 'node:fs';
 const worker=fs.readFileSync('src/worker.js','utf8');
 const html=fs.readFileSync('public/index.html','utf8');
 
-test('FM AI News lives in Telegram navigation',()=> {
+test('MatchRadar AI News lives in Telegram navigation',()=> {
   assert.match(worker,/\{ text: '📰 Новости' \}/);
   assert.match(worker,/text === '📰 Новости'/);
   assert.match(worker,/function sendGeneralFootballNews/);
@@ -27,7 +27,7 @@ test('news is classified into football-impact categories without auto-changing p
     assert.ok(worker.includes(`code:'${code}'`), `missing news category ${code}`);
   }
   assert.match(worker,/function footballNewsImpactText/);
-  assert.match(worker,/FM AI не меняет прогноз только из-за заголовка/);
+  assert.match(worker,/MatchRadar AI не меняет прогноз только из-за заголовка/);
 });
 
 test('favorite-team news can lead to a relevant upcoming match',()=> {
