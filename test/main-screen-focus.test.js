@@ -7,7 +7,7 @@ const worker = fs.readFileSync('src/worker.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 
 test('main match screen keeps secondary discovery inside the league drawer', () => {
-  const drawerStart = html.indexOf('<details class="league-filter-drawer">');
+  const drawerStart = html.indexOf('<details class="home-filter-drawer league-filter-drawer">');
   const drawerEnd = html.indexOf('</details>', drawerStart);
   const popular = html.indexOf('id="popularCompetitionsWrap"');
   assert.ok(drawerStart >= 0 && drawerEnd > drawerStart);
@@ -26,10 +26,11 @@ test('quota is quiet until it is useful', () => {
   assert.match(app, /Number\(quota\.left\) <= 3 \|\| state\.profileStale/);
 });
 
-test('overview date context follows yesterday today and tomorrow', () => {
-  assert.match(html, /id="dailyOverviewKicker">СЕГОДНЯ ДЛЯ ВАС/);
-  assert.match(app, /ВЧЕРА ДЛЯ ВАС/);
-  assert.match(app, /ЗАВТРА ДЛЯ ВАС/);
+test('date context stays directly available without a duplicate overview headline', () => {
+  assert.match(html, /data-offset="-1">Вчера/);
+  assert.match(html, /data-offset="0">Сегодня/);
+  assert.match(html, /data-offset="1">Завтра/);
+  assert.doesNotMatch(html, /dailyOverviewKicker|dailyOverviewTitle|dailyOverviewText/);
 });
 
 test('RC39 health exposes focused-home contracts', () => {
