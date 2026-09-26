@@ -1,0 +1,86 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
+const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+
+function block(source,start,end){
+  const a=source.indexOf(start);
+  assert.notEqual(a,-1,start);
+  const b=source.indexOf(end,a+start.length);
+  assert.notEqual(b,-1,end);
+  return source.slice(a,b);
+}
+
+test('production closed beta is fail-closed even when env binding is missing or false',()=>{
+  const cfg=block(worker,'function config(env)','function runtimeControlsSnapshot');
+  assert.match(cfg,/betaAccessConfigured:\s*boolEnvState\(env\.BETA_ACCESS_ENABLED\)/);
+  assert.match(cfg,/betaAccessEnabled:\s*true/);
+
+  const routes=block(worker,"if (!url.pathname.startsWith('/api/'))","async scheduled(controller");
+  const guard=routes.indexOf('closedBetaAccessDecision(user, cfg)');
+  const matches=routes.indexOf("url.pathname === '/api/matches'");
+  assert.ok(guard>=0 && matches>guard);
+  assert.match(routes,/CLOSED_BETA_ACCESS_DENIED/);
+  assert.match(routes,/providerRequests:0/);
+});
+
+test('unauthorized Mini App stops before favorites and match loading',()=>{
+  assert.match(app,/closedBetaBlocked:\s*false/);
+  const api=block(app,'async function api(path','async function loadProfile');
+  assert.match(api,/CLOSED_BETA_ACCESS_REQUIRED/);
+  assert.match(api,/state\.closedBetaBlocked = true/);
+  assert.match(api,/title: 'Закрытая beta'/);
+
+  const startup=block(app,'async function runStartupSequence','function localDate');
+  const blockAt=startup.indexOf('if (state.closedBetaBlocked) return false;');
+  const tasksAt=startup.indexOf('const startupTasks = [loadFavorites(), loadMatches()]');
+  assert.ok(blockAt>=0 && tasksAt>blockAt);
+});
+
+test('shared quota and cooldown are persisted before provider fan-out',()=>{
+  const quota=block(worker,"const PROVIDER_QUOTA_SHARED_CACHE_KEY",'function quotaUsed');
+  assert.match(quota,/provider-state:api-football:quota:v1/);
+  assert.match(quota,/provider-state:api-football:cooldown:v1/);
+  assert.match(quota,/loadSharedProviderState/);
+  assert.match(quota,/persistSharedProviderQuota/);
+  assert.match(quota,/persistSharedProviderCooldown/);
+  assert.match(quota,/setCache\(PROVIDER_QUOTA_SHARED_CACHE_KEY/);
+  assert.match(quota,/getCache\(PROVIDER_COOLDOWN_SHARED_CACHE_KEY/);
+
+  const network=block(worker,'async function apiFootballNetwork','function providerRequestKey');
+  assert.match(network,/await loadSharedProviderState\(cfg\)/);
+  assert.match(network,/await persistSharedProviderQuota\(cfg\)/);
+  assert.match(network,/persistSharedProviderCooldown\(cfg, retryAfter/);
+  assert.match(network,/persistSharedProviderCooldown\(cfg, 65/);
+});
+
+test('FREE distributed budget leaves boundary safety margin',()=>{
+  const budget=block(worker,'function distributedProviderMinuteLimit','async function claimDistributedProviderBudget');
+  assert.match(budget,/rawBudget/);
+  assert.match(budget,/plan === 'FREE' \|\| plan === 'UNKNOWN'/);
+  assert.match(budget,/Math\.floor\(rawBudget \/ 2\)/);
+});
+
+test('release evidence captures beta config and one real provider quota probe',()=>{
+  const evidence=block(worker,'async function claimReleaseEvidenceLock','async function readinessSnapshot');
+  assert.match(evidence,/BETA_ACCESS_CONFIG_CONFIRMED/);
+  assert.match(evidence,/betaAccessConfigured/);
+  assert.match(evidence,/betaAllowlistCount/);
+  assert.match(evidence,/newestUserBetaAllowlisted/);
+  assert.match(evidence,/PROVIDER_RELEASE_QUOTA_PROBE/);
+  assert.match(evidence,/apiFootball\('\/status',\{\},cfg,\{responseType:'any',transportRetries:0/);
+  assert.match(evidence,/evidenceSource:'controlled_release_probe'/);
+
+  const readiness=block(worker,'async function readinessSnapshot','export default');
+  assert.match(readiness,/scheduleReleaseFieldEvidence\(cfg\)/);
+});
+
+test('one normal startup match-list request can make at most one API-Football call',()=>{
+  const matches=block(worker,'async function apiMatches','function normalizeStandingRow');
+  const calls=(matches.match(/apiFootball\(/g) || []).length;
+  assert.equal(calls,1);
+  assert.match(matches,/providerBatch/);
+  assert.match(matches,/getCache\(providerBatchKey/);
+});
