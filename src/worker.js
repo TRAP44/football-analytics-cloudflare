@@ -1,3 +1,4 @@
+import { createTelegramWebhookHandler } from './telegram-transport.js';
 import { dispatchApiRoute } from './router.js';
 import {
   CALIBRATION_LIFECYCLE_RULES,
@@ -7488,49 +7489,6 @@ async function processTelegramUpdate(request, cfg, update) {
   }
 
   return json({ ok: true });
-}
-
-async function handleTelegramWebhook(request, cfg) {
-  if (!cfg.webhookSecret) return json({ ok: false, error: 'webhook_secret_missing' }, 503);
-  const provided=request.headers.get('x-telegram-bot-api-secret-token') || '';
-  if (!constantTimeEqual(String(provided),String(cfg.webhookSecret))) return json({ok:false},403);
-
-  let update={};
-  try { update=await request.json(); } catch { return json({ok:false},400); }
-
-  const claim=claimTelegramUpdate(update);
-  if (claim.duplicate) return json({ok:true,deduped:true});
-
-  const persistentClaim=await claimTelegramUpdatePersistent(cfg,claim.key);
-  if (persistentClaim.duplicate) {
-    completeTelegramUpdate(claim.key);
-    return json({ok:true,deduped:true,persistent:true});
-  }
-
-  const burst=enforceTelegramBurst(update);
-  if (burst?.blocked) {
-    completeTelegramUpdate(claim.key);
-    await completeTelegramUpdatePersistent(cfg,claim.key);
-    const callbackId=String(update?.callback_query?.id || '');
-    if (callbackId) {
-      await telegramApi('answerCallbackQuery',cfg,{
-        callback_query_id:callbackId,
-        text:`Слишком много действий подряд. Повторите через ${burst.retryAfter} сек.`,
-      }).catch(()=>null);
-    }
-    return json({ok:true,throttled:true,retryAfter:burst.retryAfter});
-  }
-
-  try {
-    const response=await processTelegramUpdate(request,cfg,update);
-    completeTelegramUpdate(claim.key);
-    await completeTelegramUpdatePersistent(cfg,claim.key);
-    return response;
-  } catch (error) {
-    releaseTelegramUpdate(claim.key);
-    await releaseTelegramUpdatePersistent(cfg,claim.key);
-    throw error;
-  }
 }
 
 async function apiBillingPlans(request, cfg, user) {
@@ -22186,6 +22144,21 @@ async function readinessSnapshot(cfg) {
     },
   };
 }
+
+const TELEGRAM_WEBHOOK_DEPS = Object.freeze({
+  claimTelegramUpdate,
+  claimTelegramUpdatePersistent,
+  completeTelegramUpdate,
+  completeTelegramUpdatePersistent,
+  constantTimeEqual,
+  enforceTelegramBurst,
+  json,
+  processTelegramUpdate,
+  releaseTelegramUpdate,
+  releaseTelegramUpdatePersistent,
+  telegramApi,
+});
+const handleTelegramWebhook = createTelegramWebhookHandler(TELEGRAM_WEBHOOK_DEPS);
 
 const API_ROUTE_DEPS = Object.freeze({
   adminForbidden,
