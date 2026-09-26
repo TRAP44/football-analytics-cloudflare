@@ -1199,6 +1199,27 @@ function renderBetaDashboard() {
   const nextWaveLabel=nextWave
     ? `+${Number(nextWave.add || 0)} → ${Number(nextWave.targetAssigned || 0)} пользователей · ${nextWave.allowed ? 'разрешено' : 'заблокировано'}`
     : 'Новая волна не требуется/не разрешена';
+  const fieldBlockerLabels={
+    beta_users_not_assigned:'Не назначены реальные beta-пользователи',
+    verified_beta_telemetry_missing:'Нет verified beta telemetry',
+    initial_expansion_gate_closed:'Входной gate расширения закрыт',
+    beta_product_issue:'Есть BLOCKER/MAJOR',
+    runtime_unhealthy:'Runtime требует восстановления',
+    provider_quota_pressure:'Давление на quota provider',
+    provider_review_required:'Требуется Provider Evaluation',
+  };
+  const fieldBlockers=(controlled.fieldBlockers || []).map(code=>fieldBlockerLabels[code] || humanizeTechnicalText(code));
+  const nextRequiredActionLabel={
+    assign_real_beta_users:'Назначить минимум 2 реальных beta-пользователя в server-side allowlist',
+    collect_verified_beta_usage:'Получить реальные verified beta-сессии от назначенных пользователей',
+    close_initial_expansion_requirements:'Закрыть незакрытые требования входного gate на реальных данных',
+    restore_runtime_health:'Восстановить runtime и устранить BLOCKER/MAJOR',
+    run_provider_evaluation:'Провести отдельный Provider Evaluation до продолжения',
+    observe_wave_1:'Провести и наблюдать первую ручную волну до 4 verified пользователей',
+    observe_wave_2:'Провести и наблюдать вторую ручную волну до 6 verified пользователей',
+    collect_expanded_beta_evidence:'Добрать journey / coverage / latency / LIVE evidence',
+    none:'Дополнительное действие не требуется',
+  }[String(controlled.nextRequiredAction || '')] || 'Нет данных';
   healthRoot.innerHTML=[
     ['Основной сбой',topBreak],
     ['Beta-01/Beta-02',`${betaAssigned}/${betaRequired}`],
@@ -1212,6 +1233,9 @@ function renderBetaDashboard() {
     ['Data coverage decision',coverageDecisionLabel],
     ['Provider validation',providerValidationLabel],
     ['Итог этапа',finalDecisionLabel],
+    ['Блокеры этапа',fieldBlockers.length ? fieldBlockers.join(' · ') : 'Нет'],
+    ['Следующее действие',nextRequiredActionLabel],
+    ['Незакрытые требования gate',(controlled.initialGateGaps || []).length ? controlled.initialGateGaps.join(', ') : 'Нет'],
     ['Следующая beta-волна',nextWaveLabel],
     ['Production monitor',humanizeTechnicalText(health.productionMonitor || controlled.checks?.productionMonitor?.state || 'нет данных')],
     ['Provider rate-limit',String(Number(health.providerRateLimit || 0))],

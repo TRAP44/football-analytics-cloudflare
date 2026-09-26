@@ -14683,6 +14683,36 @@ function controlledBetaExpansionDecision({
     && providerValidationDecision!=='review_new_or_paid_provider'
   );
 
+  const initialGateGaps=Object.entries(expansionDecision?.requirements || {})
+    .filter(([,value])=>!value?.pass)
+    .map(([key])=>key);
+  const fieldBlockers=[];
+  if (assignedUsers<2) fieldBlockers.push('beta_users_not_assigned');
+  if (verifiedUsers===0) fieldBlockers.push('verified_beta_telemetry_missing');
+  if (!expansionDecision?.expansionAllowed) fieldBlockers.push('initial_expansion_gate_closed');
+  if (blockerCount>0 || majorCount>0) fieldBlockers.push('beta_product_issue');
+  if (!supabaseOk || !telegramConfirmed || productionMonitor?.state==='incident') fieldBlockers.push('runtime_unhealthy');
+  if (quotaPressure) fieldBlockers.push('provider_quota_pressure');
+  if (wave1Observed && providerValidationDecision==='review_new_or_paid_provider') fieldBlockers.push('provider_review_required');
+
+  const nextRequiredAction=assignedUsers<2
+    ? 'assign_real_beta_users'
+    : verifiedUsers<Math.min(assignedUsers,2)
+      ? 'collect_verified_beta_usage'
+      : !expansionDecision?.expansionAllowed
+        ? 'close_initial_expansion_requirements'
+        : blockerCount>0 || majorCount>0 || !supabaseOk || !telegramConfirmed || productionMonitor?.state==='incident'
+          ? 'restore_runtime_health'
+          : wave1Observed && providerValidationDecision==='review_new_or_paid_provider'
+            ? 'run_provider_evaluation'
+            : verifiedUsers<4
+              ? 'observe_wave_1'
+              : verifiedUsers<6
+                ? 'observe_wave_2'
+                : !expandedEvidenceEnough
+                  ? 'collect_expanded_beta_evidence'
+                  : 'none';
+
   return {
     finalDecision,
     expansionAllowed:Boolean(expansionDecision?.expansionAllowed),
@@ -14700,6 +14730,16 @@ function controlledBetaExpansionDecision({
       add:Math.max(0,Math.min(2,nextWaveTarget-assignedUsers)),
       allowed:canAddNextWave,
     } : null,
+    fieldBlockers,
+    initialGateGaps,
+    nextRequiredAction,
+    evidenceTargets:{
+      verifiedUsers:6,
+      fullJourneys:4,
+      coverageSamples:20,
+      coreLatencySamplesPerOperation:5,
+      liveLatencySamples:3,
+    },
     providerValidationDecision,
     providerReviewSignal,
     providerSignals:{

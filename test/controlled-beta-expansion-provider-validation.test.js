@@ -75,3 +75,22 @@ test('admin dashboard renders controlled expansion and provider validation decis
   assert.match(render,/BETA READY FOR PUBLIC PRE-LAUNCH/);
   assert.match(render,/DATA PROVIDER UPGRADE REQUIRED/);
 });
+
+
+test('BETA HOLD exposes actionable field blockers instead of fabricating beta evidence',()=>{
+  const decision=block(worker,'function controlledBetaExpansionDecision','function buildBetaIssueGroups');
+  for (const token of [
+    'fieldBlockers','initialGateGaps','nextRequiredAction','beta_users_not_assigned',
+    'verified_beta_telemetry_missing','assign_real_beta_users','collect_verified_beta_usage',
+    'evidenceTargets',
+  ]) assert.match(decision,new RegExp(token));
+  assert.match(decision,/assignedUsers<2/);
+  assert.match(decision,/verifiedUsers===0/);
+  assert.doesNotMatch(decision,/BETA_TELEGRAM_IDS\s*=/);
+
+  const render=block(app,'function renderBetaDashboard','async function');
+  assert.match(render,/Блокеры этапа/);
+  assert.match(render,/Следующее действие/);
+  assert.match(render,/Назначить минимум 2 реальных beta-пользователя/);
+  assert.match(render,/Незакрытые требования gate/);
+});
