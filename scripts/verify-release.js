@@ -7,6 +7,7 @@ const app = fs.readFileSync('public/app.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const staticHeaders = fs.readFileSync('public/_headers', 'utf8');
 const styles = fs.readFileSync('public/styles.css', 'utf8');
+const publicShellStyles = fs.readFileSync('public/styles/public-shell.css', 'utf8');
 const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml', 'utf8');
 const rollbackWorkflow = fs.readFileSync('.github/workflows/rollback-production.yml', 'utf8');
 const rollbackSmoke = fs.readFileSync('scripts/rollback-smoke.js', 'utf8');
@@ -32,7 +33,9 @@ if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker
 if (!worker.includes("const RC_NAME = 'RC144'")) failures.push('Worker RC name must be RC144');
 if (!app.includes(`const CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
 if (!app.includes("const CLIENT_RELEASE_CHANNEL = 'rc144'")) failures.push('Client release channel must be rc144');
-if (!html.includes(`/app.js?v=${pkg.version}`) || !html.includes(`/styles.css?v=${pkg.version}`)) failures.push('Static asset versions must match package version');
+const frontendAssetRevision = /<meta name="frontend-asset-revision" content="([^"]+)" \/>/.exec(html)?.[1] || '';
+if (!frontendAssetRevision || frontendAssetRevision === pkg.version || !frontendAssetRevision.startsWith(`${pkg.version}-`)) failures.push('Frontend asset revision must cache-bust the package version');
+if (!html.includes(`/app.js?v=${frontendAssetRevision}`) || !html.includes(`/styles.css?v=${frontendAssetRevision}`) || !html.includes(`/styles/public-shell.css?v=${frontendAssetRevision}`)) failures.push('Frontend JS/CSS cache-bust tokens must be coherent');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_11.sql')) failures.push('Missing v6.11 migration');
@@ -205,6 +208,9 @@ if (!securityMigration.includes('revoke all privileges on all tables in schema p
 const defaultAclMigration = fs.readFileSync('supabase/migrations/supabase_migration_v6_11_1.sql', 'utf8');
 if (!defaultAclMigration.includes('application_owners')) failures.push('Missing application-owner default ACL audit');
 if (!defaultAclMigration.includes('backend_default_acl_contract')) failures.push('Missing default ACL security contract RPC');
+
+if (!publicShellStyles.includes('Bottom Navigation Visibility Hotfix') || !publicShellStyles.includes('grid-template-columns:repeat(4,minmax(0,1fr))') || !publicShellStyles.includes('transform:none')) failures.push('Bottom navigation final four-column cascade/position guard is missing');
+if (!staticHeaders.includes('/styles/public-shell.css') || !staticHeaders.includes('/index.html') || !staticHeaders.includes('Cache-Control: no-cache, max-age=0, must-revalidate')) failures.push('Mini App shell cache revalidation headers are missing');
 
 if (failures.length) {
   console.error(failures.join('\n'));

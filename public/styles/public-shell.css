@@ -1517,3 +1517,38 @@ html {
   .miniapp-public-shell .compact-team .team-logo-fallback{width:25px;height:25px}
   .miniapp-public-shell .nav-item svg{width:18px;height:18px}
 }
+
+/* Bottom Navigation Visibility Hotfix — final public cascade guard */
+.miniapp-public-shell .bottom-nav{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  grid-auto-flow:column;
+  grid-auto-columns:minmax(0,1fr);
+  box-sizing:border-box;
+  left:max(7px,env(safe-area-inset-left));
+  right:max(7px,env(safe-area-inset-right));
+  width:auto;
+  max-width:730px;
+  margin-inline:auto;
+  transform:none;
+  overflow-x:visible;
+  padding-left:6px;
+  padding-right:6px;
+  bottom:max(5px,env(safe-area-inset-bottom));
+}
+.miniapp-public-shell .bottom-nav>#navMatches,
+.miniapp-public-shell .bottom-nav>#navMyTeams,
+.miniapp-public-shell .bottom-nav>#navHistory,
+.miniapp-public-shell .bottom-nav>#navProfile{
+  display:grid!important;
+  visibility:visible!important;
+  min-width:0;
+  width:auto;
+  max-width:none;
+}
+.miniapp-public-shell .bottom-nav>.nav-item small{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
