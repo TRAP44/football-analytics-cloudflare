@@ -108,9 +108,10 @@ test('history profile and match-list recovery states are actionable', () => {
 test('closed beta contract preserves Telegram to Mini App to profile path', () => {
   assert.match(app, /x-telegram-init-data/);
   assert.match(app, /sendClientTelemetry\('boot_ok'/);
-  assert.match(html, /id="searchView" class="view active"/);
+  assert.match(html, /id="matchesView" class="view active"/);
   assert.match(html, /id="navMatches"/);
-  assert.match(html, /id="navSearch"/);
+  assert.match(html, /id="navMyTeams"/);
+  assert.doesNotMatch(html, /id="navSearch"/);
   assert.match(html, /id="navHistory"/);
   assert.match(html, /id="navProfile"/);
   assert.match(app, /async function runGlobalSearch/);
