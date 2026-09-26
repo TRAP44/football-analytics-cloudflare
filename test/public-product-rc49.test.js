@@ -24,12 +24,14 @@ test('telegram search shares the same canonical club resolution',()=> {
 });
 
 test('main Telegram navigation keeps content in chat',()=> {
-  assert.match(worker,/\{ text: '⚽ Матчи сегодня' \}/);
+  assert.match(worker,/\{ text: '⚽ Матчи' \}/);
   assert.match(worker,/\{ text: '🔴 LIVE' \}/);
   assert.match(worker,/\{ text: '⭐ Мои команды' \}/);
   assert.match(worker,/function sendBotDayMatches/);
   assert.match(worker,/function sendBotFavoriteTeams/);
-  assert.match(worker,/text === '⚽ Матчи сегодня'/);
+  assert.match(worker,/🤖 AI-подборка/);
+  assert.match(worker,/••• Ещё/);
+  assert.match(worker,/text === '⚽ Матчи'/);
   assert.match(worker,/text === '🔴 LIVE'/);
   assert.match(worker,/text === '⭐ Мои команды'/);
 });
