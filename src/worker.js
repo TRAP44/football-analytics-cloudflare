@@ -14465,23 +14465,35 @@ function betaErrorCountByKind(errorRows = [], kinds = []) {
 function betaCoverageSummary(rows = []) {
   const coverageRows=(rows || []).filter(row=>row?.source==='client' && row?.event_type==='client_telemetry' && row?.code==='DATA_COVERAGE');
   const keys=['lineups','injuries','statistics','xg','odds'];
-  const missing={};
-  for (const key of keys) {
-    const field=`${key}Available`;
-    const observed=coverageRows.filter(row=>typeof row?.metadata?.[field] === 'boolean');
-    const missingCount=observed.filter(row=>row.metadata[field]===false).length;
-    missing[key]={
-      samples:observed.length,
-      missing:missingCount,
-      missingPct:observed.length ? Math.round((missingCount/observed.length)*1000)/10 : 0,
-    };
-  }
+  const summarizeMissing=(sampleRows=[])=>{
+    const missing={};
+    for (const key of keys) {
+      const field=`${key}Available`;
+      const observed=(sampleRows || []).filter(row=>typeof row?.metadata?.[field] === 'boolean');
+      const missingCount=observed.filter(row=>row.metadata[field]===false).length;
+      missing[key]={
+        samples:observed.length,
+        missing:missingCount,
+        missingPct:observed.length ? Math.round((missingCount/observed.length)*1000)/10 : 0,
+      };
+    }
+    return missing;
+  };
   const byMode={};
   for (const row of coverageRows) {
     const mode=String(row?.metadata?.matchMode || 'unknown');
     byMode[mode]=Number(byMode[mode] || 0)+1;
   }
-  return {samples:coverageRows.length,missing,byMode};
+  const liveRows=coverageRows.filter(row=>String(row?.metadata?.matchMode || '')==='live');
+  return {
+    samples:coverageRows.length,
+    missing:summarizeMissing(coverageRows),
+    byMode,
+    live:{
+      samples:liveRows.length,
+      missing:summarizeMissing(liveRows),
+    },
+  };
 }
 
 function betaExpansionDecision({
@@ -14544,6 +14556,191 @@ function betaExpansionDecision({
     providerEvidence,
     decisionRule:'Expansion requires real verified beta users/sessions, repeated full journeys, core latency evidence, coverage evidence, zero BLOCKER/MAJOR and no launch/runtime blocker.',
     sessionDefinition:'One verified beta session start equals an accepted server-side closed_beta_v1 BOOT_OK event after telemetry dedupe.',
+  };
+}
+
+
+function quotaRemainingPct(limit,remaining) {
+  const l=Number(limit);
+  const r=Number(remaining);
+  if (!Number.isFinite(l) || l<=0 || !Number.isFinite(r)) return null;
+  return Math.max(0,Math.min(100,Math.round((r/l)*1000)/10));
+}
+
+function betaProductionMonitorSummary(rows = [], nowMs = Date.now()) {
+  const recent=(rows || [])
+    .filter(row=>row?.source==='monitor' && row?.event_type==='production_monitor')
+    .filter(row=>{
+      const at=Date.parse(row?.created_at || '');
+      return Number.isFinite(at) && nowMs-at<=6*60*60_000;
+    })
+    .sort((a,b)=>Date.parse(b?.created_at || 0)-Date.parse(a?.created_at || 0));
+  const latest=recent[0] || null;
+  const latestCode=String(latest?.code || '');
+  const state=!latest ? 'unknown'
+    : latestCode==='PRODUCTION_MONITOR_INCIDENT' ? 'incident'
+      : latestCode==='PRODUCTION_MONITOR_WATCH' ? 'watch'
+        : ['PRODUCTION_MONITOR_HEALTHY','PRODUCTION_MONITOR_RECOVERED'].includes(latestCode) ? 'healthy'
+          : 'unknown';
+  return {
+    state,
+    latestCode,
+    lastSeen:latest?.created_at || null,
+    samples:recent.length,
+    incidentCount:recent.filter(row=>String(row?.code || '')==='PRODUCTION_MONITOR_INCIDENT').length,
+    watchCount:recent.filter(row=>String(row?.code || '')==='PRODUCTION_MONITOR_WATCH').length,
+  };
+}
+
+function controlledBetaExpansionDecision({
+  expansionDecision={},
+  assignedBetaUsers=0,
+  journey={},
+  metrics={},
+  timings={},
+  coverage={},
+  issues=[],
+  errorRows=[],
+  clientErrorRows=[],
+  providerQuota={},
+  productionMonitor={},
+  supabaseOk=false,
+  telegramConfirmed=false,
+} = {}) {
+  const verifiedUsers=Number(journey?.betaUsers || 0);
+  const assignedUsers=Number(assignedBetaUsers || 0);
+  const fullJourneys=Number(journey?.fullCompleted || 0);
+  const blockerCount=(issues || []).filter(issue=>issue?.classification==='BLOCKER').length;
+  const majorCount=(issues || []).filter(issue=>issue?.classification==='MAJOR').length;
+  const searchTimeouts=(errorRows || []).filter(row=>String(row?.metadata?.action || '')==='search' && String(row?.metadata?.errorKind || '')==='timeout').length;
+  const providerRateLimit=(errorRows || []).filter(row=>String(row?.metadata?.errorKind || '')==='rate_limit').length;
+  const providerErrors=(errorRows || []).filter(row=>String(row?.metadata?.errorKind || '')==='provider').length;
+  const actionErrors=Number((errorRows || []).length || 0);
+  const dailyRemainingPct=quotaRemainingPct(providerQuota?.dailyLimit,providerQuota?.dailyRemaining);
+  const minuteRemainingPct=quotaRemainingPct(providerQuota?.minuteLimit,providerQuota?.minuteRemaining);
+  const quotaPressure=Boolean(providerQuota?.confirmed && (
+    (dailyRemainingPct!==null && dailyRemainingPct<=10)
+    || (minuteRemainingPct!==null && minuteRemainingPct<=10)
+  ));
+  const liveMissingCategories=Object.values(coverage?.live?.missing || {})
+    .filter(item=>Number(item?.samples || 0)>=5 && Number(item?.missingPct || 0)>=70).length;
+  const liveCoverageDeficit=Number(coverage?.live?.samples || 0)>=5 && liveMissingCategories>=2;
+  const providerReviewSignal=expansionDecision?.dataCoverageDecision==='review_new_or_paid_provider'
+    || providerRateLimit>=3
+    || quotaPressure
+    || liveCoverageDeficit;
+
+  const wave1Observed=verifiedUsers>=4;
+  const wave2Observed=verifiedUsers>=6;
+  const coreLatencyEnough=['search','match','ai'].every(key=>Number(timings?.[key]?.samples || 0)>=5);
+  const liveLatencyEnough=Number(timings?.live?.samples || 0)>=3;
+  const expandedEvidenceEnough=wave2Observed
+    && fullJourneys>=4
+    && Number(coverage?.samples || 0)>=20
+    && coreLatencyEnough
+    && liveLatencyEnough;
+  const runtimeHealthy=Boolean(
+    supabaseOk
+    && telegramConfirmed
+    && productionMonitor?.state==='healthy'
+    && blockerCount===0
+    && majorCount===0
+    && !quotaPressure
+  );
+
+  const providerValidationDecision=!wave1Observed
+    ? 'collecting_expanded_beta'
+    : providerReviewSignal
+      ? 'review_new_or_paid_provider'
+      : 'keep_current_provider';
+
+  let finalDecision='BETA HOLD';
+  if (expansionDecision?.expansionAllowed) {
+    if (blockerCount>0 || majorCount>0 || !supabaseOk || !telegramConfirmed || productionMonitor?.state==='incident') {
+      finalDecision='BETA HOLD';
+    } else if (wave1Observed && providerValidationDecision==='review_new_or_paid_provider') {
+      finalDecision='DATA PROVIDER UPGRADE REQUIRED';
+    } else if (expandedEvidenceEnough && runtimeHealthy && providerValidationDecision==='keep_current_provider') {
+      finalDecision='BETA READY FOR PUBLIC PRE-LAUNCH';
+    } else {
+      finalDecision='BETA CONTINUE';
+    }
+  }
+
+  const nextWaveTarget=!expansionDecision?.expansionAllowed ? null
+    : verifiedUsers<4 ? 4
+      : verifiedUsers<6 ? 6
+        : null;
+  const currentAssignmentsObserved=assignedUsers>0 && verifiedUsers>=Math.min(assignedUsers,6);
+  const canAddNextWave=Boolean(
+    finalDecision==='BETA CONTINUE'
+    && nextWaveTarget
+    && assignedUsers<nextWaveTarget
+    && currentAssignmentsObserved
+    && blockerCount===0
+    && majorCount===0
+    && !quotaPressure
+    && providerValidationDecision!=='review_new_or_paid_provider'
+  );
+
+  return {
+    finalDecision,
+    expansionAllowed:Boolean(expansionDecision?.expansionAllowed),
+    automaticExpansion:false,
+    waveSize:2,
+    assignedUsers,
+    verifiedUsers,
+    waves:{
+      baseline:{target:2,observed:verifiedUsers>=2},
+      wave1:{target:4,observed:wave1Observed},
+      wave2:{target:6,observed:wave2Observed},
+    },
+    nextWave:nextWaveTarget ? {
+      targetAssigned:nextWaveTarget,
+      add:Math.max(0,Math.min(2,nextWaveTarget-assignedUsers)),
+      allowed:canAddNextWave,
+    } : null,
+    providerValidationDecision,
+    providerReviewSignal,
+    providerSignals:{
+      rateLimit:providerRateLimit,
+      providerErrors,
+      quotaPressure,
+      dailyRemainingPct,
+      minuteRemainingPct,
+      liveCoverageDeficit,
+      liveMissingCategories,
+    },
+    checks:{
+      miniAppLaunch:Number(metrics?.miniAppLaunch?.events || 0),
+      search:{
+        used:Number(metrics?.searchUsed?.events || 0),
+        success:Number(metrics?.searchFound?.events || 0),
+        empty:Number(metrics?.searchEmpty?.events || 0),
+        timeout:searchTimeouts,
+      },
+      matchOpen:Number(metrics?.matchOpen?.events || 0),
+      ai:{
+        start:Number(metrics?.aiStart?.events || 0),
+        complete:Number(metrics?.aiComplete?.events || 0),
+      },
+      fullJourneys,
+      reentries:Number(journey?.stages?.reentry || 0),
+      latency:timings,
+      actionErrors,
+      clientErrors:Number((clientErrorRows || []).length || 0),
+      blockerCount,
+      majorCount,
+      supabaseOk:Boolean(supabaseOk),
+      telegramConfirmed:Boolean(telegramConfirmed),
+      productionMonitor,
+      live:{
+        opens:Number(metrics?.liveOpen?.events || 0),
+        timingSamples:Number(timings?.live?.samples || 0),
+        coverageSamples:Number(coverage?.live?.samples || 0),
+      },
+    },
+    readinessRule:'Two manual expansion waves of +2 users are observed before public pre-launch. Every wave remains fail-closed on BLOCKER/MAJOR, runtime health, provider quota pressure and provider-review evidence.',
   };
 }
 
@@ -14661,7 +14858,9 @@ function latestConfirmedProviderQuota(rows = [], nowMs = Date.now()) {
     source:'provider_monitor',
     confirmedAt:complete ? row.created_at : null,
     plan:complete ? String(meta.plan || '') : '',
+    dailyLimit:complete ? Number(meta.dailyLimit) : null,
     dailyRemaining:complete ? Number(meta.dailyRemaining) : null,
+    minuteLimit:complete ? Number(meta.minuteLimit) : null,
     minuteRemaining:complete ? Number(meta.minuteRemaining) : null,
   };
 }
@@ -14720,6 +14919,7 @@ async function apiBetaDashboard(request,cfg) {
   };
   const feedbackRows=opsRows.filter(row=>row?.source==='beta' && row?.event_type==='beta_feedback' && row?.code==='BETA_FEEDBACK');
   const coverage=betaCoverageSummary(betaClientRows);
+  const productionMonitor=betaProductionMonitorSummary(allOpsRows,now);
   const issues=buildBetaIssueGroups({metrics,errorRows,feedbackRows,timings,clientErrorRows});
   const activeIssues=issues.filter(issue=>issue.active);
   const evidencePending=issues.filter(issue=>issue.classification==='NEEDS_MORE_EVIDENCE');
@@ -14766,7 +14966,9 @@ async function apiBetaDashboard(request,cfg) {
     source:'provider_runtime',
     confirmedAt:providerNow.updatedAt,
     plan:String(providerNow.plan || ''),
+    dailyLimit:Number(providerNow.dailyLimit),
     dailyRemaining:Number(providerNow.dailyRemaining),
+    minuteLimit:Number(providerNow.minuteLimit),
     minuteRemaining:Number(providerNow.minuteRemaining),
   } : persistedQuota;
   const launchBlockers=[];
@@ -14785,6 +14987,21 @@ async function apiBetaDashboard(request,cfg) {
     issues,
     opsSampleLimited:opsRows.length>=1000,
     providerEvidence,
+  });
+  const controlledExpansion=controlledBetaExpansionDecision({
+    expansionDecision,
+    assignedBetaUsers,
+    journey,
+    metrics,
+    timings,
+    coverage,
+    issues,
+    errorRows,
+    clientErrorRows,
+    providerQuota,
+    productionMonitor,
+    supabaseOk,
+    telegramConfirmed:Boolean(telegramWebhookProbe?.ready),
   });
 
   return json({
@@ -14818,6 +15035,7 @@ async function apiBetaDashboard(request,cfg) {
     metrics,
     journey,
     expansionDecision,
+    controlledExpansion,
     actionErrors:{total:errorRows.length,byCategory:errorKinds,byAction:errorActions,clientErrors:clientErrorRows.length},
     dataCoverage:coverage,
     timings,
@@ -14830,6 +15048,7 @@ async function apiBetaDashboard(request,cfg) {
       clientErrors:clientErrorRows.length,
       supabase:supabaseOk ? 'ok' : String(diagnostics?.supabase?.status || 'problem'),
       telegram:telegramState,
+      productionMonitor:productionMonitor.state,
       currentRelease:{version:APP_VERSION,candidate:RC_NAME,channel:RELEASE_CHANNEL},
       activeProblems:activeIssues.length,
       needsMoreEvidence:evidencePending.length,
@@ -14866,6 +15085,13 @@ async function apiBetaDashboard(request,cfg) {
         dataCoverageDecision:expansionDecision.dataCoverageDecision,
         requirements:expansionDecision.requirements,
         hardBlockers:expansionDecision.hardBlockers,
+      },
+      controlledBetaExpansion:{
+        finalDecision:controlledExpansion.finalDecision,
+        providerValidationDecision:controlledExpansion.providerValidationDecision,
+        nextWave:controlledExpansion.nextWave,
+        waves:controlledExpansion.waves,
+        providerSignals:controlledExpansion.providerSignals,
       },
     },
     sample:{

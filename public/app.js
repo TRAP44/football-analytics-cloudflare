@@ -1163,6 +1163,7 @@ function renderBetaDashboard() {
   const health=data.health || {};
   const launch=data.launchReadiness || {};
   const expansion=data.expansionDecision || {};
+  const controlled=data.controlledExpansion || {};
   const expansionLabel={
     collecting_verified_beta:'Собираем verified beta',
     hold:'HOLD',
@@ -1174,6 +1175,17 @@ function renderBetaDashboard() {
     review_new_or_paid_provider:'Проверить новый/платный provider',
     keep_current_provider:'Текущий provider оставить',
   }[String(expansion.dataCoverageDecision || '')] || 'Нет решения';
+  const providerValidationLabel={
+    collecting_expanded_beta:'Ждём нагрузку расширенной beta',
+    review_new_or_paid_provider:'Нужен отдельный review provider',
+    keep_current_provider:'Текущий provider подтверждён',
+  }[String(controlled.providerValidationDecision || '')] || 'Нет решения';
+  const finalDecisionLabel={
+    'BETA READY FOR PUBLIC PRE-LAUNCH':'BETA READY FOR PUBLIC PRE-LAUNCH',
+    'BETA CONTINUE':'BETA CONTINUE',
+    'DATA PROVIDER UPGRADE REQUIRED':'DATA PROVIDER UPGRADE REQUIRED',
+    'BETA HOLD':'BETA HOLD',
+  }[String(controlled.finalDecision || '')] || 'Нет решения';
   badge.textContent=betaHealthLabel(health.state).toUpperCase();
   badge.className=`beta-health-badge ${escapeHtml(health.state || '')}`;
   const topBreak=health.topBreak?.count ? `${betaActionLabel(health.topBreak.action)} · ${Number(health.topBreak.count)}` : 'нет';
@@ -1181,8 +1193,12 @@ function renderBetaDashboard() {
   const betaRequired=Number(launch.betaAssignments?.required || 2);
   const providerQuota=launch.providerQuota || {};
   const quotaLabel=providerQuota.confirmed
-    ? `${providerQuota.plan || 'OK'} · day ${Number(providerQuota.dailyRemaining || 0)} · min ${Number(providerQuota.minuteRemaining || 0)}`
+    ? `${providerQuota.plan || 'OK'} · day ${Number(providerQuota.dailyRemaining || 0)}/${Number(providerQuota.dailyLimit || 0)} · min ${Number(providerQuota.minuteRemaining || 0)}/${Number(providerQuota.minuteLimit || 0)}`
     : 'Не подтверждена';
+  const nextWave=controlled.nextWave;
+  const nextWaveLabel=nextWave
+    ? `+${Number(nextWave.add || 0)} → ${Number(nextWave.targetAssigned || 0)} пользователей · ${nextWave.allowed ? 'разрешено' : 'заблокировано'}`
+    : 'Новая волна не требуется/не разрешена';
   healthRoot.innerHTML=[
     ['Основной сбой',topBreak],
     ['Beta-01/Beta-02',`${betaAssigned}/${betaRequired}`],
@@ -1194,6 +1210,10 @@ function renderBetaDashboard() {
     ['Verified beta sessions',`${Number(expansion.requirements?.verifiedSessionStarts?.actual || 0)}/${Number(expansion.requirements?.verifiedSessionStarts?.required || 7)}`],
     ['Full journeys',`${Number(expansion.requirements?.fullJourneys?.actual || 0)}/${Number(expansion.requirements?.fullJourneys?.required || 2)}`],
     ['Data coverage decision',coverageDecisionLabel],
+    ['Provider validation',providerValidationLabel],
+    ['Итог этапа',finalDecisionLabel],
+    ['Следующая beta-волна',nextWaveLabel],
+    ['Production monitor',humanizeTechnicalText(health.productionMonitor || controlled.checks?.productionMonitor?.state || 'нет данных')],
     ['Provider rate-limit',String(Number(health.providerRateLimit || 0))],
     ['Timeout',String(Number(health.timeout || 0))],
     ['UI/client errors',String(Number(health.clientErrors || 0))],
@@ -1236,7 +1256,7 @@ function renderBetaDashboard() {
   const journey=data.journey || {};
   const unmet=Object.entries(expansion.requirements || {}).filter(([,value])=>!value?.pass).map(([key])=>key);
   if ($('betaJourneySummary')) $('betaJourneySummary').textContent=
-    `${Number(journey.fullCompleted || 0)} из ${Number(journey.betaUsers || 0)} прошли полный путь запуск → поиск → найденный матч → матч → AI start → AI complete → история → повторный вход (${Number(journey.fullCompletionPct || 0)}%). До AI complete дошли ${Number(journey.analysisCompleted || 0)}. Expansion gate: ${expansionLabel}${unmet.length ? ` · не закрыто: ${unmet.join(', ')}` : ''}.`;
+    `${Number(journey.fullCompleted || 0)} из ${Number(journey.betaUsers || 0)} прошли полный путь запуск → поиск → найденный матч → матч → AI start → AI complete → история → повторный вход (${Number(journey.fullCompletionPct || 0)}%). До AI complete дошли ${Number(journey.analysisCompleted || 0)}. Expansion gate: ${expansionLabel}${unmet.length ? ` · не закрыто: ${unmet.join(', ')}` : ''}. Controlled beta: ${finalDecisionLabel}.`;
   if (meta) meta.textContent=`${Number(data.periodDays || 7)} дн. · обновлено ${relativeAge(data.generatedAt)}`;
 }
 
