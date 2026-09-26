@@ -160,6 +160,7 @@ const state = {
   viewScroll: {},
   matchesLoadSeq: 0,
   matchCenterRequestSeq: 0,
+  matchCenterInFlight: new Map(),
   analysisActionPending: false,
   favoriteMutations: new Set(),
   reminderMutations: new Set(),
@@ -386,8 +387,8 @@ function friendlyErrorMessage(error) {
   if (category === 'auth') return 'Сессия Telegram не подтверждена. Закройте приложение и откройте его снова из бота.';
   if (category === 'timeout') return 'Сервис отвечает медленнее обычного. Попробуйте обновить ещё раз.';
   if (category === 'rate_limit') return retryAfter
-    ? `Слишком много запросов. Повторите примерно через ${retryAfter} сек.`
-    : 'Сервис временно ограничил частоту обновлений. Попробуйте чуть позже.';
+    ? `Обновления на паузе ~${retryAfter} сек. Уже загруженные данные доступны.`
+    : 'Обновления временно на паузе. Уже загруженные данные доступны.';
   if (category === 'integrity') return 'Данные этого матча сейчас перепроверяются. Попробуйте открыть его немного позже.';
   if (category === 'database') return 'Хранилище данных временно недоступно. Основные футбольные экраны продолжат работу через доступные сохранённые данные.';
   if (category === 'provider') return 'Футбольные данные временно недоступны. Если есть сохранённая версия, приложение оставит её на экране.';
@@ -4854,7 +4855,6 @@ async function runGlobalSearch({ manual = false } = {}) {
     const data = await api(`/api/search?q=${encodeURIComponent(query)}`, {
       timeoutMs: 6500,
       retry: false,
-      dedupe: false,
     });
     if (seq !== state.globalSearch.requestSeq || query !== String(state.globalSearch.query || '').trim()) return;
     state.globalSearch.remoteTeams = data.teams || [];
@@ -5979,13 +5979,30 @@ function lineupLiveHtml(lineups, match) {
 }
 
 async function requestMatchCenter(fixtureId, extraParams = {}, options = {}) {
+  const id=Number(fixtureId);
+  const key=String(id);
+  const existing=state.matchCenterInFlight.get(key);
+  if (existing) {
+    state.clientPerf.deduped += 1;
+    return await existing;
+  }
+
   const seq = ++state.matchCenterRequestSeq;
-  const params = new URLSearchParams({ fixtureId: String(Number(fixtureId)) });
-  Object.entries(extraParams || {}).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== '') params.set(key, String(value));
+  const params = new URLSearchParams({ fixtureId: key });
+  Object.entries(extraParams || {}).forEach(([paramKey, value]) => {
+    if (value !== undefined && value !== null && value !== '') params.set(paramKey, String(value));
   });
-  const data = await api(`/api/match-center?${params.toString()}`, options);
-  return seq === state.matchCenterRequestSeq ? data : null;
+
+  const task=(async()=>{
+    const data = await api(`/api/match-center?${params.toString()}`, options);
+    return seq === state.matchCenterRequestSeq ? data : null;
+  })();
+  state.matchCenterInFlight.set(key,task);
+  try {
+    return await task;
+  } finally {
+    if (state.matchCenterInFlight.get(key)===task) state.matchCenterInFlight.delete(key);
+  }
 }
 
 function updateLiveCountdown() {
@@ -6684,11 +6701,22 @@ async function openMatchCenter(fixtureId, btn) {
     }
   } catch (e) {
     sendActionError('match', e, sourceView);
-    renderJourneyState('error', {
-      title: 'Матч временно не открылся',
-      message: e.message || 'Не удалось получить данные матча.',
-      retry: () => openMatchCenter(fixtureId, null),
-    });
+    const category=apiErrorCategory(e);
+    const previous=Number(state.currentCenter?.match?.fixtureId || 0)===Number(fixtureId) ? state.currentCenter : null;
+    if (['rate_limit','provider'].includes(category)) {
+      if (previous) {
+        renderMatchCenter(previous);
+      } else if (sourceView && sourceView !== 'analysisView') {
+        showView(sourceView, { restore:true });
+      }
+      toast(friendlyErrorMessage(e));
+    } else {
+      renderJourneyState('error', {
+        title: 'Матч временно не открылся',
+        message: e.message || 'Не удалось получить данные матча.',
+        retry: () => openMatchCenter(fixtureId, null),
+      });
+    }
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = original; }
   }
@@ -6713,6 +6741,7 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
     return;
   }
   stopLiveRefresh();
+  const previousCenter=state.currentCenter;
   state.currentCenter = null;
   state.analysisActionPending = true;
   syncAnalysisBusyUi();
@@ -6763,7 +6792,15 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
     } else if (e.status === 429) toast('Дневной лимит анализов исчерпан.');
     else toast(e.message);
     sendActionError('ai', e, sourceView);
-    if (movedToAnalysis && recovery?.action !== 'search') {
+    const category=apiErrorCategory(e);
+    if (['rate_limit','provider'].includes(category)) {
+      if (previousCenter && sourceView === 'analysisView') {
+        state.currentCenter=previousCenter;
+        renderMatchCenter(previousCenter);
+      } else if (sourceView && sourceView !== 'analysisView') {
+        showView(sourceView, { restore:true });
+      }
+    } else if (movedToAnalysis && recovery?.action !== 'search') {
       renderJourneyState('error', {
         title: 'AI-анализ временно недоступен',
         message: e.status === 429 ? 'Лимит анализов на сегодня исчерпан или источник временно ограничил запросы.' : (e.message || 'Не удалось подготовить анализ.'),
@@ -8068,7 +8105,9 @@ function updateConnectionBanner() {
   if (navigator.onLine === false) state.network.mode = 'offline';
   const mode = state.network.mode || 'online';
   banner.className = `connection-banner ${mode}`;
-  retry.hidden = !['offline','degraded'].includes(mode) || navigator.onLine === false;
+  retry.hidden = !['offline','degraded'].includes(mode)
+    || navigator.onLine === false
+    || (state.network.category === 'rate_limit' && Number(state.network.retryAfter || 0) > 0);
 
   if (mode === 'offline') {
     banner.hidden = false;
@@ -8089,8 +8128,13 @@ function updateConnectionBanner() {
   if (mode === 'degraded') {
     banner.hidden = false;
     icon.textContent = state.network.category === 'rate_limit' ? '⏳' : '⚠️';
-    title.textContent = state.network.category === 'rate_limit' ? 'Обновления временно ограничены' : 'Часть данных обновляется медленнее';
-    text.textContent = state.network.message || 'Сохранённые данные останутся доступны.';
+    const cooldown=Number(state.network.retryAfter || 0);
+    title.textContent = state.network.category === 'rate_limit'
+      ? (cooldown ? `Пауза обновлений · ~${cooldown} сек.` : 'Пауза обновлений')
+      : 'Часть данных обновляется медленнее';
+    text.textContent = state.network.category === 'rate_limit'
+      ? 'Показываем уже загруженные матчи и снимки.'
+      : (state.network.message || 'Сохранённые данные останутся доступны.');
     return;
   }
 
@@ -8244,8 +8288,8 @@ $('globalSearchInput')?.addEventListener('input', e => {
   state.globalSearch.matchSourceTeam = '';
   state.globalSearch.warning = '';
   renderGlobalSearch();
-  if (state.globalSearch.query.trim().length >= 2) {
-    globalSearchTimer = setTimeout(() => runGlobalSearch(), 280);
+  if (state.globalSearch.query.trim().length >= 3) {
+    globalSearchTimer = setTimeout(() => runGlobalSearch(), 500);
   }
 });
 $('globalSearchInput')?.addEventListener('keydown', e => {
