@@ -13,19 +13,20 @@ function block(source,start,end){
   return source.slice(a,b);
 }
 
-test('access-control helper cannot reopen production when legacy flag is false or missing',()=>{
+test('access-control helper opens signed normal users unless strict beta is explicitly enabled',()=>{
   const access=readFileSync(new URL('../src/access-control.js',import.meta.url),'utf8');
   const start=access.indexOf('export function closedBetaAccessDecision');
   assert.notEqual(start,-1);
   const decision=access.slice(start);
-  assert.doesNotMatch(decision,/if \(!cfg\.betaAccessEnabled\)/);
+  assert.match(decision,/if \(!cfg\.betaAccessEnabled\)/);
+  assert.match(decision,/allowed: isTelegramValidatedUser\(user\)/);
   assert.match(decision,/allowed: betaParticipant/);
 });
 
-test('production closed beta is fail-closed even when env binding is missing or false',()=>{
+test('production beta mode defaults public and becomes strict only on explicit true',()=>{
   const cfg=block(worker,'function config(env)','function runtimeControlsSnapshot');
   assert.match(cfg,/betaAccessConfigured:\s*boolEnvState\(env\.BETA_ACCESS_ENABLED\)/);
-  assert.match(cfg,/betaAccessEnabled:\s*true/);
+  assert.match(cfg,/betaAccessEnabled:\s*boolEnv\(env\.BETA_ACCESS_ENABLED, false\)/);
 
   const routes=block(worker,"if (!url.pathname.startsWith('/api/'))","async scheduled(controller");
   const guard=routes.indexOf('closedBetaAccessDecision(user, cfg)');
