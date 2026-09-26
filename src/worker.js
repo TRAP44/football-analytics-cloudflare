@@ -109,6 +109,7 @@ const memory = {
     digestDeliveryClaims: 0,
     digestDeliveryDuplicates: 0,
   },
+  providerQuotaEvidenceAt: 0,
   provider: { name: 'API-Football', plan: 'UNKNOWN', dailyLimit: null, dailyRemaining: null, minuteLimit: null, minuteRemaining: null, updatedAt: null, cooldownUntil: null, lastError: '', lastStatus: null, lastLatencyMs: null, lastRequestAt: null, lastSuccessAt: null },
 };
 
@@ -12619,6 +12620,33 @@ function updateProviderFromHeaders(response) {
   };
 }
 
+function providerQuotaEvidence(cfg) {
+  const p=memory.provider || {};
+  const raw=[p.dailyLimit,p.dailyRemaining,p.minuteLimit,p.minuteRemaining];
+  if (raw.some(value=>value===null || value===undefined || value==='')) return;
+  const values=raw.map(Number);
+  if (String(p.plan || 'UNKNOWN')==='UNKNOWN' || !values.every(Number.isFinite)) return;
+  const now=Date.now();
+  if (now-Number(memory.providerQuotaEvidenceAt || 0)<10*60_000) return;
+  memory.providerQuotaEvidenceAt=now;
+  void recordOpsEvent(cfg,{
+    severity:'info',
+    source:'provider',
+    eventType:'quota_probe',
+    code:'PROVIDER_QUOTA_CONFIRMED',
+    message:'API-Football quota confirmed from real provider response headers.',
+    endpoint:'api-football',
+    meta:{
+      plan:String(p.plan),
+      dailyLimit:Number(p.dailyLimit),
+      dailyRemaining:Number(p.dailyRemaining),
+      minuteLimit:Number(p.minuteLimit),
+      minuteRemaining:Number(p.minuteRemaining),
+      evidenceSource:'response_headers',
+    },
+  }).catch(()=>{ memory.providerQuotaEvidenceAt=0; });
+}
+
 function quotaUsed(limit, remaining) {
   if (limit === null || limit === undefined || remaining === null || remaining === undefined || limit === '' || remaining === '') return null;
   const l = Number(limit), r = Number(remaining);
@@ -12663,7 +12691,9 @@ function liveRefreshSeconds() {
   const plan = memory.provider?.plan || 'UNKNOWN';
   if (plan === 'MEGA' || plan === 'ULTRA') return 15;
   if (plan === 'PRO') return 30;
-  return 60;
+  // FREE/UNKNOWN stays intentionally slower so one LIVE user cannot consume
+  // most of the provider minute allowance by polling fixture + core features.
+  return 90;
 }
 
 function paidQuotaHealthy() {
@@ -12866,6 +12896,12 @@ function providerFeaturePolicy(feature, context = {}) {
     reason = 'economy_plan';
   }
 
+  // Core LIVE data remains available on FREE, but its shared cache outlives
+  // one UI poll so multiple beta users reuse the same events/statistics snapshot.
+  if (!paid && mode === 'live' && ['events','statistics'].includes(feature)) {
+    ttlSeconds = Math.max(ttlSeconds, 180);
+  }
+
   if (budget.mode === 'emergency' && !['events','statistics'].includes(feature)) {
     allowed = false;
     reason = 'quota_reserve';
@@ -13042,16 +13078,85 @@ function providerDataReliabilitySelfTest() {
   };
 }
 
-async function analysisProviderFetch({ feature, path, params, cfg, allowed = true, skipReason = '' }) {
+async function analysisProviderFetch({ feature, path, params, fixtureId = 0, cfg, allowed = true, skipReason = '' }) {
+  const ttlSeconds=({
+    injuries:1800,
+    predictions:1800,
+    odds:600,
+    h2h:21600,
+    lineups:300,
+  })[feature] || 600;
+  const sharedFeature=['injuries','lineups'].includes(feature);
+  const cacheKey=Number(fixtureId)>0
+    ? (sharedFeature
+      ? `provider-feature:${feature}:${Number(fixtureId)}:v4.9`
+      : `analysis-provider:${feature}:${Number(fixtureId)}:v1`)
+    : '';
+
+  const fresh=cacheKey ? await getCacheEntry(cacheKey,cfg,false).catch(()=>null) : null;
+  if (fresh?.payload) {
+    const data=fresh.payload.data ?? [];
+    return {
+      data,
+      meta:{
+        feature,
+        provider:fresh.payload.provider || 'api-football',
+        source:'cache',
+        fetchedAt:fresh.payload.fetchedAt || null,
+        ageSeconds:featureCacheAgeSeconds(fresh.payload),
+        expiresAt:fresh.expiresAt || null,
+        ...providerDataState(data,{attempted:true}),
+      },
+    };
+  }
+
+  const stale=cacheKey ? await getCacheEntry(cacheKey,cfg,true).catch(()=>null) : null;
   if (!allowed) {
+    if (stale?.payload) {
+      const data=stale.payload.data ?? [];
+      return {
+        data,
+        meta:{
+          feature,
+          provider:stale.payload.provider || 'api-football',
+          source:'stale',
+          fetchedAt:stale.payload.fetchedAt || null,
+          ageSeconds:featureCacheAgeSeconds(stale.payload),
+          expiresAt:stale.expiresAt || null,
+          ...providerDataState(data,{attempted:true,reason:skipReason || 'policy'}),
+          state:'stale',
+          reason:skipReason || 'policy',
+        },
+      };
+    }
     const meta = providerDataState([], { attempted: false, reason: skipReason || 'policy' });
     return { data: [], meta: { feature, provider: 'api-football', source: 'skipped', fetchedAt: null, ...meta } };
   }
+
   try {
     const data = await apiFootball(path, params, cfg);
+    const wrapped={data,provider:'api-football',fetchedAt:new Date().toISOString()};
+    if (cacheKey) await setCache(cacheKey,Number(fixtureId || 0),wrapped,cfg,ttlSeconds/60).catch(()=>null);
     const meta = providerDataState(data, { attempted: true });
-    return { data: Array.isArray(data) ? data : [], meta: { feature, provider: 'api-football', source: 'network', fetchedAt: new Date().toISOString(), ...meta } };
+    return { data: Array.isArray(data) ? data : [], meta: { feature, provider: 'api-football', source: 'network', fetchedAt: wrapped.fetchedAt, ...meta } };
   } catch (error) {
+    if (stale?.payload) {
+      const data=stale.payload.data ?? [];
+      return {
+        data,
+        meta:{
+          feature,
+          provider:stale.payload.provider || 'api-football',
+          source:'stale',
+          fetchedAt:stale.payload.fetchedAt || null,
+          ageSeconds:featureCacheAgeSeconds(stale.payload),
+          expiresAt:stale.expiresAt || null,
+          ...providerDataState(data,{attempted:true,error}),
+          state:'stale',
+          reason:String(error?.code || 'api_error'),
+        },
+      };
+    }
     const meta = providerDataState([], { attempted: true, error });
     return { data: [], meta: { feature, provider: 'api-football', source: 'error', fetchedAt: null, ...meta } };
   }
@@ -13864,6 +13969,7 @@ async function apiFootballNetwork(path, params, cfg, options = {}) {
 
   const durationMs = Date.now() - startedAt;
   updateProviderFromHeaders(r);
+  providerQuotaEvidence(cfg);
   memory.provider.lastStatus = r.status;
   memory.provider.lastLatencyMs = durationMs;
   const body = await r.json().catch(() => ({}));
@@ -13903,6 +14009,14 @@ async function apiFootballNetwork(path, params, cfg, options = {}) {
       await recordOpsEvent(cfg, {
         severity: 'warning', source: 'provider', eventType: 'rate_limit', code: 'FOOTBALL_RATE_LIMIT_BODY',
         message, endpoint: path, status: r.status, durationMs,
+        meta:{
+          retryAfter:65,
+          plan:memory.provider?.plan || 'UNKNOWN',
+          dailyLimit:memory.provider?.dailyLimit,
+          dailyRemaining:memory.provider?.dailyRemaining,
+          minuteLimit:memory.provider?.minuteLimit,
+          minuteRemaining:memory.provider?.minuteRemaining,
+        },
       });
       throw footballError('API-Football достиг лимита запросов. Покажем сохранённые данные, если они есть.', 'FOOTBALL_RATE_LIMIT', 65);
     }
@@ -19311,6 +19425,42 @@ async function apiSearch(request, cfg) {
   return json({ ...payload, competitions, ...fixtureSearch, warning: mergeSearchWarnings(warning, fixtureSearch.warning), cached: false, provider: publicDataCapabilities() });
 }
 
+function providerFixtureDateCacheKey(date) {
+  return `provider-fixtures:${String(date || '')}:v1`;
+}
+
+function providerFixtureDirectCacheKey(fixtureId) {
+  return `provider-fixture:${Number(fixtureId || 0)}:v1`;
+}
+
+async function cachedProviderFixture(fixtureId,cfg) {
+  const id=Number(fixtureId || 0);
+  if (!id) return null;
+  const direct=await getCache(providerFixtureDirectCacheKey(id),cfg).catch(()=>null);
+  if (direct?.fixture && Number(direct.fixture?.fixture?.id || 0)===id) return direct.fixture;
+
+  for (const offset of [-1,0,1]) {
+    const date=new Date(Date.now()+offset*86400_000).toISOString().slice(0,10);
+    const batch=await getCache(providerFixtureDateCacheKey(date),cfg).catch(()=>null);
+    const fixture=(Array.isArray(batch?.fixtures) ? batch.fixtures : []).find(row=>Number(row?.fixture?.id || 0)===id);
+    if (fixture) return fixture;
+  }
+  return null;
+}
+
+async function loadProviderFixture(fixtureId,cfg) {
+  const id=Number(fixtureId || 0);
+  if (!id) return null;
+  const cached=await cachedProviderFixture(id,cfg);
+  if (cached) return cached;
+  const fixture=(await apiFootball('/fixtures',{id},cfg))[0] || null;
+  if (!fixture) return null;
+  const status=String(fixture.fixture?.status?.short || '');
+  const ttlMinutes=isFinishedStatus(status) ? 720 : isLiveStatus(status) ? Math.max(1,liveRefreshSeconds()/60) : 5;
+  await setCache(providerFixtureDirectCacheKey(id),id,{fixture,fetchedAt:new Date().toISOString()},cfg,ttlMinutes).catch(()=>null);
+  return fixture;
+}
+
 async function apiMatches(request, cfg) {
   const url = new URL(request.url);
   const requested = url.searchParams.get('date') || '';
@@ -19325,8 +19475,16 @@ async function apiMatches(request, cfg) {
   const previousPayload = await getStaleCache(cacheKey, cfg).catch(() => null);
 
   let fixtures;
+  const providerBatchKey=providerFixtureDateCacheKey(date);
+  const providerBatch=await getCache(providerBatchKey,cfg).catch(()=>null);
   try {
-    fixtures = await apiFootball('/fixtures', { date }, cfg);
+    if (Array.isArray(providerBatch?.fixtures)) {
+      fixtures=providerBatch.fixtures;
+    } else {
+      fixtures = await apiFootball('/fixtures', { date }, cfg);
+      const providerBatchTtl=isToday ? 2 : isYesterday ? 720 : cfg.cacheMinutes;
+      await setCache(providerBatchKey,0,{fixtures,fetchedAt:new Date().toISOString()},cfg,providerBatchTtl).catch(()=>null);
+    }
   } catch (error) {
     const stale = previousPayload || await getStaleCache(cacheKey, cfg);
     if (stale?.matches && isFootballRateLimitError(error)) {
@@ -20400,7 +20558,7 @@ async function apiMatchCenter(request, cfg) {
 
   let fixture;
   try {
-    fixture = (await apiFootball('/fixtures', { id: fixtureId }, cfg))[0];
+    fixture = await loadProviderFixture(fixtureId,cfg);
   } catch (error) {
     const stale = await getStaleCache(baseCacheKey, cfg);
     if (stale && isFootballRateLimitError(error)) {
@@ -21428,7 +21586,7 @@ async function apiAnalyze(request, cfg, user) {
   }
   let fixture;
   try {
-    fixture = (await apiFootball('/fixtures', { id: fixtureId }, cfg))[0];
+    fixture = await loadProviderFixture(fixtureId,cfg);
   } catch (error) {
     if (staleBefore && isFootballRateLimitError(error)) {
       await recordHistory(user.id, staleBefore, cfg);
@@ -21458,15 +21616,15 @@ async function apiAnalyze(request, cfg, user) {
   const providerPlan = memory.provider?.plan || 'UNKNOWN';
   const paid = ['PRO','ULTRA','MEGA'].includes(providerPlan);
   const healthyFree = freeQuotaHealthy(30, 6);
-  const minuteRemaining = Number(memory.provider?.minuteRemaining);
-  const lowMinuteBudget = !paid && Number.isFinite(minuteRemaining) && minuteRemaining < 5;
-  const veryLowMinuteBudget = !paid && Number.isFinite(minuteRemaining) && minuteRemaining < 3;
-  const canFetchLineups = detailedCoverage && (paid || freeQuotaHealthy(15, 5)) && (
+  // FREE keeps only the two highest-value uncached AI provider calls (predictions + odds).
+  // Optional signals reuse shared cache when present but do not fan out into
+  // injuries/H2H/lineups/team-form network calls in the same minute.
+  const canFetchLineups = detailedCoverage && paid && (
     isLiveStatus(status) || (minutesToKickoff !== null && minutesToKickoff <= 90 && minutesToKickoff >= -240)
   );
-  const canFetchFreshForm = detailedCoverage && (paid || healthyFree);
-  const canFetchH2H = detailedCoverage && (paid || !lowMinuteBudget);
-  const canFetchInjuries = paid || !veryLowMinuteBudget;
+  const canFetchFreshForm = detailedCoverage && paid && healthyFree;
+  const canFetchH2H = detailedCoverage && paid;
+  const canFetchInjuries = paid;
 
   const skipped = [];
   if (!canFetchFreshForm && detailedCoverage) skipped.push('Свежая форма команд: бережём лимит источника данных и используем сохранённые данные, если они есть.');
@@ -21484,13 +21642,13 @@ async function apiAnalyze(request, cfg, user) {
       : canFetchLineups ? '' : 'quota_reserve';
 
   const [injuryResult, predictionResult, oddsResult, h2hResult] = await Promise.all([
-    analysisProviderFetch({ feature:'injuries', path:'/injuries', params:{ fixture:fixtureId }, cfg, allowed:canFetchInjuries, skipReason:injurySkipReason }),
-    analysisProviderFetch({ feature:'predictions', path:'/predictions', params:{ fixture:fixtureId }, cfg }),
-    analysisProviderFetch({ feature:'odds', path:'/odds', params:{ fixture:fixtureId }, cfg }),
-    analysisProviderFetch({ feature:'h2h', path:'/fixtures/headtohead', params:{ h2h:`${homeId}-${awayId}`, last:5 }, cfg, allowed:canFetchH2H, skipReason:h2hSkipReason }),
+    analysisProviderFetch({ feature:'injuries', path:'/injuries', params:{ fixture:fixtureId }, fixtureId, cfg, allowed:canFetchInjuries, skipReason:injurySkipReason }),
+    analysisProviderFetch({ feature:'predictions', path:'/predictions', params:{ fixture:fixtureId }, fixtureId, cfg }),
+    analysisProviderFetch({ feature:'odds', path:'/odds', params:{ fixture:fixtureId }, fixtureId, cfg }),
+    analysisProviderFetch({ feature:'h2h', path:'/fixtures/headtohead', params:{ h2h:`${homeId}-${awayId}`, last:5 }, fixtureId, cfg, allowed:canFetchH2H, skipReason:h2hSkipReason }),
   ]);
   const lineupResult = await analysisProviderFetch({
-    feature:'lineups', path:'/fixtures/lineups', params:{ fixture:fixtureId }, cfg,
+    feature:'lineups', path:'/fixtures/lineups', params:{ fixture:fixtureId }, fixtureId, cfg,
     allowed:canFetchLineups, skipReason:lineupSkipReason,
   });
 

@@ -43,7 +43,8 @@ test('global search shows local results first and bounds the remote wait', () =>
   assert.match(body, /Повторить/);
   assert.match(run, /timeoutMs:\s*6500/);
   assert.match(run, /retry:\s*false/);
-  assert.match(app, /globalSearchTimer = setTimeout\(\(\) => runGlobalSearch\(\), 280\)/);
+  assert.match(app, /state\.globalSearch\.query\.trim\(\)\.length >= 3/);
+  assert.match(app, /globalSearchTimer = setTimeout\(\(\) => runGlobalSearch\(\), 500\)/);
 });
 
 test('match list renders snapshots immediately and refreshes without blocking visible matches', () => {
