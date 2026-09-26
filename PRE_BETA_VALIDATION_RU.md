@@ -130,27 +130,19 @@ Screenshot/video: при наличии
 
 BLOCKER: Mini App не открывается; невозможно найти/открыть матч; AI-путь не завершается; данные другого пользователя; admin UI/endpoint доступен non-admin; бесконечная загрузка без recovery.
 
-## 8. Server-side beta allowlist и контракт BETA_ACCESS_ENABLED
+## 8. Контракт публичного доступа и временной strict beta
 
-Strict closed beta теперь является **fail-closed invariant** production-контура.
+Основной режим проекта — публичный вход через Telegram Mini App без ручного одобрения пользователя.
 
-- `BETA_TELEGRAM_IDS` — единственный server-side allowlist фактически приглашённых non-admin Telegram ID после успешной Telegram initData signature validation.
-- `BETA_ACCESS_ENABLED` больше не является переключателем, способным открыть normal-user routes. Ожидаемое operational значение — `true`; `false`, missing или invalid считаются конфигурационным drift/evidence, но strict access остаётся включённым.
-- Admin имеет только server-side bypass и намеренно не получает `betaMembershipVerified=true` / `closed_beta_v1`.
-- Non-admin вне allowlist блокируется **до normal-user API routing**, поэтому `/api/matches` и football provider requests для denied access не создаются.
-- Mini App на `CLOSED_BETA_ACCESS_REQUIRED` показывает состояние «Закрытая beta» и прекращает startup до favorites/matches fan-out.
-- Beta client telemetry не содержит Telegram ID; verified cohort остаётся privacy-safe.
-
-Фактический production configuration evidence от 26 сентября 2026, 11:41:13 UTC:
-
-- `strictEffective=true`;
-- raw `BETA_ACCESS_ENABLED=missing`;
-- `betaAllowlistCount=0`;
-- `adminAllowlistCount=1`;
-- `allowlistOverlapCount=0`;
-- observed non-admin users = `2`, оба вне beta allowlist.
-
-Это безопасное, но **не готовое к реальной beta** состояние: посторонние normal users не открываются, однако Beta-01/Beta-02 ещё не настроены. Перед реальным Beta evidence collection требуется задать `BETA_ACCESS_ENABLED=true` как явный operational acknowledgement и внести ровно два реальных non-admin ID в `BETA_TELEGRAM_IDS`; admin ID не должны пересекаться с beta allowlist.
+- Telegram `initData` и его server-side signature validation обязательны всегда.
+- `BETA_ACCESS_ENABLED=false` — любой пользователь с валидным Telegram initData получает normal-user access. `BETA_TELEGRAM_IDS` не ограничивает доступ.
+- Если `BETA_ACCESS_ENABLED` отсутствует, применяется то же поведение, что и при `false`: публичный normal-user режим.
+- `BETA_ACCESS_ENABLED=true` — временный strict closed-beta режим: non-admin должен находиться в server-side `BETA_TELEGRAM_IDS`.
+- `ADMIN_TELEGRAM_IDS` остаётся единственным списком администраторов; normal-user никогда не получает admin access из beta membership или frontend-состояния.
+- Access-control выполняется только на backend после Telegram validation. Frontend может показывать состояние доступа, но не является security boundary.
+- Регистрация/обновление валидированного пользователя в Supabase остаётся частью normal-user authentication flow.
+- RLS, admin authorization, Telegram signature validation и остальные security controls не ослабляются.
+- Provider quota protection, shared cooldown, distributed budget и request deduplication из #98/#99/#100 сохраняются.
 
 ## 9. Go / no-go
 
@@ -162,7 +154,7 @@ GO возможен только когда:
 5. фактические provider remaining/limits подтверждены;
 6. Telegram getWebhookInfo подтверждён;
 7. cohort и feedback channel реально созданы;
-8. production config подтверждает `BETA_ACCESS_ENABLED=true`, `betaAllowlistCount=2`, `allowlistOverlapCount=0`; Beta-01/Beta-02 — реальные non-admin участники allowlist.
+8. основной production-режим подтверждает `BETA_ACCESS_ENABLED=false` или missing и успешный normal-user вход нового валидированного Telegram-пользователя; strict beta отдельно проверяется тестом с `BETA_ACCESS_ENABLED=true`.
 
 
 ## 10. Strict Beta Post-Deploy snapshot — 26 сентября 2026, 12:25 UTC
@@ -177,10 +169,10 @@ GO возможен только когда:
 - production smoke 25/25;
 - deploy re-verification test suite: 799 passed, 0 failed;
 - latest provider evidence for release `6.120.0-rc144`: FREE, daily 97/100 remaining, minute 9/10 remaining, cooldown=false, evidence `controlled_release_probe` (11:41:13 UTC);
-- latest server-side configuration evidence: strict beta effective=true при raw env state `missing` (11:41:13 UTC);
+- историческое evidence до исправления #100: strict beta effective=true при raw env state `missing` (11:41:13 UTC); после этого изменения такое поведение считается устаревшим и не является целевым контрактом;
 - beta allowlist count=0, admin allowlist count=1, overlap=0.
 
-Следовательно, provider capacity подтверждена, но strict beta остаётся на **CONFIG HOLD** до явного `BETA_ACCESS_ENABLED=true` и фактического назначения Beta-01/Beta-02. Denied-account post-deploy field event и Beta-01/Beta-02 journey evidence пока не зафиксированы.
+Provider capacity подтверждена. Для публичного режима beta allowlist не является blocker; отдельный strict-beta regression должен подтвердить allowlist только при `BETA_ACCESS_ENABLED=true`.
 
 ## 11. Closed Beta Access & Field Validation — privacy boundary
 
@@ -192,4 +184,4 @@ GO возможен только когда:
 - beta client telemetry не пишет сырой Telegram ID в `growth_events` и не возвращает pseudonymous subject через Dashboard API;
 - Quality: 767/767 tests, fail 0; audit/security/lint/check/release/worker — PASS.
 
-Provider quota evidence уже подтверждена production probe. Остаются blocker: явный operational `BETA_ACCESS_ENABLED=true`, реальные Beta-01/Beta-02 в allowlist, denied-account post-deploy field event, два beta journey smoke, реальный LIVE validation, Telegram `getWebhookInfo`, feedback channel и финальный GO/NO-GO.
+Provider quota evidence уже подтверждена production probe. Для текущего публичного режима остаются field checks: новый non-admin Telegram journey, отсутствие admin-доступа у него, реальный LIVE validation и Telegram `getWebhookInfo`; strict beta проверяется отдельно как временный opt-in режим.
