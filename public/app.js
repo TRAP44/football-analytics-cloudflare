@@ -253,7 +253,7 @@ function saveInterfacePreference(key, value) {
 }
 
 const VIEW_CHROME = {
-  matchesView: ['Главная', 'Понимай матч глубже.'],
+  matchesView: ['Главная', 'Видим, что меняет матч.'],
   searchView: ['Поиск', 'Найдите команду или матч'],
   tournamentView: ['Турнир', 'Матчи и таблица'],
   teamView: ['Команда', 'Матчи и данные клуба'],
@@ -855,7 +855,7 @@ async function runStartupSequence() {
   if ($('bootContinueBtn')) $('bootContinueBtn').hidden = true;
   if ($('bootReloadBtn')) $('bootReloadBtn').hidden = true;
 
-  setBootStatus('FutLens AI', 'Загружаем матчи…', 12);
+  setBootStatus('MatchRadar', 'Загружаем матчи…', 12);
   const manifest = await loadAppManifest();
 
   if (state.compatibilityBlocked) {
@@ -867,7 +867,7 @@ async function runStartupSequence() {
     return false;
   }
 
-  setBootStatus('FutLens AI', 'Загружаем матчи…', 38);
+  setBootStatus('MatchRadar', 'Загружаем матчи…', 38);
 
   await loadRuntimeStatus(false);
   await loadProfile().catch(()=>null);
@@ -895,7 +895,7 @@ async function runStartupSequence() {
   applyLaunchIntent();
   if (!tg?.initDataUnsafe?.start_param) showView('matchesView');
   sendProductAction('open', 'matchesView');
-  setBootStatus('FutLens AI', 'Загружаем матчи…', 100);
+  setBootStatus('MatchRadar', 'Загружаем матчи…', 100);
   await new Promise(resolve => setTimeout(resolve, 120));
   hideBootGate();
 
@@ -4308,7 +4308,7 @@ function searchMatchCard(match) {
   const action = finished || live
     ? `<button class="search-match-action" type="button" data-search-center="${Number(match.fixtureId)}">${finished ? 'Итоги' : 'Центр матча'}</button>`
     : `<button class="search-match-action" type="button" data-search-fixture="${Number(match.fixtureId)}">Преданализ</button>`;
-  const primaryLabel=primary ? `<div class="search-match-primary"><b>⭐ ОСНОВНОЙ МАТЧ</b><span>${escapeHtml(match?.selection?.reason || state.globalSearch.matchDiscovery?.primaryReason || 'Основной выбор FutLens AI для анализа')}</span></div>` : '';
+  const primaryLabel=primary ? `<div class="search-match-primary"><b>⭐ ОСНОВНОЙ МАТЧ</b><span>${escapeHtml(match?.selection?.reason || state.globalSearch.matchDiscovery?.primaryReason || 'Основной выбор MatchRadar для анализа')}</span></div>` : '';
   return `<article class="search-match-card ${live ? 'is-live' : finished ? 'is-finished' : 'is-upcoming'} ${primary ? 'is-primary' : ''}">${primaryLabel}
     <div class="search-match-meta"><span>${escapeHtml(match.league || match.competition?.name || 'Матч')}</span><small>${escapeHtml(status)}</small></div>
     <div class="search-match-teams">
@@ -6091,7 +6091,7 @@ function renderMatchCenter(d) {
 
   $('analysis').innerHTML = `
     <section class="panel center-hero ${live ? 'is-live' : ''}">
-      <div class="center-brand-kicker">FutLens AI · Центр матча</div>
+      <div class="center-brand-kicker">MatchRadar · Центр матча</div>
       <div class="center-hero-top">
         <span class="live-pill ${live ? 'active' : finished ? 'finished' : ''}">${statusText}</span>
         <span class="center-competition">${escapeHtml(m.league || '')}${m.round ? ` · ${escapeHtml(m.round)}` : ''}</span>
@@ -6479,7 +6479,7 @@ function renderAiTrackRecord() {
     ${notice}
     <section class="panel ai-track-card">
       <div class="ai-track-head">
-        <div><span>📈 ПРОТОКОЛ FutLens AI</span><h2>Проверенная история модели</h2></div>
+        <div><span>📈 ПРОТОКОЛ MatchRadar</span><h2>Проверенная история модели</h2></div>
         <b class="ai-track-sample ${sampleClass}">${escapeHtml(sample.label || '—')}</b>
       </div>
       <p class="ai-track-intro">Только неизменяемые предматчевые прогнозы с подтверждённым финальным результатом. Здесь нет рекламного «процента побед».</p>
@@ -6822,10 +6822,10 @@ async function shareAnalysis(d) {
     `⚽ ${title}`,
     `${m.league || ''}${m.date ? ` · ${dateTime(m.date)}` : ''}`,
     `П1 ${pct(p.home)} · Н ${pct(p.draw)} · П2 ${pct(p.away)}`,
-    signal.label ? `FutLens AI: ${signal.label}` : `Наиболее вероятно: ${d?.likelyOutcome || '—'}`,
+    signal.label ? `MatchRadar: ${signal.label}` : `Наиболее вероятно: ${d?.likelyOutcome || '—'}`,
     `Уверенность: ${d?.confidence?.score ?? d?.aiInstructor?.confidenceScore ?? '—'}/100`,
     '',
-    'Открой матч в FutLens AI — ссылка сразу приведёт к этому разбору.',
+    'Открой матч в MatchRadar — ссылка сразу приведёт к этому разбору.',
     'Аналитическая оценка модели · не гарантия результата.',
   ];
   let shareUrl='';
@@ -7419,7 +7419,7 @@ function renderAnalysis(d) {
 
   $('analysis').innerHTML = `
     <section class="panel match-experience-hero">
-      <div class="analysis-brand-kicker">FutLens AI · AI-центр матча</div>
+      <div class="analysis-brand-kicker">MatchRadar · AI-центр матча</div>
       <div class="match-experience-meta">
         <span>${escapeHtml(m.league || 'Турнир')}${m.country ? ` · ${escapeHtml(m.country)}` : ''}</span>
         <span>${dateTime(m.date)}</span>
