@@ -655,7 +655,7 @@ function renderVersionCompatibility() {
   banner.hidden = !(state.compatibilityBlocked || state.versionMismatch);
 
   if (state.compatibilityBlocked) {
-    text.textContent = state.compatibilityReason || 'Эта версия приложения несовместима с текущим сервером. Обновите приложение.';
+    text.textContent = 'Приложение нужно обновить, чтобы продолжить.';
     button.textContent = 'Обновить';
     return;
   }
@@ -862,7 +862,7 @@ async function runStartupSequence() {
     showBootRecovery({
       blocking: true,
       title: 'Нужно обновить приложение',
-      text: state.compatibilityReason,
+      text: 'Обновите приложение и откройте его снова.',
     });
     return false;
   }
@@ -4708,15 +4708,15 @@ function renderDailyOverview() {
   if (liveCard) {
     liveCard.hidden = liveCount <= 0;
     const text = $('homeLiveText');
-    if (text) text.textContent = liveCount === 1 ? '1 матч идёт сейчас' : `${liveCount} матча идут сейчас`;
+    if (text) text.textContent = russianCountLabel(liveCount, 'матч идёт сейчас', 'матча идут сейчас', 'матчей идут сейчас');
   }
   if (teamsCard) {
     teamsCard.hidden = favoriteCount <= 0;
     const text = $('homeTeamsText');
-    if (text) text.textContent = favoriteCount === 1 ? '1 любимая команда' : `${favoriteCount} любимых команд`;
+    if (text) text.textContent = russianCountLabel(favoriteCount, 'любимая команда', 'любимые команды', 'любимых команд');
   }
   if (onboarding) onboarding.hidden = favoriteCount > 0;
-  root.hidden = liveCount <= 0 && favoriteCount < 0;
+  root.hidden = false;
 }
 
 function filteredMatches() {
@@ -7579,7 +7579,7 @@ function renderAnalysis(d) {
         <h2>🧠 Состав модели</h2>
         <p class="muted">${escapeHtml(publicText(d.modelBreakdown?.method || 'Модель объединяет доступные статистические сигналы.'))}</p>
         <div class="model-weights">${escapeHtml(modelWeightsText(d.modelBreakdown?.weights || {}))}</div>
-      ${d.modelCalibration ? `<div class="analysis-calibration-card ${escapeHtml(d.modelCalibration.mode || 'baseline')}"><span>Калибровка v${escapeHtml(d.modelCalibration.version || '4.0')}</span><strong>${escapeHtml(calibrationModeLabel(d.modelCalibration.mode))}</strong><small>профиль ${escapeHtml(String(d.modelCalibration.fingerprint || '').slice(0, 8) || 'базовый')} · выборка ${Number(d.modelCalibration.sample || 0)} · коэффициент ${Number(d.modelCalibration.temperature || 1).toFixed(2)}${d.modelCalibration.weightsActive ? ' · адаптивные веса' : ''}</small></div>` : ''}
+      ${d.modelCalibration ? `<div class="analysis-calibration-card ${escapeHtml(d.modelCalibration.mode || 'baseline')}"><span>Настройка модели</span><strong>${escapeHtml(calibrationModeLabel(d.modelCalibration.mode))}</strong><small>Проверено на выборке: ${Number(d.modelCalibration.sample || 0)}</small></div>` : ''}
         <div class="model-api-card">
           <span>Прогноз источника данных</span>
           <strong>${escapeHtml(pred?.winner || 'Нет данных')}</strong>
@@ -7621,12 +7621,11 @@ function renderAnalysis(d) {
           ${providerCoverageHtml(d.providerReliability || d.dataPolicy?.reliability || {})}
           ${dataProvenanceHtml(d.dataProvenance || {})}
           <section class="data-transparency-panel">
-        <h2>Техническая информация</h2>
+        <h2>О данных</h2>
         <div class="transparency-grid">
           <div><span>Полнота</span><strong>${d.completeness?.score ?? 0}/${d.completeness?.max ?? 10}</strong></div>
-          <div><span>Анализ</span><strong>v${escapeHtml(d.analysisVersion || '—')}</strong></div>
-          <div><span>Статус</span><strong>${d.stale ? 'Последние сохранённые данные' : d.cached ? 'Сохранённые данные' : 'Свежий'}</strong></div>
-          <div><span>Режим данных</span><strong>${escapeHtml(dataPolicyModeLabel(d.dataPolicy?.mode || 'standard'))}</strong></div>
+          <div><span>Статус</span><strong>${d.stale ? 'Последние сохранённые данные' : d.cached ? 'Сохранённые данные' : 'Свежие данные'}</strong></div>
+          <div><span>Режим</span><strong>${escapeHtml(dataPolicyModeLabel(d.dataPolicy?.mode || 'standard'))}</strong></div>
         </div>
         ${d.dataPolicy?.skipped?.length ? `<div class="policy-list"><strong>Что было пропущено для экономии/качества:</strong><ul>${d.dataPolicy.skipped.map(x => `<li>${escapeHtml(publicText(x))}</li>`).join('')}</ul></div>` : ''}
         <p class="tiny warning">${escapeHtml(publicText(d.disclaimer || ''))}</p>
