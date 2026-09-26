@@ -1,5 +1,9 @@
 # Football Analytics Mini App v6.120.0 — RC144
 
+## Current production contract
+
+Единый источник истины для текущей версии приложения, production schema, fresh-install baseline, последней migration и Telegram access contract — `release-contract.json`. Исторические RC-разделы ниже описывают эволюцию проекта и не являются текущей инструкцией деплоя.
+
 - RC144: **Availability Semantic Quality Guard** — fixture-level данные о травмах, болезнях и дисквалификациях теперь проходят отдельную semantic-проверку поверх RC139 freshness/provenance до сверки с составами, player-role hydration, корректировки вероятностей и AI. Запись допускается только если относится к одной из команд матча и содержит однозначную идентификацию игрока; строки чужой команды, записи без идентичности и конфликт одной личности одновременно по обеим сторонам fail-closed исключаются. Match Center и полный анализ публикуют `availabilityQuality`, UI показывает статус очистки. Analysis cache поднят до `v15-availability-quality-rc144`, Match Center — до `v16-availability-quality-rc144`, model-input contract — `4.15.0-availability-quality`. Новых API-ключей и Supabase DDL нет.
 
 - RC143: **Odds Market Semantic Quality Guard** — предматчевый и live-рынок 1X2 теперь проходит отдельную semantic-проверку поверх RC139 freshness/provenance до snapshots, market movement, blend модели и Live AI. Guard требует полную валидную тройку десятичных коэффициентов, разумную сумму implied probabilities, согласованный provider и положительное число источников; несогласованные provider probabilities безопасно пересчитываются из коэффициентов. Структурно повреждённый primary market может уступить место лицензированному fallback, а некорректные исторические snapshots исключаются из расчёта движения. Match Center публикует `liveOddsQuality`, полный анализ — `oddsQuality`; UI показывает статус рынка. Analysis cache поднят до `v14-odds-quality-rc143`, Match Center — до `v15-odds-quality-rc143`. Новых API-ключей и Supabase DDL нет.
@@ -24,7 +28,7 @@ Telegram-бот и Mini App для футбольной аналитики на 
 - Публичный AI Track Record строится только по подтверждённым settled-прогнозам и не выдаёт совпадение исхода за прибыльность ставок.
 - Защита от вирусной нагрузки: distributed fixture lock, shared cache и безопасный fallback.
 - Медиа deep-link на fixture, publisher kit и агрегированная first-party аналитика source / campaign / content.
-- RC99 положил начало единому fresh-install Supabase baseline; текущий baseline — `supabase/baseline/supabase_baseline_v6_18.sql`, numbered migrations v6.9–v6.18 сохранены для безопасного обновления существующих баз.
+- RC99 положил начало единому fresh-install Supabase baseline; текущий baseline — `supabase/baseline/supabase_baseline_v6_19.sql`, numbered migrations сохранены для безопасного обновления существующих баз вплоть до v6.19.
 - RC100: защищённый **Supabase Schema Drift Guard** проверяет обязательные таблицы и колонки через server-side PostgREST и блокирует Release Readiness при несовместимой схеме; production DDL не меняется.
 - RC101: **Supabase Directory Hardening** — все SQL вынесены из корня в `supabase/baseline/` и `supabase/migrations/`; fresh-install baseline теперь отказывается запускаться поверх уже существующей рабочей схемы.
 - RC102: **Secret Leak Guard** — Quality и production deploy сканируют только отслеживаемые Git-файлы и блокируют `.env`, `.dev.vars`, приватные ключи и высокоуверенные форматы токенов; значения секретов в лог не выводятся.
@@ -102,7 +106,7 @@ SQL-файлы вынесены из корня репозитория:
 
 `supabase/migrations/supabase_migration_v6_9.sql` → `v6_10` → `v6_11` → `v6_11_1` → `v6_12` → `v6_13` → `v6_14` → `v6_15` → `v6_16` → `v6_17` → `v6_18` → `v6_18_1`.
 
-Для нового проекта используется только `supabase/baseline/supabase_baseline_v6_18.sql`. Он уже включает v6.18 и исправление v6.18.1; старые fresh-install baseline удаляются при каждом roll-forward, чтобы новая установка использовала один актуальный SQL.
+Для нового проекта используется только `supabase/baseline/supabase_baseline_v6_19.sql`. Он включает обязательную production schema вплоть до v6.19, включая исправление v6.18.1. Для существующей production БД baseline не запускается: применяются только отсутствующие numbered migrations. Текущий version/schema/access contract определяется `release-contract.json`.
 
 ## Проверка релиза
 
