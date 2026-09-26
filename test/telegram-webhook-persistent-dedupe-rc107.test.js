@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const worker=fs.readFileSync('src/worker.js','utf8');
+const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-transport.js','utf8');
 const migration=fs.readFileSync('supabase/migrations/supabase_migration_v6_16.sql','utf8');
 const baseline=fs.readFileSync('supabase/baseline/supabase_baseline_v6_19.sql','utf8');
 const smoke=fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
@@ -31,7 +31,7 @@ test('RC107 claim lifecycle is atomic, leased, and keeps completed updates dedup
 
 test('RC107 Worker combines memory and persistent dedupe around webhook processing',()=>{
   const start=worker.indexOf('async function handleTelegramWebhook');
-  const end=worker.indexOf('\nasync function apiBillingPlans',start);
+  const end=worker.indexOf('\n}',start)+2;
   assert.ok(start>=0 && end>start);
   const block=worker.slice(start,end);
   assert.match(block,/const claim=claimTelegramUpdate\(update\)/);
