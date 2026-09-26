@@ -144,6 +144,16 @@ if (!fs.existsSync('test/post-match-review-rc62.test.js')) failures.push('Missin
 if (!fs.existsSync('test/post-match-return-rc63.test.js')) failures.push('Missing RC63 post-match return regression test');
 if (!fs.existsSync('test/ai-track-record-rc64.test.js')) failures.push('Missing RC64 AI track record regression test');
 if (!fs.existsSync('test/media-share-deeplink-rc65.test.js')) failures.push('Missing RC65 media share regression test');
+if (!fs.existsSync('test/primary-telegram-bot-migration-prep.test.js')) failures.push('Missing primary Telegram bot migration regression test');
+if (!fs.existsSync('src/telegram-primary-identity.js')) failures.push('Missing primary Telegram bot identity resolver');
+else {
+  const primaryTelegramIdentity = fs.readFileSync('src/telegram-primary-identity.js','utf8');
+  if (!primaryTelegramIdentity.includes('telegram:bot-username:v2:')) failures.push('Primary Telegram bot username cache must be identity-aware');
+  if (!primaryTelegramIdentity.includes("crypto.subtle.digest('SHA-256'")) failures.push('Primary Telegram bot cache identity fingerprint is missing');
+}
+if (worker.includes('telegram:bot-username:v1')) failures.push('Legacy global Telegram bot username cache key must not be used');
+if (!worker.includes('resolvePrimaryTelegramBotUsername') || !worker.includes('telegramBotStartUrl(username,startParam)')) failures.push('Primary Telegram bot identity/deep-link migration contract is incomplete');
+if (!fs.existsSync('PRIMARY_TELEGRAM_BOT_MIGRATION_PREP_RU.md')) failures.push('Missing primary Telegram bot migration runbook');
 if (!fs.existsSync('test/media-traffic-guard-rc66.test.js')) failures.push('Missing RC66 media traffic guard regression test');
 if (!fs.existsSync('test/media-publisher-kit-rc67.test.js')) failures.push('Missing RC67 media publisher regression test');
 if (!fs.existsSync('test/ai-instructor-rc43.test.js')) failures.push('Missing RC43 persistent-AI regression test');

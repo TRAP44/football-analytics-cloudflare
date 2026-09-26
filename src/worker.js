@@ -35,6 +35,7 @@ import {
   hmacSha256,
   validateTelegramInitData,
 } from './crypto-utils.js';
+import { resolvePrimaryTelegramBotUsername, telegramBotStartUrl } from './telegram-primary-identity.js';
 
 const memory = {
   users: new Map(),
@@ -2512,21 +2513,19 @@ function fixtureShareStartParam(fixtureId, { source='social', campaign='match_sh
 }
 
 async function telegramBotUsername(cfg) {
-  const cacheKey='telegram:bot-username:v1';
-  const cached=await getCache(cacheKey,cfg).catch(()=>null);
-  if (cached?.username) return String(cached.username).replace(/^@/,'');
-  const me=await telegramApi('getMe',cfg);
-  const username=String(me?.username || '').replace(/^@/,'');
-  if (!username) throw new Error('Telegram bot username is unavailable.');
-  await setCache(cacheKey,0,{username,refreshedAt:new Date().toISOString()},cfg,1440).catch(()=>null);
-  return username;
+  return resolvePrimaryTelegramBotUsername({
+    botToken:cfg.botToken,
+    getCached:cacheKey=>getCache(cacheKey,cfg),
+    setCached:(cacheKey,payload,ttlMinutes)=>setCache(cacheKey,0,payload,cfg,ttlMinutes),
+    getMe:()=>telegramApi('getMe',cfg),
+  });
 }
 
 async function fixtureTelegramDeepLink(cfg, fixtureId, options = {}) {
   const startParam=fixtureShareStartParam(fixtureId,options);
   if (!startParam) throw new Error('Некорректный матч для ссылки.');
   const username=await telegramBotUsername(cfg);
-  return {url:`https://t.me/${username}?start=${encodeURIComponent(startParam)}`,startParam,username};
+  return {url:telegramBotStartUrl(username,startParam),startParam,username};
 }
 
 function telegramShareComposerUrl(url, text = '') {
