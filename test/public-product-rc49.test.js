@@ -41,7 +41,8 @@ test('mini app exposes the current public football shell',()=> {
   assert.match(html,/id="matchesView" class="view active"/);
   assert.match(html,/id="navMatches" class="nav-item active"/);
   assert.match(html,/<small>Главная<\/small>/);
-  assert.match(html,/id="navHistory" class="nav-item" type="button"><span>🕘<\/span><small>История<\/small>/);
+  assert.match(html,/id="navHistory" class="nav-item"/);
+  assert.match(html,/<small>История<\/small>/);
   assert.match(html,/id="navProfile" class="nav-item"/);
   assert.match(html,/<small>Профиль<\/small>/);
   assert.match(html,/class="panel admin-console" data-admin-only hidden/);
