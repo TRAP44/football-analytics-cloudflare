@@ -69,6 +69,13 @@ test('Telegram safe-area and cache-bust contracts cover the public shell', () =>
   }
 });
 
+test('HTML shell and public-shell CSS are explicitly revalidated', () => {
+  const headers = fs.readFileSync('public/_headers', 'utf8');
+  assert.match(headers, /\/styles\/public-shell\.css[\s\S]*?Cache-Control: public, max-age=0, must-revalidate/);
+  assert.match(headers, /\/index\.html[\s\S]*?Cache-Control: no-cache, max-age=0, must-revalidate/);
+  assert.match(headers, /(?:^|\n)\/[ \t]*\n[\s\S]*?Cache-Control: no-cache, max-age=0, must-revalidate/);
+});
+
 test('render regression covers the required Telegram mobile widths', () => {
   const renderSmoke = fs.readFileSync('scripts/bottom-nav-render-smoke.js', 'utf8');
   for (const width of [360, 375, 390, 430]) {
