@@ -92,19 +92,19 @@ test('Telegram mobile UX includes safe areas, four-item navigation and touch tar
 });
 
 
-test('normal user journey keeps search, matches, history, favorites and settings reachable', () => {
-  assert.match(html, /id="navSearch" class="nav-item active"/);
-  assert.match(html, /id="navMatches" class="nav-item"/);
+test('Phase 4 normal user journey uses Home, My Teams, History and Profile', () => {
+  assert.match(html, /id="navMatches" class="nav-item active"[^>]*><span>⚽<\/span><small>Главная<\/small>/);
+  assert.match(html, /id="navMyTeams" class="nav-item"[^>]*><span>⭐<\/span><small>Мои команды<\/small>/);
+  assert.doesNotMatch(html, /id="navSearch"/);
   assert.match(html, /id="navHistory" class="nav-item"/);
   assert.match(html, /id="navProfile" class="nav-item"/);
-  assert.match(app, /\$\('navHistory'\)\.addEventListener/);
+  assert.match(html, /id="homeSearchBtn"/);
+  assert.match(html, /id="myTeamsView"/);
+  assert.match(app, /function renderMyTeams\(\)/);
+  assert.match(app, /\$\('navMyTeams'\)\?\.addEventListener/);
+  assert.match(app, /sendProductAction\('favorite_team_open'/);
+  assert.match(app, /sendProductAction\('open', 'matchesView'\)/);
   assert.match(app, /async function openProfileView\(\)/);
-  const profileOpen = functionBody('openProfileView', 'releaseStateLabel');
-  assert.match(profileOpen, /loadFavorites\(\)/);
-  assert.match(profileOpen, /loadReminders\(\)/);
-  assert.match(app, /data-team-id=/);
-  assert.match(html, /id="favoriteTeams"/);
-  assert.match(html, /id="reminderList"/);
 });
 
 test('admin journey keeps operational tools gated without hiding the user profile', () => {
