@@ -7435,13 +7435,14 @@ function matchCockpitHtml(d = {}) {
 }
 
 function analysisGlanceHtml(d = {}) {
-  const factors = (Array.isArray(d.insights) ? d.insights : []).filter(Boolean).slice(0, 5);
+  const factors = (Array.isArray(d.insights) ? d.insights : []).filter(Boolean).slice(0, 3);
   const risks = (Array.isArray(d.risks) ? d.risks : []).filter(Boolean).slice(0, 3);
   const score = Number.isFinite(Number(d.confidence?.score)) ? Math.round(Number(d.confidence.score)) : null;
+  const dataQuality = qualityInfo(d.completeness);
   return `<section class="panel analysis-glance">
     <div class="analysis-glance-head">
       <div><span>ГЛАВНОЕ</span><h2>Что важно перед матчем</h2></div>
-      <div class="analysis-confidence-simple"><span>Уверенность</span><strong>${score === null ? '—' : `${score}/100`}</strong><small>${escapeHtml(publicText(d.confidence?.label || 'Оценивается'))}</small></div>
+      <div class="analysis-confidence-simple"><span>Уверенность AI</span><strong>${score === null ? '—' : `${score}/100`}</strong><small>${escapeHtml(publicText(d.confidence?.label || 'Оценивается'))}</small><small>Данные: ${escapeHtml(dataQuality.label || 'пока неполные')}</small></div>
     </div>
     <div class="analysis-glance-grid">
       <div><h3>Главные факторы</h3>${factors.length ? `<ol>${factors.map(x => `<li>${escapeHtml(publicText(x))}</li>`).join('')}</ol>` : '<p>Сильных отдельных факторов пока нет.</p>'}</div>
