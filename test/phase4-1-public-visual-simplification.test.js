@@ -59,7 +59,7 @@ test('AI match view exposes key decision layer before detailed data',()=>{
   assert.match(glance,/Данные:/);
   assert.match(glance,/Главные факторы/);
   assert.match(glance,/Основные риски/);
-  const analysis=block(app,'function renderAnalysis','function safeUrl');
+  const analysis=app.slice(app.indexOf('function renderAnalysis'));
   assert.ok(analysis.indexOf('analysisGlanceHtml(d)') < analysis.indexOf('Подробные данные матча'));
   assert.match(analysis,/class="analysis-more-data"/);
   assert.doesNotMatch(analysis.slice(0,analysis.indexOf('Подробные данные матча')),/analysisVersion|fingerprint|temperature/);
