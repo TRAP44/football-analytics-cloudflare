@@ -266,9 +266,15 @@ async function main() {
     }
   } finally {
     cdp?.close();
-    chrome.kill('SIGTERM');
+    if (chrome.exitCode === null) {
+      chrome.kill('SIGTERM');
+      await Promise.race([
+        new Promise(resolve => chrome.once('exit', resolve)),
+        new Promise(resolve => setTimeout(resolve, 1500)),
+      ]);
+    }
     if (local) await new Promise(resolve => local.server.close(resolve));
-    await fsp.rm(profileDir, { recursive: true, force: true });
+    await fsp.rm(profileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
   }
 }
 
