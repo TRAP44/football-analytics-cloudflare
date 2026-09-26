@@ -6,7 +6,8 @@ const html=fs.readFileSync('public/index.html','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const css=fs.readFileSync('public/styles/public-shell.css','utf8');
 const client=fs.readFileSync('public/modules/client-core.js','utf8');
-const doc=fs.readFileSync('PHASE4_2_BRAND_IDENTITY_RU.md','utf8');
+const legacyDoc=fs.readFileSync('PHASE4_2_BRAND_IDENTITY_RU.md','utf8');
+const brand=fs.readFileSync('MATCHRADAR_BRAND_SPEC_RU.md','utf8');
 
 function block(source,start,end){
   const a=source.indexOf(start);
@@ -16,29 +17,29 @@ function block(source,start,end){
   return source.slice(a,b);
 }
 
-test('FutLens is the public brand while internal release identifiers stay untouched',()=>{
-  assert.match(html,/FutLens AI · Футбольный ассистент/);
-  assert.match(html,/Понимай матч глубже\./);
-  assert.doesNotMatch(html,/FM AI/);
-  assert.doesNotMatch(app,/FM AI/);
+test('MatchRadar is the public brand while internal release identifiers stay untouched',()=>{
+  assert.match(html,/MatchRadar · AI-футбольный ассистент/);
+  assert.match(html,/Видим, что меняет матч\./);
+  assert.doesNotMatch(html,/FutLens|FM AI/);
+  assert.doesNotMatch(app,/FutLens|FM AI/);
   assert.match(app,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
   assert.match(client,/phase5-session:v2/);
 });
 
 test('brand assets are local minimal SVGs and wired into startup and topbar',()=>{
   for(const path of [
-    'public/assets/brand/futlens-mark.svg',
-    'public/assets/brand/futlens-avatar.svg',
-    'public/assets/brand/futlens-wordmark.svg',
+    'public/assets/brand/matchradar-mark.svg',
+    'public/assets/brand/matchradar-avatar.svg',
+    'public/assets/brand/matchradar-wordmark.svg',
   ]){
     assert.equal(fs.existsSync(path),true,path);
     const asset=fs.readFileSync(path,'utf8');
     assert.match(asset,/<svg/);
     assert.doesNotMatch(asset,/<script|foreignObject/i);
   }
-  assert.match(html,/rel="icon"[^>]+futlens-mark\.svg/);
+  assert.match(html,/rel="icon"[^>]+matchradar-mark\.svg/);
   const boot=block(html,'<div id="bootGate"','<div class="app-shell">');
-  assert.match(boot,/futlens-mark\.svg/);
+  assert.match(boot,/matchradar-mark\.svg/);
   assert.doesNotMatch(boot,/RC\d|release|build|provider|runtime|telemetry|api contract/i);
 });
 
@@ -89,7 +90,7 @@ test('existing fixture deep-link and share contracts remain available',()=>{
   assert.match(launch,/\['analysis','center'\]/);
   assert.match(app,/\/api\/share-link\?fixtureId=/);
   assert.match(app,/telegramShareUrl/);
-  assert.match(doc,/Channel post → generated fixture link → FutLens Mini App/);
+  assert.match(brand,/Channel post → generated fixture link → MatchRadar Mini App/);
 });
 
 test('requested mobile widths are explicitly covered by premium CSS',()=>{
@@ -97,10 +98,12 @@ test('requested mobile widths are explicitly covered by premium CSS',()=>{
   assert.match(css,/Phase 4\.2 — FutLens AI Brand Identity & Premium UI Polish/);
 });
 
-test('brand spec contains three concepts and bot/channel packaging',()=>{
-  for(const name of ['FutLens AI','KickScope AI','PitchBrief AI']) assert.match(doc,new RegExp(name));
-  assert.match(doc,/Display name/);
-  assert.match(doc,/Telegram channel concept/);
-  assert.match(doc,/Deep-link \/ growth flow/);
-  assert.match(doc,/phase5_public_v2/);
+test('historical Phase 4.2 options are preserved while MatchRadar is the current contract',()=>{
+  for(const name of ['FutLens AI','KickScope AI','PitchBrief AI']) assert.match(legacyDoc,new RegExp(name));
+  assert.match(brand,/Продукт:\*\* MatchRadar/);
+  assert.match(brand,/Telegram-бот:\*\* MatchRadar AI/);
+  assert.match(brand,/MatchRadar \| Футбол сегодня/);
+  assert.match(brand,/Видим, что меняет матч\./);
+  assert.match(brand,/Матчи, LIVE и AI-разбор — быстро и по делу\./);
+  assert.match(brand,/phase5_public_v2/);
 });
