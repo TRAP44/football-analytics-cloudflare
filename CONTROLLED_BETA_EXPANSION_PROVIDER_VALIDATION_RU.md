@@ -90,3 +90,22 @@ Dashboard использует уже существующие события и
 - Новая analytics/telemetry система не добавляется.
 - Allowlist автоматически не расширяется.
 - Платный provider не покупается и не подключается без явного подтверждения владельца.
+
+
+## Проверенный production snapshot — 2026-09-26
+
+После введения server-side membership boundary проверены реальные production-данные, а не синтетические fixtures:
+
+- зарегистрировано пользователей в Supabase: **2**;
+- после membership boundary зафиксировано **15** growth events от **2** пользователей;
+- после membership boundary зафиксировано **22** client telemetry events, включая **3** `BOOT_OK`;
+- событий с `betaCohort=closed_beta_v1`: **0**;
+- событий с `betaMembershipVerified=true`: **0**;
+- Quality для текущего `main` прошёл успешно;
+- production deploy для SHA `78f04d4085402b553171f20de410073300436c29` прошёл успешно;
+- Cloudflare подтвердил активный release `6.120.0-rc144` на 100% traffic;
+- post-deploy smoke прошёл **25** проверок.
+
+Это доказывает, что общая telemetry и production runtime работают, но реальная закрытая beta-когорта ещё не дала ни одного verified события. Поэтому текущий фактический статус остаётся **BETA HOLD**.
+
+Следующее обязательное действие: назначить минимум двух реальных non-admin beta-пользователей в server-side `BETA_TELEGRAM_IDS` и получить их реальные Telegram Mini App сессии. Синтетически создавать beta evidence, автоматически расширять allowlist или считать обычный production-трафик beta-трафиком запрещено.
