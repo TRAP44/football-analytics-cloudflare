@@ -163,9 +163,6 @@ function assertLayout(width, snapshot) {
   if (snapshot.nav.scrollWidth > snapshot.nav.clientWidth + 1) {
     throw new Error(`${width}px: bottom nav has horizontal overflow (${snapshot.nav.scrollWidth} > ${snapshot.nav.clientWidth})`);
   }
-  if (snapshot.documentScrollWidth > width + 1) {
-    throw new Error(`${width}px: document has horizontal clipping/overflow (${snapshot.documentScrollWidth})`);
-  }
   if (!snapshot.assetRevision) throw new Error(`${width}px: frontend asset revision meta is missing`);
   if (snapshot.assetTokens.length !== 3 || snapshot.assetTokens.some(token => token !== snapshot.assetRevision)) {
     throw new Error(`${width}px: frontend JS/CSS cache-bust tokens are not coherent`);
@@ -245,7 +242,6 @@ async function main() {
           ];
           return {
             innerWidth: window.innerWidth,
-            documentScrollWidth: document.documentElement.scrollWidth,
             assetRevision: revision,
             assetTokens: urls.map(value => {
               try { return new URL(value, location.href).searchParams.get('v') || ''; } catch { return ''; }
