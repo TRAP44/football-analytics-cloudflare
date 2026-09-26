@@ -148,8 +148,8 @@ if (!fs.existsSync('test/ai-instructor-rc42.test.js')) failures.push('Missing RC
 if (!worker.includes('function loadRefereeHistoryProfile')) failures.push('RC44 referee history loader is missing');
 if (!worker.includes('saveRefereeMatchHistory')) failures.push('RC44 referee history collector is missing');
 if (!fs.existsSync('test/phase4-2-brand-premium-ui.test.js')) failures.push('Missing Phase 4.2 brand/UI regression test');
-if (!fs.existsSync('public/assets/brand/futlens-mark.svg') || !fs.existsSync('public/assets/brand/futlens-avatar.svg') || !fs.existsSync('public/assets/brand/futlens-wordmark.svg')) failures.push('Phase 4.2 FutLens brand assets are incomplete');
-if (!html.includes('FutLens AI') || app.includes('FM AI')) failures.push('Phase 4.2 public brand replacement is incomplete');
+if (!fs.existsSync('public/assets/brand/matchradar-mark.svg') || !fs.existsSync('public/assets/brand/matchradar-avatar.svg') || !fs.existsSync('public/assets/brand/matchradar-wordmark.svg')) failures.push('MatchRadar brand assets are incomplete');
+if (!html.includes('MatchRadar') || /FutLens|FM AI/.test(html) || /FutLens|FM AI/.test(app)) failures.push('MatchRadar public brand replacement is incomplete');
 if (!app.includes('function renderAiFocus')) failures.push('RC44 AI focus card is missing');
 if (!worker.includes("verifiedRefereeHistory: 'enabled'") || !worker.includes("aiFocusOfDay: 'enabled'")) failures.push('RC44 health contract is missing');
 if (!worker.includes('function buildLineupImpact')) failures.push('RC44 lineup impact engine is missing');
@@ -159,7 +159,7 @@ if (!worker.includes("aiTenSecondVerdict: 'enabled'") || !worker.includes("daily
 if (!worker.includes('function buildAiInstructor')) failures.push('AI football instructor engine is missing');
 if (!worker.includes("referee: fixture.fixture?.referee || ''")) failures.push('Pre-match referee context is missing');
 if (!app.includes('function aiInstructorHtml')) failures.push('AI instructor UI is missing');
-if (!html.includes('boot-card boot-card-simple') || !html.includes('FutLens AI') || !html.includes('Понимай матч глубже.') || !html.includes('Загружаем матчи…') || html.includes('id="bootVersion"')) failures.push('Phase 4.1/4.2 minimal public startup is missing');
+if (!html.includes('boot-card boot-card-simple') || !html.includes('MatchRadar') || !html.includes('Видим, что меняет матч.') || !html.includes('Загружаем матчи…') || html.includes('id="bootVersion"')) failures.push('MatchRadar minimal public startup is missing');
 if (!worker.includes("telegramBotHub: 'enabled'") || !worker.includes("aiFootballInstructor: 'enabled'")) failures.push('RC44 AI/bot health contract is missing');
 if (!html.includes('id="homeLiveCard"') || !html.includes('id="homeTeamsBtn"') || !html.includes('id="homeFavoriteBtn"')) failures.push('Phase 4.1 contextual Home priority cards are missing');
 if (!html.includes('id="quotaText" hidden')) failures.push('Main-screen quota must be hidden by default');
@@ -248,6 +248,7 @@ if (!html.includes('class="miniapp-public-shell"') || !app.includes('const start
 if (!html.includes('id="navMatches"') || !html.includes('id="navMyTeams"') || !html.includes('id="navHistory"') || !html.includes('id="navProfile"') || html.includes('id="navSearch"')) failures.push('Phase 4 minimal public navigation contract is missing');
 
 if (!worker.includes("fmAiNews: 'enabled'") || !worker.includes("newsSourceLinks: 'enabled'")) failures.push('RC50 FM AI News health contract is missing');
+if (worker.includes('FM AI') || !worker.includes("name: 'MatchRadar AI'") || !worker.includes('Матчи, LIVE и AI-разбор — быстро и по делу.') || !worker.includes('AI-футбольный ассистент в Telegram: матчи, команды, LIVE и понятный разбор ключевых факторов.')) failures.push('MatchRadar AI public bot profile is incomplete');
 if (!worker.includes('tavilyNewsSearch') || !worker.includes("topic:'news'")) failures.push('RC50 news provider route is missing');
 if (!worker.includes('footballNewsCategory') || !worker.includes('footballNewsImpactText')) failures.push('RC50 news classification/impact contract is missing');
 if (!worker.includes('sendFavoriteTeamNews') || !worker.includes('currentMorningFootballNews')) failures.push('RC50 personalized/morning news flows are missing');
@@ -256,7 +257,7 @@ if (!worker.includes("newsMiniAppSeparation: 'enabled'") || html.includes('id="n
 if (!worker.includes("publicTelegramOnboarding: 'enabled'") || !worker.includes("mediaLaunchUx: 'enabled'")) failures.push('RC51 public onboarding health contract is missing');
 if (!worker.includes('favoriteMatchTeamRow') || !worker.includes('favorite:toggle:')) failures.push('RC51 inline favorites are missing');
 if (!worker.includes('editMessageReplyMarkup') || !worker.includes('toggleBotFavorite')) failures.push('RC51 in-place favorite UX is missing');
-if (!worker.includes('FM AI · MATCH') || !worker.includes("brandedMatchCards: 'enabled'")) failures.push('RC51 branded match card is missing');
+if (!worker.includes('MatchRadar AI · MATCH') || !worker.includes("brandedMatchCards: 'enabled'")) failures.push('RC51 branded match card is missing');
 if (!worker.includes("telegramSearchAliasParity: 'enabled'") || !worker.includes("Number(plan.best?.score || 0) < 280")) failures.push('RC51 short Telegram alias parity is missing');
 
 if (!worker.includes("mediaLaunchHardening: 'enabled'") || !worker.includes("telegramWebhookDedupe: 'enabled'") || !worker.includes("telegramWebhookBurstGuard: 'enabled'")) failures.push('RC52 webhook hardening contract is missing');
