@@ -199,7 +199,7 @@ function applyAccentPreference(prefs = state.uiPreferences || DEFAULT_UI_PREFERE
 }
 
 function syncBootVersion() {
-  const el = $('bootVersion');
+  const el = $('publicAppVersion');
   if (el) el.textContent = CLIENT_VERSION.split('-')[0];
 }
 
@@ -253,13 +253,13 @@ function saveInterfacePreference(key, value) {
 }
 
 const VIEW_CHROME = {
-  matchesView: ['Матчи', 'Сегодня, LIVE и ближайшие игры для AI-разбора'],
-  searchView: ['AI-анализ матча', 'Найдите клуб или матч — остальное объяснит FM AI'],
-  tournamentView: ['Турнир', 'Матчи и таблица соревнования'],
+  matchesView: ['Главная', 'Ваш футбол — в одном месте'],
+  searchView: ['Поиск', 'Найдите команду или матч'],
+  tournamentView: ['Турнир', 'Матчи и таблица'],
   teamView: ['Команда', 'Матчи и данные клуба'],
-  analysisView: ['AI-разбор', 'Вердикт, причины, составы, судья, рынок и риски'],
-  historyView: ['История AI', 'Ваши последние сохранённые разборы'],
-  profileView: ['Профиль', 'Оформление, избранное и настройки'],
+  analysisView: ['Матч', 'Прогноз AI и подробности'],
+  historyView: ['История', 'Ваши сохранённые разборы'],
+  profileView: ['Профиль', 'Команды, напоминания и настройки'],
 };
 
 function syncTopbar(id) {
@@ -661,7 +661,7 @@ function renderVersionCompatibility() {
   }
 
   if (state.versionMismatch) {
-    text.textContent = `Доступно обновление ${state.serverVersion || state.appManifest?.recommendedClientVersion || ''}. Текущая версия совместима, но лучше перезагрузить приложение.`;
+    text.textContent = 'Доступно обновление приложения. Перезагрузите, чтобы получить последнюю версию.';
     button.textContent = 'Обновить';
     return;
   }
@@ -855,7 +855,7 @@ async function runStartupSequence() {
   if ($('bootContinueBtn')) $('bootContinueBtn').hidden = true;
   if ($('bootReloadBtn')) $('bootReloadBtn').hidden = true;
 
-  setBootStatus('Запускаю FM AI', 'Проверяю версию и готовлю AI-поиск матчей…', 12);
+  setBootStatus('FM AI', 'Загружаем матчи…', 12);
   const manifest = await loadAppManifest();
 
   if (state.compatibilityBlocked) {
@@ -867,11 +867,7 @@ async function runStartupSequence() {
     return false;
   }
 
-  setBootStatus(
-    'Собираю футбольный контекст',
-    manifest ? `Системная информация загружена · формат данных ${manifest.apiContract}` : 'Системная информация временно недоступна — продолжаю в безопасном режиме.',
-    38
-  );
+  setBootStatus('FM AI', 'Загружаем матчи…', 38);
 
   await loadRuntimeStatus(false);
   await loadProfile().catch(()=>null);
@@ -899,7 +895,7 @@ async function runStartupSequence() {
   applyLaunchIntent();
   if (!tg?.initDataUnsafe?.start_param) showView('matchesView');
   sendProductAction('open', 'matchesView');
-  setBootStatus('FM AI готов', state.startup.degraded ? 'AI-поиск доступен, часть фоновых проверок завершится позже.' : 'Найдите матч — AI соберёт форму, составы, судью, рынок и риски.', 100);
+  setBootStatus('FM AI', 'Загружаем матчи…', 100);
   await new Promise(resolve => setTimeout(resolve, 120));
   hideBootGate();
 
@@ -4699,33 +4695,28 @@ function personalMatchInsight(match, signals = personalContextSignals()) {
 }
 
 function renderDailyOverview() {
-  const title = $('dailyOverviewTitle');
-  const text = $('dailyOverviewText');
-  const kicker = $('dailyOverviewKicker');
-  if (!title || !text) return;
-  if (kicker) kicker.textContent = state.offset < 0 ? 'ВЧЕРА ДЛЯ ВАС' : state.offset > 0 ? 'ЗАВТРА ДЛЯ ВАС' : 'СЕГОДНЯ ДЛЯ ВАС';
-  const favorites = favoriteSet();
+  const root = $('dailyOverview');
+  const liveCard = $('homeLiveCard');
+  const teamsCard = $('homeTeamsBtn');
+  const onboarding = $('homeFavoriteBtn');
+  if (!root) return;
+
   const visible = state.matches.filter(match => state.preferences?.hideYouth === false || !match.youthReserve);
-  const live = visible.filter(match => match.live).length;
-  const favoriteMatches = visible.filter(match => favorites.has(Number(match.home?.id)) || favorites.has(Number(match.away?.id))).length;
-  const signals = personalContextSignals();
-  const recommended = visible.filter(match => personalMatchInsight(match, signals).recommended).length;
-  if ($('overviewLiveCount')) $('overviewLiveCount').textContent = String(live);
-  if ($('overviewFavoriteCount')) $('overviewFavoriteCount').textContent = String(favoriteMatches);
-  if ($('overviewRecommendedCount')) $('overviewRecommendedCount').textContent = String(recommended);
-  if (live > 0) {
-    title.textContent = 'Сейчас в эфире';
-    text.textContent = favoriteMatches ? `И ещё ${russianCountLabel(favoriteMatches, 'матч любимой команды', 'матча любимых команд', 'матчей любимых команд')} в вашем списке.` : `${russianCountLabel(recommended, 'рекомендация собрана', 'рекомендации собраны', 'рекомендаций собрано')} для вас.`;
-  } else if (favoriteMatches > 0) {
-    title.textContent = 'Матчи ваших команд';
-    text.textContent = `${russianCountLabel(favoriteMatches, 'важный матч', 'важных матча', 'важных матчей')} — без поиска по всему расписанию.`;
-  } else if (visible.length > 0) {
-    title.textContent = 'Рекомендации для вас';
-    text.textContent = `${russianCountLabel(recommended, 'матч подобран', 'матча подобраны', 'матчей подобрано')} из ${visible.length} доступных — с учётом ваших интересов.`;
-  } else {
-    title.textContent = 'Матчи скоро появятся';
-    text.textContent = 'Свежие матчи появятся здесь сразу после загрузки.';
+  const liveCount = visible.filter(match => match.live).length;
+  const favoriteCount = state.favorites.length;
+
+  if (liveCard) {
+    liveCard.hidden = liveCount <= 0;
+    const text = $('homeLiveText');
+    if (text) text.textContent = liveCount === 1 ? '1 матч идёт сейчас' : `${liveCount} матча идут сейчас`;
   }
+  if (teamsCard) {
+    teamsCard.hidden = favoriteCount <= 0;
+    const text = $('homeTeamsText');
+    if (text) text.textContent = favoriteCount === 1 ? '1 любимая команда' : `${favoriteCount} любимых команд`;
+  }
+  if (onboarding) onboarding.hidden = favoriteCount > 0;
+  root.hidden = liveCount <= 0 && favoriteCount < 0;
 }
 
 function filteredMatches() {
@@ -4849,47 +4840,46 @@ function renderPopularCompetitions() {
 function matchCardHtml(m, { grouped = false } = {}) {
   const aiHistory = analysisHistoryForFixture(m.fixtureId);
   const cardState = m.live ? 'is-live' : m.finished ? 'is-finished' : 'is-upcoming';
-  const personalInsight = personalMatchInsight(m);
-  const personalReason = state.filter === 'top' ? personalInsight.reason : '';
   const reminderActive = hasReminder(m.fixtureId);
   const reminderPending = state.reminderMutations.has(Number(m.fixtureId));
   const reminderMinutes = Number(state.preferences?.reminderMinutes || 30);
-  const statusLabel = m.live ? '<b class="match-live-label">🔴 ИДЁТ</b>' : m.finished ? '<span class="match-finished-label">Завершён</span>' : '';
+  const statusLabel = m.live
+    ? '<b class="match-live-label">LIVE</b>'
+    : m.finished
+      ? '<span class="match-finished-label">Завершён</span>'
+      : `<span class="match-time-label">${escapeHtml(timeOf(m.date))}</span>`;
   const primaryAction = m.live
-    ? `<button class="analyze-btn live-center-btn" type="button" data-center="${Number(m.fixtureId)}">Смотреть матч</button>`
+    ? `<button class="analyze-btn live-center-btn" type="button" data-center="${Number(m.fixtureId)}">Открыть матч</button>`
     : m.finished
       ? `<button class="analyze-btn finished-btn" type="button" data-center="${Number(m.fixtureId)}">Итоги матча</button>`
       : aiHistory
         ? `<button class="analyze-btn analyzed-btn" type="button" data-history-analysis="${Number(m.fixtureId)}">Открыть AI-разбор</button>`
         : `<button class="analyze-btn" type="button" data-fixture="${Number(m.fixtureId)}">AI-анализ</button>`;
 
+  const favoriteButton = team => `<button class="fav-star compact ${isFavorite(team?.id) ? 'active' : ''} ${state.favoriteMutations.has(Number(team?.id)) ? 'is-pending' : ''}" type="button" data-team-id="${Number(team?.id)}" data-team-name="${escapeHtml(team?.name || '')}" data-team-logo="${escapeHtml(team?.logo || '')}" aria-pressed="${isFavorite(team?.id) ? 'true' : 'false'}" aria-label="${isFavorite(team?.id) ? 'Удалить из избранного' : 'Добавить в избранное'}: ${escapeHtml(team?.name || '')}" ${state.favoriteMutations.has(Number(team?.id)) ? 'disabled' : ''}>${isFavorite(team?.id) ? '★' : '☆'}</button>`;
+
   return `
-    <article class="match-card ${cardState}">
-      ${grouped ? '' : `<div class="match-meta"><span class="competition-name">${escapeHtml(m.league || 'Турнир')}</span><span>${statusLabel || escapeHtml(m.country || '')}</span></div>`}
-      <div class="team-row">
-        <div class="team">
-          <button class="fav-star ${isFavorite(m.home?.id) ? 'active' : ''} ${state.favoriteMutations.has(Number(m.home?.id)) ? 'is-pending' : ''}" type="button" data-team-id="${Number(m.home?.id)}" data-team-name="${escapeHtml(m.home?.name || '')}" data-team-logo="${escapeHtml(m.home?.logo || '')}" aria-pressed="${isFavorite(m.home?.id) ? 'true' : 'false'}" aria-label="${isFavorite(m.home?.id) ? 'Удалить из избранного' : 'Добавить в избранное'}: ${escapeHtml(m.home?.name || '')}" ${state.favoriteMutations.has(Number(m.home?.id)) ? 'disabled' : ''}>${isFavorite(m.home?.id) ? '★' : '☆'}</button>
-          <button class="team-open-link match-team-open" type="button" data-open-team="${Number(m.home?.id)}" data-team-name="${escapeHtml(m.home?.name || '')}" data-team-logo="${escapeHtml(m.home?.logo || '')}">
-            ${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : '<span class="team-logo-fallback">⚽</span>'}
-            <span class="match-team-copy"><strong>${escapeHtml(m.home?.name || '')}</strong></span>
-          </button>
-        </div>
-        <div class="kickoff ${m.live ? 'live-kickoff' : ''}">${escapeHtml(matchCenter(m))}</div>
-        <div class="team away">
-          <button class="team-open-link match-team-open away-open" type="button" data-open-team="${Number(m.away?.id)}" data-team-name="${escapeHtml(m.away?.name || '')}" data-team-logo="${escapeHtml(m.away?.logo || '')}">
-            <span class="match-team-copy"><strong>${escapeHtml(m.away?.name || '')}</strong></span>
-            ${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : '<span class="team-logo-fallback">⚽</span>'}
-          </button>
-          <button class="fav-star ${isFavorite(m.away?.id) ? 'active' : ''} ${state.favoriteMutations.has(Number(m.away?.id)) ? 'is-pending' : ''}" type="button" data-team-id="${Number(m.away?.id)}" data-team-name="${escapeHtml(m.away?.name || '')}" data-team-logo="${escapeHtml(m.away?.logo || '')}" aria-pressed="${isFavorite(m.away?.id) ? 'true' : 'false'}" aria-label="${isFavorite(m.away?.id) ? 'Удалить из избранного' : 'Добавить в избранное'}: ${escapeHtml(m.away?.name || '')}" ${state.favoriteMutations.has(Number(m.away?.id)) ? 'disabled' : ''}>${isFavorite(m.away?.id) ? '★' : '☆'}</button>
-        </div>
+    <article class="match-card compact-match-card ${cardState}">
+      <div class="match-card-topline">
+        <span class="competition-name">${escapeHtml(m.league || 'Турнир')}</span>
+        ${statusLabel}
       </div>
-      <div class="match-card-actions single">${primaryAction}</div>
-      ${!m.live && !m.finished ? `<details class="match-card-more">
-        <summary>Ещё</summary>
-        ${personalReason ? `<div class="match-signal ${personalInsight.favorite ? 'favorite-signal' : ''}">Почему здесь: ${escapeHtml(personalReason)}</div>` : ''}
-        ${aiHistory ? matchAiSnapshotHtml(m) : ''}
-        <button class="quick-reminder-btn ${reminderActive ? 'active' : ''} ${reminderPending ? 'is-pending' : ''}" type="button" data-quick-reminder="${Number(m.fixtureId)}" aria-pressed="${reminderActive ? 'true' : 'false'}" ${reminderPending ? 'disabled' : ''}>${reminderActive ? '🔔 Напоминание включено' : `🔔 Напомнить за ${reminderMinutes} мин.`}</button>
-      </details>` : ''}
+      <div class="compact-match-row">
+        <button class="team-open-link compact-team" type="button" data-open-team="${Number(m.home?.id)}" data-team-name="${escapeHtml(m.home?.name || '')}" data-team-logo="${escapeHtml(m.home?.logo || '')}">
+          ${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : '<span class="team-logo-fallback">⚽</span>'}
+          <strong>${escapeHtml(m.home?.name || '')}</strong>
+        </button>
+        <div class="compact-score">${escapeHtml(matchCenter(m))}</div>
+        <button class="team-open-link compact-team away" type="button" data-open-team="${Number(m.away?.id)}" data-team-name="${escapeHtml(m.away?.name || '')}" data-team-logo="${escapeHtml(m.away?.logo || '')}">
+          ${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : '<span class="team-logo-fallback">⚽</span>'}
+          <strong>${escapeHtml(m.away?.name || '')}</strong>
+        </button>
+      </div>
+      <div class="match-card-actions compact-actions">${primaryAction}</div>
+      <div class="match-secondary-actions" aria-label="Дополнительные действия">
+        <span>${favoriteButton(m.home)}${favoriteButton(m.away)}</span>
+        ${!m.live && !m.finished ? `<button class="quick-reminder-btn compact ${reminderActive ? 'active' : ''} ${reminderPending ? 'is-pending' : ''}" type="button" data-quick-reminder="${Number(m.fixtureId)}" aria-pressed="${reminderActive ? 'true' : 'false'}" ${reminderPending ? 'disabled' : ''}>${reminderActive ? '🔔' : '🔕'} <span>${reminderActive ? 'Включено' : `${reminderMinutes} мин.`}</span></button>` : ''}
+      </div>
     </article>`;
 }
 
@@ -4987,27 +4977,20 @@ function renderAiFocus() {
 }
 function renderMatches() {
   const list = filteredMatches();
-  const age = relativeAge(state.matchesMeta?.refreshedAt);
-  const catalog = state.matchesMeta?.catalog || {};
-  const groups = competitionGroups(list);
   const integrity = state.matchesMeta?.integrity || {};
-  const summaryBits = [
-    `<span class="summary-pill"><b>${list.length}</b> из ${state.matches.length}</span>`,
-    groups.length ? `<span class="summary-pill"><b>${groups.length}</b> турниров</span>` : '',
-    Number(catalog.live || 0) > 0 ? `<span class="summary-pill live"><b>${Number(catalog.live)}</b> сейчас идут</span>` : '',
-    state.matchesMeta?.refreshing ? '<span class="summary-pill muted-pill refreshing">↻ обновляем</span>' : age ? `<span class="summary-pill muted-pill">↻ ${escapeHtml(age)}</span>` : '',
-  ].filter(Boolean);
-  $('matchesCount').innerHTML = summaryBits.join('');
+  if ($('matchesCount')) $('matchesCount').textContent = '';
   renderDailyOverview();
   renderAiFocus();
   renderAiCenterSummary();
   renderPopularCompetitions();
+
   if ($('dataNotice')) {
     const notices = [];
     if (state.matchesMeta?.stale && !state.matchesMeta?.refreshing) notices.push(`<div class="data-notice stale">⚠️ ${escapeHtml(state.matchesMeta.warning || 'Показаны последние сохранённые данные.')}</div>`);
-    if (Number(integrity.quarantined || 0) > 0) notices.push('<div class="data-notice integrity-notice">🛡️ Несколько матчей временно скрыты, пока мы проверяем данные.</div>');
+    if (Number(integrity.quarantined || 0) > 0) notices.push('<div class="data-notice integrity-notice">Некоторые матчи временно скрыты, пока мы проверяем данные.</div>');
     $('dataNotice').innerHTML = notices.join('');
   }
+
   if (!list.length) {
     const filtered = state.filter !== 'all';
     const extra = filtered ? '<button id="showAllBtn" class="secondary-btn" type="button">Показать все матчи</button>' : '';
@@ -5026,18 +5009,7 @@ function renderMatches() {
     return;
   }
 
-  $('matches').innerHTML = groups.map(rows => {
-    const first = rows[0];
-    const liveCount = rows.filter(x => x.live).length;
-    return `<section class="competition-group">
-      <button class="competition-group-head" type="button" data-open-tournament="${Number(first.leagueId)}">
-        <span class="competition-group-logo">${first.leagueLogo ? `<img src="${safeUrl(first.leagueLogo)}" alt="">` : '🏆'}</span>
-        <span class="competition-group-main"><strong>${escapeHtml(first.league || 'Турнир')}</strong><small>${escapeHtml(first.country || '')}${first.season ? ` · сезон ${Number(first.season)}` : ''}</small></span>
-        <span class="competition-group-count">${liveCount ? `<b>${liveCount} сейчас</b>` : ''}<small>${russianCountLabel(rows.length, 'матч', 'матча', 'матчей')}</small><i>›</i></span>
-      </button>
-      <div class="competition-group-matches">${rows.map(m => matchCardHtml(m, { grouped: true })).join('')}</div>
-    </section>`;
-  }).join('');
+  $('matches').innerHTML = list.map(m => matchCardHtml(m)).join('');
   bindMatchActions($('matches'));
 }
 
@@ -6145,7 +6117,6 @@ function renderMatchCenter(d) {
       <div class="center-meta-line">
         ${m.venue ? `<span>🏟 ${escapeHtml(m.venue)}</span>` : ''}
         ${m.city ? `<span>📍 ${escapeHtml(m.city)}</span>` : ''}
-        ${m.referee ? `<span>🧑‍⚖️ ${escapeHtml(m.referee)}</span>` : ''}
       </div>
 
       <div class="center-hero-actions ${isAdmin() ? 'has-admin-audit' : ''}">
@@ -6159,7 +6130,10 @@ function renderMatchCenter(d) {
     ${d.stale ? `<section class="panel stale-panel"><strong>⚠️ Показан последний сохранённый снимок</strong><p>${escapeHtml(publicText(d.warning || 'Источник данных временно ограничил запросы.'))}</p></section>` : ''}
     ${d.note ? `<section class="panel center-note"><p class="tiny warning">${escapeHtml(publicText(d.note))}</p></section>` : ''}
 
-    <div class="center-tabs-wrap">
+    <details class="match-center-more">
+      <summary>Подробности матча</summary>
+      <div class="match-center-more-body">
+      <div class="center-tabs-wrap">
       <div class="center-tabs" role="tablist" aria-label="Разделы матча">
         <button class="center-tab-btn" data-center-tab="summary" type="button">Обзор</button>
         <button class="center-tab-btn" data-center-tab="insights" type="button">Инсайты</button>
@@ -6240,6 +6214,9 @@ function renderMatchCenter(d) {
         ${centerMarketHtml(d)}
       </section>
     </div>
+    ${m.referee ? `<section class="panel analysis-referee-line"><h2>Судья</h2><p>${escapeHtml(m.referee)}</p></section>` : ''}
+      </div>
+    </details>
   `;
 
   bindMatchCenterTabs();
@@ -7490,10 +7467,13 @@ function renderAnalysis(d) {
 
     ${d.stale ? `<section class="panel stale-panel"><strong>⚠️ Использован последний сохранённый анализ</strong><p>${escapeHtml(d.warning || 'Свежие данные временно недоступны из-за ограничения источника данных.')}</p></section>` : ''}
 
-    ${kickoffHandoffHtml(d.kickoffHandoff || {}, m)}
-
     ${analysisGlanceHtml(d)}
 
+    ${kickoffHandoffHtml(d.kickoffHandoff || {}, m)}
+
+    <details class="analysis-more-data">
+      <summary>Подробные данные матча</summary>
+      <div class="analysis-more-body">
     <div class="analysis-tabs" role="tablist">
       <button class="analysis-tab-btn" data-tab="brief" type="button">Главное</button>
       <button class="analysis-tab-btn" data-tab="overview" type="button">Обзор</button>
@@ -7653,8 +7633,10 @@ function renderAnalysis(d) {
           </section>
         </div>
       </details>
-      ${m.referee ? `<section class="panel analysis-referee-line"><h2>🧑‍⚖️ Судья</h2><p>${escapeHtml(m.referee)}</p></section>` : ''}
+      ${m.referee ? `<section class="panel analysis-referee-line"><h2>Судья</h2><p>${escapeHtml(m.referee)}</p></section>` : ''}
     </div>
+      </div>
+    </details>
   `;
 
   $('analysisRecheckBtn')?.addEventListener('click', e => analyzeMatch(Number(m.fixtureId), e.currentTarget, { recheck:true }));
@@ -7835,6 +7817,16 @@ document.querySelectorAll('[data-quick-filter]').forEach(btn => {
     renderMatches();
     $('matchesTitle')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
+});
+$('homeTeamsBtn')?.addEventListener('click', () => {
+  renderMyTeams();
+  showView('myTeamsView');
+});
+$('homeFavoriteBtn')?.addEventListener('click', () => {
+  renderDiscoveryHome();
+  renderGlobalSearch();
+  showView('searchView');
+  setTimeout(() => $('globalSearchInput')?.focus({ preventScroll: true }), 80);
 });
 document.querySelectorAll('[data-theme-choice]').forEach(button => {
   button.addEventListener('click', () => saveInterfacePreference('theme', button.dataset.themeChoice || 'system'));
