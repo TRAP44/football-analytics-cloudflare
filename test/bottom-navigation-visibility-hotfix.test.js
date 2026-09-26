@@ -59,6 +59,9 @@ test('Telegram safe-area and cache-bust contracts cover the public shell', () =>
   assert.match(publicShell, /env\(safe-area-inset-right\)/);
   assert.match(publicShell, /env\(safe-area-inset-bottom\)/);
   assert.match(publicShell, /box-sizing:border-box/);
+  assert.match(publicShell, /left:max\(7px,env\(safe-area-inset-left\)\)/);
+  assert.match(publicShell, /right:max\(7px,env\(safe-area-inset-right\)\)/);
+  assert.match(publicShell, /transform:none/);
 
   const revision = /<meta name="frontend-asset-revision" content="([^"]+)" \/>/.exec(html)?.[1];
   assert.ok(revision);
