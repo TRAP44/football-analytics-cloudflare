@@ -5,7 +5,7 @@ import fs from 'node:fs';
 const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const migration=fs.readFileSync('supabase/migrations/supabase_migration_v6_17.sql','utf8');
-const baseline=fs.readFileSync('supabase/baseline/supabase_baseline_v6_18.sql','utf8');
+const baseline=fs.readFileSync('supabase/baseline/supabase_baseline_v6_19.sql','utf8');
 const smoke=fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
 
 test('RC108 persists duplicate counters without weakening webhook claim semantics',()=>{
