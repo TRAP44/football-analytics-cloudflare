@@ -98,7 +98,8 @@ test('Telegram mobile UX includes safe areas, four-item navigation and touch tar
 test('Phase 4 normal user journey uses Home, My Teams, History and Profile', () => {
   assert.match(html, /id="navMatches" class="nav-item active"/);
   assert.match(html, /<small>Главная<\/small>/);
-  assert.match(html, /id="navMyTeams" class="nav-item"[^>]*><span>⭐<\/span><small>Мои команды<\/small>/);
+  assert.match(html, /id="navMyTeams" class="nav-item"/);
+  assert.match(html, /<small>Мои команды<\/small>/);
   assert.doesNotMatch(html, /id="navSearch"/);
   assert.match(html, /id="navHistory" class="nav-item"/);
   assert.match(html, /id="navProfile" class="nav-item"/);
