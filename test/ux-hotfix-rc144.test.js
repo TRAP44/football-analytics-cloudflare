@@ -67,7 +67,7 @@ test('startup hides release identifiers while About shows the public app version
   const boot = html.slice(html.indexOf('id="bootGate"'), html.indexOf('class="app-shell"'));
   assert.doesNotMatch(boot, /bootVersion|версия|RC\d|release|build/i);
   assert.match(boot, /MatchRadar/);
-  assert.match(boot, /Понимай матч глубже\./);
+  assert.match(boot, /Видим, что меняет матч\./);
   assert.match(boot, /Загружаем матчи/);
   assert.match(html, /id="publicAppVersion">6\.120\.0</);
   assert.match(app, /CLIENT_VERSION\.split\('-'\)\[0\]/);
