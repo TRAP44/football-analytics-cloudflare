@@ -57,13 +57,15 @@ test('match list renders snapshots immediately and refreshes without blocking vi
   assert.match(app, /↻ обновляем/);
 });
 
-test('match cards keep one primary action and move secondary actions behind disclosure', () => {
+test('match cards keep one primary action with compact secondary favorite and reminder actions', () => {
   const body = functionBody('matchCardHtml', 'bindMatchActions');
-  assert.match(body, /match-card-actions single/);
-  assert.match(body, /<details class="match-card-more">/);
-  assert.match(body, /<summary>Ещё<\/summary>/);
-  assert.doesNotMatch(body, /catalog-row/);
-  assert.doesNotMatch(body, /competition-chip/);
+  assert.match(body, /compact-match-card/);
+  assert.match(body, /compact-actions/);
+  assert.match(body, /match-secondary-actions/);
+  assert.match(body, /data-quick-reminder/);
+  assert.match(body, /fav-star compact/);
+  assert.doesNotMatch(body, /match-card-more/);
+  assert.doesNotMatch(body, /matchAiSnapshotHtml/);
 });
 
 test('analysis uses progressive disclosure and keeps technical material off the first level', () => {
