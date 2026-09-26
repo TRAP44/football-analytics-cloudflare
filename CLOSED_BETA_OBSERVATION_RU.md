@@ -1,4 +1,4 @@
-> **SUPERSEDED ДЛЯ ОСНОВНОГО PRODUCTION-VALIDATION С PHASE 5.** Этот документ остаётся историей closed-beta этапа. Phase 5 использует отдельный `phase5_public_v1` cohort из server-verified normal-user Telegram sessions. `BETA_ACCESS_ENABLED` и `BETA_TELEGRAM_IDS` сохраняются для strict-beta access/security regression, но Beta-01/Beta-02 и ручные waves 2 → 4 → 6 больше не являются public readiness/evidence gate.
+> **SUPERSEDED ДЛЯ ОСНОВНОГО PRODUCTION-VALIDATION С PHASE 5.** Этот документ остаётся историей closed-beta этапа. Phase 5 использует отдельный `phase5_public_v2` cohort из server-verified normal-user Telegram sessions. `BETA_ACCESS_ENABLED` и `BETA_TELEGRAM_IDS` сохраняются для strict-beta access/security regression, но Beta-01/Beta-02 и ручные waves 2 → 4 → 6 больше не являются public readiness/evidence gate.
 
 # Closed Beta Observation & Feedback Loop
 
