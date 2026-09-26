@@ -1,5 +1,5 @@
 // Phase 3 public client infrastructure boundary.
-// Contains transport/bootstrap helpers only; product and authorization semantics stay outside.
+// Transport/bootstrap helpers only; product and authorization semantics remain outside.
 export function initTelegramWebApp(scope = window) {
   const tg = scope.Telegram?.WebApp;
   if (tg) {
@@ -57,4 +57,98 @@ export function relativeAge(iso) {
   return `${days} дн. назад`;
 }
 
-async function api(path, options = {}
+export function createApiClient(deps) {
+  const { state, tg, inflightGetRequests, observeServerVersion, showBootRecovery, applyRuntimeUi, normalizeApiError, noteRequestSuccess, noteRequestFailure } = deps;
+  return async function api(path, options = {}) {
+  const method = String(options.method || 'GET').toUpperCase();
+  const isGet = method === 'GET';
+  const timeoutMs = Number(options.timeoutMs || 12000);
+  const retryable = isGet && options.retry !== false;
+  const dedupe = isGet && options.dedupe !== false;
+  const requestKey = `${method}:${path}`;
+
+  if (dedupe && inflightGetRequests.has(requestKey)) {
+    state.clientPerf.deduped += 1;
+    return inflightGetRequests.get(requestKey);
+  }
+
+  const task = (async () => {
+    let attempt = 0;
+    while (true) {
+      const started = performance.now();
+      state.clientPerf.requests += 1;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(new DOMException('timeout', 'AbortError')), timeoutMs);
+      const headers = new Headers(options.headers || {});
+      headers.set('Content-Type', 'application/json');
+      if (tg?.initData) headers.set('x-telegram-init-data', tg.initData);
+      try {
+        const { timeoutMs: _timeoutMs, retry: _retry, dedupe: _dedupe, ...fetchOptions } = options;
+        const response = await fetch(path, { ...fetchOptions, method, headers, signal: controller.signal });
+        const serverVersion = String(response.headers.get('x-app-version') || '');
+        if (serverVersion) observeServerVersion(serverVersion, response);
+        if (state.compatibilityBlocked) {
+          showBootRecovery({ blocking: true, title: 'Нужно обновить приложение', text: state.compatibilityReason });
+          throw Object.assign(new Error(state.compatibilityReason), { status: 426, payload: { category: 'compatibility' } });
+        }
+        const data = await response.json().catch(() => ({}));
+        const runtimeFromPayload = data?.runtime || data?.dataCapabilities?.runtime || data?.features?.runtime || null;
+        if (runtimeFromPayload) {
+          state.runtimeStatus = runtimeFromPayload;
+          applyRuntimeUi();
+        }
+        if (!response.ok) {
+          if (response.status === 403 && String(data?.code || '') === 'CLOSED_BETA_ACCESS_REQUIRED') {
+            state.closedBetaBlocked = true;
+            showBootRecovery({
+              blocking: true,
+              title: 'Доступ временно ограничен',
+              text: 'Для этого аккаунта доступ временно ограничен.',
+            });
+          }
+          const error = Object.assign(new Error(data.error || `HTTP ${response.status}`), {
+            status: response.status,
+            payload: data,
+            retryAfter: Number(data.retryAfter || response.headers.get('retry-after') || 0),
+          });
+          if (response.status === 429) state.clientPerf.rateLimited += 1;
+          if (retryable && attempt < 1 && [502, 503, 504].includes(response.status) && !['maintenance','feature_disabled'].includes(String(data.category || ''))) throw Object.assign(error, { transient: true });
+          throw error;
+        }
+        const elapsed = Math.round(performance.now() - started);
+        state.clientPerf.completed += 1;
+        state.clientPerf.lastMs = elapsed;
+        state.clientPerf.totalMs += elapsed;
+        noteRequestSuccess();
+        return data;
+      } catch (error) {
+        const aborted = error?.name === 'AbortError';
+        const transient = Boolean(error?.transient) || aborted || (!error?.status && navigator.onLine !== false);
+        if (retryable && attempt < 1 && transient) {
+          attempt += 1;
+          state.clientPerf.retries += 1;
+          await new Promise(resolve => setTimeout(resolve, 350 + Math.floor(Math.random() * 250)));
+          continue;
+        }
+        state.clientPerf.failed += 1;
+        let finalError = error;
+        if (aborted) {
+          state.clientPerf.timeouts += 1;
+          finalError = Object.assign(new Error('Сервер отвечает слишком долго.'), { status: 408, payload: { category: 'timeout' } });
+        } else if (navigator.onLine === false && !error?.status) {
+          finalError = Object.assign(new Error('Нет подключения к интернету.'), { status: 0 });
+        }
+        finalError = normalizeApiError(finalError);
+        noteRequestFailure(finalError);
+        throw finalError;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+  })();
+
+  if (dedupe) inflightGetRequests.set(requestKey, task);
+  try { return await task; }
+  finally { if (dedupe && inflightGetRequests.get(requestKey) === task) inflightGetRequests.delete(requestKey); }
+  };
+}
