@@ -41,9 +41,10 @@ export function closedBetaAccessDecision(user, cfg = {}) {
   if (isAdminUser(user, cfg)) {
     return { allowed: true, adminBypass: true, betaParticipant: false };
   }
+
+  // Strict closed beta is a production safety invariant. Legacy/missing
+  // betaAccessEnabled values are configuration evidence only and never bypass
+  // the server-side allowlist for normal users.
   const betaParticipant = isClosedBetaUser(user, cfg);
-  if (!cfg.betaAccessEnabled) {
-    return { allowed: true, adminBypass: false, betaParticipant };
-  }
   return { allowed: betaParticipant, adminBypass: false, betaParticipant };
 }

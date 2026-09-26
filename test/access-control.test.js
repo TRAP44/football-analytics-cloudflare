@@ -70,14 +70,30 @@ test('strict beta access is fail-closed for normal users and keeps admin bypass 
   );
 });
 
-test('beta membership can be measured before strict access is enabled without granting unsigned membership', () => {
-  const cfg = {
+test('legacy false or missing beta flag never opens normal-user routes', () => {
+  const falseCfg = {
     devMode: false,
     adminTelegramIds: [],
     betaTelegramIds: [101],
     betaAccessEnabled: false,
   };
-  assert.equal(closedBetaAccessDecision({ id: 303, __telegramValidated: true }, cfg).allowed, true);
-  assert.equal(closedBetaAccessDecision({ id: 101, __telegramValidated: true }, cfg).betaParticipant, true);
-  assert.equal(closedBetaAccessDecision({ id: 101 }, cfg).betaParticipant, false);
+  const missingCfg = {
+    devMode: false,
+    adminTelegramIds: [],
+    betaTelegramIds: [101],
+  };
+
+  assert.deepEqual(
+    closedBetaAccessDecision({ id: 303, __telegramValidated: true }, falseCfg),
+    { allowed: false, adminBypass: false, betaParticipant: false },
+  );
+  assert.deepEqual(
+    closedBetaAccessDecision({ id: 303, __telegramValidated: true }, missingCfg),
+    { allowed: false, adminBypass: false, betaParticipant: false },
+  );
+  assert.deepEqual(
+    closedBetaAccessDecision({ id: 101, __telegramValidated: true }, falseCfg),
+    { allowed: true, adminBypass: false, betaParticipant: true },
+  );
+  assert.equal(closedBetaAccessDecision({ id: 101 }, missingCfg).allowed, false);
 });

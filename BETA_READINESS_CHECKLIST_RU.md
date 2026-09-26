@@ -1,6 +1,6 @@
 # Closed Beta Readiness — FM AI
 
-Статус кода: **PRE-BETA VALIDATED / MANUAL FIELD CHECKS PENDING**  
+Статус: **STRICT BETA HOLD — CONFIG FIX REQUIRED**  
 Базовая версия клиента: **6.120.0-rc144**  
 Цель этапа: подготовить существующий продукт к небольшой группе реальных пользователей без добавления новых аналитических функций.
 
@@ -77,11 +77,12 @@ Privacy contract:
 
 - [ ] Провести smoke на реальном Telegram минимум с двумя **не-админскими** аккаунтами по сценарию из `PRE_BETA_VALIDATION_RU.md`: Telegram → Mini App → Матчи → поиск → матч → AI → история → профиль → тема/акцент → избранное → напоминание.
 - [ ] Проверить LIVE на реальном идущем матче: первичная загрузка, счёт, события, статистика, составы/потери, ручное обновление, минимум один успешный auto-refresh, временная потеря сети и восстановление с сохранением последнего snapshot.
-- [ ] Подтвердить текущую **квоту/тариф** API-Football и фактические plan / dailyRemaining / minuteRemaining непосредственно перед приглашением. В production уже наблюдалось достижение минутного rate limit, поэтому до проверки первая cohort ограничена двумя пользователями.
+- [x] Текущую квоту/тариф API-Football подтверждает production evidence: plan=FREE, dailyLimit=100, dailyRemaining=97, minuteLimit=10, minuteRemaining=9, cooldown=false, evidenceSource=controlled_release_probe (26 сентября 2026, 11:41:13 UTC).
 - [ ] Реально назначить Beta-01 и Beta-02 и создать приватный feedback channel по шаблону из `PRE_BETA_VALIDATION_RU.md`. Runbook и формат обратной связи подготовлены, но личности/Telegram ID тестировщиков в репозиторий не записываются.
 - [ ] Подтвердить Telegram `getWebhookInfo`: production URL совпадает с `/telegram/webhook`, нет устойчивой очереди pending updates и актуальной ошибки.
-- [x] Server-side механизм строгой beta-границы реализован: membership определяется только после успешной Telegram signature validation по `BETA_TELEGRAM_IDS`; admin имеет bypass, но исключён из beta cohort; frontend-скрытия не используются как access control. Beta client telemetry не сохраняет Telegram ID: для уникальности используется server-side HMAC-псевдоним, а Dashboard учитывает только verified membership + валидный pseudonymous subject. `BETA_ACCESS_ENABLED` по умолчанию выключен, реальные ID в репозиторий не записаны.
-- [ ] После фактического назначения Beta-01/Beta-02 вне репозитория задать реальные `BETA_TELEGRAM_IDS` в server-side environment и принять операционное решение о включении `BETA_ACCESS_ENABLED=true`. До появления реальных значений строгий allowlist намеренно не включать.
+- [x] Server-side strict beta — fail-closed invariant: membership определяется только после успешной Telegram signature validation по `BETA_TELEGRAM_IDS`; admin имеет bypass, но исключён из beta cohort; frontend-скрытия не используются как access control. `BETA_ACCESS_ENABLED=false` или missing **не открывает** normal-user routes.
+- [x] Production evidence 26 сентября 2026, 11:41 UTC: `strictEffective=true`, raw `BETA_ACCESS_ENABLED=missing`, `betaAllowlistCount=0`, `adminAllowlistCount=1`, `allowlistOverlapCount=0`.
+- [ ] Исправить operational configuration: задать `BETA_ACCESS_ENABLED=true` и реальные Beta-01/Beta-02 в server-side `BETA_TELEGRAM_IDS`; после этого подтвердить `betaAllowlistCount=2`, overlap=0. До этого strict access остаётся безопасно закрытым для всех non-admin.
 
 До выполнения этих пунктов автоматическая часть готовности завершена, но приглашение реальных пользователей остаётся **MANUAL FIELD CHECKS PENDING**.
 
@@ -104,7 +105,7 @@ Privacy contract:
 - [x] `npm run security:scan`
 - [x] `npm run lint`
 - [x] `npm run check`
-- [x] `npm test` — 767/767, fail 0
+- [x] `npm test` — 798/798, fail 0 на deployed baseline #100
 - [x] `npm run verify:release`
 - [x] `npm run verify:worker`
 - [x] post-merge Quality на `main` — повторно запущен и пройден
@@ -133,21 +134,20 @@ Privacy contract:
 
 Полный ручной сценарий, LIVE protocol, quota gate, cohort и feedback runbook: `PRE_BETA_VALIDATION_RU.md`.
 
-### Снимок повторной валидации — 25 сентября 2026, 15:18 UTC
+### Strict Beta Post-Deploy snapshot — 26 сентября 2026, 11:41 UTC
 
-- [x] На момент этого validation snapshot `main`: `5519b98049ae6a74212897cf261ef2d8bc550a5c`. Последующие docs-only merges повторно проходят тот же Quality/deploy provenance gate.
-- [x] Quality на этом SHA: 756/756 tests, audit/security/lint/check/release/worker — PASS.
-- [x] Cloudflare production version на этом snapshot: `8c922e24-4e4d-431a-9515-47d649606f15`; release identity и 100% traffic postcondition — PASS. Актуальный version ID берётся из latest successful `Deploy Production`.
-- [x] Post-deploy smoke на production: 25/25.
-- [x] Supabase project `ACTIVE_HEALTHY`; schema fingerprint `c2c22ec25aacfcf1b9938b0850cebf49`.
-- [x] `backend_security_contract()` и `backend_default_acl_contract()`: `ok=true`, violations отсутствуют.
-- [x] Runtime controls: analysis/search/live/reminders=true, maintenance=false.
-- [x] Telegram persistent dedupe health RPC: stale=0, failedCurrent=0, failedRecent=0.
-- [ ] Фактические provider plan / dailyRemaining / minuteRemaining не подтверждены свежими provider headers; `provider_rate_windows` не заменяет provider quota headers.
-- [ ] Telegram `getWebhookInfo` не подтверждён напрямую, так как bot token намеренно недоступен через CI/репозиторий.
-- [ ] Два реальных non-admin smoke и реальный LIVE protocol требуют живых Telegram-аккаунтов/идущего матча.
-- [ ] Beta-01/Beta-02 и приватный feedback channel должны быть реально назначены владельцем вне репозитория.
-
+- [x] GitHub `main` baseline: `d19fc80f1f5c3c42a4761e8c9e51096b32c310ae` (#100).
+- [x] Quality #641: PASS.
+- [x] Deploy Production #348: PASS; provenance guard подтвердил exact current-main SHA.
+- [x] Cloudflare version `f629f925-fdc5-4f5b-b43f-3d0cb1da3962`, release `6.120.0-rc144 / RC144`, 100% traffic.
+- [x] Post-deploy smoke: 25/25.
+- [x] Deploy re-verification: 798 tests passed, 0 failed.
+- [x] Provider evidence: FREE; daily 97/100 remaining; minute 9/10 remaining; cooldown=false.
+- [x] Strict access effective=true даже при raw `BETA_ACCESS_ENABLED=missing`.
+- [ ] Operational env reconciliation: выставить `BETA_ACCESS_ENABLED=true`.
+- [ ] Beta allowlist reconciliation: сейчас `betaAllowlistCount=0`; требуются реальные Beta-01/Beta-02, overlap с admin должен остаться 0.
+- [ ] Новый denied non-admin post-deploy smoke ещё не зафиксирован в `CLOSED_BETA_ACCESS_DENIED`.
+- [ ] Telegram `getWebhookInfo`, два реальных beta journey smoke и LIVE protocol остаются field checks.
 
 ### Closed Beta Access & Field Validation — privacy hardening
 
@@ -157,6 +157,6 @@ Privacy contract:
 - [x] Исторические client rows без privacy-boundary `betaSubject` не входят в уникальные beta-user/journey метрики.
 - [ ] Два non-admin Telegram smoke — требуется реальное выполнение.
 - [ ] Реальный LIVE validation — требуется идущий матч.
-- [ ] Свежие API-Football plan / dailyRemaining / minuteRemaining — требуется свежий успешный provider response.
+- [x] Свежие API-Football quota headers подтверждены controlled production probe: FREE, daily 97/100, minute 9/10, cooldown=false.
 - [ ] Telegram `getWebhookInfo` — требуется доверенная среда с bot token.
 - [ ] Beta-01/Beta-02 и feedback channel — требуется фактическое назначение владельцем.
