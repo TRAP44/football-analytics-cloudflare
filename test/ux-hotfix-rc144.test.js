@@ -66,7 +66,7 @@ test('quick discovery sections are not permanently suppressed by public-shell CS
 test('startup hides release identifiers while About shows the public app version', () => {
   const boot = html.slice(html.indexOf('id="bootGate"'), html.indexOf('class="app-shell"'));
   assert.doesNotMatch(boot, /bootVersion|версия|RC\d|release|build/i);
-  assert.match(boot, /FutLens AI/);
+  assert.match(boot, /MatchRadar/);
   assert.match(boot, /Понимай матч глубже\./);
   assert.match(boot, /Загружаем матчи/);
   assert.match(html, /id="publicAppVersion">6\.120\.0</);
