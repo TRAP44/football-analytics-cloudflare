@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">FutLens AI Telegram avatar</title>
+  <rect width="512" height="512" rx="152" fill="#07111F"/>
+  <circle cx="224" cy="224" r="120" fill="#0F1D2E" stroke="#43E6A1" stroke-width="32"/>
+  <path d="M308 308 408 408" fill="none" stroke="#7CC7FF" stroke-width="42" stroke-linecap="round"/>
+  <path d="M112 224h224M224 112v224" fill="none" stroke="#EAF2F7" stroke-opacity=".52" stroke-width="12"/>
+  <circle cx="224" cy="224" r="21" fill="#EAF2F7"/>
+</svg>
