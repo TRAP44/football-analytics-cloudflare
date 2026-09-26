@@ -5,7 +5,9 @@ import { readFileSync } from 'node:fs';
 const workerCore=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 const router=readFileSync(new URL('../src/router.js',import.meta.url),'utf8');
 const worker=workerCore+'\n'+router;
-const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+const appCore=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+const clientCore=readFileSync(new URL('../public/modules/client-core.js',import.meta.url),'utf8');
+const app=appCore+'\n'+clientCore;
 
 function block(source,start,end){
   const a=source.indexOf(start);
@@ -40,12 +42,12 @@ test('production beta mode defaults public and becomes strict only on explicit t
 
 test('unauthorized Mini App stops before favorites and match loading',()=>{
   assert.match(app,/closedBetaBlocked:\s*false/);
-  const api=block(app,'async function api(path','async function loadProfile');
+  const api=block(clientCore,'return async function api(path','\n  };\n}');
   assert.match(api,/CLOSED_BETA_ACCESS_REQUIRED/);
   assert.match(api,/state\.closedBetaBlocked = true/);
   assert.match(api,/title: 'Доступ временно ограничен'/);
 
-  const startup=block(app,'async function runStartupSequence','function localDate');
+  const startup=block(appCore,'async function runStartupSequence','const api = createApiClient');
   const blockAt=startup.indexOf('if (state.closedBetaBlocked) return false;');
   const tasksAt=startup.indexOf('const startupTasks = [loadFavorites(), loadMatches()]');
   assert.ok(blockAt>=0 && tasksAt>blockAt);
