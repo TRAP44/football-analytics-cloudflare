@@ -18,7 +18,7 @@ test('FREE LIVE cadence and shared feature cache protect provider minute budget'
   const refresh=block(worker,'function liveRefreshSeconds','function providerFeaturePolicy');
   assert.match(refresh,/return 90/);
 
-  const policy=block(worker,'function providerFeaturePolicy','function providerFeatureCounter');
+  const policy=block(worker,'function providerFeaturePolicy','function featureCacheAgeSeconds');
   assert.match(policy,/mode === 'live'/);
   assert.match(policy,/\['events','statistics'\]/);
   assert.match(policy,/ttlSeconds = Math\.max\(ttlSeconds, 180\)/);
@@ -35,10 +35,10 @@ test('fixtures are reused from persistent shared caches before provider calls',(
   assert.match(matches,/providerBatchKey/);
   assert.match(matches,/providerBatchTtl=isToday \? 2/);
 
-  const matchCenter=block(worker,'async function apiMatchCenter','function analysisCacheTtlMinutes');
+  const matchCenter=block(worker,'async function apiMatchCenter','async function cachedTeamIntelligenceForAnalysis');
   assert.match(matchCenter,/loadProviderFixture\(fixtureId,cfg\)/);
 
-  const analyze=block(worker,'async function apiAnalyze','async function apiHistory');
+  const analyze=block(worker,'async function apiAnalyze','async function publicServiceStatus');
   assert.match(analyze,/loadProviderFixture\(fixtureId,cfg\)/);
 });
 
@@ -49,7 +49,7 @@ test('FREE AI avoids optional network fan-out and reuses cached feature data',()
   assert.match(providerFetch,/source:'cache'/);
   assert.match(providerFetch,/source:'stale'/);
 
-  const analyze=block(worker,'async function apiAnalyze','async function apiHistory');
+  const analyze=block(worker,'async function apiAnalyze','async function publicServiceStatus');
   assert.match(analyze,/const canFetchLineups = detailedCoverage && paid/);
   assert.match(analyze,/const canFetchFreshForm = detailedCoverage && paid/);
   assert.match(analyze,/const canFetchH2H = detailedCoverage && paid/);
