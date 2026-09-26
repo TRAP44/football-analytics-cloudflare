@@ -16,7 +16,7 @@ function functionBody(name, nextName) {
 test('public profile remains available to non-admin users while admin controls stay gated', () => {
   assert.doesNotMatch(app, /profileBtn'\)\.hidden=!admin/);
   assert.doesNotMatch(app, /navProfile'\)\.hidden=!admin/);
-  assert.match(app, /profileView:\s*\['Профиль',\s*'Оформление, избранное и настройки'\]/);
+  assert.match(app, /profileView:\s*\['Профиль',\s*'Команды, напоминания и настройки'\]/);
   assert.match(html, /id="profileBtn"[^>]*aria-label="Открыть профиль"/);
   assert.match(html, /id="navProfile"[^>]*><span>👤<\/span><small>Профиль<\/small>/);
   assert.match(html, /class="panel admin-console" data-admin-only hidden/);
@@ -54,16 +54,18 @@ test('match list renders snapshots immediately and refreshes without blocking vi
   assert.match(body, /state\.matchesMeta\.refreshing = true/);
   assert.match(body, /timeoutMs:\s*6500/);
   assert.match(body, /retry:\s*false/);
-  assert.match(app, /↻ обновляем/);
+  assert.match(app, /state\.matchesMeta\.refreshing/);
 });
 
-test('match cards keep one primary action and move secondary actions behind disclosure', () => {
+test('match cards keep one primary action with compact secondary favorite and reminder actions', () => {
   const body = functionBody('matchCardHtml', 'bindMatchActions');
-  assert.match(body, /match-card-actions single/);
-  assert.match(body, /<details class="match-card-more">/);
-  assert.match(body, /<summary>Ещё<\/summary>/);
-  assert.doesNotMatch(body, /catalog-row/);
-  assert.doesNotMatch(body, /competition-chip/);
+  assert.match(body, /compact-match-card/);
+  assert.match(body, /compact-actions/);
+  assert.match(body, /match-secondary-actions/);
+  assert.match(body, /data-quick-reminder/);
+  assert.match(body, /fav-star compact/);
+  assert.doesNotMatch(body, /match-card-more/);
+  assert.doesNotMatch(body, /matchAiSnapshotHtml/);
 });
 
 test('analysis uses progressive disclosure and keeps technical material off the first level', () => {

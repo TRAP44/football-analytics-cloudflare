@@ -9,7 +9,7 @@ const css=fs.readFileSync('public/styles.css','utf8');
 test('RC123 exposes today matches as a public Mini App destination',()=>{
   assert.match(html,/id="navMatches" class="nav-item active" type="button"><span>⚽<\/span><small>Главная<\/small>/);
   assert.doesNotMatch(html,/id="navMatches"[^>]*hidden/);
-  assert.match(app,/matchesView: \['Матчи', 'Сегодня, LIVE и ближайшие игры для AI-разбора'\]/);
+  assert.match(app,/matchesView: \['Главная', 'Ваш футбол — в одном месте'\]/);
   assert.match(css,/grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/);
 });
 

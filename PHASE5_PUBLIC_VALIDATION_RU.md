@@ -1,6 +1,6 @@
 # Phase 5 — Open/Public Validation Reconciliation
 
-Дата начала evidence: только после production deployment кода Phase 5.
+Текущий clean evidence window: `phase5_public_v2`, начинается только после production deployment Phase 4.1. Предыдущий `phase5_public_v1` остаётся исторической pre-polish выборкой и не смешивается с новым окном.
 Baseline Phase 4: `7ca8d20a5fc173523745071d49d709b8c530bdda`.
 
 ## Access control и validation cohort
@@ -12,7 +12,7 @@ Baseline Phase 4: `7ca8d20a5fc173523745071d49d709b8c530bdda`.
 - Принадлежность к `BETA_TELEGRAM_IDS` не является условием Phase 5 evidence.
 - Администраторы, unsigned/invalid requests, DEV synthetic identity и public health/smoke/release probes не входят в Phase 5 cohort.
 
-Основной cohort: `phase5_public_v1`.
+Основной cohort: `phase5_public_v2`.
 
 Сервер принимает случайный per-tab/session token только вместе с уже проверенным Telegram initData. Telegram ID и raw session token используются только как вход HMAC и не сохраняются в Phase 5 telemetry. В persistent evidence сохраняются только 32-hex HMAC subject/session.
 

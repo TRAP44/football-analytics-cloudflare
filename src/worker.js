@@ -14398,7 +14398,7 @@ async function closedBetaTelemetrySubject(user, cfg = {}) {
 }
 
 
-const PHASE5_VALIDATION_COHORT = 'phase5_public_v1';
+const PHASE5_VALIDATION_COHORT = 'phase5_public_v2';
 const PHASE5_SESSION_HEADER = 'x-phase5-session';
 const PHASE5_PROVIDER_KINDS = new Set(['search','matches_feed','match_center','ai','live_refresh']);
 

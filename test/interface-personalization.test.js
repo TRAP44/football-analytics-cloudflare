@@ -10,7 +10,7 @@ test('home prioritizes a personal daily overview and four core filters', () => {
   assert.match(html, /id="dailyOverview"/);
   const primaryStrip = html.match(/<div class="filter-strip" id="filterStrip">([\s\S]*?)<\/div>/)?.[1] || '';
   assert.equal((primaryStrip.match(/class="filter-btn/g) || []).length, 4);
-  assert.match(html, /class="league-filter-drawer"/);
+  assert.match(html, /class="home-filter-drawer league-filter-drawer"/);
 });
 
 test('interface themes and button styles persist per device', () => {
@@ -29,7 +29,8 @@ test('match cards hide technical coverage and numeric interest meters', () => {
   const cardRenderer = app.match(/function matchCardHtml[\s\S]*?\n}\n\nfunction bindMatchActions/)?.[0] || '';
   assert.doesNotMatch(cardRenderer, /coverage-mini/);
   assert.doesNotMatch(cardRenderer, /interest-meter/);
-  assert.match(cardRenderer, /match-signal/);
+  assert.match(cardRenderer, /match-secondary-actions/);
+  assert.doesNotMatch(cardRenderer, /match-signal|favorite-signal/);
 });
 
 test('rare administrator panels are grouped and loaded on demand', () => {

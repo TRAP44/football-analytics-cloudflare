@@ -63,9 +63,13 @@ test('quick discovery sections are not permanently suppressed by public-shell CS
   assert.match(app, /setDiscoveryHomeVisibility\(!query\)/);
 });
 
-test('boot version and profile button reflect current product state', () => {
-  assert.doesNotMatch(html, /версия 6\.103/);
-  assert.match(html, /id="bootVersion">6\.120\.0</);
+test('startup hides release identifiers while About shows the public app version', () => {
+  const boot = html.slice(html.indexOf('id="bootGate"'), html.indexOf('class="app-shell"'));
+  assert.doesNotMatch(boot, /bootVersion|версия|RC\d|release|build/i);
+  assert.match(boot, /FM AI/);
+  assert.match(boot, /Ваш футбол — в одном месте/);
+  assert.match(boot, /Загружаем матчи/);
+  assert.match(html, /id="publicAppVersion">6\.120\.0</);
   assert.match(app, /CLIENT_VERSION\.split\('-'\)\[0\]/);
   const profile = functionBody('renderProfile', 'qualityPct');
   assert.match(profile, /profileButtonLabel\.textContent = 'Профиль'/);

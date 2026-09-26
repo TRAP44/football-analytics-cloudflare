@@ -21,11 +21,12 @@ test('pre-match analysis exposes referee context', () => {
   assert.match(app, /analysis-referee-line/);
 });
 
-test('startup experience identifies the AI role', () => {
-  assert.match(html, /FM AI/);
-  assert.match(html, /AI ФУТБОЛЬНЫЙ ИНСТРУКТОР/);
-  assert.match(html, /boot-feature-row/);
-  assert.match(app, /Запускаю FM AI/);
+test('startup experience presents the FM AI brand without internal detail', () => {
+  const boot=html.slice(html.indexOf('id="bootGate"'),html.indexOf('class="app-shell"'));
+  assert.match(boot, /FM AI/);
+  assert.match(boot, /Ваш футбол — в одном месте/);
+  assert.match(boot, /Загружаем матчи/);
+  assert.doesNotMatch(boot, /версия|RC\d|release|build|boot-feature-row/i);
 });
 
 test('telegram bot has a button-first hub and mini-app routes', () => {

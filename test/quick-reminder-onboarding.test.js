@@ -7,10 +7,10 @@ const worker = fs.readFileSync('src/worker.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const css = fs.readFileSync('public/styles.css', 'utf8');
 
-test('daily overview uses a concrete user-facing title', () => {
-  assert.match(html, /id="dailyOverviewTitle">Рекомендации для вас/);
-  assert.match(app, /title\.textContent = 'Рекомендации для вас'/);
-  assert.doesNotMatch(html, /Главное без лишнего/);
+test('Home exposes contextual favorite onboarding instead of a duplicate overview title', () => {
+  assert.match(html, /id="homeFavoriteBtn"/);
+  assert.match(html, /Добавить любимую команду/);
+  assert.doesNotMatch(html, /dailyOverviewTitle|Главное без лишнего/);
 });
 test('upcoming match cards expose a quick reminder action', () => {
   assert.match(app, /data-quick-reminder=/);
@@ -19,11 +19,10 @@ test('upcoming match cards expose a quick reminder action', () => {
   assert.match(css, /\.quick-reminder-btn/);
   assert.match(css, /\.match-card-actions/);
 });
-test('first-run guidance is local and dismissible', () => {
-  assert.match(html, /id="firstRunGuide"/);
-  assert.match(html, /id="firstRunGuideDismiss"/);
-  assert.match(app, /FIRST_RUN_GUIDE_KEY/);
-  assert.match(app, /localStorage\.setItem\(FIRST_RUN_GUIDE_KEY, '1'\)/);
+test('first-run guidance is contextual favorite onboarding on Home', () => {
+  assert.match(html, /id="homeFavoriteBtn"/);
+  assert.match(app, /onboarding\.hidden = favoriteCount > 0/);
+  assert.match(app, /homeFavoriteBtn/);
 });
 test('RC38 health advertises the new UX contracts', () => {
   assert.match(worker, /quickMatchReminders:\s*'enabled'/);
