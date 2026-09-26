@@ -13,11 +13,11 @@ test('public onboarding explains the Telegram and Mini App roles',()=> {
   assert.match(worker,/Если данных мало или перевеса нет/);
 });
 
-test('match cards preserve team identity and use FM AI branding',()=> {
+test('match cards preserve team identity and use MatchRadar AI branding',()=> {
   assert.match(worker,/home:\{id:Number\(homeSource\?\.id/);
   assert.match(worker,/away:\{id:Number\(awaySource\?\.id/);
   assert.match(worker,/bot:team-card:/);
-  assert.match(worker,/FM AI · MATCH/);
+  assert.match(worker,/MatchRadar AI · MATCH/);
   assert.match(worker,/AI-разбор уже сохранён/);
 });
 
