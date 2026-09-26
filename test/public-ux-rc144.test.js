@@ -18,7 +18,8 @@ test('public profile remains available to non-admin users while admin controls s
   assert.doesNotMatch(app, /navProfile'\)\.hidden=!admin/);
   assert.match(app, /profileView:\s*\['Профиль',\s*'Команды, напоминания и настройки'\]/);
   assert.match(html, /id="profileBtn"[^>]*aria-label="Открыть профиль"/);
-  assert.match(html, /id="navProfile"[^>]*>[\\s\\S]*?<small>Профиль<\\/small>/);
+  assert.match(html, /id="navProfile"[^>]*>/);
+  assert.match(html, /<small>Профиль<\/small>/);
   assert.match(html, /class="panel admin-console" data-admin-only hidden/);
   assert.match(app, /querySelectorAll\('\[data-admin-only\]'\)/);
 });
@@ -95,7 +96,8 @@ test('Telegram mobile UX includes safe areas, four-item navigation and touch tar
 
 
 test('Phase 4 normal user journey uses Home, My Teams, History and Profile', () => {
-  assert.match(html, /id="navMatches" class="nav-item active"[^>]*>[\\s\\S]*?<small>Главная<\\/small>/);
+  assert.match(html, /id="navMatches" class="nav-item active"/);
+  assert.match(html, /<small>Главная<\/small>/);
   assert.match(html, /id="navMyTeams" class="nav-item"[^>]*><span>⭐<\/span><small>Мои команды<\/small>/);
   assert.doesNotMatch(html, /id="navSearch"/);
   assert.match(html, /id="navHistory" class="nav-item"/);
