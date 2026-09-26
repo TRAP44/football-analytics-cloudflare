@@ -13,6 +13,7 @@
   },
   "vars": {
     "DEV_MODE": "false",
+    "TELEGRAM_CHANNEL_ID": "@MatchRadarFootball",
     "FREE_DAILY_LIMIT": "3",
     "PRO_DAILY_LIMIT": "20",
     "PREMIUM_DAILY_LIMIT": "100",
