@@ -147,6 +147,9 @@ if (!fs.existsSync('test/ai-instructor-rc43.test.js')) failures.push('Missing RC
 if (!fs.existsSync('test/ai-instructor-rc42.test.js')) failures.push('Missing RC42 referee/AI-focus regression test');
 if (!worker.includes('function loadRefereeHistoryProfile')) failures.push('RC44 referee history loader is missing');
 if (!worker.includes('saveRefereeMatchHistory')) failures.push('RC44 referee history collector is missing');
+if (!fs.existsSync('test/phase4-2-brand-premium-ui.test.js')) failures.push('Missing Phase 4.2 brand/UI regression test');
+if (!fs.existsSync('public/assets/brand/futlens-mark.svg') || !fs.existsSync('public/assets/brand/futlens-avatar.svg') || !fs.existsSync('public/assets/brand/futlens-wordmark.svg')) failures.push('Phase 4.2 FutLens brand assets are incomplete');
+if (!html.includes('FutLens AI') || app.includes('FM AI')) failures.push('Phase 4.2 public brand replacement is incomplete');
 if (!app.includes('function renderAiFocus')) failures.push('RC44 AI focus card is missing');
 if (!worker.includes("verifiedRefereeHistory: 'enabled'") || !worker.includes("aiFocusOfDay: 'enabled'")) failures.push('RC44 health contract is missing');
 if (!worker.includes('function buildLineupImpact')) failures.push('RC44 lineup impact engine is missing');
@@ -156,7 +159,7 @@ if (!worker.includes("aiTenSecondVerdict: 'enabled'") || !worker.includes("daily
 if (!worker.includes('function buildAiInstructor')) failures.push('AI football instructor engine is missing');
 if (!worker.includes("referee: fixture.fixture?.referee || ''")) failures.push('Pre-match referee context is missing');
 if (!app.includes('function aiInstructorHtml')) failures.push('AI instructor UI is missing');
-if (!html.includes('boot-card boot-card-simple') || !html.includes('Ваш футбол — в одном месте') || !html.includes('Загружаем матчи…') || html.includes('id="bootVersion"')) failures.push('Phase 4.1 minimal public startup is missing');
+if (!html.includes('boot-card boot-card-simple') || !html.includes('FutLens AI') || !html.includes('Понимай матч глубже.') || !html.includes('Загружаем матчи…') || html.includes('id="bootVersion"')) failures.push('Phase 4.1/4.2 minimal public startup is missing');
 if (!worker.includes("telegramBotHub: 'enabled'") || !worker.includes("aiFootballInstructor: 'enabled'")) failures.push('RC44 AI/bot health contract is missing');
 if (!html.includes('id="homeLiveCard"') || !html.includes('id="homeTeamsBtn"') || !html.includes('id="homeFavoriteBtn"')) failures.push('Phase 4.1 contextual Home priority cards are missing');
 if (!html.includes('id="quotaText" hidden')) failures.push('Main-screen quota must be hidden by default');
