@@ -12622,7 +12622,9 @@ function updateProviderFromHeaders(response) {
 
 function providerQuotaEvidence(cfg) {
   const p=memory.provider || {};
-  const values=[p.dailyLimit,p.dailyRemaining,p.minuteLimit,p.minuteRemaining].map(Number);
+  const raw=[p.dailyLimit,p.dailyRemaining,p.minuteLimit,p.minuteRemaining];
+  if (raw.some(value=>value===null || value===undefined || value==='')) return;
+  const values=raw.map(Number);
   if (String(p.plan || 'UNKNOWN')==='UNKNOWN' || !values.every(Number.isFinite)) return;
   const now=Date.now();
   if (now-Number(memory.providerQuotaEvidenceAt || 0)<10*60_000) return;
