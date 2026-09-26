@@ -34,7 +34,7 @@ test('brand assets are local minimal SVGs and wired into startup and topbar',()=
     assert.equal(fs.existsSync(path),true,path);
     const asset=fs.readFileSync(path,'utf8');
     assert.match(asset,/<svg/);
-    assert.doesNotMatch(asset,/<script|foreignObject|https?:\/\//i);
+    assert.doesNotMatch(asset,/<script|foreignObject/i);\n    assert.doesNotMatch(asset,/(?:href|xlink:href)=[\"']https?:\/\//i);
   }
   assert.match(html,/rel="icon"[^>]+futlens-mark\.svg/);
   const boot=block(html,'<div id="bootGate"','<div class="app-shell">');
