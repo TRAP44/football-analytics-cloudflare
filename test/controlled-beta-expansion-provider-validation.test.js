@@ -86,6 +86,10 @@ test('BETA HOLD exposes actionable field blockers instead of fabricating beta ev
   ]) assert.match(decision,new RegExp(token));
   assert.match(decision,/assignedUsers<2/);
   assert.match(decision,/verifiedUsers===0/);
+  assert.match(decision,/launchBlockers/);
+  assert.match(decision,/strict_beta_access_disabled/);
+  assert.match(decision,/provider_quota_unconfirmed/);
+  assert.match(decision,/confirm_provider_quota/);
   assert.doesNotMatch(decision,/BETA_TELEGRAM_IDS\s*=/);
 
   const render=block(app,'function renderBetaDashboard','async function');

@@ -14686,10 +14686,13 @@ function controlledBetaExpansionDecision({
   const initialGateGaps=Object.entries(expansionDecision?.requirements || {})
     .filter(([,value])=>!value?.pass)
     .map(([key])=>key);
+  const launchBlockers=[...new Set((expansionDecision?.hardBlockers || []).map(String).filter(Boolean))];
+  const launchBlockerSet=new Set(launchBlockers);
   const fieldBlockers=[];
   if (assignedUsers<2) fieldBlockers.push('beta_users_not_assigned');
   if (verifiedUsers===0) fieldBlockers.push('verified_beta_telemetry_missing');
   if (!expansionDecision?.expansionAllowed) fieldBlockers.push('initial_expansion_gate_closed');
+  for (const code of launchBlockers) if (!fieldBlockers.includes(code)) fieldBlockers.push(code);
   if (blockerCount>0 || majorCount>0) fieldBlockers.push('beta_product_issue');
   if (!supabaseOk || !telegramConfirmed || productionMonitor?.state==='incident') fieldBlockers.push('runtime_unhealthy');
   if (quotaPressure) fieldBlockers.push('provider_quota_pressure');
@@ -14697,21 +14700,29 @@ function controlledBetaExpansionDecision({
 
   const nextRequiredAction=assignedUsers<2
     ? 'assign_real_beta_users'
-    : verifiedUsers<Math.min(assignedUsers,2)
-      ? 'collect_verified_beta_usage'
-      : !expansionDecision?.expansionAllowed
-        ? 'close_initial_expansion_requirements'
-        : blockerCount>0 || majorCount>0 || !supabaseOk || !telegramConfirmed || productionMonitor?.state==='incident'
-          ? 'restore_runtime_health'
-          : wave1Observed && providerValidationDecision==='review_new_or_paid_provider'
-            ? 'run_provider_evaluation'
-            : verifiedUsers<4
-              ? 'observe_wave_1'
-              : verifiedUsers<6
-                ? 'observe_wave_2'
-                : !expandedEvidenceEnough
-                  ? 'collect_expanded_beta_evidence'
-                  : 'none';
+    : launchBlockerSet.has('beta_admin_overlap')
+      ? 'remove_beta_admin_overlap'
+      : launchBlockerSet.has('strict_beta_access_disabled')
+        ? 'enable_strict_beta_access'
+        : launchBlockerSet.has('telegram_webhook_unconfirmed')
+          ? 'confirm_telegram_webhook'
+          : launchBlockerSet.has('provider_quota_unconfirmed')
+            ? 'confirm_provider_quota'
+            : verifiedUsers<Math.min(assignedUsers,2)
+              ? 'collect_verified_beta_usage'
+              : !expansionDecision?.expansionAllowed
+                ? 'close_initial_expansion_requirements'
+                : blockerCount>0 || majorCount>0 || !supabaseOk || !telegramConfirmed || productionMonitor?.state==='incident'
+                  ? 'restore_runtime_health'
+                  : wave1Observed && providerValidationDecision==='review_new_or_paid_provider'
+                    ? 'run_provider_evaluation'
+                    : verifiedUsers<4
+                      ? 'observe_wave_1'
+                      : verifiedUsers<6
+                        ? 'observe_wave_2'
+                        : !expandedEvidenceEnough
+                          ? 'collect_expanded_beta_evidence'
+                          : 'none';
 
   return {
     finalDecision,
@@ -14731,6 +14742,7 @@ function controlledBetaExpansionDecision({
       allowed:canAddNextWave,
     } : null,
     fieldBlockers,
+    launchBlockers,
     initialGateGaps,
     nextRequiredAction,
     evidenceTargets:{

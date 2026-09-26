@@ -1207,11 +1207,23 @@ function renderBetaDashboard() {
     runtime_unhealthy:'Runtime требует восстановления',
     provider_quota_pressure:'Давление на quota provider',
     provider_review_required:'Требуется Provider Evaluation',
+    beta_accounts_not_assigned:'В server-side allowlist меньше 2 beta-пользователей',
+    beta_admin_overlap:'Beta allowlist пересекается с admin',
+    strict_beta_access_disabled:'Строгий beta-доступ не включён',
+    telegram_webhook_unconfirmed:'Telegram webhook не подтверждён',
+    provider_quota_unconfirmed:'Квота football provider не подтверждена',
+    beta_ops_sample_truncated:'Beta telemetry sample усечён',
+    confirmed_blocker:'Есть подтверждённый BLOCKER',
+    confirmed_major:'Есть подтверждённый MAJOR',
   };
   const fieldBlockers=(controlled.fieldBlockers || []).map(code=>fieldBlockerLabels[code] || humanizeTechnicalText(code));
   const nextRequiredActionLabel={
     assign_real_beta_users:'Назначить минимум 2 реальных beta-пользователя в server-side allowlist',
     collect_verified_beta_usage:'Получить реальные verified beta-сессии от назначенных пользователей',
+    remove_beta_admin_overlap:'Убрать admin из beta allowlist и оставить только реальных тестировщиков',
+    enable_strict_beta_access:'Включить строгий beta-доступ после заполнения allowlist',
+    confirm_telegram_webhook:'Подтвердить production Telegram webhook',
+    confirm_provider_quota:'Снять свежий подтверждённый snapshot квоты football provider',
     close_initial_expansion_requirements:'Закрыть незакрытые требования входного gate на реальных данных',
     restore_runtime_health:'Восстановить runtime и устранить BLOCKER/MAJOR',
     run_provider_evaluation:'Провести отдельный Provider Evaluation до продолжения',
