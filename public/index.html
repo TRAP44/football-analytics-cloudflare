@@ -431,22 +431,22 @@
           </div>
           <div id="betaHealthPanel" class="beta-health-panel" aria-live="polite">
             <div class="beta-section-head">
-              <div><span>CLOSED BETA</span><h3>Beta Health</h3><p>Состояние реального пользовательского пути без персональных данных.</p></div>
+              <div><span>PHASE 5</span><h3>Public Validation</h3><p>Агрегированное состояние verified normal-user production journeys без персональных данных.</p></div>
               <span id="betaHealthBadge" class="beta-health-badge">НЕТ ДАННЫХ</span>
             </div>
-            <div id="betaHealthSummary" class="beta-health-grid"><div class="beta-empty">Откройте профиль, чтобы загрузить состояние beta.</div></div>
+            <div id="betaHealthSummary" class="beta-health-grid"><div class="beta-empty">Откройте профиль, чтобы загрузить Phase 5 validation.</div></div>
           </div>
           <div id="betaDashboardPanel" class="beta-dashboard-panel">
             <div class="beta-section-head">
-              <div><span>ПРОДУКТОВЫЕ СИГНАЛЫ</span><h3>Beta Dashboard</h3><p id="betaJourneySummary">Путь запуск → поиск → матч → AI ещё не рассчитан.</p></div>
+              <div><span>PRODUCTION EVIDENCE</span><h3>Phase 5 Dashboard</h3><p id="betaJourneySummary">Путь normal user → поиск → матч → AI → Мои команды → история → reopen ещё не рассчитан.</p></div>
               <div class="beta-dashboard-controls">
-                <select id="betaDashboardPeriod" aria-label="Период Beta Dashboard">
+                <select id="betaDashboardPeriod" aria-label="Период Phase 5 Dashboard">
                   <option value="1">24 часа</option>
                   <option value="7" selected>7 дней</option>
                   <option value="14">14 дней</option>
                   <option value="30">30 дней</option>
                 </select>
-                <button id="betaDashboardRefreshBtn" class="icon-btn" type="button" aria-label="Обновить Beta Dashboard">↻</button>
+                <button id="betaDashboardRefreshBtn" class="icon-btn" type="button" aria-label="Обновить Phase 5 Dashboard">↻</button>
               </div>
             </div>
             <div id="betaDashboardMeta" class="tiny"></div>
@@ -456,7 +456,7 @@
             <div class="beta-subhead"><strong>action_error по категориям</strong><span>без текстов ошибок</span></div>
             <div id="betaErrorCategories" class="beta-error-list"></div>
             <details class="beta-issues-details">
-              <summary><span><strong>Beta-проблемы</strong><small>BLOCKER → MAJOR → MINOR; единичный feedback не считается подтверждённой проблемой</small></span></summary>
+              <summary><span><strong>Abandonment и runtime signals</strong><small>решение по продукту только по повторяющемуся pattern или явному blocker</small></span></summary>
               <div id="betaIssueList" class="beta-issue-list"></div>
             </details>
           </div>

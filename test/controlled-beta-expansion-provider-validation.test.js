@@ -66,14 +66,17 @@ test('provider quota exposes limits and remaining values without secrets',()=>{
   assert.doesNotMatch(quota,/apiFootballKey|x-apisports-key|TELEGRAM_BOT_TOKEN/);
 });
 
-test('admin dashboard renders controlled expansion and provider validation decisions',()=>{
+test('legacy controlled-expansion decision stays server-side while admin primary dashboard moves to Phase 5',()=>{
+  const decision=block(worker,'function controlledBetaExpansionDecision','function buildBetaIssueGroups');
+  assert.match(decision,/BETA READY FOR PUBLIC PRE-LAUNCH/);
+  assert.match(decision,/DATA PROVIDER UPGRADE REQUIRED/);
   const render=block(app,'function renderBetaDashboard','async function');
-  assert.match(render,/Provider validation/);
-  assert.match(render,/Итог этапа/);
-  assert.match(render,/Следующая beta-волна/);
-  assert.match(render,/Production monitor/);
-  assert.match(render,/BETA READY FOR PUBLIC PRE-LAUNCH/);
-  assert.match(render,/DATA PROVIDER UPGRADE REQUIRED/);
+  assert.match(render,/verifiedNormalUsers/);
+  assert.match(render,/Provider requests\/session/);
+  assert.match(render,/Capacity decision/);
+  assert.match(render,/Coverage decision/);
+  assert.match(render,/Phase 5 status/);
+  assert.doesNotMatch(render,/Следующая beta-волна/);
 });
 
 
@@ -93,8 +96,8 @@ test('BETA HOLD exposes actionable field blockers instead of fabricating beta ev
   assert.doesNotMatch(decision,/BETA_TELEGRAM_IDS\s*=/);
 
   const render=block(app,'function renderBetaDashboard','async function');
-  assert.match(render,/Блокеры этапа/);
-  assert.match(render,/Следующее действие/);
-  assert.match(render,/Назначить минимум 2 реальных beta-пользователя/);
-  assert.match(render,/Незакрытые требования gate/);
+  assert.match(render,/COLLECT MORE EVIDENCE/);
+  assert.match(render,/INSUFFICIENT_LIVE_SAMPLE|liveStatus/);
+  assert.doesNotMatch(render,/Назначить минимум 2 реальных beta-пользователя/);
+  assert.doesNotMatch(render,/Незакрытые требования gate/);
 });

@@ -12,6 +12,7 @@ import {
   closedBetaAccessDecision,
   isAdminUser,
   isClosedBetaUser,
+  isTelegramValidatedUser,
   telegramIdList,
 } from './access-control.js';
 import { apiSecurityHeaders } from './security-headers.js';
@@ -7587,6 +7588,7 @@ async function getCacheEntry(cacheKey, cfg, allowExpired = false) {
   const local = memory.cache.get(cacheKey);
   if (local && local.expiresAt > Date.now()) {
     bumpTelemetry('cacheHits');
+    phase5ProviderCacheUsage(cfg,cacheKey,'cacheHits');
     // Touch the key so Map insertion order acts as a lightweight LRU.
     memory.cache.delete(cacheKey);
     memory.cache.set(cacheKey, local);
@@ -7600,6 +7602,7 @@ async function getCacheEntry(cacheKey, cfg, allowExpired = false) {
         bumpTelemetry('cacheMisses');
         if (allowExpired && local) {
           bumpTelemetry('staleCacheHits');
+    phase5ProviderCacheUsage(cfg,cacheKey,'staleCacheHits');
           return { payload: local.payload, expired: true, expiresAt: new Date(local.expiresAt).toISOString(), layer: 'memory-stale' };
         }
         return null;
@@ -7611,14 +7614,24 @@ async function getCacheEntry(cacheKey, cfg, allowExpired = false) {
         bumpTelemetry('cacheMisses');
         return null;
       }
-      if (expired) bumpTelemetry('staleCacheHits');
-      else bumpTelemetry('cacheHits');
+      if (expired) {
+        bumpTelemetry('staleCacheHits');
+        phase5ProviderCacheUsage(cfg,cacheKey,'staleCacheHits');
+      } else {
+        bumpTelemetry('cacheHits');
+        phase5ProviderCacheUsage(cfg,cacheKey,'cacheHits');
+      }
       return { payload: row.payload, expired, expiresAt: row.expires_at, layer: 'supabase' };
     } catch (error) {
       bumpTelemetry('supabaseErrors');
       if (local && (allowExpired || local.expiresAt > Date.now())) {
-        if (local.expiresAt <= Date.now()) bumpTelemetry('staleCacheHits');
-        else bumpTelemetry('cacheHits');
+        if (local.expiresAt <= Date.now()) {
+          bumpTelemetry('staleCacheHits');
+          phase5ProviderCacheUsage(cfg,cacheKey,'staleCacheHits');
+        } else {
+          bumpTelemetry('cacheHits');
+          phase5ProviderCacheUsage(cfg,cacheKey,'cacheHits');
+        }
         recordOpsEvent(cfg, {
           severity: 'warning', source: 'cache', eventType: 'supabase_cache_read_fallback', code: 'CACHE_DB_READ',
           message: error?.message || error, meta: { cacheKey },
@@ -7644,8 +7657,13 @@ async function getCacheEntry(cacheKey, cfg, allowExpired = false) {
     bumpTelemetry('cacheMisses');
     return null;
   }
-  if (expired) bumpTelemetry('staleCacheHits');
-  else bumpTelemetry('cacheHits');
+  if (expired) {
+    bumpTelemetry('staleCacheHits');
+    phase5ProviderCacheUsage(cfg,cacheKey,'staleCacheHits');
+  } else {
+    bumpTelemetry('cacheHits');
+    phase5ProviderCacheUsage(cfg,cacheKey,'cacheHits');
+  }
   return { payload: local.payload, expired, expiresAt: new Date(local.expiresAt).toISOString(), layer: 'memory' };
 }
 
@@ -12665,6 +12683,7 @@ async function persistSharedProviderQuota(cfg) {
 }
 
 async function persistSharedProviderCooldown(cfg, retryAfter, reason = 'rate_limit') {
+  phase5ProviderUsage(cfg,'sharedCooldowns',1);
   const seconds = Math.max(1, Number(retryAfter || 60));
   const cooldownUntil = new Date(Date.now() + seconds * 1000).toISOString();
   memory.provider.cooldownUntil = cooldownUntil;
@@ -13984,6 +14003,7 @@ async function apiFootballNetwork(path, params, cfg, options = {}) {
   const cooldown = footballCooldownRemaining();
   if (cooldown > 0) {
     bumpTelemetry('quotaBlocks');
+    phase5ProviderUsage(cfg,'quotaBlocks',1);
     throw footballError(`API-Football на паузе после ограничения. Повторите примерно через ${cooldown} сек.`, 'FOOTBALL_COOLDOWN', cooldown);
   }
   if (Number(memory.provider?.minuteRemaining) === 0 && memory.provider?.updatedAt) {
@@ -13992,6 +14012,7 @@ async function apiFootballNetwork(path, params, cfg, options = {}) {
     if (waitSec > 0 && ageSec < 60) {
       await persistSharedProviderCooldown(cfg, waitSec, 'minute_remaining_zero').catch(() => null);
       bumpTelemetry('quotaBlocks');
+    phase5ProviderUsage(cfg,'quotaBlocks',1);
       throw footballError(`Минутная квота API-Football исчерпана. Повторите примерно через ${waitSec} сек.`, 'FOOTBALL_COOLDOWN', waitSec);
     }
   }
@@ -14001,6 +14022,7 @@ async function apiFootballNetwork(path, params, cfg, options = {}) {
     const retryAfter=Math.max(1,Number(distributedBudget.retryAfter || 60));
     await persistSharedProviderCooldown(cfg, retryAfter, 'distributed_rate_guard').catch(() => null);
     bumpTelemetry('quotaBlocks');
+    phase5ProviderUsage(cfg,'quotaBlocks',1);
     throw footballError(`Глобальная минутная квота API-Football защищена. Повторите примерно через ${retryAfter} сек.`, 'FOOTBALL_COOLDOWN', retryAfter);
   }
 
@@ -14011,6 +14033,7 @@ async function apiFootballNetwork(path, params, cfg, options = {}) {
 
   const startedAt = Date.now();
   bumpTelemetry('apiRequests');
+  phase5ProviderUsage(cfg,'networkRequests',1);
   memory.provider.lastRequestAt = new Date(startedAt).toISOString();
   let r;
   try {
@@ -14045,6 +14068,7 @@ async function apiFootballNetwork(path, params, cfg, options = {}) {
     memory.provider.lastError = 'rate_limit';
     bumpTelemetry('apiErrors');
     bumpTelemetry('rateLimits');
+    phase5ProviderUsage(cfg,'quotaBlocks',1);
     await recordOpsEvent(cfg, {
       severity: 'warning', source: 'provider', eventType: 'rate_limit', code: 'FOOTBALL_RATE_LIMIT',
       message: `API-Football HTTP 429; retry ${retryAfter}s`, endpoint: path, status: r.status, durationMs,
@@ -14070,6 +14094,7 @@ async function apiFootballNetwork(path, params, cfg, options = {}) {
     if (/too many requests|rate.?limit|requests per minute/i.test(message)) {
       await persistSharedProviderCooldown(cfg, 65, 'rate_limit_body').catch(() => null);
       bumpTelemetry('rateLimits');
+    phase5ProviderUsage(cfg,'quotaBlocks',1);
       await recordOpsEvent(cfg, {
         severity: 'warning', source: 'provider', eventType: 'rate_limit', code: 'FOOTBALL_RATE_LIMIT_BODY',
         message, endpoint: path, status: r.status, durationMs,
@@ -14372,8 +14397,81 @@ async function closedBetaTelemetrySubject(user, cfg = {}) {
   }
 }
 
+
+const PHASE5_VALIDATION_COHORT = 'phase5_public_v1';
+const PHASE5_SESSION_HEADER = 'x-phase5-session';
+const PHASE5_PROVIDER_KINDS = new Set(['search','matches_feed','match_center','ai','live_refresh']);
+
+function phase5ValidationRequestKind(url) {
+  const path=String(url?.pathname || '');
+  if (path==='/api/search') return 'search';
+  if (path==='/api/matches') return 'matches_feed';
+  if (path==='/api/match-center') return url?.searchParams?.has('t') ? 'live_refresh' : 'match_center';
+  if (path==='/api/analyze') return 'ai';
+  return '';
+}
+
+async function phase5ValidationContext(request,user,cfg,url) {
+  if (!isTelegramValidatedUser(user) || isAdminUser(user,cfg) || !cfg.botToken) return null;
+  const rawSession=String(request?.headers?.get(PHASE5_SESSION_HEADER) || '').trim().toLowerCase();
+  if (!/^[0-9a-f]{32}$/.test(rawSession)) return null;
+  try {
+    const subjectDigest=await hmacSha256(enc.encode(cfg.botToken),`${PHASE5_VALIDATION_COHORT}:user:${Number(user.id)}`);
+    const sessionDigest=await hmacSha256(enc.encode(cfg.botToken),`${PHASE5_VALIDATION_COHORT}:session:${Number(user.id)}:${rawSession}`);
+    return {
+      cohort:PHASE5_VALIDATION_COHORT,
+      verified:true,
+      subject:bytesToHex(subjectDigest).slice(0,32),
+      session:bytesToHex(sessionDigest).slice(0,32),
+      requestKind:phase5ValidationRequestKind(url),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function phase5ProviderUsage(cfg,key,amount=1) {
+  const context=cfg?.phase5Validation;
+  if (!context?.verified || !PHASE5_PROVIDER_KINDS.has(String(context.requestKind || ''))) return;
+  const usage=cfg.phase5ProviderUsage ||= {networkRequests:0,cacheHits:0,staleCacheHits:0,quotaBlocks:0,sharedCooldowns:0};
+  usage[key]=Number(usage[key] || 0)+Math.max(0,Number(amount || 0));
+}
+
+function phase5ProviderCacheUsage(cfg,cacheKey,key) {
+  const name=String(cacheKey || '');
+  if (!name || /(quota|cooldown|compute-lock|runtime|webhook|attribution)/i.test(name)) return;
+  phase5ProviderUsage(cfg,key,1);
+}
+
+async function recordPhase5ProviderRequestSummary(cfg) {
+  const context=cfg?.phase5Validation;
+  if (!context?.verified || !PHASE5_PROVIDER_KINDS.has(String(context.requestKind || ''))) return;
+  const usage=cfg.phase5ProviderUsage || {};
+  await recordOpsEvent(cfg,{
+    severity:'info',
+    source:'phase5',
+    eventType:'provider_usage',
+    code:'PHASE5_PROVIDER_USAGE',
+    message:'Aggregated provider usage for one verified normal-user request.',
+    endpoint:String(context.requestKind || ''),
+    meta:{
+      validationCohort:PHASE5_VALIDATION_COHORT,
+      validationVerified:true,
+      validationSubject:String(context.subject || ''),
+      validationSession:String(context.session || ''),
+      requestKind:String(context.requestKind || ''),
+      networkRequests:Number(usage.networkRequests || 0),
+      cacheHits:Number(usage.cacheHits || 0),
+      staleCacheHits:Number(usage.staleCacheHits || 0),
+      quotaBlocks:Number(usage.quotaBlocks || 0),
+      sharedCooldowns:Number(usage.sharedCooldowns || 0),
+    },
+  });
+}
+
 const CLIENT_TELEMETRY_VIEWS = new Set([
   'matchesView',
+  'myTeamsView',
   'searchView',
   'tournamentView',
   'teamView',
@@ -14451,7 +14549,8 @@ async function apiClientTelemetry(request, cfg, user) {
     const dedupePart = event === 'data_coverage'
       ? `${meta.matchMode}:${Number(meta.lineupsAvailable)}${Number(meta.injuriesAvailable)}${Number(meta.statisticsAvailable)}${Number(meta.xgAvailable)}${Number(meta.oddsAvailable)}`
       : (meta.reason || meta.errorKind || meta.view || '');
-    const dedupeKey = `${Number(user.id)}:${event}:${meta.clientVersion || ''}:${dedupePart}`;
+    const validationSession=String(cfg?.phase5Validation?.session || '');
+    const dedupeKey = `${Number(user.id)}:${event}:${meta.clientVersion || ''}:${validationSession}:${dedupePart}`;
     const last = Number(memory.clientTelemetryDedupe.get(dedupeKey) || 0);
     if (last && Date.now() - last < 5 * 60 * 1000) {
       return json({ ok: true, deduped: true });
@@ -14460,6 +14559,15 @@ async function apiClientTelemetry(request, cfg, user) {
     if (memory.clientTelemetryDedupe.size > 1500) pruneMemoryState();
   }
 
+  const validation=cfg?.phase5Validation;
+  const phase5Meta=validation?.verified
+    ? {
+        validationCohort:PHASE5_VALIDATION_COHORT,
+        validationVerified:true,
+        validationSubject:String(validation.subject || ''),
+        validationSession:String(validation.session || ''),
+      }
+    : {};
   const betaParticipant=isClosedBetaUser(user, cfg);
   const betaSubject=betaParticipant ? await closedBetaTelemetrySubject(user,cfg) : '';
   const betaMeta=betaParticipant && betaSubject
@@ -14500,7 +14608,7 @@ async function apiClientTelemetry(request, cfg, user) {
     message: `Client event: ${event}`,
     endpoint: '/api/client-telemetry',
     durationMs: event === 'operation_timing' ? meta.durationMs : null,
-    meta:{...meta,...betaMeta},
+    meta:{...meta,...phase5Meta,...betaMeta},
   });
   return json({ ok: true, deduped: false });
 }
@@ -15093,6 +15201,288 @@ function latestConfirmedProviderQuota(rows = [], nowMs = Date.now()) {
     minuteLimit:complete ? Number(meta.minuteLimit) : null,
     minuteRemaining:complete ? Number(meta.minuteRemaining) : null,
   };
+}
+
+
+function phase5MetricSummary(rows = [], eventName = '') {
+  const matched=betaClientEventRows(rows,eventName);
+  const users=new Set();
+  const sessions=new Set();
+  for (const row of matched) {
+    const subject=String(row?.metadata?.validationSubject || '');
+    const session=String(row?.metadata?.validationSession || '');
+    if (/^[0-9a-f]{32}$/.test(subject)) users.add(subject);
+    if (/^[0-9a-f]{32}$/.test(session)) sessions.add(session);
+  }
+  return {events:matched.length,users:users.size,sessions:sessions.size};
+}
+
+function phase5JourneySummary(rows = []) {
+  const valid=(rows || []).filter(row=>
+    row?.source==='client'
+    && row?.event_type==='client_telemetry'
+    && /^[0-9a-f]{32}$/.test(String(row?.metadata?.validationSubject || ''))
+    && /^[0-9a-f]{32}$/.test(String(row?.metadata?.validationSession || ''))
+  );
+  const bootRows=valid.filter(row=>String(row?.code || '')==='BOOT_OK');
+  const users=new Set(bootRows.map(row=>String(row.metadata.validationSubject)));
+  const sessions=new Set(bootRows.map(row=>String(row.metadata.validationSession)));
+  const bySubject=new Map();
+  for (const row of valid) {
+    const subject=String(row.metadata.validationSubject);
+    if (!bySubject.has(subject)) bySubject.set(subject,[]);
+    bySubject.get(subject).push(row);
+  }
+  const stages={home:0,search:0,matchCenter:0,ai:0,favoriteTeam:0,history:0,reopen:0};
+  let fullCompleted=0;
+  let reopenUsers=0;
+  for (const subject of users) {
+    const ordered=(bySubject.get(subject) || []).slice().sort((a,b)=>Date.parse(a?.created_at || 0)-Date.parse(b?.created_at || 0));
+    const bootSessions=[...new Set(ordered.filter(row=>String(row?.code || '')==='BOOT_OK').map(row=>String(row?.metadata?.validationSession || '')))];
+    if (bootSessions.length>=2) reopenUsers+=1;
+    stages.home+=1;
+    let stage=0;
+    let historyAt=0;
+    const firstSession=bootSessions[0] || '';
+    for (const row of ordered) {
+      const code=String(row?.code || '');
+      const reason=String(row?.metadata?.reason || '');
+      const view=String(row?.metadata?.view || '');
+      const event=code==='PRODUCT_ACTION' ? reason : '';
+      if (stage===0 && event==='search_used') { stage=1; stages.search+=1; continue; }
+      if (stage===1 && event==='match_open') { stage=2; stages.matchCenter+=1; continue; }
+      if (stage===2 && event==='ai_complete') { stage=3; stages.ai+=1; continue; }
+      if (stage===3 && event==='matches_open' && view==='myTeamsView') { stage=4; stages.favoriteTeam+=1; continue; }
+      if (stage===4 && event==='history_open') { stage=5; stages.history+=1; historyAt=Date.parse(row?.created_at || 0); }
+    }
+    if (stage>=5) {
+      const reopened=ordered.some(row=>
+        String(row?.code || '')==='BOOT_OK'
+        && String(row?.metadata?.validationSession || '')!==firstSession
+        && Date.parse(row?.created_at || 0)>historyAt
+      );
+      if (reopened) { stages.reopen+=1; fullCompleted+=1; }
+    }
+  }
+  return {
+    verifiedNormalUsers:users.size,
+    sessions:sessions.size,
+    fullCompleted,
+    reopenUsers,
+    returnRatePct:users.size ? Math.round((reopenUsers/users.size)*1000)/10 : 0,
+    stages,
+    abandonment:{
+      home:Math.max(0,stages.home-stages.search),
+      search:Math.max(0,stages.search-stages.matchCenter),
+      matchCenter:Math.max(0,stages.matchCenter-stages.ai),
+      ai:Math.max(0,stages.ai-stages.favoriteTeam),
+      favoriteTeam:Math.max(0,stages.favoriteTeam-stages.history),
+      history:Math.max(0,stages.history-stages.reopen),
+    },
+    definition:'verified Telegram BOOT_OK -> search_used -> match_open -> ai_complete -> My Teams -> history_open -> BOOT_OK in a later session',
+  };
+}
+
+function phase5ProviderSummary(rows = [], {sessions=0,users=0,fullJourneys=0} = {}) {
+  const usageRows=(rows || []).filter(row=>
+    row?.source==='phase5'
+    && row?.event_type==='provider_usage'
+    && row?.code==='PHASE5_PROVIDER_USAGE'
+    && row?.metadata?.validationCohort===PHASE5_VALIDATION_COHORT
+    && row?.metadata?.validationVerified===true
+  );
+  const totals={networkRequests:0,cacheHits:0,staleCacheHits:0,quotaBlocks:0,sharedCooldowns:0};
+  const byFeature={};
+  const blockedSessions=new Set();
+  const liveUsers=new Set();
+  for (const row of usageRows) {
+    const m=row.metadata || {};
+    const kind=String(m.requestKind || 'other');
+    const bucket=byFeature[kind] ||= {requests:0,networkRequests:0,cacheHits:0,staleCacheHits:0,quotaBlocks:0,sharedCooldowns:0};
+    bucket.requests+=1;
+    for (const key of Object.keys(totals)) {
+      const value=Math.max(0,Number(m[key] || 0));
+      totals[key]+=value;
+      bucket[key]+=value;
+    }
+    if (Number(m.quotaBlocks || 0)>0 || Number(m.sharedCooldowns || 0)>0) blockedSessions.add(String(m.validationSession || ''));
+    if (kind==='live_refresh') liveUsers.add(String(m.validationSubject || ''));
+  }
+  const round=value=>Number.isFinite(value) ? Math.round(value*100)/100 : null;
+  const requestsPerSession=sessions ? round(totals.networkRequests/sessions) : null;
+  const requestsPerCompletedJourney=fullJourneys ? round(totals.networkRequests/fullJourneys) : null;
+  const cacheDenominator=totals.cacheHits+totals.networkRequests;
+  const cacheHitRatePct=cacheDenominator ? Math.round((totals.cacheHits/cacheDenominator)*1000)/10 : null;
+  const aiRequestsPerUser=users ? round(Number(byFeature.ai?.networkRequests || 0)/users) : null;
+  const liveRequestsPerActiveUser=liveUsers.size ? round(Number(byFeature.live_refresh?.networkRequests || 0)/liveUsers.size) : null;
+  const sessionsPerUser=users ? sessions/users : null;
+  return {
+    ...totals,
+    requestsPerSession,
+    requestsPerCompletedJourney,
+    cacheHitRatePct,
+    aiRequestsPerUser,
+    liveRequestsPerActiveUser,
+    activeLiveUsers:liveUsers.size,
+    blockedSessions:[...blockedSessions].filter(value=>/^[0-9a-f]{32}$/.test(value)).length,
+    byFeature,
+    capacity:{
+      evidenceSufficient:sessions>=10 && requestsPerSession!==null,
+      concurrent10:requestsPerCompletedJourney===null ? null : round(requestsPerCompletedJourney*10),
+      concurrent25:requestsPerCompletedJourney===null ? null : round(requestsPerCompletedJourney*25),
+      concurrent50:requestsPerCompletedJourney===null ? null : round(requestsPerCompletedJourney*50),
+      dailyActive100:requestsPerSession===null || sessionsPerUser===null ? null : round(requestsPerSession*sessionsPerUser*100),
+      dailyActive500:requestsPerSession===null || sessionsPerUser===null ? null : round(requestsPerSession*sessionsPerUser*500),
+      note:'Projection uses observed production requests/session and observed sessions/user; it is not inferred from provider documentation.',
+    },
+  };
+}
+
+function phase5EvidenceGate({journey={},timings={},coverage={},opsSampleLimited=false}={}) {
+  const requirements={
+    verifiedNormalUsers:{required:5,actual:Number(journey.verifiedNormalUsers || 0)},
+    sessions:{required:10,actual:Number(journey.sessions || 0)},
+    fullJourneys:{required:5,actual:Number(journey.fullCompleted || 0)},
+    searchSamples:{required:10,actual:Number(timings?.search?.samples || 0)},
+    matchCenterSamples:{required:10,actual:Number(timings?.match?.samples || 0)},
+    aiSamples:{required:10,actual:Number(timings?.ai?.samples || 0)},
+    coverageObservations:{required:20,actual:Number(coverage?.samples || 0)},
+  };
+  for (const value of Object.values(requirements)) value.pass=value.actual>=value.required;
+  const thresholdsMet=Object.values(requirements).every(value=>value.pass) && !opsSampleLimited;
+  const liveSamples=Math.max(Number(timings?.live?.samples || 0),Number(coverage?.live?.samples || 0));
+  return {
+    status:thresholdsMet ? 'EVIDENCE THRESHOLDS MET' : 'COLLECT MORE EVIDENCE',
+    thresholdsMet,
+    requirements,
+    liveStatus:liveSamples>0 ? 'OBSERVED' : 'INSUFFICIENT_LIVE_SAMPLE',
+    opsSampleLimited:Boolean(opsSampleLimited),
+  };
+}
+
+async function apiPhase5Dashboard(request,cfg) {
+  const url=new URL(request.url);
+  const days=Math.max(1,Math.min(30,Number(url.searchParams.get('days') || 7)));
+  if (!hasSupabase(cfg)) return json({available:false,reason:'Для Phase 5 validation нужен Supabase.',days});
+  const now=Date.now();
+  const since=new Date(now-days*86400_000).toISOString();
+  const end=new Date(now+1000).toISOString();
+  const [opsResult,diagnostics]=await Promise.all([
+    readOpsEventsRange(cfg,since,end,1000),
+    collectDiagnostics(cfg).catch(()=>({})),
+  ]);
+  const allOpsRows=opsResult.items || [];
+  const phase5Rows=allOpsRows.filter(row=>
+    row?.metadata?.validationCohort===PHASE5_VALIDATION_COHORT
+    && row?.metadata?.validationVerified===true
+    && /^[0-9a-f]{32}$/.test(String(row?.metadata?.validationSubject || ''))
+    && /^[0-9a-f]{32}$/.test(String(row?.metadata?.validationSession || ''))
+  );
+  const clientRows=phase5Rows.filter(row=>row?.source==='client' && row?.event_type==='client_telemetry');
+  const metrics={};
+  for (const [key,eventName] of Object.entries({
+    miniAppLaunch:'miniapp_open',searchUsed:'miniapp_search_used',searchFound:'miniapp_search_found',
+    searchEmpty:'miniapp_search_empty',matchOpen:'miniapp_match_open',aiStart:'miniapp_ai_start',
+    aiComplete:'miniapp_ai_complete',liveOpen:'miniapp_live_open',historyOpen:'miniapp_history_open',
+    profileOpen:'miniapp_profile_open',
+  })) metrics[key]=phase5MetricSummary(clientRows,eventName);
+  const journey=phase5JourneySummary(clientRows);
+  const timings={
+    search:betaTimingSummary(clientRows,'search'),
+    match:betaTimingSummary(clientRows,'match'),
+    ai:betaTimingSummary(clientRows,'ai'),
+    live:betaTimingSummary(clientRows,'live'),
+  };
+  const coverage=betaCoverageSummary(clientRows);
+  const evidenceGate=phase5EvidenceGate({journey,timings,coverage,opsSampleLimited:allOpsRows.length>=1000});
+  const provider=phase5ProviderSummary(phase5Rows,{sessions:journey.sessions,users:journey.verifiedNormalUsers,fullJourneys:journey.fullCompleted});
+  const persistedQuota=latestConfirmedProviderQuota(allOpsRows,now);
+  const providerNow=providerSnapshot();
+  const providerNowFresh=Boolean(providerNow.updatedAt && now-Date.parse(providerNow.updatedAt)<=10*60_000);
+  const providerNowComplete=providerNowFresh
+    && String(providerNow.plan || 'UNKNOWN')!=='UNKNOWN'
+    && [providerNow.dailyLimit,providerNow.dailyRemaining,providerNow.minuteLimit,providerNow.minuteRemaining].every(value=>Number.isFinite(Number(value)));
+  const quotaState=providerNowComplete ? {
+    confirmed:true,source:'provider_runtime',confirmedAt:providerNow.updatedAt,plan:String(providerNow.plan || ''),
+    dailyLimit:Number(providerNow.dailyLimit),dailyRemaining:Number(providerNow.dailyRemaining),
+    minuteLimit:Number(providerNow.minuteLimit),minuteRemaining:Number(providerNow.minuteRemaining),
+  } : persistedQuota;
+  const errorRows=betaClientEventRows(clientRows,'miniapp_error');
+  const errorKinds={};
+  for (const row of errorRows) {
+    const key=String(row?.metadata?.errorKind || 'unknown');
+    errorKinds[key]=Number(errorKinds[key] || 0)+1;
+  }
+  const issues=buildBetaIssueGroups({metrics,errorRows,feedbackRows:[],timings,clientErrorRows:clientRows.filter(row=>String(row?.code || '')==='CLIENT_ERROR')});
+  const repeatedProductBlocker=issues.some(issue=>issue?.classification==='BLOCKER');
+  const systematicMissing=Object.entries(coverage.missing || {}).filter(([,item])=>Number(item?.samples || 0)>=10 && Number(item?.missingPct || 0)>=70).map(([key])=>key);
+  const coverageDecision=coverage.samples<20
+    ? 'COLLECT MORE EVIDENCE'
+    : systematicMissing.length>=2 ? 'DATA COVERAGE REVIEW REQUIRED' : 'KEEP CURRENT PROVIDER';
+  const capacityDecision=!evidenceGate.requirements.sessions.pass || !quotaState.confirmed
+    ? 'COLLECT MORE EVIDENCE'
+    : provider.blockedSessions>=2 ? 'CAPACITY UPGRADE REQUIRED' : 'KEEP CURRENT PROVIDER';
+  let status='COLLECT MORE EVIDENCE';
+  if (evidenceGate.thresholdsMet) {
+    if (repeatedProductBlocker) status='PRODUCT BLOCKER HOLD';
+    else if (capacityDecision==='CAPACITY UPGRADE REQUIRED') status='PROVIDER CAPACITY HOLD';
+    else if (coverageDecision==='DATA COVERAGE REVIEW REQUIRED') status='DATA COVERAGE REVIEW REQUIRED';
+    else status='PUBLIC VALIDATION HEALTHY';
+  }
+  return json({
+    available:true,
+    generatedAt:new Date().toISOString(),
+    periodDays:days,
+    cohort:PHASE5_VALIDATION_COHORT,
+    status,
+    privacy:{
+      aggregatedOnly:true,telegramIdsReturned:false,telegramIdsStoredInValidationTelemetry:false,
+      rawSessionTokensStored:false,hmacSubjectsOnly:true,adminExcluded:true,unsignedExcluded:true,
+      syntheticDevIdentityExcluded:true,smokeAndHealthExcluded:true,duplicateClientEventsDeduped:true,
+    },
+    accessMode:{
+      publicByDefault:!cfg.betaAccessEnabled,
+      strictBetaAccess:Boolean(cfg.betaAccessEnabled),
+      note:'BETA_ACCESS_ENABLED controls access only; BETA_TELEGRAM_IDS is not a Phase 5 evidence membership requirement.',
+    },
+    users:{
+      verifiedNormalUsers:journey.verifiedNormalUsers,sessions:journey.sessions,
+      completedJourneys:journey.fullCompleted,reopenUsers:journey.reopenUsers,returnRatePct:journey.returnRatePct,
+    },
+    product:{
+      searchSamples:Number(timings.search.samples || 0),matchCenterSamples:Number(timings.match.samples || 0),
+      aiSamples:Number(timings.ai.samples || 0),
+      liveSamples:Math.max(Number(timings.live.samples || 0),Number(coverage.live?.samples || 0)),
+      metrics,abandonmentStage:journey.abandonment,journeyStages:journey.stages,
+    },
+    performance:timings,
+    provider:{...provider,quotaState,capacityDecision},
+    coverage:{
+      observations:Number(coverage.samples || 0),
+      lineups:coverage.missing?.lineups || {samples:0,missing:0,missingPct:0},
+      injuries:coverage.missing?.injuries || {samples:0,missing:0,missingPct:0},
+      statistics:coverage.missing?.statistics || {samples:0,missing:0,missingPct:0},
+      xg:coverage.missing?.xg || {samples:0,missing:0,missingPct:0},
+      odds:coverage.missing?.odds || {samples:0,missing:0,missingPct:0},
+      live:{status:evidenceGate.liveStatus,samples:Number(coverage.live?.samples || 0),missing:coverage.live?.missing || {}},
+      decision:coverageDecision,systematicMissing,
+    },
+    evidenceGate,
+    runtime:{
+      supabase:Boolean(diagnostics?.supabase?.ok) ? 'ok' : String(diagnostics?.supabase?.status || 'problem'),
+      telegram:String(diagnostics?.telegramWebhook?.state || (cfg.botToken ? 'configured' : 'not_configured')),
+      providerRateLimit:Number(errorKinds.rate_limit || 0),providerErrors:Number(errorKinds.provider || 0),
+      timeouts:Number(errorKinds.timeout || 0),
+      clientErrors:clientRows.filter(row=>String(row?.code || '')==='CLIENT_ERROR').length,
+      productBlockerPattern:repeatedProductBlocker,issues,
+    },
+    sample:{
+      clientEvents:clientRows.length,
+      providerUsageRows:phase5Rows.filter(row=>row?.source==='phase5' && row?.event_type==='provider_usage').length,
+      opsPersistent:Boolean(opsResult.persistent),opsSampleLimited:allOpsRows.length>=1000,
+      evidenceStartsWithTaggedPhase5ProductionEvents:true,legacyClosedBetaRowsExcluded:true,
+    },
+  });
 }
 
 async function apiBetaDashboard(request,cfg) {
@@ -22186,6 +22576,7 @@ const API_ROUTE_DEPS = Object.freeze({
   apiAnalyze,
   apiBetaDashboard,
   apiBetaFeedback,
+  apiPhase5Dashboard,
   apiBillingInvoice,
   apiBillingPlans,
   apiBillingSubscription,
@@ -22734,6 +23125,9 @@ export default {
         return json({ error: 'Доступ к закрытой beta пока не выдан.', code: 'CLOSED_BETA_ACCESS_REQUIRED' }, 403);
       }
 
+      cfg.phase5Validation = await phase5ValidationContext(request,user,cfg,url);
+      cfg.phase5ProviderUsage = {networkRequests:0,cacheHits:0,staleCacheHits:0,quotaBlocks:0,sharedCooldowns:0};
+
       const runtimeState = await loadRuntimeControls(cfg);
       const runtimeResponse = runtimeGuard(request, user, cfg, runtimeState.value);
       if (runtimeResponse) return runtimeResponse;
@@ -22741,7 +23135,11 @@ export default {
       const burstResponse = enforceRouteBurst(request, user);
       if (burstResponse) return burstResponse;
 
-      return await dispatchApiRoute(request, url, cfg, user, API_ROUTE_DEPS);
+      try {
+        return await dispatchApiRoute(request, url, cfg, user, API_ROUTE_DEPS);
+      } finally {
+        await recordPhase5ProviderRequestSummary(cfg).catch(()=>null);
+      }
     } catch (error) {
       console.error('api route', redactOpsString(error?.message || error, 240));
       const rateLimited = isFootballRateLimitError(error);

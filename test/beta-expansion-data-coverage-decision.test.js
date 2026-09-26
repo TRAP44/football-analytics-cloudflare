@@ -60,10 +60,11 @@ test('dashboard exposes the expansion decision without raw identities',()=>{
   assert.match(dashboard,/idsReturned:false/);
   assert.doesNotMatch(dashboard,/betaTelegramIdsReturned|telegramIdsReturned:true/);
 
-  assert.match(app,/Решение по расширению/);
-  assert.match(app,/Closed Beta Launch завершён/);
-  assert.match(app,/Verified beta sessions/);
-  assert.match(app,/Data coverage decision/);
+  assert.match(app,/Verified normal users/);
+  assert.match(app,/Phase 5 status/);
+  assert.match(app,/Capacity decision/);
+  assert.match(app,/Coverage decision/);
+  assert.doesNotMatch(block(app,'function renderBetaDashboard','async function'),/Closed Beta Launch завершён/);
 });
 
 test('verified session definition stays inside existing closed beta telemetry',()=>{
