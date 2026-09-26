@@ -1525,9 +1525,15 @@ html {
   grid-auto-flow:column;
   grid-auto-columns:minmax(0,1fr);
   box-sizing:border-box;
+  left:max(7px,env(safe-area-inset-left));
+  right:max(7px,env(safe-area-inset-right));
+  width:auto;
+  max-width:730px;
+  margin-inline:auto;
+  transform:none;
   overflow-x:visible;
-  padding-left:max(6px,env(safe-area-inset-left));
-  padding-right:max(6px,env(safe-area-inset-right));
+  padding-left:6px;
+  padding-right:6px;
   bottom:max(5px,env(safe-area-inset-bottom));
 }
 .miniapp-public-shell .bottom-nav>#navMatches,
