@@ -55,15 +55,19 @@
     </div>
 
     <main>
-      <section id="matchesView" class="view" hidden>
+      <section id="matchesView" class="view active">
         <div class="date-strip">
           <button class="date-btn" type="button" data-offset="-1">Вчера</button>
           <button class="date-btn active" type="button" data-offset="0">Сегодня</button>
           <button class="date-btn" type="button" data-offset="1">Завтра</button>
         </div>
 
-        <div class="search-row">
-          <input id="matchSearch" class="search-input" type="search" aria-label="Поиск по матчам" inputmode="search" enterkeyhint="search" placeholder="🔎 Команда, турнир или страна" autocomplete="off" />
+        <div class="home-search-block">
+          <div class="mini-section-head"><strong>Найти команду или матч</strong><span>Сразу на Главной</span></div>
+          <div class="search-row">
+          <input id="matchSearch" class="search-input" type="search" aria-label="Поиск по матчам" inputmode="search" enterkeyhint="search" placeholder="🔎 Команда, матч, турнир или страна" autocomplete="off" />
+          <button id="homeSearchBtn" class="global-search-btn" type="button">Найти</button>
+          </div>
         </div>
 
         <section id="dailyOverview" class="daily-overview" aria-live="polite">
@@ -134,7 +138,7 @@
         </section>
       </section>
 
-      <section id="searchView" class="view active">
+      <section id="searchView" class="view" hidden>
         <div class="section-head search-page-head">
           <div>
             <h2>Найти матч</h2>
@@ -213,6 +217,22 @@
       <section id="analysisView" class="view">
         <button id="backBtn" class="back-btn" type="button">← К поиску</button>
         <div id="analysis"></div>
+      </section>
+
+      <section id="myTeamsView" class="view" hidden>
+        <div class="section-head">
+          <div>
+            <span class="profile-zone-kicker">ВАШ ФУТБОЛ</span>
+            <h2>Мои команды</h2>
+            <p>Ближайшие матчи и быстрый переход к любимым клубам.</p>
+          </div>
+        </div>
+        <section id="myTeamsOnboarding" class="panel my-teams-onboarding" hidden>
+          <strong>Добавьте любимые команды — покажем их матчи первыми</strong>
+          <p>Найдите команду на Главной и нажмите ⭐. Профиль настраивать не нужно.</p>
+          <button id="myTeamsFindBtn" class="primary-setting-btn" type="button">Найти команду</button>
+        </section>
+        <div id="myTeamsList" class="my-teams-list" aria-live="polite"></div>
       </section>
 
       <section id="historyView" class="view">
@@ -826,9 +846,9 @@
     </main>
 
     <nav class="bottom-nav" aria-label="Основная навигация">
-      <button id="navMatches" class="nav-item" type="button"><span>⚽</span><small>Матчи</small></button>
-      <button id="navSearch" class="nav-item active" type="button"><span>🔎</span><small>Найти матч</small></button>
-      <button id="navHistory" class="nav-item" type="button"><span>🧠</span><small>История AI</small></button>
+      <button id="navMatches" class="nav-item active" type="button"><span>⚽</span><small>Главная</small></button>
+      <button id="navMyTeams" class="nav-item" type="button"><span>⭐</span><small>Мои команды</small></button>
+      <button id="navHistory" class="nav-item" type="button"><span>🕘</span><small>История</small></button>
       <button id="navProfile" class="nav-item" type="button"><span>👤</span><small>Профиль</small></button>
     </nav>
   </div>
