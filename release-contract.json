@@ -1,0 +1,19 @@
+{
+  "product": "Football Analytics Mini App",
+  "applicationVersion": "6.120.0",
+  "runtimeVersion": "6.120.0-rc144",
+  "productionSchema": "6.19",
+  "freshInstallBaseline": "supabase/baseline/supabase_baseline_v6_19.sql",
+  "latestMigration": "supabase/migrations/supabase_migration_v6_19.sql",
+  "accessContract": "public-telegram-validated-by-default",
+  "strictBeta": "opt-in-only-when-BETA_ACCESS_ENABLED=true",
+  "productionDatabaseRule": "never-run-fresh-install-baseline-over-existing-production",
+  "qualityGate": [
+    "npm run security:scan",
+    "npm run check",
+    "npm test",
+    "npm run lint",
+    "npm run verify:release",
+    "npm run verify:worker"
+  ]
+}
