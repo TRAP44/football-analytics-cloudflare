@@ -10,7 +10,7 @@ test('RC123 exposes today matches as a public Mini App destination',()=>{
   assert.match(html,/id="navMatches" class="nav-item active"/);
   assert.match(html,/<small>Главная<\/small>/);
   assert.doesNotMatch(html,/id="navMatches"[^>]*hidden/);
-  assert.ok(app.includes("matchesView: ['Главная', 'Понимай матч глубже.']"));
+  assert.ok(app.includes("matchesView: ['Главная', 'Видим, что меняет матч.']"));
   assert.match(css,/grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/);
 });
 

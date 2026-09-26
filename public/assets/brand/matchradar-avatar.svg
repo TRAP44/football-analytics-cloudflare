@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">MatchRadar AI Telegram avatar</title>
+  <rect width="512" height="512" rx="152" fill="#07111F"/>
+  <circle cx="256" cy="256" r="162" fill="#0F1D2E" stroke="#43E6A1" stroke-width="28"/>
+  <path d="M256 94v324M94 256h324" fill="none" stroke="#EAF2F7" stroke-opacity=".32" stroke-width="12"/>
+  <circle cx="256" cy="256" r="46" fill="none" stroke="#EAF2F7" stroke-opacity=".70" stroke-width="12"/>
+  <path d="M256 256 386 158A162 162 0 0 1 418 256Z" fill="#7CC7FF" fill-opacity=".18"/>
+  <path d="M338 137A162 162 0 0 1 418 252" fill="none" stroke="#7CC7FF" stroke-width="23" stroke-linecap="round"/>
+  <circle cx="360" cy="177" r="22" fill="#7CC7FF"/>
+</svg>

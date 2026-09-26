@@ -21,10 +21,10 @@ test('pre-match analysis exposes referee context', () => {
   assert.match(app, /analysis-referee-line/);
 });
 
-test('startup experience presents the FutLens AI brand without internal detail', () => {
+test('startup experience presents the MatchRadar brand without internal detail', () => {
   const boot=html.slice(html.indexOf('id="bootGate"'),html.indexOf('class="app-shell"'));
-  assert.match(boot, /FutLens AI/);
-  assert.match(boot, /Понимай матч глубже\./);
+  assert.match(boot, /MatchRadar/);
+  assert.match(boot, /Видим, что меняет матч\./);
   assert.match(boot, /Загружаем матчи/);
   assert.doesNotMatch(boot, /версия|RC\d|release|build|boot-feature-row/i);
 });

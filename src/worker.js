@@ -2542,7 +2542,7 @@ async function apiFixtureShareLink(request, cfg, user) {
   try {
     const link=await fixtureTelegramDeepLink(cfg,fixtureId,{source,campaign,content});
     void recordGrowthEvent(cfg,{userId:user.id,eventName:'share_link_created',channel:'miniapp',fixtureId,metadata:{source,campaign,content}});
-    return json({ok:true,fixtureId,url:link.url,startParam:link.startParam,telegramShareUrl:telegramShareComposerUrl(link.url,'Открой матч в FM AI — ссылка сразу приведёт к AI-разбору.')});
+    return json({ok:true,fixtureId,url:link.url,startParam:link.startParam,telegramShareUrl:telegramShareComposerUrl(link.url,'Открой матч в MatchRadar AI — ссылка сразу приведёт к AI-разбору.')});
   } catch (error) {
     return json({error:'Не удалось подготовить ссылку на матч.',detail:redactOpsString(error?.message || error,120)},503);
   }
@@ -2554,7 +2554,7 @@ function fixtureShareCardText(match = {}, analysis = null) {
   const signal=ai.betSignal || {};
   const confidence=Number.isFinite(Number(ai.confidenceScore)) ? `${Math.round(Number(ai.confidenceScore))}/100` : '';
   return [
-    '⚽ <b>FM AI · МАТЧ</b>',
+    '⚽ <b>MatchRadar AI · МАТЧ</b>',
     '',
     `<b>${telegramHtmlEscape(card.homeName)} — ${telegramHtmlEscape(card.awayName)}</b>`,
     telegramHtmlEscape(card.league || 'Футбол'),
@@ -2572,7 +2572,7 @@ async function sendBotFixtureShareCard(request,cfg,userId,chatId,fixtureId) {
     fixtureTelegramDeepLink(cfg,fixtureId,{source:'social',campaign:'match_share',content:'telegram'}),
   ]);
   if (!match) throw new Error('Матч не найден.');
-  const plain=`${match.homeName} — ${match.awayName}\nFM AI: открыть матч и AI-разбор`;
+  const plain=`${match.homeName} — ${match.awayName}\nMatchRadar AI: открыть матч и AI-разбор`;
   void recordGrowthEvent(cfg,{userId,eventName:'share_card_created',channel:'telegram',fixtureId,metadata:{surface:'match_card'}});
   await telegramApi('sendMessage',cfg,{
     chat_id:chatId,
@@ -2602,7 +2602,7 @@ function mediaPublisherCopy(match = {}, deepLink = '', attribution = {}) {
     `⚽ ${title}`,
     meta,
     '',
-    'FM AI: составы, судья, рынок, риски и AI-разбор матча.',
+    'MatchRadar AI: составы, судья, рынок, риски и AI-разбор матча.',
     deepLink ? `Открыть матч: ${deepLink}` : '',
     '',
     'Информационная аналитика. Не гарантия результата.',
@@ -2852,7 +2852,7 @@ function botFixtureCardText(match = {}, { aiReady=false } = {}) {
   const round=card.round ? ` · ${telegramHtmlEscape(card.round)}` : '';
   const aiState=card.finished ? '📋 Доступен центр матча' : aiReady ? '🧠 AI-разбор уже сохранён' : '🧠 AI готов собрать полный разбор';
   return [
-    '⚽ <b>FM AI · MATCH</b>',
+    '⚽ <b>MatchRadar AI · MATCH</b>',
     '',
     `<b>${telegramHtmlEscape(card.homeName)} — ${telegramHtmlEscape(card.awayName)}</b>`,
     `${telegramHtmlEscape(card.league)}${round}`,
@@ -6438,7 +6438,7 @@ function botAiHandoffText(data = {}) {
       ].filter(Boolean)
     : [];
   return [
-    '🧠 <b>FM AI · короткая оценка</b>',
+    '🧠 <b>MatchRadar AI · короткая оценка</b>',
     `<b>${telegramHtmlEscape(match.home?.name || 'Хозяева')} — ${telegramHtmlEscape(match.away?.name || 'Гости')}</b>`,
     '',
     handoffLocked
@@ -6460,7 +6460,7 @@ function botAiHandoffText(data = {}) {
     ...(deltaLines.length ? ['',`🔄 <b>Что изменилось после перепроверки</b>`,...deltaLines.map(telegramHtmlEscape)] : []),
     '',
     handoffLocked
-      ? '<i>После стартового свистка FM AI не превращает предматчевый сигнал в live-рекомендацию. Используйте центр матча для счёта, событий и статистики.</i>'
+      ? '<i>После стартового свистка MatchRadar AI не превращает предматчевый сигнал в live-рекомендацию. Используйте центр матча для счёта, событий и статистики.</i>'
       : '<i>Полный AI-разбор откроется сразу на этом матче — повторно искать его не нужно.</i>',
   ].join('\n');
 }
@@ -6628,10 +6628,10 @@ async function configureFootballBot(request, cfg, chatId) {
   const appUrl = telegramWebAppUrl(request);
   await Promise.allSettled([
     telegramApi('setMyCommands', cfg, { commands: [] }),
-    telegramApi('setMyName', cfg, { name: 'FM AI • Футбольный Инструктор' }),
-    telegramApi('setMyShortDescription', cfg, { short_description: 'AI-разбор матчей + важные футбольные новости, составы, судья, рынок и риски.' }),
-    telegramApi('setMyDescription', cfg, { description: 'FM AI — футбольный AI-инструктор. Матчи, LIVE и новости — в Telegram. Выберите матч и откройте минимальный Mini App для полного AI-разбора.' }),
-    telegramApi('setChatMenuButton', cfg, { chat_id: chatId, menu_button: { type: 'web_app', text: '⚽ FM AI', web_app: { url: appUrl } } }),
+    telegramApi('setMyName', cfg, { name: 'MatchRadar AI' }),
+    telegramApi('setMyShortDescription', cfg, { short_description: 'Матчи, LIVE и AI-разбор — быстро и по делу.' }),
+    telegramApi('setMyDescription', cfg, { description: 'AI-футбольный ассистент в Telegram: матчи, команды, LIVE и понятный разбор ключевых факторов.' }),
+    telegramApi('setChatMenuButton', cfg, { chat_id: chatId, menu_button: { type: 'web_app', text: '⚽ MatchRadar AI', web_app: { url: appUrl } } }),
   ]);
 }
 
@@ -6642,7 +6642,8 @@ async function sendFootballBotHome(request, cfg, chatId, telegramUser = {}) {
     chat_id: chatId,
     parse_mode: 'HTML',
     text: [
-      '⚽ <b>FM AI · Футбольный Инструктор</b>',
+      '⚽ <b>MatchRadar AI</b>',
+      'Видим, что меняет матч.',
       '',
       `${hello} Напишите клуб прямо в чат — например «Реал», «Арсенал», «Бавария», «Бока Хуниорс» или «Интер Майами».`,
       '',
@@ -6650,7 +6651,7 @@ async function sendFootballBotHome(request, cfg, chatId, telegramUser = {}) {
       '📊 Кнопка полного AI-разбора откроет Mini App сразу на выбранном матче — повторный поиск не нужен.',
       '📰 Новости и 🔴 LIVE остаются здесь, в Telegram.',
       '',
-      '<i>Если данных мало или перевеса нет, FM AI прямо предложит пропустить матч.</i>',
+      '<i>Если данных мало или перевеса нет, MatchRadar AI прямо предложит пропустить матч.</i>',
     ].join('\n'),
     reply_markup: footballBotKeyboard(request),
   });
@@ -6661,7 +6662,7 @@ async function sendFootballBotHelp(request, cfg, chatId) {
     chat_id: chatId,
     parse_mode: 'HTML',
     text: [
-      '<b>Как пользоваться FM AI</b>',
+      '<b>Как пользоваться MatchRadar AI</b>',
       '',
       '⚽ <b>Матчи сегодня</b> — персональная лента матчей.',
       '🔴 <b>LIVE</b> — матчи, которые идут сейчас.',
@@ -6675,7 +6676,7 @@ async function sendFootballBotHelp(request, cfg, chatId) {
       '',
       'После одного нажатия на матч короткая AI-оценка появляется прямо в Telegram. <b>Полный AI-разбор</b> открывается в Mini App сразу на этом fixture.',
       '',
-      '<i>FM AI — информационно-аналитический сервис. Он не гарантирует исход матча и не является финансовой или букмекерской рекомендацией.</i>',
+      '<i>MatchRadar AI — информационно-аналитический сервис. Он не гарантирует исход матча и не является финансовой или букмекерской рекомендацией.</i>',
       '',
       `<a href="${telegramHtmlEscape(publicSiteUrl(request,'/privacy.html'))}">Privacy</a> · <a href="${telegramHtmlEscape(publicSiteUrl(request,'/terms.html'))}">Terms</a> · <a href="${telegramHtmlEscape(publicSiteUrl(request,'/status.html'))}">Status</a>`,
     ].join('\n'),
@@ -6686,7 +6687,7 @@ async function sendFootballBotHelp(request, cfg, chatId) {
 async function sendDigestControls(request, cfg, chatId) {
   await telegramApi('sendMessage', cfg, {
     chat_id: chatId,
-    text: '☀️ Утренняя подборка FM AI\n\nПримерно в 07:00 UTC: до 3 заметных матчей дня + короткий блок важных футбольных новостей с источниками. Выберите режим:',
+    text: '☀️ Утренняя подборка MatchRadar AI\n\nПримерно в 07:00 UTC: до 3 заметных матчей дня + короткий блок важных футбольных новостей с источниками. Выберите режим:',
     reply_markup: { inline_keyboard: [[
       { text: '✅ Включить', callback_data: 'digest:on' },
       { text: '🔕 Выключить', callback_data: 'digest:off' },
@@ -6836,7 +6837,7 @@ async function botTeamIdMatches(teamId,cfg) {
 async function sendBotFavoriteTeams(request,cfg,userId,chatId) {
   const favorites=await getFavorites(userId,cfg);
   if (!favorites.length) {
-    await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'⭐ <b>Мои команды пока пусты</b>\n\nОткройте любой матч и нажмите ☆ рядом с нужным клубом. После этого здесь появятся его ближайшие игры, а в FM AI News — персональные новости.',parse_mode:'HTML',reply_markup:footballBotKeyboard(request)});
+    await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'⭐ <b>Мои команды пока пусты</b>\n\nОткройте любой матч и нажмите ☆ рядом с нужным клубом. После этого здесь появятся его ближайшие игры, а в MatchRadar AI · Новости — персональные новости.',parse_mode:'HTML',reply_markup:footballBotKeyboard(request)});
     return;
   }
   const rows=favorites.slice(0,12).map(x=>[{text:`⭐ ${String(x.team_name || 'Команда').slice(0,40)}`,callback_data:`favorite:team:${Number(x.team_id)}`}]);
@@ -6898,7 +6899,7 @@ async function processDailyDigests(cfg,scheduledAt=new Date()) {
         if (morningNews.items?.length) {
           await telegramApi('sendMessage',cfg,{
             chat_id:Number(row.chat_id),parse_mode:'HTML',text:morningNewsText(morningNews.items),
-            reply_markup:newsConversionKeyboard(morningNews.items,[[{text:'📰 Новости FM AI',callback_data:'news:general'}]]),
+            reply_markup:newsConversionKeyboard(morningNews.items,[[{text:'📰 Новости MatchRadar AI',callback_data:'news:general'}]]),
             disable_web_page_preview:true,
           });
         }
@@ -7057,7 +7058,7 @@ async function sendBotFootballSearch(request, cfg, userId, chatId, rawText) {
   await telegramApi('sendMessage',cfg,{
     chat_id:chatId,
     parse_mode:'HTML',
-    text:[`<b>${telegramHtmlEscape(botIntentLead(parts))}</b>`,`Запрос: «${telegramHtmlEscape(parts.query)}»`,'',...rows,'',matches.length === 1 ? 'Матч найден. Нажмите один раз — сразу покажу короткую AI-оценку.' : '⭐ Первый матч — основной выбор FM AI. Нажмите на любой матч — сразу получите короткую AI-оценку.'].join('\n'),
+    text:[`<b>${telegramHtmlEscape(botIntentLead(parts))}</b>`,`Запрос: «${telegramHtmlEscape(parts.query)}»`,'',...rows,'',matches.length === 1 ? 'Матч найден. Нажмите один раз — сразу покажу короткую AI-оценку.' : '⭐ Первый матч — основной выбор MatchRadar AI. Нажмите на любой матч — сразу получите короткую AI-оценку.'].join('\n'),
     reply_markup:replyMarkup,
   });
 }
@@ -7080,7 +7081,7 @@ function botAiTrackRecordText(record = {}) {
   const recent=(record.recent || []).slice(0,5);
   const recentLines=recent.map(row=>`${row.matched?'✅':'❌'} ${telegramHtmlEscape(row.home)} — ${telegramHtmlEscape(row.away)} · ${telegramHtmlEscape(row.score)}\n   AI: ${telegramHtmlEscape(row.predictedLabel)}${Number.isFinite(Number(row.topProbability))?` · ${Number(row.topProbability)}%`:''} → факт ${telegramHtmlEscape(row.actualLabel)}`);
   return [
-    '📈 <b>Протокол FM AI</b>',
+    '📈 <b>Протокол MatchRadar AI</b>',
     `Период: последние ${Number(record.periodDays || 180)} дней`,
     '',
     `Проверенных матчей: <b>${Number(sample.verified || 0)}</b>`,
@@ -9976,7 +9977,7 @@ function buildPublicAiTrackRecord(settledRows = [], pendingRows = [], days = 180
       verifiedOnly:true,
       profitabilityMetric:false,
       note:'Используются только неизменяемые предматчевые снимки с подтверждённым или административно разобранным финальным результатом.',
-      disclaimer:'Совпадение исхода не равно доходности ставки. FM AI показывает историю модели и качество вероятностей, а не обещание будущего результата.',
+      disclaimer:'Совпадение исхода не равно доходности ставки. MatchRadar AI показывает историю модели и качество вероятностей, а не обещание будущего результата.',
     },
   };
 }
@@ -11686,7 +11687,7 @@ function postMatchReturnMessage(history = {}, prediction = {}) {
   const correct=prediction.correct===true || (predicted && predicted===actual);
   const signal=String(history.ai_signal_label || '').trim();
   const text=[
-    '🏁 <b>Матч завершён · FM AI</b>',
+    '🏁 <b>Матч завершён · MatchRadar AI</b>',
     `<b>${telegramHtmlEscape(home)} — ${telegramHtmlEscape(away)} · ${homeGoals}:${awayGoals}</b>`,
     history.league_name ? telegramHtmlEscape(history.league_name) : '',
     '',
@@ -17355,7 +17356,7 @@ function newsImpactBadge(impact = 'low') {
   return '⚪ контекст';
 }
 
-function newsFeedText(items = [], { title='FM AI News', teamName='', fixture=null, fixtures=[] } = {}) {
+function newsFeedText(items = [], { title='MatchRadar AI · Новости', teamName='', fixture=null, fixtures=[] } = {}) {
   if (!items.length) return `📰 <b>${telegramHtmlEscape(title)}</b>\n\nСвежих новостей по этому запросу сейчас не найдено или источник новостей временно недоступен.`;
   const rows=items.slice(0,4).map((item,index)=>{
     const smartLink=(fixtures || []).length ? newsRelevantFixture(item,fixtures) : null;
@@ -17375,7 +17376,7 @@ function newsFeedText(items = [], { title='FM AI News', teamName='', fixture=nul
     ].join('\n');
   });
   const intro=teamName ? `Новости по <b>${telegramHtmlEscape(teamName)}</b>` : '<b>Главное в футболе</b>';
-  return [`📰 <b>${telegramHtmlEscape(title)}</b>`,intro,'',...rows.map(x=>x+'\n'),'FM AI не меняет прогноз только из-за заголовка: новость учитывается в анализе лишь вместе с подтверждёнными футбольными данными.'].join('\n');
+  return [`📰 <b>${telegramHtmlEscape(title)}</b>`,intro,'',...rows.map(x=>x+'\n'),'MatchRadar AI не меняет прогноз только из-за заголовка: новость учитывается в анализе лишь вместе с подтверждёнными футбольными данными.'].join('\n');
 }
 
 async function sendGeneralFootballNews(request,cfg,userId,chatId,{force=false}={}) {
@@ -17390,7 +17391,7 @@ async function sendGeneralFootballNews(request,cfg,userId,chatId,{force=false}={
   extra.push([{text:'🔄 Обновить новости',callback_data:'news:refresh'}]);
   await telegramApi('sendMessage',cfg,{
     chat_id:chatId,parse_mode:'HTML',
-    text:newsFeedText(news.items,{title:'FM AI News'}),
+    text:newsFeedText(news.items,{title:'MatchRadar AI · Новости'}),
     reply_markup:newsConversionKeyboard(news.items,extra),
     disable_web_page_preview:true,
   });
@@ -17415,7 +17416,7 @@ async function sendFavoriteTeamNews(request,cfg,userId,chatId,teamId,{force=fals
   extra.push([{text:'🔄 Обновить',callback_data:`news:team_refresh:${Number(teamId)}`},{text:'📰 Все новости',callback_data:'news:general'}]);
   await telegramApi('sendMessage',cfg,{
     chat_id:chatId,parse_mode:'HTML',
-    text:newsFeedText(news.items,{title:'FM AI News',teamName:team.team_name || '',fixture,fixtures:matches || []}),
+    text:newsFeedText(news.items,{title:'MatchRadar AI · Новости',teamName:team.team_name || '',fixture,fixtures:matches || []}),
     reply_markup:newsConversionKeyboard(news.items,extra,{fixtureId:Number(fixture?.fixtureId || 0),fixtures:matches || []}),
     disable_web_page_preview:true,
   });
@@ -17434,7 +17435,7 @@ async function currentMorningFootballNews(cfg) {
 
 function morningNewsText(items = []) {
   if (!items.length) return '';
-  return ['📰 <b>Главное за утро</b>','',...items.slice(0,2).map((item,i)=>`${i+1}. ${item.category.icon} <b>${telegramHtmlEscape(item.title)}</b>\n${telegramHtmlEscape(item.category.label)} · ${newsImpactBadge(item.category.impact)}\nИсточник: ${telegramHtmlEscape(item.source || 'веб-источник')} · ${telegramHtmlEscape(item.trust?.label || 'Веб-источник')}`),'','Откройте источник или нажмите «Новости», чтобы увидеть объяснение FM AI.'].join('\n');
+  return ['📰 <b>Главное за утро</b>','',...items.slice(0,2).map((item,i)=>`${i+1}. ${item.category.icon} <b>${telegramHtmlEscape(item.title)}</b>\n${telegramHtmlEscape(item.category.label)} · ${newsImpactBadge(item.category.impact)}\nИсточник: ${telegramHtmlEscape(item.source || 'веб-источник')} · ${telegramHtmlEscape(item.trust?.label || 'Веб-источник')}`),'','Откройте источник или нажмите «Новости», чтобы увидеть объяснение MatchRadar AI.'].join('\n');
 }
 
 async function tavilySearch(query, cfg) {

@@ -13,7 +13,7 @@ test('RC63 selects only analyzed matches old enough to be finished',()=> {
 
 test('return message compares pre-match model with final fact',()=> {
   assert.match(worker,/function postMatchReturnMessage\(/);
-  assert.match(worker,/Матч завершён · FM AI/);
+  assert.match(worker,/Матч завершён · MatchRadar AI/);
   assert.match(worker,/Исход модели/);
   assert.match(worker,/Открыть итог AI/);
   assert.match(worker,/match:return_review:/);

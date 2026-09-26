@@ -15,11 +15,14 @@ test('telegram uses a persistent button-first keyboard instead of a slash comman
   assert.match(worker,/function footballBotMoreKeyboard/);
 });
 
-test('bot profile is branded as FM AI',()=> {
+test('bot profile is branded as MatchRadar AI',()=> {
   assert.match(worker,/setMyName/);
-  assert.match(worker,/FM AI • Футбольный Инструктор/);
+  assert.match(worker,/setMyName[\s\S]{0,120}name: 'MatchRadar AI'/);
   assert.match(worker,/setMyShortDescription/);
   assert.match(worker,/setMyDescription/);
+  assert.match(worker,/Матчи, LIVE и AI-разбор — быстро и по делу\./);
+  assert.match(worker,/AI-футбольный ассистент в Telegram: матчи, команды, LIVE и понятный разбор ключевых факторов\./);
+  assert.doesNotMatch(worker,/FM AI/);
 });
 
 test('single match search exposes action buttons',()=> {
