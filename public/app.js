@@ -1,3 +1,4 @@
+import { createApiClient, initTelegramWebApp, localDate, safeDate, timeOf, dateTime, dateOnly, relativeAge } from './modules/client-core.js';
 const CLIENT_VERSION = '6.120.0-rc144';
 const CLIENT_API_CONTRACT = 5;
 const CLIENT_RELEASE_CHANNEL = 'rc144';
@@ -29,12 +30,7 @@ document.documentElement.dataset.theme = initialUiPreferences.theme;
 document.documentElement.dataset.accent = initialUiPreferences.accent;
 document.documentElement.dataset.buttonStyle = initialUiPreferences.buttonStyle;
 
-const tg = window.Telegram?.WebApp;
-if (tg) {
-  tg.ready();
-  tg.expand();
-  try { tg.setHeaderColor('secondary_bg_color'); } catch {}
-}
+const tg = initTelegramWebApp(window);
 
 const state = {
   profile: null,
@@ -913,145 +909,21 @@ async function runStartupSequence() {
 }
 
 
-function localDate(offset = 0) {
-  const d = new Date();
-  d.setDate(d.getDate() + offset);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
 
-function safeDate(iso) {
-  if (!iso) return null;
-  const d = new Date(iso);
-  return Number.isFinite(d.getTime()) ? d : null;
-}
 
-function timeOf(iso) {
-  const d = safeDate(iso);
-  if (!d) return '—';
-  try { return new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' }).format(d); } catch { return '—'; }
-}
 
-function dateTime(iso) {
-  const d = safeDate(iso);
-  if (!d) return '';
-  try { return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(d); } catch { return ''; }
-}
 
-function dateOnly(iso) {
-  const d = safeDate(iso);
-  if (!d) return '';
-  try { return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' }).format(d); } catch { return ''; }
-}
 
-function relativeAge(iso) {
-  const ms = Date.now() - Date.parse(iso || '');
-  if (!Number.isFinite(ms) || ms < 0) return '';
-  const sec = Math.floor(ms / 1000);
-  if (sec < 15) return 'только что';
-  if (sec < 60) return `${sec} сек. назад`;
-  const min = Math.floor(sec / 60);
-  if (min < 60) return `${min} мин. назад`;
-  const h = Math.floor(min / 60);
-  if (h < 24) return `${h} ч. назад`;
-  const days = Math.floor(h / 24);
-  return `${days} дн. назад`;
-}
 
-async function api(path, options = {}) {
-  const method = String(options.method || 'GET').toUpperCase();
-  const isGet = method === 'GET';
-  const timeoutMs = Number(options.timeoutMs || 12000);
-  const retryable = isGet && options.retry !== false;
-  const dedupe = isGet && options.dedupe !== false;
-  const requestKey = `${method}:${path}`;
 
-  if (dedupe && inflightGetRequests.has(requestKey)) {
-    state.clientPerf.deduped += 1;
-    return inflightGetRequests.get(requestKey);
-  }
 
-  const task = (async () => {
-    let attempt = 0;
-    while (true) {
-      const started = performance.now();
-      state.clientPerf.requests += 1;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(new DOMException('timeout', 'AbortError')), timeoutMs);
-      const headers = new Headers(options.headers || {});
-      headers.set('Content-Type', 'application/json');
-      if (tg?.initData) headers.set('x-telegram-init-data', tg.initData);
-      try {
-        const { timeoutMs: _timeoutMs, retry: _retry, dedupe: _dedupe, ...fetchOptions } = options;
-        const response = await fetch(path, { ...fetchOptions, method, headers, signal: controller.signal });
-        const serverVersion = String(response.headers.get('x-app-version') || '');
-        if (serverVersion) observeServerVersion(serverVersion, response);
-        if (state.compatibilityBlocked) {
-          showBootRecovery({ blocking: true, title: 'Нужно обновить приложение', text: state.compatibilityReason });
-          throw Object.assign(new Error(state.compatibilityReason), { status: 426, payload: { category: 'compatibility' } });
-        }
-        const data = await response.json().catch(() => ({}));
-        const runtimeFromPayload = data?.runtime || data?.dataCapabilities?.runtime || data?.features?.runtime || null;
-        if (runtimeFromPayload) {
-          state.runtimeStatus = runtimeFromPayload;
-          applyRuntimeUi();
-        }
-        if (!response.ok) {
-          if (response.status === 403 && String(data?.code || '') === 'CLOSED_BETA_ACCESS_REQUIRED') {
-            state.closedBetaBlocked = true;
-            showBootRecovery({
-              blocking: true,
-              title: 'Доступ временно ограничен',
-              text: 'Для этого аккаунта доступ временно ограничен.',
-            });
-          }
-          const error = Object.assign(new Error(data.error || `HTTP ${response.status}`), {
-            status: response.status,
-            payload: data,
-            retryAfter: Number(data.retryAfter || response.headers.get('retry-after') || 0),
-          });
-          if (response.status === 429) state.clientPerf.rateLimited += 1;
-          if (retryable && attempt < 1 && [502, 503, 504].includes(response.status) && !['maintenance','feature_disabled'].includes(String(data.category || ''))) throw Object.assign(error, { transient: true });
-          throw error;
-        }
-        const elapsed = Math.round(performance.now() - started);
-        state.clientPerf.completed += 1;
-        state.clientPerf.lastMs = elapsed;
-        state.clientPerf.totalMs += elapsed;
-        noteRequestSuccess();
-        return data;
-      } catch (error) {
-        const aborted = error?.name === 'AbortError';
-        const transient = Boolean(error?.transient) || aborted || (!error?.status && navigator.onLine !== false);
-        if (retryable && attempt < 1 && transient) {
-          attempt += 1;
-          state.clientPerf.retries += 1;
-          await new Promise(resolve => setTimeout(resolve, 350 + Math.floor(Math.random() * 250)));
-          continue;
-        }
-        state.clientPerf.failed += 1;
-        let finalError = error;
-        if (aborted) {
-          state.clientPerf.timeouts += 1;
-          finalError = Object.assign(new Error('Сервер отвечает слишком долго.'), { status: 408, payload: { category: 'timeout' } });
-        } else if (navigator.onLine === false && !error?.status) {
-          finalError = Object.assign(new Error('Нет подключения к интернету.'), { status: 0 });
-        }
-        finalError = normalizeApiError(finalError);
-        noteRequestFailure(finalError);
-        throw finalError;
-      } finally {
-        clearTimeout(timeout);
-      }
-    }
-  })();
 
-  if (dedupe) inflightGetRequests.set(requestKey, task);
-  try { return await task; }
-  finally { if (dedupe && inflightGetRequests.get(requestKey) === task) inflightGetRequests.delete(requestKey); }
-}
+
+
+
+
+
+const api = createApiClient({ state, tg, inflightGetRequests, observeServerVersion, showBootRecovery, applyRuntimeUi, normalizeApiError, noteRequestSuccess, noteRequestFailure });
 
 async function loadProfile() {
   const previousProfile = state.profile;
@@ -3988,306 +3860,29 @@ async function manageSubscription(action) {
   } catch (e) { toast(e.message); }
 }
 
-function providerAuditStateLabel(stateValue) {
-  return ({
-    available: 'Данные',
-    empty: 'Пусто',
-    error: 'Ошибка',
-    preview: 'После повышения тарифа',
-    not_applicable: 'Не нужно',
-  })[stateValue] || '—';
-}
-
-function renderProviderAudit() {
-  if (!isAdmin()) return;
-  const transition = state.providerTransition || {};
-  const audit = state.providerAudit;
-  const status = $('providerAuditStatus');
-  const result = $('providerAuditResult');
-  const runBtn = $('providerAuditBtn');
-  const probeBtn = $('providerProbeBtn');
-
-  if ($('providerTransitionMode')) $('providerTransitionMode').textContent = humanizeTechnicalText(transition.label || 'Ожидаем тариф');
-  if ($('providerRefreshCadence')) $('providerRefreshCadence').textContent = transition.liveRefreshSeconds ? `${transition.liveRefreshSeconds} сек.` : '—';
-  if ($('providerExpectedDaily')) $('providerExpectedDaily').textContent = transition.expected?.daily ? String(transition.expected.daily) : '—';
-  if ($('providerExpectedMinute')) $('providerExpectedMinute').textContent = transition.expected?.minute ? String(transition.expected.minute) : '—';
-
-  const budget = state.providerBudget || {};
-  if ($('quotaBudgetMode')) $('quotaBudgetMode').textContent = humanizeTechnicalText(budget.label || 'Ожидаем данные');
-  if ($('quotaBudgetDaily')) $('quotaBudgetDaily').textContent = Number.isFinite(Number(budget.daily?.remaining))
-    ? `${budget.daily.remaining} · резерв ${Number(budget.daily?.reserve || 0)}` : '—';
-  if ($('quotaBudgetMinute')) $('quotaBudgetMinute').textContent = Number.isFinite(Number(budget.minute?.remaining))
-    ? `${budget.minute.remaining} · резерв ${Number(budget.minute?.reserve || 0)}` : '—';
-  if ($('quotaFeatureApi')) $('quotaFeatureApi').textContent = String(Number(budget.counters?.api || 0));
-  if ($('quotaFeatureCache')) $('quotaFeatureCache').textContent = String(Number(budget.counters?.cache || 0));
-  if ($('quotaFeatureStale')) $('quotaFeatureStale').textContent = String(Number(budget.counters?.stale || 0));
-  if ($('quotaFeatureSkipped')) $('quotaFeatureSkipped').textContent = String(Number(budget.counters?.skipped || 0));
-  if ($('quotaBudgetNote')) $('quotaBudgetNote').textContent = humanizeTechnicalText(budget.note || 'Сохранение данных по функциям активно.');
-
-  const featureList = $('quotaFeatureList');
-  if (featureList) {
-    const rows = Object.entries(budget.counters?.byFeature || {});
-    featureList.innerHTML = rows.length ? rows.map(([name, c]) => `
-      <div class="quota-feature-row">
-        <strong>${escapeHtml(humanizeTechnicalText(name))}</strong>
-        <span>источник ${Number(c.api || 0)}</span>
-        <span>сохранено ${Number(c.cache || 0)}</span>
-        <span>резерв ${Number(c.stale || 0)}</span>
-        <span>пропуск ${Number(c.skipped || 0)}</span>
-      </div>`).join('') : '<div class="empty compact-empty">Счётчики появятся после открытия центра матча.</div>';
-  }
-
-  if (runBtn) runBtn.disabled = Boolean(state.providerAuditLoading || state.providerE2ELoading);
-  if (probeBtn) probeBtn.disabled = Boolean(state.providerAuditLoading || state.providerE2ELoading);
-  if ($('providerE2EBtn')) $('providerE2EBtn').disabled = Boolean(state.providerAuditLoading || state.providerE2ELoading);
-
-  if (!status || !result) return;
-  if (state.providerAuditLoading) {
-    status.textContent = '⏳ Выполняю контролируемую проверку источников данных…';
-    result.hidden = true;
-    return;
-  }
-  if (!audit) {
-    status.textContent = transition.paid
-      ? 'Тариф обнаружен. Укажите номер матча и запустите проверку.'
-      : 'Сначала обновите тариф. На бесплатном плане полная проверка будет заблокирована для экономии квоты.';
-    result.hidden = true;
-    return;
-  }
-
-  result.hidden = false;
-  const summary = audit.summary || {};
-  const blocked = Boolean(audit.blocked);
-  status.textContent = blocked
-    ? humanizeTechnicalText(audit.note || 'Полная проверка заблокирована защитой квоты.')
-    : `${humanizeTechnicalText(summary.label || 'Проверка завершена')} · ${Number(summary.score || 0)}% · ${Number(audit.durationMs || 0)} мс`;
-
-  const fixture = audit.fixture || {};
-  const endpoints = audit.endpoints || [];
-  result.innerHTML = `
-    <div class="provider-audit-head">
-      <div><strong>${escapeHtml(fixture.home || '—')} — ${escapeHtml(fixture.away || '—')}</strong><span>Матч #${Number(fixture.fixtureId || 0)} · ${escapeHtml(humanizeTechnicalText(fixture.status || ''))}</span></div>
-      <span class="provider-audit-score ${blocked ? 'blocked' : Number(summary.score || 0) >= 80 ? 'good' : 'warn'}">${blocked ? 'ЗАЩИТА' : `${Number(summary.score || 0)}%`}</span>
-    </div>
-    <div class="provider-audit-cost">
-      <span>Запросов этого запуска</span><strong>${Number(audit.cost?.usedNow || 0)}</strong>
-      <small>полная проверка максимум ${Number(audit.cost?.maxFullAudit || 0)}</small>
-    </div>
-    <div class="provider-endpoint-grid">${endpoints.map(x => `
-      <div class="provider-endpoint-row ${escapeHtml(x.state || '')}">
-        <div><strong>${escapeHtml(humanizeTechnicalText(x.label || x.key || ''))}</strong><small>${escapeHtml(humanizeTechnicalText(x.note || ''))}</small></div>
-        <span>${providerAuditStateLabel(x.state)}</span>
-        <em>${Number.isFinite(Number(x.latencyMs)) ? `${Number(x.latencyMs)} мс` : ''}</em>
-      </div>`).join('')}</div>
-    <p class="tiny">${escapeHtml(humanizeTechnicalText(audit.note || ''))}</p>`;
-}
-
-
-function e2eStepIcon(stateValue) {
-  return stateValue === 'pass' ? '✓'
-    : stateValue === 'fail' ? '×'
-      : stateValue === 'warn' ? '!'
-        : stateValue === 'hold' ? '⏸' : '•';
-}
-
-function e2eStepLabel(stateValue) {
-  return stateValue === 'pass' ? 'Готово'
-    : stateValue === 'fail' ? 'Ошибка'
-      : stateValue === 'warn' ? 'Проверить'
-        : stateValue === 'hold' ? 'Ожидание' : '—';
-}
-
-function renderExpandedDataReleaseGate() {
-  if (!isAdmin()) return;
-  const result = state.providerE2E;
-  const transition = state.providerTransition || {};
-  const budget = state.providerBudget || {};
-  const badge = $('expandedGateBadge');
-  const title = $('expandedGateTitle');
-  const meta = $('expandedGateMeta');
-  const stepsEl = $('expandedGateSteps');
-  const details = $('expandedGateDetails');
-  const btn = $('providerE2EBtn');
-
-  if (btn) btn.disabled = Boolean(state.providerE2ELoading || state.providerAuditLoading);
-  if (!badge || !title || !meta || !stepsEl || !details) return;
-
-  if (state.providerE2ELoading) {
-    badge.className = 'expanded-gate-badge running';
-    badge.textContent = 'ВЫП.';
-    title.textContent = 'Выполняется сквозная проверка расширенных данных…';
-    meta.textContent = 'На повышенной квоте проверка может занять несколько десятков секунд.';
-    stepsEl.innerHTML = '<div class="empty compact-empty">Проверяю источник данных → покрытие → центр матча → повторное использование сохранённых данных.</div>';
-    details.hidden = true;
-    return;
-  }
-
-  if (!result) {
-    const paid = Boolean(transition.paid);
-    badge.className = `expanded-gate-badge ${paid ? 'ready' : 'hold'}`;
-    badge.textContent = paid ? 'ГОТОВ?' : 'ОЖИДАНИЕ';
-    title.textContent = paid ? 'Тариф обнаружен — можно запускать сквозную проверку' : 'Сквозная проверка расширенных данных';
-    meta.textContent = paid
-      ? `${planLabel(transition.plan || 'PAID')} · ${humanizeTechnicalText(budget.label || 'режим не определён')}`
-      : `${planLabel(transition.plan || 'FREE')} · полная проверка не тратит квоту до повышения тарифа`;
-    stepsEl.innerHTML = `
-      <div class="expanded-gate-empty">
-        <strong>${paid ? 'Запустите финальную проверку на реальном матче.' : 'На бесплатном плане проверка безопасно остановится после одного запроса состояния.'}</strong>
-        <p>Пользовательская монетизация остаётся выключенной.</p>
-      </div>`;
-    details.hidden = true;
-    return;
-  }
-
-  const status = result.status || {};
-  const cls = status.code === 'READY' ? 'ready'
-    : status.code === 'READY_WITH_LIMITATIONS' ? 'warn'
-      : status.code === 'NEEDS_ATTENTION' ? 'fail' : 'hold';
-  badge.className = `expanded-gate-badge ${cls}`;
-  badge.textContent = status.code === 'READY' ? 'ГОТОВО'
-    : status.code === 'READY_WITH_LIMITATIONS' ? 'ОГРАН.'
-      : status.code === 'NEEDS_ATTENTION' ? 'ПРОВЕРИТЬ' : 'ОЖИДАНИЕ';
-  title.textContent = humanizeTechnicalText(status.label || 'Сквозная проверка расширенных данных');
-  meta.textContent = `Матч #${Number(result.fixtureId || 0)} · ${dateTime(result.generatedAt)} · ${Number(result.durationMs || 0)} мс`;
-
-  stepsEl.innerHTML = (result.steps || []).map(step => `
-    <div class="expanded-gate-step ${escapeHtml(step.state || '')}">
-      <span>${e2eStepIcon(step.state)}</span>
-      <div><strong>${escapeHtml(humanizeTechnicalText(step.label || ''))}</strong><small>${escapeHtml(humanizeTechnicalText(step.note || ''))}</small></div>
-      <em>${e2eStepLabel(step.state)}</em>
-    </div>`).join('');
-
-  details.hidden = false;
-  const coverage = result.coverageAudit?.summary;
-  const freshness = result.matchCenter?.dataFreshness || {};
-  const sourceCounts = Object.values(freshness).reduce((acc, x) => {
-    const key = x?.source || 'other';
-    acc[key] = Number(acc[key] || 0) + 1;
-    return acc;
-  }, {});
-  details.innerHTML = `
-    <div class="expanded-gate-metrics">
-      <div><span>Тариф</span><strong>${escapeHtml(planLabel(result.transition?.plan || '—'))}</strong></div>
-      <div><span>Покрытие</span><strong>${coverage ? `${Number(coverage.score || 0)}%` : '—'}</strong></div>
-      <div><span>Повтор из сохранённых данных</span><strong>${result.cacheVerification?.cached ? 'Да' : result.blocked ? '—' : 'Проверить'}</strong></div>
-      <div><span>Расход за день</span><strong>${Number.isFinite(Number(result.requestCost?.observedDailyDelta)) ? Number(result.requestCost.observedDailyDelta) : '—'}</strong></div>
-    </div>
-    ${result.matchCenter?.fixture ? `<div class="expanded-gate-fixture">
-      <strong>${escapeHtml(result.matchCenter.fixture.home?.name || '')} — ${escapeHtml(result.matchCenter.fixture.away?.name || '')}</strong>
-      <span>${escapeHtml(technicalStateLabel(result.matchCenter.mode || 'waiting'))} · первый ответ ${Number(result.matchCenter.firstResponseMs || 0)} мс · повтор из сохранённых данных ${Number(result.cacheVerification?.secondResponseMs || 0)} мс</span>
-    </div>` : ''}
-    ${Object.keys(sourceCounts).length ? `<div class="expanded-gate-sources">${Object.entries(sourceCounts).map(([key,value]) => `<span>${escapeHtml(freshnessSourceLabel(key))} <b>${Number(value)}</b></span>`).join('')}</div>` : ''}
-    <p class="tiny">${escapeHtml(humanizeTechnicalText(result.note || ''))}</p>`;
-}
-
-async function runProviderE2E(fixtureId) {
-  if (!isAdmin() || state.providerE2ELoading || state.providerAuditLoading) return;
-  const id = Number(fixtureId || $('providerAuditFixtureId')?.value || 0);
-  if (!id) { toast('Укажите номер матча'); return; }
-  if ($('providerAuditFixtureId')) $('providerAuditFixtureId').value = String(id);
-
-  state.providerE2ELoading = true;
-  renderExpandedDataReleaseGate();
-  try {
-    const data = await api(`/api/provider/e2e-validation?fixtureId=${id}`, {
-      retry: false,
-      dedupe: false,
-      timeoutMs: 60000,
+let adminProviderModule = null;
+let adminProviderModulePromise = null;
+async function ensureAdminProviderModule() {
+  if (!isAdmin()) return null;
+  if (adminProviderModule) return adminProviderModule;
+  if (!adminProviderModulePromise) {
+    adminProviderModulePromise = import('./modules/admin-provider.js').then(({ createAdminProviderModule }) => {
+      adminProviderModule = createAdminProviderModule({
+        state, $, isAdmin, humanizeTechnicalText, escapeHtml, planLabel, dateTime,
+        technicalStateLabel, freshnessSourceLabel, toast, api, renderAdminOverview,
+      });
+      return adminProviderModule;
     });
-    state.providerE2E = data;
-    state.provider = data.provider || state.provider;
-    state.providerTransition = data.transition || state.providerTransition;
-    state.providerBudget = data.budget || state.providerBudget;
-    if (data.coverageAudit) state.providerAudit = { ...data.coverageAudit, fixture: data.coverageAudit.fixture || state.providerAudit?.fixture };
-    toast(data.status?.ready ? 'Сквозная проверка расширенных данных пройдена' : (data.status?.label || 'Сквозная проверка завершена'));
-  } catch (e) {
-    toast(e.message);
-  } finally {
-    state.providerE2ELoading = false;
-    renderProvider();
   }
+  return adminProviderModulePromise;
 }
-
-function renderProvider() {
-  if (!isAdmin()) return;
-  const p = state.provider || {};
-  if (!$('providerPlan')) return;
-  $('providerPlan').textContent = p.plan && p.plan !== 'UNKNOWN' ? planLabel(p.plan) : 'Определяется';
-  $('providerDaily').textContent = Number.isFinite(Number(p.dailyRemaining)) && Number.isFinite(Number(p.dailyLimit))
-    ? `${p.dailyRemaining} / ${p.dailyLimit}` : '—';
-  $('providerMinute').textContent = Number.isFinite(Number(p.minuteRemaining)) && Number.isFinite(Number(p.minuteLimit))
-    ? `${p.minuteRemaining} / ${p.minuteLimit}` : '—';
-  $('providerLiveOdds').textContent = p.liveOddsReady ? 'Авто · расширенный режим' : 'Экономный режим';
-  if ($('providerPlayerStats')) $('providerPlayerStats').textContent = p.playerStatsReady ? 'Авто · расширенный' : 'По требованию';
-  if ($('providerOddsMovement')) $('providerOddsMovement').textContent = p.oddsMovementReady ? 'История включена' : 'Экономный режим';
-  renderProviderAudit();
-  renderExpandedDataReleaseGate();
-  renderAdminOverview();
-}
-
-async function loadProvider() {
-  if (!isAdmin()) return;
-  try {
-    const data = await api('/api/provider');
-    state.provider = data.provider || state.provider;
-    state.providerTransition = data.transition || state.providerTransition;
-    state.providerBudget = data.budget || state.providerBudget;
-    state.providerAudit = data.lastAudit || state.providerAudit;
-    state.providerE2E = data.lastE2E || state.providerE2E;
-    state.providerLoaded = true;
-    renderProvider();
-  } catch {}
-}
-
-async function probeProvider() {
-  if (!isAdmin() || state.providerAuditLoading) return;
-  state.providerAuditLoading = true;
-  renderProviderAudit();
-  try {
-    const data = await api('/api/provider/probe?refresh=1', { retry: false, dedupe: false });
-    state.provider = data.provider || state.provider;
-    state.providerTransition = data.transition || state.providerTransition;
-    try {
-      const budgetData = await api('/api/provider/budget', { retry: false });
-      state.providerBudget = budgetData.budget || state.providerBudget;
-    } catch {}
-    toast(data.probe?.ok ? 'Тариф и квоты обновлены' : (data.probe?.note || 'Проверка тарифа завершена'));
-  } catch (e) {
-    toast(e.message);
-  } finally {
-    state.providerAuditLoading = false;
-    renderProvider();
-  }
-}
-
-async function runProviderCoverageAudit(fixtureId, force = true) {
-  if (!isAdmin() || state.providerAuditLoading) return;
-  const id = Number(fixtureId || $('providerAuditFixtureId')?.value || 0);
-  if (!id) { toast('Укажите номер матча'); return; }
-  if ($('providerAuditFixtureId')) $('providerAuditFixtureId').value = String(id);
-  state.providerAuditLoading = true;
-  renderProviderAudit();
-  try {
-    const data = await api(`/api/provider/coverage-audit?fixtureId=${id}${force ? '&refresh=1' : ''}`, {
-      retry: false,
-      dedupe: false,
-      timeoutMs: 30000,
-    });
-    state.providerAudit = data;
-    state.provider = data.provider || state.provider;
-    state.providerTransition = data.transition || state.providerTransition;
-    try {
-      const budgetData = await api('/api/provider/budget', { retry: false });
-      state.providerBudget = budgetData.budget || state.providerBudget;
-    } catch {}
-    toast(data.blocked ? 'Защита не дала потратить лишнюю квоту' : 'Проверка покрытия завершена');
-  } catch (e) {
-    toast(e.message);
-  } finally {
-    state.providerAuditLoading = false;
-    renderProvider();
-  }
-}
+function renderProvider() { adminProviderModule?.renderProvider(); }
+function renderProviderAudit() { adminProviderModule?.renderProviderAudit(); }
+function renderExpandedDataReleaseGate() { adminProviderModule?.renderExpandedDataReleaseGate(); }
+async function loadProvider(...args) { const m = await ensureAdminProviderModule(); return m?.loadProvider(...args); }
+async function probeProvider(...args) { const m = await ensureAdminProviderModule(); return m?.probeProvider(...args); }
+async function runProviderCoverageAudit(...args) { const m = await ensureAdminProviderModule(); return m?.runProviderCoverageAudit(...args); }
+async function runProviderE2E(...args) { const m = await ensureAdminProviderModule(); return m?.runProviderE2E(...args); }
 
 async function loadFavorites() {
   if (state.favoritesLoading) return;
