@@ -15,7 +15,9 @@ function block(source,start,end){
 
 test('access-control helper cannot reopen production when legacy flag is false or missing',()=>{
   const access=readFileSync(new URL('../src/access-control.js',import.meta.url),'utf8');
-  const decision=block(access,'export function closedBetaAccessDecision','}');
+  const start=access.indexOf('export function closedBetaAccessDecision');
+  assert.notEqual(start,-1);
+  const decision=access.slice(start);
   assert.doesNotMatch(decision,/if \(!cfg\.betaAccessEnabled\)/);
   assert.match(decision,/allowed: betaParticipant/);
 });
