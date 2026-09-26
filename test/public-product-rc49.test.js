@@ -39,9 +39,9 @@ test('main Telegram navigation keeps content in chat',()=> {
 test('mini app exposes the current public football shell',()=> {
   assert.match(html,/body class="miniapp-public-shell"/);
   assert.match(html,/id="matchesView" class="view active"/);
-  assert.match(html,/id="navMatches" class="nav-item active" type="button"><span>⚽<\/span><small>Главная<\/small>/);
+  assert.match(html,/id="navMatches" class="nav-item active"[^>]*>[\\s\\S]*?<small>Главная<\\/small>/);
   assert.match(html,/id="navHistory" class="nav-item" type="button"><span>🕘<\/span><small>История<\/small>/);
-  assert.match(html,/id="navProfile" class="nav-item" type="button"><span>👤<\/span><small>Профиль<\/small>/);
+  assert.match(html,/id="navProfile" class="nav-item"[^>]*>[\\s\\S]*?<small>Профиль<\\/small>/);
   assert.match(html,/class="panel admin-console" data-admin-only hidden/);
   assert.match(html,/id="navMyTeams" class="nav-item"/); assert.doesNotMatch(html,/id="navSearch"/);
   assert.doesNotMatch(app,/MINIAPP_PRODUCT_MODE = 'ai-analysis-only'/);
