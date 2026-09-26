@@ -16,7 +16,7 @@ function functionBody(name, nextName) {
 test('public profile remains available to non-admin users while admin controls stay gated', () => {
   assert.doesNotMatch(app, /profileBtn'\)\.hidden=!admin/);
   assert.doesNotMatch(app, /navProfile'\)\.hidden=!admin/);
-  assert.match(app, /profileView:\s*\['Профиль',\s*'Оформление, избранное и настройки'\]/);
+  assert.match(app, /profileView:\s*\['Профиль',\s*'Команды, напоминания и настройки'\]/);
   assert.match(html, /id="profileBtn"[^>]*aria-label="Открыть профиль"/);
   assert.match(html, /id="navProfile"[^>]*><span>👤<\/span><small>Профиль<\/small>/);
   assert.match(html, /class="panel admin-console" data-admin-only hidden/);
