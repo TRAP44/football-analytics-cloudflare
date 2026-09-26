@@ -57,7 +57,7 @@ export function relativeAge(iso) {
   return `${days} дн. назад`;
 }
 
-const PHASE5_SESSION_KEY = 'football-analytics:phase5-session:v1';
+const PHASE5_SESSION_KEY = 'football-analytics:phase5-session:v2';
 
 export function phase5SessionToken(scope = globalThis) {
   try {
