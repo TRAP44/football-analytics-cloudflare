@@ -60,3 +60,59 @@ TTL username cache остаётся 1440 минут, но теперь изол�
 18. Проверить production smoke, release readiness, webhook status и отсутствие secret/token в логах.
 19. После успешного smoke не удалять пользовательские данные и не выполнять Supabase migration.
 20. Старого `@MANAGERPLAYER_BOT` отключать/перенаправлять только отдельным решением после подтверждённого периода стабильности нового MatchRadar AI bot.
+
+## Target-specific cutover addendum
+
+Целевой новый primary bot: @MatchRadarAIBot.
+Текущий production primary bot до cutover: @MANAGERPLAYER_BOT.
+
+Runtime не хардкодит новый username. После будущей замены TELEGRAM_BOT_TOKEN первый lookup нового identity namespace обязан вызвать getMe; ожидаемый username — MatchRadarAIBot. Fixture deep-link, /api/share-link, Telegram share card и channel publisher CTA используют общий fixtureTelegramDeepLink и поэтому автоматически переключатся на новый username.
+
+### Exact cutover checklist
+
+1. В BotFather проверить @MatchRadarAIBot: display name MatchRadar AI, username, avatar, description и short description.
+2. Получить новый bot token и хранить его только как production secret. Raw token не помещать в Git, PR, issue, документы или логи.
+3. До production cutover выполнить getMe новым token и проверить is_bot=true и username=MatchRadarAIBot.
+4. Зафиксировать текущий production Mini App origin и URL https://<production-origin>/telegram/webhook.
+5. Настроить Main Mini App/Menu Button @MatchRadarAIBot на тот же production Mini App URL.
+6. TELEGRAM_WEBHOOK_SECRET по умолчанию не менять. Rotation делать только при security-причине.
+7. Если rotation нужна, подготовить новое значение в secret manager и использовать одно и то же значение в production TELEGRAM_WEBHOOK_SECRET и Telegram setWebhook.secret_token. Не логировать secret.
+8. Установить webhook нового bot на существующий endpoint /telegram/webhook с выбранным secret_token. Старого @MANAGERPLAYER_BOT пока не отключать.
+9. Выполнить getWebhookInfo новым token: URL должен точно совпадать с production /telegram/webhook, last_error_message не должен содержать критическую ошибку.
+10. Только после этих проверок заменить production TELEGRAM_BOT_TOKEN на token @MatchRadarAIBot. Publisher token не менять.
+11. Если выполнялась rotation webhook secret, одновременно обновить production TELEGRAM_WEBHOOK_SECRET. Worker и Telegram не должны иметь разные значения.
+12. Запустить штатный production deploy с сохранением остальных vars/secrets.
+13. Проверить getMe через current primary identity: username должен быть MatchRadarAIBot.
+14. Проверить getWebhookInfo после deploy.
+15. Проверить /start без payload и /start с fixture attribution payload.
+16. Открыть Main Mini App из @MatchRadarAIBot и проверить Telegram initData.
+17. InitData нового bot должен проходить current primary-token validation; initData старого token после cutover не должен проходить.
+18. Проверить GET /api/me: тот же Telegram user ID, прежние favorites, reminders, preferences и корректный admin flag.
+19. Для admin Telegram ID проверить защищенный admin endpoint/UI; admin access должен сохраниться по Telegram user ID.
+20. Проверить fixture deep-link: URL должен начинаться с https://t.me/MatchRadarAIBot?start= и не содержать MANAGERPLAYER_BOT.
+21. Проверить /api/share-link и Telegram share card — они должны вести на @MatchRadarAIBot.
+22. Выполнить channel publisher dry-run: CTA должен вести на @MatchRadarAIBot, а отправитель остается отдельным Publisher Bot.
+23. Проверить reminders существующего пользователя: запись остается keyed by telegram_id, сообщение приходит от нового primary bot.
+24. Проверить history/favorites/preferences без миграции данных.
+25. Billing endpoints при disabled monetization должны оставаться fail-closed; платежи не включать.
+26. Проверить Release Readiness, /health, production smoke и отсутствие raw token/secret в логах.
+27. Старого @MANAGERPLAYER_BOT не удалять и не отзывать сразу после cutover.
+
+### Rollback procedure
+
+1. При проблемах остановить дальнейшие изменения; Publisher Bot и Telegram channel не трогать.
+2. Вернуть production TELEGRAM_BOT_TOKEN на ранее сохраненный secret @MANAGERPLAYER_BOT.
+3. Если TELEGRAM_WEBHOOK_SECRET не ротировался — оставить его без изменений.
+4. Если secret ротировался, предпочтительно оставить новый secret и переустановить webhook старого bot с тем же secret_token; альтернативно восстановить старый secret одновременно и в Worker, и в Telegram webhook.
+5. Переустановить webhook @MANAGERPLAYER_BOT на тот же /telegram/webhook.
+6. Выполнить production deploy с восстановленным primary token/secret.
+7. Проверить getMe: current primary username снова MANAGERPLAYER_BOT.
+8. Проверить getWebhookInfo, /start, Main Mini App, Telegram initData и GET /api/me.
+9. Проверить fixture/share deep-link: identity-aware v2 cache должен автоматически использовать namespace старого token; ручная очистка cache не требуется.
+10. Проверить reminders и admin access по тем же Telegram user IDs.
+11. Выполнить production smoke/readiness.
+12. @MatchRadarAIBot не удалять; повторный cutover выполнять отдельным change window после root-cause fix.
+
+### Stop point
+
+На preparation stage не выполняются: замена production TELEGRAM_BOT_TOKEN, rotation TELEGRAM_WEBHOOK_SECRET, ручной setWebhook нового bot или отключение @MANAGERPLAYER_BOT.
