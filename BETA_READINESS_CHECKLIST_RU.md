@@ -143,9 +143,9 @@ Privacy contract:
 - [x] Post-deploy smoke: 25/25.
 - [x] Deploy re-verification: 799 tests passed, 0 failed.
 - [x] Latest provider evidence for the unchanged `6.120.0-rc144` release: FREE; daily 97/100 remaining; minute 9/10 remaining; cooldown=false; captured 11:41:13 UTC.
-- [x] Latest server-side configuration evidence (11:41:13 UTC): strict access effective=true даже при raw `BETA_ACCESS_ENABLED=missing`.
-- [ ] Operational env reconciliation: выставить `BETA_ACCESS_ENABLED=true`.
-- [ ] Beta allowlist reconciliation: сейчас `betaAllowlistCount=0`; требуются реальные Beta-01/Beta-02, overlap с admin должен остаться 0.
+- [x] Историческое evidence до исправления #100 (11:41:13 UTC): strict access был effective=true при raw `BETA_ACCESS_ENABLED=missing`; это поведение заменено публичным default-контрактом.
+- [ ] Production reconciliation: оставить `BETA_ACCESS_ENABLED=false` или удалить binding для публичного normal-user режима; `true` использовать только для временной strict beta.
+- [ ] Отдельный strict-beta regression: при `BETA_ACCESS_ENABLED=true` allowlisted non-admin проходит, non-allowlisted блокируется, admin authorization остаётся отдельным.
 - [ ] Новый denied non-admin post-deploy smoke ещё не зафиксирован в `CLOSED_BETA_ACCESS_DENIED`.
 - [ ] Telegram `getWebhookInfo`, два реальных beta journey smoke и LIVE protocol остаются field checks.
 
@@ -159,4 +159,4 @@ Privacy contract:
 - [ ] Реальный LIVE validation — требуется идущий матч.
 - [x] Свежие API-Football quota headers подтверждены controlled production probe: FREE, daily 97/100, minute 9/10, cooldown=false.
 - [ ] Telegram `getWebhookInfo` — требуется доверенная среда с bot token.
-- [ ] Beta-01/Beta-02 и feedback channel — требуется фактическое назначение владельцем.
+- [ ] Для публичного запуска ручное назначение Beta-01/Beta-02 не требуется; нужен smoke новым валидированным non-admin Telegram-аккаунтом.
