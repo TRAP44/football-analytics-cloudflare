@@ -18,7 +18,7 @@ function block(source,start,end){
 
 test('startup is brand-only and contains no release or internal identifiers',()=>{
   const boot=block(html,'<div id="bootGate"','<div class="app-shell">');
-  assert.match(boot,/FutLens AI/);
+  assert.match(boot,/MatchRadar/);
   assert.match(boot,/Понимай матч глубже\./);
   assert.match(boot,/Загружаем матчи/);
   assert.doesNotMatch(boot,/bootVersion|версия|RC\d|release|build|provider|runtime|telemetry|api contract/i);
