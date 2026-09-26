@@ -201,6 +201,13 @@ function boolEnv(value, fallback = false) {
   return String(value).toLowerCase() === 'true';
 }
 
+function boolEnvState(value) {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (!raw) return 'missing';
+  if (raw === 'true' || raw === 'false') return raw;
+  return 'invalid';
+}
+
 function intEnv(value, fallback) {
   const n = Number(value);
   return Number.isFinite(n) ? Math.max(1, Math.floor(n)) : fallback;
@@ -217,7 +224,10 @@ function config(env) {
     webhookSecret: env.TELEGRAM_WEBHOOK_SECRET || '',
     adminTelegramIds: telegramIdList(env.ADMIN_TELEGRAM_IDS),
     betaTelegramIds: telegramIdList(env.BETA_TELEGRAM_IDS),
-    betaAccessEnabled: boolEnv(env.BETA_ACCESS_ENABLED, false),
+    // Closed beta is fail-closed in this release. Keep the raw env state only
+    // as production evidence so a missing/false binding cannot open user APIs.
+    betaAccessConfigured: boolEnvState(env.BETA_ACCESS_ENABLED),
+    betaAccessEnabled: true,
     supabaseUrl: String(env.SUPABASE_URL || '').replace(/\/$/, ''),
     supabaseKey: env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY || '',
     cacheMinutes: intEnv(env.CACHE_MINUTES, 20),
@@ -12620,6 +12630,74 @@ function updateProviderFromHeaders(response) {
   };
 }
 
+const PROVIDER_QUOTA_SHARED_CACHE_KEY = 'provider-state:api-football:quota:v1';
+const PROVIDER_COOLDOWN_SHARED_CACHE_KEY = 'provider-state:api-football:cooldown:v1';
+
+function completeProviderQuotaSnapshot(value = {}) {
+  return String(value?.plan || 'UNKNOWN') !== 'UNKNOWN'
+    && [value?.dailyLimit, value?.dailyRemaining, value?.minuteLimit, value?.minuteRemaining]
+      .every(item => Number.isFinite(Number(item)));
+}
+
+async function loadSharedProviderState(cfg) {
+  if (!hasSupabase(cfg)) return;
+  const [quota, cooldown] = await Promise.all([
+    getCache(PROVIDER_QUOTA_SHARED_CACHE_KEY, cfg).catch(() => null),
+    getCache(PROVIDER_COOLDOWN_SHARED_CACHE_KEY, cfg).catch(() => null),
+  ]);
+
+  if (quota && completeProviderQuotaSnapshot(quota)) {
+    const sharedAt = Date.parse(quota.updatedAt || '');
+    const localAt = Date.parse(memory.provider?.updatedAt || '');
+    if (!Number.isFinite(localAt) || (Number.isFinite(sharedAt) && sharedAt >= localAt)) {
+      memory.provider = {
+        ...memory.provider,
+        name: 'API-Football',
+        plan: String(quota.plan),
+        dailyLimit: Number(quota.dailyLimit),
+        dailyRemaining: Number(quota.dailyRemaining),
+        minuteLimit: Number(quota.minuteLimit),
+        minuteRemaining: Number(quota.minuteRemaining),
+        updatedAt: quota.updatedAt || new Date().toISOString(),
+      };
+    }
+  }
+
+  const sharedUntil = Date.parse(cooldown?.cooldownUntil || '');
+  const localUntil = Date.parse(memory.provider?.cooldownUntil || '');
+  if (Number.isFinite(sharedUntil) && sharedUntil > Date.now() && (!Number.isFinite(localUntil) || sharedUntil > localUntil)) {
+    memory.provider.cooldownUntil = cooldown.cooldownUntil;
+    memory.provider.lastError = cooldown.reason || memory.provider.lastError || 'rate_limit';
+  }
+}
+
+async function persistSharedProviderQuota(cfg) {
+  const p = memory.provider || {};
+  if (!completeProviderQuotaSnapshot(p)) return;
+  await setCache(PROVIDER_QUOTA_SHARED_CACHE_KEY, 0, {
+    provider: 'api-football',
+    plan: String(p.plan),
+    dailyLimit: Number(p.dailyLimit),
+    dailyRemaining: Number(p.dailyRemaining),
+    minuteLimit: Number(p.minuteLimit),
+    minuteRemaining: Number(p.minuteRemaining),
+    updatedAt: p.updatedAt || new Date().toISOString(),
+  }, cfg, 30);
+}
+
+async function persistSharedProviderCooldown(cfg, retryAfter, reason = 'rate_limit') {
+  const seconds = Math.max(1, Number(retryAfter || 60));
+  const cooldownUntil = new Date(Date.now() + seconds * 1000).toISOString();
+  memory.provider.cooldownUntil = cooldownUntil;
+  memory.provider.lastError = reason || 'rate_limit';
+  await setCache(PROVIDER_COOLDOWN_SHARED_CACHE_KEY, 0, {
+    provider: 'api-football',
+    cooldownUntil,
+    reason: String(reason || 'rate_limit').slice(0, 80),
+    updatedAt: new Date().toISOString(),
+  }, cfg, Math.max(1 / 6, seconds / 60));
+}
+
 function providerQuotaEvidence(cfg) {
   const p=memory.provider || {};
   const raw=[p.dailyLimit,p.dailyRemaining,p.minuteLimit,p.minuteRemaining];
@@ -13888,7 +13966,12 @@ function distributedProviderMinuteLimit() {
   const plan=String(memory.provider?.plan || 'UNKNOWN').toUpperCase();
   const expected=PROVIDER_PLAN_LIMITS[plan]?.minute || Number(memory.provider?.minuteLimit) || PROVIDER_PLAN_LIMITS.FREE.minute;
   const floors=PROVIDER_BUDGET_FLOORS[plan] || PROVIDER_BUDGET_FLOORS.FREE;
-  return Math.max(1, Math.floor(Number(expected) - Number(floors.minuteReserve || 1)));
+  const rawBudget=Math.max(1, Math.floor(Number(expected) - Number(floors.minuteReserve || 1)));
+  // The Supabase guard uses aligned fixed-minute buckets. On FREE/UNKNOWN,
+  // halve the usable budget so a burst straddling a minute boundary still
+  // remains below the provider's 10/min ceiling.
+  if (plan === 'FREE' || plan === 'UNKNOWN') return Math.max(1, Math.floor(rawBudget / 2));
+  return rawBudget;
 }
 
 async function claimDistributedProviderBudget(cfg) {
@@ -13918,6 +14001,7 @@ async function apiFootballNetwork(path, params, cfg, options = {}) {
     throw footballError('Ключ API-Football не настроен в Cloudflare.', 'FOOTBALL_CONFIG');
   }
 
+  await loadSharedProviderState(cfg);
   const cooldown = footballCooldownRemaining();
   if (cooldown > 0) {
     bumpTelemetry('quotaBlocks');
@@ -13927,7 +14011,7 @@ async function apiFootballNetwork(path, params, cfg, options = {}) {
     const ageSec = Math.max(0, Math.floor((Date.now() - Date.parse(memory.provider.updatedAt)) / 1000));
     const waitSec = Math.max(1, 60 - ageSec);
     if (waitSec > 0 && ageSec < 60) {
-      memory.provider.cooldownUntil = new Date(Date.now() + waitSec * 1000).toISOString();
+      await persistSharedProviderCooldown(cfg, waitSec, 'minute_remaining_zero').catch(() => null);
       bumpTelemetry('quotaBlocks');
       throw footballError(`Минутная квота API-Football исчерпана. Повторите примерно через ${waitSec} сек.`, 'FOOTBALL_COOLDOWN', waitSec);
     }
@@ -13936,7 +14020,7 @@ async function apiFootballNetwork(path, params, cfg, options = {}) {
   const distributedBudget=await claimDistributedProviderBudget(cfg);
   if (!distributedBudget.allowed) {
     const retryAfter=Math.max(1,Number(distributedBudget.retryAfter || 60));
-    memory.provider.cooldownUntil = new Date(Date.now() + retryAfter * 1000).toISOString();
+    await persistSharedProviderCooldown(cfg, retryAfter, 'distributed_rate_guard').catch(() => null);
     bumpTelemetry('quotaBlocks');
     throw footballError(`Глобальная минутная квота API-Football защищена. Повторите примерно через ${retryAfter} сек.`, 'FOOTBALL_COOLDOWN', retryAfter);
   }
@@ -13969,6 +14053,7 @@ async function apiFootballNetwork(path, params, cfg, options = {}) {
 
   const durationMs = Date.now() - startedAt;
   updateProviderFromHeaders(r);
+  await persistSharedProviderQuota(cfg).catch(() => null);
   providerQuotaEvidence(cfg);
   memory.provider.lastStatus = r.status;
   memory.provider.lastLatencyMs = durationMs;
@@ -13977,7 +14062,7 @@ async function apiFootballNetwork(path, params, cfg, options = {}) {
   if (r.status === 429) {
     const retryHeader = Number(r.headers.get('retry-after') || 0);
     const retryAfter = Number.isFinite(retryHeader) && retryHeader > 0 ? retryHeader : 65;
-    memory.provider.cooldownUntil = new Date(Date.now() + retryAfter * 1000).toISOString();
+    await persistSharedProviderCooldown(cfg, retryAfter, 'rate_limit').catch(() => null);
     memory.provider.lastError = 'rate_limit';
     bumpTelemetry('apiErrors');
     bumpTelemetry('rateLimits');
@@ -14004,7 +14089,7 @@ async function apiFootballNetwork(path, params, cfg, options = {}) {
     memory.provider.lastError = message.slice(0, 160);
     bumpTelemetry('apiErrors');
     if (/too many requests|rate.?limit|requests per minute/i.test(message)) {
-      memory.provider.cooldownUntil = new Date(Date.now() + 65_000).toISOString();
+      await persistSharedProviderCooldown(cfg, 65, 'rate_limit_body').catch(() => null);
       bumpTelemetry('rateLimits');
       await recordOpsEvent(cfg, {
         severity: 'warning', source: 'provider', eventType: 'rate_limit', code: 'FOOTBALL_RATE_LIMIT_BODY',
@@ -21959,7 +22044,125 @@ async function readRecentSupabaseAuthFailures(cfg, minutes = 5) {
   }
 }
 
+
+async function claimReleaseEvidenceLock(cfg, kind) {
+  if (!hasSupabase(cfg)) return false;
+  const key=`release-evidence:${APP_VERSION}:${String(kind || 'unknown').slice(0,40)}`;
+  const claimId=crypto.randomUUID();
+  const expiresAt=new Date(Date.now()+7*24*60*60_000).toISOString();
+  try {
+    const url=new URL(`${cfg.supabaseUrl}/rest/v1/analysis_cache`);
+    url.searchParams.set('on_conflict','cache_key');
+    const response=await fetchWithTimeout(url,{
+      method:'POST',
+      headers:supaHeaders(cfg,{Prefer:'resolution=ignore-duplicates,return=representation'}),
+      body:JSON.stringify([{
+        cache_key:key,
+        fixture_id:0,
+        payload:{state:'claimed',claimId,kind,release:APP_VERSION,claimedAt:new Date().toISOString()},
+        expires_at:expiresAt,
+        provider:'internal',
+        freshness_status:'fresh',
+      }]),
+    },7000,'Supabase release evidence lock');
+    if (!response.ok) return false;
+    const rows=await response.json().catch(()=>[]);
+    return Array.isArray(rows) && rows.length===1 && String(rows[0]?.payload?.claimId || '')===claimId;
+  } catch {
+    return false;
+  }
+}
+
+async function recordClosedBetaConfigurationEvidence(cfg) {
+  if (!await claimReleaseEvidenceLock(cfg,'beta-access')) return;
+  const rows=await supaSelectMany(cfg,'users',{}, {limit:50,order:'created_at.desc'}).catch(()=>[]);
+  const adminIds=new Set((cfg.adminTelegramIds || []).map(Number));
+  const betaIds=new Set((cfg.betaTelegramIds || []).map(Number));
+  const overlap=[...betaIds].filter(id=>adminIds.has(id)).length;
+  const newest=rows[0] || null;
+  const newestId=Number(newest?.telegram_id || 0);
+  const newestAdmin=Number.isSafeInteger(newestId) && adminIds.has(newestId);
+  const newestBeta=Number.isSafeInteger(newestId) && !newestAdmin && betaIds.has(newestId);
+  const nonAdmin=rows.filter(row=>!adminIds.has(Number(row?.telegram_id || 0)));
+  const outside=nonAdmin.filter(row=>!betaIds.has(Number(row?.telegram_id || 0)));
+
+  await recordOpsEvent(cfg,{
+    severity: cfg.betaAccessConfigured === 'true' ? 'info' : 'warning',
+    source:'access',
+    eventType:'closed_beta_configuration',
+    code:'BETA_ACCESS_CONFIG_CONFIRMED',
+    message:'Closed beta production configuration captured without exposing Telegram identifiers.',
+    endpoint:'production-config',
+    meta:{
+      betaAccessConfigured:String(cfg.betaAccessConfigured || 'missing'),
+      strictEffective:Boolean(cfg.betaAccessEnabled),
+      betaAllowlistCount:betaIds.size,
+      adminAllowlistCount:adminIds.size,
+      allowlistOverlapCount:overlap,
+      observedUsers:rows.length,
+      observedNonAdminUsers:nonAdmin.length,
+      observedNonAdminOutsideBeta:outside.length,
+      newestUserCreatedAt:newest?.created_at || null,
+      newestUserAdmin:Boolean(newestAdmin),
+      newestUserBetaAllowlisted:Boolean(newestBeta),
+    },
+  });
+}
+
+async function probeReleaseProviderQuotaEvidence(cfg) {
+  if (!cfg.apiFootballKey || !await claimReleaseEvidenceLock(cfg,'provider-quota')) return;
+  await loadSharedProviderState(cfg).catch(()=>null);
+  let outcome='success';
+  let errorCode='';
+  let retryAfter=0;
+  try {
+    await apiFootball('/status',{},cfg,{responseType:'any',transportRetries:0,timeoutMs:8000});
+  } catch (error) {
+    outcome=isFootballRateLimitError(error) ? 'rate_limited' : 'failed';
+    errorCode=String(error?.code || 'PROVIDER_PROBE_FAILED');
+    retryAfter=Number(error?.retryAfter || 0);
+  }
+  const snapshot=providerSnapshot();
+  await recordOpsEvent(cfg,{
+    severity: outcome === 'failed' ? 'warning' : 'info',
+    source:'provider',
+    eventType:'release_quota_probe',
+    code:'PROVIDER_RELEASE_QUOTA_PROBE',
+    message:'One controlled production provider request captured shared quota evidence for the release.',
+    endpoint:'/status',
+    meta:{
+      outcome,
+      errorCode,
+      retryAfter,
+      plan:String(snapshot.plan || 'UNKNOWN'),
+      dailyLimit:Number.isFinite(Number(snapshot.dailyLimit)) ? Number(snapshot.dailyLimit) : null,
+      dailyRemaining:Number.isFinite(Number(snapshot.dailyRemaining)) ? Number(snapshot.dailyRemaining) : null,
+      minuteLimit:Number.isFinite(Number(snapshot.minuteLimit)) ? Number(snapshot.minuteLimit) : null,
+      minuteRemaining:Number.isFinite(Number(snapshot.minuteRemaining)) ? Number(snapshot.minuteRemaining) : null,
+      cooldownActive:Boolean(snapshot.cooldownActive),
+      evidenceSource:'controlled_release_probe',
+    },
+  });
+}
+
+async function captureReleaseFieldEvidence(cfg) {
+  if (!hasSupabase(cfg)) return;
+  await Promise.allSettled([
+    recordClosedBetaConfigurationEvidence(cfg),
+    probeReleaseProviderQuotaEvidence(cfg),
+  ]);
+}
+
+function scheduleReleaseFieldEvidence(cfg) {
+  if (!hasSupabase(cfg)) return;
+  const task=captureReleaseFieldEvidence(cfg);
+  if (typeof cfg.waitUntil === 'function') cfg.waitUntil(task);
+  else void task;
+}
+
+
 async function readinessSnapshot(cfg) {
+  scheduleReleaseFieldEvidence(cfg);
   const [supabase,schema,security,authFailures]=await Promise.all([
     probeSupabaseConfirmed(cfg),
     probeSupabaseSchemaDriftConfirmed(cfg),
@@ -22463,6 +22666,22 @@ export default {
 
       const betaAccess = closedBetaAccessDecision(user, cfg);
       if (!betaAccess.allowed) {
+        await recordOpsEvent(cfg,{
+          severity:'warning',
+          source:'access',
+          eventType:'closed_beta_access',
+          code:'CLOSED_BETA_ACCESS_DENIED',
+          message:'Authenticated Telegram user was blocked before normal-user API routing.',
+          endpoint:url.pathname,
+          status:403,
+          meta:{
+            betaAccessConfigured:String(cfg.betaAccessConfigured || 'missing'),
+            strictEffective:Boolean(cfg.betaAccessEnabled),
+            betaParticipant:false,
+            betaAllowlistCount:Number(cfg.betaTelegramIds?.length || 0),
+            providerRequests:0,
+          },
+        }).catch(()=>null);
         return json({ error: 'Доступ к закрытой beta пока не выдан.', code: 'CLOSED_BETA_ACCESS_REQUIRED' }, 403);
       }
 

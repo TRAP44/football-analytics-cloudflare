@@ -96,6 +96,7 @@ const state = {
   versionMismatch: false,
   compatibilityBlocked: false,
   compatibilityReason: '',
+  closedBetaBlocked: false,
   startup: {
     startedAt: performance.now(),
     finishedAt: null,
@@ -877,6 +878,7 @@ async function runStartupSequence() {
 
   await loadRuntimeStatus(false);
   await loadProfile().catch(()=>null);
+  if (state.closedBetaBlocked) return false;
   renderProfile();
   applyRuntimeUi();
   const admin=isAdmin();
@@ -997,6 +999,14 @@ async function api(path, options = {}) {
           applyRuntimeUi();
         }
         if (!response.ok) {
+          if (response.status === 403 && String(data?.code || '') === 'CLOSED_BETA_ACCESS_REQUIRED') {
+            state.closedBetaBlocked = true;
+            showBootRecovery({
+              blocking: true,
+              title: 'Закрытая beta',
+              text: 'Этот Telegram-аккаунт пока не входит в список приглашённых тестировщиков.',
+            });
+          }
           const error = Object.assign(new Error(data.error || `HTTP ${response.status}`), {
             status: response.status,
             payload: data,
