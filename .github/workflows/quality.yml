@@ -24,5 +24,6 @@ jobs:
       - run: npm run lint
       - run: npm run check
       - run: npm test
+      - run: node scripts/bottom-nav-render-smoke.js
       - run: npm run verify:release
       - run: npm run verify:worker
