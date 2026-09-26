@@ -39,7 +39,8 @@ test('global search ignores stale responses and mobile navigation does not force
   assert.match(app, /requestSeq:\s*0/);
   assert.match(app, /seq !== state\.globalSearch\.requestSeq/);
   assert.match(app, /query !== String\(state\.globalSearch\.query \|\| ''\)\.trim\(\)/);
-  assert.match(app, /matchMedia\?\.\('\(pointer: fine\)'\)/);
+  assert.doesNotMatch(html, /id="navSearch"/);
+  assert.match(html, /id="homeSearchBtn"/);
 });
 
 test('small-screen controls retain usable touch targets and search input avoids iOS zoom', () => {
