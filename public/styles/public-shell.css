@@ -656,3 +656,34 @@ html {
     height: 42px;
   }
 }
+
+
+/* Phase 4 — Product UX Restructure */
+.miniapp-public-shell{overflow-x:hidden}
+.home-search-block{display:grid;gap:8px;margin:0 0 14px}
+.home-search-block .search-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
+.my-teams-list{display:grid;gap:12px}
+.my-teams-onboarding{display:grid;gap:8px}
+.my-teams-onboarding strong{font-size:17px;line-height:1.3}
+.my-teams-onboarding p{margin:0;color:var(--hint);line-height:1.45}
+.my-team-card{display:grid;gap:10px;min-width:0}
+.my-team-head,.my-team-match{width:100%;min-width:0;border:0;color:inherit;text-align:left;font:inherit}
+.my-team-head{display:grid;grid-template-columns:42px minmax(0,1fr) auto;gap:10px;align-items:center;background:transparent;padding:0;cursor:pointer}
+.my-team-head img,.my-team-head>.team-placeholder{width:42px;height:42px;object-fit:contain;display:grid;place-items:center}
+.my-team-head span{min-width:0;display:grid;gap:3px}
+.my-team-head strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.my-team-head small{color:var(--hint)}
+.my-team-head b{font-size:11px;white-space:nowrap}
+.my-team-match{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;padding:11px;border:1px solid var(--line);border-radius:13px;background:color-mix(in srgb,var(--surface-2) 82%,var(--surface));cursor:pointer}
+.my-team-match span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.my-team-match strong{white-space:nowrap}.my-team-match small{grid-column:1/-1;color:var(--hint)}
+@media(max-width:430px){
+  .home-search-block .search-row{grid-template-columns:1fr}
+  .home-search-block .global-search-btn{width:100%;min-height:44px}
+  .my-team-head{grid-template-columns:38px minmax(0,1fr)}
+  .my-team-head img,.my-team-head>.team-placeholder{width:38px;height:38px}
+  .my-team-head>b{grid-column:2}
+}
+@media(max-width:390px){.miniapp-public-shell .app-shell{max-width:100%}.my-team-match{grid-template-columns:1fr}.my-team-match strong{white-space:normal}}
+@media(max-width:375px){.miniapp-public-shell .bottom-nav small{font-size:9px}.miniapp-public-shell main{min-width:0}}
+@media(max-width:360px){.miniapp-public-shell .bottom-nav{gap:2px}.miniapp-public-shell .nav-item{min-width:0;padding-inline:2px}}
