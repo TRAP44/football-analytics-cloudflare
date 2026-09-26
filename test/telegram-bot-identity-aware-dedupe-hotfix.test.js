@@ -149,6 +149,6 @@ test('legacy keys do not block a migrated bot and persistent dedupe still works 
 
 test('dedupe implementation does not log or persist the raw primary bot token', () => {
   assert.doesNotMatch(identityModule,/console\.(?:log|info|warn|error)/);
-  assert.match(worker,/claimTelegramUpdate\(update,cfg\)/);
+  assert.match(transport,/claimTelegramUpdate\(update,cfg\)/);
   assert.doesNotMatch(worker,/telegramUpdateDedupeKey\([^)]*cfg\.botToken\.slice/);
 });
