@@ -137,5 +137,6 @@ jobs:
         run: |
           SMOKE_URL="${CONFIGURED_URL:-$DEPLOYMENT_URL}"
           node scripts/post-deploy-smoke.js "$SMOKE_URL" "${{ env.RELEASE_VERSION }}"
+          node scripts/bottom-nav-render-smoke.js "$SMOKE_URL"
           echo "### Cloudflare deploy verified" >> "$GITHUB_STEP_SUMMARY"
           echo "Release ${{ env.RELEASE_VERSION }} post-deploy smoke passed for the production Worker." >> "$GITHUB_STEP_SUMMARY"
