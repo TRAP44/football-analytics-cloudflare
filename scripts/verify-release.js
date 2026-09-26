@@ -6,7 +6,8 @@ const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync
 const app = fs.readFileSync('public/app.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const staticHeaders = fs.readFileSync('public/_headers', 'utf8');
-const styles = fs.readFileSync('public/styles.css', 'utf8');\nconst publicShellStyles = fs.readFileSync('public/styles/public-shell.css', 'utf8');
+const styles = fs.readFileSync('public/styles.css', 'utf8');
+const publicShellStyles = fs.readFileSync('public/styles/public-shell.css', 'utf8');
 const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml', 'utf8');
 const rollbackWorkflow = fs.readFileSync('.github/workflows/rollback-production.yml', 'utf8');
 const rollbackSmoke = fs.readFileSync('scripts/rollback-smoke.js', 'utf8');
@@ -207,6 +208,8 @@ if (!securityMigration.includes('revoke all privileges on all tables in schema p
 const defaultAclMigration = fs.readFileSync('supabase/migrations/supabase_migration_v6_11_1.sql', 'utf8');
 if (!defaultAclMigration.includes('application_owners')) failures.push('Missing application-owner default ACL audit');
 if (!defaultAclMigration.includes('backend_default_acl_contract')) failures.push('Missing default ACL security contract RPC');
+
+if (!publicShellStyles.includes('Bottom Navigation Visibility Hotfix') || !publicShellStyles.includes('grid-template-columns:repeat(4,minmax(0,1fr))')) failures.push('Bottom navigation final four-column cascade guard is missing');
 
 if (failures.length) {
   console.error(failures.join('\n'));
@@ -567,5 +570,3 @@ if (failures.length) {
   process.exit(1);
 }
 console.log(`RC109 Supabase Probe Confirmation Guard contracts verified for ${expected}.`);
-
-if (!publicShellStyles.includes('Bottom Navigation Visibility Hotfix') || !publicShellStyles.includes('grid-template-columns:repeat(4,minmax(0,1fr))')) failures.push('Bottom navigation final four-column cascade guard is missing');
