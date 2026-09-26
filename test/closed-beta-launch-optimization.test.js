@@ -68,13 +68,17 @@ test('provider probe persists only bounded quota facts for later launch evidence
   assert.doesNotMatch(probe,/apiFootballKey|x-apisports-key|TELEGRAM_BOT_TOKEN/);
 });
 
-test('beta admin UI shows launch blockers and the full evidence-based journey',()=>{
-  assert.match(app,/Beta-01\/Beta-02/);
-  assert.match(app,/Telegram webhook/);
-  assert.match(app,/API-Football quota/);
-  assert.match(app,/UI\/client errors/);
-  assert.match(app,/Нужно больше доказательств/);
-  assert.match(app,/полный путь запуск → поиск → найденный матч → матч → AI start → AI complete → история → повторный вход/);
+test('closed-beta launch evidence stays historical while primary admin UI shows Phase 5 public validation',()=>{
+  const legacy=block(worker,'async function apiBetaDashboard','async function readOpsEventsRange');
+  assert.match(legacy,/betaAssignments/);
+  assert.match(legacy,/telegramWebhook/);
+  assert.match(legacy,/providerQuota/);
+  const render=block(app,'function renderBetaDashboard','async function loadBetaDashboard');
+  assert.match(render,/Verified normal users/);
+  assert.match(render,/API-Football quota/);
+  assert.match(render,/Phase 5 status/);
+  assert.match(render,/COLLECT MORE EVIDENCE/);
+  assert.doesNotMatch(render,/Beta-01\/Beta-02/);
 });
 
 
