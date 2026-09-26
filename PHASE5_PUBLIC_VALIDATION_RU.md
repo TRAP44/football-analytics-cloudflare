@@ -57,7 +57,7 @@ LIVE не является глобальным блокером при отсу
 
 Dashboard вычисляет requests/session, requests/completed journey, cache-hit rate, AI requests/user и LIVE requests/active LIVE user. Capacity projection строится только из observed production usage и confirmed provider quota state; документационные лимиты сами по себе не являются evidence.
 
-Capacity decision и data coverage decision независимы.
+Capacity decision и data coverage decision независимы. Capacity-сигнал считается только из реальных verified sessions, observed network requests/session, cache behavior и подтверждённого quota state. Даже статус `CAPACITY REVIEW REQUIRED` не означает автоматический upgrade: смена тарифа/provider требует отдельного решения после проверки evidence.
 
 ## Coverage
 

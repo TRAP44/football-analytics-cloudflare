@@ -15419,13 +15419,38 @@ async function apiPhase5Dashboard(request,cfg) {
   const coverageDecision=coverage.samples<20
     ? 'COLLECT MORE EVIDENCE'
     : systematicMissing.length>=2 ? 'DATA COVERAGE REVIEW REQUIRED' : 'KEEP CURRENT PROVIDER';
-  const capacityDecision=!evidenceGate.requirements.sessions.pass || !quotaState.confirmed
+  const requestsPerSession=Number(provider.requestsPerSession);
+  const providerBehaviorObserved=Number.isFinite(requestsPerSession)
+    && (Number(provider.networkRequests || 0)>0 || Number(provider.cacheHits || 0)>0 || Number(provider.staleCacheHits || 0)>0);
+  const cacheBehaviorObserved=provider.cacheHitRatePct!==null
+    || Number(provider.staleCacheHits || 0)>0
+    || Number(provider.networkRequests || 0)>0;
+  const dailyHeadroomSessions=quotaState.confirmed && requestsPerSession>0
+    ? Math.floor(Math.max(0,Number(quotaState.dailyRemaining || 0))/requestsPerSession)
+    : null;
+  const typicalSessionExceedsMinuteLimit=Boolean(
+    quotaState.confirmed
+    && requestsPerSession>0
+    && Number(quotaState.minuteLimit || 0)>0
+    && requestsPerSession>Number(quotaState.minuteLimit)
+  );
+  const repeatedCapacityPressure=Number(provider.quotaBlocks || 0)>=2 || Number(provider.sharedCooldowns || 0)>=2;
+  const constrainedDailyHeadroom=dailyHeadroomSessions!==null && dailyHeadroomSessions<10;
+  const capacityEvidenceReady=Boolean(
+    evidenceGate.requirements.sessions.pass
+    && quotaState.confirmed
+    && providerBehaviorObserved
+    && cacheBehaviorObserved
+  );
+  const capacityDecision=!capacityEvidenceReady
     ? 'COLLECT MORE EVIDENCE'
-    : provider.blockedSessions>=2 ? 'CAPACITY UPGRADE REQUIRED' : 'KEEP CURRENT PROVIDER';
+    : repeatedCapacityPressure && (typicalSessionExceedsMinuteLimit || constrainedDailyHeadroom)
+      ? 'CAPACITY REVIEW REQUIRED'
+      : 'KEEP CURRENT PROVIDER';
   let status='COLLECT MORE EVIDENCE';
   if (evidenceGate.thresholdsMet) {
     if (repeatedProductBlocker) status='PRODUCT BLOCKER HOLD';
-    else if (capacityDecision==='CAPACITY UPGRADE REQUIRED') status='PROVIDER CAPACITY HOLD';
+    else if (capacityDecision==='CAPACITY REVIEW REQUIRED') status='PROVIDER CAPACITY REVIEW REQUIRED';
     else if (coverageDecision==='DATA COVERAGE REVIEW REQUIRED') status='DATA COVERAGE REVIEW REQUIRED';
     else status='PUBLIC VALIDATION HEALTHY';
   }
@@ -15456,7 +15481,7 @@ async function apiPhase5Dashboard(request,cfg) {
       metrics,abandonmentStage:journey.abandonment,journeyStages:journey.stages,
     },
     performance:timings,
-    provider:{...provider,quotaState,capacityDecision},
+    provider:{...provider,quotaState,capacityDecision,capacityInputs:{requestsPerSession:Number.isFinite(requestsPerSession)?requestsPerSession:null,cacheHitRatePct:provider.cacheHitRatePct,staleCacheHits:Number(provider.staleCacheHits || 0),dailyHeadroomSessions,typicalSessionExceedsMinuteLimit,repeatedCapacityPressure},upgradeAutomatic:false,decisionRule:'Capacity is evaluated from real verified sessions, observed network requests/session, cache behavior and confirmed quota. A review signal does not automatically upgrade the provider.'},
     coverage:{
       observations:Number(coverage.samples || 0),
       lineups:coverage.missing?.lineups || {samples:0,missing:0,missingPct:0},

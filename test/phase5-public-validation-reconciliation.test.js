@@ -83,6 +83,20 @@ test('provider cost is separated by product request kind and observed request be
   assert.match(worker,/coverageDecision/);
 });
 
+test('provider capacity decision uses observed usage and never auto-upgrades from plan size alone',()=>{
+  const start=worker.indexOf('async function apiPhase5Dashboard');
+  const end=worker.indexOf('async function apiBetaDashboard',start);
+  const dashboard=worker.slice(start,end);
+  assert.match(dashboard,/requestsPerSession/);
+  assert.match(dashboard,/cacheHitRatePct/);
+  assert.match(dashboard,/quotaState\.confirmed/);
+  assert.match(dashboard,/dailyHeadroomSessions/);
+  assert.match(dashboard,/repeatedCapacityPressure/);
+  assert.match(dashboard,/CAPACITY REVIEW REQUIRED/);
+  assert.match(dashboard,/upgradeAutomatic:false/);
+  assert.doesNotMatch(dashboard,/CAPACITY UPGRADE REQUIRED/);
+});
+
 test('closed-beta artifacts are historical rather than public readiness gates',()=>{
   assert.match(historical,/SUPERSEDED ДЛЯ ОСНОВНОГО PRODUCTION-VALIDATION С PHASE 5/);
   assert.match(phase5Doc,/Beta-01\/Beta-02/);
