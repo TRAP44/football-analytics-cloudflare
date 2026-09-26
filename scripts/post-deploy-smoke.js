@@ -347,7 +347,7 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
     throw new Error('Static application shell is missing X-Content-Type-Options: nosniff.');
   }
 
-  for (const path of ['/api/me', '/api/release-readiness', '/api/calibration-control', '/api/launch-funnel']) {
+  for (const path of ['/api/me', '/api/release-readiness', '/api/calibration-control', '/api/launch-funnel', '/api/admin/channel-publisher/test']) {
     const response = await request(fetchImpl, baseUrl, path);
     if (response.status !== 401) throw new Error(`${path} must reject missing Telegram auth with HTTP 401.`);
   }

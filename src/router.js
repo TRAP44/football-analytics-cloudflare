@@ -7,6 +7,7 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
     apiAnalyze,
     apiBetaDashboard,
     apiBetaFeedback,
+    apiChannelPublisherTest,
     apiPhase5Dashboard,
     apiBillingInvoice,
     apiBillingPlans,
@@ -64,6 +65,10 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
   if (request.method === 'GET' && url.pathname === '/api/beta-dashboard') {
     if (!isAdminUser(user, cfg)) return adminForbidden();
     return await apiBetaDashboard(request, cfg);
+  }
+  if (request.method === 'POST' && url.pathname === '/api/admin/channel-publisher/test') {
+    if (!isAdminUser(user, cfg)) return adminForbidden();
+    return await apiChannelPublisherTest(request, cfg, user);
   }
   if (request.method === 'GET' && url.pathname === '/api/phase5-dashboard') {
     if (!isAdminUser(user, cfg)) return adminForbidden();

@@ -1,5 +1,6 @@
 import { createTelegramWebhookHandler } from './telegram-transport.js';
 import { dispatchApiRoute } from './router.js';
+import { channelPublisherState, publishChannelMessage } from './channel-publisher.js';
 import {
   CALIBRATION_LIFECYCLE_RULES,
   calibrationProfileFingerprint,
@@ -224,6 +225,8 @@ function config(env) {
     theOddsApiKey: env.THE_ODDS_API_KEY || '',
     tavilyKey: env.TAVILY_KEY || '',
     botToken: env.TELEGRAM_BOT_TOKEN || '',
+    publisherBotToken: env.TELEGRAM_PUBLISHER_BOT_TOKEN || '',
+    telegramChannelId: env.TELEGRAM_CHANNEL_ID || '',
     webhookSecret: env.TELEGRAM_WEBHOOK_SECRET || '',
     adminTelegramIds: telegramIdList(env.ADMIN_TELEGRAM_IDS),
     betaTelegramIds: telegramIdList(env.BETA_TELEGRAM_IDS),
@@ -1417,6 +1420,7 @@ async function getRequestUser(request, cfg) {
   const requestUrl = new URL(request.url);
   const adminSensitive = requestUrl.pathname.startsWith('/api/runtime-controls')
     || requestUrl.pathname.startsWith('/api/provider/')
+    || requestUrl.pathname === '/api/admin/channel-publisher/test'
     || ['/api/diagnostics','/api/release-readiness','/api/production-readiness','/api/rc-regression','/api/release-monitor','/api/production-monitor','/api/beta-dashboard','/api/calibration-control','/api/model-remediation','/api/media-publisher-link'].includes(requestUrl.pathname);
   const mutation = !['GET','HEAD','OPTIONS'].includes(String(request.method || 'GET').toUpperCase());
   const initDataMaxAgeSeconds = adminSensitive ? 15 * 60 : mutation ? 2 * 60 * 60 : 24 * 60 * 60;
@@ -2584,6 +2588,72 @@ async function sendBotFixtureShareCard(request,cfg,userId,chatId,fixtureId) {
     ]},
   });
 }
+
+
+async function apiChannelPublisherTest(request,cfg,user) {
+  if (!isAdminUser(user,cfg)) return adminForbidden();
+  const body=await readJson(request);
+  const fixtureId=Number(body?.fixtureId || 0);
+  if (!Number.isSafeInteger(fixtureId) || fixtureId<=0) return json({error:'Укажите корректный fixture ID.'},400);
+  const text=String(body?.text || '').trim();
+  if (!text) return json({error:'Текст тестового поста обязателен.'},400);
+
+  const publisher=channelPublisherState(cfg);
+  const link=await fixtureTelegramDeepLink(cfg,fixtureId,{source:'channel',campaign:'publisher_mvp',content:'manual'});
+  const dryRun=body?.dryRun !== false;
+  const preview={
+    channelId:publisher.channelId || cfg.telegramChannelId || '',
+    fixtureId,
+    text,
+    cta:{text:'Открыть матч в MatchRadar',url:link.url},
+    publisher:{enabled:Boolean(publisher.enabled),reason:publisher.reason},
+  };
+
+  if (dryRun) return json({ok:true,dryRun:true,published:false,preview});
+
+  if (!publisher.enabled) {
+    return json({
+      ok:false,
+      published:false,
+      disabled:true,
+      code:'PUBLISHER_DISABLED',
+      reason:publisher.reason,
+    },503);
+  }
+
+  try {
+    const result=await publishChannelMessage({
+      cfg,
+      fixtureId,
+      text,
+      ctaUrl:link.url,
+      idempotencyKey:String(body?.idempotencyKey || '').trim(),
+    },{
+      claimIdempotency:(key,meta)=>claimChannelPublishIdempotency(key,meta,cfg),
+      completeIdempotency:(key,meta)=>completeChannelPublishIdempotency(key,meta,cfg),
+      releaseIdempotency:(key,meta)=>releaseChannelPublishIdempotency(key,meta,cfg),
+    });
+    return json({...result,dryRun:false,fixtureId,cta:preview.cta},result.ok?200:503);
+  } catch (error) {
+    void recordOpsEvent(cfg,{
+      severity:'error',
+      source:'channel_publisher',
+      eventType:'manual_publish',
+      code:String(error?.code || 'CHANNEL_PUBLISH_FAILED'),
+      message:error?.message || error,
+      endpoint:'/api/admin/channel-publisher/test',
+      status:502,
+      meta:{fixtureId},
+    }).catch(()=>null);
+    return json({
+      ok:false,
+      published:false,
+      code:String(error?.code || 'CHANNEL_PUBLISH_FAILED'),
+      error:'Не удалось отправить тестовый пост в Telegram-канал.',
+    },502);
+  }
+}
+
 
 function fixtureDeepLinkDrill() {
   const p=fixtureShareStartParam(123456,{source:'media',campaign:'launch',content:'sportnews'});
@@ -7729,6 +7799,106 @@ async function setCache(cacheKey, fixtureId, payload, cfg, minutes = cfg.cacheMi
     }).catch(() => {});
     // Cache persistence is an optimization. Do not fail a successful user request
     // only because the shared cache could not be written.
+  }
+}
+
+
+const CHANNEL_PUBLISH_IDEMPOTENCY_MINUTES = 7 * 24 * 60;
+
+async function claimChannelPublishIdempotency(cacheKey, meta = {}, cfg) {
+  const key=String(cacheKey || '').slice(0,160);
+  const fixtureId=Number(meta.fixtureId || 0);
+  if (!key.startsWith('telegram:channel-publish:v1:')) return {claimed:false,unavailable:true};
+  try {
+    const existing=await getCacheEntry(key,cfg,true);
+    if (existing && !existing.expired) {
+      return {
+        claimed:false,
+        duplicate:true,
+        inProgress:existing.payload?.state === 'publishing',
+        messageId:Number(existing.payload?.messageId || 0) || null,
+      };
+    }
+    if (existing?.expired) {
+      memory.cache.delete(key);
+      if (hasSupabase(cfg)) await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${key}`}).catch(()=>null);
+    }
+
+    const claimId=crypto.randomUUID();
+    const expiresAt=new Date(Date.now()+CHANNEL_PUBLISH_IDEMPOTENCY_MINUTES*60_000).toISOString();
+    const payload={
+      state:'publishing',
+      claimId,
+      fixtureId,
+      channelId:String(meta.channelId || '').slice(0,80),
+      claimedAt:new Date().toISOString(),
+      version:APP_VERSION,
+    };
+
+    if (!hasSupabase(cfg)) {
+      memory.cache.set(key,{payload,expiresAt:Date.parse(expiresAt)});
+      return {claimed:true,claimId,shared:false};
+    }
+
+    const url=new URL(`${cfg.supabaseUrl}/rest/v1/analysis_cache`);
+    url.searchParams.set('on_conflict','cache_key');
+    const response=await fetchWithTimeout(url,{
+      method:'POST',
+      headers:supaHeaders(cfg,{Prefer:'resolution=ignore-duplicates,return=representation'}),
+      body:JSON.stringify([{cache_key:key,fixture_id:fixtureId,payload,expires_at:expiresAt}]),
+    },7000,'Telegram channel publish idempotency');
+    if (!response.ok) throw new Error(`channel publisher idempotency HTTP ${response.status}`);
+    const rows=await response.json().catch(()=>[]);
+    if (Array.isArray(rows) && rows.length===1) {
+      memory.cache.set(key,{payload,expiresAt:Date.parse(expiresAt)});
+      return {claimed:true,claimId,shared:true};
+    }
+    const current=await getCacheEntry(key,cfg,true).catch(()=>null);
+    return {
+      claimed:false,
+      duplicate:true,
+      inProgress:current?.payload?.state === 'publishing',
+      messageId:Number(current?.payload?.messageId || 0) || null,
+      shared:true,
+    };
+  } catch (error) {
+    void recordOpsEvent(cfg,{
+      severity:'error',
+      source:'channel_publisher',
+      eventType:'idempotency',
+      code:'CHANNEL_PUBLISH_IDEMPOTENCY_UNAVAILABLE',
+      message:error?.message || error,
+      endpoint:'/api/admin/channel-publisher/test',
+      meta:{fixtureId},
+    }).catch(()=>null);
+    return {claimed:false,unavailable:true};
+  }
+}
+
+async function completeChannelPublishIdempotency(cacheKey, meta = {}, cfg) {
+  const key=String(cacheKey || '').slice(0,160);
+  await setCache(key,Number(meta.fixtureId || 0),{
+    state:'sent',
+    claimId:String(meta.claimId || ''),
+    fixtureId:Number(meta.fixtureId || 0),
+    channelId:String(meta.channelId || '').slice(0,80),
+    messageId:Number(meta.messageId || 0) || null,
+    sentAt:new Date().toISOString(),
+    version:APP_VERSION,
+  },cfg,CHANNEL_PUBLISH_IDEMPOTENCY_MINUTES);
+}
+
+async function releaseChannelPublishIdempotency(cacheKey, meta = {}, cfg) {
+  const key=String(cacheKey || '').slice(0,160);
+  const claimId=String(meta.claimId || '');
+  if (!key || !claimId) return;
+  try {
+    const current=await getCacheEntry(key,cfg,true).catch(()=>null);
+    if (String(current?.payload?.claimId || '')!==claimId || current?.payload?.state!=='publishing') return;
+    memory.cache.delete(key);
+    if (hasSupabase(cfg)) await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${key}`});
+  } catch {
+    // A retained claim is safer than a duplicate channel post; TTL clears it later.
   }
 }
 
@@ -22602,6 +22772,7 @@ const API_ROUTE_DEPS = Object.freeze({
   apiAnalyze,
   apiBetaDashboard,
   apiBetaFeedback,
+  apiChannelPublisherTest,
   apiPhase5Dashboard,
   apiBillingInvoice,
   apiBillingPlans,
