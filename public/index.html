@@ -362,7 +362,7 @@
         <section class="panel beta-feedback-panel">
           <div class="section-head profile-section-head">
             <div>
-              <h2>🧪 Closed beta</h2>
+              <h2>💬 Сообщить о проблеме</h2>
               <p>Если что-то работает непонятно или нестабильно, сообщите об этом без отправки лишних данных.</p>
             </div>
             <button id="betaFeedbackOpenBtn" class="secondary-btn beta-feedback-open" type="button" aria-expanded="false">Сообщить о проблеме</button>
@@ -382,16 +382,16 @@
               </label>
               <label>Важность
                 <select id="betaFeedbackSeverity">
-                  <option value="MAJOR">MAJOR — нестабильно или непонятно</option>
-                  <option value="BLOCKER">BLOCKER — основной функцией невозможно пользоваться</option>
-                  <option value="MINOR">MINOR — визуальный или некритичный UX-недочёт</option>
+                  <option value="MAJOR">Работает нестабильно или непонятно</option>
+                  <option value="BLOCKER">Основной функцией невозможно пользоваться</option>
+                  <option value="MINOR">Визуальный или небольшой недочёт</option>
                 </select>
               </label>
             </div>
             <label class="beta-feedback-note">Что произошло
               <textarea id="betaFeedbackNote" maxlength="600" rows="4" placeholder="Опишите шаги и результат. Не указывайте пароли, токены и другие личные данные."></textarea>
             </label>
-            <p class="tiny beta-feedback-privacy"><strong>Что будет передано:</strong> выбранный раздел, важность и только текст, который вы введёте. К записи добавляется текущая версия сервера. Telegram используется для проверки сессии, но Telegram ID, поисковые запросы, введённые названия команд и технические логи к beta-сообщению не прикладываются и в Beta Dashboard не показываются.</p>
+            <p class="tiny beta-feedback-privacy"><strong>Что будет передано:</strong> выбранный раздел, важность и только текст, который вы введёте. К записи добавляется техническая версия сервера. Telegram используется для проверки сессии, но Telegram ID, поисковые запросы, введённые названия команд и технические логи к сообщению не прикладываются и пользователю не показываются.</p>
             <div class="beta-feedback-actions">
               <button id="betaFeedbackSendBtn" class="primary-setting-btn" type="button">Отправить</button>
               <button id="betaFeedbackCancelBtn" class="secondary-btn" type="button">Отмена</button>
