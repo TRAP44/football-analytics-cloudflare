@@ -253,12 +253,12 @@ function saveInterfacePreference(key, value) {
 }
 
 const VIEW_CHROME = {
-  matchesView: ['Главная', 'Ваш футбол — в одном месте'],
+  matchesView: ['Главная', 'Понимай матч глубже.'],
   searchView: ['Поиск', 'Найдите команду или матч'],
   tournamentView: ['Турнир', 'Матчи и таблица'],
   teamView: ['Команда', 'Матчи и данные клуба'],
-  analysisView: ['Матч', 'Прогноз AI и подробности'],
-  historyView: ['История', 'Ваши сохранённые разборы'],
+  analysisView: ['AI-центр матча', 'Вероятности, факторы и риски'],
+  historyView: ['История', 'Сохранённые AI-разборы'],
   profileView: ['Профиль', 'Команды, напоминания и настройки'],
 };
 
@@ -855,7 +855,7 @@ async function runStartupSequence() {
   if ($('bootContinueBtn')) $('bootContinueBtn').hidden = true;
   if ($('bootReloadBtn')) $('bootReloadBtn').hidden = true;
 
-  setBootStatus('FM AI', 'Загружаем матчи…', 12);
+  setBootStatus('FutLens AI', 'Загружаем матчи…', 12);
   const manifest = await loadAppManifest();
 
   if (state.compatibilityBlocked) {
@@ -867,7 +867,7 @@ async function runStartupSequence() {
     return false;
   }
 
-  setBootStatus('FM AI', 'Загружаем матчи…', 38);
+  setBootStatus('FutLens AI', 'Загружаем матчи…', 38);
 
   await loadRuntimeStatus(false);
   await loadProfile().catch(()=>null);
@@ -895,7 +895,7 @@ async function runStartupSequence() {
   applyLaunchIntent();
   if (!tg?.initDataUnsafe?.start_param) showView('matchesView');
   sendProductAction('open', 'matchesView');
-  setBootStatus('FM AI', 'Загружаем матчи…', 100);
+  setBootStatus('FutLens AI', 'Загружаем матчи…', 100);
   await new Promise(resolve => setTimeout(resolve, 120));
   hideBootGate();
 
@@ -4308,7 +4308,7 @@ function searchMatchCard(match) {
   const action = finished || live
     ? `<button class="search-match-action" type="button" data-search-center="${Number(match.fixtureId)}">${finished ? 'Итоги' : 'Центр матча'}</button>`
     : `<button class="search-match-action" type="button" data-search-fixture="${Number(match.fixtureId)}">Преданализ</button>`;
-  const primaryLabel=primary ? `<div class="search-match-primary"><b>⭐ ОСНОВНОЙ МАТЧ</b><span>${escapeHtml(match?.selection?.reason || state.globalSearch.matchDiscovery?.primaryReason || 'Основной выбор FM AI для анализа')}</span></div>` : '';
+  const primaryLabel=primary ? `<div class="search-match-primary"><b>⭐ ОСНОВНОЙ МАТЧ</b><span>${escapeHtml(match?.selection?.reason || state.globalSearch.matchDiscovery?.primaryReason || 'Основной выбор FutLens AI для анализа')}</span></div>` : '';
   return `<article class="search-match-card ${live ? 'is-live' : finished ? 'is-finished' : 'is-upcoming'} ${primary ? 'is-primary' : ''}">${primaryLabel}
     <div class="search-match-meta"><span>${escapeHtml(match.league || match.competition?.name || 'Матч')}</span><small>${escapeHtml(status)}</small></div>
     <div class="search-match-teams">
@@ -4854,7 +4854,7 @@ function matchCardHtml(m, { grouped = false } = {}) {
       ? `<button class="analyze-btn finished-btn" type="button" data-center="${Number(m.fixtureId)}">Итоги матча</button>`
       : aiHistory
         ? `<button class="analyze-btn analyzed-btn" type="button" data-history-analysis="${Number(m.fixtureId)}">Открыть AI-разбор</button>`
-        : `<button class="analyze-btn" type="button" data-fixture="${Number(m.fixtureId)}">AI-анализ</button>`;
+        : `<button class="analyze-btn" type="button" data-fixture="${Number(m.fixtureId)}">AI-разбор</button>`;
 
   const favoriteButton = team => `<button class="fav-star compact ${isFavorite(team?.id) ? 'active' : ''} ${state.favoriteMutations.has(Number(team?.id)) ? 'is-pending' : ''}" type="button" data-team-id="${Number(team?.id)}" data-team-name="${escapeHtml(team?.name || '')}" data-team-logo="${escapeHtml(team?.logo || '')}" aria-pressed="${isFavorite(team?.id) ? 'true' : 'false'}" aria-label="${isFavorite(team?.id) ? 'Удалить из избранного' : 'Добавить в избранное'}: ${escapeHtml(team?.name || '')}" ${state.favoriteMutations.has(Number(team?.id)) ? 'disabled' : ''}>${isFavorite(team?.id) ? '★' : '☆'}</button>`;
 
@@ -6091,6 +6091,7 @@ function renderMatchCenter(d) {
 
   $('analysis').innerHTML = `
     <section class="panel center-hero ${live ? 'is-live' : ''}">
+      <div class="center-brand-kicker">FutLens AI · Центр матча</div>
       <div class="center-hero-top">
         <span class="live-pill ${live ? 'active' : finished ? 'finished' : ''}">${statusText}</span>
         <span class="center-competition">${escapeHtml(m.league || '')}${m.round ? ` · ${escapeHtml(m.round)}` : ''}</span>
@@ -6130,6 +6131,10 @@ function renderMatchCenter(d) {
     ${d.stale ? `<section class="panel stale-panel"><strong>⚠️ Показан последний сохранённый снимок</strong><p>${escapeHtml(publicText(d.warning || 'Источник данных временно ограничил запросы.'))}</p></section>` : ''}
     ${d.note ? `<section class="panel center-note"><p class="tiny warning">${escapeHtml(publicText(d.note))}</p></section>` : ''}
 
+    ${live ? liveAiCoachHtml(d.liveAiCoach, m) : ''}
+    ${smartInsightsHeroHtml(d.smartInsights, m)}
+    ${finished ? postMatchReviewHtml(d.postMatchReview || {}, m) : ''}
+
     <details class="match-center-more">
       <summary>Подробности матча</summary>
       <div class="match-center-more-body">
@@ -6146,9 +6151,6 @@ function renderMatchCenter(d) {
     </div>
 
     <div class="center-tab-panel" data-center-panel="summary">
-      ${finished ? postMatchReviewHtml(d.postMatchReview || {}, m) : ''}
-      ${live ? liveAiCoachHtml(d.liveAiCoach, m) : ''}
-      ${smartInsightsHeroHtml(d.smartInsights, m)}
       ${livePressureHtml(d.livePressure, m)}
       <section class="panel">
         <div class="center-section-title"><div><h2>Ключевые показатели</h2><p>Самые полезные метрики</p></div></div>
@@ -6477,7 +6479,7 @@ function renderAiTrackRecord() {
     ${notice}
     <section class="panel ai-track-card">
       <div class="ai-track-head">
-        <div><span>📈 ПРОТОКОЛ FM AI</span><h2>Проверенная история модели</h2></div>
+        <div><span>📈 ПРОТОКОЛ FutLens AI</span><h2>Проверенная история модели</h2></div>
         <b class="ai-track-sample ${sampleClass}">${escapeHtml(sample.label || '—')}</b>
       </div>
       <p class="ai-track-intro">Только неизменяемые предматчевые прогнозы с подтверждённым финальным результатом. Здесь нет рекламного «процента побед».</p>
@@ -6820,10 +6822,10 @@ async function shareAnalysis(d) {
     `⚽ ${title}`,
     `${m.league || ''}${m.date ? ` · ${dateTime(m.date)}` : ''}`,
     `П1 ${pct(p.home)} · Н ${pct(p.draw)} · П2 ${pct(p.away)}`,
-    signal.label ? `FM AI: ${signal.label}` : `Наиболее вероятно: ${d?.likelyOutcome || '—'}`,
+    signal.label ? `FutLens AI: ${signal.label}` : `Наиболее вероятно: ${d?.likelyOutcome || '—'}`,
     `Уверенность: ${d?.confidence?.score ?? d?.aiInstructor?.confidenceScore ?? '—'}/100`,
     '',
-    'Открой матч в FM AI — ссылка сразу приведёт к этому разбору.',
+    'Открой матч в FutLens AI — ссылка сразу приведёт к этому разбору.',
     'Аналитическая оценка модели · не гарантия результата.',
   ];
   let shareUrl='';
@@ -7417,6 +7419,7 @@ function renderAnalysis(d) {
 
   $('analysis').innerHTML = `
     <section class="panel match-experience-hero">
+      <div class="analysis-brand-kicker">FutLens AI · AI-центр матча</div>
       <div class="match-experience-meta">
         <span>${escapeHtml(m.league || 'Турнир')}${m.country ? ` · ${escapeHtml(m.country)}` : ''}</span>
         <span>${dateTime(m.date)}</span>

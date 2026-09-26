@@ -3,8 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#111827" />
-  <title>FM AI · Футбольный инструктор</title>
+  <meta name="theme-color" content="#07111f" />
+  <meta name="description" content="FutLens AI — футбольный AI-ассистент в Telegram: матчи, LIVE, команды и понятный разбор ключевых факторов." />
+  <title>FutLens AI · Футбольный ассистент</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/brand/futlens-mark.svg?v=6.120.0-p42" />
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
   <link rel="stylesheet" href="/styles.css?v=6.120.0" />
   <link rel="stylesheet" href="/styles/public-shell.css?v=6.120.0" />
@@ -12,9 +14,9 @@
 <body class="miniapp-public-shell">
   <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
     <div class="boot-card boot-card-simple">
-      <div class="boot-logo"><span>FM</span></div>
-      <h1 id="bootTitle">FM AI</h1>
-      <p class="boot-tagline">Ваш футбол — в одном месте</p>
+      <div class="boot-logo"><img src="/assets/brand/futlens-mark.svg" alt="" /></div>
+      <h1 id="bootTitle">FutLens AI</h1>
+      <p class="boot-tagline">Понимай матч глубже.</p>
       <p id="bootText">Загружаем матчи…</p>
       <div class="boot-progress" aria-hidden="true"><i id="bootProgressFill"></i></div>
       <div class="boot-actions">
@@ -27,11 +29,11 @@
   <div class="app-shell">
     <header class="topbar">
       <div class="brand-lockup">
-        <div class="brand-mark" aria-hidden="true"><span>FM</span></div>
+        <div class="brand-mark" aria-hidden="true"><img src="/assets/brand/futlens-mark.svg" alt="" /></div>
         <div class="brand-copy">
-          <div class="eyebrow">FM AI</div>
+          <div class="eyebrow">FutLens AI</div>
           <h1 id="topbarTitle" tabindex="-1">Главная</h1>
-          <p id="topbarSubtitle">Ваш футбол — в одном месте</p>
+          <p id="topbarSubtitle">Понимай матч глубже.</p>
         </div>
       </div>
       <button id="profileBtn" class="profile-badge" type="button" aria-label="Открыть профиль"><i></i><span>Профиль</span></button>
@@ -229,7 +231,7 @@
         <div id="aiTrackRecord" class="ai-track-record"></div>
         <div class="history-personal-head">
           <strong>Ваши анализы</strong>
-          <span>Матчи, которые вы открывали в FM AI</span>
+          <span>Матчи, которые вы открывали в FutLens AI</span>
         </div>
         <div id="history" class="history-list"></div>
       </section>
@@ -367,7 +369,7 @@
           <div class="section-head profile-section-head">
             <div>
               <h2>О сервисе</h2>
-              <p>Документы, состояние сервиса и обратная связь.</p>
+              <p>Документы, статус и обратная связь.</p>
             </div>
           </div>
           <div class="service-links">
@@ -836,10 +838,10 @@
     </main>
 
     <nav class="bottom-nav" aria-label="Основная навигация">
-      <button id="navMatches" class="nav-item active" type="button"><span>⚽</span><small>Главная</small></button>
-      <button id="navMyTeams" class="nav-item" type="button"><span>⭐</span><small>Мои команды</small></button>
-      <button id="navHistory" class="nav-item" type="button"><span>🕘</span><small>История</small></button>
-      <button id="navProfile" class="nav-item" type="button"><span>👤</span><small>Профиль</small></button>
+      <button id="navMatches" class="nav-item active" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.5 12 4l8 6.5v8.25A1.25 1.25 0 0 1 18.75 20h-13.5A1.25 1.25 0 0 1 4 18.75Z"/><path d="M9.5 20v-6h5v6"/></svg><small>Главная</small></button>
+      <button id="navMyTeams" class="nav-item" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.75 5.58 6.16.9-4.46 4.34 1.05 6.13L12 17.06l-5.5 2.89 1.05-6.13-4.46-4.34 6.16-.9Z"/></svg><small>Мои команды</small></button>
+      <button id="navHistory" class="nav-item" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.75 7.5A8 8 0 1 1 4 13"/><path d="M4 4.5v4h4"/><path d="M12 8v5l3 2"/></svg><small>История</small></button>
+      <button id="navProfile" class="nav-item" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.25"/><path d="M5.5 20c.65-4.1 2.85-6 6.5-6s5.85 1.9 6.5 6"/></svg><small>Профиль</small></button>
     </nav>
   </div>
 
