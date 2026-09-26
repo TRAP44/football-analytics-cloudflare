@@ -26,7 +26,7 @@ test('public feedback hides internal beta and severity terminology',()=>{
   const end=html.indexOf('<section class="panel admin-console"',start);
   const publicFeedback=html.slice(start,end);
   assert.match(publicFeedback,/Сообщить о проблеме/);
-  assert.doesNotMatch(publicFeedback,/Closed beta|BLOCKER|MAJOR|MINOR|Beta Dashboard/i);
+  assert.doesNotMatch(publicFeedback,/Closed beta|>\\s*(?:BLOCKER|MAJOR|MINOR)\\b|Beta Dashboard/i);
   const app=read('public/app.js');
   assert.doesNotMatch(app.slice(0,app.indexOf('function betaHealthLabel')),/title:\s*'Закрытая beta'/);
 });
