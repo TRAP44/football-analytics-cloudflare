@@ -4,12 +4,12 @@
 
 ## 1. Зафиксированная release identity
 
-- Production snapshot 26 сентября 2026, 11:41 UTC: GitHub `main` / deploy SHA `d19fc80f1f5c3c42a4761e8c9e51096b32c310ae` (commit #100).
+- Post-change production snapshot 26 сентября 2026, 12:25 UTC: GitHub `main` / deploy SHA `5e8be483a8722574877047bb8a96952ebdebc649` (PR #101 merged).
 - Версия клиента/Worker: `6.120.0-rc144`.
 - Release candidate: `RC144`.
-- Cloudflare production version: `f629f925-fdc5-4f5b-b43f-3d0cb1da3962`; RC120 подтвердил 100% traffic на этом version ID.
+- Cloudflare production version: `6797b5c9-4a3b-40db-8a1b-b967b979fbf9`; RC120 подтвердил 100% traffic на этом version ID.
 - Production URL: `https://football-analytics-cloudflare.wok-side.workers.dev`.
-- GitHub Actions: Quality #641 — PASS; Deploy Production #348 — PASS; post-deploy smoke — 25/25.
+- GitHub Actions: Quality #645 — PASS; Deploy Production #349 — PASS; post-deploy smoke — 25/25.
 
 ## 2. Что уже подтверждено автоматически
 
@@ -165,19 +165,19 @@ GO возможен только когда:
 8. production config подтверждает `BETA_ACCESS_ENABLED=true`, `betaAllowlistCount=2`, `allowlistOverlapCount=0`; Beta-01/Beta-02 — реальные non-admin участники allowlist.
 
 
-## 10. Strict Beta Post-Deploy snapshot — 26 сентября 2026, 11:41 UTC
+## 10. Strict Beta Post-Deploy snapshot — 26 сентября 2026, 12:25 UTC
 
 Подтверждено фактическим production deploy:
 
-- `main` и deployed SHA: `d19fc80f1f5c3c42a4761e8c9e51096b32c310ae`;
-- Quality #641 — PASS;
-- Deploy Production #348 — PASS;
-- Cloudflare version `f629f925-fdc5-4f5b-b43f-3d0cb1da3962`, 100% traffic;
+- `main` и deployed SHA: `5e8be483a8722574877047bb8a96952ebdebc649`;
+- Quality #645 — PASS;
+- Deploy Production #349 — PASS;
+- Cloudflare version `6797b5c9-4a3b-40db-8a1b-b967b979fbf9`, 100% traffic;
 - release identity `6.120.0-rc144 / RC144`;
 - production smoke 25/25;
-- deploy re-verification test suite: 798 passed, 0 failed;
-- provider: FREE, daily 97/100 remaining, minute 9/10 remaining, cooldown=false, evidence `controlled_release_probe`;
-- strict beta effective=true при raw env state `missing`;
+- deploy re-verification test suite: 799 passed, 0 failed;
+- latest provider evidence for release `6.120.0-rc144`: FREE, daily 97/100 remaining, minute 9/10 remaining, cooldown=false, evidence `controlled_release_probe` (11:41:13 UTC);
+- latest server-side configuration evidence: strict beta effective=true при raw env state `missing` (11:41:13 UTC);
 - beta allowlist count=0, admin allowlist count=1, overlap=0.
 
 Следовательно, provider capacity подтверждена, но strict beta остаётся на **CONFIG HOLD** до явного `BETA_ACCESS_ENABLED=true` и фактического назначения Beta-01/Beta-02. Denied-account post-deploy field event и Beta-01/Beta-02 journey evidence пока не зафиксированы.
