@@ -30,3 +30,11 @@ test('public feedback hides internal beta and severity terminology',()=>{
   const app=read('public/app.js');
   assert.doesNotMatch(app.slice(0,app.indexOf('function betaHealthLabel')),/title:\s*'Закрытая beta'/);
 });
+
+test('latest migration ADD COLUMN requirements are represented in fresh-install baseline',()=> {
+  const migration=read('supabase/migrations/supabase_migration_v6_19.sql');
+  const baseline=read('supabase/baseline/supabase_baseline_v6_19.sql');
+  const columns=[...migration.matchAll(/add\s+column\s+if\s+not\s+exists\s+([a-z_][a-z0-9_]*)/gi)].map(m=>m[1]);
+  assert.ok(columns.length > 0, 'v6.19 migration must expose schema additions');
+  for (const column of new Set(columns)) assert.match(baseline,new RegExp('\\b'+column+'\\b','i'), 'baseline missing v6.19 column '+column);
+});
