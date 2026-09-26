@@ -18,8 +18,8 @@ function block(source,start,end){
 
 test('startup is brand-only and contains no release or internal identifiers',()=>{
   const boot=block(html,'<div id="bootGate"','<div class="app-shell">');
-  assert.match(boot,/FM AI/);
-  assert.match(boot,/Ваш футбол — в одном месте/);
+  assert.match(boot,/FutLens AI/);
+  assert.match(boot,/Понимай матч глубже\./);
   assert.match(boot,/Загружаем матчи/);
   assert.doesNotMatch(boot,/bootVersion|версия|RC\d|release|build|provider|runtime|telemetry|api contract/i);
   const startup=block(app,'async function runStartupSequence','const api = createApiClient');
