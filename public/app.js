@@ -1,4 +1,5 @@
 import { createApiClient, initTelegramWebApp, localDate, safeDate, timeOf, dateTime, dateOnly, relativeAge, phase5SessionToken } from './modules/client-core.js';
+import { CANONICAL_HOME_VIEW, PUBLIC_VIEW_IDS, backTargetForView, telegramBackButtonVisible } from './modules/navigation.js';
 const CLIENT_VERSION = '6.120.0-rc144';
 const CLIENT_API_CONTRACT = 5;
 const CLIENT_RELEASE_CHANNEL = 'rc144';
@@ -174,7 +175,7 @@ const MATCH_SNAPSHOT_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 
 
 const $ = id => document.getElementById(id);
-const views = ['matchesView', 'searchView', 'myTeamsView', 'tournamentView', 'teamView', 'analysisView', 'historyView', 'profileView'];
+const views = [...PUBLIC_VIEW_IDS];
 
 function preferredAccentMode(theme) {
   if (theme === 'light') return 'light';
@@ -255,6 +256,7 @@ function saveInterfacePreference(key, value) {
 const VIEW_CHROME = {
   matchesView: ['Главная', 'Видим, что меняет матч.'],
   searchView: ['Поиск', 'Найдите команду или матч'],
+  myTeamsView: ['Мои команды', 'Избранные клубы и их матчи'],
   tournamentView: ['Турнир', 'Матчи и таблица'],
   teamView: ['Команда', 'Матчи и данные клуба'],
   analysisView: ['AI-центр матча', 'Вероятности, факторы и риски'],
@@ -284,17 +286,14 @@ const BACK_VIEW_LABELS = Object.freeze({
 });
 
 function viewBackTarget(id = activeViewId()) {
-  if (id === 'analysisView') return state.analysisBackView || 'searchView';
-  if (id === 'teamView') return state.teamBackView || 'searchView';
-  if (id === 'tournamentView') return state.tournamentBackView || 'searchView';
-  return 'searchView';
+  return backTargetForView(id, state);
 }
 
 function syncBackButtons() {
   const bindings = [
-    ['backBtn', state.analysisBackView || 'searchView'],
-    ['teamBackBtn', state.teamBackView || 'searchView'],
-    ['tournamentBackBtn', state.tournamentBackView || 'searchView'],
+    ['backBtn', viewBackTarget('analysisView')],
+    ['teamBackBtn', viewBackTarget('teamView')],
+    ['tournamentBackBtn', viewBackTarget('tournamentView')],
   ];
   bindings.forEach(([id, target]) => {
     const button = $(id);
@@ -305,14 +304,14 @@ function syncBackButtons() {
 function syncTelegramBackButton(id = activeViewId()) {
   if (!tg?.BackButton) return;
   try {
-    if (['analysisView', 'teamView', 'tournamentView'].includes(id)) tg.BackButton.show();
+    if (telegramBackButtonVisible(id)) tg.BackButton.show();
     else tg.BackButton.hide();
   } catch {}
 }
 
 function handleBackNavigation() {
   const current = activeViewId();
-  if (!['analysisView', 'teamView', 'tournamentView'].includes(current)) return false;
+  if (current === CANONICAL_HOME_VIEW) return false;
   showView(viewBackTarget(current), { restore: true });
   return true;
 }
@@ -335,12 +334,12 @@ function showView(id, options = {}) {
     view.toggleAttribute('inert', !active);
     view.setAttribute('aria-hidden', active ? 'false' : 'true');
   });
-  $('navMatches').classList.toggle('active', id === 'matchesView' || id === 'tournamentView' || id === 'teamView' || id === 'analysisView');
+  $('navMatches').classList.toggle('active', id === 'matchesView');
   $('navMyTeams')?.classList.toggle('active', id === 'myTeamsView');
   $('navHistory').classList.toggle('active', id === 'historyView');
   $('navProfile').classList.toggle('active', id === 'profileView');
   document.querySelectorAll('.nav-item').forEach(btn => btn.removeAttribute('aria-current'));
-  if (id === 'matchesView' || id === 'tournamentView' || id === 'teamView' || id === 'analysisView') $('navMatches')?.setAttribute('aria-current', 'page');
+  if (id === 'matchesView') $('navMatches')?.setAttribute('aria-current', 'page');
   if (id === 'myTeamsView') $('navMyTeams')?.setAttribute('aria-current', 'page');
   if (id === 'historyView') $('navHistory')?.setAttribute('aria-current', 'page');
   if (id === 'profileView') $('navProfile')?.setAttribute('aria-current', 'page');
@@ -2423,8 +2422,8 @@ function runClientContractSmoke() {
   const add = (id, label, pass, detail) => checks.push({ id, label, pass: Boolean(pass), detail: String(detail || '') });
 
   const requiredIds = [
-    'matchesView','searchView','tournamentView','teamView','analysisView','historyView','profileView',
-    'navMatches','navSearch','navHistory','navProfile','aiTrackRecord',
+    'matchesView','searchView','myTeamsView','tournamentView','teamView','analysisView','historyView','profileView',
+    'navMatches','navMyTeams','navHistory','navProfile','aiTrackRecord',
     'connectionBanner','connectionRetryBtn','toast',
     'modelQualityStatus','modelRemediationStatus','modelRemediationDryRunBtn','modelRemediationRunBtn','modelRemediationCircuitResetBtn','modelRemediationDriftQueue','providerAuditStatus','releaseStatus','productionReadinessStatus','diagnosticsStatus','mediaPublisherFixtureId','mediaPublisherGenerateBtn','mediaPublisherResult',
   ];
@@ -2447,7 +2446,7 @@ function runClientContractSmoke() {
   add('client_version', 'Согласованность версии клиента', versionCoherent, CLIENT_VERSION);
   add('telegram_sdk', 'Модуль Telegram Mini App', Boolean(window.Telegram?.WebApp), window.Telegram?.WebApp ? 'Модуль доступен.' : 'В обычном браузере модуль может отсутствовать; внутри Telegram он должен быть доступен.');
 
-  const navButtons = ['navMatches','navSearch','navHistory','navProfile'].filter(id => $(id));
+  const navButtons = ['navMatches','navMyTeams','navHistory','navProfile'].filter(id => $(id));
   add('navigation', 'Нижняя навигация', navButtons.length === 4, `${navButtons.length}/4 кнопки.`);
 
   const recoveryIds = ['connectionBannerIcon','connectionBannerTitle','connectionBannerText','connectionRetryBtn'];
@@ -7133,7 +7132,7 @@ function returnToTelegram() {
     tg.close();
     return true;
   }
-  showView(state.analysisBackView || 'searchView');
+  showView(state.analysisBackView || CANONICAL_HOME_VIEW);
   return false;
 }
 
