@@ -1,6 +1,6 @@
 # Closed Beta Readiness — FM AI
 
-Статус: **STRICT BETA HOLD — CONFIG FIX REQUIRED**  
+Статус: **PUBLIC ACCESS CONTRACT — STRICT BETA OPTIONAL**  
 Базовая версия клиента: **6.120.0-rc144**  
 Цель этапа: подготовить существующий продукт к небольшой группе реальных пользователей без добавления новых аналитических функций.
 
@@ -80,9 +80,9 @@ Privacy contract:
 - [x] Текущую квоту/тариф API-Football подтверждает production evidence: plan=FREE, dailyLimit=100, dailyRemaining=97, minuteLimit=10, minuteRemaining=9, cooldown=false, evidenceSource=controlled_release_probe (26 сентября 2026, 11:41:13 UTC).
 - [ ] Реально назначить Beta-01 и Beta-02 и создать приватный feedback channel по шаблону из `PRE_BETA_VALIDATION_RU.md`. Runbook и формат обратной связи подготовлены, но личности/Telegram ID тестировщиков в репозиторий не записываются.
 - [ ] Подтвердить Telegram `getWebhookInfo`: production URL совпадает с `/telegram/webhook`, нет устойчивой очереди pending updates и актуальной ошибки.
-- [x] Server-side strict beta — fail-closed invariant: membership определяется только после успешной Telegram signature validation по `BETA_TELEGRAM_IDS`; admin имеет bypass, но исключён из beta cohort; frontend-скрытия не используются как access control. `BETA_ACCESS_ENABLED=false` или missing **не открывает** normal-user routes.
-- [x] Production evidence 26 сентября 2026, 11:41 UTC: `strictEffective=true`, raw `BETA_ACCESS_ENABLED=missing`, `betaAllowlistCount=0`, `adminAllowlistCount=1`, `allowlistOverlapCount=0`.
-- [ ] Исправить operational configuration: задать `BETA_ACCESS_ENABLED=true` и реальные Beta-01/Beta-02 в server-side `BETA_TELEGRAM_IDS`; после этого подтвердить `betaAllowlistCount=2`, overlap=0. До этого strict access остаётся безопасно закрытым для всех non-admin.
+- [x] Server-side access contract: валидный Telegram initData обязателен; при BETA_ACCESS_ENABLED=false/missing normal-user access публичный, при true действует BETA_TELEGRAM_IDS.
+- [x] ADMIN_TELEGRAM_IDS остаётся отдельной server-side границей admin authorization; frontend не используется как access-control.
+- [x] Provider quota/shared cooldown/dedup protections #98/#99/#100 сохраняются независимо от режима доступа.
 
 До выполнения этих пунктов автоматическая часть готовности завершена, но приглашение реальных пользователей остаётся **MANUAL FIELD CHECKS PENDING**.
 
