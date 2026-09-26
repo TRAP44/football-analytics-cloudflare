@@ -61,7 +61,7 @@ test('wave checks reuse existing beta telemetry and expose requested operational
 });
 
 test('provider quota exposes limits and remaining values without secrets',()=>{
-  const quota=block(worker,'function latestConfirmedProviderQuota','function betaProductionMonitorSummary');
+  const quota=block(worker,'function latestConfirmedProviderQuota','async function apiBetaDashboard');
   for (const key of ['dailyLimit','dailyRemaining','minuteLimit','minuteRemaining']) assert.match(quota,new RegExp(key));
   assert.doesNotMatch(quota,/apiFootballKey|x-apisports-key|TELEGRAM_BOT_TOKEN/);
 });
