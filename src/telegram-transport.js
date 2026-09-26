@@ -23,7 +23,7 @@ export function createTelegramWebhookHandler(deps) {
   let update={};
   try { update=await request.json(); } catch { return json({ok:false},400); }
 
-  const claim=claimTelegramUpdate(update);
+  const claim=claimTelegramUpdate(update,cfg);
   if (claim.duplicate) return json({ok:true,deduped:true});
 
   const persistentClaim=await claimTelegramUpdatePersistent(cfg,claim.key);

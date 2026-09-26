@@ -34,7 +34,7 @@ test('RC107 Worker combines memory and persistent dedupe around webhook processi
   const end=worker.indexOf('\n}',start)+2;
   assert.ok(start>=0 && end>start);
   const block=worker.slice(start,end);
-  assert.match(block,/const claim=claimTelegramUpdate\(update\)/);
+  assert.match(block,/const claim=claimTelegramUpdate\(update,cfg\)/);
   assert.match(block,/await claimTelegramUpdatePersistent\(cfg,claim\.key\)/);
   assert.match(block,/deduped:true,persistent:true/);
   assert.match(block,/await completeTelegramUpdatePersistent\(cfg,claim\.key\)/);
