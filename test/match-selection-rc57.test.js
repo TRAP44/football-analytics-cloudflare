@@ -33,14 +33,14 @@ test('Mini App preserves server ranking without adding a second explanatory bann
   assert.match(app,/mergeById\(state\.globalSearch\.remoteMatches, local\.matches, 'fixtureId'\)/);
   assert.match(app,/selection\?\.rank \|\| 999/);
   assert.match(app,/ОСНОВНОЙ МАТЧ/);
-  assert.doesNotMatch(app,/FM AI выбрал основной матч/);
+  assert.doesNotMatch(app,/MatchRadar AI выбрал основной матч/);
   assert.match(css,/\.search-match-card\.is-primary/);
 });
 
 test('Telegram highlights the primary match and analytics remains query-text free',()=> {
   assert.match(worker,/matches=rankTeamDiscoveryMatches\(matches\)\.slice\(0,3\)/);
   assert.match(worker,/Основной матч для анализа/);
-  assert.match(worker,/Первый матч — основной выбор FM AI/);
+  assert.match(worker,/Первый матч — основной выбор MatchRadar AI/);
   const event=/eventName:'search_result',channel:'telegram',metadata:\{intent:parts\.intent,outcome:'match',recognized,recovery,primaryFixtureId,count:Math\.min\(3,matches\.length\)\}/;
   assert.match(worker,event);
 });
