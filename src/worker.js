@@ -7614,18 +7614,24 @@ async function getCacheEntry(cacheKey, cfg, allowExpired = false) {
         bumpTelemetry('cacheMisses');
         return null;
       }
-      if (expired) bumpTelemetry('staleCacheHits');
-    phase5ProviderCacheUsage(cfg,cacheKey,'staleCacheHits');
-      else bumpTelemetry('cacheHits');
-    phase5ProviderCacheUsage(cfg,cacheKey,'cacheHits');
+      if (expired) {
+        bumpTelemetry('staleCacheHits');
+        phase5ProviderCacheUsage(cfg,cacheKey,'staleCacheHits');
+      } else {
+        bumpTelemetry('cacheHits');
+        phase5ProviderCacheUsage(cfg,cacheKey,'cacheHits');
+      }
       return { payload: row.payload, expired, expiresAt: row.expires_at, layer: 'supabase' };
     } catch (error) {
       bumpTelemetry('supabaseErrors');
       if (local && (allowExpired || local.expiresAt > Date.now())) {
-        if (local.expiresAt <= Date.now()) bumpTelemetry('staleCacheHits');
-    phase5ProviderCacheUsage(cfg,cacheKey,'staleCacheHits');
-        else bumpTelemetry('cacheHits');
-    phase5ProviderCacheUsage(cfg,cacheKey,'cacheHits');
+        if (local.expiresAt <= Date.now()) {
+          bumpTelemetry('staleCacheHits');
+          phase5ProviderCacheUsage(cfg,cacheKey,'staleCacheHits');
+        } else {
+          bumpTelemetry('cacheHits');
+          phase5ProviderCacheUsage(cfg,cacheKey,'cacheHits');
+        }
         recordOpsEvent(cfg, {
           severity: 'warning', source: 'cache', eventType: 'supabase_cache_read_fallback', code: 'CACHE_DB_READ',
           message: error?.message || error, meta: { cacheKey },
@@ -7651,10 +7657,13 @@ async function getCacheEntry(cacheKey, cfg, allowExpired = false) {
     bumpTelemetry('cacheMisses');
     return null;
   }
-  if (expired) bumpTelemetry('staleCacheHits');
+  if (expired) {
+    bumpTelemetry('staleCacheHits');
     phase5ProviderCacheUsage(cfg,cacheKey,'staleCacheHits');
-  else bumpTelemetry('cacheHits');
+  } else {
+    bumpTelemetry('cacheHits');
     phase5ProviderCacheUsage(cfg,cacheKey,'cacheHits');
+  }
   return { payload: local.payload, expired, expiresAt: new Date(local.expiresAt).toISOString(), layer: 'memory' };
 }
 
