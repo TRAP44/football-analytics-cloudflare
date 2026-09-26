@@ -6,17 +6,17 @@ const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf
 const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
 
-test('the daily overview uses clear wording', () => {
-  assert.match(html, /id="dailyOverviewTitle">Рекомендации для вас<\/h2>/);
-  assert.match(app, /title\.textContent = 'Рекомендации для вас'/);
-  assert.match(app, /title\.textContent = 'Сейчас в эфире'/);
-  assert.match(app, /title\.textContent = 'Матчи ваших команд'/);
-  assert.doesNotMatch(app, /Главное без лишнего/);
+test('Home uses contextual LIVE and My Teams cards without duplicate counters', () => {
+  assert.match(html, /id="homeLiveCard"/);
+  assert.match(html, /id="homeTeamsBtn"/);
+  assert.match(html, /id="homeFavoriteBtn"/);
+  assert.doesNotMatch(html, /overviewRecommendedCount|dailyOverviewTitle|dailyOverviewKicker/);
+  assert.match(app, /liveCard\.hidden = liveCount <= 0/);
+  assert.match(app, /teamsCard\.hidden = favoriteCount <= 0/);
 });
 
 test('the primary match feed is presented as a personal For You view', () => {
-  assert.match(html, /class="filter-btn active" data-filter="top">✨ Для вас/);
-  assert.match(html, /id="overviewRecommendedCount"/);
+  assert.match(html, /class="filter-btn active" data-filter="top">Для вас/);
   assert.match(html, /<option value="top">✨ Для вас<\/option>/);
 });
 
@@ -29,11 +29,12 @@ test('recommendations combine favorites, viewing history and live context', () =
   assert.match(app, /personalMatchInsight\(m, signals\)\.recommended/);
 });
 
-test('match cards explain why a recommendation is shown', () => {
+test('recommendation reasons stay in ranking logic but off compact feed cards', () => {
   assert.match(app, /reason = 'Любимая команда'/);
   assert.match(app, /reason = 'Вы смотрели эту команду'/);
   assert.match(app, /reason = 'Сейчас в эфире'/);
-  assert.match(app, /favorite-signal/);
+  const card=app.slice(app.indexOf('function matchCardHtml'),app.indexOf('function bindMatchActions'));
+  assert.doesNotMatch(card, /favorite-signal|Почему здесь/);
 });
 
 test('AI history is deferred while technical profile data stays collapsed for admin', () => {
