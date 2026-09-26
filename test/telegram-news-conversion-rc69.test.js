@@ -28,7 +28,7 @@ test('news intent resolves known clubs without storing arbitrary headline text',
 test('news copy explains why the item matters and what AI will check',()=>{
   assert.match(worker,/🧠 Что проверить:/);
   assert.match(worker,/function newsConversionHook\(/);
-  assert.match(worker,/FM AI не меняет прогноз только из-за заголовка/);
+  assert.match(worker,/MatchRadar AI не меняет прогноз только из-за заголовка/);
   assert.match(worker,/needs_confirmation/);
 });
 
