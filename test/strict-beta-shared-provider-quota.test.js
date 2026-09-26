@@ -13,6 +13,13 @@ function block(source,start,end){
   return source.slice(a,b);
 }
 
+test('access-control helper cannot reopen production when legacy flag is false or missing',()=>{
+  const access=readFileSync(new URL('../src/access-control.js',import.meta.url),'utf8');
+  const decision=block(access,'export function closedBetaAccessDecision','}');
+  assert.doesNotMatch(decision,/if \(!cfg\.betaAccessEnabled\)/);
+  assert.match(decision,/allowed: betaParticipant/);
+});
+
 test('production closed beta is fail-closed even when env binding is missing or false',()=>{
   const cfg=block(worker,'function config(env)','function runtimeControlsSnapshot');
   assert.match(cfg,/betaAccessConfigured:\s*boolEnvState\(env\.BETA_ACCESS_ENABLED\)/);
