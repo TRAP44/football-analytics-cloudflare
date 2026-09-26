@@ -20,7 +20,7 @@ test('public access remains default while strict beta stays explicit',()=>{
 });
 
 test('Phase 5 cohort is verified normal-user based and independent from beta membership',()=>{
-  assert.match(worker,/PHASE5_VALIDATION_COHORT\s*=\s*'phase5_public_v1'/);
+  assert.match(worker,/PHASE5_VALIDATION_COHORT\s*=\s*'phase5_public_v2'/);
   assert.match(worker,/isTelegramValidatedUser\(user\)/);
   assert.match(worker,/isAdminUser\(user,cfg\)/);
   assert.match(worker,/x-phase5-session/);
