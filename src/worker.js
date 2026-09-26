@@ -14462,6 +14462,7 @@ async function recordPhase5ProviderRequestSummary(cfg) {
 
 const CLIENT_TELEMETRY_VIEWS = new Set([
   'matchesView',
+  'myTeamsView',
   'searchView',
   'tournamentView',
   'teamView',
