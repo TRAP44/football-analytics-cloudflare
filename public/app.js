@@ -1026,7 +1026,7 @@ function renderBetaDashboard() {
   if (state.betaDashboardLoading) {
     badge.textContent='ПРОВЕРКА';
     badge.className='beta-health-badge watch';
-    healthRoot.innerHTML='<div class="beta-empty">Собираю агрегированные beta-сигналы…</div>';
+    healthRoot.innerHTML='<div class="beta-empty">Собираю агрегированные Phase 5 production-сигналы…</div>';
     metricsRoot.innerHTML='';
     timingsRoot.innerHTML='';
     errorsRoot.innerHTML='';
@@ -1038,7 +1038,7 @@ function renderBetaDashboard() {
   if (!data?.available) {
     badge.textContent='НЕТ ДАННЫХ';
     badge.className='beta-health-badge';
-    healthRoot.innerHTML=`<div class="beta-empty">${escapeHtml(data?.reason || 'Beta telemetry ещё не загружена.')}</div>`;
+    healthRoot.innerHTML=`<div class="beta-empty">${escapeHtml(data?.reason || 'Phase 5 telemetry ещё не загружена.')}</div>`;
     metricsRoot.innerHTML='';
     timingsRoot.innerHTML='';
     errorsRoot.innerHTML='';
@@ -1046,140 +1046,98 @@ function renderBetaDashboard() {
     return;
   }
 
-  const health=data.health || {};
-  const launch=data.launchReadiness || {};
-  const expansion=data.expansionDecision || {};
-  const controlled=data.controlledExpansion || {};
-  const expansionLabel={
-    collecting_verified_beta:'Собираем verified beta',
-    hold:'HOLD',
-    expand_with_data_limitations:'Расширять с ограничениями',
-    ready_to_expand:'Готово к расширению',
-  }[String(expansion.status || '')] || 'Нет решения';
-  const coverageDecisionLabel={
-    collect_more_coverage:'Нужно больше coverage-данных',
-    review_new_or_paid_provider:'Проверить новый/платный provider',
-    keep_current_provider:'Текущий provider оставить',
-  }[String(expansion.dataCoverageDecision || '')] || 'Нет решения';
-  const providerValidationLabel={
-    collecting_expanded_beta:'Ждём нагрузку расширенной beta',
-    review_new_or_paid_provider:'Нужен отдельный review provider',
-    keep_current_provider:'Текущий provider подтверждён',
-  }[String(controlled.providerValidationDecision || '')] || 'Нет решения';
-  const finalDecisionLabel={
-    'BETA READY FOR PUBLIC PRE-LAUNCH':'BETA READY FOR PUBLIC PRE-LAUNCH',
-    'BETA CONTINUE':'BETA CONTINUE',
-    'DATA PROVIDER UPGRADE REQUIRED':'DATA PROVIDER UPGRADE REQUIRED',
-    'BETA HOLD':'BETA HOLD',
-  }[String(controlled.finalDecision || '')] || 'Нет решения';
-  badge.textContent=betaHealthLabel(health.state).toUpperCase();
-  badge.className=`beta-health-badge ${escapeHtml(health.state || '')}`;
-  const topBreak=health.topBreak?.count ? `${betaActionLabel(health.topBreak.action)} · ${Number(health.topBreak.count)}` : 'нет';
-  const betaAssigned=Number(launch.betaAssignments?.assigned || 0);
-  const betaRequired=Number(launch.betaAssignments?.required || 2);
-  const providerQuota=launch.providerQuota || {};
-  const quotaLabel=providerQuota.confirmed
-    ? `${providerQuota.plan || 'OK'} · day ${Number(providerQuota.dailyRemaining || 0)}/${Number(providerQuota.dailyLimit || 0)} · min ${Number(providerQuota.minuteRemaining || 0)}/${Number(providerQuota.minuteLimit || 0)}`
-    : 'Не подтверждена';
-  const nextWave=controlled.nextWave;
-  const nextWaveLabel=nextWave
-    ? `+${Number(nextWave.add || 0)} → ${Number(nextWave.targetAssigned || 0)} пользователей · ${nextWave.allowed ? 'разрешено' : 'заблокировано'}`
-    : 'Новая волна не требуется/не разрешена';
-  const fieldBlockerLabels={
-    beta_users_not_assigned:'Не назначены реальные beta-пользователи',
-    verified_beta_telemetry_missing:'Нет verified beta telemetry',
-    initial_expansion_gate_closed:'Входной gate расширения закрыт',
-    beta_product_issue:'Есть BLOCKER/MAJOR',
-    runtime_unhealthy:'Runtime требует восстановления',
-    provider_quota_pressure:'Давление на quota provider',
-    provider_review_required:'Требуется Provider Evaluation',
-    beta_accounts_not_assigned:'В server-side allowlist меньше 2 beta-пользователей',
-    beta_admin_overlap:'Beta allowlist пересекается с admin',
-    strict_beta_access_disabled:'Строгий beta-доступ не включён',
-    telegram_webhook_unconfirmed:'Telegram webhook не подтверждён',
-    provider_quota_unconfirmed:'Квота football provider не подтверждена',
-    beta_ops_sample_truncated:'Beta telemetry sample усечён',
-    confirmed_blocker:'Есть подтверждённый BLOCKER',
-    confirmed_major:'Есть подтверждённый MAJOR',
+  const users=data.users || {};
+  const product=data.product || {};
+  const provider=data.provider || {};
+  const coverage=data.coverage || {};
+  const gate=data.evidenceGate || {};
+  const runtime=data.runtime || {};
+  const quota=provider.quotaState || {};
+  const requirements=gate.requirements || {};
+  const status=String(data.status || 'COLLECT MORE EVIDENCE');
+  const statusMap={
+    'PUBLIC VALIDATION HEALTHY':['HEALTHY','healthy'],
+    'COLLECT MORE EVIDENCE':['СБОР ДАННЫХ','watch'],
+    'PROVIDER CAPACITY HOLD':['CAPACITY HOLD','incident'],
+    'DATA COVERAGE REVIEW REQUIRED':['COVERAGE REVIEW','watch'],
+    'PRODUCT BLOCKER HOLD':['PRODUCT HOLD','incident'],
   };
-  const fieldBlockers=(controlled.fieldBlockers || []).map(code=>fieldBlockerLabels[code] || humanizeTechnicalText(code));
-  const nextRequiredActionLabel={
-    assign_real_beta_users:'Назначить минимум 2 реальных beta-пользователя в server-side allowlist',
-    collect_verified_beta_usage:'Получить реальные verified beta-сессии от назначенных пользователей',
-    remove_beta_admin_overlap:'Убрать admin из beta allowlist и оставить только реальных тестировщиков',
-    enable_strict_beta_access:'Включить строгий beta-доступ после заполнения allowlist',
-    confirm_telegram_webhook:'Подтвердить production Telegram webhook',
-    confirm_provider_quota:'Снять свежий подтверждённый snapshot квоты football provider',
-    close_initial_expansion_requirements:'Закрыть незакрытые требования входного gate на реальных данных',
-    restore_runtime_health:'Восстановить runtime и устранить BLOCKER/MAJOR',
-    run_provider_evaluation:'Провести отдельный Provider Evaluation до продолжения',
-    observe_wave_1:'Провести и наблюдать первую ручную волну до 4 verified пользователей',
-    observe_wave_2:'Провести и наблюдать вторую ручную волну до 6 verified пользователей',
-    collect_expanded_beta_evidence:'Добрать journey / coverage / latency / LIVE evidence',
-    none:'Дополнительное действие не требуется',
-  }[String(controlled.nextRequiredAction || '')] || 'Нет данных';
+  const [statusLabel,statusClass]=statusMap[status] || [status,'watch'];
+  badge.textContent=statusLabel;
+  badge.className=`beta-health-badge ${statusClass}`;
+
+  const threshold=(key,fallback=0)=>{
+    const item=requirements[key] || {};
+    return `${Number(item.actual ?? fallback)}/${Number(item.required || 0)}`;
+  };
+  const quotaLabel=quota.confirmed
+    ? `${quota.plan || 'OK'} · day ${Number(quota.dailyRemaining || 0)}/${Number(quota.dailyLimit || 0)} · min ${Number(quota.minuteRemaining || 0)}/${Number(quota.minuteLimit || 0)}`
+    : 'Не подтверждена';
+  const cacheRate=provider.cacheHitRatePct===null || provider.cacheHitRatePct===undefined ? '—' : `${Number(provider.cacheHitRatePct)}%`;
+  const requestsPerSession=provider.requestsPerSession===null || provider.requestsPerSession===undefined ? '—' : String(Number(provider.requestsPerSession));
+  const liveStatus=String(gate.liveStatus || coverage.live?.status || 'INSUFFICIENT_LIVE_SAMPLE');
+
   healthRoot.innerHTML=[
-    ['Основной сбой',topBreak],
-    ['Beta-01/Beta-02',`${betaAssigned}/${betaRequired}`],
-    ['Закрытый доступ',launch.strictBetaAccess?'Включён':'Не подтверждён'],
-    ['Telegram webhook',launch.telegramWebhook?.confirmed?'Подтверждён':'Не подтверждён'],
+    ['Verified normal users',threshold('verifiedNormalUsers',users.verifiedNormalUsers)],
+    ['Sessions',threshold('sessions',users.sessions)],
+    ['Full journeys',threshold('fullJourneys',users.completedJourneys)],
+    ['Reopen / return',`${Number(users.reopenUsers || 0)} · ${Number(users.returnRatePct || 0)}%`],
+    ['Search samples',threshold('searchSamples',product.searchSamples)],
+    ['Match Center samples',threshold('matchCenterSamples',product.matchCenterSamples)],
+    ['AI samples',threshold('aiSamples',product.aiSamples)],
+    ['Coverage observations',threshold('coverageObservations',coverage.observations)],
+    ['LIVE',liveStatus],
+    ['Provider requests/session',requestsPerSession],
+    ['Cache-hit rate',cacheRate],
+    ['Stale-cache',String(Number(provider.staleCacheHits || 0))],
+    ['Shared cooldown',String(Number(provider.sharedCooldowns || 0))],
+    ['Quota blocks',String(Number(provider.quotaBlocks || 0))],
     ['API-Football quota',quotaLabel],
-    ['Решение по расширению',expansionLabel],
-    ['Closed Beta Launch завершён',expansion.closedBetaLaunchStageComplete?'Да':'Нет'],
-    ['Verified beta sessions',`${Number(expansion.requirements?.verifiedSessionStarts?.actual || 0)}/${Number(expansion.requirements?.verifiedSessionStarts?.required || 7)}`],
-    ['Full journeys',`${Number(expansion.requirements?.fullJourneys?.actual || 0)}/${Number(expansion.requirements?.fullJourneys?.required || 2)}`],
-    ['Data coverage decision',coverageDecisionLabel],
-    ['Provider validation',providerValidationLabel],
-    ['Итог этапа',finalDecisionLabel],
-    ['Блокеры этапа',fieldBlockers.length ? fieldBlockers.join(' · ') : 'Нет'],
-    ['Следующее действие',nextRequiredActionLabel],
-    ['Незакрытые требования gate',(controlled.initialGateGaps || []).length ? controlled.initialGateGaps.join(', ') : 'Нет'],
-    ['Следующая beta-волна',nextWaveLabel],
-    ['Production monitor',humanizeTechnicalText(health.productionMonitor || controlled.checks?.productionMonitor?.state || 'нет данных')],
-    ['Provider rate-limit',String(Number(health.providerRateLimit || 0))],
-    ['Timeout',String(Number(health.timeout || 0))],
-    ['UI/client errors',String(Number(health.clientErrors || 0))],
-    ['Нет составов',String(Number(data.dataCoverage?.missing?.lineups?.missing || 0))],
-    ['Нет данных о травмах',String(Number(data.dataCoverage?.missing?.injuries?.missing || 0))],
-    ['Нет статистики',String(Number(data.dataCoverage?.missing?.statistics?.missing || 0))],
-    ['Нет xG',String(Number(data.dataCoverage?.missing?.xg?.missing || 0))],
-    ['Нет коэффициентов',String(Number(data.dataCoverage?.missing?.odds?.missing || 0))],
-    ['Supabase',health.supabase==='ok'?'Норма':'Проблема'],
-    ['Telegram dedupe',humanizeTechnicalText(health.telegram || 'нет данных')],
-    ['Release',`${health.currentRelease?.version || CLIENT_VERSION} · ${health.currentRelease?.candidate || CLIENT_RELEASE_CHANNEL}`],
-    ['Активные проблемы',String(Number(health.activeProblems || 0))],
-    ['Нужно больше доказательств',String(Number(health.needsMoreEvidence || 0))],
+    ['Capacity decision',String(provider.capacityDecision || 'COLLECT MORE EVIDENCE')],
+    ['Coverage decision',String(coverage.decision || 'COLLECT MORE EVIDENCE')],
+    ['Phase 5 status',status],
   ].map(([label,value])=>`<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
 
-  metricsRoot.innerHTML=Object.entries(data.metrics || {}).map(([key,value])=>`
-    <div class="beta-metric"><span>${escapeHtml(betaMetricLabel(key))}</span><strong>${Number(value?.events || 0)}</strong><small>${Number(value?.users || 0)} beta-польз.</small></div>
+  const metricRows=[
+    ['Поиск',Number(product.searchSamples || 0)],
+    ['Match Center',Number(product.matchCenterSamples || 0)],
+    ['AI',Number(product.aiSamples || 0)],
+    ['LIVE',Number(product.liveSamples || 0)],
+    ['Provider network',Number(provider.networkRequests || 0)],
+    ['Cache hits',Number(provider.cacheHits || 0)],
+    ['Stale cache',Number(provider.staleCacheHits || 0)],
+    ['Provider usage rows',Number(data.sample?.providerUsageRows || 0)],
+  ];
+  metricsRoot.innerHTML=metricRows.map(([label,value])=>`
+    <div class="beta-metric"><span>${escapeHtml(label)}</span><strong>${Number(value || 0)}</strong><small>агрегированно</small></div>
   `).join('');
 
-  timingsRoot.innerHTML=Object.entries(data.timings || {}).map(([key,value])=>{
+  timingsRoot.innerHTML=Object.entries(data.performance || {}).map(([key,value])=>{
     const p50=value?.medianMs===null || value?.medianMs===undefined ? 'мало данных' : betaMs(value.medianMs);
     const p90=value?.p90Ms===null || value?.p90Ms===undefined ? 'мало данных' : betaMs(value.p90Ms);
     return `<div class="beta-timing"><span>${escapeHtml(betaTimingLabel(key))}</span><strong>P50 · ${escapeHtml(p50)}</strong><small>P90 · ${escapeHtml(p90)} · n=${Number(value?.samples || 0)}</small></div>`;
   }).join('');
 
-  const categories=Object.entries(data.actionErrors?.byCategory || {}).sort((a,b)=>Number(b[1])-Number(a[1]));
-  errorsRoot.innerHTML=categories.length
-    ? categories.map(([key,count])=>`<span class="beta-error-chip"><b>${escapeHtml(humanizeTechnicalText(key))}</b> ${Number(count || 0)}</span>`).join('')
-    : '<span class="tiny">action_error за период не зафиксированы.</span>';
+  const runtimeRows=[
+    ['provider rate-limit',runtime.providerRateLimit],
+    ['provider errors',runtime.providerErrors],
+    ['timeout',runtime.timeouts],
+    ['client errors',runtime.clientErrors],
+  ].filter(([,value])=>Number(value || 0)>0);
+  errorsRoot.innerHTML=runtimeRows.length
+    ? runtimeRows.map(([key,count])=>`<span class="beta-error-chip"><b>${escapeHtml(humanizeTechnicalText(key))}</b> ${Number(count || 0)}</span>`).join('')
+    : '<span class="tiny">Ошибок Phase 5 cohort за период не зафиксировано.</span>';
 
-  const issueRows=(data.issues || []).filter(item=>Number(item.frequency || 0)>0);
-  issuesRoot.innerHTML=issueRows.length ? issueRows.map(issue=>`
-    <article class="beta-issue ${issue.active ? 'active' : 'unconfirmed'}">
-      <div><span class="beta-severity ${escapeHtml(String(issue.classification || '').toLowerCase())}">${escapeHtml(issue.classification || 'НУЖНЫ ДАННЫЕ')}</span><strong>${escapeHtml(issue.label || '')}</strong><small>Частота: ${Number(issue.frequency || 0)} · evidence: ${escapeHtml(issue.evidence || '')}</small></div>
-      <p>${escapeHtml(issue.userImpact || '')}</p>
-      <p><b>Рекомендуемое исправление:</b> ${escapeHtml(issue.recommendedFix || '')}</p>
-    </article>
-  `).join('') : '<div class="beta-empty">Подтверждённых beta-проблем пока нет.</div>';
+  const abandonment=product.abandonmentStage || {};
+  const abandonmentLabels={home:'Home → поиск',search:'Поиск → матч',matchCenter:'Матч → AI',ai:'AI → Мои команды',favoriteTeam:'Мои команды → история',history:'История → reopen'};
+  const dropRows=Object.entries(abandonment).filter(([,count])=>Number(count || 0)>0);
+  issuesRoot.innerHTML=dropRows.length
+    ? dropRows.map(([stage,count])=>`<article class="beta-issue unconfirmed"><div><strong>${escapeHtml(abandonmentLabels[stage] || stage)}</strong><small>abandonment: ${Number(count || 0)}</small></div><p>Наблюдение агрегировано; изменение UX требует повторяющегося pattern или явного blocker.</p></article>`).join('')
+    : '<div class="beta-empty">Abandonment pattern пока не подтверждён.</div>';
 
-  const journey=data.journey || {};
-  const unmet=Object.entries(expansion.requirements || {}).filter(([,value])=>!value?.pass).map(([key])=>key);
   if ($('betaJourneySummary')) $('betaJourneySummary').textContent=
-    `${Number(journey.fullCompleted || 0)} из ${Number(journey.betaUsers || 0)} прошли полный путь запуск → поиск → найденный матч → матч → AI start → AI complete → история → повторный вход (${Number(journey.fullCompletionPct || 0)}%). До AI complete дошли ${Number(journey.analysisCompleted || 0)}. Expansion gate: ${expansionLabel}${unmet.length ? ` · не закрыто: ${unmet.join(', ')}` : ''}. Controlled beta: ${finalDecisionLabel}.`;
-  if (meta) meta.textContent=`${Number(data.periodDays || 7)} дн. · обновлено ${relativeAge(data.generatedAt)}`;
+    `${Number(users.completedJourneys || 0)} full journeys · ${Number(users.verifiedNormalUsers || 0)} verified normal users · ${Number(users.sessions || 0)} sessions. ${status}.`;
+  if (meta) meta.textContent=`${Number(data.periodDays || 7)} дн. · cohort ${escapeHtml(data.cohort || 'phase5_public_v1')} · обновлено ${relativeAge(data.generatedAt)}`;
 }
 
 async function loadBetaDashboard(force = false) {
@@ -1188,9 +1146,9 @@ async function loadBetaDashboard(force = false) {
   state.betaDashboardLoading=true;
   renderBetaDashboard();
   try {
-    state.betaDashboard=await api(`/api/beta-dashboard?days=${Number(state.betaDashboardDays || 7)}`,{timeoutMs:10000,retry:false,dedupe:false});
+    state.betaDashboard=await api(`/api/phase5-dashboard?days=${Number(state.betaDashboardDays || 7)}`,{timeoutMs:10000,retry:false,dedupe:false});
   } catch (error) {
-    state.betaDashboard={available:false,reason:error.message || 'Не удалось загрузить Beta Dashboard.'};
+    state.betaDashboard={available:false,reason:error.message || 'Не удалось загрузить Phase 5 Dashboard.'};
   } finally {
     state.betaDashboardLoading=false;
     renderBetaDashboard();
