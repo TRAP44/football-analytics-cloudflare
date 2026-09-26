@@ -11,18 +11,15 @@
 </head>
 <body class="miniapp-public-shell">
   <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
-    <div class="boot-card">
-      <div class="boot-orbit" aria-hidden="true"><i></i><i></i><i></i></div>
-      <div class="boot-logo"><span>AI</span></div>
-      <div class="boot-kicker">FM AI · ФУТБОЛЬНЫЙ ИНСТРУКТОР · версия <span id="bootVersion">6.120.0</span></div>
-      <h1 id="bootTitle">Запускаю FM AI</h1>
-      <p id="bootText">Готовлю глобальный поиск и AI-разбор матча…</p>
-      <div class="boot-feature-row" aria-hidden="true"><span>🔎 Поиск</span><span>🧠 AI-вердикт</span><span>🧑‍⚖️ Контекст</span></div>
+    <div class="boot-card boot-card-simple">
+      <div class="boot-logo"><span>FM</span></div>
+      <h1 id="bootTitle">FM AI</h1>
+      <p class="boot-tagline">Ваш футбол — в одном месте</p>
+      <p id="bootText">Загружаем матчи…</p>
       <div class="boot-progress" aria-hidden="true"><i id="bootProgressFill"></i></div>
-      <div class="boot-progress-caption"><span>АНАЛИЗИРУЮ</span><b>данные · форма · рынок</b></div>
       <div class="boot-actions">
         <button id="bootRetryBtn" class="secondary-btn" type="button" hidden>Повторить</button>
-        <button id="bootContinueBtn" class="secondary-btn" type="button" hidden>Открыть интерфейс</button>
+        <button id="bootContinueBtn" class="secondary-btn" type="button" hidden>Открыть приложение</button>
         <button id="bootReloadBtn" class="primary-btn" type="button" hidden>Обновить приложение</button>
       </div>
     </div>
@@ -32,9 +29,9 @@
       <div class="brand-lockup">
         <div class="brand-mark" aria-hidden="true"><span>FM</span></div>
         <div class="brand-copy">
-          <div class="eyebrow">AI ФУТБОЛЬНЫЙ ИНСТРУКТОР</div>
-          <h1 id="topbarTitle" tabindex="-1">AI-анализ матча</h1>
-          <p id="topbarSubtitle">Найдите клуб или матч — FM AI соберёт главное для решения</p>
+          <div class="eyebrow">FM AI</div>
+          <h1 id="topbarTitle" tabindex="-1">Главная</h1>
+          <p id="topbarSubtitle">Ваш футбол — в одном месте</p>
         </div>
       </div>
       <button id="profileBtn" class="profile-badge" type="button" aria-label="Открыть профиль"><i></i><span>Профиль</span></button>
@@ -56,59 +53,54 @@
 
     <main>
       <section id="matchesView" class="view active">
+        <div class="home-search-block">
+          <div class="search-row">
+            <input id="matchSearch" class="search-input" type="search" aria-label="Поиск команды или матча" inputmode="search" enterkeyhint="search" placeholder="Команда, матч или турнир" autocomplete="off" />
+            <button id="homeSearchBtn" class="global-search-btn" type="button">Найти</button>
+          </div>
+        </div>
+
+        <section id="dailyOverview" class="home-priority-stack" aria-label="Главное сейчас">
+          <button id="homeLiveCard" class="home-priority-card is-live" type="button" data-quick-filter="live" hidden>
+            <span>LIVE</span><strong id="homeLiveText">Матчи идут сейчас</strong><b>Открыть →</b>
+          </button>
+          <button id="homeTeamsBtn" class="home-priority-card" type="button" hidden>
+            <span>Мои команды</span><strong id="homeTeamsText">Любимые команды</strong><b>Открыть →</b>
+          </button>
+          <button id="homeFavoriteBtn" class="home-priority-card onboarding" type="button" hidden>
+            <span>Сделайте ленту своей</span><strong>Добавить любимую команду</strong><b>Найти →</b>
+          </button>
+        </section>
+
         <div class="date-strip">
           <button class="date-btn" type="button" data-offset="-1">Вчера</button>
           <button class="date-btn active" type="button" data-offset="0">Сегодня</button>
           <button class="date-btn" type="button" data-offset="1">Завтра</button>
         </div>
 
-        <div class="home-search-block">
-          <div class="mini-section-head"><strong>Найти команду или матч</strong><span>Сразу на Главной</span></div>
-          <div class="search-row">
-          <input id="matchSearch" class="search-input" type="search" aria-label="Поиск по матчам" inputmode="search" enterkeyhint="search" placeholder="🔎 Команда, матч, турнир или страна" autocomplete="off" />
-          <button id="homeSearchBtn" class="global-search-btn" type="button">Найти</button>
+        <details class="home-filter-drawer">
+          <summary>Фильтры матчей</summary>
+          <div class="home-filter-body">
+            <div class="filter-strip" id="filterStrip">
+              <button type="button" class="filter-btn active" data-filter="top">Для вас</button>
+              <button type="button" class="filter-btn" data-filter="live">LIVE</button>
+              <button type="button" class="filter-btn" data-filter="favorites">Избранное</button>
+              <button type="button" class="filter-btn" data-filter="all">Все</button>
+            </div>
+            <div class="league-filter-grid">
+              <button type="button" class="filter-btn" data-filter="international">Международные</button>
+              <button type="button" class="filter-btn" data-filter="cups">Кубки</button>
+              <button type="button" class="filter-btn" data-filter="england">Англия</button>
+              <button type="button" class="filter-btn" data-filter="spain">Испания</button>
+              <button type="button" class="filter-btn" data-filter="italy">Италия</button>
+              <button type="button" class="filter-btn" data-filter="germany">Германия</button>
+              <button type="button" class="filter-btn" data-filter="france">Франция</button>
+            </div>
+            <section id="popularCompetitionsWrap" class="popular-competitions" hidden>
+              <div class="mini-section-head"><strong>Популярные турниры</strong><span></span></div>
+              <div id="popularCompetitions" class="competition-shortcuts"></div>
+            </section>
           </div>
-        </div>
-
-        <section id="dailyOverview" class="daily-overview" aria-live="polite">
-          <div class="daily-overview-copy">
-            <span id="dailyOverviewKicker">СЕГОДНЯ ДЛЯ ВАС</span>
-            <h2 id="dailyOverviewTitle">Рекомендации для вас</h2>
-            <p id="dailyOverviewText">Собираю матчи, которые важны именно вам.</p>
-          </div>
-          <div class="daily-overview-actions">
-            <button type="button" class="overview-action live" data-quick-filter="live"><b id="overviewLiveCount">0</b><span>Сейчас</span></button>
-            <button type="button" class="overview-action favorite" data-quick-filter="favorites"><b id="overviewFavoriteCount">0</b><span>Любимые</span></button>
-            <button type="button" class="overview-action recommended" data-quick-filter="top"><b id="overviewRecommendedCount">0</b><span>Для вас</span></button>
-          </div>
-        </section>
-
-        <section id="aiFocus" class="ai-focus-card secondary-home-insight" hidden aria-live="polite"></section>
-        <section id="aiCenterSummary" class="ai-center-summary secondary-home-insight" hidden aria-live="polite"></section>
-
-
-        <div class="filter-strip" id="filterStrip">
-          <button type="button" class="filter-btn active" data-filter="top">✨ Для вас</button>
-          <button type="button" class="filter-btn" data-filter="live">🔴 Сейчас</button>
-          <button type="button" class="filter-btn" data-filter="favorites">⭐ Избранное</button>
-          <button type="button" class="filter-btn" data-filter="all">Все</button>
-        </div>
-
-        <details class="league-filter-drawer">
-          <summary>Лиги и турниры <span>Выбрать</span></summary>
-          <div class="league-filter-grid">
-            <button type="button" class="filter-btn" data-filter="international">🌍 Международные</button>
-            <button type="button" class="filter-btn" data-filter="cups">🏆 Кубки</button>
-            <button type="button" class="filter-btn" data-filter="england">🏴 Англия</button>
-            <button type="button" class="filter-btn" data-filter="spain">🇪🇸 Испания</button>
-            <button type="button" class="filter-btn" data-filter="italy">🇮🇹 Италия</button>
-            <button type="button" class="filter-btn" data-filter="germany">🇩🇪 Германия</button>
-            <button type="button" class="filter-btn" data-filter="france">🇫🇷 Франция</button>
-          </div>
-          <section id="popularCompetitionsWrap" class="popular-competitions" hidden>
-            <div class="mini-section-head"><strong>Популярное сегодня</strong><span>Открыть турнир</span></div>
-            <div id="popularCompetitions" class="competition-shortcuts"></div>
-          </section>
         </details>
 
         <div class="section-head">
@@ -118,7 +110,7 @@
           </div>
           <button id="refreshBtn" class="icon-btn" type="button" aria-label="Обновить">↻</button>
         </div>
-        <div id="matchesCount" class="results-count"></div>
+        <div id="matchesCount" class="results-count" hidden></div>
         <div id="dataNotice"></div>
         <div id="matches" class="matches" aria-live="polite" aria-busy="true">
           <div class="skeleton-stack" aria-hidden="true">
@@ -128,14 +120,7 @@
           </div>
         </div>
 
-        <section id="firstRunGuide" class="first-run-guide first-run-guide-after-feed" hidden aria-label="Быстрый старт">
-          <div class="first-run-guide-copy">
-            <span>БЫСТРЫЙ СТАРТ</span>
-            <strong>Настройте ленту под себя</strong>
-            <p>Добавляйте команды в избранное и включайте напоминания из карточки матча.</p>
-          </div>
-          <button id="firstRunGuideDismiss" class="first-run-guide-dismiss" type="button">Понятно</button>
-        </section>
+
       </section>
 
       <section id="searchView" class="view" hidden>
@@ -152,10 +137,6 @@
           </div>
           <p class="tiny search-helper">Результаты из уже загруженных матчей появятся сразу.</p>
         </section>
-        <div class="public-trust-strip" aria-label="Информация о сервисе">
-          <span>FM AI объясняет футбольные данные и не гарантирует исход матча.</span>
-          <span class="public-trust-links"><a href="/privacy.html">Конфиденциальность</a><a href="/terms.html">Условия</a><a href="/status.html">Статус</a></span>
-        </div>
         <div class="search-mode-tabs" role="group" aria-label="Фильтр результатов поиска" hidden>
           <button class="search-mode-btn active" type="button" data-search-mode="all" aria-pressed="true">Все</button>
           <button class="search-mode-btn" type="button" data-search-mode="teams" aria-pressed="false">Команды</button>
@@ -282,26 +263,26 @@
         </div>
 
 
-        <details class="profile-data-details">
-          <summary><span><strong>Доступность данных</strong><small>Что обычно доступно по матчам</small></span><b id="dataModeSummary">Обычное</b></summary>
-        <section class="panel data-mode-panel">
+        <section class="panel">
           <div class="section-head profile-section-head">
             <div>
-              <h2>⚽ Данные по матчам</h2>
-              <p>Составы, статистика и коэффициенты доступны не для всех турниров.</p>
+              <h2>⭐ Избранные команды</h2>
+              <p>Матчи этих команд доступны через фильтр «Избранное».</p>
             </div>
           </div>
-          <div class="provider-status-grid public-data-grid">
-            <div><span>Объём</span><strong id="dataModeLabel">Обычное</strong></div>
-            <div><span>Обновления</span><strong id="dataModeRefresh">автоматические</strong></div>
-            <div><span>Составы</span><strong id="dataModeLineups">По наличию</strong></div>
-            <div><span>Игроки</span><strong id="dataModePlayers">По наличию</strong></div>
-            <div><span>Коэффициенты</span><strong id="dataModeOdds">По наличию</strong></div>
-          </div>
-          <p id="dataModeNote" class="tiny">Доступность зависит от турнира и конкретного матча.</p>
+          <div id="favoriteTeams" class="favorite-teams"></div>
         </section>
-        </details>
 
+
+        <section class="panel">
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>🔔 Активные напоминания</h2>
+              <p>Можно отключить ненужный матч прямо здесь.</p>
+            </div>
+          </div>
+          <div id="reminderList" class="reminder-list"></div>
+        </section>
         <section class="panel preferences-panel">
           <div class="section-head profile-section-head">
             <div>
@@ -360,34 +341,40 @@
           <button id="savePreferencesBtn" class="primary-setting-btn" type="button">Сохранить настройки</button>
         </section>
 
-        <section class="panel">
+        <details class="profile-data-details">
+          <summary><span><strong>Доступность данных</strong><small>Что обычно доступно по матчам</small></span><b id="dataModeSummary">Обычное</b></summary>
+        <section class="panel data-mode-panel">
           <div class="section-head profile-section-head">
             <div>
-              <h2>🔔 Активные напоминания</h2>
-              <p>Можно отключить ненужный матч прямо здесь.</p>
+              <h2>⚽ Данные по матчам</h2>
+              <p>Составы, статистика и коэффициенты доступны не для всех турниров.</p>
             </div>
           </div>
-          <div id="reminderList" class="reminder-list"></div>
+          <div class="provider-status-grid public-data-grid">
+            <div><span>Объём</span><strong id="dataModeLabel">Обычное</strong></div>
+            <div><span>Обновления</span><strong id="dataModeRefresh">автоматические</strong></div>
+            <div><span>Составы</span><strong id="dataModeLineups">По наличию</strong></div>
+            <div><span>Игроки</span><strong id="dataModePlayers">По наличию</strong></div>
+            <div><span>Коэффициенты</span><strong id="dataModeOdds">По наличию</strong></div>
+          </div>
+          <p id="dataModeNote" class="tiny">Доступность зависит от турнира и конкретного матча.</p>
         </section>
-        <section class="panel">
+        </details>
+
+        <section class="panel profile-about-service">
           <div class="section-head profile-section-head">
             <div>
-              <h2>⭐ Избранные команды</h2>
-              <p>Матчи этих команд доступны через фильтр «Избранное».</p>
+              <h2>О сервисе</h2>
+              <p>Документы, состояние сервиса и обратная связь.</p>
             </div>
           </div>
-          <div id="favoriteTeams" class="favorite-teams"></div>
-        </section>
-
-
-        <section class="panel beta-feedback-panel">
-          <div class="section-head profile-section-head">
-            <div>
-              <h2>💬 Сообщить о проблеме</h2>
-              <p>Если что-то работает непонятно или нестабильно, сообщите об этом без отправки лишних данных.</p>
-            </div>
-            <button id="betaFeedbackOpenBtn" class="secondary-btn beta-feedback-open" type="button" aria-expanded="false">Сообщить о проблеме</button>
+          <div class="service-links">
+            <a href="/privacy.html">Конфиденциальность</a>
+            <a href="/terms.html">Условия использования</a>
+            <a href="/status.html">Статус сервиса</a>
+            <button id="betaFeedbackOpenBtn" class="service-link-button" type="button" aria-expanded="false">Сообщить о проблеме</button>
           </div>
+          <div class="service-version"><span>Версия приложения</span><strong id="publicAppVersion">6.120.0</strong></div>
           <div id="betaFeedbackForm" class="beta-feedback-form" hidden>
             <div class="beta-feedback-fields">
               <label>Раздел
@@ -412,13 +399,14 @@
             <label class="beta-feedback-note">Что произошло
               <textarea id="betaFeedbackNote" maxlength="600" rows="4" placeholder="Опишите шаги и результат. Не указывайте пароли, токены и другие личные данные."></textarea>
             </label>
-            <p class="tiny beta-feedback-privacy"><strong>Что будет передано:</strong> выбранный раздел, важность и только текст, который вы введёте. К записи добавляется техническая версия сервера. Telegram используется для проверки сессии, но Telegram ID, поисковые запросы, введённые названия команд и технические логи к сообщению не прикладываются и пользователю не показываются.</p>
+            <p class="tiny beta-feedback-privacy"><strong>Что будет передано:</strong> выбранный раздел, важность и только текст, который вы введёте. К записи добавляется версия приложения. Telegram используется для проверки сессии, но Telegram ID, поисковые запросы, введённые названия команд и технические логи к сообщению не прикладываются и пользователю не показываются.</p>
             <div class="beta-feedback-actions">
               <button id="betaFeedbackSendBtn" class="primary-setting-btn" type="button">Отправить</button>
               <button id="betaFeedbackCancelBtn" class="secondary-btn" type="button">Отмена</button>
               <span id="betaFeedbackStatus" class="tiny" role="status" aria-live="polite"></span>
             </div>
           </div>
+
         </section>
 
         <section class="panel admin-console" data-admin-only hidden>
