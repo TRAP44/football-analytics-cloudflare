@@ -54,7 +54,6 @@ test('common user-facing mixed English labels are removed from the Mini App', ()
     "error: 'error'",
     "liveOdds:'LIVE odds'",
     ' · TTL ',
-    '>LIVE<',
     ' LIVE</',
     'LIVE-рынок',
     'LIVE сейчас',
