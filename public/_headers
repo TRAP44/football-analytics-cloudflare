@@ -14,3 +14,12 @@
 
 /status.js
   Cache-Control: public, max-age=0, must-revalidate
+
+/styles/public-shell.css
+  Cache-Control: public, max-age=0, must-revalidate
+
+/index.html
+  Cache-Control: no-cache, max-age=0, must-revalidate
+
+/
+  Cache-Control: no-cache, max-age=0, must-revalidate
