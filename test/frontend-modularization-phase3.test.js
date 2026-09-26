@@ -38,9 +38,11 @@ test('Phase 3 keeps admin stylesheet out of the public HTML load path',()=>{
   assert.match(adminCss,/admin-zone-heading/);
 });
 
-test('Phase 3 does not introduce Phase 4 navigation',()=>{
-  assert.doesNotMatch(html,/Мои команды/);
+test('Phase 3 admin boundary remains intact after Phase 4 public navigation',()=>{
+  assert.match(html,/Мои команды/);
   assert.match(html,/id="navMatches"/);
+  assert.match(html,/id="navMyTeams"/);
   assert.match(html,/id="navHistory"/);
   assert.match(html,/id="navProfile"/);
+  assert.doesNotMatch(html.slice(html.indexOf('<nav class="bottom-nav"'),html.indexOf('</nav>',html.indexOf('<nav class="bottom-nav"'))),/admin|provider|runtime|release/i);
 });
