@@ -1,3 +1,9 @@
+# Architecture & Product Structure Consolidation — Phase 1
+
+Единый источник истины текущего release/schema contract: `release-contract.json`. Production schema — v6.19; fresh install использует только `supabase/baseline/supabase_baseline_v6_19.sql`, существующая production БД — только отсутствующие migrations. Baseline поверх production запрещён.
+
+Обязательный gate Phase 1: `npm ci && npm run security:scan && npm run check && npm test && npm run lint && npm run verify:release && npm run verify:worker`, затем production smoke. Public UX не показывает Closed Beta, BLOCKER/MAJOR/MINOR или RC/release/provider terminology; feedback остаётся «Сообщить о проблеме», а internal severity сохраняется в API/admin.
+
 # QA Release Checklist — v6.120.0 RC144
 
 ## RC144 — Availability Semantic Quality Guard

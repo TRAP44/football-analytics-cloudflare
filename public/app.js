@@ -872,7 +872,7 @@ async function runStartupSequence() {
 
   setBootStatus(
     'Собираю футбольный контекст',
-    manifest ? `${manifest.releaseCandidate || CLIENT_RELEASE_CHANNEL.toUpperCase()} · версия обмена данными ${manifest.apiContract}` : 'Манифест временно недоступен — продолжаю в безопасном режиме.',
+    manifest ? `Системная информация загружена · формат данных ${manifest.apiContract}` : 'Системная информация временно недоступна — продолжаю в безопасном режиме.',
     38
   );
 
@@ -1003,7 +1003,7 @@ async function api(path, options = {}) {
             state.closedBetaBlocked = true;
             showBootRecovery({
               blocking: true,
-              title: 'Закрытая beta',
+              title: 'Доступ временно ограничен',
               text: 'Этот Telegram-аккаунт пока не входит в список приглашённых тестировщиков.',
             });
           }

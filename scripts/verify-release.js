@@ -18,7 +18,7 @@ const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
 const readme = fs.readFileSync('README_CLOUDFLARE_RU.md', 'utf8');
 const qaChecklist = fs.readFileSync('QA_RELEASE_CHECKLIST_RU.md', 'utf8');
 const envExample = fs.readFileSync('.env.example', 'utf8');
-const baselinePath = 'supabase/baseline/supabase_baseline_v6_18.sql';
+const baselinePath = 'supabase/baseline/supabase_baseline_v6_19.sql';
 const baseline = fs.existsSync(baselinePath) ? fs.readFileSync(baselinePath, 'utf8') : '';
 const expected = `${pkg.version}-rc144`;
 const failures = [];
@@ -45,7 +45,7 @@ if (!fs.existsSync('supabase/migrations/supabase_migration_v6_16.sql')) failures
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_17.sql')) failures.push('Missing v6.17 Telegram dedupe observability migration');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_18.sql')) failures.push('Missing v6.18 RC127 hardening migration');
 if (fs.existsSync('supabase/baseline/supabase_baseline_v6_17.sql')) failures.push('Obsolete v6.17 fresh-install baseline must be removed');
-if (!fs.existsSync(baselinePath)) failures.push('Missing unified v6.18 baseline');
+if (!fs.existsSync(baselinePath)) failures.push('Missing unified v6.19 baseline');
 if (fs.existsSync('supabase/baseline/supabase_baseline_v6_16.sql')) failures.push('Obsolete v6.16 fresh-install baseline must be removed');
 if (fs.existsSync('supabase/baseline/supabase_baseline_v6_15.sql')) failures.push('Obsolete v6.15 fresh-install baseline must be removed');
 if (fs.existsSync('supabase/baseline/supabase_baseline_v6_9.sql')) failures.push('Obsolete v6.9 fresh-install baseline must be removed');

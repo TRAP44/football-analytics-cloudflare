@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const baselinePath='supabase/baseline/supabase_baseline_v6_18.sql';
+const baselinePath='supabase/baseline/supabase_baseline_v6_19.sql';
 const baseline=fs.readFileSync(baselinePath,'utf8');
 
 test('RC101 keeps Supabase SQL out of repository root',()=>{
