@@ -154,7 +154,7 @@ GO возможен только когда:
 5. фактические provider remaining/limits подтверждены;
 6. Telegram getWebhookInfo подтверждён;
 7. cohort и feedback channel реально созданы;
-8. production config подтверждает `BETA_ACCESS_ENABLED=true`, `betaAllowlistCount=2`, `allowlistOverlapCount=0`; Beta-01/Beta-02 — реальные non-admin участники allowlist.
+8. основной production-режим подтверждает `BETA_ACCESS_ENABLED=false` или missing и успешный normal-user вход нового валидированного Telegram-пользователя; strict beta отдельно проверяется тестом с `BETA_ACCESS_ENABLED=true`.
 
 
 ## 10. Strict Beta Post-Deploy snapshot — 26 сентября 2026, 12:25 UTC
@@ -169,10 +169,10 @@ GO возможен только когда:
 - production smoke 25/25;
 - deploy re-verification test suite: 799 passed, 0 failed;
 - latest provider evidence for release `6.120.0-rc144`: FREE, daily 97/100 remaining, minute 9/10 remaining, cooldown=false, evidence `controlled_release_probe` (11:41:13 UTC);
-- latest server-side configuration evidence: strict beta effective=true при raw env state `missing` (11:41:13 UTC);
+- историческое evidence до исправления #100: strict beta effective=true при raw env state `missing` (11:41:13 UTC); после этого изменения такое поведение считается устаревшим и не является целевым контрактом;
 - beta allowlist count=0, admin allowlist count=1, overlap=0.
 
-Следовательно, provider capacity подтверждена, но strict beta остаётся на **CONFIG HOLD** до явного `BETA_ACCESS_ENABLED=true` и фактического назначения Beta-01/Beta-02. Denied-account post-deploy field event и Beta-01/Beta-02 journey evidence пока не зафиксированы.
+Provider capacity подтверждена. Для публичного режима beta allowlist не является blocker; отдельный strict-beta regression должен подтвердить allowlist только при `BETA_ACCESS_ENABLED=true`.
 
 ## 11. Closed Beta Access & Field Validation — privacy boundary
 
@@ -184,4 +184,4 @@ GO возможен только когда:
 - beta client telemetry не пишет сырой Telegram ID в `growth_events` и не возвращает pseudonymous subject через Dashboard API;
 - Quality: 767/767 tests, fail 0; audit/security/lint/check/release/worker — PASS.
 
-Provider quota evidence уже подтверждена production probe. Остаются blocker: явный operational `BETA_ACCESS_ENABLED=true`, реальные Beta-01/Beta-02 в allowlist, denied-account post-deploy field event, два beta journey smoke, реальный LIVE validation, Telegram `getWebhookInfo`, feedback channel и финальный GO/NO-GO.
+Provider quota evidence уже подтверждена production probe. Для текущего публичного режима остаются field checks: новый non-admin Telegram journey, отсутствие admin-доступа у него, реальный LIVE validation и Telegram `getWebhookInfo`; strict beta проверяется отдельно как временный opt-in режим.
