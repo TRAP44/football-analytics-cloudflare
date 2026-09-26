@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const baselineUrl = new URL('../supabase/baseline/supabase_baseline_v6_18.sql', import.meta.url);
+const baselineUrl = new URL('../supabase/baseline/supabase_baseline_v6_19.sql', import.meta.url);
 const baseline = fs.readFileSync(baselineUrl, 'utf8').toLowerCase();
 
 test('RC99 exposes one current fresh-install Supabase baseline', () => {
