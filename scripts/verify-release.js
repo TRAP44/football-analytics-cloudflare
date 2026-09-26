@@ -154,6 +154,16 @@ else {
 if (worker.includes('telegram:bot-username:v1')) failures.push('Legacy global Telegram bot username cache key must not be used');
 if (!worker.includes('resolvePrimaryTelegramBotUsername') || !worker.includes('telegramBotStartUrl(username,startParam)')) failures.push('Primary Telegram bot identity/deep-link migration contract is incomplete');
 if (!fs.existsSync('PRIMARY_TELEGRAM_BOT_MIGRATION_PREP_RU.md')) failures.push('Missing primary Telegram bot migration runbook');
+else {
+  const primaryMigrationPrep = fs.readFileSync('PRIMARY_TELEGRAM_BOT_MIGRATION_PREP_RU.md','utf8');
+  for (const marker of ['@MatchRadarAIBot','@MANAGERPLAYER_BOT','TELEGRAM_WEBHOOK_SECRET','getWebhookInfo','GET /api/me','Rollback procedure']) {
+    if (!primaryMigrationPrep.includes(marker)) failures.push(`Primary Telegram migration runbook is missing: ${marker}`);
+  }
+}
+const primaryMigrationRegression = fs.readFileSync('test/primary-telegram-bot-migration-prep.test.js','utf8');
+if (!primaryMigrationRegression.includes('MatchRadarAIBot')) failures.push('Primary Telegram migration regression must target @MatchRadarAIBot');
+if (!primaryMigrationRegression.includes('channel publisher CTA use the current primary bot identity resolver')) failures.push('Primary Telegram migration regression must cover channel CTA identity');
+if (!primaryMigrationRegression.includes('/api/me and admin identity remain keyed by Telegram user id')) failures.push('Primary Telegram migration regression must cover /api/me and admin identity');
 if (!fs.existsSync('test/media-traffic-guard-rc66.test.js')) failures.push('Missing RC66 media traffic guard regression test');
 if (!fs.existsSync('test/media-publisher-kit-rc67.test.js')) failures.push('Missing RC67 media publisher regression test');
 if (!fs.existsSync('test/ai-instructor-rc43.test.js')) failures.push('Missing RC43 persistent-AI regression test');

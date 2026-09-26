@@ -11,6 +11,8 @@ import { channelPublisherState, sendMessage } from '../src/channel-publisher.js'
 
 const worker = fs.readFileSync('src/worker.js','utf8');
 const identityModule = fs.readFileSync('src/telegram-primary-identity.js','utf8');
+const router = fs.readFileSync('src/router.js','utf8');
+const accessControl = fs.readFileSync('src/access-control.js','utf8');
 
 async function signedInitData(botToken, userId = 24681012) {
   const params = new URLSearchParams();
@@ -48,11 +50,11 @@ test('primary bot username cache is identity-aware across token A and token B', 
     },
   });
 
-  assert.equal(await resolve(tokenA,'PrimaryBot_A',101),'PrimaryBot_A');
-  assert.equal(await resolve(tokenB,'MatchRadarAI_B',202),'MatchRadarAI_B');
+  assert.equal(await resolve(tokenA,'MANAGERPLAYER_BOT',101),'MANAGERPLAYER_BOT');
+  assert.equal(await resolve(tokenB,'MatchRadarAIBot',202),'MatchRadarAIBot');
   assert.equal(getMeCalls,2);
-  assert.equal(cache.get(keyA).username,'PrimaryBot_A');
-  assert.equal(cache.get(keyB).username,'MatchRadarAI_B');
+  assert.equal(cache.get(keyA).username,'MANAGERPLAYER_BOT');
+  assert.equal(cache.get(keyB).username,'MatchRadarAIBot');
   assert.equal(cache.get('telegram:bot-username:v1').username,'MANAGERPLAYER_BOT');
 });
 
@@ -62,10 +64,10 @@ test('deep link follows the new primary identity and cannot reuse the legacy use
     botToken:'test-primary-token-B',
     getCached:async key => cache.get(key),
     setCached:async (key,payload) => cache.set(key,payload),
-    getMe:async () => ({id:202,username:'MatchRadarAI_B'}),
+    getMe:async () => ({id:202,username:'MatchRadarAIBot'}),
   });
   const link = telegramBotStartUrl(username,'fx12345__social__migration__test');
-  assert.match(link,/^https:\/\/t\.me\/MatchRadarAI_B\?start=/);
+  assert.match(link,/^https:\/\/t\.me\/MatchRadarAIBot\?start=/);
   assert.equal(link.includes('MANAGERPLAYER_BOT'),false);
   assert.doesNotMatch(worker,/telegram:bot-username:v1/);
   assert.match(worker,/telegramBotStartUrl\(username,startParam\)/);
@@ -92,7 +94,7 @@ test('publisher token stays independent from primary bot migration', async () =>
   let calledUrl = '';
   await sendMessage(cfg,{
     text:'Migration isolation test',
-    ctaUrl:'https://t.me/MatchRadarAI_B?start=fx12345',
+    ctaUrl:'https://t.me/MatchRadarAIBot?start=fx12345',
   },{
     fetchImpl:async url => {
       calledUrl=String(url);
@@ -129,4 +131,40 @@ test('primary identity cache never logs or stores the raw bot token', () => {
   assert.doesNotMatch(identityModule,/console\.(?:log|info|warn|error)/);
   assert.doesNotMatch(identityModule,/payload\s*=\s*\{[^}]*botToken/s);
   assert.match(identityModule,/crypto\.subtle\.digest\('SHA-256'/);
+});
+
+test('fixture share and channel publisher CTA use the current primary bot identity resolver', () => {
+  const shareStart=worker.indexOf('async function apiFixtureShareLink');
+  const shareEnd=worker.indexOf('\nfunction fixtureShareCardText',shareStart);
+  const shareBlock=worker.slice(shareStart,shareEnd);
+  assert.match(shareBlock,/fixtureTelegramDeepLink\(cfg,fixtureId/);
+  assert.match(shareBlock,/telegramShareComposerUrl\(link\.url/);
+
+  const cardStart=worker.indexOf('async function sendBotFixtureShareCard');
+  const cardEnd=worker.indexOf('\nasync function apiChannelPublisherTest',cardStart);
+  const cardBlock=worker.slice(cardStart,cardEnd);
+  assert.match(cardBlock,/fixtureTelegramDeepLink\(cfg,fixtureId/);
+
+  const publisherStart=worker.indexOf('async function apiChannelPublisherTest');
+  const publisherEnd=worker.indexOf('\nasync function ',publisherStart+30);
+  const publisherBlock=worker.slice(publisherStart,publisherEnd);
+  assert.match(publisherBlock,/fixtureTelegramDeepLink\(cfg,fixtureId,\{source:'channel',campaign:'publisher_mvp',content:'manual'\}\)/);
+  assert.match(publisherBlock,/cta:\{text:'Открыть матч в MatchRadar',url:link\.url\}/);
+});
+
+test('/api/me and admin identity remain keyed by Telegram user id after primary bot migration', () => {
+  assert.match(router,/request\.method === 'GET' && url\.pathname === '\/api\/me'/);
+  const apiMeStart=worker.indexOf('async function apiMe');
+  const apiMeEnd=worker.indexOf('\nasync function apiHistory',apiMeStart);
+  const apiMeBlock=worker.slice(apiMeStart,apiMeEnd);
+  assert.match(apiMeBlock,/getFavorites\(user\.id, cfg\)/);
+  assert.match(apiMeBlock,/getReminders\(user\.id, cfg\)/);
+  assert.match(apiMeBlock,/getPreferences\(user\.id, cfg\)/);
+  assert.match(apiMeBlock,/isAdmin:\s*isAdminUser\(user, cfg\)/);
+  assert.match(accessControl,/cfg\.adminTelegramIds/);
+  assert.match(accessControl,/Number\(id\) === userId/);
+});
+
+test('disabled monetization remains fail-closed during primary bot migration', () => {
+  assert.match(router,/if \(!cfg\.monetizationEnabled\) return json\(\{ error: 'Монетизация отложена до финального этапа проекта\.' \}, 404\)/);
 });
