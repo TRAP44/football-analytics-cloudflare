@@ -9,6 +9,7 @@ import {
 
 const identityModule = fs.readFileSync('src/telegram-primary-identity.js','utf8');
 const worker = fs.readFileSync('src/worker.js','utf8');
+const transport = fs.readFileSync('src/telegram-transport.js','utf8');
 
 const TOKEN_A = '111111111:raw-secret-primary-a';
 const TOKEN_B = '222222222:raw-secret-primary-b';
