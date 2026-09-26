@@ -17,7 +17,7 @@ test('RC70 scores fixtures against the news publication time',()=>{
 test('each favorite-team news item can receive its own fixture CTA',()=>{
   assert.match(worker,/const smartLink=\(fixtures \|\| \[\]\)\.length \? newsRelevantFixture\(item,fixtures\) : null/);
   assert.match(worker,/linkedFixtureId=Number\(smartLink\?\.fixture\?\.fixtureId \|\| fixtureId \|\| 0\)/);
-  assert.match(worker,/newsFeedText\(news\.items,\{title:'FM AI News',teamName:team\.team_name \|\| '',fixture,fixtures:matches \|\| \[\]\}\)/);
+  assert.match(worker,/newsFeedText\(news\.items,\{title:'MatchRadar AI · Новости',teamName:team\.team_name \|\| '',fixture,fixtures:matches \|\| \[\]\}\)/);
   assert.match(worker,/newsConversionKeyboard\(news\.items,extra,\{fixtureId:Number\(fixture\?\.fixtureId \|\| 0\),fixtures:matches \|\| \[\]\}\)/);
 });
 
