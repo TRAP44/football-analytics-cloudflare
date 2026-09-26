@@ -209,7 +209,7 @@ const defaultAclMigration = fs.readFileSync('supabase/migrations/supabase_migrat
 if (!defaultAclMigration.includes('application_owners')) failures.push('Missing application-owner default ACL audit');
 if (!defaultAclMigration.includes('backend_default_acl_contract')) failures.push('Missing default ACL security contract RPC');
 
-if (!publicShellStyles.includes('Bottom Navigation Visibility Hotfix') || !publicShellStyles.includes('grid-template-columns:repeat(4,minmax(0,1fr))')) failures.push('Bottom navigation final four-column cascade guard is missing');
+if (!publicShellStyles.includes('Bottom Navigation Visibility Hotfix') || !publicShellStyles.includes('grid-template-columns:repeat(4,minmax(0,1fr))') || !publicShellStyles.includes('transform:none')) failures.push('Bottom navigation final four-column cascade/position guard is missing');
 if (!staticHeaders.includes('/styles/public-shell.css') || !staticHeaders.includes('/index.html') || !staticHeaders.includes('Cache-Control: no-cache, max-age=0, must-revalidate')) failures.push('Mini App shell cache revalidation headers are missing');
 
 if (failures.length) {
