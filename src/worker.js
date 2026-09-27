@@ -816,6 +816,21 @@ function publicRouteError(error, rateLimited = false) {
     };
   }
 
+  if (code === 'FOOTBALL_GUARD_DEGRADED') {
+    return {
+      status: 503,
+      body: {
+        error: retryAfter
+          ? `Защита лимита футбольного источника временно работает в аварийном режиме. Повторите примерно через ${retryAfter} сек.`
+          : 'Защита лимита футбольного источника временно работает в аварийном режиме. Попробуйте позже.',
+        code,
+        category: 'provider_guard',
+        recoverable: true,
+        retryAfter,
+      },
+    };
+  }
+
   if (code === 'UPSTREAM_TIMEOUT') {
     return {
       status: 504,
