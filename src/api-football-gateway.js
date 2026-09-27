@@ -127,14 +127,16 @@ export function createApiFootballGateway({
       }, Number(options.timeoutMs || 10000), 'API-Football');
     } catch (error) {
       const durationMs = Date.now() - startedAt;
+      const timedOut = String(error?.code || '') === 'UPSTREAM_TIMEOUT';
       bumpTelemetry('apiErrors');
       memory.provider.lastStatus = null;
       memory.provider.lastLatencyMs = durationMs;
-      memory.provider.lastError = 'network_error';
+      memory.provider.lastError = timedOut ? 'timeout' : 'network_error';
       await recordOpsEvent(cfg, {
-        severity: 'error', source: 'provider', eventType: 'api_request', code: 'FOOTBALL_NETWORK',
-        message: error?.message || 'Network error', endpoint: path, durationMs,
+        severity: 'error', source: 'provider', eventType: 'api_request', code: timedOut ? 'UPSTREAM_TIMEOUT' : 'FOOTBALL_NETWORK',
+        message: error?.message || (timedOut ? 'Upstream timeout' : 'Network error'), endpoint: path, durationMs,
       });
+      if (timedOut) throw error;
       throw footballError('Не удалось подключиться к API-Football.', 'FOOTBALL_NETWORK');
     }
 
@@ -227,7 +229,7 @@ export function createApiFootballGateway({
   }
 
   function isRetryableFootballTransportError(error) {
-    return String(error?.code || '') === 'FOOTBALL_NETWORK';
+    return ['FOOTBALL_NETWORK', 'UPSTREAM_TIMEOUT'].includes(String(error?.code || ''));
   }
 
   async function apiFootball(path, params, cfg, options = {}) {
