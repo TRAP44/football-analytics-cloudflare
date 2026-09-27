@@ -30,5 +30,6 @@ For this phase, extracted modules therefore receive dependencies from `worker.js
 
 - `src/router.js`: protected API route selection and admin-route isolation. Authentication, beta/public access, runtime guard, burst guard and top-level error compatibility remain in `worker.js`.
 - `src/telegram-transport.js`: Telegram webhook transport/orchestration: secret verification, update parse, memory/persistent dedupe lifecycle, burst handling and delegation to the existing update processor. Telegram commands, callbacks, deep links and football/business handlers remain unchanged in `worker.js`.
+- `src/user-favorites.js`: user-scoped favorites storage boundary: guarded Supabase add/read/delete semantics, 50-item fallback cap and memory fallback are injected from `worker.js`; API and Telegram callers remain unchanged.
 
 No API URL, JSON contract, Telegram command/deep-link contract, Supabase schema, provider quota/cooldown policy, cache/dedupe policy, AI quota, monetization flag or frontend behavior is changed by these boundaries.

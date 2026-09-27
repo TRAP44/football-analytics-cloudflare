@@ -8,6 +8,7 @@ import {
 } from '../src/personal-write-guards.js';
 
 const worker = fs.readFileSync('src/worker.js', 'utf8');
+const favorites = fs.readFileSync('src/user-favorites.js', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/supabase_migration_v6_19_1.sql', 'utf8').toLowerCase();
 
 test('personal write guards normalize valid favorites and reject unsafe payloads', () => {
@@ -56,15 +57,16 @@ test('v6.19.1 serializes per-user writes and keeps RPCs backend-only', () => {
   assert.match(migration, /grant execute on function public\.save_match_reminder_guarded[\s\S]*to service_role/);
 });
 
-test('worker uses guarded RPCs instead of direct upsert for personal writes', () => {
-  const favoriteStart = worker.indexOf('async function addFavorite');
+test('personal write storage boundaries use guarded RPCs instead of direct upserts', () => {
+  assert.match(favorites, /save_favorite_guarded/);
+  assert.doesNotMatch(favorites, /supaUpsert\(cfg, 'favorites'/);
+  assert.match(worker, /createUserFavoritesService\(\{/);
+  assert.doesNotMatch(worker, /async function addFavorite\(/);
+
   const reminderStart = worker.indexOf('async function addReminder');
-  assert.ok(favoriteStart >= 0 && reminderStart > favoriteStart);
-  const favoriteBlock = worker.slice(favoriteStart, reminderStart);
   const reminderEnd = worker.indexOf('async function removeReminder', reminderStart);
+  assert.ok(reminderStart >= 0 && reminderEnd > reminderStart);
   const reminderBlock = worker.slice(reminderStart, reminderEnd);
-  assert.match(favoriteBlock, /save_favorite_guarded/);
-  assert.doesNotMatch(favoriteBlock, /supaUpsert\(cfg, 'favorites'/);
   assert.match(reminderBlock, /save_match_reminder_guarded/);
   assert.doesNotMatch(reminderBlock, /supaUpsert\(cfg, 'match_reminders'/);
   assert.match(worker, /FAVORITES_LIMIT/);
