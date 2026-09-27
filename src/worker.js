@@ -2134,7 +2134,7 @@ async function telegramApi(method, cfg, body = {}) {
     throw error;
   }
 
-  markTelegramWebhookEffect(cfg, method);
+  if (!/^get[A-Z]/.test(String(method || ''))) markTelegramWebhookEffect(cfg, method);
   return data.result;
 }
 
