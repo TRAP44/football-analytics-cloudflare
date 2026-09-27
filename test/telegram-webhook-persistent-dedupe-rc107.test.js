@@ -43,7 +43,7 @@ test('RC107 Worker combines memory and persistent dedupe around webhook processi
 
 test('RC107 persistent dedupe fails open to memory with bounded Supabase latency',()=>{
   const start=worker.indexOf('async function claimTelegramUpdatePersistent');
-  const end=worker.indexOf('\nfunction telegramBurstKind',start);
+  const end=worker.indexOf('function telegramBurstKind',start);
   assert.ok(start>=0 && end>start);
   const block=worker.slice(start,end);
   assert.match(block,/!hasSupabase\(cfg\).*fallback/s);

@@ -995,26 +995,6 @@ function enforceRouteBurst(request, user) {
   }, 429, { 'retry-after': String(retryAfter) });
 }
 
-const {
-  claimTelegramUpdate,
-  completeTelegramUpdate,
-  releaseTelegramUpdate,
-  claimTelegramUpdatePersistent,
-  completeTelegramUpdatePersistent,
-  releaseTelegramUpdatePersistent,
-  telegramPersistentDedupeSelfTest,
-  readTelegramDedupeHealth,
-  telegramDedupeObservabilitySelfTest,
-  enforceTelegramBurst,
-} = createTelegramDedupeRuntime({
-  memory,
-  pruneMemoryState,
-  bumpTelemetry,
-  hasSupabase,
-  supaRpc,
-  redactOpsString,
-});
-
 function productionSafetySnapshot() {
   return {
     singleflight: {
@@ -1118,6 +1098,26 @@ const {
 } = createSupabaseClient({
   fetchWithTimeout,
   redactMessage: redactOpsString,
+});
+
+const {
+  claimTelegramUpdate,
+  completeTelegramUpdate,
+  releaseTelegramUpdate,
+  claimTelegramUpdatePersistent,
+  completeTelegramUpdatePersistent,
+  releaseTelegramUpdatePersistent,
+  telegramPersistentDedupeSelfTest,
+  readTelegramDedupeHealth,
+  telegramDedupeObservabilitySelfTest,
+  enforceTelegramBurst,
+} = createTelegramDedupeRuntime({
+  memory,
+  pruneMemoryState,
+  bumpTelemetry,
+  hasSupabase,
+  supaRpc,
+  redactOpsString,
 });
 
 function sensitiveOpsMetadataKey(key = '') {
