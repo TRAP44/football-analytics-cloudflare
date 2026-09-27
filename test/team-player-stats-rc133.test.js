@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/api-football-gateway.js','utf8');
+
 import {
   footballDataScorersUrl,
   normalizeFootballDataTeamScorers,
