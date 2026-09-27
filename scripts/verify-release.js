@@ -2,7 +2,7 @@ import fs from 'node:fs';
 
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
-const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync('src/router.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-transport.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-dedupe.js', 'utf8');
+const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync('src/router.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-transport.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-dedupe.js', 'utf8') + '\n' + fs.readFileSync('src/auth-user.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const staticHeaders = fs.readFileSync('public/_headers', 'utf8');
