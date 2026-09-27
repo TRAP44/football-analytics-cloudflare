@@ -98,3 +98,13 @@ test('one normal startup match-list request can make at most one API-Football ca
   assert.match(matches,/providerBatch/);
   assert.match(matches,/getCache\(providerBatchKey/);
 });
+
+
+test('distributed provider guard degradation uses a bounded local emergency budget',()=>{
+  const gateway=readFileSync(new URL('../src/api-football-gateway.js',import.meta.url),'utf8');
+  assert.match(gateway,/function emergencyProviderMinuteLimit/);
+  assert.match(gateway,/function claimEmergencyLocalProviderBudget/);
+  assert.match(gateway,/providerEmergencyBudget/);
+  assert.match(gateway,/FOOTBALL_GUARD_DEGRADED/);
+  assert.doesNotMatch(gateway,/guard_unavailable'\};?\s*$/m);
+});
