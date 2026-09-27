@@ -40,6 +40,7 @@ import {
   validateTelegramInitData,
 } from './crypto-utils.js';
 import { resolvePrimaryTelegramBotUsername, telegramBotStartUrl } from './telegram-primary-identity.js';
+import { PERSONAL_WRITE_LIMITS, normalizeFavoriteWrite, normalizeReminderWrite } from './personal-write-guards.js';
 
 const memory = {
   users: new Map(),
@@ -784,6 +785,32 @@ function publicRouteError(error, rateLimited = false) {
         category: 'rate_limit',
         recoverable: true,
         retryAfter,
+      },
+    };
+  }
+
+  if (code === 'PERSONAL_DATA_INVALID') {
+    return {
+      status: 400,
+      body: {
+        error: 'Данные запроса не прошли проверку.',
+        code,
+        category: 'validation',
+        recoverable: false,
+      },
+    };
+  }
+
+  if (code === 'FAVORITES_LIMIT' || code === 'REMINDERS_LIMIT') {
+    return {
+      status: 409,
+      body: {
+        error: code === 'FAVORITES_LIMIT'
+          ? `Достигнут лимит избранных команд: ${PERSONAL_WRITE_LIMITS.favorites}.`
+          : `Достигнут лимит активных напоминаний: ${PERSONAL_WRITE_LIMITS.reminders}.`,
+        code,
+        category: 'limit',
+        recoverable: false,
       },
     };
   }
@@ -11760,21 +11787,45 @@ async function getFavorites(userId, cfg) {
 }
 
 async function addFavorite(userId, team, cfg) {
+  const normalized = normalizeFavoriteWrite({
+    teamId: team?.id,
+    teamName: team?.name,
+    teamLogo: team?.logo,
+  });
   const row = {
     telegram_id: Number(userId),
-    team_id: Number(team.id),
-    team_name: String(team.name || ''),
-    team_logo: String(team.logo || ''),
+    team_id: normalized.teamId,
+    team_name: normalized.teamName,
+    team_logo: normalized.teamLogo,
     created_at: new Date().toISOString(),
   };
-  if (!Number.isFinite(row.team_id) || row.team_id <= 0 || !row.team_name) throw new Error('Некорректная команда.');
   if (hasSupabase(cfg)) {
-    await supaUpsert(cfg, 'favorites', row, 'telegram_id,team_id');
-    return row;
+    const result = await supaRpc(cfg, 'save_favorite_guarded', {
+      p_telegram_id: row.telegram_id,
+      p_team_id: row.team_id,
+      p_team_name: row.team_name,
+      p_team_logo: row.team_logo,
+      p_limit: PERSONAL_WRITE_LIMITS.favorites,
+    }, 4000);
+    if (!result?.allowed) {
+      const reason = String(result?.reason || 'rejected');
+      const error = new Error(reason === 'limit_reached'
+        ? `Можно сохранить не больше ${PERSONAL_WRITE_LIMITS.favorites} команд.`
+        : 'Некорректные данные избранной команды.');
+      error.code = reason === 'limit_reached' ? 'FAVORITES_LIMIT' : 'PERSONAL_DATA_INVALID';
+      throw error;
+    }
+    return result.item || row;
   }
   const key = Number(userId);
   const list = memory.favorites.get(key) || [];
-  memory.favorites.set(key, [row, ...list.filter(x => Number(x.team_id) !== row.team_id)].slice(0, 50));
+  const existing = list.some(x => Number(x.team_id) === row.team_id);
+  if (!existing && list.length >= PERSONAL_WRITE_LIMITS.favorites) {
+    const error = new Error(`Можно сохранить не больше ${PERSONAL_WRITE_LIMITS.favorites} команд.`);
+    error.code = 'FAVORITES_LIMIT';
+    throw error;
+  }
+  memory.favorites.set(key, [row, ...list.filter(x => Number(x.team_id) !== row.team_id)].slice(0, PERSONAL_WRITE_LIMITS.favorites));
   return row;
 }
 
@@ -11858,19 +11909,21 @@ async function getReminders(userId, cfg) {
 
 async function addReminder(userId, input, cfg) {
   const prefs = await getPreferences(userId, cfg);
-  const requestedMinutes = Number(input.reminderMinutes ?? prefs.reminderMinutes);
-  const reminderMinutes = [15, 30, 60].includes(requestedMinutes) ? requestedMinutes : 30;
-  const kickoffNotify = input.kickoffNotify === undefined ? Boolean(prefs.kickoffNotification) : Boolean(input.kickoffNotify);
+  const normalized = normalizeReminderWrite({
+    ...input,
+    reminderMinutes: input.reminderMinutes ?? prefs.reminderMinutes,
+    kickoffNotify: input.kickoffNotify === undefined ? Boolean(prefs.kickoffNotification) : Boolean(input.kickoffNotify),
+  });
   const row = {
     telegram_id: Number(userId),
-    fixture_id: Number(input.fixtureId),
-    home_name: String(input.homeName || ''),
-    away_name: String(input.awayName || ''),
-    league_name: String(input.leagueName || ''),
-    fixture_date: input.fixtureDate ? new Date(input.fixtureDate).toISOString() : null,
+    fixture_id: normalized.fixtureId,
+    home_name: normalized.homeName,
+    away_name: normalized.awayName,
+    league_name: normalized.leagueName,
+    fixture_date: normalized.fixtureDate,
     enabled: true,
-    remind_before_minutes: reminderMinutes,
-    kickoff_notify: kickoffNotify,
+    remind_before_minutes: normalized.reminderMinutes,
+    kickoff_notify: normalized.kickoffNotify,
     notified_at: null,
     kickoff_notified_at: null,
     prematch_claimed_at: null,
@@ -11884,17 +11937,40 @@ async function addReminder(userId, input, cfg) {
     delivery_retry_after: null,
     created_at: new Date().toISOString(),
   };
-  if (!Number.isFinite(row.fixture_id) || row.fixture_id <= 0 || !row.fixture_date || !row.home_name || !row.away_name) {
-    throw new Error('Некорректные данные напоминания.');
-  }
-  if (Date.parse(row.fixture_date) <= Date.now() + 5 * 60_000) throw new Error('Матч уже начинается или начался.');
   if (hasSupabase(cfg)) {
-    await supaUpsert(cfg, 'match_reminders', row, 'telegram_id,fixture_id');
-    return row;
+    const result = await supaRpc(cfg, 'save_match_reminder_guarded', {
+      p_telegram_id: row.telegram_id,
+      p_fixture_id: row.fixture_id,
+      p_home_name: row.home_name,
+      p_away_name: row.away_name,
+      p_league_name: row.league_name,
+      p_fixture_date: row.fixture_date,
+      p_remind_before_minutes: row.remind_before_minutes,
+      p_kickoff_notify: row.kickoff_notify,
+      p_limit: PERSONAL_WRITE_LIMITS.reminders,
+    }, 4000);
+    if (!result?.allowed) {
+      const reason = String(result?.reason || 'rejected');
+      const error = new Error(reason === 'limit_reached'
+        ? `Можно создать не больше ${PERSONAL_WRITE_LIMITS.reminders} активных напоминаний.`
+        : reason === 'fixture_started'
+          ? 'Матч уже начинается или начался.'
+          : 'Некорректные данные напоминания.');
+      error.code = reason === 'limit_reached' ? 'REMINDERS_LIMIT' : 'PERSONAL_DATA_INVALID';
+      throw error;
+    }
+    return result.item || row;
   }
   const key = Number(userId);
   const list = memory.reminders.get(key) || [];
-  memory.reminders.set(key, [row, ...list.filter(x => Number(x.fixture_id) !== row.fixture_id)].slice(0, 50));
+  const existing = list.some(x => Number(x.fixture_id) === row.fixture_id);
+  const active = list.filter(x => x.enabled !== false && Date.parse(x.fixture_date || '') > Date.now() - 10 * 60_000);
+  if (!existing && active.length >= PERSONAL_WRITE_LIMITS.reminders) {
+    const error = new Error(`Можно создать не больше ${PERSONAL_WRITE_LIMITS.reminders} активных напоминаний.`);
+    error.code = 'REMINDERS_LIMIT';
+    throw error;
+  }
+  memory.reminders.set(key, [row, ...list.filter(x => Number(x.fixture_id) !== row.fixture_id)].slice(0, PERSONAL_WRITE_LIMITS.reminders));
   return row;
 }
 
@@ -15828,6 +15904,25 @@ async function readSupabaseSchemaFingerprint(cfg) {
   }
 }
 
+async function readPersonalWriteGuardContract(cfg) {
+  if (!hasSupabase(cfg)) return { ok:false, status:'not_configured' };
+  try {
+    const raw = await supaRpc(cfg, 'personal_write_guard_contract', {}, 3000);
+    const ok = Boolean(raw?.ok)
+      && Number(raw?.favoritesLimit || 0) === PERSONAL_WRITE_LIMITS.favorites
+      && Number(raw?.remindersLimit || 0) === PERSONAL_WRITE_LIMITS.reminders;
+    return {
+      ok,
+      status: ok ? 'ok' : 'contract_mismatch',
+      version: String(raw?.version || ''),
+      favoritesLimit: Number(raw?.favoritesLimit || 0),
+      remindersLimit: Number(raw?.remindersLimit || 0),
+    };
+  } catch (error) {
+    return { ok:false, status:error?.code || 'error', detail:redactOpsString(error?.message || error,160) };
+  }
+}
+
 async function probeSupabaseSchemaDrift(cfg) {
   const specs = [
     { id: 'users_acquisition', table: 'users', columns: ['telegram_id','acquisition_source','acquisition_campaign','acquisition_content'] },
@@ -15842,19 +15937,23 @@ async function probeSupabaseSchemaDrift(cfg) {
     { id: 'odds_provenance', table: 'odds_snapshots', columns: ['fixture_id','provider','bookmaker_count','source_updated_at'] },
     { id: 'model_provenance', table: 'model_predictions', columns: ['fixture_id','data_provenance','model_inputs_version'] },
   ];
-  const [checks,fingerprint] = await Promise.all([
+  const [checks,fingerprint,personalWriteGuards] = await Promise.all([
     Promise.all(specs.map(async spec => ({ ...spec, ...(await probeTableColumns(cfg, spec.table, spec.columns)) }))),
     readSupabaseSchemaFingerprint(cfg),
+    readPersonalWriteGuardContract(cfg),
   ]);
   const summary=summarizeSupabaseSchemaChecks(checks);
   const missing=[...(summary.missing || [])];
   if (!fingerprint.ok) missing.push('schema_fingerprint');
+  if (!personalWriteGuards.ok) missing.push('personal_write_guards');
+  const ok = Boolean(summary.ok && fingerprint.ok && personalWriteGuards.ok);
   return {
     ...summary,
-    ok:Boolean(summary.ok && fingerprint.ok),
-    status:summary.ok && fingerprint.ok ? 'ok' : 'drift',
+    ok,
+    status:ok ? 'ok' : 'drift',
     missing:[...new Set(missing)],
     fingerprint,
+    personalWriteGuards,
   };
 }
 
