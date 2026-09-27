@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   beginTelegramWebhookAttempt,
   classifyTelegramWebhookFailure,
@@ -69,7 +70,7 @@ test('permanent Telegram rejection never retries even without side effects', () 
 
 
 test('worker tracks only side-effecting Telegram API methods for retry suppression', () => {
-  const worker = require('node:fs').readFileSync('src/worker.js','utf8');
+  const worker = fs.readFileSync('src/worker.js','utf8');
   assert.match(worker, /!\/\^get\[A-Z\]\//);
   assert.match(worker, /markTelegramWebhookEffect\(cfg, method\)/);
 });
