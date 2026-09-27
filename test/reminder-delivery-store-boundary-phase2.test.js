@@ -131,6 +131,8 @@ test('worker delegates delivery persistence while keeping Telegram and cron orch
   assert.doesNotMatch(worker,/async function finishReminderDelivery\(row, kind, claimAt, cfg\)/);
   assert.doesNotMatch(worker,/async function releaseReminderClaim\(row, kind, claimAt, errorMessage, cfg/);
   assert.match(worker,/async function sendTelegramMessage\(/);
-  assert.match(worker,/async function deliverClaimedReminder\(/);
+  assert.match(worker,/import \{ createReminderDeliveryRuntime \} from '\.\/reminder-delivery-runtime\.js'/);
+  assert.match(worker,/createReminderDeliveryRuntime\(\{/);
+  assert.doesNotMatch(worker,/async function deliverClaimedReminder\(/);
   assert.match(worker,/async function processDueReminders\(cfg\)/);
 });
