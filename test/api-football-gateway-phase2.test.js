@@ -33,12 +33,50 @@ test('Phase 2 gateway preserves FREE distributed safety budget',()=>{
   assert.equal(gateway.distributedProviderMinuteLimit(),4);
 });
 
-test('Phase 2 gateway fails open when distributed Supabase guard is unavailable',async()=>{
+test('Phase 2 gateway bounds emergency traffic when distributed Supabase guard is unavailable',async()=>{
   const {gateway,counters}=runtime({hasSupabase:()=>true,supaRpc:async()=>{throw new Error('db unavailable');}});
-  const result=await gateway.claimDistributedProviderBudget({});
-  assert.equal(result.allowed,true);
-  assert.equal(result.degraded,true);
-  assert.equal(counters.providerDistributedFallbacks,1);
+  const first=await gateway.claimDistributedProviderBudget({});
+  const second=await gateway.claimDistributedProviderBudget({});
+  const blocked=await gateway.claimDistributedProviderBudget({});
+  assert.equal(gateway.emergencyProviderMinuteLimit(),2);
+  assert.equal(first.allowed,true);
+  assert.equal(second.allowed,true);
+  assert.equal(first.degraded,true);
+  assert.equal(first.local,true);
+  assert.equal(blocked.allowed,false);
+  assert.equal(blocked.degraded,true);
+  assert.equal(blocked.reason,'guard_unavailable');
+  assert.ok(blocked.retryAfter>=1);
+  assert.equal(counters.providerDistributedFallbacks,3);
+  assert.equal(counters.providerDistributedBlocks,1);
+});
+
+test('Phase 2 gateway also bounds traffic when Supabase is not configured',async()=>{
+  const {gateway}=runtime({hasSupabase:()=>false});
+  assert.equal((await gateway.claimDistributedProviderBudget({})).allowed,true);
+  assert.equal((await gateway.claimDistributedProviderBudget({})).allowed,true);
+  const blocked=await gateway.claimDistributedProviderBudget({});
+  assert.equal(blocked.allowed,false);
+  assert.equal(blocked.reason,'supabase_not_configured');
+});
+
+test('Phase 2 gateway surfaces emergency-budget exhaustion without hitting API-Football',async()=>{
+  let networkCalls=0;
+  const {gateway}=runtime({
+    hasSupabase:()=>true,
+    supaRpc:async()=>{throw new Error('db unavailable');},
+    fetchWithTimeout:async()=>{
+      networkCalls+=1;
+      return new Response(JSON.stringify({response:[]}),{status:200});
+    },
+  });
+  await gateway.apiFootball('/fixtures',{id:1},{apiFootballKey:'test-key'},{transportRetries:0});
+  await gateway.apiFootball('/fixtures',{id:2},{apiFootballKey:'test-key'},{transportRetries:0});
+  await assert.rejects(
+    ()=>gateway.apiFootball('/fixtures',{id:3},{apiFootballKey:'test-key'},{transportRetries:0}),
+    error=>error?.code==='FOOTBALL_GUARD_DEGRADED' && Number(error?.retryAfter)>0,
+  );
+  assert.equal(networkCalls,2);
 });
 
 test('Phase 2 gateway keeps request keys deterministic',()=>{
@@ -67,4 +105,23 @@ test('Phase 2 gateway does not retry provider HTTP failures',async()=>{
   }});
   await assert.rejects(()=>gateway.apiFootball('/fixtures',{id:1},{apiFootballKey:'test-key'}),error=>error?.code==='FOOTBALL_HTTP');
   assert.equal(attempts,1);
+});
+
+
+test('Phase 2 gateway preserves timeout classification after bounded retry', async () => {
+  let attempts = 0;
+  const timeout = Object.assign(new Error('API-Football timeout'), { code: 'UPSTREAM_TIMEOUT' });
+  const { gateway, sleeps } = runtime({
+    fetchWithTimeout: async () => {
+      attempts += 1;
+      throw timeout;
+    },
+  });
+
+  await assert.rejects(
+    () => gateway.apiFootball('/fixtures', { id: 1 }, { apiFootballKey: 'test-key' }),
+    error => error?.code === 'UPSTREAM_TIMEOUT',
+  );
+  assert.equal(attempts, 2);
+  assert.deepEqual(sleeps, [180]);
 });

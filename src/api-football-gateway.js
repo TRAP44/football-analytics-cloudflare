@@ -57,8 +57,52 @@ export function createApiFootballGateway({
     return rawBudget;
   }
 
+  function emergencyProviderMinuteLimit() {
+    const plan=String(memory.provider?.plan || 'UNKNOWN').toUpperCase();
+    return ['PRO','ULTRA','MEGA'].includes(plan) ? 8 : 2;
+  }
+
+  function claimEmergencyLocalProviderBudget(reason = 'guard_unavailable') {
+    const now=Date.now();
+    const windowMs=60_000;
+    const limit=emergencyProviderMinuteLimit();
+    let state=memory.providerEmergencyBudget;
+    if (!state || !Number.isFinite(Number(state.windowStartedAt)) || now-Number(state.windowStartedAt)>=windowMs) {
+      state={windowStartedAt:now,count:0};
+    }
+
+    if (Number(state.count || 0)>=limit) {
+      memory.providerEmergencyBudget=state;
+      bumpTelemetry('providerDistributedBlocks');
+      return {
+        allowed:false,
+        degraded:true,
+        local:true,
+        reason,
+        count:Number(state.count || 0),
+        limit,
+        retryAfter:Math.max(1,Math.ceil((Number(state.windowStartedAt)+windowMs-now)/1000)),
+      };
+    }
+
+    state.count=Number(state.count || 0)+1;
+    memory.providerEmergencyBudget=state;
+    return {
+      allowed:true,
+      degraded:true,
+      local:true,
+      reason,
+      count:state.count,
+      limit,
+      retryAfter:0,
+    };
+  }
+
   async function claimDistributedProviderBudget(cfg) {
-    if (!hasSupabase(cfg)) return {allowed:true,degraded:true,reason:'supabase_not_configured'};
+    if (!hasSupabase(cfg)) {
+      bumpTelemetry('providerDistributedFallbacks');
+      return claimEmergencyLocalProviderBudget('supabase_not_configured');
+    }
     const limit=distributedProviderMinuteLimit();
     try {
       const result=await supaRpc(cfg,'claim_provider_request',{
@@ -74,7 +118,7 @@ export function createApiFootballGateway({
         severity:'warning',source:'provider',eventType:'distributed_rate_guard',code:'PROVIDER_RATE_GUARD_DEGRADED',
         message:error?.message || error,endpoint:'api-football',
       }).catch(()=>null);
-      return {allowed:true,limit,degraded:true,reason:'guard_unavailable'};
+      return claimEmergencyLocalProviderBudget('guard_unavailable');
     }
   }
 
@@ -105,9 +149,17 @@ export function createApiFootballGateway({
     const distributedBudget=await claimDistributedProviderBudget(cfg);
     if (!distributedBudget.allowed) {
       const retryAfter=Math.max(1,Number(distributedBudget.retryAfter || 60));
-      await persistSharedProviderCooldown(cfg, retryAfter, 'distributed_rate_guard').catch(() => null);
       bumpTelemetry('quotaBlocks');
       phase5ProviderUsage(cfg,'quotaBlocks',1);
+      if (distributedBudget.degraded) {
+        memory.provider.lastError='distributed_guard_degraded';
+        throw footballError(
+          `Защитный лимит API-Football временно работает в аварийном режиме. Повторите примерно через ${retryAfter} сек.`,
+          'FOOTBALL_GUARD_DEGRADED',
+          retryAfter,
+        );
+      }
+      await persistSharedProviderCooldown(cfg, retryAfter, 'distributed_rate_guard').catch(() => null);
       throw footballError(`Глобальная минутная квота API-Football защищена. Повторите примерно через ${retryAfter} сек.`, 'FOOTBALL_COOLDOWN', retryAfter);
     }
 
@@ -127,14 +179,16 @@ export function createApiFootballGateway({
       }, Number(options.timeoutMs || 10000), 'API-Football');
     } catch (error) {
       const durationMs = Date.now() - startedAt;
+      const timedOut = String(error?.code || '') === 'UPSTREAM_TIMEOUT';
       bumpTelemetry('apiErrors');
       memory.provider.lastStatus = null;
       memory.provider.lastLatencyMs = durationMs;
-      memory.provider.lastError = 'network_error';
+      memory.provider.lastError = timedOut ? 'timeout' : 'network_error';
       await recordOpsEvent(cfg, {
-        severity: 'error', source: 'provider', eventType: 'api_request', code: 'FOOTBALL_NETWORK',
-        message: error?.message || 'Network error', endpoint: path, durationMs,
+        severity: 'error', source: 'provider', eventType: 'api_request', code: timedOut ? 'UPSTREAM_TIMEOUT' : 'FOOTBALL_NETWORK',
+        message: error?.message || (timedOut ? 'Upstream timeout' : 'Network error'), endpoint: path, durationMs,
       });
+      if (timedOut) throw error;
       throw footballError('Не удалось подключиться к API-Football.', 'FOOTBALL_NETWORK');
     }
 
@@ -227,7 +281,7 @@ export function createApiFootballGateway({
   }
 
   function isRetryableFootballTransportError(error) {
-    return String(error?.code || '') === 'FOOTBALL_NETWORK';
+    return ['FOOTBALL_NETWORK', 'UPSTREAM_TIMEOUT'].includes(String(error?.code || ''));
   }
 
   async function apiFootball(path, params, cfg, options = {}) {
@@ -256,6 +310,8 @@ export function createApiFootballGateway({
     footballCooldownRemaining,
     freeQuotaHealthy,
     distributedProviderMinuteLimit,
+    emergencyProviderMinuteLimit,
+    claimEmergencyLocalProviderBudget,
     claimDistributedProviderBudget,
     apiFootballNetwork,
     providerRequestKey,

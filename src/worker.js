@@ -40,6 +40,8 @@ import {
   validateTelegramInitData,
 } from './crypto-utils.js';
 import { resolvePrimaryTelegramBotUsername, telegramBotStartUrl } from './telegram-primary-identity.js';
+import { markTelegramWebhookEffect, markTelegramWebhookMutation } from './telegram-webhook-retry.js';
+import { PERSONAL_WRITE_LIMITS, normalizeFavoriteWrite, normalizeReminderWrite } from './personal-write-guards.js';
 
 const memory = {
   users: new Map(),
@@ -128,7 +130,7 @@ const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
 const RELEASE_CHANNEL = 'rc144';
 const RC_NAME = 'RC144';
-const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.18; для существующей примените все доступные миграции из supabase/migrations до v6.19.';
+const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.19; для существующей примените все доступные миграции из supabase/migrations до v6.19.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49';
 
@@ -788,6 +790,47 @@ function publicRouteError(error, rateLimited = false) {
     };
   }
 
+  if (code === 'PERSONAL_DATA_INVALID') {
+    return {
+      status: 400,
+      body: {
+        error: 'Данные запроса не прошли проверку.',
+        code,
+        category: 'validation',
+        recoverable: false,
+      },
+    };
+  }
+
+  if (code === 'FAVORITES_LIMIT' || code === 'REMINDERS_LIMIT') {
+    return {
+      status: 409,
+      body: {
+        error: code === 'FAVORITES_LIMIT'
+          ? `Достигнут лимит избранных команд: ${PERSONAL_WRITE_LIMITS.favorites}.`
+          : `Достигнут лимит активных напоминаний: ${PERSONAL_WRITE_LIMITS.reminders}.`,
+        code,
+        category: 'limit',
+        recoverable: false,
+      },
+    };
+  }
+
+  if (code === 'FOOTBALL_GUARD_DEGRADED') {
+    return {
+      status: 503,
+      body: {
+        error: retryAfter
+          ? `Защита лимита футбольного источника временно работает в аварийном режиме. Повторите примерно через ${retryAfter} сек.`
+          : 'Защита лимита футбольного источника временно работает в аварийном режиме. Попробуйте позже.',
+        code,
+        category: 'provider_guard',
+        recoverable: true,
+        retryAfter,
+      },
+    };
+  }
+
   if (code === 'UPSTREAM_TIMEOUT') {
     return {
       status: 504,
@@ -969,6 +1012,70 @@ function routeBurstPolicy(pathname) {
   return ROUTE_BURST_POLICIES.find(policy => policy.test(pathname)) || null;
 }
 
+const DISTRIBUTED_ROUTE_BURST_POLICIES = Object.freeze([
+  { test: (p,m) => p === '/api/analyze', limit: 6, windowSeconds: 60, label: 'analysis' },
+  { test: (p,m) => p === '/api/match-center', limit: 48, windowSeconds: 60, label: 'match-center' },
+  { test: (p,m) => p === '/api/search', limit: 60, windowSeconds: 60, label: 'search' },
+  { test: (p,m) => p === '/api/tournament', limit: 48, windowSeconds: 60, label: 'tournament' },
+  { test: (p,m) => p === '/api/team' || p.startsWith('/api/team/'), limit: 60, windowSeconds: 60, label: 'team' },
+  { test: (p,m) => p === '/api/provider/e2e-validation', limit: 2, windowSeconds: 60, label: 'provider-e2e' },
+  { test: (p,m) => p === '/api/provider/coverage-audit', limit: 4, windowSeconds: 60, label: 'coverage-audit' },
+  { test: (p,m) => p === '/api/provider/probe', limit: 6, windowSeconds: 60, label: 'provider-probe' },
+  { test: (p,m) => p === '/api/client-telemetry', limit: 12, windowSeconds: 60, label: 'client-telemetry' },
+  { test: (p,m) => p === '/api/beta-feedback', limit: 4, windowSeconds: 60, label: 'beta-feedback' },
+  { test: (p,m) => p === '/api/runtime-controls', limit: 12, windowSeconds: 60, label: 'runtime-controls' },
+  { test: (p,m) => p === '/api/runtime-controls/rollback', limit: 6, windowSeconds: 60, label: 'runtime-rollback' },
+  { test: (p,m) => p === '/api/model-remediation', limit: 4, windowSeconds: 60, label: 'model-remediation' },
+  { test: (p,m) => p === '/api/diagnostics' || p === '/api/release-readiness' || p === '/api/production-readiness' || p === '/api/rc-regression' || p === '/api/release-monitor' || p === '/api/production-monitor', limit: 12, windowSeconds: 60, label: 'admin-diagnostics' },
+  { test: (p,m) => p === '/api/favorites' && m !== 'GET', limit: 20, windowSeconds: 60, label: 'favorites-write' },
+  { test: (p,m) => p === '/api/reminders' && m !== 'GET', limit: 20, windowSeconds: 60, label: 'reminders-write' },
+  { test: (p,m) => p === '/api/preferences' && m !== 'GET', limit: 20, windowSeconds: 60, label: 'preferences-write' },
+  { test: (p,m) => p.startsWith('/api/billing/') && m !== 'GET', limit: 10, windowSeconds: 60, label: 'billing-write' },
+]);
+
+function distributedRouteBurstPolicy(request) {
+  const url = new URL(request.url);
+  const method = String(request.method || 'GET').toUpperCase();
+  return DISTRIBUTED_ROUTE_BURST_POLICIES.find(policy => policy.test(url.pathname, method)) || null;
+}
+
+async function enforceDistributedRouteBurst(request, user, cfg) {
+  const policy = distributedRouteBurstPolicy(request);
+  if (!policy || !user?.id || !hasSupabase(cfg)) return null;
+
+  try {
+    const result = await supaRpc(cfg, 'claim_provider_request', {
+      p_bucket_key: `route:${Number(user.id)}:${policy.label}`,
+      p_limit: policy.limit,
+      p_window_seconds: policy.windowSeconds,
+    }, 1800);
+    if (result?.allowed) return null;
+
+    const retryAfter = Math.max(1, Number(result?.retryAfter || policy.windowSeconds));
+    bumpTelemetry('distributedBurstBlocks');
+    return json({
+      error: 'Слишком много запросов за короткое время. Повторите немного позже.',
+      code: 'DISTRIBUTED_BURST_GUARD',
+      retryAfter,
+    }, 429, { 'retry-after': String(retryAfter) });
+  } catch (error) {
+    bumpTelemetry('distributedBurstFallbacks');
+    const now = Date.now();
+    if (now - Number(memory.distributedRouteGuardWarningAt || 0) >= 60_000) {
+      memory.distributedRouteGuardWarningAt = now;
+      void recordOpsEvent(cfg, {
+        severity: 'warning',
+        source: 'rate_limit',
+        eventType: 'distributed_route_guard',
+        code: 'DISTRIBUTED_ROUTE_GUARD_DEGRADED',
+        message: error?.message || error,
+        endpoint: new URL(request.url).pathname,
+      }).catch(() => {});
+    }
+    return null;
+  }
+}
+
 function enforceRouteBurst(request, user) {
   const path = new URL(request.url).pathname;
   const policy = routeBurstPolicy(path);
@@ -1016,6 +1123,9 @@ function productionSafetySnapshot() {
       activeBuckets: memory.routeBurst.size,
       blocked: Number(memory.telemetry?.burstBlocks || 0),
       policies: ROUTE_BURST_POLICIES.map(x => ({ label: x.label, limit: x.limit, windowMs: x.windowMs })),
+      distributedBlocked: Number(memory.telemetry?.distributedBurstBlocks || 0),
+      distributedFallbacks: Number(memory.telemetry?.distributedBurstFallbacks || 0),
+      distributedPolicies: DISTRIBUTED_ROUTE_BURST_POLICIES.map(x => ({ label: x.label, limit: x.limit, windowSeconds: x.windowSeconds })),
     },
     telegramWebhook: {
       activeBuckets: memory.telegramBurst.size,
@@ -1191,6 +1301,17 @@ async function recordOpsEventTask(cfg, event = {}) {
     // Observability must never become a new failure mode for the product.
   }
   return row;
+}
+
+async function cleanupRateWindows(cfg) {
+  if (!hasSupabase(cfg)) return { skipped: true };
+  const cutoff = new Date(Date.now() - 2 * 86400_000).toISOString();
+  try {
+    await supaDelete(cfg, 'provider_rate_windows', { updated_at: `lt.${cutoff}` });
+    return { ok: true, cutoff };
+  } catch (error) {
+    return { ok: false, error: redactOpsString(error?.message || error, 180) };
+  }
 }
 
 async function cleanupOpsEvents(cfg) {
@@ -2098,18 +2219,47 @@ async function parseInvoicePayload(payload, botToken) {
 }
 
 async function telegramApi(method, cfg, body = {}) {
-  if (!cfg.botToken) throw new Error('TELEGRAM_BOT_TOKEN не настроен.');
-  const r = await fetchWithTimeout(`https://api.telegram.org/bot${cfg.botToken}/${method}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body || {}),
-  }, 8000, `Telegram ${method}`);
+  if (!cfg.botToken) {
+    const error = new Error('TELEGRAM_BOT_TOKEN не настроен.');
+    error.code = 'TELEGRAM_CONFIG';
+    throw error;
+  }
+
+  let r;
+  try {
+    r = await fetchWithTimeout(`https://api.telegram.org/bot${cfg.botToken}/${method}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    }, 8000, `Telegram ${method}`);
+  } catch (cause) {
+    const timedOut = String(cause?.code || '') === 'UPSTREAM_TIMEOUT';
+    const error = new Error(cause?.message || (timedOut ? `Telegram ${method} timeout` : `Telegram ${method} network error`));
+    error.code = timedOut ? 'TELEGRAM_TIMEOUT' : 'TELEGRAM_NETWORK';
+    error.retryAfter = Math.max(0, Number(cause?.retryAfter || 0));
+    throw error;
+  }
+
   const data = await r.json().catch(() => ({}));
-  if (!r.ok || !data?.ok) throw new Error(data?.description || `Telegram ${method}: HTTP ${r.status}`);
+  if (!r.ok || !data?.ok) {
+    const status = Number(r.status || 0);
+    const error = new Error(data?.description || `Telegram ${method}: HTTP ${status}`);
+    error.status = status;
+    error.retryAfter = Math.max(0, Number(data?.parameters?.retry_after || r.headers.get('retry-after') || 0));
+    error.code = status === 429
+      ? 'TELEGRAM_RATE_LIMIT'
+      : status >= 500
+        ? 'TELEGRAM_UPSTREAM'
+        : 'TELEGRAM_REJECTED';
+    throw error;
+  }
+
+  if (!/^get[A-Z]/.test(String(method || ''))) markTelegramWebhookEffect(cfg, method);
   return data.result;
 }
 
 async function updateUserSubscription(userId, fields, cfg) {
+  markTelegramWebhookMutation(cfg, 'user_subscription');
   const patch = { ...fields, plan_updated_at: new Date().toISOString() };
   if (hasSupabase(cfg)) {
     await supaPatch(cfg, 'users', { telegram_id: `eq.${Number(userId)}` }, patch);
@@ -2121,6 +2271,7 @@ async function updateUserSubscription(userId, fields, cfg) {
 
 async function saveBillingPayment(row, cfg) {
   if (!row?.telegram_payment_charge_id) return;
+  markTelegramWebhookMutation(cfg, 'billing_payment');
   if (hasSupabase(cfg)) {
     await supaUpsert(cfg, 'billing_payments', row, 'telegram_payment_charge_id');
   } else {
@@ -2746,6 +2897,7 @@ async function sendBotFixtureMenu(request, cfg, userId, chatId, fixtureId, optio
     return;
   }
   try {
+    markTelegramWebhookMutation(cfg, 'analysis_quota_or_history');
     const data=options.newsImpactDelta
       ? await botAnalyzeFixture(request,cfg,userId,fixtureId,{
           newsImpactRecheck:true,
@@ -6427,6 +6579,7 @@ function botPostMatchReviewText(data = {}) {
 
 async function sendBotFixtureSection(request, cfg, userId, chatId, fixtureId, section = 'verdict', options = {}) {
   try {
+    if (section !== 'review') markTelegramWebhookMutation(cfg, 'analysis_quota_or_history');
     const data = section === 'review'
       ? await botMatchCenterFixture(request, cfg, fixtureId)
       : await botAnalyzeFixture(request, cfg, userId, fixtureId);
@@ -6588,6 +6741,7 @@ function dailyDigestText(rows = []) {
 }
 
 async function setBotDigestSubscription(userId, chatId, enabled, cfg, appUrl = '') {
+  markTelegramWebhookMutation(cfg, 'digest_subscription');
   const previous = hasSupabase(cfg) ? null : memory.botDigestSubscriptions.get(Number(userId));
   const row = {
     telegram_id:Number(userId), chat_id:Number(chatId), enabled:Boolean(enabled), hour_utc:7,
@@ -7228,6 +7382,7 @@ async function processTelegramUpdate(request, cfg, update) {
     const userId = Number(msg.from?.id || 0);
     const chargeId = String(refund.telegram_payment_charge_id || '');
     if (hasSupabase(cfg) && chargeId) {
+      markTelegramWebhookMutation(cfg, 'billing_refund');
       await supaPatch(cfg, 'billing_payments', { telegram_payment_charge_id: `eq.${chargeId}` }, { status: 'refunded', updated_at: new Date().toISOString() });
     }
     const record = userId ? await getUserRecord(userId, cfg) : null;
@@ -11760,21 +11915,45 @@ async function getFavorites(userId, cfg) {
 }
 
 async function addFavorite(userId, team, cfg) {
+  const normalized = normalizeFavoriteWrite({
+    teamId: team?.id,
+    teamName: team?.name,
+    teamLogo: team?.logo,
+  });
   const row = {
     telegram_id: Number(userId),
-    team_id: Number(team.id),
-    team_name: String(team.name || ''),
-    team_logo: String(team.logo || ''),
+    team_id: normalized.teamId,
+    team_name: normalized.teamName,
+    team_logo: normalized.teamLogo,
     created_at: new Date().toISOString(),
   };
-  if (!Number.isFinite(row.team_id) || row.team_id <= 0 || !row.team_name) throw new Error('Некорректная команда.');
   if (hasSupabase(cfg)) {
-    await supaUpsert(cfg, 'favorites', row, 'telegram_id,team_id');
-    return row;
+    const result = await supaRpc(cfg, 'save_favorite_guarded', {
+      p_telegram_id: row.telegram_id,
+      p_team_id: row.team_id,
+      p_team_name: row.team_name,
+      p_team_logo: row.team_logo,
+      p_limit: PERSONAL_WRITE_LIMITS.favorites,
+    }, 4000);
+    if (!result?.allowed) {
+      const reason = String(result?.reason || 'rejected');
+      const error = new Error(reason === 'limit_reached'
+        ? `Можно сохранить не больше ${PERSONAL_WRITE_LIMITS.favorites} команд.`
+        : 'Некорректные данные избранной команды.');
+      error.code = reason === 'limit_reached' ? 'FAVORITES_LIMIT' : 'PERSONAL_DATA_INVALID';
+      throw error;
+    }
+    return result.item || row;
   }
   const key = Number(userId);
   const list = memory.favorites.get(key) || [];
-  memory.favorites.set(key, [row, ...list.filter(x => Number(x.team_id) !== row.team_id)].slice(0, 50));
+  const existing = list.some(x => Number(x.team_id) === row.team_id);
+  if (!existing && list.length >= PERSONAL_WRITE_LIMITS.favorites) {
+    const error = new Error(`Можно сохранить не больше ${PERSONAL_WRITE_LIMITS.favorites} команд.`);
+    error.code = 'FAVORITES_LIMIT';
+    throw error;
+  }
+  memory.favorites.set(key, [row, ...list.filter(x => Number(x.team_id) !== row.team_id)].slice(0, PERSONAL_WRITE_LIMITS.favorites));
   return row;
 }
 
@@ -11858,19 +12037,21 @@ async function getReminders(userId, cfg) {
 
 async function addReminder(userId, input, cfg) {
   const prefs = await getPreferences(userId, cfg);
-  const requestedMinutes = Number(input.reminderMinutes ?? prefs.reminderMinutes);
-  const reminderMinutes = [15, 30, 60].includes(requestedMinutes) ? requestedMinutes : 30;
-  const kickoffNotify = input.kickoffNotify === undefined ? Boolean(prefs.kickoffNotification) : Boolean(input.kickoffNotify);
+  const normalized = normalizeReminderWrite({
+    ...input,
+    reminderMinutes: input.reminderMinutes ?? prefs.reminderMinutes,
+    kickoffNotify: input.kickoffNotify === undefined ? Boolean(prefs.kickoffNotification) : Boolean(input.kickoffNotify),
+  });
   const row = {
     telegram_id: Number(userId),
-    fixture_id: Number(input.fixtureId),
-    home_name: String(input.homeName || ''),
-    away_name: String(input.awayName || ''),
-    league_name: String(input.leagueName || ''),
-    fixture_date: input.fixtureDate ? new Date(input.fixtureDate).toISOString() : null,
+    fixture_id: normalized.fixtureId,
+    home_name: normalized.homeName,
+    away_name: normalized.awayName,
+    league_name: normalized.leagueName,
+    fixture_date: normalized.fixtureDate,
     enabled: true,
-    remind_before_minutes: reminderMinutes,
-    kickoff_notify: kickoffNotify,
+    remind_before_minutes: normalized.reminderMinutes,
+    kickoff_notify: normalized.kickoffNotify,
     notified_at: null,
     kickoff_notified_at: null,
     prematch_claimed_at: null,
@@ -11884,17 +12065,40 @@ async function addReminder(userId, input, cfg) {
     delivery_retry_after: null,
     created_at: new Date().toISOString(),
   };
-  if (!Number.isFinite(row.fixture_id) || row.fixture_id <= 0 || !row.fixture_date || !row.home_name || !row.away_name) {
-    throw new Error('Некорректные данные напоминания.');
-  }
-  if (Date.parse(row.fixture_date) <= Date.now() + 5 * 60_000) throw new Error('Матч уже начинается или начался.');
   if (hasSupabase(cfg)) {
-    await supaUpsert(cfg, 'match_reminders', row, 'telegram_id,fixture_id');
-    return row;
+    const result = await supaRpc(cfg, 'save_match_reminder_guarded', {
+      p_telegram_id: row.telegram_id,
+      p_fixture_id: row.fixture_id,
+      p_home_name: row.home_name,
+      p_away_name: row.away_name,
+      p_league_name: row.league_name,
+      p_fixture_date: row.fixture_date,
+      p_remind_before_minutes: row.remind_before_minutes,
+      p_kickoff_notify: row.kickoff_notify,
+      p_limit: PERSONAL_WRITE_LIMITS.reminders,
+    }, 4000);
+    if (!result?.allowed) {
+      const reason = String(result?.reason || 'rejected');
+      const error = new Error(reason === 'limit_reached'
+        ? `Можно создать не больше ${PERSONAL_WRITE_LIMITS.reminders} активных напоминаний.`
+        : reason === 'fixture_started'
+          ? 'Матч уже начинается или начался.'
+          : 'Некорректные данные напоминания.');
+      error.code = reason === 'limit_reached' ? 'REMINDERS_LIMIT' : 'PERSONAL_DATA_INVALID';
+      throw error;
+    }
+    return result.item || row;
   }
   const key = Number(userId);
   const list = memory.reminders.get(key) || [];
-  memory.reminders.set(key, [row, ...list.filter(x => Number(x.fixture_id) !== row.fixture_id)].slice(0, 50));
+  const existing = list.some(x => Number(x.fixture_id) === row.fixture_id);
+  const active = list.filter(x => x.enabled !== false && Date.parse(x.fixture_date || '') > Date.now() - 10 * 60_000);
+  if (!existing && active.length >= PERSONAL_WRITE_LIMITS.reminders) {
+    const error = new Error(`Можно создать не больше ${PERSONAL_WRITE_LIMITS.reminders} активных напоминаний.`);
+    error.code = 'REMINDERS_LIMIT';
+    throw error;
+  }
+  memory.reminders.set(key, [row, ...list.filter(x => Number(x.fixture_id) !== row.fixture_id)].slice(0, PERSONAL_WRITE_LIMITS.reminders));
   return row;
 }
 
@@ -15828,6 +16032,25 @@ async function readSupabaseSchemaFingerprint(cfg) {
   }
 }
 
+async function readPersonalWriteGuardContract(cfg) {
+  if (!hasSupabase(cfg)) return { ok:false, status:'not_configured' };
+  try {
+    const raw = await supaRpc(cfg, 'personal_write_guard_contract', {}, 3000);
+    const ok = Boolean(raw?.ok)
+      && Number(raw?.favoritesLimit || 0) === PERSONAL_WRITE_LIMITS.favorites
+      && Number(raw?.remindersLimit || 0) === PERSONAL_WRITE_LIMITS.reminders;
+    return {
+      ok,
+      status: ok ? 'ok' : 'contract_mismatch',
+      version: String(raw?.version || ''),
+      favoritesLimit: Number(raw?.favoritesLimit || 0),
+      remindersLimit: Number(raw?.remindersLimit || 0),
+    };
+  } catch (error) {
+    return { ok:false, status:error?.code || 'error', detail:redactOpsString(error?.message || error,160) };
+  }
+}
+
 async function probeSupabaseSchemaDrift(cfg) {
   const specs = [
     { id: 'users_acquisition', table: 'users', columns: ['telegram_id','acquisition_source','acquisition_campaign','acquisition_content'] },
@@ -15842,19 +16065,23 @@ async function probeSupabaseSchemaDrift(cfg) {
     { id: 'odds_provenance', table: 'odds_snapshots', columns: ['fixture_id','provider','bookmaker_count','source_updated_at'] },
     { id: 'model_provenance', table: 'model_predictions', columns: ['fixture_id','data_provenance','model_inputs_version'] },
   ];
-  const [checks,fingerprint] = await Promise.all([
+  const [checks,fingerprint,personalWriteGuards] = await Promise.all([
     Promise.all(specs.map(async spec => ({ ...spec, ...(await probeTableColumns(cfg, spec.table, spec.columns)) }))),
     readSupabaseSchemaFingerprint(cfg),
+    readPersonalWriteGuardContract(cfg),
   ]);
   const summary=summarizeSupabaseSchemaChecks(checks);
   const missing=[...(summary.missing || [])];
   if (!fingerprint.ok) missing.push('schema_fingerprint');
+  if (!personalWriteGuards.ok) missing.push('personal_write_guards');
+  const ok = Boolean(summary.ok && fingerprint.ok && personalWriteGuards.ok);
   return {
     ...summary,
-    ok:Boolean(summary.ok && fingerprint.ok),
-    status:summary.ok && fingerprint.ok ? 'ok' : 'drift',
+    ok,
+    status:ok ? 'ok' : 'drift',
     missing:[...new Set(missing)],
     fingerprint,
+    personalWriteGuards,
   };
 }
 
@@ -22741,10 +22968,35 @@ export default {
       try {
         return await handleTelegramWebhook(request, cfg);
       } catch (error) {
+        const retry = Boolean(error?.telegramWebhookRetry);
+        const disposition = error?.telegramWebhookDisposition || {};
+        const status = retry ? 503 : 200;
         console.error('telegram webhook', redactOpsString(error?.message || error, 240));
         bumpTelemetry('routeErrors');
-        await recordOpsEvent(cfg, { severity: 'error', source: 'telegram', eventType: 'webhook', code: 'TELEGRAM_WEBHOOK', message: error?.message || error, endpoint: '/telegram/webhook' });
-        return json({ ok: false }, 200);
+        await recordOpsEvent(cfg, {
+          severity: 'error',
+          source: 'telegram',
+          eventType: 'webhook',
+          code: retry ? 'TELEGRAM_WEBHOOK_RETRY' : 'TELEGRAM_WEBHOOK_SUPPRESSED_RETRY',
+          message: error?.message || error,
+          endpoint: '/telegram/webhook',
+          status,
+          meta: {
+            errorCode: String(error?.code || ''),
+            retry,
+            successfulEffects: Number(disposition?.successfulEffects || 0),
+            unsafeMutations: Number(disposition?.unsafeMutations || 0),
+            lastEffect: String(disposition?.lastEffect || ''),
+            lastMutation: String(disposition?.lastMutation || ''),
+          },
+        });
+        return json(
+          retry ? { ok: false, retry: true } : { ok: false },
+          status,
+          retry && Number(disposition?.retryAfter || 0) > 0
+            ? { 'retry-after': String(Math.max(1, Number(disposition.retryAfter))) }
+            : {},
+        );
       }
     }
 
@@ -22784,6 +23036,9 @@ export default {
 
       const burstResponse = enforceRouteBurst(request, user);
       if (burstResponse) return burstResponse;
+
+      const distributedBurstResponse = await enforceDistributedRouteBurst(request, user, cfg);
+      if (distributedBurstResponse) return distributedBurstResponse;
 
       try {
         return await dispatchApiRoute(request, url, cfg, user, API_ROUTE_DEPS);
@@ -22827,6 +23082,7 @@ export default {
     }
     if (scheduledAt.getUTCHours() === 3 && scheduledAt.getUTCMinutes() < 15) {
       tasks.push(['ops_cleanup', cleanupOpsEvents(cfg)]);
+      tasks.push(['rate_window_cleanup', cleanupRateWindows(cfg)]);
       tasks.push(['growth_cleanup', cleanupGrowthEvents(cfg)]);
       tasks.push(['integrity_cleanup', cleanupIntegrityData(cfg)]);
     }

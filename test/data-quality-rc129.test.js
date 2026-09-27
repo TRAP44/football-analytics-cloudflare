@@ -28,7 +28,7 @@ test('RC129 verifies provenance columns explicitly while preserving the stable s
 
 test('RC129 retries only transient API-Football transport failures and never hides quota policy',()=>{
   assert.match(worker,/function isRetryableFootballTransportError\(error\)/);
-  assert.match(worker,/String\(error\?\.code \|\| ''\) === 'FOOTBALL_NETWORK'/);
+  assert.match(worker,/\['FOOTBALL_NETWORK', 'UPSTREAM_TIMEOUT'\]\.includes\(String\(error\?\.code \|\| ''\)\)/);
   assert.match(worker,/Math\.min\(1, Number\(options\.transportRetries \?\? 1\)\)/);
   assert.match(worker,/await sleepMs\(180 \* \(attempt \+ 1\)\)/);
   assert.doesNotMatch(worker,/isRetryableFootballTransportError[\s\S]{0,240}FOOTBALL_RATE_LIMIT/);
