@@ -68,3 +68,22 @@ test('Phase 2 gateway does not retry provider HTTP failures',async()=>{
   await assert.rejects(()=>gateway.apiFootball('/fixtures',{id:1},{apiFootballKey:'test-key'}),error=>error?.code==='FOOTBALL_HTTP');
   assert.equal(attempts,1);
 });
+
+
+test('Phase 2 gateway preserves timeout classification after bounded retry', async () => {
+  let attempts = 0;
+  const timeout = Object.assign(new Error('API-Football timeout'), { code: 'UPSTREAM_TIMEOUT' });
+  const { gateway, sleeps } = runtime({
+    fetchWithTimeout: async () => {
+      attempts += 1;
+      throw timeout;
+    },
+  });
+
+  await assert.rejects(
+    () => gateway.apiFootball('/fixtures', { id: 1 }, { apiFootballKey: 'test-key' }),
+    error => error?.code === 'UPSTREAM_TIMEOUT',
+  );
+  assert.equal(attempts, 2);
+  assert.deepEqual(sleeps, [180]);
+});

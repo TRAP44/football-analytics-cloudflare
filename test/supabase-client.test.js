@@ -68,3 +68,25 @@ test('supabase pagination keeps the existing cap and truncation semantics', asyn
 test('supabase client rejects construction without timeout transport', () => {
   assert.throws(() => createSupabaseClient(), /requires fetchWithTimeout/);
 });
+
+
+test('supabase client refuses unfiltered patch and delete operations', async () => {
+  let calls = 0;
+  const client = createSupabaseClient({
+    fetchWithTimeout: async () => {
+      calls += 1;
+      return response({ status: 204, json: null });
+    },
+  });
+  const cfg = { supabaseUrl: 'https://example.supabase.co', supabaseKey: 'secret' };
+
+  await assert.rejects(
+    client.supaPatch(cfg, 'users', {}, { plan: 'FREE' }),
+    /PATCH requires at least one filter/,
+  );
+  await assert.rejects(
+    client.supaDelete(cfg, 'users'),
+    /DELETE requires at least one filter/,
+  );
+  assert.equal(calls, 0);
+});

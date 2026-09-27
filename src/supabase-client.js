@@ -90,8 +90,10 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage } = {}) {
   }
 
   async function supaPatch(cfg, table, filters, patch) {
+    const filterEntries = Object.entries(filters || {});
+    if (!filterEntries.length) throw new TypeError(`Supabase ${table}: PATCH requires at least one filter.`);
     const url = new URL(`${cfg.supabaseUrl}/rest/v1/${table}`);
-    for (const [key, value] of Object.entries(filters || {})) url.searchParams.set(key, value);
+    for (const [key, value] of filterEntries) url.searchParams.set(key, value);
     const response = await fetchWithTimeout(url, {
       method: 'PATCH',
       headers: supaHeaders(cfg, { Prefer: 'return=minimal' }),
@@ -104,8 +106,10 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage } = {}) {
   }
 
   async function supaDelete(cfg, table, filters = {}) {
+    const filterEntries = Object.entries(filters || {});
+    if (!filterEntries.length) throw new TypeError(`Supabase ${table}: DELETE requires at least one filter.`);
     const url = new URL(`${cfg.supabaseUrl}/rest/v1/${table}`);
-    for (const [key, value] of Object.entries(filters || {})) url.searchParams.set(key, value);
+    for (const [key, value] of filterEntries) url.searchParams.set(key, value);
     const response = await fetchWithTimeout(url, {
       method: 'DELETE',
       headers: supaHeaders(cfg, { Prefer: 'return=minimal' }),
