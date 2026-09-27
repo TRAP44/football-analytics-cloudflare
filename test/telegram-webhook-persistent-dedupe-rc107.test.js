@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-transport.js','utf8');
+const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-transport.js','utf8')+'\n'+fs.readFileSync('src/telegram-dedupe.js','utf8');
 const migration=fs.readFileSync('supabase/migrations/supabase_migration_v6_16.sql','utf8');
 const baseline=fs.readFileSync('supabase/baseline/supabase_baseline_v6_19.sql','utf8');
 const smoke=fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
@@ -43,7 +43,7 @@ test('RC107 Worker combines memory and persistent dedupe around webhook processi
 
 test('RC107 persistent dedupe fails open to memory with bounded Supabase latency',()=>{
   const start=worker.indexOf('async function claimTelegramUpdatePersistent');
-  const end=worker.indexOf('\nfunction telegramBurstKind',start);
+  const end=worker.indexOf('function telegramBurstKind',start);
   assert.ok(start>=0 && end>start);
   const block=worker.slice(start,end);
   assert.match(block,/!hasSupabase\(cfg\).*fallback/s);
