@@ -66,3 +66,10 @@ test('permanent Telegram rejection never retries even without side effects', () 
   assert.equal(result.retry,false);
   assert.equal(result.transient,false);
 });
+
+
+test('worker tracks only side-effecting Telegram API methods for retry suppression', () => {
+  const worker = require('node:fs').readFileSync('src/worker.js','utf8');
+  assert.match(worker, /!\/\^get\[A-Z\]\//);
+  assert.match(worker, /markTelegramWebhookEffect\(cfg, method\)/);
+});
