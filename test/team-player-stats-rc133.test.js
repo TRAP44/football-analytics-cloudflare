@@ -80,7 +80,6 @@ test('RC133 football-data scorer adapter does not match generic club-name collis
 });
 
 
-const worker = fs.readFileSync('src/worker.js', 'utf8');
 
 test('RC133 API-Football player stats preserve paging metadata and bound user-facing pagination', () => {
   assert.match(worker, /options\.responseType === 'envelope'/);
