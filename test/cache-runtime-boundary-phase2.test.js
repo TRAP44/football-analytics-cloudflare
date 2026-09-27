@@ -49,10 +49,12 @@ test('Phase 2 cache boundary keeps read failures fail-soft to L1',async()=>{
     hasSupabase:()=>true,
     supaSelectOne:async()=>{throw new Error('db down');},
   });
-  rt.memory.cache.set('fallback',{payload:{ok:'l1'},expiresAt:Date.now()+60_000});
-  const entry=await rt.api.getCacheEntry('fallback',{},false);
-  assert.equal(entry.layer,'memory');
+  rt.memory.cache.set('fallback',{payload:{ok:'l1'},expiresAt:Date.now()-60_000});
+  const entry=await rt.api.getCacheEntry('fallback',{},true);
+  assert.equal(entry.layer,'memory-fallback');
+  assert.equal(entry.expired,true);
   assert.deepEqual(entry.payload,{ok:'l1'});
+  assert.ok(rt.telemetry.includes('supabaseErrors'));
 });
 
 test('Phase 2 cache boundary persists provenance without making write failures fatal',async()=>{
