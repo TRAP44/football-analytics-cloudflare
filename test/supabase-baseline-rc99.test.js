@@ -23,7 +23,10 @@ test('RC99 unified baseline includes every post-v6.9 schema layer', () => {
     'create table if not exists public.telegram_update_claims',
     'create or replace function public.claim_telegram_update',
     'create or replace function public.telegram_webhook_dedupe_health',
-    'insert into public.users(telegram_id)'
+    'insert into public.users(telegram_id)',
+    'create or replace function public.save_favorite_guarded',
+    'create or replace function public.save_match_reminder_guarded',
+    'create or replace function public.personal_write_guard_contract'
   ];
   for (const marker of required) assert.ok(baseline.includes(marker), marker);
 });
@@ -41,7 +44,9 @@ test('RC99 keeps numbered migrations for existing production upgrades', () => {
     'supabase/migrations/supabase_migration_v6_16.sql',
     'supabase/migrations/supabase_migration_v6_17.sql',
     'supabase/migrations/supabase_migration_v6_18.sql',
-    'supabase/migrations/supabase_migration_v6_18_1.sql'
+    'supabase/migrations/supabase_migration_v6_18_1.sql',
+    'supabase/migrations/supabase_migration_v6_19.sql',
+    'supabase/migrations/supabase_migration_v6_19_1.sql'
   ]) {
     assert.equal(fs.existsSync(new URL('../' + name, import.meta.url)), true, name);
   }
