@@ -969,6 +969,70 @@ function routeBurstPolicy(pathname) {
   return ROUTE_BURST_POLICIES.find(policy => policy.test(pathname)) || null;
 }
 
+const DISTRIBUTED_ROUTE_BURST_POLICIES = Object.freeze([
+  { test: (p,m) => p === '/api/analyze', limit: 6, windowSeconds: 60, label: 'analysis' },
+  { test: (p,m) => p === '/api/match-center', limit: 48, windowSeconds: 60, label: 'match-center' },
+  { test: (p,m) => p === '/api/search', limit: 60, windowSeconds: 60, label: 'search' },
+  { test: (p,m) => p === '/api/tournament', limit: 48, windowSeconds: 60, label: 'tournament' },
+  { test: (p,m) => p === '/api/team' || p.startsWith('/api/team/'), limit: 60, windowSeconds: 60, label: 'team' },
+  { test: (p,m) => p === '/api/provider/e2e-validation', limit: 2, windowSeconds: 60, label: 'provider-e2e' },
+  { test: (p,m) => p === '/api/provider/coverage-audit', limit: 4, windowSeconds: 60, label: 'coverage-audit' },
+  { test: (p,m) => p === '/api/provider/probe', limit: 6, windowSeconds: 60, label: 'provider-probe' },
+  { test: (p,m) => p === '/api/client-telemetry', limit: 12, windowSeconds: 60, label: 'client-telemetry' },
+  { test: (p,m) => p === '/api/beta-feedback', limit: 4, windowSeconds: 60, label: 'beta-feedback' },
+  { test: (p,m) => p === '/api/runtime-controls', limit: 12, windowSeconds: 60, label: 'runtime-controls' },
+  { test: (p,m) => p === '/api/runtime-controls/rollback', limit: 6, windowSeconds: 60, label: 'runtime-rollback' },
+  { test: (p,m) => p === '/api/model-remediation', limit: 4, windowSeconds: 60, label: 'model-remediation' },
+  { test: (p,m) => p === '/api/diagnostics' || p === '/api/release-readiness' || p === '/api/production-readiness' || p === '/api/rc-regression' || p === '/api/release-monitor' || p === '/api/production-monitor', limit: 12, windowSeconds: 60, label: 'admin-diagnostics' },
+  { test: (p,m) => p === '/api/favorites' && m !== 'GET', limit: 20, windowSeconds: 60, label: 'favorites-write' },
+  { test: (p,m) => p === '/api/reminders' && m !== 'GET', limit: 20, windowSeconds: 60, label: 'reminders-write' },
+  { test: (p,m) => p === '/api/preferences' && m !== 'GET', limit: 20, windowSeconds: 60, label: 'preferences-write' },
+  { test: (p,m) => p.startsWith('/api/billing/') && m !== 'GET', limit: 10, windowSeconds: 60, label: 'billing-write' },
+]);
+
+function distributedRouteBurstPolicy(request) {
+  const url = new URL(request.url);
+  const method = String(request.method || 'GET').toUpperCase();
+  return DISTRIBUTED_ROUTE_BURST_POLICIES.find(policy => policy.test(url.pathname, method)) || null;
+}
+
+async function enforceDistributedRouteBurst(request, user, cfg) {
+  const policy = distributedRouteBurstPolicy(request);
+  if (!policy || !user?.id || !hasSupabase(cfg)) return null;
+
+  try {
+    const result = await supaRpc(cfg, 'claim_provider_request', {
+      p_bucket_key: `route:${Number(user.id)}:${policy.label}`,
+      p_limit: policy.limit,
+      p_window_seconds: policy.windowSeconds,
+    }, 1800);
+    if (result?.allowed) return null;
+
+    const retryAfter = Math.max(1, Number(result?.retryAfter || policy.windowSeconds));
+    bumpTelemetry('distributedBurstBlocks');
+    return json({
+      error: 'Слишком много запросов за короткое время. Повторите немного позже.',
+      code: 'DISTRIBUTED_BURST_GUARD',
+      retryAfter,
+    }, 429, { 'retry-after': String(retryAfter) });
+  } catch (error) {
+    bumpTelemetry('distributedBurstFallbacks');
+    const now = Date.now();
+    if (now - Number(memory.distributedRouteGuardWarningAt || 0) >= 60_000) {
+      memory.distributedRouteGuardWarningAt = now;
+      void recordOpsEvent(cfg, {
+        severity: 'warning',
+        source: 'rate_limit',
+        eventType: 'distributed_route_guard',
+        code: 'DISTRIBUTED_ROUTE_GUARD_DEGRADED',
+        message: error?.message || error,
+        endpoint: new URL(request.url).pathname,
+      }).catch(() => {});
+    }
+    return null;
+  }
+}
+
 function enforceRouteBurst(request, user) {
   const path = new URL(request.url).pathname;
   const policy = routeBurstPolicy(path);
@@ -1016,6 +1080,9 @@ function productionSafetySnapshot() {
       activeBuckets: memory.routeBurst.size,
       blocked: Number(memory.telemetry?.burstBlocks || 0),
       policies: ROUTE_BURST_POLICIES.map(x => ({ label: x.label, limit: x.limit, windowMs: x.windowMs })),
+      distributedBlocked: Number(memory.telemetry?.distributedBurstBlocks || 0),
+      distributedFallbacks: Number(memory.telemetry?.distributedBurstFallbacks || 0),
+      distributedPolicies: DISTRIBUTED_ROUTE_BURST_POLICIES.map(x => ({ label: x.label, limit: x.limit, windowSeconds: x.windowSeconds })),
     },
     telegramWebhook: {
       activeBuckets: memory.telegramBurst.size,
@@ -1191,6 +1258,17 @@ async function recordOpsEventTask(cfg, event = {}) {
     // Observability must never become a new failure mode for the product.
   }
   return row;
+}
+
+async function cleanupRateWindows(cfg) {
+  if (!hasSupabase(cfg)) return { skipped: true };
+  const cutoff = new Date(Date.now() - 2 * 86400_000).toISOString();
+  try {
+    await supaDelete(cfg, 'provider_rate_windows', { updated_at: `lt.${cutoff}` });
+    return { ok: true, cutoff };
+  } catch (error) {
+    return { ok: false, error: redactOpsString(error?.message || error, 180) };
+  }
 }
 
 async function cleanupOpsEvents(cfg) {
@@ -22785,6 +22863,9 @@ export default {
       const burstResponse = enforceRouteBurst(request, user);
       if (burstResponse) return burstResponse;
 
+      const distributedBurstResponse = await enforceDistributedRouteBurst(request, user, cfg);
+      if (distributedBurstResponse) return distributedBurstResponse;
+
       try {
         return await dispatchApiRoute(request, url, cfg, user, API_ROUTE_DEPS);
       } finally {
@@ -22827,6 +22908,7 @@ export default {
     }
     if (scheduledAt.getUTCHours() === 3 && scheduledAt.getUTCMinutes() < 15) {
       tasks.push(['ops_cleanup', cleanupOpsEvents(cfg)]);
+      tasks.push(['rate_window_cleanup', cleanupRateWindows(cfg)]);
       tasks.push(['growth_cleanup', cleanupGrowthEvents(cfg)]);
       tasks.push(['integrity_cleanup', cleanupIntegrityData(cfg)]);
     }
