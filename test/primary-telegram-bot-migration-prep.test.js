@@ -13,6 +13,7 @@ const worker = fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src
 const identityModule = fs.readFileSync('src/telegram-primary-identity.js','utf8');
 const router = fs.readFileSync('src/router.js','utf8');
 const accessControl = fs.readFileSync('src/access-control.js','utf8');
+const reminderDeliveryService = fs.readFileSync('src/reminder-delivery-service.js','utf8');
 
 async function signedInitData(botToken, userId = 24681012) {
   const params = new URLSearchParams();
@@ -120,8 +121,10 @@ test('webhook, start attribution, reminders, billing and Mini App URL contracts 
   assert.match(worker,/const expectedUrl = `\$\{new URL\(request\.url\)\.origin\}\/telegram\/webhook`/);
   assert.match(worker,/function telegramStartPayload\(/);
   assert.match(worker,/async function ensureLaunchAttribution\(userId, rawStartParam, cfg\)/);
-  assert.match(worker,/async function processDueReminders\(cfg\)/);
-  assert.match(worker,/sendTelegramMessage\(row\.telegram_id, text, cfg\)/);
+  assert.match(worker,/createReminderDeliveryService\(\{/);
+  assert.match(worker,/sendTelegramMessage,/);
+  assert.match(reminderDeliveryService,/async function processDueReminders\(cfg\)/);
+  assert.match(reminderDeliveryService,/sendTelegramMessage\(row\.telegram_id, text, cfg\)/);
   assert.match(worker,/makeInvoicePayload\(user\.id, plan, cfg\.botToken\)/);
   assert.match(worker,/function telegramWebAppUrl\(request, params = \{\}\)/);
   assert.match(worker,/url\.pathname = '\/'/);

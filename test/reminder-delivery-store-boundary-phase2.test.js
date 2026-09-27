@@ -122,7 +122,7 @@ test('non-Supabase fallback preserves no-op lifecycle semantics', async () => {
   assert.equal(calls.length,0);
 });
 
-test('worker delegates delivery persistence while keeping Telegram and cron orchestration', () => {
+test('worker delegates delivery persistence to the store boundary', () => {
   const worker=fs.readFileSync('src/worker.js','utf8');
   assert.match(worker,/import \{ createReminderDeliveryStore \} from '\.\/reminder-delivery-store\.js'/);
   assert.match(worker,/createReminderDeliveryStore\(\{/);
@@ -130,7 +130,4 @@ test('worker delegates delivery persistence while keeping Telegram and cron orch
   assert.doesNotMatch(worker,/async function claimReminderDelivery\(row, kind, cfg\)/);
   assert.doesNotMatch(worker,/async function finishReminderDelivery\(row, kind, claimAt, cfg\)/);
   assert.doesNotMatch(worker,/async function releaseReminderClaim\(row, kind, claimAt, errorMessage, cfg/);
-  assert.match(worker,/async function sendTelegramMessage\(/);
-  assert.match(worker,/async function deliverClaimedReminder\(/);
-  assert.match(worker,/async function processDueReminders\(cfg\)/);
 });

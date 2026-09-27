@@ -142,9 +142,12 @@ test('worker delegates reminder CRUD storage boundary to extracted service', () 
   assert.match(worker,/await addReminder\(user\.id/);
   assert.match(worker,/await removeReminder\(user\.id/);
 
-  // Cron and Telegram-send orchestration remain in the composition root,
-  // while claim persistence is delegated to the extracted delivery store.
-  assert.match(worker,/async function processDueReminders\(cfg\)/);
+  // Reminder delivery orchestration is delegated to its service while the
+  // shared Telegram transport remains injected from the composition root.
+  assert.match(worker,/import \{ createReminderDeliveryService \} from '\.\/reminder-delivery-service\.js'/);
+  assert.match(worker,/createReminderDeliveryService\(\{/);
+  assert.match(worker,/sendTelegramMessage,/);
+  assert.doesNotMatch(worker,/async function processDueReminders\(cfg\)/);
   assert.match(worker,/import \{ createReminderDeliveryStore \} from '\.\/reminder-delivery-store\.js'/);
   assert.match(worker,/createReminderDeliveryStore\(\{/);
   assert.doesNotMatch(worker,/async function claimReminderDelivery\(row, kind, cfg\)/);
