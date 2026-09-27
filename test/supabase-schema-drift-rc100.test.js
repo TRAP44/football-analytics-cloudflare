@@ -8,6 +8,9 @@ const smoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 test('RC100 probes required Supabase tables and columns without DDL', () => {
   assert.match(worker, /async function probeTableColumns\(/);
   assert.match(worker, /async function probeSupabaseSchemaDrift\(/);
+  assert.match(worker, /async function readPersonalWriteGuardContract\(/);
+  assert.match(worker, /personal_write_guard_contract/);
+  assert.match(worker, /personal_write_guards/);
   for (const marker of [
     "id: 'users_acquisition'",
     "id: 'analysis_history_ai'",
