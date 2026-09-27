@@ -40,6 +40,7 @@ import {
   validateTelegramInitData,
 } from './crypto-utils.js';
 import { resolvePrimaryTelegramBotUsername, telegramBotStartUrl } from './telegram-primary-identity.js';
+import { markTelegramWebhookEffect, markTelegramWebhookMutation } from './telegram-webhook-retry.js';
 import { PERSONAL_WRITE_LIMITS, normalizeFavoriteWrite, normalizeReminderWrite } from './personal-write-guards.js';
 
 const memory = {
@@ -2125,18 +2126,47 @@ async function parseInvoicePayload(payload, botToken) {
 }
 
 async function telegramApi(method, cfg, body = {}) {
-  if (!cfg.botToken) throw new Error('TELEGRAM_BOT_TOKEN не настроен.');
-  const r = await fetchWithTimeout(`https://api.telegram.org/bot${cfg.botToken}/${method}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body || {}),
-  }, 8000, `Telegram ${method}`);
+  if (!cfg.botToken) {
+    const error = new Error('TELEGRAM_BOT_TOKEN не настроен.');
+    error.code = 'TELEGRAM_CONFIG';
+    throw error;
+  }
+
+  let r;
+  try {
+    r = await fetchWithTimeout(`https://api.telegram.org/bot${cfg.botToken}/${method}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    }, 8000, `Telegram ${method}`);
+  } catch (cause) {
+    const timedOut = String(cause?.code || '') === 'UPSTREAM_TIMEOUT';
+    const error = new Error(cause?.message || (timedOut ? `Telegram ${method} timeout` : `Telegram ${method} network error`));
+    error.code = timedOut ? 'TELEGRAM_TIMEOUT' : 'TELEGRAM_NETWORK';
+    error.retryAfter = Math.max(0, Number(cause?.retryAfter || 0));
+    throw error;
+  }
+
   const data = await r.json().catch(() => ({}));
-  if (!r.ok || !data?.ok) throw new Error(data?.description || `Telegram ${method}: HTTP ${r.status}`);
+  if (!r.ok || !data?.ok) {
+    const status = Number(r.status || 0);
+    const error = new Error(data?.description || `Telegram ${method}: HTTP ${status}`);
+    error.status = status;
+    error.retryAfter = Math.max(0, Number(data?.parameters?.retry_after || r.headers.get('retry-after') || 0));
+    error.code = status === 429
+      ? 'TELEGRAM_RATE_LIMIT'
+      : status >= 500
+        ? 'TELEGRAM_UPSTREAM'
+        : 'TELEGRAM_REJECTED';
+    throw error;
+  }
+
+  if (!/^get[A-Z]/.test(String(method || ''))) markTelegramWebhookEffect(cfg, method);
   return data.result;
 }
 
 async function updateUserSubscription(userId, fields, cfg) {
+  markTelegramWebhookMutation(cfg, 'user_subscription');
   const patch = { ...fields, plan_updated_at: new Date().toISOString() };
   if (hasSupabase(cfg)) {
     await supaPatch(cfg, 'users', { telegram_id: `eq.${Number(userId)}` }, patch);
@@ -2148,6 +2178,7 @@ async function updateUserSubscription(userId, fields, cfg) {
 
 async function saveBillingPayment(row, cfg) {
   if (!row?.telegram_payment_charge_id) return;
+  markTelegramWebhookMutation(cfg, 'billing_payment');
   if (hasSupabase(cfg)) {
     await supaUpsert(cfg, 'billing_payments', row, 'telegram_payment_charge_id');
   } else {
@@ -2773,6 +2804,7 @@ async function sendBotFixtureMenu(request, cfg, userId, chatId, fixtureId, optio
     return;
   }
   try {
+    markTelegramWebhookMutation(cfg, 'analysis_quota_or_history');
     const data=options.newsImpactDelta
       ? await botAnalyzeFixture(request,cfg,userId,fixtureId,{
           newsImpactRecheck:true,
@@ -6454,6 +6486,7 @@ function botPostMatchReviewText(data = {}) {
 
 async function sendBotFixtureSection(request, cfg, userId, chatId, fixtureId, section = 'verdict', options = {}) {
   try {
+    if (section !== 'review') markTelegramWebhookMutation(cfg, 'analysis_quota_or_history');
     const data = section === 'review'
       ? await botMatchCenterFixture(request, cfg, fixtureId)
       : await botAnalyzeFixture(request, cfg, userId, fixtureId);
@@ -6615,6 +6648,7 @@ function dailyDigestText(rows = []) {
 }
 
 async function setBotDigestSubscription(userId, chatId, enabled, cfg, appUrl = '') {
+  markTelegramWebhookMutation(cfg, 'digest_subscription');
   const previous = hasSupabase(cfg) ? null : memory.botDigestSubscriptions.get(Number(userId));
   const row = {
     telegram_id:Number(userId), chat_id:Number(chatId), enabled:Boolean(enabled), hour_utc:7,
@@ -7255,6 +7289,7 @@ async function processTelegramUpdate(request, cfg, update) {
     const userId = Number(msg.from?.id || 0);
     const chargeId = String(refund.telegram_payment_charge_id || '');
     if (hasSupabase(cfg) && chargeId) {
+      markTelegramWebhookMutation(cfg, 'billing_refund');
       await supaPatch(cfg, 'billing_payments', { telegram_payment_charge_id: `eq.${chargeId}` }, { status: 'refunded', updated_at: new Date().toISOString() });
     }
     const record = userId ? await getUserRecord(userId, cfg) : null;
@@ -22840,10 +22875,35 @@ export default {
       try {
         return await handleTelegramWebhook(request, cfg);
       } catch (error) {
+        const retry = Boolean(error?.telegramWebhookRetry);
+        const disposition = error?.telegramWebhookDisposition || {};
+        const status = retry ? 503 : 200;
         console.error('telegram webhook', redactOpsString(error?.message || error, 240));
         bumpTelemetry('routeErrors');
-        await recordOpsEvent(cfg, { severity: 'error', source: 'telegram', eventType: 'webhook', code: 'TELEGRAM_WEBHOOK', message: error?.message || error, endpoint: '/telegram/webhook' });
-        return json({ ok: false }, 200);
+        await recordOpsEvent(cfg, {
+          severity: 'error',
+          source: 'telegram',
+          eventType: 'webhook',
+          code: retry ? 'TELEGRAM_WEBHOOK_RETRY' : 'TELEGRAM_WEBHOOK_SUPPRESSED_RETRY',
+          message: error?.message || error,
+          endpoint: '/telegram/webhook',
+          status,
+          meta: {
+            errorCode: String(error?.code || ''),
+            retry,
+            successfulEffects: Number(disposition?.successfulEffects || 0),
+            unsafeMutations: Number(disposition?.unsafeMutations || 0),
+            lastEffect: String(disposition?.lastEffect || ''),
+            lastMutation: String(disposition?.lastMutation || ''),
+          },
+        });
+        return json(
+          retry ? { ok: false, retry: true } : { ok: false },
+          status,
+          retry && Number(disposition?.retryAfter || 0) > 0
+            ? { 'retry-after': String(Math.max(1, Number(disposition.retryAfter))) }
+            : {},
+        );
       }
     }
 
