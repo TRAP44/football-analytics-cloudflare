@@ -13887,7 +13887,11 @@ async function apiProviderCoverageAudit(request, cfg) {
 
   memory.providerAudit.last = audit;
   memory.providerAudit.byFixture.set(fixtureId, audit);
-  await setCache(cacheKey, fconst {
+  await setCache(cacheKey, fixtureId, audit, cfg, 15).catch(() => null);
+  return json(audit);
+}
+
+const {
   footballError,
   isFootballRateLimitError,
   footballCooldownRemaining,
@@ -13917,13 +13921,6 @@ async function apiProviderCoverageAudit(request, cfg) {
   withSingleFlight,
   sleepMs,
 });
-attempt + 1));
-        }
-      }
-      throw lastError;
-    },
-  );
-}
 
 async function probeSupabase(cfg) {
   if (!hasSupabase(cfg)) return { configured: false, ok: false, status: 'not_configured', latencyMs: null, cache: null };
