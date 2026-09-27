@@ -9,7 +9,7 @@ import {
   sendPhoto,
 } from '../src/channel-publisher.js';
 
-const worker=fs.readFileSync('src/worker.js','utf8');
+const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/auth-user.js','utf8');
 const router=fs.readFileSync('src/router.js','utf8');
 const envExample=fs.readFileSync('.env.example','utf8');
 const wrangler=fs.readFileSync('wrangler.jsonc','utf8');
