@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const workerCore=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 const router=readFileSync(new URL('../src/router.js',import.meta.url),'utf8');
-const worker=workerCore+'\n'+router;
+const worker=workerCore+'\n'+router+'\n'+readFileSync(new URL('../src/api-football-gateway.js',import.meta.url),'utf8');
 const appCore=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
 const clientCore=readFileSync(new URL('../public/modules/client-core.js',import.meta.url),'utf8');
 const app=appCore+'\n'+clientCore;
