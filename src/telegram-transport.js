@@ -1,3 +1,5 @@
+import { beginTelegramWebhookAttempt, classifyTelegramWebhookFailure, endTelegramWebhookAttempt } from './telegram-webhook-retry.js';
+
 // Phase 2 Telegram boundary: webhook transport/orchestration only.
 // Command semantics and Telegram business handlers remain injected by the composition root.
 export function createTelegramWebhookHandler(deps) {
@@ -46,14 +48,25 @@ export function createTelegramWebhookHandler(deps) {
     return json({ok:true,throttled:true,retryAfter:burst.retryAfter});
   }
 
+  beginTelegramWebhookAttempt(cfg);
   try {
     const response=await processTelegramUpdate(request,cfg,update);
     completeTelegramUpdate(claim.key);
     await completeTelegramUpdatePersistent(cfg,claim.key);
+    endTelegramWebhookAttempt(cfg);
     return response;
   } catch (error) {
-    releaseTelegramUpdate(claim.key);
-    await releaseTelegramUpdatePersistent(cfg,claim.key);
+    const disposition=classifyTelegramWebhookFailure(error,cfg);
+    error.telegramWebhookRetry=Boolean(disposition.retry);
+    error.telegramWebhookDisposition=disposition;
+    if (disposition.retry) {
+      releaseTelegramUpdate(claim.key);
+      await releaseTelegramUpdatePersistent(cfg,claim.key);
+    } else {
+      completeTelegramUpdate(claim.key);
+      await completeTelegramUpdatePersistent(cfg,claim.key);
+    }
+    endTelegramWebhookAttempt(cfg);
     throw error;
   }
 
