@@ -176,7 +176,6 @@ export function createProviderObservabilityRuntime({
     const outcome = String(event.outcome || event.finalResult || '');
     if (outcome === 'retrying') {
       bucket.retries += 1;
-      classifyFailure(bucket, event.errorType);
       return;
     }
 
