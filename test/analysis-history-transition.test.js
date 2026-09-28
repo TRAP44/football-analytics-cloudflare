@@ -20,12 +20,14 @@ test('renderAnalysis owns currentAnalysis assignment so a new fixture resets the
   assert.doesNotMatch(historyOpen[0], /state\.currentAnalysis = data/);
 });
 
-test('a completed analysis is shown before secondary history and reminder refreshes finish', () => {
+test('a completed analysis is shown before conditional secondary synchronization starts', () => {
   const analyze = app.match(/async function analyzeMatch\(fixtureId, btn, options = \{\}\)[\s\S]*?\n}\n\nfunction historyItemFromAnalysis/);
   assert.ok(analyze, 'analyzeMatch must exist');
   const showIndex = analyze[0].indexOf("showView('analysisView')");
-  const secondaryIndex = analyze[0].indexOf('void Promise.allSettled([loadHistory(false), loadReminders(), loadFavorites()])');
+  const secondaryIndex = analyze[0].indexOf('const secondaryTasks = [loadHistory(false)]');
   assert.ok(showIndex >= 0 && secondaryIndex > showIndex, 'analysis screen must be shown before secondary refresh starts');
+  assert.match(analyze[0], /if \(!state\.remindersLoaded\) secondaryTasks\.push\(loadReminders\(\)\)/);
+  assert.match(analyze[0], /if \(!state\.favoritesLoaded\) secondaryTasks\.push\(loadFavorites\(\)\)/);
   assert.doesNotMatch(analyze[0], /await Promise\.all\(\[loadHistory\(false\), loadReminders\(\)\]\)/);
 });
 
