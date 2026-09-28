@@ -11,6 +11,8 @@ const REQUIRED_HEALTH_FLAGS = [
   'rollbackVerification',
   'providerDataReliability',
   'providerDataReliabilitySelfTest',
+  'providerSloObservability',
+  'providerSloSelfTest',
   'multiProviderDataService',
   'openLigaDbStandingsFallback',
   'openLigaDbEventFallback',
