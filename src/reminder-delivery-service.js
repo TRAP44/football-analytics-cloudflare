@@ -2,7 +2,7 @@ export function createReminderDeliveryService({
   hasSupabase,
   loadRuntimeControls,
   clearStaleReminderClaims,
-  supaSelectMany,
+  supaSelectPaged,
   recordOpsEvent,
   sendTelegramMessage,
   claimReminderDelivery,
@@ -124,26 +124,63 @@ export function createReminderDeliveryService({
 
   async function processDueReminders(cfg) {
     if (!hasSupabase(cfg) || !cfg.botToken) {
-      return { checked: 0, sent: 0, kickoffSent: 0, failed: 0, unknown: 0, claimed: 0, staleClaims: 0 };
+      return { checked: 0, sent: 0, kickoffSent: 0, failed: 0, unknown: 0, claimed: 0, staleClaims: 0, staleCleanupFailed: 0, truncated: false };
     }
 
     const runtimeState = await loadRuntimeControls(cfg);
     if (runtimeState.value?.remindersEnabled === false) {
-      return { checked: 0, sent: 0, kickoffSent: 0, failed: 0, unknown: 0, claimed: 0, staleClaims: 0, disabled: true };
+      return { checked: 0, sent: 0, kickoffSent: 0, failed: 0, unknown: 0, claimed: 0, staleClaims: 0, staleCleanupFailed: 0, truncated: false, disabled: true };
     }
 
-    const stale = await clearStaleReminderClaims(cfg).catch(() => ({ prematch: 0, kickoff: 0 }));
+    let stale = { prematch: 0, kickoff: 0, failed: 0 };
+    try {
+      stale = await clearStaleReminderClaims(cfg);
+    } catch (error) {
+      stale = { prematch: 0, kickoff: 0, failed: 1 };
+      await recordOpsEvent(cfg, {
+        severity: 'error',
+        source: 'reminders',
+        eventType: 'reminder_scheduler',
+        code: 'REMINDER_STALE_CLAIM_CLEANUP_FAILED',
+        message: error?.message || error,
+        endpoint: 'cron:reminders',
+      }).catch(() => {});
+    }
     const now = Date.now();
     const from = new Date(now - 8 * 60_000).toISOString();
     const toMs = now + 65 * 60_000;
     let rows = [];
+    let truncated = false;
+    const to = new Date(toMs).toISOString();
 
     try {
-      rows = await supaSelectMany(cfg, 'match_reminders', {
+      const page = await supaSelectPaged(cfg, 'match_reminders', {
         enabled: 'eq.true',
-        fixture_date: `gte.${from}`,
-      }, { limit: 250, order: 'fixture_date.asc' });
-      rows = rows.filter(x => Date.parse(x.fixture_date) <= toMs);
+        and: `(fixture_date.gte.${from},fixture_date.lte.${to})`,
+      }, {
+        pageSize: 250,
+        maxRows: 2000,
+        order: 'fixture_date.asc,fixture_id.asc,telegram_id.asc',
+      });
+      rows = Array.isArray(page?.rows)
+        ? page.rows.filter(x => {
+          const fixtureMs = Date.parse(x.fixture_date || '');
+          return Number.isFinite(fixtureMs) && fixtureMs >= Date.parse(from) && fixtureMs <= toMs;
+        })
+        : [];
+      truncated = Boolean(page?.truncated);
+
+      if (truncated) {
+        await recordOpsEvent(cfg, {
+          severity: 'warning',
+          source: 'reminders',
+          eventType: 'reminder_scheduler',
+          code: 'REMINDER_SCHEDULER_TRUNCATED',
+          message: `Планировщик достиг лимита 2000 напоминаний в одном временном окне.`,
+          endpoint: 'cron:reminders',
+          meta: { rows: rows.length, windowFrom: from, windowTo: to },
+        }).catch(() => {});
+      }
     } catch (e) {
       await recordOpsEvent(cfg, {
         severity: 'error',
@@ -153,7 +190,17 @@ export function createReminderDeliveryService({
         message: e?.message || e,
         endpoint: 'cron:reminders',
       }).catch(() => {});
-      return { checked: 0, sent: 0, kickoffSent: 0, failed: 1, unknown: 0, claimed: 0, staleClaims: stale.prematch + stale.kickoff };
+      return {
+        checked: 0,
+        sent: 0,
+        kickoffSent: 0,
+        failed: 1,
+        unknown: 0,
+        claimed: 0,
+        staleClaims: stale.prematch + stale.kickoff,
+        staleCleanupFailed: Number(stale.failed || 0),
+        truncated: false,
+      };
     }
 
     let sent = 0;
@@ -220,15 +267,25 @@ export function createReminderDeliveryService({
       unknown,
       claimed,
       staleClaims: stale.prematch + stale.kickoff,
+      staleCleanupFailed: Number(stale.failed || 0),
+      truncated,
     };
 
-    if (sent || kickoffSent || failed || unknown || summary.staleClaims) {
+    if (sent || kickoffSent || failed || unknown || summary.staleClaims || summary.staleCleanupFailed || truncated) {
       await recordOpsEvent(cfg, {
-        severity: failed || unknown ? 'warning' : 'info',
+        severity: failed || unknown || summary.staleCleanupFailed || truncated ? 'warning' : 'info',
         source: 'reminders',
         eventType: 'reminder_scheduler',
-        code: failed ? 'REMINDER_RUN_WITH_FAILURES' : unknown ? 'REMINDER_RUN_WITH_UNKNOWN' : 'REMINDER_RUN_OK',
-        message: `Планировщик уведомлений: проверено ${rows.length}, предматчевых отправлено ${sent}, у старта ${kickoffSent}, неопределённых доставок ${unknown}, ошибок ${failed}.`,
+        code: failed
+          ? 'REMINDER_RUN_WITH_FAILURES'
+          : unknown
+            ? 'REMINDER_RUN_WITH_UNKNOWN'
+            : truncated
+              ? 'REMINDER_RUN_TRUNCATED'
+              : summary.staleCleanupFailed
+                ? 'REMINDER_RUN_DEGRADED'
+                : 'REMINDER_RUN_OK',
+        message: `Планировщик уведомлений: проверено ${rows.length}, предматчевых отправлено ${sent}, у старта ${kickoffSent}, неопределённых доставок ${unknown}, ошибок ${failed}, ошибок cleanup ${summary.staleCleanupFailed}, обрезка ${truncated ? 'да' : 'нет'}.`,
         endpoint: 'cron:reminders',
         meta: summary,
       }).catch(() => {});

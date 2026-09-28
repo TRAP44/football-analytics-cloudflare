@@ -18,7 +18,7 @@ export function createReminderDeliveryStore({
   }
 
   async function clearStaleReminderClaims(cfg) {
-    if (!hasSupabase(cfg)) return { prematch: 0, kickoff: 0 };
+    if (!hasSupabase(cfg)) return { prematch: 0, kickoff: 0, failed: 0 };
     const cutoff = new Date(Date.now() - 20 * 60_000).toISOString();
 
     const clearColumn = async column => {
@@ -36,8 +36,22 @@ export function createReminderDeliveryStore({
       return Array.isArray(rows) ? rows.length : 0;
     };
 
-    const prematch = await clearColumn('prematch_claimed_at').catch(() => 0);
-    const kickoff = await clearColumn('kickoff_claimed_at').catch(() => 0);
+    let prematch = 0;
+    let kickoff = 0;
+    const failures = [];
+
+    try {
+      prematch = await clearColumn('prematch_claimed_at');
+    } catch (error) {
+      failures.push({ kind: 'prematch', message: error?.message || String(error) });
+    }
+
+    try {
+      kickoff = await clearColumn('kickoff_claimed_at');
+    } catch (error) {
+      failures.push({ kind: 'kickoff', message: error?.message || String(error) });
+    }
+
     const total = prematch + kickoff;
 
     if (total > 0) {
@@ -51,7 +65,22 @@ export function createReminderDeliveryStore({
       }).catch(() => {});
     }
 
-    return { prematch, kickoff };
+    if (failures.length > 0) {
+      await recordOpsEvent(cfg, {
+        severity: 'error',
+        source: 'reminders',
+        eventType: 'reminder_delivery',
+        code: 'REMINDER_STALE_CLAIM_CLEANUP_FAILED',
+        message: `Не удалось очистить ${failures.length} типов зависших claim.`,
+        endpoint: 'cron:reminders',
+        meta: {
+          failed: failures.length,
+          kinds: failures.map(item => item.kind),
+        },
+      }).catch(() => {});
+    }
+
+    return { prematch, kickoff, failed: failures.length };
   }
 
   async function claimReminderDelivery(row, kind, cfg) {
