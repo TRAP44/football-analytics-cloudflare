@@ -1552,3 +1552,242 @@ html {
   text-overflow:ellipsis;
   white-space:nowrap;
 }
+
+
+/* MatchRadar Public UI Polish — Home + Match Cards */
+.miniapp-public-shell .home-search-block{
+  position:relative;
+  padding:10px;
+  border:1px solid color-mix(in srgb,var(--accent) 10%,var(--line));
+  border-radius:20px;
+  background:
+    radial-gradient(circle at 0% 0%,color-mix(in srgb,var(--accent) 8%,transparent),transparent 42%),
+    color-mix(in srgb,var(--surface) 96%,var(--bg));
+  box-shadow:0 12px 32px color-mix(in srgb,var(--brand-night) 8%,transparent);
+}
+.miniapp-public-shell .home-search-block:focus-within{
+  border-color:color-mix(in srgb,var(--accent) 30%,var(--line));
+  box-shadow:
+    0 14px 34px color-mix(in srgb,var(--brand-night) 10%,transparent),
+    0 0 0 3px color-mix(in srgb,var(--accent) 7%,transparent);
+}
+.miniapp-public-shell .home-search-block .search-input{
+  box-shadow:none;
+  background:color-mix(in srgb,var(--surface) 88%,transparent);
+}
+.miniapp-public-shell .home-search-block .global-search-btn{
+  min-width:84px;
+}
+.miniapp-public-shell .home-priority-stack{
+  gap:10px;
+  margin-top:2px;
+}
+.miniapp-public-shell .home-priority-card{
+  position:relative;
+  overflow:hidden;
+  min-height:70px;
+  padding:14px 15px 14px 17px;
+  border:1px solid color-mix(in srgb,var(--line) 75%,transparent);
+  background:
+    linear-gradient(140deg,color-mix(in srgb,var(--surface) 98%,var(--brand-sky) 2%),var(--surface));
+  box-shadow:0 9px 26px color-mix(in srgb,var(--brand-night) 7%,transparent);
+}
+.miniapp-public-shell .home-priority-card::before{
+  content:'';
+  position:absolute;
+  left:0;
+  top:11px;
+  bottom:11px;
+  width:3px;
+  border-radius:0 4px 4px 0;
+  background:var(--accent);
+}
+.miniapp-public-shell .home-priority-card.is-live::before{background:var(--brand-live)}
+.miniapp-public-shell .home-priority-card.onboarding::before{background:var(--brand-sky)}
+.miniapp-public-shell .home-priority-card > span{
+  letter-spacing:.035em;
+  text-transform:uppercase;
+}
+.miniapp-public-shell .home-priority-card > strong{
+  font-size:15.5px;
+  letter-spacing:-.015em;
+}
+.miniapp-public-shell .home-priority-card > b{
+  align-self:center;
+  padding:6px 8px;
+  border-radius:999px;
+  background:color-mix(in srgb,var(--accent) 8%,transparent);
+}
+.miniapp-public-shell .home-priority-card:active{
+  transform:translateY(1px);
+}
+.miniapp-public-shell .date-strip{
+  margin:12px 0 12px;
+  box-shadow:inset 0 1px rgba(255,255,255,.035);
+}
+.miniapp-public-shell .date-btn{
+  font-weight:800;
+  letter-spacing:-.01em;
+}
+.miniapp-public-shell .home-filter-drawer > summary{
+  padding-inline:4px;
+}
+.miniapp-public-shell #matchesView > .section-head{
+  margin:20px 2px 11px;
+}
+.miniapp-public-shell #matchesView > .section-head h2{
+  font-size:21px;
+  letter-spacing:-.04em;
+}
+.miniapp-public-shell .matches{
+  gap:12px;
+}
+.miniapp-public-shell .compact-match-card{
+  position:relative;
+  overflow:hidden;
+  padding:16px;
+  border-radius:22px;
+  border-color:color-mix(in srgb,var(--line) 72%,transparent);
+  background:
+    radial-gradient(circle at 50% -20%,color-mix(in srgb,var(--accent) 5%,transparent),transparent 38%),
+    linear-gradient(180deg,color-mix(in srgb,var(--surface) 99%,var(--brand-sky) 1%),var(--surface));
+  box-shadow:
+    0 14px 34px color-mix(in srgb,var(--brand-night) 9%,transparent),
+    inset 0 1px rgba(255,255,255,.035);
+}
+.miniapp-public-shell .compact-match-card::before{
+  content:'';
+  position:absolute;
+  left:0;
+  top:14px;
+  bottom:14px;
+  width:3px;
+  border-radius:0 4px 4px 0;
+  background:color-mix(in srgb,var(--accent) 78%,transparent);
+}
+.miniapp-public-shell .compact-match-card.is-live::before{background:var(--brand-live)}
+.miniapp-public-shell .compact-match-card.is-finished::before{background:color-mix(in srgb,var(--hint) 72%,transparent)}
+.miniapp-public-shell .match-card-topline{
+  margin-bottom:14px;
+}
+.miniapp-public-shell .match-card-topline .competition-name{
+  font-weight:800;
+  letter-spacing:.025em;
+}
+.miniapp-public-shell .match-live-label,
+.miniapp-public-shell .match-time-label,
+.miniapp-public-shell .match-finished-label{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:24px;
+  padding:4px 8px;
+  border-radius:999px;
+  line-height:1;
+}
+.miniapp-public-shell .match-live-label{
+  background:color-mix(in srgb,var(--brand-live) 12%,transparent);
+  border:1px solid color-mix(in srgb,var(--brand-live) 28%,transparent);
+}
+.miniapp-public-shell .match-time-label{
+  background:color-mix(in srgb,var(--accent) 8%,transparent);
+  border:1px solid color-mix(in srgb,var(--accent) 16%,transparent);
+}
+.miniapp-public-shell .match-finished-label{
+  background:color-mix(in srgb,var(--hint) 7%,transparent);
+  border:1px solid color-mix(in srgb,var(--line) 78%,transparent);
+}
+.miniapp-public-shell .compact-match-row{
+  grid-template-columns:minmax(0,1fr) 68px minmax(0,1fr);
+  gap:10px;
+}
+.miniapp-public-shell .compact-team{
+  gap:9px;
+}
+.miniapp-public-shell .compact-team img,
+.miniapp-public-shell .compact-team .team-logo-fallback{
+  width:34px;
+  height:34px;
+  padding:2px;
+  border-radius:10px;
+  background:color-mix(in srgb,var(--surface) 92%,var(--bg));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--line) 70%,transparent);
+}
+.miniapp-public-shell .compact-team strong{
+  font-size:13px;
+  font-weight:850;
+}
+.miniapp-public-shell .compact-score{
+  min-height:38px;
+  display:grid;
+  place-items:center;
+  padding:6px;
+  border-radius:12px;
+  background:color-mix(in srgb,var(--bg) 28%,var(--surface));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--line) 64%,transparent);
+  font-size:16px;
+}
+.miniapp-public-shell .compact-actions .analyze-btn{
+  min-height:44px;
+  margin-top:14px;
+  border-radius:14px;
+  font-size:12.5px;
+  letter-spacing:-.01em;
+  box-shadow:0 10px 24px color-mix(in srgb,var(--accent) 18%,transparent);
+}
+.miniapp-public-shell .match-secondary-actions{
+  min-height:38px;
+  margin-top:10px;
+  padding-top:8px;
+}
+.miniapp-public-shell .fav-star.compact{
+  width:36px;
+  height:36px;
+  border-radius:11px;
+  background:color-mix(in srgb,var(--surface) 82%,var(--bg));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--line) 70%,transparent);
+}
+.miniapp-public-shell .fav-star.compact.active{
+  background:color-mix(in srgb,var(--accent) 10%,var(--surface));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 24%,transparent);
+}
+.miniapp-public-shell .quick-reminder-btn.compact{
+  min-height:36px;
+  padding:6px 10px;
+  border:1px solid color-mix(in srgb,var(--line) 76%,transparent);
+  border-radius:11px;
+  background:color-mix(in srgb,var(--surface) 86%,var(--bg));
+}
+.miniapp-public-shell .quick-reminder-btn.compact.active{
+  border-color:color-mix(in srgb,var(--accent) 26%,var(--line));
+  background:color-mix(in srgb,var(--accent) 9%,var(--surface));
+}
+@media(max-width:430px){
+  .miniapp-public-shell .home-search-block{padding:9px;border-radius:18px}
+  .miniapp-public-shell .compact-match-card{padding:14px}
+  .miniapp-public-shell .compact-match-row{grid-template-columns:minmax(0,1fr) 60px minmax(0,1fr);gap:8px}
+  .miniapp-public-shell .compact-team img,
+  .miniapp-public-shell .compact-team .team-logo-fallback{width:31px;height:31px}
+}
+@media(max-width:390px){
+  .miniapp-public-shell .home-priority-card{min-height:66px;padding:12px 13px 12px 15px}
+  .miniapp-public-shell .compact-match-card{padding:13px}
+  .miniapp-public-shell .compact-match-row{grid-template-columns:minmax(0,1fr) 54px minmax(0,1fr);gap:6px}
+  .miniapp-public-shell .compact-team{gap:6px}
+  .miniapp-public-shell .compact-team strong{font-size:11.5px}
+  .miniapp-public-shell .compact-score{min-height:34px;font-size:14px}
+}
+@media(max-width:360px){
+  .miniapp-public-shell .home-search-block{padding:8px}
+  .miniapp-public-shell .home-priority-card > b{padding:5px 6px}
+  .miniapp-public-shell .compact-match-card{padding:12px}
+  .miniapp-public-shell .compact-match-row{grid-template-columns:minmax(0,1fr) 48px minmax(0,1fr);gap:4px}
+  .miniapp-public-shell .compact-team img,
+  .miniapp-public-shell .compact-team .team-logo-fallback{display:none}
+  .miniapp-public-shell .compact-team,
+  .miniapp-public-shell .compact-team.away{grid-template-columns:minmax(0,1fr)}
+  .miniapp-public-shell .compact-team.away strong{grid-column:1}
+}
+@media(prefers-reduced-motion:reduce){
+  .miniapp-public-shell .home-priority-card:active{transform:none}
+}
