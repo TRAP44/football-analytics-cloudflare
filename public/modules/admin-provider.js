@@ -243,6 +243,31 @@ export function createAdminProviderModule(deps) {
     $('providerLiveOdds').textContent = p.liveOddsReady ? 'Авто · расширенный режим' : 'Экономный режим';
     if ($('providerPlayerStats')) $('providerPlayerStats').textContent = p.playerStatsReady ? 'Авто · расширенный' : 'По требованию';
     if ($('providerOddsMovement')) $('providerOddsMovement').textContent = p.oddsMovementReady ? 'История включена' : 'Экономный режим';
+
+    const sloReport = state.providerObservability || {};
+    const slo = sloReport.overall || {};
+    const sloLabels = {
+      healthy:'В норме',
+      watch:'Нужен контроль',
+      incident:'Нарушен',
+      collecting:'Собираем данные',
+      idle:'Нет запросов',
+    };
+    if ($('providerSloState')) $('providerSloState').textContent = sloLabels[slo.state] || 'Собираем данные';
+    if ($('providerSloSuccess')) $('providerSloSuccess').textContent = Number.isFinite(Number(slo.successRatePct))
+      ? `${Number(slo.successRatePct).toFixed(1)}% · ${Number(slo.successes || 0)}/${Number(slo.requests || 0)}`
+      : '—';
+    if ($('providerSloRetry')) $('providerSloRetry').textContent = Number.isFinite(Number(slo.retryRatePct))
+      ? `${Number(slo.retryRatePct).toFixed(1)}% · ${Number(slo.retries || 0)}`
+      : '—';
+    if ($('providerSloLatency')) $('providerSloLatency').textContent = Number.isFinite(Number(slo.avgAttemptLatencyMs))
+      ? `${Number(slo.avgAttemptLatencyMs)} мс`
+      : '—';
+    if ($('providerSloNote')) {
+      const persistence = sloReport.persistent ? '24-часовые окна сохраняются в журнале.' : 'Показана локальная выборка текущего Worker.';
+      $('providerSloNote').textContent = `${humanizeTechnicalText(slo.label || 'SLO собирает рабочую выборку.')} ${persistence}`;
+    }
+
     renderProviderAudit();
     renderExpandedDataReleaseGate();
     renderAdminOverview();
@@ -255,6 +280,7 @@ export function createAdminProviderModule(deps) {
       state.provider = data.provider || state.provider;
       state.providerTransition = data.transition || state.providerTransition;
       state.providerBudget = data.budget || state.providerBudget;
+      state.providerObservability = data.providerObservability || state.providerObservability;
       state.providerAudit = data.lastAudit || state.providerAudit;
       state.providerE2E = data.lastE2E || state.providerE2E;
       state.providerLoaded = true;

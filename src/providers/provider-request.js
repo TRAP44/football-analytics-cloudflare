@@ -54,6 +54,7 @@ export function createProviderRequestBoundary({
   sleepMs,
   recordOpsEvent,
   bumpTelemetry = () => {},
+  observeProviderRequest = () => {},
   now = () => Date.now(),
 } = {}) {
   if (typeof fetchWithTimeout !== 'function') throw new Error('fetchWithTimeout is required');
@@ -127,6 +128,14 @@ export function createProviderRequestBoundary({
           );
           lastError = error;
           const canRetry = attempt < attemptsAllowed;
+          observeProviderRequest({
+            provider: normalizedProvider,
+            operation,
+            outcome: canRetry ? 'retrying' : 'failed',
+            errorType: error.code,
+            latencyMs,
+            attempt: attemptNumber,
+          });
           if (!canRetry) {
             await emitFailure(cfg, { provider: normalizedProvider, operation, error, attempt: attemptNumber, finalResult: 'failed', latencyMs });
             throw error;
@@ -151,6 +160,15 @@ export function createProviderRequestBoundary({
             'PROVIDER_RATE_LIMITED',
             { provider: normalizedProvider, operation, status: 429, retryAfter },
           );
+          observeProviderRequest({
+            provider: normalizedProvider,
+            operation,
+            outcome: 'rate_limited',
+            errorType: error.code,
+            status: response.status,
+            latencyMs,
+            attempt: attemptNumber,
+          });
           await emitFailure(cfg, { provider: normalizedProvider, operation, error, attempt: attemptNumber, finalResult: 'rate_limited', latencyMs });
           throw error;
         }
@@ -164,6 +182,15 @@ export function createProviderRequestBoundary({
           );
           lastError = error;
           const canRetry = attempt < attemptsAllowed && retryableStatus(response.status);
+          observeProviderRequest({
+            provider: normalizedProvider,
+            operation,
+            outcome: canRetry ? 'retrying' : 'failed',
+            errorType: error.code,
+            status: response.status,
+            latencyMs,
+            attempt: attemptNumber,
+          });
           if (!canRetry) {
             await emitFailure(cfg, { provider: normalizedProvider, operation, error, attempt: attemptNumber, finalResult: 'failed', latencyMs });
             throw error;
@@ -185,6 +212,15 @@ export function createProviderRequestBoundary({
             'PROVIDER_INVALID_RESPONSE',
             { provider: normalizedProvider, operation, status: response.status, cause },
           );
+          observeProviderRequest({
+            provider: normalizedProvider,
+            operation,
+            outcome: 'failed',
+            errorType: error.code,
+            status: response.status,
+            latencyMs,
+            attempt: attemptNumber,
+          });
           await emitFailure(cfg, { provider: normalizedProvider, operation, error, attempt: attemptNumber, finalResult: 'failed', latencyMs });
           throw error;
         }
@@ -196,10 +232,27 @@ export function createProviderRequestBoundary({
             'PROVIDER_INVALID_RESPONSE',
             { provider: normalizedProvider, operation, status: response.status },
           );
+          observeProviderRequest({
+            provider: normalizedProvider,
+            operation,
+            outcome: 'failed',
+            errorType: error.code,
+            status: response.status,
+            latencyMs,
+            attempt: attemptNumber,
+          });
           await emitFailure(cfg, { provider: normalizedProvider, operation, error, attempt: attemptNumber, finalResult: 'failed', latencyMs });
           throw error;
         }
 
+        observeProviderRequest({
+          provider: normalizedProvider,
+          operation,
+          outcome: 'success',
+          status: response.status,
+          latencyMs,
+          attempt: attemptNumber,
+        });
         return payload;
       }
 

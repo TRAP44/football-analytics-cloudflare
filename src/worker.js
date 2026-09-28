@@ -50,6 +50,7 @@ import { createUserHistoryService } from './user-history.js';
 import { createReminderDeliveryStore } from './reminder-delivery-store.js';
 import { createReminderDeliveryService } from './reminder-delivery-service.js';
 import { createScheduledJobsRuntime } from './scheduled-jobs.js';
+import { createProviderObservabilityRuntime } from './provider-observability.js';
 
 const memory = {
   users: new Map(),
@@ -1148,6 +1149,13 @@ function bumpTelemetry(key, amount = 1) {
   memory.telemetry[key] = current + Number(amount || 0);
 }
 
+const {
+  observeProviderRequest,
+  rotateWindow: rotateProviderObservabilityWindow,
+  restoreWindow: restoreProviderObservabilityWindow,
+  summarizeWindows: summarizeProviderObservabilityWindows,
+} = createProviderObservabilityRuntime({ memory });
+
 function redactOpsString(value, max = 500) {
   return String(value ?? '')
     .replace(/bot\d+:[A-Za-z0-9_-]+/g, 'bot[redacted]')
@@ -1428,6 +1436,15 @@ function telemetrySnapshot() {
     memoryPrunes: Number(t.memoryPrunes || 0),
     providerDistributedBlocks: Number(t.providerDistributedBlocks || 0),
     providerDistributedFallbacks: Number(t.providerDistributedFallbacks || 0),
+    providerRequests: Number(t.providerRequests || 0),
+    providerErrors: Number(t.providerErrors || 0),
+    providerTimeouts: Number(t.providerTimeouts || 0),
+    providerRateLimits: Number(t.providerRateLimits || 0),
+    providerRetries: Number(t.providerRetries || 0),
+    providerAvgLatencyMs: Number(t.providerLatencySamples || 0)
+      ? Math.round(Number(t.providerLatencyMs || 0) / Number(t.providerLatencySamples || 1))
+      : null,
+    providerSloPersistenceErrors: Number(t.providerSloPersistenceErrors || 0),
     quotaReservations: Number(t.quotaReservations || 0),
     quotaRefunds: Number(t.quotaRefunds || 0),
     digestDeliveryClaims: Number(t.digestDeliveryClaims || 0),
@@ -13431,6 +13448,7 @@ const {
   hasSupabase,
   supaRpc,
   bumpTelemetry,
+  observeProviderRequest,
   recordOpsEvent,
   loadSharedProviderState,
   phase5ProviderUsage,
@@ -13564,23 +13582,25 @@ async function readRecentOpsEvents(cfg, limit = 10) {
 }
 
 async function collectDiagnostics(cfg) {
-  const [supabase, ops, integrity, telegramWebhook] = await Promise.all([
+  const [supabase, ops, integrity, telegramWebhook, providerObservability] = await Promise.all([
     probeSupabaseConfirmed(cfg),
     readRecentOpsEvents(cfg, 12),
     readIntegrityDiagnostics(cfg, 12),
     readTelegramDedupeHealth(cfg,60),
+    providerSloReport(cfg,24),
   ]);
   const provider = providerSnapshot();
   let overall;
   if (supabase.configured && !supabase.ok) overall = { state: 'critical', label: 'Нужна проверка Supabase' };
   else if (supabase.recovered) overall = { state:'warning', label:'Supabase ответил после подтверждающего probe' };
   else if (provider.health === 'critical') overall = { state: 'critical', label: 'API-Football временно ограничен' };
+  else if (providerObservability?.overall?.state === 'incident') overall = { state:'warning', label:'Provider SLO нарушен' };
   else if (!ops.migrationReady && hasSupabase(cfg)) overall = { state: 'warning', label: 'Проверьте актуальную схему Supabase' };
   else if (!integrity.migrationReady && hasSupabase(cfg)) overall = { state: 'warning', label: 'Проверьте актуальную схему Supabase' };
   else if (!telegramWebhook.available && hasSupabase(cfg)) overall = { state:'warning', label:'Нужна миграция наблюдаемости Telegram webhook' };
   else if (telegramWebhook.state === 'incident') overall = { state:'warning', label:'Persistent Telegram dedupe требует проверки' };
   else if (integrity.lastRun?.health === 'critical') overall = { state: 'warning', label: 'Есть проблемы качества футбольных данных' };
-  else if (telegramWebhook.state === 'watch' || provider.health === 'warning' || integrity.lastRun?.health === 'warning' || Number(memory.telemetry?.routeErrors || 0) > 0 || Number(memory.telemetry?.cacheWriteErrors || 0) > 0) overall = { state: 'warning', label: 'Есть предупреждения' };
+  else if (telegramWebhook.state === 'watch' || provider.health === 'warning' || providerObservability?.overall?.state === 'watch' || integrity.lastRun?.health === 'warning' || Number(memory.telemetry?.routeErrors || 0) > 0 || Number(memory.telemetry?.cacheWriteErrors || 0) > 0) overall = { state: 'warning', label: 'Есть предупреждения' };
   else if (provider.health === 'waiting') overall = { state: 'waiting', label: 'Ожидаем первый запрос к источнику данных' };
   else overall = { state: 'ok', label: 'Системы работают штатно' };
 
@@ -13590,6 +13610,8 @@ async function collectDiagnostics(cfg) {
   if (!telegramWebhook.available && hasSupabase(cfg)) recommendations.push('Примените supabase_migration_v6_17.sql: она добавляет read-only health RPC для persistent Telegram dedupe.');
   if (Number(telegramWebhook.staleProcessing || 0) > 0 || Number(telegramWebhook.failedCurrent || 0) > 0) recommendations.push(`Проверьте Telegram webhook claims: stale=${Number(telegramWebhook.staleProcessing || 0)}, failed=${Number(telegramWebhook.failedCurrent || 0)}.`);
   if (provider.cooldownActive) recommendations.push(`API-Football находится на паузе ещё примерно ${footballCooldownRemaining()} сек.; приложение должно использовать последние сохранённые данные.`);
+  if (providerObservability?.overall?.state === 'incident') recommendations.push('Provider SLO за 24 часа нарушен: проверьте success rate, timeout/rate-limit долю и задержку по источникам.');
+  else if (providerObservability?.overall?.state === 'watch') recommendations.push('Provider SLO за 24 часа вышел из целевого диапазона; наблюдайте provider/operation breakdown перед расширением нагрузки.');
   if (supabase.configured && !supabase.ok) recommendations.push('Проверьте адрес Supabase, сервисный ключ и доступность интерфейса базы данных.');
   if (supabase.recovered) recommendations.push(`Первый Supabase probe не прошёл (${supabase.initialStatus || 'unknown'}), подтверждающий запрос успешно восстановился. Наблюдайте частоту transient recoveries.`);
   if (Number(provider.dailyUsedPct) >= 90) recommendations.push('Дневная квота API-Football использована более чем на 90%; до сброса лимита работаем в экономном режиме.');
@@ -13603,6 +13625,7 @@ async function collectDiagnostics(cfg) {
     generatedAt: new Date().toISOString(),
     overall,
     provider,
+    providerObservability,
     supabase,
     runtime: telemetrySnapshot(),
     observability: { persistent: ops.persistent, migrationReady: ops.migrationReady, retentionDays: cfg.opsRetentionDays, recentEvents: ops.items },
@@ -15028,6 +15051,115 @@ async function apiBetaDashboard(request,cfg) {
   });
 }
 
+function providerSloEventRow(snapshot = {}, report = {}) {
+  const state = String(report?.overall?.state || 'collecting');
+  const severity = state === 'incident' ? 'error' : state === 'watch' ? 'warning' : 'info';
+  return {
+    created_at: new Date().toISOString(),
+    severity,
+    source: 'provider',
+    event_type: 'slo_window',
+    code: 'PROVIDER_SLO_WINDOW',
+    message: 'Aggregated football provider SLO window.',
+    endpoint: 'cron:production-monitor',
+    status: null,
+    duration_ms: null,
+    metadata: safeOpsMetadata({
+      appVersion: APP_VERSION,
+      releaseCandidate: RC_NAME,
+      windowStartedAt: snapshot.windowStartedAt,
+      windowEndedAt: snapshot.windowEndedAt,
+      series: snapshot.series,
+      totals: snapshot.totals,
+      sloState: state,
+    }),
+  };
+}
+
+async function flushProviderSloWindow(cfg) {
+  const snapshot = rotateProviderObservabilityWindow();
+  if (Number(snapshot?.totals?.attempts || 0) === 0) return { skipped:true, reason:'no_provider_requests' };
+  const report = summarizeProviderObservabilityWindows([{ metadata:snapshot }], { hours:1, includeCurrent:false });
+  const row = providerSloEventRow(snapshot, report);
+
+  try {
+    if (hasSupabase(cfg)) {
+      const url = new URL(`${cfg.supabaseUrl}/rest/v1/ops_events`);
+      const response = await fetchWithTimeout(url, {
+        method:'POST',
+        headers:supaHeaders(cfg,{Prefer:'return=minimal'}),
+        body:JSON.stringify(row),
+      }, 4000, 'Supabase provider SLO window');
+      if (!response.ok) throw new Error(`Provider SLO persistence HTTP ${response.status}`);
+    }
+    memory.opsEvents.unshift(row);
+    memory.opsEvents = memory.opsEvents.slice(0, MAX_MEMORY_OPS_EVENTS);
+    return { ok:true, state:report.overall.state, requests:Number(report.overall.requests || 0) };
+  } catch (error) {
+    restoreProviderObservabilityWindow(snapshot);
+    bumpTelemetry('providerSloPersistenceErrors');
+    return { ok:false, error:redactOpsString(error?.message || error,160) };
+  }
+}
+
+async function readProviderSloWindows(cfg, hours = 24) {
+  const safeHours = Math.max(1, Math.min(168, Number(hours || 24)));
+  const since = new Date(Date.now() - safeHours * 60 * 60_000).toISOString();
+  const fallbackItems = memory.opsEvents.filter(item =>
+    item?.source === 'provider'
+    && item?.code === 'PROVIDER_SLO_WINDOW'
+    && Date.parse(item?.created_at || '') >= Date.parse(since)
+  ).slice(0, 200);
+  const fallback = () => ({ persistent:false, migrationReady:false, items:fallbackItems, hours:safeHours });
+  if (!hasSupabase(cfg)) return fallback();
+
+  try {
+    const url = new URL(`${cfg.supabaseUrl}/rest/v1/ops_events`);
+    url.searchParams.set('select','created_at,severity,source,event_type,code,metadata');
+    url.searchParams.set('source','eq.provider');
+    url.searchParams.set('code','eq.PROVIDER_SLO_WINDOW');
+    url.searchParams.set('created_at',`gte.${since}`);
+    url.searchParams.set('order','created_at.asc');
+    url.searchParams.set('limit','200');
+    const response = await fetchWithTimeout(url,{headers:supaHeaders(cfg)},7000,'Supabase provider SLO');
+    if (!response.ok) return fallback();
+    const items = await response.json().catch(()=>[]);
+    return { persistent:true, migrationReady:true, items:Array.isArray(items)?items:[], hours:safeHours };
+  } catch {
+    return fallback();
+  }
+}
+
+async function providerSloReport(cfg, hours = 24) {
+  const source = await readProviderSloWindows(cfg, hours);
+  return {
+    ...summarizeProviderObservabilityWindows(source.items, { hours:source.hours, includeCurrent:true }),
+    persistent:Boolean(source.persistent),
+    migrationReady:Boolean(source.migrationReady),
+  };
+}
+
+function providerSloSelfTest() {
+  const synthetic = summarizeProviderObservabilityWindows([
+    { metadata:{ windowStartedAt:'2026-09-28T00:00:00.000Z', windowEndedAt:'2026-09-28T00:15:00.000Z', series:[
+      { provider:'api-football', operation:'/fixtures', attempts:12, requests:10, successes:10, failures:0, retries:2, timeouts:0, networkErrors:0, rateLimits:0, httpErrors:0, invalidResponses:0, latencySumMs:1200, latencySamples:12, maxLatencyMs:200 },
+    ] } },
+  ], { hours:24, includeCurrent:false });
+  const collecting = summarizeProviderObservabilityWindows([
+    { metadata:{ windowStartedAt:'2026-09-28T00:00:00.000Z', windowEndedAt:'2026-09-28T00:15:00.000Z', series:[
+      { provider:'api-football', operation:'/fixtures', attempts:2, requests:2, successes:2, failures:0, retries:0, timeouts:0, networkErrors:0, rateLimits:0, httpErrors:0, invalidResponses:0, latencySumMs:100, latencySamples:2, maxLatencyMs:50 },
+    ] } },
+  ], { hours:24, includeCurrent:false });
+  return {
+    pass: synthetic.overall.state === 'watch'
+      && synthetic.overall.requests === 10
+      && synthetic.overall.retries === 2
+      && collecting.overall.state === 'collecting',
+    state:synthetic.overall.state,
+    collecting:collecting.overall.state,
+  };
+}
+
 async function readOpsEventsRange(cfg, startIso, endIso, limit = 600) {
   const startMs = Date.parse(startIso || '');
   const endMs = Date.parse(endIso || '');
@@ -15179,6 +15311,9 @@ function productionMonitorSelfTest() {
 
 async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {}) {
   const now = scheduledAt instanceof Date && Number.isFinite(scheduledAt.getTime()) ? scheduledAt : new Date();
+  const providerSloFlush = options.record !== false
+    ? await flushProviderSloWindow(cfg)
+    : { skipped:true, reason:'read_only_monitor' };
   const currentStart = new Date(now.getTime() - 60 * 60_000);
   const historyStart = new Date(now.getTime() - 6 * 60 * 60_000);
 
@@ -15200,6 +15335,10 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     && /HTTP 401|PGRST303|invalid.*jwt|invalid.*api.?key/i.test(String(item?.message || ''))
   ).length;
   const provider = providerSnapshot();
+  const providerSlo = summarizeProviderObservabilityWindows(
+    source.items.filter(item => item?.source === 'provider' && item?.code === 'PROVIDER_SLO_WINDOW'),
+    { hours:6, includeCurrent:true },
+  );
   const health = productionMonitorState({
     supabaseOk: supabase.ok,
     schemaOk: schemaDrift.ok,
@@ -15261,10 +15400,13 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
       health: provider.health || 'waiting',
       plan: provider.plan || 'UNKNOWN',
       cooldownActive: Boolean(provider.cooldownActive),
+      slo: providerSlo.overall,
     },
     telegramWebhook,
     observability: {
       persistent: Boolean(source.persistent),
+      providerSloFlush,
+      providerSloWindowCount:Number(providerSlo.windowCount || 0),
       migrationReady: Boolean(source.migrationReady),
       supabaseAuthFailuresCurrentRelease: supabaseAuthFailures,
     },
@@ -19546,6 +19688,7 @@ const { providerRequestJson: secondaryProviderJson } = createProviderRequestBoun
   sleepMs,
   recordOpsEvent,
   bumpTelemetry,
+  observeProviderRequest,
 });
 
 async function openLigaStandingsProvider(leagueId, season, cfg) {
@@ -22044,6 +22187,7 @@ const API_ROUTE_DEPS = Object.freeze({
   memory,
   providerBudgetProfile,
   providerSnapshot,
+  providerSloReport,
   providerTransitionProfile,
   publicDataCapabilities,
 });
@@ -22424,6 +22568,8 @@ export default {
         releaseMonitor: 'enabled',
         productionMonitor: 'enabled',
         productionMonitorSelfTest: productionMonitorSelfTest().pass ? 'enabled' : 'failed',
+        providerSloObservability: 'enabled',
+        providerSloSelfTest: providerSloSelfTest().pass ? 'enabled' : 'failed',
         supabaseProbeConfirmation: 'enabled',
         supabaseProbeConfirmationSelfTest: supabaseProbeConfirmationSelfTest().pass ? 'enabled' : 'failed',
         supabaseSchemaProbeConfirmation: 'enabled',
