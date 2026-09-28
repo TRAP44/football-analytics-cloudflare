@@ -13,21 +13,25 @@ function block(start,end){
   return app.slice(a,b);
 }
 
-test('startup collapses independent public reads into one network batch',()=>{
+test('startup parallelizes runtime and identity before the access gate',()=>{
   const startup=block('async function runStartupSequence','const api = createApiClient');
-  const batch=startup.indexOf('const startupTasks = [');
-  const awaitBatch=startup.indexOf('await Promise.allSettled(startupTasks)');
-  assert.ok(batch>=0 && awaitBatch>batch);
-  for(const call of ['loadRuntimeStatus(false)','loadProfile().catch(()=>null)','loadFavorites()','loadMatches()']) {
-    const i=startup.indexOf(call,batch);
-    assert.ok(i>batch && i<awaitBatch,call);
-  }
+  const identityBatch=startup.indexOf('await Promise.allSettled([');
+  const blocked=startup.indexOf('if (state.closedBetaBlocked) return false');
+  const publicBatch=startup.indexOf('const startupTasks = [loadFavorites(), loadMatches()]');
+  assert.ok(identityBatch>=0 && blocked>identityBatch && publicBatch>blocked);
+  const identitySlice=startup.slice(identityBatch,blocked);
+  assert.match(identitySlice,/loadRuntimeStatus\(false\)/);
+  assert.match(identitySlice,/loadProfile\(\)\.catch\(\(\)=>null\)/);
+  assert.doesNotMatch(identitySlice,/loadFavorites|loadMatches/);
   assert.doesNotMatch(startup,/await loadRuntimeStatus\(false\);[\s\S]*?await loadProfile/);
 });
 
-test('admin reminders no longer block first public paint or reload twice at startup',()=>{
+test('public feed remains behind access control and admin reminders stay off the boot path',()=>{
   const startup=block('async function runStartupSequence','const api = createApiClient');
-  const batch=startup.slice(startup.indexOf('const startupTasks = ['),startup.indexOf('await Promise.allSettled(startupTasks)'));
+  const blocked=startup.indexOf('if (state.closedBetaBlocked) return false');
+  const publicBatch=startup.indexOf('const startupTasks = [loadFavorites(), loadMatches()]');
+  assert.ok(blocked>=0 && publicBatch>blocked);
+  const batch=startup.slice(publicBatch,startup.indexOf('await Promise.allSettled(startupTasks)',publicBatch));
   assert.doesNotMatch(batch,/loadReminders/);
   assert.match(startup,/if \(!state\.remindersLoaded\) tasks\.push\(loadReminders\(\)\)/);
 });
