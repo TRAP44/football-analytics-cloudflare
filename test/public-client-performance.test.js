@@ -41,7 +41,7 @@ test('full AI avoids reloading already-known favorites and reminders',()=>{
 });
 
 test('reopening the same Match Center renders warm data before refresh completes',()=>{
-  const center=block('async function openMatchCenter','function bindMatchCenterTabs');
+  const center=block('async function openMatchCenter','function syncAnalysisBusyUi');
   const warm=center.indexOf('const reusableCenter =');
   const render=center.indexOf('renderMatchCenter(reusableCenter)');
   const request=center.indexOf('await requestMatchCenter(fixtureId)');
