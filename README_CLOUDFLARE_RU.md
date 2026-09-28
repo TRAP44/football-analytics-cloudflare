@@ -28,7 +28,7 @@ Telegram-бот и Mini App для футбольной аналитики на 
 - Публичный AI Track Record строится только по подтверждённым settled-прогнозам и не выдаёт совпадение исхода за прибыльность ставок.
 - Защита от вирусной нагрузки: distributed fixture lock, shared cache и безопасный fallback.
 - Медиа deep-link на fixture, publisher kit и агрегированная first-party аналитика source / campaign / content.
-- RC99 положил начало единому fresh-install Supabase baseline; текущий baseline — `supabase/baseline/supabase_baseline_v6_19.sql`, numbered migrations сохранены для безопасного обновления существующих баз вплоть до v6.19.
+- RC99 положил начало единому fresh-install Supabase baseline; текущий baseline — `supabase/baseline/supabase_baseline_v6_19.sql`, numbered migrations сохранены для безопасного обновления существующих баз вплоть до v6.20.
 - RC100: защищённый **Supabase Schema Drift Guard** проверяет обязательные таблицы и колонки через server-side PostgREST и блокирует Release Readiness при несовместимой схеме; production DDL не меняется.
 - RC101: **Supabase Directory Hardening** — все SQL вынесены из корня в `supabase/baseline/` и `supabase/migrations/`; fresh-install baseline теперь отказывается запускаться поверх уже существующей рабочей схемы.
 - RC102: **Secret Leak Guard** — Quality и production deploy сканируют только отслеживаемые Git-файлы и блокируют `.env`, `.dev.vars`, приватные ключи и высокоуверенные форматы токенов; значения секретов в лог не выводятся.
@@ -106,7 +106,7 @@ SQL-файлы вынесены из корня репозитория:
 
 `supabase/migrations/supabase_migration_v6_9.sql` → `v6_10` → `v6_11` → `v6_11_1` → `v6_12` → `v6_13` → `v6_14` → `v6_15` → `v6_16` → `v6_17` → `v6_18` → `v6_18_1`.
 
-Для нового проекта используется только `supabase/baseline/supabase_baseline_v6_19.sql`. Он включает обязательную production schema вплоть до v6.19, включая исправление v6.18.1. Для существующей production БД baseline не запускается: применяются только отсутствующие numbered migrations. Текущий version/schema/access contract определяется `release-contract.json`.
+Для нового проекта сначала используется `supabase/baseline/supabase_baseline_v6_19.sql`, который включает schema вплоть до v6.19.1, затем отдельно применяется `supabase/migrations/supabase_migration_v6_20.sql`. Для существующей production БД baseline не запускается: применяются только отсутствующие numbered migrations. Текущий version/schema/access contract определяется `release-contract.json`.
 
 ## Проверка релиза
 
