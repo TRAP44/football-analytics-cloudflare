@@ -35,13 +35,7 @@ function activeProductionVersion(deployment) {
   return active[0].versionId;
 }
 
-export function verifyProductionReleasePostcondition(deployment, versions, expectedRelease, expectedSha) {
-  if (!RELEASE_RE.test(String(expectedRelease || ''))) {
-    throw new Error('Expected production release has an invalid format.');
-  }
-  if (!SHA_RE.test(String(expectedSha || ''))) {
-    throw new Error('Expected deploy SHA must be a 40-character Git commit SHA.');
-  }
+export function resolveActiveProductionReleaseIdentity(deployment, versions) {
   if (!Array.isArray(versions)) {
     throw new Error('Cloudflare versions list must be a JSON array.');
   }
@@ -52,28 +46,58 @@ export function verifyProductionReleasePostcondition(deployment, versions, expec
     throw new Error(`Active production version ${activeVersionId} is missing from the recent Cloudflare versions list.`);
   }
 
-  const expectedMessage = `release=${expectedRelease} sha=${String(expectedSha).toLowerCase()}`;
   const actualMessage = String(activeVersion.annotations?.['workers/message'] || '').trim();
-  if (actualMessage.toLowerCase() !== expectedMessage.toLowerCase()) {
+  const match = /^release=([^\s]+) sha=([0-9a-f]{40})$/i.exec(actualMessage);
+  if (!match || !RELEASE_RE.test(match[1]) || !SHA_RE.test(match[2])) {
     throw new Error(`Active production version ${activeVersionId} release identity mismatch.`);
   }
 
   return {
-    ok: true,
     deploymentId: typeof deployment.id === 'string' ? deployment.id : '',
     versionId: activeVersionId,
-    release: expectedRelease,
-    sha: String(expectedSha).toLowerCase(),
+    release: match[1],
+    sha: match[2].toLowerCase(),
+  };
+}
+
+export function verifyProductionReleasePostcondition(deployment, versions, expectedRelease, expectedSha) {
+  if (!RELEASE_RE.test(String(expectedRelease || ''))) {
+    throw new Error('Expected production release has an invalid format.');
+  }
+  if (!SHA_RE.test(String(expectedSha || ''))) {
+    throw new Error('Expected deploy SHA must be a 40-character Git commit SHA.');
+  }
+  const active = resolveActiveProductionReleaseIdentity(deployment, versions);
+  if (
+    active.release.toLowerCase() !== String(expectedRelease).toLowerCase()
+    || active.sha !== String(expectedSha).toLowerCase()
+  ) {
+    throw new Error(`Active production version ${active.versionId} release identity mismatch.`);
+  }
+
+  return {
+    ok: true,
+    ...active,
   };
 }
 
 function main() {
   const [deploymentPath, versionsPath, expectedRelease, expectedSha] = process.argv.slice(2);
-  if (!deploymentPath || !versionsPath || !expectedRelease || !expectedSha) {
+  if (!deploymentPath || !versionsPath) {
     throw new Error('Usage: node scripts/verify-production-release-postcondition.js <deployment-json> <versions-json> <release> <sha>');
   }
   const deployment = JSON.parse(fs.readFileSync(deploymentPath, 'utf8'));
   const versions = JSON.parse(fs.readFileSync(versionsPath, 'utf8'));
+
+  if (expectedRelease === '--print-active-identity' && !expectedSha) {
+    const active = resolveActiveProductionReleaseIdentity(deployment, versions);
+    console.log(`${active.release} ${active.sha}`);
+    return;
+  }
+
+  if (!expectedRelease || !expectedSha) {
+    throw new Error('Usage: node scripts/verify-production-release-postcondition.js <deployment-json> <versions-json> <release> <sha>');
+  }
   const result = verifyProductionReleasePostcondition(deployment, versions, expectedRelease, expectedSha);
   console.log(`Verified active production release ${result.release} sha=${result.sha} version_id=${result.versionId}.`);
 }
