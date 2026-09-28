@@ -13613,6 +13613,10 @@ async function collectDiagnostics(cfg) {
   if (provider.cooldownActive) recommendations.push(`API-Football находится на паузе ещё примерно ${footballCooldownRemaining()} сек.; приложение должно использовать последние сохранённые данные.`);
   if (providerObservability?.overall?.state === 'incident') recommendations.push('Provider SLO за 24 часа нарушен: проверьте success rate, timeout/rate-limit долю и задержку по источникам.');
   else if (providerObservability?.overall?.state === 'watch') recommendations.push('Provider SLO за 24 часа вышел из целевого диапазона; наблюдайте provider/operation breakdown перед расширением нагрузки.');
+  for (const step of providerObservability?.incident?.activeIncident?.runbook || []) {
+    if (recommendations.length >= 8) break;
+    recommendations.push(String(step));
+  }
   if (supabase.configured && !supabase.ok) recommendations.push('Проверьте адрес Supabase, сервисный ключ и доступность интерфейса базы данных.');
   if (supabase.recovered) recommendations.push(`Первый Supabase probe не прошёл (${supabase.initialStatus || 'unknown'}), подтверждающий запрос успешно восстановился. Наблюдайте частоту transient recoveries.`);
   if (Number(provider.dailyUsedPct) >= 90) recommendations.push('Дневная квота API-Football использована более чем на 90%; до сброса лимита работаем в экономном режиме.');
@@ -15322,6 +15326,9 @@ function productionMonitorSelfTest() {
   const watch = productionMonitorState({
     supabaseOk: true, schemaOk: true, releaseState: 'healthy', providerHealth: 'ok', telegramDedupeState:'watch', persistent: true,
   });
+  const providerSloWatch = productionMonitorState({
+    supabaseOk:true, schemaOk:true, releaseState:'healthy', providerHealth:'ok', providerSloState:'incident', telegramDedupeState:'healthy', persistent:true,
+  });
   const telegramIncident = productionMonitorState({
     supabaseOk: true, schemaOk: true, releaseState: 'healthy', providerHealth: 'ok', telegramDedupeState:'incident', persistent: true,
   });
@@ -15329,11 +15336,12 @@ function productionMonitorSelfTest() {
     supabaseOk: true, schemaOk: true, supabaseAuthFailures:1, releaseState:'healthy', providerHealth:'ok', telegramDedupeState:'healthy', persistent:true,
   });
   return {
-    pass: healthy.state === 'healthy' && drift.state === 'incident' && schemaUnavailable.state === 'watch' && watch.state === 'watch' && telegramIncident.state === 'incident' && authIncident.state === 'incident',
+    pass: healthy.state === 'healthy' && drift.state === 'incident' && schemaUnavailable.state === 'watch' && watch.state === 'watch' && providerSloWatch.state === 'watch' && telegramIncident.state === 'incident' && authIncident.state === 'incident',
     healthy: healthy.state,
     drift: drift.state,
     schemaUnavailable: schemaUnavailable.state,
     watch: watch.state,
+    providerSloWatch:providerSloWatch.state,
     telegramIncident: telegramIncident.state,
     authIncident: authIncident.state,
   };
