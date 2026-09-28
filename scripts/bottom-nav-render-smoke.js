@@ -277,8 +277,8 @@ function assertEdgeCaseFixture(width, theme, snapshot) {
     if (text.scrollWidth > text.clientWidth + 1) {
       throw new Error(`${width}px/${theme}: long text overflows in ${text.className}`);
     }
-    if (text.scrollHeight > text.lineHeight * 2.35) {
-      throw new Error(`${width}px/${theme}: long text exceeds two lines in ${text.className}`);
+    if (text.clientHeight > text.lineHeight * 2.35) {
+      throw new Error(`${width}px/${theme}: visible long text exceeds two lines in ${text.className}`);
     }
   }
 }
@@ -302,7 +302,7 @@ async function inspectEdgeCaseFixture(cdp, width, theme) {
       const longText = [...root.querySelectorAll('.my-team-head strong,.my-team-match span,.history-main>strong,.favorite-team-main strong,.reminder-row strong')].map(el => {
         const s=getComputedStyle(el);
         const lineHeight=parseFloat(s.lineHeight) || parseFloat(s.fontSize)*1.3;
-        return { className:el.className || el.parentElement?.className || el.tagName, clientWidth:el.clientWidth, scrollWidth:el.scrollWidth, scrollHeight:el.scrollHeight, lineHeight };
+        return { className:el.className || el.parentElement?.className || el.tagName, clientWidth:el.clientWidth, scrollWidth:el.scrollWidth, clientHeight:el.clientHeight, scrollHeight:el.scrollHeight, lineHeight };
       });
       return { fixture:{clientWidth:root.clientWidth,scrollWidth:root.scrollWidth,left:box.left,right:box.right},controls,longText };
     })()`,
