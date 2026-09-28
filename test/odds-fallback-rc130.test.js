@@ -92,8 +92,10 @@ test('RC130 marks unusable raw odds as unavailable instead of pretending a marke
   assert.match(worker,/odds: resolvedOddsMeta/);
 });
 
-test('RC130 needs no additional Supabase DDL because RC129 snapshots already persist provider provenance',()=>{
+test('RC130 needs no odds-fallback DDL because RC129 snapshots already persist provider provenance',()=>{
   assert.ok(fs.existsSync('supabase/migrations/supabase_migration_v6_19.sql'));
-  assert.ok(!fs.existsSync('supabase/migrations/supabase_migration_v6_20.sql'));
+  const v620=fs.readFileSync('supabase/migrations/supabase_migration_v6_20.sql','utf8');
+  assert.match(v620,/provider_incident_alert_deliveries/);
+  assert.doesNotMatch(v620,/alter\s+table\s+public\.odds_snapshots/i);
   assert.match(worker,/theOddsApiOddsFallback: cfg\.theOddsApiKey \? 'enabled' : 'available_when_configured'/);
 });
