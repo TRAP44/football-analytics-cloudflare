@@ -51,7 +51,8 @@ import { createReminderDeliveryStore } from './reminder-delivery-store.js';
 import { createReminderDeliveryService } from './reminder-delivery-service.js';
 import { createScheduledJobsRuntime } from './scheduled-jobs.js';
 import { createProviderObservabilityRuntime } from './provider-observability.js';
-import { buildProviderSloIncidentTimeline, providerSloIncidentOpsEvent } from './provider-slo-incidents.js';
+import { buildProviderSloIncidentTimeline, providerSloIncidentOpsEvent, providerSloIncidentUpdateOpsEvent } from './provider-slo-incidents.js';
+import { deliverProviderIncidentAlert, planProviderIncidentAlert, providerIncidentAlertOpsEvent, providerIncidentAlertSelfTest } from './provider-incident-alerts.js';
 
 const memory = {
   users: new Map(),
@@ -15114,7 +15115,7 @@ async function readProviderSloWindows(cfg, hours = 24) {
     item?.source === 'provider'
     && item?.code === 'PROVIDER_SLO_WINDOW'
     && Date.parse(item?.created_at || '') >= Date.parse(since)
-  ).slice(0, 200);
+  ).slice(0, 800);
   const fallback = () => ({ persistent:false, migrationReady:false, items:fallbackItems, hours:safeHours });
   if (!hasSupabase(cfg)) return fallback();
 
@@ -15125,7 +15126,7 @@ async function readProviderSloWindows(cfg, hours = 24) {
     url.searchParams.set('code','eq.PROVIDER_SLO_WINDOW');
     url.searchParams.set('created_at',`gte.${since}`);
     url.searchParams.set('order','created_at.asc');
-    url.searchParams.set('limit','200');
+    url.searchParams.set('limit','800');
     const response = await fetchWithTimeout(url,{headers:supaHeaders(cfg)},7000,'Supabase provider SLO');
     if (!response.ok) return fallback();
     const items = await response.json().catch(()=>[]);
@@ -15137,13 +15138,41 @@ async function readProviderSloWindows(cfg, hours = 24) {
 
 async function providerSloReport(cfg, hours = 24) {
   const source = await readProviderSloWindows(cfg, hours);
+  const incidentSource = source.hours >= 168 ? source : await readProviderSloWindows(cfg,168);
   const report = summarizeProviderObservabilityWindows(source.items, { hours:source.hours, includeCurrent:true });
   return {
     ...report,
-    incident: buildProviderSloIncidentTimeline(source.items),
+    incident: buildProviderSloIncidentTimeline(incidentSource.items),
     persistent:Boolean(source.persistent),
-    migrationReady:Boolean(source.migrationReady),
+    incidentPersistent:Boolean(incidentSource.persistent),
+    migrationReady:Boolean(source.migrationReady && incidentSource.migrationReady),
   };
+}
+
+async function readProviderIncidentAlertEvents(cfg, hours = 168) {
+  const safeHours = Math.max(1, Math.min(336, Number(hours || 168)));
+  const since = new Date(Date.now() - safeHours * 60 * 60_000).toISOString();
+  const fallbackItems = memory.opsEvents.filter(item =>
+    item?.source === 'provider_alert'
+    && Date.parse(item?.created_at || '') >= Date.parse(since)
+  ).slice(0,300);
+  const fallback = () => ({ persistent:false, migrationReady:false, items:fallbackItems, hours:safeHours });
+  if (!hasSupabase(cfg)) return fallback();
+
+  try {
+    const url = new URL(`${cfg.supabaseUrl}/rest/v1/ops_events`);
+    url.searchParams.set('select','created_at,severity,source,event_type,code,message,endpoint,status,duration_ms,metadata');
+    url.searchParams.set('source','eq.provider_alert');
+    url.searchParams.set('created_at',`gte.${since}`);
+    url.searchParams.set('order','created_at.asc');
+    url.searchParams.set('limit','300');
+    const response = await fetchWithTimeout(url,{headers:supaHeaders(cfg)},7000,'Supabase provider incident alerts');
+    if (!response.ok) return fallback();
+    const items = await response.json().catch(()=>[]);
+    return { persistent:true, migrationReady:true, items:Array.isArray(items)?items:[], hours:safeHours };
+  } catch {
+    return fallback();
+  }
 }
 
 function providerSloSelfTest() {
@@ -15355,11 +15384,13 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
   const currentStart = new Date(now.getTime() - 60 * 60_000);
   const historyStart = new Date(now.getTime() - 6 * 60 * 60_000);
 
-  const [supabase, schemaDrift, source, telegramWebhook] = await Promise.all([
+  const [supabase, schemaDrift, source, telegramWebhook, providerSloSource, providerAlertSource] = await Promise.all([
     probeSupabaseConfirmed(cfg),
     probeSupabaseSchemaDriftConfirmed(cfg),
     readOpsEventsRange(cfg, historyStart.toISOString(), now.toISOString(), 1000),
     readTelegramDedupeHealth(cfg,60),
+    readProviderSloWindows(cfg,168),
+    readProviderIncidentAlertEvents(cfg,168),
   ]);
 
   const releaseItems = source.items.filter(item => {
@@ -15373,12 +15404,22 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     && /HTTP 401|PGRST303|invalid.*jwt|invalid.*api.?key/i.test(String(item?.message || ''))
   ).length;
   const provider = providerSnapshot();
-  const providerSloWindows = source.items.filter(item => item?.source === 'provider' && item?.code === 'PROVIDER_SLO_WINDOW');
+  const providerSloWindows = Array.isArray(providerSloSource.items) ? providerSloSource.items : [];
+  const providerSloRecentWindows = providerSloWindows.filter(item => {
+    const endedAt = Date.parse(item?.metadata?.windowEndedAt || item?.created_at || '');
+    return Number.isFinite(endedAt) && endedAt >= historyStart.getTime();
+  });
   const providerSlo = summarizeProviderObservabilityWindows(
-    providerSloWindows,
+    providerSloRecentWindows,
     { hours:6, includeCurrent:true },
   );
   const providerSloIncident = buildProviderSloIncidentTimeline(providerSloWindows, { nowMs:now.getTime() });
+  const incidentAlertPlan = options.record !== false
+    ? planProviderIncidentAlert(providerSloIncident, providerAlertSource.items, {
+        nowMs:now.getTime(),
+        adminCount:(cfg.adminTelegramIds || []).length,
+      })
+    : { action:'none', reason:'read_only_monitor' };
   const health = productionMonitorState({
     supabaseOk: supabase.ok,
     schemaOk: schemaDrift.ok,
@@ -15443,13 +15484,21 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
       cooldownActive: Boolean(provider.cooldownActive),
       slo: providerSlo.overall,
       incident: providerSloIncident,
+      alerting:{
+        configured:Boolean(cfg.botToken && (cfg.adminTelegramIds || []).length),
+        adminRecipients:(cfg.adminTelegramIds || []).length,
+        nextAction:incidentAlertPlan.action === 'send' ? incidentAlertPlan.kind : 'none',
+        reason:incidentAlertPlan.reason || '',
+      },
     },
     telegramWebhook,
     observability: {
-      persistent: Boolean(source.persistent),
+      persistent: Boolean(source.persistent && providerSloSource.persistent),
       providerSloFlush,
       providerSloWindowCount:Number(providerSlo.windowCount || 0),
-      migrationReady: Boolean(source.migrationReady),
+      providerSloHistoryWindows:Number(providerSloWindows.length || 0),
+      providerAlertHistoryEvents:Number(providerAlertSource.items?.length || 0),
+      migrationReady: Boolean(source.migrationReady && providerSloSource.migrationReady),
       supabaseAuthFailuresCurrentRelease: supabaseAuthFailures,
     },
     policy: {
@@ -15465,6 +15514,32 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
   if (options.record !== false && providerSloFlush?.ok && providerSloIncident.transition) {
     const incidentEvent = providerSloIncidentOpsEvent(providerSloIncident.transition);
     if (incidentEvent) await recordOpsEvent(cfg, incidentEvent).catch(() => {});
+  }
+
+  if (options.record !== false && incidentAlertPlan.action === 'send') {
+    if (incidentAlertPlan.kind === 'escalation') {
+      const updateEvent = providerSloIncidentUpdateOpsEvent(providerSloIncident.activeIncident, 'severity_changed');
+      if (updateEvent) await recordOpsEvent(cfg, updateEvent).catch(() => {});
+    }
+
+    let delivery;
+    try {
+      delivery = await deliverProviderIncidentAlert({
+        plan:incidentAlertPlan,
+        adminTelegramIds:cfg.adminTelegramIds || [],
+        sendMessage:(chatId,text) => sendTelegramMessage(chatId,text,cfg),
+      });
+    } catch (error) {
+      delivery = {
+        ok:false,
+        deliveredSlots:[],
+        failedSlots:Array.isArray(incidentAlertPlan.targetSlots) ? incidentAlertPlan.targetSlots : [],
+        failures:[{ slot:-1, status:0, retryable:true, reason:redactOpsString(error?.message || error,160) }],
+        recipientCount:Array.isArray(incidentAlertPlan.targetSlots) ? incidentAlertPlan.targetSlots.length : 0,
+      };
+    }
+    const alertEvent = providerIncidentAlertOpsEvent(incidentAlertPlan, delivery);
+    await recordOpsEvent(cfg, alertEvent).catch(() => {});
   }
 
   if (options.record !== false && schemaDrift.recovered) {
@@ -22621,6 +22696,8 @@ export default {
         providerSloSelfTest: providerSloSelfTest().pass ? 'enabled' : 'failed',
         providerSloIncidentIntegration: 'enabled',
         providerSloIncidentSelfTest: providerSloIncidentSelfTest().pass ? 'enabled' : 'failed',
+        providerIncidentAlertDelivery: 'enabled',
+        providerIncidentAlertDeliverySelfTest: providerIncidentAlertSelfTest().pass ? 'enabled' : 'failed',
         supabaseProbeConfirmation: 'enabled',
         supabaseProbeConfirmationSelfTest: supabaseProbeConfirmationSelfTest().pass ? 'enabled' : 'failed',
         supabaseSchemaProbeConfirmation: 'enabled',

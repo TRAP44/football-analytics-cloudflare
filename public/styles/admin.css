@@ -77,6 +77,26 @@
 .provider-slo-incident.incident .provider-slo-incident-badge { background:rgba(255,92,92,.16); }
 .provider-slo-incident.watch .provider-slo-incident-badge { background:rgba(255,190,74,.15); }
 .provider-slo-incident.recovered .provider-slo-incident-badge { background:rgba(96,211,148,.14); }
+.provider-slo-incident-details {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:7px;
+  margin-top:10px;
+}
+.provider-slo-incident-details > div {
+  min-width:0;
+  padding:8px 9px;
+  border:1px solid rgba(255,255,255,.06);
+  border-radius:10px;
+  background:rgba(255,255,255,.025);
+}
+.provider-slo-incident-details span,
+.provider-slo-incident-details strong {
+  display:block;
+  overflow-wrap:anywhere;
+}
+.provider-slo-incident-details span { font-size:10px; opacity:.62; }
+.provider-slo-incident-details strong { margin-top:3px; font-size:11px; line-height:1.35; }
 .provider-slo-incident-runbook { margin-top:10px; font-size:12px; line-height:1.45; }
 .provider-slo-incident-runbook ul { margin:6px 0 0; padding-left:18px; }
 .provider-slo-incident-history { display:grid; gap:6px; margin-top:10px; }
