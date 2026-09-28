@@ -1,4 +1,4 @@
-import { createApiClient, initTelegramWebApp, localDate, safeDate, timeOf, dateTime, dateOnly, relativeAge, phase5SessionToken } from './modules/client-core.js';
+import { createApiClient, initTelegramWebApp, localDate, timeOf, dateTime, dateOnly, relativeAge, phase5SessionToken } from './modules/client-core.js';
 import { CANONICAL_HOME_VIEW, PUBLIC_VIEW_IDS, backTargetForView, telegramBackButtonVisible } from './modules/navigation.js';
 const CLIENT_VERSION = '6.120.0-rc144';
 const CLIENT_API_CONTRACT = 5;
@@ -966,36 +966,6 @@ function isAdmin() {
     && state.profile?.features?.role === 'admin';
 }
 
-
-function betaHealthLabel(value = '') {
-  return ({healthy:'Ошибок нет',watch:'Нужно наблюдение',incident:'Есть проблемы'})[String(value || '')] || 'Нет данных';
-}
-
-function betaActionLabel(value = '') {
-  return ({
-    search:'поиск',
-    match:'открытие матча',
-    ai:'AI-анализ',
-    live_refresh:'LIVE',
-    history:'история',
-    profile:'профиль',
-  })[String(value || '')] || String(value || 'нет');
-}
-
-function betaMetricLabel(key = '') {
-  return ({
-    miniAppLaunch:'Запуск Mini App',
-    searchUsed:'Использование поиска',
-    searchFound:'Успешный поиск',
-    searchEmpty:'Пустой поиск',
-    matchOpen:'Открытие матча',
-    aiStart:'Запуск AI',
-    aiComplete:'AI завершён',
-    liveOpen:'Открытие LIVE',
-    historyOpen:'История',
-    profileOpen:'Профиль',
-  })[key] || key;
-}
 
 function betaTimingLabel(key = '') {
   return ({search:'Поиск',match:'Открытие матча',ai:'AI-анализ',live:'LIVE'})[key] || key;
@@ -4774,11 +4744,6 @@ function categoryLabel(category) {
   return labels[String(category || '')] || '';
 }
 
-function categoryClass(category) {
-  const c = String(category || 'other').replace(/[^a-z]/g, '');
-  return `cat-${c || 'other'}`;
-}
-
 function matchCenter(m) {
   if (m.finished && m.score?.home !== null && m.score?.away !== null) return `${m.score.home} : ${m.score.away}`;
   if (m.live) {
@@ -4786,27 +4751,6 @@ function matchCenter(m) {
     return `${m.score?.home ?? 0}:${m.score?.away ?? 0} · идёт матч${minute}`;
   }
   return timeOf(m.date);
-}
-
-function competitionGroups(list) {
-  const groups = new Map();
-  for (const m of list) {
-    const key = Number(m.leagueId || 0) || `${m.league || ''}:${m.country || ''}`;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(m);
-  }
-  return [...groups.values()].sort((a, b) => {
-    const aLive = a.some(x => x.live) ? 1 : 0;
-    const bLive = b.some(x => x.live) ? 1 : 0;
-    if (aLive !== bLive) return bLive - aLive;
-    const ap = Math.max(...a.map(x => Number(x.competition?.priority || 0)));
-    const bp = Math.max(...b.map(x => Number(x.competition?.priority || 0)));
-    if (ap !== bp) return bp - ap;
-    const ai = Math.max(...a.map(x => Number(x.interestScore || 0)));
-    const bi = Math.max(...b.map(x => Number(x.interestScore || 0)));
-    if (ai !== bi) return bi - ai;
-    return String(a[0]?.date || '').localeCompare(String(b[0]?.date || ''));
-  });
 }
 
 function renderPopularCompetitions() {
@@ -4917,14 +4861,6 @@ function analysisHistoryForFixture(fixtureId) {
   const id = Number(fixtureId || 0);
   if (!id) return null;
   return state.history.find(item => Number(item.fixtureId) === id && item.aiSignalLabel) || null;
-}
-
-function matchAiSnapshotHtml(match) {
-  const item = analysisHistoryForFixture(match?.fixtureId);
-  if (!item) return '';
-  const skip = item.aiSignalCode === 'skip';
-  const confidence = Number.isFinite(Number(item.aiConfidence)) ? `${Math.round(Number(item.aiConfidence))}/100` : '—';
-  return `<div class="match-ai-snapshot ${skip ? 'skip' : 'active'}"><span>AI</span><strong>${escapeHtml(item.aiSignalLabel || 'Разбор готов')}</strong><small>${item.aiOutcome ? `Исход ${escapeHtml(item.aiOutcome)} · ` : ''}уверенность ${confidence}${item.aiRisk ? ` · риск ${escapeHtml(String(item.aiRisk).toLowerCase())}` : ''}</small></div>`;
 }
 
 function renderAiCenterSummary() {
@@ -5456,11 +5392,6 @@ function openTournamentFromTeam(openTable = false) {
   renderTournamentMatches();
   setTournamentTab('table', true);
   showView('tournamentView');
-}
-
-function statValue(v) {
-  if (v === null || v === undefined || v === '') return '—';
-  return escapeHtml(String(v));
 }
 
 function minuteLabel(event) {
@@ -6792,16 +6723,6 @@ function probabilityStrip(p = {}) {
     <span class="prob-segment draw" style="width:${d.toFixed(2)}%"></span>
     <span class="prob-segment away" style="width:${a.toFixed(2)}%"></span>
   </div>`;
-}
-
-function analysisSourceStatus(d) {
-  const parts = [];
-  if (d.market) parts.push('Рынок');
-  if (d.apiPrediction) parts.push('Прогноз источника данных');
-  if (d.recentForm?.home?.overall?.sample || d.recentForm?.away?.overall?.sample) parts.push('Форма');
-  if ((d.h2h?.homeWins || 0) + (d.h2h?.awayWins || 0) + (d.h2h?.draws || 0) > 0) parts.push('Очные встречи');
-  if (d.news?.answer) parts.push('Новости');
-  return parts.length ? parts.join(' · ') : 'Базовые данные';
 }
 
 function compactAbsence(title, items) {
