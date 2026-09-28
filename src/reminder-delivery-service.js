@@ -129,7 +129,7 @@ export function createReminderDeliveryService({
 
     const runtimeState = await loadRuntimeControls(cfg);
     if (runtimeState.value?.remindersEnabled === false) {
-      return { checked: 0, sent: 0, kickoffSent: 0, failed: 0, claimed: 0, staleClaims: 0, disabled: true };
+      return { checked: 0, sent: 0, kickoffSent: 0, failed: 0, unknown: 0, claimed: 0, staleClaims: 0, disabled: true };
     }
 
     const stale = await clearStaleReminderClaims(cfg).catch(() => ({ prematch: 0, kickoff: 0 }));
