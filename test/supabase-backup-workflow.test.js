@@ -15,6 +15,8 @@ test('Supabase backup workflow is read-only, pinned, private-artifact oriented a
   assert.match(workflow, /db dump[\s\S]*--role-only/);
   assert.match(workflow, /db dump[\s\S]*schema\.sql/);
   assert.match(workflow, /db dump[\s\S]*--use-copy[\s\S]*--data-only/);
+  assert.match(workflow, /-x "storage\.buckets_vectors"/);
+  assert.match(workflow, /-x "storage\.vector_indexes"/);
   assert.match(workflow, /sha256sum roles\.sql schema\.sql data\.sql manifest\.txt/);
   assert.match(workflow, /actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/);
   assert.match(workflow, /retention-days: 30/);

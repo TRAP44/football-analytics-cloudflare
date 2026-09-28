@@ -16,7 +16,7 @@ Production-проект Supabase сейчас находится на Free-пл�
 
 - `roles.sql` — роли, которые CLI допускает к переносу;
 - `schema.sql` — схема БД, функции, политики и другие schema objects;
-- `data.sql` — данные;
+- `data.sql` — данные; управляемые Supabase Storage Vector-таблицы `storage.buckets_vectors` и `storage.vector_indexes` исключены по актуальной рекомендации Supabase;
 - `manifest.txt` — project ref, commit SHA, время создания и версия CLI;
 - `SHA256SUMS` — контрольные суммы;
 - итоговый `.tar.gz` + SHA-256 checksum архива.

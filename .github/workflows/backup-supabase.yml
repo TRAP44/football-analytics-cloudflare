@@ -83,7 +83,7 @@ jobs:
 
           npx --yes "supabase@$SUPABASE_CLI_VERSION" db dump             --db-url "$SUPABASE_DB_URL"             -f "$BACKUP_DIR/schema.sql"
 
-          npx --yes "supabase@$SUPABASE_CLI_VERSION" db dump             --db-url "$SUPABASE_DB_URL"             -f "$BACKUP_DIR/data.sql"             --use-copy             --data-only
+          npx --yes "supabase@$SUPABASE_CLI_VERSION" db dump             --db-url "$SUPABASE_DB_URL"             -f "$BACKUP_DIR/data.sql"             --use-copy             --data-only             -x "storage.buckets_vectors"             -x "storage.vector_indexes"
 
           for required in roles.sql schema.sql data.sql; do
             if [[ ! -s "$BACKUP_DIR/$required" ]]; then
