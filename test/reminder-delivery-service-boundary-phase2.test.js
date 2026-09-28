@@ -10,7 +10,10 @@ function runtime(overrides = {}) {
     hasSupabase:overrides.hasSupabase || (()=>true),
     loadRuntimeControls:overrides.loadRuntimeControls || (async()=>({value:{remindersEnabled:true}})),
     clearStaleReminderClaims:overrides.clearStaleReminderClaims || (async()=>({prematch:0,kickoff:0})),
-    supaSelectMany:overrides.supaSelectMany || (async(...args)=>{calls.selects.push(args); return overrides.rows || [];}),
+    supaSelectPaged:overrides.supaSelectPaged || (async(...args)=>{
+      calls.selects.push(args);
+      return { rows: overrides.rows || [], truncated: Boolean(overrides.truncated) };
+    }),
     recordOpsEvent:overrides.recordOpsEvent || (async(_cfg,event)=>{events.push(event);}),
     sendTelegramMessage:overrides.sendTelegramMessage || (async(...args)=>{
       calls.messages.push(args);
@@ -172,7 +175,7 @@ test('scheduler preserves kickoff, prematch and retry-window behavior', async ()
     ];
     const {service,calls,events}=runtime({rows});
     const summary=await service.processDueReminders({botToken:'token'});
-    assert.deepEqual(summary,{checked:3,sent:1,kickoffSent:1,failed:0,unknown:0,claimed:0,staleClaims:0});
+    assert.deepEqual(summary,{checked:3,sent:1,kickoffSent:1,failed:0,unknown:0,claimed:0,staleClaims:0,staleCleanupFailed:0,truncated:false});
     assert.equal(calls.messages.length,2);
     assert.equal(calls.messages[0][0],1);
     assert.equal(calls.messages[0][1],'🔴 Матч начинается\n\nAlpha — Beta\nLeague\n\nОткройте приложение: центр матча появится, когда источник данных обновит статус.');
@@ -182,10 +185,43 @@ test('scheduler preserves kickoff, prematch and retry-window behavior', async ()
     assert.equal(calls.selects[0][1],'match_reminders');
     assert.deepEqual(calls.selects[0][2],{
       enabled:'eq.true',
-      fixture_date:'gte.2026-09-27T11:52:00.000Z',
+      and:'(fixture_date.gte.2026-09-27T11:52:00.000Z,fixture_date.lte.2026-09-27T13:05:00.000Z)',
     });
-    assert.deepEqual(calls.selects[0][3],{limit:250,order:'fixture_date.asc'});
+    assert.deepEqual(calls.selects[0][3],{
+      pageSize:250,
+      maxRows:2000,
+      order:'fixture_date.asc,fixture_id.asc,telegram_id.asc',
+    });
     assert.equal(events.at(-1).code,'REMINDER_RUN_OK');
+  } finally {
+    Date.now=originalNow;
+  }
+});
+
+test('scheduler surfaces pagination truncation and stale cleanup degradation', async () => {
+  const originalNow=Date.now;
+  const now=Date.parse('2026-09-27T12:00:00.000Z');
+  Date.now=()=>now;
+  try {
+    const runtimeState=runtime({
+      rows:[],
+      truncated:true,
+      clearStaleReminderClaims:async()=>({prematch:0,kickoff:0,failed:1}),
+    });
+    const summary=await runtimeState.service.processDueReminders({botToken:'token'});
+    assert.deepEqual(summary,{
+      checked:0,
+      sent:0,
+      kickoffSent:0,
+      failed:0,
+      unknown:0,
+      claimed:0,
+      staleClaims:0,
+      staleCleanupFailed:1,
+      truncated:true,
+    });
+    assert.equal(runtimeState.events.some(event=>event.code==='REMINDER_SCHEDULER_TRUNCATED'),true);
+    assert.equal(runtimeState.events.at(-1).code,'REMINDER_RUN_TRUNCATED');
   } finally {
     Date.now=originalNow;
   }
@@ -195,16 +231,16 @@ test('scheduler preserves disabled and read-failure summaries', async () => {
   const disabled=runtime({loadRuntimeControls:async()=>({value:{remindersEnabled:false}})});
   assert.deepEqual(
     await disabled.service.processDueReminders({botToken:'token'}),
-    {checked:0,sent:0,kickoffSent:0,failed:0,unknown:0,claimed:0,staleClaims:0,disabled:true},
+    {checked:0,sent:0,kickoffSent:0,failed:0,unknown:0,claimed:0,staleClaims:0,staleCleanupFailed:0,truncated:false,disabled:true},
   );
 
   const failed=runtime({
     clearStaleReminderClaims:async()=>({prematch:2,kickoff:1}),
-    supaSelectMany:async()=>{ throw new Error('read failed'); },
+    supaSelectPaged:async()=>{ throw new Error('read failed'); },
   });
   assert.deepEqual(
     await failed.service.processDueReminders({botToken:'token'}),
-    {checked:0,sent:0,kickoffSent:0,failed:1,unknown:0,claimed:0,staleClaims:3},
+    {checked:0,sent:0,kickoffSent:0,failed:1,unknown:0,claimed:0,staleClaims:3,staleCleanupFailed:0,truncated:false},
   );
   assert.equal(failed.events[0].code,'REMINDER_SCHEDULER_READ_FAILED');
 });

@@ -1231,7 +1231,7 @@ const {
   hasSupabase,
   loadRuntimeControls,
   clearStaleReminderClaims,
-  supaSelectMany,
+  supaSelectPaged,
   recordOpsEvent,
   sendTelegramMessage,
   claimReminderDelivery,

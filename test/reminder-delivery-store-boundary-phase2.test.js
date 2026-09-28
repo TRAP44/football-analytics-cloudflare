@@ -129,7 +129,7 @@ test('stale claim recovery clears both claim columns and records an ops event', 
     ],
   });
   const result=await store.clearStaleReminderClaims({supabaseUrl:'https://db.test'});
-  assert.deepEqual(result,{prematch:2,kickoff:1});
+  assert.deepEqual(result,{prematch:2,kickoff:1,failed:0});
   assert.equal(calls.length,2);
   assert.match(calls[0].url,/prematch_claimed_at=lt\./);
   assert.match(calls[1].url,/kickoff_claimed_at=lt\./);
@@ -140,9 +140,22 @@ test('stale claim recovery clears both claim columns and records an ops event', 
   assert.deepEqual(events[0].meta,{prematch:2,kickoff:1});
 });
 
+test('stale claim cleanup surfaces partial failures instead of silently returning zero', async () => {
+  const {store,events}=runtime({
+    responses:[
+      {ok:false,status:503,json:null},
+      {ok:true,status:200,json:[{fixture_id:3}]},
+    ],
+  });
+  const result=await store.clearStaleReminderClaims({supabaseUrl:'https://db.test'});
+  assert.deepEqual(result,{prematch:0,kickoff:1,failed:1});
+  assert.equal(events.some(event=>event.code==='REMINDER_STALE_CLAIM_CLEANUP_FAILED'),true);
+  assert.equal(events.find(event=>event.code==='REMINDER_STALE_CLAIM_CLEANUP_FAILED').meta.failed,1);
+});
+
 test('non-Supabase fallback preserves no-op lifecycle semantics', async () => {
   const {store,calls}=runtime({hasSupabase:()=>false});
-  assert.deepEqual(await store.clearStaleReminderClaims({}),{prematch:0,kickoff:0});
+  assert.deepEqual(await store.clearStaleReminderClaims({}),{prematch:0,kickoff:0,failed:0});
   const claim=await store.claimReminderDelivery({},'prematch',{});
   assert.equal(claim.claimed,true);
   assert.ok(claim.claimAt);
