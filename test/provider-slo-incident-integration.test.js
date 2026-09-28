@@ -21,8 +21,8 @@ test('production monitor persists provider SLO incident transitions only with a 
 test('provider incident state affects monitoring visibility but never automatic controls', () => {
   assert.match(worker, /providerSloState: providerSloIncident\.state/);
   assert.match(worker, /\['watch','incident'\]\.includes\(providerSloState\)/);
-  assert.match(incidents, /automaticRollback:\\s*false/);
-  assert.match(incidents, /automaticFeatureDisable:\\s*false/);
+  assert.match(incidents, /automaticRollback:\s*false/);
+  assert.match(incidents, /automaticFeatureDisable:\s*false/);
   assert.doesNotMatch(incidents, /runtimeControls|rollbackRuntime|apiRuntimeRollback/);
 });
 
