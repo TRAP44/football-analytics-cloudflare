@@ -7,7 +7,6 @@ import { dispatchApiRoute } from './router.js';
 import { createHttpRuntime } from './http.js';
 import { channelPublisherState, publishChannelMessage } from './channel-publisher.js';
 import {
-  CALIBRATION_LIFECYCLE_RULES,
   calibrationProfileFingerprint,
   evaluatePostPromotionRollback,
   evaluatePromotionWindows,
