@@ -2,9 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildProviderSloIncidentTimeline } from '../src/provider-slo-incidents.js';
 import {
+  classifyProviderIncidentTelegramResult,
   deliverProviderIncidentAlert,
   planProviderIncidentAlert,
-  providerIncidentAlertOpsEvent,
+  providerIncidentAlertLedgerSummary,
+  providerIncidentAlertOpsEvents,
 } from '../src/provider-incident-alerts.js';
 
 function window(at, state, options = {}) {
@@ -59,17 +61,91 @@ function window(at, state, options = {}) {
   };
 }
 
-function sentEvent(incidentId, kind = 'incident', key = incidentId + ':' + kind, slots = [0], at = '2026-09-28T11:00:00Z') {
+function ledgerRow(incidentId, transition = 'incident', status = 'sent', options = {}) {
   return {
-    created_at:at,
-    source:'provider_alert',
-    code:'PROVIDER_SLO_ALERT_SENT',
-    metadata:{
-      incidentId,
-      alertKind:kind,
-      deliveryKey:key,
-      deliveredSlots:slots,
-      failedSlots:[],
+    incident_id:incidentId,
+    transition,
+    alert_key:options.alertKey || incidentId + ':' + transition,
+    destination_key:options.destinationKey || 'destination-key-0001',
+    destination_slot:Number(options.slot || 0),
+    status,
+    attempts:Number(options.attempts || 1),
+    retry_at:options.retryAt || null,
+    created_at:options.createdAt || '2026-09-28T11:00:00Z',
+  };
+}
+
+function alertIncident(id = 'pslo-api-football-one', overrides = {}) {
+  return {
+    incidentId:id,
+    active:true,
+    state:'incident',
+    highestState:'incident',
+    severity:'incident',
+    startedAt:'2026-09-28T10:00:00Z',
+    durationMinutes:30,
+    fingerprint:'api-football|/fixtures|provider_slo|' + id,
+    diagnostics:{
+      primaryProvider:'api-football',
+      primaryOperation:'/fixtures',
+      sampleSize:20,
+      errorRatePct:20,
+      timeoutRatePct:10,
+      rateLimitRatePct:0,
+      avgAttemptLatencyMs:4000,
+      reason:'timeout rate 10.0%',
+    },
+    ...overrides,
+  };
+}
+
+function deliveryPlan(id = 'pslo-api-football-delivery', targets = [0]) {
+  const incident=alertIncident(id);
+  return {
+    action:'send',
+    kind:'incident',
+    incidentId:id,
+    incident,
+    alertKey:id + ':incident',
+    deliveryKey:id + ':incident',
+    targetDeliveries:targets.map(slot => ({
+      slot,
+      destinationKey:'destination-key-' + String(slot).padStart(4,'0'),
+    })),
+    targetSlots:[...targets],
+  };
+}
+
+function memoryLedgerStore() {
+  const rows=new Map();
+  const key=input => String(input.alertKey) + '|' + String(input.destinationKey);
+  return {
+    rows,
+    async claim(input) {
+      const k=key(input);
+      const existing=rows.get(k);
+      if (existing) {
+        return {
+          acquired:false,
+          status:existing.status,
+          attempts:existing.attempts,
+          retryAt:existing.retryAt || null,
+          reason:'duplicate',
+        };
+      }
+      rows.set(k,{status:'sending',attempts:1,retryAt:null});
+      return {acquired:true,status:'sending',attempts:1,reason:'created'};
+    },
+    async finalize(input) {
+      const k=key(input);
+      const existing=rows.get(k);
+      if (!existing || existing.status !== 'sending') return {ok:false,reason:'not_sending'};
+      rows.set(k,{
+        ...existing,
+        status:input.status,
+        retryAt:input.retryAt || null,
+      });
+      return {ok:true,status:input.status,attempts:existing.attempts,retryAt:input.retryAt || null};
     },
   };
 }
@@ -195,154 +271,283 @@ test('collecting breaks confirmation and two providers preserve diagnostic conte
   assert.deepEqual(new Set(multi.activeIncident.diagnostics.affectedProviders),new Set(['api-football','OpenLigaDB']));
 });
 
-test('watch never sends a full incident Telegram alert and an incident is deduplicated after delivery', () => {
-  const watchIncident = {
+test('watch never sends an incident alert and a sent ledger row suppresses the duplicate', () => {
+  const watchIncident={
     incidentId:'pslo-api-football-watch',
     active:true,
     state:'watch',
     highestState:'watch',
     severity:'warning',
   };
-  assert.equal(planProviderIncidentAlert({activeIncident:watchIncident,history:[watchIncident]},[],{adminCount:1}).action,'none');
+  const destinations=[{slot:0,destinationKey:'destination-key-0001'}];
+  assert.equal(
+    planProviderIncidentAlert({activeIncident:watchIncident,history:[watchIncident]},[],{destinations}).action,
+    'none'
+  );
 
-  const incident = {
-    ...watchIncident,
-    incidentId:'pslo-api-football-one',
-    state:'incident',
-    highestState:'incident',
-    severity:'incident',
-    startedAt:'2026-09-28T10:00:00Z',
-    durationMinutes:30,
-    fingerprint:'api-football|/fixtures|provider_slo|pslo-api-football-one',
-    diagnostics:{primaryProvider:'api-football',primaryOperation:'/fixtures',sampleSize:20,errorRatePct:20,timeoutRatePct:10,rateLimitRatePct:0,avgAttemptLatencyMs:4000,reason:'timeout rate 10.0%'},
-  };
-  const report = {activeIncident:incident,history:[incident]};
-  const first = planProviderIncidentAlert(report,[],{nowMs:Date.parse('2026-09-28T10:30:00Z'),adminCount:1});
+  const incident=alertIncident();
+  const report={activeIncident:incident,history:[incident]};
+  const first=planProviderIncidentAlert(report,[],{nowMs:Date.parse('2026-09-28T10:30:00Z'),destinations});
   assert.equal(first.action,'send');
   assert.equal(first.kind,'incident');
+  assert.equal(first.alertKey,incident.incidentId + ':incident');
 
-  const prior = [sentEvent(incident.incidentId,'incident',incident.incidentId + ':incident')];
-  const duplicate = planProviderIncidentAlert(report,prior,{nowMs:Date.parse('2026-09-28T10:45:00Z'),adminCount:1});
+  const prior=[ledgerRow(incident.incidentId)];
+  const duplicate=planProviderIncidentAlert(report,prior,{nowMs:Date.parse('2026-09-28T10:45:00Z'),destinations});
   assert.equal(duplicate.action,'none');
   assert.equal(duplicate.reason,'incident_alert_deduplicated');
 });
 
-test('critical escalation, long incident reminder and recovery are each deduplicated', () => {
-  const incident = {
-    incidentId:'pslo-api-football-two',
-    active:true,
-    state:'incident',
-    highestState:'incident',
-    severity:'critical',
-    startedAt:'2026-09-28T00:00:00Z',
-    durationMinutes:370,
-    fingerprint:'api-football|/fixtures|provider_slo|pslo-api-football-two',
-    diagnostics:{primaryProvider:'api-football',primaryOperation:'/fixtures',sampleSize:40,errorRatePct:55,timeoutRatePct:25,rateLimitRatePct:0,avgAttemptLatencyMs:11000,reason:'error rate 55.0%'},
-  };
-  const open = sentEvent(incident.incidentId,'incident',incident.incidentId + ':incident',[0],'2026-09-28T00:30:00Z');
-  const escalation = planProviderIncidentAlert({activeIncident:incident,history:[incident]},[open],{nowMs:Date.parse('2026-09-28T06:10:00Z'),adminCount:1});
-  assert.equal(escalation.kind,'escalation');
+test('retry_pending reuses the same stable row and cannot run before retry_at', () => {
+  const incident=alertIncident('pslo-api-football-retry');
+  const destinations=[{slot:0,destinationKey:'destination-key-0001'}];
+  const row=ledgerRow(incident.incidentId,'incident','retry_pending',{
+    attempts:1,
+    retryAt:'2026-09-28T10:31:00Z',
+  });
+  const early=planProviderIncidentAlert({activeIncident:incident,history:[incident]},[row],{
+    nowMs:Date.parse('2026-09-28T10:30:00Z'),
+    destinations,
+  });
+  assert.equal(early.action,'none');
+  assert.equal(early.reason,'delivery_waiting');
 
-  const escalated = sentEvent(incident.incidentId,'escalation',incident.incidentId + ':escalation:critical',[0],'2026-09-28T06:10:00Z');
-  const reminder = planProviderIncidentAlert({activeIncident:incident,history:[incident]},[open,escalated],{nowMs:Date.parse('2026-09-28T06:20:00Z'),adminCount:1});
-  assert.equal(reminder.kind,'reminder');
+  const due=planProviderIncidentAlert({activeIncident:incident,history:[incident]},[row],{
+    nowMs:Date.parse('2026-09-28T10:32:00Z'),
+    destinations,
+  });
+  assert.equal(due.action,'send');
+  assert.equal(due.alertKey,incident.incidentId + ':incident');
+  assert.equal(due.attempt,2);
+  assert.deepEqual(due.targetSlots,[0]);
+});
 
-  const reminded = sentEvent(incident.incidentId,'reminder',incident.incidentId + ':reminder:1',[0],'2026-09-28T06:20:00Z');
-  const noSpam = planProviderIncidentAlert({activeIncident:incident,history:[incident]},[open,escalated,reminded],{nowMs:Date.parse('2026-09-28T06:35:00Z'),adminCount:1});
-  assert.equal(noSpam.action,'none');
+test('unknown and terminal_failed states never blind-retry', () => {
+  const incident=alertIncident('pslo-api-football-unknown');
+  const destinations=[{slot:0,destinationKey:'destination-key-0001'}];
+  for (const status of ['unknown','terminal_failed']) {
+    const plan=planProviderIncidentAlert(
+      {activeIncident:incident,history:[incident]},
+      [ledgerRow(incident.incidentId,'incident',status)],
+      {nowMs:Date.parse('2026-09-28T12:00:00Z'),destinations}
+    );
+    assert.equal(plan.action,'none');
+    assert.equal(plan.reason,'delivery_exhausted');
+  }
+});
 
-  const recovered = {...incident,active:false,state:'recovered',recoveredAt:'2026-09-28T07:00:00Z',durationMinutes:420};
-  const recovery = planProviderIncidentAlert({activeIncident:null,history:[recovered]},[open,escalated,reminded],{nowMs:Date.parse('2026-09-28T07:00:00Z'),adminCount:1});
+test('OPEN and RECOVERY have separate identities and a new generation gets a new alert identity', () => {
+  const first=alertIncident('pslo-api-football-generation-one');
+  const destinationKey='destination-key-0001';
+  const destinations=[{slot:0,destinationKey}];
+  const open=ledgerRow(first.incidentId,'incident','sent',{destinationKey});
+  const recovered={...first,active:false,state:'recovered',recoveredAt:'2026-09-28T11:00:00Z',durationMinutes:60};
+  const recovery=planProviderIncidentAlert({activeIncident:null,history:[recovered]},[open],{destinations});
+  assert.equal(recovery.action,'send');
   assert.equal(recovery.kind,'recovery');
-  const recoveredSent = sentEvent(incident.incidentId,'recovery',incident.incidentId + ':recovery',[0],'2026-09-28T07:00:00Z');
-  const duplicateRecovery = planProviderIncidentAlert({activeIncident:null,history:[recovered]},[open,escalated,reminded,recoveredSent],{nowMs:Date.parse('2026-09-28T07:15:00Z'),adminCount:1});
+  assert.equal(recovery.alertKey,first.incidentId + ':recovery');
+
+  const recoverySent=ledgerRow(first.incidentId,'recovery','sent',{
+    destinationKey,
+    alertKey:first.incidentId + ':recovery',
+  });
+  const duplicateRecovery=planProviderIncidentAlert(
+    {activeIncident:null,history:[recovered]},
+    [open,recoverySent],
+    {destinations}
+  );
   assert.equal(duplicateRecovery.action,'none');
+
+  const next=alertIncident('pslo-api-football-generation-two');
+  const nextPlan=planProviderIncidentAlert({activeIncident:next,history:[recovered,next]},[open,recoverySent],{destinations});
+  assert.equal(nextPlan.action,'send');
+  assert.equal(nextPlan.alertKey,next.incidentId + ':incident');
+  assert.notEqual(nextPlan.alertKey,first.incidentId + ':incident');
 });
 
-test('failed Telegram delivery is best effort, cooled down and bounded', async () => {
-  const incident = {
-    incidentId:'pslo-api-football-fail',
-    active:true,
-    state:'incident',
-    highestState:'incident',
-    severity:'incident',
-    startedAt:'2026-09-28T10:00:00Z',
-    durationMinutes:30,
-    fingerprint:'api-football|/fixtures|provider_slo|pslo-api-football-fail',
-    diagnostics:{primaryProvider:'api-football',primaryOperation:'/fixtures',sampleSize:20,errorRatePct:20,timeoutRatePct:10,rateLimitRatePct:0,avgAttemptLatencyMs:4000,reason:'timeout rate 10.0%'},
-  };
-  const report = {activeIncident:incident,history:[incident]};
-  const plan = planProviderIncidentAlert(report,[],{nowMs:Date.parse('2026-09-28T10:30:00Z'),adminCount:1});
-  let calls = 0;
-  const delivery = await deliverProviderIncidentAlert({
-    plan,
-    adminTelegramIds:[123],
-    sendMessage:async () => { calls += 1; return {ok:false,status:503,description:'temporary'}; },
-    sleep:async () => {},
+test('all-success delivery claims once and finalizes sent', async () => {
+  const store=memoryLedgerStore();
+  let sends=0;
+  const result=await deliverProviderIncidentAlert({
+    plan:deliveryPlan('pslo-success'),
+    adminTelegramIds:[101],
+    claimDelivery:store.claim,
+    finalizeDelivery:store.finalize,
+    sendMessage:async () => {
+      sends += 1;
+      return {ok:true,status:200,outcome:'sent'};
+    },
+    nowMs:Date.parse('2026-09-28T10:30:00Z'),
   });
-  assert.equal(delivery.ok,false);
-  assert.deepEqual(delivery.failedSlots,[0]);
-  assert.equal(calls,2);
-
-  const failed = providerIncidentAlertOpsEvent(plan,delivery);
-  failed.created_at='2026-09-28T10:30:00Z';
-  const cooldown = planProviderIncidentAlert(report,[failed],{nowMs:Date.parse('2026-09-28T10:45:00Z'),adminCount:1});
-  assert.equal(cooldown.action,'none');
-  assert.equal(cooldown.reason,'delivery_cooldown');
-
-  const retry = planProviderIncidentAlert(report,[failed],{nowMs:Date.parse('2026-09-28T11:01:00Z'),adminCount:1});
-  assert.equal(retry.action,'send');
-  assert.deepEqual(retry.targetSlots,[0]);
-
-  const failures = [1,2,3].map((n) => ({
-    created_at:'2026-09-28T1' + (n - 1) + ':00:00Z',
-    source:'provider_alert',
-    code:'PROVIDER_SLO_ALERT_FAILED',
-    metadata:{incidentId:incident.incidentId,alertKind:'incident',deliveryKey:incident.incidentId + ':incident',deliveredSlots:[],failedSlots:[0]},
-  }));
-  const exhausted = planProviderIncidentAlert(report,failures,{nowMs:Date.parse('2026-09-28T13:00:00Z'),adminCount:1});
-  assert.equal(exhausted.action,'none');
-  assert.equal(exhausted.reason,'delivery_exhausted');
+  assert.equal(result.ok,true);
+  assert.equal(sends,1);
+  assert.deepEqual(result.deliveredSlots,[0]);
+  assert.equal([...store.rows.values()][0].status,'sent');
 });
 
-test('partial delivery retries only the failed admin slot', async () => {
-  const incident = {
-    incidentId:'pslo-api-football-partial',
-    active:true,
-    state:'incident',
-    highestState:'incident',
-    severity:'incident',
-    startedAt:'2026-09-28T10:00:00Z',
-    durationMinutes:30,
-    fingerprint:'api-football|/fixtures|provider_slo|pslo-api-football-partial',
-    diagnostics:{primaryProvider:'api-football',primaryOperation:'/fixtures',sampleSize:20,errorRatePct:20,timeoutRatePct:10,rateLimitRatePct:0,avgAttemptLatencyMs:4000,reason:'timeout rate 10.0%'},
+test('parallel executions allow exactly one owner and suppress duplicates', async () => {
+  const store=memoryLedgerStore();
+  let sends=0;
+  const plan=deliveryPlan('pslo-concurrency');
+  const sendMessage=async () => {
+    sends += 1;
+    await Promise.resolve();
+    return {ok:true,status:200,outcome:'sent'};
   };
-  const report={activeIncident:incident,history:[incident]};
-  const plan=planProviderIncidentAlert(report,[],{nowMs:Date.parse('2026-09-28T10:30:00Z'),adminCount:2});
-  const delivery=await deliverProviderIncidentAlert({
-    plan,
-    adminTelegramIds:[111,222],
-    sendMessage:async (id) => id === 111 ? {ok:true,status:200} : {ok:false,status:403,description:'forbidden'},
-    sleep:async () => {},
-  });
-  assert.deepEqual(delivery.deliveredSlots,[0]);
-  assert.deepEqual(delivery.failedSlots,[1]);
-  const event=providerIncidentAlertOpsEvent(plan,delivery);
-  event.created_at='2026-09-28T10:30:00Z';
-  const retry=planProviderIncidentAlert(report,[event],{nowMs:Date.parse('2026-09-28T11:01:00Z'),adminCount:2});
-  assert.deepEqual(retry.targetSlots,[1]);
+  const results=await Promise.all([
+    deliverProviderIncidentAlert({
+      plan,
+      adminTelegramIds:[101],
+      claimDelivery:store.claim,
+      finalizeDelivery:store.finalize,
+      sendMessage,
+    }),
+    deliverProviderIncidentAlert({
+      plan,
+      adminTelegramIds:[101],
+      claimDelivery:store.claim,
+      finalizeDelivery:store.finalize,
+      sendMessage,
+    }),
+    deliverProviderIncidentAlert({
+      plan,
+      adminTelegramIds:[101],
+      claimDelivery:store.claim,
+      finalizeDelivery:store.finalize,
+      sendMessage,
+    }),
+  ]);
+  assert.equal(sends,1);
+  const states=results.flatMap(result => result.outcomes.map(item => item.state));
+  assert.equal(states.filter(state => state === 'sent').length,1);
+  assert.equal(states.filter(state => state === 'duplicate').length,2);
 });
 
-test('restart reconstruction keeps incident id and persisted alert event suppresses duplicates', () => {
+test('unconfirmed claim result and rejected claim both fail closed without Telegram delivery', async () => {
+  for (const claimDelivery of [
+    async () => ({ok:false}),
+    async () => { throw new Error('database unavailable'); },
+  ]) {
+    let sends=0;
+    const result=await deliverProviderIncidentAlert({
+      plan:deliveryPlan('pslo-persistence-' + sends),
+      adminTelegramIds:[101],
+      claimDelivery,
+      finalizeDelivery:async () => ({ok:true}),
+      sendMessage:async () => {
+        sends += 1;
+        return {ok:true,status:200};
+      },
+    });
+    assert.equal(sends,0);
+    assert.equal(result.ok,false);
+    assert.equal(result.outcomes[0].state,'persistence_failure');
+  }
+});
+
+test('rejected Telegram Promise is unknown, is finalized once and is never retried in-process', async () => {
+  const store=memoryLedgerStore();
+  let sends=0;
+  const result=await deliverProviderIncidentAlert({
+    plan:deliveryPlan('pslo-ambiguous'),
+    adminTelegramIds:[101],
+    claimDelivery:store.claim,
+    finalizeDelivery:store.finalize,
+    sendMessage:async () => {
+      sends += 1;
+      throw new Error('response connection lost');
+    },
+  });
+  assert.equal(sends,1);
+  assert.equal(result.ok,false);
+  assert.equal(result.outcomes[0].state,'unknown');
+  assert.equal([...store.rows.values()][0].status,'unknown');
+});
+
+test('Telegram 429, confirmed temporary failure and terminal failure have distinct states', () => {
+  const now=Date.parse('2026-09-28T10:30:00Z');
+  const rate=classifyProviderIncidentTelegramResult({ok:false,status:429,retryAfter:75,description:'rate limited'},now);
+  assert.equal(rate.state,'retry_pending');
+  assert.equal(rate.retryAt,'2026-09-28T10:31:15.000Z');
+
+  const temporary=classifyProviderIncidentTelegramResult({ok:false,status:503,description:'unavailable'},now);
+  assert.equal(temporary.state,'retry_pending');
+  assert.equal(temporary.retryAt,'2026-09-28T11:00:00.000Z');
+
+  const terminal=classifyProviderIncidentTelegramResult({ok:false,status:403,description:'forbidden'},now);
+  assert.equal(terminal.state,'terminal_failed');
+
+  const unknown=classifyProviderIncidentTelegramResult({ok:false,status:0,outcome:'unknown',description:'network'},now);
+  assert.equal(unknown.state,'unknown');
+});
+
+test('Telegram 429 persists retry time and performs no immediate resend', async () => {
+  const store=memoryLedgerStore();
+  let sends=0;
+  const result=await deliverProviderIncidentAlert({
+    plan:deliveryPlan('pslo-429'),
+    adminTelegramIds:[101],
+    claimDelivery:store.claim,
+    finalizeDelivery:store.finalize,
+    sendMessage:async () => {
+      sends += 1;
+      return {ok:false,status:429,retryAfter:60,description:'Too Many Requests'};
+    },
+    nowMs:Date.parse('2026-09-28T10:30:00Z'),
+  });
+  assert.equal(sends,1);
+  assert.equal(result.outcomes[0].state,'retry_pending');
+  assert.equal(result.outcomes[0].retryAt,'2026-09-28T10:31:00.000Z');
+  const row=[...store.rows.values()][0];
+  assert.equal(row.status,'retry_pending');
+  assert.equal(row.retryAt,'2026-09-28T10:31:00.000Z');
+});
+
+test('one failed recipient does not erase sent, duplicate or unknown outcomes', async () => {
+  const plan=deliveryPlan('pslo-mixed',[0,1,2,3]);
+  const states=new Map();
+  const result=await deliverProviderIncidentAlert({
+    plan,
+    adminTelegramIds:[101,102,103,104],
+    claimDelivery:async input => {
+      if (input.destinationSlot === 2) return {acquired:false,status:'sent',attempts:1,reason:'already_sent'};
+      states.set(input.destinationSlot,'sending');
+      return {acquired:true,status:'sending',attempts:1};
+    },
+    finalizeDelivery:async input => {
+      const slot=Number(input.destinationKey.slice(-4));
+      states.set(slot,input.status);
+      return {ok:true,status:input.status};
+    },
+    sendMessage:async chatId => {
+      if (chatId === 101) return {ok:true,status:200,outcome:'sent'};
+      if (chatId === 102) return {ok:false,status:503,outcome:'confirmed_failure',description:'temporary'};
+      if (chatId === 104) throw new Error('ambiguous transport');
+      assert.fail('duplicate slot must not send');
+    },
+    nowMs:Date.parse('2026-09-28T10:30:00Z'),
+  });
+  assert.deepEqual(result.outcomes.map(item => item.state),['sent','retry_pending','duplicate','unknown']);
+  const events=providerIncidentAlertOpsEvents(plan,result);
+  const codes=new Set(events.map(event => event.code));
+  assert.ok(codes.has('PROVIDER_SLO_ALERT_SENT'));
+  assert.ok(codes.has('PROVIDER_SLO_ALERT_RETRY_PENDING'));
+  assert.ok(codes.has('PROVIDER_SLO_ALERT_DUPLICATE_SUPPRESSED'));
+  assert.ok(codes.has('PROVIDER_SLO_ALERT_UNKNOWN'));
+});
+
+test('ledger summary exposes unknown and recoverable operational states', () => {
   const rows=[
-    window('2026-09-28T10:00:00Z','incident'),
-    window('2026-09-28T10:15:00Z','incident'),
-    window('2026-09-28T10:30:00Z','incident'),
+    ledgerRow('one','incident','sent'),
+    ledgerRow('two','incident','retry_pending',{destinationKey:'destination-key-0002'}),
+    ledgerRow('three','incident','unknown',{destinationKey:'destination-key-0003'}),
+    ledgerRow('four','incident','terminal_failed',{destinationKey:'destination-key-0004'}),
   ];
-  const before=buildProviderSloIncidentTimeline(rows,{nowMs:Date.parse('2026-09-28T10:35:00Z')});
-  const after=buildProviderSloIncidentTimeline(JSON.parse(JSON.stringify(rows)),{nowMs:Date.parse('2026-09-28T10:36:00Z')});
-  assert.equal(after.activeIncident.incidentId,before.activeIncident.incidentId);
-  const prior=[sentEvent(before.activeIncident.incidentId,'incident',before.activeIncident.incidentId + ':incident')];
-  const plan=planProviderIncidentAlert(after,prior,{nowMs:Date.parse('2026-09-28T10:36:00Z'),adminCount:1});
-  assert.equal(plan.action,'none');
+  const summary=providerIncidentAlertLedgerSummary(rows);
+  assert.equal(summary.rows,4);
+  assert.equal(summary.states.sent,1);
+  assert.equal(summary.states.retry_pending,1);
+  assert.equal(summary.states.unknown,1);
+  assert.equal(summary.states.terminal_failed,1);
+  assert.equal(summary.operationalAttention,3);
 });
