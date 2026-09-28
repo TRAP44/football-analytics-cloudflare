@@ -87,7 +87,7 @@ test('history service preserves Supabase upsert contract and field bounds', asyn
   assert.equal(writes[0].row.analysis_version.length,80);
 });
 
-test('history service preserves fail-soft write and read behavior', async () => {
+test('history service keeps non-critical writes fail-soft but surfaces read failures', async () => {
   const writeRuntime=runtime({
     hasSupabase:()=>true,
     supaUpsert:async()=>{ throw new Error('write unavailable'); },
@@ -96,9 +96,12 @@ test('history service preserves fail-soft write and read behavior', async () => 
 
   const readRuntime=runtime({
     hasSupabase:()=>true,
-    supaSelectMany:async()=>{ throw new Error('read unavailable'); },
+    supaSelectMany:async()=>{ throw new Error('Supabase history unavailable'); },
   });
-  assert.deepEqual(await readRuntime.service.getHistory(13,{}),[]);
+  await assert.rejects(
+    ()=>readRuntime.service.getHistory(13,{supabaseUrl:'https://db.test'}),
+    /Supabase history unavailable/,
+  );
 });
 
 test('history service preserves Supabase read query shape', async () => {
