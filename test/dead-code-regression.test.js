@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
+const css=fs.readFileSync('public/styles.css','utf8');
 
 test('obsolete superseded Worker helpers stay removed',()=>{
   for(const name of ["botMatchAction","combineProbabilities","digestAppUrl","incrementUsage","newsSourceKeyboard","patchReminder"]){
@@ -19,4 +20,11 @@ test('obsolete superseded Mini App helpers stay removed',()=>{
     assert.doesNotMatch(app,new RegExp('\\bfunction\\s+'+name+'\\s*\\('),name);
   }
   assert.doesNotMatch(app,/\bMINIAPP_PRODUCT_MODE\b/);
+});
+
+
+test('obsolete orphan Mini App styles stay removed',()=>{
+  for(const selector of ['match-ai-snapshot','competition-group','competition-chip.cat-']){
+    assert.doesNotMatch(css,new RegExp(selector.replace(/[.*+?^$\\{}()|[\\]\\\\]/g,'\\\\$&')),selector);
+  }
 });
