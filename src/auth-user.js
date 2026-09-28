@@ -1,3 +1,40 @@
+const ADMIN_SENSITIVE_PATHS = new Set([
+  '/api/beta-dashboard',
+  '/api/calibration-control',
+  '/api/data-integrity',
+  '/api/diagnostics',
+  '/api/launch-funnel',
+  '/api/media-publisher-link',
+  '/api/model-quality',
+  '/api/model-remediation',
+  '/api/phase5-dashboard',
+  '/api/production-monitor',
+  '/api/production-readiness',
+  '/api/rc-regression',
+  '/api/recovery-incident-ack',
+  '/api/release-monitor',
+  '/api/release-readiness',
+  '/api/reminder-health',
+]);
+
+export function isAdminSensitivePath(pathname = '') {
+  const path = String(pathname || '');
+  return ADMIN_SENSITIVE_PATHS.has(path)
+    || path === '/api/provider'
+    || path.startsWith('/api/provider/')
+    || path === '/api/runtime-controls'
+    || path.startsWith('/api/runtime-controls/')
+    || path.startsWith('/api/admin/');
+}
+
+export function isLocalDevelopmentRequest(requestUrl) {
+  const hostname = String(requestUrl?.hostname || '').toLowerCase();
+  return hostname === 'localhost'
+    || hostname === '127.0.0.1'
+    || hostname === '::1'
+    || hostname.endsWith('.localhost');
+}
+
 export function createUserAuthRuntime({
   memory,
   validateTelegramInitData,
@@ -13,15 +50,12 @@ export function createUserAuthRuntime({
   async function getRequestUser(request, cfg) {
     const initData = request.headers.get('x-telegram-init-data') || '';
     const requestUrl = new URL(request.url);
-    const adminSensitive = requestUrl.pathname.startsWith('/api/runtime-controls')
-      || requestUrl.pathname.startsWith('/api/provider/')
-      || requestUrl.pathname === '/api/admin/channel-publisher/test'
-      || ['/api/diagnostics','/api/release-readiness','/api/production-readiness','/api/rc-regression','/api/release-monitor','/api/production-monitor','/api/beta-dashboard','/api/calibration-control','/api/model-remediation','/api/media-publisher-link'].includes(requestUrl.pathname);
+    const adminSensitive = isAdminSensitivePath(requestUrl.pathname);
     const mutation = !['GET','HEAD','OPTIONS'].includes(String(request.method || 'GET').toUpperCase());
     const initDataMaxAgeSeconds = adminSensitive ? 15 * 60 : mutation ? 2 * 60 * 60 : 24 * 60 * 60;
     let user = await validateTelegramInitData(initData, cfg.botToken, initDataMaxAgeSeconds);
     const telegramValidated = Boolean(user);
-    if (!user && cfg.devMode) {
+    if (!user && cfg.devMode && isLocalDevelopmentRequest(requestUrl)) {
       user = {
         id: developmentTelegramId,
         username: 'dev_user',

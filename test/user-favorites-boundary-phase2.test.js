@@ -61,6 +61,17 @@ test('favorites service preserves guarded Supabase RPC contract', async () => {
   assert.equal(rpcCalls[0].timeout,4000);
 });
 
+test('favorites service surfaces Supabase read failures instead of false empty state', async () => {
+  const {service}=runtime({
+    hasSupabase:()=>true,
+    supaSelectMany:async()=>{ throw new Error('Supabase favorites unavailable'); },
+  });
+  await assert.rejects(
+    ()=>service.getFavorites(15,{supabaseUrl:'https://db.test'}),
+    /Supabase favorites unavailable/,
+  );
+});
+
 test('favorites service preserves Supabase delete request shape', async () => {
   const {fetchCalls,service}=runtime({hasSupabase:()=>true});
   await service.removeFavorite(15,77,{supabaseUrl:'https://db.test'});

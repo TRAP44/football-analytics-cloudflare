@@ -41,7 +41,8 @@ test('manual publisher route is admin-only and uses existing fixture deep-link c
   assert.match(worker,/fixtureTelegramDeepLink\(cfg,fixtureId,\{source:'channel',campaign:'publisher_mvp',content:'manual'\}\)/);
   assert.match(worker,/url:\s*link\.url/);
   assert.match(worker,/dryRun\s*=\s*body\?\.dryRun !== false/);
-  assert.match(worker,/requestUrl\.pathname === '\/api\/admin\/channel-publisher\/test'/);
+  assert.match(worker,/const adminSensitive = isAdminSensitivePath\(requestUrl\.pathname\)/);
+  assert.match(worker,/path\.startsWith\('\/api\/admin\/'\)/);
 });
 
 test('publisher has deterministic idempotency and suppresses a repeated send', async () => {

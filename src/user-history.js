@@ -47,17 +47,12 @@ export function createUserHistoryService({
 
   async function getHistory(userId, cfg) {
     if (hasSupabase(cfg)) {
-      try {
-        return await supaSelectMany(
-          cfg,
-          'analysis_history',
-          { telegram_id: `eq.${Number(userId)}` },
-          { limit:20, order:'viewed_at.desc' },
-        );
-      } catch (e) {
-        console.warn('history read skipped', e?.message || e);
-        return [];
-      }
+      return await supaSelectMany(
+        cfg,
+        'analysis_history',
+        { telegram_id: `eq.${Number(userId)}` },
+        { limit:20, order:'viewed_at.desc' },
+      );
     }
     return memory.history.get(Number(userId)) || [];
   }

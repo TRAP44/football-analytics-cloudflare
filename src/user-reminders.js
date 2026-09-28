@@ -11,12 +11,7 @@ export function createUserRemindersService({
 }) {
   async function getReminders(userId, cfg) {
     if (hasSupabase(cfg)) {
-      try {
-        return await supaSelectMany(cfg, 'match_reminders', { telegram_id: `eq.${Number(userId)}`, enabled: 'eq.true' }, { limit: 50, order: 'fixture_date.asc' });
-      } catch (e) {
-        console.warn('reminders read skipped', e?.message || e);
-        return [];
-      }
+      return await supaSelectMany(cfg, 'match_reminders', { telegram_id: `eq.${Number(userId)}`, enabled: 'eq.true' }, { limit: 50, order: 'fixture_date.asc' });
     }
     return memory.reminders.get(Number(userId)) || [];
   }

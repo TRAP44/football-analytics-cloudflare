@@ -105,12 +105,15 @@ test('preferences service preserves Supabase read and upsert contracts', async (
   assert.equal(writes[0].row.favorite_first,false);
 });
 
-test('preferences service preserves fail-soft Supabase read defaults', async () => {
+test('preferences service surfaces Supabase read failures instead of overwriting with defaults', async () => {
   const {service}=runtime({
     hasSupabase:()=>true,
-    supaSelectOne:async()=>{ throw new Error('db unavailable'); },
+    supaSelectOne:async()=>{ throw new Error('Supabase preferences unavailable'); },
   });
-  assert.deepEqual(await service.getPreferences(15,{}),DEFAULT_PREFERENCES);
+  await assert.rejects(
+    ()=>service.getPreferences(15,{supabaseUrl:'https://db.test'}),
+    /Supabase preferences unavailable/,
+  );
 });
 
 test('worker delegates preferences storage boundary to extracted service', () => {
