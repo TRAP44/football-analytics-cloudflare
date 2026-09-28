@@ -33,6 +33,7 @@ import { annotateLineupReliability, assessLineupQuality, assessMatchLineups } fr
 import { normalizeOpenLigaMatchEvents, normalizeOpenLigaStandings, openLigaCompetition, openLigaMatchDataUrls, openLigaTableUrls } from './providers/openligadb.js';
 import { footballDataScorersUrl, footballDataStandingsUrl, normalizeFootballDataStandings, normalizeFootballDataTeamScorers } from './providers/football-data.js';
 import { normalizeTheOddsApiMarket, theOddsApiUrl } from './providers/the-odds-api.js';
+import { createProviderRequestBoundary } from './providers/provider-request.js';
 import {
   bytesToHex,
   constantTimeEqual,
@@ -19539,26 +19540,13 @@ async function claimSecondaryProviderBudget(cfg, provider, limit) {
   }
 }
 
-async function secondaryProviderJson(url, cfg, { provider, headers = {}, timeoutMs = 7000 } = {}) {
-  return await withSingleFlight(`secondary:${provider}:${url}`, async () => {
-    const response = await fetchWithTimeout(url, {
-      method:'GET',
-      headers:{ accept:'application/json', ...headers },
-    }, timeoutMs, provider);
-    if (!response.ok) {
-      const error = new Error(`${provider}: HTTP ${response.status}`);
-      error.code = `${String(provider || 'provider').toUpperCase().replaceAll('-','_')}_HTTP`;
-      error.status = response.status;
-      throw error;
-    }
-    try { return await response.json(); }
-    catch {
-      const error = new Error(`${provider}: некорректный JSON`);
-      error.code = `${String(provider || 'provider').toUpperCase().replaceAll('-','_')}_JSON`;
-      throw error;
-    }
-  });
-}
+const { providerRequestJson: secondaryProviderJson } = createProviderRequestBoundary({
+  fetchWithTimeout,
+  withSingleFlight,
+  sleepMs,
+  recordOpsEvent,
+  bumpTelemetry,
+});
 
 async function openLigaStandingsProvider(leagueId, season, cfg) {
   const competition = openLigaCompetition(leagueId, season);
@@ -19568,7 +19556,7 @@ async function openLigaStandingsProvider(leagueId, season, cfg) {
 
   for (const candidate of openLigaTableUrls(leagueId, season)) {
     try {
-      const rows = await secondaryProviderJson(candidate.url, cfg, { provider:'OpenLigaDB', timeoutMs:6500 });
+      const rows = await secondaryProviderJson(candidate.url, cfg, { provider:'OpenLigaDB', operation:'standings', timeoutMs:6500 });
       const normalized = normalizeOpenLigaStandings(rows, {
         leagueId, season, label:competition.label,
       });
@@ -19630,7 +19618,7 @@ async function secondaryOpenLigaEvents(fixture, cfg, context = {}) {
 
   for (const candidate of urls) {
     try {
-      const rows=await secondaryProviderJson(candidate.url, cfg, { provider:'OpenLigaDB', timeoutMs:6500 });
+      const rows=await secondaryProviderJson(candidate.url, cfg, { provider:'OpenLigaDB', operation:'match_events', timeoutMs:6500 });
       const normalized=normalizeOpenLigaMatchEvents(rows, {
         homeId:Number(fixture?.teams?.home?.id || 0),
         awayId:Number(fixture?.teams?.away?.id || 0),
@@ -19679,6 +19667,7 @@ async function footballDataStandingsProvider(leagueId, season, cfg) {
 
   const payload = await secondaryProviderJson(url, cfg, {
     provider:'football-data.org',
+    operation:'standings',
     timeoutMs:6500,
     headers:{ 'x-auth-token':cfg.footballDataToken },
   });
@@ -19766,6 +19755,7 @@ async function secondaryOddsMarket(fixture, cfg, { mode = 'prematch' } = {}) {
     url.searchParams.set('apiKey', cfg.theOddsApiKey);
     const rows = await secondaryProviderJson(url.toString(), cfg, {
       provider:'The Odds API',
+      operation:'odds',
       timeoutMs:6500,
     });
     const market = normalizeTheOddsApiMarket(rows, {
@@ -20232,6 +20222,7 @@ async function footballDataTeamScorersProvider(teamId, teamName, leagueId, leagu
   try {
     const payload=await secondaryProviderJson(url, cfg, {
       provider:'football-data.org',
+      operation:'scorers',
       timeoutMs:6500,
       headers:{ 'x-auth-token':cfg.footballDataToken },
     });

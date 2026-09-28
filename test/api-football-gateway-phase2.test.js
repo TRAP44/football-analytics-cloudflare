@@ -125,3 +125,88 @@ test('Phase 2 gateway preserves timeout classification after bounded retry', asy
   assert.equal(attempts, 2);
   assert.deepEqual(sleeps, [180]);
 });
+
+
+test('Phase 2 gateway retries HTTP 503 once and succeeds', async () => {
+  let attempts = 0;
+  const { gateway, sleeps, counters } = runtime({
+    fetchWithTimeout: async () => {
+      attempts += 1;
+      if (attempts === 1) return new Response(JSON.stringify({ response:[] }), { status:503 });
+      return new Response(JSON.stringify({ response:[{ id:7 }] }), { status:200 });
+    },
+  });
+
+  const result = await gateway.apiFootball('/fixtures', { id:7 }, { apiFootballKey:'test-key' });
+  assert.deepEqual(result, [{ id:7 }]);
+  assert.equal(attempts, 2);
+  assert.deepEqual(sleeps, [180]);
+  assert.equal(counters.providerRetries, 1);
+});
+
+test('Phase 2 gateway does not retry 400, 401, or 403', async () => {
+  for (const status of [400, 401, 403]) {
+    let attempts = 0;
+    const { gateway } = runtime({
+      fetchWithTimeout: async () => {
+        attempts += 1;
+        return new Response(JSON.stringify({ response:[] }), { status });
+      },
+    });
+    await assert.rejects(
+      () => gateway.apiFootball('/fixtures', { id:status }, { apiFootballKey:'test-key' }),
+      error => error?.code === 'FOOTBALL_HTTP' && error?.status === status,
+    );
+    assert.equal(attempts, 1, String(status));
+  }
+});
+
+test('Phase 2 gateway keeps 429 separate, respects Retry-After and does not auto-retry it', async () => {
+  let attempts = 0;
+  const { gateway, counters } = runtime({
+    fetchWithTimeout: async () => {
+      attempts += 1;
+      return new Response(JSON.stringify({ response:[] }), {
+        status:429,
+        headers:{ 'Retry-After':'19' },
+      });
+    },
+  });
+
+  await assert.rejects(
+    () => gateway.apiFootball('/fixtures', { id:1 }, { apiFootballKey:'test-key' }),
+    error => error?.code === 'FOOTBALL_RATE_LIMIT' && error?.retryAfter === 19 && error?.status === 429,
+  );
+  assert.equal(attempts, 1);
+  assert.equal(counters.providerRateLimits, 1);
+});
+
+test('Phase 2 gateway rejects invalid JSON instead of treating it as empty data', async () => {
+  const { gateway } = runtime({
+    fetchWithTimeout: async () => new Response('{broken-json', { status:200 }),
+  });
+  await assert.rejects(
+    () => gateway.apiFootball('/fixtures', { id:1 }, { apiFootballKey:'test-key' }),
+    error => error?.code === 'FOOTBALL_INVALID_RESPONSE',
+  );
+});
+
+test('Phase 2 gateway rejects a successful response without the response field', async () => {
+  const { gateway } = runtime({
+    fetchWithTimeout: async () => new Response(JSON.stringify({ paging:{ current:1, total:1 } }), { status:200 }),
+  });
+  await assert.rejects(
+    () => gateway.apiFootball('/fixtures', { id:1 }, { apiFootballKey:'test-key' }),
+    error => error?.code === 'FOOTBALL_INVALID_RESPONSE',
+  );
+});
+
+test('Phase 2 gateway rejects a non-array fixture response shape', async () => {
+  const { gateway } = runtime({
+    fetchWithTimeout: async () => new Response(JSON.stringify({ response:{ id:1 } }), { status:200 }),
+  });
+  await assert.rejects(
+    () => gateway.apiFootball('/fixtures', { id:1 }, { apiFootballKey:'test-key' }),
+    error => error?.code === 'FOOTBALL_INVALID_RESPONSE',
+  );
+});
