@@ -15270,16 +15270,17 @@ function releaseMonitorHealth(current, persistent) {
 function productionMonitorState(input = {}) {
   const supabaseOk = Boolean(input.supabaseOk);
   const schemaOk = Boolean(input.schemaOk);
+  const schemaStatus = String(input.schemaStatus || (schemaOk ? 'ok' : 'drift'));
   const releaseState = String(input.releaseState || 'healthy');
   const providerHealth = String(input.providerHealth || 'waiting');
   const telegramDedupeState = String(input.telegramDedupeState || 'healthy');
   const persistent = input.persistent !== false;
   const supabaseAuthFailures = Number(input.supabaseAuthFailures || 0);
 
-  if (!supabaseOk || !schemaOk || supabaseAuthFailures > 0 || releaseState === 'incident' || telegramDedupeState === 'incident') {
+  if (!supabaseOk || ['drift','mixed'].includes(schemaStatus) || supabaseAuthFailures > 0 || releaseState === 'incident' || telegramDedupeState === 'incident') {
     return { state: 'incident', label: 'Production требует немедленной проверки' };
   }
-  if (releaseState === 'watch' || telegramDedupeState === 'watch' || !persistent || ['critical','warning'].includes(providerHealth)) {
+  if (schemaStatus === 'unavailable' || releaseState === 'watch' || telegramDedupeState === 'watch' || !persistent || ['critical','warning'].includes(providerHealth)) {
     return { state: 'watch', label: 'Production работает, но нужен контроль' };
   }
   return { state: 'healthy', label: 'Production monitor не видит блокирующих сигналов' };
@@ -15290,7 +15291,10 @@ function productionMonitorSelfTest() {
     supabaseOk: true, schemaOk: true, releaseState: 'healthy', providerHealth: 'ok', telegramDedupeState:'healthy', persistent: true,
   });
   const drift = productionMonitorState({
-    supabaseOk: true, schemaOk: false, releaseState: 'healthy', providerHealth: 'ok', telegramDedupeState:'healthy', persistent: true,
+    supabaseOk: true, schemaOk: false, schemaStatus:'drift', releaseState: 'healthy', providerHealth: 'ok', telegramDedupeState:'healthy', persistent: true,
+  });
+  const schemaUnavailable = productionMonitorState({
+    supabaseOk: true, schemaOk: false, schemaStatus:'unavailable', releaseState:'healthy', providerHealth:'ok', telegramDedupeState:'healthy', persistent:true,
   });
   const watch = productionMonitorState({
     supabaseOk: true, schemaOk: true, releaseState: 'healthy', providerHealth: 'ok', telegramDedupeState:'watch', persistent: true,
@@ -15302,9 +15306,10 @@ function productionMonitorSelfTest() {
     supabaseOk: true, schemaOk: true, supabaseAuthFailures:1, releaseState:'healthy', providerHealth:'ok', telegramDedupeState:'healthy', persistent:true,
   });
   return {
-    pass: healthy.state === 'healthy' && drift.state === 'incident' && watch.state === 'watch' && telegramIncident.state === 'incident' && authIncident.state === 'incident',
+    pass: healthy.state === 'healthy' && drift.state === 'incident' && schemaUnavailable.state === 'watch' && watch.state === 'watch' && telegramIncident.state === 'incident' && authIncident.state === 'incident',
     healthy: healthy.state,
     drift: drift.state,
+    schemaUnavailable: schemaUnavailable.state,
     watch: watch.state,
     telegramIncident: telegramIncident.state,
     authIncident: authIncident.state,
@@ -15337,6 +15342,7 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
   const health = productionMonitorState({
     supabaseOk: supabase.ok,
     schemaOk: schemaDrift.ok,
+    schemaStatus: schemaDrift.failureMode || schemaDrift.status,
     supabaseAuthFailures,
     releaseState: releaseHealth.state,
     providerHealth: provider.health,
@@ -15372,12 +15378,17 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     },
     schema: {
       ok: Boolean(schemaDrift.ok),
+      status: String(schemaDrift.failureMode || schemaDrift.status || (schemaDrift.ok ? 'ok' : 'unavailable')),
       checked: Number(schemaDrift.checked || 0),
       missing: Array.isArray(schemaDrift.missing) ? schemaDrift.missing : [],
+      unavailable: Array.isArray(schemaDrift.unavailable) ? schemaDrift.unavailable : [],
+      failed: Array.isArray(schemaDrift.failed) ? schemaDrift.failed : [],
       attempts: Number(schemaDrift.attempts || 1),
       recovered: Boolean(schemaDrift.recovered),
       confirmedFailure: Boolean(schemaDrift.confirmedFailure),
       initialMissing: Array.isArray(schemaDrift.initialMissing) ? schemaDrift.initialMissing : [],
+      initialUnavailable: Array.isArray(schemaDrift.initialUnavailable) ? schemaDrift.initialUnavailable : [],
+      initialFailureMode: String(schemaDrift.initialFailureMode || ''),
     },
     release: {
       state: releaseHealth.state,
@@ -15416,8 +15427,12 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
       endpoint:'cron:production-monitor',
       meta:{
         attempts:Number(schemaDrift.attempts || 2),
+        initialFailureMode:String(schemaDrift.initialFailureMode || ''),
+        finalFailureMode:String(schemaDrift.failureMode || schemaDrift.status || ''),
         initialMissing:Array.isArray(schemaDrift.initialMissing) ? schemaDrift.initialMissing : [],
+        initialUnavailable:Array.isArray(schemaDrift.initialUnavailable) ? schemaDrift.initialUnavailable : [],
         finalMissing:Array.isArray(schemaDrift.missing) ? schemaDrift.missing : [],
+        finalUnavailable:Array.isArray(schemaDrift.unavailable) ? schemaDrift.unavailable : [],
       },
     }).catch(()=>{});
   }
@@ -15463,10 +15478,14 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
         supabaseProbeRecovered: Boolean(supabase.recovered),
         supabaseProbeConfirmedFailure: Boolean(supabase.confirmedFailure),
         schemaOk: Boolean(schemaDrift.ok),
+        schemaFailureMode: String(schemaDrift.failureMode || schemaDrift.status || ''),
         schemaProbeAttempts: Number(schemaDrift.attempts || 1),
         schemaProbeRecovered: Boolean(schemaDrift.recovered),
         schemaProbeConfirmedFailure: Boolean(schemaDrift.confirmedFailure),
         schemaInitialMissing: Array.isArray(schemaDrift.initialMissing) ? schemaDrift.initialMissing : [],
+        schemaInitialUnavailable: Array.isArray(schemaDrift.initialUnavailable) ? schemaDrift.initialUnavailable : [],
+        schemaMissing: Array.isArray(schemaDrift.missing) ? schemaDrift.missing : [],
+        schemaUnavailable: Array.isArray(schemaDrift.unavailable) ? schemaDrift.unavailable : [],
         supabaseAuthFailuresCurrentRelease: supabaseAuthFailures,
         releaseState: releaseHealth.state,
         releaseScore: Number(releaseHealth.score || 0),
@@ -15641,6 +15660,67 @@ async function readPersonalWriteGuardContract(cfg) {
   }
 }
 
+function schemaProbeStatusKind(status = '') {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (!normalized || normalized === 'ok') return 'ok';
+
+  const driftStatuses = new Set([
+    'fingerprint_mismatch',
+    'contract_mismatch',
+    'http_400',
+    'http_404',
+    'pgrst202',
+    '42883',
+    '42703',
+    '42p01',
+  ]);
+  if (driftStatuses.has(normalized)) return 'drift';
+
+  if (
+    normalized === 'not_configured'
+    || normalized === 'network_error'
+    || normalized === 'error'
+    || normalized === 'timeout'
+    || normalized === 'aborterror'
+    || ['http_401','http_403','http_408','http_425','http_429'].includes(normalized)
+    || /^http_5\d\d$/.test(normalized)
+    || /timeout|network|temporar|unavailable|fetch|abort/.test(normalized)
+  ) return 'unavailable';
+
+  // Unknown probe failures must fail the release gate, but should not be
+  // misreported as proven schema loss in production monitoring.
+  return 'unavailable';
+}
+
+function classifySupabaseSchemaProbeFailures(checks = [], fingerprint = {}, personalWriteGuards = {}) {
+  const failures = [];
+  for (const item of checks || []) {
+    if (!item?.ok) failures.push({ id: String(item?.id || 'schema_check'), status: String(item?.status || 'error') });
+  }
+  if (!fingerprint?.ok) failures.push({ id: 'schema_fingerprint', status: String(fingerprint?.status || 'error') });
+  if (!personalWriteGuards?.ok) failures.push({ id: 'personal_write_guards', status: String(personalWriteGuards?.status || 'error') });
+
+  const drift = [];
+  const unavailable = [];
+  for (const failure of failures) {
+    if (schemaProbeStatusKind(failure.status) === 'drift') drift.push(failure.id);
+    else unavailable.push(failure.id);
+  }
+
+  const uniqueDrift = [...new Set(drift)];
+  const uniqueUnavailable = [...new Set(unavailable)];
+  const failed = [...new Set(failures.map(item => item.id))];
+  const failureMode = uniqueDrift.length && uniqueUnavailable.length
+    ? 'mixed'
+    : uniqueDrift.length
+      ? 'drift'
+      : uniqueUnavailable.length
+        ? 'unavailable'
+        : 'ok';
+
+  return { failureMode, drift: uniqueDrift, unavailable: uniqueUnavailable, failed };
+}
+
 async function probeSupabaseSchemaDrift(cfg) {
   const specs = [
     { id: 'users_acquisition', table: 'users', columns: ['telegram_id','acquisition_source','acquisition_campaign','acquisition_content'] },
@@ -15661,15 +15741,16 @@ async function probeSupabaseSchemaDrift(cfg) {
     readPersonalWriteGuardContract(cfg),
   ]);
   const summary=summarizeSupabaseSchemaChecks(checks);
-  const missing=[...(summary.missing || [])];
-  if (!fingerprint.ok) missing.push('schema_fingerprint');
-  if (!personalWriteGuards.ok) missing.push('personal_write_guards');
+  const classification=classifySupabaseSchemaProbeFailures(checks,fingerprint,personalWriteGuards);
   const ok = Boolean(summary.ok && fingerprint.ok && personalWriteGuards.ok);
   return {
     ...summary,
     ok,
-    status:ok ? 'ok' : 'drift',
-    missing:[...new Set(missing)],
+    status:ok ? 'ok' : classification.failureMode,
+    failureMode:ok ? 'ok' : classification.failureMode,
+    missing:classification.drift,
+    unavailable:classification.unavailable,
+    failed:classification.failed,
     fingerprint,
     personalWriteGuards,
   };
@@ -15679,6 +15760,8 @@ async function probeSupabaseSchemaDrift(cfg) {
 function combineSupabaseSchemaProbeAttempts(first = {}, second = null) {
   const firstOk = Boolean(first?.ok);
   const initialMissing = Array.isArray(first?.missing) ? first.missing.map(String) : [];
+  const initialUnavailable = Array.isArray(first?.unavailable) ? first.unavailable.map(String) : [];
+  const initialFailureMode = String(first?.failureMode || first?.status || (firstOk ? 'ok' : 'unavailable'));
   if (firstOk) {
     return {
       ...first,
@@ -15686,6 +15769,8 @@ function combineSupabaseSchemaProbeAttempts(first = {}, second = null) {
       recovered: false,
       confirmedFailure: false,
       initialMissing,
+      initialUnavailable,
+      initialFailureMode,
     };
   }
 
@@ -15696,6 +15781,8 @@ function combineSupabaseSchemaProbeAttempts(first = {}, second = null) {
       recovered: true,
       confirmedFailure: false,
       initialMissing,
+      initialUnavailable,
+      initialFailureMode,
     };
   }
 
@@ -15706,6 +15793,8 @@ function combineSupabaseSchemaProbeAttempts(first = {}, second = null) {
     recovered: false,
     confirmedFailure: true,
     initialMissing,
+    initialUnavailable,
+    initialFailureMode,
   };
 }
 
@@ -15732,16 +15821,22 @@ function supabaseSchemaProbeConfirmationSelfTest() {
     { ok: true, status: 'ok', checked: 7, missing: [] }
   );
   const confirmed = combineSupabaseSchemaProbeAttempts(
-    { ok: false, status: 'drift', checked: 7, missing: ['growth_events'] },
-    { ok: false, status: 'drift', checked: 7, missing: ['growth_events'] }
+    { ok: false, status: 'drift', failureMode: 'drift', checked: 7, missing: ['growth_events'], unavailable: [] },
+    { ok: false, status: 'drift', failureMode: 'drift', checked: 7, missing: ['growth_events'], unavailable: [] }
+  );
+  const unavailable = combineSupabaseSchemaProbeAttempts(
+    { ok: false, status: 'unavailable', failureMode: 'unavailable', checked: 7, missing: [], unavailable: ['growth_events'] },
+    { ok: false, status: 'unavailable', failureMode: 'unavailable', checked: 7, missing: [], unavailable: ['growth_events'] }
   );
   return {
     pass: direct.ok && direct.attempts === 1
       && recovered.ok && recovered.attempts === 2 && recovered.recovered && !recovered.confirmedFailure
-      && !confirmed.ok && confirmed.attempts === 2 && confirmed.confirmedFailure,
+      && !confirmed.ok && confirmed.attempts === 2 && confirmed.confirmedFailure && confirmed.failureMode === 'drift'
+      && !unavailable.ok && unavailable.confirmedFailure && unavailable.failureMode === 'unavailable',
     direct: direct.ok,
     recovered: recovered.recovered,
     confirmedFailure: confirmed.confirmedFailure,
+    unavailableFailure: unavailable.failureMode,
   };
 }
 
@@ -15825,7 +15920,11 @@ async function apiReleaseReadiness(request, cfg) {
     releaseCheck('supabase_schema_drift', 'Контракт актуальной схемы Supabase', schemaDrift.ok ? 'pass' : 'fail',
       schemaDrift.ok
         ? `Проверено ${schemaDrift.checked} обязательных участков схемы v6.17; drift не обнаружен · attempts=${Number(schemaDrift.attempts || 1)}${schemaDrift.recovered ? ' · transient recovered' : ''}.`
-        : `Schema drift: отсутствуют или несовместимы ${schemaDrift.missing.join(', ') || 'обязательные объекты'}; подтверждено после ${Number(schemaDrift.attempts || 1)} probe.`, true),
+        : schemaDrift.failureMode === 'unavailable'
+          ? `Schema probe недоступен после ${Number(schemaDrift.attempts || 1)} попыток: ${(schemaDrift.unavailable || []).join(', ') || 'обязательные проверки'}. Release остаётся fail-closed, но потеря схемы не утверждается.`
+          : schemaDrift.failureMode === 'mixed'
+            ? `Schema probe частично недоступен, при этом подтверждён drift: ${(schemaDrift.missing || []).join(', ') || 'обязательные объекты'}; недоступны ${(schemaDrift.unavailable || []).join(', ') || 'другие проверки'}.`
+            : `Schema drift: отсутствуют или несовместимы ${schemaDrift.missing.join(', ') || 'обязательные объекты'}; подтверждено после ${Number(schemaDrift.attempts || 1)} probe.`, true),
     releaseCheck('supabase_schema_drift_selftest', 'Самопроверка Schema Drift Guard', schemaDriftSelfTest.pass ? 'pass' : 'fail',
       schemaDriftSelfTest.pass ? 'Drift корректно переводит release gate в блокирующее состояние.' : 'Самопроверка Schema Drift Guard не прошла.', true),
     releaseCheck('provider_data_reliability_selftest', 'Самопроверка надёжности API-Football', providerReliabilitySelfTest.pass ? 'pass' : 'fail',
@@ -22659,13 +22758,17 @@ export default {
     if (ctx?.waitUntil) cfg.waitUntil = promise => ctx.waitUntil(Promise.resolve(promise));
     const scheduledAt = new Date(Number(controller?.scheduledTime || Date.now()));
     const backtestTask = settleBacktestDaily(cfg);
+    const remindersTask = processDueReminders(cfg);
     const tasks = [
-      ['reminders', processDueReminders(cfg)],
+      ['reminders', remindersTask],
       ['backtest', backtestTask],
       ['post_match_return', backtestTask.then(() => processPostMatchReturns(cfg))],
     ];
     if (scheduledAt.getUTCMinutes() % 15 === 0) {
-      tasks.push(['production_monitor', runProductionMonitor(cfg, scheduledAt)]);
+      // Avoid a burst of Supabase reads at the same instant: the deep schema
+      // monitor starts only after the latency-sensitive reminder read settles.
+      const monitorAfterReminders = remindersTask.catch(()=>null).then(() => runProductionMonitor(cfg, scheduledAt));
+      tasks.push(['production_monitor', monitorAfterReminders]);
     }
     if (scheduledAt.getUTCHours() === 7 && scheduledAt.getUTCMinutes() < 10) {
       tasks.push(['daily_digest', processDailyDigests(cfg, scheduledAt)]);
