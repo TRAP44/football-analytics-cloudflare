@@ -39,7 +39,7 @@ function normalizeWindow(row = {}) {
 }
 
 function transitionKind(previousState, state) {
-  if (!previousState && ['watch','incident'].includes(state)) return 'opened';
+  if ((!previousState || previousState === 'healthy') && ['watch','incident'].includes(state)) return 'opened';
   if (['watch','incident'].includes(previousState) && state === 'healthy') return 'recovered';
   if (previousState === 'watch' && state === 'incident') return 'escalated';
   if (previousState === 'incident' && state === 'watch') return 'deescalated';
