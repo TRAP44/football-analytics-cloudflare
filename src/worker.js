@@ -1151,7 +1151,6 @@ function bumpTelemetry(key, amount = 1) {
 
 const {
   observeProviderRequest,
-  currentWindow: currentProviderObservabilityWindow,
   rotateWindow: rotateProviderObservabilityWindow,
   restoreWindow: restoreProviderObservabilityWindow,
   summarizeWindows: summarizeProviderObservabilityWindows,
@@ -13595,12 +13594,13 @@ async function collectDiagnostics(cfg) {
   if (supabase.configured && !supabase.ok) overall = { state: 'critical', label: 'Нужна проверка Supabase' };
   else if (supabase.recovered) overall = { state:'warning', label:'Supabase ответил после подтверждающего probe' };
   else if (provider.health === 'critical') overall = { state: 'critical', label: 'API-Football временно ограничен' };
+  else if (providerObservability?.overall?.state === 'incident') overall = { state:'warning', label:'Provider SLO нарушен' };
   else if (!ops.migrationReady && hasSupabase(cfg)) overall = { state: 'warning', label: 'Проверьте актуальную схему Supabase' };
   else if (!integrity.migrationReady && hasSupabase(cfg)) overall = { state: 'warning', label: 'Проверьте актуальную схему Supabase' };
   else if (!telegramWebhook.available && hasSupabase(cfg)) overall = { state:'warning', label:'Нужна миграция наблюдаемости Telegram webhook' };
   else if (telegramWebhook.state === 'incident') overall = { state:'warning', label:'Persistent Telegram dedupe требует проверки' };
   else if (integrity.lastRun?.health === 'critical') overall = { state: 'warning', label: 'Есть проблемы качества футбольных данных' };
-  else if (telegramWebhook.state === 'watch' || provider.health === 'warning' || integrity.lastRun?.health === 'warning' || Number(memory.telemetry?.routeErrors || 0) > 0 || Number(memory.telemetry?.cacheWriteErrors || 0) > 0) overall = { state: 'warning', label: 'Есть предупреждения' };
+  else if (telegramWebhook.state === 'watch' || provider.health === 'warning' || providerObservability?.overall?.state === 'watch' || integrity.lastRun?.health === 'warning' || Number(memory.telemetry?.routeErrors || 0) > 0 || Number(memory.telemetry?.cacheWriteErrors || 0) > 0) overall = { state: 'warning', label: 'Есть предупреждения' };
   else if (provider.health === 'waiting') overall = { state: 'waiting', label: 'Ожидаем первый запрос к источнику данных' };
   else overall = { state: 'ok', label: 'Системы работают штатно' };
 
@@ -13610,6 +13610,8 @@ async function collectDiagnostics(cfg) {
   if (!telegramWebhook.available && hasSupabase(cfg)) recommendations.push('Примените supabase_migration_v6_17.sql: она добавляет read-only health RPC для persistent Telegram dedupe.');
   if (Number(telegramWebhook.staleProcessing || 0) > 0 || Number(telegramWebhook.failedCurrent || 0) > 0) recommendations.push(`Проверьте Telegram webhook claims: stale=${Number(telegramWebhook.staleProcessing || 0)}, failed=${Number(telegramWebhook.failedCurrent || 0)}.`);
   if (provider.cooldownActive) recommendations.push(`API-Football находится на паузе ещё примерно ${footballCooldownRemaining()} сек.; приложение должно использовать последние сохранённые данные.`);
+  if (providerObservability?.overall?.state === 'incident') recommendations.push('Provider SLO за 24 часа нарушен: проверьте success rate, timeout/rate-limit долю и задержку по источникам.');
+  else if (providerObservability?.overall?.state === 'watch') recommendations.push('Provider SLO за 24 часа вышел из целевого диапазона; наблюдайте provider/operation breakdown перед расширением нагрузки.');
   if (supabase.configured && !supabase.ok) recommendations.push('Проверьте адрес Supabase, сервисный ключ и доступность интерфейса базы данных.');
   if (supabase.recovered) recommendations.push(`Первый Supabase probe не прошёл (${supabase.initialStatus || 'unknown'}), подтверждающий запрос успешно восстановился. Наблюдайте частоту transient recoveries.`);
   if (Number(provider.dailyUsedPct) >= 90) recommendations.push('Дневная квота API-Football использована более чем на 90%; до сброса лимита работаем в экономном режиме.');
@@ -15140,7 +15142,7 @@ async function providerSloReport(cfg, hours = 24) {
 function providerSloSelfTest() {
   const synthetic = summarizeProviderObservabilityWindows([
     { metadata:{ windowStartedAt:'2026-09-28T00:00:00.000Z', windowEndedAt:'2026-09-28T00:15:00.000Z', series:[
-      { provider:'api-football', operation:'/fixtures', attempts:12, requests:10, successes:10, failures:0, retries:2, timeouts:2, networkErrors:0, rateLimits:0, httpErrors:0, invalidResponses:0, latencySumMs:1200, latencySamples:12, maxLatencyMs:200 },
+      { provider:'api-football', operation:'/fixtures', attempts:12, requests:10, successes:10, failures:0, retries:2, timeouts:0, networkErrors:0, rateLimits:0, httpErrors:0, invalidResponses:0, latencySumMs:1200, latencySamples:12, maxLatencyMs:200 },
     ] } },
   ], { hours:24, includeCurrent:false });
   const collecting = summarizeProviderObservabilityWindows([
