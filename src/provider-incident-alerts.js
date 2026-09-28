@@ -3,7 +3,7 @@ export const PROVIDER_INCIDENT_ALERT_POLICY = Object.freeze({
   reminderAfterMinutes:360,
   reminderLimit:2,
   maxDeferredAttempts:3,
-  immediateRetryAttempts:2,
+  claimLeaseSeconds:120,
 });
 
 function finite(value, fallback = 0) {
@@ -16,89 +16,149 @@ function asIso(value) {
   return Number.isFinite(ms) ? new Date(ms).toISOString() : '';
 }
 
-function eventMeta(row = {}) {
-  if (row?.metadata && typeof row.metadata === 'object') return row.metadata;
-  if (row?.meta && typeof row.meta === 'object') return row.meta;
-  return {};
+function ledgerStatus(row = {}) {
+  return String(row?.status || '').trim().toLowerCase();
 }
 
-function relevantEvents(rows = [], incidentId = '') {
-  return (rows || [])
-    .filter(row => row?.source === 'provider_alert' && String(eventMeta(row).incidentId || '') === String(incidentId || ''))
-    .sort((a,b) => Date.parse(a?.created_at || 0) - Date.parse(b?.created_at || 0));
+function normalizeDestinations(destinations = [], adminCount = 0) {
+  if (Array.isArray(destinations) && destinations.length) {
+    return destinations
+      .map((item, index) => ({
+        slot:Number.isInteger(Number(item?.slot)) ? Number(item.slot) : index,
+        destinationKey:String(item?.destinationKey || item?.destination_key || '').trim(),
+      }))
+      .filter(item => item.slot >= 0 && item.destinationKey);
+  }
+  return Array.from({ length:Math.max(0, Number(adminCount || 0)) }, (_, slot) => ({
+    slot,
+    destinationKey:'slot:' + slot,
+  }));
 }
 
-function deliveryState(rows = [], deliveryKey = '', adminCount = 0, nowMs = Date.now()) {
-  const events = (rows || []).filter(row => String(eventMeta(row).deliveryKey || '') === deliveryKey);
-  const delivered = new Set();
-  const failureCount = new Map();
-  let lastAt = 0;
+export async function providerIncidentDestinationKey(chatId, botIdentity = 'primary') {
+  const id = Number(chatId);
+  if (!Number.isSafeInteger(id) || id <= 0) return '';
+  const input = new TextEncoder().encode(String(botIdentity || 'primary') + '|' + id);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', input));
+  return Array.from(digest).map(value => value.toString(16).padStart(2,'0')).join('').slice(0,40);
+}
 
-  for (const row of events) {
-    const meta = eventMeta(row);
-    for (const slot of Array.isArray(meta.deliveredSlots) ? meta.deliveredSlots : []) {
-      if (Number.isInteger(Number(slot))) delivered.add(Number(slot));
-    }
-    for (const slot of Array.isArray(meta.failedSlots) ? meta.failedSlots : []) {
-      const n = Number(slot);
-      if (Number.isInteger(n)) failureCount.set(n, finite(failureCount.get(n)) + 1);
-    }
-    const at = Date.parse(row?.created_at || '');
-    if (Number.isFinite(at)) lastAt = Math.max(lastAt, at);
+function relevantLedgerRows(rows = [], incidentId = '') {
+  return (rows || []).filter(row => String(row?.incident_id || row?.incidentId || '') === String(incidentId || ''));
+}
+
+function deliveryState(rows = [], alertKey = '', destinations = [], nowMs = Date.now()) {
+  const matching = (rows || []).filter(row => String(row?.alert_key || row?.alertKey || '') === String(alertKey || ''));
+  const byDestination = new Map();
+  for (const row of matching) {
+    const key = String(row?.destination_key || row?.destinationKey || '');
+    if (key) byDestination.set(key,row);
   }
 
+  const deliveredSlots = [];
   const pending = [];
-  for (let slot = 0; slot < adminCount; slot += 1) {
-    if (delivered.has(slot)) continue;
-    if (finite(failureCount.get(slot)) >= PROVIDER_INCIDENT_ALERT_POLICY.maxDeferredAttempts) continue;
-    pending.push(slot);
+  const blocked = [];
+  const terminal = [];
+  const unknown = [];
+  const sending = [];
+  let maxAttempts = 0;
+
+  for (const destination of destinations) {
+    const row = byDestination.get(destination.destinationKey) || null;
+    if (!row) {
+      pending.push(destination);
+      continue;
+    }
+    const status = ledgerStatus(row);
+    const attempts = Math.max(0, finite(row?.attempts));
+    maxAttempts = Math.max(maxAttempts, attempts);
+    if (status === 'sent') {
+      deliveredSlots.push(destination.slot);
+      continue;
+    }
+    if (status === 'retry_pending') {
+      const retryAt = Date.parse(String(row?.retry_at || row?.retryAt || ''));
+      if (attempts < PROVIDER_INCIDENT_ALERT_POLICY.maxDeferredAttempts && (!Number.isFinite(retryAt) || retryAt <= nowMs)) {
+        pending.push(destination);
+      } else if (attempts >= PROVIDER_INCIDENT_ALERT_POLICY.maxDeferredAttempts) {
+        terminal.push(destination.slot);
+      } else {
+        blocked.push(destination.slot);
+      }
+      continue;
+    }
+    if (status === 'terminal_failed') {
+      terminal.push(destination.slot);
+      continue;
+    }
+    if (status === 'unknown') {
+      unknown.push(destination.slot);
+      continue;
+    }
+    if (status === 'sending' || status === 'claimed') {
+      sending.push(destination.slot);
+      continue;
+    }
+    blocked.push(destination.slot);
   }
-  const retryCooldownMs = PROVIDER_INCIDENT_ALERT_POLICY.retryCooldownMinutes * 60_000;
+
+  const completed = destinations.length > 0 && deliveredSlots.length === destinations.length;
+  const exhausted = destinations.length > 0
+    && !completed
+    && pending.length === 0
+    && blocked.length === 0
+    && sending.length === 0;
   return {
-    events,
-    deliveredSlots:[...delivered].sort((a,b) => a-b),
-    pendingSlots:pending,
-    lastAt,
-    cooldownActive:Boolean(events.length && lastAt && Number(nowMs) - lastAt < retryCooldownMs),
-    completed:adminCount > 0 && delivered.size >= adminCount,
-    exhausted:adminCount > 0 && delivered.size < adminCount && pending.length === 0,
-    nextAttempt:Number(events.length || 0) + 1,
+    rows:matching,
+    deliveredSlots:deliveredSlots.sort((a,b) => a-b),
+    pending,
+    blockedSlots:blocked,
+    terminalSlots:terminal,
+    unknownSlots:unknown,
+    sendingSlots:sending,
+    completed,
+    exhausted,
+    waiting:Boolean(blocked.length || sending.length),
+    nextAttempt:maxAttempts + 1,
   };
 }
 
-function planForKey({ rows, incident, kind, deliveryKey, adminCount, nowMs, reminderIndex = null }) {
-  const state = deliveryState(rows, deliveryKey, adminCount, nowMs);
+function planForKey({ rows, incident, kind, alertKey, destinations, nowMs, reminderIndex = null }) {
+  const state = deliveryState(rows, alertKey, destinations, nowMs);
   if (state.completed) return { action:'none', reason:'already_delivered' };
+  if (state.waiting) return { action:'none', reason:'delivery_waiting' };
   if (state.exhausted) return { action:'none', reason:'delivery_exhausted' };
-  if (state.cooldownActive) return { action:'none', reason:'delivery_cooldown' };
-  if (!state.pendingSlots.length) return { action:'none', reason:'no_pending_recipients' };
+  if (!state.pending.length) return { action:'none', reason:'no_pending_recipients' };
 
   return {
     action:'send',
     kind,
-    deliveryKey,
+    alertKey,
+    deliveryKey:alertKey,
     incidentId:incident.incidentId,
     incident,
     severity:incident.severity || (kind === 'recovery' ? 'info' : 'incident'),
-    targetSlots:state.pendingSlots,
+    targetDeliveries:state.pending,
+    targetSlots:state.pending.map(item => item.slot),
     attempt:state.nextAttempt,
     reminderIndex,
   };
 }
 
-export function planProviderIncidentAlert(report = {}, priorRows = [], { nowMs = Date.now(), adminCount = 0 } = {}) {
-  if (adminCount <= 0) return { action:'none', reason:'no_admin_recipients' };
+export function planProviderIncidentAlert(report = {}, ledgerRows = [], { nowMs = Date.now(), adminCount = 0, destinations = [] } = {}) {
+  const normalizedDestinations = normalizeDestinations(destinations, adminCount);
+  if (!normalizedDestinations.length) return { action:'none', reason:'no_admin_recipients' };
 
   const active = report?.activeIncident || null;
   if (active?.active) {
     if (active.state !== 'incident' && active.highestState !== 'incident') {
       return { action:'none', reason:'watch_not_alertable' };
     }
-    const rows = relevantEvents(priorRows, active.incidentId);
+    const rows = relevantLedgerRows(ledgerRows, active.incidentId);
     const openKey = active.incidentId + ':incident';
-    const openState = deliveryState(rows, openKey, adminCount, nowMs);
+    const openState = deliveryState(rows, openKey, normalizedDestinations, nowMs);
     if (!openState.completed) {
-      return planForKey({ rows, incident:active, kind:'incident', deliveryKey:openKey, adminCount, nowMs });
+      return planForKey({ rows, incident:active, kind:'incident', alertKey:openKey, destinations:normalizedDestinations, nowMs });
     }
 
     if (active.severity === 'critical') {
@@ -107,11 +167,11 @@ export function planProviderIncidentAlert(report = {}, priorRows = [], { nowMs =
         rows,
         incident:active,
         kind:'escalation',
-        deliveryKey:escalationKey,
-        adminCount,
+        alertKey:escalationKey,
+        destinations:normalizedDestinations,
         nowMs,
       });
-      if (escalation.action === 'send') return escalation;
+      if (escalation.action === 'send' || !['already_delivered','delivery_exhausted'].includes(escalation.reason)) return escalation;
     }
 
     const duration = finite(active.durationMinutes);
@@ -122,12 +182,12 @@ export function planProviderIncidentAlert(report = {}, priorRows = [], { nowMs =
         rows,
         incident:active,
         kind:'reminder',
-        deliveryKey:reminderKey,
-        adminCount,
+        alertKey:reminderKey,
+        destinations:normalizedDestinations,
         nowMs,
         reminderIndex:index,
       });
-      if (reminder.action === 'send') return reminder;
+      if (reminder.action === 'send' || !['already_delivered','delivery_exhausted'].includes(reminder.reason)) return reminder;
     }
     return { action:'none', reason:'incident_alert_deduplicated' };
   }
@@ -137,8 +197,8 @@ export function planProviderIncidentAlert(report = {}, priorRows = [], { nowMs =
     : null;
   if (!recovered) return { action:'none', reason:'no_incident' };
 
-  const rows = relevantEvents(priorRows, recovered.incidentId);
-  const hadIncidentAttempt = rows.some(row => ['incident','escalation','reminder'].includes(String(eventMeta(row).alertKind || '')));
+  const rows = relevantLedgerRows(ledgerRows, recovered.incidentId);
+  const hadIncidentAttempt = rows.some(row => ['incident','escalation','reminder'].includes(String(row?.transition || row?.alert_kind || row?.alertKind || '')));
   if (!hadIncidentAttempt) return { action:'none', reason:'recovery_without_prior_incident_alert' };
 
   const recoveryKey = recovered.incidentId + ':recovery';
@@ -146,8 +206,8 @@ export function planProviderIncidentAlert(report = {}, priorRows = [], { nowMs =
     rows,
     incident:recovered,
     kind:'recovery',
-    deliveryKey:recoveryKey,
-    adminCount,
+    alertKey:recoveryKey,
+    destinations:normalizedDestinations,
     nowMs,
   });
 }
@@ -209,102 +269,262 @@ export function formatProviderIncidentAlert(plan = {}) {
   return lines.join('\n');
 }
 
-function retryableTelegramResult(result = {}) {
+export function classifyProviderIncidentTelegramResult(result = {}, nowMs = Date.now()) {
+  if (result?.ok) return { state:'sent', retryAt:null, retryable:false, reason:'' };
   const status = Number(result?.status || 0);
-  return !result?.ok && (status === 0 || status === 429 || status >= 500);
+  const outcome = String(result?.outcome || '').toLowerCase();
+  const errorCode = String(result?.errorCode || result?.code || '');
+  const description = String(result?.description || 'telegram_delivery_failed').slice(0,160);
+
+  if (outcome === 'unknown' || (status === 0 && outcome !== 'not_started' && errorCode !== 'TELEGRAM_CONFIG')) {
+    return { state:'unknown', retryAt:null, retryable:false, reason:description };
+  }
+
+  if (status === 429) {
+    const retryAfter = Math.max(1, finite(result?.retryAfter, 1));
+    return {
+      state:'retry_pending',
+      retryAt:new Date(Number(nowMs) + retryAfter * 1000).toISOString(),
+      retryable:true,
+      reason:description,
+    };
+  }
+
+  if (status === 408 || status === 425 || status >= 500) {
+    return {
+      state:'retry_pending',
+      retryAt:new Date(Number(nowMs) + PROVIDER_INCIDENT_ALERT_POLICY.retryCooldownMinutes * 60_000).toISOString(),
+      retryable:true,
+      reason:description,
+    };
+  }
+
+  return { state:'terminal_failed', retryAt:null, retryable:false, reason:description };
+}
+
+async function processTarget({ plan, target, adminTelegramIds, claimDelivery, finalizeDelivery, sendMessage, nowMs, text }) {
+  const slot = Number(target?.slot);
+  const destinationKey = String(target?.destinationKey || '');
+  const chatId = adminTelegramIds[slot];
+  if (!Number.isSafeInteger(Number(chatId)) || Number(chatId) <= 0 || !destinationKey) {
+    return { slot, state:'terminal_failed', claimAcquired:false, reason:'invalid_admin_slot', attempts:0 };
+  }
+
+  let claim;
+  try {
+    claim = await claimDelivery({
+      incidentId:plan.incidentId,
+      transition:plan.kind,
+      alertKey:plan.alertKey || plan.deliveryKey,
+      destinationKey,
+      destinationSlot:slot,
+      maxAttempts:PROVIDER_INCIDENT_ALERT_POLICY.maxDeferredAttempts,
+      leaseSeconds:PROVIDER_INCIDENT_ALERT_POLICY.claimLeaseSeconds,
+    });
+  } catch (error) {
+    return {
+      slot,
+      state:'persistence_failure',
+      claimAcquired:false,
+      reason:String(error?.message || 'alert_claim_failed').slice(0,160),
+      attempts:0,
+    };
+  }
+
+  if (!claim?.acquired) {
+    const claimStatus = String(claim?.status || '').toLowerCase();
+    const state = ['invalid','missing'].includes(claimStatus)
+      ? 'persistence_failure'
+      : claimStatus === 'unknown'
+        ? 'unknown'
+        : 'duplicate';
+    return {
+      slot,
+      state,
+      ledgerState:claimStatus || 'suppressed',
+      retryAt:claim?.retryAt || claim?.retry_at || null,
+      claimAcquired:false,
+      reason:String(claim?.reason || 'claim_not_acquired'),
+      attempts:Math.max(0, finite(claim?.attempts)),
+    };
+  }
+
+  let result;
+  try {
+    result = await sendMessage(Number(chatId), text);
+  } catch (error) {
+    result = {
+      ok:false,
+      status:0,
+      outcome:'unknown',
+      description:String(error?.message || 'Telegram delivery outcome unknown').slice(0,160),
+    };
+  }
+  const classified = classifyProviderIncidentTelegramResult(result, nowMs);
+  const finalPayload = {
+    incidentId:plan.incidentId,
+    transition:plan.kind,
+    alertKey:plan.alertKey || plan.deliveryKey,
+    destinationKey,
+    status:classified.state,
+    retryAt:classified.retryAt,
+    httpStatus:Number(result?.status || 0) || null,
+    errorCode:String(result?.errorCode || result?.code || '').slice(0,80) || null,
+    errorMessage:classified.reason || null,
+  };
+
+  try {
+    await finalizeDelivery(finalPayload);
+  } catch (error) {
+    return {
+      slot,
+      state:'persistence_failure',
+      deliveryState:classified.state,
+      claimAcquired:true,
+      reason:String(error?.message || 'alert_finalize_failed').slice(0,160),
+      retryAt:classified.retryAt,
+      attempts:Math.max(1, finite(claim?.attempts,1)),
+    };
+  }
+
+  return {
+    slot,
+    state:classified.state,
+    claimAcquired:true,
+    reason:classified.reason,
+    retryAt:classified.retryAt,
+    httpStatus:Number(result?.status || 0),
+    attempts:Math.max(1, finite(claim?.attempts,1)),
+  };
 }
 
 export async function deliverProviderIncidentAlert({
   plan,
   adminTelegramIds = [],
+  claimDelivery,
+  finalizeDelivery,
   sendMessage,
-  sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
+  nowMs = Date.now(),
 } = {}) {
-  if (!plan || plan.action !== 'send') return { ok:true, skipped:true, deliveredSlots:[], failedSlots:[] };
+  if (!plan || plan.action !== 'send') return { ok:true, skipped:true, outcomes:[], deliveredSlots:[], failedSlots:[] };
   if (typeof sendMessage !== 'function') throw new Error('sendMessage is required');
-
-  const text = formatProviderIncidentAlert(plan);
-  const deliveredSlots = [];
-  const failedSlots = [];
-  const failures = [];
-
-  for (const slot of plan.targetSlots || []) {
-    const chatId = adminTelegramIds[slot];
-    if (!Number.isSafeInteger(Number(chatId)) || Number(chatId) <= 0) {
-      failedSlots.push(slot);
-      failures.push({ slot, status:0, retryable:false, reason:'invalid_admin_slot' });
-      continue;
-    }
-
-    let result = null;
-    for (let attempt = 1; attempt <= PROVIDER_INCIDENT_ALERT_POLICY.immediateRetryAttempts; attempt += 1) {
-      try {
-        result = await sendMessage(Number(chatId), text);
-      } catch (error) {
-        result = { ok:false, status:0, description:String(error?.message || 'Telegram delivery failed') };
-      }
-      if (result?.ok) break;
-      if (!retryableTelegramResult(result) || attempt >= PROVIDER_INCIDENT_ALERT_POLICY.immediateRetryAttempts) break;
-      if (Number(result?.status || 0) === 429 && Number(result?.retryAfter || 0) > 2) break;
-      // The immediate retry budget allows two seconds; never shorten an
-      // accepted Telegram retry_after below that server-requested delay.
-      const delayMs = Number(result?.retryAfter || 0) > 0
-        ? Math.min(2000, Math.max(250, Number(result.retryAfter) * 1000))
-        : 300;
-      await sleep(delayMs);
-    }
-
-    if (result?.ok) {
-      deliveredSlots.push(slot);
-    } else {
-      failedSlots.push(slot);
-      failures.push({
-        slot,
-        status:Number(result?.status || 0),
-        retryable:retryableTelegramResult(result),
-        reason:String(result?.description || 'telegram_delivery_failed').slice(0,160),
-      });
-    }
+  if (typeof claimDelivery !== 'function' || typeof finalizeDelivery !== 'function') {
+    return {
+      ok:false,
+      failClosed:true,
+      outcomes:(plan.targetDeliveries || []).map(target => ({
+        slot:Number(target?.slot),
+        state:'persistence_failure',
+        claimAcquired:false,
+        reason:'persistent_delivery_ledger_unavailable',
+      })),
+      deliveredSlots:[],
+      failedSlots:(plan.targetDeliveries || []).map(target => Number(target?.slot)),
+      recipientCount:(plan.targetDeliveries || []).length,
+    };
   }
 
+  const text = formatProviderIncidentAlert(plan);
+  const targets = Array.isArray(plan.targetDeliveries) ? plan.targetDeliveries : [];
+  const settled = await Promise.allSettled(targets.map(target => processTarget({
+    plan,
+    target,
+    adminTelegramIds,
+    claimDelivery,
+    finalizeDelivery,
+    sendMessage,
+    nowMs,
+    text,
+  })));
+
+  const outcomes = settled.map((item,index) => item.status === 'fulfilled'
+    ? item.value
+    : {
+        slot:Number(targets[index]?.slot),
+        state:'persistence_failure',
+        claimAcquired:false,
+        reason:String(item.reason?.message || item.reason || 'delivery_task_rejected').slice(0,160),
+      });
+  const deliveredSlots = outcomes.filter(item => item.state === 'sent').map(item => item.slot);
+  const failedSlots = outcomes.filter(item => !['sent','duplicate'].includes(item.state)).map(item => item.slot);
   return {
-    ok:failedSlots.length === 0,
+    ok:outcomes.every(item => ['sent','duplicate'].includes(item.state)),
+    outcomes,
     deliveredSlots,
     failedSlots,
-    failures,
-    recipientCount:(plan.targetSlots || []).length,
+    recipientCount:targets.length,
   };
 }
 
-export function providerIncidentAlertOpsEvent(plan = {}, delivery = {}) {
+function opsEventForState(plan = {}, state = '', items = []) {
   const incident = plan.incident || {};
-  const failed = Array.isArray(delivery.failedSlots) ? delivery.failedSlots : [];
-  const delivered = Array.isArray(delivery.deliveredSlots) ? delivery.deliveredSlots : [];
-  const ok = Boolean(delivery.ok) && failed.length === 0;
+  const slots = items.map(item => Number(item.slot)).filter(Number.isInteger);
+  const attempts = items.map(item => Number(item.attempts || 0)).filter(Number.isFinite);
+  const retryAt = items.map(item => item.retryAt).filter(Boolean).sort()[0] || null;
+  const spec = {
+    claim_acquired:['info','PROVIDER_SLO_ALERT_CLAIM_ACQUIRED','alert_claim_acquired','Persistent alert delivery claim acquired.'],
+    duplicate:['info','PROVIDER_SLO_ALERT_DUPLICATE_SUPPRESSED','alert_duplicate_suppressed','Duplicate provider incident alert delivery suppressed by persistent ledger.'],
+    sent:['info',plan.kind === 'recovery' ? 'PROVIDER_SLO_RECOVERY_ALERT_SENT' : 'PROVIDER_SLO_ALERT_SENT','alert_sent','Provider SLO operational alert delivery confirmed by Telegram.'],
+    retry_pending:['warning','PROVIDER_SLO_ALERT_RETRY_PENDING','alert_retry_pending','Telegram confirmed a temporary delivery failure; controlled retry is pending.'],
+    terminal_failed:['warning','PROVIDER_SLO_ALERT_TERMINAL_FAILED','alert_terminal_failed','Telegram confirmed a non-retryable provider incident alert failure.'],
+    unknown:['warning','PROVIDER_SLO_ALERT_UNKNOWN','alert_unknown','Provider incident alert delivery outcome is ambiguous; automatic retry is suppressed.'],
+    persistence_failure:['error','PROVIDER_SLO_ALERT_PERSISTENCE_FAILED','alert_persistence_failure','Persistent alert delivery state could not be confirmed; delivery failed closed.'],
+  }[state] || ['warning','PROVIDER_SLO_ALERT_STATE','alert_state','Provider incident alert delivery state changed.'];
   return {
-    severity:ok ? 'info' : 'warning',
+    severity:spec[0],
     source:'provider_alert',
     eventType:'alert_delivery',
-    code:ok ? 'PROVIDER_SLO_ALERT_SENT' : 'PROVIDER_SLO_ALERT_FAILED',
-    message:ok
-      ? 'Provider SLO operational alert delivered to configured administrators.'
-      : 'Provider SLO operational alert delivery failed for one or more configured administrators.',
+    code:spec[1],
+    message:spec[3],
     endpoint:'cron:production-monitor',
     meta:{
-      lifecycleEvent:ok ? 'alert_sent' : 'alert_failed',
-      incidentId:incident.incidentId || null,
+      lifecycleEvent:spec[2],
+      incidentId:incident.incidentId || plan.incidentId || null,
       alertKind:String(plan.kind || ''),
-      deliveryKey:String(plan.deliveryKey || ''),
+      deliveryKey:String(plan.alertKey || plan.deliveryKey || ''),
       fingerprint:String(incident.fingerprint || ''),
       severity:String(incident.severity || plan.severity || ''),
       provider:providerLabel(incident),
       operation:operationLabel(incident),
-      attempt:Number(plan.attempt || 1),
-      recipientCount:Number(delivery.recipientCount || 0),
-      deliveredSlots:delivered,
-      failedSlots:failed,
-      retryableFailures:(delivery.failures || []).filter(item => item?.retryable).length,
+      recipientSlots:slots,
+      recipientCount:slots.length,
+      attempts:attempts.length ? Math.max(...attempts) : 0,
+      retryAt,
     },
+  };
+}
+
+export function providerIncidentAlertOpsEvents(plan = {}, delivery = {}) {
+  const outcomes = Array.isArray(delivery?.outcomes) ? delivery.outcomes : [];
+  const events = [];
+  const claimed = outcomes.filter(item => item?.claimAcquired);
+  if (claimed.length) events.push(opsEventForState(plan,'claim_acquired',claimed));
+  for (const state of ['duplicate','sent','retry_pending','terminal_failed','unknown','persistence_failure']) {
+    const items = outcomes.filter(item => item?.state === state);
+    if (items.length) events.push(opsEventForState(plan,state,items));
+  }
+  return events;
+}
+
+export function providerIncidentAlertOpsEvent(plan = {}, delivery = {}) {
+  const events = providerIncidentAlertOpsEvents(plan,delivery);
+  return events.find(event => /_SENT$/.test(event.code))
+    || events.find(event => event.severity === 'error')
+    || events.find(event => event.severity === 'warning')
+    || events[0]
+    || opsEventForState(plan,'duplicate',[]);
+}
+
+export function providerIncidentAlertLedgerSummary(rows = []) {
+  const counts = { sending:0, sent:0, retry_pending:0, terminal_failed:0, unknown:0 };
+  for (const row of rows || []) {
+    const status = ledgerStatus(row);
+    if (Object.prototype.hasOwnProperty.call(counts,status)) counts[status] += 1;
+  }
+  return {
+    rows:Number((rows || []).length),
+    states:counts,
+    operationalAttention:Number(counts.retry_pending + counts.terminal_failed + counts.unknown),
   };
 }
 
@@ -318,36 +538,32 @@ export function providerIncidentAlertSelfTest() {
     startedAt:'2026-09-28T10:00:00.000Z',
     durationMinutes:30,
     fingerprint:'api-football|/fixtures|provider_slo|pslo-api-football-test',
-    diagnostics:{
-      primaryProvider:'api-football',
-      primaryOperation:'/fixtures',
-      sampleSize:20,
-      errorRatePct:20,
-      timeoutRatePct:10,
-      rateLimitRatePct:0,
-      avgAttemptLatencyMs:3200,
-      reason:'timeout rate 10.0%',
-    },
+    diagnostics:{primaryProvider:'api-football',primaryOperation:'/fixtures'},
   };
-  const report = { activeIncident:incident, history:[incident] };
-  const first = planProviderIncidentAlert(report, [], { nowMs:Date.parse('2026-09-28T10:30:00Z'), adminCount:1 });
+  const destinations=[{slot:0,destinationKey:'dest-a'}];
+  const first = planProviderIncidentAlert({ activeIncident:incident, history:[incident] }, [], { destinations });
   const sent = [{
-    created_at:'2026-09-28T10:30:00Z',
-    source:'provider_alert',
-    code:'PROVIDER_SLO_ALERT_SENT',
-    metadata:{ incidentId:incident.incidentId, alertKind:'incident', deliveryKey:incident.incidentId + ':incident', deliveredSlots:[0], failedSlots:[] },
+    incident_id:incident.incidentId,
+    transition:'incident',
+    alert_key:incident.incidentId + ':incident',
+    destination_key:'dest-a',
+    status:'sent',
+    attempts:1,
   }];
-  const duplicate = planProviderIncidentAlert(report, sent, { nowMs:Date.parse('2026-09-28T10:45:00Z'), adminCount:1 });
-  const recovered = { ...incident, active:false, state:'recovered', recoveredAt:'2026-09-28T11:00:00Z', durationMinutes:60 };
-  const recovery = planProviderIncidentAlert({ activeIncident:null, history:[recovered] }, sent, { nowMs:Date.parse('2026-09-28T11:00:00Z'), adminCount:1 });
+  const duplicate = planProviderIncidentAlert({ activeIncident:incident, history:[incident] }, sent, { destinations });
+  const recovered = { ...incident, active:false, state:'recovered', recoveredAt:'2026-09-28T11:00:00.000Z', durationMinutes:60 };
+  const recovery = planProviderIncidentAlert({ activeIncident:null, history:[recovered] }, sent, { destinations });
+  const unknown = classifyProviderIncidentTelegramResult({ok:false,status:0,outcome:'unknown'},Date.parse('2026-09-28T11:00:00Z'));
   return {
     pass:first.action === 'send'
       && first.kind === 'incident'
       && duplicate.action === 'none'
       && recovery.action === 'send'
-      && recovery.kind === 'recovery',
+      && recovery.kind === 'recovery'
+      && unknown.state === 'unknown',
     first:first.kind || '',
     duplicate:duplicate.reason || '',
     recovery:recovery.kind || '',
+    ambiguous:unknown.state,
   };
 }
