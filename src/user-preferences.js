@@ -27,13 +27,8 @@ export function createUserPreferencesService({
 
   async function getPreferences(userId, cfg) {
     if (hasSupabase(cfg)) {
-      try {
-        const row = await supaSelectOne(cfg, 'user_preferences', { telegram_id: `eq.${Number(userId)}` });
-        return normalizePreferences(row || {});
-      } catch (e) {
-        console.warn('preferences read skipped', e?.message || e);
-        return { ...DEFAULT_PREFERENCES };
-      }
+      const row = await supaSelectOne(cfg, 'user_preferences', { telegram_id: `eq.${Number(userId)}` });
+      return normalizePreferences(row || {});
     }
     return normalizePreferences(memory.preferences.get(Number(userId)) || {});
   }
