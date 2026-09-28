@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
+const scheduled=fs.readFileSync('src/scheduled-jobs.js','utf8');
 
 function block(start,end){
   const a=worker.indexOf(start);
@@ -58,5 +59,5 @@ test('stale shared rate windows are cleaned without touching active buckets',()=
   assert.match(worker,/async function cleanupRateWindows/);
   assert.match(worker,/Date\.now\(\) - 2 \* 86400_000/);
   assert.match(worker,/supaDelete\(cfg, 'provider_rate_windows', \{ updated_at: `lt\.\$\{cutoff\}` \}\)/);
-  assert.match(worker,/\['rate_window_cleanup', cleanupRateWindows\(cfg\)\]/);
+  assert.match(scheduled,/\['rate_window_cleanup', Promise\.resolve\(\)\.then\(\(\) => cleanupRateWindows\(cfg\)\)\]/);
 });
