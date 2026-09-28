@@ -16,6 +16,8 @@ const REQUIRED_HEALTH_FLAGS = [
   'providerSloIncidentIntegration',
   'providerSloIncidentSelfTest',
   'providerIncidentAlertDelivery',
+  'providerIncidentAlertPersistence',
+  'providerIncidentAlertUnknownSafety',
   'providerIncidentAlertDeliverySelfTest',
   'multiProviderDataService',
   'openLigaDbStandingsFallback',
