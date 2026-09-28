@@ -26,8 +26,8 @@ function createRuntime(overrides = {}) {
   return {api:createUserAuthRuntime(deps),memory,validationCalls,telemetry,ops};
 }
 
-function request(path='/',method='GET',initData='signed') {
-  return new Request('https://example.test'+path,{
+function request(path='/',method='GET',initData='signed',origin='https://example.test') {
+  return new Request(origin+path,{
     method,
     headers:{'x-telegram-init-data':initData},
   });
@@ -54,10 +54,47 @@ test('Phase 2 auth boundary preserves validated and development identity semanti
   assert.equal(user.__telegramValidated,true);
 
   const dev=createRuntime({validateTelegramInitData:async()=>null});
-  const devUser=await dev.api.getRequestUser(request(),{botToken:'token',devMode:true});
+  const devUser=await dev.api.getRequestUser(request('/','GET','signed','http://localhost:8787'),{botToken:'token',devMode:true});
   assert.equal(devUser.id,999999999);
   assert.equal(devUser.__developmentIdentity,true);
   assert.equal(devUser.__telegramValidated,false);
+});
+
+test('Phase 2 auth boundary never creates synthetic admin identity on remote hosts',async()=>{
+  const remote=createRuntime({validateTelegramInitData:async()=>null});
+  const user=await remote.api.getRequestUser(request('/api/diagnostics','GET',''),{botToken:'token',devMode:true});
+  assert.equal(user,null);
+});
+
+test('Phase 2 auth boundary applies 15-minute freshness to every admin surface',async()=>{
+  const adminPaths=[
+    '/api/provider',
+    '/api/provider/budget',
+    '/api/runtime-controls',
+    '/api/runtime-controls/rollback',
+    '/api/admin/channel-publisher/test',
+    '/api/diagnostics',
+    '/api/release-readiness',
+    '/api/production-readiness',
+    '/api/rc-regression',
+    '/api/release-monitor',
+    '/api/production-monitor',
+    '/api/beta-dashboard',
+    '/api/phase5-dashboard',
+    '/api/launch-funnel',
+    '/api/recovery-incident-ack',
+    '/api/reminder-health',
+    '/api/data-integrity',
+    '/api/model-quality',
+    '/api/calibration-control',
+    '/api/model-remediation',
+    '/api/media-publisher-link',
+  ];
+  for (const path of adminPaths) {
+    const rt=createRuntime();
+    await rt.api.getRequestUser(request(path,'GET'),{botToken:'token',devMode:false});
+    assert.equal(rt.validationCalls[0],15*60,path);
+  }
 });
 
 test('Phase 2 auth boundary keeps user persistence fail-soft after valid Telegram auth',async()=>{
