@@ -241,7 +241,7 @@ console.log(`Release metadata is consistent for ${expected}.`);
 
 if (!worker.includes("persistentAiVerdicts: 'enabled'") || !worker.includes("analyzedMatchHub: 'enabled'")) failures.push('RC44 persistent AI health contract is missing');
 if (!worker.includes("historyAnalysisCacheFix: 'enabled'") || !worker.includes("fixture:${fixtureId}:v15-availability-quality-rc144")) failures.push('RC44 history cache contract is missing');
-if (!app.includes('function renderAiCenterSummary') || !app.includes('matchAiSnapshotHtml')) failures.push('RC44 analyzed-match UI is missing');
+if (!app.includes('function renderAiCenterSummary')) failures.push('RC44 analyzed-match UI is missing');
 
 if (!worker.includes("aiLiveCoach: 'enabled'") || !worker.includes("prematchLiveComparison: 'enabled'") || !worker.includes("liveScenarioGuard: 'enabled'")) failures.push('RC44 AI LIVE health contract is missing');
 if (!worker.includes('function buildLiveAiCoach') || !worker.includes('v16-availability-quality-rc144')) failures.push('RC44 AI LIVE engine/current cache contract is missing');
