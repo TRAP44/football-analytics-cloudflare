@@ -21,7 +21,6 @@ import {
   isTelegramValidatedUser,
   telegramIdList,
 } from './access-control.js';
-import { apiSecurityHeaders } from './security-headers.js';
 import { createSupabaseClient } from './supabase-client.js';
 import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
 import { applyFeatureFreshness, applyFeatureFreshnessMap } from './data-freshness.js';
