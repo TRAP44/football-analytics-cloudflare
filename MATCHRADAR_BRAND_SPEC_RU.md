@@ -1,6 +1,6 @@
 # MatchRadar — current public brand specification
 
-> Канонический public-facing brand contract после controlled rebrand с FutLens AI. Исторический документ `PHASE4_2_BRAND_IDENTITY_RU.md` сохраняется как запись предыдущего этапа и не является текущим source of truth.
+> Канонический public-facing brand contract после controlled rebrand с FutLens AI. Исторический документ `docs/archive/PHASE4_2_BRAND_IDENTITY_RU.md` сохраняется как запись предыдущего этапа и не является текущим source of truth.
 
 ## Public naming
 

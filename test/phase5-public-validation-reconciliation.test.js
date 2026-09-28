@@ -9,7 +9,7 @@ const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
 const client=readFileSync(new URL('../public/modules/client-core.js',import.meta.url),'utf8');
 const index=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
 const phase5Doc=readFileSync(new URL('../PHASE5_PUBLIC_VALIDATION_RU.md',import.meta.url),'utf8');
-const historical=readFileSync(new URL('../CLOSED_BETA_OBSERVATION_RU.md',import.meta.url),'utf8');
+const historical=readFileSync(new URL('../docs/archive/CLOSED_BETA_OBSERVATION_RU.md',import.meta.url),'utf8');
 
 test('public access remains default while strict beta stays explicit',()=>{
   const user={id:123456,__telegramValidated:true};

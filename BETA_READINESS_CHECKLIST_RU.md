@@ -75,10 +75,10 @@ Privacy contract:
 
 Эти пункты требуют реальной среды/операционного решения и не могут быть честно закрыты только CI:
 
-- [ ] Провести smoke на реальном Telegram минимум с двумя **не-админскими** аккаунтами по сценарию из `PRE_BETA_VALIDATION_RU.md`: Telegram → Mini App → Матчи → поиск → матч → AI → история → профиль → тема/акцент → избранное → напоминание.
+- [ ] Провести smoke на реальном Telegram минимум с двумя **не-админскими** аккаунтами по сценарию из `docs/archive/PRE_BETA_VALIDATION_RU.md`: Telegram → Mini App → Матчи → поиск → матч → AI → история → профиль → тема/акцент → избранное → напоминание.
 - [ ] Проверить LIVE на реальном идущем матче: первичная загрузка, счёт, события, статистика, составы/потери, ручное обновление, минимум один успешный auto-refresh, временная потеря сети и восстановление с сохранением последнего snapshot.
 - [x] Текущую квоту/тариф API-Football подтверждает production evidence: plan=FREE, dailyLimit=100, dailyRemaining=97, minuteLimit=10, minuteRemaining=9, cooldown=false, evidenceSource=controlled_release_probe (26 сентября 2026, 11:41:13 UTC).
-- [ ] Реально назначить Beta-01 и Beta-02 и создать приватный feedback channel по шаблону из `PRE_BETA_VALIDATION_RU.md`. Runbook и формат обратной связи подготовлены, но личности/Telegram ID тестировщиков в репозиторий не записываются.
+- [ ] Реально назначить Beta-01 и Beta-02 и создать приватный feedback channel по шаблону из `docs/archive/PRE_BETA_VALIDATION_RU.md`. Runbook и формат обратной связи подготовлены, но личности/Telegram ID тестировщиков в репозиторий не записываются.
 - [ ] Подтвердить Telegram `getWebhookInfo`: production URL совпадает с `/telegram/webhook`, нет устойчивой очереди pending updates и актуальной ошибки.
 - [x] Server-side access contract: валидный Telegram initData обязателен; при BETA_ACCESS_ENABLED=false/missing normal-user access публичный, при true действует BETA_TELEGRAM_IDS.
 - [x] ADMIN_TELEGRAM_IDS остаётся отдельной server-side границей admin authorization; frontend не используется как access-control.
@@ -132,7 +132,7 @@ Privacy contract:
 - [x] Production monitor gate закрыт по допустимому условию «причина `watch` подтверждена как transient». Persisted запись 15:00 UTC имеет `releaseState=healthy`, `releaseScore=100`, `supabaseOk=true`, `schemaOk=true`, `providerHealth=waiting`, `telegramDedupeState=watch`, при этом stale/failed claims = 0. Прямой `telegram_webhook_dedupe_health` на повторной проверке доступен и возвращает healthy-входы (ledger/stale/failed = 0); при текущей monitor-логике это подтверждает временную недоступность dedupe-observability, а не устойчивый пользовательский/данный инцидент. Отдельный `getWebhookInfo` остаётся ручным blocker.
 - [x] Усиленный production smoke после merge/deploy прошёл и подтвердил фактические `database=supabase`, `monetization=paused` и operational Telegram/Mini App/AI/search/LIVE.
 
-Полный ручной сценарий, LIVE protocol, quota gate, cohort и feedback runbook: `PRE_BETA_VALIDATION_RU.md`.
+Полный ручной сценарий, LIVE protocol, quota gate, cohort и feedback runbook: `docs/archive/PRE_BETA_VALIDATION_RU.md`.
 
 ### Strict Beta Post-Deploy snapshot — 26 сентября 2026, 12:25 UTC
 

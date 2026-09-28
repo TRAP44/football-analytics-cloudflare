@@ -6,7 +6,7 @@ const html=fs.readFileSync('public/index.html','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const css=fs.readFileSync('public/styles/public-shell.css','utf8');
 const client=fs.readFileSync('public/modules/client-core.js','utf8');
-const legacyDoc=fs.readFileSync('PHASE4_2_BRAND_IDENTITY_RU.md','utf8');
+const legacyDoc=fs.readFileSync('docs/archive/PHASE4_2_BRAND_IDENTITY_RU.md','utf8');
 const brand=fs.readFileSync('MATCHRADAR_BRAND_SPEC_RU.md','utf8');
 
 function block(source,start,end){
