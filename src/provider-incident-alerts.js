@@ -331,7 +331,17 @@ async function processTarget({ plan, target, adminTelegramIds, claimDelivery, fi
     };
   }
 
-  if (!claim?.acquired) {
+  if (typeof claim?.acquired !== 'boolean') {
+    return {
+      slot,
+      state:'persistence_failure',
+      claimAcquired:false,
+      reason:'claim_result_unconfirmed',
+      attempts:Math.max(0, finite(claim?.attempts)),
+    };
+  }
+
+  if (!claim.acquired) {
     const claimStatus = String(claim?.status || '').toLowerCase();
     const state = ['invalid','missing'].includes(claimStatus)
       ? 'persistence_failure'
