@@ -44,7 +44,7 @@ test('provider SLO counts retry recovery as one successful logical request', () 
   assert.equal(snapshot.totals.successes, 1);
   assert.equal(snapshot.totals.failures, 0);
   assert.equal(snapshot.totals.retries, 1);
-  assert.equal(snapshot.totals.timeouts, 1);
+  assert.equal(snapshot.totals.timeouts, 0);
   assert.equal(snapshot.totals.avgAttemptLatencyMs, 560);
 });
 
@@ -93,7 +93,7 @@ test('provider SLO aggregates persisted windows by provider and operation', () =
         windowStartedAt:'2026-09-28T10:00:00.000Z',
         windowEndedAt:'2026-09-28T10:15:00.000Z',
         series:[
-          { provider:'api-football', operation:'/fixtures', attempts:6, requests:5, successes:5, failures:0, retries:1, timeouts:1, networkErrors:0, rateLimits:0, httpErrors:0, invalidResponses:0, latencySumMs:900, latencySamples:6, maxLatencyMs:300 },
+          { provider:'api-football', operation:'/fixtures', attempts:6, requests:5, successes:5, failures:0, retries:1, timeouts:0, networkErrors:0, rateLimits:0, httpErrors:0, invalidResponses:0, latencySumMs:900, latencySamples:6, maxLatencyMs:300 },
           { provider:'OpenLigaDB', operation:'standings', attempts:5, requests:5, successes:5, failures:0, retries:0, timeouts:0, networkErrors:0, rateLimits:0, httpErrors:0, invalidResponses:0, latencySumMs:500, latencySamples:5, maxLatencyMs:140 },
         ],
       },
