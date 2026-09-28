@@ -15741,6 +15741,11 @@ async function probeSupabaseSchemaDrift(cfg) {
     readPersonalWriteGuardContract(cfg),
   ]);
   const summary=summarizeSupabaseSchemaChecks(checks);
+  // Preserve the historical fail-closed dependency list for release-contract
+  // regression tests while exposing a more precise drift/unavailable split.
+  const missing=[...(summary.missing || [])];
+  if (!fingerprint.ok) missing.push('schema_fingerprint');
+  if (!personalWriteGuards.ok) missing.push('personal_write_guards');
   const classification=classifySupabaseSchemaProbeFailures(checks,fingerprint,personalWriteGuards);
   const ok = Boolean(summary.ok && fingerprint.ok && personalWriteGuards.ok);
   return {
@@ -15750,7 +15755,7 @@ async function probeSupabaseSchemaDrift(cfg) {
     failureMode:ok ? 'ok' : classification.failureMode,
     missing:classification.drift,
     unavailable:classification.unavailable,
-    failed:classification.failed,
+    failed:[...new Set(missing)],
     fingerprint,
     personalWriteGuards,
   };
