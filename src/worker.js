@@ -460,8 +460,24 @@ async function saveRuntimeControls(cfg, user, body = {}) {
   }
 
   const historySchema = await probeRuntimeHistorySchema(cfg);
+  let historyReady = Boolean(historySchema.ok);
+  let historyReason = historySchema.ok ? '' : SUPABASE_SCHEMA_GUIDANCE;
   if (historySchema.ok) {
-    await ensureRuntimeHistoryBaseline(cfg, current, user).catch(() => {});
+    try {
+      await ensureRuntimeHistoryBaseline(cfg, current, user);
+    } catch (error) {
+      historyReady = false;
+      historyReason = 'История изменений временно недоступна: базовая точка восстановления не сохранена.';
+      void recordOpsEvent(cfg, {
+        severity: 'error',
+        source: 'release',
+        eventType: 'runtime_history',
+        code: 'RUNTIME_HISTORY_BASELINE_WRITE_FAILED',
+        message: error?.message || error,
+        endpoint: '/api/runtime-controls',
+        meta: { revision: Number(current.revision || 0) },
+      }).catch(() => {});
+    }
   }
 
   const changeReason = String(body.reason || '').trim().slice(0, 240);
@@ -510,11 +526,25 @@ async function saveRuntimeControls(cfg, user, body = {}) {
   memory.runtimeControls = { value, loadedAt: Date.now(), source: 'supabase', schemaReady: true };
 
   if (historySchema.ok) {
-    await appendRuntimeHistory(cfg, value, user, {
-      action: changeAction,
-      reason: changeReason,
-      sourceRevision,
-    }).catch(() => {});
+    try {
+      await appendRuntimeHistory(cfg, value, user, {
+        action: changeAction,
+        reason: changeReason,
+        sourceRevision,
+      });
+    } catch (error) {
+      historyReady = false;
+      historyReason = 'Настройки применены, но запись в журнал изменений временно не сохранилась.';
+      void recordOpsEvent(cfg, {
+        severity: 'error',
+        source: 'release',
+        eventType: 'runtime_history',
+        code: 'RUNTIME_HISTORY_APPEND_FAILED',
+        message: error?.message || error,
+        endpoint: '/api/runtime-controls',
+        meta: { revision: Number(value.revision || 0), action: changeAction, sourceRevision },
+      }).catch(() => {});
+    }
   }
 
   await recordOpsEvent(cfg, {
@@ -536,10 +566,10 @@ async function saveRuntimeControls(cfg, user, body = {}) {
       action: changeAction,
       reason: changeReason,
       sourceRevision,
-      historyReady: historySchema.ok,
+      historyReady,
     },
   }).catch(() => {});
-  return { value, status: 200, historyReady: historySchema.ok };
+  return { value, status: 200, historyReady, historyReason };
 }
 
 function runtimeFeatureResponse(code, message, runtime, status = 503) {
@@ -588,19 +618,34 @@ async function apiRuntimeControls(request, cfg, user) {
     const state = await loadRuntimeControls(cfg, { force: new URL(request.url).searchParams.get('refresh') === '1' });
     const historySchema = await probeRuntimeHistorySchema(cfg);
     let history = [];
+    let historyReady = Boolean(historySchema.ok);
+    let historyReason = historySchema.ok ? '' : SUPABASE_SCHEMA_GUIDANCE;
     if (historySchema.ok) {
-      history = await listRuntimeHistory(cfg, 12).catch(() => []);
+      try {
+        history = await listRuntimeHistory(cfg, 12);
+      } catch (error) {
+        historyReady = false;
+        historyReason = 'История изменений временно недоступна. Обновите панель позже.';
+        void recordOpsEvent(cfg, {
+          severity: 'warning',
+          source: 'release',
+          eventType: 'runtime_history',
+          code: 'RUNTIME_HISTORY_READ_FAILED',
+          message: error?.message || error,
+          endpoint: '/api/runtime-controls',
+        }).catch(() => {});
+      }
     }
     return json({
       available: Boolean(state.schemaReady),
       source: state.source,
       schemaReady: Boolean(state.schemaReady),
-      historyReady: Boolean(historySchema.ok),
+      historyReady,
       controls: publicRuntimeControls(state.value),
       history,
       cacheSeconds: Math.round(RUNTIME_CONTROLS_CACHE_MS / 1000),
       reason: state.schemaReady ? '' : SUPABASE_SCHEMA_GUIDANCE,
-      historyReason: historySchema.ok ? '' : SUPABASE_SCHEMA_GUIDANCE,
+      historyReason,
     });
   }
 
@@ -611,11 +656,30 @@ async function apiRuntimeControls(request, cfg, user) {
     if (result.error) return json({ error: result.error, code: result.code, current: result.current }, result.status || 400);
 
     let history = [];
-    if (result.historyReady) history = await listRuntimeHistory(cfg, 12).catch(() => []);
+    let historyReady = Boolean(result.historyReady);
+    let historyReason = String(result.historyReason || '');
+    if (historyReady) {
+      try {
+        history = await listRuntimeHistory(cfg, 12);
+      } catch (error) {
+        historyReady = false;
+        historyReason = 'Настройки применены, но журнал изменений временно не удалось перечитать.';
+        void recordOpsEvent(cfg, {
+          severity: 'warning',
+          source: 'release',
+          eventType: 'runtime_history',
+          code: 'RUNTIME_HISTORY_POST_WRITE_READ_FAILED',
+          message: error?.message || error,
+          endpoint: '/api/runtime-controls',
+          meta: { revision: Number(result.value?.revision || 0) },
+        }).catch(() => {});
+      }
+    }
     return json({
       ok: true,
       controls: publicRuntimeControls(result.value),
-      historyReady: Boolean(result.historyReady),
+      historyReady,
+      historyReason,
       history,
     });
   }
@@ -637,11 +701,31 @@ async function apiRuntimeRollback(request, cfg, user) {
     }, result.status || 400);
   }
 
-  const history = await listRuntimeHistory(cfg, 12).catch(() => []);
+  let history = [];
+  let historyReady = Boolean(result.historyReady);
+  let historyReason = String(result.historyReason || '');
+  if (historyReady) {
+    try {
+      history = await listRuntimeHistory(cfg, 12);
+    } catch (error) {
+      historyReady = false;
+      historyReason = 'Откат выполнен, но журнал изменений временно не удалось перечитать.';
+      void recordOpsEvent(cfg, {
+        severity: 'warning',
+        source: 'release',
+        eventType: 'runtime_history',
+        code: 'RUNTIME_HISTORY_ROLLBACK_READ_FAILED',
+        message: error?.message || error,
+        endpoint: '/api/runtime-controls/rollback',
+        meta: { revision: Number(result.value?.revision || 0) },
+      }).catch(() => {});
+    }
+  }
   return json({
     ok: true,
     controls: publicRuntimeControls(result.value),
-    historyReady: true,
+    historyReady,
+    historyReason,
     history,
   });
 }
@@ -7652,9 +7736,16 @@ async function apiBillingSync(request, cfg, user) {
 }
 
 async function apiBillingSubscription(request, cfg, user) {
-  let body = {};
-  try { body = await request.json(); } catch {}
-  const action = body.action === 'resume' ? 'resume' : 'cancel';
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: 'Некорректное тело запроса.', code: 'BILLING_INVALID_JSON' }, 400);
+  }
+  const action = String(body?.action || '').trim().toLowerCase();
+  if (!['cancel', 'resume'].includes(action)) {
+    return json({ error: 'Укажите действие cancel или resume.', code: 'BILLING_INVALID_ACTION' }, 400);
+  }
   const record = await getUserRecord(user.id, cfg);
   const chargeId = String(record?.telegram_payment_charge_id || '');
   if (!chargeId) return json({ error: 'Активная подписка Telegram Stars не найдена.' }, 404);
