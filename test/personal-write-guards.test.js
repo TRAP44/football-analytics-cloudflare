@@ -10,6 +10,7 @@ import {
 const worker = fs.readFileSync('src/worker.js', 'utf8');
 const favorites = fs.readFileSync('src/user-favorites.js', 'utf8');
 const reminders = fs.readFileSync('src/user-reminders.js', 'utf8');
+const http = fs.readFileSync('src/http.js', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/supabase_migration_v6_19_1.sql', 'utf8').toLowerCase();
 
 test('personal write guards normalize valid favorites and reject unsafe payloads', () => {
@@ -68,8 +69,9 @@ test('personal write storage boundaries use guarded RPCs instead of direct upser
   assert.doesNotMatch(reminders, /supaUpsert\(cfg, 'match_reminders'/);
   assert.match(worker, /createUserRemindersService\(\{/);
   assert.doesNotMatch(worker, /async function addReminder\(/);
-  assert.match(worker, /FAVORITES_LIMIT/);
-  assert.match(worker, /REMINDERS_LIMIT/);
+  assert.match(http, /FAVORITES_LIMIT/);
+  assert.match(http, /REMINDERS_LIMIT/);
+  assert.match(worker, /personalWriteLimits:\s*PERSONAL_WRITE_LIMITS/);
 });
 
 test('personal write guard contract is a blocking schema-drift dependency', () => {
