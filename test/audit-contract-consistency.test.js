@@ -23,8 +23,8 @@ function walk(dir){
 
 test('audit: release contract tracks the newest production migration',()=>{
   const migrationDir=path.join('supabase','migrations');
-  const migrations=fs.readdirSync(migrationDir).filter(name=>/^supabase_migration_v\\d+_\\d+(?:_\\d+)?\\.sql$/.test(name));
-  const parts=name=>/^supabase_migration_v(\\d+)_(\\d+)(?:_(\\d+))?\\.sql$/.exec(name).slice(1).map(value=>Number(value||0));
+  const migrations=fs.readdirSync(migrationDir).filter(name=>/^supabase_migration_v\d+_\d+(?:_\d+)?\.sql$/.test(name));
+  const parts=name=>/^supabase_migration_v(\d+)_(\d+)(?:_(\d+))?\.sql$/.exec(name).slice(1).map(value=>Number(value||0));
   const latest=[...migrations].sort((a,b)=>{
     const av=parts(a), bv=parts(b);
     for(let i=0;i<3;i++){ if(av[i]!==bv[i]) return av[i]-bv[i]; }

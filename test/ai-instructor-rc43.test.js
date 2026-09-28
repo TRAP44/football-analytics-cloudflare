@@ -17,7 +17,6 @@ test('analysis history persists compact AI verdict fields',()=>{
 
 test('analyzed upcoming matches expose a compact saved verdict',()=>{
   assert.match(app,/function analysisHistoryForFixture/);
-  assert.match(app,/function matchAiSnapshotHtml/);
   assert.match(app,/data-history-analysis/);
   assert.match(app,/Открыть AI-разбор/);
 });

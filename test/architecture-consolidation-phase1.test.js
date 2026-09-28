@@ -13,7 +13,7 @@ test('fresh install baseline is current through schema v6.19',()=>{
 
 test('release contract is the documented source of truth',()=>{
   const c=JSON.parse(read('release-contract.json'));
-  assert.equal(c.productionSchema,'6.19');
+  assert.equal(c.productionSchema,'6.20');
   assert.equal(c.freshInstallBaseline,'supabase/baseline/supabase_baseline_v6_19.sql');
   assert.equal(c.accessContract,'public-telegram-validated-by-default');
   assert.match(read('supabase/README.md'),/release-contract\.json/);
@@ -28,7 +28,7 @@ test('public feedback hides internal beta and severity terminology',()=>{
   assert.match(publicFeedback,/Сообщить о проблеме/);
   assert.doesNotMatch(publicFeedback,/Closed beta|>\\s*(?:BLOCKER|MAJOR|MINOR)\\b|Beta Dashboard/i);
   const app=read('public/app.js');
-  assert.doesNotMatch(app.slice(0,app.indexOf('function betaHealthLabel')),/title:\s*'Закрытая beta'/);
+  assert.doesNotMatch(app.slice(0,app.indexOf('function renderBetaDashboard')),/title:\s*'Закрытая beta'/);
 });
 
 test('latest migration ADD COLUMN requirements are represented in fresh-install baseline',()=> {

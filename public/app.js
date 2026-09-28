@@ -3,7 +3,7 @@ import { CANONICAL_HOME_VIEW, PUBLIC_VIEW_IDS, backTargetForView, telegramBackBu
 const CLIENT_VERSION = '6.120.0-rc144';
 const CLIENT_API_CONTRACT = 5;
 const CLIENT_RELEASE_CHANNEL = 'rc144';
-const SUPABASE_SCHEMA_HINT = 'проверьте актуальную схему Supabase (baseline v6.18 / миграции до v6.19)';
+const SUPABASE_SCHEMA_HINT = 'проверьте актуальную схему Supabase (baseline v6.19 + миграция v6.20)';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
