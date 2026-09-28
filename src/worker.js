@@ -51,6 +51,7 @@ import { createReminderDeliveryStore } from './reminder-delivery-store.js';
 import { createReminderDeliveryService } from './reminder-delivery-service.js';
 import { createScheduledJobsRuntime } from './scheduled-jobs.js';
 import { createProviderObservabilityRuntime } from './provider-observability.js';
+import { buildProviderSloIncidentTimeline, providerSloIncidentOpsEvent } from './provider-slo-incidents.js';
 
 const memory = {
   users: new Map(),
@@ -15132,8 +15133,10 @@ async function readProviderSloWindows(cfg, hours = 24) {
 
 async function providerSloReport(cfg, hours = 24) {
   const source = await readProviderSloWindows(cfg, hours);
+  const report = summarizeProviderObservabilityWindows(source.items, { hours:source.hours, includeCurrent:true });
   return {
-    ...summarizeProviderObservabilityWindows(source.items, { hours:source.hours, includeCurrent:true }),
+    ...report,
+    incident: buildProviderSloIncidentTimeline(source.items),
     persistent:Boolean(source.persistent),
     migrationReady:Boolean(source.migrationReady),
   };
@@ -15157,6 +15160,25 @@ function providerSloSelfTest() {
       && collecting.overall.state === 'collecting',
     state:synthetic.overall.state,
     collecting:collecting.overall.state,
+  };
+}
+
+function providerSloIncidentSelfTest() {
+  const windows = [
+    { created_at:'2026-09-28T10:00:00Z', metadata:{ windowStartedAt:'2026-09-28T09:45:00Z', windowEndedAt:'2026-09-28T10:00:00Z', sloState:'healthy', totals:{requests:12,successRatePct:100} } },
+    { created_at:'2026-09-28T10:15:00Z', metadata:{ windowStartedAt:'2026-09-28T10:00:00Z', windowEndedAt:'2026-09-28T10:15:00Z', sloState:'healthy', totals:{requests:11,successRatePct:100} } },
+    { created_at:'2026-09-28T10:30:00Z', metadata:{ windowStartedAt:'2026-09-28T10:15:00Z', windowEndedAt:'2026-09-28T10:30:00Z', sloState:'watch', totals:{requests:10,successRatePct:97,retryRatePct:15} } },
+    { created_at:'2026-09-28T10:45:00Z', metadata:{ windowStartedAt:'2026-09-28T10:30:00Z', windowEndedAt:'2026-09-28T10:45:00Z', sloState:'watch', totals:{requests:10,successRatePct:96,retryRatePct:18} } },
+  ];
+  const incident = buildProviderSloIncidentTimeline(windows,{nowMs:Date.parse('2026-09-28T11:00:00Z')});
+  const event = providerSloIncidentOpsEvent(incident.transition);
+  return {
+    pass: incident.state === 'watch'
+      && incident.activeIncident?.active === true
+      && incident.transition?.kind === 'opened'
+      && event?.code === 'PROVIDER_SLO_WATCH',
+    state:incident.state,
+    transition:incident.transition?.kind || '',
   };
 }
 
@@ -15266,6 +15288,7 @@ function productionMonitorState(input = {}) {
   const schemaStatus = String(input.schemaStatus || (schemaOk ? 'ok' : 'drift'));
   const releaseState = String(input.releaseState || 'healthy');
   const providerHealth = String(input.providerHealth || 'waiting');
+  const providerSloState = String(input.providerSloState || 'collecting');
   const telegramDedupeState = String(input.telegramDedupeState || 'healthy');
   const persistent = input.persistent !== false;
   const supabaseAuthFailures = Number(input.supabaseAuthFailures || 0);
@@ -15273,7 +15296,14 @@ function productionMonitorState(input = {}) {
   if (!supabaseOk || ['drift','mixed'].includes(schemaStatus) || supabaseAuthFailures > 0 || releaseState === 'incident' || telegramDedupeState === 'incident') {
     return { state: 'incident', label: 'Production требует немедленной проверки' };
   }
-  if (schemaStatus === 'unavailable' || releaseState === 'watch' || telegramDedupeState === 'watch' || !persistent || ['critical','warning'].includes(providerHealth)) {
+  if (
+    schemaStatus === 'unavailable'
+    || releaseState === 'watch'
+    || telegramDedupeState === 'watch'
+    || !persistent
+    || ['critical','warning'].includes(providerHealth)
+    || ['watch','incident'].includes(providerSloState)
+  ) {
     return { state: 'watch', label: 'Production работает, но нужен контроль' };
   }
   return { state: 'healthy', label: 'Production monitor не видит блокирующих сигналов' };
@@ -15335,10 +15365,12 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     && /HTTP 401|PGRST303|invalid.*jwt|invalid.*api.?key/i.test(String(item?.message || ''))
   ).length;
   const provider = providerSnapshot();
+  const providerSloWindows = source.items.filter(item => item?.source === 'provider' && item?.code === 'PROVIDER_SLO_WINDOW');
   const providerSlo = summarizeProviderObservabilityWindows(
-    source.items.filter(item => item?.source === 'provider' && item?.code === 'PROVIDER_SLO_WINDOW'),
+    providerSloWindows,
     { hours:6, includeCurrent:true },
   );
+  const providerSloIncident = buildProviderSloIncidentTimeline(providerSloWindows, { nowMs:now.getTime() });
   const health = productionMonitorState({
     supabaseOk: supabase.ok,
     schemaOk: schemaDrift.ok,
@@ -15346,6 +15378,7 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     supabaseAuthFailures,
     releaseState: releaseHealth.state,
     providerHealth: provider.health,
+    providerSloState: providerSloIncident.state,
     telegramDedupeState: telegramWebhook.state,
     persistent: source.persistent,
   });
@@ -15401,6 +15434,7 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
       plan: provider.plan || 'UNKNOWN',
       cooldownActive: Boolean(provider.cooldownActive),
       slo: providerSlo.overall,
+      incident: providerSloIncident,
     },
     telegramWebhook,
     observability: {
@@ -15419,6 +15453,11 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     },
   };
   memory.productionMonitor = { at: Date.now(), value };
+
+  if (options.record !== false && providerSloFlush?.ok && providerSloIncident.transition) {
+    const incidentEvent = providerSloIncidentOpsEvent(providerSloIncident.transition);
+    if (incidentEvent) await recordOpsEvent(cfg, incidentEvent).catch(() => {});
+  }
 
   if (options.record !== false && schemaDrift.recovered) {
     await recordOpsEvent(cfg, {
@@ -15493,6 +15532,8 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
         releaseState: releaseHealth.state,
         releaseScore: Number(releaseHealth.score || 0),
         providerHealth: provider.health || 'waiting',
+        providerSloState: providerSloIncident.state,
+        providerSloActive: Boolean(providerSloIncident.activeIncident),
         telegramDedupeState: telegramWebhook.state,
         telegramStaleClaims: Number(telegramWebhook.staleProcessing || 0),
         telegramFailedClaims: Number(telegramWebhook.failedCurrent || 0),
@@ -22570,6 +22611,8 @@ export default {
         productionMonitorSelfTest: productionMonitorSelfTest().pass ? 'enabled' : 'failed',
         providerSloObservability: 'enabled',
         providerSloSelfTest: providerSloSelfTest().pass ? 'enabled' : 'failed',
+        providerSloIncidentIntegration: 'enabled',
+        providerSloIncidentSelfTest: providerSloIncidentSelfTest().pass ? 'enabled' : 'failed',
         supabaseProbeConfirmation: 'enabled',
         supabaseProbeConfirmationSelfTest: supabaseProbeConfirmationSelfTest().pass ? 'enabled' : 'failed',
         supabaseSchemaProbeConfirmation: 'enabled',
