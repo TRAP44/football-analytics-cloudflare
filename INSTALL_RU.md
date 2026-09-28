@@ -6,14 +6,15 @@
 
 
 1. Откройте Supabase SQL Editor.
-2. Выполните **только** `supabase/baseline/supabase_baseline_v6_19.sql` целиком.
-3. Не запускайте после него numbered migrations v6.9–v6.19: они уже включены в unified baseline.
-4. В Supabase Data API убедитесь, что backend-таблицы доступны `service_role`, а прямой доступ `anon` и `authenticated` закрыт.
+2. Выполните `supabase/baseline/supabase_baseline_v6_19.sql` целиком.
+3. Затем примените `supabase/migrations/supabase_migration_v6_20.sql`: эта migration новее baseline и добавляет persistent ledger для incident alert delivery.
+4. Не запускайте после baseline numbered migrations v6.9–v6.19.1: они уже включены в unified baseline.
+5. В Supabase Data API убедитесь, что backend-таблицы доступны `service_role`, а прямой доступ `anon` и `authenticated` закрыт.
 
 ## Обновление существующего проекта
 
 1. Сделайте резервную копию базы.
-2. Примените только отсутствующие миграции, сохраняя порядок версий: v6.9 → v6.10 → v6.11 → v6.11.1 → v6.12 → v6.13 → v6.14 → v6.15 → v6.16 → v6.17 → v6.18 → v6.18.1 → v6.19.
+2. Примените только отсутствующие миграции, сохраняя порядок версий: v6.9 → v6.10 → v6.11 → v6.11.1 → v6.12 → v6.13 → v6.14 → v6.15 → v6.16 → v6.17 → v6.18 → v6.18.1 → v6.19 → v6.19.1 → v6.20.
 3. Для существующей базы не запускайте `supabase/baseline/supabase_baseline_v6_19.sql`: он предназначен только для fresh install.
 4. Не удаляйте и не переигрывайте уже применённые миграции без отдельного плана rollback.
 5. После обновления запустите защищённый RC Regression и проверьте least-privilege контракт Supabase.
@@ -22,7 +23,10 @@
 8. RC109 не требует новой миграции: одиночный сбой Supabase probe подтверждается вторым запросом перед аварийным статусом.
 9. RC126 не требует новой миграции: Schema Drift Guard подтверждает первый неуспешный schema probe повторной проверкой перед блокирующим incident.
 10. RC127 требует `supabase_migration_v6_18.sql`: atomic AI quota, distributed provider budget, digest delivery claims, full schema fingerprint и least-privilege service-role. Production schema становится v6.18.
-11. После v6.18 примените `supabase_migration_v6_18_1.sql`: hotfix устраняет FK-race первого анализа.\n12. Затем примените `supabase_migration_v6_19.sql`: source provenance/freshness metadata для analysis cache, odds snapshots и model predictions. Для нового проекта v6.18.1 и v6.19 уже включены в baseline v6.19.
+11. После v6.18 примените `supabase_migration_v6_18_1.sql`: hotfix устраняет FK-race первого анализа.
+12. Затем примените `supabase_migration_v6_19.sql`: source provenance/freshness metadata для analysis cache, odds snapshots и model predictions.
+13. Примените `supabase_migration_v6_19_1.sql`: personal write guards для защищённых пользовательских операций.
+14. Примените `supabase_migration_v6_20.sql`: persistent incident alert delivery ledger, atomic claim/finalize RPC и deduplication. Для нового проекта v6.18.1–v6.19.1 уже включены в baseline v6.19; после baseline отдельно требуется v6.20.
 
 ## Cloudflare Secrets
 
