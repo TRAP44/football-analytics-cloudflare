@@ -21,13 +21,13 @@ test('production monitor persists provider SLO incident transitions only with a 
 test('provider incident state affects monitoring visibility but never automatic controls', () => {
   assert.match(worker, /providerSloState: providerSloIncident\.state/);
   assert.match(worker, /\['watch','incident'\]\.includes\(providerSloState\)/);
-  assert.match(incidents, /automaticRollback: false/);
-  assert.match(incidents, /automaticFeatureDisable: false/);
+  assert.match(incidents, /automaticRollback:\\s*false/);
+  assert.match(incidents, /automaticFeatureDisable:\\s*false/);
   assert.doesNotMatch(incidents, /runtimeControls|rollbackRuntime|apiRuntimeRollback/);
 });
 
 test('provider API and diagnostics include incident state and runbook', () => {
-  assert.match(worker, /incident: buildProviderSloIncidentTimeline\(source\.items\)/);
+  assert.match(worker, /incident: buildProviderSloIncidentTimeline\(incidentSource\.items\)/);
   assert.match(worker, /providerObservability\?\.incident\?\.activeIncident\?\.runbook/);
   assert.match(worker, /providerSloIncidentIntegration: 'enabled'/);
   assert.match(worker, /providerSloIncidentSelfTest/);

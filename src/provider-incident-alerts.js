@@ -17,7 +17,9 @@ function asIso(value) {
 }
 
 function eventMeta(row = {}) {
-  return row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+  if (row?.metadata && typeof row.metadata === 'object') return row.metadata;
+  if (row?.meta && typeof row.meta === 'object') return row.meta;
+  return {};
 }
 
 function relevantEvents(rows = [], incidentId = '') {
