@@ -5,55 +5,110 @@ import assert from 'node:assert/strict';
 const worker=fs.readFileSync('src/worker.js','utf8');
 const alerts=fs.readFileSync('src/provider-incident-alerts.js','utf8');
 const incidents=fs.readFileSync('src/provider-slo-incidents.js','utf8');
+const migration=fs.readFileSync('supabase/migrations/supabase_migration_v6_20.sql','utf8');
 const admin=fs.readFileSync('public/modules/admin-provider.js','utf8');
 const html=fs.readFileSync('public/index.html','utf8');
 const smoke=fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
 
-test('provider incident alerting extends existing ops_events and Telegram admin transport', () => {
-  assert.match(worker,/readProviderIncidentAlertEvents/);
-  assert.match(worker,/source','eq\.provider_alert'/);
-  assert.match(worker,/sendMessage:\(chatId,text\) => sendTelegramMessage\(chatId,text,cfg\)/);
-  assert.match(worker,/adminTelegramIds:cfg\.adminTelegramIds \|\| \[\]/);
-  assert.doesNotMatch(worker,/TELEGRAM_PROVIDER_BOT|PROVIDER_ALERT_BOT_TOKEN/);
-  assert.match(alerts,/source:'provider_alert'/);
-  assert.match(alerts,/eventType:'alert_delivery'/);
-  assert.match(alerts,/PROVIDER_SLO_ALERT_SENT/);
-  assert.match(alerts,/PROVIDER_SLO_ALERT_FAILED/);
+test('incident alert delivery uses a persistent ledger and atomic PostgreSQL claim', () => {
+  assert.match(worker,/readProviderIncidentAlertDeliveries/);
+  assert.match(worker,/claim_provider_incident_alert_delivery/);
+  assert.match(worker,/finalize_provider_incident_alert_delivery/);
+  assert.match(worker,/planProviderIncidentAlert\(providerSloIncident, providerAlertLedger\.items/);
+  assert.doesNotMatch(worker,/planProviderIncidentAlert\(providerSloIncident, providerAlertSource\.items/);
+  assert.match(migration,/create table if not exists public\.provider_incident_alert_deliveries/);
+  assert.match(migration,/constraint provider_incident_alert_delivery_identity\s+unique \(incident_id, transition, destination_key\)/);
+  assert.match(migration,/on conflict do nothing/);
+  assert.match(migration,/for update/);
 });
 
-test('alert delivery is best effort and does not change runtime controls', () => {
-  assert.match(worker,/try \{\s*delivery = await deliverProviderIncidentAlert/);
-  assert.match(worker,/await recordOpsEvent\(cfg, alertEvent\)\.catch\(\(\) => \{\}\)/);
-  assert.match(incidents,/automaticRollback:false/);
-  assert.match(incidents,/automaticFeatureDisable:false/);
-  assert.doesNotMatch(alerts,/rollbackRuntime|runtimeControls|provider switch|billing/i);
+test('claim persistence is fail-closed and ambiguous Telegram outcomes become unknown', () => {
+  assert.match(alerts,/state:'persistence_failure'/);
+  assert.match(worker,/blockedCandidate:true/);
+  assert.match(worker,/Telegram delivery was suppressed/);
+  assert.match(worker,/outcome:'unknown'/);
+  assert.match(alerts,/state:'unknown'/);
+  assert.match(migration,/status = 'unknown'/);
+  assert.match(migration,/STALE_SENDING_LEASE/);
+  assert.doesNotMatch(alerts,/immediateRetryAttempts/);
+});
+
+test('429 and confirmed temporary failures retain the same ledger identity for controlled retry', () => {
+  assert.match(alerts,/status === 429/);
+  assert.match(alerts,/state:'retry_pending'/);
+  assert.match(alerts,/retryAt:new Date/);
+  assert.match(migration,/v_row\.status = 'retry_pending'/);
+  assert.match(migration,/attempts = attempts \+ 1/);
+  assert.match(migration,/v_row\.retry_at is not null and v_row\.retry_at > v_now/);
+});
+
+test('one recipient failure cannot discard the other delivery outcomes', () => {
+  assert.match(alerts,/Promise\.allSettled/);
+  assert.match(worker,/Promise\.allSettled\(alertEvents\.map/);
+  assert.match(alerts,/PROVIDER_SLO_ALERT_DUPLICATE_SUPPRESSED/);
+  assert.match(alerts,/PROVIDER_SLO_ALERT_RETRY_PENDING/);
+  assert.match(alerts,/PROVIDER_SLO_ALERT_TERMINAL_FAILED/);
+  assert.match(alerts,/PROVIDER_SLO_ALERT_UNKNOWN/);
+  assert.match(alerts,/PROVIDER_SLO_ALERT_PERSISTENCE_FAILED/);
+  assert.match(alerts,/PROVIDER_SLO_RECOVERY_ALERT_SENT/);
+});
+
+test('v6.20 migration is additive, RLS protected and service-role-only', () => {
+  assert.doesNotMatch(migration,/\bdrop\s+(table|column|function)\b/i);
+  assert.doesNotMatch(migration,/\balter\s+table[\s\S]{0,120}\bdrop\b/i);
+  assert.match(migration,/alter table public\.provider_incident_alert_deliveries enable row level security/);
+  assert.match(migration,/revoke all on table public\.provider_incident_alert_deliveries from public, anon, authenticated/);
+  assert.match(migration,/grant select, insert, update, delete on table public\.provider_incident_alert_deliveries to service_role/);
+  assert.match(migration,/security invoker/g);
+  assert.match(migration,/revoke execute on function public\.claim_provider_incident_alert_delivery[\s\S]*from public, anon, authenticated/);
+  assert.match(migration,/provider_incident_alert_delivery_contract/);
+});
+
+test('destination identity is deterministic without exposing raw Telegram identity in ops metadata', () => {
+  assert.match(alerts,/providerIncidentDestinationKey/);
+  assert.match(alerts,/crypto\.subtle\.digest\('SHA-256'/);
+  assert.match(worker,/providerIncidentDestinationKey\(chatId,cfg\.botToken \|\| 'primary'\)/);
+  assert.doesNotMatch(alerts,/meta:\{[\s\S]{0,600}(chatId|telegramId|botToken)/);
 });
 
 test('read-only health and admin probes cannot send Telegram incident alerts', () => {
-  assert.match(worker,/const incidentAlertPlan = options\.record !== false[\s\S]*read_only_monitor/);
+  assert.match(worker,/incidentAlertCandidate = options\.record !== false[\s\S]*read_only_monitor/);
   assert.match(worker,/if \(options\.record !== false && incidentAlertPlan\.action === 'send'\)/);
   assert.match(worker,/runProductionMonitor\(cfg, new Date\(\), \{ record: false \}\)/);
 });
 
-test('admin-only incident UI exposes operational lifecycle details without public visibility', () => {
+test('admin-only incident UI remains operational and no rollback or provider switching is added', () => {
   assert.match(html,/id="providerStatusPanel"[^>]*data-admin-only[^>]*hidden/);
   assert.match(html,/id="providerSloIncidentDetails"/);
   for (const marker of ['Incident ID','Severity','Provider','Operation','Sample size','Последнее healthy окно','Recovery']) {
     assert.ok(admin.includes(marker),marker);
   }
   assert.match(admin,/incidentHistory\.slice\(0,5\)/);
+  assert.match(incidents,/automaticRollback:false/);
+  assert.match(incidents,/automaticFeatureDisable:false/);
+  assert.doesNotMatch(alerts,/rollbackRuntime|runtimeControls|provider switch|billing/i);
 });
 
-test('release health and production smoke gate provider incident alert delivery', () => {
-  assert.match(worker,/providerIncidentAlertDelivery: 'enabled'/);
-  assert.match(worker,/providerIncidentAlertDeliverySelfTest: providerIncidentAlertSelfTest\(\)\.pass \? 'enabled' : 'failed'/);
-  assert.match(smoke,/'providerIncidentAlertDelivery'/);
-  assert.match(smoke,/'providerIncidentAlertDeliverySelfTest'/);
+test('release health and production smoke require persistent and unknown-safe alert delivery', () => {
+  assert.match(worker,/providerIncidentAlertDelivery:'enabled'/);
+  assert.match(worker,/providerIncidentAlertPersistence:'enabled'/);
+  assert.match(worker,/providerIncidentAlertUnknownSafety:'enabled'/);
+  assert.match(worker,/providerIncidentAlertDeliverySelfTest:providerIncidentAlertSelfTest\(\)\.pass \? 'enabled' : 'failed'/);
+  for (const marker of [
+    'providerIncidentAlertDelivery',
+    'providerIncidentAlertPersistence',
+    'providerIncidentAlertUnknownSafety',
+    'providerIncidentAlertDeliverySelfTest',
+  ]) {
+    assert.ok(smoke.includes("'" + marker + "'"),marker);
+  }
 });
 
-test('lifecycle events include watch, open, update, recovery and alert delivery state', () => {
+test('operational lifecycle includes watch, incident, recovery and delivery states', () => {
   for (const marker of ['provider_watch_started','provider_incident_opened','provider_incident_updated','provider_incident_recovered']) {
     assert.ok(incidents.includes(marker),marker);
   }
-  assert.match(alerts,/lifecycleEvent:ok \? 'alert_sent' : 'alert_failed'/);
+  for (const marker of ['alert_claim_acquired','alert_duplicate_suppressed','alert_sent','alert_retry_pending','alert_terminal_failed','alert_unknown','alert_persistence_failure']) {
+    assert.ok(alerts.includes(marker),marker);
+  }
 });

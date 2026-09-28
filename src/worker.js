@@ -52,7 +52,14 @@ import { createReminderDeliveryService } from './reminder-delivery-service.js';
 import { createScheduledJobsRuntime } from './scheduled-jobs.js';
 import { createProviderObservabilityRuntime } from './provider-observability.js';
 import { buildProviderSloIncidentTimeline, providerSloIncidentOpsEvent, providerSloIncidentUpdateOpsEvent } from './provider-slo-incidents.js';
-import { deliverProviderIncidentAlert, planProviderIncidentAlert, providerIncidentAlertOpsEvent, providerIncidentAlertSelfTest } from './provider-incident-alerts.js';
+import {
+  deliverProviderIncidentAlert,
+  planProviderIncidentAlert,
+  providerIncidentAlertLedgerSummary,
+  providerIncidentAlertOpsEvents,
+  providerIncidentAlertSelfTest,
+  providerIncidentDestinationKey,
+} from './provider-incident-alerts.js';
 
 const memory = {
   users: new Map(),
@@ -141,7 +148,7 @@ const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
 const RELEASE_CHANNEL = 'rc144';
 const RC_NAME = 'RC144';
-const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.19; для существующей примените все доступные миграции из supabase/migrations до v6.19.';
+const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.19 и примените миграции до v6.20; для существующей примените все доступные миграции из supabase/migrations до v6.20.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49';
 
@@ -11900,37 +11907,47 @@ async function processPostMatchReturns(cfg) {
 
 async function sendTelegramMessage(chatId, text, cfg, options = {}) {
   if (!cfg.botToken) {
-    return { ok: false, status: 0, errorCode: 0, description: 'Токен Telegram-бота отсутствует.', retryAfter: 0 };
+    return {
+      ok:false,
+      status:0,
+      outcome:'not_started',
+      errorCode:0,
+      description:'Токен Telegram-бота отсутствует.',
+      retryAfter:0,
+    };
   }
 
   try {
     const r = await fetchWithTimeout(`https://api.telegram.org/bot${cfg.botToken}/sendMessage`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: Number(chatId),
+      method:'POST',
+      headers:{ 'content-type':'application/json' },
+      body:JSON.stringify({
+        chat_id:Number(chatId),
         text,
-        disable_web_page_preview: options.disableWebPagePreview !== false,
-        ...(options.parseMode ? { parse_mode: String(options.parseMode) } : {}),
-        ...(options.replyMarkup ? { reply_markup: options.replyMarkup } : {}),
+        disable_web_page_preview:options.disableWebPagePreview !== false,
+        ...(options.parseMode ? { parse_mode:String(options.parseMode) } : {}),
+        ...(options.replyMarkup ? { reply_markup:options.replyMarkup } : {}),
       }),
-    }, 7000, 'Telegram sendMessage');
+    },7000,'Telegram sendMessage');
 
     const body = await r.json().catch(() => null);
+    const ok = Boolean(r.ok && body?.ok !== false);
     return {
-      ok: Boolean(r.ok && body?.ok !== false),
-      status: Number(r.status || 0),
-      errorCode: Number(body?.error_code || 0),
-      description: redactOpsString(body?.description || (r.ok ? '' : `Telegram HTTP ${r.status}`), 220),
-      retryAfter: Number(body?.parameters?.retry_after || r.headers.get('retry-after') || 0),
+      ok,
+      status:Number(r.status || 0),
+      outcome:ok ? 'sent' : 'confirmed_failure',
+      errorCode:Number(body?.error_code || 0),
+      description:redactOpsString(body?.description || (r.ok ? '' : `Telegram HTTP ${r.status}`),220),
+      retryAfter:Number(body?.parameters?.retry_after || r.headers.get('retry-after') || 0),
     };
   } catch (error) {
     return {
-      ok: false,
-      status: 0,
-      errorCode: 0,
-      description: redactOpsString(error?.message || 'Telegram network error.', 220),
-      retryAfter: 0,
+      ok:false,
+      status:0,
+      outcome:'unknown',
+      errorCode:0,
+      description:redactOpsString(error?.message || 'Telegram network error.',220),
+      retryAfter:0,
     };
   }
 }
@@ -15175,6 +15192,97 @@ async function readProviderIncidentAlertEvents(cfg, hours = 168) {
   }
 }
 
+
+async function providerIncidentAlertDestinations(cfg) {
+  const admins = Array.isArray(cfg.adminTelegramIds) ? cfg.adminTelegramIds : [];
+  const rows = await Promise.all(admins.map(async (chatId,slot) => ({
+    slot,
+    destinationKey:await providerIncidentDestinationKey(chatId,cfg.botToken || 'primary'),
+  })));
+  return rows.filter(row => row.destinationKey);
+}
+
+async function readProviderIncidentAlertDeliveries(cfg, hours = 168) {
+  const safeHours = Math.max(1,Math.min(336,Number(hours || 168)));
+  if (!hasSupabase(cfg)) {
+    return { ok:false, persistent:false, status:'not_configured', items:[], hours:safeHours };
+  }
+  const since = new Date(Date.now() - safeHours * 60 * 60_000).toISOString();
+  try {
+    const items = await supaSelectMany(cfg,'provider_incident_alert_deliveries',{
+      created_at:`gte.${since}`,
+    },{limit:500,order:'created_at.asc'});
+    return { ok:true, persistent:true, status:'ok', items:Array.isArray(items) ? items : [], hours:safeHours };
+  } catch (error) {
+    return {
+      ok:false,
+      persistent:false,
+      status:String(error?.code || 'error'),
+      items:[],
+      hours:safeHours,
+      detail:redactOpsString(error?.message || error,160),
+    };
+  }
+}
+
+async function readProviderIncidentAlertDeliveryContract(cfg) {
+  if (!hasSupabase(cfg)) return { ok:false, status:'not_configured', version:'' };
+  try {
+    const raw = await supaRpc(cfg,'provider_incident_alert_delivery_contract',{},3000);
+    const ok = Boolean(raw?.ok);
+    return {
+      ok,
+      status:ok ? 'ok' : 'contract_mismatch',
+      version:String(raw?.version || ''),
+      table:Boolean(raw?.table),
+      claimRpc:Boolean(raw?.claimRpc),
+      finalizeRpc:Boolean(raw?.finalizeRpc),
+      uniqueIdentity:Boolean(raw?.uniqueIdentity),
+    };
+  } catch (error) {
+    return {
+      ok:false,
+      status:String(error?.code || 'error'),
+      version:'',
+      detail:redactOpsString(error?.message || error,160),
+    };
+  }
+}
+
+async function claimProviderIncidentAlertDelivery(cfg,input = {}) {
+  if (!hasSupabase(cfg)) throw new Error('Persistent incident alert ledger is unavailable.');
+  const raw = await supaRpc(cfg,'claim_provider_incident_alert_delivery',{
+    p_incident_id:String(input.incidentId || ''),
+    p_transition:String(input.transition || ''),
+    p_alert_key:String(input.alertKey || ''),
+    p_destination_key:String(input.destinationKey || ''),
+    p_destination_slot:Number(input.destinationSlot || 0),
+    p_max_attempts:Math.max(1,Number(input.maxAttempts || 3)),
+    p_lease_seconds:Math.max(30,Number(input.leaseSeconds || 120)),
+  },4000);
+  if (!raw || typeof raw.acquired !== 'boolean') {
+    throw new Error('Persistent incident alert claim was not confirmed.');
+  }
+  return raw;
+}
+
+async function finalizeProviderIncidentAlertDelivery(cfg,input = {}) {
+  if (!hasSupabase(cfg)) throw new Error('Persistent incident alert ledger is unavailable.');
+  const raw = await supaRpc(cfg,'finalize_provider_incident_alert_delivery',{
+    p_alert_key:String(input.alertKey || ''),
+    p_destination_key:String(input.destinationKey || ''),
+    p_status:String(input.status || ''),
+    p_retry_at:input.retryAt || null,
+    p_http_status:Number.isFinite(Number(input.httpStatus)) ? Number(input.httpStatus) : null,
+    p_error_code:input.errorCode ? String(input.errorCode).slice(0,80) : null,
+    p_error_message:input.errorMessage ? redactOpsString(input.errorMessage,160) : null,
+  },4000);
+  if (!raw?.ok) {
+    throw new Error('Persistent incident alert finalization was not confirmed: ' + String(raw?.reason || 'unknown'));
+  }
+  return raw;
+}
+
 function providerSloSelfTest() {
   const synthetic = summarizeProviderObservabilityWindows([
     { metadata:{ windowStartedAt:'2026-09-28T00:00:00.000Z', windowEndedAt:'2026-09-28T00:15:00.000Z', series:[
@@ -15384,13 +15492,26 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
   const currentStart = new Date(now.getTime() - 60 * 60_000);
   const historyStart = new Date(now.getTime() - 6 * 60 * 60_000);
 
-  const [supabase, schemaDrift, source, telegramWebhook, providerSloSource, providerAlertSource] = await Promise.all([
+  const [
+    supabase,
+    schemaDrift,
+    source,
+    telegramWebhook,
+    providerSloSource,
+    providerAlertSource,
+    providerAlertLedger,
+    providerAlertContract,
+    providerAlertDestinations,
+  ] = await Promise.all([
     probeSupabaseConfirmed(cfg),
     probeSupabaseSchemaDriftConfirmed(cfg),
     readOpsEventsRange(cfg, historyStart.toISOString(), now.toISOString(), 1000),
     readTelegramDedupeHealth(cfg,60),
     readProviderSloWindows(cfg,168),
     readProviderIncidentAlertEvents(cfg,168),
+    readProviderIncidentAlertDeliveries(cfg,168),
+    readProviderIncidentAlertDeliveryContract(cfg),
+    providerIncidentAlertDestinations(cfg),
   ]);
 
   const releaseItems = source.items.filter(item => {
@@ -15414,12 +15535,21 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     { hours:6, includeCurrent:true },
   );
   const providerSloIncident = buildProviderSloIncidentTimeline(providerSloWindows, { nowMs:now.getTime() });
-  const incidentAlertPlan = options.record !== false
-    ? planProviderIncidentAlert(providerSloIncident, providerAlertSource.items, {
+  const incidentAlertCandidate = options.record !== false
+    ? planProviderIncidentAlert(providerSloIncident, providerAlertLedger.items, {
         nowMs:now.getTime(),
-        adminCount:(cfg.adminTelegramIds || []).length,
+        destinations:providerAlertDestinations,
       })
     : { action:'none', reason:'read_only_monitor' };
+  const incidentAlertPersistenceReady = Boolean(providerAlertLedger.persistent && providerAlertContract.ok);
+  const incidentAlertPlan = incidentAlertCandidate.action === 'send' && !incidentAlertPersistenceReady
+    ? {
+        ...incidentAlertCandidate,
+        action:'none',
+        reason:'persistent_ledger_unavailable',
+        blockedCandidate:true,
+      }
+    : incidentAlertCandidate;
   const health = productionMonitorState({
     supabaseOk: supabase.ok,
     schemaOk: schemaDrift.ok,
@@ -15487,6 +15617,9 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
       alerting:{
         configured:Boolean(cfg.botToken && (cfg.adminTelegramIds || []).length),
         adminRecipients:(cfg.adminTelegramIds || []).length,
+        persistent:incidentAlertPersistenceReady,
+        contractOk:Boolean(providerAlertContract.ok),
+        ledger:providerIncidentAlertLedgerSummary(providerAlertLedger.items),
         nextAction:incidentAlertPlan.action === 'send' ? incidentAlertPlan.kind : 'none',
         reason:incidentAlertPlan.reason || '',
       },
@@ -15498,8 +15631,11 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
       providerSloWindowCount:Number(providerSlo.windowCount || 0),
       providerSloHistoryWindows:Number(providerSloWindows.length || 0),
       providerAlertHistoryEvents:Number(providerAlertSource.items?.length || 0),
-      migrationReady: Boolean(source.migrationReady && providerSloSource.migrationReady),
-      supabaseAuthFailuresCurrentRelease: supabaseAuthFailures,
+      providerAlertLedgerRows:Number(providerAlertLedger.items?.length || 0),
+      providerAlertLedgerStatus:String(providerAlertLedger.status || ''),
+      providerAlertContractStatus:String(providerAlertContract.status || ''),
+      migrationReady:Boolean(source.migrationReady && providerSloSource.migrationReady && providerAlertLedger.persistent && providerAlertContract.ok),
+      supabaseAuthFailuresCurrentRelease:supabaseAuthFailures,
     },
     policy: {
       consumesFootballApi: false,
@@ -15516,30 +15652,60 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     if (incidentEvent) await recordOpsEvent(cfg, incidentEvent).catch(() => {});
   }
 
-  if (options.record !== false && incidentAlertPlan.action === 'send') {
-    if (incidentAlertPlan.kind === 'escalation') {
-      const updateEvent = providerSloIncidentUpdateOpsEvent(providerSloIncident.activeIncident, 'severity_changed');
-      if (updateEvent) await recordOpsEvent(cfg, updateEvent).catch(() => {});
-    }
+  if (options.record !== false && incidentAlertPlan.blockedCandidate) {
+    await recordOpsEvent(cfg,{
+      severity:'error',
+      source:'provider_alert',
+      eventType:'alert_delivery',
+      code:'PROVIDER_SLO_ALERT_PERSISTENCE_FAILED',
+      message:'Persistent alert delivery claim is unavailable; Telegram delivery was suppressed.',
+      endpoint:'cron:production-monitor',
+      meta:{
+        lifecycleEvent:'alert_persistence_failure',
+        incidentId:incidentAlertPlan.incidentId || null,
+        alertKind:String(incidentAlertPlan.kind || ''),
+        deliveryKey:String(incidentAlertPlan.alertKey || incidentAlertPlan.deliveryKey || ''),
+        reason:'persistent_ledger_unavailable',
+      },
+    }).catch(()=>{});
+  }
 
+  if (options.record !== false && incidentAlertPlan.action === 'send') {
     let delivery;
     try {
       delivery = await deliverProviderIncidentAlert({
         plan:incidentAlertPlan,
         adminTelegramIds:cfg.adminTelegramIds || [],
+        claimDelivery:input => claimProviderIncidentAlertDelivery(cfg,input),
+        finalizeDelivery:input => finalizeProviderIncidentAlertDelivery(cfg,input),
         sendMessage:(chatId,text) => sendTelegramMessage(chatId,text,cfg),
+        nowMs:now.getTime(),
       });
     } catch (error) {
       delivery = {
         ok:false,
+        outcomes:(incidentAlertPlan.targetDeliveries || []).map(target => ({
+          slot:Number(target?.slot),
+          state:'persistence_failure',
+          claimAcquired:false,
+          reason:redactOpsString(error?.message || error,160),
+        })),
         deliveredSlots:[],
-        failedSlots:Array.isArray(incidentAlertPlan.targetSlots) ? incidentAlertPlan.targetSlots : [],
-        failures:[{ slot:-1, status:0, retryable:true, reason:redactOpsString(error?.message || error,160) }],
-        recipientCount:Array.isArray(incidentAlertPlan.targetSlots) ? incidentAlertPlan.targetSlots.length : 0,
+        failedSlots:(incidentAlertPlan.targetDeliveries || []).map(target => Number(target?.slot)),
+        recipientCount:(incidentAlertPlan.targetDeliveries || []).length,
       };
     }
-    const alertEvent = providerIncidentAlertOpsEvent(incidentAlertPlan, delivery);
-    await recordOpsEvent(cfg, alertEvent).catch(() => {});
+
+    if (
+      incidentAlertPlan.kind === 'escalation'
+      && (delivery.outcomes || []).some(item => item?.claimAcquired)
+    ) {
+      const updateEvent = providerSloIncidentUpdateOpsEvent(providerSloIncident.activeIncident,'severity_changed');
+      if (updateEvent) await recordOpsEvent(cfg,updateEvent).catch(()=>{});
+    }
+
+    const alertEvents = providerIncidentAlertOpsEvents(incidentAlertPlan,delivery);
+    await Promise.allSettled(alertEvents.map(event => recordOpsEvent(cfg,event)));
   }
 
   if (options.record !== false && schemaDrift.recovered) {
@@ -15861,12 +16027,24 @@ async function probeSupabaseSchemaDrift(cfg) {
     { id: 'cache_provenance', table: 'analysis_cache', columns: ['cache_key','provider','source_updated_at','freshness_status','updated_at'] },
     { id: 'odds_provenance', table: 'odds_snapshots', columns: ['fixture_id','provider','bookmaker_count','source_updated_at'] },
     { id: 'model_provenance', table: 'model_predictions', columns: ['fixture_id','data_provenance','model_inputs_version'] },
+    { id:'provider_incident_alert_delivery', table:'provider_incident_alert_deliveries', columns:['incident_id','transition','alert_key','destination_key','status','attempts','retry_at','unknown_at'] },
   ];
-  const [checks,fingerprint,personalWriteGuards] = await Promise.all([
+  const [tableChecks,fingerprint,personalWriteGuards,providerIncidentAlertDeliveryContract] = await Promise.all([
     Promise.all(specs.map(async spec => ({ ...spec, ...(await probeTableColumns(cfg, spec.table, spec.columns)) }))),
     readSupabaseSchemaFingerprint(cfg),
     readPersonalWriteGuardContract(cfg),
+    readProviderIncidentAlertDeliveryContract(cfg),
   ]);
+  const checks=[
+    ...tableChecks,
+    {
+      id:'provider_incident_alert_delivery_contract',
+      table:'rpc',
+      columns:[],
+      ok:Boolean(providerIncidentAlertDeliveryContract.ok),
+      status:String(providerIncidentAlertDeliveryContract.status || 'error'),
+    },
+  ];
   const summary=summarizeSupabaseSchemaChecks(checks);
   // Preserve the historical fail-closed dependency list for release-contract
   // regression tests while exposing a more precise drift/unavailable split.
@@ -15885,6 +16063,7 @@ async function probeSupabaseSchemaDrift(cfg) {
     failed:[...new Set(missing)],
     fingerprint,
     personalWriteGuards,
+    providerIncidentAlertDeliveryContract,
   };
 }
 
@@ -22696,8 +22875,10 @@ export default {
         providerSloSelfTest: providerSloSelfTest().pass ? 'enabled' : 'failed',
         providerSloIncidentIntegration: 'enabled',
         providerSloIncidentSelfTest: providerSloIncidentSelfTest().pass ? 'enabled' : 'failed',
-        providerIncidentAlertDelivery: 'enabled',
-        providerIncidentAlertDeliverySelfTest: providerIncidentAlertSelfTest().pass ? 'enabled' : 'failed',
+        providerIncidentAlertDelivery:'enabled',
+        providerIncidentAlertPersistence:'enabled',
+        providerIncidentAlertUnknownSafety:'enabled',
+        providerIncidentAlertDeliverySelfTest:providerIncidentAlertSelfTest().pass ? 'enabled' : 'failed',
         supabaseProbeConfirmation: 'enabled',
         supabaseProbeConfirmationSelfTest: supabaseProbeConfirmationSelfTest().pass ? 'enabled' : 'failed',
         supabaseSchemaProbeConfirmation: 'enabled',

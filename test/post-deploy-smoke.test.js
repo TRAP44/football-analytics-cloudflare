@@ -49,6 +49,8 @@ function healthyFetch({ staleOnce = false, devMode = false, monetization = 'paus
         providerSloIncidentIntegration: 'enabled',
         providerSloIncidentSelfTest: 'enabled',
         providerIncidentAlertDelivery: 'enabled',
+        providerIncidentAlertPersistence: 'enabled',
+        providerIncidentAlertUnknownSafety: 'enabled',
         providerIncidentAlertDeliverySelfTest: 'enabled',
         multiProviderDataService: 'enabled',
         openLigaDbStandingsFallback: 'enabled',
