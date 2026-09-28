@@ -869,16 +869,13 @@ async function runStartupSequence() {
 
   setBootStatus('MatchRadar', 'Загружаем матчи…', 38);
 
-  // These reads are independent. Keep the compatibility manifest as the only
-  // required first hop, then collapse the former runtime → profile → feed
-  // waterfall into one startup batch.
-  const startupTasks = [
+  // Runtime and identity are independent, but personal/feed reads must stay
+  // behind the access decision. This removes one network waterfall without
+  // weakening the strict-beta authorization boundary.
+  await Promise.allSettled([
     loadRuntimeStatus(false),
     loadProfile().catch(()=>null),
-    loadFavorites(),
-    loadMatches(),
-  ];
-  await Promise.allSettled(startupTasks);
+  ]);
 
   if (state.closedBetaBlocked) return false;
   renderProfile();
@@ -887,6 +884,9 @@ async function runStartupSequence() {
   if ($('profileBtn')) $('profileBtn').hidden=false;
   if ($('navProfile')) $('navProfile').hidden=false;
   if ($('navMatches')) $('navMatches').hidden=false;
+
+  const startupTasks = [loadFavorites(), loadMatches()];
+  await Promise.allSettled(startupTasks);
 
   const usable = Boolean(state.profile || admin || navigator.onLine !== false);
   if (!usable && navigator.onLine === false) {
