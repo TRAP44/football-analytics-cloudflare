@@ -478,7 +478,13 @@ if (!worker.includes("releaseCheck('telegram_miniapp_e2e_selftest'")) failures.p
 if (!worker.includes("telegramMiniAppE2E: 'enabled'") || !worker.includes("telegramMiniAppE2ESelfTest: telegramMiniAppE2EDrill().pass ? 'enabled' : 'failed'")) failures.push('RC106 E2E health flags are missing');
 if (!worker.includes('telegramMiniAppE2E: true')) failures.push('RC106 E2E manifest feature is missing');
 if (!app.includes('function returnToTelegram()') || !app.includes("id=\"returnToTelegramBtn\"")) failures.push('RC106 Mini App return-to-Telegram action is missing');
-if (!app.includes('data-analysis-favorite=') || !app.includes("loadHistory(false), loadReminders(), loadFavorites()")) failures.push('RC106 Mini App user-state synchronization is incomplete');
+const rc106UserStateSync =
+  app.includes('data-analysis-favorite=')
+  && app.includes('const secondaryTasks = [loadHistory(false)]')
+  && app.includes('if (!state.remindersLoaded) secondaryTasks.push(loadReminders())')
+  && app.includes('if (!state.favoritesLoaded) secondaryTasks.push(loadFavorites())')
+  && app.includes('Promise.allSettled([loadFavorites(), loadReminders()])');
+if (!rc106UserStateSync) failures.push('RC106 Mini App user-state synchronization is incomplete');
 if (!postDeploySmoke.includes("'telegramMiniAppE2E'") || !postDeploySmoke.includes("'telegramMiniAppE2ESelfTest'")) failures.push('RC106 production smoke E2E flags are missing');
 
 if (!fs.existsSync('test/telegram-webhook-persistent-dedupe-rc107.test.js')) failures.push('Missing RC107 persistent Telegram dedupe regression test');
