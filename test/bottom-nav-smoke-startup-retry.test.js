@@ -24,3 +24,12 @@ test('render smoke cleans failed and successful Chrome profiles', () => {
   assert.match(mainBlock, /if \(profileDir\)[\s\S]*?fsp\.rm\(profileDir/);
   assert.match(mainBlock, /launchChromeWithRetry\(browserExecutable\(\), 3\)/);
 });
+
+
+test('render smoke retries only transient Page.navigate network failures', () => {
+  assert.match(script, /async function navigateWithRetry\(cdp, url, attempts = 3\)/);
+  assert.match(script, /CONNECTION_CLOSED\|CONNECTION_RESET\|TIMED_OUT\|NETWORK_CHANGED\|HTTP2_PROTOCOL_ERROR/);
+  assert.match(script, /if \(!isTransientNavigationError\(lastError\) \|\| attempt >= totalAttempts\) break/);
+  assert.match(script, /250 \* attempt/);
+  assert.match(script, /navigateWithRetry\(cdp, targetUrl, 3\)/);
+});
