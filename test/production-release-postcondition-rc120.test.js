@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { verifyProductionReleasePostcondition } from '../scripts/verify-production-release-postcondition.js';
+import { resolveActiveProductionReleaseIdentity, verifyProductionReleasePostcondition } from '../scripts/verify-production-release-postcondition.js';
 
 const workflow = fs.readFileSync('.github/workflows/deploy-production.yml', 'utf8');
 const activeId = '11111111-2222-3333-4444-555555555555';
@@ -87,4 +87,23 @@ test('RC120 control-plane identity verification runs after deploy and before HTT
   assert.ok(deploy >= 0);
   assert.ok(postcondition > deploy);
   assert.ok(smoke > postcondition);
+});
+
+
+test('RC120 exposes the active production release identity for cumulative runtime diff checks', () => {
+  const result = resolveActiveProductionReleaseIdentity(
+    deployment([{ version_id: activeId, percentage: 100 }]),
+    [version(activeId, `release=${release} sha=${sha}`)],
+  );
+  assert.equal(result.versionId, activeId);
+  assert.equal(result.release, release);
+  assert.equal(result.sha, sha);
+
+  assert.throws(
+    () => resolveActiveProductionReleaseIdentity(
+      deployment([{ version_id: activeId, percentage: 100 }]),
+      [version(activeId, 'malformed-message')],
+    ),
+    /release identity mismatch/,
+  );
 });
