@@ -268,6 +268,50 @@ export function createAdminProviderModule(deps) {
       $('providerSloNote').textContent = `${humanizeTechnicalText(slo.label || 'SLO собирает рабочую выборку.')} ${persistence}`;
     }
 
+    const incident = sloReport.incident || {};
+    const incidentPanel = $('providerSloIncidentPanel');
+    const activeIncident = incident.activeIncident || null;
+    const incidentHistory = Array.isArray(incident.history) ? incident.history : [];
+    if (incidentPanel) {
+      const hasIncidentEvidence = Boolean(activeIncident || incidentHistory.length);
+      incidentPanel.hidden = !hasIncidentEvidence;
+      incidentPanel.classList.toggle('incident', activeIncident?.state === 'incident');
+      incidentPanel.classList.toggle('watch', activeIncident?.state === 'watch');
+      incidentPanel.classList.toggle('recovered', !activeIncident && incidentHistory.length > 0);
+
+      if ($('providerSloIncidentBadge')) {
+        $('providerSloIncidentBadge').textContent = activeIncident?.state === 'incident'
+          ? 'ИНЦИДЕНТ'
+          : activeIncident?.state === 'watch'
+            ? 'КОНТРОЛЬ'
+            : 'ВОССТАНОВЛЕНО';
+      }
+      if ($('providerSloIncidentTitle')) {
+        $('providerSloIncidentTitle').textContent = activeIncident
+          ? (activeIncident.state === 'incident' ? 'Устойчивая деградация provider SLO' : 'Provider SLO требует контроля')
+          : 'Активных provider SLO инцидентов нет';
+      }
+      if ($('providerSloIncidentMeta')) {
+        const latest = activeIncident || incidentHistory[0] || {};
+        const started = latest.startedAt ? dateTime(latest.startedAt) : '—';
+        const duration = Number.isFinite(Number(latest.durationMinutes)) ? `${Number(latest.durationMinutes).toFixed(1)} мин` : '—';
+        $('providerSloIncidentMeta').textContent = activeIncident
+          ? `Подтверждено двумя SLO-окнами · начало ${started} · длительность ${duration}`
+          : `Последнее восстановление: ${latest.recoveredAt ? dateTime(latest.recoveredAt) : '—'}`;
+      }
+      if ($('providerSloIncidentRunbook')) {
+        const steps = activeIncident?.runbook || [];
+        $('providerSloIncidentRunbook').innerHTML = steps.length
+          ? `<strong>Что проверить</strong><ul>${steps.map(step => `<li>${escapeHtml(humanizeTechnicalText(step))}</li>`).join('')}</ul>`
+          : '<span>Автоматические rollback и отключение функций не выполняются.</span>';
+      }
+      if ($('providerSloIncidentHistory')) {
+        $('providerSloIncidentHistory').innerHTML = incidentHistory.length
+          ? incidentHistory.slice(0,3).map(item => `<div><span>${item.active ? 'Активен' : 'Восстановлен'}</span><strong>${escapeHtml(humanizeTechnicalText(item.highestState === 'incident' ? 'Инцидент' : 'Контроль'))}</strong><small>${escapeHtml(item.startedAt ? dateTime(item.startedAt) : '—')} · ${Number.isFinite(Number(item.durationMinutes)) ? `${Number(item.durationMinutes).toFixed(1)} мин` : '—'}</small></div>`).join('')
+          : '';
+      }
+    }
+
     renderProviderAudit();
     renderExpandedDataReleaseGate();
     renderAdminOverview();

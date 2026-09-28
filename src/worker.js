@@ -51,6 +51,7 @@ import { createReminderDeliveryStore } from './reminder-delivery-store.js';
 import { createReminderDeliveryService } from './reminder-delivery-service.js';
 import { createScheduledJobsRuntime } from './scheduled-jobs.js';
 import { createProviderObservabilityRuntime } from './provider-observability.js';
+import { buildProviderSloIncidentTimeline, providerSloIncidentOpsEvent } from './provider-slo-incidents.js';
 
 const memory = {
   users: new Map(),
@@ -13612,6 +13613,10 @@ async function collectDiagnostics(cfg) {
   if (provider.cooldownActive) recommendations.push(`API-Football находится на паузе ещё примерно ${footballCooldownRemaining()} сек.; приложение должно использовать последние сохранённые данные.`);
   if (providerObservability?.overall?.state === 'incident') recommendations.push('Provider SLO за 24 часа нарушен: проверьте success rate, timeout/rate-limit долю и задержку по источникам.');
   else if (providerObservability?.overall?.state === 'watch') recommendations.push('Provider SLO за 24 часа вышел из целевого диапазона; наблюдайте provider/operation breakdown перед расширением нагрузки.');
+  for (const step of providerObservability?.incident?.activeIncident?.runbook || []) {
+    if (recommendations.length >= 8) break;
+    recommendations.push(String(step));
+  }
   if (supabase.configured && !supabase.ok) recommendations.push('Проверьте адрес Supabase, сервисный ключ и доступность интерфейса базы данных.');
   if (supabase.recovered) recommendations.push(`Первый Supabase probe не прошёл (${supabase.initialStatus || 'unknown'}), подтверждающий запрос успешно восстановился. Наблюдайте частоту transient recoveries.`);
   if (Number(provider.dailyUsedPct) >= 90) recommendations.push('Дневная квота API-Football использована более чем на 90%; до сброса лимита работаем в экономном режиме.');
@@ -15132,8 +15137,10 @@ async function readProviderSloWindows(cfg, hours = 24) {
 
 async function providerSloReport(cfg, hours = 24) {
   const source = await readProviderSloWindows(cfg, hours);
+  const report = summarizeProviderObservabilityWindows(source.items, { hours:source.hours, includeCurrent:true });
   return {
-    ...summarizeProviderObservabilityWindows(source.items, { hours:source.hours, includeCurrent:true }),
+    ...report,
+    incident: buildProviderSloIncidentTimeline(source.items),
     persistent:Boolean(source.persistent),
     migrationReady:Boolean(source.migrationReady),
   };
@@ -15157,6 +15164,25 @@ function providerSloSelfTest() {
       && collecting.overall.state === 'collecting',
     state:synthetic.overall.state,
     collecting:collecting.overall.state,
+  };
+}
+
+function providerSloIncidentSelfTest() {
+  const windows = [
+    { created_at:'2026-09-28T10:00:00Z', metadata:{ windowStartedAt:'2026-09-28T09:45:00Z', windowEndedAt:'2026-09-28T10:00:00Z', sloState:'healthy', totals:{requests:12,successRatePct:100} } },
+    { created_at:'2026-09-28T10:15:00Z', metadata:{ windowStartedAt:'2026-09-28T10:00:00Z', windowEndedAt:'2026-09-28T10:15:00Z', sloState:'healthy', totals:{requests:11,successRatePct:100} } },
+    { created_at:'2026-09-28T10:30:00Z', metadata:{ windowStartedAt:'2026-09-28T10:15:00Z', windowEndedAt:'2026-09-28T10:30:00Z', sloState:'watch', totals:{requests:10,successRatePct:97,retryRatePct:15} } },
+    { created_at:'2026-09-28T10:45:00Z', metadata:{ windowStartedAt:'2026-09-28T10:30:00Z', windowEndedAt:'2026-09-28T10:45:00Z', sloState:'watch', totals:{requests:10,successRatePct:96,retryRatePct:18} } },
+  ];
+  const incident = buildProviderSloIncidentTimeline(windows,{nowMs:Date.parse('2026-09-28T11:00:00Z')});
+  const event = providerSloIncidentOpsEvent(incident.transition);
+  return {
+    pass: incident.state === 'watch'
+      && incident.activeIncident?.active === true
+      && incident.transition?.kind === 'opened'
+      && event?.code === 'PROVIDER_SLO_WATCH',
+    state:incident.state,
+    transition:incident.transition?.kind || '',
   };
 }
 
@@ -15266,6 +15292,7 @@ function productionMonitorState(input = {}) {
   const schemaStatus = String(input.schemaStatus || (schemaOk ? 'ok' : 'drift'));
   const releaseState = String(input.releaseState || 'healthy');
   const providerHealth = String(input.providerHealth || 'waiting');
+  const providerSloState = String(input.providerSloState || 'collecting');
   const telegramDedupeState = String(input.telegramDedupeState || 'healthy');
   const persistent = input.persistent !== false;
   const supabaseAuthFailures = Number(input.supabaseAuthFailures || 0);
@@ -15273,7 +15300,14 @@ function productionMonitorState(input = {}) {
   if (!supabaseOk || ['drift','mixed'].includes(schemaStatus) || supabaseAuthFailures > 0 || releaseState === 'incident' || telegramDedupeState === 'incident') {
     return { state: 'incident', label: 'Production требует немедленной проверки' };
   }
-  if (schemaStatus === 'unavailable' || releaseState === 'watch' || telegramDedupeState === 'watch' || !persistent || ['critical','warning'].includes(providerHealth)) {
+  if (
+    schemaStatus === 'unavailable'
+    || releaseState === 'watch'
+    || telegramDedupeState === 'watch'
+    || !persistent
+    || ['critical','warning'].includes(providerHealth)
+    || ['watch','incident'].includes(providerSloState)
+  ) {
     return { state: 'watch', label: 'Production работает, но нужен контроль' };
   }
   return { state: 'healthy', label: 'Production monitor не видит блокирующих сигналов' };
@@ -15292,6 +15326,9 @@ function productionMonitorSelfTest() {
   const watch = productionMonitorState({
     supabaseOk: true, schemaOk: true, releaseState: 'healthy', providerHealth: 'ok', telegramDedupeState:'watch', persistent: true,
   });
+  const providerSloWatch = productionMonitorState({
+    supabaseOk:true, schemaOk:true, releaseState:'healthy', providerHealth:'ok', providerSloState:'incident', telegramDedupeState:'healthy', persistent:true,
+  });
   const telegramIncident = productionMonitorState({
     supabaseOk: true, schemaOk: true, releaseState: 'healthy', providerHealth: 'ok', telegramDedupeState:'incident', persistent: true,
   });
@@ -15299,11 +15336,12 @@ function productionMonitorSelfTest() {
     supabaseOk: true, schemaOk: true, supabaseAuthFailures:1, releaseState:'healthy', providerHealth:'ok', telegramDedupeState:'healthy', persistent:true,
   });
   return {
-    pass: healthy.state === 'healthy' && drift.state === 'incident' && schemaUnavailable.state === 'watch' && watch.state === 'watch' && telegramIncident.state === 'incident' && authIncident.state === 'incident',
+    pass: healthy.state === 'healthy' && drift.state === 'incident' && schemaUnavailable.state === 'watch' && watch.state === 'watch' && providerSloWatch.state === 'watch' && telegramIncident.state === 'incident' && authIncident.state === 'incident',
     healthy: healthy.state,
     drift: drift.state,
     schemaUnavailable: schemaUnavailable.state,
     watch: watch.state,
+    providerSloWatch:providerSloWatch.state,
     telegramIncident: telegramIncident.state,
     authIncident: authIncident.state,
   };
@@ -15335,10 +15373,12 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     && /HTTP 401|PGRST303|invalid.*jwt|invalid.*api.?key/i.test(String(item?.message || ''))
   ).length;
   const provider = providerSnapshot();
+  const providerSloWindows = source.items.filter(item => item?.source === 'provider' && item?.code === 'PROVIDER_SLO_WINDOW');
   const providerSlo = summarizeProviderObservabilityWindows(
-    source.items.filter(item => item?.source === 'provider' && item?.code === 'PROVIDER_SLO_WINDOW'),
+    providerSloWindows,
     { hours:6, includeCurrent:true },
   );
+  const providerSloIncident = buildProviderSloIncidentTimeline(providerSloWindows, { nowMs:now.getTime() });
   const health = productionMonitorState({
     supabaseOk: supabase.ok,
     schemaOk: schemaDrift.ok,
@@ -15346,6 +15386,7 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     supabaseAuthFailures,
     releaseState: releaseHealth.state,
     providerHealth: provider.health,
+    providerSloState: providerSloIncident.state,
     telegramDedupeState: telegramWebhook.state,
     persistent: source.persistent,
   });
@@ -15401,6 +15442,7 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
       plan: provider.plan || 'UNKNOWN',
       cooldownActive: Boolean(provider.cooldownActive),
       slo: providerSlo.overall,
+      incident: providerSloIncident,
     },
     telegramWebhook,
     observability: {
@@ -15419,6 +15461,11 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     },
   };
   memory.productionMonitor = { at: Date.now(), value };
+
+  if (options.record !== false && providerSloFlush?.ok && providerSloIncident.transition) {
+    const incidentEvent = providerSloIncidentOpsEvent(providerSloIncident.transition);
+    if (incidentEvent) await recordOpsEvent(cfg, incidentEvent).catch(() => {});
+  }
 
   if (options.record !== false && schemaDrift.recovered) {
     await recordOpsEvent(cfg, {
@@ -15493,6 +15540,8 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
         releaseState: releaseHealth.state,
         releaseScore: Number(releaseHealth.score || 0),
         providerHealth: provider.health || 'waiting',
+        providerSloState: providerSloIncident.state,
+        providerSloActive: Boolean(providerSloIncident.activeIncident),
         telegramDedupeState: telegramWebhook.state,
         telegramStaleClaims: Number(telegramWebhook.staleProcessing || 0),
         telegramFailedClaims: Number(telegramWebhook.failedCurrent || 0),
@@ -22570,6 +22619,8 @@ export default {
         productionMonitorSelfTest: productionMonitorSelfTest().pass ? 'enabled' : 'failed',
         providerSloObservability: 'enabled',
         providerSloSelfTest: providerSloSelfTest().pass ? 'enabled' : 'failed',
+        providerSloIncidentIntegration: 'enabled',
+        providerSloIncidentSelfTest: providerSloIncidentSelfTest().pass ? 'enabled' : 'failed',
         supabaseProbeConfirmation: 'enabled',
         supabaseProbeConfirmationSelfTest: supabaseProbeConfirmationSelfTest().pass ? 'enabled' : 'failed',
         supabaseSchemaProbeConfirmation: 'enabled',
