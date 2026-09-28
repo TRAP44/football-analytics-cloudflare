@@ -10,12 +10,7 @@ export function createUserFavoritesService({
 }) {
   async function getFavorites(userId, cfg) {
     if (hasSupabase(cfg)) {
-      try {
-        return await supaSelectMany(cfg, 'favorites', { telegram_id: `eq.${Number(userId)}` }, { limit: 50, order: 'created_at.desc' });
-      } catch (e) {
-        console.warn('favorites read skipped', e?.message || e);
-        return [];
-      }
+      return await supaSelectMany(cfg, 'favorites', { telegram_id: `eq.${Number(userId)}` }, { limit: 50, order: 'created_at.desc' });
     }
     return memory.favorites.get(Number(userId)) || [];
   }
