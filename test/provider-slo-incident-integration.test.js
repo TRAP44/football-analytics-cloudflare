@@ -12,7 +12,7 @@ const smoke = fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
 test('production monitor persists provider SLO incident transitions only with a fresh SLO window', () => {
   assert.match(worker, /providerSloFlush\?\.ok && providerSloIncident\.transition/);
   assert.match(worker, /providerSloIncidentOpsEvent\(providerSloIncident\.transition\)/);
-  assert.match(worker, /eventType:'slo_incident'/);
+  assert.match(incidents, /eventType:'slo_incident'/);
   assert.match(incidents, /PROVIDER_SLO_WATCH/);
   assert.match(incidents, /PROVIDER_SLO_INCIDENT/);
   assert.match(incidents, /PROVIDER_SLO_RECOVERED/);
