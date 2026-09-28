@@ -3112,6 +3112,8 @@ html {
   min-height:44px;
 }
 .miniapp-public-shell .fav-star.compact{
+  display:grid;
+  place-items:center;
   width:44px;
   height:44px;
 }
