@@ -59,17 +59,6 @@ async function localServer() {
   return { server, url: `http://127.0.0.1:${address.port}/` };
 }
 
-async function freePort() {
-  const server = createServer();
-  await new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolve);
-  });
-  const port = server.address().port;
-  await new Promise(resolve => server.close(resolve));
-  return port;
-}
-
 async function waitForJson(url, attempts = 80) {
   let last = '';
   for (let i = 0; i < attempts; i += 1) {
@@ -83,6 +72,34 @@ async function waitForJson(url, attempts = 80) {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   throw new Error(`Chrome DevTools endpoint unavailable: ${last}`);
+}
+
+async function waitForDevToolsPort(profileDir, chrome, stderrText, attempts = 100) {
+  const activePortFile = path.join(profileDir, 'DevToolsActivePort');
+  let last = 'not ready';
+  for (let i = 0; i < attempts; i += 1) {
+    if (chrome.exitCode !== null) {
+      const stderr = String(stderrText?.() || '').trim().slice(-1200);
+      throw new Error(
+        `Chrome exited before DevTools became ready (exit ${chrome.exitCode})${stderr ? `: ${stderr}` : ''}`,
+      );
+    }
+    try {
+      const raw = await fsp.readFile(activePortFile, 'utf8');
+      const port = Number(raw.split(/\r?\n/, 1)[0]);
+      if (Number.isInteger(port) && port > 0 && port <= 65535) return port;
+      last = `invalid DevToolsActivePort: ${raw.slice(0, 80)}`;
+    } catch (error) {
+      last = error?.code === 'ENOENT'
+        ? 'DevToolsActivePort not created yet'
+        : (error?.message || String(error));
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  const stderr = String(stderrText?.() || '').trim().slice(-1200);
+  throw new Error(
+    `Chrome DevToolsActivePort unavailable: ${last}${stderr ? `; stderr: ${stderr}` : ''}`,
+  );
 }
 
 class Cdp {
@@ -173,8 +190,8 @@ async function main() {
   const remoteUrl = process.argv[2] ? new URL(process.argv[2]).toString() : '';
   const local = remoteUrl ? null : await localServer();
   const targetUrl = remoteUrl || local.url;
-  const debugPort = await freePort();
   const profileDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'matchradar-nav-render-'));
+  let chromeStderr = '';
   const chrome = spawn(browserExecutable(), [
     '--headless=new',
     '--no-sandbox',
@@ -183,13 +200,18 @@ async function main() {
     '--no-proxy-server',
     '--no-first-run',
     '--no-default-browser-check',
-    `--remote-debugging-port=${debugPort}`,
+    '--remote-debugging-port=0',
     `--user-data-dir=${profileDir}`,
     'about:blank',
   ], { stdio: ['ignore', 'ignore', 'pipe'] });
+  chrome.stderr?.setEncoding('utf8');
+  chrome.stderr?.on('data', chunk => {
+    chromeStderr = (chromeStderr + String(chunk)).slice(-8000);
+  });
 
   let cdp;
   try {
+    const debugPort = await waitForDevToolsPort(profileDir, chrome, () => chromeStderr);
     await waitForJson(`http://127.0.0.1:${debugPort}/json/version`);
     const page = await fetch(`http://127.0.0.1:${debugPort}/json/new?${encodeURIComponent(targetUrl)}`, { method: 'PUT' }).then(r => r.json());
     cdp = new Cdp(page.webSocketDebuggerUrl);
