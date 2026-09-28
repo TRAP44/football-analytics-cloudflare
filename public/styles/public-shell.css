@@ -3100,3 +3100,171 @@ html {
   .miniapp-public-shell .history-item,
   .miniapp-public-shell #profileView .profile-panel{scroll-behavior:auto}
 }
+
+
+/* MatchRadar UX QA — Edge Cases & Accessibility */
+.miniapp-public-shell .compact-actions .analyze-btn,
+.miniapp-public-shell .fav-star.compact,
+.miniapp-public-shell .quick-reminder-btn.compact,
+.miniapp-public-shell .history-open,
+.miniapp-public-shell .favorite-remove,
+.miniapp-public-shell .reminder-remove{
+  min-height:44px;
+}
+.miniapp-public-shell .fav-star.compact{
+  display:grid;
+  place-items:center;
+  width:44px;
+  height:44px;
+}
+.miniapp-public-shell .quick-reminder-btn.compact{
+  min-width:44px;
+}
+.miniapp-public-shell .favorite-remove,
+.miniapp-public-shell .reminder-remove{
+  min-width:72px;
+}
+
+.miniapp-public-shell .compact-team strong,
+.miniapp-public-shell .my-team-head strong,
+.miniapp-public-shell .my-team-match span,
+.miniapp-public-shell .history-main > strong,
+.miniapp-public-shell .favorite-team-main strong,
+.miniapp-public-shell .reminder-row strong,
+.miniapp-public-shell .ai-track-row > div > strong{
+  min-width:0;
+  overflow:hidden;
+  overflow-wrap:anywhere;
+  white-space:normal;
+  text-overflow:clip;
+  display:-webkit-box;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+}
+.miniapp-public-shell .compact-team strong{
+  line-height:1.18;
+}
+.miniapp-public-shell .my-team-match span,
+.miniapp-public-shell .history-main > strong,
+.miniapp-public-shell .favorite-team-main strong,
+.miniapp-public-shell .reminder-row strong{
+  line-height:1.3;
+}
+
+.miniapp-public-shell .compact-loader,
+.miniapp-public-shell .history-empty-state,
+.miniapp-public-shell .profile-empty-state,
+.miniapp-public-shell .search-empty-state,
+.miniapp-public-shell .ai-track-record-empty,
+.miniapp-public-shell .ai-track-record-error,
+.miniapp-public-shell .recovery-card,
+.miniapp-public-shell .journey-state{
+  box-sizing:border-box;
+  max-width:100%;
+  overflow-wrap:anywhere;
+}
+.miniapp-public-shell .compact-loader{
+  min-height:84px;
+  padding:18px;
+  border:1px solid color-mix(in srgb,var(--line) 64%,transparent);
+  border-radius:17px;
+  background:color-mix(in srgb,var(--surface) 92%,var(--bg));
+}
+.miniapp-public-shell .history-empty-state,
+.miniapp-public-shell .profile-empty-state,
+.miniapp-public-shell .search-empty-state,
+.miniapp-public-shell .ai-track-record-empty,
+.miniapp-public-shell .ai-track-record-error{
+  padding:22px 16px;
+  border:1px dashed color-mix(in srgb,var(--line) 82%,transparent);
+  background:color-mix(in srgb,var(--surface) 90%,var(--bg));
+}
+.miniapp-public-shell .ai-track-record-empty strong,
+.miniapp-public-shell .ai-track-record-error strong{
+  display:block;
+  color:var(--text);
+  font-size:14px;
+  letter-spacing:-.01em;
+}
+.miniapp-public-shell .ai-track-record-empty p,
+.miniapp-public-shell .ai-track-record-error p{
+  margin:6px 0 0;
+  color:var(--hint);
+  font-size:11px;
+  line-height:1.5;
+}
+.miniapp-public-shell .ai-track-record-error .secondary-btn{
+  min-height:44px;
+  margin-top:12px;
+}
+.miniapp-public-shell .recovery-card{
+  grid-template-columns:38px minmax(0,1fr) auto;
+  gap:10px;
+  align-items:center;
+  padding:13px;
+  border-radius:16px;
+}
+.miniapp-public-shell .recovery-card-copy{
+  min-width:0;
+}
+.miniapp-public-shell .recovery-card-copy strong,
+.miniapp-public-shell .recovery-card-copy span{
+  overflow-wrap:anywhere;
+}
+.miniapp-public-shell .recovery-card .recovery-retry-btn{
+  min-height:44px;
+}
+.miniapp-public-shell .journey-state{
+  border-radius:18px;
+  background:color-mix(in srgb,var(--surface) 94%,var(--bg));
+}
+
+:root[data-theme="light"] .miniapp-public-shell .favorite-remove,
+:root[data-theme="light"] .miniapp-public-shell .reminder-remove{
+  color:#b42318;
+  border-color:rgba(180,35,24,.20);
+  background:rgba(180,35,24,.055);
+}
+:root[data-theme="light"] .miniapp-public-shell .history-ai-chip.skip{
+  color:#9a6700;
+  background:rgba(154,103,0,.08);
+}
+:root[data-theme="light"] .miniapp-public-shell .data-notice.stale{
+  border-color:rgba(154,103,0,.22);
+}
+
+@media(max-width:430px){
+  .miniapp-public-shell .match-secondary-actions{
+    min-height:44px;
+    align-items:center;
+  }
+  .miniapp-public-shell .recovery-card{
+    grid-template-columns:38px minmax(0,1fr);
+  }
+  .miniapp-public-shell .recovery-card .recovery-retry-btn{
+    grid-column:1 / -1;
+    width:100%;
+  }
+}
+@media(max-width:390px){
+  .miniapp-public-shell .favorite-remove,
+  .miniapp-public-shell .reminder-remove,
+  .miniapp-public-shell .history-open{
+    min-height:44px;
+  }
+  .miniapp-public-shell .history-item{
+    align-items:start;
+  }
+}
+@media(max-width:360px){
+  .miniapp-public-shell .compact-team strong{
+    font-size:11px;
+  }
+  .miniapp-public-shell .history-empty-state,
+  .miniapp-public-shell .profile-empty-state,
+  .miniapp-public-shell .search-empty-state,
+  .miniapp-public-shell .ai-track-record-empty,
+  .miniapp-public-shell .ai-track-record-error{
+    padding:18px 13px;
+  }
+}

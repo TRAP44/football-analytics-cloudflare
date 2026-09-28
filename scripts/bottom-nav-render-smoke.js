@@ -263,6 +263,53 @@ function assertLayout(width, snapshot) {
   }
 }
 
+
+function assertEdgeCaseFixture(width, theme, snapshot) {
+  if (!snapshot?.fixture) throw new Error(`${width}px/${theme}: QA fixture missing`);
+  if (snapshot.fixture.scrollWidth > snapshot.fixture.clientWidth + 1) {
+    throw new Error(`${width}px/${theme}: QA fixture overflows horizontally (${snapshot.fixture.scrollWidth} > ${snapshot.fixture.clientWidth})`);
+  }
+  for (const control of snapshot.controls || []) {
+    if (!control.visible) throw new Error(`${width}px/${theme}: ${control.className} is not visible`);
+    if (control.height < 43.5) throw new Error(`${width}px/${theme}: ${control.className} touch target is only ${control.height}px`);
+  }
+  for (const text of snapshot.longText || []) {
+    if (text.scrollWidth > text.clientWidth + 1) {
+      throw new Error(`${width}px/${theme}: long text overflows in ${text.className}`);
+    }
+    if (text.clientHeight > text.lineHeight * 2.35) {
+      throw new Error(`${width}px/${theme}: visible long text exceeds two lines in ${text.className}`);
+    }
+  }
+}
+
+async function inspectEdgeCaseFixture(cdp, width, theme) {
+  const evaluated = await cdp.call('Runtime.evaluate', {
+    returnByValue: true,
+    expression: `(() => {
+      document.documentElement.dataset.theme = ${JSON.stringify(theme)};
+      document.getElementById('matchradarQaFixture')?.remove();
+      const root = document.createElement('section');
+      root.id = 'matchradarQaFixture';
+      root.style.cssText = 'position:fixed;left:0;top:0;width:100%;max-width:430px;padding:10px;box-sizing:border-box;z-index:99999;background:var(--bg)';
+      root.innerHTML = ${JSON.stringify("\n        <article class=\"panel my-team-card\">\n          <button class=\"my-team-head team-open-link\" type=\"button\">\n            <span class=\"team-placeholder\">⚽</span>\n            <span><strong>Club Atlético Very Long International Football Association Name That Must Wrap Safely</strong><small>Ближайший матч</small></span>\n            <b>Открыть →</b>\n          </button>\n          <button class=\"my-team-match\" type=\"button\"><span>Extremely Long Home Team Name United — Extremely Long Away Team Name Athletic Club</span><strong>21:45</strong><small>Открыть матч →</small></button>\n        </article>\n        <article class=\"history-item\">\n          <div class=\"history-logos\"><span>⚽</span><span>—</span><span>⚽</span></div>\n          <div class=\"history-main\"><strong>Very Long Historical Home Team Name — Very Long Historical Away Team Name</strong><span>International Competition · сегодня</span><em class=\"history-ai-chip skip\">AI · Пропустить матч · 61/100</em></div>\n          <button class=\"history-open\" type=\"button\">Открыть</button>\n        </article>\n        <div class=\"favorite-team-row\"><button class=\"favorite-team-main\" type=\"button\"><span class=\"team-placeholder\">⚽</span><strong>Extremely Long Favourite Football Club Name Across Two Lines</strong></button><button class=\"favorite-remove\" type=\"button\">Удалить</button></div>\n        <div class=\"reminder-row\"><div><strong>Very Long Reminder Home Team Name — Very Long Reminder Away Team Name</strong><span>Сегодня · 21:45 · за 30 мин.</span></div><button class=\"reminder-remove\" type=\"button\">Отключить</button></div>\n        <div class=\"match-secondary-actions\"><span><button class=\"fav-star compact\" type=\"button\">☆</button></span><button class=\"quick-reminder-btn compact\" type=\"button\">Напомнить</button></div>\n        <button class=\"analyze-btn\" type=\"button\">AI-разбор</button>\n      ")};
+      document.body.appendChild(root);
+      const box = root.getBoundingClientRect();
+      const controls = [...root.querySelectorAll('.history-open,.favorite-remove,.reminder-remove,.fav-star.compact,.quick-reminder-btn.compact,.analyze-btn')].map(el => {
+        const r=el.getBoundingClientRect(), s=getComputedStyle(el);
+        return { className:el.className, height:r.height, width:r.width, visible:s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0 };
+      });
+      const longText = [...root.querySelectorAll('.my-team-head strong,.my-team-match span,.history-main>strong,.favorite-team-main strong,.reminder-row strong')].map(el => {
+        const s=getComputedStyle(el);
+        const lineHeight=parseFloat(s.lineHeight) || parseFloat(s.fontSize)*1.3;
+        return { className:el.className || el.parentElement?.className || el.tagName, clientWidth:el.clientWidth, scrollWidth:el.scrollWidth, clientHeight:el.clientHeight, scrollHeight:el.scrollHeight, lineHeight };
+      });
+      return { fixture:{clientWidth:root.clientWidth,scrollWidth:root.scrollWidth,left:box.left,right:box.right},controls,longText };
+    })()`,
+  });
+  return evaluated?.result?.value || null;
+}
+
 async function main() {
   const remoteUrl = process.argv[2] ? new URL(process.argv[2]).toString() : '';
   const local = remoteUrl ? null : await localServer();
@@ -344,6 +391,11 @@ async function main() {
       const snapshot = evaluated?.result?.value;
       assertLayout(width, snapshot);
       console.log(`Bottom nav rendered correctly at ${width}px: 4 visible buttons, one row, no horizontal clipping.`);
+      for (const theme of ['dark','light','ocean']) {
+        const qaSnapshot = await inspectEdgeCaseFixture(cdp, width, theme);
+        assertEdgeCaseFixture(width, theme, qaSnapshot);
+        console.log(`Public UI edge cases rendered correctly at ${width}px in ${theme} theme.`);
+      }
     }
   } finally {
     cdp?.close();

@@ -1,0 +1,68 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const html=fs.readFileSync('public/index.html','utf8');
+const app=fs.readFileSync('public/app.js','utf8');
+const css=fs.readFileSync('public/styles/public-shell.css','utf8');
+const smoke=fs.readFileSync('scripts/bottom-nav-render-smoke.js','utf8');
+
+test('QA layer restores 44px touch targets after visual polish',()=>{
+  assert.match(css,/MatchRadar UX QA — Edge Cases & Accessibility/);
+  for(const selector of [
+    '.compact-actions .analyze-btn',
+    '.fav-star.compact',
+    '.quick-reminder-btn.compact',
+    '.history-open',
+    '.favorite-remove',
+    '.reminder-remove',
+  ]) assert.ok(css.includes(selector),selector);
+  assert.match(css,/\.miniapp-public-shell \.fav-star\.compact\{[\s\S]*?width:44px;[\s\S]*?height:44px;/);
+  assert.match(css,/\.miniapp-public-shell \.history-open,[\s\S]*?\.favorite-remove,[\s\S]*?\.reminder-remove\{[\s\S]*?min-height:44px;/);
+});
+
+test('long football names can wrap safely instead of forcing horizontal overflow',()=>{
+  for(const selector of [
+    '.compact-team strong',
+    '.my-team-head strong',
+    '.my-team-match span',
+    '.history-main > strong',
+    '.favorite-team-main strong',
+    '.reminder-row strong',
+  ]) assert.ok(css.includes(selector),selector);
+  assert.match(css,/overflow-wrap:anywhere/);
+  assert.match(css,/-webkit-line-clamp:2/);
+});
+
+test('loading empty recovery and error states have bounded public surfaces',()=>{
+  for(const selector of [
+    '.compact-loader',
+    '.history-empty-state',
+    '.profile-empty-state',
+    '.search-empty-state',
+    '.ai-track-record-empty',
+    '.ai-track-record-error',
+    '.recovery-card',
+    '.journey-state',
+  ]) assert.ok(css.includes(selector),selector);
+  assert.match(css,/max-width:100%/);
+  assert.match(css,/\.recovery-card \.recovery-retry-btn\{[\s\S]*?min-height:44px/);
+});
+
+test('render smoke exercises edge cases across mobile widths and themes',()=>{
+  assert.match(smoke,/function assertEdgeCaseFixture/);
+  assert.match(smoke,/function inspectEdgeCaseFixture/);
+  for(const width of [360,375,390,430]) assert.match(smoke,new RegExp(String(width)));
+  for(const theme of ['dark','light','ocean']) assert.ok(smoke.includes(`'${theme}'`),theme);
+  assert.match(smoke,/touch target is only/);
+  assert.match(smoke,/long text exceeds two lines/);
+});
+
+test('frontend revision refreshes QA styles without changing release identity',()=>{
+  assert.match(html,/frontend-asset-revision" content="6\.120\.0-ui4"/);
+  assert.match(html,/styles\.css\?v=6\.120\.0-ui4/);
+  assert.match(html,/styles\/public-shell\.css\?v=6\.120\.0-ui4/);
+  assert.match(html,/app\.js\?v=6\.120\.0-ui4/);
+  assert.match(app,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
+  assert.doesNotMatch(html,/6\.120\.0-ui3/);
+});
