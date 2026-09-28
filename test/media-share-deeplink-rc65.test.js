@@ -3,19 +3,20 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/router.js','utf8');
+const telegramLinks=fs.readFileSync('src/telegram-links.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 
 test('RC65 fixture deep-link payload is compact and carries attribution',()=> {
-  assert.match(worker,/function fixtureShareStartParam\(/);
+  assert.match(telegramLinks,/function fixtureShareStartParam\(/);
   assert.match(worker,/fx\\d\{1,12\}/);
   assert.match(worker,/fixtureId,action:'fixture'/);
   assert.match(worker,/function fixtureDeepLinkDrill\(/);
 });
 
 test('share-link endpoint resolves Telegram bot username and returns a start link',()=> {
-  assert.match(worker,/async function telegramBotUsername\(/);
-  assert.match(worker,/telegramApi\('getMe',cfg\)/);
-  assert.match(worker,/async function fixtureTelegramDeepLink\(/);
+  assert.match(telegramLinks,/async function telegramBotUsername\(/);
+  assert.match(telegramLinks,/telegramApi\('getMe',cfg\)/);
+  assert.match(telegramLinks,/async function fixtureTelegramDeepLink\(/);
   assert.match(worker,/async function apiFixtureShareLink\(/);
   assert.match(worker,/url\.pathname === '\/api\/share-link'/);
 });

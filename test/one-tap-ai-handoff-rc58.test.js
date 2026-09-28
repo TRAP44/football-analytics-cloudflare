@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
+const telegramLinks=fs.readFileSync('src/telegram-links.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 
 test('pre-match match selection produces an immediate Telegram AI brief',()=> {
@@ -15,10 +16,10 @@ test('pre-match match selection produces an immediate Telegram AI brief',()=> {
 });
 
 test('full analysis handoff deep-links to the same fixture and brief tab',()=> {
-  assert.match(worker,/function telegramAnalysisHandoffParams\(/);
-  assert.match(worker,/action:'analysis'/);
-  assert.match(worker,/tab:String\(tab \|\| 'brief'\)/);
-  assert.match(worker,/handoff:'1'/);
+  assert.match(telegramLinks,/function telegramAnalysisHandoffParams\(/);
+  assert.match(telegramLinks,/action:'analysis'/);
+  assert.match(telegramLinks,/tab:String\(tab \|\| 'brief'\)/);
+  assert.match(telegramLinks,/handoff:'1'/);
   assert.match(worker,/telegramFullAnalysisUrl\(request,fixtureId,'brief'\)/);
   assert.match(worker,/📊 Полный AI-разбор/);
 });
