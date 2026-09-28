@@ -116,6 +116,17 @@ test('reminders service preserves active 50-item fallback cap', async () => {
   assert.equal(memory.reminders.get(userId).length,50);
 });
 
+test('reminders service surfaces Supabase read failures instead of false empty state', async () => {
+  const {service}=runtime({
+    hasSupabase:()=>true,
+    supaSelectMany:async()=>{ throw new Error('Supabase reminders unavailable'); },
+  });
+  await assert.rejects(
+    ()=>service.getReminders(15,{supabaseUrl:'https://db.test'}),
+    /Supabase reminders unavailable/,
+  );
+});
+
 test('reminders service preserves Supabase delete request shape', async () => {
   const {fetchCalls,service}=runtime({hasSupabase:()=>true});
   await service.removeReminder(15,77,{supabaseUrl:'https://db.test'});
