@@ -46,3 +46,22 @@ test('quality verifies a dry-run Worker bundle with pinned GitHub actions', () =
 test('all health probes run through the Worker instead of the SPA fallback', () => {
   assert.match(wrangler, /"run_worker_first"\s*:\s*\[[^\]]*"\/health"[^\]]*"\/health\/\*"/);
 });
+
+
+test('non-runtime changes do not force a no-op Cloudflare deployment', () => {
+  assert.match(deploy, /id: production_changes/);
+  assert.match(deploy, /BASE_SHA="\$\(git rev-parse "\$DEPLOY_SHA\^"\)"/);
+  assert.match(deploy, /git diff --quiet "\$BASE_SHA" "\$DEPLOY_SHA" -- src public wrangler\.jsonc package\.json package-lock\.json/);
+  assert.match(deploy, /Cloudflare deployment skipped because this revision changes only non-runtime files/);
+  for (const step of [
+    'Check Cloudflare credentials',
+    'Deploy Worker',
+    'RC120 verify active production release identity',
+    'Verify production deployment',
+  ]) {
+    const start = deploy.indexOf(`- name: ${step}`);
+    assert.ok(start >= 0, step);
+    const block = deploy.slice(start, start + 260);
+    assert.match(block, /if: steps\.production_changes\.outputs\.changed == 'true'/, step);
+  }
+});
