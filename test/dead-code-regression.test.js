@@ -15,7 +15,7 @@ test('obsolete superseded Worker helpers stay removed',()=>{
 });
 
 test('obsolete superseded Mini App helpers stay removed',()=>{
-  for(const name of ["absenceList","coverageLabel","discoveryCompetitionCard","interestLabel","liveStatsHtml","playerLeadersHtml","prematchUncertaintyClass"]){
+  for(const name of ["absenceList","coverageLabel","discoveryCompetitionCard","interestLabel","liveStatsHtml","playerLeadersHtml","prematchUncertaintyClass","betaHealthLabel","betaActionLabel","betaMetricLabel","categoryClass","competitionGroups","matchAiSnapshotHtml","statValue","analysisSourceStatus"]){
     assert.doesNotMatch(app,new RegExp('\\bfunction\\s+'+name+'\\s*\\('),name);
   }
   assert.doesNotMatch(app,/\bMINIAPP_PRODUCT_MODE\b/);

@@ -10,6 +10,7 @@ const app=fs.readFileSync('public/app.js','utf8');
 const envExample=fs.readFileSync('.env.example','utf8');
 const assetHeaders=fs.readFileSync('public/_headers','utf8');
 const packageMeta=JSON.parse(fs.readFileSync('package.json','utf8'));
+const releaseContract=JSON.parse(fs.readFileSync('release-contract.json','utf8'));
 const indexHtml=fs.readFileSync('public/index.html','utf8');
 const statusHtml=fs.readFileSync('public/status.html','utf8');
 
@@ -19,6 +20,21 @@ function walk(dir){
     return entry.isDirectory()?walk(full):[full];
   });
 }
+
+test('audit: release contract tracks the newest production migration',()=>{
+  const migrationDir=path.join('supabase','migrations');
+  const migrations=fs.readdirSync(migrationDir).filter(name=>/^supabase_migration_v\d+_\d+(?:_\d+)?\.sql$/.test(name));
+  const parts=name=>/^supabase_migration_v(\d+)_(\d+)(?:_(\d+))?\.sql$/.exec(name).slice(1).map(value=>Number(value||0));
+  const latest=[...migrations].sort((a,b)=>{
+    const av=parts(a), bv=parts(b);
+    for(let i=0;i<3;i++){ if(av[i]!==bv[i]) return av[i]-bv[i]; }
+    return 0;
+  }).at(-1);
+  assert.equal(releaseContract.latestMigration,path.posix.join('supabase','migrations',latest));
+  const [major,minor]=parts(latest);
+  assert.equal(releaseContract.productionSchema,`${major}.${minor}`);
+  assert.equal(fs.existsSync(releaseContract.freshInstallBaseline),true);
+});
 
 test('audit: frontend literal API routes are implemented by the Worker',()=>{
   const routes=[...app.matchAll(/[\x22\x27\x60](\/api\/[A-Za-z0-9_?=&/.\-:]*)/g)]

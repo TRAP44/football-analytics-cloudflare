@@ -1,6 +1,6 @@
 # Architecture & Product Structure Consolidation — Phase 1
 
-Единый источник истины текущего release/schema contract: `release-contract.json`. Production schema — v6.19; fresh install использует только `supabase/baseline/supabase_baseline_v6_19.sql`, существующая production БД — только отсутствующие migrations. Baseline поверх production запрещён.
+Единый источник истины текущего release/schema contract: `release-contract.json`. Production schema — v6.20; fresh install использует `supabase/baseline/supabase_baseline_v6_19.sql` и затем `supabase_migration_v6_20.sql`, существующая production БД — только отсутствующие migrations. Baseline поверх production запрещён.
 
 Обязательный gate Phase 1: `npm ci && npm run security:scan && npm run check && npm test && npm run lint && npm run verify:release && npm run verify:worker`, затем production smoke. Public UX не показывает Closed Beta, BLOCKER/MAJOR/MINOR или RC/release/provider terminology; feedback остаётся «Сообщить о проблеме», а internal severity сохраняется в API/admin.
 
@@ -75,10 +75,10 @@ npm run verify:worker
 
 ## Supabase
 
-Для нового проекта используется только `supabase/baseline/supabase_baseline_v6_18.sql`.
+Для нового проекта используется `supabase/baseline/supabase_baseline_v6_19.sql`, затем применяется `supabase/migrations/supabase_migration_v6_20.sql`.
 
 Для существующей базы должны быть применены:
-`supabase/migrations/supabase_migration_v6_9.sql`, `v6_10`, `v6_11`, `v6_11_1`, `v6_12`, `v6_13`, `v6_14`, `v6_15`, `v6_16`, `v6_17`, `v6_18`, `v6_18_1`, `v6_19`.
+`supabase/migrations/supabase_migration_v6_9.sql`, `v6_10`, `v6_11`, `v6_11_1`, `v6_12`, `v6_13`, `v6_14`, `v6_15`, `v6_16`, `v6_17`, `v6_18`, `v6_18_1`, `v6_19`, `v6_19_1`, `v6_20`.
 
 Проверить:
 - RLS и закрытые backend-only таблицы не открыты для `anon/authenticated`;

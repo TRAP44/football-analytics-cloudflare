@@ -46,7 +46,8 @@ test('RC99 keeps numbered migrations for existing production upgrades', () => {
     'supabase/migrations/supabase_migration_v6_18.sql',
     'supabase/migrations/supabase_migration_v6_18_1.sql',
     'supabase/migrations/supabase_migration_v6_19.sql',
-    'supabase/migrations/supabase_migration_v6_19_1.sql'
+    'supabase/migrations/supabase_migration_v6_19_1.sql',
+    'supabase/migrations/supabase_migration_v6_20.sql'
   ]) {
     assert.equal(fs.existsSync(new URL('../' + name, import.meta.url)), true, name);
   }
