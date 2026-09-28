@@ -74,9 +74,12 @@ jobs:
 
       - name: Re-verify release artifact
         run: |
+          npm audit --audit-level=high
           npm run security:scan
+          npm run lint
           npm run check
           npm test
+          node scripts/bottom-nav-render-smoke.js
           npm run verify:release
           npm run verify:worker
 
