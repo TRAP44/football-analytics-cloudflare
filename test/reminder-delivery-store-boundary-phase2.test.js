@@ -29,6 +29,8 @@ test('reminder delivery status preserves public state mapping', () => {
   const {store}=runtime();
   assert.equal(store.reminderDeliveryStatus({}),'scheduled');
   assert.equal(store.reminderDeliveryStatus({delivery_last_error:'x'}),'retry_pending');
+  assert.equal(store.reminderDeliveryStatus({delivery_last_error:'telegram_delivery_sending'}),'delivery_unknown');
+  assert.equal(store.reminderDeliveryStatus({delivery_last_error:'telegram_delivery_unknown'}),'delivery_unknown');
   assert.equal(store.reminderDeliveryStatus({notified_at:'2026-01-01'}),'prematch_sent');
   assert.equal(store.reminderDeliveryStatus({kickoff_notified_at:'2026-01-01'}),'kickoff_sent');
 });
@@ -51,10 +53,35 @@ test('claim preserves atomic Supabase PATCH filters and attempt increment', asyn
   assert.equal(call.init.headers.Prefer,'return=representation');
   const body=JSON.parse(call.init.body);
   assert.equal(body.prematch_attempts,3);
-  assert.equal(body.delivery_last_error,null);
+  assert.equal(body.delivery_last_error,'delivery_claimed');
   assert.equal(body.prematch_claimed_at,result.claimAt);
   assert.equal(call.timeout,7000);
   assert.equal(call.source,'Supabase reminder claim');
+});
+
+test('sending and unknown states preserve the claim for at-most-once delivery', async () => {
+  const {store,calls}=runtime({
+    responses:[
+      {ok:true,status:200,json:[{fixture_id:77}]},
+      {ok:true,status:204,json:null},
+    ],
+  });
+  const row={telegram_id:15,fixture_id:77};
+  const claimAt='2026-09-27T18:00:00.000Z';
+  await store.markReminderDeliverySending(row,'prematch',claimAt,{supabaseUrl:'https://db.test'});
+  await store.holdReminderDeliveryUnknown(row,'prematch',claimAt,{supabaseUrl:'https://db.test'});
+
+  const sending=JSON.parse(calls[0].init.body);
+  assert.equal(sending.delivery_last_error,'telegram_delivery_sending');
+  assert.equal(sending.delivery_retry_after,null);
+  assert.match(calls[0].url,/prematch_claimed_at=eq\.2026-09-27T18%3A00%3A00\.000Z/);
+  assert.equal(calls[0].init.headers.Prefer,'return=representation');
+
+  const unknown=JSON.parse(calls[1].init.body);
+  assert.equal(unknown.delivery_last_error,'telegram_delivery_unknown');
+  assert.equal(unknown.delivery_retry_after,null);
+  assert.equal(Object.hasOwn(unknown,'prematch_claimed_at'),false);
+  assert.equal(calls[1].init.headers.Prefer,'return=minimal');
 });
 
 test('finish kickoff preserves claim identity and marks prematch sent when needed', async () => {
@@ -106,6 +133,8 @@ test('stale claim recovery clears both claim columns and records an ops event', 
   assert.equal(calls.length,2);
   assert.match(calls[0].url,/prematch_claimed_at=lt\./);
   assert.match(calls[1].url,/kickoff_claimed_at=lt\./);
+  assert.match(calls[0].url,/or=%28delivery_last_error\.is\.null%2Cdelivery_last_error\.eq\.delivery_claimed%29/);
+  assert.match(calls[1].url,/or=%28delivery_last_error\.is\.null%2Cdelivery_last_error\.eq\.delivery_claimed%29/);
   assert.equal(events.length,1);
   assert.equal(events[0].code,'REMINDER_STALE_CLAIMS');
   assert.deepEqual(events[0].meta,{prematch:2,kickoff:1});
@@ -117,6 +146,8 @@ test('non-Supabase fallback preserves no-op lifecycle semantics', async () => {
   const claim=await store.claimReminderDelivery({},'prematch',{});
   assert.equal(claim.claimed,true);
   assert.ok(claim.claimAt);
+  await store.markReminderDeliverySending({},'prematch',claim.claimAt,{});
+  await store.holdReminderDeliveryUnknown({},'prematch',claim.claimAt,{});
   await store.finishReminderDelivery({},'prematch',claim.claimAt,{});
   await store.releaseReminderClaim({},'prematch',claim.claimAt,'x',{});
   assert.equal(calls.length,0);

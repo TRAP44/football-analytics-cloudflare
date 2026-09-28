@@ -1213,6 +1213,8 @@ const {
   reminderDeliveryStatus,
   clearStaleReminderClaims,
   claimReminderDelivery,
+  markReminderDeliverySending,
+  holdReminderDeliveryUnknown,
   finishReminderDelivery,
   releaseReminderClaim,
 } = createReminderDeliveryStore({
@@ -1233,6 +1235,8 @@ const {
   recordOpsEvent,
   sendTelegramMessage,
   claimReminderDelivery,
+  markReminderDeliverySending,
+  holdReminderDeliveryUnknown,
   finishReminderDelivery,
   releaseReminderClaim,
 });

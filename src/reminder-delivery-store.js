@@ -1,3 +1,7 @@
+const REMINDER_CLAIM_STATE = 'delivery_claimed';
+const REMINDER_SENDING_STATE = 'telegram_delivery_sending';
+const REMINDER_UNKNOWN_STATE = 'telegram_delivery_unknown';
+
 export function createReminderDeliveryStore({
   hasSupabase,
   fetchWithTimeout,
@@ -8,6 +12,7 @@ export function createReminderDeliveryStore({
   function reminderDeliveryStatus(row) {
     if (row?.kickoff_notified_at) return 'kickoff_sent';
     if (row?.notified_at) return 'prematch_sent';
+    if (row?.delivery_last_error === REMINDER_UNKNOWN_STATE || row?.delivery_last_error === REMINDER_SENDING_STATE) return 'delivery_unknown';
     if (row?.delivery_last_error) return 'retry_pending';
     return 'scheduled';
   }
@@ -20,6 +25,7 @@ export function createReminderDeliveryStore({
       const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
       url.searchParams.set('enabled', 'eq.true');
       url.searchParams.set(column, `lt.${cutoff}`);
+      url.searchParams.set('or', `(delivery_last_error.is.null,delivery_last_error.eq.${REMINDER_CLAIM_STATE})`);
       const r = await fetchWithTimeout(url, {
         method: 'PATCH',
         headers: supaHeaders(cfg, { Prefer: 'return=representation' }),
@@ -71,13 +77,61 @@ export function createReminderDeliveryStore({
         [claimColumn]: claimAt,
         [attemptsColumn]: Math.max(0, Number(row?.[attemptsColumn] || 0)) + 1,
         delivery_last_attempt_at: claimAt,
-        delivery_last_error: null,
+        delivery_last_error: REMINDER_CLAIM_STATE,
       }),
     }, 7000, 'Supabase reminder claim');
 
     if (!r.ok) throw new Error(`Supabase reminder claim: HTTP ${r.status}`);
     const rows = await r.json().catch(() => []);
     return { claimed: Array.isArray(rows) && rows.length === 1, claimAt };
+  }
+
+  async function markReminderDeliverySending(row, kind, claimAt, cfg) {
+    if (!hasSupabase(cfg)) return;
+    const claimColumn = kind === 'kickoff' ? 'kickoff_claimed_at' : 'prematch_claimed_at';
+
+    const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
+    url.searchParams.set('telegram_id', `eq.${Number(row.telegram_id)}`);
+    url.searchParams.set('fixture_id', `eq.${Number(row.fixture_id)}`);
+    url.searchParams.set(claimColumn, `eq.${claimAt}`);
+
+    const r = await fetchWithTimeout(url, {
+      method: 'PATCH',
+      headers: supaHeaders(cfg, { Prefer: 'return=representation' }),
+      body: JSON.stringify({
+        delivery_last_error: REMINDER_SENDING_STATE,
+        delivery_last_attempt_at: new Date().toISOString(),
+        delivery_retry_after: null,
+      }),
+    }, 7000, 'Supabase reminder sending state');
+
+    if (!r.ok) throw new Error(`Supabase reminder sending state: HTTP ${r.status}`);
+    const rows = await r.json().catch(() => []);
+    if (!Array.isArray(rows) || rows.length !== 1) {
+      throw new Error('Reminder delivery claim was lost before Telegram send.');
+    }
+  }
+
+  async function holdReminderDeliveryUnknown(row, kind, claimAt, cfg) {
+    if (!hasSupabase(cfg)) return;
+    const claimColumn = kind === 'kickoff' ? 'kickoff_claimed_at' : 'prematch_claimed_at';
+
+    const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
+    url.searchParams.set('telegram_id', `eq.${Number(row.telegram_id)}`);
+    url.searchParams.set('fixture_id', `eq.${Number(row.fixture_id)}`);
+    url.searchParams.set(claimColumn, `eq.${claimAt}`);
+
+    const r = await fetchWithTimeout(url, {
+      method: 'PATCH',
+      headers: supaHeaders(cfg, { Prefer: 'return=minimal' }),
+      body: JSON.stringify({
+        delivery_last_error: REMINDER_UNKNOWN_STATE,
+        delivery_last_attempt_at: new Date().toISOString(),
+        delivery_retry_after: null,
+      }),
+    }, 7000, 'Supabase reminder unknown hold');
+
+    if (!r.ok) throw new Error(`Supabase reminder unknown hold: HTTP ${r.status}`);
   }
 
   async function finishReminderDelivery(row, kind, claimAt, cfg) {
@@ -145,6 +199,8 @@ export function createReminderDeliveryStore({
     reminderDeliveryStatus,
     clearStaleReminderClaims,
     claimReminderDelivery,
+    markReminderDeliverySending,
+    holdReminderDeliveryUnknown,
     finishReminderDelivery,
     releaseReminderClaim,
   };
