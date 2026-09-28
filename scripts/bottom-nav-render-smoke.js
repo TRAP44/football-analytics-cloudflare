@@ -292,25 +292,7 @@ async function inspectEdgeCaseFixture(cdp, width, theme) {
       const root = document.createElement('section');
       root.id = 'matchradarQaFixture';
       root.style.cssText = 'position:fixed;left:0;top:0;width:100%;max-width:430px;padding:10px;box-sizing:border-box;z-index:99999;background:var(--bg)';
-      root.innerHTML = `
-        <article class="panel my-team-card">
-          <button class="my-team-head team-open-link" type="button">
-            <span class="team-placeholder">⚽</span>
-            <span><strong>Club Atlético Very Long International Football Association Name That Must Wrap Safely</strong><small>Ближайший матч</small></span>
-            <b>Открыть →</b>
-          </button>
-          <button class="my-team-match" type="button"><span>Extremely Long Home Team Name United — Extremely Long Away Team Name Athletic Club</span><strong>21:45</strong><small>Открыть матч →</small></button>
-        </article>
-        <article class="history-item">
-          <div class="history-logos"><span>⚽</span><span>—</span><span>⚽</span></div>
-          <div class="history-main"><strong>Very Long Historical Home Team Name — Very Long Historical Away Team Name</strong><span>International Competition · сегодня</span><em class="history-ai-chip skip">AI · Пропустить матч · 61/100</em></div>
-          <button class="history-open" type="button">Открыть</button>
-        </article>
-        <div class="favorite-team-row"><button class="favorite-team-main" type="button"><span class="team-placeholder">⚽</span><strong>Extremely Long Favourite Football Club Name Across Two Lines</strong></button><button class="favorite-remove" type="button">Удалить</button></div>
-        <div class="reminder-row"><div><strong>Very Long Reminder Home Team Name — Very Long Reminder Away Team Name</strong><span>Сегодня · 21:45 · за 30 мин.</span></div><button class="reminder-remove" type="button">Отключить</button></div>
-        <div class="match-secondary-actions"><span><button class="fav-star compact" type="button">☆</button></span><button class="quick-reminder-btn compact" type="button">Напомнить</button></div>
-        <button class="analyze-btn" type="button">AI-разбор</button>
-      `;
+      root.innerHTML = ${JSON.stringify("\n        <article class=\"panel my-team-card\">\n          <button class=\"my-team-head team-open-link\" type=\"button\">\n            <span class=\"team-placeholder\">⚽</span>\n            <span><strong>Club Atlético Very Long International Football Association Name That Must Wrap Safely</strong><small>Ближайший матч</small></span>\n            <b>Открыть →</b>\n          </button>\n          <button class=\"my-team-match\" type=\"button\"><span>Extremely Long Home Team Name United — Extremely Long Away Team Name Athletic Club</span><strong>21:45</strong><small>Открыть матч →</small></button>\n        </article>\n        <article class=\"history-item\">\n          <div class=\"history-logos\"><span>⚽</span><span>—</span><span>⚽</span></div>\n          <div class=\"history-main\"><strong>Very Long Historical Home Team Name — Very Long Historical Away Team Name</strong><span>International Competition · сегодня</span><em class=\"history-ai-chip skip\">AI · Пропустить матч · 61/100</em></div>\n          <button class=\"history-open\" type=\"button\">Открыть</button>\n        </article>\n        <div class=\"favorite-team-row\"><button class=\"favorite-team-main\" type=\"button\"><span class=\"team-placeholder\">⚽</span><strong>Extremely Long Favourite Football Club Name Across Two Lines</strong></button><button class=\"favorite-remove\" type=\"button\">Удалить</button></div>\n        <div class=\"reminder-row\"><div><strong>Very Long Reminder Home Team Name — Very Long Reminder Away Team Name</strong><span>Сегодня · 21:45 · за 30 мин.</span></div><button class=\"reminder-remove\" type=\"button\">Отключить</button></div>\n        <div class=\"match-secondary-actions\"><span><button class=\"fav-star compact\" type=\"button\">☆</button></span><button class=\"quick-reminder-btn compact\" type=\"button\">Напомнить</button></div>\n        <button class=\"analyze-btn\" type=\"button\">AI-разбор</button>\n      ")};
       document.body.appendChild(root);
       const box = root.getBoundingClientRect();
       const controls = [...root.querySelectorAll('.history-open,.favorite-remove,.reminder-remove,.fav-star.compact,.quick-reminder-btn.compact,.analyze-btn')].map(el => {
