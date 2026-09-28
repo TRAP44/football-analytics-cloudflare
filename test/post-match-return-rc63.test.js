@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
+const scheduled=fs.readFileSync('src/scheduled-jobs.js','utf8');
 
 test('RC63 selects only analyzed matches old enough to be finished',()=> {
   assert.match(worker,/function postMatchReturnEligibility\(/);
@@ -44,7 +45,7 @@ test('Telegram supports return open and reversible opt-out',()=> {
 });
 
 test('cron chains return loop after settlement task',()=> {
-  assert.match(worker,/\['post_match_return', backtestTask\.then\(\(\) => processPostMatchReturns\(cfg\)\)\]/);
+  assert.match(scheduled,/\['post_match_return', backtestTask\.then\(\(\) => processPostMatchReturns\(cfg\)\)\]/);
 });
 
 test('RC63 deterministic drill and health contract are present',()=> {
