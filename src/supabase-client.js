@@ -1,4 +1,4 @@
-export function createSupabaseClient({ fetchWithTimeout, redactMessage } = {}) {
+export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs } = {}) {
   if (typeof fetchWithTimeout !== 'function') {
     throw new TypeError('createSupabaseClient requires fetchWithTimeout');
   }
@@ -6,6 +6,26 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage } = {}) {
   const redact = typeof redactMessage === 'function'
     ? redactMessage
     : (value, max = 180) => String(value ?? '').slice(0, max);
+
+  const sleep = typeof sleepMs === 'function'
+    ? sleepMs
+    : ms => new Promise(resolve => setTimeout(resolve, ms));
+  const retryableReadStatuses = new Set([408, 503, 504]);
+
+  async function supaReadFetch(url, init, timeoutMs, source) {
+    let lastResponse = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const response = await fetchWithTimeout(url, init, timeoutMs, source);
+        lastResponse = response;
+        if (!retryableReadStatuses.has(Number(response?.status || 0)) || attempt === 1) return response;
+      } catch (error) {
+        if (attempt === 1) throw error;
+      }
+      await sleep(180 * (attempt + 1));
+    }
+    return lastResponse;
+  }
 
   function hasSupabase(cfg) {
     return Boolean(cfg?.supabaseUrl && cfg?.supabaseKey);
@@ -26,7 +46,7 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage } = {}) {
     url.searchParams.set('select', '*');
     url.searchParams.set('limit', '1');
     for (const [key, value] of Object.entries(params || {})) url.searchParams.set(key, value);
-    const response = await fetchWithTimeout(url, { headers: supaHeaders(cfg) }, 7000, `Supabase ${table}`);
+    const response = await supaReadFetch(url, { headers: supaHeaders(cfg) }, 7000, `Supabase ${table}`);
     if (!response.ok) throw new Error(`Supabase ${table}: HTTP ${response.status}`);
     const rows = await response.json();
     return rows?.[0] || null;
@@ -38,7 +58,7 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage } = {}) {
     url.searchParams.set('limit', String(limit));
     if (order) url.searchParams.set('order', order);
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
-    const response = await fetchWithTimeout(url, { headers: supaHeaders(cfg) }, 7000, `Supabase ${table}`);
+    const response = await supaReadFetch(url, { headers: supaHeaders(cfg) }, 7000, `Supabase ${table}`);
     if (!response.ok) {
       const text = await response.text().catch(() => '');
       throw new Error(`Supabase ${table}: HTTP ${response.status}${text ? ` — ${text.slice(0, 160)}` : ''}`);

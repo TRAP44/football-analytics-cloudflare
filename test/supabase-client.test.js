@@ -90,3 +90,76 @@ test('supabase client refuses unfiltered patch and delete operations', async () 
   );
   assert.equal(calls, 0);
 });
+
+
+test('supabase reads retry one transient 503 before succeeding', async () => {
+  let calls = 0;
+  const sleeps = [];
+  const client = createSupabaseClient({
+    fetchWithTimeout: async () => {
+      calls += 1;
+      if (calls === 1) return response({ ok: false, status: 503, json: null });
+      return response({ json: [{ id: 2 }] });
+    },
+    sleepMs: async ms => { sleeps.push(ms); },
+  });
+  const cfg = { supabaseUrl: 'https://example.supabase.co', supabaseKey: 'secret' };
+
+  const row = await client.supaSelectOne(cfg, 'users', { telegram_id: 'eq.2' });
+  assert.deepEqual(row, { id: 2 });
+  assert.equal(calls, 2);
+  assert.deepEqual(sleeps, [180]);
+});
+
+test('supabase reads retry one thrown transport failure before succeeding', async () => {
+  let calls = 0;
+  const sleeps = [];
+  const client = createSupabaseClient({
+    fetchWithTimeout: async () => {
+      calls += 1;
+      if (calls === 1) throw Object.assign(new Error('timeout'), { code: 'UPSTREAM_TIMEOUT' });
+      return response({ json: [{ id: 3 }] });
+    },
+    sleepMs: async ms => { sleeps.push(ms); },
+  });
+  const cfg = { supabaseUrl: 'https://example.supabase.co', supabaseKey: 'secret' };
+
+  const row = await client.supaSelectOne(cfg, 'users', { telegram_id: 'eq.3' });
+  assert.deepEqual(row, { id: 3 });
+  assert.equal(calls, 2);
+  assert.deepEqual(sleeps, [180]);
+});
+
+test('supabase read retry stays conservative and never retries writes', async () => {
+  let readCalls = 0;
+  const readSleeps = [];
+  const readClient = createSupabaseClient({
+    fetchWithTimeout: async () => {
+      readCalls += 1;
+      return response({ ok: false, status: 429, json: null });
+    },
+    sleepMs: async ms => { readSleeps.push(ms); },
+  });
+  const cfg = { supabaseUrl: 'https://example.supabase.co', supabaseKey: 'secret' };
+
+  await assert.rejects(
+    readClient.supaSelectOne(cfg, 'users', { telegram_id: 'eq.4' }),
+    /HTTP 429/,
+  );
+  assert.equal(readCalls, 1);
+  assert.deepEqual(readSleeps, []);
+
+  let writeCalls = 0;
+  const writeClient = createSupabaseClient({
+    fetchWithTimeout: async () => {
+      writeCalls += 1;
+      throw new Error('network');
+    },
+    sleepMs: async () => { throw new Error('write retry must not sleep'); },
+  });
+  await assert.rejects(
+    writeClient.supaUpsert(cfg, 'users', { telegram_id: 4 }, 'telegram_id'),
+    /network/,
+  );
+  assert.equal(writeCalls, 1);
+});
