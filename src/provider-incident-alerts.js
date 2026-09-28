@@ -246,8 +246,10 @@ export async function deliverProviderIncidentAlert({
       if (result?.ok) break;
       if (!retryableTelegramResult(result) || attempt >= PROVIDER_INCIDENT_ALERT_POLICY.immediateRetryAttempts) break;
       if (Number(result?.status || 0) === 429 && Number(result?.retryAfter || 0) > 2) break;
+      // The immediate retry budget allows two seconds; never shorten an
+      // accepted Telegram retry_after below that server-requested delay.
       const delayMs = Number(result?.retryAfter || 0) > 0
-        ? Math.min(1500, Math.max(250, Number(result.retryAfter) * 1000))
+        ? Math.min(2000, Math.max(250, Number(result.retryAfter) * 1000))
         : 300;
       await sleep(delayMs);
     }
