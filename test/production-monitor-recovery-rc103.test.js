@@ -76,7 +76,7 @@ test('RC103 rejects public technical Supabase health', async () => {
 
 
 test('RC103 schedules a read-only production monitor every 15 minutes', () => {
-  const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/router.js','utf8');
+  const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/router.js','utf8')+'\n'+fs.readFileSync('src/scheduled-jobs.js','utf8');
   assert.match(worker,/async function runProductionMonitor\(/);
   assert.match(worker,/scheduledAt\.getUTCMinutes\(\) % 15 === 0/);
   assert.match(worker,/consumesFootballApi: false/);
