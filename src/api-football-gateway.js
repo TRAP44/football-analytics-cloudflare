@@ -8,6 +8,7 @@ export function createApiFootballGateway({
   hasSupabase,
   supaRpc,
   bumpTelemetry,
+  observeProviderRequest = () => {},
   recordOpsEvent,
   loadSharedProviderState,
   phase5ProviderUsage,
@@ -203,6 +204,14 @@ export function createApiFootballGateway({
       memory.provider.lastStatus = null;
       memory.provider.lastLatencyMs = durationMs;
       memory.provider.lastError = timedOut ? 'timeout' : 'network_error';
+      observeProviderRequest({
+        provider:'api-football',
+        operation:path,
+        outcome:attempt < maxAttempts ? 'retrying' : 'failed',
+        errorType:timedOut ? 'UPSTREAM_TIMEOUT' : 'FOOTBALL_NETWORK',
+        latencyMs:durationMs,
+        attempt,
+      });
       await recordOpsEvent(cfg, {
         severity: 'error', source: 'provider', eventType: 'api_request', code: timedOut ? 'UPSTREAM_TIMEOUT' : 'FOOTBALL_NETWORK',
         message: error?.message || (timedOut ? 'Upstream timeout' : 'Network error'), endpoint: path, durationMs,
@@ -230,6 +239,15 @@ export function createApiFootballGateway({
       bumpTelemetry('rateLimits');
       bumpTelemetry('providerRateLimits');
       phase5ProviderUsage(cfg,'quotaBlocks',1);
+      observeProviderRequest({
+        provider:'api-football',
+        operation:path,
+        outcome:'rate_limited',
+        errorType:'FOOTBALL_RATE_LIMIT',
+        status:r.status,
+        latencyMs:durationMs,
+        attempt,
+      });
       await recordOpsEvent(cfg, {
         severity: 'warning', source: 'provider', eventType: 'rate_limit', code: 'FOOTBALL_RATE_LIMIT',
         message: `API-Football HTTP 429; retry ${retryAfter}s`, endpoint: path, status: r.status, durationMs,
@@ -250,6 +268,15 @@ export function createApiFootballGateway({
       memory.provider.lastError = `http_${r.status}`;
       bumpTelemetry('apiErrors');
       bumpTelemetry('providerErrors');
+      observeProviderRequest({
+        provider:'api-football',
+        operation:path,
+        outcome:[502,503,504].includes(Number(r.status)) && attempt < maxAttempts ? 'retrying' : 'failed',
+        errorType:'FOOTBALL_HTTP',
+        status:r.status,
+        latencyMs:durationMs,
+        attempt,
+      });
       await recordOpsEvent(cfg, {
         severity: r.status >= 500 ? 'error' : 'warning', source: 'provider', eventType: 'api_request', code: 'FOOTBALL_HTTP',
         message: `API-Football HTTP ${r.status}`, endpoint: path, status: r.status, durationMs,
@@ -270,6 +297,15 @@ export function createApiFootballGateway({
       memory.provider.lastError = 'invalid_json';
       bumpTelemetry('apiErrors');
       bumpTelemetry('providerErrors');
+      observeProviderRequest({
+        provider:'api-football',
+        operation:path,
+        outcome:'failed',
+        errorType:'FOOTBALL_INVALID_RESPONSE',
+        status:r.status,
+        latencyMs:durationMs,
+        attempt,
+      });
       await recordOpsEvent(cfg, {
         severity:'error', source:'provider', eventType:'api_response', code:'FOOTBALL_INVALID_RESPONSE',
         message:'API-Football вернул некорректный JSON.', endpoint:path, status:r.status, durationMs,
@@ -282,6 +318,15 @@ export function createApiFootballGateway({
       memory.provider.lastError = 'invalid_response_shape';
       bumpTelemetry('apiErrors');
       bumpTelemetry('providerErrors');
+      observeProviderRequest({
+        provider:'api-football',
+        operation:path,
+        outcome:'failed',
+        errorType:'FOOTBALL_INVALID_RESPONSE',
+        status:r.status,
+        latencyMs:durationMs,
+        attempt,
+      });
       await recordOpsEvent(cfg, {
         severity:'error', source:'provider', eventType:'api_response', code:'FOOTBALL_INVALID_RESPONSE',
         message:'API-Football вернул неожиданный формат ответа.', endpoint:path, status:r.status, durationMs,
@@ -301,6 +346,15 @@ export function createApiFootballGateway({
         bumpTelemetry('rateLimits');
         bumpTelemetry('providerRateLimits');
         phase5ProviderUsage(cfg,'quotaBlocks',1);
+        observeProviderRequest({
+          provider:'api-football',
+          operation:path,
+          outcome:'rate_limited',
+          errorType:'FOOTBALL_RATE_LIMIT_BODY',
+          status:r.status,
+          latencyMs:durationMs,
+          attempt,
+        });
         await recordOpsEvent(cfg, {
           severity: 'warning', source: 'provider', eventType: 'rate_limit', code: 'FOOTBALL_RATE_LIMIT_BODY',
           message, endpoint: path, status: r.status, durationMs,
@@ -319,6 +373,15 @@ export function createApiFootballGateway({
         });
         throw footballError('API-Football достиг лимита запросов. Покажем сохранённые данные, если они есть.', 'FOOTBALL_RATE_LIMIT', 65, r.status);
       }
+      observeProviderRequest({
+        provider:'api-football',
+        operation:path,
+        outcome:'failed',
+        errorType:'FOOTBALL_RESPONSE',
+        status:r.status,
+        latencyMs:durationMs,
+        attempt,
+      });
       await recordOpsEvent(cfg, {
         severity: 'warning', source: 'provider', eventType: 'api_response', code: 'FOOTBALL_RESPONSE',
         message, endpoint: path, status: r.status, durationMs,
@@ -335,6 +398,15 @@ export function createApiFootballGateway({
       memory.provider.lastError = 'invalid_response_shape';
       bumpTelemetry('apiErrors');
       bumpTelemetry('providerErrors');
+      observeProviderRequest({
+        provider:'api-football',
+        operation:path,
+        outcome:'failed',
+        errorType:'FOOTBALL_INVALID_RESPONSE',
+        status:r.status,
+        latencyMs:durationMs,
+        attempt,
+      });
       await recordOpsEvent(cfg, {
         severity:'error', source:'provider', eventType:'api_response', code:'FOOTBALL_INVALID_RESPONSE',
         message:'API-Football вернул неожиданный формат ответа.', endpoint:path, status:r.status, durationMs,
@@ -349,6 +421,14 @@ export function createApiFootballGateway({
       throw footballError('API-Football вернул неожиданный формат ответа.', 'FOOTBALL_INVALID_RESPONSE', 0, r.status);
     }
 
+    observeProviderRequest({
+      provider:'api-football',
+      operation:path,
+      outcome:'success',
+      status:r.status,
+      latencyMs:durationMs,
+      attempt,
+    });
     memory.provider.lastError = '';
     memory.provider.lastSuccessAt = new Date().toISOString();
     bumpTelemetry('apiSuccess');
