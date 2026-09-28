@@ -50,3 +50,43 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+
+.provider-slo-incident {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--line, rgba(255,255,255,.1));
+  border-radius: 14px;
+  background: rgba(255,255,255,.035);
+}
+.provider-slo-incident.incident { border-color: rgba(255,92,92,.45); }
+.provider-slo-incident.watch { border-color: rgba(255,190,74,.42); }
+.provider-slo-incident.recovered { border-color: rgba(96,211,148,.34); }
+.provider-slo-incident-head { display:flex; gap:10px; align-items:flex-start; }
+.provider-slo-incident-head > div { display:grid; gap:3px; min-width:0; }
+.provider-slo-incident-head small { opacity:.72; line-height:1.35; }
+.provider-slo-incident-badge {
+  flex:0 0 auto;
+  font-size:11px;
+  font-weight:800;
+  letter-spacing:.06em;
+  padding:5px 8px;
+  border-radius:999px;
+  background:rgba(255,255,255,.08);
+}
+.provider-slo-incident.incident .provider-slo-incident-badge { background:rgba(255,92,92,.16); }
+.provider-slo-incident.watch .provider-slo-incident-badge { background:rgba(255,190,74,.15); }
+.provider-slo-incident.recovered .provider-slo-incident-badge { background:rgba(96,211,148,.14); }
+.provider-slo-incident-runbook { margin-top:10px; font-size:12px; line-height:1.45; }
+.provider-slo-incident-runbook ul { margin:6px 0 0; padding-left:18px; }
+.provider-slo-incident-history { display:grid; gap:6px; margin-top:10px; }
+.provider-slo-incident-history > div {
+  display:grid;
+  grid-template-columns:auto 1fr auto;
+  gap:8px;
+  align-items:center;
+  font-size:11px;
+  padding-top:7px;
+  border-top:1px solid rgba(255,255,255,.06);
+}
+.provider-slo-incident-history small { opacity:.65; text-align:right; }
