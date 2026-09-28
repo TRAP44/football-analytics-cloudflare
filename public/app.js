@@ -2698,7 +2698,8 @@ async function restoreRuntimeRevision(historyId, sourceRevision) {
       available: true,
       schemaReady: true,
       source: 'supabase',
-      historyReady: true,
+      historyReady: Boolean(result.historyReady),
+      historyReason: String(result.historyReason || ''),
       controls: result.controls,
       history: result.history || [],
     };
@@ -2851,6 +2852,7 @@ async function saveRuntimeControls(payload = null, options = {}) {
       schemaReady: true,
       source: 'supabase',
       historyReady: Boolean(result.historyReady),
+      historyReason: String(result.historyReason || ''),
       controls: result.controls,
       history: result.history || [],
     };
