@@ -554,6 +554,17 @@
             <div><span>Средняя задержка</span><strong id="providerSloLatency">—</strong></div>
           </div>
           <p id="providerSloNote" class="tiny">SLO появится после накопления рабочих запросов к источникам данных.</p>
+          <div id="providerSloIncidentPanel" class="provider-slo-incident" hidden>
+            <div class="provider-slo-incident-head">
+              <span id="providerSloIncidentBadge" class="provider-slo-incident-badge">КОНТРОЛЬ</span>
+              <div>
+                <strong id="providerSloIncidentTitle">Provider SLO</strong>
+                <small id="providerSloIncidentMeta">Подтверждение состояния по двум последовательным окнам.</small>
+              </div>
+            </div>
+            <div id="providerSloIncidentRunbook" class="provider-slo-incident-runbook"></div>
+            <div id="providerSloIncidentHistory" class="provider-slo-incident-history"></div>
+          </div>
           <p class="tiny">API-Football работает по единой схеме, а платный тариф в основном увеличивает квоту и лимит запросов. На бесплатном плане приложение экономит запросы; при обнаружении расширенного тарифа дополнительные возможности включаются автоматически.</p>
         </section>
 
