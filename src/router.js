@@ -54,6 +54,7 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
     memory,
     providerBudgetProfile,
     providerSnapshot,
+    providerSloReport,
     providerTransitionProfile,
     publicDataCapabilities,
   } = deps;
@@ -91,6 +92,7 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
       provider: providerSnapshot(),
       transition: providerTransitionProfile(),
       budget: providerBudgetProfile(),
+      providerObservability: await providerSloReport(cfg, 24),
       lastAudit: memory.providerAudit.last,
       lastE2E: await loadLastProviderE2E(cfg),
     });
