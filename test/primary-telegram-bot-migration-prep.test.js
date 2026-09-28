@@ -10,6 +10,7 @@ import { bytesToHex, hmacSha256, validateTelegramInitData } from '../src/crypto-
 import { channelPublisherState, sendMessage } from '../src/channel-publisher.js';
 
 const worker = fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/auth-user.js','utf8');
+const telegramLinks = fs.readFileSync('src/telegram-links.js','utf8');
 const identityModule = fs.readFileSync('src/telegram-primary-identity.js','utf8');
 const router = fs.readFileSync('src/router.js','utf8');
 const accessControl = fs.readFileSync('src/access-control.js','utf8');
@@ -71,7 +72,7 @@ test('deep link follows the new primary identity and cannot reuse the legacy use
   assert.match(link,/^https:\/\/t\.me\/MatchRadarAIBot\?start=/);
   assert.equal(link.includes('MANAGERPLAYER_BOT'),false);
   assert.doesNotMatch(worker,/telegram:bot-username:v1/);
-  assert.match(worker,/telegramBotStartUrl\(username,startParam\)/);
+  assert.match(telegramLinks,/telegramBotStartUrl\(username,startParam\)/);
 });
 
 test('Telegram initData validation is bound to the current primary bot token', async () => {
@@ -126,8 +127,8 @@ test('webhook, start attribution, reminders, billing and Mini App URL contracts 
   assert.match(reminderDeliveryService,/async function processDueReminders\(cfg\)/);
   assert.match(reminderDeliveryService,/sendTelegramMessage\(row\.telegram_id, text, cfg\)/);
   assert.match(worker,/makeInvoicePayload\(user\.id, plan, cfg\.botToken\)/);
-  assert.match(worker,/function telegramWebAppUrl\(request, params = \{\}\)/);
-  assert.match(worker,/url\.pathname = '\/'/);
+  assert.match(telegramLinks,/function telegramWebAppUrl\(request, params = \{\}\)/);
+  assert.match(telegramLinks,/url\.pathname = '\/'/);
 });
 
 test('primary identity cache never logs or stores the raw bot token', () => {
