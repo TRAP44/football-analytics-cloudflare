@@ -102,6 +102,63 @@ async function waitForDevToolsPort(profileDir, chrome, stderrText, attempts = 10
   );
 }
 
+async function stopChrome(chrome) {
+  if (!chrome || chrome.exitCode !== null) return;
+  chrome.kill('SIGTERM');
+  await Promise.race([
+    new Promise(resolve => chrome.once('exit', resolve)),
+    new Promise(resolve => setTimeout(resolve, 1500)),
+  ]);
+  if (chrome.exitCode === null) {
+    chrome.kill('SIGKILL');
+    await Promise.race([
+      new Promise(resolve => chrome.once('exit', resolve)),
+      new Promise(resolve => setTimeout(resolve, 1000)),
+    ]);
+  }
+}
+
+async function launchChromeWithRetry(executable, attempts = 3) {
+  let lastError = null;
+  const totalAttempts = Math.max(1, Math.min(3, Number(attempts || 3)));
+
+  for (let attempt = 1; attempt <= totalAttempts; attempt += 1) {
+    const profileDir = await fsp.mkdtemp(path.join(os.tmpdir(), `matchradar-nav-render-${attempt}-`));
+    let stderrText = '';
+    const chrome = spawn(executable, [
+      '--headless=new',
+      '--no-sandbox',
+      '--disable-gpu',
+      '--disable-dev-shm-usage',
+      '--no-proxy-server',
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--remote-debugging-port=0',
+      `--user-data-dir=${profileDir}`,
+      'about:blank',
+    ], { stdio: ['ignore', 'ignore', 'pipe'] });
+
+    chrome.stderr?.setEncoding('utf8');
+    chrome.stderr?.on('data', chunk => {
+      stderrText = (stderrText + String(chunk)).slice(-8000);
+    });
+
+    try {
+      const debugPort = await waitForDevToolsPort(profileDir, chrome, () => stderrText, 120);
+      return { chrome, profileDir, debugPort };
+    } catch (error) {
+      lastError = error;
+      await stopChrome(chrome);
+      await fsp.rm(profileDir, { recursive:true, force:true, maxRetries:5, retryDelay:100 }).catch(() => {});
+      if (attempt < totalAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 250 * attempt));
+      }
+    }
+  }
+
+  throw new Error(`Chrome startup failed after ${totalAttempts} attempts: ${lastError?.message || lastError || 'unknown error'}`);
+}
+
 class Cdp {
   constructor(url) {
     this.nextId = 1;
@@ -190,28 +247,14 @@ async function main() {
   const remoteUrl = process.argv[2] ? new URL(process.argv[2]).toString() : '';
   const local = remoteUrl ? null : await localServer();
   const targetUrl = remoteUrl || local.url;
-  const profileDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'matchradar-nav-render-'));
-  let chromeStderr = '';
-  const chrome = spawn(browserExecutable(), [
-    '--headless=new',
-    '--no-sandbox',
-    '--disable-gpu',
-    '--disable-dev-shm-usage',
-    '--no-proxy-server',
-    '--no-first-run',
-    '--no-default-browser-check',
-    '--remote-debugging-port=0',
-    `--user-data-dir=${profileDir}`,
-    'about:blank',
-  ], { stdio: ['ignore', 'ignore', 'pipe'] });
-  chrome.stderr?.setEncoding('utf8');
-  chrome.stderr?.on('data', chunk => {
-    chromeStderr = (chromeStderr + String(chunk)).slice(-8000);
-  });
-
+  let chrome = null;
+  let profileDir = '';
   let cdp;
   try {
-    const debugPort = await waitForDevToolsPort(profileDir, chrome, () => chromeStderr);
+    const launched = await launchChromeWithRetry(browserExecutable(), 3);
+    chrome = launched.chrome;
+    profileDir = launched.profileDir;
+    const debugPort = launched.debugPort;
     await waitForJson(`http://127.0.0.1:${debugPort}/json/version`);
     const page = await fetch(`http://127.0.0.1:${debugPort}/json/new?${encodeURIComponent(targetUrl)}`, { method: 'PUT' }).then(r => r.json());
     cdp = new Cdp(page.webSocketDebuggerUrl);
@@ -285,15 +328,11 @@ async function main() {
     }
   } finally {
     cdp?.close();
-    if (chrome.exitCode === null) {
-      chrome.kill('SIGTERM');
-      await Promise.race([
-        new Promise(resolve => chrome.once('exit', resolve)),
-        new Promise(resolve => setTimeout(resolve, 1500)),
-      ]);
-    }
+    await stopChrome(chrome);
     if (local) await new Promise(resolve => local.server.close(resolve));
-    await fsp.rm(profileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
+    if (profileDir) {
+      await fsp.rm(profileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
+    }
   }
 }
 
