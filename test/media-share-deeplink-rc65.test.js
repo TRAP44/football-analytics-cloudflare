@@ -8,14 +8,14 @@ const app=fs.readFileSync('public/app.js','utf8');
 
 test('RC65 fixture deep-link payload is compact and carries attribution',()=> {
   assert.match(telegramLinks,/function fixtureShareStartParam\(/);
-  assert.match(telegramLinks,/fx\\d\{1,12\}/);
+  assert.match(worker,/fx\\d\{1,12\}/);
   assert.match(worker,/fixtureId,action:'fixture'/);
   assert.match(worker,/function fixtureDeepLinkDrill\(/);
 });
 
 test('share-link endpoint resolves Telegram bot username and returns a start link',()=> {
   assert.match(telegramLinks,/async function telegramBotUsername\(/);
-  assert.match(worker,/telegramApi\('getMe',cfg\)/);
+  assert.match(telegramLinks,/telegramApi\('getMe',cfg\)/);
   assert.match(telegramLinks,/async function fixtureTelegramDeepLink\(/);
   assert.match(worker,/async function apiFixtureShareLink\(/);
   assert.match(worker,/url\.pathname === '\/api\/share-link'/);
