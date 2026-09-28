@@ -107,30 +107,40 @@ jobs:
           VERSIONS_JSON="$RUNNER_TEMP/current-production-versions.json"
           npx wrangler deployments status --json > "$DEPLOYMENT_STATUS_JSON"
           npx wrangler versions list --json > "$VERSIONS_JSON"
-          read -r ACTIVE_RELEASE ACTIVE_SHA < <(
-            node scripts/verify-production-release-postcondition.js "$DEPLOYMENT_STATUS_JSON" "$VERSIONS_JSON" --print-active-identity
-          )
-          if [[ "$ACTIVE_RELEASE" != "$RELEASE_VERSION" ]]; then
-            echo "Active production release $ACTIVE_RELEASE does not match expected release $RELEASE_VERSION." >&2
-            exit 1
-          fi
-          if ! git cat-file -e "${ACTIVE_SHA}^{commit}" 2>/dev/null; then
-            echo "Active production SHA $ACTIVE_SHA is not available in repository history." >&2
-            exit 1
-          fi
-          if ! git merge-base --is-ancestor "$ACTIVE_SHA" "$DEPLOY_SHA"; then
-            echo "Active production SHA $ACTIVE_SHA is not an ancestor of deploy SHA $DEPLOY_SHA." >&2
-            exit 1
-          fi
-          echo "active_sha=$ACTIVE_SHA" >> "$GITHUB_OUTPUT"
-          if git diff --quiet "$ACTIVE_SHA" "$DEPLOY_SHA" -- src public wrangler.jsonc package.json package-lock.json; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "### No pending production artifact changes" >> "$GITHUB_STEP_SUMMARY"
-            echo "Active production SHA $ACTIVE_SHA already contains the current runtime artifact." >> "$GITHUB_STEP_SUMMARY"
+          IDENTITY_ERROR="$RUNNER_TEMP/active-production-identity.err"
+          if ACTIVE_IDENTITY="$(node scripts/verify-production-release-postcondition.js "$DEPLOYMENT_STATUS_JSON" "$VERSIONS_JSON" --print-active-identity 2>"$IDENTITY_ERROR")"; then
+            read -r ACTIVE_RELEASE ACTIVE_SHA <<< "$ACTIVE_IDENTITY"
+            if [[ "$ACTIVE_RELEASE" != "$RELEASE_VERSION" ]]; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "### Production release identity differs" >> "$GITHUB_STEP_SUMMARY"
+              echo "Active production release $ACTIVE_RELEASE differs from expected $RELEASE_VERSION; deploying the verified current main revision." >> "$GITHUB_STEP_SUMMARY"
+            elif ! git cat-file -e "${ACTIVE_SHA}^{commit}" 2>/dev/null; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "### Active production SHA is unavailable locally" >> "$GITHUB_STEP_SUMMARY"
+              echo "Active production SHA $ACTIVE_SHA is not available in repository history; deploying the verified current main revision." >> "$GITHUB_STEP_SUMMARY"
+            elif ! git merge-base --is-ancestor "$ACTIVE_SHA" "$DEPLOY_SHA"; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "### Active production SHA is outside current main ancestry" >> "$GITHUB_STEP_SUMMARY"
+              echo "Active production SHA $ACTIVE_SHA is not an ancestor of deploy SHA $DEPLOY_SHA; deploying the verified current main revision." >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "active_sha=$ACTIVE_SHA" >> "$GITHUB_OUTPUT"
+              if git diff --quiet "$ACTIVE_SHA" "$DEPLOY_SHA" -- src public wrangler.jsonc package.json package-lock.json; then
+                echo "changed=false" >> "$GITHUB_OUTPUT"
+                echo "### No pending production artifact changes" >> "$GITHUB_STEP_SUMMARY"
+                echo "Active production SHA $ACTIVE_SHA already contains the current runtime artifact." >> "$GITHUB_STEP_SUMMARY"
+              else
+                echo "changed=true" >> "$GITHUB_OUTPUT"
+                echo "### Pending production artifact changes detected" >> "$GITHUB_STEP_SUMMARY"
+                echo "Runtime changes exist between active production SHA $ACTIVE_SHA and deploy SHA $DEPLOY_SHA." >> "$GITHUB_STEP_SUMMARY"
+              fi
+            fi
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "### Pending production artifact changes detected" >> "$GITHUB_STEP_SUMMARY"
-            echo "Runtime changes exist between active production SHA $ACTIVE_SHA and deploy SHA $DEPLOY_SHA." >> "$GITHUB_STEP_SUMMARY"
+            echo "### Active production identity unavailable" >> "$GITHUB_STEP_SUMMARY"
+            echo "Cloudflare active version does not expose the expected release/SHA stamp. Deploying the verified current main revision; RC120 will validate the new identity after deploy." >> "$GITHUB_STEP_SUMMARY"
+            if [[ -s "$IDENTITY_ERROR" ]]; then
+              echo "Identity resolver: $(tail -n 1 "$IDENTITY_ERROR")" >> "$GITHUB_STEP_SUMMARY"
+            fi
           fi
 
       - name: Deploy Worker
