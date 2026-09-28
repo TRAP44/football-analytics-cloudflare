@@ -57,9 +57,9 @@ test('match center and AI polish preserves mobile and touch behavior',()=>{
 });
 
 test('frontend revision refreshes the polished Match Center assets',()=>{
-  assert.match(html,/frontend-asset-revision" content="6\.120\.0-ui2"/);
-  assert.match(html,/styles\.css\?v=6\.120\.0-ui2/);
-  assert.match(html,/styles\/public-shell\.css\?v=6\.120\.0-ui2/);
-  assert.match(html,/app\.js\?v=6\.120\.0-ui2/);
+  assert.match(html,/frontend-asset-revision" content="6\.120\.0-ui3"/);
+  assert.match(html,/styles\.css\?v=6\.120\.0-ui3/);
+  assert.match(html,/styles\/public-shell\.css\?v=6\.120\.0-ui3/);
+  assert.match(html,/app\.js\?v=6\.120\.0-ui3/);
   assert.doesNotMatch(html,/6\.120\.0-ui1/);
 });
