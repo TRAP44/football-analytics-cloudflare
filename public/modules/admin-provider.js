@@ -279,9 +279,24 @@ export function createAdminProviderModule(deps) {
       incidentPanel.classList.toggle('watch', activeIncident?.state === 'watch');
       incidentPanel.classList.toggle('recovered', !activeIncident && incidentHistory.length > 0);
 
+      const latest = activeIncident || incidentHistory[0] || {};
+      const diagnostics = latest.diagnostics || {};
+      const severityLabel = latest.severity === 'critical'
+        ? 'Критический'
+        : latest.severity === 'incident'
+          ? 'Инцидент'
+          : latest.severity === 'warning'
+            ? 'Предупреждение'
+            : 'Информация';
+      const stateLabel = activeIncident?.state === 'incident'
+        ? 'incident'
+        : activeIncident?.state === 'watch'
+          ? 'watch'
+          : 'healthy';
+
       if ($('providerSloIncidentBadge')) {
         $('providerSloIncidentBadge').textContent = activeIncident?.state === 'incident'
-          ? 'ИНЦИДЕНТ'
+          ? (latest.severity === 'critical' ? 'КРИТИЧНО' : 'ИНЦИДЕНТ')
           : activeIncident?.state === 'watch'
             ? 'КОНТРОЛЬ'
             : 'ВОССТАНОВЛЕНО';
@@ -292,22 +307,45 @@ export function createAdminProviderModule(deps) {
           : 'Активных provider SLO инцидентов нет';
       }
       if ($('providerSloIncidentMeta')) {
-        const latest = activeIncident || incidentHistory[0] || {};
         const started = latest.startedAt ? dateTime(latest.startedAt) : '—';
         const duration = Number.isFinite(Number(latest.durationMinutes)) ? `${Number(latest.durationMinutes).toFixed(1)} мин` : '—';
         $('providerSloIncidentMeta').textContent = activeIncident
           ? `Подтверждено двумя SLO-окнами · начало ${started} · длительность ${duration}`
           : `Последнее восстановление: ${latest.recoveredAt ? dateTime(latest.recoveredAt) : '—'}`;
       }
+      if ($('providerSloIncidentDetails')) {
+        const pct = value => Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)}%` : '—';
+        const latency = Number.isFinite(Number(diagnostics.avgAttemptLatencyMs)) ? `${Math.round(Number(diagnostics.avgAttemptLatencyMs))} мс` : '—';
+        const detailRows = [
+          ['Статус', stateLabel],
+          ['Severity', severityLabel],
+          ['Incident ID', latest.incidentId || '—'],
+          ['Provider', diagnostics.primaryProvider || 'all'],
+          ['Operation', diagnostics.primaryOperation || 'all'],
+          ['Error / timeout', `${pct(diagnostics.errorRatePct)} / ${pct(diagnostics.timeoutRatePct)}`],
+          ['Rate limit / latency', `${pct(diagnostics.rateLimitRatePct)} / ${latency}`],
+          ['Sample size', Number.isFinite(Number(diagnostics.sampleSize)) ? String(Number(diagnostics.sampleSize)) : '—'],
+          ['Последнее healthy окно', incident.lastHealthyWindowAt ? dateTime(incident.lastHealthyWindowAt) : (latest.lastHealthyWindowAt ? dateTime(latest.lastHealthyWindowAt) : '—')],
+          ['Recovery', latest.recoveredAt ? dateTime(latest.recoveredAt) : '—'],
+        ];
+        $('providerSloIncidentDetails').innerHTML = detailRows
+          .map(([label,value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(humanizeTechnicalText(String(value)))}</strong></div>`)
+          .join('');
+      }
       if ($('providerSloIncidentRunbook')) {
-        const steps = activeIncident?.runbook || [];
+        const steps = latest?.runbook || [];
         $('providerSloIncidentRunbook').innerHTML = steps.length
           ? `<strong>Что проверить</strong><ul>${steps.map(step => `<li>${escapeHtml(humanizeTechnicalText(step))}</li>`).join('')}</ul>`
           : '<span>Автоматические rollback и отключение функций не выполняются.</span>';
       }
       if ($('providerSloIncidentHistory')) {
         $('providerSloIncidentHistory').innerHTML = incidentHistory.length
-          ? incidentHistory.slice(0,3).map(item => `<div><span>${item.active ? 'Активен' : 'Восстановлен'}</span><strong>${escapeHtml(humanizeTechnicalText(item.highestState === 'incident' ? 'Инцидент' : 'Контроль'))}</strong><small>${escapeHtml(item.startedAt ? dateTime(item.startedAt) : '—')} · ${Number.isFinite(Number(item.durationMinutes)) ? `${Number(item.durationMinutes).toFixed(1)} мин` : '—'}</small></div>`).join('')
+          ? incidentHistory.slice(0,5).map(item => {
+              const itemSeverity = item.severity === 'critical' ? 'Критический' : item.highestState === 'incident' ? 'Инцидент' : 'Контроль';
+              const duration = Number.isFinite(Number(item.durationMinutes)) ? `${Number(item.durationMinutes).toFixed(1)} мин` : '—';
+              const id = item.incidentId ? ` · ${item.incidentId}` : '';
+              return `<div><span>${item.active ? 'Активен' : 'Восстановлен'}</span><strong>${escapeHtml(itemSeverity)}</strong><small>${escapeHtml(item.startedAt ? dateTime(item.startedAt) : '—')} · ${duration}${escapeHtml(id)}</small></div>`;
+            }).join('')
           : '';
       }
     }
