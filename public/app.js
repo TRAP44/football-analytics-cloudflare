@@ -869,8 +869,17 @@ async function runStartupSequence() {
 
   setBootStatus('MatchRadar', 'Загружаем матчи…', 38);
 
-  await loadRuntimeStatus(false);
-  await loadProfile().catch(()=>null);
+  // These reads are independent. Keep the compatibility manifest as the only
+  // required first hop, then collapse the former runtime → profile → feed
+  // waterfall into one startup batch.
+  const startupTasks = [
+    loadRuntimeStatus(false),
+    loadProfile().catch(()=>null),
+    loadFavorites(),
+    loadMatches(),
+  ];
+  await Promise.allSettled(startupTasks);
+
   if (state.closedBetaBlocked) return false;
   renderProfile();
   applyRuntimeUi();
@@ -878,9 +887,6 @@ async function runStartupSequence() {
   if ($('profileBtn')) $('profileBtn').hidden=false;
   if ($('navProfile')) $('navProfile').hidden=false;
   if ($('navMatches')) $('navMatches').hidden=false;
-  const startupTasks = [loadFavorites(), loadMatches()];
-  if (admin) startupTasks.push(loadReminders());
-  await Promise.allSettled(startupTasks);
 
   const usable = Boolean(state.profile || admin || navigator.onLine !== false);
   if (!usable && navigator.onLine === false) {
@@ -901,7 +907,10 @@ async function runStartupSequence() {
 
   scheduleIdle(async () => {
     const tasks = [loadHistory(false)];
-    if (isAdmin()) tasks.push(loadProvider(),loadReminders());
+    if (isAdmin()) {
+      tasks.push(loadProvider());
+      if (!state.remindersLoaded) tasks.push(loadReminders());
+    }
     await Promise.allSettled(tasks);
   });
   return true;
@@ -6203,12 +6212,19 @@ async function openMatchCenter(fixtureId, btn) {
   if (Number(state.currentCenter?.match?.fixtureId || 0) !== Number(fixtureId)) state.currentCenterTab = 'summary';
   const original = btn?.textContent || '';
   const timingStartedAt = performance.now();
+  const reusableCenter = Number(state.currentCenter?.match?.fixtureId || 0) === Number(fixtureId)
+    ? state.currentCenter
+    : null;
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Загружаю матч…'; }
   showView('analysisView');
-  renderJourneyState('loading', {
-    title: 'Открываем матч',
-    message: 'Загружаем счёт, события и доступную статистику.',
-  });
+  if (reusableCenter) {
+    renderMatchCenter(reusableCenter);
+  } else {
+    renderJourneyState('loading', {
+      title: 'Открываем матч',
+      message: 'Загружаем счёт, события и доступную статистику.',
+    });
+  }
   try {
     const data = await requestMatchCenter(fixtureId);
     if (!data) return;
@@ -6298,7 +6314,10 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
       renderProfile();
     }
     showView('analysisView');
-    void Promise.allSettled([loadHistory(false), loadReminders(), loadFavorites()]);
+    const secondaryTasks = [loadHistory(false)];
+    if (!state.remindersLoaded) secondaryTasks.push(loadReminders());
+    if (!state.favoritesLoaded) secondaryTasks.push(loadFavorites());
+    void Promise.allSettled(secondaryTasks);
   } catch (e) {
     const recovery=e.payload?.newsImpactRecovery || null;
     if (recovery?.message) {
