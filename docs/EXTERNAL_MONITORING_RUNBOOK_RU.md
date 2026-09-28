@@ -8,7 +8,7 @@ Workflow `.github/workflows/external-production-monitor.yml` запускает�
 
 ## Что проверяется
 
-Каждые 15 минут, со смещением относительно Worker cron:
+Каждые 15 минут, со смещением относительно Worker cron, а также после каждого завершённого workflow `Deploy Production`:
 
 - `/health/live` — Worker отвечает и процесс жив;
 - `/health/ready` — Supabase, schema/security contract и обязательная конфигурация готовы;
