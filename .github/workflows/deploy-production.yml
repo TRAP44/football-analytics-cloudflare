@@ -34,22 +34,6 @@ jobs:
           ref: ${{ env.DEPLOY_SHA }}
           fetch-depth: 0
 
-      - name: Detect production artifact changes
-        id: production_changes
-        shell: bash
-        run: |
-          set -euo pipefail
-          BASE_SHA="$(git rev-parse "$DEPLOY_SHA^")"
-          if git diff --quiet "$BASE_SHA" "$DEPLOY_SHA" -- src public wrangler.jsonc package.json package-lock.json; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "### No production artifact changes" >> "$GITHUB_STEP_SUMMARY"
-            echo "Cloudflare deployment skipped because this revision changes only non-runtime files." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "### Production artifact changes detected" >> "$GITHUB_STEP_SUMMARY"
-            echo "Cloudflare deployment is required for this revision." >> "$GITHUB_STEP_SUMMARY"
-          fi
-
       - name: RC110 guard against stale production deploy / RC111 verify deployment provenance
         shell: bash
         run: |
@@ -100,7 +84,6 @@ jobs:
           npm run verify:worker
 
       - name: Check Cloudflare credentials
-        if: steps.production_changes.outputs.changed == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -110,6 +93,44 @@ jobs:
             echo "### Cloudflare deploy blocked" >> "$GITHUB_STEP_SUMMARY"
             echo "CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are required in the production environment or repository secrets." >> "$GITHUB_STEP_SUMMARY"
             exit 1
+          fi
+
+      - name: Detect pending production artifact changes
+        id: production_changes
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEPLOYMENT_STATUS_JSON="$RUNNER_TEMP/current-production-deployment.json"
+          VERSIONS_JSON="$RUNNER_TEMP/current-production-versions.json"
+          npx wrangler deployments status --json > "$DEPLOYMENT_STATUS_JSON"
+          npx wrangler versions list --json > "$VERSIONS_JSON"
+          read -r ACTIVE_RELEASE ACTIVE_SHA < <(
+            node scripts/verify-production-release-postcondition.js "$DEPLOYMENT_STATUS_JSON" "$VERSIONS_JSON" --print-active-identity
+          )
+          if [[ "$ACTIVE_RELEASE" != "$RELEASE_VERSION" ]]; then
+            echo "Active production release $ACTIVE_RELEASE does not match expected release $RELEASE_VERSION." >&2
+            exit 1
+          fi
+          if ! git cat-file -e "${ACTIVE_SHA}^{commit}" 2>/dev/null; then
+            echo "Active production SHA $ACTIVE_SHA is not available in repository history." >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$ACTIVE_SHA" "$DEPLOY_SHA"; then
+            echo "Active production SHA $ACTIVE_SHA is not an ancestor of deploy SHA $DEPLOY_SHA." >&2
+            exit 1
+          fi
+          echo "active_sha=$ACTIVE_SHA" >> "$GITHUB_OUTPUT"
+          if git diff --quiet "$ACTIVE_SHA" "$DEPLOY_SHA" -- src public wrangler.jsonc package.json package-lock.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "### No pending production artifact changes" >> "$GITHUB_STEP_SUMMARY"
+            echo "Active production SHA $ACTIVE_SHA already contains the current runtime artifact." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "### Pending production artifact changes detected" >> "$GITHUB_STEP_SUMMARY"
+            echo "Runtime changes exist between active production SHA $ACTIVE_SHA and deploy SHA $DEPLOY_SHA." >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Deploy Worker
