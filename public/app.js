@@ -48,6 +48,7 @@ const state = {
   provider: null,
   providerTransition: null,
   providerBudget: null,
+  providerObservability: null,
   providerAudit: null,
   providerE2E: null,
   providerAuditLoading: false,
@@ -2297,7 +2298,11 @@ async function loadReleaseReadiness(force = false) {
     state.releaseReadiness = await api(`/api/release-readiness${force ? '?refresh=1' : ''}`);
     if (state.releaseReadiness?.diagnostics) {
       state.diagnostics = state.releaseReadiness.diagnostics;
-      if (state.diagnostics?.provider) { state.provider = state.diagnostics.provider; renderProvider(); }
+      if (state.diagnostics?.provider) {
+        state.provider = state.diagnostics.provider;
+        state.providerObservability = state.diagnostics.providerObservability || state.providerObservability;
+        renderProvider();
+      }
       renderDiagnostics();
     }
   } catch (e) {
@@ -3707,6 +3712,7 @@ async function loadDiagnostics(force = false) {
     state.diagnostics = await api(`/api/diagnostics${force ? '?refresh=1' : ''}`);
     if (state.diagnostics?.provider) {
       state.provider = state.diagnostics.provider;
+      state.providerObservability = state.diagnostics.providerObservability || state.providerObservability;
       renderProvider();
     }
   } catch (e) {
