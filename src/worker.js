@@ -4,6 +4,7 @@ import { createTelegramDedupeRuntime } from './telegram-dedupe.js';
 import { createUserAuthRuntime } from './auth-user.js';
 import { createSharedCacheRuntime } from './cache-runtime.js';
 import { dispatchApiRoute } from './router.js';
+import { createHttpRuntime } from './http.js';
 import { channelPublisherState, publishChannelMessage } from './channel-publisher.js';
 import {
   CALIBRATION_LIFECYCLE_RULES,
@@ -140,6 +141,14 @@ const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49';
 
+const { json, adminForbidden, publicRouteError } = createHttpRuntime({
+  appVersion: APP_VERSION,
+  apiContractVersion: API_CONTRACT_VERSION,
+  minClientVersion: MIN_CLIENT_VERSION,
+  releaseChannel: RELEASE_CHANNEL,
+  personalWriteLimits: PERSONAL_WRITE_LIMITS,
+});
+
 const DEFAULT_RUNTIME_CONTROLS = Object.freeze({
   maintenanceMode: false,
   analysisEnabled: true,
@@ -182,24 +191,6 @@ const CALIBRATION_PROFILE_VERSION = '4.0-atomic1';
 const CALIBRATION_CACHE_KEY = `model-calibration:global:${CALIBRATION_PROFILE_VERSION}`;
 const CALIBRATION_CACHE_MINUTES = 360;
 
-
-function json(data, status = 200, extraHeaders = {}) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      ...apiSecurityHeaders(),
-      'content-type': 'application/json; charset=utf-8',
-      'cache-control': 'no-store',
-      'x-content-type-options': 'nosniff',
-      'x-app-version': APP_VERSION,
-      'x-api-contract': String(API_CONTRACT_VERSION),
-      'x-min-client-version': MIN_CLIENT_VERSION,
-      'x-release-channel': RELEASE_CHANNEL,
-      'vary': 'x-telegram-init-data',
-      ...extraHeaders,
-    },
-  });
-}
 
 function todayUtc() {
   return new Date().toISOString().slice(0, 10);
@@ -846,120 +837,6 @@ function appManifest(cfg) {
       calibrationAutomaticRollback: true,
     },
     serverTime: new Date().toISOString(),
-  };
-}
-
-function adminForbidden() {
-  return json({ error: 'Этот технический раздел доступен только администратору.', code: 'ADMIN_ONLY' }, 403);
-}
-
-function publicRouteError(error, rateLimited = false) {
-  const code = String(error?.code || (rateLimited ? 'FOOTBALL_RATE_LIMIT' : 'SERVER_ERROR'));
-  const retryAfter = Number(error?.retryAfter || 0) || undefined;
-
-  if (rateLimited || ['FOOTBALL_RATE_LIMIT', 'FOOTBALL_COOLDOWN'].includes(code)) {
-    return {
-      status: 429,
-      body: {
-        error: retryAfter
-          ? `Футбольные данные временно обновляются медленнее. Повторите примерно через ${retryAfter} сек.`
-          : 'Футбольные данные временно обновляются медленнее. Попробуйте чуть позже.',
-        code,
-        category: 'rate_limit',
-        recoverable: true,
-        retryAfter,
-      },
-    };
-  }
-
-  if (code === 'PERSONAL_DATA_INVALID') {
-    return {
-      status: 400,
-      body: {
-        error: 'Данные запроса не прошли проверку.',
-        code,
-        category: 'validation',
-        recoverable: false,
-      },
-    };
-  }
-
-  if (code === 'FAVORITES_LIMIT' || code === 'REMINDERS_LIMIT') {
-    return {
-      status: 409,
-      body: {
-        error: code === 'FAVORITES_LIMIT'
-          ? `Достигнут лимит избранных команд: ${PERSONAL_WRITE_LIMITS.favorites}.`
-          : `Достигнут лимит активных напоминаний: ${PERSONAL_WRITE_LIMITS.reminders}.`,
-        code,
-        category: 'limit',
-        recoverable: false,
-      },
-    };
-  }
-
-  if (code === 'FOOTBALL_GUARD_DEGRADED') {
-    return {
-      status: 503,
-      body: {
-        error: retryAfter
-          ? `Защита лимита футбольного источника временно работает в аварийном режиме. Повторите примерно через ${retryAfter} сек.`
-          : 'Защита лимита футбольного источника временно работает в аварийном режиме. Попробуйте позже.',
-        code,
-        category: 'provider_guard',
-        recoverable: true,
-        retryAfter,
-      },
-    };
-  }
-
-  if (code === 'UPSTREAM_TIMEOUT') {
-    return {
-      status: 504,
-      body: {
-        error: 'Источник данных отвечает медленнее обычного. Сохранённые данные останутся доступны, попробуйте обновить позже.',
-        code,
-        category: 'timeout',
-        recoverable: true,
-      },
-    };
-  }
-
-  if (code.startsWith('FOOTBALL_')) {
-    return {
-      status: 502,
-      body: {
-        error: 'Футбольный источник временно недоступен. Приложение использует сохранённые данные там, где они есть.',
-        code,
-        category: 'provider',
-        recoverable: true,
-        retryAfter,
-      },
-    };
-  }
-
-  const raw = String(error?.message || '');
-  if (/supabase|postgrest|database/i.test(raw)) {
-    return {
-      status: 503,
-      body: {
-        error: 'Сервис хранения данных временно недоступен. Основные футбольные экраны попробуют продолжить работу через сохранённые данные.',
-        code: code === 'SERVER_ERROR' ? 'DATABASE_DEGRADED' : code,
-        category: 'database',
-        recoverable: true,
-      },
-    };
-  }
-
-  return {
-    status: 502,
-    body: {
-      error: 'Сервис временно недоступен. Попробуйте повторить действие через несколько секунд.',
-      code,
-      category: 'service',
-      recoverable: true,
-      retryAfter,
-    },
   };
 }
 
