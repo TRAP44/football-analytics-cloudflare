@@ -192,6 +192,26 @@ class Cdp {
   }
 }
 
+function isTransientNavigationError(errorText = '') {
+  return /^net::ERR_(?:CONNECTION_CLOSED|CONNECTION_RESET|TIMED_OUT|NETWORK_CHANGED|HTTP2_PROTOCOL_ERROR)$/.test(String(errorText || ''));
+}
+
+async function navigateWithRetry(cdp, url, attempts = 3) {
+  const totalAttempts = Math.max(1, Math.min(3, Number(attempts || 3)));
+  let lastError = '';
+
+  for (let attempt = 1; attempt <= totalAttempts; attempt += 1) {
+    const navResult = await cdp.call('Page.navigate', { url });
+    if (!navResult.errorText) return navResult;
+
+    lastError = String(navResult.errorText);
+    if (!isTransientNavigationError(lastError) || attempt >= totalAttempts) break;
+    await new Promise(resolve => setTimeout(resolve, 250 * attempt));
+  }
+
+  throw new Error(`Page.navigate failed after ${totalAttempts} attempt(s): ${lastError || 'unknown error'}`);
+}
+
 async function waitForReady(cdp) {
   let lastValue = {};
   for (let i = 0; i < 100; i += 1) {
@@ -274,8 +294,7 @@ async function main() {
         screenWidth: width,
         screenHeight: 844,
       });
-      const navResult = await cdp.call('Page.navigate', { url: targetUrl });
-      if (navResult.errorText) throw new Error(`Page.navigate failed: ${navResult.errorText}`);
+      await navigateWithRetry(cdp, targetUrl, 3);
       await waitForReady(cdp);
       const evaluated = await cdp.call('Runtime.evaluate', {
         returnByValue: true,
