@@ -34,6 +34,22 @@ jobs:
           ref: ${{ env.DEPLOY_SHA }}
           fetch-depth: 0
 
+      - name: Detect production artifact changes
+        id: production_changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_SHA="$(git rev-parse "$DEPLOY_SHA^")"
+          if git diff --quiet "$BASE_SHA" "$DEPLOY_SHA" -- src public wrangler.jsonc package.json package-lock.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "### No production artifact changes" >> "$GITHUB_STEP_SUMMARY"
+            echo "Cloudflare deployment skipped because this revision changes only non-runtime files." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "### Production artifact changes detected" >> "$GITHUB_STEP_SUMMARY"
+            echo "Cloudflare deployment is required for this revision." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: RC110 guard against stale production deploy / RC111 verify deployment provenance
         shell: bash
         run: |
@@ -84,6 +100,7 @@ jobs:
           npm run verify:worker
 
       - name: Check Cloudflare credentials
+        if: steps.production_changes.outputs.changed == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -96,6 +113,7 @@ jobs:
           fi
 
       - name: Deploy Worker
+        if: steps.production_changes.outputs.changed == 'true'
         id: deploy
         uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
         with:
@@ -105,6 +123,7 @@ jobs:
           command: deploy --keep-vars --message "release=${{ env.RELEASE_VERSION }} sha=${{ env.DEPLOY_SHA }}"
 
       - name: RC120 verify active production release identity
+        if: steps.production_changes.outputs.changed == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -133,6 +152,7 @@ jobs:
           echo "Cloudflare control plane confirms release $RELEASE_VERSION for deploy SHA $DEPLOY_SHA at 100% traffic." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify production deployment
+        if: steps.production_changes.outputs.changed == 'true'
         env:
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
           CONFIGURED_URL: ${{ vars.CLOUDFLARE_WORKER_URL }}
