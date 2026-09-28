@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { createReminderDeliveryService } from '../src/reminder-delivery-service.js';
 
 function runtime(overrides = {}) {
-  const calls={messages:[],claims:[],finishes:[],releases:[],selects:[]};
+  const calls={messages:[],claims:[],sending:[],unknownHolds:[],finishes:[],releases:[],selects:[]};
   const events=[];
   const service=createReminderDeliveryService({
     hasSupabase:overrides.hasSupabase || (()=>true),
@@ -14,11 +14,17 @@ function runtime(overrides = {}) {
     recordOpsEvent:overrides.recordOpsEvent || (async(_cfg,event)=>{events.push(event);}),
     sendTelegramMessage:overrides.sendTelegramMessage || (async(...args)=>{
       calls.messages.push(args);
-      return {ok:true,status:200,errorCode:0,description:'',retryAfter:0};
+      return {ok:true,status:200,outcome:'sent',errorCode:0,description:'',retryAfter:0};
     }),
     claimReminderDelivery:overrides.claimReminderDelivery || (async(row,kind,cfg)=>{
       calls.claims.push({row,kind,cfg});
       return {claimed:true,claimAt:'2026-09-27T12:00:00.000Z'};
+    }),
+    markReminderDeliverySending:overrides.markReminderDeliverySending || (async(row,kind,claimAt,cfg)=>{
+      calls.sending.push({row,kind,claimAt,cfg});
+    }),
+    holdReminderDeliveryUnknown:overrides.holdReminderDeliveryUnknown || (async(row,kind,claimAt,cfg)=>{
+      calls.unknownHolds.push({row,kind,claimAt,cfg});
     }),
     finishReminderDelivery:overrides.finishReminderDelivery || (async(row,kind,claimAt,cfg)=>{
       calls.finishes.push({row,kind,claimAt,cfg});
@@ -38,6 +44,7 @@ test('delivery success preserves claim, finish and ops semantics', async () => {
   assert.equal(result.state,'sent');
   assert.equal(calls.claims.length,1);
   assert.deepEqual(calls.messages[0],[15,'text',cfg]);
+  assert.equal(calls.sending.length,1);
   assert.equal(calls.finishes.length,1);
   assert.equal(calls.releases.length,0);
   assert.equal(events.length,1);
@@ -49,6 +56,7 @@ test('delivery success preserves claim, finish and ops semantics', async () => {
     telegramStatus:200,
     telegramErrorCode:null,
     retryAfter:null,
+    telegramOutcome:'sent',
   });
 });
 
@@ -56,7 +64,7 @@ test('403 delivery preserves disable and release semantics', async () => {
   const {service,calls,events}=runtime({
     sendTelegramMessage:async(...args)=>{
       calls.messages.push(args);
-      return {ok:false,status:403,errorCode:403,description:'Forbidden',retryAfter:30};
+      return {ok:false,status:403,outcome:'confirmed_failure',errorCode:403,description:'Forbidden',retryAfter:30};
     },
   });
   const row={telegram_id:9,fixture_id:99};
@@ -73,6 +81,42 @@ test('403 delivery preserves disable and release semantics', async () => {
   });
   assert.equal(events[0].code,'REMINDER_FORBIDDEN');
   assert.equal(events[0].severity,'warning');
+  assert.equal(events[0].meta.telegramOutcome,'confirmed_failure');
+});
+
+test('unknown Telegram outcome stays claimed and is never released for blind retry', async () => {
+  const {service,calls,events}=runtime({
+    sendTelegramMessage:async(...args)=>{
+      calls.messages.push(args);
+      return {ok:false,status:0,outcome:'unknown',errorCode:0,description:'Telegram sendMessage timeout',retryAfter:0};
+    },
+  });
+  const row={telegram_id:22,fixture_id:222};
+  const result=await service.deliverClaimedReminder(row,'prematch','text',{botToken:'token'});
+  assert.equal(result.state,'unknown');
+  assert.equal(result.persistenceFailed,false);
+  assert.equal(calls.sending.length,1);
+  assert.equal(calls.unknownHolds.length,1);
+  assert.equal(calls.releases.length,0);
+  assert.equal(calls.finishes.length,0);
+  assert.equal(events.at(-1).code,'REMINDER_DELIVERY_UNKNOWN');
+  assert.equal(events.at(-1).meta.telegramOutcome,'unknown');
+});
+
+test('unknown hold persistence failure still keeps the sending claim fail closed', async () => {
+  const {service,calls,events}=runtime({
+    sendTelegramMessage:async(...args)=>{
+      calls.messages.push(args);
+      return {ok:false,status:0,outcome:'unknown',errorCode:0,description:'network ambiguous',retryAfter:0};
+    },
+    holdReminderDeliveryUnknown:async()=>{ throw new Error('hold write failed'); },
+  });
+  const result=await service.deliverClaimedReminder({telegram_id:23,fixture_id:223},'kickoff','text',{botToken:'token'});
+  assert.equal(result.state,'unknown');
+  assert.equal(result.persistenceFailed,true);
+  assert.equal(calls.releases.length,0);
+  assert.equal(events.some(event=>event.code==='REMINDER_UNKNOWN_HOLD_FAILED'),true);
+  assert.equal(events.some(event=>event.code==='REMINDER_DELIVERY_UNKNOWN'),true);
 });
 
 test('an already claimed reminder is not sent again', async () => {
@@ -128,7 +172,7 @@ test('scheduler preserves kickoff, prematch and retry-window behavior', async ()
     ];
     const {service,calls,events}=runtime({rows});
     const summary=await service.processDueReminders({botToken:'token'});
-    assert.deepEqual(summary,{checked:3,sent:1,kickoffSent:1,failed:0,claimed:0,staleClaims:0});
+    assert.deepEqual(summary,{checked:3,sent:1,kickoffSent:1,failed:0,unknown:0,claimed:0,staleClaims:0});
     assert.equal(calls.messages.length,2);
     assert.equal(calls.messages[0][0],1);
     assert.equal(calls.messages[0][1],'🔴 Матч начинается\n\nAlpha — Beta\nLeague\n\nОткройте приложение: центр матча появится, когда источник данных обновит статус.');
@@ -151,7 +195,7 @@ test('scheduler preserves disabled and read-failure summaries', async () => {
   const disabled=runtime({loadRuntimeControls:async()=>({value:{remindersEnabled:false}})});
   assert.deepEqual(
     await disabled.service.processDueReminders({botToken:'token'}),
-    {checked:0,sent:0,kickoffSent:0,failed:0,claimed:0,staleClaims:0,disabled:true},
+    {checked:0,sent:0,kickoffSent:0,failed:0,unknown:0,claimed:0,staleClaims:0,disabled:true},
   );
 
   const failed=runtime({
@@ -160,7 +204,7 @@ test('scheduler preserves disabled and read-failure summaries', async () => {
   });
   assert.deepEqual(
     await failed.service.processDueReminders({botToken:'token'}),
-    {checked:0,sent:0,kickoffSent:0,failed:1,claimed:0,staleClaims:3},
+    {checked:0,sent:0,kickoffSent:0,failed:1,unknown:0,claimed:0,staleClaims:3},
   );
   assert.equal(failed.events[0].code,'REMINDER_SCHEDULER_READ_FAILED');
 });

@@ -6,15 +6,19 @@ export function createReminderDeliveryService({
   recordOpsEvent,
   sendTelegramMessage,
   claimReminderDelivery,
+  markReminderDeliverySending,
+  holdReminderDeliveryUnknown,
   finishReminderDelivery,
   releaseReminderClaim,
 }) {
-  async function recordReminderDelivery(cfg, { row, kind, result, success, disabled = false }) {
+  async function recordReminderDelivery(cfg, { row, kind, result, success, disabled = false, uncertain = false }) {
     const code = success
       ? (kind === 'kickoff' ? 'REMINDER_SENT_KICKOFF' : 'REMINDER_SENT_PREMATCH')
-      : disabled
-        ? 'REMINDER_FORBIDDEN'
-        : 'REMINDER_SEND_FAILED';
+      : uncertain
+        ? 'REMINDER_DELIVERY_UNKNOWN'
+        : disabled
+          ? 'REMINDER_FORBIDDEN'
+          : 'REMINDER_SEND_FAILED';
 
     await recordOpsEvent(cfg, {
       severity: success ? 'info' : 'warning',
@@ -23,7 +27,9 @@ export function createReminderDeliveryService({
       code,
       message: success
         ? `Reminder ${kind} delivered.`
-        : `Reminder ${kind} delivery failed: ${result?.description || 'unknown error'}`,
+        : uncertain
+          ? `Reminder ${kind} delivery outcome is unknown; automatic retry is suppressed.`
+          : `Reminder ${kind} delivery failed: ${result?.description || 'unknown error'}`,
       endpoint: 'cron:reminders',
       status: Number(result?.status || 0) || null,
       meta: {
@@ -32,6 +38,7 @@ export function createReminderDeliveryService({
         telegramStatus: Number(result?.status || 0) || null,
         telegramErrorCode: Number(result?.errorCode || 0) || null,
         retryAfter: Number(result?.retryAfter || 0) || null,
+        telegramOutcome: String(result?.outcome || (success ? 'sent' : 'confirmed_failure')),
       },
     });
   }
@@ -40,12 +47,53 @@ export function createReminderDeliveryService({
     const claim = await claimReminderDelivery(row, kind, cfg);
     if (!claim.claimed) return { state: 'already_claimed' };
 
+    try {
+      await markReminderDeliverySending(row, kind, claim.claimAt, cfg);
+    } catch (error) {
+      await releaseReminderClaim(
+        row,
+        kind,
+        claim.claimAt,
+        'Reminder pre-send state persistence failed.',
+        cfg,
+      ).catch(() => {});
+      throw error;
+    }
+
     const result = await sendTelegramMessage(row.telegram_id, text, cfg);
 
     if (result.ok) {
       await finishReminderDelivery(row, kind, claim.claimAt, cfg);
       await recordReminderDelivery(cfg, { row, kind, result, success: true }).catch(() => {});
       return { state: 'sent', result };
+    }
+
+    if (result?.outcome === 'unknown') {
+      let persistenceFailed = false;
+      try {
+        await holdReminderDeliveryUnknown(row, kind, claim.claimAt, cfg);
+      } catch (error) {
+        persistenceFailed = true;
+        await recordOpsEvent(cfg, {
+          severity: 'error',
+          source: 'reminders',
+          eventType: 'reminder_delivery',
+          code: 'REMINDER_UNKNOWN_HOLD_FAILED',
+          message: error?.message || error,
+          endpoint: 'cron:reminders',
+          meta: { fixtureId: Number(row?.fixture_id || 0), kind },
+        }).catch(() => {});
+      }
+
+      await recordReminderDelivery(cfg, {
+        row,
+        kind,
+        result,
+        success: false,
+        uncertain: true,
+      }).catch(() => {});
+
+      return { state: 'unknown', result, persistenceFailed };
     }
 
     const forbidden = Number(result.status) === 403 || Number(result.errorCode) === 403;
@@ -76,12 +124,12 @@ export function createReminderDeliveryService({
 
   async function processDueReminders(cfg) {
     if (!hasSupabase(cfg) || !cfg.botToken) {
-      return { checked: 0, sent: 0, kickoffSent: 0, failed: 0, claimed: 0, staleClaims: 0 };
+      return { checked: 0, sent: 0, kickoffSent: 0, failed: 0, unknown: 0, claimed: 0, staleClaims: 0 };
     }
 
     const runtimeState = await loadRuntimeControls(cfg);
     if (runtimeState.value?.remindersEnabled === false) {
-      return { checked: 0, sent: 0, kickoffSent: 0, failed: 0, claimed: 0, staleClaims: 0, disabled: true };
+      return { checked: 0, sent: 0, kickoffSent: 0, failed: 0, unknown: 0, claimed: 0, staleClaims: 0, disabled: true };
     }
 
     const stale = await clearStaleReminderClaims(cfg).catch(() => ({ prematch: 0, kickoff: 0 }));
@@ -105,12 +153,13 @@ export function createReminderDeliveryService({
         message: e?.message || e,
         endpoint: 'cron:reminders',
       }).catch(() => {});
-      return { checked: 0, sent: 0, kickoffSent: 0, failed: 1, claimed: 0, staleClaims: stale.prematch + stale.kickoff };
+      return { checked: 0, sent: 0, kickoffSent: 0, failed: 1, unknown: 0, claimed: 0, staleClaims: stale.prematch + stale.kickoff };
     }
 
     let sent = 0;
     let kickoffSent = 0;
     let failed = 0;
+    let unknown = 0;
     let claimed = 0;
 
     for (const row of rows) {
@@ -134,6 +183,7 @@ export function createReminderDeliveryService({
           const delivery = await deliverClaimedReminder(row, 'kickoff', text, cfg);
           if (delivery.state === 'sent') kickoffSent++;
           else if (delivery.state === 'already_claimed') claimed++;
+          else if (delivery.state === 'unknown') unknown++;
           else failed++;
           continue;
         }
@@ -145,6 +195,7 @@ export function createReminderDeliveryService({
           const delivery = await deliverClaimedReminder(row, 'prematch', text, cfg);
           if (delivery.state === 'sent') sent++;
           else if (delivery.state === 'already_claimed') claimed++;
+          else if (delivery.state === 'unknown') unknown++;
           else failed++;
         }
       } catch (e) {
@@ -166,17 +217,18 @@ export function createReminderDeliveryService({
       sent,
       kickoffSent,
       failed,
+      unknown,
       claimed,
       staleClaims: stale.prematch + stale.kickoff,
     };
 
-    if (sent || kickoffSent || failed || summary.staleClaims) {
+    if (sent || kickoffSent || failed || unknown || summary.staleClaims) {
       await recordOpsEvent(cfg, {
-        severity: failed ? 'warning' : 'info',
+        severity: failed || unknown ? 'warning' : 'info',
         source: 'reminders',
         eventType: 'reminder_scheduler',
-        code: failed ? 'REMINDER_RUN_WITH_FAILURES' : 'REMINDER_RUN_OK',
-        message: `Планировщик уведомлений: проверено ${rows.length}, предматчевых отправлено ${sent}, у старта ${kickoffSent}, ошибок ${failed}.`,
+        code: failed ? 'REMINDER_RUN_WITH_FAILURES' : unknown ? 'REMINDER_RUN_WITH_UNKNOWN' : 'REMINDER_RUN_OK',
+        message: `Планировщик уведомлений: проверено ${rows.length}, предматчевых отправлено ${sent}, у старта ${kickoffSent}, неопределённых доставок ${unknown}, ошибок ${failed}.`,
         endpoint: 'cron:reminders',
         meta: summary,
       }).catch(() => {});
