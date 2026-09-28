@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { evaluateEndpoint } from '../scripts/external-production-monitor.js';
 
 const workflow = fs.readFileSync('.github/workflows/external-production-monitor.yml', 'utf8');
+const monitorScript = fs.readFileSync('scripts/external-production-monitor.js', 'utf8');
 const runbook = fs.readFileSync('docs/EXTERNAL_MONITORING_RUNBOOK_RU.md', 'utf8');
 
 test('external monitor accepts healthy production contracts', () => {
@@ -44,7 +45,9 @@ test('external monitoring workflow is independent, retried and incident-aware', 
   assert.match(workflow, /cron: "7,22,37,52 \* \* \* \*"/);
   assert.match(workflow, /issues: write/);
   assert.match(workflow, /EXTERNAL_MONITOR_RETRIES: "3"/);
-  assert.match(workflow, /\/health\/live/);
+  assert.match(monitorScript, /\/health\/live/);
+  assert.match(monitorScript, /\/health\/ready/);
+  assert.match(monitorScript, /\/api\/public-status/);
   assert.match(workflow, /external-production-monitor\.js/);
   assert.match(workflow, /gh issue create/);
   assert.match(workflow, /gh issue close/);
