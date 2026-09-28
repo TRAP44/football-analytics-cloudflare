@@ -2,13 +2,6 @@ function providerLabel(value) {
   return String(value || 'provider').trim() || 'provider';
 }
 
-function providerCode(value) {
-  return providerLabel(value)
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '') || 'PROVIDER';
-}
-
 export function retryAfterSeconds(headers, fallbackSeconds = 60, nowMs = Date.now()) {
   const raw = String(headers?.get?.('retry-after') || '').trim();
   const fallback = Math.max(1, Number(fallbackSeconds || 60));
