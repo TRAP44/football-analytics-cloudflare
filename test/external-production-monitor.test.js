@@ -43,6 +43,10 @@ test('external monitor fails closed on readiness 503 but treats maintenance as a
 
 test('external monitoring workflow is independent, retried and incident-aware', () => {
   assert.match(workflow, /cron: "7,22,37,52 \* \* \* \*"/);
+  assert.match(workflow, /workflow_run:/);
+  assert.match(workflow, /workflows: \["Deploy Production"\]/);
+  assert.match(workflow, /types: \[completed\]/);
+  assert.match(workflow, /branches: \[main\]/);
   assert.match(workflow, /issues: write/);
   assert.match(workflow, /EXTERNAL_MONITOR_RETRIES: "3"/);
   assert.match(monitorScript, /\/health\/live/);

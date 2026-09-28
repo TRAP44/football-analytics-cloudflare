@@ -2,6 +2,10 @@ name: External Production Monitor
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Deploy Production"]
+    types: [completed]
+    branches: [main]
   schedule:
     # Four checks per hour, intentionally offset from the Worker's */5 cron.
     - cron: "7,22,37,52 * * * *"
