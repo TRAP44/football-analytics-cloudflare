@@ -2407,22 +2407,6 @@ async function syncBillingFromStars(userId, cfg) {
   return { synced: true, quota: await getQuota(userId, cfg) };
 }
 
-const {
-  telegramWebAppUrl,
-  telegramAnalysisHandoffParams,
-  telegramFullAnalysisUrl,
-  oneTapHandoffDrill,
-  fixtureShareStartParam,
-  telegramBotUsername,
-  fixtureTelegramDeepLink,
-  telegramShareComposerUrl,
-} = createTelegramLinksRuntime({
-  cleanLaunchPart,
-  getCache,
-  setCache,
-  telegramApi,
-});
-
 function telegramMiniAppE2EDrill() {
   const request=new Request('https://app.example/');
   const match={
@@ -7610,6 +7594,23 @@ const {
   pruneMemoryState,
   recordOpsEvent,
 });
+
+const {
+  telegramWebAppUrl,
+  telegramAnalysisHandoffParams,
+  telegramFullAnalysisUrl,
+  oneTapHandoffDrill,
+  fixtureShareStartParam,
+  telegramBotUsername,
+  fixtureTelegramDeepLink,
+  telegramShareComposerUrl,
+} = createTelegramLinksRuntime({
+  cleanLaunchPart,
+  getCache,
+  setCache,
+  telegramApi,
+});
+
 
 const CHANNEL_PUBLISH_IDEMPOTENCY_MINUTES = 7 * 24 * 60;
 
