@@ -203,7 +203,7 @@ export function providerSloIncidentOpsEvent(transition = {}) {
     : state === 'incident'
       ? 'PROVIDER_SLO_INCIDENT'
       : 'PROVIDER_SLO_WATCH';
-  const severity = recovered ? 'info' : state === 'incident' ? 'critical' : 'warning';
+  const severity = recovered ? 'info' : state === 'incident' ? 'error' : 'warning';
 
   return {
     severity,
