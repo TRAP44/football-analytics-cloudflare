@@ -48,13 +48,19 @@ test('all health probes run through the Worker instead of the SPA fallback', () 
 });
 
 
-test('non-runtime changes do not force a no-op Cloudflare deployment', () => {
+test('production change detection compares current main with the active Cloudflare SHA', () => {
   assert.match(deploy, /id: production_changes/);
-  assert.match(deploy, /BASE_SHA="\$\(git rev-parse "\$DEPLOY_SHA\^"\)"/);
-  assert.match(deploy, /git diff --quiet "\$BASE_SHA" "\$DEPLOY_SHA" -- src public wrangler\.jsonc package\.json package-lock\.json/);
-  assert.match(deploy, /Cloudflare deployment skipped because this revision changes only non-runtime files/);
+  assert.match(deploy, /verify-production-release-postcondition\.js "\$DEPLOYMENT_STATUS_JSON" "\$VERSIONS_JSON" --print-active-identity/);
+  assert.match(deploy, /git merge-base --is-ancestor "\$ACTIVE_SHA" "\$DEPLOY_SHA"/);
+  assert.match(deploy, /git diff --quiet "\$ACTIVE_SHA" "\$DEPLOY_SHA" -- src public wrangler\.jsonc package\.json package-lock\.json/);
+  assert.doesNotMatch(deploy, /BASE_SHA="\$\(git rev-parse "\$DEPLOY_SHA\^"\)"/);
+
+  const credentials = deploy.indexOf('- name: Check Cloudflare credentials');
+  const detection = deploy.indexOf('- name: Detect pending production artifact changes');
+  const cloudflareDeploy = deploy.indexOf('- name: Deploy Worker');
+  assert.ok(credentials >= 0 && detection > credentials && cloudflareDeploy > detection);
+
   for (const step of [
-    'Check Cloudflare credentials',
     'Deploy Worker',
     'RC120 verify active production release identity',
     'Verify production deployment',
