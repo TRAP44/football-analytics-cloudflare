@@ -278,14 +278,14 @@ export function createApiFootballGateway({
       throw footballError('API-Football вернул некорректный ответ.', 'FOOTBALL_INVALID_RESPONSE', 0, r.status);
     }
 
-    if (!body || typeof body !== 'object' || !Object.prototype.hasOwnProperty.call(body, 'response')) {
+    if (!body || typeof body !== 'object') {
       memory.provider.lastError = 'invalid_response_shape';
       bumpTelemetry('apiErrors');
       bumpTelemetry('providerErrors');
       await recordOpsEvent(cfg, {
         severity:'error', source:'provider', eventType:'api_response', code:'FOOTBALL_INVALID_RESPONSE',
         message:'API-Football вернул неожиданный формат ответа.', endpoint:path, status:r.status, durationMs,
-        meta:{ provider:'api-football', operation:path, attempt, finalResult:'failed', reason:'missing_response' },
+        meta:{ provider:'api-football', operation:path, attempt, finalResult:'failed', reason:'non_object_response' },
       });
       throw footballError('API-Football вернул неожиданный формат ответа.', 'FOOTBALL_INVALID_RESPONSE', 0, r.status);
     }
@@ -295,9 +295,11 @@ export function createApiFootballGateway({
       const message = errors.join('; ');
       memory.provider.lastError = message.slice(0, 160);
       bumpTelemetry('apiErrors');
+      bumpTelemetry('providerErrors');
       if (/too many requests|rate.?limit|requests per minute/i.test(message)) {
         await persistSharedProviderCooldown(cfg, 65, 'rate_limit_body').catch(() => null);
         bumpTelemetry('rateLimits');
+        bumpTelemetry('providerRateLimits');
         phase5ProviderUsage(cfg,'quotaBlocks',1);
         await recordOpsEvent(cfg, {
           severity: 'warning', source: 'provider', eventType: 'rate_limit', code: 'FOOTBALL_RATE_LIMIT_BODY',
@@ -309,22 +311,42 @@ export function createApiFootballGateway({
             dailyRemaining:memory.provider?.dailyRemaining,
             minuteLimit:memory.provider?.minuteLimit,
             minuteRemaining:memory.provider?.minuteRemaining,
+            provider:'api-football',
+            operation:path,
+            attempt,
+            finalResult:'rate_limited',
           },
         });
-        throw footballError('API-Football достиг лимита запросов. Покажем сохранённые данные, если они есть.', 'FOOTBALL_RATE_LIMIT', 65);
+        throw footballError('API-Football достиг лимита запросов. Покажем сохранённые данные, если они есть.', 'FOOTBALL_RATE_LIMIT', 65, r.status);
       }
       await recordOpsEvent(cfg, {
         severity: 'warning', source: 'provider', eventType: 'api_response', code: 'FOOTBALL_RESPONSE',
         message, endpoint: path, status: r.status, durationMs,
+        meta:{ provider:'api-football', operation:path, attempt, finalResult:'failed' },
       });
-      throw footballError(`API-Football: ${message}`, 'FOOTBALL_RESPONSE');
+      throw footballError(`API-Football: ${message}`, 'FOOTBALL_RESPONSE', 0, r.status);
     }
 
-    if (options.responseType === 'envelope' && !Array.isArray(body.response)) {
-      throw footballError('API-Football вернул неожиданный формат списка.', 'FOOTBALL_INVALID_RESPONSE', 0, r.status);
-    }
-    if (options.responseType !== 'any' && options.responseType !== 'envelope' && !Array.isArray(body.response)) {
-      throw footballError('API-Football вернул неожиданный формат списка.', 'FOOTBALL_INVALID_RESPONSE', 0, r.status);
+    const hasResponse = Object.prototype.hasOwnProperty.call(body, 'response');
+    const responseShapeValid = options.responseType === 'any'
+      ? hasResponse
+      : hasResponse && Array.isArray(body.response);
+    if (!responseShapeValid) {
+      memory.provider.lastError = 'invalid_response_shape';
+      bumpTelemetry('apiErrors');
+      bumpTelemetry('providerErrors');
+      await recordOpsEvent(cfg, {
+        severity:'error', source:'provider', eventType:'api_response', code:'FOOTBALL_INVALID_RESPONSE',
+        message:'API-Football вернул неожиданный формат ответа.', endpoint:path, status:r.status, durationMs,
+        meta:{
+          provider:'api-football',
+          operation:path,
+          attempt,
+          finalResult:'failed',
+          reason:hasResponse ? 'unexpected_response_type' : 'missing_response',
+        },
+      });
+      throw footballError('API-Football вернул неожиданный формат ответа.', 'FOOTBALL_INVALID_RESPONSE', 0, r.status);
     }
 
     memory.provider.lastError = '';
