@@ -18,8 +18,14 @@ Production-проект Supabase сейчас находится на Free-пл�
 - `schema.sql` — схема БД, функции, политики и другие schema objects;
 - `data.sql` — данные; управляемые Supabase Storage Vector-таблицы `storage.buckets_vectors` и `storage.vector_indexes` исключены по актуальной рекомендации Supabase;
 - `manifest.txt` — project ref, commit SHA, время создания и версия CLI;
-- `SHA256SUMS` — контрольные суммы;
-- итоговый `.tar.gz` + SHA-256 checksum архива.
+- `SHA256SUMS` — контрольные суммы внутренних файлов.
+
+Перед загрузкой в GitHub файлы упаковываются в `.tar.gz`, затем архив шифруется **AES-256-CBC + PBKDF2 (250000 iterations)**. Workflow тут же выполняет тестовую расшифровку и сравнение с исходным архивом. Только после успешной проверки открытый архив и временные SQL-файлы удаляются.
+
+В GitHub Actions artifact загружаются только:
+
+- `*.tar.gz.enc`;
+- SHA-256 checksum зашифрованного файла.
 
 Архив сохраняется как **private GitHub Actions artifact**, а не коммитится в Git.
 
@@ -29,11 +35,11 @@ Retention: **30 дней**.
 
 Ручной запуск обязателен **перед каждой production migration**.
 
-## Одноразовая настройка секрета
+## Одноразовая настройка секретов
 
-Workflow требует GitHub Environment secret:
+Workflow требует два GitHub Environment secret в environment `production`.
 
-`SUPABASE_DB_URL`
+### 1. SUPABASE_DB_URL
 
 Для GitHub Actions нужно использовать **Supavisor Session pooler**, потому что GitHub Actions работает в IPv4-only окружении, а direct Supabase DB endpoint Free-проекта по умолчанию IPv6.
 
@@ -47,34 +53,67 @@ Workflow требует GitHub Environment secret:
 8. Добавить secret с именем `SUPABASE_DB_URL`.
 9. Значение должно выглядеть как session-pooler PostgreSQL URL и содержать пользователя `postgres.nlmvhkjkpgzzlfavaohk`.
 
-Не добавлять этот URL в `.env`, исходный код, issues, PR comments или логи.
+### 2. BACKUP_ENCRYPTION_PASSPHRASE
+
+Добавить второй Environment secret:
+
+`BACKUP_ENCRYPTION_PASSPHRASE`
+
+Требования:
+
+- минимум 24 символа; рекомендуется длинная случайная фраза;
+- хранить отдельно от скачанного backup;
+- не добавлять в репозиторий, `.env`, issues, PR comments, сообщения или логи;
+- при утрате этой фразы зашифрованные backup-файлы восстановить невозможно.
+
+Workflow маскирует оба секрета в GitHub Actions log.
 
 ## Первый проверочный backup
 
-После добавления секрета:
+После добавления обоих секретов:
 
 1. GitHub → Actions → **Backup Supabase**.
 2. Нажать **Run workflow** на ветке `main`.
 3. Workflow должен завершиться зелёным.
 4. В run появится artifact `supabase-production-backup-<run_id>`.
-5. Скачать artifact и отдельно проверить SHA-256 checksum архива.
-6. Не распаковывать production backup на публичной/общей машине.
+5. Artifact должен содержать только `.tar.gz.enc` и его `.sha256`; открытого `.tar.gz` или SQL-файлов там быть не должно.
+6. Проверить SHA-256 checksum.
+7. Проверить расшифровку на доверенной машине с `BACKUP_ENCRYPTION_PASSPHRASE`.
+8. Не распаковывать production backup на публичной/общей машине.
 
 ## Что проверяет workflow
 
 Перед выгрузкой workflow:
 
 - проверяет наличие `SUPABASE_DB_URL`;
+- проверяет наличие `BACKUP_ENCRYPTION_PASSPHRASE` и минимальную длину 24 символа;
 - требует PostgreSQL URL;
 - требует Session pooler `.pooler.supabase.com:5432`;
 - проверяет project ref MatchRadar;
-- использует закреплённую версию Supabase CLI;
-- проверяет Docker;
+- использует закреплённую стабильную версию Supabase CLI;
+- проверяет Docker и OpenSSL;
 - после dump убеждается, что `roles.sql`, `schema.sql`, `data.sql` не пустые;
 - проверяет наличие ключевых объектов MatchRadar в schema dump;
-- проверяет, что connection URL не попал в backup-файлы;
-- формирует SHA-256 checksums;
+- проверяет, что секреты не попали в backup-файлы;
+- формирует внутренние SHA-256 checksums;
+- шифрует архив;
+- проверяет checksum зашифрованного файла;
+- выполняет test decrypt + byte-for-byte compare;
+- удаляет plaintext до artifact upload;
 - прекращает процесс при любой ошибке.
+
+## Расшифровка backup
+
+Пример на доверенной машине:
+
+```bash
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 250000 \
+  -in matchradar-supabase-<project>-<timestamp>.tar.gz.enc \
+  -out matchradar-supabase-restore.tar.gz \
+  -pass env:BACKUP_ENCRYPTION_PASSPHRASE
+```
+
+После этого проверить SHA-256 внутреннего содержимого и только затем использовать файлы для тестового restore.
 
 ## Восстановление
 
@@ -86,7 +125,7 @@ Backup **не восстанавливается автоматически**.
 - RLS;
 - функции/RPC;
 - row counts ключевых таблиц;
-- `auth.users` и связанные auth-данные, если они присутствуют в выбранном dump scope;
+- auth-данные, если они присутствуют в выбранном dump scope;
 - health/schema probes приложения.
 
 Только после проверки принимать отдельное решение о production restore. Restore в production — потенциально разрушительная операция и должен выполняться вручную с отдельным подтверждением.
@@ -99,7 +138,7 @@ Database backup не восстанавливает сами файлы из Sup
 
 Пока проект небольшой и находится на Free-плане:
 
-- weekly off-site logical backup;
+- weekly off-site encrypted logical backup;
 - manual backup перед каждой production migration;
 - 30 дней retention в GitHub Actions;
 - никаких платных backup add-ons.
