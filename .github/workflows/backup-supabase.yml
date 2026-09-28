@@ -1,0 +1,170 @@
+name: Backup Supabase
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly while the project is in the current low-volume/free-plan phase.
+    # Run off the app's 5-minute/15-minute cron boundaries.
+    - cron: "17 2 * * 0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-production-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      SUPABASE_PROJECT_REF: "nlmvhkjkpgzzlfavaohk"
+      SUPABASE_CLI_VERSION: "2.117.0"
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+
+    steps:
+      - name: Checkout backup contract
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Backup preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${SUPABASE_DB_URL:-}" ]]; then
+            echo "### Supabase backup blocked" >> "$GITHUB_STEP_SUMMARY"
+            echo "Missing production environment secret SUPABASE_DB_URL." >> "$GITHUB_STEP_SUMMARY"
+            echo "Use the Supabase Session pooler connection string (port 5432); GitHub Actions is IPv4-only." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          echo "::add-mask::$SUPABASE_DB_URL"
+
+          if [[ "$SUPABASE_DB_URL" != postgres://* && "$SUPABASE_DB_URL" != postgresql://* ]]; then
+            echo "SUPABASE_DB_URL must be a Postgres connection string." >&2
+            exit 1
+          fi
+
+          if [[ "$SUPABASE_DB_URL" != *".pooler.supabase.com:5432/"* ]]; then
+            echo "SUPABASE_DB_URL must use the Supavisor Session pooler on port 5432 for GitHub Actions IPv4 compatibility." >&2
+            exit 1
+          fi
+
+          if [[ "$SUPABASE_DB_URL" != *"postgres.$SUPABASE_PROJECT_REF"* ]]; then
+            echo "SUPABASE_DB_URL does not appear to target the configured production project ref." >&2
+            exit 1
+          fi
+
+          docker --version
+          npx --yes "supabase@$SUPABASE_CLI_VERSION" --version
+
+          echo "### Supabase backup preflight passed" >> "$GITHUB_STEP_SUMMARY"
+          echo "Project ref: $SUPABASE_PROJECT_REF" >> "$GITHUB_STEP_SUMMARY"
+          echo "CLI: $SUPABASE_CLI_VERSION" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create logical backup
+        id: dump
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+
+          BACKUP_DIR="$RUNNER_TEMP/supabase-backup"
+          rm -rf "$BACKUP_DIR"
+          mkdir -p "$BACKUP_DIR"
+
+          npx --yes "supabase@$SUPABASE_CLI_VERSION" db dump             --db-url "$SUPABASE_DB_URL"             -f "$BACKUP_DIR/roles.sql"             --role-only
+
+          npx --yes "supabase@$SUPABASE_CLI_VERSION" db dump             --db-url "$SUPABASE_DB_URL"             -f "$BACKUP_DIR/schema.sql"
+
+          npx --yes "supabase@$SUPABASE_CLI_VERSION" db dump             --db-url "$SUPABASE_DB_URL"             -f "$BACKUP_DIR/data.sql"             --use-copy             --data-only
+
+          for required in roles.sql schema.sql data.sql; do
+            if [[ ! -s "$BACKUP_DIR/$required" ]]; then
+              echo "Backup file $required is missing or empty." >&2
+              exit 1
+            fi
+          done
+
+          # Guard against accidentally backing up a different Supabase project.
+          grep -q "analysis_cache" "$BACKUP_DIR/schema.sql"
+          grep -q "match_reminders" "$BACKUP_DIR/schema.sql"
+          grep -q "runtime_controls" "$BACKUP_DIR/schema.sql"
+
+          # The connection string itself must never be present in backup output.
+          if grep -R -F -- "$SUPABASE_DB_URL" "$BACKUP_DIR" >/dev/null 2>&1; then
+            echo "Connection secret unexpectedly appeared in backup output." >&2
+            exit 1
+          fi
+
+          CREATED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          CREATED_COMPACT="$(date -u +'%Y%m%dT%H%M%SZ')"
+
+          cat > "$BACKUP_DIR/manifest.txt" <<EOF
+          product=MatchRadar
+          project_ref=$SUPABASE_PROJECT_REF
+          created_at=$CREATED_AT
+          source_sha=$GITHUB_SHA
+          workflow_run_id=$GITHUB_RUN_ID
+          supabase_cli_version=$SUPABASE_CLI_VERSION
+          format=logical_sql_roles_schema_data
+          EOF
+
+          (
+            cd "$BACKUP_DIR"
+            sha256sum roles.sql schema.sql data.sql manifest.txt > SHA256SUMS
+          )
+
+          echo "backup_dir=$BACKUP_DIR" >> "$GITHUB_OUTPUT"
+          echo "created_compact=$CREATED_COMPACT" >> "$GITHUB_OUTPUT"
+
+      - name: Package and verify archive
+        id: package
+        shell: bash
+        env:
+          BACKUP_DIR: ${{ steps.dump.outputs.backup_dir }}
+          CREATED_COMPACT: ${{ steps.dump.outputs.created_compact }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          ARCHIVE="$RUNNER_TEMP/matchradar-supabase-$SUPABASE_PROJECT_REF-$CREATED_COMPACT.tar.gz"
+          CHECKSUM="$ARCHIVE.sha256"
+
+          tar -C "$BACKUP_DIR" -czf "$ARCHIVE" .
+          test -s "$ARCHIVE"
+          sha256sum "$ARCHIVE" > "$CHECKSUM"
+          sha256sum -c "$CHECKSUM"
+
+          echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
+          echo "checksum=$CHECKSUM" >> "$GITHUB_OUTPUT"
+
+      - name: Upload private off-site backup
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: supabase-production-backup-${{ github.run_id }}
+          path: |
+            ${{ steps.package.outputs.archive }}
+            ${{ steps.package.outputs.checksum }}
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Backup summary
+        shell: bash
+        run: |
+          {
+            echo "### Supabase logical backup completed"
+            echo "- Project ref: $SUPABASE_PROJECT_REF"
+            echo "- Contents: roles.sql + schema.sql + data.sql + manifest + checksums"
+            echo "- Storage: private GitHub Actions artifact"
+            echo "- Retention: 30 days"
+            echo "- Automatic cadence: weekly"
+            echo "- Run manually before every production migration."
+          } >> "$GITHUB_STEP_SUMMARY"
