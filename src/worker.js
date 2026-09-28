@@ -48,6 +48,7 @@ import { createUserPreferencesService } from './user-preferences.js';
 import { createUserHistoryService } from './user-history.js';
 import { createReminderDeliveryStore } from './reminder-delivery-store.js';
 import { createReminderDeliveryService } from './reminder-delivery-service.js';
+import { createScheduledJobsRuntime } from './scheduled-jobs.js';
 
 const memory = {
   users: new Map(),
@@ -1361,10 +1362,31 @@ async function cleanupOpsEvents(cfg) {
 
 
 async function cleanupIntegrityData(cfg) {
-  if (!hasSupabase(cfg)) return;
-  const cutoff = new Date(Date.now() - cfg.opsRetentionDays * 86400000).toISOString();
-  try { await supaDelete(cfg, 'match_integrity_events', { observed_at: `lt.${cutoff}` }); } catch {}
-  try { await supaDelete(cfg, 'match_integrity_runs', { observed_at: `lt.${cutoff}` }); } catch {}
+  if (!hasSupabase(cfg)) return { skipped: true };
+  const days = Math.max(1, Number(cfg.opsRetentionDays || 14));
+  const cutoff = new Date(Date.now() - days * 86400000).toISOString();
+  const failedTables = [];
+
+  for (const table of ['match_integrity_events', 'match_integrity_runs']) {
+    try {
+      await supaDelete(cfg, table, { observed_at: `lt.${cutoff}` });
+    } catch (error) {
+      failedTables.push({
+        table,
+        error: redactOpsString(error?.message || error, 180),
+      });
+    }
+  }
+
+  if (failedTables.length) {
+    return {
+      ok: false,
+      error: `Integrity cleanup failed for: ${failedTables.map(item => item.table).join(', ')}`,
+      cutoff,
+      failedTables,
+    };
+  }
+  return { ok: true, cutoff };
 }
 
 function telemetrySnapshot() {
@@ -22035,6 +22057,21 @@ const API_ROUTE_DEPS = Object.freeze({
   publicDataCapabilities,
 });
 
+const { handleScheduled } = createScheduledJobsRuntime({
+  settleBacktestDaily,
+  processDueReminders,
+  processPostMatchReturns,
+  runProductionMonitor,
+  processDailyDigests,
+  cleanupOpsEvents,
+  cleanupRateWindows,
+  cleanupGrowthEvents,
+  cleanupIntegrityData,
+  runSettlementWatchdog,
+  runSettlementFinalityVerification,
+  recordOpsEvent,
+});
+
 export default {
   async fetch(request, env, ctx) {
     const cfg = config(env);
@@ -22599,46 +22636,6 @@ export default {
   async scheduled(controller, env, ctx) {
     const cfg = config(env);
     if (ctx?.waitUntil) cfg.waitUntil = promise => ctx.waitUntil(Promise.resolve(promise));
-    const scheduledAt = new Date(Number(controller?.scheduledTime || Date.now()));
-    const backtestTask = settleBacktestDaily(cfg);
-    const remindersTask = processDueReminders(cfg);
-    const tasks = [
-      ['reminders', remindersTask],
-      ['backtest', backtestTask],
-      ['post_match_return', backtestTask.then(() => processPostMatchReturns(cfg))],
-    ];
-    if (scheduledAt.getUTCMinutes() % 15 === 0) {
-      // Avoid a burst of Supabase reads at the same instant: the deep schema
-      // monitor starts only after the latency-sensitive reminder read settles.
-      const monitorAfterReminders = remindersTask.catch(()=>null).then(() => runProductionMonitor(cfg, scheduledAt));
-      tasks.push(['production_monitor', monitorAfterReminders]);
-    }
-    if (scheduledAt.getUTCHours() === 7 && scheduledAt.getUTCMinutes() < 10) {
-      tasks.push(['daily_digest', processDailyDigests(cfg, scheduledAt)]);
-    }
-    if (scheduledAt.getUTCHours() === 3 && scheduledAt.getUTCMinutes() < 15) {
-      tasks.push(['ops_cleanup', cleanupOpsEvents(cfg)]);
-      tasks.push(['rate_window_cleanup', cleanupRateWindows(cfg)]);
-      tasks.push(['growth_cleanup', cleanupGrowthEvents(cfg)]);
-      tasks.push(['integrity_cleanup', cleanupIntegrityData(cfg)]);
-    }
-    if (scheduledAt.getUTCHours() === 4 && scheduledAt.getUTCMinutes() < 15) {
-      // Sequence catch-up after the normal daily settlement so one cron invocation
-      // never spends provider quota on both recovery paths concurrently.
-      tasks.push(['settlement_watchdog', backtestTask.then(() => runSettlementWatchdog(cfg))]);
-    }
-    if (scheduledAt.getUTCHours() === 5 && scheduledAt.getUTCMinutes() < 15) {
-      // Finality verification is intentionally delayed and read-mostly:
-      // it never rewrites stored outcomes when provider data drift is detected.
-      tasks.push(['settlement_finality', backtestTask.then(() => runSettlementFinalityVerification(cfg))]);
-    }
-    ctx.waitUntil((async () => {
-      const results = await Promise.allSettled(tasks.map(([, promise]) => promise));
-      for (let i = 0; i < results.length; i++) {
-        if (results[i].status === 'rejected') {
-          await recordOpsEvent(cfg, { severity: 'error', source: 'cron', eventType: 'scheduled_task', code: 'CRON_TASK', message: results[i].reason?.message || results[i].reason, meta: { task: tasks[i][0] } });
-        }
-      }
-    })());
+    return handleScheduled(controller, cfg, ctx);
   },
 };
