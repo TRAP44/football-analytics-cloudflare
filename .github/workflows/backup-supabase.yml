@@ -21,8 +21,9 @@ jobs:
     environment: production
     env:
       SUPABASE_PROJECT_REF: "nlmvhkjkpgzzlfavaohk"
-      SUPABASE_CLI_VERSION: "2.117.0"
+      SUPABASE_CLI_VERSION: "2.118.0"
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
 
     steps:
       - name: Checkout backup contract
@@ -44,7 +45,19 @@ jobs:
             exit 1
           fi
 
+          if [[ -z "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ]]; then
+            echo "### Supabase backup blocked" >> "$GITHUB_STEP_SUMMARY"
+            echo "Missing production environment secret BACKUP_ENCRYPTION_PASSPHRASE." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          if [[ "${#BACKUP_ENCRYPTION_PASSPHRASE}" -lt 24 ]]; then
+            echo "BACKUP_ENCRYPTION_PASSPHRASE must contain at least 24 characters." >&2
+            exit 1
+          fi
+
           echo "::add-mask::$SUPABASE_DB_URL"
+          echo "::add-mask::$BACKUP_ENCRYPTION_PASSPHRASE"
 
           if [[ "$SUPABASE_DB_URL" != postgres://* && "$SUPABASE_DB_URL" != postgresql://* ]]; then
             echo "SUPABASE_DB_URL must be a Postgres connection string." >&2
@@ -62,11 +75,13 @@ jobs:
           fi
 
           docker --version
+          openssl version
           npx --yes "supabase@$SUPABASE_CLI_VERSION" --version
 
           echo "### Supabase backup preflight passed" >> "$GITHUB_STEP_SUMMARY"
           echo "Project ref: $SUPABASE_PROJECT_REF" >> "$GITHUB_STEP_SUMMARY"
           echo "CLI: $SUPABASE_CLI_VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "Artifact encryption: AES-256-CBC + PBKDF2" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Create logical backup
         id: dump
@@ -79,11 +94,22 @@ jobs:
           rm -rf "$BACKUP_DIR"
           mkdir -p "$BACKUP_DIR"
 
-          npx --yes "supabase@$SUPABASE_CLI_VERSION" db dump             --db-url "$SUPABASE_DB_URL"             -f "$BACKUP_DIR/roles.sql"             --role-only
+          npx --yes "supabase@$SUPABASE_CLI_VERSION" db dump \
+            --db-url "$SUPABASE_DB_URL" \
+            -f "$BACKUP_DIR/roles.sql" \
+            --role-only
 
-          npx --yes "supabase@$SUPABASE_CLI_VERSION" db dump             --db-url "$SUPABASE_DB_URL"             -f "$BACKUP_DIR/schema.sql"
+          npx --yes "supabase@$SUPABASE_CLI_VERSION" db dump \
+            --db-url "$SUPABASE_DB_URL" \
+            -f "$BACKUP_DIR/schema.sql"
 
-          npx --yes "supabase@$SUPABASE_CLI_VERSION" db dump             --db-url "$SUPABASE_DB_URL"             -f "$BACKUP_DIR/data.sql"             --use-copy             --data-only             -x "storage.buckets_vectors"             -x "storage.vector_indexes"
+          npx --yes "supabase@$SUPABASE_CLI_VERSION" db dump \
+            --db-url "$SUPABASE_DB_URL" \
+            -f "$BACKUP_DIR/data.sql" \
+            --use-copy \
+            --data-only \
+            -x "storage.buckets_vectors" \
+            -x "storage.vector_indexes"
 
           for required in roles.sql schema.sql data.sql; do
             if [[ ! -s "$BACKUP_DIR/$required" ]]; then
@@ -97,9 +123,13 @@ jobs:
           grep -q "match_reminders" "$BACKUP_DIR/schema.sql"
           grep -q "runtime_controls" "$BACKUP_DIR/schema.sql"
 
-          # The connection string itself must never be present in backup output.
+          # Secrets themselves must never be present in backup output.
           if grep -R -F -- "$SUPABASE_DB_URL" "$BACKUP_DIR" >/dev/null 2>&1; then
             echo "Connection secret unexpectedly appeared in backup output." >&2
+            exit 1
+          fi
+          if grep -R -F -- "$BACKUP_ENCRYPTION_PASSPHRASE" "$BACKUP_DIR" >/dev/null 2>&1; then
+            echo "Encryption secret unexpectedly appeared in backup output." >&2
             exit 1
           fi
 
@@ -114,6 +144,7 @@ jobs:
           workflow_run_id=$GITHUB_RUN_ID
           supabase_cli_version=$SUPABASE_CLI_VERSION
           format=logical_sql_roles_schema_data
+          encryption=aes-256-cbc-pbkdf2
           EOF
 
           (
@@ -124,7 +155,7 @@ jobs:
           echo "backup_dir=$BACKUP_DIR" >> "$GITHUB_OUTPUT"
           echo "created_compact=$CREATED_COMPACT" >> "$GITHUB_OUTPUT"
 
-      - name: Package and verify archive
+      - name: Package, encrypt and verify archive
         id: package
         shell: bash
         env:
@@ -135,22 +166,41 @@ jobs:
           umask 077
 
           ARCHIVE="$RUNNER_TEMP/matchradar-supabase-$SUPABASE_PROJECT_REF-$CREATED_COMPACT.tar.gz"
-          CHECKSUM="$ARCHIVE.sha256"
+          ENCRYPTED="$ARCHIVE.enc"
+          ENCRYPTED_CHECKSUM="$ENCRYPTED.sha256"
+          VERIFY_ARCHIVE="$RUNNER_TEMP/verify-matchradar-backup.tar.gz"
 
           tar -C "$BACKUP_DIR" -czf "$ARCHIVE" .
           test -s "$ARCHIVE"
-          sha256sum "$ARCHIVE" > "$CHECKSUM"
-          sha256sum -c "$CHECKSUM"
 
-          echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
-          echo "checksum=$CHECKSUM" >> "$GITHUB_OUTPUT"
+          openssl enc -aes-256-cbc -salt -pbkdf2 -iter 250000 \
+            -in "$ARCHIVE" \
+            -out "$ENCRYPTED" \
+            -pass env:BACKUP_ENCRYPTION_PASSPHRASE
 
-      - name: Upload private off-site backup
+          test -s "$ENCRYPTED"
+          sha256sum "$ENCRYPTED" > "$ENCRYPTED_CHECKSUM"
+          sha256sum -c "$ENCRYPTED_CHECKSUM"
+
+          # Prove the uploaded artifact can be decrypted before deleting plaintext.
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 250000 \
+            -in "$ENCRYPTED" \
+            -out "$VERIFY_ARCHIVE" \
+            -pass env:BACKUP_ENCRYPTION_PASSPHRASE
+          cmp "$ARCHIVE" "$VERIFY_ARCHIVE"
+
+          rm -f "$VERIFY_ARCHIVE" "$ARCHIVE"
+          rm -rf "$BACKUP_DIR"
+
+          echo "encrypted=$ENCRYPTED" >> "$GITHUB_OUTPUT"
+          echo "checksum=$ENCRYPTED_CHECKSUM" >> "$GITHUB_OUTPUT"
+
+      - name: Upload encrypted private off-site backup
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: supabase-production-backup-${{ github.run_id }}
           path: |
-            ${{ steps.package.outputs.archive }}
+            ${{ steps.package.outputs.encrypted }}
             ${{ steps.package.outputs.checksum }}
           if-no-files-found: error
           retention-days: 30
@@ -162,8 +212,10 @@ jobs:
           {
             echo "### Supabase logical backup completed"
             echo "- Project ref: $SUPABASE_PROJECT_REF"
-            echo "- Contents: roles.sql + schema.sql + data.sql + manifest + checksums"
-            echo "- Storage: private GitHub Actions artifact"
+            echo "- Contents before encryption: roles.sql + schema.sql + data.sql + manifest + checksums"
+            echo "- Storage: encrypted private GitHub Actions artifact"
+            echo "- Encryption: AES-256-CBC + PBKDF2 (250000 iterations)"
+            echo "- Plaintext archive removed before artifact upload"
             echo "- Retention: 30 days"
             echo "- Automatic cadence: weekly"
             echo "- Run manually before every production migration."
