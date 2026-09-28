@@ -37,9 +37,10 @@ test('recommendation reasons stay in ranking logic but off compact feed cards', 
   assert.doesNotMatch(card, /favorite-signal|Почему здесь/);
 });
 
-test('AI history is deferred while technical profile data stays collapsed for admin', () => {
+test('AI history and admin-only data are deferred after first public paint', () => {
   assert.match(app, /const tasks = \[loadHistory\(false\)\]/);
-  assert.match(app, /tasks\.push\(loadProvider\(\),loadReminders\(\)\)/);
+  assert.match(app, /tasks\.push\(loadProvider\(\)\)/);
+  assert.match(app, /if \(!state\.remindersLoaded\) tasks\.push\(loadReminders\(\)\)/);
   assert.match(html, /<details class="profile-data-details">/);
   assert.match(html, /id="dataModeSummary"/);
   assert.match(css, /\.profile-data-details > summary/);

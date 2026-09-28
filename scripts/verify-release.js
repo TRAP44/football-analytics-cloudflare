@@ -203,7 +203,12 @@ if (!worker.includes('function publicReminder')) failures.push('Reminder write r
 if (!fs.existsSync('test/analysis-history-transition.test.js')) failures.push('Missing analysis/history transition regression test');
 if (!app.includes('historyOpenRequestSeq: 0')) failures.push('History-open stale response guard is missing');
 if (!app.includes('historyRevision: 0')) failures.push('History read/write revision guard is missing');
-if (!app.includes('void Promise.allSettled([loadHistory(false), loadReminders(), loadFavorites()])')) failures.push('Analysis result must not wait for secondary history/reminder/favorites refresh');
+const analysisSecondaryRefreshNonBlocking =
+  app.includes('const secondaryTasks = [loadHistory(false)]')
+  && app.includes('if (!state.remindersLoaded) secondaryTasks.push(loadReminders())')
+  && app.includes('if (!state.favoritesLoaded) secondaryTasks.push(loadFavorites())')
+  && app.includes('void Promise.allSettled(secondaryTasks)');
+if (!analysisSecondaryRefreshNonBlocking) failures.push('Analysis result must keep conditional secondary history/reminder/favorites refresh non-blocking');
 if (app.includes('state.currentAnalysis = data;\n    if (isAdmin()')) failures.push('analyzeMatch must let renderAnalysis compare the previous fixture before assignment');
 if (!fs.existsSync('test/russian-ui-localization.test.js')) failures.push('Missing Russian UI localization regression test');
 if (!html.includes('id="quotaFeatureSkipped"') || html.includes('quotaFeatureПропущено')) failures.push('Provider skipped-counter DOM id is inconsistent');
@@ -473,7 +478,13 @@ if (!worker.includes("releaseCheck('telegram_miniapp_e2e_selftest'")) failures.p
 if (!worker.includes("telegramMiniAppE2E: 'enabled'") || !worker.includes("telegramMiniAppE2ESelfTest: telegramMiniAppE2EDrill().pass ? 'enabled' : 'failed'")) failures.push('RC106 E2E health flags are missing');
 if (!worker.includes('telegramMiniAppE2E: true')) failures.push('RC106 E2E manifest feature is missing');
 if (!app.includes('function returnToTelegram()') || !app.includes("id=\"returnToTelegramBtn\"")) failures.push('RC106 Mini App return-to-Telegram action is missing');
-if (!app.includes('data-analysis-favorite=') || !app.includes("loadHistory(false), loadReminders(), loadFavorites()")) failures.push('RC106 Mini App user-state synchronization is incomplete');
+const rc106UserStateSync =
+  app.includes('data-analysis-favorite=')
+  && app.includes('const secondaryTasks = [loadHistory(false)]')
+  && app.includes('if (!state.remindersLoaded) secondaryTasks.push(loadReminders())')
+  && app.includes('if (!state.favoritesLoaded) secondaryTasks.push(loadFavorites())')
+  && app.includes('Promise.allSettled([loadFavorites(), loadReminders()])');
+if (!rc106UserStateSync) failures.push('RC106 Mini App user-state synchronization is incomplete');
 if (!postDeploySmoke.includes("'telegramMiniAppE2E'") || !postDeploySmoke.includes("'telegramMiniAppE2ESelfTest'")) failures.push('RC106 production smoke E2E flags are missing');
 
 if (!fs.existsSync('test/telegram-webhook-persistent-dedupe-rc107.test.js')) failures.push('Missing RC107 persistent Telegram dedupe regression test');

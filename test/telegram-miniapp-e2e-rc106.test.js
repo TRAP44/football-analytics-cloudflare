@@ -25,13 +25,16 @@ test('RC106 synchronizes user state before a Telegram handoff analysis',()=>{
   assert.match(block,/return analyzeMatch\(id, null, \{ recheck:true/);
 });
 
-test('RC106 keeps history reminders and favorites synchronized after full AI',()=>{
+test('RC106 keeps history synchronized and avoids redundant personal reads after full AI',()=>{
   const start=app.indexOf('async function analyzeMatch');
   const end=app.indexOf('\nfunction historyItemFromAnalysis',start);
   assert.ok(start>=0 && end>start);
   const block=app.slice(start,end);
   assert.match(block,/rememberHistoryAnalysis\(data\)/);
-  assert.match(block,/Promise\.allSettled\(\[loadHistory\(false\), loadReminders\(\), loadFavorites\(\)\]\)/);
+  assert.match(block,/const secondaryTasks = \[loadHistory\(false\)\]/);
+  assert.match(block,/if \(!state\.remindersLoaded\) secondaryTasks\.push\(loadReminders\(\)\)/);
+  assert.match(block,/if \(!state\.favoritesLoaded\) secondaryTasks\.push\(loadFavorites\(\)\)/);
+  assert.match(block,/Promise\.allSettled\(secondaryTasks\)/);
 });
 
 test('RC106 full analysis exposes favorite actions and return to Telegram',()=>{
