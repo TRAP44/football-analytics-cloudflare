@@ -74,6 +74,7 @@ const state = {
   rcRegressionLoading: false,
   releaseMonitor: null,
   releaseMonitorLoading: false,
+  releaseRegressionResponsePending: false,
   releaseMonitorHours: 24,
   releaseMonitorDigestDays: 7,
   betaDashboard: null,
@@ -3096,24 +3097,19 @@ function renderReleaseMonitor() {
       <div class="release-issue-list">${dailyRows.length ? dailyRows.map(day => `<div><strong>${escapeHtml(day.date || '—')}</strong><span>${day.completionRate === null || day.completionRate === undefined ? '—' : `${(Number(day.completionRate)*100).toFixed(1)}%`} · backlog ${Number(day.finalRemaining || 0)} · RL ${Number(day.rateLimited || 0)}</span></div>`).join('') : '<div class="empty compact-empty">Истории за выбранный период пока нет.</div>'}</div>
     </details>` : '<div class="empty compact-empty">Daily Digest ещё не создавал операционных событий за доступный период.</div>'}`;
 
-  const regressionRows = (Array.isArray(r.incidents) ? r.incidents : [])
-    .filter(x => x?.source === 'release_regression' || x?.source === 'release_regression_alert');
+  const regressionData = r.postDeployRegression || {};
+  const regressionResponse = regressionData.response || {available:false,state:'new',nextState:null,lifecycleState:'healthy',history:[]};
+  const regressionRows = Array.isArray(regressionData.timeline) ? regressionData.timeline : [];
   const lifecycleRows = regressionRows.filter(x => x?.source === 'release_regression');
   const alertRows = regressionRows.filter(x => x?.source === 'release_regression_alert');
+  const responseRows = regressionRows.filter(x => x?.source === 'release_regression_response');
   const latestLifecycle = lifecycleRows[0] || null;
-  const latestLifecycleCode = String(latestLifecycle?.code || '');
-  const regressionState = latestLifecycleCode.includes('RECOVERED')
-    ? 'recovered'
-    : latestLifecycleCode.includes('INCIDENT')
-      ? 'incident'
-      : latestLifecycleCode.includes('WATCH')
-        ? 'watch'
-        : 'healthy';
-  const regressionStateLabel = regressionState === 'incident'
+  const lifecycleState = String(regressionResponse.lifecycleState || latestLifecycle?.lifecycleState || 'healthy');
+  const regressionStateLabel = lifecycleState === 'incident'
     ? 'ИНЦИДЕНТ'
-    : regressionState === 'watch'
+    : lifecycleState === 'watch'
       ? 'КОНТРОЛЬ'
-      : regressionState === 'recovered'
+      : lifecycleState === 'recovered'
         ? 'ВОССТАНОВЛЕНО'
         : 'НЕТ АКТИВНОЙ РЕГРЕССИИ';
   const latestAlert = alertRows[0] || null;
@@ -3129,26 +3125,50 @@ function renderReleaseMonitor() {
           : alertCode.includes('FAILED')
             ? 'Ошибка доставки'
             : 'Проверить';
-  const operatorAction = regressionState === 'incident'
-    ? 'Проверить сигнал, deployment identity и источник ошибки. Автоматический rollback не выполняется; решение о ручном rollback принимается отдельно после проверки.'
-    : regressionState === 'watch'
-      ? 'Дождаться следующего зрелого 30/60-минутного окна и проверить, подтверждается ли регрессия. Не менять provider или runtime controls автоматически.'
-      : regressionState === 'recovered'
-        ? 'Проверить, что следующие healthy monitor runs остаются стабильными, и закрыть наблюдение без дополнительных изменений.'
-        : 'Наблюдать обычный production monitor; активных regression transitions нет.';
+  const responseStateLabel = {
+    new:'NEW',
+    acknowledged:'ACKNOWLEDGED',
+    investigating:'INVESTIGATING',
+    resolved:'RESOLVED',
+    unavailable:'НЕДОСТУПНО',
+  }[String(regressionResponse.state || 'new')] || 'NEW';
+  const nextResponseState=String(regressionResponse.nextState || '');
+  const nextResponseLabel={
+    acknowledged:'Подтвердить инцидент',
+    investigating:'Начать расследование',
+    resolved:'Закрыть инцидент',
+  }[nextResponseState] || '';
+  const operatorAction = lifecycleState === 'incident'
+    ? (regressionResponse.state === 'investigating'
+      ? 'Продолжать расследование и дождаться фактического RECOVERED. Закрытие вручную до recovery заблокировано.'
+      : 'Подтвердить инцидент и начать расследование. Автоматический rollback не выполняется.')
+    : lifecycleState === 'recovered'
+      ? (regressionResponse.state === 'investigating'
+        ? 'Recovery подтверждён мониторингом. Инцидент можно закрыть вручную после финальной проверки.'
+        : 'Проверить audit trail и завершить ручной response lifecycle.')
+      : lifecycleState === 'watch'
+        ? 'Дождаться подтверждения INCIDENT или RECOVERED. WATCH не создаёт ручной incident response.'
+        : 'Активного regression incident нет.';
 
-  regression.innerHTML = `<div class="release-monitor-section-head"><strong>🧭 Post-deploy regression</strong><span>read-only operational response</span></div>
+  regression.innerHTML = `<div class="release-monitor-section-head"><strong>🧭 Post-deploy regression</strong><span>incident response · audit trail</span></div>
     <div class="release-client-grid">
       <div><span>Lifecycle</span><strong>${escapeHtml(regressionStateLabel)}</strong><small>${latestLifecycle?.createdAt ? escapeHtml(relativeAge(latestLifecycle.createdAt)) : 'нет transition'}</small></div>
+      <div><span>Response</span><strong>${escapeHtml(responseStateLabel)}</strong><small>${escapeHtml(regressionResponse.reason || '—')}</small></div>
       <div><span>Alert delivery</span><strong>${escapeHtml(alertLabel)}</strong><small>${latestAlert?.createdAt ? escapeHtml(relativeAge(latestAlert.createdAt)) : 'нет alert events'}</small></div>
-      <div><span>Lifecycle events</span><strong>${lifecycleRows.length}</strong><small>WATCH / INCIDENT / RECOVERED</small></div>
-      <div><span>Alert events</span><strong>${alertRows.length}</strong><small>dedupe / retry / sent / failed</small></div>
+      <div><span>Audit events</span><strong>${responseRows.length}</strong><small>ACK / INVESTIGATING / RESOLVED</small></div>
     </div>
     <div class="data-notice">🛠 <strong>Ручное действие:</strong> ${escapeHtml(operatorAction)}</div>
+    ${regressionResponse.available && nextResponseState ? `<div class="release-monitor-actions">
+      <button class="reminder-btn regression-response-btn" type="button" data-response-state="${escapeHtml(nextResponseState)}" ${state.releaseRegressionResponsePending ? 'disabled' : ''}>${state.releaseRegressionResponsePending ? 'Сохраняю…' : escapeHtml(nextResponseLabel)}</button>
+    </div>` : ''}
     <details class="release-incidents"><summary>Regression timeline · ${regressionRows.length}</summary>
-      <div class="release-issue-list">${regressionRows.length ? regressionRows.slice(0,12).map(x => `<div><strong>${escapeHtml(humanizeTechnicalText(x.code || x.source || ''))}</strong><span>${escapeHtml(dateTime(x.createdAt))}</span></div>`).join('') : '<div class="empty compact-empty">Lifecycle и alert events для post-deploy regression пока не зафиксированы.</div>'}</div>
+      <div class="release-issue-list">${regressionRows.length ? regressionRows.slice(0,20).map(x => `<div><strong>${escapeHtml(humanizeTechnicalText(x.code || x.source || ''))}</strong><span>${escapeHtml(dateTime(x.createdAt))}</span></div>`).join('') : '<div class="empty compact-empty">Lifecycle, alert и response events для текущего deployment пока не зафиксированы.</div>'}</div>
     </details>
-    <p class="tiny">Этот блок ничего не переключает автоматически: без auto-rollback, provider switch, feature disable и runtime-control mutation.</p>`;
+    <p class="tiny">State machine: NEW → ACKNOWLEDGED → INVESTIGATING → RESOLVED. RESOLVED разрешён только после RECOVERED. Auto-rollback и другие runtime mutations отсутствуют.</p>`;
+
+  regression.querySelectorAll('.regression-response-btn').forEach(button=>{
+    button.addEventListener('click',()=>transitionPostDeployRegressionResponse(String(button.dataset.responseState || '')));
+  });
 
   const codes = c.topCodes || [];
   issues.innerHTML = `<div class="release-monitor-section-head"><strong>Главные сигналы</strong><span>предупреждение/ошибка/критическая</span></div>
@@ -3163,6 +3183,39 @@ function renderReleaseMonitor() {
     </article>`).join('') : '<div class="empty compact-empty">Нет событий.</div>'}</div>
   </details>
   <p class="tiny">${escapeHtml(humanizeTechnicalText(r.policy?.note || ''))}</p>`;
+}
+
+async function transitionPostDeployRegressionResponse(targetState='') {
+  if (!isAdmin() || state.releaseRegressionResponsePending || !targetState) return;
+  const deploySha=String(state.releaseMonitor?.postDeployRegression?.response?.deploySha || '');
+  state.releaseRegressionResponsePending=true;
+  renderReleaseMonitor();
+  try {
+    const result=await api('/api/post-deploy-regression-response',{
+      method:'POST',
+      body:JSON.stringify({state:targetState,deploySha}),
+      retry:false,
+      dedupe:false,
+      timeoutMs:10000,
+    });
+    const labels={
+      acknowledged:'Инцидент подтверждён.',
+      investigating:'Расследование начато.',
+      resolved:'Инцидент закрыт.',
+    };
+    toast(labels[String(result?.state || targetState)] || 'Состояние инцидента обновлено.');
+    state.releaseMonitor=null;
+    await loadReleaseMonitor(true);
+  } catch (e) {
+    toast(e.message);
+    if (Number(e?.status || 0)===409) {
+      state.releaseMonitor=null;
+      await loadReleaseMonitor(true);
+    }
+  } finally {
+    state.releaseRegressionResponsePending=false;
+    renderReleaseMonitor();
+  }
 }
 
 async function loadReleaseMonitor(force = false) {

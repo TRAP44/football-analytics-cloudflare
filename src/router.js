@@ -29,6 +29,7 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
     apiModelQuality,
     apiModelRemediation,
     apiNewsImpactRecoveryIncidentAck,
+    apiPostDeployRegressionResponse,
     apiPreferences,
     apiProductionMonitor,
     apiProductionReadiness,
@@ -144,6 +145,10 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
   if (url.pathname === '/api/recovery-incident-ack') {
     if (!isAdminUser(user, cfg)) return adminForbidden();
     return await apiNewsImpactRecoveryIncidentAck(request, cfg, user);
+  }
+  if (url.pathname === '/api/post-deploy-regression-response') {
+    if (!isAdminUser(user, cfg)) return adminForbidden();
+    return await apiPostDeployRegressionResponse(request, cfg, user);
   }
   if (url.pathname === '/api/reminder-health') {
     if (!isAdminUser(user, cfg)) return adminForbidden();
