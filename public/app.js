@@ -6145,6 +6145,69 @@ function playerHubMetric(label, value, suffix = '') {
   return `<div class="player-hub-metric"><span>${escapeHtml(label)}</span><strong>${shown}</strong></div>`;
 }
 
+function playerSquadProfile(data = {}, player = {}) {
+  const targetId = Number(player?.data?.id || 0);
+  const targetName = String(player?.data?.name || '').trim().toLowerCase();
+  for (const group of (data?.groups || [])) {
+    for (const item of (group?.players || [])) {
+      const sameId = targetId > 0 && Number(item?.id || 0) === targetId;
+      const sameName = !targetId && targetName && String(item?.name || '').trim().toLowerCase() === targetName;
+      if (sameId || sameName) return {
+        found: true,
+        group: String(group?.label || 'Состав'),
+        age: Number(item?.age || 0) || null,
+        number: Number(item?.number || 0) || null,
+        position: item?.position || player?.data?.position || '',
+        photo: item?.photo || player?.data?.photo || '',
+        stale: Boolean(data?.stale),
+        warning: String(data?.warning || ''),
+      };
+    }
+  }
+  return { found: false, stale: Boolean(data?.stale), warning: String(data?.warning || '') };
+}
+
+function playerSquadProfileHtml(profile = {}) {
+  if (profile.loading) return `<section class="panel player-hub-profile"><div class="center-section-title"><div><h2>Профиль игрока</h2><p>Сверяю с составом команды</p></div></div><div class="loader compact-loader">Загружаю профиль…</div></section>`;
+  if (profile.error) return `<section class="panel player-hub-profile"><div class="center-section-title"><div><h2>Профиль игрока</h2><p>Дополнительные данные команды</p></div></div><div class="empty compact-empty">Профиль состава временно недоступен. Данные текущего матча остаются актуальными.</div></section>`;
+  if (!profile.found) return `<section class="panel player-hub-profile"><div class="center-section-title"><div><h2>Профиль игрока</h2><p>Дополнительные данные команды</p></div></div><div class="empty compact-empty">Игрок не найден в текущем составе команды.</div></section>`;
+  return `<section class="panel player-hub-profile">
+    <div class="center-section-title"><div><h2>Профиль игрока</h2><p>Данные из текущего состава команды</p></div></div>
+    ${profile.stale ? `<div class="data-notice stale">⚠️ ${escapeHtml(profile.warning || 'Показан сохранённый состав команды.')}</div>` : ''}
+    <div class="player-hub-profile-grid">
+      <div><span>Возраст</span><strong>${profile.age ?? '—'}</strong></div>
+      <div><span>Номер</span><strong>${profile.number ? `№${profile.number}` : '—'}</strong></div>
+      <div><span>Позиция</span><strong>${escapeHtml(playerPositionLabel(profile.position))}</strong></div>
+      <div><span>Группа состава</span><strong>${escapeHtml(profile.group || '—')}</strong></div>
+    </div>
+    <p class="tiny">Профиль загружается лениво через уже существующий кэш состава команды и не создаёт отдельный запрос на сезонную статистику игрока.</p>
+  </section>`;
+}
+
+async function loadPlayerSquadProfile(player = state.currentPlayer) {
+  const teamId = Number(player?.team?.id || 0);
+  if (!teamId || !player) return;
+  const key = String(teamId);
+  player.squadProfile = { loading: true };
+  renderPlayerHub(player);
+  try {
+    let data = state.teamSquadCache.get(key);
+    if (!data) {
+      data = await api(`/api/team/squad?teamId=${teamId}`);
+      state.teamSquadCache.set(key, data);
+    }
+    if (state.currentPlayer !== player) return;
+    player.squadProfile = playerSquadProfile(data, player);
+    if (player.squadProfile.photo && !player.data.photo) player.data.photo = player.squadProfile.photo;
+    if (player.squadProfile.position && !player.data.position) player.data.position = player.squadProfile.position;
+    renderPlayerHub(player);
+  } catch (error) {
+    if (state.currentPlayer !== player) return;
+    player.squadProfile = { error: true, message: error?.message || 'Не удалось загрузить профиль.' };
+    renderPlayerHub(player);
+  }
+}
+
 function renderPlayerHub(player = state.currentPlayer) {
   const root = $('playerHub');
   if (!root) return;
@@ -6173,6 +6236,8 @@ function renderPlayerHub(player = state.currentPlayer) {
         <small>${escapeHtml(match.statusLabel || '')}</small>
       </div>
     </section>
+
+    ${playerSquadProfileHtml(player.squadProfile || {})}
 
     <section class="panel">
       <div class="center-section-title"><div><h2>Показатели в матче</h2><p>Только данные, уже полученные для этого матча</p></div></div>
@@ -6218,6 +6283,7 @@ function openPlayerFromMatch(playerId, side = '') {
   renderPlayerHub();
   sendProductAction('player_open', current || 'analysisView');
   showView('playerView');
+  void loadPlayerSquadProfile(state.currentPlayer);
 }
 
 
