@@ -127,3 +127,85 @@ test('worker delegates scheduled orchestration and integrity cleanup reports par
   assert.match(worker, /failedTables\.push\(\{/);
   assert.match(worker, /Integrity cleanup failed for:/);
 });
+
+
+test('07:00 provider-heavy tasks are serialized without blocking reminders or production monitor', async () => {
+  const calls = [];
+  let releaseBacktest;
+  let releaseDigest;
+  const backtest = new Promise(resolve => { releaseBacktest = resolve; });
+  const digest = new Promise(resolve => { releaseDigest = resolve; });
+
+  const rt = runtime({
+    settleBacktestDaily: async () => {
+      calls.push('backtest:start');
+      const value = await backtest;
+      calls.push('backtest:end');
+      return value;
+    },
+    processDailyDigests: async () => {
+      calls.push('daily_digest:start');
+      const value = await digest;
+      calls.push('daily_digest:end');
+      return value;
+    },
+    processPostMatchReturns: async () => {
+      calls.push('post_match_return:start');
+      return { checked: 0, failed: 0 };
+    },
+    processDueReminders: async () => {
+      calls.push('reminders');
+      return { checked: 0, failed: 0 };
+    },
+    runProductionMonitor: async () => {
+      calls.push('production_monitor');
+      return { ok: true };
+    },
+  });
+
+  const tasks = rt.api.buildScheduledTaskPlan({}, new Date('2026-09-29T07:00:00.000Z'));
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.equal(calls.includes('reminders'), true);
+  assert.equal(calls.includes('production_monitor'), true);
+  assert.equal(calls.includes('daily_digest:start'), false);
+  assert.equal(calls.includes('post_match_return:start'), false);
+
+  releaseBacktest({ ok: true });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(calls.includes('daily_digest:start'), true);
+  assert.equal(calls.includes('post_match_return:start'), false);
+
+  releaseDigest({ sent: 0 });
+  await rt.api.observeScheduledTasks({}, tasks);
+
+  assert.ok(calls.indexOf('backtest:end') < calls.indexOf('daily_digest:start'));
+  assert.ok(calls.indexOf('daily_digest:end') < calls.indexOf('post_match_return:start'));
+});
+
+test('morning serialization keeps digest and post-match work runnable after backtest failure', async () => {
+  const calls = [];
+  const rt = runtime({
+    settleBacktestDaily: async () => {
+      calls.push('backtest');
+      throw new Error('backtest failed');
+    },
+    processDailyDigests: async () => {
+      calls.push('daily_digest');
+      return { sent: 0 };
+    },
+    processPostMatchReturns: async () => {
+      calls.push('post_match_return');
+      return { checked: 0, failed: 0 };
+    },
+  });
+
+  const tasks = rt.api.buildScheduledTaskPlan({}, new Date('2026-09-29T07:05:00.000Z'));
+  const results = await rt.api.observeScheduledTasks({}, tasks);
+
+  assert.equal(calls.includes('daily_digest'), true);
+  assert.equal(calls.includes('post_match_return'), true);
+  assert.equal(results.find((_, index) => tasks[index][0] === 'backtest')?.status, 'rejected');
+});
