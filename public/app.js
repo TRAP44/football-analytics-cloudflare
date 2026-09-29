@@ -3,6 +3,7 @@ import { CANONICAL_HOME_VIEW, PUBLIC_VIEW_IDS, backTargetForView, telegramBackBu
 const CLIENT_VERSION = '6.120.0-rc144';
 const CLIENT_API_CONTRACT = 5;
 const CLIENT_RELEASE_CHANNEL = 'rc144';
+const APP_SURFACE = document.querySelector('meta[name="matchradar-surface"]')?.content === 'admin' ? 'admin' : 'public';
 const SUPABASE_SCHEMA_HINT = 'проверьте актуальную схему Supabase (baseline v6.19 + миграция v6.20)';
 
 const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
@@ -8582,6 +8583,14 @@ const startupWatchdog = setTimeout(() => {
 
 try {
   await runStartupSequence();
+  if (APP_SURFACE === 'admin') {
+    if (isAdmin()) {
+      openProfileView();
+      document.body.classList.add('admin-surface-ready');
+    } else {
+      location.replace('/');
+    }
+  }
 } finally {
   clearTimeout(startupWatchdog);
 }
