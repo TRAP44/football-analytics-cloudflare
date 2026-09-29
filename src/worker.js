@@ -57,6 +57,7 @@ import { createUserHistoryService } from './user-history.js';
 import { createReminderDeliveryStore } from './reminder-delivery-store.js';
 import { createReminderDeliveryService } from './reminder-delivery-service.js';
 import { createLineupNotificationService } from './lineup-notification-service.js';
+import { createImportantChangeNotificationService } from './important-change-notification-service.js';
 import { createScheduledJobsRuntime } from './scheduled-jobs.js';
 import { DAILY_DIGEST_POLICY, assessDailyDigestRun, planDailyDigestRecipients, runBoundedDailyDigest } from './daily-digest-delivery.js';
 import { assessDailyDigestReliabilitySlo, buildDailyDigestIncidentReport, dailyDigestIncidentAlertOpsEvents, formatDailyDigestIncidentAlert, planDailyDigestIncidentAlert, planDailyDigestReliabilitySloEvent, summarizeDailyDigestOperationalStatus, summarizeDailyDigestReliability } from './daily-digest-incidents.js';
@@ -1273,6 +1274,19 @@ const {
   deliverClaimedReminder,
   recordOpsEvent,
   maxFixturesPerRun: 4,
+});
+
+const {
+  processImportantChangeNotifications,
+} = createImportantChangeNotificationService({
+  hasSupabase,
+  loadRuntimeControls,
+  supaSelectPaged,
+  getOddsSnapshots,
+  deliverClaimedReminder,
+  recordOpsEvent,
+  maxFixturesPerRun: 12,
+  thresholdPp: 5,
 });
 
 const {
@@ -23411,6 +23425,7 @@ const { handleScheduled } = createScheduledJobsRuntime({
   settleBacktestDaily,
   processDueReminders,
   processLineupNotifications,
+  processImportantChangeNotifications,
   processPostMatchReturns,
   runProductionMonitor,
   processDailyDigests,
@@ -23492,6 +23507,9 @@ export default {
         quickMatchReminders: 'enabled',
         lineupPublishedNotifications: 'enabled',
         lineupNotificationDedupe: 'enabled',
+        importantChangeNotifications: 'enabled',
+        importantChangeNotificationDedupe: 'enabled',
+        importantChangeProviderRequests: 0,
         firstRunGuide: 'enabled',
         focusedMatchHome: 'enabled',
         contextualLeagueFilter: 'enabled',
