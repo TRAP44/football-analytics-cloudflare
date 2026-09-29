@@ -22439,7 +22439,9 @@ async function measureReadinessCheck(task) {
   return {value,latencyMs:Date.now()-startedAt};
 }
 
-async function readinessSnapshot(cfg) {
+let readinessSnapshotInFlight=null;
+
+async function computeReadinessSnapshot(cfg) {
   scheduleReleaseFieldEvidence(cfg);
   const startedAt=Date.now();
   const [supabaseCheck,schemaCheck,securityCheck,authFailuresCheck]=await Promise.all([
@@ -22469,6 +22471,17 @@ async function readinessSnapshot(cfg) {
       recentSupabaseAuthFailuresLatencyMs:authFailuresCheck.latencyMs,
     },
   };
+}
+
+async function readinessSnapshot(cfg) {
+  if (readinessSnapshotInFlight) return await readinessSnapshotInFlight;
+  const task=computeReadinessSnapshot(cfg);
+  readinessSnapshotInFlight=task;
+  try {
+    return await task;
+  } finally {
+    if (readinessSnapshotInFlight===task) readinessSnapshotInFlight=null;
+  }
 }
 
 const TELEGRAM_WEBHOOK_DEPS = Object.freeze({

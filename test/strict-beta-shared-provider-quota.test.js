@@ -87,8 +87,11 @@ test('release evidence captures beta config and one real provider quota probe',(
   assert.match(evidence,/apiFootball\('\/status',\{\},cfg,\{responseType:'any',transportRetries:0/);
   assert.match(evidence,/evidenceSource:'controlled_release_probe'/);
 
+  const readinessCompute=block(worker,'async function computeReadinessSnapshot','async function readinessSnapshot');
+  assert.match(readinessCompute,/scheduleReleaseFieldEvidence\(cfg\)/);
+
   const readiness=block(worker,'async function readinessSnapshot','export default');
-  assert.match(readiness,/scheduleReleaseFieldEvidence\(cfg\)/);
+  assert.match(readiness,/computeReadinessSnapshot\(cfg\)/);
 });
 
 test('one normal startup match-list request can make at most one API-Football call',()=>{
