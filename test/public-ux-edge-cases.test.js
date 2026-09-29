@@ -56,13 +56,16 @@ test('render smoke exercises edge cases across mobile widths and themes',()=>{
   for(const theme of ['dark','light','ocean']) assert.ok(smoke.includes(`'${theme}'`),theme);
   assert.match(smoke,/touch target is only/);
   assert.match(smoke,/long text exceeds two lines/);
+  assert.match(smoke,/EXPECTED_ASSET_REVISION/);
+  assert.match(smoke,/navigateForExpectedRevision/);
+  assert.match(smoke,/Network\.setCacheDisabled/);
 });
 
 test('frontend revision refreshes QA styles without changing release identity',()=>{
-  assert.match(html,/frontend-asset-revision" content="6\.120\.0-launch2"/);
-  assert.match(html,/styles\.css\?v=6\.120\.0-launch2/);
-  assert.match(html,/styles\/public-shell\.css\?v=6\.120\.0-launch2/);
-  assert.match(html,/app\.js\?v=6\.120\.0-launch2/);
+  assert.match(html,/frontend-asset-revision" content="6\.120\.0-launch3"/);
+  assert.match(html,/styles\.css\?v=6\.120\.0-launch3/);
+  assert.match(html,/styles\/public-shell\.css\?v=6\.120\.0-launch3/);
+  assert.match(html,/app\.js\?v=6\.120\.0-launch3/);
   assert.match(app,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
   assert.doesNotMatch(html,/6\.120\.0-ui3/);
 });
