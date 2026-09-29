@@ -22,6 +22,7 @@ import {
 } from './access-control.js';
 import { createSupabaseClient } from './supabase-client.js';
 import { runtimeReleaseIdentity } from './release-identity.js';
+import { scopeOpsEventsToDeployment } from './release-event-attribution.js';
 import { createCompositeReadinessRuntime } from './readiness-contract.js';
 import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
 import { applyFeatureFreshness, applyFeatureFreshnessMap } from './data-freshness.js';
@@ -15368,7 +15369,7 @@ async function apiBetaDashboard(request,cfg) {
   });
 }
 
-function providerSloEventRow(snapshot = {}, report = {}) {
+function providerSloEventRow(snapshot = {}, report = {}, cfg = {}) {
   const state = String(report?.overall?.state || 'collecting');
   const severity = state === 'incident' ? 'error' : state === 'watch' ? 'warning' : 'info';
   return {
@@ -15382,8 +15383,7 @@ function providerSloEventRow(snapshot = {}, report = {}) {
     status: null,
     duration_ms: null,
     metadata: safeOpsMetadata({
-      appVersion: APP_VERSION,
-      releaseCandidate: RC_NAME,
+      ...currentReleaseIdentity(cfg),
       windowStartedAt: snapshot.windowStartedAt,
       windowEndedAt: snapshot.windowEndedAt,
       series: snapshot.series,
@@ -15397,7 +15397,7 @@ async function flushProviderSloWindow(cfg) {
   const snapshot = rotateProviderObservabilityWindow();
   if (Number(snapshot?.totals?.attempts || 0) === 0) return { skipped:true, reason:'no_provider_requests' };
   const report = summarizeProviderObservabilityWindows([{ metadata:snapshot }], { hours:1, includeCurrent:false });
-  const row = providerSloEventRow(snapshot, report);
+  const row = providerSloEventRow(snapshot, report, cfg);
 
   try {
     if (hasSupabase(cfg)) {
@@ -15953,15 +15953,17 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     readDailyDigestSloEvents(cfg,new Date(now.getTime()-30*24*3600_000).toISOString(),now.toISOString(),100),
   ]);
 
-  const releaseItems = source.items.filter(item => {
-    const created = Date.parse(item?.created_at || '');
-    return item?.source !== 'monitor' && Number.isFinite(created) && created >= currentStart.getTime();
-  });
+  const activeReleaseIdentity=currentReleaseIdentity(cfg);
+  const releaseScope=scopeOpsEventsToDeployment(
+    source.items.filter(item => item?.source !== 'monitor'),
+    activeReleaseIdentity,
+    {nowMs:now.getTime(),windowMs:60*60_000},
+  );
+  const releaseItems=releaseScope.actionable;
   const current = summarizeReleaseWindow(releaseItems, 1);
   const releaseHealth = releaseMonitorHealth(current, source.persistent);
   const supabaseAuthFailures = releaseItems.filter(item =>
-    String(item?.metadata?.appVersion || '') === APP_VERSION
-    && /HTTP 401|PGRST303|invalid.*jwt|invalid.*api.?key/i.test(String(item?.message || ''))
+    /HTTP 401|PGRST303|invalid.*jwt|invalid.*api.?key/i.test(String(item?.message || ''))
   ).length;
   const provider = providerSnapshot();
   const providerSloWindows = Array.isArray(providerSloSource.items) ? providerSloSource.items : [];
@@ -16026,9 +16028,13 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     persistent: source.persistent,
   });
 
-  const previousMonitor = source.items.find(item =>
-    item?.source === 'monitor' && item?.event_type === 'production_monitor'
-  ) || null;
+  const monitorScope=scopeOpsEventsToDeployment(
+    source.items.filter(item => item?.source === 'monitor' && item?.event_type === 'production_monitor'),
+    activeReleaseIdentity,
+    {nowMs:now.getTime(),windowMs:6*60*60_000},
+  );
+  const previousMonitor = [...monitorScope.actionable]
+    .sort((a,b)=>Date.parse(b?.created_at || '')-Date.parse(a?.created_at || ''))[0] || null;
   const previousState = String(previousMonitor?.metadata?.state || '');
   const previousAt = Date.parse(previousMonitor?.created_at || '');
   const heartbeatDue = !Number.isFinite(previousAt) || now.getTime() - previousAt >= 6 * 60 * 60_000;
@@ -16071,6 +16077,14 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
       score: Number(releaseHealth.score || 0),
       errors: Number(current.errorLike || 0),
       warnings: Number(current.warningLike || 0),
+      deployment:activeReleaseIdentity,
+      attribution:{
+        deploymentStartedAt:releaseScope.deploymentStartedAt,
+        exactEvents:Number(releaseScope.counts.exact || 0),
+        unattributedEvents:Number(releaseScope.counts.unattributed || 0),
+        excludedPriorDeploymentEvents:Number(releaseScope.counts.priorDeployment || 0),
+        attributionComplete:Boolean(releaseScope.attributionComplete),
+      },
     },
     provider: {
       health: provider.health || 'waiting',
@@ -16113,6 +16127,10 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
       dailyDigestSloPersistent:Boolean(digestSloSource.persistent),
       migrationReady:Boolean(source.migrationReady && providerSloSource.migrationReady && providerAlertLedger.persistent && providerAlertContract.ok),
       supabaseAuthFailuresCurrentRelease:supabaseAuthFailures,
+      releaseExactEvents:Number(releaseScope.counts.exact || 0),
+      releaseUnattributedEvents:Number(releaseScope.counts.unattributed || 0),
+      releaseExcludedPriorDeploymentEvents:Number(releaseScope.counts.priorDeployment || 0),
+      releaseAttributionComplete:Boolean(releaseScope.attributionComplete),
     },
     policy: {
       consumesFootballApi: false,
@@ -16331,6 +16349,10 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
         supabaseAuthFailuresCurrentRelease: supabaseAuthFailures,
         releaseState: releaseHealth.state,
         releaseScore: Number(releaseHealth.score || 0),
+        releaseExactEvents:Number(releaseScope.counts.exact || 0),
+        releaseUnattributedEvents:Number(releaseScope.counts.unattributed || 0),
+        releaseExcludedPriorDeploymentEvents:Number(releaseScope.counts.priorDeployment || 0),
+        releaseAttributionComplete:Boolean(releaseScope.attributionComplete),
         providerHealth: provider.health || 'waiting',
         providerSloState: providerSloIncident.state,
         providerSloActive: Boolean(providerSloIncident.activeIncident),
