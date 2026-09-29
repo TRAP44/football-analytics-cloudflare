@@ -23,7 +23,7 @@ test('dedicated admin surface is role-gated after startup', () => {
 
 test('both surfaces share the same launch13 client revision during migration', () => {
   for (const html of [publicHtml, adminHtml]) {
-    assert.match(html, /frontend-asset-revision" content="6\.120\.0-launch13"/);
-    assert.match(html, /\/app\.js\?v=6\.120\.0-launch13/);
+    assert.match(html, /frontend-asset-revision" content="6\.120\.0-launch14"/);
+    assert.match(html, /\/app\.js\?v=6\.120\.0-launch14/);
   }
 });
