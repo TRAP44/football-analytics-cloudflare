@@ -1356,7 +1356,7 @@ async function recordOpsEventTask(cfg, event = {}) {
     endpoint: redactOpsString(event.endpoint || '', 160),
     status: Number.isFinite(Number(event.status)) ? Number(event.status) : null,
     duration_ms: Number.isFinite(Number(event.durationMs)) ? Math.max(0, Math.round(Number(event.durationMs))) : null,
-    metadata: safeOpsMetadata({ ...(event.meta || {}), ...currentReleaseIdentity(cfg) }),
+    metadata: safeOpsMetadata({ ...currentReleaseIdentity(cfg), ...(event.meta || {}), ...currentReleaseIdentity(cfg) }),
   };
   memory.opsEvents.unshift(row);
   memory.opsEvents = memory.opsEvents.slice(0, MAX_MEMORY_OPS_EVENTS);
