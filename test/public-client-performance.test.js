@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { createApiClient } from '../public/modules/client-core.js';
 
 const app=fs.readFileSync('public/app.js','utf8');
+const runtime=fs.readFileSync('public/modules/app-runtime.js','utf8');
 const html=fs.readFileSync('public/index.html','utf8');
 
 function block(start,end){
@@ -55,8 +56,8 @@ test('reopening the same Match Center renders warm data before refresh completes
 });
 
 test('performance pass cache-busts app.js without changing release identity',()=>{
-  assert.match(html,/frontend-asset-revision" content="6\.120\.0-launch13"/);
-  assert.match(html,/app\.js\?v=6\.120\.0-launch13/);
+  assert.match(html,/frontend-asset-revision" content="6\.120\.0-launch14"/);
+  assert.match(html,/app\.js\?v=6\.120\.0-launch14/);
   assert.match(app,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
 });
 
