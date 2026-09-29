@@ -124,12 +124,12 @@ export function createReminderDeliveryService({
 
   async function processDueReminders(cfg) {
     if (!hasSupabase(cfg) || !cfg.botToken) {
-      return { checked: 0, sent: 0, kickoffSent: 0, failed: 0, unknown: 0, claimed: 0, staleClaims: 0, staleCleanupFailed: 0, truncated: false };
+      return { ok:true, checked: 0, sent: 0, kickoffSent: 0, failed: 0, unknown: 0, claimed: 0, staleClaims: 0, staleCleanupFailed: 0, truncated: false };
     }
 
     const runtimeState = await loadRuntimeControls(cfg);
     if (runtimeState.value?.remindersEnabled === false) {
-      return { checked: 0, sent: 0, kickoffSent: 0, failed: 0, unknown: 0, claimed: 0, staleClaims: 0, staleCleanupFailed: 0, truncated: false, disabled: true };
+      return { ok:true, checked: 0, sent: 0, kickoffSent: 0, failed: 0, unknown: 0, claimed: 0, staleClaims: 0, staleCleanupFailed: 0, truncated: false, disabled: true };
     }
 
     let stale = { prematch: 0, kickoff: 0, failed: 0 };
@@ -191,6 +191,7 @@ export function createReminderDeliveryService({
         endpoint: 'cron:reminders',
       }).catch(() => {});
       return {
+        ok:false,
         checked: 0,
         sent: 0,
         kickoffSent: 0,
@@ -260,6 +261,7 @@ export function createReminderDeliveryService({
     }
 
     const summary = {
+      ok:!(failed || unknown || Number(stale.failed || 0) || truncated),
       checked: rows.length,
       sent,
       kickoffSent,
