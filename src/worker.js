@@ -27,6 +27,7 @@ import { postDeployRegressionReport } from './post-deploy-regression.js';
 import { planPostDeployRegressionLifecycle } from './post-deploy-regression-lifecycle.js';
 import { formatPostDeployRegressionAlert, planPostDeployRegressionAlert, postDeployRegressionAlertOpsEvents } from './post-deploy-regression-alerts.js';
 import { planPostDeployRegressionResponseTransition, summarizePostDeployRegressionResponse } from './post-deploy-regression-response.js';
+import { buildPostDeployRegressionSloDashboard } from './post-deploy-regression-slo.js';
 import { createCompositeReadinessRuntime } from './readiness-contract.js';
 import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
 import { applyFeatureFreshness, applyFeatureFreshnessMap } from './data-freshness.js';
@@ -16601,6 +16602,11 @@ async function apiReleaseMonitor(request, cfg) {
       responseState:String(x?.metadata?.responseState || ''),
       message:redactOpsString(x.message || '',180),
     }));
+  const postDeployRegressionSlo=buildPostDeployRegressionSloDashboard(source.items,{
+    activeDeploySha,
+    asOfMs:end.getTime(),
+    limit:20,
+  });
   const previousItems = source.items.filter(x => {
     const t = Date.parse(x.created_at || '');
     return Number.isFinite(t) && t >= previousStart.getTime() && t < currentStart.getTime();
@@ -16659,6 +16665,7 @@ async function apiReleaseMonitor(request, cfg) {
     incidents,
     postDeployRegression:{
       response:postDeployRegressionResponse,
+      slo:postDeployRegressionSlo,
       timeline:postDeployRegressionTimeline,
     },
     dailyDigest,

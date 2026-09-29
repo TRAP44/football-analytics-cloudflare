@@ -3100,6 +3100,12 @@ function renderReleaseMonitor() {
   const regressionData = r.postDeployRegression || {};
   const regressionResponse = regressionData.response || {available:false,state:'new',nextState:null,lifecycleState:'healthy',history:[]};
   const regressionRows = Array.isArray(regressionData.timeline) ? regressionData.timeline : [];
+  const regressionSlo = regressionData.slo || {thresholds:{},summary:{},current:null};
+  const regressionCurrentSlo = regressionSlo.current || null;
+  const regressionSloSummary = regressionSlo.summary || {};
+  const regressionThresholds = regressionSlo.thresholds || {};
+  const sloValue = value => Number.isFinite(Number(value)) ? `${Number(value)} мин` : '—';
+  const sloStatusLabel = status => status === 'met' ? 'SLO выполнен' : status === 'breached' ? 'SLO нарушен' : 'ожидание';
   const lifecycleRows = regressionRows.filter(x => x?.source === 'release_regression');
   const alertRows = regressionRows.filter(x => x?.source === 'release_regression_alert');
   const responseRows = regressionRows.filter(x => x?.source === 'release_regression_response');
@@ -3157,6 +3163,13 @@ function renderReleaseMonitor() {
       <div><span>Alert delivery</span><strong>${escapeHtml(alertLabel)}</strong><small>${latestAlert?.createdAt ? escapeHtml(relativeAge(latestAlert.createdAt)) : 'нет alert events'}</small></div>
       <div><span>Audit events</span><strong>${responseRows.length}</strong><small>ACK / INVESTIGATING / RESOLVED</small></div>
     </div>
+    <div class="release-client-grid">
+      <div><span>ACK latency</span><strong>${sloValue(regressionCurrentSlo?.ackLatencyMinutes)}</strong><small>${escapeHtml(sloStatusLabel(regressionCurrentSlo?.ackStatus))} · цель ${Number(regressionThresholds.ackMinutes || 30)} мин</small></div>
+      <div><span>Investigation latency</span><strong>${sloValue(regressionCurrentSlo?.investigationLatencyMinutes)}</strong><small>метрика без отдельного SLA</small></div>
+      <div><span>Recovery latency</span><strong>${sloValue(regressionCurrentSlo?.recoveryLatencyMinutes)}</strong><small>${escapeHtml(sloStatusLabel(regressionCurrentSlo?.recoveryStatus))} · цель ${Number(regressionThresholds.recoveryMinutes || 360)} мин</small></div>
+      <div><span>Resolution latency</span><strong>${sloValue(regressionCurrentSlo?.resolutionLatencyMinutes)}</strong><small>метрика без отдельного SLA</small></div>
+    </div>
+    <div class="data-notice">${regressionCurrentSlo?.ackCriticalOverdue ? '🚨 ACK просрочен критически. ' : ''}<strong>SLO:</strong> ACK ${regressionSloSummary.ackSloPct ?? '—'}% · recovery ${regressionSloSummary.recoverySloPct ?? '—'}% · incidents ${Number(regressionSloSummary.incidents || 0)}.</div>
     <div class="data-notice">🛠 <strong>Ручное действие:</strong> ${escapeHtml(operatorAction)}</div>
     ${regressionResponse.available && nextResponseState ? `<div class="release-monitor-actions">
       <button class="reminder-btn regression-response-btn" type="button" data-response-state="${escapeHtml(nextResponseState)}" ${state.releaseRegressionResponsePending ? 'disabled' : ''}>${state.releaseRegressionResponsePending ? 'Сохраняю…' : escapeHtml(nextResponseLabel)}</button>
@@ -3164,7 +3177,7 @@ function renderReleaseMonitor() {
     <details class="release-incidents"><summary>Regression timeline · ${regressionRows.length}</summary>
       <div class="release-issue-list">${regressionRows.length ? regressionRows.slice(0,20).map(x => `<div><strong>${escapeHtml(humanizeTechnicalText(x.code || x.source || ''))}</strong><span>${escapeHtml(dateTime(x.createdAt))}</span></div>`).join('') : '<div class="empty compact-empty">Lifecycle, alert и response events для текущего deployment пока не зафиксированы.</div>'}</div>
     </details>
-    <p class="tiny">State machine: NEW → ACKNOWLEDGED → INVESTIGATING → RESOLVED. RESOLVED разрешён только после RECOVERED. Auto-rollback и другие runtime mutations отсутствуют.</p>`;
+    <p class="tiny">SLO: ACK ≤ ${Number(regressionThresholds.ackMinutes || 30)} мин, critical overdue ACK ≥ ${Number(regressionThresholds.ackCriticalMinutes || 120)} мин, recovery ≤ ${Number(regressionThresholds.recoveryMinutes || 360)} мин. Investigation и resolution отображаются как latency metrics без нового SLA. State machine: NEW → ACKNOWLEDGED → INVESTIGATING → RESOLVED. RESOLVED разрешён только после RECOVERED. Auto-rollback и другие runtime mutations отсутствуют.</p>`;
 
   regression.querySelectorAll('.regression-response-btn').forEach(button=>{
     button.addEventListener('click',()=>transitionPostDeployRegressionResponse(String(button.dataset.responseState || '')));
