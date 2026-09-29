@@ -9,6 +9,12 @@ const WIDTHS = [320, 360, 375, 390, 430];
 const NAV_IDS = ['navMatches', 'navMyTeams', 'navHistory', 'navProfile'];
 const EXPECTED_LABELS = ['Главная', 'Мои команды', 'История', 'Профиль'];
 const TELEGRAM_WEBVIEW_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/144.0.0.0 Mobile Safari/537.36 Telegram-Android/12.0';
+const EXPECTED_ASSET_REVISION = (() => {
+  const html = fs.readFileSync(path.resolve('public/index.html'), 'utf8');
+  const match = html.match(/<meta\s+name=["']frontend-asset-revision["']\s+content=["']([^"']+)["']/i);
+  if (!match?.[1]) throw new Error('frontend asset revision is missing from public/index.html');
+  return match[1];
+})();
 
 function browserExecutable() {
   const candidates = [
@@ -212,6 +218,25 @@ async function navigateWithRetry(cdp, url, attempts = 3) {
   throw new Error(`Page.navigate failed after ${totalAttempts} attempt(s): ${lastError || 'unknown error'}`);
 }
 
+async function navigateForExpectedRevision(cdp, url, remote = false) {
+  const attempts = remote ? 8 : 1;
+  let lastRevision = '';
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const next = new URL(url);
+    if (remote) next.searchParams.set('__mr_render_smoke', `${EXPECTED_ASSET_REVISION}-${attempt}`);
+    await navigateWithRetry(cdp, next.toString(), 3);
+    await waitForReady(cdp);
+    const result = await cdp.call('Runtime.evaluate', {
+      returnByValue:true,
+      expression:`document.querySelector('meta[name="frontend-asset-revision"]')?.content || ''`,
+    });
+    lastRevision = String(result?.result?.value || '');
+    if (lastRevision === EXPECTED_ASSET_REVISION) return;
+    if (attempt < attempts) await new Promise(resolve => setTimeout(resolve, 1500));
+  }
+  throw new Error(`frontend assets did not converge to ${EXPECTED_ASSET_REVISION}; last revision=${lastRevision || 'missing'}`);
+}
+
 async function waitForReady(cdp) {
   let lastValue = {};
   for (let i = 0; i < 100; i += 1) {
@@ -269,6 +294,9 @@ function assertLayout(width, snapshot) {
     if (action.height < 43.5) throw new Error(`${width}px: first-run action ${action.id} touch target is only ${action.height}px`);
   }
   if (!snapshot.assetRevision) throw new Error(`${width}px: frontend asset revision meta is missing`);
+  if (snapshot.assetRevision !== EXPECTED_ASSET_REVISION) {
+    throw new Error(`${width}px: frontend asset revision ${snapshot.assetRevision} does not match expected ${EXPECTED_ASSET_REVISION}`);
+  }
   if (snapshot.assetTokens.length !== 3 || snapshot.assetTokens.some(token => token !== snapshot.assetRevision)) {
     throw new Error(`${width}px: frontend JS/CSS cache-bust tokens are not coherent`);
   }
@@ -436,6 +464,7 @@ async function main() {
     await cdp.call('Page.enable');
     await cdp.call('Runtime.enable');
     await cdp.call('Network.enable');
+    await cdp.call('Network.setCacheDisabled', { cacheDisabled:true });
     await cdp.call('Network.setUserAgentOverride', { userAgent: TELEGRAM_WEBVIEW_UA });
     await cdp.call('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
 
@@ -449,8 +478,7 @@ async function main() {
         screenHeight: 844,
       });
       await cdp.call('Runtime.evaluate', { expression:`localStorage.removeItem('football-analytics:first-run-guide:v1')` });
-      await navigateWithRetry(cdp, targetUrl, 3);
-      await waitForReady(cdp);
+      await navigateForExpectedRevision(cdp, targetUrl, Boolean(remoteUrl));
       const evaluated = await cdp.call('Runtime.evaluate', {
         returnByValue: true,
         expression: `(() => {
