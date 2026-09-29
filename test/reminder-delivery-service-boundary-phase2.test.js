@@ -175,7 +175,7 @@ test('scheduler preserves kickoff, prematch and retry-window behavior', async ()
     ];
     const {service,calls,events}=runtime({rows});
     const summary=await service.processDueReminders({botToken:'token'});
-    assert.deepEqual(summary,{checked:3,sent:1,kickoffSent:1,failed:0,unknown:0,claimed:0,staleClaims:0,staleCleanupFailed:0,truncated:false});
+    assert.deepEqual(summary,{ok:true,checked:3,sent:1,kickoffSent:1,failed:0,unknown:0,claimed:0,staleClaims:0,staleCleanupFailed:0,truncated:false});
     assert.equal(calls.messages.length,2);
     assert.equal(calls.messages[0][0],1);
     assert.equal(calls.messages[0][1],'🔴 Матч начинается\n\nAlpha — Beta\nLeague\n\nОткройте приложение: центр матча появится, когда источник данных обновит статус.');
@@ -210,6 +210,7 @@ test('scheduler surfaces pagination truncation and stale cleanup degradation', a
     });
     const summary=await runtimeState.service.processDueReminders({botToken:'token'});
     assert.deepEqual(summary,{
+      ok:false,
       checked:0,
       sent:0,
       kickoffSent:0,
@@ -231,7 +232,7 @@ test('scheduler preserves disabled and read-failure summaries', async () => {
   const disabled=runtime({loadRuntimeControls:async()=>({value:{remindersEnabled:false}})});
   assert.deepEqual(
     await disabled.service.processDueReminders({botToken:'token'}),
-    {checked:0,sent:0,kickoffSent:0,failed:0,unknown:0,claimed:0,staleClaims:0,staleCleanupFailed:0,truncated:false,disabled:true},
+    {ok:true,checked:0,sent:0,kickoffSent:0,failed:0,unknown:0,claimed:0,staleClaims:0,staleCleanupFailed:0,truncated:false,disabled:true},
   );
 
   const failed=runtime({
@@ -240,7 +241,7 @@ test('scheduler preserves disabled and read-failure summaries', async () => {
   });
   assert.deepEqual(
     await failed.service.processDueReminders({botToken:'token'}),
-    {checked:0,sent:0,kickoffSent:0,failed:1,unknown:0,claimed:0,staleClaims:3,staleCleanupFailed:0,truncated:false},
+    {ok:false,checked:0,sent:0,kickoffSent:0,failed:1,unknown:0,claimed:0,staleClaims:3,staleCleanupFailed:0,truncated:false},
   );
   assert.equal(failed.events[0].code,'REMINDER_SCHEDULER_READ_FAILED');
 });
@@ -254,4 +255,39 @@ test('worker delegates reminder delivery orchestration while keeping Telegram tr
   assert.doesNotMatch(worker,/async function deliverClaimedReminder\(/);
   assert.doesNotMatch(worker,/async function processDueReminders\(cfg\)/);
   assert.match(worker,/async function sendTelegramMessage\(/);
+});
+
+
+test('scheduler outcome contract marks partial delivery and unknown states as ok=false', async () => {
+  const originalNow=Date.now;
+  const now=Date.parse('2026-09-27T12:00:00.000Z');
+  Date.now=()=>now;
+  try {
+    const row={
+      telegram_id:7,
+      fixture_id:707,
+      fixture_date:new Date(now+30*60_000).toISOString(),
+      home_name:'A',
+      away_name:'B',
+      kickoff_notify:true,
+      remind_before_minutes:30,
+    };
+    const failed=runtime({
+      rows:[row],
+      sendTelegramMessage:async()=>({ok:false,status:503,outcome:'confirmed_failure',errorCode:503,description:'down',retryAfter:0}),
+    });
+    const failedSummary=await failed.service.processDueReminders({botToken:'token'});
+    assert.equal(failedSummary.ok,false);
+    assert.equal(failedSummary.failed,1);
+
+    const unknown=runtime({
+      rows:[row],
+      sendTelegramMessage:async()=>({ok:false,status:0,outcome:'unknown',errorCode:0,description:'ambiguous',retryAfter:0}),
+    });
+    const unknownSummary=await unknown.service.processDueReminders({botToken:'token'});
+    assert.equal(unknownSummary.ok,false);
+    assert.equal(unknownSummary.unknown,1);
+  } finally {
+    Date.now=originalNow;
+  }
 });
