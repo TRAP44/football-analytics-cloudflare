@@ -30,10 +30,17 @@ export function createScheduledJobsRuntime({
   function buildScheduledTaskPlan(cfg, scheduledAt) {
     const backtestTask = Promise.resolve().then(() => settleBacktestDaily(cfg));
     const remindersTask = Promise.resolve().then(() => processDueReminders(cfg));
+    const digestWindow = scheduledAt.getUTCHours() === 7 && scheduledAt.getUTCMinutes() < 10;
+    const dailyDigestTask = digestWindow
+      ? backtestTask.catch(() => null).then(() => processDailyDigests(cfg, scheduledAt))
+      : null;
+    const postMatchPrerequisite = dailyDigestTask
+      ? dailyDigestTask.catch(() => null)
+      : backtestTask;
     const tasks = [
       ['reminders', remindersTask],
       ['backtest', backtestTask],
-      ['post_match_return', backtestTask.then(() => processPostMatchReturns(cfg))],
+      ['post_match_return', postMatchPrerequisite.then(() => processPostMatchReturns(cfg))],
     ];
 
     if (scheduledAt.getUTCMinutes() % 15 === 0) {
@@ -45,8 +52,12 @@ export function createScheduledJobsRuntime({
       tasks.push(['production_monitor', monitorAfterReminders]);
     }
 
-    if (scheduledAt.getUTCHours() === 7 && scheduledAt.getUTCMinutes() < 10) {
-      tasks.push(['daily_digest', Promise.resolve().then(() => processDailyDigests(cfg, scheduledAt))]);
+    if (dailyDigestTask) {
+      // Provider-heavy morning work is intentionally serialized:
+      // backtest -> daily digest -> post-match return.
+      // This preserves delivery behavior while avoiding concurrent API-Football
+      // fan-out during the busiest scheduled minute.
+      tasks.push(['daily_digest', dailyDigestTask]);
     }
 
     if (scheduledAt.getUTCHours() === 3 && scheduledAt.getUTCMinutes() < 15) {
