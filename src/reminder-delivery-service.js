@@ -11,9 +11,14 @@ export function createReminderDeliveryService({
   finishReminderDelivery,
   releaseReminderClaim,
 }) {
+  const successCodeByKind = Object.freeze({
+    prematch: 'REMINDER_SENT_PREMATCH',
+    kickoff: 'REMINDER_SENT_KICKOFF',
+  });
+
   async function recordReminderDelivery(cfg, { row, kind, result, success, disabled = false, uncertain = false }) {
     const code = success
-      ? (kind === 'kickoff' ? 'REMINDER_SENT_KICKOFF' : 'REMINDER_SENT_PREMATCH')
+      ? (successCodeByKind[kind] || 'REMINDER_SENT')
       : uncertain
         ? 'REMINDER_DELIVERY_UNKNOWN'
         : disabled
