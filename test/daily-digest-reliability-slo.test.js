@@ -289,3 +289,18 @@ test('J. admin monitor renders reliability SLO without user identifiers',()=>{
   assert.match(block,/SLO требует контроля/);
   assert.doesNotMatch(block,/telegram_id|chat_id|user_id/i);
 });
+
+
+test('K. production monitor self-test executes the real digest SLO lifecycle',()=>{
+  const worker=fs.readFileSync('src/worker.js','utf8');
+  const start=worker.indexOf('function productionMonitorSelfTest()');
+  const end=worker.indexOf('async function runProductionMonitor(',start);
+  assert.ok(start>=0 && end>start);
+  const block=worker.slice(start,end);
+  assert.match(block,/assessDailyDigestReliabilitySlo/);
+  assert.match(block,/planDailyDigestReliabilitySloEvent/);
+  assert.match(block,/repeatedWatchSuppressed/);
+  assert.match(block,/recoveryDeduplicated/);
+  assert.match(block,/newDayReset/);
+  assert.match(block,/Object\.values\(digestSloContract\)\.every\(Boolean\)/);
+});
