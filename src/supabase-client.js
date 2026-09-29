@@ -12,13 +12,23 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs 
     : ms => new Promise(resolve => setTimeout(resolve, ms));
   const retryableReadStatuses = new Set([408, 503, 504]);
 
-  async function supaReadFetch(url, init, timeoutMs, source) {
+  function isTransientSecretReadAuthResponse(response, cfg) {
+    if (Number(response?.status || 0) !== 401) return false;
+    if (!String(cfg?.supabaseKey || '').startsWith('sb_secret_')) return false;
+    const proxyStatus = String(response?.headers?.get?.('proxy-status') || '');
+    return /(?:^|[;,\s])PostgREST(?:[;,\s]|$)/i.test(proxyStatus)
+      && /(?:^|[;,\s])error=PGRST303(?:[;,\s]|$)/i.test(proxyStatus);
+  }
+
+  async function supaReadFetch(url, init, timeoutMs, source, cfg = null) {
     let lastResponse = null;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         const response = await fetchWithTimeout(url, init, timeoutMs, source);
         lastResponse = response;
-        if (!retryableReadStatuses.has(Number(response?.status || 0)) || attempt === 1) return response;
+        const retryableStatus = retryableReadStatuses.has(Number(response?.status || 0));
+        const transientSecretAuth = isTransientSecretReadAuthResponse(response, cfg);
+        if ((!retryableStatus && !transientSecretAuth) || attempt === 1) return response;
       } catch (error) {
         if (attempt === 1) throw error;
       }
@@ -46,7 +56,7 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs 
     url.searchParams.set('select', '*');
     url.searchParams.set('limit', '1');
     for (const [key, value] of Object.entries(params || {})) url.searchParams.set(key, value);
-    const response = await supaReadFetch(url, { headers: supaHeaders(cfg) }, 7000, `Supabase ${table}`);
+    const response = await supaReadFetch(url, { headers: supaHeaders(cfg) }, 7000, `Supabase ${table}`, cfg);
     if (!response.ok) throw new Error(`Supabase ${table}: HTTP ${response.status}`);
     const rows = await response.json();
     return rows?.[0] || null;
@@ -58,7 +68,7 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs 
     url.searchParams.set('limit', String(limit));
     if (order) url.searchParams.set('order', order);
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
-    const response = await supaReadFetch(url, { headers: supaHeaders(cfg) }, 7000, `Supabase ${table}`);
+    const response = await supaReadFetch(url, { headers: supaHeaders(cfg) }, 7000, `Supabase ${table}`, cfg);
     if (!response.ok) {
       const text = await response.text().catch(() => '');
       throw new Error(`Supabase ${table}: HTTP ${response.status}${text ? ` — ${text.slice(0, 160)}` : ''}`);
