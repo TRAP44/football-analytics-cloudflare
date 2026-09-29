@@ -6198,7 +6198,7 @@ function renderPlayerHub(player = state.currentPlayer) {
         <div><span>Команда</span><strong>${escapeHtml(team.name || '—')}</strong></div>
         <div><span>Источник</span><strong>данные матча</strong></div>
       </div>
-      <p class="tiny">Player Hub 4A использует уже загруженную статистику матча и не расходует дополнительную квоту API-Football. Сезонный профиль игрока будет следующим расширением.</p>
+      <p class="tiny">Статистика матча показывается без дополнительного запроса к API-Football. Сезонные данные сначала ищутся в сохранённом Team Intelligence и загружаются у источника только по вашему нажатию.</p>
     </section>
   `;
 }
