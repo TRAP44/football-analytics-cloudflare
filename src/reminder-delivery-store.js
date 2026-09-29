@@ -18,6 +18,11 @@ export const REMINDER_DELIVERY_KINDS = Object.freeze({
     doneColumn: 'lineup_notified_at',
     attemptsColumn: 'lineup_attempts',
   }),
+  important_change: Object.freeze({
+    claimColumn: 'important_change_claimed_at',
+    doneColumn: 'important_change_notified_at',
+    attemptsColumn: 'important_change_attempts',
+  }),
 });
 
 export function reminderDeliveryKindConfig(kind) {
@@ -36,6 +41,7 @@ export function createReminderDeliveryStore({
   function reminderDeliveryStatus(row) {
     if (row?.kickoff_notified_at) return 'kickoff_sent';
     if (row?.notified_at) return 'prematch_sent';
+    if (row?.important_change_notified_at) return 'important_change_sent';
     if (row?.lineup_notified_at) return 'lineup_sent';
     if (row?.delivery_last_error === REMINDER_UNKNOWN_STATE || row?.delivery_last_error === REMINDER_SENDING_STATE) return 'delivery_unknown';
     if (row?.delivery_last_error) return 'retry_pending';
@@ -43,7 +49,7 @@ export function createReminderDeliveryStore({
   }
 
   async function clearStaleReminderClaims(cfg) {
-    if (!hasSupabase(cfg)) return { prematch: 0, kickoff: 0, lineup: 0, failed: 0 };
+    if (!hasSupabase(cfg)) return { prematch: 0, kickoff: 0, lineup: 0, important_change: 0, failed: 0 };
     const cutoff = new Date(Date.now() - 20 * 60_000).toISOString();
 
     const clearColumn = async column => {
@@ -75,6 +81,7 @@ export function createReminderDeliveryStore({
     const prematch = Number(cleared.prematch || 0);
     const kickoff = Number(cleared.kickoff || 0);
     const lineup = Number(cleared.lineup || 0);
+    const important_change = Number(cleared.important_change || 0);
     const total = Object.values(cleared).reduce((sum, value) => sum + Number(value || 0), 0);
 
     if (total > 0) {
@@ -84,7 +91,7 @@ export function createReminderDeliveryStore({
         eventType: 'reminder_delivery',
         code: 'REMINDER_STALE_CLAIMS',
         message: `Восстановлено зависших заявок на доставку уведомлений: ${total}.`,
-        meta: { prematch, kickoff, lineup },
+        meta: { prematch, kickoff, lineup, important_change },
       }).catch(() => {});
     }
 
@@ -103,7 +110,7 @@ export function createReminderDeliveryStore({
       }).catch(() => {});
     }
 
-    return { prematch, kickoff, lineup, failed: failures.length };
+    return { prematch, kickoff, lineup, important_change, failed: failures.length };
   }
 
   async function claimReminderDelivery(row, kind, cfg) {
