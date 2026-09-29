@@ -6,6 +6,7 @@ const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync
 const app = fs.readFileSync('public/app.js', 'utf8');
 const appRuntime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
+const adminHtml = fs.readFileSync('public/admin.html', 'utf8');
 const staticHeaders = fs.readFileSync('public/_headers', 'utf8');
 const styles = fs.readFileSync('public/styles.css', 'utf8');
 const publicShellStyles = fs.readFileSync('public/styles/public-shell.css', 'utf8');
@@ -39,8 +40,14 @@ if (!worker.includes("const RC_NAME = 'RC144'")) failures.push('Worker RC name m
 if (!appRuntime.includes(`CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
 if (!appRuntime.includes("CLIENT_RELEASE_CHANNEL = 'rc144'")) failures.push('Client release channel must be rc144');
 const frontendAssetRevision = /<meta name="frontend-asset-revision" content="([^"]+)" \/>/.exec(html)?.[1] || '';
+const adminFrontendAssetRevision = /<meta name="frontend-asset-revision" content="([^"]+)" \/>/.exec(adminHtml)?.[1] || '';
+const runtimeFrontendAssetRevision = /FRONTEND_ASSET_REVISION = '([^']+)'/.exec(appRuntime)?.[1] || '';
 if (!frontendAssetRevision || frontendAssetRevision === pkg.version || !frontendAssetRevision.startsWith(`${pkg.version}-`)) failures.push('Frontend asset revision must cache-bust the package version');
-if (!html.includes(`/app.js?v=${frontendAssetRevision}`) || !html.includes(`/styles.css?v=${frontendAssetRevision}`) || !html.includes(`/styles/public-shell.css?v=${frontendAssetRevision}`)) failures.push('Frontend JS/CSS cache-bust tokens must be coherent');
+if (!runtimeFrontendAssetRevision || runtimeFrontendAssetRevision !== frontendAssetRevision) failures.push('Frontend runtime asset revision must match public HTML');
+if (adminFrontendAssetRevision !== frontendAssetRevision) failures.push('Admin and public frontend asset revisions must match');
+for (const [name, surface] of [['public', html], ['admin', adminHtml]]) {
+  if (!surface.includes(`/app.js?v=${frontendAssetRevision}`) || !surface.includes(`/styles.css?v=${frontendAssetRevision}`) || !surface.includes(`/styles/public-shell.css?v=${frontendAssetRevision}`)) failures.push(`${name} frontend JS/CSS cache-bust tokens must match the frontend asset revision`);
+}
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_11.sql')) failures.push('Missing v6.11 migration');

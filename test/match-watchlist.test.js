@@ -67,9 +67,9 @@ test('watchlist controls stay compact on the public mobile shell', () => {
   assert.match(shell, /\.radar-feed-item\.watching \.radar-feed-pulse/);
 });
 
-test('match watchlist ships with coherent launch16 cache revision', () => {
+test('match watchlist ships with coherent frontend asset revision', () => {
   for (const surface of [html, adminHtml]) {
-    assert.match(surface, /frontend-asset-revision" content="6\.120\.0-launch16"/);
-    assert.match(surface, /\/app\.js\?v=6\.120\.0-launch16/);
+    assert.match(surface, /frontend-asset-revision" content="6\.120\.0-launch\d+"/);
+    assert.match(surface, /\/app\.js\?v=6\.120\.0-launch\d+/);
   }
 });

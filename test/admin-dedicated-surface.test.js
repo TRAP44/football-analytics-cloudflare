@@ -23,9 +23,9 @@ test('dedicated admin surface is role-gated after startup', () => {
   assert.match(app, /location\.replace\('\/'\)/);
 });
 
-test('both surfaces share the same launch16 client revision during runtime extraction', () => {
+test('both surfaces share the same frontend asset revision during runtime extraction', () => {
   for (const html of [publicHtml, adminHtml]) {
-    assert.match(html, /frontend-asset-revision" content="6\.120\.0-launch16"/);
-    assert.match(html, /\/app\.js\?v=6\.120\.0-launch16/);
+    assert.match(html, /frontend-asset-revision" content="6\.120\.0-launch\d+"/);
+    assert.match(html, /\/app\.js\?v=6\.120\.0-launch\d+/);
   }
 });
