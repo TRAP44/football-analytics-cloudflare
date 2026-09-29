@@ -4,7 +4,7 @@ import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
-const html=fs.readFileSync('public/index.html','utf8');
+const html=fs.readFileSync('public/admin.html','utf8');
 const css=fs.readFileSync('public/styles.css','utf8');
 
 test('RC68 aggregates media attribution down to content level',()=>{
