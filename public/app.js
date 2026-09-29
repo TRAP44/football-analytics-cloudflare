@@ -3177,7 +3177,7 @@ function renderReleaseMonitor() {
     <details class="release-incidents"><summary>Regression timeline · ${regressionRows.length}</summary>
       <div class="release-issue-list">${regressionRows.length ? regressionRows.slice(0,20).map(x => `<div><strong>${escapeHtml(humanizeTechnicalText(x.code || x.source || ''))}</strong><span>${escapeHtml(dateTime(x.createdAt))}</span></div>`).join('') : '<div class="empty compact-empty">Lifecycle, alert и response events для текущего deployment пока не зафиксированы.</div>'}</div>
     </details>
-    <p class="tiny">SLO: ACK ≤ ${Number(regressionThresholds.ackMinutes || 30)} мин, critical overdue ACK ≥ ${Number(regressionThresholds.ackCriticalMinutes || 120)} мин, recovery ≤ ${Number(regressionThresholds.recoveryMinutes || 360)} мин. Investigation и resolution отображаются как latency metrics без нового SLA. State machine: NEW → ACKNOWLEDGED → INVESTIGATING → RESOLVED.</p>`;
+    <p class="tiny">SLO: ACK ≤ ${Number(regressionThresholds.ackMinutes || 30)} мин, critical overdue ACK ≥ ${Number(regressionThresholds.ackCriticalMinutes || 120)} мин, recovery ≤ ${Number(regressionThresholds.recoveryMinutes || 360)} мин. Investigation и resolution отображаются как latency metrics без нового SLA. State machine: NEW → ACKNOWLEDGED → INVESTIGATING → RESOLVED. RESOLVED разрешён только после RECOVERED. Auto-rollback и другие runtime mutations отсутствуют.</p>`;
 
   regression.querySelectorAll('.regression-response-btn').forEach(button=>{
     button.addEventListener('click',()=>transitionPostDeployRegressionResponse(String(button.dataset.responseState || '')));
