@@ -63,12 +63,36 @@ test('Home progressive disclosure keeps urgent sections open and lower-priority 
   assert.doesNotMatch(home,/<details[^>]*data-home-match-section="soon"/);
 });
 
+test('Home personal relevance selects only genuine favorite or viewed-team signals',()=>{
+  const start=app.indexOf('function homePersonalMatch(');
+  const end=app.indexOf('function homePersonalMatchMeta',start);
+  const source=app.slice(start,end);
+  assert.match(source,/if \(!signals\.hasPersonalData\) return null/);
+  assert.match(source,/item\.insight\.favorite \|\| item\.insight\.viewedTeam/);
+  assert.match(source,/if \(Boolean\(a\.match\.live\) !== Boolean\(b\.match\.live\)\) return a\.match\.live \? -1 : 1/);
+  assert.doesNotMatch(source,/viewedLeague/);
+  assert.doesNotMatch(source,/featured/);
+});
+
+test('Home renders one personal match card and routes it to existing match actions',()=>{
+  assert.match(app,/homePersonalMatchBtn/);
+  assert.match(app,/homePersonalMatchKicker/);
+  assert.match(app,/homePersonalMatchText/);
+  assert.match(app,/homePersonalMatchMeta/);
+  assert.match(app,/dataset\.personalFixture/);
+  assert.match(app,/if \(match\.live\) openMatchCenter\(fixtureId, button\)/);
+  assert.match(app,/if \(saved\) openHistoryAnalysis\(fixtureId, button\)/);
+  assert.match(app,/else analyzeMatch\(fixtureId, button\)/);
+});
+
 test('Home priority section styling is compact and mobile-safe',()=>{
   assert.match(css,/MatchRadar Home Content Priority — LIVE \/ soon \/ later/);
   assert.match(css,/\.home-match-section-list\{[\s\S]*?display:grid;[\s\S]*?gap:10px/);
   assert.match(css,/\.home-match-section--live \.home-match-section-head > strong\{[\s\S]*?var\(--brand-live\)/);
   assert.match(css,/@media\(max-width:360px\)\{[\s\S]*?\.home-match-section-list\{[\s\S]*?gap:8px/);
   assert.match(css,/MatchRadar Home Progressive Disclosure — keep first screen focused/);
+  assert.match(css,/MatchRadar Home Personal Relevance — one useful personal match, not a feed/);
+  assert.match(css,/\.home-priority-card\.home-personal-match\{[\s\S]*?background:color-mix/);
   assert.match(css,/\.home-match-section\.is-collapsible > summary\{[\s\S]*?min-height:46px/);
   assert.match(css,/\.home-match-section\.is-collapsible:not\(\[open\]\) > \.home-match-section-list\{[\s\S]*?display:none/);
 });

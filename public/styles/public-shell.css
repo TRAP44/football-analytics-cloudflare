@@ -3486,3 +3486,41 @@ html {
     transition:none;
   }
 }
+
+
+/* MatchRadar Home Personal Relevance — one useful personal match, not a feed */
+.miniapp-public-shell .home-priority-card.home-personal-match{
+  grid-template-columns:minmax(0,1fr) auto;
+  background:color-mix(in srgb,var(--accent) 7%,var(--surface));
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 24%,var(--line));
+}
+.miniapp-public-shell .home-priority-card.home-personal-match > span{
+  color:var(--accent);
+}
+.miniapp-public-shell .home-priority-card.home-personal-match > strong{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.miniapp-public-shell .home-priority-card.home-personal-match > small{
+  grid-column:1;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:var(--hint);
+  font-size:10px;
+  line-height:1.3;
+}
+.miniapp-public-shell .home-priority-card.home-personal-match > b{
+  grid-column:2;
+  grid-row:1 / 4;
+}
+@media(max-width:360px){
+  .miniapp-public-shell .home-priority-card.home-personal-match{
+    padding:11px 12px;
+  }
+  .miniapp-public-shell .home-priority-card.home-personal-match > strong{
+    font-size:14px;
+  }
+}

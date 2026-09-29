@@ -71,13 +71,17 @@ test('render smoke exercises edge cases across mobile widths and themes',()=>{
   assert.match(smoke,/home-match-section--later is-collapsible/);
   assert.match(smoke,/disclosureState/);
   assert.match(smoke,/lower-priority Home section is not collapsed by default/);
+  assert.match(smoke,/home-priority-card home-personal-match/);
+  assert.match(smoke,/Любимая команда · 21:45 · Premier League/);
+  assert.match(smoke,/personalState/);
+  assert.match(smoke,/personal Home card does not preserve single-line ellipsis clipping/);
 });
 
 test('frontend revision refreshes QA styles without changing release identity',()=>{
-  assert.match(html,/frontend-asset-revision" content="6\.120\.0-launch6"/);
-  assert.match(html,/styles\.css\?v=6\.120\.0-launch6/);
-  assert.match(html,/styles\/public-shell\.css\?v=6\.120\.0-launch6/);
-  assert.match(html,/app\.js\?v=6\.120\.0-launch6/);
+  assert.match(html,/frontend-asset-revision" content="6\.120\.0-launch7"/);
+  assert.match(html,/styles\.css\?v=6\.120\.0-launch7/);
+  assert.match(html,/styles\/public-shell\.css\?v=6\.120\.0-launch7/);
+  assert.match(html,/app\.js\?v=6\.120\.0-launch7/);
   assert.match(app,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
   assert.doesNotMatch(html,/6\.120\.0-ui3/);
 });

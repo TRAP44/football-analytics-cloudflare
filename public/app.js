@@ -4894,9 +4894,38 @@ function personalMatchInsight(match, signals = personalContextSignals()) {
   return { score, reason, favorite, viewedTeam, viewedLeague, recommended };
 }
 
+function homePersonalMatch(signals = personalContextSignals(), nowMs = Date.now()) {
+  if (!signals.hasPersonalData) return null;
+  const rows = state.matches
+    .filter(match => !match.finished && !match.youthReserve)
+    .map(match => ({ match, insight:personalMatchInsight(match, signals) }))
+    .filter(item => item.insight.favorite || item.insight.viewedTeam)
+    .sort((a, b) => {
+      if (Boolean(a.match.live) !== Boolean(b.match.live)) return a.match.live ? -1 : 1;
+      const scoreDelta = Number(b.insight.score || 0) - Number(a.insight.score || 0);
+      if (scoreDelta) return scoreDelta;
+      const aDate = Date.parse(a.match.date || '') || Number.POSITIVE_INFINITY;
+      const bDate = Date.parse(b.match.date || '') || Number.POSITIVE_INFINITY;
+      const aFuture = aDate >= nowMs ? 0 : 1;
+      const bFuture = bDate >= nowMs ? 0 : 1;
+      if (aFuture !== bFuture) return aFuture - bFuture;
+      return aDate - bDate;
+    });
+  return rows[0] || null;
+}
+
+function homePersonalMatchMeta(item) {
+  if (!item) return '';
+  const match = item.match;
+  const reason = item.insight.favorite ? 'Любимая команда' : 'Вы смотрели эту команду';
+  const status = match.live ? 'LIVE' : timeOf(match.date);
+  return [reason, status, match.league || ''].filter(Boolean).join(' · ');
+}
+
 function renderDailyOverview() {
   const root = $('dailyOverview');
   const liveCard = $('homeLiveCard');
+  const personalCard = $('homePersonalMatchBtn');
   const teamsCard = $('homeTeamsBtn');
   const onboarding = $('homeFavoriteBtn');
   if (!root) return;
@@ -4904,11 +4933,23 @@ function renderDailyOverview() {
   const visible = state.matches.filter(match => state.preferences?.hideYouth === false || !match.youthReserve);
   const liveCount = visible.filter(match => match.live).length;
   const favoriteCount = state.favorites.length;
+  const personalItem = homePersonalMatch();
 
   if (liveCard) {
     liveCard.hidden = liveCount <= 0;
     const text = $('homeLiveText');
     if (text) text.textContent = russianCountLabel(liveCount, 'матч идёт сейчас', 'матча идут сейчас', 'матчей идут сейчас');
+  }
+  if (personalCard) {
+    personalCard.hidden = !personalItem;
+    personalCard.dataset.personalFixture = personalItem ? String(Number(personalItem.match.fixtureId || 0)) : '';
+    personalCard.dataset.personalLive = personalItem?.match.live ? '1' : '0';
+    const kicker = $('homePersonalMatchKicker');
+    const text = $('homePersonalMatchText');
+    const meta = $('homePersonalMatchMeta');
+    if (kicker) kicker.textContent = personalItem?.match.live ? 'Для вас · LIVE' : 'Для вас';
+    if (text) text.textContent = personalItem ? `${personalItem.match.home?.name || ''} — ${personalItem.match.away?.name || ''}` : 'Персональный матч';
+    if (meta) meta.textContent = homePersonalMatchMeta(personalItem);
   }
   if (teamsCard) {
     teamsCard.hidden = favoriteCount <= 0;
@@ -8036,6 +8077,19 @@ document.querySelectorAll('[data-quick-filter]').forEach(btn => {
     renderMatches();
     $('matchesTitle')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
+});
+$('homePersonalMatchBtn')?.addEventListener('click', event => {
+  const button = event.currentTarget;
+  const fixtureId = Number(button.dataset.personalFixture || 0);
+  if (!fixtureId) return;
+  const match = state.matches.find(item => Number(item.fixtureId) === fixtureId);
+  if (!match) return;
+  if (match.live) openMatchCenter(fixtureId, button);
+  else {
+    const saved = analysisHistoryForFixture(fixtureId);
+    if (saved) openHistoryAnalysis(fixtureId, button);
+    else analyzeMatch(fixtureId, button);
+  }
 });
 $('homeTeamsBtn')?.addEventListener('click', () => {
   renderMyTeams();
