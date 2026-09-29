@@ -71,10 +71,10 @@ test('render smoke exercises edge cases across mobile widths and themes',()=>{
 });
 
 test('frontend revision refreshes QA styles without changing release identity',()=>{
-  assert.match(html,/frontend-asset-revision" content="6\.120\.0-launch5"/);
-  assert.match(html,/styles\.css\?v=6\.120\.0-launch5/);
-  assert.match(html,/styles\/public-shell\.css\?v=6\.120\.0-launch5/);
-  assert.match(html,/app\.js\?v=6\.120\.0-launch5/);
+  assert.match(html,/frontend-asset-revision" content="6\.120\.0-launch6"/);
+  assert.match(html,/styles\.css\?v=6\.120\.0-launch6/);
+  assert.match(html,/styles\/public-shell\.css\?v=6\.120\.0-launch6/);
+  assert.match(html,/app\.js\?v=6\.120\.0-launch6/);
   assert.match(app,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
   assert.doesNotMatch(html,/6\.120\.0-ui3/);
 });
