@@ -17,10 +17,10 @@ function deployment(versions) {
   };
 }
 
-function version(id, message) {
+function version(id, message, tag = sha) {
   return {
     id,
-    annotations: { 'workers/message': message },
+    annotations: { 'workers/message': message, 'workers/tag': tag },
     metadata: { created_on: '2026-09-24T11:47:00.000Z', source: 'wrangler' },
   };
 }
@@ -35,6 +35,18 @@ test('RC120 accepts one active 100 percent version with exact release and commit
   assert.equal(result.versionId, activeId);
   assert.equal(result.release, release);
   assert.equal(result.sha, sha);
+});
+
+test('RC120 rejects a Cloudflare version tag that is not the deploy SHA', () => {
+  assert.throws(
+    () => verifyProductionReleasePostcondition(
+      deployment([{ version_id: activeId, percentage: 100 }]),
+      [version(activeId, `release=${release} sha=${sha}`, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')],
+      release,
+      sha
+    ),
+    /version tag does not match deploy SHA/
+  );
 });
 
 test('RC120 rejects split production traffic', () => {
