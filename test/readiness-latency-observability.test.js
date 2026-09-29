@@ -40,3 +40,18 @@ test('readiness uses a lightweight confirmed Supabase probe while diagnostics ke
   const diagnostics=worker.slice(worker.indexOf('async function collectDiagnostics'),worker.indexOf('const CLIENT_TELEMETRY_EVENTS'));
   assert.match(diagnostics,/probeSupabaseConfirmed\(cfg\)/);
 });
+
+
+test('readiness coalesces only concurrent checks without caching completed results', () => {
+  assert.match(worker,/let readinessSnapshotInFlight=null/);
+  assert.match(worker,/async function computeReadinessSnapshot\(cfg\)/);
+  const start=worker.indexOf('async function readinessSnapshot(cfg)');
+  const end=worker.indexOf('const TELEGRAM_WEBHOOK_DEPS',start);
+  assert.ok(start>=0 && end>start);
+  const block=worker.slice(start,end);
+  assert.match(block,/if \(readinessSnapshotInFlight\) return await readinessSnapshotInFlight/);
+  assert.match(block,/const task=computeReadinessSnapshot\(cfg\)/);
+  assert.match(block,/readinessSnapshotInFlight=task/);
+  assert.match(block,/if \(readinessSnapshotInFlight===task\) readinessSnapshotInFlight=null/);
+  assert.doesNotMatch(block,/setTimeout|Date\.now\(\).*ttl|cached/);
+});
