@@ -76,7 +76,7 @@ test('ordinary Match Center promotes smart context without fabricating probabili
 });
 
 test('profile keeps legal and service links after user settings',()=>{
-  const profile=block(html,'<section id="profileView"','<section class="panel admin-console"');
+  const profile=block(html,'<section id="profileView"','<nav class="bottom-nav"');
   const settings=profile.indexOf('preferences-panel');
   const about=profile.indexOf('profile-about-service');
   assert.ok(settings>=0 && about>settings);
