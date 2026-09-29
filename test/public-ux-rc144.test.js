@@ -116,7 +116,7 @@ test('Phase 4 normal user journey uses Home, My Teams, History and Profile', () 
 
 test('admin journey keeps operational tools gated without hiding the user profile', () => {
   assert.match(adminHtml, /id="adminRoleBadge"[^>]*data-admin-only hidden/);
-  assert.match(html, /class="panel admin-console" data-admin-only hidden/);
+  assert.match(adminHtml, /class="panel admin-console" data-admin-only hidden/);
   assert.match(adminHtml, /id="modelQualityRefreshBtn"/);
   assert.match(app, /if \(isAdmin\(\)\) \{/);
   assert.match(app, /loadProvider\(\)/);
