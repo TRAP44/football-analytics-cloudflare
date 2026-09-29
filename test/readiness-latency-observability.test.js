@@ -55,3 +55,16 @@ test('readiness coalesces only concurrent checks without caching completed resul
   assert.match(block,/if \(readinessSnapshotInFlight===task\) readinessSnapshotInFlight=null/);
   assert.doesNotMatch(block,/setTimeout|Date\.now\(\).*ttl|cached/);
 });
+
+
+test('recent Supabase auth failure readiness read filters candidates server-side without weakening local classification', () => {
+  const start=worker.indexOf('async function readRecentSupabaseAuthFailures');
+  const end=worker.indexOf('async function claimReleaseEvidenceLock',start);
+  assert.ok(start>=0 && end>start);
+  const block=worker.slice(start,end);
+  assert.match(block,/authCandidateFilter='\(message\.ilike\.\*HTTP\*401\*,message\.ilike\.\*PGRST303\*,message\.ilike\.\*invalid\*jwt\*,message\.ilike\.\*invalid\*api\*key\*\)'/);
+  assert.match(block,/created_at:\`gte\.\$\{since\}\`/);
+  assert.match(block,/or:authCandidateFilter/);
+  assert.match(block,/limit:100,order:'created_at\.desc'/);
+  assert.match(block,/HTTP 401\|PGRST303\|invalid\.\*jwt\|invalid\.\*api\.\?key/i);
+});
