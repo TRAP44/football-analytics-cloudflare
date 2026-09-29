@@ -84,7 +84,7 @@ if (!releaseEventAttributionModule.includes('scopeOpsEventsToDeployment') || !wo
 if (!wrangler.includes('"version_metadata"') || !wrangler.includes('"binding": "CF_VERSION_METADATA"')) failures.push('Cloudflare version metadata binding is missing');
 if (!worker.includes("runtimeReleaseIdentity") || !releaseIdentityModule.includes("cloudflareVersionId") || !releaseIdentityModule.includes("deploySha")) failures.push('Worker runtime release identity integration is missing');
 if (!deployWorkflow.includes('--tag "${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy must tag the Cloudflare version with deploy SHA');
-if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "${{ env.RELEASE_VERSION }}" "${{ env.DEPLOY_SHA }}"')) failures.push('Production smoke must verify exact deploy SHA at runtime');
+if (!deployWorkflow.includes('EXPECTED_RUNTIME_SHA="$DEPLOY_SHA"') || !deployWorkflow.includes('EXPECTED_RUNTIME_SHA="$ACTIVE_RUNTIME_SHA"') || !deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "$RELEASE_VERSION" "$EXPECTED_RUNTIME_SHA"')) failures.push('Production smoke must verify the exact active runtime SHA');
 if (!productionReleasePostconditionVerifier.includes("annotations?.['workers/tag']")) failures.push('Production release verifier must validate the Cloudflare version tag');
 if (!fs.existsSync('src/access-control.js')) failures.push('Missing access-control module');
 if (!fs.existsSync('scripts/post-deploy-smoke.js')) failures.push('Missing post-deploy smoke test');
