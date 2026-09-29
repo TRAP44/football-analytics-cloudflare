@@ -127,11 +127,21 @@ export function createApiFootballGateway({
       return {allowed:Boolean(result?.allowed),limit,retryAfter:Number(result?.retryAfter || 0),count:Number(result?.count || 0),degraded:false};
     } catch (error) {
       bumpTelemetry('providerDistributedFallbacks');
+      bumpTelemetry('providerDistributedBlocks');
       await recordOpsEvent(cfg,{
         severity:'warning',source:'provider',eventType:'distributed_rate_guard',code:'PROVIDER_RATE_GUARD_DEGRADED',
         message:error?.message || error,endpoint:'api-football',
+        meta:{disposition:'fail_closed',providerCallAllowed:false},
       }).catch(()=>null);
-      return claimEmergencyLocalProviderBudget('guard_unavailable');
+      return {
+        allowed:false,
+        degraded:true,
+        local:false,
+        reason:'guard_unavailable',
+        count:0,
+        limit,
+        retryAfter:15,
+      };
     }
   }
 
