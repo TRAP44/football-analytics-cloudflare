@@ -6,7 +6,7 @@ const app=fs.readFileSync('public/app.js','utf8');
 const css=fs.readFileSync('public/styles/public-shell.css','utf8');
 
 test('Search ranking prefers exact and prefix matches before loose contains',()=>{
-  const rankStart=app.indexOf('function discoveryMatchRank');
+  const rankStart=app.indexOf('function discoveryText');
   const rankEnd=app.indexOf('function localDiscoveryResults',rankStart);
   assert.ok(rankStart>=0 && rankEnd>rankStart,'discoveryMatchRank source missing');
   const source=app.slice(rankStart,rankEnd);
