@@ -2749,3 +2749,67 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
     padding: 0 8px 8px;
   }
 }
+
+
+/* Match Intelligence — launch10 */
+.match-change-panel {
+  border-color: color-mix(in srgb, var(--accent) 26%, var(--line));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent 45%),
+    var(--surface);
+}
+.match-change-list {
+  display: grid;
+  gap: 9px;
+  margin-top: 10px;
+}
+.match-change-item {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+}
+.match-change-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-size: 17px;
+}
+.match-change-item strong {
+  display: block;
+  font-size: 13px;
+  line-height: 1.3;
+}
+.match-change-item p {
+  margin: 4px 0 0;
+  color: var(--hint);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.match-change-item.strong {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
+}
+.match-change-item.up .match-change-icon {
+  background: color-mix(in srgb, #22c55e 14%, transparent);
+}
+.match-change-item.down .match-change-icon {
+  background: color-mix(in srgb, #ef4444 12%, transparent);
+}
+@media (max-width: 430px) {
+  .match-change-item {
+    grid-template-columns: 30px 1fr;
+    padding: 10px;
+  }
+  .match-change-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
+  }
+}
