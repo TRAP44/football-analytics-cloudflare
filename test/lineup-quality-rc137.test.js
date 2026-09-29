@@ -75,6 +75,6 @@ test('RC137 frontend and Telegram no longer treat a 10-player XI as confirmed', 
 test('RC137 is part of the release health contract', () => {
   assert.match(worker, /const APP_VERSION = '6\.120\.0-rc144'/);
   assert.match(worker, /const RC_NAME = 'RC144'/);
-  assert.match(app, /const CLIENT_VERSION = '6\.120\.0-rc144'/);
+  assert.match(runtime, /const CLIENT_VERSION = '6\.120\.0-rc144'/);
   assert.match(smoke, /'lineupQualityGuard'/);
 });
