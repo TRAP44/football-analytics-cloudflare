@@ -30,14 +30,15 @@ export function planPostDeployRegressionLifecycle(report={},history=[]){
   const rows=lifecycleRows(history,deploySha);
   const previous=rows.at(-1) || null;
   const previousState=String(previous?.metadata?.lifecycleState||'');
-  const previousWindow=Number(previous?.metadata?.windowMinutes||0);
+  const previousEventId=String(previous?.id ?? previous?.metadata?.transitionEventId ?? 'root');
   const currentState=String(current?.state||'healthy');
   const currentWindow=Number(current?.minutes||0);
 
   if(['watch','incident'].includes(currentState)){
-    if(previousState===currentState && previousWindow===currentWindow){
-      return {action:'none',reason:'window_state_already_recorded'};
+    if(previousState===currentState){
+      return {action:'none',reason:'lifecycle_state_already_recorded'};
     }
+    const transitionKey=`${deploySha}:${previousEventId}:${currentState}`;
     return {
       action:'record',
       severity:currentState==='incident' ? 'error' : 'warning',
@@ -48,8 +49,10 @@ export function planPostDeployRegressionLifecycle(report={},history=[]){
         ? 'Post-deploy regression incident detected.'
         : 'Post-deploy regression watch condition detected.',
       endpoint:'cron:production-monitor',
+      transitionKey,
       meta:{
         deploySha,
+        transitionKey,
         lifecycleState:currentState,
         previousLifecycleState:previousState || null,
         windowMinutes:currentWindow,
@@ -60,9 +63,7 @@ export function planPostDeployRegressionLifecycle(report={},history=[]){
   }
 
   if(currentState==='healthy' && ['watch','incident'].includes(previousState)){
-    if(previousState==='recovered' && previousWindow===currentWindow){
-      return {action:'none',reason:'recovery_already_recorded'};
-    }
+    const transitionKey=`${deploySha}:${previousEventId}:recovered`;
     return {
       action:'record',
       severity:'info',
@@ -71,8 +72,10 @@ export function planPostDeployRegressionLifecycle(report={},history=[]){
       code:'POST_DEPLOY_REGRESSION_RECOVERED',
       message:'Post-deploy regression returned to healthy state.',
       endpoint:'cron:production-monitor',
+      transitionKey,
       meta:{
         deploySha,
+        transitionKey,
         lifecycleState:'recovered',
         previousLifecycleState:previousState,
         windowMinutes:currentWindow,
