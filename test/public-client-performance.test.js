@@ -58,7 +58,7 @@ test('reopening the same Match Center renders warm data before refresh completes
 test('performance pass cache-busts app.js without changing release identity',()=>{
   assert.match(html,/frontend-asset-revision" content="6\.120\.0-launch14"/);
   assert.match(html,/app\.js\?v=6\.120\.0-launch14/);
-  assert.match(app,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
+  assert.match(runtime,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
 });
 
 
