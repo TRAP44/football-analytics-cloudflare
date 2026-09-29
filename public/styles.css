@@ -2675,3 +2675,77 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 .absence-kind.illness{border-color:rgba(59,130,246,.35)}
 .absence-live-row small{color:var(--hint);font-size:9px}
 .center-absence-summary p{margin:6px 0 0;color:var(--hint);font-size:10px}
+
+/* Match Center hierarchy — launch9 */
+.match-center-primary {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0 14px;
+}
+.center-primary-metrics,
+.center-primary-events {
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--line));
+}
+.center-priority-label {
+  display: inline-block;
+  margin-bottom: 5px;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .12em;
+}
+.match-center-more {
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  overflow: hidden;
+}
+.match-center-more > summary {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 13px 14px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 850;
+  list-style: none;
+}
+.match-center-more > summary::-webkit-details-marker {
+  display: none;
+}
+.match-center-more > summary::after {
+  content: '⌄';
+  margin-left: auto;
+  color: var(--hint);
+  transition: transform .18s ease;
+}
+.match-center-more[open] > summary::after {
+  transform: rotate(180deg);
+}
+.match-center-more-body {
+  padding: 0 10px 10px;
+}
+.center-hero {
+  margin-bottom: 10px;
+}
+.center-hero .center-score-core > strong {
+  font-size: clamp(30px, 9vw, 42px);
+  letter-spacing: -.04em;
+}
+.center-hero-actions {
+  margin-top: 12px;
+}
+@media (max-width: 430px) {
+  .match-center-primary {
+    gap: 10px;
+  }
+  .center-primary-metrics,
+  .center-primary-events {
+    padding: 13px;
+  }
+  .match-center-more-body {
+    padding: 0 8px 8px;
+  }
+}
