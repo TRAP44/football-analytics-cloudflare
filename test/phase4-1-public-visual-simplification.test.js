@@ -69,7 +69,7 @@ test('AI match view exposes key decision layer before detailed data',()=>{
 });
 
 test('profile prioritizes user teams reminders settings and moves legal to About',()=>{
-  const publicProfile=block(html,'<section id="profileView"','<section class="panel admin-console"');
+  const publicProfile=block(html,'<section id="profileView"','<nav class="bottom-nav"');
   const profile=publicProfile.indexOf('class="panel profile-panel"');
   const teams=publicProfile.indexOf('id="favoriteTeams"');
   const reminders=publicProfile.indexOf('id="reminderList"');
@@ -87,7 +87,7 @@ test('profile prioritizes user teams reminders settings and moves legal to About
 });
 
 test('public visible copy keeps developer vocabulary out of ordinary profile and startup',()=>{
-  const publicProfile=block(html,'<section id="profileView"','<section class="panel admin-console"').replace(/<[^>]+>/g,' ').toLowerCase();
+  const publicProfile=block(html,'<section id="profileView"','<nav class="bottom-nav"').replace(/<[^>]+>/g,' ').toLowerCase();
   for(const term of ['provider','runtime','release','telemetry','rc144']) assert.equal(publicProfile.includes(term),false,term);
 });
 

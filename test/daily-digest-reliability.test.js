@@ -138,7 +138,7 @@ test('G. release monitor uses a dedicated filtered digest history read',()=>{
 });
 
 test('H. admin UI exposes 7/30 day selector and reliability metrics',()=>{
-  const html=fs.readFileSync('public/index.html','utf8');
+  const html=fs.readFileSync('public/admin.html','utf8');
   const app=fs.readFileSync('public/app.js','utf8');
   assert.match(html,/id="releaseMonitorDigestPeriod"/);
   assert.match(html,/<option value="7" selected>Digest 7д<\/option>/);

@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const app = fs.readFileSync('public/app.js', 'utf8');
 const runtime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
+const adminHtml = fs.readFileSync('public/admin.html', 'utf8');
 const css = fs.readFileSync('public/styles.css', 'utf8');
 
 function functionBody(name, nextName) {
@@ -101,9 +102,9 @@ test('custom accent persists independently and shipped pairs keep WCAG-safe cont
 });
 
 test('admin overview is gated and uses existing state without new API calls', () => {
-  const start = html.indexOf('<section class="panel admin-console" data-admin-only hidden>');
-  const end = html.indexOf('</section>', start);
-  const block = html.slice(start, end + 10);
+  const start = adminHtml.indexOf('<section class="panel admin-console" data-admin-only hidden>');
+  const end = adminHtml.indexOf('</section>', start);
+  const block = adminHtml.slice(start, end + 10);
   assert.match(block, /АДМИНИСТРИРОВАНИЕ/);
   for (const id of ['adminOverviewService', 'adminOverviewFeatures', 'adminOverviewSource', 'adminOverviewVersion']) {
     assert.ok(block.includes('id="' + id + '"'), id);
@@ -116,8 +117,8 @@ test('admin overview is gated and uses existing state without new API calls', ()
 
 test('ordinary profile copy avoids implementation vocabulary', () => {
   const profileStart = html.indexOf('<section id="profileView"');
-  const adminStart = html.indexOf('<section class="panel admin-console"', profileStart);
-  const publicProfile = html.slice(profileStart, adminStart).replace(/<[^>]+>/g, ' ').toLowerCase();
+  const navStart = html.indexOf('<nav class="bottom-nav"', profileStart);
+  const publicProfile = html.slice(profileStart, navStart).replace(/<[^>]+>/g, ' ').toLowerCase();
   for (const forbidden of ['provider', 'provenance', 'freshness guard', 'cache', 'release', 'rc144', 'технические лимиты']) {
     assert.equal(publicProfile.includes(forbidden), false, forbidden);
   }

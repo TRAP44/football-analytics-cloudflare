@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const app = fs.readFileSync('public/app.js', 'utf8');
 const css = fs.readFileSync('public/styles.css', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
+const adminHtml = fs.readFileSync('public/admin.html', 'utf8');
 
 test('profile uses Telegram photo safely and keeps a fallback avatar', () => {
   assert.match(app, /const photoUrl = safeUrl\(user\.photoUrl\)/);
@@ -16,7 +17,7 @@ test('profile uses Telegram photo safely and keeps a fallback avatar', () => {
 test('admin-only UI has a redundant fail-closed visibility boundary', () => {
   assert.match(app, /el\.toggleAttribute\(['"]inert['"],\s*!admin\)/);
   assert.match(css, /\[data-admin-only\]\[aria-hidden="true"\]/);
-  assert.match(html, /id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden[^>]*aria-hidden="true"/);
+  assert.match(adminHtml, /id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden[^>]*aria-hidden="true"/);
 });
 
 test('major admin interface labels are localized', () => {

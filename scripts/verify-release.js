@@ -125,7 +125,7 @@ if (!deployWorkflow.includes('RELEASE_VERSION: \"6.120.0-rc144\"')) failures.pus
 if (!deployWorkflow.includes('--message "release=${{ env.RELEASE_VERSION }} sha=${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must bind release version and deploy SHA');
 if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "$RELEASE_VERSION" "$EXPECTED_RUNTIME_SHA"')) failures.push('Production smoke must verify the same release identity used for deployment');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
-if (!/id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden/.test(html)) failures.push('Admin role badge must use the fail-closed admin-only visibility contract');
+if (!/id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden/.test(adminHtml)) failures.push('Admin role badge must use the fail-closed admin-only visibility contract');
 if (!/\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i.test(styles)) failures.push('Global hidden elements must remain display:none');
 if (!app.includes("badge.textContent = admin ? '🔐 Администратор' : '';")) failures.push('Client must clear the admin badge for non-admin users');
 if (!app.includes("el.toggleAttribute('inert', !admin)")) failures.push('Admin-only elements must be inert for non-admin users');
@@ -238,7 +238,7 @@ const analysisSecondaryRefreshNonBlocking =
 if (!analysisSecondaryRefreshNonBlocking) failures.push('Analysis result must keep conditional secondary history/reminder/favorites refresh non-blocking');
 if (app.includes('state.currentAnalysis = data;\n    if (isAdmin()')) failures.push('analyzeMatch must let renderAnalysis compare the previous fixture before assignment');
 if (!fs.existsSync('test/russian-ui-localization.test.js')) failures.push('Missing Russian UI localization regression test');
-if (!html.includes('id="quotaFeatureSkipped"') || html.includes('quotaFeatureПропущено')) failures.push('Provider skipped-counter DOM id is inconsistent');
+if (!adminHtml.includes('id="quotaFeatureSkipped"') || adminHtml.includes('quotaFeatureПропущено')) failures.push('Provider skipped-counter DOM id is inconsistent');
 if (!app.includes('function humanizeTechnicalText(value)')) failures.push('Admin technical-text localization helper is missing');
 if (!app.includes("const assetVersion = CLIENT_VERSION.split('-')[0]")) failures.push('Client contract smoke must derive the current asset version dynamically');
 if (app.includes('6.14.0-rc22') || worker.includes('6.14.0-rc22')) failures.push('Stale RC22 release checks remain');
@@ -341,7 +341,7 @@ if (!worker.includes("mediaFixtureDeepLinks: 'enabled'") || !worker.includes("sh
 if (!worker.includes("distributedAnalysisLock: 'enabled'") || !worker.includes("viralFixtureCollapse: 'enabled'") || !worker.includes("crossInstanceAnalysisDedupe: 'enabled'") || !worker.includes("analysisLockFailClosed: 'enabled'") || !worker.includes("sharedAnalysisWaitFallback: 'enabled'") || !worker.includes("distributedAnalysisLockSelfTest: distributedAnalysisLockDrill().pass ? 'enabled' : 'failed'")) failures.push('RC66/RC127 media traffic guard health contract is missing');
 if (!worker.includes("mediaPublisherKit: 'enabled'") || !worker.includes("campaignTaggedFixtureLinks: 'enabled'") || !worker.includes("mediaCopyGenerator: 'enabled'") || !worker.includes("adminPublisherOnly: 'enabled'") || !worker.includes("mediaPublisherSelfTest: mediaPublisherDrill().pass ? 'enabled' : 'failed'")) failures.push('RC67 media publisher health contract is missing');
 if (!worker.includes("mediaCampaignControlRoom: 'enabled'") || !worker.includes("contentLevelMediaAttribution: 'enabled'") || !worker.includes("mediaCampaignConversion: 'enabled'") || !worker.includes("publisherOutcomeTracking: 'enabled'") || !worker.includes("mediaCampaignControlSelfTest: mediaCampaignControlDrill().pass ? 'enabled' : 'failed'")) failures.push('RC68 media campaign control health contract is missing');
-if (!worker.includes('buildMediaCampaignPerformance') || !app.includes('launchFunnelMediaCampaigns') || !html.includes('id="launchFunnelMediaCampaigns"')) failures.push('RC68 media campaign analytics UI contract is missing');
+if (!worker.includes('buildMediaCampaignPerformance') || !app.includes('launchFunnelMediaCampaigns') || !adminHtml.includes('id="launchFunnelMediaCampaigns"')) failures.push('RC68 media campaign analytics UI contract is missing');
 if (!fs.existsSync('test/media-campaign-control-rc68.test.js')) failures.push('Missing RC68 media campaign regression test');
 if (!worker.includes("telegramNewsConversionEngine: 'enabled'") || !worker.includes("newsPerItemAiCta: 'enabled'") || !worker.includes("newsTeamIntentResolution: 'enabled'") || !worker.includes("newsConversionTracking: 'enabled'") || !worker.includes("newsConversionSelfTest: newsConversionDrill().pass ? 'enabled' : 'failed'")) failures.push('RC69 Telegram news conversion health contract is missing');
 if (!worker.includes('function newsTeamHint') || !worker.includes('function newsConversionKeyboard') || !worker.includes("eventName:'news_ai_intent'")) failures.push('RC69 news conversion engine is missing');

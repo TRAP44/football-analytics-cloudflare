@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const html=fs.readFileSync('public/index.html','utf8');
+const html=fs.readFileSync('public/admin.html','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 
 test('admin release monitor exposes a dedicated post-deploy regression response panel',()=>{

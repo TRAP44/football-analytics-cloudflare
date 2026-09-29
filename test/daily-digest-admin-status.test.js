@@ -76,7 +76,7 @@ test('no digest events returns an explicit collecting snapshot', () => {
 });
 
 test('admin release monitor contract includes Daily Digest block and backend payload', () => {
-  const html=fs.readFileSync('public/index.html','utf8');
+  const html=fs.readFileSync('public/admin.html','utf8');
   const app=fs.readFileSync('public/app.js','utf8');
   const worker=fs.readFileSync('src/worker.js','utf8');
 

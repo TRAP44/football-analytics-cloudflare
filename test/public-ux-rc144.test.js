@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
+const adminHtml = fs.readFileSync('public/admin.html', 'utf8');
 const css = fs.readFileSync('public/styles.css', 'utf8') + '\n' + fs.readFileSync('public/styles/public-shell.css', 'utf8');
 
 function functionBody(name, nextName) {
@@ -20,7 +21,8 @@ test('public profile remains available to non-admin users while admin controls s
   assert.match(html, /id="profileBtn"[^>]*aria-label="Открыть профиль"/);
   assert.match(html, /id="navProfile"[^>]*>/);
   assert.match(html, /<small>Профиль<\/small>/);
-  assert.match(html, /class="panel admin-console" data-admin-only hidden/);
+  assert.doesNotMatch(html, /data-admin-only|class="panel admin-console"/);
+  assert.match(adminHtml, /class="panel admin-console" data-admin-only hidden/);
   assert.match(app, /querySelectorAll\('\[data-admin-only\]'\)/);
 });
 
@@ -113,9 +115,9 @@ test('Phase 4 normal user journey uses Home, My Teams, History and Profile', () 
 });
 
 test('admin journey keeps operational tools gated without hiding the user profile', () => {
-  assert.match(html, /id="adminRoleBadge"[^>]*data-admin-only hidden/);
-  assert.match(html, /class="panel admin-console" data-admin-only hidden/);
-  assert.match(html, /id="modelQualityRefreshBtn"/);
+  assert.match(adminHtml, /id="adminRoleBadge"[^>]*data-admin-only hidden/);
+  assert.match(adminHtml, /class="panel admin-console" data-admin-only hidden/);
+  assert.match(adminHtml, /id="modelQualityRefreshBtn"/);
   assert.match(app, /if \(isAdmin\(\)\) \{/);
   assert.match(app, /loadProvider\(\)/);
   assert.match(app, /loadRuntimeControlsAdmin\(false\)/);

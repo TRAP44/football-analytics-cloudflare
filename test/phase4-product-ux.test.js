@@ -45,5 +45,5 @@ test('mobile contracts explicitly cover 360 375 390 and 430 widths without horiz
 test('admin navigation remains outside the public bottom navigation',()=>{
   const nav=html.slice(html.indexOf('<nav class="bottom-nav"'),html.indexOf('</nav>',html.indexOf('<nav class="bottom-nav"')));
   assert.doesNotMatch(nav,/admin|provider|runtime|diagnostic|release/i);
-  assert.match(html,/data-admin-only hidden/);
+  assert.doesNotMatch(html,/data-admin-only/);
 });

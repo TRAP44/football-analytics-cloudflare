@@ -45,7 +45,7 @@ test('mini app exposes the current public football shell',()=> {
   assert.match(html,/<small>История<\/small>/);
   assert.match(html,/id="navProfile" class="nav-item"/);
   assert.match(html,/<small>Профиль<\/small>/);
-  assert.match(html,/class="panel admin-console" data-admin-only hidden/);
+  assert.doesNotMatch(html,/data-admin-only|class="panel admin-console"/);
   assert.match(html,/id="navMyTeams" class="nav-item"/); assert.doesNotMatch(html,/id="navSearch"/);
   assert.doesNotMatch(app,/MINIAPP_PRODUCT_MODE = 'ai-analysis-only'/);
   assert.match(css,/RC49 — public Mini App shell/);

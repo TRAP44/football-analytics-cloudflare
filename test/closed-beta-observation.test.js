@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8')+'\n'+readFileSync(new URL('../src/router.js',import.meta.url),'utf8')+'\n'+readFileSync(new URL('../src/auth-user.js',import.meta.url),'utf8');
 const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
 const html=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
+const adminHtml=readFileSync(new URL('../public/admin.html',import.meta.url),'utf8');
 
 function block(source,start,end){
   const a=source.indexOf(start);
@@ -68,10 +69,10 @@ test('single subjective feedback is not automatically promoted to an active beta
 });
 
 test('admin first level is beta health while technical tools stay under details',()=>{
-  assert.match(html,/id="betaHealthPanel"/);
-  assert.match(html,/id="betaDashboardPanel"/);
-  assert.match(html,/id="adminAdvancedTools"/);
-  assert.match(html,/Технические разделы/);
+  assert.match(adminHtml,/id="betaHealthPanel"/);
+  assert.match(adminHtml,/id="betaDashboardPanel"/);
+  assert.match(adminHtml,/id="adminAdvancedTools"/);
+  assert.match(adminHtml,/Технические разделы/);
   const organize=block(app,'function organizeAdminConsole','async function loadAdvancedAdminTools');
   for (const panel of ['runtime-controls-panel','provider-status-panel','diagnostics-panel','model-quality-panel']) {
     assert.match(organize,new RegExp(panel));

@@ -7,7 +7,7 @@ const alerts=fs.readFileSync('src/provider-incident-alerts.js','utf8');
 const incidents=fs.readFileSync('src/provider-slo-incidents.js','utf8');
 const migration=fs.readFileSync('supabase/migrations/supabase_migration_v6_20.sql','utf8');
 const admin=fs.readFileSync('public/modules/admin-provider.js','utf8');
-const html=fs.readFileSync('public/index.html','utf8');
+const html=fs.readFileSync('public/admin.html','utf8');
 const smoke=fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
 
 test('incident alert delivery uses a persistent ledger and atomic PostgreSQL claim', () => {
