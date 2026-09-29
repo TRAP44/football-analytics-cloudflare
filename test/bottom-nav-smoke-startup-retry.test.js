@@ -31,5 +31,7 @@ test('render smoke retries only transient Page.navigate network failures', () =>
   assert.match(script, /CONNECTION_CLOSED\|CONNECTION_RESET\|TIMED_OUT\|NETWORK_CHANGED\|HTTP2_PROTOCOL_ERROR/);
   assert.match(script, /if \(!isTransientNavigationError\(lastError\) \|\| attempt >= totalAttempts\) break/);
   assert.match(script, /250 \* attempt/);
-  assert.match(script, /navigateWithRetry\(cdp, targetUrl, 3\)/);
+  assert.match(script, /navigateForExpectedRevision\(cdp, targetUrl, Boolean\(remoteUrl\)\)/);
+  assert.match(script, /navigateWithRetry\(cdp, next\.toString\(\), 3\)/);
+  assert.match(script, /lastRevision === EXPECTED_ASSET_REVISION/);
 });
