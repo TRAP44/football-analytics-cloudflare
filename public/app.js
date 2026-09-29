@@ -5167,17 +5167,34 @@ function homeMatchSections(list, nowMs = Date.now()) {
 }
 
 function homeMatchSectionsHtml(list) {
-  return homeMatchSections(list).map(section => `
-    <section class="home-match-section home-match-section--${section.tone}" data-home-match-section="${section.key}">
-      <div class="home-match-section-head">
-        <strong>${escapeHtml(section.label)}</strong>
-        <span>${section.matches.length}</span>
-      </div>
-      <div class="home-match-section-list">
-        ${section.matches.map(match => matchCardHtml(match)).join('')}
-      </div>
-    </section>
-  `).join('');
+  return homeMatchSections(list).map(section => {
+    const cards = section.matches.map(match => matchCardHtml(match)).join('');
+    const count = section.matches.length;
+    if (section.key === 'later' || section.key === 'finished') {
+      return `
+        <details class="home-match-section home-match-section--${section.tone} is-collapsible" data-home-match-section="${section.key}">
+          <summary class="home-match-section-head">
+            <strong>${escapeHtml(section.label)}</strong>
+            <span>${count}</span>
+          </summary>
+          <div class="home-match-section-list home-match-section-list--collapsed">
+            ${cards}
+          </div>
+        </details>
+      `;
+    }
+    return `
+      <section class="home-match-section home-match-section--${section.tone}" data-home-match-section="${section.key}">
+        <div class="home-match-section-head">
+          <strong>${escapeHtml(section.label)}</strong>
+          <span>${count}</span>
+        </div>
+        <div class="home-match-section-list">
+          ${cards}
+        </div>
+      </section>
+    `;
+  }).join('');
 }
 
 function renderMatches() {

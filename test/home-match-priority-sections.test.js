@@ -51,9 +51,24 @@ test('Home rendering uses priority sections without changing card actions',()=>{
   for(const label of ['Сейчас идут','Скоро начнутся','Позже','Завершённые']) assert.ok(app.includes(label),label);
 });
 
+test('Home progressive disclosure keeps urgent sections open and lower-priority sections collapsed',()=>{
+  const start=app.indexOf('function homeMatchSectionsHtml');
+  const end=app.indexOf('function renderMatches',start);
+  const home=app.slice(start,end);
+  assert.match(home,/section\.key === 'later' \|\| section\.key === 'finished'/);
+  assert.match(home,/<details class="home-match-section/);
+  assert.match(home,/<summary class="home-match-section-head">/);
+  assert.match(home,/<section class="home-match-section/);
+  assert.doesNotMatch(home,/<details[^>]*data-home-match-section="live"/);
+  assert.doesNotMatch(home,/<details[^>]*data-home-match-section="soon"/);
+});
+
 test('Home priority section styling is compact and mobile-safe',()=>{
   assert.match(css,/MatchRadar Home Content Priority — LIVE \/ soon \/ later/);
   assert.match(css,/\.home-match-section-list\{[\s\S]*?display:grid;[\s\S]*?gap:10px/);
   assert.match(css,/\.home-match-section--live \.home-match-section-head > strong\{[\s\S]*?var\(--brand-live\)/);
   assert.match(css,/@media\(max-width:360px\)\{[\s\S]*?\.home-match-section-list\{[\s\S]*?gap:8px/);
+  assert.match(css,/MatchRadar Home Progressive Disclosure — keep first screen focused/);
+  assert.match(css,/\.home-match-section\.is-collapsible > summary\{[\s\S]*?min-height:46px/);
+  assert.match(css,/\.home-match-section\.is-collapsible:not\(\[open\]\) > \.home-match-section-list\{[\s\S]*?display:none/);
 });
