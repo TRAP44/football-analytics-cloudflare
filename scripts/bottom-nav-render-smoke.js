@@ -332,6 +332,16 @@ function assertEdgeCaseFixture(width, theme, snapshot) {
       throw new Error(`${width}px/${theme}: compact team label exceeds two visible lines`);
     }
   }
+  const personal=snapshot.personalState;
+  if (!personal
+    || personal.strongOverflow!=='hidden'
+    || personal.strongTextOverflow!=='ellipsis'
+    || personal.strongWhiteSpace!=='nowrap'
+    || personal.smallOverflow!=='hidden'
+    || personal.smallTextOverflow!=='ellipsis'
+    || personal.smallWhiteSpace!=='nowrap') {
+    throw new Error(`${width}px/${theme}: personal Home card does not preserve single-line ellipsis clipping`);
+  }
   const disclosure=snapshot.disclosureState;
   if (!disclosure || disclosure.open || disclosure.contentDisplay!=='none') {
     throw new Error(`${width}px/${theme}: lower-priority Home section is not collapsed by default`);
@@ -453,7 +463,7 @@ async function inspectEdgeCaseFixture(cdp, width, theme) {
         const r=el.getBoundingClientRect(), s=getComputedStyle(el);
         return { className:el.className, height:r.height, width:r.width, visible:s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0 };
       });
-      const longText = [...root.querySelectorAll('.home-personal-match strong,.home-personal-match small,.my-team-head strong,.my-team-match span,.history-main>strong,.favorite-team-main strong,.reminder-row strong')].map(el => {
+      const longText = [...root.querySelectorAll('.my-team-head strong,.my-team-match span,.history-main>strong,.favorite-team-main strong,.reminder-row strong')].map(el => {
         const s=getComputedStyle(el);
         const lineHeight=parseFloat(s.lineHeight) || parseFloat(s.fontSize)*1.3;
         return { className:el.className || el.parentElement?.className || el.tagName, clientWidth:el.clientWidth, scrollWidth:el.scrollWidth, clientHeight:el.clientHeight, scrollHeight:el.scrollHeight, lineHeight };
@@ -478,6 +488,19 @@ async function inspectEdgeCaseFixture(cdp, width, theme) {
           lineHeight,
         };
       });
+      const personalCard = root.querySelector('.home-personal-match');
+      const personalStrong = personalCard?.querySelector('strong');
+      const personalSmall = personalCard?.querySelector('small');
+      const personalStrongStyle = personalStrong ? getComputedStyle(personalStrong) : null;
+      const personalSmallStyle = personalSmall ? getComputedStyle(personalSmall) : null;
+      const personalState = personalCard ? {
+        strongOverflow:personalStrongStyle?.overflow || '',
+        strongTextOverflow:personalStrongStyle?.textOverflow || '',
+        strongWhiteSpace:personalStrongStyle?.whiteSpace || '',
+        smallOverflow:personalSmallStyle?.overflow || '',
+        smallTextOverflow:personalSmallStyle?.textOverflow || '',
+        smallWhiteSpace:personalSmallStyle?.whiteSpace || '',
+      } : null;
       const disclosure = root.querySelector('.home-match-section.is-collapsible');
       const disclosureSummary = disclosure?.querySelector('summary');
       const disclosureList = disclosure?.querySelector('.home-match-section-list');
@@ -488,7 +511,7 @@ async function inspectEdgeCaseFixture(cdp, width, theme) {
         summaryHeight:disclosureRect?.height || 0,
         contentDisplay:disclosureStyle?.display || '',
       } : null;
-      return { fixture:{clientWidth:root.clientWidth,scrollWidth:root.scrollWidth,left:box.left,right:box.right},controls,longText,clippedCompetition,teamLabels,disclosureState };
+      return { fixture:{clientWidth:root.clientWidth,scrollWidth:root.scrollWidth,left:box.left,right:box.right},controls,longText,clippedCompetition,teamLabels,disclosureState,personalState };
     })()`,
   });
   return evaluated?.result?.value || null;
