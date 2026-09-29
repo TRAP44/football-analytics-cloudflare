@@ -23,6 +23,7 @@ import {
 import { createSupabaseClient } from './supabase-client.js';
 import { runtimeReleaseIdentity } from './release-identity.js';
 import { scopeOpsEventsToDeployment } from './release-event-attribution.js';
+import { postDeployRegressionReport } from './post-deploy-regression.js';
 import { createCompositeReadinessRuntime } from './readiness-contract.js';
 import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
 import { applyFeatureFreshness, applyFeatureFreshnessMap } from './data-freshness.js';
@@ -15962,6 +15963,11 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
   const releaseItems=releaseScope.actionable;
   const current = summarizeReleaseWindow(releaseItems, 1);
   const releaseHealth = releaseMonitorHealth(current, source.persistent);
+  const releaseRegression=postDeployRegressionReport(
+    source.items.filter(item => item?.source !== 'monitor'),
+    activeReleaseIdentity,
+    {nowMs:now.getTime(),windowsMinutes:[15,30,60]},
+  );
   const supabaseAuthFailures = releaseItems.filter(item =>
     /HTTP 401|PGRST303|invalid.*jwt|invalid.*api.?key/i.test(String(item?.message || ''))
   ).length;
@@ -16085,6 +16091,7 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
         excludedPriorDeploymentEvents:Number(releaseScope.counts.priorDeployment || 0),
         attributionComplete:Boolean(releaseScope.attributionComplete),
       },
+      regression:releaseRegression,
     },
     provider: {
       health: provider.health || 'waiting',
@@ -16131,6 +16138,8 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
       releaseUnattributedEvents:Number(releaseScope.counts.unattributed || 0),
       releaseExcludedPriorDeploymentEvents:Number(releaseScope.counts.priorDeployment || 0),
       releaseAttributionComplete:Boolean(releaseScope.attributionComplete),
+      postDeployRegressionState:String(releaseRegression.state || 'unavailable'),
+      postDeployRegressionCompletedWindows:Number(releaseRegression.completedWindows || 0),
     },
     policy: {
       consumesFootballApi: false,
@@ -16353,6 +16362,8 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
         releaseUnattributedEvents:Number(releaseScope.counts.unattributed || 0),
         releaseExcludedPriorDeploymentEvents:Number(releaseScope.counts.priorDeployment || 0),
         releaseAttributionComplete:Boolean(releaseScope.attributionComplete),
+        postDeployRegressionState:String(releaseRegression.state || 'unavailable'),
+        postDeployRegressionCompletedWindows:Number(releaseRegression.completedWindows || 0),
         providerHealth: provider.health || 'waiting',
         providerSloState: providerSloIncident.state,
         providerSloActive: Boolean(providerSloIncident.activeIncident),
