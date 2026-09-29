@@ -305,6 +305,25 @@ function verifyRuntimeDeploymentIdentity(body, label, expectedSha) {
   }
 }
 
+async function requestJsonForDeployment(fetchImpl, baseUrl, path, label, expectedSha, options = {}) {
+  const retries=Math.max(1,Number(options.retries || 1));
+  const retryDelayMs=Math.max(0,Number(options.retryDelayMs || 0));
+  let lastError='';
+  for(let attempt=1;attempt<=retries;attempt+=1){
+    try{
+      const response=await request(fetchImpl,baseUrl,path);
+      const body=await jsonBody(response,label);
+      if(!response.ok) throw new Error(`${label} returned HTTP ${response.status}.`);
+      verifyRuntimeDeploymentIdentity(body,label,expectedSha);
+      return {response,body};
+    }catch(error){
+      lastError=error?.message || String(error);
+      if(attempt<retries) await delay(retryDelayMs);
+    }
+  }
+  throw new Error(`${label} did not converge to the verified deployment: ${lastError}`);
+}
+
 export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedShaOrOptions = {}, maybeOptions = {}) {
   const expectedSha=typeof expectedShaOrOptions === 'string' ? expectedShaOrOptions : '';
   const options=typeof expectedShaOrOptions === 'string' ? maybeOptions : (expectedShaOrOptions || {});
@@ -345,11 +364,11 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
   if (!readiness) throw new Error(`Deployment did not become ready: ${lastHealthError}`);
   if (readiness.releaseCandidate !== expectedReleaseCandidate) throw new Error(`Expected ${expectedReleaseCandidate}, received ${readiness.releaseCandidate || 'unknown'}.`);
 
-  const healthResponse = await request(fetchImpl, baseUrl, '/health');
-  health = await jsonBody(healthResponse, 'Health endpoint');
-  if (!healthResponse.ok || health?.ok !== true) throw new Error('Health endpoint is not healthy.');
+  const healthResult=await requestJsonForDeployment(fetchImpl,baseUrl,'/health','Health endpoint',expectedSha,{retries,retryDelayMs});
+  const healthResponse=healthResult.response;
+  health=healthResult.body;
+  if (health?.ok !== true) throw new Error('Health endpoint is not healthy.');
   if (health.releaseCandidate !== expectedReleaseCandidate) throw new Error(`Expected ${expectedReleaseCandidate}, received ${health.releaseCandidate || 'unknown'}.`);
-  verifyRuntimeDeploymentIdentity(health,'Health endpoint',expectedSha);
   if (health.devMode !== false) throw new Error('Production deployment exposes DEV_MODE=true.');
   if (health.database !== 'supabase') throw new Error('Production deployment must use Supabase persistence.');
   if (health.monetization !== 'paused') throw new Error('Production deployment must keep MONETIZATION_ENABLED=false before beta.');
@@ -358,12 +377,12 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
     if (health[flag] !== 'enabled') throw new Error(`Health flag ${flag} is not enabled.`);
   }
 
-  const manifestResponse = await request(fetchImpl, baseUrl, '/api/app-manifest');
-  const manifest = await jsonBody(manifestResponse, 'App manifest');
-  if (!manifestResponse.ok || manifest?.version !== expectedVersion || manifest?.releaseCandidate !== expectedReleaseCandidate) {
+  const manifestResult=await requestJsonForDeployment(fetchImpl,baseUrl,'/api/app-manifest','App manifest',expectedSha,{retries,retryDelayMs});
+  const manifestResponse=manifestResult.response;
+  const manifest=manifestResult.body;
+  if (manifest?.version !== expectedVersion || manifest?.releaseCandidate !== expectedReleaseCandidate) {
     throw new Error(`Public app manifest does not match the deployed ${expectedReleaseCandidate} release.`);
   }
-  verifyRuntimeDeploymentIdentity(manifest,'App manifest',expectedSha);
 
   const rootResponse = await request(fetchImpl, baseUrl, '/');
   const rootContentType = String(rootResponse.headers.get('content-type') || '').toLowerCase();
@@ -386,12 +405,12 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
   const hiddenProbe = await request(fetchImpl, baseUrl, '/health/supabase');
   if (hiddenProbe.status !== 404) throw new Error('/health/supabase must remain unavailable publicly.');
 
-  const publicStatusResponse = await request(fetchImpl, baseUrl, '/api/public-status');
-  const publicStatus = await jsonBody(publicStatusResponse, 'Public status endpoint');
-  if (!publicStatusResponse.ok || publicStatus?.version !== expectedVersion || publicStatus?.releaseCandidate !== expectedReleaseCandidate) {
+  const publicStatusResult=await requestJsonForDeployment(fetchImpl,baseUrl,'/api/public-status','Public status endpoint',expectedSha,{retries,retryDelayMs});
+  const publicStatusResponse=publicStatusResult.response;
+  const publicStatus=publicStatusResult.body;
+  if (publicStatus?.version !== expectedVersion || publicStatus?.releaseCandidate !== expectedReleaseCandidate) {
     throw new Error('Public status endpoint does not match the deployed release.');
   }
-  verifyRuntimeDeploymentIdentity(publicStatus,'Public status endpoint',expectedSha);
   const requiredServices = ['telegram','miniApp','aiAnalysis','search','live'];
   for (const service of requiredServices) {
     if (publicStatus?.services?.[service] !== 'operational') {
