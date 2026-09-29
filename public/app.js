@@ -250,6 +250,23 @@ function dismissFirstRunGuide() {
   if (guide) guide.hidden = true;
 }
 
+function startFirstRunSearch() {
+  dismissFirstRunGuide();
+  sendProductAction('first_run_search', 'matchesView');
+  $('matchSearch')?.focus({ preventScroll: true });
+  $('matchSearch')?.scrollIntoView({ behavior:'smooth', block:'center' });
+}
+
+function startFirstRunFavorite() {
+  dismissFirstRunGuide();
+  sendProductAction('first_run_favorite', 'searchView');
+  state.globalSearch.query='';
+  if ($('globalSearchInput')) $('globalSearchInput').value='';
+  renderGlobalSearch();
+  showView('searchView');
+  setTimeout(() => $('globalSearchInput')?.focus({ preventScroll: true }), 80);
+}
+
 function saveInterfacePreference(key, value) {
   state.uiPreferences = { ...state.uiPreferences, [key]: value };
   try { localStorage.setItem(UI_PREFERENCES_KEY, JSON.stringify(state.uiPreferences)); } catch {}
@@ -8097,6 +8114,8 @@ $('releaseRefreshBtn')?.addEventListener('click', () => loadReleaseReadiness(tru
 $('bootReloadBtn')?.addEventListener('click', forceFreshReload);
 $('bootRetryBtn')?.addEventListener('click', () => runStartupSequence());
 $('bootContinueBtn')?.addEventListener('click', hideBootGate);
+$('firstRunGuideSearch')?.addEventListener('click', startFirstRunSearch);
+$('firstRunGuideFavorite')?.addEventListener('click', startFirstRunFavorite);
 $('firstRunGuideDismiss')?.addEventListener('click', dismissFirstRunGuide);
 
 if (tg?.BackButton?.onClick) {

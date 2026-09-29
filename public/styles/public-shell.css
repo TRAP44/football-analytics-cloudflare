@@ -3268,3 +3268,60 @@ html {
     padding:18px 13px;
   }
 }
+
+
+/* Public Launch UX — actionable first run */
+.miniapp-public-shell .first-run-guide{
+  display:grid;
+  gap:14px;
+  margin:0 0 14px;
+  padding:16px;
+  border:1px solid color-mix(in srgb,var(--accent) 24%,var(--line));
+  border-radius:18px;
+  background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 10%,var(--surface)),var(--surface));
+}
+.miniapp-public-shell .first-run-guide[hidden]{display:none}
+.miniapp-public-shell .first-run-guide-copy{display:grid;gap:6px}
+.miniapp-public-shell .first-run-guide-copy>span{
+  color:var(--accent);
+  font-size:10px;
+  font-weight:900;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.miniapp-public-shell .first-run-guide-copy>strong{
+  font-size:18px;
+  line-height:1.22;
+  letter-spacing:-.025em;
+}
+.miniapp-public-shell .first-run-guide-copy>p{
+  margin:0;
+  color:var(--hint);
+  font-size:12px;
+  line-height:1.45;
+}
+.miniapp-public-shell .first-run-guide-actions{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  gap:8px;
+}
+.miniapp-public-shell .first-run-guide-actions .primary-btn,
+.miniapp-public-shell .first-run-guide-actions .secondary-btn{
+  min-height:44px;
+  margin:0;
+}
+.miniapp-public-shell .first-run-guide-dismiss{
+  grid-column:1/-1;
+  min-height:36px;
+  border:0;
+  background:transparent;
+  color:var(--hint);
+  font:inherit;
+  font-size:12px;
+  font-weight:800;
+}
+@media(max-width:375px){
+  .miniapp-public-shell .first-run-guide{padding:14px}
+  .miniapp-public-shell .first-run-guide-actions{grid-template-columns:1fr}
+  .miniapp-public-shell .first-run-guide-dismiss{grid-column:1}
+}
