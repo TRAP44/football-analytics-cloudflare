@@ -52,17 +52,17 @@ test('loading empty recovery and error states have bounded public surfaces',()=>
 test('render smoke exercises edge cases across mobile widths and themes',()=>{
   assert.match(smoke,/function assertEdgeCaseFixture/);
   assert.match(smoke,/function inspectEdgeCaseFixture/);
-  for(const width of [360,375,390,430]) assert.match(smoke,new RegExp(String(width)));
+  for(const width of [320,360,375,390,430]) assert.match(smoke,new RegExp(String(width)));
   for(const theme of ['dark','light','ocean']) assert.ok(smoke.includes(`'${theme}'`),theme);
   assert.match(smoke,/touch target is only/);
   assert.match(smoke,/long text exceeds two lines/);
 });
 
 test('frontend revision refreshes QA styles without changing release identity',()=>{
-  assert.match(html,/frontend-asset-revision" content="6\.120\.0-launch1"/);
-  assert.match(html,/styles\.css\?v=6\.120\.0-launch1/);
-  assert.match(html,/styles\/public-shell\.css\?v=6\.120\.0-launch1/);
-  assert.match(html,/app\.js\?v=6\.120\.0-launch1/);
+  assert.match(html,/frontend-asset-revision" content="6\.120\.0-launch2"/);
+  assert.match(html,/styles\.css\?v=6\.120\.0-launch2/);
+  assert.match(html,/styles\/public-shell\.css\?v=6\.120\.0-launch2/);
+  assert.match(html,/app\.js\?v=6\.120\.0-launch2/);
   assert.match(app,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
   assert.doesNotMatch(html,/6\.120\.0-ui3/);
 });

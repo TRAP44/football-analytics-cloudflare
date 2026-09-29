@@ -236,12 +236,31 @@ function applyInterfacePreferences({ announce = false } = {}) {
   if (announce) toast('Оформление применено');
 }
 
+function hasDirectLaunchIntent() {
+  try {
+    const params = new URLSearchParams(location.search);
+    const view = String(params.get('view') || '').toLowerCase();
+    const query = String(params.get('q') || '').trim();
+    const fixtureId = Number(params.get('fixtureId') || 0);
+    const action = String(params.get('action') || '').toLowerCase();
+    return Boolean(
+      tg?.initDataUnsafe?.start_param
+      || view === 'search'
+      || view === 'history'
+      || query
+      || (fixtureId > 0 && ['analysis', 'center'].includes(action))
+    );
+  } catch {
+    return Boolean(tg?.initDataUnsafe?.start_param);
+  }
+}
+
 function renderFirstRunGuide() {
   const guide = $('firstRunGuide');
   if (!guide) return;
   let dismissed = false;
   try { dismissed = localStorage.getItem(FIRST_RUN_GUIDE_KEY) === '1'; } catch {}
-  guide.hidden = dismissed;
+  guide.hidden = dismissed || hasDirectLaunchIntent();
 }
 
 function dismissFirstRunGuide() {
@@ -476,7 +495,9 @@ function sendClientTelemetry(event, meta = {}, { once = false } = {}) {
 }
 
 function sendProductAction(reason, view = telemetryViewName()) {
-  sendClientTelemetry('product_action', { reason: String(reason || '').slice(0, 40), view }, { once: true });
+  try {
+    sendClientTelemetry('product_action', { reason: String(reason || '').slice(0, 40), view }, { once: true });
+  } catch {}
 }
 
 function sendActionError(reason, error, view = telemetryViewName()) {
@@ -918,7 +939,7 @@ async function runStartupSequence() {
   }
 
   applyLaunchIntent();
-  if (!tg?.initDataUnsafe?.start_param) showView('matchesView');
+  if (!hasDirectLaunchIntent()) showView('matchesView');
   sendProductAction('open', 'matchesView');
   setBootStatus('MatchRadar', 'Загружаем матчи…', 100);
   await new Promise(resolve => setTimeout(resolve, 120));

@@ -5,7 +5,7 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-const WIDTHS = [360, 375, 390, 430];
+const WIDTHS = [320, 360, 375, 390, 430];
 const NAV_IDS = ['navMatches', 'navMyTeams', 'navHistory', 'navProfile'];
 const EXPECTED_LABELS = ['Главная', 'Мои команды', 'История', 'Профиль'];
 const TELEGRAM_WEBVIEW_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/144.0.0.0 Mobile Safari/537.36 Telegram-Android/12.0';
@@ -257,6 +257,17 @@ function assertLayout(width, snapshot) {
   if (snapshot.nav.scrollWidth > snapshot.nav.clientWidth + 1) {
     throw new Error(`${width}px: bottom nav has horizontal overflow (${snapshot.nav.scrollWidth} > ${snapshot.nav.clientWidth})`);
   }
+  if (snapshot.documentWidth > width + 1) {
+    throw new Error(`${width}px: document has horizontal overflow (${snapshot.documentWidth} > ${width})`);
+  }
+  if (!snapshot.firstRun || snapshot.firstRun.hidden) throw new Error(`${width}px: first-run guide is not visible for a fresh session`);
+  if (snapshot.firstRun.scrollWidth > snapshot.firstRun.clientWidth + 1) {
+    throw new Error(`${width}px: first-run guide overflows horizontally`);
+  }
+  for (const action of snapshot.firstRun.actions || []) {
+    if (!action.visible) throw new Error(`${width}px: first-run action ${action.id} is not visible`);
+    if (action.height < 43.5) throw new Error(`${width}px: first-run action ${action.id} touch target is only ${action.height}px`);
+  }
   if (!snapshot.assetRevision) throw new Error(`${width}px: frontend asset revision meta is missing`);
   if (snapshot.assetTokens.length !== 3 || snapshot.assetTokens.some(token => token !== snapshot.assetRevision)) {
     throw new Error(`${width}px: frontend JS/CSS cache-bust tokens are not coherent`);
@@ -281,6 +292,102 @@ function assertEdgeCaseFixture(width, theme, snapshot) {
       throw new Error(`${width}px/${theme}: visible long text exceeds two lines in ${text.className}`);
     }
   }
+}
+
+async function waitForCondition(cdp, expression, label, attempts = 100) {
+  let lastValue = null;
+  for (let i = 0; i < attempts; i += 1) {
+    const result = await cdp.call('Runtime.evaluate', { expression, returnByValue:true });
+    lastValue = result?.result?.value;
+    if (lastValue) return lastValue;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw new Error(`${label} did not become true; last=${JSON.stringify(lastValue)}`);
+}
+
+async function firstRunState(cdp) {
+  const result = await cdp.call('Runtime.evaluate', {
+    returnByValue:true,
+    expression:`(() => {
+      const guide=document.getElementById('firstRunGuide');
+      return {
+        exists:Boolean(guide),
+        hidden:Boolean(guide?.hidden),
+        stored:localStorage.getItem('football-analytics:first-run-guide:v1'),
+        activeView:document.querySelector('.view.active')?.id || '',
+        activeElement:document.activeElement?.id || '',
+        searchValue:document.getElementById('globalSearchInput')?.value || '',
+      };
+    })()`,
+  });
+  return result?.result?.value || {};
+}
+
+async function clearFirstRunAndNavigate(cdp, url) {
+  await cdp.call('Runtime.evaluate', { expression:`localStorage.removeItem('football-analytics:first-run-guide:v1')` });
+  await navigateWithRetry(cdp,url,3);
+  await waitForReady(cdp);
+}
+
+async function assertFirstRunBehavior(cdp, targetUrl) {
+  const base=new URL(targetUrl);
+  base.search='';
+
+  await clearFirstRunAndNavigate(cdp,base.toString());
+  const first=await firstRunState(cdp);
+  if (!first.exists || first.hidden || first.stored) throw new Error(`first launch state invalid: ${JSON.stringify(first)}`);
+
+  await cdp.call('Runtime.evaluate',{expression:`document.getElementById('firstRunGuideDismiss')?.click()`});
+  const skipped=await firstRunState(cdp);
+  if (!skipped.hidden || skipped.stored!=='1') throw new Error(`first-run skip did not persist: ${JSON.stringify(skipped)}`);
+
+  await navigateWithRetry(cdp,base.toString(),3);
+  await waitForReady(cdp);
+  const reopened=await firstRunState(cdp);
+  if (!reopened.hidden || reopened.stored!=='1') throw new Error(`returning/reopen state invalid: ${JSON.stringify(reopened)}`);
+
+  await clearFirstRunAndNavigate(cdp,base.toString());
+  const actionResult=await cdp.call('Runtime.evaluate',{
+    returnByValue:true,
+    expression:`(() => {
+      const webApp=window.Telegram?.WebApp;
+      if (webApp) webApp.initData='behavioral-smoke';
+      const originalFetch=window.fetch;
+      window.fetch=()=>{ throw new Error('forced telemetry transport failure'); };
+      document.getElementById('firstRunGuideSearch')?.click();
+      const result={
+        hidden:Boolean(document.getElementById('firstRunGuide')?.hidden),
+        stored:localStorage.getItem('football-analytics:first-run-guide:v1'),
+        activeElement:document.activeElement?.id || '',
+      };
+      window.fetch=originalFetch;
+      return result;
+    })()`,
+  });
+  const action=actionResult?.result?.value || {};
+  if (!action.hidden || action.stored!=='1' || action.activeElement!=='matchSearch') {
+    throw new Error(`first-run primary action was blocked: ${JSON.stringify(action)}`);
+  }
+
+  await clearFirstRunAndNavigate(cdp,base.toString());
+  await cdp.call('Runtime.evaluate',{expression:`document.getElementById('firstRunGuideFavorite')?.click()`});
+  await waitForCondition(cdp,
+    `(() => document.querySelector('#searchView')?.classList.contains('active') && localStorage.getItem('football-analytics:first-run-guide:v1')==='1')()`,
+    'first-run favorite action');
+
+  await cdp.call('Runtime.evaluate',{expression:`localStorage.removeItem('football-analytics:first-run-guide:v1')`});
+  const deepLink=new URL(base);
+  deepLink.searchParams.set('view','search');
+  deepLink.searchParams.set('q','Arsenal');
+  await navigateWithRetry(cdp,deepLink.toString(),3);
+  await waitForReady(cdp);
+  await waitForCondition(cdp,
+    `(() => document.querySelector('#searchView')?.classList.contains('active') && document.getElementById('globalSearchInput')?.value==='Arsenal')()`,
+    'direct search launch');
+  const direct=await firstRunState(cdp);
+  if (!direct.hidden || direct.stored) throw new Error(`direct launch should bypass without completing onboarding: ${JSON.stringify(direct)}`);
+
+  console.log('First-run behavioral smoke passed: launch, skip, reopen, meaningful actions, telemetry fail-soft and direct-link entry.');
 }
 
 async function inspectEdgeCaseFixture(cdp, width, theme) {
@@ -341,6 +448,7 @@ async function main() {
         screenWidth: width,
         screenHeight: 844,
       });
+      await cdp.call('Runtime.evaluate', { expression:`localStorage.removeItem('football-analytics:first-run-guide:v1')` });
       await navigateWithRetry(cdp, targetUrl, 3);
       await waitForReady(cdp);
       const evaluated = await cdp.call('Runtime.evaluate', {
@@ -371,8 +479,22 @@ async function main() {
             document.querySelector('link[href*="/styles.css"]')?.href || '',
             document.querySelector('link[href*="/styles/public-shell.css"]')?.href || '',
           ];
+          const guide=document.getElementById('firstRunGuide');
+          const guideRect=guide?.getBoundingClientRect();
+          const firstRun=guide ? {
+            hidden:Boolean(guide.hidden),
+            clientWidth:guide.clientWidth,
+            scrollWidth:guide.scrollWidth,
+            rect:rectJson(guideRect),
+            actions:[...guide.querySelectorAll('button')].map(el => {
+              const r=el.getBoundingClientRect(), s=getComputedStyle(el);
+              return {id:el.id,height:r.height,width:r.width,visible:s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0};
+            }),
+          } : null;
           return {
             innerWidth: window.innerWidth,
+            documentWidth: Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth || 0),
+            firstRun,
             assetRevision: revision,
             assetTokens: urls.map(value => {
               try { return new URL(value, location.href).searchParams.get('v') || ''; } catch { return ''; }
@@ -397,6 +519,7 @@ async function main() {
         console.log(`Public UI edge cases rendered correctly at ${width}px in ${theme} theme.`);
       }
     }
+    if (local) await assertFirstRunBehavior(cdp,targetUrl);
   } finally {
     cdp?.close();
     await stopChrome(chrome);

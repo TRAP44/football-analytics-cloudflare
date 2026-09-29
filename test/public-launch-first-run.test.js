@@ -36,10 +36,21 @@ test('first run guide is one-time local UI state with privacy-safe product actio
   assert.match(app,/localStorage\.setItem\(FIRST_RUN_GUIDE_KEY, '1'\)/);
   assert.match(app,/sendProductAction\('first_run_search', 'matchesView'\)/);
   assert.match(app,/sendProductAction\('first_run_favorite', 'searchView'\)/);
+  assert.match(app,/function sendProductAction[\s\S]*?try \{[\s\S]*?sendClientTelemetry\('product_action'/);
+});
+
+test('direct launch intent bypasses the guide and is not overwritten by the default Home route',()=>{
+  assert.match(app,/function hasDirectLaunchIntent\(\)/);
+  assert.match(app,/guide\.hidden = dismissed \|\| hasDirectLaunchIntent\(\)/);
+  assert.match(app,/view === 'search'/);
+  assert.match(app,/view === 'history'/);
+  assert.match(app,/\['analysis', 'center'\]\.includes\(action\)/);
+  assert.match(app,/if \(!hasDirectLaunchIntent\(\)\) showView\('matchesView'\)/);
 });
 
 test('first run guide keeps mobile touch targets and collapses to one column on narrow screens',()=>{
   assert.match(css,/\.first-run-guide-actions[\s\S]*grid-template-columns:minmax\(0,1fr\) minmax\(0,1fr\)/);
   assert.match(css,/\.first-run-guide-actions \.primary-btn,[\s\S]*min-height:44px/);
   assert.match(css,/@media\(max-width:375px\)[\s\S]*\.first-run-guide-actions\{grid-template-columns:1fr\}/);
+  assert.match(css,/\.first-run-guide-dismiss\{[\s\S]*?min-height:44px/);
 });

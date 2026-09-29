@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createApiClient } from '../public/modules/client-core.js';
 
 const app=fs.readFileSync('public/app.js','utf8');
 const html=fs.readFileSync('public/index.html','utf8');
@@ -54,7 +55,43 @@ test('reopening the same Match Center renders warm data before refresh completes
 });
 
 test('performance pass cache-busts app.js without changing release identity',()=>{
-  assert.match(html,/frontend-asset-revision" content="6\.120\.0-launch1"/);
-  assert.match(html,/app\.js\?v=6\.120\.0-launch1/);
+  assert.match(html,/frontend-asset-revision" content="6\.120\.0-launch2"/);
+  assert.match(html,/app\.js\?v=6\.120\.0-launch2/);
   assert.match(app,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
+});
+
+
+test('identical initial GET requests are coalesced into one network round-trip', async()=>{
+  const originalFetch=globalThis.fetch;
+  let calls=0;
+  let releaseFetch;
+  globalThis.fetch=async()=>{
+    calls+=1;
+    await new Promise(resolve=>{ releaseFetch=resolve; });
+    return new Response(JSON.stringify({ok:true}),{status:200,headers:{'content-type':'application/json'}});
+  };
+  const state={
+    compatibilityBlocked:false,
+    runtimeStatus:null,
+    clientPerf:{requests:0,deduped:0,retries:0,rateLimited:0,completed:0,lastMs:0,totalMs:0,failed:0,timeouts:0},
+  };
+  const inflightGetRequests=new Map();
+  try {
+    const api=createApiClient({
+      state,tg:null,inflightGetRequests,
+      observeServerVersion(){},showBootRecovery(){},applyRuntimeUi(){},
+      normalizeApiError:error=>error,noteRequestSuccess(){},noteRequestFailure(){},
+    });
+    const first=api('/api/matches?date=2026-09-29',{retry:false});
+    const second=api('/api/matches?date=2026-09-29',{retry:false});
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(calls,1);
+    assert.equal(state.clientPerf.deduped,1);
+    releaseFetch();
+    assert.deepEqual(await first,{ok:true});
+    assert.deepEqual(await second,{ok:true});
+    assert.equal(inflightGetRequests.size,0);
+  } finally {
+    globalThis.fetch=originalFetch;
+  }
 });
