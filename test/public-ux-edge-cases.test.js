@@ -59,6 +59,11 @@ test('render smoke exercises edge cases across mobile widths and themes',()=>{
   assert.match(smoke,/EXPECTED_ASSET_REVISION/);
   assert.match(smoke,/navigateForExpectedRevision/);
   assert.match(smoke,/Network\.setCacheDisabled/);
+  assert.match(smoke,/compact-match-card is-live/);
+  assert.match(smoke,/match-live-label/);
+  assert.match(smoke,/LIVE · 88′/);
+  assert.match(smoke,/compact-score score-upcoming/);
+  assert.match(smoke,/>VS</);
 });
 
 test('frontend revision refreshes QA styles without changing release identity',()=>{
