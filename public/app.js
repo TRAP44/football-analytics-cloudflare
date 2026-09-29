@@ -11,6 +11,8 @@ import {
   ACCENT_PALETTES,
   appSurface,
   readUiPreferences,
+  MATCH_WATCHLIST_KEY,
+  readMatchWatchlist,
 } from './modules/app-runtime.js';
 
 const APP_SURFACE = appSurface(document);
@@ -30,6 +32,7 @@ const state = {
   history: [],
   favorites: [],
   reminders: [],
+  watchlist: readMatchWatchlist(localStorage),
   preferences: { defaultFilter: 'top', reminderMinutes: 30, kickoffNotification: true, hideYouth: true, favoriteFirst: true },
   uiPreferences: initialUiPreferences,
   preferencesApplied: false,
@@ -4949,6 +4952,53 @@ function homePersonalMatchMeta(item) {
   return [reason, status, match.league || ''].filter(Boolean).join(' · ');
 }
 
+function watchedMatch(fixtureId) {
+  const id = Number(fixtureId || 0);
+  return id > 0 ? state.watchlist.find(item => Number(item.fixtureId) === id) || null : null;
+}
+
+function isWatchedMatch(fixtureId) {
+  return Boolean(watchedMatch(fixtureId));
+}
+
+function matchWatchlistSnapshot(match = {}) {
+  return {
+    fixtureId: Number(match.fixtureId || 0),
+    homeName: String(match.home?.name || '').trim(),
+    awayName: String(match.away?.name || '').trim(),
+    league: String(match.league || '').trim(),
+    date: String(match.date || '').trim(),
+    homeId: Number(match.home?.id || 0),
+    awayId: Number(match.away?.id || 0),
+    homeLogo: String(match.home?.logo || '').trim(),
+    awayLogo: String(match.away?.logo || '').trim(),
+    addedAt: new Date().toISOString(),
+  };
+}
+
+function persistMatchWatchlist() {
+  try {
+    localStorage.setItem(MATCH_WATCHLIST_KEY, JSON.stringify(state.watchlist.slice(0, 50)));
+  } catch {}
+}
+
+function toggleMatchWatch(match = {}) {
+  const fixtureId = Number(match.fixtureId || 0);
+  if (!fixtureId || match.finished) return;
+  if (isWatchedMatch(fixtureId)) {
+    state.watchlist = state.watchlist.filter(item => Number(item.fixtureId) !== fixtureId);
+    persistMatchWatchlist();
+    toast('Матч удалён из слежения');
+  } else {
+    const snapshot = matchWatchlistSnapshot(match);
+    if (!snapshot.homeName || !snapshot.awayName) return;
+    state.watchlist = [snapshot, ...state.watchlist.filter(item => Number(item.fixtureId) !== fixtureId)].slice(0, 50);
+    persistMatchWatchlist();
+    toast('Матч добавлен в слежение');
+  }
+  renderMatches();
+}
+
 function radarFeedItems(nowMs = Date.now()) {
   const favoriteIds = favoriteSet();
   const viewed = personalContextSignals();
@@ -4967,23 +5017,24 @@ function radarFeedItems(nowMs = Date.now()) {
     const viewedTeam = viewed.viewedTeams.has(homeName) || viewed.viewedTeams.has(awayName);
     const reminder = reminderFor(fixtureId);
     const history = analysisHistoryForFixture(fixtureId);
+    const watched = isWatchedMatch(fixtureId);
     const kickoffMs = Date.parse(match.date || '');
     const hoursToKickoff = Number.isFinite(kickoffMs) ? (kickoffMs - nowMs) / 3600000 : Infinity;
 
     let item = null;
-    if (match.live && (favorite || viewedTeam)) {
+    if (match.live && (watched || favorite || viewedTeam)) {
       item = {
-        priority: favorite ? 120 : 105,
+        priority: watched ? 126 : favorite ? 120 : 105,
         tone: 'live',
-        kicker: favorite ? 'LIVE · ЛЮБИМАЯ КОМАНДА' : 'LIVE · ВЫ СМОТРЕЛИ',
+        kicker: watched ? 'LIVE · ВЫ СЛЕДИТЕ' : favorite ? 'LIVE · ЛЮБИМАЯ КОМАНДА' : 'LIVE · ВЫ СМОТРЕЛИ',
         title: `${match.home?.name || ''} — ${match.away?.name || ''}`,
         meta: `${match.score?.home ?? 0} : ${match.score?.away ?? 0}${Number(match.elapsed || 0) ? ` · ${Number(match.elapsed)}′` : ''}${match.league ? ` · ${match.league}` : ''}`,
         action: 'center',
         fixtureId,
       };
-    } else if (!match.finished && history && (favorite || viewedTeam)) {
+    } else if (!match.finished && history && (watched || favorite || viewedTeam)) {
       item = {
-        priority: favorite ? 92 : 82,
+        priority: watched ? 98 : favorite ? 92 : 82,
         tone: 'ai',
         kicker: 'AI-РАЗБОР ГОТОВ',
         title: `${match.home?.name || ''} — ${match.away?.name || ''}`,
@@ -4993,11 +5044,21 @@ function radarFeedItems(nowMs = Date.now()) {
       };
     } else if (!match.finished && reminder && hoursToKickoff >= 0 && hoursToKickoff <= 24) {
       item = {
-        priority: favorite ? 78 : 68,
+        priority: watched ? 84 : favorite ? 78 : 68,
         tone: 'reminder',
         kicker: 'НАПОМИНАНИЕ ВКЛЮЧЕНО',
         title: `${match.home?.name || ''} — ${match.away?.name || ''}`,
         meta: `${dateTime(match.date)} · за ${Number(reminder.remindBeforeMinutes || state.preferences?.reminderMinutes || 30)} мин.`,
+        action: 'center',
+        fixtureId,
+      };
+    } else if (!match.finished && watched && hoursToKickoff >= 0 && hoursToKickoff <= 24) {
+      item = {
+        priority: 74 - Math.min(14, Math.max(0, hoursToKickoff * .5)),
+        tone: 'watching',
+        kicker: 'СЛЕЖУ ЗА МАТЧЕМ',
+        title: `${match.home?.name || ''} — ${match.away?.name || ''}`,
+        meta: [dateTime(match.date), match.league || ''].filter(Boolean).join(' · '),
         action: 'center',
         fixtureId,
       };
@@ -5198,6 +5259,7 @@ function matchCardHtml(m, { grouped = false } = {}) {
   const reminderActive = hasReminder(m.fixtureId);
   const reminderPending = state.reminderMutations.has(Number(m.fixtureId));
   const reminderMinutes = Number(state.preferences?.reminderMinutes || 30);
+  const watchActive = isWatchedMatch(m.fixtureId);
   const liveMinute = Number(m.elapsed || 0) > 0 ? ` · ${Number(m.elapsed)}′` : '';
   const statusLabel = m.live
     ? `<b class="match-live-label">LIVE${liveMinute}</b>`
@@ -5234,6 +5296,7 @@ function matchCardHtml(m, { grouped = false } = {}) {
       <div class="match-card-actions compact-actions">${primaryAction}</div>
       <div class="match-secondary-actions" aria-label="Дополнительные действия">
         <span>${favoriteButton(m.home)}${favoriteButton(m.away)}</span>
+        ${!m.finished ? `<button class="match-watch-btn compact ${watchActive ? 'active' : ''}" type="button" data-watch-fixture="${Number(m.fixtureId)}" aria-pressed="${watchActive ? 'true' : 'false'}" aria-label="${watchActive ? 'Перестать следить за матчем' : 'Следить за матчем'}">${watchActive ? '👁 Слежу' : '👁 Следить'}</button>` : ''}
         ${!m.live && !m.finished ? `<button class="quick-reminder-btn compact ${reminderActive ? 'active' : ''} ${reminderPending ? 'is-pending' : ''}" type="button" data-quick-reminder="${Number(m.fixtureId)}" aria-pressed="${reminderActive ? 'true' : 'false'}" ${reminderPending ? 'disabled' : ''}>${reminderActive ? '🔔' : '🔕'} <span>${reminderActive ? 'Включено' : `${reminderMinutes} мин.`}</span></button>` : ''}
       </div>
     </article>`;
@@ -5252,6 +5315,11 @@ function bindMatchActions(root = document) {
   root.querySelectorAll('.fav-star').forEach(btn => btn.addEventListener('click', () => toggleFavorite({
     id: Number(btn.dataset.teamId), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '',
   })));
+  root.querySelectorAll('[data-watch-fixture]').forEach(btn => btn.addEventListener('click', () => {
+    const fixtureId = Number(btn.dataset.watchFixture);
+    const match = state.matches.find(item => Number(item.fixtureId) === fixtureId);
+    if (match) toggleMatchWatch(match);
+  }));
   root.querySelectorAll('[data-quick-reminder]').forEach(btn => btn.addEventListener('click', () => {
     const fixtureId = Number(btn.dataset.quickReminder);
     const match = state.matches.find(item => Number(item.fixtureId) === fixtureId);
