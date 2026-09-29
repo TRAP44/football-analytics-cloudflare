@@ -11,9 +11,11 @@ test('RC116 defines one production release identity for deployment and smoke', (
     workflow,
     /command: deploy --keep-vars --tag "\$\{\{ env\.DEPLOY_SHA \}\}" --message "release=\$\{\{ env\.RELEASE_VERSION \}\} sha=\$\{\{ env\.DEPLOY_SHA \}\}"/
   );
+  assert.match(workflow, /EXPECTED_RUNTIME_SHA="\$DEPLOY_SHA"/);
+  assert.match(workflow, /EXPECTED_RUNTIME_SHA="\$ACTIVE_RUNTIME_SHA"/);
   assert.match(
     workflow,
-    /post-deploy-smoke\.js "\$SMOKE_URL" "\$\{\{ env\.RELEASE_VERSION \}\}" "\$\{\{ env\.DEPLOY_SHA \}\}"/
+    /post-deploy-smoke\.js "\$SMOKE_URL" "\$RELEASE_VERSION" "\$EXPECTED_RUNTIME_SHA"/
   );
 });
 
