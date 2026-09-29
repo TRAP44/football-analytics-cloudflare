@@ -26,3 +26,18 @@ test('ops metadata sanitizer does not classify deployment identity keys as sensi
     assert.equal(re.test(key),false,key);
   }
 });
+
+
+test('ops event persistence treats Supabase HTTP errors as failed writes',()=>{
+  const start=worker.indexOf('async function recordOpsEventTask');
+  const end=worker.indexOf('async function cleanupRateWindows',start);
+  assert.ok(start>=0 && end>start);
+  const block=worker.slice(start,end);
+  assert.match(block,/const response = await fetchWithTimeout\(url,/);
+  assert.match(block,/if \(!response\.ok\)/);
+  assert.match(block,/Supabase ops event HTTP/);
+  const httpCheck=block.indexOf('if (!response.ok)');
+  const persistent=block.indexOf("setPersistenceStatus('persistent')");
+  assert.ok(httpCheck>=0 && persistent>httpCheck);
+  assert.match(block,/catch \{[\s\S]*setPersistenceStatus\('failed'\)/);
+});
