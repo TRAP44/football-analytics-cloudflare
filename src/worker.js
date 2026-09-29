@@ -24,6 +24,7 @@ import { createSupabaseClient } from './supabase-client.js';
 import { runtimeReleaseIdentity } from './release-identity.js';
 import { scopeOpsEventsToDeployment } from './release-event-attribution.js';
 import { postDeployRegressionReport } from './post-deploy-regression.js';
+import { planPostDeployRegressionLifecycle } from './post-deploy-regression-lifecycle.js';
 import { createCompositeReadinessRuntime } from './readiness-contract.js';
 import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
 import { applyFeatureFreshness, applyFeatureFreshnessMap } from './data-freshness.js';
@@ -15955,8 +15956,11 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
   ]);
 
   const activeReleaseIdentity=currentReleaseIdentity(cfg);
+  const releaseMetricItems=source.items.filter(item =>
+    item?.source !== 'monitor' && item?.source !== 'release_regression'
+  );
   const releaseScope=scopeOpsEventsToDeployment(
-    source.items.filter(item => item?.source !== 'monitor'),
+    releaseMetricItems,
     activeReleaseIdentity,
     {nowMs:now.getTime(),windowMs:60*60_000},
   );
@@ -15964,10 +15968,13 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
   const current = summarizeReleaseWindow(releaseItems, 1);
   const releaseHealth = releaseMonitorHealth(current, source.persistent);
   const releaseRegression=postDeployRegressionReport(
-    source.items.filter(item => item?.source !== 'monitor'),
+    releaseMetricItems,
     activeReleaseIdentity,
     {nowMs:now.getTime(),windowsMinutes:[15,30,60]},
   );
+  const releaseRegressionLifecycle=options.record !== false
+    ? planPostDeployRegressionLifecycle(releaseRegression,source.items)
+    : {action:'none',reason:'read_only_monitor'};
   const supabaseAuthFailures = releaseItems.filter(item =>
     /HTTP 401|PGRST303|invalid.*jwt|invalid.*api.?key/i.test(String(item?.message || ''))
   ).length;
@@ -16091,7 +16098,13 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
         excludedPriorDeploymentEvents:Number(releaseScope.counts.priorDeployment || 0),
         attributionComplete:Boolean(releaseScope.attributionComplete),
       },
-      regression:releaseRegression,
+      regression:{
+        ...releaseRegression,
+        lifecycle:{
+          nextAction:releaseRegressionLifecycle.action === 'record' ? releaseRegressionLifecycle.code : 'none',
+          reason:releaseRegressionLifecycle.reason || '',
+        },
+      },
     },
     provider: {
       health: provider.health || 'waiting',
@@ -16140,6 +16153,7 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
       releaseAttributionComplete:Boolean(releaseScope.attributionComplete),
       postDeployRegressionState:String(releaseRegression.state || 'unavailable'),
       postDeployRegressionCompletedWindows:Number(releaseRegression.completedWindows || 0),
+      postDeployRegressionLifecycleAction:releaseRegressionLifecycle.action === 'record' ? String(releaseRegressionLifecycle.code || '') : 'none',
     },
     policy: {
       consumesFootballApi: false,
@@ -16150,6 +16164,10 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     },
   };
   memory.productionMonitor = { at: Date.now(), value };
+
+  if (options.record !== false && releaseRegressionLifecycle.action === 'record') {
+    await recordOpsEvent(cfg,releaseRegressionLifecycle).catch(()=>{});
+  }
 
   if (options.record !== false && providerSloFlush?.ok && providerSloIncident.transition) {
     const incidentEvent = providerSloIncidentOpsEvent(providerSloIncident.transition);
