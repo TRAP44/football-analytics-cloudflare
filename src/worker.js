@@ -15733,6 +15733,9 @@ function productionMonitorSelfTest() {
   const providerSloWatch = productionMonitorState({
     supabaseOk:true, schemaOk:true, releaseState:'healthy', providerHealth:'ok', providerSloState:'incident', telegramDedupeState:'healthy', persistent:true,
   });
+  const digestSloWatch = productionMonitorState({
+    supabaseOk:true, schemaOk:true, releaseState:'healthy', providerHealth:'ok', providerSloState:'healthy', dailyDigestSloState:'watch', telegramDedupeState:'healthy', persistent:true,
+  });
   const telegramIncident = productionMonitorState({
     supabaseOk: true, schemaOk: true, releaseState: 'healthy', providerHealth: 'ok', telegramDedupeState:'incident', persistent: true,
   });
@@ -15740,12 +15743,13 @@ function productionMonitorSelfTest() {
     supabaseOk: true, schemaOk: true, supabaseAuthFailures:1, releaseState:'healthy', providerHealth:'ok', telegramDedupeState:'healthy', persistent:true,
   });
   return {
-    pass: healthy.state === 'healthy' && drift.state === 'incident' && schemaUnavailable.state === 'watch' && watch.state === 'watch' && providerSloWatch.state === 'watch' && telegramIncident.state === 'incident' && authIncident.state === 'incident',
+    pass: healthy.state === 'healthy' && drift.state === 'incident' && schemaUnavailable.state === 'watch' && watch.state === 'watch' && providerSloWatch.state === 'watch' && digestSloWatch.state === 'watch' && telegramIncident.state === 'incident' && authIncident.state === 'incident',
     healthy: healthy.state,
     drift: drift.state,
     schemaUnavailable: schemaUnavailable.state,
     watch: watch.state,
     providerSloWatch:providerSloWatch.state,
+    digestSloWatch:digestSloWatch.state,
     telegramIncident: telegramIncident.state,
     authIncident: authIncident.state,
   };
