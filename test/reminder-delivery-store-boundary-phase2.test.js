@@ -121,7 +121,7 @@ test('release preserves retry and disable semantics', async () => {
   assert.equal(body.delivery_disabled_reason,'telegram_forbidden');
 });
 
-test('stale claim recovery clears both claim columns and records an ops event', async () => {
+test('stale claim recovery clears registered claim columns and records an ops event', async () => {
   const {store,calls,events}=runtime({
     responses:[
       {ok:true,status:200,json:[{fixture_id:1},{fixture_id:2}]},
