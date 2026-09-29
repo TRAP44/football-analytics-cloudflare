@@ -65,7 +65,7 @@ test('AI match view exposes key decision layer before detailed data',()=>{
   assert.doesNotMatch(analysis.slice(0,analysis.indexOf('Подробные данные матча')),/analysisVersion|fingerprint|temperature/);
   const center=block(app,'function renderMatchCenter','async function openMatchCenter');
   assert.match(center,/class="match-center-more"/);
-  assert.ok(center.indexOf('center-scoreboard') < center.indexOf('Подробности матча'));
+  assert.ok(center.indexOf('center-scoreboard') < center.indexOf('Статистика, составы и хронология'));
 });
 
 test('profile prioritizes user teams reminders settings and moves legal to About',()=>{
