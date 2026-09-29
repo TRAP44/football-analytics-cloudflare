@@ -13566,6 +13566,39 @@ async function probeSupabaseConfirmed(cfg, options = {}) {
   return combined;
 }
 
+async function probeSupabaseReadiness(cfg) {
+  if (!hasSupabase(cfg)) return { configured:false, ok:false, status:'not_configured', latencyMs:null };
+  const startedAt=Date.now();
+  try {
+    const url=new URL(`${cfg.supabaseUrl}/rest/v1/analysis_cache`);
+    url.searchParams.set('select','cache_key');
+    url.searchParams.set('limit','1');
+    const response=await fetchWithTimeout(url,{headers:supaHeaders(cfg)},7000,'Supabase readiness');
+    const latencyMs=Date.now()-startedAt;
+    if (!response.ok) {
+      bumpTelemetry('supabaseErrors');
+      const detail=await response.text().catch(()=>'');
+      return {configured:true,ok:false,status:`http_${response.status}`,latencyMs,detail:redactOpsString(detail,180)};
+    }
+    return {configured:true,ok:true,status:'ok',latencyMs};
+  } catch (error) {
+    bumpTelemetry('supabaseErrors');
+    return {configured:true,ok:false,status:'network_error',latencyMs:Date.now()-startedAt,detail:redactOpsString(error?.message || error,180)};
+  }
+}
+
+async function probeSupabaseReadinessConfirmed(cfg, options = {}) {
+  const first=await probeSupabaseReadiness(cfg);
+  if (first.ok || !first.configured) return combineSupabaseProbeAttempts(first);
+  const retryDelayMs=Math.max(0,Math.min(1500,Number(options.retryDelayMs ?? 250)));
+  if (retryDelayMs) await sleepMs(retryDelayMs);
+  const second=await probeSupabaseReadiness(cfg);
+  const combined=combineSupabaseProbeAttempts(first,second);
+  if (combined.recovered) bumpTelemetry('supabaseProbeRecoveries');
+  if (combined.confirmedFailure) bumpTelemetry('supabaseProbeConfirmedFailures');
+  return combined;
+}
+
 function supabaseProbeConfirmationSelfTest() {
   const direct=combineSupabaseProbeAttempts({configured:true,ok:true,status:'ok',latencyMs:40});
   const recovered=combineSupabaseProbeAttempts(
@@ -22410,7 +22443,7 @@ async function readinessSnapshot(cfg) {
   scheduleReleaseFieldEvidence(cfg);
   const startedAt=Date.now();
   const [supabaseCheck,schemaCheck,securityCheck,authFailuresCheck]=await Promise.all([
-    measureReadinessCheck(()=>probeSupabaseConfirmed(cfg)),
+    measureReadinessCheck(()=>probeSupabaseReadinessConfirmed(cfg)),
     measureReadinessCheck(()=>probeSupabaseSchemaDriftConfirmed(cfg)),
     measureReadinessCheck(()=>readBackendSecurityContract(cfg)),
     measureReadinessCheck(()=>readRecentSupabaseAuthFailures(cfg,5)),
