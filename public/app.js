@@ -6380,6 +6380,118 @@ async function loadPlayerSquadProfile(player = state.currentPlayer) {
   }
 }
 
+function playerSeasonStatProfile(data = {}, player = {}) {
+  const targetId = Number(player?.data?.id || 0);
+  const targetName = String(player?.data?.name || '').trim().toLowerCase();
+  const stats = data?.playerStats || {};
+  const rows = Array.isArray(stats.players) ? stats.players : [];
+  const found = rows.find(item => {
+    const sameId = targetId > 0 && Number(item?.id || 0) === targetId;
+    const sameName = targetName && String(item?.name || '').trim().toLowerCase() === targetName;
+    return sameId || sameName;
+  });
+  if (!found) {
+    return {
+      found: false,
+      available: Boolean(stats.available),
+      partial: Boolean(stats.partial),
+      sourceLabel: String(stats.sourceMeta?.label || stats.sourceMeta?.provider || ''),
+      reason: String(stats.reason || ''),
+    };
+  }
+  return {
+    found: true,
+    partial: Boolean(stats.partial || !stats.complete),
+    sourceLabel: String(stats.sourceMeta?.label || stats.sourceMeta?.provider || ''),
+    scope: String(stats.scope || ''),
+    appearances: Number(found.games?.appearances || 0),
+    lineups: Number.isFinite(Number(found.games?.lineups)) ? Number(found.games.lineups) : null,
+    minutes: Number.isFinite(Number(found.games?.minutes)) ? Number(found.games.minutes) : null,
+    rating: Number.isFinite(Number(found.games?.rating)) ? Number(found.games.rating) : null,
+    goals: Number(found.goals?.total || 0),
+    assists: Number(found.goals?.assists || 0),
+    keyPasses: Number.isFinite(Number(found.passes?.key)) ? Number(found.passes.key) : null,
+    passAccuracy: Number.isFinite(Number(found.passes?.accuracy)) ? Number(found.passes.accuracy) : null,
+    yellow: Number.isFinite(Number(found.cards?.yellow)) ? Number(found.cards.yellow) : null,
+    red: Number.isFinite(Number(found.cards?.red)) ? Number(found.cards.red) + Number(found.cards?.yellowRed || 0) : null,
+    injured: found.injured === true,
+  };
+}
+
+function playerSeasonStatsHtml(profile = {}) {
+  if (profile.loading) return `<section class="panel player-hub-season"><div class="center-section-title"><div><h2>Сезон</h2><p>Собираю уже доступную статистику команды</p></div></div><div class="loader compact-loader">Загружаю сезонные показатели…</div></section>`;
+  if (profile.error) return `<section class="panel player-hub-season"><div class="center-section-title"><div><h2>Сезон</h2><p>Статистика игрока</p></div></div><div class="empty compact-empty">Сезонные показатели временно недоступны. Статистика текущего матча остаётся доступной.</div></section>`;
+  if (!profile.found) {
+    const detail = profile.reason === 'quota_guard'
+      ? 'Источник сейчас бережёт квоту — отдельный запрос ради игрока не выполняется.'
+      : 'Игрок не найден в доступной сезонной выборке команды.';
+    return `<section class="panel player-hub-season"><div class="center-section-title"><div><h2>Сезон</h2><p>Статистика игрока</p></div></div><div class="empty compact-empty">${escapeHtml(detail)}</div></section>`;
+  }
+  const rating = profile.rating === null ? '—' : profile.rating.toFixed(2);
+  const minutes = profile.minutes === null ? '—' : profile.minutes;
+  const lineups = profile.lineups === null ? '—' : profile.lineups;
+  const keyPasses = profile.keyPasses === null ? '—' : profile.keyPasses;
+  const accuracy = profile.passAccuracy === null ? '—' : `${profile.passAccuracy}%`;
+  return `<section class="panel player-hub-season">
+    <div class="center-section-title"><div><h2>Показатели сезона</h2><p>${escapeHtml(profile.sourceLabel || 'Данные команды')}${profile.partial ? ' · частичное покрытие' : ''}</p></div></div>
+    ${profile.injured ? '<div class="data-notice stale">⚠️ В сезонных данных игрок отмечен как травмированный.</div>' : ''}
+    <div class="player-hub-season-grid">
+      ${playerHubMetric('Матчи', profile.appearances)}
+      ${playerHubMetric('В старте', lineups)}
+      ${playerHubMetric('Минуты', minutes)}
+      ${playerHubMetric('Голы', profile.goals)}
+      ${playerHubMetric('Ассисты', profile.assists)}
+      ${playerHubMetric('Рейтинг', rating)}
+      ${playerHubMetric('Ключ. передачи', keyPasses)}
+      ${playerHubMetric('Точность паса', accuracy)}
+      ${playerHubMetric('Жёлтые', profile.yellow === null ? '—' : profile.yellow)}
+      ${playerHubMetric('Красные', profile.red === null ? '—' : profile.red)}
+    </div>
+    <p class="tiny">Player Hub использует общий Team Intelligence cache. Отдельного player endpoint и отдельного запроса только ради этого профиля нет.</p>
+  </section>`;
+}
+
+async function loadPlayerSeasonStats(player = state.currentPlayer) {
+  const teamId = Number(player?.team?.id || 0);
+  const leagueId = Number(player?.match?.leagueId || 0);
+  const season = Number(player?.match?.season || 0);
+  if (!player || !teamId || !leagueId || !season) {
+    if (player) {
+      player.seasonStats = { found:false, reason:'competition_context_missing' };
+      renderPlayerHub(player);
+    }
+    return;
+  }
+
+  const key = `${teamId}:${leagueId}:${season}`;
+  player.seasonStats = { loading:true };
+  renderPlayerHub(player);
+  try {
+    let data = state.teamIntelligenceCache.get(key);
+    if (!data) {
+      const q = new URLSearchParams({
+        teamId:String(teamId),
+        leagueId:String(leagueId),
+        season:String(season),
+        teamName:String(player.team?.name || ''),
+        teamLogo:String(player.team?.logo || ''),
+        leagueName:String(player.match?.league || ''),
+        leagueLogo:String(player.match?.leagueLogo || ''),
+        country:String(player.match?.country || ''),
+      });
+      data = await api(`/api/team/intelligence?${q.toString()}`);
+      state.teamIntelligenceCache.set(key, data);
+    }
+    if (state.currentPlayer !== player) return;
+    player.seasonStats = playerSeasonStatProfile(data, player);
+    renderPlayerHub(player);
+  } catch (error) {
+    if (state.currentPlayer !== player) return;
+    player.seasonStats = { error:true, message:error?.message || 'Не удалось загрузить сезонные показатели.' };
+    renderPlayerHub(player);
+  }
+}
+
 function renderPlayerHub(player = state.currentPlayer) {
   const root = $('playerHub');
   if (!root) return;
@@ -6410,6 +6522,7 @@ function renderPlayerHub(player = state.currentPlayer) {
     </section>
 
     ${playerSquadProfileHtml(player.squadProfile || {})}
+    ${playerSeasonStatsHtml(player.seasonStats || {})}
 
     <section class="panel">
       <div class="center-section-title"><div><h2>Показатели в матче</h2><p>Только данные, уже полученные для этого матча</p></div></div>
@@ -6433,7 +6546,7 @@ function renderPlayerHub(player = state.currentPlayer) {
         <div><span>Команда</span><strong>${escapeHtml(team.name || '—')}</strong></div>
         <div><span>Источник</span><strong>данные матча</strong></div>
       </div>
-      <p class="tiny">Player Hub 4A использует уже загруженную статистику матча и не расходует дополнительную квоту API-Football. Сезонный профиль игрока будет следующим расширением.</p>
+      <p class="tiny">Контекст матча остаётся независимым от сезонной выборки: если сезонные данные ограничены квотой или покрытием, текущая статистика игрока продолжает отображаться.</p>
     </section>
   `;
 }
@@ -6456,6 +6569,7 @@ function openPlayerFromMatch(playerId, side = '') {
   sendProductAction('player_open', current || 'analysisView');
   showView('playerView');
   void loadPlayerSquadProfile(state.currentPlayer);
+  void loadPlayerSeasonStats(state.currentPlayer);
 }
 
 
