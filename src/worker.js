@@ -22400,14 +22400,25 @@ function scheduleReleaseFieldEvidence(cfg) {
 }
 
 
+async function measureReadinessCheck(task) {
+  const startedAt=Date.now();
+  const value=await task();
+  return {value,latencyMs:Date.now()-startedAt};
+}
+
 async function readinessSnapshot(cfg) {
   scheduleReleaseFieldEvidence(cfg);
-  const [supabase,schema,security,authFailures]=await Promise.all([
-    probeSupabaseConfirmed(cfg),
-    probeSupabaseSchemaDriftConfirmed(cfg),
-    readBackendSecurityContract(cfg),
-    readRecentSupabaseAuthFailures(cfg,5),
+  const startedAt=Date.now();
+  const [supabaseCheck,schemaCheck,securityCheck,authFailuresCheck]=await Promise.all([
+    measureReadinessCheck(()=>probeSupabaseConfirmed(cfg)),
+    measureReadinessCheck(()=>probeSupabaseSchemaDriftConfirmed(cfg)),
+    measureReadinessCheck(()=>readBackendSecurityContract(cfg)),
+    measureReadinessCheck(()=>readRecentSupabaseAuthFailures(cfg,5)),
   ]);
+  const supabase=supabaseCheck.value;
+  const schema=schemaCheck.value;
+  const security=securityCheck.value;
+  const authFailures=authFailuresCheck.value;
   const telegramConfigured=Boolean(cfg.botToken && cfg.webhookSecret);
   const ok=Boolean(supabase.ok && schema.ok && security.ok && telegramConfigured && (!authFailures.available || authFailures.count===0));
   return {
@@ -22415,12 +22426,14 @@ async function readinessSnapshot(cfg) {
     status:ok?'ready':'not_ready',
     version:APP_VERSION,
     releaseCandidate:RC_NAME,
+    latencyMs:Date.now()-startedAt,
     checks:{
-      supabase:{ok:Boolean(supabase.ok),status:supabase.status || 'unknown',attempts:Number(supabase.attempts || 1)},
-      schema:{ok:Boolean(schema.ok),status:schema.status || 'unknown',fingerprint:schema?.fingerprint?.fingerprint || '',expectedFingerprint:EXPECTED_SCHEMA_FINGERPRINT},
-      backendSecurity:{ok:Boolean(security.ok),status:security.status || 'unknown'},
+      supabase:{ok:Boolean(supabase.ok),status:supabase.status || 'unknown',attempts:Number(supabase.attempts || 1),latencyMs:supabaseCheck.latencyMs},
+      schema:{ok:Boolean(schema.ok),status:schema.status || 'unknown',fingerprint:schema?.fingerprint?.fingerprint || '',expectedFingerprint:EXPECTED_SCHEMA_FINGERPRINT,latencyMs:schemaCheck.latencyMs},
+      backendSecurity:{ok:Boolean(security.ok),status:security.status || 'unknown',latencyMs:securityCheck.latencyMs},
       telegramConfigured,
       recentSupabaseAuthFailures:authFailures.available ? Number(authFailures.count || 0) : null,
+      recentSupabaseAuthFailuresLatencyMs:authFailuresCheck.latencyMs,
     },
   };
 }
