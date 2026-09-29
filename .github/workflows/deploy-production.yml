@@ -164,15 +164,15 @@ jobs:
           DEPLOYMENT_STATUS_JSON="$RUNNER_TEMP/production-deployment-status.json"
           VERSIONS_JSON="$RUNNER_TEMP/production-versions.json"
           verified=false
-          for attempt in 1 2 3 4 5; do
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
             if npx wrangler deployments status --json > "$DEPLOYMENT_STATUS_JSON" \
               && npx wrangler versions list --json > "$VERSIONS_JSON" \
               && node scripts/verify-production-release-postcondition.js "$DEPLOYMENT_STATUS_JSON" "$VERSIONS_JSON" "$RELEASE_VERSION" "$DEPLOY_SHA"; then
               verified=true
               break
             fi
-            if [[ "$attempt" -lt 5 ]]; then
-              sleep 3
+            if [[ "$attempt" -lt 10 ]]; then
+              sleep 6
             fi
           done
           if [[ "$verified" != "true" ]]; then
@@ -183,14 +183,24 @@ jobs:
           echo "Cloudflare control plane confirms release $RELEASE_VERSION for deploy SHA $DEPLOY_SHA at 100% traffic." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Verify production deployment
-        if: steps.production_changes.outputs.changed == 'true'
         env:
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment-url }}
           CONFIGURED_URL: ${{ vars.CLOUDFLARE_WORKER_URL }}
+          ACTIVE_RUNTIME_SHA: ${{ steps.production_changes.outputs.active_sha }}
+          RUNTIME_CHANGED: ${{ steps.production_changes.outputs.changed }}
         shell: bash
         run: |
+          set -euo pipefail
           SMOKE_URL="${CONFIGURED_URL:-$DEPLOYMENT_URL}"
-          node scripts/post-deploy-smoke.js "$SMOKE_URL" "${{ env.RELEASE_VERSION }}" "${{ env.DEPLOY_SHA }}"
+          EXPECTED_RUNTIME_SHA="$DEPLOY_SHA"
+          if [[ "$RUNTIME_CHANGED" != "true" ]]; then
+            EXPECTED_RUNTIME_SHA="$ACTIVE_RUNTIME_SHA"
+          fi
+          if [[ ! "$EXPECTED_RUNTIME_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Unable to resolve the production runtime SHA for smoke verification." >&2
+            exit 1
+          fi
+          node scripts/post-deploy-smoke.js "$SMOKE_URL" "$RELEASE_VERSION" "$EXPECTED_RUNTIME_SHA"
           node scripts/bottom-nav-render-smoke.js "$SMOKE_URL"
-          echo "### Cloudflare deploy verified" >> "$GITHUB_STEP_SUMMARY"
-          echo "Release ${{ env.RELEASE_VERSION }} post-deploy smoke passed for the production Worker." >> "$GITHUB_STEP_SUMMARY"
+          echo "### Cloudflare production verified" >> "$GITHUB_STEP_SUMMARY"
+          echo "Release $RELEASE_VERSION runtime SHA $EXPECTED_RUNTIME_SHA passed post-deploy and rendered smoke." >> "$GITHUB_STEP_SUMMARY"
