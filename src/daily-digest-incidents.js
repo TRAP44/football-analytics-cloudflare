@@ -16,7 +16,7 @@ function iso(value) {
 
 function normalizeEvent(row = {}) {
   return {
-    at: iso(row.created_at || row.createdAt),
+    at: iso(row.created_at || row.createdAt || row.at),
     code: String(row.code || ''),
     severity: String(row.severity || ''),
     metadata: row.metadata && typeof row.metadata === 'object' ? row.metadata : {},
