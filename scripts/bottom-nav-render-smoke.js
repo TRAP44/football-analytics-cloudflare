@@ -417,6 +417,89 @@ async function inspectEdgeCaseFixture(cdp, width, theme) {
   return evaluated?.result?.value || null;
 }
 
+async function captureLayoutSnapshot(cdp) {
+  const evaluated = await cdp.call('Runtime.evaluate', {
+    returnByValue: true,
+    expression: `(() => {
+      const ids = ${JSON.stringify(NAV_IDS)};
+      const nav = document.querySelector('.bottom-nav');
+      const rectJson = rect => ({ left:rect.left, right:rect.right, top:rect.top, bottom:rect.bottom, width:rect.width, height:rect.height });
+      const buttons = ids.map(id => {
+        const el = document.getElementById(id);
+        if (!el) return { id, missing:true, label:'' };
+        const style = getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return {
+          id,
+          label: el.textContent.trim(),
+          display: style.display,
+          visibility: style.visibility,
+          opacity: style.opacity,
+          visible: style.display !== 'none' && style.visibility !== 'hidden' && style.visibility !== 'collapse' && Number(style.opacity) > 0 && rect.width > 0 && rect.height > 0,
+          rect: rectJson(rect),
+        };
+      });
+      const navStyle = nav ? getComputedStyle(nav) : null;
+      const revision = document.querySelector('meta[name="frontend-asset-revision"]')?.content || '';
+      const urls = [
+        document.querySelector('script[src*="/app.js"]')?.src || '',
+        document.querySelector('link[href*="/styles.css"]')?.href || '',
+        document.querySelector('link[href*="/styles/public-shell.css"]')?.href || '',
+      ];
+      const guide=document.getElementById('firstRunGuide');
+      const guideRect=guide?.getBoundingClientRect();
+      const firstRun=guide ? {
+        hidden:Boolean(guide.hidden),
+        clientWidth:guide.clientWidth,
+        scrollWidth:guide.scrollWidth,
+        rect:rectJson(guideRect),
+        actions:[...guide.querySelectorAll('button')].map(el => {
+          const r=el.getBoundingClientRect(), s=getComputedStyle(el);
+          return {id:el.id,height:r.height,width:r.width,visible:s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0};
+        }),
+      } : null;
+      return {
+        innerWidth: window.innerWidth,
+        documentWidth: Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth || 0),
+        firstRun,
+        assetRevision: revision,
+        assetTokens: urls.map(value => {
+          try { return new URL(value, location.href).searchParams.get('v') || ''; } catch { return ''; }
+        }),
+        nav: nav ? {
+          display: navStyle.display,
+          gridTemplateColumns: navStyle.gridTemplateColumns,
+          rect: rectJson(nav.getBoundingClientRect()),
+          clientWidth: nav.clientWidth,
+          scrollWidth: nav.scrollWidth,
+        } : null,
+        buttons,
+      };
+    })()`,
+  });
+  return evaluated?.result?.value;
+}
+
+async function verifyLayoutWithPropagationRetry(cdp, targetUrl, width, remote = false) {
+  const attempts = remote ? 8 : 1;
+  let lastError = null;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    await cdp.call('Runtime.evaluate', { expression:`localStorage.removeItem('football-analytics:first-run-guide:v1')` });
+    await navigateForExpectedRevision(cdp, targetUrl, remote);
+    const snapshot = await captureLayoutSnapshot(cdp);
+    try {
+      assertLayout(width, snapshot);
+      return snapshot;
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts) break;
+      await cdp.call('Network.clearBrowserCache').catch(() => {});
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    }
+  }
+  throw lastError || new Error(`${width}px: rendered layout did not converge`);
+}
+
 async function main() {
   const remoteUrl = process.argv[2] ? new URL(process.argv[2]).toString() : '';
   const local = remoteUrl ? null : await localServer();
@@ -448,70 +531,7 @@ async function main() {
         screenWidth: width,
         screenHeight: 844,
       });
-      await cdp.call('Runtime.evaluate', { expression:`localStorage.removeItem('football-analytics:first-run-guide:v1')` });
-      await navigateWithRetry(cdp, targetUrl, 3);
-      await waitForReady(cdp);
-      const evaluated = await cdp.call('Runtime.evaluate', {
-        returnByValue: true,
-        expression: `(() => {
-          const ids = ${JSON.stringify(NAV_IDS)};
-          const nav = document.querySelector('.bottom-nav');
-          const rectJson = rect => ({ left:rect.left, right:rect.right, top:rect.top, bottom:rect.bottom, width:rect.width, height:rect.height });
-          const buttons = ids.map(id => {
-            const el = document.getElementById(id);
-            if (!el) return { id, missing:true, label:'' };
-            const style = getComputedStyle(el);
-            const rect = el.getBoundingClientRect();
-            return {
-              id,
-              label: el.textContent.trim(),
-              display: style.display,
-              visibility: style.visibility,
-              opacity: style.opacity,
-              visible: style.display !== 'none' && style.visibility !== 'hidden' && style.visibility !== 'collapse' && Number(style.opacity) > 0 && rect.width > 0 && rect.height > 0,
-              rect: rectJson(rect),
-            };
-          });
-          const navStyle = nav ? getComputedStyle(nav) : null;
-          const revision = document.querySelector('meta[name="frontend-asset-revision"]')?.content || '';
-          const urls = [
-            document.querySelector('script[src*="/app.js"]')?.src || '',
-            document.querySelector('link[href*="/styles.css"]')?.href || '',
-            document.querySelector('link[href*="/styles/public-shell.css"]')?.href || '',
-          ];
-          const guide=document.getElementById('firstRunGuide');
-          const guideRect=guide?.getBoundingClientRect();
-          const firstRun=guide ? {
-            hidden:Boolean(guide.hidden),
-            clientWidth:guide.clientWidth,
-            scrollWidth:guide.scrollWidth,
-            rect:rectJson(guideRect),
-            actions:[...guide.querySelectorAll('button')].map(el => {
-              const r=el.getBoundingClientRect(), s=getComputedStyle(el);
-              return {id:el.id,height:r.height,width:r.width,visible:s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0};
-            }),
-          } : null;
-          return {
-            innerWidth: window.innerWidth,
-            documentWidth: Math.max(document.documentElement.scrollWidth, document.body?.scrollWidth || 0),
-            firstRun,
-            assetRevision: revision,
-            assetTokens: urls.map(value => {
-              try { return new URL(value, location.href).searchParams.get('v') || ''; } catch { return ''; }
-            }),
-            nav: nav ? {
-              display: navStyle.display,
-              gridTemplateColumns: navStyle.gridTemplateColumns,
-              rect: rectJson(nav.getBoundingClientRect()),
-              clientWidth: nav.clientWidth,
-              scrollWidth: nav.scrollWidth,
-            } : null,
-            buttons,
-          };
-        })()`,
-      });
-      const snapshot = evaluated?.result?.value;
-      assertLayout(width, snapshot);
+      await verifyLayoutWithPropagationRetry(cdp, targetUrl, width, Boolean(remoteUrl));
       console.log(`Bottom nav rendered correctly at ${width}px: 4 visible buttons, one row, no horizontal clipping.`);
       for (const theme of ['dark','light','ocean']) {
         const qaSnapshot = await inspectEdgeCaseFixture(cdp, width, theme);
