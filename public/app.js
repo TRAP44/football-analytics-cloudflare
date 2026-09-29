@@ -6266,6 +6266,106 @@ function smartInsightCardHtml(insight, match) {
   </article>`;
 }
 
+function matchChangeNarrativeHtml(d = {}, match = {}) {
+  const items = [];
+  const mode = String(d.mode || '');
+  const events = Array.isArray(d.events) ? d.events : [];
+  const latest = [...events].reverse().find(event => {
+    const type = String(event?.type || '').toLowerCase();
+    const detail = String(event?.detail || '').toLowerCase();
+    return type.includes('goal')
+      || type.includes('card')
+      || type.includes('subst')
+      || detail.includes('goal')
+      || detail.includes('card')
+      || detail.includes('subst');
+  });
+
+  if (latest && mode !== 'upcoming') {
+    const type = String(latest.type || '').toLowerCase();
+    const detail = String(latest.detail || '').toLowerCase();
+    const icon = type.includes('goal') || detail.includes('goal')
+      ? '⚽'
+      : type.includes('card') || detail.includes('card')
+        ? '🟨'
+        : '🔄';
+    const actor = latest.player || latest.teamName || (latest.side === 'home' ? match.home?.name : latest.side === 'away' ? match.away?.name : '');
+    items.push({
+      icon,
+      title: `${minuteLabel(latest)} · ${publicText(latest.label || latest.detail || latest.type || 'Событие матча')}`,
+      text: actor ? String(actor) : 'Новое событие в хронологии матча.',
+      tone: type.includes('goal') || detail.includes('goal') ? 'strong' : 'neutral',
+    });
+  }
+
+  if (mode === 'live' && d.livePressure) {
+    const home = Number(d.livePressure.home);
+    const away = Number.isFinite(Number(d.livePressure.away)) ? Number(d.livePressure.away) : (Number.isFinite(home) ? 100 - home : NaN);
+    const leader = d.livePressure.leader === 'home'
+      ? match.home?.name
+      : d.livePressure.leader === 'away'
+        ? match.away?.name
+        : '';
+    if (leader && Number.isFinite(home) && Number.isFinite(away) && Math.abs(home - away) >= 12) {
+      items.push({
+        icon: '⚡',
+        title: `${leader} усилил давление`,
+        text: `Текущий индекс давления: ${Math.round(home)}:${Math.round(away)}.`,
+        tone: 'strong',
+      });
+    }
+  }
+
+  const movement = d.oddsMovement?.probabilityChange || null;
+  if (movement && typeof movement === 'object') {
+    const labels = {
+      home: match.home?.name || 'П1',
+      draw: 'Ничья',
+      away: match.away?.name || 'П2',
+    };
+    const strongest = Object.entries(movement)
+      .map(([key, value]) => ({ key, value: Number(value) }))
+      .filter(row => Number.isFinite(row.value))
+      .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))[0];
+    if (strongest && Math.abs(strongest.value) >= 0.5) {
+      items.push({
+        icon: strongest.value > 0 ? '📈' : '📉',
+        title: `Изменилась оценка: ${labels[strongest.key] || strongest.key}`,
+        text: `Сдвиг расчётной рыночной вероятности: ${signedPp(strongest.value)}.`,
+        tone: strongest.value > 0 ? 'up' : 'down',
+      });
+    }
+  }
+
+  if (mode === 'upcoming') {
+    const homeAbsences = Number(d.absences?.home?.length || 0);
+    const awayAbsences = Number(d.absences?.away?.length || 0);
+    const totalAbsences = homeAbsences + awayAbsences;
+    if (totalAbsences > 0) {
+      items.push({
+        icon: '🩺',
+        title: 'Есть изменения по доступности игроков',
+        text: `${match.home?.name || 'Хозяева'}: ${homeAbsences} · ${match.away?.name || 'Гости'}: ${awayAbsences}.`,
+        tone: 'neutral',
+      });
+    }
+  }
+
+  if (!items.length) return '';
+  const visible = items.slice(0, 3);
+  return `<section class="panel match-change-panel">
+    <div class="center-section-title">
+      <div><span class="center-priority-label">RADAR</span><h2>Что изменилось</h2><p>Последние сигналы, которые реально меняют картину матча</p></div>
+    </div>
+    <div class="match-change-list">
+      ${visible.map(item => `<article class="match-change-item ${escapeHtml(item.tone || 'neutral')}">
+        <span class="match-change-icon">${escapeHtml(item.icon || '•')}</span>
+        <div><strong>${escapeHtml(publicText(item.title || ''))}</strong><p>${escapeHtml(publicText(item.text || ''))}</p></div>
+      </article>`).join('')}
+    </div>
+  </section>`;
+}
+
 function smartInsightsHeroHtml(si, match) {
   if (!si?.available) {
     return `<section class="panel smart-story-panel is-empty">
@@ -6422,6 +6522,7 @@ function renderMatchCenter(d) {
     ${d.note ? `<section class="panel center-note"><p class="tiny warning">${escapeHtml(publicText(d.note))}</p></section>` : ''}
 
     <div class="match-center-primary" aria-label="Главное о матче">
+      ${matchChangeNarrativeHtml(d, m)}
       ${live ? liveAiCoachHtml(d.liveAiCoach, m) : ''}
       ${smartInsightsHeroHtml(d.smartInsights, m)}
       ${finished ? postMatchReviewHtml(d.postMatchReview || {}, m) : ''}
