@@ -33,6 +33,7 @@ test('reminder delivery status preserves public state mapping', () => {
   assert.equal(store.reminderDeliveryStatus({delivery_last_error:'telegram_delivery_unknown'}),'delivery_unknown');
   assert.equal(store.reminderDeliveryStatus({notified_at:'2026-01-01'}),'prematch_sent');
   assert.equal(store.reminderDeliveryStatus({kickoff_notified_at:'2026-01-01'}),'kickoff_sent');
+  assert.equal(store.reminderDeliveryStatus({lineup_notified_at:'2026-01-01'}),'lineup_sent');
 });
 
 test('claim preserves atomic Supabase PATCH filters and attempt increment', async () => {
@@ -126,18 +127,20 @@ test('stale claim recovery clears registered claim columns and records an ops ev
     responses:[
       {ok:true,status:200,json:[{fixture_id:1},{fixture_id:2}]},
       {ok:true,status:200,json:[{fixture_id:3}]},
+      {ok:true,status:200,json:[]},
     ],
   });
   const result=await store.clearStaleReminderClaims({supabaseUrl:'https://db.test'});
-  assert.deepEqual(result,{prematch:2,kickoff:1,failed:0});
-  assert.equal(calls.length,2);
+  assert.deepEqual(result,{prematch:2,kickoff:1,lineup:0,failed:0});
+  assert.equal(calls.length,3);
   assert.match(calls[0].url,/prematch_claimed_at=lt\./);
   assert.match(calls[1].url,/kickoff_claimed_at=lt\./);
+  assert.match(calls[2].url,/lineup_claimed_at=lt\./);
   assert.match(calls[0].url,/or=%28delivery_last_error\.is\.null%2Cdelivery_last_error\.eq\.delivery_claimed%29/);
   assert.match(calls[1].url,/or=%28delivery_last_error\.is\.null%2Cdelivery_last_error\.eq\.delivery_claimed%29/);
   assert.equal(events.length,1);
   assert.equal(events[0].code,'REMINDER_STALE_CLAIMS');
-  assert.deepEqual(events[0].meta,{prematch:2,kickoff:1});
+  assert.deepEqual(events[0].meta,{prematch:2,kickoff:1,lineup:0});
 });
 
 test('stale claim cleanup surfaces partial failures instead of silently returning zero', async () => {
@@ -145,17 +148,18 @@ test('stale claim cleanup surfaces partial failures instead of silently returnin
     responses:[
       {ok:false,status:503,json:null},
       {ok:true,status:200,json:[{fixture_id:3}]},
+      {ok:true,status:200,json:[]},
     ],
   });
   const result=await store.clearStaleReminderClaims({supabaseUrl:'https://db.test'});
-  assert.deepEqual(result,{prematch:0,kickoff:1,failed:1});
+  assert.deepEqual(result,{prematch:0,kickoff:1,lineup:0,failed:1});
   assert.equal(events.some(event=>event.code==='REMINDER_STALE_CLAIM_CLEANUP_FAILED'),true);
   assert.equal(events.find(event=>event.code==='REMINDER_STALE_CLAIM_CLEANUP_FAILED').meta.failed,1);
 });
 
 test('non-Supabase fallback preserves no-op lifecycle semantics', async () => {
   const {store,calls}=runtime({hasSupabase:()=>false});
-  assert.deepEqual(await store.clearStaleReminderClaims({}),{prematch:0,kickoff:0,failed:0});
+  assert.deepEqual(await store.clearStaleReminderClaims({}),{prematch:0,kickoff:0,lineup:0,failed:0});
   const claim=await store.claimReminderDelivery({},'prematch',{});
   assert.equal(claim.claimed,true);
   assert.ok(claim.claimAt);
