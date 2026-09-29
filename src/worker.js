@@ -21585,10 +21585,28 @@ async function apiTeamIntelligence(request, cfg) {
   const teamId = Number(url.searchParams.get('teamId'));
   const leagueId = Number(url.searchParams.get('leagueId'));
   const season = Number(url.searchParams.get('season'));
+  const cacheOnly = url.searchParams.get('cacheOnly') === '1';
   if (!teamId || !leagueId || !season) return json({ error: 'Номер команды, номер турнира и сезон обязательны.' }, 400);
   const cacheKey = `team:intelligence:${teamId}:${leagueId}:${season}:v2`;
   const cached = await getCache(cacheKey, cfg);
-  if (cached) return json({ ...cached, cached: true, stale: false, provider: publicDataCapabilities() });
+  if (cached) return json({ ...cached, cached: true, stale: false, cacheOnly, provider: publicDataCapabilities() });
+  if (cacheOnly) {
+    const stale = await getStaleCache(cacheKey, cfg);
+    if (stale) return json({ ...stale, cached: true, stale: true, cacheOnly: true, warning: 'Показана последняя сохранённая сезонная статистика.', provider: publicDataCapabilities() });
+    return json({
+      available: false,
+      cacheOnly: true,
+      cached: false,
+      stale: false,
+      reason: 'Сезонная статистика игрока ещё не загружалась.',
+      playerStats: {
+        available:false, complete:false, partial:false, players:[],
+        summary:{count:0,complete:false,pagesLoaded:0,pagesTotal:0,sourceScope:'team-season'},
+        reason:'not_cached',
+      },
+      provider: publicDataCapabilities(),
+    });
+  }
   if (!freeQuotaHealthy(15, 2)) {
     const stale = await getStaleCache(cacheKey, cfg);
     if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Сезонная статистика показана из сохранённых данных: бережём лимит API-Football.', provider: publicDataCapabilities() });
@@ -22063,6 +22081,7 @@ async function apiMatchCenter(request, cfg) {
       timezone: fixture.fixture?.timezone || '',
       league: leagueName,
       leagueId: Number(fixture.league?.id || 0),
+      season: Number(fixture.league?.season || 0) || null,
       leagueLogo: fixture.league?.logo || '',
       country: fixture.league?.country || '',
       round: fixture.league?.round || '',
