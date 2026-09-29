@@ -122,6 +122,7 @@ test('RC139 lineup semantics align confidence-bearing state with structural conf
 
 const smoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
+const runtime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 
 test('RC139 is part of the production release health contract', () => {
   assert.match(worker, /const APP_VERSION = '6\.120\.0-rc144'/);
