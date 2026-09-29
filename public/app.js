@@ -75,6 +75,7 @@ const state = {
   releaseMonitor: null,
   releaseMonitorLoading: false,
   releaseMonitorHours: 24,
+  releaseMonitorDigestDays: 7,
   betaDashboard: null,
   betaDashboardLoading: false,
   betaDashboardDays: 7,
@@ -3047,12 +3048,23 @@ function renderReleaseMonitor() {
   const dr = dd.latestRun || {};
   const di = dd.incident || {};
   const da = dd.alertDelivery || {};
+  const reliability = dd.reliability || {};
   const ddState = String(dd.state || 'collecting');
   const ddStateLabel = ddState === 'healthy' ? 'Норма' : ddState === 'incident' ? 'Инцидент' : ddState === 'watch' ? 'Контроль' : 'Нет данных';
   const completion = dr.completionRate === null || dr.completionRate === undefined
     ? '—'
     : `${(Number(dr.completionRate) * 100).toFixed(1)}%`;
+  const reliabilityCompletion = reliability.completionRate === null || reliability.completionRate === undefined
+    ? '—'
+    : `${(Number(reliability.completionRate) * 100).toFixed(1)}%`;
+  const reliabilityCoverage = Number.isFinite(Number(reliability.coverageRate))
+    ? `${(Number(reliability.coverageRate) * 100).toFixed(0)}%`
+    : '—';
+  const recoveryAvg = reliability.incidents?.averageRecoveryMinutes === null || reliability.incidents?.averageRecoveryMinutes === undefined
+    ? '—'
+    : `${Number(reliability.incidents.averageRecoveryMinutes).toFixed(1)} мин`;
   const alertStates = da.states || {};
+  const dailyRows = Array.isArray(reliability.daily) ? reliability.daily.slice(-7).reverse() : [];
   digest.innerHTML = `<div class="release-monitor-section-head"><strong>📨 Daily Digest</strong><span>${escapeHtml(ddStateLabel)} · только агрегаты</span></div>
     ${dd.available ? `<div class="release-client-grid">
       <div><span>Состояние</span><strong>${escapeHtml(ddStateLabel)}</strong><small>${escapeHtml(humanizeTechnicalText(dr.code || ''))}</small></div>
@@ -3064,7 +3076,19 @@ function renderReleaseMonitor() {
       <div><span>Инцидент</span><strong>${di.active ? 'Активен' : 'Нет'}</strong><small>${escapeHtml(di.incidentId || '—')}</small></div>
       <div><span>Последнее восстановление</span><strong>${di.lastRecoveryAt ? escapeHtml(relativeAge(di.lastRecoveryAt)) : '—'}</strong><small>история ${Number(di.historyCount || 0)}</small></div>
       <div><span>Alert delivery</span><strong>${Number(alertStates.sent || 0)} sent</strong><small>retry ${Number(alertStates.retry_pending || 0)} · unknown ${Number(alertStates.unknown || 0)} · terminal ${Number(alertStates.terminal_failed || 0)}</small></div>
-    </div>` : '<div class="empty compact-empty">Daily Digest ещё не создавал операционных событий за доступный период.</div>'}`;
+    </div>
+    <div class="release-monitor-section-head"><strong>Надёжность · ${Number(reliability.days || r.digestDays || 7)} дн.</strong><span>${Number(reliability.sampleDays || 0)}/${Number(reliability.expectedDays || reliability.days || 0)} дней · coverage ${reliabilityCoverage}</span></div>
+    <div class="release-client-grid">
+      <div><span>Completion rate</span><strong>${reliabilityCompletion}</strong><small>${Number(reliability.totals?.sent || 0)}/${Number(reliability.totals?.claimed || 0)} deliveries</small></div>
+      <div><span>Backlog</span><strong>${Number(reliability.backlog?.days || 0)} дн.</strong><small>${Number(reliability.backlog?.occurrences || 0)} запусков · max ${Number(reliability.backlog?.maxRecipients || 0)}</small></div>
+      <div><span>Rate-limit</span><strong>${Number(reliability.rateLimitDays || 0)} дн.</strong><small>${Number(reliability.totals?.rateLimited || 0)} событий</small></div>
+      <div><span>Инциденты</span><strong>${Number(reliability.incidents?.count || 0)}</strong><small>active ${Number(reliability.incidents?.active || 0)} · recovered ${Number(reliability.incidents?.recovered || 0)}</small></div>
+      <div><span>Среднее восстановление</span><strong>${recoveryAvg}</strong><small>max ${reliability.incidents?.maxRecoveryMinutes ?? '—'} мин</small></div>
+      <div><span>Degraded / sealed</span><strong>${Number(reliability.degradedDays || 0)} / ${Number(reliability.sealedClaimDays || 0)}</strong><small>truncated ${Number(reliability.truncatedDays || 0)} дн.</small></div>
+    </div>
+    <details class="release-incidents"><summary>Daily history · последние ${dailyRows.length}</summary>
+      <div class="release-issue-list">${dailyRows.length ? dailyRows.map(day => `<div><strong>${escapeHtml(day.date || '—')}</strong><span>${day.completionRate === null || day.completionRate === undefined ? '—' : `${(Number(day.completionRate)*100).toFixed(1)}%`} · backlog ${Number(day.finalRemaining || 0)} · RL ${Number(day.rateLimited || 0)}</span></div>`).join('') : '<div class="empty compact-empty">Истории за выбранный период пока нет.</div>'}</div>
+    </details>` : '<div class="empty compact-empty">Daily Digest ещё не создавал операционных событий за доступный период.</div>'}`;
 
   const codes = c.topCodes || [];
   issues.innerHTML = `<div class="release-monitor-section-head"><strong>Главные сигналы</strong><span>предупреждение/ошибка/критическая</span></div>
@@ -3088,8 +3112,10 @@ async function loadReleaseMonitor(force = false) {
   renderReleaseMonitor();
   try {
     const hours = Number($('releaseMonitorPeriod')?.value || state.releaseMonitorHours || 24);
+    const digestDays = Number($('releaseMonitorDigestPeriod')?.value || state.releaseMonitorDigestDays || 7) >= 30 ? 30 : 7;
     state.releaseMonitorHours = hours;
-    state.releaseMonitor = await api(`/api/release-monitor?hours=${hours}${force ? '&refresh=1' : ''}`, {
+    state.releaseMonitorDigestDays = digestDays;
+    state.releaseMonitor = await api(`/api/release-monitor?hours=${hours}&digestDays=${digestDays}${force ? '&refresh=1' : ''}`, {
       retry: false,
       timeoutMs: 12000,
     });
@@ -7925,6 +7951,7 @@ $('diagnosticsRefreshBtn')?.addEventListener('click', () => loadDiagnostics(true
 $('productionReadinessRefreshBtn')?.addEventListener('click', () => loadProductionReadiness(true));
 $('releaseMonitorRefreshBtn')?.addEventListener('click', () => loadReleaseMonitor(true));
 $('releaseMonitorPeriod')?.addEventListener('change', () => { state.releaseMonitor = null; loadReleaseMonitor(true); });
+$('releaseMonitorDigestPeriod')?.addEventListener('change', () => { state.releaseMonitor = null; loadReleaseMonitor(true); });
 $('launchFunnelRefreshBtn')?.addEventListener('click', () => loadLaunchFunnel(true));
 $('launchFunnelPeriod')?.addEventListener('change', () => { state.launchFunnel = null; loadLaunchFunnel(true); });
 $('mediaPublisherGenerateBtn')?.addEventListener('click', generateMediaPublisherLink);
