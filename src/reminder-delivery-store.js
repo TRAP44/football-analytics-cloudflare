@@ -43,7 +43,7 @@ export function createReminderDeliveryStore({
   }
 
   async function clearStaleReminderClaims(cfg) {
-    if (!hasSupabase(cfg)) return { prematch: 0, kickoff: 0, failed: 0 };
+    if (!hasSupabase(cfg)) return { prematch: 0, kickoff: 0, lineup: 0, failed: 0 };
     const cutoff = new Date(Date.now() - 20 * 60_000).toISOString();
 
     const clearColumn = async column => {
