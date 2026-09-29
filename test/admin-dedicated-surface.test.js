@@ -15,7 +15,8 @@ test('public and admin surfaces declare distinct identities', () => {
 });
 
 test('dedicated admin surface is role-gated after startup', () => {
-  assert.match(app, /const APP_SURFACE = .*content === 'admin' \? 'admin' : 'public'/);
+  assert.match(app, /const APP_SURFACE = appSurface\(document\)/);
+  assert.match(runtime, /function appSurface\(documentRef = document\)/);
   assert.match(app, /if \(APP_SURFACE === 'admin'\)/);
   assert.match(app, /if \(isAdmin\(\)\)/);
   assert.match(app, /openProfileView\(\)/);
