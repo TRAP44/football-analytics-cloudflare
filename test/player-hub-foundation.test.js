@@ -42,6 +42,6 @@ test('Player Hub has responsive visual hierarchy and launch11 cache revision', (
   assert.match(styles, /\/\* Player Hub 4A \*\//);
   assert.match(styles, /\.player-hub-main\s*\{/);
   assert.match(styles, /\.player-hub-metrics\s*\{/);
-  assert.match(html, /frontend-asset-revision" content="6\.120\.0-launch12"/);
+  assert.match(html, /frontend-asset-revision" content="6\.120\.0-launch13"/);
   assert.doesNotMatch(html, /6\.120\.0-launch10/);
 });
