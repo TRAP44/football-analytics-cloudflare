@@ -13,10 +13,13 @@ test('external monitor accepts healthy production contracts', () => {
     body: { ok: true, status: 'alive', version: '6.120.0' },
   }).passed, true);
 
-  assert.equal(evaluateEndpoint('ready', {
+  const ready = evaluateEndpoint('ready', {
     statusCode: 200,
-    body: { ok: true, status: 'ready', version: '6.120.0' },
-  }).passed, true);
+    elapsedMs: 420,
+    body: { ok: true, status: 'ready', version: '6.120.0', latencyMs: 390 },
+  });
+  assert.equal(ready.passed, true);
+  assert.equal(ready.warning, false);
 
   const publicStatus = evaluateEndpoint('public_status', {
     statusCode: 200,
@@ -24,6 +27,18 @@ test('external monitor accepts healthy production contracts', () => {
   });
   assert.equal(publicStatus.passed, true);
   assert.equal(publicStatus.warning, false);
+});
+
+test('external monitor warns on slow readiness without treating it as an outage', () => {
+  const slowReady = evaluateEndpoint('ready', {
+    statusCode: 200,
+    elapsedMs: 3200,
+    body: { ok: true, status: 'ready', version: '6.120.0', latencyMs: 3100 },
+  }, { readyWarningMs: 3000 });
+  assert.equal(slowReady.passed, true);
+  assert.equal(slowReady.warning, true);
+  assert.match(slowReady.reason, /exceeds warning budget 3000 ms/);
+  assert.equal(slowReady.observed.latencyMs, 3100);
 });
 
 test('external monitor fails closed on readiness 503 but treats maintenance as a public-status warning', () => {
@@ -49,6 +64,7 @@ test('external monitoring workflow is independent, retried and incident-aware', 
   assert.match(workflow, /branches: \[main\]/);
   assert.match(workflow, /issues: write/);
   assert.match(workflow, /EXTERNAL_MONITOR_RETRIES: "3"/);
+  assert.match(workflow, /EXTERNAL_MONITOR_READY_WARNING_MS: "3000"/);
   assert.match(monitorScript, /\/health\/live/);
   assert.match(monitorScript, /\/health\/ready/);
   assert.match(monitorScript, /\/api\/public-status/);

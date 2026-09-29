@@ -27,6 +27,7 @@ jobs:
       EXTERNAL_MONITOR_RETRIES: "3"
       EXTERNAL_MONITOR_RETRY_DELAY_MS: "10000"
       EXTERNAL_MONITOR_TIMEOUT_MS: "10000"
+      EXTERNAL_MONITOR_READY_WARNING_MS: "3000"
       INCIDENT_TITLE: "[monitor] MatchRadar production availability incident"
 
     steps:

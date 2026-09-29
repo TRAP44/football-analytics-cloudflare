@@ -33,6 +33,7 @@ function safeObserved(kind, body) {
       status: String(body.status || ''),
       version: String(body.version || ''),
       releaseCandidate: String(body.releaseCandidate || ''),
+      latencyMs: Number.isFinite(Number(body.latencyMs)) ? Number(body.latencyMs) : null,
       checks: body.checks && typeof body.checks === 'object' ? body.checks : null,
     };
   }
@@ -45,7 +46,7 @@ function safeObserved(kind, body) {
   };
 }
 
-export function evaluateEndpoint(kind, response = {}) {
+export function evaluateEndpoint(kind, response = {}, options = {}) {
   const statusCode = Number(response.statusCode || 0);
   const body = response.body && typeof response.body === 'object' ? response.body : null;
   const transportOk = statusCode >= 200 && statusCode < 300 && body;
@@ -62,10 +63,17 @@ export function evaluateEndpoint(kind, response = {}) {
 
   if (kind === 'ready') {
     const passed = Boolean(transportOk && body.ok === true && body.status === 'ready');
+    const warningBudgetMs = Math.max(500, Math.min(9000, Number(options.readyWarningMs ?? 3000)));
+    const elapsedMs = Math.max(0, Number(response.elapsedMs || 0));
+    const warning = Boolean(passed && elapsedMs >= warningBudgetMs);
     return {
       passed,
-      warning: false,
-      reason: passed ? 'ok' : `Expected HTTP 2xx with {ok:true,status:"ready"}; got HTTP ${statusCode || 'network_error'}.`,
+      warning,
+      reason: !passed
+        ? `Expected HTTP 2xx with {ok:true,status:"ready"}; got HTTP ${statusCode || 'network_error'}.`
+        : warning
+          ? `Readiness latency ${elapsedMs} ms exceeds warning budget ${warningBudgetMs} ms.`
+          : 'ok',
       observed: safeObserved(kind, body),
     };
   }
@@ -128,6 +136,7 @@ async function fetchJson(url, { timeoutMs = 10000, fetchImpl = fetch } = {}) {
 export async function runMonitorAttempt({
   baseUrl = DEFAULT_PRODUCTION_URL,
   timeoutMs = 10000,
+  readyWarningMs = 3000,
   fetchImpl = fetch,
 } = {}) {
   const normalized = normalizeBaseUrl(baseUrl);
@@ -136,7 +145,7 @@ export async function runMonitorAttempt({
   for (const endpoint of ENDPOINTS) {
     const url = `${normalized}${endpoint.path}?external_monitor=${Date.now()}`;
     const response = await fetchJson(url, { timeoutMs, fetchImpl });
-    const evaluation = evaluateEndpoint(endpoint.name, response);
+    const evaluation = evaluateEndpoint(endpoint.name, response, { readyWarningMs });
     checks[endpoint.name] = {
       endpoint: endpoint.path,
       statusCode: response.statusCode,
@@ -181,13 +190,14 @@ export async function main() {
   const retries = Math.max(1, Math.min(5, Number(process.env.EXTERNAL_MONITOR_RETRIES || 3)));
   const retryDelayMs = Math.max(0, Math.min(60000, Number(process.env.EXTERNAL_MONITOR_RETRY_DELAY_MS || 10000)));
   const timeoutMs = Math.max(1000, Math.min(30000, Number(process.env.EXTERNAL_MONITOR_TIMEOUT_MS || 10000)));
+  const readyWarningMs = Math.max(500, Math.min(9000, Number(process.env.EXTERNAL_MONITOR_READY_WARNING_MS || 3000)));
 
   let finalResult = null;
   let attemptsUsed = 0;
 
   for (let attempt = 1; attempt <= retries; attempt += 1) {
     attemptsUsed = attempt;
-    finalResult = await runMonitorAttempt({ baseUrl, timeoutMs });
+    finalResult = await runMonitorAttempt({ baseUrl, timeoutMs, readyWarningMs });
     if (finalResult.ok) break;
     if (attempt < retries) await sleep(retryDelayMs);
   }
