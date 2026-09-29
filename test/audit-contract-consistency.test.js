@@ -13,6 +13,7 @@ const packageMeta=JSON.parse(fs.readFileSync('package.json','utf8'));
 const releaseContract=JSON.parse(fs.readFileSync('release-contract.json','utf8'));
 const indexHtml=fs.readFileSync('public/index.html','utf8');
 const statusHtml=fs.readFileSync('public/status.html','utf8');
+const wranglerConfig=fs.readFileSync('wrangler.jsonc','utf8');
 
 function walk(dir){
   return fs.readdirSync(dir,{withFileTypes:true}).flatMap(entry=>{
@@ -44,10 +45,12 @@ test('audit: frontend literal API routes are implemented by the Worker',()=>{
   }
 });
 
-test('audit: every Worker env variable is documented in .env.example',()=>{
+test('audit: every operator-managed Worker env variable is documented in .env.example',()=>{
   const used=new Set([...sourceText.matchAll(/\benv\.([A-Z][A-Z0-9_]*)\b/g)].map(match=>match[1]));
   const documented=new Set([...envExample.matchAll(/^([A-Z][A-Z0-9_]*)=/gm)].map(match=>match[1]));
-  assert.deepEqual([...used].filter(name=>!documented.has(name)).sort(),[]);
+  const platformBindings=new Set([...wranglerConfig.matchAll(/"binding"\s*:\s*"([A-Z][A-Z0-9_]*)"/g)].map(match=>match[1]));
+  assert.deepEqual([...used].filter(name=>!documented.has(name) && !platformBindings.has(name)).sort(),[]);
+  assert.ok(platformBindings.has('CF_VERSION_METADATA'),'Cloudflare version metadata must remain a declared platform binding');
 });
 
 test('audit: shipped source does not instruct operators to run removed migration files',()=>{
