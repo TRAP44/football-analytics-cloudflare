@@ -7,6 +7,8 @@ export const DAILY_DIGEST_POLICY = Object.freeze({
   executionBudgetMs: 210000,
   deliveryHourUtc: 7,
   claimLeaseSeconds: 180,
+  lateBacklogMinuteUtc: 50,
+  sealedClaimAgeMs: 5 * 60 * 1000,
 });
 
 function asTime(value) {
@@ -39,6 +41,16 @@ export function planDailyDigestRecipients(rows = [], {
     const lockedUntil = Date.parse(String(row?.delivery_locked_until || ''));
     return Number.isFinite(lockedUntil) && lockedUntil > nowMs;
   });
+  const sealedClaims = activeClaims.filter(row => {
+    const claimedAt = Date.parse(String(row?.delivery_claimed_at || ''));
+    const age = Number.isFinite(claimedAt) ? Math.max(0, nowMs - claimedAt) : Number.POSITIVE_INFINITY;
+    return age >= DAILY_DIGEST_POLICY.sealedClaimAgeMs;
+  });
+  const freshClaims = activeClaims.filter(row => !sealedClaims.includes(row));
+  const activeClaimAgesMs = activeClaims
+    .map(row => Date.parse(String(row?.delivery_claimed_at || '')))
+    .filter(Number.isFinite)
+    .map(value => Math.max(0, nowMs - value));
   const expiredClaims = claimedToday.filter(row => !activeClaims.includes(row));
   const pending = due.filter(row => String(row?.delivery_claim_date || '') !== deliveryDate || expiredClaims.includes(row));
   const boundedMax = Math.max(1, Number(maxRecipients || DAILY_DIGEST_POLICY.maxRecipientsPerRun));
@@ -50,11 +62,76 @@ export function planDailyDigestRecipients(rows = [], {
     eligible: due.length,
     duplicate: activeClaims.length,
     activeClaims: activeClaims.length,
+    freshClaims: freshClaims.length,
+    sealedClaims: sealedClaims.length,
+    oldestActiveClaimAgeMs: activeClaimAgesMs.length ? Math.max(...activeClaimAgesMs) : 0,
     expiredClaims: expiredClaims.length,
     deferred: Math.max(0, pending.length - boundedMax),
     remaining: Math.max(0, pending.length - boundedMax),
     backlog: Math.max(0, pending.length - boundedMax),
     truncated: Boolean(truncated),
+  };
+}
+
+export function assessDailyDigestRun(summary = {}, scheduledAt = new Date()) {
+  const date = scheduledAt instanceof Date ? scheduledAt : new Date(scheduledAt);
+  const minute = Number.isFinite(date.getTime()) ? date.getUTCMinutes() : 0;
+  const finalWindow = minute >= DAILY_DIGEST_POLICY.lateBacklogMinuteUtc;
+  const backlog = Math.max(0, Number(summary.remaining ?? summary.backlog ?? 0));
+  const sealedClaims = Math.max(0, Number(summary.sealedClaims || 0));
+  const expiredClaims = Math.max(0, Number(summary.expiredClaims || 0));
+  const failed = Math.max(0, Number(summary.failed || 0));
+  const stateFailed = Math.max(0, Number(summary.stateFailed || 0));
+  const newsFailed = Math.max(0, Number(summary.newsFailed || 0));
+  const rateLimited = Math.max(0, Number(summary.rateLimited || 0));
+  const budgetExhausted = Boolean(summary.budgetExhausted);
+  const truncated = Boolean(summary.truncated);
+
+  if (sealedClaims > 0) {
+    return {
+      severity: 'warning',
+      code: 'DAILY_DIGEST_SEALED_CLAIMS',
+      phase: finalWindow ? 'late' : 'active',
+      reason: 'sealed_claims',
+    };
+  }
+  if (finalWindow && backlog > 0) {
+    return {
+      severity: 'warning',
+      code: 'DAILY_DIGEST_BACKLOG_LATE',
+      phase: 'late',
+      reason: 'late_backlog',
+    };
+  }
+  if (failed || stateFailed || newsFailed || rateLimited || budgetExhausted || truncated) {
+    return {
+      severity: 'warning',
+      code: 'DAILY_DIGEST_RUN_DEGRADED',
+      phase: finalWindow ? 'late' : 'active',
+      reason: 'degraded',
+    };
+  }
+  if (expiredClaims > 0) {
+    return {
+      severity: 'info',
+      code: 'DAILY_DIGEST_CLAIMS_RECOVERED',
+      phase: finalWindow ? 'late' : 'active',
+      reason: 'claim_recovery',
+    };
+  }
+  if (backlog > 0) {
+    return {
+      severity: 'info',
+      code: 'DAILY_DIGEST_RUN_DEFERRED',
+      phase: 'active',
+      reason: 'bounded_backlog',
+    };
+  }
+  return {
+    severity: 'info',
+    code: 'DAILY_DIGEST_RUN_OK',
+    phase: finalWindow ? 'late' : 'active',
+    reason: 'healthy',
   };
 }
 

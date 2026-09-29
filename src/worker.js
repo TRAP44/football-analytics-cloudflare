@@ -50,7 +50,7 @@ import { createUserHistoryService } from './user-history.js';
 import { createReminderDeliveryStore } from './reminder-delivery-store.js';
 import { createReminderDeliveryService } from './reminder-delivery-service.js';
 import { createScheduledJobsRuntime } from './scheduled-jobs.js';
-import { DAILY_DIGEST_POLICY, planDailyDigestRecipients, runBoundedDailyDigest } from './daily-digest-delivery.js';
+import { DAILY_DIGEST_POLICY, assessDailyDigestRun, planDailyDigestRecipients, runBoundedDailyDigest } from './daily-digest-delivery.js';
 import { createProviderObservabilityRuntime } from './provider-observability.js';
 import { buildProviderSloIncidentTimeline, providerSloIncidentOpsEvent, providerSloIncidentUpdateOpsEvent } from './provider-slo-incidents.js';
 import {
@@ -6987,17 +6987,24 @@ async function processDailyDigests(cfg,scheduledAt=new Date()) {
   if (!plan.pending.length) {
     const summary={
       date,scanned:plan.scanned,pages:plan.pages,eligible:plan.eligible,claimed:0,sent:0,
-      duplicate:plan.duplicate,failed:0,rateLimited:0,deferred:0,remaining:0,backlog:0,
+      duplicate:plan.duplicate,activeClaims:plan.activeClaims,freshClaims:plan.freshClaims,
+      sealedClaims:plan.sealedClaims,oldestActiveClaimAgeMs:plan.oldestActiveClaimAgeMs,
+      expiredClaims:plan.expiredClaims,failed:0,rateLimited:0,deferred:0,remaining:0,backlog:0,
       truncated:Boolean(plan.truncated),duration:Date.now()-startedAt,
     };
+    const health=assessDailyDigestRun(summary,scheduledAt);
     await recordOpsEvent(cfg,{
-      severity:plan.truncated?'warning':'info',
+      severity:health.severity,
       source:'telegram',
       eventType:'daily_digest',
-      code:plan.truncated?'DAILY_DIGEST_RUN_TRUNCATED':'DAILY_DIGEST_RUN_EMPTY',
-      message:plan.truncated?'Daily digest run finished with a truncated subscription scan.':'Daily digest run completed with no pending recipients.',
+      code:plan.truncated?'DAILY_DIGEST_RUN_TRUNCATED':health.code,
+      message:plan.truncated
+        ? 'Daily digest run finished with a truncated subscription scan.'
+        : health.reason==='sealed_claims'
+          ? `Daily digest has ${summary.sealedClaims} sealed claim(s) requiring observation.`
+          : 'Daily digest run completed with no pending recipients.',
       endpoint:'cron:daily-digest',
-      meta:summary,
+      meta:{...summary,health},
     }).catch(()=>null);
     return summary;
   }
@@ -7048,21 +7055,29 @@ async function processDailyDigests(cfg,scheduledAt=new Date()) {
   const summary={
     ...result,
     date,
+    freshClaims:plan.freshClaims,
+    sealedClaims:plan.sealedClaims,
+    oldestActiveClaimAgeMs:plan.oldestActiveClaimAgeMs,
+    expiredClaims:plan.expiredClaims,
     news:Number(morningNews.items?.length || 0),
+    completionRate:result.claimed>0 ? Number((result.sent/result.claimed).toFixed(4)) : 1,
     duration:Date.now()-startedAt,
   };
-  const degraded=Boolean(
-    summary.failed || summary.stateFailed || summary.newsFailed || summary.rateLimited
-    || summary.budgetExhausted || summary.truncated
-  );
+  const health=assessDailyDigestRun(summary,scheduledAt);
   await recordOpsEvent(cfg,{
-    severity:degraded?'warning':'info',
+    severity:health.severity,
     source:'telegram',
     eventType:'daily_digest',
-    code:degraded?'DAILY_DIGEST_RUN_DEGRADED':summary.remaining?'DAILY_DIGEST_RUN_DEFERRED':'DAILY_DIGEST_RUN_OK',
-    message:`Daily digest: sent ${summary.sent}/${summary.eligible}, deferred ${summary.deferred}, failed ${summary.failed}.`,
+    code:health.code,
+    message:health.reason==='late_backlog'
+      ? `Daily digest late backlog: ${summary.remaining} recipient(s) remain near the end of the delivery window.`
+      : health.reason==='sealed_claims'
+        ? `Daily digest has ${summary.sealedClaims} sealed claim(s); oldest active claim age ${summary.oldestActiveClaimAgeMs}ms.`
+        : health.reason==='claim_recovery'
+          ? `Daily digest recovered ${summary.recoveredClaims} expired claim(s).`
+          : `Daily digest: sent ${summary.sent}/${summary.eligible}, deferred ${summary.deferred}, failed ${summary.failed}.`,
     endpoint:'cron:daily-digest',
-    meta:summary,
+    meta:{...summary,health},
   }).catch(()=>null);
   return summary;
 }
