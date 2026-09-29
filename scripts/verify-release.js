@@ -67,6 +67,12 @@ for (const marker of [
 ]) {
   if (!baseline.toLowerCase().includes(marker.toLowerCase())) failures.push(`RC99 unified baseline is missing: ${marker}`);
 }
+if (!fs.existsSync('src/release-identity.js')) failures.push('Missing runtime release identity module');
+if (!wrangler.includes('"version_metadata"') || !wrangler.includes('"binding": "CF_VERSION_METADATA"')) failures.push('Cloudflare version metadata binding is missing');
+if (!worker.includes("runtimeReleaseIdentity") || !worker.includes("cloudflareVersionId")) failures.push('Worker runtime release identity integration is missing');
+if (!deployWorkflow.includes('--tag "${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy must tag the Cloudflare version with deploy SHA');
+if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "${{ env.RELEASE_VERSION }}" "${{ env.DEPLOY_SHA }}"')) failures.push('Production smoke must verify exact deploy SHA at runtime');
+if (!productionReleasePostconditionVerifier.includes("annotations?.['workers/tag']")) failures.push('Production release verifier must validate the Cloudflare version tag');
 if (!fs.existsSync('src/access-control.js')) failures.push('Missing access-control module');
 if (!fs.existsSync('scripts/post-deploy-smoke.js')) failures.push('Missing post-deploy smoke test');
 if (!fs.existsSync('.github/workflows/deploy-production.yml')) failures.push('Missing production deploy workflow');
