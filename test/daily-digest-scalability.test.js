@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   DAILY_DIGEST_POLICY,
   assessDailyDigestRun,
@@ -438,6 +439,45 @@ test('O. expired claim recovery is observable without escalating a healthy run',
   assert.equal(health.severity, 'info');
   assert.equal(health.code, 'DAILY_DIGEST_CLAIMS_RECOVERED');
   assert.equal(health.reason, 'claim_recovery');
+});
+
+test('P. provider payload degradation is a warning even before Telegram delivery starts', () => {
+  const health = assessDailyDigestRun(
+    { remaining: 12, backlog: 12, providerDegraded: true, failed: 0, rateLimited: 0 },
+    new Date(`${DATE}T07:20:00.000Z`),
+  );
+
+  assert.equal(health.severity, 'warning');
+  assert.equal(health.code, 'DAILY_DIGEST_RUN_DEGRADED');
+  assert.equal(health.reason, 'degraded');
+});
+
+test('Q. worker keeps provider payload failures retryable and optional morning news fail-soft', () => {
+  const worker = fs.readFileSync('src/worker.js','utf8');
+  const start = worker.indexOf('async function processDailyDigests');
+  const end = worker.indexOf('function telegramHtmlEscape',start);
+  assert.ok(start >= 0 && end > start);
+  const block = worker.slice(start,end);
+
+  assert.match(block,/payload unavailable because API-Football is rate limited/);
+  assert.match(block,/remaining:plan\.pending\.length/);
+  assert.match(block,/retryable:true/);
+  assert.match(block,/currentMorningFootballNews\(cfg\)\.catch/);
+  assert.match(block,/providerDegraded:Boolean\(digest\.providerDegraded\)/);
+});
+
+test('R. current digest can fall back to cached current-day matches after provider failure', () => {
+  const worker = fs.readFileSync('src/worker.js','utf8');
+  const start = worker.indexOf('function digestRowsFromMatchCache');
+  const end = worker.indexOf('async function loadBotDayMatches',start);
+  assert.ok(start >= 0 && end > start);
+  const block = worker.slice(start,end);
+
+  assert.match(block,/matches:\$\{date\}:v6-integrity/);
+  assert.match(block,/getStaleCache\(matchCacheKey,cfg\)/);
+  assert.match(block,/source:'matches_cache'/);
+  assert.match(block,/providerDegraded:true/);
+  assert.doesNotMatch(block,/chat_id|telegram_id|botToken|Authorization/);
 });
 
 test('controlled performance model covers 100 / 1k / 5k / 10k recipients', () => {
