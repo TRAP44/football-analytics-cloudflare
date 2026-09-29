@@ -4405,10 +4405,19 @@ function knownTeamSummaryCard(team) {
 }
 
 function searchCompetitionSummaryCard(comp) {
-  return `<div class="search-entity-summary">
-    <span class="discovery-team-logo">🏆</span>
+  return `<button class="search-entity-summary search-competition-summary" type="button"
+    data-search-competition="${Number(comp.leagueId)}"
+    data-season="${Number(comp.season || new Date().getFullYear())}"
+    data-comp-name="${escapeHtml(comp.name || comp.shortName || 'Турнир')}"
+    data-comp-short="${escapeHtml(comp.shortName || comp.name || 'Турнир')}"
+    data-comp-country="${escapeHtml(comp.country || '')}"
+    data-comp-category="${escapeHtml(comp.category || '')}"
+    data-comp-tier="${escapeHtml(comp.tier || 'standard')}"
+    aria-label="Открыть турнир ${escapeHtml(comp.shortName || comp.name || 'Турнир')}">
+    <span class="discovery-team-logo">${comp.logo ? `<img src="${safeUrl(comp.logo)}" alt="">` : '🏆'}</span>
     <span><small>ТУРНИР НАЙДЕН</small><strong>${escapeHtml(comp.shortName || comp.name || 'Турнир')}</strong><em>${escapeHtml(comp.country || '')}</em></span>
-  </div>`;
+    <b>Открыть →</b>
+  </button>`;
 }
 
 function bindDiscoveryActions(root = document) {
@@ -4428,24 +4437,44 @@ function bindDiscoveryActions(root = document) {
   }));
 }
 
+function discoveryText(value) {
+  return String(value || '').trim().toLowerCase().replace(/ё/g, 'е');
+}
+
+function discoveryMatchRank(value, query) {
+  const text = discoveryText(value);
+  const q = discoveryText(query);
+  if (!text || !q) return 99;
+  if (text === q) return 0;
+  if (text.startsWith(q)) return 1;
+  if (text.split(/\s+/).some(part => part.startsWith(q))) return 2;
+  if (text.includes(q)) return 3;
+  return 99;
+}
+
 function localDiscoveryResults(query) {
-  const q = String(query || '').trim().toLowerCase().replace(/ё/g, 'е');
+  const q = discoveryText(query);
   if (!q) return { teams: [], competitions: [], matches: [] };
   const teams = new Map(), competitions = new Map(), matches = [];
   for (const m of state.matches) {
     for (const team of [m.home, m.away]) {
       if (!team?.id || !team?.name) continue;
-      const hay = `${team.name} ${m.country || ''}`.toLowerCase().replace(/ё/g, 'е');
-      if (hay.includes(q) && !teams.has(Number(team.id))) teams.set(Number(team.id), { ...team, country: m.country || '' });
+      const rank = Math.min(discoveryMatchRank(team.name, q), discoveryMatchRank(`${team.name} ${m.country || ''}`, q));
+      if (rank < 99 && !teams.has(Number(team.id))) teams.set(Number(team.id), { ...team, country: m.country || '', _searchRank:rank });
     }
-    const chay = `${m.league || ''} ${m.leagueOriginal || ''} ${m.leagueShort || ''} ${m.country || ''}`.toLowerCase().replace(/ё/g, 'е');
-    if (Number(m.leagueId) > 0 && chay.includes(q) && !competitions.has(Number(m.leagueId))) competitions.set(Number(m.leagueId), {
-      leagueId: Number(m.leagueId), season: Number(m.season || new Date().getFullYear()), name: m.league || m.leagueOriginal || 'Турнир', shortName: m.leagueShort || m.league || 'Турнир', country: m.country || '', category: m.category || '', tier: m.competition?.tier || 'standard', logo: m.leagueLogo || '',
+    const names = [m.leagueShort, m.league, m.leagueOriginal].filter(Boolean);
+    const compRank = Math.min(...names.map(name => discoveryMatchRank(name, q)), discoveryMatchRank(`${m.league || ''} ${m.country || ''}`, q));
+    if (Number(m.leagueId) > 0 && compRank < 99 && !competitions.has(Number(m.leagueId))) competitions.set(Number(m.leagueId), {
+      leagueId: Number(m.leagueId), season: Number(m.season || new Date().getFullYear()), name: m.league || m.leagueOriginal || 'Турнир', shortName: m.leagueShort || m.league || 'Турнир', country: m.country || '', category: m.category || '', tier: m.competition?.tier || 'standard', logo: m.leagueLogo || '', _searchRank:compRank,
     });
-    const mhay = `${m.home?.name || ''} ${m.away?.name || ''} ${m.league || ''} ${m.leagueOriginal || ''} ${m.country || ''}`.toLowerCase().replace(/ё/g, 'е');
-    if (mhay.includes(q) && Number(m.fixtureId) > 0) matches.push(m);
+    const teamRank = Math.min(discoveryMatchRank(m.home?.name, q), discoveryMatchRank(m.away?.name, q));
+    const matchRank = Math.min(teamRank, discoveryMatchRank(m.league, q), discoveryMatchRank(m.leagueOriginal, q));
+    if (matchRank < 99 && Number(m.fixtureId) > 0) matches.push({ ...m, _searchRank:matchRank });
   }
-  return { teams: [...teams.values()].slice(0, 10), competitions: [...competitions.values()].slice(0, 8), matches: matches.slice(0, 20) };
+  const teamRows = [...teams.values()].sort((a,b) => Number(a._searchRank||99)-Number(b._searchRank||99) || String(a.name||'').localeCompare(String(b.name||''),'ru'));
+  const compRows = [...competitions.values()].sort((a,b) => Number(a._searchRank||99)-Number(b._searchRank||99) || Number(b.tier==='top')-Number(a.tier==='top') || String(a.shortName||a.name||'').localeCompare(String(b.shortName||b.name||''),'ru'));
+  matches.sort((a,b) => Number(a._searchRank||99)-Number(b._searchRank||99) || Number(Boolean(b.live))-Number(Boolean(a.live)) || Date.parse(a.date||0)-Date.parse(b.date||0));
+  return { teams: teamRows.slice(0, 10), competitions: compRows.slice(0, 8), matches: matches.slice(0, 20) };
 }
 
 function mergeById(first = [], second = [], idKey = 'id') {
@@ -4472,10 +4501,13 @@ function renderDiscoveryHome() {
   setDiscoveryHomeVisibility(!String(state.globalSearch.query || '').trim());
   if (recentEl) {
     const rows = getRecentTeams();
-    recentEl.innerHTML = rows.length ? rows.map(x => discoveryTeamCard(x, 'Недавно')).join('') : '<div class="empty compact-empty">Открытые команды появятся здесь.</div>';
+    recentEl.innerHTML = rows.map(x => discoveryTeamCard(x, 'Недавно')).join('');
+    if ($('searchRecentWrap')) $('searchRecentWrap').hidden = !rows.length || Boolean(String(state.globalSearch.query || '').trim());
   }
   if (favEl) {
-    favEl.innerHTML = state.favorites.length ? state.favorites.slice(0, 10).map(x => discoveryTeamCard({ id:x.teamId, name:x.teamName, logo:x.teamLogo }, 'Избранное')).join('') : '<div class="empty compact-empty">Добавьте команду в избранное — она появится здесь.</div>';
+    const rows = state.favorites.slice(0, 10);
+    favEl.innerHTML = rows.map(x => discoveryTeamCard({ id:x.teamId, name:x.teamName, logo:x.teamLogo }, 'Избранное')).join('');
+    if ($('searchFavoritesWrap')) $('searchFavoritesWrap').hidden = !rows.length || Boolean(String(state.globalSearch.query || '').trim());
   }
   if (compEl) {
     const seen = new Set();
@@ -4507,7 +4539,7 @@ function searchMatchCard(match) {
   const status = live ? (match.statusLabel || 'Матч идёт') : finished ? 'Завершён' : dateTime(match.date);
   const action = finished || live
     ? `<button class="search-match-action" type="button" data-search-center="${Number(match.fixtureId)}">${finished ? 'Итоги' : 'Центр матча'}</button>`
-    : `<button class="search-match-action" type="button" data-search-fixture="${Number(match.fixtureId)}">Преданализ</button>`;
+    : `<button class="search-match-action" type="button" data-search-fixture="${Number(match.fixtureId)}">AI-разбор</button>`;
   const primaryLabel=primary ? `<div class="search-match-primary"><b>⭐ ОСНОВНОЙ МАТЧ</b><span>${escapeHtml(match?.selection?.reason || state.globalSearch.matchDiscovery?.primaryReason || 'Основной выбор MatchRadar для анализа')}</span></div>` : '';
   return `<article class="search-match-card ${live ? 'is-live' : finished ? 'is-finished' : 'is-upcoming'} ${primary ? 'is-primary' : ''}">${primaryLabel}
     <div class="search-match-meta"><span>${escapeHtml(match.league || match.competition?.name || 'Матч')}</span><small>${escapeHtml(status)}</small></div>
