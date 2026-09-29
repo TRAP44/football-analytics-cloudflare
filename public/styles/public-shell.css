@@ -3325,3 +3325,45 @@ html {
   .miniapp-public-shell .first-run-guide-actions{grid-template-columns:1fr}
   .miniapp-public-shell .first-run-guide-dismiss{grid-column:1}
 }
+
+
+/* MatchRadar Home Match Card Hierarchy — status, score and first-action clarity */
+.miniapp-public-shell .compact-match-card .match-card-topline{
+  font-size:11px;
+  line-height:1.25;
+}
+.miniapp-public-shell .compact-match-card .competition-name{
+  color:color-mix(in srgb,var(--text) 72%,var(--hint));
+}
+.miniapp-public-shell .compact-match-card .match-live-label{
+  font-weight:900;
+  letter-spacing:.045em;
+}
+.miniapp-public-shell .compact-match-card .compact-score{
+  white-space:nowrap;
+}
+.miniapp-public-shell .compact-match-card .compact-score.score-upcoming{
+  color:var(--hint);
+  font-size:12px;
+  font-weight:850;
+  letter-spacing:.08em;
+}
+.miniapp-public-shell .compact-match-card .compact-score.score-live{
+  color:var(--brand-live);
+}
+.miniapp-public-shell .compact-match-card .compact-score.score-finished{
+  color:var(--text);
+}
+.miniapp-public-shell .compact-match-card.is-live .live-center-btn{
+  background:color-mix(in srgb,var(--brand-live) 16%,var(--accent));
+  box-shadow:0 10px 24px color-mix(in srgb,var(--brand-live) 17%,transparent);
+}
+@media(max-width:360px){
+  .miniapp-public-shell .compact-match-card .match-card-topline{
+    gap:8px;
+    font-size:10.5px;
+  }
+  .miniapp-public-shell .compact-match-card .compact-score.score-upcoming{
+    font-size:11px;
+  }
+}
