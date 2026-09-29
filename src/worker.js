@@ -6861,15 +6861,56 @@ async function releaseDigestDelivery(row,date,cfg) {
   return true;
 }
 
+function digestRowsFromMatchCache(matches = [], limit = 3) {
+  return (matches || []).map(normalizeBotFixtureCard).filter(match => match.fixtureId).map(match => ({
+    fixtureId:Number(match.fixtureId || 0),
+    date:String(match.date || ''),
+    status:String(match.status || ''),
+    live:Boolean(match.live),
+    home:{id:Number(match.home?.id || 0),name:String(match.home?.name || match.homeName || ''),logo:String(match.home?.logo || '')},
+    away:{id:Number(match.away?.id || 0),name:String(match.away?.name || match.awayName || ''),logo:String(match.away?.logo || '')},
+    homeName:String(match.home?.name || match.homeName || ''),
+    awayName:String(match.away?.name || match.awayName || ''),
+    league:String(match.league || 'Турнир'),
+    score:Number(match.interestScore || 0),
+    priority:Number(match.competition?.priority || 0),
+    featured:Boolean(match.featured),
+  })).sort((a,b) =>
+    Number(b.live)-Number(a.live)
+    || Number(b.featured)-Number(a.featured)
+    || b.score-a.score
+    || b.priority-a.priority
+    || String(a.date).localeCompare(String(b.date))
+  ).slice(0,Math.max(1,Math.min(20,Number(limit || 3))));
+}
+
 async function currentDailyDigest(cfg) {
   const date=todayUtc();
   const cacheKey=`bot:digest:${date}:v1`;
   const cached=await getCache(cacheKey,cfg);
   if (cached?.rows) return cached;
-  const fixtures=await apiFootball('/fixtures',{date},cfg);
-  const payload={date,rows:digestFixtureRows(fixtures),generatedAt:new Date().toISOString()};
-  await setCache(cacheKey,0,payload,cfg,10);
-  return payload;
+  try {
+    const fixtures=await apiFootball('/fixtures',{date},cfg);
+    const payload={date,rows:digestFixtureRows(fixtures),generatedAt:new Date().toISOString(),source:'provider',providerDegraded:false};
+    await setCache(cacheKey,0,payload,cfg,10);
+    return payload;
+  } catch (error) {
+    const matchCacheKey=`matches:${date}:v6-integrity`;
+    const matchCache=await getCache(matchCacheKey,cfg).catch(()=>null)
+      || await getStaleCache(matchCacheKey,cfg).catch(()=>null);
+    const rows=digestRowsFromMatchCache(matchCache?.matches || [],3);
+    if (rows.length) {
+      return {
+        date,
+        rows,
+        generatedAt:new Date().toISOString(),
+        source:'matches_cache',
+        providerDegraded:true,
+        providerRateLimited:isFootballRateLimitError(error),
+      };
+    }
+    throw error;
+  }
 }
 
 async function loadBotDayMatches(cfg, { liveOnly = false, limit = 8 } = {}) {
@@ -7012,8 +7053,57 @@ async function processDailyDigests(cfg,scheduledAt=new Date()) {
   }
 
   // Shared provider-backed payloads are resolved once per cron invocation, never
-  // once per recipient/page. Both helpers retain their existing daily caches.
-  const [digest,morningNews]=await Promise.all([currentDailyDigest(cfg),currentMorningFootballNews(cfg)]);
+  // once per recipient/page. Main digest data is required, while morning news is
+  // optional and must not block the primary delivery path.
+  let digest;
+  try {
+    digest=await currentDailyDigest(cfg);
+  } catch (error) {
+    const summary={
+      date,
+      scanned:plan.scanned,
+      pages:plan.pages,
+      eligible:plan.eligible,
+      claimed:0,
+      sent:0,
+      duplicate:plan.duplicate,
+      activeClaims:plan.activeClaims,
+      freshClaims:plan.freshClaims,
+      sealedClaims:plan.sealedClaims,
+      oldestActiveClaimAgeMs:plan.oldestActiveClaimAgeMs,
+      expiredClaims:plan.expiredClaims,
+      failed:0,
+      rateLimited:isFootballRateLimitError(error) ? 1 : 0,
+      providerDegraded:true,
+      payloadUnavailable:true,
+      deferred:plan.pending.length,
+      remaining:plan.pending.length,
+      backlog:plan.pending.length,
+      truncated:Boolean(plan.truncated),
+      completionRate:null,
+      duration:Date.now()-startedAt,
+    };
+    const health=assessDailyDigestRun(summary,scheduledAt);
+    await recordOpsEvent(cfg,{
+      severity:'warning',
+      source:'telegram',
+      eventType:'daily_digest',
+      code:'DAILY_DIGEST_RUN_DEGRADED',
+      message:isFootballRateLimitError(error)
+        ? 'Daily digest payload unavailable because API-Football is rate limited; recipients remain pending for the next cron slot.'
+        : 'Daily digest payload unavailable; recipients remain pending for the next cron slot.',
+      endpoint:'cron:daily-digest',
+      meta:{...summary,health,payloadSource:'unavailable',retryable:true},
+    }).catch(()=>null);
+    return summary;
+  }
+
+  const morningNews=await currentMorningFootballNews(cfg).catch(()=>({
+    date,
+    items:[],
+    generatedAt:new Date().toISOString(),
+    degraded:true,
+  }));
   const matchButtons=(digest.rows || []).slice(0,3).map(match=>[{
     text:`⚽ ${String(match.homeName || '').slice(0,18)} — ${String(match.awayName || '').slice(0,18)}`,
     callback_data:`match:menu:${Number(match.fixtureId)}`,
@@ -7062,6 +7152,10 @@ async function processDailyDigests(cfg,scheduledAt=new Date()) {
     oldestActiveClaimAgeMs:plan.oldestActiveClaimAgeMs,
     expiredClaims:plan.expiredClaims,
     news:Number(morningNews.items?.length || 0),
+    newsDegraded:Boolean(morningNews.degraded),
+    providerDegraded:Boolean(digest.providerDegraded),
+    providerRateLimited:Boolean(digest.providerRateLimited),
+    payloadSource:String(digest.source || 'provider'),
     completionRate:result.claimed>0 ? Number((result.sent/result.claimed).toFixed(4)) : 1,
     duration:Date.now()-startedAt,
   };

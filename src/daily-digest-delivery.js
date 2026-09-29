@@ -84,6 +84,7 @@ export function assessDailyDigestRun(summary = {}, scheduledAt = new Date()) {
   const stateFailed = Math.max(0, Number(summary.stateFailed || 0));
   const newsFailed = Math.max(0, Number(summary.newsFailed || 0));
   const rateLimited = Math.max(0, Number(summary.rateLimited || 0));
+  const providerDegraded = Boolean(summary.providerDegraded || summary.payloadUnavailable);
   const budgetExhausted = Boolean(summary.budgetExhausted);
   const truncated = Boolean(summary.truncated);
 
@@ -103,7 +104,7 @@ export function assessDailyDigestRun(summary = {}, scheduledAt = new Date()) {
       reason: 'late_backlog',
     };
   }
-  if (failed || stateFailed || newsFailed || rateLimited || budgetExhausted || truncated) {
+  if (failed || stateFailed || newsFailed || rateLimited || providerDegraded || budgetExhausted || truncated) {
     return {
       severity: 'warning',
       code: 'DAILY_DIGEST_RUN_DEGRADED',
