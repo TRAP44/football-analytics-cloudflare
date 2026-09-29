@@ -195,7 +195,7 @@ test('I. production monitor reads filtered SLO events and propagates watch state
   assert.match(worker,/url\.searchParams\.set\('event_type','eq\.reliability_slo'\)/);
   assert.match(worker,/dailyDigestSloState/);
   assert.match(worker,/digestReliabilitySlo\.state/);
-  assert.match(worker,/dailyDigestSloWatch/);
+  assert.match(worker,/digestSloWatch/);
   assert.match(worker,/30\*24\*3600_000/);
 });
 
