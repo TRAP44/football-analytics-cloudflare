@@ -23,7 +23,7 @@ test('MatchRadar is the public brand while internal release identifiers stay unt
   assert.match(html,/Видим, что меняет матч\./);
   assert.doesNotMatch(html,/FutLens|FM AI/);
   assert.doesNotMatch(app,/FutLens|FM AI/);
-  assert.match(app,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
+  assert.match(runtime,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
   assert.match(client,/phase5-session:v2/);
 });
 
