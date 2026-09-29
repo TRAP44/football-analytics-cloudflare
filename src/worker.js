@@ -11773,14 +11773,21 @@ function postMatchReturnDrill() {
 }
 
 async function loadPostMatchReturnCandidates(cfg, now = Date.now()) {
-  if (!hasSupabase(cfg)) return [];
+  if (!hasSupabase(cfg)) return {rows:[],truncated:false};
   const since=new Date(now-POST_MATCH_RETURN_MAX_AGE_HOURS*3600_000).toISOString();
   const cutoff=now-POST_MATCH_RETURN_MIN_DELAY_MINUTES*60_000;
-  const rows=await supaSelectMany(cfg,'analysis_history',{fixture_date:`gte.${since}`},{limit:300,order:'fixture_date.desc'});
-  return (rows || []).filter(row=>{
-    const kickoff=Date.parse(row.fixture_date || '');
-    return Number(row.telegram_id || 0)>0 && Number(row.fixture_id || 0)>0 && Number.isFinite(kickoff) && kickoff<=cutoff;
+  const page=await supaSelectPaged(cfg,'analysis_history',{fixture_date:`gte.${since}`},{
+    pageSize:500,
+    maxRows:5000,
+    order:'fixture_date.desc',
   });
+  return {
+    rows:(page.rows || []).filter(row=>{
+      const kickoff=Date.parse(row.fixture_date || '');
+      return Number(row.telegram_id || 0)>0 && Number(row.fixture_id || 0)>0 && Number.isFinite(kickoff) && kickoff<=cutoff;
+    }),
+    truncated:Boolean(page.truncated),
+  };
 }
 
 async function loadPostMatchReturnPredictions(fixtureIds = [], cfg) {
@@ -11873,13 +11880,25 @@ async function processPostMatchReturns(cfg) {
     if (runtime.value?.remindersEnabled===false) return {checked:0,eligible:0,sent:0,failed:0,skipped:'notifications_disabled'};
 
     const now=Date.now();
-    let candidates=[];
-    try { candidates=await loadPostMatchReturnCandidates(cfg,now); }
+    let candidatePage={rows:[],truncated:false};
+    try { candidatePage=await loadPostMatchReturnCandidates(cfg,now); }
     catch (error) {
       await recordOpsEvent(cfg,{severity:'warning',source:'post_match_return',eventType:'post_match_return',code:'RETURN_HISTORY_READ_FAILED',message:error?.message || error,endpoint:'cron:post-match-return'}).catch(()=>null);
-      return {checked:0,eligible:0,sent:0,failed:1};
+      return {checked:0,eligible:0,sent:0,failed:1,truncated:false};
     }
-    if (!candidates.length) return {checked:0,eligible:0,sent:0,failed:0};
+    const candidates=candidatePage.rows || [];
+    if (candidatePage.truncated) {
+      await recordOpsEvent(cfg,{
+        severity:'warning',
+        source:'post_match_return',
+        eventType:'post_match_return',
+        code:'RETURN_HISTORY_TRUNCATED',
+        message:'Post-match return history scan reached the 5000-row safety cap.',
+        endpoint:'cron:post-match-return',
+        meta:{loaded:Number(candidates.length || 0),cap:5000},
+      }).catch(()=>null);
+    }
+    if (!candidates.length) return {checked:0,eligible:0,sent:0,failed:0,truncated:Boolean(candidatePage.truncated)};
 
     const ids=[...new Set(candidates.map(row=>Number(row.fixture_id || 0)).filter(Boolean))];
     let predictions=await loadPostMatchReturnPredictions(ids,cfg).catch(()=>[]);
@@ -11924,7 +11943,7 @@ async function processPostMatchReturns(cfg) {
       }
     }
 
-    const summary={checked:candidates.length,eligible,sent,failed,deduped,disabled,cooldown,providerProbes:Number(refresh.probed || 0),newlySettled:Number(refresh.settled || 0)};
+    const summary={checked:candidates.length,eligible,sent,failed,deduped,disabled,cooldown,truncated:Boolean(candidatePage.truncated),providerProbes:Number(refresh.probed || 0),newlySettled:Number(refresh.settled || 0)};
     if (sent || failed) await recordOpsEvent(cfg,{severity:failed?'warning':'info',source:'post_match_return',eventType:'post_match_return',code:failed?'RETURN_RUN_WITH_FAILURES':'RETURN_RUN_OK',message:`Post-match return: отправлено ${sent}, ошибок ${failed}.`,endpoint:'cron:post-match-return',meta:summary}).catch(()=>null);
     return summary;
   },{countTelemetry:false});
