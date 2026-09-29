@@ -4968,12 +4968,11 @@ function categoryLabel(category) {
 }
 
 function matchCenter(m) {
-  if (m.finished && m.score?.home !== null && m.score?.away !== null) return `${m.score.home} : ${m.score.away}`;
-  if (m.live) {
-    const minute = Number(m.elapsed || 0) > 0 ? ` · ${Number(m.elapsed)}′` : '';
-    return `${m.score?.home ?? 0}:${m.score?.away ?? 0} · идёт матч${minute}`;
+  if ((m.finished || m.live) && m.score?.home !== null && m.score?.home !== undefined && m.score?.away !== null && m.score?.away !== undefined) {
+    return `${m.score.home} : ${m.score.away}`;
   }
-  return timeOf(m.date);
+  if (m.live) return `${m.score?.home ?? 0} : ${m.score?.away ?? 0}`;
+  return 'VS';
 }
 
 function renderPopularCompetitions() {
@@ -5017,13 +5016,14 @@ function matchCardHtml(m, { grouped = false } = {}) {
   const reminderActive = hasReminder(m.fixtureId);
   const reminderPending = state.reminderMutations.has(Number(m.fixtureId));
   const reminderMinutes = Number(state.preferences?.reminderMinutes || 30);
+  const liveMinute = Number(m.elapsed || 0) > 0 ? ` · ${Number(m.elapsed)}′` : '';
   const statusLabel = m.live
-    ? '<b class="match-live-label">LIVE</b>'
+    ? `<b class="match-live-label">LIVE${liveMinute}</b>`
     : m.finished
       ? '<span class="match-finished-label">Завершён</span>'
       : `<span class="match-time-label">${escapeHtml(timeOf(m.date))}</span>`;
   const primaryAction = m.live
-    ? `<button class="analyze-btn live-center-btn" type="button" data-center="${Number(m.fixtureId)}">Открыть матч</button>`
+    ? `<button class="analyze-btn live-center-btn" type="button" data-center="${Number(m.fixtureId)}">Матч-центр</button>`
     : m.finished
       ? `<button class="analyze-btn finished-btn" type="button" data-center="${Number(m.fixtureId)}">Итоги матча</button>`
       : aiHistory
@@ -5043,7 +5043,7 @@ function matchCardHtml(m, { grouped = false } = {}) {
           ${m.home?.logo ? `<img src="${safeUrl(m.home.logo)}" alt="">` : '<span class="team-logo-fallback">⚽</span>'}
           <strong>${escapeHtml(m.home?.name || '')}</strong>
         </button>
-        <div class="compact-score">${escapeHtml(matchCenter(m))}</div>
+        <div class="compact-score ${m.live ? 'score-live' : m.finished ? 'score-finished' : 'score-upcoming'}">${escapeHtml(matchCenter(m))}</div>
         <button class="team-open-link compact-team away" type="button" data-open-team="${Number(m.away?.id)}" data-team-name="${escapeHtml(m.away?.name || '')}" data-team-logo="${escapeHtml(m.away?.logo || '')}">
           ${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : '<span class="team-logo-fallback">⚽</span>'}
           <strong>${escapeHtml(m.away?.name || '')}</strong>
