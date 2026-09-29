@@ -301,7 +301,7 @@ export function summarizeDailyDigestOperationalStatus(rows = [], ledgerRows = []
       completionRate,
       oldestActiveClaimAgeMs,
       truncated,
-      durationMs:Math.max(0,Number(latestMeta.duration ?? latestMeta.durationMs || 0)),
+      durationMs:Math.max(0,Number((latestMeta.duration ?? latestMeta.durationMs) || 0)),
     } : null,
     incident:{
       state:report.state,
