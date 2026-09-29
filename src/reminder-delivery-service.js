@@ -14,6 +14,7 @@ export function createReminderDeliveryService({
   const successCodeByKind = Object.freeze({
     prematch: 'REMINDER_SENT_PREMATCH',
     kickoff: 'REMINDER_SENT_KICKOFF',
+    lineup: 'REMINDER_SENT_LINEUP',
   });
 
   async function recordReminderDelivery(cfg, { row, kind, result, success, disabled = false, uncertain = false }) {
@@ -203,7 +204,7 @@ export function createReminderDeliveryService({
         failed: 1,
         unknown: 0,
         claimed: 0,
-        staleClaims: stale.prematch + stale.kickoff,
+        staleClaims: Number(stale.prematch || 0) + Number(stale.kickoff || 0) + Number(stale.lineup || 0),
         staleCleanupFailed: Number(stale.failed || 0),
         truncated: false,
       };
@@ -273,7 +274,7 @@ export function createReminderDeliveryService({
       failed,
       unknown,
       claimed,
-      staleClaims: stale.prematch + stale.kickoff,
+      staleClaims: Number(stale.prematch || 0) + Number(stale.kickoff || 0) + Number(stale.lineup || 0),
       staleCleanupFailed: Number(stale.failed || 0),
       truncated,
     };
