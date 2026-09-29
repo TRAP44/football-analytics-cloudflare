@@ -103,11 +103,13 @@ test('one normal startup match-list request can make at most one API-Football ca
 });
 
 
-test('distributed provider guard degradation uses a bounded local emergency budget',()=>{
+test('configured distributed provider guard degradation fails closed while no-Supabase mode stays locally bounded',()=>{
   const gateway=readFileSync(new URL('../src/api-football-gateway.js',import.meta.url),'utf8');
   assert.match(gateway,/function emergencyProviderMinuteLimit/);
   assert.match(gateway,/function claimEmergencyLocalProviderBudget/);
-  assert.match(gateway,/providerEmergencyBudget/);
+  assert.match(gateway,/return claimEmergencyLocalProviderBudget\('supabase_not_configured'\)/);
+  assert.match(gateway,/reason:'guard_unavailable'/);
+  assert.match(gateway,/allowed:false,[\s\S]*degraded:true,[\s\S]*local:false/);
+  assert.doesNotMatch(gateway,/return claimEmergencyLocalProviderBudget\('guard_unavailable'\)/);
   assert.match(gateway,/FOOTBALL_GUARD_DEGRADED/);
-  assert.doesNotMatch(gateway,/guard_unavailable'\};?\s*$/m);
 });
