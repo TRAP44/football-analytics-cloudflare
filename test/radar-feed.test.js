@@ -45,8 +45,8 @@ test('Radar Feed renders on Home and opens existing match surfaces', () => {
 
 test('Radar Feed ships with coherent launch15 cache revision', () => {
   for (const surface of [html, adminHtml]) {
-    assert.match(surface, /frontend-asset-revision" content="6\.120\.0-launch15"/);
-    assert.match(surface, /\/app\.js\?v=6\.120\.0-launch15/);
+    assert.match(surface, /frontend-asset-revision" content="6\.120\.0-launch16"/);
+    assert.match(surface, /\/app\.js\?v=6\.120\.0-launch16/);
   }
   assert.match(styles, /\/\* Radar Feed \*\//);
   assert.match(styles, /\.radar-feed-item\s*\{/);
