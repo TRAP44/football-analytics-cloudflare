@@ -15722,7 +15722,7 @@ function productionMonitorSelfTest() {
     supabaseOk: true, schemaOk: true, releaseState: 'healthy', providerHealth: 'ok', telegramDedupeState:'healthy', persistent: true,
   });
   const drift = productionMonitorState({
-    supabaseOk: true, schemaOk: false, schemaStatus:'drift', releaseState: 'healthy', providerHealth: 'ok', telegramDedupeState:'healthy', persistent: true,
+    supabaseOk: true, schemaOk: false, schemaStatus:'drift', releaseState: 'healthy', providerHealth:'ok', telegramDedupeState:'healthy', persistent:true,
   });
   const schemaUnavailable = productionMonitorState({
     supabaseOk: true, schemaOk: false, schemaStatus:'unavailable', releaseState:'healthy', providerHealth:'ok', telegramDedupeState:'healthy', persistent:true,
@@ -15742,14 +15742,74 @@ function productionMonitorSelfTest() {
   const authIncident = productionMonitorState({
     supabaseOk: true, schemaOk: true, supabaseAuthFailures:1, releaseState:'healthy', providerHealth:'ok', telegramDedupeState:'healthy', persistent:true,
   });
+
+  const digestRun=(date,time='07:55:00Z')=>({
+    created_at:`${date}T${time}`,
+    severity:'info',
+    source:'telegram',
+    event_type:'daily_digest',
+    code:'DAILY_DIGEST_RUN_OK',
+    metadata:{date,sent:100,claimed:100,remaining:0,failed:0,completionRate:1},
+  });
+  const digestHealthyAssessment=assessDailyDigestReliabilitySlo([
+    digestRun('2026-09-27','07:50:00Z'),
+    digestRun('2026-09-28','07:50:00Z'),
+    digestRun('2026-09-29','07:55:00Z'),
+  ],{nowMs:Date.parse('2026-09-29T08:15:00Z')});
+  const digestBeforeCutoff=assessDailyDigestReliabilitySlo([],{nowMs:Date.parse('2026-09-29T08:14:59Z')});
+  const digestMissing=assessDailyDigestReliabilitySlo([],{nowMs:Date.parse('2026-09-29T08:15:00Z')});
+  const firstWatch=planDailyDigestReliabilitySloEvent(digestMissing,[]);
+  const firstWatchRow={
+    created_at:'2026-09-29T08:15:00Z',
+    severity:firstWatch.severity,
+    code:firstWatch.code,
+    metadata:firstWatch.meta,
+  };
+  const repeatedWatch=planDailyDigestReliabilitySloEvent(
+    assessDailyDigestReliabilitySlo([],{nowMs:Date.parse('2026-09-29T08:30:00Z')}),
+    [firstWatchRow],
+  );
+  const lateRunAssessment=assessDailyDigestReliabilitySlo([
+    digestRun('2026-09-29','08:20:00Z'),
+  ],{nowMs:Date.parse('2026-09-29T08:30:00Z')});
+  const recovery=planDailyDigestReliabilitySloEvent(lateRunAssessment,[firstWatchRow]);
+  const recoveryRow={
+    created_at:'2026-09-29T08:30:00Z',
+    severity:recovery.severity,
+    code:recovery.code,
+    metadata:recovery.meta,
+  };
+  const postRecovery=planDailyDigestReliabilitySloEvent(lateRunAssessment,[firstWatchRow,recoveryRow]);
+  const newDayMissing=assessDailyDigestReliabilitySlo([],{nowMs:Date.parse('2026-09-30T08:15:00Z')});
+  const newDayWatch=planDailyDigestReliabilitySloEvent(newDayMissing,[firstWatchRow]);
+
+  const digestSloContract={
+    healthy:digestHealthyAssessment.state==='healthy',
+    cutoff:digestBeforeCutoff.state==='collecting' && digestBeforeCutoff.reason==='before_delivery_window_completion',
+    missingRun:digestMissing.state==='watch' && digestMissing.reason==='missing_run' && firstWatch.action==='record',
+    repeatedWatchSuppressed:repeatedWatch.action==='none' && repeatedWatch.reason==='watch_episode_already_recorded',
+    recovered:recovery.action==='record' && recovery.code==='DAILY_DIGEST_SLO_RECOVERED' && recovery.meta?.reason==='missing_run_recovered',
+    recoveryDeduplicated:postRecovery.action==='none',
+    newDayReset:newDayWatch.action==='record' && newDayWatch.code==='DAILY_DIGEST_SLO_MISSING_RUN',
+  };
+
   return {
-    pass: healthy.state === 'healthy' && drift.state === 'incident' && schemaUnavailable.state === 'watch' && watch.state === 'watch' && providerSloWatch.state === 'watch' && digestSloWatch.state === 'watch' && telegramIncident.state === 'incident' && authIncident.state === 'incident',
+    pass: healthy.state === 'healthy'
+      && drift.state === 'incident'
+      && schemaUnavailable.state === 'watch'
+      && watch.state === 'watch'
+      && providerSloWatch.state === 'watch'
+      && digestSloWatch.state === 'watch'
+      && telegramIncident.state === 'incident'
+      && authIncident.state === 'incident'
+      && Object.values(digestSloContract).every(Boolean),
     healthy: healthy.state,
     drift: drift.state,
     schemaUnavailable: schemaUnavailable.state,
     watch: watch.state,
     providerSloWatch:providerSloWatch.state,
     digestSloWatch:digestSloWatch.state,
+    digestSloContract,
     telegramIncident: telegramIncident.state,
     authIncident: authIncident.state,
   };
