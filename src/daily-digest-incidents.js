@@ -473,7 +473,7 @@ export function summarizeDailyDigestReliability(rows = [], { days = 7, nowMs = D
 
 export const DAILY_DIGEST_RELIABILITY_SLO = Object.freeze({
   missingRunHourUtc:8,
-  missingRunMinuteUtc:5,
+  missingRunMinuteUtc:15,
   minSampleDays:3,
   minClaimedDeliveries:100,
   completionRateWatch:0.98,
@@ -511,7 +511,7 @@ export function assessDailyDigestReliabilitySlo(rows = [], {
       code:'DAILY_DIGEST_SLO_MISSING_RUN',
       reason:'missing_run',
       date,
-      message:`Daily Digest has no operational run event for ${date} after the 08:05 UTC grace point.`,
+      message:`Daily Digest has no operational run event for ${date} after the 08:15 UTC grace point.`,
       reliability:summarizeDailyDigestReliability(rows,{days,nowMs:now}),
       policy,
     };
@@ -619,8 +619,8 @@ export function planDailyDigestReliabilitySloEvent(assessment = {}, priorRows = 
   const latest=rows.at(-1) || null;
 
   if (assessment.state==='watch') {
-    if (latest?.severity==='warning' && latest?.code===assessment.code) {
-      return {action:'none',reason:'same_warning_already_recorded'};
+    if (latest?.severity==='warning' && String(latest?.metadata?.state || 'watch')==='watch') {
+      return {action:'none',reason:'watch_already_recorded'};
     }
     return {
       action:'record',
