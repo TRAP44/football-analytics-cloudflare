@@ -47,16 +47,22 @@ export function resolveActiveProductionReleaseIdentity(deployment, versions) {
   }
 
   const actualMessage = String(activeVersion.annotations?.['workers/message'] || '').trim();
+  const actualTag = String(activeVersion.annotations?.['workers/tag'] || '').trim();
   const match = /^release=([^\s]+) sha=([0-9a-f]{40})$/i.exec(actualMessage);
   if (!match || !RELEASE_RE.test(match[1]) || !SHA_RE.test(match[2])) {
     throw new Error(`Active production version ${activeVersionId} release identity mismatch.`);
+  }
+  const messageSha = match[2].toLowerCase();
+  if (!SHA_RE.test(actualTag) || actualTag.toLowerCase() !== messageSha) {
+    throw new Error(`Active production version ${activeVersionId} version tag does not match deploy SHA.`);
   }
 
   return {
     deploymentId: typeof deployment.id === 'string' ? deployment.id : '',
     versionId: activeVersionId,
     release: match[1],
-    sha: match[2].toLowerCase(),
+    sha: messageSha,
+    tag: actualTag.toLowerCase(),
   };
 }
 
