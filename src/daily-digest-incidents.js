@@ -614,13 +614,14 @@ export function planDailyDigestReliabilitySloEvent(assessment = {}, priorRows = 
       code:String(row?.code || ''),
       metadata:row?.metadata && typeof row.metadata==='object' ? row.metadata : {},
     }))
-    .filter(row=>row.at && String(row.metadata?.date || row.at.slice(0,10))===date)
+    .filter(row=>row.at)
     .sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
   const latest=rows.at(-1) || null;
+  const latestState=String(latest?.metadata?.state || (latest?.severity==='warning' ? 'watch' : ''));
 
   if (assessment.state==='watch') {
-    if (latest?.severity==='warning' && String(latest?.metadata?.state || 'watch')==='watch') {
-      return {action:'none',reason:'watch_already_recorded'};
+    if (latestState==='watch') {
+      return {action:'none',reason:'watch_episode_already_recorded'};
     }
     return {
       action:'record',
@@ -646,9 +647,7 @@ export function planDailyDigestReliabilitySloEvent(assessment = {}, priorRows = 
     };
   }
 
-  if (assessment.state==='healthy' && latest?.severity==='warning') {
-    const alreadyRecovered=rows.some(row=>row.code==='DAILY_DIGEST_SLO_RECOVERED' && Date.parse(row.at)>Date.parse(latest.at));
-    if (alreadyRecovered) return {action:'none',reason:'recovery_already_recorded'};
+  if (assessment.state==='healthy' && latestState==='watch') {
     return {
       action:'record',
       severity:'info',
@@ -661,6 +660,7 @@ export function planDailyDigestReliabilitySloEvent(assessment = {}, priorRows = 
         date,
         state:'healthy',
         recoveredFrom:latest.code,
+        watchStartedAt:latest.at,
         sampleDays:Number(assessment.reliability?.sampleDays || 0),
         claimed:Number(assessment.reliability?.totals?.claimed || 0),
         completionRate:assessment.reliability?.completionRate ?? null,
