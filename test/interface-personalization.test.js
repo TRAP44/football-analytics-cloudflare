@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+const adminHtml = readFileSync(new URL('../public/admin.html', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
 
@@ -34,8 +35,8 @@ test('match cards hide technical coverage and numeric interest meters', () => {
 });
 
 test('rare administrator panels are grouped and loaded on demand', () => {
-  assert.match(html, /id="adminAdvancedTools"/);
-  assert.match(html, /id="adminAdvancedContent"/);
+  assert.match(adminHtml, /id="adminAdvancedTools"/);
+  assert.match(adminHtml, /id="adminAdvancedContent"/);
   assert.match(app, /function organizeAdminConsole\(\)/);
   assert.match(app, /function loadAdvancedAdminTools\(\)/);
   const profileOpen = app.match(/async function openProfileView[\s\S]*?\n}\n\n\nfunction releaseStateLabel/)?.[0] || '';
