@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 const worker = fs.readFileSync('src/worker.js','utf8');
 const incidents = fs.readFileSync('src/provider-slo-incidents.js','utf8');
 const admin = fs.readFileSync('public/modules/admin-provider.js','utf8');
-const html = fs.readFileSync('public/index.html','utf8');
+const html = fs.readFileSync('public/admin.html','utf8');
 const css = fs.readFileSync('public/styles/admin.css','utf8');
 const smoke = fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
 
