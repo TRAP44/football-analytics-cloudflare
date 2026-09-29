@@ -71,5 +71,5 @@ test('RC135 updates model-input and health identity', () => {
   assert.match(worker,/playerRoleAvailability: 'enabled'/);
   assert.match(worker,/const APP_VERSION = '6\.120\.0-rc144'/);
   assert.match(worker,/const RC_NAME = 'RC144'/);
-  assert.match(app,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
+  assert.match(runtime,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
 });
