@@ -16,6 +16,7 @@ const rollbackDeploymentVerifier = fs.readFileSync('scripts/verify-rollback-depl
 const productionReleasePostconditionVerifier = fs.readFileSync('scripts/verify-production-release-postcondition.js', 'utf8');
 const postDeploySmoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 const releaseIdentityModule = fs.readFileSync('src/release-identity.js', 'utf8');
+const releaseEventAttributionModule = fs.readFileSync('src/release-event-attribution.js', 'utf8');
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
 const readme = fs.readFileSync('README_CLOUDFLARE_RU.md', 'utf8');
 const qaChecklist = fs.readFileSync('QA_RELEASE_CHECKLIST_RU.md', 'utf8');
@@ -69,6 +70,9 @@ for (const marker of [
   if (!baseline.toLowerCase().includes(marker.toLowerCase())) failures.push(`RC99 unified baseline is missing: ${marker}`);
 }
 if (!fs.existsSync('src/release-identity.js')) failures.push('Missing runtime release identity module');
+if (!fs.existsSync('src/release-event-attribution.js')) failures.push('Missing release-scoped ops attribution module');
+if (!releaseEventAttributionModule.includes('scopeOpsEventsToDeployment') || !worker.includes('releaseExcludedPriorDeploymentEvents')) failures.push('Release-scoped incident attribution is missing');
+
 if (!wrangler.includes('"version_metadata"') || !wrangler.includes('"binding": "CF_VERSION_METADATA"')) failures.push('Cloudflare version metadata binding is missing');
 if (!worker.includes("runtimeReleaseIdentity") || !releaseIdentityModule.includes("cloudflareVersionId") || !releaseIdentityModule.includes("deploySha")) failures.push('Worker runtime release identity integration is missing');
 if (!deployWorkflow.includes('--tag "${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy must tag the Cloudflare version with deploy SHA');
