@@ -48,6 +48,29 @@ test('A. missing run stays collecting before 08:15 UTC and becomes watch at 08:1
   assert.equal(after.reason,'missing_run');
 });
 
+test('A2. no missing-run warning is emitted before the cutoff across the delivery window and grace period',()=>{
+  for (const at of ['06:45:00Z','07:15:00Z','07:45:00Z','07:55:00Z','08:00:00Z','08:14:59Z']) {
+    const result=assessDailyDigestReliabilitySlo([],{
+      nowMs:Date.parse(`2026-09-29T${at}`),
+    });
+    assert.notEqual(result.state,'watch',at);
+    assert.equal(result.reason,'before_delivery_window_completion',at);
+  }
+});
+
+test('A3. missing-run WATCH exposes UTC window diagnostics without identifiers',()=>{
+  const result=assessDailyDigestReliabilitySlo([],{
+    nowMs:Date.parse('2026-09-29T08:15:00Z'),
+  });
+  assert.deepEqual(result.diagnostics.window,{
+    startUtc:'07:00',endUtc:'07:55',cutoffUtc:'08:15',timezone:'UTC',
+  });
+  assert.equal(result.diagnostics.expectedState,'daily_digest_run_observed_by_cutoff');
+  assert.equal(result.diagnostics.lastSuccessfulDigestRun,null);
+  assert.equal(result.diagnostics.evaluatedAt,'2026-09-29T08:15:00.000Z');
+  assert.equal(result.diagnostics.todayRunObserved,false);
+});
+
 test('B. insufficient historical sample does not enforce trend thresholds',()=>{
   const rows=[
     event('2026-09-29','DAILY_DIGEST_RUN_OK',{sent:10,claimed:10,remaining:0,completionRate:1}),
@@ -159,6 +182,63 @@ test('G3. cross-day recovery closes the previous watch episode',()=>{
   assert.equal(recovery.action,'record');
   assert.equal(recovery.code,'DAILY_DIGEST_SLO_RECOVERED');
   assert.equal(recovery.meta.watchStartedAt,'2026-09-29T08:15:00.000Z');
+});
+
+test('G4. a prior-day WATCH does not suppress a new-day missing-run transition',()=>{
+  const assessment=assessDailyDigestReliabilitySlo([],{
+    nowMs:Date.parse('2026-09-30T08:15:00Z'),
+  });
+  const plan=planDailyDigestReliabilitySloEvent(assessment,[{
+    created_at:'2026-09-29T08:15:00Z',
+    severity:'warning',
+    code:'DAILY_DIGEST_SLO_MISSING_RUN',
+    metadata:{date:'2026-09-29',state:'watch',reason:'missing_run'},
+  }]);
+  assert.equal(plan.action,'record');
+  assert.equal(plan.code,'DAILY_DIGEST_SLO_MISSING_RUN');
+  assert.equal(plan.meta.date,'2026-09-30');
+});
+
+test('G5. repeated same-day missing-run monitor checks remain suppressed',()=>{
+  const assessment=assessDailyDigestReliabilitySlo([],{
+    nowMs:Date.parse('2026-09-29T09:00:00Z'),
+  });
+  const prior=[{
+    created_at:'2026-09-29T08:15:00Z',
+    severity:'warning',
+    code:'DAILY_DIGEST_SLO_MISSING_RUN',
+    metadata:{date:'2026-09-29',state:'watch',reason:'missing_run'},
+  }];
+  for (const at of ['08:30:00Z','08:45:00Z','09:00:00Z']) {
+    const current=assessDailyDigestReliabilitySlo([],{
+      nowMs:Date.parse(`2026-09-29T${at}`),
+    });
+    const plan=planDailyDigestReliabilitySloEvent(current,prior);
+    assert.equal(plan.action,'none',at);
+    assert.equal(plan.reason,'watch_episode_already_recorded',at);
+  }
+});
+
+test('G6. a late digest run recovers a missing-run WATCH even while trend sampling is collecting',()=>{
+  const assessment=assessDailyDigestReliabilitySlo([
+    event('2026-09-29','DAILY_DIGEST_RUN_OK',{sent:10,claimed:10,remaining:0,completionRate:1},'info','08:20:00Z'),
+  ],{
+    nowMs:Date.parse('2026-09-29T08:30:00Z'),
+  });
+  assert.equal(assessment.state,'collecting');
+  assert.equal(assessment.reason,'insufficient_sample');
+  assert.equal(assessment.diagnostics.todayRunObserved,true);
+
+  const recovery=planDailyDigestReliabilitySloEvent(assessment,[{
+    created_at:'2026-09-29T08:15:00Z',
+    severity:'warning',
+    code:'DAILY_DIGEST_SLO_MISSING_RUN',
+    metadata:{date:'2026-09-29',state:'watch',reason:'missing_run'},
+  }]);
+  assert.equal(recovery.action,'record');
+  assert.equal(recovery.code,'DAILY_DIGEST_SLO_RECOVERED');
+  assert.equal(recovery.meta.reason,'missing_run_recovered');
+  assert.equal(recovery.meta.lastSuccessfulDigestRun,'2026-09-29T08:20:00.000Z');
 });
 
 test('H. recovery is recorded once after a prior watch transition',()=>{
