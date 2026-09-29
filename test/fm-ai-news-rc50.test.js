@@ -38,10 +38,16 @@ test('favorite-team news can lead to a relevant upcoming match',()=> {
   assert.match(worker,/match:menu:/);
 });
 
-test('opt-in morning digest includes a cached news block',()=> {
+test('opt-in morning digest includes cached news without making news a delivery prerequisite',()=> {
   assert.match(worker,/function currentMorningFootballNews/);
   assert.match(worker,/function morningNewsText/);
-  assert.match(worker,/currentDailyDigest\(cfg\),currentMorningFootballNews\(cfg\)/);
+  const start=worker.indexOf('async function processDailyDigests');
+  const end=worker.indexOf('function telegramHtmlEscape',start);
+  assert.ok(start>=0 && end>start);
+  const block=worker.slice(start,end);
+  assert.match(block,/digest=await currentDailyDigest\(cfg\)/);
+  assert.match(block,/currentMorningFootballNews\(cfg\)\.catch/);
+  assert.match(block,/items:\[\]/);
   assert.match(worker,/📰 <b>Главное за утро<\/b>/);
 });
 
