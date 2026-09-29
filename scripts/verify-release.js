@@ -18,6 +18,7 @@ const postDeploySmoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 const releaseIdentityModule = fs.readFileSync('src/release-identity.js', 'utf8');
 const releaseEventAttributionModule = fs.readFileSync('src/release-event-attribution.js', 'utf8');
 const postDeployRegressionModule = fs.readFileSync('src/post-deploy-regression.js', 'utf8');
+const postDeployRegressionLifecycleModule = fs.readFileSync('src/post-deploy-regression-lifecycle.js', 'utf8');
 const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
 const readme = fs.readFileSync('README_CLOUDFLARE_RU.md', 'utf8');
 const qaChecklist = fs.readFileSync('QA_RELEASE_CHECKLIST_RU.md', 'utf8');
@@ -73,6 +74,9 @@ for (const marker of [
 if (!fs.existsSync('src/release-identity.js')) failures.push('Missing runtime release identity module');
 if (!fs.existsSync('src/release-event-attribution.js')) failures.push('Missing release-scoped ops attribution module');
 if (!fs.existsSync('src/post-deploy-regression.js')) failures.push('Missing post-deploy regression module');
+if (!fs.existsSync('src/post-deploy-regression-lifecycle.js')) failures.push('Missing post-deploy regression lifecycle module');
+if (!postDeployRegressionLifecycleModule.includes('planPostDeployRegressionLifecycle') || !worker.includes('postDeployRegressionLifecycleAction')) failures.push('Post-deploy regression lifecycle is missing');
+
 if (!postDeployRegressionModule.includes('postDeployRegressionReport') || !worker.includes('postDeployRegressionState')) failures.push('Post-deploy 15/30/60 regression monitoring is missing');
 
 if (!releaseEventAttributionModule.includes('scopeOpsEventsToDeployment') || !worker.includes('releaseExcludedPriorDeploymentEvents')) failures.push('Release-scoped incident attribution is missing');
