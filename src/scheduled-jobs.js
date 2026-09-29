@@ -7,6 +7,7 @@ import { isDailyDigestExecutionWindow } from './daily-digest-delivery.js';
 export function createScheduledJobsRuntime({
   settleBacktestDaily,
   processDueReminders,
+  processLineupNotifications,
   processPostMatchReturns,
   runProductionMonitor,
   processDailyDigests,
@@ -32,6 +33,9 @@ export function createScheduledJobsRuntime({
   function buildScheduledTaskPlan(cfg, scheduledAt) {
     const backtestTask = Promise.resolve().then(() => settleBacktestDaily(cfg));
     const remindersTask = Promise.resolve().then(() => processDueReminders(cfg));
+    const lineupNotificationsTask = remindersTask
+      .catch(() => null)
+      .then(() => processLineupNotifications(cfg));
     const digestWindow = isDailyDigestExecutionWindow(scheduledAt);
     const dailyDigestTask = digestWindow
       ? backtestTask.catch(() => null).then(() => processDailyDigests(cfg, scheduledAt))
@@ -41,6 +45,7 @@ export function createScheduledJobsRuntime({
       : backtestTask;
     const tasks = [
       ['reminders', remindersTask],
+      ['lineup_notifications', lineupNotificationsTask],
       ['backtest', backtestTask],
       ['post_match_return', postMatchPrerequisite.then(() => processPostMatchReturns(cfg))],
     ];

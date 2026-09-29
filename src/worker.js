@@ -56,6 +56,7 @@ import { createUserPreferencesService } from './user-preferences.js';
 import { createUserHistoryService } from './user-history.js';
 import { createReminderDeliveryStore } from './reminder-delivery-store.js';
 import { createReminderDeliveryService } from './reminder-delivery-service.js';
+import { createLineupNotificationService } from './lineup-notification-service.js';
 import { createScheduledJobsRuntime } from './scheduled-jobs.js';
 import { DAILY_DIGEST_POLICY, assessDailyDigestRun, planDailyDigestRecipients, runBoundedDailyDigest } from './daily-digest-delivery.js';
 import { assessDailyDigestReliabilitySlo, buildDailyDigestIncidentReport, dailyDigestIncidentAlertOpsEvents, formatDailyDigestIncidentAlert, planDailyDigestIncidentAlert, planDailyDigestReliabilitySloEvent, summarizeDailyDigestOperationalStatus, summarizeDailyDigestReliability } from './daily-digest-incidents.js';
@@ -1246,6 +1247,7 @@ const {
 });
 
 const {
+  deliverClaimedReminder,
   processDueReminders,
 } = createReminderDeliveryService({
   hasSupabase,
@@ -1259,6 +1261,18 @@ const {
   holdReminderDeliveryUnknown,
   finishReminderDelivery,
   releaseReminderClaim,
+});
+
+const {
+  processLineupNotifications,
+} = createLineupNotificationService({
+  hasSupabase,
+  loadRuntimeControls,
+  supaSelectPaged,
+  loadLineupNotificationSnapshot,
+  deliverClaimedReminder,
+  recordOpsEvent,
+  maxFixturesPerRun: 4,
 });
 
 const {
@@ -21678,6 +21692,54 @@ async function apiTeamSquad(request, cfg) {
   }
 }
 
+function normalizeLineupNotificationRow(row = {}) {
+  return {
+    formation: String(row?.formation || ''),
+    coach: String(row?.coach?.name || ''),
+    startXI: (Array.isArray(row?.startXI) ? row.startXI : []).map(normalizeLineupPlayer).filter(Boolean),
+    substitutes: (Array.isArray(row?.substitutes) ? row.substitutes : []).map(normalizeLineupPlayer).filter(Boolean),
+  };
+}
+
+async function loadLineupNotificationSnapshot(fixtureId, cfg) {
+  const id = Number(fixtureId || 0);
+  if (!id) return { confirmed:false, reason:'invalid_fixture' };
+  if (!freeQuotaHealthy(10, 1)) return { confirmed:false, reason:'quota_guard' };
+
+  const result = await providerFeatureFetch({
+    feature:'lineups',
+    path:'/fixtures/lineups',
+    params:{ fixture:id },
+    fixtureId:id,
+    cfg,
+    context:{ mode:'upcoming', limitedCoverage:false },
+  });
+
+  const distinct = new Map();
+  for (const row of Array.isArray(result?.data) ? result.data : []) {
+    const teamId = Number(row?.team?.id || 0);
+    if (!teamId || distinct.has(teamId)) continue;
+    distinct.set(teamId, normalizeLineupNotificationRow(row));
+  }
+  const teams = [...distinct.values()];
+  if (teams.length < 2) return { confirmed:false, reason:'both_teams_not_published', teamCount:teams.length };
+
+  const lineups = { home:teams[0], away:teams[1] };
+  const quality = assessMatchLineups(lineups);
+  let meta = applyFeatureFreshness(
+    result?.meta || { feature:'lineups', provider:'api-football', source:'network', state:'available', available:true, usable:true, observed:true },
+    { feature:'lineups', mode:'upcoming' },
+  );
+  meta = annotateLineupReliability(meta, quality);
+
+  return {
+    confirmed:Boolean(quality.bothConfirmed && meta?.confirmed === true && meta?.confidenceBearing === true),
+    reason: quality.bothConfirmed ? String(meta?.reason || '') : 'lineup_incomplete',
+    lineupQuality:quality,
+    sourceMeta:meta,
+  };
+}
+
 async function apiMatchCenter(request, cfg) {
   const url = new URL(request.url);
   const fixtureId = Number(url.searchParams.get('fixtureId'));
@@ -23348,6 +23410,7 @@ const API_ROUTE_DEPS = Object.freeze({
 const { handleScheduled } = createScheduledJobsRuntime({
   settleBacktestDaily,
   processDueReminders,
+  processLineupNotifications,
   processPostMatchReturns,
   runProductionMonitor,
   processDailyDigests,
@@ -23427,6 +23490,8 @@ export default {
         personalDataWriteConsistency: 'enabled',
         reminderWriteConfirmation: 'enabled',
         quickMatchReminders: 'enabled',
+        lineupPublishedNotifications: 'enabled',
+        lineupNotificationDedupe: 'enabled',
         firstRunGuide: 'enabled',
         focusedMatchHome: 'enabled',
         contextualLeagueFilter: 'enabled',
