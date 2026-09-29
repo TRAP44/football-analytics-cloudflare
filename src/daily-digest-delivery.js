@@ -111,7 +111,7 @@ export async function runBoundedDailyDigest({
   const startedAt = Number(now());
   const budget = Math.max(1000, Number(executionBudgetMs || DAILY_DIGEST_POLICY.executionBudgetMs));
   const candidates = (plan.pending || plan.rows || []).slice(0, Math.max(1, Number(maxRecipients || DAILY_DIGEST_POLICY.maxRecipientsPerRun)));
-  const gate = createDigestRateGate({ sleep, now, minIntervalMs });
+  const gate = createDigestRateGate({ sleep, now, minIntervalMs: minSendIntervalMs });
   const stats = {
     scanned: Number(plan.scanned || 0),
     pages: Number(plan.pages || 0),
