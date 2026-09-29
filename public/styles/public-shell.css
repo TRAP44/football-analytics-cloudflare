@@ -3431,3 +3431,58 @@ html {
     gap:8px;
   }
 }
+
+
+/* MatchRadar Home Progressive Disclosure — keep first screen focused */
+.miniapp-public-shell .home-match-section.is-collapsible{
+  border-top:1px solid color-mix(in srgb,var(--line) 72%,transparent);
+  padding-top:2px;
+}
+.miniapp-public-shell .home-match-section.is-collapsible > summary{
+  min-height:46px;
+  cursor:pointer;
+  list-style:none;
+  user-select:none;
+}
+.miniapp-public-shell .home-match-section.is-collapsible > summary::-webkit-details-marker{
+  display:none;
+}
+.miniapp-public-shell .home-match-section.is-collapsible > summary::after{
+  content:'›';
+  flex:0 0 auto;
+  margin-left:2px;
+  color:var(--hint);
+  font-size:18px;
+  line-height:1;
+  transform:rotate(90deg);
+  transition:transform .16s ease;
+}
+.miniapp-public-shell .home-match-section.is-collapsible[open] > summary::after{
+  transform:rotate(-90deg);
+}
+.miniapp-public-shell .home-match-section.is-collapsible > summary > span{
+  margin-left:auto;
+}
+.miniapp-public-shell .home-match-section.is-collapsible:not([open]){
+  gap:0;
+  margin-bottom:6px;
+}
+.miniapp-public-shell .home-match-section.is-collapsible:not([open]) > .home-match-section-list{
+  display:none;
+}
+.miniapp-public-shell .home-match-section-list--collapsed{
+  padding-top:2px;
+}
+.miniapp-public-shell .home-match-section--finished.is-collapsible:not([open]){
+  opacity:.76;
+}
+@media(max-width:360px){
+  .miniapp-public-shell .home-match-section.is-collapsible > summary{
+    min-height:44px;
+  }
+}
+@media(prefers-reduced-motion:reduce){
+  .miniapp-public-shell .home-match-section.is-collapsible > summary::after{
+    transition:none;
+  }
+}
