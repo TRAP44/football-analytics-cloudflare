@@ -52,6 +52,7 @@ test('scheduled boundary preserves time-gated cron task cadence', async () => {
     ['2026-09-28T04:05:00.000Z', ['reminders','backtest','post_match_return','settlement_watchdog']],
     ['2026-09-28T05:05:00.000Z', ['reminders','backtest','post_match_return','settlement_finality']],
     ['2026-09-28T07:05:00.000Z', ['reminders','backtest','post_match_return','daily_digest']],
+    ['2026-09-28T07:55:00.000Z', ['reminders','backtest','post_match_return','daily_digest']],
     ['2026-09-28T12:15:00.000Z', ['reminders','backtest','post_match_return','production_monitor']],
   ];
 
@@ -129,7 +130,7 @@ test('worker delegates scheduled orchestration and integrity cleanup reports par
 });
 
 
-test('07:00 provider-heavy tasks are serialized without blocking reminders or production monitor', async () => {
+test('07 UTC provider-heavy tasks are serialized without blocking reminders or production monitor', async () => {
   const calls = [];
   let releaseBacktest;
   let releaseDigest;
