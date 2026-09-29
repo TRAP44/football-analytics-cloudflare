@@ -3524,3 +3524,24 @@ html {
     font-size:14px;
   }
 }
+
+
+/* MatchRadar Search & Discovery — direct, ranked, actionable results */
+.miniapp-public-shell .search-entity-summary.search-competition-summary{
+  width:100%;
+  cursor:pointer;
+  text-align:left;
+}
+.miniapp-public-shell .search-entity-summary.search-competition-summary > b{
+  color:var(--accent);
+  font-size:11px;
+  font-weight:900;
+  white-space:nowrap;
+}
+.miniapp-public-shell .search-entity-summary.search-competition-summary:active{
+  transform:translateY(1px);
+}
+.miniapp-public-shell #searchRecentWrap[hidden],
+.miniapp-public-shell #searchFavoritesWrap[hidden]{
+  display:none!important;
+}
