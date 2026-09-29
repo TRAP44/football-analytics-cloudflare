@@ -408,8 +408,9 @@ async function processTarget({ plan, target, adminTelegramIds, claimDelivery, fi
   };
 }
 
-export async function deliverProviderIncidentAlert({
+export async function deliverOperationalIncidentAlert({
   plan,
+  text = '',
   adminTelegramIds = [],
   claimDelivery,
   finalizeDelivery,
@@ -434,7 +435,6 @@ export async function deliverProviderIncidentAlert({
     };
   }
 
-  const text = formatProviderIncidentAlert(plan);
   const targets = Array.isArray(plan.targetDeliveries) ? plan.targetDeliveries : [];
   const settled = await Promise.allSettled(targets.map(target => processTarget({
     plan,
@@ -444,7 +444,7 @@ export async function deliverProviderIncidentAlert({
     finalizeDelivery,
     sendMessage,
     nowMs,
-    text,
+    text:String(text || ''),
   })));
 
   const outcomes = settled.map((item,index) => item.status === 'fulfilled'
@@ -464,6 +464,13 @@ export async function deliverProviderIncidentAlert({
     failedSlots,
     recipientCount:targets.length,
   };
+}
+
+export async function deliverProviderIncidentAlert(options = {}) {
+  return deliverOperationalIncidentAlert({
+    ...options,
+    text:formatProviderIncidentAlert(options?.plan || {}),
+  });
 }
 
 function opsEventForState(plan = {}, state = '', items = []) {
