@@ -131,6 +131,8 @@ const state = {
   tournamentBackView: 'matchesView',
   currentTeam: null,
   teamBackView: 'matchesView',
+  currentPlayer: null,
+  playerBackView: 'analysisView',
   teamCache: new Map(),
   teamIntelligenceCache: new Map(),
   teamSquadCache: new Map(),
@@ -298,6 +300,7 @@ const VIEW_CHROME = {
   myTeamsView: ['Мои команды', 'Избранные клубы и их матчи'],
   tournamentView: ['Турнир', 'Матчи и таблица'],
   teamView: ['Команда', 'Матчи и данные клуба'],
+  playerView: ['Игрок', 'Показатели и роль в текущем матче'],
   analysisView: ['Матч-центр', 'Что происходит, почему и что важно дальше'],
   historyView: ['История', 'Сохранённые AI-разборы'],
   profileView: ['Профиль', 'Команды, напоминания и настройки'],
@@ -322,6 +325,8 @@ const BACK_VIEW_LABELS = Object.freeze({
   profileView: 'К профилю',
   tournamentView: 'К турниру',
   teamView: 'К команде',
+  playerView: 'К игроку',
+  analysisView: 'К матчу',
 });
 
 function viewBackTarget(id = activeViewId()) {
@@ -332,6 +337,7 @@ function syncBackButtons() {
   const bindings = [
     ['backBtn', viewBackTarget('analysisView')],
     ['teamBackBtn', viewBackTarget('teamView')],
+    ['playerBackBtn', viewBackTarget('playerView')],
     ['tournamentBackBtn', viewBackTarget('tournamentView')],
   ];
   bindings.forEach(([id, target]) => {
@@ -2446,8 +2452,8 @@ function runClientContractSmoke() {
   const add = (id, label, pass, detail) => checks.push({ id, label, pass: Boolean(pass), detail: String(detail || '') });
 
   const requiredIds = [
-    'matchesView','searchView','myTeamsView','tournamentView','teamView','analysisView','historyView','profileView',
-    'navMatches','navMyTeams','navHistory','navProfile','aiTrackRecord',
+    'matchesView','searchView','myTeamsView','tournamentView','teamView','playerView','analysisView','historyView','profileView',
+    'navMatches','navMyTeams','navHistory','navProfile','aiTrackRecord','playerHub',
     'connectionBanner','connectionRetryBtn','toast',
     'modelQualityStatus','modelRemediationStatus','modelRemediationDryRunBtn','modelRemediationRunBtn','modelRemediationCircuitResetBtn','modelRemediationDriftQueue','providerAuditStatus','releaseStatus','productionReadinessStatus','diagnosticsStatus','mediaPublisherFixtureId','mediaPublisherGenerateBtn','mediaPublisherResult',
   ];
@@ -6118,14 +6124,100 @@ function timelineEventsHtml(events = [], match = {}) {
 }
 
 function centerPlayersHtml(leaders, match) {
-  const side = (title, list = []) => `<div class="center-player-team"><h3>${escapeHtml(title)}</h3>${list.length ? list.map((p,i)=>`
-    <div class="center-player-row">
+  const side = (title, teamSide, list = []) => `<div class="center-player-team"><h3>${escapeHtml(title)}</h3>${list.length ? list.map((p,i)=>`
+    <button class="center-player-row center-player-open" type="button" data-center-player="${Number(p.id || 0)}" data-center-player-side="${escapeHtml(teamSide)}" aria-label="Открыть профиль игрока ${escapeHtml(p.name || 'Игрок')}">
       <div class="center-player-rank">${i+1}</div>
       ${p.photo ? `<img src="${safeUrl(p.photo)}" alt="">` : '<span class="center-player-avatar">👤</span>'}
       <div class="center-player-info"><strong>${escapeHtml(p.name)}</strong><small>${escapeHtml(playerMetricText(p))}</small></div>
       <div class="center-player-rating">${p.rating ? p.rating.toFixed(1) : '—'}</div>
-    </div>`).join('') : '<div class="empty compact-empty">Статистика игроков недоступна.</div>'}</div>`;
-  return `<div class="center-players-grid">${side(match.home?.name || 'Хозяева', leaders?.home || [])}${side(match.away?.name || 'Гости', leaders?.away || [])}</div>`;
+      <span class="center-player-chevron" aria-hidden="true">›</span>
+    </button>`).join('') : '<div class="empty compact-empty">Статистика игроков недоступна.</div>'}</div>`;
+  return `<div class="center-players-grid">${side(match.home?.name || 'Хозяева', 'home', leaders?.home || [])}${side(match.away?.name || 'Гости', 'away', leaders?.away || [])}</div>`;
+}
+
+function playerPositionLabel(value = '') {
+  const key = String(value || '').trim().toLowerCase();
+  return ({ g:'Вратарь', goalkeeper:'Вратарь', d:'Защитник', defender:'Защитник', m:'Полузащитник', midfielder:'Полузащитник', f:'Нападающий', attacker:'Нападающий' })[key] || publicText(value) || 'Позиция не указана';
+}
+
+function playerHubMetric(label, value, suffix = '') {
+  const shown = value === null || value === undefined || value === '' ? '—' : `${escapeHtml(String(value))}${suffix}`;
+  return `<div class="player-hub-metric"><span>${escapeHtml(label)}</span><strong>${shown}</strong></div>`;
+}
+
+function renderPlayerHub(player = state.currentPlayer) {
+  const root = $('playerHub');
+  if (!root) return;
+  if (!player) {
+    root.innerHTML = '<div class="empty">Игрок не выбран.</div>';
+    return;
+  }
+  const match = player.match || {};
+  const team = player.team || {};
+  const p = player.data || {};
+  const rating = Number.isFinite(Number(p.rating)) ? Number(p.rating).toFixed(1) : '—';
+  root.innerHTML = `
+    <section class="panel player-hub-hero">
+      <div class="player-hub-main">
+        <div class="player-hub-photo">${p.photo ? `<img src="${safeUrl(p.photo)}" alt="">` : '<span>👤</span>'}</div>
+        <div class="player-hub-copy">
+          <span>PLAYER HUB · ТЕКУЩИЙ МАТЧ</span>
+          <h2>${escapeHtml(p.name || 'Игрок')}</h2>
+          <p>${escapeHtml(team.name || 'Команда')} · ${escapeHtml(playerPositionLabel(p.position))}</p>
+        </div>
+        <div class="player-hub-rating"><span>Рейтинг</span><strong>${rating}</strong></div>
+      </div>
+      <div class="player-hub-match">
+        <span>${escapeHtml(match.league || '')}</span>
+        <strong>${escapeHtml(match.home?.name || '')} — ${escapeHtml(match.away?.name || '')}</strong>
+        <small>${escapeHtml(match.statusLabel || '')}</small>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="center-section-title"><div><h2>Показатели в матче</h2><p>Только данные, уже полученные для этого матча</p></div></div>
+      <div class="player-hub-metrics">
+        ${playerHubMetric('Минуты', Number(p.minutes || 0))}
+        ${playerHubMetric('Голы', Number(p.goals || 0))}
+        ${playerHubMetric('Ассисты', Number(p.assists || 0))}
+        ${playerHubMetric('Удары в створ', Number(p.shotsOn || 0))}
+        ${playerHubMetric('Ключевые передачи', Number(p.keyPasses || 0))}
+        ${playerHubMetric('Отборы', Number(p.tackles || 0))}
+        ${playerHubMetric('Перехваты', Number(p.interceptions || 0))}
+        ${playerHubMetric('Сейвы', Number(p.saves || 0))}
+      </div>
+    </section>
+
+    <section class="panel player-hub-context">
+      <div class="center-section-title"><div><h2>Роль в текущем матче</h2><p>Краткий контекст без дополнительного запроса к источнику</p></div></div>
+      <div class="player-hub-context-grid">
+        <div><span>Позиция</span><strong>${escapeHtml(playerPositionLabel(p.position))}</strong></div>
+        <div><span>Impact</span><strong>${Number.isFinite(Number(p.impact)) ? Number(p.impact).toFixed(1) : '—'}</strong></div>
+        <div><span>Команда</span><strong>${escapeHtml(team.name || '—')}</strong></div>
+        <div><span>Источник</span><strong>данные матча</strong></div>
+      </div>
+      <p class="tiny">Player Hub 4A использует уже загруженную статистику матча и не расходует дополнительную квоту API-Football. Сезонный профиль игрока будет следующим расширением.</p>
+    </section>
+  `;
+}
+
+function openPlayerFromMatch(playerId, side = '') {
+  const center = state.currentCenter || {};
+  const match = center.match || {};
+  const key = side === 'away' ? 'away' : 'home';
+  const player = (center.playerLeaders?.[key] || []).find(item => Number(item.id || 0) === Number(playerId || 0));
+  if (!player) return toast('Данные игрока для этого матча уже недоступны.');
+  const current = activeViewId();
+  if (current !== 'playerView') state.playerBackView = current || 'analysisView';
+  state.currentPlayer = {
+    data: { ...player },
+    team: { ...(match[key] || {}) },
+    match: { ...match },
+    source: 'match_center',
+  };
+  renderPlayerHub();
+  sendProductAction('player_open', current || 'analysisView');
+  showView('playerView');
 }
 
 
@@ -6617,6 +6709,10 @@ function renderMatchCenter(d) {
 
   bindMatchCenterTabs();
   document.querySelectorAll('.smart-open-insights').forEach(btn => btn.addEventListener('click', () => setMatchCenterTab('insights', true)));
+
+  document.querySelectorAll('[data-center-player]').forEach(btn => btn.addEventListener('click', () => {
+    openPlayerFromMatch(Number(btn.dataset.centerPlayer || 0), btn.dataset.centerPlayerSide || '');
+  }));
 
   document.querySelectorAll('[data-center-team]').forEach(btn => btn.addEventListener('click', () => {
     const teamId = Number(btn.dataset.centerTeam || 0);
@@ -8312,6 +8408,7 @@ $('historyRefreshBtn').addEventListener('click', () => Promise.allSettled([loadH
 $('backBtn').addEventListener('click', handleBackNavigation);
 $('tournamentBackBtn')?.addEventListener('click', handleBackNavigation);
 $('teamBackBtn')?.addEventListener('click', handleBackNavigation);
+$('playerBackBtn')?.addEventListener('click', handleBackNavigation);
 const tournamentTabs = [...document.querySelectorAll('.tournament-tab')];
 tournamentTabs.forEach(btn => btn.addEventListener('click', () => setTournamentTab(btn.dataset.tournamentTab || 'matches')));
 bindRovingTabKeyboard(tournamentTabs, 'tournamentTab', value => setTournamentTab(value));

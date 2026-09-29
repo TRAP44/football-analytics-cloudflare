@@ -6,6 +6,7 @@ export const PUBLIC_VIEW_IDS = Object.freeze([
   'myTeamsView',
   'tournamentView',
   'teamView',
+  'playerView',
   'analysisView',
   'historyView',
   'profileView',
@@ -20,6 +21,7 @@ export function normalizeBackTarget(target, currentView = '') {
 export function backTargetForView(view, state = {}) {
   if (view === 'analysisView') return normalizeBackTarget(state.analysisBackView, 'analysisView');
   if (view === 'teamView') return normalizeBackTarget(state.teamBackView, 'teamView');
+  if (view === 'playerView') return normalizeBackTarget(state.playerBackView, 'playerView');
   if (view === 'tournamentView') return normalizeBackTarget(state.tournamentBackView, 'tournamentView');
   return CANONICAL_HOME_VIEW;
 }
