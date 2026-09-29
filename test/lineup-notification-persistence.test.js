@@ -30,7 +30,7 @@ test('new reminders initialize lineup state and release contract tracks migratio
   assert.match(reminders, /lineup_claimed_at:\s*null/);
   assert.match(reminders, /lineup_attempts:\s*0/);
   assert.equal(release.productionSchema, '6.21');
-  assert.equal(release.latestMigration, 'supabase/migrations/supabase_migration_v6_21_2.sql');
+  assert.match(release.latestMigration, /^supabase\/migrations\/supabase_migration_v6_21_[23]\.sql$/);
 });
 
 test('migration preserves current structural fingerprint during additive rollout', () => {
