@@ -42,6 +42,7 @@ test('RC135 small samples shrink toward neutral', () => {
 
 const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
+const runtime=fs.readFileSync('public/modules/app-runtime.js','utf8');
 
 test('RC135 weighting remains cache-first while RC136 hydrates only missing roles', () => {
   assert.match(worker,/async function cachedTeamIntelligenceForAnalysis/);
