@@ -16,7 +16,7 @@ function iso(value) {
 
 function normalizeEvent(row = {}) {
   return {
-    at: iso(row.created_at || row.createdAt),
+    at: iso(row.created_at || row.createdAt || row.at),
     code: String(row.code || ''),
     severity: String(row.severity || ''),
     metadata: row.metadata && typeof row.metadata === 'object' ? row.metadata : {},
@@ -318,6 +318,154 @@ export function summarizeDailyDigestOperationalStatus(rows = [], ledgerRows = []
       automaticRollback:false,
       automaticFeatureDisable:false,
       source:'ops_events_and_persistent_alert_ledger',
+    },
+  };
+}
+
+
+export function summarizeDailyDigestReliability(rows = [], { days = 7, nowMs = Date.now() } = {}) {
+  const windowDays=Math.max(1,Math.min(30,Number(days || 7)));
+  const endMs=Number(nowMs);
+  const startMs=endMs-windowDays*24*3600_000;
+  const events=(rows || [])
+    .map(normalizeEvent)
+    .filter(event => {
+      const atMs=Date.parse(event.at || '');
+      return Number.isFinite(atMs)
+        && atMs>=startMs
+        && atMs<=endMs
+        && event.code.startsWith('DAILY_DIGEST_');
+    })
+    .sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
+
+  const grouped=new Map();
+  for (const event of events) {
+    const date=dateForEvent(event);
+    if (!date) continue;
+    if (!grouped.has(date)) grouped.set(date,[]);
+    grouped.get(date).push(event);
+  }
+
+  let totalSent=0;
+  let totalClaimed=0;
+  let totalFailed=0;
+  let totalRateLimited=0;
+  let backlogOccurrences=0;
+  let backlogDays=0;
+  let sealedClaimDays=0;
+  let degradedDays=0;
+  let truncatedDays=0;
+  let maxBacklog=0;
+  const daily=[];
+
+  for (const [date,list] of [...grouped.entries()].sort((a,b)=>a[0].localeCompare(b[0]))) {
+    let sent=0;
+    let claimed=0;
+    let failed=0;
+    let rateLimited=0;
+    let backlogRuns=0;
+    let dayMaxBacklog=0;
+    let sealed=false;
+    let degraded=false;
+    let truncated=false;
+
+    for (const event of list) {
+      const meta=event.metadata || {};
+      sent+=Math.max(0,Number(meta.sent || 0));
+      claimed+=Math.max(0,Number(meta.claimed || 0));
+      failed+=Math.max(0,Number(meta.failed || 0));
+      rateLimited+=Math.max(0,Number(meta.rateLimited || 0));
+      const backlog=Math.max(0,Number(meta.remaining ?? meta.backlog ?? 0));
+      if (backlog>0) backlogRuns+=1;
+      dayMaxBacklog=Math.max(dayMaxBacklog,backlog);
+      sealed ||= event.code==='DAILY_DIGEST_SEALED_CLAIMS' || Number(meta.sealedClaims || 0)>0;
+      degraded ||= event.code==='DAILY_DIGEST_RUN_DEGRADED';
+      truncated ||= event.code==='DAILY_DIGEST_RUN_TRUNCATED' || Boolean(meta.truncated);
+    }
+
+    const final=list.at(-1);
+    const finalMeta=final?.metadata || {};
+    const finalRemaining=Math.max(0,Number(finalMeta.remaining ?? finalMeta.backlog ?? 0));
+    const completionRate=claimed>0 ? Number((sent/claimed).toFixed(4))
+      : Number.isFinite(Number(finalMeta.completionRate)) ? Number(finalMeta.completionRate)
+        : finalRemaining===0 && failed===0 ? 1 : null;
+
+    totalSent+=sent;
+    totalClaimed+=claimed;
+    totalFailed+=failed;
+    totalRateLimited+=rateLimited;
+    backlogOccurrences+=backlogRuns;
+    if (backlogRuns>0) backlogDays+=1;
+    if (sealed) sealedClaimDays+=1;
+    if (degraded) degradedDays+=1;
+    if (truncated) truncatedDays+=1;
+    maxBacklog=Math.max(maxBacklog,dayMaxBacklog);
+
+    daily.push({
+      date,
+      runs:list.length,
+      sent,
+      claimed,
+      failed,
+      rateLimited,
+      completionRate,
+      backlogOccurrences:backlogRuns,
+      maxBacklog:dayMaxBacklog,
+      finalRemaining,
+      sealedClaims:sealed,
+      degraded,
+      truncated,
+      finalCode:String(final?.code || ''),
+      lastAt:final?.at || null,
+    });
+  }
+
+  const incidentReport=buildDailyDigestIncidentReport(events,{nowMs:endMs});
+  const periodIncidentDates=incidentReport.history.filter(item => {
+    const t=Date.parse(String(item.startedAt || ''));
+    return Number.isFinite(t) && t>=startMs && t<=endMs;
+  });
+  const recovered=periodIncidentDates.filter(item=>item.recoveredAt && Number.isFinite(Number(item.durationMinutes)));
+  const averageRecoveryMinutes=recovered.length
+    ? Number((recovered.reduce((sum,item)=>sum+Number(item.durationMinutes || 0),0)/recovered.length).toFixed(1))
+    : null;
+
+  return {
+    available:events.length>0,
+    days:windowDays,
+    windowStartedAt:new Date(startMs).toISOString(),
+    windowEndedAt:new Date(endMs).toISOString(),
+    sampleDays:daily.length,
+    expectedDays:windowDays,
+    coverageRate:Number((daily.length/windowDays).toFixed(4)),
+    runs:events.length,
+    totals:{
+      sent:totalSent,
+      claimed:totalClaimed,
+      failed:totalFailed,
+      rateLimited:totalRateLimited,
+    },
+    completionRate:totalClaimed>0 ? Number((totalSent/totalClaimed).toFixed(4)) : null,
+    backlog:{
+      occurrences:backlogOccurrences,
+      days:backlogDays,
+      maxRecipients:maxBacklog,
+    },
+    sealedClaimDays,
+    degradedDays,
+    truncatedDays,
+    rateLimitDays:daily.filter(item=>item.rateLimited>0).length,
+    incidents:{
+      count:periodIncidentDates.length,
+      recovered:recovered.length,
+      active:periodIncidentDates.filter(item=>item.active).length,
+      averageRecoveryMinutes,
+      maxRecoveryMinutes:recovered.length ? Math.max(...recovered.map(item=>Number(item.durationMinutes || 0))) : null,
+    },
+    daily,
+    policy:{
+      aggregateOnly:true,
+      userIdentifiers:false,
     },
   };
 }

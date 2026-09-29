@@ -51,7 +51,7 @@ import { createReminderDeliveryStore } from './reminder-delivery-store.js';
 import { createReminderDeliveryService } from './reminder-delivery-service.js';
 import { createScheduledJobsRuntime } from './scheduled-jobs.js';
 import { DAILY_DIGEST_POLICY, assessDailyDigestRun, planDailyDigestRecipients, runBoundedDailyDigest } from './daily-digest-delivery.js';
-import { buildDailyDigestIncidentReport, dailyDigestIncidentAlertOpsEvents, formatDailyDigestIncidentAlert, planDailyDigestIncidentAlert, summarizeDailyDigestOperationalStatus } from './daily-digest-incidents.js';
+import { buildDailyDigestIncidentReport, dailyDigestIncidentAlertOpsEvents, formatDailyDigestIncidentAlert, planDailyDigestIncidentAlert, summarizeDailyDigestOperationalStatus, summarizeDailyDigestReliability } from './daily-digest-incidents.js';
 import { createProviderObservabilityRuntime } from './provider-observability.js';
 import { buildProviderSloIncidentTimeline, providerSloIncidentOpsEvent, providerSloIncidentUpdateOpsEvent } from './provider-slo-incidents.js';
 import {
@@ -15538,6 +15538,48 @@ async function readOpsEventsRange(cfg, startIso, endIso, limit = 600) {
   }
 }
 
+async function readDailyDigestOpsEvents(cfg, startIso, endIso, limit = 1000) {
+  const startMs=Date.parse(startIso || '');
+  const endMs=Date.parse(endIso || '');
+  const cap=Math.max(1,Math.min(1000,Number(limit || 1000)));
+  const fallbackItems=memory.opsEvents.filter(item => {
+    const t=Date.parse(item?.created_at || '');
+    return Number.isFinite(t)
+      && t>=startMs
+      && t<endMs
+      && item?.source==='telegram'
+      && item?.event_type==='daily_digest';
+  }).sort((a,b)=>Date.parse(b?.created_at || '')-Date.parse(a?.created_at || '')).slice(0,cap);
+  const fallback=()=>({
+    persistent:false,
+    migrationReady:false,
+    items:fallbackItems,
+    truncated:fallbackItems.length>=cap,
+  });
+  if (!hasSupabase(cfg)) return fallback();
+  try {
+    const url=new URL(`${cfg.supabaseUrl}/rest/v1/ops_events`);
+    url.searchParams.set('select','created_at,severity,source,event_type,code,message,endpoint,status,duration_ms,metadata');
+    url.searchParams.set('source','eq.telegram');
+    url.searchParams.set('event_type','eq.daily_digest');
+    url.searchParams.set('created_at',`gte.${startIso}`);
+    url.searchParams.append('created_at',`lt.${endIso}`);
+    url.searchParams.set('order','created_at.desc');
+    url.searchParams.set('limit',String(cap));
+    const r=await fetchWithTimeout(url,{headers:supaHeaders(cfg)},7000,'Supabase daily digest reliability');
+    if (!r.ok) return fallback();
+    const items=await r.json().catch(()=>[]);
+    return {
+      persistent:true,
+      migrationReady:true,
+      items:Array.isArray(items)?items:[],
+      truncated:Array.isArray(items) && items.length>=cap,
+    };
+  } catch {
+    return fallback();
+  }
+}
+
 function releaseTopGroups(items, keyFn, limit = 8) {
   const counts = new Map();
   for (const item of items || []) {
@@ -16090,8 +16132,9 @@ async function apiProductionMonitor(request, cfg) {
 async function apiReleaseMonitor(request, cfg) {
   const url = new URL(request.url);
   const hours = Math.max(1, Math.min(168, Number(url.searchParams.get('hours') || 24)));
+  const digestDays = Number(url.searchParams.get('digestDays') || 7) >= 30 ? 30 : 7;
   const force = url.searchParams.get('refresh') === '1';
-  const cacheKey = `h${hours}`;
+  const cacheKey = `h${hours}:d${digestDays}`;
   const cached = memory.releaseMonitor?.[cacheKey];
   if (!force && cached?.value && Date.now() - Number(cached.at || 0) < 30000) {
     return json({ ...cached.value, cached: true });
@@ -16100,9 +16143,11 @@ async function apiReleaseMonitor(request, cfg) {
   const end = new Date();
   const currentStart = new Date(end.getTime() - hours * 3600_000);
   const previousStart = new Date(currentStart.getTime() - hours * 3600_000);
-  const [source,digestAlertLedger] = await Promise.all([
+  const digestStart = new Date(end.getTime() - digestDays * 24 * 3600_000);
+  const [source,digestAlertLedger,digestHistory] = await Promise.all([
     readOpsEventsRange(cfg, previousStart.toISOString(), end.toISOString(), 1000),
     readProviderIncidentAlertDeliveries(cfg,336),
+    readDailyDigestOpsEvents(cfg,digestStart.toISOString(),end.toISOString(),1000),
   ]);
   const currentItems = source.items.filter(x => Date.parse(x.created_at || '') >= currentStart.getTime());
   const previousItems = source.items.filter(x => {
@@ -16112,15 +16157,20 @@ async function apiReleaseMonitor(request, cfg) {
   const current = summarizeReleaseWindow(currentItems, hours);
   const previous = summarizeReleaseWindow(previousItems, hours);
   const health = releaseMonitorHealth(current, source.persistent);
-  const digestEvents=source.items.filter(item =>
-    item?.source === 'telegram'
-    && item?.event_type === 'daily_digest'
-  );
-  const dailyDigest=summarizeDailyDigestOperationalStatus(
-    digestEvents,
-    digestAlertLedger.items,
-    {nowMs:end.getTime()},
-  );
+  const digestEvents=digestHistory.items;
+  const dailyDigest={
+    ...summarizeDailyDigestOperationalStatus(
+      digestEvents,
+      digestAlertLedger.items,
+      {nowMs:end.getTime()},
+    ),
+    reliability:summarizeDailyDigestReliability(
+      digestEvents,
+      {days:digestDays,nowMs:end.getTime()},
+    ),
+    historyPersistent:Boolean(digestHistory.persistent),
+    historyTruncated:Boolean(digestHistory.truncated),
+  };
   const incidents = currentItems
     .filter(x => ['warning','error','critical'].includes(String(x.severity || '')))
     .slice(0, 12)
@@ -16139,6 +16189,7 @@ async function apiReleaseMonitor(request, cfg) {
     releaseCandidate: RC_NAME,
     generatedAt: new Date().toISOString(),
     hours,
+    digestDays,
     persistent: source.persistent,
     migrationReady: source.migrationReady,
     health,
