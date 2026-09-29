@@ -13,6 +13,11 @@ export const REMINDER_DELIVERY_KINDS = Object.freeze({
     doneColumn: 'kickoff_notified_at',
     attemptsColumn: 'kickoff_attempts',
   }),
+  lineup: Object.freeze({
+    claimColumn: 'lineup_claimed_at',
+    doneColumn: 'lineup_notified_at',
+    attemptsColumn: 'lineup_attempts',
+  }),
 });
 
 export function reminderDeliveryKindConfig(kind) {
@@ -31,13 +36,14 @@ export function createReminderDeliveryStore({
   function reminderDeliveryStatus(row) {
     if (row?.kickoff_notified_at) return 'kickoff_sent';
     if (row?.notified_at) return 'prematch_sent';
+    if (row?.lineup_notified_at) return 'lineup_sent';
     if (row?.delivery_last_error === REMINDER_UNKNOWN_STATE || row?.delivery_last_error === REMINDER_SENDING_STATE) return 'delivery_unknown';
     if (row?.delivery_last_error) return 'retry_pending';
     return 'scheduled';
   }
 
   async function clearStaleReminderClaims(cfg) {
-    if (!hasSupabase(cfg)) return { prematch: 0, kickoff: 0, failed: 0 };
+    if (!hasSupabase(cfg)) return { prematch: 0, kickoff: 0, lineup: 0, failed: 0 };
     const cutoff = new Date(Date.now() - 20 * 60_000).toISOString();
 
     const clearColumn = async column => {
@@ -68,6 +74,7 @@ export function createReminderDeliveryStore({
 
     const prematch = Number(cleared.prematch || 0);
     const kickoff = Number(cleared.kickoff || 0);
+    const lineup = Number(cleared.lineup || 0);
     const total = Object.values(cleared).reduce((sum, value) => sum + Number(value || 0), 0);
 
     if (total > 0) {
@@ -77,7 +84,7 @@ export function createReminderDeliveryStore({
         eventType: 'reminder_delivery',
         code: 'REMINDER_STALE_CLAIMS',
         message: `Восстановлено зависших заявок на доставку уведомлений: ${total}.`,
-        meta: { prematch, kickoff },
+        meta: { prematch, kickoff, lineup },
       }).catch(() => {});
     }
 
@@ -96,7 +103,7 @@ export function createReminderDeliveryStore({
       }).catch(() => {});
     }
 
-    return { prematch, kickoff, failed: failures.length };
+    return { prematch, kickoff, lineup, failed: failures.length };
   }
 
   async function claimReminderDelivery(row, kind, cfg) {

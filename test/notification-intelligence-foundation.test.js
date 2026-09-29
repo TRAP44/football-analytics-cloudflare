@@ -7,7 +7,7 @@ import {
 } from '../src/reminder-delivery-store.js';
 
 test('notification delivery kinds keep the existing prematch and kickoff persistence contract', () => {
-  assert.deepEqual(Object.keys(REMINDER_DELIVERY_KINDS), ['prematch', 'kickoff']);
+  assert.deepEqual(Object.keys(REMINDER_DELIVERY_KINDS), ['prematch', 'kickoff', 'lineup']);
   assert.deepEqual(reminderDeliveryKindConfig('prematch'), {
     claimColumn: 'prematch_claimed_at',
     doneColumn: 'notified_at',
@@ -21,10 +21,11 @@ test('notification delivery kinds keep the existing prematch and kickoff persist
 });
 
 test('unknown intelligent notification kinds fail closed until persistence is explicitly defined', () => {
-  assert.throws(
-    () => reminderDeliveryKindConfig('lineup'),
-    /Unsupported reminder delivery kind: lineup/,
-  );
+  assert.deepEqual(reminderDeliveryKindConfig('lineup'), {
+    claimColumn: 'lineup_claimed_at',
+    doneColumn: 'lineup_notified_at',
+    attemptsColumn: 'lineup_attempts',
+  });
   assert.throws(
     () => reminderDeliveryKindConfig('important_change'),
     /Unsupported reminder delivery kind: important_change/,
