@@ -23636,7 +23636,6 @@ export default {
         dynamicRussianLocalization: 'enabled',
         adminTextHumanization: 'enabled',
         matchCenterRussianLocalization: 'enabled',
-        releaseCandidate: RC_NAME,
         regressionQA: 'enabled',
         rcSmokeTest: 'enabled',
         clientContractQA: 'enabled',
