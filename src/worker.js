@@ -21,6 +21,7 @@ import {
   telegramIdList,
 } from './access-control.js';
 import { createSupabaseClient } from './supabase-client.js';
+import { createCompositeReadinessRuntime } from './readiness-contract.js';
 import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
 import { applyFeatureFreshness, applyFeatureFreshnessMap } from './data-freshness.js';
 import { assessExpectedGoalsQuality, sanitizeExpectedGoalsForDisplay, statisticsForTrustedExpectedGoals } from './xg-quality.js';
@@ -147,7 +148,7 @@ const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
 const RELEASE_CHANNEL = 'rc144';
 const RC_NAME = 'RC144';
-const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.19 и примените миграции до v6.20; для существующей примените все доступные миграции из supabase/migrations до v6.20.';
+const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.19 и примените миграции до v6.21; для существующей примените все доступные миграции из supabase/migrations до v6.21.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49';
 
@@ -13599,6 +13600,13 @@ async function probeSupabaseReadinessConfirmed(cfg, options = {}) {
   return combined;
 }
 
+const { readCompositeReadiness } = createCompositeReadinessRuntime({
+  hasSupabase,
+  supaRpc,
+  probeConnectivity: cfg => probeSupabaseReadinessConfirmed(cfg),
+  expectedFingerprint: EXPECTED_SCHEMA_FINGERPRINT,
+});
+
 function supabaseProbeConfirmationSelfTest() {
   const direct=combineSupabaseProbeAttempts({configured:true,ok:true,status:'ok',latencyMs:40});
   const recovered=combineSupabaseProbeAttempts(
@@ -22448,18 +22456,14 @@ let readinessSnapshotInFlight=null;
 async function computeReadinessSnapshot(cfg) {
   scheduleReleaseFieldEvidence(cfg);
   const startedAt=Date.now();
-  const [supabaseCheck,schemaCheck,securityCheck,authFailuresCheck]=await Promise.all([
-    measureReadinessCheck(()=>probeSupabaseReadinessConfirmed(cfg)),
-    measureReadinessCheck(()=>probeSupabaseSchemaDriftConfirmed(cfg)),
-    measureReadinessCheck(()=>readBackendSecurityContract(cfg)),
-    measureReadinessCheck(()=>readRecentSupabaseAuthFailures(cfg,5)),
-  ]);
-  const supabase=supabaseCheck.value;
-  const schema=schemaCheck.value;
-  const security=securityCheck.value;
-  const authFailures=authFailuresCheck.value;
+  const compositeCheck=await measureReadinessCheck(()=>readCompositeReadiness(cfg,5));
+  const composite=compositeCheck.value;
+  const supabase=composite.connectivity;
+  const schema=composite.schema;
+  const security=composite.backendSecurity;
+  const authFailures=composite.authFailures;
   const telegramConfigured=Boolean(cfg.botToken && cfg.webhookSecret);
-  const ok=Boolean(supabase.ok && schema.ok && security.ok && telegramConfigured && (!authFailures.available || authFailures.count===0));
+  const ok=Boolean(composite.valid && composite.ok && telegramConfigured);
   return {
     ok,
     status:ok?'ready':'not_ready',
@@ -22467,12 +22471,12 @@ async function computeReadinessSnapshot(cfg) {
     releaseCandidate:RC_NAME,
     latencyMs:Date.now()-startedAt,
     checks:{
-      supabase:{ok:Boolean(supabase.ok),status:supabase.status || 'unknown',attempts:Number(supabase.attempts || 1),latencyMs:supabaseCheck.latencyMs},
-      schema:{ok:Boolean(schema.ok),status:schema.status || 'unknown',fingerprint:schema?.fingerprint?.fingerprint || '',expectedFingerprint:EXPECTED_SCHEMA_FINGERPRINT,latencyMs:schemaCheck.latencyMs},
-      backendSecurity:{ok:Boolean(security.ok),status:security.status || 'unknown',latencyMs:securityCheck.latencyMs},
+      supabase:{ok:Boolean(supabase.ok),status:supabase.status || 'unknown',attempts:Number(supabase.attempts || 1),latencyMs:compositeCheck.latencyMs},
+      schema:{ok:Boolean(schema.ok),status:schema.status || 'unknown',fingerprint:schema?.fingerprint?.fingerprint || '',expectedFingerprint:EXPECTED_SCHEMA_FINGERPRINT,latencyMs:compositeCheck.latencyMs},
+      backendSecurity:{ok:Boolean(security.ok),status:security.status || 'unknown',latencyMs:compositeCheck.latencyMs},
       telegramConfigured,
       recentSupabaseAuthFailures:authFailures.available ? Number(authFailures.count || 0) : null,
-      recentSupabaseAuthFailuresLatencyMs:authFailuresCheck.latencyMs,
+      recentSupabaseAuthFailuresLatencyMs:compositeCheck.latencyMs,
     },
   };
 }
