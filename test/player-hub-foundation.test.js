@@ -35,7 +35,7 @@ test('Player Hub 4A exposes match metrics without adding an API request', () => 
     assert.ok(source.includes(label), `missing metric: ${label}`);
   }
   assert.doesNotMatch(source, /\bapi\s*\(/);
-  assert.match(source, /не расходует дополнительную квоту API-Football/);
+  assert.match(source, /Контекст матча остаётся независимым от сезонной выборки/);
 });
 
 test('Player Hub has responsive visual hierarchy and launch11 cache revision', () => {
