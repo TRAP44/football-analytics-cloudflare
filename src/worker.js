@@ -6785,8 +6785,17 @@ async function setBotDigestSubscription(userId, chatId, enabled, cfg, appUrl = '
 }
 
 async function loadBotDigestSubscriptions(cfg) {
-  if (hasSupabase(cfg)) return await supaSelectMany(cfg,'bot_digest_subscriptions',{enabled:'eq.true'},{limit:1000,order:'telegram_id.asc'});
-  return [...memory.botDigestSubscriptions.values()].filter(x=>x.enabled);
+  if (hasSupabase(cfg)) {
+    return await supaSelectPaged(cfg,'bot_digest_subscriptions',{enabled:'eq.true'},{
+      pageSize:500,
+      maxRows:10000,
+      order:'telegram_id.asc',
+    });
+  }
+  return {
+    rows:[...memory.botDigestSubscriptions.values()].filter(x=>x.enabled),
+    truncated:false,
+  };
 }
 
 async function claimDigestDelivery(row,date,cfg) {
@@ -6920,9 +6929,21 @@ async function processDailyDigests(cfg,scheduledAt=new Date()) {
   if (!cfg.botToken) return {sent:0,skipped:'bot_token_missing'};
   const hour=scheduledAt.getUTCHours();
   const date=scheduledAt.toISOString().slice(0,10);
-  const subscriptions=(await loadBotDigestSubscriptions(cfg))
+  const subscriptionPage=await loadBotDigestSubscriptions(cfg);
+  const subscriptions=(subscriptionPage.rows || [])
     .filter(x=>Number(x.hour_utc ?? 7)===hour && String(x.last_sent_date || '')!==date);
-  if (!subscriptions.length) return {sent:0,eligible:0};
+  if (subscriptionPage.truncated) {
+    await recordOpsEvent(cfg,{
+      severity:'warning',
+      source:'telegram',
+      eventType:'daily_digest',
+      code:'DIGEST_SUBSCRIPTIONS_TRUNCATED',
+      message:'Daily digest subscription scan reached the 10000-row safety cap.',
+      endpoint:'cron:daily-digest',
+      meta:{loaded:Number(subscriptionPage.rows?.length || 0),eligible:subscriptions.length,cap:10000},
+    }).catch(()=>null);
+  }
+  if (!subscriptions.length) return {sent:0,eligible:0,truncated:Boolean(subscriptionPage.truncated)};
   const [digest,morningNews]=await Promise.all([currentDailyDigest(cfg),currentMorningFootballNews(cfg)]);
   let sent=0;
   for (let i=0;i<subscriptions.length;i+=20) {
@@ -6954,7 +6975,7 @@ async function processDailyDigests(cfg,scheduledAt=new Date()) {
     sent+=results.filter(x=>x.status==='fulfilled' && x.value===true).length;
     if (i+20<subscriptions.length) await sleepMs(1000);
   }
-  return {sent,eligible:subscriptions.length,date,news:Number(morningNews.items?.length || 0)};
+  return {sent,eligible:subscriptions.length,date,news:Number(morningNews.items?.length || 0),truncated:Boolean(subscriptionPage.truncated)};
 }
 
 function telegramHtmlEscape(value = '') {
