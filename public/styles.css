@@ -3114,3 +3114,23 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
     border-radius: 14px;
   }
 }
+
+
+/* Player Hub 4C — season statistics */
+.player-hub-season {
+  display: grid;
+  gap: 10px;
+}
+.player-hub-season-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.player-hub-season-grid .player-hub-metric {
+  min-width: 0;
+}
+@media (min-width: 560px) {
+  .player-hub-season-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
