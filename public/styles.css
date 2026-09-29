@@ -2815,7 +2815,7 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 }
 
 
-/* Player Hub 4A */
+/* Player Hub 4A / 4B */
 .center-player-open {
   width: 100%;
   grid-template-columns: 22px 30px minmax(0, 1fr) 34px 14px;
@@ -2969,6 +2969,47 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
     font-size: 19px;
   }
   .player-hub-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+
+/* Player Hub 4B — season profile */
+.player-season-panel,
+.player-season-empty {
+  margin-top: 12px;
+}
+.player-season-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.player-season-metric {
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-2) 76%, transparent);
+}
+.player-season-metric span {
+  display: block;
+  min-height: 24px;
+  color: var(--hint);
+  font-size: 10px;
+  line-height: 1.2;
+}
+.player-season-metric strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 16px;
+}
+.player-season-load {
+  width: 100%;
+  margin-top: 10px;
+}
+@media (max-width: 430px) {
+  .player-season-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
