@@ -1,33 +1,20 @@
 import { createApiClient, initTelegramWebApp, localDate, timeOf, dateTime, dateOnly, relativeAge, phase5SessionToken } from './modules/client-core.js';
 import { CANONICAL_HOME_VIEW, PUBLIC_VIEW_IDS, backTargetForView, telegramBackButtonVisible } from './modules/navigation.js';
-const CLIENT_VERSION = '6.120.0-rc144';
-const CLIENT_API_CONTRACT = 5;
-const CLIENT_RELEASE_CHANNEL = 'rc144';
-const APP_SURFACE = document.querySelector('meta[name="matchradar-surface"]')?.content === 'admin' ? 'admin' : 'public';
-const SUPABASE_SCHEMA_HINT = 'проверьте актуальную схему Supabase (baseline v6.19 + миграция v6.20)';
+import {
+  CLIENT_VERSION,
+  CLIENT_API_CONTRACT,
+  CLIENT_RELEASE_CHANNEL,
+  SUPABASE_SCHEMA_HINT,
+  UI_PREFERENCES_KEY,
+  FIRST_RUN_GUIDE_KEY,
+  DEFAULT_UI_PREFERENCES,
+  ACCENT_PALETTES,
+  appSurface,
+  readUiPreferences,
+} from './modules/app-runtime.js';
 
-const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
-const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
-const DEFAULT_UI_PREFERENCES = { theme: 'system', accent: 'system', buttonStyle: 'soft' };
-const ACCENT_PALETTES = {
-  green: { dark: { accent: '#57e389', text: '#041009' }, light: { accent: '#147a3d', text: '#ffffff' } },
-  blue: { dark: { accent: '#60a5fa', text: '#07111f' }, light: { accent: '#1d4ed8', text: '#ffffff' } },
-  violet: { dark: { accent: '#c084fc', text: '#160624' }, light: { accent: '#6d28d9', text: '#ffffff' } },
-  amber: { dark: { accent: '#fbbf24', text: '#1c1200' }, light: { accent: '#92400e', text: '#ffffff' } },
-};
-function readUiPreferences() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(UI_PREFERENCES_KEY) || '{}');
-    return {
-      theme: ['system', 'dark', 'light', 'ocean'].includes(saved.theme) ? saved.theme : DEFAULT_UI_PREFERENCES.theme,
-      accent: ['system', 'green', 'blue', 'violet', 'amber'].includes(saved.accent) ? saved.accent : DEFAULT_UI_PREFERENCES.accent,
-      buttonStyle: ['soft', 'compact'].includes(saved.buttonStyle) ? saved.buttonStyle : DEFAULT_UI_PREFERENCES.buttonStyle,
-    };
-  } catch {
-    return { ...DEFAULT_UI_PREFERENCES };
-  }
-}
-const initialUiPreferences = readUiPreferences();
+const APP_SURFACE = appSurface(document);
+const initialUiPreferences = readUiPreferences(localStorage);
 document.documentElement.dataset.theme = initialUiPreferences.theme;
 document.documentElement.dataset.accent = initialUiPreferences.accent;
 document.documentElement.dataset.buttonStyle = initialUiPreferences.buttonStyle;

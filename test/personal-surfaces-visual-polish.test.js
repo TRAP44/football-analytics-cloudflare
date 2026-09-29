@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const html=fs.readFileSync('public/index.html','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
+const runtime=fs.readFileSync('public/modules/app-runtime.js','utf8');
 const css=fs.readFileSync('public/styles/public-shell.css','utf8');
 
 function block(source,start,end){
@@ -54,10 +55,10 @@ test('personal surfaces keep mobile and touch targets explicit',()=>{
 });
 
 test('frontend revision refreshes personal-surface styles without changing release identity',()=>{
-  assert.match(html,/frontend-asset-revision" content="6\.120\.0-launch13"/);
-  assert.match(html,/styles\.css\?v=6\.120\.0-launch13/);
-  assert.match(html,/styles\/public-shell\.css\?v=6\.120\.0-launch13/);
-  assert.match(html,/app\.js\?v=6\.120\.0-launch13/);
-  assert.match(app,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
+  assert.match(html,/frontend-asset-revision" content="6\.120\.0-launch14"/);
+  assert.match(html,/styles\.css\?v=6\.120\.0-launch14/);
+  assert.match(html,/styles\/public-shell\.css\?v=6\.120\.0-launch14/);
+  assert.match(html,/app\.js\?v=6\.120\.0-launch14/);
+  assert.match(runtime,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
   assert.doesNotMatch(html,/6\.120\.0-ui2/);
 });

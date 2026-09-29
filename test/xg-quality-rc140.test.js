@@ -81,6 +81,7 @@ test('RC140 rejects structurally valid xG from stale or unverified statistics', 
 
 const worker = fs.readFileSync('src/worker.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
+const runtime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const smoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 
 test('RC140 routes xG through the semantic guard before live AI and post-match evidence', () => {
@@ -98,7 +99,7 @@ test('RC140 exposes xG quality in Match Center and production health contracts',
   assert.match(worker, /match-center:\$\{fixtureId\}:v16-availability-quality-rc144/);
   assert.match(worker, /const APP_VERSION = '6\.120\.0-rc144'/);
   assert.match(worker, /const RC_NAME = 'RC144'/);
-  assert.match(app, /const CLIENT_VERSION = '6\.120\.0-rc144'/);
+  assert.match(runtime, /const CLIENT_VERSION = '6\.120\.0-rc144'/);
   assert.match(app, /xgQualityHintHtml/);
   assert.match(app, /\['xG', d\.availability\?\.xg\]/);
   assert.match(smoke, /'xgSemanticQualityGuard'/);

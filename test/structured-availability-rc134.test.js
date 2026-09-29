@@ -106,6 +106,7 @@ test('RC134 lineup impact exposes injuries, suspensions, doubts and reconciled r
 
 
 const app = fs.readFileSync('public/app.js', 'utf8');
+const runtime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const styles = fs.readFileSync('public/styles.css', 'utf8');
 
 test('RC134 Match Center renders structured absence categories and doubt status', () => {
@@ -138,5 +139,5 @@ test('RC134 feature remains part of the RC136 release health contract', () => {
   assert.match(worker, /structuredAvailability: 'enabled'/);
   assert.match(worker, /const APP_VERSION = '6\.120\.0-rc144'/);
   assert.match(worker, /const RC_NAME = 'RC144'/);
-  assert.match(app, /const CLIENT_VERSION = '6\.120\.0-rc144'/);
+  assert.match(runtime, /const CLIENT_VERSION = '6\.120\.0-rc144'/);
 });

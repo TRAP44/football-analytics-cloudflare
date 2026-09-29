@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
+const runtime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const css = fs.readFileSync('public/styles.css', 'utf8');
 
@@ -93,7 +94,7 @@ test('custom accent persists independently and shipped pairs keep WCAG-safe cont
     ['#92400e', '#ffffff', '#f3f6f8'],
   ];
   for (const [accent, text, background] of pairs) {
-    assert.ok(app.includes(accent) && app.includes(text));
+    assert.ok(runtime.includes(accent) && runtime.includes(text));
     assert.ok(contrast(accent, text) >= 4.5, accent + ' button contrast');
     assert.ok(contrast(accent, background) >= 4.5, accent + ' surface contrast');
   }

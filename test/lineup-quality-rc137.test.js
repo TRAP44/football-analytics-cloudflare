@@ -50,6 +50,7 @@ test('RC137 match summary requires both teams to pass the same guard', () => {
 
 const worker = fs.readFileSync('src/worker.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
+const runtime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const smoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 
 test('RC137 uses lineup quality in Match Center and AI quality gate', () => {
@@ -74,6 +75,6 @@ test('RC137 frontend and Telegram no longer treat a 10-player XI as confirmed', 
 test('RC137 is part of the release health contract', () => {
   assert.match(worker, /const APP_VERSION = '6\.120\.0-rc144'/);
   assert.match(worker, /const RC_NAME = 'RC144'/);
-  assert.match(app, /const CLIENT_VERSION = '6\.120\.0-rc144'/);
+  assert.match(runtime, /const CLIENT_VERSION = '6\.120\.0-rc144'/);
   assert.match(smoke, /'lineupQualityGuard'/);
 });

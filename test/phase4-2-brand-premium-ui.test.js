@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const html=fs.readFileSync('public/index.html','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
+const runtime=fs.readFileSync('public/modules/app-runtime.js','utf8');
 const css=fs.readFileSync('public/styles/public-shell.css','utf8');
 const client=fs.readFileSync('public/modules/client-core.js','utf8');
 const legacyDoc=fs.readFileSync('docs/archive/PHASE4_2_BRAND_IDENTITY_RU.md','utf8');
@@ -22,7 +23,7 @@ test('MatchRadar is the public brand while internal release identifiers stay unt
   assert.match(html,/Видим, что меняет матч\./);
   assert.doesNotMatch(html,/FutLens|FM AI/);
   assert.doesNotMatch(app,/FutLens|FM AI/);
-  assert.match(app,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
+  assert.match(runtime,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
   assert.match(client,/phase5-session:v2/);
 });
 
