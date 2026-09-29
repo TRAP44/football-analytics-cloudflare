@@ -51,9 +51,11 @@ import { createReminderDeliveryStore } from './reminder-delivery-store.js';
 import { createReminderDeliveryService } from './reminder-delivery-service.js';
 import { createScheduledJobsRuntime } from './scheduled-jobs.js';
 import { DAILY_DIGEST_POLICY, assessDailyDigestRun, planDailyDigestRecipients, runBoundedDailyDigest } from './daily-digest-delivery.js';
+import { buildDailyDigestIncidentReport, dailyDigestIncidentAlertOpsEvents, formatDailyDigestIncidentAlert, planDailyDigestIncidentAlert } from './daily-digest-incidents.js';
 import { createProviderObservabilityRuntime } from './provider-observability.js';
 import { buildProviderSloIncidentTimeline, providerSloIncidentOpsEvent, providerSloIncidentUpdateOpsEvent } from './provider-slo-incidents.js';
 import {
+  deliverOperationalIncidentAlert,
   deliverProviderIncidentAlert,
   planProviderIncidentAlert,
   providerIncidentAlertLedgerSummary,
@@ -15729,6 +15731,15 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
         destinations:providerAlertDestinations,
       })
     : { action:'none', reason:'read_only_monitor' };
+  const digestIncident = buildDailyDigestIncidentReport(
+    source.items.filter(item => item?.source === 'telegram' && item?.event_type === 'daily_digest'),
+    { nowMs:now.getTime() },
+  );
+  const digestAlertCandidate = options.record !== false
+    ? planDailyDigestIncidentAlert(digestIncident, providerAlertLedger.items, {
+        destinations:providerAlertDestinations,
+      })
+    : { action:'none', reason:'read_only_monitor' };
   const incidentAlertPersistenceReady = Boolean(providerAlertLedger.persistent && providerAlertContract.ok);
   const incidentAlertPlan = incidentAlertCandidate.action === 'send' && !incidentAlertPersistenceReady
     ? {
@@ -15738,6 +15749,14 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
         blockedCandidate:true,
       }
     : incidentAlertCandidate;
+  const digestAlertPlan = digestAlertCandidate.action === 'send' && !incidentAlertPersistenceReady
+    ? {
+        ...digestAlertCandidate,
+        action:'none',
+        reason:'persistent_ledger_unavailable',
+        blockedCandidate:true,
+      }
+    : digestAlertCandidate;
   const health = productionMonitorState({
     supabaseOk: supabase.ok,
     schemaOk: schemaDrift.ok,
@@ -15813,6 +15832,15 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
       },
     },
     telegramWebhook,
+    dailyDigest:{
+      incident:digestIncident,
+      alerting:{
+        configured:Boolean(cfg.botToken && (cfg.adminTelegramIds || []).length),
+        persistent:incidentAlertPersistenceReady,
+        nextAction:digestAlertPlan.action === 'send' ? digestAlertPlan.kind : 'none',
+        reason:digestAlertPlan.reason || '',
+      },
+    },
     observability: {
       persistent: Boolean(source.persistent && providerSloSource.persistent),
       providerSloFlush,
@@ -15894,6 +15922,76 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
 
     const alertEvents = providerIncidentAlertOpsEvents(incidentAlertPlan,delivery);
     await Promise.allSettled(alertEvents.map(event => recordOpsEvent(cfg,event)));
+  }
+
+
+  if (options.record !== false && digestAlertPlan.blockedCandidate) {
+    await recordOpsEvent(cfg,{
+      severity:'error',
+      source:'digest_alert',
+      eventType:'alert_delivery',
+      code:'DAILY_DIGEST_INCIDENT_ALERT_PERSISTENCE_FAILED',
+      message:'Persistent alert delivery claim is unavailable; daily digest admin alert was suppressed.',
+      endpoint:'cron:production-monitor',
+      meta:{
+        incidentId:digestAlertPlan.incidentId || null,
+        alertKind:String(digestAlertPlan.kind || ''),
+        deliveryKey:String(digestAlertPlan.alertKey || digestAlertPlan.deliveryKey || ''),
+        reason:'persistent_ledger_unavailable',
+      },
+    }).catch(()=>{});
+  }
+
+  if (options.record !== false && digestAlertPlan.action === 'send') {
+    let digestDelivery;
+    try {
+      digestDelivery = await deliverOperationalIncidentAlert({
+        plan:digestAlertPlan,
+        text:formatDailyDigestIncidentAlert(digestAlertPlan),
+        adminTelegramIds:cfg.adminTelegramIds || [],
+        claimDelivery:input => claimProviderIncidentAlertDelivery(cfg,input),
+        finalizeDelivery:input => finalizeProviderIncidentAlertDelivery(cfg,input),
+        sendMessage:(chatId,text) => sendTelegramMessage(chatId,text,cfg),
+        nowMs:now.getTime(),
+      });
+    } catch (error) {
+      digestDelivery = {
+        ok:false,
+        outcomes:(digestAlertPlan.targetDeliveries || []).map(target => ({
+          slot:Number(target?.slot),
+          state:'persistence_failure',
+          claimAcquired:false,
+          reason:redactOpsString(error?.message || error,160),
+          attempts:0,
+        })),
+        deliveredSlots:[],
+        failedSlots:(digestAlertPlan.targetDeliveries || []).map(target => Number(target?.slot)),
+        recipientCount:(digestAlertPlan.targetDeliveries || []).length,
+      };
+    }
+
+    const firstClaims=(digestDelivery.outcomes || []).filter(item => item?.claimAcquired && Number(item?.attempts || 0) === 1);
+    if (firstClaims.length) {
+      await recordOpsEvent(cfg,{
+        severity:digestAlertPlan.kind === 'recovery' ? 'info' : 'warning',
+        source:'telegram',
+        eventType:'daily_digest_incident',
+        code:digestAlertPlan.kind === 'recovery' ? 'DAILY_DIGEST_INCIDENT_RECOVERED' : 'DAILY_DIGEST_INCIDENT_OPENED',
+        message:digestAlertPlan.kind === 'recovery'
+          ? 'Daily digest operational incident recovered.'
+          : 'Daily digest operational incident opened from backlog/stuck-delivery health thresholds.',
+        endpoint:'cron:production-monitor',
+        meta:{
+          incidentId:digestAlertPlan.incidentId || null,
+          date:digestAlertPlan.incident?.date || null,
+          alertKind:digestAlertPlan.kind,
+          diagnostics:digestAlertPlan.incident?.diagnostics || {},
+        },
+      }).catch(()=>{});
+    }
+
+    const digestAlertEvents=dailyDigestIncidentAlertOpsEvents(digestAlertPlan,digestDelivery);
+    await Promise.allSettled(digestAlertEvents.map(event => recordOpsEvent(cfg,event)));
   }
 
   if (options.record !== false && schemaDrift.recovered) {
