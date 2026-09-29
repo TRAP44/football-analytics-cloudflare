@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/auth-user.js','utf8')+'\n'+fs.readFileSync('src/api-football-gateway.js','utf8');
+const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/daily-digest-delivery.js','utf8')+'\n'+fs.readFileSync('src/auth-user.js','utf8')+'\n'+fs.readFileSync('src/api-football-gateway.js','utf8');
 const migration=fs.readFileSync('supabase/migrations/supabase_migration_v6_18.sql','utf8');
 const hotfix=fs.readFileSync('supabase/migrations/supabase_migration_v6_18_1.sql','utf8');
 const smoke=fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
@@ -45,7 +45,7 @@ test('RC127 uses atomic daily digest delivery claims',()=>{
   assert.match(migration,/create or replace function public\.complete_daily_digest/);
   assert.match(migration,/create or replace function public\.release_daily_digest/);
   assert.match(worker,/async function claimDigestDelivery/);
-  assert.match(worker,/const claimed=await claimDigestDelivery\(row,date,cfg\)/);
+  assert.match(worker,/claim:\(row,deliveryDate\)=>claimDigestDelivery\(row,deliveryDate,cfg\)/);\n  assert.match(worker,/owned = Boolean\(await claim\(row, date\)\)/);
 });
 
 test('RC127 uses full schema fingerprint plus selected compatibility probes',()=>{
