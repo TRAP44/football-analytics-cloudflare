@@ -33,21 +33,16 @@ test('Phase 2 gateway preserves FREE distributed safety budget',()=>{
   assert.equal(gateway.distributedProviderMinuteLimit(),4);
 });
 
-test('Phase 2 gateway bounds emergency traffic when distributed Supabase guard is unavailable',async()=>{
+test('Phase 2 gateway fails closed immediately when configured distributed Supabase guard is unavailable',async()=>{
   const {gateway,counters}=runtime({hasSupabase:()=>true,supaRpc:async()=>{throw new Error('db unavailable');}});
-  const first=await gateway.claimDistributedProviderBudget({});
-  const second=await gateway.claimDistributedProviderBudget({});
   const blocked=await gateway.claimDistributedProviderBudget({});
   assert.equal(gateway.emergencyProviderMinuteLimit(),2);
-  assert.equal(first.allowed,true);
-  assert.equal(second.allowed,true);
-  assert.equal(first.degraded,true);
-  assert.equal(first.local,true);
   assert.equal(blocked.allowed,false);
   assert.equal(blocked.degraded,true);
+  assert.equal(blocked.local,false);
   assert.equal(blocked.reason,'guard_unavailable');
-  assert.ok(blocked.retryAfter>=1);
-  assert.equal(counters.providerDistributedFallbacks,3);
+  assert.equal(blocked.retryAfter,15);
+  assert.equal(counters.providerDistributedFallbacks,1);
   assert.equal(counters.providerDistributedBlocks,1);
 });
 
@@ -60,7 +55,7 @@ test('Phase 2 gateway also bounds traffic when Supabase is not configured',async
   assert.equal(blocked.reason,'supabase_not_configured');
 });
 
-test('Phase 2 gateway surfaces emergency-budget exhaustion without hitting API-Football',async()=>{
+test('Phase 2 gateway never reaches API-Football when configured distributed guard is unavailable',async()=>{
   let networkCalls=0;
   const {gateway}=runtime({
     hasSupabase:()=>true,
@@ -70,13 +65,33 @@ test('Phase 2 gateway surfaces emergency-budget exhaustion without hitting API-F
       return new Response(JSON.stringify({response:[]}),{status:200});
     },
   });
-  await gateway.apiFootball('/fixtures',{id:1},{apiFootballKey:'test-key'},{transportRetries:0});
-  await gateway.apiFootball('/fixtures',{id:2},{apiFootballKey:'test-key'},{transportRetries:0});
   await assert.rejects(
-    ()=>gateway.apiFootball('/fixtures',{id:3},{apiFootballKey:'test-key'},{transportRetries:0}),
-    error=>error?.code==='FOOTBALL_GUARD_DEGRADED' && Number(error?.retryAfter)>0,
+    ()=>gateway.apiFootball('/fixtures',{id:1},{apiFootballKey:'test-key'},{transportRetries:0}),
+    error=>error?.code==='FOOTBALL_GUARD_DEGRADED' && error?.retryAfter===15,
   );
-  assert.equal(networkCalls,2);
+  assert.equal(networkCalls,0);
+});
+
+test('Phase 2 guard failure is safe across independent Worker-isolate gateway instances',async()=>{
+  let networkCalls=0;
+  const overrides={
+    hasSupabase:()=>true,
+    supaRpc:async()=>{throw new Error('distributed guard timeout');},
+    fetchWithTimeout:async()=>{
+      networkCalls+=1;
+      return new Response(JSON.stringify({response:[]}),{status:200});
+    },
+  };
+  const left=runtime(overrides).gateway;
+  const right=runtime(overrides).gateway;
+
+  const results=await Promise.allSettled([
+    left.apiFootball('/fixtures',{date:'2026-09-29'},{apiFootballKey:'test-key'},{transportRetries:0}),
+    right.apiFootball('/fixtures',{date:'2026-09-29'},{apiFootballKey:'test-key'},{transportRetries:0}),
+  ]);
+
+  assert.equal(results.every(result=>result.status==='rejected' && result.reason?.code==='FOOTBALL_GUARD_DEGRADED'),true);
+  assert.equal(networkCalls,0);
 });
 
 test('Phase 2 gateway keeps request keys deterministic',()=>{
