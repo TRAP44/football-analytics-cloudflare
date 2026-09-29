@@ -16225,6 +16225,10 @@ async function apiReleaseMonitor(request, cfg) {
       digestEvents,
       {days:digestDays,nowMs:end.getTime()},
     ),
+    reliabilitySlo:assessDailyDigestReliabilitySlo(
+      digestEvents,
+      {days:7,nowMs:end.getTime()},
+    ),
     historyPersistent:Boolean(digestHistory.persistent),
     historyTruncated:Boolean(digestHistory.truncated),
   };
