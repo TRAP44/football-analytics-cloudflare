@@ -6801,17 +6801,49 @@ async function loadBotDigestSubscriptions(cfg) {
 
 async function claimDigestDelivery(row,date,cfg) {
   if (hasSupabase(cfg)) {
-    const claimed=Boolean(await supaRpc(cfg,'claim_daily_digest',{p_telegram_id:Number(row.telegram_id),p_delivery_date:date,p_lease_seconds:180},2500));
+    const claimed=Boolean(await supaRpc(cfg,'claim_daily_digest',{p_telegram_id:Number(row.telegram_id),p_delivery_date:date,p_lease_seconds:DAILY_DIGEST_POLICY.claimLeaseSeconds},2500));
     if (claimed) bumpTelemetry('digestDeliveryClaims'); else bumpTelemetry('digestDeliveryDuplicates');
     return claimed;
   }
   const current=memory.botDigestSubscriptions.get(Number(row.telegram_id)) || row;
-  if (String(current.last_sent_date || '')===date || String(current.delivery_claim_date || '')===date) {
+  const lockedUntil=Date.parse(String(current.delivery_locked_until || ''));
+  const activeClaim=String(current.delivery_claim_date || '')===date && Number.isFinite(lockedUntil) && lockedUntil>Date.now();
+  if (String(current.last_sent_date || '')===date || activeClaim) {
     bumpTelemetry('digestDeliveryDuplicates');
     return false;
   }
-  memory.botDigestSubscriptions.set(Number(row.telegram_id),{...current,delivery_claim_date:date,delivery_locked_until:new Date(Date.now()+180000).toISOString()});
+  memory.botDigestSubscriptions.set(Number(row.telegram_id),{
+    ...current,
+    delivery_claim_date:date,
+    delivery_claimed_at:new Date().toISOString(),
+    delivery_locked_until:new Date(Date.now()+DAILY_DIGEST_POLICY.claimLeaseSeconds*1000).toISOString(),
+  });
   bumpTelemetry('digestDeliveryClaims');
+  return true;
+}
+
+function digestDeliverySealUntil(date) {
+  const nextDay=new Date(`${String(date || '')}T00:00:00.000Z`);
+  if (!Number.isFinite(nextDay.getTime())) return new Date(Date.now()+24*3600_000).toISOString();
+  nextDay.setUTCDate(nextDay.getUTCDate()+1);
+  return nextDay.toISOString();
+}
+
+async function armDigestDelivery(row,date,cfg) {
+  const lockedUntil=digestDeliverySealUntil(date);
+  if (hasSupabase(cfg)) {
+    await supaPatch(cfg,'bot_digest_subscriptions',{
+      telegram_id:`eq.${Number(row.telegram_id)}`,
+      delivery_claim_date:`eq.${date}`,
+    },{
+      delivery_locked_until:lockedUntil,
+      updated_at:new Date().toISOString(),
+    });
+    return true;
+  }
+  const current=memory.botDigestSubscriptions.get(Number(row.telegram_id)) || row;
+  if (String(current.delivery_claim_date || '')!==date || String(current.last_sent_date || '')===date) return false;
+  memory.botDigestSubscriptions.set(Number(row.telegram_id),{...current,delivery_locked_until:lockedUntil});
   return true;
 }
 
@@ -6988,6 +7020,8 @@ async function processDailyDigests(cfg,scheduledAt=new Date()) {
     plan,
     date,
     claim:(row,deliveryDate)=>claimDigestDelivery(row,deliveryDate,cfg),
+    arm:(row,deliveryDate)=>armDigestDelivery(row,deliveryDate,cfg),
+    release:(row,deliveryDate)=>releaseDigestDelivery(row,deliveryDate,cfg),
     complete:(row,deliveryDate)=>markDigestSent(row,deliveryDate,cfg),
     sendDigest:row=>telegramApi('sendMessage',cfg,{
       chat_id:Number(row.chat_id),
