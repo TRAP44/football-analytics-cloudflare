@@ -6,7 +6,7 @@ const worker=fs.readFileSync('src/worker.js','utf8');
 
 test('health payload declares releaseCandidate only once',()=>{
   const start=worker.indexOf("if (url.pathname === '/health' || url.pathname === '/api/health')");
-  const end=worker.indexOf("if (request.method === 'OPTIONS')",start);
+  const end=worker.indexOf("if (request.method === 'POST' && url.pathname === '/telegram/webhook'",start);
   assert.ok(start>=0 && end>start);
   const block=worker.slice(start,end);
   const matches=block.match(/releaseCandidate\s*:\s*RC_NAME/g) || [];
