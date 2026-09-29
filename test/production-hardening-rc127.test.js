@@ -15,7 +15,7 @@ test('RC136 has a single production identity while preserving RC127 hardening',(
   assert.equal(pkg.version,'6.120.0');
   assert.match(worker,/const APP_VERSION = '6\.120\.0-rc144'/);
   assert.match(worker,/const RC_NAME = 'RC144'/);
-  assert.match(app,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
+  assert.match(runtime,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
   assert.match(deploy,/RELEASE_VERSION: "6\.120\.0-rc144"/);
 });
 
