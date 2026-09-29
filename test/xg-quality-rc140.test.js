@@ -81,6 +81,7 @@ test('RC140 rejects structurally valid xG from stale or unverified statistics', 
 
 const worker = fs.readFileSync('src/worker.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
+const runtime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const smoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 
 test('RC140 routes xG through the semantic guard before live AI and post-match evidence', () => {
