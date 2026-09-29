@@ -1,0 +1,902 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#07111f" />
+  <meta name="description" content="MatchRadar — AI-футбольный ассистент в Telegram: матчи, команды, LIVE и понятный разбор ключевых факторов." />
+  <meta name="matchradar-surface" content="admin" />
+  <meta name="frontend-asset-revision" content="6.120.0-launch13" />
+  <title>MatchRadar Admin · Состояние и управление</title>
+  <link rel="icon" type="image/svg+xml" href="/assets/brand/matchradar-mark.svg?v=6.120.0-p42" />
+  <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
+  <link rel="stylesheet" href="/styles.css?v=6.120.0-launch13" />
+  <link rel="stylesheet" href="/styles/public-shell.css?v=6.120.0-launch13" />
+</head>
+<body class="miniapp-public-shell admin-dedicated-surface">
+  <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
+    <div class="boot-card boot-card-simple">
+      <div class="boot-logo"><img src="/assets/brand/matchradar-mark.svg" alt="" /></div>
+      <h1 id="bootTitle">MatchRadar</h1>
+      <p class="boot-tagline">Видим, что меняет матч.</p>
+      <p id="bootText">Загружаем матчи…</p>
+      <div class="boot-progress" aria-hidden="true"><i id="bootProgressFill"></i></div>
+      <div class="boot-actions">
+        <button id="bootRetryBtn" class="secondary-btn" type="button" hidden>Повторить</button>
+        <button id="bootContinueBtn" class="secondary-btn" type="button" hidden>Открыть приложение</button>
+        <button id="bootReloadBtn" class="primary-btn" type="button" hidden>Обновить приложение</button>
+      </div>
+    </div>
+  </div>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-lockup">
+        <div class="brand-mark" aria-hidden="true"><img src="/assets/brand/matchradar-mark.svg" alt="" /></div>
+        <div class="brand-copy">
+          <div class="eyebrow">MatchRadar</div>
+          <h1 id="topbarTitle" tabindex="-1">Главная</h1>
+          <p id="topbarSubtitle">Видим, что меняет матч.</p>
+        </div>
+      </div>
+      <button id="profileBtn" class="profile-badge" type="button" aria-label="Открыть профиль"><i></i><span>Профиль</span></button>
+    </header>
+
+    <div id="connectionBanner" class="connection-banner" role="status" aria-live="polite" hidden>
+      <span id="connectionBannerIcon" class="connection-banner-icon">⚠️</span>
+      <div class="connection-banner-copy">
+        <strong id="connectionBannerTitle">Состояние соединения</strong>
+        <span id="connectionBannerText"></span>
+      </div>
+      <button id="connectionRetryBtn" class="connection-retry-btn" type="button" hidden>Повторить</button>
+    </div>
+    <div id="versionBanner" class="version-banner" role="status" aria-live="polite" hidden><span id="versionBannerText"></span><button id="versionReloadBtn" type="button">Обновить</button></div>
+    <div id="runtimeBanner" class="runtime-banner" role="status" aria-live="polite" hidden>
+      <span id="runtimeBannerIcon" class="runtime-banner-icon">⚙️</span>
+      <div class="runtime-banner-copy"><strong id="runtimeBannerTitle">Состояние функций</strong><span id="runtimeBannerText"></span></div>
+    </div>
+
+    <main>
+      <section id="matchesView" class="view active">
+        <section id="firstRunGuide" class="first-run-guide" aria-label="Быстрый старт" hidden>
+          <div class="first-run-guide-copy">
+            <span>Быстрый старт</span>
+            <strong>Найдите матч — MatchRadar соберёт главное в одном месте</strong>
+            <p>Составы, форма, ключевые факторы и AI-разбор доступны из карточки матча.</p>
+          </div>
+          <div class="first-run-guide-actions">
+            <button id="firstRunGuideSearch" class="primary-btn" type="button">Найти матч</button>
+            <button id="firstRunGuideFavorite" class="secondary-btn" type="button">Добавить команду</button>
+            <button id="firstRunGuideDismiss" class="first-run-guide-dismiss" type="button">Понятно</button>
+          </div>
+        </section>
+
+        <div class="home-search-block">
+          <div class="search-row">
+            <input id="matchSearch" class="search-input" type="search" aria-label="Поиск команды или матча" inputmode="search" enterkeyhint="search" placeholder="Команда, матч или турнир" autocomplete="off" />
+            <button id="homeSearchBtn" class="global-search-btn" type="button">Найти</button>
+          </div>
+        </div>
+
+        <section id="dailyOverview" class="home-priority-stack" aria-label="Главное сейчас">
+          <button id="homeLiveCard" class="home-priority-card is-live" type="button" data-quick-filter="live" hidden>
+            <span>LIVE</span><strong id="homeLiveText">Матчи идут сейчас</strong><b>Открыть →</b>
+          </button>
+          <button id="homePersonalMatchBtn" class="home-priority-card home-personal-match" type="button" hidden>
+            <span id="homePersonalMatchKicker">Для вас</span>
+            <strong id="homePersonalMatchText">Персональный матч</strong>
+            <small id="homePersonalMatchMeta"></small>
+            <b>Открыть →</b>
+          </button>
+          <button id="homeTeamsBtn" class="home-priority-card" type="button" hidden>
+            <span>Мои команды</span><strong id="homeTeamsText">Любимые команды</strong><b>Открыть →</b>
+          </button>
+          <button id="homeFavoriteBtn" class="home-priority-card onboarding" type="button" hidden>
+            <span>Сделайте ленту своей</span><strong>Добавить любимую команду</strong><b>Найти →</b>
+          </button>
+        </section>
+
+        <div class="date-strip">
+          <button class="date-btn" type="button" data-offset="-1">Вчера</button>
+          <button class="date-btn active" type="button" data-offset="0">Сегодня</button>
+          <button class="date-btn" type="button" data-offset="1">Завтра</button>
+        </div>
+
+        <details class="home-filter-drawer league-filter-drawer">
+          <summary>Фильтры матчей</summary>
+          <div class="home-filter-body">
+            <div class="filter-strip" id="filterStrip">
+              <button type="button" class="filter-btn active" data-filter="top">Для вас</button>
+              <button type="button" class="filter-btn" data-filter="live">LIVE</button>
+              <button type="button" class="filter-btn" data-filter="favorites">Избранное</button>
+              <button type="button" class="filter-btn" data-filter="all">Все</button>
+            </div>
+            <div class="league-filter-grid">
+              <button type="button" class="filter-btn" data-filter="international">Международные</button>
+              <button type="button" class="filter-btn" data-filter="cups">Кубки</button>
+              <button type="button" class="filter-btn" data-filter="england">Англия</button>
+              <button type="button" class="filter-btn" data-filter="spain">Испания</button>
+              <button type="button" class="filter-btn" data-filter="italy">Италия</button>
+              <button type="button" class="filter-btn" data-filter="germany">Германия</button>
+              <button type="button" class="filter-btn" data-filter="france">Франция</button>
+            </div>
+            <section id="popularCompetitionsWrap" class="popular-competitions" hidden>
+              <div class="mini-section-head"><strong>Популярные турниры</strong><span></span></div>
+              <div id="popularCompetitions" class="competition-shortcuts"></div>
+            </section>
+          </div>
+        </details>
+
+        <div class="section-head">
+          <div>
+            <h2 id="matchesTitle">Матчи сегодня</h2>
+            <p id="quotaText" hidden>Загрузка профиля…</p>
+          </div>
+          <button id="refreshBtn" class="icon-btn" type="button" aria-label="Обновить">↻</button>
+        </div>
+        <div id="matchesCount" class="results-count" hidden></div>
+        <div id="dataNotice"></div>
+        <div id="matches" class="matches" aria-live="polite" aria-busy="true">
+          <div class="skeleton-stack" aria-hidden="true">
+            <div class="skeleton-card"><i></i><b></b><b></b><span></span></div>
+            <div class="skeleton-card"><i></i><b></b><b></b><span></span></div>
+            <div class="skeleton-card"><i></i><b></b><b></b><span></span></div>
+          </div>
+        </div>
+        <section id="aiFocus" class="secondary-home-insight" hidden aria-hidden="true"></section>
+        <section id="aiCenterSummary" class="secondary-home-insight" hidden aria-hidden="true"></section>
+
+
+      </section>
+
+      <section id="searchView" class="view" hidden>
+        <div class="section-head search-page-head">
+          <div>
+            <h2>Найти матч</h2>
+            <p>Введите команду или турнир.</p>
+          </div>
+        </div>
+        <section class="panel global-search-panel">
+          <div class="global-search-box">
+            <input id="globalSearchInput" class="search-input" type="search" aria-label="Поиск футбольного клуба или матча" inputmode="search" enterkeyhint="search" placeholder="Например: Реал, ПСЖ, Ман Сити, Интер…" autocomplete="off" />
+            <button id="globalSearchBtn" class="global-search-btn" type="button">Найти</button>
+          </div>
+          <p class="tiny search-helper">Результаты из уже загруженных матчей появятся сразу.</p>
+        </section>
+        <div class="search-mode-tabs" role="group" aria-label="Фильтр результатов поиска" hidden>
+          <button class="search-mode-btn active" type="button" data-search-mode="all" aria-pressed="true">Все</button>
+          <button class="search-mode-btn" type="button" data-search-mode="teams" aria-pressed="false">Команды</button>
+          <button class="search-mode-btn" type="button" data-search-mode="competitions" aria-pressed="false">Лиги</button>
+          <button class="search-mode-btn" type="button" data-search-mode="upcoming" aria-pressed="false">Предстоящие</button>
+          <button class="search-mode-btn" type="button" data-search-mode="finished" aria-pressed="false">Завершённые</button>
+        </div>
+        <div id="searchStatus"></div>
+        <section id="searchResultsWrap" class="search-section" hidden>
+          <div class="mini-section-head"><strong>Результаты</strong><span id="searchResultsMeta"></span></div>
+          <div id="searchResults" class="search-results"></div>
+        </section>
+        <section id="searchRecentWrap" class="search-section" hidden>
+          <div class="mini-section-head"><strong>Недавно открывали</strong><button id="clearRecentTeamsBtn" class="text-btn" type="button">Очистить</button></div>
+          <div id="searchRecent" class="discovery-grid"></div>
+        </section>
+        <section id="searchFavoritesWrap" class="search-section" hidden>
+          <div class="mini-section-head"><strong>⭐ Избранные команды</strong><span>Быстрый доступ</span></div>
+          <div id="searchFavorites" class="discovery-grid"></div>
+        </section>
+        <section id="searchCompetitionsWrap" class="search-section" hidden>
+          <div class="mini-section-head"><strong>Популярные турниры</strong><span>Из текущего каталога</span></div>
+          <div id="searchCompetitions" class="competition-shortcuts search-competition-shortcuts"></div>
+        </section>
+      </section>
+
+      <section id="tournamentView" class="view">
+        <button id="tournamentBackBtn" class="back-btn" type="button">← К матчам</button>
+        <div id="tournamentHero"></div>
+        <div class="tournament-tabs" role="tablist" aria-label="Разделы турнира">
+          <button class="tournament-tab active" data-tournament-tab="matches" type="button">Матчи</button>
+          <button class="tournament-tab" data-tournament-tab="table" type="button">Таблица</button>
+        </div>
+        <section id="tournamentMatchesPanel" class="tournament-panel active">
+          <div id="tournamentMatches"></div>
+        </section>
+        <section id="tournamentTablePanel" class="tournament-panel">
+          <div id="tournamentTable"></div>
+        </section>
+      </section>
+
+      <section id="teamView" class="view">
+        <button id="teamBackBtn" class="back-btn" type="button">← Назад</button>
+        <div id="teamHero"></div>
+        <div class="team-tabs" role="tablist" aria-label="Разделы команды">
+          <button class="team-tab active" data-team-tab="overview" type="button">Обзор</button>
+          <button class="team-tab" data-team-tab="intelligence" type="button">Статистика</button>
+          <button class="team-tab" data-team-tab="squad" type="button">Состав</button>
+          <button class="team-tab" data-team-tab="results" type="button">Результаты</button>
+          <button class="team-tab" data-team-tab="schedule" type="button">Матчи</button>
+        </div>
+        <section id="teamOverviewPanel" class="team-panel active"><div id="teamOverview"></div></section>
+        <section id="teamIntelligencePanel" class="team-panel"><div id="teamIntelligence"><div class="empty compact-empty">Откройте вкладку «Статистика», чтобы загрузить сезонные данные.</div></div></section>
+        <section id="teamSquadPanel" class="team-panel"><div id="teamSquad"><div class="empty compact-empty">Откройте вкладку «Состав», чтобы загрузить игроков.</div></div></section>
+        <section id="teamResultsPanel" class="team-panel"><div id="teamResults"></div></section>
+        <section id="teamSchedulePanel" class="team-panel"><div id="teamSchedule"></div></section>
+      </section>
+
+      <section id="playerView" class="view" hidden>
+        <button id="playerBackBtn" class="back-btn" type="button">← К матчу</button>
+        <div id="playerHub"></div>
+      </section>
+
+      <section id="analysisView" class="view">
+        <button id="backBtn" class="back-btn" type="button">← К поиску</button>
+        <div id="analysis"></div>
+      </section>
+
+      <section id="myTeamsView" class="view" hidden>
+        <div class="section-head">
+          <div>
+            <span class="profile-zone-kicker">ВАШ ФУТБОЛ</span>
+            <h2>Мои команды</h2>
+            <p>Ближайшие матчи и быстрый переход к любимым клубам.</p>
+          </div>
+        </div>
+        <section id="myTeamsOnboarding" class="panel my-teams-onboarding" hidden>
+          <strong>Добавьте любимые команды — покажем их матчи первыми</strong>
+          <p>Найдите команду на Главной и нажмите ⭐. Профиль настраивать не нужно.</p>
+          <button id="myTeamsFindBtn" class="primary-setting-btn" type="button">Найти команду</button>
+        </section>
+        <div id="myTeamsList" class="my-teams-list" aria-live="polite"></div>
+      </section>
+
+      <section id="historyView" class="view">
+        <div class="section-head">
+          <div>
+            <h2>История AI</h2>
+            <p>Проверенная история модели и ваши сохранённые разборы</p>
+          </div>
+          <button id="historyRefreshBtn" class="icon-btn" type="button" aria-label="Обновить">↻</button>
+        </div>
+        <div id="aiTrackRecord" class="ai-track-record"></div>
+        <div class="history-personal-head">
+          <strong>Ваши анализы</strong>
+          <span>Матчи, которые вы открывали в MatchRadar</span>
+        </div>
+        <div id="history" class="history-list"></div>
+      </section>
+
+      <section id="profileView" class="view">
+        <div id="profileRecovery" hidden></div>
+        <div class="panel profile-panel">
+          <span class="profile-zone-kicker">ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ</span>
+          <div id="avatar" class="avatar">⚽</div>
+          <h2 id="profileName">Профиль</h2>
+          <p id="profileUsername" class="muted"></p>
+          <p id="memberSince" class="tiny"></p>
+          <span id="adminRoleBadge" class="admin-role-badge" data-admin-only hidden aria-hidden="true">🔐 Администратор</span>
+
+          <div class="plan-card">
+            <div>
+              <span class="muted">Тариф</span>
+              <strong id="profilePlan">Бесплатный</strong>
+            </div>
+            <div>
+              <span class="muted">Анализы сегодня</span>
+              <strong id="profileUsage">0 / 3</strong>
+            </div>
+            <div>
+              <span class="muted">Избранные команды</span>
+              <strong id="favoriteCount">0</strong>
+            </div>
+            <div>
+              <span class="muted">Напоминания</span>
+              <strong id="reminderCount">0</strong>
+            </div>
+          </div>
+        </div>
+
+
+        <section class="panel">
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>⭐ Избранные команды</h2>
+              <p>Матчи этих команд доступны через фильтр «Избранное».</p>
+            </div>
+          </div>
+          <div id="favoriteTeams" class="favorite-teams"></div>
+        </section>
+
+
+        <section class="panel">
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>🔔 Активные напоминания</h2>
+              <p>Можно отключить ненужный матч прямо здесь.</p>
+            </div>
+          </div>
+          <div id="reminderList" class="reminder-list"></div>
+        </section>
+        <section class="panel preferences-panel">
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>⚙️ Оформление и настройки</h2>
+              <p>Цвет интерфейса применяется сразу.</p>
+            </div>
+          </div>
+          <div class="preferences-grid">
+            <fieldset class="appearance-fieldset">
+              <legend>Цвет интерфейса</legend>
+              <div class="theme-options" role="radiogroup" aria-label="Цвет интерфейса">
+                <button type="button" class="theme-option" data-theme-choice="system" aria-pressed="false"><i class="theme-preview system"></i><span>Telegram</span></button>
+                <button type="button" class="theme-option" data-theme-choice="dark" aria-pressed="false"><i class="theme-preview dark"></i><span>Чёрный</span></button>
+                <button type="button" class="theme-option" data-theme-choice="light" aria-pressed="false"><i class="theme-preview light"></i><span>Белый</span></button>
+                <button type="button" class="theme-option" data-theme-choice="ocean" aria-pressed="false"><i class="theme-preview ocean"></i><span>Океан</span></button>
+              </div>
+            </fieldset>
+            <fieldset class="appearance-fieldset">
+              <legend>Акцентный цвет</legend>
+              <div class="accent-options" role="radiogroup" aria-label="Акцентный цвет">
+                <button type="button" class="accent-option" data-accent-choice="system" aria-pressed="false"><i class="accent-swatch system"></i><span>Как в теме</span></button>
+                <button type="button" class="accent-option" data-accent-choice="green" aria-pressed="false"><i class="accent-swatch green"></i><span>Зелёный</span></button>
+                <button type="button" class="accent-option" data-accent-choice="blue" aria-pressed="false"><i class="accent-swatch blue"></i><span>Синий</span></button>
+                <button type="button" class="accent-option" data-accent-choice="violet" aria-pressed="false"><i class="accent-swatch violet"></i><span>Фиолетовый</span></button>
+                <button type="button" class="accent-option" data-accent-choice="amber" aria-pressed="false"><i class="accent-swatch amber"></i><span>Янтарный</span></button>
+              </div>
+              <small class="appearance-help">Оттенок подбирается отдельно для светлого и тёмного фона, чтобы сохранить читаемость.</small>
+            </fieldset>
+            <fieldset class="appearance-fieldset">
+              <legend>Форма кнопок</legend>
+              <div class="button-style-options" role="radiogroup" aria-label="Форма кнопок">
+                <button type="button" data-button-style-choice="soft" aria-pressed="false">Мягкие</button>
+                <button type="button" data-button-style-choice="compact" aria-pressed="false">Строгие</button>
+              </div>
+            </fieldset>
+            <label class="setting-field">
+              <span>Экран матчей по умолчанию</span>
+              <select id="defaultFilterSelect">
+                <option value="top">✨ Для вас</option>
+                <option value="favorites">⭐ Избранное</option>
+                <option value="all">Все матчи</option>
+              </select>
+            </label>
+            <label class="setting-field">
+              <span>Напоминать заранее</span>
+              <select id="reminderMinutesSelect">
+                <option value="15">за 15 минут</option>
+                <option value="30">за 30 минут</option>
+                <option value="60">за 60 минут</option>
+              </select>
+            </label>
+            <label class="switch-row"><span><strong>🔴 Сообщение при старте</strong><small>Дополнительное уведомление около начала матча.</small></span><input id="kickoffNotificationToggle" type="checkbox"><i></i></label>
+            <label class="switch-row"><span><strong>🧒 Скрывать молодёжные и резервные команды</strong><small>Не показывать молодёжные матчи в обычных фильтрах.</small></span><input id="hideYouthToggle" type="checkbox"><i></i></label>
+            <label class="switch-row"><span><strong>⭐ Избранные выше</strong><small>Поднимать матчи любимых команд в начало списка.</small></span><input id="favoriteFirstToggle" type="checkbox"><i></i></label>
+          </div>
+          <button id="savePreferencesBtn" class="primary-setting-btn" type="button">Сохранить настройки</button>
+        </section>
+
+        <details class="profile-data-details">
+          <summary><span><strong>Доступность данных</strong><small>Что обычно доступно по матчам</small></span><b id="dataModeSummary">Обычное</b></summary>
+        <section class="panel data-mode-panel">
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>⚽ Данные по матчам</h2>
+              <p>Составы, статистика и коэффициенты доступны не для всех турниров.</p>
+            </div>
+          </div>
+          <div class="provider-status-grid public-data-grid">
+            <div><span>Объём</span><strong id="dataModeLabel">Обычное</strong></div>
+            <div><span>Обновления</span><strong id="dataModeRefresh">автоматические</strong></div>
+            <div><span>Составы</span><strong id="dataModeLineups">По наличию</strong></div>
+            <div><span>Игроки</span><strong id="dataModePlayers">По наличию</strong></div>
+            <div><span>Коэффициенты</span><strong id="dataModeOdds">По наличию</strong></div>
+          </div>
+          <p id="dataModeNote" class="tiny">Доступность зависит от турнира и конкретного матча.</p>
+        </section>
+        </details>
+
+        <section class="panel profile-about-service">
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>О сервисе</h2>
+              <p>Документы, статус и обратная связь.</p>
+            </div>
+          </div>
+          <div class="service-links">
+            <a href="/privacy.html">Конфиденциальность</a>
+            <a href="/terms.html">Условия использования</a>
+            <a href="/status.html">Статус сервиса</a>
+            <button id="betaFeedbackOpenBtn" class="service-link-button" type="button" aria-expanded="false">Сообщить о проблеме</button>
+          </div>
+          <div class="service-version"><span>Версия приложения</span><strong id="publicAppVersion">6.120.0</strong></div>
+          <div id="betaFeedbackForm" class="beta-feedback-form" hidden>
+            <div class="beta-feedback-fields">
+              <label>Раздел
+                <select id="betaFeedbackCategory">
+                  <option value="search">Поиск</option>
+                  <option value="matches">Матчи</option>
+                  <option value="ai">AI</option>
+                  <option value="live">LIVE</option>
+                  <option value="ux">Интерфейс</option>
+                  <option value="data_sources">Источники данных</option>
+                  <option value="performance">Производительность</option>
+                </select>
+              </label>
+              <label>Важность
+                <select id="betaFeedbackSeverity">
+                  <option value="MAJOR">Работает нестабильно или непонятно</option>
+                  <option value="BLOCKER">Основной функцией невозможно пользоваться</option>
+                  <option value="MINOR">Визуальный или небольшой недочёт</option>
+                </select>
+              </label>
+            </div>
+            <label class="beta-feedback-note">Что произошло
+              <textarea id="betaFeedbackNote" maxlength="600" rows="4" placeholder="Опишите шаги и результат. Не указывайте пароли, токены и другие личные данные."></textarea>
+            </label>
+            <p class="tiny beta-feedback-privacy"><strong>Что будет передано:</strong> выбранный раздел, важность и только текст, который вы введёте. К записи добавляется версия приложения. Telegram используется для проверки сессии, но Telegram ID, поисковые запросы, введённые названия команд и технические логи к сообщению не прикладываются и пользователю не показываются.</p>
+            <div class="beta-feedback-actions">
+              <button id="betaFeedbackSendBtn" class="primary-setting-btn" type="button">Отправить</button>
+              <button id="betaFeedbackCancelBtn" class="secondary-btn" type="button">Отмена</button>
+              <span id="betaFeedbackStatus" class="tiny" role="status" aria-live="polite"></span>
+            </div>
+          </div>
+
+        </section>
+
+        <section class="panel admin-console" data-admin-only hidden>
+          <div class="admin-zone-heading">
+            <span>АДМИНИСТРИРОВАНИЕ</span>
+            <div>
+              <h2>Состояние и управление</h2>
+              <p>Профиль пользователя выше; служебные инструменты собраны отдельно.</p>
+            </div>
+          </div>
+          <div id="betaHealthPanel" class="beta-health-panel" aria-live="polite">
+            <div class="beta-section-head">
+              <div><span>PHASE 5</span><h3>Public Validation</h3><p>Агрегированное состояние verified normal-user production journeys без персональных данных.</p></div>
+              <span id="betaHealthBadge" class="beta-health-badge">НЕТ ДАННЫХ</span>
+            </div>
+            <div id="betaHealthSummary" class="beta-health-grid"><div class="beta-empty">Откройте профиль, чтобы загрузить Phase 5 validation.</div></div>
+          </div>
+          <div id="betaDashboardPanel" class="beta-dashboard-panel">
+            <div class="beta-section-head">
+              <div><span>PRODUCTION EVIDENCE</span><h3>Phase 5 Dashboard</h3><p id="betaJourneySummary">Путь normal user → поиск → матч → AI → Мои команды → история → reopen ещё не рассчитан.</p></div>
+              <div class="beta-dashboard-controls">
+                <select id="betaDashboardPeriod" aria-label="Период Phase 5 Dashboard">
+                  <option value="1">24 часа</option>
+                  <option value="7" selected>7 дней</option>
+                  <option value="14">14 дней</option>
+                  <option value="30">30 дней</option>
+                </select>
+                <button id="betaDashboardRefreshBtn" class="icon-btn" type="button" aria-label="Обновить Phase 5 Dashboard">↻</button>
+              </div>
+            </div>
+            <div id="betaDashboardMeta" class="tiny"></div>
+            <div id="betaMetrics" class="beta-metrics-grid"></div>
+            <div class="beta-subhead"><strong>Время ответа</strong><span>P50 при n≥3 · P90 при n≥10</span></div>
+            <div id="betaTimings" class="beta-timings-grid"></div>
+            <div class="beta-subhead"><strong>action_error по категориям</strong><span>без текстов ошибок</span></div>
+            <div id="betaErrorCategories" class="beta-error-list"></div>
+            <details class="beta-issues-details">
+              <summary><span><strong>Abandonment и runtime signals</strong><small>решение по продукту только по повторяющемуся pattern или явному blocker</small></span></summary>
+              <div id="betaIssueList" class="beta-issue-list"></div>
+            </details>
+          </div>
+          <div class="admin-system-overview" aria-label="Краткое состояние системы">
+            <div><span>Сервис</span><strong id="adminOverviewService">Проверяется</strong></div>
+            <div><span>Функции</span><strong id="adminOverviewFeatures">—</strong></div>
+            <div><span>Данные</span><strong id="adminOverviewSource">Проверяется</strong></div>
+            <div><span>Версия</span><strong id="adminOverviewVersion">—</strong></div>
+          </div>
+          <div class="admin-console-actions">
+            <button type="button" data-admin-target="adminAdvancedTools"><span>🛠</span><strong>Технические разделы</strong><small>Runtime, Provider, Diagnostics, Release и Model Quality</small></button>
+          </div>
+          <details id="adminAdvancedTools" class="admin-advanced-tools">
+            <summary><span><strong>Технические разделы</strong><small>Второй уровень: Runtime, Provider, Diagnostics, Model Quality, Release и служебные проверки</small></span><b>11 разделов</b></summary>
+            <div id="adminAdvancedContent" class="admin-advanced-content"></div>
+          </details>
+        </section>
+
+        <section class="panel model-quality-panel" data-admin-only hidden>
+          <div class="section-head profile-section-head model-quality-head">
+            <div>
+              <h2>🧪 Качество модели</h2>
+              <p>Историческая проверка прогнозов, сохранённых до начала матча.</p>
+            </div>
+            <button id="modelQualityRefreshBtn" class="icon-btn" type="button" aria-label="Обновить качество модели">↻</button>
+          </div>
+          <div class="quality-controls">
+            <label>Период
+              <select id="modelQualityPeriod">
+                <option value="30">30 дней</option>
+                <option value="90" selected>90 дней</option>
+                <option value="180">180 дней</option>
+                <option value="365">365 дней</option>
+              </select>
+            </label>
+            <span id="modelQualitySampleBadge" class="quality-sample-badge">Нет данных</span>
+          </div>
+          <div id="modelQualityStatus" class="tiny quality-status">Откройте профиль, чтобы загрузить историческую проверку.</div>
+          <div id="modelQualityHeadline" class="quality-headline" hidden></div>
+          <div id="modelQualityCalibration" class="quality-block" hidden></div>
+          <div id="modelQualityEngine" class="quality-block" hidden></div>
+          <div id="calibrationControl" class="quality-block calibration-control-block">
+            <div class="quality-block-head"><strong>🧭 Управление калибровкой</strong><span>безопасная смена + журнал</span></div>
+            <div id="calibrationControlStatus" class="tiny quality-status">Состояние жизненного цикла ещё не загружено.</div>
+            <div id="calibrationControlSummary" class="calibration-control-summary"></div>
+            <label class="runtime-message-field calibration-control-reason">
+              <span>Причина административного действия</span>
+              <input id="calibrationControlReason" maxlength="220" placeholder="Например: заморозка перед проверкой новой выборки">
+            </label>
+            <div class="runtime-controls-actions">
+              <button id="calibrationFreezeBtn" class="reminder-btn" type="button">Заморозить</button>
+              <button id="calibrationUnfreezeBtn" class="primary-setting-btn" type="button" hidden>Разморозить</button>
+              <button id="calibrationRollbackBtn" class="reminder-btn danger" type="button">Вернуть предыдущий</button>
+            </div>
+            <div id="calibrationControlHistory" class="model-remediation-history"></div>
+            <p class="tiny quality-method-note">Изменение выполняется безопасно с проверкой версии данных. Одновременное изменение не перезапишет уже сохранённые настройки.</p>
+          </div>
+          <div id="modelQualityConfidence" class="quality-block" hidden></div>
+          <div id="modelQualitySecondary" class="quality-block" hidden></div>
+          <div id="modelQualityDashboard" class="quality-block model-dashboard-block" hidden></div>
+          <div id="modelQualityRecent" class="quality-block" hidden></div>
+          <div id="modelRemediation" class="quality-block model-remediation-block" hidden>
+            <div class="quality-block-head"><strong>🛟 Восстановление целостности</strong><span>проверка → подтверждение → журнал</span></div>
+            <div id="modelRemediationStatus" class="tiny quality-status">Предварительная проверка ещё не выполнена.</div>
+            <div id="modelRemediationSummary" class="model-remediation-summary"></div>
+            <div id="modelRemediationCandidates" class="model-remediation-candidates"></div>
+            <div id="modelRemediationDriftQueue" class="model-remediation-drift-queue"></div>
+            <label class="runtime-message-field model-remediation-reason">
+              <span>Причина действия администратора</span>
+              <input id="modelRemediationReason" maxlength="220" placeholder="Например: подтверждён официальный результат после исправления источника данных">
+            </label>
+            <div class="runtime-controls-actions">
+              <button id="modelRemediationDryRunBtn" class="reminder-btn" type="button">Обновить проверку</button>
+              <button id="modelRemediationRunBtn" class="primary-setting-btn" type="button" disabled>Восстановить ожидающие</button>
+              <button id="modelRemediationCircuitResetBtn" class="reminder-btn" type="button" hidden>Сбросить защиту</button>
+            </div>
+            <div id="modelRemediationHistory" class="model-remediation-history"></div>
+            <p class="tiny quality-method-note">Удаление и перезапись снимков прогнозов запрещены. Восстановление меняет только ожидающие записи после повторной проверки финального счёта и сохраняет журнал без идентификатора Telegram в интерфейсе.</p>
+          </div>
+          <p class="tiny quality-method-note">Для каждого матча сохраняется первый предматчевый расчёт. Поздние перерасчёты не переписывают историю, поэтому статистика не «подгоняется» под результат.</p>
+        </section>
+
+        <section id="providerStatusPanel" class="panel provider-status-panel" data-admin-only hidden>
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>📡 Источник футбольных данных</h2>
+              <p>Тариф определяется автоматически по доступным лимитам источника API-Football.</p>
+            </div>
+          </div>
+          <div class="provider-status-grid">
+            <div><span>Тариф источника данных</span><strong id="providerPlan">Определяется</strong></div>
+            <div><span>Осталось сегодня</span><strong id="providerDaily">—</strong></div>
+            <div><span>Осталось в минуту</span><strong id="providerMinute">—</strong></div>
+            <div><span>Коэффициенты во время матча</span><strong id="providerLiveOdds">—</strong></div>
+            <div><span>Статистика игроков</span><strong id="providerPlayerStats">—</strong></div>
+            <div><span>Движение коэффициентов</span><strong id="providerOddsMovement">—</strong></div>
+          </div>
+          <div class="provider-transition-grid provider-slo-grid">
+            <div><span>SLO · 24 часа</span><strong id="providerSloState">Собираем данные</strong></div>
+            <div><span>Успешные запросы</span><strong id="providerSloSuccess">—</strong></div>
+            <div><span>Повторные попытки</span><strong id="providerSloRetry">—</strong></div>
+            <div><span>Средняя задержка</span><strong id="providerSloLatency">—</strong></div>
+          </div>
+          <p id="providerSloNote" class="tiny">SLO появится после накопления рабочих запросов к источникам данных.</p>
+          <div id="providerSloIncidentPanel" class="provider-slo-incident" hidden>
+            <div class="provider-slo-incident-head">
+              <span id="providerSloIncidentBadge" class="provider-slo-incident-badge">КОНТРОЛЬ</span>
+              <div>
+                <strong id="providerSloIncidentTitle">Provider SLO</strong>
+                <small id="providerSloIncidentMeta">Подтверждение состояния по двум последовательным окнам.</small>
+              </div>
+            </div>
+            <div id="providerSloIncidentDetails" class="provider-slo-incident-details"></div>
+            <div id="providerSloIncidentRunbook" class="provider-slo-incident-runbook"></div>
+            <div id="providerSloIncidentHistory" class="provider-slo-incident-history"></div>
+          </div>
+          <p class="tiny">API-Football работает по единой схеме, а платный тариф в основном увеличивает квоту и лимит запросов. На бесплатном плане приложение экономит запросы; при обнаружении расширенного тарифа дополнительные возможности включаются автоматически.</p>
+        </section>
+
+        <section class="panel provider-audit-panel" data-admin-only hidden>
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>🧪 Проверка источника данных</h2>
+              <p>Проверка тарифа и доступности данных API-Football на выбранном матче.</p>
+            </div>
+          </div>
+
+          <div class="provider-transition-grid">
+            <div><span>Режим</span><strong id="providerTransitionMode">Ожидаем тариф</strong></div>
+            <div><span>Обновление матча</span><strong id="providerRefreshCadence">—</strong></div>
+            <div><span>Ожидаемый дневной лимит</span><strong id="providerExpectedDaily">—</strong></div>
+            <div><span>Ожидаемый лимит / мин.</span><strong id="providerExpectedMinute">—</strong></div>
+          </div>
+
+          <div class="quota-orchestrator-box">
+            <div class="quota-orchestrator-head">
+              <div><strong>⚙️ Контроль квоты</strong><span id="quotaBudgetMode">Ожидаем данные</span></div>
+              <small>Сохранение данных по функциям</small>
+            </div>
+            <div class="quota-orchestrator-grid">
+              <div><span>Остаток на день</span><strong id="quotaBudgetDaily">—</strong></div>
+              <div><span>Остаток на минуту</span><strong id="quotaBudgetMinute">—</strong></div>
+              <div><span>Запросы к источнику данных</span><strong id="quotaFeatureApi">0</strong></div>
+              <div><span>Из сохранённых данных</span><strong id="quotaFeatureCache">0</strong></div>
+              <div><span>Из резервных данных</span><strong id="quotaFeatureStale">0</strong></div>
+              <div><span>Пропущено</span><strong id="quotaFeatureSkipped">0</strong></div>
+            </div>
+            <div id="quotaFeatureList" class="quota-feature-list"></div>
+            <p id="quotaBudgetNote" class="tiny">Сохранение данных по функциям активен.</p>
+          </div>
+
+          <div class="provider-audit-controls">
+            <button id="providerProbeBtn" class="reminder-btn" type="button">1. Обновить тариф · 1 запрос</button>
+            <div class="provider-audit-fixture">
+              <input id="providerAuditFixtureId" type="number" min="1" inputmode="numeric" placeholder="Номер матча">
+              <button id="providerAuditBtn" class="primary-setting-btn" type="button">Проверить покрытие</button>
+            </div>
+          </div>
+
+          <div class="expanded-release-gate">
+            <div class="expanded-release-head">
+              <div>
+                <span id="expandedGateBadge" class="expanded-gate-badge hold">ОЖИДАНИЕ</span>
+                <div><strong id="expandedGateTitle">Сквозная проверка расширенных данных</strong><small id="expandedGateMeta">Проверка полного пути данных от источника до интерфейса</small></div>
+              </div>
+              <button id="providerE2EBtn" class="primary-setting-btn" type="button">🚦 Запустить сквозную проверку</button>
+            </div>
+            <div id="expandedGateSteps" class="expanded-gate-steps">
+              <div class="expanded-gate-empty"><strong>Сквозная проверка ещё не запускалась.</strong><p>На бесплатном плане проверка остановится после одного запроса состояния.</p></div>
+            </div>
+            <div id="expandedGateDetails" class="expanded-gate-details" hidden></div>
+          </div>
+
+          <p id="providerAuditStatus" class="tiny">На бесплатном плане полная проверка не запускается: защита расходует только один запрос матча и останавливается.</p>
+          <div id="providerAuditResult" class="provider-audit-result" hidden></div>
+          <p class="tiny diagnostics-privacy">Полная проверка запускается администратором вручную. Результат сохраняется на 15 минут. Пустой ответ не всегда означает ошибку: доступность данных зависит от турнира и стадии матча.</p>
+        </section>
+
+        <section id="runtimeControlsPanel" class="panel runtime-controls-panel" data-admin-only hidden>
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>🧯 Управление функциями</h2>
+              <p>Отключение проблемной функции без нового развёртывания. Изменения применяются примерно за 30 секунд.</p>
+            </div>
+            <button id="runtimeControlsRefreshBtn" class="icon-btn" type="button" aria-label="Обновить управление функциями">↻</button>
+          </div>
+
+          <div class="runtime-controls-status">
+            <span id="runtimeControlsBadge" class="runtime-controls-badge">ОЖИДАНИЕ</span>
+            <div><strong id="runtimeControlsStatus">Настройки функций ещё не загружены.</strong><small id="runtimeControlsRevision">—</small></div>
+          </div>
+
+          <div class="runtime-control-list">
+            <label class="runtime-control-row danger"><div><strong>Техническое обслуживание</strong><small>Останавливает основные футбольные маршруты у обычных пользователей. Администратор сохраняет доступ.</small></div><input id="runtimeMaintenanceToggle" type="checkbox"></label>
+            <label class="runtime-control-row"><div><strong>Полный анализ</strong><small>Разрешить полный предматчевый анализ и соответствующие кнопки.</small></div><input id="runtimeAnalysisToggle" type="checkbox" checked></label>
+            <label class="runtime-control-row"><div><strong>Удалённый поиск</strong><small>Локальный каталог остаётся доступен, даже если поиск через источник данных выключен.</small></div><input id="runtimeSearchToggle" type="checkbox" checked></label>
+            <label class="runtime-control-row"><div><strong>Автообновление матча</strong><small>Останавливает автоматическое обновление матча, не отключая уже сохранённый центр матча.</small></div><input id="runtimeLiveToggle" type="checkbox" checked></label>
+            <label class="runtime-control-row"><div><strong>Новые уведомления</strong><small>Создание новых уведомлений и их доставка по расписанию. Существующие уведомления можно удалять.</small></div><input id="runtimeRemindersToggle" type="checkbox" checked></label>
+            <label class="runtime-control-row"><div><strong>Расширенные данные источника</strong><small>Игроки, травмы, коэффициенты во время матча и другие дополнительные данные. Основные события и статистика остаются доступными.</small></div><input id="runtimeExpandedToggle" type="checkbox" checked></label>
+            <label class="runtime-control-row"><div><strong>Автовосстановление результатов</strong><small>Один безопасный пакет в сутки, до 20 матчей / 5 дат. По умолчанию только наблюдение; ручное восстановление остаётся доступным.</small></div><input id="runtimeAutoSettlementRecoveryToggle" type="checkbox"></label>
+          </div>
+
+          <label class="runtime-message-field">
+            <span>Сообщение пользователям при техническом обслуживании</span>
+            <textarea id="runtimeMessage" rows="3" maxlength="280" placeholder="Например: Обновляем футбольные данные. Вернёмся через несколько минут."></textarea>
+          </label>
+
+          <label class="runtime-message-field">
+            <span>Причина изменения / комментарий</span>
+            <input id="runtimeChangeReason" maxlength="240" placeholder="Например: временно отключаем автообновление матча из-за ошибок источника данных">
+          </label>
+
+          <div class="runtime-controls-actions">
+            <button id="runtimeDefaultsBtn" class="reminder-btn" type="button">Вернуть безопасные настройки</button>
+            <button id="runtimeSaveBtn" class="primary-setting-btn" type="button">Применить изменения</button>
+          </div>
+          <p class="tiny diagnostics-privacy">Все изменения применяются на сервере, доступны только администраторам и записываются в журнал событий. Эти переключатели не включают оплату.</p>
+
+          <div class="runtime-history">
+            <div class="runtime-history-head">
+              <div>
+                <strong>↩ История и откат</strong>
+                <span id="runtimeHistoryStatus">История ещё не загружена.</span>
+              </div>
+            </div>
+            <div id="runtimeHistoryList" class="runtime-history-list"></div>
+          </div>
+        </section>
+
+        <section class="panel reminder-health-panel" data-admin-only hidden>
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>🔔 Доставка уведомлений</h2>
+              <p>Безопасное получение задач, доставка через Telegram, расписание и защита от дублей.</p>
+            </div>
+            <div class="reminder-health-actions">
+              <button id="reminderTestBtn" class="reminder-btn" type="button">Отправить тест себе</button>
+              <button id="reminderHealthRefreshBtn" class="icon-btn" type="button" aria-label="Обновить состояние уведомлений">↻</button>
+            </div>
+          </div>
+          <div class="reminder-health-status">
+            <span id="reminderHealthBadge" class="reminder-health-badge">ОЖИДАНИЕ</span>
+            <strong id="reminderHealthStatus">Состояние доставки ещё не загружено.</strong>
+          </div>
+          <div id="reminderHealthKpis"></div>
+          <div id="reminderHealthRecent"></div>
+        </section>
+
+        <section class="panel release-monitor-panel" data-admin-only hidden>
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>📡 Мониторинг выпуска</h2>
+              <p>Ошибки, телеметрия запуска и восстановления, а также нагрузка после развёртывания.</p>
+            </div>
+            <div class="release-monitor-actions">
+              <select id="releaseMonitorPeriod" aria-label="Период мониторинга выпуска">
+                <option value="6">6ч</option>
+                <option value="24" selected>24ч</option>
+                <option value="72">72ч</option>
+                <option value="168">7д</option>
+              </select>
+              <select id="releaseMonitorDigestPeriod" aria-label="Период надёжности Daily Digest">
+                <option value="7" selected>Digest 7д</option>
+                <option value="30">Digest 30д</option>
+              </select>
+              <button id="releaseMonitorRefreshBtn" class="icon-btn" type="button" aria-label="Обновить мониторинг выпуска">↻</button>
+            </div>
+          </div>
+
+          <div class="release-monitor-status">
+            <span id="releaseMonitorBadge" class="release-monitor-badge">ОЖИДАНИЕ</span>
+            <div><strong id="releaseMonitorStatus">Мониторинг выпуска ещё не запускался.</strong><small id="releaseMonitorMeta">Без API-Football и без изменения пользовательских данных.</small></div>
+          </div>
+          <div id="releaseMonitorKpis"></div>
+          <div id="releaseMonitorClient" class="release-monitor-block"></div>
+          <div id="releaseMonitorDigest" class="release-monitor-block"></div>
+          <div id="releaseMonitorRegression" class="release-monitor-block"></div>
+          <div id="releaseMonitorIssues" class="release-monitor-block"></div>
+          <div id="releaseMonitorIncidents" class="release-monitor-block"></div>
+        </section>
+
+        <section class="panel launch-funnel-panel" data-admin-only hidden>
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>🚀 Запуск и СМИ</h2>
+              <p>First-party воронка: от рекламного deep-link до полного AI-разбора.</p>
+            </div>
+            <div class="release-monitor-actions">
+              <select id="launchFunnelPeriod" aria-label="Период воронки запуска">
+                <option value="1">24ч</option>
+                <option value="7" selected>7д</option>
+                <option value="14">14д</option>
+                <option value="30">30д</option>
+              </select>
+              <button id="launchFunnelRefreshBtn" class="icon-btn" type="button" aria-label="Обновить воронку запуска">↻</button>
+            </div>
+          </div>
+          <div class="release-monitor-status">
+            <span class="release-monitor-badge healthy">MEDIA</span>
+            <div><strong id="launchFunnelStatus">Воронка запуска ещё не загружена.</strong><small id="launchFunnelMeta">Без сторонних рекламных SDK.</small></div>
+          </div>
+          <div id="launchFunnelKpis"></div>
+          <div id="launchFunnelStages" class="release-monitor-block"></div>
+          <div id="launchFunnelCampaigns" class="release-monitor-block"></div>
+          <div id="launchFunnelMediaCampaigns" class="release-monitor-block"></div>
+          <div class="media-publisher-kit">
+            <div class="release-monitor-section-head"><strong>Ссылка для СМИ</strong><span>fixture + attribution</span></div>
+            <div class="media-publisher-grid">
+              <label><span>Fixture ID</span><input id="mediaPublisherFixtureId" inputmode="numeric" placeholder="Например 1234567"></label>
+              <label><span>Источник</span><input id="mediaPublisherSource" value="media" placeholder="sports_media"></label>
+              <label><span>Кампания</span><input id="mediaPublisherCampaign" value="launch" placeholder="launch"></label>
+              <label><span>Материал</span><input id="mediaPublisherContent" value="article1" placeholder="article1"></label>
+            </div>
+            <div class="media-publisher-actions">
+              <button id="mediaPublisherGenerateBtn" class="primary-setting-btn" type="button">Создать ссылку</button>
+              <button id="mediaPublisherCopyBtn" class="secondary-btn" type="button" disabled>Копировать публикацию</button>
+            </div>
+            <div id="mediaPublisherResult" class="media-publisher-result" hidden></div>
+          </div>
+          <details class="release-incidents">
+            <summary>Формат deep-link кампании</summary>
+            <div class="launch-link-help">
+              <code>media__источник__кампания__материал</code>
+              <p>Пример параметра: <code>media__sports_media__launch__article1</code>. В Telegram он передаётся после <code>?start=</code>. Параметр ограничен 64 символами и не должен содержать персональные данные.</p>
+            </div>
+          </details>
+          <p class="tiny diagnostics-privacy">В админке возвращаются только агрегаты. Telegram ID пользователей в ответе launch-funnel не выдаются.</p>
+        </section>
+
+        <section class="panel rc-panel" data-admin-only hidden>
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>🚦 Проверка перед выпуском</h2>
+              <p>Регрессионная проверка: работа функций, безопасность, база данных, пользовательские маршруты и совместимость интерфейса с сервером.</p>
+            </div>
+            <button id="rcRunBtn" class="primary-setting-btn rc-run-btn" type="button">Запустить проверку</button>
+          </div>
+
+          <div class="rc-status-row">
+            <span id="rcBadge" class="rc-badge">Версия</span>
+            <div>
+              <strong id="rcStatus">Полная регрессионная проверка ещё не запускалась.</strong>
+              <small id="rcMeta">Без полного анализа, без изменения пользовательских данных и без расхода API-Football.</small>
+            </div>
+          </div>
+
+          <div id="rcSummary"></div>
+          <div id="rcGroups"></div>
+          <div id="rcClient"></div>
+          <div id="rcChecks"></div>
+        </section>
+
+        <section class="panel release-panel" data-admin-only hidden>
+          <div class="section-head profile-section-head release-head">
+            <div>
+              <h2>✅ Готовность ядра</h2>
+              <p>Автопроверка обязательных зависимостей перед выпуском.</p>
+            </div>
+            <button id="releaseRefreshBtn" class="icon-btn" type="button" aria-label="Повторить проверку готовности">↻</button>
+          </div>
+          <div class="release-summary">
+            <span id="releaseBadge" class="release-badge">Нет данных</span>
+            <div><strong id="releaseStatus">Откройте профиль, чтобы выполнить проверку.</strong><small id="releaseMeta"></small></div>
+          </div>
+          <div id="releaseChecks" class="release-checks"></div>
+          <p class="tiny diagnostics-privacy">Проверка не активирует оплату и не тратит запросы API-Football. Она проверяет конфигурацию приложения, Supabase, миграции и состояние источника данных.</p>
+        </section>
+
+        <section class="panel production-readiness-panel" data-admin-only hidden>
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>🛡 Проверка стабильности и защита от нагрузки</h2>
+              <p>Проверка защиты от параллельных запросов, зависших внешних сервисов и серии повторных нажатий.</p>
+            </div>
+            <button id="productionReadinessRefreshBtn" class="icon-btn" type="button" aria-label="Повторить производственную проверку">↻</button>
+          </div>
+
+          <div class="production-status-row">
+            <span id="productionReadinessBadge" class="production-badge">ОЖИДАНИЕ</span>
+            <div><strong id="productionReadinessStatus">Проверка стабильности ещё не запускалась.</strong><small>Тест не создаёт внешнюю нагрузку и не расходует API-Football.</small></div>
+            <strong id="productionReadinessScore" class="production-score">—</strong>
+          </div>
+
+          <div id="productionReadinessChecks" class="production-checks"></div>
+          <div id="productionReadinessRuntime" class="production-runtime"></div>
+        </section>
+
+        <section id="diagnosticsPanel" class="panel diagnostics-panel" data-admin-only hidden>
+          <div class="section-head profile-section-head diagnostics-head">
+            <div>
+              <h2>🛠 Диагностика системы</h2>
+              <p>Серверный обработчик, API-Football, Supabase, сохранённые данные и журнал ошибок.</p>
+            </div>
+            <button id="diagnosticsRefreshBtn" class="icon-btn" type="button" aria-label="Обновить диагностику">↻</button>
+          </div>
+          <div class="diagnostics-summary">
+            <span id="diagnosticsBadge" class="diagnostics-badge">Нет данных</span>
+            <div><strong id="diagnosticsStatus">Откройте профиль, чтобы запустить диагностику.</strong><small id="diagnosticsUpdated"></small></div>
+          </div>
+          <div id="diagnosticsProvider" class="diagnostics-block" hidden></div>
+          <div id="diagnosticsDatabase" class="diagnostics-block" hidden></div>
+          <div id="diagnosticsRuntime" class="diagnostics-block" hidden></div>
+          <div id="diagnosticsClient" class="diagnostics-block" hidden></div>
+          <div id="diagnosticsIntegrity" class="diagnostics-block" hidden></div>
+          <div id="diagnosticsEvents" class="diagnostics-block" hidden></div>
+          <div id="diagnosticsRecommendations" class="diagnostics-block" hidden></div>
+          <p class="tiny diagnostics-privacy">Диагностика не показывает токены или секреты. Технические сообщения перед сохранением проходят редактирование чувствительных полей.</p>
+        </section>
+
+
+      </section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="Основная навигация">
+      <button id="navMatches" class="nav-item active" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.5 12 4l8 6.5v8.25A1.25 1.25 0 0 1 18.75 20h-13.5A1.25 1.25 0 0 1 4 18.75Z"/><path d="M9.5 20v-6h5v6"/></svg><small>Главная</small></button>
+      <button id="navMyTeams" class="nav-item" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.75 5.58 6.16.9-4.46 4.34 1.05 6.13L12 17.06l-5.5 2.89 1.05-6.13-4.46-4.34 6.16-.9Z"/></svg><small>Мои команды</small></button>
+      <button id="navHistory" class="nav-item" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.75 7.5A8 8 0 1 1 4 13"/><path d="M4 4.5v4h4"/><path d="M12 8v5l3 2"/></svg><small>История</small></button>
+      <button id="navProfile" class="nav-item" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.25"/><path d="M5.5 20c.65-4.1 2.85-6 6.5-6s5.85 1.9 6.5 6"/></svg><small>Профиль</small></button>
+    </nav>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="/app.js?v=6.120.0-launch13"></script>
+</body>
+</html>
