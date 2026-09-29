@@ -163,3 +163,21 @@ test('supabase read retry stays conservative and never retries writes', async ()
   );
   assert.equal(writeCalls, 1);
 });
+
+
+test('supabase select-many supports a narrow projection without changing default selection', async () => {
+  const calls = [];
+  const client = createSupabaseClient({
+    fetchWithTimeout: async url => {
+      calls.push(new URL(String(url)));
+      return response({ json: [] });
+    },
+  });
+  const cfg = { supabaseUrl: 'https://example.supabase.co', supabaseKey: 'secret' };
+
+  await client.supaSelectMany(cfg, 'ops_events', {}, { limit: 10, select: 'message,created_at' });
+  await client.supaSelectMany(cfg, 'users', {}, { limit: 1 });
+
+  assert.equal(calls[0].searchParams.get('select'), 'message,created_at');
+  assert.equal(calls[1].searchParams.get('select'), '*');
+});

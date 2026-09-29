@@ -52,9 +52,9 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs 
     return rows?.[0] || null;
   }
 
-  async function supaSelectMany(cfg, table, params = {}, { limit = 20, order = '' } = {}) {
+  async function supaSelectMany(cfg, table, params = {}, { limit = 20, order = '', select = '*' } = {}) {
     const url = new URL(`${cfg.supabaseUrl}/rest/v1/${table}`);
-    url.searchParams.set('select', '*');
+    url.searchParams.set('select', String(select || '*'));
     url.searchParams.set('limit', String(limit));
     if (order) url.searchParams.set('order', order);
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);

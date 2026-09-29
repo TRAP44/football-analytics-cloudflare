@@ -22312,7 +22312,7 @@ async function readRecentSupabaseAuthFailures(cfg, minutes = 5) {
     const rows=await supaSelectMany(cfg,'ops_events',{
       created_at:`gte.${since}`,
       or:authCandidateFilter,
-    },{limit:100,order:'created_at.desc'});
+    },{limit:100,order:'created_at.desc',select:'message,created_at'});
     const items=(rows || []).filter(row => /HTTP 401|PGRST303|invalid.*jwt|invalid.*api.?key/i.test(String(row?.message || '')));
     return {available:true,count:items.length,items:items.slice(0,10)};
   } catch {

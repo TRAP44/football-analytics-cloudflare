@@ -65,6 +65,6 @@ test('recent Supabase auth failure readiness read filters candidates server-side
   assert.match(block,/authCandidateFilter='\(message\.ilike\.\*HTTP\*401\*,message\.ilike\.\*PGRST303\*,message\.ilike\.\*invalid\*jwt\*,message\.ilike\.\*invalid\*api\*key\*\)'/);
   assert.match(block,/created_at:\`gte\.\$\{since\}\`/);
   assert.match(block,/or:authCandidateFilter/);
-  assert.match(block,/limit:100,order:'created_at\.desc'/);
+  assert.match(block,/limit:100,order:'created_at\.desc',select:'message,created_at'/);
   assert.match(block,/HTTP 401\|PGRST303\|invalid\.\*jwt\|invalid\.\*api\.\?key/i);
 });
