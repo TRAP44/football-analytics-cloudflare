@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const html=fs.readFileSync('public/index.html','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
+const runtime=fs.readFileSync('public/modules/app-runtime.js','utf8');
 const css=fs.readFileSync('public/styles/public-shell.css','utf8');
 const client=fs.readFileSync('public/modules/client-core.js','utf8');
 const legacyDoc=fs.readFileSync('docs/archive/PHASE4_2_BRAND_IDENTITY_RU.md','utf8');
