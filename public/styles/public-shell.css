@@ -3367,3 +3367,67 @@ html {
     font-size:11px;
   }
 }
+
+
+/* MatchRadar Home Content Priority — LIVE / soon / later */
+.miniapp-public-shell .home-match-section{
+  display:grid;
+  gap:8px;
+  margin:0 0 16px;
+}
+.miniapp-public-shell .home-match-section:last-child{
+  margin-bottom:0;
+}
+.miniapp-public-shell .home-match-section-head{
+  min-height:28px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:0 2px;
+}
+.miniapp-public-shell .home-match-section-head > strong{
+  min-width:0;
+  color:var(--text);
+  font-size:12px;
+  font-weight:900;
+  letter-spacing:-.01em;
+}
+.miniapp-public-shell .home-match-section-head > span{
+  min-width:24px;
+  min-height:24px;
+  display:grid;
+  place-items:center;
+  padding:0 7px;
+  border-radius:999px;
+  background:color-mix(in srgb,var(--surface) 84%,var(--bg));
+  color:var(--hint);
+  font-size:10px;
+  font-weight:900;
+}
+.miniapp-public-shell .home-match-section-list{
+  display:grid;
+  gap:10px;
+}
+.miniapp-public-shell .home-match-section--live .home-match-section-head > strong{
+  color:var(--brand-live);
+}
+.miniapp-public-shell .home-match-section--live .home-match-section-head > span{
+  color:var(--brand-live);
+  background:color-mix(in srgb,var(--brand-live) 10%,var(--surface));
+}
+.miniapp-public-shell .home-match-section--soon .home-match-section-head > strong{
+  color:var(--accent);
+}
+.miniapp-public-shell .home-match-section--finished{
+  opacity:.9;
+}
+@media(max-width:360px){
+  .miniapp-public-shell .home-match-section{
+    gap:7px;
+    margin-bottom:14px;
+  }
+  .miniapp-public-shell .home-match-section-list{
+    gap:8px;
+  }
+}

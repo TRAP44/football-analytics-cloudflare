@@ -64,13 +64,17 @@ test('render smoke exercises edge cases across mobile widths and themes',()=>{
   assert.match(smoke,/LIVE · 88′/);
   assert.match(smoke,/compact-score score-upcoming/);
   assert.match(smoke,/>VS</);
+  assert.match(smoke,/home-match-section--live/);
+  assert.match(smoke,/Сейчас идут/);
+  assert.match(smoke,/home-match-section--soon/);
+  assert.match(smoke,/Скоро начнутся/);
 });
 
 test('frontend revision refreshes QA styles without changing release identity',()=>{
-  assert.match(html,/frontend-asset-revision" content="6\.120\.0-launch4"/);
-  assert.match(html,/styles\.css\?v=6\.120\.0-launch4/);
-  assert.match(html,/styles\/public-shell\.css\?v=6\.120\.0-launch4/);
-  assert.match(html,/app\.js\?v=6\.120\.0-launch4/);
+  assert.match(html,/frontend-asset-revision" content="6\.120\.0-launch5"/);
+  assert.match(html,/styles\.css\?v=6\.120\.0-launch5/);
+  assert.match(html,/styles\/public-shell\.css\?v=6\.120\.0-launch5/);
+  assert.match(html,/app\.js\?v=6\.120\.0-launch5/);
   assert.match(app,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
   assert.doesNotMatch(html,/6\.120\.0-ui3/);
 });

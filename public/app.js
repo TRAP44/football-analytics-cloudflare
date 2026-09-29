@@ -5141,6 +5141,45 @@ function renderAiFocus() {
   wrap.querySelectorAll('[data-ai-rank-fixture]').forEach(button => button.addEventListener('click', event => analyzeMatch(Number(event.currentTarget.dataset.aiRankFixture), event.currentTarget)));
   wrap.querySelectorAll('[data-ai-rank-history]').forEach(button => button.addEventListener('click', event => openHistoryAnalysis(Number(event.currentTarget.dataset.aiRankHistory), event.currentTarget)));
 }
+function homeMatchSections(list, nowMs = Date.now()) {
+  const soonWindowMs = 3 * 60 * 60 * 1000;
+  const sections = [
+    { key:'live', label:'Сейчас идут', tone:'live', matches:[] },
+    { key:'soon', label:'Скоро начнутся', tone:'soon', matches:[] },
+    { key:'later', label:'Позже', tone:'later', matches:[] },
+    { key:'finished', label:'Завершённые', tone:'finished', matches:[] },
+  ];
+  for (const match of list) {
+    if (match.live) {
+      sections[0].matches.push(match);
+      continue;
+    }
+    if (match.finished) {
+      sections[3].matches.push(match);
+      continue;
+    }
+    const kickoffMs = Date.parse(match.date || '');
+    const startsInMs = Number.isFinite(kickoffMs) ? kickoffMs - nowMs : Number.POSITIVE_INFINITY;
+    if (startsInMs >= 0 && startsInMs <= soonWindowMs) sections[1].matches.push(match);
+    else sections[2].matches.push(match);
+  }
+  return sections.filter(section => section.matches.length);
+}
+
+function homeMatchSectionsHtml(list) {
+  return homeMatchSections(list).map(section => `
+    <section class="home-match-section home-match-section--${section.tone}" data-home-match-section="${section.key}">
+      <div class="home-match-section-head">
+        <strong>${escapeHtml(section.label)}</strong>
+        <span>${section.matches.length}</span>
+      </div>
+      <div class="home-match-section-list">
+        ${section.matches.map(match => matchCardHtml(match)).join('')}
+      </div>
+    </section>
+  `).join('');
+}
+
 function renderMatches() {
   const list = filteredMatches();
   const integrity = state.matchesMeta?.integrity || {};
@@ -5175,7 +5214,7 @@ function renderMatches() {
     return;
   }
 
-  $('matches').innerHTML = list.map(m => matchCardHtml(m)).join('');
+  $('matches').innerHTML = homeMatchSectionsHtml(list);
   bindMatchActions($('matches'));
 }
 
