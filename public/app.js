@@ -1,5 +1,6 @@
 import { createApiClient, initTelegramWebApp, localDate, timeOf, dateTime, dateOnly, relativeAge, phase5SessionToken } from './modules/client-core.js';
 import { CANONICAL_HOME_VIEW, PUBLIC_VIEW_IDS, backTargetForView, telegramBackButtonVisible } from './modules/navigation.js';
+import { startupSurfacePlan, shouldPrepareAdminSurface, shouldPreparePublicSurface } from './modules/startup-policy.js';
 import {
   CLIENT_VERSION,
   CLIENT_API_CONTRACT,
@@ -915,9 +916,26 @@ async function runStartupSequence() {
   renderProfile();
   applyRuntimeUi();
   const admin=isAdmin();
+  const startupPlan = startupSurfacePlan(APP_SURFACE, { admin });
   if ($('profileBtn')) $('profileBtn').hidden=false;
   if ($('navProfile')) $('navProfile').hidden=false;
-  if ($('navMatches')) $('navMatches').hidden=false;
+  if ($('navMatches')) $('navMatches').hidden=APP_SURFACE === 'admin';
+
+  if (APP_SURFACE === 'admin') {
+    if (!admin) return true;
+    if (startupPlan.adminInitial.includes('provider')) {
+      await Promise.allSettled([loadProvider()]);
+    }
+    setBootStatus('MatchRadar Admin', 'Загружаем управление…', 100);
+    await new Promise(resolve => setTimeout(resolve, 80));
+    hideBootGate();
+    scheduleIdle(async () => {
+      if (startupPlan.adminIdle.includes('advanced_admin')) {
+        await loadAdvancedAdminTools();
+      }
+    });
+    return true;
+  }
 
   const startupTasks = [loadFavorites(), loadMatches()];
   await Promise.allSettled(startupTasks);
@@ -940,11 +958,8 @@ async function runStartupSequence() {
   hideBootGate();
 
   scheduleIdle(async () => {
-    const tasks = [loadHistory(false)];
-    if (isAdmin()) {
-      tasks.push(loadProvider());
-      if (!state.remindersLoaded) tasks.push(loadReminders());
-    }
+    const tasks = [];
+    if (startupPlan.publicIdle.includes('history')) tasks.push(loadHistory(false));
     await Promise.allSettled(tasks);
   });
   return true;
@@ -8548,12 +8563,14 @@ async function scheduleIdle(task) {
 $('favoriteTeams')?.setAttribute('aria-live', 'polite');
 $('reminderList')?.setAttribute('aria-live', 'polite');
 $('history')?.setAttribute('aria-live', 'polite');
-organizeAdminConsole();
+if (shouldPrepareAdminSurface(APP_SURFACE)) organizeAdminConsole();
 syncBootVersion();
 applyInterfacePreferences();
-renderFirstRunGuide();
-syncFilterButtons();
-showView('matchesView', { restore: true });
+if (shouldPreparePublicSurface(APP_SURFACE)) {
+  renderFirstRunGuide();
+  syncFilterButtons();
+  showView('matchesView', { restore: true });
+}
 
 // RC30: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
 // The boot watchdog never leaves the user behind an endless splash screen.
