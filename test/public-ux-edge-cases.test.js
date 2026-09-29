@@ -73,6 +73,8 @@ test('render smoke exercises edge cases across mobile widths and themes',()=>{
   assert.match(smoke,/lower-priority Home section is not collapsed by default/);
   assert.match(smoke,/home-priority-card home-personal-match/);
   assert.match(smoke,/Любимая команда · 21:45 · Premier League/);
+  assert.match(smoke,/personalState/);
+  assert.match(smoke,/personal Home card does not preserve single-line ellipsis clipping/);
 });
 
 test('frontend revision refreshes QA styles without changing release identity',()=>{
