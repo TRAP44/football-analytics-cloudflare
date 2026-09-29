@@ -1382,11 +1382,16 @@ async function recordOpsEventTask(cfg, event = {}) {
       ? 'resolution=ignore-duplicates,return=minimal'
       : 'return=minimal';
     if (row.transition_key) url.searchParams.set('on_conflict', 'transition_key');
-    await fetchWithTimeout(url, {
+    const response = await fetchWithTimeout(url, {
       method: 'POST',
       headers: supaHeaders(cfg, { Prefer: prefer }),
       body: JSON.stringify(row),
     }, 4000, 'Supabase ops event');
+    if (!response.ok) {
+      const error = new Error(`Supabase ops event HTTP ${response.status}`);
+      error.status = Number(response.status || 0);
+      throw error;
+    }
     setPersistenceStatus('persistent');
   } catch {
     // Observability must never become a new failure mode for the product.
