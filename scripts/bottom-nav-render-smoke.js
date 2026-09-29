@@ -324,6 +324,14 @@ function assertEdgeCaseFixture(width, theme, snapshot) {
   if (!competition || competition.overflow!=='hidden' || competition.textOverflow!=='ellipsis' || competition.whiteSpace!=='nowrap') {
     throw new Error(`${width}px/${theme}: competition label does not preserve single-line ellipsis clipping`);
   }
+  for (const team of snapshot.teamLabels || []) {
+    if (team.overflow!=='hidden' || team.whiteSpace==='nowrap' || String(team.lineClamp)!=='2') {
+      throw new Error(`${width}px/${theme}: compact team label does not preserve two-line clipping`);
+    }
+    if (team.clientHeight > team.lineHeight * 2.35) {
+      throw new Error(`${width}px/${theme}: compact team label exceeds two visible lines`);
+    }
+  }
 }
 
 async function waitForCondition(cdp, expression, label, attempts = 100) {
@@ -438,7 +446,7 @@ async function inspectEdgeCaseFixture(cdp, width, theme) {
         const r=el.getBoundingClientRect(), s=getComputedStyle(el);
         return { className:el.className, height:r.height, width:r.width, visible:s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0 };
       });
-      const longText = [...root.querySelectorAll('.my-team-head strong,.my-team-match span,.history-main>strong,.favorite-team-main strong,.reminder-row strong,.compact-team strong')].map(el => {
+      const longText = [...root.querySelectorAll('.my-team-head strong,.my-team-match span,.history-main>strong,.favorite-team-main strong,.reminder-row strong')].map(el => {
         const s=getComputedStyle(el);
         const lineHeight=parseFloat(s.lineHeight) || parseFloat(s.fontSize)*1.3;
         return { className:el.className || el.parentElement?.className || el.tagName, clientWidth:el.clientWidth, scrollWidth:el.scrollWidth, clientHeight:el.clientHeight, scrollHeight:el.scrollHeight, lineHeight };
@@ -452,7 +460,18 @@ async function inspectEdgeCaseFixture(cdp, width, theme) {
         textOverflow:competitionStyle.textOverflow,
         whiteSpace:competitionStyle.whiteSpace,
       } : null;
-      return { fixture:{clientWidth:root.clientWidth,scrollWidth:root.scrollWidth,left:box.left,right:box.right},controls,longText,clippedCompetition };
+      const teamLabels = [...root.querySelectorAll('.compact-team strong')].map(el => {
+        const s=getComputedStyle(el);
+        const lineHeight=parseFloat(s.lineHeight) || parseFloat(s.fontSize)*1.3;
+        return {
+          overflow:s.overflow,
+          whiteSpace:s.whiteSpace,
+          lineClamp:s.webkitLineClamp,
+          clientHeight:el.clientHeight,
+          lineHeight,
+        };
+      });
+      return { fixture:{clientWidth:root.clientWidth,scrollWidth:root.scrollWidth,left:box.left,right:box.right},controls,longText,clippedCompetition,teamLabels };
     })()`,
   });
   return evaluated?.result?.value || null;
