@@ -503,6 +503,17 @@ export function assessDailyDigestReliabilitySlo(rows = [], {
   const date=utcDate(now);
   const normalized=(rows || []).map(normalizeEvent).filter(event=>event.at);
   const todayEvents=normalized.filter(event=>dateForEvent(event)===date && event.code.startsWith('DAILY_DIGEST_'));
+  const latestSuccessfulDigestRun=[...normalized]
+    .filter(event=>event.code==='DAILY_DIGEST_RUN_OK' || event.code==='DAILY_DIGEST_RUN_EMPTY')
+    .sort((a,b)=>Date.parse(a.at)-Date.parse(b.at))
+    .at(-1)?.at || null;
+  const diagnostics={
+    window:{startUtc:'07:00',endUtc:'07:55',cutoffUtc:'08:15',timezone:'UTC'},
+    expectedState:'daily_digest_run_observed_by_cutoff',
+    lastSuccessfulDigestRun:latestSuccessfulDigestRun,
+    evaluatedAt:new Date(now).toISOString(),
+    todayRunObserved:todayEvents.length>0,
+  };
 
   if (afterMissingRunGrace(now,policy) && todayEvents.length===0) {
     return {
@@ -514,6 +525,7 @@ export function assessDailyDigestReliabilitySlo(rows = [], {
       message:`Daily Digest has no operational run event for ${date} after the 08:15 UTC grace point.`,
       reliability:summarizeDailyDigestReliability(rows,{days,nowMs:now}),
       policy,
+      diagnostics,
     };
   }
 
@@ -528,6 +540,7 @@ export function assessDailyDigestReliabilitySlo(rows = [], {
       message:'Daily Digest reliability SLO is collecting data before the missing-run grace point.',
       reliability,
       policy,
+      diagnostics,
     };
   }
 
@@ -543,6 +556,7 @@ export function assessDailyDigestReliabilitySlo(rows = [], {
       message:'Daily Digest reliability SLO needs more historical delivery volume before trend thresholds are enforced.',
       reliability,
       policy,
+      diagnostics,
     };
   }
 
@@ -590,6 +604,7 @@ export function assessDailyDigestReliabilitySlo(rows = [], {
       message:failed.map(check=>check.message).join(' '),
       reliability,
       policy,
+      diagnostics,
     };
   }
 
@@ -602,6 +617,7 @@ export function assessDailyDigestReliabilitySlo(rows = [], {
     message:'Daily Digest reliability SLO is within configured watch thresholds.',
     reliability,
     policy,
+    diagnostics,
   };
 }
 
@@ -618,9 +634,16 @@ export function planDailyDigestReliabilitySloEvent(assessment = {}, priorRows = 
     .sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
   const latest=rows.at(-1) || null;
   const latestState=String(latest?.metadata?.state || (latest?.severity==='warning' ? 'watch' : ''));
+  const latestDate=String(latest?.metadata?.date || latest?.at || '').slice(0,10);
+  const latestReason=String(latest?.metadata?.reason || '');
+  const dailyMissingRunReset=assessment.state==='watch'
+    && assessment.reason==='missing_run'
+    && latestState==='watch'
+    && latestDate
+    && latestDate!==date;
 
   if (assessment.state==='watch') {
-    if (latestState==='watch') {
+    if (latestState==='watch' && !dailyMissingRunReset) {
       return {action:'none',reason:'watch_episode_already_recorded'};
     }
     return {
@@ -643,27 +666,43 @@ export function planDailyDigestReliabilitySloEvent(assessment = {}, priorRows = 
         rateLimitDays:Number(assessment.reliability?.rateLimitDays || 0),
         incidentDays:Number(assessment.reliability?.incidents?.count || 0),
         degradedDays:Number(assessment.reliability?.degradedDays || 0),
+        window:assessment.diagnostics?.window || null,
+        expectedState:String(assessment.diagnostics?.expectedState || ''),
+        lastSuccessfulDigestRun:assessment.diagnostics?.lastSuccessfulDigestRun || null,
+        evaluatedAt:assessment.diagnostics?.evaluatedAt || null,
       },
     };
   }
 
-  if (assessment.state==='healthy' && latestState==='watch') {
+  const missingRunRecovered=latestState==='watch'
+    && latestReason==='missing_run'
+    && assessment.reason!=='missing_run'
+    && assessment.diagnostics?.todayRunObserved===true;
+
+  if ((assessment.state==='healthy' && latestState==='watch') || missingRunRecovered) {
     return {
       action:'record',
       severity:'info',
       source:'digest_slo',
       eventType:'reliability_slo',
       code:'DAILY_DIGEST_SLO_RECOVERED',
-      message:'Daily Digest reliability SLO recovered to within configured watch thresholds.',
+      message:missingRunRecovered
+        ? 'Daily Digest missing-run condition recovered after an operational run was observed.'
+        : 'Daily Digest reliability SLO recovered to within configured watch thresholds.',
       endpoint:'cron:production-monitor',
       meta:{
         date,
         state:'healthy',
+        reason:missingRunRecovered ? 'missing_run_recovered' : 'within_thresholds',
         recoveredFrom:latest.code,
         watchStartedAt:latest.at,
         sampleDays:Number(assessment.reliability?.sampleDays || 0),
         claimed:Number(assessment.reliability?.totals?.claimed || 0),
         completionRate:assessment.reliability?.completionRate ?? null,
+        window:assessment.diagnostics?.window || null,
+        expectedState:String(assessment.diagnostics?.expectedState || ''),
+        lastSuccessfulDigestRun:assessment.diagnostics?.lastSuccessfulDigestRun || null,
+        evaluatedAt:assessment.diagnostics?.evaluatedAt || null,
       },
     };
   }
