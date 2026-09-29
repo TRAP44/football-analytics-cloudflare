@@ -63,13 +63,20 @@ test('production change detection compares current main with the active Cloudfla
   for (const step of [
     'Deploy Worker',
     'RC120 verify active production release identity',
-    'Verify production deployment',
   ]) {
     const start = deploy.indexOf(`- name: ${step}`);
     assert.ok(start >= 0, step);
     const block = deploy.slice(start, start + 260);
     assert.match(block, /if: steps\.production_changes\.outputs\.changed == 'true'/, step);
   }
+
+  const verification = deploy.indexOf('- name: Verify production deployment');
+  assert.ok(verification >= 0);
+  const verificationBlock = deploy.slice(verification, verification + 1500);
+  assert.doesNotMatch(verificationBlock, /if: steps\.production_changes\.outputs\.changed == 'true'/);
+  assert.match(verificationBlock, /ACTIVE_RUNTIME_SHA: \$\{\{ steps\.production_changes\.outputs\.active_sha \}\}/);
+  assert.match(verificationBlock, /if \[\[ "\$RUNTIME_CHANGED" != "true" \]\]; then[\s\S]*EXPECTED_RUNTIME_SHA="\$ACTIVE_RUNTIME_SHA"/);
+  assert.match(verificationBlock, /post-deploy-smoke\.js "\$SMOKE_URL" "\$RELEASE_VERSION" "\$EXPECTED_RUNTIME_SHA"/);
 });
 
 
@@ -87,4 +94,26 @@ test('unreadable active Cloudflare identity forces a verified deploy instead of 
     postconditionBlock,
     /verify-production-release-postcondition\.js "\$DEPLOYMENT_STATUS_JSON" "\$VERSIONS_JSON" "\$RELEASE_VERSION" "\$DEPLOY_SHA"/,
   );
+});
+
+
+test('production verification waits for bounded Cloudflare activation convergence', () => {
+  const start = deploy.indexOf('- name: RC120 verify active production release identity');
+  assert.ok(start >= 0);
+  const block = deploy.slice(start, start + 1800);
+  assert.match(block, /for attempt in 1 2 3 4 5 6 7 8 9 10; do/);
+  assert.match(block, /if \[\[ "\$attempt" -lt 10 \]\]; then[\s\S]*sleep 6/);
+  assert.match(block, /Cloudflare did not confirm the expected production release identity/);
+});
+
+test('unchanged runtime is smoke-verified without a duplicate deploy', () => {
+  const deployWorker = deploy.indexOf('- name: Deploy Worker');
+  const verify = deploy.indexOf('- name: Verify production deployment');
+  assert.ok(deployWorker >= 0 && verify > deployWorker);
+  const workerBlock = deploy.slice(deployWorker, deployWorker + 500);
+  const verifyBlock = deploy.slice(verify, verify + 1500);
+  assert.match(workerBlock, /if: steps\.production_changes\.outputs\.changed == 'true'/);
+  assert.doesNotMatch(verifyBlock, /^\s*if:/m);
+  assert.match(verifyBlock, /RUNTIME_CHANGED: \$\{\{ steps\.production_changes\.outputs\.changed \}\}/);
+  assert.match(verifyBlock, /EXPECTED_RUNTIME_SHA="\$ACTIVE_RUNTIME_SHA"/);
 });
