@@ -2,6 +2,25 @@ const REMINDER_CLAIM_STATE = 'delivery_claimed';
 const REMINDER_SENDING_STATE = 'telegram_delivery_sending';
 const REMINDER_UNKNOWN_STATE = 'telegram_delivery_unknown';
 
+export const REMINDER_DELIVERY_KINDS = Object.freeze({
+  prematch: Object.freeze({
+    claimColumn: 'prematch_claimed_at',
+    doneColumn: 'notified_at',
+    attemptsColumn: 'prematch_attempts',
+  }),
+  kickoff: Object.freeze({
+    claimColumn: 'kickoff_claimed_at',
+    doneColumn: 'kickoff_notified_at',
+    attemptsColumn: 'kickoff_attempts',
+  }),
+});
+
+export function reminderDeliveryKindConfig(kind) {
+  const config = REMINDER_DELIVERY_KINDS[String(kind || '')];
+  if (!config) throw new Error(`Unsupported reminder delivery kind: ${String(kind || 'unknown')}`);
+  return config;
+}
+
 export function createReminderDeliveryStore({
   hasSupabase,
   fetchWithTimeout,
@@ -36,23 +55,20 @@ export function createReminderDeliveryStore({
       return Array.isArray(rows) ? rows.length : 0;
     };
 
-    let prematch = 0;
-    let kickoff = 0;
+    const cleared = Object.fromEntries(Object.keys(REMINDER_DELIVERY_KINDS).map(kind => [kind, 0]));
     const failures = [];
 
-    try {
-      prematch = await clearColumn('prematch_claimed_at');
-    } catch (error) {
-      failures.push({ kind: 'prematch', message: error?.message || String(error) });
+    for (const [kind, config] of Object.entries(REMINDER_DELIVERY_KINDS)) {
+      try {
+        cleared[kind] = await clearColumn(config.claimColumn);
+      } catch (error) {
+        failures.push({ kind, message: error?.message || String(error) });
+      }
     }
 
-    try {
-      kickoff = await clearColumn('kickoff_claimed_at');
-    } catch (error) {
-      failures.push({ kind: 'kickoff', message: error?.message || String(error) });
-    }
-
-    const total = prematch + kickoff;
+    const prematch = Number(cleared.prematch || 0);
+    const kickoff = Number(cleared.kickoff || 0);
+    const total = Object.values(cleared).reduce((sum, value) => sum + Number(value || 0), 0);
 
     if (total > 0) {
       await recordOpsEvent(cfg, {
@@ -86,10 +102,7 @@ export function createReminderDeliveryStore({
   async function claimReminderDelivery(row, kind, cfg) {
     if (!hasSupabase(cfg)) return { claimed: true, claimAt: new Date().toISOString() };
 
-    const kickoff = kind === 'kickoff';
-    const claimColumn = kickoff ? 'kickoff_claimed_at' : 'prematch_claimed_at';
-    const doneColumn = kickoff ? 'kickoff_notified_at' : 'notified_at';
-    const attemptsColumn = kickoff ? 'kickoff_attempts' : 'prematch_attempts';
+    const { claimColumn, doneColumn, attemptsColumn } = reminderDeliveryKindConfig(kind);
     const claimAt = new Date().toISOString();
 
     const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
@@ -117,7 +130,7 @@ export function createReminderDeliveryStore({
 
   async function markReminderDeliverySending(row, kind, claimAt, cfg) {
     if (!hasSupabase(cfg)) return;
-    const claimColumn = kind === 'kickoff' ? 'kickoff_claimed_at' : 'prematch_claimed_at';
+    const { claimColumn } = reminderDeliveryKindConfig(kind);
 
     const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
     url.searchParams.set('telegram_id', `eq.${Number(row.telegram_id)}`);
@@ -143,7 +156,7 @@ export function createReminderDeliveryStore({
 
   async function holdReminderDeliveryUnknown(row, kind, claimAt, cfg) {
     if (!hasSupabase(cfg)) return;
-    const claimColumn = kind === 'kickoff' ? 'kickoff_claimed_at' : 'prematch_claimed_at';
+    const { claimColumn } = reminderDeliveryKindConfig(kind);
 
     const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
     url.searchParams.set('telegram_id', `eq.${Number(row.telegram_id)}`);
@@ -165,9 +178,8 @@ export function createReminderDeliveryStore({
 
   async function finishReminderDelivery(row, kind, claimAt, cfg) {
     if (!hasSupabase(cfg)) return;
+    const { claimColumn, doneColumn } = reminderDeliveryKindConfig(kind);
     const kickoff = kind === 'kickoff';
-    const claimColumn = kickoff ? 'kickoff_claimed_at' : 'prematch_claimed_at';
-    const doneColumn = kickoff ? 'kickoff_notified_at' : 'notified_at';
     const doneAt = new Date().toISOString();
 
     const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
@@ -195,7 +207,7 @@ export function createReminderDeliveryStore({
 
   async function releaseReminderClaim(row, kind, claimAt, errorMessage, cfg, options = {}) {
     if (!hasSupabase(cfg)) return;
-    const claimColumn = kind === 'kickoff' ? 'kickoff_claimed_at' : 'prematch_claimed_at';
+    const { claimColumn } = reminderDeliveryKindConfig(kind);
 
     const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
     url.searchParams.set('telegram_id', `eq.${Number(row.telegram_id)}`);
