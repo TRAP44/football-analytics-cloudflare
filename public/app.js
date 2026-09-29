@@ -4081,6 +4081,7 @@ async function loadReminders() {
     state.remindersLoading = false;
     renderReminderList();
     syncAllQuickReminderButtons();
+    if (state.matches.length) renderRadarFeed();
   }
 }
 
@@ -4948,6 +4949,120 @@ function homePersonalMatchMeta(item) {
   return [reason, status, match.league || ''].filter(Boolean).join(' · ');
 }
 
+function radarFeedItems(nowMs = Date.now()) {
+  const favoriteIds = favoriteSet();
+  const viewed = personalContextSignals();
+  const rows = [];
+
+  for (const match of state.matches) {
+    if (!match || match.youthReserve) continue;
+    const fixtureId = Number(match.fixtureId || 0);
+    if (!fixtureId) continue;
+
+    const homeId = Number(match.home?.id || 0);
+    const awayId = Number(match.away?.id || 0);
+    const favorite = favoriteIds.has(homeId) || favoriteIds.has(awayId);
+    const homeName = normalizedSignalText(match.home?.name);
+    const awayName = normalizedSignalText(match.away?.name);
+    const viewedTeam = viewed.viewedTeams.has(homeName) || viewed.viewedTeams.has(awayName);
+    const reminder = reminderFor(fixtureId);
+    const history = analysisHistoryForFixture(fixtureId);
+    const kickoffMs = Date.parse(match.date || '');
+    const hoursToKickoff = Number.isFinite(kickoffMs) ? (kickoffMs - nowMs) / 3600000 : Infinity;
+
+    let item = null;
+    if (match.live && (favorite || viewedTeam)) {
+      item = {
+        priority: favorite ? 120 : 105,
+        tone: 'live',
+        kicker: favorite ? 'LIVE · ЛЮБИМАЯ КОМАНДА' : 'LIVE · ВЫ СМОТРЕЛИ',
+        title: `${match.home?.name || ''} — ${match.away?.name || ''}`,
+        meta: `${match.score?.home ?? 0} : ${match.score?.away ?? 0}${Number(match.elapsed || 0) ? ` · ${Number(match.elapsed)}′` : ''}${match.league ? ` · ${match.league}` : ''}`,
+        action: 'center',
+        fixtureId,
+      };
+    } else if (!match.finished && history && (favorite || viewedTeam)) {
+      item = {
+        priority: favorite ? 92 : 82,
+        tone: 'ai',
+        kicker: 'AI-РАЗБОР ГОТОВ',
+        title: `${match.home?.name || ''} — ${match.away?.name || ''}`,
+        meta: [history.aiSignalLabel || 'Сохранённый разбор', Number(history.aiConfidence || 0) ? `уверенность ${Math.round(Number(history.aiConfidence))}/100` : '', timeOf(match.date)].filter(Boolean).join(' · '),
+        action: 'history',
+        fixtureId,
+      };
+    } else if (!match.finished && reminder && hoursToKickoff >= 0 && hoursToKickoff <= 24) {
+      item = {
+        priority: favorite ? 78 : 68,
+        tone: 'reminder',
+        kicker: 'НАПОМИНАНИЕ ВКЛЮЧЕНО',
+        title: `${match.home?.name || ''} — ${match.away?.name || ''}`,
+        meta: `${dateTime(match.date)} · за ${Number(reminder.remindBeforeMinutes || state.preferences?.reminderMinutes || 30)} мин.`,
+        action: 'center',
+        fixtureId,
+      };
+    } else if (!match.finished && favorite && hoursToKickoff >= 0 && hoursToKickoff <= 6) {
+      item = {
+        priority: 64 - Math.min(18, Math.max(0, hoursToKickoff * 3)),
+        tone: 'soon',
+        kicker: 'СКОРО · ЛЮБИМАЯ КОМАНДА',
+        title: `${match.home?.name || ''} — ${match.away?.name || ''}`,
+        meta: [timeOf(match.date), match.league || ''].filter(Boolean).join(' · '),
+        action: 'center',
+        fixtureId,
+      };
+    }
+
+    if (item) rows.push(item);
+  }
+
+  return rows
+    .sort((a, b) => Number(b.priority || 0) - Number(a.priority || 0))
+    .slice(0, 4);
+}
+
+function renderRadarFeed() {
+  const wrap = $('radarFeedWrap');
+  const list = $('radarFeedList');
+  const meta = $('radarFeedMeta');
+  if (!wrap || !list) return;
+
+  const rows = radarFeedItems();
+  if (!rows.length) {
+    wrap.hidden = true;
+    list.innerHTML = '';
+    if (meta) meta.textContent = '';
+    return;
+  }
+
+  wrap.hidden = false;
+  if (meta) meta.textContent = russianCountLabel(rows.length, 'сигнал', 'сигнала', 'сигналов');
+  list.innerHTML = rows.map(item => `
+    <button class="radar-feed-item ${escapeHtml(item.tone || 'neutral')}" type="button"
+      data-radar-fixture="${Number(item.fixtureId)}"
+      data-radar-action="${escapeHtml(item.action || 'center')}">
+      <span class="radar-feed-pulse" aria-hidden="true"></span>
+      <span class="radar-feed-copy">
+        <small>${escapeHtml(item.kicker || '')}</small>
+        <strong>${escapeHtml(item.title || '')}</strong>
+        <em>${escapeHtml(item.meta || '')}</em>
+      </span>
+      <b aria-hidden="true">→</b>
+    </button>`).join('');
+
+  list.querySelectorAll('[data-radar-fixture]').forEach(button => {
+    button.addEventListener('click', () => {
+      const fixtureId = Number(button.dataset.radarFixture || 0);
+      if (!fixtureId) return;
+      if (button.dataset.radarAction === 'history') {
+        openHistoryAnalysis(fixtureId, button);
+        return;
+      }
+      openMatchCenter(fixtureId, button);
+    });
+  });
+}
+
 function renderDailyOverview() {
   const root = $('dailyOverview');
   const liveCard = $('homeLiveCard');
@@ -5269,6 +5384,7 @@ function renderMatches() {
   const integrity = state.matchesMeta?.integrity || {};
   if ($('matchesCount')) $('matchesCount').textContent = '';
   renderDailyOverview();
+  renderRadarFeed();
   renderAiFocus();
   renderAiCenterSummary();
   renderPopularCompetitions();
