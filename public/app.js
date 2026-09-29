@@ -298,7 +298,7 @@ const VIEW_CHROME = {
   myTeamsView: ['Мои команды', 'Избранные клубы и их матчи'],
   tournamentView: ['Турнир', 'Матчи и таблица'],
   teamView: ['Команда', 'Матчи и данные клуба'],
-  analysisView: ['AI-центр матча', 'Вероятности, факторы и риски'],
+  analysisView: ['Матч-центр', 'Что происходит, почему и что важно дальше'],
   historyView: ['История', 'Сохранённые AI-разборы'],
   profileView: ['Профиль', 'Команды, напоминания и настройки'],
 };
@@ -6421,16 +6421,25 @@ function renderMatchCenter(d) {
     ${d.stale ? `<section class="panel stale-panel"><strong>⚠️ Показан последний сохранённый снимок</strong><p>${escapeHtml(publicText(d.warning || 'Источник данных временно ограничил запросы.'))}</p></section>` : ''}
     ${d.note ? `<section class="panel center-note"><p class="tiny warning">${escapeHtml(publicText(d.note))}</p></section>` : ''}
 
-    ${live ? liveAiCoachHtml(d.liveAiCoach, m) : ''}
-    ${smartInsightsHeroHtml(d.smartInsights, m)}
-    ${finished ? postMatchReviewHtml(d.postMatchReview || {}, m) : ''}
+    <div class="match-center-primary" aria-label="Главное о матче">
+      ${live ? liveAiCoachHtml(d.liveAiCoach, m) : ''}
+      ${smartInsightsHeroHtml(d.smartInsights, m)}
+      ${finished ? postMatchReviewHtml(d.postMatchReview || {}, m) : ''}
+
+      <section class="panel center-primary-metrics">
+        <div class="center-section-title"><div><span class="center-priority-label">ГЛАВНОЕ</span><h2>Ключевые показатели</h2><p>Самые полезные метрики без перегрузки</p></div></div>
+        ${centerKeyStatsHtml(d.statistics)}
+      </section>
+
+      ${latestEvents.length ? `<section class="panel center-primary-events"><div class="center-section-title"><div><span class="center-priority-label">СЕЙЧАС</span><h2>Последние события</h2><p>Что недавно изменило ход матча</p></div></div>${liveEventsHtml(latestEvents)}</section>` : ''}
+    </div>
 
     <details class="match-center-more">
-      <summary>Подробности матча</summary>
+      <summary>Статистика, составы и хронология</summary>
       <div class="match-center-more-body">
       <div class="center-tabs-wrap">
       <div class="center-tabs" role="tablist" aria-label="Разделы матча">
-        <button class="center-tab-btn" data-center-tab="summary" type="button">Обзор</button>
+        <button class="center-tab-btn" data-center-tab="summary" type="button">Данные</button>
         <button class="center-tab-btn" data-center-tab="insights" type="button">Инсайты</button>
         <button class="center-tab-btn" data-center-tab="timeline" type="button">Хронология</button>
         <button class="center-tab-btn" data-center-tab="stats" type="button">Статистика</button>
@@ -6442,14 +6451,8 @@ function renderMatchCenter(d) {
 
     <div class="center-tab-panel" data-center-panel="summary">
       ${livePressureHtml(d.livePressure, m)}
-      <section class="panel">
-        <div class="center-section-title"><div><h2>Ключевые показатели</h2><p>Самые полезные метрики</p></div></div>
-        ${centerKeyStatsHtml(d.statistics)}
-      </section>
 
-      ${latestEvents.length ? `<section class="panel"><div class="center-section-title"><div><h2>Последние события</h2></div></div>${liveEventsHtml(latestEvents)}</section>` : ''}
-
-      ${(d.availabilityQuality?.observed || d.absences?.home?.length || d.absences?.away?.length) ? `<section class="panel"><div class="center-section-title"><div><h2>🩺 Потери состава</h2></div></div>${centerAbsenceSummary(d.absences,m)}${liveAbsencesHtml(d.absences,m)}</section>` : ''}
+      ${(d.availabilityQuality?.observed || d.absences?.home?.length || d.absences?.away?.length) ? `<section class="panel"><div class="center-section-title"><div><h2>🩺 Потери состава</h2><p>Доступность игроков и важные отсутствия</p></div></div>${centerAbsenceSummary(d.absences,m)}${liveAbsencesHtml(d.absences,m)}</section>` : ''}
 
       <details class="panel analysis-disclosure coverage-panel">
         <summary>Подробнее о данных</summary>
