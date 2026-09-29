@@ -5,6 +5,7 @@ export const SUPABASE_SCHEMA_HINT = 'проверьте актуальную с�
 
 export const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 export const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';
+export const MATCH_WATCHLIST_KEY = 'matchradar:watchlist:v1';
 export const DEFAULT_UI_PREFERENCES = Object.freeze({
   theme: 'system',
   accent: 'system',
@@ -44,5 +45,36 @@ export function readUiPreferences(storage = localStorage) {
     };
   } catch {
     return { ...DEFAULT_UI_PREFERENCES };
+  }
+}
+
+
+export function readMatchWatchlist(storage = localStorage) {
+  try {
+    const raw = JSON.parse(storage.getItem(MATCH_WATCHLIST_KEY) || '[]');
+    if (!Array.isArray(raw)) return [];
+    const seen = new Set();
+    return raw
+      .map(item => ({
+        fixtureId: Number(item?.fixtureId || 0),
+        homeName: String(item?.homeName || '').trim().slice(0, 160),
+        awayName: String(item?.awayName || '').trim().slice(0, 160),
+        league: String(item?.league || '').trim().slice(0, 160),
+        date: String(item?.date || '').trim().slice(0, 80),
+        homeId: Number(item?.homeId || 0),
+        awayId: Number(item?.awayId || 0),
+        homeLogo: String(item?.homeLogo || '').trim().slice(0, 2048),
+        awayLogo: String(item?.awayLogo || '').trim().slice(0, 2048),
+        addedAt: String(item?.addedAt || '').trim().slice(0, 80),
+      }))
+      .filter(item => {
+        if (!Number.isSafeInteger(item.fixtureId) || item.fixtureId <= 0 || seen.has(item.fixtureId)) return false;
+        if (!item.homeName || !item.awayName) return false;
+        seen.add(item.fixtureId);
+        return true;
+      })
+      .slice(0, 50);
+  } catch {
+    return [];
   }
 }

@@ -45,6 +45,6 @@ test('Match Intelligence launch10 assets are wired', () => {
   assert.match(styles, /Match Intelligence — launch10/);
   assert.match(styles, /\.match-change-panel\s*\{/);
   assert.match(styles, /\.match-change-item\s*\{/);
-  assert.match(index, /frontend-asset-revision" content="6\.120\.0-launch15"/);
+  assert.match(index, /frontend-asset-revision" content="6\.120\.0-launch16"/);
   assert.doesNotMatch(index, /6\.120\.0-launch9/);
 });

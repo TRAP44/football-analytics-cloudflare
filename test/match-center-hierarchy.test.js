@@ -36,6 +36,6 @@ test('Match Center launch9 styles and asset revision are wired', () => {
   assert.match(styles, /Match Center hierarchy — launch9/);
   assert.match(styles, /\.match-center-primary\s*\{/);
   assert.match(styles, /\.match-center-more\s*\{/);
-  assert.match(index, /frontend-asset-revision" content="6\.120\.0-launch15"/);
+  assert.match(index, /frontend-asset-revision" content="6\.120\.0-launch16"/);
   assert.doesNotMatch(index, /6\.120\.0-launch8/);
 });

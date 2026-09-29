@@ -49,9 +49,9 @@ test('visual polish preserves accessible touch targets and mobile widths',()=>{
 });
 
 test('frontend asset revision busts the public shell cache without changing release identity',()=>{
-  assert.match(html,/frontend-asset-revision" content="6\.120\.0-launch15"/);
-  assert.match(html,/styles\.css\?v=6\.120\.0-launch15/);
-  assert.match(html,/styles\/public-shell\.css\?v=6\.120\.0-launch15/);
-  assert.match(html,/app\.js\?v=6\.120\.0-launch15/);
+  assert.match(html,/frontend-asset-revision" content="6\.120\.0-launch16"/);
+  assert.match(html,/styles\.css\?v=6\.120\.0-launch16/);
+  assert.match(html,/styles\/public-shell\.css\?v=6\.120\.0-launch16/);
+  assert.match(html,/app\.js\?v=6\.120\.0-launch16/);
   assert.doesNotMatch(html,/6\.120\.0-perf1/);
 });

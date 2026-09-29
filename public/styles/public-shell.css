@@ -949,13 +949,15 @@ html {
   min-height:34px;
   display:flex;
   align-items:center;
-  justify-content:space-between;
-  gap:8px;
+  justify-content:flex-end;
+  flex-wrap:wrap;
+  gap:6px;
   margin-top:6px;
 }
 .miniapp-public-shell .match-secondary-actions > span{
   display:flex;
   gap:4px;
+  margin-right:auto;
 }
 .miniapp-public-shell .fav-star.compact{
   width:34px;
@@ -970,6 +972,27 @@ html {
   padding:5px 9px;
   border-radius:10px;
   font-size:10px;
+}
+.miniapp-public-shell .match-watch-btn.compact{
+  min-height:34px;
+  width:auto;
+  margin:0;
+  padding:5px 9px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:transparent;
+  color:var(--hint);
+  font-size:10px;
+  font-weight:850;
+}
+.miniapp-public-shell .match-watch-btn.compact.active{
+  border-color:color-mix(in srgb,var(--accent) 48%,var(--line));
+  background:color-mix(in srgb,var(--accent) 10%,var(--surface));
+  color:var(--text);
+}
+.miniapp-public-shell .radar-feed-item.watching .radar-feed-pulse{
+  background:#38bdf8;
+  box-shadow:0 0 0 4px color-mix(in srgb,#38bdf8 14%,transparent);
 }
 .miniapp-public-shell .analysis-glance{
   margin-top:10px;
