@@ -64,6 +64,10 @@ test('render smoke exercises edge cases across mobile widths and themes',()=>{
   assert.match(smoke,/LIVE · 88′/);
   assert.match(smoke,/compact-score score-upcoming/);
   assert.match(smoke,/>VS</);
+  assert.match(smoke,/home-match-section--live/);
+  assert.match(smoke,/Сейчас идут/);
+  assert.match(smoke,/home-match-section--soon/);
+  assert.match(smoke,/Скоро начнутся/);
 });
 
 test('frontend revision refreshes QA styles without changing release identity',()=>{
