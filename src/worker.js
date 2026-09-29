@@ -25,6 +25,7 @@ import { runtimeReleaseIdentity } from './release-identity.js';
 import { scopeOpsEventsToDeployment } from './release-event-attribution.js';
 import { postDeployRegressionReport } from './post-deploy-regression.js';
 import { planPostDeployRegressionLifecycle } from './post-deploy-regression-lifecycle.js';
+import { formatPostDeployRegressionAlert, planPostDeployRegressionAlert, postDeployRegressionAlertOpsEvents } from './post-deploy-regression-alerts.js';
 import { createCompositeReadinessRuntime } from './readiness-contract.js';
 import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
 import { applyFeatureFreshness, applyFeatureFreshnessMap } from './data-freshness.js';
@@ -15974,7 +15975,9 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
 
   const activeReleaseIdentity=currentReleaseIdentity(cfg);
   const releaseMetricItems=source.items.filter(item =>
-    item?.source !== 'monitor' && item?.source !== 'release_regression'
+    item?.source !== 'monitor'
+    && item?.source !== 'release_regression'
+    && item?.source !== 'release_regression_alert'
   );
   const releaseScope=scopeOpsEventsToDeployment(
     releaseMetricItems,
@@ -15992,6 +15995,17 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
   const releaseRegressionLifecycle=options.record !== false
     ? planPostDeployRegressionLifecycle(releaseRegression,source.items)
     : {action:'none',reason:'read_only_monitor'};
+  const releaseRegressionAlertCandidate=options.record !== false
+    ? planPostDeployRegressionAlert(source.items,providerAlertLedger.items,{
+        deploySha:activeReleaseIdentity.deploySha,
+        plannedTransition:releaseRegressionLifecycle,
+        destinations:providerAlertDestinations,
+        nowMs:now.getTime(),
+      })
+    : {action:'none',reason:'read_only_monitor'};
+  let releaseRegressionLifecyclePersistence=releaseRegressionLifecycle.action === 'record'
+    ? 'pending'
+    : 'not_required';
   const supabaseAuthFailures = releaseItems.filter(item =>
     /HTTP 401|PGRST303|invalid.*jwt|invalid.*api.?key/i.test(String(item?.message || ''))
   ).length;
@@ -16029,6 +16043,14 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
       })
     : { action:'none', reason:'read_only_monitor' };
   const incidentAlertPersistenceReady = Boolean(providerAlertLedger.persistent && providerAlertContract.ok);
+  const releaseRegressionAlertPlan = releaseRegressionAlertCandidate.action === 'send' && !incidentAlertPersistenceReady
+    ? {
+        ...releaseRegressionAlertCandidate,
+        action:'none',
+        reason:'persistent_ledger_unavailable',
+        blockedCandidate:true,
+      }
+    : releaseRegressionAlertCandidate;
   const incidentAlertPlan = incidentAlertCandidate.action === 'send' && !incidentAlertPersistenceReady
     ? {
         ...incidentAlertCandidate,
@@ -16121,6 +16143,13 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
           nextAction:releaseRegressionLifecycle.action === 'record' ? releaseRegressionLifecycle.code : 'none',
           reason:releaseRegressionLifecycle.reason || '',
         },
+        alerting:{
+          configured:Boolean(cfg.botToken && (cfg.adminTelegramIds || []).length),
+          persistent:incidentAlertPersistenceReady,
+          nextAction:releaseRegressionAlertPlan.action === 'send' ? releaseRegressionAlertPlan.kind : 'none',
+          reason:releaseRegressionAlertPlan.reason || '',
+          incidentId:releaseRegressionAlertPlan.incidentId || null,
+        },
       },
     },
     provider: {
@@ -16171,6 +16200,7 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
       postDeployRegressionState:String(releaseRegression.state || 'unavailable'),
       postDeployRegressionCompletedWindows:Number(releaseRegression.completedWindows || 0),
       postDeployRegressionLifecycleAction:releaseRegressionLifecycle.action === 'record' ? String(releaseRegressionLifecycle.code || '') : 'none',
+      postDeployRegressionAlertAction:releaseRegressionAlertPlan.action === 'send' ? String(releaseRegressionAlertPlan.kind || '') : 'none',
     },
     policy: {
       consumesFootballApi: false,
@@ -16184,12 +16214,75 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
 
   if (options.record !== false && releaseRegressionLifecycle.action === 'record') {
     const lifecycleWrite = await recordOpsEvent(cfg,releaseRegressionLifecycle).catch(() => null);
-    const lifecyclePersistence = String(lifecycleWrite?._persistenceStatus || 'failed');
-    value.release.regression.lifecycle.persistence = lifecyclePersistence;
-    value.observability.postDeployRegressionLifecyclePersistence = lifecyclePersistence;
-    if (lifecyclePersistence === 'failed') {
+    releaseRegressionLifecyclePersistence = String(lifecycleWrite?._persistenceStatus || 'failed');
+    value.release.regression.lifecycle.persistence = releaseRegressionLifecyclePersistence;
+    value.observability.postDeployRegressionLifecyclePersistence = releaseRegressionLifecyclePersistence;
+    if (releaseRegressionLifecyclePersistence === 'failed') {
       console.error('POST_DEPLOY_REGRESSION_LIFECYCLE_PERSISTENCE_FAILED');
     }
+  }
+
+  const releaseRegressionLifecycleReady = releaseRegressionLifecycle.action !== 'record'
+    || releaseRegressionLifecyclePersistence === 'persistent';
+
+  if (
+    options.record !== false
+    && releaseRegressionAlertCandidate.action === 'send'
+    && !releaseRegressionLifecycleReady
+  ) {
+    value.release.regression.alerting.nextAction='none';
+    value.release.regression.alerting.reason='lifecycle_persistence_unconfirmed';
+  }
+
+  if (options.record !== false && releaseRegressionAlertPlan.blockedCandidate) {
+    await recordOpsEvent(cfg,{
+      severity:'error',
+      source:'release_regression_alert',
+      eventType:'alert_delivery',
+      code:'POST_DEPLOY_REGRESSION_ALERT_PERSISTENCE_FAILED',
+      message:'Persistent alert delivery claim is unavailable; post-deploy regression alert was suppressed.',
+      endpoint:'cron:production-monitor',
+      meta:{
+        incidentId:releaseRegressionAlertPlan.incidentId || null,
+        alertKind:String(releaseRegressionAlertPlan.kind || ''),
+        deliveryKey:String(releaseRegressionAlertPlan.alertKey || releaseRegressionAlertPlan.deliveryKey || ''),
+        reason:'persistent_ledger_unavailable',
+      },
+    }).catch(()=>{});
+  }
+
+  if (
+    options.record !== false
+    && releaseRegressionAlertPlan.action === 'send'
+    && releaseRegressionLifecycleReady
+  ) {
+    let delivery;
+    try {
+      delivery = await deliverOperationalIncidentAlert({
+        plan:releaseRegressionAlertPlan,
+        text:formatPostDeployRegressionAlert(releaseRegressionAlertPlan),
+        adminTelegramIds:cfg.adminTelegramIds || [],
+        claimDelivery:input => claimProviderIncidentAlertDelivery(cfg,input),
+        finalizeDelivery:input => finalizeProviderIncidentAlertDelivery(cfg,input),
+        sendMessage:(chatId,text) => sendTelegramMessage(chatId,text,cfg),
+        nowMs:now.getTime(),
+      });
+    } catch (error) {
+      delivery = {
+        ok:false,
+        outcomes:(releaseRegressionAlertPlan.targetDeliveries || []).map(target => ({
+          slot:Number(target?.slot),
+          state:'persistence_failure',
+          claimAcquired:false,
+          reason:redactOpsString(error?.message || error,160),
+        })),
+        deliveredSlots:[],
+        failedSlots:(releaseRegressionAlertPlan.targetDeliveries || []).map(target => Number(target?.slot)),
+        recipientCount:(releaseRegressionAlertPlan.targetDeliveries || []).length,
+      };
+    }
+    const releaseAlertEvents=postDeployRegressionAlertOpsEvents(releaseRegressionAlertPlan,delivery);
+    await Promise.allSettled(releaseAlertEvents.map(event => recordOpsEvent(cfg,event)));
   }
 
   if (options.record !== false && providerSloFlush?.ok && providerSloIncident.transition) {

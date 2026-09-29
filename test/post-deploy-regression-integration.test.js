@@ -64,3 +64,31 @@ test('production monitor exposes lifecycle persistence failure without failing t
   assert.match(block,/POST_DEPLOY_REGRESSION_LIFECYCLE_PERSISTENCE_FAILED/);
   assert.doesNotMatch(block,/throw new Error\(['"]POST_DEPLOY_REGRESSION_LIFECYCLE_PERSISTENCE_FAILED/);
 });
+
+
+test('post-deploy regression alerting reuses persistent operational delivery and cannot feed its own metrics',()=>{
+  const start=worker.indexOf('async function runProductionMonitor');
+  const end=worker.indexOf('async function apiProductionMonitor',start);
+  const block=worker.slice(start,end);
+
+  assert.match(block,/item\?\.source !== 'release_regression_alert'/);
+  assert.match(block,/planPostDeployRegressionAlert\(source\.items,providerAlertLedger\.items/);
+  assert.match(block,/deliverOperationalIncidentAlert\(\{/);
+  assert.match(block,/formatPostDeployRegressionAlert\(releaseRegressionAlertPlan\)/);
+  assert.match(block,/postDeployRegressionAlertOpsEvents\(releaseRegressionAlertPlan,delivery\)/);
+  assert.match(block,/claimProviderIncidentAlertDelivery\(cfg,input\)/);
+  assert.match(block,/finalizeProviderIncidentAlertDelivery\(cfg,input\)/);
+});
+
+test('WATCH is not sent and alert delivery waits for lifecycle persistence in the same monitor run',()=>{
+  const start=worker.indexOf('async function runProductionMonitor');
+  const end=worker.indexOf('async function apiProductionMonitor',start);
+  const block=worker.slice(start,end);
+
+  assert.match(block,/releaseRegressionLifecycleReady/);
+  assert.match(block,/releaseRegressionLifecyclePersistence === 'persistent'/);
+  assert.match(block,/lifecycle_persistence_unconfirmed/);
+  assert.match(block,/releaseRegressionAlertPlan\.action === 'send'/);
+  assert.match(block,/alerting:\{/);
+  assert.doesNotMatch(block,/autoRollback:\s*true/);
+});
