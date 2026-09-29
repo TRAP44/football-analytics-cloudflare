@@ -109,6 +109,7 @@ test('RC133 normalizes useful season fields without inventing missing data', () 
 
 
 const app = fs.readFileSync('public/app.js', 'utf8');
+const runtime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const styles = fs.readFileSync('public/styles.css', 'utf8');
 
 test('RC133 Team Intelligence renders player season data without extra frontend requests', () => {
