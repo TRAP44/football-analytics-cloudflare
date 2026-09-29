@@ -24,6 +24,23 @@ test('MatchRadar home visual polish keeps the existing interaction contract',()=
   }
 });
 
+test('home match cards separate status from score and keep one clear primary action',()=>{
+  const center=app.slice(app.indexOf('function matchCenter'),app.indexOf('function renderPopularCompetitions'));
+  const card=app.slice(app.indexOf('function matchCardHtml'),app.indexOf('function bindMatchActions'));
+  assert.match(center,/if \(\(m\.finished \|\| m\.live\)[\s\S]*return `\$\{m\.score\.home\} : \$\{m\.score\.away\}`/);
+  assert.match(center,/if \(m\.live\) return `\$\{m\.score\?\.home \?\? 0\} : \$\{m\.score\?\.away \?\? 0\}`/);
+  assert.match(center,/return 'VS'/);
+  assert.doesNotMatch(center,/идёт матч/);
+  assert.match(card,/LIVE\$\{liveMinute\}/);
+  assert.match(card,/Матч-центр/);
+  assert.match(card,/score-live/);
+  assert.match(card,/score-finished/);
+  assert.match(card,/score-upcoming/);
+  assert.match(css,/Home Match Card Hierarchy — status, score and first-action clarity/);
+  assert.match(css,/\.compact-score\.score-upcoming\{[\s\S]*?font-size:12px/);
+  assert.match(css,/\.compact-match-card\.is-live \.live-center-btn\{/);
+});
+
 test('visual polish preserves accessible touch targets and mobile widths',()=>{
   assert.match(css,/\.compact-actions \.analyze-btn\{[\s\S]*?min-height:44px/);
   assert.match(css,/\.quick-reminder-btn\.compact\{[\s\S]*?min-height:36px/);
