@@ -26,6 +26,7 @@ import { scopeOpsEventsToDeployment } from './release-event-attribution.js';
 import { postDeployRegressionReport } from './post-deploy-regression.js';
 import { planPostDeployRegressionLifecycle } from './post-deploy-regression-lifecycle.js';
 import { formatPostDeployRegressionAlert, planPostDeployRegressionAlert, postDeployRegressionAlertOpsEvents } from './post-deploy-regression-alerts.js';
+import { planPostDeployRegressionResponseTransition, summarizePostDeployRegressionResponse } from './post-deploy-regression-response.js';
 import { createCompositeReadinessRuntime } from './readiness-contract.js';
 import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
 import { applyFeatureFreshness, applyFeatureFreshnessMap } from './data-freshness.js';
@@ -16521,6 +16522,48 @@ async function apiProductionMonitor(request, cfg) {
   return json(await runProductionMonitor(cfg, new Date(), { record: false }));
 }
 
+async function apiPostDeployRegressionResponse(request,cfg,user) {
+  if (request.method!=='POST') return json({error:'Метод не поддерживается.'},405);
+  if (!hasSupabase(cfg)) return json({error:'Supabase не настроен.'},503);
+
+  let body={};
+  try { body=await request.json(); } catch {}
+  const targetState=String(body?.state || '');
+  const identity=currentReleaseIdentity(cfg);
+  const deploySha=String(identity?.deploySha || '').toLowerCase();
+  if (!deploySha) return json({error:'Active deployment identity временно недоступен.'},503);
+  if (body?.deploySha && String(body.deploySha).toLowerCase()!==deploySha) {
+    return json({error:'Deployment уже изменился. Обновите Release Monitor.'},409);
+  }
+
+  const now=new Date();
+  const since=new Date(now.getTime()-7*24*3600_000);
+  const source=await readOpsEventsRange(cfg,since.toISOString(),now.toISOString(),1000);
+  if (!source.persistent) return json({error:'Persistent ops history временно недоступна.'},503);
+  if (source.truncated) return json({error:'Ops history усечена; переход не сохранён для безопасности.'},503);
+
+  const plan=planPostDeployRegressionResponseTransition(source.items,deploySha,targetState);
+  if (plan.action!=='record') {
+    if (plan.reason==='already_recorded') return json({ok:true,alreadyRecorded:true,status:plan.status});
+    return json({error:'Переход состояния инцидента сейчас недоступен.',reason:plan.reason,status:plan.status},409);
+  }
+
+  const written=await recordOpsEvent(cfg,plan).catch(()=>null);
+  if (!written || String(written?._persistenceStatus || '')!=='persistent') {
+    return json({error:'Не удалось сохранить состояние инцидента.'},503);
+  }
+
+  memory.releaseMonitor=null;
+  const status=summarizePostDeployRegressionResponse([...source.items,written],deploySha);
+  return json({
+    ok:true,
+    incidentId:status.incidentId,
+    state:status.state,
+    lifecycleState:status.lifecycleState,
+    status,
+  });
+}
+
 async function apiReleaseMonitor(request, cfg) {
   const url = new URL(request.url);
   const hours = Math.max(1, Math.min(168, Number(url.searchParams.get('hours') || 24)));
@@ -16542,6 +16585,22 @@ async function apiReleaseMonitor(request, cfg) {
     readDailyDigestOpsEvents(cfg,digestStart.toISOString(),end.toISOString(),1000),
   ]);
   const currentItems = source.items.filter(x => Date.parse(x.created_at || '') >= currentStart.getTime());
+  const activeDeploySha=String(currentReleaseIdentity(cfg)?.deploySha || '').toLowerCase();
+  const postDeployRegressionResponse=summarizePostDeployRegressionResponse(source.items,activeDeploySha);
+  const postDeployRegressionTimeline=source.items
+    .filter(x => ['release_regression','release_regression_alert','release_regression_response'].includes(String(x?.source || '')))
+    .filter(x => String(x?.metadata?.deploySha || '').toLowerCase()===activeDeploySha)
+    .sort((a,b)=>Date.parse(b?.created_at || '')-Date.parse(a?.created_at || ''))
+    .slice(0,30)
+    .map(x=>({
+      createdAt:x.created_at,
+      severity:String(x.severity || 'info'),
+      source:String(x.source || ''),
+      code:String(x.code || x.event_type || ''),
+      lifecycleState:String(x?.metadata?.lifecycleState || ''),
+      responseState:String(x?.metadata?.responseState || ''),
+      message:redactOpsString(x.message || '',180),
+    }));
   const previousItems = source.items.filter(x => {
     const t = Date.parse(x.created_at || '');
     return Number.isFinite(t) && t >= previousStart.getTime() && t < currentStart.getTime();
@@ -16598,6 +16657,10 @@ async function apiReleaseMonitor(request, cfg) {
       bootRecoveryDelta: Number(current.client?.bootRecovery || 0) - Number(previous.client?.bootRecovery || 0),
     },
     incidents,
+    postDeployRegression:{
+      response:postDeployRegressionResponse,
+      timeline:postDeployRegressionTimeline,
+    },
     dailyDigest,
     runtime: telemetrySnapshot(),
     policy: {
@@ -23239,6 +23302,7 @@ const API_ROUTE_DEPS = Object.freeze({
   apiModelQuality,
   apiModelRemediation,
   apiNewsImpactRecoveryIncidentAck,
+  apiPostDeployRegressionResponse,
   apiPreferences,
   apiProductionMonitor,
   apiProductionReadiness,
