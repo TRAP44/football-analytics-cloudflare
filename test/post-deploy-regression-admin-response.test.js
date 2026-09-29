@@ -19,7 +19,7 @@ test('regression response panel is read-only and does not introduce automatic re
   assert.ok(start>=0 && end>start);
   const block=app.slice(start,end);
   assert.doesNotMatch(block,/api\(/);
-  assert.doesNotMatch(block,/runtime-controls|rollback|provider-switch|feature-disable/i);
+  assert.doesNotMatch(block,/api\(|fetch\(|runtimeControlsSaving|saveRuntime|rollbackTo|switchProvider|disableFeature/);
   assert.match(block,/без auto-rollback/);
   assert.match(block,/Не менять provider или runtime controls автоматически/);
 });
