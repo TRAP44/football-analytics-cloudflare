@@ -15786,7 +15786,7 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     readProviderIncidentAlertDeliveryContract(cfg),
     providerIncidentAlertDestinations(cfg),
     readDailyDigestOpsEvents(cfg,new Date(now.getTime()-7*24*3600_000).toISOString(),now.toISOString(),1000),
-    readDailyDigestSloEvents(cfg,new Date(now.getTime()-48*3600_000).toISOString(),now.toISOString(),100),
+    readDailyDigestSloEvents(cfg,new Date(now.getTime()-30*24*3600_000).toISOString(),now.toISOString(),100),
   ]);
 
   const releaseItems = source.items.filter(item => {
