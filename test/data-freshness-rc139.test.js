@@ -130,6 +130,6 @@ test('RC139 is part of the production release health contract', () => {
   assert.match(worker, /freshnessAwareDataTrust: 'enabled'/);
   assert.match(worker, /analysisVersion: '4\.15\.0-availability-quality'/);
   assert.match(worker, /fixture:\$\{fixtureId\}:v15-availability-quality-rc144/);
-  assert.match(app, /const CLIENT_VERSION = '6\.120\.0-rc144'/);
+  assert.match(runtime, /const CLIENT_VERSION = '6\.120\.0-rc144'/);
   assert.match(smoke, /'freshnessAwareDataTrust'/);
 });
