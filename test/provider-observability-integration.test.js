@@ -8,7 +8,7 @@ const gateway = fs.readFileSync('src/api-football-gateway.js','utf8');
 const secondary = fs.readFileSync('src/providers/provider-request.js','utf8');
 const admin = fs.readFileSync('public/modules/admin-provider.js','utf8');
 const app = fs.readFileSync('public/app.js','utf8');
-const html = fs.readFileSync('public/index.html','utf8');
+const html = fs.readFileSync('public/admin.html','utf8');
 const smoke = fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
 
 test('provider observability is wired to both primary and secondary football transports', () => {
