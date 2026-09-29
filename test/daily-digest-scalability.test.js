@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DAILY_DIGEST_POLICY,
+  assessDailyDigestRun,
   estimateDigestOrchestration,
   isDailyDigestExecutionWindow,
   planDailyDigestRecipients,
@@ -375,6 +376,68 @@ test('daily digest continuation window uses every five-minute cron slot during 0
   assert.equal(isDailyDigestExecutionWindow(new Date('2026-09-29T07:55:00Z')), true);
   assert.equal(isDailyDigestExecutionWindow(new Date('2026-09-29T06:55:00Z')), false);
   assert.equal(isDailyDigestExecutionWindow(new Date('2026-09-29T08:00:00Z')), false);
+});
+
+test('K. fresh active claims and aged sealed claims are distinguished by claim age', () => {
+  const now = Date.parse(`${DATE}T07:20:00.000Z`);
+  const source = rows(2);
+  source[0].delivery_claim_date = DATE;
+  source[0].delivery_claimed_at = `${DATE}T07:18:30.000Z`;
+  source[0].delivery_locked_until = `${DATE}T23:59:59.999Z`;
+  source[1].delivery_claim_date = DATE;
+  source[1].delivery_claimed_at = `${DATE}T07:10:00.000Z`;
+  source[1].delivery_locked_until = `${DATE}T23:59:59.999Z`;
+
+  const plan = planDailyDigestRecipients(source, { date: DATE, now });
+
+  assert.equal(plan.activeClaims, 2);
+  assert.equal(plan.freshClaims, 1);
+  assert.equal(plan.sealedClaims, 1);
+  assert.equal(plan.oldestActiveClaimAgeMs, 10 * 60 * 1000);
+});
+
+test('L. ordinary bounded backlog is informational before the late window', () => {
+  const health = assessDailyDigestRun(
+    { remaining: 250, backlog: 250, sealedClaims: 0, failed: 0 },
+    new Date(`${DATE}T07:25:00.000Z`),
+  );
+
+  assert.equal(health.severity, 'info');
+  assert.equal(health.code, 'DAILY_DIGEST_RUN_DEFERRED');
+  assert.equal(health.reason, 'bounded_backlog');
+});
+
+test('M. remaining backlog becomes warning near the end of the delivery window', () => {
+  const health = assessDailyDigestRun(
+    { remaining: 12, backlog: 12, sealedClaims: 0, failed: 0 },
+    new Date(`${DATE}T07:50:00.000Z`),
+  );
+
+  assert.equal(health.severity, 'warning');
+  assert.equal(health.code, 'DAILY_DIGEST_BACKLOG_LATE');
+  assert.equal(health.reason, 'late_backlog');
+});
+
+test('N. sealed claims take precedence over generic degraded/backlog status', () => {
+  const health = assessDailyDigestRun(
+    { remaining: 50, sealedClaims: 2, failed: 1, rateLimited: 1 },
+    new Date(`${DATE}T07:55:00.000Z`),
+  );
+
+  assert.equal(health.severity, 'warning');
+  assert.equal(health.code, 'DAILY_DIGEST_SEALED_CLAIMS');
+  assert.equal(health.reason, 'sealed_claims');
+});
+
+test('O. expired claim recovery is observable without escalating a healthy run', () => {
+  const health = assessDailyDigestRun(
+    { remaining: 0, expiredClaims: 3, sealedClaims: 0, failed: 0 },
+    new Date(`${DATE}T07:15:00.000Z`),
+  );
+
+  assert.equal(health.severity, 'info');
+  assert.equal(health.code, 'DAILY_DIGEST_CLAIMS_RECOVERED');
+  assert.equal(health.reason, 'claim_recovery');
 });
 
 test('controlled performance model covers 100 / 1k / 5k / 10k recipients', () => {
