@@ -21,6 +21,7 @@ import {
   telegramIdList,
 } from './access-control.js';
 import { createSupabaseClient } from './supabase-client.js';
+import { runtimeReleaseIdentity } from './release-identity.js';
 import { createCompositeReadinessRuntime } from './readiness-contract.js';
 import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
 import { applyFeatureFreshness, applyFeatureFreshnessMap } from './data-freshness.js';
@@ -246,6 +247,7 @@ function config(env) {
     betaAccessEnabled: boolEnv(env.BETA_ACCESS_ENABLED, false),
     supabaseUrl: String(env.SUPABASE_URL || '').replace(/\/$/, ''),
     supabaseKey: env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY || '',
+    cfVersionMetadata: env.CF_VERSION_METADATA || null,
     cacheMinutes: intEnv(env.CACHE_MINUTES, 20),
     liveOddsEnabled: boolEnv(env.ENABLE_LIVE_ODDS, true),
     // Монетизацию сознательно держим выключенной до финального этапа проекта.
@@ -264,6 +266,13 @@ function config(env) {
       PREMIUM: intEnv(env.PREMIUM_STARS_PRICE, BILLING_PLANS.PREMIUM.stars),
     },
   };
+}
+
+function currentReleaseIdentity(cfg = {}) {
+  return runtimeReleaseIdentity(cfg?.cfVersionMetadata,{
+    appVersion:APP_VERSION,
+    releaseCandidate:RC_NAME,
+  });
 }
 
 function runtimeControlsSnapshot() {
@@ -782,6 +791,7 @@ function appManifest(cfg) {
     apiContract: API_CONTRACT_VERSION,
     releaseChannel: RELEASE_CHANNEL,
     releaseCandidate: RC_NAME,
+    deployment: currentReleaseIdentity(cfg),
     maintenance: Boolean(runtimeControlsSnapshot().maintenanceMode),
     monetization: cfg.monetizationEnabled ? 'enabled' : 'paused',
     runtime: publicRuntimeControls(),
@@ -1344,7 +1354,7 @@ async function recordOpsEventTask(cfg, event = {}) {
     endpoint: redactOpsString(event.endpoint || '', 160),
     status: Number.isFinite(Number(event.status)) ? Number(event.status) : null,
     duration_ms: Number.isFinite(Number(event.durationMs)) ? Math.max(0, Math.round(Number(event.durationMs))) : null,
-    metadata: safeOpsMetadata({ appVersion: APP_VERSION, releaseCandidate: RC_NAME, ...(event.meta || {}) }),
+    metadata: safeOpsMetadata({ ...(event.meta || {}), ...currentReleaseIdentity(cfg) }),
   };
   memory.opsEvents.unshift(row);
   memory.opsEvents = memory.opsEvents.slice(0, MAX_MEMORY_OPS_EVENTS);
@@ -22823,6 +22833,7 @@ async function publicServiceStatus(cfg) {
     label:status==='operational'?'Все основные системы работают':status==='maintenance'?'Техническое обслуживание':'Часть функций работает с ограничениями',
     version:APP_VERSION,
     releaseCandidate:RC_NAME,
+    deployment:currentReleaseIdentity(cfg),
     generatedAt:new Date().toISOString(),
     services:{
       telegram:cfg.botToken && cfg.webhookSecret ? 'operational' : 'configuration_required',
@@ -22994,6 +23005,7 @@ async function computeReadinessSnapshot(cfg) {
     status:ok?'ready':'not_ready',
     version:APP_VERSION,
     releaseCandidate:RC_NAME,
+    deployment:currentReleaseIdentity(cfg),
     latencyMs:Date.now()-startedAt,
     checks:{
       supabase:{ok:Boolean(supabase.ok),status:supabase.status || 'unknown',attempts:Number(supabase.attempts || 1),latencyMs:compositeCheck.latencyMs},
@@ -23116,7 +23128,7 @@ export default {
     }
 
     if (url.pathname === '/health/live') {
-      return json({ok:true,status:'alive',version:APP_VERSION,releaseCandidate:RC_NAME},200);
+      return json({ok:true,status:'alive',version:APP_VERSION,releaseCandidate:RC_NAME,deployment:currentReleaseIdentity(cfg)},200);
     }
 
     if (url.pathname === '/health/ready') {
@@ -23131,6 +23143,8 @@ export default {
         readiness,
 
         version: APP_VERSION,
+        releaseCandidate: RC_NAME,
+        deployment: currentReleaseIdentity(cfg),
         database: hasSupabase(cfg) ? 'supabase' : 'memory',
         monetization: cfg.monetizationEnabled ? 'enabled' : 'paused',
         observability: 'enabled',

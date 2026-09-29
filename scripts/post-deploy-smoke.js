@@ -287,7 +287,27 @@ async function jsonBody(response, label) {
   }
 }
 
-export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = {}) {
+function verifyRuntimeDeploymentIdentity(body, label, expectedSha) {
+  if (!expectedSha) return;
+  if (!/^[0-9a-f]{40}$/i.test(String(expectedSha))) throw new Error('Expected deploy SHA must be a 40-character Git commit SHA.');
+  const deployment=body?.deployment || {};
+  if (String(deployment.deploySha || '').toLowerCase() !== String(expectedSha).toLowerCase()) {
+    throw new Error(`${label} deploy SHA does not match the verified production revision.`);
+  }
+  if (String(deployment.cloudflareVersionTag || '').toLowerCase() !== String(expectedSha).toLowerCase()) {
+    throw new Error(`${label} Cloudflare version tag does not match deploy SHA.`);
+  }
+  if (!String(deployment.cloudflareVersionId || '').trim()) {
+    throw new Error(`${label} is missing Cloudflare version ID.`);
+  }
+  if (!Number.isFinite(Date.parse(String(deployment.cloudflareVersionTimestamp || '')))) {
+    throw new Error(`${label} is missing Cloudflare version timestamp.`);
+  }
+}
+
+export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedShaOrOptions = {}, maybeOptions = {}) {
+  const expectedSha=typeof expectedShaOrOptions === 'string' ? expectedShaOrOptions : '';
+  const options=typeof expectedShaOrOptions === 'string' ? maybeOptions : (expectedShaOrOptions || {});
   const baseUrl = deploymentBaseUrl(rawBaseUrl);
   const fetchImpl = options.fetchImpl || fetch;
   const retries = Math.max(1, Number(options.retries || 10));
@@ -313,6 +333,7 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
       if (body?.checks?.backendSecurity?.ok !== true) throw new Error('Readiness backend security contract failed.');
       if (body?.checks?.telegramConfigured !== true) throw new Error('Readiness Telegram configuration failed.');
       if (Number(body?.checks?.recentSupabaseAuthFailures || 0) !== 0) throw new Error('Readiness detected recent Supabase authentication failures.');
+      verifyRuntimeDeploymentIdentity(body,'Readiness endpoint',expectedSha);
       readiness = body;
       break;
     } catch (error) {
@@ -328,6 +349,7 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
   health = await jsonBody(healthResponse, 'Health endpoint');
   if (!healthResponse.ok || health?.ok !== true) throw new Error('Health endpoint is not healthy.');
   if (health.releaseCandidate !== expectedReleaseCandidate) throw new Error(`Expected ${expectedReleaseCandidate}, received ${health.releaseCandidate || 'unknown'}.`);
+  verifyRuntimeDeploymentIdentity(health,'Health endpoint',expectedSha);
   if (health.devMode !== false) throw new Error('Production deployment exposes DEV_MODE=true.');
   if (health.database !== 'supabase') throw new Error('Production deployment must use Supabase persistence.');
   if (health.monetization !== 'paused') throw new Error('Production deployment must keep MONETIZATION_ENABLED=false before beta.');
@@ -341,6 +363,7 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
   if (!manifestResponse.ok || manifest?.version !== expectedVersion || manifest?.releaseCandidate !== expectedReleaseCandidate) {
     throw new Error(`Public app manifest does not match the deployed ${expectedReleaseCandidate} release.`);
   }
+  verifyRuntimeDeploymentIdentity(manifest,'App manifest',expectedSha);
 
   const rootResponse = await request(fetchImpl, baseUrl, '/');
   const rootContentType = String(rootResponse.headers.get('content-type') || '').toLowerCase();
@@ -368,6 +391,7 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
   if (!publicStatusResponse.ok || publicStatus?.version !== expectedVersion || publicStatus?.releaseCandidate !== expectedReleaseCandidate) {
     throw new Error('Public status endpoint does not match the deployed release.');
   }
+  verifyRuntimeDeploymentIdentity(publicStatus,'Public status endpoint',expectedSha);
   const requiredServices = ['telegram','miniApp','aiAnalysis','search','live'];
   for (const service of requiredServices) {
     if (publicStatus?.services?.[service] !== 'operational') {
@@ -396,12 +420,12 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, options = 
 }
 
 async function main() {
-  const [, , baseUrl, expectedVersion] = process.argv;
-  if (!baseUrl || !expectedVersion) {
-    throw new Error('Usage: node scripts/post-deploy-smoke.js <deployment-url> <expected-version>');
+  const [, , baseUrl, expectedVersion, expectedSha] = process.argv;
+  if (!baseUrl || !expectedVersion || !expectedSha) {
+    throw new Error('Usage: node scripts/post-deploy-smoke.js <deployment-url> <expected-version> <expected-sha>');
   }
-  const result = await runDeploymentSmoke(baseUrl, expectedVersion);
-  console.log(`Post-deploy smoke passed: ${result.version} at ${result.origin} (${result.checks} checks).`);
+  const result = await runDeploymentSmoke(baseUrl, expectedVersion, expectedSha);
+  console.log(`Post-deploy smoke passed: ${result.version} sha=${expectedSha} at ${result.origin} (${result.checks} checks).`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

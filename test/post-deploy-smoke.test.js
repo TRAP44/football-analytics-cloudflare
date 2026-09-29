@@ -2,6 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runDeploymentSmoke } from '../scripts/post-deploy-smoke.js';
 
+const deploySha = '0123456789abcdef0123456789abcdef01234567';
+const deploymentIdentity = {
+  deploySha,
+  cloudflareVersionId: '11111111-2222-3333-4444-555555555555',
+  cloudflareVersionTag: deploySha,
+  cloudflareVersionTimestamp: '2026-09-29T12:36:17.000Z',
+};
+
 const json = (body, status = 200) => new Response(JSON.stringify(body), {
   status,
   headers: { 'content-type': 'application/json' },
@@ -15,7 +23,7 @@ function healthyFetch({ staleOnce = false, devMode = false, monetization = 'paus
       healthCalls += 1;
       const version=staleOnce && healthCalls===1 ? '6.12.0-rc20' : '6.27.0-rc35';
       return json({
-        ok:true,status:'ready',version,releaseCandidate:'RC35',checks:{
+        ok:true,status:'ready',version,releaseCandidate:'RC35',deployment:deploymentIdentity,checks:{
           supabase:{ok:true,status:'ok',attempts:1},
           schema:{ok:true,status:'ok',fingerprint:'abc',expectedFingerprint:'abc'},
           backendSecurity:{ok:true,status:'ok'},
@@ -31,6 +39,7 @@ function healthyFetch({ staleOnce = false, devMode = false, monetization = 'paus
         readiness:{ok:true,status:'ready'},
         version: staleOnce && healthCalls === 1 ? '6.12.0-rc20' : '6.27.0-rc35',
         releaseCandidate: 'RC35',
+        deployment: deploymentIdentity,
         devMode,
         database,
         monetization,
@@ -314,12 +323,13 @@ function healthyFetch({ staleOnce = false, devMode = false, monetization = 'paus
         newsImpactRecoveryIncidentSloImpactFocusQueueSelfTest: 'enabled',
       });
     }
-    if (url.pathname === '/api/app-manifest') return json({ version: '6.27.0-rc35', releaseCandidate: 'RC35' });
+    if (url.pathname === '/api/app-manifest') return json({ version: '6.27.0-rc35', releaseCandidate: 'RC35', deployment: deploymentIdentity });
     if (url.pathname === '/api/public-status') return json({
       ok:true,
       status:'operational',
       version:'6.27.0-rc35',
       releaseCandidate:'RC35',
+      deployment:deploymentIdentity,
       services:{
         telegram:'operational',
         miniApp:'operational',
@@ -353,6 +363,24 @@ test('post-deploy smoke validates RC35, security headers and protected routes', 
   });
   assert.equal(result.ok, true);
   assert.equal(result.checks, 25);
+});
+
+test('post-deploy smoke binds runtime Cloudflare identity to exact deploy SHA', async () => {
+  const result = await runDeploymentSmoke('https://football.example.test', '6.27.0-rc35', deploySha, {
+    fetchImpl: healthyFetch(),
+    retries: 1,
+    retryDelayMs: 0,
+  });
+  assert.equal(result.ok, true);
+
+  await assert.rejects(
+    runDeploymentSmoke('https://football.example.test', '6.27.0-rc35', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', {
+      fetchImpl: healthyFetch(),
+      retries: 1,
+      retryDelayMs: 0,
+    }),
+    /deploy SHA does not match/,
+  );
 });
 
 test('post-deploy smoke retries while the previous Worker version is propagating', async () => {
