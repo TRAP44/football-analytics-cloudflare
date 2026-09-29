@@ -39,3 +39,28 @@ test('regression lifecycle is persisted without feeding its own events back into
   assert.match(block,/recordOpsEvent\(cfg,releaseRegressionLifecycle\)/);
   assert.match(block,/postDeployRegressionLifecycleAction/);
 });
+
+
+test('regression lifecycle persistence uses an atomic transition key and remains fail-soft',()=>{
+  const start=worker.indexOf('async function recordOpsEventTask');
+  const end=worker.indexOf('async function cleanupRateWindows',start);
+  assert.ok(start>=0 && end>start);
+  const block=worker.slice(start,end);
+
+  assert.match(block,/transition_key: event\.transitionKey/);
+  assert.match(block,/on_conflict', 'transition_key'/);
+  assert.match(block,/resolution=ignore-duplicates,return=minimal/);
+  assert.match(block,/_persistenceStatus/);
+  assert.match(block,/setPersistenceStatus\('failed'\)/);
+});
+
+test('production monitor exposes lifecycle persistence failure without failing the monitor',()=>{
+  const start=worker.indexOf('async function runProductionMonitor');
+  const end=worker.indexOf('async function apiProductionMonitor',start);
+  const block=worker.slice(start,end);
+
+  assert.match(block,/postDeployRegressionLifecyclePersistence/);
+  assert.match(block,/value\.release\.regression\.lifecycle\.persistence/);
+  assert.match(block,/POST_DEPLOY_REGRESSION_LIFECYCLE_PERSISTENCE_FAILED/);
+  assert.doesNotMatch(block,/throw new Error\(['"]POST_DEPLOY_REGRESSION_LIFECYCLE_PERSISTENCE_FAILED/);
+});
