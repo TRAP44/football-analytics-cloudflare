@@ -2995,16 +2995,17 @@ function renderReleaseMonitor() {
   const kpis = $('releaseMonitorKpis');
   const client = $('releaseMonitorClient');
   const digest = $('releaseMonitorDigest');
+  const regression = $('releaseMonitorRegression');
   const issues = $('releaseMonitorIssues');
   const incidents = $('releaseMonitorIncidents');
-  if (!badge || !title || !meta || !kpis || !client || !digest || !issues || !incidents) return;
+  if (!badge || !title || !meta || !kpis || !client || !digest || !regression || !issues || !incidents) return;
 
   if (state.releaseMonitorLoading) {
     badge.className = 'release-monitor-badge running';
     badge.textContent = 'ПРОВЕРКА';
     title.textContent = 'Собираю операционные события…';
     meta.textContent = 'Без API-Football';
-    kpis.innerHTML = client.innerHTML = digest.innerHTML = issues.innerHTML = incidents.innerHTML = '';
+    kpis.innerHTML = client.innerHTML = digest.innerHTML = regression.innerHTML = issues.innerHTML = incidents.innerHTML = '';
     return;
   }
 
@@ -3014,7 +3015,7 @@ function renderReleaseMonitor() {
     badge.textContent = 'ОЖИДАНИЕ';
     title.textContent = 'Мониторинг выпуска ещё не запускался.';
     meta.textContent = 'Показывает ошибки, восстановление клиента и операционные лимиты.';
-    kpis.innerHTML = client.innerHTML = digest.innerHTML = issues.innerHTML = incidents.innerHTML = '';
+    kpis.innerHTML = client.innerHTML = digest.innerHTML = regression.innerHTML = issues.innerHTML = incidents.innerHTML = '';
     return;
   }
 
@@ -3094,6 +3095,60 @@ function renderReleaseMonitor() {
     <details class="release-incidents"><summary>Daily history · последние ${dailyRows.length}</summary>
       <div class="release-issue-list">${dailyRows.length ? dailyRows.map(day => `<div><strong>${escapeHtml(day.date || '—')}</strong><span>${day.completionRate === null || day.completionRate === undefined ? '—' : `${(Number(day.completionRate)*100).toFixed(1)}%`} · backlog ${Number(day.finalRemaining || 0)} · RL ${Number(day.rateLimited || 0)}</span></div>`).join('') : '<div class="empty compact-empty">Истории за выбранный период пока нет.</div>'}</div>
     </details>` : '<div class="empty compact-empty">Daily Digest ещё не создавал операционных событий за доступный период.</div>'}`;
+
+  const regressionRows = (Array.isArray(r.incidents) ? r.incidents : [])
+    .filter(x => x?.source === 'release_regression' || x?.source === 'release_regression_alert');
+  const lifecycleRows = regressionRows.filter(x => x?.source === 'release_regression');
+  const alertRows = regressionRows.filter(x => x?.source === 'release_regression_alert');
+  const latestLifecycle = lifecycleRows[0] || null;
+  const latestLifecycleCode = String(latestLifecycle?.code || '');
+  const regressionState = latestLifecycleCode.includes('RECOVERED')
+    ? 'recovered'
+    : latestLifecycleCode.includes('INCIDENT')
+      ? 'incident'
+      : latestLifecycleCode.includes('WATCH')
+        ? 'watch'
+        : 'healthy';
+  const regressionStateLabel = regressionState === 'incident'
+    ? 'ИНЦИДЕНТ'
+    : regressionState === 'watch'
+      ? 'КОНТРОЛЬ'
+      : regressionState === 'recovered'
+        ? 'ВОССТАНОВЛЕНО'
+        : 'НЕТ АКТИВНОЙ РЕГРЕССИИ';
+  const latestAlert = alertRows[0] || null;
+  const alertCode = String(latestAlert?.code || '');
+  const alertLabel = !latestAlert
+    ? 'Нет событий доставки'
+    : alertCode.includes('SENT')
+      ? 'Доставлено'
+      : alertCode.includes('DUPLICATE')
+        ? 'Дубль подавлен'
+        : alertCode.includes('RETRY')
+          ? 'Ожидает retry'
+          : alertCode.includes('FAILED')
+            ? 'Ошибка доставки'
+            : 'Проверить';
+  const operatorAction = regressionState === 'incident'
+    ? 'Проверить сигнал, deployment identity и источник ошибки. Автоматический rollback не выполняется; решение о ручном rollback принимается отдельно после проверки.'
+    : regressionState === 'watch'
+      ? 'Дождаться следующего зрелого 30/60-минутного окна и проверить, подтверждается ли регрессия. Не менять provider или runtime controls автоматически.'
+      : regressionState === 'recovered'
+        ? 'Проверить, что следующие healthy monitor runs остаются стабильными, и закрыть наблюдение без дополнительных изменений.'
+        : 'Наблюдать обычный production monitor; активных regression transitions нет.';
+
+  regression.innerHTML = `<div class="release-monitor-section-head"><strong>🧭 Post-deploy regression</strong><span>read-only operational response</span></div>
+    <div class="release-client-grid">
+      <div><span>Lifecycle</span><strong>${escapeHtml(regressionStateLabel)}</strong><small>${latestLifecycle?.createdAt ? escapeHtml(relativeAge(latestLifecycle.createdAt)) : 'нет transition'}</small></div>
+      <div><span>Alert delivery</span><strong>${escapeHtml(alertLabel)}</strong><small>${latestAlert?.createdAt ? escapeHtml(relativeAge(latestAlert.createdAt)) : 'нет alert events'}</small></div>
+      <div><span>Lifecycle events</span><strong>${lifecycleRows.length}</strong><small>WATCH / INCIDENT / RECOVERED</small></div>
+      <div><span>Alert events</span><strong>${alertRows.length}</strong><small>dedupe / retry / sent / failed</small></div>
+    </div>
+    <div class="data-notice">🛠 <strong>Ручное действие:</strong> ${escapeHtml(operatorAction)}</div>
+    <details class="release-incidents"><summary>Regression timeline · ${regressionRows.length}</summary>
+      <div class="release-issue-list">${regressionRows.length ? regressionRows.slice(0,12).map(x => `<div><strong>${escapeHtml(humanizeTechnicalText(x.code || x.source || ''))}</strong><span>${escapeHtml(dateTime(x.createdAt))}</span></div>`).join('') : '<div class="empty compact-empty">Lifecycle и alert events для post-deploy regression пока не зафиксированы.</div>'}</div>
+    </details>
+    <p class="tiny">Этот блок ничего не переключает автоматически: без auto-rollback, provider switch, feature disable и runtime-control mutation.</p>`;
 
   const codes = c.topCodes || [];
   issues.innerHTML = `<div class="release-monitor-section-head"><strong>Главные сигналы</strong><span>предупреждение/ошибка/критическая</span></div>
