@@ -2993,16 +2993,17 @@ function renderReleaseMonitor() {
   const meta = $('releaseMonitorMeta');
   const kpis = $('releaseMonitorKpis');
   const client = $('releaseMonitorClient');
+  const digest = $('releaseMonitorDigest');
   const issues = $('releaseMonitorIssues');
   const incidents = $('releaseMonitorIncidents');
-  if (!badge || !title || !meta || !kpis || !client || !issues || !incidents) return;
+  if (!badge || !title || !meta || !kpis || !client || !digest || !issues || !incidents) return;
 
   if (state.releaseMonitorLoading) {
     badge.className = 'release-monitor-badge running';
     badge.textContent = 'ПРОВЕРКА';
     title.textContent = 'Собираю операционные события…';
     meta.textContent = 'Без API-Football';
-    kpis.innerHTML = client.innerHTML = issues.innerHTML = incidents.innerHTML = '';
+    kpis.innerHTML = client.innerHTML = digest.innerHTML = issues.innerHTML = incidents.innerHTML = '';
     return;
   }
 
@@ -3012,7 +3013,7 @@ function renderReleaseMonitor() {
     badge.textContent = 'ОЖИДАНИЕ';
     title.textContent = 'Мониторинг выпуска ещё не запускался.';
     meta.textContent = 'Показывает ошибки, восстановление клиента и операционные лимиты.';
-    kpis.innerHTML = client.innerHTML = issues.innerHTML = incidents.innerHTML = '';
+    kpis.innerHTML = client.innerHTML = digest.innerHTML = issues.innerHTML = incidents.innerHTML = '';
     return;
   }
 
@@ -3041,6 +3042,29 @@ function renderReleaseMonitor() {
       <div><span>Ошибки клиента</span><strong>${Number(cc.clientErrors || 0)}</strong></div>
       <div><span>Восстановление сети</span><strong>${Number(cc.networkRecovery || 0)}</strong></div>
     </div>`;
+
+  const dd = r.dailyDigest || {};
+  const dr = dd.latestRun || {};
+  const di = dd.incident || {};
+  const da = dd.alertDelivery || {};
+  const ddState = String(dd.state || 'collecting');
+  const ddStateLabel = ddState === 'healthy' ? 'Норма' : ddState === 'incident' ? 'Инцидент' : ddState === 'watch' ? 'Контроль' : 'Нет данных';
+  const completion = dr.completionRate === null || dr.completionRate === undefined
+    ? '—'
+    : `${(Number(dr.completionRate) * 100).toFixed(1)}%`;
+  const alertStates = da.states || {};
+  digest.innerHTML = `<div class="release-monitor-section-head"><strong>📨 Daily Digest</strong><span>${escapeHtml(ddStateLabel)} · только агрегаты</span></div>
+    ${dd.available ? `<div class="release-client-grid">
+      <div><span>Состояние</span><strong>${escapeHtml(ddStateLabel)}</strong><small>${escapeHtml(humanizeTechnicalText(dr.code || ''))}</small></div>
+      <div><span>Последний запуск</span><strong>${dr.at ? escapeHtml(relativeAge(dr.at)) : '—'}</strong><small>${dr.durationMs ? `${Math.round(Number(dr.durationMs)/1000)} сек` : '—'}</small></div>
+      <div><span>Доставлено</span><strong>${Number(dr.sent || 0)}/${Number(dr.eligible || 0)}</strong><small>completion ${completion}</small></div>
+      <div><span>Backlog</span><strong>${Number(dr.remaining || 0)}</strong><small>deferred ${Number(dr.deferred || 0)}</small></div>
+      <div><span>Sealed claims</span><strong>${Number(dr.sealedClaims || 0)}</strong><small>oldest ${Math.round(Number(dr.oldestActiveClaimAgeMs || 0)/1000)} сек</small></div>
+      <div><span>Ошибки / rate-limit</span><strong>${Number(dr.failed || 0)} / ${Number(dr.rateLimited || 0)}</strong><small>${dr.truncated ? 'scan truncated' : 'scan complete'}</small></div>
+      <div><span>Инцидент</span><strong>${di.active ? 'Активен' : 'Нет'}</strong><small>${escapeHtml(di.incidentId || '—')}</small></div>
+      <div><span>Последнее восстановление</span><strong>${di.lastRecoveryAt ? escapeHtml(relativeAge(di.lastRecoveryAt)) : '—'}</strong><small>история ${Number(di.historyCount || 0)}</small></div>
+      <div><span>Alert delivery</span><strong>${Number(alertStates.sent || 0)} sent</strong><small>retry ${Number(alertStates.retry_pending || 0)} · unknown ${Number(alertStates.unknown || 0)} · terminal ${Number(alertStates.terminal_failed || 0)}</small></div>
+    </div>` : '<div class="empty compact-empty">Daily Digest ещё не создавал операционных событий за доступный период.</div>'}`;
 
   const codes = c.topCodes || [];
   issues.innerHTML = `<div class="release-monitor-section-head"><strong>Главные сигналы</strong><span>предупреждение/ошибка/критическая</span></div>

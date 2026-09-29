@@ -224,3 +224,100 @@ export function dailyDigestIncidentAlertOpsEvents(plan = {}, delivery = {}) {
   }
   return out;
 }
+
+
+function digestLedgerSummary(rows = [], incidentId = '') {
+  const relevant=ledgerRowsFor(rows,incidentId);
+  const states={sending:0,sent:0,retry_pending:0,terminal_failed:0,unknown:0};
+  for (const row of relevant) {
+    const status=String(row?.status || '').trim();
+    if (Object.prototype.hasOwnProperty.call(states,status)) states[status]+=1;
+  }
+  return {
+    rows:relevant.length,
+    states,
+    operationalAttention:states.retry_pending+states.terminal_failed+states.unknown,
+    lastUpdatedAt:relevant.map(row=>iso(row?.updated_at || row?.created_at)).filter(Boolean).sort().at(-1) || null,
+  };
+}
+
+export function summarizeDailyDigestOperationalStatus(rows = [], ledgerRows = [], { nowMs = Date.now() } = {}) {
+  const events=(rows || [])
+    .map(normalizeEvent)
+    .filter(event=>event.at)
+    .sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
+  const latest=events.at(-1) || null;
+  const latestMeta=latest?.metadata || {};
+  const report=buildDailyDigestIncidentReport(rows,{nowMs});
+  const latestHistory=report.history?.[0] || null;
+  const incident=report.activeIncident || latestHistory || null;
+  const ledger=digestLedgerSummary(ledgerRows,incident?.incidentId || '');
+
+  const completionRateRaw=Number(latestMeta.completionRate);
+  const completionRate=Number.isFinite(completionRateRaw)
+    ? Math.max(0,Math.min(1,completionRateRaw))
+    : null;
+  const remaining=Math.max(0,Number(latestMeta.remaining ?? latestMeta.backlog ?? 0));
+  const sealedClaims=Math.max(0,Number(latestMeta.sealedClaims || 0));
+  const failed=Math.max(0,Number(latestMeta.failed || 0));
+  const rateLimited=Math.max(0,Number(latestMeta.rateLimited || 0));
+  const truncated=Boolean(latestMeta.truncated);
+  const oldestActiveClaimAgeMs=Math.max(0,Number(latestMeta.oldestActiveClaimAgeMs || 0));
+
+  let state='collecting';
+  if (report.activeIncident) state='incident';
+  else if (latest && ['warning','error','critical'].includes(latest.severity)) state='watch';
+  else if (latest) state='healthy';
+
+  return {
+    available:Boolean(latest),
+    state,
+    label:state==='incident'
+      ? 'Есть активный инцидент Daily Digest'
+      : state==='watch'
+        ? 'Daily Digest требует контроля'
+        : state==='healthy'
+          ? 'Daily Digest работает штатно'
+          : 'Нет данных о Daily Digest',
+    generatedAt:new Date(Number(nowMs)).toISOString(),
+    latestRun:latest ? {
+      at:latest.at,
+      code:latest.code,
+      severity:latest.severity || 'info',
+      date:dateForEvent(latest),
+      scanned:Number(latestMeta.scanned || 0),
+      eligible:Number(latestMeta.eligible || 0),
+      claimed:Number(latestMeta.claimed || 0),
+      sent:Number(latestMeta.sent || 0),
+      duplicate:Number(latestMeta.duplicate || 0),
+      failed,
+      rateLimited,
+      deferred:Math.max(0,Number(latestMeta.deferred || 0)),
+      remaining,
+      backlog:Math.max(0,Number(latestMeta.backlog ?? remaining)),
+      sealedClaims,
+      expiredClaims:Math.max(0,Number(latestMeta.expiredClaims || 0)),
+      recoveredClaims:Math.max(0,Number(latestMeta.recoveredClaims || 0)),
+      completionRate,
+      oldestActiveClaimAgeMs,
+      truncated,
+      durationMs:Math.max(0,Number((latestMeta.duration ?? latestMeta.durationMs) || 0)),
+    } : null,
+    incident:{
+      state:report.state,
+      active:Boolean(report.activeIncident),
+      incidentId:report.activeIncident?.incidentId || null,
+      startedAt:report.activeIncident?.startedAt || null,
+      recoveredAt:latestHistory?.recoveredAt || null,
+      lastRecoveryAt:report.history.find(item=>item.recoveredAt)?.recoveredAt || null,
+      historyCount:Number(report.history?.length || 0),
+      diagnostics:report.activeIncident?.diagnostics || latestHistory?.diagnostics || null,
+    },
+    alertDelivery:ledger,
+    policy:{
+      automaticRollback:false,
+      automaticFeatureDisable:false,
+      source:'ops_events_and_persistent_alert_ledger',
+    },
+  };
+}
