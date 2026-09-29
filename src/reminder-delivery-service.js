@@ -15,6 +15,7 @@ export function createReminderDeliveryService({
     prematch: 'REMINDER_SENT_PREMATCH',
     kickoff: 'REMINDER_SENT_KICKOFF',
     lineup: 'REMINDER_SENT_LINEUP',
+    important_change: 'REMINDER_SENT_IMPORTANT_CHANGE',
   });
 
   async function recordReminderDelivery(cfg, { row, kind, result, success, disabled = false, uncertain = false }) {
@@ -204,7 +205,7 @@ export function createReminderDeliveryService({
         failed: 1,
         unknown: 0,
         claimed: 0,
-        staleClaims: Number(stale.prematch || 0) + Number(stale.kickoff || 0) + Number(stale.lineup || 0),
+        staleClaims: Number(stale.prematch || 0) + Number(stale.kickoff || 0) + Number(stale.lineup || 0) + Number(stale.important_change || 0),
         staleCleanupFailed: Number(stale.failed || 0),
         truncated: false,
       };
@@ -274,7 +275,7 @@ export function createReminderDeliveryService({
       failed,
       unknown,
       claimed,
-      staleClaims: Number(stale.prematch || 0) + Number(stale.kickoff || 0) + Number(stale.lineup || 0),
+      staleClaims: Number(stale.prematch || 0) + Number(stale.kickoff || 0) + Number(stale.lineup || 0) + Number(stale.important_change || 0),
       staleCleanupFailed: Number(stale.failed || 0),
       truncated,
     };

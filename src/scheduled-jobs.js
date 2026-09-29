@@ -8,6 +8,7 @@ export function createScheduledJobsRuntime({
   settleBacktestDaily,
   processDueReminders,
   processLineupNotifications,
+  processImportantChangeNotifications,
   processPostMatchReturns,
   runProductionMonitor,
   processDailyDigests,
@@ -36,6 +37,9 @@ export function createScheduledJobsRuntime({
     const lineupNotificationsTask = remindersTask
       .catch(() => null)
       .then(() => processLineupNotifications(cfg));
+    const importantChangeTask = lineupNotificationsTask
+      .catch(() => null)
+      .then(() => processImportantChangeNotifications(cfg));
     const digestWindow = isDailyDigestExecutionWindow(scheduledAt);
     const dailyDigestTask = digestWindow
       ? backtestTask.catch(() => null).then(() => processDailyDigests(cfg, scheduledAt))
@@ -46,6 +50,7 @@ export function createScheduledJobsRuntime({
     const tasks = [
       ['reminders', remindersTask],
       ['lineup_notifications', lineupNotificationsTask],
+      ['important_change_notifications', importantChangeTask],
       ['backtest', backtestTask],
       ['post_match_return', postMatchPrerequisite.then(() => processPostMatchReturns(cfg))],
     ];
