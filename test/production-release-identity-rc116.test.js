@@ -9,11 +9,11 @@ test('RC116 defines one production release identity for deployment and smoke', (
   assert.match(workflow, /RELEASE_VERSION: "6\.120\.0-rc144"/);
   assert.match(
     workflow,
-    /command: deploy --keep-vars --message "release=\$\{\{ env\.RELEASE_VERSION \}\} sha=\$\{\{ env\.DEPLOY_SHA \}\}"/
+    /command: deploy --keep-vars --tag "\$\{\{ env\.DEPLOY_SHA \}\}" --message "release=\$\{\{ env\.RELEASE_VERSION \}\} sha=\$\{\{ env\.DEPLOY_SHA \}\}"/
   );
   assert.match(
     workflow,
-    /post-deploy-smoke\.js "\$SMOKE_URL" "\$\{\{ env\.RELEASE_VERSION \}\}"/
+    /post-deploy-smoke\.js "\$SMOKE_URL" "\$\{\{ env\.RELEASE_VERSION \}\}" "\$\{\{ env\.DEPLOY_SHA \}\}"/
   );
 });
 
@@ -21,6 +21,7 @@ test('RC116 Cloudflare version metadata is machine-readable and commit-bound', (
   const deployCommand = workflow.match(/command: deploy[^\n]+/)?.[0] || '';
   assert.match(deployCommand, /release=\$\{\{ env\.RELEASE_VERSION \}\}/);
   assert.match(deployCommand, /sha=\$\{\{ env\.DEPLOY_SHA \}\}/);
+  assert.match(deployCommand, /--tag "\$\{\{ env\.DEPLOY_SHA \}\}"/);
   assert.doesNotMatch(deployCommand, /--message "RC109 /);
 });
 
