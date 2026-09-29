@@ -6188,6 +6188,8 @@ function renderPlayerHub(player = state.currentPlayer) {
       </div>
     </section>
 
+    <div id="playerSeasonPanel"></div>
+
     <section class="panel player-hub-context">
       <div class="center-section-title"><div><h2>Роль в текущем матче</h2><p>Краткий контекст без дополнительного запроса к источнику</p></div></div>
       <div class="player-hub-context-grid">
@@ -6214,11 +6216,138 @@ function openPlayerFromMatch(playerId, side = '') {
     team: { ...(match[key] || {}) },
     match: { ...match },
     source: 'match_center',
+    seasonStatus: 'idle',
+    seasonData: null,
   };
   renderPlayerHub();
   sendProductAction('player_open', current || 'analysisView');
   showView('playerView');
+  void loadPlayerSeasonProfile({ cacheOnly:true });
 }
+
+function playerSeasonMetric(label, value, suffix = '') {
+  const shown = value === null || value === undefined || value === '' ? '—' : `${escapeHtml(String(value))}${suffix}`;
+  return `<div class="player-season-metric"><span>${escapeHtml(label)}</span><strong>${shown}</strong></div>`;
+}
+
+function renderPlayerSeasonProfile() {
+  const root = $('playerSeasonPanel');
+  if (!root) return;
+  const current = state.currentPlayer || {};
+  const status = current.seasonStatus || 'idle';
+  const data = current.seasonData || null;
+  const player = data?.player || null;
+
+  if (status === 'loading') {
+    root.innerHTML = '<section class="panel"><div class="loader">Проверяю сохранённую сезонную статистику…</div></section>';
+    return;
+  }
+
+  if (player) {
+    const games = player.games || {};
+    const goals = player.goals || {};
+    const shots = player.shots || {};
+    const passes = player.passes || {};
+    const tackles = player.tackles || {};
+    const cards = player.cards || {};
+    const league = player.league || {};
+    root.innerHTML = `
+      <section class="panel player-season-panel">
+        <div class="center-section-title"><div><span class="center-priority-label">СЕЗОН</span><h2>Сезонная статистика</h2><p>${escapeHtml(league.name || current.match?.league || '')}${league.season ? ` · ${Number(league.season)}` : ''}</p></div></div>
+        ${data.stale ? `<div class="data-notice stale">⚠️ ${escapeHtml(data.warning || 'Показана сохранённая сезонная статистика.')}</div>` : ''}
+        <div class="player-season-metrics">
+          ${playerSeasonMetric('Матчи', Number(games.appearances || 0))}
+          ${playerSeasonMetric('В старте', Number(games.lineups || 0))}
+          ${playerSeasonMetric('Минуты', Number(games.minutes || 0))}
+          ${playerSeasonMetric('Рейтинг', games.rating === null || games.rating === undefined ? '—' : Number(games.rating).toFixed(1))}
+          ${playerSeasonMetric('Голы', Number(goals.total || 0))}
+          ${playerSeasonMetric('Ассисты', Number(goals.assists || 0))}
+          ${playerSeasonMetric('Удары в створ', Number(shots.on || 0))}
+          ${playerSeasonMetric('Ключевые передачи', Number(passes.key || 0))}
+          ${playerSeasonMetric('Отборы', Number(tackles.total || 0))}
+          ${playerSeasonMetric('Перехваты', Number(tackles.interceptions || 0))}
+          ${playerSeasonMetric('Жёлтые', Number(cards.yellow || 0))}
+          ${playerSeasonMetric('Красные', Number(cards.red || 0))}
+        </div>
+        <p class="tiny">Источник: ${escapeHtml(data.sourceLabel || 'сезонные данные команды')} · ${data.partial ? 'частичное покрытие' : 'доступное покрытие'}</p>
+      </section>`;
+    return;
+  }
+
+  const canLoad = Number(current.team?.id || 0) > 0
+    && Number(current.match?.leagueId || 0) > 0
+    && Number(current.match?.season || 0) > 0;
+  root.innerHTML = `<section class="panel player-season-empty">
+    <div class="center-section-title"><div><span class="center-priority-label">СЕЗОН</span><h2>Сезонная статистика</h2><p>Матчи, минуты, голы, ассисты и другие показатели</p></div></div>
+    <div class="empty compact-empty">${escapeHtml(current.seasonError || (canLoad ? 'Сохранённых сезонных данных пока нет.' : 'Для этого матча сезонный контекст недоступен.'))}</div>
+    ${canLoad ? '<button id="playerSeasonLoadBtn" class="secondary-btn player-season-load" type="button">Загрузить сезонную статистику</button><p class="tiny">Запрос к источнику выполняется только после нажатия и защищён текущими лимитами квоты.</p>' : ''}
+  </section>`;
+  $('playerSeasonLoadBtn')?.addEventListener('click', () => loadPlayerSeasonProfile({ cacheOnly:false }));
+}
+
+async function loadPlayerSeasonProfile({ cacheOnly = true } = {}) {
+  const current = state.currentPlayer;
+  if (!current?.data?.id) return;
+  const teamId = Number(current.team?.id || 0);
+  const leagueId = Number(current.match?.leagueId || 0);
+  const season = Number(current.match?.season || 0);
+  if (!teamId || !leagueId || !season) {
+    current.seasonStatus = 'unavailable';
+    current.seasonError = 'Для этого матча не удалось определить сезон турнира.';
+    renderPlayerSeasonProfile();
+    return;
+  }
+
+  const identity = `${Number(current.data.id)}:${teamId}:${leagueId}:${season}`;
+  current.seasonStatus = 'loading';
+  current.seasonError = '';
+  renderPlayerSeasonProfile();
+
+  const params = new URLSearchParams({
+    teamId:String(teamId),
+    leagueId:String(leagueId),
+    season:String(season),
+    teamName:String(current.team?.name || ''),
+    leagueName:String(current.match?.league || ''),
+    ...(cacheOnly ? { cacheOnly:'1' } : {}),
+  });
+
+  try {
+    const data = await api(`/api/team/intelligence?${params.toString()}`);
+    const active = state.currentPlayer;
+    const activeIdentity = active ? `${Number(active.data?.id || 0)}:${Number(active.team?.id || 0)}:${Number(active.match?.leagueId || 0)}:${Number(active.match?.season || 0)}` : '';
+    if (activeIdentity !== identity) return;
+
+    const rows = Array.isArray(data?.playerStats?.players) ? data.playerStats.players : [];
+    const wantedId = Number(active.data?.id || 0);
+    const wantedName = String(active.data?.name || '').trim().toLowerCase();
+    const player = rows.find(row => Number(row?.id || row?.providerId || 0) === wantedId)
+      || rows.find(row => String(row?.name || '').trim().toLowerCase() === wantedName)
+      || null;
+
+    active.seasonStatus = player ? 'ready' : 'empty';
+    active.seasonData = player ? {
+      player,
+      partial:Boolean(data?.playerStats?.partial),
+      stale:Boolean(data?.stale),
+      warning:String(data?.warning || ''),
+      sourceLabel:String(data?.playerStats?.sourceMeta?.label || data?.playerStats?.sourceMeta?.provider || ''),
+    } : null;
+    active.seasonError = player
+      ? ''
+      : cacheOnly
+        ? 'Сохранённых сезонных данных этого игрока пока нет.'
+        : String(data?.playerStats?.reason || data?.reason || 'Сезонная статистика игрока не найдена.');
+    renderPlayerSeasonProfile();
+  } catch (error) {
+    const active = state.currentPlayer;
+    if (!active) return;
+    active.seasonStatus = 'error';
+    active.seasonError = friendlyErrorMessage(error);
+    renderPlayerSeasonProfile();
+  }
+}
+
 
 
 function freshnessSourceLabel(source) {
