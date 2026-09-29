@@ -20,7 +20,10 @@ test('production monitor exposes non-blocking 15/30/60 post-deploy regression wi
 
 test('post-deploy regression uses historical ops source rather than only current-deploy events',()=>{
   const start=worker.indexOf('const releaseRegression=postDeployRegressionReport');
-  const block=worker.slice(start,start+500);
-  assert.match(block,/source\.items\.filter/);
-  assert.doesNotMatch(block,/releaseItems/);
+  assert.ok(start>=0);
+  const close=worker.indexOf(');',start);
+  assert.ok(close>start);
+  const call=worker.slice(start,close+2);
+  assert.match(call,/source\.items\.filter\(item => item\?\.source !== 'monitor'\)/);
+  assert.doesNotMatch(call,/releaseItems/);
 });
