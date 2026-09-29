@@ -2442,11 +2442,15 @@ function runClientContractSmoke() {
   const checks = [];
   const add = (id, label, pass, detail) => checks.push({ id, label, pass: Boolean(pass), detail: String(detail || '') });
 
+  const surface = document.querySelector('meta[name="matchradar-surface"]')?.content || 'public';
   const requiredIds = [
     'matchesView','searchView','myTeamsView','tournamentView','teamView','playerView','analysisView','historyView','profileView',
     'navMatches','navMyTeams','navHistory','navProfile','aiTrackRecord','playerHub',
     'connectionBanner','connectionRetryBtn','toast',
-    'modelQualityStatus','modelRemediationStatus','modelRemediationDryRunBtn','modelRemediationRunBtn','modelRemediationCircuitResetBtn','modelRemediationDriftQueue','providerAuditStatus','releaseStatus','productionReadinessStatus','diagnosticsStatus','mediaPublisherFixtureId','mediaPublisherGenerateBtn','mediaPublisherResult',
+    ...(surface === 'admin' ? [
+      'modelQualityStatus','modelRemediationStatus','modelRemediationDryRunBtn','modelRemediationRunBtn','modelRemediationCircuitResetBtn','modelRemediationDriftQueue',
+      'providerAuditStatus','releaseStatus','productionReadinessStatus','diagnosticsStatus','mediaPublisherFixtureId','mediaPublisherGenerateBtn','mediaPublisherResult',
+    ] : []),
   ];
   const missing = requiredIds.filter(id => !$(id));
   add('required_dom', 'Основные элементы интерфейса', missing.length === 0, missing.length ? `Нет: ${missing.join(', ')}` : `${requiredIds.length}/${requiredIds.length} элементов.`);
