@@ -51,7 +51,7 @@ import { createReminderDeliveryStore } from './reminder-delivery-store.js';
 import { createReminderDeliveryService } from './reminder-delivery-service.js';
 import { createScheduledJobsRuntime } from './scheduled-jobs.js';
 import { DAILY_DIGEST_POLICY, assessDailyDigestRun, planDailyDigestRecipients, runBoundedDailyDigest } from './daily-digest-delivery.js';
-import { buildDailyDigestIncidentReport, dailyDigestIncidentAlertOpsEvents, formatDailyDigestIncidentAlert, planDailyDigestIncidentAlert, summarizeDailyDigestOperationalStatus, summarizeDailyDigestReliability } from './daily-digest-incidents.js';
+import { assessDailyDigestReliabilitySlo, buildDailyDigestIncidentReport, dailyDigestIncidentAlertOpsEvents, formatDailyDigestIncidentAlert, planDailyDigestIncidentAlert, planDailyDigestReliabilitySloEvent, summarizeDailyDigestOperationalStatus, summarizeDailyDigestReliability } from './daily-digest-incidents.js';
 import { createProviderObservabilityRuntime } from './provider-observability.js';
 import { buildProviderSloIncidentTimeline, providerSloIncidentOpsEvent, providerSloIncidentUpdateOpsEvent } from './provider-slo-incidents.js';
 import {
@@ -15580,6 +15580,39 @@ async function readDailyDigestOpsEvents(cfg, startIso, endIso, limit = 1000) {
   }
 }
 
+
+async function readDailyDigestSloEvents(cfg, startIso, endIso, limit = 100) {
+  const startMs=Date.parse(startIso || '');
+  const endMs=Date.parse(endIso || '');
+  const cap=Math.max(1,Math.min(500,Number(limit || 100)));
+  const fallbackItems=memory.opsEvents.filter(item => {
+    const t=Date.parse(item?.created_at || '');
+    return Number.isFinite(t)
+      && t>=startMs
+      && t<endMs
+      && item?.source==='digest_slo'
+      && item?.event_type==='reliability_slo';
+  }).sort((a,b)=>Date.parse(b?.created_at || '')-Date.parse(a?.created_at || '')).slice(0,cap);
+  const fallback=()=>({persistent:false,items:fallbackItems});
+  if (!hasSupabase(cfg)) return fallback();
+  try {
+    const url=new URL(`${cfg.supabaseUrl}/rest/v1/ops_events`);
+    url.searchParams.set('select','created_at,severity,source,event_type,code,message,endpoint,status,duration_ms,metadata');
+    url.searchParams.set('source','eq.digest_slo');
+    url.searchParams.set('event_type','eq.reliability_slo');
+    url.searchParams.set('created_at',`gte.${startIso}`);
+    url.searchParams.append('created_at',`lt.${endIso}`);
+    url.searchParams.set('order','created_at.desc');
+    url.searchParams.set('limit',String(cap));
+    const r=await fetchWithTimeout(url,{headers:supaHeaders(cfg)},7000,'Supabase daily digest SLO');
+    if (!r.ok) return fallback();
+    const items=await r.json().catch(()=>[]);
+    return {persistent:true,items:Array.isArray(items)?items:[]};
+  } catch {
+    return fallback();
+  }
+}
+
 function releaseTopGroups(items, keyFn, limit = 8) {
   const counts = new Map();
   for (const item of items || []) {
@@ -15662,6 +15695,7 @@ function productionMonitorState(input = {}) {
   const releaseState = String(input.releaseState || 'healthy');
   const providerHealth = String(input.providerHealth || 'waiting');
   const providerSloState = String(input.providerSloState || 'collecting');
+  const dailyDigestSloState = String(input.dailyDigestSloState || 'collecting');
   const telegramDedupeState = String(input.telegramDedupeState || 'healthy');
   const persistent = input.persistent !== false;
   const supabaseAuthFailures = Number(input.supabaseAuthFailures || 0);
@@ -15676,6 +15710,7 @@ function productionMonitorState(input = {}) {
     || !persistent
     || ['critical','warning'].includes(providerHealth)
     || ['watch','incident'].includes(providerSloState)
+    || dailyDigestSloState === 'watch'
   ) {
     return { state: 'watch', label: 'Production работает, но нужен контроль' };
   }
@@ -15698,6 +15733,9 @@ function productionMonitorSelfTest() {
   const providerSloWatch = productionMonitorState({
     supabaseOk:true, schemaOk:true, releaseState:'healthy', providerHealth:'ok', providerSloState:'incident', telegramDedupeState:'healthy', persistent:true,
   });
+  const digestSloWatch = productionMonitorState({
+    supabaseOk:true, schemaOk:true, releaseState:'healthy', providerHealth:'ok', providerSloState:'healthy', dailyDigestSloState:'watch', telegramDedupeState:'healthy', persistent:true,
+  });
   const telegramIncident = productionMonitorState({
     supabaseOk: true, schemaOk: true, releaseState: 'healthy', providerHealth: 'ok', telegramDedupeState:'incident', persistent: true,
   });
@@ -15705,12 +15743,13 @@ function productionMonitorSelfTest() {
     supabaseOk: true, schemaOk: true, supabaseAuthFailures:1, releaseState:'healthy', providerHealth:'ok', telegramDedupeState:'healthy', persistent:true,
   });
   return {
-    pass: healthy.state === 'healthy' && drift.state === 'incident' && schemaUnavailable.state === 'watch' && watch.state === 'watch' && providerSloWatch.state === 'watch' && telegramIncident.state === 'incident' && authIncident.state === 'incident',
+    pass: healthy.state === 'healthy' && drift.state === 'incident' && schemaUnavailable.state === 'watch' && watch.state === 'watch' && providerSloWatch.state === 'watch' && digestSloWatch.state === 'watch' && telegramIncident.state === 'incident' && authIncident.state === 'incident',
     healthy: healthy.state,
     drift: drift.state,
     schemaUnavailable: schemaUnavailable.state,
     watch: watch.state,
     providerSloWatch:providerSloWatch.state,
+    digestSloWatch:digestSloWatch.state,
     telegramIncident: telegramIncident.state,
     authIncident: authIncident.state,
   };
@@ -15734,6 +15773,8 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     providerAlertLedger,
     providerAlertContract,
     providerAlertDestinations,
+    digestReliabilitySource,
+    digestSloSource,
   ] = await Promise.all([
     probeSupabaseConfirmed(cfg),
     probeSupabaseSchemaDriftConfirmed(cfg),
@@ -15744,6 +15785,8 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     readProviderIncidentAlertDeliveries(cfg,168),
     readProviderIncidentAlertDeliveryContract(cfg),
     providerIncidentAlertDestinations(cfg),
+    readDailyDigestOpsEvents(cfg,new Date(now.getTime()-7*24*3600_000).toISOString(),now.toISOString(),1000),
+    readDailyDigestSloEvents(cfg,new Date(now.getTime()-30*24*3600_000).toISOString(),now.toISOString(),100),
   ]);
 
   const releaseItems = source.items.filter(item => {
@@ -15777,6 +15820,13 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     source.items.filter(item => item?.source === 'telegram' && item?.event_type === 'daily_digest'),
     { nowMs:now.getTime() },
   );
+  const digestReliabilitySlo=assessDailyDigestReliabilitySlo(
+    digestReliabilitySource.items,
+    {nowMs:now.getTime(),days:7},
+  );
+  const digestReliabilitySloEvent=options.record !== false
+    ? planDailyDigestReliabilitySloEvent(digestReliabilitySlo,digestSloSource.items)
+    : {action:'none',reason:'read_only_monitor'};
   const digestAlertCandidate = options.record !== false
     ? planDailyDigestIncidentAlert(digestIncident, providerAlertLedger.items, {
         destinations:providerAlertDestinations,
@@ -15807,6 +15857,7 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     releaseState: releaseHealth.state,
     providerHealth: provider.health,
     providerSloState: providerSloIncident.state,
+    dailyDigestSloState:digestReliabilitySlo.state,
     telegramDedupeState: telegramWebhook.state,
     persistent: source.persistent,
   });
@@ -15876,6 +15927,7 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     telegramWebhook,
     dailyDigest:{
       incident:digestIncident,
+      reliabilitySlo:digestReliabilitySlo,
       alerting:{
         configured:Boolean(cfg.botToken && (cfg.adminTelegramIds || []).length),
         persistent:incidentAlertPersistenceReady,
@@ -15892,6 +15944,9 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
       providerAlertLedgerRows:Number(providerAlertLedger.items?.length || 0),
       providerAlertLedgerStatus:String(providerAlertLedger.status || ''),
       providerAlertContractStatus:String(providerAlertContract.status || ''),
+      dailyDigestReliabilityPersistent:Boolean(digestReliabilitySource.persistent),
+      dailyDigestReliabilityEvents:Number(digestReliabilitySource.items?.length || 0),
+      dailyDigestSloPersistent:Boolean(digestSloSource.persistent),
       migrationReady:Boolean(source.migrationReady && providerSloSource.migrationReady && providerAlertLedger.persistent && providerAlertContract.ok),
       supabaseAuthFailuresCurrentRelease:supabaseAuthFailures,
     },
@@ -16036,6 +16091,10 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     await Promise.allSettled(digestAlertEvents.map(event => recordOpsEvent(cfg,event)));
   }
 
+  if (options.record !== false && digestReliabilitySloEvent.action === 'record') {
+    await recordOpsEvent(cfg,digestReliabilitySloEvent).catch(()=>{});
+  }
+
   if (options.record !== false && schemaDrift.recovered) {
     await recordOpsEvent(cfg, {
       severity:'warning',
@@ -16111,6 +16170,8 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
         providerHealth: provider.health || 'waiting',
         providerSloState: providerSloIncident.state,
         providerSloActive: Boolean(providerSloIncident.activeIncident),
+        dailyDigestSloState:digestReliabilitySlo.state,
+        dailyDigestSloCode:digestReliabilitySlo.code,
         telegramDedupeState: telegramWebhook.state,
         telegramStaleClaims: Number(telegramWebhook.staleProcessing || 0),
         telegramFailedClaims: Number(telegramWebhook.failedCurrent || 0),
@@ -16167,6 +16228,10 @@ async function apiReleaseMonitor(request, cfg) {
     reliability:summarizeDailyDigestReliability(
       digestEvents,
       {days:digestDays,nowMs:end.getTime()},
+    ),
+    reliabilitySlo:assessDailyDigestReliabilitySlo(
+      digestEvents,
+      {days:7,nowMs:end.getTime()},
     ),
     historyPersistent:Boolean(digestHistory.persistent),
     historyTruncated:Boolean(digestHistory.truncated),

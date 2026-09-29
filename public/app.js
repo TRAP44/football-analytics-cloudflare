@@ -3049,6 +3049,10 @@ function renderReleaseMonitor() {
   const di = dd.incident || {};
   const da = dd.alertDelivery || {};
   const reliability = dd.reliability || {};
+  const slo = dd.reliabilitySlo || {};
+  const sloState = String(slo.state || 'collecting');
+  const sloStateLabel = sloState === 'healthy' ? 'SLO в норме' : sloState === 'watch' ? 'SLO требует контроля' : 'SLO собирает данные';
+  const sloReasons = Array.isArray(slo.reasons) && slo.reasons.length ? slo.reasons : (slo.reason ? [slo.reason] : []);
   const ddState = String(dd.state || 'collecting');
   const ddStateLabel = ddState === 'healthy' ? 'Норма' : ddState === 'incident' ? 'Инцидент' : ddState === 'watch' ? 'Контроль' : 'Нет данных';
   const completion = dr.completionRate === null || dr.completionRate === undefined
@@ -3079,6 +3083,7 @@ function renderReleaseMonitor() {
     </div>
     <div class="release-monitor-section-head"><strong>Надёжность · ${Number(reliability.days || r.digestDays || 7)} дн.</strong><span>${Number(reliability.sampleDays || 0)}/${Number(reliability.expectedDays || reliability.days || 0)} дней · coverage ${reliabilityCoverage}</span></div>
     <div class="release-client-grid">
+      <div><span>Reliability SLO</span><strong>${escapeHtml(sloStateLabel)}</strong><small>${escapeHtml(humanizeTechnicalText(slo.code || slo.reason || ''))}${sloReasons.length > 1 ? ` · ${sloReasons.length} сигналов` : ''}</small></div>
       <div><span>Completion rate</span><strong>${reliabilityCompletion}</strong><small>${Number(reliability.totals?.sent || 0)}/${Number(reliability.totals?.claimed || 0)} deliveries</small></div>
       <div><span>Backlog</span><strong>${Number(reliability.backlog?.days || 0)} дн.</strong><small>${Number(reliability.backlog?.occurrences || 0)} запусков · max ${Number(reliability.backlog?.maxRecipients || 0)}</small></div>
       <div><span>Rate-limit</span><strong>${Number(reliability.rateLimitDays || 0)} дн.</strong><small>${Number(reliability.totals?.rateLimited || 0)} событий</small></div>
