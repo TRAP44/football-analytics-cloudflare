@@ -51,7 +51,7 @@ import { createReminderDeliveryStore } from './reminder-delivery-store.js';
 import { createReminderDeliveryService } from './reminder-delivery-service.js';
 import { createScheduledJobsRuntime } from './scheduled-jobs.js';
 import { DAILY_DIGEST_POLICY, assessDailyDigestRun, planDailyDigestRecipients, runBoundedDailyDigest } from './daily-digest-delivery.js';
-import { buildDailyDigestIncidentReport, dailyDigestIncidentAlertOpsEvents, formatDailyDigestIncidentAlert, planDailyDigestIncidentAlert } from './daily-digest-incidents.js';
+import { buildDailyDigestIncidentReport, dailyDigestIncidentAlertOpsEvents, formatDailyDigestIncidentAlert, planDailyDigestIncidentAlert, summarizeDailyDigestOperationalStatus } from './daily-digest-incidents.js';
 import { createProviderObservabilityRuntime } from './provider-observability.js';
 import { buildProviderSloIncidentTimeline, providerSloIncidentOpsEvent, providerSloIncidentUpdateOpsEvent } from './provider-slo-incidents.js';
 import {
@@ -16100,7 +16100,10 @@ async function apiReleaseMonitor(request, cfg) {
   const end = new Date();
   const currentStart = new Date(end.getTime() - hours * 3600_000);
   const previousStart = new Date(currentStart.getTime() - hours * 3600_000);
-  const source = await readOpsEventsRange(cfg, previousStart.toISOString(), end.toISOString(), 1000);
+  const [source,digestAlertLedger] = await Promise.all([
+    readOpsEventsRange(cfg, previousStart.toISOString(), end.toISOString(), 1000),
+    readProviderIncidentAlertDeliveries(cfg,336),
+  ]);
   const currentItems = source.items.filter(x => Date.parse(x.created_at || '') >= currentStart.getTime());
   const previousItems = source.items.filter(x => {
     const t = Date.parse(x.created_at || '');
@@ -16109,6 +16112,15 @@ async function apiReleaseMonitor(request, cfg) {
   const current = summarizeReleaseWindow(currentItems, hours);
   const previous = summarizeReleaseWindow(previousItems, hours);
   const health = releaseMonitorHealth(current, source.persistent);
+  const digestEvents=source.items.filter(item =>
+    item?.source === 'telegram'
+    && item?.event_type === 'daily_digest'
+  );
+  const dailyDigest=summarizeDailyDigestOperationalStatus(
+    digestEvents,
+    digestAlertLedger.items,
+    {nowMs:end.getTime()},
+  );
   const incidents = currentItems
     .filter(x => ['warning','error','critical'].includes(String(x.severity || '')))
     .slice(0, 12)
@@ -16139,6 +16151,7 @@ async function apiReleaseMonitor(request, cfg) {
       bootRecoveryDelta: Number(current.client?.bootRecovery || 0) - Number(previous.client?.bootRecovery || 0),
     },
     incidents,
+    dailyDigest,
     runtime: telemetrySnapshot(),
     policy: {
       noFootballApiCalls: true,
