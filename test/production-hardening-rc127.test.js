@@ -45,7 +45,8 @@ test('RC127 uses atomic daily digest delivery claims',()=>{
   assert.match(migration,/create or replace function public\.complete_daily_digest/);
   assert.match(migration,/create or replace function public\.release_daily_digest/);
   assert.match(worker,/async function claimDigestDelivery/);
-  assert.match(worker,/claim:\(row,deliveryDate\)=>claimDigestDelivery\(row,deliveryDate,cfg\)/);\n  assert.match(worker,/owned = Boolean\(await claim\(row, date\)\)/);
+  assert.match(worker,/claim:\(row,deliveryDate\)=>claimDigestDelivery\(row,deliveryDate,cfg\)/);
+  assert.match(worker,/owned = Boolean\(await claim\(row, date\)\)/);
 });
 
 test('RC127 uses full schema fingerprint plus selected compatibility probes',()=>{
