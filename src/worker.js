@@ -50,6 +50,7 @@ import { createUserHistoryService } from './user-history.js';
 import { createReminderDeliveryStore } from './reminder-delivery-store.js';
 import { createReminderDeliveryService } from './reminder-delivery-service.js';
 import { createScheduledJobsRuntime } from './scheduled-jobs.js';
+import { DAILY_DIGEST_POLICY, planDailyDigestRecipients, runBoundedDailyDigest } from './daily-digest-delivery.js';
 import { createProviderObservabilityRuntime } from './provider-observability.js';
 import { buildProviderSloIncidentTimeline, providerSloIncidentOpsEvent, providerSloIncidentUpdateOpsEvent } from './provider-slo-incidents.js';
 import {
@@ -6927,11 +6928,18 @@ async function sendDailyPicks(request,cfg,chatId) {
 
 async function processDailyDigests(cfg,scheduledAt=new Date()) {
   if (!cfg.botToken) return {sent:0,skipped:'bot_token_missing'};
+  const startedAt=Date.now();
   const hour=scheduledAt.getUTCHours();
   const date=scheduledAt.toISOString().slice(0,10);
   const subscriptionPage=await loadBotDigestSubscriptions(cfg);
-  const subscriptions=(subscriptionPage.rows || [])
-    .filter(x=>Number(x.hour_utc ?? 7)===hour && String(x.last_sent_date || '')!==date);
+  const plan=planDailyDigestRecipients(subscriptionPage.rows || [],{
+    date,
+    hourUtc:hour,
+    pageSize:DAILY_DIGEST_POLICY.pageSize,
+    maxRecipients:DAILY_DIGEST_POLICY.maxRecipientsPerRun,
+    truncated:Boolean(subscriptionPage.truncated),
+  });
+
   if (subscriptionPage.truncated) {
     await recordOpsEvent(cfg,{
       severity:'warning',
@@ -6940,42 +6948,89 @@ async function processDailyDigests(cfg,scheduledAt=new Date()) {
       code:'DIGEST_SUBSCRIPTIONS_TRUNCATED',
       message:'Daily digest subscription scan reached the 10000-row safety cap.',
       endpoint:'cron:daily-digest',
-      meta:{loaded:Number(subscriptionPage.rows?.length || 0),eligible:subscriptions.length,cap:10000},
+      meta:{loaded:plan.scanned,eligible:plan.eligible,cap:DAILY_DIGEST_POLICY.scanCap,pages:plan.pages},
     }).catch(()=>null);
   }
-  if (!subscriptions.length) return {sent:0,eligible:0,truncated:Boolean(subscriptionPage.truncated)};
-  const [digest,morningNews]=await Promise.all([currentDailyDigest(cfg),currentMorningFootballNews(cfg)]);
-  let sent=0;
-  for (let i=0;i<subscriptions.length;i+=20) {
-    const batch=subscriptions.slice(i,i+20);
-    const results=await Promise.allSettled(batch.map(async row=>{
-      const claimed=await claimDigestDelivery(row,date,cfg);
-      if (!claimed) return false;
-      try {
-        const matchButtons=(digest.rows || []).slice(0,3).map(match=>[{text:`⚽ ${String(match.homeName || '').slice(0,18)} — ${String(match.awayName || '').slice(0,18)}`,callback_data:`match:menu:${Number(match.fixtureId)}`}]);
-        matchButtons.push([{text:'⚽ Все матчи сегодня',callback_data:'feed:today'}]);
-        await telegramApi('sendMessage',cfg,{
-          chat_id:Number(row.chat_id), parse_mode:'HTML', text:dailyDigestText(digest.rows),
-          reply_markup:{inline_keyboard:matchButtons},
-        });
-        if (morningNews.items?.length) {
-          await telegramApi('sendMessage',cfg,{
-            chat_id:Number(row.chat_id),parse_mode:'HTML',text:morningNewsText(morningNews.items),
-            reply_markup:newsConversionKeyboard(morningNews.items,[[{text:'📰 Новости MatchRadar AI',callback_data:'news:general'}]]),
-            disable_web_page_preview:true,
-          });
-        }
-        await markDigestSent(row,date,cfg);
-        return true;
-      } catch (error) {
-        await releaseDigestDelivery(row,date,cfg);
-        throw error;
-      }
-    }));
-    sent+=results.filter(x=>x.status==='fulfilled' && x.value===true).length;
-    if (i+20<subscriptions.length) await sleepMs(1000);
+
+  if (!plan.pending.length) {
+    const summary={
+      date,scanned:plan.scanned,pages:plan.pages,eligible:plan.eligible,claimed:0,sent:0,
+      duplicate:plan.duplicate,failed:0,rateLimited:0,deferred:0,remaining:0,backlog:0,
+      truncated:Boolean(plan.truncated),duration:Date.now()-startedAt,
+    };
+    await recordOpsEvent(cfg,{
+      severity:plan.truncated?'warning':'info',
+      source:'telegram',
+      eventType:'daily_digest',
+      code:plan.truncated?'DAILY_DIGEST_RUN_TRUNCATED':'DAILY_DIGEST_RUN_EMPTY',
+      message:plan.truncated?'Daily digest run finished with a truncated subscription scan.':'Daily digest run completed with no pending recipients.',
+      endpoint:'cron:daily-digest',
+      meta:summary,
+    }).catch(()=>null);
+    return summary;
   }
-  return {sent,eligible:subscriptions.length,date,news:Number(morningNews.items?.length || 0),truncated:Boolean(subscriptionPage.truncated)};
+
+  // Shared provider-backed payloads are resolved once per cron invocation, never
+  // once per recipient/page. Both helpers retain their existing daily caches.
+  const [digest,morningNews]=await Promise.all([currentDailyDigest(cfg),currentMorningFootballNews(cfg)]);
+  const matchButtons=(digest.rows || []).slice(0,3).map(match=>[{
+    text:`⚽ ${String(match.homeName || '').slice(0,18)} — ${String(match.awayName || '').slice(0,18)}`,
+    callback_data:`match:menu:${Number(match.fixtureId)}`,
+  }]);
+  matchButtons.push([{text:'⚽ Все матчи сегодня',callback_data:'feed:today'}]);
+  const digestText=dailyDigestText(digest.rows);
+  const newsText=morningNews.items?.length ? morningNewsText(morningNews.items) : '';
+  const newsKeyboard=morningNews.items?.length
+    ? newsConversionKeyboard(morningNews.items,[[{text:'📰 Новости MatchRadar AI',callback_data:'news:general'}]])
+    : null;
+
+  const result=await runBoundedDailyDigest({
+    plan,
+    date,
+    claim:(row,deliveryDate)=>claimDigestDelivery(row,deliveryDate,cfg),
+    complete:(row,deliveryDate)=>markDigestSent(row,deliveryDate,cfg),
+    sendDigest:row=>telegramApi('sendMessage',cfg,{
+      chat_id:Number(row.chat_id),
+      parse_mode:'HTML',
+      text:digestText,
+      reply_markup:{inline_keyboard:matchButtons},
+    }),
+    sendNews:newsText
+      ? row=>telegramApi('sendMessage',cfg,{
+          chat_id:Number(row.chat_id),
+          parse_mode:'HTML',
+          text:newsText,
+          reply_markup:newsKeyboard,
+          disable_web_page_preview:true,
+        })
+      : null,
+    sleep:sleepMs,
+    maxRecipients:DAILY_DIGEST_POLICY.maxRecipientsPerRun,
+    concurrency:DAILY_DIGEST_POLICY.concurrency,
+    minSendIntervalMs:DAILY_DIGEST_POLICY.minSendIntervalMs,
+    executionBudgetMs:DAILY_DIGEST_POLICY.executionBudgetMs,
+  });
+
+  const summary={
+    ...result,
+    date,
+    news:Number(morningNews.items?.length || 0),
+    duration:Date.now()-startedAt,
+  };
+  const degraded=Boolean(
+    summary.failed || summary.stateFailed || summary.newsFailed || summary.rateLimited
+    || summary.budgetExhausted || summary.truncated
+  );
+  await recordOpsEvent(cfg,{
+    severity:degraded?'warning':'info',
+    source:'telegram',
+    eventType:'daily_digest',
+    code:degraded?'DAILY_DIGEST_RUN_DEGRADED':summary.remaining?'DAILY_DIGEST_RUN_DEFERRED':'DAILY_DIGEST_RUN_OK',
+    message:`Daily digest: sent ${summary.sent}/${summary.eligible}, deferred ${summary.deferred}, failed ${summary.failed}.`,
+    endpoint:'cron:daily-digest',
+    meta:summary,
+  }).catch(()=>null);
+  return summary;
 }
 
 function telegramHtmlEscape(value = '') {

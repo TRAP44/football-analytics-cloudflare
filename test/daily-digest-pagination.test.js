@@ -25,6 +25,9 @@ test('daily digest surfaces scan truncation instead of silently dropping subscri
   const process=block(worker,'async function processDailyDigests','function telegramHtmlEscape');
   assert.match(process,/DIGEST_SUBSCRIPTIONS_TRUNCATED/);
   assert.match(process,/subscriptionPage\.truncated/);
-  assert.match(process,/cap:10000/);
+  assert.match(process,/cap:DAILY_DIGEST_POLICY\.scanCap/);
   assert.match(process,/truncated:Boolean\(subscriptionPage\.truncated\)/);
+  assert.match(process,/runBoundedDailyDigest/);
+  assert.match(process,/maxRecipients:DAILY_DIGEST_POLICY\.maxRecipientsPerRun/);
+  assert.match(process,/concurrency:DAILY_DIGEST_POLICY\.concurrency/);
 });

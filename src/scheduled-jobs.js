@@ -1,3 +1,5 @@
+import { isDailyDigestExecutionWindow } from './daily-digest-delivery.js';
+
 // Scheduled/background task orchestration boundary.
 // Owns cron task planning, dependency ordering and generic failure observation only.
 // Business task implementations remain injected by the composition root.
@@ -30,7 +32,7 @@ export function createScheduledJobsRuntime({
   function buildScheduledTaskPlan(cfg, scheduledAt) {
     const backtestTask = Promise.resolve().then(() => settleBacktestDaily(cfg));
     const remindersTask = Promise.resolve().then(() => processDueReminders(cfg));
-    const digestWindow = scheduledAt.getUTCHours() === 7 && scheduledAt.getUTCMinutes() < 10;
+    const digestWindow = isDailyDigestExecutionWindow(scheduledAt);
     const dailyDigestTask = digestWindow
       ? backtestTask.catch(() => null).then(() => processDailyDigests(cfg, scheduledAt))
       : null;
