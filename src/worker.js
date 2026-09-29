@@ -1357,20 +1357,37 @@ async function recordOpsEventTask(cfg, event = {}) {
     endpoint: redactOpsString(event.endpoint || '', 160),
     status: Number.isFinite(Number(event.status)) ? Number(event.status) : null,
     duration_ms: Number.isFinite(Number(event.durationMs)) ? Math.max(0, Math.round(Number(event.durationMs))) : null,
+    transition_key: event.transitionKey ? redactOpsString(event.transitionKey, 220) : null,
     metadata: safeOpsMetadata({ ...currentReleaseIdentity(cfg), ...(event.meta || {}), ...currentReleaseIdentity(cfg) }),
   };
   memory.opsEvents.unshift(row);
   memory.opsEvents = memory.opsEvents.slice(0, MAX_MEMORY_OPS_EVENTS);
-  if (!hasSupabase(cfg)) return row;
+  const setPersistenceStatus = status => {
+    Object.defineProperty(row, '_persistenceStatus', {
+      value: status,
+      enumerable: false,
+      configurable: true,
+    });
+  };
+  if (!hasSupabase(cfg)) {
+    setPersistenceStatus('memory_only');
+    return row;
+  }
   try {
     const url = new URL(`${cfg.supabaseUrl}/rest/v1/ops_events`);
+    const prefer = row.transition_key
+      ? 'resolution=ignore-duplicates,return=minimal'
+      : 'return=minimal';
+    if (row.transition_key) url.searchParams.set('on_conflict', 'transition_key');
     await fetchWithTimeout(url, {
       method: 'POST',
-      headers: supaHeaders(cfg, { Prefer: 'return=minimal' }),
+      headers: supaHeaders(cfg, { Prefer: prefer }),
       body: JSON.stringify(row),
     }, 4000, 'Supabase ops event');
+    setPersistenceStatus('persistent');
   } catch {
     // Observability must never become a new failure mode for the product.
+    setPersistenceStatus('failed');
   }
   return row;
 }
@@ -16166,7 +16183,13 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
   memory.productionMonitor = { at: Date.now(), value };
 
   if (options.record !== false && releaseRegressionLifecycle.action === 'record') {
-    await recordOpsEvent(cfg,releaseRegressionLifecycle).catch(()=>{});
+    const lifecycleWrite = await recordOpsEvent(cfg,releaseRegressionLifecycle).catch(() => null);
+    const lifecyclePersistence = String(lifecycleWrite?._persistenceStatus || 'failed');
+    value.release.regression.lifecycle.persistence = lifecyclePersistence;
+    value.observability.postDeployRegressionLifecyclePersistence = lifecyclePersistence;
+    if (lifecyclePersistence === 'failed') {
+      console.error('POST_DEPLOY_REGRESSION_LIFECYCLE_PERSISTENCE_FAILED');
+    }
   }
 
   if (options.record !== false && providerSloFlush?.ok && providerSloIncident.transition) {
