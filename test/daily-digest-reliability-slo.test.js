@@ -119,7 +119,46 @@ test('G. only one watch transition is recorded per date until recovery',()=>{
   );
   assert.equal(first.action,'record');
   assert.equal(second.action,'none');
-  assert.equal(second.reason,'watch_already_recorded');
+  assert.equal(second.reason,'watch_episode_already_recorded');
+});
+
+test('G2. watch episode is not re-recorded on the next UTC day',()=>{
+  const assessment={
+    state:'watch',
+    code:'DAILY_DIGEST_SLO_BACKLOG_REPEATED',
+    reason:'backlog_days',
+    reasons:['backlog_days'],
+    date:'2026-09-30',
+    message:'watch',
+    reliability:{sampleDays:4,totals:{claimed:400},completionRate:1,backlog:{days:2},rateLimitDays:0,incidents:{count:0},degradedDays:0},
+  };
+  const plan=planDailyDigestReliabilitySloEvent(assessment,[{
+    created_at:'2026-09-29T08:15:00Z',
+    severity:'warning',
+    code:'DAILY_DIGEST_SLO_COMPLETION',
+    metadata:{date:'2026-09-29',state:'watch'},
+  }]);
+  assert.equal(plan.action,'none');
+  assert.equal(plan.reason,'watch_episode_already_recorded');
+});
+
+test('G3. cross-day recovery closes the previous watch episode',()=>{
+  const healthy={
+    state:'healthy',
+    code:'DAILY_DIGEST_SLO_OK',
+    reason:'within_thresholds',
+    date:'2026-09-30',
+    reliability:{sampleDays:4,totals:{claimed:400},completionRate:1},
+  };
+  const recovery=planDailyDigestReliabilitySloEvent(healthy,[{
+    created_at:'2026-09-29T08:15:00Z',
+    severity:'warning',
+    code:'DAILY_DIGEST_SLO_COMPLETION',
+    metadata:{date:'2026-09-29',state:'watch'},
+  }]);
+  assert.equal(recovery.action,'record');
+  assert.equal(recovery.code,'DAILY_DIGEST_SLO_RECOVERED');
+  assert.equal(recovery.meta.watchStartedAt,'2026-09-29T08:15:00.000Z');
 });
 
 test('H. recovery is recorded once after a prior watch transition',()=>{
@@ -157,6 +196,7 @@ test('I. production monitor reads filtered SLO events and propagates watch state
   assert.match(worker,/dailyDigestSloState/);
   assert.match(worker,/digestReliabilitySlo\.state/);
   assert.match(worker,/dailyDigestSloWatch/);
+  assert.match(worker,/30\*24\*3600_000/);
 });
 
 test('J. admin monitor renders reliability SLO without user identifiers',()=>{
