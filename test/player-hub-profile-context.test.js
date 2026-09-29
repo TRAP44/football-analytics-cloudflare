@@ -39,6 +39,6 @@ test('Player Hub 4B exposes age number position and squad group without season-s
 test('Player Hub 4B has responsive profile context and launch12 revision', () => {
   assert.match(styles, /Player Hub 4B — profile context/);
   assert.match(styles, /\.player-hub-profile-grid\s*\{/);
-  assert.match(html, /frontend-asset-revision" content="6\.120\.0-launch12"/);
+  assert.match(html, /frontend-asset-revision" content="6\.120\.0-launch13"/);
   assert.doesNotMatch(html, /6\.120\.0-launch11/);
 });
