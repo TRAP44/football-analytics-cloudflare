@@ -30,7 +30,7 @@ function virtualClock() {
   };
 }
 
-function statefulDelivery(seed) {
+function statefulDelivery(seed, { nowMs = Date.parse(`${DATE}T07:05:00.000Z`) } = {}) {
   const state = new Map(seed.map(row => [row.telegram_id, { ...row }]));
   const sent = [];
   const news = [];
@@ -41,14 +41,35 @@ function statefulDelivery(seed) {
     snapshot: () => [...state.values()].sort((a, b) => a.telegram_id - b.telegram_id),
     claim: async (row, date) => {
       const current = state.get(row.telegram_id);
-      if (!current || current.last_sent_date === date || current.delivery_claim_date === date) return false;
+      if (!current || current.last_sent_date === date) return false;
+      const lockedUntil = Date.parse(String(current.delivery_locked_until || ''));
+      const active = current.delivery_claim_date === date && Number.isFinite(lockedUntil) && lockedUntil > nowMs;
+      if (active) return false;
       current.delivery_claim_date = date;
+      current.delivery_claimed_at = new Date(nowMs).toISOString();
+      current.delivery_locked_until = new Date(nowMs + DAILY_DIGEST_POLICY.claimLeaseSeconds * 1000).toISOString();
+      return true;
+    },
+    arm: async (row, date) => {
+      const current = state.get(row.telegram_id);
+      if (!current || current.delivery_claim_date !== date || current.last_sent_date === date) return false;
+      current.delivery_locked_until = `${date}T23:59:59.999Z`;
+      return true;
+    },
+    release: async (row, date) => {
+      const current = state.get(row.telegram_id);
+      if (!current || current.delivery_claim_date !== date || current.last_sent_date === date) return false;
+      current.delivery_claim_date = null;
+      current.delivery_claimed_at = null;
+      current.delivery_locked_until = null;
       return true;
     },
     complete: async (row, date) => {
       const current = state.get(row.telegram_id);
       current.last_sent_date = date;
       current.delivery_claim_date = null;
+      current.delivery_claimed_at = null;
+      current.delivery_locked_until = null;
       return true;
     },
     sendDigest: async row => { sent.push(row.telegram_id); },
@@ -62,6 +83,8 @@ function options(plan, delivery, overrides = {}) {
     plan,
     date: DATE,
     claim: delivery.claim,
+    arm: delivery.arm,
+    release: delivery.release,
     complete: delivery.complete,
     sendDigest: delivery.sendDigest,
     sendNews: delivery.sendNews,
@@ -170,6 +193,90 @@ test('G. one recipient failure does not block the rest and its persistent claim 
   assert.equal(next.duplicate, 1);
 });
 
+test('G2. active claim lease blocks replay while an expired lease becomes recoverable', () => {
+  const now = Date.parse(`${DATE}T07:10:00.000Z`);
+  const source = rows(3);
+  source[0].delivery_claim_date = DATE;
+  source[0].delivery_locked_until = `${DATE}T07:12:00.000Z`;
+  source[1].delivery_claim_date = DATE;
+  source[1].delivery_locked_until = `${DATE}T07:09:59.000Z`;
+
+  const plan = planDailyDigestRecipients(source, { date: DATE, maxRecipients: 10, now });
+
+  assert.equal(plan.activeClaims, 1);
+  assert.equal(plan.expiredClaims, 1);
+  assert.equal(plan.duplicate, 1);
+  assert.deepEqual(plan.pending.map(row => row.telegram_id), [2,3]);
+});
+
+test('G3. expired claim is reclaimed and delivered on a later invocation', async () => {
+  const now = Date.parse(`${DATE}T07:10:00.000Z`);
+  const source = rows(1);
+  source[0].delivery_claim_date = DATE;
+  source[0].delivery_locked_until = `${DATE}T07:09:00.000Z`;
+  const delivery = statefulDelivery(source, { nowMs: now });
+  const plan = planDailyDigestRecipients(delivery.snapshot(), { date: DATE, maxRecipients: 10, now });
+  const result = await runBoundedDailyDigest(options(plan, delivery));
+
+  assert.equal(result.recoveredClaims, 1);
+  assert.equal(result.sent, 1);
+  assert.equal(delivery.state.get(1).last_sent_date, DATE);
+});
+
+test('G4. claim is armed before Telegram send and an arm failure never touches Telegram', async () => {
+  const source = rows(1);
+  const delivery = statefulDelivery(source);
+  let sendCalls = 0;
+  delivery.arm = async () => false;
+  delivery.sendDigest = async () => { sendCalls += 1; };
+  const plan = planDailyDigestRecipients(source, { date: DATE, maxRecipients: 1 });
+  const result = await runBoundedDailyDigest(options(plan, delivery));
+
+  assert.equal(sendCalls, 0);
+  assert.equal(result.armFailed, 1);
+  assert.equal(result.retryableDeferred, 1);
+  assert.equal(result.remaining, 1);
+});
+
+test('G5. confirmed Telegram success with completion failure stays sealed against replay', async () => {
+  const source = rows(1);
+  const delivery = statefulDelivery(source);
+  delivery.complete = async () => { throw new Error('database unavailable'); };
+  const plan = planDailyDigestRecipients(source, { date: DATE, maxRecipients: 1 });
+  const result = await runBoundedDailyDigest(options(plan, delivery));
+
+  assert.equal(result.sent, 1);
+  assert.equal(result.stateFailed, 1);
+  const next = planDailyDigestRecipients(delivery.snapshot(), {
+    date: DATE,
+    maxRecipients: 1,
+    now: Date.parse(`${DATE}T07:30:00.000Z`),
+  });
+  assert.equal(next.pending.length, 0);
+  assert.equal(next.activeClaims, 1);
+});
+
+test('G6. ambiguous Telegram outcome remains sealed and is not replayed after the short claim lease', async () => {
+  const source = rows(1);
+  const delivery = statefulDelivery(source);
+  delivery.sendDigest = async () => {
+    const error = new Error('network outcome unknown');
+    error.code = 'TELEGRAM_NETWORK';
+    throw error;
+  };
+  const plan = planDailyDigestRecipients(source, { date: DATE, maxRecipients: 1 });
+  const result = await runBoundedDailyDigest(options(plan, delivery));
+
+  assert.equal(result.ambiguous, 1);
+  const next = planDailyDigestRecipients(delivery.snapshot(), {
+    date: DATE,
+    maxRecipients: 1,
+    now: Date.parse(`${DATE}T07:30:00.000Z`),
+  });
+  assert.equal(next.pending.length, 0);
+  assert.equal(next.activeClaims, 1);
+});
+
 test('H. Telegram 429 honors retry_after once and never enters an uncontrolled retry loop', async () => {
   const source = rows(1);
   const delivery = statefulDelivery(source);
@@ -200,6 +307,41 @@ test('H. Telegram 429 honors retry_after once and never enters an uncontrolled r
   assert.equal(result.rateLimited, 1);
   assert.equal(result.retries, 1);
   assert.ok(result.durationMs >= 2000);
+});
+
+test('H2. repeated Telegram 429 releases the claim for a later cron slot', async () => {
+  const source = rows(1);
+  const delivery = statefulDelivery(source);
+  const clock = virtualClock();
+  let calls = 0;
+  delivery.sendDigest = async () => {
+    calls += 1;
+    const error = new Error('Too Many Requests');
+    error.code = 'TELEGRAM_RATE_LIMIT';
+    error.status = 429;
+    error.retryAfter = 1;
+    throw error;
+  };
+
+  const plan = planDailyDigestRecipients(source, { date: DATE, maxRecipients: 1 });
+  const result = await runBoundedDailyDigest(options(plan, delivery, {
+    clock,
+    now: clock.now,
+    sleep: clock.sleep,
+    concurrency: 1,
+  }));
+
+  assert.equal(calls, 2);
+  assert.equal(result.rateLimited, 2);
+  assert.equal(result.retryableDeferred, 1);
+  assert.equal(delivery.state.get(1).delivery_claim_date, null);
+
+  const next = planDailyDigestRecipients(delivery.snapshot(), {
+    date: DATE,
+    maxRecipients: 1,
+    now: Date.parse(`${DATE}T07:10:00.000Z`),
+  });
+  assert.equal(next.pending.length, 1);
 });
 
 test('I. global scan cap remains observable and is never reported as a complete scan', () => {
