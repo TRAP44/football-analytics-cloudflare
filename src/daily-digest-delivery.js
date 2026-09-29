@@ -6,6 +6,7 @@ export const DAILY_DIGEST_POLICY = Object.freeze({
   minSendIntervalMs: 50,
   executionBudgetMs: 210000,
   deliveryHourUtc: 7,
+  claimLeaseSeconds: 180,
 });
 
 function asTime(value) {
@@ -24,15 +25,22 @@ export function planDailyDigestRecipients(rows = [], {
   pageSize = DAILY_DIGEST_POLICY.pageSize,
   maxRecipients = DAILY_DIGEST_POLICY.maxRecipientsPerRun,
   truncated = false,
+  now = Date.now(),
 } = {}) {
   const deliveryDate = String(date || '');
+  const nowMs = asTime(now);
   const scannedRows = Array.isArray(rows) ? rows : [];
   const due = scannedRows.filter(row =>
     Number(row?.hour_utc ?? DAILY_DIGEST_POLICY.deliveryHourUtc) === Number(hourUtc)
     && String(row?.last_sent_date || '') !== deliveryDate
   );
-  const alreadyClaimed = due.filter(row => String(row?.delivery_claim_date || '') === deliveryDate);
-  const pending = due.filter(row => String(row?.delivery_claim_date || '') !== deliveryDate);
+  const claimedToday = due.filter(row => String(row?.delivery_claim_date || '') === deliveryDate);
+  const activeClaims = claimedToday.filter(row => {
+    const lockedUntil = Date.parse(String(row?.delivery_locked_until || ''));
+    return Number.isFinite(lockedUntil) && lockedUntil > nowMs;
+  });
+  const expiredClaims = claimedToday.filter(row => !activeClaims.includes(row));
+  const pending = due.filter(row => String(row?.delivery_claim_date || '') !== deliveryDate || expiredClaims.includes(row));
   const boundedMax = Math.max(1, Number(maxRecipients || DAILY_DIGEST_POLICY.maxRecipientsPerRun));
   return {
     rows: pending.slice(0, boundedMax),
@@ -40,7 +48,9 @@ export function planDailyDigestRecipients(rows = [], {
     scanned: scannedRows.length,
     pages: scannedRows.length ? Math.ceil(scannedRows.length / Math.max(1, Number(pageSize || 1))) : 0,
     eligible: due.length,
-    duplicate: alreadyClaimed.length,
+    duplicate: activeClaims.length,
+    activeClaims: activeClaims.length,
+    expiredClaims: expiredClaims.length,
     deferred: Math.max(0, pending.length - boundedMax),
     remaining: Math.max(0, pending.length - boundedMax),
     backlog: Math.max(0, pending.length - boundedMax),
@@ -95,6 +105,8 @@ export async function runBoundedDailyDigest({
   date,
   claim,
   complete,
+  arm,
+  release = null,
   sendDigest,
   sendNews = null,
   sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
@@ -104,8 +116,8 @@ export async function runBoundedDailyDigest({
   minSendIntervalMs = DAILY_DIGEST_POLICY.minSendIntervalMs,
   executionBudgetMs = DAILY_DIGEST_POLICY.executionBudgetMs,
 } = {}) {
-  if (!plan || typeof claim !== 'function' || typeof complete !== 'function' || typeof sendDigest !== 'function') {
-    throw new TypeError('runBoundedDailyDigest requires plan, claim, complete and sendDigest');
+  if (!plan || typeof claim !== 'function' || typeof complete !== 'function' || typeof arm !== 'function' || typeof sendDigest !== 'function') {
+    throw new TypeError('runBoundedDailyDigest requires plan, claim, arm, complete and sendDigest');
   }
 
   const startedAt = Number(now());
@@ -119,6 +131,9 @@ export async function runBoundedDailyDigest({
     claimed: 0,
     sent: 0,
     duplicate: Number(plan.duplicate || 0),
+    activeClaims: Number(plan.activeClaims || 0),
+    expiredClaims: Number(plan.expiredClaims || 0),
+    recoveredClaims: 0,
     failed: 0,
     rateLimited: 0,
     deferred: Math.max(0, Number(plan.pending?.length || candidates.length) - candidates.length),
@@ -130,7 +145,11 @@ export async function runBoundedDailyDigest({
     newsSent: 0,
     newsFailed: 0,
     claimFailed: 0,
+    armFailed: 0,
+    releaseFailed: 0,
     stateFailed: 0,
+    sealed: 0,
+    retryableDeferred: 0,
     ambiguous: 0,
     permanentFailed: 0,
     budgetExhausted: false,
@@ -198,13 +217,45 @@ export async function runBoundedDailyDigest({
         continue;
       }
       stats.claimed += 1;
+      if (String(row?.delivery_claim_date || '') === String(date || '')) stats.recoveredClaims += 1;
+
+      // Arm the claim for the rest of the delivery day before touching Telegram.
+      // A crash before this point is recoverable through the short database lease;
+      // after this point we prefer at-most-once delivery over a possible duplicate.
+      try {
+        const armed = await arm(row, date);
+        if (armed === false) throw new Error('digest claim arm rejected');
+        stats.sealed += 1;
+      } catch {
+        stats.armFailed += 1;
+        stats.failed += 1;
+        stats.retryableDeferred += 1;
+        if (typeof release === 'function') {
+          try {
+            const released = await release(row, date);
+            if (released === false) stats.releaseFailed += 1;
+          } catch {
+            stats.releaseFailed += 1;
+          }
+        }
+        continue;
+      }
 
       const main = await sendWithRateLimit(() => sendDigest(row));
       if (!main.ok) {
-        // Preserve the persistent claim on any transport failure. Retrying an
-        // ambiguous Telegram outcome later could duplicate a message that was
-        // actually accepted before the connection failed.
         stats.failed += 1;
+        // A final 429 is an explicit non-delivery signal, so it is safe to
+        // release the armed claim and let a later cron slot retry. Ambiguous
+        // and permanent outcomes remain sealed for the date to prevent replay.
+        if (main.disposition?.rateLimited && typeof release === 'function') {
+          stats.retryableDeferred += 1;
+          try {
+            const released = await release(row, date);
+            if (released === false) stats.releaseFailed += 1;
+          } catch {
+            stats.releaseFailed += 1;
+          }
+        }
         continue;
       }
 
@@ -230,8 +281,9 @@ export async function runBoundedDailyDigest({
 
   const unvisited = Math.max(0, candidates.length - index);
   const unresolvedClaimErrors = stats.claimFailed;
-  stats.remaining += unvisited + unresolvedClaimErrors;
-  stats.deferred += unvisited + unresolvedClaimErrors;
+  const retryable = stats.retryableDeferred;
+  stats.remaining += unvisited + unresolvedClaimErrors + retryable;
+  stats.deferred += unvisited + unresolvedClaimErrors + retryable;
   stats.backlog = stats.remaining;
   stats.durationMs = elapsed();
   return stats;
