@@ -164,8 +164,7 @@ test('07:00 provider-heavy tasks are serialized without blocking reminders or pr
   });
 
   const tasks = rt.api.buildScheduledTaskPlan({}, new Date('2026-09-29T07:00:00.000Z'));
-  await Promise.resolve();
-  await Promise.resolve();
+  await new Promise(resolve => setImmediate(resolve));
 
   assert.equal(calls.includes('reminders'), true);
   assert.equal(calls.includes('production_monitor'), true);
@@ -173,8 +172,7 @@ test('07:00 provider-heavy tasks are serialized without blocking reminders or pr
   assert.equal(calls.includes('post_match_return:start'), false);
 
   releaseBacktest({ ok: true });
-  await Promise.resolve();
-  await Promise.resolve();
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(calls.includes('daily_digest:start'), true);
   assert.equal(calls.includes('post_match_return:start'), false);
 
