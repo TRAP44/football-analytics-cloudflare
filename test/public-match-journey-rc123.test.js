@@ -24,7 +24,7 @@ test('home-first launch exposes the user profile while admin panels remain gated
   assert.match(html,/id="matchesView" class="view active"/);
   assert.match(html,/id="navProfile" class="nav-item"/);
   assert.match(html,/<small>Профиль<\/small>/);
-  assert.match(html,/class="panel admin-console" data-admin-only hidden/);
+  assert.doesNotMatch(html,/data-admin-only|class="panel admin-console"/);
   assert.match(app,/showView\('matchesView', \{ restore: true \}\)/);
   assert.match(app,/if \(\$\('navProfile'\)\) \$\('navProfile'\)\.hidden=false/);
 });
