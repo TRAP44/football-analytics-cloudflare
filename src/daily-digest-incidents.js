@@ -469,3 +469,204 @@ export function summarizeDailyDigestReliability(rows = [], { days = 7, nowMs = D
     },
   };
 }
+
+
+export const DAILY_DIGEST_RELIABILITY_SLO = Object.freeze({
+  missingRunHourUtc:8,
+  missingRunMinuteUtc:5,
+  minSampleDays:3,
+  minClaimedDeliveries:100,
+  completionRateWatch:0.98,
+  backlogDaysWatch:2,
+  rateLimitDaysWatch:2,
+  incidentDaysWatch:2,
+  degradedDaysWatch:2,
+});
+
+function utcDate(ms) {
+  return new Date(Number(ms)).toISOString().slice(0,10);
+}
+
+function afterMissingRunGrace(nowMs, policy = DAILY_DIGEST_RELIABILITY_SLO) {
+  const now=new Date(Number(nowMs));
+  if (!Number.isFinite(now.getTime())) return false;
+  const minuteOfDay=now.getUTCHours()*60+now.getUTCMinutes();
+  return minuteOfDay >= Number(policy.missingRunHourUtc)*60+Number(policy.missingRunMinuteUtc);
+}
+
+export function assessDailyDigestReliabilitySlo(rows = [], {
+  nowMs = Date.now(),
+  days = 7,
+  policy = DAILY_DIGEST_RELIABILITY_SLO,
+} = {}) {
+  const now=Number(nowMs);
+  const date=utcDate(now);
+  const normalized=(rows || []).map(normalizeEvent).filter(event=>event.at);
+  const todayEvents=normalized.filter(event=>dateForEvent(event)===date && event.code.startsWith('DAILY_DIGEST_'));
+
+  if (afterMissingRunGrace(now,policy) && todayEvents.length===0) {
+    return {
+      state:'watch',
+      severity:'warning',
+      code:'DAILY_DIGEST_SLO_MISSING_RUN',
+      reason:'missing_run',
+      date,
+      message:`Daily Digest has no operational run event for ${date} after the 08:05 UTC grace point.`,
+      reliability:summarizeDailyDigestReliability(rows,{days,nowMs:now}),
+      policy,
+    };
+  }
+
+  const reliability=summarizeDailyDigestReliability(rows,{days,nowMs:now});
+  if (!afterMissingRunGrace(now,policy) && todayEvents.length===0) {
+    return {
+      state:'collecting',
+      severity:'info',
+      code:'DAILY_DIGEST_SLO_COLLECTING',
+      reason:'before_delivery_window_completion',
+      date,
+      message:'Daily Digest reliability SLO is collecting data before the missing-run grace point.',
+      reliability,
+      policy,
+    };
+  }
+
+  const enoughSample=Number(reliability.sampleDays || 0)>=Number(policy.minSampleDays || 0)
+    && Number(reliability.totals?.claimed || 0)>=Number(policy.minClaimedDeliveries || 0);
+  if (!enoughSample) {
+    return {
+      state:'collecting',
+      severity:'info',
+      code:'DAILY_DIGEST_SLO_COLLECTING',
+      reason:'insufficient_sample',
+      date,
+      message:'Daily Digest reliability SLO needs more historical delivery volume before trend thresholds are enforced.',
+      reliability,
+      policy,
+    };
+  }
+
+  const checks=[
+    {
+      hit:Number(reliability.completionRate ?? 1)<Number(policy.completionRateWatch),
+      code:'DAILY_DIGEST_SLO_COMPLETION',
+      reason:'completion_rate',
+      message:`Daily Digest 7-day completion rate is ${(Number(reliability.completionRate || 0)*100).toFixed(2)}%, below the ${(Number(policy.completionRateWatch)*100).toFixed(2)}% watch threshold.`,
+    },
+    {
+      hit:Number(reliability.backlog?.days || 0)>=Number(policy.backlogDaysWatch),
+      code:'DAILY_DIGEST_SLO_BACKLOG_REPEATED',
+      reason:'backlog_days',
+      message:`Daily Digest backlog occurred on ${Number(reliability.backlog?.days || 0)} day(s) in the reliability window.`,
+    },
+    {
+      hit:Number(reliability.rateLimitDays || 0)>=Number(policy.rateLimitDaysWatch),
+      code:'DAILY_DIGEST_SLO_RATE_LIMIT_REPEATED',
+      reason:'rate_limit_days',
+      message:`Daily Digest hit Telegram rate limits on ${Number(reliability.rateLimitDays || 0)} day(s) in the reliability window.`,
+    },
+    {
+      hit:Number(reliability.incidents?.count || 0)>=Number(policy.incidentDaysWatch),
+      code:'DAILY_DIGEST_SLO_INCIDENT_REPEATED',
+      reason:'incident_days',
+      message:`Daily Digest had ${Number(reliability.incidents?.count || 0)} operational incident day(s) in the reliability window.`,
+    },
+    {
+      hit:Number(reliability.degradedDays || 0)>=Number(policy.degradedDaysWatch),
+      code:'DAILY_DIGEST_SLO_DEGRADED_REPEATED',
+      reason:'degraded_days',
+      message:`Daily Digest was degraded on ${Number(reliability.degradedDays || 0)} day(s) in the reliability window.`,
+    },
+  ];
+  const failed=checks.filter(check=>check.hit);
+  if (failed.length) {
+    return {
+      state:'watch',
+      severity:'warning',
+      code:failed[0].code,
+      reason:failed[0].reason,
+      reasons:failed.map(check=>check.reason),
+      date,
+      message:failed.map(check=>check.message).join(' '),
+      reliability,
+      policy,
+    };
+  }
+
+  return {
+    state:'healthy',
+    severity:'info',
+    code:'DAILY_DIGEST_SLO_OK',
+    reason:'within_thresholds',
+    date,
+    message:'Daily Digest reliability SLO is within configured watch thresholds.',
+    reliability,
+    policy,
+  };
+}
+
+export function planDailyDigestReliabilitySloEvent(assessment = {}, priorRows = []) {
+  const date=String(assessment?.date || '');
+  const rows=(priorRows || [])
+    .map(row=>({
+      at:iso(row?.created_at || row?.createdAt || row?.at),
+      severity:String(row?.severity || ''),
+      code:String(row?.code || ''),
+      metadata:row?.metadata && typeof row.metadata==='object' ? row.metadata : {},
+    }))
+    .filter(row=>row.at && String(row.metadata?.date || row.at.slice(0,10))===date)
+    .sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
+  const latest=rows.at(-1) || null;
+
+  if (assessment.state==='watch') {
+    if (latest?.severity==='warning' && latest?.code===assessment.code) {
+      return {action:'none',reason:'same_warning_already_recorded'};
+    }
+    return {
+      action:'record',
+      severity:'warning',
+      source:'digest_slo',
+      eventType:'reliability_slo',
+      code:String(assessment.code || 'DAILY_DIGEST_SLO_WATCH'),
+      message:String(assessment.message || 'Daily Digest reliability SLO requires attention.'),
+      endpoint:'cron:production-monitor',
+      meta:{
+        date,
+        state:'watch',
+        reason:String(assessment.reason || ''),
+        reasons:Array.isArray(assessment.reasons)?assessment.reasons:[],
+        sampleDays:Number(assessment.reliability?.sampleDays || 0),
+        claimed:Number(assessment.reliability?.totals?.claimed || 0),
+        completionRate:assessment.reliability?.completionRate ?? null,
+        backlogDays:Number(assessment.reliability?.backlog?.days || 0),
+        rateLimitDays:Number(assessment.reliability?.rateLimitDays || 0),
+        incidentDays:Number(assessment.reliability?.incidents?.count || 0),
+        degradedDays:Number(assessment.reliability?.degradedDays || 0),
+      },
+    };
+  }
+
+  if (assessment.state==='healthy' && latest?.severity==='warning') {
+    const alreadyRecovered=rows.some(row=>row.code==='DAILY_DIGEST_SLO_RECOVERED' && Date.parse(row.at)>Date.parse(latest.at));
+    if (alreadyRecovered) return {action:'none',reason:'recovery_already_recorded'};
+    return {
+      action:'record',
+      severity:'info',
+      source:'digest_slo',
+      eventType:'reliability_slo',
+      code:'DAILY_DIGEST_SLO_RECOVERED',
+      message:'Daily Digest reliability SLO recovered to within configured watch thresholds.',
+      endpoint:'cron:production-monitor',
+      meta:{
+        date,
+        state:'healthy',
+        recoveredFrom:latest.code,
+        sampleDays:Number(assessment.reliability?.sampleDays || 0),
+        claimed:Number(assessment.reliability?.totals?.claimed || 0),
+        completionRate:assessment.reliability?.completionRate ?? null,
+      },
+    };
+  }
+
+  return {action:'none',reason:assessment.state==='collecting'?'collecting':'healthy_without_transition'};
+}
