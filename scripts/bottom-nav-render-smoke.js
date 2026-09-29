@@ -320,6 +320,10 @@ function assertEdgeCaseFixture(width, theme, snapshot) {
       throw new Error(`${width}px/${theme}: visible long text exceeds two lines in ${text.className}`);
     }
   }
+  const competition=snapshot.clippedCompetition;
+  if (!competition || competition.overflow!=='hidden' || competition.textOverflow!=='ellipsis' || competition.whiteSpace!=='nowrap') {
+    throw new Error(`${width}px/${theme}: competition label does not preserve single-line ellipsis clipping`);
+  }
 }
 
 async function waitForCondition(cdp, expression, label, attempts = 100) {
@@ -434,12 +438,21 @@ async function inspectEdgeCaseFixture(cdp, width, theme) {
         const r=el.getBoundingClientRect(), s=getComputedStyle(el);
         return { className:el.className, height:r.height, width:r.width, visible:s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0 };
       });
-      const longText = [...root.querySelectorAll('.my-team-head strong,.my-team-match span,.history-main>strong,.favorite-team-main strong,.reminder-row strong,.compact-team strong,.competition-name')].map(el => {
+      const longText = [...root.querySelectorAll('.my-team-head strong,.my-team-match span,.history-main>strong,.favorite-team-main strong,.reminder-row strong,.compact-team strong')].map(el => {
         const s=getComputedStyle(el);
         const lineHeight=parseFloat(s.lineHeight) || parseFloat(s.fontSize)*1.3;
         return { className:el.className || el.parentElement?.className || el.tagName, clientWidth:el.clientWidth, scrollWidth:el.scrollWidth, clientHeight:el.clientHeight, scrollHeight:el.scrollHeight, lineHeight };
       });
-      return { fixture:{clientWidth:root.clientWidth,scrollWidth:root.scrollWidth,left:box.left,right:box.right},controls,longText };
+      const competition = root.querySelector('.competition-name');
+      const competitionStyle = competition ? getComputedStyle(competition) : null;
+      const clippedCompetition = competition ? {
+        clientWidth:competition.clientWidth,
+        scrollWidth:competition.scrollWidth,
+        overflow:competitionStyle.overflow,
+        textOverflow:competitionStyle.textOverflow,
+        whiteSpace:competitionStyle.whiteSpace,
+      } : null;
+      return { fixture:{clientWidth:root.clientWidth,scrollWidth:root.scrollWidth,left:box.left,right:box.right},controls,longText,clippedCompetition };
     })()`,
   });
   return evaluated?.result?.value || null;
