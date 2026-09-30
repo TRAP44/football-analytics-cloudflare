@@ -60,6 +60,6 @@ test('frontend revision refreshes the polished Match Center assets',()=>{
   assert.match(html,/frontend-asset-revision" content="6\.120\.0-launch\d+"/);
   assert.match(html,/styles\.css\?v=6\.120\.0-launch\d+/);
   assert.match(html,/styles\/public-shell\.css\?v=6\.120\.0-launch\d+/);
-  assert.match(html,/app\.js\?v=6\.120\.0-launch\d+/);
+  assert.match(html,/app-(?:public|admin)\.js\?v=6\.120\.0-launch\d+/);
   assert.doesNotMatch(html,/6\.120\.0-ui1/);
 });
