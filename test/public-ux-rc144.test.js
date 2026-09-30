@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
+const globalSearchRenderer = fs.readFileSync('public/modules/global-search-renderer.js', 'utf8');
 const viewChrome = fs.readFileSync('public/modules/view-chrome.js', 'utf8');
 const myTeamsRenderer = fs.readFileSync('public/modules/my-teams-renderer.js', 'utf8');
 const uiPreferences = fs.readFileSync('public/modules/ui-preferences.js', 'utf8');
@@ -10,11 +11,15 @@ const html = fs.readFileSync('public/index.html', 'utf8');
 const adminHtml = fs.readFileSync('public/admin.html', 'utf8');
 const css = fs.readFileSync('public/styles.css', 'utf8') + '\n' + fs.readFileSync('public/styles/public-shell.css', 'utf8');
 
-function functionBody(name, nextName) {
-  const start = app.indexOf(`function ${name}`);
-  const end = nextName ? app.indexOf(`function ${nextName}`, start + 1) : -1;
+function functionBodyFrom(source, name, nextName) {
+  const start = source.indexOf(`function ${name}`);
+  const end = nextName ? source.indexOf(`function ${nextName}`, start + 1) : -1;
   assert.ok(start >= 0, `${name} must exist`);
-  return app.slice(start, end >= 0 ? end : undefined);
+  return source.slice(start, end >= 0 ? end : undefined);
+}
+
+function functionBody(name, nextName) {
+  return functionBodyFrom(app, name, nextName);
 }
 
 test('public profile remains available to non-admin users while admin controls stay gated', () => {
@@ -39,7 +44,7 @@ test('appearance choices stay in the user profile and apply immediately', () => 
 });
 
 test('global search shows local results first and bounds the remote wait', () => {
-  const body = functionBody('renderGlobalSearch', 'runGlobalSearch');
+  const body = functionBodyFrom(globalSearchRenderer, 'renderGlobalSearch');
   const run = functionBody('runGlobalSearch', 'openTournamentMeta');
   assert.match(body, /localDiscoveryResults\(query\)/);
   assert.match(body, /Ищем/);
