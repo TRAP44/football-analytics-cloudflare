@@ -1,14 +1,12 @@
 import { createApiClient, initTelegramWebApp, localDate, timeOf, dateTime, dateOnly, relativeAge, phase5SessionToken } from './modules/client-core.js';
 import { CANONICAL_HOME_VIEW, PUBLIC_VIEW_IDS, backTargetForView, telegramBackButtonVisible } from './modules/navigation.js';
+import { createInterfacePreferencesController } from './modules/ui-preferences.js';
 import {
   CLIENT_VERSION,
   CLIENT_API_CONTRACT,
   CLIENT_RELEASE_CHANNEL,
   SUPABASE_SCHEMA_HINT,
-  UI_PREFERENCES_KEY,
   FIRST_RUN_GUIDE_KEY,
-  DEFAULT_UI_PREFERENCES,
-  ACCENT_PALETTES,
   appSurface,
   readUiPreferences,
   MATCH_WATCHLIST_KEY,
@@ -173,28 +171,6 @@ const MATCH_SNAPSHOT_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const $ = id => document.getElementById(id);
 const views = [...PUBLIC_VIEW_IDS];
 
-function preferredAccentMode(theme) {
-  if (theme === 'light') return 'light';
-  if (theme === 'dark' || theme === 'ocean') return 'dark';
-  if (tg?.colorScheme === 'light') return 'light';
-  if (tg?.colorScheme === 'dark') return 'dark';
-  return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-}
-
-function applyAccentPreference(prefs = state.uiPreferences || DEFAULT_UI_PREFERENCES) {
-  const root = document.documentElement;
-  const choice = String(prefs.accent || 'system');
-  root.dataset.accent = choice;
-  if (choice === 'system' || !ACCENT_PALETTES[choice]) {
-    root.style.removeProperty('--accent');
-    root.style.removeProperty('--accent-text');
-    return;
-  }
-  const pair = ACCENT_PALETTES[choice][preferredAccentMode(prefs.theme)] || ACCENT_PALETTES[choice].dark;
-  root.style.setProperty('--accent', pair.accent);
-  root.style.setProperty('--accent-text', pair.text);
-}
-
 function syncBootVersion() {
   const el = $('publicAppVersion');
   if (el) el.textContent = CLIENT_VERSION.split('-')[0];
@@ -277,12 +253,6 @@ function startFirstRunFavorite() {
   renderGlobalSearch();
   showView('searchView');
   setTimeout(() => $('globalSearchInput')?.focus({ preventScroll: true }), 80);
-}
-
-function saveInterfacePreference(key, value) {
-  state.uiPreferences = { ...state.uiPreferences, [key]: value };
-  try { localStorage.setItem(UI_PREFERENCES_KEY, JSON.stringify(state.uiPreferences)); } catch {}
-  applyInterfacePreferences({ announce: true });
 }
 
 const VIEW_CHROME = {
@@ -395,6 +365,19 @@ function toast(message) {
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => el.classList.remove('show'), 2800);
 }
+
+const {
+  applyInterfacePreferences,
+  saveInterfacePreference,
+} = createInterfacePreferencesController({
+  document,
+  window,
+  tg,
+  state,
+  storage: localStorage,
+  toast,
+});
+
 
 function apiErrorCategory(error) {
   if (navigator.onLine === false || error?.status === 0) return 'offline';
