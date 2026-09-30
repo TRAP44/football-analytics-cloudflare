@@ -68,6 +68,7 @@ import { createScheduledJobsRuntime } from './scheduled-jobs.js';
 import { DAILY_DIGEST_POLICY, assessDailyDigestRun, planDailyDigestRecipients, runBoundedDailyDigest } from './daily-digest-delivery.js';
 import { assessDailyDigestReliabilitySlo, buildDailyDigestIncidentReport, dailyDigestIncidentAlertOpsEvents, formatDailyDigestIncidentAlert, planDailyDigestIncidentAlert, planDailyDigestReliabilitySloEvent, summarizeDailyDigestOperationalStatus, summarizeDailyDigestReliability } from './daily-digest-incidents.js';
 import { createProviderObservabilityRuntime } from './provider-observability.js';
+import { analysisTimelineSnapshotRow, buildAiTimeline } from './ai-timeline.js';
 import { buildProviderSloIncidentTimeline, providerSloIncidentOpsEvent, providerSloIncidentUpdateOpsEvent } from './provider-slo-incidents.js';
 import {
   deliverOperationalIncidentAlert,
@@ -88,6 +89,7 @@ const memory = {
   reminders: new Map(),
   preferences: new Map(),
   oddsSnapshots: new Map(),
+  analysisTimelineSnapshots: new Map(),
   refereeMatchHistory: new Map(),
   botDigestSubscriptions: new Map(),
   billingPayments: new Map(),
@@ -166,7 +168,7 @@ const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
 const RELEASE_CHANNEL = 'rc144';
 const RC_NAME = 'RC144';
-const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.19 и примените миграции до v6.21; для существующей примените все доступные миграции из supabase/migrations до v6.21.';
+const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.19 и примените миграции до v6.22; для существующей примените все доступные миграции из supabase/migrations до v6.22.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49';
 
@@ -9327,6 +9329,63 @@ async function getCalibrationProfile(cfg, { force = false } = {}) {
   return profile;
 }
 
+async function captureAnalysisTimelineSnapshot(payload, cfg, { delta = null } = {}) {
+  const row = analysisTimelineSnapshotRow(payload, { delta });
+  if (!row) return false;
+
+  const fixtureId = Number(row.fixture_id || 0);
+  const local = memory.analysisTimelineSnapshots.get(fixtureId) || [];
+  if (!local.some(item => item.snapshot_key === row.snapshot_key)) {
+    local.push(row);
+    local.sort((a, b) => Date.parse(a.captured_at || 0) - Date.parse(b.captured_at || 0));
+    memory.analysisTimelineSnapshots.set(fixtureId, local.slice(-80));
+  }
+
+  if (!hasSupabase(cfg)) return true;
+  try {
+    await supaInsertIgnore(cfg, 'analysis_timeline_snapshots', row, 'snapshot_key');
+    return true;
+  } catch (error) {
+    console.warn('AI timeline snapshot persistence skipped', error?.message || error);
+    return false;
+  }
+}
+
+async function getAnalysisTimelineSnapshots(fixtureId, cfg, limit = 80) {
+  const id = Number(fixtureId || 0);
+  if (!id) return [];
+  if (hasSupabase(cfg)) {
+    try {
+      return await supaSelectMany(cfg, 'analysis_timeline_snapshots', {
+        fixture_id: `eq.${id}`,
+      }, {
+        limit: Math.max(1, Math.min(120, Number(limit || 80))),
+        order: 'captured_at.asc',
+      });
+    } catch (error) {
+      console.warn('AI timeline history read skipped', error?.message || error);
+    }
+  }
+  return (memory.analysisTimelineSnapshots.get(id) || []).slice(-Math.max(1, Math.min(120, Number(limit || 80))));
+}
+
+async function loadFixtureAiTimeline({ fixtureId, match = {}, events = [], cfg } = {}) {
+  const id = Number(fixtureId || 0);
+  if (!id) return buildAiTimeline({ match, events });
+  const [snapshotRows, modelPrediction, oddsSnapshots] = await Promise.all([
+    getAnalysisTimelineSnapshots(id, cfg, 80),
+    loadModelPredictionForFixture(id, cfg).catch(() => null),
+    getOddsSnapshots(id, cfg, 20).catch(() => []),
+  ]);
+  return buildAiTimeline({
+    snapshotRows,
+    modelPrediction,
+    oddsSnapshots,
+    events,
+    match,
+  });
+}
+
 async function captureModelPrediction(payload, cfg) {
   const match = payload?.match;
   const probabilities = payload?.probabilities;
@@ -17126,6 +17185,7 @@ async function probeSupabaseSchemaDrift(cfg) {
     { id: 'cache_provenance', table: 'analysis_cache', columns: ['cache_key','provider','source_updated_at','freshness_status','updated_at'] },
     { id: 'odds_provenance', table: 'odds_snapshots', columns: ['fixture_id','provider','bookmaker_count','source_updated_at'] },
     { id: 'model_provenance', table: 'model_predictions', columns: ['fixture_id','data_provenance','model_inputs_version'] },
+    { id: 'ai_timeline_snapshots', table: 'analysis_timeline_snapshots', columns: ['snapshot_key','fixture_id','captured_at','home_prob','draw_prob','away_prob','causal_relation','provenance'] },
     { id:'provider_incident_alert_delivery', table:'provider_incident_alert_deliveries', columns:['incident_id','transition','alert_key','destination_key','status','attempts','retry_at','unknown_at'] },
   ];
   const [tableChecks,fingerprint,personalWriteGuards,providerIncidentAlertDeliveryContract] = await Promise.all([
@@ -22064,7 +22124,13 @@ async function apiMatchCenter(request, cfg) {
         available:true, usable:true, observed:true, fetchedAt:cached.generatedAt || null,
       },
     };
-    return json({ ...cached, dataFreshness:applyFeatureFreshnessMap(cachedMeta, { mode:cachedMode }), cached: true });
+    const cachedAiTimeline = cached.aiTimeline || await loadFixtureAiTimeline({
+      fixtureId,
+      match: cached.match || { fixtureId },
+      events: Array.isArray(cached.events) ? cached.events : [],
+      cfg,
+    }).catch(() => null);
+    return json({ ...cached, aiTimeline:cachedAiTimeline, dataFreshness:applyFeatureFreshnessMap(cachedMeta, { mode:cachedMode }), cached: true });
   }
 
   let fixture;
@@ -22326,6 +22392,13 @@ async function apiMatchCenter(request, cfg) {
   }) : null;
 
   const prematchAnalysis = live ? await getStaleCache(`fixture:${fixtureId}:v15-availability-quality-rc144`, cfg).catch(() => null) : null;
+  const aiTimeline = await loadFixtureAiTimeline({
+    fixtureId,
+    match: { fixtureId, date: fixture.fixture?.date || '', status, elapsed },
+    events: formattedEvents,
+    cfg,
+  }).catch(() => buildAiTimeline({ match: { fixtureId, date: fixture.fixture?.date || '', status, elapsed }, events: formattedEvents }));
+
   const liveAiCoach = live ? buildLiveAiCoach({
     statistics: analyticalStatistics,
     events: analyticalEvents,
@@ -22372,6 +22445,7 @@ async function apiMatchCenter(request, cfg) {
     livePressure: pressure,
     smartInsights,
     liveAiCoach,
+    aiTimeline,
     postMatchReview,
     playerLeaders,
     lineups,
@@ -23409,6 +23483,7 @@ async function apiAnalyze(request, cfg, user) {
   const effectiveRecheckDelta=recheckDelta || newsImpactRecheckDelta;
   const newsImpact=newsImpactDeltaStatus(staleBefore,payload,effectiveRecheckDelta,{requested:newsImpactRecheck,eligible:newsImpactEligible,performed:shouldPerformRecheck,publishedAt:newsPublishedAt});
   await setCache(cacheKey, fixtureId, payload, cfg, ttl);
+  await captureAnalysisTimelineSnapshot(payload, cfg, { delta: effectiveRecheckDelta });
   await captureModelPrediction(payload, cfg);
   usageCommitted=true;
   await recordHistory(user.id, payload, cfg);

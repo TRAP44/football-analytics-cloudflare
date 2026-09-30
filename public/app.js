@@ -14,6 +14,7 @@ import { createMyTeamsRenderer } from './modules/my-teams-renderer.js';
 import { createJourneyStateModule } from './modules/journey-state.js';
 import { createGlobalSearchRenderer } from './modules/global-search-renderer.js';
 import { renderMatchPulse } from './modules/match-pulse.js';
+import { renderAiTimelineCompact, renderAiTimelineDetails } from './modules/ai-timeline.js';
 import { buildPlayerComparisonCandidates, playerComparisonHtml, samePlayer } from './modules/player-comparison.js';
 import {
   CLIENT_VERSION,
@@ -4752,11 +4753,14 @@ function renderMatchCenter(d) {
 
     ${renderMatchPulse(d)}
 
+    ${renderAiTimelineCompact(d.aiTimeline || {}, m)}
+
     ${d.stale ? `<section class="panel stale-panel"><strong>⚠️ Показан последний сохранённый снимок</strong><p>${escapeHtml(publicText(d.warning || 'Источник данных временно ограничил запросы.'))}</p></section>` : ''}
     ${d.note ? `<section class="panel center-note"><p class="tiny warning">${escapeHtml(publicText(d.note))}</p></section>` : ''}
 
     <div class="match-center-primary" aria-label="Главное о матче">
       ${matchChangeNarrativeHtml(d, m)}
+      ${renderAiTimelineDetails(d.aiTimeline || {}, m)}
       ${live ? liveAiCoachHtml(d.liveAiCoach, m) : ''}
       ${smartInsightsHeroHtml(d.smartInsights, m)}
       ${finished ? postMatchReviewHtml(d.postMatchReview || {}, m) : ''}
