@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
-const app=fs.readFileSync('public/app.js','utf8');
+const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/global-search-renderer.js','utf8');
 const css=fs.readFileSync('public/styles.css','utf8');
 
 test('RC56 discovers team fixtures in one shared backend path',()=> {
