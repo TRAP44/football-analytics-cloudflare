@@ -50,8 +50,11 @@ test('direct launch intent bypasses the guide and is not overwritten by the defa
 });
 
 test('first run guide keeps mobile touch targets and collapses to one column on narrow screens',()=>{
+  assert.match(css,/\.first-run-guide\{[\s\S]*grid-template-columns:minmax\(0,1fr\)/);
   assert.match(css,/\.first-run-guide-actions[\s\S]*grid-template-columns:minmax\(0,1fr\) minmax\(0,1fr\)/);
   assert.match(css,/\.first-run-guide-actions \.primary-btn,[\s\S]*min-height:44px/);
   assert.match(css,/@media\(max-width:375px\)[\s\S]*\.first-run-guide-actions\{grid-template-columns:1fr\}/);
   assert.match(css,/\.first-run-guide-dismiss\{[\s\S]*?min-height:44px/);
+  assert.match(css,/\.miniapp-public-shell \.app-shell\{[\s\S]*--tg-content-safe-area-inset-top/);
+  assert.match(css,/\.miniapp-public-shell \.topbar\{[\s\S]*padding-top:8px/);
 });

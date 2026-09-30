@@ -28,6 +28,10 @@ test('Match Center premium polish keeps the existing data and interaction contra
     'match-center-more',
   ]) assert.ok(center.includes(token),token);
   assert.doesNotMatch(center,/d\.probabilities|probabilityStrip\(/);
+  assert.match(center,/const details = document\.querySelector\('\.match-center-more'\)/);
+  assert.match(center,/details\.open = true/);
+  assert.match(center,/data-center-panel="insights"/);
+  assert.match(center,/scrollIntoView/);
 });
 
 test('AI analysis keeps probabilities decision factors risks and detailed data in that order',()=>{

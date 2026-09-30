@@ -4708,7 +4708,14 @@ function renderMatchCenter(d) {
   `;
 
   bindMatchCenterTabs();
-  document.querySelectorAll('.smart-open-insights').forEach(btn => btn.addEventListener('click', () => setMatchCenterTab('insights', true)));
+  document.querySelectorAll('.smart-open-insights').forEach(btn => btn.addEventListener('click', () => {
+    const details = document.querySelector('.match-center-more');
+    if (details) details.open = true;
+    setMatchCenterTab('insights', false);
+    requestAnimationFrame(() => {
+      document.querySelector('[data-center-panel="insights"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }));
 
   document.querySelectorAll('[data-center-player]').forEach(btn => btn.addEventListener('click', () => {
     openPlayerFromMatch(Number(btn.dataset.centerPlayer || 0), btn.dataset.centerPlayerSide || '');
