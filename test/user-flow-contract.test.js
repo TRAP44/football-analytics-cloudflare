@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
+const navigationShell = fs.readFileSync('public/modules/navigation-shell.js', 'utf8');
 const worker = fs.readFileSync('src/worker.js', 'utf8')+'\n'+fs.readFileSync('src/router.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const css = fs.readFileSync('public/styles.css', 'utf8');
@@ -16,8 +17,8 @@ test('nested screens preserve their real back destination and Telegram BackButto
 });
 
 test('inactive views and tab panels are not focusable or exposed to assistive technology', () => {
-  assert.match(app, /view\.toggleAttribute\('inert', !active\)/);
-  assert.match(app, /view\.setAttribute\('aria-hidden', active \? 'false' : 'true'\)/);
+  assert.match(navigationShell, /view\.toggleAttribute\('inert', !active\)/);
+  assert.match(navigationShell, /view\.setAttribute\('aria-hidden', active \? 'false' : 'true'\)/);
   assert.match(app, /panel\.toggleAttribute\('inert', !active\)/);
   assert.match(app, /btn\.setAttribute\('aria-selected', active \? 'true' : 'false'\)/);
   assert.match(css, /\.view\[hidden\]/);
