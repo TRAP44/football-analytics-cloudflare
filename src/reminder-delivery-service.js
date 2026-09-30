@@ -10,6 +10,7 @@ export function createReminderDeliveryService({
   holdReminderDeliveryUnknown,
   finishReminderDelivery,
   releaseReminderClaim,
+  filterNotificationRecipients,
 }) {
   const successCodeByKind = Object.freeze({
     prematch: 'REMINDER_SENT_PREMATCH',
@@ -211,6 +212,19 @@ export function createReminderDeliveryService({
       };
     }
 
+    const [prematchAudience, kickoffAudience] = typeof filterNotificationRecipients === 'function'
+      ? await Promise.all([
+          filterNotificationRecipients(rows, 'match.prematch', cfg),
+          filterNotificationRecipients(rows, 'match.kickoff', cfg),
+        ])
+      : [
+          { rows, blockedByPreference:0, blockedByEntitlement:0 },
+          { rows, blockedByPreference:0, blockedByEntitlement:0 },
+        ];
+    const reminderKey = row => `${Number(row?.telegram_id || 0)}:${Number(row?.fixture_id || 0)}`;
+    const prematchEligible = new Set((prematchAudience?.rows || []).map(reminderKey));
+    const kickoffEligible = new Set((kickoffAudience?.rows || []).map(reminderKey));
+
     let sent = 0;
     let kickoffSent = 0;
     let failed = 0;
@@ -233,7 +247,7 @@ export function createReminderDeliveryService({
       try {
         // Cron cadence is 5 minutes in v5.6. This window is deliberately wider
         // than one cron interval so a slightly delayed execution still delivers.
-        if (kickoffEnabled && !row.kickoff_notified_at && deltaMinutes <= 4 && deltaMinutes >= -7) {
+        if (kickoffEnabled && kickoffEligible.has(reminderKey(row)) && !row.kickoff_notified_at && deltaMinutes <= 4 && deltaMinutes >= -7) {
           const text = `🔴 Матч начинается\n\n${row.home_name} — ${row.away_name}${row.league_name ? `\n${row.league_name}` : ''}\n\nОткройте приложение: центр матча появится, когда источник данных обновит статус.`;
           const delivery = await deliverClaimedReminder(row, 'kickoff', text, cfg);
           if (delivery.state === 'sent') kickoffSent++;
@@ -244,7 +258,7 @@ export function createReminderDeliveryService({
         }
 
         const lowerBound = kickoffEnabled ? 5 : 0;
-        if (!row.notified_at && deltaMinutes >= lowerBound && deltaMinutes <= remindBefore + 2) {
+        if (prematchEligible.has(reminderKey(row)) && !row.notified_at && deltaMinutes >= lowerBound && deltaMinutes <= remindBefore + 2) {
           const minutes = Math.max(1, Math.round(deltaMinutes));
           const text = `⚽ Скоро матч\n\n${row.home_name} — ${row.away_name}${row.league_name ? `\n${row.league_name}` : ''}\nСтарт примерно через ${minutes} мин.\n\nОткройте приложение для свежего предматчевого анализа.`;
           const delivery = await deliverClaimedReminder(row, 'prematch', text, cfg);
@@ -278,6 +292,8 @@ export function createReminderDeliveryService({
       staleClaims: Number(stale.prematch || 0) + Number(stale.kickoff || 0) + Number(stale.lineup || 0) + Number(stale.important_change || 0),
       staleCleanupFailed: Number(stale.failed || 0),
       truncated,
+      blockedByPreference:Number(prematchAudience?.blockedByPreference || 0) + Number(kickoffAudience?.blockedByPreference || 0),
+      blockedByEntitlement:Number(prematchAudience?.blockedByEntitlement || 0) + Number(kickoffAudience?.blockedByEntitlement || 0),
     };
 
     if (sent || kickoffSent || failed || unknown || summary.staleClaims || summary.staleCleanupFailed || truncated) {
