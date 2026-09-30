@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const app = fs.readFileSync('public/app.js', 'utf8');
 const runtime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const uiPreferences = fs.readFileSync('public/modules/ui-preferences.js', 'utf8');
+const adminOverview = fs.readFileSync('public/modules/admin-overview.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const adminHtml = fs.readFileSync('public/admin.html', 'utf8');
 const css = fs.readFileSync('public/styles.css', 'utf8');
@@ -110,10 +111,10 @@ test('admin overview is gated and uses existing state without new API calls', ()
   for (const id of ['adminOverviewService', 'adminOverviewFeatures', 'adminOverviewSource', 'adminOverviewVersion']) {
     assert.ok(block.includes('id="' + id + '"'), id);
   }
-  const overview = functionBody('renderAdminOverview', 'applyAdminVisibility');
-  assert.doesNotMatch(overview, /\bapi\s*\(/);
-  assert.match(overview, /state\.runtimeControlsAdmin/);
-  assert.match(overview, /state\.provider/);
+  assert.doesNotMatch(adminOverview, /\bapi\s*\(/);
+  assert.match(adminOverview, /state\.runtimeControlsAdmin/);
+  assert.match(adminOverview, /state\.provider/);
+  assert.match(app, /function applyAdminVisibility\(\)/);
 });
 
 test('ordinary profile copy avoids implementation vocabulary', () => {
