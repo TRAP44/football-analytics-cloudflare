@@ -896,39 +896,32 @@ async function loadBetaDashboard(...args) {
   return module?.loadBetaDashboard(...args);
 }
 
-function setBetaFeedbackOpen(open) {
-  const form=$('betaFeedbackForm');
-  const button=$('betaFeedbackOpenBtn');
-  if (!form || !button) return;
-  form.hidden=!open;
-  button.setAttribute('aria-expanded',open?'true':'false');
-  if (open) $('betaFeedbackNote')?.focus();
+let betaFeedbackModule = null;
+let betaFeedbackModulePromise = null;
+async function ensureBetaFeedbackModule() {
+  if (betaFeedbackModule) return betaFeedbackModule;
+  if (!betaFeedbackModulePromise) {
+    betaFeedbackModulePromise = import('./modules/beta-feedback.js').then(({ createBetaFeedbackModule }) => {
+      betaFeedbackModule = createBetaFeedbackModule({
+        state,
+        elementById: $,
+        api,
+        schedule: (fn, ms) => setTimeout(fn, ms),
+      });
+      return betaFeedbackModule;
+    });
+  }
+  return betaFeedbackModulePromise;
 }
 
-async function submitBetaFeedback() {
-  if (state.betaFeedbackSending) return;
-  const category=String($('betaFeedbackCategory')?.value || '');
-  const severity=String($('betaFeedbackSeverity')?.value || '');
-  const note=String($('betaFeedbackNote')?.value || '').trim();
-  const status=$('betaFeedbackStatus');
-  if (note.length<5) {
-    if (status) status.textContent='Кратко опишите, что произошло.';
-    return;
-  }
-  state.betaFeedbackSending=true;
-  if ($('betaFeedbackSendBtn')) $('betaFeedbackSendBtn').disabled=true;
-  if (status) status.textContent='Отправляю…';
-  try {
-    await api('/api/beta-feedback',{method:'POST',body:JSON.stringify({category,severity,note}),timeoutMs:6500,retry:false,dedupe:false});
-    if (status) status.textContent='Спасибо. Сообщение добавлено в beta-наблюдение.';
-    if ($('betaFeedbackNote')) $('betaFeedbackNote').value='';
-    setTimeout(()=>setBetaFeedbackOpen(false),900);
-  } catch (error) {
-    if (status) status.textContent=error.message || 'Не удалось отправить сообщение.';
-  } finally {
-    state.betaFeedbackSending=false;
-    if ($('betaFeedbackSendBtn')) $('betaFeedbackSendBtn').disabled=false;
-  }
+function setBetaFeedbackOpen(...args) {
+  if (betaFeedbackModule) return betaFeedbackModule.setBetaFeedbackOpen(...args);
+  void ensureBetaFeedbackModule().then(module => module?.setBetaFeedbackOpen(...args));
+}
+
+async function submitBetaFeedback(...args) {
+  const module = await ensureBetaFeedbackModule();
+  return module?.submitBetaFeedback(...args);
 }
 
 let adminOverviewModule = null;

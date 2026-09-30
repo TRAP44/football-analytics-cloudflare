@@ -16,6 +16,7 @@ const adminCalibrationControl = fs.readFileSync('public/modules/admin-calibratio
 const adminModelRemediation = fs.readFileSync('public/modules/admin-model-remediation.js', 'utf8');
 const adminRcRegression = fs.readFileSync('public/modules/admin-rc-regression.js', 'utf8');
 const adminOverview = fs.readFileSync('public/modules/admin-overview.js', 'utf8');
+const betaFeedback = fs.readFileSync('public/modules/beta-feedback.js', 'utf8');
 const launchFunnelFrontend = app + '\n' + adminLaunchFunnel;
 const appRuntime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
@@ -182,7 +183,11 @@ if (/\/api\/model-remediation|runModelRemediation|resolveSettlementDriftFromUi|r
 if (!adminCalibrationControl.includes('confirmAction(') || !adminCalibrationControl.includes('refreshModelQuality(true)')) failures.push('Calibration control side effects must remain explicitly injected');
 if (!app.includes("import('./modules/admin-beta-dashboard.js')") || !adminBetaDashboard.includes('export function createAdminBetaDashboardModule')) failures.push('Admin beta dashboard lazy extraction contract is missing');
 if (app.includes('Verified normal users') || app.includes('function betaTimingLabel')) failures.push('Admin beta dashboard implementation leaked back into shared app root');
-if (!app.includes('function setBetaFeedbackOpen(open)') || !app.includes('async function submitBetaFeedback()')) failures.push('Beta feedback lifecycle must remain in the shared composition root');
+if (!fs.existsSync('test/beta-feedback-extraction.test.js')) failures.push('Missing beta feedback extraction regression test');
+if (!app.includes("import('./modules/beta-feedback.js')") || !betaFeedback.includes('export function createBetaFeedbackModule')) failures.push('Beta feedback lazy extraction contract is missing');
+if (app.includes("const category=String($('betaFeedbackCategory')") || app.includes('Спасибо. Сообщение добавлено в beta-наблюдение')) failures.push('Beta feedback implementation leaked back into shared app root');
+if (!betaFeedback.includes("/api/beta-feedback") || !betaFeedback.includes('async function submitBetaFeedback()') || !betaFeedback.includes('function setBetaFeedbackOpen(open)')) failures.push('Beta feedback module contract is incomplete');
+if (/setBetaFeedbackOpen|submitBetaFeedback|betaFeedbackSending|\/api\/beta-feedback/.test(adminBetaDashboard)) failures.push('Admin beta dashboard must not own beta feedback lifecycle');
 if (!app.includes("import('./modules/admin-launch-funnel.js')") || !adminLaunchFunnel.includes('export function createAdminLaunchFunnelModule')) failures.push('Admin launch funnel lazy extraction contract is missing');
 if (app.includes('Собираю first-party воронку') || app.includes('newsImpactRecoveryIncidentSloBreachImpactRanking')) failures.push('Admin launch funnel implementation leaked back into shared app root');
 if (!app.includes("createNavigationShell({") || !navigationShell.includes('export function createNavigationShell')) failures.push('Frontend navigation shell extraction contract is missing');
