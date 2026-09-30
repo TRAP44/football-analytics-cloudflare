@@ -6,6 +6,7 @@ import { createInterfacePreferencesController } from './modules/ui-preferences.j
 import { createFirstRunGuideController } from './modules/first-run-guide.js';
 import { createProfileDataCapabilitiesModule } from './modules/profile-data-capabilities.js';
 import { createProfileAccessStateModule } from './modules/profile-access-state.js';
+import { createJourneyStateModule } from './modules/journey-state.js';
 import {
   CLIENT_VERSION,
   CLIENT_API_CONTRACT,
@@ -178,6 +179,10 @@ const { renderProfileAccessState } = createProfileAccessStateModule({
   elementById: $,
   escapeHtml,
   onRetry: () => openProfileView(),
+});
+const { renderJourneyState } = createJourneyStateModule({
+  elementById: $,
+  escapeHtml,
 });
 
 function syncBootVersion() {
@@ -413,19 +418,6 @@ function sendMatchDataCoverage(data, view = telemetryViewName()) {
     xgAvailable:xgObserved,
     oddsAvailable:oddsObserved,
   },{once:false});
-}
-
-function renderJourneyState(kind, { title = '', message = '', retry = null } = {}) {
-  const root = $('analysis');
-  if (!root) return;
-  const loading = kind === 'loading';
-  root.setAttribute('aria-busy', loading ? 'true' : 'false');
-  root.innerHTML = `<section class="panel journey-state ${loading ? 'is-loading' : 'is-error'}" role="status" aria-live="polite">
-    <span class="journey-state-icon">${loading ? '⏳' : '↻'}</span>
-    <div><strong>${escapeHtml(title || (loading ? 'Загружаем…' : 'Не удалось открыть раздел'))}</strong><p>${escapeHtml(message || (loading ? 'Подготавливаем данные матча.' : 'Попробуйте ещё раз.'))}</p></div>
-    ${!loading && retry ? '<button id="analysisStateRetry" class="primary-setting-btn" type="button">Повторить</button>' : ''}
-  </section>`;
-  if (!loading && retry) $('analysisStateRetry')?.addEventListener('click', retry, { once: true });
 }
 
 function setNetworkMode(mode, options = {}) {
