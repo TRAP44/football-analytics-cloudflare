@@ -1,9 +1,15 @@
+import {
+  DEFAULT_NOTIFICATION_PREFERENCES,
+  normalizeNotificationPreferences,
+} from './smart-notification-policy.js';
+
 export const DEFAULT_PREFERENCES = Object.freeze({
   defaultFilter: 'top',
   reminderMinutes: 30,
   kickoffNotification: true,
   hideYouth: true,
   favoriteFirst: true,
+  notificationPreferences: DEFAULT_NOTIFICATION_PREFERENCES,
 });
 
 export function createUserPreferencesService({
@@ -22,6 +28,9 @@ export function createUserPreferencesService({
       kickoffNotification: row.kickoff_notification ?? row.kickoffNotification ?? DEFAULT_PREFERENCES.kickoffNotification,
       hideYouth: row.hide_youth ?? row.hideYouth ?? DEFAULT_PREFERENCES.hideYouth,
       favoriteFirst: row.favorite_first ?? row.favoriteFirst ?? DEFAULT_PREFERENCES.favoriteFirst,
+      notificationPreferences: normalizeNotificationPreferences(
+        row.notification_preferences ?? row.notificationPreferences ?? DEFAULT_PREFERENCES.notificationPreferences,
+      ),
     };
   }
 
@@ -41,6 +50,7 @@ export function createUserPreferencesService({
       kickoffNotification: input.kickoffNotification ?? current.kickoffNotification,
       hideYouth: input.hideYouth ?? current.hideYouth,
       favoriteFirst: input.favoriteFirst ?? current.favoriteFirst,
+      notificationPreferences: input.notificationPreferences ?? input.notification_preferences ?? current.notificationPreferences,
     });
     const row = {
       telegram_id: Number(userId),
@@ -49,6 +59,7 @@ export function createUserPreferencesService({
       kickoff_notification: Boolean(next.kickoffNotification),
       hide_youth: Boolean(next.hideYouth),
       favorite_first: Boolean(next.favoriteFirst),
+      notification_preferences: next.notificationPreferences,
       updated_at: new Date().toISOString(),
     };
     if (hasSupabase(cfg)) {
