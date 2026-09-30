@@ -26,7 +26,7 @@ test('UI preferences module owns theme accent and button-style behavior', () => 
 });
 
 test('frontend revision refreshes the extracted module graph', () => {
-  assert.match(index, /frontend-asset-revision" content="6\.120\.0-launch19"/);
-  assert.match(index, /\/app\.js\?v=6\.120\.0-launch19/);
-  assert.doesNotMatch(index, /6\.120\.0-launch18/);
+  assert.match(index, /frontend-asset-revision" content="6\.120\.0-launch20"/);
+  assert.match(index, /\/app\.js\?v=6\.120\.0-launch20/);
+  assert.doesNotMatch(index, /6\.120\.0-launch19/);
 });
