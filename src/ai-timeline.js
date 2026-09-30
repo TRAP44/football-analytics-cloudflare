@@ -75,10 +75,10 @@ export function timelineTriggerFromDelta(delta = null) {
     };
   }
   return {
-    category: 'baseline',
+    category: 'model_update',
     relation: 'model_driven',
-    label: 'Базовая оценка',
-    explanation: 'Сохранена базовая оценка модели.',
+    label: 'Обновление модели',
+    explanation: 'Сохранена оценка модели после обновления входных данных.',
   };
 }
 
