@@ -14,7 +14,7 @@ test('production deploy follows successful Quality on main', () => {
 });
 
 test('production deploy is pinned, preserves remote vars and runs smoke checks', () => {
-  assert.match(deploy, /cloudflare\/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0/);
+  assert.match(deploy, /cloudflare\\/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0/);
   assert.match(deploy, /wranglerVersion: "4\.136\.1"/);
   assert.match(deploy, /deploy --keep-vars/);
   assert.match(deploy, /scripts\/post-deploy-smoke\.js/);
