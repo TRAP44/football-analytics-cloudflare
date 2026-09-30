@@ -69,7 +69,7 @@ import { createImportantChangeNotificationService } from './important-change-not
 import { createSmartNotificationAudience } from './smart-notification-audience.js';
 import { createSmartNotificationDeliveryService } from './smart-notification-delivery.js';
 import { SMART_NOTIFICATION_POLICY, publicSmartNotificationCapabilities } from './smart-notification-policy.js';
-import { createSmartNotificationService } from './smart-notification-service.js';
+import { createSmartNotificationService, radarStrongSignalState } from './smart-notification-service.js';
 import { createScheduledJobsRuntime } from './scheduled-jobs.js';
 import { DAILY_DIGEST_POLICY, assessDailyDigestRun, planDailyDigestRecipients, runBoundedDailyDigest } from './daily-digest-delivery.js';
 import { assessDailyDigestReliabilitySlo, buildDailyDigestIncidentReport, dailyDigestIncidentAlertOpsEvents, formatDailyDigestIncidentAlert, planDailyDigestIncidentAlert, planDailyDigestReliabilitySloEvent, summarizeDailyDigestOperationalStatus, summarizeDailyDigestReliability } from './daily-digest-incidents.js';
@@ -1374,6 +1374,9 @@ const {
   maxFixturesPerRun: SMART_NOTIFICATION_POLICY.maxFixturesPerRun,
   aiThresholdPp: SMART_NOTIFICATION_POLICY.aiProbabilityThresholdPp,
   aiCooldownSeconds: SMART_NOTIFICATION_POLICY.aiCooldownSeconds,
+  radarConfidenceThreshold: SMART_NOTIFICATION_POLICY.radarConfidenceThreshold,
+  radarOutcomeThreshold: SMART_NOTIFICATION_POLICY.radarOutcomeThreshold,
+  radarCooldownSeconds: SMART_NOTIFICATION_POLICY.radarCooldownSeconds,
 });
 
 const {
@@ -7104,6 +7107,29 @@ function dailyDigestText(rows = []) {
   return ['🧠 <b>3 матча дня · AI-подборка</b>','',...rows.map((x,i)=>`${i+1}. <b>${x.homeName} — ${x.awayName}</b>\n${x.league} · ${x.live ? '🔴 идёт сейчас' : digestTime(x.date)}`),'','Нажмите на матч — короткая AI-оценка придёт сразу в Telegram. Полный разбор откроется одним нажатием.'].join('\n');
 }
 
+function expandedDailyDigestText(rows = [], radarByFixture = new Map()) {
+  const base=dailyDigestText(rows);
+  const radarLines=(rows || []).slice(0,3).map(match=>{
+    const state=radarByFixture.get(Number(match?.fixtureId || 0));
+    if (!state || state.reason!=='evaluated' || !state.latest || !state.strongest) return '';
+    const sideName=state.strongest.side==='home'
+      ? String(match?.homeName || 'Хозяева')
+      : state.strongest.side==='away'
+        ? String(match?.awayName || 'Гости')
+        : 'Ничья';
+    const confidence=Number(state.latest.confidence);
+    return `• <b>${telegramHtmlEscape(match?.homeName || 'Хозяева')} — ${telegramHtmlEscape(match?.awayName || 'Гости')}</b>: ${telegramHtmlEscape(sideName)} ${Number(state.strongest.probability || 0).toFixed(1)}%${Number.isFinite(confidence) ? ` · Radar ${Math.round(confidence)}/100` : ''}`;
+  }).filter(Boolean);
+  if (!radarLines.length) return base;
+  return [
+    base,
+    '',
+    '📡 <b>PRO · Radar-контекст</b>',
+    ...radarLines,
+    '<i>Контекст построен только по сохранённым снимкам модели; это не гарантия результата.</i>',
+  ].join('\n');
+}
+
 async function getBotDigestSubscription(userId, cfg) {
   const telegramId=Number(userId || 0);
   if (!telegramId) return null;
@@ -7155,7 +7181,8 @@ function publicDigestSettings(row = null, plan = 'FREE', favorites = []) {
       morningNews:true,
       favoritePriority:false,
       customDeliveryTime:false,
-      planSpecificContent:false,
+      planSpecificContent:normalizedPlan!=='FREE',
+      smartRadarContext:normalizedPlan!=='FREE',
     },
     updatedAt:row?.updated_at || null,
   };
@@ -7484,6 +7511,40 @@ async function processDailyDigests(cfg,scheduledAt=new Date()) {
   }]);
   matchButtons.push([{text:'⚽ Все матчи сегодня',callback_data:'feed:today'}]);
   const digestText=dailyDigestText(digest.rows);
+  let expandedDigestText=digestText;
+  let expandedDigestRecipientIds=new Set();
+  let expandedDigestMatches=0;
+  try {
+    const paidDigestAudience=await filterSmartNotificationRecipients(plan.pending || [],'ai.digest_expanded',cfg);
+    expandedDigestRecipientIds=new Set((paidDigestAudience?.rows || []).map(row=>Number(row?.telegram_id || 0)).filter(Boolean));
+    if (expandedDigestRecipientIds.size) {
+      const radarEntries=await Promise.all((digest.rows || []).slice(0,3).map(async match=>{
+        const fixtureId=Number(match?.fixtureId || 0);
+        if (!fixtureId) return [0,null];
+        const snapshots=await getAnalysisTimelineSnapshots(fixtureId,cfg,10).catch(()=>[]);
+        const state=radarStrongSignalState(snapshots,{
+          confidenceThreshold:SMART_NOTIFICATION_POLICY.radarConfidenceThreshold,
+          outcomeThreshold:SMART_NOTIFICATION_POLICY.radarOutcomeThreshold,
+          maxSignalAgeMinutes:SMART_NOTIFICATION_POLICY.maxSignalAgeMinutes,
+          now:scheduledAt.getTime(),
+        });
+        return [fixtureId,state];
+      }));
+      const radarByFixture=new Map(radarEntries.filter(([fixtureId,state])=>fixtureId && state?.reason==='evaluated'));
+      expandedDigestMatches=radarByFixture.size;
+      expandedDigestText=expandedDailyDigestText(digest.rows,radarByFixture);
+    }
+  } catch (error) {
+    await recordOpsEvent(cfg,{
+      severity:'warning',
+      source:'smart_notifications',
+      eventType:'expanded_digest',
+      code:'EXPANDED_DIGEST_CONTEXT_UNAVAILABLE',
+      message:error?.message || error,
+      endpoint:'cron:daily-digest',
+      meta:{date},
+    }).catch(()=>null);
+  }
   const newsText=morningNews.items?.length ? morningNewsText(morningNews.items) : '';
   const newsKeyboard=morningNews.items?.length
     ? newsConversionKeyboard(morningNews.items,[[{text:'📰 Новости MatchRadar AI',callback_data:'news:general'}]])
@@ -7499,7 +7560,7 @@ async function processDailyDigests(cfg,scheduledAt=new Date()) {
     sendDigest:row=>telegramApi('sendMessage',cfg,{
       chat_id:Number(row.chat_id),
       parse_mode:'HTML',
-      text:digestText,
+      text:expandedDigestRecipientIds.has(Number(row?.telegram_id || 0)) ? expandedDigestText : digestText,
       reply_markup:{inline_keyboard:matchButtons},
     }),
     sendNews:newsText
@@ -7527,6 +7588,8 @@ async function processDailyDigests(cfg,scheduledAt=new Date()) {
     expiredClaims:plan.expiredClaims,
     news:Number(morningNews.items?.length || 0),
     newsDegraded:Boolean(morningNews.degraded),
+    expandedDigestRecipients:expandedDigestRecipientIds.size,
+    expandedDigestMatches,
     providerDegraded:Boolean(digest.providerDegraded),
     providerRateLimited:Boolean(digest.providerRateLimited),
     payloadSource:String(digest.source || 'provider'),
