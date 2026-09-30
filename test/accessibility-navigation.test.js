@@ -6,6 +6,7 @@ const app = fs.readFileSync('public/app.js', 'utf8');
 const navigationShell = fs.readFileSync('public/modules/navigation-shell.js', 'utf8');
 const reminderList = fs.readFileSync('public/modules/reminder-list.js', 'utf8');
 const favoriteTeamsRenderer = fs.readFileSync('public/modules/favorite-teams-renderer.js', 'utf8');
+const historyRenderer = fs.readFileSync('public/modules/history-renderer.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const styles = fs.readFileSync('public/styles.css', 'utf8');
 
@@ -28,11 +29,11 @@ test('all interactive tab groups expose keyboard and ARIA relationships', () => 
 });
 
 test('history empty state gives the user a useful next action', () => {
-  assert.match(app, /historyEmptyMatches/);
-  assert.match(app, /Найти матч/);
-  assert.match(app, /historyEmptyRetry/);
-  assert.match(app, /Обновить историю/);
-  assert.match(app, /aria-label="Открыть анализ матча/);
+  assert.match(historyRenderer, /historyEmptyMatches/);
+  assert.match(historyRenderer, /Найти матч/);
+  assert.match(historyRenderer, /historyEmptyRetry/);
+  assert.match(historyRenderer, /Обновить историю/);
+  assert.match(historyRenderer, /aria-label="Открыть анализ матча/);
 });
 
 test('top bar heading can receive programmatic focus', () => {
