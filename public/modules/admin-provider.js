@@ -5,7 +5,7 @@ export function createAdminProviderModule(deps) {
   if (!document.querySelector('link[data-admin-styles]')) {
     const link = document.createElement('link');
     link.rel = 'stylesheet';
-    link.href = '/styles/admin.css?v=6.120.0';
+    link.href = '/styles/admin.css?v=6.120.0-launch24';
     link.dataset.adminStyles = 'true';
     document.head.append(link);
   }
