@@ -8,6 +8,7 @@ import { createProfileDataCapabilitiesModule } from './modules/profile-data-capa
 import { createProfileAccessStateModule } from './modules/profile-access-state.js';
 import { createProfileSummaryModule } from './modules/profile-summary.js';
 import { createFavoriteTeamsRenderer } from './modules/favorite-teams-renderer.js';
+import { createReminderListModule } from './modules/reminder-list.js';
 import { createJourneyStateModule } from './modules/journey-state.js';
 import {
   CLIENT_VERSION,
@@ -200,6 +201,17 @@ const { renderFavoriteTeams } = createFavoriteTeamsRenderer({
   onShowMatches: () => showView('matchesView'),
   onRemoveFavorite: team => toggleFavorite(team),
   onOpenTeam: team => openTeam(team),
+});
+const { renderReminderList } = createReminderListModule({
+  state,
+  elementById: $,
+  querySelectorAll: selector => document.querySelectorAll(selector),
+  escapeHtml,
+  dateTime,
+  recoveryCardHtml,
+  onRetry: () => loadReminders(),
+  onOpenMatches: () => showView('matchesView'),
+  onRemove: fixtureId => handleReminderRemove(fixtureId),
 });
 const { renderJourneyState } = createJourneyStateModule({
   elementById: $,
@@ -1916,80 +1928,32 @@ async function loadReminders() {
   }
 }
 
-function reminderDeliveryBadge(item) {
-  const status = String(item?.deliveryStatus || 'scheduled');
-  if (status === 'kickoff_sent') return '<span class="reminder-delivery-badge sent">✓ Старт отправлен</span>';
-  if (status === 'prematch_sent') return '<span class="reminder-delivery-badge sent">✓ Предматчевое отправлено</span>';
-  if (status === 'retry_pending') return '<span class="reminder-delivery-badge retry">↻ Повтор доставки</span>';
-  return '<span class="reminder-delivery-badge scheduled">● Запланировано</span>';
-}
-
-function renderReminderList() {
-  const el = $('reminderList');
-  if (!el) return;
-  if (state.remindersLoading && !state.remindersLoaded) {
-    el.innerHTML = '<div class="loader compact-loader">Загружаю напоминания…</div>';
-    return;
-  }
-  if (state.remindersLoadError && !state.remindersLoaded) {
-    el.innerHTML = recoveryCardHtml({ title:'Напоминания временно недоступны', message:state.remindersLoadError, retryId:'remindersRetry', compact:true });
-    $('remindersRetry')?.addEventListener('click', loadReminders);
-    return;
-  }
-  if (!state.reminders.length) {
-    const warning = state.remindersLoadError
-      ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.remindersLoadError)} Последний загруженный список напоминаний был пуст.</div>`
-      : '';
-    const retry = state.remindersLoadError
-      ? '<button id="remindersEmptyRetry" class="secondary-btn" type="button">Обновить</button>'
-      : '';
-    el.innerHTML = `${warning}<div class="empty compact-empty profile-empty-state">
-      <strong>Активных напоминаний пока нет</strong>
-      <p>Откройте матч и включите напоминание перед началом.</p>
-      <div class="empty-actions">${retry}<button id="remindersEmptyMatches" class="secondary-btn" type="button">Перейти к матчам</button></div>
-    </div>`;
-    $('remindersEmptyRetry')?.addEventListener('click', loadReminders);
-    $('remindersEmptyMatches')?.addEventListener('click', () => showView('matchesView'));
-    return;
-  }
-  const rows = [...state.reminders].sort((a, b) => Date.parse(a.fixtureDate || 0) - Date.parse(b.fixtureDate || 0));
-  const staleNotice = state.remindersLoadError ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.remindersLoadError)} Показаны последние загруженные напоминания.</div>` : '';
-  el.innerHTML = staleNotice + rows.map(x => `
-    <div class="reminder-row">
-      <div>
-        <strong>${escapeHtml(x.homeName)} — ${escapeHtml(x.awayName)}</strong>
-        <span>${dateTime(x.fixtureDate)} · за ${Number(x.remindBeforeMinutes || 30)} мин.${x.kickoffNotify ? ' · + старт' : ''}</span>
-        ${reminderDeliveryBadge(x)}
-      </div>
-      <button class="reminder-remove" type="button" data-fixture-id="${Number(x.fixtureId)}" ${state.reminderMutations.has(Number(x.fixtureId)) ? 'disabled' : ''}>Отключить</button>
-    </div>`).join('');
-  document.querySelectorAll('.reminder-remove').forEach(btn => btn.addEventListener('click', async () => {
-    const fixtureId = Number(btn.dataset.fixtureId);
-    if (!fixtureId || state.reminderMutations.has(fixtureId)) return;
-    state.reminderMutations.add(fixtureId);
-    syncReminderMutationUi(fixtureId);
-    try {
-      await api(`/api/reminders?fixtureId=${fixtureId}`, { method: 'DELETE' });
-      state.reminders = state.reminders.filter(x => Number(x.fixtureId) !== fixtureId);
-      state.remindersLoaded = true;
-      state.remindersRevision += 1;
-      if (state.profile) {
-        state.profile = {
-          ...state.profile,
-          stats: { ...(state.profile.stats || {}), reminders: state.reminders.length },
-        };
-      }
-      renderReminderList();
-      if (state.currentAnalysis) renderAnalysis(state.currentAnalysis);
-      if (state.profile) renderProfile();
-      toast('Напоминание отключено');
-    } catch (e) {
-      toast(e.message);
-    } finally {
-      state.reminderMutations.delete(fixtureId);
-      syncReminderMutationUi(fixtureId);
+async function handleReminderRemove(fixtureId) {
+  fixtureId = Number(fixtureId);
+  if (!fixtureId || state.reminderMutations.has(fixtureId)) return;
+  state.reminderMutations.add(fixtureId);
+  syncReminderMutationUi(fixtureId);
+  try {
+    await api(`/api/reminders?fixtureId=${fixtureId}`, { method: 'DELETE' });
+    state.reminders = state.reminders.filter(x => Number(x.fixtureId) !== fixtureId);
+    state.remindersLoaded = true;
+    state.remindersRevision += 1;
+    if (state.profile) {
+      state.profile = {
+        ...state.profile,
+        stats: { ...(state.profile.stats || {}), reminders: state.reminders.length },
+      };
     }
-  }));
+    renderReminderList();
+    if (state.currentAnalysis) renderAnalysis(state.currentAnalysis);
+    if (state.profile) renderProfile();
+    toast('Напоминание отключено');
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    state.reminderMutations.delete(fixtureId);
+    syncReminderMutationUi(fixtureId);
+  }
 }
 
 async function savePreferencesFromUi() {
