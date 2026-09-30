@@ -5,6 +5,7 @@ const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
 const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync('src/router.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-transport.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-dedupe.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-links.js', 'utf8') + '\n' + fs.readFileSync('src/auth-user.js', 'utf8') + '\n' + fs.readFileSync('src/cache-runtime.js', 'utf8') + '\n' + fs.readFileSync('src/api-football-gateway.js', 'utf8') + '\n' + fs.readFileSync('src/scheduled-jobs.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
 const viewChrome = fs.readFileSync('public/modules/view-chrome.js', 'utf8');
+const navigationShell = fs.readFileSync('public/modules/navigation-shell.js', 'utf8');
 const adminDiagnostics = fs.readFileSync('public/modules/admin-diagnostics.js', 'utf8');
 const appRuntime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
@@ -135,6 +136,10 @@ if (!app.includes('const photoUrl = safeUrl(user.photoUrl);')) failures.push('pr
 if (!styles.includes('.avatar img')) failures.push('Profile avatar image styling is missing');
 if (!fs.existsSync('test/user-flow-contract.test.js')) failures.push('Missing user-flow regression test');
 if (!fs.existsSync('test/accessibility-navigation.test.js')) failures.push('Missing accessibility navigation regression test');
+if (!fs.existsSync('test/navigation-shell.test.js')) failures.push('Missing navigation shell behavioral regression test');
+if (!app.includes("createNavigationShell({") || !navigationShell.includes('export function createNavigationShell')) failures.push('Frontend navigation shell extraction contract is missing');
+if (navigationShell.includes('stopLiveRefresh') || navigationShell.includes('liveRefreshTimer')) failures.push('Navigation shell must not own live refresh lifecycle');
+if (!app.includes('onLeaveView: ({ from, to, options }) => {')) failures.push('Navigation lifecycle dependency must remain explicitly injected');
 if (!fs.existsSync('test/unified-search.test.js')) failures.push('Missing unified search regression test');
 if (!worker.includes("url.pathname === '/api/history-analysis'")) failures.push('Missing quota-safe history analysis route');
 if (!app.includes('tg.BackButton.onClick(handleBackNavigation)')) failures.push('Telegram BackButton navigation is not wired');
