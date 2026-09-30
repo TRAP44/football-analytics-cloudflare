@@ -6,6 +6,7 @@ import { createInterfacePreferencesController } from './modules/ui-preferences.j
 import { createFirstRunGuideController } from './modules/first-run-guide.js';
 import { createProfileDataCapabilitiesModule } from './modules/profile-data-capabilities.js';
 import { createProfileAccessStateModule } from './modules/profile-access-state.js';
+import { createProfileSummaryModule } from './modules/profile-summary.js';
 import { createJourneyStateModule } from './modules/journey-state.js';
 import {
   CLIENT_VERSION,
@@ -179,6 +180,14 @@ const { renderProfileAccessState } = createProfileAccessStateModule({
   elementById: $,
   escapeHtml,
   onRetry: () => openProfileView(),
+});
+const { renderProfileSummary } = createProfileSummaryModule({
+  state,
+  elementById: $,
+  safeUrl,
+  planLabel,
+  dateOnly,
+  createElement: tag => document.createElement(tag),
 });
 const { renderJourneyState } = createJourneyStateModule({
   elementById: $,
@@ -1200,45 +1209,7 @@ function predictionAdviceLabel(value) {
 
 function renderProfile() {
   if (!state.profile) return;
-  const { user, quota, stats = {} } = state.profile;
-  const profileButtonLabel = $('profileBtn')?.querySelector('span');
-  if (profileButtonLabel) profileButtonLabel.textContent = 'Профиль';
-  else if ($('profileBtn')) $('profileBtn').textContent = 'Профиль';
-  const quotaText = $('quotaText');
-  if (quotaText) {
-    const showQuota = Number(quota.left) <= 3 || state.profileStale;
-    quotaText.hidden = !showQuota;
-    quotaText.textContent = state.profileStale
-      ? 'Показаны сохранённые данные профиля'
-      : `Осталось анализов: ${quota.left} из ${quota.limit}`;
-  }
-  $('profileName').textContent = user.firstName || 'Пользователь';
-  const avatar = $('avatar');
-  if (avatar) {
-    const photoUrl = safeUrl(user.photoUrl);
-    avatar.classList.remove('has-photo');
-    avatar.textContent = '⚽';
-    if (photoUrl) {
-      const img = document.createElement('img');
-      img.src = photoUrl;
-      img.alt = user.firstName ? `Фото профиля ${user.firstName}` : 'Фото профиля';
-      img.loading = 'eager';
-      img.decoding = 'async';
-      img.referrerPolicy = 'no-referrer';
-      img.addEventListener('load', () => avatar.classList.add('has-photo'), { once: true });
-      img.addEventListener('error', () => {
-        avatar.classList.remove('has-photo');
-        avatar.textContent = '⚽';
-      }, { once: true });
-      avatar.replaceChildren(img);
-    }
-  }
-  $('profileUsername').textContent = user.username ? `@${user.username}` : '';
-  $('profilePlan').textContent = planLabel(quota.plan);
-  $('profileUsage').textContent = `${quota.used} / ${quota.limit}`;
-  $('memberSince').textContent = user.createdAt ? `С нами с ${dateOnly(user.createdAt)}` : '';
-  $('favoriteCount').textContent = String(stats.favorites ?? state.favorites.length);
-  $('reminderCount').textContent = String(stats.reminders ?? state.reminders.length);
+  renderProfileSummary();
   const prefs = state.preferences || {};
   if ($('defaultFilterSelect')) $('defaultFilterSelect').value = prefs.defaultFilter || 'top';
   if ($('reminderMinutesSelect')) $('reminderMinutesSelect').value = String(prefs.reminderMinutes || 30);
