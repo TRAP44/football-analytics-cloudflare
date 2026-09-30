@@ -22124,7 +22124,13 @@ async function apiMatchCenter(request, cfg) {
         available:true, usable:true, observed:true, fetchedAt:cached.generatedAt || null,
       },
     };
-    return json({ ...cached, dataFreshness:applyFeatureFreshnessMap(cachedMeta, { mode:cachedMode }), cached: true });
+    const cachedAiTimeline = cached.aiTimeline || await loadFixtureAiTimeline({
+      fixtureId,
+      match: cached.match || { fixtureId },
+      events: Array.isArray(cached.events) ? cached.events : [],
+      cfg,
+    }).catch(() => null);
+    return json({ ...cached, aiTimeline:cachedAiTimeline, dataFreshness:applyFeatureFreshnessMap(cachedMeta, { mode:cachedMode }), cached: true });
   }
 
   let fixture;
