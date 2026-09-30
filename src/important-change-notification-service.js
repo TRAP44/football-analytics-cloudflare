@@ -4,6 +4,7 @@ export function createImportantChangeNotificationService({
   supaSelectPaged,
   getOddsSnapshots,
   deliverClaimedReminder,
+  filterNotificationRecipients,
   recordOpsEvent,
   maxFixturesPerRun = 12,
   thresholdPp = 5,
@@ -132,7 +133,11 @@ export function createImportantChangeNotificationService({
     }
 
     const rows = Array.isArray(page?.rows) ? page.rows : [];
-    const groups = groupByFixture(rows);
+    const audience = typeof filterNotificationRecipients === 'function'
+      ? await filterNotificationRecipients(rows, 'market.movement', cfg)
+      : { rows, blockedByPreference:0, blockedByEntitlement:0 };
+    const eligibleRows = Array.isArray(audience?.rows) ? audience.rows : [];
+    const groups = groupByFixture(eligibleRows);
     const fixtures = [...groups.entries()].slice(0, Math.max(1, Number(maxFixturesPerRun || 12)));
     const truncated = Boolean(page?.truncated || groups.size > fixtures.length);
 
@@ -171,6 +176,9 @@ export function createImportantChangeNotificationService({
     const summary = {
       ok:!(failed || unknown || truncated),
       checked:rows.length,
+      eligible:eligibleRows.length,
+      blockedByPreference:Number(audience?.blockedByPreference || 0),
+      blockedByEntitlement:Number(audience?.blockedByEntitlement || 0),
       fixturesChecked:fixtures.length,
       significant,
       sent,
