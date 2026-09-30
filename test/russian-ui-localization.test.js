@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const app = fs.readFileSync('public/app.js', 'utf8') + '\n' + fs.readFileSync('public/modules/admin-provider.js', 'utf8') + '\n' + fs.readFileSync('public/modules/admin-model-quality.js', 'utf8');
+const app = fs.readFileSync('public/app.js', 'utf8') + '\n' + fs.readFileSync('public/modules/admin-provider.js', 'utf8') + '\n' + fs.readFileSync('public/modules/admin-model-quality.js', 'utf8') + '\n' + fs.readFileSync('public/modules/admin-model-remediation-view.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const adminHtml = fs.readFileSync('public/admin.html', 'utf8');
 const worker = fs.readFileSync('src/worker.js', 'utf8');
