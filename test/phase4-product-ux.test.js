@@ -33,9 +33,11 @@ test('Home keeps frequent match filters visible and secondary filters behind one
   assert.match(css,/MatchRadar Home Filter Simplification — fast choices first/);
 });
 
-test('new users get a simple favorite-team CTA on Home without profile setup',()=>{
-  assert.match(html,/id="homeFavoriteBtn"/);
-  assert.match(html,/Добавить любимую команду/);
+test('new users use Search or My Teams without a duplicate favorite-team promo on Home',()=>{
+  assert.doesNotMatch(html,/id="homeFavoriteBtn"/);
+  assert.doesNotMatch(html,/Сделайте ленту своей/);
+  assert.match(html,/id="homeSearchBtn"/);
+  assert.match(html,/id="navMyTeams"/);
   assert.match(myTeamsRenderer,/function renderMyTeams\(\)/);
 });
 test('My Teams reuses favorites and existing match catalog',()=>{

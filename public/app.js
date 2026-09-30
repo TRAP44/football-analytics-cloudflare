@@ -2793,22 +2793,11 @@ function renderRadarFeed() {
 
 function renderDailyOverview() {
   const root = $('dailyOverview');
-  const liveCard = $('homeLiveCard');
   const personalCard = $('homePersonalMatchBtn');
-  const teamsCard = $('homeTeamsBtn');
-  const onboarding = $('homeFavoriteBtn');
   if (!root) return;
 
-  const visible = state.matches.filter(match => state.preferences?.hideYouth === false || !match.youthReserve);
-  const liveCount = visible.filter(match => match.live).length;
-  const favoriteCount = state.favorites.length;
   const personalItem = homePersonalMatch();
 
-  if (liveCard) {
-    liveCard.hidden = liveCount <= 0;
-    const text = $('homeLiveText');
-    if (text) text.textContent = russianCountLabel(liveCount, 'матч идёт сейчас', 'матча идут сейчас', 'матчей идут сейчас');
-  }
   if (personalCard) {
     personalCard.hidden = !personalItem;
     personalCard.dataset.personalFixture = personalItem ? String(Number(personalItem.match.fixtureId || 0)) : '';
@@ -2820,15 +2809,8 @@ function renderDailyOverview() {
     if (text) text.textContent = personalItem ? `${personalItem.match.home?.name || ''} — ${personalItem.match.away?.name || ''}` : 'Персональный матч';
     if (meta) meta.textContent = homePersonalMatchMeta(personalItem);
   }
-  if (teamsCard) {
-    teamsCard.hidden = favoriteCount <= 0;
-    const text = $('homeTeamsText');
-    if (text) text.textContent = russianCountLabel(favoriteCount, 'любимая команда', 'любимые команды', 'любимых команд');
-  }
-  if (onboarding) onboarding.hidden = favoriteCount > 0;
-  root.hidden = false;
+  root.hidden = !personalItem;
 }
-
 function filteredMatches() {
   const q = state.search.trim().toLowerCase();
   const fav = favoriteSet();
@@ -6264,14 +6246,6 @@ document.querySelectorAll('.filter-btn').forEach(btn => {
   });
 });
 
-document.querySelectorAll('[data-quick-filter]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    state.filter = btn.dataset.quickFilter || 'top';
-    syncFilterButtons();
-    renderMatches();
-    $('matchesTitle')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
-});
 $('homePersonalMatchBtn')?.addEventListener('click', event => {
   const button = event.currentTarget;
   const fixtureId = Number(button.dataset.personalFixture || 0);
@@ -6284,16 +6258,6 @@ $('homePersonalMatchBtn')?.addEventListener('click', event => {
     if (saved) openHistoryAnalysis(fixtureId, button);
     else analyzeMatch(fixtureId, button);
   }
-});
-$('homeTeamsBtn')?.addEventListener('click', () => {
-  renderMyTeams();
-  showView('myTeamsView');
-});
-$('homeFavoriteBtn')?.addEventListener('click', () => {
-  renderDiscoveryHome();
-  renderGlobalSearch();
-  showView('searchView');
-  setTimeout(() => $('globalSearchInput')?.focus({ preventScroll: true }), 80);
 });
 document.querySelectorAll('[data-theme-choice]').forEach(button => {
   button.addEventListener('click', () => saveInterfacePreference('theme', button.dataset.themeChoice || 'system'));

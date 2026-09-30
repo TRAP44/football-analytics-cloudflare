@@ -6,12 +6,12 @@
   <meta name="theme-color" content="#07111f" />
   <meta name="description" content="MatchRadar — AI-футбольный ассистент в Telegram: матчи, команды, LIVE и понятный разбор ключевых факторов." />
   <meta name="matchradar-surface" content="admin" />
-  <meta name="frontend-asset-revision" content="6.120.0-launch24" />
+  <meta name="frontend-asset-revision" content="6.120.0-launch25" />
   <title>MatchRadar Admin · Состояние и управление</title>
   <link rel="icon" type="image/svg+xml" href="/assets/brand/matchradar-mark.svg?v=6.120.0-p42" />
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=6.120.0-launch24" />
-  <link rel="stylesheet" href="/styles/public-shell.css?v=6.120.0-launch24" />
+  <link rel="stylesheet" href="/styles.css?v=6.120.0-launch25" />
+  <link rel="stylesheet" href="/styles/public-shell.css?v=6.120.0-launch25" />
 </head>
 <body class="miniapp-public-shell admin-dedicated-surface">
   <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
@@ -77,21 +77,12 @@
           </div>
         </div>
 
-        <section id="dailyOverview" class="home-priority-stack" aria-label="Главное сейчас">
-          <button id="homeLiveCard" class="home-priority-card is-live" type="button" data-quick-filter="live" hidden>
-            <span>LIVE</span><strong id="homeLiveText">Матчи идут сейчас</strong><b>Открыть →</b>
-          </button>
+        <section id="dailyOverview" class="home-priority-stack" aria-label="Главное сейчас" hidden>
           <button id="homePersonalMatchBtn" class="home-priority-card home-personal-match" type="button" hidden>
             <span id="homePersonalMatchKicker">Для вас</span>
             <strong id="homePersonalMatchText">Персональный матч</strong>
             <small id="homePersonalMatchMeta"></small>
             <b>Открыть →</b>
-          </button>
-          <button id="homeTeamsBtn" class="home-priority-card" type="button" hidden>
-            <span>Мои команды</span><strong id="homeTeamsText">Любимые команды</strong><b>Открыть →</b>
-          </button>
-          <button id="homeFavoriteBtn" class="home-priority-card onboarding" type="button" hidden>
-            <span>Сделайте ленту своей</span><strong>Добавить любимую команду</strong><b>Найти →</b>
           </button>
         </section>
 
@@ -918,6 +909,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app-admin.js?v=6.120.0-launch24"></script>
+  <script type="module" src="/app-admin.js?v=6.120.0-launch25"></script>
 </body>
 </html>

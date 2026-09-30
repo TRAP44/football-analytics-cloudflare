@@ -26,20 +26,23 @@ test('startup is brand-only and contains no release or internal identifiers',()=
   assert.doesNotMatch(startup,/формат данных|apiContract|Проверяю версию|Системная информация/);
 });
 
-test('Home priority is search then contextual live or teams then today matches',()=>{
+test('Home keeps search and filters primary while only a real personal match may appear contextually',()=>{
   const home=block(html,'<section id="matchesView"','<section id="searchView"');
   const search=home.indexOf('id="homeSearchBtn"');
   const priority=home.indexOf('id="dailyOverview"');
   const dates=home.indexOf('class="date-strip"');
   const matches=home.indexOf('id="matchesTitle"');
   assert.ok(search>=0 && search<priority && priority<dates && dates<matches);
-  assert.match(home,/id="homeLiveCard"[^>]*hidden/);
-  assert.match(home,/id="homeTeamsBtn"[^>]*hidden/);
-  assert.match(home,/id="homeFavoriteBtn"[^>]*hidden/);
+  assert.match(home,/id="dailyOverview"[^>]*hidden/);
+  assert.match(home,/id="homePersonalMatchBtn"[^>]*hidden/);
+  assert.doesNotMatch(home,/id="homeLiveCard"/);
+  assert.doesNotMatch(home,/id="homeTeamsBtn"/);
+  assert.doesNotMatch(home,/id="homeFavoriteBtn"/);
+  assert.doesNotMatch(home,/Сделайте ленту своей/);
   const overview=block(app,'function renderDailyOverview','function filteredMatches');
-  assert.match(overview,/liveCard\.hidden = liveCount <= 0/);
-  assert.match(overview,/teamsCard\.hidden = favoriteCount <= 0/);
-  assert.match(overview,/onboarding\.hidden = favoriteCount > 0/);
+  assert.match(overview,/const personalItem = homePersonalMatch\(\)/);
+  assert.match(overview,/root\.hidden = !personalItem/);
+  assert.doesNotMatch(overview,/liveCount|favoriteCount|homeLiveCard|homeTeamsBtn|homeFavoriteBtn/);
 });
 
 test('match feed card is compact and does not embed analysis detail',()=>{

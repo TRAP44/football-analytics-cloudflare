@@ -6,13 +6,15 @@ const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf
 const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
 
-test('Home uses contextual LIVE and My Teams cards without duplicate counters', () => {
-  assert.match(html, /id="homeLiveCard"/);
-  assert.match(html, /id="homeTeamsBtn"/);
-  assert.match(html, /id="homeFavoriteBtn"/);
+test('Home removes duplicate LIVE and My Teams promos while keeping contextual personalization', () => {
+  assert.doesNotMatch(html, /id="homeLiveCard"/);
+  assert.doesNotMatch(html, /id="homeTeamsBtn"/);
+  assert.doesNotMatch(html, /id="homeFavoriteBtn"/);
+  assert.match(html, /id="homePersonalMatchBtn"/);
   assert.doesNotMatch(html, /overviewRecommendedCount|dailyOverviewTitle|dailyOverviewKicker/);
-  assert.match(app, /liveCard\.hidden = liveCount <= 0/);
-  assert.match(app, /teamsCard\.hidden = favoriteCount <= 0/);
+  assert.match(app, /root\.hidden = !personalItem/);
+  assert.doesNotMatch(app, /liveCard\.hidden = liveCount <= 0/);
+  assert.doesNotMatch(app, /teamsCard\.hidden = favoriteCount <= 0/);
 });
 
 test('the primary match feed is presented as a personal For You view', () => {
