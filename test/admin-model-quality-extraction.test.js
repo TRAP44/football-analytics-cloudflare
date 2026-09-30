@@ -5,6 +5,7 @@ import { createAdminModelQualityModule } from '../public/modules/admin-model-qua
 
 const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
 const modelQuality = readFileSync(new URL('../public/modules/admin-model-quality.js', import.meta.url), 'utf8');
+const remediation = readFileSync(new URL('../public/modules/admin-model-remediation.js', import.meta.url), 'utf8');
 
 function element() {
   return {
@@ -50,13 +51,13 @@ test('shared app root lazy-loads model quality only for admins with explicit dep
   ]) assert.ok(boundary.includes(dependency), dependency);
 });
 
-test('remediation-shared and destructive remediation logic stays in app composition root', () => {
+test('model quality stays isolated from extracted destructive remediation', () => {
   assert.match(app, /function outcomeShortLabel\(key\)/);
-  assert.match(app, /function renderModelRemediation\(\)/);
-  assert.match(app, /async function runModelRemediation\(\)/);
-  assert.match(app, /async function resolveSettlementDriftFromUi\(fixtureId, action\)/);
-  assert.match(app, /async function resetSettlementCircuitFromUi\(\)/);
-  assert.doesNotMatch(modelQuality, /function outcomeShortLabel|runCalibrationControlAction|runModelRemediation|resolveSettlementDriftFromUi|resetSettlementCircuitFromUi/);
+  assert.match(remediation, /async function runModelRemediation\(\)/);
+  assert.match(remediation, /async function resolveSettlementDriftFromUi\(fixtureId, action\)/);
+  assert.match(remediation, /async function resetSettlementCircuitFromUi\(\)/);
+  assert.doesNotMatch(app, /function remediationActionLabel|async function runModelRemediation\(\) \{/);
+  assert.doesNotMatch(modelQuality, /runCalibrationControlAction|runModelRemediation|resolveSettlementDriftFromUi|resetSettlementCircuitFromUi/);
   assert.doesNotMatch(modelQuality, /\/api\/calibration-control|\/api\/model-remediation|method:\s*'POST'|window\.confirm|toast\(/);
 });
 
