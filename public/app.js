@@ -6385,6 +6385,10 @@ $('navHistory').addEventListener('click', async () => {
   if (tasks.length) await Promise.allSettled(tasks);
 });
 $('navProfile').addEventListener('click', openProfileView);
+$('profileMyTeamsBtn')?.addEventListener('click', () => {
+  renderMyTeams();
+  showView('myTeamsView');
+});
 $('myTeamsFindBtn')?.addEventListener('click', () => { showView('matchesView'); setTimeout(() => $('matchSearch')?.focus({ preventScroll:true }), 80); });
 $('homeSearchBtn')?.addEventListener('click', () => { const q=String($('matchSearch')?.value || '').trim(); state.globalSearch.query=q; if ($('globalSearchInput')) $('globalSearchInput').value=q; renderGlobalSearch(); showView('searchView'); if (q) runGlobalSearch(); });
 $('proBtn')?.addEventListener('click', () => buyPlan('PRO'));

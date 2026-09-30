@@ -39,12 +39,13 @@ test('history polish keeps verified track record and reopen flow intact',()=>{
   assert.match(css,/\.miniapp-public-shell \.history-item\{/);
 });
 
-test('profile polish preserves favorites reminders preferences and service links',()=>{
+test('profile polish keeps team management focused in My Teams and preserves reminders preferences and service links',()=>{
   const profile=block(html,'<section id="profileView"','<nav class="bottom-nav"');
   for(const token of [
-    'favoriteTeams','reminderList','preferences-panel','savePreferencesBtn',
+    'profileMyTeamsBtn','reminderList','preferences-panel','savePreferencesBtn',
     'profile-data-details','Конфиденциальность','Условия использования','Статус сервиса',
   ]) assert.ok(profile.includes(token),token);
+  assert.ok(!profile.includes('id="favoriteTeams"'),'favoriteTeams duplicate should not remain in Profile');
   const favoriteFn=block(favoriteTeamsRenderer,'function renderFavoriteTeams','return Object.freeze');
   for(const token of ['favorite-team-row','favorite-team-main','favorite-remove']) assert.ok(favoriteFn.includes(token),token);
   assert.match(css,/\.miniapp-public-shell \.favorite-team-row/);

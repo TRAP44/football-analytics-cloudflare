@@ -25,13 +25,21 @@ function functionBody(name, nextName) {
 test('public profile remains available to non-admin users while admin controls stay gated', () => {
   assert.doesNotMatch(app, /profileBtn'\)\.hidden=!admin/);
   assert.doesNotMatch(app, /navProfile'\)\.hidden=!admin/);
-  assert.match(viewChrome, /profileView:\s*Object\.freeze\(\['Профиль',\s*'Команды, напоминания и настройки'\]\)/);
+  assert.match(viewChrome, /profileView:\s*Object\.freeze\(\['Профиль',\s*'Напоминания и настройки'\]\)/);
   assert.match(html, /id="profileBtn"[^>]*aria-label="Открыть профиль"/);
   assert.match(html, /id="navProfile"[^>]*>/);
   assert.match(html, /<small>Профиль<\/small>/);
   assert.doesNotMatch(html, /data-admin-only|class="panel admin-console"/);
   assert.match(adminHtml, /class="panel admin-console" data-admin-only hidden/);
   assert.match(app, /querySelectorAll\('\[data-admin-only\]'\)/);
+});
+
+test('profile keeps favorite-team management in one dedicated My Teams destination', () => {
+  assert.doesNotMatch(html, /id="favoriteTeams"/);
+  assert.match(html, /id="profileMyTeamsBtn"[^>]*>Открыть<\/button>/);
+  assert.match(html, /Любимые клубы и их ближайшие матчи собраны в отдельном разделе/);
+  assert.match(app, /\$\('profileMyTeamsBtn'\)\?\.addEventListener/);
+  assert.match(app, /renderMyTeams\(\);[\s\S]{0,80}showView\('myTeamsView'\)/);
 });
 
 test('appearance choices stay in the user profile and apply immediately', () => {

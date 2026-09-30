@@ -7,7 +7,7 @@ export const VIEW_CHROME = Object.freeze({
   playerView: Object.freeze(['Игрок', 'Показатели и роль в текущем матче']),
   analysisView: Object.freeze(['Матч-центр', 'Что происходит, почему и что важно дальше']),
   historyView: Object.freeze(['История', 'Сохранённые AI-разборы']),
-  profileView: Object.freeze(['Профиль', 'Команды, напоминания и настройки']),
+  profileView: Object.freeze(['Профиль', 'Напоминания и настройки']),
 });
 
 export const BACK_VIEW_LABELS = Object.freeze({
