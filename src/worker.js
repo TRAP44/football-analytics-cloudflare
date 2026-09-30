@@ -20287,6 +20287,28 @@ async function apiHistoryAnalysis(request, cfg, user) {
 }
 
 
+async function apiFavorites(request, cfg, user) {
+  if (request.method === 'GET') {
+    const rows = await getFavorites(user.id, cfg);
+    return json({ items: rows.map(x => ({ teamId: Number(x.team_id), teamName: x.team_name || '', teamLogo: x.team_logo || '' })) });
+  }
+  if (request.method === 'POST') {
+    let body = {};
+    try { body = await request.json(); } catch {}
+    const row = await addFavorite(user.id, { id: body.teamId, name: body.teamName, logo: body.teamLogo }, cfg);
+    return json({ ok: true, item: { teamId: row.team_id, teamName: row.team_name, teamLogo: row.team_logo } });
+  }
+  if (request.method === 'DELETE') {
+    const url = new URL(request.url);
+    const teamId = Number(url.searchParams.get('teamId'));
+    if (!teamId) return json({ error: 'Номер команды обязателен.' }, 400);
+    await removeFavorite(user.id, teamId, cfg);
+    return json({ ok: true });
+  }
+  return json({ error: 'Метод не поддерживается.' }, 405);
+}
+
+
 function publicFavoritePlayer(row = {}) {
   return {
     playerId: Number(row.player_id),
@@ -20310,7 +20332,7 @@ async function resolveFavoritePlayerIdentity(input = {}, cfg) {
     };
   }
 
-  const cacheKey = matchCenterCacheKey(fixtureId);
+  const cacheKey = `match-center:${fixtureId}:v16-availability-quality-rc144`;
   const center = await getCache(cacheKey, cfg) || await getStaleCache(cacheKey, cfg);
   if (!center) {
     return {
@@ -20392,28 +20414,6 @@ async function apiFavoritePlayers(request, cfg, user) {
 
   return json({ error: 'Метод не поддерживается.' }, 405);
 }
-
-async function apiFavorites(request, cfg, user) {
-  if (request.method === 'GET') {
-    const rows = await getFavorites(user.id, cfg);
-    return json({ items: rows.map(x => ({ teamId: Number(x.team_id), teamName: x.team_name || '', teamLogo: x.team_logo || '' })) });
-  }
-  if (request.method === 'POST') {
-    let body = {};
-    try { body = await request.json(); } catch {}
-    const row = await addFavorite(user.id, { id: body.teamId, name: body.teamName, logo: body.teamLogo }, cfg);
-    return json({ ok: true, item: { teamId: row.team_id, teamName: row.team_name, teamLogo: row.team_logo } });
-  }
-  if (request.method === 'DELETE') {
-    const url = new URL(request.url);
-    const teamId = Number(url.searchParams.get('teamId'));
-    if (!teamId) return json({ error: 'Номер команды обязателен.' }, 400);
-    await removeFavorite(user.id, teamId, cfg);
-    return json({ ok: true });
-  }
-  return json({ error: 'Метод не поддерживается.' }, 405);
-}
-
 
 async function apiDigestSettings(request, cfg, user) {
   const telegramId=Number(user?.id || 0);
@@ -22175,17 +22175,13 @@ async function loadLineupNotificationSnapshot(fixtureId, cfg) {
   };
 }
 
-function matchCenterCacheKey(fixtureId) {
-  return `match-center:${Number(fixtureId)}:v16-availability-quality-rc144`;
-}
-
 async function apiMatchCenter(request, cfg) {
   const url = new URL(request.url);
   const fixtureId = Number(url.searchParams.get('fixtureId'));
   if (!Number.isFinite(fixtureId) || fixtureId <= 0) return json({ error: 'Номер матча обязателен.' }, 400);
 
   // Shared across all users. During LIVE it expires after 60 seconds.
-  const baseCacheKey = matchCenterCacheKey(fixtureId);
+  const baseCacheKey = `match-center:${fixtureId}:v16-availability-quality-rc144`;
   const cached = await getCache(baseCacheKey, cfg);
   if (cached) {
     const cachedMode = String(cached.mode || 'upcoming');
