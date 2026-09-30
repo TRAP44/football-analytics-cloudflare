@@ -5,8 +5,9 @@ export function normalizeDigestSettingsPayload(payload = {}) {
   const plan = ['FREE', 'PRO', 'PREMIUM'].includes(String(raw.plan || '').toUpperCase())
     ? String(raw.plan).toUpperCase()
     : 'FREE';
-  const hour = Number.isInteger(Number(raw?.delivery?.hourUtc))
-    ? Math.max(0, Math.min(23, Number(raw.delivery.hourUtc)))
+  const candidateHour = Number(raw?.delivery?.hourUtc);
+  const hour = Number.isInteger(candidateHour) && candidateHour >= 0 && candidateHour <= 23
+    ? candidateHour
     : DIGEST_FIXED_HOUR_UTC;
   const favoriteTeams = Array.isArray(raw.favoriteTeams)
     ? raw.favoriteTeams
