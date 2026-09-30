@@ -40,6 +40,7 @@ test('preferences service preserves default normalization', () => {
     kickoffNotification:false,
     hideYouth:false,
     favoriteFirst:false,
+    notificationPreferences:DEFAULT_PREFERENCES.notificationPreferences,
   });
   assert.equal(service.normalizePreferences({defaultFilter:'invalid'}).defaultFilter,'top');
   assert.equal(service.normalizePreferences({reminderMinutes:99}).reminderMinutes,30);
@@ -67,11 +68,13 @@ test('preferences service preserves memory read and partial-save semantics', asy
     kickoffNotification:false,
     hideYouth:false,
     favoriteFirst:false,
+    notificationPreferences:DEFAULT_PREFERENCES.notificationPreferences,
   });
   const stored=memory.preferences.get(7);
   assert.equal(stored.default_filter,'all');
   assert.equal(stored.reminder_minutes,15);
   assert.equal(stored.hide_youth,false);
+  assert.deepEqual(stored.notification_preferences,DEFAULT_PREFERENCES.notificationPreferences);
   assert.ok(stored.updated_at);
 });
 
