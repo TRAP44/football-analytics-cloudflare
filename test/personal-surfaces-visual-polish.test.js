@@ -8,6 +8,7 @@ const runtime=fs.readFileSync('public/modules/app-runtime.js','utf8');
 const myTeamsRenderer=fs.readFileSync('public/modules/my-teams-renderer.js','utf8');
 const favoriteTeamsRenderer=fs.readFileSync('public/modules/favorite-teams-renderer.js','utf8');
 const historyRenderer=fs.readFileSync('public/modules/history-renderer.js','utf8');
+const aiTrackRecordRenderer=fs.readFileSync('public/modules/ai-track-record-renderer.js','utf8');
 const css=fs.readFileSync('public/styles/public-shell.css','utf8');
 
 function block(source,start,end){
@@ -30,7 +31,7 @@ test('personal surfaces polish keeps My Teams interaction contract intact',()=>{
 });
 
 test('history polish keeps verified track record and reopen flow intact',()=>{
-  const track=block(app,'function renderAiTrackRecord','async function loadHistory');
+  const track=block(aiTrackRecordRenderer,'function renderAiTrackRecord','return Object.freeze');
   const history=block(historyRenderer,'function renderHistory','return Object.freeze');
   for(const token of ['ai-track-card','ai-track-kpis','ai-track-row']) assert.ok(track.includes(token),token);
   for(const token of ['history-item','history-ai-chip','history-open','openHistoryAnalysis']) assert.ok((history+' '+app).includes(token),token);
