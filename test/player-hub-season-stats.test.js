@@ -50,5 +50,5 @@ test('Player Hub 4C renders season metrics and responsive layout', () => {
   }
   assert.match(styles, /Player Hub 4C — season statistics/);
   assert.match(styles, /\.player-hub-season-grid\s*\{/);
-  assert.match(runtime, /FRONTEND_ASSET_REVISION = '6\.120\.0-launch19'/);
+  assert.match(runtime, /FRONTEND_ASSET_REVISION = '6\.120\.0-launch20'/);
 });
