@@ -20,6 +20,6 @@ test('RC125 keeps match feed usable during provider or network degradation',()=>
 test('public match navigation and user profile stay independent from admin console',()=>{
   assert.match(app,/if \(\$\('profileBtn'\)\) \$\('profileBtn'\)\.hidden=false/);
   assert.match(app,/if \(\$\('navProfile'\)\) \$\('navProfile'\)\.hidden=false/);
-  assert.match(viewChrome,/profileView:\s*Object\.freeze\(\['Профиль', 'Команды, напоминания и настройки'\]\)/);
+  assert.match(viewChrome,/profileView:\s*Object\.freeze\(\['Профиль', 'Напоминания и настройки'\]\)/);
   assert.match(viewChrome,/matchesView:\s*Object\.freeze\(\['Главная', 'Видим, что меняет матч\.'\]\)/);
 });
