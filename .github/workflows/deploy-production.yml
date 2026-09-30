@@ -25,6 +25,7 @@ jobs:
     env:
       DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       RELEASE_VERSION: "6.120.0-rc144"
+      PRODUCTION_URL: "https://football-analytics-cloudflare.wok-side.workers.dev"
       WRANGLER_SEND_METRICS: "false"
       WRANGLER_SEND_ERROR_REPORTS: "false"
     steps:
@@ -191,7 +192,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          SMOKE_URL="${CONFIGURED_URL:-$DEPLOYMENT_URL}"
+          SMOKE_URL="${CONFIGURED_URL:-${DEPLOYMENT_URL:-$PRODUCTION_URL}}"
           EXPECTED_RUNTIME_SHA="$DEPLOY_SHA"
           if [[ "$RUNTIME_CHANGED" != "true" ]]; then
             EXPECTED_RUNTIME_SHA="$ACTIVE_RUNTIME_SHA"
