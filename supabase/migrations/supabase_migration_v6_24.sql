@@ -73,9 +73,12 @@ begin
     return jsonb_build_object('allowed', false, 'reason', 'invalid_input');
   end if;
 
+  -- Lock by user + fixture + event type, not only dedupe_key. This makes
+  -- cooldown checks atomic even when overlapping cron executions observe
+  -- different snapshot/event keys at the same time.
   perform pg_catalog.pg_advisory_xact_lock(
     pg_catalog.hashtext('matchradar:smart-notifications'),
-    pg_catalog.hashtext(p_telegram_id::text || ':' || p_dedupe_key)
+    pg_catalog.hashtext(p_telegram_id::text || ':' || p_fixture_id::text || ':' || p_event_type)
   );
 
   select *
