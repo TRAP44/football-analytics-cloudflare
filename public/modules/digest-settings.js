@@ -19,6 +19,14 @@ export function normalizeDigestSettingsPayload(payload = {}) {
       .slice(0, 6)
     : [];
 
+  const capabilities = Object.freeze({
+    baseDigest: raw?.capabilities?.baseDigest !== false,
+    morningNews: raw?.capabilities?.morningNews === true,
+    favoritePriority: raw?.capabilities?.favoritePriority === true,
+    customDeliveryTime: raw?.capabilities?.customDeliveryTime === true,
+    planSpecificContent: raw?.capabilities?.planSpecificContent === true,
+  });
+
   return Object.freeze({
     enabled: raw.enabled === true,
     configured: raw.configured === true,
@@ -27,8 +35,9 @@ export function normalizeDigestSettingsPayload(payload = {}) {
       hourUtc: hour,
       label: String(raw?.delivery?.label || `${String(hour).padStart(2, '0')}:00 UTC`),
       timezone: 'UTC',
-      editable: false,
+      editable: capabilities.customDeliveryTime === true && raw?.delivery?.editable === true,
     }),
+    capabilities,
     favoriteTeams: Object.freeze(favoriteTeams),
     updatedAt: raw.updatedAt || null,
   });
@@ -90,9 +99,12 @@ export function createDigestSettingsModule({
     const checked = model.pendingEnabled === null ? settings.enabled : Boolean(model.pendingEnabled);
     const summary = digestDeliverySummary({ ...settings, enabled: checked });
     const teams = settings.favoriteTeams;
+    const favoriteHint = settings.capabilities.favoritePriority
+      ? 'Любимые команды получают приоритет в серверной подборке.'
+      : 'Любимые команды уже связаны с профилем. Текущий серверный Digest пока отправляет общую подборку без отдельного приоритета по командам.';
     const teamsHtml = teams.length
       ? `<div class="digest-team-chips" aria-label="Любимые команды">${teams.map(team => `<span>${escapeHtml(team.teamName)}</span>`).join('')}</div>
-         <small>Любимые команды уже связаны с профилем. Текущий серверный Digest пока отправляет общую подборку без отдельного приоритета по командам.</small>`
+         <small>${escapeHtml(favoriteHint)}</small>`
       : '<small>Добавьте любимые команды в «Мои команды». Текущий серверный Digest пока использует общую подборку.</small>';
 
     root.innerHTML = `
@@ -111,7 +123,7 @@ export function createDigestSettingsModule({
       </label>
       <div class="digest-settings-grid">
         <div><span>Время доставки</span><strong>${escapeHtml(settings.delivery.label)}</strong><small>Фиксированное окно текущей серверной доставки · 07:00–07:55 UTC</small></div>
-        <div><span>Тариф</span><strong>${escapeHtml(planLabel(settings.plan))}</strong><small>Digest использует только реально подключённые серверные возможности.</small></div>
+        <div><span>Тариф</span><strong>${escapeHtml(planLabel(settings.plan))}</strong><small>${settings.capabilities.planSpecificContent ? 'Расширенное содержание тарифа подключено.' : 'Используется базовое содержание, доступное текущей серверной доставке.'}</small></div>
       </div>
       <div class="digest-favorites">
         <strong>⭐ Любимые команды</strong>
