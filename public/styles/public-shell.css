@@ -3724,3 +3724,23 @@ html {
     font-size:10px;
   }
 }
+
+
+/* Mobile hotfix — Telegram top spacing + first-run layout */
+.miniapp-public-shell .app-shell{
+  padding-top:var(--tg-content-safe-area-inset-top,0px);
+}
+.miniapp-public-shell .topbar{
+  padding-top:8px;
+}
+.miniapp-public-shell .first-run-guide{
+  grid-template-columns:minmax(0,1fr);
+}
+@media(max-width:430px){
+  .miniapp-public-shell .first-run-guide{
+    padding:14px;
+  }
+  .miniapp-public-shell .first-run-guide-copy>strong{
+    font-size:16px;
+  }
+}
