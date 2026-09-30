@@ -12,6 +12,7 @@ import { createReminderListModule } from './modules/reminder-list.js';
 import { createMyTeamsRenderer } from './modules/my-teams-renderer.js';
 import { createJourneyStateModule } from './modules/journey-state.js';
 import { createGlobalSearchRenderer } from './modules/global-search-renderer.js';
+import { renderMatchPulse } from './modules/match-pulse.js';
 import { buildPlayerComparisonCandidates, playerComparisonHtml, samePlayer } from './modules/player-comparison.js';
 import {
   CLIENT_VERSION,
@@ -3762,14 +3763,6 @@ function oddsMovementHtml(move) {
   return `<div class="odds-movement-grid">${row('П1','home')}${row('Н','draw')}${row('П2','away')}</div><p class="tiny">Сравнение с самым ранним сохранённым снимком во время матча${move.from ? ` · ${dateTime(move.from)}` : ''}. Изменение указано в расчётной вероятности.</p>`;
 }
 
-function livePressureHtml(p, m) {
-  if (!p) return '';
-  const home = Math.max(0, Math.min(100, Number(p.home || 0)));
-  const away = 100 - home;
-  const lead = p.leader === 'home' ? m.home?.name : p.leader === 'away' ? m.away?.name : 'Баланс';
-  return `<section class="panel pulse-panel"><h2>⚡ Пульс матча</h2><div class="pulse-names"><span>${escapeHtml(m.home?.name || '')}</span><strong>${escapeHtml(lead || 'Баланс')}</strong><span>${escapeHtml(m.away?.name || '')}</span></div><div class="pulse-bar"><i style="width:${home}%"></i><b style="width:${away}%"></b></div><div class="pulse-values"><span>${home}</span><span>${away}</span></div><p class="tiny">${escapeHtml(publicText(p.note || ''))}</p></section>`;
-}
-
 function playerMetricText(p) {
   const bits = [];
   if (Number(p.goals)) bits.push(`${p.goals} гол`);
@@ -4742,6 +4735,8 @@ function renderMatchCenter(d) {
       </div>
     </section>
 
+    ${renderMatchPulse(d)}
+
     ${d.stale ? `<section class="panel stale-panel"><strong>⚠️ Показан последний сохранённый снимок</strong><p>${escapeHtml(publicText(d.warning || 'Источник данных временно ограничил запросы.'))}</p></section>` : ''}
     ${d.note ? `<section class="panel center-note"><p class="tiny warning">${escapeHtml(publicText(d.note))}</p></section>` : ''}
 
@@ -4775,8 +4770,6 @@ function renderMatchCenter(d) {
     </div>
 
     <div class="center-tab-panel" data-center-panel="summary">
-      ${livePressureHtml(d.livePressure, m)}
-
       ${(d.availabilityQuality?.observed || d.absences?.home?.length || d.absences?.away?.length) ? `<section class="panel"><div class="center-section-title"><div><h2>🩺 Потери состава</h2><p>Доступность игроков и важные отсутствия</p></div></div>${centerAbsenceSummary(d.absences,m)}${liveAbsencesHtml(d.absences,m)}</section>` : ''}
 
       <details class="panel analysis-disclosure coverage-panel">
