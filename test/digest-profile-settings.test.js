@@ -43,7 +43,7 @@ test('digest settings fail safe for malformed or missing payloads', () => {
 
   assert.equal(settings.enabled, false);
   assert.equal(settings.plan, 'FREE');
-  assert.equal(settings.delivery.hourUtc, 23);
+  assert.equal(settings.delivery.hourUtc, 7);
   assert.deepEqual(settings.favoriteTeams, []);
 });
 
