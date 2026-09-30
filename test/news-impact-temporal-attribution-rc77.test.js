@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
-const app=fs.readFileSync('public/app.js','utf8');
+const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
 
 test('RC77 uses a 30-minute default post-decision attribution window',()=>{
   assert.match(worker,/NEWS_IMPACT_ACTION_WINDOW_MINUTES = 30/);

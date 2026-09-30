@@ -16,7 +16,7 @@ test('media publisher implementation lives outside the shared app root', () => {
 
 test('shared app root lazy-loads media publisher only for admins', () => {
   const start = app.indexOf('async function ensureAdminMediaPublisherModule()');
-  const end = app.indexOf('\nfunction launchFunnelPct', start);
+  const end = app.indexOf('\nlet adminLaunchFunnelModule', start);
   assert.ok(start >= 0 && end > start);
   const boundary = app.slice(start, end);
   assert.match(boundary, /if \(!isAdmin\(\)\) return null/);

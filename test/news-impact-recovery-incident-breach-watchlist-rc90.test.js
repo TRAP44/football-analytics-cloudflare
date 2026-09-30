@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
-const app=fs.readFileSync('public/app.js','utf8');
+const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
 
 test('RC90 derives watchlist only from RC89 breach feed',()=>{
   assert.match(worker,/function buildNewsImpactRecoveryIncidentSloBreachWatchlist\(/);
