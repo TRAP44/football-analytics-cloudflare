@@ -27,6 +27,8 @@ test('digest settings normalize the existing fixed UTC delivery contract', () =>
   assert.equal(settings.delivery.label, '07:00 UTC');
   assert.equal(settings.delivery.editable, false);
   assert.equal(settings.plan, 'PRO');
+  assert.equal(settings.capabilities.planSpecificContent, false);
+  assert.equal(settings.capabilities.favoritePriority, false);
   assert.deepEqual(settings.favoriteTeams, [{ teamId: 40, teamName: 'Liverpool' }]);
   assert.equal(digestDeliverySummary(settings).status, 'Включена');
 });
@@ -82,6 +84,64 @@ test('concurrent Mini App toggles are serialized and the last requested state wi
   assert.deepEqual(calls, [true, false]);
   assert.equal(module.snapshot().settings.enabled, false);
   assert.equal(module.saving, false);
+});
+
+test('reload keeps last known settings visible when the database read fails', async () => {
+  const root = { innerHTML: '' };
+  let calls = 0;
+  const api = async () => {
+    calls += 1;
+    if (calls === 1) {
+      return {
+        settings: {
+          enabled: true,
+          configured: true,
+          plan: 'PREMIUM',
+          delivery: { hourUtc: 7, label: '07:00 UTC' },
+          capabilities: {
+            baseDigest: true,
+            morningNews: true,
+            favoritePriority: false,
+            customDeliveryTime: false,
+            planSpecificContent: false,
+          },
+          favoriteTeams: [{ teamId: 50, teamName: 'Barcelona' }],
+        },
+      };
+    }
+    throw new Error('База данных временно недоступна');
+  };
+  const module = createDigestSettingsModule({
+    elementById: id => id === 'digestSettingsRoot' ? root : null,
+    api,
+    escapeHtml: value => String(value),
+    planLabel: plan => plan,
+  });
+
+  await module.loadDigestSettings();
+  await assert.rejects(() => module.loadDigestSettings(true), /База данных/);
+
+  const snapshot = module.snapshot();
+  assert.equal(snapshot.settings.enabled, true);
+  assert.equal(snapshot.settings.plan, 'PREMIUM');
+  assert.match(snapshot.error, /База данных/);
+  assert.match(root.innerHTML, /База данных временно недоступна/);
+  assert.match(root.innerHTML, /Barcelona/);
+});
+
+test('initial database error renders recovery state instead of a false disabled subscription', async () => {
+  const root = { innerHTML: '' };
+  const module = createDigestSettingsModule({
+    elementById: id => id === 'digestSettingsRoot' ? root : null,
+    api: async () => { throw new Error('Хранилище временно недоступно'); },
+    escapeHtml: value => String(value),
+    planLabel: plan => plan,
+  });
+
+  await assert.rejects(() => module.loadDigestSettings(), /Хранилище/);
+  assert.equal(module.snapshot().settings, null);
+  assert.match(root.innerHTML, /Подборка временно недоступна/);
+  assert.match(root.innerHTML, /Повторить/);
 });
 
 test('server route is authenticated by the existing user boundary and reuses bot_digest_subscriptions', () => {
