@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const app=fs.readFileSync('public/app.js','utf8');
+const viewChrome=fs.readFileSync('public/modules/view-chrome.js','utf8');
 
 test('RC125 public match feed starts alongside favorites without admin gating',()=>{
   assert.match(app,/const startupTasks = \[loadFavorites\(\), loadMatches\(\)\]/);
@@ -19,6 +20,6 @@ test('RC125 keeps match feed usable during provider or network degradation',()=>
 test('public match navigation and user profile stay independent from admin console',()=>{
   assert.match(app,/if \(\$\('profileBtn'\)\) \$\('profileBtn'\)\.hidden=false/);
   assert.match(app,/if \(\$\('navProfile'\)\) \$\('navProfile'\)\.hidden=false/);
-  assert.match(app,/profileView: \['Профиль', 'Команды, напоминания и настройки'\]/);
-  assert.ok(app.includes("matchesView: ['Главная', 'Видим, что меняет матч.']"));
+  assert.match(viewChrome,/profileView:\s*Object\.freeze\(\['Профиль', 'Команды, напоминания и настройки'\]\)/);
+  assert.match(viewChrome,/matchesView:\s*Object\.freeze\(\['Главная', 'Видим, что меняет матч\.'\]\)/);
 });
