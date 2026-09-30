@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+const betaDashboard=readFileSync(new URL('../public/modules/admin-beta-dashboard.js',import.meta.url),'utf8');
 
 function block(source,start,end){
   const a=source.indexOf(start);
@@ -70,7 +71,7 @@ test('legacy controlled-expansion decision stays server-side while admin primary
   const decision=block(worker,'function controlledBetaExpansionDecision','function buildBetaIssueGroups');
   assert.match(decision,/BETA READY FOR PUBLIC PRE-LAUNCH/);
   assert.match(decision,/DATA PROVIDER UPGRADE REQUIRED/);
-  const render=block(app,'function renderBetaDashboard','async function');
+  const render=block(betaDashboard,'function renderBetaDashboard','async function loadBetaDashboard');
   assert.match(render,/verifiedNormalUsers/);
   assert.match(render,/Provider requests\/session/);
   assert.match(render,/Capacity decision/);
@@ -95,7 +96,7 @@ test('BETA HOLD exposes actionable field blockers instead of fabricating beta ev
   assert.match(decision,/confirm_provider_quota/);
   assert.doesNotMatch(decision,/BETA_TELEGRAM_IDS\s*=/);
 
-  const render=block(app,'function renderBetaDashboard','async function');
+  const render=block(betaDashboard,'function renderBetaDashboard','async function loadBetaDashboard');
   assert.match(render,/COLLECT MORE EVIDENCE/);
   assert.match(render,/INSUFFICIENT_LIVE_SAMPLE|liveStatus/);
   assert.doesNotMatch(render,/Назначить минимум 2 реальных beta-пользователя/);
