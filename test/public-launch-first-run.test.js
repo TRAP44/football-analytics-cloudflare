@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const html=fs.readFileSync('public/index.html','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
+const firstRun=fs.readFileSync('public/modules/first-run-guide.js','utf8');
 const css=fs.readFileSync('public/styles/public-shell.css','utf8');
 
 test('first run guide exists on Home and explains the product before requiring navigation',()=>{
@@ -17,13 +18,13 @@ test('first run guide exists on Home and explains the product before requiring n
 });
 
 test('first run actions reuse existing search surfaces and dismiss the guide',()=>{
-  const searchStart=app.indexOf('function startFirstRunSearch');
-  const favoriteStart=app.indexOf('function startFirstRunFavorite');
+  const searchStart=firstRun.indexOf('function startFirstRunSearch');
+  const favoriteStart=firstRun.indexOf('function startFirstRunFavorite');
   assert.ok(searchStart>=0 && favoriteStart>searchStart);
-  const searchBlock=app.slice(searchStart,favoriteStart);
-  const favoriteBlock=app.slice(favoriteStart,app.indexOf('const VIEW_CHROME',favoriteStart));
+  const searchBlock=firstRun.slice(searchStart,favoriteStart);
+  const favoriteBlock=firstRun.slice(favoriteStart,firstRun.indexOf('return {',favoriteStart));
   assert.match(searchBlock,/dismissFirstRunGuide\(\)/);
-  assert.match(searchBlock,/\$\('matchSearch'\)\?\.focus/);
+  assert.match(searchBlock,/elementById\('matchSearch'\)\?\.focus/);
   assert.match(favoriteBlock,/dismissFirstRunGuide\(\)/);
   assert.match(favoriteBlock,/showView\('searchView'\)/);
   assert.match(favoriteBlock,/globalSearchInput/);
@@ -31,20 +32,20 @@ test('first run actions reuse existing search surfaces and dismiss the guide',()
 });
 
 test('first run guide is one-time local UI state with privacy-safe product actions',()=>{
-  assert.match(app,/FIRST_RUN_GUIDE_KEY/);
-  assert.match(app,/localStorage\.getItem\(FIRST_RUN_GUIDE_KEY\)/);
-  assert.match(app,/localStorage\.setItem\(FIRST_RUN_GUIDE_KEY, '1'\)/);
-  assert.match(app,/sendProductAction\('first_run_search', 'matchesView'\)/);
-  assert.match(app,/sendProductAction\('first_run_favorite', 'searchView'\)/);
+  assert.match(firstRun,/FIRST_RUN_GUIDE_KEY/);
+  assert.match(firstRun,/storage\.getItem\(FIRST_RUN_GUIDE_KEY\)/);
+  assert.match(firstRun,/storage\.setItem\(FIRST_RUN_GUIDE_KEY, '1'\)/);
+  assert.match(firstRun,/sendProductAction\('first_run_search', 'matchesView'\)/);
+  assert.match(firstRun,/sendProductAction\('first_run_favorite', 'searchView'\)/);
   assert.match(app,/function sendProductAction[\s\S]*?try \{[\s\S]*?sendClientTelemetry\('product_action'/);
 });
 
 test('direct launch intent bypasses the guide and is not overwritten by the default Home route',()=>{
-  assert.match(app,/function hasDirectLaunchIntent\(\)/);
-  assert.match(app,/guide\.hidden = dismissed \|\| hasDirectLaunchIntent\(\)/);
-  assert.match(app,/view === 'search'/);
-  assert.match(app,/view === 'history'/);
-  assert.match(app,/\['analysis', 'center'\]\.includes\(action\)/);
+  assert.match(firstRun,/function hasDirectLaunchIntent\(\)/);
+  assert.match(firstRun,/guide\.hidden = dismissed \|\| hasDirectLaunchIntent\(\)/);
+  assert.match(firstRun,/view === 'search'/);
+  assert.match(firstRun,/view === 'history'/);
+  assert.match(firstRun,/\['analysis', 'center'\]\.includes\(action\)/);
   assert.match(app,/if \(!hasDirectLaunchIntent\(\)\) showView\('matchesView'\)/);
 });
 
