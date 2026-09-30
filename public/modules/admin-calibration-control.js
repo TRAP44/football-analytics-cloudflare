@@ -40,6 +40,7 @@ export function createAdminCalibrationControlModule({
   }
   
   function renderCalibrationControl() {
+    if (!isAdmin()) return;
     const status = $('calibrationControlStatus');
     const summary = $('calibrationControlSummary');
     const history = $('calibrationControlHistory');
