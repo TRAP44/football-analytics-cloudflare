@@ -11,6 +11,7 @@ const adminLaunchFunnel = fs.readFileSync('public/modules/admin-launch-funnel.js
 const adminBetaDashboard = fs.readFileSync('public/modules/admin-beta-dashboard.js', 'utf8');
 const adminProductionReadiness = fs.readFileSync('public/modules/admin-production-readiness.js', 'utf8');
 const adminReleaseReadiness = fs.readFileSync('public/modules/admin-release-readiness.js', 'utf8');
+const adminModelQuality = fs.readFileSync('public/modules/admin-model-quality.js', 'utf8');
 const launchFunnelFrontend = app + '\n' + adminLaunchFunnel;
 const appRuntime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
@@ -150,6 +151,11 @@ if (app.includes('function productionStateLabel') || app.includes('Провер�
 if (!fs.existsSync('test/admin-release-readiness-extraction.test.js')) failures.push('Missing admin release readiness extraction regression test');
 if (!app.includes("import('./modules/admin-release-readiness.js')") || !adminReleaseReadiness.includes('export function createAdminReleaseReadinessModule')) failures.push('Admin release readiness lazy extraction contract is missing');
 if (app.includes('function releaseStateLabel') || app.includes('Проверяю обязательные зависимости ядра') || app.includes('class="release-check')) failures.push('Admin release readiness implementation leaked back into shared app root');
+if (!fs.existsSync('test/admin-model-quality-extraction.test.js')) failures.push('Missing admin model quality extraction regression test');
+if (!app.includes("import('./modules/admin-model-quality.js')") || !adminModelQuality.includes('export function createAdminModelQualityModule')) failures.push('Admin model quality lazy extraction contract is missing');
+if (app.includes('function qualityPct(value)') || app.includes('Калибратор вероятностей')) failures.push('Admin model quality implementation leaked back into shared app root');
+if (!app.includes('function outcomeShortLabel(key)') || !app.includes('async function runCalibrationControlAction(action)') || !app.includes('async function runModelRemediation()')) failures.push('Model quality extraction captured shared or destructive admin logic');
+if (/runCalibrationControlAction|runModelRemediation|\/api\/calibration-control|\/api\/model-remediation/.test(adminModelQuality)) failures.push('Admin model quality module must remain read-only');
 if (!app.includes("import('./modules/admin-beta-dashboard.js')") || !adminBetaDashboard.includes('export function createAdminBetaDashboardModule')) failures.push('Admin beta dashboard lazy extraction contract is missing');
 if (app.includes('Verified normal users') || app.includes('function betaTimingLabel')) failures.push('Admin beta dashboard implementation leaked back into shared app root');
 if (!app.includes('function setBetaFeedbackOpen(open)') || !app.includes('async function submitBetaFeedback()')) failures.push('Beta feedback lifecycle must remain in the shared composition root');
