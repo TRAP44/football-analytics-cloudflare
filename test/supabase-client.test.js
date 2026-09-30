@@ -138,6 +138,55 @@ test('supabase reads retry one transient PGRST303 401 for opaque server secret k
   assert.deepEqual(sleeps, [180]);
 });
 
+test('supabase idempotent upsert retries one transient PGRST303 401 for opaque server secret keys', async () => {
+  let calls = 0;
+  const sleeps = [];
+  const client = createSupabaseClient({
+    fetchWithTimeout: async () => {
+      calls += 1;
+      if (calls === 1) {
+        return response({
+          ok: false,
+          status: 401,
+          headers: { 'proxy-status': 'PostgREST; error=PGRST303' },
+        });
+      }
+      return response({ ok: true, status: 201, json: null });
+    },
+    sleepMs: async ms => { sleeps.push(ms); },
+  });
+  const cfg = { supabaseUrl: 'https://example.supabase.co', supabaseKey: 'sb_secret_example' };
+
+  await client.supaUpsert(cfg, 'analysis_cache', { cache_key: 'example', payload: { ok: true } }, 'cache_key');
+  assert.equal(calls, 2);
+  assert.deepEqual(sleeps, [180]);
+});
+
+test('supabase idempotent upsert keeps ordinary 401 responses fail-closed', async () => {
+  let calls = 0;
+  const sleeps = [];
+  const client = createSupabaseClient({
+    fetchWithTimeout: async () => {
+      calls += 1;
+      return response({
+        ok: false,
+        status: 401,
+        text: 'unauthorized',
+        headers: { 'proxy-status': 'PostgREST; error=PGRST301' },
+      });
+    },
+    sleepMs: async ms => { sleeps.push(ms); },
+  });
+  const cfg = { supabaseUrl: 'https://example.supabase.co', supabaseKey: 'sb_secret_example' };
+
+  await assert.rejects(
+    client.supaUpsert(cfg, 'analysis_cache', { cache_key: 'example' }, 'cache_key'),
+    /HTTP 401/,
+  );
+  assert.equal(calls, 1);
+  assert.deepEqual(sleeps, []);
+});
+
 test('supabase read auth retry stays fail-closed for ordinary 401 responses', async () => {
   const cases = [
     {
@@ -197,7 +246,7 @@ test('supabase reads retry one thrown transport failure before succeeding', asyn
   assert.deepEqual(sleeps, [180]);
 });
 
-test('supabase read retry stays conservative and never retries writes', async () => {
+test('supabase read retry stays conservative and generic write transport failures are not retried', async () => {
   let readCalls = 0;
   const readSleeps = [];
   const readClient = createSupabaseClient({
