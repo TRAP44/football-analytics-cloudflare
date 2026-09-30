@@ -31,7 +31,7 @@ test('model quality read-only implementation lives outside the shared app root',
 
 test('shared app root lazy-loads model quality only for admins with explicit dependencies', () => {
   const start = app.indexOf('async function ensureAdminModelQualityModule()');
-  const end = app.indexOf('\nfunction calibrationTransitionLabel', start);
+  const end = app.indexOf('\nlet adminCalibrationControlModule', start);
   assert.ok(start >= 0 && end > start);
   const boundary = app.slice(start, end);
   assert.match(boundary, /if \(!isAdmin\(\)\) return null/);
@@ -50,10 +50,8 @@ test('shared app root lazy-loads model quality only for admins with explicit dep
   ]) assert.ok(boundary.includes(dependency), dependency);
 });
 
-test('remediation-shared and destructive admin logic stays in app composition root', () => {
+test('remediation-shared and destructive remediation logic stays in app composition root', () => {
   assert.match(app, /function outcomeShortLabel\(key\)/);
-  assert.match(app, /function renderCalibrationControl\(\)/);
-  assert.match(app, /async function runCalibrationControlAction\(action\)/);
   assert.match(app, /function renderModelRemediation\(\)/);
   assert.match(app, /async function runModelRemediation\(\)/);
   assert.match(app, /async function resolveSettlementDriftFromUi\(fixtureId, action\)/);
