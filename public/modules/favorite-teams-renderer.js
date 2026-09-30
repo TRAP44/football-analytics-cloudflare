@@ -55,15 +55,18 @@ export function createFavoriteTeamsRenderer({
     const staleNotice = state.favoritesLoadError
       ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.favoritesLoadError)} Показано последнее загруженное избранное.</div>`
       : '';
-    el.innerHTML = staleNotice + state.favorites.map(item => `
+    el.innerHTML = staleNotice + state.favorites.map(item => {
+      const logo = safeUrl(item.teamLogo);
+      return `
       <div class="favorite-team-row">
-        <button class="favorite-team-main team-open-link" type="button" data-open-team="${Number(item.teamId)}" data-team-name="${escapeHtml(item.teamName)}" data-team-logo="${escapeHtml(item.teamLogo || '')}">
-          ${item.teamLogo ? `<img src="${safeUrl(item.teamLogo)}" alt="">` : '<span class="team-placeholder">⚽</span>'}
+        <button class="favorite-team-main team-open-link" type="button" data-open-team="${Number(item.teamId)}" data-team-name="${escapeHtml(item.teamName)}" data-team-logo="${escapeHtml(logo)}">
+          ${logo ? `<img src="${logo}" alt="">` : '<span class="team-placeholder">⚽</span>'}
           <strong>${escapeHtml(item.teamName)}</strong>
         </button>
         <button class="favorite-remove" type="button" data-team-id="${Number(item.teamId)}" data-team-name="${escapeHtml(item.teamName)}" ${state.favoriteMutations.has(Number(item.teamId)) ? 'disabled' : ''}>Удалить</button>
       </div>
-    `).join('');
+    `;
+    }).join('');
 
     el.querySelectorAll('.favorite-remove').forEach(button => button.addEventListener('click', () => {
       const item = state.favorites.find(entry => Number(entry.teamId) === Number(button.dataset.teamId));
