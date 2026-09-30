@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
 const worker = fs.readFileSync('src/worker.js', 'utf8');
+const reminderList = fs.readFileSync('public/modules/reminder-list.js', 'utf8');
 const favoriteTeamsRenderer = fs.readFileSync('public/modules/favorite-teams-renderer.js', 'utf8');
 
 test('team hub, squad and intelligence ignore responses for a team that is no longer active', () => {
@@ -34,10 +35,10 @@ test('favorites and reminders distinguish loading, error, empty and stale data s
   assert.match(app, /remindersLoadError:\s*''/);
   assert.match(favoriteTeamsRenderer, /Загружаю избранное/);
   assert.match(favoriteTeamsRenderer, /Избранное временно недоступно/);
-  assert.match(app, /Загружаю напоминания/);
-  assert.match(app, /Напоминания временно недоступны/);
+  assert.match(reminderList, /Загружаю напоминания/);
+  assert.match(reminderList, /Напоминания временно недоступны/);
   assert.match(favoriteTeamsRenderer, /Показано последнее загруженное избранное/);
-  assert.match(app, /Показаны последние загруженные напоминания/);
+  assert.match(reminderList, /Показаны последние загруженные напоминания/);
 });
 
 test('RC27 health exposes async entity and personal-data safety contracts', () => {

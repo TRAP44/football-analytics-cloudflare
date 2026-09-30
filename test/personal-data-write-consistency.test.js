@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
 const worker = fs.readFileSync('src/worker.js', 'utf8');
+const reminderList = fs.readFileSync('public/modules/reminder-list.js', 'utf8');
 const favoriteTeamsRenderer = fs.readFileSync('public/modules/favorite-teams-renderer.js', 'utf8');
 
 test('favorite reads cannot overwrite a newer confirmed mutation', () => {
@@ -17,7 +18,7 @@ test('favorite reads cannot overwrite a newer confirmed mutation', () => {
 
 test('reminder reads cannot overwrite a newer confirmed mutation', () => {
   assert.match(app, /remindersRevision:\s*0/);
-  const load = app.match(/async function loadReminders\(\)[\s\S]*?\n}\n\nfunction reminderDeliveryBadge/);
+  const load = app.match(/async function loadReminders\(\)[\s\S]*?\n}\n\nasync function handleReminderRemove/);
   assert.ok(load, 'loadReminders must exist');
   assert.match(load[0], /const revisionAtStart = state\.remindersRevision/);
   assert.match(load[0], /revisionAtStart !== state\.remindersRevision/);
@@ -43,7 +44,7 @@ test('reminder API returns the same normalized item shape after GET and POST', (
 
 test('empty cached personal-data lists still surface refresh failures', () => {
   assert.match(favoriteTeamsRenderer, /Последний загруженный список избранного был пуст/);
-  assert.match(app, /Последний загруженный список напоминаний был пуст/);
+  assert.match(reminderList, /Последний загруженный список напоминаний был пуст/);
 });
 
 test('RC28 health exposes personal-data write consistency contracts', () => {
