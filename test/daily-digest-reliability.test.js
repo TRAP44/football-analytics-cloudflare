@@ -139,22 +139,22 @@ test('G. release monitor uses a dedicated filtered digest history read',()=>{
 
 test('H. admin UI exposes 7/30 day selector and reliability metrics',()=>{
   const html=fs.readFileSync('public/admin.html','utf8');
-  const app=fs.readFileSync('public/app.js','utf8');
+  const releaseMonitor=fs.readFileSync('public/modules/admin-release-monitor.js','utf8');
   assert.match(html,/id="releaseMonitorDigestPeriod"/);
   assert.match(html,/<option value="7" selected>Digest 7д<\/option>/);
   assert.match(html,/<option value="30">Digest 30д<\/option>/);
-  assert.match(app,/state\.releaseMonitorDigestDays = digestDays/);
-  assert.match(app,/digestDays=\$\{digestDays\}/);
-  assert.match(app,/Completion rate/);
-  assert.match(app,/Среднее восстановление/);
-  assert.match(app,/Daily history/);
+  assert.match(releaseMonitor,/state\.releaseMonitorDigestDays = digestDays/);
+  assert.match(releaseMonitor,/digestDays=\$\{digestDays\}/);
+  assert.match(releaseMonitor,/Completion rate/);
+  assert.match(releaseMonitor,/Среднее восстановление/);
+  assert.match(releaseMonitor,/Daily history/);
 });
 
 test('I. trend rendering remains aggregate-only',()=>{
-  const app=fs.readFileSync('public/app.js','utf8');
-  const start=app.indexOf("const reliability = dd.reliability || {};");
-  const end=app.indexOf("const codes = c.topCodes || [];",start);
+  const releaseMonitor=fs.readFileSync('public/modules/admin-release-monitor.js','utf8');
+  const start=releaseMonitor.indexOf("const reliability = dd.reliability || {};");
+  const end=releaseMonitor.indexOf("const codes = c.topCodes || [];",start);
   assert.ok(start>=0 && end>start);
-  const block=app.slice(start,end);
+  const block=releaseMonitor.slice(start,end);
   assert.doesNotMatch(block,/telegram_id|chat_id|user_id/i);
 });
