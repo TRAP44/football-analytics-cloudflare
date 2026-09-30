@@ -2,7 +2,7 @@ export const CLIENT_VERSION = '6.120.0-rc144';
 export const CLIENT_API_CONTRACT = 5;
 export const CLIENT_RELEASE_CHANNEL = 'rc144';
 export const FRONTEND_ASSET_REVISION = '6.120.0-launch21';
-export const SUPABASE_SCHEMA_HINT = 'проверьте актуальную схему Supabase (baseline v6.19 + миграция v6.20)';
+export const SUPABASE_SCHEMA_HINT = 'проверьте актуальную схему Supabase (baseline v6.19 + миграции до v6.21.3)';
 
 export const UI_PREFERENCES_KEY = 'football-analytics:ui:v1';
 export const FIRST_RUN_GUIDE_KEY = 'football-analytics:first-run-guide:v1';

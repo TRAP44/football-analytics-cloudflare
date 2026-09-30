@@ -37,6 +37,13 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs 
     return lastResponse;
   }
 
+  async function supaIdempotentUpsertFetch(url, init, timeoutMs, source, cfg = null) {
+    const response = await fetchWithTimeout(url, init, timeoutMs, source);
+    if (!isTransientSecretReadAuthResponse(response, cfg)) return response;
+    await sleep(180);
+    return await fetchWithTimeout(url, init, timeoutMs, source);
+  }
+
   function hasSupabase(cfg) {
     return Boolean(cfg?.supabaseUrl && cfg?.supabaseKey);
   }
@@ -94,11 +101,11 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs 
   async function supaUpsert(cfg, table, rows, onConflict) {
     const url = new URL(`${cfg.supabaseUrl}/rest/v1/${table}`);
     if (onConflict) url.searchParams.set('on_conflict', onConflict);
-    const response = await fetchWithTimeout(url, {
+    const response = await supaIdempotentUpsertFetch(url, {
       method: 'POST',
       headers: supaHeaders(cfg, { Prefer: 'resolution=merge-duplicates,return=minimal' }),
       body: JSON.stringify(Array.isArray(rows) ? rows : [rows]),
-    }, 7000, `Supabase ${table}`);
+    }, 7000, `Supabase ${table}`, cfg);
     if (!response.ok) {
       const text = await response.text().catch(() => '');
       throw new Error(`Supabase ${table}: HTTP ${response.status}${text ? ` — ${text.slice(0, 180)}` : ''}`);
