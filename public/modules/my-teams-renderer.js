@@ -3,17 +3,13 @@ export function createMyTeamsRenderer({
   elementById,
   escapeHtml,
   safeUrl,
-  isLiveMatch,
-  isFinishedMatch,
-  scoreText,
   timeOf,
   onOpenTeam,
   onAnalyzeMatch,
 }) {
   if (!state || typeof elementById !== 'function' || typeof escapeHtml !== 'function' || typeof safeUrl !== 'function' ||
-      typeof isLiveMatch !== 'function' || typeof isFinishedMatch !== 'function' || typeof scoreText !== 'function' ||
       typeof timeOf !== 'function' || typeof onOpenTeam !== 'function' || typeof onAnalyzeMatch !== 'function') {
-    throw new TypeError('My Teams renderer requires state, formatters, match predicates and explicit callbacks.');
+    throw new TypeError('My Teams renderer requires state, formatters and explicit callbacks.');
   }
 
   const $ = elementById;
@@ -40,12 +36,12 @@ export function createMyTeamsRenderer({
       const id = Number(team.teamId || 0);
       const logo = safeUrl(team.teamLogo);
       const related = state.matches.filter(match => [Number(match.home?.id), Number(match.away?.id)].includes(id));
-      const live = related.find(match => isLiveMatch(match));
+      const live = related.find(match => Boolean(match?.live));
       const upcoming = related
-        .filter(match => !isFinishedMatch(match) && !isLiveMatch(match))
+        .filter(match => !match?.finished && !match?.live)
         .sort((a, b) => Date.parse(a.date || 0) - Date.parse(b.date || 0))[0];
       const recent = related
-        .filter(match => isFinishedMatch(match))
+        .filter(match => Boolean(match?.finished))
         .sort((a, b) => Date.parse(b.date || 0) - Date.parse(a.date || 0))[0];
       const focus = live || upcoming || recent;
       const status = live ? '🔴 Матч идёт' : upcoming ? 'Ближайший матч' : recent ? 'Последний матч' : 'Матчи пока не найдены';
@@ -55,7 +51,7 @@ export function createMyTeamsRenderer({
           <span><strong>${escapeHtml(team.teamName || 'Команда')}</strong><small>${status}</small></span>
           <b>Открыть →</b>
         </button>
-        ${focus ? `<button class="my-team-match" type="button" data-team-fixture="${Number(focus.fixtureId)}"><span>${escapeHtml(focus.home?.name || '')} — ${escapeHtml(focus.away?.name || '')}</span><strong>${isLiveMatch(focus) ? escapeHtml(scoreText(focus)) : timeOf(focus.date)}</strong><small>Открыть матч →</small></button>` : '<div class="empty compact-empty">Данные по ближайшему матчу пока недоступны.</div>'}
+        ${focus ? `<button class="my-team-match" type="button" data-team-fixture="${Number(focus.fixtureId)}"><span>${escapeHtml(focus.home?.name || '')} — ${escapeHtml(focus.away?.name || '')}</span><strong>${focus.live ? escapeHtml(`${focus.score?.home ?? '—'} : ${focus.score?.away ?? '—'}`) : timeOf(focus.date)}</strong><small>Открыть матч →</small></button>` : '<div class="empty compact-empty">Данные по ближайшему матчу пока недоступны.</div>'}
       </article>`;
     }).join('');
 

@@ -45,9 +45,6 @@ function createHarness(overrides = {}) {
     elementById: id => elements.get(id) || null,
     escapeHtml: value => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'),
     safeUrl: value => String(value || '').startsWith('https://') ? String(value) : '',
-    isLiveMatch: match => Boolean(match?.live),
-    isFinishedMatch: match => Boolean(match?.finished),
-    scoreText: match => `${match?.home?.score ?? 0}:${match?.away?.score ?? 0}`,
     timeOf: value => 'TIME:' + String(value ?? ''),
     onOpenTeam: team => calls.open.push(team),
     onAnalyzeMatch: (fixtureId, btn) => calls.analyze.push({ fixtureId, btn }),
@@ -61,6 +58,7 @@ test('my teams renderer lives outside app while navigation and analysis stay in 
   assert.match(app, /onOpenTeam: team => openTeam\(team\)/);
   assert.match(app, /onAnalyzeMatch: \(fixtureId, button\) => analyzeMatch\(fixtureId, button\)/);
   assert.doesNotMatch(app, /function renderMyTeams\(\)/);
+  assert.doesNotMatch(app, /\bisLiveMatch\b|\bisFinishedMatch\b|\bscoreText\b/);
 
   assert.match(source, /export function createMyTeamsRenderer/);
   assert.match(source, /function renderMyTeams\(\)/);
@@ -87,9 +85,9 @@ test('my teams prefers live match over upcoming and recent', () => {
     state: {
       favorites: [{ teamId: 7, teamName: 'Team Seven', teamLogo: 'https://img.test/7.png' }],
       matches: [
-        { fixtureId: 1, date: '2026-09-29T10:00:00Z', finished: true, home: { id: 7, name: 'Old', score: 2 }, away: { id: 8, name: 'Away', score: 1 } },
+        { fixtureId: 1, date: '2026-09-29T10:00:00Z', finished: true, home: { id: 7, name: 'Old' }, away: { id: 8, name: 'Away' }, score: { home: 2, away: 1 } },
         { fixtureId: 2, date: '2026-10-01T10:00:00Z', home: { id: 7, name: 'Next' }, away: { id: 9, name: 'Away' } },
-        { fixtureId: 3, date: '2026-09-30T10:00:00Z', live: true, home: { id: 10, name: 'Live Home', score: 1 }, away: { id: 7, name: 'Team Seven', score: 0 } },
+        { fixtureId: 3, date: '2026-09-30T10:00:00Z', live: true, home: { id: 10, name: 'Live Home' }, away: { id: 7, name: 'Team Seven' }, score: { home: 1, away: 0 } },
       ],
     },
   });
@@ -99,7 +97,7 @@ test('my teams prefers live match over upcoming and recent', () => {
   assert.equal(onboarding.hidden, true);
   assert.match(root.innerHTML, /🔴 Матч идёт/);
   assert.match(root.innerHTML, /data-team-fixture="3"/);
-  assert.match(root.innerHTML, /1:0/);
+  assert.match(root.innerHTML, /1 : 0/);
   assert.doesNotMatch(root.innerHTML, /data-team-fixture="2"/);
 });
 
@@ -162,9 +160,6 @@ test('missing my teams root fails soft without callbacks', () => {
     elementById: () => null,
     escapeHtml: value => String(value ?? ''),
     safeUrl: value => String(value ?? ''),
-    isLiveMatch: () => false,
-    isFinishedMatch: () => false,
-    scoreText: () => '',
     timeOf: value => String(value ?? ''),
     onOpenTeam: () => { calls += 1; },
     onAnalyzeMatch: () => { calls += 1; },
