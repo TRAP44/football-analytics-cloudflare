@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+const betaDashboard=readFileSync(new URL('../public/modules/admin-beta-dashboard.js',import.meta.url),'utf8');
 
 function block(source,start,end){
   const a=source.indexOf(start);
@@ -60,11 +61,11 @@ test('dashboard exposes the expansion decision without raw identities',()=>{
   assert.match(dashboard,/idsReturned:false/);
   assert.doesNotMatch(dashboard,/betaTelegramIdsReturned|telegramIdsReturned:true/);
 
-  assert.match(app,/Verified normal users/);
-  assert.match(app,/Phase 5 status/);
-  assert.match(app,/Capacity decision/);
-  assert.match(app,/Coverage decision/);
-  assert.doesNotMatch(block(app,'function renderBetaDashboard','async function'),/Closed Beta Launch завершён/);
+  assert.match(betaDashboard,/Verified normal users/);
+  assert.match(betaDashboard,/Phase 5 status/);
+  assert.match(betaDashboard,/Capacity decision/);
+  assert.match(betaDashboard,/Coverage decision/);
+  assert.doesNotMatch(block(betaDashboard,'function renderBetaDashboard','async function loadBetaDashboard'),/Closed Beta Launch завершён/);
 });
 
 test('verified session definition stays inside existing closed beta telemetry',()=>{
