@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/router.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
+const mediaPublisher=fs.readFileSync('public/modules/admin-media-publisher.js','utf8');
 const html=fs.readFileSync('public/admin.html','utf8');
 const css=fs.readFileSync('public/styles.css','utf8');
 
@@ -24,8 +25,9 @@ test('admin launch panel exposes publisher controls',()=>{
   assert.match(html,/id="mediaPublisherFixtureId"/);
   assert.match(html,/id="mediaPublisherGenerateBtn"/);
   assert.match(html,/id="mediaPublisherResult"/);
-  assert.match(app,/async function generateMediaPublisherLink\(/);
-  assert.match(app,/copyMediaPublisherPost/);
+  assert.match(mediaPublisher,/async function generateMediaPublisherLink\(/);
+  assert.match(mediaPublisher,/async function copyMediaPublisherPost\(/);
+  assert.match(app,/import\('\.\/modules\/admin-media-publisher\.js'\)/);
   assert.match(css,/\.media-publisher-kit/);
 });
 
