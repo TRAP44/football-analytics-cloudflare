@@ -15,6 +15,24 @@ test('Phase 4 public navigation is Home My Teams History Profile with search on 
   assert.doesNotMatch(html,/id="navSearch"/);
   assert.match(html,/id="homeSearchBtn"/);
 });
+test('Home keeps frequent match filters visible and secondary filters behind one disclosure',()=>{
+  const start=html.indexOf('<div class="home-filter-controls">');
+  const end=html.indexOf('<div class="section-head">',start);
+  assert.ok(start>=0 && end>start);
+  const controls=html.slice(start,end);
+  const drawer=controls.slice(controls.indexOf('<details'),controls.indexOf('</details>')+10);
+  const quick=controls.slice(0,controls.indexOf('<details'));
+  for(const filter of ['top','live','all']) assert.match(quick,new RegExp(`data-filter="${filter}"`));
+  for(const filter of ['favorites','international','cups','england','spain','italy','germany','france']) {
+    assert.match(drawer,new RegExp(`data-filter="${filter}"`));
+    assert.doesNotMatch(quick,new RegExp(`data-filter="${filter}"`));
+  }
+  assert.match(drawer,/data-filter-summary-value>Ещё</);
+  assert.match(app,/const drawerFilters = \['favorites', 'international', 'cups', 'england', 'spain', 'italy', 'germany', 'france'\]/);
+  assert.match(app,/querySelector\('\[data-filter-summary-value\]'\)/);
+  assert.match(css,/MatchRadar Home Filter Simplification — fast choices first/);
+});
+
 test('new users get a simple favorite-team CTA on Home without profile setup',()=>{
   assert.match(html,/id="homeFavoriteBtn"/);
   assert.match(html,/Добавить любимую команду/);
