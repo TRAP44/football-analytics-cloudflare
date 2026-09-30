@@ -19,6 +19,7 @@ const adminOverview = fs.readFileSync('public/modules/admin-overview.js', 'utf8'
 const betaFeedback = fs.readFileSync('public/modules/beta-feedback.js', 'utf8');
 const profileDataCapabilities = fs.readFileSync('public/modules/profile-data-capabilities.js', 'utf8');
 const profileAccessState = fs.readFileSync('public/modules/profile-access-state.js', 'utf8');
+const journeyState = fs.readFileSync('public/modules/journey-state.js', 'utf8');
 const launchFunnelFrontend = app + '\n' + adminLaunchFunnel;
 const appRuntime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
@@ -202,6 +203,11 @@ if (!app.includes("import { createProfileAccessStateModule } from './modules/pro
 if (!app.includes('const { renderProfileAccessState } = createProfileAccessStateModule({') || !app.includes('onRetry: () => openProfileView()')) failures.push('Profile access state retry dependency must stay explicitly wired from the composition root');
 if (app.includes('function renderProfileAccessState(') || app.includes('Профиль временно недоступен')) failures.push('Profile access state implementation leaked back into shared app root');
 if (/openProfileView|\bapi\s*\(|fetch\s*\(|state\./.test(profileAccessState)) failures.push('Profile access state module must not own profile loading or network lifecycle');
+if (!fs.existsSync('test/journey-state-extraction.test.js')) failures.push('Missing journey state extraction regression test');
+if (!app.includes("import { createJourneyStateModule } from './modules/journey-state.js'") || !journeyState.includes('export function createJourneyStateModule')) failures.push('Journey state extraction contract is missing');
+if (!app.includes('const { renderJourneyState } = createJourneyStateModule({')) failures.push('Journey state renderer must be wired synchronously from the composition root');
+if (app.includes('function renderJourneyState(') || app.includes('analysisStateRetry')) failures.push('Journey state implementation leaked back into shared app root');
+if (/openMatchCenter|analyzeMatch|\bapi\s*\(|fetch\s*\(|state\./.test(journeyState)) failures.push('Journey state module must not own match or AI lifecycle');
 if (!app.includes("import('./modules/admin-launch-funnel.js')") || !adminLaunchFunnel.includes('export function createAdminLaunchFunnelModule')) failures.push('Admin launch funnel lazy extraction contract is missing');
 if (app.includes('Собираю first-party воронку') || app.includes('newsImpactRecoveryIncidentSloBreachImpactRanking')) failures.push('Admin launch funnel implementation leaked back into shared app root');
 if (!app.includes("createNavigationShell({") || !navigationShell.includes('export function createNavigationShell')) failures.push('Frontend navigation shell extraction contract is missing');

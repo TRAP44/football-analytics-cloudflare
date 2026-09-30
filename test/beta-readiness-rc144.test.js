@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
 const profileAccessState = fs.readFileSync('public/modules/profile-access-state.js', 'utf8');
+const journeyState = fs.readFileSync('public/modules/journey-state.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const worker = fs.readFileSync('src/worker.js', 'utf8');
 const checklist = fs.readFileSync('BETA_READINESS_CHECKLIST_RU.md', 'utf8');
@@ -61,12 +62,15 @@ test('main action failures are measured by category, not free-form error text', 
   for (const action of ['matches','search','match','live_refresh','ai','history','profile']) {
     assert.ok(app.includes("sendActionError('" + action + "'"), action);
   }
-  const helper = block(app, 'function sendActionError', 'function renderJourneyState');
+  const helper = block(app, 'function sendActionError', 'function sendOperationTiming');
   assert.match(helper, /apiErrorCategory\(error\)/);
   assert.doesNotMatch(helper, /error\?\.message/);
 });
 
 test('match and AI transitions have explicit loading error and retry states', () => {
+  assert.match(journeyState, /function renderJourneyState/);
+  assert.match(journeyState, /analysisStateRetry/);
+  assert.match(app, /createJourneyStateModule/);
   const center = block(app, 'async function openMatchCenter', 'function syncAnalysisBusyUi');
   assert.match(center, /showView\('analysisView'\)/);
   assert.match(center, /renderJourneyState\('loading'/);
