@@ -7,6 +7,7 @@ import { createFirstRunGuideController } from './modules/first-run-guide.js';
 import { createProfileDataCapabilitiesModule } from './modules/profile-data-capabilities.js';
 import { createProfileAccessStateModule } from './modules/profile-access-state.js';
 import { createProfileSummaryModule } from './modules/profile-summary.js';
+import { createDigestSettingsModule } from './modules/digest-settings.js';
 import { createFavoriteTeamsRenderer } from './modules/favorite-teams-renderer.js';
 import { createReminderListModule } from './modules/reminder-list.js';
 import { createMyTeamsRenderer } from './modules/my-teams-renderer.js';
@@ -849,6 +850,18 @@ async function runStartupSequence() {
 
 const api = createApiClient({ state, tg, inflightGetRequests, observeServerVersion, showBootRecovery, applyRuntimeUi, normalizeApiError, noteRequestSuccess, noteRequestFailure });
 
+const digestSettingsModule = createDigestSettingsModule({
+  elementById: $,
+  api,
+  escapeHtml,
+  planLabel,
+  toast,
+});
+const {
+  loadDigestSettings,
+  renderDigestSettings,
+} = digestSettingsModule;
+
 async function loadProfile() {
   const previousProfile = state.profile;
   try {
@@ -1260,6 +1273,7 @@ function renderProfile() {
   renderMyTeams();
   renderReminderList();
   renderBilling();
+  renderDigestSettings();
   applyAdminVisibility();
   if (state.profile?.features?.runtime) state.runtimeStatus = state.profile.features.runtime;
   renderDataCapabilities();
@@ -1416,6 +1430,7 @@ async function openProfileView() {
   const essentials = [];
   if (!state.favoritesLoaded) essentials.push(loadFavorites());
   if (!state.remindersLoaded) essentials.push(loadReminders());
+  if (!digestSettingsModule.loaded) essentials.push(loadDigestSettings());
   if (isAdmin()) {
     if (!state.providerLoaded) essentials.push(loadProvider());
     essentials.push(loadRuntimeControlsAdmin(false));
