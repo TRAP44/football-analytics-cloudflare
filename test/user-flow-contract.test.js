@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
 const navigationShell = fs.readFileSync('public/modules/navigation-shell.js', 'utf8');
+const historyRenderer = fs.readFileSync('public/modules/history-renderer.js', 'utf8');
 const worker = fs.readFileSync('src/worker.js', 'utf8')+'\n'+fs.readFileSync('src/router.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const css = fs.readFileSync('public/styles.css', 'utf8');
@@ -33,7 +34,7 @@ test('history opens cached analysis read-only without spending another analysis 
   assert.match(match[0], /getStaleCache\(cacheKey, cfg\)/);
   assert.doesNotMatch(match[0], /incrementUsage\(/);
   assert.match(worker, /url\.pathname === '\/api\/history-analysis'/);
-  assert.match(app, /openHistoryAnalysis\(Number\(btn\.dataset\.fixture\), btn\)/);
+  assert.match(historyRenderer, /openHistoryAnalysis\(Number\(btn\.dataset\.fixture\), btn\)/);
 });
 
 test('global search ignores stale responses and mobile navigation does not force the keyboard open', () => {
