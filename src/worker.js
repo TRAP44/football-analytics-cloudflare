@@ -22318,14 +22318,14 @@ async function loadSmartNotificationEventSnapshot(fixtureId, cfg) {
   });
   const rawRows = Array.isArray(result?.data) ? result.data : [];
   const formatted = formatLiveEvents(rawRows, 0, 0);
-  const quality = assessMatchEventQuality(formatted, {
-    eventsMeta:result?.meta || {},
-    mode:'live',
-  });
   let meta = applyFeatureFreshness(
     result?.meta || { feature:'events', provider:'api-football', source:'network', state:'available', available:true, usable:true, observed:true },
     { feature:'events', mode:'live' },
   );
+  const quality = assessMatchEventQuality(formatted, {
+    eventsMeta:meta,
+    mode:'live',
+  });
   meta = annotateEventReliability(meta, quality);
   const events = formatted.map(event => {
     const index = Number(String(event.id || '').split('-').at(-1));
@@ -22351,7 +22351,7 @@ async function loadSmartNotificationEventSnapshot(fixtureId, cfg) {
     };
   });
   return {
-    trusted:Boolean(quality?.confidenceBearing && meta?.confidenceBearing === true),
+    trusted:Boolean(quality?.confidenceBearing && meta?.stale !== true),
     stale:Boolean(meta?.stale === true || meta?.source === 'stale' || meta?.source === 'stale-cache'),
     reason:String(meta?.reason || ''),
     sourceMeta:meta,
