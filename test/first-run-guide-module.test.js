@@ -30,10 +30,10 @@ test('first-run controller stays local and reuses existing app surfaces', () => 
   assert.doesNotMatch(moduleSource, /\/api\//);
 });
 
-test('launch20 revision refreshes both public surfaces and runtime source of truth', () => {
-  assert.match(runtime, /FRONTEND_ASSET_REVISION = '6\.120\.0-launch20'/);
-  assert.match(publicHtml, /frontend-asset-revision" content="6\.120\.0-launch20"/);
-  assert.match(adminHtml, /frontend-asset-revision" content="6\.120\.0-launch20"/);
-  assert.match(publicHtml, /\/app\.js\?v=6\.120\.0-launch20/);
-  assert.match(adminHtml, /\/app\.js\?v=6\.120\.0-launch20/);
+test('launch21 revision refreshes both public surfaces and runtime source of truth', () => {
+  assert.match(runtime, /FRONTEND_ASSET_REVISION = '6\.120\.0-launch21'/);
+  assert.match(publicHtml, /frontend-asset-revision" content="6\.120\.0-launch21"/);
+  assert.match(adminHtml, /frontend-asset-revision" content="6\.120\.0-launch21"/);
+  assert.match(publicHtml, /\/app-admin\.js\?v=6\.120\.0-launch21/);
+  assert.match(adminHtml, /\/app\.js\?v=6\.120\.0-launch21/);
 });
