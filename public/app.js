@@ -1,5 +1,6 @@
 import { createApiClient, initTelegramWebApp, localDate, timeOf, dateTime, dateOnly, relativeAge, phase5SessionToken } from './modules/client-core.js';
 import { CANONICAL_HOME_VIEW, PUBLIC_VIEW_IDS, backTargetForView, telegramBackButtonVisible } from './modules/navigation.js';
+import { createNavigationShell } from './modules/navigation-shell.js';
 import { createViewChromeController } from './modules/view-chrome.js';
 import { createInterfacePreferencesController } from './modules/ui-preferences.js';
 import { createFirstRunGuideController } from './modules/first-run-guide.js';
@@ -170,7 +171,6 @@ const MATCH_SNAPSHOT_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 
 
 const $ = id => document.getElementById(id);
-const views = [...PUBLIC_VIEW_IDS];
 
 function syncBootVersion() {
   const el = $('publicAppVersion');
@@ -215,48 +215,31 @@ const {
   isTelegramBackVisible: id => telegramBackButtonVisible(id),
 });
 
-function handleBackNavigation() {
-  const current = activeViewId();
-  if (current === CANONICAL_HOME_VIEW) return false;
-  showView(viewBackTarget(current), { restore: true });
-  return true;
-}
+const navigationShell = createNavigationShell({
+  window,
+  document,
+  elementById: $,
+  viewIds: PUBLIC_VIEW_IDS,
+  homeView: CANONICAL_HOME_VIEW,
+  resolveBackTarget: id => viewBackTarget(id),
+  syncTopbar,
+  syncBackButtons,
+  syncTelegramBackButton,
+  onLeaveView: ({ from, to, options }) => {
+    if (from === 'historyView' && to !== 'historyView' && !options.fromHistoryOpen) {
+      state.historyOpenRequestSeq += 1;
+    }
+    if (to !== 'analysisView') {
+      stopLiveRefresh();
+      state.liveRefreshWasActive = false;
+    }
+  },
+  onEffectError: (error, context) => {
+    console.error('Navigation lifecycle effect failed', context, error);
+  },
+});
 
-function showView(id, options = {}) {
-  if (!views.includes(id) || !$(id)) id = 'matchesView';
-  const current = activeViewId();
-  if (current === 'historyView' && id !== 'historyView' && !options.fromHistoryOpen) {
-    state.historyOpenRequestSeq += 1;
-  }
-  syncTopbar(id);
-  if (current && current !== id) state.viewScroll[current] = window.scrollY || 0;
-  if (id !== 'analysisView') { stopLiveRefresh(); state.liveRefreshWasActive = false; }
-  views.forEach(v => {
-    const view = $(v);
-    if (!view) return;
-    const active = v === id;
-    view.classList.toggle('active', active);
-    view.hidden = !active;
-    view.toggleAttribute('inert', !active);
-    view.setAttribute('aria-hidden', active ? 'false' : 'true');
-  });
-  $('navMatches').classList.toggle('active', id === 'matchesView');
-  $('navMyTeams')?.classList.toggle('active', id === 'myTeamsView');
-  $('navHistory').classList.toggle('active', id === 'historyView');
-  $('navProfile').classList.toggle('active', id === 'profileView');
-  document.querySelectorAll('.nav-item').forEach(btn => btn.removeAttribute('aria-current'));
-  if (id === 'matchesView') $('navMatches')?.setAttribute('aria-current', 'page');
-  if (id === 'myTeamsView') $('navMyTeams')?.setAttribute('aria-current', 'page');
-  if (id === 'historyView') $('navHistory')?.setAttribute('aria-current', 'page');
-  if (id === 'profileView') $('navProfile')?.setAttribute('aria-current', 'page');
-  syncBackButtons();
-  syncTelegramBackButton(id);
-  const top = options.restore ? Number(state.viewScroll[id] || 0) : 0;
-  requestAnimationFrame(() => {
-    window.scrollTo({ top, behavior: 'auto' });
-    if (options.focusHeading === true) $('topbarTitle')?.focus({ preventScroll: true });
-  });
-}
+const { activeViewId, handleBackNavigation, showView } = navigationShell;
 
 function toast(message) {
   const el = $('toast');
@@ -4772,7 +4755,6 @@ function setTournamentTab(tab, load = true) {
 }
 
 
-function activeViewId() { return document.querySelector('.view.active')?.id || 'matchesView'; }
 function teamResultBadge(result) {
   const r = String(result || '').toUpperCase();
   if (!['W','D','L'].includes(r)) return '';
