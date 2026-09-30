@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
-const app=fs.readFileSync('public/app.js','utf8');
+const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
 
 test('RC82 adds a recent stability window after the strict RC81 decision',()=>{
   assert.match(worker,/NEWS_IMPACT_RECOVERY_STABILITY_WINDOW_DAYS = 7/);
