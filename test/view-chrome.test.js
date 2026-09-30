@@ -8,6 +8,7 @@ import {
 } from '../public/modules/view-chrome.js';
 
 const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+const navigationShell = readFileSync(new URL('../public/modules/navigation-shell.js', import.meta.url), 'utf8');
 
 function element() {
   return { textContent: '' };
@@ -89,5 +90,6 @@ test('telegram back button remains controlled by navigation visibility', () => {
 
 test('view chrome extraction keeps live refresh lifecycle in app composition root', () => {
   assert.match(app, /function stopLiveRefresh\(\)/);
-  assert.match(app, /if \(id !== 'analysisView'\) \{ stopLiveRefresh\(\); state\.liveRefreshWasActive = false; \}/);
+  assert.match(app, /onLeaveView:\s*\(\{ from, to, options \}\) => \{[\s\S]*?stopLiveRefresh\(\)/);
+  assert.doesNotMatch(navigationShell, /stopLiveRefresh|liveRefreshTimer/);
 });
