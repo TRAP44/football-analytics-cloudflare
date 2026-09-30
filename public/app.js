@@ -1,12 +1,12 @@
 import { createApiClient, initTelegramWebApp, localDate, timeOf, dateTime, dateOnly, relativeAge, phase5SessionToken } from './modules/client-core.js';
 import { CANONICAL_HOME_VIEW, PUBLIC_VIEW_IDS, backTargetForView, telegramBackButtonVisible } from './modules/navigation.js';
 import { createInterfacePreferencesController } from './modules/ui-preferences.js';
+import { createFirstRunGuideController } from './modules/first-run-guide.js';
 import {
   CLIENT_VERSION,
   CLIENT_API_CONTRACT,
   CLIENT_RELEASE_CHANNEL,
   SUPABASE_SCHEMA_HINT,
-  FIRST_RUN_GUIDE_KEY,
   appSurface,
   readUiPreferences,
   MATCH_WATCHLIST_KEY,
@@ -176,55 +176,22 @@ function syncBootVersion() {
   if (el) el.textContent = CLIENT_VERSION.split('-')[0];
 }
 
-function hasDirectLaunchIntent() {
-  try {
-    const params = new URLSearchParams(location.search);
-    const view = String(params.get('view') || '').toLowerCase();
-    const query = String(params.get('q') || '').trim();
-    const fixtureId = Number(params.get('fixtureId') || 0);
-    const action = String(params.get('action') || '').toLowerCase();
-    return Boolean(
-      tg?.initDataUnsafe?.start_param
-      || view === 'search'
-      || view === 'history'
-      || query
-      || (fixtureId > 0 && ['analysis', 'center'].includes(action))
-    );
-  } catch {
-    return Boolean(tg?.initDataUnsafe?.start_param);
-  }
-}
-
-function renderFirstRunGuide() {
-  const guide = $('firstRunGuide');
-  if (!guide) return;
-  let dismissed = false;
-  try { dismissed = localStorage.getItem(FIRST_RUN_GUIDE_KEY) === '1'; } catch {}
-  guide.hidden = dismissed || hasDirectLaunchIntent();
-}
-
-function dismissFirstRunGuide() {
-  const guide = $('firstRunGuide');
-  try { localStorage.setItem(FIRST_RUN_GUIDE_KEY, '1'); } catch {}
-  if (guide) guide.hidden = true;
-}
-
-function startFirstRunSearch() {
-  dismissFirstRunGuide();
-  sendProductAction('first_run_search', 'matchesView');
-  $('matchSearch')?.focus({ preventScroll: true });
-  $('matchSearch')?.scrollIntoView({ behavior:'smooth', block:'center' });
-}
-
-function startFirstRunFavorite() {
-  dismissFirstRunGuide();
-  sendProductAction('first_run_favorite', 'searchView');
-  state.globalSearch.query='';
-  if ($('globalSearchInput')) $('globalSearchInput').value='';
-  renderGlobalSearch();
-  showView('searchView');
-  setTimeout(() => $('globalSearchInput')?.focus({ preventScroll: true }), 80);
-}
+const {
+  hasDirectLaunchIntent,
+  renderFirstRunGuide,
+  dismissFirstRunGuide,
+  startFirstRunSearch,
+  startFirstRunFavorite,
+} = createFirstRunGuideController({
+  window,
+  tg,
+  state,
+  storage: localStorage,
+  elementById: $,
+  sendProductAction,
+  renderGlobalSearch: () => renderGlobalSearch(),
+  showView: (id, options) => showView(id, options),
+});
 
 const VIEW_CHROME = {
   matchesView: ['Главная', 'Видим, что меняет матч.'],
