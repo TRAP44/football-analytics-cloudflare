@@ -34,6 +34,6 @@ test('launch21 revision refreshes both public surfaces and runtime source of tru
   assert.match(runtime, /FRONTEND_ASSET_REVISION = '6\.120\.0-launch21'/);
   assert.match(publicHtml, /frontend-asset-revision" content="6\.120\.0-launch21"/);
   assert.match(adminHtml, /frontend-asset-revision" content="6\.120\.0-launch21"/);
-  assert.match(publicHtml, /\/app-admin\.js\?v=6\.120\.0-launch21/);
-  assert.match(adminHtml, /\/app\.js\?v=6\.120\.0-launch21/);
+  assert.match(publicHtml, /\/app-public\.js\?v=6\.120\.0-launch21/);
+  assert.match(adminHtml, /\/app-admin\.js\?v=6\.120\.0-launch21/);
 });
