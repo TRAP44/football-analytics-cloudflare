@@ -48,6 +48,12 @@ import {
   validateTelegramInitData,
 } from './crypto-utils.js';
 import { createTelegramLinksRuntime } from './telegram-links.js';
+import {
+  normalizeReferralCode,
+  opaqueReferralCode,
+  referralAttributionDecision,
+  splitLaunchReferralParts,
+} from './referral-attribution.js';
 import { markTelegramWebhookEffect, markTelegramWebhookMutation } from './telegram-webhook-retry.js';
 import { PERSONAL_WRITE_LIMITS } from './personal-write-guards.js';
 import { createUserFavoritesService } from './user-favorites.js';
@@ -1566,16 +1572,18 @@ function telegramStartPayload(text = '') {
 
 function parseLaunchStartParam(value = '') {
   const raw=String(value || '').trim().replace(/[^A-Za-z0-9_-]/g,'').slice(0,64);
-  if (!raw) return {source:'telegram',campaign:'direct',content:'',startParam:''};
+  if (!raw) return {source:'telegram',campaign:'direct',content:'',startParam:'',referralCode:''};
   const lower=raw.toLowerCase();
-  const parts=lower.includes('__') ? lower.split('__').filter(Boolean) : lower.split('_').filter(Boolean);
+  let parts=lower.includes('__') ? lower.split('__').filter(Boolean) : lower.split('_').filter(Boolean);
+  const referral=splitLaunchReferralParts(parts);
+  parts=referral.parts;
   const prefix=cleanLaunchPart(parts.shift() || '',20);
   if (/^fx\d{1,12}$/.test(prefix)) {
     const fixtureId=Number(prefix.slice(2));
     const source=cleanLaunchPart(parts.shift() || 'social',24) || 'social';
     const campaign=cleanLaunchPart(parts.shift() || 'match_share',32) || 'match_share';
     const content=cleanLaunchPart(parts.join('_'),40);
-    return {source,campaign,content,startParam:raw,fixtureId,action:'fixture'};
+    return {source,campaign,content,startParam:raw,fixtureId,action:'fixture',referralCode:referral.referralCode};
   }
   if (['media','press','partner','social'].includes(prefix)) {
     return {
@@ -1583,6 +1591,7 @@ function parseLaunchStartParam(value = '') {
       campaign:cleanLaunchPart(parts[1] || 'launch',40) || 'launch',
       content:cleanLaunchPart(parts.slice(2).join('_'),48),
       startParam:raw,
+      referralCode:referral.referralCode,
     };
   }
   if (prefix === 'ref' || prefix === 'referral') {
@@ -1591,6 +1600,7 @@ function parseLaunchStartParam(value = '') {
       campaign:cleanLaunchPart(parts[0] || 'invite',40) || 'invite',
       content:cleanLaunchPart(parts.slice(1).join('_'),48),
       startParam:raw,
+      referralCode:referral.referralCode,
     };
   }
   return {
@@ -1598,6 +1608,7 @@ function parseLaunchStartParam(value = '') {
     campaign:cleanLaunchPart(lower,40) || 'direct',
     content:'',
     startParam:raw,
+    referralCode:referral.referralCode,
   };
 }
 
@@ -1647,15 +1658,18 @@ async function recordGrowthEventTask(cfg, {
   fixtureId=null,
   metadata={},
   attribution=null,
+  eventKey='',
 } = {}) {
   const id=Number(userId || 0);
   const event=cleanLaunchPart(eventName,40);
+  const dedupeKey=String(eventKey || '').trim().replace(/[^A-Za-z0-9._:-]/g,'').slice(0,180);
   if (!id || !event) return false;
   try {
     const attr=attribution || acquisitionFromUser(await getUserRecord(id,cfg).catch(()=>null));
     const row={
       telegram_id:id,
       event_name:event,
+      event_key:dedupeKey || null,
       channel:['telegram','miniapp','system'].includes(channel) ? channel : 'telegram',
       fixture_id:Number(fixtureId || 0) || null,
       source:attr.source || 'telegram',
@@ -1664,11 +1678,171 @@ async function recordGrowthEventTask(cfg, {
       metadata:safeOpsMetadata(metadata || {}),
       created_at:new Date().toISOString(),
     };
-    if (hasSupabase(cfg)) await supaUpsert(cfg,'growth_events',row);
+    if (hasSupabase(cfg)) {
+      if (dedupeKey) {
+        try {
+          await supaUpsert(cfg,'growth_events',row);
+        } catch (error) {
+          const existing=await supaSelectOne(cfg,'growth_events',{event_key:`eq.${dedupeKey}`}).catch(()=>null);
+          if (!existing) throw error;
+        }
+      } else await supaUpsert(cfg,'growth_events',row);
+    } else if (dedupeKey) {
+      if (!(memory.growthEventKeys instanceof Set)) memory.growthEventKeys=new Set();
+      if (memory.growthEventKeys.has(dedupeKey)) return true;
+      memory.growthEventKeys.add(dedupeKey);
+    }
     return true;
   } catch {
     return false;
   }
+}
+
+function referralCodeEventKey(code) {
+  return `referral_code:${normalizeReferralCode(code)}`;
+}
+
+function referralAttributionEventKey(userId) {
+  return `referral_attribution:${Number(userId || 0)}`;
+}
+
+function referralOpenEventKey(userId) {
+  return `referral_open:${Number(userId || 0)}`;
+}
+
+async function ensureReferralCode(userId, cfg) {
+  const id=Number(userId || 0);
+  if (!Number.isSafeInteger(id) || id<=0) return '';
+  const code=normalizeReferralCode(await opaqueReferralCode(id,cfg?.botToken));
+  if (!code) return '';
+
+  if (hasSupabase(cfg)) {
+    await supaUpsert(cfg,'growth_events',{
+      telegram_id:id,
+      event_name:'referral_code_created',
+      event_key:referralCodeEventKey(code),
+      channel:'system',
+      fixture_id:null,
+      source:'internal',
+      campaign:'referral',
+      content:'code',
+      metadata:{referral_code:code},
+      created_at:new Date().toISOString(),
+    }).catch(()=>null);
+    const confirmed=await supaSelectOne(cfg,'growth_events',{event_key:`eq.${referralCodeEventKey(code)}`});
+    return Number(confirmed?.telegram_id || 0)===id && String(confirmed?.event_name || '')==='referral_code_created' ? code : '';
+  }
+
+  if (!(memory.referralCodeOwners instanceof Map)) memory.referralCodeOwners=new Map();
+  memory.referralCodeOwners.set(code,id);
+  return code;
+}
+
+async function lookupReferralCodeOwner(code, cfg) {
+  const normalized=normalizeReferralCode(code);
+  if (!normalized) return 0;
+  if (hasSupabase(cfg)) {
+    const row=await supaSelectOne(cfg,'growth_events',{event_key:`eq.${referralCodeEventKey(normalized)}`}).catch(()=>null);
+    if (String(row?.event_name || '')!=='referral_code_created') return 0;
+    return Number(row?.telegram_id || 0) || 0;
+  }
+  return Number(memory.referralCodeOwners?.get?.(normalized) || 0) || 0;
+}
+
+async function referralAttributionForUser(userId, cfg) {
+  const id=Number(userId || 0);
+  if (!id) return null;
+  if (hasSupabase(cfg)) {
+    const row=await supaSelectOne(cfg,'growth_events',{event_key:`eq.${referralAttributionEventKey(id)}`}).catch(()=>null);
+    const code=normalizeReferralCode(row?.metadata?.referral_code || '');
+    return code ? {referralCode:code,createdAt:row?.created_at || null} : null;
+  }
+  const code=normalizeReferralCode(memory.referralAttributions?.get?.(id) || '');
+  return code ? {referralCode:code,createdAt:null} : null;
+}
+
+async function applyReferralAttribution(userId, launchIntent, cfg) {
+  const id=Number(userId || 0);
+  const code=normalizeReferralCode(launchIntent?.referralCode || '');
+  if (!code) return {accepted:false,status:'none'};
+
+  const [referrerUserId,existing]=await Promise.all([
+    lookupReferralCodeOwner(code,cfg),
+    referralAttributionForUser(id,cfg),
+  ]);
+  const decision=referralAttributionDecision({
+    referredUserId:id,
+    referrerUserId,
+    referralCode:code,
+    existingReferralCode:existing?.referralCode || '',
+  });
+  if (!decision.accepted) return decision;
+
+  const attribution={
+    source:'referral',
+    campaign:cleanLaunchPart(launchIntent?.campaign || 'match_share',40) || 'match_share',
+    content:cleanLaunchPart(launchIntent?.content || 'share',48) || 'share',
+  };
+  const metadata={
+    referral_code:code,
+    origin_source:cleanLaunchPart(launchIntent?.source || 'social',32) || 'social',
+    origin_campaign:cleanLaunchPart(launchIntent?.campaign || 'match_share',40) || 'match_share',
+    origin_content:cleanLaunchPart(launchIntent?.content || '',48),
+  };
+
+  if (!hasSupabase(cfg)) {
+    if (!(memory.referralAttributions instanceof Map)) memory.referralAttributions=new Map();
+    if (memory.referralAttributions.has(id)) {
+      return {accepted:false,status:'duplicate_attribution',referralCode:memory.referralAttributions.get(id)};
+    }
+    memory.referralAttributions.set(id,code);
+  }
+
+  await recordGrowthEvent(cfg,{
+    userId:id,
+    eventName:'referred_first_open',
+    channel:'telegram',
+    fixtureId:Number(launchIntent?.fixtureId || 0) || null,
+    attribution,
+    metadata,
+    eventKey:referralAttributionEventKey(id),
+  });
+
+  const confirmed=await referralAttributionForUser(id,cfg);
+  if (!confirmed || confirmed.referralCode!==code) {
+    return {accepted:false,status:'duplicate_attribution',referralCode:confirmed?.referralCode || ''};
+  }
+
+  await recordGrowthEvent(cfg,{
+    userId:id,
+    eventName:'referral_open',
+    channel:'telegram',
+    fixtureId:Number(launchIntent?.fixtureId || 0) || null,
+    attribution,
+    metadata,
+    eventKey:referralOpenEventKey(id),
+  });
+  return {accepted:true,status:'accepted',referralCode:code};
+}
+
+async function recordReferredPayment(userId, payment, plan, cfg) {
+  const chargeId=String(payment?.telegram_payment_charge_id || '').trim();
+  if (!chargeId) return false;
+  const referral=await referralAttributionForUser(userId,cfg);
+  if (!referral?.referralCode) return false;
+  return await recordGrowthEvent(cfg,{
+    userId,
+    eventName:'referred_payment',
+    channel:'system',
+    attribution:{source:'referral',campaign:'telegram_stars',content:cleanLaunchPart(plan || 'paid',24) || 'paid'},
+    metadata:{
+      referral_code:referral.referralCode,
+      plan:cleanLaunchPart(plan || '',24),
+      stars_amount:Number(payment?.total_amount || 0) || 0,
+      recurring:Boolean(payment?.is_recurring),
+    },
+    eventKey:`referred_payment:${chargeId}`,
+  });
 }
 
 async function cleanupGrowthEvents(cfg) {
@@ -1691,7 +1865,7 @@ function buildMediaCampaignPerformance(rows = []) {
     const campaign=cleanLaunchPart(row?.campaign || 'direct',40) || 'direct';
     const content=cleanLaunchPart(row?.content || '',48);
     const mediaRelevant=Boolean(content)
-      || event==='media_link_created'
+      || ['media_link_created','share_created','share_link_created','share_card_created'].includes(event)
       || event==='fixture_deep_link_open'
       || ['media','press','partner','social'].includes(source);
     if (!mediaRelevant) continue;
@@ -1708,7 +1882,7 @@ function buildMediaCampaignPerformance(rows = []) {
     if (uid && event==='quick_ai') bucket.quickAi.add(uid);
     if (uid && event==='full_ai') bucket.fullAi.add(uid);
     if (event==='fixture_deep_link_open') bucket.deepLinkOpens+=1;
-    if (event==='media_link_created') bucket.linksCreated+=1;
+    if (['media_link_created','share_created','share_link_created','share_card_created'].includes(event)) bucket.linksCreated+=1;
     bucket.events+=1;
     map.set(key,bucket);
   }
@@ -2172,7 +2346,7 @@ async function apiLaunchFunnel(request,cfg) {
   const previousNewsImpactActionFunnel=buildNewsImpactActionFunnel(previousNewsImpactRows,previousNewsImpactActionRows,{asOfMs:analyticsNowMs});
   const newsImpactActionTrend=trendAvailable ? buildNewsImpactActionTrend(newsImpactActionFunnel,previousNewsImpactActionFunnel) : [];
   const newsImpactActionTrendGuard={comparisonDays:days,requiresBothPeriods:true,signalRule:'non_overlapping_wilson_95'};
-  const shareRows=rows.filter(x=>['share_link_created','share_card_created'].includes(String(x.event_name || '')));
+  const shareRows=rows.filter(x=>['share_created','share_link_created','share_card_created'].includes(String(x.event_name || '')));
   const deepLinkRows=rows.filter(x=>String(x.event_name || '')==='fixture_deep_link_open');
   const deepLinkUsers=new Set(deepLinkRows.map(x=>Number(x.telegram_id || 0)).filter(Boolean));
   const deepLinkAiRows=rows.filter(x=>String(x.event_name || '')==='quick_ai' && String(x?.metadata && typeof x.metadata==='object' ? x.metadata.source || '' : '')==='deep_link');
@@ -2469,6 +2643,7 @@ async function applySuccessfulPayment(userId, payment, cfg, fallbackDate = Math.
     subscription_canceled: false,
     telegram_payment_charge_id: chargeId,
   }, cfg);
+  await recordReferredPayment(userId,payment,parsed.plan,cfg).catch(()=>false);
   return true;
 }
 
@@ -2581,9 +2756,23 @@ async function apiFixtureShareLink(request, cfg, user) {
   const campaign=cleanLaunchPart(url.searchParams.get('campaign') || 'match_share',22) || 'match_share';
   const content=cleanLaunchPart(url.searchParams.get('content') || 'miniapp',16) || 'miniapp';
   try {
-    const link=await fixtureTelegramDeepLink(cfg,fixtureId,{source,campaign,content});
-    void recordGrowthEvent(cfg,{userId:user.id,eventName:'share_link_created',channel:'miniapp',fixtureId,metadata:{source,campaign,content}});
-    return json({ok:true,fixtureId,url:link.url,startParam:link.startParam,telegramShareUrl:telegramShareComposerUrl(link.url,'Открой матч в MatchRadar AI — ссылка сразу приведёт к AI-разбору.')});
+    const referralCode=await ensureReferralCode(user.id,cfg).catch(()=>'');
+    const link=await fixtureTelegramDeepLink(cfg,fixtureId,{source,campaign,content,referralCode});
+    void recordGrowthEvent(cfg,{
+      userId:user.id,
+      eventName:'share_created',
+      channel:'miniapp',
+      fixtureId,
+      metadata:{source,campaign,content,surface:'miniapp',referral:Boolean(referralCode)},
+    });
+    return json({
+      ok:true,
+      fixtureId,
+      url:link.url,
+      startParam:link.startParam,
+      telegramShareUrl:telegramShareComposerUrl(link.url,'Открой матч в MatchRadar — ссылка сразу приведёт к матчу и доступному AI-разбору.'),
+      referral:{enabled:Boolean(referralCode),code:referralCode || null},
+    });
   } catch (error) {
     return json({error:'Не удалось подготовить ссылку на матч.',detail:redactOpsString(error?.message || error,120)},503);
   }
@@ -2607,14 +2796,21 @@ function fixtureShareCardText(match = {}, analysis = null) {
 }
 
 async function sendBotFixtureShareCard(request,cfg,userId,chatId,fixtureId) {
+  const referralCode=await ensureReferralCode(userId,cfg).catch(()=>'');
   const [match,analysis,link]=await Promise.all([
     loadBotFixtureCard(fixtureId,cfg),
-    getCache(`fixture:${Number(fixtureId)}:v10-ai-instructor`,cfg).catch(()=>null),
-    fixtureTelegramDeepLink(cfg,fixtureId,{source:'social',campaign:'match_share',content:'telegram'}),
+    getCache(`fixture:${Number(fixtureId)}:v15-availability-quality-rc144`,cfg).catch(()=>null),
+    fixtureTelegramDeepLink(cfg,fixtureId,{source:'social',campaign:'match_share',content:'telegram',referralCode}),
   ]);
   if (!match) throw new Error('Матч не найден.');
-  const plain=`${match.homeName} — ${match.awayName}\nMatchRadar AI: открыть матч и AI-разбор`;
-  void recordGrowthEvent(cfg,{userId,eventName:'share_card_created',channel:'telegram',fixtureId,metadata:{surface:'match_card'}});
+  const plain=`${match.homeName} — ${match.awayName}\nMatchRadar: открыть матч и доступный AI-разбор`;
+  void recordGrowthEvent(cfg,{
+    userId,
+    eventName:'share_created',
+    channel:'telegram',
+    fixtureId,
+    metadata:{surface:'match_card',referral:Boolean(referralCode)},
+  });
   await telegramApi('sendMessage',cfg,{
     chat_id:chatId,
     parse_mode:'HTML',
@@ -7780,10 +7976,20 @@ async function processTelegramUpdate(request, cfg, update) {
     await upsertUser(msg.from || {id:userId},cfg).catch(()=>null);
     const launchIntent=parseLaunchStartParam(startParam);
     const attribution=await ensureLaunchAttribution(userId,startParam,cfg);
+    const referral=await applyReferralAttribution(userId,launchIntent,cfg).catch(()=>({accepted:false,status:'unavailable'}));
     const eventAttribution=startParam ? launchIntent : attribution;
-    void recordGrowthEvent(cfg,{userId,eventName:'bot_start',channel:'telegram',attribution:eventAttribution,fixtureId:Number(launchIntent.fixtureId || 0) || null,metadata:{attributed:Boolean(startParam),fixtureDeepLink:Boolean(launchIntent.fixtureId)}});
+    void recordGrowthEvent(cfg,{userId,eventName:'bot_start',channel:'telegram',attribution:eventAttribution,fixtureId:Number(launchIntent.fixtureId || 0) || null,metadata:{attributed:Boolean(startParam),fixtureDeepLink:Boolean(launchIntent.fixtureId),referralStatus:referral.status}});
     await configureFootballBot(request, cfg, chatId);
     if (Number(launchIntent.fixtureId || 0)>0) {
+      void recordGrowthEvent(cfg,{
+        userId,
+        eventName:'share_open',
+        channel:'telegram',
+        fixtureId:Number(launchIntent.fixtureId),
+        attribution:launchIntent,
+        metadata:{referral:Boolean(launchIntent.referralCode),referralStatus:referral.status},
+        eventKey:`share_open:${userId}:${startParam}`,
+      });
       void recordGrowthEvent(cfg,{userId,eventName:'fixture_deep_link_open',channel:'telegram',fixtureId:Number(launchIntent.fixtureId),attribution:launchIntent,metadata:{startParam}});
       await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'⚡ Ссылка ведёт прямо на матч. Загружаю AI-разбор без повторного поиска…'}).catch(()=>null);
       await sendBotFixtureMenu(request,cfg,userId,chatId,Number(launchIntent.fixtureId),{attribution:launchIntent,source:'deep_link'});

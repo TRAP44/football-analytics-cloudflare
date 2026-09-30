@@ -2,6 +2,7 @@ import {
   resolvePrimaryTelegramBotUsername,
   telegramBotStartUrl,
 } from './telegram-primary-identity.js';
+import { normalizeReferralCode } from './referral-attribution.js';
 
 // Phase 2 Telegram boundary: Mini App handoff and primary-bot deep-link construction only.
 // Messaging, webhook orchestration, growth events and route handlers stay in the composition root.
@@ -46,13 +47,34 @@ export function createTelegramLinksRuntime({
     source='social',
     campaign='match_share',
     content='analysis',
+    referralCode='',
   } = {}) {
     const id=Number(fixtureId || 0);
     if (!Number.isSafeInteger(id) || id<=0) return '';
     const src=cleanLaunchPart(source,14) || 'social';
     const cmp=cleanLaunchPart(campaign,22) || 'match_share';
     const cnt=cleanLaunchPart(content,16) || 'analysis';
-    return `fx${id}__${src}__${cmp}__${cnt}`.slice(0,64);
+    const referral=normalizeReferralCode(referralCode);
+    if (referralCode && !referral) return '';
+
+    const prefix=`fx${id}`;
+    if (!referral) return `${prefix}__${src}__${cmp}__${cnt}`.slice(0,64);
+
+    const suffix=`__r${referral}`;
+    const values=[src,cmp,cnt];
+    const minimum=[1,1,0];
+    while (`${prefix}__${values.join('__')}${suffix}`.length>64) {
+      let reduced=false;
+      for (const index of [2,1,0]) {
+        if (values[index].length>minimum[index]) {
+          values[index]=values[index].slice(0,-1);
+          reduced=true;
+          break;
+        }
+      }
+      if (!reduced) return '';
+    }
+    return `${prefix}__${values.join('__')}${suffix}`;
   }
 
   async function telegramBotUsername(cfg) {

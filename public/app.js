@@ -5398,17 +5398,23 @@ async function shareAnalysis(d) {
   const p=d?.probabilities || {};
   const fixtureId=Number(m.fixtureId || 0);
   const signal=d?.aiInstructor?.betSignal || {};
+  const confidenceScore=d?.confidence?.score ?? d?.aiInstructor?.confidenceScore;
+  const hasProbabilities=[p.home,p.draw,p.away].every(value=>Number.isFinite(Number(value)));
   const title=`${m.home?.name || ''} — ${m.away?.name || ''}`;
   const lines=[
     `⚽ ${title}`,
     `${m.league || ''}${m.date ? ` · ${dateTime(m.date)}` : ''}`,
-    `П1 ${pct(p.home)} · Н ${pct(p.draw)} · П2 ${pct(p.away)}`,
-    signal.label ? `MatchRadar: ${signal.label}` : `Наиболее вероятно: ${d?.likelyOutcome || '—'}`,
-    `Уверенность: ${d?.confidence?.score ?? d?.aiInstructor?.confidenceScore ?? '—'}/100`,
+  ].filter(Boolean);
+  if (hasProbabilities) lines.push(`П1 ${pct(p.home)} · Н ${pct(p.draw)} · П2 ${pct(p.away)}`);
+  if (signal.label) {
+    lines.push(`MatchRadar AI: ${signal.label}`);
+    if (Number.isFinite(Number(confidenceScore))) lines.push(`Уверенность: ${Number(confidenceScore)}/100`);
+  }
+  lines.push(
     '',
-    'Открой матч в MatchRadar — ссылка сразу приведёт к этому разбору.',
+    'Открой матч в MatchRadar — ссылка сразу приведёт к матчу и доступному AI-разбору.',
     'Аналитическая оценка модели · не гарантия результата.',
-  ];
+  );
   let shareUrl='';
   let telegramShareUrl='';
   try {
