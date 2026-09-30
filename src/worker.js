@@ -66,6 +66,10 @@ import { createReminderDeliveryStore } from './reminder-delivery-store.js';
 import { createReminderDeliveryService } from './reminder-delivery-service.js';
 import { createLineupNotificationService } from './lineup-notification-service.js';
 import { createImportantChangeNotificationService } from './important-change-notification-service.js';
+import { createSmartNotificationAudience } from './smart-notification-audience.js';
+import { createSmartNotificationDeliveryService } from './smart-notification-delivery.js';
+import { SMART_NOTIFICATION_POLICY, publicSmartNotificationCapabilities } from './smart-notification-policy.js';
+import { createSmartNotificationService } from './smart-notification-service.js';
 import { createScheduledJobsRuntime } from './scheduled-jobs.js';
 import { DAILY_DIGEST_POLICY, assessDailyDigestRun, planDailyDigestRecipients, runBoundedDailyDigest } from './daily-digest-delivery.js';
 import { assessDailyDigestReliabilitySlo, buildDailyDigestIncidentReport, dailyDigestIncidentAlertOpsEvents, formatDailyDigestIncidentAlert, planDailyDigestIncidentAlert, planDailyDigestReliabilitySloEvent, summarizeDailyDigestOperationalStatus, summarizeDailyDigestReliability } from './daily-digest-incidents.js';
@@ -90,6 +94,7 @@ const memory = {
   favorites: new Map(),
   favoritePlayers: new Map(),
   reminders: new Map(),
+  smartNotificationDeliveries: new Map(),
   preferences: new Map(),
   oddsSnapshots: new Map(),
   analysisTimelineSnapshots: new Map(),
@@ -166,12 +171,12 @@ const memory = {
 };
 
 const enc = new TextEncoder();
-const APP_VERSION = '6.120.0-rc144';
+const APP_VERSION = '6.121.0-rc145';
 const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
-const RELEASE_CHANNEL = 'rc144';
-const RC_NAME = 'RC144';
-const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.19 и примените миграции до v6.23; для существующей примените все доступные миграции из supabase/migrations до v6.23.';
+const RELEASE_CHANNEL = 'rc145';
+const RC_NAME = 'RC145';
+const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.19 и примените миграции до v6.24; для существующей примените все доступные миграции из supabase/migrations до v6.24.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49';
 
@@ -876,6 +881,8 @@ function appManifest(cfg) {
       preKickoffRecheck: true,
       preKickoffChangeDetection: true,
       analysisDeltaSummary: true,
+      smartNotifications: true,
+      smartNotificationEntitlements: true,
       calibrationChampionChallenger: true,
       calibrationAutomaticRollback: true,
     },
@@ -1244,6 +1251,17 @@ const {
 });
 
 const {
+  filterRecipients: filterSmartNotificationRecipients,
+  loadFavoritePlayersByUser: loadFavoritePlayersForSmartNotifications,
+} = createSmartNotificationAudience({
+  hasSupabase,
+  supaSelectMany,
+  getPreferences,
+  getUserRecord,
+  getFavoritePlayers: (...args) => getFavoritePlayers(...args),
+});
+
+const {
   reminderDeliveryStatus,
   clearStaleReminderClaims,
   claimReminderDelivery,
@@ -1274,6 +1292,7 @@ const {
   holdReminderDeliveryUnknown,
   finishReminderDelivery,
   releaseReminderClaim,
+  filterNotificationRecipients: filterSmartNotificationRecipients,
 });
 
 const {
@@ -1284,6 +1303,7 @@ const {
   supaSelectPaged,
   loadLineupNotificationSnapshot,
   deliverClaimedReminder,
+  filterNotificationRecipients: filterSmartNotificationRecipients,
   recordOpsEvent,
   maxFixturesPerRun: 4,
 });
@@ -1296,9 +1316,10 @@ const {
   supaSelectPaged,
   getOddsSnapshots,
   deliverClaimedReminder,
+  filterNotificationRecipients: filterSmartNotificationRecipients,
   recordOpsEvent,
   maxFixturesPerRun: 12,
-  thresholdPp: 5,
+  thresholdPp: SMART_NOTIFICATION_POLICY.marketThresholdPp,
 });
 
 const {
@@ -1325,6 +1346,34 @@ const {
   supaRpc,
   fetchWithTimeout,
   supaHeaders,
+});
+
+const {
+  deliverSmartNotification,
+} = createSmartNotificationDeliveryService({
+  memory,
+  hasSupabase,
+  supaRpc,
+  sendTelegramMessage,
+  recordOpsEvent,
+});
+
+const {
+  processSmartNotifications,
+} = createSmartNotificationService({
+  hasSupabase,
+  loadRuntimeControls,
+  supaSelectPaged,
+  filterRecipients: filterSmartNotificationRecipients,
+  loadFavoritePlayersByUser: loadFavoritePlayersForSmartNotifications,
+  loadLiveNotificationSnapshot: loadSmartNotificationEventSnapshot,
+  loadLineupSnapshot: loadLineupNotificationSnapshot,
+  getAnalysisTimelineSnapshots,
+  deliverSmartNotification,
+  recordOpsEvent,
+  maxFixturesPerRun: SMART_NOTIFICATION_POLICY.maxFixturesPerRun,
+  aiThresholdPp: SMART_NOTIFICATION_POLICY.aiProbabilityThresholdPp,
+  aiCooldownSeconds: SMART_NOTIFICATION_POLICY.aiCooldownSeconds,
 });
 
 const {
@@ -17196,6 +17245,8 @@ async function probeSupabaseSchemaDrift(cfg) {
     { id: 'users_acquisition', table: 'users', columns: ['telegram_id','acquisition_source','acquisition_campaign','acquisition_content'] },
     { id: 'analysis_history_ai', table: 'analysis_history', columns: ['telegram_id','fixture_id','ai_signal_code','analysis_version'] },
     { id: 'favorite_players', table: 'favorite_players', columns: ['telegram_id','player_id','player_name','team_id','created_at'] },
+    { id: 'smart_notification_preferences', table: 'user_preferences', columns: ['telegram_id','notification_preferences','updated_at'] },
+    { id: 'smart_notification_deliveries', table: 'smart_notification_deliveries', columns: ['telegram_id','fixture_id','event_type','category','dedupe_key','status','attempts','claimed_at','sent_at','retry_at'] },
     { id: 'calibration_transitions', table: 'model_calibration_transitions', columns: ['id','action','resulting_revision','created_at'] },
     { id: 'digest_subscriptions', table: 'bot_digest_subscriptions', columns: ['telegram_id','enabled','hour_utc','delivery_claim_date','delivery_locked_until'] },
     { id: 'referee_history', table: 'referee_match_history', columns: ['fixture_id','referee_key','yellow_cards'] },
@@ -20556,12 +20607,26 @@ async function apiReminders(request, cfg, user) {
 }
 
 async function apiPreferences(request, cfg, user) {
-  if (request.method === 'GET') return json({ preferences: await getPreferences(user.id, cfg) });
+  if (request.method === 'GET') {
+    const [preferences, quota] = await Promise.all([
+      getPreferences(user.id, cfg),
+      getQuota(user.id, cfg),
+    ]);
+    return json({
+      preferences,
+      notificationCapabilities: publicSmartNotificationCapabilities(quota?.plan),
+    });
+  }
   if (request.method === 'PUT' || request.method === 'POST') {
     let body = {};
     try { body = await request.json(); } catch {}
     const preferences = await savePreferences(user.id, body, cfg);
-    return json({ ok: true, preferences });
+    const quota = await getQuota(user.id, cfg);
+    return json({
+      ok: true,
+      preferences,
+      notificationCapabilities: publicSmartNotificationCapabilities(quota?.plan),
+    });
   }
   return json({ error: 'Метод не поддерживается.' }, 405);
 }
@@ -22189,6 +22254,8 @@ async function apiTeamSquad(request, cfg) {
 
 function normalizeLineupNotificationRow(row = {}) {
   return {
+    teamId: Number(row?.team?.id || 0),
+    teamName: String(row?.team?.name || ''),
     formation: String(row?.formation || ''),
     coach: String(row?.coach?.name || ''),
     startXI: (Array.isArray(row?.startXI) ? row.startXI : []).map(normalizeLineupPlayer).filter(Boolean),
@@ -22232,6 +22299,64 @@ async function loadLineupNotificationSnapshot(fixtureId, cfg) {
     reason: quality.bothConfirmed ? String(meta?.reason || '') : 'lineup_incomplete',
     lineupQuality:quality,
     sourceMeta:meta,
+    teams,
+  };
+}
+
+async function loadSmartNotificationEventSnapshot(fixtureId, cfg) {
+  const id = Number(fixtureId || 0);
+  if (!id) return { trusted:false, stale:false, reason:'invalid_fixture', events:[] };
+  if (runtimeControlsSnapshot().liveEnabled === false) return { trusted:false, stale:false, reason:'live_disabled', events:[] };
+
+  const result = await providerFeatureFetch({
+    feature:'events',
+    path:'/fixtures/events',
+    params:{ fixture:id },
+    fixtureId:id,
+    cfg,
+    context:{ mode:'live', limitedCoverage:false },
+  });
+  const rawRows = Array.isArray(result?.data) ? result.data : [];
+  const formatted = formatLiveEvents(rawRows, 0, 0);
+  const quality = assessMatchEventQuality(formatted, {
+    eventsMeta:result?.meta || {},
+    mode:'live',
+  });
+  let meta = applyFeatureFreshness(
+    result?.meta || { feature:'events', provider:'api-football', source:'network', state:'available', available:true, usable:true, observed:true },
+    { feature:'events', mode:'live' },
+  );
+  meta = annotateEventReliability(meta, quality);
+  const events = formatted.map(event => {
+    const index = Number(String(event.id || '').split('-').at(-1));
+    const raw = Number.isInteger(index) && index >= 0 ? rawRows[index] : null;
+    const playerId = Number(raw?.player?.id || 0);
+    const assistPlayerId = Number(raw?.assist?.id || 0);
+    const eventKey = [
+      Number.isFinite(Number(event.minute)) ? Number(event.minute) : 'na',
+      Number(event.extra || 0),
+      String(event.type || '').toLowerCase(),
+      String(event.detail || '').toLowerCase(),
+      Number(event.teamId || 0),
+      playerId,
+      assistPlayerId,
+    ].join(':');
+    return {
+      ...event,
+      playerId,
+      assistPlayerId,
+      playerName:String(event.player || ''),
+      assistPlayerName:String(event.assist || ''),
+      eventKey,
+    };
+  });
+  return {
+    trusted:Boolean(quality?.confidenceBearing && meta?.confidenceBearing === true),
+    stale:Boolean(meta?.stale === true || meta?.source === 'stale' || meta?.source === 'stale-cache'),
+    reason:String(meta?.reason || ''),
+    sourceMeta:meta,
+    eventQuality:quality,
+    events,
   };
 }
 
@@ -23924,6 +24049,7 @@ const { handleScheduled } = createScheduledJobsRuntime({
   processDueReminders,
   processLineupNotifications,
   processImportantChangeNotifications,
+  processSmartNotifications,
   processPostMatchReturns,
   runProductionMonitor,
   processDailyDigests,
@@ -24007,6 +24133,9 @@ export default {
         lineupNotificationDedupe: 'enabled',
         importantChangeNotifications: 'enabled',
         importantChangeNotificationDedupe: 'enabled',
+        smartNotifications: 'enabled',
+        smartNotificationEntitlements: 'enabled',
+        smartNotificationDedupe: 'enabled',
         importantChangeProviderRequests: 0,
         firstRunGuide: 'enabled',
         focusedMatchHome: 'enabled',
