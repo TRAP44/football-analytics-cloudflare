@@ -3282,3 +3282,168 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
     font-size: 11px;
   }
 }
+
+
+/* Digest settings — Profile */
+.digest-settings-panel {
+  overflow: hidden;
+}
+.digest-settings-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+.digest-settings-head > div {
+  min-width: 0;
+}
+.digest-settings-head h2 {
+  margin: 3px 0 5px;
+}
+.digest-settings-head p {
+  margin: 0;
+  max-width: 560px;
+  color: var(--hint);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.digest-status-chip {
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--hint);
+  background: color-mix(in srgb, var(--surface-2) 86%, transparent);
+  font-size: 10px;
+  font-weight: 800;
+}
+.digest-status-chip.is-on {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--line));
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+.digest-main-toggle {
+  margin-top: 15px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.digest-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.digest-settings-grid > div {
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-2) 74%, transparent);
+}
+.digest-settings-grid span,
+.digest-settings-grid small {
+  display: block;
+  color: var(--hint);
+  font-size: 10px;
+  line-height: 1.35;
+}
+.digest-settings-grid strong {
+  display: block;
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+.digest-favorites {
+  display: grid;
+  gap: 7px;
+  margin-top: 13px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.digest-favorites > strong {
+  font-size: 12px;
+}
+.digest-favorites > small,
+.digest-time-note {
+  color: var(--hint);
+  line-height: 1.45;
+}
+.digest-team-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.digest-team-chips span {
+  max-width: 100%;
+  padding: 6px 9px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-2) 80%, transparent);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.digest-time-note {
+  margin: 12px 0 0;
+}
+.digest-settings-state {
+  min-height: 72px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 11px;
+  align-items: center;
+}
+.digest-settings-state > span {
+  font-size: 22px;
+}
+.digest-settings-state strong,
+.digest-settings-state small {
+  display: block;
+}
+.digest-settings-state small {
+  margin-top: 4px;
+  color: var(--hint);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.digest-settings-state.is-error strong,
+.digest-inline-error {
+  color: var(--danger);
+}
+.digest-retry-btn {
+  margin: 0;
+}
+.digest-inline-error {
+  margin: 10px 0 0;
+  font-size: 11px;
+}
+@media (max-width: 430px) {
+  .digest-settings-head {
+    gap: 10px;
+  }
+  .digest-settings-head h2 {
+    font-size: 18px;
+  }
+  .digest-status-chip {
+    padding: 5px 8px;
+  }
+  .digest-settings-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 360px) {
+  .digest-settings-head {
+    display: grid;
+  }
+  .digest-status-chip {
+    justify-self: start;
+  }
+  .digest-settings-state {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .digest-settings-state .digest-retry-btn {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
