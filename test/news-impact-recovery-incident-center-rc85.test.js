@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
-const app=fs.readFileSync('public/app.js','utf8');
+const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
 
 test('RC85 derives privacy-safe recovery incident events from categorical guards',()=>{
   assert.match(worker,/function buildNewsImpactRecoveryIncidentEvents\(/);
