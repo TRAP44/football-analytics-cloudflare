@@ -42,15 +42,39 @@ test('match cards hide technical coverage and numeric interest meters', () => {
   assert.doesNotMatch(cardRenderer, /match-signal|favorite-signal/);
 });
 
-test('rare administrator panels are grouped and loaded on demand', () => {
+test('admin opens with an owner dashboard while rare validation and model tools stay on demand', () => {
+  for (const id of [
+    'adminOverviewService',
+    'adminOverviewSource',
+    'adminOverviewDatabase',
+    'adminOverviewNotifications',
+    'adminOverviewAi',
+  ]) assert.match(adminHtml, new RegExp(`id="${id}"`));
+  assert.match(adminHtml, /OWNER DASHBOARD/);
+  assert.match(adminHtml, /Расширенные инструменты/);
+  assert.doesNotMatch(adminHtml, /class="admin-console-actions"/);
   assert.match(adminHtml, /id="adminAdvancedTools"/);
   assert.match(adminHtml, /id="adminAdvancedContent"/);
-  assert.match(app, /function organizeAdminConsole\(\)/);
-  assert.match(app, /function loadAdvancedAdminTools\(\)/);
+
+  const organizeStart = app.indexOf('function organizeAdminConsole()');
+  const organizeEnd = app.indexOf('async function loadAdvancedAdminTools()', organizeStart);
+  const organize = app.slice(organizeStart, organizeEnd);
+  assert.match(organize, /#betaHealthPanel/);
+  assert.match(organize, /#betaDashboardPanel/);
+
+  const advancedStart = app.indexOf('async function loadAdvancedAdminTools()');
+  const advancedEnd = app.indexOf('function planLabel', advancedStart);
+  const advanced = app.slice(advancedStart, advancedEnd);
+  assert.match(advanced, /loadBetaDashboard\(false\)/);
+  assert.match(advanced, /loadModelQuality\(false\)/);
+
   const profileStart = app.indexOf('async function openProfileView');
   const profileEnd = app.indexOf('let adminReleaseReadinessModule', profileStart);
   assert.ok(profileStart >= 0 && profileEnd > profileStart);
   const profileOpen = app.slice(profileStart, profileEnd);
   assert.match(profileOpen, /loadRuntimeControlsAdmin\(false\)/);
+  assert.match(profileOpen, /loadDiagnostics\(false\)/);
+  assert.match(profileOpen, /loadReminderHealth\(false\)/);
+  assert.doesNotMatch(profileOpen, /loadBetaDashboard\(false\)/);
   assert.doesNotMatch(profileOpen, /loadModelQuality\(false\)/);
 });
