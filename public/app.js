@@ -7,6 +7,7 @@ import { createFirstRunGuideController } from './modules/first-run-guide.js';
 import { createProfileDataCapabilitiesModule } from './modules/profile-data-capabilities.js';
 import { createProfileAccessStateModule } from './modules/profile-access-state.js';
 import { createProfileSummaryModule } from './modules/profile-summary.js';
+import { createFavoriteTeamsRenderer } from './modules/favorite-teams-renderer.js';
 import { createJourneyStateModule } from './modules/journey-state.js';
 import {
   CLIENT_VERSION,
@@ -188,6 +189,17 @@ const { renderProfileSummary } = createProfileSummaryModule({
   planLabel,
   dateOnly,
   createElement: tag => document.createElement(tag),
+});
+const { renderFavoriteTeams } = createFavoriteTeamsRenderer({
+  state,
+  elementById: $,
+  escapeHtml,
+  safeUrl,
+  recoveryCardHtml,
+  onRetryLoad: () => loadFavorites(),
+  onShowMatches: () => showView('matchesView'),
+  onRemoveFavorite: team => toggleFavorite(team),
+  onOpenTeam: team => openTeam(team),
 });
 const { renderJourneyState } = createJourneyStateModule({
   elementById: $,
@@ -2074,51 +2086,6 @@ async function toggleFavorite(team) {
     state.favoriteMutations.delete(teamId);
     syncFavoriteMutationUi(teamId);
   }
-}
-
-function renderFavoriteTeams() {
-  const el = $('favoriteTeams');
-  if (!el) return;
-  if (state.favoritesLoading && !state.favoritesLoaded) {
-    el.innerHTML = '<div class="loader compact-loader">Загружаю избранное…</div>';
-    return;
-  }
-  if (state.favoritesLoadError && !state.favoritesLoaded) {
-    el.innerHTML = recoveryCardHtml({ title:'Избранное временно недоступно', message:state.favoritesLoadError, retryId:'favoritesRetry', compact:true });
-    $('favoritesRetry')?.addEventListener('click', loadFavorites);
-    return;
-  }
-  if (!state.favorites.length) {
-    const warning = state.favoritesLoadError
-      ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.favoritesLoadError)} Последний загруженный список избранного был пуст.</div>`
-      : '';
-    const retry = state.favoritesLoadError
-      ? '<button id="favoritesEmptyRetry" class="secondary-btn" type="button">Обновить</button>'
-      : '';
-    el.innerHTML = `${warning}<div class="empty compact-empty profile-empty-state">
-      <strong>Избранных команд пока нет</strong>
-      <p>Добавьте команду звёздочкой в списке матчей.</p>
-      <div class="empty-actions">${retry}<button id="favoritesEmptyMatches" class="secondary-btn" type="button">Перейти к матчам</button></div>
-    </div>`;
-    $('favoritesEmptyRetry')?.addEventListener('click', loadFavorites);
-    $('favoritesEmptyMatches')?.addEventListener('click', () => showView('matchesView'));
-    return;
-  }
-  const staleNotice = state.favoritesLoadError ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.favoritesLoadError)} Показано последнее загруженное избранное.</div>` : '';
-  el.innerHTML = staleNotice + state.favorites.map(x => `
-    <div class="favorite-team-row">
-      <button class="favorite-team-main team-open-link" type="button" data-open-team="${Number(x.teamId)}" data-team-name="${escapeHtml(x.teamName)}" data-team-logo="${escapeHtml(x.teamLogo || '')}">
-        ${x.teamLogo ? `<img src="${safeUrl(x.teamLogo)}" alt="">` : '<span class="team-placeholder">⚽</span>'}
-        <strong>${escapeHtml(x.teamName)}</strong>
-      </button>
-      <button class="favorite-remove" type="button" data-team-id="${Number(x.teamId)}" data-team-name="${escapeHtml(x.teamName)}" ${state.favoriteMutations.has(Number(x.teamId)) ? 'disabled' : ''}>Удалить</button>
-    </div>
-  `).join('');
-  document.querySelectorAll('.favorite-remove').forEach(btn => btn.addEventListener('click', () => {
-    const item = state.favorites.find(x => Number(x.teamId) === Number(btn.dataset.teamId));
-    if (item) toggleFavorite({ id: item.teamId, name: item.teamName, logo: item.teamLogo });
-  }));
-  el.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => openTeam({ id: Number(btn.dataset.openTeam), name: btn.dataset.teamName || '', logo: btn.dataset.teamLogo || '' })));
 }
 
 function renderMyTeams() {
