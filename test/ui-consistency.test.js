@@ -3,14 +3,15 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
+const profileSummary = fs.readFileSync('public/modules/profile-summary.js', 'utf8');
 const css = fs.readFileSync('public/styles.css', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const adminHtml = fs.readFileSync('public/admin.html', 'utf8');
 
 test('profile uses Telegram photo safely and keeps a fallback avatar', () => {
-  assert.match(app, /const photoUrl = safeUrl\(user\.photoUrl\)/);
-  assert.match(app, /avatar\.textContent = '⚽'/);
-  assert.match(app, /avatar\.replaceChildren\(img\)/);
+  assert.match(profileSummary, /const photoUrl = safeUrl\(user\.photoUrl\)/);
+  assert.match(profileSummary, /avatar\.textContent = '⚽'/);
+  assert.match(profileSummary, /avatar\.replaceChildren\(img\)/);
   assert.match(css, /\.avatar img\s*\{/);
 });
 
