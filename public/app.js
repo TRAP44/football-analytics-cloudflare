@@ -4165,7 +4165,7 @@ function enrichPlayerComparisonCandidate(candidate = {}) {
     if (squadData) candidate.squadProfile = playerSquadProfile(squadData, candidate);
   }
   if (teamId && leagueId && season && !candidate.seasonStats) {
-    const intelligenceKey = \`\${teamId}:\${leagueId}:\${season}\`;
+    const intelligenceKey = `${teamId}:${leagueId}:${season}`;
     const data = state.teamIntelligenceCache.get(intelligenceKey);
     if (data) candidate.seasonStats = playerSeasonStatProfile(data, candidate);
   }
@@ -4195,7 +4195,7 @@ async function hydrateComparisonPlayer(primary, secondary) {
     if (teamId && !secondary.squadProfile?.found) {
       let squadData = state.teamSquadCache.get(String(teamId));
       if (!squadData) {
-        squadData = await api(\`/api/team/squad?teamId=\${teamId}\`);
+        squadData = await api(`/api/team/squad?teamId=${teamId}`);
         state.teamSquadCache.set(String(teamId), squadData);
       }
       secondary.squadProfile = playerSquadProfile(squadData, secondary);
@@ -4204,7 +4204,7 @@ async function hydrateComparisonPlayer(primary, secondary) {
     }
 
     if (teamId && leagueId && season && !secondary.seasonStats?.found) {
-      const intelligenceKey = \`\${teamId}:\${leagueId}:\${season}\`;
+      const intelligenceKey = `${teamId}:${leagueId}:${season}`;
       let data = state.teamIntelligenceCache.get(intelligenceKey);
       if (!data) {
         const q = new URLSearchParams({
@@ -4217,7 +4217,7 @@ async function hydrateComparisonPlayer(primary, secondary) {
           leagueLogo:String(secondary.match?.leagueLogo || ''),
           country:String(secondary.match?.country || ''),
         });
-        data = await api(\`/api/team/intelligence?\${q.toString()}\`);
+        data = await api(`/api/team/intelligence?${q.toString()}`);
         state.teamIntelligenceCache.set(intelligenceKey, data);
       }
       secondary.seasonStats = playerSeasonStatProfile(data, secondary);
