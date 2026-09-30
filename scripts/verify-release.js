@@ -17,6 +17,7 @@ const adminModelRemediation = fs.readFileSync('public/modules/admin-model-remedi
 const adminRcRegression = fs.readFileSync('public/modules/admin-rc-regression.js', 'utf8');
 const adminOverview = fs.readFileSync('public/modules/admin-overview.js', 'utf8');
 const betaFeedback = fs.readFileSync('public/modules/beta-feedback.js', 'utf8');
+const profileDataCapabilities = fs.readFileSync('public/modules/profile-data-capabilities.js', 'utf8');
 const launchFunnelFrontend = app + '\n' + adminLaunchFunnel;
 const appRuntime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
@@ -188,6 +189,11 @@ if (!app.includes("import('./modules/beta-feedback.js')") || !betaFeedback.inclu
 if (app.includes("const category=String($('betaFeedbackCategory')") || app.includes('Спасибо. Сообщение добавлено в beta-наблюдение')) failures.push('Beta feedback implementation leaked back into shared app root');
 if (!betaFeedback.includes("/api/beta-feedback") || !betaFeedback.includes('async function submitBetaFeedback()') || !betaFeedback.includes('function setBetaFeedbackOpen(open)')) failures.push('Beta feedback module contract is incomplete');
 if (/setBetaFeedbackOpen|submitBetaFeedback|betaFeedbackSending|\/api\/beta-feedback/.test(adminBetaDashboard)) failures.push('Admin beta dashboard must not own beta feedback lifecycle');
+if (!fs.existsSync('test/profile-data-capabilities-extraction.test.js')) failures.push('Missing profile data capabilities extraction regression test');
+if (!app.includes("import { createProfileDataCapabilitiesModule } from './modules/profile-data-capabilities.js'") || !profileDataCapabilities.includes('export function createProfileDataCapabilitiesModule')) failures.push('Profile data capabilities extraction contract is missing');
+if (!app.includes('const { renderDataCapabilities } = createProfileDataCapabilitiesModule({ state, elementById: $ });')) failures.push('Profile data capabilities must be wired synchronously from the composition root');
+if (app.includes('function renderDataCapabilities()') || app.includes("$('dataModeRefresh').textContent = features.liveRefresh")) failures.push('Profile data capabilities implementation leaked back into shared app root');
+if (/\bapi\s*\(|fetch\s*\(|state\.[A-Za-z0-9_]+\s*=/.test(profileDataCapabilities)) failures.push('Profile data capabilities module must remain read-only and network-free');
 if (!app.includes("import('./modules/admin-launch-funnel.js')") || !adminLaunchFunnel.includes('export function createAdminLaunchFunnelModule')) failures.push('Admin launch funnel lazy extraction contract is missing');
 if (app.includes('Собираю first-party воронку') || app.includes('newsImpactRecoveryIncidentSloBreachImpactRanking')) failures.push('Admin launch funnel implementation leaked back into shared app root');
 if (!app.includes("createNavigationShell({") || !navigationShell.includes('export function createNavigationShell')) failures.push('Frontend navigation shell extraction contract is missing');
