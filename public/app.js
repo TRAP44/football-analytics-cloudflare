@@ -13,6 +13,8 @@ import { createReminderListModule } from './modules/reminder-list.js';
 import { createMyTeamsRenderer } from './modules/my-teams-renderer.js';
 import { createJourneyStateModule } from './modules/journey-state.js';
 import { createGlobalSearchRenderer } from './modules/global-search-renderer.js';
+import { renderMatchPulse } from './modules/match-pulse.js';
+import { buildPlayerComparisonCandidates, playerComparisonHtml, samePlayer } from './modules/player-comparison.js';
 import {
   CLIENT_VERSION,
   CLIENT_API_CONTRACT,
@@ -133,6 +135,7 @@ const state = {
   teamBackView: 'matchesView',
   currentPlayer: null,
   playerBackView: 'analysisView',
+  playerComparisonRequestSeq: 0,
   teamCache: new Map(),
   teamIntelligenceCache: new Map(),
   teamSquadCache: new Map(),
@@ -3775,14 +3778,6 @@ function oddsMovementHtml(move) {
   return `<div class="odds-movement-grid">${row('П1','home')}${row('Н','draw')}${row('П2','away')}</div><p class="tiny">Сравнение с самым ранним сохранённым снимком во время матча${move.from ? ` · ${dateTime(move.from)}` : ''}. Изменение указано в расчётной вероятности.</p>`;
 }
 
-function livePressureHtml(p, m) {
-  if (!p) return '';
-  const home = Math.max(0, Math.min(100, Number(p.home || 0)));
-  const away = 100 - home;
-  const lead = p.leader === 'home' ? m.home?.name : p.leader === 'away' ? m.away?.name : 'Баланс';
-  return `<section class="panel pulse-panel"><h2>⚡ Пульс матча</h2><div class="pulse-names"><span>${escapeHtml(m.home?.name || '')}</span><strong>${escapeHtml(lead || 'Баланс')}</strong><span>${escapeHtml(m.away?.name || '')}</span></div><div class="pulse-bar"><i style="width:${home}%"></i><b style="width:${away}%"></b></div><div class="pulse-values"><span>${home}</span><span>${away}</span></div><p class="tiny">${escapeHtml(publicText(p.note || ''))}</p></section>`;
-}
-
 function playerMetricText(p) {
   const bits = [];
   if (Number(p.goals)) bits.push(`${p.goals} гол`);
@@ -4067,12 +4062,12 @@ function playerSeasonStatProfile(data = {}, player = {}) {
     partial: Boolean(stats.partial || !stats.complete),
     sourceLabel: String(stats.sourceMeta?.label || stats.sourceMeta?.provider || ''),
     scope: String(stats.scope || ''),
-    appearances: Number(found.games?.appearances || 0),
+    appearances: Number.isFinite(Number(found.games?.appearances)) ? Number(found.games.appearances) : null,
     lineups: Number.isFinite(Number(found.games?.lineups)) ? Number(found.games.lineups) : null,
     minutes: Number.isFinite(Number(found.games?.minutes)) ? Number(found.games.minutes) : null,
     rating: Number.isFinite(Number(found.games?.rating)) ? Number(found.games.rating) : null,
-    goals: Number(found.goals?.total || 0),
-    assists: Number(found.goals?.assists || 0),
+    goals: Number.isFinite(Number(found.goals?.total)) ? Number(found.goals.total) : null,
+    assists: Number.isFinite(Number(found.goals?.assists)) ? Number(found.goals.assists) : null,
     keyPasses: Number.isFinite(Number(found.passes?.key)) ? Number(found.passes.key) : null,
     passAccuracy: Number.isFinite(Number(found.passes?.accuracy)) ? Number(found.passes.accuracy) : null,
     yellow: Number.isFinite(Number(found.cards?.yellow)) ? Number(found.cards.yellow) : null,
@@ -4155,6 +4150,124 @@ async function loadPlayerSeasonStats(player = state.currentPlayer) {
   }
 }
 
+
+function playerComparisonSquadSources(player = state.currentPlayer) {
+  const match = player?.match || {};
+  const teams = [player?.team, match?.home, match?.away].filter(Boolean);
+  const seen = new Set();
+  return teams.flatMap(team => {
+    const teamId = Number(team?.id || 0);
+    if (!teamId || seen.has(teamId)) return [];
+    seen.add(teamId);
+    const data = state.teamSquadCache.get(String(teamId));
+    return data ? [{ team:{ ...team }, data }] : [];
+  });
+}
+
+function enrichPlayerComparisonCandidate(candidate = {}) {
+  const teamId = Number(candidate?.team?.id || 0);
+  const leagueId = Number(candidate?.match?.leagueId || 0);
+  const season = Number(candidate?.match?.season || 0);
+  if (teamId && !candidate.squadProfile) {
+    const squadData = state.teamSquadCache.get(String(teamId));
+    if (squadData) candidate.squadProfile = playerSquadProfile(squadData, candidate);
+  }
+  if (teamId && leagueId && season && !candidate.seasonStats) {
+    const intelligenceKey = `${teamId}:${leagueId}:${season}`;
+    const data = state.teamIntelligenceCache.get(intelligenceKey);
+    if (data) candidate.seasonStats = playerSeasonStatProfile(data, candidate);
+  }
+  return candidate;
+}
+
+function playerComparisonCandidatesFor(player = state.currentPlayer) {
+  return buildPlayerComparisonCandidates(player, {
+    center: state.currentCenter || {},
+    squads: playerComparisonSquadSources(player),
+  }).map(enrichPlayerComparisonCandidate);
+}
+
+async function hydrateComparisonPlayer(primary, secondary) {
+  if (!primary || !secondary || samePlayer(primary, secondary)) return;
+  const comparison = primary.comparison || (primary.comparison = { open:true });
+  const requestSeq = ++state.playerComparisonRequestSeq;
+  comparison.loading = true;
+  comparison.error = '';
+  renderPlayerHub(primary);
+
+  try {
+    const teamId = Number(secondary?.team?.id || 0);
+    const leagueId = Number(secondary?.match?.leagueId || 0);
+    const season = Number(secondary?.match?.season || 0);
+
+    if (teamId && !secondary.squadProfile?.found) {
+      let squadData = state.teamSquadCache.get(String(teamId));
+      if (!squadData) {
+        squadData = await api(`/api/team/squad?teamId=${teamId}`);
+        state.teamSquadCache.set(String(teamId), squadData);
+      }
+      secondary.squadProfile = playerSquadProfile(squadData, secondary);
+      if (secondary.squadProfile?.photo && !secondary.data?.photo) secondary.data.photo = secondary.squadProfile.photo;
+      if (secondary.squadProfile?.position && !secondary.data?.position) secondary.data.position = secondary.squadProfile.position;
+    }
+
+    if (teamId && leagueId && season && !secondary.seasonStats?.found) {
+      const intelligenceKey = `${teamId}:${leagueId}:${season}`;
+      let data = state.teamIntelligenceCache.get(intelligenceKey);
+      if (!data) {
+        const q = new URLSearchParams({
+          teamId:String(teamId),
+          leagueId:String(leagueId),
+          season:String(season),
+          teamName:String(secondary.team?.name || ''),
+          teamLogo:String(secondary.team?.logo || ''),
+          leagueName:String(secondary.match?.league || ''),
+          leagueLogo:String(secondary.match?.leagueLogo || ''),
+          country:String(secondary.match?.country || ''),
+        });
+        data = await api(`/api/team/intelligence?${q.toString()}`);
+        state.teamIntelligenceCache.set(intelligenceKey, data);
+      }
+      secondary.seasonStats = playerSeasonStatProfile(data, secondary);
+    } else if (!secondary.seasonStats && (!teamId || !leagueId || !season)) {
+      secondary.seasonStats = { found:false, reason:'competition_context_missing' };
+    }
+  } catch (error) {
+    comparison.error = friendlyErrorMessage(error);
+  } finally {
+    if (state.currentPlayer !== primary || requestSeq !== state.playerComparisonRequestSeq) return;
+    comparison.loading = false;
+    renderPlayerHub(primary);
+  }
+}
+
+function bindPlayerComparisonActions(player, candidates = []) {
+  const root = $('playerHub');
+  if (!root || !player) return;
+  root.querySelector('[data-player-comparison-open]')?.addEventListener('click', () => {
+    player.comparison = { ...(player.comparison || {}), open:true, error:'' };
+    renderPlayerHub(player);
+  });
+  root.querySelector('[data-player-comparison-close]')?.addEventListener('click', () => {
+    player.comparison = { open:false, secondary:null, loading:false, error:'' };
+    state.playerComparisonRequestSeq += 1;
+    renderPlayerHub(player);
+  });
+  root.querySelector('[data-player-comparison-change]')?.addEventListener('click', () => {
+    player.comparison = { ...(player.comparison || {}), open:true, secondary:null, loading:false, error:'' };
+    state.playerComparisonRequestSeq += 1;
+    renderPlayerHub(player);
+  });
+  root.querySelectorAll('[data-player-comparison-candidate]').forEach(button => button.addEventListener('click', () => {
+    const candidate = candidates[Number(button.dataset.playerComparisonCandidate || -1)];
+    if (!candidate) return;
+    if (samePlayer(player, candidate)) return toast('Нельзя сравнить игрока с самим собой.');
+    player.comparison = { open:true, secondary:candidate, loading:false, error:'' };
+    renderPlayerHub(player);
+    void hydrateComparisonPlayer(player, candidate);
+  }));
+}
+
 function renderPlayerHub(player = state.currentPlayer) {
   const root = $('playerHub');
   if (!root) return;
@@ -4182,7 +4295,18 @@ function renderPlayerHub(player = state.currentPlayer) {
         <strong>${escapeHtml(match.home?.name || '')} — ${escapeHtml(match.away?.name || '')}</strong>
         <small>${escapeHtml(match.statusLabel || '')}</small>
       </div>
+      <div class="player-hub-actions">
+        <button class="btn secondary" type="button" data-player-comparison-open>⚖️ Сравнить</button>
+      </div>
     </section>
+
+    ${player.comparison?.open ? playerComparisonHtml({
+      primary:player,
+      secondary:player.comparison?.secondary || null,
+      candidates:playerComparisonCandidatesFor(player),
+      loading:Boolean(player.comparison?.loading),
+      error:String(player.comparison?.error || ''),
+    }) : ''}
 
     ${playerSquadProfileHtml(player.squadProfile || {})}
     ${playerSeasonStatsHtml(player.seasonStats || {})}
@@ -4212,6 +4336,7 @@ function renderPlayerHub(player = state.currentPlayer) {
       <p class="tiny">Контекст матча остаётся независимым от сезонной выборки: если сезонные данные ограничены квотой или покрытием, текущая статистика игрока продолжает отображаться.</p>
     </section>
   `;
+  bindPlayerComparisonActions(player, playerComparisonCandidatesFor(player));
 }
 
 function openPlayerFromMatch(playerId, side = '') {
@@ -4625,6 +4750,8 @@ function renderMatchCenter(d) {
       </div>
     </section>
 
+    ${renderMatchPulse(d)}
+
     ${d.stale ? `<section class="panel stale-panel"><strong>⚠️ Показан последний сохранённый снимок</strong><p>${escapeHtml(publicText(d.warning || 'Источник данных временно ограничил запросы.'))}</p></section>` : ''}
     ${d.note ? `<section class="panel center-note"><p class="tiny warning">${escapeHtml(publicText(d.note))}</p></section>` : ''}
 
@@ -4658,8 +4785,6 @@ function renderMatchCenter(d) {
     </div>
 
     <div class="center-tab-panel" data-center-panel="summary">
-      ${livePressureHtml(d.livePressure, m)}
-
       ${(d.availabilityQuality?.observed || d.absences?.home?.length || d.absences?.away?.length) ? `<section class="panel"><div class="center-section-title"><div><h2>🩺 Потери состава</h2><p>Доступность игроков и важные отсутствия</p></div></div>${centerAbsenceSummary(d.absences,m)}${liveAbsencesHtml(d.absences,m)}</section>` : ''}
 
       <details class="panel analysis-disclosure coverage-panel">
