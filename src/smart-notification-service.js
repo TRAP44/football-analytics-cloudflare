@@ -36,8 +36,64 @@ function probabilityRow(row = {}) {
     home,
     draw,
     away,
+    confidence: validProbability(row.confidence_score ?? row.confidenceScore),
+    triggerCategory: String(row.trigger_category ?? row.triggerCategory ?? ''),
     capturedAt: String(capturedAt),
     snapshotKey: String(row.snapshot_key ?? row.snapshotKey ?? capturedAt),
+  };
+}
+
+export function radarStrongSignalState(snapshots = [], {
+  confidenceThreshold = SMART_NOTIFICATION_POLICY.radarConfidenceThreshold,
+  outcomeThreshold = SMART_NOTIFICATION_POLICY.radarOutcomeThreshold,
+  maxSignalAgeMinutes = SMART_NOTIFICATION_POLICY.maxSignalAgeMinutes,
+  now = Date.now(),
+} = {}) {
+  const valid = asRows(snapshots)
+    .map(probabilityRow)
+    .filter(Boolean)
+    .sort((a, b) => Date.parse(a.capturedAt) - Date.parse(b.capturedAt));
+
+  if (!valid.length) return { significant:false, strong:false, reason:'insufficient_history', sample:0 };
+  const latest = valid[valid.length - 1];
+  const baseline = valid.length > 1 ? valid[valid.length - 2] : null;
+  const ageMinutes = Math.max(0, (Number(now) - Date.parse(latest.capturedAt)) / 60000);
+  if (!Number.isFinite(ageMinutes) || ageMinutes > Number(maxSignalAgeMinutes || 180)) {
+    return { significant:false, strong:false, reason:'stale_signal', sample:valid.length, ageMinutes, latest };
+  }
+
+  const ranked = ['home','draw','away']
+    .map(side => ({ side, probability:latest[side] }))
+    .sort((a,b) => b.probability - a.probability);
+  const strongest = ranked[0] || { side:'', probability:0 };
+  const strong = Number(latest.confidence ?? -1) >= Number(confidenceThreshold || 75)
+    && Number(strongest.probability || 0) >= Number(outcomeThreshold || 55);
+
+  let baselineStrong = false;
+  let baselineSide = '';
+  if (baseline) {
+    const priorRanked = ['home','draw','away']
+      .map(side => ({ side, probability:baseline[side] }))
+      .sort((a,b) => b.probability - a.probability);
+    const priorStrongest = priorRanked[0] || { side:'', probability:0 };
+    baselineSide = priorStrongest.side;
+    baselineStrong = Number(baseline.confidence ?? -1) >= Number(confidenceThreshold || 75)
+      && Number(priorStrongest.probability || 0) >= Number(outcomeThreshold || 55);
+  }
+
+  return {
+    significant:Boolean(strong && (!baselineStrong || baselineSide !== strongest.side)),
+    strong,
+    reason:'evaluated',
+    sample:valid.length,
+    ageMinutes,
+    baseline,
+    latest,
+    strongest,
+    thresholds:{
+      confidence:Number(confidenceThreshold || 75),
+      outcome:Number(outcomeThreshold || 55),
+    },
   };
 }
 
@@ -187,6 +243,24 @@ function aiMovementMessage(row, movement) {
   ].join('\n');
 }
 
+function radarSignalMessage(row, signal) {
+  const strongest = signal?.strongest || {};
+  const sideName = strongest.side === 'home'
+    ? String(row?.home_name || 'Хозяева')
+    : strongest.side === 'away'
+      ? String(row?.away_name || 'Гости')
+      : 'Ничья';
+  return [
+    '📡 MatchRadar Radar: сильный сигнал',
+    '',
+    `${row?.home_name || 'Хозяева'} — ${row?.away_name || 'Гости'}`,
+    `Лидер модели: ${sideName} · ${Number(strongest.probability || 0).toFixed(1)}%.`,
+    `Radar Confidence: ${Math.round(Number(signal?.latest?.confidence || 0))}/100.`,
+    '',
+    'Сигнал сформирован по сохранённому снимку модели и не является гарантией результата.',
+  ].join('\n');
+}
+
 function playerIdsForEvent(event = {}) {
   const ids = [Number(event.playerId || 0)];
   if (String(event.type || '').toLowerCase() === 'subst') ids.push(Number(event.assistPlayerId || 0));
@@ -228,6 +302,9 @@ export function createSmartNotificationService({
   maxFixturesPerRun = SMART_NOTIFICATION_POLICY.maxFixturesPerRun,
   aiThresholdPp = SMART_NOTIFICATION_POLICY.aiProbabilityThresholdPp,
   aiCooldownSeconds = SMART_NOTIFICATION_POLICY.aiCooldownSeconds,
+  radarConfidenceThreshold = SMART_NOTIFICATION_POLICY.radarConfidenceThreshold,
+  radarOutcomeThreshold = SMART_NOTIFICATION_POLICY.radarOutcomeThreshold,
+  radarCooldownSeconds = SMART_NOTIFICATION_POLICY.radarCooldownSeconds,
 } = {}) {
   async function audience(rows, eventType, cfg) {
     if (typeof filterRecipients !== 'function') {
@@ -457,6 +534,33 @@ export function createSmartNotificationService({
               text: aiMovementMessage(row, movement),
               dedupeKey,
               cooldownSeconds: aiCooldownSeconds,
+            }, cfg);
+            noteDelivery(result);
+          }
+        }
+
+        const radarSignal = radarStrongSignalState(snapshots, {
+          confidenceThreshold: radarConfidenceThreshold,
+          outcomeThreshold: radarOutcomeThreshold,
+          maxSignalAgeMinutes: SMART_NOTIFICATION_POLICY.maxSignalAgeMinutes,
+          now,
+        });
+        if (radarSignal.reason === 'stale_signal' && movement.reason !== 'stale_signal') summary.staleSignals += 1;
+        if (radarSignal.significant) {
+          const eventKey = `${radarSignal.latest.snapshotKey}:${radarSignal.strongest.side}`;
+          for (const row of aiAudience) {
+            const dedupeKey = smartNotificationDedupeKey({
+              fixtureId,
+              eventType: 'radar.strong_signal',
+              eventKey,
+            });
+            const result = await deliverSmartNotification({
+              row,
+              eventType: 'radar.strong_signal',
+              category: 'aiRadar',
+              text: radarSignalMessage(row, radarSignal),
+              dedupeKey,
+              cooldownSeconds: radarCooldownSeconds,
             }, cfg);
             noteDelivery(result);
           }
