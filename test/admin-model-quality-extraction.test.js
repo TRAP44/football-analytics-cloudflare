@@ -50,9 +50,8 @@ test('shared app root lazy-loads model quality only for admins with explicit dep
   ]) assert.ok(boundary.includes(dependency), dependency);
 });
 
-test('remediation-shared and destructive remediation logic stays in app composition root', () => {
+test('shared helper and destructive remediation actions stay in app composition root', () => {
   assert.match(app, /function outcomeShortLabel\(key\)/);
-  assert.match(app, /function renderModelRemediation\(\)/);
   assert.match(app, /async function runModelRemediation\(\)/);
   assert.match(app, /async function resolveSettlementDriftFromUi\(fixtureId, action\)/);
   assert.match(app, /async function resetSettlementCircuitFromUi\(\)/);
