@@ -5,6 +5,7 @@ import { createViewChromeController } from './modules/view-chrome.js';
 import { createInterfacePreferencesController } from './modules/ui-preferences.js';
 import { createFirstRunGuideController } from './modules/first-run-guide.js';
 import { createProfileDataCapabilitiesModule } from './modules/profile-data-capabilities.js';
+import { createProfileAccessStateModule } from './modules/profile-access-state.js';
 import {
   CLIENT_VERSION,
   CLIENT_API_CONTRACT,
@@ -173,6 +174,11 @@ const MATCH_SNAPSHOT_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const $ = id => document.getElementById(id);
 
 const { renderDataCapabilities } = createProfileDataCapabilitiesModule({ state, elementById: $ });
+const { renderProfileAccessState } = createProfileAccessStateModule({
+  elementById: $,
+  escapeHtml,
+  onRetry: () => openProfileView(),
+});
 
 function syncBootVersion() {
   const el = $('publicAppVersion');
@@ -420,23 +426,6 @@ function renderJourneyState(kind, { title = '', message = '', retry = null } = {
     ${!loading && retry ? '<button id="analysisStateRetry" class="primary-setting-btn" type="button">Повторить</button>' : ''}
   </section>`;
   if (!loading && retry) $('analysisStateRetry')?.addEventListener('click', retry, { once: true });
-}
-
-function renderProfileAccessState(kind = 'ready', message = '') {
-  const view = $('profileView');
-  const root = $('profileRecovery');
-  if (!view || !root) return;
-  const unavailable = kind !== 'ready';
-  view.classList.toggle('profile-unavailable', unavailable);
-  root.hidden = !unavailable;
-  if (!unavailable) { root.innerHTML = ''; return; }
-  const loading = kind === 'loading';
-  root.innerHTML = `<section class="panel journey-state ${loading ? 'is-loading' : 'is-error'}" role="status" aria-live="polite">
-    <span class="journey-state-icon">${loading ? '⏳' : '↻'}</span>
-    <div><strong>${loading ? 'Загружаем профиль' : 'Профиль временно недоступен'}</strong><p>${escapeHtml(message || (loading ? 'Получаем ваши настройки и избранное.' : 'Не удалось обновить профиль.'))}</p></div>
-    ${loading ? '' : '<button id="profileRecoveryRetry" class="primary-setting-btn" type="button">Повторить</button>'}
-  </section>`;
-  if (!loading) $('profileRecoveryRetry')?.addEventListener('click', () => openProfileView(), { once: true });
 }
 
 function setNetworkMode(mode, options = {}) {

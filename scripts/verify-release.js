@@ -18,6 +18,7 @@ const adminRcRegression = fs.readFileSync('public/modules/admin-rc-regression.js
 const adminOverview = fs.readFileSync('public/modules/admin-overview.js', 'utf8');
 const betaFeedback = fs.readFileSync('public/modules/beta-feedback.js', 'utf8');
 const profileDataCapabilities = fs.readFileSync('public/modules/profile-data-capabilities.js', 'utf8');
+const profileAccessState = fs.readFileSync('public/modules/profile-access-state.js', 'utf8');
 const launchFunnelFrontend = app + '\n' + adminLaunchFunnel;
 const appRuntime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
@@ -196,6 +197,11 @@ if (!app.includes("import { createProfileDataCapabilitiesModule } from './module
 if (!app.includes('const { renderDataCapabilities } = createProfileDataCapabilitiesModule({ state, elementById: $ });')) failures.push('Profile data capabilities must be wired synchronously from the composition root');
 if (app.includes('function renderDataCapabilities()') || app.includes("$('dataModeRefresh').textContent = features.liveRefresh")) failures.push('Profile data capabilities implementation leaked back into shared app root');
 if (/\bapi\s*\(|fetch\s*\(|state\.[A-Za-z0-9_]+\s*=/.test(profileDataCapabilities)) failures.push('Profile data capabilities module must remain read-only and network-free');
+if (!fs.existsSync('test/profile-access-state-extraction.test.js')) failures.push('Missing profile access state extraction regression test');
+if (!app.includes("import { createProfileAccessStateModule } from './modules/profile-access-state.js'") || !profileAccessState.includes('export function createProfileAccessStateModule')) failures.push('Profile access state extraction contract is missing');
+if (!app.includes('const { renderProfileAccessState } = createProfileAccessStateModule({') || !app.includes('onRetry: () => openProfileView()')) failures.push('Profile access state retry dependency must stay explicitly wired from the composition root');
+if (app.includes('function renderProfileAccessState(') || app.includes('Профиль временно недоступен')) failures.push('Profile access state implementation leaked back into shared app root');
+if (/openProfileView|\bapi\s*\(|fetch\s*\(|state\./.test(profileAccessState)) failures.push('Profile access state module must not own profile loading or network lifecycle');
 if (!app.includes("import('./modules/admin-launch-funnel.js')") || !adminLaunchFunnel.includes('export function createAdminLaunchFunnelModule')) failures.push('Admin launch funnel lazy extraction contract is missing');
 if (app.includes('Собираю first-party воронку') || app.includes('newsImpactRecoveryIncidentSloBreachImpactRanking')) failures.push('Admin launch funnel implementation leaked back into shared app root');
 if (!app.includes("createNavigationShell({") || !navigationShell.includes('export function createNavigationShell')) failures.push('Frontend navigation shell extraction contract is missing');
