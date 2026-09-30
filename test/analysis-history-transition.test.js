@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
 const worker = fs.readFileSync('src/worker.js', 'utf8');
+const historyRenderer = fs.readFileSync('public/modules/history-renderer.js', 'utf8');
 
 test('renderAnalysis owns currentAnalysis assignment so a new fixture resets the active tab', () => {
   const render = app.match(/function renderAnalysis\(d\)[\s\S]*?state\.currentAnalysis = d;/);
@@ -15,7 +16,7 @@ test('renderAnalysis owns currentAnalysis assignment so a new fixture resets the
   assert.ok(analyze, 'analyzeMatch must exist');
   assert.doesNotMatch(analyze[0], /state\.currentAnalysis = data/);
 
-  const historyOpen = app.match(/async function openHistoryAnalysis\(fixtureId, btn\)[\s\S]*?\n}\n\nfunction renderHistory/);
+  const historyOpen = app.match(/async function openHistoryAnalysis\(fixtureId, btn\)[\s\S]*?\n}\n\nlet historyRenderer/);
   assert.ok(historyOpen, 'openHistoryAnalysis must exist');
   assert.doesNotMatch(historyOpen[0], /state\.currentAnalysis = data/);
 });
@@ -52,10 +53,10 @@ test('history open requests cannot hijack navigation after a newer click or manu
 test('history distinguishes loading, first-load failure, stale data and stale empty states', () => {
   assert.match(app, /historyLoading:\s*false/);
   assert.match(app, /historyLoadError:\s*''/);
-  assert.match(app, /Загружаю историю/);
-  assert.match(app, /История временно недоступна/);
-  assert.match(app, /Показана последняя загруженная история/);
-  assert.match(app, /Последняя загруженная история была пустой/);
+  assert.match(historyRenderer, /Загружаю историю/);
+  assert.match(historyRenderer, /История временно недоступна/);
+  assert.match(historyRenderer, /Показана последняя загруженная история/);
+  assert.match(historyRenderer, /Последняя загруженная история была пустой/);
 });
 
 test('RC28 health exposes history transition contracts', () => {
