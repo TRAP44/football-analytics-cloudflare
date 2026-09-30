@@ -68,14 +68,18 @@ test('single subjective feedback is not automatically promoted to an active beta
   assert.match(issues,/needs_more_evidence/);
 });
 
-test('admin first level is beta health while technical tools stay under details',()=>{
+test('admin first level is owner status while Phase 5 and technical tools stay under details',()=>{
+  assert.match(adminHtml,/OWNER DASHBOARD/);
+  assert.match(adminHtml,/id="adminOverviewDatabase"/);
+  assert.match(adminHtml,/id="adminOverviewNotifications"/);
+  assert.match(adminHtml,/id="adminOverviewAi"/);
   assert.match(adminHtml,/id="betaHealthPanel"/);
   assert.match(adminHtml,/id="betaDashboardPanel"/);
   assert.match(adminHtml,/id="adminAdvancedTools"/);
-  assert.match(adminHtml,/Технические разделы/);
+  assert.match(adminHtml,/Расширенные инструменты/);
   const organize=block(app,'function organizeAdminConsole','async function loadAdvancedAdminTools');
-  for (const panel of ['runtime-controls-panel','provider-status-panel','diagnostics-panel','model-quality-panel']) {
-    assert.match(organize,new RegExp(panel));
+  for (const panel of ['#betaHealthPanel','#betaDashboardPanel','runtime-controls-panel','provider-status-panel','diagnostics-panel','model-quality-panel']) {
+    assert.ok(organize.includes(panel),panel);
   }
 });
 
