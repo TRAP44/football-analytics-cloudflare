@@ -16,7 +16,7 @@ test('reminder health implementation lives outside the shared app root', () => {
 
 test('shared app root lazy-loads reminder health only for admins', () => {
   const start = app.indexOf('async function ensureAdminReminderHealthModule()');
-  const end = app.indexOf('\nfunction releaseMonitorStateLabel', start);
+  const end = app.indexOf('\nlet adminReleaseMonitorModule', start);
   assert.ok(start >= 0 && end > start);
   const boundary = app.slice(start, end);
   assert.match(boundary, /if \(!isAdmin\(\)\) return null/);

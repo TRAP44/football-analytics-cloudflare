@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
-const app=fs.readFileSync('public/app.js','utf8');
+const releaseMonitor=fs.readFileSync('public/modules/admin-release-monitor.js','utf8');
 
 test('release monitor exposes regression SLO dashboard derived from ops history',()=>{
   const start=worker.indexOf('async function apiReleaseMonitor');
@@ -17,10 +17,10 @@ test('release monitor exposes regression SLO dashboard derived from ops history'
 });
 
 test('admin regression panel shows existing ACK and recovery SLO thresholds',()=>{
-  const start=app.indexOf('const regressionData =');
-  const end=app.indexOf('const codes = c.topCodes || [];',start);
+  const start=releaseMonitor.indexOf('const regressionData =');
+  const end=releaseMonitor.indexOf('const codes = c.topCodes || [];',start);
   assert.ok(start>=0 && end>start);
-  const block=app.slice(start,end);
+  const block=releaseMonitor.slice(start,end);
   assert.match(block,/ACK latency/);
   assert.match(block,/Investigation latency/);
   assert.match(block,/Recovery latency/);
@@ -31,9 +31,9 @@ test('admin regression panel shows existing ACK and recovery SLO thresholds',()=
 });
 
 test('SLO visualization does not add automatic remediation actions',()=>{
-  const start=app.indexOf('const regressionData =');
-  const end=app.indexOf('const codes = c.topCodes || [];',start);
-  const block=app.slice(start,end);
+  const start=releaseMonitor.indexOf('const regressionData =');
+  const end=releaseMonitor.indexOf('const codes = c.topCodes || [];',start);
+  const block=releaseMonitor.slice(start,end);
   assert.doesNotMatch(block,/rollbackTo|switchProvider|disableFeature|runtimeControlsSaving/);
   assert.doesNotMatch(block,/investigationTargetMinutes\s*:\s*[1-9]/);
   assert.doesNotMatch(block,/resolutionTargetMinutes\s*:\s*[1-9]/);

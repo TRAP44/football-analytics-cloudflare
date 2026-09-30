@@ -280,11 +280,11 @@ test('I. production monitor reads filtered SLO events and propagates watch state
 });
 
 test('J. admin monitor renders reliability SLO without user identifiers',()=>{
-  const app=fs.readFileSync('public/app.js','utf8');
-  const start=app.indexOf("const slo = dd.reliabilitySlo || {};");
-  const end=app.indexOf("const codes = c.topCodes || [];",start);
+  const releaseMonitor=fs.readFileSync('public/modules/admin-release-monitor.js','utf8');
+  const start=releaseMonitor.indexOf("const slo = dd.reliabilitySlo || {};");
+  const end=releaseMonitor.indexOf("const codes = c.topCodes || [];",start);
   assert.ok(start>=0 && end>start);
-  const block=app.slice(start,end);
+  const block=releaseMonitor.slice(start,end);
   assert.match(block,/Reliability SLO/);
   assert.match(block,/SLO требует контроля/);
   assert.doesNotMatch(block,/telegram_id|chat_id|user_id/i);

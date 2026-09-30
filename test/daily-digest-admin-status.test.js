@@ -77,24 +77,24 @@ test('no digest events returns an explicit collecting snapshot', () => {
 
 test('admin release monitor contract includes Daily Digest block and backend payload', () => {
   const html=fs.readFileSync('public/admin.html','utf8');
-  const app=fs.readFileSync('public/app.js','utf8');
+  const releaseMonitor=fs.readFileSync('public/modules/admin-release-monitor.js','utf8');
   const worker=fs.readFileSync('src/worker.js','utf8');
 
   assert.match(html,/id="releaseMonitorDigest"/);
-  assert.match(app,/const digest = \$\('releaseMonitorDigest'\)/);
-  assert.match(app,/📨 Daily Digest/);
-  assert.match(app,/Sealed claims/);
-  assert.match(app,/Alert delivery/);
+  assert.match(releaseMonitor,/const digest = \$\('releaseMonitorDigest'\)/);
+  assert.match(releaseMonitor,/📨 Daily Digest/);
+  assert.match(releaseMonitor,/Sealed claims/);
+  assert.match(releaseMonitor,/Alert delivery/);
   assert.match(worker,/summarizeDailyDigestOperationalStatus/);
   assert.match(worker,/dailyDigest,/);
 });
 
 test('admin digest status rendering stays aggregate-only', () => {
-  const app=fs.readFileSync('public/app.js','utf8');
-  const start=app.indexOf("const dd = r.dailyDigest || {};");
-  const end=app.indexOf("const codes = c.topCodes || [];",start);
+  const releaseMonitor=fs.readFileSync('public/modules/admin-release-monitor.js','utf8');
+  const start=releaseMonitor.indexOf("const dd = r.dailyDigest || {};");
+  const end=releaseMonitor.indexOf("const codes = c.topCodes || [];",start);
   assert.ok(start>=0 && end>start);
-  const block=app.slice(start,end);
+  const block=releaseMonitor.slice(start,end);
   assert.doesNotMatch(block,/telegram_id|chat_id|user_id/i);
   assert.match(block,/completion/);
   assert.match(block,/remaining/);
