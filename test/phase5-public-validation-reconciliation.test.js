@@ -6,6 +6,7 @@ import { closedBetaAccessDecision } from '../src/access-control.js';
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 const router=readFileSync(new URL('../src/router.js',import.meta.url),'utf8');
 const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+const betaDashboard=readFileSync(new URL('../public/modules/admin-beta-dashboard.js',import.meta.url),'utf8');
 const client=readFileSync(new URL('../public/modules/client-core.js',import.meta.url),'utf8');
 const index=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
 const adminIndex=readFileSync(new URL('../public/admin.html',import.meta.url),'utf8');
@@ -38,7 +39,7 @@ test('Phase 5 dashboard is admin-only and legacy strict-beta dashboard remains a
   assert.match(router,/return await apiPhase5Dashboard/);
   assert.match(router,/\/api\/beta-dashboard/);
   assert.match(router,/return await apiBetaDashboard/);
-  assert.match(app,/\/api\/phase5-dashboard\?days=/);
+  assert.match(betaDashboard,/\/api\/phase5-dashboard\?days=/);
   assert.match(adminIndex,/Phase 5 Dashboard/);
   assert.match(adminIndex,/Public Validation/);
 });
