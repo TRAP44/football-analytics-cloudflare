@@ -61,7 +61,7 @@ test('main action failures are measured by category, not free-form error text', 
   for (const action of ['matches','search','match','live_refresh','ai','history','profile']) {
     assert.ok(app.includes("sendActionError('" + action + "'"), action);
   }
-  const helper = block(app, 'function sendActionError', 'function renderJourneyState');
+  const helper = block(app, 'function sendActionError', 'function sendOperationTiming');
   assert.match(helper, /apiErrorCategory\(error\)/);
   assert.doesNotMatch(helper, /error\?\.message/);
 });
