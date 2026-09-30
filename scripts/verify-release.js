@@ -4,6 +4,7 @@ const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
 const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync('src/router.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-transport.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-dedupe.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-links.js', 'utf8') + '\n' + fs.readFileSync('src/auth-user.js', 'utf8') + '\n' + fs.readFileSync('src/cache-runtime.js', 'utf8') + '\n' + fs.readFileSync('src/api-football-gateway.js', 'utf8') + '\n' + fs.readFileSync('src/scheduled-jobs.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
+const viewChrome = fs.readFileSync('public/modules/view-chrome.js', 'utf8');
 const adminDiagnostics = fs.readFileSync('public/modules/admin-diagnostics.js', 'utf8');
 const appRuntime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
@@ -599,7 +600,7 @@ if (!fs.existsSync('test/phase4-1-public-visual-simplification.test.js')) failur
 if (!fs.existsSync('test/public-match-journey-rc123.test.js')) failures.push('Missing RC123 public match journey regression test');
 if (!html.includes('id="navMatches" class="nav-item active"') || !html.includes('<small>Главная</small>') || !html.includes('id="homeSearchBtn"')) failures.push('Phase 4 home-first public navigation is missing');
 if (!app.includes('const startupTasks = [loadFavorites(), loadMatches()]')) failures.push('RC123 public match feed startup path is missing');
-if (!app.includes("matchesView: ['Главная', 'Видим, что меняет матч.']")) failures.push('Phase 4.1/MatchRadar public Home chrome is missing');
+if (!viewChrome.includes("matchesView: Object.freeze(['Главная', 'Видим, что меняет матч.'])")) failures.push('Phase 4.1/MatchRadar public Home chrome is missing');
 
 if (!fs.existsSync('test/provider-coverage-transparency-rc124.test.js')) failures.push('Missing RC124 provider coverage transparency regression test');
 if (!app.includes('function providerCoverageHtml(reliability = {})')) failures.push('RC124 provider coverage UI is missing');
