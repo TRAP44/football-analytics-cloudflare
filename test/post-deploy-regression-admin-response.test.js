@@ -24,10 +24,10 @@ test('manual regression response controls do not introduce automatic remediation
 });
 
 test('regression response derives lifecycle alert and audit state from release monitor payload',()=>{
-  const start=app.indexOf("const regressionData =");
-  const end=app.indexOf("const codes = c.topCodes || [];",start);
+  const start=releaseMonitor.indexOf("const regressionData =");
+  const end=releaseMonitor.indexOf("const codes = c.topCodes || [];",start);
   assert.ok(start>=0 && end>start);
-  const block=app.slice(start,end);
+  const block=releaseMonitor.slice(start,end);
   assert.match(block,/r\.postDeployRegression/);
   assert.match(block,/Array\.isArray\(regressionData\.timeline\)/);
   assert.match(block,/x\?\.source === 'release_regression'/);
