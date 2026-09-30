@@ -16,6 +16,7 @@ import { createGlobalSearchRenderer } from './modules/global-search-renderer.js'
 import { renderMatchPulse } from './modules/match-pulse.js';
 import { renderAiTimelineCompact, renderAiTimelineDetails } from './modules/ai-timeline.js';
 import { buildPlayerComparisonCandidates, playerComparisonHtml, samePlayer } from './modules/player-comparison.js';
+import { createPlayerFollowModule } from './modules/player-follow.js';
 import {
   CLIENT_VERSION,
   CLIENT_API_CONTRACT,
@@ -43,6 +44,7 @@ const state = {
   matchesMeta: { refreshedAt: null, stale: false, warning: '', retryAfter: 0, catalog: {}, integrity: null },
   history: [],
   favorites: [],
+  favoritePlayers: [],
   reminders: [],
   watchlist: readMatchWatchlist(localStorage),
   preferences: { defaultFilter: 'top', reminderMinutes: 30, kickoffNotification: true, hideYouth: true, favoriteFirst: true },
@@ -151,6 +153,10 @@ const state = {
   favoritesLoading: false,
   favoritesLoadError: '',
   favoritesRevision: 0,
+  favoritePlayersLoaded: false,
+  favoritePlayersLoading: false,
+  favoritePlayersLoadError: '',
+  favoritePlayersRevision: 0,
   remindersLoaded: false,
   remindersLoading: false,
   remindersLoadError: '',
@@ -170,6 +176,7 @@ const state = {
   matchCenterInFlight: new Map(),
   analysisActionPending: false,
   favoriteMutations: new Set(),
+  favoritePlayerMutations: new Set(),
   reminderMutations: new Set(),
   preferencesSaving: false,
   profileStale: false,
@@ -822,6 +829,7 @@ async function runStartupSequence() {
 
   const startupTasks = [loadFavorites(), loadMatches()];
   await Promise.allSettled(startupTasks);
+  void loadFavoritePlayers();
 
   const usable = Boolean(state.profile || admin || navigator.onLine !== false);
   if (!usable && navigator.onLine === false) {
@@ -853,6 +861,17 @@ async function runStartupSequence() {
 
 
 const api = createApiClient({ state, tg, inflightGetRequests, observeServerVersion, showBootRecovery, applyRuntimeUi, normalizeApiError, noteRequestSuccess, noteRequestFailure });
+
+const playerFollowModule = createPlayerFollowModule({
+  state,
+  api,
+  toast,
+  onChange: () => {
+    if (state.currentPlayer) renderPlayerHub(state.currentPlayer);
+    if (state.profile) renderProfile();
+  },
+});
+const { loadFavoritePlayers } = playerFollowModule;
 
 const digestSettingsModule = createDigestSettingsModule({
   elementById: $,
@@ -1433,6 +1452,7 @@ async function openProfileView() {
   if (lastFixture && $('providerAuditFixtureId') && !$('providerAuditFixtureId').value) $('providerAuditFixtureId').value = String(lastFixture);
   const essentials = [];
   if (!state.favoritesLoaded) essentials.push(loadFavorites());
+  if (!state.favoritePlayersLoaded) essentials.push(loadFavoritePlayers());
   if (!state.remindersLoaded) essentials.push(loadReminders());
   if (!digestSettingsModule.loaded) essentials.push(loadDigestSettings());
   if (isAdmin()) {
@@ -4297,6 +4317,7 @@ function renderPlayerHub(player = state.currentPlayer) {
         <small>${escapeHtml(match.statusLabel || '')}</small>
       </div>
       <div class="player-hub-actions">
+        ${playerFollowModule.controlHtml(player)}
         <button class="btn secondary" type="button" data-player-comparison-open>⚖️ Сравнить</button>
       </div>
     </section>
@@ -4338,6 +4359,7 @@ function renderPlayerHub(player = state.currentPlayer) {
     </section>
   `;
   bindPlayerComparisonActions(player, playerComparisonCandidatesFor(player));
+  playerFollowModule.bind(root, player);
 }
 
 function openPlayerFromMatch(playerId, side = '') {
@@ -4357,6 +4379,7 @@ function openPlayerFromMatch(playerId, side = '') {
   renderPlayerHub();
   sendProductAction('player_open', current || 'analysisView');
   showView('playerView');
+  if (!state.favoritePlayersLoaded && !state.favoritePlayersLoading) void loadFavoritePlayers();
   void loadPlayerSquadProfile(state.currentPlayer);
   void loadPlayerSeasonStats(state.currentPlayer);
 }

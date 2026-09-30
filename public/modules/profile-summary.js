@@ -56,6 +56,8 @@ export function createProfileSummaryModule({
     $('profileUsage').textContent = `${quota.used} / ${quota.limit}`;
     $('memberSince').textContent = user.createdAt ? `С нами с ${dateOnly(user.createdAt)}` : '';
     $('favoriteCount').textContent = String(stats.favorites ?? state.favorites.length);
+    const favoritePlayerCount = $('favoritePlayerCount');
+    if (favoritePlayerCount) favoritePlayerCount.textContent = String(stats.favoritePlayers ?? state.favoritePlayers?.length ?? 0);
     $('reminderCount').textContent = String(stats.reminders ?? state.reminders.length);
   }
 

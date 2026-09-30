@@ -57,6 +57,8 @@ import {
 import { markTelegramWebhookEffect, markTelegramWebhookMutation } from './telegram-webhook-retry.js';
 import { PERSONAL_WRITE_LIMITS } from './personal-write-guards.js';
 import { createUserFavoritesService } from './user-favorites.js';
+import { createFavoritePlayersService } from './user-player-favorites.js';
+import { publicPlayerFollowNotificationContract } from './player-follow-contract.js';
 import { createUserRemindersService } from './user-reminders.js';
 import { createUserPreferencesService } from './user-preferences.js';
 import { createUserHistoryService } from './user-history.js';
@@ -86,6 +88,7 @@ const memory = {
   cache: new Map(),
   history: new Map(),
   favorites: new Map(),
+  favoritePlayers: new Map(),
   reminders: new Map(),
   preferences: new Map(),
   oddsSnapshots: new Map(),
@@ -168,7 +171,7 @@ const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
 const RELEASE_CHANNEL = 'rc144';
 const RC_NAME = 'RC144';
-const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.19 и примените миграции до v6.22; для существующей примените все доступные миграции из supabase/migrations до v6.22.';
+const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.19 и примените миграции до v6.23; для существующей примените все доступные миграции из supabase/migrations до v6.23.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49';
 
@@ -1027,6 +1030,7 @@ const DISTRIBUTED_ROUTE_BURST_POLICIES = Object.freeze([
   { test: (p,m) => p === '/api/model-remediation', limit: 4, windowSeconds: 60, label: 'model-remediation' },
   { test: (p,m) => p === '/api/diagnostics' || p === '/api/release-readiness' || p === '/api/production-readiness' || p === '/api/rc-regression' || p === '/api/release-monitor' || p === '/api/production-monitor', limit: 12, windowSeconds: 60, label: 'admin-diagnostics' },
   { test: (p,m) => p === '/api/favorites' && m !== 'GET', limit: 20, windowSeconds: 60, label: 'favorites-write' },
+  { test: (p,m) => p === '/api/favorite-players' && m !== 'GET', limit: 20, windowSeconds: 60, label: 'favorite-players-write' },
   { test: (p,m) => p === '/api/reminders' && m !== 'GET', limit: 20, windowSeconds: 60, label: 'reminders-write' },
   { test: (p,m) => p === '/api/preferences' && m !== 'GET', limit: 20, windowSeconds: 60, label: 'preferences-write' },
   { test: (p,m) => p.startsWith('/api/billing/') && m !== 'GET', limit: 10, windowSeconds: 60, label: 'billing-write' },
@@ -1302,6 +1306,19 @@ const {
   addFavorite,
   removeFavorite,
 } = createUserFavoritesService({
+  memory,
+  hasSupabase,
+  supaSelectMany,
+  supaRpc,
+  fetchWithTimeout,
+  supaHeaders,
+});
+
+const {
+  getFavoritePlayers,
+  addFavoritePlayer,
+  removeFavoritePlayer,
+} = createFavoritePlayersService({
   memory,
   hasSupabase,
   supaSelectMany,
@@ -17098,12 +17115,14 @@ async function readPersonalWriteGuardContract(cfg) {
     const raw = await supaRpc(cfg, 'personal_write_guard_contract', {}, 3000);
     const ok = Boolean(raw?.ok)
       && Number(raw?.favoritesLimit || 0) === PERSONAL_WRITE_LIMITS.favorites
+      && Number(raw?.favoritePlayersLimit || 0) === PERSONAL_WRITE_LIMITS.favoritePlayers
       && Number(raw?.remindersLimit || 0) === PERSONAL_WRITE_LIMITS.reminders;
     return {
       ok,
       status: ok ? 'ok' : 'contract_mismatch',
       version: String(raw?.version || ''),
       favoritesLimit: Number(raw?.favoritesLimit || 0),
+      favoritePlayersLimit: Number(raw?.favoritePlayersLimit || 0),
       remindersLimit: Number(raw?.remindersLimit || 0),
     };
   } catch (error) {
@@ -17176,6 +17195,7 @@ async function probeSupabaseSchemaDrift(cfg) {
   const specs = [
     { id: 'users_acquisition', table: 'users', columns: ['telegram_id','acquisition_source','acquisition_campaign','acquisition_content'] },
     { id: 'analysis_history_ai', table: 'analysis_history', columns: ['telegram_id','fixture_id','ai_signal_code','analysis_version'] },
+    { id: 'favorite_players', table: 'favorite_players', columns: ['telegram_id','player_id','player_name','team_id','created_at'] },
     { id: 'calibration_transitions', table: 'model_calibration_transitions', columns: ['id','action','resulting_revision','created_at'] },
     { id: 'digest_subscriptions', table: 'bot_digest_subscriptions', columns: ['telegram_id','enabled','hour_utc','delivery_claim_date','delivery_locked_until'] },
     { id: 'referee_history', table: 'referee_match_history', columns: ['fixture_id','referee_key','yellow_cards'] },
@@ -17835,6 +17855,7 @@ async function apiRcRegression(request, cfg, user) {
   const readRoutes = await Promise.all([
     rcReadRoute('Профиль', () => apiMe(request, cfg, user)),
     rcReadRoute('Избранное', () => apiFavorites(new Request(request.url, { method: 'GET', headers: request.headers }), cfg, user)),
+    rcReadRoute('Игроки', () => apiFavoritePlayers(new Request(request.url, { method: 'GET', headers: request.headers }), cfg, user)),
     rcReadRoute('Напоминания', () => apiReminders(new Request(request.url, { method: 'GET', headers: request.headers }), cfg, user)),
     rcReadRoute('Настройки', () => apiPreferences(new Request(request.url, { method: 'GET', headers: request.headers }), cfg, user)),
     rcReadRoute('История', () => apiHistory(new Request(request.url, { method: 'GET', headers: request.headers }), cfg, user)),
@@ -20243,10 +20264,11 @@ async function apiDataIntegrity(request, cfg) {
 }
 
 async function apiMe(request, cfg, user) {
-  const [quota, record, favorites, reminders, preferences] = await Promise.all([
+  const [quota, record, favorites, favoritePlayers, reminders, preferences] = await Promise.all([
     getQuota(user.id, cfg),
     getUserRecord(user.id, cfg),
     getFavorites(user.id, cfg),
+    getFavoritePlayers(user.id, cfg),
     getReminders(user.id, cfg),
     getPreferences(user.id, cfg),
   ]);
@@ -20274,7 +20296,7 @@ async function apiMe(request, cfg, user) {
       runtime: publicRuntimeControls(),
     },
     preferences,
-    stats: { favorites: favorites.length, reminders: reminders.length },
+    stats: { favorites: favorites.length, favoritePlayers: favoritePlayers.length, reminders: reminders.length },
   });
 }
 
@@ -20346,6 +20368,112 @@ async function apiFavorites(request, cfg, user) {
   return json({ error: 'Метод не поддерживается.' }, 405);
 }
 
+
+function publicFavoritePlayer(row = {}) {
+  return {
+    playerId: Number(row.player_id),
+    playerName: String(row.player_name || ''),
+    teamId: Number(row.team_id),
+    createdAt: row.created_at || null,
+  };
+}
+
+async function resolveFavoritePlayerIdentity(input = {}, cfg) {
+  const playerId = Number(input?.playerId || 0);
+  const teamId = Number(input?.teamId || 0);
+  const fixtureId = Number(input?.fixtureId || 0);
+
+  if (![playerId, teamId, fixtureId].every(id => Number.isSafeInteger(id) && id > 0)) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'FAVORITE_PLAYER_INVALID',
+      error: 'Некорректный игрок, команда или матч.',
+    };
+  }
+
+  const cacheKey = `match-center:${fixtureId}:v16-availability-quality-rc144`;
+  const center = await getCache(cacheKey, cfg) || await getStaleCache(cacheKey, cfg);
+  if (!center) {
+    return {
+      ok: false,
+      status: 409,
+      code: 'FAVORITE_PLAYER_CONTEXT_EXPIRED',
+      error: 'Контекст матча устарел. Откройте матч заново и повторите.',
+    };
+  }
+
+  const match = center?.match || {};
+  const side = ['home', 'away'].find(key => Number(match?.[key]?.id || 0) === teamId);
+  if (!side) {
+    return {
+      ok: false,
+      status: 422,
+      code: 'FAVORITE_PLAYER_TEAM_MISMATCH',
+      error: 'Игрок не относится к выбранной команде этого матча.',
+    };
+  }
+
+  const player = (center?.playerLeaders?.[side] || [])
+    .find(item => Number(item?.id || 0) === playerId);
+  const playerName = String(player?.name || '').trim();
+  if (!player || !playerName) {
+    return {
+      ok: false,
+      status: 422,
+      code: 'FAVORITE_PLAYER_NOT_FOUND',
+      error: 'Игрок не найден в подтверждённых данных этого матча.',
+    };
+  }
+
+  return {
+    ok: true,
+    player: { id: playerId, name: playerName, teamId },
+  };
+}
+
+async function apiFavoritePlayers(request, cfg, user) {
+  const notificationContract = publicPlayerFollowNotificationContract();
+
+  if (request.method === 'GET') {
+    const rows = await getFavoritePlayers(user.id, cfg);
+    return json({
+      items: rows.map(publicFavoritePlayer),
+      notificationContract,
+    });
+  }
+
+  if (request.method === 'POST') {
+    let body = {};
+    try {
+      body = await request.json();
+    } catch {
+      return json({ error: 'Некорректное тело запроса.', code: 'FAVORITE_PLAYER_INVALID_JSON' }, 400);
+    }
+
+    const resolved = await resolveFavoritePlayerIdentity(body, cfg);
+    if (!resolved.ok) return json({ error: resolved.error, code: resolved.code }, resolved.status);
+
+    const row = await addFavoritePlayer(user.id, resolved.player, cfg);
+    return json({
+      ok: true,
+      item: publicFavoritePlayer(row),
+      notificationContract,
+    });
+  }
+
+  if (request.method === 'DELETE') {
+    const url = new URL(request.url);
+    const playerId = Number(url.searchParams.get('playerId'));
+    if (!Number.isSafeInteger(playerId) || playerId <= 0) {
+      return json({ error: 'Номер игрока обязателен.', code: 'FAVORITE_PLAYER_INVALID' }, 400);
+    }
+    await removeFavoritePlayer(user.id, playerId, cfg);
+    return json({ ok: true, notificationContract });
+  }
+
+  return json({ error: 'Метод не поддерживается.' }, 405);
+}
 
 async function apiDigestSettings(request, cfg, user) {
   const telegramId=Number(user?.id || 0);
@@ -23747,6 +23875,7 @@ const API_ROUTE_DEPS = Object.freeze({
   apiDataIntegrity,
   apiDiagnostics,
   apiDigestSettings,
+  apiFavoritePlayers,
   apiFavorites,
   apiFixtureShareLink,
   apiHistory,
