@@ -37,7 +37,6 @@ test('calibration control implementation lives outside app without capturing rem
   assert.doesNotMatch(app, /function calibrationTransitionLabel\(action\)/);
   assert.doesNotMatch(app, /Загружаю состояние жизненного цикла/);
 
-  assert.match(app, /function renderModelRemediation\(\)/);
   assert.match(app, /async function runModelRemediation\(\)/);
   assert.match(app, /async function resolveSettlementDriftFromUi\(fixtureId, action\)/);
   assert.match(app, /async function resetSettlementCircuitFromUi\(\)/);
@@ -46,7 +45,7 @@ test('calibration control implementation lives outside app without capturing rem
 
 test('app lazy-loads calibration control behind admin gate with explicit callbacks', () => {
   const start = app.indexOf('async function ensureAdminCalibrationControlModule()');
-  const end = app.indexOf('\nfunction remediationActionLabel', start);
+  const end = app.indexOf('\nlet adminModelRemediationViewModule', start);
   assert.ok(start >= 0 && end > start);
   const boundary = app.slice(start, end);
   assert.match(boundary, /if \(!isAdmin\(\)\) return null/);
