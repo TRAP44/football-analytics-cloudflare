@@ -292,8 +292,6 @@ export function createReminderDeliveryService({
       staleClaims: Number(stale.prematch || 0) + Number(stale.kickoff || 0) + Number(stale.lineup || 0) + Number(stale.important_change || 0),
       staleCleanupFailed: Number(stale.failed || 0),
       truncated,
-      blockedByPreference:Number(prematchAudience?.blockedByPreference || 0) + Number(kickoffAudience?.blockedByPreference || 0),
-      blockedByEntitlement:Number(prematchAudience?.blockedByEntitlement || 0) + Number(kickoffAudience?.blockedByEntitlement || 0),
     };
 
     if (sent || kickoffSent || failed || unknown || summary.staleClaims || summary.staleCleanupFailed || truncated) {
