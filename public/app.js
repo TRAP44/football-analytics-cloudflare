@@ -2507,11 +2507,12 @@ function syncFilterButtons() {
   });
   const drawer = document.querySelector('.league-filter-drawer');
   if (drawer) {
-    const leagueFilters = ['international', 'cups', 'england', 'spain', 'italy', 'germany', 'france'];
-    const activeLeagueFilter = leagueFilters.includes(state.filter);
-    drawer.classList.toggle('has-active-filter', activeLeagueFilter);
-    const summaryValue = drawer.querySelector('summary span');
+    const drawerFilters = ['favorites', 'international', 'cups', 'england', 'spain', 'italy', 'germany', 'france'];
+    const activeDrawerFilter = drawerFilters.includes(state.filter);
+    drawer.classList.toggle('has-active-filter', activeDrawerFilter);
+    const summaryValue = drawer.querySelector('[data-filter-summary-value]');
     const labels = {
+      favorites: 'Избранное',
       international: 'Международные',
       cups: 'Кубки',
       england: 'Англия',
@@ -2520,7 +2521,7 @@ function syncFilterButtons() {
       germany: 'Германия',
       france: 'Франция',
     };
-    if (summaryValue) summaryValue.textContent = activeLeagueFilter ? labels[state.filter] : 'Выбрать';
+    if (summaryValue) summaryValue.textContent = activeDrawerFilter ? labels[state.filter] : 'Ещё';
   }
 }
 

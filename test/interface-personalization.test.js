@@ -8,10 +8,12 @@ const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
 const uiPreferences = readFileSync(new URL('../public/modules/ui-preferences.js', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
 
-test('home prioritizes a personal daily overview and four core filters', () => {
+test('home prioritizes a personal daily overview with three always-visible quick filters', () => {
   assert.match(html, /id="dailyOverview"/);
-  const primaryStrip = html.match(/<div class="filter-strip" id="filterStrip">([\s\S]*?)<\/div>/)?.[1] || '';
-  assert.equal((primaryStrip.match(/class="filter-btn/g) || []).length, 4);
+  const primaryStrip = html.match(/<div class="filter-strip home-quick-filter-strip" id="filterStrip"[^>]*>([\s\S]*?)<\/div>/)?.[1] || '';
+  assert.equal((primaryStrip.match(/class="filter-btn/g) || []).length, 3);
+  for (const filter of ['top', 'live', 'all']) assert.match(primaryStrip, new RegExp(`data-filter="${filter}"`));
+  assert.doesNotMatch(primaryStrip, /data-filter="favorites"/);
   assert.match(html, /class="home-filter-drawer league-filter-drawer"/);
 });
 

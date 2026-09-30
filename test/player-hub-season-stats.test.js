@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { FRONTEND_ASSET_REVISION } from '../public/modules/app-runtime.js';
 
 const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
-const runtime = readFileSync(new URL('../public/modules/app-runtime.js', import.meta.url), 'utf8');
 
 function sourceBetween(startNeedle, endNeedle) {
   const start = app.indexOf(startNeedle);
@@ -50,5 +50,5 @@ test('Player Hub 4C renders season metrics and responsive layout', () => {
   }
   assert.match(styles, /Player Hub 4C — season statistics/);
   assert.match(styles, /\.player-hub-season-grid\s*\{/);
-  assert.match(runtime, /FRONTEND_ASSET_REVISION = '6\.120\.0-launch21'/);
+  assert.match(FRONTEND_ASSET_REVISION, /^6\.120\.0-launch\d+$/);
 });

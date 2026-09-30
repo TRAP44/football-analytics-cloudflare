@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { FRONTEND_ASSET_REVISION } from '../public/modules/app-runtime.js';
 
 const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
 const moduleSource = readFileSync(new URL('../public/modules/ui-preferences.js', import.meta.url), 'utf8');
@@ -26,7 +27,7 @@ test('UI preferences module owns theme accent and button-style behavior', () => 
 });
 
 test('frontend revision refreshes the extracted module graph', () => {
-  assert.match(index, /frontend-asset-revision" content="6\.120\.0-launch21"/);
-  assert.match(index, /\/app-public\.js\?v=6\.120\.0-launch21/);
-  assert.doesNotMatch(index, /6\.120\.0-launch19/);
+  assert.match(FRONTEND_ASSET_REVISION, /^6\.120\.0-launch\d+$/);
+  assert.ok(index.includes(`frontend-asset-revision" content="${FRONTEND_ASSET_REVISION}"`));
+  assert.ok(index.includes(`/app-public.js?v=${FRONTEND_ASSET_REVISION}`));
 });
