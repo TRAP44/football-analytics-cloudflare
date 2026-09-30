@@ -58,7 +58,7 @@ test('frontend revision refreshes personal-surface styles without changing relea
   assert.match(html,/frontend-asset-revision" content="6\.120\.0-launch\d+"/);
   assert.match(html,/styles\.css\?v=6\.120\.0-launch\d+/);
   assert.match(html,/styles\/public-shell\.css\?v=6\.120\.0-launch\d+/);
-  assert.match(html,/app\.js\?v=6\.120\.0-launch\d+/);
+  assert.match(html,/app-(?:public|admin)\.js\?v=6\.120\.0-launch\d+/);
   assert.match(runtime,/const CLIENT_VERSION = '6\.120\.0-rc144'/);
   assert.doesNotMatch(html,/6\.120\.0-ui2/);
 });

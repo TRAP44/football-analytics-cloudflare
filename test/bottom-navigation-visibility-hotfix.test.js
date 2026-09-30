@@ -67,7 +67,7 @@ test('Telegram safe-area and cache-bust contracts cover the public shell', () =>
   assert.ok(revision);
   assert.notEqual(revision, pkg.version);
   assert.ok(revision.startsWith(`${pkg.version}-`));
-  for (const asset of ['/app.js', '/styles.css', '/styles/public-shell.css']) {
+  for (const asset of ['/app-public.js', '/styles.css', '/styles/public-shell.css']) {
     assert.ok(html.includes(`${asset}?v=${revision}`), `${asset} must use the current frontend asset revision`);
   }
 });

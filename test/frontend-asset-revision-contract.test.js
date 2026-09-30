@@ -18,8 +18,9 @@ test('frontend asset revision has one runtime source of truth', () => {
 });
 
 test('all static frontend entrypoints use the same revision token', () => {
+  assert.ok(publicHtml.includes(`/app-public.js?v=${FRONTEND_ASSET_REVISION}`));
+  assert.ok(adminHtml.includes(`/app-admin.js?v=${FRONTEND_ASSET_REVISION}`));
   for (const html of [publicHtml, adminHtml]) {
-    assert.ok(html.includes(`/app.js?v=${FRONTEND_ASSET_REVISION}`));
     assert.ok(html.includes(`/styles.css?v=${FRONTEND_ASSET_REVISION}`));
     assert.ok(html.includes(`/styles/public-shell.css?v=${FRONTEND_ASSET_REVISION}`));
   }

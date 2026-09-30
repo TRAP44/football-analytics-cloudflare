@@ -575,7 +575,7 @@ async function main() {
           const navStyle = nav ? getComputedStyle(nav) : null;
           const revision = document.querySelector('meta[name="frontend-asset-revision"]')?.content || '';
           const urls = [
-            document.querySelector('script[src*="/app.js"]')?.src || '',
+            document.querySelector('script[src*="/app-public.js"]')?.src || '',
             document.querySelector('link[href*="/styles.css"]')?.href || '',
             document.querySelector('link[href*="/styles/public-shell.css"]')?.href || '',
           ];
