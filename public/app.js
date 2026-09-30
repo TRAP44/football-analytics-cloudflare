@@ -194,6 +194,12 @@ const {
   showView: (id, options) => showView(id, options),
 });
 
+function stopLiveRefresh() {
+  if (state.liveRefreshTimer) clearInterval(state.liveRefreshTimer);
+  state.liveRefreshTimer = null;
+  state.liveRefreshRemaining = 0;
+}
+
 function viewBackTarget(id = activeViewId()) {
   return backTargetForView(id, state);
 }
