@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
-const app=fs.readFileSync('public/app.js','utf8');
+const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/admin-diagnostics.js','utf8');
 const smoke=fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
 
 test('RC109 combines Supabase probe attempts with fail-closed confirmation semantics',()=>{
