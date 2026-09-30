@@ -340,10 +340,10 @@ if (!worker.includes("referee: fixture.fixture?.referee || ''")) failures.push('
 if (!app.includes('function aiInstructorHtml')) failures.push('AI instructor UI is missing');
 if (!html.includes('boot-card boot-card-simple') || !html.includes('MatchRadar') || !html.includes('Видим, что меняет матч.') || !html.includes('Загружаем матчи…') || html.includes('id="bootVersion"')) failures.push('MatchRadar minimal public startup is missing');
 if (!worker.includes("telegramBotHub: 'enabled'") || !worker.includes("aiFootballInstructor: 'enabled'")) failures.push('RC44 AI/bot health contract is missing');
-if (!html.includes('id="homeLiveCard"') || !html.includes('id="homeTeamsBtn"') || !html.includes('id="homeFavoriteBtn"')) failures.push('Phase 4.1 contextual Home priority cards are missing');
+if (!html.includes('id="dailyOverview"') || !html.includes('id="homePersonalMatchBtn"') || html.includes('id="homeLiveCard"') || html.includes('id="homeTeamsBtn"') || html.includes('id="homeFavoriteBtn"')) failures.push('Phase 4.1 clean Home priority contract is missing');
 if (!html.includes('id="quotaText" hidden')) failures.push('Main-screen quota must be hidden by default');
 if (!worker.includes("focusedMatchHome: 'enabled'") || !worker.includes("contextualLeagueFilter: 'enabled'")) failures.push('RC44 focused-home health contract is missing');
-if (!html.includes('id="homeFavoriteBtn"') || !app.includes('onboarding.hidden = favoriteCount > 0')) failures.push('Phase 4.1 favorite onboarding is missing');
+if (!html.includes('id="firstRunGuideFavorite"') || html.includes('id="homeFavoriteBtn"') || app.includes("homeFavoriteBtn")) failures.push('Phase 4.1 first-run onboarding / clean Home contract is missing');
 if (!app.includes('data-quick-reminder')) failures.push('Quick reminder action is missing from match cards');
 if (!worker.includes("quickMatchReminders: 'enabled'") || !worker.includes("firstRunGuide: 'enabled'")) failures.push('RC44 health contract is missing');
 if (!app.includes('profileStale: false')) failures.push('Profile fail-soft state is missing');
