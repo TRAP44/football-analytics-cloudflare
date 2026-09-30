@@ -826,8 +826,9 @@ async function runStartupSequence() {
   if ($('navProfile')) $('navProfile').hidden=false;
   if ($('navMatches')) $('navMatches').hidden=false;
 
-  const startupTasks = [loadFavorites(), loadFavoritePlayers(), loadMatches()];
+  const startupTasks = [loadFavorites(), loadMatches()];
   await Promise.allSettled(startupTasks);
+  void loadFavoritePlayers();
 
   const usable = Boolean(state.profile || admin || navigator.onLine !== false);
   if (!usable && navigator.onLine === false) {
