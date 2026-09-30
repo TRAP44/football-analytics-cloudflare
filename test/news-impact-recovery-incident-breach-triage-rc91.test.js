@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
-const app=fs.readFileSync('public/app.js','utf8');
+const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
 
 test('RC91 derives triage only from RC90 active watchlist',()=>{
   assert.match(worker,/function buildNewsImpactRecoveryIncidentSloBreachTriage\(/);
