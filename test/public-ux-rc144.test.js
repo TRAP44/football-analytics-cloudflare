@@ -42,13 +42,27 @@ test('profile keeps favorite-team management in one dedicated My Teams destinati
   assert.match(app, /renderMyTeams\(\);[\s\S]{0,80}showView\('myTeamsView'\)/);
 });
 
-test('appearance choices stay in the user profile and apply immediately', () => {
-  for (const theme of ['system', 'dark', 'light', 'ocean']) {
-    assert.match(html, new RegExp(`data-theme-choice="${theme}"`));
+test('profile keeps common appearance choices visible and moves rare styling behind disclosure', () => {
+  const panelStart = html.indexOf('<section class="panel preferences-panel">');
+  const panelEnd = html.indexOf('<details class="profile-data-details">', panelStart);
+  const panel = html.slice(panelStart, panelEnd);
+  const advancedStart = panel.indexOf('<details id="advancedAppearance"');
+  const advancedEnd = panel.indexOf('</details>', advancedStart);
+  const primary = panel.slice(0, advancedStart);
+  const advanced = panel.slice(advancedStart, advancedEnd + 10);
+
+  for (const theme of ['system', 'dark', 'light']) {
+    assert.match(primary, new RegExp(`data-theme-choice="${theme}"`));
   }
+  assert.doesNotMatch(primary, /data-theme-choice="ocean"/);
+  assert.match(advanced, /data-theme-choice="ocean"/);
+  assert.match(advanced, /data-accent-choice="green"/);
+  assert.match(advanced, /data-button-style-choice="compact"/);
+  assert.match(panel, /Матчи и уведомления/);
+  assert.match(uiPreferences, /advancedAppearanceLabel/);
+  assert.match(uiPreferences, /advancedAppearanceSummary/);
   assert.match(app, /saveInterfacePreference\('theme'/);
   assert.match(uiPreferences, /applyInterfacePreferences\(\{ announce: true \}\)/);
-  assert.match(html, /Цвет интерфейса применяется сразу/);
 });
 
 test('global search shows local results first and bounds the remote wait', () => {

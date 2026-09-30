@@ -22,6 +22,10 @@ test('UI preferences module owns theme accent and button-style behavior', () => 
   assert.match(moduleSource, /data-theme-choice/);
   assert.match(moduleSource, /data-accent-choice/);
   assert.match(moduleSource, /data-button-style-choice/);
+  assert.match(moduleSource, /function advancedAppearanceLabel/);
+  assert.match(moduleSource, /advancedAppearanceSummary/);
+  assert.match(moduleSource, /Океан/);
+  assert.match(moduleSource, /Строгие кнопки/);
   assert.match(moduleSource, /setHeaderColor/);
   assert.match(moduleSource, /setBackgroundColor/);
 });

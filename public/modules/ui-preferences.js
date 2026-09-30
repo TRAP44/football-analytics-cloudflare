@@ -34,6 +34,20 @@ export function createInterfacePreferencesController({
     root.style.setProperty('--accent-text', pair.text);
   }
 
+  function advancedAppearanceLabel(prefs = state.uiPreferences || DEFAULT_UI_PREFERENCES) {
+    const parts = [];
+    if (prefs.theme === 'ocean') parts.push('Океан');
+    const accentLabels = {
+      green: 'Зелёный акцент',
+      blue: 'Синий акцент',
+      violet: 'Фиолетовый акцент',
+      amber: 'Янтарный акцент',
+    };
+    if (prefs.accent !== 'system' && accentLabels[prefs.accent]) parts.push(accentLabels[prefs.accent]);
+    if (prefs.buttonStyle === 'compact') parts.push('Строгие кнопки');
+    return parts.length ? parts.join(' · ') : 'По умолчанию';
+  }
+
   function applyInterfacePreferences({ announce = false } = {}) {
     const prefs = state.uiPreferences || DEFAULT_UI_PREFERENCES;
     document.documentElement.dataset.theme = prefs.theme;
@@ -55,6 +69,9 @@ export function createInterfacePreferencesController({
       button.classList.toggle('active', active);
       button.setAttribute('aria-pressed', active ? 'true' : 'false');
     });
+
+    const advancedSummary = document.getElementById('advancedAppearanceSummary');
+    if (advancedSummary) advancedSummary.textContent = advancedAppearanceLabel(prefs);
 
     window.requestAnimationFrame(() => {
       const background = window.getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0b1220';
