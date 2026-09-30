@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/router.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
+const aiTrackRecordRenderer=fs.readFileSync('public/modules/ai-track-record-renderer.js','utf8');
 const html=fs.readFileSync('public/index.html','utf8');
 const css=fs.readFileSync('public/styles.css','utf8');
 
@@ -26,7 +27,7 @@ test('public trust UX reports counts and Brier without a win-rate metric',()=> {
   assert.match(worker,/avgBrier/);
   assert.match(worker,/profitabilityMetric:false/);
   assert.match(worker,/не равно доходности ставки/);
-  assert.match(app,/Здесь нет рекламного «процента побед»/);
+  assert.match(aiTrackRecordRenderer,/Здесь нет рекламного «процента побед»/);
   assert.doesNotMatch(app,/Винрейт/);
 });
 
@@ -39,7 +40,7 @@ test('small samples are explicitly labeled',()=> {
 test('History view separates global model record from personal history',()=> {
   assert.match(html,/id="aiTrackRecord"/);
   assert.match(html,/Ваши анализы/);
-  assert.match(app,/function renderAiTrackRecord\(/);
+  assert.match(aiTrackRecordRenderer,/function renderAiTrackRecord\(/);
   assert.match(app,/\/api\/ai-track-record\?days=180/);
   assert.match(css,/\.ai-track-card/);
 });
