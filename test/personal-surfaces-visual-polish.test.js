@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const html=fs.readFileSync('public/index.html','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const runtime=fs.readFileSync('public/modules/app-runtime.js','utf8');
+const favoriteTeamsRenderer=fs.readFileSync('public/modules/favorite-teams-renderer.js','utf8');
 const css=fs.readFileSync('public/styles/public-shell.css','utf8');
 
 function block(source,start,end){
@@ -40,7 +41,7 @@ test('profile polish preserves favorites reminders preferences and service links
     'favoriteTeams','reminderList','preferences-panel','savePreferencesBtn',
     'profile-data-details','Конфиденциальность','Условия использования','Статус сервиса',
   ]) assert.ok(profile.includes(token),token);
-  const favoriteFn=block(app,'function renderFavoriteTeams','function renderMyTeams');
+  const favoriteFn=block(favoriteTeamsRenderer,'function renderFavoriteTeams','return Object.freeze');
   for(const token of ['favorite-team-row','favorite-team-main','favorite-remove']) assert.ok(favoriteFn.includes(token),token);
   assert.match(css,/\.miniapp-public-shell \.favorite-team-row/);
   assert.match(css,/\.miniapp-public-shell \.reminder-row/);

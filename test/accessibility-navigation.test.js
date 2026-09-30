@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
 const navigationShell = fs.readFileSync('public/modules/navigation-shell.js', 'utf8');
+const favoriteTeamsRenderer = fs.readFileSync('public/modules/favorite-teams-renderer.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const styles = fs.readFileSync('public/styles.css', 'utf8');
 
@@ -40,8 +41,8 @@ test('top bar heading can receive programmatic focus', () => {
 
 test('search, favorites and reminders empty states provide recovery actions', () => {
   assert.match(app, /searchEmptyAll/);
-  assert.match(app, /favoritesEmptyMatches/);
+  assert.match(favoriteTeamsRenderer, /favoritesEmptyMatches/);
   assert.match(app, /remindersEmptyMatches/);
-  assert.match(app, /favoritesEmptyRetry/);
+  assert.match(favoriteTeamsRenderer, /favoritesEmptyRetry/);
   assert.match(app, /remindersEmptyRetry/);
 });
