@@ -23,6 +23,7 @@ const profileSummary = fs.readFileSync('public/modules/profile-summary.js', 'utf
 const journeyState = fs.readFileSync('public/modules/journey-state.js', 'utf8');
 const favoriteTeamsRenderer = fs.readFileSync('public/modules/favorite-teams-renderer.js', 'utf8');
 const reminderList = fs.readFileSync('public/modules/reminder-list.js', 'utf8');
+const myTeamsRenderer = fs.readFileSync('public/modules/my-teams-renderer.js', 'utf8');
 const launchFunnelFrontend = app + '\n' + adminLaunchFunnel;
 const appRuntime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
@@ -227,6 +228,11 @@ if (!app.includes('const { renderReminderList } = createReminderListModule({') |
 if (app.includes('function reminderDeliveryBadge(item)') || app.includes("document.querySelectorAll('.reminder-remove')")) failures.push('Reminder list rendering implementation leaked back into shared app root');
 if (!app.includes('async function handleReminderRemove(fixtureId)') || !app.includes("method: 'DELETE'") || !app.includes('state.reminderMutations.add(fixtureId)')) failures.push('Reminder mutation lifecycle must remain in the composition root');
 if (/\/api\/reminders|state\.profile\s*=|toast\s*\(|renderProfile\s*\(|renderAnalysis\s*\(/.test(reminderList)) failures.push('Reminder list module captured mutation or business lifecycle');
+if (!fs.existsSync('test/my-teams-renderer-extraction.test.js')) failures.push('Missing my teams renderer extraction regression test');
+if (!app.includes("import { createMyTeamsRenderer } from './modules/my-teams-renderer.js'") || !myTeamsRenderer.includes('export function createMyTeamsRenderer')) failures.push('My Teams renderer extraction contract is missing');
+if (!app.includes('const { renderMyTeams } = createMyTeamsRenderer({') || !app.includes('onOpenTeam: team => openTeam(team)') || !app.includes('onAnalyzeMatch: (fixtureId, button) => analyzeMatch(fixtureId, button)')) failures.push('My Teams navigation dependencies must remain explicitly wired from composition root');
+if (app.includes('function renderMyTeams()') || app.includes('Загружаю ваши команды…')) failures.push('My Teams renderer implementation leaked back into shared app root');
+if (/function openTeam|async function analyzeMatch|\/api\//.test(myTeamsRenderer)) failures.push('My Teams renderer captured navigation, analysis or network lifecycle');
 if (/async function loadFavorites|async function toggleFavorite|function openTeam|\/api\/favorites|showView\('matchesView'\)/.test(favoriteTeamsRenderer)) failures.push('Favorite teams renderer must not own loading, mutation, navigation or team lifecycle');
 if (!app.includes("import('./modules/admin-launch-funnel.js')") || !adminLaunchFunnel.includes('export function createAdminLaunchFunnelModule')) failures.push('Admin launch funnel lazy extraction contract is missing');
 if (app.includes('Собираю first-party воронку') || app.includes('newsImpactRecoveryIncidentSloBreachImpactRanking')) failures.push('Admin launch funnel implementation leaked back into shared app root');
