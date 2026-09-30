@@ -152,7 +152,6 @@ const state = {
   aiTrackRecordError: '',
   historyOpenRequestSeq: 0,
   providerLoaded: false,
-  viewScroll: {},
   matchesLoadSeq: 0,
   matchCenterRequestSeq: 0,
   matchCenterInFlight: new Map(),
