@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
-const app=fs.readFileSync('public/app.js','utf8');
+const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/global-search-renderer.js','utf8');
 const css=fs.readFileSync('public/styles.css','utf8');
 
 test('RC57 server ranks the primary match before client rendering',()=> {
