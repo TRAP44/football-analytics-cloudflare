@@ -7036,17 +7036,61 @@ function dailyDigestText(rows = []) {
   return ['🧠 <b>3 матча дня · AI-подборка</b>','',...rows.map((x,i)=>`${i+1}. <b>${x.homeName} — ${x.awayName}</b>\n${x.league} · ${x.live ? '🔴 идёт сейчас' : digestTime(x.date)}`),'','Нажмите на матч — короткая AI-оценка придёт сразу в Telegram. Полный разбор откроется одним нажатием.'].join('\n');
 }
 
+async function getBotDigestSubscription(userId, cfg) {
+  const telegramId=Number(userId || 0);
+  if (!telegramId) return null;
+  if (hasSupabase(cfg)) {
+    return await supaSelectOne(cfg,'bot_digest_subscriptions',{telegram_id:`eq.${telegramId}`});
+  }
+  return memory.botDigestSubscriptions.get(telegramId) || null;
+}
+
 async function setBotDigestSubscription(userId, chatId, enabled, cfg, appUrl = '') {
   markTelegramWebhookMutation(cfg, 'digest_subscription');
-  const previous = hasSupabase(cfg) ? null : memory.botDigestSubscriptions.get(Number(userId));
+  const telegramId=Number(userId || 0);
+  const previous=await getBotDigestSubscription(telegramId,cfg);
   const row = {
-    telegram_id:Number(userId), chat_id:Number(chatId), enabled:Boolean(enabled), hour_utc:7,
+    telegram_id:telegramId,
+    chat_id:Number(previous?.chat_id || chatId || telegramId),
+    enabled:Boolean(enabled),
+    hour_utc:DAILY_DIGEST_POLICY.deliveryHourUtc,
     app_url:String(appUrl || previous?.app_url || '').slice(0,500),
     updated_at:new Date().toISOString(),
   };
   if (hasSupabase(cfg)) await supaUpsert(cfg,'bot_digest_subscriptions',row,'telegram_id');
-  else memory.botDigestSubscriptions.set(Number(userId),{...previous,...row,last_sent_date:previous?.last_sent_date || null});
-  return row;
+  else memory.botDigestSubscriptions.set(telegramId,{...previous,...row,last_sent_date:previous?.last_sent_date || null});
+  return {...previous,...row};
+}
+
+function publicDigestSettings(row = null, plan = 'FREE', favorites = []) {
+  const hourUtc=DAILY_DIGEST_POLICY.deliveryHourUtc;
+  const normalizedPlan=['FREE','PRO','PREMIUM'].includes(String(plan || '').toUpperCase())
+    ? String(plan).toUpperCase()
+    : 'FREE';
+  return {
+    enabled:row?.enabled === true,
+    configured:Boolean(row?.telegram_id),
+    plan:normalizedPlan,
+    delivery:{
+      hourUtc,
+      label:`${String(hourUtc).padStart(2,'0')}:00 UTC`,
+      timezone:'UTC',
+      editable:false,
+      executionWindow:`${String(hourUtc).padStart(2,'0')}:00–${String(hourUtc).padStart(2,'0')}:55 UTC`,
+    },
+    favoriteTeams:(favorites || []).map(item=>({
+      teamId:Number(item.team_id || item.teamId || 0),
+      teamName:String(item.team_name || item.teamName || '').slice(0,80),
+    })).filter(item=>item.teamId && item.teamName).slice(0,6),
+    capabilities:{
+      baseDigest:true,
+      morningNews:true,
+      favoritePriority:false,
+      customDeliveryTime:false,
+      planSpecificContent:false,
+    },
+    updatedAt:row?.updated_at || null,
+  };
 }
 
 async function loadBotDigestSubscriptions(cfg) {
@@ -20242,6 +20286,49 @@ async function apiFavorites(request, cfg, user) {
   return json({ error: 'Метод не поддерживается.' }, 405);
 }
 
+
+async function apiDigestSettings(request, cfg, user) {
+  const telegramId=Number(user?.id || 0);
+  if (!telegramId) return json({error:'Сессия Telegram не подтверждена.',code:'DIGEST_AUTH_REQUIRED'},401);
+
+  if (request.method === 'GET') {
+    const [row,quota,favorites]=await Promise.all([
+      getBotDigestSubscription(telegramId,cfg),
+      getQuota(telegramId,cfg),
+      getFavorites(telegramId,cfg),
+    ]);
+    return json({settings:publicDigestSettings(row,quota?.plan,favorites)});
+  }
+
+  if (request.method === 'PUT' || request.method === 'POST') {
+    let body={};
+    try { body=await request.json(); } catch {
+      return json({error:'Некорректное тело запроса.',code:'DIGEST_INVALID_JSON'},400);
+    }
+    if (typeof body?.enabled !== 'boolean') {
+      return json({error:'Поле enabled должно быть true или false.',code:'DIGEST_INVALID_ENABLED'},400);
+    }
+    const appUrl=publicSiteUrl(request,'/');
+    const row=await setBotDigestSubscription(telegramId,telegramId,body.enabled,cfg,appUrl);
+    const [quota,favorites]=await Promise.all([
+      getQuota(telegramId,cfg),
+      getFavorites(telegramId,cfg),
+    ]);
+    void recordOpsEvent(cfg,{
+      severity:'info',
+      source:'telegram',
+      eventType:'digest_subscription',
+      code:body.enabled?'DIGEST_SUBSCRIPTION_ENABLED':'DIGEST_SUBSCRIPTION_DISABLED',
+      message:body.enabled?'Mini App digest subscription enabled.':'Mini App digest subscription disabled.',
+      endpoint:'/api/digest-settings',
+      meta:{channel:'miniapp',enabled:Boolean(body.enabled),plan:String(quota?.plan || 'FREE')},
+    }).catch(()=>null);
+    return json({ok:true,settings:publicDigestSettings(row,quota?.plan,favorites)});
+  }
+
+  return json({error:'Метод не поддерживается.'},405);
+}
+
 function publicReminder(row = {}) {
   return {
     fixtureId: Number(row.fixture_id),
@@ -23584,6 +23671,7 @@ const API_ROUTE_DEPS = Object.freeze({
   apiClientTelemetry,
   apiDataIntegrity,
   apiDiagnostics,
+  apiDigestSettings,
   apiFavorites,
   apiFixtureShareLink,
   apiHistory,

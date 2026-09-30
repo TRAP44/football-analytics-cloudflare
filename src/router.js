@@ -17,6 +17,7 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
     apiClientTelemetry,
     apiDataIntegrity,
     apiDiagnostics,
+    apiDigestSettings,
     apiFavorites,
     apiFixtureShareLink,
     apiHistory,
@@ -190,6 +191,7 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
   if (request.method === 'GET' && url.pathname === '/api/history') return await apiHistory(request, cfg, user);
   if (request.method === 'GET' && url.pathname === '/api/history-analysis') return await apiHistoryAnalysis(request, cfg, user);
   if (url.pathname === '/api/favorites') return await apiFavorites(request, cfg, user);
+  if (url.pathname === '/api/digest-settings') return await apiDigestSettings(request, cfg, user);
   if (url.pathname === '/api/reminders') return await apiReminders(request, cfg, user);
   if (url.pathname === '/api/preferences') return await apiPreferences(request, cfg, user);
   if (request.method === 'POST' && url.pathname === '/api/analyze') return await apiAnalyze(request, cfg, user);
