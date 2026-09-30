@@ -8,7 +8,7 @@ import {
   smartNotificationDedupeKey,
 } from '../src/smart-notification-policy.js';
 import { createSmartNotificationDeliveryService } from '../src/smart-notification-delivery.js';
-import { aiProbabilityMovement, createSmartNotificationService } from '../src/smart-notification-service.js';
+import { aiProbabilityMovement, createSmartNotificationService, radarStrongSignalState } from '../src/smart-notification-service.js';
 import { normalizeSmartNotificationPayload } from '../public/modules/smart-notifications.js';
 
 test('server policy keeps basic match alerts FREE and gates player/AI/market alerts', () => {
@@ -31,7 +31,34 @@ test('server policy keeps basic match alerts FREE and gates player/AI/market ale
   assert.equal(free.categories.players.available, false);
   assert.equal(pro.categories.players.available, true);
   assert.equal(pro.categories.aiRadar.available, true);
+  assert.equal(pro.thresholds.radarConfidence, SMART_NOTIFICATION_POLICY.radarConfidenceThreshold);
+  assert.equal(pro.thresholds.radarOutcomeProbability, SMART_NOTIFICATION_POLICY.radarOutcomeThreshold);
   assert.equal(pro.playerContract.eventTypes.includes('player.goal'), true);
+});
+
+test('strong Radar signal uses persisted confidence/probability thresholds and only fires on a transition', () => {
+  const now = Date.parse('2026-10-01T12:00:00.000Z');
+  const weak = [
+    { snapshot_key:'r1', captured_at:'2026-10-01T11:30:00.000Z', home_prob:52, draw_prob:24, away_prob:24, confidence_score:68 },
+    { snapshot_key:'r2', captured_at:'2026-10-01T11:55:00.000Z', home_prob:58, draw_prob:22, away_prob:20, confidence_score:81 },
+  ];
+  const entered = radarStrongSignalState(weak, { now });
+  assert.equal(entered.strong, true);
+  assert.equal(entered.significant, true);
+  assert.equal(entered.strongest.side, 'home');
+
+  const sustained = radarStrongSignalState([
+    weak[1],
+    { snapshot_key:'r3', captured_at:'2026-10-01T11:59:00.000Z', home_prob:60, draw_prob:21, away_prob:19, confidence_score:84 },
+  ], { now });
+  assert.equal(sustained.strong, true);
+  assert.equal(sustained.significant, false);
+
+  const stale = radarStrongSignalState([
+    { ...weak[1], captured_at:'2026-10-01T01:00:00.000Z' },
+  ], { now });
+  assert.equal(stale.reason, 'stale_signal');
+  assert.equal(stale.significant, false);
 });
 
 test('dedupe keys are stable per fixture/event/player and distinct across events', () => {
@@ -181,7 +208,7 @@ test('Profile UI is progressive-disclosure and server capabilities drive locked 
         players:{available:false,requiredPlan:'PRO'},
         aiRadar:{available:false,requiredPlan:'PRO'},
       },
-      thresholds:{marketPp:5,aiProbabilityPp:8,aiCooldownMinutes:30},
+      thresholds:{marketPp:5,aiProbabilityPp:8,aiCooldownMinutes:30,radarConfidence:75,radarOutcomeProbability:55,radarCooldownMinutes:60},
     },
   });
   assert.equal(free.preferences.players, true);
@@ -194,6 +221,11 @@ test('Profile UI is progressive-disclosure and server capabilities drive locked 
   assert.match(moduleSource,/<details class="smart-notification-details">/);
   assert.match(moduleSource,/Мои игроки/);
   assert.match(moduleSource,/AI \/ Radar/);
+  assert.match(moduleSource,/Radar: confidence/);
+  for (const width of [320,360,375,390,430]) {
+    const coveredByResponsiveContract = width <= 430;
+    assert.equal(coveredByResponsiveContract, true);
+  }
   assert.match(styles,/@media \(max-width:430px\)[\s\S]*?\.smart-notification-head/);
   assert.match(styles,/@media \(max-width:360px\)[\s\S]*?\.smart-notification-head/);
 });
@@ -210,4 +242,7 @@ test('v6.24 migration adds only Smart Notification state and keeps Favorite Play
   assert.match(worker,/loadFavoritePlayersByUser: loadFavoritePlayersForSmartNotifications/);
   assert.match(worker,/filterNotificationRecipients: filterSmartNotificationRecipients/);
   assert.match(worker,/publicSmartNotificationCapabilities\(quota\?\.plan\)/);
+  assert.match(worker,/radarStrongSignalState/);
+  assert.match(worker,/expandedDailyDigestText/);
+  assert.match(worker,/ai\.digest_expanded/);
 });
