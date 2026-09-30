@@ -13,6 +13,7 @@ const adminProductionReadiness = fs.readFileSync('public/modules/admin-productio
 const adminReleaseReadiness = fs.readFileSync('public/modules/admin-release-readiness.js', 'utf8');
 const adminModelQuality = fs.readFileSync('public/modules/admin-model-quality.js', 'utf8');
 const adminCalibrationControl = fs.readFileSync('public/modules/admin-calibration-control.js', 'utf8');
+const adminModelRemediation = fs.readFileSync('public/modules/admin-model-remediation.js', 'utf8');
 const launchFunnelFrontend = app + '\n' + adminLaunchFunnel;
 const appRuntime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
@@ -155,12 +156,16 @@ if (app.includes('function releaseStateLabel') || app.includes('Проверяю
 if (!fs.existsSync('test/admin-model-quality-extraction.test.js')) failures.push('Missing admin model quality extraction regression test');
 if (!app.includes("import('./modules/admin-model-quality.js')") || !adminModelQuality.includes('export function createAdminModelQualityModule')) failures.push('Admin model quality lazy extraction contract is missing');
 if (app.includes('function qualityPct(value)') || app.includes('Калибратор вероятностей')) failures.push('Admin model quality implementation leaked back into shared app root');
-if (!app.includes('function outcomeShortLabel(key)') || !app.includes('async function runModelRemediation()')) failures.push('Model quality extraction captured shared or remediation logic');
+if (!app.includes('function outcomeShortLabel(key)') || !adminModelRemediation.includes('async function runModelRemediation()')) failures.push('Model quality extraction captured shared logic or remediation boundary is missing');
 if (/runCalibrationControlAction|runModelRemediation|\/api\/calibration-control|\/api\/model-remediation/.test(adminModelQuality)) failures.push('Admin model quality module must remain read-only');
 if (!fs.existsSync('test/admin-calibration-control-extraction.test.js')) failures.push('Missing admin calibration control extraction regression test');
 if (!app.includes("import('./modules/admin-calibration-control.js')") || !adminCalibrationControl.includes('export function createAdminCalibrationControlModule')) failures.push('Admin calibration control lazy extraction contract is missing');
 if (app.includes('function calibrationTransitionLabel(action)') || app.includes('Загружаю состояние жизненного цикла')) failures.push('Admin calibration control implementation leaked back into shared app root');
-if (!app.includes('async function runModelRemediation()') || !app.includes('async function resolveSettlementDriftFromUi(fixtureId, action)') || !app.includes('async function resetSettlementCircuitFromUi()')) failures.push('Calibration extraction captured remediation actions');
+if (!fs.existsSync('test/admin-model-remediation-extraction.test.js')) failures.push('Missing admin model remediation extraction regression test');
+if (!app.includes("import('./modules/admin-model-remediation.js')") || !adminModelRemediation.includes('export function createAdminModelRemediationModule')) failures.push('Admin model remediation lazy extraction contract is missing');
+if (app.includes('function remediationActionLabel') || app.includes("action: 'resolve_drift'") || app.includes("action: 'reset_circuit'")) failures.push('Admin model remediation implementation leaked back into shared app root');
+if (!app.includes('confirmAction: message => window.confirm(message)') || !app.includes('loadModelQuality')) failures.push('Admin model remediation destructive-action dependencies must stay explicit');
+if (!adminModelRemediation.includes('async function runModelRemediation()') || !adminModelRemediation.includes('async function resolveSettlementDriftFromUi(fixtureId, action)') || !adminModelRemediation.includes('async function resetSettlementCircuitFromUi()')) failures.push('Calibration extraction captured remediation actions or remediation boundary is missing');
 if (/\/api\/model-remediation|runModelRemediation|resolveSettlementDriftFromUi|resetSettlementCircuitFromUi/.test(adminCalibrationControl)) failures.push('Admin calibration control module must not own remediation logic');
 if (!adminCalibrationControl.includes('confirmAction(') || !adminCalibrationControl.includes('refreshModelQuality(true)')) failures.push('Calibration control side effects must remain explicitly injected');
 if (!app.includes("import('./modules/admin-beta-dashboard.js')") || !adminBetaDashboard.includes('export function createAdminBetaDashboardModule')) failures.push('Admin beta dashboard lazy extraction contract is missing');

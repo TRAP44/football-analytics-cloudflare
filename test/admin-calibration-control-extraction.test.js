@@ -5,6 +5,7 @@ import { createAdminCalibrationControlModule } from '../public/modules/admin-cal
 
 const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
 const calibration = readFileSync(new URL('../public/modules/admin-calibration-control.js', import.meta.url), 'utf8');
+const remediation = readFileSync(new URL('../public/modules/admin-model-remediation.js', import.meta.url), 'utf8');
 
 function element() {
   return {
@@ -37,16 +38,16 @@ test('calibration control implementation lives outside app without capturing rem
   assert.doesNotMatch(app, /function calibrationTransitionLabel\(action\)/);
   assert.doesNotMatch(app, /Загружаю состояние жизненного цикла/);
 
-  assert.match(app, /function renderModelRemediation\(\)/);
-  assert.match(app, /async function runModelRemediation\(\)/);
-  assert.match(app, /async function resolveSettlementDriftFromUi\(fixtureId, action\)/);
-  assert.match(app, /async function resetSettlementCircuitFromUi\(\)/);
+  assert.match(remediation, /function renderModelRemediation\(\)/);
+  assert.match(remediation, /async function runModelRemediation\(\)/);
+  assert.match(remediation, /async function resolveSettlementDriftFromUi\(fixtureId, action\)/);
+  assert.match(remediation, /async function resetSettlementCircuitFromUi\(\)/);
   assert.doesNotMatch(calibration, /\/api\/model-remediation|runModelRemediation|resolveSettlementDriftFromUi|resetSettlementCircuitFromUi/);
 });
 
 test('app lazy-loads calibration control behind admin gate with explicit callbacks', () => {
   const start = app.indexOf('async function ensureAdminCalibrationControlModule()');
-  const end = app.indexOf('\nfunction remediationActionLabel', start);
+  const end = app.indexOf('\nlet adminModelRemediationModule', start);
   assert.ok(start >= 0 && end > start);
   const boundary = app.slice(start, end);
   assert.match(boundary, /if \(!isAdmin\(\)\) return null/);
