@@ -8,6 +8,7 @@ const viewChrome = fs.readFileSync('public/modules/view-chrome.js', 'utf8');
 const navigationShell = fs.readFileSync('public/modules/navigation-shell.js', 'utf8');
 const adminDiagnostics = fs.readFileSync('public/modules/admin-diagnostics.js', 'utf8');
 const adminLaunchFunnel = fs.readFileSync('public/modules/admin-launch-funnel.js', 'utf8');
+const adminBetaDashboard = fs.readFileSync('public/modules/admin-beta-dashboard.js', 'utf8');
 const launchFunnelFrontend = app + '\n' + adminLaunchFunnel;
 const appRuntime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
@@ -140,6 +141,10 @@ if (!fs.existsSync('test/user-flow-contract.test.js')) failures.push('Missing us
 if (!fs.existsSync('test/accessibility-navigation.test.js')) failures.push('Missing accessibility navigation regression test');
 if (!fs.existsSync('test/navigation-shell.test.js')) failures.push('Missing navigation shell behavioral regression test');
 if (!fs.existsSync('test/admin-launch-funnel-extraction.test.js')) failures.push('Missing admin launch funnel extraction regression test');
+if (!fs.existsSync('test/admin-beta-dashboard-extraction.test.js')) failures.push('Missing admin beta dashboard extraction regression test');
+if (!app.includes("import('./modules/admin-beta-dashboard.js')") || !adminBetaDashboard.includes('export function createAdminBetaDashboardModule')) failures.push('Admin beta dashboard lazy extraction contract is missing');
+if (app.includes('Verified normal users') || app.includes('function betaTimingLabel')) failures.push('Admin beta dashboard implementation leaked back into shared app root');
+if (!app.includes('function setBetaFeedbackOpen(open)') || !app.includes('async function submitBetaFeedback()')) failures.push('Beta feedback lifecycle must remain in the shared composition root');
 if (!app.includes("import('./modules/admin-launch-funnel.js')") || !adminLaunchFunnel.includes('export function createAdminLaunchFunnelModule')) failures.push('Admin launch funnel lazy extraction contract is missing');
 if (app.includes('Собираю first-party воронку') || app.includes('newsImpactRecoveryIncidentSloBreachImpactRanking')) failures.push('Admin launch funnel implementation leaked back into shared app root');
 if (!app.includes("createNavigationShell({") || !navigationShell.includes('export function createNavigationShell')) failures.push('Frontend navigation shell extraction contract is missing');
