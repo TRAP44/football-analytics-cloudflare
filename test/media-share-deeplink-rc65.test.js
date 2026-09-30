@@ -52,6 +52,7 @@ test('Mini App share includes a fixture deep link and native Telegram fallback',
 test('admin funnel exposes media share to AI conversion',()=> {
   assert.match(worker,/mediaLoop:\{/);
   assert.match(worker,/fixture_deep_link_open/);
+  assert.match(worker,/share_created/);
   assert.match(worker,/share_link_created/);
   assert.match(app,/Media deep-link → AI/);
   assert.match(app,/Media loop:/);
