@@ -14,7 +14,7 @@
     "lint": "node scripts/source-hygiene.js"
   },
   "devDependencies": {
-    "wrangler": "4.136.1"
+    "wrangler": "4.141.0"
   },
   "overrides": {
     "undici": "7.30.0"
