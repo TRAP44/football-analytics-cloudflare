@@ -5,6 +5,9 @@ export const SMART_NOTIFICATION_POLICY = Object.freeze({
   marketThresholdPp: 5,
   aiProbabilityThresholdPp: 8,
   aiCooldownSeconds: 30 * 60,
+  radarConfidenceThreshold: 75,
+  radarOutcomeThreshold: 55,
+  radarCooldownSeconds: 60 * 60,
   maxSignalAgeMinutes: 180,
   maxFixturesPerRun: 6,
 });
@@ -98,6 +101,9 @@ export function publicSmartNotificationCapabilities(plan = 'FREE') {
       marketPp: SMART_NOTIFICATION_POLICY.marketThresholdPp,
       aiProbabilityPp: SMART_NOTIFICATION_POLICY.aiProbabilityThresholdPp,
       aiCooldownMinutes: Math.round(SMART_NOTIFICATION_POLICY.aiCooldownSeconds / 60),
+      radarConfidence: SMART_NOTIFICATION_POLICY.radarConfidenceThreshold,
+      radarOutcomeProbability: SMART_NOTIFICATION_POLICY.radarOutcomeThreshold,
+      radarCooldownMinutes: Math.round(SMART_NOTIFICATION_POLICY.radarCooldownSeconds / 60),
     }),
     playerContract: Object.freeze({
       version: PLAYER_FOLLOW_NOTIFICATION_CONTRACT.version,
