@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const app=fs.readFileSync('public/app.js','utf8');
+const viewChrome=fs.readFileSync('public/modules/view-chrome.js','utf8');
 const html=fs.readFileSync('public/index.html','utf8');
 const css=fs.readFileSync('public/styles.css','utf8');
 
@@ -10,7 +11,7 @@ test('RC123 exposes today matches as a public Mini App destination',()=>{
   assert.match(html,/id="navMatches" class="nav-item active"/);
   assert.match(html,/<small>Главная<\/small>/);
   assert.doesNotMatch(html,/id="navMatches"[^>]*hidden/);
-  assert.ok(app.includes("matchesView: ['Главная', 'Видим, что меняет матч.']"));
+  assert.match(viewChrome,/matchesView:\s*Object\.freeze\(\['Главная', 'Видим, что меняет матч\.'\]\)/);
   assert.match(css,/grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/);
 });
 
