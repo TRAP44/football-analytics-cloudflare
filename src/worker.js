@@ -20059,6 +20059,28 @@ async function apiHistoryAnalysis(request, cfg, user) {
 }
 
 
+async function apiFavorites(request, cfg, user) {
+  if (request.method === 'GET') {
+    const rows = await getFavorites(user.id, cfg);
+    return json({ items: rows.map(x => ({ teamId: Number(x.team_id), teamName: x.team_name || '', teamLogo: x.team_logo || '' })) });
+  }
+  if (request.method === 'POST') {
+    let body = {};
+    try { body = await request.json(); } catch {}
+    const row = await addFavorite(user.id, { id: body.teamId, name: body.teamName, logo: body.teamLogo }, cfg);
+    return json({ ok: true, item: { teamId: row.team_id, teamName: row.team_name, teamLogo: row.team_logo } });
+  }
+  if (request.method === 'DELETE') {
+    const url = new URL(request.url);
+    const teamId = Number(url.searchParams.get('teamId'));
+    if (!teamId) return json({ error: 'Номер команды обязателен.' }, 400);
+    await removeFavorite(user.id, teamId, cfg);
+    return json({ ok: true });
+  }
+  return json({ error: 'Метод не поддерживается.' }, 405);
+}
+
+
 async function apiDigestSettings(request, cfg, user) {
   const telegramId=Number(user?.id || 0);
   if (!telegramId) return json({error:'Сессия Telegram не подтверждена.',code:'DIGEST_AUTH_REQUIRED'},401);
@@ -20099,27 +20121,6 @@ async function apiDigestSettings(request, cfg, user) {
   }
 
   return json({error:'Метод не поддерживается.'},405);
-}
-
-async function apiFavorites(request, cfg, user) {
-  if (request.method === 'GET') {
-    const rows = await getFavorites(user.id, cfg);
-    return json({ items: rows.map(x => ({ teamId: Number(x.team_id), teamName: x.team_name || '', teamLogo: x.team_logo || '' })) });
-  }
-  if (request.method === 'POST') {
-    let body = {};
-    try { body = await request.json(); } catch {}
-    const row = await addFavorite(user.id, { id: body.teamId, name: body.teamName, logo: body.teamLogo }, cfg);
-    return json({ ok: true, item: { teamId: row.team_id, teamName: row.team_name, teamLogo: row.team_logo } });
-  }
-  if (request.method === 'DELETE') {
-    const url = new URL(request.url);
-    const teamId = Number(url.searchParams.get('teamId'));
-    if (!teamId) return json({ error: 'Номер команды обязателен.' }, 400);
-    await removeFavorite(user.id, teamId, cfg);
-    return json({ ok: true });
-  }
-  return json({ error: 'Метод не поддерживается.' }, 405);
 }
 
 function publicReminder(row = {}) {
