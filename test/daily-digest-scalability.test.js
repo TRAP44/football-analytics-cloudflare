@@ -190,7 +190,7 @@ test('G. one recipient failure does not block the rest and its persistent claim 
   assert.equal(result.failed, 1);
   assert.equal(result.ambiguous, 1);
   assert.deepEqual(delivery.sent, [1,3,4]);
-  const next = planDailyDigestRecipients(delivery.snapshot(), { date: DATE, maxRecipients: 10 });
+  const next = planDailyDigestRecipients(delivery.snapshot(), { date: DATE, maxRecipients: 10, now: Date.parse(`${DATE}T07:10:00.000Z`) });
   assert.equal(next.pending.length, 0);
   assert.equal(next.duplicate, 1);
 });

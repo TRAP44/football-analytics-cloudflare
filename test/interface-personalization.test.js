@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
 const adminHtml = readFileSync(new URL('../public/admin.html', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
+const uiPreferences = readFileSync(new URL('../public/modules/ui-preferences.js', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
 
 test('home prioritizes a personal daily overview and four core filters', () => {
@@ -18,8 +19,8 @@ test('interface themes and button styles persist per device', () => {
   for (const theme of ['system', 'dark', 'light', 'ocean']) {
     assert.match(html, new RegExp(`data-theme-choice="${theme}"`));
   }
-  assert.match(app, /UI_PREFERENCES_KEY/);
-  assert.match(app, /localStorage\.setItem\(UI_PREFERENCES_KEY/);
+  assert.match(uiPreferences, /UI_PREFERENCES_KEY/);
+  assert.match(uiPreferences, /storage\.setItem\(UI_PREFERENCES_KEY/);
   assert.match(css, /:root\[data-theme="light"\]/);
   assert.match(css, /:root\[data-theme="dark"\]/);
   assert.match(css, /:root\[data-theme="ocean"\]/);

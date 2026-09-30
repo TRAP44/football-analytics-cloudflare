@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
 const runtime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
+const uiPreferences = fs.readFileSync('public/modules/ui-preferences.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const adminHtml = fs.readFileSync('public/admin.html', 'utf8');
 const css = fs.readFileSync('public/styles.css', 'utf8');
@@ -82,7 +83,7 @@ test('custom accent persists independently and shipped pairs keep WCAG-safe cont
   for (const choice of ['system', 'green', 'blue', 'violet', 'amber']) {
     assert.ok(html.includes('data-accent-choice="' + choice + '"'), choice);
   }
-  assert.match(app, /function applyAccentPreference/);
+  assert.match(uiPreferences, /function applyAccentPreference/);
   assert.match(app, /saveInterfacePreference\('accent'/);
   const pairs = [
     ['#57e389', '#041009', '#050607'],
