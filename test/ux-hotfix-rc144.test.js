@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
+const globalSearchRenderer = fs.readFileSync('public/modules/global-search-renderer.js', 'utf8');
 const runtime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const uiPreferences = fs.readFileSync('public/modules/ui-preferences.js', 'utf8');
 const adminOverview = fs.readFileSync('public/modules/admin-overview.js', 'utf8');
@@ -66,7 +67,7 @@ test('quick discovery sections are not permanently suppressed by public-shell CS
     assert.ok(forcedHidden.every(r => r.selector.includes('[hidden]')), id + ': ' + forcedHidden.map(r => r.selector).join(', '));
   }
   assert.match(app, /function setDiscoveryHomeVisibility\(visible\)/);
-  assert.match(app, /setDiscoveryHomeVisibility\(!query\)/);
+  assert.match(globalSearchRenderer, /setDiscoveryHomeVisibility\(!query\)/);
 });
 
 test('startup hides release identifiers while About shows the public app version', () => {
