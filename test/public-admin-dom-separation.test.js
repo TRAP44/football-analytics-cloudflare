@@ -47,10 +47,10 @@ test('public startup has no required listener dependency on removed admin DOM', 
   }
 });
 
-test('public and admin entrypoints stay on the centralized launch21 revision', () => {
-  assert.equal(FRONTEND_ASSET_REVISION, '6.120.0-launch21');
-  assert.match(publicHtml, /frontend-asset-revision" content="6\.120\.0-launch21"/);
-  assert.match(adminHtml, /frontend-asset-revision" content="6\.120\.0-launch21"/);
-  assert.match(publicHtml, /\/app-public\.js\?v=6\.120\.0-launch21/);
-  assert.match(adminHtml, /\/app-admin\.js\?v=6\.120\.0-launch21/);
+test('public and admin entrypoints stay on one centralized frontend revision', () => {
+  assert.match(FRONTEND_ASSET_REVISION, /^6\.120\.0-launch\d+$/);
+  assert.ok(publicHtml.includes(`frontend-asset-revision" content="${FRONTEND_ASSET_REVISION}"`));
+  assert.ok(adminHtml.includes(`frontend-asset-revision" content="${FRONTEND_ASSET_REVISION}"`));
+  assert.ok(publicHtml.includes(`/app-public.js?v=${FRONTEND_ASSET_REVISION}`));
+  assert.ok(adminHtml.includes(`/app-admin.js?v=${FRONTEND_ASSET_REVISION}`));
 });
