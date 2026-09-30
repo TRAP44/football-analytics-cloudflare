@@ -15,6 +15,7 @@ const adminModelQuality = fs.readFileSync('public/modules/admin-model-quality.js
 const adminCalibrationControl = fs.readFileSync('public/modules/admin-calibration-control.js', 'utf8');
 const adminModelRemediation = fs.readFileSync('public/modules/admin-model-remediation.js', 'utf8');
 const adminRcRegression = fs.readFileSync('public/modules/admin-rc-regression.js', 'utf8');
+const adminOverview = fs.readFileSync('public/modules/admin-overview.js', 'utf8');
 const launchFunnelFrontend = app + '\n' + adminLaunchFunnel;
 const appRuntime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
@@ -171,6 +172,11 @@ if (!app.includes("import('./modules/admin-rc-regression.js')") || !adminRcRegre
 if (app.includes('function rcStateText(status)') || app.includes('Запускаю безопасную регрессионную проверку')) failures.push('Admin RC regression implementation leaked back into shared app root');
 if (!app.includes('function runClientContractSmoke()') || !app.includes('runClientContractSmoke,')) failures.push('Client contract smoke must remain in composition root and be explicitly injected into RC regression');
 if (adminRcRegression.includes('function runClientContractSmoke()') || adminRcRegression.includes('document.querySelector') || adminRcRegression.includes('window.Telegram')) failures.push('Admin RC regression module must not own cross-app client smoke/browser integration');
+if (!fs.existsSync('test/admin-overview-extraction.test.js')) failures.push('Missing admin overview extraction regression test');
+if (!app.includes("import('./modules/admin-overview.js')") || !adminOverview.includes('export function createAdminOverviewModule')) failures.push('Admin overview lazy extraction contract is missing');
+if (app.includes("const enabled = ['analysisEnabled', 'searchEnabled', 'liveEnabled']")) failures.push('Admin overview implementation leaked back into shared app root');
+if (!app.includes('function applyAdminVisibility()') || !app.includes('function organizeAdminConsole()') || !app.includes('async function loadAdvancedAdminTools()')) failures.push('Admin access and boot orchestration must remain in the composition root');
+if (/applyAdminVisibility|organizeAdminConsole|loadAdvancedAdminTools|querySelectorAll\('\[data-admin-only\]'\)/.test(adminOverview)) failures.push('Admin overview module must not own access or boot orchestration');
 if (!adminModelRemediation.includes('async function runModelRemediation()') || !adminModelRemediation.includes('async function resolveSettlementDriftFromUi(fixtureId, action)') || !adminModelRemediation.includes('async function resetSettlementCircuitFromUi()')) failures.push('Calibration extraction captured remediation actions or remediation boundary is missing');
 if (/\/api\/model-remediation|runModelRemediation|resolveSettlementDriftFromUi|resetSettlementCircuitFromUi/.test(adminCalibrationControl)) failures.push('Admin calibration control module must not own remediation logic');
 if (!adminCalibrationControl.includes('confirmAction(') || !adminCalibrationControl.includes('refreshModelQuality(true)')) failures.push('Calibration control side effects must remain explicitly injected');
