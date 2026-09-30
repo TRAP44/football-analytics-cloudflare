@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const html=fs.readFileSync('public/index.html','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 const runtime=fs.readFileSync('public/modules/app-runtime.js','utf8');
+const myTeamsRenderer=fs.readFileSync('public/modules/my-teams-renderer.js','utf8');
 const favoriteTeamsRenderer=fs.readFileSync('public/modules/favorite-teams-renderer.js','utf8');
 const css=fs.readFileSync('public/styles/public-shell.css','utf8');
 
@@ -17,10 +18,11 @@ function block(source,start,end){
 }
 
 test('personal surfaces polish keeps My Teams interaction contract intact',()=>{
-  const teams=block(app,'function renderMyTeams','function storageGet');
-  for(const token of ['my-team-card','my-team-head','my-team-match','data-open-team','data-team-fixture','analyzeMatch']) {
+  const teams=block(myTeamsRenderer,'function renderMyTeams','return Object.freeze');
+  for(const token of ['my-team-card','my-team-head','my-team-match','data-open-team','data-team-fixture','onAnalyzeMatch']) {
     assert.ok(teams.includes(token),token);
   }
+  assert.match(app,/onAnalyzeMatch: \(fixtureId, button\) => analyzeMatch\(fixtureId, button\)/);
   assert.match(css,/MatchRadar Public UI Polish — Personal Surfaces/);
   assert.match(css,/\.miniapp-public-shell \.my-team-card\{/);
   assert.match(css,/\.miniapp-public-shell \.my-team-match\{/);

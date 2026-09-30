@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const app=fs.readFileSync('public/app.js','utf8');
+const myTeamsRenderer=fs.readFileSync('public/modules/my-teams-renderer.js','utf8');
 const html=fs.readFileSync('public/index.html','utf8');
 const css=fs.readFileSync('public/styles/public-shell.css','utf8');
 
@@ -17,16 +18,17 @@ test('Phase 4 public navigation is Home My Teams History Profile with search on 
 test('new users get a simple favorite-team CTA on Home without profile setup',()=>{
   assert.match(html,/id="homeFavoriteBtn"/);
   assert.match(html,/Добавить любимую команду/);
-  assert.match(app,/function renderMyTeams\(\)/);
+  assert.match(myTeamsRenderer,/function renderMyTeams\(\)/);
 });
 test('My Teams reuses favorites and existing match catalog',()=>{
-  const start=app.indexOf('function renderMyTeams');
-  const end=app.indexOf('function storageGet',start);
-  const body=app.slice(start,end);
+  const start=myTeamsRenderer.indexOf('function renderMyTeams');
+  const end=myTeamsRenderer.indexOf('return Object.freeze',start);
+  const body=myTeamsRenderer.slice(start,end);
   assert.match(body,/state\.favorites/);
   assert.match(body,/state\.matches\.filter/);
-  assert.match(body,/analyzeMatch/);
+  assert.match(body,/onAnalyzeMatch/);
   assert.doesNotMatch(body,/api\(/);
+  assert.match(app,/onAnalyzeMatch: \(fixtureId, button\) => analyzeMatch\(fixtureId, button\)/);
 });
 test('Match Center first level keeps AI confidence data quality three factors and risks',()=>{
   const start=app.indexOf('function analysisGlanceHtml');

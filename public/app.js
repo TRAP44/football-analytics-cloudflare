@@ -9,6 +9,7 @@ import { createProfileAccessStateModule } from './modules/profile-access-state.j
 import { createProfileSummaryModule } from './modules/profile-summary.js';
 import { createFavoriteTeamsRenderer } from './modules/favorite-teams-renderer.js';
 import { createReminderListModule } from './modules/reminder-list.js';
+import { createMyTeamsRenderer } from './modules/my-teams-renderer.js';
 import { createJourneyStateModule } from './modules/journey-state.js';
 import {
   CLIENT_VERSION,
@@ -212,6 +213,15 @@ const { renderReminderList } = createReminderListModule({
   onRetry: () => loadReminders(),
   onOpenMatches: () => showView('matchesView'),
   onRemove: fixtureId => handleReminderRemove(fixtureId),
+});
+const { renderMyTeams } = createMyTeamsRenderer({
+  state,
+  elementById: $,
+  escapeHtml,
+  safeUrl,
+  timeOf,
+  onOpenTeam: team => openTeam(team),
+  onAnalyzeMatch: (fixtureId, button) => analyzeMatch(fixtureId, button),
 });
 const { renderJourneyState } = createJourneyStateModule({
   elementById: $,
@@ -2050,42 +2060,6 @@ async function toggleFavorite(team) {
     state.favoriteMutations.delete(teamId);
     syncFavoriteMutationUi(teamId);
   }
-}
-
-function renderMyTeams() {
-  const root = $('myTeamsList');
-  const onboarding = $('myTeamsOnboarding');
-  if (!root) return;
-  if (state.favoritesLoading && !state.favoritesLoaded) {
-    root.innerHTML = '<div class="loader compact-loader">Загружаю ваши команды…</div>';
-    if (onboarding) onboarding.hidden = true;
-    return;
-  }
-  if (!state.favorites.length) {
-    root.innerHTML = '';
-    if (onboarding) onboarding.hidden = false;
-    return;
-  }
-  if (onboarding) onboarding.hidden = true;
-  root.innerHTML = state.favorites.map(team => {
-    const id = Number(team.teamId || 0);
-    const related = state.matches.filter(match => [Number(match.home?.id), Number(match.away?.id)].includes(id));
-    const live = related.find(match => isLiveMatch(match));
-    const upcoming = related.filter(match => !isFinishedMatch(match) && !isLiveMatch(match)).sort((a,b) => Date.parse(a.date||0)-Date.parse(b.date||0))[0];
-    const recent = related.filter(match => isFinishedMatch(match)).sort((a,b) => Date.parse(b.date||0)-Date.parse(a.date||0))[0];
-    const focus = live || upcoming || recent;
-    const status = live ? '🔴 Матч идёт' : upcoming ? 'Ближайший матч' : recent ? 'Последний матч' : 'Матчи пока не найдены';
-    return `<article class="panel my-team-card">
-      <button class="my-team-head team-open-link" type="button" data-open-team="${id}" data-team-name="${escapeHtml(team.teamName || '')}" data-team-logo="${escapeHtml(team.teamLogo || '')}">
-        ${team.teamLogo ? `<img src="${safeUrl(team.teamLogo)}" alt="">` : '<span class="team-placeholder">⚽</span>'}
-        <span><strong>${escapeHtml(team.teamName || 'Команда')}</strong><small>${status}</small></span>
-        <b>Открыть →</b>
-      </button>
-      ${focus ? `<button class="my-team-match" type="button" data-team-fixture="${Number(focus.fixtureId)}"><span>${escapeHtml(focus.home?.name || '')} — ${escapeHtml(focus.away?.name || '')}</span><strong>${isLiveMatch(focus) ? escapeHtml(scoreText(focus)) : timeOf(focus.date)}</strong><small>Открыть матч →</small></button>` : '<div class="empty compact-empty">Данные по ближайшему матчу пока недоступны.</div>'}
-    </article>`;
-  }).join('');
-  root.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => openTeam({ id:Number(btn.dataset.openTeam), name:btn.dataset.teamName || '', logo:btn.dataset.teamLogo || '' })));
-  root.querySelectorAll('[data-team-fixture]').forEach(btn => btn.addEventListener('click', () => analyzeMatch(Number(btn.dataset.teamFixture), btn)));
 }
 
 
