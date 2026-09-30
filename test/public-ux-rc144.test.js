@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
+const uiPreferences = fs.readFileSync('public/modules/ui-preferences.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const adminHtml = fs.readFileSync('public/admin.html', 'utf8');
 const css = fs.readFileSync('public/styles.css', 'utf8') + '\n' + fs.readFileSync('public/styles/public-shell.css', 'utf8');
@@ -31,7 +32,7 @@ test('appearance choices stay in the user profile and apply immediately', () => 
     assert.match(html, new RegExp(`data-theme-choice="${theme}"`));
   }
   assert.match(app, /saveInterfacePreference\('theme'/);
-  assert.match(app, /applyInterfacePreferences\(\{ announce: true \}\)/);
+  assert.match(uiPreferences, /applyInterfacePreferences\(\{ announce: true \}\)/);
   assert.match(html, /Цвет интерфейса применяется сразу/);
 });
 
