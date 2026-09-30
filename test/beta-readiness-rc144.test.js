@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const app = fs.readFileSync('public/app.js', 'utf8');
 const profileAccessState = fs.readFileSync('public/modules/profile-access-state.js', 'utf8');
 const journeyState = fs.readFileSync('public/modules/journey-state.js', 'utf8');
+const historyRenderer = fs.readFileSync('public/modules/history-renderer.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const worker = fs.readFileSync('src/worker.js', 'utf8');
 const checklist = fs.readFileSync('BETA_READINESS_CHECKLIST_RU.md', 'utf8');
@@ -98,7 +99,7 @@ test('history profile and match-list recovery states are actionable', () => {
   assert.match(profileAccessState, /profileRecoveryRetry/);
   assert.match(app, /createProfileAccessStateModule/);
 
-  const history = block(app, 'function renderHistory', 'function pct');
+  const history = block(historyRenderer, 'function renderHistory', 'return Object.freeze');
   assert.match(history, /История временно недоступна/);
   assert.match(history, /historyRecoveryRetry/);
   assert.match(history, /История пока пуста/);
