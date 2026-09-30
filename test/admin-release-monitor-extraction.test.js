@@ -16,7 +16,7 @@ test('release monitor implementation lives outside the shared app root', () => {
 
 test('shared app root lazy-loads release monitor only for admins', () => {
   const start = app.indexOf('async function ensureAdminReleaseMonitorModule()');
-  const end = app.indexOf('\nlet mediaPublisherPayload', start);
+  const end = app.indexOf('\nlet adminMediaPublisherModule', start);
   assert.ok(start >= 0 && end > start);
   const boundary = app.slice(start, end);
   assert.match(boundary, /if \(!isAdmin\(\)\) return null/);
