@@ -1,10 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   VIEW_CHROME,
   BACK_VIEW_LABELS,
   createViewChromeController,
 } from '../public/modules/view-chrome.js';
+
+const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
 
 function element() {
   return { textContent: '' };
@@ -81,4 +84,10 @@ test('telegram back button remains controlled by navigation visibility', () => {
   controller.syncTelegramBackButton('analysisView');
   controller.syncTelegramBackButton('matchesView');
   assert.deepEqual(calls, ['show', 'hide']);
+});
+
+
+test('view chrome extraction keeps live refresh lifecycle in app composition root', () => {
+  assert.match(app, /function stopLiveRefresh\(\)/);
+  assert.match(app, /if \(id !== 'analysisView'\) \{ stopLiveRefresh\(\); state\.liveRefreshWasActive = false; \}/);
 });
