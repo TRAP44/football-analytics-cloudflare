@@ -13,7 +13,7 @@ test('fresh install baseline is current through schema v6.19',()=>{
 
 test('release contract is the documented source of truth',()=>{
   const c=JSON.parse(read('release-contract.json'));
-  assert.equal(c.productionSchema,'6.22');
+  assert.equal(c.productionSchema,'6.23');
   assert.equal(c.freshInstallBaseline,'supabase/baseline/supabase_baseline_v6_19.sql');
   assert.equal(c.accessContract,'public-telegram-validated-by-default');
   assert.match(read('supabase/README.md'),/release-contract\.json/);

@@ -19,7 +19,7 @@ const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
 const index = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
 const profileSummary = readFileSync(new URL('../public/modules/profile-summary.js', import.meta.url), 'utf8');
-const migration = readFileSync(new URL('../supabase/migrations/supabase_migration_v6_22.sql', import.meta.url), 'utf8').toLowerCase();
+const migration = readFileSync(new URL('../supabase/migrations/supabase_migration_v6_23.sql', import.meta.url), 'utf8').toLowerCase();
 const releaseContract = JSON.parse(readFileSync(new URL('../release-contract.json', import.meta.url), 'utf8'));
 
 function backendRuntime(overrides = {}) {
@@ -228,7 +228,7 @@ test('Favorite Players API is authenticated before routing and canonicalizes met
   assert.match(worker, /favorite-players-write/);
 });
 
-test('v6.22 migration enforces RLS, service-role access, atomic cap and schema visibility', () => {
+test('v6.23 migration enforces RLS, service-role access, atomic cap and schema visibility', () => {
   assert.match(migration, /create table if not exists public\.favorite_players/);
   assert.match(migration, /primary key \(telegram_id, player_id\)/);
   assert.match(migration, /alter table public\.favorite_players enable row level security/);
@@ -238,10 +238,11 @@ test('v6.22 migration enforces RLS, service-role access, atomic cap and schema v
   assert.match(migration, /pg_advisory_xact_lock/);
   assert.match(migration, /limit_reached/);
   assert.match(migration, /favoriteplayerslimit', 50/);
+  assert.match(migration, /analysis_timeline_snapshots/);
   assert.match(worker, /id: 'favorite_players', table: 'favorite_players'/);
   assert.match(worker, /favoritePlayersLimit/);
-  assert.equal(releaseContract.productionSchema, '6.22');
-  assert.equal(releaseContract.latestMigration, 'supabase/migrations/supabase_migration_v6_22.sql');
+  assert.equal(releaseContract.productionSchema, '6.23');
+  assert.equal(releaseContract.latestMigration, 'supabase/migrations/supabase_migration_v6_23.sql');
 });
 
 test('Player Hub and Profile integrate follow state without adding a bottom-navigation destination', () => {
