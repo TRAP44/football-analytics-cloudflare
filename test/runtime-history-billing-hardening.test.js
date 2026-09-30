@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker = fs.readFileSync('src/worker.js', 'utf8');
-const app = fs.readFileSync('public/app.js', 'utf8');
+const app = fs.readFileSync('public/app.js', 'utf8') + '\n' + fs.readFileSync('public/modules/admin-runtime-controls.js', 'utf8');
 
 function section(source, startMarker, endMarker) {
   const start = source.indexOf(startMarker);
