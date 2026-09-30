@@ -73,7 +73,7 @@ test('worker uses idempotent growth events for share and referral lifecycle', ()
   for (const event of ['share_created','share_open','referral_open','referred_first_open','referred_payment']) {
     assert.ok(worker.includes(`eventName:'${event}'`) || worker.includes(`event_name:'${event}'`), `missing ${event}`);
   }
-  assert.match(worker,/supaInsertIgnore\(cfg,'growth_events',row,'event_key'\)/);
+  assert.match(worker,/supaSelectOne\(cfg,'growth_events',\{event_key:\`eq\.\${dedupeKey}\`\}\)/);
   assert.match(worker,/eventKey:\`share_open:\${userId}:\${startParam}\`/);
   assert.match(worker,/referralAttributionDecision/);
   assert.match(worker,/referral_code:referral\.referralCode/);

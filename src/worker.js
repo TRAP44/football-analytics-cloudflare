@@ -1679,8 +1679,14 @@ async function recordGrowthEventTask(cfg, {
       created_at:new Date().toISOString(),
     };
     if (hasSupabase(cfg)) {
-      if (dedupeKey) await supaInsertIgnore(cfg,'growth_events',row,'event_key');
-      else await supaUpsert(cfg,'growth_events',row);
+      if (dedupeKey) {
+        try {
+          await supaUpsert(cfg,'growth_events',row);
+        } catch (error) {
+          const existing=await supaSelectOne(cfg,'growth_events',{event_key:`eq.${dedupeKey}`}).catch(()=>null);
+          if (!existing) throw error;
+        }
+      } else await supaUpsert(cfg,'growth_events',row);
     } else if (dedupeKey) {
       if (!(memory.growthEventKeys instanceof Set)) memory.growthEventKeys=new Set();
       if (memory.growthEventKeys.has(dedupeKey)) return true;
@@ -1711,7 +1717,7 @@ async function ensureReferralCode(userId, cfg) {
   if (!code) return '';
 
   if (hasSupabase(cfg)) {
-    await supaInsertIgnore(cfg,'growth_events',{
+    await supaUpsert(cfg,'growth_events',{
       telegram_id:id,
       event_name:'referral_code_created',
       event_key:referralCodeEventKey(code),
@@ -1722,7 +1728,7 @@ async function ensureReferralCode(userId, cfg) {
       content:'code',
       metadata:{referral_code:code},
       created_at:new Date().toISOString(),
-    },'event_key');
+    }).catch(()=>null);
     const confirmed=await supaSelectOne(cfg,'growth_events',{event_key:`eq.${referralCodeEventKey(code)}`});
     return Number(confirmed?.telegram_id || 0)===id && String(confirmed?.event_name || '')==='referral_code_created' ? code : '';
   }
