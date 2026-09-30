@@ -43,6 +43,9 @@ export function normalizeSmartNotificationPayload(payload = {}) {
         marketPp: Number(rawCapabilities?.thresholds?.marketPp || 0),
         aiProbabilityPp: Number(rawCapabilities?.thresholds?.aiProbabilityPp || 0),
         aiCooldownMinutes: Number(rawCapabilities?.thresholds?.aiCooldownMinutes || 0),
+        radarConfidence: Number(rawCapabilities?.thresholds?.radarConfidence || 0),
+        radarOutcomeProbability: Number(rawCapabilities?.thresholds?.radarOutcomeProbability || 0),
+        radarCooldownMinutes: Number(rawCapabilities?.thresholds?.radarCooldownMinutes || 0),
       }),
     }),
   });
@@ -122,6 +125,7 @@ export function createSmartNotificationsModule({
       </details>
       <p class="tiny smart-notification-note">
         Порог рынка: ${caps.thresholds.marketPp || '—'} п.п. · AI: ${caps.thresholds.aiProbabilityPp || '—'} п.п.${caps.thresholds.aiCooldownMinutes ? ` · cooldown ${caps.thresholds.aiCooldownMinutes} мин` : ''}.
+        ${caps.thresholds.radarConfidence ? `Radar: confidence ≥ ${caps.thresholds.radarConfidence}/100 и лидер ≥ ${caps.thresholds.radarOutcomeProbability}%${caps.thresholds.radarCooldownMinutes ? ` · cooldown ${caps.thresholds.radarCooldownMinutes} мин` : ''}.` : ''}
         Тариф проверяется сервером при каждой доставке.
       </p>
       ${model.error ? `<p class="digest-inline-error" role="status">${escapeHtml(model.error)}</p>` : ''}
