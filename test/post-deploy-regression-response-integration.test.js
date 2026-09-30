@@ -4,7 +4,7 @@ import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
 const router=fs.readFileSync('src/router.js','utf8');
-const app=fs.readFileSync('public/app.js','utf8');
+const releaseMonitor=fs.readFileSync('public/modules/admin-release-monitor.js','utf8');
 
 test('regression response endpoint is admin-only at the router boundary',()=>{
   assert.match(router,/url\.pathname === '\/api\/post-deploy-regression-response'/);
@@ -41,13 +41,13 @@ test('release monitor exposes deployment-scoped lifecycle alert and response aud
 });
 
 test('admin UI exposes only sequential manual incident response actions',()=>{
-  assert.match(app,/NEW → ACKNOWLEDGED → INVESTIGATING → RESOLVED/);
-  assert.match(app,/RESOLVED разрешён только после RECOVERED/);
-  assert.match(app,/\/api\/post-deploy-regression-response/);
-  assert.match(app,/data-response-state/);
-  assert.match(app,/releaseRegressionResponsePending/);
-  assert.doesNotMatch(app.slice(
-    app.indexOf('async function transitionPostDeployRegressionResponse'),
-    app.indexOf('async function loadReleaseMonitor'),
+  assert.match(releaseMonitor,/NEW → ACKNOWLEDGED → INVESTIGATING → RESOLVED/);
+  assert.match(releaseMonitor,/RESOLVED разрешён только после RECOVERED/);
+  assert.match(releaseMonitor,/\/api\/post-deploy-regression-response/);
+  assert.match(releaseMonitor,/data-response-state/);
+  assert.match(releaseMonitor,/releaseRegressionResponsePending/);
+  assert.doesNotMatch(releaseMonitor.slice(
+    releaseMonitor.indexOf('async function transitionPostDeployRegressionResponse'),
+    releaseMonitor.indexOf('async function loadReleaseMonitor'),
   ),/runtime-controls|rollbackTo|switchProvider|disableFeature/);
 });
