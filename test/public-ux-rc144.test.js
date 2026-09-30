@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
+const viewChrome = fs.readFileSync('public/modules/view-chrome.js', 'utf8');
 const uiPreferences = fs.readFileSync('public/modules/ui-preferences.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const adminHtml = fs.readFileSync('public/admin.html', 'utf8');
@@ -18,7 +19,7 @@ function functionBody(name, nextName) {
 test('public profile remains available to non-admin users while admin controls stay gated', () => {
   assert.doesNotMatch(app, /profileBtn'\)\.hidden=!admin/);
   assert.doesNotMatch(app, /navProfile'\)\.hidden=!admin/);
-  assert.match(app, /profileView:\s*\['Профиль',\s*'Команды, напоминания и настройки'\]/);
+  assert.match(viewChrome, /profileView:\s*Object\.freeze\(\['Профиль',\s*'Команды, напоминания и настройки'\]\)/);
   assert.match(html, /id="profileBtn"[^>]*aria-label="Открыть профиль"/);
   assert.match(html, /id="navProfile"[^>]*>/);
   assert.match(html, /<small>Профиль<\/small>/);
