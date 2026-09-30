@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+const betaDashboard=readFileSync(new URL('../public/modules/admin-beta-dashboard.js',import.meta.url),'utf8');
 
 function block(source,start,end){
   const a=source.indexOf(start);
@@ -73,7 +74,7 @@ test('closed-beta launch evidence stays historical while primary admin UI shows 
   assert.match(legacy,/betaAssignments/);
   assert.match(legacy,/telegramWebhook/);
   assert.match(legacy,/providerQuota/);
-  const render=block(app,'function renderBetaDashboard','async function loadBetaDashboard');
+  const render=block(betaDashboard,'function renderBetaDashboard','async function loadBetaDashboard');
   assert.match(render,/Verified normal users/);
   assert.match(render,/API-Football quota/);
   assert.match(render,/Phase 5 status/);
