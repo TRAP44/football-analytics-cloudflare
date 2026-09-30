@@ -3637,3 +3637,90 @@ html {
   .miniapp-public-shell .home-quick-filter-strip{gap:5px}
   .miniapp-public-shell .home-quick-filter-strip .filter-btn{font-size:10px}
 }
+
+
+/* MatchRadar Profile Appearance Simplification */
+.miniapp-public-shell .appearance-primary-theme{
+  padding-bottom:12px;
+}
+.miniapp-public-shell .theme-options-primary{
+  grid-template-columns:repeat(3,minmax(0,1fr));
+}
+.miniapp-public-shell .appearance-advanced-details{
+  overflow:hidden;
+  border:1px solid color-mix(in srgb,var(--line) 65%,transparent);
+  border-radius:15px;
+  background:color-mix(in srgb,var(--surface-2) 42%,transparent);
+}
+.miniapp-public-shell .appearance-advanced-details > summary{
+  min-height:50px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:0 12px;
+  cursor:pointer;
+  list-style:none;
+}
+.miniapp-public-shell .appearance-advanced-details > summary::-webkit-details-marker{
+  display:none;
+}
+.miniapp-public-shell .appearance-advanced-details > summary span{
+  min-width:0;
+  display:grid;
+  gap:2px;
+}
+.miniapp-public-shell .appearance-advanced-details > summary strong{
+  color:var(--text);
+  font-size:11px;
+  font-weight:850;
+}
+.miniapp-public-shell .appearance-advanced-details > summary small{
+  min-width:0;
+  overflow:hidden;
+  color:var(--hint);
+  font-size:9px;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.miniapp-public-shell .appearance-advanced-details > summary > b{
+  margin-left:auto;
+  color:var(--accent);
+  font-size:9px;
+  font-weight:850;
+}
+.miniapp-public-shell .appearance-advanced-body{
+  display:grid;
+  gap:9px;
+  padding:0 9px 9px;
+  border-top:1px solid color-mix(in srgb,var(--line) 55%,transparent);
+}
+.miniapp-public-shell .appearance-advanced-body > .appearance-fieldset:first-child{
+  margin-top:9px;
+}
+.miniapp-public-shell .theme-options-extra{
+  grid-template-columns:minmax(0,1fr);
+}
+.miniapp-public-shell .preference-subhead{
+  display:grid;
+  gap:2px;
+  padding:5px 2px 0;
+}
+.miniapp-public-shell .preference-subhead strong{
+  color:var(--text);
+  font-size:11px;
+  font-weight:850;
+}
+.miniapp-public-shell .preference-subhead small{
+  color:var(--hint);
+  font-size:9px;
+}
+@media(max-width:390px){
+  .miniapp-public-shell .theme-options-primary{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:5px;
+  }
+  .miniapp-public-shell .theme-options-primary .theme-option{
+    padding-inline:4px;
+    font-size:10px;
+  }
+}
