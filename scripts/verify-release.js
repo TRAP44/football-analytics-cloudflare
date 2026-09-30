@@ -14,6 +14,7 @@ const adminReleaseReadiness = fs.readFileSync('public/modules/admin-release-read
 const adminModelQuality = fs.readFileSync('public/modules/admin-model-quality.js', 'utf8');
 const adminCalibrationControl = fs.readFileSync('public/modules/admin-calibration-control.js', 'utf8');
 const adminModelRemediation = fs.readFileSync('public/modules/admin-model-remediation.js', 'utf8');
+const adminRcRegression = fs.readFileSync('public/modules/admin-rc-regression.js', 'utf8');
 const launchFunnelFrontend = app + '\n' + adminLaunchFunnel;
 const appRuntime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
@@ -165,6 +166,11 @@ if (!fs.existsSync('test/admin-model-remediation-extraction.test.js')) failures.
 if (!app.includes("import('./modules/admin-model-remediation.js')") || !adminModelRemediation.includes('export function createAdminModelRemediationModule')) failures.push('Admin model remediation lazy extraction contract is missing');
 if (app.includes('function remediationActionLabel') || app.includes("action: 'resolve_drift'") || app.includes("action: 'reset_circuit'")) failures.push('Admin model remediation implementation leaked back into shared app root');
 if (!app.includes('confirmAction: message => window.confirm(message)') || !app.includes('loadModelQuality')) failures.push('Admin model remediation destructive-action dependencies must stay explicit');
+if (!fs.existsSync('test/admin-rc-regression-extraction.test.js')) failures.push('Missing admin RC regression extraction regression test');
+if (!app.includes("import('./modules/admin-rc-regression.js')") || !adminRcRegression.includes('export function createAdminRcRegressionModule')) failures.push('Admin RC regression lazy extraction contract is missing');
+if (app.includes('function rcStateText(status)') || app.includes('Запускаю безопасную регрессионную проверку')) failures.push('Admin RC regression implementation leaked back into shared app root');
+if (!app.includes('function runClientContractSmoke()') || !app.includes('runClientContractSmoke,')) failures.push('Client contract smoke must remain in composition root and be explicitly injected into RC regression');
+if (adminRcRegression.includes('function runClientContractSmoke()') || adminRcRegression.includes('document.querySelector') || adminRcRegression.includes('window.Telegram')) failures.push('Admin RC regression module must not own cross-app client smoke/browser integration');
 if (!adminModelRemediation.includes('async function runModelRemediation()') || !adminModelRemediation.includes('async function resolveSettlementDriftFromUi(fixtureId, action)') || !adminModelRemediation.includes('async function resetSettlementCircuitFromUi()')) failures.push('Calibration extraction captured remediation actions or remediation boundary is missing');
 if (/\/api\/model-remediation|runModelRemediation|resolveSettlementDriftFromUi|resetSettlementCircuitFromUi/.test(adminCalibrationControl)) failures.push('Admin calibration control module must not own remediation logic');
 if (!adminCalibrationControl.includes('confirmAction(') || !adminCalibrationControl.includes('refreshModelQuality(true)')) failures.push('Calibration control side effects must remain explicitly injected');
