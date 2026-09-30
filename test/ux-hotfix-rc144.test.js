@@ -6,6 +6,7 @@ const app = fs.readFileSync('public/app.js', 'utf8');
 const runtime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const uiPreferences = fs.readFileSync('public/modules/ui-preferences.js', 'utf8');
 const adminOverview = fs.readFileSync('public/modules/admin-overview.js', 'utf8');
+const profileDataCapabilities = fs.readFileSync('public/modules/profile-data-capabilities.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const adminHtml = fs.readFileSync('public/admin.html', 'utf8');
 const css = fs.readFileSync('public/styles.css', 'utf8');
@@ -124,7 +125,7 @@ test('ordinary profile copy avoids implementation vocabulary', () => {
   for (const forbidden of ['provider', 'provenance', 'freshness guard', 'cache', 'release', 'rc144', 'технические лимиты']) {
     assert.equal(publicProfile.includes(forbidden), false, forbidden);
   }
-  const capabilities = functionBody('renderDataCapabilities', 'planLabel');
-  assert.doesNotMatch(capabilities, /c\.note/);
-  assert.match(capabilities, /Доступность зависит от турнира и конкретного матча/);
+  assert.doesNotMatch(profileDataCapabilities, /c\.note/);
+  assert.match(profileDataCapabilities, /Доступность зависит от турнира и конкретного матча/);
+  assert.match(app, /createProfileDataCapabilitiesModule\(\{ state, elementById: \$ \}\)/);
 });
