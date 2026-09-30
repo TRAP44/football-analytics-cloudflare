@@ -8,6 +8,7 @@ import { createProfileDataCapabilitiesModule } from './modules/profile-data-capa
 import { createProfileAccessStateModule } from './modules/profile-access-state.js';
 import { createProfileSummaryModule } from './modules/profile-summary.js';
 import { createDigestSettingsModule } from './modules/digest-settings.js';
+import { createSmartNotificationsModule } from './modules/smart-notifications.js';
 import { createFavoriteTeamsRenderer } from './modules/favorite-teams-renderer.js';
 import { createReminderListModule } from './modules/reminder-list.js';
 import { createMyTeamsRenderer } from './modules/my-teams-renderer.js';
@@ -885,6 +886,17 @@ const {
   renderDigestSettings,
 } = digestSettingsModule;
 
+const smartNotificationsModule = createSmartNotificationsModule({
+  elementById: $,
+  api,
+  escapeHtml,
+  toast,
+});
+const {
+  load: loadSmartNotifications,
+  render: renderSmartNotifications,
+} = smartNotificationsModule;
+
 async function loadProfile() {
   const previousProfile = state.profile;
   try {
@@ -1297,6 +1309,7 @@ function renderProfile() {
   renderReminderList();
   renderBilling();
   renderDigestSettings();
+  renderSmartNotifications();
   applyAdminVisibility();
   if (state.profile?.features?.runtime) state.runtimeStatus = state.profile.features.runtime;
   renderDataCapabilities();
@@ -1455,6 +1468,7 @@ async function openProfileView() {
   if (!state.favoritePlayersLoaded) essentials.push(loadFavoritePlayers());
   if (!state.remindersLoaded) essentials.push(loadReminders());
   if (!digestSettingsModule.loaded) essentials.push(loadDigestSettings());
+  if (!smartNotificationsModule.snapshot().loaded) essentials.push(loadSmartNotifications());
   if (isAdmin()) {
     if (!state.providerLoaded) essentials.push(loadProvider());
     essentials.push(loadRuntimeControlsAdmin(false));
