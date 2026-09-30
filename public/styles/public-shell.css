@@ -3568,3 +3568,72 @@ html {
 .miniapp-public-shell #searchFavoritesWrap[hidden]{
   display:none!important;
 }
+
+
+/* MatchRadar Home Filter Simplification — fast choices first */
+.miniapp-public-shell .home-filter-controls{
+  display:grid;
+  gap:7px;
+  margin:0 0 18px;
+}
+.miniapp-public-shell .home-quick-filter-strip{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:7px;
+  margin:0;
+  padding:0;
+  overflow:visible;
+}
+.miniapp-public-shell .home-quick-filter-strip .filter-btn{
+  min-width:0;
+  min-height:42px;
+  width:100%;
+  padding:8px 7px;
+  text-align:center;
+}
+.miniapp-public-shell .home-filter-controls .home-filter-drawer{
+  margin:0;
+  border:1px solid color-mix(in srgb,var(--line) 78%,transparent);
+  border-radius:14px;
+  background:color-mix(in srgb,var(--surface) 78%,transparent);
+  overflow:hidden;
+}
+.miniapp-public-shell .home-filter-controls .home-filter-drawer > summary{
+  min-height:42px;
+  gap:7px;
+  padding:0 11px;
+}
+.miniapp-public-shell .home-filter-controls .home-filter-drawer > summary > span{
+  margin:0;
+  color:inherit;
+  font-size:11px;
+  font-weight:850;
+}
+.miniapp-public-shell .home-filter-controls [data-filter-summary-value]{
+  min-width:0;
+  margin-left:auto;
+  overflow:hidden;
+  color:var(--hint);
+  font-size:9px;
+  font-weight:750;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.miniapp-public-shell .home-filter-controls .league-filter-drawer.has-active-filter [data-filter-summary-value]{
+  color:var(--accent);
+  font-weight:900;
+}
+.miniapp-public-shell .home-filter-controls .home-filter-body{
+  padding:0 0 8px;
+  border-top:1px solid color-mix(in srgb,var(--line) 62%,transparent);
+}
+.miniapp-public-shell .home-filter-controls .league-filter-grid{
+  padding:9px 9px 4px;
+}
+.miniapp-public-shell .home-filter-controls .league-filter-grid .filter-btn{
+  min-height:40px;
+}
+@media(max-width:360px){
+  .miniapp-public-shell .home-quick-filter-strip{gap:5px}
+  .miniapp-public-shell .home-quick-filter-strip .filter-btn{font-size:10px}
+}
