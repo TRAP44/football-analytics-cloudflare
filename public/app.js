@@ -862,6 +862,17 @@ async function runStartupSequence() {
 
 const api = createApiClient({ state, tg, inflightGetRequests, observeServerVersion, showBootRecovery, applyRuntimeUi, normalizeApiError, noteRequestSuccess, noteRequestFailure });
 
+const playerFollowModule = createPlayerFollowModule({
+  state,
+  api,
+  toast,
+  onChange: () => {
+    if (state.currentPlayer) renderPlayerHub(state.currentPlayer);
+    if (state.profile) renderProfile();
+  },
+});
+const { loadFavoritePlayers } = playerFollowModule;
+
 const digestSettingsModule = createDigestSettingsModule({
   elementById: $,
   api,

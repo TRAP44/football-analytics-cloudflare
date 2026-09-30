@@ -247,6 +247,8 @@ test('v6.23 migration enforces RLS, service-role access, atomic cap and schema v
 
 test('Player Hub and Profile integrate follow state without adding a bottom-navigation destination', () => {
   assert.match(app, /createPlayerFollowModule/);
+  assert.match(app, /const playerFollowModule = createPlayerFollowModule\(\{/);
+  assert.match(app, /const \{ loadFavoritePlayers \} = playerFollowModule/);
   assert.match(app, /playerFollowModule\.controlHtml\(player\)/);
   assert.match(app, /playerFollowModule\.bind\(root, player\)/);
   assert.match(app, /loadFavoritePlayers\(\)/);
