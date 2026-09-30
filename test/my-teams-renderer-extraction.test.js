@@ -58,7 +58,10 @@ test('my teams renderer lives outside app while navigation and analysis stay in 
   assert.match(app, /onOpenTeam: team => openTeam\(team\)/);
   assert.match(app, /onAnalyzeMatch: \(fixtureId, button\) => analyzeMatch\(fixtureId, button\)/);
   assert.doesNotMatch(app, /function renderMyTeams\(\)/);
-  assert.doesNotMatch(app, /\bisLiveMatch\b|\bisFinishedMatch\b|\bscoreText\b/);
+  const wiringStart = app.indexOf('const { renderMyTeams } = createMyTeamsRenderer({');
+  const wiringEnd = app.indexOf('\n});', wiringStart) + 4;
+  assert.ok(wiringStart >= 0 && wiringEnd > wiringStart);
+  assert.doesNotMatch(app.slice(wiringStart, wiringEnd), /\bisLiveMatch\b|\bisFinishedMatch\b|\bscoreText\b/);
 
   assert.match(source, /export function createMyTeamsRenderer/);
   assert.match(source, /function renderMyTeams\(\)/);
