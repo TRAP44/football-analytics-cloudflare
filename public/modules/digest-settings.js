@@ -80,11 +80,6 @@ export function createDigestSettingsModule({
     const root = $('digestSettingsRoot');
     if (!root) return;
 
-    if ((!model.loaded || model.loading) && !model.settings) {
-      root.innerHTML = '<div class="digest-settings-state" role="status"><span>⏳</span><div><strong>Загружаем утреннюю подборку…</strong><small>Проверяем текущую подписку в Telegram.</small></div></div>';
-      return;
-    }
-
     if (model.error && !model.settings) {
       root.innerHTML = `<div class="digest-settings-state is-error" role="status">
         <span>↻</span>
@@ -92,6 +87,11 @@ export function createDigestSettingsModule({
         <button id="digestRetryBtn" class="secondary-btn digest-retry-btn" type="button">Повторить</button>
       </div>`;
       $('digestRetryBtn')?.addEventListener('click', () => loadDigestSettings(true));
+      return;
+    }
+
+    if ((!model.loaded || model.loading) && !model.settings) {
+      root.innerHTML = '<div class="digest-settings-state" role="status"><span>⏳</span><div><strong>Загружаем утреннюю подборку…</strong><small>Проверяем текущую подписку в Telegram.</small></div></div>';
       return;
     }
 
