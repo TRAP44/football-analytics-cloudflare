@@ -9,6 +9,7 @@ const navigationShell = fs.readFileSync('public/modules/navigation-shell.js', 'u
 const adminDiagnostics = fs.readFileSync('public/modules/admin-diagnostics.js', 'utf8');
 const adminLaunchFunnel = fs.readFileSync('public/modules/admin-launch-funnel.js', 'utf8');
 const adminBetaDashboard = fs.readFileSync('public/modules/admin-beta-dashboard.js', 'utf8');
+const adminProductionReadiness = fs.readFileSync('public/modules/admin-production-readiness.js', 'utf8');
 const launchFunnelFrontend = app + '\n' + adminLaunchFunnel;
 const appRuntime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
@@ -142,6 +143,9 @@ if (!fs.existsSync('test/accessibility-navigation.test.js')) failures.push('Miss
 if (!fs.existsSync('test/navigation-shell.test.js')) failures.push('Missing navigation shell behavioral regression test');
 if (!fs.existsSync('test/admin-launch-funnel-extraction.test.js')) failures.push('Missing admin launch funnel extraction regression test');
 if (!fs.existsSync('test/admin-beta-dashboard-extraction.test.js')) failures.push('Missing admin beta dashboard extraction regression test');
+if (!fs.existsSync('test/admin-production-readiness-extraction.test.js')) failures.push('Missing admin production readiness extraction regression test');
+if (!app.includes("import('./modules/admin-production-readiness.js')") || !adminProductionReadiness.includes('export function createAdminProductionReadinessModule')) failures.push('Admin production readiness lazy extraction contract is missing');
+if (app.includes('function productionStateLabel') || app.includes('Проверяю объединение запросов') || app.includes('Быстрые сохранённые данные')) failures.push('Admin production readiness implementation leaked back into shared app root');
 if (!app.includes("import('./modules/admin-beta-dashboard.js')") || !adminBetaDashboard.includes('export function createAdminBetaDashboardModule')) failures.push('Admin beta dashboard lazy extraction contract is missing');
 if (app.includes('Verified normal users') || app.includes('function betaTimingLabel')) failures.push('Admin beta dashboard implementation leaked back into shared app root');
 if (!app.includes('function setBetaFeedbackOpen(open)') || !app.includes('async function submitBetaFeedback()')) failures.push('Beta feedback lifecycle must remain in the shared composition root');
