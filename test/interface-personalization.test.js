@@ -40,7 +40,7 @@ test('rare administrator panels are grouped and loaded on demand', () => {
   assert.match(adminHtml, /id="adminAdvancedContent"/);
   assert.match(app, /function organizeAdminConsole\(\)/);
   assert.match(app, /function loadAdvancedAdminTools\(\)/);
-  const profileOpen = app.match(/async function openProfileView[\s\S]*?\n}\n\n\nfunction releaseStateLabel/)?.[0] || '';
+  const profileOpen = app.match(/async function openProfileView[\s\S]*?\n}\n\n\nlet adminReleaseReadinessModule/)?.[0] || '';
   assert.match(profileOpen, /loadRuntimeControlsAdmin\(false\)/);
   assert.doesNotMatch(profileOpen, /loadModelQuality\(false\)/);
 });
