@@ -1257,7 +1257,7 @@ const {
   hasSupabase,
   supaSelectMany,
   getPreferences,
-  getUserRecord,
+  getUserRecord: (...args) => getUserRecord(...args),
   getFavoritePlayers: (...args) => getFavoritePlayers(...args),
 });
 
