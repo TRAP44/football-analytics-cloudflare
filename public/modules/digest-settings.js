@@ -70,7 +70,7 @@ export function createDigestSettingsModule({
     const root = $('digestSettingsRoot');
     if (!root) return;
 
-    if (model.loading && !model.settings) {
+    if ((!model.loaded || model.loading) && !model.settings) {
       root.innerHTML = '<div class="digest-settings-state" role="status"><span>⏳</span><div><strong>Загружаем утреннюю подборку…</strong><small>Проверяем текущую подписку в Telegram.</small></div></div>';
       return;
     }
@@ -109,14 +109,14 @@ export function createDigestSettingsModule({
         <i></i>
       </label>
       <div class="digest-settings-grid">
-        <div><span>Время доставки</span><strong>${escapeHtml(settings.delivery.label)}</strong><small>Фиксированное окно текущего backend · 07:00–07:55 UTC</small></div>
+        <div><span>Время доставки</span><strong>${escapeHtml(settings.delivery.label)}</strong><small>Фиксированное окно текущей серверной доставки · 07:00–07:55 UTC</small></div>
         <div><span>Тариф</span><strong>${escapeHtml(planLabel(settings.plan))}</strong><small>Digest использует только реально подключённые серверные возможности.</small></div>
       </div>
       <div class="digest-favorites">
         <strong>⭐ Любимые команды</strong>
         ${teamsHtml}
       </div>
-      <p class="tiny digest-time-note">Местное время доставки пока не настраивается: scheduler работает в UTC. Это ограничение показано явно, чтобы не обещать функцию, которой ещё нет на сервере.</p>
+      <p class="tiny digest-time-note">Местное время доставки пока не настраивается: серверный планировщик работает в UTC. Это ограничение показано явно, чтобы не обещать функцию, которой ещё нет на сервере.</p>
       ${model.error ? `<p class="digest-inline-error" role="status">${escapeHtml(model.error)}</p>` : ''}
     `;
 
