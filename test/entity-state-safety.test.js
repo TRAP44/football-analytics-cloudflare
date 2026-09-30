@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
 const worker = fs.readFileSync('src/worker.js', 'utf8');
+const favoriteTeamsRenderer = fs.readFileSync('public/modules/favorite-teams-renderer.js', 'utf8');
 
 test('team hub, squad and intelligence ignore responses for a team that is no longer active', () => {
   assert.match(app, /teamHubRequestSeq:\s*0/);
@@ -31,11 +32,11 @@ test('favorites and reminders distinguish loading, error, empty and stale data s
   assert.match(app, /favoritesLoadError:\s*''/);
   assert.match(app, /remindersLoading:\s*false/);
   assert.match(app, /remindersLoadError:\s*''/);
-  assert.match(app, /Загружаю избранное/);
-  assert.match(app, /Избранное временно недоступно/);
+  assert.match(favoriteTeamsRenderer, /Загружаю избранное/);
+  assert.match(favoriteTeamsRenderer, /Избранное временно недоступно/);
   assert.match(app, /Загружаю напоминания/);
   assert.match(app, /Напоминания временно недоступны/);
-  assert.match(app, /Показано последнее загруженное избранное/);
+  assert.match(favoriteTeamsRenderer, /Показано последнее загруженное избранное/);
   assert.match(app, /Показаны последние загруженные напоминания/);
 });
 
