@@ -819,20 +819,6 @@ async function runStartupSequence() {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 const api = createApiClient({ state, tg, inflightGetRequests, observeServerVersion, showBootRecovery, applyRuntimeUi, normalizeApiError, noteRequestSuccess, noteRequestFailure });
 
 async function loadProfile() {
@@ -1898,7 +1884,6 @@ async function runModelRemediation() {
 }
 
 
-
 async function resolveSettlementDriftFromUi(fixtureId, action) {
   if (!isAdmin() || state.modelRemediationRunning) return;
   const review = state.modelRemediation?.driftReview || {};
@@ -2011,66 +1996,40 @@ async function openProfileView() {
 }
 
 
-function releaseStateLabel(value) {
-  const map = { ready: 'Готово', warning: 'Почти готово', blocked: 'Блокировано' };
-  return map[String(value || '')] || 'Нет данных';
+let adminReleaseReadinessModule = null;
+let adminReleaseReadinessModulePromise = null;
+async function ensureAdminReleaseReadinessModule() {
+  if (!isAdmin()) return null;
+  if (adminReleaseReadinessModule) return adminReleaseReadinessModule;
+  if (!adminReleaseReadinessModulePromise) {
+    adminReleaseReadinessModulePromise = import('./modules/admin-release-readiness.js').then(({ createAdminReleaseReadinessModule }) => {
+      adminReleaseReadinessModule = createAdminReleaseReadinessModule({
+        state,
+        elementById: $,
+        isAdmin,
+        escapeHtml,
+        humanizeTechnicalText,
+        relativeAge,
+        api,
+        renderProvider,
+        renderDiagnostics,
+      });
+      return adminReleaseReadinessModule;
+    });
+  }
+  return adminReleaseReadinessModulePromise;
 }
 
 function renderReleaseReadiness() {
-  const root = $('releaseStatus');
-  const badge = $('releaseBadge');
-  const checksEl = $('releaseChecks');
-  const meta = $('releaseMeta');
-  if (!root || !badge || !checksEl) return;
-  if (state.releaseReadinessLoading) {
-    badge.textContent = 'Проверка'; badge.className = 'release-badge waiting';
-    root.textContent = 'Проверяю обязательные зависимости ядра…';
-    checksEl.innerHTML = '';
-    if (meta) meta.textContent = '';
-    return;
-  }
-  const r = state.releaseReadiness;
-  if (!r?.available) {
-    badge.textContent = 'Нет данных'; badge.className = 'release-badge';
-    root.textContent = r?.reason || 'Проверка ещё не запускалась.';
-    checksEl.innerHTML = '';
-    return;
-  }
-  badge.textContent = releaseStateLabel(r.status);
-  badge.className = `release-badge ${escapeHtml(r.status || '')}`;
-  root.textContent = r.label || 'Проверка завершена.';
-  if (meta) meta.textContent = `${Number(r.score || 0)}% · ${relativeAge(r.generatedAt)}`;
-  checksEl.innerHTML = (r.checks || []).map(x => `
-    <div class="release-check ${escapeHtml(x.state || 'warn')}">
-      <i>${x.state === 'pass' ? '✓' : x.state === 'fail' ? '×' : '!'}</i>
-      <span><strong>${escapeHtml(humanizeTechnicalText(x.label || ''))}</strong><small>${escapeHtml(humanizeTechnicalText(x.detail || ''))}</small></span>
-    </div>`).join('') || '<div class="empty compact-empty">Нет результатов проверки.</div>';
+  if (adminReleaseReadinessModule) return adminReleaseReadinessModule.renderReleaseReadiness();
+  void ensureAdminReleaseReadinessModule().then(module => module?.renderReleaseReadiness());
 }
 
-async function loadReleaseReadiness(force = false) {
-  if (!isAdmin()) return;
-  if (state.releaseReadinessLoading) return;
-  if (!force && state.releaseReadiness) { renderReleaseReadiness(); return; }
-  state.releaseReadinessLoading = true;
-  renderReleaseReadiness();
-  try {
-    state.releaseReadiness = await api(`/api/release-readiness${force ? '?refresh=1' : ''}`);
-    if (state.releaseReadiness?.diagnostics) {
-      state.diagnostics = state.releaseReadiness.diagnostics;
-      if (state.diagnostics?.provider) {
-        state.provider = state.diagnostics.provider;
-        state.providerObservability = state.diagnostics.providerObservability || state.providerObservability;
-        renderProvider();
-      }
-      renderDiagnostics();
-    }
-  } catch (e) {
-    state.releaseReadiness = { available: false, reason: e.message || 'Не удалось выполнить проверку готовности.' };
-  } finally {
-    state.releaseReadinessLoading = false;
-    renderReleaseReadiness();
-  }
+async function loadReleaseReadiness(...args) {
+  const module = await ensureAdminReleaseReadinessModule();
+  return module?.loadReleaseReadiness(...args);
 }
+
 
 function diagPct(value) {
   return Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)}%` : '—';
@@ -2295,8 +2254,6 @@ async function loadRcRegression(force = true) {
     renderRcRegression();
   }
 }
-
-
 
 
 let adminRuntimeControlsModule = null;
