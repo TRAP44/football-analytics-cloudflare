@@ -108,6 +108,8 @@ if (!wrangler.includes('"version_metadata"') || !wrangler.includes('"binding": "
 if (!worker.includes("runtimeReleaseIdentity") || !releaseIdentityModule.includes("cloudflareVersionId") || !releaseIdentityModule.includes("deploySha")) failures.push('Worker runtime release identity integration is missing');
 if (!deployWorkflow.includes('--tag "${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy must tag the Cloudflare version with deploy SHA');
 if (!deployWorkflow.includes('EXPECTED_RUNTIME_SHA="$DEPLOY_SHA"') || !deployWorkflow.includes('EXPECTED_RUNTIME_SHA="$ACTIVE_RUNTIME_SHA"') || !deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "$RELEASE_VERSION" "$EXPECTED_RUNTIME_SHA"')) failures.push('Production smoke must verify the exact active runtime SHA');
+if (!fs.existsSync('test/production-deploy-noop-smoke-rc144.test.js')) failures.push('Missing no-op production deploy smoke regression test');
+if (!deployWorkflow.includes('PRODUCTION_URL: "https://football-analytics-cloudflare.wok-side.workers.dev"') || !deployWorkflow.includes('SMOKE_URL="${CONFIGURED_URL:-${DEPLOYMENT_URL:-$PRODUCTION_URL}}"')) failures.push('No-op production deploy must retain a canonical smoke URL when Worker deploy is skipped');
 if (!productionReleasePostconditionVerifier.includes("annotations?.['workers/tag']")) failures.push('Production release verifier must validate the Cloudflare version tag');
 if (!fs.existsSync('src/access-control.js')) failures.push('Missing access-control module');
 if (!fs.existsSync('scripts/post-deploy-smoke.js')) failures.push('Missing post-deploy smoke test');
