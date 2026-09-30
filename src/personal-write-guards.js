@@ -1,7 +1,9 @@
 export const PERSONAL_WRITE_LIMITS = Object.freeze({
   favorites: 50,
+  favoritePlayers: 50,
   reminders: 50,
   teamName: 160,
+  playerName: 160,
   teamLogo: 2048,
   clubName: 160,
   leagueName: 160,
@@ -58,6 +60,30 @@ export function normalizeFavoriteWrite(input = {}) {
     teamId,
     teamName: boundedText(input.teamName ?? input.name, PERSONAL_WRITE_LIMITS.teamName, 'Название команды', { required: true }),
     teamLogo: httpUrlOrEmpty(input.teamLogo ?? input.logo),
+  };
+}
+
+export function normalizeFavoritePlayerReference(input = {}) {
+  const playerId = positiveSafeInteger(input.playerId ?? input.id);
+  if (!playerId) {
+    const error = new Error('Некорректный игрок.');
+    error.code = 'PERSONAL_DATA_INVALID';
+    throw error;
+  }
+  const teamId = positiveSafeInteger(input.teamId);
+  if (!teamId) {
+    const error = new Error('Некорректная команда игрока.');
+    error.code = 'PERSONAL_DATA_INVALID';
+    throw error;
+  }
+  return { playerId, teamId };
+}
+
+export function normalizeFavoritePlayerWrite(input = {}) {
+  const ids = normalizeFavoritePlayerReference(input);
+  return {
+    ...ids,
+    playerName: boundedText(input.playerName ?? input.name, PERSONAL_WRITE_LIMITS.playerName, 'Имя игрока', { required: true }),
   };
 }
 
