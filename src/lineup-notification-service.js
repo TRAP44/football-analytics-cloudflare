@@ -4,6 +4,7 @@ export function createLineupNotificationService({
   supaSelectPaged,
   loadLineupSnapshot,
   deliverClaimedReminder,
+  filterNotificationRecipients,
   recordOpsEvent,
   maxFixturesPerRun = 4,
 } = {}) {
@@ -85,7 +86,11 @@ export function createLineupNotificationService({
     }
 
     const rows = Array.isArray(page?.rows) ? page.rows : [];
-    const groups = groupByFixture(rows);
+    const audience = typeof filterNotificationRecipients === 'function'
+      ? await filterNotificationRecipients(rows, 'match.lineup', cfg)
+      : { rows, blockedByPreference:0, blockedByEntitlement:0 };
+    const eligibleRows = Array.isArray(audience?.rows) ? audience.rows : [];
+    const groups = groupByFixture(eligibleRows);
     const fixtures = [...groups.entries()].slice(0, Math.max(1, Number(maxFixturesPerRun || 4)));
     const truncated = Boolean(page?.truncated || groups.size > fixtures.length);
     let confirmed = 0;
@@ -131,6 +136,9 @@ export function createLineupNotificationService({
     const summary = {
       ok: !(failed || unknown || truncated),
       checked: rows.length,
+      eligible: eligibleRows.length,
+      blockedByPreference:Number(audience?.blockedByPreference || 0),
+      blockedByEntitlement:Number(audience?.blockedByEntitlement || 0),
       fixturesChecked: fixtures.length,
       confirmed,
       sent,
