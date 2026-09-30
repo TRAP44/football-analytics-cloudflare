@@ -21,7 +21,7 @@ test('first run actions reuse existing search surfaces and dismiss the guide',()
   const favoriteStart=app.indexOf('function startFirstRunFavorite');
   assert.ok(searchStart>=0 && favoriteStart>searchStart);
   const searchBlock=app.slice(searchStart,favoriteStart);
-  const favoriteBlock=app.slice(favoriteStart,app.indexOf('function saveInterfacePreference',favoriteStart));
+  const favoriteBlock=app.slice(favoriteStart,app.indexOf('const VIEW_CHROME',favoriteStart));
   assert.match(searchBlock,/dismissFirstRunGuide\(\)/);
   assert.match(searchBlock,/\$\('matchSearch'\)\?\.focus/);
   assert.match(favoriteBlock,/dismissFirstRunGuide\(\)/);
