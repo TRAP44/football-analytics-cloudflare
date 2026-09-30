@@ -45,8 +45,8 @@ const runtimeFrontendAssetRevision = /FRONTEND_ASSET_REVISION = '([^']+)'/.exec(
 if (!frontendAssetRevision || frontendAssetRevision === pkg.version || !frontendAssetRevision.startsWith(`${pkg.version}-`)) failures.push('Frontend asset revision must cache-bust the package version');
 if (!runtimeFrontendAssetRevision || runtimeFrontendAssetRevision !== frontendAssetRevision) failures.push('Frontend runtime asset revision must match public HTML');
 if (adminFrontendAssetRevision !== frontendAssetRevision) failures.push('Admin and public frontend asset revisions must match');
-for (const [name, surface] of [['public', html], ['admin', adminHtml]]) {
-  if (!surface.includes(`/app.js?v=${frontendAssetRevision}`) || !surface.includes(`/styles.css?v=${frontendAssetRevision}`) || !surface.includes(`/styles/public-shell.css?v=${frontendAssetRevision}`)) failures.push(`${name} frontend JS/CSS cache-bust tokens must match the frontend asset revision`);
+for (const [name, surface, entrypoint] of [['public', html, '/app-public.js'], ['admin', adminHtml, '/app-admin.js']]) {
+  if (!surface.includes(`${entrypoint}?v=${frontendAssetRevision}`) || !surface.includes(`/styles.css?v=${frontendAssetRevision}`) || !surface.includes(`/styles/public-shell.css?v=${frontendAssetRevision}`)) failures.push(`${name} frontend JS/CSS cache-bust tokens must match the frontend asset revision`);
 }
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_10.sql')) failures.push('Missing v6.10 migration');
