@@ -6,12 +6,12 @@
   <meta name="theme-color" content="#07111f" />
   <meta name="description" content="MatchRadar — AI-футбольный ассистент в Telegram: матчи, команды, LIVE и понятный разбор ключевых факторов." />
   <meta name="matchradar-surface" content="admin" />
-  <meta name="frontend-asset-revision" content="6.120.0-launch22" />
+  <meta name="frontend-asset-revision" content="6.120.0-launch23" />
   <title>MatchRadar Admin · Состояние и управление</title>
   <link rel="icon" type="image/svg+xml" href="/assets/brand/matchradar-mark.svg?v=6.120.0-p42" />
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=6.120.0-launch22" />
-  <link rel="stylesheet" href="/styles/public-shell.css?v=6.120.0-launch22" />
+  <link rel="stylesheet" href="/styles.css?v=6.120.0-launch23" />
+  <link rel="stylesheet" href="/styles/public-shell.css?v=6.120.0-launch23" />
 </head>
 <body class="miniapp-public-shell admin-dedicated-surface">
   <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
@@ -323,33 +323,50 @@
             </div>
           </div>
           <div class="preferences-grid">
-            <fieldset class="appearance-fieldset">
-              <legend>Цвет интерфейса</legend>
-              <div class="theme-options" role="radiogroup" aria-label="Цвет интерфейса">
+            <fieldset class="appearance-fieldset appearance-primary-theme">
+              <legend>Тема</legend>
+              <div class="theme-options theme-options-primary" role="radiogroup" aria-label="Основная тема интерфейса">
                 <button type="button" class="theme-option" data-theme-choice="system" aria-pressed="false"><i class="theme-preview system"></i><span>Telegram</span></button>
-                <button type="button" class="theme-option" data-theme-choice="dark" aria-pressed="false"><i class="theme-preview dark"></i><span>Чёрный</span></button>
-                <button type="button" class="theme-option" data-theme-choice="light" aria-pressed="false"><i class="theme-preview light"></i><span>Белый</span></button>
-                <button type="button" class="theme-option" data-theme-choice="ocean" aria-pressed="false"><i class="theme-preview ocean"></i><span>Океан</span></button>
+                <button type="button" class="theme-option" data-theme-choice="dark" aria-pressed="false"><i class="theme-preview dark"></i><span>Тёмная</span></button>
+                <button type="button" class="theme-option" data-theme-choice="light" aria-pressed="false"><i class="theme-preview light"></i><span>Светлая</span></button>
               </div>
             </fieldset>
-            <fieldset class="appearance-fieldset">
-              <legend>Акцентный цвет</legend>
-              <div class="accent-options" role="radiogroup" aria-label="Акцентный цвет">
-                <button type="button" class="accent-option" data-accent-choice="system" aria-pressed="false"><i class="accent-swatch system"></i><span>Как в теме</span></button>
-                <button type="button" class="accent-option" data-accent-choice="green" aria-pressed="false"><i class="accent-swatch green"></i><span>Зелёный</span></button>
-                <button type="button" class="accent-option" data-accent-choice="blue" aria-pressed="false"><i class="accent-swatch blue"></i><span>Синий</span></button>
-                <button type="button" class="accent-option" data-accent-choice="violet" aria-pressed="false"><i class="accent-swatch violet"></i><span>Фиолетовый</span></button>
-                <button type="button" class="accent-option" data-accent-choice="amber" aria-pressed="false"><i class="accent-swatch amber"></i><span>Янтарный</span></button>
+            <details id="advancedAppearance" class="appearance-advanced-details">
+              <summary>
+                <span><strong>Дополнительное оформление</strong><small id="advancedAppearanceSummary">По умолчанию</small></span>
+                <b>Настроить</b>
+              </summary>
+              <div class="appearance-advanced-body">
+                <fieldset class="appearance-fieldset">
+                  <legend>Дополнительная тема</legend>
+                  <div class="theme-options theme-options-extra" role="radiogroup" aria-label="Дополнительная тема интерфейса">
+                    <button type="button" class="theme-option" data-theme-choice="ocean" aria-pressed="false"><i class="theme-preview ocean"></i><span>Океан</span></button>
+                  </div>
+                </fieldset>
+                <fieldset class="appearance-fieldset">
+                  <legend>Акцентный цвет</legend>
+                  <div class="accent-options" role="radiogroup" aria-label="Акцентный цвет">
+                    <button type="button" class="accent-option" data-accent-choice="system" aria-pressed="false"><i class="accent-swatch system"></i><span>Как в теме</span></button>
+                    <button type="button" class="accent-option" data-accent-choice="green" aria-pressed="false"><i class="accent-swatch green"></i><span>Зелёный</span></button>
+                    <button type="button" class="accent-option" data-accent-choice="blue" aria-pressed="false"><i class="accent-swatch blue"></i><span>Синий</span></button>
+                    <button type="button" class="accent-option" data-accent-choice="violet" aria-pressed="false"><i class="accent-swatch violet"></i><span>Фиолетовый</span></button>
+                    <button type="button" class="accent-option" data-accent-choice="amber" aria-pressed="false"><i class="accent-swatch amber"></i><span>Янтарный</span></button>
+                  </div>
+                  <small class="appearance-help">Оттенок подбирается отдельно для светлого и тёмного фона, чтобы сохранить читаемость.</small>
+                </fieldset>
+                <fieldset class="appearance-fieldset">
+                  <legend>Форма кнопок</legend>
+                  <div class="button-style-options" role="radiogroup" aria-label="Форма кнопок">
+                    <button type="button" data-button-style-choice="soft" aria-pressed="false">Мягкие</button>
+                    <button type="button" data-button-style-choice="compact" aria-pressed="false">Строгие</button>
+                  </div>
+                </fieldset>
               </div>
-              <small class="appearance-help">Оттенок подбирается отдельно для светлого и тёмного фона, чтобы сохранить читаемость.</small>
-            </fieldset>
-            <fieldset class="appearance-fieldset">
-              <legend>Форма кнопок</legend>
-              <div class="button-style-options" role="radiogroup" aria-label="Форма кнопок">
-                <button type="button" data-button-style-choice="soft" aria-pressed="false">Мягкие</button>
-                <button type="button" data-button-style-choice="compact" aria-pressed="false">Строгие</button>
-              </div>
-            </fieldset>
+            </details>
+            <div class="preference-subhead">
+              <strong>Матчи и уведомления</strong>
+              <small>Основные настройки использования приложения</small>
+            </div>
             <label class="setting-field">
               <span>Экран матчей по умолчанию</span>
               <select id="defaultFilterSelect">
@@ -899,6 +916,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app-admin.js?v=6.120.0-launch22"></script>
+  <script type="module" src="/app-admin.js?v=6.120.0-launch23"></script>
 </body>
 </html>
