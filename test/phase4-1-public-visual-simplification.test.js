@@ -68,10 +68,10 @@ test('AI match view exposes key decision layer before detailed data',()=>{
   assert.ok(center.indexOf('center-scoreboard') < center.indexOf('Статистика, составы и хронология'));
 });
 
-test('profile prioritizes user teams reminders settings and moves legal to About',()=>{
+test('profile prioritizes My Teams shortcut reminders settings and moves legal to About',()=>{
   const publicProfile=block(html,'<section id="profileView"','<nav class="bottom-nav"');
   const profile=publicProfile.indexOf('class="panel profile-panel"');
-  const teams=publicProfile.indexOf('id="favoriteTeams"');
+  const teams=publicProfile.indexOf('id="profileMyTeamsBtn"');
   const reminders=publicProfile.indexOf('id="reminderList"');
   const settings=publicProfile.indexOf('class="panel preferences-panel"');
   const about=publicProfile.indexOf('class="panel profile-about-service"');
