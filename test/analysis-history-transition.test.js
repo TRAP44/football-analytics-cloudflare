@@ -45,7 +45,7 @@ test('history open requests cannot hijack navigation after a newer click or manu
   assert.match(app, /historyOpenRequestSeq:\s*0/);
   assert.match(app, /const seq = \+\+state\.historyOpenRequestSeq/);
   assert.match(app, /seq !== state\.historyOpenRequestSeq/);
-  assert.match(app, /current === 'historyView' && id !== 'historyView' && !options\.fromHistoryOpen/);
+  assert.match(app, /from === 'historyView' && to !== 'historyView' && !options\.fromHistoryOpen/);
   assert.match(app, /showView\('analysisView', \{ fromHistoryOpen: true \}\)/);
 });
 

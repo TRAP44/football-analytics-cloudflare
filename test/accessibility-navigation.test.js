@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
+const navigationShell = fs.readFileSync('public/modules/navigation-shell.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const styles = fs.readFileSync('public/styles.css', 'utf8');
 
@@ -34,7 +35,7 @@ test('history empty state gives the user a useful next action', () => {
 
 test('top bar heading can receive programmatic focus', () => {
   assert.match(html, /id="topbarTitle" tabindex="-1"/);
-  assert.match(app, /options\.focusHeading === true/);
+  assert.match(navigationShell, /options\.focusHeading === true/);
 });
 
 test('search, favorites and reminders empty states provide recovery actions', () => {

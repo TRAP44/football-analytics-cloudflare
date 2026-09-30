@@ -10,6 +10,7 @@ import {
 } from '../public/modules/navigation.js';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
+const navigationShell = fs.readFileSync('public/modules/navigation-shell.js', 'utf8');
 const viewChrome = fs.readFileSync('public/modules/view-chrome.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 
@@ -18,8 +19,8 @@ test('matchesView is the single canonical Home and bottom Home always opens it',
   assert.equal(PUBLIC_VIEW_IDS.filter(id => id === CANONICAL_HOME_VIEW).length, 1);
   assert.match(html, /id="navMatches"[\s\S]*?<small>Главная<\/small>/);
   assert.match(app, /\$\('navMatches'\)\.addEventListener\('click', \(\) => \{[\s\S]*?showView\('matchesView'\);[\s\S]*?\}\);/);
-  assert.match(app, /\$\('navMatches'\)\.classList\.toggle\('active', id === 'matchesView'\)/);
-  assert.doesNotMatch(app, /\$\('navMatches'\)\.classList\.toggle\('active', id === 'matchesView' \|\|/);
+  assert.match(navigationShell, /\['navMatches', 'matchesView'\]/);
+  assert.match(navigationShell, /item\.classList\.add\('active'\)/);
 });
 
 test('search always has a direct BackButton path to Home', () => {
@@ -74,12 +75,13 @@ test('Telegram BackButton is available on every non-Home public view and routes 
   }
   assert.match(app, /isTelegramBackVisible: id => telegramBackButtonVisible\(id\)/);
   assert.match(viewChrome, /if \(isTelegramBackVisible\(id\)\) telegramWebApp\.BackButton\.show\(\)/);
-  assert.match(app, /showView\(viewBackTarget\(current\), \{ restore: true \}\)/);
+  assert.match(app, /resolveBackTarget: id => viewBackTarget\(id\)/);
+  assert.match(navigationShell, /showView\(target, \{ restore: true \}\)/);
   assert.match(app, /tg\.BackButton\.onClick\(handleBackNavigation\)/);
 });
 
 test('legacy navSearch contracts are removed from current navigation smoke checks', () => {
   assert.doesNotMatch(html, /id="navSearch"/);
   assert.doesNotMatch(app, /['"]navSearch['"]/);
-  assert.match(app, /\['navMatches','navMyTeams','navHistory','navProfile'\]/);
+  for (const id of ['navMatches', 'navMyTeams', 'navHistory', 'navProfile']) assert.match(navigationShell, new RegExp(`'${id}'`));
 });
