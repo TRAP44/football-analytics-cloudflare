@@ -6853,15 +6853,11 @@ async function setBotDigestSubscription(userId, chatId, enabled, cfg, appUrl = '
   markTelegramWebhookMutation(cfg, 'digest_subscription');
   const telegramId=Number(userId || 0);
   const previous=await getBotDigestSubscription(telegramId,cfg);
-  const preservedHour=Number(previous?.hour_utc);
-  const hourUtc=Number.isInteger(preservedHour) && preservedHour>=0 && preservedHour<=23
-    ? preservedHour
-    : DAILY_DIGEST_POLICY.deliveryHourUtc;
   const row = {
     telegram_id:telegramId,
     chat_id:Number(previous?.chat_id || chatId || telegramId),
     enabled:Boolean(enabled),
-    hour_utc:hourUtc,
+    hour_utc:DAILY_DIGEST_POLICY.deliveryHourUtc,
     app_url:String(appUrl || previous?.app_url || '').slice(0,500),
     updated_at:new Date().toISOString(),
   };
@@ -6871,10 +6867,7 @@ async function setBotDigestSubscription(userId, chatId, enabled, cfg, appUrl = '
 }
 
 function publicDigestSettings(row = null, plan = 'FREE', favorites = []) {
-  const rawHour=Number(row?.hour_utc);
-  const hourUtc=Number.isInteger(rawHour) && rawHour>=0 && rawHour<=23
-    ? rawHour
-    : DAILY_DIGEST_POLICY.deliveryHourUtc;
+  const hourUtc=DAILY_DIGEST_POLICY.deliveryHourUtc;
   const normalizedPlan=['FREE','PRO','PREMIUM'].includes(String(plan || '').toUpperCase())
     ? String(plan).toUpperCase()
     : 'FREE';
