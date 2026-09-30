@@ -6,12 +6,12 @@
   <meta name="theme-color" content="#07111f" />
   <meta name="description" content="MatchRadar — AI-футбольный ассистент в Telegram: матчи, команды, LIVE и понятный разбор ключевых факторов." />
   <meta name="matchradar-surface" content="admin" />
-  <meta name="frontend-asset-revision" content="6.120.0-launch23" />
+  <meta name="frontend-asset-revision" content="6.120.0-launch24" />
   <title>MatchRadar Admin · Состояние и управление</title>
   <link rel="icon" type="image/svg+xml" href="/assets/brand/matchradar-mark.svg?v=6.120.0-p42" />
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=6.120.0-launch23" />
-  <link rel="stylesheet" href="/styles/public-shell.css?v=6.120.0-launch23" />
+  <link rel="stylesheet" href="/styles.css?v=6.120.0-launch24" />
+  <link rel="stylesheet" href="/styles/public-shell.css?v=6.120.0-launch24" />
 </head>
 <body class="miniapp-public-shell admin-dedicated-surface">
   <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
@@ -460,10 +460,10 @@
 
         <section class="panel admin-console" data-admin-only hidden>
           <div class="admin-zone-heading">
-            <span>АДМИНИСТРИРОВАНИЕ</span>
+            <span>OWNER DASHBOARD</span>
             <div>
-              <h2>Состояние и управление</h2>
-              <p>Профиль пользователя выше; служебные инструменты собраны отдельно.</p>
+              <h2>Состояние MatchRadar</h2>
+              <p>Главное для владельца — production, источник данных, Supabase, уведомления и AI. Детальная диагностика находится ниже.</p>
             </div>
           </div>
           <div id="betaHealthPanel" class="beta-health-panel" aria-live="polite">
@@ -497,17 +497,19 @@
               <div id="betaIssueList" class="beta-issue-list"></div>
             </details>
           </div>
-          <div class="admin-system-overview" aria-label="Краткое состояние системы">
-            <div><span>Сервис</span><strong id="adminOverviewService">Проверяется</strong></div>
-            <div><span>Функции</span><strong id="adminOverviewFeatures">—</strong></div>
-            <div><span>Данные</span><strong id="adminOverviewSource">Проверяется</strong></div>
-            <div><span>Версия</span><strong id="adminOverviewVersion">—</strong></div>
+          <div class="admin-owner-head">
+            <div><strong>Что важно сейчас</strong><small>Один экран без служебного шума</small></div>
+            <span>Версия <b id="adminOverviewVersion">—</b></span>
           </div>
-          <div class="admin-console-actions">
-            <button type="button" data-admin-target="adminAdvancedTools"><span>🛠</span><strong>Технические разделы</strong><small>Runtime, Provider, Diagnostics, Release и Model Quality</small></button>
+          <div class="admin-system-overview admin-owner-grid" aria-label="Сводка владельца">
+            <div class="admin-owner-card"><span>Production</span><strong id="adminOverviewService">Проверяется</strong><small id="adminOverviewFeatures">Проверяем основные функции</small></div>
+            <div class="admin-owner-card"><span>API-Football</span><strong id="adminOverviewSource">Проверяется</strong><small id="adminOverviewProviderDetail">Лимиты ещё не получены</small></div>
+            <div class="admin-owner-card"><span>Supabase</span><strong id="adminOverviewDatabase">Проверяется</strong><small id="adminOverviewDatabaseDetail">Проверяем доступ к базе</small></div>
+            <div class="admin-owner-card"><span>Уведомления</span><strong id="adminOverviewNotifications">Проверяется</strong><small id="adminOverviewNotificationsDetail">Проверяем доставку</small></div>
+            <div class="admin-owner-card"><span>AI-анализ</span><strong id="adminOverviewAi">Проверяется</strong><small id="adminOverviewAiDetail">Проверяем доступность анализа</small></div>
           </div>
           <details id="adminAdvancedTools" class="admin-advanced-tools">
-            <summary><span><strong>Технические разделы</strong><small>Второй уровень: Runtime, Provider, Diagnostics, Model Quality, Release и служебные проверки</small></span><b>11 разделов</b></summary>
+            <summary><span><strong>Расширенные инструменты</strong><small>Validation, Runtime, Provider, Supabase diagnostics, уведомления, Model Quality, Release и служебные проверки</small></span><b>Открыть</b></summary>
             <div id="adminAdvancedContent" class="admin-advanced-content"></div>
           </details>
         </section>
@@ -916,6 +918,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app-admin.js?v=6.120.0-launch23"></script>
+  <script type="module" src="/app-admin.js?v=6.120.0-launch24"></script>
 </body>
 </html>

@@ -15,6 +15,13 @@ function createElements() {
     ['adminOverviewService', element()],
     ['adminOverviewFeatures', element()],
     ['adminOverviewSource', element()],
+    ['adminOverviewProviderDetail', element()],
+    ['adminOverviewDatabase', element()],
+    ['adminOverviewDatabaseDetail', element()],
+    ['adminOverviewNotifications', element()],
+    ['adminOverviewNotificationsDetail', element()],
+    ['adminOverviewAi', element()],
+    ['adminOverviewAiDetail', element()],
     ['adminOverviewVersion', element()],
   ]);
 }
@@ -55,7 +62,7 @@ test('non-admin overview fails closed without DOM access', () => {
   assert.doesNotThrow(() => module.renderAdminOverview());
 });
 
-test('admin overview preserves runtime, feature, provider and version presentation', () => {
+test('admin overview presents owner-level production provider database notification and AI status', () => {
   const elements = createElements();
   const state = {
     runtimeControlsAdmin: {
@@ -63,11 +70,19 @@ test('admin overview preserves runtime, feature, provider and version presentati
         analysisEnabled: true,
         searchEnabled: false,
         liveEnabled: true,
+        remindersEnabled: true,
         maintenanceMode: false,
       },
     },
-    provider: { plan: 'PRO' },
+    provider: { plan: 'PRO', dailyRemaining: 80, dailyLimit: 100 },
     providerLoaded: true,
+    diagnostics: { supabase: { ok: true, latencyMs: 42, attempts: 1 } },
+    reminderHealth: {
+      available: true,
+      health: { state: 'healthy' },
+      summary: { activeUpcoming: 3, failed24h: 0 },
+    },
+    modelQuality: { sample: { settled: 17 } },
   };
   const module = createAdminOverviewModule({
     state,
@@ -81,7 +96,14 @@ test('admin overview preserves runtime, feature, provider and version presentati
 
   assert.equal(elements.get('adminOverviewService').textContent, 'Работает');
   assert.equal(elements.get('adminOverviewFeatures').textContent, '2/3 основных функций');
-  assert.equal(elements.get('adminOverviewSource').textContent, 'PRO · подключён');
+  assert.equal(elements.get('adminOverviewSource').textContent, 'PRO');
+  assert.equal(elements.get('adminOverviewProviderDetail').textContent, '80 / 100 запросов осталось сегодня');
+  assert.equal(elements.get('adminOverviewDatabase').textContent, 'Норма');
+  assert.equal(elements.get('adminOverviewDatabaseDetail').textContent, '42 мс · 1 попыт.');
+  assert.equal(elements.get('adminOverviewNotifications').textContent, 'Норма');
+  assert.equal(elements.get('adminOverviewNotificationsDetail').textContent, '3 активных · 0 ошибок за 24ч');
+  assert.equal(elements.get('adminOverviewAi').textContent, 'Включён');
+  assert.equal(elements.get('adminOverviewAiDetail').textContent, '17 прогнозов проверено');
   assert.equal(elements.get('adminOverviewVersion').textContent, '6.120.0-rc144');
 });
 
@@ -105,4 +127,7 @@ test('admin overview preserves checking and maintenance fallbacks', () => {
   assert.equal(elements.get('adminOverviewService').textContent, 'Обслуживание');
   assert.equal(elements.get('adminOverviewFeatures').textContent, '3/3 основных функций');
   assert.equal(elements.get('adminOverviewSource').textContent, 'Проверяется');
+  assert.equal(elements.get('adminOverviewDatabase').textContent, 'Не проверено');
+  assert.equal(elements.get('adminOverviewNotifications').textContent, 'Включены');
+  assert.equal(elements.get('adminOverviewAi').textContent, 'Включён');
 });

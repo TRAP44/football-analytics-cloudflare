@@ -997,6 +997,8 @@ function organizeAdminConsole() {
   const content = $('adminAdvancedContent');
   if (!content || content.dataset.ready === 'true') return;
   [
+    '#betaHealthPanel',
+    '#betaDashboardPanel',
     '.runtime-controls-panel',
     '.provider-status-panel',
     '.diagnostics-panel',
@@ -1018,6 +1020,7 @@ function organizeAdminConsole() {
 async function loadAdvancedAdminTools() {
   if (!isAdmin()) return;
   await Promise.allSettled([
+    loadBetaDashboard(false),
     loadProvider(),
     loadRuntimeControlsAdmin(false),
     loadDiagnostics(false),
@@ -1030,6 +1033,7 @@ async function loadAdvancedAdminTools() {
     loadLaunchFunnel(false),
     loadReminderHealth(false),
   ]);
+  renderAdminOverview();
 }
 
 function planLabel(plan) {
@@ -1415,9 +1419,11 @@ async function openProfileView() {
   if (isAdmin()) {
     if (!state.providerLoaded) essentials.push(loadProvider());
     essentials.push(loadRuntimeControlsAdmin(false));
-    essentials.push(loadBetaDashboard(false));
+    essentials.push(loadDiagnostics(false));
+    essentials.push(loadReminderHealth(false));
   }
   await Promise.allSettled(essentials);
+  if (isAdmin()) renderAdminOverview();
 }
 
 
@@ -1649,7 +1655,9 @@ function renderReminderHealth() {
 }
 async function loadReminderHealth(...args) {
   const module = await ensureAdminReminderHealthModule();
-  return module?.loadReminderHealth(...args);
+  const result = await module?.loadReminderHealth(...args);
+  renderAdminOverview();
+  return result;
 }
 async function sendReminderTest(...args) {
   const module = await ensureAdminReminderHealthModule();
@@ -1761,7 +1769,9 @@ function renderDiagnostics() {
 }
 async function loadDiagnostics(...args) {
   const module = await ensureAdminDiagnosticsModule();
-  return module?.loadDiagnostics(...args);
+  const result = await module?.loadDiagnostics(...args);
+  renderAdminOverview();
+  return result;
 }
 
 function renderBilling() {

@@ -110,3 +110,91 @@
   border-top:1px solid rgba(255,255,255,.06);
 }
 .provider-slo-incident-history small { opacity:.65; text-align:right; }
+
+
+/* MatchRadar Owner Dashboard — first-level admin summary */
+.admin-owner-head{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:12px;
+  margin:2px 0 10px;
+}
+.admin-owner-head > div{
+  min-width:0;
+  display:grid;
+  gap:2px;
+}
+.admin-owner-head > div > strong{
+  font-size:13px;
+  letter-spacing:-.01em;
+}
+.admin-owner-head > div > small{
+  color:var(--hint);
+  font-size:9px;
+}
+.admin-owner-head > span{
+  flex:0 0 auto;
+  color:var(--hint);
+  font-size:8px;
+}
+.admin-owner-head > span > b{
+  color:var(--text);
+  font-weight:850;
+}
+.admin-system-overview.admin-owner-grid{
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:8px;
+  margin-bottom:12px;
+}
+.admin-owner-card{
+  min-height:86px;
+  display:grid;
+  align-content:start;
+  gap:4px;
+  padding:10px!important;
+}
+.admin-owner-card > span{
+  font-size:8px;
+  font-weight:850;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}
+.admin-owner-card > strong{
+  margin-top:2px;
+  font-size:12px;
+}
+.admin-owner-card > small{
+  min-width:0;
+  color:var(--hint);
+  font-size:8px;
+  line-height:1.35;
+  overflow-wrap:anywhere;
+}
+.admin-advanced-tools{
+  margin-top:2px;
+}
+.admin-advanced-tools > summary{
+  min-height:52px;
+}
+@media(max-width:720px){
+  .admin-system-overview.admin-owner-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+  .admin-owner-card:last-child{
+    grid-column:1/-1;
+  }
+}
+@media(max-width:390px){
+  .admin-owner-head{
+    align-items:flex-start;
+    flex-direction:column;
+    gap:5px;
+  }
+  .admin-system-overview.admin-owner-grid{
+    grid-template-columns:1fr;
+  }
+  .admin-owner-card:last-child{
+    grid-column:auto;
+  }
+}
