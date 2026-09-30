@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
 const viewChrome = fs.readFileSync('public/modules/view-chrome.js', 'utf8');
+const myTeamsRenderer = fs.readFileSync('public/modules/my-teams-renderer.js', 'utf8');
 const uiPreferences = fs.readFileSync('public/modules/ui-preferences.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const adminHtml = fs.readFileSync('public/admin.html', 'utf8');
@@ -109,7 +110,7 @@ test('Phase 4 normal user journey uses Home, My Teams, History and Profile', () 
   assert.match(html, /id="navProfile" class="nav-item"/);
   assert.match(html, /id="homeSearchBtn"/);
   assert.match(html, /id="myTeamsView"/);
-  assert.match(app, /function renderMyTeams\(\)/);
+  assert.match(myTeamsRenderer, /function renderMyTeams\(\)/);
   assert.match(app, /\$\('navMyTeams'\)\?\.addEventListener/);
   assert.match(app, /sendProductAction\('matches_open', 'myTeamsView'\)/);
   assert.match(app, /sendProductAction\('open', 'matchesView'\)/);

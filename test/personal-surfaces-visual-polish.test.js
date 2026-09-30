@@ -19,9 +19,10 @@ function block(source,start,end){
 
 test('personal surfaces polish keeps My Teams interaction contract intact',()=>{
   const teams=block(myTeamsRenderer,'function renderMyTeams','return Object.freeze');
-  for(const token of ['my-team-card','my-team-head','my-team-match','data-open-team','data-team-fixture','analyzeMatch']) {
+  for(const token of ['my-team-card','my-team-head','my-team-match','data-open-team','data-team-fixture','onAnalyzeMatch']) {
     assert.ok(teams.includes(token),token);
   }
+  assert.match(app,/onAnalyzeMatch: \(fixtureId, button\) => analyzeMatch\(fixtureId, button\)/);
   assert.match(css,/MatchRadar Public UI Polish — Personal Surfaces/);
   assert.match(css,/\.miniapp-public-shell \.my-team-card\{/);
   assert.match(css,/\.miniapp-public-shell \.my-team-match\{/);
