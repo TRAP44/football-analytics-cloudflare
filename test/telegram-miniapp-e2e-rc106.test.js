@@ -48,7 +48,7 @@ test('RC106 full analysis exposes favorite actions and return to Telegram',()=>{
 
 test('RC106 favorite mutation rerenders an open analysis',()=>{
   const start=app.indexOf('async function toggleFavorite');
-  const end=app.indexOf('\nfunction renderFavoriteTeams',start);
+  const end=app.indexOf('\nfunction renderMyTeams',start);
   assert.ok(start>=0 && end>start);
   assert.match(app.slice(start,end),/if \(state\.currentAnalysis\) renderAnalysis\(state\.currentAnalysis\)/);
 });
