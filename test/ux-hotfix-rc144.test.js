@@ -107,17 +107,27 @@ test('custom accent persists independently and shipped pairs keep WCAG-safe cont
   }
 });
 
-test('admin overview is gated and uses existing state without new API calls', () => {
+test('admin overview is gated and summarizes owner-critical state without direct API calls', () => {
   const start = adminHtml.indexOf('<section class="panel admin-console" data-admin-only hidden>');
   const end = adminHtml.indexOf('</section>', start);
   const block = adminHtml.slice(start, end + 10);
-  assert.match(block, /АДМИНИСТРИРОВАНИЕ/);
-  for (const id of ['adminOverviewService', 'adminOverviewFeatures', 'adminOverviewSource', 'adminOverviewVersion']) {
+  assert.match(block, /OWNER DASHBOARD/);
+  for (const id of [
+    'adminOverviewService',
+    'adminOverviewFeatures',
+    'adminOverviewSource',
+    'adminOverviewDatabase',
+    'adminOverviewNotifications',
+    'adminOverviewAi',
+    'adminOverviewVersion',
+  ]) {
     assert.ok(block.includes('id="' + id + '"'), id);
   }
   assert.doesNotMatch(adminOverview, /\bapi\s*\(/);
   assert.match(adminOverview, /state\.runtimeControlsAdmin/);
   assert.match(adminOverview, /state\.provider/);
+  assert.match(adminOverview, /state\.diagnostics/);
+  assert.match(adminOverview, /state\.reminderHealth/);
   assert.match(app, /function applyAdminVisibility\(\)/);
 });
 
