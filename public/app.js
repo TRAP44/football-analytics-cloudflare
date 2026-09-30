@@ -1,5 +1,6 @@
 import { createApiClient, initTelegramWebApp, localDate, timeOf, dateTime, dateOnly, relativeAge, phase5SessionToken } from './modules/client-core.js';
 import { CANONICAL_HOME_VIEW, PUBLIC_VIEW_IDS, backTargetForView, telegramBackButtonVisible } from './modules/navigation.js';
+import { createViewChromeController } from './modules/view-chrome.js';
 import { createInterfacePreferencesController } from './modules/ui-preferences.js';
 import { createFirstRunGuideController } from './modules/first-run-guide.js';
 import {
@@ -193,65 +194,26 @@ const {
   showView: (id, options) => showView(id, options),
 });
 
-const VIEW_CHROME = {
-  matchesView: ['Главная', 'Видим, что меняет матч.'],
-  searchView: ['Поиск', 'Найдите команду или матч'],
-  myTeamsView: ['Мои команды', 'Избранные клубы и их матчи'],
-  tournamentView: ['Турнир', 'Матчи и таблица'],
-  teamView: ['Команда', 'Матчи и данные клуба'],
-  playerView: ['Игрок', 'Показатели и роль в текущем матче'],
-  analysisView: ['Матч-центр', 'Что происходит, почему и что важно дальше'],
-  historyView: ['История', 'Сохранённые AI-разборы'],
-  profileView: ['Профиль', 'Команды, напоминания и настройки'],
-};
-
-function syncTopbar(id) {
-  const [title, subtitle] = VIEW_CHROME[id] || VIEW_CHROME.matchesView;
-  if ($('topbarTitle')) $('topbarTitle').textContent = title;
-  if ($('topbarSubtitle')) $('topbarSubtitle').textContent = subtitle;
-}
-
 function stopLiveRefresh() {
   if (state.liveRefreshTimer) clearInterval(state.liveRefreshTimer);
   state.liveRefreshTimer = null;
   state.liveRefreshRemaining = 0;
 }
 
-const BACK_VIEW_LABELS = Object.freeze({
-  matchesView: 'К матчам',
-  searchView: 'К поиску',
-  historyView: 'К истории',
-  profileView: 'К профилю',
-  tournamentView: 'К турниру',
-  teamView: 'К команде',
-  playerView: 'К игроку',
-  analysisView: 'К матчу',
-});
-
 function viewBackTarget(id = activeViewId()) {
   return backTargetForView(id, state);
 }
 
-function syncBackButtons() {
-  const bindings = [
-    ['backBtn', viewBackTarget('analysisView')],
-    ['teamBackBtn', viewBackTarget('teamView')],
-    ['playerBackBtn', viewBackTarget('playerView')],
-    ['tournamentBackBtn', viewBackTarget('tournamentView')],
-  ];
-  bindings.forEach(([id, target]) => {
-    const button = $(id);
-    if (button) button.textContent = `← ${BACK_VIEW_LABELS[target] || 'Назад'}`;
-  });
-}
-
-function syncTelegramBackButton(id = activeViewId()) {
-  if (!tg?.BackButton) return;
-  try {
-    if (telegramBackButtonVisible(id)) tg.BackButton.show();
-    else tg.BackButton.hide();
-  } catch {}
-}
+const {
+  syncTopbar,
+  syncBackButtons,
+  syncTelegramBackButton,
+} = createViewChromeController({
+  elementById: $,
+  telegramWebApp: tg,
+  resolveBackTarget: id => viewBackTarget(id),
+  isTelegramBackVisible: id => telegramBackButtonVisible(id),
+});
 
 function handleBackNavigation() {
   const current = activeViewId();

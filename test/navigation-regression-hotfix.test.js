@@ -10,6 +10,7 @@ import {
 } from '../public/modules/navigation.js';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
+const viewChrome = fs.readFileSync('public/modules/view-chrome.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 
 test('matchesView is the single canonical Home and bottom Home always opens it', () => {
@@ -51,7 +52,7 @@ test('myTeams-opened match returns to myTeams and then Home', () => {
   const state = { analysisBackView: 'myTeamsView' };
   assert.equal(backTargetForView('analysisView', state), 'myTeamsView');
   assert.equal(backTargetForView('myTeamsView', state), 'matchesView');
-  assert.match(app, /myTeamsView:\s*\['Мои команды'/);
+  assert.match(viewChrome, /myTeamsView:\s*Object\.freeze\(\['Мои команды'/);
 });
 
 test('history-opened match returns to history and then Home', () => {
@@ -71,7 +72,8 @@ test('Telegram BackButton is available on every non-Home public view and routes 
   for (const view of PUBLIC_VIEW_IDS) {
     assert.equal(telegramBackButtonVisible(view), view !== 'matchesView');
   }
-  assert.match(app, /if \(telegramBackButtonVisible\(id\)\) tg\.BackButton\.show\(\)/);
+  assert.match(app, /isTelegramBackVisible: id => telegramBackButtonVisible\(id\)/);
+  assert.match(viewChrome, /if \(isTelegramBackVisible\(id\)\) telegramWebApp\.BackButton\.show\(\)/);
   assert.match(app, /showView\(viewBackTarget\(current\), \{ restore: true \}\)/);
   assert.match(app, /tg\.BackButton\.onClick\(handleBackNavigation\)/);
 });
