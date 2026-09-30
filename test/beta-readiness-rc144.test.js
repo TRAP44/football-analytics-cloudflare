@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
+const profileAccessState = fs.readFileSync('public/modules/profile-access-state.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const worker = fs.readFileSync('src/worker.js', 'utf8');
 const checklist = fs.readFileSync('BETA_READINESS_CHECKLIST_RU.md', 'utf8');
@@ -89,9 +90,9 @@ test('LIVE background refresh keeps the current screen usable on transient error
 
 test('history profile and match-list recovery states are actionable', () => {
   assert.match(html, /id="profileRecovery" hidden/);
-  assert.match(app, /function renderProfileAccessState/);
-  assert.match(app, /profileRecoveryRetry/);
-  assert.match(app, /profileRecoveryRetry/);
+  assert.match(profileAccessState, /function renderProfileAccessState/);
+  assert.match(profileAccessState, /profileRecoveryRetry/);
+  assert.match(app, /createProfileAccessStateModule/);
 
   const history = block(app, 'function renderHistory', 'function pct');
   assert.match(history, /История временно недоступна/);
