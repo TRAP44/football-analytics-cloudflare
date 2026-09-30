@@ -25,6 +25,7 @@ const favoriteTeamsRenderer = fs.readFileSync('public/modules/favorite-teams-ren
 const reminderList = fs.readFileSync('public/modules/reminder-list.js', 'utf8');
 const myTeamsRenderer = fs.readFileSync('public/modules/my-teams-renderer.js', 'utf8');
 const historyRenderer = fs.readFileSync('public/modules/history-renderer.js', 'utf8');
+const aiTrackRecordRenderer = fs.readFileSync('public/modules/ai-track-record-renderer.js', 'utf8');
 const launchFunnelFrontend = app + '\n' + adminLaunchFunnel;
 const appRuntime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
@@ -243,6 +244,12 @@ if (!app.includes('onReloadHistory: force => loadHistory(force)') || !app.includ
 if (app.includes('class="history-item"') || app.includes('История пока пуста')) failures.push('History renderer implementation leaked back into shared app root');
 if (!app.includes('async function loadHistory(showLoader = true)') || !app.includes('async function openHistoryAnalysis(fixtureId, btn)')) failures.push('History loading and analysis lifecycle must remain in the composition root');
 if (/\/api\/history|\/api\/history-analysis|requestMatchCenter|showView\(/.test(historyRenderer)) failures.push('History renderer captured network, fallback or navigation lifecycle');
+if (!fs.existsSync('test/ai-track-record-renderer-extraction.test.js')) failures.push('Missing AI track record renderer extraction regression test');
+if (!app.includes("import('./modules/ai-track-record-renderer.js')") || !aiTrackRecordRenderer.includes('export function createAiTrackRecordRenderer')) failures.push('AI track record renderer extraction contract is missing');
+if (!app.includes('onRetry: force => loadAiTrackRecord(force)')) failures.push('AI track record retry lifecycle must remain explicitly wired from composition root');
+if (app.includes('Здесь нет рекламного «процента побед»') || app.includes('class="ai-track-card"')) failures.push('AI track record renderer implementation leaked back into shared app root');
+if (!app.includes('async function loadAiTrackRecord(force = false)') || !app.includes("/api/ai-track-record?days=180")) failures.push('AI track record loading lifecycle must remain in composition root');
+if (/\/api\/ai-track-record|\bapi\s*\(|fetch\s*\(/.test(aiTrackRecordRenderer)) failures.push('AI track record renderer captured network lifecycle');
 if (!app.includes("import('./modules/admin-launch-funnel.js')") || !adminLaunchFunnel.includes('export function createAdminLaunchFunnelModule')) failures.push('Admin launch funnel lazy extraction contract is missing');
 if (app.includes('Собираю first-party воронку') || app.includes('newsImpactRecoveryIncidentSloBreachImpactRanking')) failures.push('Admin launch funnel implementation leaked back into shared app root');
 if (!app.includes("createNavigationShell({") || !navigationShell.includes('export function createNavigationShell')) failures.push('Frontend navigation shell extraction contract is missing');
