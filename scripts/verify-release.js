@@ -4,6 +4,7 @@ const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
 const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync('src/router.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-transport.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-dedupe.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-links.js', 'utf8') + '\n' + fs.readFileSync('src/auth-user.js', 'utf8') + '\n' + fs.readFileSync('src/cache-runtime.js', 'utf8') + '\n' + fs.readFileSync('src/api-football-gateway.js', 'utf8') + '\n' + fs.readFileSync('src/scheduled-jobs.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
+const adminDiagnostics = fs.readFileSync('public/modules/admin-diagnostics.js', 'utf8');
 const appRuntime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const adminHtml = fs.readFileSync('public/admin.html', 'utf8');
@@ -541,7 +542,7 @@ if (!worker.includes('function telegramDedupeObservabilitySelfTest')) failures.p
 if (!worker.includes("releaseCheck('telegram_webhook_dedupe_observability'")) failures.push('RC108 release observability gate is missing');
 if (!worker.includes("productionCheck('telegram_dedupe_observability'")) failures.push('RC108 production observability gate is missing');
 if (!worker.includes("telegramWebhookDedupeObservability: 'enabled'") || !worker.includes("telegramWebhookDedupeObservabilitySelfTest: telegramDedupeObservabilitySelfTest().pass ? 'enabled' : 'failed'")) failures.push('RC108 health observability flags are missing');
-if (!app.includes('Telegram webhook dedupe') || !app.includes('duplicateAttemptsRetained')) failures.push('RC108 admin dedupe diagnostics are missing');
+if (!adminDiagnostics.includes('Telegram webhook dedupe') || !adminDiagnostics.includes('duplicateAttemptsRetained')) failures.push('RC108 admin dedupe diagnostics are missing');
 if (!postDeploySmoke.includes("'telegramWebhookDedupeObservability'") || !postDeploySmoke.includes("'telegramWebhookDedupeObservabilitySelfTest'")) failures.push('RC108 production smoke observability flags are missing');
 
 
@@ -588,7 +589,7 @@ if (!worker.includes("releaseCheck('supabase_probe_confirmation'")) failures.pus
 if (!worker.includes("productionCheck('supabase_probe_confirmation'")) failures.push('RC109 production probe confirmation gate is missing');
 if (!worker.includes("supabaseProbeConfirmation: 'enabled'") || !worker.includes("supabaseProbeConfirmationSelfTest: supabaseProbeConfirmationSelfTest().pass ? 'enabled' : 'failed'")) failures.push('RC109 probe confirmation health flags are missing');
 if (!worker.includes("code:'SUPABASE_PROBE_RECOVERED'")) failures.push('RC109 transient Supabase recovery event is missing');
-if (!app.includes('Подтверждение Supabase probe') || !app.includes('supabaseProbeConfirmedFailures')) failures.push('RC109 admin probe diagnostics are missing');
+if (!adminDiagnostics.includes('Подтверждение Supabase probe') || !adminDiagnostics.includes('supabaseProbeConfirmedFailures')) failures.push('RC109 admin probe diagnostics are missing');
 if (!postDeploySmoke.includes("'supabaseProbeConfirmation'") || !postDeploySmoke.includes("'supabaseProbeConfirmationSelfTest'")) failures.push('RC109 production smoke confirmation flags are missing');
 
 
