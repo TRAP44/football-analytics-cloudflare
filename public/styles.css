@@ -3138,9 +3138,23 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 
 /* Player Comparison */
 .player-hub-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin-top: 12px;
+}
+.player-hub-actions .btn {
+  min-width: 0;
+  white-space: normal;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.player-follow-btn.is-active {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+.player-follow-btn.has-error {
+  border-style: dashed;
 }
 .player-comparison-panel {
   min-width: 0;
@@ -3265,6 +3279,11 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 .compact-btn {
   min-height: 34px;
   padding: 7px 10px;
+}
+@media (max-width: 360px) {
+  .player-hub-actions {
+    grid-template-columns: 1fr;
+  }
 }
 @media (max-width: 430px) {
   .player-comparison-heads {
