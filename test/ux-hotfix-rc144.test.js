@@ -7,6 +7,7 @@ const runtime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const uiPreferences = fs.readFileSync('public/modules/ui-preferences.js', 'utf8');
 const adminOverview = fs.readFileSync('public/modules/admin-overview.js', 'utf8');
 const profileDataCapabilities = fs.readFileSync('public/modules/profile-data-capabilities.js', 'utf8');
+const profileSummary = fs.readFileSync('public/modules/profile-summary.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const adminHtml = fs.readFileSync('public/admin.html', 'utf8');
 const css = fs.readFileSync('public/styles.css', 'utf8');
@@ -76,9 +77,10 @@ test('startup hides release identifiers while About shows the public app version
   assert.match(boot, /Загружаем матчи/);
   assert.match(html, /id="publicAppVersion">6\.120\.0</);
   assert.match(app, /CLIENT_VERSION\.split\('-'\)\[0\]/);
-  const profile = functionBody('renderProfile', 'qualityPct');
-  assert.match(profile, /profileButtonLabel\.textContent = 'Профиль'/);
-  assert.doesNotMatch(profile, /profilePlanLabel/);
+  const profile = functionBody('renderProfile', 'outcomeShortLabel');
+  assert.match(profile, /renderProfileSummary\(\)/);
+  assert.match(profileSummary, /profileButtonLabel\.textContent = 'Профиль'/);
+  assert.doesNotMatch(profileSummary, /profilePlanLabel/);
 });
 
 test('custom accent persists independently and shipped pairs keep WCAG-safe contrast', () => {
