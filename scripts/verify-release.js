@@ -19,6 +19,7 @@ const adminOverview = fs.readFileSync('public/modules/admin-overview.js', 'utf8'
 const betaFeedback = fs.readFileSync('public/modules/beta-feedback.js', 'utf8');
 const profileDataCapabilities = fs.readFileSync('public/modules/profile-data-capabilities.js', 'utf8');
 const profileAccessState = fs.readFileSync('public/modules/profile-access-state.js', 'utf8');
+const profileSummary = fs.readFileSync('public/modules/profile-summary.js', 'utf8');
 const launchFunnelFrontend = app + '\n' + adminLaunchFunnel;
 const appRuntime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
@@ -147,11 +148,16 @@ if (!/id="adminRoleBadge"[^>]*data-admin-only[^>]*hidden/.test(adminHtml)) failu
 if (!/\[hidden\]\s*\{\s*display\s*:\s*none\s*!important\s*\}/i.test(styles)) failures.push('Global hidden elements must remain display:none');
 if (!app.includes("badge.textContent = admin ? '🔐 Администратор' : '';")) failures.push('Client must clear the admin badge for non-admin users');
 if (!app.includes("el.toggleAttribute('inert', !admin)")) failures.push('Admin-only elements must be inert for non-admin users');
-if (!app.includes('const photoUrl = safeUrl(user.photoUrl);')) failures.push('profile photo must use Telegram photoUrl through safeUrl');
+if (!profileSummary.includes('const photoUrl = safeUrl(user.photoUrl);')) failures.push('profile photo must use Telegram photoUrl through safeUrl');
 if (!styles.includes('.avatar img')) failures.push('Profile avatar image styling is missing');
 if (!fs.existsSync('test/user-flow-contract.test.js')) failures.push('Missing user-flow regression test');
 if (!fs.existsSync('test/accessibility-navigation.test.js')) failures.push('Missing accessibility navigation regression test');
 if (!fs.existsSync('test/navigation-shell.test.js')) failures.push('Missing navigation shell behavioral regression test');
+if (!fs.existsSync('test/profile-summary-extraction.test.js')) failures.push('Missing profile summary extraction regression test');
+if (!app.includes("import { createProfileSummaryModule } from './modules/profile-summary.js'") || !profileSummary.includes('export function createProfileSummaryModule')) failures.push('Profile summary extraction contract is missing');
+if (app.includes("const profileButtonLabel = $('profileBtn')") || app.includes("const photoUrl = safeUrl(user.photoUrl)")) failures.push('Profile summary implementation leaked back into shared app root');
+if (!app.includes('renderProfileSummary();') || !app.includes('renderBilling();') || !app.includes('applyAdminVisibility();') || !app.includes('applyRuntimeUi();')) failures.push('Profile summary extraction must keep profile orchestration in the composition root');
+if (/renderBilling|applyAdminVisibility|applyRuntimeUi|renderAdminOverview|renderFavoriteTeams|renderReminderList|\/api\//.test(profileSummary)) failures.push('Profile summary module must remain presentation-only');
 if (!fs.existsSync('test/admin-launch-funnel-extraction.test.js')) failures.push('Missing admin launch funnel extraction regression test');
 if (!fs.existsSync('test/admin-beta-dashboard-extraction.test.js')) failures.push('Missing admin beta dashboard extraction regression test');
 if (!fs.existsSync('test/admin-production-readiness-extraction.test.js')) failures.push('Missing admin production readiness extraction regression test');
