@@ -13,6 +13,7 @@ const adminProductionReadiness = fs.readFileSync('public/modules/admin-productio
 const adminReleaseReadiness = fs.readFileSync('public/modules/admin-release-readiness.js', 'utf8');
 const adminModelQuality = fs.readFileSync('public/modules/admin-model-quality.js', 'utf8');
 const adminCalibrationControl = fs.readFileSync('public/modules/admin-calibration-control.js', 'utf8');
+const adminModelRemediationView = fs.readFileSync('public/modules/admin-model-remediation-view.js', 'utf8');
 const launchFunnelFrontend = app + '\n' + adminLaunchFunnel;
 const appRuntime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
@@ -163,6 +164,11 @@ if (app.includes('function calibrationTransitionLabel(action)') || app.includes(
 if (!app.includes('async function runModelRemediation()') || !app.includes('async function resolveSettlementDriftFromUi(fixtureId, action)') || !app.includes('async function resetSettlementCircuitFromUi()')) failures.push('Calibration extraction captured remediation actions');
 if (/\/api\/model-remediation|runModelRemediation|resolveSettlementDriftFromUi|resetSettlementCircuitFromUi/.test(adminCalibrationControl)) failures.push('Admin calibration control module must not own remediation logic');
 if (!adminCalibrationControl.includes('confirmAction(') || !adminCalibrationControl.includes('refreshModelQuality(true)')) failures.push('Calibration control side effects must remain explicitly injected');
+if (!fs.existsSync('test/admin-model-remediation-view-extraction.test.js')) failures.push('Missing admin model remediation view extraction regression test');
+if (!app.includes("import('./modules/admin-model-remediation-view.js')") || !adminModelRemediationView.includes('export function createAdminModelRemediationViewModule')) failures.push('Admin model remediation view lazy extraction contract is missing');
+if (app.includes('function remediationActionLabel(action)') || app.includes('Сканирую историю прогнозов без внешних запросов')) failures.push('Admin model remediation read-only implementation leaked back into shared app root');
+if (!app.includes('async function runModelRemediation()') || !app.includes('async function resolveSettlementDriftFromUi(fixtureId, action)') || !app.includes('async function resetSettlementCircuitFromUi()')) failures.push('Model remediation extraction captured destructive actions');
+if (/method:\s*'POST'|window\.confirm|runModelRemediation|resolveSettlementDriftFromUi|resetSettlementCircuitFromUi/.test(adminModelRemediationView)) failures.push('Admin model remediation view module must remain read-only');
 if (!app.includes("import('./modules/admin-beta-dashboard.js')") || !adminBetaDashboard.includes('export function createAdminBetaDashboardModule')) failures.push('Admin beta dashboard lazy extraction contract is missing');
 if (app.includes('Verified normal users') || app.includes('function betaTimingLabel')) failures.push('Admin beta dashboard implementation leaked back into shared app root');
 if (!app.includes('function setBetaFeedbackOpen(open)') || !app.includes('async function submitBetaFeedback()')) failures.push('Beta feedback lifecycle must remain in the shared composition root');
