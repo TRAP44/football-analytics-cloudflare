@@ -87,7 +87,7 @@ test('match and AI transitions have explicit loading error and retry states', ()
 });
 
 test('LIVE background refresh keeps the current screen usable on transient errors', () => {
-  const live = block(app, 'function startLiveRefresh', 'function signedPp');
+  const live = block(app, 'function scheduleLiveRefresh', 'function signedPp');
   assert.match(live, /Не удалось обновить\. Повторим автоматически\./);
   assert.match(live, /sendActionError\('live_refresh'/);
   assert.doesNotMatch(live, /toast\(e\.message\)/);
