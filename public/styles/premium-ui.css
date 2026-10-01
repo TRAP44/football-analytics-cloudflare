@@ -640,7 +640,7 @@ html[data-theme="light"] .miniapp-public-shell {
   box-shadow: none;
 }
 .miniapp-public-shell .history-open {
-  min-height: 36px;
+  min-height: 44px;
   color: var(--text);
   font-size: 10px;
 }
