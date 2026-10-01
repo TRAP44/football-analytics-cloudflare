@@ -33,7 +33,7 @@ test('Stars sync paginates bounded history beyond the first 100 transactions', (
   assert.match(loader, /offset=page\*STAR_SYNC_PAGE_SIZE/);
   assert.match(loader, /limit:STAR_SYNC_PAGE_SIZE/);
   assert.match(loader, /batch\.length < STAR_SYNC_PAGE_SIZE/);
-  assert.match(loader, /transactionHistoryTruncated/);
+  assert.match(worker, /transactionHistoryTruncated: history\.truncated/);
 });
 
 test('Stars sync reconciles outgoing refunds before replaying paginated purchases', () => {
