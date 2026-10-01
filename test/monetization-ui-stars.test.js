@@ -72,7 +72,8 @@ test('manual Telegram Stars refund requires server admin authorization and verif
   assert.match(worker, /reason\.length < 3/);
   assert.match(worker, /refundStarPayment/);
   assert.match(worker, /applyRefundedPayment\(targetUserId, chargeId, cfg\)/);
-  assert.match(worker, /BILLING_REFUND_ALREADY_APPLIED/);
+  assert.match(worker, /CHARGE_ALREADY_REFUNDED/);
+  assert.match(worker, /reconciled:true/);
 });
 
 test('Telegram bot exposes payment support without enabling monetization', () => {
