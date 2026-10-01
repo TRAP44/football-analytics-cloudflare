@@ -1270,8 +1270,6 @@ const {
 
 const {
   activatePassPurchase,
-  consumeEntitlement: consumePassEntitlement,
-  listUserEntitlements,
   refundPassByCharge,
   resolveUserEntitlements,
 } = createEntitlementService({
@@ -23585,8 +23583,10 @@ async function apiAnalyze(request, cfg, user) {
     }
   }
 
+  const entitlementBefore = await resolveUserEntitlements(user.id, fixtureId, cfg);
+  const passAccess = entitlementBefore.source === 'pass' && entitlementBefore.access.expandedAi === true;
   const quotaBefore = await getQuota(user.id, cfg);
-  if (!freeRecheck && quotaBefore.left <= 0) return await trackedFullAiFailureResponse({ error: `Лимит исчерпан: ${quotaBefore.used}/${quotaBefore.limit} анализов сегодня.`, quota: quotaBefore },429,'quota_exhausted');
+  if (!freeRecheck && !passAccess && quotaBefore.left <= 0) return await trackedFullAiFailureResponse({ error: `Лимит исчерпан: ${quotaBefore.used}/${quotaBefore.limit} анализов сегодня.`, quota: quotaBefore },429,'quota_exhausted');
 
   const analysisLock=await claimDistributedAnalysisLock(fixtureId,cfg);
   if (!analysisLock.claimed && analysisLock.unavailable) {
@@ -23615,7 +23615,7 @@ async function apiAnalyze(request, cfg, user) {
   let usageReservation=null;
   let usageCommitted=false;
   try {
-  if (!freeRecheck) {
+  if (!freeRecheck && !passAccess) {
     usageReservation=await reserveAnalysisQuota(user.id,cfg);
     if (!usageReservation.allowed) {
       return await trackedFullAiFailureResponse({error:`Лимит исчерпан: ${usageReservation.used}/${usageReservation.limit} анализов сегодня.`,quota:{plan:usageReservation.plan,used:usageReservation.used,limit:usageReservation.limit,left:usageReservation.left}},429,'quota_exhausted');
