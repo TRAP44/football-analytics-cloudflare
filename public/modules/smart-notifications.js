@@ -56,6 +56,7 @@ export function createSmartNotificationsModule({
   api,
   escapeHtml,
   toast = () => {},
+  onOpenBilling = () => {},
 } = {}) {
   if (typeof elementById !== 'function' || typeof api !== 'function' || typeof escapeHtml !== 'function') {
     throw new TypeError('Smart Notifications requires elementById, api and escapeHtml.');
@@ -75,7 +76,7 @@ export function createSmartNotificationsModule({
     ['match', 'Матчи', 'Старт, составы, голы и красные карточки для отслеживаемых матчей.'],
     ['teams', 'Мои команды', 'Категория для уведомлений, связанных с любимыми командами.'],
     ['players', 'Мои игроки', 'Стартовый состав и события игроков из Favorite Players.'],
-    ['aiRadar', 'AI / Radar', 'Сильные изменения вероятностей и движения рынка без мелкого шума.'],
+    ['aiRadar', 'AI-сигналы', 'Сильные изменения вероятностей и движения рынка без мелкого шума.'],
   ];
 
   function render() {
@@ -94,15 +95,18 @@ export function createSmartNotificationsModule({
     const normalized = normalizeSmartNotificationPayload(model.payload);
     const preferences = model.desired || normalized.preferences;
     const caps = normalized.capabilities;
-    const paidLabel = caps.smartAlerts ? 'Smart Alerts доступны' : 'Smart Alerts · PRO';
+    const paidLabel = caps.smartAlerts ? 'Расширенные уведомления доступны' : 'Расширенные уведомления · PRO';
     root.innerHTML = `
       <div class="smart-notification-head">
         <div>
-          <span class="profile-zone-kicker">SMART ALERTS</span>
+          <span class="profile-zone-kicker">УМНЫЕ УВЕДОМЛЕНИЯ</span>
           <h2>🔔 Уведомления</h2>
           <p>Только важные изменения. Дубли, мелкие колебания и частые повторения подавляются на сервере.</p>
         </div>
-        <span class="smart-notification-plan ${caps.smartAlerts ? 'is-on' : ''}">${escapeHtml(paidLabel)}</span>
+        <div class="smart-notification-head-actions">
+          <span class="smart-notification-plan ${caps.smartAlerts ? 'is-on' : ''}">${escapeHtml(paidLabel)}</span>
+          ${caps.smartAlerts ? '' : '<button id="smartNotificationsUpgradeBtn" class="secondary-btn smart-notification-upgrade" type="button">Посмотреть PRO</button>'}
+        </div>
       </div>
       <label class="switch-row smart-notification-master">
         <span><strong>Получать уведомления</strong><small>${model.saving ? 'Сохраняем…' : 'Главный выключатель для уведомлений MatchRadar.'}</small></span>
@@ -116,7 +120,7 @@ export function createSmartNotificationsModule({
             const cap = caps.categories[key];
             const locked = !cap.available;
             return `<label class="switch-row smart-notification-option ${locked ? 'is-locked' : ''}">
-              <span><strong>${escapeHtml(title)} ${locked ? `<em>${escapeHtml(cap.requiredPlan)}</em>` : ''}</strong><small>${escapeHtml(description)}</small></span>
+              <span><strong>${escapeHtml(title)} ${locked ? `<em>Доступно в ${escapeHtml(cap.requiredPlan)}</em>` : ''}</strong><small>${escapeHtml(description)}</small></span>
               <input data-smart-notification-key="${escapeHtml(key)}" type="checkbox" ${preferences[key] ? 'checked' : ''} ${model.saving || locked ? 'disabled' : ''}>
               <i></i>
             </label>`;
@@ -124,13 +128,14 @@ export function createSmartNotificationsModule({
         </div>
       </details>
       <p class="tiny smart-notification-note">
-        Порог рынка: ${caps.thresholds.marketPp || '—'} п.п. · AI: ${caps.thresholds.aiProbabilityPp || '—'} п.п.${caps.thresholds.aiCooldownMinutes ? ` · cooldown ${caps.thresholds.aiCooldownMinutes} мин` : ''}.
-        ${caps.thresholds.radarConfidence ? `Radar: confidence ≥ ${caps.thresholds.radarConfidence}/100 и лидер ≥ ${caps.thresholds.radarOutcomeProbability}%${caps.thresholds.radarCooldownMinutes ? ` · cooldown ${caps.thresholds.radarCooldownMinutes} мин` : ''}.` : ''}
-        Тариф проверяется сервером при каждой доставке.
+        Порог рынка: ${caps.thresholds.marketPp || '—'} п.п. · AI: ${caps.thresholds.aiProbabilityPp || '—'} п.п.${caps.thresholds.aiCooldownMinutes ? ` · пауза между AI-уведомлениями ${caps.thresholds.aiCooldownMinutes} мин` : ''}.
+        ${caps.thresholds.radarConfidence ? `Радар: уверенность ≥ ${caps.thresholds.radarConfidence}/100 и вероятность лидера ≥ ${caps.thresholds.radarOutcomeProbability}%${caps.thresholds.radarCooldownMinutes ? ` · пауза ${caps.thresholds.radarCooldownMinutes} мин` : ''}.` : ''}
+        Доступ к категориям проверяется сервером при каждой доставке.
       </p>
       ${model.error ? `<p class="digest-inline-error" role="status">${escapeHtml(model.error)}</p>` : ''}
     `;
 
+    $('smartNotificationsUpgradeBtn')?.addEventListener('click', () => onOpenBilling());
     $('smartNotificationMaster')?.addEventListener('change', event => {
       void updatePreference('enabled', Boolean(event.currentTarget.checked));
     });
