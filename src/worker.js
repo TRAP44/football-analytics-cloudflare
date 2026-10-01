@@ -23968,11 +23968,14 @@ async function apiAnalyze(request, cfg, user) {
   await recordTrackedFullAiOutcome('fresh');
   return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:recheckReasonCode,delta:recheckDelta},newsImpact,quota:await getQuota(user.id,cfg)}));
   } finally {
-    if (usageReservation?.reserved && !usageCommitted) await refundAnalysisQuota(user.id,usageReservation,cfg);
-    if (passUsageReservation?.reserved && !usageCommitted) {
-      await refundEntitlementUsage(user.id,passUsageReservation.entitlementId,cfg).catch(()=>null);
+    try {
+      if (usageReservation?.reserved && !usageCommitted) await refundAnalysisQuota(user.id,usageReservation,cfg);
+      if (passUsageReservation?.reserved && !usageCommitted) {
+        await refundEntitlementUsage(user.id,passUsageReservation.entitlementId,cfg).catch(()=>null);
+      }
+    } finally {
+      await releaseDistributedAnalysisLock(analysisLock,cfg);
     }
-    await releaseDistributedAnalysisLock(analysisLock,cfg);
   }
   } catch (error) {
     const reason=newsImpactFailureCode(error,'server_error');
