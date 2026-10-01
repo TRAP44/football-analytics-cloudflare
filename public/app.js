@@ -5722,15 +5722,6 @@ function aiInstructorHtml(ai = {}, match = {}, kickoffHandoff = {}) {
 }
 
 let launchIntentHandled = false;
-function returnToTelegram() {
-  if (tg?.close) {
-    tg.close();
-    return true;
-  }
-  showView(state.analysisBackView || CANONICAL_HOME_VIEW);
-  return false;
-}
-
 async function openLaunchFixture(fixtureId, action, tab = '', handoff = false, newsImpactDecision = '', newsImpactAction = '', newsImpactRecoveryCode = '', newsImpactRecoveryFrom = '') {
   const id = Number(fixtureId || 0);
   if (!id) return;
