@@ -3591,3 +3591,19 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
   .pass-card-top { flex-wrap:wrap; }
   .pass-meta { display:grid; grid-template-columns:minmax(0,1fr); }
 }
+
+
+/* Admin Telegram Stars refund */
+.admin-billing-refund-grid{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end}
+.admin-billing-refund-grid .setting-field{margin:0}
+.admin-billing-refund-results{display:grid;gap:8px;margin:12px 0}
+.admin-billing-refund-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border:1px solid var(--line);border-radius:12px;background:rgba(148,163,184,.04)}
+.admin-billing-refund-item>div{display:grid;gap:3px;min-width:0}
+.admin-billing-refund-item span,.admin-billing-refund-item small{color:var(--hint);font-size:11px;overflow-wrap:anywhere}
+.admin-billing-refund-confirm{margin-top:10px}
+@media (max-width:430px){
+  .admin-billing-refund-grid{grid-template-columns:1fr}
+  .admin-billing-refund-grid>button{width:100%}
+  .admin-billing-refund-item{align-items:flex-start;flex-direction:column}
+  .admin-billing-refund-item>button{width:100%}
+}
