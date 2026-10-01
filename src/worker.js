@@ -7521,7 +7521,8 @@ async function botTeamIdMatches(teamId,cfg) {
   const cached=await getCache(cacheKey,cfg).catch(()=>null);
   if (cached?.matches) return cached.matches.map(normalizeBotFixtureCard);
   if (!freeQuotaHealthy(8,1)) return [];
-  const fixtures=await apiFootball('/fixtures',{team:id,from,to},cfg).catch(()=>[]);
+  let fixtures=await apiFootball('/fixtures',{team:id,next:8},cfg).catch(()=>[]);
+  if (!fixtures.length) fixtures=await apiFootball('/fixtures',{team:id,last:6},cfg).catch(()=>[]);
   const matches=(fixtures || []).filter(f=>!['CANC','PST','ABD','AWD','WO'].includes(String(f.fixture?.status?.short||''))).map(f=>normalizeBotFixtureCard(f)).filter(x=>x.fixtureId)
     .sort((a,b)=>Number(b.live)-Number(a.live) || Number(a.finished)-Number(b.finished) || Date.parse(a.date||0)-Date.parse(b.date||0)).slice(0,6);
   await setCache(cacheKey,id,{matches,refreshedAt:new Date().toISOString()},cfg,120).catch(()=>null);
@@ -19636,7 +19637,7 @@ async function getRecentTeamForm(teamId, preferredVenue, fixtureDate, fixtureId,
   const cached = await getCache(cacheKey, cfg);
   if (cached) return cached;
   if (!allowNetwork) return null;
-  const rows = await apiFootball('/fixtures', { team: Number(teamId), from, to }, cfg);
+  const rows = await apiFootball('/fixtures', { team: Number(teamId), last: 20 }, cfg);
   const usable = rows.filter(x => {
     const id = Number(x.fixture?.id || 0);
     const dateMs = Date.parse(x.fixture?.date || '');
@@ -21517,8 +21518,17 @@ async function loadSearchTeamMatches(team, cfg, options = {}) {
     return {matches:[],matchSource:{kind:'team',id:teamId,name:String(team?.name || 'Команда')},matchDiscovery:{mode:'empty',upcoming:0,recent:0,windowPastDays:TEAM_DISCOVERY_PAST_DAYS,windowFutureDays:TEAM_DISCOVERY_FUTURE_DAYS,cached:false,stale:false},warning:'Команда найдена, но календарь временно не обновляется: бережём остаток лимита источника.'};
   }
   try {
-    const rows=await apiFootball('/fixtures',{team:teamId,from,to},cfg);
-    const fixtures=(rows || []).filter(f=>!['CANC','PST','ABD','AWD','WO'].includes(String(f.fixture?.status?.short || ''))).map(f=>normalizeTeamHubMatch(f,teamId)).filter(x=>x.fixtureId);
+    const [upcomingRows,recentRows]=await Promise.all([
+      apiFootball('/fixtures',{team:teamId,next:12},cfg),
+      apiFootball('/fixtures',{team:teamId,last:8},cfg),
+    ]);
+    const rows=[...(upcomingRows || []),...(recentRows || [])];
+    const seenFixtures=new Set();
+    const fixtures=rows.filter(f=>{
+      const fixtureId=Number(f?.fixture?.id || 0);
+      return fixtureId && !seenFixtures.has(fixtureId) && seenFixtures.add(fixtureId)
+        && !['CANC','PST','ABD','AWD','WO'].includes(String(f.fixture?.status?.short || ''));
+    }).map(f=>normalizeTeamHubMatch(f,teamId)).filter(x=>x.fixtureId);
     const payload={fixtures,refreshedAt:new Date().toISOString()};
     await setCache(cacheKey,teamId,payload,cfg,180);
     return teamSearchFixturePayload(team,fixtures,options.secondQuery,{refreshedAt:payload.refreshedAt});
@@ -22293,7 +22303,17 @@ async function apiTeam(request, cfg) {
   const cached = await getCache(cacheKey, cfg);
   if (cached) return json({ ...cached, standing: await cachedTeamStanding(teamId, cached.primaryCompetition, cfg), sourceMeta: markCachedSourceMeta(cached.sourceMeta || sourceMeta({ provider:'api-football', label:'API-Football' })), cached:true, stale:false, provider:publicDataCapabilities() });
   let fixtures;
-  try { fixtures = await apiFootball('/fixtures', { team:teamId, from, to }, cfg); }
+  try {
+    const [upcomingRows,recentRows]=await Promise.all([
+      apiFootball('/fixtures', { team:teamId, next:12 }, cfg),
+      apiFootball('/fixtures', { team:teamId, last:8 }, cfg),
+    ]);
+    const seenFixtures=new Set();
+    fixtures=[...(upcomingRows || []),...(recentRows || [])].filter(fixture=>{
+      const fixtureId=Number(fixture?.fixture?.id || 0);
+      return fixtureId && !seenFixtures.has(fixtureId) && seenFixtures.add(fixtureId);
+    });
+  }
   catch (error) {
     const stale = await getStaleCache(cacheKey, cfg);
     if (stale && isFootballRateLimitError(error)) return json({ ...stale, standing:await cachedTeamStanding(teamId, stale.primaryCompetition, cfg), sourceMeta:markCachedSourceMeta(stale.sourceMeta || sourceMeta({ provider:'api-football', label:'API-Football' }),{stale:true}), cached:true, stale:true, warning:'Страница команды показана из последних сохранённых данных из-за лимита источника данных.', provider:publicDataCapabilities() });
