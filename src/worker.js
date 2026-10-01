@@ -8364,10 +8364,14 @@ async function apiBillingInvoice(request, cfg, user) {
       return json({ error: 'Этот Pass не привязывается к матчу.', code: 'BILLING_FIXTURE_NOT_ALLOWED' }, 400);
     }
 
-    const record = await getUserRecord(user.id, cfg);
-    const subscriptionActive = ['PRO','PREMIUM'].includes(String(record?.plan || '').toUpperCase())
-      && (!record?.subscription_until || new Date(record.subscription_until).getTime() > Date.now());
-    if (subscriptionActive) {
+    const currentAccess = await resolveUserEntitlements(user.id, fixtureId, cfg);
+    if (currentAccess.store?.available !== true) {
+      return json({
+        error: 'Pass-покупки временно недоступны: хранилище доступов ещё не готово.',
+        code: 'BILLING_ENTITLEMENT_STORE_UNAVAILABLE',
+      }, 503);
+    }
+    if (currentAccess.subscriptionActive) {
       return json({ error: 'Активная подписка уже включает расширенный доступ.', code: 'BILLING_SUBSCRIPTION_HAS_ACCESS' }, 409);
     }
 
