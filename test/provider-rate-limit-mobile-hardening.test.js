@@ -84,6 +84,19 @@ test('client deduplicates match center refreshes and keeps provider cooldown non
   assert.match(app,/setTimeout\(\(\) => runGlobalSearch\(\), 500\)/);
 });
 
+test('public shell owns final shared layout declarations without duplicate base cascade ownership',()=>{
+  const base=readFileSync(new URL('../public/styles.css',import.meta.url),'utf8');
+  const shell=readFileSync(new URL('../public/styles/public-shell.css',import.meta.url),'utf8');
+  const premium=readFileSync(new URL('../public/styles/premium-ui.css',import.meta.url),'utf8');
+
+  assert.doesNotMatch(base,/\.app-shell\s*\{[^}]*padding-left:\s*18px/);
+  assert.doesNotMatch(base,/\.center-score-core\s*\{[^}]*min-width:\s*88px/);
+  assert.doesNotMatch(base,/\.miniapp-public-shell \.global-search-panel\s*\{[^}]*padding:\s*18px/);
+  assert.match(shell,/\.app-shell\s*\{[^}]*padding-left:\s*max\(16px,env\(safe-area-inset-left\)\)/);
+  assert.match(shell,/\.center-score-core\s*\{[^}]*min-width:\s*78px/);
+  assert.match(premium,/\.miniapp-public-shell \.global-search-panel\s*\{[^}]*padding:\s*12px/);
+});
+
 test('360-400px mobile layout keeps score status teams and title stable',()=>{
   assert.match(css,/provider cooldown \+ 360–400px mobile hardening/);
   assert.match(css,/\.center-score-core > strong,[\s\S]*white-space: nowrap/);
