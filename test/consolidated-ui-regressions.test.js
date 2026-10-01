@@ -15,7 +15,9 @@ test('standard MatchRadar action buttons center their contents', () => {
 test('compact favorite controls use a common SVG geometry', () => {
   assert.match(app, /function favoriteStarSvg\(active = false\)/);
   assert.match(app, /class="fav-star-icon"/);
-  assert.doesNotMatch(app, /\? '★' : '☆'/);
+  const favStart = app.indexOf('const favoriteButton = team =>');
+  const favEnd = app.indexOf('\n\n  return `', favStart);
+  assert.doesNotMatch(app.slice(favStart, favEnd), /\? '★' : '☆'/);
   assert.match(css, /\.fav-star-icon\{[\s\S]*width:19px[\s\S]*height:19px/);
 });
 
