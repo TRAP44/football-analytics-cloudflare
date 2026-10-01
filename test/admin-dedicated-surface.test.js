@@ -5,7 +5,6 @@ import { readFileSync } from 'node:fs';
 const publicHtml = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
 const adminHtml = readFileSync(new URL('../public/admin.html', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-const runtime = readFileSync(new URL('../public/modules/app-runtime.js', import.meta.url), 'utf8');
 
 test('public and admin surfaces declare distinct identities', () => {
   assert.match(publicHtml, /matchradar-surface" content="public"/);
