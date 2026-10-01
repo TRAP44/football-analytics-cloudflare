@@ -943,10 +943,12 @@ function isAdmin() {
 let adminBillingRefundModule = null;
 let adminBillingRefundModulePromise = null;
 async function ensureAdminBillingRefundModule() {
-  if (!isAdmin() || !$('adminBillingRefundPanel')) return null;
+  if (!isAdmin()) return null;
   if (adminBillingRefundModule) return adminBillingRefundModule;
   if (!adminBillingRefundModulePromise) {
-    adminBillingRefundModulePromise = import('./modules/admin-billing-refund.js').then(({ createAdminBillingRefundModule }) => {
+    adminBillingRefundModulePromise = import('./modules/admin-billing-refund.js').then(({ createAdminBillingRefundModule, mountAdminBillingRefundPanel }) => {
+      if (!$('adminBillingRefundPanel')) mountAdminBillingRefundPanel(document);
+      if (!$('adminBillingRefundPanel')) return null;
       adminBillingRefundModule = createAdminBillingRefundModule({
         state,
         elementById: $,
