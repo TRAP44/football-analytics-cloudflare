@@ -174,6 +174,7 @@ const state = {
   matchCenterRequestSeq: 0,
   matchCenterInFlight: new Map(),
   analysisActionPending: false,
+  analysisRequestSeq: 0,
   favoriteMutations: new Set(),
   favoritePlayerMutations: new Set(),
   reminderMutations: new Set(),
@@ -295,6 +296,9 @@ const navigationShell = createNavigationShell({
   onLeaveView: ({ from, to, options }) => {
     if (from === 'historyView' && to !== 'historyView' && !options.fromHistoryOpen) {
       state.historyOpenRequestSeq += 1;
+    }
+    if (from === 'analysisView' && to !== 'analysisView' && state.analysisActionPending) {
+      state.analysisRequestSeq += 1;
     }
     if (to !== 'analysisView') {
       stopLiveRefresh();
@@ -4893,7 +4897,9 @@ function renderMatchCenter(d) {
 }
 
 async function openMatchCenter(fixtureId, btn) {
+  if (state.analysisActionPending) state.analysisRequestSeq += 1;
   const sourceView = activeViewId();
+  const requestSeq = ++state.analysisRequestSeq;
   if (sourceView !== 'analysisView') state.analysisBackView = sourceView;
   if (Number(state.currentCenter?.match?.fixtureId || 0) !== Number(fixtureId)) state.currentCenterTab = 'summary';
   const original = btn?.textContent || '';
@@ -4992,7 +4998,8 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
       newsImpactRecoveryFrom:String(options.newsImpactRecoveryFrom || '').toLowerCase().slice(0,24),
     }) });
     if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
-    renderAnalysis(data);
+    const ownsAnalysisView = requestSeq === state.analysisRequestSeq && activeViewId() === 'analysisView';
+    if (ownsAnalysisView) renderAnalysis(data);
     rememberHistoryAnalysis(data);
     sendProductAction('ai_complete', sourceView);
     sendOperationTiming('ai', timingStartedAt, sourceView);
@@ -5000,12 +5007,14 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
       state.profile.quota = data.quota;
       renderProfile();
     }
-    showView('analysisView');
+    if (ownsAnalysisView) showView('analysisView');
     const secondaryTasks = [loadHistory(false)];
     if (!state.remindersLoaded) secondaryTasks.push(loadReminders());
     if (!state.favoritesLoaded) secondaryTasks.push(loadFavorites());
     void Promise.allSettled(secondaryTasks);
   } catch (e) {
+    sendActionError('ai', e, sourceView);
+    if (requestSeq !== state.analysisRequestSeq || activeViewId() !== 'analysisView') return;
     const recovery=e.payload?.newsImpactRecovery || null;
     const quotaExhausted = e.status === 429 && !String(e.payload?.code || '').startsWith('FOOTBALL_');
     if (quotaExhausted) showQuotaPaywallForFixture(fixtureId);
@@ -5020,7 +5029,6 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
       toast(e.payload?.retryAfter ? `Источник футбольных данных временно на паузе. Повторите через ~${e.payload.retryAfter} сек.` : e.message);
     } else if (quotaExhausted) toast('AI-разборы на сегодня закончились. Матчи и LIVE остаются доступны.');
     else toast(e.message);
-    sendActionError('ai', e, sourceView);
     const category=apiErrorCategory(e);
     if (['rate_limit','provider'].includes(category)) {
       if (previousCenter && sourceView === 'analysisView') {
