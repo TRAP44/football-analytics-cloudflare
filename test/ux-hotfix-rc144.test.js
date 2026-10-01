@@ -11,7 +11,11 @@ const profileDataCapabilities = fs.readFileSync('public/modules/profile-data-cap
 const profileSummary = fs.readFileSync('public/modules/profile-summary.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const adminHtml = fs.readFileSync('public/admin.html', 'utf8');
-const css = fs.readFileSync('public/styles.css', 'utf8');
+const css = [
+  'public/styles.css',
+  'public/styles/public-shell.css',
+  'public/styles/premium-ui.css',
+].map(path => fs.readFileSync(path, 'utf8')).join('\n');
 
 function functionBody(name, nextName) {
   const start = app.indexOf('function ' + name);
