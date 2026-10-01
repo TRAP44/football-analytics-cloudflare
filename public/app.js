@@ -2913,6 +2913,13 @@ function renderPopularCompetitions() {
   el.querySelectorAll('[data-open-tournament]').forEach(btn => btn.addEventListener('click', () => openTournament(Number(btn.dataset.openTournament))));
 }
 
+function favoriteStarSvg(active = false) {
+  return `<svg class="fav-star-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path d="M12 3.7l2.55 5.17 5.71.83-4.13 4.03.98 5.69L12 16.73l-5.11 2.69.98-5.69-4.13-4.03 5.71-.83L12 3.7z"
+      ${active ? 'fill="currentColor"' : 'fill="none"'} stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+  </svg>`;
+}
+
 function matchCardHtml(m, { grouped = false } = {}) {
   const aiHistory = analysisHistoryForFixture(m.fixtureId);
   const cardState = m.live ? 'is-live' : m.finished ? 'is-finished' : 'is-upcoming';
@@ -2934,7 +2941,7 @@ function matchCardHtml(m, { grouped = false } = {}) {
         ? `<button class="analyze-btn analyzed-btn" type="button" data-history-analysis="${Number(m.fixtureId)}">Открыть AI-разбор</button>`
         : `<button class="analyze-btn" type="button" data-fixture="${Number(m.fixtureId)}">AI-разбор</button>`;
 
-  const favoriteButton = team => `<button class="fav-star compact ${isFavorite(team?.id) ? 'active' : ''} ${state.favoriteMutations.has(Number(team?.id)) ? 'is-pending' : ''}" type="button" data-team-id="${Number(team?.id)}" data-team-name="${escapeHtml(team?.name || '')}" data-team-logo="${escapeHtml(team?.logo || '')}" aria-pressed="${isFavorite(team?.id) ? 'true' : 'false'}" aria-label="${isFavorite(team?.id) ? 'Удалить из избранного' : 'Добавить в избранное'}: ${escapeHtml(team?.name || '')}" ${state.favoriteMutations.has(Number(team?.id)) ? 'disabled' : ''}>${isFavorite(team?.id) ? '★' : '☆'}</button>`;
+  const favoriteButton = team => { const active = isFavorite(team?.id); return `<button class="fav-star compact ${active ? 'active' : ''} ${state.favoriteMutations.has(Number(team?.id)) ? 'is-pending' : ''}" type="button" data-team-id="${Number(team?.id)}" data-team-name="${escapeHtml(team?.name || '')}" data-team-logo="${escapeHtml(team?.logo || '')}" aria-pressed="${active ? 'true' : 'false'}" aria-label="${active ? 'Удалить из избранного' : 'Добавить в избранное'}: ${escapeHtml(team?.name || '')}" ${state.favoriteMutations.has(Number(team?.id)) ? 'disabled' : ''}>${favoriteStarSvg(active)}</button>`; };
 
   return `
     <article class="match-card compact-match-card ${cardState}">
@@ -3711,7 +3718,7 @@ async function requestMatchCenter(fixtureId, extraParams = {}, options = {}) {
 function updateLiveCountdown() {
   const el = $('liveRefreshText');
   if (!el || !state.currentCenter || state.currentCenter.mode !== 'live') return;
-  el.textContent = `Автообновление через ${Math.max(0, state.liveRefreshRemaining)} сек.`;
+  el.textContent = 'Обновляется автоматически';
 }
 
 function startLiveRefresh(fixtureId) {
@@ -4724,7 +4731,7 @@ function renderMatchCenter(d) {
         <div class="center-score-core">
           <strong>${escapeHtml(scoreText)}</strong>
           <span>${escapeHtml(m.statusLabel || '')}</span>
-          ${live ? `<small id="liveRefreshText">Обновление через ${Number(d.refreshSeconds || 60)} сек.</small>` : `<small>${upcoming ? dateTime(m.date) : `Обновлено ${dateTime(d.generatedAt)}`}</small>`}
+          ${live ? '<small id="liveRefreshText">Обновляется автоматически</small>' : `<small>${upcoming ? dateTime(m.date) : `Обновлено ${dateTime(d.generatedAt)}`}</small>`}
         </div>
         <button class="center-team-card away" type="button" data-center-team="${Number(m.away?.id || 0)}">
           ${m.away?.logo ? `<img src="${safeUrl(m.away.logo)}" alt="">` : '<span class="center-logo-fallback">⚽</span>'}
@@ -4750,7 +4757,6 @@ function renderMatchCenter(d) {
 
     ${renderAiTimelineCompact(d.aiTimeline || {}, m)}
 
-    ${d.stale ? `<section class="panel stale-panel"><strong>⚠️ Показан последний сохранённый снимок</strong><p>${escapeHtml(publicText(d.warning || 'Источник данных временно ограничил запросы.'))}</p></section>` : ''}
     ${d.note ? `<section class="panel center-note"><p class="tiny warning">${escapeHtml(publicText(d.note))}</p></section>` : ''}
 
     <div class="match-center-primary" aria-label="Главное о матче">
@@ -6058,7 +6064,6 @@ function renderAnalysis(d) {
       </div>
     </section>
 
-    ${d.stale ? `<section class="panel stale-panel"><strong>⚠️ Использован последний сохранённый анализ</strong><p>${escapeHtml(d.warning || 'Свежие данные временно недоступны из-за ограничения источника данных.')}</p></section>` : ''}
 
     ${analysisGlanceHtml(d)}
 
