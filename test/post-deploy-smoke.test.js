@@ -739,7 +739,7 @@ test('post-deploy smoke rejects DEV_MODE in production', async () => {
 });
 
 
-test('post-deploy smoke rejects enabled monetization before closed beta', async () => {
+test('post-deploy smoke rejects enabled monetization when the release still expects paused', async () => {
   await assert.rejects(
     runDeploymentSmoke('https://football.example.test', '6.27.0-rc35', {
       fetchImpl: healthyFetch({ monetization: 'enabled' }),
@@ -748,6 +748,16 @@ test('post-deploy smoke rejects enabled monetization before closed beta', async 
     }),
     /MONETIZATION_ENABLED=false/,
   );
+});
+
+test('post-deploy smoke accepts enabled monetization only when the release explicitly expects it', async () => {
+  const result = await runDeploymentSmoke('https://football.example.test', '6.27.0-rc35', {
+    fetchImpl: healthyFetch({ monetization: 'enabled' }),
+    retries: 1,
+    retryDelayMs: 0,
+    expectedMonetization: 'enabled',
+  });
+  assert.equal(result.ok, true);
 });
 
 test('post-deploy smoke requires API-Football-backed public services to be operational', async () => {
