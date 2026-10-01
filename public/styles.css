@@ -3500,3 +3500,53 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
   .smart-notification-head p,.smart-notification-note{font-size:12px}
   .smart-notification-plan{white-space:normal}
 }
+
+
+/* Issue #284 — Monetization UI + Telegram Stars */
+.billing-panel { overflow:hidden; background:radial-gradient(circle at 92% 0%, color-mix(in srgb,var(--accent) 12%,transparent), transparent 38%), var(--surface); }
+.billing-panel * { min-width:0; box-sizing:border-box; }
+.billing-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.billing-head h2 { margin:3px 0 0; font-size:18px; }
+.billing-head p { margin:6px 0 0; color:var(--hint); font-size:11px; line-height:1.45; max-width:520px; }
+.billing-plan-badge { flex:0 0 auto; border:1px solid color-mix(in srgb,var(--accent) 38%,var(--line)); border-radius:999px; padding:6px 9px; color:var(--accent); background:color-mix(in srgb,var(--accent) 9%,transparent); font-size:10px; font-weight:900; letter-spacing:.08em; }
+.billing-summary-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:14px; }
+.billing-summary-grid > div { padding:10px; border:1px solid var(--line); border-radius:12px; background:rgba(148,163,184,.035); }
+.billing-summary-grid span { display:block; color:var(--hint); font-size:9px; }
+.billing-summary-grid strong { display:block; margin-top:4px; font-size:13px; overflow-wrap:anywhere; }
+.billing-quota-track { height:7px; margin:9px 1px 2px; border-radius:999px; overflow:hidden; background:rgba(148,163,184,.13); }
+.billing-quota-track > i { display:block; width:0; height:100%; border-radius:inherit; background:var(--accent); transition:width .2s ease; }
+.billing-status.pending { border-color:rgba(245,158,11,.26); background:rgba(245,158,11,.07); color:var(--text); }
+.billing-status.success { border-color:rgba(34,197,94,.28); background:rgba(34,197,94,.07); color:var(--text); }
+.billing-status.failed { border-color:rgba(239,68,68,.28); background:rgba(239,68,68,.07); color:var(--text); }
+.billing-pricing-grid .pricing-card { display:flex; flex-direction:column; min-height:100%; }
+.billing-pricing-grid .pricing-card ul { flex:1 1 auto; }
+.billing-pricing-grid .pricing-card.current { position:relative; }
+.billing-pricing-grid .pricing-card.current::after { content:'АКТИВЕН'; position:absolute; top:10px; right:10px; padding:3px 6px; border-radius:999px; background:color-mix(in srgb,var(--accent) 12%,transparent); color:var(--accent); font-size:7px; font-weight:900; letter-spacing:.08em; }
+.pricing-state { display:block; width:100%; border:1px solid var(--line); border-radius:11px; padding:10px 12px; color:var(--hint); background:rgba(148,163,184,.06); text-align:center; font-size:11px; font-weight:800; }
+.billing-actions { flex-wrap:wrap; }
+.billing-actions > button { min-width:min(190px,100%); }
+.billing-footnote { margin:10px 0 0; color:var(--hint); font-size:9px; line-height:1.45; }
+.billing-panel.is-loading { opacity:.92; }
+.billing-quota-paywall { display:grid; grid-template-columns:auto minmax(0,1fr); gap:10px 12px; align-items:center; margin-top:12px; border-color:color-mix(in srgb,var(--accent) 30%,var(--line)); background:color-mix(in srgb,var(--accent) 6%,var(--surface)); }
+.billing-quota-paywall[hidden] { display:none !important; }
+.billing-quota-icon { width:36px; height:36px; display:grid; place-items:center; border-radius:12px; background:rgba(245,158,11,.10); }
+.billing-quota-paywall strong { display:block; font-size:13px; }
+.billing-quota-paywall p { margin:4px 0 0; color:var(--hint); font-size:10px; line-height:1.45; }
+.billing-quota-paywall button { grid-column:1 / -1; width:100%; margin:0; }
+@media (max-width:430px) {
+  .billing-head { gap:8px; }
+  .billing-head h2 { font-size:16px; }
+  .billing-plan-badge { padding:5px 8px; font-size:9px; }
+  .billing-summary-grid { gap:6px; }
+  .billing-summary-grid > div { padding:9px 8px; }
+  .billing-pricing-grid { grid-template-columns:1fr; }
+  .subscription-details { align-items:flex-start; flex-direction:column; gap:4px; }
+  .subscription-details span { text-align:left; }
+  .billing-actions { display:grid; grid-template-columns:1fr; }
+  .billing-actions > button { width:100%; min-width:0; }
+}
+@media (max-width:360px) {
+  .billing-summary-grid { grid-template-columns:1fr 1fr; }
+  .billing-panel { padding-left:11px; padding-right:11px; }
+  .billing-pricing-grid .pricing-card { padding:12px; }
+}

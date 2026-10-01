@@ -9,6 +9,7 @@ import { createProfileAccessStateModule } from './modules/profile-access-state.j
 import { createProfileSummaryModule } from './modules/profile-summary.js';
 import { createDigestSettingsModule } from './modules/digest-settings.js';
 import { createSmartNotificationsModule } from './modules/smart-notifications.js';
+import { createBillingModule } from './modules/billing.js';
 import { createFavoriteTeamsRenderer } from './modules/favorite-teams-renderer.js';
 import { createReminderListModule } from './modules/reminder-list.js';
 import { createMyTeamsRenderer } from './modules/my-teams-renderer.js';
@@ -1464,6 +1465,7 @@ async function openProfileView() {
   const lastFixture = Number(state.currentCenter?.match?.fixtureId || state.currentAnalysis?.match?.fixtureId || 0);
   if (lastFixture && $('providerAuditFixtureId') && !$('providerAuditFixtureId').value) $('providerAuditFixtureId').value = String(lastFixture);
   const essentials = [];
+  if (!billingModule.snapshot().loaded) essentials.push(loadBilling());
   if (!state.favoritesLoaded) essentials.push(loadFavorites());
   if (!state.favoritePlayersLoaded) essentials.push(loadFavoritePlayers());
   if (!state.remindersLoaded) essentials.push(loadReminders());
@@ -1827,107 +1829,20 @@ async function loadDiagnostics(...args) {
   return result;
 }
 
-function renderBilling() {
-  if (!$('billingStatus')) return;
-  const b = state.billing;
-  const quota = state.profile?.quota || {};
-  const currentPlan = String(b?.current?.plan || quota.plan || 'FREE').toUpperCase();
-  const currentUntil = b?.current?.subscriptionUntil || state.profile?.billing?.subscriptionUntil || null;
-  const canceled = Boolean(b?.current?.canceled ?? state.profile?.billing?.canceled);
-
-  document.querySelectorAll('.pricing-card[data-plan]').forEach(card => {
-    card.classList.toggle('current', card.dataset.plan === currentPlan);
-  });
-
-  const pro = b?.plans?.PRO || { stars: 199, dailyLimit: 20 };
-  const premium = b?.plans?.PREMIUM || { stars: 399, dailyLimit: 100 };
-  if ($('proPrice')) $('proPrice').textContent = `${pro.stars} ⭐ / 30 дней`;
-  if ($('premiumPrice')) $('premiumPrice').textContent = `${premium.stars} ⭐ / 30 дней`;
-  if ($('proLimit')) $('proLimit').textContent = `${pro.dailyLimit} анализов / день`;
-  if ($('premiumLimit')) $('premiumLimit').textContent = `${premium.dailyLimit} анализов / день`;
-
-  const ready = Boolean(b?.ready);
-  $('billingStatus').className = `billing-status ${ready ? 'ready' : 'waiting'}`;
-  $('billingStatus').textContent = ready
-    ? '⭐ Telegram Stars подключены. Оплата и автопродление готовы.'
-    : '⚙️ Telegram Stars подготовлены, но обработчик платежей ещё не активирован.';
-
-  const proBtn = $('proBtn');
-  const premiumBtn = $('premiumBtn');
-  [proBtn, premiumBtn].forEach(btn => { if (btn) btn.disabled = !ready; });
-  if (proBtn) proBtn.textContent = currentPlan === 'PRO' ? 'Текущий PRO' : `Подключить за ${pro.stars} ⭐`;
-  if (premiumBtn) premiumBtn.textContent = currentPlan === 'PREMIUM' ? 'Текущий PREMIUM' : `Подключить за ${premium.stars} ⭐`;
-  if (proBtn && currentPlan === 'PRO') proBtn.disabled = true;
-  if (premiumBtn && currentPlan === 'PREMIUM') premiumBtn.disabled = true;
-
-  const details = $('subscriptionDetails');
-  const manage = $('subscriptionManageBtn');
-  if (currentPlan !== 'FREE' && currentUntil) {
-    details.hidden = false;
-    details.innerHTML = `<strong>${escapeHtml(currentPlan)}</strong><span>Активен до ${escapeHtml(dateTime(currentUntil))}${canceled ? ' · автопродление отключено' : ' · автопродление включено'}</span>`;
-    manage.hidden = false;
-    manage.textContent = canceled ? '↻ Возобновить автопродление' : 'Отключить автопродление';
-    manage.dataset.action = canceled ? 'resume' : 'cancel';
-  } else {
-    details.hidden = true;
-    manage.hidden = true;
-  }
-}
-
-async function loadBilling() {
-  try {
-    state.billing = await api('/api/billing/plans');
-    renderBilling();
-  } catch (e) {
-    state.billing = { ready: false };
-    renderBilling();
-  }
-}
-
-async function syncBilling(showToast = true) {
-  try {
-    const result = await api('/api/billing/sync', { method: 'POST', body: '{}' });
-    await loadProfile();
-    await loadBilling();
-    if (showToast) toast(result.synced ? 'Подписка синхронизирована' : 'Новых платежей не найдено');
-  } catch (e) { if (showToast) toast(e.message); }
-}
-
-async function buyPlan(plan) {
-  if (!state.billing?.ready) {
-    toast('Оплата ещё не активирована администратором.');
-    return;
-  }
-  if (!tg?.openInvoice) {
-    toast('Оплата доступна только внутри Telegram.');
-    return;
-  }
-  try {
-    const invoice = await api('/api/billing/invoice', { method: 'POST', body: JSON.stringify({ plan }) });
-    tg.openInvoice(invoice.invoiceUrl, async status => {
-      const value = typeof status === 'string' ? status : status?.status;
-      if (value === 'paid') {
-        toast('Платёж принят. Активируем подписку…');
-        await new Promise(resolve => setTimeout(resolve, 700));
-        await syncBilling(false);
-        toast(`${plan} активирован`);
-      } else if (value === 'pending') {
-        toast('Платёж обрабатывается. Нажмите «Проверить оплату» через несколько секунд.');
-      } else if (value === 'failed') {
-        toast('Telegram не смог завершить платёж.');
-      }
-    });
-  } catch (e) { toast(e.message); }
-}
-
-async function manageSubscription(action) {
-  try {
-    const data = await api('/api/billing/subscription', { method: 'POST', body: JSON.stringify({ action }) });
-    await loadProfile();
-    await loadBilling();
-    toast(data.canceled ? 'Автопродление отключено' : 'Автопродление включено');
-  } catch (e) { toast(e.message); }
-}
+const billingModule = createBillingModule({
+  state,
+  elementById: $,
+  api,
+  toast,
+  telegram: tg,
+  dateTime,
+  reloadProfile: () => loadProfile(),
+  openProfile: () => openProfileView(),
+});
+function renderBilling() { return billingModule.render(); }
+function loadBilling(...args) { return billingModule.load(...args); }
+function showQuotaPaywall() { return billingModule.showQuotaPaywall(); }
+function hideQuotaPaywall() { return billingModule.hideQuotaPaywall(); }
 
 let adminProviderModule = null;
 let adminProviderModulePromise = null;
@@ -5009,6 +4924,7 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
     return;
   }
   stopLiveRefresh();
+  hideQuotaPaywall();
   const previousCenter=state.currentCenter;
   state.currentCenter = null;
   state.analysisActionPending = true;
@@ -5051,6 +4967,8 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
     void Promise.allSettled(secondaryTasks);
   } catch (e) {
     const recovery=e.payload?.newsImpactRecovery || null;
+    const quotaExhausted = e.status === 429 && !String(e.payload?.code || '').startsWith('FOOTBALL_');
+    if (quotaExhausted) showQuotaPaywall();
     if (recovery?.message) {
       toast(recovery.message);
       if (recovery.action==='search') {
@@ -5060,7 +4978,7 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
       }
     } else if (e.status === 429 && String(e.payload?.code || '').startsWith('FOOTBALL_')) {
       toast(e.payload?.retryAfter ? `Источник футбольных данных временно на паузе. Повторите через ~${e.payload.retryAfter} сек.` : e.message);
-    } else if (e.status === 429) toast('Дневной лимит анализов исчерпан.');
+    } else if (quotaExhausted) toast('AI-разборы на сегодня закончились. Матчи и LIVE остаются доступны.');
     else toast(e.message);
     sendActionError('ai', e, sourceView);
     const category=apiErrorCategory(e);
@@ -5074,7 +4992,9 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
     } else if (movedToAnalysis && recovery?.action !== 'search') {
       renderJourneyState('error', {
         title: 'AI-анализ временно недоступен',
-        message: e.status === 429 ? 'Лимит анализов на сегодня исчерпан или источник временно ограничил запросы.' : (e.message || 'Не удалось подготовить анализ.'),
+        message: quotaExhausted
+          ? 'AI-разборы на сегодня закончились. Матчи, LIVE, составы и статистика остаются доступны бесплатно.'
+          : (e.status === 429 ? 'Источник футбольных данных временно ограничил обновления.' : (e.message || 'Не удалось подготовить анализ.')),
         retry: () => analyzeMatch(fixtureId, null, options),
       });
     }
@@ -6560,10 +6480,7 @@ $('profileMyTeamsBtn')?.addEventListener('click', () => {
 });
 $('myTeamsFindBtn')?.addEventListener('click', () => { showView('matchesView'); setTimeout(() => $('matchSearch')?.focus({ preventScroll:true }), 80); });
 $('homeSearchBtn')?.addEventListener('click', () => { const q=String($('matchSearch')?.value || '').trim(); state.globalSearch.query=q; if ($('globalSearchInput')) $('globalSearchInput').value=q; renderGlobalSearch(); showView('searchView'); if (q) runGlobalSearch(); });
-$('proBtn')?.addEventListener('click', () => buyPlan('PRO'));
-$('premiumBtn')?.addEventListener('click', () => buyPlan('PREMIUM'));
-$('billingSyncBtn')?.addEventListener('click', () => syncBilling(true));
-$('subscriptionManageBtn')?.addEventListener('click', () => manageSubscription($('subscriptionManageBtn').dataset.action || 'cancel'));
+billingModule.bind();
 $('savePreferencesBtn')?.addEventListener('click', savePreferencesFromUi);
 $('modelQualityRefreshBtn')?.addEventListener('click', () => Promise.allSettled([loadModelQuality(true), loadCalibrationControl(true), loadModelRemediation(true)]));
 $('modelQualityPeriod')?.addEventListener('change', () => loadModelQuality(true));

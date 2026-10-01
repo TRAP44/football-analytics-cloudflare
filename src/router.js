@@ -11,6 +11,7 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
     apiPhase5Dashboard,
     apiBillingInvoice,
     apiBillingPlans,
+    apiBillingRefund,
     apiBillingSubscription,
     apiBillingSync,
     apiCalibrationControl,
@@ -70,6 +71,10 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
   if (request.method === 'GET' && url.pathname === '/api/beta-dashboard') {
     if (!isAdminUser(user, cfg)) return adminForbidden();
     return await apiBetaDashboard(request, cfg);
+  }
+  if (request.method === 'POST' && url.pathname === '/api/admin/billing/refund') {
+    if (!isAdminUser(user, cfg)) return adminForbidden();
+    return await apiBillingRefund(request, cfg, user);
   }
   if (request.method === 'POST' && url.pathname === '/api/admin/channel-publisher/test') {
     if (!isAdminUser(user, cfg)) return adminForbidden();

@@ -1273,6 +1273,7 @@ const {
 
 const {
   activatePassPurchase,
+  listUserEntitlements,
   refundEntitlementUsage,
   refundPassByCharge,
   reserveEntitlementUsage,
@@ -2713,6 +2714,76 @@ async function saveBillingPayment(row, cfg) {
   } else {
     memory.billingPayments.set(String(row.telegram_payment_charge_id), row);
   }
+}
+
+async function findRefundableBillingCharge(userId, paymentChargeId, cfg) {
+  const uid = Number(userId);
+  const chargeId = String(paymentChargeId || '').trim();
+  if (!Number.isSafeInteger(uid) || uid <= 0 || !chargeId || chargeId.length > 240) return null;
+
+  let payment = null;
+  if (hasSupabase(cfg)) {
+    payment = await supaSelectOne(cfg, 'billing_payments', {
+      telegram_payment_charge_id: `eq.${chargeId}`,
+      telegram_id: `eq.${uid}`,
+    }).catch(() => null);
+  } else {
+    const row = memory.billingPayments.get(chargeId) || null;
+    if (row && Number(row.telegram_id) === uid) payment = row;
+  }
+  if (payment) return {
+    kind: 'subscription',
+    status: String(payment.status || 'paid').toLowerCase(),
+    plan: String(payment.plan || ''),
+  };
+
+  const entitlements = await listUserEntitlements(uid, cfg).catch(() => []);
+  const entitlement = entitlements.find(row =>
+    String(row.payment_charge_id || row.paymentChargeId || '') === chargeId
+    && Number(row.telegram_id || row.telegramId || 0) === uid
+  );
+  if (!entitlement) return null;
+  return {
+    kind: 'pass',
+    status: String(entitlement.status || 'active').toLowerCase(),
+    plan: String(entitlement.entitlement_type || entitlement.type || ''),
+  };
+}
+
+async function applyRefundedPayment(userId, paymentChargeId, cfg) {
+  const uid = Number(userId);
+  const chargeId = String(paymentChargeId || '').trim();
+  if (!Number.isSafeInteger(uid) || uid <= 0 || !chargeId) return { updated:false, reason:'invalid_refund' };
+
+  markTelegramWebhookMutation(cfg, 'billing_refund');
+  if (hasSupabase(cfg)) {
+    await supaPatch(cfg, 'billing_payments', {
+      telegram_payment_charge_id: `eq.${chargeId}`,
+      telegram_id: `eq.${uid}`,
+    }, {
+      status: 'refunded',
+      updated_at: new Date().toISOString(),
+    });
+  } else {
+    const row = memory.billingPayments.get(chargeId);
+    if (row && Number(row.telegram_id) === uid) {
+      memory.billingPayments.set(chargeId, { ...row, status:'refunded', updated_at:new Date().toISOString() });
+    }
+  }
+
+  const passRefund = await refundPassByCharge(userId, chargeId, cfg).catch(() => ({ updated:false, reason:'not_found' }));
+  const record = await getUserRecord(uid, cfg);
+  let subscriptionRevoked = false;
+  if (record && String(record.telegram_payment_charge_id || '') === chargeId) {
+    await updateUserSubscription(uid, {
+      plan: 'FREE',
+      subscription_until: new Date().toISOString(),
+      subscription_canceled: true,
+      telegram_payment_charge_id: null,
+    }, cfg);
+    subscriptionRevoked = true;
+  }
+  return { updated:true, subscriptionRevoked, passRevoked:Boolean(passRefund?.updated) };
 }
 
 async function applySuccessfulPayment(userId, payment, cfg, fallbackDate = Math.floor(Date.now() / 1000)) {
@@ -8153,23 +8224,9 @@ async function processTelegramUpdate(request, cfg, update) {
   }
 
   if (msg?.refunded_payment) {
-    const refund = msg.refunded_payment;
     const userId = Number(msg.from?.id || 0);
-    const chargeId = String(refund.telegram_payment_charge_id || '');
-    if (hasSupabase(cfg) && chargeId) {
-      markTelegramWebhookMutation(cfg, 'billing_refund');
-      await supaPatch(cfg, 'billing_payments', { telegram_payment_charge_id: `eq.${chargeId}` }, { status: 'refunded', updated_at: new Date().toISOString() });
-    }
-    if (userId && chargeId) await refundPassByCharge(userId, chargeId, cfg).catch(()=>null);
-    const record = userId ? await getUserRecord(userId, cfg) : null;
-    if (record && String(record.telegram_payment_charge_id || '') === chargeId) {
-      await updateUserSubscription(userId, {
-        plan: 'FREE',
-        subscription_until: new Date().toISOString(),
-        subscription_canceled: true,
-        telegram_payment_charge_id: null,
-      }, cfg);
-    }
+    const chargeId = String(msg.refunded_payment.telegram_payment_charge_id || '');
+    if (userId && chargeId) await applyRefundedPayment(userId, chargeId, cfg);
     return json({ ok: true });
   }
 
@@ -8225,6 +8282,21 @@ async function processTelegramUpdate(request, cfg, update) {
   if (chatId && text === '← Главное меню') {
     await telegramApi('sendMessage', cfg, { chat_id:chatId, text:'Главное меню', reply_markup:footballBotKeyboard(request) });
     return json({ ok: true });
+  }
+
+  if (chatId && /^\/paysupport(?:@\w+)?(?:\s|$)/i.test(text)) {
+    await telegramApi('sendMessage', cfg, {
+      chat_id: chatId,
+      text: [
+        '⭐ Поддержка по оплате MatchRadar',
+        '',
+        'Если Stars списаны, а тариф не обновился — откройте Профиль → MatchRadar Pro и нажмите «Проверить оплату».',
+        'Возврат выполняется только после ручной проверки администратором MatchRadar.',
+        'Не отправляйте данные карты или секретные коды: платежи проходят через Telegram Stars.',
+      ].join('\n'),
+      reply_markup: { inline_keyboard: [[{ text:'Открыть Профиль', web_app:{ url:telegramWebAppUrl(request,{view:'profile'}) } }]] },
+    });
+    return json({ ok:true });
   }
 
   if (chatId && (/^\/help(?:@\w+)?(?:\s|$)/i.test(text) || text === 'ℹ️ Как это работает')) {
@@ -8311,11 +8383,14 @@ async function processTelegramUpdate(request, cfg, update) {
 }
 
 async function apiBillingPlans(request, cfg, user) {
-  const webhook = await billingWebhookStatus(request, cfg);
+  const webhook = cfg.monetizationEnabled
+    ? await billingWebhookStatus(request, cfg)
+    : { ready:false, reason:'monetization_paused', expectedUrl:`${new URL(request.url).origin}/telegram/webhook`, currentUrl:'', lastError:'' };
   const quota = await getQuota(user.id, cfg);
   const record = await getUserRecord(user.id, cfg);
   return json({
-    ready: webhook.ready,
+    enabled: Boolean(cfg.monetizationEnabled),
+    ready: Boolean(cfg.monetizationEnabled && webhook.ready),
     reason: webhook.reason || '',
     webhook: { expectedUrl: webhook.expectedUrl, currentUrl: webhook.currentUrl || '', lastError: webhook.lastError || '' },
     current: {
@@ -8446,6 +8521,60 @@ async function apiBillingSubscription(request, cfg, user) {
   });
   await updateUserSubscription(user.id, { subscription_canceled: action === 'cancel' }, cfg);
   return json({ ok: true, canceled: action === 'cancel' });
+}
+
+async function apiBillingRefund(request, cfg, user) {
+  if (!isAdminUser(user, cfg)) return adminForbidden();
+
+  let body;
+  try { body = await request.json(); }
+  catch { return json({ error:'Некорректное тело запроса.', code:'BILLING_INVALID_JSON' }, 400); }
+
+  const targetUserId = Number(body?.telegramId || 0);
+  const chargeId = String(body?.telegramPaymentChargeId || '').trim();
+  const reason = String(body?.reason || '').trim().slice(0, 240);
+  if (!Number.isSafeInteger(targetUserId) || targetUserId <= 0 || !chargeId || chargeId.length > 240) {
+    return json({ error:'Нужны корректные telegramId и Telegram payment charge ID.', code:'BILLING_REFUND_INVALID_TARGET' }, 400);
+  }
+  if (reason.length < 3) {
+    return json({ error:'Для ручного возврата укажите причину.', code:'BILLING_REFUND_REASON_REQUIRED' }, 400);
+  }
+
+  const source = await findRefundableBillingCharge(targetUserId, chargeId, cfg);
+  if (!source) return json({ error:'Платёж с таким charge ID не принадлежит указанному пользователю.', code:'BILLING_REFUND_NOT_FOUND' }, 404);
+  if (source.status === 'refunded') {
+    return json({ error:'Этот платёж уже отмечен как возвращённый.', code:'BILLING_REFUND_ALREADY_APPLIED' }, 409);
+  }
+
+  await telegramApi('refundStarPayment', cfg, {
+    user_id: targetUserId,
+    telegram_payment_charge_id: chargeId,
+  });
+  const revoked = await applyRefundedPayment(targetUserId, chargeId, cfg);
+  await recordOpsEvent(cfg, {
+    severity:'warning',
+    source:'billing',
+    eventType:'manual_refund',
+    code:'BILLING_MANUAL_REFUND',
+    message:'Администратор выполнил ручной возврат Telegram Stars.',
+    endpoint:'/api/admin/billing/refund',
+    status:200,
+    meta:{
+      kind:source.kind,
+      product:source.plan,
+      chargeSuffix:chargeId.slice(-8),
+      reason,
+      actorRole:'admin',
+    },
+  }).catch(() => null);
+
+  return json({
+    ok:true,
+    refunded:true,
+    kind:source.kind,
+    subscriptionRevoked:Boolean(revoked?.subscriptionRevoked),
+    passRevoked:Boolean(revoked?.passRevoked),
+  });
 }
 
 const {
@@ -24218,6 +24347,7 @@ const API_ROUTE_DEPS = Object.freeze({
   apiChannelPublisherTest,
   apiPhase5Dashboard,
   apiBillingInvoice,
+  apiBillingRefund,
   apiBillingPlans,
   apiBillingSubscription,
   apiBillingSync,
