@@ -658,7 +658,7 @@ export function createBillingModule({
       return;
     }
     passFixtureId = id;
-    if (typeof openProfile === 'function') await openProfile({ preservePassContext:true });
+    if (typeof openProfile === 'function') await openProfile();
     await loadPassAccess({ fixtureId:id, force:true });
     render();
     $('passStore')?.scrollIntoView?.({ behavior:'smooth', block:'start' });
