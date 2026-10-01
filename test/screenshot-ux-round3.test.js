@@ -39,8 +39,11 @@ test('advanced filters stay compact until the user opens them', () => {
 
 test('public date feed batches yesterday today and tomorrow into one provider request', () => {
   assert.match(worker, /function publicFeedDateWindow\(date\)/);
-  assert.match(worker, /\{ from:feedWindow\.from, to:feedWindow\.to \}/);
+  assert.match(worker, /\{from:feedWindow\.from,to:feedWindow\.to\}/);
   assert.match(worker, /grouped=new Map\(feedWindow\.days/);
+  const start = worker.indexOf('async function apiMatches');
+  const end = worker.indexOf('function normalizeStandingRow', start);
+  assert.equal((worker.slice(start, end).match(/apiFootball\(/g) || []).length, 1);
   assert.match(worker, /providerFixtureDateCacheKey\(day\)/);
 });
 
