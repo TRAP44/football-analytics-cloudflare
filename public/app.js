@@ -4899,7 +4899,6 @@ function renderMatchCenter(d) {
 async function openMatchCenter(fixtureId, btn) {
   if (state.analysisActionPending) state.analysisRequestSeq += 1;
   const sourceView = activeViewId();
-  const requestSeq = ++state.analysisRequestSeq;
   if (sourceView !== 'analysisView') state.analysisBackView = sourceView;
   if (Number(state.currentCenter?.match?.fixtureId || 0) !== Number(fixtureId)) state.currentCenterTab = 'summary';
   const original = btn?.textContent || '';
@@ -4964,6 +4963,7 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
     return;
   }
   const sourceView = activeViewId();
+  const requestSeq = ++state.analysisRequestSeq;
   if (sourceView !== 'analysisView') state.analysisBackView = sourceView;
   if (!runtimeAllows('analysisEnabled')) {
     toast(state.runtimeStatus?.message || 'Полный анализ временно приостановлен.');
