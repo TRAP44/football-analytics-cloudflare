@@ -21682,11 +21682,14 @@ async function apiMatches(request, cfg) {
       fixtures=providerBatch.fixtures;
     } else {
       const feedWindow=publicFeedDateWindow(date);
+      const providerParams=feedWindow
+        ? {from:feedWindow.from,to:feedWindow.to}
+        : {date};
+      const fetchedFixtures=await apiFootball('/fixtures',providerParams,cfg);
+      const fetchedAt=new Date().toISOString();
       if (feedWindow) {
-        const windowFixtures=await apiFootball('/fixtures', { from:feedWindow.from, to:feedWindow.to }, cfg);
-        const fetchedAt=new Date().toISOString();
         const grouped=new Map(feedWindow.days.map(day=>[day,[]]));
-        for (const fixture of windowFixtures) {
+        for (const fixture of fetchedFixtures) {
           const fixtureDate=fixtureProviderDate(fixture);
           if (grouped.has(fixtureDate)) grouped.get(fixtureDate).push(fixture);
         }
@@ -21701,9 +21704,9 @@ async function apiMatches(request, cfg) {
         ));
         fixtures=grouped.get(date) || [];
       } else {
-        fixtures = await apiFootball('/fixtures', { date }, cfg);
+        fixtures=fetchedFixtures;
         const providerBatchTtl=isToday ? 2 : isYesterday ? 720 : cfg.cacheMinutes;
-        await setCache(providerBatchKey,0,{fixtures,fetchedAt:new Date().toISOString()},cfg,providerBatchTtl).catch(()=>null);
+        await setCache(providerBatchKey,0,{fixtures,fetchedAt},cfg,providerBatchTtl).catch(()=>null);
       }
     }
   } catch (error) {
