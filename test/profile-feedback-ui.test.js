@@ -41,5 +41,6 @@ test('Match Pass profile context does not inherit an unrelated last viewed fixtu
   assert.match(billing, /function clearPassContext/);
   assert.doesNotMatch(billing, /Сервер подпишет именно этот fixtureId/);
   assert.match(billing, /Match Pass будет привязан к выбранному матчу №/);
-  assert.match(app, /preservePassContext/);
+  assert.match(app, /profileBtn[\s\S]*billingModule\.clearPassContext/);
+  assert.match(app, /navProfile[\s\S]*billingModule\.clearPassContext/);
 });
