@@ -50,6 +50,10 @@ test('Pass prices keep requested defaults and are server-configurable', () => {
   assert.equal(passProductConfig('WEEKEND_PASS', {}).stars, 149);
   assert.equal(passProductConfig('DAY_PASS', { passPrices: { DAY_PASS: 99 } }).stars, 99);
   assert.equal(passProductConfig('DAY_PASS', { passDurations: { DAY_PASS: 12 } }).durationHours, 12);
+  assert.equal(passProductConfig('WEEKEND_PASS', {}).saleReady, false);
+  const weekend = passProductConfig('WEEKEND_PASS', { passUsageLimits: { WEEKEND_PASS: 6 } });
+  assert.equal(weekend.usageLimit, 6);
+  assert.equal(weekend.saleReady, true);
 });
 
 test('fa2 Telegram Stars payload signs user, Pass type and fixture and rejects tampering', async () => {
@@ -186,6 +190,32 @@ test('duplicate and concurrent payment activation are idempotent and conflicting
   assert.equal(memory.userEntitlements.size, 1);
 });
 
+test('Weekend Pass requires an explicit package cap and reservation refunds failed work', async () => {
+  const { service, memory } = memoryRuntime();
+  const cfg = { passUsageLimits: { WEEKEND_PASS: 2 } };
+  const activation = await service.activatePassPurchase({
+    telegramId: 42,
+    passType: PASS_TYPES.WEEKEND,
+    fixtureId: 0,
+    starsAmount: 149,
+    paymentChargeId: 'charge-weekend',
+    invoicePayload: 'signed-weekend',
+    paidAt: new Date(Date.now() - 60 * 1000).toISOString(),
+  }, cfg);
+  assert.equal(activation.activated, true);
+  const stored = memory.userEntitlements.get('charge-weekend');
+  assert.equal(stored.usage_limit, 2);
+
+  const resolved = await service.resolveUserEntitlements(42, 123, cfg);
+  const first = await service.reserveEntitlementUsage(42, resolved.passes.active, 123, cfg);
+  assert.equal(first.allowed, true);
+  assert.equal(first.reserved, true);
+  assert.equal(memory.userEntitlements.get('charge-weekend').usage_count, 1);
+
+  assert.equal((await service.refundEntitlementUsage(42, first.entitlementId, cfg)).updated, true);
+  assert.equal(memory.userEntitlements.get('charge-weekend').usage_count, 0);
+});
+
 test('usage consumption is atomic in service semantics and refund revokes Pass access', async () => {
   const { service, memory, mutations } = memoryRuntime();
   const activation = await service.activatePassPurchase({
@@ -219,7 +249,11 @@ test('v6.25 migration is additive, service-role-only and protects duplicate/conc
   assert.match(sql, /pg_advisory_xact_lock/i);
   assert.match(sql, /payment_charge_conflict/i);
   assert.match(sql, /create or replace function public\.consume_pass_entitlement/i);
+  assert.match(sql, /p_usage_limit integer/i);
+  assert.match(sql, /v_type = 'WEEKEND_PASS' and p_usage_limit is null/i);
   assert.match(sql, /usage_count = usage_count \+ 1/i);
+  assert.match(sql, /create or replace function public\.refund_pass_entitlement_usage/i);
+  assert.match(sql, /usage_count = greatest\(0, usage_count - 1\)/i);
   assert.match(sql, /create or replace function public\.refund_pass_entitlement/i);
   assert.match(sql, /alter table public\.user_entitlements enable row level security/i);
   assert.match(sql, /revoke all privileges on table public\.user_entitlements from public, anon, authenticated/i);
@@ -267,9 +301,11 @@ test('full AI uses Pass entitlement server-side instead of the FREE quota gate f
   const source = worker.slice(start, end > start ? end : start + 40000);
 
   assert.match(source, /resolveUserEntitlements\(user\.id, fixtureId, cfg\)/);
-  assert.match(source, /const passAccess = entitlementBefore\.source === 'pass'/);
-  assert.match(source, /if \(!freeRecheck && !passAccess && quotaBefore\.left <= 0\)/);
+  assert.match(source, /const passCandidate = entitlementBefore\.source === 'pass'/);
+  assert.match(source, /if \(!freeRecheck && !passCandidate && quotaBefore\.left <= 0\)/);
+  assert.match(source, /reserveEntitlementUsage\(user\.id,entitlementBefore\.passes\.active,fixtureId,cfg\)/);
   assert.match(source, /if \(!freeRecheck && !passAccess\) \{\s*usageReservation=await reserveAnalysisQuota/);
+  assert.match(source, /refundEntitlementUsage\(user\.id,passUsageReservation\.entitlementId,cfg\)/);
   assert.doesNotMatch(source, /users\.plan\s*=\s*['"]PASS['"]/);
 });
 
@@ -287,6 +323,8 @@ test('Worker reuses the established billing route/webhook and keeps monetization
   assert.match(worker, /createInvoiceLink/);
   assert.match(worker, /prices: \[\{ label: product\.title, amount: product\.stars \}\]/);
   assert.match(worker, /BILLING_ENTITLEMENT_STORE_UNAVAILABLE/);
+  assert.match(worker, /BILLING_PASS_USAGE_LIMIT_REQUIRED/);
+  assert.match(env, /WEEKEND_PASS_USAGE_LIMIT=/);
   assert.match(router, /url\.pathname === '\/api\/entitlements'/);
   assert.match(router, /url\.pathname === '\/api\/billing\/invoice'/);
   assert.match(router, /if \(!cfg\.monetizationEnabled\) return json/);
