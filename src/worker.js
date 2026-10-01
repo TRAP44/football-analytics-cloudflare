@@ -15072,6 +15072,16 @@ function clientTelemetryMetadata(body = {}, event = '') {
     networkMode: redactOpsString(meta.networkMode || '', 30),
     bootMs: Number.isFinite(Number(meta.bootMs)) ? Math.max(0, Math.min(60000, Math.round(Number(meta.bootMs)))) : null,
     durationMs: event === 'operation_timing' && Number.isFinite(rawDurationMs) ? Math.max(0, Math.min(120000, Math.round(rawDurationMs))) : null,
+    moduleReadyMs: event === 'boot_ok' && Number.isFinite(Number(meta.moduleReadyMs)) ? Math.max(0, Math.min(60000, Math.round(Number(meta.moduleReadyMs)))) : null,
+    navigationReadyMs: event === 'boot_ok' && Number.isFinite(Number(meta.navigationReadyMs)) ? Math.max(0, Math.min(60000, Math.round(Number(meta.navigationReadyMs)))) : null,
+    responseEndMs: event === 'boot_ok' && Number.isFinite(Number(meta.responseEndMs)) ? Math.max(0, Math.min(60000, Math.round(Number(meta.responseEndMs)))) : null,
+    domContentLoadedMs: event === 'boot_ok' && Number.isFinite(Number(meta.domContentLoadedMs)) ? Math.max(0, Math.min(60000, Math.round(Number(meta.domContentLoadedMs)))) : null,
+    firstContentfulPaintMs: event === 'boot_ok' && Number.isFinite(Number(meta.firstContentfulPaintMs)) ? Math.max(0, Math.min(60000, Math.round(Number(meta.firstContentfulPaintMs)))) : null,
+    manifestMs: event === 'boot_ok' && Number.isFinite(Number(meta.manifestMs)) ? Math.max(0, Math.min(60000, Math.round(Number(meta.manifestMs)))) : null,
+    identityMs: event === 'boot_ok' && Number.isFinite(Number(meta.identityMs)) ? Math.max(0, Math.min(60000, Math.round(Number(meta.identityMs)))) : null,
+    feedMs: event === 'boot_ok' && Number.isFinite(Number(meta.feedMs)) ? Math.max(0, Math.min(60000, Math.round(Number(meta.feedMs)))) : null,
+    revealDelayMs: event === 'boot_ok' && Number.isFinite(Number(meta.revealDelayMs)) ? Math.max(0, Math.min(5000, Math.round(Number(meta.revealDelayMs)))) : null,
+    viewportWidth: event === 'boot_ok' && Number.isFinite(Number(meta.viewportWidth)) ? Math.max(200, Math.min(2400, Math.round(Number(meta.viewportWidth)))) : null,
     matchMode: event === 'data_coverage' && ['upcoming','live','finished'].includes(String(meta.matchMode || '').toLowerCase())
       ? String(meta.matchMode || '').toLowerCase()
       : null,

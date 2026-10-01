@@ -6,6 +6,7 @@ import { createApiClient } from '../public/modules/client-core.js';
 const app=fs.readFileSync('public/app.js','utf8');
 const runtime=fs.readFileSync('public/modules/app-runtime.js','utf8');
 const html=fs.readFileSync('public/index.html','utf8');
+const worker=fs.readFileSync('src/worker.js','utf8');
 
 function block(start,end){
   const a=app.indexOf(start);
@@ -26,6 +27,28 @@ test('startup parallelizes runtime and identity before the access gate',()=>{
   assert.match(identitySlice,/loadProfile\(\)\.catch\(\(\)=>null\)/);
   assert.doesNotMatch(identitySlice,/loadFavorites|loadMatches/);
   assert.doesNotMatch(startup,/await loadRuntimeStatus\(false\);[\s\S]*?await loadProfile/);
+});
+
+test('startup profiling separates browser/navigation and server-backed boot phases',()=>{
+  const startup=block('async function runStartupSequence','const api = createApiClient');
+  const boot=block('function hideBootGate','function showBootRecovery');
+  for (const phase of ['manifestMs','identityMs','feedMs','revealDelayMs']) {
+    assert.match(startup,new RegExp(`state\\.startup\\.timings\\.${phase}`));
+    assert.match(boot,new RegExp(`${phase}: state\\.startup\\.timings\\.${phase}`));
+  }
+  assert.match(boot,/getEntriesByType\?\.\('navigation'\)/);
+  assert.match(boot,/first-contentful-paint/);
+  assert.match(boot,/moduleReadyMs/);
+  assert.match(boot,/navigationReadyMs/);
+  assert.match(boot,/viewportWidth/);
+
+  const telemetryStart=worker.indexOf('function clientTelemetryMetadata');
+  const telemetryEnd=worker.indexOf('async function apiClientTelemetry',telemetryStart);
+  const telemetry=worker.slice(telemetryStart,telemetryEnd);
+  for (const field of ['moduleReadyMs','navigationReadyMs','responseEndMs','domContentLoadedMs','firstContentfulPaintMs','manifestMs','identityMs','feedMs','revealDelayMs','viewportWidth']) {
+    assert.match(telemetry,new RegExp(field));
+  }
+  assert.match(telemetry,/event === 'boot_ok'/);
 });
 
 test('public feed remains behind access control and admin reminders stay off the boot path',()=>{
