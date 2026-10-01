@@ -228,6 +228,38 @@ test('v6.25 migration is additive, service-role-only and protects duplicate/conc
   assert.doesNotMatch(sql, /\bdrop\s+(table|column|schema)\b/i);
 });
 
+test('entitlement store failure denies Pass without breaking existing FREE or subscription access', async () => {
+  const brokenStore = createEntitlementService({
+    memory: { userEntitlements: new Map() },
+    hasSupabase: () => true,
+    supaSelectMany: async () => { throw new Error('relation unavailable'); },
+    supaRpc: async () => { throw new Error('unexpected rpc'); },
+    getUserRecord: async () => ({ telegram_id: 42, plan: 'FREE', subscription_until: null }),
+  });
+  const free = await brokenStore.resolveUserEntitlements(42, 777, {}, NOW);
+  assert.equal(free.store.available, false);
+  assert.equal(free.store.reason, 'entitlement_store_unavailable');
+  assert.equal(free.source, 'free');
+  assert.equal(free.access.expandedAi, false);
+
+  const subscribedStore = createEntitlementService({
+    memory: { userEntitlements: new Map() },
+    hasSupabase: () => true,
+    supaSelectMany: async () => { throw new Error('relation unavailable'); },
+    supaRpc: async () => { throw new Error('unexpected rpc'); },
+    getUserRecord: async () => ({
+      telegram_id: 42,
+      plan: 'PRO',
+      subscription_until: '2026-11-01T00:00:00.000Z',
+    }),
+  });
+  const pro = await subscribedStore.resolveUserEntitlements(42, 777, {}, NOW);
+  assert.equal(pro.store.available, false);
+  assert.equal(pro.source, 'subscription');
+  assert.equal(pro.effectiveTier, 'PRO');
+  assert.equal(pro.access.expandedAi, true);
+});
+
 test('full AI uses Pass entitlement server-side instead of the FREE quota gate for the entitled scope', () => {
   const worker = fs.readFileSync('src/worker.js', 'utf8');
   const start = worker.indexOf('async function apiAnalyze(');
@@ -254,6 +286,7 @@ test('Worker reuses the established billing route/webhook and keeps monetization
   assert.match(worker, /passVerified/);
   assert.match(worker, /createInvoiceLink/);
   assert.match(worker, /prices: \[\{ label: product\.title, amount: product\.stars \}\]/);
+  assert.match(worker, /BILLING_ENTITLEMENT_STORE_UNAVAILABLE/);
   assert.match(router, /url\.pathname === '\/api\/entitlements'/);
   assert.match(router, /url\.pathname === '\/api\/billing\/invoice'/);
   assert.match(router, /if \(!cfg\.monetizationEnabled\) return json/);
