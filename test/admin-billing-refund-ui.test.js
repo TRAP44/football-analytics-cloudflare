@@ -47,7 +47,8 @@ test('admin refund UI requires reason, explicit confirmation and server refund e
 
 test('admin surface loads refund module only for admins', () => {
   assert.match(app, /ensureAdminBillingRefundModule/);
-  assert.match(app, /if \(!isAdmin\(\) \|\| !\$\('adminBillingRefundPanel'\)\) return null/);
+  assert.match(app, /if \(!isAdmin\(\)\) return null/);
+  assert.match(app, /mountAdminBillingRefundPanel\(document\)/);
   assert.match(app, /essentials\.push\(loadAdminBillingRefund\(false\)\)/);
 });
 
