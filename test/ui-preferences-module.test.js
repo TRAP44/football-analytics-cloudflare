@@ -33,5 +33,5 @@ test('UI preferences module owns theme accent and button-style behavior', () => 
 test('frontend revision refreshes the extracted module graph', () => {
   assert.match(FRONTEND_ASSET_REVISION, /^6\.120\.0-launch\d+$/);
   assert.ok(index.includes(`frontend-asset-revision" content="${FRONTEND_ASSET_REVISION}"`));
-  assert.ok(index.includes(`/app-public.js?v=${FRONTEND_ASSET_REVISION}`));
+  assert.ok(index.includes(`/app.js?v=${FRONTEND_ASSET_REVISION}`));
 });
