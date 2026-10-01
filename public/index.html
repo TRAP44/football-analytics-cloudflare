@@ -364,6 +364,43 @@
             </article>
           </div>
 
+
+          <section id="passStore" class="pass-store" aria-labelledby="passStoreTitle">
+            <div class="pass-store-head">
+              <div>
+                <span class="profile-zone-kicker">РАЗОВЫЙ ДОСТУП</span>
+                <h3 id="passStoreTitle">Match / Day / Weekend Pass</h3>
+                <p id="passContext">Проверяем доступ и продукты на сервере…</p>
+              </div>
+              <button id="passRefreshBtn" class="icon-btn pass-refresh-btn" type="button" aria-label="Обновить Pass-доступ">↻</button>
+            </div>
+            <div id="passStoreStatus" class="pass-store-status" role="status" aria-live="polite">Обновляем Pass-доступ…</div>
+            <div id="activePasses" class="active-passes" hidden></div>
+            <div class="pass-grid">
+              <article id="matchPassCard" class="pass-card" data-pass-type="MATCH_PASS">
+                <div class="pass-card-top"><strong id="matchPassTitle">Match Pass</strong><b id="matchPassPrice">— ⭐</b></div>
+                <p>Расширенный AI-доступ для одного выбранного матча.</p>
+                <div class="pass-meta"><span id="matchPassDuration">—</span><span id="matchPassUsage">Проверяем сервер…</span></div>
+                <small id="matchPassState">Откройте Pass из конкретного матча</small>
+                <button id="matchPassBtn" type="button" disabled>Откройте матч</button>
+              </article>
+              <article id="dayPassCard" class="pass-card" data-pass-type="DAY_PASS">
+                <div class="pass-card-top"><strong id="dayPassTitle">Day Pass</strong><b id="dayPassPrice">— ⭐</b></div>
+                <p>Расширенный AI-доступ MatchRadar на ограниченный срок.</p>
+                <div class="pass-meta"><span id="dayPassDuration">—</span><span id="dayPassUsage">Проверяем сервер…</span></div>
+                <small id="dayPassState">Проверяем доступ…</small>
+                <button id="dayPassBtn" type="button" disabled>Проверяем…</button>
+              </article>
+              <article id="weekendPassCard" class="pass-card" data-pass-type="WEEKEND_PASS">
+                <div class="pass-card-top"><strong id="weekendPassTitle">Weekend Pass</strong><b id="weekendPassPrice">— ⭐</b></div>
+                <p>Расширенный AI-доступ на футбольный уикенд с серверным лимитом.</p>
+                <div class="pass-meta"><span id="weekendPassDuration">—</span><span id="weekendPassUsage">Проверяем сервер…</span></div>
+                <small id="weekendPassState">Проверяем готовность…</small>
+                <button id="weekendPassBtn" type="button" disabled>Проверяем…</button>
+              </article>
+            </div>
+          </section>
+
           <div class="billing-actions">
             <button id="billingSyncBtn" class="secondary-setting-btn" type="button" disabled>Проверить оплату</button>
             <button id="subscriptionManageBtn" class="secondary-setting-btn" type="button" hidden>Отключить автопродление</button>

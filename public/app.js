@@ -1841,7 +1841,7 @@ const billingModule = createBillingModule({
 });
 function renderBilling() { return billingModule.render(); }
 function loadBilling(...args) { return billingModule.load(...args); }
-function showQuotaPaywall() { return billingModule.showQuotaPaywall(); }
+function showQuotaPaywall(fixtureId = 0) { return billingModule.showQuotaPaywall(fixtureId); }
 function hideQuotaPaywall() { return billingModule.hideQuotaPaywall(); }
 
 let adminProviderModule = null;
@@ -4697,7 +4697,7 @@ function renderMatchCenter(d) {
 
       <div class="center-hero-actions ${isAdmin() ? 'has-admin-audit' : ''}">
         <button id="centerRefreshBtn" class="reminder-btn" type="button">↻ Обновить</button>
-        ${upcoming ? `<button id="centerAnalyzeBtn" class="primary-btn center-analyze-inline" type="button">🧠 Полный анализ</button>` : ''}
+        ${upcoming ? `<button id="centerAnalyzeBtn" class="primary-btn center-analyze-inline" type="button">🧠 Полный анализ</button><button id="centerMatchPassBtn" class="reminder-btn center-pass-btn" type="button">⭐ Pass на матч</button>` : ''}
         ${isAdmin() ? `<button id="centerCoverageAuditBtn" class="reminder-btn admin-audit-btn" type="button">🧪 Покрытие</button>` : ''}
         ${isAdmin() ? `<button id="centerE2EBtn" class="reminder-btn admin-e2e-btn" type="button">🚦 E2E</button>` : ''}
       </div>
@@ -4824,6 +4824,7 @@ function renderMatchCenter(d) {
   }));
 
   $('centerAnalyzeBtn')?.addEventListener('click', e => analyzeMatch(Number(m.fixtureId), e.currentTarget));
+  $('centerMatchPassBtn')?.addEventListener('click', () => { void billingModule.openPassStoreForFixture(Number(m.fixtureId)); });
   $('centerCoverageAuditBtn')?.addEventListener('click', async () => {
     await runProviderCoverageAudit(Number(m.fixtureId), true);
     await openProfileView();
@@ -4968,7 +4969,7 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
   } catch (e) {
     const recovery=e.payload?.newsImpactRecovery || null;
     const quotaExhausted = e.status === 429 && !String(e.payload?.code || '').startsWith('FOOTBALL_');
-    if (quotaExhausted) showQuotaPaywall();
+    if (quotaExhausted) showQuotaPaywall(fixtureId);
     if (recovery?.message) {
       toast(recovery.message);
       if (recovery.action==='search') {

@@ -6,10 +6,17 @@
   "assets": {
     "directory": "./public",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/health", "/health/*", "/telegram/*"]
+    "run_worker_first": [
+      "/api/*",
+      "/health",
+      "/health/*",
+      "/telegram/*"
+    ]
   },
   "triggers": {
-    "crons": ["*/5 * * * *"]
+    "crons": [
+      "*/5 * * * *"
+    ]
   },
   "version_metadata": {
     "binding": "CF_VERSION_METADATA"
@@ -21,6 +28,7 @@
     "PRO_DAILY_LIMIT": "20",
     "PREMIUM_DAILY_LIMIT": "100",
     "CACHE_MINUTES": "20",
-    "GROWTH_RETENTION_DAYS": "90"
+    "GROWTH_RETENTION_DAYS": "90",
+    "WEEKEND_PASS_USAGE_LIMIT": "6"
   }
 }

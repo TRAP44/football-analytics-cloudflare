@@ -3550,3 +3550,44 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
   .billing-panel { padding-left:11px; padding-right:11px; }
   .billing-pricing-grid .pricing-card { padding:12px; }
 }
+
+
+/* Issue #303 — Pass purchase UI */
+.pass-store { margin-top:16px; padding-top:14px; border-top:1px solid var(--line); min-width:0; max-width:100%; overflow:hidden; }
+.pass-store * { min-width:0; box-sizing:border-box; }
+.pass-store-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+.pass-store-head h3 { margin:3px 0 0; font-size:15px; }
+.pass-store-head p { margin:5px 0 0; color:var(--hint); font-size:10px; line-height:1.45; overflow-wrap:anywhere; }
+.pass-refresh-btn { flex:0 0 auto; }
+.pass-store-status { margin-top:9px; color:var(--hint); font-size:9px; line-height:1.4; }
+.pass-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-top:10px; width:100%; max-width:100%; }
+.pass-card { display:flex; flex-direction:column; gap:7px; padding:11px; border:1px solid var(--line); border-radius:13px; background:rgba(148,163,184,.035); overflow:hidden; }
+.pass-card[data-state="active"] { border-color:rgba(34,197,94,.35); background:rgba(34,197,94,.055); }
+.pass-card[data-state="expired"], .pass-card[data-state="exhausted"] { opacity:.82; }
+.pass-card[data-state="unavailable"], .pass-card[data-state="paused"] { background:rgba(148,163,184,.025); }
+.pass-card-top { display:flex; justify-content:space-between; align-items:flex-start; gap:7px; }
+.pass-card-top strong { font-size:12px; }
+.pass-card-top b { white-space:nowrap; font-size:11px; }
+.pass-card p { margin:0; color:var(--hint); font-size:9px; line-height:1.4; overflow-wrap:anywhere; }
+.pass-meta { display:flex; flex-wrap:wrap; gap:5px; }
+.pass-meta span { padding:4px 6px; border-radius:999px; background:rgba(148,163,184,.09); color:var(--hint); font-size:8px; overflow-wrap:anywhere; }
+.pass-card small { min-height:28px; color:var(--hint); font-size:8px; line-height:1.35; overflow-wrap:anywhere; }
+.pass-card button { width:100%; max-width:100%; margin-top:auto; white-space:normal; overflow-wrap:anywhere; }
+.active-passes { display:grid; gap:6px; margin-top:9px; }
+.active-pass-row { display:flex; justify-content:space-between; gap:8px; padding:8px 9px; border-radius:10px; background:rgba(34,197,94,.06); border:1px solid rgba(34,197,94,.18); }
+.active-pass-row strong { font-size:9px; }
+.active-pass-row span { color:var(--hint); font-size:8px; text-align:right; overflow-wrap:anywhere; }
+.center-pass-btn { white-space:normal; }
+@media (max-width:430px) {
+  .pass-grid { grid-template-columns:1fr; }
+  .pass-card { width:100%; max-width:100%; padding:10px; }
+  .pass-card small { min-height:0; }
+  .active-pass-row { flex-direction:column; gap:3px; }
+  .active-pass-row span { text-align:left; }
+}
+@media (max-width:360px) {
+  .pass-store { margin-left:0; margin-right:0; }
+  .pass-store-head { gap:6px; }
+  .pass-card-top { flex-wrap:wrap; }
+  .pass-meta { display:grid; grid-template-columns:minmax(0,1fr); }
+}
