@@ -940,6 +940,37 @@ function isAdmin() {
     && state.profile?.features?.role === 'admin';
 }
 
+let adminBillingRefundModule = null;
+let adminBillingRefundModulePromise = null;
+async function ensureAdminBillingRefundModule() {
+  if (!isAdmin() || !$('adminBillingRefundPanel')) return null;
+  if (adminBillingRefundModule) return adminBillingRefundModule;
+  if (!adminBillingRefundModulePromise) {
+    adminBillingRefundModulePromise = import('./modules/admin-billing-refund.js').then(({ createAdminBillingRefundModule }) => {
+      adminBillingRefundModule = createAdminBillingRefundModule({
+        state,
+        elementById: $,
+        api,
+        escapeHtml,
+        toast,
+        isAdmin,
+        confirmAction: message => window.confirm(message),
+        reloadProfile: () => loadProfile(),
+      });
+      adminBillingRefundModule.bind();
+      return adminBillingRefundModule;
+    });
+  }
+  return adminBillingRefundModulePromise;
+}
+function renderAdminBillingRefund() {
+  adminBillingRefundModule?.render();
+}
+async function loadAdminBillingRefund(...args) {
+  const module = await ensureAdminBillingRefundModule();
+  return module?.load(...args);
+}
+
 
 let adminBetaDashboardModule = null;
 let adminBetaDashboardModulePromise = null;
@@ -1311,6 +1342,7 @@ function renderProfile() {
   renderBilling();
   renderDigestSettings();
   renderSmartNotifications();
+  renderAdminBillingRefund();
   applyAdminVisibility();
   if (state.profile?.features?.runtime) state.runtimeStatus = state.profile.features.runtime;
   renderDataCapabilities();
@@ -1476,6 +1508,7 @@ async function openProfileView() {
     essentials.push(loadRuntimeControlsAdmin(false));
     essentials.push(loadDiagnostics(false));
     essentials.push(loadReminderHealth(false));
+    essentials.push(loadAdminBillingRefund(false));
   }
   await Promise.allSettled(essentials);
   if (isAdmin()) renderAdminOverview();
