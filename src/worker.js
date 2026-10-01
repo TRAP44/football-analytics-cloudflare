@@ -159,6 +159,7 @@ const memory = {
     integrityQuarantined: 0,
     integrityDuplicates: 0,
     singleflightJoins: 0,
+    providerFixtureDateReuses: 0,
     burstBlocks: 0,
     telegramBurstBlocks: 0,
     telegramDuplicateUpdates: 0,
@@ -3375,7 +3376,7 @@ async function loadBotFixtureCard(fixtureId, cfg) {
     return card;
   }
   if (!freeQuotaHealthy(6,1)) return { fixtureId:id, home:{id:0,name:'Матч',logo:''}, away:{id:0,name:String(id),logo:''}, homeName:'Матч', awayName:String(id), league:'Футбол', live:false, finished:false };
-  const fixture = (await apiFootball('/fixtures',{id},cfg).catch(()=>[]))[0];
+  const fixture = await loadProviderFixture(id,cfg).catch(()=>null);
   if (!fixture) return null;
   const card = normalizeBotFixtureCard(fixture);
   await rememberBotFixtureCards([card], cfg);
@@ -7459,7 +7460,7 @@ async function currentDailyDigest(cfg) {
   const cached=await getCache(cacheKey,cfg);
   if (cached?.rows) return cached;
   try {
-    const fixtures=await apiFootball('/fixtures',{date},cfg);
+    const fixtures=await loadProviderFixturesForDate(date,cfg);
     const payload={date,rows:digestFixtureRows(fixtures),generatedAt:new Date().toISOString(),source:'provider',providerDegraded:false};
     await setCache(cacheKey,0,payload,cfg,10);
     return payload;
@@ -7487,7 +7488,7 @@ async function loadBotDayMatches(cfg, { liveOnly = false, limit = 8 } = {}) {
   const cached=await getCache(`matches:${date}:v6-integrity`,cfg).catch(()=>null);
   let matches=(cached?.matches || []).map(normalizeBotFixtureCard).filter(x=>x.fixtureId);
   if (!matches.length && freeQuotaHealthy(8,1)) {
-    const fixtures=await apiFootball('/fixtures',{date},cfg).catch(()=>[]);
+    const fixtures=await loadProviderFixturesForDate(date,cfg).catch(()=>[]);
     matches=digestFixtureRows(fixtures,20).map(normalizeBotFixtureCard).filter(x=>x.fixtureId);
   }
   if (liveOnly) matches=matches.filter(x=>x.live);
@@ -11737,7 +11738,7 @@ async function runSettlementFinalityVerification(cfg) {
   const fixtureIds = new Set(selected.map(row => Number(row.fixture_id)).filter(Boolean));
   const fixtureMap = new Map();
   for (const date of dates) {
-    const fixtures = await apiFootball('/fixtures', { date }, cfg);
+    const fixtures = await loadProviderFixturesForDate(date, cfg);
     for (const fixture of fixtures || []) {
       const id = fixtureIdentity(fixture);
       if (fixtureIds.has(id)) fixtureMap.set(id, fixture);
@@ -12420,7 +12421,7 @@ async function apiModelRemediation(request, cfg, user) {
   const actionId = crypto.randomUUID();
   try {
     for (const date of dates) {
-      const rows = await apiFootball('/fixtures', { date }, cfg);
+      const rows = await loadProviderFixturesForDate(date, cfg);
       fixtures.push(...rows.filter(fixture => fixtureSet.has(fixtureIdentity(fixture))));
     }
     const settlement = await settlePredictionsFromFixtures(fixtures, cfg);
@@ -12651,7 +12652,7 @@ async function runSettlementWatchdog(cfg) {
     auditStarted = true;
 
     for (const date of dates) {
-      const rows = await apiFootball('/fixtures', { date }, cfg);
+      const rows = await loadProviderFixturesForDate(date, cfg);
       fixtures.push(...rows.filter(fixture => fixtureSet.has(fixtureIdentity(fixture))));
     }
     const settlement = await settlePredictionsFromFixtures(fixtures, cfg);
@@ -12772,7 +12773,7 @@ async function settleBacktestDaily(cfg) {
   }
   if (!freeQuotaHealthy(12, 3)) return { skipped: 'provider_quota_guard', date, pending: pending.length };
   try {
-    const fixtures = await apiFootball('/fixtures', { date }, cfg);
+    const fixtures = await loadProviderFixturesForDate(date, cfg);
     const result = await settlePredictionsFromFixtures(fixtures, cfg);
     await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), pending: pending.length, settled: result.settled }, cfg, 1440);
     return { date, pending: pending.length, settled: result.settled };
@@ -12905,7 +12906,7 @@ async function refreshPostMatchSettlement(candidates = [], predictions = [], cfg
     if (await getCache(markerKey,cfg)) continue;
     await setCache(markerKey,0,{state:'probing',at:new Date().toISOString()},cfg,30);
     try {
-      const fixtures=await apiFootball('/fixtures',{date},cfg);
+      const fixtures=await loadProviderFixturesForDate(date,cfg);
       const relevant=(fixtures || []).filter(f=>pendingIds.has(fixtureIdentity(f)));
       const result=await settlePredictionsFromFixtures(relevant,cfg);
       probed++;
@@ -13557,6 +13558,7 @@ function providerBudgetProfile() {
       cache: Number(memory.providerFeatureFetch?.cache || 0),
       stale: Number(memory.providerFeatureFetch?.stale || 0),
       skipped: Number(memory.providerFeatureFetch?.skipped || 0),
+      fixtureDateReuses: Number(memory.telemetry?.providerFixtureDateReuses || 0),
       byFeature: memory.providerFeatureFetch?.byFeature || {},
       lastUpdatedAt: memory.providerFeatureFetch?.lastUpdatedAt || null,
     },
@@ -21600,6 +21602,24 @@ async function apiSearch(request, cfg) {
 
 function providerFixtureDateCacheKey(date) {
   return `provider-fixtures:${String(date || '')}:v1`;
+}
+
+async function loadProviderFixturesForDate(date, cfg, { allowNetwork = true, forceRefresh = false } = {}) {
+  const normalized=String(date || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return [];
+  const cacheKey=providerFixtureDateCacheKey(normalized);
+  if (!forceRefresh) {
+    const cached=await getCache(cacheKey,cfg).catch(()=>null);
+    if (Array.isArray(cached?.fixtures)) {
+      bumpTelemetry('providerFixtureDateReuses');
+      return cached.fixtures;
+    }
+  }
+  if (!allowNetwork) return [];
+  const fixtures=await apiFootball('/fixtures',{date:normalized},cfg);
+  const fetchedAt=new Date().toISOString();
+  await setCache(cacheKey,0,{fixtures,fetchedAt},cfg,providerFeedDateTtl(normalized,cfg)).catch(()=>null);
+  return fixtures;
 }
 
 function providerFixtureDirectCacheKey(fixtureId) {
