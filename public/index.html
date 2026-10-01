@@ -288,18 +288,18 @@
               <span class="muted">Анализы сегодня</span>
               <strong id="profileUsage">0 / 3</strong>
             </div>
-            <div>
+            <button id="profileFavoriteTeamsBtn" class="profile-stat-link" type="button" aria-label="Открыть мои команды">
               <span class="muted">Избранные команды</span>
               <strong id="favoriteCount">0</strong>
-            </div>
+            </button>
             <div>
               <span class="muted">Отслеживаемые игроки</span>
               <strong id="favoritePlayerCount">0</strong>
             </div>
-            <div>
+            <button id="profileRemindersBtn" class="profile-stat-link" type="button" aria-label="Перейти к активным напоминаниям">
               <span class="muted">Напоминания</span>
               <strong id="reminderCount">0</strong>
-            </div>
+            </button>
           </div>
         </div>
 
@@ -347,7 +347,7 @@
               <ul>
                 <li>Расширенный дневной AI-лимит</li>
                 <li>Расширенные AI-возможности</li>
-                <li>Дополнительные smart-уведомления</li>
+                <li>Дополнительные умные уведомления</li>
               </ul>
               <button id="proBtn" type="button" disabled>Проверяем оплату…</button>
             </article>
@@ -358,7 +358,7 @@
               <ul>
                 <li>Максимальный дневной AI-лимит</li>
                 <li>Максимальные AI-возможности</li>
-                <li>Расширенные LIVE и notification-возможности</li>
+                <li>Расширенные LIVE-возможности и уведомления</li>
               </ul>
               <button id="premiumBtn" type="button" disabled>Проверяем оплату…</button>
             </article>
@@ -369,8 +369,8 @@
             <div class="pass-store-head">
               <div>
                 <span class="profile-zone-kicker">РАЗОВЫЙ ДОСТУП</span>
-                <h3 id="passStoreTitle">Match / Day / Weekend Pass</h3>
-                <p id="passContext">Проверяем доступ и продукты на сервере…</p>
+                <h3 id="passStoreTitle">Разовый AI-доступ</h3>
+                <p id="passContext">Проверяем доступ…</p>
               </div>
               <button id="passRefreshBtn" class="icon-btn pass-refresh-btn" type="button" aria-label="Обновить Pass-доступ">↻</button>
             </div>
@@ -430,18 +430,7 @@
         </section>
 
 
-        <section class="panel profile-teams-shortcut">
-          <div class="section-head profile-section-head">
-            <div>
-              <h2>⭐ Мои команды</h2>
-              <p>Любимые клубы и их ближайшие матчи собраны в отдельном разделе.</p>
-            </div>
-            <button id="profileMyTeamsBtn" class="secondary-btn" type="button">Открыть</button>
-          </div>
-        </section>
-
-
-        <section class="panel">
+        <section id="remindersPanel" class="panel">
           <div class="section-head profile-section-head">
             <div>
               <h2>🔔 Активные напоминания</h2>
@@ -526,22 +515,22 @@
         </section>
 
         <details class="profile-data-details">
-          <summary><span><strong>Доступность данных</strong><small>Что обычно доступно по матчам</small></span><b id="dataModeSummary">Обычное</b></summary>
+          <summary><span><strong>Что может быть в матче</strong><small>Составы, игроки, статистика и коэффициенты</small></span><b id="dataModeSummary">Подробнее</b></summary>
         <section class="panel data-mode-panel">
           <div class="section-head profile-section-head">
             <div>
-              <h2>⚽ Данные по матчам</h2>
-              <p>Составы, статистика и коэффициенты доступны не для всех турниров.</p>
+              <h2>⚽ Данные матча</h2>
+              <p>Набор данных зависит от турнира и от того, что передаёт источник.</p>
             </div>
           </div>
           <div class="provider-status-grid public-data-grid">
-            <div><span>Объём</span><strong id="dataModeLabel">Обычное</strong></div>
-            <div><span>Обновления</span><strong id="dataModeRefresh">автоматические</strong></div>
-            <div><span>Составы</span><strong id="dataModeLineups">По наличию</strong></div>
-            <div><span>Игроки</span><strong id="dataModePlayers">По наличию</strong></div>
-            <div><span>Коэффициенты</span><strong id="dataModeOdds">По наличию</strong></div>
+            <div><span>Режим</span><strong id="dataModeLabel">Стандартный</strong></div>
+            <div><span>Обновление</span><strong id="dataModeRefresh">автоматически</strong></div>
+            <div><span>Составы</span><strong id="dataModeLineups">Если доступны</strong></div>
+            <div><span>Игроки</span><strong id="dataModePlayers">Если доступны</strong></div>
+            <div><span>Коэффициенты</span><strong id="dataModeOdds">Если доступны</strong></div>
           </div>
-          <p id="dataModeNote" class="tiny">Доступность зависит от турнира и конкретного матча.</p>
+          <p id="dataModeNote" class="tiny">Если каких-то данных нет, MatchRadar не подставляет их искусственно.</p>
         </section>
         </details>
 

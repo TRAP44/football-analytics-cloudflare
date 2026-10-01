@@ -220,8 +220,11 @@ test('Profile UI is progressive-disclosure and server capabilities drive locked 
   assert.match(html,/id="smartNotificationsRoot"/);
   assert.match(moduleSource,/<details class="smart-notification-details">/);
   assert.match(moduleSource,/Мои игроки/);
-  assert.match(moduleSource,/AI \/ Radar/);
-  assert.match(moduleSource,/Radar: confidence/);
+  assert.match(moduleSource,/AI-сигналы/);
+  assert.match(moduleSource,/Радар: уверенность/);
+  assert.match(moduleSource,/smartNotificationsUpgradeBtn/);
+  assert.doesNotMatch(moduleSource,/cooldown/);
+  assert.doesNotMatch(moduleSource,/Smart Alerts/);
   for (const width of [320,360,375,390,430]) {
     const coveredByResponsiveContract = width <= 430;
     assert.equal(coveredByResponsiveContract, true);

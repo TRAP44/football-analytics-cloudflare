@@ -1,5 +1,21 @@
 export const DIGEST_FIXED_HOUR_UTC = 7;
 
+export function digestLocalDeliveryWindow(hourUtc = DIGEST_FIXED_HOUR_UTC, date = new Date(), timeZone = '') {
+  const hour = Number.isInteger(Number(hourUtc)) && Number(hourUtc) >= 0 && Number(hourUtc) <= 23
+    ? Number(hourUtc)
+    : DIGEST_FIXED_HOUR_UTC;
+  const anchor = date instanceof Date && Number.isFinite(date.getTime()) ? date : new Date();
+  const start = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), anchor.getUTCDate(), hour, 0, 0));
+  const end = new Date(start.getTime() + 55 * 60 * 1000);
+  const options = { hour:'2-digit', minute:'2-digit', ...(timeZone ? { timeZone } : {}) };
+  try {
+    const format = new Intl.DateTimeFormat('ru-RU', options);
+    return `${format.format(start)}–${format.format(end)}`;
+  } catch {
+    return `${String(hour).padStart(2, '0')}:00–${String(hour).padStart(2, '0')}:55`;
+  }
+}
+
 export function normalizeDigestSettingsPayload(payload = {}) {
   const raw = payload?.settings || payload || {};
   const plan = ['FREE', 'PRO', 'PREMIUM'].includes(String(raw.plan || '').toUpperCase())
@@ -48,7 +64,7 @@ export function digestDeliverySummary(settings = {}) {
   return {
     title: normalized.enabled ? 'Подборка включена' : 'Подборка выключена',
     status: normalized.enabled ? 'Включена' : 'Выключена',
-    delivery: normalized.delivery.label,
+    delivery: digestLocalDeliveryWindow(normalized.delivery.hourUtc),
     plan: normalized.plan,
   };
 }
@@ -99,6 +115,7 @@ export function createDigestSettingsModule({
     const checked = model.pendingEnabled === null ? settings.enabled : Boolean(model.pendingEnabled);
     const summary = digestDeliverySummary({ ...settings, enabled: checked });
     const teams = settings.favoriteTeams;
+    const localDeliveryWindow = digestLocalDeliveryWindow(settings.delivery.hourUtc);
     const favoriteHint = settings.capabilities.favoritePriority
       ? 'Любимые команды получают приоритет в серверной подборке.'
       : 'Любимые команды уже связаны с профилем. Текущий серверный Digest пока отправляет общую подборку без отдельного приоритета по командам.';
@@ -122,14 +139,14 @@ export function createDigestSettingsModule({
         <i></i>
       </label>
       <div class="digest-settings-grid">
-        <div><span>Время доставки</span><strong>${escapeHtml(settings.delivery.label)}</strong><small>Фиксированное окно текущей серверной доставки · 07:00–07:55 UTC</small></div>
+        <div><span>Время доставки</span><strong>${escapeHtml(localDeliveryWindow)}</strong><small>По вашему местному времени · ежедневное фиксированное окно</small></div>
         <div><span>Тариф</span><strong>${escapeHtml(planLabel(settings.plan))}</strong><small>${settings.capabilities.planSpecificContent ? 'Расширенное содержание тарифа подключено.' : 'Используется базовое содержание, доступное текущей серверной доставке.'}</small></div>
       </div>
       <div class="digest-favorites">
         <strong>⭐ Любимые команды</strong>
         ${teamsHtml}
       </div>
-      <p class="tiny digest-time-note">Местное время доставки пока не настраивается: серверный планировщик работает в UTC. Это ограничение показано явно, чтобы не обещать функцию, которой ещё нет на сервере.</p>
+      <p class="tiny digest-time-note">Время пока нельзя изменить вручную. MatchRadar автоматически показывает серверное окно доставки в вашем местном времени.</p>
       ${model.error ? `<p class="digest-inline-error" role="status">${escapeHtml(model.error)}</p>` : ''}
     `;
 

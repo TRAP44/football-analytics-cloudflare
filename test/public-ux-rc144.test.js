@@ -34,11 +34,12 @@ test('public profile remains available to non-admin users while admin controls s
   assert.match(app, /querySelectorAll\('\[data-admin-only\]'\)/);
 });
 
-test('profile keeps favorite-team management in one dedicated My Teams destination', () => {
+test('profile keeps favorite-team management in My Teams without a duplicate Profile block', () => {
   assert.doesNotMatch(html, /id="favoriteTeams"/);
-  assert.match(html, /id="profileMyTeamsBtn"[^>]*>Открыть<\/button>/);
-  assert.match(html, /Любимые клубы и их ближайшие матчи собраны в отдельном разделе/);
-  assert.match(app, /\$\('profileMyTeamsBtn'\)\?\.addEventListener/);
+  assert.doesNotMatch(html, /id="profileMyTeamsBtn"/);
+  assert.doesNotMatch(html, /profile-teams-shortcut/);
+  assert.match(html, /id="profileFavoriteTeamsBtn"/);
+  assert.match(app, /\$\('profileFavoriteTeamsBtn'\)\?\.addEventListener/);
   assert.match(app, /renderMyTeams\(\);[\s\S]{0,80}showView\('myTeamsView'\)/);
 });
 

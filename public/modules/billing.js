@@ -46,12 +46,12 @@ export function passUiState({
   let state = 'available';
   if (!product || product.saleReady === false) state = 'unavailable';
   else if (subscriptionActive) state = 'included';
+  else if (type === 'MATCH_PASS' && !safeFixtureId(fixtureId)) state = 'needs-fixture';
   else if (decision?.active && exactFixture) state = 'active';
   else if (type === 'MATCH_PASS' && decision?.reason === 'fixture_mismatch' && future) state = 'active-other';
   else if (decision?.reason === 'usage_exhausted') state = 'exhausted';
   else if (decision && (!future || decision.reason === 'expired')) state = 'expired';
   else if (!paymentsEnabled) state = 'paused';
-  else if (type === 'MATCH_PASS' && !safeFixtureId(fixtureId)) state = 'needs-fixture';
 
   return { state, decision, expiresAt:decision?.expiresAt || null };
 }
@@ -124,12 +124,15 @@ export function createBillingModule({
   }
 
   function contextFixtureId() {
-    return safeFixtureId(
-      passFixtureId
-      || state.currentCenter?.match?.fixtureId
-      || state.currentAnalysis?.match?.fixtureId
-      || 0
-    );
+    return safeFixtureId(passFixtureId);
+  }
+
+  function clearPassContext() {
+    if (!passFixtureId) return;
+    passFixtureId = 0;
+    passLoaded = false;
+    passError = '';
+    render();
   }
 
   function paymentStatus(snapshot) {
@@ -184,7 +187,7 @@ export function createBillingModule({
   function passUsageLabel(product) {
     const limit = Number(product?.usageLimit || 0);
     if (limit > 0) return String(limit) + ' полных AI-анализов';
-    return 'Без пакетного лимита';
+    return 'Без лимита анализов';
   }
 
   function passStateCopy(type, view) {
@@ -194,7 +197,7 @@ export function createBillingModule({
     if (view.state === 'exhausted') return 'Пакет использован';
     if (view.state === 'included') return 'Расширенный доступ уже входит в подписку';
     if (view.state === 'unavailable') return type === 'WEEKEND_PASS' ? 'Пока недоступен: серверный лимит не настроен' : 'Пока недоступен';
-    if (view.state === 'needs-fixture') return 'Откройте Pass из конкретного матча';
+    if (view.state === 'needs-fixture') return 'Чтобы купить Match Pass, откройте нужный матч';
     if (view.state === 'paused') return 'Покупка пока на паузе';
     return 'Доступен к покупке';
   }
@@ -219,8 +222,8 @@ export function createBillingModule({
 
     const context = $('passContext');
     if (context) context.textContent = fixtureId
-      ? 'Контекст Match Pass: матч #' + fixtureId + '. Сервер подпишет именно этот fixtureId.'
-      : 'Match Pass покупается из конкретного матча. Day Pass и Weekend Pass доступны из Профиля.';
+      ? 'Match Pass будет привязан к выбранному матчу №' + fixtureId + '.'
+      : 'Чтобы купить Match Pass, откройте нужный матч. Day Pass и Weekend Pass можно купить здесь.';
 
     if ($('passStoreStatus')) {
       $('passStoreStatus').textContent = passError
@@ -273,7 +276,7 @@ export function createBillingModule({
       active.innerHTML = visible.length ? visible.map(row => {
         const type = String(row.type || '');
         const title = PASS_META[type]?.title || type;
-        const scope = type === 'MATCH_PASS' && row.fixtureId ? ' · матч #' + Number(row.fixtureId) : '';
+        const scope = type === 'MATCH_PASS' && row.fixtureId ? ' · матч №' + Number(row.fixtureId) : '';
         const usage = row.usageLimit != null ? ' · ' + Number(row.usageCount || 0) + '/' + Number(row.usageLimit) : '';
         const expiry = row.expiresAt ? ' · до ' + dateTime(row.expiresAt) : '';
         return '<div class="active-pass-row"><strong>' + title + '</strong><span>' + scope.replace(/^ · /,'') + usage + expiry + '</span></div>';
@@ -662,7 +665,7 @@ export function createBillingModule({
   }
 
   async function openPlansFromQuota() {
-    if (typeof openProfile === 'function') await openProfile();
+    if (typeof openProfile === 'function') await openProfile({ preservePassContext:true });
     await load({ force: !loaded });
     const id = contextFixtureId();
     if (id) await loadPassAccess({ fixtureId:id, force:true });
@@ -699,6 +702,7 @@ export function createBillingModule({
   return Object.freeze({
     bind,
     buyPass,
+    clearPassContext,
     buyPlan,
     hideQuotaPaywall,
     load,
