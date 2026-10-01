@@ -182,9 +182,9 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
     return await apiModelRemediation(request, cfg, user);
   }
   if (request.method === 'GET' && url.pathname === '/api/entitlements') return await apiEntitlements(request, cfg, user);
-  if (request.method === 'GET' && url.pathname === '/api/billing/plans') return await apiBillingPlans(request, cfg, user);
   if (url.pathname.startsWith('/api/billing/')) {
     if (!cfg.monetizationEnabled) return json({ error: 'Монетизация отложена до финального этапа проекта.' }, 404);
+    if (request.method === 'GET' && url.pathname === '/api/billing/plans') return await apiBillingPlans(request, cfg, user);
     if (request.method === 'POST' && url.pathname === '/api/billing/invoice') return await apiBillingInvoice(request, cfg, user);
     if (request.method === 'POST' && url.pathname === '/api/billing/sync') return await apiBillingSync(request, cfg, user);
     if (request.method === 'POST' && url.pathname === '/api/billing/subscription') return await apiBillingSubscription(request, cfg, user);

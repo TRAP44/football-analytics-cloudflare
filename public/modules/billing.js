@@ -75,8 +75,12 @@ export function createBillingModule({
     const price = $(plan === 'PRO' ? 'proPrice' : 'premiumPrice');
     const limit = $(plan === 'PRO' ? 'proLimit' : 'premiumLimit');
     const button = $(plan === 'PRO' ? 'proBtn' : 'premiumBtn');
-    if (price) price.textContent = cfg ? String(cfg.stars) + ' ⭐ / 30 дней' : 'Цена загружается…';
-    if (limit) limit.textContent = cfg ? String(cfg.dailyLimit) + ' AI-разборов / день' : 'Лимит загружается…';
+    if (price) price.textContent = cfg
+      ? String(cfg.stars) + ' ⭐ / 30 дней'
+      : (snapshot.monetizationEnabled ? 'Цена загружается…' : 'Пока недоступно');
+    if (limit) limit.textContent = cfg
+      ? String(cfg.dailyLimit) + ' AI-разборов / день'
+      : (snapshot.monetizationEnabled ? 'Лимит загружается…' : 'После включения оплаты');
     if (!button) return;
 
     const currentPaid = paidPlans.has(snapshot.plan);
@@ -102,7 +106,7 @@ export function createBillingModule({
     root.classList.toggle('is-loading', loading);
     root.classList.toggle('is-paused', !snapshot.monetizationEnabled);
 
-    setText('billingPlanBadge', snapshot.plan);
+    setText('billingPlanBadge', snapshot.plan === 'FREE' ? 'Бесплатный' : snapshot.plan);
     setText('billingQuotaUsed', snapshot.used);
     setText('billingQuotaLimit', snapshot.limit || '—');
     setText('billingQuotaLeft', snapshot.limit ? snapshot.left : '—');
@@ -162,6 +166,22 @@ export function createBillingModule({
   }
 
   async function load({ force = false } = {}) {
+    if (state.profile?.features?.monetizationEnabled === false) {
+      state.billing = {
+        enabled: false,
+        ready: false,
+        current: {
+          plan: state.profile?.billing?.plan || state.profile?.quota?.plan || 'FREE',
+          subscriptionUntil: state.profile?.billing?.subscriptionUntil || null,
+          canceled: Boolean(state.profile?.billing?.canceled),
+        },
+      };
+      loaded = true;
+      loading = false;
+      lastError = '';
+      render();
+      return state.billing;
+    }
     if (loading || (loaded && !force)) {
       render();
       return state.billing;

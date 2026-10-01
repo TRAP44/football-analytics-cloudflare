@@ -40,13 +40,13 @@ test('expired subscription renders as FREE without trusting stale client plan st
   assert.equal(snapshot.canceled, true);
 });
 
-test('plan catalog is readable while purchase mutations remain behind MONETIZATION_ENABLED', () => {
-  const plans = router.indexOf("url.pathname === '/api/billing/plans'");
+test('billing endpoints remain fail-closed while MONETIZATION_ENABLED is false', () => {
   const gate = router.indexOf("if (!cfg.monetizationEnabled) return json");
+  const plans = router.indexOf("url.pathname === '/api/billing/plans'");
   const invoice = router.indexOf("url.pathname === '/api/billing/invoice'");
-  assert.ok(plans > 0 && gate > plans && invoice > gate);
+  assert.ok(gate > 0 && plans > gate && invoice > gate);
+  assert.match(billingModule, /state\.profile\?\.features\?\.monetizationEnabled === false/);
   assert.match(worker, /enabled: Boolean\(cfg\.monetizationEnabled\)/);
-  assert.match(worker, /ready: Boolean\(cfg\.monetizationEnabled && webhook\.ready\)/);
   assert.match(env, /MONETIZATION_ENABLED=false/);
   assert.doesNotMatch(env, /MONETIZATION_ENABLED=true/);
 });
@@ -98,7 +98,7 @@ test('AI quota exhaustion is a soft paywall and does not hide football surfaces'
   assert.match(html, /Матчи, LIVE, составы и статистика остаются доступны бесплатно/);
   assert.match(app, /const quotaExhausted = e\.status === 429/);
   assert.match(app, /showQuotaPaywall\(\)/);
-  assert.match(app, /retry: quotaExhausted \? null/);
+  assert.match(app, /retry: \(\) => analyzeMatch/);
   assert.match(billingModule, /quotaUpgradeBtn/);
   assert.match(billingModule, /openProfile/);
 });
@@ -110,7 +110,7 @@ test('billing UI covers payment states and guards duplicate actions', () => {
   assert.match(billingModule, /if \(!paidPlans\.has\(normalized\) \|\| busyAction \|\| syncing\) return/);
   assert.match(billingModule, /busyAction = 'purchase:' \+ normalized/);
   assert.match(billingModule, /after\.plan === normalized/);
-  assert.match(billingModule, /сервер ещё синхронизирует доступ/);
+  assert.match(billingModule, /Сервер ещё синхронизирует доступ/);
 });
 
 test('billing layout has explicit narrow-screen safeguards for 320-430 class widths', () => {

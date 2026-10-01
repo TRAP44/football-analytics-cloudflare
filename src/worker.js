@@ -2771,7 +2771,7 @@ async function applyRefundedPayment(userId, paymentChargeId, cfg) {
     }
   }
 
-  const passRefund = await refundPassByCharge(uid, chargeId, cfg).catch(() => ({ updated:false, reason:'not_found' }));
+  const passRefund = await refundPassByCharge(userId, chargeId, cfg).catch(() => ({ updated:false, reason:'not_found' }));
   const record = await getUserRecord(uid, cfg);
   let subscriptionRevoked = false;
   if (record && String(record.telegram_payment_charge_id || '') === chargeId) {

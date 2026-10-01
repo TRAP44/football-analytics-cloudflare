@@ -908,10 +908,10 @@ const billingModule = createBillingModule({
   reloadProfile: () => loadProfile(),
   openProfile: () => openProfileView(),
 });
-const renderBilling = () => billingModule.render();
-const loadBilling = (...args) => billingModule.load(...args);
-const showQuotaPaywall = () => billingModule.showQuotaPaywall();
-const hideQuotaPaywall = () => billingModule.hideQuotaPaywall();
+function renderBilling() { return billingModule.render(); }
+function loadBilling(...args) { return billingModule.load(...args); }
+function showQuotaPaywall() { return billingModule.showQuotaPaywall(); }
+function hideQuotaPaywall() { return billingModule.hideQuotaPaywall(); }
 
 async function loadProfile() {
   const previousProfile = state.profile;
@@ -4995,7 +4995,7 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
         message: quotaExhausted
           ? 'AI-разборы на сегодня закончились. Матчи, LIVE, составы и статистика остаются доступны бесплатно.'
           : (e.status === 429 ? 'Источник футбольных данных временно ограничил обновления.' : (e.message || 'Не удалось подготовить анализ.')),
-        retry: quotaExhausted ? null : () => analyzeMatch(fixtureId, null, options),
+        retry: () => analyzeMatch(fixtureId, null, options),
       });
     }
   } finally {
