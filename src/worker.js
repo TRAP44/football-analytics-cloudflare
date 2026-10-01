@@ -2791,6 +2791,25 @@ async function applySuccessfulPayment(userId, payment, cfg, fallbackDate = Math.
   const chargeId = String(payment.telegram_payment_charge_id || '');
   if (!chargeId) return false;
 
+  const existingCharge = await findRefundableBillingCharge(userId, chargeId, cfg).catch(() => null);
+  if (String(existingCharge?.status || '').toLowerCase() === 'refunded') {
+    await recordOpsEvent(cfg, {
+      severity:'warning',
+      source:'billing',
+      eventType:'refund_replay_blocked',
+      code:'BILLING_REFUNDED_CHARGE_REPLAY_BLOCKED',
+      message:'Refused to re-apply a refunded Telegram Stars charge.',
+      endpoint:'telegram_stars_sync',
+      status:200,
+      meta:{
+        kind:existingCharge?.kind || '',
+        product:existingCharge?.plan || '',
+        chargeSuffix:chargeId.slice(-8),
+      },
+    }).catch(() => null);
+    return false;
+  }
+
   const subscription = await parseInvoicePayload(payment.invoice_payload, cfg.botToken);
   if (subscription) {
     if (Number(subscription.userId) !== Number(userId)) return false;
