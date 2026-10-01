@@ -18,6 +18,7 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
     apiDataIntegrity,
     apiDiagnostics,
     apiDigestSettings,
+    apiEntitlements,
     apiFavoritePlayers,
     apiFavorites,
     apiFixtureShareLink,
@@ -175,6 +176,7 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
     if (!isAdminUser(user, cfg)) return adminForbidden();
     return await apiModelRemediation(request, cfg, user);
   }
+  if (request.method === 'GET' && url.pathname === '/api/entitlements') return await apiEntitlements(request, cfg, user);
   if (url.pathname.startsWith('/api/billing/')) {
     if (!cfg.monetizationEnabled) return json({ error: 'Монетизация отложена до финального этапа проекта.' }, 404);
     if (request.method === 'GET' && url.pathname === '/api/billing/plans') return await apiBillingPlans(request, cfg, user);
