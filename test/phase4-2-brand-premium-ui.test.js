@@ -80,9 +80,10 @@ test('profile keeps legal and service links after user settings',()=>{
   const settings=profile.indexOf('preferences-panel');
   const about=profile.indexOf('profile-about-service');
   assert.ok(settings>=0 && about>settings);
-  for(const label of ['Конфиденциальность','Условия использования','Статус сервиса','Сообщить о проблеме','Версия приложения']){
+  for(const label of ['Конфиденциальность','Условия использования','Сообщить о проблеме','Версия приложения']){
     assert.match(profile,new RegExp(label));
   }
+  assert.doesNotMatch(profile,/Статус сервиса|status\.html/);
 });
 
 test('existing fixture deep-link and share contracts remain available',()=>{

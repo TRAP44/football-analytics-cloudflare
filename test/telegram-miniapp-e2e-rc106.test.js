@@ -37,13 +37,11 @@ test('RC106 keeps history synchronized and avoids redundant personal reads after
   assert.match(block,/Promise\.allSettled\(secondaryTasks\)/);
 });
 
-test('RC106 full analysis exposes favorite actions and return to Telegram',()=>{
+test('RC106 full analysis exposes favorite actions without a redundant return-to-Telegram control',()=>{
   assert.match(app,/data-analysis-favorite=/);
   assert.match(app,/analysis-favorite-btn/);
-  assert.match(app,/id="returnToTelegramBtn"/);
-  assert.match(app,/function returnToTelegram\(\)/);
-  assert.match(app,/tg\?\.close/);
-  assert.match(app,/\$\('returnToTelegramBtn'\)\?\.addEventListener\('click', returnToTelegram\)/);
+  assert.match(app,/analysis-favorite-star/);
+  assert.doesNotMatch(app,/returnToTelegramBtn|function returnToTelegram\(/);
 });
 
 test('RC106 favorite mutation rerenders an open analysis',()=>{

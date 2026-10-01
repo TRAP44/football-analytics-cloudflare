@@ -82,7 +82,7 @@ test('profile prioritizes actionable team counter reminders settings and moves l
   assert.match(publicProfile,/О сервисе/);
   assert.match(publicProfile,/Конфиденциальность/);
   assert.match(publicProfile,/Условия использования/);
-  assert.match(publicProfile,/Статус сервиса/);
+  assert.doesNotMatch(publicProfile,/Статус сервиса|status\.html/);
   assert.match(publicProfile,/Сообщить о проблеме/);
   assert.match(publicProfile,/id="publicAppVersion"/);
   const search=block(html,'<section id="searchView"','<section id="tournamentView"');

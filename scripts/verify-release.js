@@ -633,7 +633,7 @@ if (!worker.includes('function telegramMiniAppE2EDrill')) failures.push('RC106 T
 if (!worker.includes("releaseCheck('telegram_miniapp_e2e_selftest'")) failures.push('RC106 blocking E2E release check is missing');
 if (!worker.includes("telegramMiniAppE2E: 'enabled'") || !worker.includes("telegramMiniAppE2ESelfTest: telegramMiniAppE2EDrill().pass ? 'enabled' : 'failed'")) failures.push('RC106 E2E health flags are missing');
 if (!worker.includes('telegramMiniAppE2E: true')) failures.push('RC106 E2E manifest feature is missing');
-if (!app.includes('function returnToTelegram()') || !app.includes("id=\"returnToTelegramBtn\"")) failures.push('RC106 Mini App return-to-Telegram action is missing');
+if (!app.includes('data-analysis-favorite=') || !app.includes('analysis-favorite-btn')) failures.push('RC106 Mini App favorite actions are missing');
 const rc106UserStateSync =
   app.includes('data-analysis-favorite=')
   && app.includes('const secondaryTasks = [loadHistory(false)]')

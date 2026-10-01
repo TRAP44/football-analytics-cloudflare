@@ -892,7 +892,6 @@ const smartNotificationsModule = createSmartNotificationsModule({
   api,
   escapeHtml,
   toast,
-  onOpenBilling: () => $('billingPanel')?.scrollIntoView?.({ behavior:'smooth', block:'start' }),
 });
 const {
   load: loadSmartNotifications,
@@ -2948,7 +2947,7 @@ function matchCardHtml(m, { grouped = false } = {}) {
           <strong>${escapeHtml(m.away?.name || '')}</strong>
         </button>
       </div>
-      <div class="match-card-actions compact-actions">${primaryAction}</div>
+      <div class="match-card-actions compact-actions single">${primaryAction}</div>
       <div class="match-secondary-actions" aria-label="Дополнительные действия">
         <span>${favoriteButton(m.home)}${favoriteButton(m.away)}</span>
         ${!m.finished ? `<button class="match-watch-btn compact ${watchActive ? 'active' : ''}" type="button" data-watch-fixture="${Number(m.fixtureId)}" aria-pressed="${watchActive ? 'true' : 'false'}" aria-label="${watchActive ? 'Перестать следить за матчем' : 'Следить за матчем'}">${watchActive ? '👁 Слежу' : '👁 Следить'}</button>` : ''}
@@ -5210,6 +5209,14 @@ function formSequence(form) {
   return String(form).split('').map(x => x === 'W' ? 'П' : x === 'D' ? 'Н' : x === 'L' ? 'ПР' : x).join(' · ');
 }
 
+function likelyOutcomeDisplay(probabilities, fallback = '') {
+  const rows = [Number(probabilities?.home), Number(probabilities?.draw), Number(probabilities?.away)]
+    .filter(Number.isFinite)
+    .sort((a, b) => b - a);
+  if (rows.length === 3 && rows[0] - rows[1] < 1) return 'Нет явного фаворита';
+  return String(fallback || 'Недостаточно данных');
+}
+
 function formCard(title, form) {
   const o = form?.overall;
   const v = form?.venue;
@@ -5715,15 +5722,6 @@ function aiInstructorHtml(ai = {}, match = {}, kickoffHandoff = {}) {
 }
 
 let launchIntentHandled = false;
-function returnToTelegram() {
-  if (tg?.close) {
-    tg.close();
-    return true;
-  }
-  showView(state.analysisBackView || CANONICAL_HOME_VIEW);
-  return false;
-}
-
 async function openLaunchFixture(fixtureId, action, tab = '', handoff = false, newsImpactDecision = '', newsImpactAction = '', newsImpactRecoveryCode = '', newsImpactRecoveryFrom = '') {
   const id = Number(fixtureId || 0);
   if (!id) return;
@@ -6030,7 +6028,7 @@ function renderAnalysis(d) {
 
       <div class="experience-callout">
         <span>Наиболее вероятный исход</span>
-        <strong>${escapeHtml(d.likelyOutcome || 'Недостаточно данных')}</strong>
+        <strong>${escapeHtml(likelyOutcomeDisplay(p, d.likelyOutcome))}</strong>
       </div>
 
       <div class="experience-prob-labels">
@@ -6049,9 +6047,8 @@ function renderAnalysis(d) {
       <div class="experience-actions">
         <button id="reminderBtn" class="reminder-btn ${reminderActive ? 'active' : ''} ${reminderPending ? 'is-pending' : ''}" type="button" aria-pressed="${reminderActive ? 'true' : 'false'}" ${reminderPending ? 'disabled' : ''}>${reminderPending ? '⏳ Сохраняю…' : reminderActive ? `🔔 За ${Number(activeReminder?.remindBeforeMinutes || 30)} мин.${activeReminder?.kickoffNotify ? ' + старт' : ''}` : `🔕 Напомнить за ${Number(state.preferences?.reminderMinutes || 30)} минут`}</button>
         <button id="shareAnalysisBtn" class="share-analysis-btn" type="button">↗ Поделиться матчем</button>
-        ${Number(m.home?.id || 0) ? `<button class="secondary-btn analysis-favorite-btn" type="button" data-analysis-favorite="${Number(m.home.id)}" data-team-name="${escapeHtml(m.home?.name || '')}" data-team-logo="${escapeHtml(m.home?.logo || '')}">${homeFavorite ? '★' : '☆'} ${escapeHtml(m.home?.name || 'Хозяева')}</button>` : ''}
-        ${Number(m.away?.id || 0) ? `<button class="secondary-btn analysis-favorite-btn" type="button" data-analysis-favorite="${Number(m.away.id)}" data-team-name="${escapeHtml(m.away?.name || '')}" data-team-logo="${escapeHtml(m.away?.logo || '')}">${awayFavorite ? '★' : '☆'} ${escapeHtml(m.away?.name || 'Гости')}</button>` : ''}
-        ${tg ? '<button id="returnToTelegramBtn" class="secondary-btn" type="button">↩ Вернуться в Telegram</button>' : ''}
+        ${Number(m.home?.id || 0) ? `<button class="secondary-btn analysis-favorite-btn ${homeFavorite ? 'active' : ''}" type="button" data-analysis-favorite="${Number(m.home.id)}" data-team-name="${escapeHtml(m.home?.name || '')}" data-team-logo="${escapeHtml(m.home?.logo || '')}" aria-pressed="${homeFavorite ? 'true' : 'false'}"><span class="analysis-favorite-star">${homeFavorite ? '★' : '☆'}</span><span class="analysis-favorite-copy"><small>${homeFavorite ? 'В избранном' : 'В избранное'}</small><strong>${escapeHtml(m.home?.name || 'Хозяева')}</strong></span></button>` : ''}
+        ${Number(m.away?.id || 0) ? `<button class="secondary-btn analysis-favorite-btn ${awayFavorite ? 'active' : ''}" type="button" data-analysis-favorite="${Number(m.away.id)}" data-team-name="${escapeHtml(m.away?.name || '')}" data-team-logo="${escapeHtml(m.away?.logo || '')}" aria-pressed="${awayFavorite ? 'true' : 'false'}"><span class="analysis-favorite-star">${awayFavorite ? '★' : '☆'}</span><span class="analysis-favorite-copy"><small>${awayFavorite ? 'В избранном' : 'В избранное'}</small><strong>${escapeHtml(m.away?.name || 'Гости')}</strong></span></button>` : ''}
       </div>
     </section>
 
@@ -6237,7 +6234,6 @@ function renderAnalysis(d) {
     name:btn.dataset.teamName || '',
     logo:btn.dataset.teamLogo || '',
   })));
-  $('returnToTelegramBtn')?.addEventListener('click', returnToTelegram);
   $('openPrematchBrief')?.addEventListener('click', () => setAnalysisTab('brief', true));
   $('analysis')?.querySelectorAll('[data-cockpit-tab]').forEach(btn => btn.addEventListener('click', () => setAnalysisTab(btn.dataset.cockpitTab || 'overview', true)));
   $('analysis')?.querySelectorAll('[data-open-team]').forEach(btn => btn.addEventListener('click', () => openTeam({

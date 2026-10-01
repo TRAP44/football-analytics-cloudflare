@@ -19747,8 +19747,10 @@ function outcomeName(probabilities, homeName, awayName) {
     { key: 'home', label: homeName || 'П1', value: Number(probabilities.home) },
     { key: 'draw', label: 'Ничья', value: Number(probabilities.draw) },
     { key: 'away', label: awayName || 'П2', value: Number(probabilities.away) },
-  ].sort((a, b) => b.value - a.value);
-  return rows[0]?.label || 'Недостаточно данных';
+  ].filter(row => Number.isFinite(row.value)).sort((a, b) => b.value - a.value);
+  if (rows.length !== 3) return 'Недостаточно данных';
+  if (rows[0].value - rows[1].value < 1) return 'Нет явного фаворита';
+  return rows[0].label;
 }
 
 function signalDisagreement(signals, finalP) {

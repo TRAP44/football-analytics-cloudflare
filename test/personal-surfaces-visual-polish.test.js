@@ -43,9 +43,11 @@ test('profile polish keeps team management focused in My Teams and preserves rem
   const profile=block(html,'<section id="profileView"','<nav class="bottom-nav"');
   for(const token of [
     'profileFavoriteTeamsBtn','profileRemindersBtn','reminderList','preferences-panel','savePreferencesBtn',
-    'profile-data-details','Конфиденциальность','Условия использования','Статус сервиса',
+    'Конфиденциальность','Условия использования',
   ]) assert.ok(profile.includes(token),token);
   assert.ok(!profile.includes('id="favoriteTeams"'),'favoriteTeams duplicate should not remain in Profile');
+  assert.ok(!profile.includes('profile-data-details'),'technical data drawer should not remain in Profile');
+  assert.ok(!profile.includes('Статус сервиса'),'technical status link should not remain in Profile');
   const favoriteFn=block(favoriteTeamsRenderer,'function renderFavoriteTeams','return Object.freeze');
   for(const token of ['favorite-team-row','favorite-team-main','favorite-remove']) assert.ok(favoriteFn.includes(token),token);
   assert.match(css,/\.miniapp-public-shell \.favorite-team-row/);
