@@ -6,7 +6,6 @@ const worker = fs.readFileSync('src/worker.js', 'utf8');
 const router = fs.readFileSync('src/router.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
 const adminHtml = fs.readFileSync('public/admin.html', 'utf8');
-const publicHtml = fs.readFileSync('public/index.html', 'utf8');
 const moduleSource = fs.readFileSync('public/modules/admin-billing-refund.js', 'utf8');
 
 test('admin refundable lookup is server-authorized and separate from the public profile', () => {
@@ -53,10 +52,11 @@ test('admin surface loads refund module only for admins', () => {
 });
 
 
-test('refund panel is also present on the normal Mini App for admin accounts', () => {
-  assert.match(publicHtml, /id="adminBillingRefundPanel"[\s\S]*data-admin-only/);
-  assert.match(publicHtml, /id="billingRefundUserId"/);
-  assert.match(publicHtml, /id="billingRefundLookupBtn"/);
-  assert.match(publicHtml, /id="billingRefundReason"/);
-  assert.match(publicHtml, /id="billingRefundConfirm"/);
+test('normal Mini App keeps a clean public DOM and mounts refund UI only after admin verification', () => {
+  const publicHtml = fs.readFileSync('public/index.html', 'utf8');
+  assert.doesNotMatch(publicHtml, /data-admin-only|adminBillingRefundPanel/);
+  assert.match(app, /if \(!isAdmin\(\)\) return null/);
+  assert.match(app, /mountAdminBillingRefundPanel\(document\)/);
+  assert.match(moduleSource, /export function mountAdminBillingRefundPanel/);
+  assert.match(moduleSource, /billing\.insertAdjacentElement\('afterend', section\)/);
 });
