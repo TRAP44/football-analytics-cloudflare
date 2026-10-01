@@ -739,7 +739,7 @@ test('post-deploy smoke rejects DEV_MODE in production', async () => {
 });
 
 
-test('post-deploy smoke rejects enabled monetization before closed beta', async () => {
+test('post-deploy smoke rejects enabled monetization when the release still expects paused', async () => {
   await assert.rejects(
     runDeploymentSmoke('https://football.example.test', '6.27.0-rc35', {
       fetchImpl: healthyFetch({ monetization: 'enabled' }),
