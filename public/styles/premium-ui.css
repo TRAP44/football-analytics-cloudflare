@@ -630,7 +630,6 @@ html[data-theme="light"] .miniapp-public-shell {
   margin: 18px 2px 9px;
 }
 .miniapp-public-shell .history-personal-head strong { font-size: 13px; }
-.miniapp-public-shell .history-personal-head span { color: var(--hint); font-size: 10px; }
 .miniapp-public-shell .history-list { gap: 8px; }
 .miniapp-public-shell .history-item {
   padding: 12px;
@@ -1003,7 +1002,6 @@ html[data-theme="light"] .miniapp-public-shell {
     padding: 0;
     justify-content: center;
   }
-  .miniapp-public-shell .profile-badge span { display: none; }
   .miniapp-public-shell .profile-badge i {
     width: 9px;
     height: 9px;

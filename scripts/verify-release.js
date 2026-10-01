@@ -35,8 +35,6 @@ const staticHeaders = fs.readFileSync('public/_headers', 'utf8');
 const styles = fs.readFileSync('public/styles.css', 'utf8');
 const publicShellStyles = fs.readFileSync('public/styles/public-shell.css', 'utf8');
 const premiumUiStyles = fs.readFileSync('public/styles/premium-ui.css', 'utf8');
-const publicEntry = fs.readFileSync('public/app-public.js', 'utf8');
-const adminEntry = fs.readFileSync('public/app-admin.js', 'utf8');
 const deployWorkflow = fs.readFileSync('.github/workflows/deploy-production.yml', 'utf8');
 const rollbackWorkflow = fs.readFileSync('.github/workflows/rollback-production.yml', 'utf8');
 const rollbackSmoke = fs.readFileSync('scripts/rollback-smoke.js', 'utf8');
@@ -72,12 +70,10 @@ const runtimeFrontendAssetRevision = /FRONTEND_ASSET_REVISION = '([^']+)'/.exec(
 if (!frontendAssetRevision || frontendAssetRevision === pkg.version || !frontendAssetRevision.startsWith(`${pkg.version}-`)) failures.push('Frontend asset revision must cache-bust the package version');
 if (!runtimeFrontendAssetRevision || runtimeFrontendAssetRevision !== frontendAssetRevision) failures.push('Frontend runtime asset revision must match public HTML');
 if (adminFrontendAssetRevision !== frontendAssetRevision) failures.push('Admin and public frontend asset revisions must match');
-for (const [name, surface, entrypoint] of [['public', html, '/app-public.js'], ['admin', adminHtml, '/app-admin.js']]) {
-  if (!surface.includes(`${entrypoint}?v=${frontendAssetRevision}`) || !surface.includes(`/styles.css?v=${frontendAssetRevision}`) || !surface.includes(`/styles/public-shell.css?v=${frontendAssetRevision}`)) failures.push(`${name} frontend JS/CSS cache-bust tokens must match the frontend asset revision`);
+for (const [name, surface] of [['public', html], ['admin', adminHtml]]) {
+  if (!surface.includes(`/app.js?v=${frontendAssetRevision}`) || !surface.includes(`/styles.css?v=${frontendAssetRevision}`) || !surface.includes(`/styles/public-shell.css?v=${frontendAssetRevision}`)) failures.push(`${name} frontend JS/CSS cache-bust tokens must match the frontend asset revision`);
 }
 if (!html.includes(`/styles/premium-ui.css?v=${frontendAssetRevision}`)) failures.push('Public premium UI cache-bust token must match the frontend asset revision');
-if (!publicEntry.includes(`import './app.js?v=${frontendAssetRevision}';`)) failures.push('Public entrypoint shared app import must match the frontend asset revision');
-if (!adminEntry.includes(`import './app.js?v=${frontendAssetRevision}';`)) failures.push('Admin entrypoint shared app import must match the frontend asset revision');
 if (!staticHeaders.includes('/styles/premium-ui.css') || !staticHeaders.includes('/modules/*')) failures.push('Frontend cache policy must explicitly revalidate premium UI and frontend modules');
 if (!premiumUiStyles.includes('--mr-touch-target: 44px')) failures.push('Public UI canonical touch-target contract is missing');
 if (!fs.existsSync('supabase/migrations/supabase_migration_v6_9.sql')) failures.push('Missing v6.9 migration');

@@ -5,7 +5,6 @@ import { FRONTEND_ASSET_REVISION } from '../public/modules/app-runtime.js';
 
 const html = fs.readFileSync('public/index.html', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
-const entry = fs.readFileSync('public/app-public.js', 'utf8');
 const premium = fs.readFileSync('public/styles/premium-ui.css', 'utf8');
 const worker = fs.readFileSync('src/worker.js', 'utf8');
 
@@ -14,8 +13,7 @@ test('public head has no literal escaped newline and bumps public asset revision
   assert.doesNotMatch(head, /\\n/);
   assert.ok(html.includes(`frontend-asset-revision" content="${FRONTEND_ASSET_REVISION}"`));
   assert.ok(html.includes(`premium-ui.css?v=${FRONTEND_ASSET_REVISION}`));
-  assert.ok(html.includes(`app-public.js?v=${FRONTEND_ASSET_REVISION}`));
-  assert.ok(entry.includes(`import './app.js?v=${FRONTEND_ASSET_REVISION}';`));
+  assert.ok(html.includes(`app.js?v=${FRONTEND_ASSET_REVISION}`));
 });
 
 test('Radar Feed uses a namespaced tone and a non-collapsing flex row', () => {

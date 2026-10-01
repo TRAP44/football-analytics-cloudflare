@@ -34,6 +34,6 @@ test('frontend revision refreshes both public surfaces from one runtime source o
   assert.match(FRONTEND_ASSET_REVISION, /^6\.120\.0-launch\d+$/);
   assert.ok(publicHtml.includes(`frontend-asset-revision" content="${FRONTEND_ASSET_REVISION}"`));
   assert.ok(adminHtml.includes(`frontend-asset-revision" content="${FRONTEND_ASSET_REVISION}"`));
-  assert.ok(publicHtml.includes(`/app-public.js?v=${FRONTEND_ASSET_REVISION}`));
-  assert.ok(adminHtml.includes(`/app-admin.js?v=${FRONTEND_ASSET_REVISION}`));
+  assert.ok(publicHtml.includes(`/app.js?v=${FRONTEND_ASSET_REVISION}`));
+  assert.ok(adminHtml.includes(`/app.js?v=${FRONTEND_ASSET_REVISION}`));
 });
