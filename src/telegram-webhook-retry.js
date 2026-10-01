@@ -45,13 +45,19 @@ export function classifyTelegramWebhookFailure(error, cfg) {
   const state = stateFor(cfg) || {};
   const code = String(error?.code || '');
   const transient = RETRYABLE_CODES.has(code);
+  const retrySafe = error?.telegramWebhookRetrySafe === true;
   const successfulEffects = Math.max(0, Number(state.successfulEffects || 0));
   const unsafeMutations = Math.max(0, Number(state.unsafeMutations || 0));
-  const retry = Boolean(transient && successfulEffects === 0 && unsafeMutations === 0);
+  const retry = Boolean(
+    (transient || retrySafe)
+    && successfulEffects === 0
+    && (unsafeMutations === 0 || retrySafe)
+  );
 
   return {
     retry,
     transient,
+    retrySafe,
     code: code || 'TELEGRAM_WEBHOOK_FAILURE',
     retryAfter: Math.max(0, Number(error?.retryAfter || 0)),
     successfulEffects,

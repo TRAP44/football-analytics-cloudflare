@@ -18,6 +18,7 @@ test('retry classifier allows only transient failures before any side effect', (
     {
       retry:true,
       transient:true,
+      retrySafe:false,
       code:'TELEGRAM_NETWORK',
       retryAfter:0,
       successfulEffects:0,
@@ -55,6 +56,40 @@ test('unsafe user mutations suppress webhook retries', () => {
   assert.equal(result.retry,false);
   assert.equal(result.unsafeMutations,1);
   assert.equal(result.lastMutation,'billing_payment');
+});
+
+test('explicit retry-safe reconciliation can retry after idempotent internal mutations', () => {
+  const cfg={};
+  beginTelegramWebhookAttempt(cfg);
+  assert.equal(markTelegramWebhookMutation(cfg,'billing_refund'),true);
+  const result=classifyTelegramWebhookFailure(
+    Object.assign(new Error('supabase unavailable'),{
+      code:'BILLING_REFUND_RECONCILIATION',
+      telegramWebhookRetrySafe:true,
+    }),
+    cfg,
+  );
+  assert.equal(result.retry,true);
+  assert.equal(result.transient,false);
+  assert.equal(result.retrySafe,true);
+  assert.equal(result.unsafeMutations,1);
+  assert.equal(result.lastMutation,'billing_refund');
+});
+
+test('retry-safe reconciliation still cannot retry after an external Telegram side effect', () => {
+  const cfg={};
+  beginTelegramWebhookAttempt(cfg);
+  markTelegramWebhookEffect(cfg,'sendMessage');
+  const result=classifyTelegramWebhookFailure(
+    Object.assign(new Error('reconcile'),{
+      code:'BILLING_REFUND_RECONCILIATION',
+      telegramWebhookRetrySafe:true,
+    }),
+    cfg,
+  );
+  assert.equal(result.retry,false);
+  assert.equal(result.retrySafe,true);
+  assert.equal(result.successfulEffects,1);
 });
 
 test('permanent Telegram rejection never retries even without side effects', () => {

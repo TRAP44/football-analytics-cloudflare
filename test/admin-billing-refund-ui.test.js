@@ -42,7 +42,8 @@ test('admin refund UI requires reason, explicit confirmation and server refund e
   assert.match(moduleSource, /telegramPaymentChargeId:String\(item\.paymentChargeId\)/);
   assert.match(moduleSource, /dedupe:false/);
   assert.match(worker, /refundStarPayment/);
-  assert.match(worker, /BILLING_REFUND_ALREADY_APPLIED/);
+  assert.match(worker, /CHARGE_ALREADY_REFUNDED/);
+  assert.match(worker, /reconciled:true/);
 });
 
 test('admin surface loads refund module only for admins', () => {
