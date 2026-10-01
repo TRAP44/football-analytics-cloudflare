@@ -1,3 +1,61 @@
+const PASS_TYPES = Object.freeze(['MATCH_PASS', 'DAY_PASS', 'WEEKEND_PASS']);
+const PASS_META = Object.freeze({
+  MATCH_PASS: Object.freeze({ title:'Match Pass', short:'Один матч' }),
+  DAY_PASS: Object.freeze({ title:'Day Pass', short:'24 часа' }),
+  WEEKEND_PASS: Object.freeze({ title:'Weekend Pass', short:'Футбольный уикенд' }),
+});
+
+function safeFixtureId(value) {
+  const id = Number(value || 0);
+  return Number.isSafeInteger(id) && id > 0 ? id : 0;
+}
+
+export function buildPassPurchaseBody(passType, fixtureId = 0) {
+  const type = String(passType || '').trim().toUpperCase();
+  if (!PASS_TYPES.includes(type)) return null;
+  if (type === 'MATCH_PASS') {
+    const id = safeFixtureId(fixtureId);
+    return id ? { passType:type, fixtureId:id } : null;
+  }
+  return { passType:type };
+}
+
+function latestPassDecision(entitlement = {}, passType = '') {
+  const rows = Array.isArray(entitlement?.decisions) ? entitlement.decisions : [];
+  return rows
+    .filter(row => String(row?.type || '').toUpperCase() === String(passType || '').toUpperCase())
+    .sort((a,b) => String(b?.expiresAt || '').localeCompare(String(a?.expiresAt || '')))[0] || null;
+}
+
+export function passUiState({
+  product = null,
+  entitlement = {},
+  passType = '',
+  fixtureId = 0,
+  paymentsEnabled = false,
+  subscriptionActive = false,
+  now = Date.now(),
+} = {}) {
+  const type = String(passType || '').toUpperCase();
+  const decision = latestPassDecision(entitlement, type);
+  const expiresMs = decision?.expiresAt ? new Date(decision.expiresAt).getTime() : Number.NaN;
+  const future = Number.isFinite(expiresMs) && expiresMs > Number(now);
+  const exactFixture = type !== 'MATCH_PASS'
+    || (safeFixtureId(fixtureId) > 0 && Number(decision?.fixtureId || 0) === safeFixtureId(fixtureId));
+
+  let state = 'available';
+  if (!product || product.saleReady === false) state = 'unavailable';
+  else if (subscriptionActive) state = 'included';
+  else if (decision?.active && exactFixture) state = 'active';
+  else if (type === 'MATCH_PASS' && decision?.reason === 'fixture_mismatch' && future) state = 'active-other';
+  else if (decision?.reason === 'usage_exhausted') state = 'exhausted';
+  else if (decision && (!future || decision.reason === 'expired')) state = 'expired';
+  else if (!paymentsEnabled) state = 'paused';
+  else if (type === 'MATCH_PASS' && !safeFixtureId(fixtureId)) state = 'needs-fixture';
+
+  return { state, decision, expiresAt:decision?.expiresAt || null };
+}
+
 export function billingUiSnapshot(profile = {}, billing = {}, now = Date.now()) {
   const quota = profile?.quota || {};
   const profileBilling = profile?.billing || {};
@@ -46,6 +104,15 @@ export function createBillingModule({
   let paymentState = 'idle';
   let bound = false;
   let lastError = '';
+  let passFixtureId = 0;
+  let passLoading = false;
+  let passLoaded = false;
+  let passError = '';
+  let passData = {
+    paymentsEnabled:false,
+    products:{},
+    entitlement:{ decisions:[], passes:{ active:[] }, subscriptionActive:false },
+  };
 
   function planConfig(plan) {
     return state.billing?.plans?.[plan] || null;
@@ -56,18 +123,27 @@ export function createBillingModule({
     if (node) node.textContent = String(value ?? '');
   }
 
+  function contextFixtureId() {
+    return safeFixtureId(
+      passFixtureId
+      || state.currentCenter?.match?.fixtureId
+      || state.currentAnalysis?.match?.fixtureId
+      || 0
+    );
+  }
+
   function paymentStatus(snapshot) {
     if (paymentState === 'opening') return ['pending', 'Открываю защищённое окно Telegram Stars…'];
     if (paymentState === 'syncing') return ['pending', 'Платёж подтверждён Telegram. Сверяем доступ с сервером…'];
-    if (paymentState === 'success') return ['success', 'Оплата подтверждена сервером. Тариф активирован.'];
+    if (paymentState === 'success') return ['success', 'Оплата подтверждена сервером. Доступ активирован.'];
     if (paymentState === 'pending') return ['pending', 'Платёж обрабатывается. Нажмите «Проверить оплату», если статус не обновится автоматически.'];
     if (paymentState === 'failed') return ['failed', 'Telegram не завершил платёж. Доступ меняется только после серверного подтверждения транзакции.'];
     if (paymentState === 'cancelled') return ['waiting', 'Оплата отменена. Текущий доступ не изменился.'];
     if (lastError) return ['failed', lastError];
-    if (!snapshot.monetizationEnabled) return ['waiting', 'Платежи пока на паузе. Тарифы подготовлены, бесплатные функции работают как обычно.'];
+    if (!snapshot.monetizationEnabled) return ['waiting', 'Платежи пока на паузе. Тарифы и Pass подготовлены, бесплатные функции работают как обычно.'];
     if (!telegram?.openInvoice) return ['waiting', 'Оплата Telegram Stars доступна только внутри Telegram Mini App.'];
     if (!snapshot.ready) return ['waiting', 'Платежи временно недоступны: проверяем подключение Telegram.'];
-    return ['ready', 'Telegram Stars готовы. Тариф активируется только после серверного подтверждения платежа.'];
+    return ['ready', 'Telegram Stars готовы. Доступ активируется только после серверного подтверждения платежа.'];
   }
 
   function renderPlan(plan, snapshot) {
@@ -96,6 +172,113 @@ export function createBillingModule({
     else if (!telegram?.openInvoice) button.textContent = 'Откройте в Telegram';
     else if (!snapshot.ready) button.textContent = 'Временно недоступно';
     else button.textContent = 'Подключить · ' + String(cfg.stars) + ' ⭐';
+  }
+
+  function durationLabel(hours) {
+    const n = Number(hours || 0);
+    if (n === 24) return '24 часа';
+    if (n === 72) return '72 часа';
+    return n > 0 ? String(n) + ' ч' : '—';
+  }
+
+  function passUsageLabel(product) {
+    const limit = Number(product?.usageLimit || 0);
+    if (limit > 0) return String(limit) + ' полных AI-анализов';
+    return 'Без пакетного лимита';
+  }
+
+  function passStateCopy(type, view) {
+    if (view.state === 'active') return view.expiresAt ? 'Активен до ' + dateTime(view.expiresAt) : 'Активен';
+    if (view.state === 'active-other') return 'Активен для матча #' + Number(view.decision?.fixtureId || 0) + (view.expiresAt ? ' · до ' + dateTime(view.expiresAt) : '');
+    if (view.state === 'expired') return view.expiresAt ? 'Истёк · ' + dateTime(view.expiresAt) : 'Истёк';
+    if (view.state === 'exhausted') return 'Пакет использован';
+    if (view.state === 'included') return 'Расширенный доступ уже входит в подписку';
+    if (view.state === 'unavailable') return type === 'WEEKEND_PASS' ? 'Пока недоступен: серверный лимит не настроен' : 'Пока недоступен';
+    if (view.state === 'needs-fixture') return 'Откройте Pass из конкретного матча';
+    if (view.state === 'paused') return 'Покупка пока на паузе';
+    return 'Доступен к покупке';
+  }
+
+  function passButtonCopy(type, product, view) {
+    if (busyAction === 'pass:' + type) return 'Открываю Telegram…';
+    if (view.state === 'active') return 'Уже активен';
+    if (view.state === 'included') return 'Входит в подписку';
+    if (view.state === 'unavailable') return 'Недоступен';
+    if (view.state === 'needs-fixture') return 'Откройте матч';
+    if (view.state === 'paused') return 'Оплата пока на паузе';
+    if (!telegram?.openInvoice) return 'Откройте в Telegram';
+    return 'Купить · ' + String(product?.stars || '—') + ' ⭐';
+  }
+
+  function renderPasses(snapshot) {
+    const root = $('passStore');
+    if (!root) return;
+    const fixtureId = contextFixtureId();
+    root.classList.toggle('is-loading', passLoading);
+    root.dataset.fixtureId = fixtureId ? String(fixtureId) : '';
+
+    const context = $('passContext');
+    if (context) context.textContent = fixtureId
+      ? 'Контекст Match Pass: матч #' + fixtureId + '. Сервер подпишет именно этот fixtureId.'
+      : 'Match Pass покупается из конкретного матча. Day Pass и Weekend Pass доступны из Профиля.';
+
+    if ($('passStoreStatus')) {
+      $('passStoreStatus').textContent = passError
+        ? passError
+        : (passLoading ? 'Обновляем Pass-доступ…' : 'Разовые Pass не меняют ваш FREE / PRO / PREMIUM тариф.');
+    }
+
+    for (const type of PASS_TYPES) {
+      const meta = PASS_META[type];
+      const product = passData.products?.[type] || null;
+      const view = passUiState({
+        product,
+        entitlement:passData.entitlement,
+        passType:type,
+        fixtureId,
+        paymentsEnabled:Boolean(passData.paymentsEnabled),
+        subscriptionActive:Boolean(passData.entitlement?.subscriptionActive || paidPlans.has(snapshot.plan)),
+      });
+      const key = type === 'MATCH_PASS' ? 'matchPass' : type === 'DAY_PASS' ? 'dayPass' : 'weekendPass';
+      setText(key + 'Title', meta.title);
+      setText(key + 'Price', product ? String(product.stars) + ' ⭐' : '— ⭐');
+      setText(key + 'Duration', product ? durationLabel(product.durationHours) : '—');
+      setText(key + 'Usage', product ? passUsageLabel(product) : 'Проверяем сервер…');
+      setText(key + 'State', passStateCopy(type, view));
+      const card = $(key + 'Card');
+      if (card) card.dataset.state = view.state;
+      const button = $(key + 'Btn');
+      if (button) {
+        const request = buildPassPurchaseBody(type, fixtureId);
+        const enabledState = ['available','expired','exhausted','active-other'].includes(view.state);
+        button.disabled = Boolean(
+          busyAction || syncing || passLoading
+          || !product || product.saleReady === false
+          || !passData.paymentsEnabled || !telegram?.openInvoice
+          || !request || !enabledState
+        );
+        button.textContent = passButtonCopy(type, product, view);
+        button.setAttribute('aria-busy', busyAction === 'pass:' + type ? 'true' : 'false');
+      }
+    }
+
+    const active = $('activePasses');
+    if (active) {
+      const rows = Array.isArray(passData.entitlement?.decisions) ? passData.entitlement.decisions : [];
+      const visible = rows.filter(row => {
+        const expiry = row?.expiresAt ? new Date(row.expiresAt).getTime() : Number.NaN;
+        return row?.active || (row?.reason === 'fixture_mismatch' && Number.isFinite(expiry) && expiry > Date.now());
+      }).slice(0,4);
+      active.hidden = visible.length === 0;
+      active.innerHTML = visible.length ? visible.map(row => {
+        const type = String(row.type || '');
+        const title = PASS_META[type]?.title || type;
+        const scope = type === 'MATCH_PASS' && row.fixtureId ? ' · матч #' + Number(row.fixtureId) : '';
+        const usage = row.usageLimit != null ? ' · ' + Number(row.usageCount || 0) + '/' + Number(row.usageLimit) : '';
+        const expiry = row.expiresAt ? ' · до ' + dateTime(row.expiresAt) : '';
+        return '<div class="active-pass-row"><strong>' + title + '</strong><span>' + scope.replace(/^ · /,'') + usage + expiry + '</span></div>';
+      }).join('') : '';
+    }
   }
 
   function render() {
@@ -163,6 +346,37 @@ export function createBillingModule({
 
     renderPlan('PRO', snapshot);
     renderPlan('PREMIUM', snapshot);
+    renderPasses(snapshot);
+  }
+
+  async function loadPassAccess({ fixtureId = contextFixtureId(), force = false } = {}) {
+    const fid = safeFixtureId(fixtureId);
+    if (fid) passFixtureId = fid;
+    if (passLoading || (passLoaded && !force && fid === contextFixtureId())) {
+      render();
+      return passData;
+    }
+    passLoading = true;
+    passError = '';
+    render();
+    try {
+      const suffix = fid ? '?fixtureId=' + encodeURIComponent(String(fid)) : '';
+      const data = await api('/api/entitlements' + suffix, { retry:false });
+      passData = {
+        paymentsEnabled:Boolean(data?.paymentsEnabled),
+        products:data?.products || {},
+        entitlement:data?.entitlement || { decisions:[], passes:{ active:[] }, subscriptionActive:false },
+      };
+      passLoaded = true;
+      return passData;
+    } catch (error) {
+      passLoaded = false;
+      passError = error?.message || 'Не удалось проверить Pass-доступ.';
+      return passData;
+    } finally {
+      passLoading = false;
+      render();
+    }
   }
 
   async function load({ force = false } = {}) {
@@ -179,10 +393,12 @@ export function createBillingModule({
       loaded = true;
       loading = false;
       lastError = '';
+      await loadPassAccess({ force });
       render();
       return state.billing;
     }
     if (loading || (loaded && !force)) {
+      if (!passLoaded || force) await loadPassAccess({ force });
       render();
       return state.billing;
     }
@@ -192,11 +408,13 @@ export function createBillingModule({
     try {
       state.billing = await api('/api/billing/plans', { retry: false });
       loaded = true;
+      await loadPassAccess({ force:true });
       return state.billing;
     } catch (error) {
       loaded = false;
       lastError = error?.message || 'Не удалось загрузить тарифы.';
       state.billing = state.billing || { enabled: Boolean(state.profile?.features?.monetizationEnabled), ready: false };
+      await loadPassAccess({ force });
       return state.billing;
     } finally {
       loading = false;
@@ -218,6 +436,7 @@ export function createBillingModule({
       const result = await api('/api/billing/sync', { method: 'POST', body: '{}' });
       if (typeof reloadProfile === 'function') await reloadProfile();
       await load({ force: true });
+      await loadPassAccess({ force:true });
       if (showToast) toast?.(result.synced ? 'Оплата подтверждена сервером' : 'Новых подтверждённых платежей не найдено');
       return result;
     } catch (error) {
@@ -303,6 +522,109 @@ export function createBillingModule({
     }
   }
 
+  async function buyPass(passType) {
+    const type = String(passType || '').toUpperCase();
+    if (!PASS_TYPES.includes(type) || busyAction || syncing) return;
+    const fixtureId = contextFixtureId();
+    const body = buildPassPurchaseBody(type, fixtureId);
+    const product = passData.products?.[type] || null;
+    const snapshot = billingUiSnapshot(state.profile || {}, state.billing || {});
+    const view = passUiState({
+      product,
+      entitlement:passData.entitlement,
+      passType:type,
+      fixtureId,
+      paymentsEnabled:Boolean(passData.paymentsEnabled),
+      subscriptionActive:Boolean(passData.entitlement?.subscriptionActive || paidPlans.has(snapshot.plan)),
+    });
+
+    if (!body) {
+      toast?.('Match Pass нужно открывать из конкретного матча.');
+      return;
+    }
+    if (!product?.saleReady) {
+      toast?.('Этот Pass пока недоступен.');
+      return;
+    }
+    if (!passData.paymentsEnabled || !snapshot.monetizationEnabled) {
+      toast?.('Оплата пока не включена.');
+      return;
+    }
+    if (!telegram?.openInvoice) {
+      toast?.('Оплата доступна только внутри Telegram.');
+      return;
+    }
+    if (view.state === 'active' || view.state === 'included') {
+      toast?.(view.state === 'included' ? 'Расширенный доступ уже входит в подписку.' : 'Этот Pass уже активен.');
+      return;
+    }
+
+    busyAction = 'pass:' + type;
+    paymentState = 'opening';
+    lastError = '';
+    render();
+    try {
+      const invoice = await api('/api/billing/invoice', {
+        method:'POST',
+        body:JSON.stringify(body),
+      });
+      if (!invoice?.invoiceUrl) throw new Error('Telegram не вернул ссылку на оплату.');
+      if (type === 'MATCH_PASS' && Number(invoice.fixtureId || 0) !== fixtureId) {
+        throw new Error('Сервер вернул другой контекст матча. Счёт отменён.');
+      }
+
+      telegram.openInvoice(invoice.invoiceUrl, status => {
+        void (async () => {
+          const value = String(typeof status === 'string' ? status : status?.status || '').toLowerCase();
+          try {
+            if (value === 'paid') {
+              paymentState = 'syncing';
+              render();
+              await syncBilling(false);
+              await loadPassAccess({ fixtureId, force:true });
+              const confirmed = passUiState({
+                product:passData.products?.[type],
+                entitlement:passData.entitlement,
+                passType:type,
+                fixtureId,
+                paymentsEnabled:Boolean(passData.paymentsEnabled),
+                subscriptionActive:Boolean(passData.entitlement?.subscriptionActive),
+              });
+              if (confirmed.state === 'active') {
+                paymentState = 'success';
+                toast?.((PASS_META[type]?.title || 'Pass') + ' активирован');
+              } else {
+                paymentState = 'pending';
+                toast?.('Платёж принят Telegram. Сервер ещё активирует Pass.');
+              }
+            } else if (value === 'pending') {
+              paymentState = 'pending';
+              toast?.('Платёж обрабатывается.');
+            } else if (value === 'cancelled' || value === 'canceled') {
+              paymentState = 'cancelled';
+              toast?.('Оплата отменена.');
+            } else {
+              paymentState = 'failed';
+              toast?.('Telegram не завершил платёж.');
+            }
+          } catch (error) {
+            paymentState = 'pending';
+            lastError = error?.message || 'Pass требует повторной серверной проверки.';
+          } finally {
+            busyAction = '';
+            render();
+          }
+        })();
+      });
+    } catch (error) {
+      busyAction = '';
+      paymentState = 'failed';
+      lastError = error?.message || 'Не удалось открыть оплату.';
+      render();
+      toast?.(lastError);
+    }
+  }
+
   async function manageSubscription(action) {
     const normalized = String(action || '').toLowerCase();
     if (!['cancel', 'resume'].includes(normalized) || busyAction || syncing) return;
@@ -326,13 +648,30 @@ export function createBillingModule({
     }
   }
 
+  async function openPassStoreForFixture(fixtureId) {
+    const id = safeFixtureId(fixtureId);
+    if (!id) {
+      toast?.('Не удалось определить матч для Match Pass.');
+      return;
+    }
+    passFixtureId = id;
+    if (typeof openProfile === 'function') await openProfile();
+    await loadPassAccess({ fixtureId:id, force:true });
+    render();
+    $('passStore')?.scrollIntoView?.({ behavior:'smooth', block:'start' });
+  }
+
   async function openPlansFromQuota() {
     if (typeof openProfile === 'function') await openProfile();
     await load({ force: !loaded });
+    const id = contextFixtureId();
+    if (id) await loadPassAccess({ fixtureId:id, force:true });
     $('billingPanel')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
   }
 
-  function showQuotaPaywall() {
+  function showQuotaPaywall(fixtureId = 0) {
+    const id = safeFixtureId(fixtureId);
+    if (id) passFixtureId = id;
     const panel = $('analysisQuotaPaywall');
     if (panel) panel.hidden = false;
   }
@@ -350,18 +689,28 @@ export function createBillingModule({
     $('billingSyncBtn')?.addEventListener('click', () => syncBilling(true));
     $('subscriptionManageBtn')?.addEventListener('click', () => manageSubscription($('subscriptionManageBtn')?.dataset.action || 'cancel'));
     $('quotaUpgradeBtn')?.addEventListener('click', () => { void openPlansFromQuota(); });
+    $('matchPassBtn')?.addEventListener('click', () => { void buyPass('MATCH_PASS'); });
+    $('dayPassBtn')?.addEventListener('click', () => { void buyPass('DAY_PASS'); });
+    $('weekendPassBtn')?.addEventListener('click', () => { void buyPass('WEEKEND_PASS'); });
+    $('passRefreshBtn')?.addEventListener('click', () => { void loadPassAccess({ force:true }); });
     render();
   }
 
   return Object.freeze({
     bind,
+    buyPass,
     buyPlan,
     hideQuotaPaywall,
     load,
+    loadPassAccess,
     manageSubscription,
+    openPassStoreForFixture,
     render,
     showQuotaPaywall,
-    snapshot: () => ({ loaded, loading, busyAction, syncing, paymentState, lastError }),
+    snapshot: () => ({
+      loaded, loading, busyAction, syncing, paymentState, lastError,
+      passLoaded, passLoading, passError, passFixtureId:contextFixtureId(),
+    }),
     syncBilling,
   });
 }

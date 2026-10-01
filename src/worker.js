@@ -8420,6 +8420,12 @@ async function apiEntitlements(request, cfg, user) {
   }
   return json({
     entitlement: await resolveUserEntitlements(user.id, fixtureId, cfg),
+    paymentsEnabled: Boolean(cfg.monetizationEnabled),
+    products: {
+      MATCH_PASS: passProductConfig(PASS_TYPES.MATCH, cfg),
+      DAY_PASS: passProductConfig(PASS_TYPES.DAY, cfg),
+      WEEKEND_PASS: passProductConfig(PASS_TYPES.WEEKEND, cfg),
+    },
   });
 }
 
