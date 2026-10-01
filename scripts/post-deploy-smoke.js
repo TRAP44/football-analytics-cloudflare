@@ -331,6 +331,7 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
   const fetchImpl = options.fetchImpl || fetch;
   const retries = Math.max(1, Number(options.retries || 10));
   const retryDelayMs = Math.max(0, Number(options.retryDelayMs ?? 6000));
+  const expectedMonetization = String(options.expectedMonetization || 'paused').toLowerCase() === 'enabled' ? 'enabled' : 'paused';
   const rcNumber = /-rc(\d+)$/i.exec(String(expectedVersion || ''))?.[1];
   if (!rcNumber) throw new Error('Expected version must end with -rc<number>.');
   const expectedReleaseCandidate = `RC${rcNumber}`;
@@ -371,7 +372,9 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
   if (health.releaseCandidate !== expectedReleaseCandidate) throw new Error(`Expected ${expectedReleaseCandidate}, received ${health.releaseCandidate || 'unknown'}.`);
   if (health.devMode !== false) throw new Error('Production deployment exposes DEV_MODE=true.');
   if (health.database !== 'supabase') throw new Error('Production deployment must use Supabase persistence.');
-  if (health.monetization !== 'paused') throw new Error('Production deployment must keep MONETIZATION_ENABLED=false before beta.');
+  if (health.monetization !== expectedMonetization) {
+    throw new Error(`Production deployment must expose MONETIZATION_ENABLED=${expectedMonetization === 'enabled' ? 'true' : 'false'}.`);
+  }
   if (health?.readiness?.ok !== true) throw new Error('Legacy health endpoint must embed a passing readiness snapshot.');
   for (const flag of REQUIRED_HEALTH_FLAGS) {
     if (health[flag] !== 'enabled') throw new Error(`Health flag ${flag} is not enabled.`);
@@ -443,7 +446,8 @@ async function main() {
   if (!baseUrl || !expectedVersion || !expectedSha) {
     throw new Error('Usage: node scripts/post-deploy-smoke.js <deployment-url> <expected-version> <expected-sha>');
   }
-  const result = await runDeploymentSmoke(baseUrl, expectedVersion, expectedSha);
+  const expectedMonetization = String(process.env.EXPECTED_MONETIZATION || 'paused').toLowerCase() === 'enabled' ? 'enabled' : 'paused';
+  const result = await runDeploymentSmoke(baseUrl, expectedVersion, expectedSha, { expectedMonetization });
   console.log(`Post-deploy smoke passed: ${result.version} sha=${expectedSha} at ${result.origin} (${result.checks} checks).`);
 }
 
