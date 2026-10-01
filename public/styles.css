@@ -70,7 +70,11 @@ h2 { margin: 0; font-size: 20px; }
 .avatar { width: 72px; height: 72px; display: grid; place-items: center; margin: 0 auto 10px; border-radius: 50%; font-size: 36px; background: color-mix(in srgb, var(--accent) 15%, var(--surface-2)); }
 .profile-panel h2 { font-size: 24px; }
 .plan-card { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
-.plan-card > div { text-align: left; border: 1px solid var(--line); padding: 12px; border-radius: 14px; }
+.plan-card > div,
+.plan-card > button { text-align: left; border: 1px solid var(--line); padding: 12px; border-radius: 14px; }
+.plan-card > button { width:100%; font:inherit; color:inherit; background:transparent; cursor:pointer; appearance:none; }
+.plan-card > button:hover { border-color:color-mix(in srgb,var(--accent) 38%,var(--line)); background:color-mix(in srgb,var(--accent) 6%,transparent); }
+.plan-card > button:focus-visible { outline:2px solid color-mix(in srgb,var(--accent) 65%,transparent); outline-offset:2px; }
 .plan-card strong { display: block; margin-top: 5px; }
 .bottom-nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: min(760px, 100%); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; background: color-mix(in srgb, var(--bg) 90%, transparent); backdrop-filter: blur(18px); border-top: 1px solid var(--line); padding: 8px 16px calc(8px + env(safe-area-inset-bottom)); z-index: 10; }
 .nav-item { border: 0; background: transparent; color: var(--hint); padding: 8px; border-radius: 12px; }
@@ -1019,6 +1023,7 @@ main { position: relative; z-index: 1; }
   box-shadow: 0 14px 32px rgba(0,0,0,.15);
 }
 .plan-card > div,
+.plan-card > button,
 .provider-status-grid > div,
 .provider-live-grid > div,
 .diagnostics-grid > div,
@@ -3491,6 +3496,8 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 .smart-notification-head p{margin:0;max-width:620px}
 .smart-notification-plan{flex:0 0 auto;border:1px solid var(--border);border-radius:999px;padding:7px 10px;font-size:12px;font-weight:800;white-space:nowrap;background:var(--surface-2)}
 .smart-notification-plan.is-on{border-color:var(--accent);color:var(--accent)}
+.smart-notification-head-actions{display:grid;justify-items:end;gap:7px;flex:0 0 auto}
+.smart-notification-upgrade.secondary-btn{margin:0;width:auto;min-height:34px;padding:7px 10px;font-size:11px}
 .smart-notification-master{margin-top:16px}
 .smart-notification-details{margin-top:10px;border-top:1px solid var(--border)}
 .smart-notification-details>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0 8px;cursor:pointer;list-style:none}
@@ -3508,6 +3515,7 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
 .smart-notification-state.is-error>div{display:grid;gap:4px;flex:1}
 
 @media (max-width:430px){
+  .smart-notification-head-actions{justify-items:start}
   .smart-notification-head{display:grid}
   .smart-notification-plan{justify-self:start}
   .smart-notification-option{align-items:flex-start}
