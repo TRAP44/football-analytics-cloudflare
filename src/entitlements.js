@@ -308,17 +308,29 @@ export function createEntitlementService({
   }
 
   async function resolveUserEntitlements(userId, fixtureId, cfg, now = Date.now()) {
-    const [record, entitlements] = await Promise.all([
-      getUserRecord(userId, cfg),
-      listUserEntitlements(userId, cfg),
-    ]);
-    return resolveEntitlementAccess({
-      plan: record?.plan || 'FREE',
-      subscriptionUntil: record?.subscription_until || null,
-      entitlements,
-      fixtureId,
-      now,
-    });
+    const record = await getUserRecord(userId, cfg);
+    let entitlements = [];
+    let storeAvailable = true;
+    try {
+      entitlements = await listUserEntitlements(userId, cfg);
+    } catch {
+      // Fail closed for temporary Pass access without breaking the pre-existing
+      // FREE / PRO / PREMIUM subscription path during migration or DB incidents.
+      storeAvailable = false;
+    }
+    return {
+      ...resolveEntitlementAccess({
+        plan: record?.plan || 'FREE',
+        subscriptionUntil: record?.subscription_until || null,
+        entitlements,
+        fixtureId,
+        now,
+      }),
+      store: {
+        available: storeAvailable,
+        reason: storeAvailable ? '' : 'entitlement_store_unavailable',
+      },
+    };
   }
 
   async function consumeEntitlement(userId, entitlementId, fixtureId, cfg) {
