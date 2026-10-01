@@ -34,7 +34,7 @@ test('news high-impact claims are downgraded when the source is not major or off
   assert.match(worker,/requires confirmation|требуется подтверждение/i);
 });
 
-test('public legal and status pages exist without adding a new Mini App content section',()=> {
+test('public legal pages stay linked while technical status stays outside the Mini App navigation',()=> {
   assert.match(privacy,/Политика конфиденциальности/);
   assert.match(privacy,/Telegram ID/);
   assert.match(privacy,/Cloudflare/);
@@ -42,7 +42,8 @@ test('public legal and status pages exist without adding a new Mini App content 
   assert.match(terms,/не гарантирует исход/i);
   assert.match(html,/\/privacy\.html/);
   assert.match(html,/\/terms\.html/);
-  assert.match(html,/\/status\.html/);
+  assert.doesNotMatch(html,/\/status\.html/);
+  assert.equal(fs.existsSync('public/status.html'),true);
   assert.doesNotMatch(html,/id="privacyView"/);
 });
 
