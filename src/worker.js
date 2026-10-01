@@ -2755,35 +2755,46 @@ async function applyRefundedPayment(userId, paymentChargeId, cfg) {
   const chargeId = String(paymentChargeId || '').trim();
   if (!Number.isSafeInteger(uid) || uid <= 0 || !chargeId) return { updated:false, reason:'invalid_refund' };
 
-  markTelegramWebhookMutation(cfg, 'billing_refund');
-  if (hasSupabase(cfg)) {
-    await supaPatch(cfg, 'billing_payments', {
-      telegram_payment_charge_id: `eq.${chargeId}`,
-      telegram_id: `eq.${uid}`,
-    }, {
-      status: 'refunded',
-      updated_at: new Date().toISOString(),
-    });
-  } else {
-    const row = memory.billingPayments.get(chargeId);
-    if (row && Number(row.telegram_id) === uid) {
-      memory.billingPayments.set(chargeId, { ...row, status:'refunded', updated_at:new Date().toISOString() });
+  try {
+    markTelegramWebhookMutation(cfg, 'billing_refund');
+    if (hasSupabase(cfg)) {
+      await supaPatch(cfg, 'billing_payments', {
+        telegram_payment_charge_id: `eq.${chargeId}`,
+        telegram_id: `eq.${uid}`,
+      }, {
+        status: 'refunded',
+        updated_at: new Date().toISOString(),
+      });
+    } else {
+      const row = memory.billingPayments.get(chargeId);
+      if (row && Number(row.telegram_id) === uid) {
+        memory.billingPayments.set(chargeId, { ...row, status:'refunded', updated_at:new Date().toISOString() });
+      }
     }
-  }
 
-  const passRefund = await refundPassByCharge(userId, chargeId, cfg).catch(() => ({ updated:false, reason:'not_found' }));
-  const record = await getUserRecord(uid, cfg);
-  let subscriptionRevoked = false;
-  if (record && String(record.telegram_payment_charge_id || '') === chargeId) {
-    await updateUserSubscription(uid, {
-      plan: 'FREE',
-      subscription_until: new Date().toISOString(),
-      subscription_canceled: true,
-      telegram_payment_charge_id: null,
-    }, cfg);
-    subscriptionRevoked = true;
+    // Pass revocation is part of the refund invariant. Do not turn a temporary
+    // entitlement-store failure into a successful refund acknowledgement.
+    const passRefund = await refundPassByCharge(userId, chargeId, cfg);
+    const record = await getUserRecord(uid, cfg);
+    let subscriptionRevoked = false;
+    if (record && String(record.telegram_payment_charge_id || '') === chargeId) {
+      await updateUserSubscription(uid, {
+        plan: 'FREE',
+        subscription_until: new Date().toISOString(),
+        subscription_canceled: true,
+        telegram_payment_charge_id: null,
+      }, cfg);
+      subscriptionRevoked = true;
+    }
+    return { updated:true, subscriptionRevoked, passRevoked:Boolean(passRefund?.updated) };
+  } catch (cause) {
+    const error = cause instanceof Error ? cause : new Error(String(cause || 'Refund reconciliation failed.'));
+    error.code = 'BILLING_REFUND_RECONCILIATION';
+    // Every mutation above is an idempotent move toward the same refunded
+    // state, so Telegram may safely redeliver a refunded_payment update.
+    error.telegramWebhookRetrySafe = true;
+    throw error;
   }
-  return { updated:true, subscriptionRevoked, passRevoked:Boolean(passRefund?.updated) };
 }
 
 async function applySuccessfulPayment(userId, payment, cfg, fallbackDate = Math.floor(Date.now() / 1000)) {
@@ -8647,14 +8658,23 @@ async function apiBillingRefund(request, cfg, user) {
 
   const source = await findRefundableBillingCharge(targetUserId, chargeId, cfg);
   if (!source) return json({ error:'Платёж с таким charge ID не принадлежит указанному пользователю.', code:'BILLING_REFUND_NOT_FOUND' }, 404);
-  if (source.status === 'refunded') {
-    return json({ error:'Этот платёж уже отмечен как возвращённый.', code:'BILLING_REFUND_ALREADY_APPLIED' }, 409);
-  }
 
-  await telegramApi('refundStarPayment', cfg, {
-    user_id: targetUserId,
-    telegram_payment_charge_id: chargeId,
-  });
+  let alreadyRefunded = source.status === 'refunded';
+  if (!alreadyRefunded) {
+    try {
+      await telegramApi('refundStarPayment', cfg, {
+        user_id: targetUserId,
+        telegram_payment_charge_id: chargeId,
+      });
+    } catch (error) {
+      // A previous manual attempt may have refunded Stars successfully before
+      // the internal entitlement/subscription reconciliation failed. Telegram
+      // documents CHARGE_ALREADY_REFUNDED for that retry; continue with the
+      // idempotent internal reconciliation instead of issuing a second refund.
+      if (!/CHARGE_ALREADY_REFUNDED/i.test(String(error?.message || ''))) throw error;
+      alreadyRefunded = true;
+    }
+  }
   const revoked = await applyRefundedPayment(targetUserId, chargeId, cfg);
   await recordOpsEvent(cfg, {
     severity:'warning',
@@ -8676,6 +8696,8 @@ async function apiBillingRefund(request, cfg, user) {
   return json({
     ok:true,
     refunded:true,
+    reconciled:true,
+    alreadyRefunded,
     kind:source.kind,
     subscriptionRevoked:Boolean(revoked?.subscriptionRevoked),
     passRevoked:Boolean(revoked?.passRevoked),
