@@ -22,20 +22,20 @@ test('Radar Feed uses a namespaced tone and a non-collapsing flex row', () => {
   assert.match(app, /radar-feed-item tone-\$\{escapeHtml\(item\.tone/);
   assert.doesNotMatch(app, /radar-feed-item \$\{escapeHtml\(item\.tone/);
   assert.match(premium, /\.radar-feed-item \{[\s\S]*display:\s*flex;/);
-  assert.match(premium, /\.radar-feed-item \.radar-feed-copy\{[\s\S]*flex:1 1 auto/);
+  assert.match(premium, /\.radar-feed-item \.radar-feed-copy \{[\s\S]*flex:\s*1 1 auto/);
   assert.match(premium, /\.radar-feed-item\.tone-ai \.radar-feed-pulse/);
 });
 
 test('bottom navigation is explicitly centered and each nav action centers its contents', () => {
   assert.match(premium, /\.bottom-nav \{[\s\S]*left:\s*50%;[\s\S]*transform:\s*translateX\(-50%\);/);
-  assert.match(premium, /\.bottom-nav \.nav-item\{[\s\S]*align-items:center[\s\S]*justify-content:center[\s\S]*text-align:center/);
+  assert.match(premium, /\.bottom-nav \.nav-item \{[\s\S]*align-items:\s*center[\s\S]*justify-content:\s*center[\s\S]*text-align:\s*center/);
 });
 
 test('advanced filters stay compact until the user opens them', () => {
   assert.match(html, /<summary><span>⚙ Фильтры<\/span><b data-filter-summary-value hidden><\/b><\/summary>/);
   assert.match(app, /summaryValue\.hidden = !activeDrawerFilter/);
-  assert.match(premium, /\.league-filter-drawer > summary\{[\s\S]*width:max-content/);
-  assert.match(premium, /\.league-filter-drawer \.home-filter-body\{[\s\S]*margin-top:8px/);
+  assert.match(premium, /\.league-filter-drawer > summary \{[\s\S]*width:\s*max-content/);
+  assert.match(premium, /\.league-filter-drawer \.home-filter-body \{[\s\S]*margin-top:\s*8px/);
 });
 
 test('public date feed batches yesterday today and tomorrow into one provider request', () => {
