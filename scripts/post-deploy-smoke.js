@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 const REQUIRED_HEALTH_FLAGS = [
@@ -446,7 +447,13 @@ async function main() {
   if (!baseUrl || !expectedVersion || !expectedSha) {
     throw new Error('Usage: node scripts/post-deploy-smoke.js <deployment-url> <expected-version> <expected-sha>');
   }
-  const expectedMonetization = String(process.env.EXPECTED_MONETIZATION || 'paused').toLowerCase() === 'enabled' ? 'enabled' : 'paused';
+  let configuredMonetization = 'paused';
+  try {
+    const wrangler = JSON.parse(readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8'));
+    configuredMonetization = String(wrangler?.vars?.MONETIZATION_ENABLED || '').toLowerCase() === 'true' ? 'enabled' : 'paused';
+  } catch {}
+  const requestedMonetization = process.env.EXPECTED_MONETIZATION || configuredMonetization;
+  const expectedMonetization = String(requestedMonetization).toLowerCase() === 'enabled' ? 'enabled' : 'paused';
   const result = await runDeploymentSmoke(baseUrl, expectedVersion, expectedSha, { expectedMonetization });
   console.log(`Post-deploy smoke passed: ${result.version} sha=${expectedSha} at ${result.origin} (${result.checks} checks).`);
 }
