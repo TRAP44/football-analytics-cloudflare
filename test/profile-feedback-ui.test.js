@@ -18,11 +18,11 @@ test('Profile removes the duplicate My Teams block and makes useful counters act
   assert.match(app, /profileRemindersBtn/);
 });
 
-test('Profile uses plain Russian copy for plans notifications and data availability', () => {
+test('Profile uses plain Russian copy and removes technical data availability chrome', () => {
   assert.doesNotMatch(html, /smart-уведомления/);
   assert.doesNotMatch(html, /notification-возможности/);
-  assert.match(html, /Что может быть в матче/);
-  assert.match(html, /Составы, игроки, статистика и коэффициенты/);
+  assert.doesNotMatch(html, /Что может быть в матче/);
+  assert.doesNotMatch(html, /profile-data-details/);
   assert.match(notifications, /УМНЫЕ УВЕДОМЛЕНИЯ/);
   assert.match(notifications, /AI-сигналы/);
   assert.doesNotMatch(notifications, /Smart Alerts/);
