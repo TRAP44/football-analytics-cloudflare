@@ -11,15 +11,15 @@ export function createProfileDataCapabilitiesModule({
   function renderDataCapabilities() {
     const c = state.dataCapabilities || state.profile?.features?.dataCapabilities || {};
     const features = c.features || {};
-    if ($('dataModeLabel')) $('dataModeLabel').textContent = c.mode === 'expanded' ? 'Больше данных' : 'Обычное';
-    if ($('dataModeSummary')) $('dataModeSummary').textContent = c.mode === 'expanded' ? 'Больше данных' : 'Обычное';
+    if ($('dataModeLabel')) $('dataModeLabel').textContent = c.mode === 'expanded' ? 'Расширенный' : 'Стандартный';
+    if ($('dataModeSummary')) $('dataModeSummary').textContent = 'Подробнее';
     if ($('dataModeRefresh')) $('dataModeRefresh').textContent = features.liveRefresh === false || Number(c.refreshSeconds) === 0
       ? 'временно приостановлены'
-      : Number(c.refreshSeconds || 60) <= 30 ? 'частые' : 'автоматические';
-    if ($('dataModeLineups')) $('dataModeLineups').textContent = features.lineupsFallback ? 'Чаще доступны' : 'По наличию';
-    if ($('dataModePlayers')) $('dataModePlayers').textContent = features.playerStats ? 'Чаще доступны' : 'По наличию';
-    if ($('dataModeOdds')) $('dataModeOdds').textContent = features.liveOdds ? 'Чаще доступны' : 'По наличию';
-    if ($('dataModeNote')) $('dataModeNote').textContent = 'Доступность зависит от турнира и конкретного матча.';
+      : Number(c.refreshSeconds || 60) <= 30 ? 'часто' : 'автоматически';
+    if ($('dataModeLineups')) $('dataModeLineups').textContent = features.lineupsFallback ? 'Чаще доступны' : 'Если доступны';
+    if ($('dataModePlayers')) $('dataModePlayers').textContent = features.playerStats ? 'Чаще доступны' : 'Если доступны';
+    if ($('dataModeOdds')) $('dataModeOdds').textContent = features.liveOdds ? 'Чаще доступны' : 'Если доступны';
+    if ($('dataModeNote')) $('dataModeNote').textContent = 'Если каких-то данных нет, MatchRadar не подставляет их искусственно.';
   }
 
   return Object.freeze({ renderDataCapabilities });
