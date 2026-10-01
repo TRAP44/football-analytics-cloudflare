@@ -48,6 +48,7 @@ create or replace function public.activate_pass_entitlement(
   p_fixture_id bigint,
   p_starts_at timestamptz,
   p_expires_at timestamptz,
+  p_usage_limit integer,
   p_stars_amount integer,
   p_payment_charge_id text,
   p_invoice_payload text
@@ -68,6 +69,9 @@ begin
      or v_type not in ('MATCH_PASS','DAY_PASS','WEEKEND_PASS')
      or p_starts_at is null or p_expires_at is null or p_expires_at <= p_starts_at
      or p_stars_amount is null or p_stars_amount <= 0
+     or (p_usage_limit is not null and p_usage_limit <= 0)
+     or (v_type = 'WEEKEND_PASS' and p_usage_limit is null)
+     or (v_type in ('MATCH_PASS','DAY_PASS') and p_usage_limit is not null)
      or v_charge = '' or char_length(v_charge) > 240
      or v_payload = '' or char_length(v_payload) > 512
      or (v_type = 'MATCH_PASS' and (p_fixture_id is null or p_fixture_id <= 0))
@@ -90,6 +94,7 @@ begin
     if v_existing.telegram_id = p_telegram_id
        and v_existing.entitlement_type = v_type
        and coalesce(v_existing.fixture_id, 0) = coalesce(p_fixture_id, 0)
+       and coalesce(v_existing.usage_limit, 0) = coalesce(p_usage_limit, 0)
        and v_existing.stars_amount = p_stars_amount
        and v_existing.invoice_payload = v_payload then
       return jsonb_build_object(
@@ -129,7 +134,7 @@ begin
     p_fixture_id,
     p_starts_at,
     p_expires_at,
-    null,
+    p_usage_limit,
     0,
     p_stars_amount,
     v_charge,
@@ -207,6 +212,45 @@ begin
 end;
 $$;
 
+create or replace function public.refund_pass_entitlement_usage(
+  p_telegram_id bigint,
+  p_entitlement_id bigint
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, pg_catalog, pg_temp
+as $
+declare
+  v_count integer;
+begin
+  if p_telegram_id is null or p_telegram_id <= 0
+     or p_entitlement_id is null or p_entitlement_id <= 0 then
+    return jsonb_build_object('updated', false, 'reason', 'invalid_input');
+  end if;
+
+  update public.user_entitlements
+  set usage_count = greatest(0, usage_count - 1),
+      updated_at = now()
+  where id = p_entitlement_id
+    and telegram_id = p_telegram_id
+    and usage_limit is not null
+    and usage_count > 0
+  returning usage_count into v_count;
+
+  if v_count is null then
+    return jsonb_build_object('updated', false, 'reason', 'not_refundable');
+  end if;
+
+  return jsonb_build_object(
+    'updated', true,
+    'reason', 'refunded',
+    'entitlementId', p_entitlement_id,
+    'usageCount', v_count
+  );
+end;
+$;
+
 create or replace function public.refund_pass_entitlement(
   p_telegram_id bigint,
   p_payment_charge_id text
@@ -234,14 +278,19 @@ begin
 end;
 $$;
 
-revoke execute on function public.activate_pass_entitlement(bigint,text,bigint,timestamptz,timestamptz,integer,text,text)
+revoke execute on function public.activate_pass_entitlement(bigint,text,bigint,timestamptz,timestamptz,integer,integer,text,text)
   from public, anon, authenticated;
-grant execute on function public.activate_pass_entitlement(bigint,text,bigint,timestamptz,timestamptz,integer,text,text)
+grant execute on function public.activate_pass_entitlement(bigint,text,bigint,timestamptz,timestamptz,integer,integer,text,text)
   to service_role;
 
 revoke execute on function public.consume_pass_entitlement(bigint,bigint,bigint)
   from public, anon, authenticated;
 grant execute on function public.consume_pass_entitlement(bigint,bigint,bigint)
+  to service_role;
+
+revoke execute on function public.refund_pass_entitlement_usage(bigint,bigint)
+  from public, anon, authenticated;
+grant execute on function public.refund_pass_entitlement_usage(bigint,bigint)
   to service_role;
 
 revoke execute on function public.refund_pass_entitlement(bigint,text)
@@ -331,6 +380,7 @@ with parts as (
       'finalize_smart_notification_delivery',
       'activate_pass_entitlement',
       'consume_pass_entitlement',
+      'refund_pass_entitlement_usage',
       'refund_pass_entitlement',
       'backend_readiness_contract'
     )
