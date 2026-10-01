@@ -92,7 +92,7 @@ test('public shell owns final shared layout declarations without duplicate base 
   assert.doesNotMatch(base,/\.app-shell\s*\{[^}]*padding-left:\s*18px/);
   assert.doesNotMatch(base,/\.center-score-core\s*\{[^}]*min-width:\s*88px/);
   assert.doesNotMatch(base,/\.miniapp-public-shell \.global-search-panel\s*\{[^}]*padding:\s*18px/);
-  assert.match(shell,/\.app-shell\s*\{[^}]*padding-left:\s*max\(16px,env\(safe-area-inset-left\)\)/);
+  assert.match(shell,/\.app-shell\s*\{[^}]*padding-left:\s*max\(16px,\s*env\(safe-area-inset-left\)\)/);
   assert.match(shell,/\.center-score-core\s*\{[^}]*min-width:\s*78px/);
   assert.match(premium,/\.miniapp-public-shell \.global-search-panel\s*\{[^}]*padding:\s*12px/);
 });

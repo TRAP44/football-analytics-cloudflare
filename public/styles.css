@@ -2360,6 +2360,7 @@ button:disabled.is-pending { opacity:.65; cursor:wait; }
   .ai-match-plan-grid { grid-template-columns:1fr; }
 }
 
+/* RC49 — public Mini App shell */
 .miniapp-public-shell .search-mode-tabs {
   display:none !important;
 }
