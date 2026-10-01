@@ -307,6 +307,9 @@ function config(env) {
       DAY_PASS: intEnv(env.DAY_PASS_DURATION_HOURS, 24),
       WEEKEND_PASS: intEnv(env.WEEKEND_PASS_DURATION_HOURS, 72),
     },
+    passUsageLimits: {
+      WEEKEND_PASS: intEnv(env.WEEKEND_PASS_USAGE_LIMIT, 0) || null,
+    },
   };
 }
 
@@ -1270,7 +1273,9 @@ const {
 
 const {
   activatePassPurchase,
+  refundEntitlementUsage,
   refundPassByCharge,
+  reserveEntitlementUsage,
   resolveUserEntitlements,
 } = createEntitlementService({
   memory,
@@ -8355,6 +8360,12 @@ async function apiBillingInvoice(request, cfg, user) {
   if (passType) {
     const product = passProductConfig(passType, cfg);
     if (!product) return json({ error: 'Неизвестный Pass.', code: 'BILLING_UNKNOWN_PASS' }, 400);
+    if (!product.saleReady) {
+      return json({
+        error: 'Этот Pass ещё не готов к продаже: серверный лимит использования не настроен.',
+        code: 'BILLING_PASS_USAGE_LIMIT_REQUIRED',
+      }, 503);
+    }
 
     const fixtureId = passType === PASS_TYPES.MATCH ? Number(body?.fixtureId || 0) : 0;
     if (passType === PASS_TYPES.MATCH && (!Number.isSafeInteger(fixtureId) || fixtureId <= 0)) {
@@ -23588,9 +23599,9 @@ async function apiAnalyze(request, cfg, user) {
   }
 
   const entitlementBefore = await resolveUserEntitlements(user.id, fixtureId, cfg);
-  const passAccess = entitlementBefore.source === 'pass' && entitlementBefore.access.expandedAi === true;
+  const passCandidate = entitlementBefore.source === 'pass' && entitlementBefore.access.expandedAi === true;
   const quotaBefore = await getQuota(user.id, cfg);
-  if (!freeRecheck && !passAccess && quotaBefore.left <= 0) return await trackedFullAiFailureResponse({ error: `Лимит исчерпан: ${quotaBefore.used}/${quotaBefore.limit} анализов сегодня.`, quota: quotaBefore },429,'quota_exhausted');
+  if (!freeRecheck && !passCandidate && quotaBefore.left <= 0) return await trackedFullAiFailureResponse({ error: `Лимит исчерпан: ${quotaBefore.used}/${quotaBefore.limit} анализов сегодня.`, quota: quotaBefore },429,'quota_exhausted');
 
   const analysisLock=await claimDistributedAnalysisLock(fixtureId,cfg);
   if (!analysisLock.claimed && analysisLock.unavailable) {
@@ -23617,8 +23628,14 @@ async function apiAnalyze(request, cfg, user) {
   }
 
   let usageReservation=null;
+  let passUsageReservation=null;
   let usageCommitted=false;
   try {
+  let passAccess=false;
+  if (!freeRecheck && passCandidate) {
+    passUsageReservation=await reserveEntitlementUsage(user.id,entitlementBefore.passes.active,fixtureId,cfg);
+    passAccess=Boolean(passUsageReservation?.allowed);
+  }
   if (!freeRecheck && !passAccess) {
     usageReservation=await reserveAnalysisQuota(user.id,cfg);
     if (!usageReservation.allowed) {
@@ -23952,6 +23969,9 @@ async function apiAnalyze(request, cfg, user) {
   return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:recheckReasonCode,delta:recheckDelta},newsImpact,quota:await getQuota(user.id,cfg)}));
   } finally {
     if (usageReservation?.reserved && !usageCommitted) await refundAnalysisQuota(user.id,usageReservation,cfg);
+    if (passUsageReservation?.reserved && !usageCommitted) {
+      await refundEntitlementUsage(user.id,passUsageReservation.entitlementId,cfg).catch(()=>null);
+    }
     await releaseDistributedAnalysisLock(analysisLock,cfg);
   }
   } catch (error) {
