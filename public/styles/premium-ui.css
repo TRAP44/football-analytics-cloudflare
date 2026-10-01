@@ -1135,284 +1135,329 @@ html[data-theme="light"] .miniapp-public-shell {
   }
 }
 
-
-/* Screenshot UX fixes — Issue #317 */
-.miniapp-public-shell .compact-actions{
-  grid-template-columns:minmax(0,1fr)!important;
-}
-.miniapp-public-shell .compact-actions .analyze-btn{
-  width:100%;
-  max-width:none;
-  justify-self:stretch;
-  text-align:center;
-}
-.miniapp-public-shell .experience-actions{
-  grid-template-columns:repeat(2,minmax(0,1fr));
-}
-.miniapp-public-shell .analysis-favorite-btn.secondary-btn{
-  width:100%;
-  min-height:52px;
-  margin:0;
-  display:grid;
-  grid-template-columns:30px minmax(0,1fr);
-  gap:9px;
-  align-items:center;
-  padding:8px 11px;
-  border:1px solid var(--mr-line-soft);
-  border-radius:14px;
-  background:color-mix(in srgb,var(--surface-2) 44%,var(--surface));
-  color:var(--text);
-  text-align:left;
-}
-.miniapp-public-shell .analysis-favorite-btn.active{
-  border-color:color-mix(in srgb,#f5b82e 38%,var(--mr-line-soft));
-  background:color-mix(in srgb,#f5b82e 8%,var(--surface));
-}
-.miniapp-public-shell .analysis-favorite-star{
-  width:30px;
-  height:30px;
-  display:grid;
-  place-items:center;
-  border-radius:10px;
-  background:color-mix(in srgb,#f5b82e 10%,var(--surface-2));
-  color:#f5b82e;
-  font-size:17px;
-}
-.miniapp-public-shell .analysis-favorite-copy{min-width:0;display:grid;gap:2px}
-.miniapp-public-shell .analysis-favorite-copy small{color:var(--hint);font-size:8px;line-height:1.1}
-.miniapp-public-shell .analysis-favorite-copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;line-height:1.2}
-@media(max-width:430px){
-  .miniapp-public-shell .experience-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .miniapp-public-shell .experience-actions #reminderBtn,
-  .miniapp-public-shell .experience-actions #shareAnalysisBtn{grid-column:span 1}
-  .miniapp-public-shell .analysis-favorite-btn.secondary-btn{min-height:50px}
-}
-@media(max-width:360px){
-  .miniapp-public-shell .experience-actions{grid-template-columns:1fr}
+/* Public component contracts — Issue #323
+   This is the public-surface source of truth for interactive geometry.
+   Keep product-specific cosmetics above; keep shared control geometry here. */
+.miniapp-public-shell {
+  --mr-touch-target: 44px;
 }
 
-
-/* Screenshot UX fixes — Issue #319 */
-.miniapp-public-shell .radar-feed-item{
-  display:flex!important;
-  align-items:center;
-  gap:11px;
-  width:100%;
-  max-width:none;
-}
-.miniapp-public-shell .radar-feed-item .radar-feed-pulse{
-  flex:0 0 8px;
-}
-.miniapp-public-shell .radar-feed-item .radar-feed-copy{
-  flex:1 1 auto;
-  width:auto;
-  min-width:0;
-  max-width:none;
-  white-space:normal;
-}
-.miniapp-public-shell .radar-feed-item .radar-feed-copy strong,
-.miniapp-public-shell .radar-feed-item .radar-feed-copy em,
-.miniapp-public-shell .radar-feed-item .radar-feed-copy small{
-  max-width:100%;
-  white-space:normal;
-}
-.miniapp-public-shell .radar-feed-item.tone-live .radar-feed-pulse{
-  background:#ef4444;
-  box-shadow:0 0 0 4px color-mix(in srgb,#ef4444 14%,transparent);
-}
-.miniapp-public-shell .radar-feed-item.tone-ai .radar-feed-pulse{
-  background:var(--accent);
-  box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 15%,transparent);
-}
-.miniapp-public-shell .radar-feed-item.tone-reminder .radar-feed-pulse{
-  background:#f59e0b;
-  box-shadow:0 0 0 4px color-mix(in srgb,#f59e0b 14%,transparent);
-}
-.miniapp-public-shell .radar-feed-item.tone-watching .radar-feed-pulse{
-  background:#38bdf8;
-  box-shadow:0 0 0 4px color-mix(in srgb,#38bdf8 14%,transparent);
+.miniapp-public-shell :is(
+  .primary-btn,
+  .primary-setting-btn,
+  .secondary-btn:not(.analysis-favorite-btn),
+  .secondary-setting-btn,
+  .global-search-btn,
+  .analyze-btn,
+  .reminder-btn,
+  .share-analysis-btn,
+  .history-open,
+  .quick-reminder-btn,
+  .match-watch-btn,
+  .date-btn,
+  .filter-btn,
+  .search-mode-btn,
+  .tournament-tab,
+  .team-tab,
+  .analysis-tab-btn,
+  .center-tab-btn,
+  .connection-retry-btn,
+  .recovery-retry-btn,
+  .back-btn,
+  .icon-btn
+) {
+  min-height: var(--mr-touch-target);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1.2;
 }
 
-.miniapp-public-shell .bottom-nav{
-  left:50%!important;
-  right:auto!important;
-  width:min(720px,calc(100vw - 24px))!important;
-  max-width:720px!important;
-  margin:0!important;
-  transform:translateX(-50%)!important;
-  box-sizing:border-box;
-}
-.miniapp-public-shell .bottom-nav .nav-item{
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  text-align:center;
-  padding-left:4px;
-  padding-right:4px;
-}
-.miniapp-public-shell .bottom-nav .nav-item svg,
-.miniapp-public-shell .bottom-nav .nav-item small{
-  margin-left:auto;
-  margin-right:auto;
+.miniapp-public-shell :is(.icon-btn, .fav-star.compact) {
+  min-width: var(--mr-touch-target);
+  width: var(--mr-touch-target);
+  height: var(--mr-touch-target);
+  padding: 0;
 }
 
-.miniapp-public-shell .home-filter-controls{
-  display:grid;
-  gap:8px;
+.miniapp-public-shell :is(
+  .compact-actions,
+  .center-hero-actions,
+  .empty-actions,
+  .beta-feedback-actions,
+  .experience-actions,
+  .boot-actions
+):has(> button:only-child) {
+  grid-template-columns: minmax(0, 1fr);
 }
-.miniapp-public-shell .league-filter-drawer{
-  border:0;
-  background:transparent;
+
+.miniapp-public-shell :is(
+  .compact-actions,
+  .center-hero-actions,
+  .empty-actions,
+  .beta-feedback-actions,
+  .experience-actions,
+  .boot-actions
+):has(> button:only-child) > button {
+  width: 100%;
+  max-width: none;
+  justify-self: stretch;
 }
-.miniapp-public-shell .league-filter-drawer > summary{
-  width:max-content;
-  min-width:0;
-  min-height:40px;
-  margin-left:auto;
-  padding:0 13px;
-  display:inline-flex;
-  align-items:center;
-  gap:7px;
-  border:1px solid var(--mr-line-soft);
-  border-radius:999px;
-  background:color-mix(in srgb,var(--surface-2) 48%,var(--surface));
-  color:var(--hint);
-  font-size:11px;
-  font-weight:850;
+
+.miniapp-public-shell .compact-actions {
+  grid-template-columns: minmax(0, 1fr);
 }
-.miniapp-public-shell .league-filter-drawer > summary b[hidden]{
-  display:none!important;
+
+.miniapp-public-shell .compact-actions .analyze-btn {
+  width: 100%;
+  max-width: none;
+  justify-self: stretch;
 }
-.miniapp-public-shell .league-filter-drawer > summary b:not([hidden]){
-  padding-left:7px;
-  border-left:1px solid var(--mr-line-soft);
-  color:var(--accent);
-  font-size:10px;
+
+.miniapp-public-shell .experience-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-.miniapp-public-shell .league-filter-drawer > summary::after{
-  margin-left:0;
+
+.miniapp-public-shell .analysis-favorite-btn.secondary-btn {
+  width: 100%;
+  min-height: 52px;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  padding: 8px 11px;
+  border: 1px solid var(--mr-line-soft);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-2) 44%, var(--surface));
+  color: var(--text);
+  text-align: left;
 }
-.miniapp-public-shell .league-filter-drawer[open] > summary{
-  border-color:var(--mr-accent-line);
-  background:var(--mr-accent-soft);
-  color:var(--text);
+
+.miniapp-public-shell .analysis-favorite-btn.active {
+  border-color: color-mix(in srgb, #f5b82e 38%, var(--mr-line-soft));
+  background: color-mix(in srgb, #f5b82e 8%, var(--surface));
 }
-.miniapp-public-shell .league-filter-drawer .home-filter-body{
-  margin-top:8px;
-  padding:10px;
-  border:1px solid var(--mr-line-soft);
-  border-radius:14px;
-  background:var(--surface);
+
+.miniapp-public-shell .analysis-favorite-star {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: color-mix(in srgb, #f5b82e 10%, var(--surface-2));
+  color: #f5b82e;
 }
-@media(max-width:430px){
-  .miniapp-public-shell .bottom-nav{
-    width:calc(100vw - 16px)!important;
+
+.miniapp-public-shell .analysis-favorite-star .fav-star-icon {
+  width: 19px;
+  height: 19px;
+}
+
+.miniapp-public-shell .analysis-favorite-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.miniapp-public-shell .analysis-favorite-copy small {
+  color: var(--hint);
+  font-size: 8px;
+  line-height: 1.1;
+}
+
+.miniapp-public-shell .analysis-favorite-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+/* Radar Feed is always a full-width row. Tone is namespaced; legacy .ai is intentionally unsupported. */
+.miniapp-public-shell .radar-feed-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+
+.miniapp-public-shell .radar-feed-item .radar-feed-pulse {
+  flex: 0 0 8px;
+}
+
+.miniapp-public-shell .radar-feed-item .radar-feed-copy {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  white-space: normal;
+}
+
+.miniapp-public-shell .radar-feed-item .radar-feed-copy :is(strong, em, small) {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.miniapp-public-shell .radar-feed-item.tone-live .radar-feed-pulse {
+  background: #ef4444;
+  box-shadow: 0 0 0 4px color-mix(in srgb, #ef4444 14%, transparent);
+}
+
+.miniapp-public-shell .radar-feed-item.tone-ai .radar-feed-pulse {
+  background: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+.miniapp-public-shell .radar-feed-item.tone-reminder .radar-feed-pulse {
+  background: #f59e0b;
+  box-shadow: 0 0 0 4px color-mix(in srgb, #f59e0b 14%, transparent);
+}
+
+.miniapp-public-shell .radar-feed-item.tone-watching .radar-feed-pulse {
+  background: #38bdf8;
+  box-shadow: 0 0 0 4px color-mix(in srgb, #38bdf8 14%, transparent);
+}
+
+/* Navigation geometry stays centered at every supported width. */
+.miniapp-public-shell .bottom-nav {
+  left: 50%;
+  right: auto;
+  width: min(720px, calc(100vw - 24px));
+  max-width: 720px;
+  margin: 0;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+}
+
+.miniapp-public-shell .bottom-nav .nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+.miniapp-public-shell .bottom-nav .nav-item :is(svg, small) {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Advanced filters stay compact until opened, but their summary remains a valid touch target. */
+.miniapp-public-shell .home-filter-controls {
+  display: grid;
+  gap: 8px;
+}
+
+.miniapp-public-shell .league-filter-drawer {
+  border: 0;
+  background: transparent;
+}
+
+.miniapp-public-shell .league-filter-drawer > summary {
+  width: max-content;
+  min-width: 0;
+  min-height: var(--mr-touch-target);
+  margin-left: auto;
+  padding: 0 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--mr-line-soft);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-2) 48%, var(--surface));
+  color: var(--hint);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.miniapp-public-shell .league-filter-drawer > summary b[hidden] {
+  display: none;
+}
+
+.miniapp-public-shell .league-filter-drawer > summary b:not([hidden]) {
+  padding-left: 7px;
+  border-left: 1px solid var(--mr-line-soft);
+  color: var(--accent);
+  font-size: 10px;
+}
+
+.miniapp-public-shell .league-filter-drawer > summary::after {
+  margin-left: 0;
+}
+
+.miniapp-public-shell .league-filter-drawer[open] > summary {
+  border-color: var(--mr-accent-line);
+  background: var(--mr-accent-soft);
+  color: var(--text);
+}
+
+.miniapp-public-shell .league-filter-drawer .home-filter-body {
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--mr-line-soft);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+/* Favorites use one SVG geometry everywhere; time remains plain HH:mm text. */
+.miniapp-public-shell .fav-star.compact {
+  display: grid;
+  place-items: center;
+  margin: 0;
+  line-height: 0;
+}
+
+.miniapp-public-shell .fav-star-icon {
+  display: block;
+  width: 19px;
+  height: 19px;
+  margin: 0;
+  transform: none;
+  overflow: visible;
+}
+
+.miniapp-public-shell .match-secondary-actions > span {
+  display: grid;
+  grid-template-columns: 44px 44px;
+  align-items: center;
+  justify-items: center;
+  gap: 6px;
+}
+
+.miniapp-public-shell .match-secondary-actions > span > .fav-star.compact {
+  width: var(--mr-touch-target);
+  height: var(--mr-touch-target);
+}
+
+.miniapp-public-shell .match-time-label {
+  min-height: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--hint);
+  font-size: 11px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .01em;
+}
+
+@media (max-width: 430px) {
+  .miniapp-public-shell .bottom-nav {
+    width: calc(100vw - 16px);
   }
-  .miniapp-public-shell .league-filter-drawer > summary{
-    min-height:38px;
-  }
 }
 
-
-/* Consolidated production UI regression pass — Issue #321 */
-.miniapp-public-shell .primary-btn,
-.miniapp-public-shell .primary-setting-btn,
-.miniapp-public-shell .secondary-btn:not(.analysis-favorite-btn),
-.miniapp-public-shell .secondary-setting-btn,
-.miniapp-public-shell .global-search-btn,
-.miniapp-public-shell .analyze-btn,
-.miniapp-public-shell .reminder-btn,
-.miniapp-public-shell .share-analysis-btn,
-.miniapp-public-shell .history-open,
-.miniapp-public-shell .quick-reminder-btn,
-.miniapp-public-shell .match-watch-btn,
-.miniapp-public-shell .date-btn,
-.miniapp-public-shell .filter-btn{
-  display:inline-flex!important;
-  align-items:center!important;
-  justify-content:center!important;
-  text-align:center!important;
-  line-height:1.2;
-}
-
-.miniapp-public-shell .center-hero-actions:not(.has-admin-audit):has(> button:only-child){
-  grid-template-columns:minmax(0,1fr)!important;
-}
-.miniapp-public-shell .center-hero-actions:not(.has-admin-audit):has(> button:only-child) > button{
-  width:100%!important;
-  justify-self:stretch!important;
-}
-
-.miniapp-public-shell .fav-star.compact{
-  display:grid!important;
-  place-items:center!important;
-  padding:0!important;
-  line-height:0!important;
-}
-.miniapp-public-shell .fav-star-icon{
-  display:block;
-  width:19px;
-  height:19px;
-  margin:0;
-  transform:none;
-  overflow:visible;
-}
-.miniapp-public-shell .match-secondary-actions > span{
-  display:grid!important;
-  grid-template-columns:44px 44px;
-  align-items:center;
-  justify-items:center;
-  gap:6px!important;
-}
-.miniapp-public-shell .match-secondary-actions > span > .fav-star.compact{
-  width:44px!important;
-  height:44px!important;
-  margin:0!important;
-}
-
-.miniapp-public-shell .match-time-label{
-  min-height:auto!important;
-  padding:0!important;
-  border:0!important;
-  border-radius:0!important;
-  background:transparent!important;
-  box-shadow:none!important;
-  color:var(--hint)!important;
-  font-size:11px!important;
-  font-weight:800!important;
-  font-variant-numeric:tabular-nums;
-  letter-spacing:.01em;
-}
-
-/* Backward compatibility for a cached pre-launch32 app.js that still emitted .ai. */
-.miniapp-public-shell .radar-feed-item.ai,
-.miniapp-public-shell .radar-feed-item.tone-ai{
-  display:flex!important;
-  align-items:center!important;
-  width:100%!important;
-  max-width:none!important;
-  min-width:0!important;
-}
-.miniapp-public-shell .radar-feed-item.ai .radar-feed-copy,
-.miniapp-public-shell .radar-feed-item.tone-ai .radar-feed-copy{
-  display:grid!important;
-  flex:1 1 0%!important;
-  width:0!important;
-  min-width:0!important;
-  max-width:none!important;
-}
-.miniapp-public-shell .radar-feed-item.ai .radar-feed-copy > *,
-.miniapp-public-shell .radar-feed-item.tone-ai .radar-feed-copy > *{
-  width:auto!important;
-  max-width:100%!important;
-  white-space:normal!important;
-  word-break:normal!important;
-  overflow-wrap:normal!important;
-}
-
-@media(max-width:430px){
-  .miniapp-public-shell .center-hero-actions:not(.has-admin-audit):has(> button:only-child){
-    grid-template-columns:minmax(0,1fr)!important;
+@media (max-width: 360px) {
+  .miniapp-public-shell .experience-actions {
+    grid-template-columns: 1fr;
   }
 }

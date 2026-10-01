@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { FRONTEND_ASSET_REVISION } from '../public/modules/app-runtime.js';
 
 const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
 const diagnostics = readFileSync(new URL('../public/modules/admin-diagnostics.js', import.meta.url), 'utf8');
@@ -26,8 +27,8 @@ test('shared app root lazy-loads diagnostics only behind admin role', () => {
 });
 
 test('surface entrypoints remain separated while diagnostics extraction stays lazy', () => {
-  assert.match(publicEntry, /import '\.\/app\.js\?v=6\.120\.0-launch32';/);
-  assert.match(adminEntry, /import '\.\/app\.js\?v=6\.120\.0-launch32';/);
+  assert.ok(publicEntry.includes(`import './app.js?v=${FRONTEND_ASSET_REVISION}';`));
+  assert.ok(adminEntry.includes(`import './app.js?v=${FRONTEND_ASSET_REVISION}';`));
   assert.doesNotMatch(publicEntry, /admin-diagnostics/);
   assert.doesNotMatch(adminEntry, /admin-diagnostics/);
 });

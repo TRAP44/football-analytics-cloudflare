@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { FRONTEND_ASSET_REVISION } from '../public/modules/app-runtime.js';
 
 const html = fs.readFileSync('public/index.html', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
@@ -11,30 +12,30 @@ const worker = fs.readFileSync('src/worker.js', 'utf8');
 test('public head has no literal escaped newline and bumps public asset revision', () => {
   const head = html.slice(html.indexOf('<head>'), html.indexOf('</head>'));
   assert.doesNotMatch(head, /\\n/);
-  assert.match(html, /frontend-asset-revision" content="6\.120\.0-launch32"/);
-  assert.match(html, /premium-ui\.css\?v=6\.120\.0-launch32/);
-  assert.match(html, /app-public\.js\?v=6\.120\.0-launch32/);
-  assert.match(entry, /import '\.\/app\.js\?v=6\.120\.0-launch32';/);
+  assert.ok(html.includes(`frontend-asset-revision" content="${FRONTEND_ASSET_REVISION}"`));
+  assert.ok(html.includes(`premium-ui.css?v=${FRONTEND_ASSET_REVISION}`));
+  assert.ok(html.includes(`app-public.js?v=${FRONTEND_ASSET_REVISION}`));
+  assert.ok(entry.includes(`import './app.js?v=${FRONTEND_ASSET_REVISION}';`));
 });
 
 test('Radar Feed uses a namespaced tone and a non-collapsing flex row', () => {
   assert.match(app, /radar-feed-item tone-\$\{escapeHtml\(item\.tone/);
   assert.doesNotMatch(app, /radar-feed-item \$\{escapeHtml\(item\.tone/);
-  assert.match(premium, /\.radar-feed-item\{[\s\S]*display:flex!important/);
-  assert.match(premium, /\.radar-feed-item \.radar-feed-copy\{[\s\S]*flex:1 1 auto/);
+  assert.match(premium, /\.radar-feed-item \{[\s\S]*display:\s*flex;/);
+  assert.match(premium, /\.radar-feed-item \.radar-feed-copy \{[\s\S]*flex:\s*1 1 auto/);
   assert.match(premium, /\.radar-feed-item\.tone-ai \.radar-feed-pulse/);
 });
 
 test('bottom navigation is explicitly centered and each nav action centers its contents', () => {
-  assert.match(premium, /\.bottom-nav\{[\s\S]*left:50%!important[\s\S]*transform:translateX\(-50%\)!important/);
-  assert.match(premium, /\.bottom-nav \.nav-item\{[\s\S]*align-items:center[\s\S]*justify-content:center[\s\S]*text-align:center/);
+  assert.match(premium, /\.bottom-nav \{[\s\S]*left:\s*50%;[\s\S]*transform:\s*translateX\(-50%\);/);
+  assert.match(premium, /\.bottom-nav \.nav-item \{[\s\S]*align-items:\s*center[\s\S]*justify-content:\s*center[\s\S]*text-align:\s*center/);
 });
 
 test('advanced filters stay compact until the user opens them', () => {
   assert.match(html, /<summary><span>⚙ Фильтры<\/span><b data-filter-summary-value hidden><\/b><\/summary>/);
   assert.match(app, /summaryValue\.hidden = !activeDrawerFilter/);
-  assert.match(premium, /\.league-filter-drawer > summary\{[\s\S]*width:max-content/);
-  assert.match(premium, /\.league-filter-drawer \.home-filter-body\{[\s\S]*margin-top:8px/);
+  assert.match(premium, /\.league-filter-drawer > summary \{[\s\S]*width:\s*max-content/);
+  assert.match(premium, /\.league-filter-drawer \.home-filter-body \{[\s\S]*margin-top:\s*8px/);
 });
 
 test('public date feed batches yesterday today and tomorrow into one provider request', () => {

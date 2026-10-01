@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { FRONTEND_ASSET_REVISION } from '../public/modules/app-runtime.js';
 
 const html = fs.readFileSync('public/index.html', 'utf8');
 const css = fs.readFileSync('public/styles/premium-ui.css', 'utf8');
@@ -9,8 +10,8 @@ test('premium UI layer is loaded after public shell', () => {
   const shell = html.indexOf('/styles/public-shell.css');
   const premium = html.indexOf('/styles/premium-ui.css');
   assert.ok(shell >= 0 && premium > shell);
-  assert.match(html, /frontend-asset-revision" content="6\.120\.0-launch32"/);
-  assert.match(html, /premium-ui\.css\?v=6\.120\.0-launch32/);
+  assert.ok(html.includes(`frontend-asset-revision" content="${FRONTEND_ASSET_REVISION}"`));
+  assert.ok(html.includes(`premium-ui.css?v=${FRONTEND_ASSET_REVISION}`));
 });
 
 test('premium UI covers core public surfaces without changing product contracts', () => {
