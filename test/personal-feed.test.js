@@ -43,7 +43,6 @@ test('AI history and admin-only data are deferred after first public paint', () 
   assert.match(app, /const tasks = \[loadHistory\(false\)\]/);
   assert.match(app, /tasks\.push\(loadProvider\(\)\)/);
   assert.match(app, /if \(!state\.remindersLoaded\) tasks\.push\(loadReminders\(\)\)/);
-  assert.match(html, /<details class="profile-data-details">/);
-  assert.match(html, /id="dataModeSummary"/);
-  assert.match(css, /\.profile-data-details > summary/);
+  assert.doesNotMatch(html, /profile-data-details/);
+  assert.doesNotMatch(html, /id="dataModeSummary"/);
 });
