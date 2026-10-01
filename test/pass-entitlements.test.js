@@ -11,7 +11,7 @@ import {
   resolveEntitlementAccess,
 } from '../src/entitlements.js';
 
-const BOT_TOKEN = '123456:test-token-for-entitlement-signatures';
+const BOT_TOKEN = 'unit-test-signing-key';
 const NOW = Date.parse('2026-10-01T12:00:00.000Z');
 
 function row(overrides = {}) {
