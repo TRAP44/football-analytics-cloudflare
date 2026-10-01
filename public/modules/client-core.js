@@ -28,13 +28,13 @@ export function safeDate(iso) {
 export function timeOf(iso) {
   const d = safeDate(iso);
   if (!d) return '—';
-  try { return new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' }).format(d); } catch { return '—'; }
+  try { return new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d); } catch { return '—'; }
 }
 
 export function dateTime(iso) {
   const d = safeDate(iso);
   if (!d) return '';
-  try { return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(d); } catch { return ''; }
+  try { return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d); } catch { return ''; }
 }
 
 export function dateOnly(iso) {
