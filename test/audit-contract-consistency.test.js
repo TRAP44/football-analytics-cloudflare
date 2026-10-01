@@ -90,7 +90,7 @@ test('audit: Worker external requests use the shared timeout transport',()=>{
 
 
 test('audit: mutable entrypoint assets are never cached as immutable',()=>{
-  const appBlocks=['/app.js','/app-public.js','/app-admin.js'].map(asset => {
+  const appBlocks=['/app.js'].map(asset => {
     const block=assetHeaders.split(asset+'\n')[1]?.split('\n\n')[0] || '';
     return block;
   });
@@ -120,7 +120,7 @@ test('audit: public entrypoint asset revisions track the package release',()=>{
   const version=packageMeta.version;
   const frontendRevision=/<meta name="frontend-asset-revision" content="([^"]+)" \/>/.exec(indexHtml)?.[1] || '';
   assert.ok(frontendRevision.startsWith(version+'-'));
-  assert.ok(indexHtml.includes('/app-public.js?v='+frontendRevision+'"') || indexHtml.includes("/app-public.js?v="+frontendRevision+"'"));
+  assert.ok(indexHtml.includes('/app.js?v='+frontendRevision+'"') || indexHtml.includes("/app.js?v="+frontendRevision+"'"));
   assert.ok(indexHtml.includes('/styles.css?v='+frontendRevision+'"') || indexHtml.includes("/styles.css?v="+frontendRevision+"'"));
   assert.ok(indexHtml.includes('/styles/public-shell.css?v='+frontendRevision+'"') || indexHtml.includes("/styles/public-shell.css?v="+frontendRevision+"'"));
   assert.ok(statusHtml.includes('/status.js?v='+version+'"') || statusHtml.includes("/status.js?v="+version+"'"));
