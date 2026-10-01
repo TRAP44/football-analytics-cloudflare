@@ -10,7 +10,7 @@ const worker = fs.readFileSync('src/worker.js', 'utf8');
 
 test('match card AI CTA owns the full primary action row', () => {
   assert.match(app, /match-card-actions compact-actions single/);
-  assert.match(premium, /\.compact-actions\{[\s\S]*grid-template-columns:minmax\(0,1fr\)!important/);
+  assert.match(premium, /\\.compact-actions \\{[\\s\\S]*grid-template-columns:\\s*minmax\\(0, 1fr\\)/);
   assert.match(premium, /\.compact-actions \.analyze-btn\{[\s\S]*width:100%/);
 });
 
