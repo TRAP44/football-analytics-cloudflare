@@ -892,6 +892,7 @@ const smartNotificationsModule = createSmartNotificationsModule({
   api,
   escapeHtml,
   toast,
+  onOpenBilling: () => $('billingPanel')?.scrollIntoView?.({ behavior:'smooth', block:'start' }),
 });
 const {
   load: loadSmartNotifications,
@@ -1484,7 +1485,8 @@ async function resetSettlementCircuitFromUi(...args) {
   return module?.resetSettlementCircuitFromUi(...args);
 }
 
-async function openProfileView() {
+async function openProfileView({ preservePassContext = false } = {}) {
+  if (!preservePassContext) billingModule.clearPassContext();
   showView('profileView');
   sendProductAction('profile_open', 'profileView');
   if (!state.profile) {
@@ -1499,7 +1501,8 @@ async function openProfileView() {
   const lastFixture = Number(state.currentCenter?.match?.fixtureId || state.currentAnalysis?.match?.fixtureId || 0);
   if (lastFixture && $('providerAuditFixtureId') && !$('providerAuditFixtureId').value) $('providerAuditFixtureId').value = String(lastFixture);
   const essentials = [];
-  if (!billingModule.snapshot().loaded) essentials.push(loadBilling());
+  const billingState = billingModule.snapshot();
+  if (!billingState.loaded || !billingState.passLoaded) essentials.push(loadBilling());
   if (!state.favoritesLoaded) essentials.push(loadFavorites());
   if (!state.favoritePlayersLoaded) essentials.push(loadFavoritePlayers());
   if (!state.remindersLoaded) essentials.push(loadReminders());
@@ -1872,7 +1875,7 @@ const billingModule = createBillingModule({
   telegram: tg,
   dateTime,
   reloadProfile: () => loadProfile(),
-  openProfile: () => openProfileView(),
+  openProfile: options => openProfileView(options),
 });
 function renderBilling() { return billingModule.render(); }
 function loadBilling(...args) { return billingModule.load(...args); }
@@ -6511,9 +6514,12 @@ $('navHistory').addEventListener('click', async () => {
   if (tasks.length) await Promise.allSettled(tasks);
 });
 $('navProfile').addEventListener('click', openProfileView);
-$('profileMyTeamsBtn')?.addEventListener('click', () => {
+$('profileFavoriteTeamsBtn')?.addEventListener('click', () => {
   renderMyTeams();
   showView('myTeamsView');
+});
+$('profileRemindersBtn')?.addEventListener('click', () => {
+  $('remindersPanel')?.scrollIntoView?.({ behavior:'smooth', block:'start' });
 });
 $('myTeamsFindBtn')?.addEventListener('click', () => { showView('matchesView'); setTimeout(() => $('matchSearch')?.focus({ preventScroll:true }), 80); });
 $('homeSearchBtn')?.addEventListener('click', () => { const q=String($('matchSearch')?.value || '').trim(); state.globalSearch.query=q; if ($('globalSearchInput')) $('globalSearchInput').value=q; renderGlobalSearch(); showView('searchView'); if (q) runGlobalSearch(); });
