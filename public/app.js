@@ -266,7 +266,7 @@ const {
 });
 
 function stopLiveRefresh() {
-  if (state.liveRefreshTimer) clearInterval(state.liveRefreshTimer);
+  if (state.liveRefreshTimer) clearTimeout(state.liveRefreshTimer);
   state.liveRefreshTimer = null;
   state.liveRefreshRemaining = 0;
 }
@@ -349,21 +349,18 @@ function apiErrorCategory(error) {
 
 function friendlyErrorMessage(error) {
   const category = apiErrorCategory(error);
-  const retryAfter = Number(error?.retryAfter || error?.payload?.retryAfter || 0);
   if (category === 'offline') return 'Нет подключения к интернету. Сохранённые данные останутся на экране.';
   if (error?.status === 426 || error?.payload?.category === 'compatibility') return 'Версия приложения устарела. Обновите приложение.';
-  if (error?.payload?.category === 'maintenance') return error?.payload?.error || 'Приложение временно на техническом обслуживании.';
-  if (error?.payload?.category === 'feature_disabled') return error?.payload?.error || 'Эта функция временно приостановлена.';
+  if (error?.payload?.category === 'maintenance') return 'Приложение временно на техническом обслуживании.';
+  if (error?.payload?.category === 'feature_disabled') return 'Эта функция временно приостановлена.';
   if (category === 'auth') return 'Сессия Telegram не подтверждена. Закройте приложение и откройте его снова из бота.';
   if (category === 'timeout') return 'Сервис отвечает медленнее обычного. Попробуйте обновить ещё раз.';
-  if (category === 'rate_limit') return retryAfter
-    ? `Обновления на паузе ~${retryAfter} сек. Уже загруженные данные доступны.`
-    : 'Обновления временно на паузе. Уже загруженные данные доступны.';
+  if (category === 'rate_limit') return 'Обновления временно на паузе. Уже загруженные данные доступны.';
   if (category === 'integrity') return 'Данные этого матча сейчас перепроверяются. Попробуйте открыть его немного позже.';
   if (category === 'database') return 'Хранилище данных временно недоступно. Основные футбольные экраны продолжат работу через доступные сохранённые данные.';
   if (category === 'provider') return 'Футбольные данные временно недоступны. Если есть сохранённая версия, приложение оставит её на экране.';
   if (category === 'service') return 'Сервис временно недоступен. Попробуйте повторить действие через несколько секунд.';
-  return error?.message || 'Не удалось получить данные. Попробуйте ещё раз.';
+  return 'Не удалось получить данные. Попробуйте ещё раз.';
 }
 
 function normalizeApiError(error) {
@@ -3721,6 +3718,46 @@ function updateLiveCountdown() {
   el.textContent = 'Обновляется автоматически';
 }
 
+function isActiveLiveFixture(fixtureId) {
+  return Boolean(
+    state.liveRefreshWasActive
+    && !document.hidden
+    && activeViewId() === 'analysisView'
+    && state.currentCenter?.mode === 'live'
+    && Number(state.currentCenter?.match?.fixtureId || 0) === Number(fixtureId)
+  );
+}
+
+function scheduleLiveRefresh(fixtureId) {
+  const delaySeconds = Math.max(15, Number(state.currentCenter?.refreshSeconds || 60));
+  state.liveRefreshRemaining = delaySeconds;
+  state.liveRefreshTimer = setTimeout(async () => {
+    state.liveRefreshTimer = null;
+    if (!isActiveLiveFixture(fixtureId)) return;
+
+    try {
+      const timingStartedAt = performance.now();
+      const data = await requestMatchCenter(fixtureId, { t: Date.now() });
+      if (!data || !isActiveLiveFixture(fixtureId)) return;
+
+      sendOperationTiming('live', timingStartedAt, 'analysisView');
+      state.currentCenter = data;
+      renderMatchCenter(data);
+      if (data.mode !== 'live') {
+        stopLiveRefresh();
+        state.liveRefreshWasActive = false;
+      }
+    } catch (e) {
+      if (!isActiveLiveFixture(fixtureId)) return;
+      const el = $('liveRefreshText');
+      if (el) el.textContent = 'Не удалось обновить. Повторим автоматически.';
+      sendActionError('live_refresh', e, 'analysisView');
+    } finally {
+      if (isActiveLiveFixture(fixtureId) && !state.liveRefreshTimer) scheduleLiveRefresh(fixtureId);
+    }
+  }, delaySeconds * 1000);
+}
+
 function startLiveRefresh(fixtureId) {
   stopLiveRefresh();
   if (!runtimeAllows('liveEnabled')) {
@@ -3729,37 +3766,12 @@ function startLiveRefresh(fixtureId) {
     if (el) el.textContent = 'Автообновление матча временно приостановлено.';
     return;
   }
-  state.liveRefreshRemaining = Math.max(15, Number(state.currentCenter?.refreshSeconds || 60));
-  if (document.hidden) {
-    state.liveRefreshWasActive = true;
-    updateLiveCountdown();
-    return;
-  }
+
   state.liveRefreshWasActive = true;
   updateLiveCountdown();
-  state.liveRefreshTimer = setInterval(async () => {
-    state.liveRefreshRemaining -= 1;
-    updateLiveCountdown();
-    if (state.liveRefreshRemaining <= 0) {
-      state.liveRefreshRemaining = Math.max(15, Number(state.currentCenter?.refreshSeconds || 60));
-      try {
-        const timingStartedAt = performance.now();
-        const data = await requestMatchCenter(fixtureId, { t: Date.now() });
-        if (!data) return;
-        sendOperationTiming('live', timingStartedAt, 'analysisView');
-        state.currentCenter = data;
-        renderMatchCenter(data);
-        if (data.mode !== 'live') stopLiveRefresh();
-      } catch (e) {
-        state.liveRefreshRemaining = Math.max(15, Number(state.currentCenter?.refreshSeconds || 60));
-        const el = $('liveRefreshText');
-        if (el) el.textContent = 'Не удалось обновить. Повторим автоматически.';
-        sendActionError('live_refresh', e, 'analysisView');
-      }
-    }
-  }, 1000);
+  if (document.hidden) return;
+  scheduleLiveRefresh(fixtureId);
 }
-
 
 function signedPp(v) {
   const n = Number(v);
@@ -6311,9 +6323,8 @@ function updateConnectionBanner() {
   if (mode === 'degraded') {
     banner.hidden = false;
     icon.textContent = state.network.category === 'rate_limit' ? '⏳' : '⚠️';
-    const cooldown=Number(state.network.retryAfter || 0);
     title.textContent = state.network.category === 'rate_limit'
-      ? (cooldown ? `Пауза обновлений · ~${cooldown} сек.` : 'Пауза обновлений')
+      ? 'Обновления временно на паузе'
       : 'Часть данных обновляется медленнее';
     text.textContent = state.network.category === 'rate_limit'
       ? 'Показываем уже загруженные матчи и снимки.'
