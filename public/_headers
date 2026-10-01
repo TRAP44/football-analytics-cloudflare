@@ -24,6 +24,12 @@
 /styles/public-shell.css
   Cache-Control: public, max-age=0, must-revalidate
 
+/styles/premium-ui.css
+  Cache-Control: public, max-age=0, must-revalidate
+
+/modules/*
+  Cache-Control: public, max-age=0, must-revalidate
+
 /index.html
   Cache-Control: no-cache, max-age=0, must-revalidate
 
