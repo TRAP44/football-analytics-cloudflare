@@ -2895,16 +2895,60 @@ async function billingWebhookStatus(request, cfg) {
   }
 }
 
+const STAR_SYNC_PAGE_SIZE = 100;
+const STAR_SYNC_MAX_PAGES = 5;
+
+async function loadStarTransactionsForSync(cfg) {
+  const transactions=[];
+  let pagesScanned=0;
+  let truncated=false;
+
+  for (let page=0; page<STAR_SYNC_MAX_PAGES; page+=1) {
+    const offset=page*STAR_SYNC_PAGE_SIZE;
+    const tx=await telegramApi('getStarTransactions',cfg,{offset,limit:STAR_SYNC_PAGE_SIZE});
+    const batch=Array.isArray(tx?.transactions) ? tx.transactions : [];
+    transactions.push(...batch);
+    pagesScanned+=1;
+    if (batch.length < STAR_SYNC_PAGE_SIZE) {
+      truncated=false;
+      break;
+    }
+    truncated=page === STAR_SYNC_MAX_PAGES - 1;
+  }
+
+  return { transactions, pagesScanned, truncated };
+}
+
 async function syncBillingFromStars(userId, cfg) {
-  const tx = await telegramApi('getStarTransactions', cfg, { offset: 0, limit: 100 });
-  const list = Array.isArray(tx?.transactions) ? tx.transactions : [];
+  const history=await loadStarTransactionsForSync(cfg);
+  const list=history.transactions;
+  const refundedChargeIds=new Set();
   let best = null;
   let passVerified = 0;
+  let refundsReconciled = 0;
 
+  // Telegram exposes purchase refunds as outgoing Star transactions whose id
+  // matches the original incoming payment charge. Reconcile those first so an
+  // older purchase page can never reactivate already-refunded access.
+  for (const item of list) {
+    const receiver=item?.receiver;
+    if (!receiver || receiver.type !== 'user' || receiver.transaction_type !== 'invoice_payment') continue;
+    if (Number(receiver.user?.id) !== Number(userId)) continue;
+    const chargeId=String(item?.id || '').trim();
+    if (!chargeId || refundedChargeIds.has(chargeId)) continue;
+    refundedChargeIds.add(chargeId);
+    const reconciled=await applyRefundedPayment(userId,chargeId,cfg);
+    if (reconciled?.updated) refundsReconciled+=1;
+  }
+
+  const seenIncomingCharges=new Set();
   for (const item of list) {
     const source = item?.source;
     if (!source || source.type !== 'user' || source.transaction_type !== 'invoice_payment') continue;
     if (Number(source.user?.id) !== Number(userId)) continue;
+    const chargeId=String(item?.id || '').trim();
+    if (!chargeId || refundedChargeIds.has(chargeId) || seenIncomingCharges.has(chargeId)) continue;
+    seenIncomingCharges.add(chargeId);
 
     const pass = await parsePassInvoicePayload(source.invoice_payload, cfg.botToken);
     if (pass && Number(pass.userId) === Number(userId)) {
@@ -2914,7 +2958,7 @@ async function syncBillingFromStars(userId, cfg) {
           currency: 'XTR',
           total_amount: Number(item.amount),
           invoice_payload: source.invoice_payload,
-          telegram_payment_charge_id: String(item.id || ''),
+          telegram_payment_charge_id: chargeId,
           provider_payment_charge_id: '',
           is_recurring: false,
           is_first_recurring: false,
@@ -2930,7 +2974,7 @@ async function syncBillingFromStars(userId, cfg) {
     if (!planCfg || Number(item.amount) !== Number(planCfg.stars)) continue;
     const period = Number(source.subscription_period || SUBSCRIPTION_PERIOD_SECONDS);
     const expiresUnix = Number(item.date || 0) + period;
-    if (!best || expiresUnix > best.expiresUnix) best = { item, source, parsed, expiresUnix };
+    if (!best || expiresUnix > best.expiresUnix) best = { item, source, parsed, expiresUnix, chargeId };
   }
 
   let subscriptionSynced = false;
@@ -2939,7 +2983,7 @@ async function syncBillingFromStars(userId, cfg) {
       currency: 'XTR',
       total_amount: Number(best.item.amount),
       invoice_payload: best.source.invoice_payload,
-      telegram_payment_charge_id: String(best.item.id || ''),
+      telegram_payment_charge_id: best.chargeId,
       provider_payment_charge_id: '',
       subscription_expiration_date: best.expiresUnix,
       is_recurring: true,
@@ -2948,9 +2992,12 @@ async function syncBillingFromStars(userId, cfg) {
   }
 
   return {
-    synced: Boolean(subscriptionSynced || passVerified),
+    synced: Boolean(subscriptionSynced || passVerified || refundsReconciled),
     subscriptionSynced: Boolean(subscriptionSynced),
     passVerified,
+    refundsReconciled,
+    transactionPagesScanned: history.pagesScanned,
+    transactionHistoryTruncated: history.truncated,
     quota: await getQuota(userId, cfg),
   };
 }
