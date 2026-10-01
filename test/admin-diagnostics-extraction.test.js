@@ -26,8 +26,8 @@ test('shared app root lazy-loads diagnostics only behind admin role', () => {
 });
 
 test('surface entrypoints remain separated while diagnostics extraction stays lazy', () => {
-  assert.match(publicEntry, /import '\.\/app\.js';/);
-  assert.match(adminEntry, /import '\.\/app\.js';/);
+  assert.match(publicEntry, /import '\.\/app\.js\?v=6\.120\.0-launch32';/);
+  assert.match(adminEntry, /import '\.\/app\.js\?v=6\.120\.0-launch32';/);
   assert.doesNotMatch(publicEntry, /admin-diagnostics/);
   assert.doesNotMatch(adminEntry, /admin-diagnostics/);
 });
