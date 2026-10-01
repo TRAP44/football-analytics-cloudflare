@@ -228,6 +228,19 @@ test('v6.25 migration is additive, service-role-only and protects duplicate/conc
   assert.doesNotMatch(sql, /\bdrop\s+(table|column|schema)\b/i);
 });
 
+test('full AI uses Pass entitlement server-side instead of the FREE quota gate for the entitled scope', () => {
+  const worker = fs.readFileSync('src/worker.js', 'utf8');
+  const start = worker.indexOf('async function apiAnalyze(');
+  const end = worker.indexOf('async function apiHistoryAnalysis', start);
+  const source = worker.slice(start, end > start ? end : start + 40000);
+
+  assert.match(source, /resolveUserEntitlements\(user\.id, fixtureId, cfg\)/);
+  assert.match(source, /const passAccess = entitlementBefore\.source === 'pass'/);
+  assert.match(source, /if \(!freeRecheck && !passAccess && quotaBefore\.left <= 0\)/);
+  assert.match(source, /if \(!freeRecheck && !passAccess\) \{\s*usageReservation=await reserveAnalysisQuota/);
+  assert.doesNotMatch(source, /users\.plan\s*=\s*['"]PASS['"]/);
+});
+
 test('Worker reuses the established billing route/webhook and keeps monetization default-off', () => {
   const worker = fs.readFileSync('src/worker.js', 'utf8');
   const router = fs.readFileSync('src/router.js', 'utf8');
