@@ -139,6 +139,6 @@ test('ordinary profile copy avoids implementation vocabulary', () => {
     assert.equal(publicProfile.includes(forbidden), false, forbidden);
   }
   assert.doesNotMatch(profileDataCapabilities, /c\.note/);
-  assert.match(profileDataCapabilities, /Доступность зависит от турнира и конкретного матча/);
+  assert.match(profileDataCapabilities, /Если каких-то данных нет, MatchRadar не подставляет их искусственно/);
   assert.match(app, /createProfileDataCapabilitiesModule\(\{ state, elementById: \$ \}\)/);
 });
