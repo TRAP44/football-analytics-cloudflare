@@ -32,6 +32,23 @@ test('a completed analysis is shown before conditional secondary synchronization
   assert.doesNotMatch(analyze[0], /await Promise\.all\(\[loadHistory\(false\), loadReminders\(\)\]\)/);
 });
 
+test('pending AI analysis cannot reclaim navigation after the user leaves or opens another match', () => {
+  assert.match(app, /analysisRequestSeq:\s*0/);
+  const analyze = app.match(/async function analyzeMatch\(fixtureId, btn, options = \{\}\)[\s\S]*?\n}\n\nfunction historyItemFromAnalysis/);
+  assert.ok(analyze, 'analyzeMatch must exist');
+  assert.match(analyze[0], /const requestSeq = \+\+state\.analysisRequestSeq/);
+  assert.match(analyze[0], /const ownsAnalysisView = requestSeq === state\.analysisRequestSeq && activeViewId\(\) === 'analysisView'/);
+  assert.match(analyze[0], /if \(ownsAnalysisView\) renderAnalysis\(data\)/);
+  assert.match(analyze[0], /if \(ownsAnalysisView\) showView\('analysisView'\)/);
+  assert.match(analyze[0], /if \(requestSeq !== state\.analysisRequestSeq \|\| activeViewId\(\) !== 'analysisView'\) return/);
+
+  const center = app.match(/async function openMatchCenter\(fixtureId, btn\)[\s\S]*?\n}\n\nfunction syncAnalysisBusyUi/);
+  assert.ok(center, 'openMatchCenter must exist');
+  assert.match(center[0], /if \(state\.analysisActionPending\) state\.analysisRequestSeq \+= 1/);
+
+  assert.match(app, /from === 'analysisView' && to !== 'analysisView' && state\.analysisActionPending[\s\S]*?state\.analysisRequestSeq \+= 1/);
+});
+
 test('history gets an immediate local row and stale GET responses cannot overwrite it', () => {
   assert.match(app, /historyRevision:\s*0/);
   assert.match(app, /function rememberHistoryAnalysis\(data\)/);
