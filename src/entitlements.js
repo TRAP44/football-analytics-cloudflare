@@ -43,11 +43,14 @@ export function passProductConfig(type, cfg = {}) {
   const key = normalizePassType(type);
   if (!key) return null;
   const base = DEFAULT_PASS_PRODUCTS[key];
+  const usageLimit = positiveInt(cfg.passUsageLimits?.[key], null);
   return {
     key,
     ...base,
     stars: positiveInt(cfg.passPrices?.[key], base.stars),
     durationHours: positiveInt(cfg.passDurations?.[key], base.durationHours),
+    usageLimit,
+    saleReady: key !== PASS_TYPES.WEEKEND || usageLimit !== null,
   };
 }
 
@@ -263,6 +266,7 @@ export function createEntitlementService({
         p_fixture_id: fid || null,
         p_starts_at: window.startsAt,
         p_expires_at: window.expiresAt,
+        p_usage_limit: product.usageLimit,
         p_stars_amount: Number(product.stars),
         p_payment_charge_id: chargeId,
         p_invoice_payload: payload,
@@ -294,7 +298,7 @@ export function createEntitlementService({
       fixture_id: fid || null,
       starts_at: window.startsAt,
       expires_at: window.expiresAt,
-      usage_limit: null,
+      usage_limit: product.usageLimit,
       usage_count: 0,
       stars_amount: Number(product.stars),
       payment_charge_id: chargeId,
@@ -355,6 +359,53 @@ export function createEntitlementService({
     return { allowed: true, reason: 'consumed', usageCount: Number(row.usage_count || 0), usageLimit: row.usage_limit };
   }
 
+  async function refundEntitlementUsage(userId, entitlementId, cfg) {
+    const uid = Number(userId);
+    const eid = Number(entitlementId);
+    if (!Number.isSafeInteger(uid) || uid <= 0 || !Number.isSafeInteger(eid) || eid <= 0) {
+      return { updated: false, reason: 'invalid_input' };
+    }
+    if (hasSupabase(cfg)) {
+      return await supaRpc(cfg, 'refund_pass_entitlement_usage', {
+        p_telegram_id: uid,
+        p_entitlement_id: eid,
+      }, 4000);
+    }
+    const row = [...memory.userEntitlements.values()].find(item => Number(item.id) === eid && Number(item.telegram_id) === uid);
+    if (!row) return { updated: false, reason: 'not_found' };
+    if (row.usage_limit == null) return { updated: false, reason: 'not_limited' };
+    row.usage_count = Math.max(0, Number(row.usage_count || 0) - 1);
+    row.updated_at = new Date().toISOString();
+    return { updated: true, reason: 'refunded', entitlementId: row.id, usageCount: row.usage_count };
+  }
+
+  async function reserveEntitlementUsage(userId, activeEntitlements, fixtureId, cfg) {
+    const candidates = (activeEntitlements || []).map(normalizeEntitlementRow);
+    const unlimited = candidates.find(item => item.usageLimit == null);
+    if (unlimited) {
+      return {
+        allowed: true,
+        reserved: false,
+        reason: 'unlimited',
+        entitlementId: unlimited.id,
+        type: unlimited.type,
+      };
+    }
+    for (const item of candidates) {
+      const consumed = await consumeEntitlement(userId, item.id, fixtureId, cfg);
+      if (consumed?.allowed) {
+        return {
+          ...consumed,
+          allowed: true,
+          reserved: true,
+          entitlementId: item.id,
+          type: item.type,
+        };
+      }
+    }
+    return { allowed: false, reserved: false, reason: candidates.length ? 'usage_exhausted' : 'no_entitlement' };
+  }
+
   async function refundPassByCharge(userId, paymentChargeId, cfg) {
     const uid = Number(userId);
     const chargeId = String(paymentChargeId || '').trim();
@@ -377,7 +428,9 @@ export function createEntitlementService({
     activatePassPurchase,
     consumeEntitlement,
     listUserEntitlements,
+    refundEntitlementUsage,
     refundPassByCharge,
+    reserveEntitlementUsage,
     resolveUserEntitlements,
   };
 }
