@@ -1313,3 +1313,106 @@ html[data-theme="light"] .miniapp-public-shell {
     min-height:38px;
   }
 }
+
+
+/* Consolidated production UI regression pass — Issue #321 */
+.miniapp-public-shell .primary-btn,
+.miniapp-public-shell .primary-setting-btn,
+.miniapp-public-shell .secondary-btn:not(.analysis-favorite-btn),
+.miniapp-public-shell .secondary-setting-btn,
+.miniapp-public-shell .global-search-btn,
+.miniapp-public-shell .analyze-btn,
+.miniapp-public-shell .reminder-btn,
+.miniapp-public-shell .share-analysis-btn,
+.miniapp-public-shell .history-open,
+.miniapp-public-shell .quick-reminder-btn,
+.miniapp-public-shell .match-watch-btn,
+.miniapp-public-shell .date-btn,
+.miniapp-public-shell .filter-btn{
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  text-align:center!important;
+  line-height:1.2;
+}
+
+.miniapp-public-shell .center-hero-actions:not(.has-admin-audit):has(> button:only-child){
+  grid-template-columns:minmax(0,1fr)!important;
+}
+.miniapp-public-shell .center-hero-actions:not(.has-admin-audit):has(> button:only-child) > button{
+  width:100%!important;
+  justify-self:stretch!important;
+}
+
+.miniapp-public-shell .fav-star.compact{
+  display:grid!important;
+  place-items:center!important;
+  padding:0!important;
+  line-height:0!important;
+}
+.miniapp-public-shell .fav-star-icon{
+  display:block;
+  width:19px;
+  height:19px;
+  margin:0;
+  transform:none;
+  overflow:visible;
+}
+.miniapp-public-shell .match-secondary-actions > span{
+  display:grid!important;
+  grid-template-columns:44px 44px;
+  align-items:center;
+  justify-items:center;
+  gap:6px!important;
+}
+.miniapp-public-shell .match-secondary-actions > span > .fav-star.compact{
+  width:44px!important;
+  height:44px!important;
+  margin:0!important;
+}
+
+.miniapp-public-shell .match-time-label{
+  min-height:auto!important;
+  padding:0!important;
+  border:0!important;
+  border-radius:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+  color:var(--hint)!important;
+  font-size:11px!important;
+  font-weight:800!important;
+  font-variant-numeric:tabular-nums;
+  letter-spacing:.01em;
+}
+
+/* Backward compatibility for a cached pre-launch32 app.js that still emitted .ai. */
+.miniapp-public-shell .radar-feed-item.ai,
+.miniapp-public-shell .radar-feed-item.tone-ai{
+  display:flex!important;
+  align-items:center!important;
+  width:100%!important;
+  max-width:none!important;
+  min-width:0!important;
+}
+.miniapp-public-shell .radar-feed-item.ai .radar-feed-copy,
+.miniapp-public-shell .radar-feed-item.tone-ai .radar-feed-copy{
+  display:grid!important;
+  flex:1 1 0%!important;
+  width:0!important;
+  min-width:0!important;
+  max-width:none!important;
+}
+.miniapp-public-shell .radar-feed-item.ai .radar-feed-copy > *,
+.miniapp-public-shell .radar-feed-item.tone-ai .radar-feed-copy > *{
+  width:auto!important;
+  max-width:100%!important;
+  white-space:normal!important;
+  word-break:normal!important;
+  overflow-wrap:normal!important;
+}
+
+@media(max-width:430px){
+  .miniapp-public-shell .center-hero-actions:not(.has-admin-audit):has(> button:only-child){
+    grid-template-columns:minmax(0,1fr)!important;
+  }
+}
