@@ -2507,8 +2507,11 @@ async function loadMatches(options = {}) {
       $('matches')?.setAttribute('aria-busy', 'false');
       return;
     }
-    const suffix = retry ? `<br><span class="tiny">Повторите примерно через ${retry} сек.</span>` : '';
-    $('matches').innerHTML = `<div class="empty error-state"><strong>Матчи сейчас не обновились</strong><span>${escapeHtml(e.message)}${suffix}</span><button id="matchesRetryBtn" class="secondary-btn" type="button">Повторить</button></div>`;
+    const category = apiErrorCategory(e);
+    const publicMessage = category === 'rate_limit'
+      ? 'Источник матчей временно занят. Попробуйте ещё раз чуть позже.'
+      : (e.message || 'Не удалось обновить матчи.');
+    $('matches').innerHTML = `<div class="empty error-state"><strong>Матчи сейчас не обновились</strong><span>${escapeHtml(publicMessage)}</span><button id="matchesRetryBtn" class="secondary-btn" type="button">Повторить</button></div>`;
     $('matchesRetryBtn')?.addEventListener('click', () => loadMatches({ force: true }));
     $('matches')?.setAttribute('aria-busy', 'false');
   }
@@ -2536,7 +2539,10 @@ function syncFilterButtons() {
       germany: 'Германия',
       france: 'Франция',
     };
-    if (summaryValue) summaryValue.textContent = activeDrawerFilter ? labels[state.filter] : 'Ещё';
+    if (summaryValue) {
+      summaryValue.textContent = activeDrawerFilter ? labels[state.filter] : '';
+      summaryValue.hidden = !activeDrawerFilter;
+    }
   }
 }
 
@@ -2771,7 +2777,7 @@ function renderRadarFeed() {
   wrap.hidden = false;
   if (meta) meta.textContent = russianCountLabel(rows.length, 'сигнал', 'сигнала', 'сигналов');
   list.innerHTML = rows.map(item => `
-    <button class="radar-feed-item ${escapeHtml(item.tone || 'neutral')}" type="button"
+    <button class="radar-feed-item tone-${escapeHtml(item.tone || 'neutral')}" type="button"
       data-radar-fixture="${Number(item.fixtureId)}"
       data-radar-action="${escapeHtml(item.action || 'center')}">
       <span class="radar-feed-pulse" aria-hidden="true"></span>

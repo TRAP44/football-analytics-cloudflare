@@ -1190,3 +1190,126 @@ html[data-theme="light"] .miniapp-public-shell {
 @media(max-width:360px){
   .miniapp-public-shell .experience-actions{grid-template-columns:1fr}
 }
+
+
+/* Screenshot UX fixes — Issue #319 */
+.miniapp-public-shell .radar-feed-item{
+  display:flex!important;
+  align-items:center;
+  gap:11px;
+  width:100%;
+  max-width:none;
+}
+.miniapp-public-shell .radar-feed-item .radar-feed-pulse{
+  flex:0 0 8px;
+}
+.miniapp-public-shell .radar-feed-item .radar-feed-copy{
+  flex:1 1 auto;
+  width:auto;
+  min-width:0;
+  max-width:none;
+  white-space:normal;
+}
+.miniapp-public-shell .radar-feed-item .radar-feed-copy strong,
+.miniapp-public-shell .radar-feed-item .radar-feed-copy em,
+.miniapp-public-shell .radar-feed-item .radar-feed-copy small{
+  max-width:100%;
+  white-space:normal;
+}
+.miniapp-public-shell .radar-feed-item.tone-live .radar-feed-pulse{
+  background:#ef4444;
+  box-shadow:0 0 0 4px color-mix(in srgb,#ef4444 14%,transparent);
+}
+.miniapp-public-shell .radar-feed-item.tone-ai .radar-feed-pulse{
+  background:var(--accent);
+  box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 15%,transparent);
+}
+.miniapp-public-shell .radar-feed-item.tone-reminder .radar-feed-pulse{
+  background:#f59e0b;
+  box-shadow:0 0 0 4px color-mix(in srgb,#f59e0b 14%,transparent);
+}
+.miniapp-public-shell .radar-feed-item.tone-watching .radar-feed-pulse{
+  background:#38bdf8;
+  box-shadow:0 0 0 4px color-mix(in srgb,#38bdf8 14%,transparent);
+}
+
+.miniapp-public-shell .bottom-nav{
+  left:50%!important;
+  right:auto!important;
+  width:min(720px,calc(100vw - 24px))!important;
+  max-width:720px!important;
+  margin:0!important;
+  transform:translateX(-50%)!important;
+  box-sizing:border-box;
+}
+.miniapp-public-shell .bottom-nav .nav-item{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  padding-left:4px;
+  padding-right:4px;
+}
+.miniapp-public-shell .bottom-nav .nav-item svg,
+.miniapp-public-shell .bottom-nav .nav-item small{
+  margin-left:auto;
+  margin-right:auto;
+}
+
+.miniapp-public-shell .home-filter-controls{
+  display:grid;
+  gap:8px;
+}
+.miniapp-public-shell .league-filter-drawer{
+  border:0;
+  background:transparent;
+}
+.miniapp-public-shell .league-filter-drawer > summary{
+  width:max-content;
+  min-width:0;
+  min-height:40px;
+  margin-left:auto;
+  padding:0 13px;
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  border:1px solid var(--mr-line-soft);
+  border-radius:999px;
+  background:color-mix(in srgb,var(--surface-2) 48%,var(--surface));
+  color:var(--hint);
+  font-size:11px;
+  font-weight:850;
+}
+.miniapp-public-shell .league-filter-drawer > summary b[hidden]{
+  display:none!important;
+}
+.miniapp-public-shell .league-filter-drawer > summary b:not([hidden]){
+  padding-left:7px;
+  border-left:1px solid var(--mr-line-soft);
+  color:var(--accent);
+  font-size:10px;
+}
+.miniapp-public-shell .league-filter-drawer > summary::after{
+  margin-left:0;
+}
+.miniapp-public-shell .league-filter-drawer[open] > summary{
+  border-color:var(--mr-accent-line);
+  background:var(--mr-accent-soft);
+  color:var(--text);
+}
+.miniapp-public-shell .league-filter-drawer .home-filter-body{
+  margin-top:8px;
+  padding:10px;
+  border:1px solid var(--mr-line-soft);
+  border-radius:14px;
+  background:var(--surface);
+}
+@media(max-width:430px){
+  .miniapp-public-shell .bottom-nav{
+    width:calc(100vw - 16px)!important;
+  }
+  .miniapp-public-shell .league-filter-drawer > summary{
+    min-height:38px;
+  }
+}

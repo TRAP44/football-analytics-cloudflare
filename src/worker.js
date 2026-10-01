@@ -21634,6 +21634,33 @@ async function loadProviderFixture(fixtureId,cfg) {
   return fixture;
 }
 
+function utcDateShift(date, offsetDays = 0) {
+  const parsed = new Date(`${String(date || '')}T00:00:00.000Z`);
+  if (!Number.isFinite(parsed.getTime())) return '';
+  parsed.setUTCDate(parsed.getUTCDate() + Number(offsetDays || 0));
+  return parsed.toISOString().slice(0, 10);
+}
+
+function publicFeedDateWindow(date) {
+  const today = todayUtc();
+  const yesterday = utcDateShift(today, -1);
+  const tomorrow = utcDateShift(today, 1);
+  if (![yesterday, today, tomorrow].includes(String(date || ''))) return null;
+  return { from: yesterday, to: tomorrow, days: [yesterday, today, tomorrow] };
+}
+
+function providerFeedDateTtl(date, cfg) {
+  const today = todayUtc();
+  const yesterday = utcDateShift(today, -1);
+  if (date === today) return 2;
+  if (date === yesterday) return 720;
+  return cfg.cacheMinutes;
+}
+
+function fixtureProviderDate(fixture = {}) {
+  return String(fixture?.fixture?.date || '').slice(0, 10);
+}
+
 async function apiMatches(request, cfg) {
   const url = new URL(request.url);
   const requested = url.searchParams.get('date') || '';
@@ -21654,9 +21681,33 @@ async function apiMatches(request, cfg) {
     if (Array.isArray(providerBatch?.fixtures)) {
       fixtures=providerBatch.fixtures;
     } else {
-      fixtures = await apiFootball('/fixtures', { date }, cfg);
-      const providerBatchTtl=isToday ? 2 : isYesterday ? 720 : cfg.cacheMinutes;
-      await setCache(providerBatchKey,0,{fixtures,fetchedAt:new Date().toISOString()},cfg,providerBatchTtl).catch(()=>null);
+      const feedWindow=publicFeedDateWindow(date);
+      const providerParams=feedWindow
+        ? {from:feedWindow.from,to:feedWindow.to}
+        : {date};
+      const fetchedFixtures=await apiFootball('/fixtures',providerParams,cfg);
+      const fetchedAt=new Date().toISOString();
+      if (feedWindow) {
+        const grouped=new Map(feedWindow.days.map(day=>[day,[]]));
+        for (const fixture of fetchedFixtures) {
+          const fixtureDate=fixtureProviderDate(fixture);
+          if (grouped.has(fixtureDate)) grouped.get(fixtureDate).push(fixture);
+        }
+        await Promise.all(feedWindow.days.map(day=>
+          setCache(
+            providerFixtureDateCacheKey(day),
+            0,
+            {fixtures:grouped.get(day) || [],fetchedAt},
+            cfg,
+            providerFeedDateTtl(day,cfg),
+          ).catch(()=>null)
+        ));
+        fixtures=grouped.get(date) || [];
+      } else {
+        fixtures=fetchedFixtures;
+        const providerBatchTtl=isToday ? 2 : isYesterday ? 720 : cfg.cacheMinutes;
+        await setCache(providerBatchKey,0,{fixtures,fetchedAt},cfg,providerBatchTtl).catch(()=>null);
+      }
     }
   } catch (error) {
     const stale = previousPayload || await getStaleCache(cacheKey, cfg);
