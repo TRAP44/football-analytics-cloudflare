@@ -14,7 +14,7 @@ test('public head has no literal escaped newline and bumps public asset revision
   assert.match(html, /frontend-asset-revision" content="6\.120\.0-launch31"/);
   assert.match(html, /premium-ui\.css\?v=6\.120\.0-launch31/);
   assert.match(html, /app-public\.js\?v=6\.120\.0-launch31/);
-  assert.match(entry, /app\.js\?v=6\.120\.0-launch31/);
+  assert.match(entry, /import '\.\/app\.js';/);
 });
 
 test('Radar Feed uses a namespaced tone and a non-collapsing flex row', () => {
