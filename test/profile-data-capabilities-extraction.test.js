@@ -68,13 +68,13 @@ test('top-level data capabilities take precedence over profile fallback', () => 
 
   module.renderDataCapabilities();
 
-  assert.equal(elements.get('dataModeLabel').textContent, 'Больше данных');
-  assert.equal(elements.get('dataModeSummary').textContent, 'Больше данных');
-  assert.equal(elements.get('dataModeRefresh').textContent, 'частые');
+  assert.equal(elements.get('dataModeLabel').textContent, 'Расширенный');
+  assert.equal(elements.get('dataModeSummary').textContent, 'Подробнее');
+  assert.equal(elements.get('dataModeRefresh').textContent, 'часто');
   assert.equal(elements.get('dataModeLineups').textContent, 'Чаще доступны');
   assert.equal(elements.get('dataModePlayers').textContent, 'Чаще доступны');
   assert.equal(elements.get('dataModeOdds').textContent, 'Чаще доступны');
-  assert.equal(elements.get('dataModeNote').textContent, 'Доступность зависит от турнира и конкретного матча.');
+  assert.equal(elements.get('dataModeNote').textContent, 'Если каких-то данных нет, MatchRadar не подставляет их искусственно.');
 });
 
 test('profile fallback preserves standard availability copy', () => {
@@ -99,12 +99,12 @@ test('profile fallback preserves standard availability copy', () => {
 
   module.renderDataCapabilities();
 
-  assert.equal(elements.get('dataModeLabel').textContent, 'Обычное');
-  assert.equal(elements.get('dataModeSummary').textContent, 'Обычное');
-  assert.equal(elements.get('dataModeRefresh').textContent, 'автоматические');
-  assert.equal(elements.get('dataModeLineups').textContent, 'По наличию');
-  assert.equal(elements.get('dataModePlayers').textContent, 'По наличию');
-  assert.equal(elements.get('dataModeOdds').textContent, 'По наличию');
+  assert.equal(elements.get('dataModeLabel').textContent, 'Стандартный');
+  assert.equal(elements.get('dataModeSummary').textContent, 'Подробнее');
+  assert.equal(elements.get('dataModeRefresh').textContent, 'автоматически');
+  assert.equal(elements.get('dataModeLineups').textContent, 'Если доступны');
+  assert.equal(elements.get('dataModePlayers').textContent, 'Если доступны');
+  assert.equal(elements.get('dataModeOdds').textContent, 'Если доступны');
 });
 
 test('disabled or zero-second refresh remains temporarily paused', () => {
