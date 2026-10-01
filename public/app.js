@@ -1841,7 +1841,8 @@ const billingModule = createBillingModule({
 });
 function renderBilling() { return billingModule.render(); }
 function loadBilling(...args) { return billingModule.load(...args); }
-function showQuotaPaywall(fixtureId = 0) { return billingModule.showQuotaPaywall(fixtureId); }
+function showQuotaPaywall() { return billingModule.showQuotaPaywall(); }
+function showQuotaPaywallForFixture(fixtureId = 0) { return billingModule.showQuotaPaywall(fixtureId); }
 function hideQuotaPaywall() { return billingModule.hideQuotaPaywall(); }
 
 let adminProviderModule = null;
@@ -4969,7 +4970,7 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
   } catch (e) {
     const recovery=e.payload?.newsImpactRecovery || null;
     const quotaExhausted = e.status === 429 && !String(e.payload?.code || '').startsWith('FOOTBALL_');
-    if (quotaExhausted) showQuotaPaywall(fixtureId);
+    if (quotaExhausted) showQuotaPaywallForFixture(fixtureId);
     if (recovery?.message) {
       toast(recovery.message);
       if (recovery.action==='search') {

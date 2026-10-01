@@ -75,7 +75,7 @@ test('active expired unavailable and included Pass states render from server dec
 test('Match Pass opens from Match Center context and quota paywall preserves fixture context', () => {
   assert.match(app, /id="centerMatchPassBtn"/);
   assert.match(app, /openPassStoreForFixture\(Number\(m\.fixtureId\)\)/);
-  assert.match(app, /showQuotaPaywall\(fixtureId\)/);
+  assert.match(app, /showQuotaPaywallForFixture\(fixtureId\)/);
   assert.match(billing, /passFixtureId = id/);
   assert.match(billing, /fixtureId:id, force:true/);
   assert.match(billing, /Number\(invoice\.fixtureId \|\| 0\) !== fixtureId/);
