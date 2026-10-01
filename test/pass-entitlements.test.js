@@ -195,7 +195,7 @@ test('usage consumption is atomic in service semantics and refund revokes Pass a
     starsAmount: 89,
     paymentChargeId: 'charge-limited',
     invoicePayload: 'signed-day',
-    paidAt: '2026-10-01T12:00:00.000Z',
+    paidAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
   }, {});
   assert.equal(activation.activated, true);
   const stored = memory.userEntitlements.get('charge-limited');
