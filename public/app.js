@@ -109,6 +109,12 @@ const state = {
     manifestOk: false,
     degraded: false,
     watchdogFired: false,
+    timings: {
+      manifestMs: null,
+      identityMs: null,
+      feedMs: null,
+      revealDelayMs: null,
+    },
   },
   storageAvailable: true,
   liveRefreshWasActive: false,
@@ -391,6 +397,16 @@ function sendClientTelemetry(event, meta = {}, { once = false } = {}) {
       networkMode: meta.networkMode || state.network.mode || 'online',
       bootMs: meta.bootMs,
       durationMs: meta.durationMs,
+      moduleReadyMs: meta.moduleReadyMs,
+      navigationReadyMs: meta.navigationReadyMs,
+      responseEndMs: meta.responseEndMs,
+      domContentLoadedMs: meta.domContentLoadedMs,
+      firstContentfulPaintMs: meta.firstContentfulPaintMs,
+      manifestMs: meta.manifestMs,
+      identityMs: meta.identityMs,
+      feedMs: meta.feedMs,
+      revealDelayMs: meta.revealDelayMs,
+      viewportWidth: meta.viewportWidth,
       matchMode: meta.matchMode,
       lineupsAvailable: meta.lineupsAvailable,
       injuriesAvailable: meta.injuriesAvailable,
@@ -756,8 +772,21 @@ function hideBootGate() {
   gate.classList.add('done');
   state.startup.finishedAt = performance.now();
   state.clientPerf.bootMs = Math.round(state.startup.finishedAt - state.startup.startedAt);
+  const navigation = performance.getEntriesByType?.('navigation')?.[0] || null;
+  const firstContentfulPaint = (performance.getEntriesByType?.('paint') || [])
+    .find(entry => entry?.name === 'first-contentful-paint') || null;
   sendClientTelemetry('boot_ok', {
     bootMs: state.clientPerf.bootMs,
+    moduleReadyMs: Math.max(0, Math.round(state.startup.startedAt)),
+    navigationReadyMs: Math.max(0, Math.round(state.startup.finishedAt)),
+    responseEndMs: Number.isFinite(Number(navigation?.responseEnd)) ? Math.max(0, Math.round(Number(navigation.responseEnd))) : null,
+    domContentLoadedMs: Number.isFinite(Number(navigation?.domContentLoadedEventEnd)) ? Math.max(0, Math.round(Number(navigation.domContentLoadedEventEnd))) : null,
+    firstContentfulPaintMs: Number.isFinite(Number(firstContentfulPaint?.startTime)) ? Math.max(0, Math.round(Number(firstContentfulPaint.startTime))) : null,
+    manifestMs: state.startup.timings.manifestMs,
+    identityMs: state.startup.timings.identityMs,
+    feedMs: state.startup.timings.feedMs,
+    revealDelayMs: state.startup.timings.revealDelayMs,
+    viewportWidth: Math.max(0, Math.round(Number(window.innerWidth || 0))),
     manifestOk: state.startup.manifestOk,
     degraded: state.startup.degraded,
     startParam: tg?.initDataUnsafe?.start_param || '',
@@ -793,7 +822,9 @@ async function runStartupSequence() {
   if ($('bootReloadBtn')) $('bootReloadBtn').hidden = true;
 
   setBootStatus('MatchRadar', 'Загружаем матчи…', 12);
+  let phaseStartedAt = performance.now();
   const manifest = await loadAppManifest();
+  state.startup.timings.manifestMs = Math.max(0, Math.round(performance.now() - phaseStartedAt));
 
   if (state.compatibilityBlocked) {
     showBootRecovery({
@@ -809,10 +840,12 @@ async function runStartupSequence() {
   // Runtime and identity are independent, but personal/feed reads must stay
   // behind the access decision. This removes one network waterfall without
   // weakening the strict-beta authorization boundary.
+  phaseStartedAt = performance.now();
   await Promise.allSettled([
     loadRuntimeStatus(false),
     loadProfile().catch(()=>null),
   ]);
+  state.startup.timings.identityMs = Math.max(0, Math.round(performance.now() - phaseStartedAt));
 
   if (state.closedBetaBlocked) return false;
   renderProfile();
@@ -822,8 +855,10 @@ async function runStartupSequence() {
   if ($('navProfile')) $('navProfile').hidden=false;
   if ($('navMatches')) $('navMatches').hidden=false;
 
+  phaseStartedAt = performance.now();
   const startupTasks = [loadFavorites(), loadMatches()];
   await Promise.allSettled(startupTasks);
+  state.startup.timings.feedMs = Math.max(0, Math.round(performance.now() - phaseStartedAt));
   void loadFavoritePlayers();
 
   const usable = Boolean(state.profile || admin || navigator.onLine !== false);
@@ -840,7 +875,9 @@ async function runStartupSequence() {
   if (!hasDirectLaunchIntent()) showView('matchesView');
   sendProductAction('open', 'matchesView');
   setBootStatus('MatchRadar', 'Загружаем матчи…', 100);
+  phaseStartedAt = performance.now();
   await new Promise(resolve => setTimeout(resolve, 120));
+  state.startup.timings.revealDelayMs = Math.max(0, Math.round(performance.now() - phaseStartedAt));
   hideBootGate();
 
   scheduleIdle(async () => {
