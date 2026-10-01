@@ -11,10 +11,10 @@ const worker = fs.readFileSync('src/worker.js', 'utf8');
 test('public head has no literal escaped newline and bumps public asset revision', () => {
   const head = html.slice(html.indexOf('<head>'), html.indexOf('</head>'));
   assert.doesNotMatch(head, /\\n/);
-  assert.match(html, /frontend-asset-revision" content="6\.120\.0-launch31"/);
-  assert.match(html, /premium-ui\.css\?v=6\.120\.0-launch31/);
-  assert.match(html, /app-public\.js\?v=6\.120\.0-launch31/);
-  assert.match(entry, /import '\.\/app\.js';/);
+  assert.match(html, /frontend-asset-revision" content="6\.120\.0-launch32"/);
+  assert.match(html, /premium-ui\.css\?v=6\.120\.0-launch32/);
+  assert.match(html, /app-public\.js\?v=6\.120\.0-launch32/);
+  assert.match(entry, /import '\.\/app\.js\?v=6\.120\.0-launch32';/);
 });
 
 test('Radar Feed uses a namespaced tone and a non-collapsing flex row', () => {

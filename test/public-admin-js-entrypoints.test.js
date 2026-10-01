@@ -16,8 +16,8 @@ test('public and admin surfaces use distinct JavaScript entrypoints', () => {
 });
 
 test('surface entrypoints keep the shared composition root explicit during extraction', () => {
-  assert.match(publicEntry, /import '\.\/app\.js';/);
-  assert.match(adminEntry, /import '\.\/app\.js';/);
+  assert.match(publicEntry, /import '\.\/app\.js\?v=6\.120\.0-launch32';/);
+  assert.match(adminEntry, /import '\.\/app\.js\?v=6\.120\.0-launch32';/);
   assert.doesNotMatch(publicEntry, /admin-only|runtimeControls|diagnostics/i);
 });
 
