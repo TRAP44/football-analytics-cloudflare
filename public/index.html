@@ -229,6 +229,14 @@
       <section id="analysisView" class="view">
         <button id="backBtn" class="back-btn" type="button">← К поиску</button>
         <div id="analysis"></div>
+        <section id="analysisQuotaPaywall" class="panel billing-quota-paywall" hidden aria-live="polite">
+          <span class="billing-quota-icon">⭐</span>
+          <div>
+            <strong>AI-разборы на сегодня закончились</strong>
+            <p>Матчи, LIVE, составы и статистика остаются доступны бесплатно.</p>
+          </div>
+          <button id="quotaUpgradeBtn" class="primary-setting-btn" type="button">Смотреть PRO и PREMIUM</button>
+        </section>
       </section>
 
       <section id="myTeamsView" class="view" hidden>
@@ -294,6 +302,74 @@
             </div>
           </div>
         </div>
+
+        <section id="billingPanel" class="panel billing-panel" aria-labelledby="billingTitle">
+          <div class="billing-head">
+            <div>
+              <span class="profile-zone-kicker">MATCHRADAR PRO</span>
+              <h2 id="billingTitle">Тариф и AI-доступ</h2>
+              <p>Подписка через Telegram Stars. Матчи, LIVE и базовая статистика не блокируются тарифом.</p>
+            </div>
+            <span id="billingPlanBadge" class="billing-plan-badge">FREE</span>
+          </div>
+
+          <div class="billing-summary-grid">
+            <div><span>Использовано AI</span><strong id="billingQuotaUsed">0</strong></div>
+            <div><span>Лимит сегодня</span><strong id="billingQuotaLimit">—</strong></div>
+            <div><span>Осталось</span><strong id="billingQuotaLeft">—</strong></div>
+            <div><span>Подписка</span><strong id="billingExpiry">Без подписки</strong></div>
+          </div>
+          <div class="billing-quota-track" role="progressbar" aria-label="Использование AI-разборов" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="billingQuotaProgress"></i></div>
+
+          <div id="billingStatus" class="billing-status waiting" role="status" aria-live="polite">Проверяем доступность тарифов…</div>
+
+          <div id="subscriptionDetails" class="subscription-details" hidden>
+            <strong id="subscriptionPlan">PRO</strong>
+            <span id="subscriptionCopy"></span>
+          </div>
+
+          <div class="pricing-grid billing-pricing-grid" aria-label="Тарифы MatchRadar">
+            <article class="pricing-card" data-plan="FREE">
+              <span class="pricing-name">FREE</span>
+              <strong>0 ⭐</strong>
+              <span id="freeLimit" class="pricing-price">— AI-разборов / день</span>
+              <ul>
+                <li>Матчи и LIVE</li>
+                <li>Составы и базовая статистика</li>
+                <li>Базовый AI-лимит</li>
+              </ul>
+              <span id="freePlanState" class="pricing-state">Текущий тариф</span>
+            </article>
+            <article class="pricing-card" data-plan="PRO">
+              <span class="pricing-name">PRO</span>
+              <strong id="proPrice">Цена загружается…</strong>
+              <span id="proLimit" class="pricing-price">Лимит загружается…</span>
+              <ul>
+                <li>Расширенный дневной AI-лимит</li>
+                <li>Расширенные AI-возможности</li>
+                <li>Дополнительные smart-уведомления</li>
+              </ul>
+              <button id="proBtn" type="button" disabled>Проверяем оплату…</button>
+            </article>
+            <article class="pricing-card premium-card" data-plan="PREMIUM">
+              <span class="pricing-name">PREMIUM</span>
+              <strong id="premiumPrice">Цена загружается…</strong>
+              <span id="premiumLimit" class="pricing-price">Лимит загружается…</span>
+              <ul>
+                <li>Максимальный дневной AI-лимит</li>
+                <li>Максимальные AI-возможности</li>
+                <li>Расширенные LIVE и notification-возможности</li>
+              </ul>
+              <button id="premiumBtn" type="button" disabled>Проверяем оплату…</button>
+            </article>
+          </div>
+
+          <div class="billing-actions">
+            <button id="billingSyncBtn" class="secondary-setting-btn" type="button" disabled>Проверить оплату</button>
+            <button id="subscriptionManageBtn" class="secondary-setting-btn" type="button" hidden>Отключить автопродление</button>
+          </div>
+          <p class="billing-footnote">Тариф меняется только после подтверждения Telegram Stars на сервере. Клиент не может самостоятельно выдать PRO или PREMIUM.</p>
+        </section>
 
         <section class="panel digest-settings-panel" aria-label="Утренняя подборка">
           <div id="digestSettingsRoot">
