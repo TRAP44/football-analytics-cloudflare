@@ -67,7 +67,7 @@ test('real provider response headers persist quota evidence without synthetic pr
 });
 
 test('client deduplicates match center refreshes and keeps provider cooldown non-blocking',()=>{
-  const request=block(app,'async function requestMatchCenter','function updateLiveCountdown');
+  const request=block(app,'async function requestMatchCenter','function isActiveLiveFixture');
   assert.match(request,/matchCenterInFlight/);
   assert.match(request,/state\.clientPerf\.deduped/);
 
