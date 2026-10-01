@@ -1,3 +1,43 @@
+export function mountAdminBillingRefundPanel(doc = document) {
+  if (!doc || doc.getElementById('adminBillingRefundPanel')) return doc?.getElementById?.('adminBillingRefundPanel') || null;
+  const billing = doc.getElementById('billingPanel');
+  if (!billing) return null;
+
+  const section = doc.createElement('section');
+  section.id = 'adminBillingRefundPanel';
+  section.className = 'panel admin-billing-refund-panel';
+  section.hidden = false;
+  section.setAttribute('aria-hidden', 'false');
+  section.innerHTML = `
+    <div class="section-head profile-section-head">
+      <div>
+        <h2>💫 Возврат Telegram Stars</h2>
+        <p>Ручной возврат только через Telegram API. База обновляется сервером после успешного refund.</p>
+      </div>
+    </div>
+    <div class="admin-billing-refund-grid">
+      <label class="setting-field">
+        <span>Telegram ID пользователя</span>
+        <input id="billingRefundUserId" inputmode="numeric" autocomplete="off" placeholder="Например: 123456789">
+      </label>
+      <button id="billingRefundLookupBtn" class="secondary-btn" type="button">Найти платежи</button>
+    </div>
+    <div id="billingRefundStatus" class="tiny" role="status" aria-live="polite">Укажите Telegram ID и загрузите доступные для возврата платежи.</div>
+    <div id="billingRefundResults" class="admin-billing-refund-results"></div>
+    <label class="runtime-message-field">
+      <span>Причина возврата</span>
+      <input id="billingRefundReason" maxlength="240" autocomplete="off" placeholder="Например: E2E тест финального monetization gate">
+    </label>
+    <label class="switch-row admin-billing-refund-confirm">
+      <span><strong>Подтверждаю ручной возврат</strong><small>Stars будут возвращены через Telegram, а доступ будет отозван сервером.</small></span>
+      <input id="billingRefundConfirm" type="checkbox"><i></i>
+    </label>
+    <p class="tiny quality-method-note">Повторный возврат одного charge блокируется сервером. Полный charge ID в интерфейсе не показывается.</p>
+  `;
+  billing.insertAdjacentElement('afterend', section);
+  return section;
+}
+
 export function createAdminBillingRefundModule({
   state,
   elementById,

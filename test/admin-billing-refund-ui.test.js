@@ -47,6 +47,17 @@ test('admin refund UI requires reason, explicit confirmation and server refund e
 
 test('admin surface loads refund module only for admins', () => {
   assert.match(app, /ensureAdminBillingRefundModule/);
-  assert.match(app, /if \(!isAdmin\(\) \|\| !\$\('adminBillingRefundPanel'\)\) return null/);
+  assert.match(app, /if \(!isAdmin\(\)\) return null/);
+  assert.match(app, /mountAdminBillingRefundPanel\(document\)/);
   assert.match(app, /essentials\.push\(loadAdminBillingRefund\(false\)\)/);
+});
+
+
+test('normal Mini App keeps a clean public DOM and mounts refund UI only after admin verification', () => {
+  const publicHtml = fs.readFileSync('public/index.html', 'utf8');
+  assert.doesNotMatch(publicHtml, /data-admin-only|adminBillingRefundPanel/);
+  assert.match(app, /if \(!isAdmin\(\)\) return null/);
+  assert.match(app, /mountAdminBillingRefundPanel\(document\)/);
+  assert.match(moduleSource, /export function mountAdminBillingRefundPanel/);
+  assert.match(moduleSource, /billing\.insertAdjacentElement\('afterend', section\)/);
 });
