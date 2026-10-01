@@ -5,7 +5,7 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-const WIDTHS = [320, 360, 375, 390, 430];
+const WIDTHS = [320, 360, 375, 390, 430, 768, 1280];
 const NAV_IDS = ['navMatches', 'navMyTeams', 'navHistory', 'navProfile'];
 const EXPECTED_LABELS = ['Главная', 'Мои команды', 'История', 'Профиль'];
 const TELEGRAM_WEBVIEW_UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/144.0.0.0 Mobile Safari/537.36 Telegram-Android/12.0';
@@ -297,7 +297,7 @@ function assertLayout(width, snapshot) {
   if (snapshot.assetRevision !== EXPECTED_ASSET_REVISION) {
     throw new Error(`${width}px: frontend asset revision ${snapshot.assetRevision} does not match expected ${EXPECTED_ASSET_REVISION}`);
   }
-  if (snapshot.assetTokens.length !== 3 || snapshot.assetTokens.some(token => token !== snapshot.assetRevision)) {
+  if (snapshot.assetTokens.length !== 4 || snapshot.assetTokens.some(token => token !== snapshot.assetRevision)) {
     throw new Error(`${width}px: frontend JS/CSS cache-bust tokens are not coherent`);
   }
 }
@@ -341,6 +341,21 @@ function assertEdgeCaseFixture(width, theme, snapshot) {
     || personal.smallTextOverflow!=='ellipsis'
     || personal.smallWhiteSpace!=='nowrap') {
     throw new Error(`${width}px/${theme}: personal Home card does not preserve single-line ellipsis clipping`);
+  }
+  const radar=snapshot.radar;
+  if (!radar || radar.display!=='flex' || radar.copyWidth < 100 || radar.width < radar.parentWidth - 2 || radar.scrollWidth > radar.clientWidth + 1) {
+    throw new Error(`${width}px/${theme}: Radar Feed row collapsed or overflowed: ${JSON.stringify(radar)}`);
+  }
+  for (const action of snapshot.singleActions || []) {
+    if (Math.abs(action.groupWidth - action.buttonWidth) > 2) {
+      throw new Error(`${width}px/${theme}: single primary action does not fill its row: ${JSON.stringify(action)}`);
+    }
+  }
+  if (!snapshot.star || Math.abs(snapshot.star.width - 19) > 0.6 || Math.abs(snapshot.star.height - 19) > 0.6) {
+    throw new Error(`${width}px/${theme}: favorite SVG geometry is unstable: ${JSON.stringify(snapshot.star)}`);
+  }
+  if (!snapshot.time || !/^\d{2}:\d{2}$/.test(snapshot.time.text) || snapshot.time.borderTopWidth !== '0px' || snapshot.time.borderRadius !== '0px') {
+    throw new Error(`${width}px/${theme}: match time is not a plain HH:mm label: ${JSON.stringify(snapshot.time)}`);
   }
   const disclosure=snapshot.disclosureState;
   if (!disclosure || disclosure.open || disclosure.contentDisplay!=='none') {
@@ -456,10 +471,10 @@ async function inspectEdgeCaseFixture(cdp, width, theme) {
       const root = document.createElement('section');
       root.id = 'matchradarQaFixture';
       root.style.cssText = 'position:fixed;left:0;top:0;width:100%;max-width:430px;padding:10px;box-sizing:border-box;z-index:99999;background:var(--bg)';
-      root.innerHTML = ${JSON.stringify("\n        <button class=\"home-priority-card home-personal-match\" type=\"button\"><span>Для вас</span><strong>Extremely Long Favourite Football Club — Another Long Team Name</strong><small>Любимая команда · 21:45 · Premier League</small><b>Открыть →</b></button>\n        <article class=\"panel my-team-card\">\n          <button class=\"my-team-head team-open-link\" type=\"button\">\n            <span class=\"team-placeholder\">⚽</span>\n            <span><strong>Club Atlético Very Long International Football Association Name That Must Wrap Safely</strong><small>Ближайший матч</small></span>\n            <b>Открыть →</b>\n          </button>\n          <button class=\"my-team-match\" type=\"button\"><span>Extremely Long Home Team Name United — Extremely Long Away Team Name Athletic Club</span><strong>21:45</strong><small>Открыть матч →</small></button>\n        </article>\n        <article class=\"history-item\">\n          <div class=\"history-logos\"><span>⚽</span><span>—</span><span>⚽</span></div>\n          <div class=\"history-main\"><strong>Very Long Historical Home Team Name — Very Long Historical Away Team Name</strong><span>International Competition · сегодня</span><em class=\"history-ai-chip skip\">AI · Пропустить матч · 61/100</em></div>\n          <button class=\"history-open\" type=\"button\">Открыть</button>\n        </article>\n        <div class=\"favorite-team-row\"><button class=\"favorite-team-main\" type=\"button\"><span class=\"team-placeholder\">⚽</span><strong>Extremely Long Favourite Football Club Name Across Two Lines</strong></button><button class=\"favorite-remove\" type=\"button\">Удалить</button></div>\n        <div class=\"reminder-row\"><div><strong>Very Long Reminder Home Team Name — Very Long Reminder Away Team Name</strong><span>Сегодня · 21:45 · за 30 мин.</span></div><button class=\"reminder-remove\" type=\"button\">Отключить</button></div>\n        <section class=\"home-match-section home-match-section--live\" data-home-match-section=\"live\">\n          <div class=\"home-match-section-head\"><strong>Сейчас идут</strong><span>1</span></div>\n          <div class=\"home-match-section-list\">\n        <article class=\"match-card compact-match-card is-live\">\n          <div class=\"match-card-topline\"><span class=\"competition-name\">UEFA Champions League with a Very Long Competition Name</span><b class=\"match-live-label\">LIVE · 88′</b></div>\n          <div class=\"compact-match-row\">\n            <button class=\"team-open-link compact-team\" type=\"button\"><span class=\"team-logo-fallback\">⚽</span><strong>Extremely Long Home Football Club Name United</strong></button>\n            <div class=\"compact-score score-live\">2 : 1</div>\n            <button class=\"team-open-link compact-team away\" type=\"button\"><strong>Extremely Long Away Athletic Club Name</strong><span class=\"team-logo-fallback\">⚽</span></button>\n          </div>\n          <div class=\"match-card-actions compact-actions\"><button class=\"analyze-btn live-center-btn\" type=\"button\">Матч-центр</button></div>\n        </article>\n          </div>\n        </section>\n        <section class=\"home-match-section home-match-section--soon\" data-home-match-section=\"soon\">\n          <div class=\"home-match-section-head\"><strong>Скоро начнутся</strong><span>1</span></div>\n          <div class=\"home-match-section-list\">\n        <article class=\"match-card compact-match-card is-upcoming\">\n          <div class=\"match-card-topline\"><span class=\"competition-name\">Premier League</span><span class=\"match-time-label\">21:45</span></div>\n          <div class=\"compact-match-row\">\n            <button class=\"team-open-link compact-team\" type=\"button\"><span class=\"team-logo-fallback\">⚽</span><strong>Long Home Team Name</strong></button>\n            <div class=\"compact-score score-upcoming\">VS</div>\n            <button class=\"team-open-link compact-team away\" type=\"button\"><strong>Long Away Team Name</strong><span class=\"team-logo-fallback\">⚽</span></button>\n          </div>\n          <div class=\"match-card-actions compact-actions\"><button class=\"analyze-btn\" type=\"button\">AI-разбор</button></div>\n        </article>\n          </div>\n        </section>\n        <details class=\"home-match-section home-match-section--later is-collapsible\" data-home-match-section=\"later\">\n          <summary class=\"home-match-section-head\"><strong>Позже</strong><span>4</span></summary>\n          <div class=\"home-match-section-list home-match-section-list--collapsed\"><div class=\"compact-match-card\">Скрытая карточка</div></div>\n        </details>\n        <div class=\"match-secondary-actions\"><span><button class=\"fav-star compact\" type=\"button\">☆</button></span><button class=\"quick-reminder-btn compact\" type=\"button\">Напомнить</button></div>\n        <button class=\"analyze-btn\" type=\"button\">AI-разбор</button>\n      ")};
+      root.innerHTML = ${JSON.stringify("\n        <button class=\"home-priority-card home-personal-match\" type=\"button\"><span>Для вас</span><strong>Extremely Long Favourite Football Club — Another Long Team Name</strong><small>Любимая команда · 21:45 · Premier League</small><b>Открыть →</b></button>\n        <article class=\"panel my-team-card\">\n          <button class=\"my-team-head team-open-link\" type=\"button\">\n            <span class=\"team-placeholder\">⚽</span>\n            <span><strong>Club Atlético Very Long International Football Association Name That Must Wrap Safely</strong><small>Ближайший матч</small></span>\n            <b>Открыть →</b>\n          </button>\n          <button class=\"my-team-match\" type=\"button\"><span>Extremely Long Home Team Name United — Extremely Long Away Team Name Athletic Club</span><strong>21:45</strong><small>Открыть матч →</small></button>\n        </article>\n        <article class=\"history-item\">\n          <div class=\"history-logos\"><span>⚽</span><span>—</span><span>⚽</span></div>\n          <div class=\"history-main\"><strong>Very Long Historical Home Team Name — Very Long Historical Away Team Name</strong><span>International Competition · сегодня</span><em class=\"history-ai-chip skip\">AI · Пропустить матч · 61/100</em></div>\n          <button class=\"history-open\" type=\"button\">Открыть</button>\n        </article>\n        <div class=\"favorite-team-row\"><button class=\"favorite-team-main\" type=\"button\"><span class=\"team-placeholder\">⚽</span><strong>Extremely Long Favourite Football Club Name Across Two Lines</strong></button><button class=\"favorite-remove\" type=\"button\">Удалить</button></div>\n        <div class=\"reminder-row\"><div><strong>Very Long Reminder Home Team Name — Very Long Reminder Away Team Name</strong><span>Сегодня · 21:45 · за 30 мин.</span></div><button class=\"reminder-remove\" type=\"button\">Отключить</button></div>\n        <section class=\"home-match-section home-match-section--live\" data-home-match-section=\"live\">\n          <div class=\"home-match-section-head\"><strong>Сейчас идут</strong><span>1</span></div>\n          <div class=\"home-match-section-list\">\n        <article class=\"match-card compact-match-card is-live\">\n          <div class=\"match-card-topline\"><span class=\"competition-name\">UEFA Champions League with a Very Long Competition Name</span><b class=\"match-live-label\">LIVE · 88′</b></div>\n          <div class=\"compact-match-row\">\n            <button class=\"team-open-link compact-team\" type=\"button\"><span class=\"team-logo-fallback\">⚽</span><strong>Extremely Long Home Football Club Name United</strong></button>\n            <div class=\"compact-score score-live\">2 : 1</div>\n            <button class=\"team-open-link compact-team away\" type=\"button\"><strong>Extremely Long Away Athletic Club Name</strong><span class=\"team-logo-fallback\">⚽</span></button>\n          </div>\n          <div class=\"match-card-actions compact-actions\"><button class=\"analyze-btn live-center-btn\" type=\"button\">Матч-центр</button></div>\n        </article>\n          </div>\n        </section>\n        <section class=\"home-match-section home-match-section--soon\" data-home-match-section=\"soon\">\n          <div class=\"home-match-section-head\"><strong>Скоро начнутся</strong><span>1</span></div>\n          <div class=\"home-match-section-list\">\n        <article class=\"match-card compact-match-card is-upcoming\">\n          <div class=\"match-card-topline\"><span class=\"competition-name\">Premier League</span><span class=\"match-time-label\">21:45</span></div>\n          <div class=\"compact-match-row\">\n            <button class=\"team-open-link compact-team\" type=\"button\"><span class=\"team-logo-fallback\">⚽</span><strong>Long Home Team Name</strong></button>\n            <div class=\"compact-score score-upcoming\">VS</div>\n            <button class=\"team-open-link compact-team away\" type=\"button\"><strong>Long Away Team Name</strong><span class=\"team-logo-fallback\">⚽</span></button>\n          </div>\n          <div class=\"match-card-actions compact-actions\"><button class=\"analyze-btn\" type=\"button\">AI-разбор</button></div>\n        </article>\n          </div>\n        </section>\n        <details class=\"home-match-section home-match-section--later is-collapsible\" data-home-match-section=\"later\">\n          <summary class=\"home-match-section-head\"><strong>Позже</strong><span>4</span></summary>\n          <div class=\"home-match-section-list home-match-section-list--collapsed\"><div class=\"compact-match-card\">Скрытая карточка</div></div>\n        </details>\n        <div class=\"radar-feed\"><div class=\"radar-feed-list\"><button class=\"radar-feed-item tone-ai\" type=\"button\"><span class=\"radar-feed-pulse\"></span><span class=\"radar-feed-copy\"><small>AI-РАЗБОР ГОТОВ</small><strong>Extremely Long Home Club — Extremely Long Away Club</strong><em>Нет явного фаворита · 21:45</em></span><b>→</b></button></div></div>\n        <div class=\"date-strip\"><button class=\"date-btn\" type=\"button\">Вчера</button><button class=\"date-btn active\" type=\"button\">Сегодня</button><button class=\"date-btn\" type=\"button\">Завтра</button></div>\n        <div class=\"filter-strip\"><button class=\"filter-btn active\" type=\"button\">Для вас</button><button class=\"filter-btn\" type=\"button\">LIVE</button><button class=\"filter-btn\" type=\"button\">Все</button></div>\n        <div class=\"match-secondary-actions\"><span><button class=\"fav-star compact\" type=\"button\"><svg class=\"fav-star-icon\" viewBox=\"0 0 24 24\"><path d=\"M12 3.7l2.55 5.17 5.71.83-4.13 4.03.98 5.69L12 16.73l-5.11 2.69.98-5.69-4.13-4.03 5.71-.83L12 3.7z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\"/></svg></button></span><button class=\"quick-reminder-btn compact\" type=\"button\">Напомнить</button></div>\n        <span class=\"match-time-label\">21:45</span>\n        <div class=\"match-card-actions compact-actions\"><button class=\"analyze-btn\" type=\"button\">AI-разбор</button></div>\n      ")};
       document.body.appendChild(root);
       const box = root.getBoundingClientRect();
-      const controls = [...root.querySelectorAll('.home-personal-match,.history-open,.favorite-remove,.reminder-remove,.fav-star.compact,.quick-reminder-btn.compact,.analyze-btn')].map(el => {
+      const controls = [...root.querySelectorAll('.home-personal-match,.history-open,.favorite-remove,.reminder-remove,.fav-star.compact,.quick-reminder-btn.compact,.analyze-btn,.date-btn,.filter-btn')].map(el => {
         const r=el.getBoundingClientRect(), s=getComputedStyle(el);
         return { className:el.className, height:r.height, width:r.width, visible:s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0 };
       });
@@ -511,7 +526,29 @@ async function inspectEdgeCaseFixture(cdp, width, theme) {
         summaryHeight:disclosureRect?.height || 0,
         contentDisplay:disclosureStyle?.display || '',
       } : null;
-      return { fixture:{clientWidth:root.clientWidth,scrollWidth:root.scrollWidth,left:box.left,right:box.right},controls,longText,clippedCompetition,teamLabels,disclosureState,personalState };
+      const radar = root.querySelector('.radar-feed-item');
+      const radarCopy = radar?.querySelector('.radar-feed-copy');
+      const radarRect = radar?.getBoundingClientRect();
+      const radarParentRect = radar?.parentElement?.getBoundingClientRect();
+      const radarStyle = radar ? getComputedStyle(radar) : null;
+      const singleActions = [...root.querySelectorAll('.compact-actions')].map(group => {
+        const button=group.querySelector(':scope > button:only-child');
+        if (!button) return null;
+        const gr=group.getBoundingClientRect(), br=button.getBoundingClientRect();
+        return { groupWidth:gr.width, buttonWidth:br.width };
+      }).filter(Boolean);
+      const star = root.querySelector('.fav-star-icon');
+      const starRect = star?.getBoundingClientRect();
+      const time = root.querySelector('.match-time-label');
+      const timeStyle = time ? getComputedStyle(time) : null;
+      return {
+        fixture:{clientWidth:root.clientWidth,scrollWidth:root.scrollWidth,left:box.left,right:box.right},
+        controls,longText,clippedCompetition,teamLabels,disclosureState,personalState,
+        radar:radar ? { display:radarStyle.display,width:radarRect.width,parentWidth:radarParentRect.width,copyWidth:radarCopy?.getBoundingClientRect().width || 0,scrollWidth:radar.scrollWidth,clientWidth:radar.clientWidth } : null,
+        singleActions,
+        star:starRect ? {width:starRect.width,height:starRect.height} : null,
+        time:timeStyle ? {text:time.textContent.trim(),borderTopWidth:timeStyle.borderTopWidth,borderRadius:timeStyle.borderRadius} : null,
+      };
     })()`,
   });
   return evaluated?.result?.value || null;
@@ -578,6 +615,7 @@ async function main() {
             document.querySelector('script[src*="/app-public.js"]')?.src || '',
             document.querySelector('link[href*="/styles.css"]')?.href || '',
             document.querySelector('link[href*="/styles/public-shell.css"]')?.href || '',
+            document.querySelector('link[href*="/styles/premium-ui.css"]')?.href || '',
           ];
           const guide=document.getElementById('firstRunGuide');
           const guideRect=guide?.getBoundingClientRect();
