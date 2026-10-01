@@ -6,12 +6,12 @@
   <meta name="theme-color" content="#07111f" />
   <meta name="description" content="MatchRadar — AI-футбольный ассистент в Telegram: матчи, команды, LIVE и понятный разбор ключевых факторов." />
   <meta name="matchradar-surface" content="public" />
-  <meta name="frontend-asset-revision" content="6.120.0-launch29" />
+  <meta name="frontend-asset-revision" content="6.120.0-launch30" />
   <title>MatchRadar · AI-футбольный ассистент</title>
   <link rel="icon" type="image/svg+xml" href="/assets/brand/matchradar-mark.svg?v=6.120.0-p42" />
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=6.120.0-launch29" />
-  <link rel="stylesheet" href="/styles/public-shell.css?v=6.120.0-launch29" />
+  <link rel="stylesheet" href="/styles.css?v=6.120.0-launch30" />
+  <link rel="stylesheet" href="/styles/public-shell.css?v=6.120.0-launch30" />
 </head>
 <body class="miniapp-public-shell">
   <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
@@ -307,6 +307,15 @@
           </div>
         </section>
 
+        <section class="panel smart-notifications-panel" aria-label="Уведомления MatchRadar">
+          <div id="smartNotificationsRoot">
+            <div class="smart-notification-state" role="status">
+              <span>⏳</span>
+              <span>Загружаем настройки уведомлений…</span>
+            </div>
+          </div>
+        </section>
+
 
         <section class="panel profile-teams-shortcut">
           <div class="section-head profile-section-head">
@@ -483,6 +492,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app-public.js?v=6.120.0-launch29"></script>
+  <script type="module" src="/app-public.js?v=6.120.0-launch30"></script>
 </body>
 </html>

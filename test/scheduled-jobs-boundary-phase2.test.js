@@ -11,6 +11,7 @@ function runtime(overrides = {}) {
     processDueReminders: async () => { calls.push('reminders'); return { checked: 0, failed: 0 }; },
     processLineupNotifications: async () => { calls.push('lineup_notifications'); return { checked: 0, failed: 0 }; },
     processImportantChangeNotifications: async () => { calls.push('important_change_notifications'); return { checked: 0, failed: 0 }; },
+    processSmartNotifications: async () => { calls.push('smart_notifications'); return { ok: true, checked: 0, failed: 0 }; },
     processPostMatchReturns: async () => { calls.push('post_match_return'); return { checked: 0, failed: 0 }; },
     runProductionMonitor: async () => { calls.push('production_monitor'); return { ok: true }; },
     processDailyDigests: async () => { calls.push('daily_digest'); return { sent: 0 }; },
@@ -39,7 +40,7 @@ test('scheduled boundary preserves the base task graph and post-match dependency
   });
 
   const tasks = rt.api.buildScheduledTaskPlan({}, new Date('2026-09-28T12:05:00.000Z'));
-  assert.deepEqual(tasks.map(([name]) => name), ['reminders', 'lineup_notifications', 'important_change_notifications', 'backtest', 'post_match_return']);
+  assert.deepEqual(tasks.map(([name]) => name), ['reminders', 'lineup_notifications', 'important_change_notifications', 'smart_notifications', 'backtest', 'post_match_return']);
   await Promise.resolve();
   assert.equal(postMatchStarted, false);
 
@@ -50,12 +51,12 @@ test('scheduled boundary preserves the base task graph and post-match dependency
 
 test('scheduled boundary preserves time-gated cron task cadence', async () => {
   const cases = [
-    ['2026-09-28T03:05:00.000Z', ['reminders','lineup_notifications','important_change_notifications','backtest','post_match_return','ops_cleanup','rate_window_cleanup','growth_cleanup','integrity_cleanup']],
-    ['2026-09-28T04:05:00.000Z', ['reminders','lineup_notifications','important_change_notifications','backtest','post_match_return','settlement_watchdog']],
-    ['2026-09-28T05:05:00.000Z', ['reminders','lineup_notifications','important_change_notifications','backtest','post_match_return','settlement_finality']],
-    ['2026-09-28T07:05:00.000Z', ['reminders','lineup_notifications','important_change_notifications','backtest','post_match_return','daily_digest']],
-    ['2026-09-28T07:55:00.000Z', ['reminders','lineup_notifications','important_change_notifications','backtest','post_match_return','daily_digest']],
-    ['2026-09-28T12:15:00.000Z', ['reminders','lineup_notifications','important_change_notifications','backtest','post_match_return','production_monitor']],
+    ['2026-09-28T03:05:00.000Z', ['reminders','lineup_notifications','important_change_notifications','smart_notifications','backtest','post_match_return','ops_cleanup','rate_window_cleanup','growth_cleanup','integrity_cleanup']],
+    ['2026-09-28T04:05:00.000Z', ['reminders','lineup_notifications','important_change_notifications','smart_notifications','backtest','post_match_return','settlement_watchdog']],
+    ['2026-09-28T05:05:00.000Z', ['reminders','lineup_notifications','important_change_notifications','smart_notifications','backtest','post_match_return','settlement_finality']],
+    ['2026-09-28T07:05:00.000Z', ['reminders','lineup_notifications','important_change_notifications','smart_notifications','backtest','post_match_return','daily_digest']],
+    ['2026-09-28T07:55:00.000Z', ['reminders','lineup_notifications','important_change_notifications','smart_notifications','backtest','post_match_return','daily_digest']],
+    ['2026-09-28T12:15:00.000Z', ['reminders','lineup_notifications','important_change_notifications','smart_notifications','backtest','post_match_return','production_monitor']],
   ];
 
   for (const [iso, expected] of cases) {

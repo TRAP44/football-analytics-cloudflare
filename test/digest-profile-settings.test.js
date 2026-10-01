@@ -157,7 +157,9 @@ test('server route is authenticated by the existing user boundary and reuses bot
   assert.match(worker, /hour_utc:DAILY_DIGEST_POLICY\.deliveryHourUtc/);
   assert.match(worker, /customDeliveryTime:false/);
   assert.match(worker, /favoritePriority:false/);
-  assert.match(worker, /planSpecificContent:false/);
+  assert.match(worker, /planSpecificContent:normalizedPlan!==\'FREE\'/);
+  assert.match(worker, /filterSmartNotificationRecipients\(plan\.pending \|\| \[],\'ai\.digest_expanded\',cfg\)/);
+  assert.match(worker, /expandedDailyDigestText/);
 });
 
 test('existing reliable digest delivery pipeline remains the delivery path', () => {
