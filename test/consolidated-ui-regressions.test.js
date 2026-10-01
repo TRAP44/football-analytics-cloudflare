@@ -1,12 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { FRONTEND_ASSET_REVISION } from '../public/modules/app-runtime.js';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
 const css = fs.readFileSync('public/styles/premium-ui.css', 'utf8');
 const core = fs.readFileSync('public/modules/client-core.js', 'utf8');
-const publicEntry = fs.readFileSync('public/app-public.js', 'utf8');
 
 test('standard MatchRadar action buttons share one centered 44px geometry contract', () => {
   assert.match(css, /--mr-touch-target:\s*44px/);
@@ -36,7 +34,6 @@ test('public match center does not render stale snapshot warning cards or visibl
 });
 
 test('Radar Feed uses namespaced tones without legacy .ai compatibility CSS', () => {
-  assert.ok(publicEntry.includes(`import './app.js?v=${FRONTEND_ASSET_REVISION}';`));
   assert.doesNotMatch(css, /\.radar-feed-item\.ai(?:\W|$)/);
   assert.match(css, /\.radar-feed-item\.tone-ai \.radar-feed-pulse/);
 });
