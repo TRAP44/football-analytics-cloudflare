@@ -35,6 +35,15 @@ test('fixtures are reused from persistent shared caches before provider calls',(
   assert.match(matches,/providerBatchKey/);
   assert.match(matches,/providerBatchTtl=isToday \? 2/);
 
+  const sharedDateLoader=block(worker,'async function loadProviderFixturesForDate','function providerFixtureDirectCacheKey');
+  assert.match(sharedDateLoader,/providerFixtureDateCacheKey\(normalized\)/);
+  assert.match(sharedDateLoader,/providerFixtureDateReuses/);
+  assert.match(sharedDateLoader,/apiFootball\('\/fixtures',\{date:normalized\},cfg\)/);
+  assert.equal((worker.match(/apiFootball\('\/fixtures',\s*\{\s*date\s*\}\s*,\s*cfg\)/g) || []).length,0);
+
+  const botFixture=block(worker,'async function loadBotFixtureCard','function botFixtureDateTime');
+  assert.match(botFixture,/loadProviderFixture\(id,cfg\)/);
+
   const matchCenter=block(worker,'async function apiMatchCenter','async function cachedTeamIntelligenceForAnalysis');
   assert.match(matchCenter,/loadProviderFixture\(fixtureId,cfg\)/);
 
@@ -54,6 +63,12 @@ test('FREE AI avoids optional network fan-out and reuses cached feature data',()
   assert.match(analyze,/const canFetchFreshForm = detailedCoverage && paid/);
   assert.match(analyze,/const canFetchH2H = detailedCoverage && paid/);
   assert.match(analyze,/const canFetchInjuries = paid/);
+});
+
+test('provider budget telemetry exposes shared date-fixture reuse',()=>{
+  const budget=block(worker,'function providerBudgetProfile','function providerPublicBudgetMode');
+  assert.match(budget,/fixtureDateReuses/);
+  assert.match(worker,/providerFixtureDateReuses:\s*0/);
 });
 
 test('real provider response headers persist quota evidence without synthetic probes',()=>{
