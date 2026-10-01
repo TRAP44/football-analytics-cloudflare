@@ -56,7 +56,6 @@ export function createSmartNotificationsModule({
   api,
   escapeHtml,
   toast = () => {},
-  onOpenBilling = () => {},
 } = {}) {
   if (typeof elementById !== 'function' || typeof api !== 'function' || typeof escapeHtml !== 'function') {
     throw new TypeError('Smart Notifications requires elementById, api and escapeHtml.');
@@ -103,10 +102,7 @@ export function createSmartNotificationsModule({
           <h2>🔔 Уведомления</h2>
           <p>Только важные изменения. Дубли, мелкие колебания и частые повторения подавляются на сервере.</p>
         </div>
-        <div class="smart-notification-head-actions">
-          <span class="smart-notification-plan ${caps.smartAlerts ? 'is-on' : ''}">${escapeHtml(paidLabel)}</span>
-          ${caps.smartAlerts ? '' : '<button id="smartNotificationsUpgradeBtn" class="secondary-btn smart-notification-upgrade" type="button">Посмотреть PRO</button>'}
-        </div>
+        <span class="smart-notification-plan ${caps.smartAlerts ? 'is-on' : ''}">${escapeHtml(paidLabel)}</span>
       </div>
       <label class="switch-row smart-notification-master">
         <span><strong>Получать уведомления</strong><small>${model.saving ? 'Сохраняем…' : 'Главный выключатель для уведомлений MatchRadar.'}</small></span>
@@ -135,7 +131,6 @@ export function createSmartNotificationsModule({
       ${model.error ? `<p class="digest-inline-error" role="status">${escapeHtml(model.error)}</p>` : ''}
     `;
 
-    $('smartNotificationsUpgradeBtn')?.addEventListener('click', () => onOpenBilling());
     $('smartNotificationMaster')?.addEventListener('change', event => {
       void updatePreference('enabled', Boolean(event.currentTarget.checked));
     });
