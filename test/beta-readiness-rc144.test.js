@@ -59,13 +59,16 @@ test('critical Mini App journey emits bounded product events without user search
   assert.doesNotMatch(sender, /query|teamName|leagueName|searchText/);
 });
 
-test('main action failures are measured by category, not free-form error text', () => {
+test('main action failures are measured by category without leaking backend details', () => {
   for (const action of ['matches','search','match','live_refresh','ai','history','profile']) {
     assert.ok(app.includes("sendActionError('" + action + "'"), action);
   }
   const helper = block(app, 'function sendActionError', 'function sendOperationTiming');
   assert.match(helper, /apiErrorCategory\(error\)/);
   assert.doesNotMatch(helper, /error\?\.message/);
+  const errors = block(app, 'function friendlyErrorMessage', 'function normalizeApiError');
+  assert.match(errors, /category === 'rate_limit'.*Обновления временно на паузе/s);
+  assert.doesNotMatch(errors, /retryAfter|error\?\.message|payload\?\.error/);
 });
 
 test('match and AI transitions have explicit loading error and retry states', () => {
@@ -86,11 +89,19 @@ test('match and AI transitions have explicit loading error and retry states', ()
   assert.match(analysis, /retry: \(\) => analyzeMatch/);
 });
 
-test('LIVE background refresh keeps the current screen usable on transient errors', () => {
-  const live = block(app, 'function scheduleLiveRefresh', 'function signedPp');
+test('LIVE refresh is interval-sized, stale-safe and recovers from transient errors', () => {
+  const live = block(app, 'function isActiveLiveFixture', 'function signedPp');
+  assert.doesNotMatch(live, /setInterval\s*\(/);
+  assert.match(live, /setTimeout\(async \(\) =>/);
+  assert.match(live, /delayMs/);
+  assert.match(live, /activeViewId\(\) === 'analysisView'/);
+  assert.match(live, /currentCenter\?\.match\?\.fixtureId/);
+  assert.match(live, /if \(!data \|\| !isActiveLiveFixture\(fixtureId\)\) return/);
   assert.match(live, /Не удалось обновить\. Повторим автоматически\./);
   assert.match(live, /sendActionError\('live_refresh'/);
   assert.doesNotMatch(live, /toast\(e\.message\)/);
+  const stop = block(app, 'function stopLiveRefresh', 'function viewBackTarget');
+  assert.match(stop, /clearTimeout\(state\.liveRefreshTimer\)/);
 });
 
 test('history profile and match-list recovery states are actionable', () => {
