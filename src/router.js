@@ -12,6 +12,7 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
     apiBillingInvoice,
     apiBillingPlans,
     apiBillingRefund,
+    apiBillingRefundLookup,
     apiBillingSubscription,
     apiBillingSync,
     apiCalibrationControl,
@@ -71,6 +72,10 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
   if (request.method === 'GET' && url.pathname === '/api/beta-dashboard') {
     if (!isAdminUser(user, cfg)) return adminForbidden();
     return await apiBetaDashboard(request, cfg);
+  }
+  if (request.method === 'GET' && url.pathname === '/api/admin/billing/refundable') {
+    if (!isAdminUser(user, cfg)) return adminForbidden();
+    return await apiBillingRefundLookup(request, cfg, user);
   }
   if (request.method === 'POST' && url.pathname === '/api/admin/billing/refund') {
     if (!isAdminUser(user, cfg)) return adminForbidden();

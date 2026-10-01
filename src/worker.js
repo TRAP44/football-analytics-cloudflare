@@ -8529,6 +8529,86 @@ async function apiBillingSubscription(request, cfg, user) {
   return json({ ok: true, canceled: action === 'cancel' });
 }
 
+async function listRefundableBillingCharges(userId, cfg) {
+  const uid = Number(userId);
+  if (!Number.isSafeInteger(uid) || uid <= 0) return [];
+
+  const items = [];
+  let payments = [];
+  if (hasSupabase(cfg)) {
+    payments = await supaSelectMany(cfg, 'billing_payments', {
+      telegram_id: `eq.${uid}`,
+    }, {
+      limit: 20,
+      order: 'created_at.desc',
+    }).catch(() => []);
+  } else {
+    payments = [...memory.billingPayments.values()]
+      .filter(row => Number(row?.telegram_id || 0) === uid)
+      .sort((a, b) => Date.parse(b?.created_at || 0) - Date.parse(a?.created_at || 0))
+      .slice(0, 20);
+  }
+
+  for (const row of payments || []) {
+    const chargeId = String(row?.telegram_payment_charge_id || '').trim();
+    const status = String(row?.status || 'paid').toLowerCase();
+    if (!chargeId || status !== 'paid') continue;
+    items.push({
+      kind: 'subscription',
+      product: String(row?.plan || ''),
+      stars: Math.max(0, Number(row?.stars_amount || 0)),
+      status,
+      createdAt: row?.created_at || null,
+      expiresAt: row?.subscription_expiration_date || null,
+      fixtureId: null,
+      paymentChargeId: chargeId,
+      chargeSuffix: chargeId.slice(-8),
+    });
+  }
+
+  const entitlements = await listUserEntitlements(uid, cfg).catch(() => []);
+  for (const row of entitlements || []) {
+    const chargeId = String(row?.payment_charge_id || row?.paymentChargeId || '').trim();
+    const status = String(row?.status || 'active').toLowerCase();
+    if (!chargeId || status !== 'active') continue;
+    items.push({
+      kind: 'pass',
+      product: String(row?.entitlement_type || row?.type || ''),
+      stars: Math.max(0, Number(row?.stars_amount || row?.starsAmount || 0)),
+      status,
+      createdAt: row?.created_at || row?.createdAt || null,
+      expiresAt: row?.expires_at || row?.expiresAt || null,
+      fixtureId: Number(row?.fixture_id || row?.fixtureId || 0) || null,
+      paymentChargeId: chargeId,
+      chargeSuffix: chargeId.slice(-8),
+    });
+  }
+
+  const seen = new Set();
+  return items
+    .sort((a, b) => Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0))
+    .filter(item => {
+      if (seen.has(item.paymentChargeId)) return false;
+      seen.add(item.paymentChargeId);
+      return true;
+    })
+    .slice(0, 20);
+}
+
+async function apiBillingRefundLookup(request, cfg, user) {
+  const url = new URL(request.url);
+  const targetUserId = Number(url.searchParams.get('telegramId') || user?.id || 0);
+  if (!Number.isSafeInteger(targetUserId) || targetUserId <= 0) {
+    return json({ error:'Укажите корректный Telegram ID.', code:'BILLING_REFUND_INVALID_TARGET' }, 400);
+  }
+  const items = await listRefundableBillingCharges(targetUserId, cfg);
+  return json({
+    ok:true,
+    telegramId:targetUserId,
+    items,
+  });
+}
+
 async function apiBillingRefund(request, cfg, user) {
   if (!isAdminUser(user, cfg)) return adminForbidden();
 
@@ -24354,6 +24434,7 @@ const API_ROUTE_DEPS = Object.freeze({
   apiPhase5Dashboard,
   apiBillingInvoice,
   apiBillingRefund,
+  apiBillingRefundLookup,
   apiBillingPlans,
   apiBillingSubscription,
   apiBillingSync,
