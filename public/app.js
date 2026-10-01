@@ -1485,8 +1485,7 @@ async function resetSettlementCircuitFromUi(...args) {
   return module?.resetSettlementCircuitFromUi(...args);
 }
 
-async function openProfileView({ preservePassContext = false } = {}) {
-  if (!preservePassContext) billingModule.clearPassContext();
+async function openProfileView() {
   showView('profileView');
   sendProductAction('profile_open', 'profileView');
   if (!state.profile) {
@@ -1875,7 +1874,7 @@ const billingModule = createBillingModule({
   telegram: tg,
   dateTime,
   reloadProfile: () => loadProfile(),
-  openProfile: options => openProfileView(options),
+  openProfile: () => openProfileView(),
 });
 function renderBilling() { return billingModule.render(); }
 function loadBilling(...args) { return billingModule.load(...args); }
@@ -6495,7 +6494,10 @@ bindRovingTabKeyboard(tournamentTabs, 'tournamentTab', value => setTournamentTab
 const teamTabs = [...document.querySelectorAll('.team-tab')];
 teamTabs.forEach(btn => btn.addEventListener('click', () => setTeamTab(btn.dataset.teamTab || 'overview')));
 bindRovingTabKeyboard(teamTabs, 'teamTab', value => setTeamTab(value));
-$('profileBtn').addEventListener('click', openProfileView);
+$('profileBtn').addEventListener('click', () => {
+  billingModule.clearPassContext();
+  void openProfileView();
+});
 $('navMatches').addEventListener('click', () => {
   sendProductAction('matches_open', 'matchesView');
   showView('matchesView');
@@ -6513,7 +6515,10 @@ $('navHistory').addEventListener('click', async () => {
   if (!state.aiTrackRecordLoaded) tasks.push(loadAiTrackRecord(false)); else renderAiTrackRecord();
   if (tasks.length) await Promise.allSettled(tasks);
 });
-$('navProfile').addEventListener('click', openProfileView);
+$('navProfile').addEventListener('click', () => {
+  billingModule.clearPassContext();
+  void openProfileView();
+});
 $('profileFavoriteTeamsBtn')?.addEventListener('click', () => {
   renderMyTeams();
   showView('myTeamsView');
