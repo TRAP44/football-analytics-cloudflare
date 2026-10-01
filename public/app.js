@@ -898,21 +898,6 @@ const {
   render: renderSmartNotifications,
 } = smartNotificationsModule;
 
-const billingModule = createBillingModule({
-  state,
-  elementById: $,
-  api,
-  toast,
-  telegram: tg,
-  dateTime,
-  reloadProfile: () => loadProfile(),
-  openProfile: () => openProfileView(),
-});
-function renderBilling() { return billingModule.render(); }
-function loadBilling(...args) { return billingModule.load(...args); }
-function showQuotaPaywall() { return billingModule.showQuotaPaywall(); }
-function hideQuotaPaywall() { return billingModule.hideQuotaPaywall(); }
-
 async function loadProfile() {
   const previousProfile = state.profile;
   try {
@@ -1843,6 +1828,21 @@ async function loadDiagnostics(...args) {
   renderAdminOverview();
   return result;
 }
+
+const billingModule = createBillingModule({
+  state,
+  elementById: $,
+  api,
+  toast,
+  telegram: tg,
+  dateTime,
+  reloadProfile: () => loadProfile(),
+  openProfile: () => openProfileView(),
+});
+function renderBilling() { return billingModule.render(); }
+function loadBilling(...args) { return billingModule.load(...args); }
+function showQuotaPaywall() { return billingModule.showQuotaPaywall(); }
+function hideQuotaPaywall() { return billingModule.hideQuotaPaywall(); }
 
 let adminProviderModule = null;
 let adminProviderModulePromise = null;
