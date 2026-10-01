@@ -490,14 +490,14 @@ html[data-theme="light"] .miniapp-public-shell {
 }
 .miniapp-public-shell .fav-star,
 .miniapp-public-shell .fav-star.compact {
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   border: 0;
   background: transparent;
 }
 .miniapp-public-shell .quick-reminder-btn.compact,
 .miniapp-public-shell .match-watch-btn.compact {
-  min-height: 34px;
+  min-height: 44px;
   border-color: var(--mr-line-soft);
   background: transparent;
 }
