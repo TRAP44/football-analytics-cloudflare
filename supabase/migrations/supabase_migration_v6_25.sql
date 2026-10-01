@@ -220,7 +220,7 @@ returns jsonb
 language plpgsql
 security invoker
 set search_path = public, pg_catalog, pg_temp
-as $
+as $$
 declare
   v_count integer;
 begin
@@ -249,7 +249,7 @@ begin
     'usageCount', v_count
   );
 end;
-$;
+$$;
 
 create or replace function public.refund_pass_entitlement(
   p_telegram_id bigint,

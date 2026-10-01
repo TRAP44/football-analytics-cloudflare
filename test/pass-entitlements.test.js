@@ -253,6 +253,7 @@ test('v6.25 migration is additive, service-role-only and protects duplicate/conc
   assert.match(sql, /v_type = 'WEEKEND_PASS' and p_usage_limit is null/i);
   assert.match(sql, /usage_count = usage_count \+ 1/i);
   assert.match(sql, /create or replace function public\.refund_pass_entitlement_usage/i);
+  assert.match(sql, /create or replace function public\.refund_pass_entitlement_usage[\s\S]*?as \$\$[\s\S]*?end;\s*\$\$;/i);
   assert.match(sql, /usage_count = greatest\(0, usage_count - 1\)/i);
   assert.match(sql, /create or replace function public\.refund_pass_entitlement/i);
   assert.match(sql, /alter table public\.user_entitlements enable row level security/i);
