@@ -15,11 +15,12 @@ test('RC56 discovers team fixtures in one shared backend path',()=> {
   assert.doesNotMatch(worker,/bot:team-matches:/);
 });
 
-test('discovery uses date windows and recent-match recovery without next parameter',()=> {
+test('discovery uses provider-supported team next/last queries with recent-match recovery',()=> {
   assert.match(worker,/TEAM_DISCOVERY_PAST_DAYS = 30/);
   assert.match(worker,/TEAM_DISCOVERY_FUTURE_DAYS = 120/);
-  assert.match(worker,/apiFootball\('\/fixtures',\{team:teamId,from,to\},cfg\)/);
-  assert.doesNotMatch(worker,/\{\s*team:teamId\s*,\s*next:/);
+  assert.match(worker,/apiFootball\('\/fixtures',\{team:teamId,next:12\},cfg\)/);
+  assert.match(worker,/apiFootball\('\/fixtures',\{team:teamId,last:8\},cfg\)/);
+  assert.doesNotMatch(worker,/apiFootball\('\/fixtures',\{team:teamId,from,to\},cfg\)/);
   assert.match(worker,/mode:upcoming\.length \? 'upcoming' : recent\.length \? 'recent' : 'empty'/);
   assert.match(worker,/matches:\[\.\.\.split\.upcoming,\.\.\.split\.recent\]/);
 });
