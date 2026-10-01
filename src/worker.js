@@ -49,6 +49,13 @@ import {
 } from './crypto-utils.js';
 import { createTelegramLinksRuntime } from './telegram-links.js';
 import {
+  PASS_TYPES,
+  createEntitlementService,
+  createPassInvoicePayload,
+  parsePassInvoicePayload,
+  passProductConfig,
+} from './entitlements.js';
+import {
   normalizeReferralCode,
   opaqueReferralCode,
   referralAttributionDecision,
@@ -101,6 +108,7 @@ const memory = {
   refereeMatchHistory: new Map(),
   botDigestSubscriptions: new Map(),
   billingPayments: new Map(),
+  userEntitlements: new Map(),
   modelPredictions: new Map(),
   modelRemediation: { lastRun: null, actions: [] },
   opsEvents: [],
@@ -176,7 +184,7 @@ const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
 const RELEASE_CHANNEL = 'rc144';
 const RC_NAME = 'RC144';
-const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.19 и примените миграции до v6.24; для существующей примените все доступные миграции из supabase/migrations до v6.24.';
+const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.19 и примените миграции до v6.25; для существующей примените все доступные миграции из supabase/migrations до v6.25.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49';
 
@@ -288,6 +296,19 @@ function config(env) {
     starsPrices: {
       PRO: intEnv(env.PRO_STARS_PRICE, BILLING_PLANS.PRO.stars),
       PREMIUM: intEnv(env.PREMIUM_STARS_PRICE, BILLING_PLANS.PREMIUM.stars),
+    },
+    passPrices: {
+      MATCH_PASS: intEnv(env.MATCH_PASS_STARS_PRICE, 39),
+      DAY_PASS: intEnv(env.DAY_PASS_STARS_PRICE, 89),
+      WEEKEND_PASS: intEnv(env.WEEKEND_PASS_STARS_PRICE, 149),
+    },
+    passDurations: {
+      MATCH_PASS: intEnv(env.MATCH_PASS_DURATION_HOURS, 72),
+      DAY_PASS: intEnv(env.DAY_PASS_DURATION_HOURS, 24),
+      WEEKEND_PASS: intEnv(env.WEEKEND_PASS_DURATION_HOURS, 72),
+    },
+    passUsageLimits: {
+      WEEKEND_PASS: intEnv(env.WEEKEND_PASS_USAGE_LIMIT, 0) || null,
     },
   };
 }
@@ -1248,6 +1269,21 @@ const {
   hasSupabase,
   supaUpsert,
   supaSelectMany,
+});
+
+const {
+  activatePassPurchase,
+  refundEntitlementUsage,
+  refundPassByCharge,
+  reserveEntitlementUsage,
+  resolveUserEntitlements,
+} = createEntitlementService({
+  memory,
+  hasSupabase,
+  supaSelectMany,
+  supaRpc,
+  getUserRecord: (...args) => getUserRecord(...args),
+  markWebhookMutation: markTelegramWebhookMutation,
 });
 
 const {
@@ -2681,41 +2717,59 @@ async function saveBillingPayment(row, cfg) {
 
 async function applySuccessfulPayment(userId, payment, cfg, fallbackDate = Math.floor(Date.now() / 1000)) {
   if (!payment || payment.currency !== 'XTR') return false;
-  const parsed = await parseInvoicePayload(payment.invoice_payload, cfg.botToken);
-  if (!parsed || Number(parsed.userId) !== Number(userId)) return false;
-  const planCfg = billingPlanConfig(parsed.plan, cfg);
-  if (!planCfg || Number(payment.total_amount) !== Number(planCfg.stars)) return false;
-
-  const expiresUnix = Number(payment.subscription_expiration_date || 0)
-    || (Number(fallbackDate || Math.floor(Date.now() / 1000)) + SUBSCRIPTION_PERIOD_SECONDS);
-  const expiresAt = new Date(expiresUnix * 1000).toISOString();
-
   const chargeId = String(payment.telegram_payment_charge_id || '');
   if (!chargeId) return false;
 
-  await saveBillingPayment({
-    telegram_payment_charge_id: chargeId,
-    telegram_id: Number(userId),
-    plan: parsed.plan,
-    stars_amount: Number(payment.total_amount),
-    currency: 'XTR',
-    invoice_payload: String(payment.invoice_payload || ''),
-    provider_payment_charge_id: payment.provider_payment_charge_id || null,
-    subscription_expiration_date: expiresAt,
-    is_recurring: Boolean(payment.is_recurring),
-    is_first_recurring: Boolean(payment.is_first_recurring),
-    status: 'paid',
-    created_at: new Date(Number(fallbackDate || Math.floor(Date.now() / 1000)) * 1000).toISOString(),
-  }, cfg);
+  const subscription = await parseInvoicePayload(payment.invoice_payload, cfg.botToken);
+  if (subscription) {
+    if (Number(subscription.userId) !== Number(userId)) return false;
+    const planCfg = billingPlanConfig(subscription.plan, cfg);
+    if (!planCfg || Number(payment.total_amount) !== Number(planCfg.stars)) return false;
 
-  await updateUserSubscription(userId, {
-    plan: parsed.plan,
-    subscription_until: expiresAt,
-    subscription_canceled: false,
-    telegram_payment_charge_id: chargeId,
+    const expiresUnix = Number(payment.subscription_expiration_date || 0)
+      || (Number(fallbackDate || Math.floor(Date.now() / 1000)) + SUBSCRIPTION_PERIOD_SECONDS);
+    const expiresAt = new Date(expiresUnix * 1000).toISOString();
+
+    await saveBillingPayment({
+      telegram_payment_charge_id: chargeId,
+      telegram_id: Number(userId),
+      plan: subscription.plan,
+      stars_amount: Number(payment.total_amount),
+      currency: 'XTR',
+      invoice_payload: String(payment.invoice_payload || ''),
+      provider_payment_charge_id: payment.provider_payment_charge_id || null,
+      subscription_expiration_date: expiresAt,
+      is_recurring: Boolean(payment.is_recurring),
+      is_first_recurring: Boolean(payment.is_first_recurring),
+      status: 'paid',
+      created_at: new Date(Number(fallbackDate || Math.floor(Date.now() / 1000)) * 1000).toISOString(),
+    }, cfg);
+
+    await updateUserSubscription(userId, {
+      plan: subscription.plan,
+      subscription_until: expiresAt,
+      subscription_canceled: false,
+      telegram_payment_charge_id: chargeId,
+    }, cfg);
+    await recordReferredPayment(userId,payment,subscription.plan,cfg).catch(()=>false);
+    return true;
+  }
+
+  const pass = await parsePassInvoicePayload(payment.invoice_payload, cfg.botToken);
+  if (!pass || Number(pass.userId) !== Number(userId)) return false;
+  const product = passProductConfig(pass.passType, cfg);
+  if (!product || Number(payment.total_amount) !== Number(product.stars)) return false;
+
+  const activated = await activatePassPurchase({
+    telegramId: Number(userId),
+    passType: pass.passType,
+    fixtureId: pass.fixtureId,
+    starsAmount: Number(payment.total_amount),
+    paymentChargeId: chargeId,
+    invoicePayload: String(payment.invoice_payload || ''),
+    paidAt: new Date(Number(fallbackDate || Math.floor(Date.now() / 1000)) * 1000).toISOString(),
   }, cfg);
-  await recordReferredPayment(userId,payment,parsed.plan,cfg).catch(()=>false);
-  return true;
+  return Boolean(activated?.activated || activated?.duplicate);
 }
 
 async function billingWebhookStatus(request, cfg) {
@@ -2743,11 +2797,31 @@ async function syncBillingFromStars(userId, cfg) {
   const tx = await telegramApi('getStarTransactions', cfg, { offset: 0, limit: 100 });
   const list = Array.isArray(tx?.transactions) ? tx.transactions : [];
   let best = null;
+  let passVerified = 0;
 
   for (const item of list) {
     const source = item?.source;
     if (!source || source.type !== 'user' || source.transaction_type !== 'invoice_payment') continue;
     if (Number(source.user?.id) !== Number(userId)) continue;
+
+    const pass = await parsePassInvoicePayload(source.invoice_payload, cfg.botToken);
+    if (pass && Number(pass.userId) === Number(userId)) {
+      const product = passProductConfig(pass.passType, cfg);
+      if (product && Number(item.amount) === Number(product.stars)) {
+        const applied = await applySuccessfulPayment(userId, {
+          currency: 'XTR',
+          total_amount: Number(item.amount),
+          invoice_payload: source.invoice_payload,
+          telegram_payment_charge_id: String(item.id || ''),
+          provider_payment_charge_id: '',
+          is_recurring: false,
+          is_first_recurring: false,
+        }, cfg, Number(item.date || Math.floor(Date.now() / 1000)));
+        if (applied) passVerified += 1;
+      }
+      continue;
+    }
+
     const parsed = await parseInvoicePayload(source.invoice_payload, cfg.botToken);
     if (!parsed || Number(parsed.userId) !== Number(userId)) continue;
     const planCfg = billingPlanConfig(parsed.plan, cfg);
@@ -2757,22 +2831,26 @@ async function syncBillingFromStars(userId, cfg) {
     if (!best || expiresUnix > best.expiresUnix) best = { item, source, parsed, expiresUnix };
   }
 
-  if (!best || best.expiresUnix * 1000 <= Date.now()) {
-    return { synced: false, quota: await getQuota(userId, cfg) };
+  let subscriptionSynced = false;
+  if (best && best.expiresUnix * 1000 > Date.now()) {
+    subscriptionSynced = await applySuccessfulPayment(userId, {
+      currency: 'XTR',
+      total_amount: Number(best.item.amount),
+      invoice_payload: best.source.invoice_payload,
+      telegram_payment_charge_id: String(best.item.id || ''),
+      provider_payment_charge_id: '',
+      subscription_expiration_date: best.expiresUnix,
+      is_recurring: true,
+      is_first_recurring: false,
+    }, cfg, Number(best.item.date || Math.floor(Date.now() / 1000)));
   }
 
-  await applySuccessfulPayment(userId, {
-    currency: 'XTR',
-    total_amount: Number(best.item.amount),
-    invoice_payload: best.source.invoice_payload,
-    telegram_payment_charge_id: String(best.item.id || ''),
-    provider_payment_charge_id: '',
-    subscription_expiration_date: best.expiresUnix,
-    is_recurring: true,
-    is_first_recurring: false,
-  }, cfg, Number(best.item.date || Math.floor(Date.now() / 1000)));
-
-  return { synced: true, quota: await getQuota(userId, cfg) };
+  return {
+    synced: Boolean(subscriptionSynced || passVerified),
+    subscriptionSynced: Boolean(subscriptionSynced),
+    passVerified,
+    quota: await getQuota(userId, cfg),
+  };
 }
 
 function telegramMiniAppE2EDrill() {
@@ -7834,14 +7912,22 @@ async function processTelegramUpdate(request, cfg, update) {
     try {
       const parsed = await parseInvoicePayload(q.invoice_payload, cfg.botToken);
       const planCfg = parsed ? billingPlanConfig(parsed.plan, cfg) : null;
+      const pass = parsed ? null : await parsePassInvoicePayload(q.invoice_payload, cfg.botToken);
+      const passCfg = pass ? passProductConfig(pass.passType, cfg) : null;
       ok = Boolean(
-        parsed
-        && Number(parsed.userId) === Number(q.from?.id)
-        && q.currency === 'XTR'
-        && planCfg
-        && Number(q.total_amount) === Number(planCfg.stars)
+        q.currency === 'XTR'
+        && (
+          (parsed
+            && Number(parsed.userId) === Number(q.from?.id)
+            && planCfg
+            && Number(q.total_amount) === Number(planCfg.stars))
+          || (pass
+            && Number(pass.userId) === Number(q.from?.id)
+            && passCfg
+            && Number(q.total_amount) === Number(passCfg.stars))
+        )
       );
-      if (!ok) errorMessage = 'Параметры подписки не совпадают. Откройте приложение и создайте счёт заново.';
+      if (!ok) errorMessage = 'Параметры покупки не совпадают. Откройте приложение и создайте счёт заново.';
     } catch {}
     await telegramApi('answerPreCheckoutQuery', cfg, {
       pre_checkout_query_id: q.id,
@@ -8074,6 +8160,7 @@ async function processTelegramUpdate(request, cfg, update) {
       markTelegramWebhookMutation(cfg, 'billing_refund');
       await supaPatch(cfg, 'billing_payments', { telegram_payment_charge_id: `eq.${chargeId}` }, { status: 'refunded', updated_at: new Date().toISOString() });
     }
+    if (userId && chargeId) await refundPassByCharge(userId, chargeId, cfg).catch(()=>null);
     const record = userId ? await getUserRecord(userId, cfg) : null;
     if (record && String(record.telegram_payment_charge_id || '') === chargeId) {
       await updateUserSubscription(userId, {
@@ -8241,6 +8328,23 @@ async function apiBillingPlans(request, cfg, user) {
       PRO: { stars: billingPlanConfig('PRO', cfg).stars, dailyLimit: cfg.limits.PRO },
       PREMIUM: { stars: billingPlanConfig('PREMIUM', cfg).stars, dailyLimit: cfg.limits.PREMIUM },
     },
+    passes: {
+      MATCH_PASS: passProductConfig(PASS_TYPES.MATCH, cfg),
+      DAY_PASS: passProductConfig(PASS_TYPES.DAY, cfg),
+      WEEKEND_PASS: passProductConfig(PASS_TYPES.WEEKEND, cfg),
+    },
+  });
+}
+
+async function apiEntitlements(request, cfg, user) {
+  const url = new URL(request.url);
+  const rawFixtureId = url.searchParams.get('fixtureId');
+  const fixtureId = rawFixtureId == null || rawFixtureId === '' ? 0 : Number(rawFixtureId);
+  if (!Number.isSafeInteger(fixtureId) || fixtureId < 0) {
+    return json({ error: 'Некорректный fixtureId.', code: 'ENTITLEMENT_INVALID_FIXTURE' }, 400);
+  }
+  return json({
+    entitlement: await resolveUserEntitlements(user.id, fixtureId, cfg),
   });
 }
 
@@ -8248,9 +8352,53 @@ async function apiBillingInvoice(request, cfg, user) {
   const webhook = await billingWebhookStatus(request, cfg);
   if (!webhook.ready) return json({ error: 'Оплата ещё не активирована: Telegram webhook не настроен.', webhook }, 503);
 
-  let body = {};
-  try { body = await request.json(); } catch {}
-  const plan = String(body.plan || '').toUpperCase();
+  let body;
+  try { body = await request.json(); }
+  catch { return json({ error: 'Некорректное тело запроса.', code: 'BILLING_INVALID_JSON' }, 400); }
+
+  const passType = String(body?.passType || '').trim().toUpperCase();
+  if (passType) {
+    const product = passProductConfig(passType, cfg);
+    if (!product) return json({ error: 'Неизвестный Pass.', code: 'BILLING_UNKNOWN_PASS' }, 400);
+    if (!product.saleReady) {
+      return json({
+        error: 'Этот Pass ещё не готов к продаже: серверный лимит использования не настроен.',
+        code: 'BILLING_PASS_USAGE_LIMIT_REQUIRED',
+      }, 503);
+    }
+
+    const fixtureId = passType === PASS_TYPES.MATCH ? Number(body?.fixtureId || 0) : 0;
+    if (passType === PASS_TYPES.MATCH && (!Number.isSafeInteger(fixtureId) || fixtureId <= 0)) {
+      return json({ error: 'Для Match Pass нужен корректный fixtureId.', code: 'BILLING_FIXTURE_REQUIRED' }, 400);
+    }
+    if (passType !== PASS_TYPES.MATCH && body?.fixtureId != null && Number(body.fixtureId || 0) !== 0) {
+      return json({ error: 'Этот Pass не привязывается к матчу.', code: 'BILLING_FIXTURE_NOT_ALLOWED' }, 400);
+    }
+
+    const currentAccess = await resolveUserEntitlements(user.id, fixtureId, cfg);
+    if (currentAccess.store?.available !== true) {
+      return json({
+        error: 'Pass-покупки временно недоступны: хранилище доступов ещё не готово.',
+        code: 'BILLING_ENTITLEMENT_STORE_UNAVAILABLE',
+      }, 503);
+    }
+    if (currentAccess.subscriptionActive) {
+      return json({ error: 'Активная подписка уже включает расширенный доступ.', code: 'BILLING_SUBSCRIPTION_HAS_ACCESS' }, 409);
+    }
+
+    const payload = await createPassInvoicePayload(user.id, passType, fixtureId, cfg.botToken);
+    const invoiceUrl = await telegramApi('createInvoiceLink', cfg, {
+      title: product.title,
+      description: product.description,
+      payload,
+      provider_token: '',
+      currency: 'XTR',
+      prices: [{ label: product.title, amount: product.stars }],
+    });
+    return json({ invoiceUrl, passType, fixtureId: fixtureId || null, stars: product.stars });
+  }
+
+  const plan = String(body?.plan || '').toUpperCase();
   const planCfg = billingPlanConfig(plan, cfg);
   if (!planCfg) return json({ error: 'Неизвестный тариф.' }, 400);
 
@@ -17310,6 +17458,7 @@ async function probeSupabaseSchemaDrift(cfg) {
     { id: 'favorite_players', table: 'favorite_players', columns: ['telegram_id','player_id','player_name','team_id','created_at'] },
     { id: 'smart_notification_preferences', table: 'user_preferences', columns: ['telegram_id','notification_preferences','updated_at'] },
     { id: 'smart_notification_deliveries', table: 'smart_notification_deliveries', columns: ['telegram_id','fixture_id','event_type','category','dedupe_key','status','attempts','claimed_at','sent_at','retry_at'] },
+    { id: 'user_entitlements', table: 'user_entitlements', columns: ['id','telegram_id','entitlement_type','fixture_id','starts_at','expires_at','usage_limit','usage_count','payment_charge_id','status'] },
     { id: 'calibration_transitions', table: 'model_calibration_transitions', columns: ['id','action','resulting_revision','created_at'] },
     { id: 'digest_subscriptions', table: 'bot_digest_subscriptions', columns: ['telegram_id','enabled','hour_utc','delivery_claim_date','delivery_locked_until'] },
     { id: 'referee_history', table: 'referee_match_history', columns: ['fixture_id','referee_key','yellow_cards'] },
@@ -23449,8 +23598,10 @@ async function apiAnalyze(request, cfg, user) {
     }
   }
 
+  const entitlementBefore = await resolveUserEntitlements(user.id, fixtureId, cfg);
+  const passCandidate = entitlementBefore.source === 'pass' && entitlementBefore.access.expandedAi === true;
   const quotaBefore = await getQuota(user.id, cfg);
-  if (!freeRecheck && quotaBefore.left <= 0) return await trackedFullAiFailureResponse({ error: `Лимит исчерпан: ${quotaBefore.used}/${quotaBefore.limit} анализов сегодня.`, quota: quotaBefore },429,'quota_exhausted');
+  if (!freeRecheck && !passCandidate && quotaBefore.left <= 0) return await trackedFullAiFailureResponse({ error: `Лимит исчерпан: ${quotaBefore.used}/${quotaBefore.limit} анализов сегодня.`, quota: quotaBefore },429,'quota_exhausted');
 
   const analysisLock=await claimDistributedAnalysisLock(fixtureId,cfg);
   if (!analysisLock.claimed && analysisLock.unavailable) {
@@ -23477,9 +23628,15 @@ async function apiAnalyze(request, cfg, user) {
   }
 
   let usageReservation=null;
+  let passUsageReservation=null;
   let usageCommitted=false;
   try {
-  if (!freeRecheck) {
+  let passAccess=false;
+  if (!freeRecheck && passCandidate) {
+    passUsageReservation=await reserveEntitlementUsage(user.id,entitlementBefore.passes.active,fixtureId,cfg);
+    passAccess=Boolean(passUsageReservation?.allowed);
+  }
+  if (!freeRecheck && !passAccess) {
     usageReservation=await reserveAnalysisQuota(user.id,cfg);
     if (!usageReservation.allowed) {
       return await trackedFullAiFailureResponse({error:`Лимит исчерпан: ${usageReservation.used}/${usageReservation.limit} анализов сегодня.`,quota:{plan:usageReservation.plan,used:usageReservation.used,limit:usageReservation.limit,left:usageReservation.left}},429,'quota_exhausted');
@@ -23811,8 +23968,14 @@ async function apiAnalyze(request, cfg, user) {
   await recordTrackedFullAiOutcome('fresh');
   return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:recheckReasonCode,delta:recheckDelta},newsImpact,quota:await getQuota(user.id,cfg)}));
   } finally {
-    if (usageReservation?.reserved && !usageCommitted) await refundAnalysisQuota(user.id,usageReservation,cfg);
-    await releaseDistributedAnalysisLock(analysisLock,cfg);
+    try {
+      if (usageReservation?.reserved && !usageCommitted) await refundAnalysisQuota(user.id,usageReservation,cfg);
+      if (passUsageReservation?.reserved && !usageCommitted) {
+        await refundEntitlementUsage(user.id,passUsageReservation.entitlementId,cfg).catch(()=>null);
+      }
+    } finally {
+      await releaseDistributedAnalysisLock(analysisLock,cfg);
+    }
   }
   } catch (error) {
     const reason=newsImpactFailureCode(error,'server_error');
@@ -24063,6 +24226,7 @@ const API_ROUTE_DEPS = Object.freeze({
   apiDataIntegrity,
   apiDiagnostics,
   apiDigestSettings,
+  apiEntitlements,
   apiFavoritePlayers,
   apiFavorites,
   apiFixtureShareLink,
