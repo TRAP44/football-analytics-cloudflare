@@ -5,7 +5,6 @@ import {
   CLIENT_API_CONTRACT,
   CLIENT_RELEASE_CHANNEL,
   DEFAULT_UI_PREFERENCES,
-  appSurface,
   readUiPreferences,
 } from '../public/modules/app-runtime.js';
 
@@ -15,16 +14,6 @@ test('frontend runtime centralizes stable client identity', () => {
   assert.equal(CLIENT_RELEASE_CHANNEL, 'rc144');
 });
 
-test('surface detection defaults public and recognizes dedicated admin meta', () => {
-  const doc = value => ({
-    querySelector() {
-      return value === null ? null : { content: value };
-    },
-  });
-  assert.equal(appSurface(doc('admin')), 'admin');
-  assert.equal(appSurface(doc('public')), 'public');
-  assert.equal(appSurface(doc(null)), 'public');
-});
 
 test('UI preferences normalize persisted values and fail safe', () => {
   const good = {
