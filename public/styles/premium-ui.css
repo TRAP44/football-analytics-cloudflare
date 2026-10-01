@@ -1134,3 +1134,59 @@ html[data-theme="light"] .miniapp-public-shell {
     transition-duration: .001ms !important;
   }
 }
+
+
+/* Screenshot UX fixes — Issue #317 */
+.miniapp-public-shell .compact-actions{
+  grid-template-columns:minmax(0,1fr)!important;
+}
+.miniapp-public-shell .compact-actions .analyze-btn{
+  width:100%;
+  max-width:none;
+  justify-self:stretch;
+  text-align:center;
+}
+.miniapp-public-shell .experience-actions{
+  grid-template-columns:repeat(2,minmax(0,1fr));
+}
+.miniapp-public-shell .analysis-favorite-btn.secondary-btn{
+  width:100%;
+  min-height:52px;
+  margin:0;
+  display:grid;
+  grid-template-columns:30px minmax(0,1fr);
+  gap:9px;
+  align-items:center;
+  padding:8px 11px;
+  border:1px solid var(--mr-line-soft);
+  border-radius:14px;
+  background:color-mix(in srgb,var(--surface-2) 44%,var(--surface));
+  color:var(--text);
+  text-align:left;
+}
+.miniapp-public-shell .analysis-favorite-btn.active{
+  border-color:color-mix(in srgb,#f5b82e 38%,var(--mr-line-soft));
+  background:color-mix(in srgb,#f5b82e 8%,var(--surface));
+}
+.miniapp-public-shell .analysis-favorite-star{
+  width:30px;
+  height:30px;
+  display:grid;
+  place-items:center;
+  border-radius:10px;
+  background:color-mix(in srgb,#f5b82e 10%,var(--surface-2));
+  color:#f5b82e;
+  font-size:17px;
+}
+.miniapp-public-shell .analysis-favorite-copy{min-width:0;display:grid;gap:2px}
+.miniapp-public-shell .analysis-favorite-copy small{color:var(--hint);font-size:8px;line-height:1.1}
+.miniapp-public-shell .analysis-favorite-copy strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;line-height:1.2}
+@media(max-width:430px){
+  .miniapp-public-shell .experience-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .miniapp-public-shell .experience-actions #reminderBtn,
+  .miniapp-public-shell .experience-actions #shareAnalysisBtn{grid-column:span 1}
+  .miniapp-public-shell .analysis-favorite-btn.secondary-btn{min-height:50px}
+}
+@media(max-width:360px){
+  .miniapp-public-shell .experience-actions{grid-template-columns:1fr}
+}
