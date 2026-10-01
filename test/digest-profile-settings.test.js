@@ -5,6 +5,7 @@ import {
   DIGEST_FIXED_HOUR_UTC,
   createDigestSettingsModule,
   digestDeliverySummary,
+  digestLocalDeliveryWindow,
   normalizeDigestSettingsPayload,
 } from '../public/modules/digest-settings.js';
 
@@ -31,6 +32,7 @@ test('digest settings normalize the existing fixed UTC delivery contract', () =>
   assert.equal(settings.capabilities.favoritePriority, false);
   assert.deepEqual(settings.favoriteTeams, [{ teamId: 40, teamName: 'Liverpool' }]);
   assert.equal(digestDeliverySummary(settings).status, 'Включена');
+  assert.equal(digestLocalDeliveryWindow(7, new Date('2026-10-01T00:00:00Z'), 'Europe/Warsaw'), '09:00–09:55');
 });
 
 test('digest settings fail safe for malformed or missing payloads', () => {
@@ -185,7 +187,8 @@ test('Profile surface exposes Russian Digest controls and narrow mobile layouts'
   assert.match(app, /loadDigestSettings\(\)/);
   assert.match(moduleSource, /☀️ Утренняя подборка/);
   assert.match(moduleSource, /Получать подборку/);
-  assert.match(moduleSource, /07:00–07:55 UTC/);
+  assert.match(moduleSource, /По вашему местному времени/);
+  assert.doesNotMatch(moduleSource, /07:00–07:55 UTC/);
   assert.match(styles, /@media \(max-width: 430px\)[\s\S]*?\.digest-settings-grid/);
   assert.match(styles, /@media \(max-width: 360px\)[\s\S]*?\.digest-settings-head/);
 });
