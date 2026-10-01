@@ -9,8 +9,8 @@ test('premium UI layer is loaded after public shell', () => {
   const shell = html.indexOf('/styles/public-shell.css');
   const premium = html.indexOf('/styles/premium-ui.css');
   assert.ok(shell >= 0 && premium > shell);
-  assert.match(html, /frontend-asset-revision" content="6\.120\.0-launch30"/);
-  assert.match(html, /premium-ui\.css\?v=6\.120\.0-launch30/);
+  assert.match(html, /frontend-asset-revision" content="6\.120\.0-launch31"/);
+  assert.match(html, /premium-ui\.css\?v=6\.120\.0-launch31/);
 });
 
 test('premium UI covers core public surfaces without changing product contracts', () => {
