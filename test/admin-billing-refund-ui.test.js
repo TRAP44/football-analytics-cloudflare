@@ -17,7 +17,10 @@ test('admin refundable lookup is server-authorized and separate from the public 
   assert.match(worker, /listUserEntitlements\(uid, cfg\)/);
   assert.match(worker, /status !== 'paid'/);
   assert.match(worker, /status !== 'active'/);
-  const me = worker.slice(worker.indexOf('async function apiMe'), worker.indexOf('async function apiHistory'));
+  const meStart = worker.indexOf('async function apiMe(request');
+  const meEnd = worker.indexOf('async function apiHistory(request', meStart);
+  assert.ok(meStart > 0 && meEnd > meStart);
+  const me = worker.slice(meStart, meEnd);
   assert.doesNotMatch(me, /telegram_payment_charge_id\s*:/);
   assert.match(me, /paymentChargeIdPresent/);
 });
