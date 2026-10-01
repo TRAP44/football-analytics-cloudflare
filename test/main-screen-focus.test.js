@@ -18,7 +18,8 @@ test('main match screen keeps secondary discovery inside the league drawer', () 
 
 test('secondary filter summary explains the selected filter and closes after selection', () => {
   assert.match(app, /const drawerFilters = \['favorites', 'international', 'cups', 'england', 'spain', 'italy', 'germany', 'france'\]/);
-  assert.match(app, /summaryValue\.textContent = activeDrawerFilter \? labels\[state\.filter\] : 'Ещё'/);
+  assert.match(app, /summaryValue\.textContent = activeDrawerFilter \? labels\[state\.filter\] : ''/);
+  assert.match(app, /summaryValue\.hidden = !activeDrawerFilter/);
   assert.match(app, /btn\.closest\('\.league-filter-drawer'\)/);
   assert.match(app, /drawer\.open = false/);
 });
