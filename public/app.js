@@ -24,13 +24,11 @@ import {
   CLIENT_API_CONTRACT,
   CLIENT_RELEASE_CHANNEL,
   SUPABASE_SCHEMA_HINT,
-  appSurface,
   readUiPreferences,
   MATCH_WATCHLIST_KEY,
   readMatchWatchlist,
 } from './modules/app-runtime.js';
 
-const APP_SURFACE = appSurface(document);
 const initialUiPreferences = readUiPreferences(localStorage);
 document.documentElement.dataset.theme = initialUiPreferences.theme;
 document.documentElement.dataset.accent = initialUiPreferences.accent;
@@ -150,7 +148,6 @@ const state = {
   teamSquadRequestSeq: 0,
   tournamentStandingsRequestSeq: 0,
   liveRefreshTimer: null,
-  liveRefreshRemaining: 0,
   favoritesLoaded: false,
   favoritesLoading: false,
   favoritesLoadError: '',
@@ -268,7 +265,6 @@ const {
 function stopLiveRefresh() {
   if (state.liveRefreshTimer) clearTimeout(state.liveRefreshTimer);
   state.liveRefreshTimer = null;
-  state.liveRefreshRemaining = 0;
 }
 
 function viewBackTarget(id = activeViewId()) {
@@ -3712,41 +3708,25 @@ async function requestMatchCenter(fixtureId, extraParams = {}, options = {}) {
   }
 }
 
-function updateLiveCountdown() {
-  const el = $('liveRefreshText');
-  if (!el || !state.currentCenter || state.currentCenter.mode !== 'live') return;
-  el.textContent = 'Обновляется автоматически';
-}
-
 function isActiveLiveFixture(fixtureId) {
-  return Boolean(
-    state.liveRefreshWasActive
-    && !document.hidden
-    && activeViewId() === 'analysisView'
+  return state.liveRefreshWasActive && !document.hidden && activeViewId() === 'analysisView'
     && state.currentCenter?.mode === 'live'
-    && Number(state.currentCenter?.match?.fixtureId || 0) === Number(fixtureId)
-  );
+    && Number(state.currentCenter?.match?.fixtureId || 0) === Number(fixtureId);
 }
 
 function scheduleLiveRefresh(fixtureId) {
-  const delaySeconds = Math.max(15, Number(state.currentCenter?.refreshSeconds || 60));
-  state.liveRefreshRemaining = delaySeconds;
+  const delayMs = Math.max(15, Number(state.currentCenter?.refreshSeconds || 60)) * 1000;
   state.liveRefreshTimer = setTimeout(async () => {
     state.liveRefreshTimer = null;
     if (!isActiveLiveFixture(fixtureId)) return;
-
     try {
       const timingStartedAt = performance.now();
       const data = await requestMatchCenter(fixtureId, { t: Date.now() });
       if (!data || !isActiveLiveFixture(fixtureId)) return;
-
       sendOperationTiming('live', timingStartedAt, 'analysisView');
       state.currentCenter = data;
       renderMatchCenter(data);
-      if (data.mode !== 'live') {
-        stopLiveRefresh();
-        state.liveRefreshWasActive = false;
-      }
+      if (data.mode !== 'live') state.liveRefreshWasActive = false;
     } catch (e) {
       if (!isActiveLiveFixture(fixtureId)) return;
       const el = $('liveRefreshText');
@@ -3755,22 +3735,20 @@ function scheduleLiveRefresh(fixtureId) {
     } finally {
       if (isActiveLiveFixture(fixtureId) && !state.liveRefreshTimer) scheduleLiveRefresh(fixtureId);
     }
-  }, delaySeconds * 1000);
+  }, delayMs);
 }
 
 function startLiveRefresh(fixtureId) {
   stopLiveRefresh();
+  const el = $('liveRefreshText');
   if (!runtimeAllows('liveEnabled')) {
     state.liveRefreshWasActive = false;
-    const el = $('liveRefreshText');
     if (el) el.textContent = 'Автообновление матча временно приостановлено.';
     return;
   }
-
   state.liveRefreshWasActive = true;
-  updateLiveCountdown();
-  if (document.hidden) return;
-  scheduleLiveRefresh(fixtureId);
+  if (el) el.textContent = 'Обновляется автоматически';
+  if (!document.hidden) scheduleLiveRefresh(fixtureId);
 }
 
 function signedPp(v) {
@@ -6623,7 +6601,7 @@ const startupWatchdog = setTimeout(() => {
 
 try {
   await runStartupSequence();
-  if (APP_SURFACE === 'admin') {
+  if (document.querySelector('meta[name="matchradar-surface"]')?.content === 'admin') {
     if (isAdmin()) {
       openProfileView();
       document.body.classList.add('admin-surface-ready');
