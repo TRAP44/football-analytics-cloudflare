@@ -67,6 +67,7 @@ test('active expired unavailable and included Pass states render from server dec
   const activeEntitlement = { decisions:[{ type:'MATCH_PASS', fixtureId:777, active:true, reason:'active', expiresAt:'2026-10-03T12:00:00Z' }] };
   const expiredEntitlement = { decisions:[{ type:'MATCH_PASS', fixtureId:777, active:false, reason:'expired', expiresAt:'2026-09-30T12:00:00Z' }] };
   assert.equal(passUiState({ product, entitlement:activeEntitlement, passType:'MATCH_PASS', fixtureId:777, paymentsEnabled:true, now:Date.parse('2026-10-01T12:00:00Z') }).state, 'active');
+  assert.equal(passUiState({ product, entitlement:activeEntitlement, passType:'MATCH_PASS', fixtureId:0, paymentsEnabled:true, now:Date.parse('2026-10-01T12:00:00Z') }).state, 'needs-fixture');
   assert.equal(passUiState({ product, entitlement:expiredEntitlement, passType:'MATCH_PASS', fixtureId:777, paymentsEnabled:true, now:Date.parse('2026-10-01T12:00:00Z') }).state, 'expired');
   assert.equal(passUiState({ product:{...product,saleReady:false}, entitlement:{decisions:[]}, passType:'WEEKEND_PASS', paymentsEnabled:true }).state, 'unavailable');
   assert.equal(passUiState({ product, entitlement:{decisions:[]}, passType:'DAY_PASS', paymentsEnabled:true, subscriptionActive:true }).state, 'included');
@@ -77,6 +78,9 @@ test('Match Pass opens from Match Center context and quota paywall preserves fix
   assert.match(app, /openPassStoreForFixture\(Number\(m\.fixtureId\)\)/);
   assert.match(app, /showQuotaPaywallForFixture\(fixtureId\)/);
   assert.match(billing, /passFixtureId = id/);
+  assert.match(billing, /function clearPassContext/);
+  assert.match(billing, /openProfile\(\{ preservePassContext:true \}\)/);
+  assert.match(app, /billingModule\.clearPassContext\(\)/);
   assert.match(billing, /fixtureId:id, force:true/);
   assert.match(billing, /Number\(invoice\.fixtureId \|\| 0\) !== fixtureId/);
 });
