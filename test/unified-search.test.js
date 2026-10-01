@@ -31,11 +31,21 @@ test('search enriches league queries with cached upcoming and finished fixtures'
 test('search enriches a team query on the server with recent and upcoming fixtures', () => {
   assert.match(worker, /async function loadSearchTeamMatches\(/);
   assert.match(worker, /search:team-fixtures:/);
+  assert.match(worker, /apiFootball\('\/fixtures',\{team:teamId,next:12\},cfg\)/);
+  assert.match(worker, /apiFootball\('\/fixtures',\{team:teamId,last:8\},cfg\)/);
+  assert.doesNotMatch(worker, /apiFootball\('\/fixtures',\{team:teamId,from,to\},cfg\)/);
   assert.match(worker, /teamFixtureDiscovery: 'enabled'/);
   assert.doesNotMatch(app, /const hub = await api\(`\/api\/team\?teamId=/);
   assert.match(app, /data\.matchDiscovery \|\| null/);
   assert.match(app, /Предстоящие матчи/);
   assert.match(app, /Завершённые матчи/);
+});
+
+test('team fixture discovery avoids date-range queries that require a season', () => {
+  assert.doesNotMatch(worker, /apiFootball\('\/fixtures',\s*\{\s*team:[^}]*\bfrom\b[^}]*\bto\b/);
+  assert.match(worker, /apiFootball\('\/fixtures', \{ team: Number\(teamId\), last: 20 \}, cfg\)/);
+  assert.match(worker, /apiFootball\('\/fixtures', \{ team:teamId, next:12 \}, cfg\)/);
+  assert.match(worker, /apiFootball\('\/fixtures', \{ team:teamId, last:8 \}, cfg\)/);
 });
 
 test('search match results have direct actions without running analysis automatically', () => {
