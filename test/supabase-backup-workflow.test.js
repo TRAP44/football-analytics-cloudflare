@@ -25,7 +25,7 @@ test('Supabase backup workflow is read-only, pinned, encrypted and fail-closed',
   assert.match(workflow, /rm -f "\$VERIFY_ARCHIVE" "\$ARCHIVE"/);
   assert.match(workflow, /rm -rf "\$BACKUP_DIR"/);
   assert.match(workflow, /steps\.package\.outputs\.encrypted/);
-  assert.match(workflow, /actions\/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02/);
+  assert.match(workflow, /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/);
   assert.match(workflow, /retention-days: 30/);
   assert.doesNotMatch(workflow, /steps\.package\.outputs\.archive/);
   assert.doesNotMatch(workflow, /db (reset|push)/);
