@@ -68,7 +68,7 @@ export function runSecurityHistoryScan() {
     for (let offset=0;offset<commits.length;offset+=chunkSize) {
       const chunk=commits.slice(offset,offset+chunkSize);
       const output=runGit(
-        ['grep','-I','-n','-E',pattern,...chunk,'--','.'],
+        ['grep','-I','-n','-E','-e',pattern,...chunk,'--','.'],
         {allowNoMatch:true},
       );
       findings.push(...parseGitGrep(output,type));
