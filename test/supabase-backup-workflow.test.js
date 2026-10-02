@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 
 const workflow = fs.readFileSync('.github/workflows/backup-supabase.yml', 'utf8');
 const runbook = fs.readFileSync('docs/SUPABASE_BACKUP_RUNBOOK_RU.md', 'utf8');
+const restoreSql = fs.readFileSync('scripts/verify-supabase-restore.sql', 'utf8');
 
 test('Supabase backup workflow is read-only, pinned, encrypted and fail-closed', () => {
   assert.match(workflow, /workflow_dispatch:/);
@@ -44,4 +45,36 @@ test('Supabase backup runbook requires manual backup before production migration
   assert.match(runbook, /test decrypt/i);
   assert.match(runbook, /не восстанавливается автоматически/i);
   assert.match(runbook, /Supabase Storage/i);
+});
+
+
+test('Supabase restore drill is isolated, measurable and preserves least privilege', () => {
+  assert.match(workflow, /push:[\s\S]*branches: \[main\]/);
+  assert.match(workflow, /actions: read/);
+  assert.match(workflow, /restore_drill:/);
+  assert.match(workflow, /needs: backup/);
+  assert.match(workflow, /gh run download "\$GITHUB_RUN_ID"/);
+  assert.match(workflow, /supabase@\$SUPABASE_CLI_VERSION" start/);
+  assert.match(workflow, /verify-supabase-restore\.sql/);
+  assert.match(workflow, /BACKUP_AGE_SECONDS/);
+  assert.match(workflow, /RESTORE_SECONDS/);
+  assert.match(workflow, /rowCountParityVerified/);
+  assert.match(workflow, /productionDatabaseWritten": false/);
+
+  const restoreJob = workflow.slice(workflow.indexOf('  restore_drill:'));
+  assert.doesNotMatch(restoreJob, /SUPABASE_DB_URL:/);
+  assert.doesNotMatch(restoreJob, /--db-url/);
+  assert.doesNotMatch(restoreJob, /db (push|reset)/);
+
+  assert.match(restoreSql, /row level security|RLS/i);
+  assert.match(restoreSql, /has_table_privilege\('anon'/);
+  assert.match(restoreSql, /has_table_privilege\('authenticated'/);
+  assert.match(restoreSql, /has_table_privilege\('service_role'/);
+  assert.match(restoreSql, /user_entitlements/);
+  assert.match(restoreSql, /backend_schema_fingerprint/);
+
+  assert.match(runbook, /Изолированный restore drill/i);
+  assert.match(runbook, /Observed backup freshness/i);
+  assert.match(runbook, /Measured restore time/i);
+  assert.match(runbook, /production backup не восстанавливается автоматически/i);
 });
