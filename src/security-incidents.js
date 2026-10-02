@@ -120,7 +120,7 @@ export function securityIncidentTimeline(assessment = {}, historyItems = [], { n
       active:true,
       state:'incident',
       highestState:'incident',
-      severity:assessment.severity || 'incident',
+      severity:'incident',
       startedAt:active ? (metadata(latest)?.startedAt || latest?.created_at || assessment.startedAt) : assessment.startedAt,
       durationMinutes:Math.max(0,Math.round((Number(nowMs)-Date.parse(active ? (metadata(latest)?.startedAt || latest?.created_at || assessment.startedAt || '') : (assessment.startedAt || '')))/60_000)),
       fingerprint:'security|' + String(assessment.primaryCode || 'mixed'),
@@ -129,6 +129,7 @@ export function securityIncidentTimeline(assessment = {}, historyItems = [], { n
         primaryCode:assessment.primaryCode || '',
         signalCount:Number(assessment.signalCount || 0),
         counts:assessment.counts || {},
+        riskLevel:assessment.severity || 'incident',
         windowMinutes:Number(assessment.windowMinutes || SECURITY_WINDOW_MINUTES),
       },
     };
@@ -140,16 +141,38 @@ export function securityIncidentTimeline(assessment = {}, historyItems = [], { n
     };
   }
 
+  if (active && assessment.state==='watch') {
+    const incident={
+      incidentId:existingIncidentId,
+      active:true,
+      state:'incident',
+      highestState:'incident',
+      severity:'incident',
+      startedAt:metadata(latest)?.startedAt || latest?.created_at || null,
+      durationMinutes:Math.max(0,Math.round((Number(nowMs)-Date.parse(metadata(latest)?.startedAt || latest?.created_at || ''))/60_000)),
+      fingerprint:'security|' + String(assessment.primaryCode || 'mixed'),
+      diagnostics:{
+        reason:'Security incident остаётся открытым до чистого окна без подозрительных сигналов.',
+        primaryCode:assessment.primaryCode || '',
+        signalCount:Number(assessment.signalCount || 0),
+        counts:assessment.counts || {},
+        riskLevel:assessment.severity || 'warning',
+        windowMinutes:Number(assessment.windowMinutes || SECURITY_WINDOW_MINUTES),
+      },
+    };
+    return {state:'watch',activeIncident:incident,history:[],transition:null};
+  }
+
   if (active) {
     const incident={
       incidentId:existingIncidentId,
       active:false,
       state:'recovered',
       highestState:'incident',
-      severity:String(metadata(latest)?.severity || 'incident'),
+      severity:'incident',
       startedAt:metadata(latest)?.startedAt || latest?.created_at || null,
       recoveredAt:new Date(Number(nowMs)).toISOString(),
-      durationMinutes:Math.max(0,Math.round((Number(nowMs)-eventTime(latest))/60_000)),
+      durationMinutes:Math.max(0,Math.round((Number(nowMs)-Date.parse(metadata(latest)?.startedAt || latest?.created_at || ''))/60_000)),
       fingerprint:'security|recovered',
       diagnostics:{reason:'Security-сигналы вернулись ниже incident-порога.'},
     };
@@ -157,7 +180,7 @@ export function securityIncidentTimeline(assessment = {}, historyItems = [], { n
       state:assessment.state || 'healthy',
       activeIncident:null,
       history:[incident],
-      transition:assessment.state==='healthy' ? {kind:'recovered',incident} : null,
+      transition:{kind:'recovered',incident},
     };
   }
 
