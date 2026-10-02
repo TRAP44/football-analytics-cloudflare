@@ -64,13 +64,17 @@ jobs:
             exit 1
           fi
 
-          if [[ "$SUPABASE_DB_URL" != *".pooler.supabase.com:5432/"* ]]; then
-            echo "SUPABASE_DB_URL must use the Supavisor Session pooler on port 5432 for GitHub Actions IPv4 compatibility." >&2
+          DB_HOST="$(node -e 'const u=new URL(process.env.SUPABASE_DB_URL); process.stdout.write(u.hostname)')"
+          DB_PORT="$(node -e 'const u=new URL(process.env.SUPABASE_DB_URL); process.stdout.write(u.port || "")')"
+          DB_USER="$(node -e 'const u=new URL(process.env.SUPABASE_DB_URL); process.stdout.write(decodeURIComponent(u.username))')"
+
+          if [[ ! "$DB_HOST" =~ ^[a-z0-9-]+\.pooler\.supabase\.com$ || "$DB_PORT" != "5432" ]]; then
+            echo "SUPABASE_DB_URL must use an exact Supavisor Session pooler host on port 5432 for GitHub Actions IPv4 compatibility." >&2
             exit 1
           fi
 
-          if [[ "$SUPABASE_DB_URL" != *"postgres.$SUPABASE_PROJECT_REF"* ]]; then
-            echo "SUPABASE_DB_URL does not appear to target the configured production project ref." >&2
+          if [[ "$DB_USER" != "postgres.$SUPABASE_PROJECT_REF" ]]; then
+            echo "SUPABASE_DB_URL username does not target the configured production project ref." >&2
             exit 1
           fi
 
