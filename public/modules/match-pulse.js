@@ -2,7 +2,7 @@ const IMPORTANT_EVENT_RE = /(goal|card|red|subst|var|penalty)/i;
 
 function finiteNumber(value) {
   if (value === null || value === undefined || value === '') return null;
-  const number = Number(String(value).replace('%', '').replace(',', '.'));
+  const number = Number(String(value).replaceAll('%', '').replace(',', '.'));
   return Number.isFinite(number) ? number : null;
 }
 
