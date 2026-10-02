@@ -25334,8 +25334,8 @@ export default {
             retryAfter:abuse.retryAfter,
           },429,{'retry-after':String(abuse.retryAfter)});
         }
-        return json({ error: 'Откройте мини-приложение внутри Telegram.' }, 401);
       }
+      if (!user) return json({ error: 'Откройте мини-приложение внутри Telegram.' }, 401);
 
       const betaAccess = closedBetaAccessDecision(user, cfg);
       if (!betaAccess.allowed) {
