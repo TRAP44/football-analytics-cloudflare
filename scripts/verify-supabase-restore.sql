@@ -110,7 +110,7 @@ begin
     raise exception 'restore acceptance: backend_default_acl_contract() failed';
   end if;
 end
-$;
+$$;
 
 select public.backend_schema_fingerprint();
 select public.backend_security_contract();
