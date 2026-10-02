@@ -50,6 +50,11 @@ test('profile polish keeps team management focused in My Teams and removes the d
   assert.ok(!profile.includes('Активные напоминания'),'duplicate reminder panel copy should not remain in Profile');
   assert.ok(!profile.includes('profile-data-details'),'technical data drawer should not remain in Profile');
   assert.ok(!profile.includes('Статус сервиса'),'technical status link should not remain in Profile');
+  for(const technicalCopy of [
+    'Проверяем сервер…',
+    'серверным лимитом',
+    'Клиент не может самостоятельно выдать',
+  ]) assert.ok(!profile.includes(technicalCopy), technicalCopy);
   const favoriteFn=block(favoriteTeamsRenderer,'function renderFavoriteTeams','return Object.freeze');
   for(const token of ['favorite-team-row','favorite-team-main','favorite-remove']) assert.ok(favoriteFn.includes(token),token);
   assert.match(css,/\.miniapp-public-shell \.favorite-team-row/);
