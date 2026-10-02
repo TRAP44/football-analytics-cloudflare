@@ -22,6 +22,7 @@ import {
 } from './access-control.js';
 import { createSupabaseClient } from './supabase-client.js';
 import { runtimeReleaseIdentity } from './release-identity.js';
+import { CLIENT_TELEMETRY_EVENT_TYPE, CLIENT_TELEMETRY_EVENTS, clientTelemetryCode } from './client-telemetry-contract.js';
 import { scopeOpsEventsToDeployment } from './release-event-attribution.js';
 import { postDeployRegressionReport } from './post-deploy-regression.js';
 import { planPostDeployRegressionLifecycle } from './post-deploy-regression-lifecycle.js';
@@ -14901,18 +14902,6 @@ async function collectDiagnostics(cfg) {
 }
 
 
-const CLIENT_TELEMETRY_EVENTS = new Set([
-  'boot_ok',
-  'boot_recovery',
-  'compatibility_block',
-  'network_recovery',
-  'client_error',
-  'product_action',
-  'action_error',
-  'operation_timing',
-  'data_coverage',
-]);
-
 const CLIENT_PRODUCT_ACTIONS = new Set([
   'matches_open',
   'search_used',
@@ -15104,7 +15093,7 @@ async function apiClientTelemetry(request, cfg, user) {
   let body = {};
   try { body = await request.json(); } catch {}
   const event = String(body?.event || '').trim().toLowerCase();
-  if (!CLIENT_TELEMETRY_EVENTS.has(event)) {
+  if (!CLIENT_TELEMETRY_EVENTS.includes(event)) {
     return json({ ok: false, error: 'Unsupported telemetry event.' }, 400);
   }
 
@@ -15180,8 +15169,8 @@ async function apiClientTelemetry(request, cfg, user) {
   await recordOpsEvent(cfg, {
     severity,
     source: 'client',
-    eventType: 'client_telemetry',
-    code: event.toUpperCase(),
+    eventType: CLIENT_TELEMETRY_EVENT_TYPE,
+    code: clientTelemetryCode(event),
     message: `Client event: ${event}`,
     endpoint: '/api/client-telemetry',
     durationMs: event === 'operation_timing' ? meta.durationMs : null,
