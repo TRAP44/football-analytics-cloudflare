@@ -52,7 +52,7 @@ test('mini app exposes the current public football shell',()=> {
 });
 
 test('normal mini app startup prepares the public home-first match feed',()=> {
-  assert.match(app,/const startupTasks = \[loadFavorites\(\), loadMatches\(\)\]/);
+  assert.match(app,/const startupTasks = \[loadFavorites\(\), loadMatches\(\{ snapshotFastPath:true \}\)\]/);
   assert.doesNotMatch(app,/if \(admin\) startupTasks\.push\(loadReminders\(\)\)/);
   assert.match(app,/if \(!state\.remindersLoaded\) tasks\.push\(loadReminders\(\)\)/);
   assert.match(app,/showView\('matchesView', \{ restore: true \}\)/);
