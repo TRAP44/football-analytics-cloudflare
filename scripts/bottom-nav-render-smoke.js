@@ -371,7 +371,7 @@ function assertEdgeCaseFixture(width, theme, snapshot) {
     const surface=surfaces.get(name);
     if (!surface) throw new Error(`${width}px/${theme}: ${name} QA surface missing`);
     if (surface.scrollWidth > surface.clientWidth + 1) {
-      throw new Error(`${width}px/${theme}: ${name} surface overflows horizontally (${surface.scrollWidth} > ${surface.clientWidth})`);
+      throw new Error(`${width}px/${theme}: ${name} surface overflows horizontally (${surface.scrollWidth} > ${surface.clientWidth}); overflowers=${JSON.stringify(surface.overflowers || [])}`);
     }
     if (surface.rect.left < -1 || surface.rect.right > width + 1) {
       throw new Error(`${width}px/${theme}: ${name} surface exceeds viewport bounds`);
@@ -616,6 +616,18 @@ async function inspectEdgeCaseFixture(cdp, width, theme) {
         clientWidth:surface.clientWidth,
         scrollWidth:surface.scrollWidth,
         rect:{left:surface.getBoundingClientRect().left,right:surface.getBoundingClientRect().right,width:surface.getBoundingClientRect().width},
+        overflowers:[...surface.querySelectorAll('*')].map(el => {
+          const r=el.getBoundingClientRect();
+          return {
+            tag:el.tagName.toLowerCase(),
+            className:typeof el.className==='string' ? el.className : '',
+            text:(el.textContent || '').trim().slice(0,80),
+            clientWidth:el.clientWidth,
+            scrollWidth:el.scrollWidth,
+            left:r.left,
+            right:r.right,
+          };
+        }).filter(item => item.scrollWidth > item.clientWidth + 1 || item.right > surface.getBoundingClientRect().right + 1).slice(0,12),
         controls:[...surface.querySelectorAll('button,input[type="search"],select,summary')].map(el => {
           const r=el.getBoundingClientRect(), s=getComputedStyle(el);
           return {
