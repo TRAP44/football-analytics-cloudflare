@@ -248,6 +248,11 @@ html {
 .team-tab {
   min-height: 40px;
 }
+.standing-team.team-open-link {
+  min-height: 44px;
+  box-sizing: border-box;
+  align-items: center;
+}
 .theme-option,
 .button-style-options button {
   min-height: 48px;
