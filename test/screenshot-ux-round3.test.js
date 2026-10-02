@@ -43,16 +43,16 @@ test('Profile no longer renders the duplicate active reminders panel', () => {
   assert.doesNotMatch(html, /🔔 Активные напоминания/);
 });
 
-test('public date feed uses a provider-valid exact-date request and preserves per-date cache', () => {
+test('public date feed uses the shared exact-date provider loader and per-date cache', () => {
   assert.doesNotMatch(worker, /function publicFeedDateWindow\(date\)/);
   assert.doesNotMatch(worker, /\{from:feedWindow\.from,to:feedWindow\.to\}/);
   const start = worker.indexOf('async function apiMatches');
   const end = worker.indexOf('function normalizeStandingRow', start);
   const block = worker.slice(start, end);
-  assert.equal((block.match(/apiFootball\(/g) || []).length, 1);
-  assert.match(block, /apiFootball\('\/fixtures',\{date\},cfg\)/);
+  assert.equal((block.match(/apiFootball\(/g) || []).length, 0);
+  assert.match(block, /loadProviderFixturesForDate\(date,cfg,\{forceRefresh:true\}\)/);
   assert.match(block, /providerFixtureDateCacheKey\(date\)/);
-  assert.match(block, /providerFeedDateTtl\(date,cfg\)/);
+  assert.match(worker, /apiFootball\('\/fixtures',\{date:normalized\},cfg\)/);
 });
 
 test('match rate-limit UI no longer exposes a long countdown', () => {
