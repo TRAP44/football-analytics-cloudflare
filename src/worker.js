@@ -3241,9 +3241,9 @@ async function apiMediaPublisherLink(request,cfg,user) {
   const body=await readJson(request);
   const fixtureId=Number(body?.fixtureId || 0);
   if (fixtureId && (!Number.isSafeInteger(fixtureId) || fixtureId<=0)) return json({error:'Укажите корректный fixture ID или оставьте поле пустым.'},400);
-  const source=cleanLaunchPart(body?.source || 'social',14) || 'social';
-  const campaign=cleanLaunchPart(body?.campaign || 'soft_launch',22) || 'soft_launch';
-  const content=cleanLaunchPart(body?.content || 'promo1',16) || 'promo1';
+  const source=cleanLaunchPart(body?.source || 'social',fixtureId>0?14:24) || 'social';
+  const campaign=cleanLaunchPart(body?.campaign || 'soft_launch',fixtureId>0?22:28) || 'soft_launch';
+  const content=cleanLaunchPart(body?.content || 'promo1',fixtureId>0?16:20) || 'promo1';
 
   let link;
   let copy;
