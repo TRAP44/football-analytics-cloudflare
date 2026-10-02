@@ -94,12 +94,16 @@ test('release evidence captures beta config and one real provider quota probe',(
   assert.match(readiness,/computeReadinessSnapshot\(cfg\)/);
 });
 
-test('one normal startup match-list request can make at most one API-Football call',()=>{
+test('one normal startup match-list request delegates to one bounded shared provider loader',()=>{
   const matches=block(worker,'async function apiMatches','function normalizeStandingRow');
-  const calls=(matches.match(/apiFootball\(/g) || []).length;
-  assert.equal(calls,1);
+  assert.equal((matches.match(/apiFootball\(/g) || []).length,0);
+  assert.equal((matches.match(/loadProviderFixturesForDate\(/g) || []).length,1);
   assert.match(matches,/providerBatch/);
   assert.match(matches,/getCache\(providerBatchKey/);
+
+  const loader=block(worker,'async function loadProviderFixturesForDate','function providerFixtureDirectCacheKey');
+  assert.equal((loader.match(/apiFootball\(/g) || []).length,1);
+  assert.match(loader,/apiFootball\('\/fixtures',\{date:normalized\},cfg\)/);
 });
 
 
