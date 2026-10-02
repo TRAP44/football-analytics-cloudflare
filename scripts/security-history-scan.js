@@ -63,6 +63,35 @@ export function parseHistoricalPatchForSecrets(text='') {
   return findings;
 }
 
+export const REVIEWED_SYNTHETIC_HISTORY_FIXTURES = Object.freeze({
+  '7d4e5ff5329830168e4fb7acf301e68f2c9c7160|test/pass-entitlements.test.js|telegram_bot_token': 1,
+  '775e63fdcc7bf441481ca7ec8c951ddc604ec07e|test/security-scan-rc102.test.js|telegram_bot_token': 1,
+  '775e63fdcc7bf441481ca7ec8c951ddc604ec07e|test/security-scan-rc102.test.js|supabase_secret_key': 2,
+  '775e63fdcc7bf441481ca7ec8c951ddc604ec07e|test/security-scan-rc102.test.js|private_key': 1,
+});
+
+function reviewedFixtureKey(item = {}) {
+  return [String(item.commit || ''),String(item.path || ''),String(item.type || '')].join('|');
+}
+
+export function applyReviewedSyntheticFixtureAllowlist(items = [], allowlist = REVIEWED_SYNTHETIC_HISTORY_FIXTURES) {
+  const used=new Map();
+  const actionable=[];
+  const reviewed=[];
+  for (const item of items || []) {
+    const key=reviewedFixtureKey(item);
+    const expected=Math.max(0,Number(allowlist?.[key] || 0));
+    const seen=Number(used.get(key) || 0);
+    if (seen<expected) {
+      used.set(key,seen+1);
+      reviewed.push(item);
+    } else {
+      actionable.push(item);
+    }
+  }
+  return {actionable,reviewed};
+}
+
 function unique(items=[]) {
   const seen=new Set();
   const out=[];
@@ -94,18 +123,26 @@ export function runSecurityHistoryScan() {
   ]);
   findings.push(...parseHistoricalPatchForSecrets(patch));
 
-  const clean=unique(findings).slice(0,100);
+  const uniqueFindings=unique(findings);
+  const review=applyReviewedSyntheticFixtureAllowlist(uniqueFindings);
+  const clean=review.actionable.slice(0,100);
   if (clean.length) {
-    console.error('Secret History Audit found historical secret evidence:');
+    console.error('Secret History Audit found unreviewed historical secret evidence:');
     for (const item of clean) {
       console.error('- ' + (item.commit || 'unknown').slice(0,12) + ' ' + item.path + ': ' + item.type + (item.line ? ' line ' + item.line : ''));
     }
     console.error('Matched secret values are intentionally never printed.');
-    return {ok:false,findings:clean,commitCount:commits.length};
+    return {ok:false,findings:clean,reviewedFixtureCount:review.reviewed.length,commitCount:commits.length};
   }
 
-  console.log('Secret History Audit: no known secret patterns or forbidden secret files found across ' + commits.length + ' reachable commits.');
-  return {ok:true,findings:[],commitCount:commits.length};
+  console.log(
+    'Secret History Audit: no unreviewed secret evidence across '
+      + commits.length
+      + ' reachable commits; reviewed synthetic fixture findings: '
+      + review.reviewed.length
+      + '.'
+  );
+  return {ok:true,findings:[],reviewedFixtureCount:review.reviewed.length,commitCount:commits.length};
 }
 
 const isCli=process.argv[1] && import.meta.url===pathToFileURL(process.argv[1]).href;
