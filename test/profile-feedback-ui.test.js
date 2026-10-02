@@ -29,11 +29,11 @@ test('Profile uses plain Russian copy and removes technical data availability ch
   assert.doesNotMatch(notifications, /cooldown/);
 });
 
-test('Digest renders the fixed server schedule in local browser time', () => {
+test('Digest renders the fixed delivery schedule in local browser time without implementation wording', () => {
   assert.match(digest, /digestLocalDeliveryWindow/);
   assert.match(digest, /По вашему местному времени/);
-  assert.match(digest, /Время пока нельзя изменить вручную/);
-  assert.doesNotMatch(digest, /Фиксированное окно текущей серверной доставки · 07:00–07:55 UTC/);
+  assert.match(digest, /Время доставки задаётся автоматически/);
+  assert.doesNotMatch(digest, /Время пока нельзя изменить вручную|серверное окно доставки|Фиксированное окно текущей серверной доставки · 07:00–07:55 UTC/);
 });
 
 test('Match Pass profile context does not inherit an unrelated last viewed fixture', () => {

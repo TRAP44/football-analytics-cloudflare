@@ -221,7 +221,8 @@ test('Profile UI is progressive-disclosure and server capabilities drive locked 
   assert.match(moduleSource,/<details class="smart-notification-details">/);
   assert.match(moduleSource,/Мои игроки/);
   assert.match(moduleSource,/AI-сигналы/);
-  assert.match(moduleSource,/Радар: уверенность/);
+  assert.match(moduleSource,/Выберите нужные категории/);
+  assert.doesNotMatch(moduleSource,/Радар: уверенность|Порог рынка|Доступ к категориям проверяется сервером/);
   assert.doesNotMatch(moduleSource,/smartNotificationsUpgradeBtn|Посмотреть PRO/);
   assert.doesNotMatch(moduleSource,/cooldown/);
   assert.doesNotMatch(moduleSource,/Smart Alerts/);
@@ -298,4 +299,12 @@ test('v6.24 migration adds only Smart Notification state and keeps Favorite Play
   assert.match(worker,/radarStrongSignalState/);
   assert.match(worker,/expandedDailyDigestText/);
   assert.match(worker,/ai\.digest_expanded/);
+});
+
+
+test('public Smart Notifications copy hides internal delivery thresholds and server wording', () => {
+  const source = fs.readFileSync('public/modules/smart-notifications.js', 'utf8');
+  assert.match(source, /Только важные изменения по матчам, командам и игрокам/);
+  assert.match(source, /Выберите нужные категории/);
+  assert.doesNotMatch(source, /Порог рынка|Доступ к категориям проверяется сервером|подавляются на сервере|smart-notification-note/);
 });

@@ -107,7 +107,7 @@ export function createDigestSettingsModule({
     }
 
     if ((!model.loaded || model.loading) && !model.settings) {
-      root.innerHTML = '<div class="digest-settings-state" role="status"><span>⏳</span><div><strong>Загружаем утреннюю подборку…</strong><small>Проверяем текущую подписку в Telegram.</small></div></div>';
+      root.innerHTML = '<div class="digest-settings-state" role="status"><span>⏳</span><div><strong>Загружаем утреннюю подборку…</strong><small>Загружаем настройки доставки.</small></div></div>';
       return;
     }
 
@@ -132,9 +132,9 @@ export function createDigestSettingsModule({
       </label>
       <div class="digest-settings-grid">
         <div><span>Время доставки</span><strong>${escapeHtml(localDeliveryWindow)}</strong><small>По вашему местному времени · ежедневное фиксированное окно</small></div>
-        <div><span>Тариф</span><strong>${escapeHtml(planLabel(settings.plan))}</strong><small>${settings.capabilities.planSpecificContent ? 'Расширенное содержание тарифа подключено.' : 'Используется базовое содержание, доступное текущей серверной доставке.'}</small></div>
+        <div><span>Тариф</span><strong>${escapeHtml(planLabel(settings.plan))}</strong><small>${settings.capabilities.planSpecificContent ? 'Расширенная подборка доступна.' : 'Базовая подборка доступна.'}</small></div>
       </div>
-      <p class="tiny digest-time-note">Время пока нельзя изменить вручную. MatchRadar автоматически показывает серверное окно доставки в вашем местном времени.</p>
+      <p class="tiny digest-time-note">Время доставки задаётся автоматически и показано по вашему местному времени.</p>
       ${model.error ? `<p class="digest-inline-error" role="status">${escapeHtml(model.error)}</p>` : ''}
     `;
 

@@ -188,6 +188,9 @@ test('Profile surface exposes Russian Digest controls and narrow mobile layouts'
   assert.match(moduleSource, /☀️ Утренняя подборка/);
   assert.match(moduleSource, /Получать подборку/);
   assert.match(moduleSource, /По вашему местному времени/);
+  assert.match(moduleSource, /Время доставки задаётся автоматически/);
+  assert.match(moduleSource, /Базовая подборка доступна/);
+  assert.doesNotMatch(moduleSource, /Проверяем текущую подписку|текущей серверной доставке|серверное окно доставки/);
   assert.doesNotMatch(moduleSource, /07:00–07:55 UTC/);
   assert.doesNotMatch(moduleSource, /⭐ Любимые команды|digest-favorites|digest-team-chips|Любимые команды уже связаны/);
   assert.match(styles, /@media \(max-width: 430px\)[\s\S]*?\.digest-settings-grid/);
