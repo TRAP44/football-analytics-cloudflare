@@ -1,3 +1,5 @@
+import { MAX_TELEGRAM_INIT_DATA_LENGTH } from './security-gate.js';
+
 const ADMIN_SENSITIVE_PATHS = new Set([
   '/api/beta-dashboard',
   '/api/calibration-control',
@@ -50,6 +52,7 @@ export function createUserAuthRuntime({
   async function getRequestUser(request, cfg) {
     const initData = request.headers.get('x-telegram-init-data') || '';
     const requestUrl = new URL(request.url);
+    if (initData.length > MAX_TELEGRAM_INIT_DATA_LENGTH) return null;
     const adminSensitive = isAdminSensitivePath(requestUrl.pathname);
     const mutation = !['GET','HEAD','OPTIONS'].includes(String(request.method || 'GET').toUpperCase());
     const initDataMaxAgeSeconds = adminSensitive ? 15 * 60 : mutation ? 2 * 60 * 60 : 24 * 60 * 60;
