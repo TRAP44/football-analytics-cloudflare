@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#07111f" />
   <meta name="description" content="MatchRadar — AI-футбольный ассистент в Telegram: матчи, команды, LIVE и понятный разбор ключевых факторов." />
   <meta name="matchradar-surface" content="public" />
-  <meta name="frontend-asset-revision" content="6.120.0-launch39" />
+  <meta name="frontend-asset-revision" content="6.120.0-launch40" />
   <title>MatchRadar · AI-футбольный ассистент</title>
   <link rel="icon" type="image/svg+xml" href="/assets/brand/matchradar-mark.svg?v=6.120.0-p42" />
   <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
-  <link rel="stylesheet" href="/styles.css?v=6.120.0-launch39" />
-  <link rel="stylesheet" href="/styles/public-shell.css?v=6.120.0-launch39" />
-  <link rel="stylesheet" href="/styles/premium-ui.css?v=6.120.0-launch39" />
+  <link rel="stylesheet" href="/styles.css?v=6.120.0-launch40" />
+  <link rel="stylesheet" href="/styles/public-shell.css?v=6.120.0-launch40" />
+  <link rel="stylesheet" href="/styles/premium-ui.css?v=6.120.0-launch40" />
 </head>
 <body class="miniapp-public-shell">
   <div id="bootGate" class="boot-gate" role="status" aria-live="polite">
@@ -381,21 +381,21 @@
               <article id="matchPassCard" class="pass-card" data-pass-type="MATCH_PASS">
                 <div class="pass-card-top"><strong id="matchPassTitle">Match Pass</strong><b id="matchPassPrice">— ⭐</b></div>
                 <p>Расширенный AI-доступ для одного выбранного матча.</p>
-                <div class="pass-meta"><span id="matchPassDuration">—</span><span id="matchPassUsage">Проверяем сервер…</span></div>
+                <div class="pass-meta"><span id="matchPassDuration">—</span><span id="matchPassUsage">Проверяем доступ…</span></div>
                 <small id="matchPassState">Откройте Pass из конкретного матча</small>
                 <button id="matchPassBtn" type="button" disabled>Откройте матч</button>
               </article>
               <article id="dayPassCard" class="pass-card" data-pass-type="DAY_PASS">
                 <div class="pass-card-top"><strong id="dayPassTitle">Day Pass</strong><b id="dayPassPrice">— ⭐</b></div>
                 <p>Расширенный AI-доступ MatchRadar на ограниченный срок.</p>
-                <div class="pass-meta"><span id="dayPassDuration">—</span><span id="dayPassUsage">Проверяем сервер…</span></div>
+                <div class="pass-meta"><span id="dayPassDuration">—</span><span id="dayPassUsage">Проверяем доступ…</span></div>
                 <small id="dayPassState">Проверяем доступ…</small>
                 <button id="dayPassBtn" type="button" disabled>Проверяем…</button>
               </article>
               <article id="weekendPassCard" class="pass-card" data-pass-type="WEEKEND_PASS">
                 <div class="pass-card-top"><strong id="weekendPassTitle">Weekend Pass</strong><b id="weekendPassPrice">— ⭐</b></div>
-                <p>Расширенный AI-доступ на футбольный уикенд с серверным лимитом.</p>
-                <div class="pass-meta"><span id="weekendPassDuration">—</span><span id="weekendPassUsage">Проверяем сервер…</span></div>
+                <p>Расширенный AI-доступ на футбольный уикенд с лимитом использования.</p>
+                <div class="pass-meta"><span id="weekendPassDuration">—</span><span id="weekendPassUsage">Проверяем доступ…</span></div>
                 <small id="weekendPassState">Проверяем готовность…</small>
                 <button id="weekendPassBtn" type="button" disabled>Проверяем…</button>
               </article>
@@ -406,7 +406,7 @@
             <button id="billingSyncBtn" class="secondary-setting-btn" type="button" disabled>Проверить оплату</button>
             <button id="subscriptionManageBtn" class="secondary-setting-btn" type="button" hidden>Отключить автопродление</button>
           </div>
-          <p class="billing-footnote">Тариф меняется только после подтверждения Telegram Stars на сервере. Клиент не может самостоятельно выдать PRO или PREMIUM.</p>
+          <p class="billing-footnote">Тариф активируется после подтверждения оплаты в Telegram Stars.</p>
         </section>
 
         <section class="panel digest-settings-panel" aria-label="Утренняя подборка">
@@ -415,7 +415,7 @@
               <span>⏳</span>
               <div>
                 <strong>Загружаем утреннюю подборку…</strong>
-                <small>Проверяем текущую подписку в Telegram.</small>
+                <small>Загружаем настройки доставки.</small>
               </div>
             </div>
           </div>
@@ -565,6 +565,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=6.120.0-launch39"></script>
+  <script type="module" src="/app.js?v=6.120.0-launch40"></script>
 </body>
 </html>
