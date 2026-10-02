@@ -1986,6 +1986,22 @@ async function loadDiagnostics(...args) {
   return result;
 }
 
+function openActivePassMatches(passType = 'DAY_PASS') {
+  const label = String(passType || '').toUpperCase() === 'WEEKEND_PASS' ? 'Weekend Pass' : 'Day Pass';
+  showView('matchesView');
+  renderMatches();
+  requestAnimationFrame(() => {
+    const action = document.querySelector('.match-card.is-upcoming .analyze-btn[data-fixture]');
+    if (action) {
+      action.scrollIntoView({ block:'center', behavior:'smooth' });
+      action.focus();
+      toast(label + ' активен. Выберите будущий матч и нажмите «Разобрать матч».');
+      return;
+    }
+    toast(label + ' активен, но сейчас нет будущих матчей для разбора.');
+  });
+}
+
 let billingModule = null;
 let billingModulePromise = null;
 async function ensureBillingModule() {
@@ -2001,6 +2017,7 @@ async function ensureBillingModule() {
         dateTime,
         reloadProfile: () => loadProfile(),
         openProfile: () => openProfileView(),
+        openPassMatches: passType => openActivePassMatches(passType),
       });
       billingModule.bind();
       return billingModule;
@@ -2438,7 +2455,7 @@ function searchMatchCard(match) {
   const status = live ? (match.statusLabel || 'Матч идёт') : finished ? 'Завершён' : dateTime(match.date);
   const action = finished || live
     ? `<button class="search-match-action" type="button" data-search-center="${Number(match.fixtureId)}">${finished ? 'Итоги' : 'Центр матча'}</button>`
-    : `<button class="search-match-action" type="button" data-search-fixture="${Number(match.fixtureId)}">AI-разбор</button>`;
+    : `<button class="search-match-action" type="button" data-search-fixture="${Number(match.fixtureId)}">Разобрать матч</button>`;
   const primaryLabel=primary ? `<div class="search-match-primary"><b>⭐ ОСНОВНОЙ МАТЧ</b><span>${escapeHtml(match?.selection?.reason || state.globalSearch.matchDiscovery?.primaryReason || 'Основной выбор MatchRadar для анализа')}</span></div>` : '';
   return `<article class="search-match-card ${live ? 'is-live' : finished ? 'is-finished' : 'is-upcoming'} ${primary ? 'is-primary' : ''}">${primaryLabel}
     <div class="search-match-meta"><span>${escapeHtml(match.league || match.competition?.name || 'Матч')}</span><small>${escapeHtml(status)}</small></div>
@@ -3136,7 +3153,7 @@ function matchCardHtml(m, { grouped = false } = {}) {
       ? `<button class="analyze-btn finished-btn" type="button" data-center="${Number(m.fixtureId)}">Итоги матча</button>`
       : aiHistory
         ? `<button class="analyze-btn analyzed-btn" type="button" data-history-analysis="${Number(m.fixtureId)}">Открыть AI-разбор</button>`
-        : `<button class="analyze-btn" type="button" data-fixture="${Number(m.fixtureId)}">AI-разбор</button>`;
+        : `<button class="analyze-btn" type="button" data-fixture="${Number(m.fixtureId)}">Разобрать матч</button>`;
 
   const favoriteButton = team => { const active = isFavorite(team?.id); return `<button class="fav-star compact ${active ? 'active' : ''} ${state.favoriteMutations.has(Number(team?.id)) ? 'is-pending' : ''}" type="button" data-team-id="${Number(team?.id)}" data-team-name="${escapeHtml(team?.name || '')}" data-team-logo="${escapeHtml(team?.logo || '')}" aria-pressed="${active ? 'true' : 'false'}" aria-label="${active ? 'Удалить из избранного' : 'Добавить в избранное'}: ${escapeHtml(team?.name || '')}" ${state.favoriteMutations.has(Number(team?.id)) ? 'disabled' : ''}>${favoriteStarSvg(active)}</button>`; };
 
@@ -4941,7 +4958,7 @@ function renderMatchCenter(d) {
 
       <div class="center-hero-actions ${isAdmin() ? 'has-admin-audit' : ''}">
         <button id="centerRefreshBtn" class="reminder-btn" type="button">↻ Обновить</button>
-        ${upcoming ? `<button id="centerAnalyzeBtn" class="primary-btn center-analyze-inline" type="button">🧠 Полный анализ</button><button id="centerMatchPassBtn" class="reminder-btn center-pass-btn" type="button">⭐ Pass на матч</button>` : ''}
+        ${upcoming ? `<button id="centerAnalyzeBtn" class="primary-btn center-analyze-inline" type="button">🧠 Разобрать матч</button><button id="centerMatchPassBtn" class="reminder-btn center-pass-btn" type="button">⭐ Pass на матч</button>` : ''}
         ${isAdmin() ? `<button id="centerCoverageAuditBtn" class="reminder-btn admin-audit-btn" type="button">🧪 Покрытие</button>` : ''}
         ${isAdmin() ? `<button id="centerE2EBtn" class="reminder-btn admin-e2e-btn" type="button">🚦 E2E</button>` : ''}
       </div>
