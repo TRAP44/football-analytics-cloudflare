@@ -7898,7 +7898,12 @@ async function processDailyDigests(cfg,scheduledAt=new Date()) {
 }
 
 function telegramHtmlEscape(value = '') {
-  return String(value || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(value || '')
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
 }
 
 function botSearchParts(raw = '') {
