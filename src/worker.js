@@ -6,6 +6,7 @@ import { createSharedCacheRuntime } from './cache-runtime.js';
 import { dispatchApiRoute } from './router.js';
 import { createHttpRuntime } from './http.js';
 import { createPreAuthAbuseGuard, preAuthRequestShapeDecision } from './security-gate.js';
+import { isSecurityLockdownControls, runtimeLockdownDecision } from './runtime-lockdown.js';
 import { assessSecuritySignals, formatSecurityIncidentAlert, securityIncidentOpsEvent, securityIncidentTimeline } from './security-incidents.js';
 import { channelPublisherState, publishChannelMessage } from './channel-publisher.js';
 import {
@@ -356,6 +357,7 @@ function publicRuntimeControls(value = runtimeControlsSnapshot()) {
     remindersEnabled: value.remindersEnabled !== false,
     expandedDataEnabled: value.expandedDataEnabled !== false,
     autoSettlementRecoveryEnabled: Boolean(value.autoSettlementRecoveryEnabled),
+    securityLockdown: isSecurityLockdownControls(value),
     message: String(value.message || '').slice(0, 280),
     revision: Number(value.revision || 1),
     updatedAt: value.updatedAt || null,
@@ -399,6 +401,7 @@ function runtimeHistorySnapshot(value) {
     remindersEnabled: c.remindersEnabled,
     expandedDataEnabled: c.expandedDataEnabled,
     autoSettlementRecoveryEnabled: c.autoSettlementRecoveryEnabled,
+    securityLockdown: Boolean(c.securityLockdown),
     message: c.message,
     revision: c.revision,
     updatedAt: c.updatedAt,
@@ -547,20 +550,49 @@ async function saveRuntimeControls(cfg, user, body = {}) {
     }
   }
 
-  const changeReason = String(body.reason || '').trim().slice(0, 240);
   const requestedAction = String(body.action || 'update').trim();
-  const changeAction = ['update', 'defaults', 'rollback'].includes(requestedAction) ? requestedAction : 'update';
+  const changeAction = ['update', 'defaults', 'rollback', 'lockdown', 'lockdown_release'].includes(requestedAction) ? requestedAction : 'update';
   const sourceRevision = Number(body.sourceRevision || 0) || null;
+  const wasSecurityLockdown = isSecurityLockdownControls(current);
+  const lockdownRequested = changeAction === 'lockdown';
+  const lockdownReleaseRequested = changeAction === 'lockdown_release';
+  const proposed = {
+    maintenanceMode: lockdownRequested ? true : lockdownReleaseRequested ? false : Boolean(body.maintenanceMode),
+    analysisEnabled: lockdownRequested ? false : lockdownReleaseRequested ? true : body.analysisEnabled !== false,
+    searchEnabled: lockdownRequested ? false : lockdownReleaseRequested ? true : body.searchEnabled !== false,
+    liveEnabled: lockdownRequested ? false : lockdownReleaseRequested ? true : body.liveEnabled !== false,
+    remindersEnabled: lockdownRequested ? false : lockdownReleaseRequested ? true : body.remindersEnabled !== false,
+    expandedDataEnabled: lockdownRequested ? false : lockdownReleaseRequested ? true : body.expandedDataEnabled !== false,
+    autoSettlementRecoveryEnabled: lockdownRequested || lockdownReleaseRequested ? false : Boolean(body.autoSettlementRecoveryEnabled),
+  };
+
+  if (wasSecurityLockdown && changeAction === 'update' && !isSecurityLockdownControls(proposed)) {
+    return {
+      error: 'Аварийный Security Lockdown можно снять только явным восстановлением, откатом или безопасными настройками.',
+      code: 'SECURITY_LOCKDOWN_EXPLICIT_RELEASE_REQUIRED',
+      status: 409,
+      current: publicRuntimeControls(current),
+    };
+  }
+
+  const changeReason = String(
+    body.reason
+      || (lockdownRequested ? 'Аварийный Security Lockdown включён администратором.'
+        : lockdownReleaseRequested ? 'Аварийный Security Lockdown снят администратором.'
+          : '')
+  ).trim().slice(0, 240);
 
   const next = {
-    maintenance_mode: Boolean(body.maintenanceMode),
-    analysis_enabled: body.analysisEnabled !== false,
-    search_enabled: body.searchEnabled !== false,
-    live_enabled: body.liveEnabled !== false,
-    reminders_enabled: body.remindersEnabled !== false,
-    expanded_data_enabled: body.expandedDataEnabled !== false,
-    auto_settlement_recovery_enabled: Boolean(body.autoSettlementRecoveryEnabled),
-    message: String(body.message || '').trim().slice(0, 280),
+    maintenance_mode: proposed.maintenanceMode,
+    analysis_enabled: proposed.analysisEnabled,
+    search_enabled: proposed.searchEnabled,
+    live_enabled: proposed.liveEnabled,
+    reminders_enabled: proposed.remindersEnabled,
+    expanded_data_enabled: proposed.expandedDataEnabled,
+    auto_settlement_recovery_enabled: proposed.autoSettlementRecoveryEnabled,
+    message: lockdownRequested
+      ? String(body.message || 'Аварийный режим безопасности активен. Изменения временно недоступны.').trim().slice(0, 280)
+      : lockdownReleaseRequested ? '' : String(body.message || '').trim().slice(0, 280),
     revision: expectedRevision + 1,
     updated_at: new Date().toISOString(),
     updated_by: Number(user?.id || 0) || null,
@@ -614,12 +646,25 @@ async function saveRuntimeControls(cfg, user, body = {}) {
     }
   }
 
+  const securityLockdown = isSecurityLockdownControls(value);
+  const lockdownTransition = !wasSecurityLockdown && securityLockdown
+    ? 'enabled'
+    : wasSecurityLockdown && !securityLockdown ? 'released' : '';
+
   await recordOpsEvent(cfg, {
-    severity: value.maintenanceMode ? 'warning' : 'info',
+    severity: securityLockdown ? 'critical' : value.maintenanceMode ? 'warning' : 'info',
     source: 'release',
-    eventType: 'runtime_controls',
-    code: value.maintenanceMode ? 'MAINTENANCE_ENABLED' : 'RUNTIME_CONTROLS_UPDATED',
-    message: `Настройки функций обновлены до версии ${value.revision}.`,
+    eventType: lockdownTransition ? 'security_lockdown' : 'runtime_controls',
+    code: lockdownTransition === 'enabled'
+      ? 'SECURITY_LOCKDOWN_ENABLED'
+      : lockdownTransition === 'released'
+        ? 'SECURITY_LOCKDOWN_RELEASED'
+        : value.maintenanceMode ? 'MAINTENANCE_ENABLED' : 'RUNTIME_CONTROLS_UPDATED',
+    message: lockdownTransition === 'enabled'
+      ? `Аварийный Security Lockdown включён на версии ${value.revision}.`
+      : lockdownTransition === 'released'
+        ? `Аварийный Security Lockdown снят на версии ${value.revision}.`
+        : `Настройки функций обновлены до версии ${value.revision}.`,
     endpoint: '/api/runtime-controls',
     meta: {
       revision: value.revision,
@@ -630,6 +675,7 @@ async function saveRuntimeControls(cfg, user, body = {}) {
       remindersEnabled: value.remindersEnabled,
       expandedDataEnabled: value.expandedDataEnabled,
       autoSettlementRecoveryEnabled: value.autoSettlementRecoveryEnabled,
+      securityLockdown,
       action: changeAction,
       reason: changeReason,
       sourceRevision,
@@ -640,17 +686,44 @@ async function saveRuntimeControls(cfg, user, body = {}) {
 }
 
 function runtimeFeatureResponse(code, message, runtime, status = 503) {
+  const category = String(code || '').startsWith('SECURITY_LOCKDOWN_')
+    ? 'security_lockdown'
+    : code === 'MAINTENANCE_MODE' ? 'maintenance' : 'feature_disabled';
   return json({
     error: message,
     code,
-    category: code === 'MAINTENANCE_MODE' ? 'maintenance' : 'feature_disabled',
+    category,
     recoverable: true,
     runtime: publicRuntimeControls(runtime),
   }, status);
 }
 
 function runtimeGuard(request, user, cfg, runtime) {
-  if (isAdminUser(user, cfg)) return null;
+  const admin = isAdminUser(user, cfg);
+  const lockdown = runtimeLockdownDecision(request, { runtime, isAdmin: admin });
+  if (lockdown.blocked) {
+    const url = new URL(request.url);
+    const minuteBucket = new Date().toISOString().slice(0, 16);
+    void recordOpsEvent(cfg, {
+      severity: 'warning',
+      source: 'release',
+      eventType: 'security_lockdown_block',
+      code: lockdown.code,
+      message: 'Запрос остановлен активным аварийным режимом безопасности.',
+      endpoint: url.pathname,
+      status: lockdown.status,
+      transitionKey: `security-lockdown:${lockdown.code}:${url.pathname}:${minuteBucket}`,
+      meta: {
+        method: String(request.method || 'GET').toUpperCase(),
+        admin,
+        providerFanout: Boolean(lockdown.providerFanout),
+        minuteBucket,
+      },
+    }).catch(() => {});
+    return runtimeFeatureResponse(lockdown.code, lockdown.message, runtime, lockdown.status);
+  }
+
+  if (admin) return null;
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method;
@@ -808,7 +881,7 @@ function publicDataCapabilities() {
   return {
     visibility: 'public',
     mode: paid ? 'expanded' : 'standard',
-    label: runtime.maintenanceMode ? 'Техническое обслуживание' : publicBudget.label,
+    label: isSecurityLockdownControls(runtime) ? 'Security Lockdown' : runtime.maintenanceMode ? 'Техническое обслуживание' : publicBudget.label,
     refreshSeconds: liveAllowed ? publicBudget.liveRefreshSeconds : 0,
     runtime: publicRuntimeControls(runtime),
     features: {
@@ -821,7 +894,9 @@ function publicDataCapabilities() {
       liveOdds: Boolean(canEnrich && liveAllowed),
       oddsMovement: Boolean(canEnrich && liveAllowed),
     },
-    note: runtime.maintenanceMode
+    note: isSecurityLockdownControls(runtime)
+      ? (runtime.message || 'Аварийный режим безопасности: изменения и внешние запросы временно остановлены.')
+      : runtime.maintenanceMode
       ? (runtime.message || 'Часть футбольных функций временно приостановлена.')
       : !expandedAllowed
         ? 'Расширенные данные источника временно отключены администратором.'
@@ -869,6 +944,7 @@ function appManifest(cfg) {
       reminderDeliveryClaims: true,
       runtimeControls: true,
       emergencyKillSwitches: true,
+      emergencySecurityLockdown: true,
       runtimeRollback: true,
       runtimeHistory: true,
       predictionIntegrity: true,
@@ -24950,6 +25026,7 @@ export default {
         telegramInitDataSizeGuard: 'enabled',
         securityAttackMonitoring: 'enabled',
         securityIncidentAlerts: 'enabled',
+        emergencySecurityLockdown: 'enabled',
         expandedDataReady: 'enabled',
         matchCenter2: 'enabled',
         smartMatchInsights: 'enabled',
@@ -25512,6 +25589,20 @@ export default {
   async scheduled(controller, env, ctx) {
     const cfg = config(env);
     if (ctx?.waitUntil) cfg.waitUntil = promise => ctx.waitUntil(Promise.resolve(promise));
+    const runtimeState = await loadRuntimeControls(cfg, { force: true });
+    if (isSecurityLockdownControls(runtimeState.value)) {
+      const hourBucket = new Date(Number(controller?.scheduledTime || Date.now())).toISOString().slice(0, 13);
+      await recordOpsEvent(cfg, {
+        severity: 'warning',
+        source: 'release',
+        eventType: 'security_lockdown_cron',
+        code: 'SECURITY_LOCKDOWN_SCHEDULED_TASKS_PAUSED',
+        message: 'Плановые фоновые задачи пропущены из-за активного Security Lockdown.',
+        transitionKey: `security-lockdown:cron:${hourBucket}`,
+        meta: { hourBucket },
+      }).catch(() => {});
+      return undefined;
+    }
     return handleScheduled(controller, cfg, ctx);
   },
 };

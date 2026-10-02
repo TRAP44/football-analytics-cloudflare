@@ -707,6 +707,7 @@
           </div>
 
           <div class="runtime-control-list">
+            <label class="runtime-control-row danger"><div><strong>🚨 Security Lockdown</strong><small>Аварийно переводит систему в read-only: блокирует пользовательские записи, новые billing/refund/admin mutations, provider fan-out и плановые фоновые задачи. Health, диагностика, история и откат остаются доступны.</small></div><input id="runtimeSecurityLockdownToggle" type="checkbox"></label>
             <label class="runtime-control-row danger"><div><strong>Техническое обслуживание</strong><small>Останавливает основные футбольные маршруты у обычных пользователей. Администратор сохраняет доступ.</small></div><input id="runtimeMaintenanceToggle" type="checkbox"></label>
             <label class="runtime-control-row"><div><strong>Полный анализ</strong><small>Разрешить полный предматчевый анализ и соответствующие кнопки.</small></div><input id="runtimeAnalysisToggle" type="checkbox" checked></label>
             <label class="runtime-control-row"><div><strong>Удалённый поиск</strong><small>Локальный каталог остаётся доступен, даже если поиск через источник данных выключен.</small></div><input id="runtimeSearchToggle" type="checkbox" checked></label>
