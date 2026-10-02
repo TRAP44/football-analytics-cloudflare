@@ -11,11 +11,18 @@ function bool(value, fallback) {
 }
 
 export function normalizeSmartNotificationPayload(payload = {}) {
+  const directPreferences = payload?.preferences
+    && typeof payload.preferences === 'object'
+    && !Array.isArray(payload.preferences)
+    && ['enabled', 'match', 'teams', 'players', 'aiRadar', 'ai_radar'].some(key => Object.hasOwn(payload.preferences, key))
+      ? payload.preferences
+      : null;
   const rawPreferences = payload?.preferences?.notificationPreferences
     ?? payload?.preferences?.notification_preferences
+    ?? directPreferences
     ?? payload?.notificationPreferences
     ?? {};
-  const rawCapabilities = payload?.notificationCapabilities || {};
+  const rawCapabilities = payload?.notificationCapabilities || payload?.capabilities || {};
   const categories = rawCapabilities.categories || {};
   const preferences = Object.freeze({
     enabled: bool(rawPreferences.enabled, DEFAULT_NOTIFICATION_PREFERENCES.enabled),
