@@ -82,9 +82,9 @@ export function createTelegramLinksRuntime({
     campaign='launch',
     content='promo',
   } = {}) {
-    const src=cleanLaunchPart(source,14) || 'social';
-    const cmp=cleanLaunchPart(campaign,22) || 'launch';
-    const cnt=cleanLaunchPart(content,16) || 'promo';
+    const src=cleanLaunchPart(source,24) || 'social';
+    const cmp=cleanLaunchPart(campaign,28) || 'launch';
+    const cnt=cleanLaunchPart(content,20) || 'promo';
     const prefix='media';
     const values=[src,cmp,cnt];
     while (`${prefix}__${values.join('__')}`.length>64) {
