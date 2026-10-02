@@ -1353,9 +1353,13 @@ html[data-theme="light"] .miniapp-public-shell {
   gap: 8px;
 }
 
-.miniapp-public-shell .league-filter-drawer {
+.miniapp-public-shell .home-filter-controls .league-filter-drawer {
+  margin: 0;
   border: 0;
+  border-radius: 0;
   background: transparent;
+  box-shadow: none;
+  overflow: visible;
 }
 
 .miniapp-public-shell .league-filter-drawer > summary {
