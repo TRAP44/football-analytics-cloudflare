@@ -77,6 +77,30 @@ export function createTelegramLinksRuntime({
     return `${prefix}__${values.join('__')}${suffix}`;
   }
 
+  function campaignStartParam({
+    source='social',
+    campaign='launch',
+    content='promo',
+  } = {}) {
+    const src=cleanLaunchPart(source,24) || 'social';
+    const cmp=cleanLaunchPart(campaign,28) || 'launch';
+    const cnt=cleanLaunchPart(content,20) || 'promo';
+    const prefix='media';
+    const values=[src,cmp,cnt];
+    while (`${prefix}__${values.join('__')}`.length>64) {
+      let reduced=false;
+      for (const index of [2,1,0]) {
+        if (values[index].length>1) {
+          values[index]=values[index].slice(0,-1);
+          reduced=true;
+          break;
+        }
+      }
+      if (!reduced) return '';
+    }
+    return `${prefix}__${values.join('__')}`;
+  }
+
   async function telegramBotUsername(cfg) {
     return resolvePrimaryTelegramBotUsername({
       botToken:cfg.botToken,
@@ -89,6 +113,13 @@ export function createTelegramLinksRuntime({
   async function fixtureTelegramDeepLink(cfg, fixtureId, options = {}) {
     const startParam=fixtureShareStartParam(fixtureId,options);
     if (!startParam) throw new Error('Некорректный матч для ссылки.');
+    const username=await telegramBotUsername(cfg);
+    return {url:telegramBotStartUrl(username,startParam),startParam,username};
+  }
+
+  async function telegramCampaignDeepLink(cfg, options = {}) {
+    const startParam=campaignStartParam(options);
+    if (!startParam) throw new Error('Некорректные параметры рекламной кампании.');
     const username=await telegramBotUsername(cfg);
     return {url:telegramBotStartUrl(username,startParam),startParam,username};
   }
@@ -106,8 +137,10 @@ export function createTelegramLinksRuntime({
     telegramFullAnalysisUrl,
     oneTapHandoffDrill,
     fixtureShareStartParam,
+    campaignStartParam,
     telegramBotUsername,
     fixtureTelegramDeepLink,
+    telegramCampaignDeepLink,
     telegramShareComposerUrl,
   });
 }

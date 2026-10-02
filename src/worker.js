@@ -3217,30 +3217,61 @@ function mediaPublisherCopy(match = {}, deepLink = '', attribution = {}) {
   };
 }
 
+function campaignPublisherCopy(deepLink = '', attribution = {}) {
+  const body=[
+    '⚽ MatchRadar — футбольная аналитика в Telegram',
+    '',
+    'Матчи, форма команд, составы, события, статистика и AI-разбор — в одном Mini App.',
+    'Открой MatchRadar, выбери матч и посмотри доступный разбор.',
+    deepLink ? `Открыть MatchRadar: ${deepLink}` : '',
+    '',
+    'Информационная аналитика. Не гарантия результата.',
+  ].filter(Boolean).join('\n');
+  return {
+    title:'MatchRadar — футбольная аналитика',
+    body,
+    source:String(attribution.source || ''),
+    campaign:String(attribution.campaign || ''),
+    content:String(attribution.content || ''),
+  };
+}
+
 async function apiMediaPublisherLink(request,cfg,user) {
   if (!isAdminUser(user,cfg)) return adminForbidden();
   const body=await readJson(request);
   const fixtureId=Number(body?.fixtureId || 0);
-  if (!Number.isSafeInteger(fixtureId) || fixtureId<=0) return json({error:'Укажите корректный fixture ID.'},400);
-  const source=cleanLaunchPart(body?.source || 'media',14) || 'media';
-  const campaign=cleanLaunchPart(body?.campaign || 'launch',22) || 'launch';
-  const content=cleanLaunchPart(body?.content || 'article',16) || 'article';
-  const link=await fixtureTelegramDeepLink(cfg,fixtureId,{source,campaign,content});
-  const cached=await getCache(`bot:fixture-card:${fixtureId}:v2`,cfg).catch(()=>null);
-  const analyzed=await getCache(`fixture:${fixtureId}:v15-availability-quality-rc144`,cfg).catch(()=>null);
-  const match=normalizeBotFixtureCard(cached?.match || analyzed?.match || {fixtureId,homeName:'Матч',awayName:String(fixtureId),league:'Футбол'});
-  const copy=mediaPublisherCopy(match,link.url,{source,campaign,content});
+  if (fixtureId && (!Number.isSafeInteger(fixtureId) || fixtureId<=0)) return json({error:'Укажите корректный fixture ID или оставьте поле пустым.'},400);
+  const source=cleanLaunchPart(body?.source || 'social',fixtureId>0?14:24) || 'social';
+  const campaign=cleanLaunchPart(body?.campaign || 'soft_launch',fixtureId>0?22:28) || 'soft_launch';
+  const content=cleanLaunchPart(body?.content || 'promo1',fixtureId>0?16:20) || 'promo1';
+
+  let link;
+  let copy;
+  let mode='campaign';
+  if (fixtureId>0) {
+    mode='fixture';
+    link=await fixtureTelegramDeepLink(cfg,fixtureId,{source,campaign,content});
+    const cached=await getCache(`bot:fixture-card:${fixtureId}:v2`,cfg).catch(()=>null);
+    const analyzed=await getCache(`fixture:${fixtureId}:v15-availability-quality-rc144`,cfg).catch(()=>null);
+    const match=normalizeBotFixtureCard(cached?.match || analyzed?.match || {fixtureId,homeName:'Матч',awayName:String(fixtureId),league:'Футбол'});
+    copy=mediaPublisherCopy(match,link.url,{source,campaign,content});
+  } else {
+    link=await telegramCampaignDeepLink(cfg,{source,campaign,content});
+    copy=campaignPublisherCopy(link.url,{source,campaign,content});
+  }
+
   void recordGrowthEvent(cfg,{
     userId:user.id,
     eventName:'media_link_created',
     channel:'miniapp',
-    fixtureId,
-    metadata:{source,campaign,content,admin:true},
+    fixtureId:fixtureId || null,
+    metadata:{source,campaign,content,admin:true,mode},
     attribution:{source,campaign,content,startParam:link.startParam},
   });
   return json({
     ok:true,
-    fixtureId,
+    mode,
+    fixtureId:fixtureId || null,
     startParam:link.startParam,
     deepLink:link.url,
     telegramShareUrl:telegramShareComposerUrl(link.url,copy.title),
@@ -3249,10 +3280,20 @@ async function apiMediaPublisherLink(request,cfg,user) {
 }
 
 function mediaPublisherDrill() {
-  const param=fixtureShareStartParam(998877,{source:'press',campaign:'ucl_launch',content:'article1'});
-  const parsed=parseLaunchStartParam(param);
-  const copy=mediaPublisherCopy({fixtureId:998877,homeName:'A',awayName:'B',league:'Cup'},'https://t.me/test?start='+param,{source:'press',campaign:'ucl_launch',content:'article1'});
-  return {pass:parsed.fixtureId===998877 && parsed.source==='press' && parsed.campaign==='ucl_launch' && copy.body.includes('A — B') && copy.body.includes('https://t.me/test'),cases:4};
+  const fixtureParam=fixtureShareStartParam(998877,{source:'press',campaign:'ucl_launch',content:'article1'});
+  const fixtureParsed=parseLaunchStartParam(fixtureParam);
+  const campaignParam=campaignStartParam({source:'telegram_channel',campaign:'soft_launch',content:'post1'});
+  const campaignParsed=parseLaunchStartParam(campaignParam);
+  const fixtureCopy=mediaPublisherCopy({fixtureId:998877,homeName:'A',awayName:'B',league:'Cup'},'https://t.me/test?start='+fixtureParam,{source:'press',campaign:'ucl_launch',content:'article1'});
+  const campaignCopy=campaignPublisherCopy('https://t.me/test?start='+campaignParam,{source:'telegram_channel',campaign:'soft_launch',content:'post1'});
+  return {pass:fixtureParsed.fixtureId===998877
+    && fixtureParsed.source==='press'
+    && fixtureParsed.campaign==='ucl_launch'
+    && campaignParsed.source==='telegram_channel'
+    && campaignParsed.campaign==='soft_launch'
+    && campaignParsed.content==='post1'
+    && fixtureCopy.body.includes('A — B')
+    && campaignCopy.body.includes('MatchRadar'),cases:8};
 }
 
 function publicSiteUrl(request, pathname = '/') {
@@ -8775,8 +8816,10 @@ const {
   telegramFullAnalysisUrl,
   oneTapHandoffDrill,
   fixtureShareStartParam,
+  campaignStartParam,
   telegramBotUsername,
   fixtureTelegramDeepLink,
+  telegramCampaignDeepLink,
   telegramShareComposerUrl,
 } = createTelegramLinksRuntime({
   cleanLaunchPart,
