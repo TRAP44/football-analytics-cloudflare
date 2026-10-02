@@ -28,7 +28,7 @@ test('generic promo campaign start param is compact and attributable', async () 
     campaign:'soft_launch',
     content:'post1',
   });
-  assert.equal(startParam,'media__telegram_chann__soft_launch__post1');
+  assert.equal(startParam,'media__telegram_channel__soft_launch__post1');
   assert.ok(startParam.length<=64);
   const deep=await api.telegramCampaignDeepLink({botToken:'test'},{
     source:'telegram_channel',
