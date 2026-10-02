@@ -112,6 +112,17 @@ test('Pass copy states one match one day and seven days without misleading Match
   assert.doesNotMatch(billing, /if \(n === 72\) return '72 часа'/);
 });
 
+test('active Day and Weekend Pass expose a direct use path instead of a disabled dead-end', () => {
+  assert.match(billing, /view\.state === 'active' && \(type === 'DAY_PASS' \|\| type === 'WEEKEND_PASS'\)/);
+  assert.match(billing, /return 'Выбрать матч'/);
+  assert.match(billing, /button\.dataset\.passAction = useActivePass \? 'use' : 'buy'/);
+  assert.match(billing, /openPassMatches\(normalized\)/);
+  assert.match(app, /function openActivePassMatches\(passType = 'DAY_PASS'\)/);
+  assert.match(app, /\.match-card\.is-upcoming \.analyze-btn\[data-fixture\]/);
+  assert.match(app, /сейчас нет будущих матчей для разбора/);
+  assert.match(app, /Разобрать матч/);
+});
+
 test('Profile keeps FREE PRO PREMIUM and adds compact Match Day Weekend Pass cards', () => {
   for (const plan of ['FREE','PRO','PREMIUM']) assert.match(html, new RegExp('data-plan="'+plan+'"'));
   for (const pass of ['MATCH_PASS','DAY_PASS','WEEKEND_PASS']) assert.match(html, new RegExp('data-pass-type="'+pass+'"'));
