@@ -21786,6 +21786,10 @@ async function apiMatches(request, cfg) {
   let fixtures;
   const providerBatchKey=providerFixtureDateCacheKey(date);
   const providerBatch=await getCache(providerBatchKey,cfg).catch(()=>null);
+  const staleProviderBatch=Array.isArray(providerBatch?.fixtures)
+    ? null
+    : await getStaleCache(providerBatchKey,cfg).catch(()=>null);
+  let providerFallback=null;
   try {
     if (Array.isArray(providerBatch?.fixtures)) {
       fixtures=providerBatch.fixtures;
@@ -21819,16 +21823,25 @@ async function apiMatches(request, cfg) {
       }
     }
   } catch (error) {
+    const rateLimited=isFootballRateLimitError(error);
     const stale = previousPayload || await getStaleCache(cacheKey, cfg);
-    if (stale?.matches && isFootballRateLimitError(error)) {
+    if (stale?.matches && rateLimited) {
       return json({
         ...stale, cached: true, stale: true,
-        warning: 'Показаны последние сохранённые данные: API-Football временно ограничил частоту запросов.',
+        warning: 'Показаны последние сохранённые данные: источник матчей временно ограничил обновления.',
         sourceMeta: markCachedSourceMeta(stale.sourceMeta || sourceMeta({ provider:'api-football', label:'API-Football' }), { stale:true }),
         retryAfter: Number(error?.retryAfter || 60),
       });
     }
-    throw error;
+    if (rateLimited && Array.isArray(staleProviderBatch?.fixtures)) {
+      fixtures=staleProviderBatch.fixtures;
+      providerFallback={
+        retryAfter:Number(error?.retryAfter || 60),
+        warning:'Показаны последние сохранённые данные: источник матчей временно ограничил обновления.',
+      };
+    } else {
+      throw error;
+    }
   }
 
   const integrityRun = runMatchIntegrityGuard(fixtures, date, previousPayload);
@@ -21907,7 +21920,28 @@ async function apiMatches(request, cfg) {
     international: matches.filter(x => ['continental','national','international'].includes(x.category)).length,
     hiddenLowPriority: matches.filter(x => x.lowPriority).length,
   };
-  const payload = { date, matches, catalog, integrity: integrityRun.report, refreshedAt: new Date().toISOString(), sourceMeta: sourceMeta({ provider:'api-football', label:'API-Football' }), provider: publicDataCapabilities() };
+  const refreshedAt=providerFallback
+    ? (staleProviderBatch?.fetchedAt || previousPayload?.refreshedAt || new Date().toISOString())
+    : new Date().toISOString();
+  const primarySourceMeta=sourceMeta({ provider:'api-football', label:'API-Football' });
+  const payload = {
+    date,
+    matches,
+    catalog,
+    integrity: integrityRun.report,
+    refreshedAt,
+    sourceMeta: providerFallback ? markCachedSourceMeta(primarySourceMeta, { stale:true }) : primarySourceMeta,
+    provider: publicDataCapabilities(),
+  };
+  if (providerFallback) {
+    return json({
+      ...payload,
+      cached:true,
+      stale:true,
+      warning:providerFallback.warning,
+      retryAfter:providerFallback.retryAfter,
+    });
+  }
   const ttl = isToday ? 1 : isYesterday ? 720 : cfg.cacheMinutes;
   await setCache(cacheKey, 0, payload, cfg, ttl);
   return json({ ...payload, cached: false, stale: false });
