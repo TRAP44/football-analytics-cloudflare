@@ -299,3 +299,11 @@ test('v6.24 migration adds only Smart Notification state and keeps Favorite Play
   assert.match(worker,/expandedDailyDigestText/);
   assert.match(worker,/ai\.digest_expanded/);
 });
+
+
+test('public Smart Notifications copy hides internal delivery thresholds and server wording', () => {
+  const source = fs.readFileSync('public/modules/smart-notifications.js', 'utf8');
+  assert.match(source, /Только важные изменения по матчам, командам и игрокам/);
+  assert.match(source, /Выберите нужные категории/);
+  assert.doesNotMatch(source, /Порог рынка|Доступ к категориям проверяется сервером|подавляются на сервере|smart-notification-note/);
+});
