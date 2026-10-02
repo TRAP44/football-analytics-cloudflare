@@ -42,12 +42,12 @@ async function bodyWithinLimit(request, maxBytes) {
       if (done) return true;
       total+=Number(value?.byteLength || value?.length || 0);
       if (total>maxBytes) {
-        await reader.cancel().catch(()=>{});
+        void reader.cancel().catch(()=>{});
         return false;
       }
     }
   } catch {
-    try { await reader?.cancel?.(); } catch {}
+    try { void reader?.cancel?.().catch?.(()=>{}); } catch {}
     return false;
   }
 }
