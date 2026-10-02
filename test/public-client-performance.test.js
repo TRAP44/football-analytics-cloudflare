@@ -70,8 +70,8 @@ test('startup graph defers profile-only and Match Center-only modules until thei
     'ai-timeline.js',
   ];
   for (const moduleName of deferred) {
-    assert.doesNotMatch(app,new RegExp(`from ['"]\\.\\/modules\\/${moduleName.replace('.', '\\\\.')}['"]`));
-    assert.match(app,new RegExp(`import\\(['"]\\.\\/modules\\/${moduleName.replace('.', '\\\\.')}['"]\\)`));
+    assert.equal(app.includes(`from './modules/${moduleName}'`), false);
+    assert.equal(app.includes(`import('./modules/${moduleName}')`), true);
   }
   assert.match(app,/async function ensureBillingModule\(/);
   assert.match(app,/async function ensureDigestSettingsModule\(/);

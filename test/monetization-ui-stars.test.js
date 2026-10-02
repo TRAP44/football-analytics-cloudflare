@@ -98,7 +98,7 @@ test('AI quota exhaustion is a soft paywall and does not hide football surfaces'
   assert.match(html, /id="analysisQuotaPaywall"/);
   assert.match(html, /Матчи, LIVE, составы и статистика остаются доступны бесплатно/);
   assert.match(app, /const quotaExhausted = e\.status === 429/);
-  assert.match(app, /showQuotaPaywall\(\)/);
+  assert.match(app, /showQuotaPaywallForFixture\(fixtureId\)/);
   assert.match(app, /retry: \(\) => analyzeMatch/);
   assert.match(billingModule, /quotaUpgradeBtn/);
   assert.match(billingModule, /openProfile/);
