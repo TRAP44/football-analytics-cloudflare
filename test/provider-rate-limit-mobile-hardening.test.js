@@ -37,12 +37,11 @@ test('fixtures are reused from persistent shared caches before provider calls',(
   assert.match(matches,/staleProviderBatch/);
   assert.match(matches,/providerFallback/);
   assert.match(matches,/cached:true,[\s\S]*stale:true/);
-  assert.match(matches,/providerBatchTtl=isToday \? 2/);
-
   const sharedDateLoader=block(worker,'async function loadProviderFixturesForDate','function providerFixtureDirectCacheKey');
   assert.match(sharedDateLoader,/providerFixtureDateCacheKey\(normalized\)/);
   assert.match(sharedDateLoader,/providerFixtureDateReuses/);
   assert.match(sharedDateLoader,/apiFootball\('\/fixtures',\{date:normalized\},cfg\)/);
+  assert.match(sharedDateLoader,/providerFeedDateTtl\(normalized,cfg\)/);
   assert.equal((worker.match(/apiFootball\('\/fixtures',\s*\{\s*date\s*\}\s*,\s*cfg\)/g) || []).length,0);
 
   const botFixture=block(worker,'async function loadBotFixtureCard','function botFixtureDateTime');
@@ -53,6 +52,16 @@ test('fixtures are reused from persistent shared caches before provider calls',(
 
   const analyze=block(worker,'async function apiAnalyze','async function publicServiceStatus');
   assert.match(analyze,/loadProviderFixture\(fixtureId,cfg\)/);
+});
+
+test('public match feed uses the shared provider-valid exact-date fixtures loader',()=>{
+  const matches=block(worker,'async function apiMatches','function normalizeStandingRow');
+  assert.match(matches,/loadProviderFixturesForDate\(date,cfg,\{forceRefresh:true\}\)/);
+  assert.doesNotMatch(matches,/apiFootball\('\/fixtures'/);
+  assert.doesNotMatch(matches,/publicFeedDateWindow/);
+  assert.doesNotMatch(matches,/\{from:feedWindow\.from,to:feedWindow\.to\}/);
+  assert.doesNotMatch(worker,/function publicFeedDateWindow/);
+  assert.doesNotMatch(worker,/function fixtureProviderDate/);
 });
 
 test('FREE AI avoids optional network fan-out and reuses cached feature data',()=>{
