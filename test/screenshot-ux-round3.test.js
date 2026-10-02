@@ -32,8 +32,15 @@ test('bottom navigation is explicitly centered and each nav action centers its c
 test('advanced filters stay compact until the user opens them', () => {
   assert.match(html, /<summary><span>⚙ Фильтры<\/span><b data-filter-summary-value hidden><\/b><\/summary>/);
   assert.match(app, /summaryValue\.hidden = !activeDrawerFilter/);
+  assert.match(premium, /\.home-filter-controls \.league-filter-drawer \{[\s\S]*border:\s*0;[\s\S]*background:\s*transparent;[\s\S]*box-shadow:\s*none;/);
   assert.match(premium, /\.league-filter-drawer > summary \{[\s\S]*width:\s*max-content/);
   assert.match(premium, /\.league-filter-drawer \.home-filter-body \{[\s\S]*margin-top:\s*8px/);
+});
+
+
+test('Profile no longer renders the duplicate active reminders panel', () => {
+  assert.doesNotMatch(html, /id="remindersPanel"/);
+  assert.doesNotMatch(html, /🔔 Активные напоминания/);
 });
 
 test('public date feed batches yesterday today and tomorrow into one provider request', () => {

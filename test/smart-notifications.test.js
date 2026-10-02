@@ -9,7 +9,7 @@ import {
 } from '../src/smart-notification-policy.js';
 import { createSmartNotificationDeliveryService } from '../src/smart-notification-delivery.js';
 import { aiProbabilityMovement, createSmartNotificationService, radarStrongSignalState } from '../src/smart-notification-service.js';
-import { normalizeSmartNotificationPayload } from '../public/modules/smart-notifications.js';
+import { createSmartNotificationsModule, normalizeSmartNotificationPayload } from '../public/modules/smart-notifications.js';
 
 test('server policy keeps basic match alerts FREE and gates player/AI/market alerts', () => {
   assert.equal(notificationDecision({ eventType:'match.goal', plan:'FREE' }).allowed, true);
@@ -231,6 +231,56 @@ test('Profile UI is progressive-disclosure and server capabilities drive locked 
   }
   assert.match(styles,/@media \(max-width:430px\)[\s\S]*?\.smart-notification-head/);
   assert.match(styles,/@media \(max-width:360px\)[\s\S]*?\.smart-notification-head/);
+});
+
+
+test('smart notification payload normalization is idempotent for saved switch state', () => {
+  const once = normalizeSmartNotificationPayload({
+    preferences: { notificationPreferences: { enabled:false, match:true, teams:false, players:true, aiRadar:false } },
+    notificationCapabilities: { plan:'FREE', categories:{} },
+  });
+  const twice = normalizeSmartNotificationPayload(once);
+  assert.equal(twice.preferences.enabled, false);
+  assert.equal(twice.preferences.teams, false);
+  assert.equal(twice.preferences.aiRadar, false);
+});
+
+test('master notification switch stays visually toggled while save is in flight', async () => {
+  const root = { innerHTML: '', querySelectorAll: () => [] };
+  let resolveSave = null;
+  const enabledPayload = {
+    preferences: { notificationPreferences: { enabled:true, match:true, teams:true, players:true, aiRadar:true } },
+  };
+  const disabledPayload = {
+    ok: true,
+    preferences: { notificationPreferences: { enabled:false, match:true, teams:true, players:true, aiRadar:true } },
+  };
+  const api = (_path, options = {}) => {
+    if (options.method === 'PUT') {
+      return new Promise(resolve => { resolveSave = resolve; });
+    }
+    return Promise.resolve(enabledPayload);
+  };
+  const module = createSmartNotificationsModule({
+    elementById: id => id === 'smartNotificationsRoot' ? root : null,
+    api,
+    escapeHtml: value => String(value),
+    toast: () => {},
+  });
+
+  await module.load(true);
+  assert.match(root.innerHTML, /id="smartNotificationMaster"[^>]*checked/);
+
+  const savePromise = module.updatePreference('enabled', false);
+  assert.equal(module.snapshot().saving, true);
+  assert.equal(module.snapshot().savingPreferences?.enabled, false);
+  assert.doesNotMatch(root.innerHTML, /id="smartNotificationMaster"[^>]*checked/);
+
+  resolveSave(disabledPayload);
+  await savePromise;
+  assert.equal(module.snapshot().saving, false);
+  assert.equal(module.snapshot().savingPreferences, null);
+  assert.doesNotMatch(root.innerHTML, /id="smartNotificationMaster"[^>]*checked/);
 });
 
 test('v6.24 migration adds only Smart Notification state and keeps Favorite Players as the existing source', () => {

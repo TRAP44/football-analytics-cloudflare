@@ -75,10 +75,10 @@ test('profile prioritizes actionable team counter reminders settings and moves l
   const publicProfile=block(html,'<section id="profileView"','<nav class="bottom-nav"');
   const profile=publicProfile.indexOf('class="panel profile-panel"');
   const teams=publicProfile.indexOf('id="profileFavoriteTeamsBtn"');
-  const reminders=publicProfile.indexOf('id="reminderList"');
   const settings=publicProfile.indexOf('class="panel preferences-panel"');
   const about=publicProfile.indexOf('class="panel profile-about-service"');
-  assert.ok(profile>=0 && profile<teams && teams<reminders && reminders<settings && settings<about);
+  assert.ok(profile>=0 && profile<teams && teams<settings && settings<about);
+  assert.doesNotMatch(publicProfile,/id="reminderList"|Активные напоминания/);
   assert.match(publicProfile,/О сервисе/);
   assert.match(publicProfile,/Конфиденциальность/);
   assert.match(publicProfile,/Условия использования/);
