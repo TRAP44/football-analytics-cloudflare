@@ -6,6 +6,7 @@ import { createSharedCacheRuntime } from './cache-runtime.js';
 import { dispatchApiRoute } from './router.js';
 import { createHttpRuntime } from './http.js';
 import { createPreAuthAbuseGuard, preAuthRequestShapeDecision } from './security-gate.js';
+import { cloudflareEdgeGuard, cloudflareEdgePolicies } from './edge-security.js';
 import { isSecurityLockdownControls, runtimeLockdownDecision, telegramLockdownDecision } from './runtime-lockdown.js';
 import { assessSecuritySignals, formatSecurityIncidentAlert, securityIncidentOpsEvent, securityIncidentTimeline } from './security-incidents.js';
 import { channelPublisherState, publishChannelMessage } from './channel-publisher.js';
@@ -170,6 +171,9 @@ const memory = {
     telegramPersistentDuplicateUpdates: 0,
     telegramDedupeFallbacks: 0,
     securityShapeBlocks: 0,
+    edgeRateLimitBlocks: 0,
+    edgeRateLimitFallbacks: 0,
+    edgeScannerBlocks: 0,
     securityCrossOriginBlocks: 0,
     securityOversizeBlocks: 0,
     securityInvalidAuthBlocks: 0,
@@ -944,6 +948,7 @@ function appManifest(cfg) {
       reminderDeliveryClaims: true,
       runtimeControls: true,
       emergencyKillSwitches: true,
+      cloudflareEdgeRateLimits: true,
       emergencySecurityLockdown: true,
       runtimeRollback: true,
       runtimeHistory: true,
@@ -1236,6 +1241,10 @@ function productionSafetySnapshot() {
     },
     securityGuard: {
       invalidAuthBuckets: memory.authFailureBurst.size,
+      edgeRateLimitBlocked:Number(memory.telemetry?.edgeRateLimitBlocks || 0),
+      edgeRateLimitFallbacks:Number(memory.telemetry?.edgeRateLimitFallbacks || 0),
+      edgeScannerBlocked:Number(memory.telemetry?.edgeScannerBlocks || 0),
+      edgePolicies:cloudflareEdgePolicies(),
       invalidAuthBlocked:Number(memory.telemetry?.securityInvalidAuthBlocks || 0),
       crossOriginBlocked:Number(memory.telemetry?.securityCrossOriginBlocks || 0),
       oversizeBlocked:Number(memory.telemetry?.securityOversizeBlocks || 0),
@@ -24980,6 +24989,52 @@ export default {
     if (ctx?.waitUntil) cfg.waitUntil = promise => ctx.waitUntil(Promise.resolve(promise));
     const url = new URL(request.url);
 
+    const edgeGuard = await cloudflareEdgeGuard(request, env);
+    if (edgeGuard.blocked) {
+      if (edgeGuard.kind === 'scanner') bumpTelemetry('edgeScannerBlocks');
+      else bumpTelemetry('edgeRateLimitBlocks');
+      const minuteBucket = new Date().toISOString().slice(0, 16);
+      await recordOpsEvent(cfg, {
+        severity: 'warning',
+        source: 'security',
+        eventType: edgeGuard.kind === 'scanner' ? 'edge_scanner_block' : 'edge_rate_limit',
+        code: edgeGuard.code,
+        message: edgeGuard.kind === 'scanner'
+          ? 'Obvious scanner traffic was rejected at the earliest Worker boundary.'
+          : 'Cloudflare edge rate limiter rejected an abusive request burst.',
+        endpoint: url.pathname,
+        status: edgeGuard.status,
+        transitionKey: `edge-security:${edgeGuard.policy || edgeGuard.kind}:${url.pathname}:${minuteBucket}`,
+        meta: {
+          policy: edgeGuard.policy || '',
+          kind: edgeGuard.kind || '',
+          retryAfter: Number(edgeGuard.retryAfter || 0) || null,
+          minuteBucket,
+        },
+      }).catch(() => {});
+      return json({
+        error: edgeGuard.kind === 'scanner' ? 'Not found.' : 'Слишком много запросов. Повторите позже.',
+        code: edgeGuard.code,
+        retryAfter: Number(edgeGuard.retryAfter || 0) || undefined,
+      }, edgeGuard.status, edgeGuard.retryAfter ? { 'retry-after': String(edgeGuard.retryAfter) } : {});
+    }
+    if (edgeGuard.degraded) {
+      bumpTelemetry('edgeRateLimitFallbacks');
+      const now = Date.now();
+      if (now - Number(memory.edgeRateLimitWarningAt || 0) >= 60_000) {
+        memory.edgeRateLimitWarningAt = now;
+        await recordOpsEvent(cfg, {
+          severity: 'warning',
+          source: 'security',
+          eventType: 'edge_rate_limit',
+          code: 'EDGE_RATE_LIMIT_DEGRADED',
+          message: 'Cloudflare rate-limit binding was unavailable; existing Worker guards remain active.',
+          endpoint: url.pathname,
+          meta: { policy: edgeGuard.policy || '', configured: Boolean(edgeGuard.configured) },
+        }).catch(() => {});
+      }
+    }
+
     const securityShape=await preAuthRequestShapeDecision(request,{
       api:url.pathname.startsWith('/api/'),
       webhook:url.pathname==='/telegram/webhook',
@@ -25045,6 +25100,7 @@ export default {
         telegramInitDataSizeGuard: 'enabled',
         securityAttackMonitoring: 'enabled',
         securityIncidentAlerts: 'enabled',
+        cloudflareEdgeRateLimits: 'enabled',
         emergencySecurityLockdown: 'enabled',
         expandedDataReady: 'enabled',
         matchCenter2: 'enabled',
