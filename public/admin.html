@@ -820,12 +820,12 @@
           <div id="launchFunnelCampaigns" class="release-monitor-block"></div>
           <div id="launchFunnelMediaCampaigns" class="release-monitor-block"></div>
           <div class="media-publisher-kit">
-            <div class="release-monitor-section-head"><strong>Ссылка для СМИ</strong><span>fixture + attribution</span></div>
+            <div class="release-monitor-section-head"><strong>Промо-ссылка</strong><span>campaign attribution · fixture необязателен</span></div>
             <div class="media-publisher-grid">
-              <label><span>Fixture ID</span><input id="mediaPublisherFixtureId" inputmode="numeric" placeholder="Например 1234567"></label>
-              <label><span>Источник</span><input id="mediaPublisherSource" value="media" placeholder="sports_media"></label>
-              <label><span>Кампания</span><input id="mediaPublisherCampaign" value="launch" placeholder="launch"></label>
-              <label><span>Материал</span><input id="mediaPublisherContent" value="article1" placeholder="article1"></label>
+              <label><span>Fixture ID · необязательно</span><input id="mediaPublisherFixtureId" inputmode="numeric" placeholder="Пусто = ссылка на MatchRadar"></label>
+              <label><span>Источник</span><input id="mediaPublisherSource" value="telegram_channel" placeholder="telegram_channel"></label>
+              <label><span>Кампания</span><input id="mediaPublisherCampaign" value="soft_launch" placeholder="soft_launch"></label>
+              <label><span>Материал</span><input id="mediaPublisherContent" value="post1" placeholder="post1"></label>
             </div>
             <div class="media-publisher-actions">
               <button id="mediaPublisherGenerateBtn" class="primary-setting-btn" type="button">Создать ссылку</button>
@@ -837,7 +837,7 @@
             <summary>Формат deep-link кампании</summary>
             <div class="launch-link-help">
               <code>media__источник__кампания__материал</code>
-              <p>Пример параметра: <code>media__sports_media__launch__article1</code>. В Telegram он передаётся после <code>?start=</code>. Параметр ограничен 64 символами и не должен содержать персональные данные.</p>
+              <p>Для общего пиара оставьте Fixture ID пустым. Например: <code>media__telegram_channel__soft_launch__post1</code>. Для рекламы конкретного матча укажите Fixture ID — ссылка откроет сразу этот матч. Параметр ограничен 64 символами и не содержит персональные данные.</p>
             </div>
           </details>
           <p class="tiny diagnostics-privacy">В админке возвращаются только агрегаты. Telegram ID пользователей в ответе launch-funnel не выдаются.</p>
