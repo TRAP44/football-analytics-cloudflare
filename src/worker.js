@@ -21783,19 +21783,9 @@ async function apiMatches(request, cfg) {
       fixtures=providerBatch.fixtures;
     } else {
       // API-Football accepts an all-competitions fixtures request by exact date.
-      // Bare from/to ranges require an additional league/team constraint and were
-      // causing production FOOTBALL_RESPONSE errors before the request reached
-      // the normal stale-cache/rate-limit recovery path.
-      const fetchedFixtures=await apiFootball('/fixtures',{date},cfg);
-      const fetchedAt=new Date().toISOString();
-      fixtures=fetchedFixtures;
-      await setCache(
-        providerBatchKey,
-        0,
-        {fixtures,fetchedAt},
-        cfg,
-        providerFeedDateTtl(date,cfg),
-      ).catch(()=>null);
+      // Bare from/to ranges require an additional league/team constraint, so the
+      // public feed goes through the shared exact-date loader and its cache.
+      fixtures=await loadProviderFixturesForDate(date,cfg,{forceRefresh:true});
     }
   } catch (error) {
     const rateLimited=isFootballRateLimitError(error);
