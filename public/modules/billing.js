@@ -1,8 +1,8 @@
 const PASS_TYPES = Object.freeze(['MATCH_PASS', 'DAY_PASS', 'WEEKEND_PASS']);
 const PASS_META = Object.freeze({
-  MATCH_PASS: Object.freeze({ title:'Match Pass', short:'Один матч' }),
-  DAY_PASS: Object.freeze({ title:'Day Pass', short:'24 часа' }),
-  WEEKEND_PASS: Object.freeze({ title:'Weekend Pass', short:'Футбольный уикенд' }),
+  MATCH_PASS: Object.freeze({ title:'Match Pass', short:'1 матч' }),
+  DAY_PASS: Object.freeze({ title:'Day Pass', short:'1 день' }),
+  WEEKEND_PASS: Object.freeze({ title:'Weekend Pass', short:'7 дней' }),
 });
 
 function safeFixtureId(value) {
@@ -177,22 +177,28 @@ export function createBillingModule({
     else button.textContent = 'Подключить · ' + String(cfg.stars) + ' ⭐';
   }
 
-  function durationLabel(hours) {
-    const n = Number(hours || 0);
-    if (n === 24) return '24 часа';
-    if (n === 72) return '72 часа';
+  function passDurationLabel(type, product) {
+    if (type === 'MATCH_PASS') return '1 матч';
+    if (type === 'DAY_PASS') return '24 часа';
+    if (type === 'WEEKEND_PASS') return '7 дней';
+    const n = Number(product?.durationHours || 0);
     return n > 0 ? String(n) + ' ч' : '—';
   }
 
-  function passUsageLabel(product) {
+  function passUsageLabel(type, product) {
+    if (type === 'MATCH_PASS') return 'Полный AI-доступ';
+    if (type === 'DAY_PASS') return 'Все матчи';
     const limit = Number(product?.usageLimit || 0);
-    if (limit > 0) return String(limit) + ' полных AI-анализов';
-    return 'Без лимита анализов';
+    if (type === 'WEEKEND_PASS' && limit > 0) return 'До ' + String(limit) + ' AI-анализов';
+    if (limit > 0) return String(limit) + ' AI-анализов';
+    return 'Все матчи';
   }
 
   function passStateCopy(type, view) {
+    if (view.state === 'active' && type === 'MATCH_PASS') return 'Активен для выбранного матча';
     if (view.state === 'active') return view.expiresAt ? 'Активен до ' + dateTime(view.expiresAt) : 'Активен';
-    if (view.state === 'active-other') return 'Активен для матча #' + Number(view.decision?.fixtureId || 0) + (view.expiresAt ? ' · до ' + dateTime(view.expiresAt) : '');
+    if (view.state === 'active-other') return 'Есть Match Pass для матча #' + Number(view.decision?.fixtureId || 0);
+    if (view.state === 'expired' && type === 'MATCH_PASS') return 'Match Pass завершён';
     if (view.state === 'expired') return view.expiresAt ? 'Истёк · ' + dateTime(view.expiresAt) : 'Истёк';
     if (view.state === 'exhausted') return 'Пакет использован';
     if (view.state === 'included') return 'Расширенный доступ уже входит в подписку';
@@ -245,8 +251,8 @@ export function createBillingModule({
       const key = type === 'MATCH_PASS' ? 'matchPass' : type === 'DAY_PASS' ? 'dayPass' : 'weekendPass';
       setText(key + 'Title', meta.title);
       setText(key + 'Price', product ? String(product.stars) + ' ⭐' : '— ⭐');
-      setText(key + 'Duration', product ? durationLabel(product.durationHours) : '—');
-      setText(key + 'Usage', product ? passUsageLabel(product) : 'Проверяем сервер…');
+      setText(key + 'Duration', product ? passDurationLabel(type, product) : '—');
+      setText(key + 'Usage', product ? passUsageLabel(type, product) : 'Проверяем сервер…');
       setText(key + 'State', passStateCopy(type, view));
       const card = $(key + 'Card');
       if (card) card.dataset.state = view.state;
@@ -278,7 +284,7 @@ export function createBillingModule({
         const title = PASS_META[type]?.title || type;
         const scope = type === 'MATCH_PASS' && row.fixtureId ? ' · матч №' + Number(row.fixtureId) : '';
         const usage = row.usageLimit != null ? ' · ' + Number(row.usageCount || 0) + '/' + Number(row.usageLimit) : '';
-        const expiry = row.expiresAt ? ' · до ' + dateTime(row.expiresAt) : '';
+        const expiry = type === 'MATCH_PASS' ? '' : (row.expiresAt ? ' · до ' + dateTime(row.expiresAt) : '');
         return '<div class="active-pass-row"><strong>' + title + '</strong><span>' + scope.replace(/^ · /,'') + usage + expiry + '</span></div>';
       }).join('') : '';
     }
