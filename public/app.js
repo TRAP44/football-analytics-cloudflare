@@ -7,16 +7,11 @@ import { createFirstRunGuideController } from './modules/first-run-guide.js';
 import { createProfileDataCapabilitiesModule } from './modules/profile-data-capabilities.js';
 import { createProfileAccessStateModule } from './modules/profile-access-state.js';
 import { createProfileSummaryModule } from './modules/profile-summary.js';
-import { createDigestSettingsModule } from './modules/digest-settings.js';
-import { createSmartNotificationsModule } from './modules/smart-notifications.js';
-import { createBillingModule } from './modules/billing.js';
 import { createFavoriteTeamsRenderer } from './modules/favorite-teams-renderer.js';
 import { createReminderListModule } from './modules/reminder-list.js';
 import { createMyTeamsRenderer } from './modules/my-teams-renderer.js';
 import { createJourneyStateModule } from './modules/journey-state.js';
 import { createGlobalSearchRenderer } from './modules/global-search-renderer.js';
-import { renderMatchPulse } from './modules/match-pulse.js';
-import { renderAiTimelineCompact, renderAiTimelineDetails } from './modules/ai-timeline.js';
 import { buildPlayerComparisonCandidates, playerComparisonHtml, samePlayer } from './modules/player-comparison.js';
 import { createPlayerFollowModule } from './modules/player-follow.js';
 import {
@@ -909,28 +904,76 @@ const playerFollowModule = createPlayerFollowModule({
 });
 const { loadFavoritePlayers } = playerFollowModule;
 
-const digestSettingsModule = createDigestSettingsModule({
-  elementById: $,
-  api,
-  escapeHtml,
-  planLabel,
-  toast,
-});
-const {
-  loadDigestSettings,
-  renderDigestSettings,
-} = digestSettingsModule;
+let digestSettingsModule = null;
+let digestSettingsModulePromise = null;
+async function ensureDigestSettingsModule() {
+  if (digestSettingsModule) return digestSettingsModule;
+  if (!digestSettingsModulePromise) {
+    digestSettingsModulePromise = import('./modules/digest-settings.js').then(({ createDigestSettingsModule }) => {
+      digestSettingsModule = createDigestSettingsModule({
+        elementById: $,
+        api,
+        escapeHtml,
+        planLabel,
+        toast,
+      });
+      return digestSettingsModule;
+    });
+  }
+  return digestSettingsModulePromise;
+}
+function renderDigestSettings() {
+  return digestSettingsModule?.renderDigestSettings();
+}
+async function loadDigestSettings(...args) {
+  const module = await ensureDigestSettingsModule();
+  return module?.loadDigestSettings(...args);
+}
 
-const smartNotificationsModule = createSmartNotificationsModule({
-  elementById: $,
-  api,
-  escapeHtml,
-  toast,
-});
-const {
-  load: loadSmartNotifications,
-  render: renderSmartNotifications,
-} = smartNotificationsModule;
+let smartNotificationsModule = null;
+let smartNotificationsModulePromise = null;
+async function ensureSmartNotificationsModule() {
+  if (smartNotificationsModule) return smartNotificationsModule;
+  if (!smartNotificationsModulePromise) {
+    smartNotificationsModulePromise = import('./modules/smart-notifications.js').then(({ createSmartNotificationsModule }) => {
+      smartNotificationsModule = createSmartNotificationsModule({
+        elementById: $,
+        api,
+        escapeHtml,
+        toast,
+      });
+      return smartNotificationsModule;
+    });
+  }
+  return smartNotificationsModulePromise;
+}
+function renderSmartNotifications() {
+  return smartNotificationsModule?.render();
+}
+async function loadSmartNotifications(...args) {
+  const module = await ensureSmartNotificationsModule();
+  return module?.load(...args);
+}
+
+let matchCenterExtras = null;
+let matchCenterExtrasPromise = null;
+async function ensureMatchCenterExtras() {
+  if (matchCenterExtras) return matchCenterExtras;
+  if (!matchCenterExtrasPromise) {
+    matchCenterExtrasPromise = Promise.all([
+      import('./modules/match-pulse.js'),
+      import('./modules/ai-timeline.js'),
+    ]).then(([pulse, timeline]) => {
+      matchCenterExtras = Object.freeze({
+        renderMatchPulse: pulse.renderMatchPulse,
+        renderAiTimelineCompact: timeline.renderAiTimelineCompact,
+        renderAiTimelineDetails: timeline.renderAiTimelineDetails,
+      });
+      return matchCenterExtras;
+    });
+  }
+  return matchCenterExtrasPromise;
+}
 
 async function loadProfile() {
   const previousProfile = state.profile;
@@ -1530,6 +1573,12 @@ async function openProfileView() {
     return;
   }
   renderProfileAccessState('ready');
+  await Promise.all([
+    ensureBillingModule(),
+    ensureDigestSettingsModule(),
+    ensureSmartNotificationsModule(),
+  ]);
+  renderProfile();
   const lastFixture = Number(state.currentCenter?.match?.fixtureId || state.currentAnalysis?.match?.fixtureId || 0);
   if (lastFixture && $('providerAuditFixtureId') && !$('providerAuditFixtureId').value) $('providerAuditFixtureId').value = String(lastFixture);
   const essentials = [];
@@ -1899,21 +1948,50 @@ async function loadDiagnostics(...args) {
   return result;
 }
 
-const billingModule = createBillingModule({
-  state,
-  elementById: $,
-  api,
-  toast,
-  telegram: tg,
-  dateTime,
-  reloadProfile: () => loadProfile(),
-  openProfile: () => openProfileView(),
-});
-function renderBilling() { return billingModule.render(); }
-function loadBilling(...args) { return billingModule.load(...args); }
-function showQuotaPaywall() { return billingModule.showQuotaPaywall(); }
-function showQuotaPaywallForFixture(fixtureId = 0) { return billingModule.showQuotaPaywall(fixtureId); }
-function hideQuotaPaywall() { return billingModule.hideQuotaPaywall(); }
+let billingModule = null;
+let billingModulePromise = null;
+async function ensureBillingModule() {
+  if (billingModule) return billingModule;
+  if (!billingModulePromise) {
+    billingModulePromise = import('./modules/billing.js').then(({ createBillingModule }) => {
+      billingModule = createBillingModule({
+        state,
+        elementById: $,
+        api,
+        toast,
+        telegram: tg,
+        dateTime,
+        reloadProfile: () => loadProfile(),
+        openProfile: () => openProfileView(),
+      });
+            return billingModule;
+    });
+  }
+  return billingModulePromise;
+}
+function renderBilling() {
+  return billingModule?.render();
+}
+async function loadBilling(...args) {
+  const module = await ensureBillingModule();
+  return module?.load(...args);
+}
+function showQuotaPaywall(fixtureId = 0) {
+  if (billingModule) return billingModule.showQuotaPaywall(fixtureId);
+  void ensureBillingModule().then(module => module?.showQuotaPaywall(fixtureId));
+}
+function showQuotaPaywallForFixture(fixtureId = 0) {
+  return showQuotaPaywall(fixtureId);
+}
+function hideQuotaPaywall() {
+  if (billingModule) return billingModule.hideQuotaPaywall();
+  const panel = $('analysisQuotaPaywall');
+  if (panel) panel.hidden = true;
+}
+async function openPassStoreForFixture(fixtureId = 0) {
+  const module = await ensureBillingModule();
+  return module?.openPassStoreForFixture(fixtureId);
+}
 
 let adminProviderModule = null;
 let adminProviderModulePromise = null;
@@ -4784,15 +4862,15 @@ function renderMatchCenter(d) {
       </div>
     </section>
 
-    ${renderMatchPulse(d)}
+    ${matchCenterExtras?.renderMatchPulse?.(d) || ''}
 
-    ${renderAiTimelineCompact(d.aiTimeline || {}, m)}
+    ${matchCenterExtras?.renderAiTimelineCompact?.(d.aiTimeline || {}, m) || ''}
 
     ${d.note ? `<section class="panel center-note"><p class="tiny warning">${escapeHtml(publicText(d.note))}</p></section>` : ''}
 
     <div class="match-center-primary" aria-label="Главное о матче">
       ${matchChangeNarrativeHtml(d, m)}
-      ${renderAiTimelineDetails(d.aiTimeline || {}, m)}
+      ${matchCenterExtras?.renderAiTimelineDetails?.(d.aiTimeline || {}, m) || ''}
       ${live ? liveAiCoachHtml(d.liveAiCoach, m) : ''}
       ${smartInsightsHeroHtml(d.smartInsights, m)}
       ${finished ? postMatchReviewHtml(d.postMatchReview || {}, m) : ''}
@@ -4904,7 +4982,7 @@ function renderMatchCenter(d) {
   }));
 
   $('centerAnalyzeBtn')?.addEventListener('click', e => analyzeMatch(Number(m.fixtureId), e.currentTarget));
-  $('centerMatchPassBtn')?.addEventListener('click', () => { void billingModule.openPassStoreForFixture(Number(m.fixtureId)); });
+  $('centerMatchPassBtn')?.addEventListener('click', () => { void openPassStoreForFixture(Number(m.fixtureId)); });
   $('centerCoverageAuditBtn')?.addEventListener('click', async () => {
     await runProviderCoverageAudit(Number(m.fixtureId), true);
     await openProfileView();
@@ -4945,16 +5023,21 @@ async function openMatchCenter(fixtureId, btn) {
     : null;
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Загружаю матч…'; }
   showView('analysisView');
-  if (reusableCenter) {
-    renderMatchCenter(reusableCenter);
-  } else {
+  if (!reusableCenter) {
     renderJourneyState('loading', {
       title: 'Открываем матч',
       message: 'Загружаем счёт, события и доступную статистику.',
     });
   }
   try {
-    const data = await requestMatchCenter(fixtureId);
+    const extrasPromise = ensureMatchCenterExtras();
+    const centerLoad = Promise.all([
+      requestMatchCenter(fixtureId),
+      extrasPromise,
+    ]).then(([data]) => data);
+    await extrasPromise;
+    if (reusableCenter) renderMatchCenter(reusableCenter);
+    const data = await centerLoad;
     if (!data) return;
     renderMatchCenter(data);
     sendProductAction('match_open', sourceView);
@@ -5206,7 +5289,10 @@ async function openHistoryAnalysis(fixtureId, btn) {
   } catch (error) {
     if (seq !== state.historyOpenRequestSeq) return;
     if (Number(error?.status || 0) === 404) {
-      const center = await requestMatchCenter(fixtureId, {}, { timeoutMs: 9000 });
+      const [center] = await Promise.all([
+        requestMatchCenter(fixtureId, {}, { timeoutMs: 9000 }),
+        ensureMatchCenterExtras(),
+      ]);
       if (seq !== state.historyOpenRequestSeq || !center) return;
       renderMatchCenter(center);
       showView('analysisView', { fromHistoryOpen: true });
@@ -6536,7 +6622,7 @@ const teamTabs = [...document.querySelectorAll('.team-tab')];
 teamTabs.forEach(btn => btn.addEventListener('click', () => setTeamTab(btn.dataset.teamTab || 'overview')));
 bindRovingTabKeyboard(teamTabs, 'teamTab', value => setTeamTab(value));
 $('profileBtn').addEventListener('click', () => {
-  billingModule.clearPassContext();
+  billingModule?.clearPassContext();
   void openProfileView();
 });
 $('navMatches').addEventListener('click', () => {
@@ -6557,7 +6643,7 @@ $('navHistory').addEventListener('click', async () => {
   if (tasks.length) await Promise.allSettled(tasks);
 });
 $('navProfile').addEventListener('click', () => {
-  billingModule.clearPassContext();
+  billingModule?.clearPassContext();
   void openProfileView();
 });
 $('profileFavoriteTeamsBtn')?.addEventListener('click', () => {

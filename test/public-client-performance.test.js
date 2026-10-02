@@ -61,6 +61,28 @@ test('public feed remains behind access control and admin reminders stay off the
   assert.match(startup,/if \(!state\.remindersLoaded\) tasks\.push\(loadReminders\(\)\)/);
 });
 
+test('startup graph defers profile-only and Match Center-only modules until their route boundary',()=>{
+  const deferred = [
+    'billing.js',
+    'digest-settings.js',
+    'smart-notifications.js',
+    'match-pulse.js',
+    'ai-timeline.js',
+  ];
+  for (const moduleName of deferred) {
+    assert.doesNotMatch(app,new RegExp(`from ['"]\\.\\/modules\\/${moduleName.replace('.', '\\\\.')}['"]`));
+    assert.match(app,new RegExp(`import\\(['"]\\.\\/modules\\/${moduleName.replace('.', '\\\\.')}['"]\\)`));
+  }
+  assert.match(app,/async function ensureBillingModule\(/);
+  assert.match(app,/async function ensureDigestSettingsModule\(/);
+  assert.match(app,/async function ensureSmartNotificationsModule\(/);
+  assert.match(app,/async function ensureMatchCenterExtras\(/);
+
+  const staticImports=[...app.matchAll(/from ['"]\.\/modules\/([^'"]+)['"]/g)].map(match=>`public/modules/${match[1]}`);
+  const startupJsRawBytes=Buffer.byteLength(app)+staticImports.reduce((total,path)=>total+fs.statSync(path).size,0);
+  assert.ok(startupJsRawBytes < 440_000, `startup JS graph regressed to ${startupJsRawBytes} bytes`);
+});
+
 test('full AI avoids reloading already-known favorites and reminders',()=>{
   const analyze=block('async function analyzeMatch','function historyItemFromAnalysis');
   assert.match(analyze,/const secondaryTasks = \[loadHistory\(false\)\]/);
@@ -69,12 +91,15 @@ test('full AI avoids reloading already-known favorites and reminders',()=>{
   assert.doesNotMatch(analyze,/Promise\.allSettled\(\[loadHistory\(false\), loadReminders\(\), loadFavorites\(\)\]\)/);
 });
 
-test('reopening the same Match Center renders warm data before refresh completes',()=>{
+test('reopening the same Match Center renders warm data while the refresh and deferred UI chunk load in parallel',()=>{
   const center=block('async function openMatchCenter','function syncAnalysisBusyUi');
   const warm=center.indexOf('const reusableCenter =');
+  const extras=center.indexOf('const extrasPromise = ensureMatchCenterExtras()');
+  const request=center.indexOf('requestMatchCenter(fixtureId)');
   const render=center.indexOf('renderMatchCenter(reusableCenter)');
-  const request=center.indexOf('await requestMatchCenter(fixtureId)');
-  assert.ok(warm>=0 && render>warm && request>render);
+  const refreshed=center.indexOf('const data = await centerLoad');
+  assert.ok(warm>=0 && extras>warm && request>extras && render>request && refreshed>render);
+  assert.match(center,/Promise\.all\(\[\s*requestMatchCenter\(fixtureId\),\s*extrasPromise,/);
   assert.match(center,/Number\(state\.currentCenter\?\.match\?\.fixtureId \|\| 0\) === Number\(fixtureId\)/);
 });
 
