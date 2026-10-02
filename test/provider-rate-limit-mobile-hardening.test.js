@@ -37,7 +37,7 @@ test('fixtures are reused from persistent shared caches before provider calls',(
   assert.match(matches,/staleProviderBatch/);
   assert.match(matches,/providerFallback/);
   assert.match(matches,/cached:true,[\s\S]*stale:true/);
-  assert.match(matches,/providerBatchTtl=isToday \? 2/);
+  assert.match(matches,/providerFeedDateTtl\(date,cfg\)/);
 
   const sharedDateLoader=block(worker,'async function loadProviderFixturesForDate','function providerFixtureDirectCacheKey');
   assert.match(sharedDateLoader,/providerFixtureDateCacheKey\(normalized\)/);
