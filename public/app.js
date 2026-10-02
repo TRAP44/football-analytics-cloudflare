@@ -11,6 +11,7 @@ import { createFavoriteTeamsRenderer } from './modules/favorite-teams-renderer.j
 import { createReminderListModule } from './modules/reminder-list.js';
 import { createMyTeamsRenderer } from './modules/my-teams-renderer.js';
 import { createJourneyStateModule } from './modules/journey-state.js';
+import { analysisAccessUsageHtml, buildAnalysisAccessUsage } from './modules/analysis-access.js';
 import { createGlobalSearchRenderer } from './modules/global-search-renderer.js';
 import { buildPlayerComparisonCandidates, playerComparisonHtml, samePlayer } from './modules/player-comparison.js';
 import { createPlayerFollowModule } from './modules/player-follow.js';
@@ -5179,6 +5180,16 @@ function syncAnalysisBusyUi() {
   });
 }
 
+async function loadAnalysisAccessSnapshot(fixtureId) {
+  const id = Number(fixtureId || 0);
+  if (!Number.isSafeInteger(id) || id <= 0) return null;
+  try {
+    return await api('/api/entitlements?fixtureId=' + encodeURIComponent(String(id)), { retry:false, timeoutMs:4000 });
+  } catch {
+    return null;
+  }
+}
+
 async function analyzeMatch(fixtureId, btn, options = {}) {
   if (state.analysisActionPending) {
     toast('Анализ уже выполняется. Дождитесь завершения текущего запроса.');
@@ -5210,6 +5221,7 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
   const original = btn?.textContent || '';
   if (btn) btn.textContent = '⏳ Собираю данные…';
   try {
+    const entitlementBefore = await loadAnalysisAccessSnapshot(fixtureId);
     const data = await api('/api/analyze', { method: 'POST', body: JSON.stringify({
       fixtureId,
       origin:'miniapp',
@@ -5219,6 +5231,19 @@ async function analyzeMatch(fixtureId, btn, options = {}) {
       newsImpactRecoveryCode:String(options.newsImpactRecoveryCode || '').toLowerCase().slice(0,24),
       newsImpactRecoveryFrom:String(options.newsImpactRecoveryFrom || '').toLowerCase().slice(0,24),
     }) });
+    const entitlementAfter = entitlementBefore?.entitlement?.source === 'pass'
+      ? await loadAnalysisAccessSnapshot(fixtureId)
+      : entitlementBefore;
+    data.accessUsage = buildAnalysisAccessUsage({
+      analysis:data,
+      entitlementBefore:entitlementBefore || {},
+      entitlementAfter:entitlementAfter || entitlementBefore || {},
+      profile:state.profile || {},
+      fixtureId,
+    });
+    if (billingModule && entitlementBefore?.entitlement?.source === 'pass') {
+      void billingModule.loadPassAccess({ fixtureId, force:true }).catch(() => null);
+    }
     if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
     const ownsAnalysisView = requestSeq === state.analysisRequestSeq && activeViewId() === 'analysisView';
     if (ownsAnalysisView) renderAnalysis(data);
@@ -6278,6 +6303,7 @@ function renderAnalysis(d) {
         <span>${confidence.score ?? '—'}/100 уверенность</span>
         ${d.stale ? '<span>⚠️ Показана последняя доступная версия</span>' : ''}
       </div>
+      ${analysisAccessUsageHtml(d.accessUsage, escapeHtml)}
 
       <div class="experience-actions">
         <button id="reminderBtn" class="reminder-btn ${reminderActive ? 'active' : ''} ${reminderPending ? 'is-pending' : ''}" type="button" aria-pressed="${reminderActive ? 'true' : 'false'}" ${reminderPending ? 'disabled' : ''}>${reminderPending ? '⏳ Сохраняю…' : reminderActive ? `🔔 За ${Number(activeReminder?.remindBeforeMinutes || 30)} мин.${activeReminder?.kickoffNotify ? ' + старт' : ''}` : `🔕 Напомнить за ${Number(state.preferences?.reminderMinutes || 30)} минут`}</button>
