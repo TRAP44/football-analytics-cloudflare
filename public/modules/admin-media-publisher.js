@@ -14,9 +14,10 @@ export function createAdminMediaPublisherModule({
 
   async function generateMediaPublisherLink() {
     if (!isAdmin()) return;
-    const fixtureId = Number(mediaPublisherValue('mediaPublisherFixtureId'));
-    if (!Number.isSafeInteger(fixtureId) || fixtureId <= 0) {
-      return toast('Укажите корректный fixture ID.');
+    const fixtureRaw = mediaPublisherValue('mediaPublisherFixtureId');
+    const fixtureId = fixtureRaw ? Number(fixtureRaw) : 0;
+    if (fixtureRaw && (!Number.isSafeInteger(fixtureId) || fixtureId <= 0)) {
+      return toast('Укажите корректный fixture ID или оставьте поле пустым.');
     }
 
     const button = $('mediaPublisherGenerateBtn');
@@ -32,10 +33,10 @@ export function createAdminMediaPublisherModule({
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          fixtureId,
-          source: mediaPublisherValue('mediaPublisherSource', 'media'),
-          campaign: mediaPublisherValue('mediaPublisherCampaign', 'launch'),
-          content: mediaPublisherValue('mediaPublisherContent', 'article1'),
+          fixtureId: fixtureId || null,
+          source: mediaPublisherValue('mediaPublisherSource', 'telegram_channel'),
+          campaign: mediaPublisherValue('mediaPublisherCampaign', 'soft_launch'),
+          content: mediaPublisherValue('mediaPublisherContent', 'post1'),
         }),
         retry: false,
         dedupe: false,
@@ -44,7 +45,7 @@ export function createAdminMediaPublisherModule({
 
       if (result) {
         result.innerHTML = `
-          <div class="media-publisher-link-row"><span>Deep-link</span><code>${escapeHtml(mediaPublisherPayload.deepLink || '')}</code></div>
+          <div class="media-publisher-link-row"><span>${mediaPublisherPayload.mode === 'fixture' ? 'Ссылка на матч' : 'Промо-ссылка'}</span><code>${escapeHtml(mediaPublisherPayload.deepLink || '')}</code></div>
           <div class="media-publisher-link-row"><span>Start param</span><code>${escapeHtml(mediaPublisherPayload.startParam || '')}</code></div>
           <textarea class="media-publisher-copy" readonly>${escapeHtml(mediaPublisherPayload.copy?.body || '')}</textarea>
           <div class="media-publisher-result-actions">
@@ -59,7 +60,7 @@ export function createAdminMediaPublisherModule({
         if (tg?.openTelegramLink) tg.openTelegramLink(url);
         else window.open(url, '_blank', 'noopener,noreferrer');
       });
-      toast('Ссылка для публикации готова');
+      toast(mediaPublisherPayload?.mode === 'fixture' ? 'Ссылка на матч готова' : 'Промо-ссылка готова');
     } catch (error) {
       mediaPublisherPayload = null;
       if (result) {
