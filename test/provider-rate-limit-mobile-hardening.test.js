@@ -33,6 +33,10 @@ test('fixtures are reused from persistent shared caches before provider calls',(
 
   const matches=block(worker,'async function apiMatches','function normalizeStandingRow');
   assert.match(matches,/providerBatchKey/);
+  assert.match(matches,/getStaleCache\(providerBatchKey,cfg\)/);
+  assert.match(matches,/staleProviderBatch/);
+  assert.match(matches,/providerFallback/);
+  assert.match(matches,/cached:true,[\s\S]*stale:true/);
   assert.match(matches,/providerBatchTtl=isToday \? 2/);
 
   const sharedDateLoader=block(worker,'async function loadProviderFixturesForDate','function providerFixtureDirectCacheKey');
@@ -95,6 +99,9 @@ test('client deduplicates match center refreshes and keeps provider cooldown non
 
   const matches=block(app,'async function loadMatches','function syncFilterButtons');
   assert.doesNotMatch(matches,/dedupe:\s*false/);
+  assert.match(matches,/const fallbackSnapshot = readMatchSnapshot\(date\)/);
+  assert.match(matches,/fallbackSnapshot\.matches\.length/);
+  assert.match(matches,/Показана последняя сохранённая версия/);
   assert.match(app,/query\.trim\(\)\.length >= 3/);
   assert.match(app,/setTimeout\(\(\) => runGlobalSearch\(\), 500\)/);
 });

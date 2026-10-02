@@ -2573,6 +2573,9 @@ function writeMatchSnapshot(date, data) {
       savedAt: Date.now(),
       matches: data.matches || [],
       refreshedAt: data.refreshedAt || new Date().toISOString(),
+      stale: Boolean(data.stale),
+      warning: data.warning || '',
+      retryAfter: Number(data.retryAfter || 0),
       catalog: data.catalog || {},
       integrity: data.integrity || null,
     }));
@@ -2607,7 +2610,8 @@ async function loadMatches(options = {}) {
   const labels = { '-1': 'Матчи вчера', '0': 'Матчи сегодня', '1': 'Матчи завтра' };
   $('matchesTitle').textContent = labels[String(state.offset)] || 'Матчи';
 
-  const snapshot = !force ? readMatchSnapshot(date) : null;
+  const fallbackSnapshot = readMatchSnapshot(date);
+  const snapshot = !force ? fallbackSnapshot : null;
   const canReuseCurrent = Boolean(state.matches.length && state.matchesMeta?.date === date);
 
   if (snapshot && !canReuseCurrent) {
@@ -2639,16 +2643,29 @@ async function loadMatches(options = {}) {
     if (seq !== state.matchesLoadSeq) return;
     sendActionError('matches', e, 'matchesView');
     const retry = Number(e.payload?.retryAfter || 0);
-    if (state.matches.length && (snapshot || state.matchesMeta?.date === date)) {
+    const category = apiErrorCategory(e);
+    const staleWarning = category === 'rate_limit'
+      ? 'Источник матчей временно ограничил обновления. Показана последняя сохранённая версия.'
+      : 'Не удалось обновить данные. Показана последняя сохранённая версия.';
+    if (state.matches.length && state.matchesMeta?.date === date) {
       state.matchesMeta.stale = true;
       state.matchesMeta.refreshing = false;
-      state.matchesMeta.warning = e.message || 'Не удалось обновить данные. Показана последняя сохранённая версия.';
+      state.matchesMeta.warning = staleWarning;
       state.matchesMeta.retryAfter = retry;
       renderMatches();
       $('matches')?.setAttribute('aria-busy', 'false');
       return;
     }
-    const category = apiErrorCategory(e);
+    if (Array.isArray(fallbackSnapshot?.matches) && fallbackSnapshot.matches.length) {
+      applyMatchPayload({
+        ...fallbackSnapshot,
+        stale:true,
+        warning:staleWarning,
+        retryAfter:retry,
+      }, { snapshot:true, refreshing:false });
+      state.matchesMeta.date = date;
+      return;
+    }
     const publicMessage = category === 'rate_limit'
       ? 'Источник матчей временно занят. Попробуйте ещё раз чуть позже.'
       : (e.message || 'Не удалось обновить матчи.');
