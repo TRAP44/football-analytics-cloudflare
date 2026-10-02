@@ -30,7 +30,29 @@ function sameRequestOrigin(request, origin) {
   }
 }
 
-export function preAuthRequestShapeDecision(request, {
+async function bodyWithinLimit(request, maxBytes) {
+  if (!request?.body) return true;
+  let reader;
+  try {
+    reader=request.clone().body?.getReader?.();
+    if (!reader) return true;
+    let total=0;
+    while (true) {
+      const {done,value}=await reader.read();
+      if (done) return true;
+      total+=Number(value?.byteLength || value?.length || 0);
+      if (total>maxBytes) {
+        await reader.cancel().catch(()=>{});
+        return false;
+      }
+    }
+  } catch {
+    try { await reader?.cancel?.(); } catch {}
+    return false;
+  }
+}
+
+export async function preAuthRequestShapeDecision(request, {
   api=false,
   webhook=false,
 } = {}) {
@@ -42,6 +64,9 @@ export function preAuthRequestShapeDecision(request, {
     }
     const length=declaredContentLength(request);
     if (length!==null && length>MAX_TELEGRAM_WEBHOOK_BODY_BYTES) {
+      return { allowed:false, status:413, code:'REQUEST_TOO_LARGE', error:'Запрос слишком большой.' };
+    }
+    if (length===null && !(await bodyWithinLimit(request,MAX_TELEGRAM_WEBHOOK_BODY_BYTES))) {
       return { allowed:false, status:413, code:'REQUEST_TOO_LARGE', error:'Запрос слишком большой.' };
     }
     const contentType=headerValue(request,'content-type').toLowerCase();
@@ -65,6 +90,9 @@ export function preAuthRequestShapeDecision(request, {
   if (UNSAFE_METHODS.has(method)) {
     const length=declaredContentLength(request);
     if (length!==null && length>MAX_API_BODY_BYTES) {
+      return { allowed:false, status:413, code:'REQUEST_TOO_LARGE', error:'Запрос слишком большой.' };
+    }
+    if (length===null && !(await bodyWithinLimit(request,MAX_API_BODY_BYTES))) {
       return { allowed:false, status:413, code:'REQUEST_TOO_LARGE', error:'Запрос слишком большой.' };
     }
 
