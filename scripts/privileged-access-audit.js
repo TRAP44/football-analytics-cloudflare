@@ -9,6 +9,7 @@ export const WORKFLOW_SECRET_ALLOWLIST = Object.freeze({
   '.github/workflows/external-production-monitor.yml': new Set(),
   '.github/workflows/quality.yml': new Set(),
   '.github/workflows/codeql.yml': new Set(),
+  '.github/workflows/privileged-access-audit.yml': new Set(),
 });
 
 const SECRET_NAME_PATTERN = /(TOKEN|SECRET|PASSWORD|PASSPHRASE|PRIVATE|SERVICE_ROLE|DB_URL|API_KEY)/i;
