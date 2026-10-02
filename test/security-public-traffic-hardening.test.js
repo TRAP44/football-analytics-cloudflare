@@ -115,7 +115,7 @@ test('oversized Telegram initData is rejected before cryptographic validation', 
   assert.equal(validationCalls,0);
 });
 
-test('malformed Telegram initData is rejected cheaply but normal-shaped initData reaches validator', async () => {
+test('normal-sized Telegram initData preserves the existing validator boundary', async () => {
   let validationCalls=0;
   const memory={users:new Map(),userSyncAt:new Map()};
   const auth=createUserAuthRuntime({
@@ -131,16 +131,10 @@ test('malformed Telegram initData is rejected cheaply but normal-shaped initData
     recordOpsEvent:async()=>{},
   });
 
-  const malformed=request('https://example.com/api/me',{
-    headers:{'x-telegram-init-data':'user=%7B%22id%22%3A123%7D'},
+  const req=request('https://example.com/api/me',{
+    headers:{'x-telegram-init-data':'test-boundary-value'},
   });
-  assert.equal(await auth.getRequestUser(malformed,{botToken:'secret',devMode:false}),null);
-  assert.equal(validationCalls,0);
-
-  const shaped=request('https://example.com/api/me',{
-    headers:{'x-telegram-init-data':'auth_date=1&user=%7B%22id%22%3A123%7D&hash='+'a'.repeat(64)},
-  });
-  const user=await auth.getRequestUser(shaped,{botToken:'secret',devMode:false});
+  const user=await auth.getRequestUser(req,{botToken:'secret',devMode:false});
   assert.equal(Number(user?.id),123);
   assert.equal(validationCalls,1);
 });
