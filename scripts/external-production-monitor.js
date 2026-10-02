@@ -17,6 +17,13 @@ function normalizeBaseUrl(value) {
   return String(value || DEFAULT_PRODUCTION_URL).replace(/\/+$/, '');
 }
 
+function escapeMarkdownCell(value) {
+  return String(value ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\|/g, '\\|')
+    .replace(/\r?\n/g, ' ');
+}
+
 function safeObserved(kind, body) {
   if (!body || typeof body !== 'object') return null;
   if (kind === 'live') {
@@ -179,7 +186,7 @@ function toMarkdown(result, attempts) {
   ];
   for (const [name, check] of Object.entries(result.checks)) {
     lines.push(
-      `| ${name} | ${check.statusCode || 'network'} | ${check.elapsedMs} ms | ${check.passed ? (check.warning ? 'WARNING' : 'PASS') : 'FAIL'} | ${String(check.reason || '').replace(/\|/g, '\\|')} |`
+      `| ${name} | ${check.statusCode || 'network'} | ${check.elapsedMs} ms | ${check.passed ? (check.warning ? 'WARNING' : 'PASS') : 'FAIL'} | ${escapeMarkdownCell(check.reason)} |`
     );
   }
   return `${lines.join('\n')}\n`;
