@@ -585,6 +585,11 @@ async function inspectEdgeCaseFixture(cdp, width, theme) {
       };
     })()`,
   });
+  if (evaluated?.exceptionDetails) {
+    const detail = evaluated.exceptionDetails;
+    const description = detail.exception?.description || detail.exception?.value || detail.text || 'unknown runtime exception';
+    throw new Error(`QA fixture evaluation failed: ${description}`);
+  }
   return evaluated?.result?.value || null;
 }
 
