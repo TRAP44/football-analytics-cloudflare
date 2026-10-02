@@ -144,3 +144,38 @@ test('360-400px mobile layout keeps score status teams and title stable',()=>{
   assert.match(css,/@media \(max-width: 430px\)/);
   assert.match(css,/@media \(max-width: 380px\)/);
 });
+
+
+test('Match Center keeps partial provider blocks independent and renderable',()=>{
+  const render=block(app,'function renderMatchCenter','async function openMatchCenter');
+  assert.match(render,/centerKeyStatsHtml\(d\.statistics\)/);
+  assert.match(render,/timelineEventsHtml\(d\.events, m\)/);
+  assert.match(render,/centerAllStatsHtml\(d\.statistics\)/);
+  assert.match(render,/lineupLiveHtml\(d\.lineups, m\)/);
+  assert.match(render,/centerPlayersHtml\(d\.playerLeaders, m\)/);
+  assert.match(render,/centerMarketHtml\(d\)/);
+  assert.match(render,/d\.cached \? 'Данные из сохранённой версии' : 'Свежие данные источника'/);
+
+  const market=block(app,'function centerMarketHtml','function centerAbsenceSummary');
+  assert.match(market,/if \(!d\.liveOdds\) return/);
+  assert.match(market,/Коэффициенты П1 \/ Н \/ П2 в реальном времени сейчас недоступны/);
+
+  const lineups=block(app,'function lineupLiveHtml','async function requestMatchCenter');
+  assert.match(lineups,/if \(!home && !away\) return/);
+  assert.match(lineups,/Составы не опубликованы или не входят в покрытие турнира/);
+});
+
+test('Match Center preserves the originating view across degraded provider failure',()=>{
+  const open=block(app,'async function openMatchCenter','function syncAnalysisBusyUi');
+  assert.match(open,/const sourceView = activeViewId\(\)/);
+  assert.match(open,/state\.analysisBackView = sourceView/);
+  assert.match(open,/showView\('analysisView'\)/);
+  assert.match(open,/\['rate_limit','provider'\]\.includes\(category\)/);
+  assert.match(open,/showView\(sourceView, \{ restore:true \}\)/);
+
+  const request=block(app,'async function requestMatchCenter','function isActiveLiveFixture');
+  assert.match(request,/const existing=state\.matchCenterInFlight\.get\(key\)/);
+  assert.match(request,/if \(existing\)/);
+  assert.match(request,/state\.matchCenterInFlight\.set\(key,task\)/);
+  assert.match(request,/state\.matchCenterInFlight\.delete\(key\)/);
+});
