@@ -772,7 +772,6 @@ html[data-theme="light"] .miniapp-public-shell {
 .miniapp-public-shell .digest-settings-grid > div {
   background: color-mix(in srgb, var(--surface-2) 40%, var(--surface));
 }
-.miniapp-public-shell .digest-team-chips span,
 .miniapp-public-shell .smart-notification-plan {
   border-color: var(--mr-line-soft);
   background: color-mix(in srgb, var(--surface-2) 48%, var(--surface));
