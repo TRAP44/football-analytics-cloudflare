@@ -143,7 +143,8 @@ Backup **не восстанавливается автоматически**.
 4. Проверяются внутренние `SHA256SUMS`, `manifest.txt`, `roles.sql`, `schema.sql` и `data.sql`.
 5. Во временном каталоге запускается локальный Supabase stack.
 6. `schema.sql` и `data.sql` восстанавливаются в локальную disposable DB.
-7. SQL acceptance проверяет:
+7. Перед acceptance применяется `scripts/apply-supabase-restore-hardening.sql`: новый/local Supabase target может иметь более широкие default ACL, поэтому restore-процедура явно возвращает `public` к backend-only политике MatchRadar (RLS включён, `anon`/`authenticated` без прямого data access, `service_role` получает только необходимые runtime-права).
+8. SQL acceptance проверяет:
    - наличие ключевых таблиц;
    - включённый RLS;
    - отсутствие прямых table privileges у `anon` и `authenticated` на критических таблицах;
@@ -151,13 +152,13 @@ Backup **не восстанавливается автоматически**.
    - доступ `service_role`;
    - ключевые PK/FK constraints;
    - наличие `backend_schema_fingerprint()`.
-8. Для `users`, `analysis_cache`, `runtime_controls`, `billing_payments` и `user_entitlements` сравнивается количество строк из `data.sql` и восстановленной БД. Сами production row counts в лог не выводятся.
-9. Фиксируются фактические:
+9. Для `users`, `analysis_cache`, `runtime_controls`, `billing_payments` и `user_entitlements` сравнивается количество строк из `data.sql` и восстановленной БД. Сами production row counts в лог не выводятся.
+10. Фиксируются фактические:
    - возраст backup на момент начала drill;
    - время restore + verification;
    - source SHA и workflow run id.
-10. Evidence сохраняется отдельным private Actions artifact на 30 дней.
-11. Локальный Supabase stack и plaintext restore files удаляются в `always()` cleanup.
+11. Evidence сохраняется отдельным private Actions artifact на 30 дней.
+12. Локальный Supabase stack и plaintext restore files удаляются в `always()` cleanup.
 
 Это проверка **disaster-recovery процедуры**, а не production restore. В production backup не восстанавливается автоматически. Любое реальное production-восстановление остаётся отдельной контролируемой операцией после анализа причины инцидента и подтверждения целевой точки восстановления.
 
@@ -183,3 +184,12 @@ Database backup не восстанавливает сами файлы из Sup
 - никаких платных backup add-ons.
 
 Перед публичным запуском с ценными пользовательскими данными пересмотреть переход на Supabase Pro и ежедневные managed backups.
+
+
+### Почему restore включает ACL hardening
+
+Первый фактический drill показал важный DR-риск: production имеет корректный backend-only security contract, но свежий локальный/new-project Supabase target может начинать с более широкими platform default ACL. Поэтому простой replay `schema.sql` + `data.sql` недостаточен как завершённая recovery-процедура.
+
+Обязательный post-restore шаг `scripts/apply-supabase-restore-hardening.sql` повторяет security posture проекта: блокирует прямой доступ `anon`/`authenticated`, включает RLS на public tables, восстанавливает service-role runtime grants и безопасные default privileges. После этого `backend_security_contract()` и `backend_default_acl_contract()` должны возвращать `ok=true`.
+
+Этот шаг применяется только к disposable/new restore target. Production drill не меняет.
