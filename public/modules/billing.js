@@ -90,6 +90,7 @@ export function createBillingModule({
   dateTime,
   reloadProfile,
   openProfile,
+  openPassMatches,
 }) {
   if (!state || typeof elementById !== 'function' || typeof api !== 'function') {
     throw new TypeError('Billing module requires state, elementById and api.');
@@ -210,6 +211,7 @@ export function createBillingModule({
 
   function passButtonCopy(type, product, view) {
     if (busyAction === 'pass:' + type) return 'Открываю Telegram…';
+    if (view.state === 'active' && (type === 'DAY_PASS' || type === 'WEEKEND_PASS')) return 'Выбрать матч';
     if (view.state === 'active') return 'Уже активен';
     if (view.state === 'included') return 'Входит в подписку';
     if (view.state === 'unavailable') return 'Недоступен';
@@ -259,12 +261,16 @@ export function createBillingModule({
       const button = $(key + 'Btn');
       if (button) {
         const request = buildPassPurchaseBody(type, fixtureId);
-        const enabledState = ['available','expired','exhausted','active-other'].includes(view.state);
+        const useActivePass = view.state === 'active'
+          && (type === 'DAY_PASS' || type === 'WEEKEND_PASS')
+          && typeof openPassMatches === 'function';
+        const enabledState = ['available','expired','exhausted','active-other'].includes(view.state) || useActivePass;
+        button.dataset.passAction = useActivePass ? 'use' : 'buy';
         button.disabled = Boolean(
           busyAction || syncing || passLoading
           || !product || product.saleReady === false
-          || !passData.paymentsEnabled || !telegram?.openInvoice
-          || !request || !enabledState
+          || (!useActivePass && (!passData.paymentsEnabled || !telegram?.openInvoice || !request))
+          || !enabledState
         );
         button.textContent = passButtonCopy(type, product, view);
         button.setAttribute('aria-busy', busyAction === 'pass:' + type ? 'true' : 'false');
@@ -690,6 +696,17 @@ export function createBillingModule({
     if (panel) panel.hidden = true;
   }
 
+  function handlePassButton(type) {
+    const normalized = String(type || '').toUpperCase();
+    const key = normalized === 'MATCH_PASS' ? 'matchPass' : normalized === 'DAY_PASS' ? 'dayPass' : 'weekendPass';
+    const button = $(key + 'Btn');
+    if (button?.dataset.passAction === 'use' && typeof openPassMatches === 'function') {
+      openPassMatches(normalized);
+      return;
+    }
+    void buyPass(normalized);
+  }
+
   function bind() {
     if (bound) return;
     bound = true;
@@ -698,9 +715,9 @@ export function createBillingModule({
     $('billingSyncBtn')?.addEventListener('click', () => syncBilling(true));
     $('subscriptionManageBtn')?.addEventListener('click', () => manageSubscription($('subscriptionManageBtn')?.dataset.action || 'cancel'));
     $('quotaUpgradeBtn')?.addEventListener('click', () => { void openPlansFromQuota(); });
-    $('matchPassBtn')?.addEventListener('click', () => { void buyPass('MATCH_PASS'); });
-    $('dayPassBtn')?.addEventListener('click', () => { void buyPass('DAY_PASS'); });
-    $('weekendPassBtn')?.addEventListener('click', () => { void buyPass('WEEKEND_PASS'); });
+    $('matchPassBtn')?.addEventListener('click', () => handlePassButton('MATCH_PASS'));
+    $('dayPassBtn')?.addEventListener('click', () => handlePassButton('DAY_PASS'));
+    $('weekendPassBtn')?.addEventListener('click', () => handlePassButton('WEEKEND_PASS'));
     $('passRefreshBtn')?.addEventListener('click', () => { void loadPassAccess({ force:true }); });
     render();
   }
