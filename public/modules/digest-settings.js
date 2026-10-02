@@ -114,15 +114,7 @@ export function createDigestSettingsModule({
     const settings = normalizeDigestSettingsPayload(model.settings || {});
     const checked = model.pendingEnabled === null ? settings.enabled : Boolean(model.pendingEnabled);
     const summary = digestDeliverySummary({ ...settings, enabled: checked });
-    const teams = settings.favoriteTeams;
     const localDeliveryWindow = digestLocalDeliveryWindow(settings.delivery.hourUtc);
-    const favoriteHint = settings.capabilities.favoritePriority
-      ? 'Любимые команды получают приоритет в серверной подборке.'
-      : 'Любимые команды уже связаны с профилем. Текущий серверный Digest пока отправляет общую подборку без отдельного приоритета по командам.';
-    const teamsHtml = teams.length
-      ? `<div class="digest-team-chips" aria-label="Любимые команды">${teams.map(team => `<span>${escapeHtml(team.teamName)}</span>`).join('')}</div>
-         <small>${escapeHtml(favoriteHint)}</small>`
-      : '<small>Добавьте любимые команды в «Мои команды». Текущий серверный Digest пока использует общую подборку.</small>';
 
     root.innerHTML = `
       <div class="digest-settings-head">
@@ -141,10 +133,6 @@ export function createDigestSettingsModule({
       <div class="digest-settings-grid">
         <div><span>Время доставки</span><strong>${escapeHtml(localDeliveryWindow)}</strong><small>По вашему местному времени · ежедневное фиксированное окно</small></div>
         <div><span>Тариф</span><strong>${escapeHtml(planLabel(settings.plan))}</strong><small>${settings.capabilities.planSpecificContent ? 'Расширенное содержание тарифа подключено.' : 'Используется базовое содержание, доступное текущей серверной доставке.'}</small></div>
-      </div>
-      <div class="digest-favorites">
-        <strong>⭐ Любимые команды</strong>
-        ${teamsHtml}
       </div>
       <p class="tiny digest-time-note">Время пока нельзя изменить вручную. MatchRadar автоматически показывает серверное окно доставки в вашем местном времени.</p>
       ${model.error ? `<p class="digest-inline-error" role="status">${escapeHtml(model.error)}</p>` : ''}

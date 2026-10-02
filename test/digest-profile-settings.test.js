@@ -128,7 +128,7 @@ test('reload keeps last known settings visible when the database read fails', as
   assert.equal(snapshot.settings.plan, 'PREMIUM');
   assert.match(snapshot.error, /База данных/);
   assert.match(root.innerHTML, /База данных временно недоступна/);
-  assert.match(root.innerHTML, /Barcelona/);
+  assert.doesNotMatch(root.innerHTML, /Barcelona|Любимые команды|digest-team-chips|digest-favorites/);
 });
 
 test('initial database error renders recovery state instead of a false disabled subscription', async () => {
@@ -189,6 +189,7 @@ test('Profile surface exposes Russian Digest controls and narrow mobile layouts'
   assert.match(moduleSource, /Получать подборку/);
   assert.match(moduleSource, /По вашему местному времени/);
   assert.doesNotMatch(moduleSource, /07:00–07:55 UTC/);
+  assert.doesNotMatch(moduleSource, /⭐ Любимые команды|digest-favorites|digest-team-chips|Любимые команды уже связаны/);
   assert.match(styles, /@media \(max-width: 430px\)[\s\S]*?\.digest-settings-grid/);
   assert.match(styles, /@media \(max-width: 360px\)[\s\S]*?\.digest-settings-head/);
 });
