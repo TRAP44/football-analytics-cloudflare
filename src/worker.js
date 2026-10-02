@@ -306,7 +306,7 @@ function config(env) {
     passDurations: {
       MATCH_PASS: intEnv(env.MATCH_PASS_DURATION_HOURS, 72),
       DAY_PASS: intEnv(env.DAY_PASS_DURATION_HOURS, 24),
-      WEEKEND_PASS: intEnv(env.WEEKEND_PASS_DURATION_HOURS, 72),
+      WEEKEND_PASS: intEnv(env.WEEKEND_PASS_DURATION_HOURS, 168),
     },
     passUsageLimits: {
       WEEKEND_PASS: intEnv(env.WEEKEND_PASS_USAGE_LIMIT, 0) || null,
