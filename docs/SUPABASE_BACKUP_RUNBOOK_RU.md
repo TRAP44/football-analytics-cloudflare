@@ -130,6 +130,45 @@ Backup **не восстанавливается автоматически**.
 
 Только после проверки принимать отдельное решение о production restore. Restore в production — потенциально разрушительная операция и должен выполняться вручную с отдельным подтверждением.
 
+
+## Изолированный restore drill
+
+После каждого успешного запуска `Backup Supabase` workflow выполняет второй job — **Isolated restore drill**. Он не подключается к production database на запись и не использует `SUPABASE_DB_URL`.
+
+Порядок проверки:
+
+1. Берётся **ровно тот encrypted artifact**, который создан текущим backup run.
+2. Проверяется внешний SHA-256.
+3. Архив расшифровывается только во временный каталог GitHub-hosted runner.
+4. Проверяются внутренние `SHA256SUMS`, `manifest.txt`, `roles.sql`, `schema.sql` и `data.sql`.
+5. Во временном каталоге запускается локальный Supabase stack.
+6. `schema.sql` и `data.sql` восстанавливаются в локальную disposable DB.
+7. SQL acceptance проверяет:
+   - наличие ключевых таблиц;
+   - включённый RLS;
+   - отсутствие прямых table privileges у `anon` и `authenticated` на критических таблицах;
+   - отсутствие неожиданных write privileges у этих ролей в `public`;
+   - доступ `service_role`;
+   - ключевые PK/FK constraints;
+   - наличие `backend_schema_fingerprint()`.
+8. Для `users`, `analysis_cache`, `runtime_controls`, `billing_payments` и `user_entitlements` сравнивается количество строк из `data.sql` и восстановленной БД. Сами production row counts в лог не выводятся.
+9. Фиксируются фактические:
+   - возраст backup на момент начала drill;
+   - время restore + verification;
+   - source SHA и workflow run id.
+10. Evidence сохраняется отдельным private Actions artifact на 30 дней.
+11. Локальный Supabase stack и plaintext restore files удаляются в `always()` cleanup.
+
+Это проверка **disaster-recovery процедуры**, а не production restore. В production backup не восстанавливается автоматически. Любое реальное production-восстановление остаётся отдельной контролируемой операцией после анализа причины инцидента и подтверждения целевой точки восстановления.
+
+### RPO / RTO evidence
+
+- **Observed backup freshness** — фактический возраст конкретного backup в секундах на старте drill.
+- **Measured restore time** — фактическое время от старта disposable Supabase restore до завершения schema/data/security verification.
+- Weekly schedule задаёт текущий backup cadence; перед рискованными production migrations по-прежнему требуется отдельный fresh backup.
+- Эти метрики относятся к техническому восстановлению БД в изолированной среде и не включают DNS, Cloudflare, Telegram или организационное время принятия решения.
+
+
 ## Ограничение Supabase Storage
 
 Database backup не восстанавливает сами файлы из Supabase Storage buckets; база хранит только metadata Storage. Если MatchRadar начнёт хранить пользовательские файлы в Supabase Storage, для объектов Storage нужно добавить отдельный backup-контур.
