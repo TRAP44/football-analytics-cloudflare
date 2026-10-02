@@ -68,6 +68,7 @@ export function createSmartNotificationsModule({
     error: '',
     payload: normalizeSmartNotificationPayload(),
     desired: null,
+    savingPreferences: null,
   };
   let mutationPromise = null;
 
@@ -92,7 +93,7 @@ export function createSmartNotificationsModule({
     }
 
     const normalized = normalizeSmartNotificationPayload(model.payload);
-    const preferences = model.desired || normalized.preferences;
+    const preferences = model.desired || model.savingPreferences || normalized.preferences;
     const caps = normalized.capabilities;
     const paidLabel = caps.smartAlerts ? 'Расширенные уведомления доступны' : 'Расширенные уведомления · PRO';
     root.innerHTML = `
@@ -167,6 +168,7 @@ export function createSmartNotificationsModule({
     while (model.desired) {
       const next = model.desired;
       model.desired = null;
+      model.savingPreferences = next;
       model.saving = true;
       model.error = '';
       render();
@@ -185,6 +187,7 @@ export function createSmartNotificationsModule({
         model.desired = null;
         toast(model.error);
       } finally {
+        model.savingPreferences = null;
         model.saving = false;
         render();
       }
@@ -195,7 +198,7 @@ export function createSmartNotificationsModule({
 
   function updatePreference(key, enabled) {
     if (!Object.hasOwn(DEFAULT_NOTIFICATION_PREFERENCES, key)) return Promise.resolve(model.payload);
-    const current = model.desired || normalizeSmartNotificationPayload(model.payload).preferences;
+    const current = model.desired || model.savingPreferences || normalizeSmartNotificationPayload(model.payload).preferences;
     model.desired = { ...current, [key]: Boolean(enabled) };
     if (!mutationPromise) mutationPromise = drain();
     return mutationPromise;
@@ -210,6 +213,7 @@ export function createSmartNotificationsModule({
         loaded: model.loaded,
         loading: model.loading,
         saving: model.saving,
+        savingPreferences: model.savingPreferences,
         error: model.error,
         payload: model.payload,
       };
