@@ -1964,7 +1964,8 @@ async function ensureBillingModule() {
         reloadProfile: () => loadProfile(),
         openProfile: () => openProfileView(),
       });
-            return billingModule;
+      billingModule.bind();
+      return billingModule;
     });
   }
   return billingModulePromise;
@@ -6655,7 +6656,6 @@ $('profileRemindersBtn')?.addEventListener('click', () => {
 });
 $('myTeamsFindBtn')?.addEventListener('click', () => { showView('matchesView'); setTimeout(() => $('matchSearch')?.focus({ preventScroll:true }), 80); });
 $('homeSearchBtn')?.addEventListener('click', () => { const q=String($('matchSearch')?.value || '').trim(); state.globalSearch.query=q; if ($('globalSearchInput')) $('globalSearchInput').value=q; renderGlobalSearch(); showView('searchView'); if (q) runGlobalSearch(); });
-billingModule.bind();
 $('savePreferencesBtn')?.addEventListener('click', savePreferencesFromUi);
 $('modelQualityRefreshBtn')?.addEventListener('click', () => Promise.allSettled([loadModelQuality(true), loadCalibrationControl(true), loadModelRemediation(true)]));
 $('modelQualityPeriod')?.addEventListener('change', () => loadModelQuality(true));
