@@ -55,10 +55,10 @@ test('fixtures are reused from persistent shared caches before provider calls',(
   assert.match(analyze,/loadProviderFixture\(fixtureId,cfg\)/);
 });
 
-test('public match feed uses a provider-valid exact-date fixtures query',()=>{
+test('public match feed uses the shared provider-valid exact-date fixtures loader',()=>{
   const matches=block(worker,'async function apiMatches','function normalizeStandingRow');
-  assert.match(matches,/apiFootball\('\/fixtures',\{date\},cfg\)/);
-  assert.match(matches,/providerFeedDateTtl\(date,cfg\)/);
+  assert.match(matches,/loadProviderFixturesForDate\(date,cfg,\{forceRefresh:true\}\)/);
+  assert.doesNotMatch(matches,/apiFootball\('\/fixtures'/);
   assert.doesNotMatch(matches,/publicFeedDateWindow/);
   assert.doesNotMatch(matches,/\{from:feedWindow\.from,to:feedWindow\.to\}/);
   assert.doesNotMatch(worker,/function publicFeedDateWindow/);
