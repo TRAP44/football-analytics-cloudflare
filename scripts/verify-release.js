@@ -439,7 +439,7 @@ if (!worker.includes("callback_data: `match:verdict:") || !worker.includes("call
 if (!worker.includes("globalTopClubSearch: 'enabled'") || !worker.includes('TOP_TEAM_SEARCH_CATALOG')) failures.push('RC49 global top-club search contract is missing');
 if (!worker.includes('topTeamSearchPlan') || !worker.includes("v2-global")) failures.push('RC49 canonical team-search plan is missing');
 if (!worker.includes("botContentFirstNavigation: 'enabled'") || !worker.includes('sendBotDayMatches') || !worker.includes('sendBotFavoriteTeams')) failures.push('RC49 chat content navigation is missing');
-if (!html.includes('class="miniapp-public-shell"') || !app.includes('const startupTasks = [loadFavorites(), loadMatches()]') || !worker.includes("miniAppPublicShell: 'enabled'")) failures.push('RC49 public Mini App shell contract is missing');
+if (!html.includes('class="miniapp-public-shell"') || !app.includes('const startupTasks = [loadFavorites(), loadMatches({ snapshotFastPath:true })]') || !worker.includes("miniAppPublicShell: 'enabled'")) failures.push('RC49 public Mini App shell contract is missing');
 if (!html.includes('id="navMatches"') || !html.includes('id="navMyTeams"') || !html.includes('id="navHistory"') || !html.includes('id="navProfile"') || html.includes('id="navSearch"')) failures.push('Phase 4 minimal public navigation contract is missing');
 
 if (!worker.includes("fmAiNews: 'enabled'") || !worker.includes("newsSourceLinks: 'enabled'")) failures.push('RC50 FM AI News health contract is missing');
@@ -734,7 +734,7 @@ if (!postDeploySmoke.includes("'supabaseProbeConfirmation'") || !postDeploySmoke
 if (!fs.existsSync('test/phase4-1-public-visual-simplification.test.js')) failures.push('Missing Phase 4.1 public visual simplification regression test');
 if (!fs.existsSync('test/public-match-journey-rc123.test.js')) failures.push('Missing RC123 public match journey regression test');
 if (!html.includes('id="navMatches" class="nav-item active"') || !html.includes('<small>Главная</small>') || !html.includes('id="homeSearchBtn"')) failures.push('Phase 4 home-first public navigation is missing');
-if (!app.includes('const startupTasks = [loadFavorites(), loadMatches()]')) failures.push('RC123 public match feed startup path is missing');
+if (!app.includes('const startupTasks = [loadFavorites(), loadMatches({ snapshotFastPath:true })]')) failures.push('RC123 public match feed startup path is missing');
 if (!viewChrome.includes("matchesView: Object.freeze(['Главная', 'Видим, что меняет матч.'])")) failures.push('Phase 4.1/MatchRadar public Home chrome is missing');
 
 if (!fs.existsSync('test/provider-coverage-transparency-rc124.test.js')) failures.push('Missing RC124 provider coverage transparency regression test');

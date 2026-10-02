@@ -20,7 +20,7 @@ test('startup parallelizes runtime and identity before the access gate',()=>{
   const startup=block('async function runStartupSequence','const api = createApiClient');
   const identityBatch=startup.indexOf('await Promise.allSettled([');
   const blocked=startup.indexOf('if (state.closedBetaBlocked) return false');
-  const publicBatch=startup.indexOf('const startupTasks = [loadFavorites(), loadMatches()]');
+  const publicBatch=startup.indexOf('const startupTasks = [loadFavorites(), loadMatches({ snapshotFastPath:true })]');
   assert.ok(identityBatch>=0 && blocked>identityBatch && publicBatch>blocked);
   const identitySlice=startup.slice(identityBatch,blocked);
   assert.match(identitySlice,/loadRuntimeStatus\(false\)/);
@@ -51,10 +51,22 @@ test('startup profiling separates browser/navigation and server-backed boot phas
   assert.match(telemetry,/event === 'boot_ok'/);
 });
 
+test('repeat startup can finish from a saved match snapshot while refresh continues in background',()=>{
+  const startup=block('async function runStartupSequence','const api = createApiClient');
+  assert.match(startup,/loadMatches\(\{ snapshotFastPath:true \}\)/);
+
+  const matches=block('async function loadMatches','function syncFilterButtons');
+  assert.match(matches,/const snapshotFastPath = Boolean\(options\.snapshotFastPath\)/);
+  assert.match(matches,/const refresh = async \(\) => \{/);
+  assert.match(matches,/if \(snapshotFastPath && snapshot && !force\) \{[\s\S]*void refresh\(\);[\s\S]*return;/);
+  assert.match(matches,/await refresh\(\);/);
+  assert.equal((matches.match(/api\(`\/api\/matches\?date=\$\{date\}`/g) || []).length,1);
+});
+
 test('public feed remains behind access control and admin reminders stay off the boot path',()=>{
   const startup=block('async function runStartupSequence','const api = createApiClient');
   const blocked=startup.indexOf('if (state.closedBetaBlocked) return false');
-  const publicBatch=startup.indexOf('const startupTasks = [loadFavorites(), loadMatches()]');
+  const publicBatch=startup.indexOf('const startupTasks = [loadFavorites(), loadMatches({ snapshotFastPath:true })]');
   assert.ok(blocked>=0 && publicBatch>blocked);
   const batch=startup.slice(publicBatch,startup.indexOf('await Promise.allSettled(startupTasks)',publicBatch));
   assert.doesNotMatch(batch,/loadReminders/);

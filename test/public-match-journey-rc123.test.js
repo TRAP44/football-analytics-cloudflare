@@ -16,7 +16,7 @@ test('RC123 exposes today matches as a public Mini App destination',()=>{
 });
 
 test('RC123 prepares the public match journey during startup',()=>{
-  assert.match(app,/const startupTasks = \[loadFavorites\(\), loadMatches\(\)\]/);
+  assert.match(app,/const startupTasks = \[loadFavorites\(\), loadMatches\(\{ snapshotFastPath:true \}\)\]/);
   assert.match(app,/await Promise\.allSettled\(startupTasks\)/);
   assert.match(app,/if \(\$\('navMatches'\)\) \$\('navMatches'\)\.hidden=false/);
 });

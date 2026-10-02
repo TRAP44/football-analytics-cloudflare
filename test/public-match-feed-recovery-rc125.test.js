@@ -6,7 +6,7 @@ const app=fs.readFileSync('public/app.js','utf8');
 const viewChrome=fs.readFileSync('public/modules/view-chrome.js','utf8');
 
 test('RC125 public match feed starts alongside favorites without admin gating',()=>{
-  assert.match(app,/const startupTasks = \[loadFavorites\(\), loadMatches\(\)\]/);
+  assert.match(app,/const startupTasks = \[loadFavorites\(\), loadMatches\(\{ snapshotFastPath:true \}\)\]/);
   assert.match(app,/if \(\$\('navMatches'\)\) \$\('navMatches'\)\.hidden=false/);
 });
 
