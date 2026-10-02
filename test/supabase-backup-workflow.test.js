@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 const workflow = fs.readFileSync('.github/workflows/backup-supabase.yml', 'utf8');
 const runbook = fs.readFileSync('docs/SUPABASE_BACKUP_RUNBOOK_RU.md', 'utf8');
 const restoreSql = fs.readFileSync('scripts/verify-supabase-restore.sql', 'utf8');
+const restoreHardeningSql = fs.readFileSync('scripts/apply-supabase-restore-hardening.sql', 'utf8');
 
 test('Supabase backup workflow is read-only, pinned, encrypted and fail-closed', () => {
   assert.match(workflow, /workflow_dispatch:/);
@@ -55,6 +56,7 @@ test('Supabase restore drill is isolated, measurable and preserves least privile
   assert.match(workflow, /needs: backup/);
   assert.match(workflow, /gh run download "\$GITHUB_RUN_ID"/);
   assert.match(workflow, /supabase@\$SUPABASE_CLI_VERSION" start/);
+  assert.match(workflow, /apply-supabase-restore-hardening\.sql/);
   assert.match(workflow, /verify-supabase-restore\.sql/);
   assert.match(workflow, /BACKUP_AGE_SECONDS/);
   assert.match(workflow, /RESTORE_SECONDS/);
@@ -72,9 +74,17 @@ test('Supabase restore drill is isolated, measurable and preserves least privile
   assert.match(restoreSql, /has_table_privilege\('service_role'/);
   assert.match(restoreSql, /user_entitlements/);
   assert.match(restoreSql, /backend_schema_fingerprint/);
+  assert.match(restoreSql, /backend_security_contract/);
+  assert.match(restoreSql, /backend_default_acl_contract/);
+
+  assert.match(restoreHardeningSql, /revoke create on schema public from public, anon, authenticated/i);
+  assert.match(restoreHardeningSql, /revoke all privileges on all tables in schema public from public, anon, authenticated/i);
+  assert.match(restoreHardeningSql, /alter default privileges in schema public/i);
+  assert.match(restoreHardeningSql, /grant select, insert, update, delete on all tables in schema public to service_role/i);
 
   assert.match(runbook, /Изолированный restore drill/i);
   assert.match(runbook, /Observed backup freshness/i);
   assert.match(runbook, /Measured restore time/i);
+  assert.match(runbook, /ACL hardening/i);
   assert.match(runbook, /production backup не восстанавливается автоматически/i);
 });

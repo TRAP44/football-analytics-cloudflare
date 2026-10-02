@@ -93,7 +93,25 @@ begin
   if to_regprocedure('public.backend_schema_fingerprint()') is null then
     raise exception 'restore acceptance: backend_schema_fingerprint() is missing';
   end if;
+
+  if to_regprocedure('public.backend_security_contract()') is null then
+    raise exception 'restore acceptance: backend_security_contract() is missing';
+  end if;
+
+  if to_regprocedure('public.backend_default_acl_contract()') is null then
+    raise exception 'restore acceptance: backend_default_acl_contract() is missing';
+  end if;
+
+  if coalesce((public.backend_security_contract()->>'ok')::boolean, false) is not true then
+    raise exception 'restore acceptance: backend_security_contract() failed';
+  end if;
+
+  if coalesce((public.backend_default_acl_contract()->>'ok')::boolean, false) is not true then
+    raise exception 'restore acceptance: backend_default_acl_contract() failed';
+  end if;
 end
-$$;
+$;
 
 select public.backend_schema_fingerprint();
+select public.backend_security_contract();
+select public.backend_default_acl_contract();

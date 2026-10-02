@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/backup-supabase.yml"
       - "scripts/verify-supabase-restore.sql"
+      - "scripts/apply-supabase-restore-hardening.sql"
       - "docs/SUPABASE_BACKUP_RUNBOOK_RU.md"
       - "test/supabase-backup-workflow.test.js"
   schedule:
@@ -355,6 +356,7 @@ jobs:
           set -euo pipefail
           docker cp "$RESTORE_DIR/schema.sql" "$DB_CONTAINER:/tmp/matchradar-schema.sql"
           docker cp "$RESTORE_DIR/data.sql" "$DB_CONTAINER:/tmp/matchradar-data.sql"
+          docker cp "scripts/apply-supabase-restore-hardening.sql" "$DB_CONTAINER:/tmp/apply-supabase-restore-hardening.sql"
           docker cp "scripts/verify-supabase-restore.sql" "$DB_CONTAINER:/tmp/verify-supabase-restore.sql"
 
           docker exec "$DB_CONTAINER" \
@@ -364,6 +366,13 @@ jobs:
           docker exec "$DB_CONTAINER" \
             psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
             -f /tmp/matchradar-data.sql >/dev/null
+
+          # A fresh/local Supabase target can carry broader default ACLs than
+          # production. Restore therefore normalizes public-schema privileges
+          # to MatchRadar's backend-only contract before acceptance checks.
+          docker exec "$DB_CONTAINER" \
+            psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -f /tmp/apply-supabase-restore-hardening.sql >/dev/null
 
           docker exec "$DB_CONTAINER" \
             psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
