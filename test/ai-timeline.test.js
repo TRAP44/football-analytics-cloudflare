@@ -226,8 +226,9 @@ test('AI Timeline integration does not add provider requests and preserves Match
   assert.match(worker,/id: 'ai_timeline_snapshots'/);
 
   const app=fs.readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
-  const pulse=app.indexOf('\${renderMatchPulse(d)}');
-  const timeline=app.indexOf('\${renderAiTimelineCompact(d.aiTimeline || {}, m)}');
+  assert.match(app,/import\('\.\/modules\/ai-timeline\.js'\)/);
+  const pulse=app.indexOf('matchCenterExtras?.renderMatchPulse?.(d)');
+  const timeline=app.indexOf('matchCenterExtras?.renderAiTimelineCompact?.(d.aiTimeline || {}, m)');
   assert.ok(pulse>=0 && timeline>pulse,'AI Timeline must be rendered after existing Match Pulse');
 });
 

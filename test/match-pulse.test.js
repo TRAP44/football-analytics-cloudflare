@@ -144,9 +144,10 @@ test('Match Pulse integration is directly below scoreboard and does not create a
   const start = app.indexOf('function renderMatchCenter');
   const end = app.indexOf('async function openMatchCenter', start);
   const center = app.slice(start, end);
-  assert.match(app, /import \{ renderMatchPulse \} from '\.\/modules\/match-pulse\.js'/);
-  assert.ok(center.indexOf('center-scoreboard') < center.indexOf('\${renderMatchPulse(d)}'));
-  assert.ok(center.indexOf('\${renderMatchPulse(d)}') < center.indexOf('match-center-primary'));
+  assert.match(app, /import\('\.\/modules\/match-pulse\.js'\)/);
+  const pulseRender = center.indexOf('matchCenterExtras?.renderMatchPulse?.(d)');
+  assert.ok(center.indexOf('center-scoreboard') < pulseRender);
+  assert.ok(pulseRender < center.indexOf('match-center-primary'));
   assert.equal((center.match(/data-center-tab="pulse"/g) || []).length, 0);
   assert.doesNotMatch(center, /livePressureHtml\(/);
 });
