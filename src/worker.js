@@ -6,7 +6,7 @@ import { createSharedCacheRuntime } from './cache-runtime.js';
 import { dispatchApiRoute } from './router.js';
 import { createHttpRuntime } from './http.js';
 import { createPreAuthAbuseGuard, preAuthRequestShapeDecision } from './security-gate.js';
-import { isSecurityLockdownControls, runtimeLockdownDecision } from './runtime-lockdown.js';
+import { isSecurityLockdownControls, runtimeLockdownDecision, telegramLockdownDecision } from './runtime-lockdown.js';
 import { assessSecuritySignals, formatSecurityIncidentAlert, securityIncidentOpsEvent, securityIncidentTimeline } from './security-incidents.js';
 import { channelPublisherState, publishChannelMessage } from './channel-publisher.js';
 import {
@@ -8183,6 +8183,25 @@ async function sendLastAiVerdict(request, cfg, userId, chatId) {
   });
 }
 async function processTelegramUpdate(request, cfg, update) {
+  const runtimeState = await loadRuntimeControls(cfg);
+  const lockdown = telegramLockdownDecision(update, { runtime: runtimeState.value });
+  if (lockdown.blocked) {
+    if (update.pre_checkout_query && lockdown.rejectCheckout) {
+      await telegramApi('answerPreCheckoutQuery', cfg, {
+        pre_checkout_query_id: update.pre_checkout_query.id,
+        ok: false,
+        error_message: 'Оплата временно приостановлена аварийным режимом безопасности. Попробуйте позже.',
+      }).catch(() => null);
+    } else if (update.callback_query?.id) {
+      await telegramApi('answerCallbackQuery', cfg, {
+        callback_query_id: update.callback_query.id,
+        text: 'Security Lockdown: действие временно недоступно.',
+        show_alert: true,
+      }).catch(() => null);
+    }
+    return json({ ok: true, securityLockdown: true });
+  }
+
   if (update.pre_checkout_query) {
     const q = update.pre_checkout_query;
     if (!cfg.monetizationEnabled) {

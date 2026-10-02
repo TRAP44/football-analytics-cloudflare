@@ -58,3 +58,20 @@ export function runtimeLockdownDecision(request, { runtime = {}, isAdmin = false
       : 'Аварийный режим безопасности временно перевёл приложение в режим только для чтения.',
   };
 }
+
+
+export function telegramLockdownDecision(update = {}, { runtime = {} } = {}) {
+  if (!isSecurityLockdownControls(runtime)) {
+    return { blocked: false, active: false };
+  }
+
+  if (update?.message?.successful_payment || update?.message?.refunded_payment || update?.subscription) {
+    return { blocked: false, active: true, paymentReconciliation: true };
+  }
+
+  if (update?.pre_checkout_query) {
+    return { blocked: true, active: true, rejectCheckout: true };
+  }
+
+  return { blocked: true, active: true };
+}

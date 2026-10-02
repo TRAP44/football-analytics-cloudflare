@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { isSecurityLockdownControls, runtimeLockdownDecision } from '../src/runtime-lockdown.js';
+import { isSecurityLockdownControls, runtimeLockdownDecision, telegramLockdownDecision } from '../src/runtime-lockdown.js';
 
 const locked = Object.freeze({
   maintenanceMode: true,
@@ -100,4 +100,27 @@ test('worker and admin surface wire lockdown into history, rollback-safe runtime
   assert.match(module, /action: wasSecurityLockdown \? 'update' : 'lockdown'/);
   assert.match(module, /action: 'lockdown_release'/);
   assert.match(module, /LOCKDOWN/);
+});
+
+
+test('Telegram lockdown blocks new actions and checkout but preserves payment/refund reconciliation', () => {
+  assert.equal(telegramLockdownDecision({ pre_checkout_query: { id: 'q1' } }, { runtime: locked }).blocked, true);
+  assert.equal(telegramLockdownDecision({ pre_checkout_query: { id: 'q1' } }, { runtime: locked }).rejectCheckout, true);
+  assert.equal(telegramLockdownDecision({ callback_query: { id: 'cb1' } }, { runtime: locked }).blocked, true);
+  assert.equal(telegramLockdownDecision({ message: { text: '/start' } }, { runtime: locked }).blocked, true);
+  assert.equal(telegramLockdownDecision({ message: { successful_payment: { telegram_payment_charge_id: 'charge' } } }, { runtime: locked }).blocked, false);
+  assert.equal(telegramLockdownDecision({ message: { refunded_payment: { telegram_payment_charge_id: 'charge' } } }, { runtime: locked }).blocked, false);
+  assert.equal(telegramLockdownDecision({ subscription: { state: 'canceled' } }, { runtime: locked }).blocked, false);
+});
+
+test('worker applies Telegram lockdown before checkout, callbacks and bot business routing', () => {
+  const worker = fs.readFileSync('src/worker.js', 'utf8');
+  const start = worker.indexOf('async function processTelegramUpdate');
+  const preCheckout = worker.indexOf('if (update.pre_checkout_query)', start);
+  const callback = worker.indexOf('if (update.callback_query)', start);
+  const boundary = worker.indexOf('telegramLockdownDecision(update', start);
+  assert.ok(start >= 0 && boundary > start);
+  assert.ok(boundary < preCheckout);
+  assert.ok(boundary < callback);
+  assert.match(worker.slice(start, preCheckout), /securityLockdown: true/);
 });
