@@ -10188,7 +10188,7 @@ function postMatchStatValue(statistics = {}, key = '', side = 'home') {
   if (!item) return null;
   const raw=item?.[side];
   if (raw===null || raw===undefined || raw==='') return null;
-  const n=Number(String(raw).replace('%','').replace(',','.'));
+  const n=Number(String(raw).replaceAll('%','').replace(',','.'));
   return Number.isFinite(n) ? n : null;
 }
 
@@ -19161,7 +19161,7 @@ async function tavilySearch(query, cfg) {
 }
 
 function parsePercent(value) {
-  const num = Number(String(value ?? '').replace('%', '').replace(',', '.'));
+  const num = Number(String(value ?? '').replaceAll('%', '').replace(',', '.'));
   return Number.isFinite(num) ? num : null;
 }
 function round1(n) { return Math.round(n * 10) / 10; }
@@ -19220,7 +19220,7 @@ function extractLiveMarket(rows) {
 
 function numericValue(value) {
   if (value === null || value === undefined || value === '') return null;
-  const n = Number(String(value).replace('%', '').replace(',', '.'));
+  const n = Number(String(value).replaceAll('%', '').replace(',', '.'));
   return Number.isFinite(n) ? n : null;
 }
 
@@ -22616,7 +22616,7 @@ function playerStatNumber(value) {
 }
 
 function playerStatNullable(value) {
-  const cleaned = String(value ?? '').replace('%', '').trim();
+  const cleaned = String(value ?? '').replaceAll('%', '').trim();
   if (!cleaned) return null;
   const n = Number(cleaned);
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : null;
