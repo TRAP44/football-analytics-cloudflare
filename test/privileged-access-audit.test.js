@@ -8,6 +8,7 @@ import {
   workflowSecretRefs,
 } from '../scripts/privileged-access-audit.js';
 import {
+  applyReviewedSyntheticFixtureAllowlist,
   parseHistoricalAddedPaths,
   parseHistoricalPatchForSecrets,
 } from '../scripts/security-history-scan.js';
@@ -107,4 +108,46 @@ test('historical patch parser reports secret location but not the matched value'
     type:'telegram_bot_token',
   }]);
   assert.equal(JSON.stringify(parsed).includes(secret),false);
+});
+
+
+test('reviewed synthetic fixture allowlist suppresses only the exact reviewed count', () => {
+  const key='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|test/example.test.js|telegram_bot_token';
+  const finding={
+    commit:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    path:'test/example.test.js',
+    line:10,
+    type:'telegram_bot_token',
+  };
+  const one=applyReviewedSyntheticFixtureAllowlist([finding],{[key]:1});
+  assert.equal(one.reviewed.length,1);
+  assert.equal(one.actionable.length,0);
+
+  const extra=applyReviewedSyntheticFixtureAllowlist([
+    finding,
+    {...finding,line:11},
+  ],{[key]:1});
+  assert.equal(extra.reviewed.length,1);
+  assert.equal(extra.actionable.length,1);
+  assert.equal(extra.actionable[0].line,11);
+});
+
+test('reviewed synthetic fixture allowlist never suppresses another commit or path', () => {
+  const key='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|test/example.test.js|telegram_bot_token';
+  const review=applyReviewedSyntheticFixtureAllowlist([
+    {
+      commit:'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+      path:'test/example.test.js',
+      line:10,
+      type:'telegram_bot_token',
+    },
+    {
+      commit:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      path:'src/example.js',
+      line:10,
+      type:'telegram_bot_token',
+    },
+  ],{[key]:2});
+  assert.equal(review.reviewed.length,0);
+  assert.equal(review.actionable.length,2);
 });
