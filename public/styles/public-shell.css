@@ -3976,8 +3976,6 @@ html {
   .match-pulse-change span{white-space:normal}
 }
 @media(max-width:375px){
-  .match-pulse-teams>span{display:none}
-  .match-pulse-teams{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
   .match-pulse-timeline{grid-template-columns:1fr}
   .match-pulse-timeline>div{grid-template-columns:36px 18px minmax(0,1fr)}
 }
