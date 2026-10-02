@@ -53,7 +53,6 @@ export function createUserAuthRuntime({
     const initData = request.headers.get('x-telegram-init-data') || '';
     const requestUrl = new URL(request.url);
     if (initData.length > MAX_TELEGRAM_INIT_DATA_LENGTH) return null;
-    if (initData && (!initData.includes('hash=') || !initData.includes('auth_date='))) return null;
     const adminSensitive = isAdminSensitivePath(requestUrl.pathname);
     const mutation = !['GET','HEAD','OPTIONS'].includes(String(request.method || 'GET').toUpperCase());
     const initDataMaxAgeSeconds = adminSensitive ? 15 * 60 : mutation ? 2 * 60 * 60 : 24 * 60 * 60;
