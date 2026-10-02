@@ -11,21 +11,21 @@ export const PASS_TYPES = Object.freeze({
 export const DEFAULT_PASS_PRODUCTS = Object.freeze({
   MATCH_PASS: Object.freeze({
     title: 'Match Pass',
-    description: 'Расширенный AI-доступ для одного выбранного матча.',
+    description: 'Полный AI-доступ к одному выбранному матчу.',
     stars: 39,
     durationHours: 72,
   }),
   DAY_PASS: Object.freeze({
     title: 'Day Pass',
-    description: 'Расширенный AI-доступ MatchRadar на 24 часа.',
+    description: 'Полный AI-доступ ко всем поддерживаемым матчам на 24 часа.',
     stars: 89,
     durationHours: 24,
   }),
   WEEKEND_PASS: Object.freeze({
     title: 'Weekend Pass',
-    description: 'Расширенный AI-доступ MatchRadar на футбольный уикенд.',
+    description: 'AI-доступ ко всем поддерживаемым матчам на 7 дней.',
     stars: 149,
-    durationHours: 72,
+    durationHours: 168,
   }),
 });
 

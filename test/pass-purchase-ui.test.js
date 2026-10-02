@@ -23,7 +23,10 @@ test('Weekend Pass stays fail-closed without a usage limit and becomes sale-read
   assert.equal(missing.usageLimit, null);
   assert.equal(configured.saleReady, true);
   assert.equal(configured.usageLimit, 6);
+  assert.equal(configured.durationHours, 168);
+  assert.match(env, /WEEKEND_PASS_DURATION_HOURS=168/);
   assert.match(env, /WEEKEND_PASS_USAGE_LIMIT=6/);
+  assert.equal(wrangler.vars.WEEKEND_PASS_DURATION_HOURS, '168');
   assert.equal(wrangler.vars.WEEKEND_PASS_USAGE_LIMIT, '6');
   assert.equal(wrangler.vars.MONETIZATION_ENABLED, 'true');
   assert.match(env, /MONETIZATION_ENABLED=false/);
@@ -94,6 +97,19 @@ test('Pass purchase reuses Telegram openInvoice sync and duplicate-action guard'
   assert.match(billing, /await loadPassAccess\(\{ fixtureId, force:true \}\)/);
   for (const state of ['paid','pending','cancelled','canceled']) assert.match(billing, new RegExp("value === '"+state+"'"));
   assert.match(billing, /paymentState = 'failed'/);
+});
+
+test('Pass copy states one match one day and seven days without misleading Match duration', () => {
+  assert.match(html, /Один выбранный матч: полный AI-разбор и расширенные данные только для этого матча\./);
+  assert.match(html, /Все поддерживаемые матчи и полный AI-доступ в течение 24 часов\./);
+  assert.match(html, /Все поддерживаемые матчи на 7 дней\. Включено до 6 полных AI-разборов\./);
+  assert.match(billing, /MATCH_PASS: Object\.freeze\(\{ title:'Match Pass', short:'1 матч' \}\)/);
+  assert.match(billing, /DAY_PASS: Object\.freeze\(\{ title:'Day Pass', short:'1 день' \}\)/);
+  assert.match(billing, /WEEKEND_PASS: Object\.freeze\(\{ title:'Weekend Pass', short:'7 дней' \}\)/);
+  assert.match(billing, /if \(type === 'MATCH_PASS'\) return '1 матч'/);
+  assert.match(billing, /if \(type === 'DAY_PASS'\) return '24 часа'/);
+  assert.match(billing, /if \(type === 'WEEKEND_PASS'\) return '7 дней'/);
+  assert.doesNotMatch(billing, /if \(n === 72\) return '72 часа'/);
 });
 
 test('Profile keeps FREE PRO PREMIUM and adds compact Match Day Weekend Pass cards', () => {

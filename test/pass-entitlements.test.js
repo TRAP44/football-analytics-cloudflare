@@ -48,11 +48,13 @@ test('Pass prices keep requested defaults and are server-configurable', () => {
   assert.equal(passProductConfig('MATCH_PASS', {}).stars, 39);
   assert.equal(passProductConfig('DAY_PASS', {}).stars, 89);
   assert.equal(passProductConfig('WEEKEND_PASS', {}).stars, 149);
+  assert.equal(passProductConfig('WEEKEND_PASS', {}).durationHours, 168);
   assert.equal(passProductConfig('DAY_PASS', { passPrices: { DAY_PASS: 99 } }).stars, 99);
   assert.equal(passProductConfig('DAY_PASS', { passDurations: { DAY_PASS: 12 } }).durationHours, 12);
   assert.equal(passProductConfig('WEEKEND_PASS', {}).saleReady, false);
   const weekend = passProductConfig('WEEKEND_PASS', { passUsageLimits: { WEEKEND_PASS: 6 } });
   assert.equal(weekend.usageLimit, 6);
+  assert.equal(weekend.durationHours, 168);
   assert.equal(weekend.saleReady, true);
 });
 
@@ -325,7 +327,9 @@ test('Worker reuses the established billing route/webhook and keeps monetization
   assert.match(worker, /prices: \[\{ label: product\.title, amount: product\.stars \}\]/);
   assert.match(worker, /BILLING_ENTITLEMENT_STORE_UNAVAILABLE/);
   assert.match(worker, /BILLING_PASS_USAGE_LIMIT_REQUIRED/);
+  assert.match(env, /WEEKEND_PASS_DURATION_HOURS=168/);
   assert.match(env, /WEEKEND_PASS_USAGE_LIMIT=/);
+  assert.match(worker, /WEEKEND_PASS: intEnv\(env\.WEEKEND_PASS_DURATION_HOURS, 168\)/);
   assert.match(router, /url\.pathname === '\/api\/entitlements'/);
   assert.match(router, /url\.pathname === '\/api\/billing\/invoice'/);
   assert.match(router, /if \(!cfg\.monetizationEnabled\) return json/);

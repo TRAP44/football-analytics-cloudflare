@@ -5,6 +5,7 @@ import {
   CLIENT_VERSION,
   CLIENT_API_CONTRACT,
   CLIENT_RELEASE_CHANNEL,
+  FRONTEND_ASSET_REVISION,
   SUPABASE_SCHEMA_HINT,
   DEFAULT_UI_PREFERENCES,
   readUiPreferences,
@@ -16,6 +17,7 @@ test('frontend runtime centralizes stable client identity', () => {
   assert.equal(CLIENT_VERSION, '6.120.0-rc144');
   assert.equal(CLIENT_API_CONTRACT, 5);
   assert.equal(CLIENT_RELEASE_CHANNEL, 'rc144');
+  assert.equal(FRONTEND_ASSET_REVISION, '6.120.0-launch41');
   assert.match(SUPABASE_SCHEMA_HINT, /baseline v6\.19/);
   assert.ok(SUPABASE_SCHEMA_HINT.includes(`миграции до v${releaseContract.productionSchema}`));
 });
