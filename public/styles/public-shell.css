@@ -248,6 +248,11 @@ html {
 .team-tab {
   min-height: 40px;
 }
+.standing-team.team-open-link {
+  min-height: 44px;
+  box-sizing: border-box;
+  align-items: center;
+}
 .theme-option,
 .button-style-options button {
   min-height: 48px;
@@ -3837,6 +3842,7 @@ html {
   background:color-mix(in srgb,#60a5fa 78%,var(--hint));
 }
 .match-pulse-pressure-values{
+  grid-template-columns:32px minmax(0,1fr) 32px;
   margin-top:6px;
 }
 .match-pulse-pressure-values>strong{
