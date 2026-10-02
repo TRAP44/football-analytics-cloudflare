@@ -121,6 +121,7 @@ const state = {
     lastAutoRecoveryAt: 0,
     consecutiveFailures: 0,
     retryAfter: 0,
+    retryAt: 0,
     category: '',
     message: '',
     hiddenAt: null,
@@ -488,10 +489,12 @@ function sendMatchDataCoverage(data, view = telemetryViewName()) {
 
 function setNetworkMode(mode, options = {}) {
   const previous = state.network.mode;
+  const retryAfter = Math.max(0, Number(options.retryAfter || 0));
   state.network.mode = mode;
   state.network.category = options.category || '';
   state.network.message = options.message || '';
-  state.network.retryAfter = Number(options.retryAfter || 0);
+  state.network.retryAfter = retryAfter;
+  state.network.retryAt = retryAfter > 0 ? Date.now() + retryAfter * 1000 : 0;
   if (mode === 'degraded' && previous !== 'degraded') state.clientPerf.degradedEvents += 1;
   if (mode === 'online' && ['offline', 'degraded', 'recovering'].includes(previous)) {
     state.network.lastRecoveredAt = new Date().toISOString();
@@ -505,6 +508,7 @@ function noteRequestSuccess() {
   state.network.lastSuccessAt = new Date().toISOString();
   state.network.consecutiveFailures = 0;
   state.network.retryAfter = 0;
+  state.network.retryAt = 0;
   if (navigator.onLine !== false && ['degraded', 'recovering'].includes(state.network.mode)) {
     setNetworkMode('online');
   }
@@ -530,6 +534,25 @@ function recoveryCardHtml({ title = 'Не удалось обновить дан
     <div class="recovery-card-copy"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(message || 'Попробуйте ещё раз.')}</span></div>
     ${retryId ? `<button id="${escapeHtml(retryId)}" class="secondary-btn recovery-retry-btn" type="button">Повторить</button>` : ''}
   </div>`;
+}
+
+function bindCooldownRetry(button, retryAfterSeconds = 0, onRetry = null) {
+  if (!button || typeof onRetry !== 'function') return;
+  const retryAt = Date.now() + Math.max(0, Number(retryAfterSeconds || 0)) * 1000;
+  let timer = null;
+  const sync = () => {
+    const remaining = retryAt > Date.now() ? Math.max(1, Math.ceil((retryAt - Date.now()) / 1000)) : 0;
+    button.disabled = remaining > 0;
+    button.textContent = remaining > 0 ? `Повторить через ${remaining} с` : 'Повторить';
+    clearTimeout(timer);
+    if (remaining > 0) timer = setTimeout(sync, Math.min(1000, remaining * 1000));
+  };
+  button.addEventListener('click', () => {
+    if (button.disabled) return;
+    clearTimeout(timer);
+    onRetry();
+  }, { once:true });
+  sync();
 }
 
 async function recoverActiveView({ automatic = false } = {}) {
@@ -2667,10 +2690,14 @@ async function loadMatches(options = {}) {
       return;
     }
     const publicMessage = category === 'rate_limit'
-      ? 'Источник матчей временно занят. Попробуйте ещё раз чуть позже.'
-      : (e.message || 'Не удалось обновить матчи.');
+      ? 'Источник матчей временно занят. Новая попытка станет доступна после короткой паузы.'
+      : friendlyErrorMessage(e);
     $('matches').innerHTML = `<div class="empty error-state"><strong>Матчи сейчас не обновились</strong><span>${escapeHtml(publicMessage)}</span><button id="matchesRetryBtn" class="secondary-btn" type="button">Повторить</button></div>`;
-    $('matchesRetryBtn')?.addEventListener('click', () => loadMatches({ force: true }));
+    bindCooldownRetry(
+      $('matchesRetryBtn'),
+      category === 'rate_limit' ? retry : 0,
+      () => loadMatches({ force: true }),
+    );
     $('matches')?.setAttribute('aria-busy', 'false');
   }
 }
@@ -6454,10 +6481,13 @@ function updateConnectionBanner() {
 
   if (navigator.onLine === false) state.network.mode = 'offline';
   const mode = state.network.mode || 'online';
+  const retryAt = Number(state.network.retryAt || 0);
+  const retryRemaining = retryAt > Date.now() ? Math.max(1, Math.ceil((retryAt - Date.now()) / 1000)) : 0;
+  clearTimeout(updateConnectionBanner.retryTimer);
   banner.className = `connection-banner ${mode}`;
-  retry.hidden = !['offline','degraded'].includes(mode)
-    || navigator.onLine === false
-    || (state.network.category === 'rate_limit' && Number(state.network.retryAfter || 0) > 0);
+  retry.hidden = !['offline','degraded'].includes(mode) || navigator.onLine === false;
+  retry.disabled = false;
+  retry.textContent = 'Повторить';
 
   if (mode === 'offline') {
     banner.hidden = false;
@@ -6481,9 +6511,19 @@ function updateConnectionBanner() {
     title.textContent = state.network.category === 'rate_limit'
       ? 'Обновления временно на паузе'
       : 'Часть данных обновляется медленнее';
-    text.textContent = state.network.category === 'rate_limit'
-      ? 'Показываем уже загруженные матчи и снимки.'
-      : (state.network.message || 'Сохранённые данные останутся доступны.');
+    if (state.network.category === 'rate_limit') {
+      retry.hidden = false;
+      retry.disabled = retryRemaining > 0;
+      retry.textContent = retryRemaining > 0 ? `Повторить через ${retryRemaining} с` : 'Повторить';
+      text.textContent = retryRemaining > 0
+        ? `Показываем сохранённые данные. Новая попытка будет доступна через ${retryRemaining} с.`
+        : 'Показываем сохранённые данные. Можно повторить обновление.';
+      if (retryRemaining > 0) {
+        updateConnectionBanner.retryTimer = setTimeout(updateConnectionBanner, Math.min(1000, retryRemaining * 1000));
+      }
+    } else {
+      text.textContent = state.network.message || 'Сохранённые данные останутся доступны.';
+    }
     return;
   }
 

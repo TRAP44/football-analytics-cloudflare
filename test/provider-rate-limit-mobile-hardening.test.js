@@ -85,6 +85,23 @@ test('real provider response headers persist quota evidence without synthetic pr
   assert.match(network,/FOOTBALL_RATE_LIMIT_BODY/);
 });
 
+test('provider cooldown exposes a bounded countdown before manual retry',()=>{
+  const connection=block(app,'function updateConnectionBanner','function noteClientError');
+  assert.match(connection,/retryRemaining/);
+  assert.match(connection,/Повторить через/);
+  assert.match(connection,/retry\.disabled = retryRemaining > 0/);
+  assert.match(connection,/setTimeout\(updateConnectionBanner/);
+
+  const cooldownRetry=block(app,'function bindCooldownRetry','async function recoverActiveView');
+  assert.match(cooldownRetry,/button\.disabled = remaining > 0/);
+  assert.match(cooldownRetry,/Повторить через/);
+
+  const matches=block(app,'async function loadMatches','function syncFilterButtons');
+  assert.match(matches,/bindCooldownRetry/);
+  assert.doesNotMatch(matches,/matchesRetryBtn'\)\?\.addEventListener/);
+  assert.match(matches,/friendlyErrorMessage\(e\)/);
+});
+
 test('client deduplicates match center refreshes and keeps provider cooldown non-blocking',()=>{
   const request=block(app,'async function requestMatchCenter','function isActiveLiveFixture');
   assert.match(request,/matchCenterInFlight/);
