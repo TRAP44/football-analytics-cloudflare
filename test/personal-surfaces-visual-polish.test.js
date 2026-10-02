@@ -39,13 +39,15 @@ test('history polish keeps verified track record and reopen flow intact',()=>{
   assert.match(css,/\.miniapp-public-shell \.history-item\{/);
 });
 
-test('profile polish keeps team management focused in My Teams and preserves reminders preferences and service links',()=>{
+test('profile polish keeps team management focused in My Teams and removes the duplicate reminder list while preserving preferences and service links',()=>{
   const profile=block(html,'<section id="profileView"','<nav class="bottom-nav"');
   for(const token of [
-    'profileFavoriteTeamsBtn','profileRemindersBtn','reminderList','preferences-panel','savePreferencesBtn',
+    'profileFavoriteTeamsBtn','profileRemindersBtn','preferences-panel','savePreferencesBtn',
     'Конфиденциальность','Условия использования',
   ]) assert.ok(profile.includes(token),token);
   assert.ok(!profile.includes('id="favoriteTeams"'),'favoriteTeams duplicate should not remain in Profile');
+  assert.ok(!profile.includes('id="reminderList"'),'duplicate reminder list should not remain in Profile');
+  assert.ok(!profile.includes('Активные напоминания'),'duplicate reminder panel copy should not remain in Profile');
   assert.ok(!profile.includes('profile-data-details'),'technical data drawer should not remain in Profile');
   assert.ok(!profile.includes('Статус сервиса'),'technical status link should not remain in Profile');
   const favoriteFn=block(favoriteTeamsRenderer,'function renderFavoriteTeams','return Object.freeze');
