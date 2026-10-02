@@ -37,12 +37,11 @@ test('fixtures are reused from persistent shared caches before provider calls',(
   assert.match(matches,/staleProviderBatch/);
   assert.match(matches,/providerFallback/);
   assert.match(matches,/cached:true,[\s\S]*stale:true/);
-  assert.match(matches,/providerFeedDateTtl\(date,cfg\)/);
-
   const sharedDateLoader=block(worker,'async function loadProviderFixturesForDate','function providerFixtureDirectCacheKey');
   assert.match(sharedDateLoader,/providerFixtureDateCacheKey\(normalized\)/);
   assert.match(sharedDateLoader,/providerFixtureDateReuses/);
   assert.match(sharedDateLoader,/apiFootball\('\/fixtures',\{date:normalized\},cfg\)/);
+  assert.match(sharedDateLoader,/providerFeedDateTtl\(normalized,cfg\)/);
   assert.equal((worker.match(/apiFootball\('\/fixtures',\s*\{\s*date\s*\}\s*,\s*cfg\)/g) || []).length,0);
 
   const botFixture=block(worker,'async function loadBotFixtureCard','function botFixtureDateTime');
