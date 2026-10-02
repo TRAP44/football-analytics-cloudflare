@@ -49,7 +49,7 @@ function inspectProbability(value) {
   if (typeof value === 'boolean') {
     return { observed:true, valid:false, value:null, reason:'invalid_type' };
   }
-  const raw = typeof value === 'number' ? String(value) : String(value).trim().replace(',', '.').replace('%', '');
+  const raw = typeof value === 'number' ? String(value) : String(value).trim().replace(',', '.').replaceAll('%', '');
   if (!/^\d+(?:\.\d+)?$/.test(raw)) {
     return { observed:true, valid:false, value:null, reason:'invalid_format' };
   }
