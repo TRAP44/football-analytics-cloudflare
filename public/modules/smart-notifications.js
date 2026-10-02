@@ -108,7 +108,7 @@ export function createSmartNotificationsModule({
         <div>
           <span class="profile-zone-kicker">УМНЫЕ УВЕДОМЛЕНИЯ</span>
           <h2>🔔 Уведомления</h2>
-          <p>Только важные изменения. Дубли, мелкие колебания и частые повторения подавляются на сервере.</p>
+          <p>Только важные изменения по матчам, командам и игрокам — без лишних повторов.</p>
         </div>
         <span class="smart-notification-plan ${caps.smartAlerts ? 'is-on' : ''}">${escapeHtml(paidLabel)}</span>
       </div>
@@ -118,7 +118,7 @@ export function createSmartNotificationsModule({
         <i></i>
       </label>
       <details class="smart-notification-details">
-        <summary><span><strong>Что присылать</strong><small>Тонкая настройка по категориям</small></span><b>Настроить</b></summary>
+        <summary><span><strong>Что присылать</strong><small>Выберите нужные категории</small></span><b>Настроить</b></summary>
         <div class="smart-notification-options">
           ${rows.map(([key, title, description]) => {
             const cap = caps.categories[key];
@@ -131,11 +131,6 @@ export function createSmartNotificationsModule({
           }).join('')}
         </div>
       </details>
-      <p class="tiny smart-notification-note">
-        Порог рынка: ${caps.thresholds.marketPp || '—'} п.п. · AI: ${caps.thresholds.aiProbabilityPp || '—'} п.п.${caps.thresholds.aiCooldownMinutes ? ` · пауза между AI-уведомлениями ${caps.thresholds.aiCooldownMinutes} мин` : ''}.
-        ${caps.thresholds.radarConfidence ? `Радар: уверенность ≥ ${caps.thresholds.radarConfidence}/100 и вероятность лидера ≥ ${caps.thresholds.radarOutcomeProbability}%${caps.thresholds.radarCooldownMinutes ? ` · пауза ${caps.thresholds.radarCooldownMinutes} мин` : ''}.` : ''}
-        Доступ к категориям проверяется сервером при каждой доставке.
-      </p>
       ${model.error ? `<p class="digest-inline-error" role="status">${escapeHtml(model.error)}</p>` : ''}
     `;
 
