@@ -18,10 +18,13 @@ export function createAdminRuntimeControlsModule(deps) {
       update: 'Изменение',
       defaults: 'Безопасные настройки',
       rollback: 'Откат',
+      lockdown: 'Security Lockdown',
+      lockdown_release: 'Снятие Lockdown',
     })[String(action || '')] || String(action || 'Изменение');
   }
   
   function runtimeHistorySummary(controls = {}) {
+    if (controls.securityLockdown) return 'SECURITY LOCKDOWN · записи, биллинг, admin mutations и provider fan-out приостановлены';
     const disabled = [];
     if (controls.maintenanceMode) disabled.push('обслуживание');
     if (controls.analysisEnabled === false) disabled.push('анализ');
@@ -172,13 +175,18 @@ export function createAdminRuntimeControlsModule(deps) {
     }
   
     const c = panel.controls || {};
-    badge.className = `runtime-controls-badge ${c.maintenanceMode ? 'maintenance' : 'healthy'}`;
-    badge.textContent = c.maintenanceMode ? 'ОБСЛУЖ.' : 'АКТИВНО';
-    status.textContent = c.maintenanceMode
-      ? 'Режим технического обслуживания включён для обычных пользователей.'
-      : 'Настройки функций активны. Изменения применяются без нового развёртывания.';
+    const securityLockdown = Boolean(c.securityLockdown);
+    badge.className = `runtime-controls-badge ${securityLockdown ? 'blocked' : c.maintenanceMode ? 'maintenance' : 'healthy'}`;
+    badge.textContent = securityLockdown ? 'LOCKDOWN' : c.maintenanceMode ? 'ОБСЛУЖ.' : 'АКТИВНО';
+    status.textContent = securityLockdown
+      ? 'Аварийный Security Lockdown активен: записи, биллинг, admin mutations и provider fan-out приостановлены.'
+      : c.maintenanceMode
+        ? 'Режим технического обслуживания включён для обычных пользователей.'
+        : 'Настройки функций активны. Изменения применяются без нового развёртывания.';
     revision.textContent = `версия ${Number(c.revision || 1)}${c.updatedAt ? ` · ${relativeAge(c.updatedAt)}` : ''}`;
   
+    const lockdownToggle = $('runtimeSecurityLockdownToggle');
+    if (lockdownToggle) lockdownToggle.checked = securityLockdown;
     const map = [
       ['runtimeMaintenanceToggle', 'maintenanceMode'],
       ['runtimeAnalysisToggle', 'analysisEnabled'],
@@ -188,7 +196,12 @@ export function createAdminRuntimeControlsModule(deps) {
       ['runtimeExpandedToggle', 'expandedDataEnabled'],
       ['runtimeAutoSettlementRecoveryToggle', 'autoSettlementRecoveryEnabled'],
     ];
-    for (const [id, key] of map) if ($(id)) $(id).checked = Boolean(c[key]);
+    for (const [id, key] of map) {
+      const el = $(id);
+      if (!el) continue;
+      el.checked = Boolean(c[key]);
+      el.disabled = securityLockdown;
+    }
     if ($('runtimeMessage')) $('runtimeMessage').value = c.message || '';
     renderRuntimeHistory();
     renderAdminOverview();
@@ -218,8 +231,45 @@ export function createAdminRuntimeControlsModule(deps) {
   }
   
   function runtimeControlsPayload() {
+    const current = state.runtimeControlsAdmin?.controls || {};
+    const securityLockdown = runtimeControlsFormValue('runtimeSecurityLockdownToggle', false);
+    const wasSecurityLockdown = Boolean(current.securityLockdown);
+    const typedReason = String($('runtimeChangeReason')?.value || '').trim().slice(0, 240);
+
+    if (securityLockdown) {
+      return {
+        expectedRevision: Number(current.revision || 0),
+        maintenanceMode: true,
+        analysisEnabled: false,
+        searchEnabled: false,
+        liveEnabled: false,
+        remindersEnabled: false,
+        expandedDataEnabled: false,
+        autoSettlementRecoveryEnabled: false,
+        message: String($('runtimeMessage')?.value || '').trim().slice(0, 280),
+        reason: typedReason || 'Аварийный Security Lockdown включён администратором.',
+        action: wasSecurityLockdown ? 'update' : 'lockdown',
+      };
+    }
+
+    if (wasSecurityLockdown) {
+      return {
+        expectedRevision: Number(current.revision || 0),
+        maintenanceMode: false,
+        analysisEnabled: true,
+        searchEnabled: true,
+        liveEnabled: true,
+        remindersEnabled: true,
+        expandedDataEnabled: true,
+        autoSettlementRecoveryEnabled: false,
+        message: '',
+        reason: typedReason || 'Аварийный Security Lockdown снят администратором.',
+        action: 'lockdown_release',
+      };
+    }
+
     return {
-      expectedRevision: Number(state.runtimeControlsAdmin?.controls?.revision || 0),
+      expectedRevision: Number(current.revision || 0),
       maintenanceMode: runtimeControlsFormValue('runtimeMaintenanceToggle', false),
       analysisEnabled: runtimeControlsFormValue('runtimeAnalysisToggle', true),
       searchEnabled: runtimeControlsFormValue('runtimeSearchToggle', true),
@@ -228,7 +278,7 @@ export function createAdminRuntimeControlsModule(deps) {
       expandedDataEnabled: runtimeControlsFormValue('runtimeExpandedToggle', true),
       autoSettlementRecoveryEnabled: runtimeControlsFormValue('runtimeAutoSettlementRecoveryToggle', false),
       message: String($('runtimeMessage')?.value || '').trim().slice(0, 280),
-      reason: String($('runtimeChangeReason')?.value || '').trim().slice(0, 240),
+      reason: typedReason,
       action: 'update',
     };
   }
@@ -244,11 +294,15 @@ export function createAdminRuntimeControlsModule(deps) {
     const disabling = body.maintenanceMode || !body.analysisEnabled || !body.searchEnabled || !body.liveEnabled || !body.remindersEnabled || !body.expandedDataEnabled;
     const enablingAutoRecovery = Boolean(body.autoSettlementRecoveryEnabled) && !Boolean(state.runtimeControlsAdmin?.controls?.autoSettlementRecoveryEnabled);
     if (!options.skipConfirm) {
-      const message = enablingAutoRecovery
-        ? 'Включить автоматическое восстановление результатов? Система сможет один раз в сутки сделать до 5 запросов к источнику данных и изменить только зависшие ожидающие записи с подтверждённым финальным счётом.'
-        : disabling
-          ? 'Применить ограничения сейчас? Они затронут обычных пользователей без нового развёртывания.'
-          : 'Применить настройки функций?';
+      const message = body.action === 'lockdown'
+        ? 'Включить аварийный Security Lockdown? Все пользовательские записи, новые billing/refund/admin mutations, provider fan-out и плановые фоновые задачи будут остановлены. Чтение, health/diagnostics и восстановление останутся доступны.'
+        : body.action === 'lockdown_release'
+          ? 'Снять Security Lockdown и вернуть безопасные стандартные настройки? История режима останется доступна для отката.'
+          : enablingAutoRecovery
+            ? 'Включить автоматическое восстановление результатов? Система сможет один раз в сутки сделать до 5 запросов к источнику данных и изменить только зависшие ожидающие записи с подтверждённым финальным счётом.'
+            : disabling
+              ? 'Применить ограничения сейчас? Они затронут обычных пользователей без нового развёртывания.'
+              : 'Применить настройки функций?';
       if (!window.confirm(message)) return;
     }
   
