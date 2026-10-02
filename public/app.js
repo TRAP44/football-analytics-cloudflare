@@ -878,7 +878,7 @@ async function runStartupSequence() {
   if ($('navMatches')) $('navMatches').hidden=false;
 
   phaseStartedAt = performance.now();
-  const startupTasks = [loadFavorites(), loadMatches()];
+  const startupTasks = [loadFavorites(), loadMatches({ snapshotFastPath:true })];
   await Promise.allSettled(startupTasks);
   state.startup.timings.feedMs = Math.max(0, Math.round(performance.now() - phaseStartedAt));
   void loadFavoritePlayers();
@@ -2628,6 +2628,7 @@ function applyMatchPayload(data, { snapshot = false, refreshing = false } = {}) 
 async function loadMatches(options = {}) {
   const force = Boolean(options.force);
   const silent = Boolean(options.silent);
+  const snapshotFastPath = Boolean(options.snapshotFastPath);
   const seq = ++state.matchesLoadSeq;
   const date = localDate(state.offset);
   const labels = { '-1': 'Матчи вчера', '0': 'Матчи сегодня', '1': 'Матчи завтра' };
@@ -2652,8 +2653,9 @@ async function loadMatches(options = {}) {
     if ($('dataNotice')) $('dataNotice').innerHTML = '';
   }
 
-  try {
-    const data = await api(`/api/matches?date=${date}`, {
+  const refresh = async () => {
+    try {
+      const data = await api(`/api/matches?date=${date}`, {
       timeoutMs: 6500,
       retry: false,
     });
@@ -2700,8 +2702,18 @@ async function loadMatches(options = {}) {
     );
     $('matches')?.setAttribute('aria-busy', 'false');
   }
-}
+  };
 
+  // Repeat launches can paint a recent local snapshot immediately while the
+  // normal network refresh continues in the background. First launch, force
+  // refresh and snapshot misses keep the existing blocking semantics.
+  if (snapshotFastPath && snapshot && !force) {
+    void refresh();
+    return;
+  }
+
+  await refresh();
+}
 function syncFilterButtons() {
   document.querySelectorAll('.filter-btn').forEach(btn => {
     const active = btn.dataset.filter === state.filter;
