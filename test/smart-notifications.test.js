@@ -221,7 +221,8 @@ test('Profile UI is progressive-disclosure and server capabilities drive locked 
   assert.match(moduleSource,/<details class="smart-notification-details">/);
   assert.match(moduleSource,/Мои игроки/);
   assert.match(moduleSource,/AI-сигналы/);
-  assert.match(moduleSource,/Радар: уверенность/);
+  assert.match(moduleSource,/Выберите нужные категории/);
+  assert.doesNotMatch(moduleSource,/Радар: уверенность|Порог рынка|Доступ к категориям проверяется сервером/);
   assert.doesNotMatch(moduleSource,/smartNotificationsUpgradeBtn|Посмотреть PRO/);
   assert.doesNotMatch(moduleSource,/cooldown/);
   assert.doesNotMatch(moduleSource,/Smart Alerts/);
