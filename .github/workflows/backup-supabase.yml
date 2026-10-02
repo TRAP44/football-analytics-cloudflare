@@ -2,12 +2,20 @@ name: Backup Supabase
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/backup-supabase.yml"
+      - "scripts/verify-supabase-restore.sql"
+      - "docs/SUPABASE_BACKUP_RUNBOOK_RU.md"
+      - "test/supabase-backup-workflow.test.js"
   schedule:
     # Weekly while the project is in the current low-volume/free-plan phase.
     # Run off the app's 5-minute/15-minute cron boundaries.
     - cron: "17 2 * * 0"
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -224,3 +232,248 @@ jobs:
             echo "- Automatic cadence: weekly"
             echo "- Run manually before every production migration."
           } >> "$GITHUB_STEP_SUMMARY"
+
+
+  restore_drill:
+    name: Isolated restore drill
+    needs: backup
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    env:
+      SUPABASE_CLI_VERSION: "2.118.0"
+      BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+    steps:
+      - name: Checkout restore contract
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate restore secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${BACKUP_ENCRYPTION_PASSPHRASE:-}" ]]; then
+            echo "Missing production environment secret BACKUP_ENCRYPTION_PASSPHRASE." >&2
+            exit 1
+          fi
+          if [[ "${#BACKUP_ENCRYPTION_PASSPHRASE}" -lt 24 ]]; then
+            echo "BACKUP_ENCRYPTION_PASSPHRASE must contain at least 24 characters." >&2
+            exit 1
+          fi
+          echo "::add-mask::$BACKUP_ENCRYPTION_PASSPHRASE"
+
+      - name: Download exact encrypted backup from this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARTIFACT_DIR="$RUNNER_TEMP/restore-artifact"
+          rm -rf "$ARTIFACT_DIR"
+          mkdir -p "$ARTIFACT_DIR"
+          gh run download "$GITHUB_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "supabase-production-backup-$GITHUB_RUN_ID" \
+            --dir "$ARTIFACT_DIR"
+          test -n "$(find "$ARTIFACT_DIR" -maxdepth 1 -name '*.tar.gz.enc' -print -quit)"
+          test -n "$(find "$ARTIFACT_DIR" -maxdepth 1 -name '*.sha256' -print -quit)"
+          echo "ARTIFACT_DIR=$ARTIFACT_DIR" >> "$GITHUB_ENV"
+
+      - name: Decrypt and verify backup package
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          ENCRYPTED="$(find "$ARTIFACT_DIR" -maxdepth 1 -name '*.tar.gz.enc' -print -quit)"
+          CHECKSUM="$(find "$ARTIFACT_DIR" -maxdepth 1 -name '*.sha256' -print -quit)"
+          EXPECTED_HASH="$(awk '{print $1}' "$CHECKSUM")"
+          ACTUAL_HASH="$(sha256sum "$ENCRYPTED" | awk '{print $1}')"
+          [[ -n "$EXPECTED_HASH" && "$EXPECTED_HASH" == "$ACTUAL_HASH" ]]
+
+          RESTORE_ARCHIVE="$RUNNER_TEMP/matchradar-restore.tar.gz"
+          RESTORE_DIR="$RUNNER_TEMP/matchradar-restore"
+          rm -rf "$RESTORE_DIR" "$RESTORE_ARCHIVE"
+          mkdir -p "$RESTORE_DIR"
+
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 250000 \
+            -in "$ENCRYPTED" \
+            -out "$RESTORE_ARCHIVE" \
+            -pass env:BACKUP_ENCRYPTION_PASSPHRASE
+
+          tar -xzf "$RESTORE_ARCHIVE" -C "$RESTORE_DIR"
+          (
+            cd "$RESTORE_DIR"
+            sha256sum -c SHA256SUMS
+          )
+
+          for required in roles.sql schema.sql data.sql manifest.txt; do
+            test -s "$RESTORE_DIR/$required"
+          done
+
+          SOURCE_SHA="$(sed -n 's/^source_sha=//p' "$RESTORE_DIR/manifest.txt" | head -n 1)"
+          BACKUP_CREATED_AT="$(sed -n 's/^created_at=//p' "$RESTORE_DIR/manifest.txt" | head -n 1)"
+          BACKUP_RUN_ID="$(sed -n 's/^workflow_run_id=//p' "$RESTORE_DIR/manifest.txt" | head -n 1)"
+          [[ "$BACKUP_RUN_ID" == "$GITHUB_RUN_ID" ]]
+          [[ "$SOURCE_SHA" == "$GITHUB_SHA" ]]
+          [[ -n "$BACKUP_CREATED_AT" ]]
+
+          NOW_EPOCH="$(date -u +%s)"
+          BACKUP_EPOCH="$(date -u -d "$BACKUP_CREATED_AT" +%s)"
+          BACKUP_AGE_SECONDS="$((NOW_EPOCH - BACKUP_EPOCH))"
+          (( BACKUP_AGE_SECONDS >= 0 ))
+
+          echo "RESTORE_DIR=$RESTORE_DIR" >> "$GITHUB_ENV"
+          echo "BACKUP_CREATED_AT=$BACKUP_CREATED_AT" >> "$GITHUB_ENV"
+          echo "BACKUP_AGE_SECONDS=$BACKUP_AGE_SECONDS" >> "$GITHUB_ENV"
+          echo "SOURCE_SHA=$SOURCE_SHA" >> "$GITHUB_ENV"
+          rm -f "$RESTORE_ARCHIVE"
+
+      - name: Start isolated local Supabase
+        shell: bash
+        run: |
+          set -euo pipefail
+          RESTORE_STARTED_EPOCH="$(date -u +%s)"
+          RESTORE_STARTED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          LOCAL_PROJECT="$RUNNER_TEMP/supabase-restore-project"
+          rm -rf "$LOCAL_PROJECT"
+          mkdir -p "$LOCAL_PROJECT"
+          cd "$LOCAL_PROJECT"
+
+          npx --yes "supabase@$SUPABASE_CLI_VERSION" init >/dev/null
+          npx --yes "supabase@$SUPABASE_CLI_VERSION" start \
+            -x studio,imgproxy,edge-runtime,logflare,vector,supavisor \
+            >"$RUNNER_TEMP/supabase-restore-start.log" 2>&1
+
+          DB_CONTAINER="$(docker ps --format '{{.Names}}' | grep '^supabase_db_' | head -n 1)"
+          [[ -n "$DB_CONTAINER" ]]
+          echo "DB_CONTAINER=$DB_CONTAINER" >> "$GITHUB_ENV"
+          echo "RESTORE_STARTED_EPOCH=$RESTORE_STARTED_EPOCH" >> "$GITHUB_ENV"
+          echo "RESTORE_STARTED_AT=$RESTORE_STARTED_AT" >> "$GITHUB_ENV"
+
+      - name: Restore schema and data into isolated database
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker cp "$RESTORE_DIR/schema.sql" "$DB_CONTAINER:/tmp/matchradar-schema.sql"
+          docker cp "$RESTORE_DIR/data.sql" "$DB_CONTAINER:/tmp/matchradar-data.sql"
+          docker cp "scripts/verify-supabase-restore.sql" "$DB_CONTAINER:/tmp/verify-supabase-restore.sql"
+
+          docker exec "$DB_CONTAINER" \
+            psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -f /tmp/matchradar-schema.sql >/dev/null
+
+          docker exec "$DB_CONTAINER" \
+            psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -f /tmp/matchradar-data.sql >/dev/null
+
+          docker exec "$DB_CONTAINER" \
+            psql -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -f /tmp/verify-supabase-restore.sql >/dev/null
+
+      - name: Verify restored key-table row-count parity
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          expected_rows() {
+            local table="$1"
+            awk -v table="$table" '
+              BEGIN { in_copy=0; count=0; found=0 }
+              {
+                plain = "^COPY public\\." table "[ (]"
+                quoted = "^COPY \"public\"\\.\"" table "\"[ (]"
+                if ($0 ~ plain || $0 ~ quoted) {
+                  in_copy=1
+                  found=1
+                  next
+                }
+                if (in_copy && $0 == "\\.") {
+                  print count
+                  exit
+                }
+                if (in_copy) count++
+              }
+              END {
+                if (!found) print 0
+              }
+            ' "$RESTORE_DIR/data.sql"
+          }
+
+          for table in users analysis_cache runtime_controls billing_payments user_entitlements; do
+            EXPECTED="$(expected_rows "$table" | tail -n 1)"
+            ACTUAL="$(docker exec "$DB_CONTAINER" \
+              psql -U postgres -d postgres -Atqc "select count(*) from public.$table")"
+            [[ "$EXPECTED" =~ ^[0-9]+$ ]]
+            [[ "$ACTUAL" =~ ^[0-9]+$ ]]
+            if [[ "$EXPECTED" != "$ACTUAL" ]]; then
+              echo "Restored row-count parity failed for $table." >&2
+              exit 1
+            fi
+          done
+
+          echo "Key-table data parity verified without printing production row counts."
+
+      - name: Record measured RTO and backup freshness evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          COMPLETED_EPOCH="$(date -u +%s)"
+          COMPLETED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          RESTORE_SECONDS="$((COMPLETED_EPOCH - RESTORE_STARTED_EPOCH))"
+          EVIDENCE="$RUNNER_TEMP/restore-drill-evidence.json"
+
+          cat > "$EVIDENCE" <<EOF
+          {
+            "product": "MatchRadar",
+            "kind": "supabase_isolated_restore_drill",
+            "workflowRunId": "$GITHUB_RUN_ID",
+            "sourceSha": "$SOURCE_SHA",
+            "backupCreatedAt": "$BACKUP_CREATED_AT",
+            "drillStartedAt": "$RESTORE_STARTED_AT",
+            "drillCompletedAt": "$COMPLETED_AT",
+            "backupAgeSecondsAtDrillStart": $BACKUP_AGE_SECONDS,
+            "restoreAndVerificationSeconds": $RESTORE_SECONDS,
+            "verifiedTables": [
+              "users",
+              "analysis_cache",
+              "runtime_controls",
+              "billing_payments",
+              "user_entitlements"
+            ],
+            "rowCountParityVerified": true,
+            "rlsAndPrivilegeChecksVerified": true,
+            "productionDatabaseWritten": false
+          }
+          EOF
+
+          {
+            echo "### Supabase isolated restore drill passed"
+            echo "- Source SHA: $SOURCE_SHA"
+            echo "- Backup created: $BACKUP_CREATED_AT"
+            echo "- Observed backup age at drill start: $BACKUP_AGE_SECONDS seconds"
+            echo "- Measured isolated restore + verification time: $RESTORE_SECONDS seconds"
+            echo "- Key-table row-count parity: verified (counts intentionally not printed)"
+            echo "- RLS / anon / authenticated / service_role checks: verified"
+            echo "- Production database writes: none"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "EVIDENCE=$EVIDENCE" >> "$GITHUB_ENV"
+
+      - name: Upload restore drill evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: supabase-restore-drill-evidence-${{ github.run_id }}
+          path: ${{ env.EVIDENCE }}
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 6
+
+      - name: Stop isolated local Supabase
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          if [[ -d "$RUNNER_TEMP/supabase-restore-project" ]]; then
+            cd "$RUNNER_TEMP/supabase-restore-project"
+            npx --yes "supabase@$SUPABASE_CLI_VERSION" stop --no-backup >/dev/null 2>&1
+          fi
+          rm -rf "$RUNNER_TEMP/matchradar-restore" "$RUNNER_TEMP/restore-artifact"
