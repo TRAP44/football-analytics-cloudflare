@@ -234,6 +234,17 @@ test('Profile UI is progressive-disclosure and server capabilities drive locked 
 });
 
 
+test('smart notification payload normalization is idempotent for saved switch state', () => {
+  const once = normalizeSmartNotificationPayload({
+    preferences: { notificationPreferences: { enabled:false, match:true, teams:false, players:true, aiRadar:false } },
+    notificationCapabilities: { plan:'FREE', categories:{} },
+  });
+  const twice = normalizeSmartNotificationPayload(once);
+  assert.equal(twice.preferences.enabled, false);
+  assert.equal(twice.preferences.teams, false);
+  assert.equal(twice.preferences.aiRadar, false);
+});
+
 test('master notification switch stays visually toggled while save is in flight', async () => {
   const root = { innerHTML: '', querySelectorAll: () => [] };
   let resolveSave = null;
