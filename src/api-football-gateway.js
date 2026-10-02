@@ -41,8 +41,35 @@ export function createApiFootballGateway({
   }
 
   function isFootballRateLimitError(error) {
-    return ['FOOTBALL_RATE_LIMIT', 'FOOTBALL_COOLDOWN'].includes(String(error?.code || ''))
-      || /too many requests|rate.?limit|requests per minute|лимит запросов/i.test(String(error?.message || ''));
+    return ['FOOTBALL_RATE_LIMIT', 'FOOTBALL_COOLDOWN', 'FOOTBALL_DAILY_RESERVE'].includes(String(error?.code || ''))
+      || /too many requests|rate.?limit|requests per minute|лимит запросов|дневной резерв/i.test(String(error?.message || ''));
+  }
+
+  function secondsUntilUtcDayReset(nowMs = Date.now()) {
+    const now = new Date(nowMs);
+    const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 1, 0);
+    return Math.max(60, Math.ceil((next - nowMs) / 1000));
+  }
+
+  function dailyReserveDecision(options = {}) {
+    const p = memory.provider || {};
+    const plan = String(p.plan || 'UNKNOWN').toUpperCase();
+    if (options.allowDailyReserve === true || plan !== 'FREE') {
+      return { blocked:false, plan, remaining:null, reserve:null, retryAfter:0 };
+    }
+    const remaining = Number(p.dailyRemaining);
+    const updatedAtMs = Date.parse(p.updatedAt || '');
+    const updatedToday = Number.isFinite(updatedAtMs)
+      && new Date(updatedAtMs).toISOString().slice(0,10) === new Date().toISOString().slice(0,10);
+    const reserve = Math.max(1, Number(providerBudgetFloors.FREE?.dailyReserve || 20));
+    const blocked = updatedToday && Number.isFinite(remaining) && remaining <= reserve;
+    return {
+      blocked,
+      plan,
+      remaining:Number.isFinite(remaining) ? remaining : null,
+      reserve,
+      retryAfter:blocked ? secondsUntilUtcDayReset() : 0,
+    };
   }
 
   function footballCooldownRemaining() {
@@ -152,6 +179,38 @@ export function createApiFootballGateway({
     }
 
     await loadSharedProviderState(cfg);
+
+    const dailyReserve = dailyReserveDecision(options);
+    if (dailyReserve.blocked) {
+      const retryAfter = Math.max(60, Number(dailyReserve.retryAfter || 3600));
+      bumpTelemetry('quotaBlocks');
+      phase5ProviderUsage(cfg,'quotaBlocks',1);
+      const now = Date.now();
+      if (now - Number(memory.providerDailyReserveEvidenceAt || 0) >= 5 * 60_000) {
+        memory.providerDailyReserveEvidenceAt = now;
+        await recordOpsEvent(cfg, {
+          severity:'warning',
+          source:'provider',
+          eventType:'quota_guard',
+          code:'PROVIDER_DAILY_RESERVE',
+          message:'API-Football FREE daily reserve is protecting remaining requests.',
+          endpoint:path,
+          meta:{
+            plan:dailyReserve.plan,
+            dailyRemaining:dailyReserve.remaining,
+            dailyReserve:dailyReserve.reserve,
+            retryAfter,
+            disposition:'serve_cache_or_fail_soft',
+          },
+        }).catch(() => null);
+      }
+      throw footballError(
+        'Дневной резерв API-Football включён. До обновления квоты используем сохранённые данные.',
+        'FOOTBALL_DAILY_RESERVE',
+        retryAfter,
+      );
+    }
+
     const cooldown = footballCooldownRemaining();
     if (cooldown > 0) {
       bumpTelemetry('quotaBlocks');
@@ -500,6 +559,8 @@ export function createApiFootballGateway({
     isFootballRateLimitError,
     footballCooldownRemaining,
     freeQuotaHealthy,
+    secondsUntilUtcDayReset,
+    dailyReserveDecision,
     distributedProviderMinuteLimit,
     emergencyProviderMinuteLimit,
     claimEmergencyLocalProviderBudget,

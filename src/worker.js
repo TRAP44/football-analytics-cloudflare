@@ -13582,6 +13582,8 @@ function providerBudgetProfile() {
   const minuteRemaining = Number.isFinite(Number(p.minuteRemaining)) ? Number(p.minuteRemaining) : null;
   const cooldown = providerSnapshot().cooldownActive;
   const paid = ['PRO','ULTRA','MEGA'].includes(plan);
+  const observedDailyLimit = Number.isFinite(Number(p.dailyLimit)) ? Number(p.dailyLimit) : null;
+  const observedMinuteLimit = Number.isFinite(Number(p.minuteLimit)) ? Number(p.minuteLimit) : null;
 
   let mode = paid ? 'expanded' : 'economy';
   if (plan === 'UNKNOWN') mode = 'waiting';
@@ -13594,6 +13596,31 @@ function providerBudgetProfile() {
     (dailyPct !== null && dailyPct <= floors.conserveDailyPct) ||
     (minutePct !== null && minutePct <= floors.conserveMinutePct)
   ) mode = 'conserve';
+
+  const proBaseline = PROVIDER_PLAN_LIMITS.PRO;
+  const broadTrafficReady = Boolean(
+    paid
+    && observedDailyLimit !== null
+    && observedMinuteLimit !== null
+    && observedDailyLimit >= Number(proBaseline.daily || 0)
+    && observedMinuteLimit >= Number(proBaseline.minute || 0)
+    && mode !== 'emergency'
+  );
+  const launchCapacity = {
+    broadTrafficReady,
+    recommendedMode: broadTrafficReady ? 'public' : 'limited_beta',
+    blocker: broadTrafficReady
+      ? ''
+      : plan === 'FREE'
+        ? 'provider_free_plan'
+        : plan === 'UNKNOWN'
+          ? 'provider_quota_unconfirmed'
+          : 'provider_capacity_guard',
+    observedDailyLimit,
+    observedMinuteLimit,
+    protectedDailyReserve: Number(floors.dailyReserve || 0),
+    usableDailyRemaining: dailyRemaining === null ? null : Math.max(0, dailyRemaining - Number(floors.dailyReserve || 0)),
+  };
 
   const label = ({
     waiting: 'Ожидаем квоту',
@@ -13623,6 +13650,7 @@ function providerBudgetProfile() {
     },
     dailyRemainingPct: dailyPct === null ? null : Math.round(dailyPct * 10) / 10,
     liveRefreshSeconds: mode === 'conserve' ? Math.max(60, liveRefreshSeconds()) : mode === 'emergency' ? 90 : liveRefreshSeconds(),
+    launchCapacity,
     counters: {
       api: Number(memory.providerFeatureFetch?.api || 0),
       cache: Number(memory.providerFeatureFetch?.cache || 0),
@@ -13633,12 +13661,14 @@ function providerBudgetProfile() {
       lastUpdatedAt: memory.providerFeatureFetch?.lastUpdatedAt || null,
     },
     note: mode === 'emergency'
-      ? 'Дополнительные запросы обогащения данных блокируются, пока квота не восстановится.'
+      ? 'Защитный резерв активен: новые запросы ограничиваются, а приложение переходит на сохранённые данные.'
       : mode === 'conserve'
         ? 'Часть дополнительных запросов замедлена или пропускается, чтобы сохранить резерв.'
-        : paid
-          ? 'Квота в норме: расширенные данные разрешены с сохранением по функциям.'
-          : 'Бесплатный тариф работает в экономном режиме с приоритетом основных данных матча.',
+        : broadTrafficReady
+          ? 'Квота подходит для публичного трафика по текущему техническому порогу; кэш и защитные лимиты остаются активны.'
+          : plan === 'FREE'
+            ? 'FREE-квота подходит только для ограниченной beta. Широкое продвижение не запускайте до повышения лимита.'
+            : 'Ёмкость источника ещё не подтверждена для широкого публичного трафика.',
   };
 }
 
