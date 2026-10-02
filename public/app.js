@@ -918,6 +918,9 @@ async function ensureDigestSettingsModule() {
         toast,
       });
       return digestSettingsModule;
+    }).catch(error => {
+      digestSettingsModulePromise = null;
+      throw error;
     });
   }
   return digestSettingsModulePromise;
@@ -943,6 +946,9 @@ async function ensureSmartNotificationsModule() {
         toast,
       });
       return smartNotificationsModule;
+    }).catch(error => {
+      smartNotificationsModulePromise = null;
+      throw error;
     });
   }
   return smartNotificationsModulePromise;
@@ -970,6 +976,9 @@ async function ensureMatchCenterExtras() {
         renderAiTimelineDetails: timeline.renderAiTimelineDetails,
       });
       return matchCenterExtras;
+    }).catch(error => {
+      matchCenterExtrasPromise = null;
+      throw error;
     });
   }
   return matchCenterExtrasPromise;
@@ -1573,11 +1582,17 @@ async function openProfileView() {
     return;
   }
   renderProfileAccessState('ready');
-  await Promise.all([
-    ensureBillingModule(),
-    ensureDigestSettingsModule(),
-    ensureSmartNotificationsModule(),
-  ]);
+  try {
+    await Promise.all([
+      ensureBillingModule(),
+      ensureDigestSettingsModule(),
+      ensureSmartNotificationsModule(),
+    ]);
+  } catch (error) {
+    sendActionError('profile_modules', error, 'profileView');
+    renderProfileAccessState('error', 'Не удалось загрузить дополнительные модули профиля. Повторите открытие профиля.');
+    return;
+  }
   renderProfile();
   const lastFixture = Number(state.currentCenter?.match?.fixtureId || state.currentAnalysis?.match?.fixtureId || 0);
   if (lastFixture && $('providerAuditFixtureId') && !$('providerAuditFixtureId').value) $('providerAuditFixtureId').value = String(lastFixture);
@@ -1966,6 +1981,9 @@ async function ensureBillingModule() {
       });
       billingModule.bind();
       return billingModule;
+    }).catch(error => {
+      billingModulePromise = null;
+      throw error;
     });
   }
   return billingModulePromise;
@@ -1979,7 +1997,12 @@ async function loadBilling(...args) {
 }
 function showQuotaPaywall(fixtureId = 0) {
   if (billingModule) return billingModule.showQuotaPaywall(fixtureId);
-  void ensureBillingModule().then(module => module?.showQuotaPaywall(fixtureId));
+  void ensureBillingModule()
+    .then(module => module?.showQuotaPaywall(fixtureId))
+    .catch(error => {
+      sendActionError('billing_ui', error, activeViewId());
+      toast('Не удалось открыть варианты доступа. Повторите попытку.');
+    });
 }
 function showQuotaPaywallForFixture(fixtureId = 0) {
   return showQuotaPaywall(fixtureId);
@@ -1990,8 +2013,13 @@ function hideQuotaPaywall() {
   if (panel) panel.hidden = true;
 }
 async function openPassStoreForFixture(fixtureId = 0) {
-  const module = await ensureBillingModule();
-  return module?.openPassStoreForFixture(fixtureId);
+  try {
+    const module = await ensureBillingModule();
+    return await module?.openPassStoreForFixture(fixtureId);
+  } catch (error) {
+    sendActionError('billing_ui', error, activeViewId());
+    toast('Не удалось открыть Match Pass. Повторите попытку.');
+  }
 }
 
 let adminProviderModule = null;
