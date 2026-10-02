@@ -25,7 +25,7 @@ function parseNumber(value, percent = false) {
   if (!(percent ? /^\d+(?:\.\d+)?%?$/ : /^\d+(?:\.\d+)?$/).test(raw)) {
     return { observed:true, value:null, reason:'invalid_format' };
   }
-  const numeric = Number(raw.replace('%',''));
+  const numeric = Number(raw.replaceAll('%',''));
   return Number.isFinite(numeric)
     ? { observed:true, value:numeric, reason:'ok' }
     : { observed:true, value:null, reason:'not_finite' };
