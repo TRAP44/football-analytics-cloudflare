@@ -8,8 +8,8 @@ import {
   workflowSecretRefs,
 } from '../scripts/privileged-access-audit.js';
 import {
-  parseGitGrep,
   parseHistoricalAddedPaths,
+  parseHistoricalPatchForSecrets,
 } from '../scripts/security-history-scan.js';
 
 test('workflow audit allows only expected production secret references and pinned actions', () => {
@@ -89,14 +89,22 @@ test('history path parser detects forbidden secret files with commit evidence', 
   assert.equal(parsed[0].commit,'0123456789abcdef0123456789abcdef01234567');
 });
 
-test('git grep history parser retains location metadata but not matched secret text', () => {
-  const text='0123456789abcdef0123456789abcdef01234567:src/file.js:14:secret-value-that-must-not-be-reported';
-  const parsed=parseGitGrep(text,'test_secret');
+test('historical patch parser reports secret location but not the matched value', () => {
+  const secret=['123456789',':','A'.repeat(32)].join('');
+  const patch=[
+    '@@COMMIT:0123456789abcdef0123456789abcdef01234567',
+    'diff --git a/src/file.js b/src/file.js',
+    '--- a/src/file.js',
+    '+++ b/src/file.js',
+    '@@ -13,0 +14 @@',
+    '+'+secret,
+  ].join('\n');
+  const parsed=parseHistoricalPatchForSecrets(patch);
   assert.deepEqual(parsed,[{
     commit:'0123456789abcdef0123456789abcdef01234567',
     path:'src/file.js',
     line:14,
-    type:'test_secret',
+    type:'telegram_bot_token',
   }]);
-  assert.doesNotMatch(JSON.stringify(parsed),/secret-value/);
+  assert.equal(JSON.stringify(parsed).includes(secret),false);
 });
