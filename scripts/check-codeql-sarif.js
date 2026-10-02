@@ -22,6 +22,11 @@ function relativeUri(location={}) {
   ).slice(0,240);
 }
 
+function startLine(location={}) {
+  const line=Number(location?.physicalLocation?.region?.startLine || 0);
+  return Number.isSafeInteger(line) && line>0 ? line : null;
+}
+
 const files=walk(target);
 if (!files.length) {
   console.error('CodeQL SARIF gate: no SARIF files found.');
@@ -38,10 +43,12 @@ for (const file of files) {
       const ruleId=String(result.ruleId || result.rule?.id || 'unknown');
       const rule=rules.get(ruleId) || {};
       const level=String(result.level || rule.defaultConfiguration?.level || 'warning');
+      const location=result.locations?.[0] || {};
       findings.push({
         ruleId,
         level,
-        file:relativeUri(result.locations?.[0] || {}),
+        file:relativeUri(location),
+        line:startLine(location),
         message:String(result.message?.text || rule.shortDescription?.text || 'CodeQL finding').replace(/\s+/g,' ').slice(0,240),
       });
     }
@@ -55,7 +62,7 @@ if (!findings.length) {
 
 console.error(`CodeQL SARIF gate: ${findings.length} unsuppressed finding(s).`);
 for (const finding of findings.slice(0,50)) {
-  console.error(`- [${finding.level}] ${finding.ruleId} · ${finding.file} · ${finding.message}`);
+  console.error(`- [${finding.level}] ${finding.ruleId} · ${finding.file}${finding.line ? ':'+finding.line : ''} · ${finding.message}`);
 }
 if (findings.length>50) console.error(`- ... ${findings.length-50} more finding(s)`);
 process.exit(1);
