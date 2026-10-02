@@ -1,10 +1,11 @@
 import { createTelegramWebhookHandler } from './telegram-transport.js';
 import { createApiFootballGateway } from './api-football-gateway.js';
 import { createTelegramDedupeRuntime } from './telegram-dedupe.js';
-import { createUserAuthRuntime } from './auth-user.js';
+import { createUserAuthRuntime, isAdminSensitivePath } from './auth-user.js';
 import { createSharedCacheRuntime } from './cache-runtime.js';
 import { dispatchApiRoute } from './router.js';
 import { createHttpRuntime } from './http.js';
+import { createPreAuthAbuseGuard, preAuthRequestShapeDecision } from './security-gate.js';
 import { channelPublisherState, publishChannelMessage } from './channel-publisher.js';
 import {
   calibrationProfileFingerprint,
@@ -125,6 +126,7 @@ const memory = {
   clientTelemetryDedupe: new Map(),
   inflight: new Map(),
   routeBurst: new Map(),
+  authFailureBurst: new Map(),
   telegramBurst: new Map(),
   telegramUpdateDedupe: new Map(),
   userSyncAt: new Map(),
@@ -165,6 +167,10 @@ const memory = {
     telegramDuplicateUpdates: 0,
     telegramPersistentDuplicateUpdates: 0,
     telegramDedupeFallbacks: 0,
+    securityShapeBlocks: 0,
+    securityCrossOriginBlocks: 0,
+    securityOversizeBlocks: 0,
+    securityInvalidAuthBlocks: 0,
     upstreamTimeouts: 0,
     userSyncSkips: 0,
     memoryPrunes: 0,
@@ -1150,6 +1156,13 @@ function productionSafetySnapshot() {
       timeouts:Number(memory.telemetry?.analysisLockTimeouts || 0),
       failOpen:Number(memory.telemetry?.analysisLockFailOpen || 0),
       policy:distributedAnalysisLockPolicy(),
+    },
+    securityGuard: {
+      invalidAuthBuckets: memory.authFailureBurst.size,
+      invalidAuthBlocked:Number(memory.telemetry?.securityInvalidAuthBlocks || 0),
+      crossOriginBlocked:Number(memory.telemetry?.securityCrossOriginBlocks || 0),
+      oversizeBlocked:Number(memory.telemetry?.securityOversizeBlocks || 0),
+      shapeBlocked:Number(memory.telemetry?.securityShapeBlocks || 0),
     },
     burstGuard: {
       activeBuckets: memory.routeBurst.size,
@@ -24775,6 +24788,20 @@ export default {
     if (ctx?.waitUntil) cfg.waitUntil = promise => ctx.waitUntil(Promise.resolve(promise));
     const url = new URL(request.url);
 
+    const securityShape=await preAuthRequestShapeDecision(request,{
+      api:url.pathname.startsWith('/api/'),
+      webhook:url.pathname==='/telegram/webhook',
+    });
+    if (!securityShape.allowed) {
+      if (securityShape.code==='REQUEST_TOO_LARGE' || securityShape.code==='TELEGRAM_INIT_DATA_TOO_LARGE') bumpTelemetry('securityOversizeBlocks');
+      else if (String(securityShape.code || '').includes('CROSS_')) bumpTelemetry('securityCrossOriginBlocks');
+      else bumpTelemetry('securityShapeBlocks');
+      return json({
+        error:securityShape.error || 'Запрос отклонён.',
+        code:securityShape.code || 'REQUEST_REJECTED',
+      },securityShape.status || 400);
+    }
+
     if (request.method === 'GET' && url.pathname === '/api/public-status') {
       return json(await publicServiceStatus(cfg),200,{'cache-control':'no-store'});
     }
@@ -24805,6 +24832,10 @@ export default {
         visualDesign: 'enabled',
         releaseHardening: 'enabled',
         adminSecurity: 'enabled',
+        preAuthAbuseGuard: 'enabled',
+        crossOriginMutationGuard: 'enabled',
+        requestSizeGuard: 'enabled',
+        telegramInitDataSizeGuard: 'enabled',
         expandedDataReady: 'enabled',
         matchCenter2: 'enabled',
         smartMatchInsights: 'enabled',
@@ -25287,7 +25318,24 @@ export default {
 
     try {
       const user = await getRequestUser(request, cfg);
-      if (!user) return json({ error: 'Откройте мини-приложение внутри Telegram.' }, 401);
+      if (!user) {
+        const abuseGuard=createPreAuthAbuseGuard({
+          memory,
+          bumpTelemetry,
+          recordOpsEvent:event=>recordOpsEvent(cfg,event),
+        });
+        const abuse=await abuseGuard.registerInvalidAuthFailure(request,{
+          adminSensitive:isAdminSensitivePath(url.pathname),
+        });
+        if (abuse.blocked) {
+          return json({
+            error:'Слишком много неуспешных попыток авторизации. Повторите позже.',
+            code:'INVALID_AUTH_BURST',
+            retryAfter:abuse.retryAfter,
+          },429,{'retry-after':String(abuse.retryAfter)});
+        }
+        return json({ error: 'Откройте мини-приложение внутри Telegram.' }, 401);
+      }
 
       const betaAccess = closedBetaAccessDecision(user, cfg);
       if (!betaAccess.allowed) {
