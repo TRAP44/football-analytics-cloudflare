@@ -190,7 +190,7 @@ test('AI Timeline: incorrect input order is corrected and long Russian text is e
   },match);
   assert.equal(model.points[0].capturedAt,'2026-10-01T12:00:00.000Z');
   const html=renderAiTimelineDetails(model,match);
-  assert.doesNotMatch(html,/<script>/);
+  assert.doesNotMatch(html,/<script>/i);
   assert.match(html,/&lt;script&gt;/);
 });
 

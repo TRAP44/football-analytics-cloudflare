@@ -4029,7 +4029,7 @@ function liveAbsencesHtml(absences, match) {
 
 function centerStatNumber(value) {
   if (value === null || value === undefined || value === '') return null;
-  const n = Number(String(value).replace('%','').replace(',','.'));
+  const n = Number(String(value).replaceAll('%','').replace(',','.'));
   return Number.isFinite(n) ? n : null;
 }
 

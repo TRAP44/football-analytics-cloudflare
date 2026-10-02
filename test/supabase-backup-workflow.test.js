@@ -12,7 +12,11 @@ test('Supabase backup workflow is read-only, pinned, encrypted and fail-closed',
   assert.match(workflow, /SUPABASE_DB_URL: \$\{\{ secrets\.SUPABASE_DB_URL \}\}/);
   assert.match(workflow, /BACKUP_ENCRYPTION_PASSPHRASE: \$\{\{ secrets\.BACKUP_ENCRYPTION_PASSPHRASE \}\}/);
   assert.match(workflow, /SUPABASE_CLI_VERSION: "2\.118\.0"/);
-  assert.match(workflow, /\.pooler\.supabase\.com:5432/);
+  assert.match(workflow, /DB_HOST=.*u\.hostname/);
+  assert.match(workflow, /\^\[a-z0-9-\]\+\\\.pooler\\\.supabase\\\.com\$/);
+  assert.match(workflow, /DB_PORT.*5432/);
+  assert.match(workflow, /DB_USER/);
+  assert.match(workflow, /postgres\.\$SUPABASE_PROJECT_REF/);
   assert.match(workflow, /db dump[\s\S]*--role-only/);
   assert.match(workflow, /db dump[\s\S]*schema\.sql/);
   assert.match(workflow, /db dump[\s\S]*--use-copy[\s\S]*--data-only/);
