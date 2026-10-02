@@ -196,9 +196,18 @@ export function createBillingModule({
   }
 
   function passStateCopy(type, view) {
-    if (view.state === 'active' && type === 'MATCH_PASS') return 'Активен для выбранного матча';
+    if (view.state === 'active' && type === 'MATCH_PASS') return 'Активен только для выбранного матча';
+    if (view.state === 'active' && type === 'DAY_PASS') {
+      return view.expiresAt ? 'Все поддерживаемые матчи · до ' + dateTime(view.expiresAt) : 'Все поддерживаемые матчи';
+    }
+    if (view.state === 'active' && type === 'WEEKEND_PASS') {
+      const used = Math.max(0, Number(view.decision?.usageCount || 0));
+      const limit = Math.max(0, Number(view.decision?.usageLimit || 0));
+      const usage = limit > 0 ? ' · использовано ' + used + '/' + limit + ' · осталось ' + Math.max(0, limit - used) : '';
+      return (view.expiresAt ? 'Активен до ' + dateTime(view.expiresAt) : 'Активен') + usage;
+    }
     if (view.state === 'active') return view.expiresAt ? 'Активен до ' + dateTime(view.expiresAt) : 'Активен';
-    if (view.state === 'active-other') return 'Есть Match Pass для матча #' + Number(view.decision?.fixtureId || 0);
+    if (view.state === 'active-other') return 'Есть Match Pass только для матча #' + Number(view.decision?.fixtureId || 0);
     if (view.state === 'expired' && type === 'MATCH_PASS') return 'Match Pass завершён';
     if (view.state === 'expired') return view.expiresAt ? 'Истёк · ' + dateTime(view.expiresAt) : 'Истёк';
     if (view.state === 'exhausted') return 'Пакет использован';
@@ -288,8 +297,15 @@ export function createBillingModule({
       active.innerHTML = visible.length ? visible.map(row => {
         const type = String(row.type || '');
         const title = PASS_META[type]?.title || type;
-        const scope = type === 'MATCH_PASS' && row.fixtureId ? ' · матч №' + Number(row.fixtureId) : '';
-        const usage = row.usageLimit != null ? ' · ' + Number(row.usageCount || 0) + '/' + Number(row.usageLimit) : '';
+        const scope = type === 'MATCH_PASS' && row.fixtureId
+          ? ' · только матч №' + Number(row.fixtureId)
+          : type === 'DAY_PASS'
+            ? ' · все поддерживаемые матчи'
+            : '';
+        const usage = row.usageLimit != null
+          ? ' · использовано ' + Number(row.usageCount || 0) + '/' + Number(row.usageLimit)
+            + ' · осталось ' + Math.max(0, Number(row.usageLimit || 0) - Number(row.usageCount || 0))
+          : '';
         const expiry = type === 'MATCH_PASS' ? '' : (row.expiresAt ? ' · до ' + dateTime(row.expiresAt) : '');
         return '<div class="active-pass-row"><strong>' + title + '</strong><span>' + scope.replace(/^ · /,'') + usage + expiry + '</span></div>';
       }).join('') : '';
