@@ -98,3 +98,20 @@ test('worker executes the Cloudflare guard before request-body/auth gates and ex
   assert.match(worker,/EDGE_RATE_LIMIT_DEGRADED/);
   assert.match(worker,/cloudflareEdgeRateLimits: 'enabled'/);
 });
+
+
+test('obvious scanner paths are routed through Worker before SPA asset fallback', () => {
+  const cfg=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
+  for (const pattern of [
+    '/.env*',
+    '/.git/*',
+    '/wp-*',
+    '/phpmyadmin*',
+    '/vendor/phpunit/*',
+    '/actuator*',
+    '/server-status*',
+    '/cgi-bin/*',
+  ]) {
+    assert.ok(cfg.assets.run_worker_first.includes(pattern), pattern);
+  }
+});

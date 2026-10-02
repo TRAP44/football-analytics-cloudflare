@@ -10,7 +10,15 @@
       "/api/*",
       "/health",
       "/health/*",
-      "/telegram/*"
+      "/telegram/*",
+      "/.env*",
+      "/.git/*",
+      "/wp-*",
+      "/phpmyadmin*",
+      "/vendor/phpunit/*",
+      "/actuator*",
+      "/server-status*",
+      "/cgi-bin/*"
     ]
   },
   "triggers": {
