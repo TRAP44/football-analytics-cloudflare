@@ -6,6 +6,7 @@ import { createSharedCacheRuntime } from './cache-runtime.js';
 import { dispatchApiRoute } from './router.js';
 import { createHttpRuntime } from './http.js';
 import { createPreAuthAbuseGuard, preAuthRequestShapeDecision } from './security-gate.js';
+import { assessSecuritySignals, formatSecurityIncidentAlert, securityIncidentOpsEvent, securityIncidentTimeline } from './security-incidents.js';
 import { channelPublisherState, publishChannelMessage } from './channel-publisher.js';
 import {
   calibrationProfileFingerprint,
@@ -17070,6 +17071,14 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
         destinations:providerAlertDestinations,
       })
     : { action:'none', reason:'read_only_monitor' };
+  const securityAssessment=assessSecuritySignals(source.items,{nowMs:now.getTime(),windowMinutes:15});
+  const securityIncident=securityIncidentTimeline(securityAssessment,source.items,{nowMs:now.getTime()});
+  const securityAlertCandidate=options.record !== false
+    ? planProviderIncidentAlert(securityIncident,providerAlertLedger.items,{
+        nowMs:now.getTime(),
+        destinations:providerAlertDestinations,
+      })
+    : {action:'none',reason:'read_only_monitor'};
   const incidentAlertPersistenceReady = Boolean(providerAlertLedger.persistent && providerAlertContract.ok);
   const releaseRegressionAlertPlan = releaseRegressionAlertCandidate.action === 'send' && !incidentAlertPersistenceReady
     ? {
@@ -17095,6 +17104,14 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
         blockedCandidate:true,
       }
     : digestAlertCandidate;
+  const securityAlertPlan = securityAlertCandidate.action === 'send' && !incidentAlertPersistenceReady
+    ? {
+        ...securityAlertCandidate,
+        action:'none',
+        reason:'persistent_ledger_unavailable',
+        blockedCandidate:true,
+      }
+    : securityAlertCandidate;
   const health = productionMonitorState({
     supabaseOk: supabase.ok,
     schemaOk: schemaDrift.ok,
@@ -17207,6 +17224,16 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
         reason:digestAlertPlan.reason || '',
       },
     },
+    security:{
+      assessment:securityAssessment,
+      incident:securityIncident,
+      alerting:{
+        configured:Boolean(cfg.botToken && (cfg.adminTelegramIds || []).length),
+        persistent:incidentAlertPersistenceReady,
+        nextAction:securityAlertPlan.action === 'send' ? securityAlertPlan.kind : 'none',
+        reason:securityAlertPlan.reason || '',
+      },
+    },
     observability: {
       persistent: Boolean(source.persistent && providerSloSource.persistent),
       providerSloFlush,
@@ -17311,6 +17338,71 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     }
     const releaseAlertEvents=postDeployRegressionAlertOpsEvents(releaseRegressionAlertPlan,delivery);
     await Promise.allSettled(releaseAlertEvents.map(event => recordOpsEvent(cfg,event)));
+  }
+
+  if (options.record !== false && securityIncident.transition) {
+    const securityLifecycleEvent=securityIncidentOpsEvent(securityIncident.transition);
+    if (securityLifecycleEvent) await recordOpsEvent(cfg,securityLifecycleEvent).catch(()=>{});
+  }
+
+  if (options.record !== false && securityAlertPlan.blockedCandidate) {
+    await recordOpsEvent(cfg,{
+      severity:'error',
+      source:'security_alert',
+      eventType:'alert_delivery',
+      code:'SECURITY_INCIDENT_ALERT_PERSISTENCE_FAILED',
+      message:'Persistent alert delivery claim is unavailable; security alert was suppressed.',
+      endpoint:'cron:production-monitor',
+      meta:{
+        incidentId:securityAlertPlan.incidentId || null,
+        alertKind:String(securityAlertPlan.kind || ''),
+        deliveryKey:String(securityAlertPlan.alertKey || securityAlertPlan.deliveryKey || ''),
+        reason:'persistent_ledger_unavailable',
+      },
+    }).catch(()=>{});
+  }
+
+  if (options.record !== false && securityAlertPlan.action === 'send') {
+    let securityDeliveryResult;
+    try {
+      securityDeliveryResult=await deliverOperationalIncidentAlert({
+        plan:securityAlertPlan,
+        text:formatSecurityIncidentAlert(securityAlertPlan),
+        adminTelegramIds:cfg.adminTelegramIds || [],
+        claimDelivery:input => claimProviderIncidentAlertDelivery(cfg,input),
+        finalizeDelivery:input => finalizeProviderIncidentAlertDelivery(cfg,input),
+        sendMessage:(chatId,text) => sendTelegramMessage(chatId,text,cfg),
+        nowMs:now.getTime(),
+      });
+    } catch (error) {
+      securityDeliveryResult={
+        ok:false,
+        outcomes:(securityAlertPlan.targetDeliveries || []).map(target => ({
+          slot:Number(target?.slot),
+          state:'persistence_failure',
+          claimAcquired:false,
+          reason:redactOpsString(error?.message || error,160),
+        })),
+      };
+    }
+    const sent=(securityDeliveryResult.outcomes || []).filter(item => item?.state === 'sent').length;
+    const failed=(securityDeliveryResult.outcomes || []).filter(item => !['sent','duplicate'].includes(item?.state)).length;
+    await recordOpsEvent(cfg,{
+      severity:failed ? 'warning' : 'info',
+      source:'security_alert',
+      eventType:'alert_delivery',
+      code:failed ? 'SECURITY_INCIDENT_ALERT_PARTIAL' : 'SECURITY_INCIDENT_ALERT_SENT',
+      message:failed ? 'Security incident alert delivery had failures.' : 'Security incident alert delivery confirmed.',
+      endpoint:'cron:production-monitor',
+      transitionKey:'security-alert:' + String(securityAlertPlan.alertKey || securityAlertPlan.deliveryKey || ''),
+      meta:{
+        incidentId:securityAlertPlan.incidentId || null,
+        alertKind:String(securityAlertPlan.kind || ''),
+        recipientCount:Number(securityDeliveryResult.recipientCount || 0),
+        sent,
+        failed,
+      },
+    }).catch(()=>{});
   }
 
   if (options.record !== false && providerSloFlush?.ok && providerSloIncident.transition) {
@@ -24801,6 +24893,21 @@ export default {
       if (securityShape.code==='REQUEST_TOO_LARGE' || securityShape.code==='TELEGRAM_INIT_DATA_TOO_LARGE') bumpTelemetry('securityOversizeBlocks');
       else if (String(securityShape.code || '').includes('CROSS_')) bumpTelemetry('securityCrossOriginBlocks');
       else bumpTelemetry('securityShapeBlocks');
+      const minuteBucket=new Date().toISOString().slice(0,16);
+      await recordOpsEvent(cfg,{
+        severity:'warning',
+        source:'security',
+        eventType:'request_guard',
+        code:String(securityShape.code || 'REQUEST_REJECTED'),
+        message:'Public request blocked by the pre-auth security gate.',
+        endpoint:url.pathname,
+        status:Number(securityShape.status || 400),
+        transitionKey:'security-request-guard:' + String(securityShape.code || 'REQUEST_REJECTED') + ':' + minuteBucket,
+        meta:{
+          method:String(request.method || 'GET').toUpperCase(),
+          minuteBucket,
+        },
+      }).catch(()=>{});
       return json({
         error:securityShape.error || 'Запрос отклонён.',
         code:securityShape.code || 'REQUEST_REJECTED',
@@ -24841,6 +24948,8 @@ export default {
         crossOriginMutationGuard: 'enabled',
         requestSizeGuard: 'enabled',
         telegramInitDataSizeGuard: 'enabled',
+        securityAttackMonitoring: 'enabled',
+        securityIncidentAlerts: 'enabled',
         expandedDataReady: 'enabled',
         matchCenter2: 'enabled',
         smartMatchInsights: 'enabled',
