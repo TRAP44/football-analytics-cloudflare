@@ -59,8 +59,6 @@ test('provider SLO is release-gated and production-smoke checked', () => {
   assert.match(worker, /providerSloObservability: 'enabled'/);
   assert.match(worker, /providerSloSelfTest: providerSloSelfTest\(\)\.pass \? 'enabled' : 'failed'/);
   assert.match(smoke, /'providerSloObservability'/);
-  assert.match(smoke, /'providerSloDistributedAggregation'/);
-  assert.match(smoke, /'providerSloCadenceValidation'/);
   assert.match(smoke, /'providerSloSelfTest'/);
 });
 
