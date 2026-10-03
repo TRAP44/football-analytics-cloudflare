@@ -418,7 +418,22 @@ else {
   }
 }
 if (!worker.includes("createScheduledLeaseRuntime") || !worker.includes("claimScheduledJob") || !worker.includes("scheduled_job_leases")) failures.push('Issue #404 scheduled lease integration is incomplete');
-if (!worker.includes("CRON_TASK_DEGRADED") || !worker.includes("dailyScheduledTaskKey")) failures.push('Issue #404 scheduled result/idempotency contract is incomplete');
+if (!worker.includes("CRON_TASK_DEGRADED") || !worker.includes("CRON_TASK_SKIPPED") || !worker.includes("CRON_EXECUTION_SKIPPED") || !worker.includes("dailyScheduledTaskKey")) failures.push('Issue #404 scheduled result/idempotency/observability contract is incomplete');
+
+if (!fs.existsSync('supabase/migrations/supabase_migration_v6_26_1.sql')) failures.push('Missing v6.26.1 scheduled-job lease privilege hardening migration');
+else {
+  const scheduledLeasePrivilegeMigration = fs.readFileSync('supabase/migrations/supabase_migration_v6_26_1.sql','utf8').toLowerCase();
+  for (const marker of [
+    'revoke all privileges on table public.scheduled_job_leases',
+    'revoke truncate, references, trigger',
+    'from service_role',
+    'grant select, insert, update, delete',
+    'to service_role',
+    'revoke execute on function public.claim_scheduled_job(text,text,timestamptz,integer,integer)'
+  ]) {
+    if (!scheduledLeasePrivilegeMigration.includes(marker.toLowerCase())) failures.push(`v6.26.1 scheduled lease privilege migration is missing: ${marker}`);
+  }
+}
 
 if (failures.length) {
   console.error(failures.join('\n'));
