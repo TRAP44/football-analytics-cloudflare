@@ -3,6 +3,7 @@ import {
   notificationCategory,
   smartNotificationDedupeKey,
 } from './smart-notification-policy.js';
+import { inspectMatchEvent } from './event-quality.js';
 
 function asRows(value) {
   return Array.isArray(value) ? value : [];
@@ -145,6 +146,35 @@ function normalizedEventKey(event = {}) {
     Number(event.playerId || 0),
     Number(event.assistPlayerId || 0),
   ].join(':');
+}
+
+export function notificationEventsFromSnapshot(snapshot = {}, { elapsed = null } = {}) {
+  if (snapshot?.trusted !== true || snapshot?.stale === true) return [];
+
+  const sanitized = Array.isArray(snapshot?.sanitizedEvents) ? snapshot.sanitizedEvents : null;
+  const rows = sanitized || asRows(snapshot?.events);
+  const quality = snapshot?.eventQuality && typeof snapshot.eventQuality === 'object'
+    ? snapshot.eventQuality
+    : null;
+  const explicitAllowed = !sanitized && Array.isArray(quality?.displayEventIndices)
+    ? new Set(quality.displayEventIndices.map(Number))
+    : null;
+
+  if (quality?.sourceTrusted === false) return [];
+
+  const seen = new Set();
+  const accepted = [];
+  for (let index = 0; index < rows.length; index += 1) {
+    if (explicitAllowed && !explicitAllowed.has(index)) continue;
+    const event = rows[index] || {};
+    const inspected = inspectMatchEvent(event, { mode:'live', elapsed });
+    if (!inspected.displayValid) continue;
+    const key = normalizedEventKey(event);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    accepted.push(event);
+  }
+  return accepted;
 }
 
 function isGoal(event = {}) {
@@ -411,7 +441,8 @@ export function createSmartNotificationService({
         }
 
         if (snapshot?.trusted === true && snapshot?.stale !== true) {
-          for (const event of asRows(snapshot.events)) {
+          const elapsed = minutesToKickoff < 0 ? Math.max(0, Math.floor(-minutesToKickoff)) : 0;
+          for (const event of notificationEventsFromSnapshot(snapshot, { elapsed })) {
             const basicType = matchEventType(event);
             if (basicType) {
               const eligible = basicType === 'match.goal'
