@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createUserAuthRuntime } from '../src/auth-user.js';
+import { adminSensitivePathInventory, requiresAdminAuthorizationPath } from '../src/security-route-registry.js';
 
 function createRuntime(overrides = {}) {
   const memory={users:new Map(),userSyncAt:new Map()};
@@ -66,36 +67,54 @@ test('Phase 2 auth boundary never creates synthetic admin identity on remote hos
   assert.equal(user,null);
 });
 
-test('Phase 2 auth boundary applies 15-minute freshness to every admin surface',async()=>{
-  const adminPaths=[
+test('Phase 2 auth boundary applies 15-minute freshness from the authoritative route registry',async()=>{
+  const routes=adminSensitivePathInventory();
+  const paths=routes.map(route=>route.path);
+  for (const required of [
     '/api/provider',
-    '/api/provider/budget',
     '/api/runtime-controls',
-    '/api/runtime-controls/rollback',
-    '/api/admin/channel-publisher/test',
+    '/api/admin/billing/refund',
     '/api/diagnostics',
-    '/api/release-readiness',
-    '/api/production-readiness',
     '/api/post-deploy-regression-response',
-    '/api/rc-regression',
-    '/api/release-monitor',
-    '/api/production-monitor',
-    '/api/beta-dashboard',
-    '/api/phase5-dashboard',
-    '/api/launch-funnel',
     '/api/recovery-incident-ack',
-    '/api/reminder-health',
-    '/api/data-integrity',
-    '/api/model-quality',
-    '/api/calibration-control',
     '/api/model-remediation',
     '/api/media-publisher-link',
-  ];
-  for (const path of adminPaths) {
+  ]) {
+    if (required.startsWith('/api/admin/')) {
+      assert.equal(requiresAdminAuthorizationPath(required),true,required);
+    } else {
+      assert.ok(paths.includes(required),required);
+    }
+  }
+
+  for (const route of routes) {
     const rt=createRuntime();
-    await rt.api.getRequestUser(request(path,'GET'),{botToken:'token',devMode:false});
+    await rt.api.getRequestUser(request(route.path,'GET'),{botToken:'token',devMode:false});
+    assert.equal(rt.validationCalls[0],15*60,route.path);
+  }
+
+  for (const path of ['/api/admin/billing/refund','/api/provider/budget','/api/runtime-controls/rollback']) {
+    const rt=createRuntime();
+    await rt.api.getRequestUser(request(path,'POST'),{botToken:'token',devMode:false});
     assert.equal(rt.validationCalls[0],15*60,path);
   }
+
+  for (const nearMiss of ['/api/providerish','/api/adminish/test','/api/runtime-controls-extra','/api/post-deploy-regression-response-extra']) {
+    const rt=createRuntime();
+    await rt.api.getRequestUser(request(nearMiss,'GET'),{botToken:'token',devMode:false});
+    assert.equal(rt.validationCalls[0],24*60*60,nearMiss);
+  }
+});
+
+test('privileged Telegram freshness accepts 900 seconds and rejects 901 seconds',async()=>{
+  let ageSeconds=900;
+  const rt=createRuntime({
+    validateTelegramInitData:async(_data,_token,maxAge)=>ageSeconds<=maxAge ? {id:42,username:'user'} : null,
+  });
+  assert.equal((await rt.api.getRequestUser(request('/api/post-deploy-regression-response','GET'),{botToken:'token',devMode:false}))?.id,42);
+
+  ageSeconds=901;
+  assert.equal(await rt.api.getRequestUser(request('/api/post-deploy-regression-response','GET'),{botToken:'token',devMode:false}),null);
 });
 
 test('Phase 2 auth boundary keeps user persistence fail-soft after valid Telegram auth',async()=>{

@@ -1,34 +1,6 @@
 import { MAX_TELEGRAM_INIT_DATA_LENGTH } from './security-gate.js';
+import { usesStrictTelegramFreshness } from './security-route-registry.js';
 
-const ADMIN_SENSITIVE_PATHS = new Set([
-  '/api/beta-dashboard',
-  '/api/calibration-control',
-  '/api/data-integrity',
-  '/api/diagnostics',
-  '/api/launch-funnel',
-  '/api/media-publisher-link',
-  '/api/model-quality',
-  '/api/model-remediation',
-  '/api/phase5-dashboard',
-  '/api/production-monitor',
-  '/api/production-readiness',
-  '/api/post-deploy-regression-response',
-  '/api/rc-regression',
-  '/api/recovery-incident-ack',
-  '/api/release-monitor',
-  '/api/release-readiness',
-  '/api/reminder-health',
-]);
-
-export function isAdminSensitivePath(pathname = '') {
-  const path = String(pathname || '');
-  return ADMIN_SENSITIVE_PATHS.has(path)
-    || path === '/api/provider'
-    || path.startsWith('/api/provider/')
-    || path === '/api/runtime-controls'
-    || path.startsWith('/api/runtime-controls/')
-    || path.startsWith('/api/admin/');
-}
 
 export function isLocalDevelopmentRequest(requestUrl) {
   const hostname = String(requestUrl?.hostname || '').toLowerCase();
@@ -54,7 +26,7 @@ export function createUserAuthRuntime({
     const initData = request.headers.get('x-telegram-init-data') || '';
     const requestUrl = new URL(request.url);
     if (initData.length > MAX_TELEGRAM_INIT_DATA_LENGTH) return null;
-    const adminSensitive = isAdminSensitivePath(requestUrl.pathname);
+    const adminSensitive = usesStrictTelegramFreshness(requestUrl.pathname);
     const mutation = !['GET','HEAD','OPTIONS'].includes(String(request.method || 'GET').toUpperCase());
     const initDataMaxAgeSeconds = adminSensitive ? 15 * 60 : mutation ? 2 * 60 * 60 : 24 * 60 * 60;
     let user = await validateTelegramInitData(initData, cfg.botToken, initDataMaxAgeSeconds);
