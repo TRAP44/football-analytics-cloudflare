@@ -348,7 +348,7 @@ test('Issue #408 runtime-control failure becomes a controlled result and ops eve
   assert.equal(rt.events.some(event=>event.code==='REMINDER_RUNTIME_CONTROLS_FAILED'),true);
 });
 
-test('Issue #408 audience failure is isolated per batch and other batches still deliver', async () => {
+test('Issue #408 preferences lookup failure is isolated per audience batch and other batches still deliver', async () => {
   const originalNow=Date.now;
   const now=Date.parse('2026-09-27T12:00:00.000Z');
   Date.now=()=>now;
@@ -378,8 +378,95 @@ test('Issue #408 audience failure is isolated per batch and other batches still 
     assert.equal(summary.dependencyFailures,1);
     assert.equal(summary.sent,2);
     assert.equal(rt.calls.messages.length,2);
-    assert.equal(rt.events.some(event=>event.code==='REMINDER_AUDIENCE_BATCH_FAILED'),true);
+    assert.equal(
+      rt.events.some(event=>event.code==='REMINDER_AUDIENCE_BATCH_FAILED' && event.message==='preferences lookup failed'),
+      true,
+    );
     assert.equal(rt.events.at(-1).code,'REMINDER_RUN_WITH_DEPENDENCY_FAILURES');
+  } finally {
+    Date.now=originalNow;
+  }
+});
+
+
+test('Issue #408 audience lookup failure is isolated per batch and later batches still deliver', async () => {
+  const originalNow=Date.now;
+  const now=Date.parse('2026-09-27T12:00:00.000Z');
+  Date.now=()=>now;
+  try {
+    const rows=[1,2].map(id=>({
+      telegram_id:20+id,
+      fixture_id:850+id,
+      fixture_date:new Date(now+30*60_000).toISOString(),
+      home_name:`AudienceH${id}`,
+      away_name:`AudienceA${id}`,
+      kickoff_notify:true,
+      remind_before_minutes:30,
+    }));
+    let audienceCall=0;
+    const rt=runtime({
+      rows,
+      audienceBatchSize:1,
+      filterNotificationRecipients:async batch=>{
+        audienceCall+=1;
+        if (audienceCall===1) throw new Error('audience lookup failed');
+        return {rows:batch,blockedByPreference:0,blockedByEntitlement:0};
+      },
+    });
+
+    const summary=await rt.service.processDueReminders({botToken:'token'});
+    assert.equal(summary.ok,false);
+    assert.equal(summary.dependencyFailures,1);
+    assert.equal(summary.sent,1);
+    assert.equal(rt.calls.messages.length,1);
+    assert.equal(
+      rt.events.some(event=>event.code==='REMINDER_AUDIENCE_BATCH_FAILED' && event.message==='audience lookup failed'),
+      true,
+    );
+    assert.equal(rt.events.at(-1).code,'REMINDER_RUN_WITH_DEPENDENCY_FAILURES');
+  } finally {
+    Date.now=originalNow;
+  }
+});
+
+test('Issue #408 one failed reminder does not block the next reminder', async () => {
+  const originalNow=Date.now;
+  const now=Date.parse('2026-09-27T12:00:00.000Z');
+  Date.now=()=>now;
+  try {
+    const rows=[1,2].map(id=>({
+      telegram_id:40+id,
+      fixture_id:880+id,
+      fixture_date:new Date(now+30*60_000).toISOString(),
+      home_name:`FailureH${id}`,
+      away_name:`FailureA${id}`,
+      kickoff_notify:true,
+      remind_before_minutes:30,
+    }));
+    let claimAttempts=0;
+    const rt=runtime({
+      rows,
+      deliveryConcurrency:1,
+      claimReminderDelivery:async(row,kind,cfg)=>{
+        rt.calls.claims.push({row,kind,cfg});
+        claimAttempts+=1;
+        if (claimAttempts===1) throw new Error('claim persistence unavailable');
+        return {claimed:true,claimAt:'2026-09-27T12:00:00.000Z'};
+      },
+    });
+
+    const summary=await rt.service.processDueReminders({botToken:'token'});
+    assert.equal(summary.ok,false);
+    assert.equal(summary.failed,1);
+    assert.equal(summary.sent,1);
+    assert.equal(rt.calls.claims.length,2);
+    assert.equal(rt.calls.messages.length,1);
+    assert.equal(rt.calls.messages[0][0],42);
+    assert.equal(
+      rt.events.some(event=>event.code==='REMINDER_DELIVERY_EXCEPTION' && event.message==='claim persistence unavailable'),
+      true,
+    );
+    assert.equal(rt.events.at(-1).code,'REMINDER_RUN_WITH_FAILURES');
   } finally {
     Date.now=originalNow;
   }
