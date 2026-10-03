@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { validateReleaseIdentity } from '../src/release-identity.js';
 
 const RELEASE_RE = /^[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$/;
 const SHA_RE = /^[0-9a-f]{40}$/i;
@@ -57,12 +58,26 @@ export function resolveActiveProductionReleaseIdentity(deployment, versions) {
     throw new Error(`Active production version ${activeVersionId} version tag does not match deploy SHA.`);
   }
 
+  const rcNumber = /-rc([0-9]+)$/i.exec(match[1])?.[1] || '';
+  const validation = validateReleaseIdentity({
+    appVersion: match[1],
+    releaseCandidate: `RC${rcNumber}`,
+    deploySha: messageSha,
+    cloudflareVersionId: activeVersionId,
+    cloudflareVersionTag: actualTag,
+    cloudflareVersionTimestamp: activeVersion.metadata?.created_on,
+  });
+  if (!validation.ok) {
+    throw new Error(`Active production version ${activeVersionId} release identity validation failed: ${validation.code}.`);
+  }
+
   return {
     deploymentId: typeof deployment.id === 'string' ? deployment.id : '',
     versionId: activeVersionId,
     release: match[1],
     sha: messageSha,
     tag: actualTag.toLowerCase(),
+    timestamp: new Date(validation.timestampMs).toISOString(),
   };
 }
 
