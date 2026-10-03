@@ -128,17 +128,36 @@ function windowCadence(previous = {}, current = {}) {
 function canonicalWindows(rows = []) {
   const byIdentity=new Map();
   let duplicates=0;
+  let duplicateConflicts=0;
   for (const row of rows || []) {
     const window=normalizeWindow(row);
     if (!window.endedAt || !window.startedAt) continue;
-    const identity=window.windowId || `${window.startedAt}|${window.endedAt}`;
-    if (byIdentity.has(identity)) duplicates+=1;
+    const identity=`${window.startedAt}|${window.endedAt}`;
+    const existing=byIdentity.get(identity);
+    if (existing) {
+      duplicates+=1;
+      if (
+        existing.derivedState!==window.derivedState
+        || existing.stateMismatch!==window.stateMismatch
+        || JSON.stringify(existing.totals)!==JSON.stringify(window.totals)
+      ) {
+        duplicateConflicts+=1;
+        byIdentity.set(identity,{
+          ...window,
+          state:'invalid',
+          stateMismatch:true,
+          duplicateConflict:true,
+        });
+      }
+      continue;
+    }
     byIdentity.set(identity,window);
   }
   const windows=[...byIdentity.values()]
     .sort((a,b)=>Date.parse(a.endedAt)-Date.parse(b.endedAt) || Date.parse(a.startedAt)-Date.parse(b.startedAt));
   const integrity={
     duplicates,
+    duplicateConflicts,
     gaps:0,
     overlaps:0,
     invalidDuration:0,
