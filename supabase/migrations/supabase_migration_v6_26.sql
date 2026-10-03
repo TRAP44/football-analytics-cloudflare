@@ -62,15 +62,6 @@ begin
     pg_catalog.hashtext(v_group_key)
   );
 
-  delete from public.scheduled_job_leases
-  where job_key in (
-    select job_key
-    from public.scheduled_job_leases
-    where expires_at < v_now
-    order by expires_at asc
-    limit 200
-  );
-
   select *
   into v_existing
   from public.scheduled_job_leases

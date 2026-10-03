@@ -1606,6 +1606,17 @@ async function cleanupRateWindows(cfg) {
   }
 }
 
+async function cleanupScheduledJobLeases(cfg) {
+  if (!hasSupabase(cfg)) return { skipped: true };
+  const cutoff = new Date().toISOString();
+  try {
+    await supaDelete(cfg, 'scheduled_job_leases', { expires_at: `lt.${cutoff}` });
+    return { ok: true, cutoff };
+  } catch (error) {
+    return { ok: false, error: redactOpsString(error?.message || error, 180) };
+  }
+}
+
 async function cleanupOpsEvents(cfg) {
   if (!hasSupabase(cfg)) return { skipped: true };
   const days = Math.max(1, Number(cfg.opsRetentionDays || 14));
@@ -24930,6 +24941,7 @@ const { handleScheduled } = createScheduledJobsRuntime({
   processDailyDigests,
   cleanupOpsEvents,
   cleanupRateWindows,
+  cleanupScheduledJobLeases,
   cleanupGrowthEvents,
   cleanupIntegrityData,
   runSettlementWatchdog,

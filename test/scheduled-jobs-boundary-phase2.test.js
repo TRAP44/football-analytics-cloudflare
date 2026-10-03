@@ -80,6 +80,7 @@ function runtime(overrides = {}) {
     processDailyDigests: async () => { calls.push('daily_digest'); return { sent: 0 }; },
     cleanupOpsEvents: async () => { calls.push('ops_cleanup'); return { ok: true }; },
     cleanupRateWindows: async () => { calls.push('rate_window_cleanup'); return { ok: true }; },
+    cleanupScheduledJobLeases: async () => { calls.push('scheduled_lease_cleanup'); return { ok: true }; },
     cleanupGrowthEvents: async () => { calls.push('growth_cleanup'); return { ok: true }; },
     cleanupIntegrityData: async () => { calls.push('integrity_cleanup'); return { ok: true }; },
     runSettlementWatchdog: async () => { calls.push('settlement_watchdog'); return { ok: true }; },
@@ -190,7 +191,7 @@ test('daily cleanup executes once per UTC day across the 03:00/03:05/03:10 windo
     await rt.api.executeScheduledRun({scheduledTime:Date.parse(iso)},{});
   }
 
-  for (const task of ['ops_cleanup','rate_window_cleanup','growth_cleanup','integrity_cleanup']) {
+  for (const task of ['ops_cleanup','rate_window_cleanup','scheduled_lease_cleanup','growth_cleanup','integrity_cleanup']) {
     assert.equal(rt.calls.filter(call=>call===task).length,1,task);
     assert.equal(leases.rows.get(dailyScheduledTaskKey(task,new Date('2026-09-28T03:00:00.000Z')))?.status,'done');
   }
@@ -213,6 +214,7 @@ test('failed daily cleanup is released for retry without repeating successful cl
 
   assert.equal(rt.calls.filter(x=>x==='ops_cleanup').length,1);
   assert.equal(rt.calls.filter(x=>x==='rate_window_cleanup').length,1);
+  assert.equal(rt.calls.filter(x=>x==='scheduled_lease_cleanup').length,1);
   assert.equal(rt.calls.filter(x=>x==='growth_cleanup').length,1);
   assert.equal(rt.calls.filter(x=>x==='integrity_cleanup').length,2);
 });

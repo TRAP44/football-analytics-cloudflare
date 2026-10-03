@@ -103,4 +103,5 @@ test('v6.26 migration provides least-privilege atomic scheduled lease contract',
     "'complete_scheduled_job'",
     "'release_scheduled_job'",
   ]) assert.ok(sql.includes(marker),marker);
+  assert.equal(/delete\s+from\s+public\.scheduled_job_leases/.test(sql),false,'claim RPC must not prune with DELETE on the hot path');
 });

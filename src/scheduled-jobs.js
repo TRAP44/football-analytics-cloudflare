@@ -71,6 +71,7 @@ export function createScheduledJobsRuntime({
   processDailyDigests,
   cleanupOpsEvents,
   cleanupRateWindows,
+  cleanupScheduledJobLeases,
   cleanupGrowthEvents,
   cleanupIntegrityData,
   runSettlementWatchdog,
@@ -172,6 +173,7 @@ export function createScheduledJobsRuntime({
     if (scheduledAt.getUTCHours() === 3 && scheduledAt.getUTCMinutes() < 15) {
       tasks.push(['ops_cleanup', runDailyTaskOnce('ops_cleanup', () => cleanupOpsEvents(cfg), cfg, scheduledAt)]);
       tasks.push(['rate_window_cleanup', runDailyTaskOnce('rate_window_cleanup', () => cleanupRateWindows(cfg), cfg, scheduledAt)]);
+      tasks.push(['scheduled_lease_cleanup', runDailyTaskOnce('scheduled_lease_cleanup', () => cleanupScheduledJobLeases(cfg), cfg, scheduledAt)]);
       tasks.push(['growth_cleanup', runDailyTaskOnce('growth_cleanup', () => cleanupGrowthEvents(cfg), cfg, scheduledAt)]);
       tasks.push(['integrity_cleanup', runDailyTaskOnce('integrity_cleanup', () => cleanupIntegrityData(cfg), cfg, scheduledAt)]);
     }
