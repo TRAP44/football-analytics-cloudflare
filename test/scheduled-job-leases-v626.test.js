@@ -130,3 +130,18 @@ test('v6.26 lease SQL bounds TTL, blocks active owners and permits stale-owner r
     'expired or stale rows must be reclaimable with a new owner token and bounded lock',
   );
 });
+
+
+test('v6.26.1 lease privilege hardening removes non-CRUD service-role table privileges', () => {
+  const sql=fs.readFileSync('supabase/migrations/supabase_migration_v6_26_1.sql','utf8').toLowerCase();
+  for (const marker of [
+    'revoke all privileges on table public.scheduled_job_leases',
+    'from public, anon, authenticated',
+    'revoke truncate, references, trigger',
+    'from service_role',
+    'grant select, insert, update, delete',
+    'to service_role',
+    'revoke execute on function public.claim_scheduled_job(text,text,timestamptz,integer,integer)',
+    'grant execute on function public.claim_scheduled_job(text,text,timestamptz,integer,integer)',
+  ]) assert.ok(sql.includes(marker),marker);
+});
