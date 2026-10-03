@@ -244,7 +244,7 @@ test('usage consumption is atomic in service semantics and refund revokes Pass a
 });
 
 test('v6.25 migration is additive, service-role-only and protects duplicate/concurrent activation', () => {
-  const sql = fs.readFileSync('supabase/migrations/supabase_migration_v6_25.sql', 'utf8');
+  const sql = fs.readFileSync('supabase/migrations/supabase_migration_v6_25_1.sql', 'utf8');
   assert.match(sql, /create table if not exists public\.user_entitlements/i);
   assert.match(sql, /payment_charge_id text not null unique/i);
   assert.match(sql, /create or replace function public\.activate_pass_entitlement/i);
@@ -336,5 +336,5 @@ test('Worker reuses the established billing route/webhook and keeps monetization
   assert.match(env, /MONETIZATION_ENABLED=false/);
   assert.doesNotMatch(env, /MONETIZATION_ENABLED=true/);
   assert.equal(release.productionSchema, '6.25');
-  assert.equal(release.latestMigration, 'supabase/migrations/supabase_migration_v6_25.sql');
+  assert.equal(release.latestMigration, 'supabase/migrations/supabase_migration_v6_25_1.sql');
 });
