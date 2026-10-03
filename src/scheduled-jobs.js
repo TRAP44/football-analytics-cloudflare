@@ -17,7 +17,7 @@ export function normalizeScheduledTaskResult(task, value) {
   const state=String(raw.status || raw.state || '').toLowerCase();
   const failedCount=Number(raw.failed || 0);
 
-  let status='success';
+  let status='ok';
   if (
     raw.ok===false
     || raw.failed===true
@@ -45,7 +45,7 @@ export function normalizeScheduledTaskResult(task, value) {
   return Object.freeze({
     __scheduledTaskResult:true,
     task:String(task || 'unknown'),
-    ok:status!=='failed',
+    ok:status==='ok',
     status,
     reason,
     value,
@@ -131,7 +131,7 @@ export function createScheduledJobsRuntime({
     if (claim.persistent && settled!==true) {
       return Object.freeze({
         ...result,
-        ok:result.status!=='failed',
+        ok:false,
         status:result.status==='failed' ? 'failed' : 'degraded',
         reason:shortReason(result.reason || 'scheduled_task_lease_settlement_failed'),
       });
@@ -201,12 +201,18 @@ export function createScheduledJobsRuntime({
         : normalizeScheduledTaskResult(task,entry.value);
       results.push(result);
 
-      if (result.status==='failed' || result.status==='degraded') {
+      if (result.status==='failed' || result.status==='degraded' || result.status==='skipped') {
+        const severity=result.status==='failed' ? 'error' : result.status==='degraded' ? 'warning' : 'info';
+        const code=result.status==='failed'
+          ? 'CRON_TASK_FAILED'
+          : result.status==='degraded'
+            ? 'CRON_TASK_DEGRADED'
+            : 'CRON_TASK_SKIPPED';
         await recordOpsEvent(cfg, {
-          severity: result.status==='failed' ? 'error' : 'warning',
+          severity,
           source: 'cron',
           eventType: 'scheduled_task',
-          code: result.status==='failed' ? 'CRON_TASK_FAILED' : 'CRON_TASK_DEGRADED',
+          code,
           message: result.reason || `Scheduled task reported ${result.status}`,
           meta: { task, disposition: result.status },
         }).catch(() => null);
@@ -240,16 +246,17 @@ export function createScheduledJobsRuntime({
         skipped:claim?.reason || 'lease_not_claimed',
         lease:claim || null,
       });
-      if (claim?.reason==='lease_unavailable') {
-        await recordOpsEvent(cfg,{
-          severity:'error',
-          source:'cron',
-          eventType:'scheduled_execution',
-          code:'CRON_EXECUTION_LEASE_UNAVAILABLE',
-          message:'Scheduled execution skipped because the distributed lease backend is unavailable.',
-          meta:{task:'scheduled_execution',disposition:'skipped',reason:claim.reason},
-        }).catch(()=>null);
-      }
+      const leaseUnavailable=claim?.reason==='lease_unavailable';
+      await recordOpsEvent(cfg,{
+        severity:leaseUnavailable ? 'error' : 'info',
+        source:'cron',
+        eventType:'scheduled_execution',
+        code:leaseUnavailable ? 'CRON_EXECUTION_LEASE_UNAVAILABLE' : 'CRON_EXECUTION_SKIPPED',
+        message:leaseUnavailable
+          ? 'Scheduled execution skipped because the distributed lease backend is unavailable.'
+          : `Scheduled execution skipped: ${shortReason(claim?.reason,'lease_not_claimed')}.`,
+        meta:{task:'scheduled_execution',disposition:'skipped',reason:claim?.reason || 'lease_not_claimed'},
+      }).catch(()=>null);
       return [skipped];
     }
 
