@@ -12,16 +12,6 @@ function runtime(overrides = {}) {
     supaSelectMany:overrides.supaSelectMany || (async()=>[]),
     supaRpc:overrides.supaRpc || (async(_cfg,name,args)=>{
       rpcCalls.push({name,args});
-      if (name === 'resolve_match_reminder_fixture') {
-        return {
-          available:true,
-          fixtureId:args.p_fixture_id,
-          homeName:'Server Home',
-          awayName:'Server Away',
-          leagueName:'Server League',
-          fixtureDate:new Date(Date.now()+3*60*60_000).toISOString(),
-        };
-      }
       if (name === 'prune_match_reminders_for_user') return {ok:true,disabled:0,deleted:0};
       if (name === 'save_match_reminder_guarded_v2') {
         return {
@@ -30,10 +20,10 @@ function runtime(overrides = {}) {
           item:{
             telegram_id:args.p_telegram_id,
             fixture_id:args.p_fixture_id,
-            home_name:args.p_home_name,
-            away_name:args.p_away_name,
-            league_name:args.p_league_name,
-            fixture_date:args.p_fixture_date,
+            home_name:'Server Home',
+            away_name:'Server Away',
+            league_name:'Server League',
+            fixture_date:new Date(Date.now()+3*60*60_000).toISOString(),
             remind_before_minutes:args.p_remind_before_minutes,
             kickoff_notify:args.p_kickoff_notify,
             enabled:true,
@@ -68,10 +58,10 @@ test('Supabase reminder persistence ignores forged client fixture metadata and u
   assert.equal(row.away_name,'Server Away');
   const save=rpcCalls.find(call=>call.name==='save_match_reminder_guarded_v2');
   assert.ok(save);
-  assert.equal(save.args.p_home_name,'Server Home');
-  assert.equal(save.args.p_away_name,'Server Away');
-  assert.equal(save.args.p_league_name,'Server League');
-  assert.notEqual(save.args.p_fixture_date,'2099-01-01T00:00:00.000Z');
+  assert.equal(save.args.p_home_name,'');
+  assert.equal(save.args.p_away_name,'');
+  assert.equal(save.args.p_league_name,'');
+  assert.equal(save.args.p_fixture_date,null);
 });
 
 test('cache/provider canonicalization unavailability fails closed before persistence', async()=>{
@@ -80,15 +70,15 @@ test('cache/provider canonicalization unavailability fails closed before persist
     hasSupabase:()=>true,
     supaRpc:async(_cfg,name,args)=>{
       calls.push({name,args});
-      if(name==='resolve_match_reminder_fixture') return {available:false,reason:'not_cached'};
-      throw new Error('save should not execute');
+      if(name==='save_match_reminder_guarded_v2') return {allowed:false,reason:'fixture_unavailable'};
+      throw new Error('unexpected rpc '+name);
     },
   });
   await assert.rejects(
     ()=>service.addReminder(88,{fixtureId:9002,homeName:'Fake',awayName:'Fake',fixtureDate:future()},{}),
     error=>error?.code==='REMINDER_FIXTURE_UNAVAILABLE',
   );
-  assert.deepEqual(calls.map(call=>call.name),['resolve_match_reminder_fixture']);
+  assert.deepEqual(calls.map(call=>call.name),['save_match_reminder_guarded_v2']);
 });
 
 test('duplicate reminder update preserves delivered state unless rearm is explicit', async()=>{
@@ -198,6 +188,8 @@ test('v6.25.2 SQL contract canonicalizes, prunes, preserves idempotent state and
   assert.match(sql,/fixture_date <= now\(\) - interval '10 minutes'/);
   assert.match(sql,/fixture_date < now\(\) - interval '90 days'/);
   assert.match(sql,/create or replace function public\.save_match_reminder_guarded_v2/);
+  assert.match(sql,/v_canonical := public\.resolve_match_reminder_fixture\(p_fixture_id\)/);
+  assert.match(sql,/legacy metadata arguments[\s\S]*never trusted/);
   assert.match(sql,/coalesce\(p_rearm, false\)/);
   assert.match(sql,/reason', 'rearmed'/);
   assert.match(sql,/Compatibility wrapper/);
