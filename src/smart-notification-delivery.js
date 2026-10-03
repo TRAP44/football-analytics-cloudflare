@@ -1,4 +1,5 @@
 const CLAIM_STALE_MS = 20 * 60_000;
+const MAX_DELIVERY_ATTEMPTS = 3;
 
 function memoryKey(userId, dedupeKey) {
   return `${Number(userId)}:${String(dedupeKey || '')}`;
@@ -63,7 +64,7 @@ export function createSmartNotificationDeliveryService({
       createdAt: existing?.createdAt || claimAt,
       updatedAt: claimAt,
     });
-    return { allowed: true, reason: existing ? 'retry' : 'created', claimAt };
+    return { allowed: true, reason: existing ? 'retry' : 'created', claimAt, attempts: Math.max(0, Number(existing?.attempts || 0)) + 1 };
   }
 
   async function claim(input, cfg) {
@@ -80,13 +81,44 @@ export function createSmartNotificationDeliveryService({
       allowed: result?.allowed === true,
       reason: String(result?.reason || (result?.allowed ? 'claimed' : 'duplicate')),
       claimAt: result?.claimAt || result?.claim_at || null,
+      attempts: Math.max(1, Number(result?.attempts || 1)),
+    };
+  }
+
+  async function beginSendMemory(input) {
+    const key = memoryKey(input.userId, input.dedupeKey);
+    const current = ledger.get(key);
+    if (!current || current.status !== 'claimed' || String(current.claimAt) !== String(input.claimAt)) {
+      return { started: false, reason: 'claim_lost' };
+    }
+    if (Number(current.attempts || 0) > MAX_DELIVERY_ATTEMPTS) {
+      const now = new Date().toISOString();
+      ledger.set(key, { ...current, status:'terminal_failed', lastError:'Maximum delivery attempts exceeded.', updatedAt:now });
+      return { started:false, reason:'max_retries' };
+    }
+    const now = new Date().toISOString();
+    ledger.set(key, { ...current, status:'sending', sendStartedAt:now, updatedAt:now });
+    return { started:true, reason:'sending' };
+  }
+
+  async function beginSend(input, cfg) {
+    if (!hasSupabase?.(cfg)) return beginSendMemory(input);
+    const result = await supaRpc(cfg, 'begin_smart_notification_delivery_send', {
+      p_telegram_id: Number(input.userId),
+      p_dedupe_key: String(input.dedupeKey || ''),
+      p_claimed_at: input.claimAt,
+      p_max_attempts: MAX_DELIVERY_ATTEMPTS,
+    }, 5000);
+    return {
+      started: result?.started === true,
+      reason: String(result?.reason || (result?.started ? 'sending' : 'claim_lost')),
     };
   }
 
   async function finalizeMemory(input) {
     const key = memoryKey(input.userId, input.dedupeKey);
     const current = ledger.get(key);
-    if (!current || String(current.claimAt) !== String(input.claimAt)) return false;
+    if (!current || current.status !== 'sending' || String(current.claimAt) !== String(input.claimAt)) return false;
     const now = new Date().toISOString();
     ledger.set(key, {
       ...current,
@@ -160,13 +192,34 @@ export function createSmartNotificationDeliveryService({
       return { state };
     }
 
+    let sendStarted;
+    try {
+      sendStarted = await beginSend({ userId, dedupeKey, claimAt: claimed.claimAt }, cfg);
+    } catch (error) {
+      sendStarted = { started:false, reason:'persistence_error', error };
+    }
+    if (!sendStarted?.started) {
+      await observe(cfg, {
+        severity: 'error',
+        code: sendStarted?.reason === 'max_retries' ? 'SMART_NOTIFICATION_MAX_RETRIES' : 'SMART_NOTIFICATION_SEND_NOT_STARTED',
+        message: sendStarted?.reason === 'max_retries'
+          ? 'Smart notification reached the maximum delivery attempts and was not sent.'
+          : 'Smart notification was not sent because delivery ownership could not be persisted.',
+        fixtureId,
+        eventType,
+        category,
+        disposition: String(sendStarted?.reason || 'persistence_error'),
+      });
+      return { state: sendStarted?.reason === 'max_retries' ? 'failed' : 'persistence_ambiguous' };
+    }
+
     let result;
     try {
       result = await sendTelegramMessage(userId, text, cfg);
     } catch (error) {
       result = {
         ok: false,
-        outcome: 'confirmed_failure',
+        outcome: 'unknown',
         status: Number(error?.status || 0),
         errorCode: Number(error?.status || 0),
         retryAfter: Number(error?.retryAfter || 0),
@@ -175,7 +228,22 @@ export function createSmartNotificationDeliveryService({
     }
 
     if (result?.ok) {
-      await finalize({ userId, dedupeKey, claimAt: claimed.claimAt, status: 'sent' }, cfg);
+      let finalized = false;
+      try {
+        finalized = await finalize({ userId, dedupeKey, claimAt: claimed.claimAt, status: 'sent' }, cfg);
+      } catch {}
+      if (!finalized) {
+        await observe(cfg, {
+          severity: 'error',
+          code: 'SMART_NOTIFICATION_SENT_PERSISTENCE_AMBIGUOUS',
+          message: 'Telegram accepted the notification but final persistence did not confirm ownership; automatic resend is suppressed.',
+          fixtureId,
+          eventType,
+          category,
+          disposition: 'sent_unconfirmed',
+        });
+        return { state: 'sent_unconfirmed', result };
+      }
       await observe(cfg, {
         code: 'SMART_NOTIFICATION_SENT',
         message: 'Smart notification delivered.',
@@ -188,13 +256,16 @@ export function createSmartNotificationDeliveryService({
     }
 
     if (result?.outcome === 'unknown') {
-      await finalize({
-        userId,
-        dedupeKey,
-        claimAt: claimed.claimAt,
-        status: 'unknown',
-        error: result?.description || 'Telegram delivery outcome unknown.',
-      }, cfg);
+      let finalized = false;
+      try {
+        finalized = await finalize({
+          userId,
+          dedupeKey,
+          claimAt: claimed.claimAt,
+          status: 'unknown',
+          error: result?.description || 'Telegram delivery outcome unknown.',
+        }, cfg);
+      } catch {}
       await observe(cfg, {
         severity: 'warning',
         code: 'SMART_NOTIFICATION_DELIVERY_UNKNOWN',
@@ -204,21 +275,36 @@ export function createSmartNotificationDeliveryService({
         category,
         disposition: 'unknown',
       });
-      return { state: 'unknown', result };
+      return { state: finalized ? 'unknown' : 'persistence_ambiguous', result };
     }
 
     const status = Number(result?.status || result?.errorCode || 0);
     const retryable = retryableTelegramFailure(result);
     const retryAfterSeconds = retryable ? Math.max(1, Number(result?.retryAfter || 60)) : 0;
     const finalStatus = retryable ? 'retry_pending' : 'terminal_failed';
-    await finalize({
-      userId,
-      dedupeKey,
-      claimAt: claimed.claimAt,
-      status: finalStatus,
-      error: result?.description || 'Telegram delivery failed.',
-      retryAfterSeconds,
-    }, cfg);
+    let finalized = false;
+    try {
+      finalized = await finalize({
+        userId,
+        dedupeKey,
+        claimAt: claimed.claimAt,
+        status: finalStatus,
+        error: result?.description || 'Telegram delivery failed.',
+        retryAfterSeconds,
+      }, cfg);
+    } catch {}
+    if (!finalized) {
+      await observe(cfg, {
+        severity: 'error',
+        code: 'SMART_NOTIFICATION_FAILURE_PERSISTENCE_AMBIGUOUS',
+        message: 'Telegram failure could not be finalized safely; automatic retry is suppressed until reconciliation.',
+        fixtureId,
+        eventType,
+        category,
+        disposition: 'failure_unconfirmed',
+      });
+      return { state:'persistence_ambiguous', result };
+    }
 
     await observe(cfg, {
       severity: 'warning',
