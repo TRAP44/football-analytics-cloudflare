@@ -214,3 +214,33 @@ test('summarizeWindows enforces the requested hours boundary', () => {
   assert.equal(report.windowCount,1);
   assert.equal(report.overall.requests,5);
 });
+
+
+test('distributed provider aggregation clamps retention to seven days', () => {
+  const now=Date.parse('2026-09-28T12:20:00.000Z');
+  const row=(bucketStartedAt)=>({
+    bucket_started_at:bucketStartedAt,
+    provider:'api-football',
+    operation:'/fixtures',
+    attempts:1,
+    requests:1,
+    successes:1,
+    failures:0,
+    retries:0,
+    timeouts:0,
+    network_errors:0,
+    rate_limits:0,
+    http_errors:0,
+    invalid_responses:0,
+    latency_sum_ms:100,
+    latency_samples:1,
+    max_latency_ms:100,
+    updated_at:bucketStartedAt,
+  });
+  const windows=providerSloWindowsFromBuckets([
+    row('2026-09-20T12:00:00.000Z'),
+    row('2026-09-28T12:00:00.000Z'),
+  ],{hours:999,nowMs:now,includeOpen:false});
+  assert.equal(windows.length,1);
+  assert.equal(windows[0].metadata.windowId,'provider-slo:2026-09-28T12:00:00.000Z');
+});
