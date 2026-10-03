@@ -1503,6 +1503,7 @@ const {
   memory,
   hasSupabase,
   supaRpc,
+  supaSelectOne,
   sendTelegramMessage,
   recordOpsEvent,
 });
