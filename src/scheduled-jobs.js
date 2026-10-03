@@ -1,8 +1,64 @@
 import { isDailyDigestExecutionWindow } from './daily-digest-delivery.js';
 
-// Scheduled/background task orchestration boundary.
-// Owns cron task planning, dependency ordering and generic failure observation only.
-// Business task implementations remain injected by the composition root.
+const GLOBAL_CRON_LEASE_SECONDS = 12 * 60;
+const GLOBAL_CRON_RETENTION_SECONDS = 2 * 24 * 60 * 60;
+const DAILY_TASK_LEASE_SECONDS = 10 * 60;
+const DAILY_TASK_RETENTION_SECONDS = 4 * 24 * 60 * 60;
+
+function shortReason(value, fallback='') {
+  const text=String(value ?? fallback ?? '').trim();
+  return text.slice(0,500);
+}
+
+export function normalizeScheduledTaskResult(task, value) {
+  if (value?.__scheduledTaskResult === true) return value;
+
+  const raw=value && typeof value==='object' ? value : {};
+  const state=String(raw.status || raw.state || '').toLowerCase();
+  const failedCount=Number(raw.failed || 0);
+
+  let status='success';
+  if (
+    raw.ok===false
+    || raw.failed===true
+    || ['failed','failure','error'].includes(state)
+  ) status='failed';
+  else if (
+    raw.degraded===true
+    || state==='degraded'
+    || (Number.isFinite(failedCount) && failedCount>0)
+  ) status='degraded';
+  else if (
+    raw.skipped===true
+    || typeof raw.skipped==='string'
+    || state==='skipped'
+  ) status='skipped';
+
+  const reason=shortReason(
+    raw.error
+      || raw.reason
+      || (typeof raw.skipped==='string' ? raw.skipped : '')
+      || (status==='degraded' ? `partial_failures:${failedCount}` : ''),
+    status,
+  );
+
+  return Object.freeze({
+    __scheduledTaskResult:true,
+    task:String(task || 'unknown'),
+    ok:status!=='failed',
+    status,
+    reason,
+    value,
+  });
+}
+
+export function scheduledRunKey(scheduledAt) {
+  return `cron:${new Date(scheduledAt).toISOString()}`;
+}
+
+export function dailyScheduledTaskKey(task, scheduledAt) {
+  return `daily:${String(task || 'task')}:${new Date(scheduledAt).toISOString().slice(0,10)}`;
+}
 
 export function createScheduledJobsRuntime({
   settleBacktestDaily,
@@ -20,6 +76,9 @@ export function createScheduledJobsRuntime({
   runSettlementWatchdog,
   runSettlementFinalityVerification,
   recordOpsEvent,
+  claimScheduledJob,
+  completeScheduledJob,
+  releaseScheduledJob,
 } = {}) {
   function normalizedScheduledAt(controller) {
     const value = Number(controller?.scheduledTime || Date.now());
@@ -28,111 +87,215 @@ export function createScheduledJobsRuntime({
   }
 
   function explicitTaskFailure(value) {
-    if (!value || typeof value !== 'object' || value.ok !== false) return '';
-    return String(value.error || value.reason || 'Scheduled task reported ok=false').slice(0, 500);
+    const result=normalizeScheduledTaskResult('scheduled_task',value);
+    return result.status==='failed' ? result.reason : '';
+  }
+
+  async function runTask(task, runner) {
+    try {
+      return normalizeScheduledTaskResult(task, await runner());
+    } catch (error) {
+      return normalizeScheduledTaskResult(task,{
+        ok:false,
+        status:'failed',
+        error:error?.message || error,
+      });
+    }
+  }
+
+  async function runDailyTaskOnce(task, runner, cfg, scheduledAt) {
+    if (typeof claimScheduledJob!=='function') return await runTask(task,runner);
+
+    const claim=await claimScheduledJob(cfg,{
+      jobKey:dailyScheduledTaskKey(task,scheduledAt),
+      groupKey:`daily:${task}`,
+      scheduledAt,
+      leaseSeconds:DAILY_TASK_LEASE_SECONDS,
+      retentionSeconds:DAILY_TASK_RETENTION_SECONDS,
+    });
+
+    if (!claim?.claimed) {
+      return normalizeScheduledTaskResult(task,{
+        skipped:claim?.reason || 'daily_task_not_claimed',
+        lease:claim || null,
+      });
+    }
+
+    const result=await runTask(task,runner);
+    const retryable=result.status==='failed' || result.status==='degraded';
+    const settled=retryable
+      ? await Promise.resolve(releaseScheduledJob?.(cfg,claim)).catch(()=>false)
+      : await Promise.resolve(completeScheduledJob?.(cfg,claim)).catch(()=>false);
+
+    if (claim.persistent && settled!==true) {
+      return Object.freeze({
+        ...result,
+        ok:result.status!=='failed',
+        status:result.status==='failed' ? 'failed' : 'degraded',
+        reason:shortReason(result.reason || 'scheduled_task_lease_settlement_failed'),
+      });
+    }
+    return result;
   }
 
   function buildScheduledTaskPlan(cfg, scheduledAt) {
-    const backtestTask = Promise.resolve().then(() => settleBacktestDaily(cfg));
-    const remindersTask = Promise.resolve().then(() => processDueReminders(cfg));
+    const backtestTask = runTask('backtest', () => settleBacktestDaily(cfg));
+    const remindersTask = runTask('reminders', () => processDueReminders(cfg));
     const lineupNotificationsTask = remindersTask
-      .catch(() => null)
-      .then(() => processLineupNotifications(cfg));
+      .then(() => runTask('lineup_notifications', () => processLineupNotifications(cfg)));
     const importantChangeTask = lineupNotificationsTask
-      .catch(() => null)
-      .then(() => processImportantChangeNotifications(cfg));
+      .then(() => runTask('important_change_notifications', () => processImportantChangeNotifications(cfg)));
     const smartNotificationsTask = importantChangeTask
-      .catch(() => null)
-      .then(() => processSmartNotifications(cfg));
+      .then(() => runTask('smart_notifications', () => processSmartNotifications(cfg)));
     const digestWindow = isDailyDigestExecutionWindow(scheduledAt);
     const dailyDigestTask = digestWindow
-      ? backtestTask.catch(() => null).then(() => processDailyDigests(cfg, scheduledAt))
+      ? backtestTask.then(() => runTask('daily_digest', () => processDailyDigests(cfg, scheduledAt)))
       : null;
-    const postMatchPrerequisite = dailyDigestTask
-      ? dailyDigestTask.catch(() => null)
-      : backtestTask;
+    const postMatchPrerequisite = dailyDigestTask || backtestTask;
     const tasks = [
       ['reminders', remindersTask],
       ['lineup_notifications', lineupNotificationsTask],
       ['important_change_notifications', importantChangeTask],
       ['smart_notifications', smartNotificationsTask],
       ['backtest', backtestTask],
-      ['post_match_return', postMatchPrerequisite.then(() => processPostMatchReturns(cfg))],
+      ['post_match_return', postMatchPrerequisite.then(() => runTask('post_match_return', () => processPostMatchReturns(cfg)))],
     ];
 
     if (scheduledAt.getUTCMinutes() % 15 === 0) {
-      // Preserve the existing load-smoothing contract: deep production checks
-      // begin only after the latency-sensitive reminder read has settled.
       const monitorAfterReminders = remindersTask
-        .catch(() => null)
-        .then(() => runProductionMonitor(cfg, scheduledAt));
+        .then(() => runTask('production_monitor', () => runProductionMonitor(cfg, scheduledAt)));
       tasks.push(['production_monitor', monitorAfterReminders]);
     }
 
-    if (dailyDigestTask) {
-      // Provider-heavy morning work is intentionally serialized:
-      // backtest -> daily digest -> post-match return.
-      // This preserves delivery behavior while avoiding concurrent API-Football
-      // fan-out during the busiest scheduled minute.
-      tasks.push(['daily_digest', dailyDigestTask]);
-    }
+    if (dailyDigestTask) tasks.push(['daily_digest', dailyDigestTask]);
 
     if (scheduledAt.getUTCHours() === 3 && scheduledAt.getUTCMinutes() < 15) {
-      tasks.push(['ops_cleanup', Promise.resolve().then(() => cleanupOpsEvents(cfg))]);
-      tasks.push(['rate_window_cleanup', Promise.resolve().then(() => cleanupRateWindows(cfg))]);
-      tasks.push(['growth_cleanup', Promise.resolve().then(() => cleanupGrowthEvents(cfg))]);
-      tasks.push(['integrity_cleanup', Promise.resolve().then(() => cleanupIntegrityData(cfg))]);
+      tasks.push(['ops_cleanup', runDailyTaskOnce('ops_cleanup', () => cleanupOpsEvents(cfg), cfg, scheduledAt)]);
+      tasks.push(['rate_window_cleanup', runDailyTaskOnce('rate_window_cleanup', () => cleanupRateWindows(cfg), cfg, scheduledAt)]);
+      tasks.push(['growth_cleanup', runDailyTaskOnce('growth_cleanup', () => cleanupGrowthEvents(cfg), cfg, scheduledAt)]);
+      tasks.push(['integrity_cleanup', runDailyTaskOnce('integrity_cleanup', () => cleanupIntegrityData(cfg), cfg, scheduledAt)]);
     }
 
     if (scheduledAt.getUTCHours() === 4 && scheduledAt.getUTCMinutes() < 15) {
-      tasks.push(['settlement_watchdog', backtestTask.then(() => runSettlementWatchdog(cfg))]);
+      tasks.push(['settlement_watchdog', backtestTask.then(() => runTask('settlement_watchdog', () => runSettlementWatchdog(cfg)))]);
     }
 
     if (scheduledAt.getUTCHours() === 5 && scheduledAt.getUTCMinutes() < 15) {
-      tasks.push(['settlement_finality', backtestTask.then(() => runSettlementFinalityVerification(cfg))]);
+      tasks.push(['settlement_finality', backtestTask.then(() => runTask('settlement_finality', () => runSettlementFinalityVerification(cfg)))]);
     }
 
     return tasks;
   }
 
   async function observeScheduledTasks(cfg, tasks) {
-    const results = await Promise.allSettled(tasks.map(([, promise]) => promise));
-    for (let i = 0; i < results.length; i += 1) {
+    const settled = await Promise.allSettled(tasks.map(([, promise]) => promise));
+    const results=[];
+
+    for (let i = 0; i < settled.length; i += 1) {
       const task = tasks[i]?.[0] || 'unknown';
-      const result = results[i];
+      const entry = settled[i];
+      const result = entry.status==='rejected'
+        ? normalizeScheduledTaskResult(task,{ok:false,status:'failed',error:entry.reason?.message || entry.reason})
+        : normalizeScheduledTaskResult(task,entry.value);
+      results.push(result);
 
-      if (result.status === 'rejected') {
+      if (result.status==='failed' || result.status==='degraded') {
         await recordOpsEvent(cfg, {
-          severity: 'error',
+          severity: result.status==='failed' ? 'error' : 'warning',
           source: 'cron',
           eventType: 'scheduled_task',
-          code: 'CRON_TASK',
-          message: result.reason?.message || result.reason,
-          meta: { task, disposition: 'rejected' },
-        }).catch(() => null);
-        continue;
-      }
-
-      const reportedFailure = explicitTaskFailure(result.value);
-      if (reportedFailure) {
-        await recordOpsEvent(cfg, {
-          severity: 'error',
-          source: 'cron',
-          eventType: 'scheduled_task',
-          code: 'CRON_TASK',
-          message: reportedFailure,
-          meta: { task, disposition: 'reported_failure' },
+          code: result.status==='failed' ? 'CRON_TASK_FAILED' : 'CRON_TASK_DEGRADED',
+          message: result.reason || `Scheduled task reported ${result.status}`,
+          meta: { task, disposition: result.status },
         }).catch(() => null);
       }
     }
     return results;
   }
 
-  function handleScheduled(controller, cfg, ctx) {
-    const scheduledAt = normalizedScheduledAt(controller);
-    const tasks = buildScheduledTaskPlan(cfg, scheduledAt);
-    const execution = observeScheduledTasks(cfg, tasks);
+  async function executeScheduledRun(controller, cfg) {
+    const scheduledAt=normalizedScheduledAt(controller);
+    let claim={
+      claimed:true,
+      persistent:false,
+      reason:'lease_not_configured',
+      jobKey:scheduledRunKey(scheduledAt),
+      groupKey:'cron-global',
+    };
 
+    if (typeof claimScheduledJob==='function') {
+      claim=await claimScheduledJob(cfg,{
+        jobKey:scheduledRunKey(scheduledAt),
+        groupKey:'cron-global',
+        scheduledAt,
+        leaseSeconds:GLOBAL_CRON_LEASE_SECONDS,
+        retentionSeconds:GLOBAL_CRON_RETENTION_SECONDS,
+      });
+    }
+
+    if (!claim?.claimed) {
+      const skipped=normalizeScheduledTaskResult('scheduled_execution',{
+        skipped:claim?.reason || 'lease_not_claimed',
+        lease:claim || null,
+      });
+      if (claim?.reason==='lease_unavailable') {
+        await recordOpsEvent(cfg,{
+          severity:'error',
+          source:'cron',
+          eventType:'scheduled_execution',
+          code:'CRON_EXECUTION_LEASE_UNAVAILABLE',
+          message:'Scheduled execution skipped because the distributed lease backend is unavailable.',
+          meta:{task:'scheduled_execution',disposition:'skipped',reason:claim.reason},
+        }).catch(()=>null);
+      }
+      return [skipped];
+    }
+
+    try {
+      const tasks=buildScheduledTaskPlan(cfg,scheduledAt);
+      const results=await observeScheduledTasks(cfg,tasks);
+      if (claim.persistent && typeof completeScheduledJob==='function') {
+        const completed=await completeScheduledJob(cfg,claim);
+        if (!completed) {
+          const degraded=normalizeScheduledTaskResult('scheduled_execution',{
+            degraded:true,
+            reason:'execution_lease_completion_failed',
+          });
+          results.push(degraded);
+          await recordOpsEvent(cfg,{
+            severity:'warning',
+            source:'cron',
+            eventType:'scheduled_execution',
+            code:'CRON_EXECUTION_LEASE_COMPLETE_FAILED',
+            message:'Scheduled work completed but its distributed run marker could not be sealed.',
+            meta:{task:'scheduled_execution',disposition:'degraded'},
+          }).catch(()=>null);
+        }
+      }
+      return results;
+    } catch (error) {
+      if (claim?.claimed && typeof releaseScheduledJob==='function') {
+        await releaseScheduledJob(cfg,claim).catch(()=>false);
+      }
+      const failed=normalizeScheduledTaskResult('scheduled_execution',{
+        ok:false,
+        status:'failed',
+        error:error?.message || error,
+      });
+      await recordOpsEvent(cfg,{
+        severity:'error',
+        source:'cron',
+        eventType:'scheduled_execution',
+        code:'CRON_EXECUTION_FAILED',
+        message:failed.reason,
+        meta:{task:'scheduled_execution',disposition:'failed'},
+      }).catch(()=>null);
+      return [failed];
+    }
+  }
+
+  function handleScheduled(controller, cfg, ctx) {
+    const execution=executeScheduledRun(controller,cfg);
     if (typeof ctx?.waitUntil === 'function') {
       ctx.waitUntil(execution);
       return undefined;
@@ -143,8 +306,12 @@ export function createScheduledJobsRuntime({
   return Object.freeze({
     normalizedScheduledAt,
     explicitTaskFailure,
+    normalizeScheduledTaskResult,
+    scheduledRunKey,
+    dailyScheduledTaskKey,
     buildScheduledTaskPlan,
     observeScheduledTasks,
+    executeScheduledRun,
     handleScheduled,
   });
 }

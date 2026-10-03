@@ -401,6 +401,25 @@ if (!defaultAclMigration.includes('backend_default_acl_contract')) failures.push
 if (!publicShellStyles.includes('Bottom Navigation Visibility Hotfix') || !publicShellStyles.includes('grid-template-columns:repeat(4,minmax(0,1fr))') || !publicShellStyles.includes('transform:none')) failures.push('Bottom navigation final four-column cascade/position guard is missing');
 if (!staticHeaders.includes('/styles/public-shell.css') || !staticHeaders.includes('/index.html') || !staticHeaders.includes('Cache-Control: no-cache, max-age=0, must-revalidate')) failures.push('Mini App shell cache revalidation headers are missing');
 
+
+if (!fs.existsSync('supabase/migrations/supabase_migration_v6_26.sql')) failures.push('Missing v6.26 scheduled-job lease migration');
+else {
+  const scheduledLeaseMigration = fs.readFileSync('supabase/migrations/supabase_migration_v6_26.sql','utf8').toLowerCase();
+  for (const marker of [
+    'create table if not exists public.scheduled_job_leases',
+    'alter table public.scheduled_job_leases enable row level security',
+    'create or replace function public.claim_scheduled_job',
+    'create or replace function public.complete_scheduled_job',
+    'create or replace function public.release_scheduled_job',
+    'grant execute on function public.claim_scheduled_job(text,text,timestamptz,integer,integer)',
+    "'scheduled_job_leases'"
+  ]) {
+    if (!scheduledLeaseMigration.includes(marker.toLowerCase())) failures.push(`v6.26 scheduled lease migration is missing: ${marker}`);
+  }
+}
+if (!worker.includes("createScheduledLeaseRuntime") || !worker.includes("claimScheduledJob") || !worker.includes("scheduled_job_leases")) failures.push('Issue #404 scheduled lease integration is incomplete');
+if (!worker.includes("CRON_TASK_DEGRADED") || !worker.includes("dailyScheduledTaskKey")) failures.push('Issue #404 scheduled result/idempotency contract is incomplete');
+
 if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);

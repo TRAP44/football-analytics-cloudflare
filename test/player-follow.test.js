@@ -242,8 +242,8 @@ test('v6.23 migration enforces RLS, service-role access, atomic cap and schema v
   assert.match(migration, /analysis_timeline_snapshots/);
   assert.match(worker, /id: 'favorite_players', table: 'favorite_players'/);
   assert.match(worker, /favoritePlayersLimit/);
-  assert.equal(releaseContract.productionSchema, '6.25');
-  assert.equal(releaseContract.latestMigration, 'supabase/migrations/supabase_migration_v6_25_2.sql');
+  assert.equal(releaseContract.productionSchema, '6.26');
+  assert.equal(releaseContract.latestMigration, 'supabase/migrations/supabase_migration_v6_26.sql');
 });
 
 test('Player Hub and Profile integrate follow state without adding a bottom-navigation destination', () => {
