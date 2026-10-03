@@ -33,7 +33,7 @@ test('provider SLO persists distributed 15-minute aggregate windows through prod
   assert.match(worker, /code: 'PROVIDER_SLO_WINDOW'/);
   assert.match(worker, /event_type: 'slo_window'/);
   assert.match(worker, /const providerSloFlush = options\.record !== false/);
-  assert.match(worker, /restoreProviderObservabilityWindow\(snapshot\)/);
+  assert.match(worker, /restoreProviderObservabilityWindow\(localSnapshot\)/);
   assert.match(worker, /providerSloPersistenceErrors/);
 });
 
@@ -59,6 +59,8 @@ test('provider SLO is release-gated and production-smoke checked', () => {
   assert.match(worker, /providerSloObservability: 'enabled'/);
   assert.match(worker, /providerSloSelfTest: providerSloSelfTest\(\)\.pass \? 'enabled' : 'failed'/);
   assert.match(smoke, /'providerSloObservability'/);
+  assert.match(smoke, /'providerSloDistributedAggregation'/);
+  assert.match(smoke, /'providerSloCadenceValidation'/);
   assert.match(smoke, /'providerSloSelfTest'/);
 });
 
