@@ -201,7 +201,7 @@ const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
 const RELEASE_CHANNEL = 'rc144';
 const RC_NAME = 'RC144';
-const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.19 и примените миграции до v6.26.2; для существующей примените все доступные миграции из supabase/migrations до v6.26.2.';
+const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.19 и примените миграции до v6.26.3; для существующей примените все доступные миграции из supabase/migrations до v6.26.3.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49';
 
@@ -1567,8 +1567,9 @@ async function recordOpsEvent(cfg, event = {}) {
 }
 
 async function recordOpsEventTask(cfg, event = {}) {
+  const createdAt = new Date().toISOString();
   const row = {
-    created_at: new Date().toISOString(),
+    created_at: createdAt,
     severity: ['info','warning','error','critical'].includes(String(event.severity || '')) ? String(event.severity) : 'info',
     source: redactOpsString(event.source || 'worker', 80),
     event_type: redactOpsString(event.eventType || 'runtime', 100),
@@ -1578,10 +1579,36 @@ async function recordOpsEventTask(cfg, event = {}) {
     status: Number.isFinite(Number(event.status)) ? Number(event.status) : null,
     duration_ms: Number.isFinite(Number(event.durationMs)) ? Math.max(0, Math.round(Number(event.durationMs))) : null,
     transition_key: event.transitionKey ? redactOpsString(event.transitionKey, 220) : null,
-    metadata: safeOpsMetadata({ ...currentReleaseIdentity(cfg), ...(event.meta || {}), ...currentReleaseIdentity(cfg) }),
+    occurrence_count: 1,
+    last_occurred_at: createdAt,
+    metadata: safeOpsMetadata({
+      ...currentReleaseIdentity(cfg),
+      ...(event.meta || {}),
+      ...currentReleaseIdentity(cfg),
+      occurrenceCount:1,
+      lastOccurredAt:createdAt,
+    }),
   };
-  memory.opsEvents.unshift(row);
-  memory.opsEvents = memory.opsEvents.slice(0, MAX_MEMORY_OPS_EVENTS);
+
+  const memoryExisting = row.transition_key
+    ? memory.opsEvents.find(item => String(item?.transition_key || '') === row.transition_key)
+    : null;
+  if (memoryExisting) {
+    const nextCount=Math.max(1,Number(memoryExisting?.occurrence_count || memoryExisting?.metadata?.occurrenceCount || 1))+1;
+    memoryExisting.occurrence_count=nextCount;
+    memoryExisting.last_occurred_at=createdAt;
+    memoryExisting.metadata={
+      ...(memoryExisting.metadata || {}),
+      occurrenceCount:nextCount,
+      lastOccurredAt:createdAt,
+    };
+    row.occurrence_count=nextCount;
+    row.metadata={...(row.metadata || {}),occurrenceCount:nextCount,lastOccurredAt:createdAt};
+  } else {
+    memory.opsEvents.unshift(row);
+    memory.opsEvents = memory.opsEvents.slice(0, MAX_MEMORY_OPS_EVENTS);
+  }
+
   const setPersistenceStatus = status => {
     Object.defineProperty(row, '_persistenceStatus', {
       value: status,
@@ -1593,16 +1620,49 @@ async function recordOpsEventTask(cfg, event = {}) {
     setPersistenceStatus('memory_only');
     return row;
   }
+
+  if (row.transition_key) {
+    try {
+      const result=await supaRpc(cfg,'record_ops_event_occurrence',{
+        p_created_at:row.created_at,
+        p_severity:row.severity,
+        p_source:row.source,
+        p_event_type:row.event_type,
+        p_transition_key:row.transition_key,
+        p_code:row.code,
+        p_message:row.message,
+        p_endpoint:row.endpoint,
+        p_status:row.status,
+        p_duration_ms:row.duration_ms,
+        p_metadata:row.metadata,
+      },4000);
+      if (!result?.ok) throw new Error('Persistent ops occurrence was not confirmed.');
+      row.occurrence_count=Math.max(1,Number(result.occurrenceCount || result.occurrence_count || row.occurrence_count || 1));
+      row.last_occurred_at=result.lastOccurredAt || result.last_occurred_at || row.last_occurred_at;
+      row.metadata={
+        ...(row.metadata || {}),
+        occurrenceCount:row.occurrence_count,
+        lastOccurredAt:row.last_occurred_at,
+      };
+      setPersistenceStatus('persistent');
+      return row;
+    } catch {
+      // Backward-compatible DDL boundary: old schemas still dedupe transition
+      // events safely, but cannot yet retain the true occurrence volume.
+    }
+  }
+
   try {
     const url = new URL(`${cfg.supabaseUrl}/rest/v1/ops_events`);
     const prefer = row.transition_key
       ? 'resolution=ignore-duplicates,return=minimal'
       : 'return=minimal';
     if (row.transition_key) url.searchParams.set('on_conflict', 'transition_key');
+    const { occurrence_count: _occurrenceCount, last_occurred_at: _lastOccurredAt, ...legacyRow } = row;
     const response = await fetchWithTimeout(url, {
       method: 'POST',
       headers: supaHeaders(cfg, { Prefer: prefer }),
-      body: JSON.stringify(row),
+      body: JSON.stringify(legacyRow),
     }, 4000, 'Supabase ops event');
     if (!response.ok) {
       const error = new Error(`Supabase ops event HTTP ${response.status}`);
