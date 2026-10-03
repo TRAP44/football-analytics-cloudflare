@@ -105,3 +105,28 @@ test('v6.26 migration provides least-privilege atomic scheduled lease contract',
   ]) assert.ok(sql.includes(marker),marker);
   assert.equal(/delete\s+from\s+public\.scheduled_job_leases/.test(sql),false,'claim RPC must not prune with DELETE on the hot path');
 });
+
+
+test('v6.26 lease SQL bounds TTL, blocks active owners and permits stale-owner reclaim', () => {
+  const sql=fs.readFileSync('supabase/migrations/supabase_migration_v6_26.sql','utf8').toLowerCase();
+  assert.match(
+    sql,
+    /v_lease_seconds integer := greatest\(30, least\(coalesce\(p_lease_seconds,720\),1800\)\)/,
+    'lease ttl must remain bounded between 30 and 1800 seconds',
+  );
+  assert.match(
+    sql,
+    /if v_existing\.locked_until>v_now then[\s\S]*?'duplicate_active'[\s\S]*?end if;/,
+    'an active owner must block a duplicate claim',
+  );
+  assert.match(
+    sql,
+    /and status='running'\s+and locked_until>v_now/,
+    'cross-job overlap must only block while the other owner lease is active',
+  );
+  assert.match(
+    sql,
+    /on conflict \(job_key\) do update[\s\S]*?status='running'[\s\S]*?lease_token=excluded\.lease_token[\s\S]*?locked_until=excluded\.locked_until/,
+    'expired or stale rows must be reclaimable with a new owner token and bounded lock',
+  );
+});
