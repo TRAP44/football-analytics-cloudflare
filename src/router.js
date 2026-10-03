@@ -1,3 +1,5 @@
+import { runSensitiveMutationWithReplay } from './sensitive-mutation-replay.js';
+
 // Phase 2 router boundary: route selection only. Authentication, beta access,
 // runtime controls, burst protection and route error compatibility stay in the composition root.
 export async function dispatchApiRoute(request, url, cfg, user, deps) {
@@ -65,6 +67,24 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
     publicDataCapabilities,
   } = deps;
 
+  async function sensitiveMutation(handler) {
+    const guarded=await runSensitiveMutationWithReplay({
+      request,
+      url,
+      user,
+      memory,
+      handler,
+    });
+    if (guarded.blocked) {
+      return json({
+        error:'Повтор чувствительной операции отклонён.',
+        code:'SENSITIVE_MUTATION_REPLAY_BLOCKED',
+        reason:guarded.reason,
+      },409);
+    }
+    return guarded.response;
+  }
+
   if (request.method === 'GET' && url.pathname === '/api/me') return await apiMe(request, cfg, user);
   if (request.method === 'GET' && url.pathname === '/api/data-capabilities') return json({ dataCapabilities: publicDataCapabilities() });
   if (request.method === 'POST' && url.pathname === '/api/client-telemetry') return await apiClientTelemetry(request, cfg, user);
@@ -79,11 +99,11 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
   }
   if (request.method === 'POST' && url.pathname === '/api/admin/billing/refund') {
     if (!isAdminUser(user, cfg)) return adminForbidden();
-    return await apiBillingRefund(request, cfg, user);
+    return await sensitiveMutation(()=>apiBillingRefund(request, cfg, user));
   }
   if (request.method === 'POST' && url.pathname === '/api/admin/channel-publisher/test') {
     if (!isAdminUser(user, cfg)) return adminForbidden();
-    return await apiChannelPublisherTest(request, cfg, user);
+    return await sensitiveMutation(()=>apiChannelPublisherTest(request, cfg, user));
   }
   if (request.method === 'GET' && url.pathname === '/api/phase5-dashboard') {
     if (!isAdminUser(user, cfg)) return adminForbidden();
@@ -91,11 +111,13 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
   }
   if (url.pathname === '/api/runtime-controls') {
     if (!isAdminUser(user, cfg)) return adminForbidden();
-    return await apiRuntimeControls(request, cfg, user);
+    return request.method === 'GET'
+      ? await apiRuntimeControls(request, cfg, user)
+      : await sensitiveMutation(()=>apiRuntimeControls(request, cfg, user));
   }
   if (url.pathname === '/api/runtime-controls/rollback') {
     if (!isAdminUser(user, cfg)) return adminForbidden();
-    return await apiRuntimeRollback(request, cfg, user);
+    return await sensitiveMutation(()=>apiRuntimeRollback(request, cfg, user));
   }
 
   // v4.3 Admin Security: technical endpoints are protected server-side.
@@ -157,11 +179,15 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
   }
   if (url.pathname === '/api/recovery-incident-ack') {
     if (!isAdminUser(user, cfg)) return adminForbidden();
-    return await apiNewsImpactRecoveryIncidentAck(request, cfg, user);
+    return request.method === 'GET'
+      ? await apiNewsImpactRecoveryIncidentAck(request, cfg, user)
+      : await sensitiveMutation(()=>apiNewsImpactRecoveryIncidentAck(request, cfg, user));
   }
   if (url.pathname === '/api/post-deploy-regression-response') {
     if (!isAdminUser(user, cfg)) return adminForbidden();
-    return await apiPostDeployRegressionResponse(request, cfg, user);
+    return request.method === 'GET'
+      ? await apiPostDeployRegressionResponse(request, cfg, user)
+      : await sensitiveMutation(()=>apiPostDeployRegressionResponse(request, cfg, user));
   }
   if (url.pathname === '/api/reminder-health') {
     if (!isAdminUser(user, cfg)) return adminForbidden();
@@ -180,19 +206,23 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
   if (request.method === 'POST' && url.pathname === '/api/media-publisher-link') return await apiMediaPublisherLink(request,cfg,user);
   if (url.pathname === '/api/calibration-control') {
     if (!isAdminUser(user, cfg)) return adminForbidden();
-    return await apiCalibrationControl(request, cfg, user);
+    return request.method === 'GET'
+      ? await apiCalibrationControl(request, cfg, user)
+      : await sensitiveMutation(()=>apiCalibrationControl(request, cfg, user));
   }
   if (url.pathname === '/api/model-remediation') {
     if (!isAdminUser(user, cfg)) return adminForbidden();
-    return await apiModelRemediation(request, cfg, user);
+    return request.method === 'GET'
+      ? await apiModelRemediation(request, cfg, user)
+      : await sensitiveMutation(()=>apiModelRemediation(request, cfg, user));
   }
   if (request.method === 'GET' && url.pathname === '/api/entitlements') return await apiEntitlements(request, cfg, user);
   if (url.pathname.startsWith('/api/billing/')) {
     if (!cfg.monetizationEnabled) return json({ error: 'Монетизация отложена до финального этапа проекта.' }, 404);
     if (request.method === 'GET' && url.pathname === '/api/billing/plans') return await apiBillingPlans(request, cfg, user);
-    if (request.method === 'POST' && url.pathname === '/api/billing/invoice') return await apiBillingInvoice(request, cfg, user);
-    if (request.method === 'POST' && url.pathname === '/api/billing/sync') return await apiBillingSync(request, cfg, user);
-    if (request.method === 'POST' && url.pathname === '/api/billing/subscription') return await apiBillingSubscription(request, cfg, user);
+    if (request.method === 'POST' && url.pathname === '/api/billing/invoice') return await sensitiveMutation(()=>apiBillingInvoice(request, cfg, user));
+    if (request.method === 'POST' && url.pathname === '/api/billing/sync') return await sensitiveMutation(()=>apiBillingSync(request, cfg, user));
+    if (request.method === 'POST' && url.pathname === '/api/billing/subscription') return await sensitiveMutation(()=>apiBillingSubscription(request, cfg, user));
   }
   if (request.method === 'GET' && url.pathname === '/api/search') return await apiSearch(request, cfg);
   if (request.method === 'GET' && url.pathname === '/api/matches') return await apiMatches(request, cfg);
