@@ -435,6 +435,29 @@ else {
   }
 }
 
+if (!fs.existsSync('supabase/migrations/supabase_migration_v6_26_2.sql')) failures.push('Missing v6.26.2 provider observability/alert lease migration');
+else {
+  const providerReliabilityMigration=fs.readFileSync('supabase/migrations/supabase_migration_v6_26_2.sql','utf8').toLowerCase();
+  for (const marker of [
+    'create table if not exists public.provider_slo_buckets',
+    'create or replace function public.record_provider_slo_observation',
+    'on conflict (bucket_started_at,provider,operation) do update',
+    'create or replace function public.read_provider_slo_buckets',
+    "status in ('claimed','sending','sent','retry_pending','terminal_failed','unknown')",
+    'create or replace function public.claim_provider_incident_alert_delivery_v2',
+    'create or replace function public.begin_provider_incident_alert_delivery_send',
+    'stale_claim_reclaimed',
+    'stale_sending_lease',
+    'revoke all privileges on table public.provider_incident_alert_deliveries'
+  ]) {
+    if (!providerReliabilityMigration.includes(marker.toLowerCase())) failures.push(`v6.26.2 provider reliability migration is missing: ${marker}`);
+  }
+}
+if (!worker.includes("record_provider_slo_observation") || !worker.includes("read_provider_slo_buckets") || !worker.includes("providerSloDistributedAggregation:'enabled'")) failures.push('Issue #405 distributed provider SLO aggregation is incomplete');
+if (!worker.includes("providerSloCadenceValidation:'enabled'") || !worker.includes("windowIntegrity")) failures.push('Issue #405 provider SLO cadence validation is incomplete');
+if (!worker.includes("claim_provider_incident_alert_delivery_v2") || !worker.includes("begin_provider_incident_alert_delivery_send") || !worker.includes("providerIncidentAlertLeaseRecovery:'enabled'")) failures.push('Issue #405 provider alert lease recovery is incomplete');
+if (!worker.includes("providerIncidentBotIdentity(cfg.botToken)") || !worker.includes("providerIncidentStableBotIdentity:'enabled'")) failures.push('Issue #405 stable provider alert bot identity is incomplete');
+
 if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
