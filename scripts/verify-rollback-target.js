@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { cloudflareVersionIdValid, RELEASE_IDENTITY_CODES } from '../src/release-identity.js';
 
 const RELEASE_MESSAGE_RE = /^release=([0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+) sha=([0-9a-f]{40})$/i;
 
@@ -10,6 +11,9 @@ function legacyAllowed(value) {
 export function verifyRollbackTarget(version, expectedVersion, expectedId, allowLegacyUnverified = false, legacyConfirmation = '') {
   if (!version || typeof version !== 'object' || Array.isArray(version)) {
     throw new Error('Cloudflare rollback target metadata must be a JSON object.');
+  }
+  if (!cloudflareVersionIdValid(expectedId) || !cloudflareVersionIdValid(version.id)) {
+    throw new Error(`Rollback target release identity validation failed: ${RELEASE_IDENTITY_CODES.CLOUDFLARE_VERSION_ID_INVALID}.`);
   }
   if (version.id !== expectedId) {
     throw new Error(`Cloudflare resolved version ID ${version.id || 'unknown'} instead of requested ${expectedId}.`);
