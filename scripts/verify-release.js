@@ -3,6 +3,7 @@ import fs from 'node:fs';
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
 const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync('src/router.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-transport.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-dedupe.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-links.js', 'utf8') + '\n' + fs.readFileSync('src/auth-user.js', 'utf8') + '\n' + fs.readFileSync('src/cache-runtime.js', 'utf8') + '\n' + fs.readFileSync('src/api-football-gateway.js', 'utf8') + '\n' + fs.readFileSync('src/scheduled-jobs.js', 'utf8');
+const providerSloIncidents = fs.readFileSync('src/provider-slo-incidents.js','utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
 const viewChrome = fs.readFileSync('public/modules/view-chrome.js', 'utf8');
 const navigationShell = fs.readFileSync('public/modules/navigation-shell.js', 'utf8');
@@ -454,7 +455,7 @@ else {
   }
 }
 if (!worker.includes("record_provider_slo_observation") || !worker.includes("read_provider_slo_buckets") || !worker.includes("providerSloDistributedAggregation:'enabled'")) failures.push('Issue #405 distributed provider SLO aggregation is incomplete');
-if (!worker.includes("providerSloCadenceValidation:'enabled'") || !worker.includes("windowIntegrity")) failures.push('Issue #405 provider SLO cadence validation is incomplete');
+if (!worker.includes("providerSloCadenceValidation:'enabled'") || !providerSloIncidents.includes("windowIntegrity") || !providerSloIncidents.includes("windowCadence")) failures.push('Issue #405 provider SLO cadence validation is incomplete');
 if (!worker.includes("claim_provider_incident_alert_delivery_v2") || !worker.includes("begin_provider_incident_alert_delivery_send") || !worker.includes("providerIncidentAlertLeaseRecovery:'enabled'")) failures.push('Issue #405 provider alert lease recovery is incomplete');
 if (!worker.includes("providerIncidentBotIdentity(cfg.botToken)") || !worker.includes("providerIncidentStableBotIdentity:'enabled'")) failures.push('Issue #405 stable provider alert bot identity is incomplete');
 
