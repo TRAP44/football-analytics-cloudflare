@@ -24,7 +24,7 @@ export function createReminderDeliveryService({
 
   const concurrency = Math.max(1, Math.min(8, Math.round(Number(deliveryConcurrency || 4))));
   const maxPerRun = Math.max(concurrency, Math.min(1000, Math.round(Number(maxDeliveriesPerRun || 240))));
-  const audienceChunkSize = Math.max(25, Math.min(500, Math.round(Number(audienceBatchSize || 250))));
+  const audienceChunkSize = Math.max(1, Math.min(500, Math.round(Number(audienceBatchSize || 250))));
 
   function chunkRows(rows = [], size = audienceChunkSize) {
     const output = [];
