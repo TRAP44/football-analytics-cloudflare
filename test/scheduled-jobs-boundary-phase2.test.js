@@ -95,8 +95,8 @@ function runtime(overrides = {}) {
   return { api: createScheduledJobsRuntime(deps), calls, events, leases };
 }
 
-test('scheduled result contract standardizes success, skipped, degraded and failed shapes', () => {
-  assert.equal(normalizeScheduledTaskResult('ok',{ok:true}).status,'success');
+test('scheduled result contract standardizes ok, failed, degraded and skipped shapes', () => {
+  assert.equal(normalizeScheduledTaskResult('ok',{ok:true}).status,'ok');
   assert.equal(normalizeScheduledTaskResult('skip',{skipped:'already_checked'}).status,'skipped');
   assert.equal(normalizeScheduledTaskResult('degraded',{checked:4,failed:1}).status,'degraded');
   assert.equal(normalizeScheduledTaskResult('failed',{ok:false,error:'boom'}).status,'failed');
@@ -123,7 +123,7 @@ test('scheduled boundary preserves dependency ordering without failure propagati
   releaseBacktest({ ok: true });
   const results=await rt.api.observeScheduledTasks({}, tasks);
   assert.equal(postMatchStarted, true);
-  assert.equal(results.find(row=>row.task==='backtest').status,'success');
+  assert.equal(results.find(row=>row.task==='backtest').status,'ok');
 });
 
 test('rejected backtest cannot suppress watchdog or finality safety work', async () => {
@@ -134,7 +134,7 @@ test('rejected backtest cannot suppress watchdog or finality safety work', async
   const watchdogResults=await watchdog.api.observeScheduledTasks({},watchdogTasks);
   assert.equal(watchdog.calls.includes('settlement_watchdog'),true);
   assert.equal(watchdogResults.find(row=>row.task==='backtest').status,'failed');
-  assert.equal(watchdogResults.find(row=>row.task==='settlement_watchdog').status,'success');
+  assert.equal(watchdogResults.find(row=>row.task==='settlement_watchdog').status,'ok');
 
   const finality=runtime({
     settleBacktestDaily: async () => { throw new Error('backtest failed'); },
@@ -143,10 +143,10 @@ test('rejected backtest cannot suppress watchdog or finality safety work', async
   const finalityResults=await finality.api.observeScheduledTasks({},finalityTasks);
   assert.equal(finality.calls.includes('settlement_finality'),true);
   assert.equal(finalityResults.find(row=>row.task==='backtest').status,'failed');
-  assert.equal(finalityResults.find(row=>row.task==='settlement_finality').status,'success');
+  assert.equal(finalityResults.find(row=>row.task==='settlement_finality').status,'ok');
 });
 
-test('degraded results are observed as warnings while skipped results remain explicit non-failures', async () => {
+test('degraded, skipped and failed results are all observable with distinct dispositions', async () => {
   const rt=runtime();
   const tasks=[
     ['degraded_task',Promise.resolve(normalizeScheduledTaskResult('degraded_task',{checked:3,failed:1}))],
@@ -157,10 +157,12 @@ test('degraded results are observed as warnings while skipped results remain exp
   assert.deepEqual(results.map(row=>row.status),['degraded','skipped','failed']);
   assert.deepEqual(rt.events.map(event=>[event.code,event.meta.task,event.meta.disposition]),[
     ['CRON_TASK_DEGRADED','degraded_task','degraded'],
+    ['CRON_TASK_SKIPPED','skipped_task','skipped'],
     ['CRON_TASK_FAILED','failed_task','failed'],
   ]);
   assert.equal(rt.events[0].severity,'warning');
-  assert.equal(rt.events[1].severity,'error');
+  assert.equal(rt.events[1].severity,'info');
+  assert.equal(rt.events[2].severity,'error');
 });
 
 test('production monitor still waits for reminders completion even when reminders fail', async () => {
@@ -234,10 +236,14 @@ test('duplicate invocation and cross-isolate overlap are blocked by the shared g
   assert.equal(duplicate[0].task,'scheduled_execution');
   assert.equal(duplicate[0].status,'skipped');
   assert.equal(['duplicate_active','overlap'].includes(duplicate[0].reason),true);
+  assert.equal(isolateB.events.at(-1)?.code,'CRON_EXECUTION_SKIPPED');
+  assert.equal(isolateB.events.at(-1)?.meta?.reason,'duplicate_active');
 
   const overlappingNextSlot=await isolateB.api.executeScheduledRun({scheduledTime:Date.parse('2026-09-28T12:10:00.000Z')},{});
   assert.equal(overlappingNextSlot[0].status,'skipped');
   assert.equal(overlappingNextSlot[0].reason,'overlap');
+  assert.equal(isolateB.events.at(-1)?.code,'CRON_EXECUTION_SKIPPED');
+  assert.equal(isolateB.events.at(-1)?.meta?.reason,'overlap');
 
   releaseBacktest({ok:true});
   await first;
@@ -245,9 +251,11 @@ test('duplicate invocation and cross-isolate overlap are blocked by the shared g
   const duplicateAfterCompletion=await isolateB.api.executeScheduledRun({scheduledTime:Date.parse('2026-09-28T12:05:00.000Z')},{});
   assert.equal(duplicateAfterCompletion[0].status,'skipped');
   assert.equal(duplicateAfterCompletion[0].reason,'duplicate');
+  assert.equal(isolateB.events.at(-1)?.code,'CRON_EXECUTION_SKIPPED');
+  assert.equal(isolateB.events.at(-1)?.meta?.reason,'duplicate');
 
   const nextRun=await isolateB.api.executeScheduledRun({scheduledTime:Date.parse('2026-09-28T12:10:00.000Z')},{});
-  assert.ok(nextRun.some(row=>row.task==='backtest' && row.status==='success'));
+  assert.ok(nextRun.some(row=>row.task==='backtest' && row.status==='ok'));
 });
 
 test('07 UTC provider-heavy tasks remain serialized after backtest failure', async () => {
@@ -262,8 +270,8 @@ test('07 UTC provider-heavy tasks remain serialized after backtest failure', asy
   const results=await rt.api.observeScheduledTasks({},tasks);
   assert.deepEqual(calls,['backtest','daily_digest','post_match_return']);
   assert.equal(results.find(row=>row.task==='backtest').status,'failed');
-  assert.equal(results.find(row=>row.task==='daily_digest').status,'success');
-  assert.equal(results.find(row=>row.task==='post_match_return').status,'success');
+  assert.equal(results.find(row=>row.task==='daily_digest').status,'ok');
+  assert.equal(results.find(row=>row.task==='post_match_return').status,'ok');
 });
 
 test('scheduled handler registers exactly one execution with waitUntil', async () => {

@@ -336,5 +336,5 @@ test('Worker reuses the established billing route/webhook and keeps monetization
   assert.match(env, /MONETIZATION_ENABLED=false/);
   assert.doesNotMatch(env, /MONETIZATION_ENABLED=true/);
   assert.equal(release.productionSchema, '6.26');
-  assert.equal(release.latestMigration, 'supabase/migrations/supabase_migration_v6_26.sql');
+  assert.equal(release.latestMigration, 'supabase/migrations/supabase_migration_v6_26_1.sql');
 });
