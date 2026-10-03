@@ -31,6 +31,30 @@ test('same-origin JSON API mutation passes the pre-auth request-shape gate', asy
   assert.equal(decision.allowed,true);
 });
 
+
+test('same-origin PUT is accepted while missing JSON content type is rejected', async () => {
+  const ok=request('https://example.com/api/preferences',{
+    method:'PUT',
+    headers:{
+      origin:'https://example.com',
+      'sec-fetch-site':'same-origin',
+      'content-type':'application/json',
+    },
+    body:JSON.stringify({theme:'dark'}),
+  });
+  assert.equal((await preAuthRequestShapeDecision(ok,{api:true})).allowed,true);
+
+  const missingType=request('https://example.com/api/preferences',{
+    method:'PUT',
+    headers:{origin:'https://example.com','sec-fetch-site':'same-origin'},
+    body:JSON.stringify({theme:'dark'}),
+  });
+  const rejected=await preAuthRequestShapeDecision(missingType,{api:true});
+  assert.equal(rejected.allowed,false);
+  assert.equal(rejected.status,415);
+  assert.equal(rejected.code,'UNSUPPORTED_MEDIA_TYPE');
+});
+
 test('cross-origin and cross-site API mutations are rejected before auth/business work', async () => {
   const crossOrigin=request('https://example.com/api/analyze',{
     method:'POST',
@@ -176,6 +200,19 @@ test('admin-sensitive invalid auth gets a tighter pre-auth throttle', async () =
     assert.equal((await guard.registerInvalidAuthFailure(req,{adminSensitive:true})).blocked,false);
   }
   assert.equal((await guard.registerInvalidAuthFailure(req,{adminSensitive:true})).blocked,true);
+});
+
+
+test('invalid-auth burst guard has a hard bucket cardinality cap', async () => {
+  const memory={authFailureBurst:new Map()};
+  const guard=createPreAuthAbuseGuard({memory});
+  for (let i=0;i<2200;i+=1) {
+    const req=request('https://example.com/api/me',{
+      headers:{'cf-connecting-ip':`203.0.${Math.floor(i/255)}.${i%255}`},
+    });
+    await guard.registerInvalidAuthFailure(req,{adminSensitive:false});
+  }
+  assert.ok(memory.authFailureBurst.size<=2048);
 });
 
 test('Telegram webhook shape gate requires POST JSON and bounds payloads', async () => {
