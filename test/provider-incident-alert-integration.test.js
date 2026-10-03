@@ -120,7 +120,7 @@ test('operational lifecycle includes watch, incident, recovery and delivery stat
 
 
 test('v6.26.2 adds two-phase reclaimable alert claims without weakening ambiguous-send safety', () => {
-  assert.match(migration405,/status in \('claimed','sending','sent','retry_pending','terminal_failed','unknown'\)/);
+  assert.match(migration405,/delivery_phase in \('legacy','claimed','sending','retry'\)/);
   assert.match(migration405,/destination_identity_version text not null default 'legacy'/);
   assert.match(migration405,/destination_identity_version in \('legacy','stable_v1'\)/);
   assert.match(migration405,/create or replace function public\.claim_provider_incident_alert_delivery_v2/);
