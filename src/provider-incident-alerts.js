@@ -69,11 +69,21 @@ function deliveryState(rows = [], alertKey = '', destinations = [], nowMs = Date
   let maxAttempts = 0;
 
   for (const destination of destinations) {
-    const row = byDestination.get(destination.destinationKey) || null;
+    let row=byDestination.get(destination.destinationKey) || null;
+    if (!row) {
+      row=matching.find(candidate =>
+        String(candidate?.destination_identity_version || candidate?.destinationIdentityVersion || 'legacy')==='legacy'
+        && Number(candidate?.destination_slot ?? candidate?.destinationSlot)===Number(destination.slot)
+      ) || null;
+    }
     if (!row) {
       pending.push(destination);
       continue;
     }
+    const rowDestinationKey=String(row?.destination_key || row?.destinationKey || '');
+    const pendingDestination=rowDestinationKey && rowDestinationKey!==destination.destinationKey
+      ? {...destination,destinationKey:rowDestinationKey,identityVersion:'legacy'}
+      : destination;
     const status = ledgerStatus(row);
     const attempts = Math.max(0, finite(row?.attempts));
     maxAttempts = Math.max(maxAttempts, attempts);
@@ -84,7 +94,7 @@ function deliveryState(rows = [], alertKey = '', destinations = [], nowMs = Date
     if (status === 'retry_pending') {
       const retryAt = Date.parse(String(row?.retry_at || row?.retryAt || ''));
       if (attempts < PROVIDER_INCIDENT_ALERT_POLICY.maxDeferredAttempts && (!Number.isFinite(retryAt) || retryAt <= nowMs)) {
-        pending.push(destination);
+        pending.push(pendingDestination);
       } else if (attempts >= PROVIDER_INCIDENT_ALERT_POLICY.maxDeferredAttempts) {
         terminal.push(destination.slot);
       } else {
@@ -102,13 +112,13 @@ function deliveryState(rows = [], alertKey = '', destinations = [], nowMs = Date
     }
     if (status === 'claimed') {
       const lockedUntil=Date.parse(String(row?.locked_until || row?.lockedUntil || ''));
-      if (!Number.isFinite(lockedUntil) || lockedUntil<=nowMs) pending.push(destination);
+      if (!Number.isFinite(lockedUntil) || lockedUntil<=nowMs) pending.push(pendingDestination);
       else sending.push(destination.slot);
       continue;
     }
     if (status === 'sending') {
       const lockedUntil=Date.parse(String(row?.locked_until || row?.lockedUntil || ''));
-      if (!Number.isFinite(lockedUntil) || lockedUntil<=nowMs) pending.push(destination);
+      if (!Number.isFinite(lockedUntil) || lockedUntil<=nowMs) pending.push(pendingDestination);
       else sending.push(destination.slot);
       continue;
     }
