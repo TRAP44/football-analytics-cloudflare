@@ -42,6 +42,7 @@ test('sustained cross-site blocks open a security incident', () => {
     event(3,'CROSS_SITE_MUTATION_BLOCKED',{nowMs}),
   ],{nowMs});
   assert.equal(result.state,'incident');
+  assert.equal(result.severity,'error');
   assert.equal(result.counts.crossSiteBlocks,3);
 });
 
@@ -225,6 +226,90 @@ test('Issue #407 explicit billing security category is accepted without trusting
   });
   assert.equal(isSecuritySignal(row),true);
   assert.equal(assessSecuritySignals([row],{nowMs}).state,'watch');
+});
+
+
+
+test('Issue #407 maps warning, error and critical assessment severity end-to-end', () => {
+  const nowMs=Date.parse('2026-10-03T20:00:00Z');
+  for (const severity of ['warning','error','critical']) {
+    const assessment={
+      state:'incident',
+      severity,
+      startedAt:new Date(nowMs-60_000).toISOString(),
+      primaryCode:'CROSS_SITE_MUTATION_BLOCKED',
+      signalCount:3,
+      recordCount:1,
+      counts:{crossSiteBlocks:3},
+      windowMinutes:15,
+    };
+    const timeline=securityIncidentTimeline(assessment,[],{nowMs});
+    assert.equal(timeline.activeIncident?.severity,severity);
+    assert.equal(timeline.activeIncident?.diagnostics?.riskLevel,severity);
+    assert.equal(securityIncidentOpsEvent(timeline.transition)?.severity,severity);
+  }
+});
+
+test('Issue #407 legacy generic or missing incident severity falls back safely to error', () => {
+  const nowMs=Date.parse('2026-10-03T20:00:00Z');
+  for (const severity of ['incident',undefined]) {
+    const assessment={
+      state:'incident',
+      severity,
+      startedAt:new Date(nowMs-60_000).toISOString(),
+      primaryCode:'CROSS_SITE_MUTATION_BLOCKED',
+      signalCount:3,
+      recordCount:1,
+      counts:{crossSiteBlocks:3},
+      windowMinutes:15,
+    };
+    const timeline=securityIncidentTimeline(assessment,[],{nowMs});
+    assert.equal(timeline.activeIncident?.severity,'error');
+    assert.equal(securityIncidentOpsEvent(timeline.transition)?.severity,'error');
+  }
+});
+
+test('Issue #407 legacy rows without occurrence count represent one occurrence', () => {
+  const nowMs=Date.parse('2026-10-03T20:00:00Z');
+  const row=event(1,'CROSS_SITE_MUTATION_BLOCKED',{nowMs});
+  const result=assessSecuritySignals([row],{nowMs});
+  assert.equal(result.state,'watch');
+  assert.equal(result.recordCount,1);
+  assert.equal(result.signalCount,1);
+  assert.equal(result.counts.crossSiteBlocks,1);
+});
+
+test('Issue #407 an explicit first occurrence count remains one', () => {
+  const nowMs=Date.parse('2026-10-03T20:00:00Z');
+  const row=event(1,'CROSS_SITE_MUTATION_BLOCKED',{nowMs});
+  row.occurrence_count=1;
+  const result=assessSecuritySignals([row],{nowMs});
+  assert.equal(result.signalCount,1);
+  assert.equal(result.counts.crossSiteBlocks,1);
+});
+
+test('Issue #407 many same-window duplicates retain their full occurrence volume', () => {
+  const nowMs=Date.parse('2026-10-03T20:00:00Z');
+  const row=event(1,'CROSS_SITE_MUTATION_BLOCKED',{nowMs});
+  row.occurrence_count=12;
+  row.last_occurred_at=new Date(nowMs-5_000).toISOString();
+  const result=assessSecuritySignals([row],{nowMs});
+  assert.equal(result.recordCount,1);
+  assert.equal(result.signalCount,12);
+  assert.equal(result.counts.crossSiteBlocks,12);
+  assert.equal(result.state,'incident');
+  assert.equal(result.severity,'error');
+});
+
+test('Issue #407 concurrent duplicate updates use one atomic database increment expression', () => {
+  const migration=fs.readFileSync('supabase/migrations/supabase_migration_v6_26_3.sql','utf8');
+  const conflict=migration.slice(
+    migration.toLowerCase().indexOf('on conflict (transition_key) do update'),
+    migration.toLowerCase().indexOf('returning occurrence_count',migration.toLowerCase().indexOf('on conflict (transition_key) do update'))
+  );
+  assert.match(conflict,/occurrence_count\s*=\s*public\.ops_events\.occurrence_count\s*\+\s*1/i);
+  assert.match(conflict,/last_occurred_at\s*=\s*greatest/i);
+  assert.doesNotMatch(conflict,/select\s+occurrence_count/i);
 });
 
 test('Issue #407 persistence uses an atomic occurrence RPC with backward-compatible fallback', () => {
