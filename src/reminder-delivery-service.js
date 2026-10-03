@@ -522,11 +522,13 @@ export function createReminderDeliveryService({
               ? 'REMINDER_RUN_RATE_LIMITED'
               : dependencyFailures
                 ? 'REMINDER_RUN_WITH_DEPENDENCY_FAILURES'
-                : backlog
-                  ? 'REMINDER_RUN_BACKLOG_DEFERRED'
-                  : staleCleanupFailed
-                    ? 'REMINDER_RUN_DEGRADED'
-                    : 'REMINDER_RUN_OK';
+                : truncated
+                  ? 'REMINDER_RUN_TRUNCATED'
+                  : backlog
+                    ? 'REMINDER_RUN_BACKLOG_DEFERRED'
+                    : staleCleanupFailed
+                      ? 'REMINDER_RUN_DEGRADED'
+                      : 'REMINDER_RUN_OK';
 
       await recordOpsEvent(cfg, {
         severity:ok ? 'info' : 'warning',
