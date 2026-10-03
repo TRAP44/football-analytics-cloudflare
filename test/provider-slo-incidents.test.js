@@ -230,3 +230,22 @@ test('incomplete windows do not confirm provider incidents', () => {
   assert.equal(report.activeIncident,null);
   assert.equal(report.windowIntegrity.incomplete,1);
 });
+
+
+test('incident history is bounded to the ten most recent episodes', () => {
+  const rows=[];
+  const base=Date.parse('2026-09-20T00:15:00.000Z');
+  for (let episode=0;episode<12;episode+=1) {
+    const offset=episode*4;
+    rows.push(window(new Date(base+(offset+0)*15*60_000).toISOString(),'watch'));
+    rows.push(window(new Date(base+(offset+1)*15*60_000).toISOString(),'watch'));
+    rows.push(window(new Date(base+(offset+2)*15*60_000).toISOString(),'healthy'));
+    rows.push(window(new Date(base+(offset+3)*15*60_000).toISOString(),'healthy'));
+  }
+  const report=buildProviderSloIncidentTimeline(rows,{
+    nowMs:base+48*15*60_000,
+  });
+  assert.equal(report.summary.episodes,12);
+  assert.equal(report.history.length,10);
+  assert.equal(report.history.every(item=>item.active===false),true);
+});
