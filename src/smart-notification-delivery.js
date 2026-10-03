@@ -1,4 +1,5 @@
 const CLAIM_STALE_MS = 20 * 60_000;
+const MAX_DELIVERY_ATTEMPTS = 4;
 
 function memoryKey(userId, dedupeKey) {
   return `${Number(userId)}:${String(dedupeKey || '')}`;
@@ -13,6 +14,7 @@ export function createSmartNotificationDeliveryService({
   memory,
   hasSupabase,
   supaRpc,
+  supaSelectOne,
   sendTelegramMessage,
   recordOpsEvent,
 } = {}) {
@@ -28,11 +30,13 @@ export function createSmartNotificationDeliveryService({
     const key = memoryKey(userId, dedupeKey);
     const existing = ledger.get(key);
 
+    let retryReady = false;
+    let staleClaim = false;
     if (existing) {
       const retryAt = Date.parse(existing.retryAt || '');
       const claimedAt = Date.parse(existing.claimedAt || '');
-      const retryReady = existing.status === 'retry_pending' && (!Number.isFinite(retryAt) || retryAt <= now);
-      const staleClaim = existing.status === 'claimed' && Number.isFinite(claimedAt) && claimedAt <= now - CLAIM_STALE_MS;
+      retryReady = existing.status === 'retry_pending' && (!Number.isFinite(retryAt) || retryAt <= now);
+      staleClaim = existing.status === 'claimed' && Number.isFinite(claimedAt) && claimedAt <= now - CLAIM_STALE_MS;
       if (!retryReady && !staleClaim) return { allowed: false, reason: existing.status === 'retry_pending' ? 'retry_wait' : 'duplicate' };
     }
 
@@ -63,7 +67,12 @@ export function createSmartNotificationDeliveryService({
       createdAt: existing?.createdAt || claimAt,
       updatedAt: claimAt,
     });
-    return { allowed: true, reason: existing ? 'retry' : 'created', claimAt };
+    return {
+      allowed: true,
+      reason: staleClaim ? 'stale_claim_recovered' : retryReady ? 'retry' : 'created',
+      claimAt,
+      attempts: Math.max(0, Number(existing?.attempts || 0)) + 1,
+    };
   }
 
   async function claim(input, cfg) {
@@ -76,11 +85,20 @@ export function createSmartNotificationDeliveryService({
       p_dedupe_key: String(input.dedupeKey || ''),
       p_cooldown_seconds: Math.max(0, Math.round(Number(input.cooldownSeconds || 0))),
     }, 5000);
-    return {
+    const claimed = {
       allowed: result?.allowed === true,
       reason: String(result?.reason || (result?.allowed ? 'claimed' : 'duplicate')),
       claimAt: result?.claimAt || result?.claim_at || null,
+      attempts: Number(result?.attempts || 0) || 0,
     };
+    if (claimed.allowed && typeof supaSelectOne === 'function') {
+      const row = await supaSelectOne(cfg, 'smart_notification_deliveries', {
+        telegram_id: `eq.${Number(input.userId)}`,
+        dedupe_key: `eq.${String(input.dedupeKey || '')}`,
+      });
+      claimed.attempts = Math.max(claimed.attempts, Number(row?.attempts || 0));
+    }
+    return claimed;
   }
 
   async function finalizeMemory(input) {
@@ -127,8 +145,39 @@ export function createSmartNotificationDeliveryService({
         notificationType: String(payload.eventType || ''),
         category: String(payload.category || ''),
         disposition: String(payload.disposition || ''),
+        attempts: Number(payload.attempts || 0) || null,
       },
     }).catch(() => {});
+  }
+
+  async function finalizeOwned(input, cfg, context = {}) {
+    try {
+      const updated = await finalize(input, cfg);
+      if (updated === true) return { updated: true };
+      await observe(cfg, {
+        severity: 'error',
+        code: 'SMART_NOTIFICATION_FINALIZE_CLAIM_LOST',
+        message: 'Smart notification finalization lost claim ownership; automatic resend is suppressed.',
+        fixtureId: context.fixtureId,
+        eventType: context.eventType,
+        category: context.category,
+        disposition: context.disposition || 'finalize_claim_lost',
+        attempts: context.attempts,
+      });
+      return { updated: false, claimLost: true };
+    } catch (error) {
+      await observe(cfg, {
+        severity: 'error',
+        code: 'SMART_NOTIFICATION_FINALIZE_FAILED',
+        message: error?.message || 'Smart notification finalization failed; automatic resend is suppressed.',
+        fixtureId: context.fixtureId,
+        eventType: context.eventType,
+        category: context.category,
+        disposition: context.disposition || 'finalize_failed',
+        attempts: context.attempts,
+      });
+      return { updated: false, error };
+    }
   }
 
   async function deliverSmartNotification({
@@ -156,8 +205,58 @@ export function createSmartNotificationDeliveryService({
         eventType,
         category,
         disposition: state,
+        attempts: claimed.attempts,
       });
       return { state };
+    }
+
+    const finalizeContext = {
+      fixtureId,
+      eventType,
+      category,
+      attempts: claimed.attempts,
+    };
+
+    if (claimed.reason === 'stale_claim_recovered') {
+      const quarantined = await finalizeOwned({
+        userId,
+        dedupeKey,
+        claimAt: claimed.claimAt,
+        status: 'unknown',
+        error: 'Recovered stale claim quarantined to prevent duplicate delivery.',
+      }, cfg, { ...finalizeContext, disposition: 'stale_claim_quarantine' });
+      await observe(cfg, {
+        severity: 'warning',
+        code: 'SMART_NOTIFICATION_STALE_CLAIM_QUARANTINED',
+        message: 'Recovered stale smart-notification claim was quarantined before send to prevent a duplicate.',
+        fixtureId,
+        eventType,
+        category,
+        disposition: 'stale_claim_quarantined',
+        attempts: claimed.attempts,
+      });
+      return { state: 'unknown', quarantined: true, persistenceFailed: quarantined.updated !== true };
+    }
+
+    if (Number(claimed.attempts || 0) > MAX_DELIVERY_ATTEMPTS) {
+      const capped = await finalizeOwned({
+        userId,
+        dedupeKey,
+        claimAt: claimed.claimAt,
+        status: 'terminal_failed',
+        error: `Maximum delivery attempts exceeded (${MAX_DELIVERY_ATTEMPTS}).`,
+      }, cfg, { ...finalizeContext, disposition: 'max_attempts' });
+      await observe(cfg, {
+        severity: 'warning',
+        code: 'SMART_NOTIFICATION_MAX_ATTEMPTS',
+        message: `Smart notification stopped after ${MAX_DELIVERY_ATTEMPTS} delivery attempts.`,
+        fixtureId,
+        eventType,
+        category,
+        disposition: 'max_attempts',
+        attempts: claimed.attempts,
+      });
+      return { state: 'failed', maxAttempts: true, persistenceFailed: capped.updated !== true };
     }
 
     let result;
@@ -175,7 +274,14 @@ export function createSmartNotificationDeliveryService({
     }
 
     if (result?.ok) {
-      await finalize({ userId, dedupeKey, claimAt: claimed.claimAt, status: 'sent' }, cfg);
+      const finalized = await finalizeOwned(
+        { userId, dedupeKey, claimAt: claimed.claimAt, status: 'sent' },
+        cfg,
+        { ...finalizeContext, disposition: 'sent_finalize' },
+      );
+      if (finalized.updated !== true) {
+        return { state: 'unknown', result, persistenceFailed: true };
+      }
       await observe(cfg, {
         code: 'SMART_NOTIFICATION_SENT',
         message: 'Smart notification delivered.',
@@ -183,18 +289,19 @@ export function createSmartNotificationDeliveryService({
         eventType,
         category,
         disposition: 'sent',
+        attempts: claimed.attempts,
       });
       return { state: 'sent', result };
     }
 
     if (result?.outcome === 'unknown') {
-      await finalize({
+      const finalized = await finalizeOwned({
         userId,
         dedupeKey,
         claimAt: claimed.claimAt,
         status: 'unknown',
         error: result?.description || 'Telegram delivery outcome unknown.',
-      }, cfg);
+      }, cfg, { ...finalizeContext, disposition: 'unknown_finalize' });
       await observe(cfg, {
         severity: 'warning',
         code: 'SMART_NOTIFICATION_DELIVERY_UNKNOWN',
@@ -203,22 +310,26 @@ export function createSmartNotificationDeliveryService({
         eventType,
         category,
         disposition: 'unknown',
+        attempts: claimed.attempts,
       });
-      return { state: 'unknown', result };
+      return { state: 'unknown', result, persistenceFailed: finalized.updated !== true };
     }
 
     const status = Number(result?.status || result?.errorCode || 0);
     const retryable = retryableTelegramFailure(result);
     const retryAfterSeconds = retryable ? Math.max(1, Number(result?.retryAfter || 60)) : 0;
     const finalStatus = retryable ? 'retry_pending' : 'terminal_failed';
-    await finalize({
+    const finalized = await finalizeOwned({
       userId,
       dedupeKey,
       claimAt: claimed.claimAt,
       status: finalStatus,
       error: result?.description || 'Telegram delivery failed.',
       retryAfterSeconds,
-    }, cfg);
+    }, cfg, { ...finalizeContext, disposition: `${finalStatus}_finalize` });
+    if (finalized.updated !== true) {
+      return { state: 'failed', result, persistenceFailed: true };
+    }
 
     await observe(cfg, {
       severity: 'warning',
@@ -230,6 +341,7 @@ export function createSmartNotificationDeliveryService({
       eventType,
       category,
       disposition: retryable ? `retry_${status || 'network'}` : `terminal_${status || 'unknown'}`,
+      attempts: claimed.attempts,
     });
     return { state: retryable ? 'retry_pending' : 'failed', result };
   }
