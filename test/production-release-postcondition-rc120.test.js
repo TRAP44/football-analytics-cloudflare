@@ -35,6 +35,51 @@ test('RC120 accepts one active 100 percent version with exact release and commit
   assert.equal(result.versionId, activeId);
   assert.equal(result.release, release);
   assert.equal(result.sha, sha);
+  assert.equal(result.timestamp, '2026-09-24T11:47:00.000Z');
+});
+
+
+test('Issue #409 rejects malformed Cloudflare version IDs in the control-plane verifier', () => {
+  const malformedId='not-a-version-id';
+  assert.throws(
+    () => verifyProductionReleasePostcondition(
+      deployment([{ version_id: malformedId, percentage: 100 }]),
+      [version(malformedId, `release=${release} sha=${sha}`)],
+      release,
+      sha,
+    ),
+    /RELEASE_IDENTITY_CLOUDFLARE_VERSION_ID_INVALID/,
+  );
+});
+
+test('Issue #409 rejects non-canonical and implausible future control-plane timestamps', () => {
+  const nonCanonical={
+    ...version(activeId, `release=${release} sha=${sha}`),
+    metadata:{created_on:'0',source:'wrangler'},
+  };
+  assert.throws(
+    () => verifyProductionReleasePostcondition(
+      deployment([{ version_id: activeId, percentage: 100 }]),
+      [nonCanonical],
+      release,
+      sha,
+    ),
+    /RELEASE_IDENTITY_CLOUDFLARE_VERSION_TIMESTAMP_INVALID_FORMAT/,
+  );
+
+  const future={
+    ...version(activeId, `release=${release} sha=${sha}`),
+    metadata:{created_on:'2099-01-01T00:00:00.000Z',source:'wrangler'},
+  };
+  assert.throws(
+    () => verifyProductionReleasePostcondition(
+      deployment([{ version_id: activeId, percentage: 100 }]),
+      [future],
+      release,
+      sha,
+    ),
+    /RELEASE_IDENTITY_CLOUDFLARE_VERSION_TIMESTAMP_FUTURE_SKEW/,
+  );
 });
 
 test('RC120 rejects a Cloudflare version tag that is not the deploy SHA', () => {

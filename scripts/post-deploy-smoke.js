@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { validateReleaseIdentity } from '../src/release-identity.js';
 
 const REQUIRED_HEALTH_FLAGS = [
   'adminSecurity',
@@ -292,17 +293,16 @@ function verifyRuntimeDeploymentIdentity(body, label, expectedSha) {
   if (!expectedSha) return;
   if (!/^[0-9a-f]{40}$/i.test(String(expectedSha))) throw new Error('Expected deploy SHA must be a 40-character Git commit SHA.');
   const deployment=body?.deployment || {};
+  const validation=validateReleaseIdentity({
+    ...deployment,
+    appVersion:body?.version,
+    releaseCandidate:body?.releaseCandidate,
+  });
+  if (!validation.ok) {
+    throw new Error(`${label} release identity validation failed: ${validation.code}.`);
+  }
   if (String(deployment.deploySha || '').toLowerCase() !== String(expectedSha).toLowerCase()) {
     throw new Error(`${label} deploy SHA does not match the verified production revision.`);
-  }
-  if (String(deployment.cloudflareVersionTag || '').toLowerCase() !== String(expectedSha).toLowerCase()) {
-    throw new Error(`${label} Cloudflare version tag does not match deploy SHA.`);
-  }
-  if (!String(deployment.cloudflareVersionId || '').trim()) {
-    throw new Error(`${label} is missing Cloudflare version ID.`);
-  }
-  if (!Number.isFinite(Date.parse(String(deployment.cloudflareVersionTimestamp || '')))) {
-    throw new Error(`${label} is missing Cloudflare version timestamp.`);
   }
 }
 

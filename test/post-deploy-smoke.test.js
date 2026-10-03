@@ -355,6 +355,19 @@ function healthyFetch({ staleOnce = false, devMode = false, monetization = 'paus
   };
 }
 
+
+function healthyFetchWithDeployment(identity) {
+  const base=healthyFetch();
+  const identityPaths=new Set(['/health/ready','/health','/api/app-manifest','/api/public-status']);
+  return async input=>{
+    const url=new URL(input);
+    const response=await base(input);
+    if(!identityPaths.has(url.pathname)) return response;
+    const body=await response.json();
+    return json({...body,deployment:identity},response.status);
+  };
+}
+
 test('post-deploy smoke validates RC35, security headers and protected routes', async () => {
   const result = await runDeploymentSmoke('https://football.example.test', '6.27.0-rc35', {
     fetchImpl: healthyFetch(),
@@ -380,6 +393,35 @@ test('post-deploy smoke binds runtime Cloudflare identity to exact deploy SHA', 
       retryDelayMs: 0,
     }),
     /deploy SHA does not match/,
+  );
+});
+
+
+test('Issue #409 post-deploy smoke rejects malformed Cloudflare version IDs with the validator code', async () => {
+  await assert.rejects(
+    runDeploymentSmoke('https://football.example.test','6.27.0-rc35',deploySha,{
+      fetchImpl:healthyFetchWithDeployment({
+        ...deploymentIdentity,
+        cloudflareVersionId:'version-id',
+      }),
+      retries:1,
+      retryDelayMs:0,
+    }),
+    /RELEASE_IDENTITY_CLOUDFLARE_VERSION_ID_INVALID/,
+  );
+});
+
+test('Issue #409 post-deploy smoke rejects implausible future Cloudflare timestamps', async () => {
+  await assert.rejects(
+    runDeploymentSmoke('https://football.example.test','6.27.0-rc35',deploySha,{
+      fetchImpl:healthyFetchWithDeployment({
+        ...deploymentIdentity,
+        cloudflareVersionTimestamp:'2099-01-01T00:00:00.000Z',
+      }),
+      retries:1,
+      retryDelayMs:0,
+    }),
+    /RELEASE_IDENTITY_CLOUDFLARE_VERSION_TIMESTAMP_FUTURE_SKEW/,
   );
 });
 
