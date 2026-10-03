@@ -39,10 +39,19 @@ function header(request, name) {
   return String(request?.headers?.get?.(name) || '').trim();
 }
 
-async function networkFingerprint(request) {
+async function requestFingerprint(request) {
   const ip = header(request, 'cf-connecting-ip');
-  if (!ip) return '';
-  const payload = new TextEncoder().encode(`matchradar-edge-v1|${ip}`);
+  const initData = header(request, 'x-telegram-init-data');
+  if (!ip && !initData) return '';
+
+  // Prefer a credential-scoped fingerprint when Telegram initData is present so
+  // unrelated signed users behind one NAT do not share the same edge bucket.
+  // Keep the IP in the hash as defense-in-depth; invalid rotating initData is
+  // still constrained by the separate pre-auth IP burst guard.
+  const material = initData
+    ? `matchradar-edge-v2|telegram|${ip}|${initData}`
+    : `matchradar-edge-v2|network|${ip}`;
+  const payload = new TextEncoder().encode(material);
   const digest = await crypto.subtle.digest('SHA-256', payload);
   return [...new Uint8Array(digest)]
     .slice(0, 12)
@@ -89,7 +98,7 @@ export async function cloudflareEdgeGuard(request, env = {}) {
     return { blocked: false, configured: false, degraded: true, policy: policy.id };
   }
 
-  const fingerprint = await networkFingerprint(request);
+  const fingerprint = await requestFingerprint(request);
   if (!fingerprint) {
     // Do not collapse unrelated visitors into one global bucket when a network
     // identity is unavailable. Existing authenticated/local/distributed guards
