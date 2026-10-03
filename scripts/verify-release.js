@@ -444,7 +444,7 @@ else {
     'create or replace function public.record_provider_slo_observation',
     'on conflict (bucket_started_at,provider,operation) do update',
     'create or replace function public.read_provider_slo_buckets',
-    "status in ('claimed','sending','sent','retry_pending','terminal_failed','unknown')",
+    "delivery_phase in ('legacy','claimed','sending','retry')",
     'create or replace function public.claim_provider_incident_alert_delivery_v2',
     'create or replace function public.begin_provider_incident_alert_delivery_send',
     'stale_claim_reclaimed',
