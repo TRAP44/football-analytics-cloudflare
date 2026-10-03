@@ -22,7 +22,6 @@ begin
     select
       1 as priority,
       coalesce(ac.source_updated_at, ac.updated_at, ac.created_at) as observed_at,
-      nullif(ac.payload->'match'->>'home', '') as unused_home_object,
       ac.payload->'match'->'home'->>'name' as home_name,
       ac.payload->'match'->'away'->>'name' as away_name,
       ac.payload->'match'->>'league' as league_name,
@@ -35,6 +34,7 @@ begin
     from public.analysis_cache ac
     where ac.fixture_id = p_fixture_id
       and ac.cache_key like 'match-center:%'
+      and coalesce(ac.source_updated_at, ac.updated_at, ac.created_at) >= now() - interval '36 hours'
       and jsonb_typeof(ac.payload->'match') = 'object'
       and ac.payload->'match'->>'fixtureId' = p_fixture_id::text
 
@@ -43,7 +43,6 @@ begin
     select
       2 as priority,
       coalesce(ac.source_updated_at, ac.updated_at, ac.created_at) as observed_at,
-      null::text as unused_home_object,
       fixture_row->'teams'->'home'->>'name' as home_name,
       fixture_row->'teams'->'away'->>'name' as away_name,
       fixture_row->'league'->>'name' as league_name,
@@ -61,6 +60,7 @@ begin
       end
     ) fixture_row
     where ac.cache_key like 'provider-fixtures:%'
+      and coalesce(ac.source_updated_at, ac.updated_at, ac.created_at) >= now() - interval '36 hours'
       and fixture_row->'fixture'->>'id' = p_fixture_id::text
 
     union all
@@ -68,7 +68,6 @@ begin
     select
       3 as priority,
       mp.captured_at as observed_at,
-      null::text as unused_home_object,
       mp.home_name,
       mp.away_name,
       mp.league_name,
@@ -76,12 +75,12 @@ begin
       'model_prediction'::text as source
     from public.model_predictions mp
     where mp.fixture_id = p_fixture_id
+      and mp.captured_at >= now() - interval '36 hours'
   )
   select *
   into v_candidate
   from candidates
-  where observed_at >= now() - interval '36 hours'
-    and fixture_date is not null
+  where fixture_date is not null
     and btrim(coalesce(home_name, '')) <> ''
     and btrim(coalesce(away_name, '')) <> ''
   order by priority asc, observed_at desc
