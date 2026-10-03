@@ -96,20 +96,13 @@ export function createUserRemindersService({
 
   async function canonicalFixture(input, cfg) {
     const fixtureId = requireFixtureId(input?.fixtureId);
-
-    let result = null;
-    if (hasSupabase(cfg)) {
-      result = await supaRpc(cfg, 'resolve_match_reminder_fixture', {
-        p_fixture_id: fixtureId,
-      }, 3000);
-    } else if (typeof resolveCanonicalFixture === 'function') {
-      result = await resolveCanonicalFixture(fixtureId, cfg);
-    } else {
-      // Local/test fallback has no shared trusted cache. Production always uses
-      // the server-side canonical resolver above.
+    if (typeof resolveCanonicalFixture !== 'function') {
+      // Local/test fallback has no shared trusted cache. Production persistence
+      // canonicalizes independently inside save_match_reminder_guarded_v2.
       return { ...input, fixtureId };
     }
 
+    const result = await resolveCanonicalFixture(fixtureId, cfg);
     if (!result?.available) {
       if (String(result?.reason || '') === 'fixture_started') {
         throw personalDataError('Матч уже начинается или начался.');
@@ -123,6 +116,16 @@ export function createUserRemindersService({
       awayName: result.awayName,
       leagueName: result.leagueName,
       fixtureDate: result.fixtureDate,
+    };
+  }
+
+  function reminderSettings(input, prefs) {
+    const requested = Number(input?.reminderMinutes ?? prefs?.reminderMinutes);
+    return {
+      reminderMinutes: [15, 30, 60].includes(requested) ? requested : 30,
+      kickoffNotify: input?.kickoffNotify === undefined
+        ? Boolean(prefs?.kickoffNotification)
+        : Boolean(input.kickoffNotify),
     };
   }
 
@@ -153,14 +156,50 @@ export function createUserRemindersService({
   async function addReminder(userId, input, cfg) {
     const uid = requireUserId(userId);
     const fixtureId = requireFixtureId(input?.fixtureId);
-    const canonical = await canonicalFixture({ ...input, fixtureId }, cfg);
     const prefs = await getPreferences(uid, cfg);
+    const settings = reminderSettings(input, prefs);
+    const rearm = input?.rearm === true;
+
+    if (hasSupabase(cfg)) {
+      // The database RPC resolves canonical team/league/kickoff metadata from
+      // trusted server-populated caches. Client-supplied identity fields are
+      // deliberately not forwarded as authoritative values.
+      const result = await supaRpc(cfg, 'save_match_reminder_guarded_v2', {
+        p_telegram_id: uid,
+        p_fixture_id: fixtureId,
+        p_home_name: '',
+        p_away_name: '',
+        p_league_name: '',
+        p_fixture_date: null,
+        p_remind_before_minutes: settings.reminderMinutes,
+        p_kickoff_notify: settings.kickoffNotify,
+        p_rearm: rearm,
+        p_limit: PERSONAL_WRITE_LIMITS.reminders,
+      }, 4000);
+      if (!result?.allowed) {
+        const reason = String(result?.reason || 'rejected');
+        if (reason === 'limit_reached') {
+          const error = new Error(`Можно создать не больше ${PERSONAL_WRITE_LIMITS.reminders} активных напоминаний.`);
+          error.code = 'REMINDERS_LIMIT';
+          throw error;
+        }
+        if (reason === 'fixture_started') {
+          throw personalDataError('Матч уже начинается или начался.');
+        }
+        if (['fixture_unavailable','not_cached'].includes(reason)) {
+          throw reminderFixtureUnavailable(reason);
+        }
+        throw personalDataError();
+      }
+      return result.item;
+    }
+
+    const canonical = await canonicalFixture({ ...input, fixtureId }, cfg);
     const normalized = normalizeReminderWrite({
       ...canonical,
-      reminderMinutes: input.reminderMinutes ?? prefs.reminderMinutes,
-      kickoffNotify: input.kickoffNotify === undefined ? Boolean(prefs.kickoffNotification) : Boolean(input.kickoffNotify),
+      reminderMinutes: settings.reminderMinutes,
+      kickoffNotify: settings.kickoffNotify,
     });
-    const rearm = input?.rearm === true;
     const nowIso = new Date().toISOString();
     const row = resetDeliveryState({
       telegram_id: uid,
@@ -173,32 +212,6 @@ export function createUserRemindersService({
       kickoff_notify: normalized.kickoffNotify,
       created_at: nowIso,
     });
-
-    if (hasSupabase(cfg)) {
-      const result = await supaRpc(cfg, 'save_match_reminder_guarded_v2', {
-        p_telegram_id: row.telegram_id,
-        p_fixture_id: row.fixture_id,
-        p_home_name: row.home_name,
-        p_away_name: row.away_name,
-        p_league_name: row.league_name,
-        p_fixture_date: row.fixture_date,
-        p_remind_before_minutes: row.remind_before_minutes,
-        p_kickoff_notify: row.kickoff_notify,
-        p_rearm: rearm,
-        p_limit: PERSONAL_WRITE_LIMITS.reminders,
-      }, 4000);
-      if (!result?.allowed) {
-        const reason = String(result?.reason || 'rejected');
-        const error = new Error(reason === 'limit_reached'
-          ? `Можно создать не больше ${PERSONAL_WRITE_LIMITS.reminders} активных напоминаний.`
-          : reason === 'fixture_started'
-            ? 'Матч уже начинается или начался.'
-            : 'Некорректные данные напоминания.');
-        error.code = reason === 'limit_reached' ? 'REMINDERS_LIMIT' : 'PERSONAL_DATA_INVALID';
-        throw error;
-      }
-      return result.item || row;
-    }
 
     const key = uid;
     const list = pruneMemory(key);
