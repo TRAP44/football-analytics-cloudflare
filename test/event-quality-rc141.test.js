@@ -78,3 +78,17 @@ test('RC141 exposes event quality in Match Center UI and rolls the cache contrac
   assert.match(app, /function eventQualityHintHtml/);
   assert.match(app, /eventQualityHintHtml\(d\.eventQuality\)/);
 });
+
+test('Issue #406 sanitizer cannot re-include rejected duplicate rows that share a provider event id', () => {
+  const rows=[
+    ev('same',12,'home'),
+    ev('same',12,'home'),
+    ev('future',80,'away'),
+  ];
+  const quality=assessMatchEventQuality(rows,{eventsMeta:trustedMeta,mode:'live',elapsed:20});
+  assert.deepEqual(quality.displayEventIndices,[0]);
+  assert.deepEqual(quality.duplicateEventIndices,[1]);
+  assert.deepEqual(quality.rejectedEventIndices,[2]);
+  assert.deepEqual(sanitizeEventsForDisplay(rows,quality).map(row=>row.id),['same']);
+  assert.deepEqual(eventsForTrustedAnalytics(rows,quality).map(row=>row.id),['same']);
+});
