@@ -47,6 +47,19 @@ export function createHttpRuntime({
       };
     }
 
+    if (code === 'REMINDER_FIXTURE_UNAVAILABLE') {
+      return {
+        status: 503,
+        body: {
+          error: 'Матч не удалось подтвердить по актуальным серверным данным. Обновите список матчей и попробуйте ещё раз.',
+          code,
+          category: 'fixture_validation',
+          recoverable: true,
+          retryAfter: retryAfter || 30,
+        },
+      };
+    }
+
     if (code === 'PERSONAL_DATA_INVALID') {
       return {
         status: 400,
