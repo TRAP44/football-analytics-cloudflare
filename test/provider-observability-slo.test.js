@@ -4,6 +4,7 @@ import {
   createProviderObservabilityRuntime,
   providerSloState,
   DEFAULT_PROVIDER_SLO_POLICY,
+  providerSloWindowsFromBuckets,
 } from '../src/provider-observability.js';
 
 function runtime(start = Date.parse('2026-09-28T12:00:00.000Z')) {
@@ -132,4 +133,114 @@ test('provider SLO policy exposes stable operational thresholds', () => {
   assert.equal(DEFAULT_PROVIDER_SLO_POLICY.avgAttemptLatencyMs, 2500);
 
   assert.equal(providerSloState({ requests:10, successRatePct:100, timeoutRatePct:0, rateLimitRatePct:0, retryRatePct:0, avgAttemptLatencyMs:100 }).state, 'healthy');
+});
+
+
+test('distributed provider buckets combine cross-isolate traffic into one canonical window', () => {
+  const now=Date.parse('2026-09-28T12:20:00.000Z');
+  const rows=[
+    {
+      bucket_started_at:'2026-09-28T12:00:00.000Z',
+      provider:'api-football',
+      operation:'/fixtures',
+      attempts:8,
+      requests:6,
+      successes:5,
+      failures:1,
+      retries:2,
+      timeouts:1,
+      network_errors:0,
+      rate_limits:0,
+      http_errors:0,
+      invalid_responses:0,
+      latency_sum_ms:2400,
+      latency_samples:8,
+      max_latency_ms:800,
+      updated_at:'2026-09-28T12:12:00.000Z',
+    },
+  ];
+  const windows=providerSloWindowsFromBuckets(rows,{hours:1,nowMs:now,includeOpen:false});
+  assert.equal(windows.length,1);
+  assert.equal(windows[0].metadata.windowId,'provider-slo:2026-09-28T12:00:00.000Z');
+  assert.equal(windows[0].metadata.totals.requests,6);
+  assert.equal(windows[0].metadata.totals.attempts,8);
+  assert.equal(windows[0].metadata.series.length,1);
+});
+
+test('requested hours excludes older distributed buckets and duplicate snapshots do not double count', () => {
+  const now=Date.parse('2026-09-28T12:20:00.000Z');
+  const base={
+    provider:'api-football',
+    operation:'/fixtures',
+    attempts:2,
+    requests:2,
+    successes:2,
+    failures:0,
+    retries:0,
+    timeouts:0,
+    network_errors:0,
+    rate_limits:0,
+    http_errors:0,
+    invalid_responses:0,
+    latency_sum_ms:200,
+    latency_samples:2,
+    max_latency_ms:120,
+  };
+  const rows=[
+    {...base,bucket_started_at:'2026-09-28T10:00:00.000Z',updated_at:'2026-09-28T10:05:00.000Z'},
+    {...base,bucket_started_at:'2026-09-28T12:00:00.000Z',requests:1,successes:1,attempts:1,updated_at:'2026-09-28T12:02:00.000Z'},
+    {...base,bucket_started_at:'2026-09-28T12:00:00.000Z',requests:3,successes:3,attempts:3,latencySamples:3,latencySumMs:300,updated_at:'2026-09-28T12:10:00.000Z'},
+  ];
+  const windows=providerSloWindowsFromBuckets(rows,{hours:1,nowMs:now,includeOpen:false});
+  assert.equal(windows.length,1);
+  assert.equal(windows[0].metadata.totals.requests,3);
+});
+
+test('summarizeWindows enforces the requested hours boundary', () => {
+  const rt=runtime(Date.parse('2026-09-28T12:20:00.000Z'));
+  const row=(start,end,requests)=>({
+    metadata:{
+      windowId:'provider-slo:'+start,
+      windowStartedAt:start,
+      windowEndedAt:end,
+      series:[{provider:'api-football',operation:'/fixtures',attempts:requests,requests,successes:requests,failures:0,retries:0,timeouts:0,rateLimits:0,latencySumMs:requests*100,latencySamples:requests,maxLatencyMs:100}],
+    },
+  });
+  const report=rt.api.summarizeWindows([
+    row('2026-09-28T10:00:00.000Z','2026-09-28T10:15:00.000Z',20),
+    row('2026-09-28T12:00:00.000Z','2026-09-28T12:15:00.000Z',5),
+  ],{hours:1,includeCurrent:false});
+  assert.equal(report.hours,1);
+  assert.equal(report.windowCount,1);
+  assert.equal(report.overall.requests,5);
+});
+
+
+test('distributed provider aggregation clamps retention to seven days', () => {
+  const now=Date.parse('2026-09-28T12:20:00.000Z');
+  const row=(bucketStartedAt)=>({
+    bucket_started_at:bucketStartedAt,
+    provider:'api-football',
+    operation:'/fixtures',
+    attempts:1,
+    requests:1,
+    successes:1,
+    failures:0,
+    retries:0,
+    timeouts:0,
+    network_errors:0,
+    rate_limits:0,
+    http_errors:0,
+    invalid_responses:0,
+    latency_sum_ms:100,
+    latency_samples:1,
+    max_latency_ms:100,
+    updated_at:bucketStartedAt,
+  });
+  const windows=providerSloWindowsFromBuckets([
+    row('2026-09-20T12:00:00.000Z'),
+    row('2026-09-28T12:00:00.000Z'),
+  ],{hours:999,nowMs:now,includeOpen:false});
+  assert.equal(windows.length,1);
+  assert.equal(windows[0].metadata.windowId,'provider-slo:2026-09-28T12:00:00.000Z');
 });

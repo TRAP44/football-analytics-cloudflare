@@ -61,6 +61,10 @@ export function createProviderRequestBoundary({
   if (typeof withSingleFlight !== 'function') throw new Error('withSingleFlight is required');
   if (typeof sleepMs !== 'function') throw new Error('sleepMs is required');
 
+  async function observe(cfg, event) {
+    return await Promise.resolve(observeProviderRequest(event, cfg));
+  }
+
   async function emitFailure(cfg, {
     provider,
     operation,
@@ -128,7 +132,7 @@ export function createProviderRequestBoundary({
           );
           lastError = error;
           const canRetry = attempt < attemptsAllowed;
-          observeProviderRequest({
+          await observe(cfg,{
             provider: normalizedProvider,
             operation,
             outcome: canRetry ? 'retrying' : 'failed',
@@ -160,7 +164,7 @@ export function createProviderRequestBoundary({
             'PROVIDER_RATE_LIMITED',
             { provider: normalizedProvider, operation, status: 429, retryAfter },
           );
-          observeProviderRequest({
+          await observe(cfg,{
             provider: normalizedProvider,
             operation,
             outcome: 'rate_limited',
@@ -182,7 +186,7 @@ export function createProviderRequestBoundary({
           );
           lastError = error;
           const canRetry = attempt < attemptsAllowed && retryableStatus(response.status);
-          observeProviderRequest({
+          await observe(cfg,{
             provider: normalizedProvider,
             operation,
             outcome: canRetry ? 'retrying' : 'failed',
@@ -212,7 +216,7 @@ export function createProviderRequestBoundary({
             'PROVIDER_INVALID_RESPONSE',
             { provider: normalizedProvider, operation, status: response.status, cause },
           );
-          observeProviderRequest({
+          await observe(cfg,{
             provider: normalizedProvider,
             operation,
             outcome: 'failed',
@@ -232,7 +236,7 @@ export function createProviderRequestBoundary({
             'PROVIDER_INVALID_RESPONSE',
             { provider: normalizedProvider, operation, status: response.status },
           );
-          observeProviderRequest({
+          await observe(cfg,{
             provider: normalizedProvider,
             operation,
             outcome: 'failed',
@@ -245,7 +249,7 @@ export function createProviderRequestBoundary({
           throw error;
         }
 
-        observeProviderRequest({
+        await observe(cfg,{
           provider: normalizedProvider,
           operation,
           outcome: 'success',

@@ -27,7 +27,7 @@ test('provider incident state affects monitoring visibility but never automatic 
 });
 
 test('provider API and diagnostics include incident state and runbook', () => {
-  assert.match(worker, /incident: buildProviderSloIncidentTimeline\(incidentSource\.items\)/);
+  assert.match(worker, /incident:\s*buildProviderSloIncidentTimeline\(incidentSource\.items\)/);
   assert.match(worker, /providerObservability\?\.incident\?\.activeIncident\?\.runbook/);
   assert.match(worker, /providerSloIncidentIntegration: 'enabled'/);
   assert.match(worker, /providerSloIncidentSelfTest/);

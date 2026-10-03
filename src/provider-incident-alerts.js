@@ -35,10 +35,15 @@ function normalizeDestinations(destinations = [], adminCount = 0) {
   }));
 }
 
-export async function providerIncidentDestinationKey(chatId, botIdentity = 'primary') {
+export function providerIncidentBotIdentity(botToken = '') {
+  const match=/^(\d{5,}):/.exec(String(botToken || '').trim());
+  return match ? `telegram-bot:${match[1]}` : 'telegram-bot:primary';
+}
+
+export async function providerIncidentDestinationKey(chatId, botIdentity = 'telegram-bot:primary') {
   const id = Number(chatId);
   if (!Number.isSafeInteger(id) || id <= 0) return '';
-  const input = new TextEncoder().encode(String(botIdentity || 'primary') + '|' + id);
+  const input = new TextEncoder().encode(String(botIdentity || 'telegram-bot:primary') + '|' + id);
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', input));
   return Array.from(digest).map(value => value.toString(16).padStart(2,'0')).join('').slice(0,40);
 }
@@ -64,11 +69,26 @@ function deliveryState(rows = [], alertKey = '', destinations = [], nowMs = Date
   let maxAttempts = 0;
 
   for (const destination of destinations) {
-    const row = byDestination.get(destination.destinationKey) || null;
+    let row=byDestination.get(destination.destinationKey) || null;
+    if (!row) {
+      const legacyCandidates=matching
+        .filter(candidate =>
+          String(candidate?.destination_identity_version || candidate?.destinationIdentityVersion || 'legacy')==='legacy'
+          && Number(candidate?.destination_slot ?? candidate?.destinationSlot)===Number(destination.slot)
+        )
+        .sort((a,b)=>Date.parse(b?.updated_at || b?.created_at || '')-Date.parse(a?.updated_at || a?.created_at || ''));
+      row=legacyCandidates.find(candidate=>ledgerStatus(candidate)==='sent')
+        || legacyCandidates[0]
+        || null;
+    }
     if (!row) {
       pending.push(destination);
       continue;
     }
+    const rowDestinationKey=String(row?.destination_key || row?.destinationKey || '');
+    const pendingDestination=rowDestinationKey && rowDestinationKey!==destination.destinationKey
+      ? {...destination,destinationKey:rowDestinationKey,identityVersion:'legacy'}
+      : destination;
     const status = ledgerStatus(row);
     const attempts = Math.max(0, finite(row?.attempts));
     maxAttempts = Math.max(maxAttempts, attempts);
@@ -79,7 +99,7 @@ function deliveryState(rows = [], alertKey = '', destinations = [], nowMs = Date
     if (status === 'retry_pending') {
       const retryAt = Date.parse(String(row?.retry_at || row?.retryAt || ''));
       if (attempts < PROVIDER_INCIDENT_ALERT_POLICY.maxDeferredAttempts && (!Number.isFinite(retryAt) || retryAt <= nowMs)) {
-        pending.push(destination);
+        pending.push(pendingDestination);
       } else if (attempts >= PROVIDER_INCIDENT_ALERT_POLICY.maxDeferredAttempts) {
         terminal.push(destination.slot);
       } else {
@@ -95,8 +115,16 @@ function deliveryState(rows = [], alertKey = '', destinations = [], nowMs = Date
       unknown.push(destination.slot);
       continue;
     }
-    if (status === 'sending' || status === 'claimed') {
-      sending.push(destination.slot);
+    if (status === 'claimed') {
+      const lockedUntil=Date.parse(String(row?.locked_until || row?.lockedUntil || ''));
+      if (!Number.isFinite(lockedUntil) || lockedUntil<=nowMs) pending.push(pendingDestination);
+      else sending.push(destination.slot);
+      continue;
+    }
+    if (status === 'sending') {
+      const lockedUntil=Date.parse(String(row?.locked_until || row?.lockedUntil || ''));
+      if (!Number.isFinite(lockedUntil) || lockedUntil<=nowMs) pending.push(pendingDestination);
+      else sending.push(destination.slot);
       continue;
     }
     blocked.push(destination.slot);
@@ -302,7 +330,7 @@ export function classifyProviderIncidentTelegramResult(result = {}, nowMs = Date
   return { state:'terminal_failed', retryAt:null, retryable:false, reason:description };
 }
 
-async function processTarget({ plan, target, adminTelegramIds, claimDelivery, finalizeDelivery, sendMessage, nowMs, text }) {
+async function processTarget({ plan, target, adminTelegramIds, claimDelivery, beginDelivery, finalizeDelivery, sendMessage, nowMs, text }) {
   const slot = Number(target?.slot);
   const destinationKey = String(target?.destinationKey || '');
   const chatId = adminTelegramIds[slot];
@@ -356,6 +384,51 @@ async function processTarget({ plan, target, adminTelegramIds, claimDelivery, fi
       claimAcquired:false,
       reason:String(claim?.reason || 'claim_not_acquired'),
       attempts:Math.max(0, finite(claim?.attempts)),
+    };
+  }
+
+  const claimStatus=String(claim?.status || '').toLowerCase();
+  if (claimStatus==='claimed') {
+    if (typeof beginDelivery!=='function') {
+      return {
+        slot,
+        state:'persistence_failure',
+        claimAcquired:true,
+        reason:'begin_delivery_unavailable',
+        attempts:Math.max(1,finite(claim?.attempts,1)),
+      };
+    }
+    let begun;
+    try {
+      begun=await beginDelivery({
+        alertKey:plan.alertKey || plan.deliveryKey,
+        destinationKey,
+      });
+    } catch (error) {
+      return {
+        slot,
+        state:'persistence_failure',
+        claimAcquired:true,
+        reason:String(error?.message || 'begin_delivery_failed').slice(0,160),
+        attempts:Math.max(1,finite(claim?.attempts,1)),
+      };
+    }
+    if (!begun?.ok || String(begun?.status || '').toLowerCase()!=='sending') {
+      return {
+        slot,
+        state:'persistence_failure',
+        claimAcquired:true,
+        reason:String(begun?.reason || 'begin_delivery_unconfirmed').slice(0,160),
+        attempts:Math.max(1,finite(claim?.attempts,1)),
+      };
+    }
+  } else if (claimStatus!=='sending') {
+    return {
+      slot,
+      state:'persistence_failure',
+      claimAcquired:true,
+      reason:'unexpected_claim_state',
+      attempts:Math.max(1,finite(claim?.attempts,1)),
     };
   }
 
@@ -413,6 +486,7 @@ export async function deliverOperationalIncidentAlert({
   text = '',
   adminTelegramIds = [],
   claimDelivery,
+  beginDelivery,
   finalizeDelivery,
   sendMessage,
   nowMs = Date.now(),
@@ -441,6 +515,7 @@ export async function deliverOperationalIncidentAlert({
     target,
     adminTelegramIds,
     claimDelivery,
+    beginDelivery,
     finalizeDelivery,
     sendMessage,
     nowMs,
@@ -533,7 +608,7 @@ export function providerIncidentAlertOpsEvent(plan = {}, delivery = {}) {
 }
 
 export function providerIncidentAlertLedgerSummary(rows = []) {
-  const counts = { sending:0, sent:0, retry_pending:0, terminal_failed:0, unknown:0 };
+  const counts = { claimed:0, sending:0, sent:0, retry_pending:0, terminal_failed:0, unknown:0 };
   for (const row of rows || []) {
     const status = ledgerStatus(row);
     if (Object.prototype.hasOwnProperty.call(counts,status)) counts[status] += 1;

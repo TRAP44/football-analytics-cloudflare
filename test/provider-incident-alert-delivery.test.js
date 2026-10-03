@@ -7,6 +7,8 @@ import {
   planProviderIncidentAlert,
   providerIncidentAlertLedgerSummary,
   providerIncidentAlertOpsEvents,
+  providerIncidentBotIdentity,
+  providerIncidentDestinationKey,
 } from '../src/provider-incident-alerts.js';
 
 function window(at, state, options = {}) {
@@ -71,6 +73,7 @@ function ledgerRow(incidentId, transition = 'incident', status = 'sent', options
     status,
     attempts:Number(options.attempts || 1),
     retry_at:options.retryAt || null,
+    locked_until:options.lockedUntil || null,
     created_at:options.createdAt || '2026-09-28T11:00:00Z',
   };
 }
@@ -550,4 +553,122 @@ test('ledger summary exposes unknown and recoverable operational states', () => 
   assert.equal(summary.states.unknown,1);
   assert.equal(summary.states.terminal_failed,1);
   assert.equal(summary.operationalAttention,3);
+});
+
+
+test('active alert lease blocks while an expired claimed lease becomes reclaimable', () => {
+  const incident=alertIncident('pslo-lease-reclaim');
+  const destinations=[{slot:0,destinationKey:'destination-key-0001'}];
+  const report={activeIncident:incident,history:[incident]};
+
+  const active=planProviderIncidentAlert(report,[
+    ledgerRow(incident.incidentId,'incident','claimed',{
+      lockedUntil:'2026-09-28T10:35:00Z',
+    }),
+  ],{
+    nowMs:Date.parse('2026-09-28T10:30:00Z'),
+    destinations,
+  });
+  assert.equal(active.action,'none');
+  assert.equal(active.reason,'delivery_waiting');
+
+  const stale=planProviderIncidentAlert(report,[
+    ledgerRow(incident.incidentId,'incident','claimed',{
+      lockedUntil:'2026-09-28T10:29:59Z',
+    }),
+  ],{
+    nowMs:Date.parse('2026-09-28T10:30:00Z'),
+    destinations,
+  });
+  assert.equal(stale.action,'send');
+  assert.deepEqual(stale.targetSlots,[0]);
+});
+
+test('expired sending lease is sent back to the database for unknown-state reconciliation, not blind resend', () => {
+  const incident=alertIncident('pslo-stale-sending');
+  const destinations=[{slot:0,destinationKey:'destination-key-0001'}];
+  const plan=planProviderIncidentAlert(
+    {activeIncident:incident,history:[incident]},
+    [ledgerRow(incident.incidentId,'incident','sending',{lockedUntil:'2026-09-28T10:29:59Z'})],
+    {nowMs:Date.parse('2026-09-28T10:30:00Z'),destinations},
+  );
+  assert.equal(plan.action,'send');
+  assert.deepEqual(plan.targetSlots,[0]);
+});
+
+test('v2 two-phase alert delivery begins durable sending state before Telegram side effects', async () => {
+  const order=[];
+  let sends=0;
+  const result=await deliverProviderIncidentAlert({
+    plan:deliveryPlan('pslo-two-phase'),
+    adminTelegramIds:[101],
+    claimDelivery:async () => {
+      order.push('claim');
+      return {acquired:true,status:'claimed',attempts:1,reason:'created'};
+    },
+    beginDelivery:async () => {
+      order.push('begin');
+      return {ok:true,status:'sending',attempts:1};
+    },
+    finalizeDelivery:async input => {
+      order.push('finalize:'+input.status);
+      return {ok:true,status:input.status};
+    },
+    sendMessage:async () => {
+      order.push('send');
+      sends+=1;
+      return {ok:true,status:200,outcome:'sent'};
+    },
+  });
+  assert.equal(result.ok,true);
+  assert.equal(sends,1);
+  assert.deepEqual(order,['claim','begin','send','finalize:sent']);
+});
+
+test('unconfirmed begin-send transition fails closed before Telegram delivery', async () => {
+  let sends=0;
+  const result=await deliverProviderIncidentAlert({
+    plan:deliveryPlan('pslo-begin-fail'),
+    adminTelegramIds:[101],
+    claimDelivery:async () => ({acquired:true,status:'claimed',attempts:1}),
+    beginDelivery:async () => ({ok:false,status:'claimed',reason:'claim_lease_expired'}),
+    finalizeDelivery:async () => ({ok:true}),
+    sendMessage:async () => {
+      sends+=1;
+      return {ok:true,status:200};
+    },
+  });
+  assert.equal(sends,0);
+  assert.equal(result.ok,false);
+  assert.equal(result.outcomes[0].state,'persistence_failure');
+  assert.equal(result.outcomes[0].reason,'claim_lease_expired');
+});
+
+test('provider incident destination identity survives bot-token rotation', async () => {
+  const firstIdentity=providerIncidentBotIdentity('123456789:old-token-material');
+  const rotatedIdentity=providerIncidentBotIdentity('123456789:new-token-material');
+  assert.equal(firstIdentity,'telegram-bot:123456789');
+  assert.equal(rotatedIdentity,firstIdentity);
+  const before=await providerIncidentDestinationKey(987654321,firstIdentity);
+  const after=await providerIncidentDestinationKey(987654321,rotatedIdentity);
+  assert.equal(after,before);
+  assert.equal(before.length,40);
+});
+
+
+test('legacy destination identity suppresses duplicate delivery during stable bot-id migration', () => {
+  const incident=alertIncident('pslo-legacy-identity');
+  const stableDestination={slot:0,destinationKey:'stable-destination-key-0001'};
+  const legacy=ledgerRow(incident.incidentId,'incident','sent',{
+    destinationKey:'legacy-destination-key-0001',
+    slot:0,
+  });
+  legacy.destination_identity_version='legacy';
+  const plan=planProviderIncidentAlert(
+    {activeIncident:incident,history:[incident]},
+    [legacy],
+    {destinations:[stableDestination]},
+  );
+  assert.equal(plan.action,'none');
+  assert.equal(plan.reason,'incident_alert_deduplicated');
 });
