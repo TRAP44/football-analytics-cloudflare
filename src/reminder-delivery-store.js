@@ -38,6 +38,13 @@ export function createReminderDeliveryStore({
   recordOpsEvent,
   redactOpsString,
 }) {
+  function requireOwnedClaimMutation(rows, action) {
+    if (Array.isArray(rows) && rows.length === 1) return rows[0];
+    const error = new Error(`Reminder delivery claim was lost during ${action}.`);
+    error.code = 'REMINDER_DELIVERY_CLAIM_LOST';
+    error.claimLost = true;
+    throw error;
+  }
   function reminderDeliveryStatus(row) {
     if (row?.kickoff_notified_at) return 'kickoff_sent';
     if (row?.notified_at) return 'prematch_sent';
@@ -179,7 +186,7 @@ export function createReminderDeliveryStore({
 
     const r = await fetchWithTimeout(url, {
       method: 'PATCH',
-      headers: supaHeaders(cfg, { Prefer: 'return=minimal' }),
+      headers: supaHeaders(cfg, { Prefer: 'return=representation' }),
       body: JSON.stringify({
         delivery_last_error: REMINDER_UNKNOWN_STATE,
         delivery_last_attempt_at: new Date().toISOString(),
@@ -188,6 +195,8 @@ export function createReminderDeliveryStore({
     }, 7000, 'Supabase reminder unknown hold');
 
     if (!r.ok) throw new Error(`Supabase reminder unknown hold: HTTP ${r.status}`);
+    const rows = await r.json().catch(() => []);
+    requireOwnedClaimMutation(rows, 'unknown hold');
   }
 
   async function finishReminderDelivery(row, kind, claimAt, cfg) {
@@ -213,10 +222,12 @@ export function createReminderDeliveryStore({
 
     const r = await fetchWithTimeout(url, {
       method: 'PATCH',
-      headers: supaHeaders(cfg, { Prefer: 'return=minimal' }),
+      headers: supaHeaders(cfg, { Prefer: 'return=representation' }),
       body: JSON.stringify(patch),
     }, 7000, 'Supabase reminder finish');
     if (!r.ok) throw new Error(`Supabase reminder finish: HTTP ${r.status}`);
+    const rows = await r.json().catch(() => []);
+    requireOwnedClaimMutation(rows, 'finish');
   }
 
   async function releaseReminderClaim(row, kind, claimAt, errorMessage, cfg, options = {}) {
@@ -244,10 +255,12 @@ export function createReminderDeliveryStore({
 
     const r = await fetchWithTimeout(url, {
       method: 'PATCH',
-      headers: supaHeaders(cfg, { Prefer: 'return=minimal' }),
+      headers: supaHeaders(cfg, { Prefer: 'return=representation' }),
       body: JSON.stringify(patch),
     }, 7000, 'Supabase reminder release');
     if (!r.ok) throw new Error(`Supabase reminder release: HTTP ${r.status}`);
+    const rows = await r.json().catch(() => []);
+    requireOwnedClaimMutation(rows, 'release');
   }
 
   return {
