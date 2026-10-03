@@ -1,4 +1,5 @@
 const encoder = new TextEncoder();
+export const TELEGRAM_AUTH_FUTURE_SKEW_SECONDS = 30;
 
 export function bytesToHex(bytes) {
   return [...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2, '0')).join('');
@@ -7,10 +8,12 @@ export function bytesToHex(bytes) {
 export function constantTimeEqual(a, b) {
   const left = String(a ?? '');
   const right = String(b ?? '');
-  if (left.length !== right.length) return false;
-  let diff = 0;
-  for (let index = 0; index < left.length; index += 1) {
-    diff |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  const length = Math.max(left.length, right.length);
+  let diff = left.length ^ right.length;
+  for (let index = 0; index < length; index += 1) {
+    const leftCode = index < left.length ? left.charCodeAt(index) : 0;
+    const rightCode = index < right.length ? right.charCodeAt(index) : 0;
+    diff |= leftCode ^ rightCode;
   }
   return diff === 0;
 }
@@ -45,7 +48,10 @@ export async function validateTelegramInitData(initData, botToken, maxAgeSeconds
 
   const authDate = Number(params.get('auth_date') || 0);
   const ageLimit = Math.max(60, Math.min(24 * 60 * 60, Number(maxAgeSeconds || 0)));
-  if (!authDate || Math.abs(Date.now() / 1000 - authDate) > ageLimit) return null;
+  if (!Number.isSafeInteger(authDate) || authDate <= 0) return null;
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  if (authDate > nowSeconds + TELEGRAM_AUTH_FUTURE_SKEW_SECONDS) return null;
+  if (nowSeconds - authDate > ageLimit) return null;
 
   try {
     const user = JSON.parse(params.get('user') || '{}');
