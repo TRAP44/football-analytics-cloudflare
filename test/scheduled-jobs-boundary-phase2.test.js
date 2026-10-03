@@ -95,7 +95,7 @@ function runtime(overrides = {}) {
   return { api: createScheduledJobsRuntime(deps), calls, events, leases };
 }
 
-test('scheduled result contract standardizes success, skipped, degraded and failed shapes', () => {
+test('scheduled result contract standardizes ok, failed, degraded and skipped shapes', () => {
   assert.equal(normalizeScheduledTaskResult('ok',{ok:true}).status,'ok');
   assert.equal(normalizeScheduledTaskResult('skip',{skipped:'already_checked'}).status,'skipped');
   assert.equal(normalizeScheduledTaskResult('degraded',{checked:4,failed:1}).status,'degraded');
@@ -255,7 +255,7 @@ test('duplicate invocation and cross-isolate overlap are blocked by the shared g
   assert.equal(isolateB.events.at(-1)?.meta?.reason,'duplicate');
 
   const nextRun=await isolateB.api.executeScheduledRun({scheduledTime:Date.parse('2026-09-28T12:10:00.000Z')},{});
-  assert.ok(nextRun.some(row=>row.task==='backtest' && row.status==='success'));
+  assert.ok(nextRun.some(row=>row.task==='backtest' && row.status==='ok'));
 });
 
 test('07 UTC provider-heavy tasks remain serialized after backtest failure', async () => {
