@@ -27,6 +27,20 @@ test('RC117 accepts a stamped rollback target only when release identity matches
   assert.equal(result.deploySha, '297985dc7faf3f222e046844726f2f747b097e6e');
 });
 
+
+test('Issue #409 rejects malformed rollback Cloudflare version identifiers', () => {
+  const malformed={...stampedVersion(),id:'not-a-version-id'};
+  assert.throws(
+    () => verifyRollbackTarget(
+      malformed,
+      '6.101.0-rc109',
+      'not-a-version-id',
+      false,
+    ),
+    /RELEASE_IDENTITY_CLOUDFLARE_VERSION_ID_INVALID/,
+  );
+});
+
 test('RC117 rejects a stamped rollback target when expected version is wrong', () => {
   assert.throws(
     () => verifyRollbackTarget(
