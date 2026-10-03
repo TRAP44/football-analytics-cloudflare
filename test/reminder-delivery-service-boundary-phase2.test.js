@@ -35,6 +35,10 @@ function runtime(overrides = {}) {
     releaseReminderClaim:overrides.releaseReminderClaim || (async(row,kind,claimAt,errorMessage,cfg,options)=>{
       calls.releases.push({row,kind,claimAt,errorMessage,cfg,options});
     }),
+    filterNotificationRecipients:overrides.filterNotificationRecipients,
+    deliveryConcurrency:overrides.deliveryConcurrency,
+    maxDeliveriesPerRun:overrides.maxDeliveriesPerRun,
+    audienceBatchSize:overrides.audienceBatchSize,
   });
   return {service,calls,events};
 }
@@ -63,7 +67,7 @@ test('delivery success preserves claim, finish and ops semantics', async () => {
   });
 });
 
-test('successful Telegram send with lost final CAS fails closed and never releases the claim', async () => {
+test('successful Telegram send with finish failure is held fail-closed for reconciliation and never released', async () => {
   const finishError=new Error('Reminder delivery claim was lost during finish.');
   finishError.code='REMINDER_DELIVERY_CLAIM_LOST';
   finishError.claimLost=true;
@@ -72,14 +76,21 @@ test('successful Telegram send with lost final CAS fails closed and never releas
     finishReminderDelivery:async()=>{ throw finishError; },
   });
 
-  await assert.rejects(
-    service.deliverClaimedReminder({telegram_id:16,fixture_id:78},'prematch','text',{botToken:'token'}),
-    error=>error?.code==='REMINDER_DELIVERY_CLAIM_LOST' && error?.claimLost===true,
+  const result=await service.deliverClaimedReminder(
+    {telegram_id:16,fixture_id:78},
+    'prematch',
+    'text',
+    {botToken:'token'},
   );
 
+  assert.equal(result.state,'sent_unconfirmed');
+  assert.equal(result.persistenceFailed,true);
+  assert.equal(result.holdFailed,false);
   assert.equal(calls.messages.length,1);
+  assert.equal(calls.unknownHolds.length,1);
   assert.equal(calls.releases.length,0);
   assert.equal(events.some(event=>event.code==='REMINDER_SENT_PREMATCH'),false);
+  assert.equal(events.some(event=>event.code==='REMINDER_SENT_PERSISTENCE_AMBIGUOUS'),true);
 });
 
 test('403 delivery preserves disable and release semantics', async () => {
@@ -194,7 +205,24 @@ test('scheduler preserves kickoff, prematch and retry-window behavior', async ()
     ];
     const {service,calls,events}=runtime({rows});
     const summary=await service.processDueReminders({botToken:'token'});
-    assert.deepEqual(summary,{ok:true,checked:3,sent:1,kickoffSent:1,failed:0,unknown:0,claimed:0,staleClaims:0,staleCleanupFailed:0,truncated:false});
+    assert.equal(summary.ok,true);
+    assert.equal(summary.checked,3);
+    assert.equal(summary.candidates,2);
+    assert.equal(summary.eligible,2);
+    assert.equal(summary.sent,1);
+    assert.equal(summary.kickoffSent,1);
+    assert.equal(summary.failed,0);
+    assert.equal(summary.unknown,0);
+    assert.equal(summary.ambiguous,0);
+    assert.equal(summary.rateLimited,0);
+    assert.equal(summary.claimed,0);
+    assert.equal(summary.deferred,0);
+    assert.equal(summary.staleClaims,0);
+    assert.equal(summary.staleCleanupFailed,0);
+    assert.equal(summary.truncated,false);
+    assert.equal(summary.backlog,false);
+    assert.equal(summary.concurrency,4);
+    assert.equal(summary.maxDeliveriesPerRun,240);
     assert.equal(calls.messages.length,2);
     assert.equal(calls.messages[0][0],1);
     assert.equal(calls.messages[0][1],'🔴 Матч начинается\n\nAlpha — Beta\nLeague\n\nОткройте приложение: центр матча появится, когда источник данных обновит статус.');
@@ -228,18 +256,12 @@ test('scheduler surfaces pagination truncation and stale cleanup degradation', a
       clearStaleReminderClaims:async()=>({prematch:0,kickoff:0,failed:1}),
     });
     const summary=await runtimeState.service.processDueReminders({botToken:'token'});
-    assert.deepEqual(summary,{
-      ok:false,
-      checked:0,
-      sent:0,
-      kickoffSent:0,
-      failed:0,
-      unknown:0,
-      claimed:0,
-      staleClaims:0,
-      staleCleanupFailed:1,
-      truncated:true,
-    });
+    assert.equal(summary.ok,false);
+    assert.equal(summary.checked,0);
+    assert.equal(summary.failed,0);
+    assert.equal(summary.staleCleanupFailed,1);
+    assert.equal(summary.truncated,true);
+    assert.equal(summary.backlog,true);
     assert.equal(runtimeState.events.some(event=>event.code==='REMINDER_SCHEDULER_TRUNCATED'),true);
     assert.equal(runtimeState.events.at(-1).code,'REMINDER_RUN_TRUNCATED');
   } finally {
@@ -249,19 +271,20 @@ test('scheduler surfaces pagination truncation and stale cleanup degradation', a
 
 test('scheduler preserves disabled and read-failure summaries', async () => {
   const disabled=runtime({loadRuntimeControls:async()=>({value:{remindersEnabled:false}})});
-  assert.deepEqual(
-    await disabled.service.processDueReminders({botToken:'token'}),
-    {ok:true,checked:0,sent:0,kickoffSent:0,failed:0,unknown:0,claimed:0,staleClaims:0,staleCleanupFailed:0,truncated:false,disabled:true},
-  );
+  const disabledSummary=await disabled.service.processDueReminders({botToken:'token'});
+  assert.equal(disabledSummary.ok,true);
+  assert.equal(disabledSummary.disabled,true);
+  assert.equal(disabledSummary.checked,0);
 
   const failed=runtime({
     clearStaleReminderClaims:async()=>({prematch:2,kickoff:1}),
     supaSelectPaged:async()=>{ throw new Error('read failed'); },
   });
-  assert.deepEqual(
-    await failed.service.processDueReminders({botToken:'token'}),
-    {ok:false,checked:0,sent:0,kickoffSent:0,failed:1,unknown:0,claimed:0,staleClaims:3,staleCleanupFailed:0,truncated:false},
-  );
+  const failedSummary=await failed.service.processDueReminders({botToken:'token'});
+  assert.equal(failedSummary.ok,false);
+  assert.equal(failedSummary.failed,1);
+  assert.equal(failedSummary.staleClaims,3);
+  assert.equal(failedSummary.reason,'reminder_read_failed');
   assert.equal(failed.events[0].code,'REMINDER_SCHEDULER_READ_FAILED');
 });
 
@@ -306,6 +329,210 @@ test('scheduler outcome contract marks partial delivery and unknown states as ok
     const unknownSummary=await unknown.service.processDueReminders({botToken:'token'});
     assert.equal(unknownSummary.ok,false);
     assert.equal(unknownSummary.unknown,1);
+  } finally {
+    Date.now=originalNow;
+  }
+});
+
+
+test('Issue #408 runtime-control failure becomes a controlled result and ops event', async () => {
+  const rt=runtime({
+    loadRuntimeControls:async()=>{ throw new Error('runtime controls unavailable'); },
+  });
+  const summary=await rt.service.processDueReminders({botToken:'token'});
+  assert.equal(summary.ok,false);
+  assert.equal(summary.failed,1);
+  assert.equal(summary.dependencyFailures,1);
+  assert.equal(summary.reason,'runtime_controls_unavailable');
+  assert.equal(rt.calls.messages.length,0);
+  assert.equal(rt.events.some(event=>event.code==='REMINDER_RUNTIME_CONTROLS_FAILED'),true);
+});
+
+test('Issue #408 audience failure is isolated per batch and other batches still deliver', async () => {
+  const originalNow=Date.now;
+  const now=Date.parse('2026-09-27T12:00:00.000Z');
+  Date.now=()=>now;
+  try {
+    const rows=[1,2,3,4].map(id=>({
+      telegram_id:id,
+      fixture_id:800+id,
+      fixture_date:new Date(now+30*60_000).toISOString(),
+      home_name:`H${id}`,
+      away_name:`A${id}`,
+      kickoff_notify:true,
+      remind_before_minutes:30,
+    }));
+    let audienceCall=0;
+    const rt=runtime({
+      rows,
+      audienceBatchSize:2,
+      filterNotificationRecipients:async batch=>{
+        audienceCall+=1;
+        if (audienceCall===1) throw new Error('preferences lookup failed');
+        return {rows:batch,blockedByPreference:0,blockedByEntitlement:0};
+      },
+    });
+
+    const summary=await rt.service.processDueReminders({botToken:'token'});
+    assert.equal(summary.ok,false);
+    assert.equal(summary.dependencyFailures,1);
+    assert.equal(summary.sent,2);
+    assert.equal(rt.calls.messages.length,2);
+    assert.equal(rt.events.some(event=>event.code==='REMINDER_AUDIENCE_BATCH_FAILED'),true);
+    assert.equal(rt.events.at(-1).code,'REMINDER_RUN_WITH_DEPENDENCY_FAILURES');
+  } finally {
+    Date.now=originalNow;
+  }
+});
+
+test('Issue #408 read-after-write reconciliation reports a confirmed sent reminder as sent', async () => {
+  const rt=runtime({
+    finishReminderDelivery:async()=>({finalized:true,reconciled:true}),
+  });
+  const result=await rt.service.deliverClaimedReminder(
+    {telegram_id:55,fixture_id:505},
+    'prematch',
+    'text',
+    {botToken:'token'},
+  );
+  assert.equal(result.state,'sent');
+  assert.equal(result.reconciled,true);
+  assert.equal(rt.events.some(event=>event.code==='REMINDER_FINISH_RECONCILED'),true);
+  assert.equal(rt.events.some(event=>event.code==='REMINDER_SENT_PREMATCH'),true);
+});
+
+test('Issue #408 large backlog is capped per run and deferred without claiming excess rows', async () => {
+  const originalNow=Date.now;
+  const now=Date.parse('2026-09-27T12:00:00.000Z');
+  Date.now=()=>now;
+  try {
+    const rows=Array.from({length:12},(_,index)=>({
+      telegram_id:index+1,
+      fixture_id:900+index,
+      fixture_date:new Date(now+30*60_000).toISOString(),
+      home_name:'A',
+      away_name:'B',
+      kickoff_notify:true,
+      remind_before_minutes:30,
+    }));
+    const rt=runtime({rows,maxDeliveriesPerRun:5,deliveryConcurrency:2});
+    const summary=await rt.service.processDueReminders({botToken:'token'});
+    assert.equal(summary.sent,5);
+    assert.equal(summary.deferred,7);
+    assert.equal(summary.backlog,true);
+    assert.equal(summary.ok,false);
+    assert.equal(rt.calls.claims.length,5);
+    assert.equal(rt.events.at(-1).code,'REMINDER_RUN_BACKLOG_DEFERRED');
+  } finally {
+    Date.now=originalNow;
+  }
+});
+
+test('Issue #408 delivery concurrency is bounded', async () => {
+  const originalNow=Date.now;
+  const now=Date.parse('2026-09-27T12:00:00.000Z');
+  Date.now=()=>now;
+  try {
+    const rows=Array.from({length:8},(_,index)=>({
+      telegram_id:index+1,
+      fixture_id:1000+index,
+      fixture_date:new Date(now+30*60_000).toISOString(),
+      home_name:'A',
+      away_name:'B',
+      kickoff_notify:true,
+      remind_before_minutes:30,
+    }));
+    let active=0;
+    let maxActive=0;
+    const rt=runtime({
+      rows,
+      deliveryConcurrency:3,
+      sendTelegramMessage:async(...args)=>{
+        rt.calls.messages.push(args);
+        active+=1;
+        maxActive=Math.max(maxActive,active);
+        await new Promise(resolve=>setTimeout(resolve,5));
+        active-=1;
+        return {ok:true,status:200,outcome:'sent',errorCode:0,description:'',retryAfter:0};
+      },
+    });
+    const summary=await rt.service.processDueReminders({botToken:'token'});
+    assert.equal(summary.sent,8);
+    assert.ok(maxActive<=3);
+    assert.ok(maxActive>=2);
+  } finally {
+    Date.now=originalNow;
+  }
+});
+
+test('Issue #408 Telegram 429 stops scheduling new work and preserves retry_after release', async () => {
+  const originalNow=Date.now;
+  const now=Date.parse('2026-09-27T12:00:00.000Z');
+  Date.now=()=>now;
+  try {
+    const rows=Array.from({length:10},(_,index)=>({
+      telegram_id:index+1,
+      fixture_id:1100+index,
+      fixture_date:new Date(now+30*60_000).toISOString(),
+      home_name:'A',
+      away_name:'B',
+      kickoff_notify:true,
+      remind_before_minutes:30,
+    }));
+    let sends=0;
+    const rt=runtime({
+      rows,
+      deliveryConcurrency:2,
+      sendTelegramMessage:async(...args)=>{
+        rt.calls.messages.push(args);
+        sends+=1;
+        if (sends===1) {
+          return {ok:false,status:429,outcome:'confirmed_failure',errorCode:429,description:'Too Many Requests',retryAfter:30};
+        }
+        await new Promise(resolve=>setTimeout(resolve,5));
+        return {ok:true,status:200,outcome:'sent',errorCode:0,description:'',retryAfter:0};
+      },
+    });
+
+    const summary=await rt.service.processDueReminders({botToken:'token'});
+    assert.equal(summary.rateLimited,1);
+    assert.ok(summary.deferred>0);
+    assert.equal(summary.ok,false);
+    assert.ok(rt.calls.messages.length<=2);
+    const limitedRelease=rt.calls.releases.find(item=>Number(item.options?.retryAfter||0)===30);
+    assert.ok(limitedRelease);
+    assert.equal(rt.events.some(event=>event.code==='REMINDER_RATE_LIMITED'),true);
+    assert.equal(rt.events.at(-1).code,'REMINDER_RUN_RATE_LIMITED');
+  } finally {
+    Date.now=originalNow;
+  }
+});
+
+test('Issue #408 sent persistence ambiguity is counted without blind resend', async () => {
+  const originalNow=Date.now;
+  const now=Date.parse('2026-09-27T12:00:00.000Z');
+  Date.now=()=>now;
+  try {
+    const row={
+      telegram_id:77,
+      fixture_id:1200,
+      fixture_date:new Date(now+30*60_000).toISOString(),
+      home_name:'A',
+      away_name:'B',
+      kickoff_notify:true,
+      remind_before_minutes:30,
+    };
+    const rt=runtime({
+      rows:[row],
+      finishReminderDelivery:async()=>{ throw new Error('finish unavailable'); },
+    });
+    const summary=await rt.service.processDueReminders({botToken:'token'});
+    assert.equal(summary.ambiguous,1);
+    assert.equal(summary.sent,0);
+    assert.equal(summary.ok,false);
+    assert.equal(rt.calls.unknownHolds.length,1);
+    assert.equal(rt.calls.releases.length,0);
+    assert.equal(rt.events.at(-1).code,'REMINDER_RUN_WITH_PERSISTENCE_AMBIGUITY');
   } finally {
     Date.now=originalNow;
   }

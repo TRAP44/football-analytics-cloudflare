@@ -103,6 +103,59 @@ test('finish kickoff preserves claim identity and marks prematch sent when neede
   assert.equal(body.delivery_retry_after,null);
 });
 
+test('Issue #408 finish reconciles a lost write response by reading committed sent state', async () => {
+  const doneAt='2026-09-27T18:00:05.000Z';
+  const {store,calls}=runtime({
+    responses:[
+      {ok:false,status:503,json:null},
+      {ok:true,status:200,json:[{
+        telegram_id:7,
+        fixture_id:88,
+        prematch_claimed_at:null,
+        notified_at:doneAt,
+        delivery_last_error:null,
+        delivery_last_success_at:doneAt,
+      }]},
+    ],
+  });
+  const result=await store.finishReminderDelivery(
+    {telegram_id:7,fixture_id:88},
+    'prematch',
+    '2026-09-27T18:00:00.000Z',
+    {supabaseUrl:'https://db.test'},
+  );
+  assert.deepEqual(result,{finalized:true,reconciled:true,doneAt});
+  assert.equal(calls.length,2);
+  assert.equal(calls[0].init.method,'PATCH');
+  assert.equal(calls[1].init.method,'GET');
+  assert.match(calls[1].url,/select=/);
+  assert.match(calls[1].url,/notified_at/);
+});
+
+test('Issue #408 finish remains fail-closed when reconciliation cannot confirm sent state', async () => {
+  const {store}=runtime({
+    responses:[
+      {ok:false,status:503,json:null},
+      {ok:true,status:200,json:[{
+        telegram_id:7,
+        fixture_id:88,
+        prematch_claimed_at:'2026-09-27T18:00:00.000Z',
+        notified_at:null,
+        delivery_last_error:'telegram_delivery_sending',
+      }]},
+    ],
+  });
+  await assert.rejects(
+    store.finishReminderDelivery(
+      {telegram_id:7,fixture_id:88},
+      'prematch',
+      '2026-09-27T18:00:00.000Z',
+      {supabaseUrl:'https://db.test'},
+    ),
+    /Supabase reminder finish: HTTP 503/,
+  );
+});
+
 test('release preserves retry and disable semantics', async () => {
   const {store,calls}=runtime({responses:[{ok:true,status:200,json:[{fixture_id:99}]}]});
   await store.releaseReminderClaim(
@@ -149,34 +202,54 @@ test('finish, unknown hold and release reject a lost claim instead of reporting 
   );
 });
 
-test('stale claim recovery clears registered claim columns and records an ops event', async () => {
+test('stale claim recovery clears claim-only rows and reconciles stale sending rows fail-closed', async () => {
   const {store,calls,events}=runtime({
     responses:[
       {ok:true,status:200,json:[{fixture_id:1},{fixture_id:2}]},
+      {ok:true,status:200,json:[{fixture_id:10}]},
       {ok:true,status:200,json:[{fixture_id:3}]},
+      {ok:true,status:200,json:[]},
+      {ok:true,status:200,json:[]},
+      {ok:true,status:200,json:[]},
       {ok:true,status:200,json:[]},
       {ok:true,status:200,json:[]},
     ],
   });
   const result=await store.clearStaleReminderClaims({supabaseUrl:'https://db.test'});
   assert.deepEqual(result,{prematch:2,kickoff:1,lineup:0,important_change:0,failed:0});
-  assert.equal(calls.length,4);
+  assert.equal(calls.length,8);
+
   assert.match(calls[0].url,/prematch_claimed_at=lt\./);
-  assert.match(calls[1].url,/kickoff_claimed_at=lt\./);
-  assert.match(calls[2].url,/lineup_claimed_at=lt\./);
-  assert.match(calls[3].url,/important_change_claimed_at=lt\./);
   assert.match(calls[0].url,/or=%28delivery_last_error\.is\.null%2Cdelivery_last_error\.eq\.delivery_claimed%29/);
-  assert.match(calls[1].url,/or=%28delivery_last_error\.is\.null%2Cdelivery_last_error\.eq\.delivery_claimed%29/);
-  assert.equal(events.length,1);
-  assert.equal(events[0].code,'REMINDER_STALE_CLAIMS');
-  assert.deepEqual(events[0].meta,{prematch:2,kickoff:1,lineup:0,important_change:0});
+  assert.match(calls[1].url,/prematch_claimed_at=lt\./);
+  assert.match(calls[1].url,/notified_at=is\.null/);
+  assert.match(calls[1].url,/delivery_last_error=eq\.telegram_delivery_sending/);
+  const reconciledBody=JSON.parse(calls[1].init.body);
+  assert.equal(reconciledBody.delivery_last_error,'telegram_delivery_unknown');
+  assert.equal(Object.hasOwn(reconciledBody,'prematch_claimed_at'),false);
+
+  assert.match(calls[2].url,/kickoff_claimed_at=lt\./);
+  assert.match(calls[4].url,/lineup_claimed_at=lt\./);
+  assert.match(calls[6].url,/important_change_claimed_at=lt\./);
+
+  assert.equal(events.some(event=>event.code==='REMINDER_STALE_CLAIMS'),true);
+  assert.equal(events.some(event=>event.code==='REMINDER_STALE_SENDING_RECONCILED'),true);
+  assert.deepEqual(
+    events.find(event=>event.code==='REMINDER_STALE_SENDING_RECONCILED').meta,
+    {total:1,prematch:1,kickoff:0,lineup:0,important_change:0},
+  );
 });
 
-test('stale claim cleanup surfaces partial failures instead of silently returning zero', async () => {
+test('stale claim cleanup surfaces partial clear or reconciliation failures instead of silently returning zero', async () => {
   const {store,events}=runtime({
     responses:[
       {ok:false,status:503,json:null},
+      {ok:true,status:200,json:[]},
       {ok:true,status:200,json:[{fixture_id:3}]},
+      {ok:true,status:200,json:[]},
+      {ok:true,status:200,json:[]},
+      {ok:true,status:200,json:[]},
+      {ok:true,status:200,json:[]},
       {ok:true,status:200,json:[]},
     ],
   });
