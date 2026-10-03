@@ -140,5 +140,5 @@ test('stale shared rate windows are cleaned without touching active buckets',()=
   assert.match(worker,/async function cleanupRateWindows/);
   assert.match(worker,/Date\.now\(\) - 2 \* 86400_000/);
   assert.match(worker,/supaDelete\(cfg, 'provider_rate_windows', \{ updated_at: `lt\.\$\{cutoff\}` \}\)/);
-  assert.match(scheduled,/\['rate_window_cleanup', Promise\.resolve\(\)\.then\(\(\) => cleanupRateWindows\(cfg\)\)\]/);
+  assert.match(scheduled,/runDailyTaskOnce\('rate_window_cleanup', \(\) => cleanupRateWindows\(cfg\), cfg, scheduledAt\)/);
 });

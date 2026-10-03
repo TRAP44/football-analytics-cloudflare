@@ -29,7 +29,7 @@ test('new reminders initialize important-change state and release contract track
   assert.match(reminders, /important_change_notified_at:\s*null/);
   assert.match(reminders, /important_change_claimed_at:\s*null/);
   assert.match(reminders, /important_change_attempts:\s*0/);
-  assert.equal(release.latestMigration, 'supabase/migrations/supabase_migration_v6_25_2.sql');
+  assert.equal(release.latestMigration, 'supabase/migrations/supabase_migration_v6_26.sql');
 });
 
 test('migration preserves current structural fingerprint during additive rollout', () => {
