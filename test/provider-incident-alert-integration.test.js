@@ -125,7 +125,7 @@ test('v6.26.2 adds two-phase reclaimable alert claims without weakening ambiguou
   assert.match(migration405,/destination_identity_version in \('legacy','stable_v1'\)/);
   assert.match(migration405,/create or replace function public\.claim_provider_incident_alert_delivery_v2/);
   assert.match(migration405,/create or replace function public\.begin_provider_incident_alert_delivery_send/);
-  assert.match(migration405,/v_row\.status = 'claimed'/);
+  assert.match(migration405,/coalesce\(v_row\.delivery_phase,'legacy'\) = 'claimed'/);
   assert.match(migration405,/stale_claim_reclaimed/);
   assert.match(migration405,/STALE_SENDING_LEASE/);
   assert.match(migration405,/set status='sending'/);
