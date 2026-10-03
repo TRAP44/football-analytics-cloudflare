@@ -61,6 +61,29 @@ test('runtime release identity safely represents missing local version metadata'
   assert.equal(releaseIdentityComplete(identity),false);
 });
 
+
+test('Issue #409 accepts strict Cloudflare UTC timestamps with higher fractional precision and normalizes them',()=>{
+  const identity=runtimeReleaseIdentity({
+    id:versionId,
+    tag:sha,
+    timestamp:'2026-09-29T12:36:17.123456Z',
+  },{appVersion:'6.120.0-rc144',releaseCandidate:'RC144'});
+  assert.equal(identity.cloudflareVersionTimestamp,'2026-09-29T12:36:17.123Z');
+  assert.equal(releaseIdentityComplete(identity,{
+    nowMs:Date.parse('2026-09-29T12:40:00.000Z'),
+  }),true);
+});
+
+test('Issue #409 rejects structurally ISO-looking but impossible calendar timestamps',()=>{
+  const validation=validateReleaseIdentity(validIdentity({
+    cloudflareVersionTimestamp:'2026-02-31T00:00:00Z',
+  }),{
+    nowMs:Date.parse('2026-09-29T12:40:00.000Z'),
+  });
+  assert.equal(validation.ok,false);
+  assert.equal(validation.code,RELEASE_IDENTITY_CODES.CLOUDFLARE_VERSION_TIMESTAMP_INVALID_FORMAT);
+});
+
 test('Issue #409 rejects non-canonical timestamp shortcuts instead of normalizing Date.parse input',()=>{
   for(const shortcut of ['0','2026-09-29','09/29/2026 12:36:17']){
     const identity=runtimeReleaseIdentity({
