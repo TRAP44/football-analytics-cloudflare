@@ -37,7 +37,8 @@ test('ops event persistence treats Supabase HTTP errors as failed writes',()=>{
   assert.match(block,/if \(!response\.ok\)/);
   assert.match(block,/Supabase ops event HTTP/);
   const httpCheck=block.indexOf('if (!response.ok)');
-  const persistent=block.indexOf("setPersistenceStatus('persistent')");
-  assert.ok(httpCheck>=0 && persistent>httpCheck);
+  const fallbackPersistent=block.indexOf("setPersistenceStatus('persistent')",httpCheck);
+  assert.ok(httpCheck>=0 && fallbackPersistent>httpCheck);
+  assert.match(block,/record_ops_event_occurrence/);
   assert.match(block,/catch \{[\s\S]*setPersistenceStatus\('failed'\)/);
 });

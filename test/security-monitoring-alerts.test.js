@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import {
   assessSecuritySignals,
   formatSecurityIncidentAlert,
+  isSecuritySignal,
   securityIncidentOpsEvent,
   securityIncidentTimeline,
 } from '../src/security-incidents.js';
@@ -41,6 +42,7 @@ test('sustained cross-site blocks open a security incident', () => {
     event(3,'CROSS_SITE_MUTATION_BLOCKED',{nowMs}),
   ],{nowMs});
   assert.equal(result.state,'incident');
+  assert.equal(result.severity,'error');
   assert.equal(result.counts.crossSiteBlocks,3);
 });
 
@@ -144,4 +146,184 @@ test('security monitoring does not create a second alert delivery system', () =>
   assert.match(block,/claimProviderIncidentAlertDelivery/);
   assert.match(block,/finalizeProviderIncidentAlertDelivery/);
   assert.doesNotMatch(block,/new Map\(|new Set\(/);
+});
+
+
+test('Issue #407 preserves critical assessment severity through incident lifecycle and ops event', () => {
+  const nowMs=Date.parse('2026-10-03T20:00:00Z');
+  const assessment=assessSecuritySignals([
+    event(1,'INVALID_AUTH_BURST_BLOCKED',{nowMs,metadata:{scope:'admin'}}),
+  ],{nowMs});
+  assert.equal(assessment.severity,'critical');
+
+  const timeline=securityIncidentTimeline(assessment,[],{nowMs});
+  assert.equal(timeline.activeIncident?.severity,'critical');
+  assert.equal(timeline.activeIncident?.diagnostics?.riskLevel,'critical');
+
+  const opsEvent=securityIncidentOpsEvent(timeline.transition);
+  assert.equal(opsEvent?.severity,'critical');
+  assert.equal(opsEvent?.meta?.severity,'critical');
+
+  const alert=formatSecurityIncidentAlert({kind:'incident',incident:timeline.activeIncident});
+  assert.match(alert,/SECURITY incident/);
+});
+
+test('Issue #407 deduplicated security rows use true occurrence volume for thresholds', () => {
+  const nowMs=Date.parse('2026-10-03T20:00:00Z');
+  const row=event(1,'CROSS_SITE_MUTATION_BLOCKED',{nowMs});
+  row.occurrence_count=3;
+  row.last_occurred_at=new Date(nowMs-30_000).toISOString();
+  row.metadata={...row.metadata,occurrenceCount:3,lastOccurredAt:row.last_occurred_at};
+
+  const result=assessSecuritySignals([row],{nowMs});
+  assert.equal(result.state,'incident');
+  assert.equal(result.recordCount,1);
+  assert.equal(result.signalCount,3);
+  assert.equal(result.counts.total,3);
+  assert.equal(result.counts.crossSiteBlocks,3);
+  assert.equal(result.codes.CROSS_SITE_MUTATION_BLOCKED,3);
+});
+
+test('Issue #407 ordinary billing warnings do not become security signals', () => {
+  const nowMs=Date.parse('2026-10-03T20:00:00Z');
+  const row=event(1,'BILLING_MANUAL_REFUND',{
+    nowMs,
+    source:'billing',
+    severity:'warning',
+    metadata:{category:'operations'},
+  });
+  assert.equal(isSecuritySignal(row),false);
+  const result=assessSecuritySignals([row],{nowMs});
+  assert.equal(result.state,'healthy');
+  assert.equal(result.signalCount,0);
+  assert.equal(result.counts.billingAnomalies,0);
+});
+
+test('Issue #407 explicitly security-coded billing replay remains actionable', () => {
+  const nowMs=Date.parse('2026-10-03T20:00:00Z');
+  const row=event(1,'BILLING_REFUNDED_CHARGE_REPLAY_BLOCKED',{
+    nowMs,
+    source:'billing',
+    severity:'warning',
+  });
+  row.occurrence_count=2;
+
+  assert.equal(isSecuritySignal(row),true);
+  const result=assessSecuritySignals([row],{nowMs});
+  assert.equal(result.state,'incident');
+  assert.equal(result.severity,'critical');
+  assert.equal(result.signalCount,2);
+  assert.equal(result.counts.billingAnomalies,2);
+});
+
+test('Issue #407 explicit billing security category is accepted without trusting severity alone', () => {
+  const nowMs=Date.parse('2026-10-03T20:00:00Z');
+  const row=event(1,'BILLING_PROVIDER_WARNING',{
+    nowMs,
+    source:'billing',
+    severity:'warning',
+    metadata:{securityCategory:'fraud'},
+  });
+  assert.equal(isSecuritySignal(row),true);
+  assert.equal(assessSecuritySignals([row],{nowMs}).state,'watch');
+});
+
+
+
+test('Issue #407 maps warning, error and critical assessment severity end-to-end', () => {
+  const nowMs=Date.parse('2026-10-03T20:00:00Z');
+  for (const severity of ['warning','error','critical']) {
+    const assessment={
+      state:'incident',
+      severity,
+      startedAt:new Date(nowMs-60_000).toISOString(),
+      primaryCode:'CROSS_SITE_MUTATION_BLOCKED',
+      signalCount:3,
+      recordCount:1,
+      counts:{crossSiteBlocks:3},
+      windowMinutes:15,
+    };
+    const timeline=securityIncidentTimeline(assessment,[],{nowMs});
+    assert.equal(timeline.activeIncident?.severity,severity);
+    assert.equal(timeline.activeIncident?.diagnostics?.riskLevel,severity);
+    assert.equal(securityIncidentOpsEvent(timeline.transition)?.severity,severity);
+  }
+});
+
+test('Issue #407 legacy generic or missing incident severity falls back safely to error', () => {
+  const nowMs=Date.parse('2026-10-03T20:00:00Z');
+  for (const severity of ['incident',undefined]) {
+    const assessment={
+      state:'incident',
+      severity,
+      startedAt:new Date(nowMs-60_000).toISOString(),
+      primaryCode:'CROSS_SITE_MUTATION_BLOCKED',
+      signalCount:3,
+      recordCount:1,
+      counts:{crossSiteBlocks:3},
+      windowMinutes:15,
+    };
+    const timeline=securityIncidentTimeline(assessment,[],{nowMs});
+    assert.equal(timeline.activeIncident?.severity,'error');
+    assert.equal(securityIncidentOpsEvent(timeline.transition)?.severity,'error');
+  }
+});
+
+test('Issue #407 legacy rows without occurrence count represent one occurrence', () => {
+  const nowMs=Date.parse('2026-10-03T20:00:00Z');
+  const row=event(1,'CROSS_SITE_MUTATION_BLOCKED',{nowMs});
+  const result=assessSecuritySignals([row],{nowMs});
+  assert.equal(result.state,'watch');
+  assert.equal(result.recordCount,1);
+  assert.equal(result.signalCount,1);
+  assert.equal(result.counts.crossSiteBlocks,1);
+});
+
+test('Issue #407 an explicit first occurrence count remains one', () => {
+  const nowMs=Date.parse('2026-10-03T20:00:00Z');
+  const row=event(1,'CROSS_SITE_MUTATION_BLOCKED',{nowMs});
+  row.occurrence_count=1;
+  const result=assessSecuritySignals([row],{nowMs});
+  assert.equal(result.signalCount,1);
+  assert.equal(result.counts.crossSiteBlocks,1);
+});
+
+test('Issue #407 many same-window duplicates retain their full occurrence volume', () => {
+  const nowMs=Date.parse('2026-10-03T20:00:00Z');
+  const row=event(1,'CROSS_SITE_MUTATION_BLOCKED',{nowMs});
+  row.occurrence_count=12;
+  row.last_occurred_at=new Date(nowMs-5_000).toISOString();
+  const result=assessSecuritySignals([row],{nowMs});
+  assert.equal(result.recordCount,1);
+  assert.equal(result.signalCount,12);
+  assert.equal(result.counts.crossSiteBlocks,12);
+  assert.equal(result.state,'incident');
+  assert.equal(result.severity,'error');
+});
+
+test('Issue #407 concurrent duplicate updates use one atomic database increment expression', () => {
+  const migration=fs.readFileSync('supabase/migrations/supabase_migration_v6_26_3.sql','utf8');
+  const conflict=migration.slice(
+    migration.toLowerCase().indexOf('on conflict (transition_key) do update'),
+    migration.toLowerCase().indexOf('returning occurrence_count',migration.toLowerCase().indexOf('on conflict (transition_key) do update'))
+  );
+  assert.match(conflict,/occurrence_count\s*=\s*public\.ops_events\.occurrence_count\s*\+\s*1/i);
+  assert.match(conflict,/last_occurred_at\s*=\s*greatest/i);
+  assert.doesNotMatch(conflict,/select\s+occurrence_count/i);
+});
+
+test('Issue #407 persistence uses an atomic occurrence RPC with backward-compatible fallback', () => {
+  const worker=fs.readFileSync('src/worker.js','utf8');
+  const migration=fs.readFileSync('supabase/migrations/supabase_migration_v6_26_3.sql','utf8');
+  assert.match(worker,/record_ops_event_occurrence/);
+  assert.match(worker,/occurrenceCount:1/);
+  assert.match(worker,/lastOccurredAt:createdAt/);
+  assert.match(worker,/resolution=ignore-duplicates,return=minimal/);
+  assert.match(migration,/add column if not exists occurrence_count integer not null default 1/i);
+  assert.match(migration,/add column if not exists last_occurred_at timestamptz/i);
+  assert.match(migration,/create or replace function public\.record_ops_event_occurrence/i);
+  assert.match(migration,/on conflict \(transition_key\) do update/i);
+  assert.match(migration,/occurrence_count = public\.ops_events\.occurrence_count \+ 1/i);
+  assert.match(migration,/security invoker/i);
+  assert.match(migration,/grant execute on function public\.record_ops_event_occurrence/i);
 });
