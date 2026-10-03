@@ -131,11 +131,98 @@ export function providerSloState(summary = {}, policy = DEFAULT_PROVIDER_SLO_POL
 function normalizePersistedWindow(item = {}) {
   const meta = item?.metadata || item || {};
   const series = Array.isArray(meta.series) ? meta.series : [];
+  const windowStartedAt=String(meta.windowStartedAt || '');
+  const windowEndedAt=String(meta.windowEndedAt || item?.created_at || '');
   return {
-    windowStartedAt: String(meta.windowStartedAt || ''),
-    windowEndedAt: String(meta.windowEndedAt || item?.created_at || ''),
+    windowId:String(meta.windowId || `${windowStartedAt}|${windowEndedAt}`),
+    windowStartedAt,
+    windowEndedAt,
+    complete:meta.complete !== false,
     series: series.filter(row => row && typeof row === 'object').slice(0, 24),
   };
+}
+
+function bucketMetricRow(row = {}) {
+  return {
+    provider:String(row.provider || 'provider').trim() || 'provider',
+    operation:String(row.operation || 'unknown').trim() || 'unknown',
+    attempts:finite(row.attempts),
+    requests:finite(row.requests),
+    successes:finite(row.successes),
+    failures:finite(row.failures),
+    retries:finite(row.retries),
+    timeouts:finite(row.timeouts),
+    networkErrors:finite(row.network_errors ?? row.networkErrors),
+    rateLimits:finite(row.rate_limits ?? row.rateLimits),
+    httpErrors:finite(row.http_errors ?? row.httpErrors),
+    invalidResponses:finite(row.invalid_responses ?? row.invalidResponses),
+    latencySumMs:finite(row.latency_sum_ms ?? row.latencySumMs),
+    latencySamples:finite(row.latency_samples ?? row.latencySamples),
+    maxLatencyMs:finite(row.max_latency_ms ?? row.maxLatencyMs),
+  };
+}
+
+export function providerSloWindowsFromBuckets(rows = [], {
+  hours = 24,
+  nowMs = Date.now(),
+  windowMinutes = 15,
+  includeOpen = true,
+  policy = DEFAULT_PROVIDER_SLO_POLICY,
+} = {}) {
+  const safeHours=Math.max(1,Math.min(168,Number(hours || 24)));
+  const safeWindowMinutes=Math.max(1,Math.min(60,Number(windowMinutes || 15)));
+  const nowValue=Number(nowMs || Date.now());
+  const cutoff=nowValue-safeHours*60*60_000;
+  const deduped=new Map();
+
+  for (const row of rows || []) {
+    const startMs=Date.parse(String(row?.bucket_started_at || row?.bucketStartedAt || ''));
+    if (!Number.isFinite(startMs)) continue;
+    const endMs=startMs+safeWindowMinutes*60_000;
+    if (endMs<=cutoff || startMs>nowValue) continue;
+    const metric=bucketMetricRow(row);
+    const identity=`${new Date(startMs).toISOString()}|${seriesKey(metric.provider,metric.operation)}`;
+    const previous=deduped.get(identity);
+    const previousUpdated=Date.parse(String(previous?.updated_at || previous?.updatedAt || ''));
+    const currentUpdated=Date.parse(String(row?.updated_at || row?.updatedAt || ''));
+    if (!previous || !Number.isFinite(previousUpdated) || (Number.isFinite(currentUpdated) && currentUpdated>=previousUpdated)) {
+      deduped.set(identity,row);
+    }
+  }
+
+  const grouped=new Map();
+  for (const row of deduped.values()) {
+    const startMs=Date.parse(String(row?.bucket_started_at || row?.bucketStartedAt || ''));
+    const endMs=startMs+safeWindowMinutes*60_000;
+    const complete=endMs<=nowValue;
+    if (!includeOpen && !complete) continue;
+    const startIso=new Date(startMs).toISOString();
+    if (!grouped.has(startIso)) grouped.set(startIso,[]);
+    grouped.get(startIso).push(bucketMetricRow(row));
+  }
+
+  return [...grouped.entries()]
+    .sort(([a],[b])=>Date.parse(a)-Date.parse(b))
+    .map(([windowStartedAt,series])=>{
+      const startMs=Date.parse(windowStartedAt);
+      const windowEndedAt=new Date(startMs+safeWindowMinutes*60_000).toISOString();
+      const totals=emptySeries('all','all');
+      for (const metric of series) mergeSeries(totals,metric);
+      const summarizedTotals=summarizeSeries(totals);
+      const state=providerSloState(summarizedTotals,policy).state;
+      return {
+        created_at:windowEndedAt,
+        metadata:{
+          windowId:`provider-slo:${windowStartedAt}`,
+          windowStartedAt,
+          windowEndedAt,
+          complete:Date.parse(windowEndedAt)<=nowValue,
+          series:series.map(row=>({...row})),
+          totals:summarizedTotals,
+          sloState:state,
+        },
+      };
+    });
 }
 
 export function createProviderObservabilityRuntime({
@@ -226,9 +313,19 @@ export function createProviderObservabilityRuntime({
   }
 
   function summarizeWindows(items = [], { hours = 24, includeCurrent = true } = {}) {
+    const safeHours=Math.max(1,Math.min(168,Number(hours || 24)));
+    const cutoff=now()-safeHours*60*60_000;
     const combined = new Map();
-    const windows = (items || []).map(normalizePersistedWindow);
-    if (includeCurrent) windows.push(currentWindow());
+    const deduped=new Map();
+    const sourceWindows=(items || []).map(normalizePersistedWindow);
+    if (includeCurrent) sourceWindows.push(normalizePersistedWindow(currentWindow()));
+    for (const window of sourceWindows) {
+      const endMs=Date.parse(window.windowEndedAt || '');
+      if (!Number.isFinite(endMs) || endMs<cutoff || endMs>now()+60_000) continue;
+      const identity=window.windowId || `${window.windowStartedAt}|${window.windowEndedAt}`;
+      deduped.set(identity,window);
+    }
+    const windows=[...deduped.values()].sort((a,b)=>Date.parse(a.windowEndedAt)-Date.parse(b.windowEndedAt));
 
     let windowCount = 0;
     let windowStartedAt = null;
@@ -268,7 +365,7 @@ export function createProviderObservabilityRuntime({
 
     return {
       visibility:'admin',
-      hours: Math.max(1, Number(hours || 24)),
+      hours: safeHours,
       generatedAt: iso(now()),
       windowStartedAt,
       windowEndedAt,
@@ -287,5 +384,6 @@ export function createProviderObservabilityRuntime({
     rotateWindow,
     restoreWindow,
     summarizeWindows,
+    windowsFromBuckets:(rows,options={})=>providerSloWindowsFromBuckets(rows,{...options,policy,nowMs:options.nowMs ?? now()}),
   });
 }
