@@ -8,11 +8,11 @@ import {
   obviousScannerPath,
 } from '../src/edge-security.js';
 
-function request(path, { method='GET', ip='203.0.113.10' } = {}) {
-  return new Request(`https://example.com${path}`, {
-    method,
-    headers: ip ? { 'cf-connecting-ip': ip } : {},
-  });
+function request(path, { method='GET', ip='203.0.113.10', initData='' } = {}) {
+  const headers={};
+  if (ip) headers['cf-connecting-ip']=ip;
+  if (initData) headers['x-telegram-init-data']=initData;
+  return new Request(`https://example.com${path}`, { method, headers });
 }
 
 function limiter(success=true, capture=null) {
@@ -54,6 +54,18 @@ test('rate-limit binding uses a hashed network fingerprint and never the raw IP 
   assert.equal(seen.length,1);
   assert.match(seen[0].key,/^analyze:[a-f0-9]{24}$/);
   assert.equal(seen[0].key.includes('198.51.100.42'),false);
+});
+
+
+test('signed Telegram users sharing one IP receive distinct edge buckets', async () => {
+  const seen=[];
+  const env={ EDGE_ANALYZE_RATE_LIMIT: limiter(true,seen) };
+  await cloudflareEdgeGuard(request('/api/analyze',{method:'POST',ip:'198.51.100.50',initData:'user=alpha&hash=a'}),env);
+  await cloudflareEdgeGuard(request('/api/analyze',{method:'POST',ip:'198.51.100.50',initData:'user=beta&hash=b'}),env);
+  assert.equal(seen.length,2);
+  assert.notEqual(seen[0].key,seen[1].key);
+  assert.ok(seen.every(item=>!item.key.includes('198.51.100.50')));
+  assert.ok(seen.every(item=>!item.key.includes('user=')));
 });
 
 test('Webhook ceiling is intentionally much looser than user API ceilings', () => {

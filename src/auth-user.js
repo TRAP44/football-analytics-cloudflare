@@ -12,6 +12,7 @@ const ADMIN_SENSITIVE_PATHS = new Set([
   '/api/phase5-dashboard',
   '/api/production-monitor',
   '/api/production-readiness',
+  '/api/post-deploy-regression-response',
   '/api/rc-regression',
   '/api/recovery-incident-ack',
   '/api/release-monitor',

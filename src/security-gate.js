@@ -2,8 +2,10 @@ export const MAX_TELEGRAM_INIT_DATA_LENGTH = 16 * 1024;
 export const MAX_API_BODY_BYTES = 64 * 1024;
 export const MAX_TELEGRAM_WEBHOOK_BODY_BYTES = 256 * 1024;
 
-const SAFE_API_METHODS = new Set(['GET','POST','PATCH','DELETE','HEAD']);
-const UNSAFE_METHODS = new Set(['POST','PATCH','DELETE']);
+const SAFE_API_METHODS = new Set(['GET','POST','PUT','PATCH','DELETE','HEAD']);
+const UNSAFE_METHODS = new Set(['POST','PUT','PATCH','DELETE']);
+const JSON_MUTATION_METHODS = new Set(['POST','PUT','PATCH']);
+const MAX_INVALID_AUTH_BUCKETS = 2048;
 const INVALID_AUTH_POLICIES = Object.freeze({
   public: { limit: 30, windowMs: 60_000 },
   admin: { limit: 12, windowMs: 60_000 },
@@ -70,6 +72,9 @@ export async function preAuthRequestShapeDecision(request, {
       return { allowed:false, status:413, code:'REQUEST_TOO_LARGE', error:'Запрос слишком большой.' };
     }
     const contentType=headerValue(request,'content-type').toLowerCase();
+    if (JSON_MUTATION_METHODS.has(method) && !contentType.startsWith('application/json')) {
+      return { allowed:false, status:415, code:'UNSUPPORTED_MEDIA_TYPE', error:'Ожидается JSON.' };
+    }
     if (contentType && !contentType.startsWith('application/json')) {
       return { allowed:false, status:415, code:'UNSUPPORTED_MEDIA_TYPE', error:'Ожидается JSON.' };
     }
@@ -129,11 +134,19 @@ async function clientNetworkFingerprint(request) {
 
 function pruneBuckets(map, now=Date.now()) {
   if (!(map instanceof Map)) return;
-  if (map.size<2000) return;
+  if (map.size<MAX_INVALID_AUTH_BUCKETS) return;
+
   for (const [key,bucket] of map) {
     const policy=INVALID_AUTH_POLICIES[bucket?.scope] || INVALID_AUTH_POLICIES.public;
     if (now-Number(bucket?.startedAt || 0)>policy.windowMs*2) map.delete(key);
   }
+
+  if (map.size<MAX_INVALID_AUTH_BUCKETS) return;
+  const overflow=map.size-MAX_INVALID_AUTH_BUCKETS+1;
+  const oldest=[...map.entries()]
+    .sort((a,b)=>Number(a[1]?.startedAt || 0)-Number(b[1]?.startedAt || 0))
+    .slice(0,overflow);
+  for (const [key] of oldest) map.delete(key);
 }
 
 export function createPreAuthAbuseGuard({
