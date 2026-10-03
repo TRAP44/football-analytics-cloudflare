@@ -63,6 +63,25 @@ test('delivery success preserves claim, finish and ops semantics', async () => {
   });
 });
 
+test('successful Telegram send with lost final CAS fails closed and never releases the claim', async () => {
+  const finishError=new Error('Reminder delivery claim was lost during finish.');
+  finishError.code='REMINDER_DELIVERY_CLAIM_LOST';
+  finishError.claimLost=true;
+
+  const {service,calls,events}=runtime({
+    finishReminderDelivery:async()=>{ throw finishError; },
+  });
+
+  await assert.rejects(
+    service.deliverClaimedReminder({telegram_id:16,fixture_id:78},'prematch','text',{botToken:'token'}),
+    error=>error?.code==='REMINDER_DELIVERY_CLAIM_LOST' && error?.claimLost===true,
+  );
+
+  assert.equal(calls.messages.length,1);
+  assert.equal(calls.releases.length,0);
+  assert.equal(events.some(event=>event.code==='REMINDER_SENT_PREMATCH'),false);
+});
+
 test('403 delivery preserves disable and release semantics', async () => {
   const {service,calls,events}=runtime({
     sendTelegramMessage:async(...args)=>{

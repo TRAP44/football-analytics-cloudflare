@@ -64,7 +64,7 @@ test('sending and unknown states preserve the claim for at-most-once delivery', 
   const {store,calls}=runtime({
     responses:[
       {ok:true,status:200,json:[{fixture_id:77}]},
-      {ok:true,status:204,json:null},
+      {ok:true,status:200,json:[{fixture_id:77}]},
     ],
   });
   const row={telegram_id:15,fixture_id:77};
@@ -82,11 +82,11 @@ test('sending and unknown states preserve the claim for at-most-once delivery', 
   assert.equal(unknown.delivery_last_error,'telegram_delivery_unknown');
   assert.equal(unknown.delivery_retry_after,null);
   assert.equal(Object.hasOwn(unknown,'prematch_claimed_at'),false);
-  assert.equal(calls[1].init.headers.Prefer,'return=minimal');
+  assert.equal(calls[1].init.headers.Prefer,'return=representation');
 });
 
 test('finish kickoff preserves claim identity and marks prematch sent when needed', async () => {
-  const {store,calls}=runtime({responses:[{ok:true,status:204,json:null}]});
+  const {store,calls}=runtime({responses:[{ok:true,status:200,json:[{fixture_id:88}]}]});
   const claimAt='2026-09-27T18:00:00.000Z';
   await store.finishReminderDelivery({telegram_id:7,fixture_id:88,notified_at:null},'kickoff',claimAt,{supabaseUrl:'https://db.test'});
   assert.equal(calls.length,1);
@@ -94,7 +94,7 @@ test('finish kickoff preserves claim identity and marks prematch sent when neede
   assert.match(call.url,/telegram_id=eq\.7/);
   assert.match(call.url,/fixture_id=eq\.88/);
   assert.match(call.url,/kickoff_claimed_at=eq\.2026-09-27T18%3A00%3A00\.000Z/);
-  assert.equal(call.init.headers.Prefer,'return=minimal');
+  assert.equal(call.init.headers.Prefer,'return=representation');
   const body=JSON.parse(call.init.body);
   assert.ok(body.kickoff_notified_at);
   assert.equal(body.kickoff_claimed_at,null);
@@ -104,7 +104,7 @@ test('finish kickoff preserves claim identity and marks prematch sent when neede
 });
 
 test('release preserves retry and disable semantics', async () => {
-  const {store,calls}=runtime({responses:[{ok:true,status:204,json:null}]});
+  const {store,calls}=runtime({responses:[{ok:true,status:200,json:[{fixture_id:99}]}]});
   await store.releaseReminderClaim(
     {telegram_id:9,fixture_id:99},
     'prematch',
@@ -120,6 +120,33 @@ test('release preserves retry and disable semantics', async () => {
   assert.ok(body.delivery_retry_after);
   assert.equal(body.enabled,false);
   assert.equal(body.delivery_disabled_reason,'telegram_forbidden');
+  assert.equal(calls[0].init.headers.Prefer,'return=representation');
+});
+
+test('finish, unknown hold and release reject a lost claim instead of reporting success', async () => {
+  const {store}=runtime({
+    responses:[
+      {ok:true,status:200,json:[]},
+      {ok:true,status:200,json:[]},
+      {ok:true,status:200,json:[]},
+    ],
+  });
+  const row={telegram_id:31,fixture_id:310};
+  const claimAt='2026-09-27T18:00:00.000Z';
+  const lostClaim=error=>error?.code==='REMINDER_DELIVERY_CLAIM_LOST' && error?.claimLost===true;
+
+  await assert.rejects(
+    store.finishReminderDelivery(row,'prematch',claimAt,{supabaseUrl:'https://db.test'}),
+    lostClaim,
+  );
+  await assert.rejects(
+    store.holdReminderDeliveryUnknown(row,'prematch',claimAt,{supabaseUrl:'https://db.test'}),
+    lostClaim,
+  );
+  await assert.rejects(
+    store.releaseReminderClaim(row,'prematch',claimAt,'send failed',{supabaseUrl:'https://db.test'}),
+    lostClaim,
+  );
 });
 
 test('stale claim recovery clears registered claim columns and records an ops event', async () => {
