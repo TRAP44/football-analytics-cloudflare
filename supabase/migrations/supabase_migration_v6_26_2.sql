@@ -192,9 +192,12 @@ select jsonb_build_object(
 );
 $$;
 
--- Expand the delivery-state machine without removing any existing state.
+-- Alert delivery v2 keeps the existing status enum intact.
+-- New columns are additive: old rows/workers remain valid, while v2 separates pre-send ownership from the send boundary.
 alter table public.provider_incident_alert_deliveries
   add column if not exists destination_identity_version text not null default 'legacy';
+alter table public.provider_incident_alert_deliveries
+  add column if not exists delivery_phase text not null default 'legacy';
 
 alter table public.provider_incident_alert_deliveries
   drop constraint if exists provider_incident_alert_deliveries_destination_identity_version_check;
@@ -203,13 +206,10 @@ alter table public.provider_incident_alert_deliveries
   check (destination_identity_version in ('legacy','stable_v1'));
 
 alter table public.provider_incident_alert_deliveries
-  drop constraint if exists provider_incident_alert_deliveries_status_check;
+  drop constraint if exists provider_incident_alert_deliveries_delivery_phase_check;
 alter table public.provider_incident_alert_deliveries
-  add constraint provider_incident_alert_deliveries_status_check
-  check (status in ('claimed','sending','sent','retry_pending','terminal_failed','unknown'));
-
--- v1 remains for the currently running/rollback Worker. It still acquires directly into "sending",
--- but it can safely recover an expired v2 "claimed" row after rollback.
+  add constraint provider_incident_alert_deliveries_delivery_phase_check
+  check (delivery_phase in ('legacy','claimed','sending','retry'));
 
 create or replace function public.claim_provider_incident_alert_delivery(
   p_incident_id text,
@@ -250,6 +250,7 @@ begin
     alert_key,
     destination_key,
     destination_slot,
+    delivery_phase,
     status,
     attempts,
     claimed_at,
@@ -263,6 +264,7 @@ begin
     left(btrim(p_alert_key),280),
     left(btrim(p_destination_key),160),
     p_destination_slot,
+    'sending',
     'sending',
     1,
     v_now,
@@ -336,39 +338,6 @@ begin
     );
   end if;
 
-  if v_row.status = 'claimed' then
-    if v_row.attempts >= v_max_attempts then
-      update public.provider_incident_alert_deliveries
-      set status='terminal_failed',
-          terminal_at=coalesce(terminal_at,v_now),
-          locked_until=null,
-          last_error_code=coalesce(last_error_code,'MAX_ATTEMPTS'),
-          last_error=coalesce(last_error,'Maximum automatic delivery attempts reached.'),
-          updated_at=v_now
-      where id=v_row.id
-      returning * into v_row;
-      return jsonb_build_object('acquired',false,'status','terminal_failed','reason','max_attempts','attempts',v_row.attempts);
-    end if;
-
-    if v_row.locked_until is not null and v_row.locked_until > v_now then
-      return jsonb_build_object('acquired',false,'status','claimed','reason','in_flight','attempts',v_row.attempts);
-    end if;
-
-    update public.provider_incident_alert_deliveries
-    set status='sending',
-        attempts=attempts+1,
-        claimed_at=v_now,
-        locked_until=v_now + make_interval(secs => v_lease_seconds),
-        updated_at=v_now
-    where id=v_row.id
-    returning * into v_row;
-
-    return jsonb_build_object(
-      'acquired',true,'status','sending','reason','stale_claim_reclaimed',
-      'attempts',v_row.attempts,'retryAt',null
-    );
-  end if;
-
   if v_row.status = 'sending' then
     if v_row.locked_until is null or v_row.locked_until <= v_now then
       update public.provider_incident_alert_deliveries
@@ -430,6 +399,7 @@ begin
 
     update public.provider_incident_alert_deliveries
     set status = 'sending',
+        delivery_phase = 'sending',
         attempts = attempts + 1,
         claimed_at = v_now,
         locked_until = v_now + make_interval(secs => v_lease_seconds),
@@ -476,6 +446,7 @@ declare
   v_max_attempts integer := greatest(1, least(coalesce(p_max_attempts,3), 10));
   v_lease_seconds integer := greatest(30, least(coalesce(p_lease_seconds,120), 900));
   v_row public.provider_incident_alert_deliveries%rowtype;
+  v_locked_until timestamptz;
 begin
   if p_incident_id is null or btrim(p_incident_id) = ''
      or p_transition is null or btrim(p_transition) = ''
@@ -490,6 +461,8 @@ begin
     );
   end if;
 
+  v_locked_until := v_now + make_interval(secs => v_lease_seconds);
+
   insert into public.provider_incident_alert_deliveries(
     incident_id,
     transition,
@@ -497,10 +470,12 @@ begin
     destination_key,
     destination_slot,
     destination_identity_version,
+    delivery_phase,
     status,
     attempts,
     claimed_at,
     locked_until,
+    retry_at,
     created_at,
     updated_at
   )
@@ -512,9 +487,11 @@ begin
     p_destination_slot,
     'stable_v1',
     'claimed',
+    'retry_pending',
     1,
     v_now,
-    v_now + make_interval(secs => v_lease_seconds),
+    v_locked_until,
+    v_locked_until,
     v_now,
     v_now
   )
@@ -527,7 +504,7 @@ begin
       'status', 'claimed',
       'reason', 'created',
       'attempts', v_row.attempts,
-      'retryAt', null
+      'retryAt', v_row.retry_at
     );
   end if;
 
@@ -539,55 +516,95 @@ begin
   for update;
 
   if not found then
-    return jsonb_build_object(
-      'acquired', false,
-      'status', 'invalid',
-      'reason', 'identity_conflict',
-      'attempts', 0
-    );
+    return jsonb_build_object('acquired',false,'status','invalid','reason','identity_conflict','attempts',0);
   end if;
 
   if v_row.incident_id <> left(btrim(p_incident_id),200)
      or v_row.transition <> left(btrim(p_transition),80) then
-    return jsonb_build_object(
-      'acquired', false,
-      'status', 'invalid',
-      'reason', 'identity_mismatch',
-      'attempts', v_row.attempts
-    );
+    return jsonb_build_object('acquired',false,'status','invalid','reason','identity_mismatch','attempts',v_row.attempts);
   end if;
 
   if v_row.status = 'sent' then
-    return jsonb_build_object(
-      'acquired', false,
-      'status', 'sent',
-      'reason', 'already_sent',
-      'attempts', v_row.attempts
-    );
+    return jsonb_build_object('acquired',false,'status','sent','reason','already_sent','attempts',v_row.attempts);
   end if;
 
   if v_row.status = 'terminal_failed' then
-    return jsonb_build_object(
-      'acquired', false,
-      'status', 'terminal_failed',
-      'reason', 'terminal_failure',
-      'attempts', v_row.attempts
-    );
+    return jsonb_build_object('acquired',false,'status','terminal_failed','reason','terminal_failure','attempts',v_row.attempts);
   end if;
 
   if v_row.status = 'unknown' then
-    return jsonb_build_object(
-      'acquired', false,
-      'status', 'unknown',
-      'reason', 'ambiguous_delivery_suppressed',
-      'attempts', v_row.attempts
-    );
+    return jsonb_build_object('acquired',false,'status','unknown','reason','ambiguous_delivery_suppressed','attempts',v_row.attempts);
   end if;
 
-  if v_row.status = 'claimed' then
+  if v_row.status = 'sending' then
+    if v_row.locked_until is null or v_row.locked_until <= v_now then
+      update public.provider_incident_alert_deliveries
+      set status='unknown',
+          delivery_phase='sending',
+          unknown_at=v_now,
+          locked_until=null,
+          last_error_code='STALE_SENDING_LEASE',
+          last_error='Delivery lease expired after the send boundary; automatic resend is suppressed.',
+          updated_at=v_now
+      where id=v_row.id
+      returning * into v_row;
+
+      return jsonb_build_object(
+        'acquired',false,
+        'status','unknown',
+        'reason','stale_sending_lease',
+        'attempts',v_row.attempts
+      );
+    end if;
+
+    return jsonb_build_object('acquired',false,'status','sending','reason','in_flight','attempts',v_row.attempts);
+  end if;
+
+  if v_row.status = 'retry_pending' then
+    if coalesce(v_row.delivery_phase,'legacy') = 'claimed' then
+      if v_row.locked_until is not null and v_row.locked_until > v_now then
+        return jsonb_build_object(
+          'acquired',false,'status','claimed','reason','in_flight',
+          'attempts',v_row.attempts,'retryAt',v_row.retry_at
+        );
+      end if;
+
+      if v_row.attempts >= v_max_attempts then
+        update public.provider_incident_alert_deliveries
+        set status='terminal_failed',
+            delivery_phase='claimed',
+            retry_at=null,
+            terminal_at=coalesce(terminal_at,v_now),
+            locked_until=null,
+            last_error_code=coalesce(last_error_code,'MAX_ATTEMPTS'),
+            last_error=coalesce(last_error,'Maximum automatic delivery attempts reached.'),
+            updated_at=v_now
+        where id=v_row.id
+        returning * into v_row;
+        return jsonb_build_object('acquired',false,'status','terminal_failed','reason','max_attempts','attempts',v_row.attempts);
+      end if;
+
+      v_locked_until := v_now + make_interval(secs => v_lease_seconds);
+      update public.provider_incident_alert_deliveries
+      set delivery_phase='claimed',
+          attempts=attempts+1,
+          claimed_at=v_now,
+          locked_until=v_locked_until,
+          retry_at=v_locked_until,
+          updated_at=v_now
+      where id=v_row.id
+      returning * into v_row;
+
+      return jsonb_build_object(
+        'acquired',true,'status','claimed','reason','stale_claim_reclaimed',
+        'attempts',v_row.attempts,'retryAt',v_row.retry_at
+      );
+    end if;
+
     if v_row.attempts >= v_max_attempts then
       update public.provider_incident_alert_deliveries
       set status='terminal_failed',
+          retry_at=null,
           terminal_at=coalesce(terminal_at,v_now),
           locked_until=null,
           last_error_code=coalesce(last_error_code,'MAX_ATTEMPTS'),
@@ -598,112 +615,39 @@ begin
       return jsonb_build_object('acquired',false,'status','terminal_failed','reason','max_attempts','attempts',v_row.attempts);
     end if;
 
-    if v_row.locked_until is not null and v_row.locked_until > v_now then
-      return jsonb_build_object('acquired',false,'status','claimed','reason','in_flight','attempts',v_row.attempts);
+    if v_row.retry_at is not null and v_row.retry_at > v_now then
+      return jsonb_build_object(
+        'acquired',false,'status','retry_pending','reason','retry_not_due',
+        'attempts',v_row.attempts,'retryAt',v_row.retry_at
+      );
     end if;
 
+    v_locked_until := v_now + make_interval(secs => v_lease_seconds);
     update public.provider_incident_alert_deliveries
-    set status='claimed',
+    set status='retry_pending',
+        delivery_phase='claimed',
         attempts=attempts+1,
         claimed_at=v_now,
-        locked_until=v_now + make_interval(secs => v_lease_seconds),
+        locked_until=v_locked_until,
+        retry_at=v_locked_until,
         updated_at=v_now
     where id=v_row.id
     returning * into v_row;
 
     return jsonb_build_object(
-      'acquired',true,'status','claimed','reason','stale_claim_reclaimed',
-      'attempts',v_row.attempts,'retryAt',null
-    );
-  end if;
-
-  if v_row.status = 'sending' then
-    if v_row.locked_until is null or v_row.locked_until <= v_now then
-      update public.provider_incident_alert_deliveries
-      set status = 'unknown',
-          unknown_at = v_now,
-          locked_until = null,
-          last_error_code = 'STALE_SENDING_LEASE',
-          last_error = 'Delivery lease expired before the Telegram result was durably finalized.',
-          updated_at = v_now
-      where id = v_row.id
-      returning * into v_row;
-
-      return jsonb_build_object(
-        'acquired', false,
-        'status', 'unknown',
-        'reason', 'stale_sending_lease',
-        'attempts', v_row.attempts
-      );
-    end if;
-
-    return jsonb_build_object(
-      'acquired', false,
-      'status', 'sending',
-      'reason', 'in_flight',
-      'attempts', v_row.attempts
-    );
-  end if;
-
-  if v_row.status = 'retry_pending' then
-    if v_row.attempts >= v_max_attempts then
-      update public.provider_incident_alert_deliveries
-      set status = 'terminal_failed',
-          retry_at = null,
-          terminal_at = coalesce(terminal_at,v_now),
-          locked_until = null,
-          last_error_code = coalesce(last_error_code,'MAX_ATTEMPTS'),
-          last_error = coalesce(last_error,'Maximum automatic delivery attempts reached.'),
-          updated_at = v_now
-      where id = v_row.id
-      returning * into v_row;
-
-      return jsonb_build_object(
-        'acquired', false,
-        'status', 'terminal_failed',
-        'reason', 'max_attempts',
-        'attempts', v_row.attempts
-      );
-    end if;
-
-    if v_row.retry_at is not null and v_row.retry_at > v_now then
-      return jsonb_build_object(
-        'acquired', false,
-        'status', 'retry_pending',
-        'reason', 'retry_not_due',
-        'attempts', v_row.attempts,
-        'retryAt', v_row.retry_at
-      );
-    end if;
-
-    update public.provider_incident_alert_deliveries
-    set status = 'claimed',
-        attempts = attempts + 1,
-        claimed_at = v_now,
-        locked_until = v_now + make_interval(secs => v_lease_seconds),
-        retry_at = null,
-        updated_at = v_now
-    where id = v_row.id
-    returning * into v_row;
-
-    return jsonb_build_object(
-      'acquired', true,
-      'status', 'claimed',
-      'reason', 'retry_acquired',
-      'attempts', v_row.attempts,
-      'retryAt', null
+      'acquired',true,'status','claimed','reason','retry_acquired',
+      'attempts',v_row.attempts,'retryAt',v_row.retry_at
     );
   end if;
 
   return jsonb_build_object(
-    'acquired', false,
-    'status', coalesce(v_row.status,'invalid'),
-    'reason', 'unsupported_state',
-    'attempts', v_row.attempts
+    'acquired',false,
+    'status',coalesce(v_row.status,'invalid'),
+    'reason','unsupported_state',
+    'attempts',v_row.attempts
   );
 end;
 $$;
-
 
 create or replace function public.begin_provider_incident_alert_delivery_send(
   p_alert_key text,
@@ -720,10 +664,13 @@ declare
 begin
   update public.provider_incident_alert_deliveries
   set status='sending',
+      delivery_phase='sending',
+      retry_at=null,
       updated_at=v_now
   where alert_key=left(btrim(coalesce(p_alert_key,'')),280)
     and destination_key=left(btrim(coalesce(p_destination_key,'')),160)
-    and status='claimed'
+    and status='retry_pending'
+    and delivery_phase='claimed'
     and locked_until is not null
     and locked_until>v_now
   returning * into v_row;
@@ -745,7 +692,10 @@ begin
     'ok',false,
     'status',v_row.status,
     'reason',case
-      when v_row.status='claimed' and (v_row.locked_until is null or v_row.locked_until<=v_now) then 'claim_lease_expired'
+      when v_row.status='retry_pending'
+        and coalesce(v_row.delivery_phase,'legacy')='claimed'
+        and (v_row.locked_until is null or v_row.locked_until<=v_now)
+        then 'claim_lease_expired'
       else 'not_claimed'
     end,
     'attempts',v_row.attempts
@@ -792,7 +742,6 @@ select jsonb_build_object(
 from checks;
 $$;
 
--- Least privilege for both new aggregation and existing alert ledger.
 revoke all privileges on table public.provider_incident_alert_deliveries
   from public, anon, authenticated, service_role;
 grant select, insert, update, delete on table public.provider_incident_alert_deliveries
