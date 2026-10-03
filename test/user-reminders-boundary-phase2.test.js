@@ -14,26 +14,16 @@ function runtime(overrides = {}) {
     supaSelectMany:overrides.supaSelectMany || (async()=>[]),
     supaRpc:overrides.supaRpc || (async(_cfg,name,args,timeout)=>{
       rpcCalls.push({name,args,timeout});
-      if (name === 'resolve_match_reminder_fixture') {
-        return {
-          available:true,
-          fixtureId:args.p_fixture_id,
-          homeName:'Canonical Home',
-          awayName:'Canonical Away',
-          leagueName:'Canonical League',
-          fixtureDate:new Date(Date.now()+2*60*60_000).toISOString(),
-        };
-      }
       if (name === 'prune_match_reminders_for_user') return {ok:true,disabled:0,deleted:0};
       return {
         allowed:true,
         item:{
           telegram_id:args.p_telegram_id,
           fixture_id:args.p_fixture_id,
-          home_name:args.p_home_name,
-          away_name:args.p_away_name,
-          league_name:args.p_league_name,
-          fixture_date:args.p_fixture_date,
+          home_name:'Canonical Home',
+          away_name:'Canonical Away',
+          league_name:'Canonical League',
+          fixture_date:new Date(Date.now()+2*60*60_000).toISOString(),
           remind_before_minutes:args.p_remind_before_minutes,
           kickoff_notify:args.p_kickoff_notify,
           enabled:true,
@@ -99,15 +89,15 @@ test('reminders service preserves guarded Supabase RPC contract', async () => {
     fixtureId:55,homeName:'Home',awayName:'Away',leagueName:'Cup',fixtureDate:future,
   },{supabaseUrl:'https://db.test'});
   assert.equal(row.fixture_id,55);
-  assert.equal(rpcCalls.length,2);
-  assert.equal(rpcCalls[0].name,'resolve_match_reminder_fixture');
+  assert.equal(rpcCalls.length,1);
+  assert.equal(rpcCalls[0].name,'save_match_reminder_guarded_v2');
+  assert.equal(rpcCalls[0].args.p_telegram_id,11);
   assert.equal(rpcCalls[0].args.p_fixture_id,55);
-  assert.equal(rpcCalls[1].name,'save_match_reminder_guarded_v2');
-  assert.equal(rpcCalls[1].args.p_telegram_id,11);
-  assert.equal(rpcCalls[1].args.p_fixture_id,55);
-  assert.equal(rpcCalls[1].args.p_rearm,false);
-  assert.equal(rpcCalls[1].args.p_limit,50);
-  assert.equal(rpcCalls[1].timeout,4000);
+  assert.equal(rpcCalls[0].args.p_home_name,'');
+  assert.equal(rpcCalls[0].args.p_fixture_date,null);
+  assert.equal(rpcCalls[0].args.p_rearm,false);
+  assert.equal(rpcCalls[0].args.p_limit,50);
+  assert.equal(rpcCalls[0].timeout,4000);
 });
 
 test('reminders service preserves active 50-item fallback cap', async () => {
