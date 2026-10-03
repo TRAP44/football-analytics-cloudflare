@@ -183,7 +183,8 @@ test('v6.25.2 SQL contract canonicalizes, prunes, preserves idempotent state and
   assert.match(sql,/create or replace function public\.resolve_match_reminder_fixture/);
   assert.match(sql,/provider-fixtures:%/);
   assert.match(sql,/match-center:%/);
-  assert.match(sql,/observed_at >= now\(\) - interval '36 hours'/);
+  assert.match(sql,/coalesce\(ac\.source_updated_at, ac\.updated_at, ac\.created_at\) >= now\(\) - interval '36 hours'/);
+  assert.match(sql,/mp\.captured_at >= now\(\) - interval '36 hours'/);
   assert.match(sql,/create or replace function public\.prune_match_reminders_for_user/);
   assert.match(sql,/fixture_date <= now\(\) - interval '10 minutes'/);
   assert.match(sql,/fixture_date < now\(\) - interval '90 days'/);
