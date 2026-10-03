@@ -654,3 +654,21 @@ test('provider incident destination identity survives bot-token rotation', async
   assert.equal(after,before);
   assert.equal(before.length,40);
 });
+
+
+test('legacy destination identity suppresses duplicate delivery during stable bot-id migration', () => {
+  const incident=alertIncident('pslo-legacy-identity');
+  const stableDestination={slot:0,destinationKey:'stable-destination-key-0001'};
+  const legacy=ledgerRow(incident.incidentId,'incident','sent',{
+    destinationKey:'legacy-destination-key-0001',
+    slot:0,
+  });
+  legacy.destination_identity_version='legacy';
+  const plan=planProviderIncidentAlert(
+    {activeIncident:incident,history:[incident]},
+    [legacy],
+    {destinations:[stableDestination]},
+  );
+  assert.equal(plan.action,'none');
+  assert.equal(plan.reason,'incident_alert_deduplicated');
+});
