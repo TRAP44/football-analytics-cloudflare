@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { isSecurityLockdownControls, runtimeLockdownDecision, telegramLockdownDecision } from '../src/runtime-lockdown.js';
+import { failClosedRuntimeControls, isSecurityLockdownControls, runtimeLockdownDecision, telegramLockdownDecision } from '../src/runtime-lockdown.js';
 
 const locked = Object.freeze({
   maintenanceMode: true,
@@ -16,6 +16,51 @@ const locked = Object.freeze({
 function req(path, method = 'GET') {
   return new Request(`https://example.com${path}`, { method });
 }
+
+test('control-plane failure produces an explicit fail-closed lockdown snapshot', () => {
+  const fallback = failClosedRuntimeControls({
+    maintenanceMode: false,
+    analysisEnabled: true,
+    searchEnabled: true,
+    liveEnabled: true,
+    remindersEnabled: true,
+    expandedDataEnabled: true,
+    autoSettlementRecoveryEnabled: true,
+    revision: 17,
+    updatedAt: '2026-10-03T08:00:00.000Z',
+  }, 'runtime_controls_unavailable');
+
+  assert.equal(isSecurityLockdownControls(fallback), true);
+  assert.equal(fallback.controlPlaneFailClosed, true);
+  assert.equal(fallback.controlPlaneReason, 'runtime_controls_unavailable');
+  assert.equal(fallback.revision, 17);
+  assert.equal(fallback.autoSettlementRecoveryEnabled, false);
+
+  const provider = runtimeLockdownDecision(req('/api/search'), { runtime: fallback });
+  assert.equal(provider.blocked, true);
+  assert.equal(provider.code, 'SECURITY_LOCKDOWN_CONTROL_PLANE_UNAVAILABLE');
+  assert.equal(provider.controlPlaneFailClosed, true);
+
+  const write = runtimeLockdownDecision(req('/api/preferences', 'PATCH'), { runtime: fallback });
+  assert.equal(write.blocked, true);
+  assert.equal(write.code, 'SECURITY_LOCKDOWN_CONTROL_PLANE_UNAVAILABLE');
+
+  assert.equal(runtimeLockdownDecision(req('/api/runtime-controls', 'PATCH'), { runtime: fallback, isAdmin: true }).blocked, false);
+});
+
+test('worker never falls back to normal defaults when runtime controls cannot be verified', () => {
+  const worker = fs.readFileSync('src/worker.js', 'utf8');
+  const start = worker.indexOf('async function loadRuntimeControls');
+  const end = worker.indexOf('function runtimeHistorySnapshot', start);
+  const block = worker.slice(start, end);
+
+  assert.match(block, /activateFailClosed\('supabase_not_configured'\)/);
+  assert.match(block, /activateFailClosed\('runtime_controls_missing'\)/);
+  assert.match(block, /activateFailClosed\('runtime_controls_unavailable', error\)/);
+  assert.match(block, /source: 'fail_closed'/);
+  assert.doesNotMatch(block, /previous \|\| \{ \.\.\.DEFAULT_RUNTIME_CONTROLS \}/);
+  assert.doesNotMatch(block, /normalizeRuntimeControls\(row \|\| DEFAULT_RUNTIME_CONTROLS\)/);
+});
 
 test('lockdown is a derived state of the existing runtime controls, not a second control plane', () => {
   assert.equal(isSecurityLockdownControls(locked), true);
