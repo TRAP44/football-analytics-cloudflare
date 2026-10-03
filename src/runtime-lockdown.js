@@ -17,6 +17,27 @@ const ADMIN_RECOVERY_PATHS = new Set([
   '/api/runtime-controls/rollback',
 ]);
 
+const CONTROL_PLANE_FAIL_CLOSED_MESSAGE =
+  'Аварийный режим безопасности: состояние панели управления временно недоступно.';
+
+export function failClosedRuntimeControls(previous = {}, reason = 'control_plane_unavailable') {
+  return {
+    ...previous,
+    maintenanceMode: true,
+    analysisEnabled: false,
+    searchEnabled: false,
+    liveEnabled: false,
+    remindersEnabled: false,
+    expandedDataEnabled: false,
+    autoSettlementRecoveryEnabled: false,
+    message: CONTROL_PLANE_FAIL_CLOSED_MESSAGE,
+    revision: Math.max(1, Number(previous?.revision || 1)),
+    updatedAt: previous?.updatedAt || null,
+    controlPlaneFailClosed: true,
+    controlPlaneReason: String(reason || 'control_plane_unavailable').slice(0, 80),
+  };
+}
+
 export function isSecurityLockdownControls(runtime = {}) {
   return Boolean(runtime.maintenanceMode)
     && runtime.analysisEnabled === false
@@ -42,6 +63,7 @@ export function runtimeLockdownDecision(request, { runtime = {}, isAdmin = false
 
   const providerFanout = PROVIDER_FANOUT_PATHS.has(path);
   const safeRead = method === 'GET' || method === 'HEAD';
+  const controlPlaneFailClosed = Boolean(runtime.controlPlaneFailClosed);
   if (safeRead && !providerFanout) {
     return { blocked: false, active: true, readOnly: true };
   }
@@ -51,11 +73,16 @@ export function runtimeLockdownDecision(request, { runtime = {}, isAdmin = false
     active: true,
     providerFanout,
     status: 503,
-    code: providerFanout ? 'SECURITY_LOCKDOWN_PROVIDER_PAUSED' : 'SECURITY_LOCKDOWN_WRITE_BLOCKED',
+    code: controlPlaneFailClosed
+      ? 'SECURITY_LOCKDOWN_CONTROL_PLANE_UNAVAILABLE'
+      : providerFanout ? 'SECURITY_LOCKDOWN_PROVIDER_PAUSED' : 'SECURITY_LOCKDOWN_WRITE_BLOCKED',
     category: 'security_lockdown',
-    message: providerFanout
-      ? 'Аварийный режим безопасности временно приостановил обращения к внешнему футбольному источнику.'
-      : 'Аварийный режим безопасности временно перевёл приложение в режим только для чтения.',
+    controlPlaneFailClosed,
+    message: controlPlaneFailClosed
+      ? CONTROL_PLANE_FAIL_CLOSED_MESSAGE
+      : providerFanout
+        ? 'Аварийный режим безопасности временно приостановил обращения к внешнему футбольному источнику.'
+        : 'Аварийный режим безопасности временно перевёл приложение в режим только для чтения.',
   };
 }
 
