@@ -5,6 +5,7 @@ import {
   constantTimeEqual,
   hmacSha256,
   validateTelegramInitData,
+  TELEGRAM_AUTH_FUTURE_SKEW_SECONDS,
 } from '../src/crypto-utils.js';
 
 const encoder = new TextEncoder();
@@ -47,4 +48,36 @@ test('validateTelegramInitData rejects tampering and stale payloads', async () =
 
   const stale = await telegramInitData({ token, authDate: Math.floor(Date.now() / 1000) - 7200 });
   assert.equal(await validateTelegramInitData(stale, token, 3600), null);
+});
+
+
+test('validateTelegramInitData accepts only the explicit small future clock skew', async () => {
+  const token='123456:TEST_TOKEN';
+  const now=Math.floor(Date.now()/1000);
+  const within=await telegramInitData({
+    token,
+    authDate:now+Math.max(1,TELEGRAM_AUTH_FUTURE_SKEW_SECONDS-1),
+  });
+  assert.equal((await validateTelegramInitData(within,token,3600))?.id,42);
+
+  const beyond=await telegramInitData({
+    token,
+    authDate:now+TELEGRAM_AUTH_FUTURE_SKEW_SECONDS+1,
+  });
+  assert.equal(await validateTelegramInitData(beyond,token,3600),null);
+});
+
+test('validateTelegramInitData enforces directional freshness at the configured boundary', async () => {
+  const token='123456:TEST_TOKEN';
+  const now=Math.floor(Date.now()/1000);
+  const inside=await telegramInitData({token,authDate:now-59});
+  const outside=await telegramInitData({token,authDate:now-61});
+  assert.equal((await validateTelegramInitData(inside,token,60))?.id,42);
+  assert.equal(await validateTelegramInitData(outside,token,60),null);
+});
+
+test('constantTimeEqual compares unequal-length inputs without changing equality semantics', () => {
+  assert.equal(constantTimeEqual('a'.repeat(64),'a'.repeat(63)),false);
+  assert.equal(constantTimeEqual('a'.repeat(64),'a'.repeat(64)),true);
+  assert.equal(constantTimeEqual('a'.repeat(63)+'b','a'.repeat(64)),false);
 });
