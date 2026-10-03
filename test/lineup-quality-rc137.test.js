@@ -78,3 +78,52 @@ test('RC137 is part of the release health contract', () => {
   assert.match(runtime, /const CLIENT_VERSION = '6\.120\.0-rc144'/);
   assert.match(smoke, /'lineupQualityGuard'/);
 });
+
+test('Issue #406 detects alias overlap across XI and substitutes', () => {
+  const lineup={
+    startXI:Array.from({length:11},(_,i)=>player(i+1,i===0?'José Álvarez':`Player ${i+1}`)),
+    substitutes:[{name:'Jose Alvarez'}],
+  };
+  const quality=assessLineupQuality(lineup);
+  assert.equal(quality.confirmed,false);
+  assert.equal(quality.starterSubstituteOverlapCount,1);
+  assert.match(quality.warnings.join(' '),/одновременно указан/i);
+});
+
+test('Issue #406 keeps same-name players distinct when both have different known IDs', () => {
+  const lineup={
+    startXI:[
+      player(1,'Alex Silva'),
+      player(2,'Alex Silva'),
+      ...Array.from({length:9},(_,i)=>player(i+3,`P ${i+3}`)),
+    ],
+  };
+  const quality=assessLineupQuality(lineup);
+  assert.equal(quality.uniqueStartCount,11);
+  assert.equal(quality.duplicateStartCount,0);
+  assert.equal(quality.confirmed,true);
+});
+
+test('Issue #406 fails closed on malformed substitute identity and malformed grid', () => {
+  const lineup={
+    startXI:Array.from({length:11},(_,i)=>player(i+1,`P ${i+1}`,i===0?'bad-grid':'')),
+    substitutes:[{}],
+  };
+  const quality=assessLineupQuality(lineup);
+  assert.equal(quality.confirmed,false);
+  assert.equal(quality.invalidGridCount,1);
+  assert.equal(quality.invalidSubstituteIdentityCount,1);
+});
+
+test('Issue #406 fails closed when one player row carries conflicting known IDs', () => {
+  const lineup={
+    startXI:[
+      {id:1,playerId:999,name:'Conflicted'},
+      ...Array.from({length:10},(_,i)=>player(i+2,`P ${i+2}`)),
+    ],
+  };
+  const quality=assessLineupQuality(lineup);
+  assert.equal(quality.confirmed,false);
+  assert.equal(quality.conflictingIdentityCount,1);
+  assert.equal(quality.invalidStarterIdentityCount,1);
+});
