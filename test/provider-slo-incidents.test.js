@@ -5,25 +5,30 @@ import {
   providerSloIncidentOpsEvent,
 } from '../src/provider-slo-incidents.js';
 
-function window(at, state, totals = {}) {
+function window(at, state, totals = {}, metadata = {}) {
+  const healthy=state==='healthy';
+  const watch=state==='watch';
   return {
     created_at: at,
     metadata: {
+      windowId:`provider-slo:${new Date(Date.parse(at)-15*60_000).toISOString()}`,
       windowStartedAt: new Date(Date.parse(at) - 15 * 60_000).toISOString(),
       windowEndedAt: at,
+      complete:true,
       sloState: state,
       totals: {
         requests: 12,
-        successes: state === 'healthy' ? 12 : 10,
-        failures: state === 'healthy' ? 0 : 2,
-        retries: state === 'healthy' ? 0 : 2,
-        successRatePct: state === 'healthy' ? 100 : 83.3,
-        timeoutRatePct: state === 'healthy' ? 0 : 8.3,
+        successes: healthy ? 12 : watch ? 11 : 10,
+        failures: healthy ? 0 : watch ? 1 : 2,
+        retries: healthy ? 0 : 2,
+        successRatePct: healthy ? 100 : watch ? 91.7 : 83.3,
+        timeoutRatePct: healthy || watch ? 0 : 8.3,
         rateLimitRatePct: 0,
-        retryRatePct: state === 'healthy' ? 0 : 16.7,
-        avgAttemptLatencyMs: state === 'healthy' ? 120 : 3100,
+        retryRatePct: healthy ? 0 : 16.7,
+        avgAttemptLatencyMs: healthy ? 120 : watch ? 3100 : 5500,
         ...totals,
       },
+      ...metadata,
     },
   };
 }
@@ -150,4 +155,76 @@ test('runbook points to the observed provider failure modes without automatic co
 test('non-actionable transitions do not produce ops incident events', () => {
   assert.equal(providerSloIncidentOpsEvent({state:'healthy',previousState:'healthy'}), null);
   assert.equal(providerSloIncidentOpsEvent({state:'collecting',previousState:'watch'}), null);
+});
+
+
+test('gapped windows cannot confirm an incident or recovery cadence', () => {
+  const report=buildProviderSloIncidentTimeline([
+    window('2026-09-28T10:00:00Z','watch'),
+    window('2026-09-28T10:30:00Z','watch'),
+  ],{nowMs:Date.parse('2026-09-28T10:35:00Z')});
+  assert.equal(report.activeIncident,null);
+  assert.equal(report.transition,null);
+  assert.equal(report.windowIntegrity.gaps,1);
+});
+
+test('duplicate and out-of-order windows are canonicalized before confirmation', () => {
+  const first=window('2026-09-28T10:00:00Z','watch');
+  const second=window('2026-09-28T10:15:00Z','watch');
+  const report=buildProviderSloIncidentTimeline([
+    second,
+    first,
+    structuredClone(first),
+  ],{nowMs:Date.parse('2026-09-28T10:20:00Z')});
+  assert.equal(report.state,'watch');
+  assert.equal(report.activeIncident?.active,true);
+  assert.equal(report.transition?.kind,'opened');
+  assert.equal(report.windowsObserved,2);
+  assert.equal(report.windowIntegrity.duplicates,1);
+});
+
+test('overlapping windows never satisfy consecutive-window confirmation', () => {
+  const first=window('2026-09-28T10:00:00Z','incident');
+  const overlapping=window('2026-09-28T10:10:00Z','incident',{},{
+    windowId:'provider-slo:overlap',
+    windowStartedAt:'2026-09-28T09:55:00.000Z',
+  });
+  const report=buildProviderSloIncidentTimeline([first,overlapping],{
+    nowMs:Date.parse('2026-09-28T10:15:00Z'),
+  });
+  assert.equal(report.activeIncident,null);
+  assert.equal(report.transition,null);
+  assert.equal(report.windowIntegrity.overlaps,1);
+});
+
+test('reported SLO state must agree with metrics before it can drive lifecycle state', () => {
+  const mismatched=window('2026-09-28T10:00:00Z','watch',{
+    successes:12,
+    failures:0,
+    retries:0,
+    successRatePct:100,
+    timeoutRatePct:0,
+    rateLimitRatePct:0,
+    retryRatePct:0,
+    avgAttemptLatencyMs:100,
+  });
+  const second=window('2026-09-28T10:15:00Z','watch');
+  const report=buildProviderSloIncidentTimeline([mismatched,second],{
+    nowMs:Date.parse('2026-09-28T10:20:00Z'),
+  });
+  assert.equal(report.activeIncident,null);
+  assert.equal(report.transition,null);
+  assert.equal(report.windowIntegrity.stateMismatches,1);
+});
+
+test('incomplete windows do not confirm provider incidents', () => {
+  const first=window('2026-09-28T10:00:00Z','incident');
+  const open=window('2026-09-28T10:15:00Z','incident',{},{
+    complete:false,
+  });
+  const report=buildProviderSloIncidentTimeline([first,open],{
+    nowMs:Date.parse('2026-09-28T10:10:00Z'),
+  });
+  assert.equal(report.activeIncident,null);
+  assert.equal(report.windowIntegrity.incomplete,1);
 });
