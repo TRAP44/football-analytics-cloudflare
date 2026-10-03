@@ -15,6 +15,7 @@ import { createPlayerFollowModule } from '../public/modules/player-follow.js';
 
 const worker = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8');
 const router = readFileSync(new URL('../src/router.js', import.meta.url), 'utf8');
+const accountRate = readFileSync(new URL('../src/account-rate-limit.js', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
 const index = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
@@ -225,7 +226,7 @@ test('Favorite Players API is authenticated before routing and canonicalizes met
   const apiSource = worker.slice(apiStart, apiEnd);
   assert.match(apiSource, /resolveFavoritePlayerIdentity\(body, cfg\)/);
   assert.doesNotMatch(apiSource, /body\.playerName/);
-  assert.match(worker, /favorite-players-write/);
+  assert.match(accountRate, /favorite-players-write/);
 });
 
 test('v6.23 migration enforces RLS, service-role access, atomic cap and schema visibility', () => {
