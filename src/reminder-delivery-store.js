@@ -74,14 +74,40 @@ export function createReminderDeliveryStore({
       return Array.isArray(rows) ? rows.length : 0;
     };
 
+    const reconcileSendingColumn = async ({ claimColumn, doneColumn }) => {
+      const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
+      url.searchParams.set('enabled', 'eq.true');
+      url.searchParams.set(claimColumn, `lt.${cutoff}`);
+      url.searchParams.set(doneColumn, 'is.null');
+      url.searchParams.set('delivery_last_error', `eq.${REMINDER_SENDING_STATE}`);
+      const r = await fetchWithTimeout(url, {
+        method: 'PATCH',
+        headers: supaHeaders(cfg, { Prefer: 'return=representation' }),
+        body: JSON.stringify({
+          delivery_last_error: REMINDER_UNKNOWN_STATE,
+          delivery_last_attempt_at: new Date().toISOString(),
+          delivery_retry_after: null,
+        }),
+      }, 7000, 'Supabase reminder sending reconciliation');
+      if (!r.ok) throw new Error(`Supabase reminder sending reconciliation: HTTP ${r.status}`);
+      const rows = await r.json().catch(() => []);
+      return Array.isArray(rows) ? rows.length : 0;
+    };
+
     const cleared = Object.fromEntries(Object.keys(REMINDER_DELIVERY_KINDS).map(kind => [kind, 0]));
+    const reconciled = Object.fromEntries(Object.keys(REMINDER_DELIVERY_KINDS).map(kind => [kind, 0]));
     const failures = [];
 
     for (const [kind, config] of Object.entries(REMINDER_DELIVERY_KINDS)) {
       try {
         cleared[kind] = await clearColumn(config.claimColumn);
       } catch (error) {
-        failures.push({ kind, message: error?.message || String(error) });
+        failures.push({ kind, phase:'clear', message: error?.message || String(error) });
+      }
+      try {
+        reconciled[kind] = await reconcileSendingColumn(config);
+      } catch (error) {
+        failures.push({ kind, phase:'reconcile_sending', message: error?.message || String(error) });
       }
     }
 
@@ -90,6 +116,7 @@ export function createReminderDeliveryStore({
     const lineup = Number(cleared.lineup || 0);
     const important_change = Number(cleared.important_change || 0);
     const total = Object.values(cleared).reduce((sum, value) => sum + Number(value || 0), 0);
+    const reconciledTotal = Object.values(reconciled).reduce((sum, value) => sum + Number(value || 0), 0);
 
     if (total > 0) {
       await recordOpsEvent(cfg, {
@@ -99,6 +126,24 @@ export function createReminderDeliveryStore({
         code: 'REMINDER_STALE_CLAIMS',
         message: `Восстановлено зависших заявок на доставку уведомлений: ${total}.`,
         meta: { prematch, kickoff, lineup, important_change },
+      }).catch(() => {});
+    }
+
+    if (reconciledTotal > 0) {
+      await recordOpsEvent(cfg, {
+        severity: 'warning',
+        source: 'reminders',
+        eventType: 'reminder_delivery',
+        code: 'REMINDER_STALE_SENDING_RECONCILED',
+        message: `Неопределённые отправки переведены из sending в fail-closed unknown: ${reconciledTotal}.`,
+        endpoint: 'cron:reminders',
+        meta: {
+          total: reconciledTotal,
+          prematch: Number(reconciled.prematch || 0),
+          kickoff: Number(reconciled.kickoff || 0),
+          lineup: Number(reconciled.lineup || 0),
+          important_change: Number(reconciled.important_change || 0),
+        },
       }).catch(() => {});
     }
 
@@ -199,11 +244,41 @@ export function createReminderDeliveryStore({
     requireOwnedClaimMutation(rows, 'unknown hold');
   }
 
+  async function readReminderDeliveryState(row, kind, cfg) {
+    if (!hasSupabase(cfg)) return null;
+    const { claimColumn, doneColumn } = reminderDeliveryKindConfig(kind);
+    const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
+    url.searchParams.set('telegram_id', `eq.${Number(row.telegram_id)}`);
+    url.searchParams.set('fixture_id', `eq.${Number(row.fixture_id)}`);
+    url.searchParams.set('select', `telegram_id,fixture_id,${claimColumn},${doneColumn},delivery_last_error,delivery_last_attempt_at,delivery_last_success_at`);
+    url.searchParams.set('limit', '2');
+
+    const r = await fetchWithTimeout(url, {
+      method: 'GET',
+      headers: supaHeaders(cfg),
+    }, 7000, 'Supabase reminder delivery reconciliation read');
+    if (!r.ok) throw new Error(`Supabase reminder delivery reconciliation read: HTTP ${r.status}`);
+    const rows = await r.json().catch(() => []);
+    return Array.isArray(rows) && rows.length === 1 ? rows[0] : null;
+  }
+
   async function finishReminderDelivery(row, kind, claimAt, cfg) {
-    if (!hasSupabase(cfg)) return;
+    if (!hasSupabase(cfg)) return { finalized:true, reconciled:false };
     const { claimColumn, doneColumn } = reminderDeliveryKindConfig(kind);
     const kickoff = kind === 'kickoff';
     const doneAt = new Date().toISOString();
+
+    const confirmCommittedFinish = async () => {
+      const current = await readReminderDeliveryState(row, kind, cfg);
+      if (current?.[doneColumn]) {
+        return {
+          finalized:true,
+          reconciled:true,
+          doneAt:current[doneColumn],
+        };
+      }
+      return null;
+    };
 
     const url = new URL(`${cfg.supabaseUrl}/rest/v1/match_reminders`);
     url.searchParams.set('telegram_id', `eq.${Number(row.telegram_id)}`);
@@ -220,13 +295,32 @@ export function createReminderDeliveryStore({
 
     if (kickoff && !row.notified_at) patch.notified_at = doneAt;
 
-    const r = await fetchWithTimeout(url, {
-      method: 'PATCH',
-      headers: supaHeaders(cfg, { Prefer: 'return=representation' }),
-      body: JSON.stringify(patch),
-    }, 7000, 'Supabase reminder finish');
-    if (!r.ok) throw new Error(`Supabase reminder finish: HTTP ${r.status}`);
+    let r;
+    try {
+      r = await fetchWithTimeout(url, {
+        method: 'PATCH',
+        headers: supaHeaders(cfg, { Prefer: 'return=representation' }),
+        body: JSON.stringify(patch),
+      }, 7000, 'Supabase reminder finish');
+    } catch (error) {
+      const reconciled = await confirmCommittedFinish().catch(() => null);
+      if (reconciled) return reconciled;
+      throw error;
+    }
+
+    if (!r.ok) {
+      const reconciled = await confirmCommittedFinish().catch(() => null);
+      if (reconciled) return reconciled;
+      throw new Error(`Supabase reminder finish: HTTP ${r.status}`);
+    }
+
     const rows = await r.json().catch(() => []);
+    if (Array.isArray(rows) && rows.length === 1) {
+      return { finalized:true, reconciled:false, doneAt:rows[0]?.[doneColumn] || doneAt };
+    }
+
+    const reconciled = await confirmCommittedFinish().catch(() => null);
+    if (reconciled) return reconciled;
     requireOwnedClaimMutation(rows, 'finish');
   }
 
@@ -269,6 +363,7 @@ export function createReminderDeliveryStore({
     claimReminderDelivery,
     markReminderDeliverySending,
     holdReminderDeliveryUnknown,
+    readReminderDeliveryState,
     finishReminderDelivery,
     releaseReminderClaim,
   };
