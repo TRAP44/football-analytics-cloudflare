@@ -122,7 +122,7 @@ export function assessSecuritySignals(items = [], {
   const watch = !incident && counts.total>0;
   const state=incident ? 'incident' : watch ? 'watch' : 'healthy';
   const severity=incident
-    ? (counts.criticalSignals>0 || counts.adminInvalidAuthBursts || counts.billingAnomalies>=2 ? 'critical' : 'incident')
+    ? (counts.criticalSignals>0 || counts.adminInvalidAuthBursts || counts.billingAnomalies>=2 ? 'critical' : 'error')
     : watch ? 'warning' : 'info';
 
   const primary=Object.entries(codes).sort((a,b)=>b[1]-a[1])[0]?.[0] || '';
@@ -152,8 +152,27 @@ function incidentIdFromEvent(item = {}) {
   return String(metadata(item)?.incidentId || '').slice(0,120);
 }
 
+const SECURITY_INCIDENT_SEVERITY_RANK = Object.freeze({
+  warning:1,
+  error:2,
+  critical:3,
+});
+
+function normalizeSecurityIncidentSeverity(value, fallback='error') {
+  const severity=String(value || '').trim().toLowerCase();
+  if (severity === 'warning' || severity === 'error' || severity === 'critical') return severity;
+  if (severity === 'incident') return 'error';
+  return fallback;
+}
+
+function maxSecurityIncidentSeverity(current, previous) {
+  const a=normalizeSecurityIncidentSeverity(current);
+  const b=normalizeSecurityIncidentSeverity(previous);
+  return SECURITY_INCIDENT_SEVERITY_RANK[a] >= SECURITY_INCIDENT_SEVERITY_RANK[b] ? a : b;
+}
+
 function persistedIncidentSeverity(item = {}) {
-  return String(metadata(item)?.severity || '') === 'critical' ? 'critical' : 'incident';
+  return normalizeSecurityIncidentSeverity(metadata(item)?.severity, 'error');
 }
 
 export function securityIncidentTimeline(assessment = {}, historyItems = [], { nowMs=Date.now() } = {}) {
@@ -165,9 +184,9 @@ export function securityIncidentTimeline(assessment = {}, historyItems = [], { n
 
   if (assessment.state==='incident') {
     const incidentId=existingIncidentId || openingId;
-    const assessmentSeverity=assessment.severity==='critical' ? 'critical' : 'incident';
-    const priorSeverity=active ? persistedIncidentSeverity(latest) : 'incident';
-    const severity=assessmentSeverity==='critical' || priorSeverity==='critical' ? 'critical' : 'incident';
+    const assessmentSeverity=normalizeSecurityIncidentSeverity(assessment.severity, 'error');
+    const priorSeverity=active ? persistedIncidentSeverity(latest) : assessmentSeverity;
+    const severity=active ? maxSecurityIncidentSeverity(assessmentSeverity, priorSeverity) : assessmentSeverity;
     const incident={
       incidentId,
       active:true,
@@ -254,7 +273,7 @@ export function securityIncidentOpsEvent(transition = {}) {
   if (!incident?.incidentId) return null;
   if (transition.kind==='opened') {
     return {
-      severity:incident.severity==='critical' ? 'critical' : 'warning',
+      severity:normalizeSecurityIncidentSeverity(incident.severity, 'error'),
       source:'security_monitor',
       eventType:'security_incident',
       code:'SECURITY_INCIDENT_OPENED',
