@@ -194,6 +194,15 @@ $$;
 
 -- Expand the delivery-state machine without removing any existing state.
 alter table public.provider_incident_alert_deliveries
+  add column if not exists destination_identity_version text not null default 'legacy';
+
+alter table public.provider_incident_alert_deliveries
+  drop constraint if exists provider_incident_alert_deliveries_destination_identity_version_check;
+alter table public.provider_incident_alert_deliveries
+  add constraint provider_incident_alert_deliveries_destination_identity_version_check
+  check (destination_identity_version in ('legacy','stable_v1'));
+
+alter table public.provider_incident_alert_deliveries
   drop constraint if exists provider_incident_alert_deliveries_status_check;
 alter table public.provider_incident_alert_deliveries
   add constraint provider_incident_alert_deliveries_status_check
@@ -487,6 +496,7 @@ begin
     alert_key,
     destination_key,
     destination_slot,
+    destination_identity_version,
     status,
     attempts,
     claimed_at,
@@ -500,6 +510,7 @@ begin
     left(btrim(p_alert_key),280),
     left(btrim(p_destination_key),160),
     p_destination_slot,
+    'stable_v1',
     'claimed',
     1,
     v_now,
