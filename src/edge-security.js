@@ -1,4 +1,4 @@
-import { isAdminSensitivePath } from './auth-user.js';
+import { isAdminSensitivePath } from './security-route-registry.js';
 
 const POLICIES = Object.freeze([
   Object.freeze({

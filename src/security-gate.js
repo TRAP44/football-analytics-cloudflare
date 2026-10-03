@@ -5,7 +5,8 @@ export const MAX_TELEGRAM_WEBHOOK_BODY_BYTES = 256 * 1024;
 const SAFE_API_METHODS = new Set(['GET','POST','PUT','PATCH','DELETE','HEAD']);
 const UNSAFE_METHODS = new Set(['POST','PUT','PATCH','DELETE']);
 const JSON_MUTATION_METHODS = new Set(['POST','PUT','PATCH']);
-const MAX_INVALID_AUTH_BUCKETS = 2048;
+export const MAX_INVALID_AUTH_BUCKETS = 2048;
+const INVALID_AUTH_PRUNE_SCAN_LIMIT = 64;
 const INVALID_AUTH_POLICIES = Object.freeze({
   public: { limit: 30, windowMs: 60_000 },
   admin: { limit: 12, windowMs: 60_000 },
@@ -13,6 +14,12 @@ const INVALID_AUTH_POLICIES = Object.freeze({
 
 function headerValue(request, name) {
   return String(request?.headers?.get?.(name) || '').trim();
+}
+
+const JSON_MEDIA_TYPE_RE=/^application\/json(?:\s*;\s*[!#$%&'*+.^_`|~0-9A-Za-z-]+\s*=\s*(?:"[^"\r\n]*"|[!#$%&'*+.^_`|~0-9A-Za-z-]+))*\s*$/i;
+
+export function isJsonMediaType(value='') {
+  return JSON_MEDIA_TYPE_RE.test(String(value || '').trim());
 }
 
 function declaredContentLength(request) {
@@ -71,11 +78,8 @@ export async function preAuthRequestShapeDecision(request, {
     if (length===null && !(await bodyWithinLimit(request,MAX_TELEGRAM_WEBHOOK_BODY_BYTES))) {
       return { allowed:false, status:413, code:'REQUEST_TOO_LARGE', error:'Запрос слишком большой.' };
     }
-    const contentType=headerValue(request,'content-type').toLowerCase();
-    if (JSON_MUTATION_METHODS.has(method) && !contentType.startsWith('application/json')) {
-      return { allowed:false, status:415, code:'UNSUPPORTED_MEDIA_TYPE', error:'Ожидается JSON.' };
-    }
-    if (contentType && !contentType.startsWith('application/json')) {
+    const contentType=headerValue(request,'content-type');
+    if (!isJsonMediaType(contentType)) {
       return { allowed:false, status:415, code:'UNSUPPORTED_MEDIA_TYPE', error:'Ожидается JSON.' };
     }
     return { allowed:true };
@@ -111,8 +115,11 @@ export async function preAuthRequestShapeDecision(request, {
       return { allowed:false, status:403, code:'CROSS_SITE_MUTATION_BLOCKED', error:'Запрос отклонён.' };
     }
 
-    const contentType=headerValue(request,'content-type').toLowerCase();
-    if (contentType && !contentType.startsWith('application/json')) {
+    const contentType=headerValue(request,'content-type');
+    if (JSON_MUTATION_METHODS.has(method) && !isJsonMediaType(contentType)) {
+      return { allowed:false, status:415, code:'UNSUPPORTED_MEDIA_TYPE', error:'Ожидается JSON.' };
+    }
+    if (!JSON_MUTATION_METHODS.has(method) && contentType && !isJsonMediaType(contentType)) {
       return { allowed:false, status:415, code:'UNSUPPORTED_MEDIA_TYPE', error:'Ожидается JSON.' };
     }
   }
@@ -132,27 +139,28 @@ async function clientNetworkFingerprint(request) {
   return (await sha256Hex(`matchradar-security-v1|${ip}`)).slice(0,24);
 }
 
-function pruneBuckets(map, now=Date.now()) {
-  if (!(map instanceof Map)) return;
-  if (map.size<MAX_INVALID_AUTH_BUCKETS) return;
+function evictOldestBucket(map) {
+  const oldestKey=map?.keys?.().next?.().value;
+  if (oldestKey!==undefined) map.delete(oldestKey);
+}
 
+function ensureBucketCapacity(map, now=Date.now()) {
+  if (!(map instanceof Map) || map.size<MAX_INVALID_AUTH_BUCKETS) return;
+  let scanned=0;
   for (const [key,bucket] of map) {
+    if (scanned>=INVALID_AUTH_PRUNE_SCAN_LIMIT) break;
+    scanned+=1;
     const policy=INVALID_AUTH_POLICIES[bucket?.scope] || INVALID_AUTH_POLICIES.public;
-    if (now-Number(bucket?.startedAt || 0)>policy.windowMs*2) map.delete(key);
+    if (now-Number(bucket?.startedAt || 0)>=policy.windowMs) map.delete(key);
   }
-
-  if (map.size<MAX_INVALID_AUTH_BUCKETS) return;
-  const overflow=map.size-MAX_INVALID_AUTH_BUCKETS+1;
-  const oldest=[...map.entries()]
-    .sort((a,b)=>Number(a[1]?.startedAt || 0)-Number(b[1]?.startedAt || 0))
-    .slice(0,overflow);
-  for (const [key] of oldest) map.delete(key);
+  while (map.size>=MAX_INVALID_AUTH_BUCKETS) evictOldestBucket(map);
 }
 
 export function createPreAuthAbuseGuard({
   memory,
   bumpTelemetry=()=>{},
   recordOpsEvent=async()=>{},
+  now=Date.now,
 } = {}) {
   if (!(memory?.authFailureBurst instanceof Map)) memory.authFailureBurst=new Map();
 
@@ -163,18 +171,20 @@ export function createPreAuthAbuseGuard({
     const scope=adminSensitive ? 'admin' : 'public';
     const policy=INVALID_AUTH_POLICIES[scope];
     const key=`${scope}:${fingerprint}`;
-    const now=Date.now();
+    const timestamp=Number(now());
     let bucket=memory.authFailureBurst.get(key);
-    if (!bucket || now-Number(bucket.startedAt || 0)>=policy.windowMs) {
-      bucket={scope,startedAt:now,count:0,reported:false};
+    const isNew=!bucket;
+    if (!bucket || timestamp-Number(bucket.startedAt || 0)>=policy.windowMs) {
+      bucket={scope,startedAt:timestamp,count:0,reported:false};
     }
     bucket.count+=1;
+    if (isNew) ensureBucketCapacity(memory.authFailureBurst,timestamp);
+    else memory.authFailureBurst.delete(key);
     memory.authFailureBurst.set(key,bucket);
-    pruneBuckets(memory.authFailureBurst,now);
 
     if (bucket.count<=policy.limit) return { blocked:false, tracked:true, scope, remaining:policy.limit-bucket.count };
 
-    const retryAfter=Math.max(1,Math.ceil((policy.windowMs-(now-bucket.startedAt))/1000));
+    const retryAfter=Math.max(1,Math.ceil((policy.windowMs-(timestamp-bucket.startedAt))/1000));
     bumpTelemetry('securityInvalidAuthBlocks');
     if (!bucket.reported) {
       bucket.reported=true;

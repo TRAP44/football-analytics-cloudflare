@@ -8,6 +8,7 @@ import {
   publisherDedupeKey,
   sendPhoto,
 } from '../src/channel-publisher.js';
+import { isAdminSensitivePath } from '../src/security-route-registry.js';
 
 const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/auth-user.js','utf8');
 const router=fs.readFileSync('src/router.js','utf8');
@@ -41,8 +42,8 @@ test('manual publisher route is admin-only and uses existing fixture deep-link c
   assert.match(worker,/fixtureTelegramDeepLink\(cfg,fixtureId,\{source:'channel',campaign:'publisher_mvp',content:'manual'\}\)/);
   assert.match(worker,/url:\s*link\.url/);
   assert.match(worker,/dryRun\s*=\s*body\?\.dryRun !== false/);
-  assert.match(worker,/const adminSensitive = isAdminSensitivePath\(requestUrl\.pathname\)/);
-  assert.match(worker,/path\.startsWith\('\/api\/admin\/'\)/);
+  assert.equal(isAdminSensitivePath('/api/admin/channel-publisher/test'),true);
+  assert.equal(isAdminSensitivePath('/api/adminish/channel-publisher/test'),false);
 });
 
 test('publisher has deterministic idempotency and suppresses a repeated send', async () => {
