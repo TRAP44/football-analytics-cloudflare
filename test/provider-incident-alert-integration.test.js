@@ -6,13 +6,15 @@ const worker=fs.readFileSync('src/worker.js','utf8');
 const alerts=fs.readFileSync('src/provider-incident-alerts.js','utf8');
 const incidents=fs.readFileSync('src/provider-slo-incidents.js','utf8');
 const migration=fs.readFileSync('supabase/migrations/supabase_migration_v6_20.sql','utf8');
+const migration405=fs.readFileSync('supabase/migrations/supabase_migration_v6_26_2.sql','utf8');
 const admin=fs.readFileSync('public/modules/admin-provider.js','utf8');
 const html=fs.readFileSync('public/admin.html','utf8');
 const smoke=fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
 
 test('incident alert delivery uses a persistent ledger and atomic PostgreSQL claim', () => {
   assert.match(worker,/readProviderIncidentAlertDeliveries/);
-  assert.match(worker,/claim_provider_incident_alert_delivery/);
+  assert.match(worker,/claim_provider_incident_alert_delivery_v2/);
+  assert.match(worker,/begin_provider_incident_alert_delivery_send/);
   assert.match(worker,/finalize_provider_incident_alert_delivery/);
   assert.match(worker,/planProviderIncidentAlert\(providerSloIncident, providerAlertLedger\.items/);
   assert.doesNotMatch(worker,/planProviderIncidentAlert\(providerSloIncident, providerAlertSource\.items/);
@@ -67,7 +69,10 @@ test('v6.20 migration is additive, RLS protected and service-role-only', () => {
 test('destination identity is deterministic without exposing raw Telegram identity in ops metadata', () => {
   assert.match(alerts,/providerIncidentDestinationKey/);
   assert.match(alerts,/crypto\.subtle\.digest\('SHA-256'/);
-  assert.match(worker,/providerIncidentDestinationKey\(chatId,cfg\.botToken \|\| 'primary'\)/);
+  assert.match(alerts,/providerIncidentBotIdentity/);
+  assert.match(worker,/const botIdentity=providerIncidentBotIdentity\(cfg\.botToken\)/);
+  assert.match(worker,/providerIncidentDestinationKey\(chatId,botIdentity\)/);
+  assert.doesNotMatch(worker,/providerIncidentDestinationKey\(chatId,cfg\.botToken/);
   assert.doesNotMatch(alerts,/meta:\{[\s\S]{0,600}(chatId|telegramId|botToken)/);
 });
 
@@ -111,4 +116,26 @@ test('operational lifecycle includes watch, incident, recovery and delivery stat
   for (const marker of ['alert_claim_acquired','alert_duplicate_suppressed','alert_sent','alert_retry_pending','alert_terminal_failed','alert_unknown','alert_persistence_failure']) {
     assert.ok(alerts.includes(marker),marker);
   }
+});
+
+
+test('v6.26.2 adds two-phase reclaimable alert claims without weakening ambiguous-send safety', () => {
+  assert.match(migration405,/status in \('claimed','sending','sent','retry_pending','terminal_failed','unknown'\)/);
+  assert.match(migration405,/create or replace function public\.claim_provider_incident_alert_delivery_v2/);
+  assert.match(migration405,/create or replace function public\.begin_provider_incident_alert_delivery_send/);
+  assert.match(migration405,/v_row\.status = 'claimed'/);
+  assert.match(migration405,/stale_claim_reclaimed/);
+  assert.match(migration405,/STALE_SENDING_LEASE/);
+  assert.match(migration405,/set status='sending'/);
+  assert.match(alerts,/beginDelivery/);
+  assert.match(alerts,/begin_delivery_unconfirmed/);
+  assert.match(worker,/beginDelivery:input => beginProviderIncidentAlertDeliverySend\(cfg,input\)/);
+});
+
+test('v6.26.2 keeps the v1 claim RPC for rollback compatibility and hardens table grants', () => {
+  assert.match(migration405,/create or replace function public\.claim_provider_incident_alert_delivery\(/);
+  assert.match(migration405,/create or replace function public\.claim_provider_incident_alert_delivery_v2\(/);
+  assert.match(migration405,/revoke all privileges on table public\.provider_incident_alert_deliveries[\s\S]*service_role/);
+  assert.match(migration405,/grant select, insert, update, delete on table public\.provider_incident_alert_deliveries[\s\S]*to service_role/);
+  assert.match(migration405,/revoke execute on function public\.claim_provider_incident_alert_delivery_v2[\s\S]*from public, anon, authenticated/);
 });
