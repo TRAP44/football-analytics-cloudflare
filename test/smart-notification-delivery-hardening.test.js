@@ -98,8 +98,8 @@ test('transport exception is treated as unknown outcome instead of confirmed ret
   assert.equal(finalizedStatus,'unknown');
 });
 
-test('v6.26 migration adds pre-send CAS, permanent ambiguous-send suppression and bounded attempts',()=>{
-  const sql=fs.readFileSync('supabase/migrations/supabase_migration_v6_26.sql','utf8');
+test('v6.25.1 migration adds pre-send CAS, permanent ambiguous-send suppression and bounded attempts',()=>{
+  const sql=fs.readFileSync('supabase/migrations/supabase_migration_v6_25_1.sql','utf8');
   assert.match(sql,/status in \('claimed','sending','sent','retry_pending','unknown','terminal_failed'\)/);
   assert.match(sql,/create or replace function public\.begin_smart_notification_delivery_send/);
   assert.match(sql,/status = 'claimed'[\s\S]*claimed_at = p_claimed_at[\s\S]*for update/);
