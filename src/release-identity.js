@@ -38,6 +38,10 @@ function canonicalIsoUtc(value) {
   return new Date(timestampMs).toISOString() === raw ? raw : null;
 }
 
+export function cloudflareVersionIdValid(value) {
+  return CLOUDFLARE_VERSION_ID_RE.test(clean(value, 80));
+}
+
 function failure(code, field) {
   return { ok:false, code, field };
 }
@@ -79,7 +83,7 @@ export function validateReleaseIdentity(identity = {}, options = {}) {
 
   const versionId = clean(identity.cloudflareVersionId, 80);
   if (!versionId) return failure(RELEASE_IDENTITY_CODES.CLOUDFLARE_VERSION_ID_REQUIRED, 'cloudflareVersionId');
-  if (!CLOUDFLARE_VERSION_ID_RE.test(versionId)) {
+  if (!cloudflareVersionIdValid(versionId)) {
     return failure(RELEASE_IDENTITY_CODES.CLOUDFLARE_VERSION_ID_INVALID, 'cloudflareVersionId');
   }
 
