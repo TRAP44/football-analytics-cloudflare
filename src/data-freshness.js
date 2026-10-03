@@ -117,6 +117,9 @@ export function assessFeatureFreshness(meta = {}, {
   if (originalAvailable && futureTimestamp) {
     state = 'invalid_freshness';
     freshnessReason = 'future_timestamp';
+  } else if (originalAvailable && !provenanceKnown) {
+    state = 'unverified_source';
+    freshnessReason = 'provenance_missing';
   } else if (originalAvailable && timestampMissing) {
     state = 'unverified_freshness';
     freshnessReason = 'embedded_timestamp_missing';
@@ -126,9 +129,6 @@ export function assessFeatureFreshness(meta = {}, {
   } else if (originalAvailable && stale) {
     state = 'stale_data';
     freshnessReason = forceStale || explicitStale ? 'explicit_stale_source' : 'freshness_expired';
-  } else if (originalAvailable && !provenanceKnown) {
-    state = 'unverified_source';
-    freshnessReason = 'provenance_missing';
   } else if (originalAvailable && !freshnessKnown) {
     state = 'unverified_freshness';
     freshnessReason = 'freshness_missing';
