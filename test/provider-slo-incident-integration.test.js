@@ -51,6 +51,8 @@ test('admin-only provider panel renders incident status, runbook and short histo
 });
 
 test('production smoke requires provider SLO incident integration health flags', () => {
+  assert.match(smoke, /'providerSloDistributedAggregation'/);
+  assert.match(smoke, /'providerSloCadenceValidation'/);
   assert.match(smoke, /'providerSloIncidentIntegration'/);
   assert.match(smoke, /'providerSloIncidentSelfTest'/);
 });
