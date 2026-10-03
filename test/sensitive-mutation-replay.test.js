@@ -48,15 +48,27 @@ test('exact replay after successful sensitive mutation is blocked', async () => 
 test('concurrent identical sensitive mutation is blocked while first is inflight', async () => {
   const memory={};
   let release;
+  let markStarted;
   let calls=0;
   const gate=new Promise(resolve=>{ release=resolve; });
+  const started=new Promise(resolve=>{ markStarted=resolve; });
   const req=request('/api/model-remediation',{body:'{"action":"recover","candidateToken":"abc"}'});
   const url=new URL(req.url);
   const first=runSensitiveMutationWithReplay({
     request:req,url,user:{id:7},memory,
-    handler:async()=>{ calls+=1; await gate; return {status:200}; },
+    handler:async()=>{
+      calls+=1;
+      markStarted();
+      await gate;
+      return {status:200};
+    },
   });
-  await new Promise(resolve=>setTimeout(resolve,0));
+
+  // Entering the handler proves the replay key was already hashed and the
+  // inflight reservation was committed to the shared ledger. Synchronize on
+  // that contract rather than assuming one timer turn is enough for WebCrypto.
+  await started;
+
   const duplicate=await runSensitiveMutationWithReplay({
     request:req,url,user:{id:7},memory,
     handler:async()=>{ calls+=1; return {status:200}; },
