@@ -2,7 +2,7 @@ const SHA_RE = /^[0-9a-f]{40}$/i;
 const CLOUDFLARE_VERSION_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const APP_VERSION_RE = /^([0-9]+)\.([0-9]+)\.([0-9]+)-rc([0-9]+)$/i;
 const RELEASE_CANDIDATE_RE = /^RC([0-9]+)$/;
-const CANONICAL_ISO_UTC_RE = /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\.\d{3}Z$/;
+const STRICT_ISO_UTC_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/;
 const DEFAULT_MIN_TIMESTAMP_MS = Date.parse('2020-01-01T00:00:00.000Z');
 const DEFAULT_MAX_FUTURE_SKEW_MS = 10 * 60_000;
 
@@ -32,10 +32,21 @@ function clean(value, max = 120) {
 
 function canonicalIsoUtc(value) {
   const raw = clean(value, 80);
-  if (!CANONICAL_ISO_UTC_RE.test(raw)) return null;
+  const match = STRICT_ISO_UTC_RE.exec(raw);
+  if (!match) return null;
+  const [, year, month, day, hour, minute, second] = match;
   const timestampMs = Date.parse(raw);
   if (!Number.isFinite(timestampMs)) return null;
-  return new Date(timestampMs).toISOString() === raw ? raw : null;
+  const parsed = new Date(timestampMs);
+  if (
+    parsed.getUTCFullYear() !== Number(year)
+    || parsed.getUTCMonth() + 1 !== Number(month)
+    || parsed.getUTCDate() !== Number(day)
+    || parsed.getUTCHours() !== Number(hour)
+    || parsed.getUTCMinutes() !== Number(minute)
+    || parsed.getUTCSeconds() !== Number(second)
+  ) return null;
+  return parsed.toISOString();
 }
 
 export function cloudflareVersionIdValid(value) {
