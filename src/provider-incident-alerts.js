@@ -71,10 +71,15 @@ function deliveryState(rows = [], alertKey = '', destinations = [], nowMs = Date
   for (const destination of destinations) {
     let row=byDestination.get(destination.destinationKey) || null;
     if (!row) {
-      row=matching.find(candidate =>
-        String(candidate?.destination_identity_version || candidate?.destinationIdentityVersion || 'legacy')==='legacy'
-        && Number(candidate?.destination_slot ?? candidate?.destinationSlot)===Number(destination.slot)
-      ) || null;
+      const legacyCandidates=matching
+        .filter(candidate =>
+          String(candidate?.destination_identity_version || candidate?.destinationIdentityVersion || 'legacy')==='legacy'
+          && Number(candidate?.destination_slot ?? candidate?.destinationSlot)===Number(destination.slot)
+        )
+        .sort((a,b)=>Date.parse(b?.updated_at || b?.created_at || '')-Date.parse(a?.updated_at || a?.created_at || ''));
+      row=legacyCandidates.find(candidate=>ledgerStatus(candidate)==='sent')
+        || legacyCandidates[0]
+        || null;
     }
     if (!row) {
       pending.push(destination);
