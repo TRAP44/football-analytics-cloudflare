@@ -97,6 +97,7 @@ import {
   providerIncidentAlertLedgerSummary,
   providerIncidentAlertOpsEvents,
   providerIncidentAlertSelfTest,
+  providerIncidentBotIdentity,
   providerIncidentDestinationKey,
 } from './provider-incident-alerts.js';
 
@@ -1262,10 +1263,11 @@ function bumpTelemetry(key, amount = 1) {
 }
 
 const {
-  observeProviderRequest,
+  observeProviderRequest: observeProviderRequestLocal,
   rotateWindow: rotateProviderObservabilityWindow,
   restoreWindow: restoreProviderObservabilityWindow,
   summarizeWindows: summarizeProviderObservabilityWindows,
+  windowsFromBuckets: providerSloWindowsFromBuckets,
 } = createProviderObservabilityRuntime({ memory });
 
 function redactOpsString(value, max = 500) {
@@ -1292,6 +1294,26 @@ const {
   fetchWithTimeout,
   redactMessage: redactOpsString,
 });
+
+async function observeProviderRequest(event = {}, cfg = {}) {
+  observeProviderRequestLocal(event);
+  if (!hasSupabase(cfg)) return { ok:true, persistent:false, reason:'supabase_not_configured' };
+  try {
+    const result=await supaRpc(cfg,'record_provider_slo_observation',{
+      p_provider:String(event?.provider || 'provider'),
+      p_operation:String(event?.operation || 'unknown'),
+      p_outcome:String(event?.outcome || event?.finalResult || ''),
+      p_error_type:event?.errorType ? String(event.errorType) : null,
+      p_latency_ms:Number.isFinite(Number(event?.latencyMs)) ? Math.max(0,Math.round(Number(event.latencyMs))) : null,
+      p_observed_at:new Date().toISOString(),
+    },2500);
+    if (!result?.ok) throw new Error('Provider SLO observation was not confirmed.');
+    return { ok:true, persistent:true, bucketStartedAt:result.bucketStartedAt || null };
+  } catch (error) {
+    bumpTelemetry('providerSloPersistenceErrors');
+    return { ok:false, persistent:false, reason:redactOpsString(error?.message || error,160) };
+  }
+}
 
 const {
   claimScheduledJob,
@@ -16501,8 +16523,10 @@ function providerSloEventRow(snapshot = {}, report = {}, cfg = {}) {
     duration_ms: null,
     metadata: safeOpsMetadata({
       ...currentReleaseIdentity(cfg),
+      windowId: snapshot.windowId || `provider-slo:${snapshot.windowStartedAt || ''}`,
       windowStartedAt: snapshot.windowStartedAt,
       windowEndedAt: snapshot.windowEndedAt,
+      complete: snapshot.complete !== false,
       series: snapshot.series,
       totals: snapshot.totals,
       sloState: state,
@@ -16510,69 +16534,132 @@ function providerSloEventRow(snapshot = {}, report = {}, cfg = {}) {
   };
 }
 
-async function flushProviderSloWindow(cfg) {
-  const snapshot = rotateProviderObservabilityWindow();
-  if (Number(snapshot?.totals?.attempts || 0) === 0) return { skipped:true, reason:'no_provider_requests' };
-  const report = summarizeProviderObservabilityWindows([{ metadata:snapshot }], { hours:1, includeCurrent:false });
-  const row = providerSloEventRow(snapshot, report, cfg);
+async function persistProviderSloWindowRow(cfg, snapshot = {}) {
+  const report=summarizeProviderObservabilityWindows([{metadata:snapshot}],{hours:1,includeCurrent:false});
+  const row=providerSloEventRow(snapshot,report,cfg);
+  if (hasSupabase(cfg)) {
+    const url=new URL(`${cfg.supabaseUrl}/rest/v1/ops_events`);
+    const response=await fetchWithTimeout(url,{
+      method:'POST',
+      headers:supaHeaders(cfg,{Prefer:'return=minimal'}),
+      body:JSON.stringify(row),
+    },4000,'Supabase provider SLO window');
+    if (!response.ok) throw new Error(`Provider SLO persistence HTTP ${response.status}`);
+  }
+  memory.opsEvents.unshift(row);
+  memory.opsEvents=memory.opsEvents.slice(0,MAX_MEMORY_OPS_EVENTS);
+  return {ok:true,state:report.overall.state,requests:Number(report.overall.requests || 0)};
+}
 
-  try {
-    if (hasSupabase(cfg)) {
-      const url = new URL(`${cfg.supabaseUrl}/rest/v1/ops_events`);
-      const response = await fetchWithTimeout(url, {
-        method:'POST',
-        headers:supaHeaders(cfg,{Prefer:'return=minimal'}),
-        body:JSON.stringify(row),
-      }, 4000, 'Supabase provider SLO window');
-      if (!response.ok) throw new Error(`Provider SLO persistence HTTP ${response.status}`);
+async function flushProviderSloWindow(cfg) {
+  const localSnapshot=rotateProviderObservabilityWindow();
+  if (hasSupabase(cfg)) {
+    try {
+      const distributed=await readProviderSloWindows(cfg,2,{includeOpen:false,nowMs:Date.now()});
+      if (distributed.distributed) {
+        const latest=distributed.items.at(-1)?.metadata || null;
+        if (!latest) return {skipped:true,reason:'no_completed_provider_slo_bucket',distributed:true};
+        return {...await persistProviderSloWindowRow(cfg,latest),distributed:true,windowId:latest.windowId || null};
+      }
+    } catch {
+      // Fall through to the local snapshot. SLO persistence must never break provider traffic.
     }
-    memory.opsEvents.unshift(row);
-    memory.opsEvents = memory.opsEvents.slice(0, MAX_MEMORY_OPS_EVENTS);
-    return { ok:true, state:report.overall.state, requests:Number(report.overall.requests || 0) };
+  }
+
+  if (Number(localSnapshot?.totals?.attempts || 0)===0) {
+    return {skipped:true,reason:'no_provider_requests',distributed:false};
+  }
+  try {
+    return {...await persistProviderSloWindowRow(cfg,localSnapshot),distributed:false};
   } catch (error) {
-    restoreProviderObservabilityWindow(snapshot);
+    restoreProviderObservabilityWindow(localSnapshot);
     bumpTelemetry('providerSloPersistenceErrors');
-    return { ok:false, error:redactOpsString(error?.message || error,160) };
+    return {ok:false,error:redactOpsString(error?.message || error,160),distributed:false};
   }
 }
 
-async function readProviderSloWindows(cfg, hours = 24) {
-  const safeHours = Math.max(1, Math.min(168, Number(hours || 24)));
-  const since = new Date(Date.now() - safeHours * 60 * 60_000).toISOString();
-  const fallbackItems = memory.opsEvents.filter(item =>
-    item?.source === 'provider'
-    && item?.code === 'PROVIDER_SLO_WINDOW'
-    && Date.parse(item?.created_at || '') >= Date.parse(since)
-  ).slice(0, 800);
-  const fallback = () => ({ persistent:false, migrationReady:false, items:fallbackItems, hours:safeHours });
+async function readProviderSloWindows(cfg, hours = 24, { nowMs = Date.now(), includeOpen = true } = {}) {
+  const safeHours=Math.max(1,Math.min(168,Number(hours || 24)));
+  const safeNow=Number(nowMs || Date.now());
+  const since=new Date(safeNow-safeHours*60*60_000).toISOString();
+  const fallbackItems=memory.opsEvents.filter(item =>
+    item?.source==='provider'
+    && item?.code==='PROVIDER_SLO_WINDOW'
+    && Date.parse(item?.metadata?.windowEndedAt || item?.created_at || '')>=Date.parse(since)
+  ).slice(0,800);
+  const fallback=()=>({
+    persistent:false,
+    migrationReady:false,
+    distributed:false,
+    items:fallbackItems,
+    hours:safeHours,
+  });
   if (!hasSupabase(cfg)) return fallback();
 
   try {
-    const url = new URL(`${cfg.supabaseUrl}/rest/v1/ops_events`);
+    const raw=await supaRpc(cfg,'read_provider_slo_buckets',{
+      p_since:since,
+      p_until:new Date(safeNow+15*60_000).toISOString(),
+      p_limit:10000,
+    },5000);
+    const rows=Array.isArray(raw) ? raw : [];
+    const items=providerSloWindowsFromBuckets(rows,{
+      hours:safeHours,
+      nowMs:safeNow,
+      windowMinutes:15,
+      includeOpen,
+    });
+    return {
+      persistent:true,
+      migrationReady:true,
+      distributed:true,
+      items,
+      hours:safeHours,
+      bucketRows:rows.length,
+    };
+  } catch {
+    // Backward-compatible fallback for the DDL/deploy boundary and local development.
+  }
+
+  try {
+    const url=new URL(`${cfg.supabaseUrl}/rest/v1/ops_events`);
     url.searchParams.set('select','created_at,severity,source,event_type,code,metadata');
     url.searchParams.set('source','eq.provider');
     url.searchParams.set('code','eq.PROVIDER_SLO_WINDOW');
     url.searchParams.set('created_at',`gte.${since}`);
     url.searchParams.set('order','created_at.asc');
     url.searchParams.set('limit','800');
-    const response = await fetchWithTimeout(url,{headers:supaHeaders(cfg)},7000,'Supabase provider SLO');
+    const response=await fetchWithTimeout(url,{headers:supaHeaders(cfg)},7000,'Supabase provider SLO fallback');
     if (!response.ok) return fallback();
-    const items = await response.json().catch(()=>[]);
-    return { persistent:true, migrationReady:true, items:Array.isArray(items)?items:[], hours:safeHours };
+    const items=await response.json().catch(()=>[]);
+    return {
+      persistent:true,
+      migrationReady:false,
+      distributed:false,
+      items:Array.isArray(items)?items:[],
+      hours:safeHours,
+    };
   } catch {
     return fallback();
   }
 }
 
 async function providerSloReport(cfg, hours = 24) {
-  const source = await readProviderSloWindows(cfg, hours);
-  const incidentSource = source.hours >= 168 ? source : await readProviderSloWindows(cfg,168);
-  const report = summarizeProviderObservabilityWindows(source.items, { hours:source.hours, includeCurrent:true });
+  const source=await readProviderSloWindows(cfg,hours,{nowMs:Date.now(),includeOpen:true});
+  const incidentSource=source.hours>=168
+    ? await readProviderSloWindows(cfg,168,{nowMs:Date.now(),includeOpen:false})
+    : await readProviderSloWindows(cfg,168,{nowMs:Date.now(),includeOpen:false});
+  const report=summarizeProviderObservabilityWindows(source.items,{
+    hours:source.hours,
+    includeCurrent:!source.distributed,
+  });
   return {
     ...report,
-    incident: buildProviderSloIncidentTimeline(incidentSource.items),
+    incident:buildProviderSloIncidentTimeline(incidentSource.items),
     persistent:Boolean(source.persistent),
+    distributed:Boolean(source.distributed),
     incidentPersistent:Boolean(incidentSource.persistent),
+    incidentDistributed:Boolean(incidentSource.distributed),
     migrationReady:Boolean(source.migrationReady && incidentSource.migrationReady),
   };
 }
@@ -16605,12 +16692,13 @@ async function readProviderIncidentAlertEvents(cfg, hours = 168) {
 
 
 async function providerIncidentAlertDestinations(cfg) {
-  const admins = Array.isArray(cfg.adminTelegramIds) ? cfg.adminTelegramIds : [];
-  const rows = await Promise.all(admins.map(async (chatId,slot) => ({
+  const admins=Array.isArray(cfg.adminTelegramIds) ? cfg.adminTelegramIds : [];
+  const botIdentity=providerIncidentBotIdentity(cfg.botToken);
+  const rows=await Promise.all(admins.map(async (chatId,slot)=>({
     slot,
-    destinationKey:await providerIncidentDestinationKey(chatId,cfg.botToken || 'primary'),
+    destinationKey:await providerIncidentDestinationKey(chatId,botIdentity),
   })));
-  return rows.filter(row => row.destinationKey);
+  return rows.filter(row=>row.destinationKey);
 }
 
 async function readProviderIncidentAlertDeliveries(cfg, hours = 168) {
@@ -16647,6 +16735,8 @@ async function readProviderIncidentAlertDeliveryContract(cfg) {
       version:String(raw?.version || ''),
       table:Boolean(raw?.table),
       claimRpc:Boolean(raw?.claimRpc),
+      claimV2Rpc:Boolean(raw?.claimV2Rpc),
+      beginRpc:Boolean(raw?.beginRpc),
       finalizeRpc:Boolean(raw?.finalizeRpc),
       uniqueIdentity:Boolean(raw?.uniqueIdentity),
     };
@@ -16662,7 +16752,7 @@ async function readProviderIncidentAlertDeliveryContract(cfg) {
 
 async function claimProviderIncidentAlertDelivery(cfg,input = {}) {
   if (!hasSupabase(cfg)) throw new Error('Persistent incident alert ledger is unavailable.');
-  const raw = await supaRpc(cfg,'claim_provider_incident_alert_delivery',{
+  const raw = await supaRpc(cfg,'claim_provider_incident_alert_delivery_v2',{
     p_incident_id:String(input.incidentId || ''),
     p_transition:String(input.transition || ''),
     p_alert_key:String(input.alertKey || ''),
@@ -16673,6 +16763,18 @@ async function claimProviderIncidentAlertDelivery(cfg,input = {}) {
   },4000);
   if (!raw || typeof raw.acquired !== 'boolean') {
     throw new Error('Persistent incident alert claim was not confirmed.');
+  }
+  return raw;
+}
+
+async function beginProviderIncidentAlertDeliverySend(cfg,input = {}) {
+  if (!hasSupabase(cfg)) throw new Error('Persistent incident alert ledger is unavailable.');
+  const raw=await supaRpc(cfg,'begin_provider_incident_alert_delivery_send',{
+    p_alert_key:String(input.alertKey || ''),
+    p_destination_key:String(input.destinationKey || ''),
+  },4000);
+  if (!raw?.ok || String(raw?.status || '').toLowerCase()!=='sending') {
+    throw new Error('Persistent incident alert begin-send transition was not confirmed: ' + String(raw?.reason || 'unknown'));
   }
   return raw;
 }
@@ -17112,9 +17214,9 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
     const endedAt = Date.parse(item?.metadata?.windowEndedAt || item?.created_at || '');
     return Number.isFinite(endedAt) && endedAt >= historyStart.getTime();
   });
-  const providerSlo = summarizeProviderObservabilityWindows(
+  const providerSlo=summarizeProviderObservabilityWindows(
     providerSloRecentWindows,
-    { hours:6, includeCurrent:true },
+    {hours:6,includeCurrent:!providerSloSource.distributed},
   );
   const providerSloIncident = buildProviderSloIncidentTimeline(providerSloWindows, { nowMs:now.getTime() });
   const incidentAlertCandidate = options.record !== false
@@ -17386,6 +17488,7 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
         text:formatPostDeployRegressionAlert(releaseRegressionAlertPlan),
         adminTelegramIds:cfg.adminTelegramIds || [],
         claimDelivery:input => claimProviderIncidentAlertDelivery(cfg,input),
+        beginDelivery:input => beginProviderIncidentAlertDeliverySend(cfg,input),
         finalizeDelivery:input => finalizeProviderIncidentAlertDelivery(cfg,input),
         sendMessage:(chatId,text) => sendTelegramMessage(chatId,text,cfg),
         nowMs:now.getTime(),
@@ -17438,6 +17541,7 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
         text:formatSecurityIncidentAlert(securityAlertPlan),
         adminTelegramIds:cfg.adminTelegramIds || [],
         claimDelivery:input => claimProviderIncidentAlertDelivery(cfg,input),
+        beginDelivery:input => beginProviderIncidentAlertDeliverySend(cfg,input),
         finalizeDelivery:input => finalizeProviderIncidentAlertDelivery(cfg,input),
         sendMessage:(chatId,text) => sendTelegramMessage(chatId,text,cfg),
         nowMs:now.getTime(),
@@ -17503,6 +17607,7 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
         plan:incidentAlertPlan,
         adminTelegramIds:cfg.adminTelegramIds || [],
         claimDelivery:input => claimProviderIncidentAlertDelivery(cfg,input),
+        beginDelivery:input => beginProviderIncidentAlertDeliverySend(cfg,input),
         finalizeDelivery:input => finalizeProviderIncidentAlertDelivery(cfg,input),
         sendMessage:(chatId,text) => sendTelegramMessage(chatId,text,cfg),
         nowMs:now.getTime(),
@@ -17560,6 +17665,7 @@ async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {})
         text:formatDailyDigestIncidentAlert(digestAlertPlan),
         adminTelegramIds:cfg.adminTelegramIds || [],
         claimDelivery:input => claimProviderIncidentAlertDelivery(cfg,input),
+        beginDelivery:input => beginProviderIncidentAlertDeliverySend(cfg,input),
         finalizeDelivery:input => finalizeProviderIncidentAlertDelivery(cfg,input),
         sendMessage:(chatId,text) => sendTelegramMessage(chatId,text,cfg),
         nowMs:now.getTime(),
