@@ -454,6 +454,24 @@ else {
     if (!providerReliabilityMigration.includes(marker.toLowerCase())) failures.push(`v6.26.2 provider reliability migration is missing: ${marker}`);
   }
 }
+if (!fs.existsSync('supabase/migrations/supabase_migration_v6_26_3.sql')) failures.push('Missing v6.26.3 security occurrence migration');
+else {
+  const securityOccurrenceMigration=fs.readFileSync('supabase/migrations/supabase_migration_v6_26_3.sql','utf8').toLowerCase();
+  for (const marker of [
+    'add column if not exists occurrence_count integer not null default 1',
+    'add column if not exists last_occurred_at timestamptz',
+    'create or replace function public.record_ops_event_occurrence',
+    'on conflict (transition_key) do update',
+    'occurrence_count = public.ops_events.occurrence_count + 1',
+    "'occurrencecount', public.ops_events.occurrence_count + 1",
+    'security invoker',
+    'grant execute on function public.record_ops_event_occurrence'
+  ]) {
+    if (!securityOccurrenceMigration.includes(marker.toLowerCase())) failures.push(`v6.26.3 security occurrence migration is missing: ${marker}`);
+  }
+}
+if (!worker.includes("record_ops_event_occurrence") || !worker.includes("occurrenceCount:1") || !worker.includes("lastOccurredAt:createdAt")) failures.push('Issue #407 atomic ops occurrence persistence is incomplete');
+
 if (!worker.includes("record_provider_slo_observation") || !worker.includes("read_provider_slo_buckets") || !worker.includes("providerSloDistributedAggregation:'enabled'")) failures.push('Issue #405 distributed provider SLO aggregation is incomplete');
 if (!worker.includes("providerSloCadenceValidation:'enabled'") || !providerSloIncidents.includes("windowIntegrity") || !providerSloIncidents.includes("windowCadence")) failures.push('Issue #405 provider SLO cadence validation is incomplete');
 if (!worker.includes("claim_provider_incident_alert_delivery_v2") || !worker.includes("begin_provider_incident_alert_delivery_send") || !worker.includes("providerIncidentAlertLeaseRecovery:'enabled'")) failures.push('Issue #405 provider alert lease recovery is incomplete');
