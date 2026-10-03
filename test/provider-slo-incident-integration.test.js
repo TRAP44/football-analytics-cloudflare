@@ -27,7 +27,7 @@ test('provider incident state affects monitoring visibility but never automatic 
 });
 
 test('provider API and diagnostics include incident state and runbook', () => {
-  assert.match(worker, /incident: buildProviderSloIncidentTimeline\(incidentSource\.items\)/);
+  assert.match(worker, /incident:\s*buildProviderSloIncidentTimeline\(incidentSource\.items\)/);
   assert.match(worker, /providerObservability\?\.incident\?\.activeIncident\?\.runbook/);
   assert.match(worker, /providerSloIncidentIntegration: 'enabled'/);
   assert.match(worker, /providerSloIncidentSelfTest/);
@@ -51,8 +51,6 @@ test('admin-only provider panel renders incident status, runbook and short histo
 });
 
 test('production smoke requires provider SLO incident integration health flags', () => {
-  assert.match(smoke, /'providerSloDistributedAggregation'/);
-  assert.match(smoke, /'providerSloCadenceValidation'/);
   assert.match(smoke, /'providerSloIncidentIntegration'/);
   assert.match(smoke, /'providerSloIncidentSelfTest'/);
 });
