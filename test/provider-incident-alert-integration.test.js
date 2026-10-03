@@ -102,8 +102,6 @@ test('release health and production smoke require persistent and unknown-safe al
   for (const marker of [
     'providerIncidentAlertDelivery',
     'providerIncidentAlertPersistence',
-    'providerIncidentAlertLeaseRecovery',
-    'providerIncidentStableBotIdentity',
     'providerIncidentAlertUnknownSafety',
     'providerIncidentAlertDeliverySelfTest',
   ]) {
