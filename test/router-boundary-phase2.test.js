@@ -44,6 +44,34 @@ test('billing stays unavailable while monetization is disabled', async () => {
   assert.equal(result.body.error, 'Монетизация отложена до финального этапа проекта.');
 });
 
+
+test('router blocks exact replay of a successful sensitive admin mutation', async () => {
+  let calls=0;
+  const memory={ providerAudit:{last:null} };
+  const deps={
+    ...baseDeps(),
+    memory,
+    isAdminUser:()=>true,
+    apiRuntimeControls:async()=>{ calls+=1; return {status:200,body:{ok:true}}; },
+  };
+  const makeRequest=()=>new Request('https://example.com/api/runtime-controls',{
+    method:'POST',
+    headers:{'content-type':'application/json'},
+    body:JSON.stringify({providerEnabled:false}),
+  });
+  const user={id:42};
+
+  const firstReq=makeRequest();
+  const first=await dispatchApiRoute(firstReq,new URL(firstReq.url),{},user,deps);
+  assert.equal(first.status,200);
+
+  const replayReq=makeRequest();
+  const replay=await dispatchApiRoute(replayReq,new URL(replayReq.url),{},user,deps);
+  assert.equal(replay.status,409);
+  assert.equal(replay.body.code,'SENSITIVE_MUTATION_REPLAY_BLOCKED');
+  assert.equal(calls,1);
+});
+
 test('worker authenticates and applies beta/runtime/burst guards before router dispatch', () => {
   const source = fs.readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8');
   const auth = source.indexOf('const user = await getRequestUser(request, cfg)');
