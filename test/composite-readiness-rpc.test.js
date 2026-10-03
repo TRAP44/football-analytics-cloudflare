@@ -54,7 +54,7 @@ test('v6.21 keeps the pre-deploy fingerprint stable by excluding only the new op
 
 test('release contract and worker target schema v6.25', () => {
   assert.equal(releaseContract.productionSchema, '6.25');
-  assert.equal(releaseContract.latestMigration, 'supabase/migrations/supabase_migration_v6_25.sql');
+  assert.equal(releaseContract.latestMigration, 'supabase/migrations/supabase_migration_v6_25_1.sql');
   assert.match(worker, /миграции до v6\.25/);
   assert.match(worker, /createCompositeReadinessRuntime/);
   assert.match(worker, /readCompositeReadiness\(cfg,5\)/);
