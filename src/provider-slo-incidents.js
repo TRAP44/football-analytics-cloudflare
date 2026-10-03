@@ -71,16 +71,92 @@ function normalizeWindow(row = {}) {
   const meta = row?.metadata && typeof row.metadata === 'object' ? row.metadata : row;
   const endedAt = asIso(meta?.windowEndedAt || row?.created_at);
   const startedAt = asIso(meta?.windowStartedAt || row?.created_at);
-  const state = String(meta?.sloState || '').trim();
+  const reportedState = String(meta?.sloState || '').trim().toLowerCase();
   const totals = summarizeMetricRow({
     provider:'all',
     operation:'all',
     ...(meta?.totals && typeof meta.totals === 'object' ? meta.totals : {}),
   });
+  const derivedState=providerSloState(totals).state;
+  const stateMismatch=ACTIONABLE_STATES.has(reportedState) && reportedState!==derivedState;
   const series = Array.isArray(meta?.series)
     ? meta.series.filter(x => x && typeof x === 'object').slice(0,24).map(summarizeMetricRow)
     : [];
-  return { startedAt, endedAt, state, totals, series };
+  return {
+    windowId:String(meta?.windowId || `${startedAt}|${endedAt}`),
+    startedAt,
+    endedAt,
+    state:stateMismatch ? 'invalid' : derivedState,
+    reportedState,
+    derivedState,
+    stateMismatch,
+    complete:meta?.complete !== false,
+    totals,
+    series,
+  };
+}
+
+const PROVIDER_SLO_WINDOW_MINUTES=15;
+const PROVIDER_SLO_CADENCE_TOLERANCE_MS=90_000;
+
+function windowTiming(window = {}) {
+  const start=Date.parse(String(window.startedAt || ''));
+  const end=Date.parse(String(window.endedAt || ''));
+  return {
+    start,
+    end,
+    valid:Number.isFinite(start) && Number.isFinite(end) && end>start,
+    durationMs:Number.isFinite(start) && Number.isFinite(end) ? end-start : NaN,
+  };
+}
+
+function validWindowDuration(window = {}) {
+  const timing=windowTiming(window);
+  const expected=PROVIDER_SLO_WINDOW_MINUTES*60_000;
+  return timing.valid && Math.abs(timing.durationMs-expected)<=PROVIDER_SLO_CADENCE_TOLERANCE_MS;
+}
+
+function windowCadence(previous = {}, current = {}) {
+  const a=windowTiming(previous);
+  const b=windowTiming(current);
+  if (!a.valid || !b.valid) return 'invalid';
+  const delta=b.start-a.end;
+  if (Math.abs(delta)<=PROVIDER_SLO_CADENCE_TOLERANCE_MS) return 'contiguous';
+  return delta>0 ? 'gap' : 'overlap';
+}
+
+function canonicalWindows(rows = []) {
+  const byIdentity=new Map();
+  let duplicates=0;
+  for (const row of rows || []) {
+    const window=normalizeWindow(row);
+    if (!window.endedAt || !window.startedAt) continue;
+    const identity=window.windowId || `${window.startedAt}|${window.endedAt}`;
+    if (byIdentity.has(identity)) duplicates+=1;
+    byIdentity.set(identity,window);
+  }
+  const windows=[...byIdentity.values()]
+    .sort((a,b)=>Date.parse(a.endedAt)-Date.parse(b.endedAt) || Date.parse(a.startedAt)-Date.parse(b.startedAt));
+  const integrity={
+    duplicates,
+    gaps:0,
+    overlaps:0,
+    invalidDuration:0,
+    incomplete:0,
+    stateMismatches:0,
+  };
+  for (let i=0;i<windows.length;i+=1) {
+    const window=windows[i];
+    if (!validWindowDuration(window)) integrity.invalidDuration+=1;
+    if (!window.complete) integrity.incomplete+=1;
+    if (window.stateMismatch) integrity.stateMismatches+=1;
+    if (i>0) {
+      const cadence=windowCadence(windows[i-1],window);
+      if (cadence==='gap') integrity.gaps+=1;
+      else if (cadence==='overlap') integrity.overlaps+=1;
+    }
+  }
+  return {windows,integrity};
 }
 
 function transitionKind(previousState, state) {
@@ -225,10 +301,8 @@ function lastHealthyBefore(windows, at) {
 }
 
 export function buildProviderSloIncidentTimeline(rows = [], { nowMs = Date.now() } = {}) {
-  const windows = (rows || [])
-    .map(normalizeWindow)
-    .filter(x => x.endedAt)
-    .sort((a,b) => Date.parse(a.endedAt) - Date.parse(b.endedAt));
+  const canonical=canonicalWindows(rows);
+  const windows=canonical.windows;
 
   const transitions = [];
   let confirmedState = '';
@@ -236,7 +310,17 @@ export function buildProviderSloIncidentTimeline(rows = [], { nowMs = Date.now()
   for (let i = 1; i < windows.length; i += 1) {
     const previous = windows[i - 1];
     const current = windows[i];
-    if (!ACTIONABLE_STATES.has(previous.state) || current.state !== previous.state) continue;
+    if (
+      !previous.complete
+      || !current.complete
+      || !validWindowDuration(previous)
+      || !validWindowDuration(current)
+      || windowCadence(previous,current)!=='contiguous'
+      || previous.stateMismatch
+      || current.stateMismatch
+      || !ACTIONABLE_STATES.has(previous.state)
+      || current.state !== previous.state
+    ) continue;
     const nextState = current.state;
     if (nextState === confirmedState) continue;
 
@@ -372,7 +456,9 @@ export function buildProviderSloIncidentTimeline(rows = [], { nowMs = Date.now()
           ? 'Provider SLO восстановлен'
           : 'Собираем подтверждение SLO',
     confirmationWindows:2,
+    expectedWindowMinutes:PROVIDER_SLO_WINDOW_MINUTES,
     windowsObserved:windows.length,
+    windowIntegrity:{...canonical.integrity},
     lastHealthyWindowAt:lastHealthyWindow?.endedAt || null,
     activeIncident:currentEpisode,
     transition:transitionIsFresh ? latestTransition : null,
@@ -387,7 +473,7 @@ export function buildProviderSloIncidentTimeline(rows = [], { nowMs = Date.now()
       automaticRollback:false,
       automaticFeatureDisable:false,
       notificationChannel:'ops_events_and_admin_telegram',
-      note:'Переход фиксируется только после двух последовательных одинаковых SLO-окон. watch не отправляет полноценный incident alert; collecting не создаёт инцидент.',
+      note:'Переход фиксируется только после двух последовательных полных 15-минутных SLO-окон без gap/overlap и только когда состояние согласуется с метриками. watch не отправляет полноценный incident alert; collecting/invalid не создаёт инцидент.',
     },
   };
 }
