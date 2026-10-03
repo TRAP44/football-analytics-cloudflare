@@ -16602,7 +16602,11 @@ async function readProviderSloWindows(cfg, hours = 24, { nowMs = Date.now(), inc
       p_until:new Date(safeNow+15*60_000).toISOString(),
       p_limit:10000,
     },5000);
-    const rows=Array.isArray(raw) ? raw : [];
+    const rows=Array.isArray(raw)
+      ? raw
+      : raw && typeof raw==='object' && raw.bucket_started_at
+        ? [raw]
+        : [];
     const items=providerSloWindowsFromBuckets(rows,{
       hours:safeHours,
       nowMs:safeNow,
@@ -16797,21 +16801,25 @@ async function finalizeProviderIncidentAlertDelivery(cfg,input = {}) {
 }
 
 function providerSloSelfTest() {
-  const synthetic = summarizeProviderObservabilityWindows([
-    { metadata:{ windowStartedAt:'2026-09-28T00:00:00.000Z', windowEndedAt:'2026-09-28T00:15:00.000Z', series:[
-      { provider:'api-football', operation:'/fixtures', attempts:12, requests:10, successes:10, failures:0, retries:2, timeouts:0, networkErrors:0, rateLimits:0, httpErrors:0, invalidResponses:0, latencySumMs:1200, latencySamples:12, maxLatencyMs:200 },
-    ] } },
-  ], { hours:24, includeCurrent:false });
-  const collecting = summarizeProviderObservabilityWindows([
-    { metadata:{ windowStartedAt:'2026-09-28T00:00:00.000Z', windowEndedAt:'2026-09-28T00:15:00.000Z', series:[
-      { provider:'api-football', operation:'/fixtures', attempts:2, requests:2, successes:2, failures:0, retries:0, timeouts:0, networkErrors:0, rateLimits:0, httpErrors:0, invalidResponses:0, latencySumMs:100, latencySamples:2, maxLatencyMs:50 },
-    ] } },
-  ], { hours:24, includeCurrent:false });
+  const endedAt=new Date();
+  const startedAt=new Date(endedAt.getTime()-15*60_000);
+  const windowStartedAt=startedAt.toISOString();
+  const windowEndedAt=endedAt.toISOString();
+  const synthetic=summarizeProviderObservabilityWindows([
+    {metadata:{windowId:'provider-slo:selftest',windowStartedAt,windowEndedAt,series:[
+      {provider:'api-football',operation:'/fixtures',attempts:12,requests:10,successes:10,failures:0,retries:2,timeouts:0,networkErrors:0,rateLimits:0,httpErrors:0,invalidResponses:0,latencySumMs:1200,latencySamples:12,maxLatencyMs:200},
+    ]}},
+  ],{hours:24,includeCurrent:false});
+  const collecting=summarizeProviderObservabilityWindows([
+    {metadata:{windowId:'provider-slo:selftest-collecting',windowStartedAt,windowEndedAt,series:[
+      {provider:'api-football',operation:'/fixtures',attempts:2,requests:2,successes:2,failures:0,retries:0,timeouts:0,networkErrors:0,rateLimits:0,httpErrors:0,invalidResponses:0,latencySumMs:100,latencySamples:2,maxLatencyMs:50},
+    ]}},
+  ],{hours:24,includeCurrent:false});
   return {
-    pass: synthetic.overall.state === 'watch'
-      && synthetic.overall.requests === 10
-      && synthetic.overall.retries === 2
-      && collecting.overall.state === 'collecting',
+    pass:synthetic.overall.state==='watch'
+      && synthetic.overall.requests===10
+      && synthetic.overall.retries===2
+      && collecting.overall.state==='collecting',
     state:synthetic.overall.state,
     collecting:collecting.overall.state,
   };
