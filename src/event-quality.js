@@ -40,10 +40,13 @@ function eventFingerprint(event = {}) {
     integerInRange(event?.minute, 0, MAX_EVENT_MINUTE) ?? '',
     integerInRange(event?.extra, 0, MAX_EXTRA_MINUTE) ?? '',
     compactState(event?.side),
+    Number(event?.teamId || event?.team_id || 0) || '',
     normalizedText(event?.type),
     normalizedText(event?.detail),
-    normalizedText(event?.player),
-    normalizedText(event?.assist),
+    Number(event?.playerId || event?.player_id || 0) || '',
+    normalizedText(event?.playerName || event?.player),
+    Number(event?.assistPlayerId || event?.assist_player_id || 0) || '',
+    normalizedText(event?.assistPlayerName || event?.assist),
     normalizedText(event?.comments),
   ].join('|');
 }
@@ -96,6 +99,10 @@ export function assessMatchEventQuality(events = [], { eventsMeta = {}, mode = '
   const analyticalEventIds = [];
   const duplicateEventIds = [];
   const rejectedEventIds = [];
+  const displayEventIndices = [];
+  const analyticalEventIndices = [];
+  const duplicateEventIndices = [];
+  const rejectedEventIndices = [];
   const warnings = [];
   let unknownSideCount = 0;
   let futureEventCount = 0;
@@ -108,6 +115,7 @@ export function assessMatchEventQuality(events = [], { eventsMeta = {}, mode = '
 
     if (!inspected.displayValid) {
       rejectedEventIds.push(eventId);
+      rejectedEventIndices.push(index);
       if (inspected.future) futureEventCount += 1;
       if (inspected.minute === null || inspected.extra === null) invalidTimeCount += 1;
       continue;
@@ -116,19 +124,25 @@ export function assessMatchEventQuality(events = [], { eventsMeta = {}, mode = '
     const fingerprint = inspected.fingerprint;
     if (fingerprint && seen.has(fingerprint)) {
       duplicateEventIds.push(eventId);
+      duplicateEventIndices.push(index);
       continue;
     }
     if (fingerprint) seen.add(fingerprint);
     displayEventIds.push(eventId);
+    displayEventIndices.push(index);
 
-    if (inspected.analyticsValid) analyticalEventIds.push(eventId);
-    else if (inspected.analyticalType && !inspected.sideValid) unknownSideCount += 1;
+    if (inspected.analyticsValid) {
+      analyticalEventIds.push(eventId);
+      analyticalEventIndices.push(index);
+    } else if (inspected.analyticalType && !inspected.sideValid) {
+      unknownSideCount += 1;
+    }
   }
 
   const observed = rows.length > 0;
-  const displayCount = displayEventIds.length;
-  const analyticalCount = analyticalEventIds.length;
-  const issueCount = rejectedEventIds.length + duplicateEventIds.length + unknownSideCount;
+  const displayCount = displayEventIndices.length;
+  const analyticalCount = analyticalEventIndices.length;
+  const issueCount = rejectedEventIndices.length + duplicateEventIndices.length + unknownSideCount;
   let state = 'unavailable';
   let label = 'События недоступны';
   let reason = 'no_events';
@@ -167,8 +181,8 @@ export function assessMatchEventQuality(events = [], { eventsMeta = {}, mode = '
     rawCount:rows.length,
     displayCount,
     analyticalCount,
-    rejectedCount:rejectedEventIds.length,
-    duplicateCount:duplicateEventIds.length,
+    rejectedCount:rejectedEventIndices.length,
+    duplicateCount:duplicateEventIndices.length,
     unknownSideCount,
     futureEventCount,
     invalidTimeCount,
@@ -178,31 +192,49 @@ export function assessMatchEventQuality(events = [], { eventsMeta = {}, mode = '
     analyticalEventIds,
     duplicateEventIds,
     rejectedEventIds,
+    displayEventIndices,
+    analyticalEventIndices,
+    duplicateEventIndices,
+    rejectedEventIndices,
     warnings,
     provider:String(eventsMeta?.provider || ''),
     source:String(eventsMeta?.source || ''),
     freshnessState:String(eventsMeta?.freshnessState || 'unknown'),
     provenanceState:String(eventsMeta?.provenanceState || 'unknown'),
-    methodology:'Live-события допускаются в аналитику только после проверки времени, дедупликации, подтверждения стороны команды и freshness/provenance источника. Некорректные или дублирующиеся записи не должны влиять на Live AI и post-match evidence.',
+    methodology:'Live-события допускаются downstream только после проверки времени и дедупликации. Аналитика дополнительно требует подтверждённую сторону команды. Sanitized collections выбираются по индексам исходного массива, поэтому rejected/duplicate rows не могут вернуться из-за совпадающего provider event ID.',
   };
 }
 
-function selectEventIds(events = [], ids = []) {
+function selectEventIndices(events = [], indices = []) {
+  const allowed = new Set(Array.isArray(indices) ? indices.map(Number) : []);
+  return (Array.isArray(events) ? events : []).filter((_, index) => allowed.has(index));
+}
+
+function selectEventIdsLegacy(events = [], ids = []) {
   const allowed = new Set(Array.isArray(ids) ? ids.map(String) : []);
+  const emitted = new Set();
   return (Array.isArray(events) ? events : []).filter((event, index) => {
     const id = compactText(event?.id) || `index:${index}`;
-    return allowed.has(id);
+    if (!allowed.has(id) || emitted.has(id)) return false;
+    emitted.add(id);
+    return true;
   });
 }
 
 export function sanitizeEventsForDisplay(events = [], quality = {}) {
   if (!quality?.sourceTrusted) return [];
-  return selectEventIds(events, quality?.displayEventIds || []);
+  if (Array.isArray(quality?.displayEventIndices)) {
+    return selectEventIndices(events, quality.displayEventIndices);
+  }
+  return selectEventIdsLegacy(events, quality?.displayEventIds || []);
 }
 
 export function eventsForTrustedAnalytics(events = [], quality = {}) {
   if (!quality?.analyticalConfidenceBearing) return [];
-  return selectEventIds(events, quality?.analyticalEventIds || []);
+  if (Array.isArray(quality?.analyticalEventIndices)) {
+    return selectEventIndices(events, quality.analyticalEventIndices);
+  }
+  return selectEventIdsLegacy(events, quality?.analyticalEventIds || []);
 }
 
 export function annotateEventReliability(meta = {}, quality = {}) {
@@ -250,7 +282,7 @@ export function annotateEventReliability(meta = {}, quality = {}) {
     available:true,
     usable:true,
     observed:true,
-    degraded:false,
+    degraded:quality?.state === 'sanitized',
     confidenceBearing:Boolean(quality?.analyticalConfidenceBearing),
     reason:quality?.analyticalConfidenceBearing ? (quality?.state === 'sanitized' ? 'events_sanitized' : '') : 'no_analytical_events',
   };

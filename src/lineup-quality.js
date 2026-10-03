@@ -1,18 +1,7 @@
+import { createPlayerIdentityResolver } from './player-identity.js';
+
 function compactText(value = '') {
   return String(value || '').trim().replace(/\s+/g, ' ');
-}
-
-function normalizedPlayerKey(player = {}) {
-  const id = Number(player?.id || 0);
-  if (id > 0) return `id:${id}`;
-  const name = compactText(player?.name || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9а-яё]+/giu, ' ')
-    .trim()
-    .replace(/\s+/g, ' ');
-  return name ? `name:${name}` : '';
 }
 
 function validGrid(value = '') {
@@ -78,26 +67,65 @@ function downgradeConfirmedMatchQuality(quality = {}, reason = '') {
 export function assessLineupQuality(lineup = null) {
   const starters = Array.isArray(lineup?.startXI) ? lineup.startXI : [];
   const substitutes = Array.isArray(lineup?.substitutes) ? lineup.substitutes : [];
-  const keys = starters.map(normalizedPlayerKey).filter(Boolean);
-  const uniqueStarters = new Set(keys).size;
-  const duplicateStarters = Math.max(0, keys.length - uniqueStarters);
+  const resolver = createPlayerIdentityResolver([...starters, ...substitutes]);
+  const starterIdentities = starters.map(player => resolver.resolve(player));
+  const substituteIdentities = substitutes.map(player => resolver.resolve(player));
+
+  const starterKeys = starterIdentities.filter(identity => identity.valid && identity.key).map(identity => identity.key);
+  const substituteKeys = substituteIdentities.filter(identity => identity.valid && identity.key).map(identity => identity.key);
+  const uniqueStarters = new Set(starterKeys).size;
+  const uniqueSubstitutes = new Set(substituteKeys).size;
+  const duplicateStarters = Math.max(0, starterKeys.length - uniqueStarters);
+  const duplicateSubstitutes = Math.max(0, substituteKeys.length - uniqueSubstitutes);
+  const invalidStarterIdentityCount = starterIdentities.filter(identity => !identity.valid).length;
+  const invalidSubstituteIdentityCount = substituteIdentities.filter(identity => !identity.valid).length;
+  const ambiguousIdentityCount = [...starterIdentities, ...substituteIdentities]
+    .filter(identity => identity.reason === 'name_alias_ambiguous').length;
+  const conflictingIdentityCount = [...starterIdentities, ...substituteIdentities]
+    .filter(identity => identity.reason === 'conflicting_known_ids').length;
+
+  const starterSet = new Set(starterKeys);
+  const overlapKeys = [...new Set(substituteKeys.filter(key => starterSet.has(key)))];
+  const starterSubstituteOverlapCount = overlapKeys.length;
+
   const gridKnown = starters.filter(player => validGrid(player?.grid)).length;
+  const invalidGridCount = starters.filter(player => {
+    const grid = compactText(player?.grid);
+    return Boolean(grid) && !validGrid(grid);
+  }).length;
+
   const published = starters.length > 0;
-  const confirmed = starters.length === 11 && uniqueStarters === 11 && duplicateStarters === 0;
+  const identityClean = invalidStarterIdentityCount === 0
+    && invalidSubstituteIdentityCount === 0
+    && duplicateStarters === 0
+    && duplicateSubstitutes === 0
+    && starterSubstituteOverlapCount === 0;
+  const confirmed = starters.length === 11
+    && starterKeys.length === 11
+    && uniqueStarters === 11
+    && identityClean
+    && invalidGridCount === 0;
   const partial = published && !confirmed;
   const starterCoverage = Math.min(1, uniqueStarters / 11);
   const gridCoverage = starters.length ? gridKnown / starters.length : 0;
+  const substituteQualityBonus = substitutes.length && invalidSubstituteIdentityCount === 0 && duplicateSubstitutes === 0
+    && starterSubstituteOverlapCount === 0 ? 5 : 0;
   const score = boundedScore(
     starterCoverage * 75
     + (compactText(lineup?.formation) ? 10 : 0)
     + (compactText(lineup?.coach) ? 5 : 0)
     + gridCoverage * 5
-    + (substitutes.length ? 5 : 0)
+    + substituteQualityBonus
   );
 
   const warnings = [];
   if (partial) warnings.push(`Ожидалось 11 уникальных игроков старта, получено ${uniqueStarters}.`);
-  if (duplicateStarters > 0) warnings.push(`В стартовом составе обнаружены дубли: ${duplicateStarters}.`);
+  if (duplicateStarters > 0) warnings.push(`В стартовом составе обнаружены дубли identity: ${duplicateStarters}.`);
+  if (duplicateSubstitutes > 0) warnings.push(`Среди запасных обнаружены дубли identity: ${duplicateSubstitutes}.`);
+  if (starterSubstituteOverlapCount > 0) warnings.push(`Игрок одновременно указан в старте и запасе: ${starterSubstituteOverlapCount}.`);
+  if (invalidStarterIdentityCount > 0) warnings.push(`Неоднозначные или отсутствующие identity в старте: ${invalidStarterIdentityCount}.`);
+  if (invalidSubstituteIdentityCount > 0) warnings.push(`Неоднозначные или отсутствующие identity среди запасных: ${invalidSubstituteIdentityCount}.`);
+  if (invalidGridCount > 0) warnings.push(`Некорректные grid-координаты стартового состава: ${invalidGridCount}.`);
 
   return {
     state: confirmed ? 'confirmed' : partial ? 'partial' : 'unavailable',
@@ -110,7 +138,15 @@ export function assessLineupQuality(lineup = null) {
     uniqueStartCount: uniqueStarters,
     duplicateStartCount: duplicateStarters,
     substituteCount: substitutes.length,
+    uniqueSubstituteCount: uniqueSubstitutes,
+    duplicateSubstituteCount: duplicateSubstitutes,
+    starterSubstituteOverlapCount,
+    invalidStarterIdentityCount,
+    invalidSubstituteIdentityCount,
+    ambiguousIdentityCount,
+    conflictingIdentityCount,
     gridKnown,
+    invalidGridCount,
     formationKnown: Boolean(compactText(lineup?.formation)),
     coachKnown: Boolean(compactText(lineup?.coach)),
     warnings,

@@ -133,3 +133,58 @@ test('RC139 is part of the production release health contract', () => {
   assert.match(runtime, /const CLIENT_VERSION = '6\.120\.0-rc144'/);
   assert.match(smoke, /'freshnessAwareDataTrust'/);
 });
+
+test('Issue #406 rejects implausible future timestamps instead of clamping them to age zero', () => {
+  const now=Date.parse('2026-10-03T12:00:00.000Z');
+  const meta=assessFeatureFreshness({
+    feature:'events',provider:'api-football',source:'network',
+    state:'available',available:true,usable:true,observed:true,
+    fetchedAt:'2026-10-03T12:10:00.000Z',
+  },{mode:'live',now});
+  assert.equal(meta.state,'invalid_freshness');
+  assert.equal(meta.futureTimestamp,true);
+  assert.equal(meta.ageSeconds,null);
+  assert.equal(meta.available,false);
+  assert.equal(meta.confidenceBearing,false);
+  assert.equal(meta.freshnessReason,'future_timestamp');
+});
+
+test('Issue #406 tolerates only bounded provider clock skew', () => {
+  const now=Date.parse('2026-10-03T12:00:00.000Z');
+  const meta=assessFeatureFreshness({
+    feature:'events',provider:'api-football',source:'network',
+    state:'available',available:true,usable:true,observed:true,
+    fetchedAt:'2026-10-03T12:00:20.000Z',
+  },{mode:'live',now});
+  assert.equal(meta.futureTimestamp,false);
+  assert.equal(meta.futureSkewSeconds,20);
+  assert.equal(meta.ageSeconds,0);
+  assert.equal(meta.confidenceBearing,true);
+});
+
+test('Issue #406 requires an actual timestamp for embedded freshness', () => {
+  const meta=assessFeatureFreshness({
+    feature:'lineups',provider:'api-football',source:'embedded',
+    state:'available',available:true,usable:true,observed:true,
+    ageSeconds:0,
+  },{mode:'upcoming',now:Date.parse('2026-10-03T12:00:00.000Z')});
+  assert.equal(meta.timestampRequired,true);
+  assert.equal(meta.timestampMissing,true);
+  assert.equal(meta.state,'unverified_freshness');
+  assert.equal(meta.freshnessReason,'embedded_timestamp_missing');
+  assert.equal(meta.confidenceBearing,false);
+});
+
+test('Issue #406 excessive provider TTL cannot forge a wider freshness window', () => {
+  const now=Date.parse('2026-10-03T12:00:00.000Z');
+  const meta=assessFeatureFreshness({
+    feature:'statistics',provider:'api-football',source:'network',
+    state:'available',available:true,usable:true,observed:true,
+    fetchedAt:'2026-10-03T11:59:30.000Z',
+    policy:{ttlSeconds:3600},
+  },{mode:'live',now});
+  assert.equal(meta.ttlPolicyExcessive,true);
+  assert.equal(meta.freshnessLimitSeconds,150);
+  assert.equal(meta.state,'unverified_freshness');
+  assert.equal(meta.confidenceBearing,false);
+});

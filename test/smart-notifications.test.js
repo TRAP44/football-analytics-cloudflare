@@ -308,3 +308,43 @@ test('public Smart Notifications copy hides internal delivery thresholds and ser
   assert.match(source, /Выберите нужные категории/);
   assert.doesNotMatch(source, /Порог рынка|Доступ к категориям проверяется сервером|подавляются на сервере|smart-notification-note/);
 });
+
+test('Issue #406 smart notifications drop mixed invalid live events before delivery', async () => {
+  const originalNow=Date.now;
+  const now=Date.parse('2026-10-01T12:20:00.000Z');
+  Date.now=()=>now;
+  try {
+    const rows=[
+      {telegram_id:1,fixture_id:100,fixture_date:'2026-10-01T12:00:00.000Z',home_name:'Alpha',away_name:'Beta',enabled:true},
+    ];
+    const deliveries=[];
+    const service=createSmartNotificationService({
+      hasSupabase:()=>true,
+      loadRuntimeControls:async()=>({value:{remindersEnabled:true}}),
+      supaSelectPaged:async()=>({rows,truncated:false}),
+      filterRecipients:async input=>({rows:input,blockedByPreference:0,blockedByEntitlement:0}),
+      loadFavoritePlayersByUser:async()=>new Map([[1,[]]]),
+      loadLiveNotificationSnapshot:async()=>({
+        trusted:true,
+        stale:false,
+        events:[
+          {id:'good',minute:20,extra:0,type:'Goal',detail:'Normal Goal',teamId:11,playerId:10,eventKey:'20:goal:10'},
+          {id:'dup',minute:20,extra:0,type:'Goal',detail:'Normal Goal',teamId:11,playerId:10,eventKey:'20:goal:10'},
+          {id:'future',minute:80,extra:0,type:'Goal',detail:'Normal Goal',teamId:11,playerId:12,eventKey:'80:goal:12'},
+          {id:'bad',minute:'oops',extra:0,type:'Goal',detail:'Normal Goal',teamId:11,playerId:13,eventKey:'bad:goal:13'},
+        ],
+      }),
+      loadLineupSnapshot:async()=>({confirmed:false}),
+      getAnalysisTimelineSnapshots:async()=>[],
+      deliverSmartNotification:async input=>{ deliveries.push(input); return {state:'sent'}; },
+      recordOpsEvent:async()=>{},
+    });
+    const summary=await service.processSmartNotifications({botToken:'token'});
+    assert.equal(summary.sent,1);
+    assert.equal(deliveries.length,1);
+    assert.equal(deliveries[0].eventType,'match.goal');
+    assert.match(deliveries[0].dedupeKey,/20:goal:10/);
+  } finally {
+    Date.now=originalNow;
+  }
+});
