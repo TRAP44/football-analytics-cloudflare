@@ -11,6 +11,9 @@ const DEFAULT_FRESHNESS_LIMITS = Object.freeze({
   h2h:         { live: 86400,finished: 86400, upcoming: 86400 },
 });
 
+const FUTURE_TIMESTAMP_TOLERANCE_SECONDS = 30;
+const MAX_POLICY_TTL_MULTIPLIER = 2;
+
 function compactState(value = '') {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, '_');
 }
@@ -30,11 +33,28 @@ function defaultFreshnessLimit(feature, mode) {
   return Number(config[String(mode || '')] || config.upcoming || 3600);
 }
 
-export function featureFreshnessLimitSeconds(meta = {}, { feature = meta?.feature || 'data', mode = 'upcoming' } = {}) {
+function policyTtlState(meta = {}, { feature = meta?.feature || 'data', mode = 'upcoming' } = {}) {
   const fallback = defaultFreshnessLimit(feature, mode);
-  const policyTtl = Number(meta?.policy?.ttlSeconds);
-  if (!Number.isFinite(policyTtl) || policyTtl <= 0) return fallback;
-  return Math.max(fallback, Math.ceil(policyTtl * 2));
+  const raw = Number(meta?.policy?.ttlSeconds);
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return { configured:false, excessive:false, ttlSeconds:null, fallback, limit:fallback };
+  }
+  const ttlSeconds = Math.ceil(raw);
+  const ceiling = Math.max(fallback, fallback * MAX_POLICY_TTL_MULTIPLIER);
+  const excessive = ttlSeconds > ceiling;
+  return {
+    configured:true,
+    excessive,
+    ttlSeconds,
+    fallback,
+    limit: excessive
+      ? fallback
+      : Math.min(ceiling, Math.max(fallback, ttlSeconds * 2)),
+  };
+}
+
+export function featureFreshnessLimitSeconds(meta = {}, { feature = meta?.feature || 'data', mode = 'upcoming' } = {}) {
+  return policyTtlState(meta, { feature, mode }).limit;
 }
 
 export function assessFeatureFreshness(meta = {}, {
@@ -51,17 +71,27 @@ export function assessFeatureFreshness(meta = {}, {
   const sourceKnown = Boolean(source && source !== 'unknown' && source !== 'none');
   const provenanceKnown = providerKnown && sourceKnown;
 
-  const sourceUpdatedAt = timestampMs(meta?.sourceUpdatedAt) !== null
-    ? String(meta.sourceUpdatedAt)
-    : null;
-  const fetchedAt = timestampMs(meta?.fetchedAt) !== null
-    ? String(meta.fetchedAt)
-    : null;
-  const anchorMs = timestampMs(sourceUpdatedAt) ?? timestampMs(fetchedAt);
+  const sourceUpdatedAtMs = timestampMs(meta?.sourceUpdatedAt);
+  const fetchedAtMs = timestampMs(meta?.fetchedAt);
+  const sourceUpdatedAt = sourceUpdatedAtMs !== null ? String(meta.sourceUpdatedAt) : null;
+  const fetchedAt = fetchedAtMs !== null ? String(meta.fetchedAt) : null;
+  const anchorMs = sourceUpdatedAtMs ?? fetchedAtMs;
+  const nowMs = Number(now);
+  const futureSkewSeconds = anchorMs !== null && Number.isFinite(nowMs) && anchorMs > nowMs
+    ? Math.ceil((anchorMs - nowMs) / 1000)
+    : 0;
+  const futureTimestamp = futureSkewSeconds > FUTURE_TIMESTAMP_TOLERANCE_SECONDS;
+  const timestampRequired = source === 'embedded';
+  const timestampMissing = timestampRequired && anchorMs === null;
+
   const computedAge = anchorMs === null
     ? boundedAgeSeconds(meta?.ageSeconds)
-    : Math.max(0, Math.floor((Number(now) - anchorMs) / 1000));
-  const limit = featureFreshnessLimitSeconds(meta, { feature, mode });
+    : futureTimestamp
+      ? null
+      : Math.max(0, Math.floor((nowMs - anchorMs) / 1000));
+
+  const ttlPolicy = policyTtlState(meta, { feature, mode });
+  const limit = ttlPolicy.limit;
   const ageExpired = computedAge !== null && computedAge > limit;
   const explicitStale = forceStale
     || ['stale','stale_data'].includes(transportState)
@@ -69,21 +99,31 @@ export function assessFeatureFreshness(meta = {}, {
     || ['stale','stale-cache'].includes(source);
   const stale = explicitStale || ageExpired;
   const freshnessKnown = stale
-    || computedAge !== null
-    || ['fresh','cached'].includes(freshnessHint)
-    || source === 'embedded';
+    || (!timestampMissing && !futureTimestamp && computedAge !== null)
+    || (!timestampRequired && ['fresh','cached'].includes(freshnessHint));
 
   const originalAvailable = Boolean(meta?.available);
   const originalUsable = meta?.usable === undefined ? originalAvailable : Boolean(meta.usable);
+  const freshnessPolicyValid = !futureTimestamp && !timestampMissing && !ttlPolicy.excessive;
   const confidenceBearing = originalAvailable
     && originalUsable
     && provenanceKnown
     && freshnessKnown
+    && freshnessPolicyValid
     && !stale;
 
   let state = String(meta?.state || 'unknown');
   let freshnessReason = '';
-  if (originalAvailable && stale) {
+  if (originalAvailable && futureTimestamp) {
+    state = 'invalid_freshness';
+    freshnessReason = 'future_timestamp';
+  } else if (originalAvailable && timestampMissing) {
+    state = 'unverified_freshness';
+    freshnessReason = 'embedded_timestamp_missing';
+  } else if (originalAvailable && ttlPolicy.excessive) {
+    state = 'unverified_freshness';
+    freshnessReason = 'ttl_policy_excessive';
+  } else if (originalAvailable && stale) {
     state = 'stale_data';
     freshnessReason = forceStale || explicitStale ? 'explicit_stale_source' : 'freshness_expired';
   } else if (originalAvailable && !provenanceKnown) {
@@ -104,14 +144,21 @@ export function assessFeatureFreshness(meta = {}, {
     observed: Boolean(meta?.observed ?? originalAvailable),
     degraded: Boolean(meta?.degraded) || (originalAvailable && !confidenceBearing),
     sourceUpdatedAt,
+    fetchedAt,
     ageSeconds: computedAge,
     freshnessLimitSeconds: limit,
-    freshnessState: stale ? 'stale' : freshnessKnown ? (source === 'cache' ? 'cached' : 'fresh') : 'unknown',
+    freshnessState: stale ? 'stale' : freshnessKnown && freshnessPolicyValid ? (source === 'cache' ? 'cached' : 'fresh') : 'unknown',
     provenanceState: provenanceKnown ? 'verified' : 'unknown',
     stale,
     confidenceBearing,
     freshnessReason,
     reason: freshnessReason || String(meta?.reason || ''),
+    futureTimestamp,
+    futureSkewSeconds,
+    timestampRequired,
+    timestampMissing,
+    ttlPolicySeconds: ttlPolicy.ttlSeconds,
+    ttlPolicyExcessive: ttlPolicy.excessive,
   };
 }
 
