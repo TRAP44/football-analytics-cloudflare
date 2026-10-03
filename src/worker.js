@@ -84,6 +84,7 @@ import { createSmartNotificationDeliveryService } from './smart-notification-del
 import { SMART_NOTIFICATION_POLICY, publicSmartNotificationCapabilities } from './smart-notification-policy.js';
 import { createSmartNotificationService, radarStrongSignalState } from './smart-notification-service.js';
 import { createScheduledJobsRuntime } from './scheduled-jobs.js';
+import { createScheduledLeaseRuntime } from './scheduled-lease.js';
 import { DAILY_DIGEST_POLICY, assessDailyDigestRun, planDailyDigestRecipients, runBoundedDailyDigest } from './daily-digest-delivery.js';
 import { assessDailyDigestReliabilitySlo, buildDailyDigestIncidentReport, dailyDigestIncidentAlertOpsEvents, formatDailyDigestIncidentAlert, planDailyDigestIncidentAlert, planDailyDigestReliabilitySloEvent, summarizeDailyDigestOperationalStatus, summarizeDailyDigestReliability } from './daily-digest-incidents.js';
 import { createProviderObservabilityRuntime } from './provider-observability.js';
@@ -199,7 +200,7 @@ const API_CONTRACT_VERSION = 5;
 const MIN_CLIENT_VERSION = '5.8.0';
 const RELEASE_CHANNEL = 'rc144';
 const RC_NAME = 'RC144';
-const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.19 и примените миграции до v6.25; для существующей примените все доступные миграции из supabase/migrations до v6.25.';
+const SUPABASE_SCHEMA_GUIDANCE = 'Проверьте схему Supabase: для новой установки используйте baseline v6.19 и примените миграции до v6.26; для существующей примените все доступные миграции из supabase/migrations до v6.26.';
 const MAX_MEMORY_OPS_EVENTS = 50;
 const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49';
 
@@ -1293,6 +1294,17 @@ const {
 });
 
 const {
+  claimScheduledJob,
+  completeScheduledJob,
+  releaseScheduledJob,
+} = createScheduledLeaseRuntime({
+  hasSupabase,
+  supaRpc,
+  recordOpsEvent,
+  redactOpsString,
+});
+
+const {
   getPreferences,
   savePreferences,
 } = createUserPreferencesService({
@@ -1588,6 +1600,17 @@ async function cleanupRateWindows(cfg) {
   const cutoff = new Date(Date.now() - 2 * 86400_000).toISOString();
   try {
     await supaDelete(cfg, 'provider_rate_windows', { updated_at: `lt.${cutoff}` });
+    return { ok: true, cutoff };
+  } catch (error) {
+    return { ok: false, error: redactOpsString(error?.message || error, 180) };
+  }
+}
+
+async function cleanupScheduledJobLeases(cfg) {
+  if (!hasSupabase(cfg)) return { skipped: true };
+  const cutoff = new Date().toISOString();
+  try {
+    await supaDelete(cfg, 'scheduled_job_leases', { expires_at: `lt.${cutoff}` });
     return { ok: true, cutoff };
   } catch (error) {
     return { ok: false, error: redactOpsString(error?.message || error, 180) };
@@ -18009,6 +18032,7 @@ async function probeSupabaseSchemaDrift(cfg) {
     { id: 'growth_events', table: 'growth_events', columns: ['id','event_name','metadata','created_at'] },
     { id: 'telegram_update_claims', table: 'telegram_update_claims', columns: ['update_key','status','locked_until','expires_at','duplicate_count','last_duplicate_at'] },
     { id: 'provider_rate_windows', table: 'provider_rate_windows', columns: ['bucket_key','window_started_at','request_count','updated_at'] },
+    { id: 'scheduled_job_leases', table: 'scheduled_job_leases', columns: ['job_key','group_key','status','lease_token','scheduled_at','claimed_at','locked_until','completed_at','expires_at'] },
     { id: 'cache_provenance', table: 'analysis_cache', columns: ['cache_key','provider','source_updated_at','freshness_status','updated_at'] },
     { id: 'odds_provenance', table: 'odds_snapshots', columns: ['fixture_id','provider','bookmaker_count','source_updated_at'] },
     { id: 'model_provenance', table: 'model_predictions', columns: ['fixture_id','data_provenance','model_inputs_version'] },
@@ -24917,11 +24941,15 @@ const { handleScheduled } = createScheduledJobsRuntime({
   processDailyDigests,
   cleanupOpsEvents,
   cleanupRateWindows,
+  cleanupScheduledJobLeases,
   cleanupGrowthEvents,
   cleanupIntegrityData,
   runSettlementWatchdog,
   runSettlementFinalityVerification,
   recordOpsEvent,
+  claimScheduledJob,
+  completeScheduledJob,
+  releaseScheduledJob,
 });
 
 export default {

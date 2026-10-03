@@ -46,7 +46,7 @@ test('Telegram supports return open and reversible opt-out',()=> {
 
 test('cron chains return loop after settlement task',()=> {
   assert.match(scheduled,/const postMatchPrerequisite = dailyDigestTask/);
-  assert.match(scheduled,/\['post_match_return', postMatchPrerequisite\.then\(\(\) => processPostMatchReturns\(cfg\)\)\]/);
+  assert.match(scheduled,/\['post_match_return', postMatchPrerequisite\.then\(\(\) => runTask\('post_match_return', \(\) => processPostMatchReturns\(cfg\)\)\)\]/);
 });
 
 test('RC63 deterministic drill and health contract are present',()=> {
