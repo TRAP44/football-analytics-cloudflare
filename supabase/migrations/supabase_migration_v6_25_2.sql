@@ -180,28 +180,58 @@ security invoker
 set search_path = public, pg_catalog, pg_temp
 as $$
 declare
-  v_home text := btrim(coalesce(p_home_name, ''));
-  v_away text := btrim(coalesce(p_away_name, ''));
-  v_league text := btrim(coalesce(p_league_name, ''));
   v_limit integer := greatest(1, least(coalesce(p_limit, 50), 100));
   v_count integer := 0;
   v_existing public.match_reminders%rowtype;
   v_row public.match_reminders%rowtype;
+  v_canonical jsonb;
+  v_home text;
+  v_away text;
+  v_league text;
+  v_fixture_date timestamptz;
 begin
-  if p_telegram_id is null or p_telegram_id <= 0 or p_fixture_id is null or p_fixture_id <= 0 then
+  if p_telegram_id is null or p_telegram_id <= 0
+     or p_fixture_id is null or p_fixture_id <= 0
+     or p_telegram_id > 9007199254740991
+     or p_fixture_id > 9007199254740991 then
     return jsonb_build_object('allowed', false, 'reason', 'invalid_input');
-  end if;
-  if v_home = '' or v_away = ''
-     or char_length(v_home) > 160
-     or char_length(v_away) > 160
-     or char_length(v_league) > 160 then
-    return jsonb_build_object('allowed', false, 'reason', 'invalid_input');
-  end if;
-  if p_fixture_date is null or p_fixture_date <= now() + interval '5 minutes' then
-    return jsonb_build_object('allowed', false, 'reason', 'fixture_started');
   end if;
   if p_remind_before_minutes not in (15, 30, 60) then
     return jsonb_build_object('allowed', false, 'reason', 'invalid_input');
+  end if;
+
+  -- Canonical identity is resolved inside the persistence boundary. The
+  -- legacy metadata arguments remain only for signature compatibility and are
+  -- never trusted for team names, league or kickoff.
+  v_canonical := public.resolve_match_reminder_fixture(p_fixture_id);
+  if coalesce((v_canonical->>'available')::boolean, false) is not true then
+    return jsonb_build_object(
+      'allowed', false,
+      'reason', case
+        when v_canonical->>'reason' = 'fixture_started' then 'fixture_started'
+        else 'fixture_unavailable'
+      end
+    );
+  end if;
+
+  v_home := btrim(coalesce(v_canonical->>'homeName', ''));
+  v_away := btrim(coalesce(v_canonical->>'awayName', ''));
+  v_league := btrim(coalesce(v_canonical->>'leagueName', ''));
+  begin
+    v_fixture_date := (v_canonical->>'fixtureDate')::timestamptz;
+  exception when others then
+    return jsonb_build_object('allowed', false, 'reason', 'fixture_unavailable');
+  end;
+
+  if v_home = '' or v_away = ''
+     or char_length(v_home) > 160
+     or char_length(v_away) > 160
+     or char_length(v_league) > 160
+     or v_fixture_date is null then
+    return jsonb_build_object('allowed', false, 'reason', 'fixture_unavailable');
+  end if;
+  if v_fixture_date <= now() + interval '5 minutes' then
+    return jsonb_build_object('allowed', false, 'reason', 'fixture_started');
   end if;
 
   perform pg_catalog.pg_advisory_xact_lock(
@@ -241,7 +271,7 @@ begin
       set home_name = v_home,
           away_name = v_away,
           league_name = v_league,
-          fixture_date = p_fixture_date,
+          fixture_date = v_fixture_date,
           enabled = true,
           remind_before_minutes = p_remind_before_minutes,
           kickoff_notify = coalesce(p_kickoff_notify, true),
@@ -277,7 +307,7 @@ begin
     set home_name = v_home,
         away_name = v_away,
         league_name = v_league,
-        fixture_date = p_fixture_date,
+        fixture_date = v_fixture_date,
         remind_before_minutes = p_remind_before_minutes,
         kickoff_notify = coalesce(p_kickoff_notify, true)
     where telegram_id = p_telegram_id
@@ -341,7 +371,7 @@ begin
     v_home,
     v_away,
     v_league,
-    p_fixture_date,
+    v_fixture_date,
     true,
     p_remind_before_minutes,
     coalesce(p_kickoff_notify, true),
