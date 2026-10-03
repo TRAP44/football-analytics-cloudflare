@@ -1581,13 +1581,11 @@ async function recordOpsEventTask(cfg, event = {}) {
     transition_key: event.transitionKey ? redactOpsString(event.transitionKey, 220) : null,
     occurrence_count: 1,
     last_occurred_at: createdAt,
-    metadata: safeOpsMetadata({
-      ...currentReleaseIdentity(cfg),
-      ...(event.meta || {}),
-      ...currentReleaseIdentity(cfg),
+    metadata: {
+      ...safeOpsMetadata({ ...currentReleaseIdentity(cfg), ...(event.meta || {}), ...currentReleaseIdentity(cfg) }),
       occurrenceCount:1,
       lastOccurredAt:createdAt,
-    }),
+    },
   };
 
   const memoryExisting = row.transition_key
