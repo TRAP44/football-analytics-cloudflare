@@ -7,7 +7,7 @@ import { dispatchApiRoute } from './router.js';
 import { createHttpRuntime } from './http.js';
 import { createPreAuthAbuseGuard, preAuthRequestShapeDecision } from './security-gate.js';
 import { cloudflareEdgeGuard, cloudflareEdgePolicies } from './edge-security.js';
-import { isSecurityLockdownControls, runtimeLockdownDecision, telegramLockdownDecision } from './runtime-lockdown.js';
+import { failClosedRuntimeControls, isSecurityLockdownControls, runtimeLockdownDecision, telegramLockdownDecision } from './runtime-lockdown.js';
 import { assessSecuritySignals, formatSecurityIncidentAlert, securityIncidentOpsEvent, securityIncidentTimeline } from './security-incidents.js';
 import { channelPublisherState, publishChannelMessage } from './channel-publisher.js';
 import {
@@ -362,6 +362,7 @@ function publicRuntimeControls(value = runtimeControlsSnapshot()) {
     expandedDataEnabled: value.expandedDataEnabled !== false,
     autoSettlementRecoveryEnabled: Boolean(value.autoSettlementRecoveryEnabled),
     securityLockdown: isSecurityLockdownControls(value),
+    controlPlaneFailClosed: Boolean(value.controlPlaneFailClosed),
     message: String(value.message || '').slice(0, 280),
     revision: Number(value.revision || 1),
     updatedAt: value.updatedAt || null,
@@ -375,22 +376,32 @@ async function loadRuntimeControls(cfg, options = {}) {
     return { ...memory.runtimeControls, cached: true };
   }
 
-  if (!hasSupabase(cfg)) {
-    const value = { ...DEFAULT_RUNTIME_CONTROLS };
-    memory.runtimeControls = { value, loadedAt: now, source: 'defaults', schemaReady: false };
+  const activateFailClosed = (reason, error = null) => {
+    const previous = memory.runtimeControls?.value;
+    const value = failClosedRuntimeControls(previous, reason);
+    memory.runtimeControls = {
+      value,
+      loadedAt: now,
+      source: 'fail_closed',
+      schemaReady: false,
+      failClosed: true,
+      ...(error ? { error: redactOpsString(error?.message || error, 160) } : {}),
+    };
     return { ...memory.runtimeControls, cached: false };
+  };
+
+  if (!hasSupabase(cfg)) {
+    return activateFailClosed('supabase_not_configured');
   }
 
   try {
     const row = await supaSelectOne(cfg, 'runtime_controls', { id: 'eq.global' });
-    const value = normalizeRuntimeControls(row || DEFAULT_RUNTIME_CONTROLS);
-    memory.runtimeControls = { value, loadedAt: now, source: row ? 'supabase' : 'defaults', schemaReady: Boolean(row) };
+    if (!row) return activateFailClosed('runtime_controls_missing');
+    const value = normalizeRuntimeControls(row);
+    memory.runtimeControls = { value, loadedAt: now, source: 'supabase', schemaReady: true, failClosed: false };
     return { ...memory.runtimeControls, cached: false };
   } catch (error) {
-    const previous = memory.runtimeControls?.value;
-    const value = previous || { ...DEFAULT_RUNTIME_CONTROLS };
-    memory.runtimeControls = { value, loadedAt: now, source: previous ? 'stale' : 'defaults', schemaReady: false, error: redactOpsString(error?.message || error, 160) };
-    return { ...memory.runtimeControls, cached: false };
+    return activateFailClosed('runtime_controls_unavailable', error);
   }
 }
 
@@ -721,6 +732,7 @@ function runtimeGuard(request, user, cfg, runtime) {
         method: String(request.method || 'GET').toUpperCase(),
         admin,
         providerFanout: Boolean(lockdown.providerFanout),
+        controlPlaneFailClosed: Boolean(lockdown.controlPlaneFailClosed),
         minuteBucket,
       },
     }).catch(() => {});
@@ -25674,7 +25686,11 @@ export default {
         code: 'SECURITY_LOCKDOWN_SCHEDULED_TASKS_PAUSED',
         message: 'Плановые фоновые задачи пропущены из-за активного Security Lockdown.',
         transitionKey: `security-lockdown:cron:${hourBucket}`,
-        meta: { hourBucket },
+        meta: {
+          hourBucket,
+          controlPlaneFailClosed: Boolean(runtimeState.value?.controlPlaneFailClosed),
+          runtimeSource: String(runtimeState.source || ''),
+        },
       }).catch(() => {});
       return undefined;
     }
