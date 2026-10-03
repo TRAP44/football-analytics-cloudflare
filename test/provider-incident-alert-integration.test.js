@@ -102,6 +102,8 @@ test('release health and production smoke require persistent and unknown-safe al
   for (const marker of [
     'providerIncidentAlertDelivery',
     'providerIncidentAlertPersistence',
+    'providerIncidentAlertLeaseRecovery',
+    'providerIncidentStableBotIdentity',
     'providerIncidentAlertUnknownSafety',
     'providerIncidentAlertDeliverySelfTest',
   ]) {
@@ -121,6 +123,8 @@ test('operational lifecycle includes watch, incident, recovery and delivery stat
 
 test('v6.26.2 adds two-phase reclaimable alert claims without weakening ambiguous-send safety', () => {
   assert.match(migration405,/status in \('claimed','sending','sent','retry_pending','terminal_failed','unknown'\)/);
+  assert.match(migration405,/destination_identity_version text not null default 'legacy'/);
+  assert.match(migration405,/destination_identity_version in \('legacy','stable_v1'\)/);
   assert.match(migration405,/create or replace function public\.claim_provider_incident_alert_delivery_v2/);
   assert.match(migration405,/create or replace function public\.begin_provider_incident_alert_delivery_send/);
   assert.match(migration405,/v_row\.status = 'claimed'/);
