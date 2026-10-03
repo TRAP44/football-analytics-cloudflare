@@ -110,3 +110,14 @@ Action: **Block**, не Challenge.
 - Custom Domains: https://developers.cloudflare.com/workers/configuration/routing/custom-domains/
 - WAF: https://developers.cloudflare.com/waf/
 - WAF Rate Limiting Rules: https://developers.cloudflare.com/waf/rate-limiting-rules/
+
+
+## Модель идентичности rate limit
+
+Cloudflare Rate Limiting используется только как defense-in-depth до бизнес-логики и не является механизмом аутентификации или авторизации.
+
+- Для Telegram API-запроса с `x-telegram-init-data` edge-key строится из криптографического хэша initData вместе с сетевым контекстом. Два валидных Telegram-пользователя за одним NAT/IP не делят один bucket.
+- Сырые IP, initData и Telegram user ID в ключах/логах limiter не сохраняются.
+- Если initData отсутствует, используется хэш сетевого IP как coarse fallback.
+- Ротация произвольного невалидного initData не отменяет отдельный Worker pre-auth IP burst guard: он остаётся независимым слоем защиты.
+- Успешное прохождение edge limiter ничего не говорит о валидности Telegram-подписи; криптографическая проверка initData и серверная авторизация выполняются отдельно.
