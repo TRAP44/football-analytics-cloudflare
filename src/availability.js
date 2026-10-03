@@ -1,28 +1,11 @@
+import { createPlayerIdentityResolver, normalizePlayerName } from './player-identity.js';
+
 function compactText(value = '') {
   return String(value || '').trim().replace(/\s+/g, ' ');
 }
 
 function normalizedName(value = '') {
-  return compactText(value)
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9а-яё]+/giu, ' ')
-    .trim()
-    .replace(/\s+/g, ' ');
-}
-
-function absenceMatchKeys(player = {}) {
-  const keys = [];
-  const id = Number(player?.id || 0);
-  if (id > 0) keys.push(`id:${id}`);
-  const name = normalizedName(player?.name || '');
-  if (name) keys.push(`name:${name}`);
-  return keys;
-}
-
-function absencePlayerKey(player = {}) {
-  return absenceMatchKeys(player)[0] || '';
+  return normalizePlayerName(value);
 }
 
 function categoryFromText(type = '', reason = '') {
@@ -83,8 +66,8 @@ function normalizeAbsenceRow(item = {}) {
   const category = categoryFromText(type, reason);
   const status = statusFromText(type, reason, category.key);
   return {
-    id: Number(player?.id || 0) || 0,
-    name: compactText(player?.name || 'Игрок'),
+    id: Number(player?.id || player?.playerId || player?.player_id || 0) || 0,
+    name: compactText(player?.name || player?.playerName || player?.player_name || 'Игрок'),
     type,
     reason,
     category: category.key,
@@ -96,12 +79,11 @@ function normalizeAbsenceRow(item = {}) {
   };
 }
 
-function lineupKeys(lineup = null) {
-  const keys = new Set();
-  for (const entry of [...(lineup?.startXI || []), ...(lineup?.substitutes || [])]) {
-    for (const key of absenceMatchKeys(entry)) keys.add(key);
-  }
-  return keys;
+function lineupEntries(lineup = null) {
+  return [
+    ...(Array.isArray(lineup?.startXI) ? lineup.startXI : []),
+    ...(Array.isArray(lineup?.substitutes) ? lineup.substitutes : []),
+  ];
 }
 
 function summarize(rows = []) {
@@ -124,23 +106,33 @@ function summarize(rows = []) {
 }
 
 export function normalizeFixtureAbsences(rows = [], { homeId = 0, awayId = 0, lineups = null } = {}) {
+  const list = Array.isArray(rows) ? rows : [];
+  const homeLineup = lineupEntries(lineups?.home || null);
+  const awayLineup = lineupEntries(lineups?.away || null);
+  const resolver = createPlayerIdentityResolver([
+    ...list.map(item => item?.player || {}),
+    ...homeLineup,
+    ...awayLineup,
+  ]);
   const bySide = { home: new Map(), away: new Map() };
-  for (const item of Array.isArray(rows) ? rows : []) {
+
+  for (const item of list) {
     const teamId = Number(item?.team?.id || 0);
     const side = teamId === Number(homeId) ? 'home' : teamId === Number(awayId) ? 'away' : '';
     if (!side) continue;
     const normalized = normalizeAbsenceRow(item);
-    const key = absencePlayerKey(normalized);
-    if (!key) continue;
-    bySide[side].set(key, mergeAbsenceRows(bySide[side].get(key), normalized));
+    const identity = resolver.resolve(normalized);
+    if (!identity.valid || !identity.key) continue;
+    bySide[side].set(identity.key, mergeAbsenceRows(bySide[side].get(identity.key), normalized));
   }
 
   const active = { home: [], away: [] };
   const resolvedByLineup = { home: [], away: [] };
+  const published = { home:homeLineup, away:awayLineup };
+
   for (const side of ['home', 'away']) {
-    const published = lineupKeys(lineups?.[side] || null);
     for (const [, item] of bySide[side]) {
-      const listed = absenceMatchKeys(item).some(key => published.has(key));
+      const listed = published[side].some(player => resolver.matches(item, player));
       if (listed) {
         resolvedByLineup[side].push({
           ...item,
@@ -168,10 +160,9 @@ export function normalizeFixtureAbsences(rows = [], { homeId = 0, awayId = 0, li
     },
     resolvedByLineup,
     source: 'api-football',
-    methodology: 'Потери нормализуются из fixture-level /injuries; игрок, присутствующий в опубликованном стартовом составе или запасе, исключается из активных потерь.',
+    methodology: 'Потери нормализуются по устойчивой identity-модели: известный ID имеет приоритет, имя используется только для ID-less alias без конфликта. Игрок снимается из активных потерь только при однозначном совпадении с опубликованным стартом или запасом.',
   };
 }
-
 
 function compactState(value = '') {
   return compactText(value).toLowerCase().replace(/\s+/g, '_');
@@ -186,12 +177,10 @@ function availabilitySourceTrusted(meta = {}) {
     && compactState(meta?.provenanceState) === 'verified';
 }
 
-function rawAbsenceIdentity(item = {}) {
-  const player = item?.player || {};
-  const id = Number(player?.id || 0);
-  if (Number.isInteger(id) && id > 0) return `id:${id}`;
-  const name = normalizedName(player?.name || '');
-  return name ? `name:${name}` : '';
+function identityIssueCode(reason = '') {
+  if (reason === 'name_alias_ambiguous') return 'player_identity_ambiguous';
+  if (reason === 'conflicting_known_ids') return 'player_identity_conflict';
+  return 'player_identity_missing';
 }
 
 export function assessFixtureAvailabilityQuality(rows = [], {
@@ -202,6 +191,7 @@ export function assessFixtureAvailabilityQuality(rows = [], {
 } = {}) {
   const list = Array.isArray(rows) ? rows : [];
   const sourceTrusted = availabilitySourceTrusted(injuriesMeta);
+  const resolver = createPlayerIdentityResolver(list.map(item => item?.player || {}));
   const accepted = new Set();
   const rejected = new Set();
   const issues = [];
@@ -212,25 +202,30 @@ export function assessFixtureAvailabilityQuality(rows = [], {
     const item = list[index] || {};
     const teamId = Number(item?.team?.id || 0);
     const side = teamId === Number(homeId) ? 'home' : teamId === Number(awayId) ? 'away' : '';
-    const identity = rawAbsenceIdentity(item);
+    const identity = resolver.resolve(item?.player || {});
 
     if (!side) {
       rejected.add(index);
       issues.push({ code:'team_mismatch', index, teamId:Number.isFinite(teamId) ? teamId : 0 });
       continue;
     }
-    if (!identity) {
+    if (!identity.valid || !identity.key) {
       rejected.add(index);
-      issues.push({ code:'player_identity_missing', index, side });
+      issues.push({
+        code:identityIssueCode(identity.reason),
+        index,
+        side,
+        normalizedName:identity.normalizedName || '',
+      });
       continue;
     }
 
     accepted.add(index);
-    if (!identitySides.has(identity)) identitySides.set(identity, new Set());
-    identitySides.get(identity).add(side);
-    const indices = identityRows.get(identity) || [];
+    if (!identitySides.has(identity.key)) identitySides.set(identity.key, new Set());
+    identitySides.get(identity.key).add(side);
+    const indices = identityRows.get(identity.key) || [];
     indices.push(index);
-    identityRows.set(identity, indices);
+    identityRows.set(identity.key, indices);
   }
 
   let crossTeamConflictCount = 0;
@@ -249,6 +244,8 @@ export function assessFixtureAvailabilityQuality(rows = [], {
   const rejectedIndices = [...rejected].sort((a, b) => a - b);
   const acceptedCount = acceptedIndices.length;
   const rejectedCount = rejectedIndices.length;
+  const ambiguousIdentityCount = issues.filter(issue => issue.code === 'player_identity_ambiguous').length;
+  const conflictingIdentityCount = issues.filter(issue => issue.code === 'player_identity_conflict').length;
 
   let state = 'unavailable';
   let label = 'Данные о потерях недоступны';
@@ -282,6 +279,8 @@ export function assessFixtureAvailabilityQuality(rows = [], {
     acceptedCount,
     rejectedCount,
     crossTeamConflictCount,
+    ambiguousIdentityCount,
+    conflictingIdentityCount,
     confidenceBearing:Boolean(sourceTrusted && acceptedCount > 0),
     acceptedIndices,
     rejectedIndices,
@@ -292,10 +291,12 @@ export function assessFixtureAvailabilityQuality(rows = [], {
     provenanceState:String(injuriesMeta?.provenanceState || 'unknown'),
     warnings:[
       ...(rejectedCount ? [`Исключены некорректные записи о потерях: ${rejectedCount}.`] : []),
+      ...(ambiguousIdentityCount ? [`Неоднозначные name-only идентичности игроков: ${ambiguousIdentityCount}.`] : []),
+      ...(conflictingIdentityCount ? [`Конфликтующие известные ID игроков: ${conflictingIdentityCount}.`] : []),
       ...(crossTeamConflictCount ? [`Обнаружены конфликты принадлежности игрока к командам: ${crossTeamConflictCount}.`] : []),
       ...(observed && !sourceTrusted ? ['Источник потерь не прошёл freshness/provenance guard.'] : []),
     ],
-    methodology:'Записи о травмах, болезнях и дисквалификациях участвуют в модели только при подтверждённом источнике, принадлежности одной из команд матча и однозначной идентификации игрока. Конфликты одной личности между обеими сторонами fail-closed исключаются.',
+    methodology:'Известный player ID является авторитетной identity. Name-only alias разрешается только при единственном совместимом ID; одинаковые имена с разными известными ID не объединяются. Неоднозначные alias и межкомандные конфликты fail-closed исключаются.',
   };
 }
 
