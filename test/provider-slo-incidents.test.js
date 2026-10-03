@@ -171,10 +171,12 @@ test('gapped windows cannot confirm an incident or recovery cadence', () => {
 test('duplicate and out-of-order windows are canonicalized before confirmation', () => {
   const first=window('2026-09-28T10:00:00Z','watch');
   const second=window('2026-09-28T10:15:00Z','watch');
+  const duplicate=structuredClone(first);
+  duplicate.metadata.windowId='alternate-id-for-same-interval';
   const report=buildProviderSloIncidentTimeline([
     second,
     first,
-    structuredClone(first),
+    duplicate,
   ],{nowMs:Date.parse('2026-09-28T10:20:00Z')});
   assert.equal(report.state,'watch');
   assert.equal(report.activeIncident?.active,true);
