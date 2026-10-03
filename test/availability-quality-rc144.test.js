@@ -114,3 +114,40 @@ test('RC144 exposes availability quality through UI and release contracts', () =
   assert.match(app, /availabilityQualityHintHtml\(d\.availabilityQuality\)/);
   assert.match(smoke, /'availabilitySemanticQualityGuard'/);
 });
+
+test('Issue #406 resolves mixed ID/name aliases without double-counting one absence', async () => {
+  const { normalizeFixtureAbsences } = await import('../src/availability.js');
+  const data=normalizeFixtureAbsences([
+    {team:{id:1},player:{id:44,name:'José Álvarez',type:'Injury'}},
+    {team:{id:1},player:{name:'Jose Alvarez',type:'Missing Fixture'}},
+  ],{homeId:1,awayId:2});
+  assert.equal(data.home.length,1);
+  assert.equal(data.home[0].id,44);
+  assert.equal(data.home[0].duplicateCount,2);
+});
+
+test('Issue #406 does not reconcile same-name players when both known IDs conflict', async () => {
+  const { normalizeFixtureAbsences } = await import('../src/availability.js');
+  const data=normalizeFixtureAbsences([
+    {team:{id:1},player:{id:10,name:'Alex Silva',type:'Injury'}},
+  ],{
+    homeId:1,awayId:2,
+    lineups:{home:{startXI:[{id:20,name:'Alex Silva'}],substitutes:[]}},
+  });
+  assert.equal(data.home.length,1);
+  assert.equal(data.home[0].id,10);
+  assert.equal(data.resolvedByLineup.home.length,0);
+});
+
+test('Issue #406 rejects ambiguous name-only aliases when the same name maps to different known IDs', () => {
+  const rows=[
+    {team:{id:1},player:{id:10,name:'Alex Silva',type:'Injury'}},
+    {team:{id:1},player:{id:20,name:'Alex Silva',type:'Injury'}},
+    {team:{id:1},player:{name:'Alex Silva',type:'Injury'}},
+  ];
+  const quality=assessFixtureAvailabilityQuality(rows,{homeId:1,awayId:2,injuriesMeta:trustedMeta});
+  assert.equal(quality.acceptedCount,2);
+  assert.equal(quality.rejectedCount,1);
+  assert.equal(quality.ambiguousIdentityCount,1);
+  assert.ok(quality.issues.some(issue=>issue.code==='player_identity_ambiguous'));
+});
