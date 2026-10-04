@@ -6,6 +6,43 @@ const TELEGRAM_BURST_POLICIES = Object.freeze({
   refresh: { limit: 4, windowMs: 30000, label: 'refresh' },
 });
 
+const TELEGRAM_DEDUPE_RISK = Object.freeze({
+  READ_ONLY: 'read_only',
+  IDEMPOTENT_MUTATION: 'idempotent_mutation',
+  EXTERNAL_SIDE_EFFECT: 'external_side_effect',
+  BILLING: 'billing',
+});
+
+function telegramUpdateDedupeRisk(update = {}) {
+  if (
+    update?.pre_checkout_query
+    || update?.subscription
+    || update?.message?.successful_payment
+    || update?.message?.refunded_payment
+  ) {
+    return { kind:TELEGRAM_DEDUPE_RISK.BILLING, highRisk:true };
+  }
+
+  if (update?.callback_query) {
+    const data=String(update?.callback_query?.data || '');
+    if (
+      /^(?:digest:(?:on|off)|favorite:toggle:\d+:\d+|postmatch:return:(?:on|off))$/.test(data)
+    ) {
+      return { kind:TELEGRAM_DEDUPE_RISK.IDEMPOTENT_MUTATION, highRisk:true };
+    }
+    return { kind:TELEGRAM_DEDUPE_RISK.EXTERNAL_SIDE_EFFECT, highRisk:true };
+  }
+
+  const text=String(update?.message?.text || '').trim();
+  if (
+    /^\/(?:start|digest|digest_off)(?:@\w+)?(?:\s|$)/i.test(text)
+  ) {
+    return { kind:TELEGRAM_DEDUPE_RISK.IDEMPOTENT_MUTATION, highRisk:true };
+  }
+
+  return { kind:TELEGRAM_DEDUPE_RISK.READ_ONLY, highRisk:false };
+}
+
 export function createTelegramDedupeRuntime({
   memory,
   pruneMemoryState,
@@ -42,8 +79,27 @@ export function createTelegramDedupeRuntime({
     if (key) memory.telegramUpdateDedupe.delete(key);
   }
 
-  async function claimTelegramUpdatePersistent(cfg, key='') {
-    if (!key || !hasSupabase(cfg)) return { persistent:false, claimed:true, duplicate:false, status:'fallback' };
+  function degradedTelegramDedupeDecision(update = {}) {
+    const risk=telegramUpdateDedupeRisk(update);
+    bumpTelemetry('telegramPersistentDedupeUnavailable');
+    if (risk.highRisk) {
+      bumpTelemetry('telegramDedupeFailClosedHighRisk');
+      return {
+        persistent:false,
+        claimed:false,
+        duplicate:false,
+        status:'fail_closed',
+        retry:true,
+        retryAfter:3,
+        risk:risk.kind,
+      };
+    }
+    bumpTelemetry('telegramDedupeSafeFallbacks');
+    return { persistent:false, claimed:true, duplicate:false, status:'fallback' };
+  }
+
+  async function claimTelegramUpdatePersistent(cfg, key='', update = {}) {
+    if (!key || !hasSupabase(cfg)) return degradedTelegramDedupeDecision(update);
     try {
       const claimed=Boolean(await supaRpc(cfg,'claim_telegram_update',{p_update_key:key,p_lease_seconds:90},1800));
       if (!claimed) {
@@ -53,7 +109,7 @@ export function createTelegramDedupeRuntime({
       return { persistent:true, claimed:true, duplicate:false, status:'claimed' };
     } catch {
       bumpTelemetry('telegramDedupeFallbacks');
-      return { persistent:false, claimed:true, duplicate:false, status:'fallback' };
+      return degradedTelegramDedupeDecision(update);
     }
   }
 
@@ -191,6 +247,7 @@ export function createTelegramDedupeRuntime({
 
   return {
     telegramUpdateDedupeKey,
+    telegramUpdateDedupeRisk,
     claimTelegramUpdate,
     completeTelegramUpdate,
     releaseTelegramUpdate,
