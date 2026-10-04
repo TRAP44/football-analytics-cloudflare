@@ -131,7 +131,7 @@ test('normal runtime state preserves existing routing', () => {
 });
 
 test('worker and admin surface wire lockdown into history, rollback-safe runtime controls and cron suppression', () => {
-  const worker = fs.readFileSync('src/worker.js', 'utf8');
+  const worker = (fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'));
   const runtimeControls = fs.readFileSync('src/runtime-controls.js', 'utf8');
   const admin = fs.readFileSync('public/admin.html', 'utf8');
   const module = fs.readFileSync('public/modules/admin-runtime-controls.js', 'utf8');
@@ -160,7 +160,7 @@ test('Telegram lockdown blocks new actions and checkout but preserves payment/re
 });
 
 test('worker applies Telegram lockdown before checkout, callbacks and bot business routing', () => {
-  const worker = fs.readFileSync('src/worker.js', 'utf8');
+  const worker = (fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'));
   const start = worker.indexOf('async function processTelegramUpdate');
   const preCheckout = worker.indexOf('if (update.pre_checkout_query)', start);
   const callback = worker.indexOf('if (update.callback_query)', start);
