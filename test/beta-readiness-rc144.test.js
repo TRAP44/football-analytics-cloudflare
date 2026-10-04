@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const app = fs.readFileSync('public/app.js', 'utf8') + '\n' + fs.readFileSync('public/modules/global-search-controller.js', 'utf8');
+const matchCenterController = fs.readFileSync('public/modules/match-center-controller.js', 'utf8');
 const profileAccessState = fs.readFileSync('public/modules/profile-access-state.js', 'utf8');
 const journeyState = fs.readFileSync('public/modules/journey-state.js', 'utf8');
 const historyRenderer = fs.readFileSync('public/modules/history-renderer.js', 'utf8');
@@ -48,10 +49,12 @@ test('beta product analytics are privacy-safe and server allowlisted', () => {
 
 test('critical Mini App journey emits bounded product events without user search text', () => {
   for (const action of [
-    'matches_open','match_open','live_open','ai_start','ai_complete',
-    'history_open','history_item_open','profile_open',
+    'matches_open','ai_start','ai_complete','history_open','history_item_open','profile_open',
   ]) {
     assert.ok(app.includes("sendProductAction('" + action + "'"), action);
+  }
+  for (const action of ['match_open','live_open']) {
+    assert.ok(matchCenterController.includes("productAction('" + action + "'"), action);
   }
   assert.ok(app.includes("productAction('search_used'"), 'search_used');
   assert.match(app,/productAction\(totalMatches \|\| totalEntities \? 'search_found' : 'search_empty','searchView'\)/);
@@ -62,8 +65,11 @@ test('critical Mini App journey emits bounded product events without user search
 });
 
 test('main action failures are measured by category without leaking backend details', () => {
-  for (const action of ['matches','match','live_refresh','ai','history','profile']) {
+  for (const action of ['matches','ai','history','profile']) {
     assert.ok(app.includes("sendActionError('" + action + "'"), action);
+  }
+  for (const action of ['match','live_refresh']) {
+    assert.ok(matchCenterController.includes("actionError('" + action + "'"), action);
   }
   assert.ok(app.includes("actionError('search'"), 'search');
   const helper = block(app, 'function sendActionError', 'function sendOperationTiming');
@@ -78,10 +84,10 @@ test('match and AI transitions have explicit loading error and retry states', ()
   assert.match(journeyState, /function renderJourneyState/);
   assert.match(journeyState, /analysisStateRetry/);
   assert.match(app, /createJourneyStateModule/);
-  const center = block(app, 'async function openMatchCenter', 'function syncAnalysisBusyUi');
+  const center = block(matchCenterController, 'async function openMatchCenter', 'return Object.freeze');
   assert.match(center, /showView\('analysisView'\)/);
-  assert.match(center, /renderJourneyState\('loading'/);
-  assert.match(center, /renderJourneyState\('error'/);
+  assert.match(center, /renderJourney\('loading'/);
+  assert.match(center, /renderJourney\('error'/);
   assert.match(center, /retry: \(\) => openMatchCenter/);
 
   const analysis = block(app, 'async function analyzeMatch', 'function historyItemFromAnalysis');
@@ -93,18 +99,17 @@ test('match and AI transitions have explicit loading error and retry states', ()
 });
 
 test('LIVE refresh is interval-sized, stale-safe and recovers from transient errors', () => {
-  const live = block(app, 'function isActiveLiveFixture', 'function signedPp');
+  const live = block(matchCenterController, 'function isActiveLiveFixture', 'async function openMatchCenter');
   assert.doesNotMatch(live, /setInterval\s*\(/);
-  assert.match(live, /setTimeout\(async \(\) =>/);
+  assert.match(live, /setTimer\(async \(\) =>/);
   assert.match(live, /delayMs/);
   assert.match(live, /activeViewId\(\) === 'analysisView'/);
   assert.match(live, /currentCenter\?\.match\?\.fixtureId/);
   assert.match(live, /if \(!data \|\| !isActiveLiveFixture\(fixtureId\)\) return/);
   assert.match(live, /Не удалось обновить\. Повторим автоматически\./);
-  assert.match(live, /sendActionError\('live_refresh'/);
-  assert.doesNotMatch(live, /toast\(e\.message\)/);
-  const stop = block(app, 'function stopLiveRefresh', 'function viewBackTarget');
-  assert.match(stop, /clearTimeout\(state\.liveRefreshTimer\)/);
+  assert.match(live, /actionError\('live_refresh'/);
+  assert.doesNotMatch(live, /showToast\(error\?\.message\)/);
+  assert.match(live, /clearTimer\(liveRefreshTimer\)/);
 });
 
 test('history profile and match-list recovery states are actionable', () => {
