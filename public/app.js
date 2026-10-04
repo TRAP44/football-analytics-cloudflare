@@ -2429,6 +2429,7 @@ let renderGlobalSearch = () => {};
 
 const {
   localDiscoveryResults,
+  mergeById,
   runGlobalSearch,
   setGlobalSearchMode,
   bindGlobalSearchControls,
@@ -2455,15 +2456,7 @@ const {
   querySelectorAll: selector => document.querySelectorAll(selector),
   escapeHtml,
   localDiscoveryResults,
-  mergeById: (first = [], second = [], idKey = 'id') => {
-    const seen = new Set(), out = [];
-    for (const row of [...first, ...second]) {
-      const id = Number(row?.[idKey] || 0);
-      if (!id || seen.has(id)) continue;
-      seen.add(id); out.push(row);
-    }
-    return out;
-  },
+  mergeById,
   russianCountLabel,
   searchTeamSummaryCard,
   knownTeamSummaryCard,
