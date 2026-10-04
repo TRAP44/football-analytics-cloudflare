@@ -28,6 +28,7 @@ const myTeamsRenderer = fs.readFileSync('public/modules/my-teams-renderer.js', '
 const historyRenderer = fs.readFileSync('public/modules/history-renderer.js', 'utf8');
 const aiTrackRecordRenderer = fs.readFileSync('public/modules/ai-track-record-renderer.js', 'utf8');
 const globalSearchRenderer = fs.readFileSync('public/modules/global-search-renderer.js', 'utf8');
+const globalSearchController = fs.readFileSync('public/modules/global-search-controller.js', 'utf8');
 const launchFunnelFrontend = app + '\n' + adminLaunchFunnel;
 const appRuntime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
@@ -261,10 +262,12 @@ if (app.includes('Здесь нет рекламного «процента по
 if (!app.includes('async function loadAiTrackRecord(force = false)') || !app.includes("/api/ai-track-record?days=180")) failures.push('AI track record loading lifecycle must remain in composition root');
 if (/\/api\/ai-track-record|\bapi\s*\(|fetch\s*\(/.test(aiTrackRecordRenderer)) failures.push('AI track record renderer captured network lifecycle');
 if (!fs.existsSync('test/global-search-renderer-extraction.test.js')) failures.push('Missing global search renderer extraction regression test');
+if (!fs.existsSync('test/global-search-controller-issue441.test.js')) failures.push('Missing global search controller regression test');
 if (!app.includes("import { createGlobalSearchRenderer } from './modules/global-search-renderer.js'") || !globalSearchRenderer.includes('export function createGlobalSearchRenderer')) failures.push('Global search renderer extraction contract is missing');
-if (!app.includes('const { renderGlobalSearch } = createGlobalSearchRenderer({') || !app.includes('onRetry: () => runGlobalSearch({ manual:true })') || !app.includes('onSetMode: mode => setGlobalSearchMode(mode)')) failures.push('Global search renderer lifecycle dependencies must remain explicitly wired from composition root');
+if (!app.includes("import { createGlobalSearchController } from './modules/global-search-controller.js'") || !globalSearchController.includes('export function createGlobalSearchController')) failures.push('Global search controller extraction contract is missing');
+if (!app.includes('createGlobalSearchController({') || !app.includes('onRetry: () => runGlobalSearch({ manual:true })') || !app.includes('onSetMode: mode => setGlobalSearchMode(mode)') || !app.includes('bindGlobalSearchControls();')) failures.push('Global search lifecycle dependencies must remain explicitly wired from composition root');
 if (app.includes('function renderGlobalSearch()') || app.includes('class="search-result-block compact-entity-results"') || app.includes('class="empty search-empty-state"')) failures.push('Global search renderer implementation leaked back into shared app root');
-if (!app.includes('async function runGlobalSearch({ manual = false } = {})') || !app.includes('/api/search?q=')) failures.push('Global search network lifecycle must remain in composition root');
+if (app.includes('async function runGlobalSearch(') || !globalSearchController.includes('async function runGlobalSearch(') || !globalSearchController.includes('/api/search?q=')) failures.push('Global search network lifecycle must remain in extracted controller');
 if (/\/api\/search|\bapi\s*\(|sendProductAction|sendActionError/.test(globalSearchRenderer)) failures.push('Global search renderer captured network or telemetry lifecycle');
 if (!app.includes("import('./modules/admin-launch-funnel.js')") || !adminLaunchFunnel.includes('export function createAdminLaunchFunnelModule')) failures.push('Admin launch funnel lazy extraction contract is missing');
 if (app.includes('Собираю first-party воронку') || app.includes('newsImpactRecoveryIncidentSloBreachImpactRanking')) failures.push('Admin launch funnel implementation leaked back into shared app root');
@@ -274,10 +277,10 @@ if (!app.includes('onLeaveView: ({ from, to, options }) => {')) failures.push('N
 if (!fs.existsSync('test/unified-search.test.js')) failures.push('Missing unified search regression test');
 if (!worker.includes("url.pathname === '/api/history-analysis'")) failures.push('Missing quota-safe history analysis route');
 if (!app.includes('tg.BackButton.onClick(handleBackNavigation)')) failures.push('Telegram BackButton navigation is not wired');
-if (!app.includes('state.globalSearch.requestSeq')) failures.push('Global search stale-response guard is missing');
+if (!globalSearchController.includes('state.globalSearch.requestSeq') || !globalSearchController.includes('seq !== state.globalSearch.requestSeq')) failures.push('Global search stale-response guard is missing');
 if (!worker.includes('searchLeagueFixtures: true')) failures.push('League fixture search capability is missing');
 if (!worker.includes('loadSearchCompetitionMatches')) failures.push('League fixture search loader is missing');
-if (!app.includes('data.matches || []')) failures.push('Client does not hydrate server-side league matches');
+if (!globalSearchController.includes('remoteMatches:data.matches || []')) failures.push('Client does not hydrate server-side league matches');
 if (!fs.existsSync('test/interaction-safety.test.js')) failures.push('Missing interaction-safety regression test');
 if (!app.includes('analysisActionPending: false')) failures.push('Analysis duplicate-submit guard is missing');
 if (!app.includes('matchCenterRequestSeq: 0')) failures.push('Match-center stale-response guard is missing');
