@@ -14,7 +14,7 @@ import {
   preAuthRequestShapeDecision,
 } from './security-gate.js';
 import { cloudflareEdgeGuard, cloudflareEdgePolicies } from './edge-security.js';
-import { failClosedRuntimeControls, isSecurityLockdownControls, runtimeLockdownDecision, telegramLockdownDecision } from './runtime-lockdown.js';
+import { isSecurityLockdownControls, telegramLockdownDecision } from './runtime-lockdown.js';
 import { createRuntimeControlsRuntime } from './runtime-controls.js';
 import { assessSecuritySignals, formatSecurityIncidentAlert, securityIncidentOpsEvent, securityIncidentTimeline } from './security-incidents.js';
 import { channelPublisherState, publishChannelMessage } from './channel-publisher.js';
