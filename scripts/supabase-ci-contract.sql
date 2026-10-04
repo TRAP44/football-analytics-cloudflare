@@ -66,6 +66,9 @@ begin
        'public.claim_scheduled_job(text,text,timestamp with time zone,integer,integer)'
      ) is null
      or to_regprocedure(
+       'public.renew_scheduled_job(text,text,integer)'
+     ) is null
+     or to_regprocedure(
        'public.record_ops_event_occurrence(timestamp with time zone,text,text,text,text,text,text,text,integer,integer,jsonb)'
      ) is null
      or to_regprocedure(
@@ -92,6 +95,9 @@ begin
       to_regprocedure('public.claim_telegram_update(text,integer)'),
       to_regprocedure(
         'public.claim_scheduled_job(text,text,timestamp with time zone,integer,integer)'
+      ),
+      to_regprocedure(
+        'public.renew_scheduled_job(text,text,integer)'
       ),
       to_regprocedure(
         'public.record_ops_event_occurrence(timestamp with time zone,text,text,text,text,text,text,text,integer,integer,jsonb)'
@@ -132,6 +138,11 @@ begin
      or not has_function_privilege(
        'service_role',
        'public.claim_scheduled_job(text,text,timestamp with time zone,integer,integer)',
+       'EXECUTE'
+     )
+     or not has_function_privilege(
+       'service_role',
+       'public.renew_scheduled_job(text,text,integer)',
        'EXECUTE'
      )
      or not has_function_privilege(
@@ -190,6 +201,16 @@ begin
      or has_function_privilege(
        'authenticated',
        'public.claim_scheduled_job(text,text,timestamp with time zone,integer,integer)',
+       'EXECUTE'
+     )
+     or has_function_privilege(
+       'anon',
+       'public.renew_scheduled_job(text,text,integer)',
+       'EXECUTE'
+     )
+     or has_function_privilege(
+       'authenticated',
+       'public.renew_scheduled_job(text,text,integer)',
        'EXECUTE'
      )
      or has_function_privilege(
@@ -287,7 +308,7 @@ begin
   if not exists (
     select 1
     from supabase_migrations.schema_migrations
-    where version='20260101001600'
+    where version='20260101001700'
   ) then
     raise exception 'Supabase integration contract: latest migration history entry missing';
   end if;
