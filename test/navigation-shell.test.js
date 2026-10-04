@@ -228,12 +228,15 @@ test('focus is released before its old view becomes hidden', () => {
   assert.equal(elements.matchesView.hidden, true);
 });
 
-test('regression guard keeps live-refresh implementation in app composition root only', () => {
+test('regression guard keeps navigation shell generic while Match Center owns live refresh', () => {
   const app = fs.readFileSync('public/app.js', 'utf8');
   const shell = fs.readFileSync('public/modules/navigation-shell.js', 'utf8');
+  const matchCenterController = fs.readFileSync('public/modules/match-center-controller.js', 'utf8');
 
-  assert.match(app, /function stopLiveRefresh\(\)/);
-  assert.match(app, /onLeaveView:\s*\(\{ from, to, options \}\) => \{[\s\S]*?stopLiveRefresh\(\)/);
+  assert.match(app, /function deactivateLiveRefresh\(\)[\s\S]*?matchCenterController\?\.deactivateLiveRefresh\(\)/);
+  assert.match(app, /onLeaveView:\s*\(\{ from, to, options \}\) => \{[\s\S]*?deactivateLiveRefresh\(\)/);
+  assert.match(matchCenterController, /function stopLiveRefresh\(\)/);
+  assert.match(matchCenterController, /let liveRefreshTimer = null/);
   assert.doesNotMatch(shell, /stopLiveRefresh|liveRefreshTimer|provider|supabase|api\(/i);
   assert.match(app, /createFirstRunGuideController\([\s\S]*?showView:\s*\(id, options\) => showView\(id, options\)/);
   assert.match(app, /function applyLaunchIntent\(\)[\s\S]*?showView\('searchView'\)/);
