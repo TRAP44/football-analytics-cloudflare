@@ -162,3 +162,36 @@ from pg_class c
 join pg_namespace n on n.oid=c.relnamespace
 where n.nspname='public' and c.relkind='S'
 order by c.relname;
+
+
+select
+  'COLUMN_DETAIL' as marker,
+  c.table_name,
+  c.column_name,
+  c.data_type,
+  coalesce(c.udt_name,'') as udt_name,
+  c.is_nullable
+from information_schema.columns c
+where c.table_schema='public'
+order by c.table_name,c.ordinal_position;
+
+select
+  'CONSTRAINT_DETAIL' as marker,
+  c.relname as table_name,
+  pc.conname as object_name,
+  pc.contype::text as object_type,
+  pg_get_constraintdef(pc.oid,true) as definition
+from pg_constraint pc
+join pg_class c on c.oid=pc.conrelid
+join pg_namespace n on n.oid=c.relnamespace
+where n.nspname='public'
+order by c.relname,pc.conname;
+
+select
+  'INDEX_DETAIL' as marker,
+  i.tablename as table_name,
+  i.indexname as object_name,
+  i.indexdef as definition
+from pg_indexes i
+where i.schemaname='public'
+order by i.tablename,i.indexname;
