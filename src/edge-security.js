@@ -36,10 +36,6 @@ const SCANNER_PATH_PATTERNS = Object.freeze([
   /(?:^|\/)cgi-bin(?:\/|$)/i,
 ]);
 
-function header(request, name) {
-  return String(request?.headers?.get?.(name) || '').trim();
-}
-
 async function requestFingerprint(request, secret='') {
   // First-stage edge identity is deliberately independent of Telegram
   // credentials. Attacker-controlled initData must never create a fresh
