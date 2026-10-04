@@ -33,6 +33,14 @@ function inMemoryLeaseBackend() {
     return {claimed:true,persistent:true,reason:'claimed',jobKey,groupKey,leaseToken};
   }
 
+  async function renewScheduledJob(_cfg,claim={}) {
+    const row=rows.get(claim.jobKey);
+    if (!row || row.leaseToken!==claim.leaseToken || row.status!=='running') {
+      return {renewed:false,reason:'ownership_lost',jobKey:claim.jobKey,groupKey:claim.groupKey};
+    }
+    return {renewed:true,reason:'renewed',jobKey:claim.jobKey,groupKey:row.groupKey,lockedUntil:new Date(Date.now()+720000).toISOString()};
+  }
+
   async function completeScheduledJob(_cfg,claim={}) {
     const row=rows.get(claim.jobKey);
     if (!row || row.leaseToken!==claim.leaseToken || row.status!=='running') return false;
@@ -51,7 +59,7 @@ function inMemoryLeaseBackend() {
     return true;
   }
 
-  return {rows,activeByGroup,claimScheduledJob,completeScheduledJob,releaseScheduledJob};
+  return {rows,activeByGroup,claimScheduledJob,renewScheduledJob,completeScheduledJob,releaseScheduledJob};
 }
 
 function runtime(overrides = {}) {
@@ -87,6 +95,7 @@ function runtime(overrides = {}) {
     runSettlementFinalityVerification: async () => { calls.push('settlement_finality'); return { ok: true }; },
     recordOpsEvent: async (_cfg, event) => { events.push(event); },
     claimScheduledJob: leases.claimScheduledJob,
+    renewScheduledJob: leases.renewScheduledJob,
     completeScheduledJob: leases.completeScheduledJob,
     releaseScheduledJob: leases.releaseScheduledJob,
     ...overrides,
