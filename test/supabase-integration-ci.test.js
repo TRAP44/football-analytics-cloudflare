@@ -34,7 +34,7 @@ test('Issue #433 upgrade plan stops before latest and appends only latest migrat
   const latest = buildMigrationPlan('latest-only');
 
   assert.equal(base[0].source, releaseContract.freshInstallBaseline);
-  assert.equal(base.at(-1).source, 'supabase/migrations/supabase_migration_v6_26_3.sql');
+  assert.equal(base.at(-1).source, 'supabase/migrations/supabase_migration_v6_27.sql');
   assert.equal(latest.length, 1);
   assert.equal(latest[0].source, releaseContract.latestMigration);
   assert.ok(base.at(-1).version < latest[0].version);
@@ -54,6 +54,8 @@ test('Issue #433 Quality contains a secret-free executable Supabase database gat
   assert.match(quality, /prepare-supabase-ci-migrations\.js/);
   assert.match(quality, /supabase-concurrency-gate\.js/);
   assert.match(quality, /supabase-ci-contract\.sql/);
+  assert.match(quality, /supabase_migration_v6_27_1\.sql/);
+  assert.match(quality, /PRE_LATEST_RENEW/);
   assert.match(quality, /migration up/);
   assert.match(quality, /Fresh-install baseline unexpectedly applied/);
   assert.doesNotMatch(quality, /secrets\.SUPABASE_/);

@@ -162,10 +162,68 @@ async function testScheduledLease() {
     'scheduled group lease must grant exactly one concurrent owner',
   );
 
+  const owner=decoded.find((item)=>item.claimed===true);
+  assert.ok(owner?.jobKey,'scheduled lease owner must expose its job key');
+  assert.ok(owner?.leaseToken,'scheduled lease owner must expose its lease token');
+
+  const before=await psql(
+    "select extract(epoch from locked_until)::bigint from public.scheduled_job_leases where job_key='"
+      + owner.jobKey + "';",
+  );
+  await psql("select pg_sleep(0.05);");
+  const renewed=parseJson(await serviceRoleQuery(
+    "select public.renew_scheduled_job('" + owner.jobKey + "','"
+      + owner.leaseToken + "',120)::text;",
+  ),'renew_scheduled_job');
+  assert.equal(renewed.renewed,true,'active owner heartbeat must renew its lease');
+
+  const after=await psql(
+    "select extract(epoch from locked_until)::bigint from public.scheduled_job_leases where job_key='"
+      + owner.jobKey + "';",
+  );
+  assert.ok(Number(after)>=Number(before),'heartbeat must not shorten the active lease');
+
+  const staleRenew=parseJson(await serviceRoleQuery(
+    "select public.renew_scheduled_job('" + owner.jobKey
+      + "','stale-token-000000000000',120)::text;",
+  ),'renew_scheduled_job stale token');
+  assert.equal(staleRenew.renewed,false,'stale lease token must not renew ownership');
+
+  const overlapping=parseJson(await serviceRoleQuery(
+    "select public.claim_scheduled_job('ci-433-scheduled-job-heartbeat-overlap','"
+      + group + "',clock_timestamp(),120,600)::text;",
+  ),'claim_scheduled_job heartbeat overlap');
+  assert.equal(overlapping.claimed,false,'second run must stay blocked while heartbeat lease is active');
+  assert.equal(overlapping.reason,'overlap');
+
+  await psql(
+    "update public.scheduled_job_leases set locked_until=clock_timestamp()-interval '1 second'"
+      + " where job_key='" + owner.jobKey + "';",
+  );
+
+  const staleComplete=parsePgBoolean(await serviceRoleQuery(
+    "select public.complete_scheduled_job('" + owner.jobKey + "','"
+      + owner.leaseToken + "');",
+  ),'complete_scheduled_job expired owner');
+  assert.equal(staleComplete,false,'expired owner must not complete after ownership loss');
+
+  const reclaimed=parseJson(await serviceRoleQuery(
+    "select public.claim_scheduled_job('ci-433-scheduled-job-reclaimed','"
+      + group + "',clock_timestamp(),120,600)::text;",
+  ),'claim_scheduled_job reclaim');
+  assert.equal(reclaimed.claimed,true,'group lease must be reclaimable after heartbeat stops and lease expires');
+  assert.notEqual(reclaimed.leaseToken,owner.leaseToken,'reclaim must issue a new owner token');
+
+  const staleRelease=parsePgBoolean(await serviceRoleQuery(
+    "select public.release_scheduled_job('" + owner.jobKey + "','"
+      + owner.leaseToken + "');",
+  ),'release_scheduled_job stale owner');
+  assert.equal(staleRelease,false,'stale owner must not release after another run reclaimed the group');
+
   const rows = Number(await psql(
     "select count(*) from public.scheduled_job_leases where group_key='" + group + "';",
   ));
-  assert.equal(rows, 1, 'overlapping scheduled claims must not create competing lease rows');
+  assert.equal(rows, 2, 'reclaim should retain the stale audit row and create one current owner row');
 }
 
 async function testSensitiveMutationIdempotency() {
@@ -256,7 +314,7 @@ export async function runConcurrencyGate() {
   }
 
   console.log(
-    'Supabase concurrency gate passed: quota, provider budget, Telegram dedupe, scheduled lease and sensitive mutation idempotency.',
+    'Supabase concurrency gate passed: quota, provider budget, Telegram dedupe, renewable scheduled lease and sensitive mutation idempotency.',
   );
 }
 
