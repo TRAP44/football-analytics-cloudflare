@@ -9,6 +9,9 @@ import {
 } from '../src/referral-attribution.js';
 import { createTelegramLinksRuntime } from '../src/telegram-links.js';
 
+const growthReferral=fs.readFileSync('src/growth-referral.js','utf8');
+const backendSource=fs.readFileSync('src/worker.js','utf8')+'\n'+growthReferral;
+
 function cleanLaunchPart(value, maxLength = 24) {
   return String(value || '')
     .trim()
@@ -68,15 +71,14 @@ test('referral attribution blocks forged, self and duplicate attribution', () =>
   assert.equal(referralAttributionDecision({referredUserId:2,referrerUserId:1,referralCode:code}).status,'accepted');
 });
 
-test('worker uses idempotent growth events for share and referral lifecycle', () => {
-  const worker=fs.readFileSync('src/worker.js','utf8');
+test('backend growth/referral domain uses idempotent growth events for share and referral lifecycle', () => {
   for (const event of ['share_created','share_open','referral_open','referred_first_open','referred_payment']) {
-    assert.ok(worker.includes(`eventName:'${event}'`) || worker.includes(`event_name:'${event}'`), `missing ${event}`);
+    assert.ok(backendSource.includes(`eventName:'${event}'`) || backendSource.includes(`event_name:'${event}'`), `missing ${event}`);
   }
-  assert.match(worker,/supaSelectOne\(cfg,'growth_events',\{event_key:\`eq\.\${dedupeKey}\`\}\)/);
-  assert.match(worker,/eventKey:\`share_open:\${userId}:\${startParam}\`/);
-  assert.match(worker,/referralAttributionDecision/);
-  assert.match(worker,/referral_code:referral\.referralCode/);
+  assert.match(growthReferral,/supaSelectOne\(cfg,'growth_events',\{event_key:\`eq\.\$\{dedupeKey\}\`\}\)/);
+  assert.match(backendSource,/eventKey:\`share_open:\$\{userId\}:\$\{startParam\}\`/);
+  assert.match(growthReferral,/referralAttributionDecision/);
+  assert.match(growthReferral,/referral_code:referral\.referralCode/);
 });
 
 test('share UX stays single-action and omits invented AI signal when signal is unavailable', () => {
