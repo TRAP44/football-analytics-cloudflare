@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8')+'\n'+readFileSync(new URL('../src/router.js',import.meta.url),'utf8')+'\n'+readFileSync(new URL('../src/auth-user.js',import.meta.url),'utf8');
 const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8')+'\n'+readFileSync(new URL('../public/modules/global-search-controller.js',import.meta.url),'utf8');
 const matchCenterController=readFileSync(new URL('../public/modules/match-center-controller.js',import.meta.url),'utf8');
+const analysisController=readFileSync(new URL('../public/modules/analysis-controller.js',import.meta.url),'utf8');
 const html=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
 const adminHtml=readFileSync(new URL('../public/admin.html',import.meta.url),'utf8');
 
@@ -25,7 +26,7 @@ test('closed beta telemetry adds bounded operation timings only',()=>{
   assert.match(app,/function sendOperationTiming/);
   assert.match(app,/operationTiming\('search'/);
   assert.match(matchCenterController,/timing\('match'/);
-  assert.match(app,/sendOperationTiming\('ai'/);
+  assert.match(analysisController,/timing\('ai'/);
   assert.match(matchCenterController,/timing\('live'/);
 });
 
