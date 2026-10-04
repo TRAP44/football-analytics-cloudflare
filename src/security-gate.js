@@ -232,6 +232,7 @@ export async function enforceDistributedPreAuthRateLimit({
 
   if (!fingerprint) {
     if (policy.failClosed && !cfg?.devMode) {
+      const hourBucket=new Date().toISOString().slice(0,13);
       void recordOpsEvent(cfg,{
         severity:'warning',
         source:'security',
@@ -240,7 +241,8 @@ export async function enforceDistributedPreAuthRateLimit({
         message:'Sensitive pre-auth request was rejected because a stable network fingerprint was unavailable.',
         endpoint,
         status:503,
-        meta:{scope:policy.scope,failClosed:true},
+        transitionKey:`preauth-network-id-unavailable:${policy.scope}:${endpoint}:${hourBucket}`,
+        meta:{scope:policy.scope,failClosed:true,hourBucket},
       }).catch(()=>{});
       return failClosedResponse();
     }
@@ -263,6 +265,7 @@ export async function enforceDistributedPreAuthRateLimit({
     if (result?.allowed) return null;
 
     const retryAfter=Math.max(1,Number(result?.retryAfter || policy.windowSeconds));
+    const minuteBucket=new Date().toISOString().slice(0,16);
     bumpTelemetry('securityPreAuthBlocks');
     await recordOpsEvent(cfg,{
       severity:policy.scope==='admin' ? 'warning' : 'info',
@@ -272,11 +275,13 @@ export async function enforceDistributedPreAuthRateLimit({
       message:'Unauthenticated request burst was blocked before Telegram credential verification.',
       endpoint,
       status:429,
+      transitionKey:`preauth-rate-blocked:${policy.scope}:${endpoint}:${minuteBucket}`,
       meta:{
         scope:policy.scope,
         limit:policy.limit,
         windowSeconds:policy.windowSeconds,
         retryAfter,
+        minuteBucket,
       },
     }).catch(()=>{});
     return json({
@@ -285,6 +290,7 @@ export async function enforceDistributedPreAuthRateLimit({
       retryAfter,
     },429,{'retry-after':String(retryAfter),'cache-control':'no-store'});
   } catch (error) {
+    const hourBucket=new Date().toISOString().slice(0,13);
     bumpTelemetry('securityPreAuthFallbacks');
     await recordOpsEvent(cfg,{
       severity:policy.failClosed ? 'error' : 'warning',
@@ -294,7 +300,8 @@ export async function enforceDistributedPreAuthRateLimit({
       message:String(error?.message || error || 'distributed pre-auth limiter unavailable').slice(0,240),
       endpoint,
       status:policy.failClosed ? 503 : null,
-      meta:{scope:policy.scope,failClosed:policy.failClosed},
+      transitionKey:`preauth-rate-degraded:${policy.scope}:${endpoint}:${hourBucket}`,
+      meta:{scope:policy.scope,failClosed:policy.failClosed,hourBucket},
     }).catch(()=>{});
 
     if (policy.failClosed && !cfg?.devMode) return failClosedResponse();
