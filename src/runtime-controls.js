@@ -22,7 +22,7 @@ export function createRuntimeControlsRuntime({
   redactOpsString,
   json,
   isAdminUser,
-  clock = () => Date.clock(),
+  clock = () => Date.now(),
 }) {
   function runtimeControlsSnapshot() {
     return memory.runtimeControls?.value || { ...DEFAULT_RUNTIME_CONTROLS };
