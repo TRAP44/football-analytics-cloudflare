@@ -157,11 +157,11 @@ export function createSupabaseClient({ fetchWithTimeout, redactMessage, sleepMs 
     }
   }
 
-  async function supaRpc(cfg, functionName, payload = {}, timeoutMs = 7000) {
+  async function supaRpc(cfg, functionName, payload = {}, timeoutMs = 7000, extraHeaders = {}) {
     const url = new URL(`${cfg.supabaseUrl}/rest/v1/rpc/${functionName}`);
     const response = await fetchWithTimeout(url, {
       method: 'POST',
-      headers: supaHeaders(cfg),
+      headers: supaHeaders(cfg, extraHeaders),
       body: JSON.stringify(payload || {}),
     }, Math.max(500, Number(timeoutMs || 7000)), `Supabase RPC ${functionName}`);
     const body = await response.json().catch(() => null);
