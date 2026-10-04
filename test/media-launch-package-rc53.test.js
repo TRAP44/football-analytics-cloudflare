@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const worker=(fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'))+'\n'+fs.readFileSync('src/router.js','utf8')+'\n'+fs.readFileSync('src/growth-referral.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
+const analysisController=fs.readFileSync('public/modules/analysis-controller.js','utf8');
 const html=fs.readFileSync('public/admin.html','utf8');
 const migration=fs.readFileSync('supabase/migrations/supabase_migration_v6_15.sql','utf8');
 const privacy=fs.readFileSync('public/privacy.html','utf8');
@@ -28,7 +29,7 @@ test('growth analytics is backend-only and RLS protected',()=> {
 
 test('funnel separates Telegram quick AI from a full Mini App analysis',()=> {
   assert.match(worker,/origin:'telegram_quick'/);
-  assert.match(app,/origin:'miniapp'/);
+  assert.match(analysisController,/origin:\s*'miniapp'/);
   assert.match(worker,/trackFullAi=analysisOrigin !== 'telegram_quick'/);
   assert.match(worker,/eventName:'quick_ai'/);
   assert.match(worker,/eventName:'full_ai'/);

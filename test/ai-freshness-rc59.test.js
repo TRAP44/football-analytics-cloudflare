@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
+const analysisController=fs.readFileSync('public/modules/analysis-controller.js','utf8');
 const css=fs.readFileSync('public/styles.css','utf8');
 
 test('RC59 computes dynamic freshness from analysis age kickoff lineups and market',()=> {
@@ -51,7 +52,7 @@ test('adaptive analysis TTL tightens toward kickoff',()=> {
 test('Mini App and Telegram expose freshness without hiding stale provider fallback',()=> {
   assert.match(app,/function analysisFreshnessHtml\(/);
   assert.match(app,/Перепроверить AI сейчас/);
-  assert.match(app,/recheck: options\.recheck !== false/);
+  assert.match(analysisController,/recheck: options\.recheck !== false/);
   assert.match(app,/analysisRecheckBtn/);
   assert.match(worker,/Свежесть: <b>/);
   assert.match(css,/\.analysis-freshness\.recheck/);

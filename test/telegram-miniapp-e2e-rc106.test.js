@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
+const analysisController=fs.readFileSync('public/modules/analysis-controller.js','utf8');
 
 test('RC106 locks the Telegram to Mini App handoff contract',()=>{
   assert.match(worker,/function telegramMiniAppE2EDrill\(/);
@@ -26,14 +27,14 @@ test('RC106 synchronizes user state before a Telegram handoff analysis',()=>{
 });
 
 test('RC106 keeps history synchronized and avoids redundant personal reads after full AI',()=>{
-  const start=app.indexOf('async function analyzeMatch');
-  const end=app.indexOf('\nfunction historyItemFromAnalysis',start);
+  const start=analysisController.indexOf('async function analyzeMatch');
+  const end=analysisController.indexOf('return Object.freeze',start);
   assert.ok(start>=0 && end>start);
-  const block=app.slice(start,end);
-  assert.match(block,/rememberHistoryAnalysis\(data\)/);
-  assert.match(block,/const secondaryTasks = \[loadHistory\(false\)\]/);
-  assert.match(block,/if \(!state\.remindersLoaded\) secondaryTasks\.push\(loadReminders\(\)\)/);
-  assert.match(block,/if \(!state\.favoritesLoaded\) secondaryTasks\.push\(loadFavorites\(\)\)/);
+  const block=analysisController.slice(start,end);
+  assert.match(block,/rememberHistory\(data\)/);
+  assert.match(block,/const secondaryTasks = \[refreshHistory\(false\)\]/);
+  assert.match(block,/if \(!state\.remindersLoaded\) secondaryTasks\.push\(refreshReminders\(\)\)/);
+  assert.match(block,/if \(!state\.favoritesLoaded\) secondaryTasks\.push\(refreshFavorites\(\)\)/);
   assert.match(block,/Promise\.allSettled\(secondaryTasks\)/);
 });
 

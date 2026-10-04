@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const worker=(fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'));
 const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
+const analysisController=fs.readFileSync('public/modules/analysis-controller.js','utf8');
 
 test('RC79 stores categorical failure diagnostics without raw error text',()=>{
   assert.match(worker,/eventName:'news_impact_outcome_failure'/);
@@ -35,8 +36,8 @@ test('RC79 exposes safe recovery in Telegram and Mini App',()=>{
   assert.match(worker,/sendNewsImpactRecoveryMessage\(/);
   assert.match(worker,/error\.newsImpactRecovery=recovery/);
   assert.match(worker,/newsImpactRecovery:error\.newsImpactRecovery/);
-  assert.match(app,/e\.payload\?\.newsImpactRecovery/);
-  assert.match(app,/recovery\.action==='search'/);
+  assert.match(analysisController,/error\?\.payload\?\.newsImpactRecovery/);
+  assert.match(analysisController,/recovery\.action === 'search'/);
 });
 
 test('RC79 aggregates failure reasons without interpreting dissatisfaction',()=>{

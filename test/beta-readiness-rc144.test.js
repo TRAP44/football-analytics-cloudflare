@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const app = fs.readFileSync('public/app.js', 'utf8') + '\n' + fs.readFileSync('public/modules/global-search-controller.js', 'utf8');
 const matchCenterController = fs.readFileSync('public/modules/match-center-controller.js', 'utf8');
+const analysisController = fs.readFileSync('public/modules/analysis-controller.js', 'utf8');
 const profileAccessState = fs.readFileSync('public/modules/profile-access-state.js', 'utf8');
 const journeyState = fs.readFileSync('public/modules/journey-state.js', 'utf8');
 const historyRenderer = fs.readFileSync('public/modules/history-renderer.js', 'utf8');
@@ -49,9 +50,12 @@ test('beta product analytics are privacy-safe and server allowlisted', () => {
 
 test('critical Mini App journey emits bounded product events without user search text', () => {
   for (const action of [
-    'matches_open','ai_start','ai_complete','history_open','history_item_open','profile_open',
+    'matches_open','history_open','history_item_open','profile_open',
   ]) {
     assert.ok(app.includes("sendProductAction('" + action + "'"), action);
+  }
+  for (const action of ['ai_start','ai_complete']) {
+    assert.ok(analysisController.includes("productAction('" + action + "'"), action);
   }
   for (const action of ['match_open','live_open']) {
     assert.ok(matchCenterController.includes("productAction('" + action + "'"), action);
@@ -65,9 +69,10 @@ test('critical Mini App journey emits bounded product events without user search
 });
 
 test('main action failures are measured by category without leaking backend details', () => {
-  for (const action of ['matches','ai','history','profile']) {
+  for (const action of ['matches','history','profile']) {
     assert.ok(app.includes("sendActionError('" + action + "'"), action);
   }
+  assert.ok(analysisController.includes("actionError('ai'"), 'ai');
   for (const action of ['match','live_refresh']) {
     assert.ok(matchCenterController.includes("actionError('" + action + "'"), action);
   }
@@ -90,11 +95,11 @@ test('match and AI transitions have explicit loading error and retry states', ()
   assert.match(center, /renderJourney\('error'/);
   assert.match(center, /retry: \(\) => openMatchCenter/);
 
-  const analysis = block(app, 'async function analyzeMatch', 'function historyItemFromAnalysis');
-  assert.match(analysis, /sendProductAction\('ai_start'/);
-  assert.match(analysis, /sendProductAction\('ai_complete'/);
-  assert.match(analysis, /renderJourneyState\('loading'/);
-  assert.match(analysis, /renderJourneyState\('error'/);
+  const analysis = block(analysisController, 'async function analyzeMatch', 'return Object.freeze');
+  assert.match(analysis, /productAction\('ai_start'/);
+  assert.match(analysis, /productAction\('ai_complete'/);
+  assert.match(analysis, /renderJourney\('loading'/);
+  assert.match(analysis, /renderJourney\('error'/);
   assert.match(analysis, /retry: \(\) => analyzeMatch/);
 });
 

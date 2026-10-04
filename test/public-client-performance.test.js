@@ -8,6 +8,7 @@ const runtime=fs.readFileSync('public/modules/app-runtime.js','utf8');
 const html=fs.readFileSync('public/index.html','utf8');
 const worker=fs.readFileSync('src/worker.js','utf8');
 const matchCenterController=fs.readFileSync('public/modules/match-center-controller.js','utf8');
+const analysisController=fs.readFileSync('public/modules/analysis-controller.js','utf8');
 
 function block(start,end){
   const a=app.indexOf(start);
@@ -80,6 +81,7 @@ test('startup graph defers profile-only and Match Center-only modules until thei
     'digest-settings.js',
     'smart-notifications.js',
     'match-center-controller.js',
+    'analysis-controller.js',
     'match-pulse.js',
     'ai-timeline.js',
   ];
@@ -91,6 +93,7 @@ test('startup graph defers profile-only and Match Center-only modules until thei
   assert.match(app,/async function ensureDigestSettingsModule\(/);
   assert.match(app,/async function ensureSmartNotificationsModule\(/);
   assert.match(app,/async function ensureMatchCenterController\(/);
+  assert.match(app,/async function ensureAnalysisController\(/);
   assert.match(app,/async function ensureMatchCenterExtras\(/);
 
   const staticImports=[...app.matchAll(/from ['"]\.\/modules\/([^'"]+)['"]/g)].map(match=>`public/modules/${match[1]}`);
@@ -99,11 +102,14 @@ test('startup graph defers profile-only and Match Center-only modules until thei
 });
 
 test('full AI avoids reloading already-known favorites and reminders',()=>{
-  const analyze=block('async function analyzeMatch','function historyItemFromAnalysis');
-  assert.match(analyze,/const secondaryTasks = \[loadHistory\(false\)\]/);
-  assert.match(analyze,/if \(!state\.remindersLoaded\) secondaryTasks\.push\(loadReminders\(\)\)/);
-  assert.match(analyze,/if \(!state\.favoritesLoaded\) secondaryTasks\.push\(loadFavorites\(\)\)/);
-  assert.doesNotMatch(analyze,/Promise\.allSettled\(\[loadHistory\(false\), loadReminders\(\), loadFavorites\(\)\]\)/);
+  const start=analysisController.indexOf('async function analyzeMatch');
+  const end=analysisController.indexOf('return Object.freeze',start);
+  assert.ok(start>=0 && end>start);
+  const analyze=analysisController.slice(start,end);
+  assert.match(analyze,/const secondaryTasks = \[refreshHistory\(false\)\]/);
+  assert.match(analyze,/if \(!state\.remindersLoaded\) secondaryTasks\.push\(refreshReminders\(\)\)/);
+  assert.match(analyze,/if \(!state\.favoritesLoaded\) secondaryTasks\.push\(refreshFavorites\(\)\)/);
+  assert.doesNotMatch(analyze,/Promise\.allSettled\(\[refreshHistory\(false\), refreshReminders\(\), refreshFavorites\(\)\]\)/);
 });
 
 test('reopening the same Match Center renders warm data while the refresh and deferred UI chunk load in parallel',()=>{

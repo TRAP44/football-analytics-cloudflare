@@ -11,6 +11,7 @@ const worker = fs.readFileSync('src/worker.js', 'utf8');
 const router = fs.readFileSync('src/router.js', 'utf8');
 const billing = fs.readFileSync('public/modules/billing.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
+const analysisController = fs.readFileSync('public/modules/analysis-controller.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const css = fs.readFileSync('public/styles.css', 'utf8');
 const env = fs.readFileSync('.env.example', 'utf8');
@@ -79,7 +80,8 @@ test('active expired unavailable and included Pass states render from server dec
 test('Match Pass opens from Match Center context and quota paywall preserves fixture context', () => {
   assert.match(app, /id="centerMatchPassBtn"/);
   assert.match(app, /openPassStoreForFixture\(Number\(m\.fixtureId\)\)/);
-  assert.match(app, /showQuotaPaywallForFixture\(fixtureId\)/);
+  assert.match(app, /showQuotaPaywallForFixture,/);
+  assert.match(analysisController, /showPaywall\(fixtureId\)/);
   assert.match(billing, /passFixtureId = id/);
   assert.match(billing, /function clearPassContext/);
   assert.match(billing, /await openProfile\(\)/);
