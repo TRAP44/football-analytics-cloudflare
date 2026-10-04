@@ -28,3 +28,120 @@ jobs:
       - run: node scripts/bottom-nav-render-smoke.js
       - run: npm run verify:release
       - run: npm run verify:worker
+
+
+  database-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_CLI_VERSION: "2.119.0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify pinned Supabase CLI
+        run: |
+          set -euo pipefail
+          CLI_VERSION="$(npx --yes "supabase@$SUPABASE_CLI_VERSION" --version)"
+          test "$CLI_VERSION" = "$SUPABASE_CLI_VERSION"
+
+      - name: Fresh install migration and concurrency gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v psql >/dev/null
+
+          FRESH_DIR="$RUNNER_TEMP/matchradar-supabase-fresh"
+          mkdir -p "$FRESH_DIR"
+          cd "$FRESH_DIR"
+
+          npx --yes "supabase@$SUPABASE_CLI_VERSION" init
+          node "$GITHUB_WORKSPACE/scripts/prepare-supabase-ci-migrations.js" \
+            fresh "$FRESH_DIR/supabase/migrations" "$GITHUB_WORKSPACE"
+
+          npx --yes "supabase@$SUPABASE_CLI_VERSION" start \
+            --exclude rest,auth,realtime,storage,functions,studio,mail,analytics,pooler \
+            --output-format json > "$RUNNER_TEMP/supabase-fresh-start.json"
+          npx --yes "supabase@$SUPABASE_CLI_VERSION" db reset
+
+          npx --yes "supabase@$SUPABASE_CLI_VERSION" status \
+            -o env --output-format text > "$RUNNER_TEMP/supabase-fresh.env"
+          set -a
+          source "$RUNNER_TEMP/supabase-fresh.env"
+          set +a
+
+          psql "$DB_URL" -X -v ON_ERROR_STOP=1 \
+            -f "$GITHUB_WORKSPACE/scripts/supabase-ci-contract.sql"
+          node "$GITHUB_WORKSPACE/scripts/supabase-concurrency-gate.js"
+
+          psql "$DB_URL" -X -v ON_ERROR_STOP=1 \
+            -f "$GITHUB_WORKSPACE/supabase/migrations/supabase_migration_v6_26_3.sql"
+          psql "$DB_URL" -X -v ON_ERROR_STOP=1 \
+            -f "$GITHUB_WORKSPACE/scripts/supabase-ci-contract.sql"
+
+          if psql "$DB_URL" -X -v ON_ERROR_STOP=1 \
+            -f "$GITHUB_WORKSPACE/supabase/baseline/supabase_baseline_v6_19.sql" \
+            > "$RUNNER_TEMP/supabase-baseline-guard.log" 2>&1; then
+            echo "Fresh-install baseline unexpectedly applied over an existing schema." >&2
+            exit 1
+          fi
+          grep -q "Fresh-install baseline refused" \
+            "$RUNNER_TEMP/supabase-baseline-guard.log"
+
+      - name: Stop fresh Supabase stack
+        if: always()
+        shell: bash
+        run: |
+          FRESH_DIR="$RUNNER_TEMP/matchradar-supabase-fresh"
+          if [[ -f "$FRESH_DIR/supabase/config.toml" ]]; then
+            cd "$FRESH_DIR"
+            npx --yes "supabase@$SUPABASE_CLI_VERSION" stop --no-backup || true
+          fi
+
+      - name: Upgrade previous schema through latest migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          UPGRADE_DIR="$RUNNER_TEMP/matchradar-supabase-upgrade"
+          mkdir -p "$UPGRADE_DIR"
+          cd "$UPGRADE_DIR"
+
+          npx --yes "supabase@$SUPABASE_CLI_VERSION" init
+          node "$GITHUB_WORKSPACE/scripts/prepare-supabase-ci-migrations.js" \
+            upgrade-base "$UPGRADE_DIR/supabase/migrations" "$GITHUB_WORKSPACE"
+
+          npx --yes "supabase@$SUPABASE_CLI_VERSION" start \
+            --exclude rest,auth,realtime,storage,functions,studio,mail,analytics,pooler \
+            --output-format json > "$RUNNER_TEMP/supabase-upgrade-start.json"
+
+          npx --yes "supabase@$SUPABASE_CLI_VERSION" status \
+            -o env --output-format text > "$RUNNER_TEMP/supabase-upgrade.env"
+          set -a
+          source "$RUNNER_TEMP/supabase-upgrade.env"
+          set +a
+
+          PRE_LATEST_COLUMNS="$(psql "$DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+            "select count(*) from information_schema.columns where table_schema='public' and table_name='ops_events' and column_name in ('occurrence_count','last_occurred_at');")"
+          test "$PRE_LATEST_COLUMNS" = "0"
+
+          node "$GITHUB_WORKSPACE/scripts/prepare-supabase-ci-migrations.js" \
+            latest-only "$UPGRADE_DIR/supabase/migrations" "$GITHUB_WORKSPACE"
+          npx --yes "supabase@$SUPABASE_CLI_VERSION" migration up
+
+          psql "$DB_URL" -X -v ON_ERROR_STOP=1 \
+            -f "$GITHUB_WORKSPACE/scripts/supabase-ci-contract.sql"
+
+          npx --yes "supabase@$SUPABASE_CLI_VERSION" migration up
+
+      - name: Stop upgrade Supabase stack
+        if: always()
+        shell: bash
+        run: |
+          UPGRADE_DIR="$RUNNER_TEMP/matchradar-supabase-upgrade"
+          if [[ -f "$UPGRADE_DIR/supabase/config.toml" ]]; then
+            cd "$UPGRADE_DIR"
+            npx --yes "supabase@$SUPABASE_CLI_VERSION" stop --no-backup || true
+          fi
