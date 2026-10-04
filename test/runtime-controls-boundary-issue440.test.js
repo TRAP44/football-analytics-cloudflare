@@ -80,6 +80,31 @@ test('runtime-controls domain normalizes database rows and exposes only public c
   });
 });
 
+test('runtime-controls domain default clock uses Date.now and does not crash production wiring', async () => {
+  const memory = { runtimeControls: null };
+  const api = createRuntimeControlsRuntime({
+    memory,
+    DEFAULT_RUNTIME_CONTROLS,
+    RUNTIME_CONTROLS_CACHE_MS: 30_000,
+    SUPABASE_SCHEMA_GUIDANCE: 'schema guidance',
+    APP_VERSION: 'test',
+    hasSupabase: () => false,
+    supaSelectOne: async () => null,
+    supaInsertIgnore: async () => null,
+    supaSelectMany: async () => [],
+    fetchWithTimeout: async () => new Response('[]', { status: 200 }),
+    supaHeaders: () => ({ authorization: 'test' }),
+    recordOpsEvent: async () => {},
+    redactOpsString: value => String(value || '').slice(0, 160),
+    json: (body, status = 200) => new Response(JSON.stringify(body), { status }),
+    isAdminUser: () => false,
+  });
+
+  const state = await api.loadRuntimeControls({});
+  assert.equal(state.source, 'fail_closed');
+  assert.equal(Number.isFinite(Number(memory.runtimeControls.loadedAt)), true);
+});
+
 test('runtime-controls domain fails closed when the control plane cannot be verified', async () => {
   const { api, memory } = runtime({ hasSupabase: () => false });
   const state = await api.loadRuntimeControls({});
