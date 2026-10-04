@@ -218,6 +218,56 @@ test('Weekend Pass requires an explicit package cap and reservation refunds fail
   assert.equal(memory.userEntitlements.get('charge-weekend').usage_count, 0);
 });
 
+test('Supabase limited Pass reservation propagates the durable operation contract', async () => {
+  const calls = [];
+  const operationId = '55555555-5555-4555-8555-555555555555';
+  const service = createEntitlementService({
+    memory: { userEntitlements: new Map() },
+    hasSupabase: () => true,
+    supaSelectMany: async () => [],
+    supaRpc: async (...args) => {
+      calls.push(args);
+      return {
+        allowed: true,
+        reserved: true,
+        durable: true,
+        operationId,
+        reason: 'consumed_durable',
+        entitlementId: 9,
+        usageCount: 1,
+        usageLimit: 2,
+      };
+    },
+    getUserRecord: async () => ({ telegram_id: 42, plan: 'FREE', subscription_until: null }),
+  });
+
+  const active = [row({
+    id: 9,
+    entitlement_type: 'DAY_PASS',
+    fixture_id: null,
+    usage_limit: 2,
+    usage_count: 0,
+  })];
+
+  const result = await service.reserveEntitlementUsage(
+    42,
+    active,
+    123,
+    {},
+    { durable: true, operationId },
+  );
+
+  assert.equal(result.allowed, true);
+  assert.equal(result.reserved, true);
+  assert.equal(result.durable, true);
+  assert.equal(result.operationId, operationId);
+  assert.equal(result.kind, 'pass');
+  assert.equal(result.userId, 42);
+  assert.equal(calls[0][1], 'consume_pass_entitlement');
+  assert.equal(calls[0][4]['x-analysis-usage-lifecycle'], 'durable-v1');
+  assert.equal(calls[0][4]['x-analysis-operation-id'], operationId);
+});
+
 test('usage consumption is atomic in service semantics and refund revokes Pass access', async () => {
   const { service, memory, mutations } = memoryRuntime();
   const activation = await service.activatePassPurchase({
