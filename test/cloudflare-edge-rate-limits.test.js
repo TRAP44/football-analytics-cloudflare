@@ -57,21 +57,30 @@ test('rate-limit binding uses a hashed network fingerprint and never the raw IP 
 });
 
 
-test('signed Telegram users sharing one IP receive distinct edge buckets', async () => {
+test('rotating Telegram initData cannot fragment the first-stage edge bucket', async () => {
   const seen=[];
-  const env={ EDGE_ANALYZE_RATE_LIMIT: limiter(true,seen) };
-  await cloudflareEdgeGuard(request('/api/analyze',{method:'POST',ip:'198.51.100.50',initData:'user=alpha&hash=a'}),env);
-  await cloudflareEdgeGuard(request('/api/analyze',{method:'POST',ip:'198.51.100.50',initData:'user=beta&hash=b'}),env);
-  assert.equal(seen.length,2);
-  assert.notEqual(seen[0].key,seen[1].key);
+  const env={
+    TELEGRAM_BOT_TOKEN:'test-fingerprint-secret',
+    EDGE_ANALYZE_RATE_LIMIT:limiter(true,seen),
+  };
+  for(let i=0;i<100;i+=1) {
+    await cloudflareEdgeGuard(request('/api/analyze',{
+      method:'POST',
+      ip:'198.51.100.50',
+      initData:`user=attacker-${i}&hash=garbage-${i}`,
+    }),env);
+  }
+  assert.equal(seen.length,100);
+  assert.equal(new Set(seen.map(item=>item.key)).size,1);
   assert.ok(seen.every(item=>!item.key.includes('198.51.100.50')));
   assert.ok(seen.every(item=>!item.key.includes('user=')));
+  assert.ok(seen.every(item=>!item.key.includes('garbage')));
 });
 
 test('Webhook ceiling is intentionally much looser than user API ceilings', () => {
   const policies=Object.fromEntries(cloudflareEdgePolicies().map(x=>[x.id,x]));
-  assert.equal(policies.analyze.limit,30);
-  assert.equal(policies.sensitive.limit,120);
+  assert.equal(policies.analyze.limit,120);
+  assert.equal(policies.sensitive.limit,30);
   assert.equal(policies['telegram-webhook'].limit,6000);
   assert.equal(policies['telegram-webhook'].period,60);
 });
@@ -94,8 +103,8 @@ test('binding outage and missing network identity fail open to existing Worker g
 test('wrangler declares three independent Cloudflare rate-limit namespaces', () => {
   const cfg=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
   assert.deepEqual(cfg.ratelimits,[
-    {name:'EDGE_ANALYZE_RATE_LIMIT',namespace_id:'386101',simple:{limit:30,period:60}},
-    {name:'EDGE_SENSITIVE_RATE_LIMIT',namespace_id:'386102',simple:{limit:120,period:60}},
+    {name:'EDGE_ANALYZE_RATE_LIMIT',namespace_id:'386101',simple:{limit:120,period:60}},
+    {name:'EDGE_SENSITIVE_RATE_LIMIT',namespace_id:'386102',simple:{limit:30,period:60}},
     {name:'EDGE_WEBHOOK_RATE_LIMIT',namespace_id:'386103',simple:{limit:6000,period:60}},
   ]);
 });
