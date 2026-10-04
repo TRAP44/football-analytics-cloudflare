@@ -1,3 +1,5 @@
+const LIFECYCLE_HEADER = 'durable-v1';
+
 function normalizeOperationId(value) {
   const id = String(value || '').trim().toLowerCase();
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id) ? id : '';
@@ -12,6 +14,23 @@ function compensationCode(disposition) {
   return disposition === 'commit'
     ? 'ANALYSIS_USAGE_COMMIT_PENDING'
     : 'ANALYSIS_USAGE_REFUND_PENDING';
+}
+
+function lifecycleHeaders(operationId, action) {
+  return {
+    'x-analysis-usage-lifecycle': LIFECYCLE_HEADER,
+    'x-analysis-operation-id': operationId,
+    'x-analysis-usage-action': action,
+  };
+}
+
+export function durableAnalysisUsageHeaders(operationId) {
+  const id = normalizeOperationId(operationId);
+  if (!id) throw new TypeError('durable analysis usage requires a UUID operation id');
+  return {
+    'x-analysis-usage-lifecycle': LIFECYCLE_HEADER,
+    'x-analysis-operation-id': id,
+  };
 }
 
 export function createAnalysisUsageCompensationRuntime({
@@ -31,15 +50,15 @@ export function createAnalysisUsageCompensationRuntime({
     cfg,
     userId,
   } = {}) {
-    if (!reservation?.reserved) {
-      return { ok: true, skipped: true, reason: 'not_reserved' };
+    if (!reservation?.reserved || reservation?.durable !== true) {
+      return { ok: true, skipped: true, reason: 'legacy_or_not_reserved' };
     }
 
     const operationId = normalizeOperationId(reservation.operationId);
     const kind = normalizeKind(reservation.kind);
     const action = disposition === 'commit' ? 'commit' : disposition === 'refund' ? 'refund' : '';
 
-    if (!operationId || !action) {
+    if (!operationId || !action || kind === 'unknown') {
       return { ok: false, pending: false, reason: 'invalid_reservation' };
     }
 
@@ -48,10 +67,18 @@ export function createAnalysisUsageCompensationRuntime({
     }
 
     try {
-      const result = await supaRpc(cfg, 'finalize_analysis_usage_reservation', {
-        p_operation_id: operationId,
-        p_disposition: action,
-      }, 4000);
+      let result;
+      if (kind === 'quota') {
+        result = await supaRpc(cfg, 'refund_analysis_quota', {
+          p_telegram_id: Number(userId || reservation.userId),
+          p_usage_date: reservation.date,
+        }, 4000, lifecycleHeaders(operationId, action));
+      } else {
+        result = await supaRpc(cfg, 'refund_pass_entitlement_usage', {
+          p_telegram_id: Number(userId || reservation.userId),
+          p_entitlement_id: Number(reservation.entitlementId),
+        }, 4000, lifecycleHeaders(operationId, action));
+      }
 
       const expectedStatus = action === 'commit' ? 'committed' : 'refunded';
       if (result?.ok !== true || String(result?.status || '') !== expectedStatus) {
@@ -112,21 +139,19 @@ export function createAnalysisUsageCompensationRuntime({
     }
   }
 
-  async function reconcileAnalysisUsageReservations(cfg, {
-    staleSeconds = 30 * 60,
-    limit = 100,
-  } = {}) {
+  async function reconcileAnalysisUsageReservations(cfg) {
     if (!hasSupabase(cfg)) {
       return { ok: true, skipped: true, reason: 'supabase_not_configured', reconciled: 0 };
     }
 
     try {
-      const result = await supaRpc(cfg, 'reconcile_analysis_usage_reservations', {
-        p_stale_seconds: Math.max(300, Math.min(Number(staleSeconds || 1800), 86400)),
-        p_limit: Math.max(1, Math.min(Number(limit || 100), 500)),
-      }, 7000);
+      const operationId = '00000000-0000-4000-8000-000000000000';
+      const result = await supaRpc(cfg, 'refund_analysis_quota', {
+        p_telegram_id: 0,
+        p_usage_date: new Date().toISOString().slice(0, 10),
+      }, 7000, lifecycleHeaders(operationId, 'reconcile'));
 
-      if (result?.ok !== true) {
+      if (result?.ok !== true || result?.reconciliation !== true) {
         const error = new Error(String(result?.reason || 'analysis_usage_reconciliation_not_confirmed'));
         error.code = 'ANALYSIS_USAGE_RECONCILIATION_NOT_CONFIRMED';
         throw error;
