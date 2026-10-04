@@ -46,7 +46,7 @@
       "name": "EDGE_ANALYZE_RATE_LIMIT",
       "namespace_id": "386101",
       "simple": {
-        "limit": 120,
+        "limit": 600,
         "period": 60
       }
     },
