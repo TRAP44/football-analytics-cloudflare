@@ -3,6 +3,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const sql = fs.readFileSync('supabase/migrations/supabase_migration_v6_21.sql', 'utf8');
+const contractV2Sql = fs.readFileSync('supabase/migrations/supabase_migration_v6_27_2.sql', 'utf8');
+const compatibilitySql = fs.readFileSync('supabase/migrations/supabase_migration_v6_27_3.sql', 'utf8');
 const worker = fs.readFileSync('src/worker.js', 'utf8');
 const releaseContract = JSON.parse(fs.readFileSync('release-contract.json', 'utf8'));
 
@@ -52,10 +54,35 @@ test('v6.21 keeps the pre-deploy fingerprint stable by excluding only the new op
   assert.match(sql, /'provider_incident_alert_delivery_contract',[\s\S]*'backend_readiness_contract'/);
 });
 
-test('release contract and worker target schema v6.27', () => {
+test('Issue #438 adds a complete versioned database contract without mutating the historical rollout contract', () => {
+  const v2Only = contractV2Sql.split('-- Freeze the historical v1 fingerprint')[0];
+  assert.match(v2Only, /create or replace function public\.backend_schema_contract_v2\(\)/);
+  assert.match(v2Only, /create or replace function public\.backend_readiness_contract_v2\(/);
+  assert.match(v2Only, /from information_schema\.columns c[\s\S]*where c\.table_schema = 'public'/);
+  assert.match(v2Only, /from pg_constraint pc/);
+  assert.match(v2Only, /from pg_indexes/);
+  assert.match(v2Only, /from pg_proc p/);
+  assert.match(v2Only, /from pg_policies p/);
+  assert.match(v2Only, /from pg_trigger t/);
+  assert.match(v2Only, /has_table_privilege/);
+  assert.match(v2Only, /has_sequence_privilege/);
+  assert.match(v2Only, /has_function_privilege/);
+  assert.doesNotMatch(v2Only, /table_name\s+not\s+in/i);
+  assert.doesNotMatch(v2Only, /proname\s+not\s+in/i);
+  assert.match(contractV2Sql, /backend_schema_contract_v2'[\s\S]*backend_readiness_contract_v2'/);
+  assert.match(compatibilitySql, /legacy schema fingerprint compatibility repair/i);
+});
+
+test('release contract and Worker require database contract v2 on schema v6.27.3', () => {
   assert.equal(releaseContract.productionSchema, '6.27');
-  assert.equal(releaseContract.latestMigration, 'supabase/migrations/supabase_migration_v6_27_1.sql');
-  assert.match(worker, /миграции до v6\.27/);
-  assert.match(worker, /createCompositeReadinessRuntime/);
+  assert.equal(releaseContract.latestMigration, 'supabase/migrations/supabase_migration_v6_27_3.sql');
+  assert.equal(releaseContract.databaseContract.version, 2);
+  assert.equal(releaseContract.databaseContract.rpc, 'backend_readiness_contract_v2');
+  assert.equal(releaseContract.databaseContract.fingerprint, '6a7f0fe444f49a2a52c4603e952ee9ea');
+  assert.equal(releaseContract.databaseContract.legacyFingerprint, 'c2c22ec25aacfcf1b9938b0850cebf49');
+  assert.match(worker, /миграции до v6\.27\.3/);
+  assert.match(worker, /EXPECTED_SCHEMA_CONTRACT_VERSION = 2/);
+  assert.match(worker, /EXPECTED_SCHEMA_FINGERPRINT = '6a7f0fe444f49a2a52c4603e952ee9ea'/);
+  assert.match(worker, /readinessRpc: 'backend_readiness_contract_v2'/);
   assert.match(worker, /readCompositeReadiness\(cfg,5\)/);
 });
