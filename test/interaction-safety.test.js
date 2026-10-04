@@ -5,13 +5,14 @@ import fs from 'node:fs';
 const app = fs.readFileSync('public/app.js', 'utf8');
 const worker = fs.readFileSync('src/worker.js', 'utf8');
 const matchCenterController = fs.readFileSync('public/modules/match-center-controller.js', 'utf8');
+const analysisController = fs.readFileSync('public/modules/analysis-controller.js', 'utf8');
 
 test('full analysis is globally single-flight on the client to protect user quota', () => {
   assert.match(app, /analysisActionPending:\s*false/);
-  assert.match(app, /if \(state\.analysisActionPending\)/);
-  assert.match(app, /state\.analysisActionPending = true/);
-  assert.match(app, /state\.analysisActionPending = false/);
-  assert.match(app, /syncAnalysisBusyUi\(\)/);
+  assert.match(analysisController, /if \(state\.analysisActionPending\)/);
+  assert.match(analysisController, /state\.analysisActionPending = true/);
+  assert.match(analysisController, /state\.analysisActionPending = false/);
+  assert.match(analysisController, /syncBusy\(\)/);
 });
 
 test('match-center responses cannot overwrite a newer user selection', () => {
