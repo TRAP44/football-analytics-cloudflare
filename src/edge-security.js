@@ -1,20 +1,32 @@
 import { isAdminSensitivePath } from './security-route-registry.js';
 import { privacyNetworkFingerprint } from './security-gate.js';
 
+const PUBLIC_UNAUTHENTICATED_API_PATHS = new Set([
+  '/api/public-status',
+  '/api/health',
+  '/api/app-manifest',
+  '/api/runtime-status',
+]);
+
+function protectedApiPath(path='') {
+  return String(path || '').startsWith('/api/')
+    && !PUBLIC_UNAUTHENTICATED_API_PATHS.has(String(path || ''));
+}
+
 const POLICIES = Object.freeze([
-  Object.freeze({
-    id: 'analyze',
-    binding: 'EDGE_ANALYZE_RATE_LIMIT',
-    limit: 120,
-    period: 60,
-    matches: (path) => path === '/api/analyze',
-  }),
   Object.freeze({
     id: 'sensitive',
     binding: 'EDGE_SENSITIVE_RATE_LIMIT',
     limit: 30,
     period: 60,
     matches: (path) => path.startsWith('/api/billing/') || isAdminSensitivePath(path),
+  }),
+  Object.freeze({
+    id: 'api-preauth',
+    binding: 'EDGE_ANALYZE_RATE_LIMIT',
+    limit: 600,
+    period: 60,
+    matches: (path) => protectedApiPath(path),
   }),
   Object.freeze({
     id: 'telegram-webhook',
