@@ -105,6 +105,7 @@ Current shared modules include:
 - `first-run-guide.js` — onboarding controller
 - `global-search-controller.js` — discovery/search request lifecycle
 - `match-center-controller.js` — Match Center request dedupe, open/recovery and LIVE refresh lifecycle
+- `analysis-controller.js` — AI analysis request, entitlement snapshot, stale-view guard and recovery lifecycle
 
 The frontend is being decomposed incrementally. New feature work should prefer focused modules over adding unrelated logic directly to `public/app.js`.
 
