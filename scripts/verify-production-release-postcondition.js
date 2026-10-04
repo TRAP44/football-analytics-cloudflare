@@ -116,6 +116,12 @@ function main() {
     return;
   }
 
+  if (expectedRelease === '--print-active-rollback-target' && !expectedSha) {
+    const active = resolveActiveProductionReleaseIdentity(deployment, versions);
+    console.log(`${active.versionId} ${active.release} ${active.sha}`);
+    return;
+  }
+
   if (!expectedRelease || !expectedSha) {
     throw new Error('Usage: node scripts/verify-production-release-postcondition.js <deployment-json> <versions-json> <release> <sha>');
   }
