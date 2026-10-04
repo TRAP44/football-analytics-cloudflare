@@ -26,7 +26,7 @@ test('discovery uses provider-supported team next/last queries with recent-match
 });
 
 test('Mini App no longer performs an automatic second team-hub fetch',()=> {
-  assert.match(app,/state\.globalSearch\.matchDiscovery = data\.matchDiscovery \|\| null/);
+  assert.match(app,/matchDiscovery:data\.matchDiscovery \|\| null/);
   assert.doesNotMatch(app,/const hub = await api\(`\/api\/team\?teamId=/);
   assert.match(app,/data-search-team=/);
   assert.match(app,/Открыть →/);
