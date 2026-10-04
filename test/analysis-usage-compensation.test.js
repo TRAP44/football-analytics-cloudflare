@@ -175,6 +175,33 @@ test('reconciliation reuses the stable quota RPC and reports recovered reservati
   assert.equal(calls[0][4]['x-analysis-usage-action'], 'reconcile');
 });
 
+test('partial reconciliation remains observable while preserving successful recovery counts', async () => {
+  const telemetry = {};
+  const events = [];
+  const runtime = createAnalysisUsageCompensationRuntime({
+    hasSupabase: () => true,
+    supaRpc: async () => ({
+      ok: false,
+      reconciliation: true,
+      reconciled: 2,
+      failed: 1,
+      pending: 1,
+      cleaned: 0,
+    }),
+    recordOpsEvent: async (_cfg, event) => events.push(event),
+    bumpTelemetry: (key, amount = 1) => { telemetry[key] = Number(telemetry[key] || 0) + amount; },
+  });
+
+  const result = await runtime.reconcileAnalysisUsageReservations(CFG);
+  assert.equal(result.ok, false);
+  assert.equal(result.degraded, true);
+  assert.equal(result.reconciled, 2);
+  assert.equal(result.failed, 1);
+  assert.equal(telemetry.analysisUsageReconciled, 2);
+  assert.equal(telemetry.analysisUsageReconciliationFailures, 1);
+  assert.equal(events[0].code, 'ANALYSIS_USAGE_RECONCILIATION_PARTIAL');
+});
+
 test('v6.28 migration keeps the public contract stable and durable state private', () => {
   const sql = fs.readFileSync('supabase/migrations/supabase_migration_v6_28.sql', 'utf8');
   const release = JSON.parse(fs.readFileSync('release-contract.json', 'utf8'));
