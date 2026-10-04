@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
 const globalSearchRenderer = fs.readFileSync('public/modules/global-search-renderer.js', 'utf8');
+const globalSearchController = fs.readFileSync('public/modules/global-search-controller.js', 'utf8');
 const viewChrome = fs.readFileSync('public/modules/view-chrome.js', 'utf8');
 const myTeamsRenderer = fs.readFileSync('public/modules/my-teams-renderer.js', 'utf8');
 const uiPreferences = fs.readFileSync('public/modules/ui-preferences.js', 'utf8');
@@ -68,7 +69,7 @@ test('profile keeps common appearance choices visible and moves rare styling beh
 
 test('global search shows local results first and bounds the remote wait', () => {
   const body = functionBodyFrom(globalSearchRenderer, 'renderGlobalSearch');
-  const run = functionBody('runGlobalSearch', 'openTournamentMeta');
+  const run = functionBodyFrom(globalSearchController, 'runGlobalSearch', 'handleSearchInput');
   assert.match(body, /localDiscoveryResults\(query\)/);
   assert.match(body, /Ищем/);
   assert.match(body, /Матч найден/);
@@ -77,8 +78,8 @@ test('global search shows local results first and bounds the remote wait', () =>
   assert.match(body, /Повторить/);
   assert.match(run, /timeoutMs:\s*6500/);
   assert.match(run, /retry:\s*false/);
-  assert.match(app, /state\.globalSearch\.query\.trim\(\)\.length >= 3/);
-  assert.match(app, /globalSearchTimer = setTimeout\(\(\) => runGlobalSearch\(\), 500\)/);
+  assert.match(globalSearchController, /state\.globalSearch\.query\.trim\(\)\.length >= 3/);
+  assert.match(globalSearchController, /searchTimer = setTimer\(\(\) => runGlobalSearch\(\), 500\)/);
 });
 
 test('match list renders snapshots immediately and refreshes without blocking visible matches', () => {

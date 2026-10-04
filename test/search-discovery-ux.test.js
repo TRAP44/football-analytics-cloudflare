@@ -1,22 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { discoveryMatchRank } from '../public/modules/global-search-controller.js';
 
 const app=fs.readFileSync('public/app.js','utf8');
 const css=fs.readFileSync('public/styles/public-shell.css','utf8');
 
 test('Search ranking prefers exact and prefix matches before loose contains',()=>{
-  const rankStart=app.indexOf('function discoveryText');
-  const rankEnd=app.indexOf('function localDiscoveryResults',rankStart);
-  assert.ok(rankStart>=0 && rankEnd>rankStart,'discoveryMatchRank source missing');
-  const source=app.slice(rankStart,rankEnd);
-  const rank=Function(source+'; return discoveryMatchRank;')();
-  assert.equal(rank('Arsenal','arsenal'),0);
-  assert.equal(rank('Arsenal Women','ars'),1);
-  assert.equal(rank('Real Madrid','mad'),2);
-  assert.equal(rank('Manchester City','city'),2);
-  assert.equal(rank('Paris Saint-Germain','germain'),3);
-  assert.equal(rank('Inter','xyz'),99);
+  assert.equal(discoveryMatchRank('Arsenal','arsenal'),0);
+  assert.equal(discoveryMatchRank('Arsenal Women','ars'),1);
+  assert.equal(discoveryMatchRank('Real Madrid','mad'),2);
+  assert.equal(discoveryMatchRank('Manchester City','city'),2);
+  assert.equal(discoveryMatchRank('Paris Saint-Germain','germain'),3);
+  assert.equal(discoveryMatchRank('Inter','xyz'),99);
 });
 
 test('Search competition result is directly actionable',()=>{
@@ -27,7 +23,7 @@ test('Search competition result is directly actionable',()=>{
   assert.match(source,/data-search-competition/);
   assert.match(source,/data-comp-name/);
   assert.match(source,/Открыть →/);
-  const bind=app.slice(end,app.indexOf('function discoveryText',end));
+  const bind=app.slice(end,app.indexOf('function setDiscoveryHomeVisibility',end));
   assert.match(bind,/\[data-search-competition\]/);
   assert.match(bind,/openTournamentMeta/);
 });

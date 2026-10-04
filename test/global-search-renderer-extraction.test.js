@@ -5,6 +5,7 @@ import { createGlobalSearchRenderer } from '../public/modules/global-search-rend
 
 const app = readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
 const rendererSource = readFileSync(new URL('../public/modules/global-search-renderer.js', import.meta.url), 'utf8');
+const controllerSource = readFileSync(new URL('../public/modules/global-search-controller.js', import.meta.url), 'utf8');
 
 function button(dataset = {}) {
   return {
@@ -82,20 +83,25 @@ function makeRenderer({ state, els, local = {}, callbacks = {}, filters = [] }) 
   });
 }
 
-test('global search renderer owns presentation only while search lifecycle stays in app root', () => {
+test('global search renderer stays presentation-only while controller owns search lifecycle', () => {
   assert.match(rendererSource, /export function createGlobalSearchRenderer/);
   assert.match(rendererSource, /function renderGlobalSearch\(\)/);
   assert.doesNotMatch(rendererSource, /\/api\/search|\bapi\s*\(|sendProductAction|sendActionError/);
-  assert.match(app, /async function runGlobalSearch\(/);
-  assert.match(app, /\/api\/search\?q=/);
+  assert.match(controllerSource, /export function createGlobalSearchController/);
+  assert.match(controllerSource, /async function runGlobalSearch\(/);
+  assert.match(controllerSource, /\/api\/search\?q=/);
+  assert.doesNotMatch(app, /async function runGlobalSearch\(/);
   assert.doesNotMatch(app, /function renderGlobalSearch\(\)/);
 });
 
-test('app wires the renderer synchronously with explicit lifecycle callbacks', () => {
+test('app composes controller and renderer with explicit lifecycle callbacks', () => {
   assert.match(app, /import \{ createGlobalSearchRenderer \} from '\.\/modules\/global-search-renderer\.js'/);
-  assert.match(app, /const \{ renderGlobalSearch \} = createGlobalSearchRenderer\(\{/);
+  assert.match(app, /import \{ createGlobalSearchController \} from '\.\/modules\/global-search-controller\.js'/);
+  assert.match(app, /createGlobalSearchController\(\{/);
+  assert.match(app, /\(\{ renderGlobalSearch \} = createGlobalSearchRenderer\(\{/);
   assert.match(app, /onRetry: \(\) => runGlobalSearch\(\{ manual:true \}\)/);
   assert.match(app, /onSetMode: mode => setGlobalSearchMode\(mode\)/);
+  assert.match(app, /bindGlobalSearchControls\(\)/);
 });
 
 test('empty query hides results and returns to discovery home', () => {

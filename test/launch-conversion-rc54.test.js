@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker=(fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'));
-const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
+const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/global-search-controller.js','utf8')+'\n'+fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
 
 test('RC54 shortens first-session path and prioritizes search',()=> {
   assert.ok(worker.includes('Напишите клуб прямо в чат'));
@@ -17,7 +17,8 @@ test('top-club discovery survives low quota better and covers more regions',()=>
   assert.ok(worker.includes('highIntentTeam && freeQuotaHealthy(2, 1)'));
   assert.ok(worker.includes('highIntent && freeQuotaHealthy(2,1)'));
   assert.ok(worker.includes('cfg, 1440'));
-  assert.ok(app.includes("if (query.length < 2 || !runtimeAllows('searchEnabled'))"));
+  assert.ok(app.includes("const searchEnabled = runtimeAllows('searchEnabled')"));
+  assert.ok(app.includes("if (query.length < 2 || !searchEnabled)"));
 });
 test('recognized clubs do not collapse into a false empty state',()=> {
   assert.ok(worker.includes('function knownTopTeamFallbacks'));

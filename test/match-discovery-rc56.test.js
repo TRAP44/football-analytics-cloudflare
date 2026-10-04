@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
-const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/global-search-renderer.js','utf8');
+const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/global-search-renderer.js','utf8')+'\n'+fs.readFileSync('public/modules/global-search-controller.js','utf8');
 const css=fs.readFileSync('public/styles.css','utf8');
 
 test('RC56 discovers team fixtures in one shared backend path',()=> {
@@ -26,7 +26,7 @@ test('discovery uses provider-supported team next/last queries with recent-match
 });
 
 test('Mini App no longer performs an automatic second team-hub fetch',()=> {
-  assert.match(app,/state\.globalSearch\.matchDiscovery = data\.matchDiscovery \|\| null/);
+  assert.match(app,/matchDiscovery:data\.matchDiscovery \|\| null/);
   assert.doesNotMatch(app,/const hub = await api\(`\/api\/team\?teamId=/);
   assert.match(app,/data-search-team=/);
   assert.match(app,/Открыть →/);
