@@ -299,7 +299,7 @@ begin
   select public.backend_schema_fingerprint() into v_contract;
   if coalesce((v_contract->>'ok')::boolean,false) is not true
      or coalesce(v_contract->>'fingerprint','') <> 'c2c22ec25aacfcf1b9938b0850cebf49' then
-    raise exception 'Supabase integration contract: legacy backend schema fingerprint drifted';
+    raise exception 'Supabase integration contract: legacy backend schema fingerprint drifted: %', coalesce(v_contract->>'fingerprint','');
   end if;
 
   if to_regprocedure('public.backend_schema_contract_v2()') is null
@@ -344,7 +344,7 @@ begin
   if coalesce((v_contract->>'ok')::boolean,false) is not true
      or coalesce((v_contract->>'version')::integer,0) <> 2
      or coalesce(v_contract->>'fingerprint','') <> '6a7f0fe444f49a2a52c4603e952ee9ea' then
-    raise exception 'Supabase integration contract: complete v2 schema contract drifted';
+    raise exception 'Supabase integration contract: complete v2 schema contract drifted: %', coalesce(v_contract->>'fingerprint','');
   end if;
 
   -- Prove that v2 has no hidden object/column exclusion list. A new public
