@@ -1,3 +1,4 @@
+import { providerBackedRouteDefinition } from './provider-route-registry.js';
 import { runSensitiveMutationWithReplay } from './sensitive-mutation-replay.js';
 
 // Phase 2 router boundary: route selection only. Authentication, beta access,
@@ -6,7 +7,6 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
   const {
     adminForbidden,
     apiAiTrackRecord,
-    apiAnalyze,
     apiBetaDashboard,
     apiBetaFeedback,
     apiChannelPublisherTest,
@@ -29,8 +29,6 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
     apiHistory,
     apiHistoryAnalysis,
     apiLaunchFunnel,
-    apiMatchCenter,
-    apiMatches,
     apiMe,
     apiMediaPublisherLink,
     apiModelQuality,
@@ -41,9 +39,6 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
     apiProductionMonitor,
     apiProductionReadiness,
     apiProviderBudget,
-    apiProviderCoverageAudit,
-    apiProviderE2EValidation,
-    apiProviderProbe,
     apiRcRegression,
     apiReleaseMonitor,
     apiReleaseReadiness,
@@ -51,11 +46,6 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
     apiReminders,
     apiRuntimeControls,
     apiRuntimeRollback,
-    apiSearch,
-    apiTeam,
-    apiTeamIntelligence,
-    apiTeamSquad,
-    apiTournament,
     isAdminUser,
     json,
     loadLastProviderE2E,
@@ -120,6 +110,18 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
     return await sensitiveMutation(()=>apiRuntimeRollback(request, cfg, user));
   }
 
+  const providerRoute=providerBackedRouteDefinition(url.pathname,request.method);
+  if (providerRoute) {
+    if (providerRoute.adminOnly && !isAdminUser(user,cfg)) return adminForbidden();
+    const handler=deps[providerRoute.handler];
+    if (typeof handler !== 'function') {
+      throw new Error(`Provider-backed route handler ${providerRoute.handler} is unavailable.`);
+    }
+    return providerRoute.userScoped
+      ? await handler(request,cfg,user)
+      : await handler(request,cfg);
+  }
+
   // v4.3 Admin Security: technical endpoints are protected server-side.
   // Hiding cards in the UI is not considered authorization.
   if (request.method === 'GET' && url.pathname === '/api/provider') {
@@ -136,18 +138,6 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
   if (request.method === 'GET' && url.pathname === '/api/provider/budget') {
     if (!isAdminUser(user, cfg)) return adminForbidden();
     return await apiProviderBudget(request, cfg);
-  }
-  if (request.method === 'GET' && url.pathname === '/api/provider/e2e-validation') {
-    if (!isAdminUser(user, cfg)) return adminForbidden();
-    return await apiProviderE2EValidation(request, cfg);
-  }
-  if (request.method === 'GET' && url.pathname === '/api/provider/probe') {
-    if (!isAdminUser(user, cfg)) return adminForbidden();
-    return await apiProviderProbe(request, cfg);
-  }
-  if (request.method === 'GET' && url.pathname === '/api/provider/coverage-audit') {
-    if (!isAdminUser(user, cfg)) return adminForbidden();
-    return await apiProviderCoverageAudit(request, cfg);
   }
   if (request.method === 'GET' && url.pathname === '/api/diagnostics') {
     if (!isAdminUser(user, cfg)) return adminForbidden();
@@ -224,13 +214,6 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
     if (request.method === 'POST' && url.pathname === '/api/billing/sync') return await sensitiveMutation(()=>apiBillingSync(request, cfg, user));
     if (request.method === 'POST' && url.pathname === '/api/billing/subscription') return await sensitiveMutation(()=>apiBillingSubscription(request, cfg, user));
   }
-  if (request.method === 'GET' && url.pathname === '/api/search') return await apiSearch(request, cfg);
-  if (request.method === 'GET' && url.pathname === '/api/matches') return await apiMatches(request, cfg);
-  if (request.method === 'GET' && url.pathname === '/api/tournament') return await apiTournament(request, cfg);
-  if (request.method === 'GET' && url.pathname === '/api/team') return await apiTeam(request, cfg);
-  if (request.method === 'GET' && url.pathname === '/api/team/intelligence') return await apiTeamIntelligence(request, cfg);
-  if (request.method === 'GET' && url.pathname === '/api/team/squad') return await apiTeamSquad(request, cfg);
-  if (request.method === 'GET' && url.pathname === '/api/match-center') return await apiMatchCenter(request, cfg);
   if (request.method === 'GET' && url.pathname === '/api/history') return await apiHistory(request, cfg, user);
   if (request.method === 'GET' && url.pathname === '/api/history-analysis') return await apiHistoryAnalysis(request, cfg, user);
   if (url.pathname === '/api/favorites') return await apiFavorites(request, cfg, user);
@@ -238,6 +221,5 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
   if (url.pathname === '/api/digest-settings') return await apiDigestSettings(request, cfg, user);
   if (url.pathname === '/api/reminders') return await apiReminders(request, cfg, user);
   if (url.pathname === '/api/preferences') return await apiPreferences(request, cfg, user);
-  if (request.method === 'POST' && url.pathname === '/api/analyze') return await apiAnalyze(request, cfg, user);
   return json({ error: 'Маршрут не найден.' }, 404);
 }
