@@ -53,9 +53,8 @@ test('critical Mini App journey emits bounded product events without user search
   ]) {
     assert.ok(app.includes("sendProductAction('" + action + "'"), action);
   }
-  for (const action of ['search_used','search_found','search_empty']) {
-    assert.ok(app.includes("productAction('" + action + "'"), action);
-  }
+  assert.ok(app.includes("productAction('search_used'"), 'search_used');
+  assert.match(app,/productAction\(totalMatches \|\| totalEntities \? 'search_found' : 'search_empty','searchView'\)/);
   assert.match(app, /function sendProductAction\(reason, view = telemetryViewName\(\)\)/);
   assert.match(app, /sendClientTelemetry\('product_action'/);
   const sender = block(app, 'function sendClientTelemetry', 'function sendProductAction');
