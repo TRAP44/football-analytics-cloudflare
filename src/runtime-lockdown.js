@@ -1,16 +1,4 @@
-const PROVIDER_FANOUT_PATHS = new Set([
-  '/api/matches',
-  '/api/search',
-  '/api/tournament',
-  '/api/team',
-  '/api/team/intelligence',
-  '/api/team/squad',
-  '/api/match-center',
-  '/api/analyze',
-  '/api/provider/e2e-validation',
-  '/api/provider/probe',
-  '/api/provider/coverage-audit',
-]);
+import { isProviderFanoutPath } from './provider-route-registry.js';
 
 const ADMIN_RECOVERY_PATHS = new Set([
   '/api/runtime-controls',
@@ -61,7 +49,7 @@ export function runtimeLockdownDecision(request, { runtime = {}, isAdmin = false
     return { blocked: false, active: true, recovery: true };
   }
 
-  const providerFanout = PROVIDER_FANOUT_PATHS.has(path);
+  const providerFanout = isProviderFanoutPath(path);
   const safeRead = method === 'GET' || method === 'HEAD';
   const controlPlaneFailClosed = Boolean(runtime.controlPlaneFailClosed);
   if (safeRead && !providerFanout) {
