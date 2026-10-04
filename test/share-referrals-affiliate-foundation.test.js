@@ -10,7 +10,7 @@ import {
 import { createTelegramLinksRuntime } from '../src/telegram-links.js';
 
 const growthReferral=fs.readFileSync('src/growth-referral.js','utf8');
-const backendSource=fs.readFileSync('src/worker.js','utf8')+'\n'+growthReferral;
+const backendSource=(fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'))+'\n'+growthReferral;
 
 function cleanLaunchPart(value, maxLength = 24) {
   return String(value || '')

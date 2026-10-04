@@ -2,7 +2,7 @@ import fs from 'node:fs';
 
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
-const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync('src/router.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-transport.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-dedupe.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-links.js', 'utf8') + '\n' + fs.readFileSync('src/auth-user.js', 'utf8') + '\n' + fs.readFileSync('src/cache-runtime.js', 'utf8') + '\n' + fs.readFileSync('src/api-football-gateway.js', 'utf8') + '\n' + fs.readFileSync('src/scheduled-jobs.js', 'utf8');
+const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync('src/router.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-transport.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-update-orchestration.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-dedupe.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-links.js', 'utf8') + '\n' + fs.readFileSync('src/auth-user.js', 'utf8') + '\n' + fs.readFileSync('src/cache-runtime.js', 'utf8') + '\n' + fs.readFileSync('src/api-football-gateway.js', 'utf8') + '\n' + fs.readFileSync('src/scheduled-jobs.js', 'utf8');
 const providerSloIncidents = fs.readFileSync('src/provider-slo-incidents.js','utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
 const viewChrome = fs.readFileSync('public/modules/view-chrome.js', 'utf8');

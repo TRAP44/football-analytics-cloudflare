@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const worker=fs.readFileSync('src/worker.js','utf8');
+const worker=(fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'));
 const scheduled=fs.readFileSync('src/scheduled-jobs.js','utf8');
 
 test('RC63 selects only analyzed matches old enough to be finished',()=> {
