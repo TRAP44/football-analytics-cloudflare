@@ -7,7 +7,12 @@ import { accountRatePolicies, enforceDistributedAccountRateLimit } from './accou
 import { createSharedCacheRuntime } from './cache-runtime.js';
 import { dispatchApiRoute } from './router.js';
 import { createHttpRuntime } from './http.js';
-import { createPreAuthAbuseGuard, preAuthRequestShapeDecision } from './security-gate.js';
+import {
+  createPreAuthAbuseGuard,
+  distributedPreAuthPolicies,
+  enforceDistributedPreAuthRateLimit,
+  preAuthRequestShapeDecision,
+} from './security-gate.js';
 import { cloudflareEdgeGuard, cloudflareEdgePolicies } from './edge-security.js';
 import { failClosedRuntimeControls, isSecurityLockdownControls, runtimeLockdownDecision, telegramLockdownDecision } from './runtime-lockdown.js';
 import { assessSecuritySignals, formatSecurityIncidentAlert, securityIncidentOpsEvent, securityIncidentTimeline } from './security-incidents.js';
@@ -181,6 +186,9 @@ const memory = {
     securityCrossOriginBlocks: 0,
     securityOversizeBlocks: 0,
     securityInvalidAuthBlocks: 0,
+    securityPreAuthBlocks: 0,
+    securityPreAuthFallbacks: 0,
+    securityPreAuthFailClosed: 0,
     upstreamTimeouts: 0,
     userSyncSkips: 0,
     memoryPrunes: 0,
@@ -1189,6 +1197,10 @@ function productionSafetySnapshot() {
       edgeScannerBlocked:Number(memory.telemetry?.edgeScannerBlocks || 0),
       edgePolicies:cloudflareEdgePolicies(),
       invalidAuthBlocked:Number(memory.telemetry?.securityInvalidAuthBlocks || 0),
+      distributedPreAuthBlocked:Number(memory.telemetry?.securityPreAuthBlocks || 0),
+      distributedPreAuthFallbacks:Number(memory.telemetry?.securityPreAuthFallbacks || 0),
+      distributedPreAuthFailClosed:Number(memory.telemetry?.securityPreAuthFailClosed || 0),
+      distributedPreAuthPolicies:distributedPreAuthPolicies(),
       crossOriginBlocked:Number(memory.telemetry?.securityCrossOriginBlocks || 0),
       oversizeBlocked:Number(memory.telemetry?.securityOversizeBlocks || 0),
       shapeBlocked:Number(memory.telemetry?.securityShapeBlocks || 0),
@@ -25236,6 +25248,8 @@ export default {
         releaseHardening: 'enabled',
         adminSecurity: 'enabled',
         preAuthAbuseGuard: 'enabled',
+        distributedPreAuthRateLimit: 'enabled',
+        preAuthNetworkFingerprint: 'hmac-sha256',
         crossOriginMutationGuard: 'enabled',
         requestSizeGuard: 'enabled',
         telegramInitDataSizeGuard: 'enabled',
@@ -25726,6 +25740,19 @@ export default {
     }
 
     if (!url.pathname.startsWith('/api/')) return new Response('Not found', { status: 404 });
+
+    const distributedPreAuthResponse=await enforceDistributedPreAuthRateLimit({
+      request,
+      cfg,
+      adminSensitive:isAdminSensitivePath(url.pathname),
+      fingerprintSecret:cfg.botToken,
+      hasSupabase,
+      supaRpc,
+      bumpTelemetry,
+      recordOpsEvent,
+      json,
+    });
+    if (distributedPreAuthResponse) return distributedPreAuthResponse;
 
     try {
       const user = await getRequestUser(request, cfg);
