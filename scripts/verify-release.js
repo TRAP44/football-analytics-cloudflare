@@ -30,6 +30,7 @@ const aiTrackRecordRenderer = fs.readFileSync('public/modules/ai-track-record-re
 const globalSearchRenderer = fs.readFileSync('public/modules/global-search-renderer.js', 'utf8');
 const globalSearchController = fs.readFileSync('public/modules/global-search-controller.js', 'utf8');
 const matchCenterController = fs.readFileSync('public/modules/match-center-controller.js', 'utf8');
+const analysisController = fs.readFileSync('public/modules/analysis-controller.js', 'utf8');
 const launchFunnelFrontend = app + '\n' + adminLaunchFunnel;
 const appRuntime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
@@ -280,6 +281,13 @@ if (!matchCenterRequestWrapper.includes('ensureMatchCenterController()') || matc
 if (!matchCenterOpenWrapper.includes('ensureMatchCenterController()') || matchCenterOpenWrapper.includes("showView('analysisView')")) failures.push('Match Center open wrapper must delegate without owning navigation implementation');
 if (app.includes('function scheduleLiveRefresh(')) failures.push('Match Center live scheduler leaked back into shared app root');
 if (!matchCenterController.includes('/api/match-center?') || !matchCenterController.includes('function scheduleLiveRefresh(') || !matchCenterController.includes('async function openMatchCenter(')) failures.push('Match Center controller boundary is incomplete');
+if (!fs.existsSync('test/analysis-controller-issue461.test.js')) failures.push('Missing AI analysis controller regression test');
+if (!app.includes("import('./modules/analysis-controller.js')") || !analysisController.includes('export function createAnalysisController')) failures.push('AI analysis controller lazy extraction contract is missing');
+if (!app.includes('async function ensureAnalysisController()') || !app.includes('createAnalysisController({')) failures.push('AI analysis controller dependencies must remain explicitly wired from composition root');
+const analysisWrapper = app.slice(app.indexOf('async function analyzeMatch('), app.indexOf('function historyItemFromAnalysis', app.indexOf('async function analyzeMatch(')));
+if (!analysisWrapper.includes('ensureAnalysisController()') || analysisWrapper.includes('/api/analyze')) failures.push('AI analyze wrapper must delegate without owning network/recovery implementation');
+if (app.includes('async function loadAnalysisAccessSnapshot(') || app.includes("await api('/api/analyze'")) failures.push('AI analysis request/recovery implementation leaked back into shared app root');
+if (!analysisController.includes('async function loadAnalysisAccessSnapshot(') || !analysisController.includes("await api('/api/analyze'") || !analysisController.includes('const ownsAnalysisView = requestSeq === state.analysisRequestSeq')) failures.push('AI analysis controller boundary is incomplete');
 if (!app.includes("import('./modules/admin-launch-funnel.js')") || !adminLaunchFunnel.includes('export function createAdminLaunchFunnelModule')) failures.push('Admin launch funnel lazy extraction contract is missing');
 if (app.includes('Собираю first-party воронку') || app.includes('newsImpactRecoveryIncidentSloBreachImpactRanking')) failures.push('Admin launch funnel implementation leaked back into shared app root');
 if (!app.includes("createNavigationShell({") || !navigationShell.includes('export function createNavigationShell')) failures.push('Frontend navigation shell extraction contract is missing');
