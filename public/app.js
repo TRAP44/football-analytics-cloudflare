@@ -13,6 +13,7 @@ import { createMyTeamsRenderer } from './modules/my-teams-renderer.js';
 import { createJourneyStateModule } from './modules/journey-state.js';
 import { analysisAccessUsageHtml, buildAnalysisAccessUsage } from './modules/analysis-access.js';
 import { createGlobalSearchRenderer } from './modules/global-search-renderer.js';
+import { createGlobalSearchController } from './modules/global-search-controller.js';
 import { buildPlayerComparisonCandidates, playerComparisonHtml, samePlayer } from './modules/player-comparison.js';
 import { createPlayerFollowModule } from './modules/player-follow.js';
 import {
@@ -2354,56 +2355,6 @@ function bindDiscoveryActions(root = document) {
   }));
 }
 
-function discoveryText(value) {
-  return String(value || '').trim().toLowerCase().replace(/ё/g, 'е');
-}
-
-function discoveryMatchRank(value, query) {
-  const text = discoveryText(value);
-  const q = discoveryText(query);
-  if (!text || !q) return 99;
-  if (text === q) return 0;
-  if (text.startsWith(q)) return 1;
-  if (text.split(/\s+/).some(part => part.startsWith(q))) return 2;
-  if (text.includes(q)) return 3;
-  return 99;
-}
-
-function localDiscoveryResults(query) {
-  const q = discoveryText(query);
-  if (!q) return { teams: [], competitions: [], matches: [] };
-  const teams = new Map(), competitions = new Map(), matches = [];
-  for (const m of state.matches) {
-    for (const team of [m.home, m.away]) {
-      if (!team?.id || !team?.name) continue;
-      const rank = Math.min(discoveryMatchRank(team.name, q), discoveryMatchRank(`${team.name} ${m.country || ''}`, q));
-      if (rank < 99 && !teams.has(Number(team.id))) teams.set(Number(team.id), { ...team, country: m.country || '', _searchRank:rank });
-    }
-    const names = [m.leagueShort, m.league, m.leagueOriginal].filter(Boolean);
-    const compRank = Math.min(...names.map(name => discoveryMatchRank(name, q)), discoveryMatchRank(`${m.league || ''} ${m.country || ''}`, q));
-    if (Number(m.leagueId) > 0 && compRank < 99 && !competitions.has(Number(m.leagueId))) competitions.set(Number(m.leagueId), {
-      leagueId: Number(m.leagueId), season: Number(m.season || new Date().getFullYear()), name: m.league || m.leagueOriginal || 'Турнир', shortName: m.leagueShort || m.league || 'Турнир', country: m.country || '', category: m.category || '', tier: m.competition?.tier || 'standard', logo: m.leagueLogo || '', _searchRank:compRank,
-    });
-    const teamRank = Math.min(discoveryMatchRank(m.home?.name, q), discoveryMatchRank(m.away?.name, q));
-    const matchRank = Math.min(teamRank, discoveryMatchRank(m.league, q), discoveryMatchRank(m.leagueOriginal, q));
-    if (matchRank < 99 && Number(m.fixtureId) > 0) matches.push({ ...m, _searchRank:matchRank });
-  }
-  const teamRows = [...teams.values()].sort((a,b) => Number(a._searchRank||99)-Number(b._searchRank||99) || String(a.name||'').localeCompare(String(b.name||''),'ru'));
-  const compRows = [...competitions.values()].sort((a,b) => Number(a._searchRank||99)-Number(b._searchRank||99) || Number(b.tier==='top')-Number(a.tier==='top') || String(a.shortName||a.name||'').localeCompare(String(b.shortName||b.name||''),'ru'));
-  matches.sort((a,b) => Number(a._searchRank||99)-Number(b._searchRank||99) || Number(Boolean(b.live))-Number(Boolean(a.live)) || Date.parse(a.date||0)-Date.parse(b.date||0));
-  return { teams: teamRows.slice(0, 10), competitions: compRows.slice(0, 8), matches: matches.slice(0, 20) };
-}
-
-function mergeById(first = [], second = [], idKey = 'id') {
-  const seen = new Set(), out = [];
-  for (const row of [...first, ...second]) {
-    const id = Number(row?.[idKey] || 0);
-    if (!id || seen.has(id)) continue;
-    seen.add(id); out.push(row);
-  }
-  return out;
-}
-
 function setDiscoveryHomeVisibility(visible) {
   ['searchRecentWrap', 'searchFavoritesWrap', 'searchCompetitionsWrap'].forEach(id => {
     const el = $(id);
@@ -2474,23 +2425,45 @@ function bindSearchMatchActions(root) {
   root?.querySelectorAll?.('[data-search-center]').forEach(btn => btn.addEventListener('click', () => openMatchCenter(Number(btn.dataset.searchCenter), btn)));
 }
 
-function setGlobalSearchMode(mode) {
-  state.globalSearch.mode = ['all','teams','competitions','upcoming','finished'].includes(mode) ? mode : 'all';
-  document.querySelectorAll('[data-search-mode]').forEach(btn => {
-    const active = btn.dataset.searchMode === state.globalSearch.mode;
-    btn.classList.toggle('active', active);
-    btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-  });
-  renderGlobalSearch();
-}
+let renderGlobalSearch = () => {};
 
-const { renderGlobalSearch } = createGlobalSearchRenderer({
+const {
+  localDiscoveryResults,
+  runGlobalSearch,
+  setGlobalSearchMode,
+  bindGlobalSearchControls,
+} = createGlobalSearchController({
+  state,
+  elementById: $,
+  querySelectorAll: selector => document.querySelectorAll(selector),
+  runtimeAllows,
+  api,
+  renderSearch: () => renderGlobalSearch(),
+  sendProductAction,
+  sendOperationTiming,
+  isAdmin,
+  renderProvider,
+  apiErrorCategory,
+  friendlyErrorMessage,
+  sendActionError,
+  toast,
+});
+
+({ renderGlobalSearch } = createGlobalSearchRenderer({
   state,
   elementById: $,
   querySelectorAll: selector => document.querySelectorAll(selector),
   escapeHtml,
   localDiscoveryResults,
-  mergeById,
+  mergeById: (first = [], second = [], idKey = 'id') => {
+    const seen = new Set(), out = [];
+    for (const row of [...first, ...second]) {
+      const id = Number(row?.[idKey] || 0);
+      if (!id || seen.has(id)) continue;
+      seen.add(id); out.push(row);
+    }
+    return out;
+  },
   russianCountLabel,
   searchTeamSummaryCard,
   knownTeamSummaryCard,
@@ -2502,81 +2475,7 @@ const { renderGlobalSearch } = createGlobalSearchRenderer({
   onBindDiscoveryActions: root => bindDiscoveryActions(root),
   onBindSearchMatchActions: root => bindSearchMatchActions(root),
   onSetMode: mode => setGlobalSearchMode(mode),
-});
-
-async function runGlobalSearch({ manual = false } = {}) {
-  const input = $('globalSearchInput');
-  const query = String(input?.value || '').trim();
-  const seq = ++state.globalSearch.requestSeq;
-  state.globalSearch.query = query;
-  state.globalSearch.warning = '';
-  state.globalSearch.resolvedQuery = '';
-  state.globalSearch.remoteMatches = [];
-  state.globalSearch.knownTeams = [];
-  state.globalSearch.matchSourceTeam = '';
-  state.globalSearch.matchDiscovery = null;
-  state.globalSearch.primaryFixtureId = null;
-
-  if (query.length < 2 || !runtimeAllows('searchEnabled')) {
-    state.globalSearch.loading = false;
-    state.globalSearch.status = query.length < 2 ? 'idle' : 'done';
-    state.globalSearch.remoteTeams = [];
-    state.globalSearch.remoteCompetitions = [];
-    if (!runtimeAllows('searchEnabled')) state.globalSearch.warning = 'Удалённый поиск временно недоступен. Уже загруженные матчи остаются доступны.';
-    renderGlobalSearch();
-    return;
-  }
-
-  const local = localDiscoveryResults(query);
-  const localCount = local.teams.length + local.competitions.length + local.matches.length;
-  sendProductAction('search_used', 'searchView');
-  const timingStartedAt = performance.now();
-  state.globalSearch.loading = true;
-  state.globalSearch.status = localCount ? 'refreshing' : 'searching';
-  renderGlobalSearch();
-
-  try {
-    const data = await api(`/api/search?q=${encodeURIComponent(query)}`, {
-      timeoutMs: 6500,
-      retry: false,
-    });
-    if (seq !== state.globalSearch.requestSeq || query !== String(state.globalSearch.query || '').trim()) return;
-    state.globalSearch.remoteTeams = data.teams || [];
-    state.globalSearch.knownTeams = data.knownTeams || [];
-    state.globalSearch.remoteCompetitions = data.competitions || [];
-    state.globalSearch.resolvedQuery = data.resolvedQuery || '';
-    state.globalSearch.remoteMatches = data.matches || [];
-    state.globalSearch.matchSourceTeam = data.matchSource?.name || '';
-    state.globalSearch.matchDiscovery = data.matchDiscovery || null;
-    state.globalSearch.primaryFixtureId = Number(data.primaryFixtureId || data.matchDiscovery?.primaryFixtureId || 0) || null;
-    state.globalSearch.warning = data.warning || data.hint || '';
-    state.globalSearch.searchedAt = data.refreshedAt || new Date().toISOString();
-    const merged = localDiscoveryResults(query);
-    const totalMatches = mergeById(state.globalSearch.remoteMatches, merged.matches, 'fixtureId').length;
-    const totalEntities = mergeById(merged.teams, state.globalSearch.remoteTeams, 'id').length
-      + mergeById(merged.competitions, state.globalSearch.remoteCompetitions, 'leagueId').length
-      + state.globalSearch.knownTeams.length;
-    state.globalSearch.status = totalMatches ? 'found' : totalEntities ? 'done' : 'empty';
-    if (totalMatches || totalEntities) sendProductAction('search_found', 'searchView');
-    else sendProductAction('search_empty', 'searchView');
-    sendOperationTiming('search', timingStartedAt, 'searchView');
-    if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
-  } catch (e) {
-    if (seq !== state.globalSearch.requestSeq) return;
-    const category = apiErrorCategory(e);
-    state.globalSearch.status = category === 'timeout' ? 'timeout' : 'error';
-    state.globalSearch.warning = category === 'timeout'
-      ? 'Источник отвечает слишком долго.'
-      : friendlyErrorMessage(e);
-    sendActionError('search', e, 'searchView');
-    if (manual && category !== 'timeout') toast(state.globalSearch.warning);
-  } finally {
-    if (seq === state.globalSearch.requestSeq) {
-      state.globalSearch.loading = false;
-      renderGlobalSearch();
-    }
-  }
-}
+}));
 
 function openTournamentMeta(meta) {
   const current = activeViewId(); if (current !== 'tournamentView') state.tournamentBackView = current;
@@ -6646,7 +6545,6 @@ $('connectionRetryBtn')?.addEventListener('click', () => recoverActiveView({ aut
 updateConnectionBanner();
 
 let matchSearchTimer = null;
-let globalSearchTimer = null;
 
 document.querySelectorAll('.date-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -6721,34 +6619,7 @@ $('matchSearch').addEventListener('input', e => {
   matchSearchTimer = setTimeout(renderMatches, 110);
 });
 
-$('globalSearchBtn')?.addEventListener('click', () => {
-  clearTimeout(globalSearchTimer);
-  runGlobalSearch({ manual:true });
-});
-$('globalSearchInput')?.addEventListener('input', e => {
-  clearTimeout(globalSearchTimer);
-  state.globalSearch.requestSeq += 1;
-  state.globalSearch.loading = false;
-  state.globalSearch.query = e.target.value || '';
-  state.globalSearch.status = state.globalSearch.query.trim().length >= 2 ? 'local' : 'idle';
-  state.globalSearch.remoteTeams = [];
-  state.globalSearch.remoteCompetitions = [];
-  state.globalSearch.remoteMatches = [];
-  state.globalSearch.matchSourceTeam = '';
-  state.globalSearch.warning = '';
-  renderGlobalSearch();
-  if (state.globalSearch.query.trim().length >= 3) {
-    globalSearchTimer = setTimeout(() => runGlobalSearch(), 500);
-  }
-});
-$('globalSearchInput')?.addEventListener('keydown', e => {
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    clearTimeout(globalSearchTimer);
-    runGlobalSearch({ manual:true });
-  }
-});
-document.querySelectorAll('[data-search-mode]').forEach(btn => btn.addEventListener('click', () => setGlobalSearchMode(btn.dataset.searchMode || 'all')));
+bindGlobalSearchControls();
 $('clearRecentTeamsBtn')?.addEventListener('click', clearRecentTeams);
 $('refreshBtn').addEventListener('click', () => loadMatches({ force: true }));
 $('historyRefreshBtn').addEventListener('click', () => Promise.allSettled([loadHistory(true), loadAiTrackRecord(true)]));
