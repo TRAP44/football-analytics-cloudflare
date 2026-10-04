@@ -8,6 +8,7 @@ import fs from 'node:fs';
 {
 const worker=(fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'));
 const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
+const analysisController=fs.readFileSync('public/modules/analysis-controller.js','utf8');
 
 test('RC80 records only real recovery attempts',()=>{
   assert.match(worker,/eventName:'news_impact_recovery_attempt'/);
@@ -35,9 +36,9 @@ test('RC80 requires a post-attempt confirmed delivery inside the maturity window
 test('RC80 tracks full-AI fallback attribution through Mini App launch params',()=>{
   assert.match(worker,/function newsImpactRecoveryAnalysisUrl\(/);
   assert.match(worker,/newsImpactRecoveryCode:r/);
-  assert.match(app,/newsImpactRecoveryCode:String\(options\.newsImpactRecoveryCode/);
+  assert.match(analysisController,/newsImpactRecoveryCode:\s*String\(options\.newsImpactRecoveryCode/);
   assert.match(app,/params\.get\('newsImpactRecoveryCode'\)/);
-  assert.match(app,/newsImpactRecoveryFrom/);
+  assert.match(analysisController,/newsImpactRecoveryFrom/);
 });
 
 test('RC80 admin UI keeps pending out of premature failure conclusions',()=>{
