@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const app = fs.readFileSync('public/app.js', 'utf8');
 const worker = fs.readFileSync('src/worker.js', 'utf8');
 const historyRenderer = fs.readFileSync('public/modules/history-renderer.js', 'utf8');
+const matchCenterController = fs.readFileSync('public/modules/match-center-controller.js', 'utf8');
 
 test('renderAnalysis owns currentAnalysis assignment so a new fixture resets the active tab', () => {
   const render = app.match(/function renderAnalysis\(d\)[\s\S]*?state\.currentAnalysis = d;/);
@@ -42,9 +43,8 @@ test('pending AI analysis cannot reclaim navigation after the user leaves or ope
   assert.match(analyze[0], /if \(ownsAnalysisView\) showView\('analysisView'\)/);
   assert.match(analyze[0], /if \(requestSeq !== state\.analysisRequestSeq \|\| activeViewId\(\) !== 'analysisView'\) return/);
 
-  const center = app.match(/async function openMatchCenter\(fixtureId, btn\)[\s\S]*?\n}\n\nfunction syncAnalysisBusyUi/);
-  assert.ok(center, 'openMatchCenter must exist');
-  assert.match(center[0], /if \(state\.analysisActionPending\) state\.analysisRequestSeq \+= 1/);
+  assert.match(app, /async function openMatchCenter\(fixtureId, btn\)[\s\S]*?ensureMatchCenterController\(\)/);
+  assert.match(matchCenterController, /async function openMatchCenter\(fixtureId, button\)[\s\S]*?if \(state\.analysisActionPending\) state\.analysisRequestSeq \+= 1/);
 
   assert.match(app, /from === 'analysisView' && to !== 'analysisView' && state\.analysisActionPending[\s\S]*?state\.analysisRequestSeq \+= 1/);
 });
