@@ -307,9 +307,12 @@ test('full AI uses Pass entitlement server-side instead of the FREE quota gate f
   assert.match(source, /const passCandidate = entitlementBefore\.source === 'pass'/);
   assert.match(source, /if \(!freeRecheck && !passCandidate && quotaBefore\.left <= 0\)/);
   assert.match(source, /reserveEntitlementUsage\(user\.id,entitlementBefore\.passes\.active,fixtureId,cfg,\{/);
+  assert.match(source, /const passOperationId=crypto\.randomUUID\(\)/);
   assert.match(source, /durable:hasSupabase\(cfg\)/);
-  assert.match(source, /operationId:crypto\.randomUUID\(\)/);
+  assert.match(source, /operationId:passOperationId/);
+  assert.match(source, /ANALYSIS_PASS_RESERVATION_OUTCOME_UNKNOWN/);
   assert.match(source, /if \(!freeRecheck && !passAccess\) \{\s*usageReservation=await reserveAnalysisQuota/);
+  assert.match(source, /const responseQuota=await getQuota\(user\.id,cfg\);\s*usageCommitted=true;/);
   assert.match(source, /finalizeAnalysisUsageReservation\(\{/);
   assert.match(source, /disposition/);
   assert.match(source, /refundEntitlementUsage\(user\.id,passUsageReservation\.entitlementId,cfg\)/);
