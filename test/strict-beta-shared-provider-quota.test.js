@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const workerCore=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 const router=readFileSync(new URL('../src/router.js',import.meta.url),'utf8');
+const providerRoutes=readFileSync(new URL('../src/provider-route-registry.js',import.meta.url),'utf8');
 const worker=workerCore+'\n'+router+'\n'+readFileSync(new URL('../src/api-football-gateway.js',import.meta.url),'utf8');
 const appCore=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
 const clientCore=readFileSync(new URL('../public/modules/client-core.js',import.meta.url),'utf8');
@@ -34,8 +35,9 @@ test('production beta mode defaults public and becomes strict only on explicit t
 
   const routes=block(workerCore,"if (!url.pathname.startsWith('/api/'))","async scheduled(controller")+'\n'+router;
   const guard=routes.indexOf('closedBetaAccessDecision(user, cfg)');
-  const matches=routes.indexOf("url.pathname === '/api/matches'");
-  assert.ok(guard>=0 && matches>guard);
+  const dispatch=routes.indexOf('dispatchApiRoute(request, url, cfg, user, API_ROUTE_DEPS)',guard);
+  assert.ok(guard>=0 && dispatch>guard);
+  assert.match(providerRoutes,/method:'GET', path:'\/api\/matches', handler:'apiMatches'/);
   assert.match(routes,/CLOSED_BETA_ACCESS_DENIED/);
   assert.match(routes,/providerRequests:0/);
 });
