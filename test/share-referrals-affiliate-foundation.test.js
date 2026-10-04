@@ -69,7 +69,7 @@ test('referral attribution blocks forged, self and duplicate attribution', () =>
 });
 
 test('worker uses idempotent growth events for share and referral lifecycle', () => {
-  const worker=fs.readFileSync('src/worker.js','utf8');
+  const worker=(fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'));
   for (const event of ['share_created','share_open','referral_open','referred_first_open','referred_payment']) {
     assert.ok(worker.includes(`eventName:'${event}'`) || worker.includes(`event_name:'${event}'`), `missing ${event}`);
   }
