@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8')+'\n'+readFileSync(new URL('../src/api-football-gateway.js',import.meta.url),'utf8');
 const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+const searchController=readFileSync(new URL('../public/modules/global-search-controller.js',import.meta.url),'utf8');
 const css=readFileSync(new URL('../public/styles.css',import.meta.url),'utf8') + '\n' + readFileSync(new URL('../public/styles/public-shell.css', import.meta.url), 'utf8');
 
 function block(source,start,end){
@@ -120,7 +121,7 @@ test('client deduplicates match center refreshes and keeps provider cooldown non
   assert.match(open,/\['rate_limit','provider'\]/);
   assert.match(open,/showView\(sourceView/);
 
-  const search=block(app,'async function runGlobalSearch','function openTournamentMeta');
+  const search=block(searchController,'async function runGlobalSearch','function handleSearchInput');
   assert.doesNotMatch(search,/dedupe:\s*false/);
 
   const matches=block(app,'async function loadMatches','function syncFilterButtons');
@@ -128,8 +129,8 @@ test('client deduplicates match center refreshes and keeps provider cooldown non
   assert.match(matches,/const fallbackSnapshot = readMatchSnapshot\(date\)/);
   assert.match(matches,/fallbackSnapshot\.matches\.length/);
   assert.match(matches,/Показана последняя сохранённая версия/);
-  assert.match(app,/query\.trim\(\)\.length >= 3/);
-  assert.match(app,/setTimeout\(\(\) => runGlobalSearch\(\), 500\)/);
+  assert.match(searchController,/query\.trim\(\)\.length >= 3/);
+  assert.match(searchController,/setTimer\(\(\) => runGlobalSearch\(\), 500\)/);
 });
 
 test('public shell owns final shared layout declarations without duplicate base cascade ownership',()=>{
