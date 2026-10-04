@@ -385,6 +385,7 @@ export function createEntitlementService({
   }
 
   async function reserveEntitlementUsage(userId, activeEntitlements, fixtureId, cfg, usageOptions = {}) {
+    const uid = Number(userId);
     const candidates = (activeEntitlements || []).map(normalizeEntitlementRow);
     const unlimited = candidates.find(item => item.usageLimit == null);
     if (unlimited) {
