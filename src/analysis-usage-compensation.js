@@ -151,7 +151,7 @@ export function createAnalysisUsageCompensationRuntime({
         p_usage_date: new Date().toISOString().slice(0, 10),
       }, 7000, lifecycleHeaders(operationId, 'reconcile'));
 
-      if (result?.ok !== true || result?.reconciliation !== true) {
+      if (result?.reconciliation !== true) {
         const error = new Error(String(result?.reason || 'analysis_usage_reconciliation_not_confirmed'));
         error.code = 'ANALYSIS_USAGE_RECONCILIATION_NOT_CONFIRMED';
         throw error;
@@ -160,7 +160,21 @@ export function createAnalysisUsageCompensationRuntime({
       const reconciled = Math.max(0, Number(result?.reconciled || 0));
       const failed = Math.max(0, Number(result?.failed || 0));
       if (reconciled) bumpTelemetry?.('analysisUsageReconciled', reconciled);
-      if (failed) bumpTelemetry?.('analysisUsageReconciliationFailures', failed);
+      if (failed) {
+        bumpTelemetry?.('analysisUsageReconciliationFailures', failed);
+        await Promise.resolve(recordOpsEvent?.(cfg, {
+          severity: 'error',
+          source: 'quota',
+          eventType: 'analysis_usage_reconciliation',
+          code: 'ANALYSIS_USAGE_RECONCILIATION_PARTIAL',
+          message: 'Some stale analysis usage reservations could not be reconciled and remain pending.',
+          meta: {
+            reconciled,
+            failed,
+            pending: Math.max(0, Number(result?.pending || 0)),
+          },
+        })).catch(() => null);
+      }
 
       return {
         ok: failed === 0,
