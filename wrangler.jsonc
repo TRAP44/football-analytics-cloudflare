@@ -46,7 +46,7 @@
       "name": "EDGE_ANALYZE_RATE_LIMIT",
       "namespace_id": "386101",
       "simple": {
-        "limit": 30,
+        "limit": 120,
         "period": 60
       }
     },
@@ -54,7 +54,7 @@
       "name": "EDGE_SENSITIVE_RATE_LIMIT",
       "namespace_id": "386102",
       "simple": {
-        "limit": 120,
+        "limit": 30,
         "period": 60
       }
     },
