@@ -54,6 +54,8 @@ test('Issue #433 Quality contains a secret-free executable Supabase database gat
   assert.match(quality, /prepare-supabase-ci-migrations\.js/);
   assert.match(quality, /supabase-concurrency-gate\.js/);
   assert.match(quality, /supabase-ci-contract\.sql/);
+  assert.match(quality, /supabase_migration_v6_27_1\.sql/);
+  assert.match(quality, /PRE_LATEST_RENEW/);
   assert.match(quality, /migration up/);
   assert.match(quality, /Fresh-install baseline unexpectedly applied/);
   assert.doesNotMatch(quality, /secrets\.SUPABASE_/);
