@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker = fs.readFileSync('src/worker.js', 'utf8');
+const runtimeControls = fs.readFileSync('src/runtime-controls.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8') + '\n' + fs.readFileSync('public/modules/admin-runtime-controls.js', 'utf8');
 
 function section(source, startMarker, endMarker) {
@@ -14,19 +15,19 @@ function section(source, startMarker, endMarker) {
 }
 
 test('runtime history failures are surfaced instead of being rendered as an empty audit trail', () => {
-  const runtimeApi = section(worker, 'async function apiRuntimeControls', 'function publicDataCapabilities');
+  const runtimeApi = section(runtimeControls, 'async function apiRuntimeControls', 'async function apiRuntimeRollback');
   assert.match(runtimeApi, /RUNTIME_HISTORY_READ_FAILED/);
   assert.match(runtimeApi, /RUNTIME_HISTORY_POST_WRITE_READ_FAILED/);
   assert.match(runtimeApi, /historyReady = false/);
   assert.match(runtimeApi, /historyReason/);
   assert.doesNotMatch(runtimeApi, /listRuntimeHistory\(cfg, 12\)\.catch\(\(\) => \[\]\)/);
 
-  const saveRuntime = section(worker, 'async function saveRuntimeControls', 'function runtimeFeatureResponse');
+  const saveRuntime = section(runtimeControls, 'async function saveRuntimeControls', 'function runtimeFeatureResponse');
   assert.match(saveRuntime, /RUNTIME_HISTORY_BASELINE_WRITE_FAILED/);
   assert.match(saveRuntime, /RUNTIME_HISTORY_APPEND_FAILED/);
   assert.match(saveRuntime, /return \{ value, status: 200, historyReady, historyReason \}/);
 
-  const rollback = section(worker, 'async function apiRuntimeRollback', 'function publicDataCapabilities');
+  const rollback = section(runtimeControls, 'async function apiRuntimeRollback', 'return {\n    runtimeControlsSnapshot');
   assert.match(rollback, /RUNTIME_HISTORY_ROLLBACK_READ_FAILED/);
   assert.doesNotMatch(rollback, /historyReady:\s*true/);
 
