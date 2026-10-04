@@ -4,7 +4,7 @@
   "runtimeVersion": "6.120.0-rc144",
   "productionSchema": "6.27",
   "freshInstallBaseline": "supabase/baseline/supabase_baseline_v6_19.sql",
-  "latestMigration": "supabase/migrations/supabase_migration_v6_27_1.sql",
+  "latestMigration": "supabase/migrations/supabase_migration_v6_27_3.sql",
   "accessContract": "public-telegram-validated-by-default",
   "strictBeta": "opt-in-only-when-BETA_ACCESS_ENABLED=true",
   "productionDatabaseRule": "never-run-fresh-install-baseline-over-existing-production",
@@ -15,5 +15,12 @@
     "npm run lint",
     "npm run verify:release",
     "npm run verify:worker"
-  ]
+  ],
+  "databaseContract": {
+    "version": 2,
+    "rpc": "backend_readiness_contract_v2",
+    "fingerprint": "6a7f0fe444f49a2a52c4603e952ee9ea",
+    "scope": "all-public-relations-columns-constraints-indexes-functions-policies-triggers-and-app-role-grants",
+    "legacyFingerprint": "c2c22ec25aacfcf1b9938b0850cebf49"
+  }
 }
