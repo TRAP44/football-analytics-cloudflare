@@ -78,7 +78,7 @@ jobs:
           node "$GITHUB_WORKSPACE/scripts/supabase-concurrency-gate.js"
 
           psql "$DB_URL" -X -v ON_ERROR_STOP=1 \
-            -f "$GITHUB_WORKSPACE/supabase/migrations/supabase_migration_v6_26_3.sql"
+            -f "$GITHUB_WORKSPACE/supabase/migrations/supabase_migration_v6_27.sql"
           psql "$DB_URL" -X -v ON_ERROR_STOP=1 \
             -f "$GITHUB_WORKSPACE/scripts/supabase-ci-contract.sql"
 
@@ -123,9 +123,9 @@ jobs:
           source "$RUNNER_TEMP/supabase-upgrade.env"
           set +a
 
-          PRE_LATEST_COLUMNS="$(psql "$DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
-            "select count(*) from information_schema.columns where table_schema='public' and table_name='ops_events' and column_name in ('occurrence_count','last_occurred_at');")"
-          test "$PRE_LATEST_COLUMNS" = "0"
+          PRE_LATEST_LEDGER="$(psql "$DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+            "select count(*) from information_schema.tables where table_schema='public' and table_name='sensitive_mutation_idempotency';")"
+          test "$PRE_LATEST_LEDGER" = "0"
 
           node "$GITHUB_WORKSPACE/scripts/prepare-supabase-ci-migrations.js" \
             latest-only "$UPGRADE_DIR/supabase/migrations" "$GITHUB_WORKSPACE"
