@@ -186,15 +186,16 @@ test('app composition root wires Match Center controller and no longer owns its 
   const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
   const module = fs.readFileSync(new URL('../public/modules/match-center-controller.js', import.meta.url), 'utf8');
 
-  assert.match(app, /createMatchCenterController/);
+  assert.match(app, /import\('\.\/modules\/match-center-controller\.js'\)/);
+  assert.match(app, /async function ensureMatchCenterController\(\)/);
   assert.match(app, /suspendLiveRefresh\(\)/);
   assert.match(app, /resumeLiveRefresh\(\)/);
   assert.doesNotMatch(app, /matchCenterInFlight:/);
   assert.doesNotMatch(app, /matchCenterRequestSeq:/);
   assert.doesNotMatch(app, /liveRefreshTimer:/);
   assert.doesNotMatch(app, /liveRefreshWasActive:/);
-  assert.doesNotMatch(app, /async function requestMatchCenter\(/);
-  assert.doesNotMatch(app, /async function openMatchCenter\(/);
+  assert.match(app, /async function requestMatchCenter\(fixtureId, extraParams = \{\}, options = \{\}\)[\s\S]*?ensureMatchCenterController\(\)/);
+  assert.match(app, /async function openMatchCenter\(fixtureId, btn\)[\s\S]*?ensureMatchCenterController\(\)/);
   assert.doesNotMatch(app, /function scheduleLiveRefresh\(/);
   assert.match(module, /\/api\/match-center\?/);
   assert.match(module, /function scheduleLiveRefresh\(/);
