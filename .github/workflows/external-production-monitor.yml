@@ -20,7 +20,9 @@ concurrency:
 
 jobs:
   monitor:
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
+    # Must remain independent from the self-hosted CI/deploy runner so a local
+    # runner outage cannot make production invisible at the same time.
     timeout-minutes: 5
     env:
       PRODUCTION_URL: "https://football-analytics-cloudflare.wok-side.workers.dev"
