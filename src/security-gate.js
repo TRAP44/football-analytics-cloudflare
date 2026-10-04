@@ -220,7 +220,7 @@ export async function enforceDistributedPreAuthRateLimit({
   const endpoint=new URL(request.url).pathname;
   const fingerprint=await privacyNetworkFingerprint(request,fingerprintSecret);
 
-  const failClosedResponse=(reason='backend_unavailable')=>{
+  const failClosedResponse=()=>{
     bumpTelemetry('securityPreAuthFailClosed');
     return json({
       error:'Защитный контур временно недоступен. Повторите немного позже.',
@@ -241,13 +241,13 @@ export async function enforceDistributedPreAuthRateLimit({
         status:503,
         meta:{scope:policy.scope,failClosed:true},
       }).catch(()=>{});
-      return failClosedResponse('network_identity_unavailable');
+      return failClosedResponse();
     }
     return null;
   }
 
   if (typeof hasSupabase!=='function' || !hasSupabase(cfg) || typeof supaRpc!=='function') {
-    if (policy.failClosed && !cfg?.devMode) return failClosedResponse('distributed_backend_not_configured');
+    if (policy.failClosed && !cfg?.devMode) return failClosedResponse();
     return null;
   }
 
@@ -296,7 +296,7 @@ export async function enforceDistributedPreAuthRateLimit({
       meta:{scope:policy.scope,failClosed:policy.failClosed},
     }).catch(()=>{});
 
-    if (policy.failClosed && !cfg?.devMode) return failClosedResponse('distributed_backend_unavailable');
+    if (policy.failClosed && !cfg?.devMode) return failClosedResponse();
     return null;
   }
 }
