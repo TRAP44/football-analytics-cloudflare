@@ -43,6 +43,7 @@ import { formatPostDeployRegressionAlert, planPostDeployRegressionAlert, postDep
 import { planPostDeployRegressionResponseTransition, summarizePostDeployRegressionResponse } from './post-deploy-regression-response.js';
 import { buildPostDeployRegressionSloDashboard } from './post-deploy-regression-slo.js';
 import { createCompositeReadinessRuntime } from './readiness-contract.js';
+import { createAnalysisUsageCompensationRuntime, durableAnalysisUsageHeaders } from './analysis-usage-compensation.js';
 import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
 import { applyFeatureFreshness, applyFeatureFreshnessMap } from './data-freshness.js';
 import { assessExpectedGoalsQuality, sanitizeExpectedGoalsForDisplay, statisticsForTrustedExpectedGoals } from './xg-quality.js';
@@ -199,6 +200,15 @@ const memory = {
     providerDistributedFallbacks: 0,
     quotaReservations: 0,
     quotaRefunds: 0,
+    quotaRefundFailures: 0,
+    passUsageRefunds: 0,
+    passUsageRefundFailures: 0,
+    analysisUsageCommits: 0,
+    analysisUsageCommitFailures: 0,
+    analysisUsageRefunds: 0,
+    analysisUsageCompensationFailures: 0,
+    analysisUsageReconciled: 0,
+    analysisUsageReconciliationFailures: 0,
     digestDeliveryClaims: 0,
     digestDeliveryDuplicates: 0,
   },
@@ -761,6 +771,17 @@ const {
 } = createSupabaseClient({
   fetchWithTimeout,
   redactMessage: redactOpsString,
+});
+
+const {
+  finalizeAnalysisUsageReservation,
+  reconcileAnalysisUsageReservations,
+} = createAnalysisUsageCompensationRuntime({
+  hasSupabase,
+  supaRpc,
+  recordOpsEvent,
+  bumpTelemetry,
+  redactOpsString,
 });
 
 const {
@@ -1942,16 +1963,42 @@ async function reserveAnalysisQuota(userId, cfg) {
   const limit = Number(cfg.limits[plan] || cfg.limits.FREE);
 
   if (hasSupabase(cfg)) {
-    const result = await supaRpc(cfg, 'consume_analysis_quota', {
-      p_telegram_id: Number(userId),
-      p_usage_date: date,
-      p_limit: limit,
-    });
+    const requestedOperationId = crypto.randomUUID();
+    let result;
+    try {
+      result = await supaRpc(cfg, 'consume_analysis_quota', {
+        p_telegram_id: Number(userId),
+        p_usage_date: date,
+        p_limit: limit,
+      }, 7000, durableAnalysisUsageHeaders(requestedOperationId));
+    } catch (error) {
+      await recordOpsEvent(cfg, {
+        severity: 'error',
+        source: 'quota',
+        eventType: 'analysis_usage_reservation',
+        code: 'ANALYSIS_QUOTA_RESERVATION_OUTCOME_UNKNOWN',
+        message: 'Analysis quota reservation response was not confirmed. A durable database reservation, if created, will be reconciled automatically.',
+        meta: {
+          operationId: requestedOperationId,
+          telegramId: Number(userId),
+          usageDate: date,
+          error: redactOpsString(error?.message || error, 180),
+        },
+      }).catch(() => null);
+      throw error;
+    }
+
     const used = Number(result?.used || 0);
+    const operationId = String(result?.operationId || '').trim();
+    const durable = Boolean(result?.allowed && result?.durable === true && operationId);
     if (result?.allowed) bumpTelemetry('quotaReservations');
     return {
       reserved: Boolean(result?.allowed),
       allowed: Boolean(result?.allowed),
+      durable,
+      operationId: durable ? operationId : null,
+      kind: 'quota',
+      userId: Number(userId),
       date,
       plan,
       used,
@@ -1962,25 +2009,31 @@ async function reserveAnalysisQuota(userId, cfg) {
   }
 
   const used = await getUsage(userId, cfg);
-  if (used >= limit) return { reserved:false, allowed:false, date, plan, used, limit, left:0, reason:'quota_exhausted' };
+  if (used >= limit) return { reserved:false, allowed:false, durable:false, kind:'quota', userId:Number(userId), date, plan, used, limit, left:0, reason:'quota_exhausted' };
   const next = used + 1;
   memory.usage.set(`${userId}:${date}`, next);
   bumpTelemetry('quotaReservations');
-  return { reserved:true, allowed:true, date, plan, used:next, limit, left:Math.max(0,limit-next), reason:'reserved_local' };
+  return { reserved:true, allowed:true, durable:false, kind:'quota', userId:Number(userId), date, plan, used:next, limit, left:Math.max(0,limit-next), reason:'reserved_local' };
 }
 
 async function refundAnalysisQuota(userId, reservation, cfg) {
-  if (!reservation?.reserved) return;
+  if (!reservation?.reserved) return { ok:true, skipped:true, reason:'not_reserved' };
   if (hasSupabase(cfg)) {
-    await supaRpc(cfg, 'refund_analysis_quota', {
+    const result = await supaRpc(cfg, 'refund_analysis_quota', {
       p_telegram_id: Number(userId),
       p_usage_date: reservation.date || todayUtc(),
-    }).catch(()=>null);
+    });
+    if (result?.refunded !== true) {
+      const error = new Error(String(result?.reason || 'legacy_quota_refund_not_confirmed'));
+      error.code = 'LEGACY_QUOTA_REFUND_NOT_CONFIRMED';
+      throw error;
+    }
   } else {
     const key=`${userId}:${reservation.date || todayUtc()}`;
     memory.usage.set(key, Math.max(0, Number(memory.usage.get(key) || 0) - 1));
   }
   bumpTelemetry('quotaRefunds');
+  return { ok:true, refunded:true };
 }
 
 async function getQuota(userId, cfg) {
@@ -23259,7 +23312,10 @@ async function apiAnalyze(request, cfg, user) {
   try {
   let passAccess=false;
   if (!freeRecheck && passCandidate) {
-    passUsageReservation=await reserveEntitlementUsage(user.id,entitlementBefore.passes.active,fixtureId,cfg);
+    passUsageReservation=await reserveEntitlementUsage(user.id,entitlementBefore.passes.active,fixtureId,cfg,{
+      durable:hasSupabase(cfg),
+      operationId:crypto.randomUUID(),
+    });
     passAccess=Boolean(passUsageReservation?.allowed);
   }
   if (!freeRecheck && !passAccess) {
@@ -23595,9 +23651,66 @@ async function apiAnalyze(request, cfg, user) {
   return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:recheckReasonCode,delta:recheckDelta},newsImpact,quota:await getQuota(user.id,cfg)}));
   } finally {
     try {
-      if (usageReservation?.reserved && !usageCommitted) await refundAnalysisQuota(user.id,usageReservation,cfg);
-      if (passUsageReservation?.reserved && !usageCommitted) {
-        await refundEntitlementUsage(user.id,passUsageReservation.entitlementId,cfg).catch(()=>null);
+      const disposition=usageCommitted ? 'commit' : 'refund';
+
+      if (usageReservation?.reserved) {
+        if (usageReservation.durable) {
+          await finalizeAnalysisUsageReservation({
+            reservation:usageReservation,
+            disposition,
+            cfg,
+            userId:user.id,
+          });
+        } else if (!usageCommitted) {
+          try {
+            await refundAnalysisQuota(user.id,usageReservation,cfg);
+          } catch (error) {
+            bumpTelemetry('quotaRefundFailures');
+            await recordOpsEvent(cfg,{
+              severity:'error',
+              source:'quota',
+              eventType:'analysis_usage_compensation',
+              code:'LEGACY_QUOTA_REFUND_FAILED',
+              message:'Legacy analysis quota refund failed before durable lifecycle confirmation.',
+              meta:{
+                telegramId:Number(user.id),
+                usageDate:usageReservation.date || null,
+                error:redactOpsString(error?.message || error,180),
+              },
+            }).catch(()=>null);
+          }
+        }
+      }
+
+      if (passUsageReservation?.reserved) {
+        if (passUsageReservation.durable) {
+          await finalizeAnalysisUsageReservation({
+            reservation:passUsageReservation,
+            disposition,
+            cfg,
+            userId:user.id,
+          });
+        } else if (!usageCommitted) {
+          try {
+            const result=await refundEntitlementUsage(user.id,passUsageReservation.entitlementId,cfg);
+            if (result?.updated !== true) throw new Error(String(result?.reason || 'legacy_pass_refund_not_confirmed'));
+            bumpTelemetry('passUsageRefunds');
+          } catch (error) {
+            bumpTelemetry('passUsageRefundFailures');
+            await recordOpsEvent(cfg,{
+              severity:'error',
+              source:'quota',
+              eventType:'analysis_usage_compensation',
+              code:'LEGACY_PASS_REFUND_FAILED',
+              message:'Legacy limited Pass refund failed before durable lifecycle confirmation.',
+              meta:{
+                telegramId:Number(user.id),
+                entitlementId:Number(passUsageReservation.entitlementId || 0) || null,
+                error:redactOpsString(error?.message || error,180),
+              },
+            }).catch(()=>null);
+          }
+        }
       }
     } finally {
       await releaseDistributedAnalysisLock(analysisLock,cfg);
@@ -24710,6 +24823,14 @@ export default {
       }).catch(() => {});
       return undefined;
     }
+
+    const scheduledAt = new Date(Number(controller?.scheduledTime || Date.now()));
+    if (Number.isFinite(scheduledAt.getTime()) && scheduledAt.getUTCMinutes() % 15 === 0) {
+      const reconciliation = reconcileAnalysisUsageReservations(cfg);
+      if (typeof ctx?.waitUntil === 'function') ctx.waitUntil(reconciliation);
+      else await reconciliation;
+    }
+
     return handleScheduled(controller, cfg, ctx);
   },
 };
