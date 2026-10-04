@@ -12,6 +12,12 @@ const INVALID_AUTH_POLICIES = Object.freeze({
   admin: { limit: 12, windowMs: 60_000 },
 });
 
+const DISTRIBUTED_PREAUTH_POLICIES = Object.freeze({
+  public: Object.freeze({ limit: 180, windowSeconds: 60, failClosed: false, distributed: false }),
+  expensive: Object.freeze({ limit: 60, windowSeconds: 60, failClosed: true, distributed: true }),
+  admin: Object.freeze({ limit: 24, windowSeconds: 60, failClosed: true, distributed: true }),
+});
+
 function headerValue(request, name) {
   return String(request?.headers?.get?.(name) || '').trim();
 }
@@ -133,10 +139,174 @@ async function sha256Hex(value='') {
   return [...new Uint8Array(digest)].map(byte=>byte.toString(16).padStart(2,'0')).join('');
 }
 
-async function clientNetworkFingerprint(request) {
-  const ip=headerValue(request,'cf-connecting-ip');
-  if (!ip) return '';
-  return (await sha256Hex(`matchradar-security-v1|${ip}`)).slice(0,24);
+async function hmacSha256Hex(secret='', value='') {
+  const keyBytes=new TextEncoder().encode(String(secret || ''));
+  const key=await crypto.subtle.importKey(
+    'raw',
+    keyBytes,
+    {name:'HMAC',hash:'SHA-256'},
+    false,
+    ['sign'],
+  );
+  const signature=await crypto.subtle.sign(
+    'HMAC',
+    key,
+    new TextEncoder().encode(String(value || '')),
+  );
+  return [...new Uint8Array(signature)].map(byte=>byte.toString(16).padStart(2,'0')).join('');
+}
+
+export function normalizeClientNetworkAddress(value='') {
+  let raw=String(value || '').trim().toLowerCase();
+  if (!raw) return '';
+
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(raw)) {
+    const parts=raw.split('.').map(part=>Number(part));
+    if (parts.length!==4 || parts.some(part=>!Number.isInteger(part) || part<0 || part>255)) return '';
+    return parts.join('.');
+  }
+
+  if (raw.startsWith('[') && raw.endsWith(']')) raw=raw.slice(1,-1);
+  if (!raw.includes(':') || raw.includes('%')) return '';
+  try {
+    const normalized=new URL(`http://[${raw}]/`).hostname
+      .replace(/^\[|\]$/g,'')
+      .toLowerCase();
+    return normalized.includes(':') ? normalized : '';
+  } catch {
+    return '';
+  }
+}
+
+export async function privacyNetworkFingerprint(request, secret='') {
+  const normalized=normalizeClientNetworkAddress(headerValue(request,'cf-connecting-ip'));
+  if (!normalized) return '';
+  const material=`matchradar-preauth-v2|${normalized}`;
+  const digest=String(secret || '').trim()
+    ? await hmacSha256Hex(secret,material)
+    : await sha256Hex(material);
+  return digest.slice(0,24);
+}
+
+function distributedPreAuthPolicy(request, adminSensitive=false) {
+  if (adminSensitive) return {scope:'admin',...DISTRIBUTED_PREAUTH_POLICIES.admin};
+  const path=new URL(request.url).pathname;
+  if (path==='/api/analyze') return {scope:'expensive',...DISTRIBUTED_PREAUTH_POLICIES.expensive};
+  return {scope:'public',...DISTRIBUTED_PREAUTH_POLICIES.public};
+}
+
+export function distributedPreAuthPolicies() {
+  return Object.fromEntries(
+    Object.entries(DISTRIBUTED_PREAUTH_POLICIES).map(([scope,policy])=>[
+      scope,
+      {scope,...policy},
+    ]),
+  );
+}
+
+export async function enforceDistributedPreAuthRateLimit({
+  request,
+  cfg,
+  adminSensitive=false,
+  fingerprintSecret='',
+  hasSupabase,
+  supaRpc,
+  bumpTelemetry=()=>{},
+  recordOpsEvent=async()=>{},
+  json,
+} = {}) {
+  if (!request || typeof json!=='function') throw new TypeError('distributed pre-auth limiter dependencies are required');
+  const policy=distributedPreAuthPolicy(request,adminSensitive);
+  const endpoint=new URL(request.url).pathname;
+  if (!policy.distributed) return null;
+  const fingerprint=await privacyNetworkFingerprint(request,fingerprintSecret);
+
+  const failClosedResponse=()=>{
+    bumpTelemetry('securityPreAuthFailClosed');
+    return json({
+      error:'Защитный контур временно недоступен. Повторите немного позже.',
+      code:'PREAUTH_RATE_GUARD_UNAVAILABLE',
+      retryAfter:5,
+    },503,{'retry-after':'5','cache-control':'no-store'});
+  };
+
+  if (!fingerprint) {
+    if (policy.failClosed && !cfg?.devMode) {
+      const hourBucket=new Date().toISOString().slice(0,13);
+      void recordOpsEvent(cfg,{
+        severity:'warning',
+        source:'security',
+        eventType:'preauth_rate_limit',
+        code:'PREAUTH_NETWORK_ID_UNAVAILABLE',
+        message:'Sensitive pre-auth request was rejected because a stable network fingerprint was unavailable.',
+        endpoint,
+        status:503,
+        transitionKey:`preauth-network-id-unavailable:${policy.scope}:${endpoint}:${hourBucket}`,
+        meta:{scope:policy.scope,failClosed:true,hourBucket},
+      }).catch(()=>{});
+      return failClosedResponse();
+    }
+    return null;
+  }
+
+  if (typeof hasSupabase!=='function' || !hasSupabase(cfg) || typeof supaRpc!=='function') {
+    if (policy.failClosed && !cfg?.devMode) return failClosedResponse();
+    return null;
+  }
+
+  const bucketKey=`preauth:${policy.scope}:${fingerprint}`;
+  try {
+    const result=await supaRpc(cfg,'claim_provider_request',{
+      p_bucket_key:bucketKey,
+      p_limit:policy.limit,
+      p_window_seconds:policy.windowSeconds,
+    },1800);
+
+    if (result?.allowed) return null;
+
+    const retryAfter=Math.max(1,Number(result?.retryAfter || policy.windowSeconds));
+    const minuteBucket=new Date().toISOString().slice(0,16);
+    bumpTelemetry('securityPreAuthBlocks');
+    await recordOpsEvent(cfg,{
+      severity:policy.scope==='admin' ? 'warning' : 'info',
+      source:'security',
+      eventType:'preauth_rate_limit',
+      code:'PREAUTH_RATE_LIMIT_BLOCKED',
+      message:'Unauthenticated request burst was blocked before Telegram credential verification.',
+      endpoint,
+      status:429,
+      transitionKey:`preauth-rate-blocked:${policy.scope}:${endpoint}:${minuteBucket}`,
+      meta:{
+        scope:policy.scope,
+        limit:policy.limit,
+        windowSeconds:policy.windowSeconds,
+        retryAfter,
+        minuteBucket,
+      },
+    }).catch(()=>{});
+    return json({
+      error:'Слишком много запросов за короткое время. Повторите позже.',
+      code:'PREAUTH_RATE_LIMIT',
+      retryAfter,
+    },429,{'retry-after':String(retryAfter),'cache-control':'no-store'});
+  } catch (error) {
+    const hourBucket=new Date().toISOString().slice(0,13);
+    bumpTelemetry('securityPreAuthFallbacks');
+    await recordOpsEvent(cfg,{
+      severity:policy.failClosed ? 'error' : 'warning',
+      source:'security',
+      eventType:'preauth_rate_limit',
+      code:'PREAUTH_RATE_LIMIT_DEGRADED',
+      message:String(error?.message || error || 'distributed pre-auth limiter unavailable').slice(0,240),
+      endpoint,
+      status:policy.failClosed ? 503 : null,
+      transitionKey:`preauth-rate-degraded:${policy.scope}:${endpoint}:${hourBucket}`,
+      meta:{scope:policy.scope,failClosed:policy.failClosed,hourBucket},
+    }).catch(()=>{});
+
+    if (policy.failClosed && !cfg?.devMode) return failClosedResponse();
+    return null;
+  }
 }
 
 function evictOldestBucket(map) {
@@ -158,6 +328,7 @@ function ensureBucketCapacity(map, now=Date.now()) {
 
 export function createPreAuthAbuseGuard({
   memory,
+  fingerprintSecret='',
   bumpTelemetry=()=>{},
   recordOpsEvent=async()=>{},
   now=Date.now,
@@ -165,7 +336,7 @@ export function createPreAuthAbuseGuard({
   if (!(memory?.authFailureBurst instanceof Map)) memory.authFailureBurst=new Map();
 
   async function registerInvalidAuthFailure(request, { adminSensitive=false } = {}) {
-    const fingerprint=await clientNetworkFingerprint(request);
+    const fingerprint=await privacyNetworkFingerprint(request,fingerprintSecret);
     if (!fingerprint) return { blocked:false, tracked:false };
 
     const scope=adminSensitive ? 'admin' : 'public';

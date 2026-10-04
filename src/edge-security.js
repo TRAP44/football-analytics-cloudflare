@@ -1,19 +1,32 @@
 import { isAdminSensitivePath } from './security-route-registry.js';
+import { privacyNetworkFingerprint } from './security-gate.js';
+
+const PUBLIC_UNAUTHENTICATED_API_PATHS = new Set([
+  '/api/public-status',
+  '/api/health',
+  '/api/app-manifest',
+  '/api/runtime-status',
+]);
+
+function protectedApiPath(path='') {
+  return String(path || '').startsWith('/api/')
+    && !PUBLIC_UNAUTHENTICATED_API_PATHS.has(String(path || ''));
+}
 
 const POLICIES = Object.freeze([
   Object.freeze({
-    id: 'analyze',
-    binding: 'EDGE_ANALYZE_RATE_LIMIT',
-    limit: 30,
-    period: 60,
-    matches: (path) => path === '/api/analyze',
-  }),
-  Object.freeze({
     id: 'sensitive',
     binding: 'EDGE_SENSITIVE_RATE_LIMIT',
-    limit: 120,
+    limit: 30,
     period: 60,
     matches: (path) => path.startsWith('/api/billing/') || isAdminSensitivePath(path),
+  }),
+  Object.freeze({
+    id: 'api-preauth',
+    binding: 'EDGE_ANALYZE_RATE_LIMIT',
+    limit: 600,
+    period: 60,
+    matches: (path) => protectedApiPath(path),
   }),
   Object.freeze({
     id: 'telegram-webhook',
@@ -35,28 +48,11 @@ const SCANNER_PATH_PATTERNS = Object.freeze([
   /(?:^|\/)cgi-bin(?:\/|$)/i,
 ]);
 
-function header(request, name) {
-  return String(request?.headers?.get?.(name) || '').trim();
-}
-
-async function requestFingerprint(request) {
-  const ip = header(request, 'cf-connecting-ip');
-  const initData = header(request, 'x-telegram-init-data');
-  if (!ip && !initData) return '';
-
-  // Prefer a credential-scoped fingerprint when Telegram initData is present so
-  // unrelated signed users behind one NAT do not share the same edge bucket.
-  // Keep the IP in the hash as defense-in-depth; invalid rotating initData is
-  // still constrained by the separate pre-auth IP burst guard.
-  const material = initData
-    ? `matchradar-edge-v2|telegram|${ip}|${initData}`
-    : `matchradar-edge-v2|network|${ip}`;
-  const payload = new TextEncoder().encode(material);
-  const digest = await crypto.subtle.digest('SHA-256', payload);
-  return [...new Uint8Array(digest)]
-    .slice(0, 12)
-    .map(byte => byte.toString(16).padStart(2, '0'))
-    .join('');
+async function requestFingerprint(request, secret='') {
+  // First-stage edge identity is deliberately independent of Telegram
+  // credentials. Attacker-controlled initData must never create a fresh
+  // pre-auth bucket before its HMAC has been verified.
+  return await privacyNetworkFingerprint(request, secret);
 }
 
 export function obviousScannerPath(pathname = '') {
@@ -98,11 +94,11 @@ export async function cloudflareEdgeGuard(request, env = {}) {
     return { blocked: false, configured: false, degraded: true, policy: policy.id };
   }
 
-  const fingerprint = await requestFingerprint(request);
+  const fingerprint = await requestFingerprint(request, env?.TELEGRAM_BOT_TOKEN || '');
   if (!fingerprint) {
-    // Do not collapse unrelated visitors into one global bucket when a network
-    // identity is unavailable. Existing authenticated/local/distributed guards
-    // remain the fallback.
+    // Never collapse unrelated visitors into one global bucket when the
+    // Cloudflare network identity is unavailable. The distributed Worker guard
+    // provides a stricter fail-closed boundary for expensive/sensitive APIs.
     return { blocked: false, configured: true, degraded: true, policy: policy.id };
   }
 
@@ -121,9 +117,9 @@ export async function cloudflareEdgeGuard(request, env = {}) {
       policy: policy.id,
     };
   } catch {
-    // Edge rate limiting is defense-in-depth. Binding failure must not turn
-    // production into an outage; existing request-shape, auth, local burst and
-    // Supabase distributed guards remain active.
+    // Edge rate limiting remains defense-in-depth. Binding failure falls
+    // through to the Worker-level distributed pre-auth guard before Telegram
+    // HMAC verification and business/provider routing.
     return { blocked: false, configured: true, degraded: true, policy: policy.id };
   }
 }
