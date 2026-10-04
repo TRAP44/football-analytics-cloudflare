@@ -1980,7 +1980,6 @@ async function reserveAnalysisQuota(userId, cfg) {
         message: 'Analysis quota reservation response was not confirmed. A durable database reservation, if created, will be reconciled automatically.',
         meta: {
           operationId: requestedOperationId,
-          telegramId: Number(userId),
           usageDate: date,
           error: redactOpsString(error?.message || error, 180),
         },
@@ -23327,7 +23326,6 @@ async function apiAnalyze(request, cfg, user) {
         message:'Limited Pass reservation response was not confirmed. A durable database reservation, if created, will be reconciled automatically.',
         meta:{
           operationId:passOperationId,
-          telegramId:Number(user.id),
           fixtureId:Number(fixtureId),
           error:redactOpsString(error?.message || error,180),
         },
@@ -23692,7 +23690,6 @@ async function apiAnalyze(request, cfg, user) {
               code:'LEGACY_QUOTA_REFUND_FAILED',
               message:'Legacy analysis quota refund failed before durable lifecycle confirmation.',
               meta:{
-                telegramId:Number(user.id),
                 usageDate:usageReservation.date || null,
                 error:redactOpsString(error?.message || error,180),
               },
@@ -23723,7 +23720,6 @@ async function apiAnalyze(request, cfg, user) {
               code:'LEGACY_PASS_REFUND_FAILED',
               message:'Legacy limited Pass refund failed before durable lifecycle confirmation.',
               meta:{
-                telegramId:Number(user.id),
                 entitlementId:Number(passUsageReservation.entitlementId || 0) || null,
                 error:redactOpsString(error?.message || error,180),
               },
