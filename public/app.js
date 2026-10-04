@@ -190,6 +190,8 @@ const MATCH_SNAPSHOT_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 
 let matchCenterController = null;
 let matchCenterControllerPromise = null;
+let analysisController = null;
+let analysisControllerPromise = null;
 
 const $ = id => document.getElementById(id);
 
@@ -957,6 +959,53 @@ async function ensureMatchCenterController() {
       });
   }
   return matchCenterControllerPromise;
+}
+
+async function ensureAnalysisController() {
+  if (analysisController) return analysisController;
+  if (!analysisControllerPromise) {
+    analysisControllerPromise = import('./modules/analysis-controller.js')
+      .then(({ createAnalysisController }) => {
+        analysisController = createAnalysisController({
+          state,
+          documentRef: document,
+          activeViewId,
+          showView,
+          api,
+          runtimeAllows,
+          stopLiveRefresh,
+          hideQuotaPaywall,
+          showQuotaPaywallForFixture,
+          syncAnalysisBusyUi,
+          renderJourneyState,
+          renderAnalysis,
+          renderMatchCenter,
+          rememberHistoryAnalysis,
+          renderProfile,
+          renderProvider,
+          renderDiscoveryHome,
+          renderGlobalSearch,
+          loadHistory,
+          loadReminders,
+          loadFavorites,
+          buildAnalysisAccessUsage,
+          refreshPassAccess: fixtureId => billingModule?.loadPassAccess({ fixtureId, force: true }),
+          isAdmin,
+          sendProductAction,
+          sendOperationTiming,
+          sendActionError,
+          apiErrorCategory,
+          toast,
+          performanceNow: () => performance.now(),
+        });
+        return analysisController;
+      })
+      .catch(error => {
+        analysisControllerPromise = null;
+        throw error;
+      });
+  }
+  return analysisControllerPromise;
 }
 
 const playerFollowModule = createPlayerFollowModule({
@@ -5004,124 +5053,9 @@ function syncAnalysisBusyUi() {
   });
 }
 
-async function loadAnalysisAccessSnapshot(fixtureId) {
-  const id = Number(fixtureId || 0);
-  if (!Number.isSafeInteger(id) || id <= 0) return null;
-  try {
-    return await api('/api/entitlements?fixtureId=' + encodeURIComponent(String(id)), { retry:false, timeoutMs:4000 });
-  } catch {
-    return null;
-  }
-}
-
 async function analyzeMatch(fixtureId, btn, options = {}) {
-  if (state.analysisActionPending) {
-    toast('Анализ уже выполняется. Дождитесь завершения текущего запроса.');
-    return;
-  }
-  const sourceView = activeViewId();
-  const requestSeq = ++state.analysisRequestSeq;
-  if (sourceView !== 'analysisView') state.analysisBackView = sourceView;
-  if (!runtimeAllows('analysisEnabled')) {
-    toast(state.runtimeStatus?.message || 'Полный анализ временно приостановлен.');
-    return;
-  }
-  stopLiveRefresh();
-  hideQuotaPaywall();
-  const previousCenter=state.currentCenter;
-  state.currentCenter = null;
-  state.analysisActionPending = true;
-  syncAnalysisBusyUi();
-  sendProductAction('ai_start', sourceView);
-  const timingStartedAt = performance.now();
-  const movedToAnalysis = sourceView !== 'analysisView';
-  if (movedToAnalysis) {
-    showView('analysisView');
-    renderJourneyState('loading', {
-      title: 'Готовим AI-анализ',
-      message: 'Собираем данные матча и проверяем основные факторы.',
-    });
-  }
-  const original = btn?.textContent || '';
-  if (btn) btn.textContent = '⏳ Собираю данные…';
-  try {
-    const entitlementBefore = await loadAnalysisAccessSnapshot(fixtureId);
-    const data = await api('/api/analyze', { method: 'POST', body: JSON.stringify({
-      fixtureId,
-      origin:'miniapp',
-      recheck: options.recheck !== false,
-      newsImpactDecision:String(options.newsImpactDecision || '').toLowerCase().slice(0,24),
-      newsImpactAction:String(options.newsImpactAction || '').toLowerCase().slice(0,24),
-      newsImpactRecoveryCode:String(options.newsImpactRecoveryCode || '').toLowerCase().slice(0,24),
-      newsImpactRecoveryFrom:String(options.newsImpactRecoveryFrom || '').toLowerCase().slice(0,24),
-    }) });
-    const entitlementAfter = entitlementBefore?.entitlement?.source === 'pass'
-      ? await loadAnalysisAccessSnapshot(fixtureId)
-      : entitlementBefore;
-    data.accessUsage = buildAnalysisAccessUsage({
-      analysis:data,
-      entitlementBefore:entitlementBefore || {},
-      entitlementAfter:entitlementAfter || entitlementBefore || {},
-      profile:state.profile || {},
-      fixtureId,
-    });
-    if (billingModule && entitlementBefore?.entitlement?.source === 'pass') {
-      void billingModule.loadPassAccess({ fixtureId, force:true }).catch(() => null);
-    }
-    if (isAdmin() && data.provider?.visibility === 'admin') { state.provider = data.provider; renderProvider(); }
-    const ownsAnalysisView = requestSeq === state.analysisRequestSeq && activeViewId() === 'analysisView';
-    if (ownsAnalysisView) renderAnalysis(data);
-    rememberHistoryAnalysis(data);
-    sendProductAction('ai_complete', sourceView);
-    sendOperationTiming('ai', timingStartedAt, sourceView);
-    if (state.profile && data.quota) {
-      state.profile.quota = data.quota;
-      renderProfile();
-    }
-    if (ownsAnalysisView) showView('analysisView');
-    const secondaryTasks = [loadHistory(false)];
-    if (!state.remindersLoaded) secondaryTasks.push(loadReminders());
-    if (!state.favoritesLoaded) secondaryTasks.push(loadFavorites());
-    void Promise.allSettled(secondaryTasks);
-  } catch (e) {
-    sendActionError('ai', e, sourceView);
-    if (requestSeq !== state.analysisRequestSeq || activeViewId() !== 'analysisView') return;
-    const recovery=e.payload?.newsImpactRecovery || null;
-    const quotaExhausted = e.status === 429 && !String(e.payload?.code || '').startsWith('FOOTBALL_');
-    if (quotaExhausted) showQuotaPaywallForFixture(fixtureId);
-    if (recovery?.message) {
-      toast(recovery.message);
-      if (recovery.action==='search') {
-        renderDiscoveryHome();
-        renderGlobalSearch();
-        showView('searchView');
-      }
-    } else if (e.status === 429 && String(e.payload?.code || '').startsWith('FOOTBALL_')) {
-      toast(e.payload?.retryAfter ? `Источник футбольных данных временно на паузе. Повторите через ~${e.payload.retryAfter} сек.` : e.message);
-    } else if (quotaExhausted) toast('AI-разборы на сегодня закончились. Матчи и LIVE остаются доступны.');
-    else toast(e.message);
-    const category=apiErrorCategory(e);
-    if (['rate_limit','provider'].includes(category)) {
-      if (previousCenter && sourceView === 'analysisView') {
-        state.currentCenter=previousCenter;
-        renderMatchCenter(previousCenter);
-      } else if (sourceView && sourceView !== 'analysisView') {
-        showView(sourceView, { restore:true });
-      }
-    } else if (movedToAnalysis && recovery?.action !== 'search') {
-      renderJourneyState('error', {
-        title: 'AI-анализ временно недоступен',
-        message: quotaExhausted
-          ? 'AI-разборы на сегодня закончились. Матчи, LIVE, составы и статистика остаются доступны бесплатно.'
-          : (e.status === 429 ? 'Источник футбольных данных временно ограничил обновления.' : (e.message || 'Не удалось подготовить анализ.')),
-        retry: () => analyzeMatch(fixtureId, null, options),
-      });
-    }
-  } finally {
-    state.analysisActionPending = false;
-    syncAnalysisBusyUi();
-    if (btn) btn.textContent = original;
-  }
+  const controller = await ensureAnalysisController();
+  return controller.analyzeMatch(fixtureId, btn, options);
 }
 
 function historyItemFromAnalysis(data = {}) {
