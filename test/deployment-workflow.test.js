@@ -111,7 +111,9 @@ test('unchanged runtime is smoke-verified without a duplicate deploy', () => {
   const verify = deploy.indexOf('- name: Verify production deployment');
   assert.ok(deployWorker >= 0 && verify > deployWorker);
   const workerBlock = deploy.slice(deployWorker, deployWorker + 500);
-  const verifyBlock = deploy.slice(verify, verify + 1500);
+  const rollback = deploy.indexOf('- name: Automatic rollback after failed production verification');
+  assert.ok(rollback > verify);
+  const verifyBlock = deploy.slice(verify, rollback);
   assert.match(workerBlock, /if: steps\.production_changes\.outputs\.changed == 'true'/);
   assert.doesNotMatch(verifyBlock, /^\s*if:/m);
   assert.match(verifyBlock, /RUNTIME_CHANGED: \$\{\{ steps\.production_changes\.outputs\.changed \}\}/);
