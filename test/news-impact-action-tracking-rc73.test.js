@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const worker=(fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'));
 const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
+const analysisController=fs.readFileSync('public/modules/analysis-controller.js','utf8');
 
 test('RC73 creates tracked callbacks and a tracked full-AI handoff',()=>{
   assert.match(worker,/function newsImpactActionCallback\(/);
@@ -22,8 +23,8 @@ test('Telegram action tracking stores categorical decision/action and optional r
 });
 
 test('Mini App carries decision attribution into full AI without article text',()=>{
-  assert.match(app,/newsImpactDecision:String\(options\.newsImpactDecision \|\| ''\)/);
-  assert.match(app,/newsImpactAction:String\(options\.newsImpactAction \|\| ''\)/);
+  assert.match(analysisController,/newsImpactDecision:\s*String\(options\.newsImpactDecision \|\| ''\)/);
+  assert.match(analysisController,/newsImpactAction:\s*String\(options\.newsImpactAction \|\| ''\)/);
   assert.match(app,/params\.get\('newsImpactDecision'\)/);
   assert.match(app,/params\.get\('newsImpactAction'\)/);
   assert.match(worker,/newsImpactAction==='full_ai'/);
