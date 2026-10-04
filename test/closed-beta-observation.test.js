@@ -22,7 +22,7 @@ test('closed beta telemetry adds bounded operation timings only',()=>{
   assert.match(metadata,/durationMs/);
   assert.doesNotMatch(metadata,/query|teamName|leagueName|searchText/);
   assert.match(app,/function sendOperationTiming/);
-  assert.match(app,/sendOperationTiming\('search'/);
+  assert.match(app,/operationTiming\('search'/);
   assert.match(app,/sendOperationTiming\('match'/);
   assert.match(app,/sendOperationTiming\('ai'/);
   assert.match(app,/sendOperationTiming\('live'/);
