@@ -68,7 +68,7 @@ jobs:
           npx --yes "supabase@$SUPABASE_CLI_VERSION" db reset
 
           npx --yes "supabase@$SUPABASE_CLI_VERSION" status \
-            --env --output-format text > "$RUNNER_TEMP/supabase-fresh.env"
+            -o env --output-format text > "$RUNNER_TEMP/supabase-fresh.env"
           set -a
           source "$RUNNER_TEMP/supabase-fresh.env"
           set +a
@@ -118,7 +118,7 @@ jobs:
             --output-format json > "$RUNNER_TEMP/supabase-upgrade-start.json"
 
           npx --yes "supabase@$SUPABASE_CLI_VERSION" status \
-            --env --output-format text > "$RUNNER_TEMP/supabase-upgrade.env"
+            -o env --output-format text > "$RUNNER_TEMP/supabase-upgrade.env"
           set -a
           source "$RUNNER_TEMP/supabase-upgrade.env"
           set +a
