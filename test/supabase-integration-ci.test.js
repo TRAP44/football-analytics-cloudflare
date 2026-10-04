@@ -34,7 +34,7 @@ test('Issue #433 upgrade plan stops before latest and appends only latest migrat
   const latest = buildMigrationPlan('latest-only');
 
   assert.equal(base[0].source, releaseContract.freshInstallBaseline);
-  assert.equal(base.at(-1).source, 'supabase/migrations/supabase_migration_v6_27.sql');
+  assert.equal(base.at(-1).source, 'supabase/migrations/supabase_migration_v6_27_2.sql');
   assert.equal(latest.length, 1);
   assert.equal(latest[0].source, releaseContract.latestMigration);
   assert.ok(base.at(-1).version < latest[0].version);
@@ -54,11 +54,29 @@ test('Issue #433 Quality contains a secret-free executable Supabase database gat
   assert.match(quality, /prepare-supabase-ci-migrations\.js/);
   assert.match(quality, /supabase-concurrency-gate\.js/);
   assert.match(quality, /supabase-ci-contract\.sql/);
-  assert.match(quality, /supabase_migration_v6_27_1\.sql/);
-  assert.match(quality, /PRE_LATEST_RENEW/);
+  assert.match(quality, /backend_schema_contract_v2/);
+  assert.match(quality, /backend_readiness_contract_v2/);
+  assert.match(quality, /PRE_LATEST_LEGACY_FP/);
+  assert.match(quality, /OLD_WORKER_READY/);
+  assert.match(quality, /NEW_WORKER_READY/);
   assert.match(quality, /migration up/);
   assert.match(quality, /Fresh-install baseline unexpectedly applied/);
   assert.doesNotMatch(quality, /secrets\.SUPABASE_/);
+});
+
+test('Issue #438 CI contract proves complete v2 drift detection and rollout compatibility', () => {
+  const sql = fs.readFileSync(
+    new URL('../scripts/supabase-ci-contract.sql', import.meta.url),
+    'utf8',
+  );
+  assert.match(sql, /backend_schema_contract_v2/);
+  assert.match(sql, /backend_readiness_contract_v2/);
+  assert.match(sql, /issue438_contract_probe/);
+  assert.match(sql, /v2 ignored a new public table/);
+  assert.match(sql, /v2 ignored a new public column/);
+  assert.match(sql, /legacy backend schema fingerprint drifted/);
+  assert.match(sql, /6a7f0fe444f49a2a52c4603e952ee9ea/);
+  assert.match(sql, /c2c22ec25aacfcf1b9938b0850cebf49/);
 });
 
 test('Issue #433 keeps database integration in the same Quality workflow used by deploy', () => {
