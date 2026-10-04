@@ -71,7 +71,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: P1 gate: require merged PR provenance for production deploy
+      - name: "P1 gate: require merged PR provenance for production deploy"
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/verify-main-pr-provenance.js "$GITHUB_REPOSITORY" "$DEPLOY_SHA" main

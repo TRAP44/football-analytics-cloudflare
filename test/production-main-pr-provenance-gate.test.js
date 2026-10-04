@@ -84,7 +84,7 @@ test('production workflow enforces merged-PR provenance before Cloudflare work',
   );
 
   const provenance = workflow.indexOf(
-    '- name: P1 gate: require merged PR provenance for production deploy',
+    'P1 gate: require merged PR provenance for production deploy',
   );
   const credentials = workflow.indexOf('- name: Check Cloudflare credentials');
   const deployWorker = workflow.indexOf('- name: Deploy Worker');
