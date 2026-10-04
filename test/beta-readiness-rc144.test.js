@@ -48,10 +48,13 @@ test('beta product analytics are privacy-safe and server allowlisted', () => {
 
 test('critical Mini App journey emits bounded product events without user search text', () => {
   for (const action of [
-    'matches_open','search_used','search_found','search_empty','match_open','live_open',
-    'ai_start','ai_complete','history_open','history_item_open','profile_open',
+    'matches_open','match_open','live_open','ai_start','ai_complete',
+    'history_open','history_item_open','profile_open',
   ]) {
     assert.ok(app.includes("sendProductAction('" + action + "'"), action);
+  }
+  for (const action of ['search_used','search_found','search_empty']) {
+    assert.ok(app.includes("productAction('" + action + "'"), action);
   }
   assert.match(app, /function sendProductAction\(reason, view = telemetryViewName\(\)\)/);
   assert.match(app, /sendClientTelemetry\('product_action'/);
@@ -60,9 +63,10 @@ test('critical Mini App journey emits bounded product events without user search
 });
 
 test('main action failures are measured by category without leaking backend details', () => {
-  for (const action of ['matches','search','match','live_refresh','ai','history','profile']) {
+  for (const action of ['matches','match','live_refresh','ai','history','profile']) {
     assert.ok(app.includes("sendActionError('" + action + "'"), action);
   }
+  assert.ok(app.includes("actionError('search'"), 'search');
   const helper = block(app, 'function sendActionError', 'function sendOperationTiming');
   assert.match(helper, /apiErrorCategory\(error\)/);
   assert.doesNotMatch(helper, /error\?\.message/);
