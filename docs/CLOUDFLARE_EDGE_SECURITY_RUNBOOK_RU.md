@@ -12,7 +12,7 @@ Production URL сейчас использует `football-analytics-cloudflare.
 
 | Контур | Binding | Порог | Назначение |
 | --- | --- | ---: | --- |
-| AI analyze | `EDGE_ANALYZE_RATE_LIMIT` | 120 / 60 сек | NAT-tolerant first-stage ceiling по стабильному сетевому fingerprint до Telegram HMAC |
+| protected `/api/*` | `EDGE_ANALYZE_RATE_LIMIT` | 600 / 60 сек | NAT-tolerant first-stage ceiling по стабильному сетевому fingerprint до Telegram HMAC; public status/health/bootstrap endpoints исключены |
 | billing + admin-sensitive | `EDGE_SENSITIVE_RATE_LIMIT` | 30 / 60 сек | более строгий first-stage ceiling для чувствительных API |
 | Telegram webhook | `EDGE_WEBHOOK_RATE_LIMIT` | 6000 / 60 сек | очень высокий аварийный потолок, чтобы не мешать нормальной доставке Telegram |
 
@@ -118,7 +118,7 @@ Cloudflare Rate Limiting используется только как defense-in
 
 - **First stage до Telegram HMAC** использует только стабильный privacy-preserving network fingerprint. `x-telegram-init-data` намеренно не участвует в ключе: ротация мусорного initData не создаёт новые buckets.
 - IPv4 и IPv6 нормализуются перед fingerprinting. В production network fingerprint строится через HMAC-SHA-256; raw IP не сохраняется.
-- Worker дополнительно использует **distributed pre-auth window в Supabase** через существующий атомарный rate-window RPC: public 180/60 сек, expensive `/api/analyze` 60/60 сек, admin-sensitive 24/60 сек.
+- Worker дополнительно использует **distributed pre-auth window в Supabase** через существующий атомарный rate-window RPC только там, где цена abuse оправдывает дополнительный DB round-trip: expensive `/api/analyze` 60/60 сек и admin-sensitive 24/60 сек. Обычные protected reads остаются под Cloudflare first-stage + post-invalid local guard и не получают лишний Supabase RPC.
 - При отказе distributed backend дорогие и admin-sensitive запросы fail-closed до криптографической проверки и provider/business paths. Обычные API reads остаются fail-soft, чтобы единичная проблема БД не превращалась в полный outage.
 - После успешной Telegram verification включается отдельный account-scoped local + distributed limiter. Поэтому пользователи за одним NAT получают общий высокий first-stage ceiling, но сохраняют независимые пользовательские квоты после auth.
 - Сырые IP, initData и Telegram user ID не сохраняются в first-stage bucket keys или telemetry.
