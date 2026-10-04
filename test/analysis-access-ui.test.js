@@ -93,11 +93,12 @@ test('free recheck is clearly marked as no-consumption before Pass inference', (
 
 test('analysis access UI is rendered and analyze flow snapshots entitlement around the request', () => {
   const app = fs.readFileSync('public/app.js', 'utf8');
+  const analysisController = fs.readFileSync('public/modules/analysis-controller.js', 'utf8');
   assert.match(app, /analysis-access\.js/);
-  assert.match(app, /loadAnalysisAccessSnapshot\(fixtureId\)/);
-  assert.match(app, /const entitlementBefore = await loadAnalysisAccessSnapshot\(fixtureId\)/);
-  assert.match(app, /entitlementBefore\?\.entitlement\?\.source === 'pass'/);
-  assert.match(app, /data\.accessUsage = buildAnalysisAccessUsage/);
+  assert.match(analysisController, /loadAnalysisAccessSnapshot\(fixtureId\)/);
+  assert.match(analysisController, /const entitlementBefore = await loadAnalysisAccessSnapshot\(fixtureId\)/);
+  assert.match(analysisController, /entitlementBefore\?\.entitlement\?\.source === 'pass'/);
+  assert.match(analysisController, /data\.accessUsage = buildAccessUsage/);
   assert.match(app, /analysisAccessUsageHtml\(d\.accessUsage, escapeHtml\)/);
 
   const html = analysisAccessUsageHtml({ label:'Использовано: FREE · 1/3 сегодня', detail:'Pass не использовался.' }, x => x);
