@@ -391,10 +391,10 @@ if (!fs.existsSync('test/analysis-history-transition.test.js')) failures.push('M
 if (!app.includes('historyOpenRequestSeq: 0')) failures.push('History-open stale response guard is missing');
 if (!app.includes('historyRevision: 0')) failures.push('History read/write revision guard is missing');
 const analysisSecondaryRefreshNonBlocking =
-  app.includes('const secondaryTasks = [loadHistory(false)]')
-  && app.includes('if (!state.remindersLoaded) secondaryTasks.push(loadReminders())')
-  && app.includes('if (!state.favoritesLoaded) secondaryTasks.push(loadFavorites())')
-  && app.includes('void Promise.allSettled(secondaryTasks)');
+  analysisController.includes('const secondaryTasks = [refreshHistory(false)]')
+  && analysisController.includes('if (!state.remindersLoaded) secondaryTasks.push(refreshReminders())')
+  && analysisController.includes('if (!state.favoritesLoaded) secondaryTasks.push(refreshFavorites())')
+  && analysisController.includes('void Promise.allSettled(secondaryTasks)');
 if (!analysisSecondaryRefreshNonBlocking) failures.push('Analysis result must keep conditional secondary history/reminder/favorites refresh non-blocking');
 if (app.includes('state.currentAnalysis = data;\n    if (isAdmin()')) failures.push('analyzeMatch must let renderAnalysis compare the previous fixture before assignment');
 if (!fs.existsSync('test/russian-ui-localization.test.js')) failures.push('Missing Russian UI localization regression test');
