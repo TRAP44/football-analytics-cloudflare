@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { billingUiSnapshot } from '../public/modules/billing.js';
 
-const worker = fs.readFileSync('src/worker.js', 'utf8');
+const worker = (fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'));
 const router = fs.readFileSync('src/router.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
