@@ -28,10 +28,28 @@ export function createTelegramWebhookHandler(deps) {
   const claim=claimTelegramUpdate(update,cfg);
   if (claim.duplicate) return json({ok:true,deduped:true});
 
-  const persistentClaim=await claimTelegramUpdatePersistent(cfg,claim.key);
+  const persistentClaim=await claimTelegramUpdatePersistent(cfg,claim.key,update);
   if (persistentClaim.duplicate) {
     completeTelegramUpdate(claim.key);
     return json({ok:true,deduped:true,persistent:true});
+  }
+  if (persistentClaim.retry) {
+    releaseTelegramUpdate(claim.key);
+    const error=Object.assign(
+      new Error('Persistent Telegram dedupe is temporarily unavailable.'),
+      {
+        code:'TELEGRAM_DEDUPE_UNAVAILABLE',
+        retryAfter:Math.max(1,Number(persistentClaim.retryAfter || 3)),
+        telegramWebhookRetrySafe:true,
+      },
+    );
+    const disposition=classifyTelegramWebhookFailure(error,cfg);
+    error.telegramWebhookRetry=Boolean(disposition.retry);
+    error.telegramWebhookDisposition={
+      ...disposition,
+      dedupeRisk:String(persistentClaim.risk || ''),
+    };
+    throw error;
   }
 
   const burst=enforceTelegramBurst(update);
