@@ -48,9 +48,28 @@ test('billing stays unavailable while monetization is disabled', async () => {
 test('router blocks exact replay of a successful sensitive admin mutation', async () => {
   let calls=0;
   const memory={ providerAudit:{last:null} };
+  const distributed=new Map();
+  let lease=0;
+  const sensitiveMutationCoordinator={
+    claim:async identity=>{
+      const existing=distributed.get(identity.operationKey);
+      if (existing) return {claimed:false,state:existing.state,reason:existing.state==='completed'?'duplicate_completed':'duplicate_inflight'};
+      const leaseToken='router-lease-'+(++lease);
+      distributed.set(identity.operationKey,{state:'inflight',leaseToken});
+      return {claimed:true,state:'inflight',reason:'claimed',leaseToken};
+    },
+    complete:async (identity,claim)=>{
+      const row=distributed.get(identity.operationKey);
+      if (!row || row.leaseToken!==claim.leaseToken) return {ok:false};
+      distributed.set(identity.operationKey,{...row,state:'completed'});
+      return {ok:true};
+    },
+    fail:async()=>({ok:true}),
+  };
   const deps={
     ...baseDeps(),
     memory,
+    sensitiveMutationCoordinator,
     isAdminUser:()=>true,
     apiRuntimeControls:async()=>{ calls+=1; return {status:200,body:{ok:true}}; },
   };

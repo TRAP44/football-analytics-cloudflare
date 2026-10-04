@@ -55,6 +55,7 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
     providerSloReport,
     providerTransitionProfile,
     publicDataCapabilities,
+    sensitiveMutationCoordinator,
   } = deps;
 
   async function sensitiveMutation(handler) {
@@ -63,14 +64,22 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
       url,
       user,
       memory,
+      cfg,
       handler,
+      coordinator:sensitiveMutationCoordinator || null,
     });
     if (guarded.blocked) {
+      const unavailable=guarded.reason==='guard_unavailable';
       return json({
-        error:'Повтор чувствительной операции отклонён.',
-        code:'SENSITIVE_MUTATION_REPLAY_BLOCKED',
+        error:unavailable
+          ? 'Защита чувствительных операций временно недоступна. Повторите позже.'
+          : 'Повтор чувствительной операции отклонён.',
+        code:unavailable
+          ? 'SENSITIVE_MUTATION_GUARD_UNAVAILABLE'
+          : 'SENSITIVE_MUTATION_REPLAY_BLOCKED',
         reason:guarded.reason,
-      },409);
+        ...(unavailable ? {retryAfter:Number(guarded.retryAfter || 3)} : {}),
+      },unavailable?503:409,unavailable?{'retry-after':String(Number(guarded.retryAfter || 3))}:{});
     }
     return guarded.response;
   }

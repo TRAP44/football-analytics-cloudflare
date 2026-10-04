@@ -9,7 +9,8 @@ begin
      or to_regclass('public.provider_rate_windows') is null
      or to_regclass('public.telegram_update_claims') is null
      or to_regclass('public.scheduled_job_leases') is null
-     or to_regclass('public.provider_slo_buckets') is null then
+     or to_regclass('public.provider_slo_buckets') is null
+     or to_regclass('public.sensitive_mutation_idempotency') is null then
     raise exception 'Supabase integration contract: required table is missing';
   end if;
 
@@ -41,6 +42,13 @@ begin
     where n.nspname='public'
       and c.relname='provider_slo_buckets'
       and c.relrowsecurity
+  ) or not exists (
+    select 1
+    from pg_class c
+    join pg_namespace n on n.oid=c.relnamespace
+    where n.nspname='public'
+      and c.relname='sensitive_mutation_idempotency'
+      and c.relrowsecurity
   ) then
     raise exception 'Supabase integration contract: backend-only table missing RLS';
   end if;
@@ -59,6 +67,18 @@ begin
      ) is null
      or to_regprocedure(
        'public.record_ops_event_occurrence(timestamp with time zone,text,text,text,text,text,text,text,integer,integer,jsonb)'
+     ) is null
+     or to_regprocedure(
+       'public.claim_sensitive_mutation(text,bigint,text,text,text,text,integer,integer)'
+     ) is null
+     or to_regprocedure(
+       'public.complete_sensitive_mutation(text,text,integer)'
+     ) is null
+     or to_regprocedure(
+       'public.fail_sensitive_mutation(text,text,boolean,integer)'
+     ) is null
+     or to_regprocedure(
+       'public.cleanup_sensitive_mutation_idempotency(integer)'
      ) is null then
     raise exception 'Supabase integration contract: required RPC is missing';
   end if;
@@ -75,6 +95,18 @@ begin
       ),
       to_regprocedure(
         'public.record_ops_event_occurrence(timestamp with time zone,text,text,text,text,text,text,text,integer,integer,jsonb)'
+      ),
+      to_regprocedure(
+        'public.claim_sensitive_mutation(text,bigint,text,text,text,text,integer,integer)'
+      ),
+      to_regprocedure(
+        'public.complete_sensitive_mutation(text,text,integer)'
+      ),
+      to_regprocedure(
+        'public.fail_sensitive_mutation(text,text,boolean,integer)'
+      ),
+      to_regprocedure(
+        'public.cleanup_sensitive_mutation_idempotency(integer)'
       )
     )
       and prosecdef
@@ -100,6 +132,21 @@ begin
      or not has_function_privilege(
        'service_role',
        'public.claim_scheduled_job(text,text,timestamp with time zone,integer,integer)',
+       'EXECUTE'
+     )
+     or not has_function_privilege(
+       'service_role',
+       'public.claim_sensitive_mutation(text,bigint,text,text,text,text,integer,integer)',
+       'EXECUTE'
+     )
+     or not has_function_privilege(
+       'service_role',
+       'public.complete_sensitive_mutation(text,text,integer)',
+       'EXECUTE'
+     )
+     or not has_function_privilege(
+       'service_role',
+       'public.fail_sensitive_mutation(text,text,boolean,integer)',
        'EXECUTE'
      ) then
     raise exception 'Supabase integration contract: service_role missing critical RPC EXECUTE';
@@ -144,6 +191,16 @@ begin
        'authenticated',
        'public.claim_scheduled_job(text,text,timestamp with time zone,integer,integer)',
        'EXECUTE'
+     )
+     or has_function_privilege(
+       'anon',
+       'public.claim_sensitive_mutation(text,bigint,text,text,text,text,integer,integer)',
+       'EXECUTE'
+     )
+     or has_function_privilege(
+       'authenticated',
+       'public.claim_sensitive_mutation(text,bigint,text,text,text,text,integer,integer)',
+       'EXECUTE'
      ) then
     raise exception 'Supabase integration contract: public role can execute backend-only RPC';
   end if;
@@ -164,6 +221,24 @@ begin
        'SELECT'
      ) then
     raise exception 'Supabase integration contract: scheduled lease grants are incorrect';
+  end if;
+
+  if not has_table_privilege(
+       'service_role',
+       'public.sensitive_mutation_idempotency',
+       'SELECT,INSERT,UPDATE,DELETE'
+     )
+     or has_table_privilege(
+       'anon',
+       'public.sensitive_mutation_idempotency',
+       'SELECT'
+     )
+     or has_table_privilege(
+       'authenticated',
+       'public.sensitive_mutation_idempotency',
+       'SELECT'
+     ) then
+    raise exception 'Supabase integration contract: sensitive mutation ledger grants are incorrect';
   end if;
 
   if not exists (
@@ -212,7 +287,7 @@ begin
   if not exists (
     select 1
     from supabase_migrations.schema_migrations
-    where version='20260101001500'
+    where version='20260101001600'
   ) then
     raise exception 'Supabase integration contract: latest migration history entry missing';
   end if;
