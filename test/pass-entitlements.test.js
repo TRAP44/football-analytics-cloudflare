@@ -306,9 +306,14 @@ test('full AI uses Pass entitlement server-side instead of the FREE quota gate f
   assert.match(source, /resolveUserEntitlements\(user\.id, fixtureId, cfg\)/);
   assert.match(source, /const passCandidate = entitlementBefore\.source === 'pass'/);
   assert.match(source, /if \(!freeRecheck && !passCandidate && quotaBefore\.left <= 0\)/);
-  assert.match(source, /reserveEntitlementUsage\(user\.id,entitlementBefore\.passes\.active,fixtureId,cfg\)/);
-  assert.match(source, /if \(!freeRecheck && !passAccess\) \{\s*usageReservation=await reserveAnalysisQuota/);
-  assert.match(source, /refundEntitlementUsage\(user\.id,passUsageReservation\.entitlementId,cfg\)/);
+  assert.match(source, /claimAnalysisAccessLease\(user\.id,cfg\)/);
+  assert.match(source, /commitPassUsageAfterSuccess\(\{/);
+  assert.match(source, /commitAnalysisQuotaAfterSuccess\(\{/);
+  assert.match(source, /releaseAnalysisAccessLease\(accessLease,cfg\)/);
+  assert.doesNotMatch(source, /reserveEntitlementUsage\(/);
+  assert.doesNotMatch(source, /reserveAnalysisQuota\(/);
+  assert.doesNotMatch(source, /refundEntitlementUsage\(/);
+  assert.doesNotMatch(source, /refundAnalysisQuota\(/);
   assert.doesNotMatch(source, /users\.plan\s*=\s*['"]PASS['"]/);
 });
 

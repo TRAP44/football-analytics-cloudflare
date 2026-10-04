@@ -3,6 +3,8 @@ import { createTelegramUpdateProcessor } from './telegram-update-orchestration.j
 import { createApiFootballGateway } from './api-football-gateway.js';
 import { createTelegramDedupeRuntime } from './telegram-dedupe.js';
 import { createUserAuthRuntime } from './auth-user.js';
+import { createAnalysisAccessLeaseRuntime } from './analysis-access-lease.js';
+import { createAnalysisUsageCommitRuntime } from './analysis-usage-commit.js';
 import { isAdminSensitivePath, privilegedLocalRatePolicy } from './security-route-registry.js';
 import { accountRatePolicies, enforceDistributedAccountRateLimit } from './account-rate-limit.js';
 import { createSharedCacheRuntime } from './cache-runtime.js';
@@ -199,6 +201,14 @@ const memory = {
     providerDistributedFallbacks: 0,
     quotaReservations: 0,
     quotaRefunds: 0,
+    quotaCommits: 0,
+    quotaCommitUncertain: 0,
+    quotaCommitSkips: 0,
+    passUsageCommits: 0,
+    passUsageCommitUncertain: 0,
+    passUsageCommitSkips: 0,
+    analysisAccessLeaseBlocks: 0,
+    analysisAccessLeaseErrors: 0,
     digestDeliveryClaims: 0,
     digestDeliveryDuplicates: 0,
   },
@@ -842,10 +852,9 @@ const {
 
 const {
   activatePassPurchase,
+  consumeEntitlement,
   listUserEntitlements,
-  refundEntitlementUsage,
   refundPassByCharge,
-  reserveEntitlementUsage,
   resolveUserEntitlements,
 } = createEntitlementService({
   memory,
@@ -854,6 +863,51 @@ const {
   supaRpc,
   getUserRecord: (...args) => getUserRecord(...args),
   markWebhookMutation: markTelegramWebhookMutation,
+});
+
+const {
+  claimAnalysisAccessLease,
+  releaseAnalysisAccessLease,
+} = createAnalysisAccessLeaseRuntime({
+  memory,
+  hasSupabase,
+  supaRpc,
+  recordOpsEvent,
+  bumpTelemetry,
+});
+
+const {
+  commitAnalysisQuotaAfterSuccess,
+  commitPassUsageAfterSuccess,
+} = createAnalysisUsageCommitRuntime({
+  commitQuota: async ({ userId, date, limit, cfg }) => {
+    if (hasSupabase(cfg)) {
+      return await supaRpc(cfg, 'consume_analysis_quota', {
+        p_telegram_id: Number(userId),
+        p_usage_date: String(date || todayUtc()),
+        p_limit: Number(limit),
+      });
+    }
+    const key=`${Number(userId)}:${String(date || todayUtc())}`;
+    const used=Number(memory.usage.get(key) || 0);
+    if (used >= Number(limit)) {
+      return { allowed:false, used, limit:Number(limit), reason:'quota_exhausted' };
+    }
+    const next=used+1;
+    memory.usage.set(key,next);
+    return { allowed:true, used:next, limit:Number(limit), reason:'committed_local' };
+  },
+  readQuotaUsage: async ({ userId, cfg }) => await getUsage(userId, cfg),
+  commitPass: async ({ userId, entitlementId, fixtureId, cfg }) =>
+    await consumeEntitlement(userId, entitlementId, fixtureId, cfg),
+  readPassUsage: async ({ userId, entitlementId, cfg }) => {
+    const rows=await listUserEntitlements(userId,cfg);
+    const row=(rows || []).find(item=>Number(item?.id || 0)===Number(entitlementId));
+    if (!row) return null;
+    return Number(row?.usage_count ?? row?.usageCount ?? 0);
+  },
+  recordOpsEvent,
+  bumpTelemetry,
 });
 
 const {
@@ -1281,6 +1335,14 @@ function telemetrySnapshot() {
     providerSloPersistenceErrors: Number(t.providerSloPersistenceErrors || 0),
     quotaReservations: Number(t.quotaReservations || 0),
     quotaRefunds: Number(t.quotaRefunds || 0),
+    quotaCommits: Number(t.quotaCommits || 0),
+    quotaCommitUncertain: Number(t.quotaCommitUncertain || 0),
+    quotaCommitSkips: Number(t.quotaCommitSkips || 0),
+    passUsageCommits: Number(t.passUsageCommits || 0),
+    passUsageCommitUncertain: Number(t.passUsageCommitUncertain || 0),
+    passUsageCommitSkips: Number(t.passUsageCommitSkips || 0),
+    analysisAccessLeaseBlocks: Number(t.analysisAccessLeaseBlocks || 0),
+    analysisAccessLeaseErrors: Number(t.analysisAccessLeaseErrors || 0),
     digestDeliveryClaims: Number(t.digestDeliveryClaims || 0),
     digestDeliveryDuplicates: Number(t.digestDeliveryDuplicates || 0),
     inflightNow: memory.inflight.size,
@@ -1932,55 +1994,6 @@ async function getUsage(userId, cfg) {
     return Number(row?.analyses || 0);
   }
   return Number(memory.usage.get(`${userId}:${date}`) || 0);
-}
-
-async function reserveAnalysisQuota(userId, cfg) {
-  const date = todayUtc();
-  const user = await getUserRecord(userId, cfg);
-  let plan = user?.plan || 'FREE';
-  if (plan !== 'FREE' && user?.subscription_until && new Date(user.subscription_until) < new Date()) plan = 'FREE';
-  const limit = Number(cfg.limits[plan] || cfg.limits.FREE);
-
-  if (hasSupabase(cfg)) {
-    const result = await supaRpc(cfg, 'consume_analysis_quota', {
-      p_telegram_id: Number(userId),
-      p_usage_date: date,
-      p_limit: limit,
-    });
-    const used = Number(result?.used || 0);
-    if (result?.allowed) bumpTelemetry('quotaReservations');
-    return {
-      reserved: Boolean(result?.allowed),
-      allowed: Boolean(result?.allowed),
-      date,
-      plan,
-      used,
-      limit,
-      left: Math.max(0, limit - used),
-      reason: String(result?.reason || ''),
-    };
-  }
-
-  const used = await getUsage(userId, cfg);
-  if (used >= limit) return { reserved:false, allowed:false, date, plan, used, limit, left:0, reason:'quota_exhausted' };
-  const next = used + 1;
-  memory.usage.set(`${userId}:${date}`, next);
-  bumpTelemetry('quotaReservations');
-  return { reserved:true, allowed:true, date, plan, used:next, limit, left:Math.max(0,limit-next), reason:'reserved_local' };
-}
-
-async function refundAnalysisQuota(userId, reservation, cfg) {
-  if (!reservation?.reserved) return;
-  if (hasSupabase(cfg)) {
-    await supaRpc(cfg, 'refund_analysis_quota', {
-      p_telegram_id: Number(userId),
-      p_usage_date: reservation.date || todayUtc(),
-    }).catch(()=>null);
-  } else {
-    const key=`${userId}:${reservation.date || todayUtc()}`;
-    memory.usage.set(key, Math.max(0, Number(memory.usage.get(key) || 0) - 1));
-  }
-  bumpTelemetry('quotaRefunds');
 }
 
 async function getQuota(userId, cfg) {
@@ -23253,19 +23266,50 @@ async function apiAnalyze(request, cfg, user) {
     return await trackedFullAiFailureResponse({error:'AI-разбор этого матча уже рассчитывается для других пользователей. Повторите через несколько секунд.',code:'ANALYSIS_WARMING',retryAfter:5,quota:quotaBefore},429,'analysis_warming',{'retry-after':'5'});
   }
 
-  let usageReservation=null;
-  let passUsageReservation=null;
-  let usageCommitted=false;
+  let accessLease=null;
+  let accessMode=freeRecheck ? 'free_recheck' : '';
+  let passUsageCandidate=null;
+  let quotaCommitBaseline={...quotaBefore,date:todayUtc()};
+  let quotaAfterCommit={plan:quotaBefore.plan,used:quotaBefore.used,limit:quotaBefore.limit,left:quotaBefore.left};
   try {
-  let passAccess=false;
-  if (!freeRecheck && passCandidate) {
-    passUsageReservation=await reserveEntitlementUsage(user.id,entitlementBefore.passes.active,fixtureId,cfg);
-    passAccess=Boolean(passUsageReservation?.allowed);
-  }
-  if (!freeRecheck && !passAccess) {
-    usageReservation=await reserveAnalysisQuota(user.id,cfg);
-    if (!usageReservation.allowed) {
-      return await trackedFullAiFailureResponse({error:`Лимит исчерпан: ${usageReservation.used}/${usageReservation.limit} анализов сегодня.`,quota:{plan:usageReservation.plan,used:usageReservation.used,limit:usageReservation.limit,left:usageReservation.left}},429,'quota_exhausted');
+  if (!freeRecheck) {
+    accessLease=await claimAnalysisAccessLease(user.id,cfg);
+    if (!accessLease?.claimed) {
+      const retryAfter=Math.max(1,Number(accessLease?.retryAfter || 5));
+      const unavailable=Boolean(accessLease?.unavailable);
+      return await trackedFullAiFailureResponse({
+        error:unavailable
+          ? 'Координация пользовательского лимита временно недоступна. Повторите через несколько секунд.'
+          : 'Другой AI-разбор уже выполняется для вашего аккаунта. Повторите через несколько секунд.',
+        code:unavailable ? 'ANALYSIS_ACCESS_COORDINATION_DEGRADED' : 'ANALYSIS_ACCESS_BUSY',
+        retryAfter,
+        quota:quotaBefore,
+      },unavailable?503:429,unavailable?'analysis_access_coordination_degraded':'analysis_access_busy',{'retry-after':String(retryAfter)});
+    }
+
+    const entitlementCurrent=await resolveUserEntitlements(user.id,fixtureId,cfg);
+    quotaCommitBaseline={...(await getQuota(user.id,cfg)),date:todayUtc()};
+    quotaAfterCommit={
+      plan:quotaCommitBaseline.plan,
+      used:quotaCommitBaseline.used,
+      limit:quotaCommitBaseline.limit,
+      left:quotaCommitBaseline.left,
+    };
+    const currentPassCandidate=entitlementCurrent.source==='pass' && entitlementCurrent.access.expandedAi===true;
+    if (currentPassCandidate) {
+      const activePasses=Array.isArray(entitlementCurrent.passes?.active) ? entitlementCurrent.passes.active : [];
+      passUsageCandidate=activePasses.find(item=>item?.usageLimit==null) || activePasses[0] || null;
+    }
+    if (passUsageCandidate) {
+      accessMode='pass';
+    } else {
+      accessMode='quota';
+      if (quotaCommitBaseline.left<=0) {
+        return await trackedFullAiFailureResponse({
+          error:`Лимит исчерпан: ${quotaCommitBaseline.used}/${quotaCommitBaseline.limit} анализов сегодня.`,
+          quota:quotaAfterCommit,
+        },429,'quota_exhausted');
+      }
     }
   }
   let fixture;
@@ -23584,21 +23628,36 @@ async function apiAnalyze(request, cfg, user) {
   await setCache(cacheKey, fixtureId, payload, cfg, ttl);
   await captureAnalysisTimelineSnapshot(payload, cfg, { delta: effectiveRecheckDelta });
   await captureModelPrediction(payload, cfg);
-  usageCommitted=true;
+
+  if (!freeRecheck && accessMode==='pass' && passUsageCandidate) {
+    await commitPassUsageAfterSuccess({
+      userId:user.id,
+      candidate:passUsageCandidate,
+      fixtureId,
+      cfg,
+      context:{fixtureId},
+    });
+  } else if (!freeRecheck && accessMode==='quota') {
+    const quotaCommit=await commitAnalysisQuotaAfterSuccess({
+      userId:user.id,
+      baseline:quotaCommitBaseline,
+      cfg,
+      context:{fixtureId},
+    });
+    quotaAfterCommit=quotaCommit.quota;
+  }
+
   await recordHistory(user.id, payload, cfg);
   if (newsImpactEligible && !needsFreshnessRecheck) {
     void recordGrowthEvent(cfg,{userId:user.id,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:'news_impact',material:Boolean(effectiveRecheckDelta?.material),stable:Boolean(effectiveRecheckDelta?.stable),changeCount:Number(effectiveRecheckDelta?.items?.length || 0),codes:(effectiveRecheckDelta?.codes || []).slice(0,6)}});
   }
   if (needsFreshnessRecheck) void recordGrowthEvent(cfg,{userId:user.id,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:previousFreshness?.reasonCode || 'age_window',material:Boolean(recheckDelta?.material),stable:Boolean(recheckDelta?.stable),changeCount:Number(recheckDelta?.items?.length || 0),codes:(recheckDelta?.codes || []).slice(0,6)}});
   if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:false,recheck:shouldPerformRecheck}});
-  await recordTrackedFullAiOutcome('fresh');
-  return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:recheckReasonCode,delta:recheckDelta},newsImpact,quota:await getQuota(user.id,cfg)}));
+  await recordTrackedFullAiOutcome('fresh').catch(()=>null);
+  return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:recheckReasonCode,delta:recheckDelta},newsImpact,quota:quotaAfterCommit}));
   } finally {
     try {
-      if (usageReservation?.reserved && !usageCommitted) await refundAnalysisQuota(user.id,usageReservation,cfg);
-      if (passUsageReservation?.reserved && !usageCommitted) {
-        await refundEntitlementUsage(user.id,passUsageReservation.entitlementId,cfg).catch(()=>null);
-      }
+      if (accessLease?.claimed) await releaseAnalysisAccessLease(accessLease,cfg);
     } finally {
       await releaseDistributedAnalysisLock(analysisLock,cfg);
     }
