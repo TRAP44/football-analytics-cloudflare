@@ -29,7 +29,7 @@ test('access-control helper opens signed normal users unless strict beta is expl
 });
 
 test('production beta mode defaults public and becomes strict only on explicit true',()=>{
-  const cfg=block(worker,'function config(env)','function runtimeControlsSnapshot');
+  const cfg=block(worker,'function config(env)','function currentReleaseIdentity');
   assert.match(cfg,/betaAccessConfigured:\s*boolEnvState\(env\.BETA_ACCESS_ENABLED\)/);
   assert.match(cfg,/betaAccessEnabled:\s*boolEnv\(env\.BETA_ACCESS_ENABLED, false\)/);
 

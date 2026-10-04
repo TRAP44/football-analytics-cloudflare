@@ -48,11 +48,11 @@ test('control-plane failure produces an explicit fail-closed lockdown snapshot',
   assert.equal(runtimeLockdownDecision(req('/api/runtime-controls', 'PATCH'), { runtime: fallback, isAdmin: true }).blocked, false);
 });
 
-test('worker never falls back to normal defaults when runtime controls cannot be verified', () => {
-  const worker = fs.readFileSync('src/worker.js', 'utf8');
-  const start = worker.indexOf('async function loadRuntimeControls');
-  const end = worker.indexOf('function runtimeHistorySnapshot', start);
-  const block = worker.slice(start, end);
+test('runtime-controls domain never falls back to normal defaults when controls cannot be verified', () => {
+  const runtimeControls = fs.readFileSync('src/runtime-controls.js', 'utf8');
+  const start = runtimeControls.indexOf('async function loadRuntimeControls');
+  const end = runtimeControls.indexOf('function runtimeHistorySnapshot', start);
+  const block = runtimeControls.slice(start, end);
 
   assert.match(block, /activateFailClosed\('supabase_not_configured'\)/);
   assert.match(block, /activateFailClosed\('runtime_controls_missing'\)/);
@@ -132,15 +132,16 @@ test('normal runtime state preserves existing routing', () => {
 
 test('worker and admin surface wire lockdown into history, rollback-safe runtime controls and cron suppression', () => {
   const worker = fs.readFileSync('src/worker.js', 'utf8');
+  const runtimeControls = fs.readFileSync('src/runtime-controls.js', 'utf8');
   const admin = fs.readFileSync('public/admin.html', 'utf8');
   const module = fs.readFileSync('public/modules/admin-runtime-controls.js', 'utf8');
 
-  assert.match(worker, /securityLockdown: isSecurityLockdownControls\(value\)/);
-  assert.match(worker, /SECURITY_LOCKDOWN_EXPLICIT_RELEASE_REQUIRED/);
-  assert.match(worker, /SECURITY_LOCKDOWN_ENABLED/);
-  assert.match(worker, /SECURITY_LOCKDOWN_RELEASED/);
+  assert.match(runtimeControls, /securityLockdown: isSecurityLockdownControls\(value\)/);
+  assert.match(runtimeControls, /SECURITY_LOCKDOWN_EXPLICIT_RELEASE_REQUIRED/);
+  assert.match(runtimeControls, /SECURITY_LOCKDOWN_ENABLED/);
+  assert.match(runtimeControls, /SECURITY_LOCKDOWN_RELEASED/);
   assert.match(worker, /SECURITY_LOCKDOWN_SCHEDULED_TASKS_PAUSED/);
-  assert.match(worker, /runtimeLockdownDecision\(request, \{ runtime, isAdmin: admin \}\)/);
+  assert.match(runtimeControls, /runtimeLockdownDecision\(request, \{ runtime, isAdmin: admin \}\)/);
   assert.match(admin, /runtimeSecurityLockdownToggle/);
   assert.match(module, /action: wasSecurityLockdown \? 'update' : 'lockdown'/);
   assert.match(module, /action: 'lockdown_release'/);
