@@ -25759,6 +25759,7 @@ export default {
       if (!user) {
         const abuseGuard=createPreAuthAbuseGuard({
           memory,
+          fingerprintSecret:cfg.botToken,
           bumpTelemetry,
           recordOpsEvent:event=>recordOpsEvent(cfg,event),
         });
