@@ -335,8 +335,12 @@ test('worker exposes security guard telemetry and keeps server-side admin author
   const router=fs.readFileSync('src/router.js','utf8');
   assert.match(worker,/preAuthRequestShapeDecision/);
   assert.match(worker,/createPreAuthAbuseGuard/);
+  assert.match(worker,/enforceDistributedPreAuthRateLimit/);
+  assert.match(worker,/fingerprintSecret:cfg\.botToken/);
   assert.match(worker,/securityInvalidAuthBlocks/);
+  assert.match(worker,/securityPreAuthBlocks/);
   assert.match(worker,/preAuthAbuseGuard: 'enabled'/);
+  assert.match(worker,/distributedPreAuthRateLimit: 'enabled'/);
   assert.match(router,/isAdminUser\(user, cfg\)/);
   assert.match(router,/adminForbidden\(\)/);
 });
