@@ -168,6 +168,71 @@ async function testScheduledLease() {
   assert.equal(rows, 1, 'overlapping scheduled claims must not create competing lease rows');
 }
 
+async function testSensitiveMutationIdempotency() {
+  const operationKey='435'.padEnd(64,'a');
+  const requestDigest='435'.padEnd(64,'b');
+  const retryKey='436'.padEnd(64,'c');
+  const retryDigest='436'.padEnd(64,'d');
+
+  await psql(
+    "delete from public.sensitive_mutation_idempotency where operation_key in ('"
+      + operationKey + "','" + retryKey + "');",
+  );
+
+  const results=await Promise.all(
+    Array.from({length:12},()=>serviceRoleQuery(
+      "select public.claim_sensitive_mutation('"
+        + operationKey + "',900000000435,'POST','/api/runtime-controls','"
+        + requestDigest + "',null,300,300)::text;",
+    )),
+  );
+  const decoded=results.map(value=>parseJson(value,'claim_sensitive_mutation'));
+  assert.equal(
+    decoded.filter(item=>item.claimed===true).length,
+    1,
+    'distributed sensitive mutation claim must grant exactly one owner',
+  );
+
+  const owner=decoded.find(item=>item.claimed===true);
+  assert.ok(owner?.leaseToken,'winning sensitive mutation claim must return a lease token');
+
+  const completed=parseJson(await serviceRoleQuery(
+    "select public.complete_sensitive_mutation('"
+      + operationKey + "','" + owner.leaseToken + "',300)::text;",
+  ),'complete_sensitive_mutation');
+  assert.equal(completed.ok,true,'winning owner must complete the operation');
+
+  const completedDuplicate=parseJson(await serviceRoleQuery(
+    "select public.claim_sensitive_mutation('"
+      + operationKey + "',900000000435,'POST','/api/runtime-controls','"
+      + requestDigest + "',null,300,300)::text;",
+  ),'claim_sensitive_mutation completed duplicate');
+  assert.equal(completedDuplicate.claimed,false);
+  assert.equal(completedDuplicate.reason,'duplicate_completed');
+
+  const retryClaim=parseJson(await serviceRoleQuery(
+    "select public.claim_sensitive_mutation('"
+      + retryKey + "',900000000435,'POST','/api/runtime-controls/rollback','"
+      + retryDigest + "',null,300,300)::text;",
+  ),'claim_sensitive_mutation retry');
+  assert.equal(retryClaim.claimed,true);
+
+  const failed=parseJson(await serviceRoleQuery(
+    "select public.fail_sensitive_mutation('"
+      + retryKey + "','" + retryClaim.leaseToken + "',true,300)::text;",
+  ),'fail_sensitive_mutation');
+  assert.equal(failed.ok,true);
+  assert.equal(failed.retryable,true);
+
+  const retryOwner=parseJson(await serviceRoleQuery(
+    "select public.claim_sensitive_mutation('"
+      + retryKey + "',900000000435,'POST','/api/runtime-controls/rollback','"
+      + retryDigest + "',null,300,300)::text;",
+  ),'claim_sensitive_mutation retry owner');
+  assert.equal(retryOwner.claimed,true,'retryable failed mutation must be reclaimable');
+  assert.equal(retryOwner.reason,'retry_failed');
+}
+
 async function cleanup() {
   await psql([
     'delete from public.usage_daily where telegram_id=900000000433',
@@ -175,6 +240,7 @@ async function cleanup() {
     "delete from public.provider_rate_windows where bucket_key='ci-433-provider-budget'",
     "delete from public.telegram_update_claims where update_key='ci-433-telegram-update'",
     "delete from public.scheduled_job_leases where group_key='ci-433-scheduled-group'",
+    "delete from public.sensitive_mutation_idempotency where actor_id=900000000435",
   ].join('; ') + ';');
 }
 
@@ -184,12 +250,13 @@ export async function runConcurrencyGate() {
     await testProviderBudget();
     await testTelegramDedupe();
     await testScheduledLease();
+    await testSensitiveMutationIdempotency();
   } finally {
     await cleanup();
   }
 
   console.log(
-    'Supabase concurrency gate passed: quota, provider budget, Telegram dedupe and scheduled lease.',
+    'Supabase concurrency gate passed: quota, provider budget, Telegram dedupe, scheduled lease and sensitive mutation idempotency.',
   );
 }
 
