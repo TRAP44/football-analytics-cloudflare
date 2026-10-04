@@ -12,19 +12,35 @@ export function createTelegramLinksRuntime({
   setCache,
   telegramApi,
 } = {}) {
+  function canonicalFixtureId(value) {
+    const id=Number(value);
+    return Number.isSafeInteger(id) && id>0 ? id : null;
+  }
+
+  function invalidFixtureIdError() {
+    const error=new TypeError('Некорректный fixture ID для Telegram-ссылки.');
+    error.code='TELEGRAM_FIXTURE_ID_INVALID';
+    return error;
+  }
+
   function telegramWebAppUrl(request, params = {}) {
     const url = new URL(request.url);
     url.pathname = '/';
     url.search = '';
     for (const [key, value] of Object.entries(params)) {
-      if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
+      if (value === undefined || value === null || value === '') continue;
+      const normalizedValue=key === 'fixtureId' ? canonicalFixtureId(value) : value;
+      if (key === 'fixtureId' && normalizedValue === null) throw invalidFixtureIdError();
+      url.searchParams.set(key, String(normalizedValue));
     }
     return url.toString();
   }
 
   function telegramAnalysisHandoffParams(fixtureId, tab = 'brief') {
+    const id=canonicalFixtureId(fixtureId);
+    if (id === null) throw invalidFixtureIdError();
     return {
-      fixtureId:Number(fixtureId || 0),
+      fixtureId:id,
       action:'analysis',
       tab:String(tab || 'brief'),
       handoff:'1',
@@ -49,8 +65,8 @@ export function createTelegramLinksRuntime({
     content='analysis',
     referralCode='',
   } = {}) {
-    const id=Number(fixtureId || 0);
-    if (!Number.isSafeInteger(id) || id<=0) return '';
+    const id=canonicalFixtureId(fixtureId);
+    if (id === null) return '';
     const src=cleanLaunchPart(source,14) || 'social';
     const cmp=cleanLaunchPart(campaign,22) || 'match_share';
     const cnt=cleanLaunchPart(content,16) || 'analysis';
