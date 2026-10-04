@@ -6,6 +6,7 @@ const app = fs.readFileSync('public/app.js', 'utf8');
 const worker = fs.readFileSync('src/worker.js', 'utf8');
 const historyRenderer = fs.readFileSync('public/modules/history-renderer.js', 'utf8');
 const matchCenterController = fs.readFileSync('public/modules/match-center-controller.js', 'utf8');
+const analysisController = fs.readFileSync('public/modules/analysis-controller.js', 'utf8');
 
 test('renderAnalysis owns currentAnalysis assignment so a new fixture resets the active tab', () => {
   const render = app.match(/function renderAnalysis\(d\)[\s\S]*?state\.currentAnalysis = d;/);
@@ -23,25 +24,25 @@ test('renderAnalysis owns currentAnalysis assignment so a new fixture resets the
 });
 
 test('a completed analysis is shown before conditional secondary synchronization starts', () => {
-  const analyze = app.match(/async function analyzeMatch\(fixtureId, btn, options = \{\}\)[\s\S]*?\n}\n\nfunction historyItemFromAnalysis/);
-  assert.ok(analyze, 'analyzeMatch must exist');
-  const showIndex = analyze[0].indexOf("showView('analysisView')");
-  const secondaryIndex = analyze[0].indexOf('const secondaryTasks = [loadHistory(false)]');
+  const start = analysisController.indexOf('async function analyzeMatch');
+  const end = analysisController.indexOf('return Object.freeze', start);
+  assert.ok(start >= 0 && end > start, 'analysis controller must own analyzeMatch');
+  const analyze = analysisController.slice(start, end);
+  const showIndex = analyze.indexOf("showView('analysisView')");
+  const secondaryIndex = analyze.indexOf('const secondaryTasks = [refreshHistory(false)]');
   assert.ok(showIndex >= 0 && secondaryIndex > showIndex, 'analysis screen must be shown before secondary refresh starts');
-  assert.match(analyze[0], /if \(!state\.remindersLoaded\) secondaryTasks\.push\(loadReminders\(\)\)/);
-  assert.match(analyze[0], /if \(!state\.favoritesLoaded\) secondaryTasks\.push\(loadFavorites\(\)\)/);
-  assert.doesNotMatch(analyze[0], /await Promise\.all\(\[loadHistory\(false\), loadReminders\(\)\]\)/);
+  assert.match(analyze, /if \(!state\.remindersLoaded\) secondaryTasks\.push\(refreshReminders\(\)\)/);
+  assert.match(analyze, /if \(!state\.favoritesLoaded\) secondaryTasks\.push\(refreshFavorites\(\)\)/);
+  assert.doesNotMatch(analyze, /await Promise\.all\(\[refreshHistory\(false\), refreshReminders\(\)\]\)/);
 });
 
 test('pending AI analysis cannot reclaim navigation after the user leaves or opens another match', () => {
   assert.match(app, /analysisRequestSeq:\s*0/);
-  const analyze = app.match(/async function analyzeMatch\(fixtureId, btn, options = \{\}\)[\s\S]*?\n}\n\nfunction historyItemFromAnalysis/);
-  assert.ok(analyze, 'analyzeMatch must exist');
-  assert.match(analyze[0], /const requestSeq = \+\+state\.analysisRequestSeq/);
-  assert.match(analyze[0], /const ownsAnalysisView = requestSeq === state\.analysisRequestSeq && activeViewId\(\) === 'analysisView'/);
-  assert.match(analyze[0], /if \(ownsAnalysisView\) renderAnalysis\(data\)/);
-  assert.match(analyze[0], /if \(ownsAnalysisView\) showView\('analysisView'\)/);
-  assert.match(analyze[0], /if \(requestSeq !== state\.analysisRequestSeq \|\| activeViewId\(\) !== 'analysisView'\) return/);
+  assert.match(analysisController, /const requestSeq = \+\+state\.analysisRequestSeq/);
+  assert.match(analysisController, /const ownsAnalysisView = requestSeq === state\.analysisRequestSeq[\s\S]*?activeViewId\(\) === 'analysisView'/);
+  assert.match(analysisController, /if \(ownsAnalysisView\) renderResult\(data\)/);
+  assert.match(analysisController, /if \(ownsAnalysisView\) showView\('analysisView'\)/);
+  assert.match(analysisController, /if \(requestSeq !== state\.analysisRequestSeq \|\| activeViewId\(\) !== 'analysisView'\) return/);
 
   assert.match(app, /async function openMatchCenter\(fixtureId, btn\)[\s\S]*?ensureMatchCenterController\(\)/);
   assert.match(matchCenterController, /async function openMatchCenter\(fixtureId, button\)[\s\S]*?if \(state\.analysisActionPending\) state\.analysisRequestSeq \+= 1/);
