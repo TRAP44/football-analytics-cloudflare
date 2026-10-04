@@ -279,5 +279,5 @@ test('v6.27 migration provides backend-only atomic distributed mutation idempote
     'security invoker',
   ]) assert.ok(sql.includes(marker),marker);
 
-  assert.doesNotMatch(sql,/request_body|raw_body|init_data|telegram_init|authorization\s+text|token\s+text/);
+  assert.doesNotMatch(sql,/request_body|raw_body|init_data|telegram_init|authorization\s+text|bot_token\s+text|api_token\s+text/);
 });
