@@ -12,11 +12,11 @@ Production URL сейчас использует `football-analytics-cloudflare.
 
 | Контур | Binding | Порог | Назначение |
 | --- | --- | ---: | --- |
-| AI analyze | `EDGE_ANALYZE_RATE_LIMIT` | 30 / 60 сек | грубый pre-auth ceiling перед более строгими user quota/burst guards |
-| billing + admin-sensitive | `EDGE_SENSITIVE_RATE_LIMIT` | 120 / 60 сек | отсечение очевидных бурстов по чувствительным API |
+| AI analyze | `EDGE_ANALYZE_RATE_LIMIT` | 120 / 60 сек | NAT-tolerant first-stage ceiling по стабильному сетевому fingerprint до Telegram HMAC |
+| billing + admin-sensitive | `EDGE_SENSITIVE_RATE_LIMIT` | 30 / 60 сек | более строгий first-stage ceiling для чувствительных API |
 | Telegram webhook | `EDGE_WEBHOOK_RATE_LIMIT` | 6000 / 60 сек | очень высокий аварийный потолок, чтобы не мешать нормальной доставке Telegram |
 
-Ключ счётчика строится из необратимого SHA-256 fingerprint сетевого адреса. Raw IP не пишется в telemetry, ops_events или ответы.
+Ключ first-stage счётчика строится только из нормализованного сетевого адреса. В production используется HMAC-SHA-256 с серверным секретом; raw IP и Telegram initData не входят в persistent bucket key, telemetry, ops_events или ответы.
 
 Важно: Workers Rate Limiting API вызывается после старта Worker. Это защита ранней границы Worker и provider/business logic, но **не заменяет zone WAF, который должен отбрасывать запрос до запуска Worker**.
 
@@ -116,8 +116,10 @@ Action: **Block**, не Challenge.
 
 Cloudflare Rate Limiting используется только как defense-in-depth до бизнес-логики и не является механизмом аутентификации или авторизации.
 
-- Для Telegram API-запроса с `x-telegram-init-data` edge-key строится из криптографического хэша initData вместе с сетевым контекстом. Два валидных Telegram-пользователя за одним NAT/IP не делят один bucket.
-- Сырые IP, initData и Telegram user ID в ключах/логах limiter не сохраняются.
-- Если initData отсутствует, используется хэш сетевого IP как coarse fallback.
-- Ротация произвольного невалидного initData не отменяет отдельный Worker pre-auth IP burst guard: он остаётся независимым слоем защиты.
-- Успешное прохождение edge limiter ничего не говорит о валидности Telegram-подписи; криптографическая проверка initData и серверная авторизация выполняются отдельно.
+- **First stage до Telegram HMAC** использует только стабильный privacy-preserving network fingerprint. `x-telegram-init-data` намеренно не участвует в ключе: ротация мусорного initData не создаёт новые buckets.
+- IPv4 и IPv6 нормализуются перед fingerprinting. В production network fingerprint строится через HMAC-SHA-256; raw IP не сохраняется.
+- Worker дополнительно использует **distributed pre-auth window в Supabase** через существующий атомарный rate-window RPC: public 180/60 сек, expensive `/api/analyze` 60/60 сек, admin-sensitive 24/60 сек.
+- При отказе distributed backend дорогие и admin-sensitive запросы fail-closed до криптографической проверки и provider/business paths. Обычные API reads остаются fail-soft, чтобы единичная проблема БД не превращалась в полный outage.
+- После успешной Telegram verification включается отдельный account-scoped local + distributed limiter. Поэтому пользователи за одним NAT получают общий высокий first-stage ceiling, но сохраняют независимые пользовательские квоты после auth.
+- Сырые IP, initData и Telegram user ID не сохраняются в first-stage bucket keys или telemetry.
+- Cloudflare WAF/zone rate limits остаются внешним слоем и не считаются единственной защитой.
