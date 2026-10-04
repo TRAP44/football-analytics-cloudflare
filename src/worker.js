@@ -23312,10 +23312,28 @@ async function apiAnalyze(request, cfg, user) {
   try {
   let passAccess=false;
   if (!freeRecheck && passCandidate) {
-    passUsageReservation=await reserveEntitlementUsage(user.id,entitlementBefore.passes.active,fixtureId,cfg,{
-      durable:hasSupabase(cfg),
-      operationId:crypto.randomUUID(),
-    });
+    const passOperationId=crypto.randomUUID();
+    try {
+      passUsageReservation=await reserveEntitlementUsage(user.id,entitlementBefore.passes.active,fixtureId,cfg,{
+        durable:hasSupabase(cfg),
+        operationId:passOperationId,
+      });
+    } catch (error) {
+      await recordOpsEvent(cfg,{
+        severity:'error',
+        source:'quota',
+        eventType:'analysis_usage_reservation',
+        code:'ANALYSIS_PASS_RESERVATION_OUTCOME_UNKNOWN',
+        message:'Limited Pass reservation response was not confirmed. A durable database reservation, if created, will be reconciled automatically.',
+        meta:{
+          operationId:passOperationId,
+          telegramId:Number(user.id),
+          fixtureId:Number(fixtureId),
+          error:redactOpsString(error?.message || error,180),
+        },
+      }).catch(()=>null);
+      throw error;
+    }
     passAccess=Boolean(passUsageReservation?.allowed);
   }
   if (!freeRecheck && !passAccess) {
@@ -23640,7 +23658,6 @@ async function apiAnalyze(request, cfg, user) {
   await setCache(cacheKey, fixtureId, payload, cfg, ttl);
   await captureAnalysisTimelineSnapshot(payload, cfg, { delta: effectiveRecheckDelta });
   await captureModelPrediction(payload, cfg);
-  usageCommitted=true;
   await recordHistory(user.id, payload, cfg);
   if (newsImpactEligible && !needsFreshnessRecheck) {
     void recordGrowthEvent(cfg,{userId:user.id,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:'news_impact',material:Boolean(effectiveRecheckDelta?.material),stable:Boolean(effectiveRecheckDelta?.stable),changeCount:Number(effectiveRecheckDelta?.items?.length || 0),codes:(effectiveRecheckDelta?.codes || []).slice(0,6)}});
@@ -23648,7 +23665,9 @@ async function apiAnalyze(request, cfg, user) {
   if (needsFreshnessRecheck) void recordGrowthEvent(cfg,{userId:user.id,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:previousFreshness?.reasonCode || 'age_window',material:Boolean(recheckDelta?.material),stable:Boolean(recheckDelta?.stable),changeCount:Number(recheckDelta?.items?.length || 0),codes:(recheckDelta?.codes || []).slice(0,6)}});
   if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:false,recheck:shouldPerformRecheck}});
   await recordTrackedFullAiOutcome('fresh');
-  return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:recheckReasonCode,delta:recheckDelta},newsImpact,quota:await getQuota(user.id,cfg)}));
+  const responseQuota=await getQuota(user.id,cfg);
+  usageCommitted=true;
+  return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:recheckReasonCode,delta:recheckDelta},newsImpact,quota:responseQuota}));
   } finally {
     try {
       const disposition=usageCommitted ? 'commit' : 'refund';
