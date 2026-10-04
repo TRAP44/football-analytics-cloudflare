@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { createRuntimeControlsRuntime } from '../src/runtime-controls.js';
 
 const DEFAULT_RUNTIME_CONTROLS = Object.freeze({
@@ -164,4 +165,16 @@ test('runtime-controls domain keeps administrators exempt from ordinary feature 
     { ...DEFAULT_RUNTIME_CONTROLS, maintenanceMode:true, searchEnabled:false },
   );
   assert.equal(response, null);
+});
+
+test('worker composition root wires the extracted runtime-controls domain instead of owning its implementation', () => {
+  const worker = fs.readFileSync('src/worker.js', 'utf8');
+  const lines = worker.split('\n').length;
+
+  assert.match(worker, /import \{ createRuntimeControlsRuntime \} from '\.\/runtime-controls\.js';/);
+  assert.match(worker, /= createRuntimeControlsRuntime\(\{/);
+  assert.doesNotMatch(worker, /^function runtimeControlsSnapshot\(\)/m);
+  assert.doesNotMatch(worker, /^async function saveRuntimeControls\(/m);
+  assert.doesNotMatch(worker, /^async function apiRuntimeControls\(/m);
+  assert.ok(lines < 25500, `expected worker.js below 25,500 lines after extraction, got ${lines}`);
 });
