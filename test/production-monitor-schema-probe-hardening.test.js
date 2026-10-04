@@ -15,7 +15,7 @@ test('production monitor distinguishes confirmed drift from transient schema pro
 });
 
 test('production monitor waits for reminder reads before deep Supabase schema probes', () => {
-  assert.match(scheduled, /const remindersTask = runTask\('reminders', \(\) => processDueReminders\(cfg\)\);/);
-  assert.match(scheduled, /const monitorAfterReminders = remindersTask[\s\S]*?\.then\(\(\) => runTask\('production_monitor', \(\) => runProductionMonitor\(cfg, scheduledAt\)\)\);/);
+  assert.match(scheduled, /const remindersTask = run\('reminders', \(\) => processDueReminders\(cfg\)\);/);
+  assert.match(scheduled, /const monitorAfterReminders = remindersTask[\s\S]*?\.then\(\(\) => run\('production_monitor', \(\) => runProductionMonitor\(cfg, scheduledAt\)\)\);/);
   assert.match(scheduled, /tasks\.push\(\['production_monitor', monitorAfterReminders\]\);/);
 });
