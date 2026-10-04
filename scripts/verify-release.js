@@ -294,7 +294,7 @@ if (!worker.includes('loadSearchCompetitionMatches')) failures.push('League fixt
 if (!globalSearchController.includes('remoteMatches:data.matches || []')) failures.push('Client does not hydrate server-side league matches');
 if (!fs.existsSync('test/interaction-safety.test.js')) failures.push('Missing interaction-safety regression test');
 if (!app.includes('analysisActionPending: false')) failures.push('Analysis duplicate-submit guard is missing');
-if (!app.includes('matchCenterRequestSeq: 0')) failures.push('Match-center stale-response guard is missing');
+if (!matchCenterController.includes('let requestSeq = 0') || !matchCenterController.includes('seq === requestSeq ? data : null')) failures.push('Match-center stale-response guard is missing');
 if (!app.includes('favoriteMutations: new Set()')) failures.push('Favorite mutation guard is missing');
 if (!app.includes('reminderMutations: new Set()')) failures.push('Reminder mutation guard is missing');
 if (!fs.existsSync('test/quick-reminder-onboarding.test.js')) failures.push('Missing RC44 quick-reminder/onboarding regression test');
