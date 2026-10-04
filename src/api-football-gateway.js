@@ -1,6 +1,7 @@
 // Phase 2 API-Football gateway boundary.
 // Owns API-Football transport, provider cooldown/quota protection and bounded retry semantics.
 // Provider state, telemetry, persistence and network primitives remain injected by the composition root.
+const RETRYABLE_FOOTBALL_HTTP_STATUSES = new Set([500, 502, 503, 504]);
 export function createApiFootballGateway({
   memory,
   providerPlanLimits,
@@ -47,6 +48,10 @@ export function createApiFootballGateway({
   function isFootballRateLimitError(error) {
     return ['FOOTBALL_RATE_LIMIT', 'FOOTBALL_COOLDOWN', 'FOOTBALL_DAILY_RESERVE'].includes(String(error?.code || ''))
       || /too many requests|rate.?limit|requests per minute|лимит запросов|дневной резерв/i.test(String(error?.message || ''));
+  }
+
+  function isRetryableFootballHttpStatus(status) {
+    return RETRYABLE_FOOTBALL_HTTP_STATUSES.has(Number(status));
   }
 
   function secondsUntilUtcDayReset(nowMs = Date.now()) {
@@ -344,7 +349,7 @@ export function createApiFootballGateway({
       await observe(cfg,{
         provider:'api-football',
         operation:path,
-        outcome:[502,503,504].includes(Number(r.status)) && attempt < maxAttempts ? 'retrying' : 'failed',
+        outcome:isRetryableFootballHttpStatus(r.status) && attempt < maxAttempts ? 'retrying' : 'failed',
         errorType:'FOOTBALL_HTTP',
         status:r.status,
         latencyMs:durationMs,
@@ -357,7 +362,7 @@ export function createApiFootballGateway({
           provider:'api-football',
           operation:path,
           attempt,
-          finalResult: [502,503,504].includes(Number(r.status)) && attempt < maxAttempts ? 'retrying' : 'failed',
+          finalResult: isRetryableFootballHttpStatus(r.status) && attempt < maxAttempts ? 'retrying' : 'failed',
         },
       });
       throw footballError(`API-Football временно недоступен (HTTP ${r.status}).`, 'FOOTBALL_HTTP', 0, r.status);
@@ -529,7 +534,7 @@ export function createApiFootballGateway({
 
   function isRetryableFootballTransportError(error) {
     return ['FOOTBALL_NETWORK', 'UPSTREAM_TIMEOUT'].includes(String(error?.code || ''))
-      || (String(error?.code || '') === 'FOOTBALL_HTTP' && [502,503,504].includes(Number(error?.status)));
+      || (String(error?.code || '') === 'FOOTBALL_HTTP' && isRetryableFootballHttpStatus(error?.status));
   }
 
   async function apiFootball(path, params, cfg, options = {}) {
@@ -561,6 +566,7 @@ export function createApiFootballGateway({
   return {
     footballError,
     isFootballRateLimitError,
+    isRetryableFootballHttpStatus,
     footballCooldownRemaining,
     freeQuotaHealthy,
     secondsUntilUtcDayReset,
