@@ -94,8 +94,8 @@ test('Issue #438 CI contract proves complete v2 drift detection and rollout comp
 
   assert.match(quality, /freshInstallLegacyFingerprint/);
   assert.match(quality, /freshInstallFingerprint/);
-  assert.match(quality, /expected_legacy_fingerprint="$FRESH_LEGACY_FP"/);
-  assert.match(quality, /expected_v2_fingerprint="$FRESH_V2_FP"/);
+  assert.ok(quality.includes('expected_legacy_fingerprint="$FRESH_LEGACY_FP"'));
+  assert.ok(quality.includes('expected_v2_fingerprint="$FRESH_V2_FP"'));
   assert.doesNotMatch(quality, /test "$LEGACY_FP" = "c2c22ec25aacfcf1b9938b0850cebf49"/);
 });
 
