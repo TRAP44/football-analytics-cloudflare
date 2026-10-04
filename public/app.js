@@ -14,7 +14,6 @@ import { createJourneyStateModule } from './modules/journey-state.js';
 import { analysisAccessUsageHtml, buildAnalysisAccessUsage } from './modules/analysis-access.js';
 import { createGlobalSearchRenderer } from './modules/global-search-renderer.js';
 import { createGlobalSearchController } from './modules/global-search-controller.js';
-import { createMatchCenterController } from './modules/match-center-controller.js';
 import { buildPlayerComparisonCandidates, playerComparisonHtml, samePlayer } from './modules/player-comparison.js';
 import { createPlayerFollowModule } from './modules/player-follow.js';
 import {
@@ -189,6 +188,8 @@ const inflightGetRequests = new Map();
 const MATCH_SNAPSHOT_PREFIX = 'football-analytics:v4:matches:';
 const MATCH_SNAPSHOT_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 
+let matchCenterController = null;
+let matchCenterControllerPromise = null;
 
 const $ = id => document.getElementById(id);
 
@@ -263,6 +264,22 @@ const {
   renderGlobalSearch: () => renderGlobalSearch(),
   showView: (id, options) => showView(id, options),
 });
+
+function stopLiveRefresh() {
+  matchCenterController?.stopLiveRefresh();
+}
+
+function deactivateLiveRefresh() {
+  matchCenterController?.deactivateLiveRefresh();
+}
+
+function suspendLiveRefresh() {
+  return matchCenterController?.suspendLiveRefresh() || false;
+}
+
+function resumeLiveRefresh() {
+  return matchCenterController?.resumeLiveRefresh() || false;
+}
 
 function viewBackTarget(id = activeViewId()) {
   return backTargetForView(id, state);
@@ -907,34 +924,40 @@ async function runStartupSequence() {
 
 const api = createApiClient({ state, tg, inflightGetRequests, observeServerVersion, showBootRecovery, applyRuntimeUi, normalizeApiError, noteRequestSuccess, noteRequestFailure });
 
-const {
-  requestMatchCenter,
-  openMatchCenter,
-  startLiveRefresh,
-  stopLiveRefresh,
-  deactivateLiveRefresh,
-  suspendLiveRefresh,
-  resumeLiveRefresh,
-} = createMatchCenterController({
-  state,
-  documentRef: document,
-  elementById: $,
-  activeViewId,
-  showView,
-  api,
-  runtimeAllows,
-  ensureMatchCenterExtras,
-  renderMatchCenter,
-  renderJourneyState,
-  sendProductAction,
-  sendMatchDataCoverage,
-  sendOperationTiming,
-  sendActionError,
-  apiErrorCategory,
-  friendlyErrorMessage,
-  toast,
-  performanceNow: () => performance.now(),
-});
+async function ensureMatchCenterController() {
+  if (matchCenterController) return matchCenterController;
+  if (!matchCenterControllerPromise) {
+    matchCenterControllerPromise = import('./modules/match-center-controller.js')
+      .then(({ createMatchCenterController }) => {
+        matchCenterController = createMatchCenterController({
+          state,
+          documentRef: document,
+          elementById: $,
+          activeViewId,
+          showView,
+          api,
+          runtimeAllows,
+          ensureMatchCenterExtras,
+          renderMatchCenter,
+          renderJourneyState,
+          sendProductAction,
+          sendMatchDataCoverage,
+          sendOperationTiming,
+          sendActionError,
+          apiErrorCategory,
+          friendlyErrorMessage,
+          toast,
+          performanceNow: () => performance.now(),
+        });
+        return matchCenterController;
+      })
+      .catch(error => {
+        matchCenterControllerPromise = null;
+        throw error;
+      });
+  }
+  return matchCenterControllerPromise;
+}
 
 const playerFollowModule = createPlayerFollowModule({
   state,
@@ -3813,6 +3836,21 @@ function lineupLiveHtml(lineups, match) {
   return `<div class="center-lineups-grid">${lineupTeamHtml(home, match.home?.name || 'Хозяева')}${lineupTeamHtml(away, match.away?.name || 'Гости')}</div>`;
 }
 
+async function requestMatchCenter(fixtureId, extraParams = {}, options = {}) {
+  const controller = await ensureMatchCenterController();
+  return controller.requestMatchCenter(fixtureId, extraParams, options);
+}
+
+function startLiveRefresh(fixtureId) {
+  if (matchCenterController) {
+    matchCenterController.startLiveRefresh(fixtureId);
+    return;
+  }
+  void ensureMatchCenterController()
+    .then(controller => controller.startLiveRefresh(fixtureId))
+    .catch(error => sendActionError('live_refresh', error, 'analysisView'));
+}
+
 function signedPp(v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return '—';
@@ -4952,6 +4990,11 @@ function renderMatchCenter(d) {
   });
 
   if (live) startLiveRefresh(m.fixtureId); else stopLiveRefresh();
+}
+
+async function openMatchCenter(fixtureId, btn) {
+  const controller = await ensureMatchCenterController();
+  return controller.openMatchCenter(fixtureId, btn);
 }
 
 function syncAnalysisBusyUi() {
