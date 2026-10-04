@@ -75,6 +75,8 @@ jobs:
 
           psql "$DB_URL" -X -v ON_ERROR_STOP=1 -c \
             "select public.backend_schema_fingerprint() as legacy_schema_contract, public.backend_schema_contract_v2() as schema_contract_v2;"
+          psql "$DB_URL" -X -v ON_ERROR_STOP=1 \
+            -f "$GITHUB_WORKSPACE/scripts/schema-contract-v2-diagnostics.sql"
 
           psql "$DB_URL" -X -v ON_ERROR_STOP=1 \
             -f "$GITHUB_WORKSPACE/scripts/supabase-ci-contract.sql"
