@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const app = fs.readFileSync('public/app.js', 'utf8');
 const worker = fs.readFileSync('src/worker.js', 'utf8');
+const matchCenterController = fs.readFileSync('public/modules/match-center-controller.js', 'utf8');
 
 test('full analysis is globally single-flight on the client to protect user quota', () => {
   assert.match(app, /analysisActionPending:\s*false/);
@@ -14,11 +15,11 @@ test('full analysis is globally single-flight on the client to protect user quot
 });
 
 test('match-center responses cannot overwrite a newer user selection', () => {
-  assert.match(app, /matchCenterRequestSeq:\s*0/);
-  assert.match(app, /async function requestMatchCenter/);
-  assert.match(app, /const seq = \+\+state\.matchCenterRequestSeq/);
-  assert.match(app, /return seq === state\.matchCenterRequestSeq \? data : null/);
-  assert.doesNotMatch(app, /await api\(\x60\/api\/match-center\?fixtureId=/);
+  assert.match(app, /async function requestMatchCenter[\s\S]*?ensureMatchCenterController\(\)/);
+  assert.match(matchCenterController, /let requestSeq = 0/);
+  assert.match(matchCenterController, /const seq = \+\+requestSeq/);
+  assert.match(matchCenterController, /return seq === requestSeq \? data : null/);
+  assert.doesNotMatch(app, /await api\(\x60\/api\/match-center\?/);
 });
 
 test('favorite and reminder mutations are deduplicated per entity', () => {

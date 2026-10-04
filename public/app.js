@@ -114,7 +114,6 @@ const state = {
     },
   },
   storageAvailable: true,
-  liveRefreshWasActive: false,
   network: {
     mode: navigator.onLine === false ? 'offline' : 'online',
     lastSuccessAt: null,
@@ -151,7 +150,6 @@ const state = {
   teamIntelligenceRequestSeq: 0,
   teamSquadRequestSeq: 0,
   tournamentStandingsRequestSeq: 0,
-  liveRefreshTimer: null,
   favoritesLoaded: false,
   favoritesLoading: false,
   favoritesLoadError: '',
@@ -175,8 +173,6 @@ const state = {
   historyOpenRequestSeq: 0,
   providerLoaded: false,
   matchesLoadSeq: 0,
-  matchCenterRequestSeq: 0,
-  matchCenterInFlight: new Map(),
   analysisActionPending: false,
   analysisRequestSeq: 0,
   favoriteMutations: new Set(),
@@ -192,6 +188,8 @@ const inflightGetRequests = new Map();
 const MATCH_SNAPSHOT_PREFIX = 'football-analytics:v4:matches:';
 const MATCH_SNAPSHOT_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 
+let matchCenterController = null;
+let matchCenterControllerPromise = null;
 
 const $ = id => document.getElementById(id);
 
@@ -268,8 +266,19 @@ const {
 });
 
 function stopLiveRefresh() {
-  if (state.liveRefreshTimer) clearTimeout(state.liveRefreshTimer);
-  state.liveRefreshTimer = null;
+  matchCenterController?.stopLiveRefresh();
+}
+
+function deactivateLiveRefresh() {
+  matchCenterController?.deactivateLiveRefresh();
+}
+
+function suspendLiveRefresh() {
+  return matchCenterController?.suspendLiveRefresh() || false;
+}
+
+function resumeLiveRefresh() {
+  return matchCenterController?.resumeLiveRefresh() || false;
 }
 
 function viewBackTarget(id = activeViewId()) {
@@ -304,10 +313,7 @@ const navigationShell = createNavigationShell({
     if (from === 'analysisView' && to !== 'analysisView' && state.analysisActionPending) {
       state.analysisRequestSeq += 1;
     }
-    if (to !== 'analysisView') {
-      stopLiveRefresh();
-      state.liveRefreshWasActive = false;
-    }
+    if (to !== 'analysisView') deactivateLiveRefresh();
   },
   onEffectError: (error, context) => {
     console.error('Navigation lifecycle effect failed', context, error);
@@ -917,6 +923,41 @@ async function runStartupSequence() {
 
 
 const api = createApiClient({ state, tg, inflightGetRequests, observeServerVersion, showBootRecovery, applyRuntimeUi, normalizeApiError, noteRequestSuccess, noteRequestFailure });
+
+async function ensureMatchCenterController() {
+  if (matchCenterController) return matchCenterController;
+  if (!matchCenterControllerPromise) {
+    matchCenterControllerPromise = import('./modules/match-center-controller.js')
+      .then(({ createMatchCenterController }) => {
+        matchCenterController = createMatchCenterController({
+          state,
+          documentRef: document,
+          elementById: $,
+          activeViewId,
+          showView,
+          api,
+          runtimeAllows,
+          ensureMatchCenterExtras,
+          renderMatchCenter,
+          renderJourneyState,
+          sendProductAction,
+          sendMatchDataCoverage,
+          sendOperationTiming,
+          sendActionError,
+          apiErrorCategory,
+          friendlyErrorMessage,
+          toast,
+          performanceNow: () => performance.now(),
+        });
+        return matchCenterController;
+      })
+      .catch(error => {
+        matchCenterControllerPromise = null;
+        throw error;
+      });
+  }
+  return matchCenterControllerPromise;
+}
 
 const playerFollowModule = createPlayerFollowModule({
   state,
@@ -3796,73 +3837,18 @@ function lineupLiveHtml(lineups, match) {
 }
 
 async function requestMatchCenter(fixtureId, extraParams = {}, options = {}) {
-  const id=Number(fixtureId);
-  const key=String(id);
-  const existing=state.matchCenterInFlight.get(key);
-  if (existing) {
-    state.clientPerf.deduped += 1;
-    return await existing;
-  }
-
-  const seq = ++state.matchCenterRequestSeq;
-  const params = new URLSearchParams({ fixtureId: key });
-  Object.entries(extraParams || {}).forEach(([paramKey, value]) => {
-    if (value !== undefined && value !== null && value !== '') params.set(paramKey, String(value));
-  });
-
-  const task=(async()=>{
-    const data = await api(`/api/match-center?${params.toString()}`, options);
-    return seq === state.matchCenterRequestSeq ? data : null;
-  })();
-  state.matchCenterInFlight.set(key,task);
-  try {
-    return await task;
-  } finally {
-    if (state.matchCenterInFlight.get(key)===task) state.matchCenterInFlight.delete(key);
-  }
-}
-
-function isActiveLiveFixture(fixtureId) {
-  return state.liveRefreshWasActive && !document.hidden && activeViewId() === 'analysisView'
-    && state.currentCenter?.mode === 'live'
-    && Number(state.currentCenter?.match?.fixtureId || 0) === Number(fixtureId);
-}
-
-function scheduleLiveRefresh(fixtureId) {
-  const delayMs = Math.max(15, Number(state.currentCenter?.refreshSeconds || 60)) * 1000;
-  state.liveRefreshTimer = setTimeout(async () => {
-    state.liveRefreshTimer = null;
-    if (!isActiveLiveFixture(fixtureId)) return;
-    try {
-      const timingStartedAt = performance.now();
-      const data = await requestMatchCenter(fixtureId, { t: Date.now() });
-      if (!data || !isActiveLiveFixture(fixtureId)) return;
-      sendOperationTiming('live', timingStartedAt, 'analysisView');
-      state.currentCenter = data;
-      renderMatchCenter(data);
-      if (data.mode !== 'live') state.liveRefreshWasActive = false;
-    } catch (e) {
-      if (!isActiveLiveFixture(fixtureId)) return;
-      const el = $('liveRefreshText');
-      if (el) el.textContent = 'Не удалось обновить. Повторим автоматически.';
-      sendActionError('live_refresh', e, 'analysisView');
-    } finally {
-      if (isActiveLiveFixture(fixtureId) && !state.liveRefreshTimer) scheduleLiveRefresh(fixtureId);
-    }
-  }, delayMs);
+  const controller = await ensureMatchCenterController();
+  return controller.requestMatchCenter(fixtureId, extraParams, options);
 }
 
 function startLiveRefresh(fixtureId) {
-  stopLiveRefresh();
-  const el = $('liveRefreshText');
-  if (!runtimeAllows('liveEnabled')) {
-    state.liveRefreshWasActive = false;
-    if (el) el.textContent = 'Автообновление матча временно приостановлено.';
+  if (matchCenterController) {
+    matchCenterController.startLiveRefresh(fixtureId);
     return;
   }
-  state.liveRefreshWasActive = true;
-  if (el) el.textContent = 'Обновляется автоматически';
-  if (!document.hidden) scheduleLiveRefresh(fixtureId);
+  void ensureMatchCenterController()
+    .then(controller => controller.startLiveRefresh(fixtureId))
+    .catch(error => sendActionError('live_refresh', error, 'analysisView'));
 }
 
 function signedPp(v) {
@@ -5007,62 +4993,8 @@ function renderMatchCenter(d) {
 }
 
 async function openMatchCenter(fixtureId, btn) {
-  if (state.analysisActionPending) state.analysisRequestSeq += 1;
-  const sourceView = activeViewId();
-  if (sourceView !== 'analysisView') state.analysisBackView = sourceView;
-  if (Number(state.currentCenter?.match?.fixtureId || 0) !== Number(fixtureId)) state.currentCenterTab = 'summary';
-  const original = btn?.textContent || '';
-  const timingStartedAt = performance.now();
-  const reusableCenter = Number(state.currentCenter?.match?.fixtureId || 0) === Number(fixtureId)
-    ? state.currentCenter
-    : null;
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Загружаю матч…'; }
-  showView('analysisView');
-  if (!reusableCenter) {
-    renderJourneyState('loading', {
-      title: 'Открываем матч',
-      message: 'Загружаем счёт, события и доступную статистику.',
-    });
-  }
-  try {
-    const extrasPromise = ensureMatchCenterExtras();
-    const centerLoad = Promise.all([
-      requestMatchCenter(fixtureId),
-      extrasPromise,
-    ]).then(([data]) => data);
-    await extrasPromise;
-    if (reusableCenter) renderMatchCenter(reusableCenter);
-    const data = await centerLoad;
-    if (!data) return;
-    renderMatchCenter(data);
-    sendProductAction('match_open', sourceView);
-    sendMatchDataCoverage(data, sourceView);
-    sendOperationTiming('match', timingStartedAt, sourceView);
-    if (data.mode === 'live') {
-      sendProductAction('live_open', sourceView);
-      sendOperationTiming('live', timingStartedAt, sourceView);
-    }
-  } catch (e) {
-    sendActionError('match', e, sourceView);
-    const category=apiErrorCategory(e);
-    const previous=Number(state.currentCenter?.match?.fixtureId || 0)===Number(fixtureId) ? state.currentCenter : null;
-    if (['rate_limit','provider'].includes(category)) {
-      if (previous) {
-        renderMatchCenter(previous);
-      } else if (sourceView && sourceView !== 'analysisView') {
-        showView(sourceView, { restore:true });
-      }
-      toast(friendlyErrorMessage(e));
-    } else {
-      renderJourneyState('error', {
-        title: 'Матч временно не открылся',
-        message: e.message || 'Не удалось получить данные матча.',
-        retry: () => openMatchCenter(fixtureId, null),
-      });
-    }
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = original; }
-  }
+  const controller = await ensureMatchCenterController();
+  return controller.openMatchCenter(fixtureId, btn);
 }
 
 function syncAnalysisBusyUi() {
@@ -6507,7 +6439,7 @@ $('versionReloadBtn')?.addEventListener('click', forceFreshReload);
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
     state.network.hiddenAt = Date.now();
-    if (state.liveRefreshTimer) { stopLiveRefresh(); state.liveRefreshWasActive = true; }
+    suspendLiveRefresh();
     return;
   }
 
@@ -6515,9 +6447,7 @@ document.addEventListener('visibilitychange', () => {
   state.network.hiddenAt = null;
   const fixtureId = Number(state.currentCenter?.match?.fixtureId || 0);
 
-  if (fixtureId && state.currentCenter?.mode === 'live' && activeViewId() === 'analysisView' && state.liveRefreshWasActive) {
-    startLiveRefresh(fixtureId);
-  }
+  resumeLiveRefresh();
 
   // Telegram can keep the WebView suspended for minutes. Refresh only the
   // current screen, never re-run a paid/limited pre-match analysis automatically.

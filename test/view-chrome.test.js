@@ -88,8 +88,11 @@ test('telegram back button remains controlled by navigation visibility', () => {
 });
 
 
-test('view chrome extraction keeps live refresh lifecycle in app composition root', () => {
-  assert.match(app, /function stopLiveRefresh\(\)/);
-  assert.match(app, /onLeaveView:\s*\(\{ from, to, options \}\) => \{[\s\S]*?stopLiveRefresh\(\)/);
+test('view chrome remains separate from extracted Match Center live refresh lifecycle', () => {
+  const matchCenterController = readFileSync(new URL('../public/modules/match-center-controller.js', import.meta.url), 'utf8');
+  assert.match(app, /function deactivateLiveRefresh\(\)/);
+  assert.match(app, /onLeaveView:\s*\(\{ from, to, options \}\) => \{[\s\S]*?deactivateLiveRefresh\(\)/);
+  assert.match(matchCenterController, /function stopLiveRefresh\(\)/);
+  assert.match(matchCenterController, /function scheduleLiveRefresh\(fixtureId\)/);
   assert.doesNotMatch(navigationShell, /stopLiveRefresh|liveRefreshTimer/);
 });

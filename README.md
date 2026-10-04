@@ -103,6 +103,8 @@ Current shared modules include:
 - `app-runtime.js` — client/release identity and runtime constants
 - `ui-preferences.js` — interface preference controller
 - `first-run-guide.js` — onboarding controller
+- `global-search-controller.js` — discovery/search request lifecycle
+- `match-center-controller.js` — Match Center request dedupe, open/recovery and LIVE refresh lifecycle
 
 The frontend is being decomposed incrementally. New feature work should prefer focused modules over adding unrelated logic directly to `public/app.js`.
 

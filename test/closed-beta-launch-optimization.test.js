@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
+const matchCenterController=readFileSync(new URL('../public/modules/match-center-controller.js',import.meta.url),'utf8');
 const betaDashboard=readFileSync(new URL('../public/modules/admin-beta-dashboard.js',import.meta.url),'utf8');
 
 function block(source,start,end){
@@ -95,7 +96,8 @@ test('beta data coverage stays inside existing privacy-safe telemetry and tracks
   for (const key of ['lineups','injuries','statistics','xg','odds']) {
     assert.match(dashboard,new RegExp(key));
   }
-  assert.match(app,/sendMatchDataCoverage\(data, sourceView\)/);
+  assert.match(app,/sendMatchDataCoverage,/);
+  assert.match(matchCenterController,/coverage\(data, sourceView\)/);
   assert.match(app,/sendClientTelemetry\('data_coverage'/);
 });
 

@@ -29,6 +29,7 @@ const historyRenderer = fs.readFileSync('public/modules/history-renderer.js', 'u
 const aiTrackRecordRenderer = fs.readFileSync('public/modules/ai-track-record-renderer.js', 'utf8');
 const globalSearchRenderer = fs.readFileSync('public/modules/global-search-renderer.js', 'utf8');
 const globalSearchController = fs.readFileSync('public/modules/global-search-controller.js', 'utf8');
+const matchCenterController = fs.readFileSync('public/modules/match-center-controller.js', 'utf8');
 const launchFunnelFrontend = app + '\n' + adminLaunchFunnel;
 const appRuntime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
@@ -269,6 +270,16 @@ if (!app.includes('createGlobalSearchController({') || !app.includes('onRetry: (
 if (app.includes('function renderGlobalSearch()') || app.includes('class="search-result-block compact-entity-results"') || app.includes('class="empty search-empty-state"')) failures.push('Global search renderer implementation leaked back into shared app root');
 if (app.includes('async function runGlobalSearch(') || !globalSearchController.includes('async function runGlobalSearch(') || !globalSearchController.includes('/api/search?q=')) failures.push('Global search network lifecycle must remain in extracted controller');
 if (/\/api\/search|\bapi\s*\(|sendProductAction|sendActionError/.test(globalSearchRenderer)) failures.push('Global search renderer captured network or telemetry lifecycle');
+if (!fs.existsSync('test/match-center-controller-issue459.test.js')) failures.push('Missing Match Center controller regression test');
+if (!app.includes("import('./modules/match-center-controller.js')") || !matchCenterController.includes('export function createMatchCenterController')) failures.push('Match Center controller lazy extraction contract is missing');
+if (!app.includes('async function ensureMatchCenterController()') || !app.includes('createMatchCenterController({') || !app.includes('suspendLiveRefresh();') || !app.includes('resumeLiveRefresh();')) failures.push('Match Center request/live lifecycle dependencies must remain explicitly wired from composition root');
+if (app.includes('matchCenterInFlight:') || app.includes('matchCenterRequestSeq:') || app.includes('liveRefreshTimer:') || app.includes('liveRefreshWasActive:')) failures.push('Match Center mutable timer/inflight ownership leaked back into shared app state');
+const matchCenterRequestWrapper = app.slice(app.indexOf('async function requestMatchCenter('), app.indexOf('function signedPp', app.indexOf('async function requestMatchCenter(')));
+const matchCenterOpenWrapper = app.slice(app.indexOf('async function openMatchCenter('), app.indexOf('function syncAnalysisBusyUi', app.indexOf('async function openMatchCenter(')));
+if (!matchCenterRequestWrapper.includes('ensureMatchCenterController()') || matchCenterRequestWrapper.includes('/api/match-center')) failures.push('Match Center request wrapper must delegate without owning network implementation');
+if (!matchCenterOpenWrapper.includes('ensureMatchCenterController()') || matchCenterOpenWrapper.includes("showView('analysisView')")) failures.push('Match Center open wrapper must delegate without owning navigation implementation');
+if (app.includes('function scheduleLiveRefresh(')) failures.push('Match Center live scheduler leaked back into shared app root');
+if (!matchCenterController.includes('/api/match-center?') || !matchCenterController.includes('function scheduleLiveRefresh(') || !matchCenterController.includes('async function openMatchCenter(')) failures.push('Match Center controller boundary is incomplete');
 if (!app.includes("import('./modules/admin-launch-funnel.js')") || !adminLaunchFunnel.includes('export function createAdminLaunchFunnelModule')) failures.push('Admin launch funnel lazy extraction contract is missing');
 if (app.includes('Собираю first-party воронку') || app.includes('newsImpactRecoveryIncidentSloBreachImpactRanking')) failures.push('Admin launch funnel implementation leaked back into shared app root');
 if (!app.includes("createNavigationShell({") || !navigationShell.includes('export function createNavigationShell')) failures.push('Frontend navigation shell extraction contract is missing');
@@ -283,7 +294,7 @@ if (!worker.includes('loadSearchCompetitionMatches')) failures.push('League fixt
 if (!globalSearchController.includes('remoteMatches:data.matches || []')) failures.push('Client does not hydrate server-side league matches');
 if (!fs.existsSync('test/interaction-safety.test.js')) failures.push('Missing interaction-safety regression test');
 if (!app.includes('analysisActionPending: false')) failures.push('Analysis duplicate-submit guard is missing');
-if (!app.includes('matchCenterRequestSeq: 0')) failures.push('Match-center stale-response guard is missing');
+if (!matchCenterController.includes('let requestSeq = 0') || !matchCenterController.includes('seq === requestSeq ? data : null')) failures.push('Match-center stale-response guard is missing');
 if (!app.includes('favoriteMutations: new Set()')) failures.push('Favorite mutation guard is missing');
 if (!app.includes('reminderMutations: new Set()')) failures.push('Reminder mutation guard is missing');
 if (!fs.existsSync('test/quick-reminder-onboarding.test.js')) failures.push('Missing RC44 quick-reminder/onboarding regression test');

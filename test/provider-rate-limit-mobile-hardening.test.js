@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8')+'\n'+readFileSync(new URL('../src/api-football-gateway.js',import.meta.url),'utf8');
 const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
 const searchController=readFileSync(new URL('../public/modules/global-search-controller.js',import.meta.url),'utf8');
+const matchCenterController=readFileSync(new URL('../public/modules/match-center-controller.js',import.meta.url),'utf8');
 const css=readFileSync(new URL('../public/styles.css',import.meta.url),'utf8') + '\n' + readFileSync(new URL('../public/styles/public-shell.css', import.meta.url), 'utf8');
 
 function block(source,start,end){
@@ -113,12 +114,13 @@ test('provider cooldown exposes a bounded countdown before manual retry',()=>{
 });
 
 test('client deduplicates match center refreshes and keeps provider cooldown non-blocking',()=>{
-  const request=block(app,'async function requestMatchCenter','function isActiveLiveFixture');
-  assert.match(request,/matchCenterInFlight/);
-  assert.match(request,/state\.clientPerf\.deduped/);
+  const request=block(matchCenterController,'async function requestMatchCenter','function isActiveLiveFixture');
+  assert.match(request,/inFlight/);
+  assert.match(request,/state\.clientPerf/);
+  assert.match(request,/deduped/);
 
-  const open=block(app,'async function openMatchCenter','function syncAnalysisBusyUi');
-  assert.match(open,/\['rate_limit','provider'\]/);
+  const open=block(matchCenterController,'async function openMatchCenter','return Object.freeze');
+  assert.match(open,/\['rate_limit', 'provider'\]/);
   assert.match(open,/showView\(sourceView/);
 
   const search=block(searchController,'async function runGlobalSearch','function handleSearchInput');
@@ -176,16 +178,16 @@ test('Match Center keeps partial provider blocks independent and renderable',()=
 });
 
 test('Match Center preserves the originating view across degraded provider failure',()=>{
-  const open=block(app,'async function openMatchCenter','function syncAnalysisBusyUi');
+  const open=block(matchCenterController,'async function openMatchCenter','return Object.freeze');
   assert.match(open,/const sourceView = activeViewId\(\)/);
   assert.match(open,/state\.analysisBackView = sourceView/);
   assert.match(open,/showView\('analysisView'\)/);
-  assert.match(open,/\['rate_limit','provider'\]\.includes\(category\)/);
-  assert.match(open,/showView\(sourceView, \{ restore:true \}\)/);
+  assert.match(open,/\['rate_limit', 'provider'\]\.includes\(category\)/);
+  assert.match(open,/showView\(sourceView, \{ restore: true \}\)/);
 
-  const request=block(app,'async function requestMatchCenter','function isActiveLiveFixture');
-  assert.match(request,/const existing=state\.matchCenterInFlight\.get\(key\)/);
+  const request=block(matchCenterController,'async function requestMatchCenter','function isActiveLiveFixture');
+  assert.match(request,/const existing = inFlight\.get\(key\)/);
   assert.match(request,/if \(existing\)/);
-  assert.match(request,/state\.matchCenterInFlight\.set\(key,task\)/);
-  assert.match(request,/state\.matchCenterInFlight\.delete\(key\)/);
+  assert.match(request,/inFlight\.set\(key, task\)/);
+  assert.match(request,/inFlight\.delete\(key\)/);
 });

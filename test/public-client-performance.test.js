@@ -7,6 +7,7 @@ const app=fs.readFileSync('public/app.js','utf8');
 const runtime=fs.readFileSync('public/modules/app-runtime.js','utf8');
 const html=fs.readFileSync('public/index.html','utf8');
 const worker=fs.readFileSync('src/worker.js','utf8');
+const matchCenterController=fs.readFileSync('public/modules/match-center-controller.js','utf8');
 
 function block(start,end){
   const a=app.indexOf(start);
@@ -78,6 +79,7 @@ test('startup graph defers profile-only and Match Center-only modules until thei
     'billing.js',
     'digest-settings.js',
     'smart-notifications.js',
+    'match-center-controller.js',
     'match-pulse.js',
     'ai-timeline.js',
   ];
@@ -88,6 +90,7 @@ test('startup graph defers profile-only and Match Center-only modules until thei
   assert.match(app,/async function ensureBillingModule\(/);
   assert.match(app,/async function ensureDigestSettingsModule\(/);
   assert.match(app,/async function ensureSmartNotificationsModule\(/);
+  assert.match(app,/async function ensureMatchCenterController\(/);
   assert.match(app,/async function ensureMatchCenterExtras\(/);
 
   const staticImports=[...app.matchAll(/from ['"]\.\/modules\/([^'"]+)['"]/g)].map(match=>`public/modules/${match[1]}`);
@@ -104,15 +107,19 @@ test('full AI avoids reloading already-known favorites and reminders',()=>{
 });
 
 test('reopening the same Match Center renders warm data while the refresh and deferred UI chunk load in parallel',()=>{
-  const center=block('async function openMatchCenter','function syncAnalysisBusyUi');
+  const start=matchCenterController.indexOf('async function openMatchCenter');
+  const end=matchCenterController.indexOf('return Object.freeze',start);
+  assert.ok(start>=0 && end>start);
+  const center=matchCenterController.slice(start,end);
   const warm=center.indexOf('const reusableCenter =');
-  const extras=center.indexOf('const extrasPromise = ensureMatchCenterExtras()');
+  const extras=center.indexOf('const extrasPromise = ensureExtras()');
   const request=center.indexOf('requestMatchCenter(fixtureId)');
-  const render=center.indexOf('renderMatchCenter(reusableCenter)');
+  const render=center.indexOf('renderCenter(reusableCenter)');
   const refreshed=center.indexOf('const data = await centerLoad');
   assert.ok(warm>=0 && extras>warm && request>extras && render>request && refreshed>render);
   assert.match(center,/Promise\.all\(\[\s*requestMatchCenter\(fixtureId\),\s*extrasPromise,/);
   assert.match(center,/Number\(state\.currentCenter\?\.match\?\.fixtureId \|\| 0\) === Number\(fixtureId\)/);
+  assert.match(app,/async function openMatchCenter\(fixtureId, btn\)[\s\S]*?ensureMatchCenterController\(\)/);
 });
 
 test('performance pass cache-busts shared app.js without changing release identity',()=>{
