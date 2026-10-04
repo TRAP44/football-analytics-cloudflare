@@ -141,7 +141,7 @@ export function createScheduledJobsRuntime({
         : null;
 
     async function markLost(reason='lease_renewal_failed') {
-      if (state.lost || state.stopped) return;
+      if (state.lost) return;
       state.lost=true;
       state.reason=shortReason(reason,'lease_renewal_failed');
       await Promise.resolve(recordOpsEvent?.(cfg,{
