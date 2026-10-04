@@ -50,7 +50,7 @@ test('all health probes run through the Worker instead of the SPA fallback', () 
 
 test('production change detection compares current main with the active Cloudflare SHA', () => {
   assert.match(deploy, /id: production_changes/);
-  assert.match(deploy, /verify-production-release-postcondition\.js "\$DEPLOYMENT_STATUS_JSON" "\$VERSIONS_JSON" --print-active-identity/);
+  assert.match(deploy, /verify-production-release-postcondition\.js "\$DEPLOYMENT_STATUS_JSON" "\$VERSIONS_JSON" --print-active-rollback-target/);
   assert.match(deploy, /git merge-base --is-ancestor "\$ACTIVE_SHA" "\$DEPLOY_SHA"/);
   assert.match(deploy, /git diff --quiet "\$ACTIVE_SHA" "\$DEPLOY_SHA" -- src public wrangler\.jsonc package\.json package-lock\.json/);
   assert.doesNotMatch(deploy, /BASE_SHA="\$\(git rev-parse "\$DEPLOY_SHA\^"\)"/);
