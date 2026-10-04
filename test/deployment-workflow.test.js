@@ -50,7 +50,7 @@ test('all health probes run through the Worker instead of the SPA fallback', () 
 
 test('production change detection compares current main with the active Cloudflare SHA', () => {
   assert.match(deploy, /id: production_changes/);
-  assert.match(deploy, /verify-production-release-postcondition\.js "\$DEPLOYMENT_STATUS_JSON" "\$VERSIONS_JSON" --print-active-identity/);
+  assert.match(deploy, /verify-production-release-postcondition\.js "\$DEPLOYMENT_STATUS_JSON" "\$VERSIONS_JSON" --print-active-rollback-target/);
   assert.match(deploy, /git merge-base --is-ancestor "\$ACTIVE_SHA" "\$DEPLOY_SHA"/);
   assert.match(deploy, /git diff --quiet "\$ACTIVE_SHA" "\$DEPLOY_SHA" -- src public wrangler\.jsonc package\.json package-lock\.json/);
   assert.doesNotMatch(deploy, /BASE_SHA="\$\(git rev-parse "\$DEPLOY_SHA\^"\)"/);
@@ -80,20 +80,20 @@ test('production change detection compares current main with the active Cloudfla
 });
 
 
-test('unreadable active Cloudflare identity forces a verified deploy instead of blocking production', () => {
-  assert.match(deploy, /### Active production identity unavailable/);
-  assert.match(deploy, /does not expose the expected release\/SHA stamp/);
-  assert.match(deploy, /echo "changed=true" >> "\$GITHUB_OUTPUT"/);
-  assert.match(deploy, /RC120 will validate the new identity after deploy/);
+test('unreadable active Cloudflare identity blocks production before mutation', () => {
+  assert.match(deploy, /### Safe production deployment blocked/);
+  assert.match(deploy, /automatic rollback target cannot be proven/);
+  assert.match(deploy, /echo "rollback_ready=false" >> "\$GITHUB_OUTPUT"/);
 
   const detection = deploy.indexOf('- name: Detect pending production artifact changes');
-  const strictPostcondition = deploy.indexOf('- name: RC120 verify active production release identity');
-  assert.ok(detection >= 0 && strictPostcondition > detection);
-  const postconditionBlock = deploy.slice(strictPostcondition, strictPostcondition + 1800);
-  assert.match(
-    postconditionBlock,
-    /verify-production-release-postcondition\.js "\$DEPLOYMENT_STATUS_JSON" "\$VERSIONS_JSON" "\$RELEASE_VERSION" "\$DEPLOY_SHA"/,
-  );
+  const rollbackPreflight = deploy.indexOf('- name: Preflight previous-known-good rollback target');
+  const cloudflareDeploy = deploy.indexOf('- name: Deploy Worker');
+  assert.ok(detection >= 0 && rollbackPreflight > detection && cloudflareDeploy > rollbackPreflight);
+
+  const detectionBlock = deploy.slice(detection, rollbackPreflight);
+  assert.match(detectionBlock, /exit 1/);
+  assert.doesNotMatch(detectionBlock, /Active production identity unavailable/);
+  assert.doesNotMatch(detectionBlock, /RC120 will validate the new identity after deploy/);
 });
 
 
@@ -111,7 +111,9 @@ test('unchanged runtime is smoke-verified without a duplicate deploy', () => {
   const verify = deploy.indexOf('- name: Verify production deployment');
   assert.ok(deployWorker >= 0 && verify > deployWorker);
   const workerBlock = deploy.slice(deployWorker, deployWorker + 500);
-  const verifyBlock = deploy.slice(verify, verify + 1500);
+  const rollback = deploy.indexOf('- name: Automatic rollback after failed production verification');
+  assert.ok(rollback > verify);
+  const verifyBlock = deploy.slice(verify, rollback);
   assert.match(workerBlock, /if: steps\.production_changes\.outputs\.changed == 'true'/);
   assert.doesNotMatch(verifyBlock, /^\s*if:/m);
   assert.match(verifyBlock, /RUNTIME_CHANGED: \$\{\{ steps\.production_changes\.outputs\.changed \}\}/);

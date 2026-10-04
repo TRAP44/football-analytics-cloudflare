@@ -3,12 +3,13 @@ import { pathToFileURL } from 'node:url';
 import { cloudflareVersionIdValid, RELEASE_IDENTITY_CODES } from '../src/release-identity.js';
 
 const RELEASE_MESSAGE_RE = /^release=([0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+) sha=([0-9a-f]{40})$/i;
+const SHA_RE = /^[0-9a-f]{40}$/i;
 
 function legacyAllowed(value) {
   return value === true || String(value || '').toLowerCase() === 'true';
 }
 
-export function verifyRollbackTarget(version, expectedVersion, expectedId, allowLegacyUnverified = false, legacyConfirmation = '') {
+export function verifyRollbackTarget(version, expectedVersion, expectedId, allowLegacyUnverified = false, legacyConfirmation = '', expectedSha = '') {
   if (!version || typeof version !== 'object' || Array.isArray(version)) {
     throw new Error('Cloudflare rollback target metadata must be a JSON object.');
   }
@@ -27,7 +28,15 @@ export function verifyRollbackTarget(version, expectedVersion, expectedId, allow
     if (releaseVersion !== expectedVersion) {
       throw new Error(`Rollback target release identity mismatch: expected ${expectedVersion}, metadata reports ${releaseVersion}.`);
     }
-    return { mode: 'stamped', releaseVersion, deploySha };
+    if (expectedSha) {
+      if (!SHA_RE.test(String(expectedSha))) {
+        throw new Error('Expected rollback deploy SHA must be a 40-character Git commit SHA.');
+      }
+      if (deploySha.toLowerCase() !== String(expectedSha).toLowerCase()) {
+        throw new Error(`Rollback target deploy SHA mismatch: expected ${expectedSha}, metadata reports ${deploySha}.`);
+      }
+    }
+    return { mode: 'stamped', releaseVersion, deploySha: deploySha.toLowerCase() };
   }
 
   if (!legacyAllowed(allowLegacyUnverified)) {
@@ -47,7 +56,7 @@ export function verifyRollbackTarget(version, expectedVersion, expectedId, allow
 }
 
 function main() {
-  const [metadataPath, expectedVersion, expectedId, allowLegacyUnverified = 'false', legacyConfirmation = ''] = process.argv.slice(2);
+  const [metadataPath, expectedVersion, expectedId, allowLegacyUnverified = 'false', legacyConfirmation = '', expectedSha = ''] = process.argv.slice(2);
   if (!metadataPath || !expectedVersion || !expectedId) {
     throw new Error(
       'Usage: node scripts/verify-rollback-target.js <metadata-json> <expected-version> <version-id> [allow-legacy-unverified] [legacy-confirmation]'
@@ -55,7 +64,7 @@ function main() {
   }
 
   const version = JSON.parse(fs.readFileSync(metadataPath, 'utf8'));
-  const result = verifyRollbackTarget(version, expectedVersion, expectedId, allowLegacyUnverified, legacyConfirmation);
+  const result = verifyRollbackTarget(version, expectedVersion, expectedId, allowLegacyUnverified, legacyConfirmation, expectedSha);
   if (result.mode === 'stamped') {
     console.log(`Verified rollback target release=${result.releaseVersion} sha=${result.deploySha}.`);
   } else {
