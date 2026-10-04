@@ -797,7 +797,8 @@ if (!baseline.toLowerCase().includes('create or replace function public.consume_
 if (!worker.includes("const EXPECTED_SCHEMA_FINGERPRINT = '6a7f0fe444f49a2a52c4603e952ee9ea'")) failures.push('RC127 expected schema fingerprint is missing');
 if (!worker.includes('const EXPECTED_SCHEMA_CONTRACT_VERSION = 2')) failures.push('Issue #438 expected schema contract version is missing');
 if (!worker.includes("readinessRpc: 'backend_readiness_contract_v2'")) failures.push('Issue #438 Worker does not use versioned readiness RPC');
-if (!worker.includes('async function reserveAnalysisQuota')) failures.push('RC127 atomic analysis quota integration is missing');
+if (!worker.includes('commitAnalysisQuotaAfterSuccess({') || !worker.includes('claimAnalysisAccessLease(user.id,cfg)')) failures.push('Issue #467 deferred analysis quota commit integration is missing');
+if (worker.includes('async function reserveAnalysisQuota') || worker.includes('refundAnalysisQuota(user.id,usageReservation,cfg)')) failures.push('Issue #467 legacy pre-charge compensation path is still present');
 if (!worker.includes("supaRpc(cfg, 'consume_analysis_quota'")) failures.push('RC127 quota RPC call is missing');
 if (!worker.includes('async function claimDistributedProviderBudget')) failures.push('RC127 distributed provider budget is missing');
 if (!worker.includes("supaRpc(cfg,'claim_provider_request'")) failures.push('RC127 provider budget RPC call is missing');
