@@ -77,10 +77,13 @@ jobs:
             -f "$GITHUB_WORKSPACE/scripts/supabase-ci-contract.sql"
           node "$GITHUB_WORKSPACE/scripts/supabase-concurrency-gate.js"
 
-          psql "$DB_URL" -X -v ON_ERROR_STOP=1 \
-            -f "$GITHUB_WORKSPACE/supabase/migrations/supabase_migration_v6_27_1.sql"
-          psql "$DB_URL" -X -v ON_ERROR_STOP=1 \
-            -f "$GITHUB_WORKSPACE/scripts/supabase-ci-contract.sql"
+          LEGACY_FP="$(psql "$DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+            "select public.backend_schema_fingerprint()->>'fingerprint';")"
+          test "$LEGACY_FP" = "c2c22ec25aacfcf1b9938b0850cebf49"
+
+          CONTRACT_V2_FP="$(psql "$DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+            "select public.backend_schema_contract_v2()->>'fingerprint';")"
+          test "$CONTRACT_V2_FP" = "6a7f0fe444f49a2a52c4603e952ee9ea"
 
           if psql "$DB_URL" -X -v ON_ERROR_STOP=1 \
             -f "$GITHUB_WORKSPACE/supabase/baseline/supabase_baseline_v6_19.sql" \
@@ -123,9 +126,20 @@ jobs:
           source "$RUNNER_TEMP/supabase-upgrade.env"
           set +a
 
-          PRE_LATEST_RENEW="$(psql "$DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
-            "select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='renew_scheduled_job';")"
-          test "$PRE_LATEST_RENEW" = "0"
+          # upgrade-base already includes v6.27.2. Prove an older Worker that
+          # still requires the historical v1 fingerprint remains ready after the
+          # new complete contract is present.
+          PRE_LATEST_LEGACY_FP="$(psql "$DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+            "select public.backend_schema_fingerprint()->>'fingerprint';")"
+          test "$PRE_LATEST_LEGACY_FP" = "c2c22ec25aacfcf1b9938b0850cebf49"
+
+          PRE_LATEST_V2="$(psql "$DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+            "select to_regprocedure('public.backend_schema_contract_v2()') is not null;")"
+          test "$PRE_LATEST_V2" = "t"
+
+          OLD_WORKER_READY="$(psql "$DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+            "select public.backend_readiness_contract('c2c22ec25aacfcf1b9938b0850cebf49',5)->>'ok';")"
+          test "$OLD_WORKER_READY" = "true"
 
           node "$GITHUB_WORKSPACE/scripts/prepare-supabase-ci-migrations.js" \
             latest-only "$UPGRADE_DIR/supabase/migrations" "$GITHUB_WORKSPACE"
@@ -133,6 +147,10 @@ jobs:
 
           psql "$DB_URL" -X -v ON_ERROR_STOP=1 \
             -f "$GITHUB_WORKSPACE/scripts/supabase-ci-contract.sql"
+
+          NEW_WORKER_READY="$(psql "$DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
+            "select public.backend_readiness_contract_v2('6a7f0fe444f49a2a52c4603e952ee9ea',5)->>'ok';")"
+          test "$NEW_WORKER_READY" = "true"
 
           npx --yes "supabase@$SUPABASE_CLI_VERSION" migration up
 
