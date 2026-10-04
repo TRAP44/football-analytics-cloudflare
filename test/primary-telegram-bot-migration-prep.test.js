@@ -9,7 +9,7 @@ import {
 import { bytesToHex, hmacSha256, validateTelegramInitData } from '../src/crypto-utils.js';
 import { channelPublisherState, sendMessage } from '../src/channel-publisher.js';
 
-const worker = fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/auth-user.js','utf8');
+const worker = fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/auth-user.js','utf8')+'\n'+fs.readFileSync('src/growth-referral.js','utf8');
 const telegramLinks = fs.readFileSync('src/telegram-links.js','utf8');
 const identityModule = fs.readFileSync('src/telegram-primary-identity.js','utf8');
 const router = fs.readFileSync('src/router.js','utf8');
