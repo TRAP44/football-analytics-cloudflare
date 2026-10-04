@@ -67,6 +67,8 @@ test('supabase RPC forwards internal lifecycle headers without changing auth hea
     { p_telegram_id: 42, p_usage_date: '2026-10-05' },
     4000,
     {
+      apikey: 'attacker-controlled',
+      authorization: 'Bearer attacker-controlled',
       'x-analysis-usage-lifecycle': 'durable-v1',
       'x-analysis-operation-id': '11111111-1111-4111-8111-111111111111',
       'x-analysis-usage-action': 'refund',
