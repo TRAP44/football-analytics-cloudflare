@@ -105,3 +105,60 @@ select category, count(*) as parts, md5(string_agg(part,E'\n' order by part)) as
 from parts
 group by category
 order by category;
+
+
+select
+  'columns' as category,
+  c.table_name as object_name,
+  count(*) as parts,
+  md5(string_agg(
+    'C|' || c.table_name || '|' || c.ordinal_position || '|' || c.column_name
+      || '|' || c.data_type || '|' || coalesce(c.udt_name,'')
+      || '|nullable=' || c.is_nullable || '|default=' || coalesce(c.column_default,'')
+      || '|identity=' || coalesce(c.is_identity,'NO')
+      || '|identity_generation=' || coalesce(c.identity_generation,'')
+      || '|generated=' || coalesce(c.is_generated,'NEVER')
+      || '|generation=' || coalesce(c.generation_expression,''),
+    E'\n' order by c.ordinal_position
+  )) as fingerprint
+from information_schema.columns c
+where c.table_schema='public'
+group by c.table_name
+order by c.table_name;
+
+select
+  'constraints' as category,
+  c.relname as object_name,
+  count(*) as parts,
+  md5(string_agg(
+    'K|' || c.relname || '|' || pc.conname || '|type=' || pc.contype::text
+      || '|' || pg_get_constraintdef(pc.oid,true),
+    E'\n' order by pc.conname
+  )) as fingerprint
+from pg_constraint pc
+join pg_class c on c.oid=pc.conrelid
+join pg_namespace n on n.oid=c.relnamespace
+where n.nspname='public'
+group by c.relname
+order by c.relname;
+
+select
+  'indexes' as category,
+  i.tablename as object_name,
+  count(*) as parts,
+  md5(string_agg(
+    'I|' || i.tablename || '|' || i.indexname || '|' || i.indexdef,
+    E'\n' order by i.indexname
+  )) as fingerprint
+from pg_indexes i
+where i.schemaname='public'
+group by i.tablename
+order by i.tablename;
+
+select
+  'sequence' as category,
+  c.relname as object_name
+from pg_class c
+join pg_namespace n on n.oid=c.relnamespace
+where n.nspname='public' and c.relkind='S'
+order by c.relname;
