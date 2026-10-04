@@ -1,6 +1,7 @@
 import { isDailyDigestExecutionWindow } from './daily-digest-delivery.js';
 
 const GLOBAL_CRON_LEASE_SECONDS = 12 * 60;
+const GLOBAL_CRON_HEARTBEAT_INTERVAL_MS = Math.floor(GLOBAL_CRON_LEASE_SECONDS * 1000 / 3);
 const GLOBAL_CRON_RETENTION_SECONDS = 2 * 24 * 60 * 60;
 const DAILY_TASK_LEASE_SECONDS = 10 * 60;
 const DAILY_TASK_RETENTION_SECONDS = 4 * 24 * 60 * 60;
@@ -78,8 +79,12 @@ export function createScheduledJobsRuntime({
   runSettlementFinalityVerification,
   recordOpsEvent,
   claimScheduledJob,
+  renewScheduledJob,
   completeScheduledJob,
   releaseScheduledJob,
+  leaseHeartbeatIntervalMs=GLOBAL_CRON_HEARTBEAT_INTERVAL_MS,
+  setHeartbeatTimeout=setTimeout,
+  clearHeartbeatTimeout=clearTimeout,
 } = {}) {
   function normalizedScheduledAt(controller) {
     const value = Number(controller?.scheduledTime || Date.now());
@@ -104,8 +109,118 @@ export function createScheduledJobsRuntime({
     }
   }
 
-  async function runDailyTaskOnce(task, runner, cfg, scheduledAt) {
-    if (typeof claimScheduledJob!=='function') return await runTask(task,runner);
+  function ownershipLostResult(task, ownershipState) {
+    return normalizeScheduledTaskResult(task,{
+      skipped:ownershipState?.reason || 'execution_lease_ownership_lost',
+    });
+  }
+
+  async function runOwnedTask(task, runner, ownershipState) {
+    if (ownershipState?.lost) return ownershipLostResult(task,ownershipState);
+    return await runTask(task,runner);
+  }
+
+  async function startScheduledLeaseHeartbeat(cfg, claim={}) {
+    const state={
+      lost:false,
+      reason:'',
+      stopped:false,
+      renewals:0,
+    };
+    const emptyController={
+      state,
+      done:Promise.resolve(),
+      stop:async()=>{},
+    };
+    if (!claim?.persistent) return emptyController;
+
+    const renew=typeof renewScheduledJob==='function'
+      ? () => renewScheduledJob(cfg,claim,claim?.leaseSeconds || GLOBAL_CRON_LEASE_SECONDS)
+      : typeof claim?.renew==='function'
+        ? () => claim.renew()
+        : null;
+
+    async function markLost(reason='lease_renewal_failed') {
+      if (state.lost || state.stopped) return;
+      state.lost=true;
+      state.reason=shortReason(reason,'lease_renewal_failed');
+      await Promise.resolve(recordOpsEvent?.(cfg,{
+        severity:'error',
+        source:'cron',
+        eventType:'scheduled_execution',
+        code:'CRON_EXECUTION_LEASE_HEARTBEAT_LOST',
+        message:'Scheduled execution stopped launching new work because distributed lease ownership could not be renewed.',
+        meta:{
+          task:'scheduled_execution',
+          disposition:'degraded',
+          reason:state.reason,
+          jobKey:String(claim?.jobKey || '').slice(0,180),
+          groupKey:String(claim?.groupKey || '').slice(0,120),
+        },
+      })).catch(()=>null);
+    }
+
+    async function renewOnce() {
+      if (!renew) {
+        await markLost('renew_not_configured');
+        return false;
+      }
+      let result;
+      try {
+        result=await renew();
+      } catch {
+        result={renewed:false,reason:'lease_unavailable'};
+      }
+      if (!result?.renewed) {
+        await markLost(result?.reason || 'lease_renewal_failed');
+        return false;
+      }
+      state.renewals+=1;
+      if (result?.lockedUntil) claim.lockedUntil=result.lockedUntil;
+      return true;
+    }
+
+    if (!await renewOnce()) return emptyController;
+
+    const intervalMs=Math.max(10,Number(leaseHeartbeatIntervalMs || GLOBAL_CRON_HEARTBEAT_INTERVAL_MS));
+    let wakeSleep=null;
+
+    function sleepUntilHeartbeat() {
+      return new Promise(resolve=>{
+        const timer=setHeartbeatTimeout(()=>{
+          wakeSleep=null;
+          resolve();
+        },intervalMs);
+        wakeSleep=()=>{
+          clearHeartbeatTimeout(timer);
+          wakeSleep=null;
+          resolve();
+        };
+      });
+    }
+
+    const done=(async()=>{
+      while (!state.stopped && !state.lost) {
+        await sleepUntilHeartbeat();
+        if (state.stopped || state.lost) break;
+        await renewOnce();
+      }
+    })();
+
+    return {
+      state,
+      done,
+      stop:async()=>{
+        state.stopped=true;
+        wakeSleep?.();
+        await done.catch(()=>{});
+      },
+    };
+  }
+
+  async function runDailyTaskOnce(task, runner, cfg, scheduledAt, ownershipState) {
+    if (ownershipState?.lost) return ownershipLostResult(task,ownershipState);
+    if (typeof claimScheduledJob!=='function') return await runOwnedTask(task,runner,ownershipState);
 
     const claim=await claimScheduledJob(cfg,{
       jobKey:dailyScheduledTaskKey(task,scheduledAt),
@@ -122,7 +237,12 @@ export function createScheduledJobsRuntime({
       });
     }
 
-    const result=await runTask(task,runner);
+    if (ownershipState?.lost) {
+      await Promise.resolve(releaseScheduledJob?.(cfg,claim)).catch(()=>false);
+      return ownershipLostResult(task,ownershipState);
+    }
+
+    const result=await runOwnedTask(task,runner,ownershipState);
     const retryable=result.status==='failed' || result.status==='degraded';
     const settled=retryable
       ? await Promise.resolve(releaseScheduledJob?.(cfg,claim)).catch(()=>false)
@@ -139,18 +259,19 @@ export function createScheduledJobsRuntime({
     return result;
   }
 
-  function buildScheduledTaskPlan(cfg, scheduledAt) {
-    const backtestTask = runTask('backtest', () => settleBacktestDaily(cfg));
-    const remindersTask = runTask('reminders', () => processDueReminders(cfg));
+  function buildScheduledTaskPlan(cfg, scheduledAt, ownershipState) {
+    const run=(task,runner)=>runOwnedTask(task,runner,ownershipState);
+    const backtestTask = run('backtest', () => settleBacktestDaily(cfg));
+    const remindersTask = run('reminders', () => processDueReminders(cfg));
     const lineupNotificationsTask = remindersTask
-      .then(() => runTask('lineup_notifications', () => processLineupNotifications(cfg)));
+      .then(() => run('lineup_notifications', () => processLineupNotifications(cfg)));
     const importantChangeTask = lineupNotificationsTask
-      .then(() => runTask('important_change_notifications', () => processImportantChangeNotifications(cfg)));
+      .then(() => run('important_change_notifications', () => processImportantChangeNotifications(cfg)));
     const smartNotificationsTask = importantChangeTask
-      .then(() => runTask('smart_notifications', () => processSmartNotifications(cfg)));
+      .then(() => run('smart_notifications', () => processSmartNotifications(cfg)));
     const digestWindow = isDailyDigestExecutionWindow(scheduledAt);
     const dailyDigestTask = digestWindow
-      ? backtestTask.then(() => runTask('daily_digest', () => processDailyDigests(cfg, scheduledAt)))
+      ? backtestTask.then(() => run('daily_digest', () => processDailyDigests(cfg, scheduledAt)))
       : null;
     const postMatchPrerequisite = dailyDigestTask || backtestTask;
     const tasks = [
@@ -159,31 +280,31 @@ export function createScheduledJobsRuntime({
       ['important_change_notifications', importantChangeTask],
       ['smart_notifications', smartNotificationsTask],
       ['backtest', backtestTask],
-      ['post_match_return', postMatchPrerequisite.then(() => runTask('post_match_return', () => processPostMatchReturns(cfg)))],
+      ['post_match_return', postMatchPrerequisite.then(() => run('post_match_return', () => processPostMatchReturns(cfg)))],
     ];
 
     if (scheduledAt.getUTCMinutes() % 15 === 0) {
       const monitorAfterReminders = remindersTask
-        .then(() => runTask('production_monitor', () => runProductionMonitor(cfg, scheduledAt)));
+        .then(() => run('production_monitor', () => runProductionMonitor(cfg, scheduledAt)));
       tasks.push(['production_monitor', monitorAfterReminders]);
     }
 
     if (dailyDigestTask) tasks.push(['daily_digest', dailyDigestTask]);
 
     if (scheduledAt.getUTCHours() === 3 && scheduledAt.getUTCMinutes() < 15) {
-      tasks.push(['ops_cleanup', runDailyTaskOnce('ops_cleanup', () => cleanupOpsEvents(cfg), cfg, scheduledAt)]);
-      tasks.push(['rate_window_cleanup', runDailyTaskOnce('rate_window_cleanup', () => cleanupRateWindows(cfg), cfg, scheduledAt)]);
-      tasks.push(['scheduled_lease_cleanup', runDailyTaskOnce('scheduled_lease_cleanup', () => cleanupScheduledJobLeases(cfg), cfg, scheduledAt)]);
-      tasks.push(['growth_cleanup', runDailyTaskOnce('growth_cleanup', () => cleanupGrowthEvents(cfg), cfg, scheduledAt)]);
-      tasks.push(['integrity_cleanup', runDailyTaskOnce('integrity_cleanup', () => cleanupIntegrityData(cfg), cfg, scheduledAt)]);
+      tasks.push(['ops_cleanup', runDailyTaskOnce('ops_cleanup', () => cleanupOpsEvents(cfg), cfg, scheduledAt, ownershipState)]);
+      tasks.push(['rate_window_cleanup', runDailyTaskOnce('rate_window_cleanup', () => cleanupRateWindows(cfg), cfg, scheduledAt, ownershipState)]);
+      tasks.push(['scheduled_lease_cleanup', runDailyTaskOnce('scheduled_lease_cleanup', () => cleanupScheduledJobLeases(cfg), cfg, scheduledAt, ownershipState)]);
+      tasks.push(['growth_cleanup', runDailyTaskOnce('growth_cleanup', () => cleanupGrowthEvents(cfg), cfg, scheduledAt, ownershipState)]);
+      tasks.push(['integrity_cleanup', runDailyTaskOnce('integrity_cleanup', () => cleanupIntegrityData(cfg), cfg, scheduledAt, ownershipState)]);
     }
 
     if (scheduledAt.getUTCHours() === 4 && scheduledAt.getUTCMinutes() < 15) {
-      tasks.push(['settlement_watchdog', backtestTask.then(() => runTask('settlement_watchdog', () => runSettlementWatchdog(cfg)))]);
+      tasks.push(['settlement_watchdog', backtestTask.then(() => run('settlement_watchdog', () => runSettlementWatchdog(cfg)))]);
     }
 
     if (scheduledAt.getUTCHours() === 5 && scheduledAt.getUTCMinutes() < 15) {
-      tasks.push(['settlement_finality', backtestTask.then(() => runTask('settlement_finality', () => runSettlementFinalityVerification(cfg)))]);
+      tasks.push(['settlement_finality', backtestTask.then(() => run('settlement_finality', () => runSettlementFinalityVerification(cfg)))]);
     }
 
     return tasks;
@@ -260,9 +381,28 @@ export function createScheduledJobsRuntime({
       return [skipped];
     }
 
+    const heartbeat=await startScheduledLeaseHeartbeat(cfg,claim);
+    if (heartbeat.state.lost) {
+      return [normalizeScheduledTaskResult('scheduled_execution',{
+        ok:false,
+        status:'failed',
+        reason:heartbeat.state.reason || 'execution_lease_heartbeat_lost',
+      })];
+    }
+
     try {
-      const tasks=buildScheduledTaskPlan(cfg,scheduledAt);
+      const tasks=buildScheduledTaskPlan(cfg,scheduledAt,heartbeat.state);
       const results=await observeScheduledTasks(cfg,tasks);
+      await heartbeat.stop();
+
+      if (heartbeat.state.lost) {
+        results.push(normalizeScheduledTaskResult('scheduled_execution',{
+          degraded:true,
+          reason:heartbeat.state.reason || 'execution_lease_heartbeat_lost',
+        }));
+        return results;
+      }
+
       if (claim.persistent && typeof completeScheduledJob==='function') {
         const completed=await completeScheduledJob(cfg,claim);
         if (!completed) {
@@ -283,7 +423,8 @@ export function createScheduledJobsRuntime({
       }
       return results;
     } catch (error) {
-      if (claim?.claimed && typeof releaseScheduledJob==='function') {
+      await heartbeat.stop().catch(()=>{});
+      if (!heartbeat.state.lost && claim?.claimed && typeof releaseScheduledJob==='function') {
         await releaseScheduledJob(cfg,claim).catch(()=>false);
       }
       const failed=normalizeScheduledTaskResult('scheduled_execution',{
@@ -319,6 +460,7 @@ export function createScheduledJobsRuntime({
     scheduledRunKey,
     dailyScheduledTaskKey,
     buildScheduledTaskPlan,
+    startScheduledLeaseHeartbeat,
     observeScheduledTasks,
     executeScheduledRun,
     handleScheduled,
