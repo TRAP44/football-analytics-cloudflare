@@ -102,7 +102,7 @@ test('unlimited Pass requires no usage mutation', async () => {
 test('Issue #467 full AI path persists result before quota/Pass usage commit and has no compensating refund path', () => {
   const worker = fs.readFileSync('src/worker.js', 'utf8');
   const start = worker.indexOf('async function apiAnalyze(');
-  const end = worker.indexOf('async function apiHistoryAnalysis', start);
+  const end = worker.indexOf('async function publicServiceStatus', start);
   assert.ok(start >= 0 && end > start);
   const source = worker.slice(start, end);
 

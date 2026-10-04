@@ -36,9 +36,9 @@ test('non-owner waits for shared fixture analysis instead of recomputing',()=> {
   assert.match(worker,/shared_compute_pending/);
 });
 
-test('analysis owner always releases persistent lock',()=> {
-  assert.match(worker,/let usageReservation=null;/);
-  assert.match(worker,/finally \{\n    try \{[\s\S]*if \(usageReservation\?\.reserved && !usageCommitted\) await refundAnalysisQuota\(user\.id,usageReservation,cfg\);[\s\S]*refundEntitlementUsage\(user\.id,passUsageReservation\.entitlementId,cfg\)[\s\S]*\} finally \{\n      await releaseDistributedAnalysisLock\(analysisLock,cfg\);\n    \}\n  \}/);
+test('analysis owner always releases user access lease and persistent fixture lock',()=> {
+  assert.match(worker,/let accessLease=null;/);
+  assert.match(worker,/finally \{\n    try \{\n      if \(accessLease\?\.claimed\) await releaseAnalysisAccessLease\(accessLease,cfg\);\n    \} finally \{\n      await releaseDistributedAnalysisLock\(analysisLock,cfg\);\n    \}\n  \}/);
   assert.match(worker,/async function releaseDistributedAnalysisLock\(/);
   assert.match(worker,/row\?\.payload\?\.claimId/);
 });

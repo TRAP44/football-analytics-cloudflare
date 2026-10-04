@@ -19,14 +19,16 @@ test('RC136 has a single production identity while preserving RC127 hardening',(
   assert.match(deploy,/RELEASE_VERSION: "6\.120\.0-rc144"/);
 });
 
-test('RC127 atomically reserves and refunds analysis quota',()=>{
+test('RC127 atomic quota primitive is retained while Issue #467 defers charging until successful analysis',()=>{
   assert.match(migration,/create or replace function public\.consume_analysis_quota/);
   assert.match(migration,/on conflict \(telegram_id, usage_date\)/);
   assert.match(migration,/where public\.usage_daily\.analyses < p_limit/);
   assert.match(migration,/create or replace function public\.refund_analysis_quota/);
-  assert.match(worker,/async function reserveAnalysisQuota/);
   assert.match(worker,/supaRpc\(cfg, 'consume_analysis_quota'/);
-  assert.match(worker,/refundAnalysisQuota\(user\.id,usageReservation,cfg\)/);
+  assert.match(worker,/commitAnalysisQuotaAfterSuccess\(\{/);
+  assert.match(worker,/claimAnalysisAccessLease\(user\.id,cfg\)/);
+  assert.doesNotMatch(worker,/async function reserveAnalysisQuota/);
+  assert.doesNotMatch(worker,/refundAnalysisQuota\(user\.id,usageReservation,cfg\)/);
   assert.match(hotfix,/insert into public\.users\(telegram_id\)/);
   assert.match(hotfix,/on conflict \(telegram_id\) do nothing/);
   assert.match(hotfix,/p_telegram_id <= 0/);

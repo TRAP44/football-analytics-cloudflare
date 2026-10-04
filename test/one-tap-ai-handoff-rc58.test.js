@@ -40,8 +40,9 @@ test('cached Telegram brief to full Mini App does not increment usage twice',()=
   const start=worker.indexOf('async function apiAnalyze(request, cfg, user)');
   const cached=worker.indexOf('if (cached && !needsFreshnessRecheck) {',start);
   const cachedReturn=worker.indexOf('return json(analysisResponsePayload(cached',cached);
-  const reserve=worker.indexOf('usageReservation=await reserveAnalysisQuota(user.id,cfg);',start);
-  assert.ok(start>=0 && cached>start && cachedReturn>cached && reserve>cachedReturn);
+  const accessLease=worker.indexOf('accessLease=await claimAnalysisAccessLease(user.id,cfg);',start);
+  assert.ok(start>=0 && cached>start && cachedReturn>cached && accessLease>cachedReturn);
+  assert.doesNotMatch(worker.slice(cached,cachedReturn),/commitAnalysisQuotaAfterSuccess|commitPassUsageAfterSuccess/);
   assert.match(worker,/trackFullAi=analysisOrigin !== 'telegram_quick'/);
 });
 

@@ -38,7 +38,10 @@ test('free recheck is scoped to a user who already analyzed the fixture',()=> {
   assert.match(worker,/if \(needsFreshnessRecheck\) freeRecheck=await userHasAnalyzedFixture\(user\.id,fixtureId,cfg\)/);
   assert.match(worker,/const passCandidate = entitlementBefore\.source === 'pass' && entitlementBefore\.access\.expandedAi === true/);
   assert.match(worker,/if \(!freeRecheck && !passCandidate && quotaBefore\.left <= 0\)/);
-  assert.match(worker,/if \(!freeRecheck && !passAccess\) \{\n    usageReservation=await reserveAnalysisQuota\(user\.id,cfg\)/);
+  assert.match(worker,/accessLease=await claimAnalysisAccessLease\(user\.id,cfg\)/);
+  assert.match(worker,/if \(!freeRecheck && accessMode==='quota'\)/);
+  assert.match(worker,/commitAnalysisQuotaAfterSuccess\(\{/);
+  assert.doesNotMatch(worker,/reserveAnalysisQuota\(/);
 });
 
 test('adaptive analysis TTL tightens toward kickoff',()=> {

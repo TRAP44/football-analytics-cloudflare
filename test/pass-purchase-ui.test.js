@@ -150,6 +150,8 @@ test('Pass UI does not enable monetization and keeps subscriptions and Pass enti
   assert.match(billing, /paidPlans = new Set\(\['PRO', 'PREMIUM'\]\)/);
   assert.match(billing, /passData\.entitlement\?\.subscriptionActive/);
   assert.match(worker, /resolveUserEntitlements\(user\.id, fixtureId, cfg\)/);
-  assert.match(worker, /reserveEntitlementUsage\(user\.id,entitlementBefore\.passes\.active,fixtureId,cfg\)/);
+  assert.match(worker, /claimAnalysisAccessLease\(user\.id,cfg\)/);
+  assert.match(worker, /commitPassUsageAfterSuccess\(\{/);
+  assert.match(worker, /releaseAnalysisAccessLease\(accessLease,cfg\)/);
   assert.match(worker, /releaseDistributedAnalysisLock\(analysisLock,cfg\)/);
 });
