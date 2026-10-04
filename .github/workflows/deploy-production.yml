@@ -21,7 +21,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     environment: production
     env:
       DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
@@ -115,40 +115,67 @@ jobs:
           npx wrangler deployments status --json > "$DEPLOYMENT_STATUS_JSON"
           npx wrangler versions list --json > "$VERSIONS_JSON"
           IDENTITY_ERROR="$RUNNER_TEMP/active-production-identity.err"
-          if ACTIVE_IDENTITY="$(node scripts/verify-production-release-postcondition.js "$DEPLOYMENT_STATUS_JSON" "$VERSIONS_JSON" --print-active-identity 2>"$IDENTITY_ERROR")"; then
-            read -r ACTIVE_RELEASE ACTIVE_SHA <<< "$ACTIVE_IDENTITY"
+          if ACTIVE_IDENTITY="$(node scripts/verify-production-release-postcondition.js "$DEPLOYMENT_STATUS_JSON" "$VERSIONS_JSON" --print-active-rollback-target 2>"$IDENTITY_ERROR")"; then
+            read -r ACTIVE_VERSION_ID ACTIVE_RELEASE ACTIVE_SHA <<< "$ACTIVE_IDENTITY"
+            echo "active_sha=$ACTIVE_SHA" >> "$GITHUB_OUTPUT"
+            echo "previous_version_id=$ACTIVE_VERSION_ID" >> "$GITHUB_OUTPUT"
+            echo "previous_release=$ACTIVE_RELEASE" >> "$GITHUB_OUTPUT"
+            echo "previous_sha=$ACTIVE_SHA" >> "$GITHUB_OUTPUT"
+            echo "rollback_ready=true" >> "$GITHUB_OUTPUT"
+
             if [[ "$ACTIVE_RELEASE" != "$RELEASE_VERSION" ]]; then
               echo "changed=true" >> "$GITHUB_OUTPUT"
               echo "### Production release identity differs" >> "$GITHUB_STEP_SUMMARY"
-              echo "Active production release $ACTIVE_RELEASE differs from expected $RELEASE_VERSION; deploying the verified current main revision." >> "$GITHUB_STEP_SUMMARY"
+              echo "Active production release $ACTIVE_RELEASE differs from expected $RELEASE_VERSION; deploying the verified current main revision with rollback target $ACTIVE_VERSION_ID pinned." >> "$GITHUB_STEP_SUMMARY"
             elif ! git cat-file -e "${ACTIVE_SHA}^{commit}" 2>/dev/null; then
               echo "changed=true" >> "$GITHUB_OUTPUT"
               echo "### Active production SHA is unavailable locally" >> "$GITHUB_STEP_SUMMARY"
-              echo "Active production SHA $ACTIVE_SHA is not available in repository history; deploying the verified current main revision." >> "$GITHUB_STEP_SUMMARY"
+              echo "Active production SHA $ACTIVE_SHA is not available in repository history; deploying with exact rollback target $ACTIVE_VERSION_ID pinned." >> "$GITHUB_STEP_SUMMARY"
             elif ! git merge-base --is-ancestor "$ACTIVE_SHA" "$DEPLOY_SHA"; then
               echo "changed=true" >> "$GITHUB_OUTPUT"
               echo "### Active production SHA is outside current main ancestry" >> "$GITHUB_STEP_SUMMARY"
-              echo "Active production SHA $ACTIVE_SHA is not an ancestor of deploy SHA $DEPLOY_SHA; deploying the verified current main revision." >> "$GITHUB_STEP_SUMMARY"
+              echo "Active production SHA $ACTIVE_SHA is not an ancestor of deploy SHA $DEPLOY_SHA; deploying with exact rollback target $ACTIVE_VERSION_ID pinned." >> "$GITHUB_STEP_SUMMARY"
+            elif git diff --quiet "$ACTIVE_SHA" "$DEPLOY_SHA" -- src public wrangler.jsonc package.json package-lock.json; then
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              echo "### No pending production artifact changes" >> "$GITHUB_STEP_SUMMARY"
+              echo "Active production SHA $ACTIVE_SHA already contains the current runtime artifact." >> "$GITHUB_STEP_SUMMARY"
             else
-              echo "active_sha=$ACTIVE_SHA" >> "$GITHUB_OUTPUT"
-              if git diff --quiet "$ACTIVE_SHA" "$DEPLOY_SHA" -- src public wrangler.jsonc package.json package-lock.json; then
-                echo "changed=false" >> "$GITHUB_OUTPUT"
-                echo "### No pending production artifact changes" >> "$GITHUB_STEP_SUMMARY"
-                echo "Active production SHA $ACTIVE_SHA already contains the current runtime artifact." >> "$GITHUB_STEP_SUMMARY"
-              else
-                echo "changed=true" >> "$GITHUB_OUTPUT"
-                echo "### Pending production artifact changes detected" >> "$GITHUB_STEP_SUMMARY"
-                echo "Runtime changes exist between active production SHA $ACTIVE_SHA and deploy SHA $DEPLOY_SHA." >> "$GITHUB_STEP_SUMMARY"
-              fi
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "### Pending production artifact changes detected" >> "$GITHUB_STEP_SUMMARY"
+              echo "Runtime changes exist between active production SHA $ACTIVE_SHA and deploy SHA $DEPLOY_SHA; automatic rollback target $ACTIVE_VERSION_ID is pinned before cutover." >> "$GITHUB_STEP_SUMMARY"
             fi
           else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "### Active production identity unavailable" >> "$GITHUB_STEP_SUMMARY"
-            echo "Cloudflare active version does not expose the expected release/SHA stamp. Deploying the verified current main revision; RC120 will validate the new identity after deploy." >> "$GITHUB_STEP_SUMMARY"
+            echo "rollback_ready=false" >> "$GITHUB_OUTPUT"
+            echo "### Safe production deployment blocked" >> "$GITHUB_STEP_SUMMARY"
+            echo "The active production version could not be resolved to an exact version ID, release and SHA. No production mutation was attempted because an automatic rollback target cannot be proven." >> "$GITHUB_STEP_SUMMARY"
             if [[ -s "$IDENTITY_ERROR" ]]; then
               echo "Identity resolver: $(tail -n 1 "$IDENTITY_ERROR")" >> "$GITHUB_STEP_SUMMARY"
             fi
+            exit 1
           fi
+
+      - name: Preflight previous-known-good rollback target
+        if: steps.production_changes.outputs.changed == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PREVIOUS_VERSION_ID: ${{ steps.production_changes.outputs.previous_version_id }}
+          PREVIOUS_RELEASE: ${{ steps.production_changes.outputs.previous_release }}
+          PREVIOUS_SHA: ${{ steps.production_changes.outputs.previous_sha }}
+          CONFIGURED_URL: ${{ vars.CLOUDFLARE_WORKER_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ steps.production_changes.outputs.rollback_ready }}" != "true" ]]; then
+            echo "Automatic rollback target is not ready; blocking production mutation." >&2
+            exit 1
+          fi
+          npx wrangler versions view "$PREVIOUS_VERSION_ID" --json > "$RUNNER_TEMP/automatic-rollback-target.json"
+          node scripts/verify-rollback-target.js "$RUNNER_TEMP/automatic-rollback-target.json" "$PREVIOUS_RELEASE" "$PREVIOUS_VERSION_ID" false "" "$PREVIOUS_SHA"
+          SMOKE_URL="${CONFIGURED_URL:-$PRODUCTION_URL}"
+          node scripts/rollback-smoke.js "$SMOKE_URL" "$PREVIOUS_RELEASE"
+          echo "### Previous-known-good rollback target verified" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pinned Cloudflare version $PREVIOUS_VERSION_ID for release $PREVIOUS_RELEASE before production cutover." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Deploy Worker
         if: steps.production_changes.outputs.changed == 'true'
@@ -211,3 +238,53 @@ jobs:
           node scripts/bottom-nav-render-smoke.js "$SMOKE_URL"
           echo "### Cloudflare production verified" >> "$GITHUB_STEP_SUMMARY"
           echo "Release $RELEASE_VERSION runtime SHA $EXPECTED_RUNTIME_SHA passed post-deploy and rendered smoke." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Automatic rollback after failed production verification
+        if: ${{ failure() && steps.production_changes.outputs.changed == 'true' && steps.deploy.outcome == 'success' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PREVIOUS_VERSION_ID: ${{ steps.production_changes.outputs.previous_version_id }}
+          PREVIOUS_RELEASE: ${{ steps.production_changes.outputs.previous_release }}
+          PREVIOUS_SHA: ${{ steps.production_changes.outputs.previous_sha }}
+          CONFIGURED_URL: ${{ vars.CLOUDFLARE_WORKER_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$PREVIOUS_VERSION_ID" || -z "$PREVIOUS_RELEASE" || ! "$PREVIOUS_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Automatic rollback target metadata is incomplete; manual recovery is required." >&2
+            exit 1
+          fi
+
+          TARGET_JSON="$RUNNER_TEMP/automatic-rollback-target-recheck.json"
+          npx wrangler versions view "$PREVIOUS_VERSION_ID" --json > "$TARGET_JSON"
+          node scripts/verify-rollback-target.js "$TARGET_JSON" "$PREVIOUS_RELEASE" "$PREVIOUS_VERSION_ID" false "" "$PREVIOUS_SHA"
+
+          echo "### Production verification failed; starting automatic rollback" >> "$GITHUB_STEP_SUMMARY"
+          echo "Restoring previously verified release $PREVIOUS_RELEASE on Cloudflare version $PREVIOUS_VERSION_ID." >> "$GITHUB_STEP_SUMMARY"
+          npx wrangler rollback "$PREVIOUS_VERSION_ID" --yes --message "Automatic rollback after failed verification release=$RELEASE_VERSION sha=$DEPLOY_SHA"
+
+          DEPLOYMENT_STATUS_JSON="$RUNNER_TEMP/automatic-rollback-deployment-status.json"
+          ROLLBACK_VERSION_JSON="$RUNNER_TEMP/automatic-rollback-version-postcondition.json"
+          verified=false
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if npx wrangler deployments status --json > "$DEPLOYMENT_STATUS_JSON" \
+              && npx wrangler versions view "$PREVIOUS_VERSION_ID" --json > "$ROLLBACK_VERSION_JSON" \
+              && node scripts/verify-rollback-deployment.js "$DEPLOYMENT_STATUS_JSON" "$PREVIOUS_VERSION_ID" \
+              && node scripts/verify-rollback-target.js "$ROLLBACK_VERSION_JSON" "$PREVIOUS_RELEASE" "$PREVIOUS_VERSION_ID" false "" "$PREVIOUS_SHA"; then
+              verified=true
+              break
+            fi
+            if [[ "$attempt" -lt 10 ]]; then
+              sleep 6
+            fi
+          done
+          if [[ "$verified" != "true" ]]; then
+            echo "CRITICAL: automatic rollback command ran, but Cloudflare did not confirm the exact previous target at 100% traffic." >&2
+            exit 1
+          fi
+
+          ROLLBACK_URL="${CONFIGURED_URL:-$PRODUCTION_URL}"
+          node scripts/rollback-smoke.js "$ROLLBACK_URL" "$PREVIOUS_RELEASE"
+          echo "### Automatic rollback verified" >> "$GITHUB_STEP_SUMMARY"
+          echo "Production was restored to release $PREVIOUS_RELEASE on exact Cloudflare version $PREVIOUS_VERSION_ID and passed rollback smoke." >> "$GITHUB_STEP_SUMMARY"
