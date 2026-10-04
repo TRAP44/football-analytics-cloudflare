@@ -13,9 +13,9 @@ const INVALID_AUTH_POLICIES = Object.freeze({
 });
 
 const DISTRIBUTED_PREAUTH_POLICIES = Object.freeze({
-  public: Object.freeze({ limit: 180, windowSeconds: 60, failClosed: false }),
-  expensive: Object.freeze({ limit: 60, windowSeconds: 60, failClosed: true }),
-  admin: Object.freeze({ limit: 24, windowSeconds: 60, failClosed: true }),
+  public: Object.freeze({ limit: 180, windowSeconds: 60, failClosed: false, distributed: false }),
+  expensive: Object.freeze({ limit: 60, windowSeconds: 60, failClosed: true, distributed: true }),
+  admin: Object.freeze({ limit: 24, windowSeconds: 60, failClosed: true, distributed: true }),
 });
 
 function headerValue(request, name) {
@@ -218,6 +218,7 @@ export async function enforceDistributedPreAuthRateLimit({
   if (!request || typeof json!=='function') throw new TypeError('distributed pre-auth limiter dependencies are required');
   const policy=distributedPreAuthPolicy(request,adminSensitive);
   const endpoint=new URL(request.url).pathname;
+  if (!policy.distributed) return null;
   const fingerprint=await privacyNetworkFingerprint(request,fingerprintSecret);
 
   const failClosedResponse=()=>{
@@ -320,6 +321,7 @@ function ensureBucketCapacity(map, now=Date.now()) {
 
 export function createPreAuthAbuseGuard({
   memory,
+  fingerprintSecret='',
   bumpTelemetry=()=>{},
   recordOpsEvent=async()=>{},
   now=Date.now,
@@ -327,7 +329,7 @@ export function createPreAuthAbuseGuard({
   if (!(memory?.authFailureBurst instanceof Map)) memory.authFailureBurst=new Map();
 
   async function registerInvalidAuthFailure(request, { adminSensitive=false } = {}) {
-    const fingerprint=await privacyNetworkFingerprint(request);
+    const fingerprint=await privacyNetworkFingerprint(request,fingerprintSecret);
     if (!fingerprint) return { blocked:false, tracked:false };
 
     const scope=adminSensitive ? 'admin' : 'public';
