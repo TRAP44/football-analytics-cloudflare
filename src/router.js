@@ -55,6 +55,7 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
     providerSloReport,
     providerTransitionProfile,
     publicDataCapabilities,
+    sensitiveMutationCoordinator,
   } = deps;
 
   async function sensitiveMutation(handler) {
@@ -65,6 +66,7 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
       memory,
       cfg,
       handler,
+      coordinator:sensitiveMutationCoordinator || null,
     });
     if (guarded.blocked) {
       const unavailable=guarded.reason==='guard_unavailable';
