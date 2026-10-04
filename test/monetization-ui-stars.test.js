@@ -6,6 +6,7 @@ import { billingUiSnapshot } from '../public/modules/billing.js';
 const worker = (fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'));
 const router = fs.readFileSync('src/router.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
+const analysisController = fs.readFileSync('public/modules/analysis-controller.js', 'utf8');
 const html = fs.readFileSync('public/index.html', 'utf8');
 const css = fs.readFileSync('public/styles.css', 'utf8');
 const billingModule = fs.readFileSync('public/modules/billing.js', 'utf8');
@@ -97,9 +98,9 @@ test('Profile contains compact FREE PRO PREMIUM billing UI and four-item bottom 
 test('AI quota exhaustion is a soft paywall and does not hide football surfaces', () => {
   assert.match(html, /id="analysisQuotaPaywall"/);
   assert.match(html, /Матчи, LIVE, составы и статистика остаются доступны бесплатно/);
-  assert.match(app, /const quotaExhausted = e\.status === 429/);
-  assert.match(app, /showQuotaPaywallForFixture\(fixtureId\)/);
-  assert.match(app, /retry: \(\) => analyzeMatch/);
+  assert.match(analysisController, /const quotaExhausted = error\?\.status === 429/);
+  assert.match(analysisController, /showPaywall\(fixtureId\)/);
+  assert.match(analysisController, /retry: \(\) => analyzeMatch/);
   assert.match(billingModule, /quotaUpgradeBtn/);
   assert.match(billingModule, /openProfile/);
 });
