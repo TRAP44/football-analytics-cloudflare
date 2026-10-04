@@ -20,7 +20,7 @@ function runtime(overrides = {}) {
   const memory = { runtimeControls: null };
   const events = [];
   let nowMs = 1_700_000_000_000;
-  const api = createRuntimeControlsRuntime({
+  const dependencies = {
     memory,
     DEFAULT_RUNTIME_CONTROLS,
     RUNTIME_CONTROLS_CACHE_MS: 30_000,
@@ -39,8 +39,9 @@ function runtime(overrides = {}) {
       headers: { 'content-type': 'application/json' },
     }),
     isAdminUser: overrides.isAdminUser || (() => false),
-    clock: () => nowMs,
-  });
+  };
+  if (overrides.useDefaultClock !== true) dependencies.clock = () => nowMs;
+  const api = createRuntimeControlsRuntime(dependencies);
   return {
     api,
     memory,
@@ -78,6 +79,17 @@ test('runtime-controls domain normalizes database rows and exposes only public c
     revision: 7,
     updatedAt: '2026-10-04T12:00:00.000Z',
   });
+});
+
+test('runtime-controls domain default clock is safe without injection', async () => {
+  const before = Date.now();
+  const { api } = runtime({ useDefaultClock:true, hasSupabase:() => false });
+  const state = await api.loadRuntimeControls({});
+  const after = Date.now();
+
+  assert.equal(state.failClosed, true);
+  assert.ok(Number(state.loadedAt) >= before);
+  assert.ok(Number(state.loadedAt) <= after);
 });
 
 test('runtime-controls domain fails closed when the control plane cannot be verified', async () => {
