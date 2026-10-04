@@ -39,7 +39,7 @@ function runtime(overrides = {}) {
       headers: { 'content-type': 'application/json' },
     }),
     isAdminUser: overrides.isAdminUser || (() => false),
-    now: () => nowMs,
+    clock: () => nowMs,
   });
   return {
     api,
