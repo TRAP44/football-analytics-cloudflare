@@ -298,7 +298,7 @@ test('entitlement store failure denies Pass without breaking existing FREE or su
 });
 
 test('full AI uses Pass entitlement server-side instead of the FREE quota gate for the entitled scope', () => {
-  const worker = fs.readFileSync('src/worker.js', 'utf8');
+  const worker = (fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'));
   const start = worker.indexOf('async function apiAnalyze(');
   const end = worker.indexOf('async function apiHistoryAnalysis', start);
   const source = worker.slice(start, end > start ? end : start + 40000);
@@ -313,7 +313,7 @@ test('full AI uses Pass entitlement server-side instead of the FREE quota gate f
 });
 
 test('Worker reuses the established billing route/webhook and keeps monetization default-off', () => {
-  const worker = fs.readFileSync('src/worker.js', 'utf8');
+  const worker = (fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'));
   const router = fs.readFileSync('src/router.js', 'utf8');
   const env = fs.readFileSync('.env.example', 'utf8');
   const release = JSON.parse(fs.readFileSync('release-contract.json', 'utf8'));

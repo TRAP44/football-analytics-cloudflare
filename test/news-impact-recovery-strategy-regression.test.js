@@ -6,7 +6,7 @@ import fs from 'node:fs';
 
 // test/news-impact-recovery-effectiveness-rc80.test.js
 {
-const worker=fs.readFileSync('src/worker.js','utf8');
+const worker=(fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'));
 const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
 
 test('RC80 records only real recovery attempts',()=>{
@@ -63,7 +63,7 @@ test('RC80 needs no new Supabase migration',()=>{
 
 // test/news-impact-recovery-strategy-guard-rc81.test.js
 {
-const worker=fs.readFileSync('src/worker.js','utf8');
+const worker=(fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'));
 const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
 
 test('RC81 requires stable baseline and candidate evidence before adaptive override',()=>{
@@ -133,7 +133,7 @@ test('RC81 needs no new Supabase migration',()=>{
 
 // test/news-impact-recovery-stability-parity-rc82.test.js
 {
-const worker=fs.readFileSync('src/worker.js','utf8');
+const worker=(fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'));
 const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
 
 test('RC82 adds a recent stability window after the strict RC81 decision',()=>{
@@ -185,7 +185,7 @@ test('RC82 needs no new Supabase migration',()=>{
 
 // test/news-impact-recovery-drift-guard-rc83.test.js
 {
-const worker=fs.readFileSync('src/worker.js','utf8');
+const worker=(fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'));
 const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
 
 test('RC83 detects statistically confirmed adaptive recovery drift',()=>{
@@ -247,7 +247,7 @@ test('RC83 needs no new Supabase migration',()=>{
 
 // test/news-impact-recovery-transition-alerts-rc84.test.js
 {
-const worker=fs.readFileSync('src/worker.js','utf8');
+const worker=(fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'));
 const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/admin-launch-funnel.js','utf8');
 
 test('RC84 derives strategy transition history from actual failure events',()=>{
