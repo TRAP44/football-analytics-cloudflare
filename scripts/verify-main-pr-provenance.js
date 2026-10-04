@@ -1,5 +1,3 @@
-import fs from 'node:fs';
-
 const SHA_RE = /^[0-9a-f]{40}$/i;
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
@@ -54,11 +52,6 @@ export async function fetchAssociatedPullRequests({
   return pulls;
 }
 
-function appendSummary(message) {
-  const summary = process.env.GITHUB_STEP_SUMMARY;
-  if (summary) fs.appendFileSync(summary, `${message}\n`);
-}
-
 export async function verifyMainPrProvenance({
   repository,
   sha,
@@ -90,14 +83,8 @@ async function main() {
       baseBranch,
       token: process.env.GITHUB_TOKEN,
     });
-    appendSummary('### Main PR provenance verified');
-    appendSummary(
-      `Production deploy SHA ${sha} is associated with merged PR #${pull.number} into ${baseBranch}.`,
-    );
     console.log(`Verified merged PR #${pull.number} provenance for ${sha}.`);
   } catch (error) {
-    appendSummary('### Main PR provenance gate failed');
-    appendSummary(String(error?.message || error));
     console.error(String(error?.message || error));
     process.exitCode = 1;
   }
