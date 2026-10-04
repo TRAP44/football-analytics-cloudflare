@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: cloudflare-production
@@ -69,6 +70,11 @@ jobs:
         with:
           node-version: 22
           cache: npm
+
+      - name: P1 gate: require merged PR provenance for production deploy
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/verify-main-pr-provenance.js "$GITHUB_REPOSITORY" "$DEPLOY_SHA" main
 
       - name: Install pinned dependencies
         run: npm ci
