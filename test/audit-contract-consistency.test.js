@@ -37,11 +37,11 @@ test('audit: release contract tracks the newest production migration',()=>{
   assert.equal(fs.existsSync(releaseContract.freshInstallBaseline),true);
 });
 
-test('audit: frontend literal API routes are implemented by the Worker',()=>{
+test('audit: frontend literal API routes are represented in the backend source graph',()=>{
   const routes=[...app.matchAll(/[\x22\x27\x60](\/api\/[A-Za-z0-9_?=&/.\-:]*)/g)]
     .map(match=>match[1].split('?')[0].replace(/\/$/,''));
   for(const route of new Set(routes)){
-    assert.ok(worker.includes(route), `Worker route missing: ${route}`);
+    assert.ok(sourceText.includes(route), `Backend route missing: ${route}`);
   }
 });
 
