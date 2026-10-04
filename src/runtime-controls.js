@@ -22,7 +22,7 @@ export function createRuntimeControlsRuntime({
   redactOpsString,
   json,
   isAdminUser,
-  now = () => Date.now(),
+  clock = () => Date.clock(),
 }) {
   function runtimeControlsSnapshot() {
     return memory.runtimeControls?.value || { ...DEFAULT_RUNTIME_CONTROLS };
@@ -62,7 +62,7 @@ export function createRuntimeControlsRuntime({
   
   async function loadRuntimeControls(cfg, options = {}) {
     const force = Boolean(options.force);
-    const now = now();
+    const now = clock();
     if (!force && memory.runtimeControls?.value && now - Number(memory.runtimeControls.loadedAt || 0) < RUNTIME_CONTROLS_CACHE_MS) {
       return { ...memory.runtimeControls, cached: true };
     }
@@ -137,7 +137,7 @@ export function createRuntimeControlsRuntime({
       app_version: APP_VERSION,
       changed_by: Number(user?.id || 0) || null,
       source_revision: null,
-      created_at: snapshot.updatedAt || new Date(now()).toISOString(),
+      created_at: snapshot.updatedAt || new Date(clock()).toISOString(),
     }, 'revision');
   }
   
@@ -151,7 +151,7 @@ export function createRuntimeControlsRuntime({
       app_version: APP_VERSION,
       changed_by: Number(user?.id || 0) || null,
       source_revision: Number(meta.sourceRevision || 0) || null,
-      created_at: new Date(now()).toISOString(),
+      created_at: new Date(clock()).toISOString(),
     }, 'revision');
   }
   
@@ -300,7 +300,7 @@ export function createRuntimeControlsRuntime({
         ? String(body.message || 'Аварийный режим безопасности активен. Изменения временно недоступны.').trim().slice(0, 280)
         : lockdownReleaseRequested ? '' : String(body.message || '').trim().slice(0, 280),
       revision: expectedRevision + 1,
-      updated_at: new Date(now()).toISOString(),
+      updated_at: new Date(clock()).toISOString(),
       updated_by: Number(user?.id || 0) || null,
     };
   
@@ -328,7 +328,7 @@ export function createRuntimeControlsRuntime({
     }
   
     const value = normalizeRuntimeControls(rows[0]);
-    memory.runtimeControls = { value, loadedAt: now(), source: 'supabase', schemaReady: true };
+    memory.runtimeControls = { value, loadedAt: clock(), source: 'supabase', schemaReady: true };
   
     if (historySchema.ok) {
       try {
@@ -409,7 +409,7 @@ export function createRuntimeControlsRuntime({
     const lockdown = runtimeLockdownDecision(request, { runtime, isAdmin: admin });
     if (lockdown.blocked) {
       const url = new URL(request.url);
-      const minuteBucket = new Date(now()).toISOString().slice(0, 16);
+      const minuteBucket = new Date(clock()).toISOString().slice(0, 16);
       void recordOpsEvent(cfg, {
         severity: 'warning',
         source: 'release',
