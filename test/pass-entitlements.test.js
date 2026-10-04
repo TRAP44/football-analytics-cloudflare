@@ -306,8 +306,12 @@ test('full AI uses Pass entitlement server-side instead of the FREE quota gate f
   assert.match(source, /resolveUserEntitlements\(user\.id, fixtureId, cfg\)/);
   assert.match(source, /const passCandidate = entitlementBefore\.source === 'pass'/);
   assert.match(source, /if \(!freeRecheck && !passCandidate && quotaBefore\.left <= 0\)/);
-  assert.match(source, /reserveEntitlementUsage\(user\.id,entitlementBefore\.passes\.active,fixtureId,cfg\)/);
+  assert.match(source, /reserveEntitlementUsage\(user\.id,entitlementBefore\.passes\.active,fixtureId,cfg,\{/);
+  assert.match(source, /durable:hasSupabase\(cfg\)/);
+  assert.match(source, /operationId:crypto\.randomUUID\(\)/);
   assert.match(source, /if \(!freeRecheck && !passAccess\) \{\s*usageReservation=await reserveAnalysisQuota/);
+  assert.match(source, /finalizeAnalysisUsageReservation\(\{/);
+  assert.match(source, /disposition/);
   assert.match(source, /refundEntitlementUsage\(user\.id,passUsageReservation\.entitlementId,cfg\)/);
   assert.doesNotMatch(source, /users\.plan\s*=\s*['"]PASS['"]/);
 });
@@ -335,6 +339,6 @@ test('Worker reuses the established billing route/webhook and keeps monetization
   assert.match(router, /if \(!cfg\.monetizationEnabled\) return json/);
   assert.match(env, /MONETIZATION_ENABLED=false/);
   assert.doesNotMatch(env, /MONETIZATION_ENABLED=true/);
-  assert.equal(release.productionSchema, '6.27');
-  assert.equal(release.latestMigration, 'supabase/migrations/supabase_migration_v6_27_3.sql');
+  assert.equal(release.productionSchema, '6.28');
+  assert.equal(release.latestMigration, 'supabase/migrations/supabase_migration_v6_28.sql');
 });
