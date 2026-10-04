@@ -131,7 +131,7 @@ test('Issue #411 router has no duplicated direct provider-backed route dispatch 
 
   for(const route of providerBackedRouteInventory()){
     const escaped=route.path.replace(/[.*+?^$()|[\]\\]/g,'\\$&');
-    const direct=new RegExp('url\\.pathname\\s*===\\s*[\\'"]'+escaped+'[\\'"]');
+    const direct=new RegExp("url\\.pathname\\s*===\\s*['\\\"]"+escaped+"['\\\"]");
     assert.doesNotMatch(source,direct,route.method+' '+route.path+' must remain registry-dispatched');
   }
 });
