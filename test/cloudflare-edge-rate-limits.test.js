@@ -24,13 +24,18 @@ function limiter(success=true, capture=null) {
   };
 }
 
-test('edge policies cover analyze, billing/admin and Telegram webhook without touching normal reads', () => {
-  assert.equal(edgePolicyForRequest(request('/api/analyze'))?.id, 'analyze');
+test('edge policies apply stable first-stage buckets to protected API, with stricter sensitive routes', () => {
+  assert.equal(edgePolicyForRequest(request('/api/analyze'))?.id, 'api-preauth');
+  assert.equal(edgePolicyForRequest(request('/api/me'))?.id, 'api-preauth');
+  assert.equal(edgePolicyForRequest(request('/api/search'))?.id, 'api-preauth');
   assert.equal(edgePolicyForRequest(request('/api/billing/invoice', { method:'POST' }))?.id, 'sensitive');
   assert.equal(edgePolicyForRequest(request('/api/admin/billing/refund', { method:'POST' }))?.id, 'sensitive');
   assert.equal(edgePolicyForRequest(request('/api/runtime-controls'))?.id, 'sensitive');
   assert.equal(edgePolicyForRequest(request('/telegram/webhook', { method:'POST' }))?.id, 'telegram-webhook');
-  assert.equal(edgePolicyForRequest(request('/api/me')), null);
+  assert.equal(edgePolicyForRequest(request('/api/public-status')), null);
+  assert.equal(edgePolicyForRequest(request('/api/health')), null);
+  assert.equal(edgePolicyForRequest(request('/api/app-manifest')), null);
+  assert.equal(edgePolicyForRequest(request('/api/runtime-status')), null);
   assert.equal(edgePolicyForRequest(request('/health/live')), null);
 });
 
@@ -50,9 +55,9 @@ test('rate-limit binding uses a hashed network fingerprint and never the raw IP 
   const result=await cloudflareEdgeGuard(request('/api/analyze', { method:'POST', ip:'198.51.100.42' }),env);
   assert.equal(result.blocked,true);
   assert.equal(result.status,429);
-  assert.equal(result.policy,'analyze');
+  assert.equal(result.policy,'api-preauth');
   assert.equal(seen.length,1);
-  assert.match(seen[0].key,/^analyze:[a-f0-9]{24}$/);
+  assert.match(seen[0].key,/^api-preauth:[a-f0-9]{24}$/);
   assert.equal(seen[0].key.includes('198.51.100.42'),false);
 });
 
@@ -79,7 +84,7 @@ test('rotating Telegram initData cannot fragment the first-stage edge bucket', a
 
 test('Webhook ceiling is intentionally much looser than user API ceilings', () => {
   const policies=Object.fromEntries(cloudflareEdgePolicies().map(x=>[x.id,x]));
-  assert.equal(policies.analyze.limit,120);
+  assert.equal(policies['api-preauth'].limit,600);
   assert.equal(policies.sensitive.limit,30);
   assert.equal(policies['telegram-webhook'].limit,6000);
   assert.equal(policies['telegram-webhook'].period,60);
@@ -103,7 +108,7 @@ test('binding outage and missing network identity fail open to existing Worker g
 test('wrangler declares three independent Cloudflare rate-limit namespaces', () => {
   const cfg=JSON.parse(fs.readFileSync('wrangler.jsonc','utf8'));
   assert.deepEqual(cfg.ratelimits,[
-    {name:'EDGE_ANALYZE_RATE_LIMIT',namespace_id:'386101',simple:{limit:120,period:60}},
+    {name:'EDGE_ANALYZE_RATE_LIMIT',namespace_id:'386101',simple:{limit:600,period:60}},
     {name:'EDGE_SENSITIVE_RATE_LIMIT',namespace_id:'386102',simple:{limit:30,period:60}},
     {name:'EDGE_WEBHOOK_RATE_LIMIT',namespace_id:'386103',simple:{limit:6000,period:60}},
   ]);
