@@ -69,14 +69,34 @@ test('Issue #438 CI contract proves complete v2 drift detection and rollout comp
     new URL('../scripts/supabase-ci-contract.sql', import.meta.url),
     'utf8',
   );
+  const dbContract = releaseContract.databaseContract;
+  assert.equal(dbContract.version, 2);
+  assert.match(dbContract.fingerprint, /^[a-f0-9]{32}$/);
+  assert.match(dbContract.freshInstallFingerprint, /^[a-f0-9]{32}$/);
+  assert.match(dbContract.legacyFingerprint, /^[a-f0-9]{32}$/);
+  assert.match(dbContract.freshInstallLegacyFingerprint, /^[a-f0-9]{32}$/);
+  assert.deepEqual(dbContract.compatibleFingerprints, [
+    dbContract.fingerprint,
+    dbContract.freshInstallFingerprint,
+  ]);
+  assert.equal(new Set(dbContract.compatibleFingerprints).size, 2);
+
   assert.match(sql, /backend_schema_contract_v2/);
   assert.match(sql, /backend_readiness_contract_v2/);
   assert.match(sql, /issue438_contract_probe/);
   assert.match(sql, /v2 ignored a new public table/);
   assert.match(sql, /v2 ignored a new public column/);
   assert.match(sql, /legacy backend schema fingerprint drifted/);
-  assert.match(sql, /6a7f0fe444f49a2a52c4603e952ee9ea/);
-  assert.match(sql, /c2c22ec25aacfcf1b9938b0850cebf49/);
+  assert.match(sql, /expected_legacy_fingerprint/);
+  assert.match(sql, /expected_v2_fingerprint/);
+  assert.doesNotMatch(sql, /6a7f0fe444f49a2a52c4603e952ee9ea/);
+  assert.doesNotMatch(sql, /8b3e6ec749079296e6746d3db8ae3d2e/);
+
+  assert.match(quality, /freshInstallLegacyFingerprint/);
+  assert.match(quality, /freshInstallFingerprint/);
+  assert.match(quality, /expected_legacy_fingerprint="$FRESH_LEGACY_FP"/);
+  assert.match(quality, /expected_v2_fingerprint="$FRESH_V2_FP"/);
+  assert.doesNotMatch(quality, /test "$LEGACY_FP" = "c2c22ec25aacfcf1b9938b0850cebf49"/);
 });
 
 test('Issue #433 keeps database integration in the same Quality workflow used by deploy', () => {

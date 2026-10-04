@@ -7,7 +7,8 @@
 - **Никогда не запускайте fresh-install baseline поверх существующей production БД.** Guard в baseline дополнительно останавливает bootstrap при обнаружении рабочей схемы.
 - Для существующей БД применяются только отсутствующие numbered migrations в порядке версий.
 - Старые migrations не удаляются: это история upgrade-контракта и вход regression/release checks.
-- Текущий production contract: `databaseContract.version = 2` из `/release-contract.json`; Worker проверяет `backend_readiness_contract_v2`, а `backend_schema_contract_v2` автоматически охватывает все public relations/columns/constraints/indexes/functions/RLS policies/triggers и effective grants для `anon`, `authenticated`, `service_role`.
+- Текущий database contract: `databaseContract.version = 2` из `/release-contract.json`; Worker проверяет `backend_readiness_contract_v2`, а `backend_schema_contract_v2` автоматически охватывает все public relations/columns/constraints/indexes/functions/RLS policies/triggers и effective grants для `anon`, `authenticated`, `service_role`.
+- Полный v2 fingerprint versioned по физической схеме. Исторически развивавшаяся production schema и детерминированный fresh-install baseline имеют разные, но явно зарегистрированные полные fingerprints (`databaseContract.compatibleFingerprints`). Production fingerprint остаётся primary; fresh-install fingerprint принимается только при точном совпадении. Любой незарегистрированный fingerprint остаётся schema drift и блокирует readiness.
 - Исторический `backend_schema_fingerprint()` сохранён только как rollout-совместимость для старого Worker и намеренно не является текущим полным contract.
 - RLS/least-privilege, service-role grants и executable CI schema checks являются обязательной частью schema contract.
 

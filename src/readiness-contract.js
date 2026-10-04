@@ -130,11 +130,22 @@ export function normalizeCompositeReadinessResponse(
   };
 }
 
+function normalizeExpectedFingerprints(expectedFingerprint, expectedFingerprints) {
+  const values = [
+    expectedFingerprint,
+    ...(Array.isArray(expectedFingerprints) ? expectedFingerprints : []),
+  ]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+  return [...new Set(values)];
+}
+
 export function createCompositeReadinessRuntime({
   hasSupabase,
   supaRpc,
   probeConnectivity,
   expectedFingerprint,
+  expectedFingerprints,
   expectedContractVersion = 2,
   readinessRpc = 'backend_readiness_contract_v2',
 } = {}) {
@@ -143,6 +154,12 @@ export function createCompositeReadinessRuntime({
       || typeof probeConnectivity !== 'function') {
     throw new TypeError('createCompositeReadinessRuntime requires Supabase dependencies');
   }
+
+  const supportedFingerprints = normalizeExpectedFingerprints(
+    expectedFingerprint,
+    expectedFingerprints,
+  );
+  const primaryExpectedFingerprint = supportedFingerprints[0] || '';
 
   function classifyRpcError(error) {
     const raw = `${String(error?.code || '')} ${String(error?.message || '')}`.toLowerCase();
@@ -160,20 +177,62 @@ export function createCompositeReadinessRuntime({
           expectedContractVersion,
         ),
         connectivity: { ok: false, status: 'not_configured', attempts: 1 },
+        primaryExpectedFingerprint,
+        acceptedFingerprint: '',
       };
     }
 
     const authWindowMinutes = Math.max(1, Math.min(60, Number(minutes || 5)));
     try {
-      const raw = await supaRpc(cfg, readinessRpc, {
-        p_expected_fingerprint: String(expectedFingerprint || ''),
-        p_auth_window_minutes: authWindowMinutes,
-      }, 7000);
-      return normalizeCompositeReadinessResponse(
-        raw,
-        expectedFingerprint,
-        expectedContractVersion,
-      );
+      const readForFingerprint = async (fingerprint) => {
+        const raw = await supaRpc(cfg, readinessRpc, {
+          p_expected_fingerprint: String(fingerprint || ''),
+          p_auth_window_minutes: authWindowMinutes,
+        }, 7000);
+        return normalizeCompositeReadinessResponse(
+          raw,
+          fingerprint,
+          expectedContractVersion,
+        );
+      };
+
+      const primary = await readForFingerprint(primaryExpectedFingerprint);
+      if (primary.ok) {
+        return {
+          ...primary,
+          primaryExpectedFingerprint,
+          acceptedFingerprint: primaryExpectedFingerprint,
+        };
+      }
+
+      // Retry only for one of the explicitly registered complete v2 schemas.
+      // Unknown hashes and transport/security/auth failures stay fail-closed.
+      const actualFingerprint = String(primary?.schema?.fingerprint?.fingerprint || '');
+      const alternateExpectedFingerprint = primary.valid
+        && primary.connectivity.ok
+        && primary.backendSecurity.ok
+        && primary.authFailures.available
+        && primary.authFailures.count === 0
+        ? supportedFingerprints.find(
+          (fingerprint) => fingerprint !== primaryExpectedFingerprint
+            && fingerprint === actualFingerprint,
+        ) || ''
+        : '';
+
+      if (!alternateExpectedFingerprint) {
+        return {
+          ...primary,
+          primaryExpectedFingerprint,
+          acceptedFingerprint: '',
+        };
+      }
+
+      const alternate = await readForFingerprint(alternateExpectedFingerprint);
+      return {
+        ...alternate,
+        primaryExpectedFingerprint,
+        acceptedFingerprint: alternate.ok ? alternateExpectedFingerprint : '',
+      };
     } catch (error) {
       const rpcStatus = classifyRpcError(error);
       const connectivity = await probeConnectivity(cfg);
@@ -184,6 +243,8 @@ export function createCompositeReadinessRuntime({
           status: String(connectivity?.status || 'unknown'),
           attempts: Number(connectivity?.attempts || 1),
         },
+        primaryExpectedFingerprint,
+        acceptedFingerprint: '',
         failureReasons: [rpcStatus],
       };
     }

@@ -73,22 +73,27 @@ jobs:
           source "$RUNNER_TEMP/supabase-fresh.env"
           set +a
 
+          FRESH_LEGACY_FP="$(node -p "require(process.env.GITHUB_WORKSPACE + '/release-contract.json').databaseContract.freshInstallLegacyFingerprint")"
+          FRESH_V2_FP="$(node -p "require(process.env.GITHUB_WORKSPACE + '/release-contract.json').databaseContract.freshInstallFingerprint")"
+
           psql "$DB_URL" -X -v ON_ERROR_STOP=1 -c \
             "select public.backend_schema_fingerprint() as legacy_schema_contract, public.backend_schema_contract_v2() as schema_contract_v2;"
           psql "$DB_URL" -X -v ON_ERROR_STOP=1 \
             -f "$GITHUB_WORKSPACE/scripts/schema-contract-v2-diagnostics.sql"
 
           psql "$DB_URL" -X -v ON_ERROR_STOP=1 \
+            -v expected_legacy_fingerprint="$FRESH_LEGACY_FP" \
+            -v expected_v2_fingerprint="$FRESH_V2_FP" \
             -f "$GITHUB_WORKSPACE/scripts/supabase-ci-contract.sql"
           node "$GITHUB_WORKSPACE/scripts/supabase-concurrency-gate.js"
 
           LEGACY_FP="$(psql "$DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
             "select public.backend_schema_fingerprint()->>'fingerprint';")"
-          test "$LEGACY_FP" = "c2c22ec25aacfcf1b9938b0850cebf49"
+          test "$LEGACY_FP" = "$FRESH_LEGACY_FP"
 
           CONTRACT_V2_FP="$(psql "$DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
             "select public.backend_schema_contract_v2()->>'fingerprint';")"
-          test "$CONTRACT_V2_FP" = "6a7f0fe444f49a2a52c4603e952ee9ea"
+          test "$CONTRACT_V2_FP" = "$FRESH_V2_FP"
 
           if psql "$DB_URL" -X -v ON_ERROR_STOP=1 \
             -f "$GITHUB_WORKSPACE/supabase/baseline/supabase_baseline_v6_19.sql" \
@@ -131,19 +136,22 @@ jobs:
           source "$RUNNER_TEMP/supabase-upgrade.env"
           set +a
 
+          FRESH_LEGACY_FP="$(node -p "require(process.env.GITHUB_WORKSPACE + '/release-contract.json').databaseContract.freshInstallLegacyFingerprint")"
+          FRESH_V2_FP="$(node -p "require(process.env.GITHUB_WORKSPACE + '/release-contract.json').databaseContract.freshInstallFingerprint")"
+
           # upgrade-base already includes v6.27.2. Prove an older Worker that
           # still requires the historical v1 fingerprint remains ready after the
           # new complete contract is present.
           PRE_LATEST_LEGACY_FP="$(psql "$DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
             "select public.backend_schema_fingerprint()->>'fingerprint';")"
-          test "$PRE_LATEST_LEGACY_FP" = "c2c22ec25aacfcf1b9938b0850cebf49"
+          test "$PRE_LATEST_LEGACY_FP" = "$FRESH_LEGACY_FP"
 
           PRE_LATEST_V2="$(psql "$DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
             "select to_regprocedure('public.backend_schema_contract_v2()') is not null;")"
           test "$PRE_LATEST_V2" = "t"
 
           OLD_WORKER_READY="$(psql "$DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
-            "select public.backend_readiness_contract('c2c22ec25aacfcf1b9938b0850cebf49',5)->>'ok';")"
+            "select public.backend_readiness_contract('$FRESH_LEGACY_FP',5)->>'ok';")"
           test "$OLD_WORKER_READY" = "true"
 
           node "$GITHUB_WORKSPACE/scripts/prepare-supabase-ci-migrations.js" \
@@ -151,10 +159,12 @@ jobs:
           npx --yes "supabase@$SUPABASE_CLI_VERSION" migration up
 
           psql "$DB_URL" -X -v ON_ERROR_STOP=1 \
+            -v expected_legacy_fingerprint="$FRESH_LEGACY_FP" \
+            -v expected_v2_fingerprint="$FRESH_V2_FP" \
             -f "$GITHUB_WORKSPACE/scripts/supabase-ci-contract.sql"
 
           NEW_WORKER_READY="$(psql "$DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
-            "select public.backend_readiness_contract_v2('6a7f0fe444f49a2a52c4603e952ee9ea',5)->>'ok';")"
+            "select public.backend_readiness_contract_v2('$FRESH_V2_FP',5)->>'ok';")"
           test "$NEW_WORKER_READY" = "true"
 
           npx --yes "supabase@$SUPABASE_CLI_VERSION" migration up

@@ -1,5 +1,24 @@
 \set ON_ERROR_STOP on
 
+\if :{?expected_legacy_fingerprint}
+\else
+  \echo 'Missing psql variable: expected_legacy_fingerprint'
+  \quit 2
+\endif
+\if :{?expected_v2_fingerprint}
+\else
+  \echo 'Missing psql variable: expected_v2_fingerprint'
+  \quit 2
+\endif
+
+create temp table issue438_contract_expectations (
+  legacy_fingerprint text not null,
+  v2_fingerprint text not null
+) on commit preserve rows;
+
+insert into issue438_contract_expectations(legacy_fingerprint, v2_fingerprint)
+values (:'expected_legacy_fingerprint', :'expected_v2_fingerprint');
+
 do $matchradar$
 declare
   v_contract jsonb;
@@ -7,7 +26,12 @@ declare
   v_contract_after text;
   v_contract_with_column text;
   v_contract_restored text;
+  v_expected_legacy_fingerprint text;
+  v_expected_v2_fingerprint text;
 begin
+  select legacy_fingerprint, v2_fingerprint
+    into v_expected_legacy_fingerprint, v_expected_v2_fingerprint
+  from issue438_contract_expectations;
   if to_regclass('public.users') is null
      or to_regclass('public.usage_daily') is null
      or to_regclass('public.provider_rate_windows') is null
@@ -298,7 +322,7 @@ begin
   -- is already present. This is the old-Worker/new-DB rollout guarantee.
   select public.backend_schema_fingerprint() into v_contract;
   if coalesce((v_contract->>'ok')::boolean,false) is not true
-     or coalesce(v_contract->>'fingerprint','') <> 'c2c22ec25aacfcf1b9938b0850cebf49' then
+     or coalesce(v_contract->>'fingerprint','') <> v_expected_legacy_fingerprint then
     raise exception 'Supabase integration contract: legacy backend schema fingerprint drifted: %', coalesce(v_contract->>'fingerprint','');
   end if;
 
@@ -343,7 +367,7 @@ begin
   select public.backend_schema_contract_v2() into v_contract;
   if coalesce((v_contract->>'ok')::boolean,false) is not true
      or coalesce((v_contract->>'version')::integer,0) <> 2
-     or coalesce(v_contract->>'fingerprint','') <> '6a7f0fe444f49a2a52c4603e952ee9ea' then
+     or coalesce(v_contract->>'fingerprint','') <> v_expected_v2_fingerprint then
     raise exception 'Supabase integration contract: complete v2 schema contract drifted: %', coalesce(v_contract->>'fingerprint','');
   end if;
 
@@ -376,7 +400,7 @@ begin
   end if;
 
   select public.backend_readiness_contract_v2(
-    '6a7f0fe444f49a2a52c4603e952ee9ea',
+    v_expected_v2_fingerprint,
     5
   ) into v_contract;
   if coalesce((v_contract->>'ok')::boolean,false) is not true
