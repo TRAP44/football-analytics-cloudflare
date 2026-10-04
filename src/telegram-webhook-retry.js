@@ -3,6 +3,7 @@ const RETRYABLE_CODES = new Set([
   'TELEGRAM_TIMEOUT',
   'TELEGRAM_RATE_LIMIT',
   'TELEGRAM_UPSTREAM',
+  'TELEGRAM_DEDUPE_UNAVAILABLE',
 ]);
 
 function stateFor(cfg) {

@@ -35,22 +35,25 @@ test('RC107 Worker combines memory and persistent dedupe around webhook processi
   assert.ok(start>=0 && end>start);
   const block=worker.slice(start,end);
   assert.match(block,/const claim=claimTelegramUpdate\(update,cfg\)/);
-  assert.match(block,/await claimTelegramUpdatePersistent\(cfg,claim\.key\)/);
+  assert.match(block,/await claimTelegramUpdatePersistent\(cfg,claim\.key,update\)/);
   assert.match(block,/deduped:true,persistent:true/);
   assert.match(block,/await completeTelegramUpdatePersistent\(cfg,claim\.key\)/);
   assert.match(block,/await releaseTelegramUpdatePersistent\(cfg,claim\.key\)/);
 });
 
-test('RC107 persistent dedupe fails open to memory with bounded Supabase latency',()=>{
-  const start=worker.indexOf('async function claimTelegramUpdatePersistent');
+test('RC107 persistent dedupe keeps bounded Supabase latency and safe degraded routing',()=>{
+  const start=worker.indexOf('function degradedTelegramDedupeDecision');
   const end=worker.indexOf('function telegramBurstKind',start);
   assert.ok(start>=0 && end>start);
   const block=worker.slice(start,end);
-  assert.match(block,/!hasSupabase\(cfg\).*fallback/s);
+  assert.match(block,/!key \|\| !hasSupabase\(cfg\)/);
   assert.match(block,/claim_telegram_update/);
   assert.match(block,/,1800\)/);
   assert.match(block,/,1200\)/);
   assert.match(block,/telegramDedupeFallbacks/);
+  assert.match(block,/telegramDedupeFailClosedHighRisk/);
+  assert.match(block,/telegramDedupeSafeFallbacks/);
+  assert.match(block,/status:'fail_closed'/);
   assert.match(block,/persistent:false, claimed:true, duplicate:false, status:'fallback'/);
 });
 
