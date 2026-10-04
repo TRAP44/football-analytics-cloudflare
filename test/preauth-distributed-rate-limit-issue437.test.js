@@ -107,20 +107,20 @@ test('Issue #437 normalizes equivalent IPv4 and IPv6 identities before fingerpri
   assert.notEqual(rotatedSecret,ipv4A);
 });
 
-test('one IP with 100 rotating invalid initData values stays in one distributed first-stage bucket', async()=>{
+test('one IP with 100 rotating invalid initData values stays in one distributed expensive-route bucket', async()=>{
   const backend=sharedBackend();
   for(let i=0;i<100;i+=1) {
-    const {response}=await enforce(request('/api/me',{
+    await enforce(request('/api/analyze',{
+      method:'POST',
       ip:'203.0.113.77',
       initData:`query_id=q${i}&user=garbage-${i}&hash=invalid-${i}`,
     }),{backend});
-    assert.equal(response,null);
   }
 
   assert.equal(backend.calls.length,100);
   assert.equal(new Set(backend.calls.map(call=>call.p_bucket_key)).size,1);
   const [bucketKey]=new Set(backend.calls.map(call=>call.p_bucket_key));
-  assert.match(bucketKey,/^preauth:public:[a-f0-9]{24}$/);
+  assert.match(bucketKey,/^preauth:expensive:[a-f0-9]{24}$/);
   assert.equal(bucketKey.includes('203.0.113.77'),false);
   assert.equal(JSON.stringify(backend.calls).includes('query_id='),false);
   assert.equal(JSON.stringify(backend.calls).includes('invalid-'),false);
@@ -132,8 +132,11 @@ test('distributed pre-auth policy is NAT-tolerant but stricter for expensive and
   assert.equal(policies.expensive.limit,60);
   assert.equal(policies.admin.limit,24);
   assert.equal(policies.public.failClosed,false);
+  assert.equal(policies.public.distributed,false);
   assert.equal(policies.expensive.failClosed,true);
+  assert.equal(policies.expensive.distributed,true);
   assert.equal(policies.admin.failClosed,true);
+  assert.equal(policies.admin.distributed,true);
   assert.ok(policies.admin.limit<policies.expensive.limit);
   assert.ok(policies.expensive.limit<policies.public.limit);
 });
@@ -187,7 +190,8 @@ test('backend outage fails closed for expensive/admin routes but keeps ordinary 
     ip:'198.51.100.88',
   }),{backend:throwing});
   assert.equal(ordinary.response,null);
-  assert.ok(ordinary.telemetry.includes('securityPreAuthFallbacks'));
+  assert.equal(ordinary.backend.calls.length,0);
+  assert.equal(ordinary.telemetry.includes('securityPreAuthFallbacks'),false);
 });
 
 test('missing network identity is fail-closed only where pre-auth work is expensive or sensitive', async()=>{
@@ -210,8 +214,12 @@ test('pre-auth persistence and telemetry never contain raw network identity or T
   const rawIp='192.0.2.123';
   const rawInitData='query_id=secret-query&user=attacker-controlled&hash=invalid-secret';
 
-  for(let i=0;i<181;i+=1) {
-    await enforce(request('/api/me',{ip:rawIp,initData:rawInitData}),{backend,events});
+  for(let i=0;i<61;i+=1) {
+    await enforce(request('/api/analyze',{
+      method:'POST',
+      ip:rawIp,
+      initData:rawInitData,
+    }),{backend,events});
   }
 
   const serialized=JSON.stringify({calls:backend.calls,events});
