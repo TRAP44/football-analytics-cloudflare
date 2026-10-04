@@ -47,6 +47,46 @@ test('Telegram links boundary preserves Mini App handoff contract', () => {
   assert.equal(api.oneTapHandoffDrill().pass,true);
 });
 
+
+test('Issue #410 analysis handoff rejects non-positive, fractional, junk and unsafe fixture IDs', () => {
+  const {api}=runtime();
+  const request=new Request('https://app.example/path?old=1');
+  const invalid=[0,-1,1.5,NaN,'not-a-fixture',Number.MAX_SAFE_INTEGER+1];
+
+  for (const value of invalid) {
+    assert.throws(
+      ()=>api.telegramAnalysisHandoffParams(value),
+      error=>error?.code==='TELEGRAM_FIXTURE_ID_INVALID',
+      String(value),
+    );
+    assert.throws(
+      ()=>api.telegramFullAnalysisUrl(request,value,'brief'),
+      error=>error?.code==='TELEGRAM_FIXTURE_ID_INVALID',
+      String(value),
+    );
+    assert.throws(
+      ()=>api.telegramWebAppUrl(request,{fixtureId:value,action:'analysis'}),
+      error=>error?.code==='TELEGRAM_FIXTURE_ID_INVALID',
+      String(value),
+    );
+  }
+});
+
+test('Issue #410 analysis and share fixture boundaries accept the same canonical fixture IDs', () => {
+  const {api}=runtime();
+  const request=new Request('https://app.example/');
+  const params=api.telegramAnalysisHandoffParams('12345','brief');
+  assert.equal(params.fixtureId,12345);
+  assert.equal(api.fixtureShareStartParam('12345').startsWith('fx12345__'),true);
+
+  const url=new URL(api.telegramFullAnalysisUrl(request,'12345','brief'));
+  assert.equal(url.searchParams.get('fixtureId'),'12345');
+
+  for (const value of [0,-5,2.25,NaN,'junk',Number.MAX_SAFE_INTEGER+1]) {
+    assert.equal(api.fixtureShareStartParam(value),'',String(value));
+  }
+});
+
 test('Telegram links boundary keeps compact attributed fixture start payload', () => {
   const {api}=runtime();
   assert.equal(
@@ -54,6 +94,10 @@ test('Telegram links boundary keeps compact attributed fixture start payload', (
     'fx12345__social_feed__match_share__miniapp',
   );
   assert.equal(api.fixtureShareStartParam(0),'');
+  assert.equal(api.fixtureShareStartParam(-1),'');
+  assert.equal(api.fixtureShareStartParam(1.5),'');
+  assert.equal(api.fixtureShareStartParam('junk'),'');
+  assert.equal(api.fixtureShareStartParam(Number.MAX_SAFE_INTEGER+1),'');
   assert.ok(api.fixtureShareStartParam(12345,{source:'x'.repeat(80)}).length<=64);
 });
 
