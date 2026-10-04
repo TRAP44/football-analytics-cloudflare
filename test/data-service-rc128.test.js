@@ -90,6 +90,6 @@ test('RC128 Mini App exposes provider attribution and data provenance',()=>{
 });
 
 test('RC128 base provider contract keeps the proven schema fingerprint through additive RC129 metadata',()=>{
-  assert.match(worker,/const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49'/);
+  assert.match(worker,/const EXPECTED_SCHEMA_FINGERPRINT = '6a7f0fe444f49a2a52c4603e952ee9ea'/);
   assert.ok(fs.existsSync('supabase/migrations/supabase_migration_v6_19.sql'));
 });

@@ -1,9 +1,37 @@
 \set ON_ERROR_STOP on
 
+\if :{?expected_legacy_fingerprint}
+\else
+  \echo 'Missing psql variable: expected_legacy_fingerprint'
+  \quit 2
+\endif
+\if :{?expected_v2_fingerprint}
+\else
+  \echo 'Missing psql variable: expected_v2_fingerprint'
+  \quit 2
+\endif
+
+create temp table issue438_contract_expectations (
+  legacy_fingerprint text not null,
+  v2_fingerprint text not null
+) on commit preserve rows;
+
+insert into issue438_contract_expectations(legacy_fingerprint, v2_fingerprint)
+values (:'expected_legacy_fingerprint', :'expected_v2_fingerprint');
+
 do $matchradar$
 declare
   v_contract jsonb;
+  v_contract_before text;
+  v_contract_after text;
+  v_contract_with_column text;
+  v_contract_restored text;
+  v_expected_legacy_fingerprint text;
+  v_expected_v2_fingerprint text;
 begin
+  select legacy_fingerprint, v2_fingerprint
+    into v_expected_legacy_fingerprint, v_expected_v2_fingerprint
+  from issue438_contract_expectations;
   if to_regclass('public.users') is null
      or to_regclass('public.usage_daily') is null
      or to_regclass('public.provider_rate_windows') is null
@@ -290,9 +318,94 @@ begin
     raise exception 'Supabase integration contract: scheduled lease overlap index missing';
   end if;
 
+  -- Historical v1 stays frozen for an old Worker while the new DB contract
+  -- is already present. This is the old-Worker/new-DB rollout guarantee.
   select public.backend_schema_fingerprint() into v_contract;
-  if coalesce((v_contract->>'ok')::boolean,false) is not true then
-    raise exception 'Supabase integration contract: backend schema fingerprint failed';
+  if coalesce((v_contract->>'ok')::boolean,false) is not true
+     or coalesce(v_contract->>'fingerprint','') <> v_expected_legacy_fingerprint then
+    raise exception 'Supabase integration contract: legacy backend schema fingerprint drifted: %', coalesce(v_contract->>'fingerprint','');
+  end if;
+
+  if to_regprocedure('public.backend_schema_contract_v2()') is null
+     or to_regprocedure('public.backend_readiness_contract_v2(text,integer)') is null then
+    raise exception 'Supabase integration contract: versioned v2 schema RPC is missing';
+  end if;
+
+  if not has_function_privilege(
+       'service_role',
+       'public.backend_schema_contract_v2()',
+       'EXECUTE'
+     )
+     or not has_function_privilege(
+       'service_role',
+       'public.backend_readiness_contract_v2(text,integer)',
+       'EXECUTE'
+     )
+     or has_function_privilege(
+       'anon',
+       'public.backend_schema_contract_v2()',
+       'EXECUTE'
+     )
+     or has_function_privilege(
+       'authenticated',
+       'public.backend_schema_contract_v2()',
+       'EXECUTE'
+     )
+     or has_function_privilege(
+       'anon',
+       'public.backend_readiness_contract_v2(text,integer)',
+       'EXECUTE'
+     )
+     or has_function_privilege(
+       'authenticated',
+       'public.backend_readiness_contract_v2(text,integer)',
+       'EXECUTE'
+     ) then
+    raise exception 'Supabase integration contract: v2 schema contract grants are incorrect';
+  end if;
+
+  select public.backend_schema_contract_v2() into v_contract;
+  if coalesce((v_contract->>'ok')::boolean,false) is not true
+     or coalesce((v_contract->>'version')::integer,0) <> 2
+     or coalesce(v_contract->>'fingerprint','') <> v_expected_v2_fingerprint then
+    raise exception 'Supabase integration contract: complete v2 schema contract drifted: %', coalesce(v_contract->>'fingerprint','');
+  end if;
+
+  -- Prove that v2 has no hidden object/column exclusion list. A new public
+  -- production object and a new column must automatically change the contract,
+  -- and removing the probe must restore the exact release fingerprint.
+  v_contract_before := v_contract->>'fingerprint';
+  create table public.issue438_contract_probe (
+    id bigint primary key
+  );
+  select public.backend_schema_contract_v2()->>'fingerprint'
+    into v_contract_after;
+  if v_contract_after = v_contract_before then
+    raise exception 'Supabase integration contract: v2 ignored a new public table';
+  end if;
+
+  alter table public.issue438_contract_probe
+    add column probe_value text;
+  select public.backend_schema_contract_v2()->>'fingerprint'
+    into v_contract_with_column;
+  if v_contract_with_column = v_contract_after then
+    raise exception 'Supabase integration contract: v2 ignored a new public column';
+  end if;
+
+  drop table public.issue438_contract_probe;
+  select public.backend_schema_contract_v2()->>'fingerprint'
+    into v_contract_restored;
+  if v_contract_restored <> v_contract_before then
+    raise exception 'Supabase integration contract: v2 probe did not restore release fingerprint';
+  end if;
+
+  select public.backend_readiness_contract_v2(
+    v_expected_v2_fingerprint,
+    5
+  ) into v_contract;
+  if coalesce((v_contract->>'ok')::boolean,false) is not true
+     or coalesce((v_contract->>'schemaContractVersion')::integer,0) <> 2 then
+    raise exception 'Supabase integration contract: v2 readiness contract failed';
   end if;
 
   select public.provider_slo_aggregation_contract() into v_contract;
@@ -308,7 +421,7 @@ begin
   if not exists (
     select 1
     from supabase_migrations.schema_migrations
-    where version='20260101001700'
+    where version='20260101001900'
   ) then
     raise exception 'Supabase integration contract: latest migration history entry missing';
   end if;

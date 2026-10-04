@@ -23,7 +23,7 @@ test('RC129 verifies provenance columns explicitly while preserving the stable s
   assert.match(worker,/model_provenance'.*model_predictions'.*data_provenance.*model_inputs_version/);
   assert.match(migration,/backend_schema_fingerprint/);
   assert.match(migration,/c\.table_name = 'analysis_cache'.*provider.*source_updated_at.*freshness_status.*updated_at/s);
-  assert.match(worker,/const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49'/);
+  assert.match(worker,/const EXPECTED_SCHEMA_FINGERPRINT = '6a7f0fe444f49a2a52c4603e952ee9ea'/);
 });
 
 test('RC129 retries only transient API-Football transport failures and never hides quota policy',()=>{

@@ -2,12 +2,17 @@ function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function failedCompositeShape(status, connectivity = { ok: true, status: 'ok', attempts: 1 }) {
+function failedCompositeShape(
+  status,
+  connectivity = { ok: true, status: 'ok', attempts: 1 },
+  expectedContractVersion = 2,
+) {
   return {
     valid: false,
     ok: false,
     status: 'not_ready',
     rpcStatus: status,
+    schemaContractVersion: 0,
     connectivity: {
       ok: Boolean(connectivity?.ok),
       status: String(connectivity?.status || 'unknown'),
@@ -16,6 +21,8 @@ function failedCompositeShape(status, connectivity = { ok: true, status: 'ok', a
     schema: {
       ok: false,
       status: status === 'malformed_response' ? 'malformed_response' : 'composite_unavailable',
+      contractVersion: 0,
+      expectedContractVersion: Number(expectedContractVersion || 0),
       fingerprint: { ok: false, status: 'unavailable', fingerprint: '', expected: '' },
     },
     backendSecurity: {
@@ -27,7 +34,11 @@ function failedCompositeShape(status, connectivity = { ok: true, status: 'ok', a
   };
 }
 
-export function normalizeCompositeReadinessResponse(raw, expectedFingerprint = '') {
+export function normalizeCompositeReadinessResponse(
+  raw,
+  expectedFingerprint = '',
+  expectedContractVersion = 2,
+) {
   if (!isObject(raw)
       || typeof raw.ok !== 'boolean'
       || !isObject(raw.connectivity)
@@ -35,12 +46,22 @@ export function normalizeCompositeReadinessResponse(raw, expectedFingerprint = '
       || !isObject(raw.schema.fingerprint)
       || !isObject(raw.backendSecurity)
       || !isObject(raw.recentSupabaseAuthFailures)) {
-    return failedCompositeShape('malformed_response');
+    return failedCompositeShape('malformed_response', undefined, expectedContractVersion);
   }
 
   const fingerprint = String(raw.schema.fingerprint.fingerprint || '');
   const expected = String(expectedFingerprint || '');
+  const actualContractVersion = Number(
+    raw.schemaContractVersion ?? raw.schema.contractVersion ?? 0,
+  );
+  const expectedVersion = Number(expectedContractVersion || 0);
+  const contractVersionOk = Number.isInteger(actualContractVersion)
+    && actualContractVersion > 0
+    && actualContractVersion === expectedVersion
+    && Number(raw.schema.contractVersion || 0) === expectedVersion;
+
   const fingerprintOk = raw.schema.fingerprint.ok === true
+    && contractVersionOk
     && fingerprint.length > 0
     && fingerprint === expected;
   const connectivityOk = raw.connectivity.ok === true;
@@ -54,9 +75,12 @@ export function normalizeCompositeReadinessResponse(raw, expectedFingerprint = '
   const valid = typeof raw.schema.status === 'string'
     && typeof raw.backendSecurity.status === 'string'
     && typeof raw.connectivity.status === 'string'
+    && Number.isInteger(actualContractVersion)
     && authAvailable;
 
-  if (!valid) return failedCompositeShape('malformed_response');
+  if (!valid) {
+    return failedCompositeShape('malformed_response', undefined, expectedContractVersion);
+  }
 
   const ok = Boolean(
     raw.ok === true
@@ -71,6 +95,7 @@ export function normalizeCompositeReadinessResponse(raw, expectedFingerprint = '
     ok,
     status: ok ? 'ready' : 'not_ready',
     rpcStatus: 'ok',
+    schemaContractVersion: actualContractVersion,
     connectivity: {
       ok: connectivityOk,
       status: String(raw.connectivity.status || (connectivityOk ? 'ok' : 'unknown')),
@@ -80,6 +105,8 @@ export function normalizeCompositeReadinessResponse(raw, expectedFingerprint = '
       ...raw.schema,
       ok: schemaOk,
       status: schemaOk ? 'ok' : String(raw.schema.status || 'drift'),
+      contractVersion: actualContractVersion,
+      expectedContractVersion: expectedVersion,
       fingerprint: {
         ...raw.schema.fingerprint,
         ok: fingerprintOk,
@@ -103,17 +130,36 @@ export function normalizeCompositeReadinessResponse(raw, expectedFingerprint = '
   };
 }
 
+function normalizeExpectedFingerprints(expectedFingerprint, expectedFingerprints) {
+  const values = [
+    expectedFingerprint,
+    ...(Array.isArray(expectedFingerprints) ? expectedFingerprints : []),
+  ]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean);
+  return [...new Set(values)];
+}
+
 export function createCompositeReadinessRuntime({
   hasSupabase,
   supaRpc,
   probeConnectivity,
   expectedFingerprint,
+  expectedFingerprints,
+  expectedContractVersion = 2,
+  readinessRpc = 'backend_readiness_contract_v2',
 } = {}) {
   if (typeof hasSupabase !== 'function'
       || typeof supaRpc !== 'function'
       || typeof probeConnectivity !== 'function') {
     throw new TypeError('createCompositeReadinessRuntime requires Supabase dependencies');
   }
+
+  const supportedFingerprints = normalizeExpectedFingerprints(
+    expectedFingerprint,
+    expectedFingerprints,
+  );
+  const primaryExpectedFingerprint = supportedFingerprints[0] || '';
 
   function classifyRpcError(error) {
     const raw = `${String(error?.code || '')} ${String(error?.message || '')}`.toLowerCase();
@@ -125,28 +171,80 @@ export function createCompositeReadinessRuntime({
   async function readCompositeReadiness(cfg, minutes = 5) {
     if (!hasSupabase(cfg)) {
       return {
-        ...failedCompositeShape('not_configured', { ok: false, status: 'not_configured', attempts: 1 }),
+        ...failedCompositeShape(
+          'not_configured',
+          { ok: false, status: 'not_configured', attempts: 1 },
+          expectedContractVersion,
+        ),
         connectivity: { ok: false, status: 'not_configured', attempts: 1 },
+        primaryExpectedFingerprint,
+        acceptedFingerprint: '',
       };
     }
 
     const authWindowMinutes = Math.max(1, Math.min(60, Number(minutes || 5)));
     try {
-      const raw = await supaRpc(cfg, 'backend_readiness_contract', {
-        p_expected_fingerprint: String(expectedFingerprint || ''),
-        p_auth_window_minutes: authWindowMinutes,
-      }, 7000);
-      return normalizeCompositeReadinessResponse(raw, expectedFingerprint);
+      const readForFingerprint = async (fingerprint) => {
+        const raw = await supaRpc(cfg, readinessRpc, {
+          p_expected_fingerprint: String(fingerprint || ''),
+          p_auth_window_minutes: authWindowMinutes,
+        }, 7000);
+        return normalizeCompositeReadinessResponse(
+          raw,
+          fingerprint,
+          expectedContractVersion,
+        );
+      };
+
+      const primary = await readForFingerprint(primaryExpectedFingerprint);
+      if (primary.ok) {
+        return {
+          ...primary,
+          primaryExpectedFingerprint,
+          acceptedFingerprint: primaryExpectedFingerprint,
+        };
+      }
+
+      // Retry only for one of the explicitly registered complete v2 schemas.
+      // Unknown hashes and transport/security/auth failures stay fail-closed.
+      const actualFingerprint = String(primary?.schema?.fingerprint?.fingerprint || '');
+      const alternateExpectedFingerprint = primary.valid
+        && primary.connectivity.ok
+        && primary.backendSecurity.ok
+        && primary.authFailures.available
+        && primary.authFailures.count === 0
+        ? supportedFingerprints.find(
+          (fingerprint) => fingerprint !== primaryExpectedFingerprint
+            && fingerprint === actualFingerprint,
+        ) || ''
+        : '';
+
+      if (!alternateExpectedFingerprint) {
+        return {
+          ...primary,
+          primaryExpectedFingerprint,
+          acceptedFingerprint: '',
+        };
+      }
+
+      const alternate = await readForFingerprint(alternateExpectedFingerprint);
+      return {
+        ...alternate,
+        primaryExpectedFingerprint,
+        acceptedFingerprint: alternate.ok ? alternateExpectedFingerprint : '',
+      };
     } catch (error) {
       const rpcStatus = classifyRpcError(error);
       const connectivity = await probeConnectivity(cfg);
       return {
-        ...failedCompositeShape(rpcStatus, connectivity),
+        ...failedCompositeShape(rpcStatus, connectivity, expectedContractVersion),
         connectivity: {
           ok: Boolean(connectivity?.ok),
           status: String(connectivity?.status || 'unknown'),
           attempts: Number(connectivity?.attempts || 1),
         },
+        primaryExpectedFingerprint,
+        acceptedFingerprint: '',
         failureReasons: [rpcStatus],
       };
     }

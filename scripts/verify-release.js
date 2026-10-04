@@ -772,7 +772,9 @@ for (const marker of [
 }
 if (!baseline.toLowerCase().includes('create table if not exists public.provider_rate_windows')) failures.push('RC127 v6.18 baseline is missing provider rate windows');
 if (!baseline.toLowerCase().includes('create or replace function public.consume_analysis_quota')) failures.push('RC127 v6.18 baseline is missing atomic quota RPC');
-if (!worker.includes("const EXPECTED_SCHEMA_FINGERPRINT = 'c2c22ec25aacfcf1b9938b0850cebf49'")) failures.push('RC127 expected schema fingerprint is missing');
+if (!worker.includes("const EXPECTED_SCHEMA_FINGERPRINT = '6a7f0fe444f49a2a52c4603e952ee9ea'")) failures.push('RC127 expected schema fingerprint is missing');
+if (!worker.includes('const EXPECTED_SCHEMA_CONTRACT_VERSION = 2')) failures.push('Issue #438 expected schema contract version is missing');
+if (!worker.includes("readinessRpc: 'backend_readiness_contract_v2'")) failures.push('Issue #438 Worker does not use versioned readiness RPC');
 if (!worker.includes('async function reserveAnalysisQuota')) failures.push('RC127 atomic analysis quota integration is missing');
 if (!worker.includes("supaRpc(cfg, 'consume_analysis_quota'")) failures.push('RC127 quota RPC call is missing');
 if (!worker.includes('async function claimDistributedProviderBudget')) failures.push('RC127 distributed provider budget is missing');

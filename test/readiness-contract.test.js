@@ -5,16 +5,20 @@ import {
   normalizeCompositeReadinessResponse,
 } from '../src/readiness-contract.js';
 
-const FP = 'c2c22ec25aacfcf1b9938b0850cebf49';
+const FP = '6a7f0fe444f49a2a52c4603e952ee9ea';
+const CONTRACT_VERSION = 2;
+const FRESH_FP = '8b3e6ec749079296e6746d3db8ae3d2e';
 
 function healthyRaw(overrides = {}) {
   return {
     ok: true,
     status: 'ok',
+    schemaContractVersion: CONTRACT_VERSION,
     connectivity: { ok: true, status: 'ok' },
     schema: {
       ok: true,
       status: 'ok',
+      contractVersion: CONTRACT_VERSION,
       fingerprint: {
         ok: true,
         status: 'ok',
@@ -42,12 +46,35 @@ function healthyRaw(overrides = {}) {
   };
 }
 
+function rawForFingerprint(actualFingerprint, expectedFingerprint) {
+  const matches = actualFingerprint === expectedFingerprint;
+  const raw = healthyRaw();
+  raw.ok = matches;
+  raw.status = matches ? 'ok' : 'not_ready';
+  raw.schema = {
+    ...raw.schema,
+    ok: matches,
+    status: matches ? 'ok' : 'drift',
+    fingerprint: {
+      ...raw.schema.fingerprint,
+      ok: matches,
+      status: matches ? 'ok' : 'drift',
+      fingerprint: actualFingerprint,
+      expected: expectedFingerprint,
+    },
+  };
+  raw.failureReasons = matches ? [] : ['schema_contract_v2'];
+  return raw;
+}
+
 test('composite readiness healthy path uses exactly one Supabase RPC round-trip', async () => {
   const rpcCalls = [];
   let connectivityCalls = 0;
   const runtime = createCompositeReadinessRuntime({
     hasSupabase: () => true,
     expectedFingerprint: FP,
+    expectedContractVersion: CONTRACT_VERSION,
+    readinessRpc: 'backend_readiness_contract_v2',
     supaRpc: async (...args) => {
       rpcCalls.push(args);
       return healthyRaw();
@@ -63,11 +90,83 @@ test('composite readiness healthy path uses exactly one Supabase RPC round-trip'
   assert.equal(result.ok, true);
   assert.equal(rpcCalls.length, 1);
   assert.equal(connectivityCalls, 0);
-  assert.equal(rpcCalls[0][1], 'backend_readiness_contract');
+  assert.equal(rpcCalls[0][1], 'backend_readiness_contract_v2');
   assert.deepEqual(rpcCalls[0][2], {
     p_expected_fingerprint: FP,
     p_auth_window_minutes: 5,
   });
+});
+
+test('registered fresh-install complete fingerprint retries once and becomes ready', async () => {
+  const rpcCalls = [];
+  const runtime = createCompositeReadinessRuntime({
+    hasSupabase: () => true,
+    expectedFingerprint: FP,
+    expectedFingerprints: [FP, FRESH_FP],
+    expectedContractVersion: CONTRACT_VERSION,
+    readinessRpc: 'backend_readiness_contract_v2',
+    supaRpc: async (...args) => {
+      rpcCalls.push(args);
+      return rawForFingerprint(FRESH_FP, args[2].p_expected_fingerprint);
+    },
+    probeConnectivity: async () => ({ ok: true, status: 'ok', attempts: 1 }),
+  });
+
+  const result = await runtime.readCompositeReadiness({}, 5);
+  assert.equal(rpcCalls.length, 2);
+  assert.equal(rpcCalls[0][2].p_expected_fingerprint, FP);
+  assert.equal(rpcCalls[1][2].p_expected_fingerprint, FRESH_FP);
+  assert.equal(result.ok, true);
+  assert.equal(result.primaryExpectedFingerprint, FP);
+  assert.equal(result.acceptedFingerprint, FRESH_FP);
+  assert.equal(result.schema.fingerprint.expected, FRESH_FP);
+});
+
+test('unknown complete schema fingerprint remains fail-closed without retry', async () => {
+  const rpcCalls = [];
+  const runtime = createCompositeReadinessRuntime({
+    hasSupabase: () => true,
+    expectedFingerprint: FP,
+    expectedFingerprints: [FP, FRESH_FP],
+    expectedContractVersion: CONTRACT_VERSION,
+    readinessRpc: 'backend_readiness_contract_v2',
+    supaRpc: async (...args) => {
+      rpcCalls.push(args);
+      return rawForFingerprint('00000000000000000000000000000000', args[2].p_expected_fingerprint);
+    },
+    probeConnectivity: async () => ({ ok: true, status: 'ok', attempts: 1 }),
+  });
+
+  const result = await runtime.readCompositeReadiness({}, 5);
+  assert.equal(rpcCalls.length, 1);
+  assert.equal(result.ok, false);
+  assert.equal(result.acceptedFingerprint, '');
+});
+
+test('registered alternate fingerprint cannot bypass a security failure', async () => {
+  const rpcCalls = [];
+  const runtime = createCompositeReadinessRuntime({
+    hasSupabase: () => true,
+    expectedFingerprint: FP,
+    expectedFingerprints: [FP, FRESH_FP],
+    expectedContractVersion: CONTRACT_VERSION,
+    readinessRpc: 'backend_readiness_contract_v2',
+    supaRpc: async (...args) => {
+      rpcCalls.push(args);
+      const raw = rawForFingerprint(FRESH_FP, args[2].p_expected_fingerprint);
+      raw.ok = false;
+      raw.backendSecurity = { ok: false, status: 'violations' };
+      raw.failureReasons = ['schema_contract_v2', 'backend_security_contract'];
+      return raw;
+    },
+    probeConnectivity: async () => ({ ok: true, status: 'ok', attempts: 1 }),
+  });
+
+  const result = await runtime.readCompositeReadiness({}, 5);
+  assert.equal(rpcCalls.length, 1);
+  assert.equal(result.backendSecurity.ok, false);
+  assert.equal(result.ok, false);
+  assert.equal(result.acceptedFingerprint, '');
 });
 
 test('one failed security contract remains fail-closed', () => {
@@ -86,6 +185,20 @@ test('one failed security contract remains fail-closed', () => {
   assert.equal(result.backendSecurity.ok, false);
   assert.equal(result.ok, false);
   assert.deepEqual(result.failureReasons, ['backend_security_contract']);
+});
+
+test('database contract version mismatch remains fail-closed even with matching fingerprint', () => {
+  const raw = healthyRaw();
+  raw.schemaContractVersion = 1;
+  raw.schema = {
+    ...raw.schema,
+    contractVersion: 1,
+  };
+  const result = normalizeCompositeReadinessResponse(raw, FP, CONTRACT_VERSION);
+  assert.equal(result.valid, true);
+  assert.equal(result.schema.fingerprint.ok, false);
+  assert.equal(result.schema.ok, false);
+  assert.equal(result.ok, false);
 });
 
 test('schema fingerprint mismatch remains fail-closed even if top-level RPC lies ok=true', () => {
@@ -112,8 +225,10 @@ test('RPC unavailable uses connectivity only for diagnosis and never falls back 
   const runtime = createCompositeReadinessRuntime({
     hasSupabase: () => true,
     expectedFingerprint: FP,
+    expectedContractVersion: CONTRACT_VERSION,
+    readinessRpc: 'backend_readiness_contract_v2',
     supaRpc: async () => {
-      throw Object.assign(new Error('Supabase RPC backend_readiness_contract: HTTP 404'), { code: 'PGRST202' });
+      throw Object.assign(new Error('Supabase RPC backend_readiness_contract_v2: HTTP 404'), { code: 'PGRST202' });
     },
     probeConnectivity: async () => {
       connectivityCalls += 1;
@@ -135,6 +250,8 @@ test('malformed RPC response is fail-closed without hiding successful transport 
   const runtime = createCompositeReadinessRuntime({
     hasSupabase: () => true,
     expectedFingerprint: FP,
+    expectedContractVersion: CONTRACT_VERSION,
+    readinessRpc: 'backend_readiness_contract_v2',
     supaRpc: async () => ({ ok: true, schema: null }),
     probeConnectivity: async () => {
       connectivityCalls += 1;
@@ -154,6 +271,8 @@ test('Supabase composite timeout remains fail-closed and preserves connectivity 
   const runtime = createCompositeReadinessRuntime({
     hasSupabase: () => true,
     expectedFingerprint: FP,
+    expectedContractVersion: CONTRACT_VERSION,
+    readinessRpc: 'backend_readiness_contract_v2',
     supaRpc: async () => {
       throw Object.assign(new Error('Supabase readiness timeout'), { code: 'UPSTREAM_TIMEOUT' });
     },
