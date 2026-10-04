@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/router.js','utf8');
+const growthReferral=fs.readFileSync('src/growth-referral.js','utf8');
 const sourceFiles=walk('src').filter(file=>file.endsWith('.js'));
 const sourceText=sourceFiles.map(file=>fs.readFileSync(file,'utf8')).join('\n');
 const app=fs.readFileSync('public/app.js','utf8');
@@ -105,7 +106,7 @@ test('audit: mutable entrypoint assets are never cached as immutable',()=>{
 test('audit: fire-and-forget observability is anchored to Cloudflare waitUntil',()=>{
   assert.match(worker,/async fetch\(request, env, ctx\)/);
   assert.match(worker,/cfg\.waitUntil = promise => ctx\.waitUntil\(Promise\.resolve\(promise\)\)/);
-  assert.match(worker,/async function recordGrowthEvent\(cfg, event = \{\}\)[\s\S]{0,240}cfg\?\.waitUntil/);
+  assert.match(growthReferral,/async function recordGrowthEvent\(cfg, event = \{\}\)[\s\S]{0,240}cfg\?\.waitUntil/);
   assert.match(worker,/async function recordOpsEvent\(cfg, event = \{\}\)[\s\S]{0,240}cfg\?\.waitUntil/);
 });
 
