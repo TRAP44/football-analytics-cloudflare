@@ -284,6 +284,7 @@ export function createGlobalSearchController({
 
   return Object.freeze({
     localDiscoveryResults,
+    mergeById,
     runGlobalSearch,
     setGlobalSearchMode,
     bindGlobalSearchControls,
