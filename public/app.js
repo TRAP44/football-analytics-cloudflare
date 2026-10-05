@@ -794,7 +794,7 @@ function setBootStatus(title, text = '', progress = null) {
   if ($('bootTitle')) $('bootTitle').textContent = title;
   if ($('bootText')) $('bootText').textContent = text;
   if ($('bootProgressFill') && Number.isFinite(Number(progress))) {
-    $('bootProgressFill').style.width = `${Math.max(0, Math.min(100, Number(progress)))}%`;
+    setPercentClass($('bootProgressFill'),'w',progress);
   }
 }
 
@@ -3847,7 +3847,7 @@ function lineupPitchHtml(lineup, title) {
       const safeCol = col || ((i % count) + 1);
       const x = count === 1 ? 50 : 12 + ((safeCol - 1) / Math.max(1, count - 1)) * 76;
       const y = maxRow <= 1 ? 50 : 91 - ((safeRow - 1) / (maxRow - 1)) * 82;
-      return `<div class="pitch-player" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%">
+      return `<div class="pitch-player ${percentClass('left',x)} ${percentClass('top',y)}">
         <span>${lineupPlayerNumber(p) || '•'}</span><small>${shortPlayerName(lineupPlayerName(p))}</small>
       </div>`;
     }).join('')}
@@ -3973,7 +3973,7 @@ function centerCompareRow(label, homeValue, awayValue, suffix = '') {
   const fmt = v => v === null || v === undefined || v === '' ? '—' : `${escapeHtml(String(v))}${suffix && !String(v).includes(suffix) ? suffix : ''}`;
   return `<div class="center-stat-visual">
     <div class="center-stat-values"><strong>${fmt(homeValue)}</strong><span>${escapeHtml(label)}</span><strong>${fmt(awayValue)}</strong></div>
-    <div class="center-stat-bar"><i style="width:${hp}%"></i><b style="width:${ap}%"></b></div>
+    <div class="center-stat-bar"><i class="${percentClass('w',hp)}"></i><b class="${percentClass('w',ap)}"></b></div>
   </div>`;
 }
 
@@ -5379,6 +5379,19 @@ function clampPercent(value) {
   return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 0;
 }
 
+function percentClass(axis, value) {
+  return `pct-${axis}-${Math.round(clampPercent(value))}`;
+}
+
+function setPercentClass(element, axis, value) {
+  if (!element) return;
+  const prefix=`pct-${axis}-`;
+  for (const cls of [...element.classList]) {
+    if (cls.startsWith(prefix)) element.classList.remove(cls);
+  }
+  element.classList.add(percentClass(axis,value));
+}
+
 function qualityInfo(completeness = {}) {
   const score = Number(completeness.score || 0);
   const max = Math.max(1, Number(completeness.max || 10));
@@ -5397,9 +5410,9 @@ function probabilityStrip(p = {}) {
   const d = draw / total * 100;
   const a = away / total * 100;
   return `<div class="probability-strip" aria-label="Вероятности исхода">
-    <span class="prob-segment home" style="width:${h.toFixed(2)}%"></span>
-    <span class="prob-segment draw" style="width:${d.toFixed(2)}%"></span>
-    <span class="prob-segment away" style="width:${a.toFixed(2)}%"></span>
+    <span class="prob-segment home ${percentClass('w',h)}"></span>
+    <span class="prob-segment draw ${percentClass('w',d)}"></span>
+    <span class="prob-segment away ${percentClass('w',a)}"></span>
   </div>`;
 }
 
@@ -6111,8 +6124,8 @@ function renderAnalysis(d) {
           <div><span>${escapeHtml(m.away?.name || 'Гости')}</span><strong>${goal.awayExpected}</strong></div>
         </div>
         <div class="goal-market-grid">
-          <div><span>ТБ 2.5</span><strong>${pct(goal.over25)}</strong><div class="mini-progress"><i style="width:${clampPercent(goal.over25)}%"></i></div></div>
-          <div><span>Обе забьют</span><strong>${pct(goal.btts)}</strong><div class="mini-progress"><i style="width:${clampPercent(goal.btts)}%"></i></div></div>
+          <div><span>ТБ 2.5</span><strong>${pct(goal.over25)}</strong><div class="mini-progress"><i class="${percentClass('w',goal.over25)}"></i></div></div>
+          <div><span>Обе забьют</span><strong>${pct(goal.btts)}</strong><div class="mini-progress"><i class="${percentClass('w',goal.btts)}"></i></div></div>
         </div>
         <p class="muted">Модель Пуассона по недавней результативности. Качество выборки: <b>${escapeHtml(goal.qualityLabel || 'Оценивается')}</b>${Number.isFinite(Number(goal.qualityScore)) ? ` · ${Math.round(Number(goal.qualityScore))}/100` : ''}. Это не официальный показатель ожидаемых голов.</p>` : '<p class="muted">Недостаточно недавних матчей для голевой модели.</p>'}
       </section>
