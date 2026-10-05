@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 export const DEFAULT_PRODUCTION_URL = 'https://football-analytics-cloudflare.wok-side.workers.dev';
 
 const ENDPOINTS = Object.freeze([
+  { name: 'health', path: '/health' },
   { name: 'live', path: '/health/live' },
   { name: 'ready', path: '/health/ready' },
   { name: 'public_status', path: '/api/public-status' },
@@ -26,6 +27,9 @@ function escapeMarkdownCell(value) {
 
 function safeObserved(kind, body) {
   if (!body || typeof body !== 'object') return null;
+  if (kind === 'health') {
+    return {ok:body.ok===true};
+  }
   if (kind === 'live') {
     return {
       ok: body.ok === true,
@@ -57,6 +61,17 @@ export function evaluateEndpoint(kind, response = {}, options = {}) {
   const statusCode = Number(response.statusCode || 0);
   const body = response.body && typeof response.body === 'object' ? response.body : null;
   const transportOk = statusCode >= 200 && statusCode < 300 && body;
+
+  if (kind === 'health') {
+    const keys=body ? Object.keys(body) : [];
+    const passed=Boolean(transportOk && body.ok===true && keys.length===1 && keys[0]==='ok');
+    return {
+      passed,
+      warning:false,
+      reason:passed ? 'ok' : `Expected minimal HTTP 2xx {ok:true}; got HTTP ${statusCode || 'network_error'} or leaked fields.`,
+      observed:safeObserved(kind,body),
+    };
+  }
 
   if (kind === 'live') {
     const passed = Boolean(transportOk && body.ok === true && body.status === 'alive');
