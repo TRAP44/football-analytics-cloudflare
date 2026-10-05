@@ -225,6 +225,6 @@ test('v6.28 migration keeps the public contract stable and durable state private
   assert.doesNotMatch(sql, /create or replace function public\.backend_schema_contract_v2/i);
   assert.doesNotMatch(sql, /security definer/i);
   assert.equal(release.productionSchema, '6.29');
-  assert.equal(release.latestMigration, 'supabase/migrations/supabase_migration_v6_29.sql');
+  assert.equal(release.latestMigration, 'supabase/migrations/supabase_migration_v6_29_1.sql');
   assert.equal(release.databaseContract.fingerprint, '6a7f0fe444f49a2a52c4603e952ee9ea');
 });
