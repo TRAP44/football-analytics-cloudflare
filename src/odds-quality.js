@@ -64,22 +64,42 @@ function round1(value) {
   return Math.round(Number(value) * 10) / 10;
 }
 
+function integerCandidate(value) {
+  if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+  if (typeof value !== 'string') return null;
+  const raw=value.trim();
+  if (!/^\d+$/.test(raw)) return null;
+  const number=Number(raw);
+  return Number.isSafeInteger(number) ? number : null;
+}
+
 function impliedTotalFromOdds(odds = {}) {
-  const values = SIDES.map(side => Number(odds?.[side]));
-  if (values.some(value => !Number.isFinite(value) || value <= 0)) return null;
-  return values.reduce((sum, value) => sum + 1 / value, 0);
+  const inspections=SIDES.map(side => inspectDecimalOdd(odds?.[side]));
+  if (inspections.some(item => !item.valid)) return null;
+  return inspections.reduce((sum,item) => sum + 1 / item.value, 0);
 }
 
 export function probabilitiesFromDecimalOdds(odds = {}) {
-  const total = impliedTotalFromOdds(odds);
-  if (!(total > 0)) return null;
-  return Object.fromEntries(SIDES.map(side => [side, round1((1 / Number(odds[side])) / total * 100)]));
+  const inspections=Object.fromEntries(SIDES.map(side => [side,inspectDecimalOdd(odds?.[side])]));
+  if (!SIDES.every(side => inspections[side].valid)) return null;
+  const canonical=Object.fromEntries(SIDES.map(side => [side,inspections[side].value]));
+  const total=impliedTotalFromOdds(canonical);
+  if (!(total > 0) || total < MIN_IMPLIED_TOTAL || total > MAX_IMPLIED_TOTAL) return null;
+  return Object.fromEntries(SIDES.map(side => [side, round1((1 / canonical[side]) / total * 100)]));
 }
 
-function sourceCount(market = {}) {
-  const value = market?.sources ?? market?.bookmakers;
-  const count = Number(value);
-  return Number.isInteger(count) && count >= 1 && count <= MAX_SOURCE_COUNT ? count : null;
+function inspectSourceCount(market = {}) {
+  const hasSources=market?.sources !== undefined && market?.sources !== null && market?.sources !== '';
+  const hasBookmakers=market?.bookmakers !== undefined && market?.bookmakers !== null && market?.bookmakers !== '';
+  const sourceValue=hasSources ? integerCandidate(market.sources) : null;
+  const bookmakerValue=hasBookmakers ? integerCandidate(market.bookmakers) : null;
+  const sourceValid=!hasSources || (sourceValue !== null && sourceValue >= 1 && sourceValue <= MAX_SOURCE_COUNT);
+  const bookmakerValid=!hasBookmakers || (bookmakerValue !== null && bookmakerValue >= 1 && bookmakerValue <= MAX_SOURCE_COUNT);
+  const mismatch=hasSources && hasBookmakers && sourceValid && bookmakerValid && sourceValue !== bookmakerValue;
+  const count=sourceValid && bookmakerValid && !mismatch
+    ? hasSources ? sourceValue : hasBookmakers ? bookmakerValue : null
+    : null;
+  return {count,mismatch,sourceValid,bookmakerValid,hasSources,hasBookmakers};
 }
 
 export function assessOddsMarketQuality(market = null, { oddsMeta = {}, mode = 'upcoming' } = {}) {
@@ -103,8 +123,15 @@ export function assessOddsMarketQuality(market = null, { oddsMeta = {}, mode = '
     issues.push({ code:'implied_total_out_of_range', value:round1(impliedTotal * 100) });
   }
 
-  const sources = observed ? sourceCount(market) : null;
-  if (observed && sources === null) issues.push({ code:'source_count_invalid', value:market?.sources ?? market?.bookmakers ?? null });
+  const sourceInspection = observed ? inspectSourceCount(market) : {count:null,mismatch:false};
+  const sources = sourceInspection.count;
+  if (observed && sources === null) {
+    issues.push({
+      code:sourceInspection.mismatch ? 'source_count_mismatch' : 'source_count_invalid',
+      sources:market?.sources ?? null,
+      bookmakers:market?.bookmakers ?? null,
+    });
+  }
 
   const marketProvider = compactState(market?.provider);
   const metaProvider = compactState(oddsMeta?.provider);
@@ -195,7 +222,14 @@ export function assessOddsMarketQuality(market = null, { oddsMeta = {}, mode = '
 }
 
 export function oddsMarketForTrustedAnalytics(market = null, quality = {}) {
-  if (!quality?.confidenceBearing || !quality?.marketValid || !quality?.odds || !quality?.probabilities) return null;
+  if (
+    quality?.confidenceBearing !== true
+    || quality?.marketValid !== true
+    || !quality?.odds
+    || typeof quality.odds !== 'object'
+    || !quality?.probabilities
+    || typeof quality.probabilities !== 'object'
+  ) return null;
   const result = {
     ...(market || {}),
     odds:{ ...quality.odds },
@@ -208,18 +242,21 @@ export function oddsMarketForTrustedAnalytics(market = null, quality = {}) {
 
 export function sanitizeOddsSnapshotsForMovement(snapshots = []) {
   const safe = [];
+  const seenTimes=new Set();
   for (const row of Array.isArray(snapshots) ? snapshots : []) {
-    const at = String(row?.at || '');
-    if (!Number.isFinite(Date.parse(at))) continue;
+    if (typeof row?.at !== 'string') continue;
+    const rawAt=row.at.trim();
+    const timestampMs=Date.parse(rawAt);
+    if (!rawAt || !Number.isFinite(timestampMs) || seenTimes.has(timestampMs)) continue;
     const inspections = Object.fromEntries(SIDES.map(side => [side, inspectDecimalOdd(row?.[side])]));
     if (!SIDES.every(side => inspections[side].valid)) continue;
     const odds = Object.fromEntries(SIDES.map(side => [side, inspections[side].value]));
-    const impliedTotal = impliedTotalFromOdds(odds);
-    if (impliedTotal === null || impliedTotal < MIN_IMPLIED_TOTAL || impliedTotal > MAX_IMPLIED_TOTAL) continue;
     const probabilities = probabilitiesFromDecimalOdds(odds);
     if (!probabilities) continue;
+    seenTimes.add(timestampMs);
     safe.push({
       ...row,
+      at:new Date(timestampMs).toISOString(),
       home:odds.home,
       draw:odds.draw,
       away:odds.away,
