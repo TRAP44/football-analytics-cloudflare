@@ -178,6 +178,7 @@ const memory = {
     integrityDuplicates: 0,
     singleflightJoins: 0,
     providerFixtureDateReuses: 0,
+    providerTeamFixtureReuses: 0,
     burstBlocks: 0,
     telegramBurstBlocks: 0,
     telegramDuplicateUpdates: 0,
@@ -12742,6 +12743,7 @@ function providerBudgetProfile() {
       stale: Number(memory.providerFeatureFetch?.stale || 0),
       skipped: Number(memory.providerFeatureFetch?.skipped || 0),
       fixtureDateReuses: Number(memory.telemetry?.providerFixtureDateReuses || 0),
+      teamFixtureReuses: Number(memory.telemetry?.providerTeamFixtureReuses || 0),
       byFeature: memory.providerFeatureFetch?.byFeature || {},
       lastUpdatedAt: memory.providerFeatureFetch?.lastUpdatedAt || null,
     },
@@ -20904,17 +20906,10 @@ async function loadSearchTeamMatches(team, cfg, options = {}) {
     return {matches:[],matchSource:{kind:'team',id:teamId,name:String(team?.name || 'Команда')},matchDiscovery:{mode:'empty',upcoming:0,recent:0,windowPastDays:TEAM_DISCOVERY_PAST_DAYS,windowFutureDays:TEAM_DISCOVERY_FUTURE_DAYS,cached:false,stale:false},warning:'Команда найдена, но календарь временно не обновляется: бережём остаток лимита источника.'};
   }
   try {
-    const [upcomingRows,recentRows]=await Promise.all([
-      apiFootball('/fixtures',{team:teamId,next:12},cfg),
-      apiFootball('/fixtures',{team:teamId,last:8},cfg),
-    ]);
-    const rows=[...(upcomingRows || []),...(recentRows || [])];
-    const seenFixtures=new Set();
-    const fixtures=rows.filter(f=>{
-      const fixtureId=Number(f?.fixture?.id || 0);
-      return fixtureId && !seenFixtures.has(fixtureId) && seenFixtures.add(fixtureId)
-        && !['CANC','PST','ABD','AWD','WO'].includes(String(f.fixture?.status?.short || ''));
-    }).map(f=>normalizeTeamHubMatch(f,teamId)).filter(x=>x.fixtureId);
+    const rows=await loadProviderTeamDiscoveryFixtures(teamId,cfg);
+    const fixtures=rows.filter(f=>
+      !['CANC','PST','ABD','AWD','WO'].includes(String(f.fixture?.status?.short || ''))
+    ).map(f=>normalizeTeamHubMatch(f,teamId)).filter(x=>x.fixtureId);
     const payload={fixtures,refreshedAt:new Date().toISOString()};
     await setCache(cacheKey,teamId,payload,cfg,180);
     return teamSearchFixturePayload(team,fixtures,options.secondQuery,{refreshedAt:payload.refreshedAt});
@@ -21013,6 +21008,38 @@ async function loadProviderFixturesForDate(date, cfg, { allowNetwork = true, for
   const fixtures=await apiFootball('/fixtures',{date:normalized},cfg);
   const fetchedAt=new Date().toISOString();
   await setCache(cacheKey,0,{fixtures,fetchedAt},cfg,providerFeedDateTtl(normalized,cfg)).catch(()=>null);
+  return fixtures;
+}
+
+function providerTeamDiscoveryCacheKey(teamId) {
+  return `provider-team-discovery:${Number(teamId || 0)}:v1`;
+}
+
+async function loadProviderTeamDiscoveryFixtures(teamId, cfg, { allowNetwork = true, forceRefresh = false } = {}) {
+  const id=Number(teamId || 0);
+  if (!id) return [];
+  const cacheKey=providerTeamDiscoveryCacheKey(id);
+  if (!forceRefresh) {
+    const cached=await getCache(cacheKey,cfg).catch(()=>null);
+    if (Array.isArray(cached?.fixtures)) {
+      bumpTelemetry('providerTeamFixtureReuses');
+      return cached.fixtures;
+    }
+  }
+  if (!allowNetwork) return [];
+
+  const [upcomingRows,recentRows]=await Promise.all([
+    apiFootball('/fixtures',{team:id,next:12},cfg),
+    apiFootball('/fixtures',{team:id,last:8},cfg),
+  ]);
+  const seenFixtures=new Set();
+  const fixtures=[...(upcomingRows || []),...(recentRows || [])].filter(fixture=>{
+    const fixtureId=Number(fixture?.fixture?.id || 0);
+    return fixtureId && !seenFixtures.has(fixtureId) && seenFixtures.add(fixtureId);
+  });
+  const hasLive=fixtures.some(fixture=>isLiveStatus(fixture?.fixture?.status?.short));
+  const ttlMinutes=hasLive ? Math.max(1,Math.ceil(liveRefreshSeconds()/60)) : 120;
+  await setCache(cacheKey,id,{fixtures,fetchedAt:new Date().toISOString()},cfg,ttlMinutes).catch(()=>null);
   return fixtures;
 }
 
@@ -21707,15 +21734,7 @@ async function apiTeam(request, cfg) {
   if (cached) return json({ ...cached, standing: await cachedTeamStanding(teamId, cached.primaryCompetition, cfg), sourceMeta: markCachedSourceMeta(cached.sourceMeta || sourceMeta({ provider:'api-football', label:'API-Football' })), cached:true, stale:false, provider:publicDataCapabilities() });
   let fixtures;
   try {
-    const [upcomingRows,recentRows]=await Promise.all([
-      apiFootball('/fixtures', { team:teamId, next:12 }, cfg),
-      apiFootball('/fixtures', { team:teamId, last:8 }, cfg),
-    ]);
-    const seenFixtures=new Set();
-    fixtures=[...(upcomingRows || []),...(recentRows || [])].filter(fixture=>{
-      const fixtureId=Number(fixture?.fixture?.id || 0);
-      return fixtureId && !seenFixtures.has(fixtureId) && seenFixtures.add(fixtureId);
-    });
+    fixtures=await loadProviderTeamDiscoveryFixtures(teamId,cfg);
   }
   catch (error) {
     const stale = await getStaleCache(cacheKey, cfg);
