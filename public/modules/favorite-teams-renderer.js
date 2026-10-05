@@ -1,3 +1,5 @@
+// @ts-check
+
 export function createFavoriteTeamsRenderer({
   state,
   elementById,
