@@ -2089,7 +2089,7 @@ async function findRefundableBillingCharge(userId, paymentChargeId, cfg) {
     payment = await supaSelectOne(cfg, 'billing_payments', {
       telegram_payment_charge_id: `eq.${chargeId}`,
       telegram_id: `eq.${uid}`,
-    }).catch(() => null);
+    });
   } else {
     const row = memory.billingPayments.get(chargeId) || null;
     if (row && Number(row.telegram_id) === uid) payment = row;
@@ -2100,7 +2100,7 @@ async function findRefundableBillingCharge(userId, paymentChargeId, cfg) {
     plan: String(payment.plan || ''),
   };
 
-  const entitlements = await listUserEntitlements(uid, cfg).catch(() => []);
+  const entitlements = await listUserEntitlements(uid, cfg);
   const entitlement = entitlements.find(row =>
     String(row.payment_charge_id || row.paymentChargeId || '') === chargeId
     && Number(row.telegram_id || row.telegramId || 0) === uid
@@ -2153,6 +2153,21 @@ async function applyRefundedPayment(userId, paymentChargeId, cfg) {
   } catch (cause) {
     const error = cause instanceof Error ? cause : new Error(String(cause || 'Refund reconciliation failed.'));
     error.code = 'BILLING_REFUND_RECONCILIATION';
+    await recordOpsEvent(cfg, {
+      severity:'error',
+      source:'billing',
+      eventType:'refund_reconciliation_failed',
+      code:'BILLING_REFUND_RECONCILIATION',
+      message:error.message || 'Refund reconciliation failed.',
+      endpoint:'telegram_stars_refund',
+      status:503,
+      transitionKey:`billing-refund-reconciliation:${chargeId.slice(-16)}`,
+      meta:{
+        chargeSuffix:chargeId.slice(-8),
+      },
+    }).catch(recordError => {
+      console.error('billing refund reconciliation telemetry', redactOpsString(recordError?.message || recordError, 180));
+    });
     // Every mutation above is an idempotent move toward the same refunded
     // state, so Telegram may safely redeliver a refunded_payment update.
     error.telegramWebhookRetrySafe = true;
@@ -2165,7 +2180,7 @@ async function applySuccessfulPayment(userId, payment, cfg, fallbackDate = Math.
   const chargeId = String(payment.telegram_payment_charge_id || '');
   if (!chargeId) return false;
 
-  const existingCharge = await findRefundableBillingCharge(userId, chargeId, cfg).catch(() => null);
+  const existingCharge = await findRefundableBillingCharge(userId, chargeId, cfg);
   if (String(existingCharge?.status || '').toLowerCase() === 'refunded') {
     await recordOpsEvent(cfg, {
       severity:'warning',
