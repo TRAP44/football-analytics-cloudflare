@@ -16,6 +16,12 @@ export function createAdminModelQualityModule({
 
   const $ = elementById;
 
+  function percentClass(axis,value) {
+    const n=Number(value);
+    const safe=Number.isFinite(n) ? Math.max(0,Math.min(100,n)) : 0;
+    return `pct-${axis}-${Math.round(safe)}`;
+  }
+
   function qualityPct(value) {
     return Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)}%` : '—';
   }
@@ -83,7 +89,7 @@ export function createAdminModelQualityModule({
       <div class="quality-calibration-list">${(q.calibration || []).map(x => `
         <div class="quality-cal-row">
           <span>${escapeHtml(x.label)}</span>
-          <div class="quality-cal-bars"><i style="--w:${Math.max(0, Math.min(100, Number(x.avgPredicted || 0)))}%"></i><b style="--w:${Math.max(0, Math.min(100, Number(x.hitRate || 0)))}%"></b></div>
+          <div class="quality-cal-bars"><i class="${percentClass('w',x.avgPredicted)}"></i><b class="${percentClass('w',x.hitRate)}"></b></div>
           <strong>${x.sample ? `${qualityPct(x.hitRate)} · выборка ${x.sample}` : '—'}</strong>
         </div>`).join('')}</div>
       ${q.methodology?.warning ? `<p class="quality-warning">⚠️ ${escapeHtml(humanizeTechnicalText(q.methodology.warning))}</p>` : ''}`;
@@ -133,7 +139,7 @@ export function createAdminModelQualityModule({
         ${(ce.signalStats || []).map(x => {
           const base = Number(x.baseWeight || 0) * 100;
           const current = Number(x.currentWeight ?? x.baseWeight ?? 0) * 100;
-          return `<div class="calibration-weight-row"><span>${escapeHtml(signalLabel(x.name))}</span><div><i style="--w:${Math.max(0, Math.min(100, current))}%"></i></div><strong>${base.toFixed(0)} → ${current.toFixed(1)}%</strong><small>выборка ${Number(x.sample || 0)}${Number.isFinite(Number(x.avgBrier)) ? ` · ошибка Брайера ${qualityNum(x.avgBrier)}` : ''}</small></div>`;
+          return `<div class="calibration-weight-row"><span>${escapeHtml(signalLabel(x.name))}</span><div><i class="${percentClass('w',current)}"></i></div><strong>${base.toFixed(0)} → ${current.toFixed(1)}%</strong><small>выборка ${Number(x.sample || 0)}${Number.isFinite(Number(x.avgBrier)) ? ` · ошибка Брайера ${qualityNum(x.avgBrier)}` : ''}</small></div>`;
         }).join('')}
       </div>
       ${Number(impact.sample || 0) ? `<div class="calibration-impact"><span>Проверка v3.7: выборка ${Number(impact.sample || 0)}</span><strong>Ошибка Брайера ${qualityNum(impact.rawBrier)} → ${qualityNum(impact.finalBrier)}</strong><small>${Number(impact.brierDelta || 0) > 0 ? 'улучшение' : Number(impact.brierDelta || 0) < 0 ? 'ухудшение — автоматика будет видна в исторической проверке' : 'без изменения'}</small></div>` : '<p class="quality-engine-note">Эффект v3.7 появится после завершения первых матчей, рассчитанных этой версией.</p>'}
@@ -181,7 +187,7 @@ export function createAdminModelQualityModule({
             const acc = Math.max(2, Math.min(100, Number(x.accuracy || 0)));
             const sampleH = Math.max(8, Math.round(Number(x.sample || 0) / trendMaxSample * 100));
             return `<div class="model-trend-col" title="${escapeHtml(x.label)} · выборка ${Number(x.sample || 0)} · ${qualityPct(x.accuracy)}">
-              <div class="model-trend-bars"><i style="height:${acc}%"></i><b style="height:${sampleH}%"></b></div>
+              <div class="model-trend-bars"><i class="${percentClass('h',acc)}"></i><b class="${percentClass('h',sampleH)}"></b></div>
               <strong>${qualityPct(x.accuracy)}</strong>
               <span>${escapeHtml(x.label)}</span>
               <small>выборка ${Number(x.sample || 0)} · Ошибка Брайера ${qualityNum(x.avgBrier)}</small>
@@ -194,7 +200,7 @@ export function createAdminModelQualityModule({
           <div class="model-band-list">${(db.confidence || []).map(x => `
             <div class="model-band-row">
               <span>${escapeHtml(x.label)}</span>
-              <div><i style="--w:${Math.max(0, Math.min(100, Number(x.accuracy || 0)))}%"></i></div>
+              <div><i class="${percentClass('w',x.accuracy)}"></i></div>
               <strong>${x.sample ? qualityPct(x.accuracy) : '—'}</strong>
               <small>выборка ${Number(x.sample || 0)} · Ошибка Брайера ${qualityNum(x.avgBrier)}</small>
             </div>`).join('')}</div>
