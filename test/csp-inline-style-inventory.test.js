@@ -16,14 +16,8 @@ test('runtime inline-style blocker inventory remains bounded and explicit', () =
   const styleAttributes = app.match(/style="/g) || [];
   const cssomWrites = app.match(/\.style\.[A-Za-z0-9_]+/g) || [];
 
-  assert.equal(styleAttributes.length, 1);
+  assert.equal(styleAttributes.length, 0);
   assert.equal(cssomWrites.length, 0);
-
-  for (const expected of [
-    'style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%"',
-  ]) {
-    assert.ok(app.includes(expected), `missing documented CSP blocker: ${expected}`);
-  }
 
   assert.doesNotMatch(app, /\.style\.[A-Za-z0-9_]+/);
   assert.match(app, /function applyPercentWidthClass\(element, value\)/);
@@ -40,6 +34,19 @@ test('percentage-based visuals use CSP-safe utility classes', () => {
   assert.match(css, /\.pct-100\{width:100%\}/);
 });
 
-test('CSP remains explicitly transitional until blocker inventory reaches zero', () => {
-  assert.match(headers, /style-src 'self' 'unsafe-inline'/);
+test('production CSP rejects inline styles', () => {
+  assert.match(headers, /style-src 'self'/);
+  assert.doesNotMatch(headers, /style-src[^\n]*'unsafe-inline'/);
+  assert.doesNotMatch(app, /\sstyle="/i);
+  assert.doesNotMatch(app, /\.style\.[A-Za-z0-9_]+/);
+});
+
+test('pitch positioning uses CSP-safe static utility classes', () => {
+  assert.match(app, /xpos-\$\{Math\.round\(clampPercent\(x\)\)\}/);
+  assert.match(app, /ypos-\$\{Math\.round\(clampPercent\(y\)\)\}/);
+  const css = fs.readFileSync('public/styles.css', 'utf8');
+  assert.match(css, /\.xpos-0\{left:0%\}/);
+  assert.match(css, /\.xpos-100\{left:100%\}/);
+  assert.match(css, /\.ypos-0\{top:0%\}/);
+  assert.match(css, /\.ypos-100\{top:100%\}/);
 });
