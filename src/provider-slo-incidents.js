@@ -73,6 +73,7 @@ function inspectMetricRow(row = {}) {
     'rateLimits','networkErrors','httpErrors','invalidResponses','latencySamples','latencySumMs','maxLatencyMs',
   ];
   const values={};
+  const present=new Set();
   let valid=true;
   for (const key of fields) {
     const raw=row?.[key];
@@ -80,6 +81,7 @@ function inspectMetricRow(row = {}) {
       values[key]=0;
       continue;
     }
+    present.add(key);
     const number=nonNegativeIntegerCandidate(raw);
     if (number === null) {
       valid=false;
@@ -120,6 +122,28 @@ function inspectMetricRow(row = {}) {
     return number;
   })();
 
+  const explicitSuccess=explicitPct('successRatePct');
+  const explicitError=explicitPct('errorRatePct');
+  const explicitTimeout=explicitPct('timeoutRatePct');
+  const explicitRateLimit=explicitPct('rateLimitRatePct');
+  const explicitRetry=explicitPct('retryRatePct',Number.MAX_SAFE_INTEGER);
+
+  const closeEnough=(reported,derived)=>
+    reported === null
+    || derived === null
+    || Math.abs(reported-derived) <= 0.2;
+
+  if (
+    requests > 0
+    && (
+      (present.has('successes') && !closeEnough(explicitSuccess,pct(successes,requests)))
+      || (present.has('failures') && !closeEnough(explicitError,pct(failures,requests)))
+      || (present.has('timeouts') && !closeEnough(explicitTimeout,pct(timeouts,requests)))
+      || (present.has('rateLimits') && !closeEnough(explicitRateLimit,pct(rateLimits,requests)))
+      || (present.has('retries') && !closeEnough(explicitRetry,pct(retries,requests)))
+    )
+  ) valid=false;
+
   const summary={
     provider:cleanLabel(row.provider,'provider',80),
     operation:cleanLabel(row.operation,'unknown',180),
@@ -133,11 +157,11 @@ function inspectMetricRow(row = {}) {
     networkErrors,
     httpErrors,
     invalidResponses,
-    successRatePct:explicitPct('successRatePct') ?? pct(successes,requests),
-    errorRatePct:explicitPct('errorRatePct') ?? pct(failures,requests),
-    timeoutRatePct:explicitPct('timeoutRatePct') ?? pct(timeouts,requests),
-    rateLimitRatePct:explicitPct('rateLimitRatePct') ?? pct(rateLimits,requests),
-    retryRatePct:explicitPct('retryRatePct',Number.MAX_SAFE_INTEGER) ?? pct(retries,requests),
+    successRatePct:explicitSuccess ?? pct(successes,requests),
+    errorRatePct:explicitError ?? pct(failures,requests),
+    timeoutRatePct:explicitTimeout ?? pct(timeouts,requests),
+    rateLimitRatePct:explicitRateLimit ?? pct(rateLimits,requests),
+    retryRatePct:explicitRetry ?? pct(retries,requests),
     avgAttemptLatencyMs:explicitLatency ?? (latencySamples > 0 ? Math.round(latencySumMs / latencySamples) : null),
     maxLatencyMs:nullableNumber(row.maxLatencyMs,{min:0,max:MAX_LATENCY_MS}) ?? maxLatencyMs,
   };
@@ -630,10 +654,16 @@ export function buildProviderSloIncidentTimeline(rows = [], { nowMs = Date.now()
 }
 
 export function providerSloIncidentOpsEvent(transition = {}) {
-  const state = String(transition?.state || '');
-  const previousState = String(transition?.previousState || '');
+  if (!transition || typeof transition !== 'object' || Array.isArray(transition)) return null;
+  const state=typeof transition.state === 'string' ? transition.state.trim().toLowerCase() : '';
+  const previousState=typeof transition.previousState === 'string'
+    ? transition.previousState.trim().toLowerCase()
+    : '';
+  const incidentId=typeof transition.incidentId === 'string'
+    ? transition.incidentId.trim()
+    : '';
   const recovered = state === 'healthy' && ['watch','incident'].includes(previousState);
-  if (!['watch','incident'].includes(state) && !recovered) return null;
+  if ((!['watch','incident'].includes(state) && !recovered) || !incidentId || incidentId.length > 200) return null;
 
   const code = recovered
     ? 'PROVIDER_SLO_RECOVERED'
@@ -666,7 +696,7 @@ export function providerSloIncidentOpsEvent(transition = {}) {
     endpoint:'cron:production-monitor',
     meta:{
       lifecycleEvent,
-      incidentId:transition.incidentId || null,
+      incidentId,
       state:recovered ? 'recovered' : state,
       previousState:previousState || null,
       transitionKind:String(transition.kind || ''),
@@ -683,7 +713,14 @@ export function providerSloIncidentOpsEvent(transition = {}) {
 }
 
 export function providerSloIncidentUpdateOpsEvent(episode = {}, reason = 'severity_changed') {
-  if (!episode?.active || episode?.highestState !== 'incident' || !episode?.incidentId) return null;
+  if (!episode || typeof episode !== 'object' || Array.isArray(episode)) return null;
+  const incidentId=typeof episode.incidentId === 'string' ? episode.incidentId.trim() : '';
+  if (
+    episode.active !== true
+    || episode.highestState !== 'incident'
+    || !incidentId
+    || incidentId.length > 200
+  ) return null;
   return {
     severity:episode.severity === 'critical' ? 'critical' : 'error',
     source:'provider',
@@ -693,7 +730,7 @@ export function providerSloIncidentUpdateOpsEvent(episode = {}, reason = 'severi
     endpoint:'cron:production-monitor',
     meta:{
       lifecycleEvent:'provider_incident_updated',
-      incidentId:episode.incidentId,
+      incidentId,
       state:episode.state,
       severity:episode.severity,
       updateReason:String(reason || 'material_update').slice(0,80),
