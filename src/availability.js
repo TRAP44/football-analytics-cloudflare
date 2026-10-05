@@ -8,6 +8,20 @@ function normalizedName(value = '') {
   return normalizePlayerName(value);
 }
 
+function positiveSafeId(value) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number > 0 ? number : 0;
+}
+
+function nonNegativeFinite(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : 0;
+}
+
+function nonNegativeInteger(value) {
+  return Math.floor(nonNegativeFinite(value));
+}
+
 function categoryFromText(type = '', reason = '') {
   const text = `${compactText(type)} ${compactText(reason)}`.toLowerCase();
   if (/suspend|suspension|ban\b|banned|disciplin|red card|cards accumulation|дисквалиф|отстран/u.test(text)) {
@@ -66,7 +80,7 @@ function normalizeAbsenceRow(item = {}) {
   const category = categoryFromText(type, reason);
   const status = statusFromText(type, reason, category.key);
   return {
-    id: Number(player?.id || player?.playerId || player?.player_id || 0) || 0,
+    id: positiveSafeId(player?.id ?? player?.playerId ?? player?.player_id),
     name: compactText(player?.name || player?.playerName || player?.player_name || 'Игрок'),
     type,
     reason,
@@ -107,6 +121,9 @@ function summarize(rows = []) {
 
 export function normalizeFixtureAbsences(rows = [], { homeId = 0, awayId = 0, lineups = null } = {}) {
   const list = Array.isArray(rows) ? rows : [];
+  const homeTeamId = positiveSafeId(homeId);
+  const awayTeamId = positiveSafeId(awayId);
+  const validTeamContext = Boolean(homeTeamId && awayTeamId && homeTeamId !== awayTeamId);
   const homeLineup = lineupEntries(lineups?.home || null);
   const awayLineup = lineupEntries(lineups?.away || null);
   const resolver = createPlayerIdentityResolver([
@@ -117,8 +134,10 @@ export function normalizeFixtureAbsences(rows = [], { homeId = 0, awayId = 0, li
   const bySide = { home: new Map(), away: new Map() };
 
   for (const item of list) {
-    const teamId = Number(item?.team?.id || 0);
-    const side = teamId === Number(homeId) ? 'home' : teamId === Number(awayId) ? 'away' : '';
+    const teamId = positiveSafeId(item?.team?.id);
+    const side = validTeamContext
+      ? teamId === homeTeamId ? 'home' : teamId === awayTeamId ? 'away' : ''
+      : '';
     if (!side) continue;
     const normalized = normalizeAbsenceRow(item);
     const identity = resolver.resolve(normalized);
@@ -191,6 +210,9 @@ export function assessFixtureAvailabilityQuality(rows = [], {
 } = {}) {
   const list = Array.isArray(rows) ? rows : [];
   const sourceTrusted = availabilitySourceTrusted(injuriesMeta);
+  const homeTeamId = positiveSafeId(homeId);
+  const awayTeamId = positiveSafeId(awayId);
+  const validTeamContext = Boolean(homeTeamId && awayTeamId && homeTeamId !== awayTeamId);
   const resolver = createPlayerIdentityResolver(list.map(item => item?.player || {}));
   const accepted = new Set();
   const rejected = new Set();
@@ -200,13 +222,19 @@ export function assessFixtureAvailabilityQuality(rows = [], {
 
   for (let index = 0; index < list.length; index += 1) {
     const item = list[index] || {};
-    const teamId = Number(item?.team?.id || 0);
-    const side = teamId === Number(homeId) ? 'home' : teamId === Number(awayId) ? 'away' : '';
+    const teamId = positiveSafeId(item?.team?.id);
+    const side = validTeamContext
+      ? teamId === homeTeamId ? 'home' : teamId === awayTeamId ? 'away' : ''
+      : '';
     const identity = resolver.resolve(item?.player || {});
 
     if (!side) {
       rejected.add(index);
-      issues.push({ code:'team_mismatch', index, teamId:Number.isFinite(teamId) ? teamId : 0 });
+      issues.push({
+        code:validTeamContext ? 'team_mismatch' : 'invalid_fixture_teams',
+        index,
+        teamId,
+      });
       continue;
     }
     if (!identity.valid || !identity.key) {
@@ -312,8 +340,8 @@ export function annotateAvailabilityReliability(meta = {}, quality = {}) {
     ...meta,
     semanticState:String(quality?.state || 'unavailable'),
     availabilityQuality:quality,
-    rawCount:Number(quality?.rawCount || 0),
-    count:Number(quality?.acceptedCount || 0),
+    rawCount:nonNegativeInteger(quality?.rawCount),
+    count:nonNegativeInteger(quality?.acceptedCount),
     partial:Boolean(quality?.state === 'sanitized'),
   };
 
@@ -372,9 +400,9 @@ function seasonPlayerIndex(playerStats = null) {
   const byNameCandidates = new Map();
   for (const player of players) {
     const source = compactText(player?.source || playerStats?.sourceMeta?.provider || '').toLowerCase();
-    const ids = [Number(player?.id || 0)];
-    if (source === 'api-football') ids.push(Number(player?.providerId || 0));
-    for (const id of [...new Set(ids.filter(value => value > 0))]) if (!byId.has(id)) byId.set(id, player);
+    const ids = [positiveSafeId(player?.id)];
+    if (source === 'api-football') ids.push(positiveSafeId(player?.providerId));
+    for (const id of [...new Set(ids.filter(Boolean))]) if (!byId.has(id)) byId.set(id, player);
     const name = normalizedName(player?.name || '');
     if (name) {
       const candidates = byNameCandidates.get(name) || [];
@@ -390,18 +418,18 @@ function seasonPlayerIndex(playerStats = null) {
 }
 
 function matchSeasonPlayer(absence = {}, index = {}) {
-  const id = Number(absence?.id || 0);
-  if (id > 0 && index.byId?.has(id)) return index.byId.get(id);
+  const id = positiveSafeId(absence?.id);
+  if (id && index.byId?.has(id)) return index.byId.get(id);
   const name = normalizedName(absence?.name || '');
   return name && index.byName?.has(name) ? index.byName.get(name) : null;
 }
 
 function seasonRoleProfile(player = {}) {
-  const appearances = Math.max(0, Number(player?.games?.appearances || 0));
-  const lineups = Math.max(0, Number(player?.games?.lineups || 0));
-  const minutes = Math.max(0, Number(player?.games?.minutes || 0));
-  const goals = Math.max(0, Number(player?.goals?.total || 0));
-  const assists = Math.max(0, Number(player?.goals?.assists || 0));
+  const appearances = nonNegativeInteger(player?.games?.appearances);
+  const lineups = nonNegativeInteger(player?.games?.lineups);
+  const minutes = nonNegativeInteger(player?.games?.minutes);
+  const goals = nonNegativeInteger(player?.goals?.total);
+  const assists = nonNegativeInteger(player?.goals?.assists);
   if (!appearances && !lineups && !minutes && !goals && !assists) return null;
 
   const starterRate = appearances ? bounded(lineups / appearances, 0, 1) : 0;
