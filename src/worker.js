@@ -12720,6 +12720,14 @@ function providerFeaturePolicy(feature, context = {}) {
     ttlSeconds = Math.max(ttlSeconds, 180);
   }
 
+  // On the 10 req/min FREE plan, the interactive Match Center must not consume
+  // the request that AI Analysis needs for predictions/odds. Events can fall back
+  // to OpenLigaDB; API-Football statistics remain the primary LIVE enrichment.
+  if (!paid && context.preserveAiBudget === true && feature === 'events') {
+    allowed = false;
+    reason = 'interactive_ai_reserve';
+  }
+
   if (budget.mode === 'emergency' && !['events','statistics'].includes(feature)) {
     allowed = false;
     reason = 'quota_reserve';
@@ -19762,14 +19770,15 @@ function matchInterestScore({ competition, leagueId, leagueName, country, homeNa
 
 function catalogRank(match) {
   const cat = match?.competition?.category || match?.category || '';
-  if (match?.live) return 0;
-  if (match?.competition?.featured || match?.featured) return 1;
-  if (cat === 'continental' || cat === 'national' || cat === 'international') return 2;
-  if (cat === 'league' || cat === 'cup') return 3;
-  if (cat === 'women') return 4;
-  if (cat === 'friendly') return 6;
-  if (cat === 'youth' || cat === 'lower') return 7;
-  return 5;
+  // Competition relevance is independent from live status. LIVE is a filter/state,
+  // not a reason for a low-value fixture to displace a major upcoming match.
+  if (match?.competition?.featured || match?.featured) return 0;
+  if (cat === 'continental' || cat === 'national' || cat === 'international') return 1;
+  if (cat === 'league' || cat === 'cup') return 2;
+  if (cat === 'women') return 3;
+  if (cat === 'friendly') return 5;
+  if (cat === 'youth' || cat === 'lower') return 6;
+  return 4;
 }
 
 function matchStatusRank(status) {
@@ -21050,10 +21059,12 @@ async function apiMatches(request, cfg) {
       };
     })
     .sort((a, b) =>
-      matchStatusRank(a.status) - matchStatusRank(b.status) ||
+      // Rank the capped provider feed by product relevance first. Status is only
+      // a tiebreaker so arbitrary low-tier LIVE matches cannot consume the cap.
       catalogRank(a) - catalogRank(b) ||
-      Number(b.interestScore || 0) - Number(a.interestScore || 0) ||
       Number(b.competition?.priority || 0) - Number(a.competition?.priority || 0) ||
+      Number(b.interestScore || 0) - Number(a.interestScore || 0) ||
+      matchStatusRank(a.status) - matchStatusRank(b.status) ||
       String(a.date || '').localeCompare(String(b.date || ''))
     )
     .slice(0, 120);
@@ -21088,7 +21099,7 @@ async function apiMatches(request, cfg) {
       retryAfter:providerFallback.retryAfter,
     });
   }
-  const ttl = isToday ? 1 : isYesterday ? 720 : cfg.cacheMinutes;
+  const ttl = isToday ? (providerBudgetProfile().paid ? 1 : 3) : isYesterday ? 720 : cfg.cacheMinutes;
   await setCache(cacheKey, 0, payload, cfg, ttl);
   return json({ ...payload, cached: false, stale: false });
 }
@@ -22263,14 +22274,21 @@ async function apiMatchCenter(request, cfg) {
   if (events.length) {
     featureMeta.events = { feature:'events', provider:'api-football', source:'embedded', fetchedAt:fixtureFetchedAt, ageSeconds:0, fallback:false, policy:providerFeaturePolicy('events', { mode:centerMode, limitedCoverage }), ...providerDataState(events, { attempted:true }) };
   } else if (live || finished) {
-    const eventContext={ mode:centerMode, limitedCoverage };
+    const eventContext={
+      mode:centerMode,
+      limitedCoverage,
+      preserveAiBudget: !providerBudgetProfile().paid,
+    };
     const result = await providerFeatureFetch({
       feature: 'events', path: '/fixtures/events', params: { fixture: fixtureId },
       fixtureId, cfg, context: eventContext,
     });
     events = result.data;
     featureMeta.events = result.meta;
-    if (!events.length && result.meta?.policy?.allowed !== false) {
+    // FREE intentionally skips the API-Football events call and tries the
+    // secondary source instead. Paid plans also retain the secondary fallback
+    // when the primary endpoint is empty or degraded.
+    if (!events.length && !limitedCoverage) {
       const secondaryEvents=await secondaryOpenLigaEvents(fixture, cfg, eventContext);
       if (secondaryEvents.available) {
         events=secondaryEvents.events;
@@ -23378,7 +23396,19 @@ async function apiAnalyze(request, cfg, user) {
   if (analysisMarket) await saveOddsSnapshot(fixtureId, analysisMarket, cfg).catch(() => false);
   const apiPrediction = extractPrediction(predictions);
   const h2h = formatH2H(h2hRows, homeId, awayId);
-  const baseAbsences = formatAbsences(trustedInjuries, homeId, awayId, lineups);
+  const normalizedAbsences = formatAbsences(trustedInjuries, homeId, awayId, lineups);
+  // Production must fail soft when optional availability enrichment is absent or
+  // malformed. Never let a null optional block turn the entire AI endpoint into 502.
+  const baseAbsences = normalizedAbsences && Array.isArray(normalizedAbsences.home) && Array.isArray(normalizedAbsences.away)
+    ? normalizedAbsences
+    : {
+      home: [],
+      away: [],
+      summary: { home:{ total:0 }, away:{ total:0 }, resolvedByLineup:0 },
+      resolvedByLineup: { home:[], away:[] },
+      source: 'unavailable',
+      methodology: 'Данные о потерях недоступны; анализ продолжен без этого сигнала.',
+    };
   const roleHydrationMaxPages = paid ? 2 : 1;
   const [homeRoleHydration, awayRoleHydration] = await Promise.all([
     hydratePlayerRolesForAnalysis({ teamId:homeId, teamName:homeName, leagueId, leagueName, season, cachedPlayerStats:cachedHomePlayerStats, needed:baseAbsences.home.length>0, cfg, maxPages:roleHydrationMaxPages }),
