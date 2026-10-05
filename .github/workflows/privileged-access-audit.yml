@@ -3,8 +3,24 @@ name: Privileged Access Audit
 on:
   pull_request:
     branches: [main]
+    paths:
+      - ".github/workflows/**"
+      - "scripts/privileged-access-audit.js"
+      - "scripts/security-history-scan.js"
+      - "scripts/security-scan.js"
+      - "wrangler.jsonc"
+      - ".gitignore"
+      - ".env.example"
   push:
     branches: [main]
+    paths:
+      - ".github/workflows/**"
+      - "scripts/privileged-access-audit.js"
+      - "scripts/security-history-scan.js"
+      - "scripts/security-scan.js"
+      - "wrangler.jsonc"
+      - ".gitignore"
+      - ".env.example"
   schedule:
     - cron: "47 3 * * 1"
   workflow_dispatch:
