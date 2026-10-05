@@ -8,6 +8,7 @@ import { createProfileDataCapabilitiesModule } from './modules/profile-data-capa
 import { createProfileAccessStateModule } from './modules/profile-access-state.js';
 import { createProfileSummaryModule } from './modules/profile-summary.js';
 import { createFavoriteTeamsRenderer } from './modules/favorite-teams-renderer.js';
+import { bindRovingTabKeyboard } from './modules/roving-tabs.js';
 import { createReminderListModule } from './modules/reminder-list.js';
 import { createMyTeamsRenderer } from './modules/my-teams-renderer.js';
 import { createJourneyStateModule } from './modules/journey-state.js';
@@ -5473,25 +5474,6 @@ async function shareAnalysis(d) {
       }
     }
   }
-}
-
-function bindRovingTabKeyboard(buttons, dataKey, activate) {
-  const tabs = Array.from(buttons || []);
-  if (!tabs.length) return;
-  tabs.forEach((btn, index) => btn.addEventListener('keydown', event => {
-    if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
-    event.preventDefault();
-    let nextIndex = index;
-    if (event.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length;
-    if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length;
-    if (event.key === 'Home') nextIndex = 0;
-    if (event.key === 'End') nextIndex = tabs.length - 1;
-    const next = tabs[nextIndex];
-    const value = next?.dataset?.[dataKey];
-    if (!next || !value) return;
-    activate(value);
-    next.focus();
-  }));
 }
 
 function setAnalysisTab(tab, scroll = false) {
