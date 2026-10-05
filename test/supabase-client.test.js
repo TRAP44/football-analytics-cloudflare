@@ -52,6 +52,37 @@ test('supabase client preserves write preferences and RPC error contract', async
   );
 });
 
+test('supabase RPC forwards internal lifecycle headers without changing auth headers', async () => {
+  const calls = [];
+  const client = createSupabaseClient({
+    fetchWithTimeout: async (url, init) => {
+      calls.push({ url: String(url), init });
+      return response({ json: { ok: true } });
+    },
+  });
+  const cfg = { supabaseUrl: 'https://example.supabase.co', supabaseKey: 'sb_secret_example' };
+  const result = await client.supaRpc(
+    cfg,
+    'refund_analysis_quota',
+    { p_telegram_id: 42, p_usage_date: '2026-10-05' },
+    4000,
+    {
+      apikey: 'attacker-controlled',
+      authorization: 'Bearer attacker-controlled',
+      'x-analysis-usage-lifecycle': 'durable-v1',
+      'x-analysis-operation-id': '11111111-1111-4111-8111-111111111111',
+      'x-analysis-usage-action': 'refund',
+    },
+  );
+
+  assert.deepEqual(result, { ok: true });
+  assert.equal(calls[0].init.headers.apikey, 'sb_secret_example');
+  assert.equal('authorization' in calls[0].init.headers, false);
+  assert.equal(calls[0].init.headers['x-analysis-usage-lifecycle'], 'durable-v1');
+  assert.equal(calls[0].init.headers['x-analysis-usage-action'], 'refund');
+  assert.equal(calls[0].init.headers['x-analysis-operation-id'], '11111111-1111-4111-8111-111111111111');
+});
+
 test('supabase pagination keeps the existing cap and truncation semantics', async () => {
   let calls = 0;
   const client = createSupabaseClient({

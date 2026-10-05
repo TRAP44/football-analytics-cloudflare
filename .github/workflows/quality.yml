@@ -139,7 +139,7 @@ jobs:
           FRESH_LEGACY_FP="$(node -p "require(process.env.GITHUB_WORKSPACE + '/release-contract.json').databaseContract.freshInstallLegacyFingerprint")"
           FRESH_V2_FP="$(node -p "require(process.env.GITHUB_WORKSPACE + '/release-contract.json').databaseContract.freshInstallFingerprint")"
 
-          # upgrade-base already includes v6.27.2. Prove an older Worker that
+          # upgrade-base already includes v6.27.3. Prove an older Worker that
           # still requires the historical v1 fingerprint remains ready after the
           # new complete contract is present.
           PRE_LATEST_LEGACY_FP="$(psql "$DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c \

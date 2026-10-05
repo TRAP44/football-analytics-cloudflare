@@ -73,9 +73,9 @@ test('Issue #438 adds a complete versioned database contract without mutating th
   assert.match(compatibilitySql, /legacy schema fingerprint compatibility repair/i);
 });
 
-test('release contract and Worker require database contract v2 on schema v6.27.3', () => {
-  assert.equal(releaseContract.productionSchema, '6.27');
-  assert.equal(releaseContract.latestMigration, 'supabase/migrations/supabase_migration_v6_27_3.sql');
+test('release contract and Worker require database contract v2 on schema v6.28', () => {
+  assert.equal(releaseContract.productionSchema, '6.28');
+  assert.equal(releaseContract.latestMigration, 'supabase/migrations/supabase_migration_v6_28.sql');
   assert.equal(releaseContract.databaseContract.version, 2);
   assert.equal(releaseContract.databaseContract.rpc, 'backend_readiness_contract_v2');
   assert.equal(releaseContract.databaseContract.fingerprint, '6a7f0fe444f49a2a52c4603e952ee9ea');
@@ -86,7 +86,7 @@ test('release contract and Worker require database contract v2 on schema v6.27.3
   ]);
   assert.equal(releaseContract.databaseContract.legacyFingerprint, 'c2c22ec25aacfcf1b9938b0850cebf49');
   assert.equal(releaseContract.databaseContract.freshInstallLegacyFingerprint, 'e025ecf4559a4d7518250b4124ff26c8');
-  assert.match(worker, /миграции до v6\.27\.3/);
+  assert.match(worker, /миграции до v6\.28/);
   assert.match(worker, /EXPECTED_SCHEMA_CONTRACT_VERSION = 2/);
   assert.match(worker, /EXPECTED_SCHEMA_FINGERPRINT = '6a7f0fe444f49a2a52c4603e952ee9ea'/);
   assert.match(worker, /FRESH_INSTALL_SCHEMA_FINGERPRINT = '8b3e6ec749079296e6746d3db8ae3d2e'/);

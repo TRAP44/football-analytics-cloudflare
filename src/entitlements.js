@@ -1,4 +1,5 @@
 import { bytesToHex, constantTimeEqual, hmacSha256 } from './crypto-utils.js';
+import { durableAnalysisUsageHeaders } from './analysis-usage-compensation.js';
 
 const enc = new TextEncoder();
 
@@ -337,7 +338,7 @@ export function createEntitlementService({
     };
   }
 
-  async function consumeEntitlement(userId, entitlementId, fixtureId, cfg) {
+  async function consumeEntitlement(userId, entitlementId, fixtureId, cfg, usageOptions = {}) {
     const uid = Number(userId);
     const eid = Number(entitlementId);
     const fid = Number(fixtureId || 0);
@@ -345,11 +346,15 @@ export function createEntitlementService({
       return { allowed: false, reason: 'invalid_input' };
     }
     if (hasSupabase(cfg)) {
+      const operationId = String(usageOptions?.operationId || '').trim();
+      const extraHeaders = usageOptions?.durable === true && operationId
+        ? durableAnalysisUsageHeaders(operationId)
+        : {};
       return await supaRpc(cfg, 'consume_pass_entitlement', {
         p_telegram_id: uid,
         p_entitlement_id: eid,
         p_fixture_id: fid || null,
-      }, 4000);
+      }, 4000, extraHeaders);
     }
     const row = [...memory.userEntitlements.values()].find(item => Number(item.id) === eid && Number(item.telegram_id) === uid);
     const decision = entitlementDecision(row || {}, { fixtureId: fid, now: Date.now() });
@@ -379,7 +384,8 @@ export function createEntitlementService({
     return { updated: true, reason: 'refunded', entitlementId: row.id, usageCount: row.usage_count };
   }
 
-  async function reserveEntitlementUsage(userId, activeEntitlements, fixtureId, cfg) {
+  async function reserveEntitlementUsage(userId, activeEntitlements, fixtureId, cfg, usageOptions = {}) {
+    const uid = Number(userId);
     const candidates = (activeEntitlements || []).map(normalizeEntitlementRow);
     const unlimited = candidates.find(item => item.usageLimit == null);
     if (unlimited) {
@@ -392,12 +398,18 @@ export function createEntitlementService({
       };
     }
     for (const item of candidates) {
-      const consumed = await consumeEntitlement(userId, item.id, fixtureId, cfg);
+      const consumed = await consumeEntitlement(userId, item.id, fixtureId, cfg, usageOptions);
       if (consumed?.allowed) {
+        const reserved = item.usageLimit != null && consumed?.reserved !== false;
+        const operationId = String(consumed?.operationId || '').trim();
         return {
           ...consumed,
           allowed: true,
-          reserved: true,
+          reserved,
+          durable: reserved && consumed?.durable === true && Boolean(operationId),
+          operationId: operationId || null,
+          kind: 'pass',
+          userId: uid,
           entitlementId: item.id,
           type: item.type,
         };
