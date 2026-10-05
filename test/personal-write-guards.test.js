@@ -99,6 +99,22 @@ test('personal write guards normalize valid reminders and reject stale or oversi
     fixtureId:42,
     homeName:'Home',
     awayName:'Away',
+    fixtureDate:'2026-02-30T20:00:00.000Z',
+  },now), /Некорректное время матча/);
+
+  assert.throws(() => normalizeReminderWrite({
+    fixtureId:42,
+    homeName:'Home',
+    awayName:'Away',
+    fixtureDate:'2026-09-27T20:00:00+14:30',
+  },now), /Некорректное время матча/);
+
+
+
+  assert.throws(() => normalizeReminderWrite({
+    fixtureId:42,
+    homeName:'Home',
+    awayName:'Away',
     fixtureDate:'2026-09-27T20:00:00.000Z',
     kickoffNotify:'false',
   },now), error => error?.code === 'PERSONAL_DATA_INVALID');
