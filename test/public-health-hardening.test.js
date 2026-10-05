@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   PUBLIC_READINESS_CACHE_MS,
   createPublicHealthRuntime,
+  isHealthProbeAuthorized,
   sanitizePublicReadiness,
 } from '../src/public-health.js';
 
@@ -78,33 +79,31 @@ test('public readiness coalesces concurrent probes and caches completed results'
   assert.equal(calls,2);
 });
 
-test('public liveness is dependency-free and full public health stays minimal', async () => {
+test('public health is minimal and detailed diagnostics require the configured token', async () => {
   let calls=0;
   const runtime=createPublicHealthRuntime({
     version:'6.120.0-rc144',
     releaseCandidate:'RC144',
     computeReadiness:async()=>{
       calls+=1;
-      return {
-        ok:false,status:'not_ready',version:'6.120.0-rc144',releaseCandidate:'RC144',
-        checks:{supabase:{ok:false,status:'unavailable'},schema:{ok:false,status:'unknown'},backendSecurity:{ok:false,status:'unknown'},telegramConfigured:true},
-      };
+      return {ok:false,status:'not_ready',version:'6.120.0-rc144',releaseCandidate:'RC144',checks:{}};
     },
+    buildDetailedHealth:async(context,readiness)=>({ok:Boolean(readiness.ok),devMode:Boolean(context.devMode),database:'supabase',deployment:{deploySha:'a'.repeat(40)}}),
   });
 
-  assert.deepEqual(runtime.liveSnapshot(),{
-    ok:true,status:'alive',version:'6.120.0-rc144',releaseCandidate:'RC144',
-  });
+  assert.deepEqual(runtime.liveSnapshot(),{ok:true,status:'alive',version:'6.120.0-rc144',releaseCandidate:'RC144'});
   assert.equal(calls,0);
 
-  const full=await runtime.healthSnapshot({devMode:false});
+  const publicHealth=await runtime.publicHealthSnapshot({});
+  assert.deepEqual(publicHealth,{ok:false});
   assert.equal(calls,1);
-  assert.deepEqual(full,{
-    ok:false,
-    status:'not_ready',
-    version:'6.120.0-rc144',
-    releaseCandidate:'RC144',
-    devMode:false,
-    readiness:{ok:false,status:'not_ready'},
-  });
+
+  assert.equal(isHealthProbeAuthorized(new Request('https://example.test/health'),{healthProbeToken:'secret'}),false);
+  assert.equal(isHealthProbeAuthorized(new Request('https://example.test/health',{headers:{'x-health-token':'wrong'}}),{healthProbeToken:'secret'}),false);
+  assert.equal(isHealthProbeAuthorized(new Request('https://example.test/health',{headers:{'x-health-token':'secret'}}),{healthProbeToken:'secret'}),true);
+
+  const detailed=await runtime.detailedHealthSnapshot({devMode:false});
+  assert.equal(detailed.database,'supabase');
+  assert.equal(detailed.devMode,false);
+  assert.ok(detailed.deployment.deploySha);
 });
