@@ -27,3 +27,10 @@ test('incremental extracted modules opt into ts-check',()=>{
     assert.ok(source.startsWith('// @ts-check'), path);
   }
 });
+
+
+test('ESLint test baseline includes Node 22 Web API globals used by behavioral tests',()=>{
+  for(const globalName of ['Request','Response','Headers','FormData','Blob','File','crypto','performance']) {
+    assert.match(eslintConfig,new RegExp(`${globalName}: 'readonly'`),globalName);
+  }
+});
