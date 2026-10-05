@@ -27,7 +27,12 @@ function knownPlayerIds(player = {}) {
   let invalidKnownIdCount=0;
 
   for (const value of [player?.id, player?.playerId, player?.player_id]) {
-    if (value === undefined || value === null || value === '') continue;
+    if (
+      value === undefined
+      || value === null
+      || value === ''
+      || (typeof value === 'string' && !value.trim())
+    ) continue;
     const id=integerCandidate(value);
     if (id === 0) continue;
     if (id === null || id < 0) {
@@ -43,10 +48,18 @@ function knownPlayerIds(player = {}) {
   };
 }
 
+function playerNameCandidate(player = {}) {
+  for (const value of [player?.name, player?.playerName, player?.player_name]) {
+    const name=compactText(value);
+    if (name) return name;
+  }
+  return '';
+}
+
 export function describePlayerIdentity(player = {}) {
   const knownIds = knownPlayerIds(player);
   const ids=knownIds.ids;
-  const name = compactText(player?.name ?? player?.playerName ?? player?.player_name ?? '');
+  const name = playerNameCandidate(player);
   const normalizedName = normalizePlayerName(name);
   return {
     id: ids.length === 1 ? ids[0] : 0,
