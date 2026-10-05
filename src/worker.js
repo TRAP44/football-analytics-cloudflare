@@ -44,6 +44,7 @@ import { planPostDeployRegressionResponseTransition, summarizePostDeployRegressi
 import { buildPostDeployRegressionSloDashboard } from './post-deploy-regression-slo.js';
 import { createCompositeReadinessRuntime } from './readiness-contract.js';
 import { createPublicHealthRuntime } from './public-health.js';
+import { createPublicStatusRouter, createPublicStatusRuntime } from './public-status.js';
 import { createAnalysisUsageCompensationRuntime, durableAnalysisUsageHeaders } from './analysis-usage-compensation.js';
 import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
 import { applyFeatureFreshness, applyFeatureFreshnessMap } from './data-freshness.js';
@@ -23791,34 +23792,6 @@ async function apiAnalyze(request, cfg, user) {
   }
 }
 
-async function publicServiceStatus(cfg) {
-  const runtimeState=await loadRuntimeControls(cfg);
-  const runtime=publicRuntimeControls(runtimeState.value);
-  const providerCooldown=Number(memory.provider?.cooldownUntil || 0)>Date.now();
-  const maintenance=Boolean(runtime.maintenanceMode);
-  const coreLimited=maintenance || !runtime.analysisEnabled || !runtime.searchEnabled;
-  const status=maintenance ? 'maintenance' : providerCooldown || coreLimited ? 'degraded' : 'operational';
-  return {
-    ok:status!=='maintenance',
-    status,
-    label:status==='operational'?'Все основные системы работают':status==='maintenance'?'Техническое обслуживание':'Часть функций работает с ограничениями',
-    version:APP_VERSION,
-    releaseCandidate:RC_NAME,
-    deployment:currentReleaseIdentity(cfg),
-    generatedAt:new Date().toISOString(),
-    services:{
-      telegram:cfg.botToken && cfg.webhookSecret ? 'operational' : 'configuration_required',
-      miniApp:'operational',
-      aiAnalysis:runtime.analysisEnabled ? (cfg.apiFootballKey ? 'operational' : 'configuration_required') : 'paused',
-      search:runtime.searchEnabled ? (cfg.apiFootballKey ? 'operational' : 'configuration_required') : 'paused',
-      live:runtime.liveEnabled ? (cfg.apiFootballKey ? 'operational' : 'configuration_required') : 'paused',
-      news:cfg.tavilyKey ? 'operational' : 'limited',
-    },
-    notice:runtime.message || '',
-  };
-}
-
-
 async function readRecentSupabaseAuthFailures(cfg, minutes = 5) {
   if (!hasSupabase(cfg)) return { available:false, count:0, items:[] };
   const since=new Date(Date.now()-Math.max(1,Number(minutes || 5))*60_000).toISOString();
@@ -23952,45 +23925,33 @@ function scheduleReleaseFieldEvidence(cfg) {
 }
 
 
-async function measureReadinessCheck(task) {
-  const startedAt=Date.now();
-  const value=await task();
-  return {value,latencyMs:Date.now()-startedAt};
-}
-
-async function computeReadinessSnapshot(cfg) {
-  scheduleReleaseFieldEvidence(cfg);
-  const startedAt=Date.now();
-  const compositeCheck=await measureReadinessCheck(()=>readCompositeReadiness(cfg,5));
-  const composite=compositeCheck.value;
-  const supabase=composite.connectivity;
-  const schema=composite.schema;
-  const security=composite.backendSecurity;
-  const authFailures=composite.authFailures;
-  const telegramConfigured=Boolean(cfg.botToken && cfg.webhookSecret);
-  const ok=Boolean(composite.valid && composite.ok && telegramConfigured);
-  return {
-    ok,
-    status:ok?'ready':'not_ready',
-    version:APP_VERSION,
-    releaseCandidate:RC_NAME,
-    deployment:currentReleaseIdentity(cfg),
-    latencyMs:Date.now()-startedAt,
-    checks:{
-      supabase:{ok:Boolean(supabase.ok),status:supabase.status || 'unknown',attempts:Number(supabase.attempts || 1),latencyMs:compositeCheck.latencyMs},
-      schema:{ok:Boolean(schema.ok),status:schema.status || 'unknown',contractVersion:Number(schema.contractVersion || composite.schemaContractVersion || 0),expectedContractVersion:EXPECTED_SCHEMA_CONTRACT_VERSION,fingerprint:schema?.fingerprint?.fingerprint || '',expectedFingerprint:schema?.fingerprint?.expected || EXPECTED_SCHEMA_FINGERPRINT,primaryExpectedFingerprint:EXPECTED_SCHEMA_FINGERPRINT,latencyMs:compositeCheck.latencyMs},
-      backendSecurity:{ok:Boolean(security.ok),status:security.status || 'unknown',latencyMs:compositeCheck.latencyMs},
-      telegramConfigured,
-      recentSupabaseAuthFailures:authFailures.available ? Number(authFailures.count || 0) : null,
-      recentSupabaseAuthFailuresLatencyMs:compositeCheck.latencyMs,
-    },
-  };
-}
-
-const publicHealthRuntime=createPublicHealthRuntime({
-  computeReadiness:computeReadinessSnapshot,
+const publicStatusRuntime=createPublicStatusRuntime({
+  loadRuntimeControls,
+  publicRuntimeControls,
+  providerCooldownUntil:()=>Number(memory.provider?.cooldownUntil || 0),
+  currentReleaseIdentity,
+  readCompositeReadiness,
+  scheduleReleaseFieldEvidence,
   version:APP_VERSION,
   releaseCandidate:RC_NAME,
+  expectedSchemaContractVersion:EXPECTED_SCHEMA_CONTRACT_VERSION,
+  expectedSchemaFingerprint:EXPECTED_SCHEMA_FINGERPRINT,
+});
+
+const publicHealthRuntime=createPublicHealthRuntime({
+  computeReadiness:publicStatusRuntime.computeReadinessSnapshot,
+  version:APP_VERSION,
+  releaseCandidate:RC_NAME,
+});
+
+const publicStatusRouter=createPublicStatusRouter({
+  publicStatusRuntime,
+  publicHealthRuntime,
+  appManifest,
+  loadRuntimeControls,
+  publicRuntimeControls,
+  runtimeControlsCacheMs:RUNTIME_CONTROLS_CACHE_MS,
+  json,
 });
 
 const processTelegramUpdate = createTelegramUpdateProcessor({
@@ -24235,47 +24196,8 @@ export default {
       },securityShape.status || 400);
     }
 
-    if (request.method === 'GET' && url.pathname === '/api/public-status') {
-      return json(await publicServiceStatus(cfg),200,{'cache-control':'no-store'});
-    }
-
-    if (url.pathname === '/health/live') {
-      return json(publicHealthRuntime.liveSnapshot(),200,{'cache-control':'no-store'});
-    }
-
-    if (url.pathname === '/health/ready') {
-      const readiness=await publicHealthRuntime.readinessSnapshot(cfg);
-      return json(readiness,readiness.ok?200:503,{'cache-control':'no-store'});
-    }
-
-    if (url.pathname === '/health' || url.pathname === '/api/health') {
-      const health=await publicHealthRuntime.healthSnapshot(cfg);
-      return json(health,health.ok?200:503,{'cache-control':'no-store'});
-    }
-
-    if (request.method === 'GET' && url.pathname === '/api/app-manifest') {
-      await loadRuntimeControls(cfg);
-      return json(appManifest(cfg));
-    }
-
-    if (request.method === 'GET' && url.pathname === '/api/runtime-status') {
-      const runtimeState = await loadRuntimeControls(cfg);
-      return json({
-        ok: true,
-        available: Boolean(runtimeState.schemaReady),
-        runtime: publicRuntimeControls(runtimeState.value),
-        source: runtimeState.source,
-        cacheSeconds: Math.round(RUNTIME_CONTROLS_CACHE_MS / 1000),
-      });
-    }
-
-    if (url.pathname === '/health/supabase') {
-      return json({
-        ok: false,
-        error: 'Техническая проверка Supabase перенесена в защищённую диагностику администратора мини-приложения.',
-        code: 'ADMIN_DIAGNOSTICS_ONLY',
-      }, 404);
-    }
+    const publicStatusResponse=await publicStatusRouter.handle(request,url,cfg);
+    if (publicStatusResponse) return publicStatusResponse;
 
     if (request.method === 'POST' && url.pathname === '/telegram/webhook') {
       try {
