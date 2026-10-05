@@ -111,11 +111,33 @@ test('RC143 trusted-market projection requires strict quality booleans', () => {
   assert.equal(oddsMarketForTrustedAnalytics(market,{...quality,marketValid:1}),null);
 });
 
+test('RC143 reliability annotation requires strict quality booleans', () => {
+  const base={
+    state:'verified',
+    observed:true,
+    sourceTrusted:true,
+    marketValid:true,
+  };
+  const forged=annotateOddsReliability(trustedMeta,{...base,sourceTrusted:'true'});
+  assert.equal(forged.available,false);
+  assert.equal(forged.confidenceBearing,false);
+
+  const forgedObserved=annotateOddsReliability(trustedMeta,{...base,observed:'true'});
+  assert.equal(forgedObserved.available,false);
+  assert.equal(forgedObserved.confidenceBearing,false);
+
+  const forgedMarket=annotateOddsReliability(trustedMeta,{...base,marketValid:'true'});
+  assert.equal(forgedMarket.available,false);
+  assert.equal(forgedMarket.confidenceBearing,false);
+});
+
 test('RC143 filters malformed historical snapshots and recomputes movement probabilities from odds', () => {
   const rows=[
     {at:'2026-09-25T12:00:00Z',home:2,draw:3.5,away:4,homeProb:99,drawProb:0.5,awayProb:0.5,sources:3},
     {at:'2026-09-25T12:00:00.000Z',home:2.1,draw:3.4,away:3.9,sources:3},
     {at:'2026-09-25T12:01:00Z',home:100,draw:100,away:100,homeProb:33.3,drawProb:33.3,awayProb:33.3,sources:3},
+    {at:'2026-09-25T12:01:30Z',home:2,draw:3.5,away:4,sources:true},
+    {at:'2026-09-25T12:01:45Z',home:2,draw:3.5,away:4,sources:0},
     {at:'not-a-date',home:2,draw:3.5,away:4,sources:3},
     {at:new Date('2026-09-25T12:02:00Z'),home:2,draw:3.5,away:4,sources:3},
   ];
