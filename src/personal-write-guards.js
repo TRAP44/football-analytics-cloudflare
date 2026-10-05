@@ -9,6 +9,10 @@ export const PERSONAL_WRITE_LIMITS = Object.freeze({
   leagueName: 160,
 });
 
+export const TEAM_LOGO_ALLOWED_HOSTS = Object.freeze([
+  'media.api-sports.io',
+]);
+
 function positiveSafeInteger(value) {
   const n = Number(value);
   return Number.isSafeInteger(n) && n > 0 ? n : 0;
@@ -40,7 +44,7 @@ function httpUrlOrEmpty(value) {
     error.code = 'PERSONAL_DATA_INVALID';
     throw error;
   }
-  if (!['http:', 'https:'].includes(url.protocol)) {
+  if (url.protocol !== 'https:' || !TEAM_LOGO_ALLOWED_HOSTS.includes(url.host)) {
     const error = new Error('Некорректный URL логотипа.');
     error.code = 'PERSONAL_DATA_INVALID';
     throw error;
