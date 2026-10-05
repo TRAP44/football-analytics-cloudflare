@@ -33,6 +33,58 @@ function window(at, state, totals = {}, metadata = {}) {
   };
 }
 
+test('provider SLO incident timeline rejects malformed rows, counters and explicit states', () => {
+  const malformed=window('2026-09-28T10:00:00Z','watch',{
+    requests:true,
+    successes:1,
+    failures:0,
+  });
+  const unknownState=window('2026-09-28T10:15:00Z','WATCH_WRONG');
+  const report=buildProviderSloIncidentTimeline([
+    null,
+    malformed,
+    unknownState,
+  ],{nowMs:true});
+
+  assert.equal(report.activeIncident,null);
+  assert.equal(report.transition,null);
+  assert.equal(report.windowIntegrity.invalidMetrics,1);
+  assert.equal(report.windowIntegrity.invalidReportedStates,1);
+  assert.ok(report.windowIntegrity.stateMismatches>=1);
+});
+
+test('string false does not mark an SLO window complete', () => {
+  const first=window('2026-09-28T10:00:00Z','incident');
+  const second=window('2026-09-28T10:15:00Z','incident',{},{
+    complete:'false',
+  });
+  const report=buildProviderSloIncidentTimeline([first,second],{
+    nowMs:Date.parse('2026-09-28T10:20:00Z'),
+  });
+  assert.equal(report.activeIncident,null);
+  assert.equal(report.windowIntegrity.incomplete,1);
+});
+
+test('metric integrity prevents impossible SLO totals from opening incidents', () => {
+  const first=window('2026-09-28T10:00:00Z','incident',{
+    requests:10,
+    successes:10,
+    failures:5,
+    successRatePct:50,
+  });
+  const second=window('2026-09-28T10:15:00Z','incident',{
+    requests:10,
+    successes:10,
+    failures:5,
+    successRatePct:50,
+  });
+  const report=buildProviderSloIncidentTimeline([first,second],{
+    nowMs:Date.parse('2026-09-28T10:20:00Z'),
+  });
+  assert.equal(report.activeIncident,null);
+  assert.equal(report.windowIntegrity.invalidMetrics,2);
+});
+
 test('one degraded SLO window does not open an incident', () => {
   const report = buildProviderSloIncidentTimeline([
     window('2026-09-28T10:00:00Z','healthy'),
@@ -150,6 +202,14 @@ test('runbook points to the observed provider failure modes without automatic co
   assert.ok(report.activeIncident?.runbook?.some(x => /retry/.test(x)));
   assert.equal(report.policy.automaticRollback, false);
   assert.equal(report.policy.automaticFeatureDisable, false);
+});
+
+test('malformed nowMs falls back to latest observed window instead of corrupting duration', () => {
+  const report=buildProviderSloIncidentTimeline([
+    window('2026-09-28T10:00:00Z','watch'),
+    window('2026-09-28T10:15:00Z','watch'),
+  ],{nowMs:true});
+  assert.equal(report.activeIncident?.durationMinutes,30);
 });
 
 test('non-actionable transitions do not produce ops incident events', () => {
