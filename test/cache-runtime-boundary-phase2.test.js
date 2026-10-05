@@ -76,3 +76,31 @@ test('Phase 2 cache boundary persists provenance without making write failures f
   assert.ok(failing.telemetry.includes('cacheWriteErrors'));
   assert.ok(failing.telemetry.includes('supabaseErrors'));
 });
+
+
+test('cache ops metadata keeps namespaces but never persists user-scoped cache keys or overloaded ids',async()=>{
+  const userScoped='postmatch:return:disabled:987654321:v1';
+
+  const readFailure=runtime({
+    hasSupabase:()=>true,
+    supaSelectOne:async()=>{throw new Error('db down');},
+  });
+  assert.equal(await readFailure.api.getCache(userScoped,{}),null);
+  const readEvent=readFailure.ops.at(-1);
+  assert.equal(readEvent.code,'CACHE_DB_READ_NO_L1');
+  assert.equal(readEvent.meta.cacheNamespace,'postmatch:return');
+  assert.equal(Object.hasOwn(readEvent.meta,'cacheKey'),false);
+  assert.equal(JSON.stringify(readEvent.meta).includes('987654321'),false);
+
+  const writeFailure=runtime({
+    hasSupabase:()=>true,
+    supaUpsert:async()=>{throw new Error('db down');},
+  });
+  await writeFailure.api.setCache(userScoped,987654321,{provider:'api-football'},{cacheMinutes:20},20);
+  const writeEvent=writeFailure.ops.at(-1);
+  assert.equal(writeEvent.code,'CACHE_DB_WRITE');
+  assert.equal(writeEvent.meta.cacheNamespace,'postmatch:return');
+  assert.equal(Object.hasOwn(writeEvent.meta,'cacheKey'),false);
+  assert.equal(Object.hasOwn(writeEvent.meta,'fixtureId'),false);
+  assert.equal(JSON.stringify(writeEvent.meta).includes('987654321'),false);
+});
