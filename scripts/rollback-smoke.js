@@ -16,6 +16,12 @@ function expectedReleaseCandidate(version) {
   return `RC${match[1]}`;
 }
 
+function boundedNumber(value, fallback, min, max) {
+  const parsed=Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min,Math.min(max,parsed));
+}
+
 async function request(fetchImpl, baseUrl, path, timeoutMs = 8000) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -23,7 +29,11 @@ async function request(fetchImpl, baseUrl, path, timeoutMs = 8000) {
     return await fetchImpl(new URL(path, baseUrl), {
       method: 'GET',
       redirect: 'follow',
-      headers: { accept: 'application/json' },
+      headers: {
+        accept: 'application/json',
+        'cache-control': 'no-cache',
+        'user-agent': 'MatchRadar-Rollback-Smoke/1.0',
+      },
       signal: controller.signal,
     });
   } finally {
@@ -35,8 +45,8 @@ export async function runRollbackSmoke(rawBaseUrl, expectedVersion, options = {}
   const baseUrl = rollbackBaseUrl(rawBaseUrl);
   const expectedRc = expectedReleaseCandidate(expectedVersion);
   const fetchImpl = options.fetchImpl || fetch;
-  const retries = Math.max(1, Number(options.retries || 10));
-  const retryDelayMs = Math.max(0, Number(options.retryDelayMs ?? 6000));
+  const retries = boundedNumber(options.retries,10,1,20);
+  const retryDelayMs = boundedNumber(options.retryDelayMs,6000,0,60000);
   let lastError = '';
 
   for (let attempt = 1; attempt <= retries; attempt += 1) {
