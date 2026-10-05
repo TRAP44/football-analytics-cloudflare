@@ -76,6 +76,11 @@ test('Supabase restore drill is isolated, measurable and preserves least privile
   assert.match(restoreSql, /has_table_privilege\('service_role'/);
   assert.match(restoreSql, /user_entitlements/);
   assert.match(restoreSql, /backend_schema_fingerprint/);
+  assert.match(restoreSql, /backend_schema_contract_v2/);
+  assert.match(restoreSql, /backend_readiness_contract_v2/);
+  assert.match(restoreSql, /private\.analysis_usage_reservations/);
+  assert.match(restoreSql, /public-schema function EXECUTE/);
+  assert.match(restoreSql, /public-schema sequence privileges/);
   assert.match(restoreSql, /backend_security_contract/);
   assert.match(restoreSql, /backend_default_acl_contract/);
   assert.match(restoreSql, /end\s+\$\$;/);
