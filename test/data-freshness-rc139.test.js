@@ -134,6 +134,41 @@ test('RC139 is part of the production release health contract', () => {
   assert.match(smoke, /'freshnessAwareDataTrust'/);
 });
 
+test('freshness fails closed when the evaluation clock is not finite', () => {
+  for (const now of [Number.NaN, Number.POSITIVE_INFINITY, 'NaN']) {
+    const meta=assessFeatureFreshness({
+      feature:'events',provider:'api-football',source:'network',
+      state:'available',available:true,usable:true,observed:true,
+      fetchedAt:'2026-10-03T11:59:30.000Z',
+    },{mode:'live',now});
+    assert.equal(meta.clockValid,false,String(now));
+    assert.equal(meta.ageSeconds,null,String(now));
+    assert.equal(meta.state,'invalid_freshness',String(now));
+    assert.equal(meta.freshnessReason,'invalid_clock',String(now));
+    assert.equal(meta.confidenceBearing,false,String(now));
+    assert.equal(meta.available,false,String(now));
+  }
+});
+
+test('freshness flags require actual booleans instead of truthy strings', () => {
+  const meta=assessFeatureFreshness({
+    feature:'events',provider:'api-football',source:'network',
+    state:'available',available:'false',usable:'true',observed:'false',
+    fetchedAt:'2026-10-03T11:59:30.000Z',
+  },{mode:'live',now:Date.parse('2026-10-03T12:00:00.000Z'),forceStale:'false'});
+  assert.equal(meta.available,false);
+  assert.equal(meta.usable,false);
+  assert.equal(meta.observed,false);
+  assert.equal(meta.stale,false);
+  assert.equal(meta.confidenceBearing,false);
+});
+
+test('freshness map ignores malformed non-object maps safely', () => {
+  assert.deepEqual(applyFeatureFreshnessMap(null),{});
+  assert.deepEqual(applyFeatureFreshnessMap([]),{});
+  assert.deepEqual(applyFeatureFreshnessMap('broken'),{});
+});
+
 test('Issue #406 rejects implausible future timestamps instead of clamping them to age zero', () => {
   const now=Date.parse('2026-10-03T12:00:00.000Z');
   const meta=assessFeatureFreshness({
