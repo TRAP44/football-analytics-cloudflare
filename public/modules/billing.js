@@ -81,6 +81,17 @@ export function billingUiSnapshot(profile = {}, billing = {}, now = Date.now()) 
   };
 }
 
+export function billingPurchaseVisibility(snapshot = {}) {
+  const enabled=Boolean(snapshot?.monetizationEnabled);
+  return Object.freeze({
+    enabled,
+    pricing:enabled,
+    passes:enabled,
+    paymentActions:enabled,
+    quotaUpgrade:enabled,
+  });
+}
+
 export function createBillingModule({
   state,
   elementById,
@@ -320,6 +331,23 @@ export function createBillingModule({
     root.classList.toggle('is-loading', loading);
     root.classList.toggle('is-paused', !snapshot.monetizationEnabled);
 
+    const purchaseUi=billingPurchaseVisibility(snapshot);
+    for (const id of ['billingPricingGrid','passStore','billingActions','billingFootnote']) {
+      const node=$(id);
+      if (node) node.hidden=!purchaseUi.enabled;
+    }
+    const quotaUpgrade=$('quotaUpgradeBtn');
+    if (quotaUpgrade) quotaUpgrade.hidden=!purchaseUi.quotaUpgrade;
+
+    setText('billingKicker', purchaseUi.enabled ? 'MATCHRADAR PRO' : 'AI-ДОСТУП');
+    setText('billingTitle', purchaseUi.enabled ? 'Тариф и AI-доступ' : 'AI-лимит');
+    setText(
+      'billingIntro',
+      purchaseUi.enabled
+        ? 'Подписка через Telegram Stars. Матчи, LIVE и базовая статистика не блокируются тарифом.'
+        : 'Бесплатный режим активен. Матчи, LIVE и базовая статистика доступны без оплаты.'
+    );
+
     setText('billingPlanBadge', snapshot.plan === 'FREE' ? 'Бесплатный' : snapshot.plan);
     setText('billingQuotaUsed', snapshot.used);
     setText('billingQuotaLimit', snapshot.limit || '—');
@@ -424,7 +452,14 @@ export function createBillingModule({
       loaded = true;
       loading = false;
       lastError = '';
-      await loadPassAccess({ force });
+      passLoaded = true;
+      passLoading = false;
+      passError = '';
+      passData = {
+        paymentsEnabled:false,
+        products:{},
+        entitlement:{ decisions:[], passes:{ active:[] }, subscriptionActive:false },
+      };
       render();
       return state.billing;
     }
@@ -685,6 +720,11 @@ export function createBillingModule({
       toast?.('Не удалось определить матч для Match Pass.');
       return;
     }
+    const snapshot=billingUiSnapshot(state.profile || {}, state.billing || {});
+    if (!snapshot.monetizationEnabled) {
+      toast?.('Покупки пока не включены. Бесплатные функции продолжают работать.');
+      return { opened:false, reason:'monetization_paused' };
+    }
     passFixtureId = id;
     if (typeof openProfile === 'function') await openProfile();
     await loadPassAccess({ fixtureId:id, force:true });
@@ -703,6 +743,9 @@ export function createBillingModule({
   function showQuotaPaywall(fixtureId = 0) {
     const id = safeFixtureId(fixtureId);
     if (id) passFixtureId = id;
+    const snapshot=billingUiSnapshot(state.profile || {}, state.billing || {});
+    const button=$('quotaUpgradeBtn');
+    if (button) button.hidden=!snapshot.monetizationEnabled;
     const panel = $('analysisQuotaPaywall');
     if (panel) panel.hidden = false;
   }
