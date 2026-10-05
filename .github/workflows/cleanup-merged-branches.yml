@@ -91,5 +91,3 @@ jobs:
           )
 
           echo "Cleanup complete: deleted=$deleted skipped=$skipped"
-
-# Manual cleanup trigger: 2026-10-05
