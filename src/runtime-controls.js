@@ -179,6 +179,64 @@ export function createRuntimeControlsRuntime({
   async function rollbackRuntimeControls(cfg, user, body = {}) {
     const historySchema = await probeRuntimeHistorySchema(cfg);
     if (!historySchema.ok) {
+      return {
+        error: SUPABASE_SCHEMA_GUIDANCE,
+        code: 'RUNTIME_HISTORY_SCHEMA',
+        status: 409,
+      };
+    }
+  
+    const expectedRevision = Number(body.expectedRevision || 0);
+    const historyId = Number(body.historyId || 0);
+    if (!expectedRevision || !historyId) {
+      return { error: 'Не хватает номера текущей версии или идентификатора точки восстановления для отката.', code: 'RUNTIME_ROLLBACK_INPUT', status: 400 };
+    }
+  
+    const row = await supaSelectOne(cfg, 'runtime_control_history', { id: `eq.${historyId}` });
+    if (!row?.snapshot) {
+      return { error: 'Точка восстановления настроек функций не найдена.', code: 'RUNTIME_ROLLBACK_NOT_FOUND', status: 404 };
+    }
+  
+    const target = normalizeRuntimeControls(row.snapshot);
+    if (Number(target.revision || 0) === expectedRevision) {
+      return { error: 'Выбрана уже активная версия.', code: 'RUNTIME_ROLLBACK_SAME_REVISION', status: 409 };
+    }
+  
+    return await saveRuntimeControls(cfg, user, {
+      expectedRevision,
+      maintenanceMode: target.maintenanceMode,
+      analysisEnabled: target.analysisEnabled,
+      searchEnabled: target.searchEnabled,
+      liveEnabled: target.liveEnabled,
+      remindersEnabled: target.remindersEnabled,
+      expandedDataEnabled: target.expandedDataEnabled,
+      autoSettlementRecoveryEnabled: target.autoSettlementRecoveryEnabled,
+      message: target.message,
+      reason: String(body.reason || `Rollback to revision ${Number(row.revision || target.revision || 0)}`).slice(0, 240),
+      action: 'rollback',
+      sourceRevision: Number(row.revision || target.revision || 0),
+    });
+  }
+  
+  async function saveRuntimeControls(cfg, user, body = {}) {
+    const currentState = await loadRuntimeControls(cfg, { force: true });
+    if (!currentState.schemaReady) {
+      return { error: SUPABASE_SCHEMA_GUIDANCE, code: 'RUNTIME_CONTROLS_SCHEMA', status: 409 };
+    }
+  
+    const current = currentState.value;
+    const expectedRevision = Number(body.expectedRevision || 0);
+    if (!expectedRevision || expectedRevision !== Number(current.revision || 1)) {
+      return {
+        error: 'Настройки уже изменились в другой сессии. Обновите панель и повторите.',
+        code: 'RUNTIME_CONTROLS_CONFLICT',
+        status: 409,
+        current: publicRuntimeControls(current),
+      };
+    }
+  
+    const historySchema = await probeRuntimeHistorySchema(cfg);
+    if (!historySchema.ok) {
       const historyReason = 'Журнал изменений недоступен. Настройки не применены, чтобы не создавать неаудируемую версию.';
       void recordOpsEvent(cfg, {
         severity: 'error',
@@ -224,6 +282,7 @@ export function createRuntimeControlsRuntime({
 
     const historyReady = true;
     const historyReason = '';
+
     const requestedAction = String(body.action || 'update').trim();
     const changeAction = ['update', 'defaults', 'rollback', 'lockdown', 'lockdown_release'].includes(requestedAction) ? requestedAction : 'update';
     const sourceRevision = Number(body.sourceRevision || 0) || null;
