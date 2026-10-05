@@ -30,6 +30,30 @@ test('production admin access requires an exact allowlist match', () => {
   assert.equal(isAdminUser({ id: 5195504559 }, cfg), false);
 });
 
+test('access control fails safely for malformed config values', () => {
+  assert.equal(
+    isAdminUser(
+      { id: DEVELOPMENT_TELEGRAM_ID, __developmentIdentity: true },
+      { devMode: 'false', adminTelegramIds: null },
+    ),
+    false,
+  );
+  assert.equal(
+    isClosedBetaUser(
+      { id: 101, __telegramValidated: true },
+      { betaTelegramIds: '101' },
+    ),
+    false,
+  );
+  assert.equal(
+    closedBetaAccessDecision(
+      { id: 303, __telegramValidated: true },
+      { betaAccessEnabled: 'true', betaTelegramIds: [101] },
+    ).allowed,
+    true,
+  );
+});
+
 test('billing plan never grants administrative access', () => {
   assert.equal(isAdminUser({ id: 77, plan: 'PREMIUM' }, { devMode: false, adminTelegramIds: [] }), false);
 });
