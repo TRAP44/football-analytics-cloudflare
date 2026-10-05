@@ -26,6 +26,15 @@ function plan(id = 'retry-after-test') {
   };
 }
 
+test('retry classifier rejects malformed clock/status coercion without throwing', () => {
+  const result=classifyProviderIncidentTelegramResult(
+    {ok:false,status:'429',retryAfter:'60',description:'rate limited'},
+    true,
+  );
+  assert.equal(result.state,'retry_pending');
+  assert.ok(Number.isFinite(Date.parse(result.retryAt)));
+});
+
 test('Telegram 429 persists the full retry_after and never retries immediately', async () => {
   let calls=0;
   let finalized=null;
