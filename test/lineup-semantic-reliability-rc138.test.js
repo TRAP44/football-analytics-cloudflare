@@ -85,6 +85,48 @@ test('RC138 hardening rejects stale 11v11 data as a confidence-bearing signal', 
   assert.equal(quality.away.confirmed, false);
 });
 
+test('RC138 honors explicit stale boolean and rejects truthy string transport flags', () => {
+  const staleQuality=assessMatchLineups({home:side(11),away:side(11,100)});
+  const staleMeta=annotateLineupReliability(sourceMeta({
+    stale:true,
+    state:'available',
+    freshness:'fresh',
+  }),staleQuality);
+  assert.equal(staleMeta.state,'stale_data');
+  assert.equal(staleMeta.confirmed,false);
+  assert.equal(staleQuality.bothConfirmed,false);
+
+  const stringQuality=assessMatchLineups({home:side(11),away:side(11,100)});
+  const stringMeta=annotateLineupReliability(sourceMeta({
+    available:'false',
+    usable:'false',
+    observed:'false',
+  }),stringQuality);
+  assert.equal(stringMeta.confirmed,true);
+  assert.equal(stringMeta.available,false);
+  assert.equal(stringMeta.usable,false);
+  assert.equal(stringMeta.confidenceBearing,false);
+});
+
+test('RC138 reliability downgrade can be safely re-evaluated with fresh trusted metadata', () => {
+  const quality=assessMatchLineups({home:side(11),away:side(11,100)});
+  const stale=annotateLineupReliability(sourceMeta({
+    stale:true,
+    source:'stale-cache',
+    freshness:'stale',
+  }),quality);
+  assert.equal(stale.confirmed,false);
+  assert.equal(quality.bothConfirmed,false);
+  assert.equal(quality.structuralBothConfirmed,true);
+
+  const fresh=annotateLineupReliability(sourceMeta(),quality);
+  assert.equal(fresh.confirmed,true);
+  assert.equal(fresh.confidenceBearing,true);
+  assert.equal(quality.bothConfirmed,true);
+  assert.equal(quality.home.confirmed,true);
+  assert.equal(quality.away.confirmed,true);
+});
+
 test('RC138 hardening rejects complete XI without provider provenance', () => {
   const quality = assessMatchLineups({ home: side(11), away: side(11, 100) });
   const meta = annotateLineupReliability(sourceMeta({ provider:'unknown' }), quality);
