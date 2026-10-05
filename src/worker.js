@@ -47,6 +47,7 @@ import { createCompositeReadinessRuntime } from './readiness-contract.js';
 import { createDiagnosticsRuntime } from './diagnostics-runtime.js';
 import { createAppCapabilitiesRuntime } from './app-capabilities.js';
 import { createPublicHealthRuntime } from './public-health.js';
+import { analyzeQuotaDecision, parseAnalyzeRequest } from './api-analyze-preflight.js';
 import { createPublicStatusRouter, createPublicStatusRuntime } from './public-status.js';
 import { createAnalysisUsageCompensationRuntime, durableAnalysisUsageHeaders } from './analysis-usage-compensation.js';
 import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
@@ -23112,10 +23113,11 @@ function analysisResponsePayload(payload = {}, extra = {}) {
 async function apiAnalyze(request, cfg, user) {
   let body = {};
   try { body = await request.json(); } catch {}
-  const fixtureId = Number(body?.fixtureId);
-  const analysisOrigin=String(body?.origin || 'miniapp').slice(0,30);
-  const recheckRequested=Boolean(body?.recheck);
-  const newsImpactRecheck=Boolean(body?.newsImpactRecheck);
+  const analyzeRequest=parseAnalyzeRequest(body);
+  const fixtureId=analyzeRequest.fixtureId;
+  const analysisOrigin=analyzeRequest.origin;
+  const recheckRequested=analyzeRequest.recheckRequested;
+  const newsImpactRecheck=analyzeRequest.newsImpactRecheck;
   const newsPublishedAt=Number.isFinite(Date.parse(String(body?.newsPublishedAt || ''))) ? new Date(Date.parse(String(body.newsPublishedAt))).toISOString() : '';
   const newsImpactDecision=cleanNewsImpactDecisionCode(body?.newsImpactDecision);
   const newsImpactAction=cleanNewsImpactActionCode(body?.newsImpactAction);
@@ -23144,7 +23146,7 @@ async function apiAnalyze(request, cfg, user) {
     return json({...payload,...(recovery ? {newsImpactRecovery:recovery} : {})},status,headers);
   };
   try {
-  if (!Number.isFinite(fixtureId) || fixtureId <= 0) return await trackedFullAiFailureResponse({ error: 'Некорректный номер матча.' },400,'invalid_fixture');
+  if (!analyzeRequest.validFixtureId) return await trackedFullAiFailureResponse({ error: 'Некорректный номер матча.' },400,'invalid_fixture');
 
   const cacheKey = `fixture:${fixtureId}:v15-availability-quality-rc144`;
   const cached = await getCache(cacheKey, cfg);
@@ -23179,7 +23181,8 @@ async function apiAnalyze(request, cfg, user) {
   const entitlementBefore = await resolveUserEntitlements(user.id, fixtureId, cfg);
   const passCandidate = entitlementBefore.source === 'pass' && entitlementBefore.access.expandedAi === true;
   const quotaBefore = await getQuota(user.id, cfg);
-  if (!freeRecheck && !passCandidate && quotaBefore.left <= 0) return await trackedFullAiFailureResponse({ error: `Лимит исчерпан: ${quotaBefore.used}/${quotaBefore.limit} анализов сегодня.`, quota: quotaBefore },429,'quota_exhausted');
+  const quotaDecision=analyzeQuotaDecision(quotaBefore,{freeRecheck,passCandidate});
+  if (!quotaDecision.allowed) return await trackedFullAiFailureResponse({ error: quotaDecision.message, quota: quotaBefore },quotaDecision.status,quotaDecision.reason);
 
   const analysisLock=await claimDistributedAnalysisLock(fixtureId,cfg);
   if (!analysisLock.claimed && analysisLock.unavailable) {
