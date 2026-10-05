@@ -109,6 +109,10 @@ Current shared modules include:
 
 The frontend is being decomposed incrementally. New feature work should prefer focused modules over adding unrelated logic directly to `public/app.js`.
 
+## Documentation
+
+Operational, security, product and archived project documentation is indexed in [docs/README.md](docs/README.md).
+
 ## Local development
 
 Requirements:
