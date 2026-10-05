@@ -68,6 +68,7 @@ import {
   validateTelegramInitData,
 } from './crypto-utils.js';
 import { createTelegramLinksRuntime } from './telegram-links.js';
+import { signInvoiceBase, verifyInvoiceBaseSignature } from './invoice-signing.js';
 import {
   PASS_TYPES,
   createEntitlementService,
@@ -323,6 +324,7 @@ function config(env) {
     theOddsApiKey: env.THE_ODDS_API_KEY || '',
     tavilyKey: env.TAVILY_KEY || '',
     botToken: env.TELEGRAM_BOT_TOKEN || '',
+    invoiceSigningSecret: env.INVOICE_SIGNING_SECRET || '',
     publisherBotToken: env.TELEGRAM_PUBLISHER_BOT_TOKEN || '',
     telegramChannelId: env.TELEGRAM_CHANNEL_ID || '',
     webhookSecret: env.TELEGRAM_WEBHOOK_SECRET || '',
@@ -1994,18 +1996,14 @@ function billingPlanConfig(plan, cfg) {
   };
 }
 
-async function invoiceSignature(base, botToken) {
-  return bytesToHex(await hmacSha256(enc.encode(botToken), base)).slice(0, 24);
-}
-
-async function makeInvoicePayload(userId, plan, botToken) {
+async function makeInvoicePayload(userId, plan, signingSecret) {
   const nonceBytes = crypto.getRandomValues(new Uint8Array(6));
   const nonce = bytesToHex(nonceBytes);
   const base = `fa1|${Number(userId)}|${String(plan).toUpperCase()}|${nonce}`;
-  return `${base}|${await invoiceSignature(base, botToken)}`;
+  return `${base}|${await signInvoiceBase(base, signingSecret)}`;
 }
 
-async function parseInvoicePayload(payload, botToken) {
+async function parseInvoicePayload(payload, signingSecret, legacySecret = '') {
   const parts = String(payload || '').split('|');
   if (parts.length !== 5 || parts[0] !== 'fa1') return null;
   const [, uidRaw, planRaw, nonce, sig] = parts;
@@ -2013,8 +2011,7 @@ async function parseInvoicePayload(payload, botToken) {
   const plan = String(planRaw || '').toUpperCase();
   if (!Number.isSafeInteger(uid) || !BILLING_PLANS[plan] || !/^[0-9a-f]{12}$/i.test(nonce) || !/^[0-9a-f]{24}$/i.test(sig)) return null;
   const base = `fa1|${uid}|${plan}|${nonce}`;
-  const expected = await invoiceSignature(base, botToken);
-  if (!constantTimeEqual(expected.toLowerCase(), sig.toLowerCase())) return null;
+  if (!await verifyInvoiceBaseSignature(base, sig, signingSecret, legacySecret)) return null;
   return { userId: uid, plan, nonce };
 }
 
@@ -2184,7 +2181,7 @@ async function applySuccessfulPayment(userId, payment, cfg, fallbackDate = Math.
     return false;
   }
 
-  const subscription = await parseInvoicePayload(payment.invoice_payload, cfg.botToken);
+  const subscription = await parseInvoicePayload(payment.invoice_payload, cfg.invoiceSigningSecret, cfg.botToken);
   if (subscription) {
     if (Number(subscription.userId) !== Number(userId)) return false;
     const planCfg = billingPlanConfig(subscription.plan, cfg);
@@ -2219,7 +2216,7 @@ async function applySuccessfulPayment(userId, payment, cfg, fallbackDate = Math.
     return true;
   }
 
-  const pass = await parsePassInvoicePayload(payment.invoice_payload, cfg.botToken);
+  const pass = await parsePassInvoicePayload(payment.invoice_payload, cfg.invoiceSigningSecret, cfg.botToken);
   if (!pass || Number(pass.userId) !== Number(userId)) return false;
   const product = passProductConfig(pass.passType, cfg);
   if (!product || Number(payment.total_amount) !== Number(product.stars)) return false;
@@ -2312,7 +2309,7 @@ async function syncBillingFromStars(userId, cfg) {
     if (!chargeId || refundedChargeIds.has(chargeId) || seenIncomingCharges.has(chargeId)) continue;
     seenIncomingCharges.add(chargeId);
 
-    const pass = await parsePassInvoicePayload(source.invoice_payload, cfg.botToken);
+    const pass = await parsePassInvoicePayload(source.invoice_payload, cfg.invoiceSigningSecret, cfg.botToken);
     if (pass && Number(pass.userId) === Number(userId)) {
       const product = passProductConfig(pass.passType, cfg);
       if (product && Number(item.amount) === Number(product.stars)) {
@@ -2330,7 +2327,7 @@ async function syncBillingFromStars(userId, cfg) {
       continue;
     }
 
-    const parsed = await parseInvoicePayload(source.invoice_payload, cfg.botToken);
+    const parsed = await parseInvoicePayload(source.invoice_payload, cfg.invoiceSigningSecret, cfg.botToken);
     if (!parsed || Number(parsed.userId) !== Number(userId)) continue;
     const planCfg = billingPlanConfig(parsed.plan, cfg);
     if (!planCfg || Number(item.amount) !== Number(planCfg.stars)) continue;
@@ -7502,6 +7499,12 @@ async function apiEntitlements(request, cfg, user) {
 }
 
 async function apiBillingInvoice(request, cfg, user) {
+  if (!cfg.invoiceSigningSecret) {
+    return json({
+      error:'Создание счёта временно недоступно: ключ подписи не настроен.',
+      code:'INVOICE_SIGNING_SECRET_REQUIRED',
+    },503);
+  }
   const webhook = await billingWebhookStatus(request, cfg);
   if (!webhook.ready) return json({ error: 'Оплата ещё не активирована: Telegram webhook не настроен.', webhook }, 503);
 
@@ -7539,7 +7542,7 @@ async function apiBillingInvoice(request, cfg, user) {
       return json({ error: 'Активная подписка уже включает расширенный доступ.', code: 'BILLING_SUBSCRIPTION_HAS_ACCESS' }, 409);
     }
 
-    const payload = await createPassInvoicePayload(user.id, passType, fixtureId, cfg.botToken);
+    const payload = await createPassInvoicePayload(user.id, passType, fixtureId, cfg.invoiceSigningSecret);
     const invoiceUrl = await telegramApi('createInvoiceLink', cfg, {
       title: product.title,
       description: product.description,
@@ -7561,7 +7564,7 @@ async function apiBillingInvoice(request, cfg, user) {
     return json({ error: quota.plan === plan ? 'Этот тариф уже активен.' : 'Сначала отключите автопродление текущего тарифа и дождитесь окончания оплаченного периода.' }, 409);
   }
 
-  const payload = await makeInvoicePayload(user.id, plan, cfg.botToken);
+  const payload = await makeInvoicePayload(user.id, plan, cfg.invoiceSigningSecret);
   const invoiceUrl = await telegramApi('createInvoiceLink', cfg, {
     title: planCfg.title,
     description: planCfg.description,
