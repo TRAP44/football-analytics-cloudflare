@@ -49,6 +49,53 @@ function ledger(kind,status='sent',destinationKey='destination-a',overrides={}){
   };
 }
 
+test('post-deploy alert planning rejects malformed deployment identities and deduplicates destinations',()=>{
+  assert.equal(postDeployRegressionIncidentId('not-a-sha'),'');
+  assert.equal(postDeployRegressionIncidentId(true),'');
+
+  const invalid=planPostDeployRegressionAlert(
+    [lifecycle('incident')],
+    [],
+    {deploySha:'not-a-sha',destinations},
+  );
+  assert.deepEqual(invalid,{action:'none',reason:'deployment_identity_unavailable'});
+
+  const plan=planPostDeployRegressionAlert(
+    [lifecycle('incident')],
+    [],
+    {
+      deploySha:sha.toUpperCase(),
+      destinations:[
+        {slot:0,destinationKey:'destination-a'},
+        {slot:'0',destinationKey:'duplicate-slot'},
+        {slot:1,destinationKey:'destination-a'},
+        {slot:true,destinationKey:'coerced-slot'},
+        {slot:2,destinationKey:'destination-c'},
+      ],
+    },
+  );
+  assert.equal(plan.action,'send');
+  assert.deepEqual(plan.targetSlots,[0,2]);
+  assert.deepEqual(plan.targetDeliveries.map(item=>item.destinationKey),['destination-a','destination-c']);
+});
+
+test('post-deploy alert planning ignores malformed lifecycle rows instead of corrupting the latest state',()=>{
+  const history=[
+    lifecycle('incident','2026-09-29T15:00:00Z'),
+    lifecycle('recovered','not-a-date'),
+    lifecycle('watch','2026-09-29T15:10:00Z',sha,{id:3}),
+  ];
+  history.push({
+    source:'release_regression',
+    event_type:'post_deploy_regression',
+    created_at:'2026-09-29T15:20:00Z',
+    metadata:{deploySha:sha,lifecycleState:'INCIDENT_WRONG',windowMinutes:30},
+  });
+  const plan=planPostDeployRegressionAlert(history,[],{deploySha:sha,destinations});
+  assert.equal(plan.action,'none');
+  assert.equal(plan.reason,'watch_not_alertable');
+});
+
 test('WATCH remains observable but never sends an admin alert',()=>{
   const plan=planPostDeployRegressionAlert(
     [lifecycle('watch')],
@@ -98,6 +145,45 @@ test('sent incident destinations are durably deduplicated',()=>{
     [lifecycle('incident')],
     [ledger('incident','sent','destination-a'),ledger('incident','sent','destination-b')],
     {deploySha:sha,destinations},
+  );
+  assert.equal(plan.action,'none');
+  assert.equal(plan.reason,'already_delivered');
+});
+
+test('expired claimed/sending leases are retryable instead of suppressing alerts forever',()=>{
+  for(const status of ['claimed','sending']){
+    const due=planPostDeployRegressionAlert(
+      [lifecycle('incident')],
+      [{
+        ...ledger('incident',status,'destination-a',{attempts:1}),
+        locked_until:'2026-09-29T15:20:00Z',
+      }],
+      {deploySha:sha,destinations:[destinations[0]],nowMs:Date.parse('2026-09-29T15:30:00Z')},
+    );
+    assert.equal(due.action,'send');
+    assert.deepEqual(due.targetSlots,[0]);
+
+    const waiting=planPostDeployRegressionAlert(
+      [lifecycle('incident')],
+      [{
+        ...ledger('incident',status,'destination-a',{attempts:1}),
+        locked_until:'2026-09-29T16:00:00Z',
+      }],
+      {deploySha:sha,destinations:[destinations[0]],nowMs:Date.parse('2026-09-29T15:30:00Z')},
+    );
+    assert.equal(waiting.action,'none');
+    assert.equal(waiting.reason,'delivery_waiting');
+  }
+});
+
+test('delivery planner uses the newest ledger row for a destination',()=>{
+  const plan=planPostDeployRegressionAlert(
+    [lifecycle('incident')],
+    [
+      {...ledger('incident','sending','destination-a',{attempts:1}),updated_at:'2026-09-29T15:00:00Z',locked_until:'2026-09-29T16:00:00Z'},
+      {...ledger('incident','sent','destination-a',{attempts:2}),updated_at:'2026-09-29T15:10:00Z'},
+    ],
+    {deploySha:sha,destinations:[destinations[0]],nowMs:Date.parse('2026-09-29T15:30:00Z')},
   );
   assert.equal(plan.action,'none');
   assert.equal(plan.reason,'already_delivered');
