@@ -7954,7 +7954,13 @@ async function claimDistributedAnalysisLock(fixtureId,cfg) {
     }
     if (existing?.expired) {
       memory.cache.delete(key);
-      await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${key}`}).catch(()=>null);
+      await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${key}`}).catch(error => recordCriticalWriteFailure(cfg, {
+        code:'ANALYSIS_LOCK_STALE_DELETE_FAILED',
+        source:'analysis_lock',
+        eventType:'lock_cleanup',
+        message:error?.message || error,
+        meta:{fixtureId:id},
+      }));
     }
 
     const claimId=crypto.randomUUID();
@@ -7998,8 +8004,14 @@ async function releaseDistributedAnalysisLock(lock,cfg) {
     if (String(row?.payload?.claimId || '')!==String(lock.claimId)) return;
     memory.cache.delete(lock.key);
     await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${lock.key}`});
-  } catch {
-    // TTL is the final safety net if cleanup fails.
+  } catch (error) {
+    // TTL remains the final safety net, but cleanup failures must be observable.
+    void recordCriticalWriteFailure(cfg, {
+      code:'ANALYSIS_LOCK_RELEASE_FAILED',
+      source:'analysis_lock',
+      eventType:'lock_cleanup',
+      message:error?.message || error,
+    });
   }
 }
 
@@ -12104,7 +12116,13 @@ async function claimPostMatchReturnDelivery(userId, fixtureId, cfg) {
   const priorClaimedAt=Date.parse(prior?.payload?.claimedAt || '');
   if (prior?.payload?.state==='claimed' && Number.isFinite(priorClaimedAt) && priorClaimedAt < Date.now()-15*60_000) {
     memory.cache.delete(key);
-    await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${key}`}).catch(()=>null);
+    await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${key}`}).catch(error => recordCriticalWriteFailure(cfg, {
+      code:'POST_MATCH_RETURN_STALE_CLAIM_DELETE_FAILED',
+      source:'post_match_return',
+      eventType:'delivery_claim',
+      message:error?.message || error,
+      meta:{fixtureId:Number(fixtureId || 0)},
+    }));
   }
   const expiresAt=new Date(Date.now()+POST_MATCH_RETURN_MARKER_DAYS*86400_000).toISOString();
   const url=new URL(`${cfg.supabaseUrl}/rest/v1/analysis_cache`);
@@ -12144,7 +12162,15 @@ async function finishPostMatchReturnClaim(key, userId, fixtureId, cfg) {
 async function releasePostMatchReturnClaim(key, cfg) {
   if (!key) return;
   memory.cache.delete(key);
-  if (hasSupabase(cfg)) await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${key}`}).catch(()=>null);
+  if (hasSupabase(cfg)) {
+    await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${key}`})
+      .catch(error => recordCriticalWriteFailure(cfg, {
+        code:'POST_MATCH_RETURN_RELEASE_WRITE_FAILED',
+        source:'post_match_return',
+        eventType:'delivery_claim',
+        message:error?.message || error,
+      }));
+  }
 }
 
 async function processPostMatchReturns(cfg) {
