@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import {
   DAILY_DIGEST_POLICY,
   assessDailyDigestRun,
+  classifyDigestTransportError,
   estimateDigestOrchestration,
   isDailyDigestExecutionWindow,
   planDailyDigestRecipients,
@@ -225,6 +226,57 @@ test('G3. expired claim is reclaimed and delivered on a later invocation', async
   assert.equal(delivery.state.get(1).last_sent_date, DATE);
 });
 
+test('G4a. malformed claim and arm responses fail closed before Telegram delivery', async () => {
+  const source=rows(2);
+  let sends=0;
+  const plan=planDailyDigestRecipients(source,{date:DATE,maxRecipients:2});
+  const result=await runBoundedDailyDigest({
+    ...options(plan,statefulDelivery(source),{concurrency:1}),
+    claim:async row=>row.telegram_id===1 ? 'true' : true,
+    arm:async()=> 'true',
+    sendDigest:async()=>{sends+=1;},
+    release:async()=>true,
+  });
+  assert.equal(sends,0);
+  assert.equal(result.duplicate,1);
+  assert.equal(result.armFailed,1);
+  assert.equal(result.retryableDeferred,1);
+});
+
+test('G4b. malformed completion and release responses are observable', async () => {
+  const source=rows(1);
+  const delivery=statefulDelivery(source);
+  delivery.complete=async()=>undefined;
+  const plan=planDailyDigestRecipients(source,{date:DATE,maxRecipients:1});
+  const completed=await runBoundedDailyDigest(options(plan,delivery,{concurrency:1}));
+  assert.equal(completed.sent,1);
+  assert.equal(completed.stateFailed,1);
+
+  const retrySource=rows(1);
+  const retryDelivery=statefulDelivery(retrySource);
+  retryDelivery.arm=async()=>false;
+  retryDelivery.release=async()=>undefined;
+  const retryPlan=planDailyDigestRecipients(retrySource,{date:DATE,maxRecipients:1});
+  const released=await runBoundedDailyDigest(options(retryPlan,retryDelivery,{concurrency:1}));
+  assert.equal(released.releaseFailed,1);
+});
+
+test('G4c. malformed orchestration limits fall back to bounded defaults instead of spawning zero workers', async () => {
+  const source=rows(2);
+  const delivery=statefulDelivery(source);
+  const plan=planDailyDigestRecipients(source,{date:DATE,maxRecipients:2});
+  const result=await runBoundedDailyDigest(options(plan,delivery,{
+    maxRecipients:'NaN',
+    concurrency:'NaN',
+    minSendIntervalMs:'Infinity',
+    executionBudgetMs:'NaN',
+  }));
+  assert.equal(result.concurrency,DAILY_DIGEST_POLICY.concurrency);
+  assert.equal(result.maxRecipients,DAILY_DIGEST_POLICY.maxRecipientsPerRun);
+  assert.equal(result.minSendIntervalMs,DAILY_DIGEST_POLICY.minSendIntervalMs);
+  assert.equal(result.sent,2);
+});
+
 test('G4. claim is armed before Telegram send and an arm failure never touches Telegram', async () => {
   const source = rows(1);
   const delivery = statefulDelivery(source);
@@ -277,6 +329,22 @@ test('G6. ambiguous Telegram outcome remains sealed and is not replayed after th
   });
   assert.equal(next.pending.length, 0);
   assert.equal(next.activeClaims, 1);
+});
+
+test('H0. malformed Telegram retry_after is bounded to a safe retry delay', () => {
+  const invalid=classifyDigestTransportError({
+    code:'TELEGRAM_RATE_LIMIT',
+    status:429,
+    retryAfter:'NaN',
+  });
+  assert.equal(invalid.retryAfter,1);
+
+  const huge=classifyDigestTransportError({
+    code:'TELEGRAM_RATE_LIMIT',
+    status:429,
+    retryAfter:999999,
+  });
+  assert.equal(huge.retryAfter,3600);
 });
 
 test('H. Telegram 429 honors retry_after once and never enters an uncontrolled retry loop', async () => {
