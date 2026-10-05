@@ -11581,7 +11581,24 @@ async function apiModelRemediation(request, cfg, user) {
       detail: { providerCalls: dates.length, finishedFixtures: fixtures.filter(f => isFinishedStatus(fixtureStatusShort(f))).length, settlementChecked: settlement.checked },
     });
     memory.modelRemediation.lastRun = action;
-    await noteSettlementWatchdogOutcome(cfg, status, { actionId }).catch(() => null);
+    await failSoftWithOpsEvent(
+      () => noteSettlementWatchdogOutcome(cfg, status, { actionId }),
+      {
+        fallback:null,
+        onFailure:error=>recordOpsEvent(cfg,{
+          severity:'error',
+          source:'model',
+          eventType:'settlement_watchdog_state',
+          code:'SETTLEMENT_WATCHDOG_STATE_WRITE_FAILED',
+          message:'Settlement watchdog state update failed after remediation execution.',
+          meta:{
+            actionId,
+            status,
+            error:redactOpsString(error?.message || error,180),
+          },
+        }),
+      },
+    );
     await recordOpsEvent(cfg, {
       severity: skippedCount ? 'warning' : 'info', source: 'model', eventType: 'prediction_remediation',
       code: skippedCount ? 'REMEDIATION_PARTIAL' : 'REMEDIATION_COMPLETED', message: reason,
@@ -11590,18 +11607,34 @@ async function apiModelRemediation(request, cfg, user) {
     const refreshedReport = await buildModelRemediationReport(cfg).catch(() => null);
     return json({ ok: true, execution: action, report: refreshedReport || report });
   } catch (error) {
-    await recordRemediationAction(cfg, user, {
-      actionId,
-      actionType: 'recover',
-      status: 'failed',
-      reason,
-      candidateCount: report.recovery.stalePending,
-      inspectedCount: currentIds.length,
-      settledCount: 0,
-      skippedCount: currentIds.length,
-      fixtureIds: currentIds,
-      detail: { providerCalls: dates.length, error: redactOpsString(error?.message || error, 180) },
-    }).catch(() => null);
+    await failSoftWithOpsEvent(
+      () => recordRemediationAction(cfg, user, {
+        actionId,
+        actionType: 'recover',
+        status: 'failed',
+        reason,
+        candidateCount: report.recovery.stalePending,
+        inspectedCount: currentIds.length,
+        settledCount: 0,
+        skippedCount: currentIds.length,
+        fixtureIds: currentIds,
+        detail: { providerCalls: dates.length, error: redactOpsString(error?.message || error, 180) },
+      }),
+      {
+        fallback:null,
+        onFailure:writeError=>recordOpsEvent(cfg,{
+          severity:'error',
+          source:'model',
+          eventType:'prediction_remediation_write',
+          code:'REMEDIATION_FAILURE_RECORD_WRITE_FAILED',
+          message:'Failed remediation execution could not be persisted to the remediation action log.',
+          meta:{
+            actionId,
+            error:redactOpsString(writeError?.message || writeError,180),
+          },
+        }),
+      },
+    );
     throw error;
   }
 }
