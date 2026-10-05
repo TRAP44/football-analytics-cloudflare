@@ -23,6 +23,22 @@ function cacheOpsCategory(cacheKey) {
   return (safe.join(':') || 'opaque').slice(0, 80);
 }
 
+function cacheTtlMinutes(value, fallback = 10) {
+  const parsed = Number(value);
+  const fallbackParsed = Number(fallback);
+  const safeFallback = Number.isFinite(fallbackParsed)
+    ? Math.max(1 / 6, Math.min(24 * 60, fallbackParsed))
+    : 10;
+  return Number.isFinite(parsed)
+    ? Math.max(1 / 6, Math.min(24 * 60, parsed))
+    : safeFallback;
+}
+
+function cacheExpiryMs(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 export function createSharedCacheRuntime({
   memory,
   bumpTelemetry,
@@ -33,17 +49,31 @@ export function createSharedCacheRuntime({
   pruneMemoryState,
   recordOpsEvent,
 }) {
+  async function emitOpsEvent(cfg, event) {
+    if (typeof recordOpsEvent !== 'function') return;
+    try {
+      await Promise.resolve(recordOpsEvent(cfg, event));
+    } catch {
+      // Cache observability is best-effort and must never break cache fallback.
+    }
+  }
+
   async function getCacheEntry(cacheKey, cfg, allowExpired = false) {
     // L1 cache inside the current Worker isolate. This reduces Supabase reads and
     // also gives us a tiny fallback during a transient database problem.
-    const local = memory.cache.get(cacheKey);
-    if (local && local.expiresAt > Date.now()) {
+    let local = memory.cache.get(cacheKey);
+    const localExpiresAt = cacheExpiryMs(local?.expiresAt);
+    if (local && localExpiresAt === null) {
+      memory.cache.delete(cacheKey);
+      local = null;
+    }
+    if (local && localExpiresAt > Date.now()) {
       bumpTelemetry('cacheHits');
       phase5ProviderCacheUsage(cfg,cacheKey,'cacheHits');
       // Touch the key so Map insertion order acts as a lightweight LRU.
       memory.cache.delete(cacheKey);
       memory.cache.set(cacheKey, local);
-      return { payload: local.payload, expired: false, expiresAt: new Date(local.expiresAt).toISOString(), layer: 'memory' };
+      return { payload: local.payload, expired: false, expiresAt: new Date(localExpiresAt).toISOString(), layer: 'memory' };
     }
 
     if (hasSupabase(cfg)) {
@@ -54,7 +84,7 @@ export function createSharedCacheRuntime({
           if (allowExpired && local) {
             bumpTelemetry('staleCacheHits');
             phase5ProviderCacheUsage(cfg,cacheKey,'staleCacheHits');
-            return { payload: local.payload, expired: true, expiresAt: new Date(local.expiresAt).toISOString(), layer: 'memory-stale' };
+            return { payload: local.payload, expired: true, expiresAt: new Date(localExpiresAt).toISOString(), layer: 'memory-stale' };
           }
           return null;
         }
@@ -75,24 +105,24 @@ export function createSharedCacheRuntime({
         return { payload: row.payload, expired, expiresAt: row.expires_at, layer: 'supabase' };
       } catch (error) {
         bumpTelemetry('supabaseErrors');
-        if (local && (allowExpired || local.expiresAt > Date.now())) {
-          if (local.expiresAt <= Date.now()) {
+        if (local && (allowExpired || localExpiresAt > Date.now())) {
+          if (localExpiresAt <= Date.now()) {
             bumpTelemetry('staleCacheHits');
             phase5ProviderCacheUsage(cfg,cacheKey,'staleCacheHits');
           } else {
             bumpTelemetry('cacheHits');
             phase5ProviderCacheUsage(cfg,cacheKey,'cacheHits');
           }
-          recordOpsEvent(cfg, {
+          await emitOpsEvent(cfg, {
             severity: 'warning', source: 'cache', eventType: 'supabase_cache_read_fallback', code: 'CACHE_DB_READ',
             message: error?.message || error, meta: { cacheCategory: cacheOpsCategory(cacheKey) },
-          }).catch(() => {});
-          return { payload: local.payload, expired: local.expiresAt <= Date.now(), expiresAt: new Date(local.expiresAt).toISOString(), layer: 'memory-fallback' };
+          });
+          return { payload: local.payload, expired: localExpiresAt <= Date.now(), expiresAt: new Date(localExpiresAt).toISOString(), layer: 'memory-fallback' };
         }
-        recordOpsEvent(cfg, {
+        await emitOpsEvent(cfg, {
           severity: 'warning', source: 'cache', eventType: 'supabase_cache_read_degraded', code: 'CACHE_DB_READ_NO_L1',
           message: error?.message || error, meta: { cacheCategory: cacheOpsCategory(cacheKey) },
-        }).catch(() => {});
+        });
         // Treat a transient shared-cache outage as a cache miss. The route may
         // still refresh from the provider and serve the user.
         return null;
@@ -103,7 +133,7 @@ export function createSharedCacheRuntime({
       bumpTelemetry('cacheMisses');
       return null;
     }
-    const expired = local.expiresAt <= Date.now();
+    const expired = localExpiresAt <= Date.now();
     if (expired && !allowExpired) {
       bumpTelemetry('cacheMisses');
       return null;
@@ -115,15 +145,17 @@ export function createSharedCacheRuntime({
       bumpTelemetry('cacheHits');
       phase5ProviderCacheUsage(cfg,cacheKey,'cacheHits');
     }
-    return { payload: local.payload, expired, expiresAt: new Date(local.expiresAt).toISOString(), layer: 'memory' };
+    return { payload: local.payload, expired, expiresAt: new Date(localExpiresAt).toISOString(), layer: 'memory' };
   }
 
   async function getCache(cacheKey, cfg) {
-    return (await getCacheEntry(cacheKey, cfg, false))?.payload || null;
+    const entry = await getCacheEntry(cacheKey, cfg, false);
+    return entry ? entry.payload : null;
   }
 
   async function getStaleCache(cacheKey, cfg) {
-    return (await getCacheEntry(cacheKey, cfg, true))?.payload || null;
+    const entry = await getCacheEntry(cacheKey, cfg, true);
+    return entry ? entry.payload : null;
   }
 
   function cacheSourceProvenance(payload = {}) {
@@ -149,8 +181,8 @@ export function createSharedCacheRuntime({
     return { provider, sourceUpdatedAt, freshness };
   }
 
-  async function setCache(cacheKey, fixtureId, payload, cfg, minutes = cfg.cacheMinutes) {
-    const ttlMinutes = Number.isFinite(Number(minutes)) ? Math.max(1 / 6, Number(minutes)) : cfg.cacheMinutes;
+  async function setCache(cacheKey, fixtureId, payload, cfg = {}, minutes = cfg?.cacheMinutes) {
+    const ttlMinutes = cacheTtlMinutes(minutes, cfg?.cacheMinutes);
     const expiresAt = new Date(Date.now() + ttlMinutes * 60_000).toISOString();
     const expiresAtMs = Date.parse(expiresAt);
     const provenance = cacheSourceProvenance(payload);
@@ -162,7 +194,7 @@ export function createSharedCacheRuntime({
     try {
       await supaUpsert(cfg, 'analysis_cache', {
         cache_key: cacheKey,
-        fixture_id: Number(fixtureId),
+        fixture_id: Number.isSafeInteger(Number(fixtureId)) && Number(fixtureId) > 0 ? Number(fixtureId) : null,
         payload,
         expires_at: expiresAt,
         provider: provenance.provider,
@@ -173,10 +205,10 @@ export function createSharedCacheRuntime({
     } catch (error) {
       bumpTelemetry('cacheWriteErrors');
       bumpTelemetry('supabaseErrors');
-      recordOpsEvent(cfg, {
+      await emitOpsEvent(cfg, {
         severity: 'warning', source: 'cache', eventType: 'supabase_cache_write_fallback', code: 'CACHE_DB_WRITE',
         message: error?.message || error, meta: { cacheCategory: cacheOpsCategory(cacheKey), provider: provenance.provider },
-      }).catch(() => {});
+      });
       // Cache persistence is an optimization. Do not fail a successful user request
       // only because the shared cache could not be written.
     }
