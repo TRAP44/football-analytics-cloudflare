@@ -81,6 +81,16 @@ begin
     raise exception 'Supabase integration contract: backend-only table missing RLS';
   end if;
 
+  if not exists (
+    select 1
+    from pg_rules
+    where schemaname = 'public'
+      and tablename = 'runtime_controls'
+      and rulename = 'runtime_controls_atomic_history'
+  ) then
+    raise exception 'Supabase integration contract: atomic runtime-control history rule is missing';
+  end if;
+
   if to_regprocedure(
        'public.consume_analysis_quota(bigint,date,integer)'
      ) is null
@@ -421,7 +431,7 @@ begin
   if not exists (
     select 1
     from supabase_migrations.schema_migrations
-    where version='20260101001900'
+    where version='20260101002000'
   ) then
     raise exception 'Supabase integration contract: latest migration history entry missing';
   end if;
