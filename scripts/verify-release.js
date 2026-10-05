@@ -2,6 +2,7 @@ import fs from 'node:fs';
 
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+const releaseContract = JSON.parse(fs.readFileSync('release-contract.json', 'utf8'));
 const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync('src/router.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-transport.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-update-orchestration.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-dedupe.js', 'utf8') + '\n' + fs.readFileSync('src/telegram-links.js', 'utf8') + '\n' + fs.readFileSync('src/auth-user.js', 'utf8') + '\n' + fs.readFileSync('src/cache-runtime.js', 'utf8') + '\n' + fs.readFileSync('src/api-football-gateway.js', 'utf8') + '\n' + fs.readFileSync('src/scheduled-jobs.js', 'utf8');
 const providerSloIncidents = fs.readFileSync('src/provider-slo-incidents.js','utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
@@ -54,10 +55,13 @@ const wrangler = fs.readFileSync('wrangler.jsonc', 'utf8');
 const readme = fs.readFileSync('README_CLOUDFLARE_RU.md', 'utf8');
 const qaChecklist = fs.readFileSync('QA_RELEASE_CHECKLIST_RU.md', 'utf8');
 const envExample = fs.readFileSync('.env.example', 'utf8');
-const baselinePath = 'supabase/baseline/supabase_baseline_v6_19.sql';
-const baseline = fs.existsSync(baselinePath) ? fs.readFileSync(baselinePath, 'utf8') : '';
-const expected = `${pkg.version}-rc144`;
 const failures = [];
+const expected = String(releaseContract.runtimeVersion || '');
+const runtimeMatch = /^(\d+\.\d+\.\d+)-rc(\d+)$/i.exec(expected);
+const expectedRc = runtimeMatch ? `RC${runtimeMatch[2]}` : '';
+const expectedChannel = runtimeMatch ? `rc${runtimeMatch[2]}` : '';
+const baselinePath = String(releaseContract.freshInstallBaseline || '');
+const baseline = baselinePath && fs.existsSync(baselinePath) ? fs.readFileSync(baselinePath, 'utf8') : '';
 function regressionContract(path, marker) {
   if (!fs.existsSync(path)) return false;
   return fs.readFileSync(path, 'utf8').includes(marker);
@@ -68,10 +72,19 @@ if (rootSql.length) failures.push(`Supabase SQL must live under supabase/: ${roo
 
 if (lock.version !== pkg.version || lock.packages?.['']?.version !== pkg.version) failures.push('package-lock version must match package.json');
 
+if (releaseContract.applicationVersion !== pkg.version) failures.push('release-contract applicationVersion must match package.json');
+if (!runtimeMatch || runtimeMatch[1] !== pkg.version) failures.push('release-contract runtimeVersion must be <package.version>-rc<number>');
+if (!baselinePath || !fs.existsSync(baselinePath)) failures.push('release-contract freshInstallBaseline must reference an existing file');
+if (!releaseContract.latestMigration || !fs.existsSync(releaseContract.latestMigration)) failures.push('release-contract latestMigration must reference an existing file');
+if (releaseContract.databaseContract?.version !== 2) failures.push('release-contract databaseContract.version must remain 2');
+if (releaseContract.databaseContract?.rpc !== 'backend_readiness_contract_v2') failures.push('release-contract databaseContract.rpc must remain backend_readiness_contract_v2');
+if (!releaseContract.databaseContract?.compatibleFingerprints?.includes(releaseContract.databaseContract?.fingerprint)) failures.push('release-contract compatibleFingerprints must include the production fingerprint');
+if (!releaseContract.databaseContract?.compatibleFingerprints?.includes(releaseContract.databaseContract?.freshInstallFingerprint)) failures.push('release-contract compatibleFingerprints must include the fresh-install fingerprint');
+
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
-if (!worker.includes("const RC_NAME = 'RC144'")) failures.push('Worker RC name must be RC144');
+if (!expectedRc || !worker.includes(`const RC_NAME = '${expectedRc}'`)) failures.push(`Worker RC name must be ${expectedRc || 'derived from runtimeVersion'}`);
 if (!appRuntime.includes(`CLIENT_VERSION = '${expected}'`)) failures.push(`Client version must be ${expected}`);
-if (!appRuntime.includes("CLIENT_RELEASE_CHANNEL = 'rc144'")) failures.push('Client release channel must be rc144');
+if (!expectedChannel || !appRuntime.includes(`CLIENT_RELEASE_CHANNEL = '${expectedChannel}'`)) failures.push(`Client release channel must be ${expectedChannel || 'derived from runtimeVersion'}`);
 const frontendAssetRevision = /<meta name="frontend-asset-revision" content="([^"]+)" \/>/.exec(html)?.[1] || '';
 const adminFrontendAssetRevision = /<meta name="frontend-asset-revision" content="([^"]+)" \/>/.exec(adminHtml)?.[1] || '';
 const runtimeFrontendAssetRevision = /FRONTEND_ASSET_REVISION = '([^']+)'/.exec(appRuntime)?.[1] || '';
@@ -159,7 +172,7 @@ if (!rollbackSmoke.includes("'/api/me', '/api/release-readiness', '/api/calibrat
 if (!staticHeaders.includes('Content-Security-Policy:')) failures.push('Missing static asset Content-Security-Policy');
 if (!staticHeaders.includes("script-src 'self' https://telegram.org")) failures.push('CSP must allow the official Telegram Mini App SDK');
 if (!deployWorkflow.includes('exit 1')) failures.push('Production deployment must fail closed without Cloudflare credentials');
-if (!deployWorkflow.includes('RELEASE_VERSION: \"6.120.0-rc144\"')) failures.push('Production deploy must pin the verified release version');
+if (!deployWorkflow.includes(`RELEASE_VERSION: "${expected}"`)) failures.push('Production deploy must pin the verified release-contract runtime version');
 if (!deployWorkflow.includes('--message "release=${{ env.RELEASE_VERSION }} sha=${{ env.DEPLOY_SHA }}"')) failures.push('Production deploy message must bind release version and deploy SHA');
 if (!deployWorkflow.includes('post-deploy-smoke.js "$SMOKE_URL" "$RELEASE_VERSION" "$EXPECTED_RUNTIME_SHA"')) failures.push('Production smoke must verify the same release identity used for deployment');
 if (!wrangler.includes('"/health/*"')) failures.push('All health probes must be routed through the Worker');
@@ -865,4 +878,4 @@ if (failures.length) {
   console.error(failures.join('\n'));
   process.exit(1);
 }
-console.log(`RC109 Supabase Probe Confirmation Guard contracts verified for ${expected}.`);
+console.log(`Release contracts verified for ${expected}.`);
