@@ -38,7 +38,7 @@ export function createAdminBetaDashboardModule({
     if (state.betaDashboardLoading) {
       badge.textContent='ПРОВЕРКА';
       badge.className='beta-health-badge watch';
-      healthRoot.innerHTML='<div class="beta-empty">Собираю агрегированные Phase 5 production-сигналы…</div>';
+      healthRoot.innerHTML='<div class="beta-empty">Собираю агрегированные production-сигналы…</div>';
       metricsRoot.innerHTML='';
       timingsRoot.innerHTML='';
       errorsRoot.innerHTML='';
@@ -50,7 +50,7 @@ export function createAdminBetaDashboardModule({
     if (!data?.available) {
       badge.textContent='НЕТ ДАННЫХ';
       badge.className='beta-health-badge';
-      healthRoot.innerHTML=`<div class="beta-empty">${escapeHtml(data?.reason || 'Phase 5 telemetry ещё не загружена.')}</div>`;
+      healthRoot.innerHTML=`<div class="beta-empty">${escapeHtml(data?.reason || 'Production telemetry ещё не загружена.')}</div>`;
       metricsRoot.innerHTML='';
       timingsRoot.innerHTML='';
       errorsRoot.innerHTML='';
@@ -138,7 +138,7 @@ export function createAdminBetaDashboardModule({
     ].filter(([,value])=>Number(value || 0)>0);
     errorsRoot.innerHTML=runtimeRows.length
       ? runtimeRows.map(([key,count])=>`<span class="beta-error-chip"><b>${escapeHtml(humanizeTechnicalText(key))}</b> ${Number(count || 0)}</span>`).join('')
-      : '<span class="tiny">Ошибок Phase 5 cohort за период не зафиксировано.</span>';
+      : '<span class="tiny">Ошибок production cohort за период не зафиксировано.</span>';
   
     const abandonment=product.abandonmentStage || {};
     const abandonmentLabels={home:'Home → поиск',search:'Поиск → матч',matchCenter:'Матч → AI',ai:'AI → Мои команды',favoriteTeam:'Мои команды → история',history:'История → reopen'};
@@ -160,7 +160,7 @@ export function createAdminBetaDashboardModule({
     try {
       state.betaDashboard=await api(`/api/phase5-dashboard?days=${Number(state.betaDashboardDays || 7)}`,{timeoutMs:10000,retry:false,dedupe:false});
     } catch (error) {
-      state.betaDashboard={available:false,reason:error.message || 'Не удалось загрузить Phase 5 Dashboard.'};
+      state.betaDashboard={available:false,reason:error.message || 'Не удалось загрузить Production Dashboard.'};
     } finally {
       state.betaDashboardLoading=false;
       renderBetaDashboard();
