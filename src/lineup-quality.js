@@ -20,7 +20,11 @@ function explicitLineupStale(meta = {}) {
   const state = compactState(meta?.state);
   const freshness = compactState(meta?.freshness);
   const source = compactState(meta?.source);
-  return state === 'stale' || state === 'stale_data' || freshness === 'stale' || source === 'stale-cache';
+  return meta?.stale === true
+    || state === 'stale'
+    || state === 'stale_data'
+    || freshness === 'stale'
+    || source === 'stale-cache';
 }
 
 function lineupProvenanceKnown(meta = {}) {
@@ -46,8 +50,24 @@ function lineupSourceReliability(meta = {}) {
   };
 }
 
+function restoreStructuralMatchQuality(quality = {}) {
+  if (!quality || typeof quality !== 'object' || quality.structuralBothConfirmed !== true) return quality;
+  quality.bothConfirmed = true;
+  quality.confirmedSides = 2;
+  quality.reliabilityConfirmed = true;
+  quality.reliabilityReason = '';
+  for (const sideName of ['home', 'away']) {
+    const side = quality?.[sideName];
+    if (!side || typeof side !== 'object' || side.structurallyConfirmed !== true) continue;
+    side.confirmed = true;
+    side.reliabilityConfirmed = true;
+    side.reliabilityReason = '';
+  }
+  return quality;
+}
+
 function downgradeConfirmedMatchQuality(quality = {}, reason = '') {
-  if (!quality || typeof quality !== 'object' || !quality.bothConfirmed) return quality;
+  if (!quality || typeof quality !== 'object' || quality.bothConfirmed !== true) return quality;
   quality.structuralBothConfirmed = true;
   quality.reliabilityConfirmed = false;
   quality.reliabilityReason = reason;
@@ -56,7 +76,7 @@ function downgradeConfirmedMatchQuality(quality = {}, reason = '') {
   for (const sideName of ['home', 'away']) {
     const side = quality?.[sideName];
     if (!side || typeof side !== 'object') continue;
-    side.structurallyConfirmed = Boolean(side.confirmed);
+    side.structurallyConfirmed = side.confirmed === true;
     side.confirmed = false;
     side.reliabilityConfirmed = false;
     side.reliabilityReason = reason;
@@ -155,12 +175,13 @@ export function assessLineupQuality(lineup = null) {
 
 export function annotateLineupReliability(meta = {}, matchQuality = {}) {
   const quality = matchQuality && typeof matchQuality === 'object' ? matchQuality : {};
-  const anyPublished = Boolean(quality.anyPublished);
-  const bothConfirmed = Boolean(quality.bothConfirmed);
+  restoreStructuralMatchQuality(quality);
+  const anyPublished = quality.anyPublished === true;
+  const bothConfirmed = quality.bothConfirmed === true;
   const originalState = String(meta?.state || (anyPublished ? 'available' : 'empty_response'));
-  const originalAvailable = meta?.available === undefined ? anyPublished : Boolean(meta.available);
-  const originalUsable = meta?.usable === undefined ? originalAvailable : Boolean(meta.usable);
-  const originalObserved = meta?.observed === undefined ? anyPublished : Boolean(meta.observed);
+  const originalAvailable = meta?.available === undefined ? anyPublished : meta.available === true;
+  const originalUsable = meta?.usable === undefined ? originalAvailable : meta.usable === true;
+  const originalObserved = meta?.observed === undefined ? anyPublished : meta.observed === true;
   const sourceReliability = lineupSourceReliability(meta);
 
   if (!anyPublished) {
@@ -261,17 +282,37 @@ export function annotateLineupReliability(meta = {}, matchQuality = {}) {
 }
 
 export function assessMatchLineups(lineups = {}) {
-  const home = assessLineupQuality(lineups?.home || null);
-  const away = assessLineupQuality(lineups?.away || null);
+  const homeLineup=lineups?.home || null;
+  const awayLineup=lineups?.away || null;
+  const home = assessLineupQuality(homeLineup);
+  const away = assessLineupQuality(awayLineup);
+
+  const homeStarters=Array.isArray(homeLineup?.startXI) ? homeLineup.startXI : [];
+  const awayStarters=Array.isArray(awayLineup?.startXI) ? awayLineup.startXI : [];
+  const resolver=createPlayerIdentityResolver([...homeStarters,...awayStarters]);
+  const explicitKeys = rows => new Set(
+    rows
+      .map(player => resolver.resolve(player))
+      .filter(identity => identity.valid && identity.via === 'id' && identity.key)
+      .map(identity => identity.key),
+  );
+  const homeIds=explicitKeys(homeStarters);
+  const awayIds=explicitKeys(awayStarters);
+  const crossTeamStarterOverlapCount=[...homeIds].filter(key => awayIds.has(key)).length;
+  const structuralBothConfirmed=home.confirmed && away.confirmed;
+  const integrityConfirmed=structuralBothConfirmed && crossTeamStarterOverlapCount === 0;
+
   return {
     home,
     away,
     anyPublished: home.published || away.published,
     bothPublished: home.published && away.published,
-    bothConfirmed: home.confirmed && away.confirmed,
+    bothConfirmed: integrityConfirmed,
     confirmedSides: Number(home.confirmed) + Number(away.confirmed),
     partialSides: Number(home.partial) + Number(away.partial),
-    reliabilityConfirmed: home.confirmed && away.confirmed,
-    methodology: 'Состав считается подтверждённым только при 11 уникальных игроках стартового XI и надёжном свежем источнике. Stale-кэш или неизвестный provenance не повышают статус до подтверждённого.',
+    crossTeamStarterOverlapCount,
+    integrityConfirmed,
+    reliabilityConfirmed: integrityConfirmed,
+    methodology: 'Состав считается подтверждённым только при 11 уникальных игроках стартового XI, отсутствии одного и того же явного player ID в обеих командах и надёжном свежем источнике. Stale-кэш или неизвестный provenance не повышают статус до подтверждённого.',
   };
 }
