@@ -63,7 +63,7 @@ test('external monitor fails closed on readiness 503 but treats maintenance as a
 });
 
 test('external monitoring workflow is independent, retried and incident-aware without gh CLI', () => {
-  assert.match(workflow, /cron: "7,22,37,52 \* \* \* \*"/);
+  assert.match(workflow, /cron: "17 \* \* \* \*"/);
   assert.match(workflow, /workflow_run:/);
   assert.match(workflow, /workflows: \["Deploy Production"\]/);
   assert.match(workflow, /types: \[completed\]/);
