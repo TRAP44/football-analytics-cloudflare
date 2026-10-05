@@ -59,7 +59,7 @@ jobs:
 
             if [[ "$branch" == "main" ]]; then
               if [[ "$conclusion" == "cancelled" || "$conclusion" == "skipped" ]]; then
-                (( age_days >= 1 )) && delete_run=true
+                delete_run=true
               elif [[ "$conclusion" == "failure" ]]; then
                 (( age_days >= 14 )) && delete_run=true
               else
