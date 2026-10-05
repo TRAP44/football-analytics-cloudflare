@@ -27,6 +27,7 @@ jobs:
       DIAGNOSTIC_MONITOR_RETRIES: "2"
       PRIMARY_RUN_ID: ${{ github.event.workflow_run.id }}
       PRIMARY_RUN_URL: ${{ github.event.workflow_run.html_url }}
+      MONITOR_INFRA_TRACKING_ISSUE: "463"
       GITHUB_TOKEN: ${{ github.token }}
 
     steps:
