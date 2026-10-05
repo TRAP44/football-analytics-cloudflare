@@ -109,6 +109,21 @@ test('RC120 rejects split production traffic', () => {
   );
 });
 
+test('RC120 rejects an ambiguous versions list with duplicate active version IDs', () => {
+  assert.throws(
+    () => verifyProductionReleasePostcondition(
+      deployment([{ version_id: activeId, percentage: 100 }]),
+      [
+        version(activeId, `release=${release} sha=${sha}`),
+        version(activeId, `release=${release} sha=${sha}`),
+      ],
+      release,
+      sha
+    ),
+    /appears multiple times/
+  );
+});
+
 test('RC120 rejects a mismatched or missing active version identity stamp', () => {
   assert.throws(
     () => verifyProductionReleasePostcondition(
