@@ -87,10 +87,10 @@ test('external monitoring workflow is independent, retried and incident-aware wi
   assert.match(runbook, /не выполняет rollback автоматически/i);
 });
 
-test('failed primary monitor has a self-hosted diagnostic fallback with read-only Actions access', () => {
+test('failed primary monitor has a GitHub-hosted diagnostic fallback with read-only Actions access', () => {
   assert.match(diagnosticsWorkflow, /workflows: \["External Production Monitor"\]/);
   assert.match(diagnosticsWorkflow, /conclusion == 'failure'/);
-  assert.match(diagnosticsWorkflow, /runs-on: \[self-hosted, Linux, X64\]/);
+  assert.match(diagnosticsWorkflow, /runs-on: ubuntu-latest/);
   assert.match(diagnosticsWorkflow, /actions: read/);
   assert.match(diagnosticsWorkflow, /issues: write/);
   assert.match(diagnosticsWorkflow, /MONITOR_INFRA_TRACKING_ISSUE: "463"/);
