@@ -145,7 +145,20 @@ export function createImportantChangeNotificationService({
       return { ok:true, checked:0, fixturesChecked:0, significant:0, sent:0, failed:0, unknown:0, claimed:0, truncated:false };
     }
 
-    const runtime = await loadRuntimeControls(cfg);
+    let runtime;
+    try {
+      runtime = await loadRuntimeControls(cfg);
+    } catch (error) {
+      await emitOpsEvent(cfg,{
+        severity:'error',
+        source:'important_change_notifications',
+        eventType:'important_change_notification_scheduler',
+        code:'IMPORTANT_CHANGE_NOTIFICATION_RUNTIME_CONTROLS_FAILED',
+        message:error?.message || error,
+        endpoint:'cron:important-change-notifications',
+      });
+      return { ok:false, checked:0, fixturesChecked:0, significant:0, sent:0, failed:1, unknown:0, claimed:0, truncated:false };
+    }
     if (runtime?.value?.remindersEnabled === false) {
       return { ok:true, checked:0, fixturesChecked:0, significant:0, sent:0, failed:0, unknown:0, claimed:0, truncated:false, disabled:true };
     }
@@ -220,8 +233,17 @@ export function createImportantChangeNotificationService({
       let snapshots = [];
       try {
         snapshots = await getOddsSnapshots(fixtureId, cfg, 12);
-      } catch {
+      } catch (error) {
         failed += 1;
+        await emitOpsEvent(cfg,{
+          severity:'warning',
+          source:'important_change_notifications',
+          eventType:'important_change_notification_probe',
+          code:'IMPORTANT_CHANGE_NOTIFICATION_ODDS_READ_FAILED',
+          message:error?.message || error,
+          endpoint:'cron:important-change-notifications',
+          meta:{fixtureId},
+        });
         continue;
       }
 
