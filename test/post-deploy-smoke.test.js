@@ -343,6 +343,9 @@ function healthyFetch({ staleOnce = false, devMode = false, monetization = 'paus
       'content-type':'text/html; charset=UTF-8',
       'content-security-policy':"default-src 'self'; object-src 'none'",
     }});
+    if (url.pathname === '/status.js') return new Response('export {};', { status:200, headers:{
+      'content-type':'text/javascript; charset=UTF-8',
+    }});
     if (url.pathname === '/telegram/webhook') return json({ ok:false },403);
     if (url.pathname === '/') return new Response('<!doctype html>', { status: 200, headers: {
       'content-type': 'text/html; charset=UTF-8',
@@ -747,6 +750,9 @@ test('post-deploy smoke tolerates brief mixed-edge identity propagation across h
     if(url.pathname==='/health/supabase') return json({error:'not found'},404);
     if(['/privacy.html','/terms.html','/status.html'].includes(url.pathname)) return new Response('<!doctype html>',{status:200,headers:{
       'content-type':'text/html; charset=UTF-8','content-security-policy':"default-src 'self'; object-src 'none'",
+    }});
+    if(url.pathname==='/status.js') return new Response('export {};',{status:200,headers:{
+      'content-type':'text/javascript; charset=UTF-8',
     }});
     if(url.pathname==='/telegram/webhook') return json({ok:false},403);
     if(url.pathname.startsWith('/api/')) return json({error:'Telegram auth required'},401);
