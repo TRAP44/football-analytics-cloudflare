@@ -25,13 +25,36 @@ export function createAppCapabilitiesRuntime({
     if (typeof fn!=='function') throw new TypeError(`${name} is required`);
   }
 
+  function runtimeFeatureEnabled(value) {
+    return value === undefined ? true : value === true;
+  }
+
+  function normalizedRuntimeControls() {
+    const value=runtimeControlsSnapshot();
+    return value && typeof value==='object' && !Array.isArray(value) ? value : {};
+  }
+
+  function normalizedPublicBudget() {
+    const value=providerPublicBudgetMode();
+    const budget=value && typeof value==='object' && !Array.isArray(value) ? value : {};
+    const refresh=Number(budget.liveRefreshSeconds);
+    return {
+      ...budget,
+      mode:String(budget.mode || 'emergency'),
+      label:String(budget.label || 'Защитный режим'),
+      liveRefreshSeconds:Number.isFinite(refresh)
+        ? Math.max(0,Math.min(3600,Math.floor(refresh)))
+        : 0,
+    };
+  }
+
   function publicDataCapabilities() {
     const paid=['PRO','ULTRA','MEGA'].includes(String(memory.provider?.plan || '').toUpperCase());
-    const healthy=paidQuotaHealthy();
-    const publicBudget=providerPublicBudgetMode();
-    const runtime=runtimeControlsSnapshot();
-    const expandedAllowed=runtime.expandedDataEnabled!==false;
-    const liveAllowed=runtime.liveEnabled!==false;
+    const healthy=paidQuotaHealthy() === true;
+    const publicBudget=normalizedPublicBudget();
+    const runtime=normalizedRuntimeControls();
+    const expandedAllowed=runtimeFeatureEnabled(runtime.expandedDataEnabled);
+    const liveAllowed=runtimeFeatureEnabled(runtime.liveEnabled);
     const canEnrich=Boolean(
       paid
       && healthy
@@ -86,9 +109,9 @@ export function createAppCapabilitiesRuntime({
       releaseChannel:String(releaseChannel || ''),
       releaseCandidate:String(releaseCandidate || ''),
       deployment:currentReleaseIdentity(cfg),
-      maintenance:Boolean(runtimeControlsSnapshot().maintenanceMode),
-      monetization:cfg.monetizationEnabled ? 'enabled' : 'paused',
-      runtime:publicRuntimeControls(),
+      maintenance:normalizedRuntimeControls().maintenanceMode === true,
+      monetization:cfg?.monetizationEnabled === true ? 'enabled' : 'paused',
+      runtime:publicRuntimeControls(normalizedRuntimeControls()),
       compatibility:{
         hardBlockBelowMinClient:true,
         contractRequired:Number(apiContractVersion || 0),
