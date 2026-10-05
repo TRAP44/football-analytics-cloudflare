@@ -52,7 +52,7 @@ export function createPublicHealthRuntime({
     });
   }
 
-  async function readinessSnapshot() {
+  async function readinessSnapshot(context) {
     const current=Number(now());
     if (
       cached
@@ -63,7 +63,7 @@ export function createPublicHealthRuntime({
     if (inFlight) return await inFlight;
 
     const task=Promise.resolve()
-      .then(()=>computeReadiness())
+      .then(()=>computeReadiness(context))
       .then(value=>{
         const safe=sanitizePublicReadiness(value);
         cached={at:Number(now()),value:safe};
@@ -78,8 +78,8 @@ export function createPublicHealthRuntime({
     }
   }
 
-  async function healthSnapshot() {
-    const readiness=await readinessSnapshot();
+  async function healthSnapshot(context) {
+    const readiness=await readinessSnapshot(context);
     return Object.freeze({
       ok:Boolean(readiness.ok),
       status:readiness.ok ? 'ready' : 'not_ready',
