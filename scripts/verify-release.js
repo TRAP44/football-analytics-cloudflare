@@ -80,6 +80,7 @@ if (!runtimeFrontendAssetRevision || runtimeFrontendAssetRevision !== frontendAs
 if (adminFrontendAssetRevision !== frontendAssetRevision) failures.push('Admin and public frontend asset revisions must match');
 for (const [name, surface] of [['public', html], ['admin', adminHtml]]) {
   if (!surface.includes(`/app.js?v=${frontendAssetRevision}`) || !surface.includes(`/styles.css?v=${frontendAssetRevision}`) || !surface.includes(`/styles/public-shell.css?v=${frontendAssetRevision}`)) failures.push(`${name} frontend JS/CSS cache-bust tokens must match the frontend asset revision`);
+  if (!surface.includes(`/assets/brand/matchradar-mark.svg?v=${frontendAssetRevision}`)) failures.push(`${name} favicon cache-bust token must match the frontend asset revision`);
 }
 if (!html.includes(`/styles/premium-ui.css?v=${frontendAssetRevision}`)) failures.push('Public premium UI cache-bust token must match the frontend asset revision');
 if (!staticHeaders.includes('/styles/premium-ui.css') || !staticHeaders.includes('/modules/*')) failures.push('Frontend cache policy must explicitly revalidate premium UI and frontend modules');
