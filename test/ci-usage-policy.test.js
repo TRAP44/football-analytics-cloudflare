@@ -16,7 +16,7 @@ test('CI usage policy keeps external monitoring hourly with immediate post-deplo
 
 test('Quality cancels superseded PR runs and skips docs-only changes',()=>{
   assert.match(quality,/group: quality-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}/);
-  assert.match(quality,/cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/);
+  assert.match(quality,/cancel-in-progress: true/);
   assert.match(quality,/paths-ignore:[\s\S]*"docs\/\*\*"[\s\S]*"\*\*\/\*\.md"/);
 });
 
