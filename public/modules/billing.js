@@ -5,6 +5,16 @@ const PASS_META = Object.freeze({
   WEEKEND_PASS: Object.freeze({ title:'Weekend Pass', short:'7 дней' }),
 });
 
+function setPercentClass(element,value) {
+  if (!element) return;
+  const n=Number(value);
+  const percent=Number.isFinite(n) ? Math.max(0,Math.min(100,Math.round(n))) : 0;
+  for (const cls of [...element.classList]) {
+    if (cls.startsWith('pct-w-')) element.classList.remove(cls);
+  }
+  element.classList.add(`pct-w-${percent}`);
+}
+
 function safeFixtureId(value) {
   const id = Number(value || 0);
   return Number.isSafeInteger(id) && id > 0 ? id : 0;
@@ -357,7 +367,7 @@ export function createBillingModule({
     const progress = $('billingQuotaProgress');
     if (progress) {
       const percent = snapshot.limit > 0 ? Math.max(0, Math.min(100, Math.round(snapshot.used / snapshot.limit * 100))) : 0;
-      progress.style.width = String(percent) + '%';
+      setPercentClass(progress,percent);
       progress.parentElement?.setAttribute('aria-valuenow', String(percent));
     }
 
