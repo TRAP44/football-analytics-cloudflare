@@ -29,11 +29,17 @@ export function canonicalClientTelemetrySelector(code) {
   });
 }
 
-export function assessClientTelemetryEvidence(rows = [], {
-  code = CLIENT_TELEMETRY_CODES.BOOT_OK,
-  requiredMetadata = code === CLIENT_TELEMETRY_CODES.BOOT_OK ? BOOT_OK_REQUIRED_METADATA : [],
-} = {}) {
+export function assessClientTelemetryEvidence(rows = [], options = {}) {
+  const code = options?.code ?? CLIENT_TELEMETRY_CODES.BOOT_OK;
   const selector = canonicalClientTelemetrySelector(code);
+  const defaultRequiredMetadata = selector.code === CLIENT_TELEMETRY_CODES.BOOT_OK
+    ? BOOT_OK_REQUIRED_METADATA
+    : [];
+  const requiredMetadata = options?.requiredMetadata === undefined
+    ? defaultRequiredMetadata
+    : Array.isArray(options.requiredMetadata)
+      ? [...new Set(options.requiredMetadata.map(field => String(field || '').trim()).filter(Boolean))]
+      : defaultRequiredMetadata;
   const samples = Array.isArray(rows) ? rows : [];
   const matching = samples.filter(row =>
     String(row?.event_type || '') === selector.eventType
@@ -51,13 +57,13 @@ export function assessClientTelemetryEvidence(rows = [], {
   }
 
   const complete = matching.filter(row => {
-    const metadata = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+    const metadata = row?.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata) ? row.metadata : {};
     return requiredMetadata.every(field => metadata[field] !== undefined && metadata[field] !== null && metadata[field] !== '');
   });
 
   const missingMetadata = requiredMetadata.filter(field =>
     !matching.some(row => {
-      const metadata = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+      const metadata = row?.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata) ? row.metadata : {};
       return metadata[field] !== undefined && metadata[field] !== null && metadata[field] !== '';
     })
   );
