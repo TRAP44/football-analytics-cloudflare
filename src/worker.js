@@ -36,6 +36,7 @@ import {
 } from './access-control.js';
 import { createSupabaseClient } from './supabase-client.js';
 import { runtimeReleaseIdentity } from './release-identity.js';
+import { CLIENT_TELEMETRY_EVENT_TYPE } from './client-telemetry-contract.js';
 import { scopeOpsEventsToDeployment } from './release-event-attribution.js';
 import { createReleaseFieldEvidenceRuntime } from './release-field-evidence.js';
 import { postDeployRegressionReport } from './post-deploy-regression.js';
@@ -14152,7 +14153,7 @@ async function apiClientTelemetry(request, cfg, user) {
   await recordOpsEvent(cfg, {
     severity,
     source: 'client',
-    eventType: 'client_telemetry',
+    eventType: CLIENT_TELEMETRY_EVENT_TYPE,
     code: event.toUpperCase(),
     message: `Client event: ${event}`,
     endpoint: '/api/client-telemetry',
@@ -14247,7 +14248,7 @@ async function apiBetaFeedback(request, cfg, user) {
 function betaClientEventRows(rows = [], eventName = '') {
   const target=String(eventName || '');
   return (rows || []).filter(row=>{
-    if (row?.source!=='client' || row?.event_type!=='client_telemetry') return false;
+    if (row?.source!=='client' || row?.event_type!==CLIENT_TELEMETRY_EVENT_TYPE) return false;
     const code=String(row?.code || '');
     if (target==='miniapp_open') return code==='BOOT_OK';
     if (target==='miniapp_error') return code==='ACTION_ERROR';
@@ -14266,7 +14267,7 @@ function betaMetricSummary(rows = [], eventName = '') {
 
 function betaTimingSummary(opsRows = [], operation = '') {
   const values=(opsRows || [])
-    .filter(row=>row?.source==='client' && row?.event_type==='client_telemetry' && row?.code==='OPERATION_TIMING'
+    .filter(row=>row?.source==='client' && row?.event_type===CLIENT_TELEMETRY_EVENT_TYPE && row?.code==='OPERATION_TIMING'
       && String(row?.metadata?.reason || '')===operation)
     .map(row=>Number(row?.duration_ms))
     .filter(value=>Number.isFinite(value) && value>=0 && value<=120000);
@@ -14298,7 +14299,7 @@ function betaErrorCountByKind(errorRows = [], kinds = []) {
 }
 
 function betaCoverageSummary(rows = []) {
-  const coverageRows=(rows || []).filter(row=>row?.source==='client' && row?.event_type==='client_telemetry' && row?.code==='DATA_COVERAGE');
+  const coverageRows=(rows || []).filter(row=>row?.source==='client' && row?.event_type===CLIENT_TELEMETRY_EVENT_TYPE && row?.code==='DATA_COVERAGE');
   const keys=['lineups','injuries','statistics','xg','odds'];
   const summarizeMissing=(sampleRows=[])=>{
     const missing={};
@@ -14671,7 +14672,7 @@ function buildBetaIssueGroups({metrics,errorRows,feedbackRows,timings,clientErro
 }
 
 function betaJourneyEventName(row = {}) {
-  if (row?.source!=='client' || row?.event_type!=='client_telemetry') return '';
+  if (row?.source!=='client' || row?.event_type!==CLIENT_TELEMETRY_EVENT_TYPE) return '';
   const code=String(row?.code || '');
   if (code==='BOOT_OK') return 'miniapp_open';
   if (code!=='PRODUCT_ACTION') return '';
@@ -14769,7 +14770,7 @@ function phase5MetricSummary(rows = [], eventName = '') {
 function phase5JourneySummary(rows = []) {
   const valid=(rows || []).filter(row=>
     row?.source==='client'
-    && row?.event_type==='client_telemetry'
+    && row?.event_type===CLIENT_TELEMETRY_EVENT_TYPE
     && /^[0-9a-f]{32}$/.test(String(row?.metadata?.validationSubject || ''))
     && /^[0-9a-f]{32}$/.test(String(row?.metadata?.validationSession || ''))
   );
@@ -14927,7 +14928,7 @@ async function apiPhase5Dashboard(request,cfg) {
     && /^[0-9a-f]{32}$/.test(String(row?.metadata?.validationSubject || ''))
     && /^[0-9a-f]{32}$/.test(String(row?.metadata?.validationSession || ''))
   );
-  const clientRows=phase5Rows.filter(row=>row?.source==='client' && row?.event_type==='client_telemetry');
+  const clientRows=phase5Rows.filter(row=>row?.source==='client' && row?.event_type===CLIENT_TELEMETRY_EVENT_TYPE);
   const metrics={};
   for (const [key,eventName] of Object.entries({
     miniAppLaunch:'miniapp_open',searchUsed:'miniapp_search_used',searchFound:'miniapp_search_found',
@@ -15073,7 +15074,7 @@ async function apiBetaDashboard(request,cfg) {
   ]);
   const allOpsRows=opsResult.items || [];
   const opsRows=allOpsRows.filter(row=>String(row?.metadata?.betaCohort || '')===CLOSED_BETA_COHORT && row?.metadata?.betaMembershipVerified===true);
-  const betaClientRows=opsRows.filter(row=>row?.source==='client' && row?.event_type==='client_telemetry'
+  const betaClientRows=opsRows.filter(row=>row?.source==='client' && row?.event_type===CLIENT_TELEMETRY_EVENT_TYPE
     && /^[0-9a-f]{32}$/.test(String(row?.metadata?.betaSubject || '')));
 
   const metricDefs={
@@ -15752,7 +15753,7 @@ function summarizeReleaseWindow(items = [], hours = 24) {
     const key = String(item?.severity || 'info');
     if (key in severity) severity[key] += 1;
   }
-  const client = items.filter(x => x?.source === 'client' && x?.event_type === 'client_telemetry');
+  const client = items.filter(x => x?.source === 'client' && x?.event_type === CLIENT_TELEMETRY_EVENT_TYPE);
   const clientCounts = Object.fromEntries(releaseTopGroups(client, x => x.code, 12).map(x => [x.key, x.count]));
   const errorLike = severity.error + severity.critical;
   const compatibilityBlocks = Number(clientCounts.COMPATIBILITY_BLOCK || 0);
