@@ -238,7 +238,7 @@ const { renderMyTeams } = createMyTeamsRenderer({
   safeUrl,
   timeOf,
   onOpenTeam: team => openTeam(team),
-  onAnalyzeMatch: (fixtureId, button) => analyzeMatch(fixtureId, button),
+  onOpenMatch: (fixtureId, button) => openMatchCenter(fixtureId, button),
 });
 const { renderJourneyState } = createJourneyStateModule({
   elementById: $,
