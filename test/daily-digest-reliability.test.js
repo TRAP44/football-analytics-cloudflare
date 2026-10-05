@@ -118,6 +118,32 @@ test('E. non-digest operational events and pre-window rows are ignored',()=>{
   assert.equal(r.totals.sent,3);
 });
 
+test('F0. malformed digest telemetry cannot poison aggregate reliability with NaN or truthy strings',()=>{
+  const r=summarizeDailyDigestReliability([
+    event('2026-09-29T07:55:00Z','DAILY_DIGEST_RUN_OK',{
+      date:'2026-09-29',
+      sent:'NaN',
+      claimed:'Infinity',
+      failed:-2,
+      rateLimited:1.5,
+      remaining:'bad',
+      truncated:'false',
+      completionRate:'NaN',
+    }),
+  ],{days:'NaN',nowMs:NOW});
+  assert.equal(r.days,7);
+  assert.deepEqual(r.totals,{sent:0,claimed:0,failed:0,rateLimited:1});
+  assert.equal(r.backlog.maxRecipients,0);
+  assert.equal(r.truncatedDays,0);
+  assert.equal(Number.isNaN(r.completionRate),false);
+});
+
+test('F1. non-array history input is treated as empty evidence',()=>{
+  const r=summarizeDailyDigestReliability({broken:true},{days:7,nowMs:NOW});
+  assert.equal(r.available,false);
+  assert.equal(r.runs,0);
+});
+
 test('F. empty history is explicit and privacy contract remains aggregate-only',()=>{
   const r=summarizeDailyDigestReliability([],{days:30,nowMs:NOW});
   assert.equal(r.available,false);
