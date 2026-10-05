@@ -29,6 +29,21 @@ test('external monitor accepts healthy production contracts', () => {
   assert.equal(ready.passed, true);
   assert.equal(ready.warning, false);
 
+  const health = evaluateEndpoint('health', {
+    statusCode: 200,
+    body: {
+      ok:true,
+      status:'ready',
+      version:'6.120.0-rc144',
+      releaseCandidate:'RC144',
+      devMode:false,
+      database:'supabase',
+      readiness:{ok:true},
+    },
+  });
+  assert.equal(health.passed,true);
+  assert.equal(health.warning,false);
+
   const publicStatus = evaluateEndpoint('public_status', {
     statusCode: 200,
     body: { ok: true, status: 'operational' },
@@ -76,6 +91,8 @@ test('external monitoring workflow is independent, retried and incident-aware wi
   assert.match(workflow, /EXTERNAL_MONITOR_READY_WARNING_MS: "3000"/);
   assert.match(monitorScript, /\/health\/live/);
   assert.match(monitorScript, /\/health\/ready/);
+  assert.match(monitorScript, /x-health-token/);
+  assert.match(workflow, /HEALTH_PROBE_TOKEN: \$\{\{ secrets\.HEALTH_PROBE_TOKEN \}\}/);
   assert.match(monitorScript, /\/api\/public-status/);
   assert.match(workflow, /external-production-monitor\.js/);
   assert.match(workflow, /external-monitor-control-plane\.js primary/);
