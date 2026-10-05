@@ -1,41 +1,56 @@
 # CI and production runner recovery
 
-MatchRadar deliberately separates **independent production observation** from the
-self-hosted CI/deploy runner.
+MatchRadar separates primary CI, security, deployment and production observation
+from the optional local diagnostic runner.
 
 ## Runner boundaries
 
-- `External Production Monitor` runs on GitHub-hosted `ubuntu-latest`. It must
-  not depend on the MatchRadar self-hosted runner, Docker, Supabase, Cloudflare
-  deployment credentials, or local network/VPN state.
-- `Quality`, `CodeQL Security`, `Privileged Access Audit`, and production
-  deployment remain fail-closed when their required execution environment is
-  unavailable.
-- Database integration and production mutation must not be silently moved to a
-  weaker fallback just to make a workflow green.
+- `Quality` runs on GitHub-hosted `ubuntu-latest`, including the isolated
+  Supabase/Docker database integration gate.
+- `CodeQL Security` and `Privileged Access Audit` run on GitHub-hosted
+  `ubuntu-latest`.
+- `Deploy Production` runs on GitHub-hosted `ubuntu-latest` and keeps the
+  existing `production` environment, exact-main provenance guard, rollback
+  preflight and post-deploy smoke verification.
+- `External Production Monitor` remains on an independent GitHub-hosted runner
+  and receives no production deployment credentials.
+- `External Production Monitor Diagnostics` may use the self-hosted runner as
+  a secondary diagnostic signal only. Losing that runner must not block
+  Quality, security gates, deployment, rollback or primary availability checks.
 
-## Self-hosted runner outage
+## Local self-hosted runner outage
 
-If the primary self-hosted runner is offline:
+If the local runner is offline:
 
-1. Do not bypass Quality, security, provenance, or deployment verification.
-2. Keep production unchanged. A queued deployment is safer than an unverified
-   deployment.
-3. Use the independent External Production Monitor as the availability signal.
-4. Restore the runner service and its required Node/Docker/Postgres tooling.
-5. Re-run the affected checks from the same commit. Do not manufacture status
-   checks or direct-push around the release flow.
-6. Deploy only after the normal gates pass.
+1. Do not bypass or alter required status checks.
+2. Primary Quality, CodeQL, Privileged Access Audit, Deploy Production,
+   rollback and External Production Monitor continue independently.
+3. Treat missing self-hosted diagnostics only as reduced diagnostic depth.
+4. Restore the local runner when convenient for secondary diagnostics; it is
+   not a release prerequisite.
+
+## GitHub-hosted execution outage
+
+If GitHub-hosted Actions cannot execute a required gate:
+
+1. Keep the release fail-closed; do not manufacture statuses or direct-push
+   around release controls.
+2. Keep the active production version unchanged.
+3. Continue using available production health evidence for availability.
+4. Re-run the exact affected commit after execution recovers.
+5. Deploy only after the normal required gates pass.
 
 ## Verification contract
 
-A change to runner topology is acceptable only when:
+The topology is acceptable only when:
 
-- production monitoring continues without the self-hosted runner;
-- no production secret is added to the monitoring job;
-- CI/security gates remain fail-closed;
-- production deployment still verifies the exact current-main revision and PR
-  provenance;
-- monitor incident creation/recovery remains functional.
+- no required Quality, CodeQL, Privileged Access Audit or Deploy Production job
+  carries the `self-hosted` label;
+- database integration still executes the real Supabase CLI, Docker and psql
+  migration/concurrency checks;
+- deployment still verifies current-main identity, merged-PR provenance,
+  previous-known-good rollback target and post-deploy smoke;
+- monitoring does not gain production secrets;
+- self-hosted execution remains optional and diagnostic-only.
 
 This document records the recovery policy for GitHub Issue #463.
