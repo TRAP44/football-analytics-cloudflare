@@ -209,6 +209,11 @@ const memory = {
     analysisUsageCompensationFailures: 0,
     analysisUsageReconciled: 0,
     analysisUsageReconciliationFailures: 0,
+    analysisHistoryWriteErrors: 0,
+    analysisHistoryRetryAttempts: 0,
+    analysisHistoryWriteRecovered: 0,
+    analysisHistoryWriteLosses: 0,
+    analysisHistoryRetryPending: 0,
     digestDeliveryClaims: 0,
     digestDeliveryDuplicates: 0,
   },
@@ -688,6 +693,14 @@ function productionSafetySnapshot() {
       dedupeEntries: memory.telegramUpdateDedupe.size,
       policies: Object.values(TELEGRAM_BURST_POLICIES).map(x=>({label:x.label,limit:x.limit,windowMs:x.windowMs})),
     },
+    analysisHistoryPersistence: {
+      writeErrors: Number(memory.telemetry?.analysisHistoryWriteErrors || 0),
+      retryAttempts: Number(memory.telemetry?.analysisHistoryRetryAttempts || 0),
+      recovered: Number(memory.telemetry?.analysisHistoryWriteRecovered || 0),
+      acceptedDataLoss: Number(memory.telemetry?.analysisHistoryWriteLosses || 0),
+      retryPending: Math.max(0, Number(memory.telemetry?.analysisHistoryRetryPending || 0)),
+      sustainedFailureThreshold: 3,
+    },
     upstream: {
       timeouts: Number(memory.telemetry?.upstreamTimeouts || 0),
       supabaseTimeoutMs: 7000,
@@ -859,6 +872,17 @@ const {
   hasSupabase,
   supaUpsert,
   supaSelectMany,
+  recordOpsEvent,
+  bumpTelemetry,
+  redactOpsString,
+  correlationId: async (userId, fixtureId, cfg) => {
+    if (!cfg?.botToken) return `fixture-${Number(fixtureId || 0)}`;
+    const digest = await hmacSha256(
+      enc.encode(cfg.botToken),
+      `analysis-history:${Number(userId)}:${Number(fixtureId)}`,
+    );
+    return bytesToHex(digest).slice(0, 24);
+  },
 });
 
 const {
@@ -1302,6 +1326,11 @@ function telemetrySnapshot() {
     providerSloPersistenceErrors: Number(t.providerSloPersistenceErrors || 0),
     quotaReservations: Number(t.quotaReservations || 0),
     quotaRefunds: Number(t.quotaRefunds || 0),
+    analysisHistoryWriteErrors: Number(t.analysisHistoryWriteErrors || 0),
+    analysisHistoryRetryAttempts: Number(t.analysisHistoryRetryAttempts || 0),
+    analysisHistoryWriteRecovered: Number(t.analysisHistoryWriteRecovered || 0),
+    analysisHistoryWriteLosses: Number(t.analysisHistoryWriteLosses || 0),
+    analysisHistoryRetryPending: Number(t.analysisHistoryRetryPending || 0),
     digestDeliveryClaims: Number(t.digestDeliveryClaims || 0),
     digestDeliveryDuplicates: Number(t.digestDeliveryDuplicates || 0),
     inflightNow: memory.inflight.size,
@@ -13950,6 +13979,7 @@ async function collectDiagnostics(cfg) {
   else if (!telegramWebhook.available && hasSupabase(cfg)) overall = { state:'warning', label:'Нужна миграция наблюдаемости Telegram webhook' };
   else if (telegramWebhook.state === 'incident') overall = { state:'warning', label:'Persistent Telegram dedupe требует проверки' };
   else if (integrity.lastRun?.health === 'critical') overall = { state: 'warning', label: 'Есть проблемы качества футбольных данных' };
+  else if (Number(memory.telemetry?.analysisHistoryWriteLosses || 0) >= 3) overall = { state: 'warning', label: 'Есть потери истории AI-анализов' };
   else if (telegramWebhook.state === 'watch' || provider.health === 'warning' || providerObservability?.overall?.state === 'watch' || integrity.lastRun?.health === 'warning' || Number(memory.telemetry?.routeErrors || 0) > 0 || Number(memory.telemetry?.cacheWriteErrors || 0) > 0) overall = { state: 'warning', label: 'Есть предупреждения' };
   else if (provider.health === 'waiting') overall = { state: 'waiting', label: 'Ожидаем первый запрос к источнику данных' };
   else overall = { state: 'ok', label: 'Системы работают штатно' };
@@ -13971,6 +14001,8 @@ async function collectDiagnostics(cfg) {
   if (Number(provider.dailyUsedPct) >= 90) recommendations.push('Дневная квота API-Football использована более чем на 90%; до сброса лимита работаем в экономном режиме.');
   if (Number(integrity.lastRun?.quarantined || 0) > 0) recommendations.push(`Защита целостности скрыла ${Number(integrity.lastRun.quarantined)} подозрительных матч(а/ей) из последней выборки. Проверьте список кодов проблем ниже.`);
   if (Number(integrity.lastRun?.warnings || 0) > 0 && !Number(integrity.lastRun?.quarantined || 0)) recommendations.push('В последней выборке есть предупреждения целостности данных; приложение оставило матчи доступными, но пометило их для контроля.');
+  if (Number(memory.telemetry?.analysisHistoryWriteLosses || 0) >= 3) recommendations.push(`История AI-анализов потеряла ${Number(memory.telemetry.analysisHistoryWriteLosses)} записей после повторной попытки в текущем экземпляре Worker. Проверьте Supabase analysis_history и события ANALYSIS_HISTORY_WRITE_LOST.`);
+  else if (Number(memory.telemetry?.analysisHistoryRetryPending || 0) > 0) recommendations.push('Есть фоновые повторные попытки сохранения истории AI-анализов; проверьте их завершение в ops_events.');
   if (!recommendations.length) recommendations.push('Критичных действий сейчас не требуется.');
 
   return {
