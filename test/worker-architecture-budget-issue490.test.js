@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createDiagnosticsRuntime } from '../src/diagnostics-runtime.js';
 import { createPublicHealthRuntime } from '../src/public-health.js';
 import { createPublicStatusRouter, createPublicStatusRuntime } from '../src/public-status.js';
+import { createReleaseFieldEvidenceRuntime } from '../src/release-field-evidence.js';
 import { createAppCapabilitiesRuntime } from '../src/app-capabilities.js';
 
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
@@ -11,7 +12,7 @@ const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 test('Worker composition root stays below the post-audit architecture budget',()=>{
   const bytes=Buffer.byteLength(worker,'utf8');
   assert.ok(
-    bytes<=1_170_000,
+    bytes<=1_165_000,
     `src/worker.js grew to ${bytes} bytes; extract another cohesive runtime instead of growing the composition root`,
   );
 });
@@ -20,6 +21,7 @@ test('extracted runtime factories are executable contracts, not source-only plac
   assert.equal(typeof createPublicHealthRuntime,'function');
   assert.equal(typeof createPublicStatusRuntime,'function');
   assert.equal(typeof createPublicStatusRouter,'function');
+  assert.equal(typeof createReleaseFieldEvidenceRuntime,'function');
   assert.equal(typeof createDiagnosticsRuntime,'function');
   assert.equal(typeof createAppCapabilitiesRuntime,'function');
 
@@ -42,6 +44,21 @@ test('extracted runtime factories are executable contracts, not source-only plac
     expectedSchemaFingerprint:'fingerprint',
   });
   assert.equal((await publicStatus.computeReadinessSnapshot({botToken:'x',webhookSecret:'y'})).ok,true);
+
+  const releaseEvidence=createReleaseFieldEvidenceRuntime({
+    hasSupabase:()=>false,
+    appVersion:'test',
+    fetchWithTimeout:async()=>{throw new Error('not expected');},
+    supaHeaders:()=>({}),
+    supaSelectMany:async()=>[],
+    recordOpsEvent:async()=>{},
+    loadSharedProviderState:async()=>{},
+    apiFootball:async()=>{},
+    isFootballRateLimitError:()=>false,
+    providerSnapshot:()=>({}),
+    randomUUID:()=> 'test-claim',
+  });
+  assert.equal(releaseEvidence.scheduleReleaseFieldEvidence({}),null);
 
   const health=createPublicHealthRuntime({
     version:'test',
@@ -98,15 +115,21 @@ test('extracted runtime factories are executable contracts, not source-only plac
 test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/import \{ createPublicHealthRuntime \} from '\.\/public-health\.js'/);
   assert.match(worker,/import \{ createPublicStatusRouter, createPublicStatusRuntime \} from '\.\/public-status\.js'/);
+  assert.match(worker,/import \{ createReleaseFieldEvidenceRuntime \} from '\.\/release-field-evidence\.js'/);
   assert.match(worker,/import \{ createDiagnosticsRuntime \} from '\.\/diagnostics-runtime\.js'/);
   assert.match(worker,/import \{ createAppCapabilitiesRuntime \} from '\.\/app-capabilities\.js'/);
   assert.match(worker,/createDiagnosticsRuntime\(\{/);
   assert.match(worker,/createPublicHealthRuntime\(\{/);
   assert.match(worker,/createPublicStatusRuntime\(\{/);
   assert.match(worker,/createPublicStatusRouter\(\{/);
+  assert.match(worker,/createReleaseFieldEvidenceRuntime\(\{/);
   assert.match(worker,/createAppCapabilitiesRuntime\(\{/);
   assert.doesNotMatch(worker,/async function collectDiagnostics\(/);
   assert.doesNotMatch(worker,/async function readRecentOpsEvents\(/);
   assert.doesNotMatch(worker,/async function publicServiceStatus\(/);
   assert.doesNotMatch(worker,/async function computeReadinessSnapshot\(/);
+  assert.doesNotMatch(worker,/async function claimReleaseEvidenceLock\(/);
+  assert.doesNotMatch(worker,/async function recordClosedBetaConfigurationEvidence\(/);
+  assert.doesNotMatch(worker,/async function probeReleaseProviderQuotaEvidence\(/);
+  assert.doesNotMatch(worker,/async function captureReleaseFieldEvidence\(/);
 });
