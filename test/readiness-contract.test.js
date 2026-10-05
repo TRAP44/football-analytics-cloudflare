@@ -67,6 +67,45 @@ function rawForFingerprint(actualFingerprint, expectedFingerprint) {
   return raw;
 }
 
+test('readiness normalization rejects JavaScript coercion and malformed fingerprints', () => {
+  const booleanCount=healthyRaw({
+    recentSupabaseAuthFailures:{available:true,count:true,windowMinutes:5},
+  });
+  assert.equal(normalizeCompositeReadinessResponse(booleanCount,FP).valid,false);
+
+  const booleanVersion=healthyRaw({
+    schemaContractVersion:true,
+    schema:{
+      ...healthyRaw().schema,
+      contractVersion:true,
+    },
+  });
+  assert.equal(normalizeCompositeReadinessResponse(booleanVersion,FP).valid,false);
+
+  assert.equal(
+    normalizeCompositeReadinessResponse(healthyRaw(),{fingerprint:FP}).valid,
+    false,
+  );
+  assert.equal(
+    normalizeCompositeReadinessResponse(healthyRaw(),'not-a-fingerprint').valid,
+    false,
+  );
+});
+
+test('readiness normalization requires strict nested booleans and sanitizes failure reasons', () => {
+  const raw=healthyRaw({
+    failureReasons:[' backend_security_contract ','backend_security_contract',true,{secret:'x'}],
+  });
+  raw.connectivity={ok:'true',status:'ok'};
+  assert.equal(normalizeCompositeReadinessResponse(raw,FP).valid,false);
+
+  const healthy=healthyRaw({
+    failureReasons:[' schema_contract_v2 ','schema_contract_v2',true,{secret:'x'}],
+  });
+  const result=normalizeCompositeReadinessResponse(healthy,FP);
+  assert.deepEqual(result.failureReasons,['schema_contract_v2']);
+});
+
 test('composite readiness healthy path uses exactly one Supabase RPC round-trip', async () => {
   const rpcCalls = [];
   let connectivityCalls = 0;
@@ -95,6 +134,44 @@ test('composite readiness healthy path uses exactly one Supabase RPC round-trip'
     p_expected_fingerprint: FP,
     p_auth_window_minutes: 5,
   });
+});
+
+test('invalid readiness configuration fails closed before any RPC call', async () => {
+  let rpcCalls=0;
+  const runtime=createCompositeReadinessRuntime({
+    hasSupabase:()=>true,
+    expectedFingerprint:true,
+    expectedFingerprints:[{hash:FP},'bad'],
+    expectedContractVersion:true,
+    readinessRpc:'backend-readiness;drop',
+    supaRpc:async()=>{ rpcCalls+=1; return healthyRaw(); },
+    probeConnectivity:async()=>({ok:true,status:'ok',attempts:1}),
+  });
+
+  const result=await runtime.readCompositeReadiness({},5);
+  assert.equal(rpcCalls,0);
+  assert.equal(result.ok,false);
+  assert.equal(result.rpcStatus,'configuration_invalid');
+  assert.equal(result.acceptedFingerprint,'');
+});
+
+test('auth window rejects coercion and preserves bounded numeric strings', async () => {
+  const windows=[];
+  const runtime=createCompositeReadinessRuntime({
+    hasSupabase:()=>true,
+    expectedFingerprint:FP,
+    expectedContractVersion:CONTRACT_VERSION,
+    supaRpc:async (_cfg,_rpc,args)=>{
+      windows.push(args.p_auth_window_minutes);
+      return healthyRaw();
+    },
+    probeConnectivity:async()=>({ok:true,status:'ok',attempts:1}),
+  });
+
+  await runtime.readCompositeReadiness({},true);
+  await runtime.readCompositeReadiness({},'60');
+  await runtime.readCompositeReadiness({},999);
+  assert.deepEqual(windows,[5,60,5]);
 });
 
 test('registered fresh-install complete fingerprint retries once and becomes ready', async () => {
@@ -265,6 +342,36 @@ test('malformed RPC response is fail-closed without hiding successful transport 
   assert.equal(result.rpcStatus, 'malformed_response');
   assert.equal(result.connectivity.ok, true);
   assert.equal(result.ok, false);
+});
+
+test('connectivity probe failure after RPC error remains fail-closed instead of rejecting', async () => {
+  const runtime=createCompositeReadinessRuntime({
+    hasSupabase:()=>true,
+    expectedFingerprint:FP,
+    expectedContractVersion:CONTRACT_VERSION,
+    supaRpc:async()=>{ throw new Error('network exploded'); },
+    probeConnectivity:async()=>{ throw new Error('probe exploded'); },
+  });
+
+  const result=await runtime.readCompositeReadiness({},5);
+  assert.equal(result.ok,false);
+  assert.equal(result.rpcStatus,'rpc_error');
+  assert.deepEqual(result.connectivity,{ok:false,status:'probe_unavailable',attempts:1});
+});
+
+test('hasSupabase must confirm configuration with strict true', async () => {
+  let rpcCalls=0;
+  const runtime=createCompositeReadinessRuntime({
+    hasSupabase:()=> 'true',
+    expectedFingerprint:FP,
+    expectedContractVersion:CONTRACT_VERSION,
+    supaRpc:async()=>{ rpcCalls+=1; return healthyRaw(); },
+    probeConnectivity:async()=>({ok:true,status:'ok',attempts:1}),
+  });
+  const result=await runtime.readCompositeReadiness({},5);
+  assert.equal(rpcCalls,0);
+  assert.equal(result.rpcStatus,'not_configured');
+  assert.equal(result.ok,false);
 });
 
 test('Supabase composite timeout remains fail-closed and preserves connectivity diagnosis', async () => {
