@@ -246,7 +246,6 @@ jobs:
     env:
       SUPABASE_CLI_VERSION: "2.118.0"
       BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
-      ARTIFACT_DIR: ${{ runner.temp }}/restore-artifact
     steps:
       - name: Checkout restore contract
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -271,14 +270,16 @@ jobs:
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           name: supabase-production-backup-${{ github.run_id }}
-          path: ${{ env.ARTIFACT_DIR }}
+          path: ${{ runner.temp }}/restore-artifact
 
       - name: Validate downloaded backup artifact
         shell: bash
         run: |
           set -euo pipefail
+          ARTIFACT_DIR="$RUNNER_TEMP/restore-artifact"
           test -n "$(find "$ARTIFACT_DIR" -maxdepth 1 -name '*.tar.gz.enc' -print -quit)"
           test -n "$(find "$ARTIFACT_DIR" -maxdepth 1 -name '*.sha256' -print -quit)"
+          echo "ARTIFACT_DIR=$ARTIFACT_DIR" >> "$GITHUB_ENV"
 
       - name: Decrypt and verify backup package
         shell: bash
