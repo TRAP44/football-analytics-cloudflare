@@ -27,7 +27,7 @@ function runtime(overrides = {}) {
 test('favorites service preserves in-memory add/read/remove semantics', async () => {
   const {memory,service}=runtime();
   const cfg={};
-  const added=await service.addFavorite(7,{id:101,name:' Arsenal ',logo:'https://example.test/a.png'},cfg);
+  const added=await service.addFavorite(7,{id:101,name:' Arsenal ',logo:'https://media.api-sports.io/football/teams/101.png'},cfg);
   assert.equal(added.telegram_id,7);
   assert.equal(added.team_id,101);
   assert.equal(added.team_name,'Arsenal');
@@ -35,6 +35,19 @@ test('favorites service preserves in-memory add/read/remove semantics', async ()
   await service.removeFavorite(7,101,cfg);
   assert.deepEqual(await service.getFavorites(7,cfg),[]);
   assert.equal(memory.favorites.get(7).length,0);
+});
+
+test('favorites service sanitizes legacy stored logo URLs without dropping favorites', async () => {
+  const {memory,service}=runtime();
+  memory.favorites.set(8,[
+    {telegram_id:8,team_id:201,team_name:'Safe',team_logo:'https://media.api-sports.io/football/teams/201.png'},
+    {telegram_id:8,team_id:202,team_name:'Legacy',team_logo:'https://legacy.example/logo.png'},
+  ]);
+  const rows=await service.getFavorites(8,{});
+  assert.equal(rows.length,2);
+  assert.equal(rows[0].team_logo,'https://media.api-sports.io/football/teams/201.png');
+  assert.equal(rows[1].team_logo,'');
+  assert.equal(rows[1].team_name,'Legacy');
 });
 
 test('favorites service preserves 50-item fallback cap', async () => {
