@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   backup:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 20
     environment: production
     env:
@@ -240,12 +240,13 @@ jobs:
   restore_drill:
     name: Isolated restore drill
     needs: backup
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 30
     environment: production
     env:
       SUPABASE_CLI_VERSION: "2.118.0"
       BACKUP_ENCRYPTION_PASSPHRASE: ${{ secrets.BACKUP_ENCRYPTION_PASSPHRASE }}
+      ARTIFACT_DIR: ${{ runner.temp }}/restore-artifact
     steps:
       - name: Checkout restore contract
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -267,21 +268,17 @@ jobs:
           echo "::add-mask::$BACKUP_ENCRYPTION_PASSPHRASE"
 
       - name: Download exact encrypted backup from this run
-        env:
-          GH_TOKEN: ${{ github.token }}
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: supabase-production-backup-${{ github.run_id }}
+          path: ${{ env.ARTIFACT_DIR }}
+
+      - name: Validate downloaded backup artifact
         shell: bash
         run: |
           set -euo pipefail
-          ARTIFACT_DIR="$RUNNER_TEMP/restore-artifact"
-          rm -rf "$ARTIFACT_DIR"
-          mkdir -p "$ARTIFACT_DIR"
-          gh run download "$GITHUB_RUN_ID" \
-            --repo "$GITHUB_REPOSITORY" \
-            --name "supabase-production-backup-$GITHUB_RUN_ID" \
-            --dir "$ARTIFACT_DIR"
           test -n "$(find "$ARTIFACT_DIR" -maxdepth 1 -name '*.tar.gz.enc' -print -quit)"
           test -n "$(find "$ARTIFACT_DIR" -maxdepth 1 -name '*.sha256' -print -quit)"
-          echo "ARTIFACT_DIR=$ARTIFACT_DIR" >> "$GITHUB_ENV"
 
       - name: Decrypt and verify backup package
         shell: bash
