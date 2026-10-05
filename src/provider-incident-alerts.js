@@ -6,14 +6,51 @@ export const PROVIDER_INCIDENT_ALERT_POLICY = Object.freeze({
   claimLeaseSeconds:120,
 });
 
+function numericCandidate(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'string') return null;
+  const raw=value.trim();
+  if (!/^-?\d+(?:\.\d+)?$/.test(raw)) return null;
+  const number=Number(raw);
+  return Number.isFinite(number) ? number : null;
+}
+
+function integerCandidate(value) {
+  const number=numericCandidate(value);
+  return Number.isSafeInteger(number) ? number : null;
+}
+
+function nonNegativeInteger(value, fallback = 0) {
+  const number=integerCandidate(value);
+  return number !== null && number >= 0 ? number : fallback;
+}
+
+function positiveInteger(value, fallback = 0, max = Number.MAX_SAFE_INTEGER) {
+  const number=integerCandidate(value);
+  return number !== null && number > 0 && number <= max ? number : fallback;
+}
+
 function finite(value, fallback = 0) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
+  const number=numericCandidate(value);
+  return number === null ? fallback : number;
+}
+
+function timestampCandidate(value, fallback = Date.now()) {
+  const number=numericCandidate(value);
+  return number !== null && number >= 0 && number <= 8.64e15 ? number : fallback;
 }
 
 function asIso(value) {
-  const ms = Date.parse(String(value || ''));
-  return Number.isFinite(ms) ? new Date(ms).toISOString() : '';
+  let ms=null;
+  if (typeof value === 'number') ms=Number.isFinite(value) ? value : null;
+  else if (value instanceof Date) ms=value.getTime();
+  else if (typeof value === 'string' && value.trim()) ms=Date.parse(value.trim());
+  if (!Number.isFinite(ms)) return '';
+  try {
+    return new Date(ms).toISOString();
+  } catch {
+    return '';
+  }
 }
 
 function ledgerStatus(row = {}) {
@@ -22,14 +59,31 @@ function ledgerStatus(row = {}) {
 
 function normalizeDestinations(destinations = [], adminCount = 0) {
   if (Array.isArray(destinations) && destinations.length) {
-    return destinations
-      .map((item, index) => ({
-        slot:Number.isInteger(Number(item?.slot)) ? Number(item.slot) : index,
-        destinationKey:String(item?.destinationKey || item?.destination_key || '').trim(),
-      }))
-      .filter(item => item.slot >= 0 && item.destinationKey);
+    const normalized=[];
+    const seenSlots=new Set();
+    const seenKeys=new Set();
+    for (const [index,item] of destinations.entries()) {
+      const rawSlot=item?.slot;
+      const slot=rawSlot === undefined || rawSlot === null || rawSlot === ''
+        ? index
+        : nonNegativeInteger(rawSlot,-1);
+      const rawKey=item?.destinationKey ?? item?.destination_key;
+      const destinationKey=typeof rawKey === 'string' ? rawKey.trim() : '';
+      if (
+        slot < 0
+        || !destinationKey
+        || destinationKey.length > 160
+        || seenSlots.has(slot)
+        || seenKeys.has(destinationKey)
+      ) continue;
+      seenSlots.add(slot);
+      seenKeys.add(destinationKey);
+      normalized.push({slot,destinationKey});
+    }
+    return normalized;
   }
-  return Array.from({ length:Math.max(0, Number(adminCount || 0)) }, (_, slot) => ({
+  const count=Math.min(100,nonNegativeInteger(adminCount));
+  return Array.from({ length:count }, (_, slot) => ({
     slot,
     destinationKey:'slot:' + slot,
   }));
@@ -41,23 +95,45 @@ export function providerIncidentBotIdentity(botToken = '') {
 }
 
 export async function providerIncidentDestinationKey(chatId, botIdentity = 'telegram-bot:primary') {
-  const id = Number(chatId);
-  if (!Number.isSafeInteger(id) || id <= 0) return '';
-  const input = new TextEncoder().encode(String(botIdentity || 'telegram-bot:primary') + '|' + id);
+  const id = positiveInteger(chatId);
+  if (!id) return '';
+  const identity=typeof botIdentity === 'string' && botIdentity.trim()
+    ? botIdentity.trim().slice(0,120)
+    : 'telegram-bot:primary';
+  const input = new TextEncoder().encode(identity + '|' + id);
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', input));
   return Array.from(digest).map(value => value.toString(16).padStart(2,'0')).join('').slice(0,40);
 }
 
 function relevantLedgerRows(rows = [], incidentId = '') {
-  return (rows || []).filter(row => String(row?.incident_id || row?.incidentId || '') === String(incidentId || ''));
+  const id=typeof incidentId === 'string' ? incidentId.trim() : '';
+  return (Array.isArray(rows) ? rows : [])
+    .filter(row => String(row?.incident_id || row?.incidentId || '') === id);
+}
+
+function ledgerRowTime(row = {}) {
+  const value=row?.updated_at ?? row?.updatedAt ?? row?.created_at ?? row?.createdAt;
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const timestamp=Date.parse(value.trim());
+  return Number.isFinite(timestamp) ? timestamp : null;
 }
 
 function deliveryState(rows = [], alertKey = '', destinations = [], nowMs = Date.now()) {
-  const matching = (rows || []).filter(row => String(row?.alert_key || row?.alertKey || '') === String(alertKey || ''));
+  const sourceRows=Array.isArray(rows) ? rows : [];
+  const targetList=Array.isArray(destinations) ? destinations : [];
+  const matching = sourceRows.filter(row => String(row?.alert_key || row?.alertKey || '') === String(alertKey || ''));
   const byDestination = new Map();
   for (const row of matching) {
-    const key = String(row?.destination_key || row?.destinationKey || '');
-    if (key) byDestination.set(key,row);
+    const key = String(row?.destination_key || row?.destinationKey || '').trim();
+    if (!key) continue;
+    const existing=byDestination.get(key);
+    const rowTime=ledgerRowTime(row);
+    const existingTime=ledgerRowTime(existing);
+    if (
+      !existing
+      || (rowTime !== null && (existingTime === null || rowTime >= existingTime))
+      || (rowTime === null && existingTime === null)
+    ) byDestination.set(key,row);
   }
 
   const deliveredSlots = [];
@@ -67,16 +143,17 @@ function deliveryState(rows = [], alertKey = '', destinations = [], nowMs = Date
   const unknown = [];
   const sending = [];
   let maxAttempts = 0;
+  const effectiveNow=timestampCandidate(nowMs);
 
-  for (const destination of destinations) {
+  for (const destination of targetList) {
     let row=byDestination.get(destination.destinationKey) || null;
     if (!row) {
       const legacyCandidates=matching
         .filter(candidate =>
           String(candidate?.destination_identity_version || candidate?.destinationIdentityVersion || 'legacy')==='legacy'
-          && Number(candidate?.destination_slot ?? candidate?.destinationSlot)===Number(destination.slot)
+          && nonNegativeInteger(candidate?.destination_slot ?? candidate?.destinationSlot,-1)===destination.slot
         )
-        .sort((a,b)=>Date.parse(b?.updated_at || b?.created_at || '')-Date.parse(a?.updated_at || a?.created_at || ''));
+        .sort((a,b)=>(ledgerRowTime(b) ?? -1)-(ledgerRowTime(a) ?? -1));
       row=legacyCandidates.find(candidate=>ledgerStatus(candidate)==='sent')
         || legacyCandidates[0]
         || null;
@@ -85,20 +162,27 @@ function deliveryState(rows = [], alertKey = '', destinations = [], nowMs = Date
       pending.push(destination);
       continue;
     }
-    const rowDestinationKey=String(row?.destination_key || row?.destinationKey || '');
+
+    const rowDestinationKey=String(row?.destination_key || row?.destinationKey || '').trim();
     const pendingDestination=rowDestinationKey && rowDestinationKey!==destination.destinationKey
       ? {...destination,destinationKey:rowDestinationKey,identityVersion:'legacy'}
       : destination;
     const status = ledgerStatus(row);
-    const attempts = Math.max(0, finite(row?.attempts));
+    const attemptsCandidate=integerCandidate(row?.attempts);
+    if (attemptsCandidate === null || attemptsCandidate < 0) {
+      unknown.push(destination.slot);
+      continue;
+    }
+    const attempts=attemptsCandidate;
     maxAttempts = Math.max(maxAttempts, attempts);
+
     if (status === 'sent') {
       deliveredSlots.push(destination.slot);
       continue;
     }
     if (status === 'retry_pending') {
       const retryAt = Date.parse(String(row?.retry_at || row?.retryAt || ''));
-      if (attempts < PROVIDER_INCIDENT_ALERT_POLICY.maxDeferredAttempts && (!Number.isFinite(retryAt) || retryAt <= nowMs)) {
+      if (attempts < PROVIDER_INCIDENT_ALERT_POLICY.maxDeferredAttempts && (!Number.isFinite(retryAt) || retryAt <= effectiveNow)) {
         pending.push(pendingDestination);
       } else if (attempts >= PROVIDER_INCIDENT_ALERT_POLICY.maxDeferredAttempts) {
         terminal.push(destination.slot);
@@ -115,23 +199,21 @@ function deliveryState(rows = [], alertKey = '', destinations = [], nowMs = Date
       unknown.push(destination.slot);
       continue;
     }
-    if (status === 'claimed') {
+    if (status === 'claimed' || status === 'sending') {
+      if (attempts >= PROVIDER_INCIDENT_ALERT_POLICY.maxDeferredAttempts) {
+        terminal.push(destination.slot);
+        continue;
+      }
       const lockedUntil=Date.parse(String(row?.locked_until || row?.lockedUntil || ''));
-      if (!Number.isFinite(lockedUntil) || lockedUntil<=nowMs) pending.push(pendingDestination);
-      else sending.push(destination.slot);
-      continue;
-    }
-    if (status === 'sending') {
-      const lockedUntil=Date.parse(String(row?.locked_until || row?.lockedUntil || ''));
-      if (!Number.isFinite(lockedUntil) || lockedUntil<=nowMs) pending.push(pendingDestination);
+      if (!Number.isFinite(lockedUntil) || lockedUntil<=effectiveNow) pending.push(pendingDestination);
       else sending.push(destination.slot);
       continue;
     }
     blocked.push(destination.slot);
   }
 
-  const completed = destinations.length > 0 && deliveredSlots.length === destinations.length;
-  const exhausted = destinations.length > 0
+  const completed = targetList.length > 0 && deliveredSlots.length === targetList.length;
+  const exhausted = targetList.length > 0
     && !completed
     && pending.length === 0
     && blocked.length === 0
@@ -147,7 +229,7 @@ function deliveryState(rows = [], alertKey = '', destinations = [], nowMs = Date
     completed,
     exhausted,
     waiting:Boolean(blocked.length || sending.length),
-    nextAttempt:maxAttempts + 1,
+    nextAttempt:Math.min(PROVIDER_INCIDENT_ALERT_POLICY.maxDeferredAttempts,maxAttempts + 1),
   };
 }
 
@@ -177,8 +259,13 @@ export function planProviderIncidentAlert(report = {}, ledgerRows = [], { nowMs 
   const normalizedDestinations = normalizeDestinations(destinations, adminCount);
   if (!normalizedDestinations.length) return { action:'none', reason:'no_admin_recipients' };
 
-  const active = report?.activeIncident || null;
-  if (active?.active) {
+  const active = report?.activeIncident && typeof report.activeIncident === 'object'
+    ? report.activeIncident
+    : null;
+  if (active?.active === true) {
+    if (typeof active.incidentId !== 'string' || !active.incidentId.trim() || active.incidentId.length > 200) {
+      return { action:'none', reason:'incident_identity_unavailable' };
+    }
     if (active.state !== 'incident' && active.highestState !== 'incident') {
       return { action:'none', reason:'watch_not_alertable' };
     }
@@ -202,7 +289,7 @@ export function planProviderIncidentAlert(report = {}, ledgerRows = [], { nowMs 
       if (escalation.action === 'send' || !['already_delivered','delivery_exhausted'].includes(escalation.reason)) return escalation;
     }
 
-    const duration = finite(active.durationMinutes);
+    const duration = Math.max(0,finite(active.durationMinutes));
     for (let index = 1; index <= PROVIDER_INCIDENT_ALERT_POLICY.reminderLimit; index += 1) {
       if (duration < PROVIDER_INCIDENT_ALERT_POLICY.reminderAfterMinutes * index) break;
       const reminderKey = active.incidentId + ':reminder:' + index;
@@ -221,7 +308,13 @@ export function planProviderIncidentAlert(report = {}, ledgerRows = [], { nowMs 
   }
 
   const recovered = Array.isArray(report?.history)
-    ? report.history.find(item => !item?.active && item?.highestState === 'incident' && item?.incidentId)
+    ? report.history.find(item =>
+        item?.active === false
+        && item?.highestState === 'incident'
+        && typeof item?.incidentId === 'string'
+        && item.incidentId.trim()
+        && item.incidentId.length <= 200
+      )
     : null;
   if (!recovered) return { action:'none', reason:'no_incident' };
 
@@ -298,21 +391,26 @@ export function formatProviderIncidentAlert(plan = {}) {
 }
 
 export function classifyProviderIncidentTelegramResult(result = {}, nowMs = Date.now()) {
-  if (result?.ok) return { state:'sent', retryAt:null, retryable:false, reason:'' };
-  const status = Number(result?.status || 0);
-  const outcome = String(result?.outcome || '').toLowerCase();
-  const errorCode = String(result?.errorCode || result?.code || '');
-  const description = String(result?.description || 'telegram_delivery_failed').slice(0,160);
+  if (result?.ok === true) return { state:'sent', retryAt:null, retryable:false, reason:'' };
+  const statusCandidate=integerCandidate(result?.status);
+  const status=statusCandidate !== null && statusCandidate >= 0 && statusCandidate <= 599 ? statusCandidate : 0;
+  const outcome = typeof result?.outcome === 'string' ? result.outcome.trim().toLowerCase() : '';
+  const errorCodeValue=result?.errorCode ?? result?.code;
+  const errorCode = typeof errorCodeValue === 'string' ? errorCodeValue.trim().slice(0,80) : '';
+  const description = typeof result?.description === 'string' && result.description.trim()
+    ? result.description.trim().slice(0,160)
+    : 'telegram_delivery_failed';
+  const effectiveNow=timestampCandidate(nowMs);
 
   if (outcome === 'unknown' || (status === 0 && outcome !== 'not_started' && errorCode !== 'TELEGRAM_CONFIG')) {
     return { state:'unknown', retryAt:null, retryable:false, reason:description };
   }
 
   if (status === 429) {
-    const retryAfter = Math.max(1, finite(result?.retryAfter, 1));
+    const retryAfter = Math.min(604800,positiveInteger(result?.retryAfter,1,604800));
     return {
       state:'retry_pending',
-      retryAt:new Date(Number(nowMs) + retryAfter * 1000).toISOString(),
+      retryAt:new Date(effectiveNow + retryAfter * 1000).toISOString(),
       retryable:true,
       reason:description,
     };
@@ -321,7 +419,7 @@ export function classifyProviderIncidentTelegramResult(result = {}, nowMs = Date
   if (status === 408 || status === 425 || status >= 500) {
     return {
       state:'retry_pending',
-      retryAt:new Date(Number(nowMs) + PROVIDER_INCIDENT_ALERT_POLICY.retryCooldownMinutes * 60_000).toISOString(),
+      retryAt:new Date(effectiveNow + PROVIDER_INCIDENT_ALERT_POLICY.retryCooldownMinutes * 60_000).toISOString(),
       retryable:true,
       reason:description,
     };
@@ -331,10 +429,11 @@ export function classifyProviderIncidentTelegramResult(result = {}, nowMs = Date
 }
 
 async function processTarget({ plan, target, adminTelegramIds, claimDelivery, beginDelivery, finalizeDelivery, sendMessage, nowMs, text }) {
-  const slot = Number(target?.slot);
-  const destinationKey = String(target?.destinationKey || '');
-  const chatId = adminTelegramIds[slot];
-  if (!Number.isSafeInteger(Number(chatId)) || Number(chatId) <= 0 || !destinationKey) {
+  const slot = nonNegativeInteger(target?.slot,-1);
+  const destinationKey = typeof target?.destinationKey === 'string' ? target.destinationKey.trim() : '';
+  const chatIdRaw = Array.isArray(adminTelegramIds) && slot >= 0 ? adminTelegramIds[slot] : null;
+  const chatId = positiveInteger(chatIdRaw);
+  if (slot < 0 || !chatId || !destinationKey || destinationKey.length > 160) {
     return { slot, state:'terminal_failed', claimAcquired:false, reason:'invalid_admin_slot', attempts:0 };
   }
 
@@ -365,7 +464,7 @@ async function processTarget({ plan, target, adminTelegramIds, claimDelivery, be
       state:'persistence_failure',
       claimAcquired:false,
       reason:'claim_result_unconfirmed',
-      attempts:Math.max(0, finite(claim?.attempts)),
+      attempts:nonNegativeInteger(claim?.attempts),
     };
   }
 
@@ -383,7 +482,7 @@ async function processTarget({ plan, target, adminTelegramIds, claimDelivery, be
       retryAt:claim?.retryAt || claim?.retry_at || null,
       claimAcquired:false,
       reason:String(claim?.reason || 'claim_not_acquired'),
-      attempts:Math.max(0, finite(claim?.attempts)),
+      attempts:nonNegativeInteger(claim?.attempts),
     };
   }
 
@@ -395,7 +494,7 @@ async function processTarget({ plan, target, adminTelegramIds, claimDelivery, be
         state:'persistence_failure',
         claimAcquired:true,
         reason:'begin_delivery_unavailable',
-        attempts:Math.max(1,finite(claim?.attempts,1)),
+        attempts:Math.max(1,positiveInteger(claim?.attempts,1)),
       };
     }
     let begun;
@@ -410,7 +509,7 @@ async function processTarget({ plan, target, adminTelegramIds, claimDelivery, be
         state:'persistence_failure',
         claimAcquired:true,
         reason:String(error?.message || 'begin_delivery_failed').slice(0,160),
-        attempts:Math.max(1,finite(claim?.attempts,1)),
+        attempts:Math.max(1,positiveInteger(claim?.attempts,1)),
       };
     }
     if (!begun?.ok || String(begun?.status || '').toLowerCase()!=='sending') {
@@ -419,7 +518,7 @@ async function processTarget({ plan, target, adminTelegramIds, claimDelivery, be
         state:'persistence_failure',
         claimAcquired:true,
         reason:String(begun?.reason || 'begin_delivery_unconfirmed').slice(0,160),
-        attempts:Math.max(1,finite(claim?.attempts,1)),
+        attempts:Math.max(1,positiveInteger(claim?.attempts,1)),
       };
     }
   } else if (claimStatus!=='sending') {
@@ -428,13 +527,13 @@ async function processTarget({ plan, target, adminTelegramIds, claimDelivery, be
       state:'persistence_failure',
       claimAcquired:true,
       reason:'unexpected_claim_state',
-      attempts:Math.max(1,finite(claim?.attempts,1)),
+      attempts:Math.max(1,positiveInteger(claim?.attempts,1)),
     };
   }
 
   let result;
   try {
-    result = await sendMessage(Number(chatId), text);
+    result = await sendMessage(chatId, text);
   } catch (error) {
     result = {
       ok:false,
@@ -451,13 +550,22 @@ async function processTarget({ plan, target, adminTelegramIds, claimDelivery, be
     destinationKey,
     status:classified.state,
     retryAt:classified.retryAt,
-    httpStatus:Number(result?.status || 0) || null,
-    errorCode:String(result?.errorCode || result?.code || '').slice(0,80) || null,
+    httpStatus:(()=>{
+      const status=integerCandidate(result?.status);
+      return status !== null && status >= 100 && status <= 599 ? status : null;
+    })(),
+    errorCode:(()=>{
+      const value=result?.errorCode ?? result?.code;
+      return typeof value === 'string' && value.trim() ? value.trim().slice(0,80) : null;
+    })(),
     errorMessage:classified.reason || null,
   };
 
   try {
-    await finalizeDelivery(finalPayload);
+    const finalized=await finalizeDelivery(finalPayload);
+    if (!finalized || finalized.ok !== true) {
+      throw new Error(String(finalized?.reason || 'alert_finalize_unconfirmed'));
+    }
   } catch (error) {
     return {
       slot,
@@ -466,7 +574,7 @@ async function processTarget({ plan, target, adminTelegramIds, claimDelivery, be
       claimAcquired:true,
       reason:String(error?.message || 'alert_finalize_failed').slice(0,160),
       retryAt:classified.retryAt,
-      attempts:Math.max(1, finite(claim?.attempts,1)),
+      attempts:Math.max(1,positiveInteger(claim?.attempts,1)),
     };
   }
 
@@ -476,8 +584,11 @@ async function processTarget({ plan, target, adminTelegramIds, claimDelivery, be
     claimAcquired:true,
     reason:classified.reason,
     retryAt:classified.retryAt,
-    httpStatus:Number(result?.status || 0),
-    attempts:Math.max(1, finite(claim?.attempts,1)),
+    httpStatus:(()=>{
+      const status=integerCandidate(result?.status);
+      return status !== null && status >= 0 && status <= 599 ? status : 0;
+    })(),
+    attempts:Math.max(1,positiveInteger(claim?.attempts,1)),
   };
 }
 
@@ -497,15 +608,15 @@ export async function deliverOperationalIncidentAlert({
     return {
       ok:false,
       failClosed:true,
-      outcomes:(plan.targetDeliveries || []).map(target => ({
-        slot:Number(target?.slot),
+      outcomes:(Array.isArray(plan.targetDeliveries) ? plan.targetDeliveries : []).map(target => ({
+        slot:nonNegativeInteger(target?.slot,-1),
         state:'persistence_failure',
         claimAcquired:false,
         reason:'persistent_delivery_ledger_unavailable',
       })),
       deliveredSlots:[],
-      failedSlots:(plan.targetDeliveries || []).map(target => Number(target?.slot)),
-      recipientCount:(plan.targetDeliveries || []).length,
+      failedSlots:(Array.isArray(plan.targetDeliveries) ? plan.targetDeliveries : []).map(target => nonNegativeInteger(target?.slot,-1)),
+      recipientCount:(Array.isArray(plan.targetDeliveries) ? plan.targetDeliveries : []).length,
     };
   }
 
@@ -525,7 +636,7 @@ export async function deliverOperationalIncidentAlert({
   const outcomes = settled.map((item,index) => item.status === 'fulfilled'
     ? item.value
     : {
-        slot:Number(targets[index]?.slot),
+        slot:nonNegativeInteger(targets[index]?.slot,-1),
         state:'persistence_failure',
         claimAcquired:false,
         reason:String(item.reason?.message || item.reason || 'delivery_task_rejected').slice(0,160),
@@ -550,8 +661,10 @@ export async function deliverProviderIncidentAlert(options = {}) {
 
 function opsEventForState(plan = {}, state = '', items = []) {
   const incident = plan.incident || {};
-  const slots = items.map(item => Number(item.slot)).filter(Number.isInteger);
-  const attempts = items.map(item => Number(item.attempts || 0)).filter(Number.isFinite);
+  const slots = items.map(item => nonNegativeInteger(item?.slot,-1)).filter(slot => slot >= 0);
+  const attempts = items
+    .map(item => nonNegativeInteger(item?.attempts,-1))
+    .filter(attempt => attempt >= 0);
   const retryAt = items.map(item => item.retryAt).filter(Boolean).sort()[0] || null;
   const spec = {
     claim_acquired:['info','PROVIDER_SLO_ALERT_CLAIM_ACQUIRED','alert_claim_acquired','Persistent alert delivery claim acquired.'],
@@ -608,13 +721,14 @@ export function providerIncidentAlertOpsEvent(plan = {}, delivery = {}) {
 }
 
 export function providerIncidentAlertLedgerSummary(rows = []) {
+  const source=Array.isArray(rows) ? rows : [];
   const counts = { claimed:0, sending:0, sent:0, retry_pending:0, terminal_failed:0, unknown:0 };
-  for (const row of rows || []) {
+  for (const row of source) {
     const status = ledgerStatus(row);
     if (Object.prototype.hasOwnProperty.call(counts,status)) counts[status] += 1;
   }
   return {
-    rows:Number((rows || []).length),
+    rows:source.length,
     states:counts,
     operationalAttention:Number(counts.retry_pending + counts.terminal_failed + counts.unknown),
   };
