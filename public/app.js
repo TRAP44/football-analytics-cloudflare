@@ -4886,7 +4886,7 @@ function renderMatchCenter(d) {
 
       <div class="center-hero-actions ${isAdmin() ? 'has-admin-audit' : ''}">
         <button id="centerRefreshBtn" class="reminder-btn" type="button">↻ Обновить</button>
-        ${upcoming ? `<button id="centerAnalyzeBtn" class="primary-btn center-analyze-inline" type="button">🧠 Разобрать матч</button><button id="centerMatchPassBtn" class="reminder-btn center-pass-btn" type="button">⭐ Pass на матч</button>` : ''}
+        ${upcoming ? `<button id="centerAnalyzeBtn" class="primary-btn center-analyze-inline" type="button">🧠 Разобрать матч</button>${state.profile?.features?.monetizationEnabled === true ? '<button id="centerMatchPassBtn" class="reminder-btn center-pass-btn" type="button">⭐ Pass на матч</button>' : ''}` : ''}
         ${isAdmin() ? `<button id="centerCoverageAuditBtn" class="reminder-btn admin-audit-btn" type="button">🧪 Покрытие</button>` : ''}
         ${isAdmin() ? `<button id="centerE2EBtn" class="reminder-btn admin-e2e-btn" type="button">🚦 E2E</button>` : ''}
       </div>
