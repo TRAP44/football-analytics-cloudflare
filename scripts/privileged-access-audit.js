@@ -6,10 +6,6 @@ export const WORKFLOW_SECRET_ALLOWLIST = Object.freeze({
   '.github/workflows/backup-supabase.yml': new Set(['SUPABASE_DB_URL','BACKUP_ENCRYPTION_PASSPHRASE']),
   '.github/workflows/deploy-production.yml': new Set(['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID']),
   '.github/workflows/rollback-production.yml': new Set(['CLOUDFLARE_API_TOKEN','CLOUDFLARE_ACCOUNT_ID']),
-  '.github/workflows/external-production-monitor.yml': new Set(),
-  '.github/workflows/quality.yml': new Set(),
-  '.github/workflows/codeql.yml': new Set(),
-  '.github/workflows/privileged-access-audit.yml': new Set(),
 });
 
 const SECRET_NAME_PATTERN = /(TOKEN|SECRET|PASSWORD|PASSPHRASE|PRIVATE|SERVICE_ROLE|DB_URL|API_KEY)/i;
@@ -47,7 +43,14 @@ export function workflowSecretRefs(text='') {
 export function workflowActionRefs(text='') {
   return String(text).split(/\r?\n/)
     .map(line=>line.match(/^\s*-?\s*uses:\s*([^\s#]+)(?:\s+#.*)?$/)?.[1] || '')
+    .map(ref=>ref.replace(/^(["'])(.*)\1$/,'$2'))
     .filter(Boolean);
+}
+
+export function workflowPaths(dir='.github/workflows') {
+  return walk(dir)
+    .filter(file=>/\.ya?ml$/i.test(file))
+    .sort();
 }
 
 export function auditWorkflow(pathName, text='') {
@@ -121,12 +124,15 @@ export function auditPublicFiles(paths, readFile=file=>fs.readFileSync(file,'utf
 
 export function runPrivilegedAccessAudit() {
   const findings=[];
-  for (const pathName of Object.keys(WORKFLOW_SECRET_ALLOWLIST)) {
-    if (!fs.existsSync(pathName)) {
-      findings.push({path:pathName,type:'workflow_missing'});
-      continue;
-    }
+  const workflows=workflowPaths();
+  if (!workflows.length) {
+    findings.push({path:'.github/workflows',type:'workflow_directory_empty'});
+  }
+  for (const pathName of workflows) {
     findings.push(...auditWorkflow(pathName,fs.readFileSync(pathName,'utf8')));
+  }
+  for (const pathName of Object.keys(WORKFLOW_SECRET_ALLOWLIST)) {
+    if (!workflows.includes(pathName)) findings.push({path:pathName,type:'workflow_missing'});
   }
   if (fs.existsSync('wrangler.jsonc')) findings.push(...auditWranglerVars(fs.readFileSync('wrangler.jsonc','utf8')));
   findings.push(...auditPublicFiles(walk('public')));
