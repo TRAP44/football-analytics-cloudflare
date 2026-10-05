@@ -10,6 +10,16 @@ function finiteScore(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+function positiveFixtureId(value) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number > 0 ? number : 0;
+}
+
+function matchMinute(value) {
+  const number = finiteScore(value);
+  return number === null ? null : Math.max(0, Math.min(180, Math.round(number)));
+}
+
 function validIso(value) {
   const ms = Date.parse(String(value || ''));
   return Number.isFinite(ms) ? new Date(ms).toISOString() : '';
@@ -20,6 +30,8 @@ function probabilitySet(value = {}) {
   const draw = finiteProbability(value.draw);
   const away = finiteProbability(value.away);
   if (home === null || draw === null || away === null) return null;
+  const total = home + draw + away;
+  if (Math.abs(total - 100) > 2) return null;
   return { home, draw, away };
 }
 
@@ -108,8 +120,8 @@ function compactProvenance(payload = {}) {
 }
 
 function matchMinuteForSnapshot(payload = {}, capturedAt = '') {
-  const explicit = finiteScore(payload?.match?.elapsed);
-  if (explicit !== null && explicit >= 0) return Math.round(explicit);
+  const explicit = matchMinute(payload?.match?.elapsed);
+  if (explicit !== null) return explicit;
   const status = String(payload?.match?.status || '').toUpperCase();
   if (!['1H','HT','2H','ET','BT','P','INT','LIVE'].includes(status)) return null;
   const kickoff = Date.parse(String(payload?.match?.date || ''));
@@ -119,7 +131,7 @@ function matchMinuteForSnapshot(payload = {}, capturedAt = '') {
 }
 
 export function analysisTimelineSnapshotRow(payload = {}, { delta = null } = {}) {
-  const fixtureId = Number(payload?.match?.fixtureId || 0);
+  const fixtureId = positiveFixtureId(payload?.match?.fixtureId);
   const capturedAt = validIso(payload?.generatedAt);
   const probabilities = probabilitySet(payload?.probabilities);
   if (!fixtureId || !capturedAt || !probabilities) return null;
@@ -151,7 +163,7 @@ export function analysisTimelineSnapshotRow(payload = {}, { delta = null } = {})
 }
 
 export function modelPredictionTimelineRow(row = {}) {
-  const fixtureId = Number(row?.fixture_id || 0);
+  const fixtureId = positiveFixtureId(row?.fixture_id);
   const capturedAt = validIso(row?.captured_at);
   const probabilities = probabilitySet({
     home: row?.home_prob,
@@ -186,7 +198,7 @@ export function modelPredictionTimelineRow(row = {}) {
 
 function normalizedSnapshot(row = {}, source = 'analysis_timeline_snapshots') {
   const capturedAt = validIso(row?.captured_at ?? row?.capturedAt);
-  const fixtureId = Number(row?.fixture_id ?? row?.fixtureId ?? 0);
+  const fixtureId = positiveFixtureId(row?.fixture_id ?? row?.fixtureId);
   const probabilities = probabilitySet({
     home: row?.home_prob ?? row?.probabilities?.home,
     draw: row?.draw_prob ?? row?.probabilities?.draw,
@@ -204,7 +216,7 @@ function normalizedSnapshot(row = {}, source = 'analysis_timeline_snapshots') {
     id: String(row?.snapshot_key || `${source}:${fixtureId}:${capturedAt}`),
     fixtureId,
     capturedAt,
-    minute: minute === null ? null : Math.max(0, Math.round(minute)),
+    minute: matchMinute(minute),
     status: String(row?.match_status ?? row?.status ?? ''),
     probabilities,
     confidence: finiteScore(row?.confidence_score ?? row?.confidence),
@@ -328,11 +340,19 @@ export function buildAiTimeline({
   events = [],
   match = {},
 } = {}) {
+  const requestedFixtureId = positiveFixtureId(match?.fixtureId ?? match?.fixture_id);
+  const predictionFixtureId = positiveFixtureId(modelPrediction?.fixture_id ?? modelPrediction?.fixtureId);
+  const targetFixtureId = requestedFixtureId || predictionFixtureId;
   const normalized = (Array.isArray(snapshotRows) ? snapshotRows : [])
     .map(row => normalizedSnapshot(row))
-    .filter(Boolean);
+    .filter(row => row && (!targetFixtureId || row.fixtureId === targetFixtureId));
   const firstPrediction = modelPredictionTimelineRow(modelPrediction || {});
-  if (firstPrediction) normalized.push(normalizedSnapshot(firstPrediction, 'model_predictions'));
+  if (
+    firstPrediction
+    && (!targetFixtureId || firstPrediction.fixture_id === targetFixtureId)
+  ) {
+    normalized.push(normalizedSnapshot(firstPrediction, 'model_predictions'));
+  }
 
   const points = dedupeSnapshots(normalized);
   const kickoffAt = validIso(match?.date ?? modelPrediction?.kickoff_at);
