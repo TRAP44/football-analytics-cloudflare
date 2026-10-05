@@ -103,19 +103,6 @@ jobs:
             exit 1
           fi
 
-      - name: Configure private health probe secret
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ -z "$HEALTH_PROBE_TOKEN" ]]; then
-            echo "HEALTH_PROBE_TOKEN is required in the production GitHub environment." >&2
-            exit 1
-          fi
-          printf '%s' "$HEALTH_PROBE_TOKEN" | npx wrangler secret put HEALTH_PROBE_TOKEN
-
       - name: Detect pending production artifact changes
         id: production_changes
         env:
@@ -190,6 +177,20 @@ jobs:
           node scripts/rollback-smoke.js "$SMOKE_URL" "$PREVIOUS_RELEASE"
           echo "### Previous-known-good rollback target verified" >> "$GITHUB_STEP_SUMMARY"
           echo "Pinned Cloudflare version $PREVIOUS_VERSION_ID for release $PREVIOUS_RELEASE before production cutover." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Configure private health probe secret
+        if: steps.production_changes.outputs.changed == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$HEALTH_PROBE_TOKEN" ]]; then
+            echo "HEALTH_PROBE_TOKEN is required in the production GitHub environment." >&2
+            exit 1
+          fi
+          printf '%s' "$HEALTH_PROBE_TOKEN" | npx wrangler secret put HEALTH_PROBE_TOKEN
 
       - name: Deploy Worker
         if: steps.production_changes.outputs.changed == 'true'
