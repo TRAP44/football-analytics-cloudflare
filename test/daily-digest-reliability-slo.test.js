@@ -71,6 +71,45 @@ test('A3. missing-run WATCH exposes UTC window diagnostics without identifiers',
   assert.equal(result.diagnostics.todayRunObserved,false);
 });
 
+test('A4. malformed nowMs and non-array history do not crash SLO evaluation',()=>{
+  assert.doesNotThrow(()=>assessDailyDigestReliabilitySlo({broken:true},{nowMs:'NaN'}));
+  const result=assessDailyDigestReliabilitySlo([],{
+    nowMs:Date.parse('2026-09-29T08:15:00Z'),
+  });
+  assert.equal(result.date,'2026-09-29');
+});
+
+test('A5. SLO transition metadata rejects array metadata and sanitizes malformed counters',()=>{
+  const assessment={
+    state:'watch',
+    code:'DAILY_DIGEST_SLO_COMPLETION',
+    reason:'completion_rate',
+    date:'2026-09-29',
+    message:'watch',
+    reliability:{
+      sampleDays:'NaN',
+      totals:{claimed:'Infinity'},
+      completionRate:2,
+      backlog:{days:-1},
+      rateLimitDays:1.5,
+      incidents:{count:'bad'},
+      degradedDays:3,
+    },
+  };
+  const plan=planDailyDigestReliabilitySloEvent(assessment,[{
+    created_at:'2026-09-28T08:15:00Z',
+    severity:'info',
+    code:'OLD',
+    metadata:[],
+  }]);
+  assert.equal(plan.action,'record');
+  assert.equal(plan.meta.sampleDays,0);
+  assert.equal(plan.meta.claimed,0);
+  assert.equal(plan.meta.completionRate,1);
+  assert.equal(plan.meta.backlogDays,0);
+  assert.equal(plan.meta.rateLimitDays,1);
+});
+
 test('B. insufficient historical sample does not enforce trend thresholds',()=>{
   const rows=[
     event('2026-09-29','DAILY_DIGEST_RUN_OK',{sent:10,claimed:10,remaining:0,completionRate:1}),
