@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { signInvoiceBase, verifyInvoiceBaseSignature } from '../src/invoice-signing.js';
 
 const PRIMARY='invoice-secret-v2';
@@ -25,4 +26,13 @@ test('invoice signing fails closed without a dedicated secret and rejects tamper
   const sig=await signInvoiceBase('payload',PRIMARY);
   assert.equal(await verifyInvoiceBaseSignature('payload-tampered',sig,PRIMARY,LEGACY),false);
   assert.equal(await verifyInvoiceBaseSignature('payload','not-a-signature',PRIMARY,LEGACY),false);
+});
+
+
+test('production deploy fails closed when dedicated invoice secret is absent',()=>{
+  const workflow=fs.readFileSync('.github/workflows/deploy-production.yml','utf8');
+  assert.match(workflow,/INVOICE_SIGNING_SECRET: \$\{\{ secrets\.INVOICE_SIGNING_SECRET \}\}/);
+  assert.match(workflow,/-z "\$INVOICE_SIGNING_SECRET"/);
+  assert.match(workflow,/wrangler secret put INVOICE_SIGNING_SECRET/);
+  assert.doesNotMatch(workflow,/env\.INVOICE_SIGNING_SECRET != ''/);
 });
