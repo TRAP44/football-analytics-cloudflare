@@ -25,11 +25,35 @@ function response(body, { ok = true, status = 200 } = {}) {
 
 test('selectMergedPullRequest accepts only a merged PR into main', () => {
   const pull = selectMergedPullRequest([
-    { number: 10, state: 'open', merged_at: null, base: { ref: 'main' } },
-    { number: 11, state: 'closed', merged_at: '2026-10-04T00:00:00Z', base: { ref: 'develop' } },
-    { number: 12, state: 'closed', merged_at: '2026-10-04T00:01:00Z', base: { ref: 'main' } },
-  ]);
+    { number: 10, state: 'open', merged_at: null, base: { ref: 'main', repo: { full_name: 'TRAP44/football-analytics-cloudflare' } } },
+    { number: 11, state: 'closed', merged_at: '2026-10-04T00:00:00Z', base: { ref: 'develop', repo: { full_name: 'TRAP44/football-analytics-cloudflare' } } },
+    { number: 12, state: 'closed', merged_at: '2026-10-04T00:01:00Z', base: { ref: 'main', repo: { full_name: 'TRAP44/football-analytics-cloudflare' } } },
+  ], 'main', 'TRAP44/football-analytics-cloudflare');
   assert.equal(pull?.number, 12);
+});
+
+test('selectMergedPullRequest rejects same-named branches from another base repository', () => {
+  const pull=selectMergedPullRequest([
+    {
+      number: 13,
+      state: 'closed',
+      merged_at: '2026-10-04T00:02:00Z',
+      base: { ref: 'main', repo: { full_name: 'TRAP44/another-repository' } },
+    },
+  ], 'main', 'TRAP44/football-analytics-cloudflare');
+  assert.equal(pull,null);
+});
+
+test('selectMergedPullRequest rejects malformed merge timestamps', () => {
+  const pull=selectMergedPullRequest([
+    {
+      number: 14,
+      state: 'closed',
+      merged_at: 'not-a-date',
+      base: { ref: 'main', repo: { full_name: 'TRAP44/football-analytics-cloudflare' } },
+    },
+  ], 'main', 'TRAP44/football-analytics-cloudflare');
+  assert.equal(pull,null);
 });
 
 test('verifyMainPrProvenance rejects a direct-push commit with no associated PR', async () => {
@@ -55,7 +79,7 @@ test('verifyMainPrProvenance rejects PRs merged into a different base branch', a
           number: 99,
           state: 'closed',
           merged_at: '2026-10-04T00:00:00Z',
-          base: { ref: 'release' },
+          base: { ref: 'release', repo: { full_name: 'TRAP44/football-analytics-cloudflare' } },
         },
       ]),
     }),
