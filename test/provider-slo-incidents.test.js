@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildProviderSloIncidentTimeline,
   providerSloIncidentOpsEvent,
+  providerSloIncidentUpdateOpsEvent,
 } from '../src/provider-slo-incidents.js';
 
 function window(at, state, totals = {}, metadata = {}) {
@@ -63,6 +64,30 @@ test('string false does not mark an SLO window complete', () => {
   });
   assert.equal(report.activeIncident,null);
   assert.equal(report.windowIntegrity.incomplete,1);
+});
+
+test('explicit SLO percentages must agree with their persisted counters', () => {
+  const first=window('2026-09-28T10:00:00Z','incident',{
+    requests:10,
+    successes:10,
+    failures:0,
+    retries:0,
+    successRatePct:80,
+    retryRatePct:0,
+  });
+  const second=window('2026-09-28T10:15:00Z','incident',{
+    requests:10,
+    successes:10,
+    failures:0,
+    retries:0,
+    successRatePct:80,
+    retryRatePct:0,
+  });
+  const report=buildProviderSloIncidentTimeline([first,second],{
+    nowMs:Date.parse('2026-09-28T10:20:00Z'),
+  });
+  assert.equal(report.activeIncident,null);
+  assert.equal(report.windowIntegrity.invalidMetrics,2);
 });
 
 test('metric integrity prevents impossible SLO totals from opening incidents', () => {
@@ -210,6 +235,34 @@ test('malformed nowMs falls back to latest observed window instead of corrupting
     window('2026-09-28T10:15:00Z','watch'),
   ],{nowMs:true});
   assert.equal(report.activeIncident?.durationMinutes,30);
+});
+
+test('provider SLO ops events require strict incident identity and active booleans', () => {
+  assert.equal(providerSloIncidentOpsEvent({
+    state:'incident',
+    previousState:'watch',
+    incidentId:true,
+  }),null);
+  assert.equal(providerSloIncidentOpsEvent({
+    state:'incident',
+    previousState:'watch',
+    incidentId:'   ',
+  }),null);
+
+  assert.equal(providerSloIncidentUpdateOpsEvent({
+    active:'true',
+    highestState:'incident',
+    incidentId:'pslo-test',
+  }),null);
+
+  const event=providerSloIncidentUpdateOpsEvent({
+    active:true,
+    highestState:'incident',
+    incidentId:' pslo-test ',
+    severity:'incident',
+    state:'incident',
+  });
+  assert.equal(event?.meta?.incidentId,'pslo-test');
 });
 
 test('non-actionable transitions do not produce ops incident events', () => {
