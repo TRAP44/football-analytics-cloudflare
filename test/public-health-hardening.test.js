@@ -41,6 +41,44 @@ test('public readiness removes deployment identity, fingerprints and internal co
   assert.equal('recentSupabaseAuthFailures' in value.checks,false);
 });
 
+test('public readiness rejects boolean and object coercion at the public boundary', () => {
+  const value=sanitizePublicReadiness({
+    ok:'true',
+    status:{value:'ready'},
+    version:{value:'6.120.0'},
+    releaseCandidate:['RC144'],
+    latencyMs:true,
+    checks:{
+      supabase:{ok:'true',status:['ok']},
+      schema:[],
+      backendSecurity:{ok:1,status:'ok'},
+      telegramConfigured:'false',
+    },
+  });
+
+  assert.deepEqual(value,{
+    ok:false,
+    status:'not_ready',
+    version:'',
+    releaseCandidate:'',
+    latencyMs:null,
+    checks:{
+      supabase:{ok:false,status:'unknown'},
+      schema:{ok:false,status:'unknown'},
+      backendSecurity:{ok:false,status:'ok'},
+      telegramConfigured:false,
+    },
+  });
+});
+
+test('public readiness accepts only bounded non-negative latency and strips control characters', () => {
+  assert.equal(sanitizePublicReadiness({latencyMs:'123.5'}).latencyMs,123.5);
+  assert.equal(sanitizePublicReadiness({latencyMs:-1}).latencyMs,null);
+  assert.equal(sanitizePublicReadiness({latencyMs:9999999}).latencyMs,null);
+  assert.equal(sanitizePublicReadiness({version:'6.1\u0000hidden'}).version,'');
+  assert.equal(sanitizePublicReadiness({status:' ready\nspoofed '}).status,'not_ready');
+});
+
 test('public readiness coalesces concurrent probes and caches completed results', async () => {
   let now=1000;
   let calls=0;
@@ -76,6 +114,37 @@ test('public readiness coalesces concurrent probes and caches completed results'
   now+=PUBLIC_READINESS_CACHE_MS+1;
   await runtime.readinessSnapshot();
   assert.equal(calls,2);
+});
+
+test('public readiness cache rejects malformed TTL and clock rollback safely', async () => {
+  let now=1000;
+  let calls=0;
+  const runtime=createPublicHealthRuntime({
+    cacheMs:true,
+    now:()=>now,
+    computeReadiness:async()=>{
+      calls+=1;
+      return {ok:true,status:'ready'};
+    },
+  });
+
+  await runtime.readinessSnapshot();
+  now+=1000;
+  await runtime.readinessSnapshot();
+  assert.equal(calls,1);
+
+  now=500;
+  await runtime.readinessSnapshot();
+  assert.equal(calls,2);
+});
+
+test('public health devMode requires a strict boolean', async () => {
+  const runtime=createPublicHealthRuntime({
+    computeReadiness:async()=>({ok:true,status:'ready'}),
+  });
+  assert.equal((await runtime.healthSnapshot({devMode:'false'})).devMode,false);
+  runtime.invalidate();
+  assert.equal((await runtime.healthSnapshot({devMode:true})).devMode,true);
 });
 
 test('public liveness is dependency-free and full public health stays minimal', async () => {
