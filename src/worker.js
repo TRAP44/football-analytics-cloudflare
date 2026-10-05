@@ -10848,7 +10848,13 @@ async function runSettlementFinalityVerification(cfg) {
   });
 
   if (!rows.length) {
-    await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), candidates: 0, verified: 0, confirmed: 0, drift: 0 }, cfg, 1440).catch(() => null);
+    await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), candidates: 0, verified: 0, confirmed: 0, drift: 0 }, cfg, 1440)
+      .catch(error => recordCriticalWriteFailure(cfg, {
+        code:'SETTLEMENT_FINALITY_MARKER_WRITE_FAILED',
+        eventType:'settlement_finality',
+        message:error?.message || error,
+        meta:{phase:'empty'},
+      }));
     return { ok: true, candidates: 0, verified: 0, confirmed: 0, drift: 0, skipped: 0 };
   }
 
@@ -10957,7 +10963,13 @@ async function runSettlementFinalityVerification(cfg) {
       : `Settlement finality: ${verified} first-pass verified, ${confirmed} second-pass confirmed.`,
     meta: result,
   }).catch(() => null);
-  await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), ...result }, cfg, 1440).catch(() => null);
+  await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), ...result }, cfg, 1440)
+    .catch(error => recordCriticalWriteFailure(cfg, {
+      code:'SETTLEMENT_FINALITY_MARKER_WRITE_FAILED',
+      eventType:'settlement_finality',
+      message:error?.message || error,
+      meta:{phase:'result',drift:Number(result.drift || 0),confirmed:Number(result.confirmed || 0)},
+    }));
   return result;
 }
 
@@ -11746,7 +11758,13 @@ async function runSettlementWatchdog(cfg) {
   };
 
   if (decision.state === 'clean') {
-    await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), ...baseMeta }, cfg, 1440).catch(() => null);
+    await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), ...baseMeta }, cfg, 1440)
+      .catch(error => recordCriticalWriteFailure(cfg, {
+        code:'SETTLEMENT_WATCHDOG_MARKER_WRITE_FAILED',
+        eventType:'settlement_watchdog',
+        message:error?.message || error,
+        meta:{phase:'clean'},
+      }));
     return { ok: true, ...baseMeta };
   }
 
@@ -11773,7 +11791,13 @@ async function runSettlementWatchdog(cfg) {
       meta: baseMeta,
     }).catch(() => null);
     if (decision.state !== 'quota_guard') {
-      await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), ...baseMeta }, cfg, 1440).catch(() => null);
+      await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), ...baseMeta }, cfg, 1440)
+        .catch(error => recordCriticalWriteFailure(cfg, {
+          code:'SETTLEMENT_WATCHDOG_MARKER_WRITE_FAILED',
+          eventType:'settlement_watchdog',
+          message:error?.message || error,
+          meta:{phase:'observe',state:String(decision.state || '')},
+        }));
     }
     return { ok: true, ...baseMeta };
   }
@@ -11793,7 +11817,13 @@ async function runSettlementWatchdog(cfg) {
       message: 'Для текущего пакета матчей исчерпан лимит повторных попыток фиксации результатов.',
       meta: { ...baseMeta, retryOfActionId: retry.retryOfActionId, maxAttempts: SETTLEMENT_RUN_MAX_ATTEMPTS },
     }).catch(() => null);
-    await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), ...baseMeta, state: 'retry_exhausted' }, cfg, 1440).catch(() => null);
+    await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), ...baseMeta, state: 'retry_exhausted' }, cfg, 1440)
+      .catch(error => recordCriticalWriteFailure(cfg, {
+        code:'SETTLEMENT_WATCHDOG_MARKER_WRITE_FAILED',
+        eventType:'settlement_watchdog',
+        message:error?.message || error,
+        meta:{phase:'retry_exhausted'},
+      }));
     return { ok: true, ...baseMeta, state: 'retry_exhausted', retryOfActionId: retry.retryOfActionId };
   }
   const actionId = crypto.randomUUID();
@@ -11861,7 +11891,13 @@ async function runSettlementWatchdog(cfg) {
       message: `${reason}: завершено ${settledCount}, пропущено ${skippedCount}.`,
       meta: { ...baseMeta, actionId, settledCount, skippedCount },
     }).catch(() => null);
-    await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), ...baseMeta, actionId, settledCount, skippedCount, status }, cfg, 1440).catch(() => null);
+    await setCache(markerKey, 0, { checkedAt: new Date().toISOString(), ...baseMeta, actionId, settledCount, skippedCount, status }, cfg, 1440)
+      .catch(error => recordCriticalWriteFailure(cfg, {
+        code:'SETTLEMENT_WATCHDOG_MARKER_WRITE_FAILED',
+        eventType:'settlement_watchdog',
+        message:error?.message || error,
+        meta:{phase:'completed',actionId,status},
+      }));
     return { ok: true, ...baseMeta, actionId, settledCount, skippedCount, status };
   } catch (error) {
     if (executionResult) {
@@ -11885,7 +11921,12 @@ async function runSettlementWatchdog(cfg) {
         actionId,
         ...executionResult,
         auditPending: true,
-      }, cfg, 1440).catch(() => null);
+      }, cfg, 1440).catch(markerError => recordCriticalWriteFailure(cfg, {
+        code:'SETTLEMENT_WATCHDOG_MARKER_WRITE_FAILED',
+        eventType:'settlement_watchdog',
+        message:markerError?.message || markerError,
+        meta:{phase:'audit_pending',actionId},
+      }));
       return { ok: true, ...baseMeta, actionId, ...executionResult, auditPending: true };
     }
     await noteSettlementWatchdogOutcome(cfg, 'failed', { actionId, error: redactOpsString(error?.message || error, 180) }).catch(stateError => recordCriticalWriteFailure(cfg, {
