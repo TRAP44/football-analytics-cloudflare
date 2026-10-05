@@ -32,7 +32,18 @@ export const DEFAULT_PASS_PRODUCTS = Object.freeze({
 
 function positiveInt(value, fallback) {
   const n = Number(value);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+  return Number.isSafeInteger(n) && n > 0 ? n : fallback;
+}
+
+function nonNegativeInt(value, fallback = Number.NaN) {
+  const n = Number(value);
+  return Number.isSafeInteger(n) && n >= 0 ? n : fallback;
+}
+
+function timestampMs(value) {
+  if (value == null || value === '') return Number.NaN;
+  const ms = value instanceof Date ? value.getTime() : new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : Number.NaN;
 }
 
 export function normalizePassType(value) {
@@ -44,7 +55,12 @@ export function passProductConfig(type, cfg = {}) {
   const key = normalizePassType(type);
   if (!key) return null;
   const base = DEFAULT_PASS_PRODUCTS[key];
-  const usageLimit = positiveInt(cfg.passUsageLimits?.[key], null);
+  // The durable SQL contract only allows a usage cap for WEEKEND_PASS.
+  // Keep the in-memory/runtime contract identical so failover cannot create
+  // a broader entitlement shape than Supabase would accept.
+  const usageLimit = key === PASS_TYPES.WEEKEND
+    ? positiveInt(cfg.passUsageLimits?.[key], null)
+    : null;
   return {
     key,
     ...base,
@@ -114,17 +130,19 @@ export function passEntitlementWindow(passType, paidAt, cfg = {}) {
 }
 
 export function normalizeEntitlementRow(row = {}) {
+  const fixtureRaw = row.fixture_id ?? row.fixtureId;
+  const usageLimitRaw = row.usage_limit ?? row.usageLimit;
   return {
     id: row.id ?? null,
-    telegramId: Number(row.telegram_id ?? row.telegramId ?? 0),
+    telegramId: positiveInt(row.telegram_id ?? row.telegramId, 0),
     type: normalizePassType(row.entitlement_type ?? row.type),
-    fixtureId: Number(row.fixture_id ?? row.fixtureId ?? 0) || 0,
+    fixtureId: fixtureRaw == null ? 0 : nonNegativeInt(fixtureRaw),
     startsAt: row.starts_at ?? row.startsAt ?? null,
     expiresAt: row.expires_at ?? row.expiresAt ?? null,
-    usageLimit: row.usage_limit == null && row.usageLimit == null ? null : Number(row.usage_limit ?? row.usageLimit),
-    usageCount: Math.max(0, Number(row.usage_count ?? row.usageCount ?? 0)),
+    usageLimit: usageLimitRaw == null ? null : positiveInt(usageLimitRaw, Number.NaN),
+    usageCount: nonNegativeInt(row.usage_count ?? row.usageCount ?? 0),
     paymentChargeId: String(row.payment_charge_id ?? row.paymentChargeId ?? ''),
-    status: String(row.status || 'active').toLowerCase(),
+    status: String(row.status || 'active').trim().toLowerCase(),
   };
 }
 
@@ -134,18 +152,41 @@ export function entitlementDecision(row, { fixtureId = 0, now = Date.now() } = {
   if (item.status !== 'active') return { active: false, reason: item.status || 'inactive', item };
 
   const nowMs = now instanceof Date ? now.getTime() : Number(now);
-  const startsMs = new Date(item.startsAt || 0).getTime();
-  const expiresMs = new Date(item.expiresAt || 0).getTime();
-  if (!Number.isFinite(nowMs) || !Number.isFinite(startsMs) || !Number.isFinite(expiresMs)) {
+  const startsMs = timestampMs(item.startsAt);
+  const expiresMs = timestampMs(item.expiresAt);
+  if (
+    !Number.isFinite(nowMs)
+    || !Number.isFinite(startsMs)
+    || !Number.isFinite(expiresMs)
+    || expiresMs <= startsMs
+  ) {
     return { active: false, reason: 'invalid_window', item };
   }
   if (startsMs > nowMs) return { active: false, reason: 'not_started', item };
   if (expiresMs <= nowMs) return { active: false, reason: 'expired', item };
-  if (item.usageLimit != null && (!Number.isFinite(item.usageLimit) || item.usageLimit <= item.usageCount)) {
-    return { active: false, reason: 'usage_exhausted', item };
+
+  if (!Number.isSafeInteger(item.usageCount) || item.usageCount < 0) {
+    return { active: false, reason: 'invalid_usage', item };
   }
-  if (item.type === PASS_TYPES.MATCH && Number(fixtureId || 0) !== item.fixtureId) {
-    return { active: false, reason: 'fixture_mismatch', item };
+  if (item.usageLimit != null) {
+    if (!Number.isSafeInteger(item.usageLimit) || item.usageLimit <= 0) {
+      return { active: false, reason: 'invalid_usage', item };
+    }
+    if (item.usageLimit <= item.usageCount) {
+      return { active: false, reason: 'usage_exhausted', item };
+    }
+  }
+
+  if (item.type === PASS_TYPES.MATCH) {
+    const requestedFixtureId = Number(fixtureId);
+    if (!Number.isSafeInteger(item.fixtureId) || item.fixtureId <= 0) {
+      return { active: false, reason: 'invalid_fixture', item };
+    }
+    if (!Number.isSafeInteger(requestedFixtureId) || requestedFixtureId <= 0 || requestedFixtureId !== item.fixtureId) {
+      return { active: false, reason: 'fixture_mismatch', item };
+    }
+  } else if (item.fixtureId !== 0) {
+    return { active: false, reason: 'invalid_fixture', item };
   }
   return { active: true, reason: 'active', item };
 }
@@ -166,7 +207,8 @@ export function resolveEntitlementAccess({
     && Number.isFinite(nowMs)
     && (!subscriptionUntil || (Number.isFinite(subscriptionExpiresMs) && subscriptionExpiresMs > nowMs));
 
-  const decisions = (entitlements || []).map(row => entitlementDecision(row, { fixtureId, now: nowMs }));
+  const rows = Array.isArray(entitlements) ? entitlements : [];
+  const decisions = rows.map(row => entitlementDecision(row, { fixtureId, now: nowMs }));
   const activePasses = decisions.filter(item => item.active).map(item => item.item);
   const hasMatchPass = activePasses.some(item => item.type === PASS_TYPES.MATCH);
   const hasDayPass = activePasses.some(item => item.type === PASS_TYPES.DAY);
@@ -249,10 +291,11 @@ export function createEntitlementService({
     const chargeId = String(paymentChargeId || '').trim();
     const payload = String(invoicePayload || '');
     const window = passEntitlementWindow(product?.key, paidAt, cfg);
+    const paidStars = Number(starsAmount);
     if (
       !Number.isSafeInteger(uid) || uid <= 0
-      || !product || fid === null
-      || Number(starsAmount) !== Number(product.stars)
+      || !product || !product.saleReady || fid === null
+      || !Number.isSafeInteger(paidStars) || paidStars !== product.stars
       || !chargeId || chargeId.length > 240
       || !payload || payload.length > 512
       || !window
@@ -284,10 +327,12 @@ export function createEntitlementService({
 
     const existing = memory.userEntitlements.get(chargeId);
     if (existing) {
+      const existingUsageLimit = existing.usage_limit == null ? null : Number(existing.usage_limit);
       const same = Number(existing.telegram_id) === uid
         && existing.entitlement_type === product.key
         && Number(existing.fixture_id || 0) === Number(fid || 0)
-        && Number(existing.stars_amount) === Number(product.stars)
+        && existingUsageLimit === product.usageLimit
+        && Number(existing.stars_amount) === product.stars
         && String(existing.invoice_payload || '') === payload;
       return { activated: false, duplicate: same, reason: same ? 'duplicate' : 'payment_charge_conflict', entitlementId: existing.id };
     }
