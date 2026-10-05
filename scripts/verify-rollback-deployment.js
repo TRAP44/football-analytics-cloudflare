@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { cloudflareVersionIdValid } from '../src/release-identity.js';
 
 const EPSILON = 1e-9;
 
@@ -15,6 +16,9 @@ function normalizedTrafficVersions(deployment) {
     const versionId = String(entry?.version_id || '');
     const percentage = Number(entry?.percentage);
     if (!versionId) throw new Error(`Deployment traffic entry ${index + 1} is missing version_id.`);
+    if (!cloudflareVersionIdValid(versionId)) {
+      throw new Error(`Deployment traffic entry ${index + 1} has an invalid version_id.`);
+    }
     if (!Number.isFinite(percentage) || percentage < 0 || percentage > 100) {
       throw new Error(`Deployment traffic entry ${index + 1} has an invalid percentage.`);
     }
@@ -25,8 +29,17 @@ function normalizedTrafficVersions(deployment) {
 export function verifyRollbackDeployment(deployment, expectedVersionId) {
   const expectedId = String(expectedVersionId || '');
   if (!expectedId) throw new Error('Expected rollback version ID is required.');
+  if (!cloudflareVersionIdValid(expectedId)) {
+    throw new Error('Expected rollback version ID has an invalid format.');
+  }
 
   const traffic = normalizedTrafficVersions(deployment);
+  const duplicateIds = traffic
+    .map(entry => entry.versionId)
+    .filter((versionId, index, all) => all.indexOf(versionId) !== index);
+  if (duplicateIds.length) {
+    throw new Error(`Cloudflare deployment status contains duplicate version IDs: ${[...new Set(duplicateIds)].join(', ')}.`);
+  }
   const active = traffic.filter(entry => entry.percentage > EPSILON);
   const totalPercentage = traffic.reduce((sum, entry) => sum + entry.percentage, 0);
   const expected = active.find(entry => entry.versionId === expectedId);
