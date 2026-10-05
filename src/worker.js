@@ -37,6 +37,7 @@ import {
 import { createSupabaseClient } from './supabase-client.js';
 import { runtimeReleaseIdentity } from './release-identity.js';
 import { scopeOpsEventsToDeployment } from './release-event-attribution.js';
+import { createReleaseFieldEvidenceRuntime } from './release-field-evidence.js';
 import { postDeployRegressionReport } from './post-deploy-regression.js';
 import { planPostDeployRegressionLifecycle } from './post-deploy-regression-lifecycle.js';
 import { formatPostDeployRegressionAlert, planPostDeployRegressionAlert, postDeployRegressionAlertOpsEvents } from './post-deploy-regression-alerts.js';
@@ -23638,138 +23639,20 @@ async function apiAnalyze(request, cfg, user) {
   }
 }
 
-async function readRecentSupabaseAuthFailures(cfg, minutes = 5) {
-  if (!hasSupabase(cfg)) return { available:false, count:0, items:[] };
-  const since=new Date(Date.now()-Math.max(1,Number(minutes || 5))*60_000).toISOString();
-  const authCandidateFilter='(message.ilike.*HTTP*401*,message.ilike.*PGRST303*,message.ilike.*invalid*jwt*,message.ilike.*invalid*api*key*)';
-  try {
-    const rows=await supaSelectMany(cfg,'ops_events',{
-      created_at:`gte.${since}`,
-      or:authCandidateFilter,
-    },{limit:100,order:'created_at.desc',select:'message,created_at'});
-    const items=(rows || []).filter(row => /HTTP 401|PGRST303|invalid.*jwt|invalid.*api.?key/i.test(String(row?.message || '')));
-    return {available:true,count:items.length,items:items.slice(0,10)};
-  } catch {
-    return {available:false,count:0,items:[]};
-  }
-}
+const releaseFieldEvidenceRuntime=createReleaseFieldEvidenceRuntime({
+  hasSupabase,
+  appVersion:APP_VERSION,
+  fetchWithTimeout,
+  supaHeaders,
+  supaSelectMany,
+  recordOpsEvent,
+  loadSharedProviderState,
+  apiFootball,
+  isFootballRateLimitError,
+  providerSnapshot,
+});
 
-
-async function claimReleaseEvidenceLock(cfg, kind) {
-  if (!hasSupabase(cfg)) return false;
-  const key=`release-evidence:${APP_VERSION}:${String(kind || 'unknown').slice(0,40)}`;
-  const claimId=crypto.randomUUID();
-  const expiresAt=new Date(Date.now()+7*24*60*60_000).toISOString();
-  try {
-    const url=new URL(`${cfg.supabaseUrl}/rest/v1/analysis_cache`);
-    url.searchParams.set('on_conflict','cache_key');
-    const response=await fetchWithTimeout(url,{
-      method:'POST',
-      headers:supaHeaders(cfg,{Prefer:'resolution=ignore-duplicates,return=representation'}),
-      body:JSON.stringify([{
-        cache_key:key,
-        fixture_id:0,
-        payload:{state:'claimed',claimId,kind,release:APP_VERSION,claimedAt:new Date().toISOString()},
-        expires_at:expiresAt,
-        provider:'internal',
-        freshness_status:'fresh',
-      }]),
-    },7000,'Supabase release evidence lock');
-    if (!response.ok) return false;
-    const rows=await response.json().catch(()=>[]);
-    return Array.isArray(rows) && rows.length===1 && String(rows[0]?.payload?.claimId || '')===claimId;
-  } catch {
-    return false;
-  }
-}
-
-async function recordClosedBetaConfigurationEvidence(cfg) {
-  if (!await claimReleaseEvidenceLock(cfg,'beta-access')) return;
-  const rows=await supaSelectMany(cfg,'users',{}, {limit:50,order:'created_at.desc'}).catch(()=>[]);
-  const adminIds=new Set((cfg.adminTelegramIds || []).map(Number));
-  const betaIds=new Set((cfg.betaTelegramIds || []).map(Number));
-  const overlap=[...betaIds].filter(id=>adminIds.has(id)).length;
-  const newest=rows[0] || null;
-  const newestId=Number(newest?.telegram_id || 0);
-  const newestAdmin=Number.isSafeInteger(newestId) && adminIds.has(newestId);
-  const newestBeta=Number.isSafeInteger(newestId) && !newestAdmin && betaIds.has(newestId);
-  const nonAdmin=rows.filter(row=>!adminIds.has(Number(row?.telegram_id || 0)));
-  const outside=nonAdmin.filter(row=>!betaIds.has(Number(row?.telegram_id || 0)));
-
-  await recordOpsEvent(cfg,{
-    severity: cfg.betaAccessConfigured === 'true' ? 'info' : 'warning',
-    source:'access',
-    eventType:'closed_beta_configuration',
-    code:'BETA_ACCESS_CONFIG_CONFIRMED',
-    message:'Closed beta production configuration captured without exposing Telegram identifiers.',
-    endpoint:'production-config',
-    meta:{
-      betaAccessConfigured:String(cfg.betaAccessConfigured || 'missing'),
-      strictEffective:Boolean(cfg.betaAccessEnabled),
-      betaAllowlistCount:betaIds.size,
-      adminAllowlistCount:adminIds.size,
-      allowlistOverlapCount:overlap,
-      observedUsers:rows.length,
-      observedNonAdminUsers:nonAdmin.length,
-      observedNonAdminOutsideBeta:outside.length,
-      newestUserCreatedAt:newest?.created_at || null,
-      newestUserAdmin:Boolean(newestAdmin),
-      newestUserBetaAllowlisted:Boolean(newestBeta),
-    },
-  });
-}
-
-async function probeReleaseProviderQuotaEvidence(cfg) {
-  if (!cfg.apiFootballKey || !await claimReleaseEvidenceLock(cfg,'provider-quota')) return;
-  await loadSharedProviderState(cfg).catch(()=>null);
-  let outcome='success';
-  let errorCode='';
-  let retryAfter=0;
-  try {
-    await apiFootball('/status',{},cfg,{responseType:'any',transportRetries:0,timeoutMs:8000});
-  } catch (error) {
-    outcome=isFootballRateLimitError(error) ? 'rate_limited' : 'failed';
-    errorCode=String(error?.code || 'PROVIDER_PROBE_FAILED');
-    retryAfter=Number(error?.retryAfter || 0);
-  }
-  const snapshot=providerSnapshot();
-  await recordOpsEvent(cfg,{
-    severity: outcome === 'failed' ? 'warning' : 'info',
-    source:'provider',
-    eventType:'release_quota_probe',
-    code:'PROVIDER_RELEASE_QUOTA_PROBE',
-    message:'One controlled production provider request captured shared quota evidence for the release.',
-    endpoint:'/status',
-    meta:{
-      outcome,
-      errorCode,
-      retryAfter,
-      plan:String(snapshot.plan || 'UNKNOWN'),
-      dailyLimit:Number.isFinite(Number(snapshot.dailyLimit)) ? Number(snapshot.dailyLimit) : null,
-      dailyRemaining:Number.isFinite(Number(snapshot.dailyRemaining)) ? Number(snapshot.dailyRemaining) : null,
-      minuteLimit:Number.isFinite(Number(snapshot.minuteLimit)) ? Number(snapshot.minuteLimit) : null,
-      minuteRemaining:Number.isFinite(Number(snapshot.minuteRemaining)) ? Number(snapshot.minuteRemaining) : null,
-      cooldownActive:Boolean(snapshot.cooldownActive),
-      evidenceSource:'controlled_release_probe',
-    },
-  });
-}
-
-async function captureReleaseFieldEvidence(cfg) {
-  if (!hasSupabase(cfg)) return;
-  await Promise.allSettled([
-    recordClosedBetaConfigurationEvidence(cfg),
-    probeReleaseProviderQuotaEvidence(cfg),
-  ]);
-}
-
-function scheduleReleaseFieldEvidence(cfg) {
-  if (!hasSupabase(cfg)) return;
-  const task=captureReleaseFieldEvidence(cfg);
-  if (typeof cfg.waitUntil === 'function') cfg.waitUntil(task);
-  else void task;
-}
-
+const { scheduleReleaseFieldEvidence }=releaseFieldEvidenceRuntime;
 
 const publicStatusRuntime=createPublicStatusRuntime({
   loadRuntimeControls,
