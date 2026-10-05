@@ -141,7 +141,7 @@ export function normalizeEntitlementRow(row = {}) {
   const fixtureRaw = row.fixture_id ?? row.fixtureId;
   const usageLimitRaw = row.usage_limit ?? row.usageLimit;
   return {
-    id: row.id ?? null,
+    id: positiveInt(row.id, 0) || null,
     telegramId: positiveInt(row.telegram_id ?? row.telegramId, 0),
     type: normalizePassType(row.entitlement_type ?? row.type),
     fixtureId: fixtureRaw == null ? 0 : nonNegativeInt(fixtureRaw),
@@ -157,6 +157,8 @@ export function normalizeEntitlementRow(row = {}) {
 export function entitlementDecision(row, { fixtureId = 0, now = Date.now() } = {}) {
   const item = normalizeEntitlementRow(row);
   if (!item.type) return { active: false, reason: 'unknown_type', item };
+  if (!item.id) return { active: false, reason: 'invalid_id', item };
+  if (!item.telegramId) return { active: false, reason: 'invalid_owner', item };
   if (item.status !== 'active') return { active: false, reason: item.status || 'inactive', item };
 
   const nowMs = now instanceof Date ? now.getTime() : Number(now);
@@ -174,6 +176,12 @@ export function entitlementDecision(row, { fixtureId = 0, now = Date.now() } = {
   if (expiresMs <= nowMs) return { active: false, reason: 'expired', item };
 
   if (!Number.isSafeInteger(item.usageCount) || item.usageCount < 0) {
+    return { active: false, reason: 'invalid_usage', item };
+  }
+  if (
+    (item.type === PASS_TYPES.WEEKEND && item.usageLimit == null)
+    || (item.type !== PASS_TYPES.WEEKEND && item.usageLimit != null)
+  ) {
     return { active: false, reason: 'invalid_usage', item };
   }
   if (item.usageLimit != null) {
