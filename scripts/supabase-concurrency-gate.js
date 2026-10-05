@@ -5,12 +5,27 @@ import { pathToFileURL } from 'node:url';
 
 const execFileAsync = promisify(execFile);
 
-function requireDbUrl() {
-  const value = String(process.env.DB_URL || '').trim();
-  if (!value.startsWith('postgresql://') && !value.startsWith('postgres://')) {
+export function requireDbUrl(value = process.env.DB_URL) {
+  const raw = String(value || '').trim();
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
     throw new Error('DB_URL must point to the disposable local Supabase database.');
   }
-  return value;
+  if (!['postgresql:','postgres:'].includes(url.protocol)) {
+    throw new Error('DB_URL must use the PostgreSQL protocol.');
+  }
+  const host = String(url.hostname || '').toLowerCase();
+  if (!['127.0.0.1','localhost','::1'].includes(host)) {
+    throw new Error('Supabase concurrency gate refuses non-local DB_URL targets.');
+  }
+  return raw;
+}
+
+function psqlTimeoutMs() {
+  const parsed=Number(process.env.PSQL_TIMEOUT_MS || 30000);
+  return Number.isFinite(parsed) ? Math.max(1000,Math.min(60000,parsed)) : 30000;
 }
 
 async function psql(sql) {
@@ -30,6 +45,8 @@ async function psql(sql) {
     {
       env: process.env,
       maxBuffer: 1024 * 1024,
+      timeout: psqlTimeoutMs(),
+      killSignal: 'SIGKILL',
     },
   );
 
