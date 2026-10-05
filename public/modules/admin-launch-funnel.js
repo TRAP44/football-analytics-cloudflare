@@ -32,7 +32,7 @@ export function createAdminLaunchFunnelModule({
     const d=state.launchFunnel;
     if (!d?.available) {
       status.textContent=d?.reason || 'Воронка запуска ещё не загружена.';
-      meta.textContent='Нужна миграция v6.15 и события пользователей.';
+      meta.textContent='Проверьте актуальность Supabase-схемы и наличие пользовательских growth-событий.';
       kpis.innerHTML=stages.innerHTML=campaigns.innerHTML=mediaCampaigns.innerHTML='';
       return;
     }
