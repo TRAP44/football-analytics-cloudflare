@@ -1,6 +1,6 @@
-/* MatchRadar Premium UI Overhaul — Issue #315
-   Loaded after legacy styles so the product has one coherent visual layer
-   without changing DOM ids, API contracts, billing, entitlements or auth. */
+/* MatchRadar public UI layer.
+   Loaded after legacy styles to keep one coherent visual layer without
+   changing DOM ids, API contracts, billing, entitlements or auth. */
 
 .miniapp-public-shell {
   --mr-radius-xs: 10px;
@@ -1132,7 +1132,7 @@ html[data-theme="light"] .miniapp-public-shell {
   }
 }
 
-/* Public component contracts — Issue #323
+/* Public component contracts.
    This is the public-surface source of truth for interactive geometry.
    Keep product-specific cosmetics above; keep shared control geometry here. */
 .miniapp-public-shell {
