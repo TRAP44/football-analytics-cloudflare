@@ -173,3 +173,16 @@ test('reviewed synthetic fixture allowlist never suppresses another commit or pa
   assert.equal(review.reviewed.length,0);
   assert.equal(review.actionable.length,2);
 });
+
+
+test('reviewed synthetic fixture allowlist reports stale entries when expected evidence disappears', () => {
+  const key='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|test/example.test.js|telegram_bot_token';
+  const review=applyReviewedSyntheticFixtureAllowlist([],{[key]:1});
+  assert.deepEqual(review.staleAllowlist,[{
+    commit:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    path:'test/example.test.js',
+    type:'telegram_bot_token',
+    expected:1,
+    seen:0,
+  }]);
+});
