@@ -94,9 +94,9 @@ export function createTelegramUpdateProcessor(deps) {
     let ok = false;
     let errorMessage = 'Не удалось проверить подписку.';
     try {
-      const parsed = await parseInvoicePayload(q.invoice_payload, cfg.botToken);
+      const parsed = await parseInvoicePayload(q.invoice_payload, cfg.invoiceSigningSecret, cfg.botToken);
       const planCfg = parsed ? billingPlanConfig(parsed.plan, cfg) : null;
-      const pass = parsed ? null : await parsePassInvoicePayload(q.invoice_payload, cfg.botToken);
+      const pass = parsed ? null : await parsePassInvoicePayload(q.invoice_payload, cfg.invoiceSigningSecret, cfg.botToken);
       const passCfg = pass ? passProductConfig(pass.passType, cfg) : null;
       ok = Boolean(
         q.currency === 'XTR'
