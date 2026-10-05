@@ -85,3 +85,15 @@ test('settlement cron marker write failures are observable',()=>{
   assert.match(worker,/SETTLEMENT_FINALITY_MARKER_WRITE_FAILED/);
   assert.match(worker,/SETTLEMENT_WATCHDOG_MARKER_WRITE_FAILED/);
 });
+
+
+test('prediction settlement failures are never silently swallowed',()=>{
+  for (const code of [
+    'SETTLEMENT_PENDING_READ_FAILED',
+    'SETTLEMENT_PREDICTION_WRITE_FAILED',
+    'SETTLEMENT_BACKGROUND_FAILED',
+  ]) {
+    assert.match(worker,new RegExp(code));
+  }
+  assert.doesNotMatch(worker,/settlePredictionsFromFixtures\([^\n]+\)\.catch\(\(\) => null\)/);
+});
