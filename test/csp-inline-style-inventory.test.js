@@ -17,7 +17,7 @@ test('runtime inline-style blocker inventory remains bounded and explicit', () =
   const cssomWrites = app.match(/\.style\.[A-Za-z0-9_]+/g) || [];
 
   assert.equal(styleAttributes.length, 1);
-  assert.equal(cssomWrites.length, 1);
+  assert.equal(cssomWrites.length, 0);
 
   for (const expected of [
     'style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%"',
@@ -25,7 +25,8 @@ test('runtime inline-style blocker inventory remains bounded and explicit', () =
     assert.ok(app.includes(expected), `missing documented CSP blocker: ${expected}`);
   }
 
-  assert.ok(app.includes("style.width ="));
+  assert.doesNotMatch(app, /\.style\.[A-Za-z0-9_]+/);
+  assert.match(app, /function applyPercentWidthClass\(element, value\)/);
 });
 
 
