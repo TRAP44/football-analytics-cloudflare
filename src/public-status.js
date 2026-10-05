@@ -165,20 +165,37 @@ export function createPublicStatusRouter({
     }
 
     if (pathname === '/health/live') {
-      return json(publicHealthRuntime.liveSnapshot(), 200, { 'cache-control': 'no-store' });
+      return json({ ok:true, status:'alive' }, 200, { 'cache-control': 'no-store' });
     }
 
     if (pathname === '/health/ready') {
+      if (healthProbeAuthorized(request, cfg)) {
+        const readiness = await publicStatusRuntime.computeReadinessSnapshot(cfg);
+        return json(readiness, readiness.ok ? 200 : 503, { 'cache-control': 'no-store' });
+      }
       const readiness = await publicHealthRuntime.readinessSnapshot(cfg);
-      return json(readiness, readiness.ok ? 200 : 503, { 'cache-control': 'no-store' });
+      return json(
+        { ok:Boolean(readiness.ok), status:readiness.ok ? 'ready' : 'not_ready' },
+        readiness.ok ? 200 : 503,
+        { 'cache-control': 'no-store' },
+      );
     }
 
     if (pathname === '/health' || pathname === '/api/health') {
-      const health = await publicHealthRuntime.healthSnapshot(cfg);
-      const status = health.ok ? 200 : 503;
+      const publicHealth = await publicHealthRuntime.healthSnapshot(cfg);
+      const status = publicHealth.ok ? 200 : 503;
       if (!healthProbeAuthorized(request, cfg)) {
-        return json({ ok:Boolean(health.ok) }, status, { 'cache-control': 'no-store' });
+        return json({ ok:Boolean(publicHealth.ok) }, status, { 'cache-control': 'no-store' });
       }
+      const readiness = await publicStatusRuntime.computeReadinessSnapshot(cfg);
+      const health = {
+        ok:Boolean(readiness.ok),
+        status:readiness.ok ? 'ready' : 'not_ready',
+        version:String(readiness.version || ''),
+        releaseCandidate:String(readiness.releaseCandidate || ''),
+        devMode:Boolean(cfg?.devMode),
+        readiness,
+      };
       return json(
         detailedHealthPayload(health, appManifest(cfg), cfg),
         status,
