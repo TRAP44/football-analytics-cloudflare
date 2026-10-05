@@ -6,6 +6,7 @@ export const DEFAULT_PRODUCTION_URL = 'https://football-analytics-cloudflare.wok
 const ENDPOINTS = Object.freeze([
   { name: 'live', path: '/health/live' },
   { name: 'ready', path: '/health/ready' },
+  { name: 'health', path: '/health', authenticated: true },
   { name: 'public_status', path: '/api/public-status' },
 ]);
 
@@ -42,6 +43,17 @@ function safeObserved(kind, body) {
       releaseCandidate: String(body.releaseCandidate || ''),
       latencyMs: Number.isFinite(Number(body.latencyMs)) ? Number(body.latencyMs) : null,
       checks: body.checks && typeof body.checks === 'object' ? body.checks : null,
+    };
+  }
+  if (kind === 'health') {
+    return {
+      ok: body.ok === true,
+      status: String(body.status || ''),
+      version: String(body.version || ''),
+      releaseCandidate: String(body.releaseCandidate || ''),
+      devMode: body.devMode === true,
+      database: String(body.database || ''),
+      readinessOk: body?.readiness?.ok === true,
     };
   }
   return {
@@ -85,6 +97,24 @@ export function evaluateEndpoint(kind, response = {}, options = {}) {
     };
   }
 
+  if (kind === 'health') {
+    const passed = Boolean(
+      transportOk
+      && body.ok === true
+      && body.devMode === false
+      && body.database === 'supabase'
+      && body?.readiness?.ok === true
+    );
+    return {
+      passed,
+      warning: false,
+      reason: passed
+        ? 'ok'
+        : `Expected authenticated health diagnostics with production invariants; got HTTP ${statusCode || 'network_error'}.`,
+      observed: safeObserved(kind, body),
+    };
+  }
+
   const allowed = new Set(['operational', 'degraded', 'maintenance']);
   const passed = Boolean(transportOk && allowed.has(String(body.status || '')));
   const warning = Boolean(passed && body.status !== 'operational');
@@ -100,7 +130,7 @@ export function evaluateEndpoint(kind, response = {}, options = {}) {
   };
 }
 
-async function fetchJson(url, { timeoutMs = 10000, fetchImpl = fetch } = {}) {
+async function fetchJson(url, { timeoutMs = 10000, fetchImpl = fetch, headers = {} } = {}) {
   const startedAt = Date.now();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -111,6 +141,7 @@ async function fetchJson(url, { timeoutMs = 10000, fetchImpl = fetch } = {}) {
         accept: 'application/json',
         'cache-control': 'no-cache',
         'user-agent': 'MatchRadar-External-Monitor/1.0',
+        ...headers,
       },
       signal: controller.signal,
     });
@@ -144,6 +175,7 @@ export async function runMonitorAttempt({
   baseUrl = DEFAULT_PRODUCTION_URL,
   timeoutMs = 10000,
   readyWarningMs = 3000,
+  healthProbeToken = process.env.HEALTH_PROBE_TOKEN || '',
   fetchImpl = fetch,
 } = {}) {
   const normalized = normalizeBaseUrl(baseUrl);
@@ -151,7 +183,13 @@ export async function runMonitorAttempt({
 
   for (const endpoint of ENDPOINTS) {
     const url = `${normalized}${endpoint.path}?external_monitor=${Date.now()}`;
-    const response = await fetchJson(url, { timeoutMs, fetchImpl });
+    const response = await fetchJson(url, {
+      timeoutMs,
+      fetchImpl,
+      headers: endpoint.authenticated && healthProbeToken
+        ? { 'x-health-token':String(healthProbeToken) }
+        : {},
+    });
     const evaluation = evaluateEndpoint(endpoint.name, response, { readyWarningMs });
     checks[endpoint.name] = {
       endpoint: endpoint.path,
@@ -204,7 +242,12 @@ export async function main() {
 
   for (let attempt = 1; attempt <= retries; attempt += 1) {
     attemptsUsed = attempt;
-    finalResult = await runMonitorAttempt({ baseUrl, timeoutMs, readyWarningMs });
+    finalResult = await runMonitorAttempt({
+      baseUrl,
+      timeoutMs,
+      readyWarningMs,
+      healthProbeToken: process.env.HEALTH_PROBE_TOKEN || '',
+    });
     if (finalResult.ok) break;
     if (attempt < retries) await sleep(retryDelayMs);
   }
