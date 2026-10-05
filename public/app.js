@@ -6522,7 +6522,7 @@ $('profileFavoriteTeamsBtn')?.addEventListener('click', () => {
   showView('myTeamsView');
 });
 $('profileRemindersBtn')?.addEventListener('click', () => {
-  showView('matchesView');
+  $('remindersPanel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 $('myTeamsFindBtn')?.addEventListener('click', () => { showView('matchesView'); setTimeout(() => $('matchSearch')?.focus({ preventScroll:true }), 80); });
 $('homeSearchBtn')?.addEventListener('click', () => { const q=String($('matchSearch')?.value || '').trim(); state.globalSearch.query=q; if ($('globalSearchInput')) $('globalSearchInput').value=q; renderGlobalSearch(); showView('searchView'); if (q) runGlobalSearch(); });
