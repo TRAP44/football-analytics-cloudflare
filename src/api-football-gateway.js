@@ -23,20 +23,35 @@ export function createApiFootballGateway({
   sleepMs,
 }) {
   async function observe(cfg, event) {
-    return await Promise.resolve(observeProviderRequest(event, cfg));
+    try {
+      await Promise.resolve(observeProviderRequest(event, cfg));
+    } catch {
+      // Provider observability is best-effort and must never break data delivery.
+    }
+  }
+
+  async function emitOpsEvent(cfg, event) {
+    if (typeof recordOpsEvent !== 'function') return;
+    try {
+      await Promise.resolve(recordOpsEvent(cfg, event));
+    } catch {
+      // Operational logging is best-effort and must not mask provider behavior.
+    }
   }
 
   function footballError(message, code = 'FOOTBALL_API', retryAfter = 0, status = null) {
     const error = new Error(message);
     error.code = code;
-    error.retryAfter = Math.max(0, Number(retryAfter || 0));
+    const retrySeconds = Number(retryAfter);
+    error.retryAfter = Number.isFinite(retrySeconds) ? Math.max(0, retrySeconds) : 0;
     if (Number.isFinite(Number(status)) && Number(status) > 0) error.status = Number(status);
     return error;
   }
 
   function retryAfterSeconds(headers, fallbackSeconds = 65) {
     const raw = String(headers?.get?.('retry-after') || '').trim();
-    const fallback = Math.max(1, Number(fallbackSeconds || 65));
+    const parsedFallback = Number(fallbackSeconds);
+    const fallback = Number.isFinite(parsedFallback) ? Math.max(1, Math.ceil(parsedFallback)) : 65;
     if (!raw) return fallback;
     const numeric = Number(raw);
     if (Number.isFinite(numeric) && numeric >= 0) return Math.max(1, Math.ceil(numeric));
@@ -159,16 +174,25 @@ export function createApiFootballGateway({
         p_limit:limit,
         p_window_seconds:60,
       },2500);
-      if (!result?.allowed) bumpTelemetry('providerDistributedBlocks');
-      return {allowed:Boolean(result?.allowed),limit,retryAfter:Number(result?.retryAfter || 0),count:Number(result?.count || 0),degraded:false};
+      if (result?.allowed !== true && result?.allowed !== false) {
+        throw new Error('Distributed provider guard returned an invalid allowed flag.');
+      }
+      const rawRetryAfter=Number(result?.retryAfter);
+      const rawCount=Number(result?.count);
+      const retryAfter=Number.isFinite(rawRetryAfter)
+        ? Math.max(0,Math.min(60,Math.ceil(rawRetryAfter)))
+        : 0;
+      const count=Number.isSafeInteger(rawCount) && rawCount>=0 ? rawCount : 0;
+      if (result.allowed === false) bumpTelemetry('providerDistributedBlocks');
+      return {allowed:result.allowed,limit,retryAfter,count,degraded:false};
     } catch (error) {
       bumpTelemetry('providerDistributedFallbacks');
       bumpTelemetry('providerDistributedBlocks');
-      await recordOpsEvent(cfg,{
+      await emitOpsEvent(cfg,{
         severity:'warning',source:'provider',eventType:'distributed_rate_guard',code:'PROVIDER_RATE_GUARD_DEGRADED',
         message:error?.message || error,endpoint:'api-football',
         meta:{disposition:'fail_closed',providerCallAllowed:false},
-      }).catch(()=>null);
+      });
       return {
         allowed:false,
         degraded:true,
@@ -183,7 +207,7 @@ export function createApiFootballGateway({
 
   async function apiFootballNetwork(path, params, cfg, options = {}) {
     if (!cfg.apiFootballKey) {
-      await recordOpsEvent(cfg, { severity: 'critical', source: 'provider', eventType: 'configuration', code: 'FOOTBALL_CONFIG', message: 'Ключ API-Football отсутствует.' });
+      await emitOpsEvent(cfg, { severity: 'critical', source: 'provider', eventType: 'configuration', code: 'FOOTBALL_CONFIG', message: 'Ключ API-Football отсутствует.' });
       throw footballError('Ключ API-Football не настроен в Cloudflare.', 'FOOTBALL_CONFIG');
     }
 
@@ -197,7 +221,7 @@ export function createApiFootballGateway({
       const now = Date.now();
       if (now - Number(memory.providerDailyReserveEvidenceAt || 0) >= 5 * 60_000) {
         memory.providerDailyReserveEvidenceAt = now;
-        await recordOpsEvent(cfg, {
+        await emitOpsEvent(cfg, {
           severity:'warning',
           source:'provider',
           eventType:'quota_guard',
@@ -211,7 +235,7 @@ export function createApiFootballGateway({
             retryAfter,
             disposition:'serve_cache_or_fail_soft',
           },
-        }).catch(() => null);
+        });
       }
       throw footballError(
         'Дневной резерв API-Football включён. До обновления квоты используем сохранённые данные.',
@@ -290,7 +314,7 @@ export function createApiFootballGateway({
         latencyMs:durationMs,
         attempt,
       });
-      await recordOpsEvent(cfg, {
+      await emitOpsEvent(cfg, {
         severity: 'error', source: 'provider', eventType: 'api_request', code: timedOut ? 'UPSTREAM_TIMEOUT' : 'FOOTBALL_NETWORK',
         message: error?.message || (timedOut ? 'Upstream timeout' : 'Network error'), endpoint: path, durationMs,
         meta: { provider:'api-football', operation:path, attempt, finalResult: attempt < maxAttempts ? 'retrying' : 'failed' },
@@ -326,7 +350,7 @@ export function createApiFootballGateway({
         latencyMs:durationMs,
         attempt,
       });
-      await recordOpsEvent(cfg, {
+      await emitOpsEvent(cfg, {
         severity: 'warning', source: 'provider', eventType: 'rate_limit', code: 'FOOTBALL_RATE_LIMIT',
         message: `API-Football HTTP 429; retry ${retryAfter}s`, endpoint: path, status: r.status, durationMs,
         meta: {
@@ -355,7 +379,7 @@ export function createApiFootballGateway({
         latencyMs:durationMs,
         attempt,
       });
-      await recordOpsEvent(cfg, {
+      await emitOpsEvent(cfg, {
         severity: r.status >= 500 ? 'error' : 'warning', source: 'provider', eventType: 'api_request', code: 'FOOTBALL_HTTP',
         message: `API-Football HTTP ${r.status}`, endpoint: path, status: r.status, durationMs,
         meta: {
@@ -384,7 +408,7 @@ export function createApiFootballGateway({
         latencyMs:durationMs,
         attempt,
       });
-      await recordOpsEvent(cfg, {
+      await emitOpsEvent(cfg, {
         severity:'error', source:'provider', eventType:'api_response', code:'FOOTBALL_INVALID_RESPONSE',
         message:'API-Football вернул некорректный JSON.', endpoint:path, status:r.status, durationMs,
         meta:{ provider:'api-football', operation:path, attempt, finalResult:'failed', reason:'invalid_json' },
@@ -405,7 +429,7 @@ export function createApiFootballGateway({
         latencyMs:durationMs,
         attempt,
       });
-      await recordOpsEvent(cfg, {
+      await emitOpsEvent(cfg, {
         severity:'error', source:'provider', eventType:'api_response', code:'FOOTBALL_INVALID_RESPONSE',
         message:'API-Football вернул неожиданный формат ответа.', endpoint:path, status:r.status, durationMs,
         meta:{ provider:'api-football', operation:path, attempt, finalResult:'failed', reason:'non_object_response' },
@@ -433,7 +457,7 @@ export function createApiFootballGateway({
           latencyMs:durationMs,
           attempt,
         });
-        await recordOpsEvent(cfg, {
+        await emitOpsEvent(cfg, {
           severity: 'warning', source: 'provider', eventType: 'rate_limit', code: 'FOOTBALL_RATE_LIMIT_BODY',
           message, endpoint: path, status: r.status, durationMs,
           meta:{
@@ -460,7 +484,7 @@ export function createApiFootballGateway({
         latencyMs:durationMs,
         attempt,
       });
-      await recordOpsEvent(cfg, {
+      await emitOpsEvent(cfg, {
         severity: 'warning', source: 'provider', eventType: 'api_response', code: 'FOOTBALL_RESPONSE',
         message, endpoint: path, status: r.status, durationMs,
         meta:{ provider:'api-football', operation:path, attempt, finalResult:'failed' },
@@ -485,7 +509,7 @@ export function createApiFootballGateway({
         latencyMs:durationMs,
         attempt,
       });
-      await recordOpsEvent(cfg, {
+      await emitOpsEvent(cfg, {
         severity:'error', source:'provider', eventType:'api_response', code:'FOOTBALL_INVALID_RESPONSE',
         message:'API-Football вернул неожиданный формат ответа.', endpoint:path, status:r.status, durationMs,
         meta:{
