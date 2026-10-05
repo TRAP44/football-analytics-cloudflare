@@ -2,6 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runDeploymentSmoke } from '../scripts/post-deploy-smoke.js';
 
+process.env.HEALTH_PROBE_TOKEN = 'test-health-token';
+
+const healthFeatures = Object.freeze({
+  startupSafety:true,
+  rollbackSafety:true,
+  productionMonitor:true,
+  rollbackVerification:true,
+  providerDataReliability:true,
+  aiAnalysisQualityGate:true,
+  telegramMiniAppE2E:true,
+  telegramWebhookPersistentDedupe:true,
+  supabaseProbeConfirmation:true,
+  supabaseSchemaProbeConfirmation:true,
+  runtimeControls:true,
+  emergencySecurityLockdown:true,
+});
+
 const deploySha = '0123456789abcdef0123456789abcdef01234567';
 const deploymentIdentity = {
   deploySha,
@@ -17,7 +34,7 @@ const json = (body, status = 200) => new Response(JSON.stringify(body), {
 
 function healthyFetch({ staleOnce = false, devMode = false, monetization = 'paused', database = 'supabase', serviceOverrides = {} } = {}) {
   let healthCalls = 0;
-  return async input => {
+  return async (input, init = {}) => {
     const url = new URL(input);
     if (url.pathname === '/health/ready') {
       healthCalls += 1;
@@ -33,6 +50,8 @@ function healthyFetch({ staleOnce = false, devMode = false, monetization = 'paus
       });
     }
     if (url.pathname === '/health') {
+      const probeToken = init?.headers?.['x-health-token'] || init?.headers?.['X-Health-Token'] || '';
+      if (!probeToken) return json({ok:true});
       healthCalls += 1;
       return json({
         ok: true,
@@ -43,6 +62,7 @@ function healthyFetch({ staleOnce = false, devMode = false, monetization = 'paus
         devMode,
         database,
         monetization,
+        features:healthFeatures,
         adminSecurity: 'enabled',
         adminDevModeIsolation: 'enabled',
         backendSecurityContract: 'enabled',
@@ -427,7 +447,7 @@ test('Issue #409 post-deploy smoke rejects implausible future Cloudflare timesta
 
 test('post-deploy smoke tolerates brief mixed-edge identity propagation across health endpoints', async () => {
   let healthCalls=0;
-  const fetchImpl=async input=>{
+  const fetchImpl=async (input,init={})=>{
     const url=new URL(input);
     if(url.pathname==='/health/ready'){
       return json({
@@ -441,6 +461,8 @@ test('post-deploy smoke tolerates brief mixed-edge identity propagation across h
       });
     }
     if(url.pathname==='/health'){
+      const probeToken=init?.headers?.['x-health-token'] || init?.headers?.['X-Health-Token'] || '';
+      if(!probeToken) return json({ok:true});
       healthCalls+=1;
       const deployment=healthCalls===1
         ? {...deploymentIdentity,deploySha:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',cloudflareVersionTag:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'}
@@ -454,6 +476,7 @@ test('post-deploy smoke tolerates brief mixed-edge identity propagation across h
         devMode:false,
         database:'supabase',
         monetization:'paused',
+        features:healthFeatures,
         adminSecurity:'enabled',
         adminDevModeIsolation:'enabled',
         backendSecurityContract:'enabled',
