@@ -36,8 +36,6 @@ jobs:
           deleted=0
           kept=0
 
-          gh api --paginate "repos/$GH_REPO/actions/runs?status=completed&per_page=100" \
-            --jq '.workflow_runs[] | [.id, (.head_branch // ""), .created_at, .name, (.conclusion // "")] | @tsv' |
           while IFS=$'\t' read -r run_id branch created_at workflow_name conclusion; do
             [[ -z "$run_id" ]] && continue
 
@@ -91,12 +89,16 @@ jobs:
             else
               kept=$((kept + 1))
             fi
-          done
+          done < <(
+            gh api --paginate "repos/$GH_REPO/actions/runs?status=completed&per_page=100" \
+              --jq '.workflow_runs[] | [.id, (.head_branch // ""), .created_at, .name, (.conclusion // "")] | @tsv'
+          )
 
-          echo "Actions history cleanup complete."
+          echo "Actions history cleanup complete: deleted=$deleted kept=$kept"
 
   artifacts:
     name: Clean Actions artifacts
+    needs: history
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -112,8 +114,6 @@ jobs:
           deleted=0
           kept=0
 
-          gh api --paginate "repos/$GH_REPO/actions/artifacts?per_page=100" \
-            --jq '.artifacts[] | [.id, .name, .created_at, .expired] | @tsv' |
           while IFS=$'\t' read -r artifact_id name created_at expired; do
             [[ -z "$artifact_id" ]] && continue
 
@@ -144,12 +144,16 @@ jobs:
             else
               kept=$((kept + 1))
             fi
-          done
+          done < <(
+            gh api --paginate "repos/$GH_REPO/actions/artifacts?per_page=100" \
+              --jq '.artifacts[] | [.id, .name, .created_at, .expired] | @tsv'
+          )
 
           echo "Artifact cleanup complete: deleted=$deleted kept=$kept"
 
   caches:
     name: Clean Actions caches
+    needs: artifacts
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -165,8 +169,6 @@ jobs:
           deleted=0
           kept=0
 
-          gh api --paginate "repos/$GH_REPO/actions/caches?per_page=100" \
-            --jq '.actions_caches[] | [.id, .key, .ref, .last_accessed_at] | @tsv' |
           while IFS=$'\t' read -r cache_id key ref last_accessed_at; do
             [[ -z "$cache_id" ]] && continue
 
@@ -184,6 +186,9 @@ jobs:
             else
               kept=$((kept + 1))
             fi
-          done
+          done < <(
+            gh api --paginate "repos/$GH_REPO/actions/caches?per_page=100" \
+              --jq '.actions_caches[] | [.id, .key, .ref, .last_accessed_at] | @tsv'
+          )
 
           echo "Cache cleanup complete: deleted=$deleted kept=$kept"
