@@ -48,7 +48,9 @@ test('custom tabs expose semantics, keyboard navigation and visible focus',()=>{
   }
 
   const app=readFileSync(resolve(root,'public/app.js'),'utf8');
-  assert.match(app,/\['ArrowRight', 'ArrowLeft', 'Home', 'End'\]/);
+  const roving=readFileSync(resolve(root,'public/modules/roving-tabs.js'),'utf8');
+  assert.match(app,/from '\.\/modules\/roving-tabs\.js'/);
+  assert.match(roving,/\['ArrowRight', 'ArrowLeft', 'Home', 'End'\]/);
   assert.match(app,/btn\.setAttribute\('aria-selected', active \? 'true' : 'false'\)/);
   assert.match(app,/btn\.tabIndex = active \? 0 : -1/);
   assert.match(app,/panel\.setAttribute\('role', 'tabpanel'\)/);
