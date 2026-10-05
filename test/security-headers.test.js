@@ -22,6 +22,7 @@ test('static assets receive a Telegram-compatible restrictive CSP', () => {
 test('public frontend contains no inline style attributes or runtime style mutations', () => {
   const roots=[
     new URL('../public/app.js',import.meta.url),
+    new URL('../public/status.js',import.meta.url),
     new URL('../public/index.html',import.meta.url),
     new URL('../public/admin.html',import.meta.url),
     new URL('../public/status.html',import.meta.url),
