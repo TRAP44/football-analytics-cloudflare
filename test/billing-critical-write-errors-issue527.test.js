@@ -79,3 +79,9 @@ test('channel publisher idempotency cleanup uses its own diagnostic codes',()=>{
   assert.doesNotMatch(body,/POST_MATCH_RETURN_RELEASE_WRITE_FAILED/);
   assert.doesNotMatch(body,/source:'post_match_return'/);
 });
+
+
+test('settlement cron marker write failures are observable',()=>{
+  assert.match(worker,/SETTLEMENT_FINALITY_MARKER_WRITE_FAILED/);
+  assert.match(worker,/SETTLEMENT_WATCHDOG_MARKER_WRITE_FAILED/);
+});
