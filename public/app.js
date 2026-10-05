@@ -3847,7 +3847,9 @@ function lineupPitchHtml(lineup, title) {
       const safeCol = col || ((i % count) + 1);
       const x = count === 1 ? 50 : 12 + ((safeCol - 1) / Math.max(1, count - 1)) * 76;
       const y = maxRow <= 1 ? 50 : 91 - ((safeRow - 1) / (maxRow - 1)) * 82;
-      return `<div class="pitch-player" style="left:${x.toFixed(1)}%;top:${y.toFixed(1)}%">
+      const xClass = `xpos-${Math.round(clampPercent(x))}`;
+      const yClass = `ypos-${Math.round(clampPercent(y))}`;
+      return `<div class="pitch-player ${xClass} ${yClass}">
         <span>${lineupPlayerNumber(p) || '•'}</span><small>${shortPlayerName(lineupPlayerName(p))}</small>
       </div>`;
     }).join('')}
