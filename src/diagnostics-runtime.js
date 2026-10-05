@@ -30,18 +30,25 @@ export function createDiagnosticsRuntime({
     if (typeof fn!=='function') throw new TypeError(`${name} is required`);
   }
 
+  function normalizeOpsLimit(limit = 10) {
+    const parsed=Number(limit);
+    if (!Number.isFinite(parsed)) return 10;
+    return Math.max(1,Math.min(20,Math.trunc(parsed)));
+  }
+
   async function readRecentOpsEvents(cfg, limit = 10) {
+    const safeLimit=normalizeOpsLimit(limit);
     const fallback = () => ({
       persistent:false,
       migrationReady:false,
-      items:Array.isArray(memory.opsEvents) ? memory.opsEvents.slice(0,limit) : [],
+      items:Array.isArray(memory.opsEvents) ? memory.opsEvents.slice(0,safeLimit) : [],
     });
     if (!hasSupabase(cfg)) return fallback();
     try {
       const url = new URL(`${cfg.supabaseUrl}/rest/v1/ops_events`);
       url.searchParams.set('select','created_at,severity,source,event_type,code,message,endpoint,status,duration_ms,metadata');
       url.searchParams.set('order','created_at.desc');
-      url.searchParams.set('limit',String(Math.max(1,Math.min(20,limit))));
+      url.searchParams.set('limit',String(safeLimit));
       const response=await fetchWithTimeout(
         url,
         {headers:supaHeaders(cfg)},
@@ -49,11 +56,12 @@ export function createDiagnosticsRuntime({
         'Supabase ops',
       );
       if (!response.ok) return fallback();
-      const items=await response.json().catch(()=>[]);
+      const items=await response.json();
+      if (!Array.isArray(items)) return fallback();
       return {
         persistent:true,
         migrationReady:true,
-        items:Array.isArray(items) ? items : [],
+        items,
       };
     } catch {
       return fallback();
@@ -99,7 +107,7 @@ export function createDiagnosticsRuntime({
       recommendations.push(`Схема постоянного журнала целостности недоступна. ${supabaseSchemaGuidance}`);
     }
     if (!telegramWebhook.available && hasSupabase(cfg)) {
-      recommendations.push('Примените supabase_migration_v6_17.sql: она добавляет read-only health RPC для persistent Telegram dedupe.');
+      recommendations.push(`Диагностика persistent Telegram dedupe недоступна. ${supabaseSchemaGuidance}`);
     }
     if (Number(telegramWebhook.staleProcessing || 0)>0 || Number(telegramWebhook.failedCurrent || 0)>0) {
       recommendations.push(`Проверьте Telegram webhook claims: stale=${Number(telegramWebhook.staleProcessing || 0)}, failed=${Number(telegramWebhook.failedCurrent || 0)}.`);
