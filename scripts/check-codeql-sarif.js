@@ -27,6 +27,15 @@ function startLine(location={}) {
   return Number.isSafeInteger(line) && line>0 ? line : null;
 }
 
+function isAcceptedSuppression(result={}) {
+  const suppressions=Array.isArray(result.suppressions) ? result.suppressions : [];
+  return suppressions.some(suppression => {
+    const status=String(suppression?.status || '').trim();
+    // CodeQL in-source suppressions can omit status; preserve that supported form.
+    return !status || status==='accepted';
+  });
+}
+
 const files=walk(target);
 if (!files.length) {
   console.error('CodeQL SARIF gate: no SARIF files found.');
@@ -39,7 +48,7 @@ for (const file of files) {
   for (const run of sarif.runs || []) {
     const rules=new Map((run.tool?.driver?.rules || []).map(rule=>[String(rule.id || ''),rule]));
     for (const result of run.results || []) {
-      if (Array.isArray(result.suppressions) && result.suppressions.length) continue;
+      if (isAcceptedSuppression(result)) continue;
       const ruleId=String(result.ruleId || result.rule?.id || 'unknown');
       const rule=rules.get(ruleId) || {};
       const level=String(result.level || rule.defaultConfiguration?.level || 'warning');
