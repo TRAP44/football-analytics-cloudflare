@@ -10,7 +10,6 @@ import {
 } from '../scripts/external-monitor-control-plane.js';
 
 const workflow = fs.readFileSync('.github/workflows/external-production-monitor.yml', 'utf8');
-const diagnosticsWorkflow = fs.readFileSync('.github/workflows/external-production-monitor-diagnostics.yml', 'utf8');
 const monitorScript = fs.readFileSync('scripts/external-production-monitor.js', 'utf8');
 const controlPlaneScript = fs.readFileSync('scripts/external-monitor-control-plane.js', 'utf8');
 const runbook = fs.readFileSync('docs/EXTERNAL_MONITORING_RUNBOOK_RU.md', 'utf8');
@@ -87,15 +86,15 @@ test('external monitoring workflow is independent, retried and incident-aware wi
   assert.match(runbook, /не выполняет rollback автоматически/i);
 });
 
-test('failed primary monitor has a self-hosted diagnostic fallback with read-only Actions access', () => {
-  assert.match(diagnosticsWorkflow, /workflows: \["External Production Monitor"\]/);
-  assert.match(diagnosticsWorkflow, /conclusion == 'failure'/);
-  assert.match(diagnosticsWorkflow, /runs-on: \[self-hosted, Linux, X64\]/);
-  assert.match(diagnosticsWorkflow, /actions: read/);
-  assert.match(diagnosticsWorkflow, /issues: write/);
-  assert.match(diagnosticsWorkflow, /MONITOR_INFRA_TRACKING_ISSUE: "463"/);
-  assert.match(diagnosticsWorkflow, /external-monitor-control-plane\.js diagnose/);
-  assert.doesNotMatch(diagnosticsWorkflow, /API_FOOTBALL_KEY|THE_ODDS_API_KEY|TAVILY_KEY|SUPABASE_SECRET_KEY/);
+test('failed primary monitor has a GitHub-hosted diagnostic fallback with read-only Actions access', () => {
+  assert.match(workflow, /workflows: \["External Production Monitor"\]/);
+  assert.match(workflow, /conclusion == 'failure'/);
+  assert.match(workflow, /runs-on: ubuntu-latest/);
+  assert.match(workflow, /actions: read/);
+  assert.match(workflow, /issues: write/);
+  assert.match(workflow, /MONITOR_INFRA_TRACKING_ISSUE: "463"/);
+  assert.match(workflow, /external-monitor-control-plane\.js diagnose/);
+  assert.doesNotMatch(workflow, /API_FOOTBALL_KEY|THE_ODDS_API_KEY|TAVILY_KEY|SUPABASE_SECRET_KEY/);
 });
 
 test('diagnostics classify zero-step and post-probe failures as monitor infrastructure failures', () => {
