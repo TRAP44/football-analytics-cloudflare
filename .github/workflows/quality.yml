@@ -11,6 +11,10 @@ on:
     paths-ignore:
       - "docs/**"
       - "**/*.md"
+      - ".github/workflows/cleanup-merged-branches.yml"
+      - ".github/workflows/cleanup-actions-history.yml"
+      - ".github/workflows/cleanup-actions-artifacts.yml"
+      - ".github/workflows/cleanup-actions-caches.yml"
 
 permissions:
   contents: read
