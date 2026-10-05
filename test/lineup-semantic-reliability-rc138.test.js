@@ -102,10 +102,12 @@ test('RC138 honors explicit stale boolean and rejects truthy string transport fl
     usable:'false',
     observed:'false',
   }),stringQuality);
-  assert.equal(stringMeta.confirmed,true);
+  assert.equal(stringMeta.confirmed,false);
   assert.equal(stringMeta.available,false);
   assert.equal(stringMeta.usable,false);
   assert.equal(stringMeta.confidenceBearing,false);
+  assert.equal(stringMeta.reason,'lineup_source_unavailable');
+  assert.equal(stringQuality.bothConfirmed,false);
 });
 
 test('RC138 reliability downgrade can be safely re-evaluated with fresh trusted metadata', () => {
