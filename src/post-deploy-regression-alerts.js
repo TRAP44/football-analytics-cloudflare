@@ -32,8 +32,16 @@ function normalizeDeploySha(value=''){
 }
 
 function iso(value){
-  const ms=Date.parse(String(value||''));
-  return Number.isFinite(ms)?new Date(ms).toISOString():'';
+  let ms=null;
+  if(typeof value==='number') ms=Number.isFinite(value)?value:null;
+  else if(value instanceof Date) ms=value.getTime();
+  else if(typeof value==='string'&&value.trim()) ms=Date.parse(value.trim());
+  if(!Number.isFinite(ms)) return '';
+  try {
+    return new Date(ms).toISOString();
+  } catch {
+    return '';
+  }
 }
 
 function destinations(items=[]){
@@ -135,7 +143,13 @@ function targetState(rows=[],alertKey='',targets=[],nowMs=Date.now()){
       continue;
     }
     const status=String(row?.status||'').trim().toLowerCase();
-    const attempts=nonNegativeInteger(row?.attempts);
+    const rawAttempts=row?.attempts;
+    const attemptsCandidate=numericCandidate(rawAttempts);
+    const attempts=Number.isSafeInteger(attemptsCandidate)&&attemptsCandidate>=0?attemptsCandidate:null;
+    if(attempts===null){
+      states.push('unknown');
+      continue;
+    }
     if(status==='retry_pending'){
       const retryAt=Date.parse(String(row?.retry_at||row?.retryAt||''));
       if(attempts<MAX_DELIVERY_ATTEMPTS&&(!Number.isFinite(retryAt)||retryAt<=effectiveNow)){
@@ -299,7 +313,7 @@ export function postDeployRegressionAlertOpsEvents(plan={},delivery={}){
   const outcomes=Array.isArray(delivery?.outcomes)?delivery.outcomes:[];
   const groups=new Map();
   for(const item of outcomes){
-    const state=String(item?.state||'unknown');
+    const state=String(item?.state||'unknown').trim().toLowerCase()||'unknown';
     if(!groups.has(state)) groups.set(state,[]);
     groups.get(state).push(item);
   }
@@ -327,9 +341,13 @@ export function postDeployRegressionAlertOpsEvents(plan={},delivery={}){
         alertKind:String(plan.kind||''),
         deliveryKey:String(plan.alertKey||plan.deliveryKey||''),
         deploySha:String(plan.incident?.deploySha||''),
-        windowMinutes:Number(plan.incident?.windowMinutes||0),
-        signalCodes:Array.isArray(plan.incident?.signalCodes)?plan.incident.signalCodes:[],
-        recipientSlots:items.map(item=>Number(item?.slot)).filter(Number.isInteger),
+        windowMinutes:positiveInteger(plan.incident?.windowMinutes),
+        signalCodes:Array.isArray(plan.incident?.signalCodes)
+          ? plan.incident.signalCodes.filter(code=>typeof code==='string').slice(0,50)
+          : [],
+        recipientSlots:items
+          .map(item=>nonNegativeInteger(item?.slot,-1))
+          .filter(slot=>slot>=0),
         recipientCount:items.length,
       },
     });
