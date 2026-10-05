@@ -73,9 +73,15 @@ export async function enforceDistributedAccountRateLimit({
       p_limit:policy.limit,
       p_window_seconds:policy.windowSeconds,
     },1800);
-    if (result?.allowed) return null;
+    if (result?.allowed === true) return null;
+    if (result?.allowed !== false) {
+      throw new Error('Distributed account limiter returned an invalid allowed flag.');
+    }
 
-    const retryAfter=Math.max(1,Number(result?.retryAfter || policy.windowSeconds));
+    const rawRetryAfter=Number(result?.retryAfter);
+    const retryAfter=Number.isFinite(rawRetryAfter)
+      ? Math.max(1,Math.min(3600,Math.ceil(rawRetryAfter)))
+      : policy.windowSeconds;
     bumpTelemetry('distributedBurstBlocks');
     return json({
       error:'Слишком много запросов за короткое время. Повторите немного позже.',
@@ -87,14 +93,14 @@ export async function enforceDistributedAccountRateLimit({
     const now=Date.now();
     if (memory && now-Number(memory.distributedRouteGuardWarningAt || 0)>=60_000) {
       memory.distributedRouteGuardWarningAt=now;
-      void recordOpsEvent(cfg,{
+      Promise.resolve(recordOpsEvent(cfg,{
         severity:'warning',
         source:'rate_limit',
         eventType:'distributed_route_guard',
         code:'DISTRIBUTED_ROUTE_GUARD_DEGRADED',
         message:error?.message || error,
         endpoint:new URL(request.url).pathname,
-      }).catch(()=>{});
+      })).catch(()=>{});
     }
     return null;
   }
