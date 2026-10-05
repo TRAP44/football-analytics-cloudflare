@@ -44,6 +44,7 @@ import { planPostDeployRegressionResponseTransition, summarizePostDeployRegressi
 import { buildPostDeployRegressionSloDashboard } from './post-deploy-regression-slo.js';
 import { createCompositeReadinessRuntime } from './readiness-contract.js';
 import { createDiagnosticsRuntime } from './diagnostics-runtime.js';
+import { createAppCapabilitiesRuntime } from './app-capabilities.js';
 import { createPublicHealthRuntime } from './public-health.js';
 import { createAnalysisUsageCompensationRuntime, durableAnalysisUsageHeaders } from './analysis-usage-compensation.js';
 import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
@@ -372,130 +373,34 @@ function currentReleaseIdentity(cfg = {}) {
   });
 }
 
-function publicDataCapabilities() {
-  const paid = ['PRO', 'ULTRA', 'MEGA'].includes(String(memory.provider?.plan || '').toUpperCase());
-  const healthy = paidQuotaHealthy();
-  const publicBudget = providerPublicBudgetMode();
-  const runtime = runtimeControlsSnapshot();
-  const expandedAllowed = runtime.expandedDataEnabled !== false;
-  const liveAllowed = runtime.liveEnabled !== false;
-  const canEnrich = Boolean(paid && healthy && expandedAllowed && !['conserve','emergency'].includes(publicBudget.mode));
-  return {
-    visibility: 'public',
-    mode: paid ? 'expanded' : 'standard',
-    label: isSecurityLockdownControls(runtime) ? 'Security Lockdown' : runtime.maintenanceMode ? 'Техническое обслуживание' : publicBudget.label,
-    refreshSeconds: liveAllowed ? publicBudget.liveRefreshSeconds : 0,
-    runtime: publicRuntimeControls(runtime),
-    features: {
-      events: true,
-      matchStatistics: true,
-      liveRefresh: liveAllowed,
-      lineupsFallback: Boolean(paid && healthy && expandedAllowed),
-      playerStats: canEnrich,
-      injuries: canEnrich,
-      liveOdds: Boolean(canEnrich && liveAllowed),
-      oddsMovement: Boolean(canEnrich && liveAllowed),
-    },
-    note: isSecurityLockdownControls(runtime)
-      ? (runtime.message || 'Аварийный режим безопасности: изменения и внешние запросы временно остановлены.')
-      : runtime.maintenanceMode
-      ? (runtime.message || 'Часть футбольных функций временно приостановлена.')
-      : !expandedAllowed
-        ? 'Расширенные данные источника временно отключены администратором.'
-        : paid
-          ? (canEnrich
-              ? 'Расширенный режим активен. Сохранение данных по функциям снижает количество повторных запросов.'
-              : 'Расширенный тариф активен, но сейчас включён защитный режим квоты.')
-          : 'Сейчас приложение экономит запросы. После увеличения квоты расширенные данные включатся автоматически.',
-  };
+let appCapabilitiesRuntime=null;
+
+function getAppCapabilitiesRuntime() {
+  if (!appCapabilitiesRuntime) {
+    appCapabilitiesRuntime=createAppCapabilitiesRuntime({
+      memory,
+      appVersion:APP_VERSION,
+      minClientVersion:MIN_CLIENT_VERSION,
+      apiContractVersion:API_CONTRACT_VERSION,
+      releaseChannel:RELEASE_CHANNEL,
+      releaseCandidate:RC_NAME,
+      paidQuotaHealthy,
+      providerPublicBudgetMode,
+      runtimeControlsSnapshot,
+      isSecurityLockdownControls,
+      publicRuntimeControls,
+      currentReleaseIdentity,
+    });
+  }
+  return appCapabilitiesRuntime;
 }
 
+function publicDataCapabilities() {
+  return getAppCapabilitiesRuntime().publicDataCapabilities();
+}
 
 function appManifest(cfg) {
-  return {
-    ok: true,
-    app: 'football-manager',
-    version: APP_VERSION,
-    recommendedClientVersion: APP_VERSION,
-    minClientVersion: MIN_CLIENT_VERSION,
-    apiContract: API_CONTRACT_VERSION,
-    releaseChannel: RELEASE_CHANNEL,
-    releaseCandidate: RC_NAME,
-    deployment: currentReleaseIdentity(cfg),
-    maintenance: Boolean(runtimeControlsSnapshot().maintenanceMode),
-    monetization: cfg.monetizationEnabled ? 'enabled' : 'paused',
-    runtime: publicRuntimeControls(),
-    compatibility: {
-      hardBlockBelowMinClient: true,
-      contractRequired: API_CONTRACT_VERSION,
-      softReloadOnVersionDifference: true,
-    },
-    features: {
-      startupSafety: true,
-      rollbackSafety: true,
-      failureRecovery: true,
-      productionLoadSafety: true,
-      regressionQA: true,
-      releaseMonitor: true,
-      productionMonitor: true,
-      rollbackVerification: true,
-      providerDataReliability: true,
-      aiAnalysisQualityGate: true,
-      clientTelemetry: true,
-      notificationReliability: true,
-      reminderDeliveryClaims: true,
-      runtimeControls: true,
-      emergencyKillSwitches: true,
-      cloudflareEdgeRateLimits: true,
-      emergencySecurityLockdown: true,
-      runtimeRollback: true,
-      runtimeHistory: true,
-      predictionIntegrity: true,
-      modelVersionCohorts: true,
-      calibrationDiagnostics: true,
-      predictionRemediation: true,
-      settlementRecovery: true,
-      settlementWatchdog: true,
-      automaticSettlementRecovery: true,
-      settlementCircuitBreaker: true,
-      settlementReliability: true,
-      settlementRunLedger: true,
-      interruptedRunRecovery: true,
-      settlementFinalityVerification: true,
-      settlementDriftGuard: true,
-      settlementDriftReview: true,
-      settlementAdjudication: true,
-      trustedMetricsGate: true,
-      twoPassSettlementFinality: true,
-      calibrationPromotionGate: true,
-      adaptiveWeightsHoldout: true,
-      unifiedSearch: true,
-      searchMatchHistory: true,
-      searchLeagueFixtures: true,
-      searchQualityDrill: true,
-      searchOutcomeAnalytics: true,
-      zeroResultRecovery: true,
-      teamFixtureDiscovery: true,
-      matchSelectionIntelligence: true,
-      primaryMatchRecommendation: true,
-      oneTapAiHandoff: true,
-      telegramMiniAppE2E: true,
-      telegramWebhookPersistentDedupe: true,
-      telegramWebhookDedupeObservability: true,
-      supabaseProbeConfirmation: true,
-      supabaseSchemaProbeConfirmation: true,
-      cachedFullAnalysisHandoff: true,
-      aiFreshnessGuard: true,
-      preKickoffRecheck: true,
-      preKickoffChangeDetection: true,
-      analysisDeltaSummary: true,
-      smartNotifications: true,
-      smartNotificationEntitlements: true,
-      calibrationChampionChallenger: true,
-      calibrationAutomaticRollback: true,
-    },
-    serverTime: new Date().toISOString(),
-  };
+  return getAppCapabilitiesRuntime().appManifest(cfg);
 }
 
 function sleepMs(ms) {
