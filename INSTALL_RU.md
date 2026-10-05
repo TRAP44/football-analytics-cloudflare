@@ -1,36 +1,31 @@
 # Установка Football Analytics
 
+Актуальные версии и требования всегда смотрите в `release-contract.json`.
+
 ## Новый Supabase-проект
 
-Все SQL находятся в каталоге `supabase/`: fresh-install baseline — в `baseline/`, последовательные обновления — в `migrations/`.
-
-
 1. Откройте Supabase SQL Editor.
-2. Выполните `supabase/baseline/supabase_baseline_v6_19.sql` целиком.
-3. Затем примените `supabase/migrations/supabase_migration_v6_20.sql`: эта migration новее baseline и добавляет persistent ledger для incident alert delivery.
-4. Не запускайте после baseline numbered migrations v6.9–v6.19.1: они уже включены в unified baseline.
-5. В Supabase Data API убедитесь, что backend-таблицы доступны `service_role`, а прямой доступ `anon` и `authenticated` закрыт.
+2. Выполните fresh-install baseline из поля `freshInstallBaseline` в `release-contract.json`.
+3. Затем примените все миграции из `supabase/migrations/`, которые новее baseline, строго по порядку до файла из поля `latestMigration`.
+4. Не запускайте старые миграции, уже включённые в baseline.
+5. Проверьте, что backend-таблицы доступны только серверной роли, а прямой доступ `anon` и `authenticated` закрыт.
 
-## Обновление существующего проекта
+Текущий контракт:
+- приложение: `6.120.0`
+- runtime: `6.120.0-rc144`
+- schema: `6.29`
+- baseline: `supabase/baseline/supabase_baseline_v6_19.sql`
+- latest migration: `supabase/migrations/supabase_migration_v6_29_1.sql`
+
+## Существующий Supabase-проект
 
 1. Сделайте резервную копию базы.
-2. Примените только отсутствующие миграции, сохраняя порядок версий: v6.9 → v6.10 → v6.11 → v6.11.1 → v6.12 → v6.13 → v6.14 → v6.15 → v6.16 → v6.17 → v6.18 → v6.18.1 → v6.19 → v6.19.1 → v6.20.
-3. Для существующей базы не запускайте `supabase/baseline/supabase_baseline_v6_19.sql`: он предназначен только для fresh install.
-4. Не удаляйте и не переигрывайте уже применённые миграции без отдельного плана rollback.
-5. После обновления запустите защищённый RC Regression и проверьте least-privilege контракт Supabase.
-6. RC107 требует `supabase_migration_v6_16.sql`: она добавляет backend-only ledger для атомарной дедупликации Telegram webhook между Cloudflare isolates.
-7. RC108 требует `supabase_migration_v6_17.sql`: она добавляет агрегированные счётчики дублей и service-role-only health RPC для production monitoring.
-8. RC109 не требует новой миграции: одиночный сбой Supabase probe подтверждается вторым запросом перед аварийным статусом.
-9. RC126 не требует новой миграции: Schema Drift Guard подтверждает первый неуспешный schema probe повторной проверкой перед блокирующим incident.
-10. RC127 требует `supabase_migration_v6_18.sql`: atomic AI quota, distributed provider budget, digest delivery claims, full schema fingerprint и least-privilege service-role. Production schema становится v6.18.
-11. После v6.18 примените `supabase_migration_v6_18_1.sql`: hotfix устраняет FK-race первого анализа.
-12. Затем примените `supabase_migration_v6_19.sql`: source provenance/freshness metadata для analysis cache, odds snapshots и model predictions.
-13. Примените `supabase_migration_v6_19_1.sql`: personal write guards для защищённых пользовательских операций.
-14. Примените `supabase_migration_v6_20.sql`: persistent incident alert delivery ledger, atomic claim/finalize RPC и deduplication. Для нового проекта v6.18.1–v6.19.1 уже включены в baseline v6.19; после baseline отдельно требуется v6.20.
+2. Не запускайте fresh-install baseline поверх существующей production-базы.
+3. Применяйте только отсутствующие миграции, строго по порядку версий.
+4. Не переигрывайте уже применённые миграции без отдельного rollback-плана.
+5. После обновления проверьте schema/readiness contract.
 
-## Cloudflare Secrets
-
-Обязательные:
+## Обязательные Cloudflare Secrets
 
 ```text
 TELEGRAM_BOT_TOKEN
@@ -41,24 +36,26 @@ SUPABASE_URL
 SUPABASE_SECRET_KEY
 ```
 
-`SUPABASE_SERVICE_ROLE_KEY` поддерживается для совместимости. Секретные значения никогда не должны попадать в `public/`, Git history или Telegram-клиент. RC102+ автоматически блокирует release, если распознаваемый секрет попал в отслеживаемый Git-файл.
+`SUPABASE_SERVICE_ROLE_KEY` поддерживается для совместимости. Остальные переменные перечислены в `.env.example`.
 
-Опциональные переменные перечислены в `.env.example`.
+Секреты нельзя хранить в `public/`, Git history или клиентском коде.
 
-## GitHub / Cloudflare production
+## GitHub / Cloudflare
 
-Для автоматического production deploy добавьте в GitHub Environment `production` или Repository Secrets:
+Для production deploy нужны:
 
 ```text
 CLOUDFLARE_API_TOKEN
 CLOUDFLARE_ACCOUNT_ID
 ```
 
-API token должен быть ограничен нужным Cloudflare account и правом редактирования Workers. Не добавляйте эти значения в `.env`, `.dev.vars` или файлы репозитория.
+Для защищённого rollback задайте `CLOUDFLARE_WORKER_URL`.
 
-Рекомендуется задать Repository/Environment Variable `CLOUDFLARE_WORKER_URL`. Для обычного deploy это запасной стабильный URL, а для защищённого rollback RC103 эта переменная обязательна, потому что после отката нужно независимо проверить восстановленную версию.
+Release-процесс:
 
-Единый источник истины для текущей версии, schema requirement и production contract: `release-contract.json`.\n\nРабочий release-процесс:\n\n`PR → Quality → merge в main → Deploy Production → production smoke`.
+```text
+PR → Quality → merge в main → Deploy Production → production smoke
+```
 
 ## Локальная проверка
 
@@ -67,6 +64,7 @@ npm ci
 npm run security:scan
 npm run check
 npm test
+npm run lint
 npm run verify:release
 npm run verify:worker
 ```
@@ -76,23 +74,16 @@ npm run verify:worker
 ## После deploy
 
 Проверьте:
-
-1. `/health/live` возвращает `ok=true`; `/health/ready` возвращает `ok=true`, `status=ready`, версию, совпадающую с `release-contract.json`.
-2. Regression gate не содержит blocking failures.
-3. `DEV_MODE=false` и `MONETIZATION_ENABLED=false`.
-4. Обычный пользователь не видит административные controls.
-5. `/health/supabase` не доступен публично.
-6. CSP, HSTS, `X-Content-Type-Options: nosniff` и остальные security headers присутствуют.
-7. Production smoke подтверждает readiness: Supabase online, schema fingerprint совпадает, backend security contract чистый, Telegram configured и свежих Supabase auth failures текущего релиза нет.
+1. `/health/live` возвращает `ok=true`.
+2. `/health/ready` возвращает `ok=true`, `status=ready` и актуальную версию.
+3. `DEV_MODE=false`.
+4. `MONETIZATION_ENABLED=false`, пока монетизация не включена отдельно.
+5. Обычный пользователь не видит admin controls.
+6. Технический Supabase health не доступен публично.
+7. Production smoke и schema contract проходят без blocking failures.
 
 ## Rollback
 
-Для аварийного возврата используйте workflow `Rollback Production`:
+Используйте workflow `Rollback Production` и укажите нужный Cloudflare Worker `version_id`.
 
-1. Укажите Cloudflare Worker `version_id`, который нужно восстановить.
-2. Укажите `expected_version` в формате вроде `6.94.0-rc102`.
-3. Подтвердите действие значением `ROLLBACK`.
-4. Workflow до отката проверит credentials, формат version ID, expected version и наличие HTTPS `CLOUDFLARE_WORKER_URL`.
-5. После отката `scripts/rollback-smoke.js` подтвердит точную восстановленную версию, `DEV_MODE=false` и отсутствие публичного технического Supabase health.
-
-Rollback меняет только версию Worker и **не откатывает состояние Supabase**. Изменения базы требуют отдельного SQL rollback-плана/резервной копии; RC103 не выполняет автоматический SQL rollback.
+Rollback Worker не откатывает Supabase. Изменения базы требуют отдельного SQL rollback-плана или восстановления из резервной копии.
