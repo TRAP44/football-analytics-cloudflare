@@ -1,41 +1,52 @@
 # CI and production runner recovery
 
-MatchRadar deliberately separates **independent production observation** from the
-self-hosted CI/deploy runner.
+MatchRadar does not depend on a single self-hosted runner for critical CI,
+security, deployment, backup/restore, or production observation.
 
 ## Runner boundaries
 
-- `External Production Monitor` runs on GitHub-hosted `ubuntu-latest`. It must
-  not depend on the MatchRadar self-hosted runner, Docker, Supabase, Cloudflare
-  deployment credentials, or local network/VPN state.
-- `Quality`, `CodeQL Security`, `Privileged Access Audit`, and production
-  deployment remain fail-closed when their required execution environment is
-  unavailable.
-- Database integration and production mutation must not be silently moved to a
-  weaker fallback just to make a workflow green.
+The following workflows run on GitHub-hosted `ubuntu-latest`:
 
-## Self-hosted runner outage
+- Quality;
+- CodeQL Security;
+- Privileged Access Audit;
+- Deploy Production;
+- External Production Monitor;
+- External Production Monitor Diagnostics;
+- Backup Supabase and isolated restore drill.
 
-If the primary self-hosted runner is offline:
+The previous self-hosted WSL runner may remain available for ad-hoc/local work,
+but it is not part of the required release path.
+
+## Failure behavior
+
+If a personal PC, WSL instance, or old self-hosted runner is offline:
 
 1. Do not bypass Quality, security, provenance, or deployment verification.
-2. Keep production unchanged. A queued deployment is safer than an unverified
-   deployment.
-3. Use the independent External Production Monitor as the availability signal.
-4. Restore the runner service and its required Node/Docker/Postgres tooling.
-5. Re-run the affected checks from the same commit. Do not manufacture status
-   checks or direct-push around the release flow.
-6. Deploy only after the normal gates pass.
+2. GitHub-hosted checks must continue independently.
+3. External Production Monitor remains the production availability signal.
+4. Deploy Production must still verify exact current-main SHA and merged-PR provenance.
+5. Backup/restore must continue to fail closed if production secrets or prerequisites are unavailable.
+6. Do not re-introduce `runs-on: [self-hosted, ...]` into critical workflows without a reviewed redundancy design.
+
+## GitHub-hosted prerequisites
+
+- Node.js 22 is installed through `actions/setup-node`.
+- Docker is supplied by the GitHub-hosted Linux runner for local Supabase jobs.
+- Quality installs PostgreSQL client when `psql` is not already available.
+- Supabase CLI and Wrangler stay version/pin controlled by repository workflows/package metadata.
+- Production secrets remain in GitHub environments/repository secrets and are never written to source or logs.
 
 ## Verification contract
 
-A change to runner topology is acceptable only when:
+Runner-topology changes are acceptable only when:
 
-- production monitoring continues without the self-hosted runner;
-- no production secret is added to the monitoring job;
-- CI/security gates remain fail-closed;
-- production deployment still verifies the exact current-main revision and PR
-  provenance;
-- monitor incident creation/recovery remains functional.
+- production monitoring remains independent of a developer workstation;
+- critical PR checks can start without the self-hosted runner;
+- security gates remain fail-closed;
+- production deployment still verifies current-main revision and PR provenance;
+- database integration continues to execute the fresh-install/upgrade contract;
+- backup and restore verification remain encrypted and isolated;
+- no secret is exposed while moving execution environments.
 
-This document records the recovery policy for GitHub Issue #463.
+This document records the recovery and runner-independence policy for GitHub Issue #463.
