@@ -11847,7 +11847,19 @@ async function runSettlementWatchdog(cfg) {
       },
     };
     if (auditStarted) {
-      await finalizeRemediationAction(cfg, actionId, failurePatch).catch(() => null);
+      await finalizeRemediationAction(cfg, actionId, failurePatch).catch(async auditError => {
+        await recordCriticalWriteFailure({
+          recordOpsEvent,
+          cfg,
+          source:'model',
+          eventType:'remediation_audit_write',
+          code:'REMEDIATION_AUDIT_FINALIZE_WRITE_FAILED',
+          message:'Failed to finalize remediation audit record.',
+          meta:{ actionId, actionType:'auto_recover', status:'failed' },
+          error:auditError,
+        });
+        return null;
+      });
     } else {
       await recordRemediationAction(cfg, null, {
         actionId,
@@ -11863,7 +11875,19 @@ async function runSettlementWatchdog(cfg) {
         skippedCount: currentIds.length,
         fixtureIds: currentIds,
         detail: failurePatch.detail,
-      }).catch(() => null);
+      }).catch(async auditError => {
+        await recordCriticalWriteFailure({
+          recordOpsEvent,
+          cfg,
+          source:'model',
+          eventType:'remediation_audit_write',
+          code:'REMEDIATION_AUDIT_CREATE_WRITE_FAILED',
+          message:'Failed to persist failed remediation audit record.',
+          meta:{ actionId, actionType:'auto_recover', status:'failed' },
+          error:auditError,
+        });
+        return null;
+      });
     }
     await recordOpsEvent(cfg, {
       severity: 'error',
