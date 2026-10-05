@@ -85,6 +85,7 @@ export function createPublicHealthRuntime({
       status:readiness.ok ? 'ready' : 'not_ready',
       version:String(version || readiness.version || ''),
       releaseCandidate:String(releaseCandidate || readiness.releaseCandidate || ''),
+      devMode:Boolean(context?.devMode),
       readiness:Object.freeze({
         ok:Boolean(readiness.ok),
         status:String(readiness.status || ''),
