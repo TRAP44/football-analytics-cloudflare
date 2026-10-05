@@ -347,10 +347,11 @@ export function buildAiTimeline({
     .map(row => normalizedSnapshot(row))
     .filter(row => row && (!targetFixtureId || row.fixtureId === targetFixtureId));
   const firstPrediction = modelPredictionTimelineRow(modelPrediction || {});
-  if (
+  const includesFirstPrediction = Boolean(
     firstPrediction
     && (!targetFixtureId || firstPrediction.fixture_id === targetFixtureId)
-  ) {
+  );
+  if (includesFirstPrediction) {
     normalized.push(normalizedSnapshot(firstPrediction, 'model_predictions'));
   }
 
@@ -395,7 +396,7 @@ export function buildAiTimeline({
     marketContext,
     generatedFrom: {
       timelineSnapshots: points.filter(point => point.source !== 'model_predictions').length,
-      immutableModelPrediction: Boolean(firstPrediction),
+      immutableModelPrediction: includesFirstPrediction,
       marketSnapshots: marketContext.length,
     },
     note: points.length
