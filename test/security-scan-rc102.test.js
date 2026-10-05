@@ -4,6 +4,7 @@ import {
   forbiddenTrackedFile,
   scanTextForSecrets,
   scanTrackedFiles,
+  trackedFiles,
 } from '../scripts/security-scan.js';
 
 test('RC102 blocks secret-bearing tracked filenames', () => {
@@ -42,4 +43,17 @@ test('RC102 reports file and content violations without exposing secret values',
     {path:'token.txt',type:'supabase_secret_key'},
   ]);
   assert.equal(JSON.stringify(findings).includes('a'.repeat(24)), false);
+});
+
+
+test('security scan fails with an actionable message when git is unavailable', () => {
+  const noGit=()=>{ throw new Error('fatal: not a git repository'); };
+  assert.throws(
+    ()=>trackedFiles(noGit),
+    error=>error.code==='SECURITY_SCAN_NO_GIT' && /git checkout/.test(error.message),
+  );
+});
+
+test('security scan lists files from git output', () => {
+  assert.deepEqual(trackedFiles(()=>'a.js\0b/c.md\0'), ['a.js','b/c.md']);
 });
