@@ -1,5 +1,5 @@
 name: Cleanup merged branches
-# Safe stale-branch cleanup trigger
+# Safe stale-branch cleanup trigger after PR cleanup
 
 on:
   pull_request:
