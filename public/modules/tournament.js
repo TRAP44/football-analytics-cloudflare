@@ -1,5 +1,6 @@
 export function createTournamentModule(deps = {}) {
   const {
+    $,
     activeViewId,
     api,
     bindMatchActions,
