@@ -66,6 +66,9 @@ test('RC127 separates liveness and readiness and deploy smoke requires readiness
   assert.match(worker,/recentSupabaseAuthFailures/);
   assert.match(smoke,/\/health\/ready/);
   assert.match(smoke,/Readiness schema fingerprint failed/);
+  assert.match(worker,/HEALTH_PROBE_TOKEN/);
+  assert.match(smoke,/x-health-token/);
+  assert.match(smoke,/Public health endpoint exposes deployment diagnostics/);
 });
 
 test('RC127 fails analysis coordination closed during shared-lock outage',()=>{
