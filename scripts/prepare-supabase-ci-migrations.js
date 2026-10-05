@@ -33,6 +33,23 @@ function timestampForIndex(index) {
   return '2026010100' + String(index).padStart(2, '0') + '00';
 }
 
+function migrationVersion(source) {
+  const name=path.basename(String(source || ''));
+  const match=/^supabase_migration_v(\d+(?:_\d+)*)\.sql$/i.exec(name);
+  if (!match) return null;
+  return match[1].split('_').map(Number);
+}
+
+function compareVersions(a,b) {
+  const length=Math.max(a.length,b.length);
+  for (let i=0;i<length;i+=1) {
+    const left=a[i] || 0;
+    const right=b[i] || 0;
+    if (left !== right) return left-right;
+  }
+  return 0;
+}
+
 export function buildMigrationPlan(mode = 'fresh') {
   if (!['fresh', 'upgrade-base', 'latest-only'].includes(mode)) {
     throw new Error('Unsupported Supabase CI migration mode: ' + mode);
@@ -64,6 +81,9 @@ export function buildMigrationPlan(mode = 'fresh') {
 }
 
 export function validateMigrationPlan(repoRoot, releaseContract) {
+  if (new Set(POST_BASELINE_MIGRATIONS).size !== POST_BASELINE_MIGRATIONS.length) {
+    throw new Error('POST_BASELINE_MIGRATIONS contains duplicate entries.');
+  }
   if (releaseContract.freshInstallBaseline !== FRESH_BASELINE) {
     throw new Error(
       'release-contract freshInstallBaseline drift: '
@@ -81,6 +101,24 @@ export function validateMigrationPlan(repoRoot, releaseContract) {
     if (!fs.existsSync(sourcePath)) {
       throw new Error('Missing Supabase CI migration source: ' + item.source);
     }
+  }
+
+  const migrationsDir=path.join(repoRoot,'supabase','migrations');
+  const latestVersion=migrationVersion(releaseContract.latestMigration);
+  if (!latestVersion) {
+    throw new Error('release-contract latestMigration has an invalid filename.');
+  }
+  const newerFiles=fs.readdirSync(migrationsDir,{withFileTypes:true})
+    .filter(entry=>entry.isFile() && entry.name.endsWith('.sql'))
+    .map(entry=>({name:entry.name,version:migrationVersion(entry.name)}))
+    .filter(item=>item.version && compareVersions(item.version,latestVersion)>0)
+    .map(item=>item.name)
+    .sort();
+  if (newerFiles.length) {
+    throw new Error(
+      'Supabase migration(s) newer than release-contract latestMigration: '
+        + newerFiles.join(', '),
+    );
   }
 }
 
