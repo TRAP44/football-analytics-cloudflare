@@ -17,6 +17,12 @@ function normalizeBaseUrl(value) {
   return String(value || DEFAULT_PRODUCTION_URL).replace(/\/+$/, '');
 }
 
+function boundedNumber(value, fallback, min, max) {
+  const parsed=Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min,Math.min(max,parsed));
+}
+
 function escapeMarkdownCell(value) {
   return String(value ?? '')
     .replace(/\\/g, '\\\\')
@@ -147,21 +153,21 @@ export async function runMonitorAttempt({
   fetchImpl = fetch,
 } = {}) {
   const normalized = normalizeBaseUrl(baseUrl);
-  const checks = {};
-
-  for (const endpoint of ENDPOINTS) {
-    const url = `${normalized}${endpoint.path}?external_monitor=${Date.now()}`;
+  const checkedAtToken=Date.now();
+  const entries=await Promise.all(ENDPOINTS.map(async endpoint => {
+    const url = `${normalized}${endpoint.path}?external_monitor=${checkedAtToken}`;
     const response = await fetchJson(url, { timeoutMs, fetchImpl });
     const evaluation = evaluateEndpoint(endpoint.name, response, { readyWarningMs });
-    checks[endpoint.name] = {
+    return [endpoint.name, {
       endpoint: endpoint.path,
       statusCode: response.statusCode,
       elapsedMs: response.elapsedMs,
       parseOk: response.parseOk,
       transportError: response.error || '',
       ...evaluation,
-    };
-  }
+    }];
+  }));
+  const checks=Object.fromEntries(entries);
 
   return {
     ok: Object.values(checks).every(item => item.passed),
@@ -194,10 +200,10 @@ function toMarkdown(result, attempts) {
 
 export async function main() {
   const baseUrl = normalizeBaseUrl(process.env.PRODUCTION_URL || DEFAULT_PRODUCTION_URL);
-  const retries = Math.max(1, Math.min(5, Number(process.env.EXTERNAL_MONITOR_RETRIES || 3)));
-  const retryDelayMs = Math.max(0, Math.min(60000, Number(process.env.EXTERNAL_MONITOR_RETRY_DELAY_MS || 10000)));
-  const timeoutMs = Math.max(1000, Math.min(30000, Number(process.env.EXTERNAL_MONITOR_TIMEOUT_MS || 10000)));
-  const readyWarningMs = Math.max(500, Math.min(9000, Number(process.env.EXTERNAL_MONITOR_READY_WARNING_MS || 3000)));
+  const retries = boundedNumber(process.env.EXTERNAL_MONITOR_RETRIES, 3, 1, 5);
+  const retryDelayMs = boundedNumber(process.env.EXTERNAL_MONITOR_RETRY_DELAY_MS, 10000, 0, 60000);
+  const timeoutMs = boundedNumber(process.env.EXTERNAL_MONITOR_TIMEOUT_MS, 10000, 1000, 30000);
+  const readyWarningMs = boundedNumber(process.env.EXTERNAL_MONITOR_READY_WARNING_MS, 3000, 500, 9000);
 
   let finalResult = null;
   let attemptsUsed = 0;
