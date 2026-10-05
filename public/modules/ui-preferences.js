@@ -1,7 +1,6 @@
 import {
   UI_PREFERENCES_KEY,
   DEFAULT_UI_PREFERENCES,
-  ACCENT_PALETTES,
 } from './app-runtime.js';
 
 export function createInterfacePreferencesController({
@@ -24,14 +23,7 @@ export function createInterfacePreferencesController({
     const root = document.documentElement;
     const choice = String(prefs.accent || 'system');
     root.dataset.accent = choice;
-    if (choice === 'system' || !ACCENT_PALETTES[choice]) {
-      root.style.removeProperty('--accent');
-      root.style.removeProperty('--accent-text');
-      return;
-    }
-    const pair = ACCENT_PALETTES[choice][preferredAccentMode(prefs.theme)] || ACCENT_PALETTES[choice].dark;
-    root.style.setProperty('--accent', pair.accent);
-    root.style.setProperty('--accent-text', pair.text);
+    root.dataset.accentMode = preferredAccentMode(prefs.theme);
   }
 
   function advancedAppearanceLabel(prefs = state.uiPreferences || DEFAULT_UI_PREFERENCES) {
