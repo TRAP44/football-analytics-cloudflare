@@ -42,3 +42,17 @@ test('settlement watchdog state-write failures are observable instead of silentl
     /loadSettlementReliability\(cfg\)\.catch\(\(\) => normalizeSettlementReliability\(\)\)/,
   );
 });
+
+
+test('critical delivery and referral writes emit stable diagnostics',()=>{
+  for (const code of [
+    'BILLING_REFERRAL_WRITE_FAILED',
+    'DAILY_DIGEST_RELEASE_WRITE_FAILED',
+    'POST_MATCH_RETURN_FINISH_WRITE_FAILED',
+    'POST_MATCH_RETURN_RELEASE_WRITE_FAILED',
+  ]) {
+    assert.match(worker,new RegExp(code));
+  }
+  assert.doesNotMatch(worker,/recordReferredPayment\([^\n]+\)\.catch\(\(\)=>false\)/);
+  assert.doesNotMatch(worker,/release_daily_digest[^\n]+\.catch\(\(\)=>false\)/);
+});
