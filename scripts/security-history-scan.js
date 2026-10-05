@@ -89,7 +89,16 @@ export function applyReviewedSyntheticFixtureAllowlist(items = [], allowlist = R
       actionable.push(item);
     }
   }
-  return {actionable,reviewed};
+
+  const staleAllowlist=Object.entries(allowlist || {}).flatMap(([key,value]) => {
+    const expected=Math.max(0,Number(value || 0));
+    const seen=Number(used.get(key) || 0);
+    if (seen >= expected) return [];
+    const [commit,path,type]=key.split('|');
+    return [{commit,path,type,expected,seen}];
+  });
+
+  return {actionable,reviewed,staleAllowlist};
 }
 
 function unique(items=[]) {
@@ -125,6 +134,25 @@ export function runSecurityHistoryScan() {
 
   const uniqueFindings=unique(findings);
   const review=applyReviewedSyntheticFixtureAllowlist(uniqueFindings);
+  if (review.staleAllowlist.length) {
+    console.error('Secret History Audit has stale reviewed-fixture allowlist entries:');
+    for (const item of review.staleAllowlist) {
+      console.error(
+        '- ' + (item.commit || 'unknown').slice(0,12)
+          + ' ' + item.path
+          + ': ' + item.type
+          + ' expected=' + item.expected
+          + ' seen=' + item.seen
+      );
+    }
+    return {
+      ok:false,
+      findings:review.staleAllowlist.map(item=>({...item,type:'stale_reviewed_fixture_allowlist'})),
+      reviewedFixtureCount:review.reviewed.length,
+      commitCount:commits.length,
+    };
+  }
+
   const clean=review.actionable.slice(0,100);
   if (clean.length) {
     console.error('Secret History Audit found unreviewed historical secret evidence:');
