@@ -1,3 +1,6 @@
+import { createApiAnalyzeRuntime } from './api-analyze-runtime.js';
+import { createProductionMonitorRuntime } from './production-monitor-runtime.js';
+import { createLaunchFunnelRuntime } from './launch-funnel-runtime.js';
 import { createTelegramWebhookHandler } from './telegram-transport.js';
 import { createTelegramUpdateProcessor } from './telegram-update-orchestration.js';
 import { createApiFootballGateway } from './api-football-gateway.js';
@@ -1426,462 +1429,63 @@ async function apiNewsImpactRecoveryIncidentAck(request,cfg,user) {
   });
 }
 
-async function apiLaunchFunnel(request,cfg) {
-  const url=new URL(request.url);
-  const days=Math.max(1,Math.min(30,Number(url.searchParams.get('days') || 7)));
-  if (!hasSupabase(cfg)) return json({available:false,reason:'Supabase не настроен.',days});
-  const analyticsNowMs=Date.now();
-  const since=new Date(analyticsNowMs-days*86400_000).toISOString();
-  const previousSince=new Date(analyticsNowMs-days*2*86400_000).toISOString();
-  let rows=[];
-  let comparisonRows=[];
-  let previousWindowRows=[];
-  let truncated=false;
-  let trendTruncated=false;
-  let trendAvailable=true;
-  try {
-    const page=await supaSelectPaged(cfg,'growth_events',{created_at:`gte.${since}`},{pageSize:1000,maxRows:10000,order:'created_at.asc'});
-    rows=page.rows;
-    truncated=Boolean(page.truncated);
-  } catch (error) {
-    return json({available:false,reason:'Нужна миграция v6.15 или временно недоступна база.',days,error:redactOpsString(error?.message || error,120)});
-  }
-  try {
-    const comparisonPage=await supaSelectPaged(cfg,'growth_events',{created_at:`gte.${previousSince}`},{pageSize:1000,maxRows:10000,order:'created_at.asc'});
-    comparisonRows=comparisonPage.rows || [];
-    previousWindowRows=comparisonRows.filter(row=>{
-      const createdAt=Date.parse(String(row?.created_at || ''));
-      return Number.isFinite(createdAt) && createdAt<Date.parse(since);
-    });
-    trendTruncated=Boolean(comparisonPage.truncated);
-  } catch {
-    trendAvailable=false;
-    comparisonRows=[];
-    previousWindowRows=[];
-  }
-  const setFor=(names)=>new Set(rows.filter(x=>names.includes(String(x.event_name || ''))).map(x=>Number(x.telegram_id || 0)).filter(Boolean));
-  const entry=new Set([...setFor(['bot_start']),...setFor(['miniapp_open'])]);
-  const stages=[
-    ['entry','Вход',entry],
-    ['search','Поиск',setFor(['search'])],
-    ['match_open','Карточка матча',setFor(['match_open'])],
-    ['quick_ai','AI в Telegram',setFor(['quick_ai'])],
-    ['full_ai','Полный AI-разбор',setFor(['full_ai'])],
-  ];
-  const base=Math.max(1,entry.size);
-  const funnel=stages.map(([key,label,set],index)=>({
-    key,label,users:set.size,
-    fromEntryPct:entry.size ? Math.round((set.size/base)*1000)/10 : 0,
-    fromPreviousPct:index===0 ? 100 : stages[index-1][2].size ? Math.round((set.size/stages[index-1][2].size)*1000)/10 : 0,
-  }));
-  const campaignMap=new Map();
-  for (const row of rows) {
-    const source=cleanLaunchPart(row.source || 'telegram',32) || 'telegram';
-    const campaign=cleanLaunchPart(row.campaign || 'direct',40) || 'direct';
-    const key=`${source}|${campaign}`;
-    const bucket=campaignMap.get(key) || {source,campaign,users:new Set(),entry:new Set(),fullAi:new Set(),events:0};
-    const uid=Number(row.telegram_id || 0);
-    if (uid) bucket.users.add(uid);
-    if (uid && ['bot_start','miniapp_open'].includes(String(row.event_name || ''))) bucket.entry.add(uid);
-    if (uid && row.event_name==='full_ai') bucket.fullAi.add(uid);
-    bucket.events+=1;
-    campaignMap.set(key,bucket);
-  }
-  const recheckRows=rows.filter(x=>String(x.event_name || '')==='analysis_recheck');
-  const recheckFree=recheckRows.filter(x=>Boolean(x?.metadata && typeof x.metadata==='object' ? x.metadata.free : false)).length;
-  const recheckMaterial=recheckRows.filter(x=>Boolean(x?.metadata && typeof x.metadata==='object' ? x.metadata.material : false)).length;
-  const recheckStable=recheckRows.filter(x=>Boolean(x?.metadata && typeof x.metadata==='object' ? x.metadata.stable : false)).length;
-  const handoffUsers=setFor(['ai_handoff']);
-  const fullAiUsers=setFor(['full_ai']);
-  const handoffToFull=new Set([...handoffUsers].filter(uid=>fullAiUsers.has(uid)));
-  const newsOpen=setFor(['news_open']);
-  const newsAiIntent=setFor(['news_ai_intent']);
-  const smartNewsAiRows=rows.filter(x=>String(x.event_name || '')==='news_ai_intent' && String(x?.metadata && typeof x.metadata==='object' ? x.metadata.linking || '' : '')==='smart_fixture');
-  const smartNewsAiUsers=new Set(smartNewsAiRows.map(x=>Number(x.telegram_id || 0)).filter(Boolean));
-  const newsReturn=setFor(['news_return']);
-  const newsImpactRows=rows.filter(x=>String(x.event_name || '')==='news_impact_delta');
-  const newsImpactCompared=new Set(newsImpactRows.filter(x=>Boolean(x?.metadata && typeof x.metadata==='object' ? x.metadata.compared : false)).map(x=>Number(x.telegram_id || 0)).filter(Boolean));
-  const newsImpactMaterial=new Set(newsImpactRows.filter(x=>Boolean(x?.metadata && typeof x.metadata==='object' ? x.metadata.material : false)).map(x=>Number(x.telegram_id || 0)).filter(Boolean));
-  const newsImpactDecision=(row)=>String(row?.metadata && typeof row.metadata==='object' ? row.metadata.decision || '' : '');
-  const newsImpactDecisionSummary={
-    total:newsImpactRows.length,
-    material:newsImpactRows.filter(x=>newsImpactDecision(x)==='material').length,
-    detail:newsImpactRows.filter(x=>newsImpactDecision(x)==='detail').length,
-    stable:newsImpactRows.filter(x=>newsImpactDecision(x)==='stable').length,
-    guarded:newsImpactRows.filter(x=>['guarded','baseline_missing'].includes(newsImpactDecision(x))).length,
-    unavailable:newsImpactRows.filter(x=>newsImpactDecision(x)==='unavailable').length,
-  };
-  const newsImpactActionRows=rows.filter(x=>String(x.event_name || '')==='news_impact_action');
-  const newsImpactAction=(row)=>String(row?.metadata && typeof row.metadata==='object' ? row.metadata.action || '' : '');
-  const newsImpactActionSummary={
-    total:newsImpactActionRows.length,
-    users:new Set(newsImpactActionRows.map(x=>Number(x.telegram_id || 0)).filter(Boolean)).size,
-    fullAi:newsImpactActionRows.filter(x=>newsImpactAction(x)==='full_ai').length,
-    squads:newsImpactActionRows.filter(x=>newsImpactAction(x)==='squads').length,
-    market:newsImpactActionRows.filter(x=>newsImpactAction(x)==='market').length,
-    recheck:newsImpactActionRows.filter(x=>newsImpactAction(x)==='recheck').length,
-    news:newsImpactActionRows.filter(x=>newsImpactAction(x)==='news').length,
-    share:newsImpactActionRows.filter(x=>newsImpactAction(x)==='share').length,
-  };
-  const newsImpactOutcomeRows=rows.filter(x=>String(x.event_name || '')==='news_impact_outcome');
-  const newsImpactActionOutcomeQuality=buildNewsImpactActionOutcomeQuality(newsImpactActionRows,newsImpactOutcomeRows,{asOfMs:analyticsNowMs});
-  const newsImpactOutcomeBottleneck=newsImpactOutcomeBottleneck(newsImpactActionOutcomeQuality);
-  const newsImpactOutcomeSummary=newsImpactActionOutcomeQuality.reduce((acc,row)=>{
-    acc.observed+=Number(row.observed || 0);
-    acc.attempts+=Number(row.attempts || 0);
-    acc.pending+=Number(row.pending || 0);
-    acc.confirmed+=Number(row.confirmed || 0);
-    return acc;
-  },{observed:0,attempts:0,pending:0,confirmed:0,completionPct:0});
-  newsImpactOutcomeSummary.completionPct=newsImpactOutcomeSummary.attempts
-    ? Math.round((newsImpactOutcomeSummary.confirmed/newsImpactOutcomeSummary.attempts)*1000)/10
-    : 0;
-  const newsImpactOutcomeGuard={outcomeWindowMinutes:NEWS_IMPACT_OUTCOME_WINDOW_MINUTES,minimumSample:NEWS_IMPACT_FUNNEL_MIN_USERS,meaning:'confirmed_delivery_not_satisfaction'};
-  const newsImpactFailureRows=rows.filter(x=>String(x.event_name || '')==='news_impact_outcome_failure');
-  const newsImpactFailureDiagnostics=buildNewsImpactFailureDiagnostics(newsImpactFailureRows);
-  const newsImpactFailureSummary={
-    total:newsImpactFailureRows.length,
-    users:new Set(newsImpactFailureRows.map(x=>Number(x.telegram_id || 0)).filter(Boolean)).size,
-    topReason:newsImpactFailureDiagnostics[0] || null,
-  };
-  const newsImpactFailureGuard={rawErrorsStored:false,meaning:'delivery_failure_not_user_dissatisfaction',taxonomy:[...NEWS_IMPACT_FAILURE_CODES]};
-  const newsImpactRecoveryAttemptRows=rows.filter(x=>String(x.event_name || '')==='news_impact_recovery_attempt');
-  const newsImpactRecoveryEffectiveness=buildNewsImpactRecoveryEffectiveness(newsImpactRecoveryAttemptRows,newsImpactOutcomeRows,newsImpactFailureRows,{asOfMs:analyticsNowMs});
-  const newsImpactRecoveryBestStrategy=newsImpactRecoveryBest(newsImpactRecoveryEffectiveness);
-  const newsImpactRecoverySummary=newsImpactRecoveryEffectiveness.reduce((acc,row)=>{
-    acc.observed+=Number(row.observed || 0);
-    acc.attempts+=Number(row.attempts || 0);
-    acc.pending+=Number(row.pending || 0);
-    acc.recovered+=Number(row.recovered || 0);
-    acc.failed+=Number(row.failed || 0);
-    return acc;
-  },{observed:0,attempts:0,pending:0,recovered:0,failed:0,successPct:0});
-  newsImpactRecoverySummary.successPct=newsImpactRecoverySummary.attempts
-    ? Math.round((newsImpactRecoverySummary.recovered/newsImpactRecoverySummary.attempts)*1000)/10
-    : 0;
-  const newsImpactRecoveryGuard={windowMinutes:NEWS_IMPACT_RECOVERY_WINDOW_MINUTES,minimumSample:NEWS_IMPACT_FUNNEL_MIN_USERS,latestAttemptPerJourney:true,meaning:'confirmed_delivery_after_real_recovery_attempt'};
-  const newsImpactRecoveryStrategyLoaded=await loadNewsImpactRecoveryStrategyEvidence(cfg);
-  const newsImpactRecoveryStrategyEvidence=newsImpactRecoveryStrategyLoaded.available ? newsImpactRecoveryStrategyLoaded.evidence : [];
-  const newsImpactRecoveryStrategyRecentEvidence=newsImpactRecoveryStrategyLoaded.available ? newsImpactRecoveryStrategyLoaded.recentEvidence : [];
-  const newsImpactRecoveryStrategyPriorEvidence=newsImpactRecoveryStrategyLoaded.available ? newsImpactRecoveryStrategyLoaded.priorEvidence : [];
-  const newsImpactRecoveryStrategyBaseMatrix=newsImpactRecoveryStrategyLoaded.available
-    ? buildNewsImpactRecoveryStrategyMatrix(newsImpactRecoveryStrategyEvidence,newsImpactRecoveryStrategyRecentEvidence)
-    : [];
-  const newsImpactRecoveryStrategyMatrix=buildNewsImpactRecoveryDriftMatrix(newsImpactRecoveryStrategyBaseMatrix,newsImpactRecoveryStrategyPriorEvidence,newsImpactRecoveryStrategyRecentEvidence);
-  const newsImpactRecoveryTransitionHistory=newsImpactRecoveryStrategyLoaded.available
-    ? (newsImpactRecoveryStrategyLoaded.transitionHistory || [])
-    : [];
-  const newsImpactRecoveryTransitionSummary=summarizeNewsImpactRecoveryTransitions(newsImpactRecoveryTransitionHistory);
-  const newsImpactRecoveryIncidentEvents=newsImpactRecoveryStrategyLoaded.available
-    ? (newsImpactRecoveryStrategyLoaded.incidentEvents || [])
-    : [];
-  const newsImpactRecoveryIncidentAcknowledgements=newsImpactRecoveryStrategyLoaded.available
-    ? (newsImpactRecoveryStrategyLoaded.incidentAcknowledgements || [])
-    : [];
-  const newsImpactRecoveryIncidents=buildNewsImpactRecoveryIncidentCenter(
-    newsImpactRecoveryStrategyMatrix,
-    newsImpactRecoveryIncidentEvents,
-    newsImpactRecoveryIncidentAcknowledgements,
-    newsImpactRecoveryStrategyLoaded.reason,
-    {asOfMs:analyticsNowMs},
-  );
-  const newsImpactRecoveryIncidentSummary=summarizeNewsImpactRecoveryIncidents(newsImpactRecoveryIncidents);
-  const newsImpactRecoveryIncidentSloDashboard=newsImpactRecoveryStrategyLoaded.available
-    ? buildNewsImpactRecoveryIncidentSloDashboard(
-        newsImpactRecoveryStrategyLoaded.incidentEpisodeHistory || [],
-        {asOfMs:analyticsNowMs,weeks:4},
-      )
-    : {
-        available:false,
-        reason:String(newsImpactRecoveryStrategyLoaded.reason || 'evidence_unavailable'),
-        windowDays:28,
-        weeks:4,
-        generatedAt:new Date(analyticsNowMs).toISOString(),
-        summary:{episodes:0,recurringPairs:0,ackSloPct:null,recoverySloPct:null},
-        weekly:[],
-        repeated:[],
-        privacy:{telegramIdsExposed:false,rawErrorsExposed:false},
-      };
-  const newsImpactRecoveryIncidentSloBreachFeed=newsImpactRecoveryStrategyLoaded.available
-    ? buildNewsImpactRecoveryIncidentSloBreachFeed(
-        newsImpactRecoveryStrategyLoaded.incidentEpisodeHistory || [],
-        {asOfMs:analyticsNowMs,limit:20},
-      )
-    : {
-        available:false,
-        reason:String(newsImpactRecoveryStrategyLoaded.reason || 'evidence_unavailable'),
-        generatedAt:new Date(analyticsNowMs).toISOString(),
-        summary:{breachEpisodes:0,activeBreaches:0,critical:0,ackBreaches:0,recoveryBreaches:0,repeatedPairs:0},
-        items:[],
-        repeated:[],
-        privacy:{telegramIdsExposed:false,rawErrorsExposed:false,freeTextExposed:false},
-        routingChanged:false,
-      };
-  const newsImpactRecoveryIncidentSloBreachWatchlist=buildNewsImpactRecoveryIncidentSloBreachWatchlist(
-    newsImpactRecoveryIncidentSloBreachFeed,
-    {limit:10},
-  );
-  const newsImpactRecoveryIncidentSloBreachTriage=buildNewsImpactRecoveryIncidentSloBreachTriage(
-    newsImpactRecoveryIncidentSloBreachWatchlist,
-    {limit:10},
-  );
-  const newsImpactRecoveryIncidentSloBreachTriageTrend=newsImpactRecoveryStrategyLoaded.available
-    ? buildNewsImpactRecoveryIncidentSloBreachTriageTrend(
-        newsImpactRecoveryStrategyLoaded.incidentEpisodeHistory || [],
-        {asOfMs:analyticsNowMs,weeks:4},
-      )
-    : {
-        available:false,
-        reason:String(newsImpactRecoveryStrategyLoaded.reason || 'evidence_unavailable'),
-        weeks:4,
-        generatedAt:new Date(analyticsNowMs).toISOString(),
-        summary:{currentTotal:0,totalDelta:0,recoveryOverdueDelta:0,ackCriticalDelta:0,ackOverdueDelta:0,stuckPairs:0},
-        weekly:[],
-        stuck:[],
-        thresholds:{
-          ackMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,
-          criticalAckMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,
-          recoveryMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,
-          source:'rc87_existing_slo',
-        },
-        privacy:{telegramIdsExposed:false,rawErrorsExposed:false,freeTextExposed:false},
-        routingChanged:false,
-        persistence:'none',
-      };
-  const newsImpactRecoveryIncidentSloBreachImpactRanking=newsImpactRecoveryStrategyLoaded.available
-    ? buildNewsImpactRecoveryIncidentSloBreachImpactRanking(
-        newsImpactRecoveryStrategyLoaded.incidentEpisodeHistory || [],
-        {asOfMs:analyticsNowMs,limit:10},
-      )
-    : {
-        available:false,
-        reason:String(newsImpactRecoveryStrategyLoaded.reason || 'evidence_unavailable'),
-        generatedAt:new Date(analyticsNowMs).toISOString(),
-        summary:{pairs:0,activePairs:0,breachEpisodes:0,totalOverdueMinutes:0,ackOverdueMinutes:0,recoveryOverdueMinutes:0,topContributionPct:0},
-        ranking:[],
-        thresholds:{
-          ackMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,
-          criticalAckMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,
-          recoveryMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,
-          source:'rc87_existing_slo',
-        },
-        methodology:'sum_minutes_above_existing_ack_and_recovery_slo',
-        privacy:{telegramIdsExposed:false,rawErrorsExposed:false,freeTextExposed:false},
-        routingChanged:false,
-        persistence:'none',
-      };
-  const newsImpactRecoveryIncidentSloBreachImpactTrend=newsImpactRecoveryStrategyLoaded.available
-    ? buildNewsImpactRecoveryIncidentSloBreachImpactTrend(
-        newsImpactRecoveryStrategyLoaded.incidentEpisodeHistory || [],
-        {asOfMs:analyticsNowMs,weeks:4,limit:10},
-      )
-    : {
-        available:false,
-        reason:String(newsImpactRecoveryStrategyLoaded.reason || 'evidence_unavailable'),
-        weeks:4,
-        generatedAt:new Date(analyticsNowMs).toISOString(),
-        summary:{currentOverdueMinutes:0,previousOverdueMinutes:0,deltaMinutes:0,increasedPairs:0,decreasedPairs:0,unchangedPairs:0},
-        weekly:[],
-        pairs:[],
-        thresholds:{
-          ackMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,
-          criticalAckMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,
-          recoveryMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,
-          source:'rc87_existing_slo',
-        },
-        methodology:'weekly_overlap_minutes_above_existing_ack_and_recovery_slo',
-        privacy:{telegramIdsExposed:false,rawErrorsExposed:false,freeTextExposed:false},
-        routingChanged:false,
-        persistence:'none',
-      };
-  const newsImpactRecoveryIncidentSloImpactConcentration=buildNewsImpactRecoveryIncidentSloImpactConcentration(
-    newsImpactRecoveryIncidentSloBreachImpactRanking,
-  );
-  const newsImpactRecoveryIncidentSloImpactConcentrationTrend=newsImpactRecoveryStrategyLoaded.available
-    ? buildNewsImpactRecoveryIncidentSloImpactConcentrationTrend(
-        newsImpactRecoveryStrategyLoaded.incidentEpisodeHistory || [],
-        {asOfMs:analyticsNowMs,weeks:4},
-      )
-    : {
-        available:false,
-        reason:String(newsImpactRecoveryStrategyLoaded.reason || 'evidence_unavailable'),
-        weeks:4,
-        generatedAt:new Date(analyticsNowMs).toISOString(),
-        summary:{
-          currentPairs:0,previousPairs:0,pairDelta:0,currentOverdueMinutes:0,previousOverdueMinutes:0,
-          top1ContributionPct:0,top3ContributionPct:0,top5ContributionPct:0,
-          top1DeltaPctPoints:0,top3DeltaPctPoints:0,top5DeltaPctPoints:0,
-          top1Direction:'unchanged',top3Direction:'unchanged',top5Direction:'unchanged',
-        },
-        weekly:[],
-        methodology:'weekly_cumulative_share_of_total_overdue_minutes',
-        thresholds:{
-          ackMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,
-          criticalAckMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,
-          recoveryMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,
-          source:'rc87_existing_slo',
-        },
-        privacy:{telegramIdsExposed:false,rawErrorsExposed:false,freeTextExposed:false},
-        routingChanged:false,
-        persistence:'none',
-      };
-  const newsImpactRecoveryIncidentSloImpactExecutiveSummary=buildNewsImpactRecoveryIncidentSloImpactExecutiveSummary(
-    newsImpactRecoveryIncidentSloBreachImpactRanking,
-    newsImpactRecoveryIncidentSloBreachImpactTrend,
-    newsImpactRecoveryIncidentSloImpactConcentration,
-    newsImpactRecoveryIncidentSloImpactConcentrationTrend,
-  );
-  const newsImpactRecoveryIncidentSloImpactFocusQueue=buildNewsImpactRecoveryIncidentSloImpactFocusQueue(
-    newsImpactRecoveryIncidentSloBreachImpactRanking,
-    newsImpactRecoveryIncidentSloBreachImpactTrend,
-    newsImpactRecoveryIncidentSloImpactExecutiveSummary,
-    {limit:5},
-  );
-  const newsImpactRecoveryIncidentSloGuard={
-    ackTargetMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,
-    ackCriticalMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,
-    recoveryTargetMinutes:NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,
-    escalation:'derived_from_incident_age_and_ack_state',
-    persistence:'none',
-  };
-  const newsImpactRecoveryStrategyAlerts=buildNewsImpactRecoveryAdminAlerts(
-    newsImpactRecoveryStrategyMatrix,
-    newsImpactRecoveryStrategyLoaded.reason,
-    newsImpactRecoveryIncidents,
-  );
-  const newsImpactRecoveryAlertSummary=summarizeNewsImpactRecoveryAlerts(newsImpactRecoveryStrategyAlerts);
-  const newsImpactRecoveryStrategySummary={
-    available:Boolean(newsImpactRecoveryStrategyLoaded.available),
-    evidenceReason:String(newsImpactRecoveryStrategyLoaded.reason || 'unknown'),
-    rules:newsImpactRecoveryStrategyMatrix.length,
-    adaptive:newsImpactRecoveryStrategyMatrix.filter(x=>x.strategy==='adaptive').length,
-    fixed:newsImpactRecoveryStrategyMatrix.filter(x=>x.strategy==='fixed').length,
-    stabilityBlocked:newsImpactRecoveryStrategyMatrix.filter(x=>['stability_sample','recent_regression'].includes(x.guardReason)).length,
-    driftBlocked:newsImpactRecoveryStrategyMatrix.filter(x=>x.guardReason==='performance_drift').length,
-    adaptiveUsed:newsImpactFailureRows.filter(x=>String(x?.metadata?.strategy || '')==='adaptive').length,
-    fixedUsed:newsImpactFailureRows.filter(x=>String(x?.metadata?.strategy || 'fixed')!=='adaptive').length,
-  };
-  const newsImpactRecoveryStrategyGuard={
-    minAttempts:NEWS_IMPACT_RECOVERY_STRATEGY_MIN_ATTEMPTS,
-    minLiftPctPoints:NEWS_IMPACT_RECOVERY_STRATEGY_MIN_LIFT_PCT_POINTS,
-    lookbackDays:NEWS_IMPACT_RECOVERY_STRATEGY_LOOKBACK_DAYS,
-    stabilityWindowDays:NEWS_IMPACT_RECOVERY_STABILITY_WINDOW_DAYS,
-    stabilityMinAttempts:NEWS_IMPACT_RECOVERY_STABILITY_MIN_ATTEMPTS,
-    sourceWindowMinutes:NEWS_IMPACT_RECOVERY_SOURCE_WINDOW_MINUTES,
-    interval:'non_overlapping_wilson_95',
-    recentRule:'candidate_not_worse',
-    driftPriorMinAttempts:NEWS_IMPACT_RECOVERY_DRIFT_PRIOR_MIN_ATTEMPTS,
-    driftRecentMinAttempts:NEWS_IMPACT_RECOVERY_DRIFT_RECENT_MIN_ATTEMPTS,
-    driftDropPctPoints:NEWS_IMPACT_RECOVERY_DRIFT_DROP_PCT_POINTS,
-    driftRule:'recent_upper_below_prior_lower_wilson_95',
-    evidenceSource:'shared_runtime_loader',
-    fallback:'fixed',
-  };
-  const newsImpactActionFunnel=buildNewsImpactActionFunnel(newsImpactRows,newsImpactActionRows,{asOfMs:analyticsNowMs});
-  const newsImpactActionBottleneck=newsImpactActionFunnelBottleneck(newsImpactActionFunnel);
-  const newsImpactActionConfidenceGuard={minUsers:NEWS_IMPACT_FUNNEL_MIN_USERS,stableUsers:NEWS_IMPACT_FUNNEL_STABLE_USERS,interval:'wilson_95'};
-  const newsImpactActionAttributionGuard={actionWindowMinutes:NEWS_IMPACT_ACTION_WINDOW_MINUTES,maturationMinutes:NEWS_IMPACT_ACTION_WINDOW_MINUTES,requiresActionAfterDecision:true,allowsBoundaryFollowup:true};
-  const previousNewsImpactRows=previousWindowRows.filter(x=>String(x.event_name || '')==='news_impact_delta');
-  const previousNewsImpactActionRows=comparisonRows.filter(x=>String(x.event_name || '')==='news_impact_action');
-  const previousNewsImpactActionFunnel=buildNewsImpactActionFunnel(previousNewsImpactRows,previousNewsImpactActionRows,{asOfMs:analyticsNowMs});
-  const newsImpactActionTrend=trendAvailable ? buildNewsImpactActionTrend(newsImpactActionFunnel,previousNewsImpactActionFunnel) : [];
-  const newsImpactActionTrendGuard={comparisonDays:days,requiresBothPeriods:true,signalRule:'non_overlapping_wilson_95'};
-  const shareRows=rows.filter(x=>['share_created','share_link_created','share_card_created'].includes(String(x.event_name || '')));
-  const deepLinkRows=rows.filter(x=>String(x.event_name || '')==='fixture_deep_link_open');
-  const deepLinkUsers=new Set(deepLinkRows.map(x=>Number(x.telegram_id || 0)).filter(Boolean));
-  const deepLinkAiRows=rows.filter(x=>String(x.event_name || '')==='quick_ai' && String(x?.metadata && typeof x.metadata==='object' ? x.metadata.source || '' : '')==='deep_link');
-  const deepLinkAiUsers=new Set(deepLinkAiRows.map(x=>Number(x.telegram_id || 0)).filter(Boolean));
-  const shareUsers=new Set(shareRows.map(x=>Number(x.telegram_id || 0)).filter(Boolean));
-  const searchResultRows=rows.filter(x=>String(x.event_name || '')==='search_result');
-  const searchOutcome=(row)=>String(row?.metadata && typeof row.metadata==='object' ? row.metadata.outcome || '' : '');
-  const searchMatches=searchResultRows.filter(x=>searchOutcome(x)==='match').length;
-  const searchRecognizedNoMatch=searchResultRows.filter(x=>searchOutcome(x)==='recognized_no_match').length;
-  const searchNotFound=searchResultRows.filter(x=>searchOutcome(x)==='not_found').length;
-  const searchRecoveredRecent=searchResultRows.filter(x=>searchOutcome(x)==='match' && String(x?.metadata && typeof x.metadata==='object' ? x.metadata.recovery || '' : '')==='recent').length;
-  const transitions=funnel.slice(1).map((stage,index)=>({
-    from:funnel[index]?.key || '',to:stage.key,label:`${funnel[index]?.label || ''} → ${stage.label || ''}`,
-    fromUsers:Number(funnel[index]?.users || 0),toUsers:Number(stage.users || 0),conversionPct:Number(stage.fromPreviousPct || 0),
-    dropPct:Math.max(0,Math.round((100-Number(stage.fromPreviousPct || 0))*10)/10),
-  }));
-  const bottleneck=[...transitions].filter(x=>x.fromUsers>0).sort((a,b)=>b.dropPct-a.dropPct)[0] || null;
-  const campaigns=[...campaignMap.values()].map(x=>({
-    source:x.source,campaign:x.campaign,users:x.users.size,entries:x.entry.size,fullAi:x.fullAi.size,events:x.events,
-    conversionPct:x.entry.size ? Math.round((x.fullAi.size/x.entry.size)*1000)/10 : 0,
-  })).sort((a,b)=>b.entries-a.entries || b.fullAi-a.fullAi).slice(0,20);
-  const mediaCampaigns=buildMediaCampaignPerformance(rows);
-  const mediaSummary=mediaCampaigns.reduce((acc,x)=>{
-    acc.linksCreated+=Number(x.linksCreated || 0);
-    acc.entries+=Number(x.entries || 0);
-    acc.deepLinkOpens+=Number(x.deepLinkOpens || 0);
-    acc.quickAi+=Number(x.quickAi || 0);
-    acc.fullAi+=Number(x.fullAi || 0);
-    return acc;
-  },{materials:mediaCampaigns.length,linksCreated:0,entries:0,deepLinkOpens:0,quickAi:0,fullAi:0,conversionPct:0});
-  mediaSummary.conversionPct=mediaSummary.entries ? Math.round((mediaSummary.fullAi/mediaSummary.entries)*1000)/10 : 0;
-  return json({
-    available:true,
-    days,
-    generatedAt:new Date().toISOString(),
-    retentionDays:Number(cfg.growthRetentionDays || 90),
-    events:rows.length,
-    truncated,
-    uniqueUsers:new Set(rows.map(x=>Number(x.telegram_id || 0)).filter(Boolean)).size,
-    funnel,
-    bottleneck,
-    handoff:{users:handoffUsers.size,fullAiUsers:handoffToFull.size,conversionPct:handoffUsers.size?Math.round((handoffToFull.size/handoffUsers.size)*1000)/10:0},
-    rechecks:{total:recheckRows.length,free:recheckFree,charged:Math.max(0,recheckRows.length-recheckFree),material:recheckMaterial,stable:recheckStable},
-    returnLoop:{newsOpen:newsOpen.size,newsReturn:newsReturn.size,aiIntent:newsAiIntent.size,smartFixtureIntent:smartNewsAiUsers.size,impactChecks:newsImpactRows.length,impactCompared:newsImpactCompared.size,impactMaterial:newsImpactMaterial.size,intentPct:newsOpen.size?Math.round((newsAiIntent.size/newsOpen.size)*1000)/10:0,conversionPct:newsOpen.size?Math.round((newsReturn.size/newsOpen.size)*1000)/10:0},
-    newsImpactDecisionSummary,
-    newsImpactActionSummary,
-    newsImpactOutcomeSummary,
-    newsImpactActionOutcomeQuality,
+let launchFunnelRuntime;
+async function apiLaunchFunnel(...args) {
+  launchFunnelRuntime ||= createLaunchFunnelRuntime({
+    NEWS_IMPACT_ACTION_WINDOW_MINUTES,
+    NEWS_IMPACT_FAILURE_CODES,
+    NEWS_IMPACT_FUNNEL_MIN_USERS,
+    NEWS_IMPACT_FUNNEL_STABLE_USERS,
+    NEWS_IMPACT_OUTCOME_WINDOW_MINUTES,
+    NEWS_IMPACT_RECOVERY_DRIFT_DROP_PCT_POINTS,
+    NEWS_IMPACT_RECOVERY_DRIFT_PRIOR_MIN_ATTEMPTS,
+    NEWS_IMPACT_RECOVERY_DRIFT_RECENT_MIN_ATTEMPTS,
+    NEWS_IMPACT_RECOVERY_INCIDENT_ACK_CRITICAL_MINUTES,
+    NEWS_IMPACT_RECOVERY_INCIDENT_ACK_SLO_MINUTES,
+    NEWS_IMPACT_RECOVERY_INCIDENT_RECOVERY_SLO_MINUTES,
+    NEWS_IMPACT_RECOVERY_SOURCE_WINDOW_MINUTES,
+    NEWS_IMPACT_RECOVERY_STABILITY_MIN_ATTEMPTS,
+    NEWS_IMPACT_RECOVERY_STABILITY_WINDOW_DAYS,
+    NEWS_IMPACT_RECOVERY_STRATEGY_LOOKBACK_DAYS,
+    NEWS_IMPACT_RECOVERY_STRATEGY_MIN_ATTEMPTS,
+    NEWS_IMPACT_RECOVERY_STRATEGY_MIN_LIFT_PCT_POINTS,
+    NEWS_IMPACT_RECOVERY_WINDOW_MINUTES,
+    buildMediaCampaignPerformance,
+    buildNewsImpactActionFunnel,
+    buildNewsImpactActionOutcomeQuality,
+    buildNewsImpactActionTrend,
+    buildNewsImpactFailureDiagnostics,
+    buildNewsImpactRecoveryAdminAlerts,
+    buildNewsImpactRecoveryDriftMatrix,
+    buildNewsImpactRecoveryEffectiveness,
+    buildNewsImpactRecoveryIncidentCenter,
+    buildNewsImpactRecoveryIncidentSloBreachFeed,
+    buildNewsImpactRecoveryIncidentSloBreachImpactRanking,
+    buildNewsImpactRecoveryIncidentSloBreachImpactTrend,
+    buildNewsImpactRecoveryIncidentSloBreachTriage,
+    buildNewsImpactRecoveryIncidentSloBreachTriageTrend,
+    buildNewsImpactRecoveryIncidentSloBreachWatchlist,
+    buildNewsImpactRecoveryIncidentSloDashboard,
+    buildNewsImpactRecoveryIncidentSloImpactConcentration,
+    buildNewsImpactRecoveryIncidentSloImpactConcentrationTrend,
+    buildNewsImpactRecoveryIncidentSloImpactExecutiveSummary,
+    buildNewsImpactRecoveryIncidentSloImpactFocusQueue,
+    buildNewsImpactRecoveryStrategyMatrix,
+    cleanLaunchPart,
+    hasSupabase,
+    json,
+    loadNewsImpactRecoveryStrategyEvidence,
+    newsImpactActionFunnelBottleneck,
     newsImpactOutcomeBottleneck,
-    newsImpactOutcomeGuard,
-    newsImpactFailureSummary,
-    newsImpactFailureDiagnostics,
-    newsImpactFailureGuard,
-    newsImpactRecoverySummary,
-    newsImpactRecoveryEffectiveness,
-    newsImpactRecoveryBestStrategy,
-    newsImpactRecoveryGuard,
-    newsImpactRecoveryStrategySummary,
-    newsImpactRecoveryStrategyMatrix,
-    newsImpactRecoveryStrategyGuard,
-    newsImpactRecoveryTransitionHistory,
-    newsImpactRecoveryTransitionSummary,
-    newsImpactRecoveryStrategyAlerts,
-    newsImpactRecoveryAlertSummary,
-    newsImpactRecoveryIncidents,
-    newsImpactRecoveryIncidentSummary,
-    newsImpactRecoveryIncidentSloGuard,
-    newsImpactRecoveryIncidentSloDashboard,
-    newsImpactRecoveryIncidentSloBreachFeed,
-    newsImpactRecoveryIncidentSloBreachWatchlist,
-    newsImpactRecoveryIncidentSloBreachTriage,
-    newsImpactRecoveryIncidentSloBreachTriageTrend,
-    newsImpactRecoveryIncidentSloBreachImpactRanking,
-    newsImpactRecoveryIncidentSloBreachImpactTrend,
-    newsImpactRecoveryIncidentSloImpactConcentration,
-    newsImpactRecoveryIncidentSloImpactConcentrationTrend,
-    newsImpactRecoveryIncidentSloImpactExecutiveSummary,
-    newsImpactRecoveryIncidentSloImpactFocusQueue,
-    newsImpactActionFunnel,
-    newsImpactActionBottleneck,
-    newsImpactActionConfidenceGuard,
-    newsImpactActionAttributionGuard,
-    newsImpactActionTrend,
-    newsImpactActionTrendGuard,
-    trendAvailable,
-    trendTruncated,
-    mediaLoop:{shareEvents:shareRows.length,shareUsers:shareUsers.size,deepLinkOpens:deepLinkRows.length,deepLinkUsers:deepLinkUsers.size,aiUsers:deepLinkAiUsers.size,conversionPct:deepLinkUsers.size?Math.round((deepLinkAiUsers.size/deepLinkUsers.size)*1000)/10:0},
-    searchQuality:{attempts:searchResultRows.length,match:searchMatches,recognizedNoMatch:searchRecognizedNoMatch,notFound:searchNotFound,recoveredRecent:searchRecoveredRecent,matchPct:searchResultRows.length?Math.round((searchMatches/searchResultRows.length)*1000)/10:0},
-    campaigns,
-    mediaCampaigns,
-    mediaSummary,
-    privacy:'Ответ содержит только агрегаты; Telegram ID и текст поисковых запросов пользователей не возвращаются.',
+    newsImpactRecoveryBest,
+    redactOpsString,
+    summarizeNewsImpactRecoveryAlerts,
+    summarizeNewsImpactRecoveryIncidents,
+    summarizeNewsImpactRecoveryTransitions,
+    supaSelectPaged,
   });
+  return launchFunnelRuntime(...args);
 }
-
 async function getUsage(userId, cfg) {
   const date = todayUtc();
   if (hasSupabase(cfg)) {
@@ -15936,675 +15540,63 @@ function productionMonitorSelfTest() {
   };
 }
 
-async function runProductionMonitor(cfg, scheduledAt = new Date(), options = {}) {
-  const now = scheduledAt instanceof Date && Number.isFinite(scheduledAt.getTime()) ? scheduledAt : new Date();
-  const providerSloFlush = options.record !== false
-    ? await flushProviderSloWindow(cfg)
-    : { skipped:true, reason:'read_only_monitor' };
-  const currentStart = new Date(now.getTime() - 60 * 60_000);
-  const historyStart = new Date(now.getTime() - 6 * 60 * 60_000);
-
-  const [
-    supabase,
-    schemaDrift,
-    source,
-    telegramWebhook,
-    providerSloSource,
-    providerAlertSource,
-    providerAlertLedger,
-    providerAlertContract,
-    providerAlertDestinations,
-    digestReliabilitySource,
-    digestSloSource,
-  ] = await Promise.all([
-    probeSupabaseConfirmed(cfg),
-    probeSupabaseSchemaDriftConfirmed(cfg),
-    readOpsEventsRange(cfg, historyStart.toISOString(), now.toISOString(), 1000),
-    readTelegramDedupeHealth(cfg,60),
-    readProviderSloWindows(cfg,168),
-    readProviderIncidentAlertEvents(cfg,168),
-    readProviderIncidentAlertDeliveries(cfg,168),
-    readProviderIncidentAlertDeliveryContract(cfg),
-    providerIncidentAlertDestinations(cfg),
-    readDailyDigestOpsEvents(cfg,new Date(now.getTime()-7*24*3600_000).toISOString(),now.toISOString(),1000),
-    readDailyDigestSloEvents(cfg,new Date(now.getTime()-30*24*3600_000).toISOString(),now.toISOString(),100),
-  ]);
-
-  const activeReleaseIdentity=currentReleaseIdentity(cfg);
-  const releaseMetricItems=source.items.filter(item =>
-    item?.source !== 'monitor'
-    && item?.source !== 'release_regression'
-    && item?.source !== 'release_regression_alert'
-  );
-  const releaseScope=scopeOpsEventsToDeployment(
-    releaseMetricItems,
-    activeReleaseIdentity,
-    {nowMs:now.getTime(),windowMs:60*60_000},
-  );
-  const releaseItems=releaseScope.actionable;
-  const current = summarizeReleaseWindow(releaseItems, 1);
-  const releaseHealth = releaseMonitorHealth(current, source.persistent);
-  const releaseRegression=postDeployRegressionReport(
-    releaseMetricItems,
-    activeReleaseIdentity,
-    {nowMs:now.getTime(),windowsMinutes:[15,30,60]},
-  );
-  const releaseRegressionLifecycle=options.record !== false
-    ? planPostDeployRegressionLifecycle(releaseRegression,source.items)
-    : {action:'none',reason:'read_only_monitor'};
-  const releaseRegressionAlertCandidate=options.record !== false
-    ? planPostDeployRegressionAlert(source.items,providerAlertLedger.items,{
-        deploySha:activeReleaseIdentity.deploySha,
-        plannedTransition:releaseRegressionLifecycle,
-        destinations:providerAlertDestinations,
-        nowMs:now.getTime(),
-      })
-    : {action:'none',reason:'read_only_monitor'};
-  let releaseRegressionLifecyclePersistence=releaseRegressionLifecycle.action === 'record'
-    ? 'pending'
-    : 'not_required';
-  const supabaseAuthFailures = releaseItems.filter(item =>
-    /HTTP 401|PGRST303|invalid.*jwt|invalid.*api.?key/i.test(String(item?.message || ''))
-  ).length;
-  const provider = providerSnapshot();
-  const providerSloWindows = Array.isArray(providerSloSource.items) ? providerSloSource.items : [];
-  const providerSloRecentWindows = providerSloWindows.filter(item => {
-    const endedAt = Date.parse(item?.metadata?.windowEndedAt || item?.created_at || '');
-    return Number.isFinite(endedAt) && endedAt >= historyStart.getTime();
+let productionMonitorRuntime;
+async function runProductionMonitor(...args) {
+  productionMonitorRuntime ||= createProductionMonitorRuntime({
+    APP_VERSION,
+    RC_NAME,
+    assessDailyDigestReliabilitySlo,
+    assessSecuritySignals,
+    beginProviderIncidentAlertDeliverySend,
+    buildDailyDigestIncidentReport,
+    buildProviderSloIncidentTimeline,
+    claimProviderIncidentAlertDelivery,
+    currentReleaseIdentity,
+    dailyDigestIncidentAlertOpsEvents,
+    deliverOperationalIncidentAlert,
+    deliverProviderIncidentAlert,
+    finalizeProviderIncidentAlertDelivery,
+    flushProviderSloWindow,
+    formatDailyDigestIncidentAlert,
+    formatPostDeployRegressionAlert,
+    formatSecurityIncidentAlert,
+    memory,
+    planDailyDigestIncidentAlert,
+    planDailyDigestReliabilitySloEvent,
+    planPostDeployRegressionAlert,
+    planPostDeployRegressionLifecycle,
+    planProviderIncidentAlert,
+    postDeployRegressionAlertOpsEvents,
+    postDeployRegressionReport,
+    probeSupabaseConfirmed,
+    probeSupabaseSchemaDriftConfirmed,
+    productionMonitorState,
+    providerIncidentAlertDestinations,
+    providerIncidentAlertLedgerSummary,
+    providerIncidentAlertOpsEvents,
+    providerSloIncidentOpsEvent,
+    providerSloIncidentUpdateOpsEvent,
+    providerSnapshot,
+    readDailyDigestOpsEvents,
+    readDailyDigestSloEvents,
+    readOpsEventsRange,
+    readProviderIncidentAlertDeliveries,
+    readProviderIncidentAlertDeliveryContract,
+    readProviderIncidentAlertEvents,
+    readProviderSloWindows,
+    readTelegramDedupeHealth,
+    recordOpsEvent,
+    redactOpsString,
+    releaseMonitorHealth,
+    scopeOpsEventsToDeployment,
+    securityIncidentOpsEvent,
+    securityIncidentTimeline,
+    sendTelegramMessage,
+    summarizeProviderObservabilityWindows,
+    summarizeReleaseWindow,
   });
-  const providerSlo=summarizeProviderObservabilityWindows(
-    providerSloRecentWindows,
-    {hours:6,includeCurrent:!providerSloSource.distributed},
-  );
-  const providerSloIncident = buildProviderSloIncidentTimeline(providerSloWindows, { nowMs:now.getTime() });
-  const incidentAlertCandidate = options.record !== false
-    ? planProviderIncidentAlert(providerSloIncident, providerAlertLedger.items, {
-        nowMs:now.getTime(),
-        destinations:providerAlertDestinations,
-      })
-    : { action:'none', reason:'read_only_monitor' };
-  const digestIncident = buildDailyDigestIncidentReport(
-    source.items.filter(item => item?.source === 'telegram' && item?.event_type === 'daily_digest'),
-    { nowMs:now.getTime() },
-  );
-  const digestReliabilitySlo=assessDailyDigestReliabilitySlo(
-    digestReliabilitySource.items,
-    {nowMs:now.getTime(),days:7},
-  );
-  const digestReliabilitySloEvent=options.record !== false
-    ? planDailyDigestReliabilitySloEvent(digestReliabilitySlo,digestSloSource.items)
-    : {action:'none',reason:'read_only_monitor'};
-  const digestAlertCandidate = options.record !== false
-    ? planDailyDigestIncidentAlert(digestIncident, providerAlertLedger.items, {
-        destinations:providerAlertDestinations,
-      })
-    : { action:'none', reason:'read_only_monitor' };
-  const securityAssessment=assessSecuritySignals(source.items,{nowMs:now.getTime(),windowMinutes:15});
-  const securityIncident=securityIncidentTimeline(securityAssessment,source.items,{nowMs:now.getTime()});
-  const securityAlertCandidate=options.record !== false
-    ? planProviderIncidentAlert(securityIncident,providerAlertLedger.items,{
-        nowMs:now.getTime(),
-        destinations:providerAlertDestinations,
-      })
-    : {action:'none',reason:'read_only_monitor'};
-  const incidentAlertPersistenceReady = Boolean(providerAlertLedger.persistent && providerAlertContract.ok);
-  const releaseRegressionAlertPlan = releaseRegressionAlertCandidate.action === 'send' && !incidentAlertPersistenceReady
-    ? {
-        ...releaseRegressionAlertCandidate,
-        action:'none',
-        reason:'persistent_ledger_unavailable',
-        blockedCandidate:true,
-      }
-    : releaseRegressionAlertCandidate;
-  const incidentAlertPlan = incidentAlertCandidate.action === 'send' && !incidentAlertPersistenceReady
-    ? {
-        ...incidentAlertCandidate,
-        action:'none',
-        reason:'persistent_ledger_unavailable',
-        blockedCandidate:true,
-      }
-    : incidentAlertCandidate;
-  const digestAlertPlan = digestAlertCandidate.action === 'send' && !incidentAlertPersistenceReady
-    ? {
-        ...digestAlertCandidate,
-        action:'none',
-        reason:'persistent_ledger_unavailable',
-        blockedCandidate:true,
-      }
-    : digestAlertCandidate;
-  const securityAlertPlan = securityAlertCandidate.action === 'send' && !incidentAlertPersistenceReady
-    ? {
-        ...securityAlertCandidate,
-        action:'none',
-        reason:'persistent_ledger_unavailable',
-        blockedCandidate:true,
-      }
-    : securityAlertCandidate;
-  const health = productionMonitorState({
-    supabaseOk: supabase.ok,
-    schemaOk: schemaDrift.ok,
-    schemaStatus: schemaDrift.failureMode || schemaDrift.status,
-    supabaseAuthFailures,
-    releaseState: releaseHealth.state,
-    providerHealth: provider.health,
-    providerSloState: providerSloIncident.state,
-    dailyDigestSloState:digestReliabilitySlo.state,
-    telegramDedupeState: telegramWebhook.state,
-    persistent: source.persistent,
-  });
-
-  const monitorScope=scopeOpsEventsToDeployment(
-    source.items.filter(item => item?.source === 'monitor' && item?.event_type === 'production_monitor'),
-    activeReleaseIdentity,
-    {nowMs:now.getTime(),windowMs:6*60*60_000},
-  );
-  const previousMonitor = [...monitorScope.actionable]
-    .sort((a,b)=>Date.parse(b?.created_at || '')-Date.parse(a?.created_at || ''))[0] || null;
-  const previousState = String(previousMonitor?.metadata?.state || '');
-  const previousAt = Date.parse(previousMonitor?.created_at || '');
-  const heartbeatDue = !Number.isFinite(previousAt) || now.getTime() - previousAt >= 6 * 60 * 60_000;
-  const stateChanged = previousState && previousState !== health.state;
-
-  const value = {
-    available: true,
-    version: APP_VERSION,
-    releaseCandidate: RC_NAME,
-    generatedAt: now.toISOString(),
-    cadenceMinutes: 15,
-    state: health.state,
-    label: health.label,
-    supabase: {
-      ok: Boolean(supabase.ok),
-      status: supabase.status || (supabase.ok ? 'ok' : 'unknown'),
-      latencyMs: Number(supabase.latencyMs || 0) || null,
-      attempts: Number(supabase.attempts || 1),
-      recovered: Boolean(supabase.recovered),
-      confirmedFailure: Boolean(supabase.confirmedFailure),
-      initialStatus: supabase.initialStatus || null,
-      initialLatencyMs: Number(supabase.initialLatencyMs || 0) || null,
-    },
-    schema: {
-      ok: Boolean(schemaDrift.ok),
-      status: String(schemaDrift.failureMode || schemaDrift.status || (schemaDrift.ok ? 'ok' : 'unavailable')),
-      checked: Number(schemaDrift.checked || 0),
-      missing: Array.isArray(schemaDrift.missing) ? schemaDrift.missing : [],
-      unavailable: Array.isArray(schemaDrift.unavailable) ? schemaDrift.unavailable : [],
-      failed: Array.isArray(schemaDrift.failed) ? schemaDrift.failed : [],
-      attempts: Number(schemaDrift.attempts || 1),
-      recovered: Boolean(schemaDrift.recovered),
-      confirmedFailure: Boolean(schemaDrift.confirmedFailure),
-      initialMissing: Array.isArray(schemaDrift.initialMissing) ? schemaDrift.initialMissing : [],
-      initialUnavailable: Array.isArray(schemaDrift.initialUnavailable) ? schemaDrift.initialUnavailable : [],
-      initialFailureMode: String(schemaDrift.initialFailureMode || ''),
-    },
-    release: {
-      state: releaseHealth.state,
-      score: Number(releaseHealth.score || 0),
-      errors: Number(current.errorLike || 0),
-      warnings: Number(current.warningLike || 0),
-      deployment:activeReleaseIdentity,
-      attribution:{
-        deploymentStartedAt:releaseScope.deploymentStartedAt,
-        exactEvents:Number(releaseScope.counts.exact || 0),
-        unattributedEvents:Number(releaseScope.counts.unattributed || 0),
-        excludedPriorDeploymentEvents:Number(releaseScope.counts.priorDeployment || 0),
-        attributionComplete:Boolean(releaseScope.attributionComplete),
-      },
-      regression:{
-        ...releaseRegression,
-        lifecycle:{
-          nextAction:releaseRegressionLifecycle.action === 'record' ? releaseRegressionLifecycle.code : 'none',
-          reason:releaseRegressionLifecycle.reason || '',
-        },
-        alerting:{
-          configured:Boolean(cfg.botToken && (cfg.adminTelegramIds || []).length),
-          persistent:incidentAlertPersistenceReady,
-          nextAction:releaseRegressionAlertPlan.action === 'send' ? releaseRegressionAlertPlan.kind : 'none',
-          reason:releaseRegressionAlertPlan.reason || '',
-          incidentId:releaseRegressionAlertPlan.incidentId || null,
-        },
-      },
-    },
-    provider: {
-      health: provider.health || 'waiting',
-      plan: provider.plan || 'UNKNOWN',
-      cooldownActive: Boolean(provider.cooldownActive),
-      slo: providerSlo.overall,
-      incident: providerSloIncident,
-      alerting:{
-        configured:Boolean(cfg.botToken && (cfg.adminTelegramIds || []).length),
-        adminRecipients:(cfg.adminTelegramIds || []).length,
-        persistent:incidentAlertPersistenceReady,
-        contractOk:Boolean(providerAlertContract.ok),
-        ledger:providerIncidentAlertLedgerSummary(providerAlertLedger.items),
-        nextAction:incidentAlertPlan.action === 'send' ? incidentAlertPlan.kind : 'none',
-        reason:incidentAlertPlan.reason || '',
-      },
-    },
-    telegramWebhook,
-    dailyDigest:{
-      incident:digestIncident,
-      reliabilitySlo:digestReliabilitySlo,
-      alerting:{
-        configured:Boolean(cfg.botToken && (cfg.adminTelegramIds || []).length),
-        persistent:incidentAlertPersistenceReady,
-        nextAction:digestAlertPlan.action === 'send' ? digestAlertPlan.kind : 'none',
-        reason:digestAlertPlan.reason || '',
-      },
-    },
-    security:{
-      assessment:securityAssessment,
-      incident:securityIncident,
-      alerting:{
-        configured:Boolean(cfg.botToken && (cfg.adminTelegramIds || []).length),
-        persistent:incidentAlertPersistenceReady,
-        nextAction:securityAlertPlan.action === 'send' ? securityAlertPlan.kind : 'none',
-        reason:securityAlertPlan.reason || '',
-      },
-    },
-    observability: {
-      persistent: Boolean(source.persistent && providerSloSource.persistent),
-      providerSloFlush,
-      providerSloWindowCount:Number(providerSlo.windowCount || 0),
-      providerSloHistoryWindows:Number(providerSloWindows.length || 0),
-      providerAlertHistoryEvents:Number(providerAlertSource.items?.length || 0),
-      providerAlertLedgerRows:Number(providerAlertLedger.items?.length || 0),
-      providerAlertLedgerStatus:String(providerAlertLedger.status || ''),
-      providerAlertContractStatus:String(providerAlertContract.status || ''),
-      dailyDigestReliabilityPersistent:Boolean(digestReliabilitySource.persistent),
-      dailyDigestReliabilityEvents:Number(digestReliabilitySource.items?.length || 0),
-      dailyDigestSloPersistent:Boolean(digestSloSource.persistent),
-      migrationReady:Boolean(source.migrationReady && providerSloSource.migrationReady && providerAlertLedger.persistent && providerAlertContract.ok),
-      supabaseAuthFailuresCurrentRelease:supabaseAuthFailures,
-      releaseExactEvents:Number(releaseScope.counts.exact || 0),
-      releaseUnattributedEvents:Number(releaseScope.counts.unattributed || 0),
-      releaseExcludedPriorDeploymentEvents:Number(releaseScope.counts.priorDeployment || 0),
-      releaseAttributionComplete:Boolean(releaseScope.attributionComplete),
-      postDeployRegressionState:String(releaseRegression.state || 'unavailable'),
-      postDeployRegressionCompletedWindows:Number(releaseRegression.completedWindows || 0),
-      postDeployRegressionLifecycleAction:releaseRegressionLifecycle.action === 'record' ? String(releaseRegressionLifecycle.code || '') : 'none',
-      postDeployRegressionAlertAction:releaseRegressionAlertPlan.action === 'send' ? String(releaseRegressionAlertPlan.kind || '') : 'none',
-    },
-    policy: {
-      consumesFootballApi: false,
-      mutatesUserData: false,
-      changesRuntimeControls: false,
-      autoRollback: false,
-      note: 'Монитор только наблюдает и записывает изменение состояния. Автоматический rollback намеренно не выполняется.',
-    },
-  };
-  memory.productionMonitor = { at: Date.now(), value };
-
-  if (options.record !== false && releaseRegressionLifecycle.action === 'record') {
-    const lifecycleWrite = await recordOpsEvent(cfg,releaseRegressionLifecycle).catch(() => null);
-    releaseRegressionLifecyclePersistence = String(lifecycleWrite?._persistenceStatus || 'failed');
-    value.release.regression.lifecycle.persistence = releaseRegressionLifecyclePersistence;
-    value.observability.postDeployRegressionLifecyclePersistence = releaseRegressionLifecyclePersistence;
-    if (releaseRegressionLifecyclePersistence === 'failed') {
-      console.error('POST_DEPLOY_REGRESSION_LIFECYCLE_PERSISTENCE_FAILED');
-    }
-  }
-
-  const releaseRegressionLifecycleReady = releaseRegressionLifecycle.action !== 'record'
-    || releaseRegressionLifecyclePersistence === 'persistent';
-
-  if (
-    options.record !== false
-    && releaseRegressionAlertCandidate.action === 'send'
-    && !releaseRegressionLifecycleReady
-  ) {
-    value.release.regression.alerting.nextAction='none';
-    value.release.regression.alerting.reason='lifecycle_persistence_unconfirmed';
-  }
-
-  if (options.record !== false && releaseRegressionAlertPlan.blockedCandidate) {
-    await recordOpsEvent(cfg,{
-      severity:'error',
-      source:'release_regression_alert',
-      eventType:'alert_delivery',
-      code:'POST_DEPLOY_REGRESSION_ALERT_PERSISTENCE_FAILED',
-      message:'Persistent alert delivery claim is unavailable; post-deploy regression alert was suppressed.',
-      endpoint:'cron:production-monitor',
-      meta:{
-        incidentId:releaseRegressionAlertPlan.incidentId || null,
-        alertKind:String(releaseRegressionAlertPlan.kind || ''),
-        deliveryKey:String(releaseRegressionAlertPlan.alertKey || releaseRegressionAlertPlan.deliveryKey || ''),
-        reason:'persistent_ledger_unavailable',
-      },
-    }).catch(()=>{});
-  }
-
-  if (
-    options.record !== false
-    && releaseRegressionAlertPlan.action === 'send'
-    && releaseRegressionLifecycleReady
-  ) {
-    let delivery;
-    try {
-      delivery = await deliverOperationalIncidentAlert({
-        plan:releaseRegressionAlertPlan,
-        text:formatPostDeployRegressionAlert(releaseRegressionAlertPlan),
-        adminTelegramIds:cfg.adminTelegramIds || [],
-        claimDelivery:input => claimProviderIncidentAlertDelivery(cfg,input),
-        beginDelivery:input => beginProviderIncidentAlertDeliverySend(cfg,input),
-        finalizeDelivery:input => finalizeProviderIncidentAlertDelivery(cfg,input),
-        sendMessage:(chatId,text) => sendTelegramMessage(chatId,text,cfg),
-        nowMs:now.getTime(),
-      });
-    } catch (error) {
-      delivery = {
-        ok:false,
-        outcomes:(releaseRegressionAlertPlan.targetDeliveries || []).map(target => ({
-          slot:Number(target?.slot),
-          state:'persistence_failure',
-          claimAcquired:false,
-          reason:redactOpsString(error?.message || error,160),
-        })),
-        deliveredSlots:[],
-        failedSlots:(releaseRegressionAlertPlan.targetDeliveries || []).map(target => Number(target?.slot)),
-        recipientCount:(releaseRegressionAlertPlan.targetDeliveries || []).length,
-      };
-    }
-    const releaseAlertEvents=postDeployRegressionAlertOpsEvents(releaseRegressionAlertPlan,delivery);
-    await Promise.allSettled(releaseAlertEvents.map(event => recordOpsEvent(cfg,event)));
-  }
-
-  if (options.record !== false && securityIncident.transition) {
-    const securityLifecycleEvent=securityIncidentOpsEvent(securityIncident.transition);
-    if (securityLifecycleEvent) await recordOpsEvent(cfg,securityLifecycleEvent).catch(()=>{});
-  }
-
-  if (options.record !== false && securityAlertPlan.blockedCandidate) {
-    await recordOpsEvent(cfg,{
-      severity:'error',
-      source:'security_alert',
-      eventType:'alert_delivery',
-      code:'SECURITY_INCIDENT_ALERT_PERSISTENCE_FAILED',
-      message:'Persistent alert delivery claim is unavailable; security alert was suppressed.',
-      endpoint:'cron:production-monitor',
-      meta:{
-        incidentId:securityAlertPlan.incidentId || null,
-        alertKind:String(securityAlertPlan.kind || ''),
-        deliveryKey:String(securityAlertPlan.alertKey || securityAlertPlan.deliveryKey || ''),
-        reason:'persistent_ledger_unavailable',
-      },
-    }).catch(()=>{});
-  }
-
-  if (options.record !== false && securityAlertPlan.action === 'send') {
-    let securityDeliveryResult;
-    try {
-      securityDeliveryResult=await deliverOperationalIncidentAlert({
-        plan:securityAlertPlan,
-        text:formatSecurityIncidentAlert(securityAlertPlan),
-        adminTelegramIds:cfg.adminTelegramIds || [],
-        claimDelivery:input => claimProviderIncidentAlertDelivery(cfg,input),
-        beginDelivery:input => beginProviderIncidentAlertDeliverySend(cfg,input),
-        finalizeDelivery:input => finalizeProviderIncidentAlertDelivery(cfg,input),
-        sendMessage:(chatId,text) => sendTelegramMessage(chatId,text,cfg),
-        nowMs:now.getTime(),
-      });
-    } catch (error) {
-      securityDeliveryResult={
-        ok:false,
-        outcomes:(securityAlertPlan.targetDeliveries || []).map(target => ({
-          slot:Number(target?.slot),
-          state:'persistence_failure',
-          claimAcquired:false,
-          reason:redactOpsString(error?.message || error,160),
-        })),
-      };
-    }
-    const sent=(securityDeliveryResult.outcomes || []).filter(item => item?.state === 'sent').length;
-    const failed=(securityDeliveryResult.outcomes || []).filter(item => !['sent','duplicate'].includes(item?.state)).length;
-    await recordOpsEvent(cfg,{
-      severity:failed ? 'warning' : 'info',
-      source:'security_alert',
-      eventType:'alert_delivery',
-      code:failed ? 'SECURITY_INCIDENT_ALERT_PARTIAL' : 'SECURITY_INCIDENT_ALERT_SENT',
-      message:failed ? 'Security incident alert delivery had failures.' : 'Security incident alert delivery confirmed.',
-      endpoint:'cron:production-monitor',
-      transitionKey:'security-alert:' + String(securityAlertPlan.alertKey || securityAlertPlan.deliveryKey || ''),
-      meta:{
-        incidentId:securityAlertPlan.incidentId || null,
-        alertKind:String(securityAlertPlan.kind || ''),
-        recipientCount:Number(securityDeliveryResult.recipientCount || 0),
-        sent,
-        failed,
-      },
-    }).catch(()=>{});
-  }
-
-  if (options.record !== false && providerSloFlush?.ok && providerSloIncident.transition) {
-    const incidentEvent = providerSloIncidentOpsEvent(providerSloIncident.transition);
-    if (incidentEvent) await recordOpsEvent(cfg, incidentEvent).catch(() => {});
-  }
-
-  if (options.record !== false && incidentAlertPlan.blockedCandidate) {
-    await recordOpsEvent(cfg,{
-      severity:'error',
-      source:'provider_alert',
-      eventType:'alert_delivery',
-      code:'PROVIDER_SLO_ALERT_PERSISTENCE_FAILED',
-      message:'Persistent alert delivery claim is unavailable; Telegram delivery was suppressed.',
-      endpoint:'cron:production-monitor',
-      meta:{
-        lifecycleEvent:'alert_persistence_failure',
-        incidentId:incidentAlertPlan.incidentId || null,
-        alertKind:String(incidentAlertPlan.kind || ''),
-        deliveryKey:String(incidentAlertPlan.alertKey || incidentAlertPlan.deliveryKey || ''),
-        reason:'persistent_ledger_unavailable',
-      },
-    }).catch(()=>{});
-  }
-
-  if (options.record !== false && incidentAlertPlan.action === 'send') {
-    let delivery;
-    try {
-      delivery = await deliverProviderIncidentAlert({
-        plan:incidentAlertPlan,
-        adminTelegramIds:cfg.adminTelegramIds || [],
-        claimDelivery:input => claimProviderIncidentAlertDelivery(cfg,input),
-        beginDelivery:input => beginProviderIncidentAlertDeliverySend(cfg,input),
-        finalizeDelivery:input => finalizeProviderIncidentAlertDelivery(cfg,input),
-        sendMessage:(chatId,text) => sendTelegramMessage(chatId,text,cfg),
-        nowMs:now.getTime(),
-      });
-    } catch (error) {
-      delivery = {
-        ok:false,
-        outcomes:(incidentAlertPlan.targetDeliveries || []).map(target => ({
-          slot:Number(target?.slot),
-          state:'persistence_failure',
-          claimAcquired:false,
-          reason:redactOpsString(error?.message || error,160),
-        })),
-        deliveredSlots:[],
-        failedSlots:(incidentAlertPlan.targetDeliveries || []).map(target => Number(target?.slot)),
-        recipientCount:(incidentAlertPlan.targetDeliveries || []).length,
-      };
-    }
-
-    if (
-      incidentAlertPlan.kind === 'escalation'
-      && (delivery.outcomes || []).some(item => item?.claimAcquired)
-    ) {
-      const updateEvent = providerSloIncidentUpdateOpsEvent(providerSloIncident.activeIncident,'severity_changed');
-      if (updateEvent) await recordOpsEvent(cfg,updateEvent).catch(()=>{});
-    }
-
-    const alertEvents = providerIncidentAlertOpsEvents(incidentAlertPlan,delivery);
-    await Promise.allSettled(alertEvents.map(event => recordOpsEvent(cfg,event)));
-  }
-
-
-  if (options.record !== false && digestAlertPlan.blockedCandidate) {
-    await recordOpsEvent(cfg,{
-      severity:'error',
-      source:'digest_alert',
-      eventType:'alert_delivery',
-      code:'DAILY_DIGEST_INCIDENT_ALERT_PERSISTENCE_FAILED',
-      message:'Persistent alert delivery claim is unavailable; daily digest admin alert was suppressed.',
-      endpoint:'cron:production-monitor',
-      meta:{
-        incidentId:digestAlertPlan.incidentId || null,
-        alertKind:String(digestAlertPlan.kind || ''),
-        deliveryKey:String(digestAlertPlan.alertKey || digestAlertPlan.deliveryKey || ''),
-        reason:'persistent_ledger_unavailable',
-      },
-    }).catch(()=>{});
-  }
-
-  if (options.record !== false && digestAlertPlan.action === 'send') {
-    let digestDelivery;
-    try {
-      digestDelivery = await deliverOperationalIncidentAlert({
-        plan:digestAlertPlan,
-        text:formatDailyDigestIncidentAlert(digestAlertPlan),
-        adminTelegramIds:cfg.adminTelegramIds || [],
-        claimDelivery:input => claimProviderIncidentAlertDelivery(cfg,input),
-        beginDelivery:input => beginProviderIncidentAlertDeliverySend(cfg,input),
-        finalizeDelivery:input => finalizeProviderIncidentAlertDelivery(cfg,input),
-        sendMessage:(chatId,text) => sendTelegramMessage(chatId,text,cfg),
-        nowMs:now.getTime(),
-      });
-    } catch (error) {
-      digestDelivery = {
-        ok:false,
-        outcomes:(digestAlertPlan.targetDeliveries || []).map(target => ({
-          slot:Number(target?.slot),
-          state:'persistence_failure',
-          claimAcquired:false,
-          reason:redactOpsString(error?.message || error,160),
-          attempts:0,
-        })),
-        deliveredSlots:[],
-        failedSlots:(digestAlertPlan.targetDeliveries || []).map(target => Number(target?.slot)),
-        recipientCount:(digestAlertPlan.targetDeliveries || []).length,
-      };
-    }
-
-    const firstClaims=(digestDelivery.outcomes || []).filter(item => item?.claimAcquired && Number(item?.attempts || 0) === 1);
-    if (firstClaims.length) {
-      await recordOpsEvent(cfg,{
-        severity:digestAlertPlan.kind === 'recovery' ? 'info' : 'warning',
-        source:'telegram',
-        eventType:'daily_digest_incident',
-        code:digestAlertPlan.kind === 'recovery' ? 'DAILY_DIGEST_INCIDENT_RECOVERED' : 'DAILY_DIGEST_INCIDENT_OPENED',
-        message:digestAlertPlan.kind === 'recovery'
-          ? 'Daily digest operational incident recovered.'
-          : 'Daily digest operational incident opened from backlog/stuck-delivery health thresholds.',
-        endpoint:'cron:production-monitor',
-        meta:{
-          incidentId:digestAlertPlan.incidentId || null,
-          date:digestAlertPlan.incident?.date || null,
-          alertKind:digestAlertPlan.kind,
-          diagnostics:digestAlertPlan.incident?.diagnostics || {},
-        },
-      }).catch(()=>{});
-    }
-
-    const digestAlertEvents=dailyDigestIncidentAlertOpsEvents(digestAlertPlan,digestDelivery);
-    await Promise.allSettled(digestAlertEvents.map(event => recordOpsEvent(cfg,event)));
-  }
-
-  if (options.record !== false && digestReliabilitySloEvent.action === 'record') {
-    await recordOpsEvent(cfg,digestReliabilitySloEvent).catch(()=>{});
-  }
-
-  if (options.record !== false && schemaDrift.recovered) {
-    await recordOpsEvent(cfg, {
-      severity:'warning',
-      source:'monitor',
-      eventType:'schema_probe',
-      code:'SCHEMA_PROBE_RECOVERED',
-      message:'Initial Supabase schema probe failed but the confirmation probe succeeded.',
-      endpoint:'cron:production-monitor',
-      meta:{
-        attempts:Number(schemaDrift.attempts || 2),
-        initialFailureMode:String(schemaDrift.initialFailureMode || ''),
-        finalFailureMode:String(schemaDrift.failureMode || schemaDrift.status || ''),
-        initialMissing:Array.isArray(schemaDrift.initialMissing) ? schemaDrift.initialMissing : [],
-        initialUnavailable:Array.isArray(schemaDrift.initialUnavailable) ? schemaDrift.initialUnavailable : [],
-        finalMissing:Array.isArray(schemaDrift.missing) ? schemaDrift.missing : [],
-        finalUnavailable:Array.isArray(schemaDrift.unavailable) ? schemaDrift.unavailable : [],
-      },
-    }).catch(()=>{});
-  }
-
-  if (options.record !== false && supabase.recovered) {
-    await recordOpsEvent(cfg, {
-      severity:'warning',
-      source:'monitor',
-      eventType:'supabase_probe',
-      code:'SUPABASE_PROBE_RECOVERED',
-      message:'Initial Supabase probe failed but the confirmation probe succeeded.',
-      endpoint:'cron:production-monitor',
-      meta:{
-        initialStatus:supabase.initialStatus || 'unknown',
-        attempts:Number(supabase.attempts || 2),
-        finalLatencyMs:Number(supabase.latencyMs || 0) || null,
-      },
-    }).catch(()=>{});
-  }
-
-  if (options.record !== false && (!previousState || stateChanged || heartbeatDue)) {
-    const recovered = previousState && previousState !== 'healthy' && health.state === 'healthy';
-    const severity = health.state === 'incident' ? 'critical' : health.state === 'watch' ? 'warning' : 'info';
-    const code = recovered
-      ? 'PRODUCTION_MONITOR_RECOVERED'
-      : health.state === 'incident'
-        ? 'PRODUCTION_MONITOR_INCIDENT'
-        : health.state === 'watch'
-          ? 'PRODUCTION_MONITOR_WATCH'
-          : 'PRODUCTION_MONITOR_HEALTHY';
-    await recordOpsEvent(cfg, {
-      severity,
-      source: 'monitor',
-      eventType: 'production_monitor',
-      code,
-      message: recovered ? 'Production monitor returned to healthy state.' : health.label,
-      endpoint: 'cron:production-monitor',
-      meta: {
-        state: health.state,
-        previousState: previousState || null,
-        supabaseOk: Boolean(supabase.ok),
-        supabaseProbeAttempts: Number(supabase.attempts || 1),
-        supabaseProbeRecovered: Boolean(supabase.recovered),
-        supabaseProbeConfirmedFailure: Boolean(supabase.confirmedFailure),
-        schemaOk: Boolean(schemaDrift.ok),
-        schemaFailureMode: String(schemaDrift.failureMode || schemaDrift.status || ''),
-        schemaProbeAttempts: Number(schemaDrift.attempts || 1),
-        schemaProbeRecovered: Boolean(schemaDrift.recovered),
-        schemaProbeConfirmedFailure: Boolean(schemaDrift.confirmedFailure),
-        schemaInitialMissing: Array.isArray(schemaDrift.initialMissing) ? schemaDrift.initialMissing : [],
-        schemaInitialUnavailable: Array.isArray(schemaDrift.initialUnavailable) ? schemaDrift.initialUnavailable : [],
-        schemaMissing: Array.isArray(schemaDrift.missing) ? schemaDrift.missing : [],
-        schemaUnavailable: Array.isArray(schemaDrift.unavailable) ? schemaDrift.unavailable : [],
-        supabaseAuthFailuresCurrentRelease: supabaseAuthFailures,
-        releaseState: releaseHealth.state,
-        releaseScore: Number(releaseHealth.score || 0),
-        releaseExactEvents:Number(releaseScope.counts.exact || 0),
-        releaseUnattributedEvents:Number(releaseScope.counts.unattributed || 0),
-        releaseExcludedPriorDeploymentEvents:Number(releaseScope.counts.priorDeployment || 0),
-        releaseAttributionComplete:Boolean(releaseScope.attributionComplete),
-        postDeployRegressionState:String(releaseRegression.state || 'unavailable'),
-        postDeployRegressionCompletedWindows:Number(releaseRegression.completedWindows || 0),
-        providerHealth: provider.health || 'waiting',
-        providerSloState: providerSloIncident.state,
-        providerSloActive: Boolean(providerSloIncident.activeIncident),
-        dailyDigestSloState:digestReliabilitySlo.state,
-        dailyDigestSloCode:digestReliabilitySlo.code,
-        telegramDedupeState: telegramWebhook.state,
-        telegramStaleClaims: Number(telegramWebhook.staleProcessing || 0),
-        telegramFailedClaims: Number(telegramWebhook.failedCurrent || 0),
-      },
-    }).catch(() => {});
-  }
-
-  return value;
+  return productionMonitorRuntime(...args);
 }
-
 async function apiProductionMonitor(request, cfg) {
   const force = new URL(request.url).searchParams.get('refresh') === '1';
   if (!force && memory.productionMonitor?.value && Date.now() - Number(memory.productionMonitor.at || 0) < 30000) {
@@ -23109,536 +22101,104 @@ function analysisDeltaDrill() {
 function analysisResponsePayload(payload = {}, extra = {}) {
   return {...payload,freshness:analysisFreshness(payload),kickoffHandoff:analysisKickoffHandoff(payload),...extra};
 }
-async function apiAnalyze(request, cfg, user) {
-  let body = {};
-  try { body = await request.json(); } catch {}
-  const fixtureId = Number(body?.fixtureId);
-  const analysisOrigin=String(body?.origin || 'miniapp').slice(0,30);
-  const recheckRequested=Boolean(body?.recheck);
-  const newsImpactRecheck=Boolean(body?.newsImpactRecheck);
-  const newsPublishedAt=Number.isFinite(Date.parse(String(body?.newsPublishedAt || ''))) ? new Date(Date.parse(String(body.newsPublishedAt))).toISOString() : '';
-  const newsImpactDecision=cleanNewsImpactDecisionCode(body?.newsImpactDecision);
-  const newsImpactAction=cleanNewsImpactActionCode(body?.newsImpactAction);
-  const newsImpactRecoveryCode=cleanNewsImpactRecoveryCode(body?.newsImpactRecoveryCode);
-  const newsImpactRecoveryFrom=cleanNewsImpactActionCode(body?.newsImpactRecoveryFrom);
-  const trackFullAi=analysisOrigin !== 'telegram_quick';
-  const recordTrackedFullAiOutcome=async (delivery='analysis')=>{
-    if (trackFullAi && newsImpactDecision && newsImpactAction==='full_ai') {
-      await recordNewsImpactOutcome(cfg,{userId:user.id,fixtureId,decision:newsImpactDecision,action:'full_ai',channel:'miniapp',delivery});
-    }
-  };
-  if (trackFullAi && newsImpactDecision && newsImpactAction==='full_ai') {
-    if (newsImpactRecoveryCode) {
-      await recordNewsImpactRecoveryAttempt(cfg,{userId:user.id,fixtureId,decision:newsImpactDecision,action:'full_ai',recovery:newsImpactRecoveryCode,sourceAction:newsImpactRecoveryFrom,channel:'miniapp'});
-    }
-    void recordGrowthEvent(cfg,{userId:user.id,eventName:'news_impact_action',channel:'miniapp',fixtureId,metadata:{decision:newsImpactDecision,action:'full_ai',...(newsImpactRecoveryCode ? {recovery:newsImpactRecoveryCode} : {})}});
-  }
-  const recordTrackedFullAiFailure=async (reason='server_error',status=0)=>{
-    if (!(trackFullAi && newsImpactDecision && newsImpactAction==='full_ai')) return null;
-    const recovery=await selectNewsImpactRecoveryStrategy(cfg,reason,'full_ai');
-    await recordNewsImpactFailure(cfg,{userId:user.id,fixtureId,decision:newsImpactDecision,action:'full_ai',channel:'miniapp',reason,recovery:recovery.code,strategy:recovery.strategy,strategyReason:recovery.guardReason,status});
-    return recovery;
-  };
-  const trackedFullAiFailureResponse=async (payload,status,reason,headers={})=>{
-    const recovery=await recordTrackedFullAiFailure(reason,status);
-    return json({...payload,...(recovery ? {newsImpactRecovery:recovery} : {})},status,headers);
-  };
-  try {
-  if (!Number.isFinite(fixtureId) || fixtureId <= 0) return await trackedFullAiFailureResponse({ error: 'Некорректный номер матча.' },400,'invalid_fixture');
-
-  const cacheKey = `fixture:${fixtureId}:v15-availability-quality-rc144`;
-  const cached = await getCache(cacheKey, cfg);
-  const staleBefore = cached || await getStaleCache(cacheKey, cfg);
-  const previousFreshness = staleBefore ? analysisFreshness(staleBefore) : null;
-  const previousGeneratedMs=Date.parse(String(staleBefore?.generatedAt || ''));
-  const newsPublishedMs=Date.parse(String(newsPublishedAt || ''));
-  const newsImpactEligible=Boolean(
-    recheckRequested
-    && newsImpactRecheck
-    && staleBefore
-    && Number.isFinite(previousGeneratedMs)
-    && Number.isFinite(newsPublishedMs)
-    && previousGeneratedMs < newsPublishedMs
-  );
-  const needsFreshnessRecheck=Boolean(recheckRequested && staleBefore && previousFreshness?.needsRecheck);
-  const shouldPerformRecheck=Boolean(needsFreshnessRecheck || newsImpactEligible);
-  const recheckReasonCode=newsImpactEligible ? 'news_impact' : (previousFreshness?.reasonCode || 'fresh');
-  let freeRecheck=false;
-  if (needsFreshnessRecheck) freeRecheck=await userHasAnalyzedFixture(user.id,fixtureId,cfg);
-  else if (newsImpactEligible) freeRecheck=await userHasAnalyzedFixture(user.id,fixtureId,cfg);
-  if (cached && !needsFreshnessRecheck) {
-    if (!newsImpactEligible) {
-      await recordHistory(user.id, cached, cfg);
-      if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,freshness:previousFreshness?.state || 'fresh'}});
-      const newsImpact=newsImpactDeltaStatus(staleBefore,cached,null,{requested:newsImpactRecheck,eligible:newsImpactEligible,performed:false,publishedAt:newsPublishedAt});
-      await recordTrackedFullAiOutcome('cached');
-      return json(analysisResponsePayload(cached,{cached:true,stale:false,recheck:{requested:recheckRequested,performed:false,free:false,reasonCode:recheckReasonCode},newsImpact,quota:await getQuota(user.id,cfg)}));
-    }
-  }
-
-  const entitlementBefore = await resolveUserEntitlements(user.id, fixtureId, cfg);
-  const passCandidate = entitlementBefore.source === 'pass' && entitlementBefore.access.expandedAi === true;
-  const quotaBefore = await getQuota(user.id, cfg);
-  if (!freeRecheck && !passCandidate && quotaBefore.left <= 0) return await trackedFullAiFailureResponse({ error: `Лимит исчерпан: ${quotaBefore.used}/${quotaBefore.limit} анализов сегодня.`, quota: quotaBefore },429,'quota_exhausted');
-
-  const analysisLock=await claimDistributedAnalysisLock(fixtureId,cfg);
-  if (!analysisLock.claimed && analysisLock.unavailable) {
-    if (staleBefore) {
-      await recordHistory(user.id,staleBefore,cfg);
-      return json(analysisResponsePayload(staleBefore,{cached:true,stale:true,warning:'Координация нового AI-расчёта временно недоступна. Показан последний сохранённый анализ.',retryAfter:5,quota:quotaBefore}));
-    }
-    return await trackedFullAiFailureResponse({error:'Координация AI-расчёта временно недоступна. Повторите через несколько секунд.',code:'ANALYSIS_COORDINATION_DEGRADED',retryAfter:5,quota:quotaBefore},503,'analysis_coordination_degraded',{'retry-after':'5'});
-  }
-  if (!analysisLock.claimed) {
-    const joined=await waitForSharedAnalysis(cacheKey,cfg);
-    if (joined) {
-      await recordHistory(user.id,joined,cfg);
-      if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,sharedJoin:true}});
-      await recordTrackedFullAiOutcome('shared');
-      return json(analysisResponsePayload(joined,{cached:true,stale:false,sharedJoin:true,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_shared' : (previousFreshness?.reasonCode || 'shared_compute')},quota:await getQuota(user.id,cfg)}));
-    }
-    if (staleBefore) {
-      await recordHistory(user.id,staleBefore,cfg);
-      await recordTrackedFullAiOutcome('stale_pending');
-      return json(analysisResponsePayload(staleBefore,{cached:true,stale:true,sharedJoinPending:true,warning:'Свежий расчёт этого матча уже выполняется. Пока показан последний сохранённый анализ.',retryAfter:5,recheck:{requested:recheckRequested,performed:false,free:freeRecheck,reasonCode:'shared_compute_pending'},quota:quotaBefore}));
-    }
-    return await trackedFullAiFailureResponse({error:'AI-разбор этого матча уже рассчитывается для других пользователей. Повторите через несколько секунд.',code:'ANALYSIS_WARMING',retryAfter:5,quota:quotaBefore},429,'analysis_warming',{'retry-after':'5'});
-  }
-
-  let usageReservation=null;
-  let passUsageReservation=null;
-  let usageCommitted=false;
-  try {
-  let passAccess=false;
-  if (!freeRecheck && passCandidate) {
-    const passOperationId=crypto.randomUUID();
-    try {
-      passUsageReservation=await reserveEntitlementUsage(user.id,entitlementBefore.passes.active,fixtureId,cfg,{
-        durable:hasSupabase(cfg),
-        operationId:passOperationId,
-      });
-    } catch (error) {
-      await recordOpsEvent(cfg,{
-        severity:'error',
-        source:'quota',
-        eventType:'analysis_usage_reservation',
-        code:'ANALYSIS_PASS_RESERVATION_OUTCOME_UNKNOWN',
-        message:'Limited Pass reservation response was not confirmed. A durable database reservation, if created, will be reconciled automatically.',
-        meta:{
-          operationId:passOperationId,
-          fixtureId:Number(fixtureId),
-          error:redactOpsString(error?.message || error,180),
-        },
-      }).catch(()=>null);
-      throw error;
-    }
-    passAccess=Boolean(passUsageReservation?.allowed);
-  }
-  if (!freeRecheck && !passAccess) {
-    usageReservation=await reserveAnalysisQuota(user.id,cfg);
-    if (!usageReservation.allowed) {
-      return await trackedFullAiFailureResponse({error:`Лимит исчерпан: ${usageReservation.used}/${usageReservation.limit} анализов сегодня.`,quota:{plan:usageReservation.plan,used:usageReservation.used,limit:usageReservation.limit,left:usageReservation.left}},429,'quota_exhausted');
-    }
-  }
-  let fixture;
-  try {
-    fixture = await loadProviderFixture(fixtureId,cfg);
-  } catch (error) {
-    if (staleBefore && isFootballRateLimitError(error)) {
-      await recordHistory(user.id, staleBefore, cfg);
-      if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,stale:true}});
-      await recordTrackedFullAiOutcome('stale');
-      return json(analysisResponsePayload(staleBefore,{cached:true,stale:true,warning:'Показан последний сохранённый анализ: источник футбольных данных временно ограничил запросы.',retryAfter:Number(error?.retryAfter || 60),recheck:{requested:recheckRequested,performed:false,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_provider_limit' : (previousFreshness?.reasonCode || 'provider_limit')},quota:quotaBefore}));
-    }
-    throw error;
-  }
-  if (!fixture) return json({ error: 'Матч не найден.' }, 404);
-  const analysisIntegrity = validateFixtureIntegrity(fixture, '', null);
-  if (analysisIntegrity.quarantine) {
-    await recordOpsEvent(cfg, { severity: 'warning', source: 'integrity', eventType: 'single_fixture_guard', code: 'ANALYSIS_REJECTED', message: 'Анализ отклонён: данные матча не прошли структурную проверку.', meta: { fixtureId, issues: analysisIntegrity.issues.filter(x => x.severity === 'error').map(x => x.code) } }).catch(() => {});
-    return await trackedFullAiFailureResponse({ error: 'Данные матча выглядят противоречиво, поэтому анализ временно заблокирован.', code: 'MATCH_DATA_INVALID', integrity: analysisIntegrity, quota: quotaBefore },409,'data_invalid');
-  }
-  // If this fixture has already finished, settle any earlier immutable pre-match snapshot without another football API call.
-  if (isFinishedStatus(fixture.fixture?.status?.short)) await settlePredictionsFromFixtures([fixture], cfg).catch(() => null);
-
-  const homeId = fixture.teams?.home?.id, awayId = fixture.teams?.away?.id;
-  const homeName = fixture.teams?.home?.name || '', awayName = fixture.teams?.away?.name || '';
-  const leagueName = fixture.league?.name || '';
-
-  const kickoffMs = fixture.fixture?.date ? Date.parse(fixture.fixture.date) : NaN;
-  const minutesToKickoff = Number.isFinite(kickoffMs) ? Math.round((kickoffMs - Date.now()) / 60000) : null;
-  const status = fixture.fixture?.status?.short || '';
-  const detailedCoverage = !isYouthReserveMatch(leagueName, homeName, awayName);
-  const providerPlan = memory.provider?.plan || 'UNKNOWN';
-  const paid = ['PRO','ULTRA','MEGA'].includes(providerPlan);
-  const healthyFree = freeQuotaHealthy(30, 6);
-  // FREE keeps only the two highest-value uncached AI provider calls (predictions + odds).
-  // Optional signals reuse shared cache when present but do not fan out into
-  // injuries/H2H/lineups/team-form network calls in the same minute.
-  const canFetchLineups = detailedCoverage && paid && (
-    isLiveStatus(status) || (minutesToKickoff !== null && minutesToKickoff <= 90 && minutesToKickoff >= -240)
-  );
-  const canFetchFreshForm = detailedCoverage && paid && healthyFree;
-  const canFetchH2H = detailedCoverage && paid;
-  const canFetchInjuries = paid;
-
-  const skipped = [];
-  if (!canFetchFreshForm && detailedCoverage) skipped.push('Свежая форма команд: бережём лимит источника данных и используем сохранённые данные, если они есть.');
-  if (!canFetchLineups && detailedCoverage && minutesToKickoff !== null && minutesToKickoff <= 120) skipped.push('Составы: запрос отложен из-за лимита или до публикации стартовых составов.');
-  if (!canFetchH2H && detailedCoverage) skipped.push('Очные встречи временно пропущены: осталось мало запросов в минутном окне.');
-  if (!canFetchInjuries) skipped.push('Травмы временно пропущены: осталось критически мало запросов в минутном окне.');
-  if (!detailedCoverage) skipped.push('Молодёжный/резервный турнир: расширенные запросы ограничены из-за слабого покрытия.');
-
-  const injurySkipReason = !detailedCoverage ? 'limited_coverage' : canFetchInjuries ? '' : 'quota_reserve';
-  const h2hSkipReason = !detailedCoverage ? 'limited_coverage' : canFetchH2H ? '' : 'quota_reserve';
-  const lineupSkipReason = !detailedCoverage
-    ? 'limited_coverage'
-    : minutesToKickoff === null || (!isLiveStatus(status) && (minutesToKickoff > 90 || minutesToKickoff < -240))
-      ? 'publication_window'
-      : canFetchLineups ? '' : 'quota_reserve';
-
-  const [injuryResult, predictionResult, oddsResult, h2hResult] = await Promise.all([
-    analysisProviderFetch({ feature:'injuries', path:'/injuries', params:{ fixture:fixtureId }, fixtureId, cfg, allowed:canFetchInjuries, skipReason:injurySkipReason }),
-    analysisProviderFetch({ feature:'predictions', path:'/predictions', params:{ fixture:fixtureId }, fixtureId, cfg }),
-    analysisProviderFetch({ feature:'odds', path:'/odds', params:{ fixture:fixtureId }, fixtureId, cfg }),
-    analysisProviderFetch({ feature:'h2h', path:'/fixtures/headtohead', params:{ h2h:`${homeId}-${awayId}`, last:5 }, fixtureId, cfg, allowed:canFetchH2H, skipReason:h2hSkipReason }),
-  ]);
-  const lineupResult = await analysisProviderFetch({
-    feature:'lineups', path:'/fixtures/lineups', params:{ fixture:fixtureId }, fixtureId, cfg,
-    allowed:canFetchLineups, skipReason:lineupSkipReason,
+let apiAnalyzeRuntime;
+async function apiAnalyze(...args) {
+  apiAnalyzeRuntime ||= createApiAnalyzeRuntime({
+    CALIBRATION_PROFILE_VERSION,
+    MODEL_BASE_WEIGHTS,
+    analysisFreshness,
+    analysisProviderFetch,
+    analysisRecheckDelta,
+    analysisResponsePayload,
+    annotateAvailabilityReliability,
+    annotateLineupReliability,
+    annotateOddsReliability,
+    applyAbsenceAdjustment,
+    applyFeatureFreshnessMap,
+    assessFixtureAvailabilityQuality,
+    assessMatchLineups,
+    assessOddsMarketQuality,
+    baselineCalibrationProfile,
+    blendProbabilitySignals,
+    buildAiInstructor,
+    buildAnalysisNotes,
+    buildLineupImpact,
+    buildMatchComparison,
+    buildOddsMovement,
+    buildPreMatchIntelligence,
+    bumpTelemetry,
+    cachedTeamIntelligenceForAnalysis,
+    cachedTeamStanding,
+    captureAnalysisTimelineSnapshot,
+    captureModelPrediction,
+    claimDistributedAnalysisLock,
+    cleanNewsImpactActionCode,
+    cleanNewsImpactDecisionCode,
+    cleanNewsImpactRecoveryCode,
+    confidenceModel,
+    enrichFixtureAbsencesWithSeasonRole,
+    extractMarket,
+    extractPrediction,
+    finalizeAnalysisUsageReservation,
+    formProbabilities,
+    formatAbsences,
+    formatH2H,
+    formatLineups,
+    freeQuotaHealthy,
+    getCache,
+    getCalibrationProfile,
+    getOddsSnapshots,
+    getQuota,
+    getRecentTeamForm,
+    getStaleCache,
+    h2hProbabilities,
+    hasSupabase,
+    hydratePlayerRolesForAnalysis,
+    isFinishedStatus,
+    isFootballRateLimitError,
+    isLiveStatus,
+    isYouthReserveMatch,
+    json,
+    loadProviderFixture,
+    loadRefereeHistoryProfile,
+    memory,
+    newsImpactDeltaStatus,
+    newsImpactFailureCode,
+    newsPublishedMs,
+    oddsMarketForTrustedAnalytics,
+    outcomeName,
+    poissonGoalModel,
+    providerDataReliabilitySummary,
+    publicDataCapabilities,
+    recordGrowthEvent,
+    recordHistory,
+    recordNewsImpactFailure,
+    recordNewsImpactOutcome,
+    recordNewsImpactRecoveryAttempt,
+    recordOpsEvent,
+    redactOpsString,
+    refereeProfile,
+    refundAnalysisQuota,
+    refundEntitlementUsage,
+    releaseDistributedAnalysisLock,
+    reserveAnalysisQuota,
+    reserveEntitlementUsage,
+    resolveUserEntitlements,
+    sanitizeAvailabilityRows,
+    saveOddsSnapshot,
+    secondaryOddsMarket,
+    selectNewsImpactRecoveryStrategy,
+    setCache,
+    settlePredictionsFromFixtures,
+    tavilySearch,
+    temperatureScaleProbabilities,
+    usableOddsFeatureMeta,
+    userHasAnalyzedFixture,
+    validateFixtureIntegrity,
+    waitForSharedAnalysis,
   });
-
-  const injuries = injuryResult.data;
-  const predictions = predictionResult.data;
-  const odds = oddsResult.data;
-  const h2hRows = h2hResult.data;
-  const lineupsRows = lineupResult.data;
-  const lineups = formatLineups(lineupsRows, homeId, awayId);
-  const lineupQuality=assessMatchLineups(lineups);
-  const lineupMeta=annotateLineupReliability(lineupResult.meta, lineupQuality);
-  const primaryMarket = extractMarket(odds);
-  const primaryMarketMeta = usableOddsFeatureMeta(oddsResult.meta, primaryMarket);
-  const primaryMarketShape = assessOddsMarketQuality(primaryMarket, { oddsMeta:primaryMarketMeta, mode:'upcoming' });
-  const secondaryOdds = primaryMarket && primaryMarketShape.marketValid
-    ? null
-    : await secondaryOddsMarket(fixture, cfg, { mode:'prematch' });
-  const market = secondaryOdds?.available ? secondaryOdds.market : primaryMarket || null;
-  const resolvedOddsMeta = secondaryOdds?.available
-    ? usableOddsFeatureMeta(secondaryOdds.meta, market)
-    : usableOddsFeatureMeta(oddsResult.meta, primaryMarket, secondaryOdds?.reason || '');
-  const analysisFeatureMeta = applyFeatureFreshnessMap({
-    injuries: injuryResult.meta,
-    predictions: predictionResult.meta,
-    odds: resolvedOddsMeta,
-    h2h: h2hResult.meta,
-    lineups: lineupMeta,
-  }, { mode:'upcoming' });
-  const oddsQuality = assessOddsMarketQuality(market, { oddsMeta:analysisFeatureMeta.odds || {}, mode:'upcoming' });
-  analysisFeatureMeta.odds = annotateOddsReliability(analysisFeatureMeta.odds || { feature:'odds' }, oddsQuality);
-  const analysisMarket = oddsMarketForTrustedAnalytics(market, oddsQuality);
-  const availabilityQuality = assessFixtureAvailabilityQuality(injuries, {
-    homeId, awayId, injuriesMeta:analysisFeatureMeta.injuries || {}, mode:'upcoming',
-  });
-  analysisFeatureMeta.injuries = annotateAvailabilityReliability(
-    analysisFeatureMeta.injuries || { feature:'injuries', provider:'api-football', source:'network' },
-    availabilityQuality,
-  );
-  const trustedInjuries = sanitizeAvailabilityRows(injuries, availabilityQuality);
-  const providerReliability = providerDataReliabilitySummary(analysisFeatureMeta, { minutesToKickoff, mode:'upcoming' });
-  skipped.push(...providerReliability.warnings);
-
-  const webPromise = tavilySearch(`${homeName} ${awayName} injuries team news probable lineups latest`, cfg);
-  const homeFormPromise = detailedCoverage
-    ? getRecentTeamForm(homeId, 'home', fixture.fixture?.date, fixtureId, cfg, { allowNetwork: canFetchFreshForm }).catch(() => null)
-    : Promise.resolve(null);
-  const awayFormPromise = detailedCoverage
-    ? getRecentTeamForm(awayId, 'away', fixture.fixture?.date, fixtureId, cfg, { allowNetwork: canFetchFreshForm }).catch(() => null)
-    : Promise.resolve(null);
-  const refereeHistoryPromise = loadRefereeHistoryProfile(fixture.fixture?.referee || '', cfg).catch(() => ({ available:false, sample:0 }));
-  const [web, homeForm, awayForm, refereeHistory] = await Promise.all([webPromise, homeFormPromise, awayFormPromise, refereeHistoryPromise]);
-
-  // v3.5 Match Comparison: reuse only already cached deep team data.
-  // This adds Supabase cache reads but deliberately makes zero extra API-Football calls.
-  const leagueId = Number(fixture.league?.id || 0);
-  const season = Number(fixture.league?.season || 0) || null;
-  const comparisonCompetition = { leagueId, season };
-  const [homeStanding, awayStanding, homeTeamIntelligence, awayTeamIntelligence] = await Promise.all([
-    cachedTeamStanding(homeId, comparisonCompetition, cfg).catch(() => null),
-    cachedTeamStanding(awayId, comparisonCompetition, cfg).catch(() => null),
-    cachedTeamIntelligenceForAnalysis(homeId, leagueId, season, cfg).catch(() => ({ stats:null, playerStats:null })),
-    cachedTeamIntelligenceForAnalysis(awayId, leagueId, season, cfg).catch(() => ({ stats:null, playerStats:null })),
-  ]);
-  const homeSeasonStats = homeTeamIntelligence?.stats || null;
-  const awaySeasonStats = awayTeamIntelligence?.stats || null;
-  const cachedHomePlayerStats = homeTeamIntelligence?.playerStats || null;
-  const cachedAwayPlayerStats = awayTeamIntelligence?.playerStats || null;
-
-  const previousMarketSnapshots = analysisMarket ? await getOddsSnapshots(fixtureId, cfg, 8).catch(() => []) : [];
-  const marketMovement = buildOddsMovement(previousMarketSnapshots, analysisMarket);
-  if (analysisMarket) await saveOddsSnapshot(fixtureId, analysisMarket, cfg).catch(() => false);
-  const apiPrediction = extractPrediction(predictions);
-  const h2h = formatH2H(h2hRows, homeId, awayId);
-  const baseAbsences = formatAbsences(trustedInjuries, homeId, awayId, lineups);
-  const roleHydrationMaxPages = paid ? 2 : 1;
-  const [homeRoleHydration, awayRoleHydration] = await Promise.all([
-    hydratePlayerRolesForAnalysis({ teamId:homeId, teamName:homeName, leagueId, leagueName, season, cachedPlayerStats:cachedHomePlayerStats, needed:baseAbsences.home.length>0, cfg, maxPages:roleHydrationMaxPages }),
-    hydratePlayerRolesForAnalysis({ teamId:awayId, teamName:awayName, leagueId, leagueName, season, cachedPlayerStats:cachedAwayPlayerStats, needed:baseAbsences.away.length>0, cfg, maxPages:roleHydrationMaxPages }),
-  ]);
-  const homePlayerStats = homeRoleHydration.playerStats;
-  const awayPlayerStats = awayRoleHydration.playerStats;
-  if (baseAbsences.home.length && !homePlayerStats?.available) skipped.push('Роль отсутствующих игроков хозяев не уточнена: сезонная статистика недоступна или сохранена квота.');
-  if (baseAbsences.away.length && !awayPlayerStats?.available) skipped.push('Роль отсутствующих игроков гостей не уточнена: сезонная статистика недоступна или сохранена квота.');
-  const absences = enrichFixtureAbsencesWithSeasonRole(baseAbsences, { homePlayerStats, awayPlayerStats });
-  const lineupImpact = buildLineupImpact({ absences, lineups, homeName, awayName, reliability:providerReliability });
-  const recentFormProb = formProbabilities(homeForm, awayForm);
-  const h2hProb = h2hProbabilities(h2h);
-  const calibrationProfile = await getCalibrationProfile(cfg).catch(() => baselineCalibrationProfile());
-  const baselineBlend = blendProbabilitySignals({ market:analysisMarket, model: apiPrediction, form: recentFormProb, h2h: h2hProb, weightOverrides: MODEL_BASE_WEIGHTS });
-  const blended = calibrationProfile.weightsActive
-    ? blendProbabilitySignals({ market:analysisMarket, model: apiPrediction, form: recentFormProb, h2h: h2hProb, weightOverrides: calibrationProfile.signalWeights })
-    : baselineBlend;
-  const rawProbabilities = applyAbsenceAdjustment(baselineBlend.probabilities, absences);
-  const weightedProbabilities = applyAbsenceAdjustment(blended.probabilities, absences);
-  const probabilities = calibrationProfile.temperatureActive
-    ? temperatureScaleProbabilities(weightedProbabilities, calibrationProfile.temperature)
-    : weightedProbabilities;
-  const goalModel = poissonGoalModel(homeForm, awayForm);
-  const comparison = buildMatchComparison({
-    homeName, awayName, homeForm, awayForm, homeStanding, awayStanding, homeSeasonStats, awaySeasonStats,
-    goalModel, h2h, absences, hasInjuryData: Boolean(providerReliability.features?.injuries?.available),
-  });
-  const confidence = confidenceModel(blended.signals, probabilities, homeForm, awayForm);
-  const notes = buildAnalysisNotes({
-    probabilities, market:analysisMarket, model: apiPrediction, homeForm, awayForm, h2h, absences, lineups, news: web,
-    homeName, awayName, minutesToKickoff, confidence,
-  });
-  notes.risks.push(...providerReliability.warnings);
-  notes.risks = [...new Set(notes.risks)].slice(0, 7);
-  if (calibrationProfile.mode === 'active') {
-    notes.factors.unshift(`Калибратор вероятностей активен (${String(calibrationProfile.fingerprint || '').slice(0, 8) || 'базовый'}) на базе ${Number(calibrationProfile.sample || 0)} доверенных прогнозов.`);
-  } else if (calibrationProfile.mode === 'shadow') {
-    notes.risks.push('Калибратор пока работает в теневом режиме: выборка собирается, но итоговые вероятности ещё не корректируются автоматически.');
-  }
-
-  const availableSignals = [
-    analysisMarket && 'market',
-    apiPrediction && 'apiPrediction',
-    homeForm?.overall && awayForm?.overall && 'recentForm',
-    h2hRows.length && 'h2h',
-    trustedInjuries.length && 'injuries',
-    lineupQuality.bothConfirmed && 'lineups',
-    web.answer && 'web',
-  ].filter(Boolean);
-
-  const completenessPreview = {
-    score: [fixture, analysisMarket, apiPrediction, trustedInjuries.length, h2hRows.length, lineupQuality.bothConfirmed, web.answer, homeForm?.overall, awayForm?.overall, goalModel].filter(Boolean).length,
-    max: 10,
-    providerReliability: {
-      state: providerReliability.state,
-      trustCap: providerReliability.trustCap,
-      available: providerReliability.available,
-      checked: providerReliability.checked,
-    },
-  };
-  const preMatchIntelligence = buildPreMatchIntelligence({
-    probabilities,
-    rawProbabilities,
-    market:analysisMarket,
-    apiPrediction,
-    homeForm,
-    awayForm,
-    h2h,
-    absences,
-    lineups,
-    goalModel,
-    comparison,
-    confidence,
-    modelBreakdown: { weights: blended.weights, signals: blended.signals },
-    homeName,
-    awayName,
-    minutesToKickoff,
-    news: web,
-    completeness: completenessPreview,
-  });
-
-  const payload = {
-    generatedAt: new Date().toISOString(),
-    analysisVersion: '4.15.0-availability-quality',
-    match: {
-      fixtureId, date: fixture.fixture?.date || '', status: fixture.fixture?.status?.short || '',
-      venue: fixture.fixture?.venue?.name || '', city: fixture.fixture?.venue?.city || '',
-      referee: fixture.fixture?.referee || '',
-      leagueId, season, league: leagueName, country: fixture.league?.country || '',
-      home: { id: homeId, name: homeName, logo: fixture.teams?.home?.logo || '' },
-      away: { id: awayId, name: awayName, logo: fixture.teams?.away?.logo || '' },
-      integrity: { state: analysisIntegrity.state, score: analysisIntegrity.qualityScore, warnings: analysisIntegrity.warnings, issues: analysisIntegrity.issues.filter(x => x.severity !== 'info').slice(0, 3) },
-    },
-    probabilities,
-    rawProbabilities,
-    modelCalibration: {
-      version: calibrationProfile.version || CALIBRATION_PROFILE_VERSION,
-      fingerprint: calibrationProfile.fingerprint || '',
-      mode: calibrationProfile.mode || 'baseline',
-      sample: Number(calibrationProfile.sample || 0),
-      temperature: Number(calibrationProfile.temperature || 1),
-      temperatureActive: Boolean(calibrationProfile.temperatureActive),
-      weightsActive: Boolean(calibrationProfile.weightsActive),
-      signalWeights: calibrationProfile.signalWeights || { ...MODEL_BASE_WEIGHTS },
-      validation: calibrationProfile.temperatureValidation || null,
-      weightsValidation: calibrationProfile.weightsValidation || null,
-      promotionGate: calibrationProfile.promotionGate || null,
-      lifecycle: calibrationProfile.lifecycle || null,
-      note: calibrationProfile.note || '',
-    },
-    confidence,
-    likelyOutcome: outcomeName(probabilities, homeName, awayName),
-    modelBreakdown: {
-      weights: blended.weights,
-      signals: blended.signals,
-      method: 'Рынок, прогноз источника данных, форма и очные встречи объединяются динамически. Активный профиль применяется только после двух окон отложенной выборки и атомарного сравнения кандидата с активной моделью. Потери состава корректируют итог ограниченно: роль игрока сначала берётся из Team Intelligence cache, а при реальной потере может точечно гидратироваться из сезонной статистики с отдельным кешем и quota guard; сомнительный статус даёт половинный вклад.',
-    },
-    dataPolicy: {
-      dataMode: paid ? 'expanded' : 'standard',
-      mode: paid ? 'full' : healthyFree ? 'balanced-free' : 'quota-saver',
-      availableSignals,
-      skipped: [...new Set(skipped)],
-      featureReliability: analysisFeatureMeta,
-      reliability: providerReliability,
-    },
-    dataCapabilities: publicDataCapabilities(),
-    dataProvenance: {
-      primaryProvider:'api-football',
-      generatedAt:new Date().toISOString(),
-      features:Object.fromEntries(Object.entries(analysisFeatureMeta).map(([feature, meta]) => [feature, {
-        provider:String(meta?.provider || 'api-football'),
-        source:String(meta?.source || 'network'),
-        state:String(meta?.state || 'unknown'),
-        fetchedAt:meta?.fetchedAt || null,
-        ageSeconds:Number.isFinite(Number(meta?.ageSeconds)) ? Number(meta.ageSeconds) : null,
-        sourceUpdatedAt:meta?.sourceUpdatedAt || null,
-        freshnessState:String(meta?.freshnessState || 'unknown'),
-        provenanceState:String(meta?.provenanceState || 'unknown'),
-        freshnessLimitSeconds:Number.isFinite(Number(meta?.freshnessLimitSeconds)) ? Number(meta.freshnessLimitSeconds) : null,
-        confidenceBearing:Boolean(meta?.confidenceBearing),
-        stale:Boolean(meta?.stale),
-      }])),
-      playerRoleHydration:{
-        home:{source:homeRoleHydration.source,network:Boolean(homeRoleHydration.network),stale:Boolean(homeRoleHydration.stale),reason:String(homeRoleHydration.reason || '')},
-        away:{source:awayRoleHydration.source,network:Boolean(awayRoleHydration.network),stale:Boolean(awayRoleHydration.stale),reason:String(awayRoleHydration.reason || '')},
-      },
-      news:{
-        provider:'tavily',
-        source:web?.answer || web?.results?.length ? 'network-or-cache' : 'unavailable',
-        state:web?.answer || web?.results?.length ? 'available' : 'unavailable',
-      },
-    },
-    market:analysisMarket, marketMovement, oddsQuality, availabilityQuality, apiPrediction, recentForm: { home: homeForm, away: awayForm }, goalModel, comparison, absences, lineups, lineupQuality, lineupImpact, h2h,
-    preMatchIntelligence,
-    aiInstructor: buildAiInstructor({ probabilities, goalModel, confidence, completeness: completenessPreview, factors: notes.factors, risks: [...(notes.risks || []), ...skipped], referee: fixture.fixture?.referee || '', refereeData: refereeProfile(fixture.fixture?.referee || ''), refereeHistory, lineupImpact, marketMovement, providerReliability, minutesToKickoff }),
-    insights: notes.factors, risks: [...(notes.risks || []), ...skipped], news: web,
-    completeness: completenessPreview,
-    providerReliability,
-    provider: publicDataCapabilities(),
-    disclaimer: 'Расчёт основан на доступных статистических сигналах и не гарантирует исход матча. Это не финансовая рекомендация.',
-  };
-
-  let ttl = cfg.cacheMinutes;
-  if (isFinishedStatus(status)) ttl = 720;
-  else if (minutesToKickoff !== null && minutesToKickoff <= 15) ttl = 3;
-  else if (minutesToKickoff !== null && minutesToKickoff <= 45) ttl = 5;
-  else if (minutesToKickoff !== null && minutesToKickoff <= 120) ttl = 10;
-  else if (minutesToKickoff !== null && minutesToKickoff <= 360) ttl = 20;
-  else if (minutesToKickoff !== null && minutesToKickoff > 360) ttl = 45;
-  const recheckDelta=needsFreshnessRecheck ? analysisRecheckDelta(staleBefore,payload) : null;
-  const newsImpactRecheckDelta=!needsFreshnessRecheck && newsImpactEligible ? analysisRecheckDelta(staleBefore,payload) : null;
-  const effectiveRecheckDelta=recheckDelta || newsImpactRecheckDelta;
-  const newsImpact=newsImpactDeltaStatus(staleBefore,payload,effectiveRecheckDelta,{requested:newsImpactRecheck,eligible:newsImpactEligible,performed:shouldPerformRecheck,publishedAt:newsPublishedAt});
-  await setCache(cacheKey, fixtureId, payload, cfg, ttl);
-  await captureAnalysisTimelineSnapshot(payload, cfg, { delta: effectiveRecheckDelta });
-  await captureModelPrediction(payload, cfg);
-  await recordHistory(user.id, payload, cfg);
-  if (newsImpactEligible && !needsFreshnessRecheck) {
-    void recordGrowthEvent(cfg,{userId:user.id,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:'news_impact',material:Boolean(effectiveRecheckDelta?.material),stable:Boolean(effectiveRecheckDelta?.stable),changeCount:Number(effectiveRecheckDelta?.items?.length || 0),codes:(effectiveRecheckDelta?.codes || []).slice(0,6)}});
-  }
-  if (needsFreshnessRecheck) void recordGrowthEvent(cfg,{userId:user.id,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:previousFreshness?.reasonCode || 'age_window',material:Boolean(recheckDelta?.material),stable:Boolean(recheckDelta?.stable),changeCount:Number(recheckDelta?.items?.length || 0),codes:(recheckDelta?.codes || []).slice(0,6)}});
-  if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:false,recheck:shouldPerformRecheck}});
-  await recordTrackedFullAiOutcome('fresh');
-  const responseQuota=await getQuota(user.id,cfg);
-  usageCommitted=true;
-  return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:recheckReasonCode,delta:recheckDelta},newsImpact,quota:responseQuota}));
-  } finally {
-    try {
-      const disposition=usageCommitted ? 'commit' : 'refund';
-
-      if (usageReservation?.reserved) {
-        if (usageReservation.durable) {
-          await finalizeAnalysisUsageReservation({
-            reservation:usageReservation,
-            disposition,
-            cfg,
-            userId:user.id,
-          });
-        } else if (!usageCommitted) {
-          try {
-            await refundAnalysisQuota(user.id,usageReservation,cfg);
-          } catch (error) {
-            bumpTelemetry('quotaRefundFailures');
-            await recordOpsEvent(cfg,{
-              severity:'error',
-              source:'quota',
-              eventType:'analysis_usage_compensation',
-              code:'LEGACY_QUOTA_REFUND_FAILED',
-              message:'Legacy analysis quota refund failed before durable lifecycle confirmation.',
-              meta:{
-                usageDate:usageReservation.date || null,
-                error:redactOpsString(error?.message || error,180),
-              },
-            }).catch(()=>null);
-          }
-        }
-      }
-
-      if (passUsageReservation?.reserved) {
-        if (passUsageReservation.durable) {
-          await finalizeAnalysisUsageReservation({
-            reservation:passUsageReservation,
-            disposition,
-            cfg,
-            userId:user.id,
-          });
-        } else if (!usageCommitted) {
-          try {
-            const result=await refundEntitlementUsage(user.id,passUsageReservation.entitlementId,cfg);
-            if (result?.updated !== true) throw new Error(String(result?.reason || 'legacy_pass_refund_not_confirmed'));
-            bumpTelemetry('passUsageRefunds');
-          } catch (error) {
-            bumpTelemetry('passUsageRefundFailures');
-            await recordOpsEvent(cfg,{
-              severity:'error',
-              source:'quota',
-              eventType:'analysis_usage_compensation',
-              code:'LEGACY_PASS_REFUND_FAILED',
-              message:'Legacy limited Pass refund failed before durable lifecycle confirmation.',
-              meta:{
-                entitlementId:Number(passUsageReservation.entitlementId || 0) || null,
-                error:redactOpsString(error?.message || error,180),
-              },
-            }).catch(()=>null);
-          }
-        }
-      }
-    } finally {
-      await releaseDistributedAnalysisLock(analysisLock,cfg);
-    }
-  }
-  } catch (error) {
-    const reason=newsImpactFailureCode(error,'server_error');
-    const recovery=await recordTrackedFullAiFailure(reason,Number(error?.status || 0));
-    if (recovery) error.newsImpactRecovery=recovery;
-    throw error;
-  }
+  return apiAnalyzeRuntime(...args);
 }
-
 const releaseFieldEvidenceRuntime=createReleaseFieldEvidenceRuntime({
   hasSupabase,
   appVersion:APP_VERSION,
