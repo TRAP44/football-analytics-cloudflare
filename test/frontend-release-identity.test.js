@@ -21,7 +21,9 @@ test('frontend asset revision matches the runtime release identity', () => {
     assert.ok(html.includes(`/app.js?v=${expected}`));
     assert.ok(html.includes(`/styles.css?v=${expected}`));
     assert.ok(html.includes(`/styles/public-shell.css?v=${expected}`));
+    assert.ok(html.includes(`/assets/brand/matchradar-mark.svg?v=${expected}`));
   }
+  assert.ok(publicHtml.includes(`/styles/premium-ui.css?v=${expected}`));
 });
 
 
