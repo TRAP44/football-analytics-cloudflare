@@ -16,14 +16,14 @@ function expectedReleaseCandidate(version) {
   return `RC${match[1]}`;
 }
 
-async function request(fetchImpl, baseUrl, path, timeoutMs = 8000) {
+async function request(fetchImpl, baseUrl, path, timeoutMs = 8000, init = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetchImpl(new URL(path, baseUrl), {
       method: 'GET',
       redirect: 'follow',
-      headers: { accept: 'application/json' },
+      headers: { accept: 'application/json', ...(init.headers || {}) },
       signal: controller.signal,
     });
   } finally {
@@ -37,14 +37,29 @@ export async function runRollbackSmoke(rawBaseUrl, expectedVersion, options = {}
   const fetchImpl = options.fetchImpl || fetch;
   const retries = Math.max(1, Number(options.retries || 10));
   const retryDelayMs = Math.max(0, Number(options.retryDelayMs ?? 6000));
+  const healthProbeToken = String(options.healthProbeToken || process.env.HEALTH_PROBE_TOKEN || '').trim();
   let lastError = '';
 
   for (let attempt = 1; attempt <= retries; attempt += 1) {
     try {
-      const response = await request(fetchImpl, baseUrl, '/health');
-      if (!response.ok) throw new Error(`/health returned HTTP ${response.status}`);
-      const health = await response.json();
-      if (health?.ok !== true) throw new Error('/health.ok must be true after rollback.');
+      const publicResponse = await request(fetchImpl, baseUrl, '/health');
+      if (!publicResponse.ok) throw new Error(`/health returned HTTP ${publicResponse.status}`);
+      const publicHealth = await publicResponse.json();
+      if (publicHealth?.ok !== true) throw new Error('/health.ok must be true after rollback.');
+
+      const publicKeys = Object.keys(publicHealth || {}).sort();
+      const legacyDetailedHealth = publicKeys.some(key => key !== 'ok');
+      let health = publicHealth;
+
+      if (!legacyDetailedHealth) {
+        if (!healthProbeToken) throw new Error('HEALTH_PROBE_TOKEN is required to verify the restored release.');
+        const detailedResponse = await request(fetchImpl, baseUrl, '/health', 8000, {
+          headers:{'x-health-token':healthProbeToken},
+        });
+        if (!detailedResponse.ok) throw new Error(`Detailed /health returned HTTP ${detailedResponse.status}`);
+        health = await detailedResponse.json();
+      }
+
       if (health?.version !== expectedVersion) throw new Error(`Expected ${expectedVersion}, got ${health?.version || 'unknown'}.`);
       if (health?.releaseCandidate !== expectedRc) throw new Error(`Expected ${expectedRc}, got ${health?.releaseCandidate || 'unknown'}.`);
       if (health?.devMode !== false) throw new Error('DEV_MODE must remain false after rollback.');
