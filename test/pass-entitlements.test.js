@@ -51,6 +51,9 @@ test('Pass prices keep requested defaults and are server-configurable', () => {
   assert.equal(passProductConfig('WEEKEND_PASS', {}).durationHours, 168);
   assert.equal(passProductConfig('DAY_PASS', { passPrices: { DAY_PASS: 99 } }).stars, 99);
   assert.equal(passProductConfig('DAY_PASS', { passDurations: { DAY_PASS: 12 } }).durationHours, 12);
+  assert.equal(passProductConfig('DAY_PASS', { passUsageLimits: { DAY_PASS: 3 } }).usageLimit, null);
+  assert.equal(passProductConfig('DAY_PASS', { passPrices: { DAY_PASS: true } }).stars, 89);
+  assert.equal(passProductConfig('DAY_PASS', { passDurations: { DAY_PASS: 12.5 } }).durationHours, 24);
   assert.equal(passProductConfig('WEEKEND_PASS', {}).saleReady, false);
   const weekend = passProductConfig('WEEKEND_PASS', { passUsageLimits: { WEEKEND_PASS: 6 } });
   assert.equal(weekend.usageLimit, 6);
@@ -122,6 +125,25 @@ test('expired Pass, Day Pass window and usage cap fail closed', () => {
   assert.equal(entitlementDecision(limited, { fixtureId: 123, now: NOW }).reason, 'usage_exhausted');
 });
 
+test('malformed entitlement rows fail closed instead of broadening Pass access', () => {
+  assert.equal(entitlementDecision(row({ usage_count: 'not-a-number' }), { fixtureId: 777, now: NOW }).reason, 'invalid_usage');
+  assert.equal(entitlementDecision(row({ fixture_id: 'broken' }), { fixtureId: 777, now: NOW }).reason, 'invalid_fixture');
+  assert.equal(entitlementDecision(row({ starts_at: null }), { fixtureId: 777, now: NOW }).reason, 'invalid_window');
+  assert.equal(entitlementDecision(row({
+    entitlement_type: 'DAY_PASS',
+    fixture_id: 777,
+  }), { fixtureId: 777, now: NOW }).reason, 'invalid_fixture');
+
+  const malformedCollection = resolveEntitlementAccess({
+    plan: 'FREE',
+    entitlements: { unexpected: true },
+    fixtureId: 777,
+    now: NOW,
+  });
+  assert.equal(malformedCollection.source, 'free');
+  assert.equal(malformedCollection.access.expandedAi, false);
+});
+
 test('FREE has no entitlement; Pass grants access; PRO/PREMIUM subscription takes precedence', () => {
   const free = resolveEntitlementAccess({ plan: 'FREE', entitlements: [], fixtureId: 777, now: NOW });
   assert.equal(free.source, 'free');
@@ -190,6 +212,31 @@ test('duplicate and concurrent payment activation are idempotent and conflicting
   assert.equal(replay.duplicate, false);
   assert.equal(replay.reason, 'payment_charge_conflict');
   assert.equal(memory.userEntitlements.size, 1);
+});
+
+test('memory fallback rejects uncapped Weekend Pass and conflicting cap replay', async () => {
+  const { service, memory } = memoryRuntime();
+  const input = {
+    telegramId: 42,
+    passType: PASS_TYPES.WEEKEND,
+    fixtureId: 0,
+    starsAmount: 149,
+    paymentChargeId: 'charge-weekend-parity',
+    invoicePayload: 'signed-weekend-parity',
+    paidAt: new Date(Date.now() - 60 * 1000).toISOString(),
+  };
+
+  const uncapped = await service.activatePassPurchase(input, {});
+  assert.deepEqual(uncapped, { activated: false, duplicate: false, reason: 'invalid_purchase' });
+  assert.equal(memory.userEntitlements.size, 0);
+
+  const created = await service.activatePassPurchase(input, { passUsageLimits: { WEEKEND_PASS: 2 } });
+  assert.equal(created.activated, true);
+
+  const replayWithDifferentCap = await service.activatePassPurchase(input, { passUsageLimits: { WEEKEND_PASS: 3 } });
+  assert.equal(replayWithDifferentCap.activated, false);
+  assert.equal(replayWithDifferentCap.duplicate, false);
+  assert.equal(replayWithDifferentCap.reason, 'payment_charge_conflict');
 });
 
 test('Weekend Pass requires an explicit package cap and reservation refunds failed work', async () => {
