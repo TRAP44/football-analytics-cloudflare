@@ -293,6 +293,18 @@ test('alert destinations reject coercion and deduplicate slot and destination id
   assert.deepEqual(plan.targetSlots,[0,2]);
 });
 
+test('planner canonicalizes incident identity before building ledger keys', () => {
+  const incident=alertIncident(' pslo-provider-trimmed ');
+  const plan=planProviderIncidentAlert(
+    {activeIncident:incident,history:[incident]},
+    [],
+    {destinations:[{slot:0,destinationKey:'destination-key-0001'}]},
+  );
+  assert.equal(plan.action,'send');
+  assert.equal(plan.incidentId,'pslo-provider-trimmed');
+  assert.equal(plan.alertKey,'pslo-provider-trimmed:incident');
+});
+
 test('planner rejects malformed active/recovered incident identity', () => {
   assert.deepEqual(
     planProviderIncidentAlert(
