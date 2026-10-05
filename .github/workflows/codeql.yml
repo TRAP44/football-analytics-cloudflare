@@ -12,6 +12,7 @@ on:
       - "wrangler.jsonc"
       - ".github/workflows/codeql.yml"
   pull_request:
+    types: [opened, synchronize, reopened, closed]
     branches: [main]
     paths:
       - "src/**"
@@ -36,6 +37,7 @@ concurrency:
 
 jobs:
   analyze:
+    if: ${{ github.event_name != 'pull_request' || github.event.action != 'closed' }}
     name: Analyze JavaScript
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 20
