@@ -54,6 +54,7 @@ test('Issue #490 public service status preserves operational/degraded/maintenanc
   assert.equal(value.services.telegram,'operational');
   assert.equal(value.services.aiAnalysis,'operational');
   assert.equal(value.services.news,'operational');
+  assert.equal('deployment' in value,false);
 
   const degraded=runtime({providerCooldownUntil:2_000});
   assert.equal((await degraded.api.serviceStatus({apiFootballKey:'football'})).status,'degraded');
@@ -70,6 +71,33 @@ test('Issue #490 public service status preserves operational/degraded/maintenanc
   assert.equal(maintenanceValue.ok,false);
   assert.equal(maintenanceValue.services.aiAnalysis,'paused');
   assert.equal(maintenanceValue.notice,'maintenance');
+});
+
+test('public service status fails safe on malformed cooldown, config and runtime values',async()=>{
+  const malformed=runtime({
+    providerCooldownUntil:true,
+    controls:{
+      maintenanceMode:'false',
+      analysisEnabled:'true',
+      searchEnabled:true,
+      liveEnabled:false,
+      message:{internal:'do not expose'},
+    },
+  });
+  const value=await malformed.api.serviceStatus({
+    botToken:{secret:true},
+    webhookSecret:'hook',
+    apiFootballKey:['football'],
+    tavilyKey:true,
+  });
+  assert.equal(value.status,'degraded');
+  assert.equal(value.services.telegram,'configuration_required');
+  assert.equal(value.services.aiAnalysis,'paused');
+  assert.equal(value.services.search,'configuration_required');
+  assert.equal(value.services.live,'paused');
+  assert.equal(value.services.news,'limited');
+  assert.equal(value.notice,'');
+  assert.equal('deployment' in value,false);
 });
 
 test('Issue #490 readiness builder preserves internal contract before public sanitization',async()=>{
@@ -92,6 +120,53 @@ test('Issue #490 readiness builder preserves internal contract before public san
   assert.equal(rt.evidence[0],cfg);
 });
 
+test('readiness uses strict booleans and bounded numeric fields',async()=>{
+  const rt=runtime({composite:{
+    valid:'true',
+    ok:'true',
+    connectivity:{ok:'true',status:{value:'ok'},attempts:true},
+    schema:{ok:1,status:'ok',contractVersion:true,fingerprint:{fingerprint:{secret:true},expected:['expected']}},
+    backendSecurity:{ok:'true',status:'ok'},
+    authFailures:{available:'true',count:true},
+  }});
+  const value=await rt.api.computeReadinessSnapshot({
+    botToken:{secret:true},
+    webhookSecret:'hook',
+  });
+  assert.equal(value.ok,false);
+  assert.equal(value.checks.telegramConfigured,false);
+  assert.equal(value.checks.supabase.ok,false);
+  assert.equal(value.checks.supabase.status,'unknown');
+  assert.equal(value.checks.supabase.attempts,1);
+  assert.equal(value.checks.schema.ok,false);
+  assert.equal(value.checks.schema.contractVersion,0);
+  assert.equal(value.checks.schema.fingerprint,'');
+  assert.equal(value.checks.recentSupabaseAuthFailures,null);
+});
+
+test('release-field evidence failure does not make readiness unavailable',async()=>{
+  const base=runtime();
+  const api=createPublicStatusRuntime({
+    loadRuntimeControls:async()=>({value:{maintenanceMode:false,analysisEnabled:true,searchEnabled:true,liveEnabled:true}}),
+    publicRuntimeControls:value=>value,
+    providerCooldownUntil:()=>0,
+    currentReleaseIdentity:()=>({deploySha:'release-sha'}),
+    readCompositeReadiness:async()=>({
+      valid:true,
+      ok:true,
+      connectivity:{ok:true,status:'ok',attempts:1},
+      schema:{ok:true,status:'ok',contractVersion:2},
+      backendSecurity:{ok:true,status:'ok'},
+      authFailures:{available:true,count:0},
+    }),
+    scheduleReleaseFieldEvidence:()=>{ throw new Error('evidence unavailable'); },
+    now:()=>1000,
+  });
+  const value=await api.computeReadinessSnapshot({botToken:'bot',webhookSecret:'hook'});
+  assert.equal(value.ok,true);
+  assert.equal(base.evidence.length,0);
+});
+
 test('Issue #490 readiness fails closed when Telegram or composite readiness is not ready',async()=>{
   const missingTelegram=runtime();
   assert.equal((await missingTelegram.api.computeReadinessSnapshot({})).ok,false);
@@ -109,6 +184,35 @@ test('Issue #490 readiness fails closed when Telegram or composite readiness is 
   assert.equal(value.status,'not_ready');
   assert.equal(value.checks.supabase.attempts,2);
   assert.equal(value.checks.recentSupabaseAuthFailures,null);
+});
+
+test('public router only serves status surfaces to read methods and fails closed on malformed readiness flags',async()=>{
+  const router=createPublicStatusRouter({
+    publicStatusRuntime:{serviceStatus:async()=>({ok:true,status:'operational'})},
+    publicHealthRuntime:{
+      liveSnapshot:()=>({ok:true,status:'alive'}),
+      readinessSnapshot:async()=>({ok:'true',status:'ready'}),
+      healthSnapshot:async()=>({ok:'true',status:'ready'}),
+    },
+    appManifest:()=>({version:'manifest'}),
+    loadRuntimeControls:async()=>({schemaReady:'true',value:{revision:4},source:{internal:'supabase'}}),
+    publicRuntimeControls:value=>value,
+    runtimeControlsCacheMs:true,
+    json:(body,status=200,headers={})=>({body,status,headers}),
+  });
+
+  assert.equal(await router.handle({method:'POST'},{pathname:'/health/live'},{}),null);
+  assert.equal(await router.handle({method:true},{pathname:'/api/public-status'},{}),null);
+
+  const ready=await router.handle({method:'GET'},{pathname:'/health/ready'},{});
+  assert.equal(ready.status,503);
+  const health=await router.handle({method:'HEAD'},{pathname:'/health'},{});
+  assert.equal(health.status,503);
+
+  const status=await router.handle({method:'GET'},{pathname:'/api/runtime-status'},{});
+  assert.equal(status.body.available,false);
+  assert.equal(status.body.source,'unknown');
+  assert.equal(status.body.cacheSeconds,0);
 });
 
 test('Issue #490 public router preserves manifest, runtime-status and retired Supabase probe behavior',async()=>{
