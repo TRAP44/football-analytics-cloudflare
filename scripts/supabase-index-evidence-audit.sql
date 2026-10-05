@@ -1,6 +1,6 @@
--- MatchRadar production index evidence audit (Issue #493)
+-- MatchRadar production index evidence audit.
 -- READ-ONLY by design. This script must never drop/create/reindex database objects.
--- Capture output at the beginning and end of a representative production/soft-launch window.
+-- Capture output at the beginning and end of a representative production traffic window.
 -- Compare idx_scan deltas; cumulative zero usage alone is not sufficient evidence for removal.
 
 begin transaction read only;
@@ -54,7 +54,14 @@ index_meta as (
     pg_relation_size(i.oid) as bytes,
     pg_get_indexdef(i.oid) as index_def,
     ix.indisunique,
-    ix.indisprimary
+    ix.indisprimary,
+    ix.indisvalid,
+    ix.indisready,
+    exists (
+      select 1
+      from pg_constraint c
+      where c.conindid = ix.indexrelid
+    ) as backs_constraint
   from pg_index ix
   join pg_class t on t.oid = ix.indrelid
   join pg_class i on i.oid = ix.indexrelid
@@ -76,8 +83,11 @@ select
   pg_size_pretty(m.bytes) as index_size,
   m.indisunique,
   m.indisprimary,
+  m.indisvalid,
+  m.indisready,
+  m.backs_constraint,
   case
-    when m.indisprimary or m.indisunique then 'required_keep'
+    when m.indisprimary or m.indisunique or m.backs_constraint then 'required_keep'
     when coalesce(s.idx_scan, 0) > 0 then 'observed_used'
     when coalesce(t.n_live_tup, 0) = 0 then 'future_operational_retain'
     else 'needs_representative_traffic'
@@ -98,18 +108,30 @@ with idx as (
     i.relname as index_name,
     ix.indexrelid,
     ix.indrelid,
+    i.relam,
+    am.amname as access_method,
     ix.indkey,
     ix.indclass,
     ix.indcollation,
     ix.indoption,
+    ix.indnkeyatts,
     ix.indexprs,
     ix.indpred,
     ix.indisunique,
     ix.indisprimary,
+    ix.indnullsnotdistinct,
+    ix.indisvalid,
+    ix.indisready,
+    exists (
+      select 1
+      from pg_constraint c
+      where c.conindid = ix.indexrelid
+    ) as backs_constraint,
     pg_get_indexdef(i.oid) as index_def
   from pg_index ix
   join pg_class t on t.oid = ix.indrelid
   join pg_class i on i.oid = ix.indexrelid
+  join pg_am am on am.oid = i.relam
   join pg_namespace n on n.oid = t.relnamespace
   where n.nspname = 'public'
 )
@@ -117,18 +139,28 @@ select
   a.table_name,
   a.index_name as index_a,
   b.index_name as index_b,
+  a.access_method,
   a.indisunique,
   a.indisprimary,
+  a.backs_constraint as index_a_backs_constraint,
+  b.backs_constraint as index_b_backs_constraint,
   a.index_def as definition_a,
   b.index_def as definition_b
 from idx a
 join idx b
   on a.indrelid = b.indrelid
  and a.indexrelid < b.indexrelid
+ and a.relam = b.relam
  and a.indkey = b.indkey
  and a.indclass = b.indclass
  and a.indcollation = b.indcollation
  and a.indoption = b.indoption
+ and a.indnkeyatts = b.indnkeyatts
+ and a.indnullsnotdistinct = b.indnullsnotdistinct
+ and a.indisvalid
+ and b.indisvalid
+ and a.indisready
+ and b.indisready
  and coalesce(pg_get_expr(a.indexprs, a.indrelid), '') = coalesce(pg_get_expr(b.indexprs, b.indrelid), '')
  and coalesce(pg_get_expr(a.indpred, a.indrelid), '') = coalesce(pg_get_expr(b.indpred, b.indrelid), '')
  and a.indisunique = b.indisunique
