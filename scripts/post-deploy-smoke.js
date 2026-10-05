@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { validateReleaseIdentity } from '../src/release-identity.js';
 
-const REQUIRED_HEALTH_FLAGS = [
+const REQUIRED_HEALTH_FEATURES = [
   'adminSecurity',
   'adminDevModeIsolation',
   'backendSecurityContract',
@@ -312,7 +312,7 @@ async function requestJsonForDeployment(fetchImpl, baseUrl, path, label, expecte
   let lastError='';
   for(let attempt=1;attempt<=retries;attempt+=1){
     try{
-      const response=await request(fetchImpl,baseUrl,path);
+      const response=await request(fetchImpl,baseUrl,path,8000,{headers:options.headers || {}});
       const body=await jsonBody(response,label);
       if(!response.ok) throw new Error(`${label} returned HTTP ${response.status}.`);
       verifyRuntimeDeploymentIdentity(body,label,expectedSha);
@@ -333,6 +333,8 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
   const retries = Math.max(1, Number(options.retries || 10));
   const retryDelayMs = Math.max(0, Number(options.retryDelayMs ?? 6000));
   const expectedMonetization = String(options.expectedMonetization || 'paused').toLowerCase() === 'enabled' ? 'enabled' : 'paused';
+  const healthProbeToken = String(options.healthProbeToken || process.env.HEALTH_PROBE_TOKEN || '').trim();
+  if (!healthProbeToken) throw new Error('HEALTH_PROBE_TOKEN is required for detailed deployment health verification.');
   const rcNumber = /-rc(\d+)$/i.exec(String(expectedVersion || ''))?.[1];
   if (!rcNumber) throw new Error('Expected version must end with -rc<number>.');
   const expectedReleaseCandidate = `RC${rcNumber}`;
@@ -366,7 +368,12 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
   if (!readiness) throw new Error(`Deployment did not become ready: ${lastHealthError}`);
   if (readiness.releaseCandidate !== expectedReleaseCandidate) throw new Error(`Expected ${expectedReleaseCandidate}, received ${readiness.releaseCandidate || 'unknown'}.`);
 
-  const healthResult=await requestJsonForDeployment(fetchImpl,baseUrl,'/health','Health endpoint',expectedSha,{retries,retryDelayMs});
+  const publicHealthResponse=await request(fetchImpl,baseUrl,'/health');
+  const publicHealth=await jsonBody(publicHealthResponse,'Public health endpoint');
+  if(!publicHealthResponse.ok || publicHealth?.ok!==true) throw new Error('Public health endpoint is not healthy.');
+  if(Object.keys(publicHealth).some(key=>key!=='ok')) throw new Error('Public health endpoint exposes detailed diagnostics without a probe token.');
+
+  const healthResult=await requestJsonForDeployment(fetchImpl,baseUrl,'/health','Health endpoint',expectedSha,{retries,retryDelayMs,headers:{'x-health-token':healthProbeToken}});
   const healthResponse=healthResult.response;
   health=healthResult.body;
   if (health?.ok !== true) throw new Error('Health endpoint is not healthy.');
@@ -377,8 +384,8 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
     throw new Error(`Production deployment must expose MONETIZATION_ENABLED=${expectedMonetization === 'enabled' ? 'true' : 'false'}.`);
   }
   if (health?.readiness?.ok !== true) throw new Error('Legacy health endpoint must embed a passing readiness snapshot.');
-  for (const flag of REQUIRED_HEALTH_FLAGS) {
-    if (health[flag] !== 'enabled') throw new Error(`Health flag ${flag} is not enabled.`);
+  for (const flag of REQUIRED_HEALTH_FEATURES) {
+    if (health?.features?.[flag] !== true) throw new Error(`Health feature ${flag} is not enabled.`);
   }
 
   const manifestResult=await requestJsonForDeployment(fetchImpl,baseUrl,'/api/app-manifest','App manifest',expectedSha,{retries,retryDelayMs});
@@ -454,7 +461,7 @@ async function main() {
   } catch {}
   const requestedMonetization = process.env.EXPECTED_MONETIZATION || configuredMonetization;
   const expectedMonetization = String(requestedMonetization).toLowerCase() === 'enabled' ? 'enabled' : 'paused';
-  const result = await runDeploymentSmoke(baseUrl, expectedVersion, expectedSha, { expectedMonetization });
+  const result = await runDeploymentSmoke(baseUrl, expectedVersion, expectedSha, { expectedMonetization, healthProbeToken:process.env.HEALTH_PROBE_TOKEN });
   console.log(`Post-deploy smoke passed: ${result.version} sha=${expectedSha} at ${result.origin} (${result.checks} checks).`);
 }
 
