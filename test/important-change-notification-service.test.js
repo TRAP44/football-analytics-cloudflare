@@ -119,6 +119,49 @@ test('scheduler does not generate provider work and skips already notified recip
   assert.equal(result.checked,2);
 });
 
+test('scheduler fails soft when runtime controls are unavailable', async () => {
+  const events=[];
+  const service=createImportantChangeNotificationService({
+    hasSupabase:()=>true,
+    loadRuntimeControls:async()=>{ throw new Error('controls unavailable'); },
+    supaSelectPaged:async()=>{ throw new Error('should not query reminders'); },
+    getOddsSnapshots:async()=>[],
+    deliverClaimedReminder:async()=>({state:'sent'}),
+    recordOpsEvent:async(_cfg,event)=>events.push(event),
+  });
+
+  const result=await service.processImportantChangeNotifications({botToken:'token'});
+  assert.equal(result.ok,false);
+  assert.equal(result.failed,1);
+  assert.equal(result.fixturesChecked,0);
+  assert.equal(events.at(-1)?.code,'IMPORTANT_CHANGE_NOTIFICATION_RUNTIME_CONTROLS_FAILED');
+});
+
+test('scheduler records odds snapshot read failures without aborting other fixtures', async () => {
+  const events=[];
+  const reads=[];
+  const rows=[reminder(1,100),reminder(2,200)];
+  const service=createImportantChangeNotificationService({
+    hasSupabase:()=>true,
+    loadRuntimeControls:async()=>({value:{remindersEnabled:true}}),
+    supaSelectPaged:async()=>({rows,truncated:false}),
+    getOddsSnapshots:async(fixtureId)=>{
+      reads.push(fixtureId);
+      if (fixtureId===100) throw new Error('odds store unavailable');
+      return snapshots();
+    },
+    deliverClaimedReminder:async()=>({state:'sent'}),
+    recordOpsEvent:async(_cfg,event)=>events.push(event),
+  });
+
+  const result=await service.processImportantChangeNotifications({botToken:'token'});
+  assert.deepEqual(reads,[100,200]);
+  assert.equal(result.failed,1);
+  assert.equal(result.significant,1);
+  assert.equal(result.sent,1);
+  assert.ok(events.some(event=>event.code==='IMPORTANT_CHANGE_NOTIFICATION_ODDS_READ_FAILED' && event.meta?.fixtureId===100));
+});
+
 test('scheduler fails soft when recipient preference filtering is unavailable', async () => {
   const events=[];
   const service=createImportantChangeNotificationService({
