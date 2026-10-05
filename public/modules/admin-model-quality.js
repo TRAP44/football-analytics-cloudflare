@@ -136,7 +136,7 @@ export function createAdminModelQualityModule({
           return `<div class="calibration-weight-row"><span>${escapeHtml(signalLabel(x.name))}</span><div><i style="--w:${Math.max(0, Math.min(100, current))}%"></i></div><strong>${base.toFixed(0)} → ${current.toFixed(1)}%</strong><small>выборка ${Number(x.sample || 0)}${Number.isFinite(Number(x.avgBrier)) ? ` · ошибка Брайера ${qualityNum(x.avgBrier)}` : ''}</small></div>`;
         }).join('')}
       </div>
-      ${Number(impact.sample || 0) ? `<div class="calibration-impact"><span>Проверка v3.7: выборка ${Number(impact.sample || 0)}</span><strong>Ошибка Брайера ${qualityNum(impact.rawBrier)} → ${qualityNum(impact.finalBrier)}</strong><small>${Number(impact.brierDelta || 0) > 0 ? 'улучшение' : Number(impact.brierDelta || 0) < 0 ? 'ухудшение — автоматика будет видна в исторической проверке' : 'без изменения'}</small></div>` : '<p class="quality-engine-note">Эффект v3.7 появится после завершения первых матчей, рассчитанных этой версией.</p>'}
+      ${Number(impact.sample || 0) ? `<div class="calibration-impact"><span>Проверка калибровки: выборка ${Number(impact.sample || 0)}</span><strong>Ошибка Брайера ${qualityNum(impact.rawBrier)} → ${qualityNum(impact.finalBrier)}</strong><small>${Number(impact.brierDelta || 0) > 0 ? 'улучшение' : Number(impact.brierDelta || 0) < 0 ? 'ухудшение — автоматика будет видна в исторической проверке' : 'без изменения'}</small></div>` : '<p class="quality-engine-note">Эффект калибровки появится после завершения первых матчей, рассчитанных текущей моделью.</p>'}
       <p class="quality-engine-note">${escapeHtml(humanizeTechnicalText(ce.note || 'Автокалибровка включается только после достаточной выборки.'))}</p>`;
   
     confidence.hidden = false;
