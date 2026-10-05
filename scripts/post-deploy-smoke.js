@@ -265,6 +265,12 @@ function deploymentBaseUrl(value) {
   return url;
 }
 
+function boundedNumber(value, fallback, min, max) {
+  const parsed=Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min,Math.min(max,parsed));
+}
+
 async function request(fetchImpl, baseUrl, path, timeoutMs = 8000, init = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -272,7 +278,12 @@ async function request(fetchImpl, baseUrl, path, timeoutMs = 8000, init = {}) {
     return await fetchImpl(new URL(path, baseUrl), {
       method: init.method || 'GET',
       redirect: 'follow',
-      headers: { accept: 'application/json, text/html;q=0.9', ...(init.headers || {}) },
+      headers: {
+        accept: 'application/json, text/html;q=0.9',
+        'cache-control': 'no-cache',
+        'user-agent': 'MatchRadar-Post-Deploy-Smoke/1.0',
+        ...(init.headers || {}),
+      },
       ...(init.body !== undefined ? { body:init.body } : {}),
       signal: controller.signal,
     });
@@ -307,8 +318,8 @@ function verifyRuntimeDeploymentIdentity(body, label, expectedSha) {
 }
 
 async function requestJsonForDeployment(fetchImpl, baseUrl, path, label, expectedSha, options = {}) {
-  const retries=Math.max(1,Number(options.retries || 1));
-  const retryDelayMs=Math.max(0,Number(options.retryDelayMs || 0));
+  const retries=boundedNumber(options.retries,1,1,20);
+  const retryDelayMs=boundedNumber(options.retryDelayMs,0,0,60000);
   let lastError='';
   for(let attempt=1;attempt<=retries;attempt+=1){
     try{
@@ -330,8 +341,8 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
   const options=typeof expectedShaOrOptions === 'string' ? maybeOptions : (expectedShaOrOptions || {});
   const baseUrl = deploymentBaseUrl(rawBaseUrl);
   const fetchImpl = options.fetchImpl || fetch;
-  const retries = Math.max(1, Number(options.retries || 10));
-  const retryDelayMs = Math.max(0, Number(options.retryDelayMs ?? 6000));
+  const retries = boundedNumber(options.retries,10,1,20);
+  const retryDelayMs = boundedNumber(options.retryDelayMs,6000,0,60000);
   const expectedMonetization = String(options.expectedMonetization || 'paused').toLowerCase() === 'enabled' ? 'enabled' : 'paused';
   const rcNumber = /-rc(\d+)$/i.exec(String(expectedVersion || ''))?.[1];
   if (!rcNumber) throw new Error('Expected version must end with -rc<number>.');
@@ -418,7 +429,7 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
   const requiredServices = ['telegram','miniApp','aiAnalysis','search','live'];
   for (const service of requiredServices) {
     if (publicStatus?.services?.[service] !== 'operational') {
-      throw new Error(`Public status service ${service} must be operational before beta.`);
+      throw new Error(`Public status service ${service} must be operational before production acceptance.`);
     }
   }
 
@@ -428,6 +439,12 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
     if (!response.ok || !type.includes('text/html')) throw new Error(`${path} must be a public HTML page.`);
     const csp=String(response.headers.get('content-security-policy') || '');
     if (!csp.includes("object-src 'none'")) throw new Error(`${path} is missing the static security policy.`);
+  }
+
+  const statusScript=await request(fetchImpl,baseUrl,'/status.js');
+  const statusScriptType=String(statusScript.headers.get('content-type') || '').toLowerCase();
+  if (!statusScript.ok || !/(javascript|ecmascript)/.test(statusScriptType)) {
+    throw new Error(`/status.js must be a public JavaScript asset, received HTTP ${statusScript.status}.`);
   }
 
   const webhookProbe=await request(fetchImpl,baseUrl,'/telegram/webhook',8000,{method:'POST',headers:{'content-type':'application/json'},body:'{}'});
