@@ -871,7 +871,7 @@ async function runStartupSequence() {
 
   // Runtime and identity are independent, but personal/feed reads must stay
   // behind the access decision. This removes one network waterfall without
-  // weakening the strict-beta authorization boundary.
+  // weakening the current access-control boundary.
   phaseStartedAt = performance.now();
   await Promise.allSettled([
     loadRuntimeStatus(false),
@@ -6587,7 +6587,7 @@ renderFirstRunGuide();
 syncFilterButtons();
 showView('matchesView', { restore: true });
 
-// RC30: settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
+// Settlement watchdog with runtime-gated automatic catch-up and cron audit trail.
 // The boot watchdog never leaves the user behind an endless splash screen.
 const startupWatchdog = setTimeout(() => {
   if (!$('bootGate')?.hidden && !state.compatibilityBlocked) {
