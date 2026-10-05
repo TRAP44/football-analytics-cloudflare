@@ -12,6 +12,40 @@ export function createImportantChangeNotificationService({
   const WINDOW_BEFORE_KICKOFF_MINUTES = 180;
   const WINDOW_AFTER_KICKOFF_MINUTES = 2;
 
+  function numericCandidate(value) {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value !== 'string') return null;
+    const raw=value.trim();
+    if (!/^\d+(?:\.\d+)?$/.test(raw)) return null;
+    const number=Number(raw);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function positiveSafeInteger(value, fallback = 0, max = Number.MAX_SAFE_INTEGER) {
+    const number=numericCandidate(value);
+    return Number.isSafeInteger(number) && number > 0 && number <= max ? number : fallback;
+  }
+
+  function nonNegativeSafeInteger(value) {
+    const number=numericCandidate(value);
+    return Number.isSafeInteger(number) && number >= 0 ? number : 0;
+  }
+
+  const fixtureLimit=positiveSafeInteger(maxFixturesPerRun,12,100);
+  const movementThreshold=(() => {
+    const value=numericCandidate(thresholdPp);
+    return value !== null && value > 0 && value <= 100 ? value : 5;
+  })();
+
+  async function emitOpsEvent(cfg, event) {
+    if (typeof recordOpsEvent !== 'function') return;
+    try {
+      await Promise.resolve(recordOpsEvent(cfg,event));
+    } catch {
+      // Scheduler observability is best-effort and must not break delivery.
+    }
+  }
+
   function candidateWindow(now = Date.now()) {
     return {
       from: new Date(now - WINDOW_AFTER_KICKOFF_MINUTES * 60_000).toISOString(),
@@ -22,7 +56,7 @@ export function createImportantChangeNotificationService({
   function groupByFixture(rows = []) {
     const groups = new Map();
     for (const row of rows) {
-      const fixtureId = Number(row?.fixture_id || 0);
+      const fixtureId = positiveSafeInteger(row?.fixture_id);
       if (!fixtureId || row?.important_change_notified_at) continue;
       const list = groups.get(fixtureId) || [];
       list.push(row);
@@ -32,22 +66,31 @@ export function createImportantChangeNotificationService({
   }
 
   function validProbability(value) {
-    const n = Number(value);
-    return Number.isFinite(n) && n >= 0 && n <= 100 ? n : null;
+    const number=numericCandidate(value);
+    return number !== null && number >= 0 && number <= 100 ? number : null;
   }
 
   function movementFromSnapshots(snapshots = []) {
-    const valid = (Array.isArray(snapshots) ? snapshots : [])
-      .filter(row => Number.isFinite(Date.parse(String(row?.at || ''))))
+    const ordered = (Array.isArray(snapshots) ? snapshots : [])
       .map(row => ({
         ...row,
-        homeProb: validProbability(row?.homeProb),
-        drawProb: validProbability(row?.drawProb),
-        awayProb: validProbability(row?.awayProb),
+        timestampMs:Date.parse(String(row?.at || '')),
+        homeProb:validProbability(row?.homeProb),
+        drawProb:validProbability(row?.drawProb),
+        awayProb:validProbability(row?.awayProb),
       }))
+      .filter(row => Number.isFinite(row.timestampMs))
       .filter(row => row.homeProb !== null && row.drawProb !== null && row.awayProb !== null)
       .filter(row => Math.abs((row.homeProb + row.drawProb + row.awayProb) - 100) <= 2.5)
-      .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+      .sort((a,b) => b.timestampMs-a.timestampMs);
+
+    const seenTimes=new Set();
+    const valid=[];
+    for (const row of ordered) {
+      if (seenTimes.has(row.timestampMs)) continue;
+      seenTimes.add(row.timestampMs);
+      valid.push(row);
+    }
 
     if (valid.length < 2) return { significant:false, reason:'insufficient_history', sample:valid.length };
 
@@ -63,7 +106,7 @@ export function createImportantChangeNotificationService({
       .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))[0];
 
     return {
-      significant:Boolean(strongest && Math.abs(strongest.delta) >= Number(thresholdPp || 5)),
+      significant:Boolean(strongest && Math.abs(strongest.delta) >= movementThreshold),
       reason: strongest ? 'evaluated' : 'invalid',
       sample:valid.length,
       baselineAt:baseline.at,
@@ -121,24 +164,50 @@ export function createImportantChangeNotificationService({
         order:'fixture_date.asc,fixture_id.asc,telegram_id.asc',
       });
     } catch (error) {
-      await recordOpsEvent(cfg, {
+      await emitOpsEvent(cfg, {
         severity:'error',
         source:'important_change_notifications',
         eventType:'important_change_notification_scheduler',
         code:'IMPORTANT_CHANGE_NOTIFICATION_READ_FAILED',
         message:error?.message || error,
         endpoint:'cron:important-change-notifications',
-      }).catch(()=>{});
+      });
       return { ok:false, checked:0, fixturesChecked:0, significant:0, sent:0, failed:1, unknown:0, claimed:0, truncated:false };
     }
 
     const rows = Array.isArray(page?.rows) ? page.rows : [];
-    const audience = typeof filterNotificationRecipients === 'function'
-      ? await filterNotificationRecipients(rows, 'market.movement', cfg)
-      : { rows, blockedByPreference:0, blockedByEntitlement:0 };
+    let audience;
+    try {
+      audience = typeof filterNotificationRecipients === 'function'
+        ? await filterNotificationRecipients(rows, 'market.movement', cfg)
+        : { rows, blockedByPreference:0, blockedByEntitlement:0 };
+    } catch (error) {
+      await emitOpsEvent(cfg,{
+        severity:'error',
+        source:'important_change_notifications',
+        eventType:'important_change_notification_scheduler',
+        code:'IMPORTANT_CHANGE_NOTIFICATION_AUDIENCE_FAILED',
+        message:error?.message || error,
+        endpoint:'cron:important-change-notifications',
+      });
+      return {
+        ok:false,
+        checked:rows.length,
+        eligible:0,
+        blockedByPreference:0,
+        blockedByEntitlement:0,
+        fixturesChecked:0,
+        significant:0,
+        sent:0,
+        failed:1,
+        unknown:0,
+        claimed:0,
+        truncated:Boolean(page?.truncated),
+      };
+    }
     const eligibleRows = Array.isArray(audience?.rows) ? audience.rows : [];
     const groups = groupByFixture(eligibleRows);
-    const fixtures = [...groups.entries()].slice(0, Math.max(1, Number(maxFixturesPerRun || 12)));
+    const fixtures = [...groups.entries()].slice(0, fixtureLimit);
     const truncated = Boolean(page?.truncated || groups.size > fixtures.length);
 
     let significant = 0;
@@ -177,8 +246,8 @@ export function createImportantChangeNotificationService({
       ok:!(failed || unknown || truncated),
       checked:rows.length,
       eligible:eligibleRows.length,
-      blockedByPreference:Number(audience?.blockedByPreference || 0),
-      blockedByEntitlement:Number(audience?.blockedByEntitlement || 0),
+      blockedByPreference:nonNegativeSafeInteger(audience?.blockedByPreference),
+      blockedByEntitlement:nonNegativeSafeInteger(audience?.blockedByEntitlement),
       fixturesChecked:fixtures.length,
       significant,
       sent,
@@ -189,7 +258,7 @@ export function createImportantChangeNotificationService({
     };
 
     if (sent || failed || unknown || truncated) {
-      await recordOpsEvent(cfg, {
+      await emitOpsEvent(cfg, {
         severity:failed || unknown || truncated ? 'warning' : 'info',
         source:'important_change_notifications',
         eventType:'important_change_notification_scheduler',
@@ -200,7 +269,7 @@ export function createImportantChangeNotificationService({
         message:`Важные изменения: проверено матчей ${fixtures.length}, сигналов ${significant}, отправлено ${sent}, ошибок ${failed}.`,
         endpoint:'cron:important-change-notifications',
         meta:summary,
-      }).catch(()=>{});
+      });
     }
 
     return summary;
