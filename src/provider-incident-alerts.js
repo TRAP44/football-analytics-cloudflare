@@ -30,6 +30,12 @@ function positiveInteger(value, fallback = 0, max = Number.MAX_SAFE_INTEGER) {
   return number !== null && number > 0 && number <= max ? number : fallback;
 }
 
+function boundedPositiveInteger(value, fallback, max) {
+  const number=integerCandidate(value);
+  if (number === null || number <= 0) return fallback;
+  return Math.min(max,number);
+}
+
 function finite(value, fallback = 0) {
   const number=numericCandidate(value);
   return number === null ? fallback : number;
@@ -263,24 +269,25 @@ export function planProviderIncidentAlert(report = {}, ledgerRows = [], { nowMs 
     ? report.activeIncident
     : null;
   if (active?.active === true) {
-    if (typeof active.incidentId !== 'string' || !active.incidentId.trim() || active.incidentId.length > 200) {
+    if (typeof active.incidentId !== 'string' || !active.incidentId.trim() || active.incidentId.trim().length > 200) {
       return { action:'none', reason:'incident_identity_unavailable' };
     }
-    if (active.state !== 'incident' && active.highestState !== 'incident') {
+    const incident={...active,incidentId:active.incidentId.trim()};
+    if (incident.state !== 'incident' && incident.highestState !== 'incident') {
       return { action:'none', reason:'watch_not_alertable' };
     }
-    const rows = relevantLedgerRows(ledgerRows, active.incidentId);
-    const openKey = active.incidentId + ':incident';
+    const rows = relevantLedgerRows(ledgerRows, incident.incidentId);
+    const openKey = incident.incidentId + ':incident';
     const openState = deliveryState(rows, openKey, normalizedDestinations, nowMs);
     if (!openState.completed) {
-      return planForKey({ rows, incident:active, kind:'incident', alertKey:openKey, destinations:normalizedDestinations, nowMs });
+      return planForKey({ rows, incident, kind:'incident', alertKey:openKey, destinations:normalizedDestinations, nowMs });
     }
 
-    if (active.severity === 'critical') {
-      const escalationKey = active.incidentId + ':escalation:critical';
+    if (incident.severity === 'critical') {
+      const escalationKey = incident.incidentId + ':escalation:critical';
       const escalation = planForKey({
         rows,
-        incident:active,
+        incident,
         kind:'escalation',
         alertKey:escalationKey,
         destinations:normalizedDestinations,
@@ -289,13 +296,13 @@ export function planProviderIncidentAlert(report = {}, ledgerRows = [], { nowMs 
       if (escalation.action === 'send' || !['already_delivered','delivery_exhausted'].includes(escalation.reason)) return escalation;
     }
 
-    const duration = Math.max(0,finite(active.durationMinutes));
+    const duration = Math.max(0,finite(incident.durationMinutes));
     for (let index = 1; index <= PROVIDER_INCIDENT_ALERT_POLICY.reminderLimit; index += 1) {
       if (duration < PROVIDER_INCIDENT_ALERT_POLICY.reminderAfterMinutes * index) break;
-      const reminderKey = active.incidentId + ':reminder:' + index;
+      const reminderKey = incident.incidentId + ':reminder:' + index;
       const reminder = planForKey({
         rows,
-        incident:active,
+        incident,
         kind:'reminder',
         alertKey:reminderKey,
         destinations:normalizedDestinations,
@@ -318,14 +325,15 @@ export function planProviderIncidentAlert(report = {}, ledgerRows = [], { nowMs 
     : null;
   if (!recovered) return { action:'none', reason:'no_incident' };
 
-  const rows = relevantLedgerRows(ledgerRows, recovered.incidentId);
+  const recoveredIncident={...recovered,incidentId:recovered.incidentId.trim()};
+  const rows = relevantLedgerRows(ledgerRows, recoveredIncident.incidentId);
   const hadIncidentAttempt = rows.some(row => ['incident','escalation','reminder'].includes(String(row?.transition || row?.alert_kind || row?.alertKind || '')));
   if (!hadIncidentAttempt) return { action:'none', reason:'recovery_without_prior_incident_alert' };
 
-  const recoveryKey = recovered.incidentId + ':recovery';
+  const recoveryKey = recoveredIncident.incidentId + ':recovery';
   return planForKey({
     rows,
-    incident:recovered,
+    incident:recoveredIncident,
     kind:'recovery',
     alertKey:recoveryKey,
     destinations:normalizedDestinations,
@@ -407,7 +415,7 @@ export function classifyProviderIncidentTelegramResult(result = {}, nowMs = Date
   }
 
   if (status === 429) {
-    const retryAfter = Math.min(604800,positiveInteger(result?.retryAfter,1,604800));
+    const retryAfter = boundedPositiveInteger(result?.retryAfter,1,604800);
     return {
       state:'retry_pending',
       retryAt:new Date(effectiveNow + retryAfter * 1000).toISOString(),
