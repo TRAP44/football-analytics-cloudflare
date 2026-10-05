@@ -41,6 +41,7 @@ export function sanitizeTeamLogoUrl(value) {
     if (
       url.protocol !== 'https:'
       || !TEAM_LOGO_ALLOWED_HOSTS.includes(url.hostname)
+      || url.port
       || url.username
       || url.password
     ) return '';
