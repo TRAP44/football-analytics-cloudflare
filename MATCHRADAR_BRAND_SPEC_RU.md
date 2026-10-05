@@ -1,62 +1,68 @@
-# MatchRadar — current public brand specification
+# MatchRadar — публичная спецификация бренда
 
-> Канонический public-facing brand contract после controlled rebrand с FutLens AI. Исторический документ `docs/archive/PHASE4_2_BRAND_IDENTITY_RU.md` сохраняется как запись предыдущего этапа и не является текущим source of truth.
+Этот документ — текущий source of truth для публичного бренда MatchRadar.
 
-## Public naming
+## Название и позиционирование
 
 - **Продукт:** MatchRadar
 - **Telegram-бот:** MatchRadar AI
 - **Telegram-канал:** MatchRadar | Футбол сегодня
 - **Основной слоган:** Видим, что меняет матч.
 - **Позиционирование:** AI-футбольный ассистент в Telegram.
-- **Descriptor:** Матчи, LIVE и AI-разбор — быстро и по делу.
-- **About:** AI-футбольный ассистент в Telegram: матчи, команды, LIVE и понятный разбор ключевых факторов.
-- **Channel description:** Матчи дня, составы, важные изменения и короткие AI-инсайты. Без лишнего шума. Полный разбор матчей — в MatchRadar AI.
+- **Короткое описание:** Матчи, LIVE и AI-разбор — быстро и по делу.
+- **Описание продукта:** AI-футбольный ассистент в Telegram: матчи, команды, LIVE и понятный разбор ключевых факторов.
+- **Описание канала:** Матчи дня, составы, важные изменения и короткие AI-инсайты. Без лишнего шума. Полный разбор матчей — в MatchRadar AI.
 
-## Visual identity
+## Визуальный стиль
 
-Сохраняется premium sports-tech direction Phase 4.2: dark graphite / Night Pitch, electric mint, secondary cool blue, clean typography, minimal sports-tech UI и существующая Home / Match Center hierarchy.
+Основное направление: современный sports-tech интерфейс с тёмной графитовой базой, electric mint как главным акцентом, дополнительным холодным синим и чистой компактной типографикой.
 
 Знак MatchRadar объединяет:
-- контур футбольного поля / центральную разметку;
-- круг радара / focus signal;
+- геометрию футбольного поля и центральной разметки;
+- радар / focus signal;
 - холодно-синий sweep/accent;
-- компактную геометрию, читаемую в маленьком Telegram avatar.
+- компактную форму, читаемую в маленьком Telegram avatar.
 
-Не использовать игровой, casino или букмекерский visual language.
+Не использовать casino, игровой или букмекерский visual language.
 
-## Current assets
+## Текущие бренд-ассеты
 
-- `public/assets/brand/matchradar-mark.svg` — app/favicon mark.
-- `public/assets/brand/matchradar-avatar.svg` — Telegram avatar source.
-- `public/assets/brand/matchradar-wordmark.svg` — horizontal wordmark.
+- `public/assets/brand/matchradar-mark.svg` — основной знак приложения и favicon.
+- `public/assets/brand/matchradar-avatar.svg` — источник Telegram avatar.
+- `public/assets/brand/matchradar-wordmark.svg` — горизонтальный wordmark.
 
-## Public surfaces
+## Публичные поверхности
 
 Mini App startup и header используют **MatchRadar** и слоган **«Видим, что меняет матч.»**.
 
-Telegram bot profile:
+Telegram bot:
 - display name: **MatchRadar AI**;
-- short description: **Матчи, LIVE и AI-разбор — быстро и по делу.**
+- short description: **Матчи, LIVE и AI-разбор — быстро и по делу.**;
 - description: **AI-футбольный ассистент в Telegram: матчи, команды, LIVE и понятный разбор ключевых факторов.**
 
-Telegram channel concept:
+Telegram channel:
 - name: **MatchRadar | Футбол сегодня**;
 - description: **Матчи дня, составы, важные изменения и короткие AI-инсайты. Без лишнего шума. Полный разбор матчей — в MatchRadar AI.**
 
 ## Deep-link / growth flow
 
-**Channel post → generated fixture link → MatchRadar Mini App → concrete Match Center / AI analysis → Share / Back to Telegram.**
+**Channel post → generated fixture link → MatchRadar Mini App → конкретный Match Center / AI-анализ → Share / Back to Telegram.**
 
-Этот rebrand не запускает Telegram Publisher и не расширяет Phase 5 evidence. `phase5_public_v2` остаётся без изменений.
+Брендинг сам по себе не включает publisher, платежи или новые продуктовые возможности.
 
-## Technical boundaries
+## Технические границы
 
-Не переименовывать без отдельной миграции:
+Публичный rebrand не требует переименования внутренних технических идентификаторов, если это может нарушить совместимость.
+
+Без отдельной миграции не изменять:
 - repository/package/internal API identifiers;
 - database schema;
 - telemetry internals;
 - Cloudflare Worker technical name;
-- historical RC/test filenames и internal feature keys вроде `fmAiNews`.
-
-Не изменять Telegram initData, public access, admin authorization, API contracts, Supabase schema, provider logic, AI model, monetization или Phase 5 evidence scope.
+- совместимые internal feature keys;
+- Telegram initData и авторизацию;
+- API contracts;
+- Supabase schema;
+- provider logic;
+- AI model;
+- monetization state.
