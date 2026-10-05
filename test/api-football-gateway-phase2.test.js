@@ -99,7 +99,7 @@ test('Phase 2 guard failure is safe across independent Worker-isolate gateway in
 
 test('Phase 2 gateway keeps request keys deterministic',()=>{
   const {gateway}=runtime();
-  assert.equal(gateway.providerRequestKey('/fixtures',{team:7,season:2026,empty:''},{responseType:'envelope'}),'football:/fixtures?season=2026&team=7:type=envelope');
+  assert.equal(gateway.providerRequestKey('/fixtures',{team:7,season:2026,empty:''},{responseType:'envelope'}),'football:/fixtures?season=2026&team=7:type=envelope:retries=1:timeout=10000');
 });
 
 test('Phase 2 gateway centralizes the retryable HTTP status policy', () => {
@@ -283,4 +283,80 @@ test('Phase 2 gateway rejects a non-array fixture response shape', async () => {
     () => gateway.apiFootball('/fixtures', { id:1 }, { apiFootballKey:'test-key' }),
     error => error?.code === 'FOOTBALL_INVALID_RESPONSE',
   );
+});
+
+
+test('Issue #330 single-flight key includes retry and timeout policy',()=>{
+  const {gateway}=runtime();
+  const base=gateway.providerRequestKey('/status',{}, {transportRetries:1,timeoutMs:10000});
+  const noRetry=gateway.providerRequestKey('/status',{}, {transportRetries:0,timeoutMs:10000});
+  const shortTimeout=gateway.providerRequestKey('/status',{}, {transportRetries:1,timeoutMs:2500});
+  assert.notEqual(base,noRetry);
+  assert.notEqual(base,shortTimeout);
+  assert.equal(
+    gateway.providerRequestKey('/status',{},{}),
+    gateway.providerRequestKey('/status',{}, {transportRetries:1,timeoutMs:10000}),
+  );
+});
+
+test('Issue #330 requests with different transport policy do not share single-flight execution',async()=>{
+  let calls=0;
+  let release;
+  const pending=new Promise(resolve=>{ release=resolve; });
+  const inflight=new Map();
+  const withSingleFlight=async(key,factory)=>{
+    const existing=inflight.get(key);
+    if(existing) return await existing;
+    const task=Promise.resolve().then(factory);
+    inflight.set(key,task);
+    try { return await task; }
+    finally { if(inflight.get(key)===task) inflight.delete(key); }
+  };
+  const {gateway}=runtime({
+    withSingleFlight,
+    fetchWithTimeout:async()=>{
+      calls+=1;
+      await pending;
+      return new Response(JSON.stringify({response:[]}),{status:200});
+    },
+  });
+
+  const normal=gateway.apiFootball('/status',{}, {apiFootballKey:'test-key'}, {transportRetries:1,timeoutMs:10000});
+  const controlled=gateway.apiFootball('/status',{}, {apiFootballKey:'test-key'}, {transportRetries:0,timeoutMs:2500});
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(calls,2);
+  release();
+  await Promise.all([normal,controlled]);
+});
+
+test('Issue #330 identical transport policy still deduplicates concurrent requests',async()=>{
+  let calls=0;
+  let release;
+  const pending=new Promise(resolve=>{ release=resolve; });
+  const inflight=new Map();
+  const withSingleFlight=async(key,factory)=>{
+    const existing=inflight.get(key);
+    if(existing) return await existing;
+    const task=Promise.resolve().then(factory);
+    inflight.set(key,task);
+    try { return await task; }
+    finally { if(inflight.get(key)===task) inflight.delete(key); }
+  };
+  const {gateway}=runtime({
+    withSingleFlight,
+    fetchWithTimeout:async()=>{
+      calls+=1;
+      await pending;
+      return new Response(JSON.stringify({response:[]}),{status:200});
+    },
+  });
+
+  const a=gateway.apiFootball('/status',{}, {apiFootballKey:'test-key'}, {transportRetries:0,timeoutMs:2500});
+  const b=gateway.apiFootball('/status',{}, {apiFootballKey:'test-key'}, {transportRetries:0,timeoutMs:2500});
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(calls,1);
+  release();
+  await Promise.all([a,b]);
 });
