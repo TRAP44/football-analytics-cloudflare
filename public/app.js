@@ -1113,6 +1113,7 @@ async function ensureMatchCenterExtras() {
 let __profileCoreModule;
 function __getProfileCoreModule() {
   __profileCoreModule ||= createProfileCoreModule({
+    $,
     CLIENT_VERSION,
     adminBetaDashboardModule,
     adminBetaDashboardModulePromise,
@@ -1182,6 +1183,7 @@ function renderProfile(...args) { return __getProfileCoreModule().renderProfile(
 let __adminBootstrapModule;
 function __getAdminBootstrapModule() {
   __adminBootstrapModule ||= createAdminBootstrapModule({
+    $,
     CLIENT_API_CONTRACT,
     CLIENT_RELEASE_CHANNEL,
     CLIENT_VERSION,
@@ -1337,6 +1339,7 @@ async function toggleFavorite(...args) { return __getAdminBootstrapModule().togg
 let __discoveryModule;
 function __getDiscoveryModule() {
   __discoveryModule ||= createDiscoveryModule({
+    $,
     RECENT_TEAMS_KEY,
     activeViewId,
     analyzeMatch,
@@ -1392,6 +1395,7 @@ function openTournamentMeta(...args) { return __getDiscoveryModule().openTournam
 let __matchesHomeModule;
 function __getMatchesHomeModule() {
   __matchesHomeModule ||= createMatchesHomeModule({
+    $,
     MATCH_SNAPSHOT_MAX_AGE_MS,
     MATCH_SNAPSHOT_PREFIX,
     MATCH_WATCHLIST_KEY,
@@ -1466,6 +1470,7 @@ function renderMatches(...args) { return __getMatchesHomeModule().renderMatches(
 let __tournamentModule;
 function __getTournamentModule() {
   __tournamentModule ||= createTournamentModule({
+    $,
     activeViewId,
     api,
     bindMatchActions,
@@ -1497,6 +1502,7 @@ function setTournamentTab(...args) { return __getTournamentModule().setTournamen
 let __teamHubModule;
 function __getTeamHubModule() {
   __teamHubModule ||= createTeamHubModule({
+    $,
     activeViewId,
     analyzeMatch,
     api,
@@ -1588,6 +1594,7 @@ function centerPlayersHtml(...args) { return __getMatchLiveModule().centerPlayer
 let __playerHubModule;
 function __getPlayerHubModule() {
   __playerHubModule ||= createPlayerHubModule({
+    $,
     activeViewId,
     api,
     buildPlayerComparisonCandidates,
@@ -1624,6 +1631,7 @@ function openPlayerFromMatch(...args) { return __getPlayerHubModule().openPlayer
 let __matchRenderModule;
 function __getMatchRenderModule() {
   __matchRenderModule ||= createMatchCenterRenderModule({
+    $,
     analyzeMatch,
     api,
     availabilityQualityHintHtml,
@@ -1724,6 +1732,7 @@ function renderHistory(...args) { return __getAnalysisOrchestrationModule().rend
 let __analysisPresentationModule;
 function __getAnalysisPresentationModule() {
   __analysisPresentationModule ||= createAnalysisPresentationModule({
+    $,
     absenceKindLabel,
     absenceStatusLabel,
     analysisAccessUsageHtml,
