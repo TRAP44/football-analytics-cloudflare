@@ -36,6 +36,10 @@ test('report rejects malformed deployment identity, clock and impossible deploym
     postDeployRegressionReport([],identity,{nowMs:true}).reason,
     'monitor_clock_unavailable',
   );
+  assert.equal(
+    postDeployRegressionReport([],identity,{nowMs:-1}).reason,
+    'monitor_clock_unavailable',
+  );
 });
 
 test('window normalization rejects coercion, fractions, duplicates and out-of-range values',()=>{
@@ -57,7 +61,7 @@ test('event summarization rejects coerced durations and detects auth failures fr
     row('2026-09-29T13:01:00Z',{duration_ms:true}),
     row('2026-09-29T13:02:00Z',{duration_ms:'125.5'}),
     row('2026-09-29T13:03:00Z',{duration_ms:[200]}),
-    row('2026-09-29T13:04:00Z',{code:'PGRST303',message:'request failed'}),
+    row('2026-09-29T13:04:00Z',{code:'PGRST303',message:'request failed',duration_ms:null}),
     null,
   ]);
   assert.equal(summary.events,4);
