@@ -56,3 +56,15 @@ test('critical delivery and referral writes emit stable diagnostics',()=>{
   assert.doesNotMatch(worker,/recordReferredPayment\([^\n]+\)\.catch\(\(\)=>false\)/);
   assert.doesNotMatch(worker,/release_daily_digest[^\n]+\.catch\(\(\)=>false\)/);
 });
+
+
+test('analysis-lock and post-match-return cleanup failures stay observable',()=>{
+  for (const code of [
+    'ANALYSIS_LOCK_STALE_DELETE_FAILED',
+    'ANALYSIS_LOCK_RELEASE_FAILED',
+    'POST_MATCH_RETURN_STALE_CLAIM_DELETE_FAILED',
+    'POST_MATCH_RETURN_RELEASE_WRITE_FAILED',
+  ]) {
+    assert.match(worker,new RegExp(code));
+  }
+});
