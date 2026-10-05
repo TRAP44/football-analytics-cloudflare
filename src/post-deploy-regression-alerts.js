@@ -26,7 +26,7 @@ function finite(value,fallback=0){
   return n===null?fallback:n;
 }
 
-function deploySha(value=''){
+function normalizeDeploySha(value=''){
   const sha=typeof value==='string'?value.trim().toLowerCase():'';
   return DEPLOY_SHA_RE.test(sha)?sha:'';
 }
@@ -57,12 +57,12 @@ function destinations(items=[]){
 }
 
 function lifecycleRows(items=[],deployShaValue=''){
-  const sha=deploySha(deployShaValue);
+  const sha=normalizeDeploySha(deployShaValue);
   if(!sha) return [];
   return (Array.isArray(items)?items:[])
     .filter(row=>String(row?.source||'')==='release_regression')
     .filter(row=>String(row?.event_type||row?.eventType||'')==='post_deploy_regression')
-    .filter(row=>deploySha(row?.metadata?.deploySha)===sha)
+    .filter(row=>normalizeDeploySha(row?.metadata?.deploySha)===sha)
     .map(row=>({
       id:row?.id??null,
       createdAt:iso(row?.created_at??row?.createdAt),
@@ -81,8 +81,8 @@ function lifecycleRows(items=[],deployShaValue=''){
 
 function plannedLifecycleRow(plan={},deployShaValue='',nowMs=Date.now()){
   if(plan?.action!=='record') return null;
-  const sha=deploySha(deployShaValue);
-  const plannedSha=deploySha(plan?.meta?.deploySha);
+  const sha=normalizeDeploySha(deployShaValue);
+  const plannedSha=normalizeDeploySha(plan?.meta?.deploySha);
   const state=String(plan?.meta?.lifecycleState||'').trim().toLowerCase();
   const timestamp=numericCandidate(nowMs);
   if(!sha||plannedSha!==sha||!LIFECYCLE_STATES.has(state)||timestamp===null) return null;
@@ -171,7 +171,7 @@ function targetState(rows=[],alertKey='',targets=[],nowMs=Date.now()){
 }
 
 export function postDeployRegressionIncidentId(deployShaValue=''){
-  const sha=deploySha(deployShaValue);
+  const sha=normalizeDeploySha(deployShaValue);
   return sha?'release-regression:'+sha:'';
 }
 
@@ -180,7 +180,7 @@ export function planPostDeployRegressionAlert(
   deliveryLedger=[],
   {deploySha='',plannedTransition=null,destinations:targetDestinations=[],nowMs=Date.now()}={},
 ){
-  const sha=deploySha(deploySha);
+  const sha=normalizeDeploySha(deploySha);
   const targets=destinations(targetDestinations);
   if(!sha) return {action:'none',reason:'deployment_identity_unavailable'};
   if(!targets.length) return {action:'none',reason:'no_admin_recipients'};
