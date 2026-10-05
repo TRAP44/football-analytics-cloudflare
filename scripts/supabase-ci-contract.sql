@@ -197,6 +197,16 @@ begin
        'service_role',
        'public.fail_sensitive_mutation(text,text,boolean,integer)',
        'EXECUTE'
+     )
+     or not has_function_privilege(
+       'service_role',
+       'public.cleanup_sensitive_mutation_idempotency(integer)',
+       'EXECUTE'
+     )
+     or not has_function_privilege(
+       'service_role',
+       'public.record_ops_event_occurrence(timestamp with time zone,text,text,text,text,text,text,text,integer,integer,jsonb)',
+       'EXECUTE'
      ) then
     raise exception 'Supabase integration contract: service_role missing critical RPC EXECUTE';
   end if;
@@ -259,6 +269,46 @@ begin
      or has_function_privilege(
        'authenticated',
        'public.claim_sensitive_mutation(text,bigint,text,text,text,text,integer,integer)',
+       'EXECUTE'
+     )
+     or has_function_privilege(
+       'anon',
+       'public.complete_sensitive_mutation(text,text,integer)',
+       'EXECUTE'
+     )
+     or has_function_privilege(
+       'authenticated',
+       'public.complete_sensitive_mutation(text,text,integer)',
+       'EXECUTE'
+     )
+     or has_function_privilege(
+       'anon',
+       'public.fail_sensitive_mutation(text,text,boolean,integer)',
+       'EXECUTE'
+     )
+     or has_function_privilege(
+       'authenticated',
+       'public.fail_sensitive_mutation(text,text,boolean,integer)',
+       'EXECUTE'
+     )
+     or has_function_privilege(
+       'anon',
+       'public.cleanup_sensitive_mutation_idempotency(integer)',
+       'EXECUTE'
+     )
+     or has_function_privilege(
+       'authenticated',
+       'public.cleanup_sensitive_mutation_idempotency(integer)',
+       'EXECUTE'
+     )
+     or has_function_privilege(
+       'anon',
+       'public.record_ops_event_occurrence(timestamp with time zone,text,text,text,text,text,text,text,integer,integer,jsonb)',
+       'EXECUTE'
+     )
+     or has_function_privilege(
+       'authenticated',
+       'public.record_ops_event_occurrence(timestamp with time zone,text,text,text,text,text,text,text,integer,integer,jsonb)',
        'EXECUTE'
      ) then
     raise exception 'Supabase integration contract: public role can execute backend-only RPC';
