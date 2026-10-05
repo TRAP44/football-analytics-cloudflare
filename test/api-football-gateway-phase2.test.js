@@ -99,7 +99,7 @@ test('Phase 2 guard failure is safe across independent Worker-isolate gateway in
 
 test('Phase 2 gateway keeps request keys deterministic',()=>{
   const {gateway}=runtime();
-  assert.equal(gateway.providerRequestKey('/fixtures',{team:7,season:2026,empty:''},{responseType:'envelope'}),'football:/fixtures?season=2026&team=7:type=envelope');
+  assert.equal(gateway.providerRequestKey('/fixtures',{team:7,season:2026,empty:''},{responseType:'envelope'}),'football:/fixtures?season=2026&team=7:type=envelope:retries=1:timeout=10000:dailyReserve=protect');
 });
 
 test('Phase 2 gateway centralizes the retryable HTTP status policy', () => {
