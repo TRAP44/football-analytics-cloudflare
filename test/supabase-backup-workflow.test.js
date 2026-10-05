@@ -54,7 +54,9 @@ test('Supabase restore drill is isolated, measurable and preserves least privile
   assert.match(workflow, /actions: read/);
   assert.match(workflow, /restore_drill:/);
   assert.match(workflow, /needs: backup/);
-  assert.match(workflow, /gh run download "\$GITHUB_RUN_ID"/);
+  assert.equal((workflow.match(/runs-on: \[self-hosted, Linux, X64\]/g) || []).length,2);
+  assert.match(workflow, /actions\/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0/);
+  assert.doesNotMatch(workflow, /gh run download/);
   assert.match(workflow, /supabase@\$SUPABASE_CLI_VERSION" start/);
   assert.match(workflow, /apply-supabase-restore-hardening\.sql/);
   assert.match(workflow, /verify-supabase-restore\.sql/);
