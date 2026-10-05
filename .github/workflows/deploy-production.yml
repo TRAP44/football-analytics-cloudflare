@@ -29,6 +29,7 @@ jobs:
       PRODUCTION_URL: "https://football-analytics-cloudflare.wok-side.workers.dev"
       WRANGLER_SEND_METRICS: "false"
       WRANGLER_SEND_ERROR_REPORTS: "false"
+      HEALTH_PROBE_TOKEN: ${{ secrets.HEALTH_PROBE_TOKEN }}
     steps:
       - name: Checkout verified revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -101,6 +102,19 @@ jobs:
             echo "CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are required in the production environment or repository secrets." >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
+
+      - name: Configure private health probe secret
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$HEALTH_PROBE_TOKEN" ]]; then
+            echo "HEALTH_PROBE_TOKEN is required in the production GitHub environment." >&2
+            exit 1
+          fi
+          printf '%s' "$HEALTH_PROBE_TOKEN" | npx wrangler secret put HEALTH_PROBE_TOKEN
 
       - name: Detect pending production artifact changes
         id: production_changes
