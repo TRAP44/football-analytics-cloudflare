@@ -11,13 +11,14 @@ export function isAdminUser(user, cfg = {}) {
   const userId = Number(user?.id || 0);
   if (!Number.isSafeInteger(userId) || userId <= 0) return false;
 
-  const allowlisted = (cfg.adminTelegramIds || []).some(id => Number(id) === userId);
+  const adminTelegramIds = Array.isArray(cfg.adminTelegramIds) ? cfg.adminTelegramIds : [];
+  const allowlisted = adminTelegramIds.some(id => Number(id) === userId);
   if (allowlisted) return true;
 
   // DEV_MODE may create one synthetic identity when Telegram initData is absent.
   // It must never elevate a real Telegram user merely because DEV_MODE was left on.
   return Boolean(
-    cfg.devMode
+    cfg.devMode === true
     && userId === DEVELOPMENT_TELEGRAM_ID
     && user.__developmentIdentity === true
   );
@@ -34,7 +35,8 @@ export function isClosedBetaUser(user, cfg = {}) {
   if (!Number.isSafeInteger(userId) || userId <= 0) return false;
   if (isAdminUser(user, cfg)) return false;
   if (!isTelegramValidatedUser(user)) return false;
-  return (cfg.betaTelegramIds || []).some(id => Number(id) === userId);
+  const betaTelegramIds = Array.isArray(cfg.betaTelegramIds) ? cfg.betaTelegramIds : [];
+  return betaTelegramIds.some(id => Number(id) === userId);
 }
 
 export function closedBetaAccessDecision(user, cfg = {}) {
@@ -45,7 +47,7 @@ export function closedBetaAccessDecision(user, cfg = {}) {
   // Public access is the default. Strict closed beta is an explicit temporary
   // mode and is enforced server-side only when BETA_ACCESS_ENABLED=true.
   const betaParticipant = isClosedBetaUser(user, cfg);
-  if (!cfg.betaAccessEnabled) {
+  if (cfg.betaAccessEnabled !== true) {
     return { allowed: isTelegramValidatedUser(user), adminBypass: false, betaParticipant };
   }
   return { allowed: betaParticipant, adminBypass: false, betaParticipant };
