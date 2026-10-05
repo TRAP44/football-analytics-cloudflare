@@ -61,6 +61,29 @@ test('release evidence requires strict Supabase availability and valid lock iden
   );
 });
 
+test('release evidence lock rejects clocks that cannot safely fit the lease TTL',async()=>{
+  let fetches=0;
+  const api=createReleaseFieldEvidenceRuntime({
+    hasSupabase:()=>true,
+    appVersion:'6.120.0-rc144',
+    fetchWithTimeout:async()=>{fetches+=1;return {ok:true,json:async()=>[]};},
+    supaHeaders:()=>({}),
+    supaSelectMany:async()=>[],
+    recordOpsEvent:async()=>{},
+    loadSharedProviderState:async()=>{},
+    apiFootball:async()=>({}),
+    isFootballRateLimitError:()=>false,
+    providerSnapshot:()=>({}),
+    randomUUID:()=> 'clock-boundary-claim',
+    now:()=>8.64e15,
+  });
+  assert.equal(
+    await api.claimReleaseEvidenceLock({supabaseUrl:'https://db.test'},'beta-access'),
+    false,
+  );
+  assert.equal(fetches,0);
+});
+
 test('release evidence lock requires strict confirmed HTTP success',async()=>{
   const rt=runtime({
     fetchWithTimeout:async(_url,options)=>{
@@ -111,6 +134,8 @@ test('beta evidence ignores coercible allowlist identifiers and uses strict conf
   assert.equal(event.meta.betaAllowlistCount,1);
   assert.equal(event.meta.betaAccessConfigured,'invalid');
   assert.equal(event.meta.strictEffective,false);
+  assert.equal(event.meta.observedUsers,1);
+  assert.equal(event.meta.observedInvalidUsers,1);
   assert.equal(event.meta.newestUserCreatedAt,null);
 });
 
