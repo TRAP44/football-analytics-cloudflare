@@ -12,6 +12,10 @@ test('RC102 blocks secret-bearing tracked filenames', () => {
   assert.equal(forbiddenTrackedFile('.dev.vars'), true);
   assert.equal(forbiddenTrackedFile('.env.local'), true);
   assert.equal(forbiddenTrackedFile('.env.production'), true);
+  assert.equal(forbiddenTrackedFile('config/.env'), true);
+  assert.equal(forbiddenTrackedFile('tools/.env.production'), true);
+  assert.equal(forbiddenTrackedFile('tools/.dev.vars'), true);
+  assert.equal(forbiddenTrackedFile('config/.env.example'), false);
   assert.equal(forbiddenTrackedFile('certs/prod.pem'), true);
   assert.equal(forbiddenTrackedFile('certs/prod.p12'), true);
   assert.equal(forbiddenTrackedFile('.env.example'), false);
@@ -43,6 +47,13 @@ test('RC102 reports file and content violations without exposing secret values',
     {path:'token.txt',type:'supabase_secret_key'},
   ]);
   assert.equal(JSON.stringify(findings).includes('a'.repeat(24)), false);
+});
+
+test('security scan covers JSONC and shell/config text files', () => {
+  const secret='123456789:' + 'A'.repeat(35);
+  const files=['wrangler.jsonc','scripts/check.sh','config/runtime.conf'];
+  const findings=scanTrackedFiles(files,path=>path==='wrangler.jsonc' ? 'TOKEN='+secret : 'safe=true');
+  assert.deepEqual(findings,[{path:'wrangler.jsonc',type:'telegram_bot_token'}]);
 });
 
 
