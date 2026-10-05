@@ -49,6 +49,31 @@ test('Phase 2 gateway fails closed immediately when configured distributed Supab
   assert.equal(counters.providerDistributedBlocks,1);
 });
 
+test('Phase 2 gateway fails closed on malformed distributed guard responses',async()=>{
+  const {gateway,counters}=runtime({
+    hasSupabase:()=>true,
+    supaRpc:async()=>({allowed:'false',count:'NaN',retryAfter:'invalid'}),
+  });
+  const blocked=await gateway.claimDistributedProviderBudget({});
+  assert.equal(blocked.allowed,false);
+  assert.equal(blocked.degraded,true);
+  assert.equal(blocked.reason,'guard_unavailable');
+  assert.equal(counters.providerDistributedFallbacks,1);
+  assert.equal(counters.providerDistributedBlocks,1);
+});
+
+test('Phase 2 gateway normalizes distributed guard counters and retry-after',async()=>{
+  const {gateway}=runtime({
+    hasSupabase:()=>true,
+    supaRpc:async()=>({allowed:false,count:1.5,retryAfter:9999}),
+  });
+  const blocked=await gateway.claimDistributedProviderBudget({});
+  assert.equal(blocked.allowed,false);
+  assert.equal(blocked.degraded,false);
+  assert.equal(blocked.count,0);
+  assert.equal(blocked.retryAfter,60);
+});
+
 test('Phase 2 gateway also bounds traffic when Supabase is not configured',async()=>{
   const {gateway}=runtime({hasSupabase:()=>false});
   assert.equal((await gateway.claimDistributedProviderBudget({})).allowed,true);
@@ -106,6 +131,32 @@ test('Phase 2 gateway centralizes the retryable HTTP status policy', () => {
   const { gateway } = runtime();
   for (const status of [500, 502, 503, 504]) assert.equal(gateway.isRetryableFootballHttpStatus(status), true, String(status));
   for (const status of [400, 401, 403, 429, 501, 505]) assert.equal(gateway.isRetryableFootballHttpStatus(status), false, String(status));
+});
+
+test('Phase 2 gateway observability failures never replace a successful provider response',async()=>{
+  const memory={provider:{plan:'FREE',minuteLimit:10,minuteRemaining:10,dailyRemaining:90}};
+  const gateway=createApiFootballGateway({
+    memory,
+    providerPlanLimits:{FREE:{minute:10},UNKNOWN:{minute:10}},
+    providerBudgetFloors:{FREE:{minuteReserve:2},UNKNOWN:{minuteReserve:2}},
+    hasSupabase:()=>false,
+    supaRpc:async()=>({allowed:true}),
+    bumpTelemetry:()=>{},
+    observeProviderRequest:()=>{throw new Error('telemetry unavailable');},
+    recordOpsEvent:()=>{throw new Error('ops unavailable');},
+    loadSharedProviderState:async()=>{},
+    phase5ProviderUsage:()=>{},
+    persistSharedProviderCooldown:async()=>{},
+    fetchWithTimeout:async()=>new Response(JSON.stringify({response:[{id:1}]}),{status:200}),
+    updateProviderFromHeaders:()=>{},
+    persistSharedProviderQuota:async()=>{},
+    providerQuotaEvidence:()=>{},
+    providerSnapshot:()=>({cooldownActive:false}),
+    withSingleFlight:async(_key,fn)=>fn(),
+    sleepMs:async()=>{},
+  });
+  const result=await gateway.apiFootball('/fixtures',{id:1},{apiFootballKey:'test-key'},{transportRetries:0});
+  assert.deepEqual(result,[{id:1}]);
 });
 
 test('Phase 2 gateway retries only network transport failures once',async()=>{
