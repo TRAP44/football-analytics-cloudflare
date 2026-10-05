@@ -23844,6 +23844,11 @@ const { handleScheduled } = createScheduledJobsRuntime({
   releaseScheduledJob,
 });
 
+// Narrow executable test seam for core analyze behavior. This intentionally
+// exposes only the analyze boundary and its in-memory cache used by tests.
+export const __testApiAnalyze = apiAnalyze;
+export const __testWorkerMemory = memory;
+
 export default {
   async fetch(request, env, ctx) {
     const cfg = config(env);
