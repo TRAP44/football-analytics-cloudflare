@@ -11,6 +11,36 @@ export function createLineupNotificationService({
   const WINDOW_BEFORE_KICKOFF_MINUTES = 95;
   const WINDOW_AFTER_KICKOFF_MINUTES = 8;
 
+  function integerCandidate(value) {
+    if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+    if (typeof value !== 'string') return null;
+    const raw=value.trim();
+    if (!/^\d+$/.test(raw)) return null;
+    const number=Number(raw);
+    return Number.isSafeInteger(number) ? number : null;
+  }
+
+  function positiveSafeInteger(value, fallback = 0, max = Number.MAX_SAFE_INTEGER) {
+    const number=integerCandidate(value);
+    return number !== null && number > 0 && number <= max ? number : fallback;
+  }
+
+  function nonNegativeSafeInteger(value) {
+    const number=integerCandidate(value);
+    return number !== null && number >= 0 ? number : 0;
+  }
+
+  const fixtureLimit=positiveSafeInteger(maxFixturesPerRun,4,100);
+
+  async function emitOpsEvent(cfg,event) {
+    if (typeof recordOpsEvent !== 'function') return;
+    try {
+      await Promise.resolve(recordOpsEvent(cfg,event));
+    } catch {
+      // Scheduler observability is best-effort and must not break delivery.
+    }
+  }
+
   function candidateWindow(now = Date.now()) {
     return {
       from: new Date(now - WINDOW_AFTER_KICKOFF_MINUTES * 60_000).toISOString(),
@@ -21,7 +51,7 @@ export function createLineupNotificationService({
   function groupByFixture(rows = []) {
     const groups = new Map();
     for (const row of rows) {
-      const fixtureId = Number(row?.fixture_id || 0);
+      const fixtureId = positiveSafeInteger(row?.fixture_id);
       if (!fixtureId || row?.lineup_notified_at) continue;
       const list = groups.get(fixtureId) || [];
       list.push(row);
@@ -55,7 +85,20 @@ export function createLineupNotificationService({
       return { ok:true, checked:0, fixturesChecked:0, confirmed:0, sent:0, failed:0, unknown:0, claimed:0, truncated:false };
     }
 
-    const runtime = await loadRuntimeControls(cfg);
+    let runtime;
+    try {
+      runtime = await loadRuntimeControls(cfg);
+    } catch (error) {
+      await emitOpsEvent(cfg,{
+        severity:'error',
+        source:'lineup_notifications',
+        eventType:'lineup_notification_scheduler',
+        code:'LINEUP_NOTIFICATION_RUNTIME_CONTROLS_FAILED',
+        message:error?.message || error,
+        endpoint:'cron:lineup-notifications',
+      });
+      return { ok:false, checked:0, fixturesChecked:0, confirmed:0, sent:0, failed:1, unknown:0, claimed:0, truncated:false };
+    }
     if (runtime?.value?.remindersEnabled === false) {
       return { ok:true, checked:0, fixturesChecked:0, confirmed:0, sent:0, failed:0, unknown:0, claimed:0, truncated:false, disabled:true };
     }
@@ -74,24 +117,50 @@ export function createLineupNotificationService({
         order:'fixture_date.asc,fixture_id.asc,telegram_id.asc',
       });
     } catch (error) {
-      await recordOpsEvent(cfg, {
+      await emitOpsEvent(cfg, {
         severity:'error',
         source:'lineup_notifications',
         eventType:'lineup_notification_scheduler',
         code:'LINEUP_NOTIFICATION_READ_FAILED',
         message:error?.message || error,
         endpoint:'cron:lineup-notifications',
-      }).catch(()=>{});
+      });
       return { ok:false, checked:0, fixturesChecked:0, confirmed:0, sent:0, failed:1, unknown:0, claimed:0, truncated:false };
     }
 
     const rows = Array.isArray(page?.rows) ? page.rows : [];
-    const audience = typeof filterNotificationRecipients === 'function'
-      ? await filterNotificationRecipients(rows, 'match.lineup', cfg)
-      : { rows, blockedByPreference:0, blockedByEntitlement:0 };
+    let audience;
+    try {
+      audience = typeof filterNotificationRecipients === 'function'
+        ? await filterNotificationRecipients(rows, 'match.lineup', cfg)
+        : { rows, blockedByPreference:0, blockedByEntitlement:0 };
+    } catch (error) {
+      await emitOpsEvent(cfg,{
+        severity:'error',
+        source:'lineup_notifications',
+        eventType:'lineup_notification_scheduler',
+        code:'LINEUP_NOTIFICATION_AUDIENCE_FAILED',
+        message:error?.message || error,
+        endpoint:'cron:lineup-notifications',
+      });
+      return {
+        ok:false,
+        checked:rows.length,
+        eligible:0,
+        blockedByPreference:0,
+        blockedByEntitlement:0,
+        fixturesChecked:0,
+        confirmed:0,
+        sent:0,
+        failed:1,
+        unknown:0,
+        claimed:0,
+        truncated:Boolean(page?.truncated),
+      };
+    }
     const eligibleRows = Array.isArray(audience?.rows) ? audience.rows : [];
     const groups = groupByFixture(eligibleRows);
-    const fixtures = [...groups.entries()].slice(0, Math.max(1, Number(maxFixturesPerRun || 4)));
+    const fixtures = [...groups.entries()].slice(0, fixtureLimit);
     const truncated = Boolean(page?.truncated || groups.size > fixtures.length);
     let confirmed = 0;
     let sent = 0;
@@ -105,7 +174,7 @@ export function createLineupNotificationService({
         snapshot = await loadLineupSnapshot(fixtureId, cfg);
       } catch (error) {
         failed += 1;
-        await recordOpsEvent(cfg, {
+        await emitOpsEvent(cfg, {
           severity:'warning',
           source:'lineup_notifications',
           eventType:'lineup_notification_probe',
@@ -113,11 +182,11 @@ export function createLineupNotificationService({
           message:error?.message || error,
           endpoint:'cron:lineup-notifications',
           meta:{ fixtureId },
-        }).catch(()=>{});
+        });
         continue;
       }
 
-      if (!snapshot?.confirmed) continue;
+      if (snapshot?.confirmed !== true) continue;
       confirmed += 1;
 
       for (const row of recipients) {
@@ -137,8 +206,8 @@ export function createLineupNotificationService({
       ok: !(failed || unknown || truncated),
       checked: rows.length,
       eligible: eligibleRows.length,
-      blockedByPreference:Number(audience?.blockedByPreference || 0),
-      blockedByEntitlement:Number(audience?.blockedByEntitlement || 0),
+      blockedByPreference:nonNegativeSafeInteger(audience?.blockedByPreference),
+      blockedByEntitlement:nonNegativeSafeInteger(audience?.blockedByEntitlement),
       fixturesChecked: fixtures.length,
       confirmed,
       sent,
@@ -149,7 +218,7 @@ export function createLineupNotificationService({
     };
 
     if (sent || failed || unknown || truncated) {
-      await recordOpsEvent(cfg, {
+      await emitOpsEvent(cfg, {
         severity: failed || unknown || truncated ? 'warning' : 'info',
         source:'lineup_notifications',
         eventType:'lineup_notification_scheduler',
@@ -160,7 +229,7 @@ export function createLineupNotificationService({
         message:`Составы: проверено матчей ${fixtures.length}, подтверждено ${confirmed}, отправлено ${sent}, ошибок ${failed}.`,
         endpoint:'cron:lineup-notifications',
         meta:summary,
-      }).catch(()=>{});
+      });
     }
 
     return summary;
