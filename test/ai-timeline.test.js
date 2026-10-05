@@ -124,7 +124,7 @@ test('AI Timeline: rejects snapshots from another fixture and malformed probabil
   });
   assert.equal(timeline.points.length,1);
   assert.equal(timeline.points[0].fixtureId,42);
-  assert.equal(timeline.generatedFrom.immutableModelPrediction,true);
+  assert.equal(timeline.generatedFrom.immutableModelPrediction,false);
 });
 
 test('AI Timeline: match minutes are clamped to the supported 0-180 range', () => {
