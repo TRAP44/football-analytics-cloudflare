@@ -4,6 +4,21 @@ import { DEFAULT_PRODUCTION_URL, runMonitorAttempt } from './external-production
 export const AVAILABILITY_INCIDENT_TITLE = '[monitor] MatchRadar production availability incident';
 export const INFRASTRUCTURE_INCIDENT_TITLE = '[monitor-infra] External Production Monitor execution failure';
 
+export function parseTrackingIssueNumber(value) {
+  const n=Number(String(value || '').trim());
+  return Number.isSafeInteger(n) && n > 0 ? n : 0;
+}
+
+export function selectInfrastructureIncidentTarget(openIssues = [], configuredNumber = 0) {
+  const number=parseTrackingIssueNumber(configuredNumber);
+  if (number > 0) {
+    const tracked=(Array.isArray(openIssues) ? openIssues : [])
+      .find(issue=>!issue?.pull_request && Number(issue?.number || 0)===number);
+    if (tracked) return { kind:'tracking', number };
+  }
+  return { kind:'dedicated', number:0 };
+}
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -77,6 +92,33 @@ async function upsertIncident(title, markdown, options = {}) {
     body: { title, body: markdown },
   });
   return { action: 'created', number: created?.number || null };
+}
+
+async function upsertInfrastructureIncident(markdown, options = {}) {
+  const issues = await githubRequest('/issues?state=open&per_page=100', options);
+  const target = selectInfrastructureIncidentTarget(
+    issues,
+    process.env.MONITOR_INFRA_TRACKING_ISSUE,
+  );
+
+  if (target.kind === 'tracking') {
+    await githubRequest(`/issues/${target.number}/comments`, {
+      ...options,
+      method:'POST',
+      body:{
+        body:[
+          '### External Production Monitor infrastructure signal',
+          '',
+          'Production fallback evidence is attached below. This is tracked under the existing runner/redundancy incident instead of opening another duplicate issue.',
+          '',
+          markdown,
+        ].join('\n'),
+      },
+    });
+    return { action:'commented_tracking', number:target.number };
+  }
+
+  return await upsertIncident(INFRASTRUCTURE_INCIDENT_TITLE, markdown, options);
 }
 
 async function closeIncident(title, markdown, options = {}) {
@@ -287,7 +329,7 @@ async function diagnosticsMode() {
   }
 
   if (actions.infrastructure === 'open') {
-    await upsertIncident(INFRASTRUCTURE_INCIDENT_TITLE, evidence);
+    await upsertInfrastructureIncident(evidence);
   } else if (actions.infrastructure === 'close') {
     await closeIncident(
       INFRASTRUCTURE_INCIDENT_TITLE,
