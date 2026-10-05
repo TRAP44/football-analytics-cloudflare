@@ -527,8 +527,14 @@ export function createApiFootballGateway({
     const responseType = ['array','any','envelope'].includes(String(options.responseType || 'array'))
       ? String(options.responseType || 'array')
       : 'array';
-    const transportRetries = Math.max(0, Math.min(1, Number(options.transportRetries ?? 1)));
-    const timeoutMs = Math.max(500, Number(options.timeoutMs || 10000));
+    const requestedRetries = Number(options.transportRetries ?? 1);
+    const transportRetries = Number.isFinite(requestedRetries)
+      ? Math.max(0, Math.min(1, Math.trunc(requestedRetries)))
+      : 1;
+    const requestedTimeoutMs = Number(options.timeoutMs || 10000);
+    const timeoutMs = Number.isFinite(requestedTimeoutMs)
+      ? Math.max(500, Math.trunc(requestedTimeoutMs))
+      : 10000;
     const allowDailyReserve = options.allowDailyReserve === true;
     return Object.freeze({
       responseType,
