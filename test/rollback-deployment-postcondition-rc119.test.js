@@ -27,6 +27,35 @@ test('RC119 accepts only the requested version at 100 percent production traffic
   );
 });
 
+test('RC119 rejects malformed and duplicate Cloudflare version IDs', () => {
+  assert.throws(
+    () => verifyRollbackDeployment(
+      deployment([{ version_id: 'not-a-version-id', percentage: 100 }]),
+      targetId
+    ),
+    /invalid version_id/
+  );
+
+  assert.throws(
+    () => verifyRollbackDeployment(
+      deployment([
+        { version_id: targetId, percentage: 100 },
+        { version_id: targetId, percentage: 0 },
+      ]),
+      targetId
+    ),
+    /duplicate version IDs/
+  );
+
+  assert.throws(
+    () => verifyRollbackDeployment(
+      deployment([{ version_id: targetId, percentage: 100 }]),
+      'not-a-version-id'
+    ),
+    /invalid format/
+  );
+});
+
 test('RC119 rejects split traffic even when the rollback target is present', () => {
   assert.throws(
     () => verifyRollbackDeployment(
