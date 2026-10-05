@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
   PERSONAL_WRITE_LIMITS,
+  normalizeFavoritePlayerReference,
+  normalizeFavoritePlayerWrite,
   normalizeFavoriteWrite,
   normalizeReminderWrite,
 } from '../src/personal-write-guards.js';
@@ -21,6 +23,38 @@ test('personal write guards normalize valid favorites and reject unsafe payloads
   assert.throws(() => normalizeFavoriteWrite({ teamId: 0, teamName: 'x' }), /Некорректная команда/);
   assert.throws(() => normalizeFavoriteWrite({ teamId: 7, teamName: 'x'.repeat(PERSONAL_WRITE_LIMITS.teamName + 1) }), /слишком длинный/);
   assert.throws(() => normalizeFavoriteWrite({ teamId: 7, teamName: 'Club', teamLogo: 'javascript:alert(1)' }), /Некорректный URL/);
+});
+
+test('personal write guards reject coerced IDs, non-string names and credentialed logo URLs', () => {
+  assert.throws(
+    () => normalizeFavoriteWrite({teamId:true,teamName:'Club'}),
+    error => error?.code === 'PERSONAL_DATA_INVALID',
+  );
+  assert.throws(
+    () => normalizeFavoriteWrite({teamId:7,teamName:{name:'Club'}}),
+    error => error?.code === 'PERSONAL_DATA_INVALID',
+  );
+  assert.throws(
+    () => normalizeFavoriteWrite({teamId:7,teamName:'Club\u0000Name'}),
+    error => error?.code === 'PERSONAL_DATA_INVALID',
+  );
+  assert.throws(
+    () => normalizeFavoriteWrite({teamId:7,teamName:'Club',teamLogo:'https://user:secret@example.test/logo.png'}),
+    error => error?.code === 'PERSONAL_DATA_INVALID',
+  );
+
+  assert.deepEqual(
+    normalizeFavoritePlayerReference({playerId:'15',teamId:'7'}),
+    {playerId:15,teamId:7},
+  );
+  assert.throws(
+    () => normalizeFavoritePlayerReference({playerId:[15],teamId:7}),
+    error => error?.code === 'PERSONAL_DATA_INVALID',
+  );
+  assert.throws(
+    () => normalizeFavoritePlayerWrite({playerId:15,teamId:7,playerName:['Player']}),
+    error => error?.code === 'PERSONAL_DATA_INVALID',
+  );
 });
 
 test('personal write guards normalize valid reminders and reject stale or oversized input', () => {
@@ -46,6 +80,43 @@ test('personal write guards normalize valid reminders and reject stale or oversi
     awayName: 'Away',
     fixtureDate: '2026-09-27T18:04:00.000Z',
   }, now), /начинается или начался/);
+
+  assert.throws(() => normalizeReminderWrite({
+    fixtureId:true,
+    homeName:'Home',
+    awayName:'Away',
+    fixtureDate:'2026-09-27T20:00:00.000Z',
+  },now), error => error?.code === 'PERSONAL_DATA_INVALID');
+
+  assert.throws(() => normalizeReminderWrite({
+    fixtureId:42,
+    homeName:'Home',
+    awayName:'Away',
+    fixtureDate:'2026-09-27 20:00:00',
+  },now), /Некорректное время матча/);
+
+  assert.throws(() => normalizeReminderWrite({
+    fixtureId:42,
+    homeName:'Home',
+    awayName:'Away',
+    fixtureDate:'2026-09-27T20:00:00.000Z',
+    kickoffNotify:'false',
+  },now), error => error?.code === 'PERSONAL_DATA_INVALID');
+
+  assert.throws(() => normalizeReminderWrite({
+    fixtureId:42,
+    homeName:'Home',
+    awayName:'Away',
+    fixtureDate:'2026-09-27T20:00:00.000Z',
+  },Number.NaN), /Некорректное текущее время/);
+
+  assert.equal(normalizeReminderWrite({
+    fixtureId:'42',
+    homeName:'Home',
+    awayName:'Away',
+    fixtureDate:'2026-09-27T20:00:00+00:00',
+    reminderMinutes:'60',
+  },now).reminderMinutes,60);
 });
 
 test('v6.19.1 serializes per-user writes and keeps RPCs backend-only', () => {
