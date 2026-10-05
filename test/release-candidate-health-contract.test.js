@@ -1,19 +1,35 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import { createPublicHealthRuntime } from '../src/public-health.js';
+import { createPublicStatusRouter } from '../src/public-status.js';
 
-const worker=fs.readFileSync('src/worker.js','utf8');
+test('public status router delegates health routes without exposing internal readiness details',async()=>{
+  const calls=[];
+  const publicHealthRuntime={
+    liveSnapshot:()=>({ok:true,status:'alive',version:'6.120.0-rc144',releaseCandidate:'RC144'}),
+    readinessSnapshot:async()=>({ok:true,status:'ready',version:'6.120.0-rc144',releaseCandidate:'RC144'}),
+    healthSnapshot:async()=>({ok:true,status:'ready',version:'6.120.0-rc144',releaseCandidate:'RC144',readiness:{ok:true,status:'ready'}}),
+  };
+  const router=createPublicStatusRouter({
+    publicStatusRuntime:{serviceStatus:async()=>({ok:true,status:'operational'})},
+    publicHealthRuntime,
+    appManifest:()=>({version:'manifest'}),
+    loadRuntimeControls:async()=>({schemaReady:true,value:{revision:4},source:'supabase'}),
+    publicRuntimeControls:value=>({revision:value.revision}),
+    runtimeControlsCacheMs:30000,
+    json:(body,status=200,headers={})=>({body,status,headers}),
+  });
 
-test('public health routes use the minimized public health runtime',()=>{
-  const start=worker.indexOf("if (url.pathname === '/health/live')");
-  const end=worker.indexOf("if (request.method === 'GET' && url.pathname === '/api/app-manifest')",start);
-  assert.ok(start>=0 && end>start);
-  const block=worker.slice(start,end);
-  assert.match(block,/publicHealthRuntime\.liveSnapshot\(\)/);
-  assert.match(block,/publicHealthRuntime\.readinessSnapshot\(cfg\)/);
-  assert.match(block,/publicHealthRuntime\.healthSnapshot\(cfg\)/);
-  assert.doesNotMatch(block,/currentReleaseIdentity|EXPECTED_SCHEMA_FINGERPRINT|cloudflareVersionId/);
+  const live=await router.handle({method:'GET'},{pathname:'/health/live'},{});
+  const ready=await router.handle({method:'GET'},{pathname:'/health/ready'},{});
+  const health=await router.handle({method:'GET'},{pathname:'/health'},{});
+  calls.push(live,ready,health);
+
+  assert.deepEqual(calls.map(row=>row.status),[200,200,200]);
+  assert.equal(live.headers['cache-control'],'no-store');
+  assert.equal(ready.headers['cache-control'],'no-store');
+  assert.equal('deployment' in ready.body,false);
+  assert.equal(await router.handle({method:'GET'},{pathname:'/unknown'},{}),null);
 });
 
 test('public live and readiness preserve version/release candidate without deployment internals',async()=>{
