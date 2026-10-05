@@ -108,7 +108,7 @@ function primaryEvidence(outcome) {
     `- Workflow outcome: **${outcome.toUpperCase()}**`,
     `- Run: ${runId ? `[${runId}](${runUrl})` : runUrl}`,
     `- Detailed endpoint evidence: GitHub Actions artifact \`external-production-monitor-${runId || 'unknown'}\``,
-  ].join('\\n');
+  ].join('\n');
 }
 
 export function classifyPrimaryRunJobs(jobs = []) {
