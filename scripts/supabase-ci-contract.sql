@@ -110,6 +110,9 @@ begin
      ) is null
      or to_regprocedure(
        'public.cleanup_sensitive_mutation_idempotency(integer)'
+     ) is null
+     or to_regprocedure(
+       'public.commit_runtime_controls(integer,boolean,boolean,boolean,boolean,boolean,boolean,boolean,text,bigint,text,text,text,integer)'
      ) is null then
     raise exception 'Supabase integration contract: required RPC is missing';
   end if;
@@ -141,6 +144,9 @@ begin
       ),
       to_regprocedure(
         'public.cleanup_sensitive_mutation_idempotency(integer)'
+      ),
+      to_regprocedure(
+        'public.commit_runtime_controls(integer,boolean,boolean,boolean,boolean,boolean,boolean,boolean,text,bigint,text,text,text,integer)'
       )
     )
       and prosecdef
@@ -186,6 +192,11 @@ begin
      or not has_function_privilege(
        'service_role',
        'public.fail_sensitive_mutation(text,text,boolean,integer)',
+       'EXECUTE'
+     )
+     or not has_function_privilege(
+       'service_role',
+       'public.commit_runtime_controls(integer,boolean,boolean,boolean,boolean,boolean,boolean,boolean,text,bigint,text,text,text,integer)',
        'EXECUTE'
      ) then
     raise exception 'Supabase integration contract: service_role missing critical RPC EXECUTE';
@@ -249,6 +260,16 @@ begin
      or has_function_privilege(
        'authenticated',
        'public.claim_sensitive_mutation(text,bigint,text,text,text,text,integer,integer)',
+       'EXECUTE'
+     )
+     or has_function_privilege(
+       'anon',
+       'public.commit_runtime_controls(integer,boolean,boolean,boolean,boolean,boolean,boolean,boolean,text,bigint,text,text,text,integer)',
+       'EXECUTE'
+     )
+     or has_function_privilege(
+       'authenticated',
+       'public.commit_runtime_controls(integer,boolean,boolean,boolean,boolean,boolean,boolean,boolean,text,bigint,text,text,text,integer)',
        'EXECUTE'
      ) then
     raise exception 'Supabase integration contract: public role can execute backend-only RPC';
@@ -421,7 +442,7 @@ begin
   if not exists (
     select 1
     from supabase_migrations.schema_migrations
-    where version='20260101001900'
+    where version='20260101002000'
   ) then
     raise exception 'Supabase integration contract: latest migration history entry missing';
   end if;
