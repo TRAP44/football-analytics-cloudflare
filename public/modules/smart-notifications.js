@@ -102,7 +102,7 @@ export function createSmartNotificationsModule({
     const normalized = normalizeSmartNotificationPayload(model.payload);
     const preferences = model.desired || model.savingPreferences || normalized.preferences;
     const caps = normalized.capabilities;
-    const paidLabel = caps.smartAlerts ? 'Расширенные уведомления доступны' : 'Расширенные уведомления · PRO';
+    const paidLabel = caps.smartAlerts ? 'Расширенные уведомления доступны' : 'Базовые уведомления доступны';
     root.innerHTML = `
       <div class="smart-notification-head">
         <div>
@@ -124,7 +124,7 @@ export function createSmartNotificationsModule({
             const cap = caps.categories[key];
             const locked = !cap.available;
             return `<label class="switch-row smart-notification-option ${locked ? 'is-locked' : ''}">
-              <span><strong>${escapeHtml(title)} ${locked ? `<em>Доступно в ${escapeHtml(cap.requiredPlan)}</em>` : ''}</strong><small>${escapeHtml(description)}</small></span>
+              <span><strong>${escapeHtml(title)} ${locked ? '<em>Требуется расширенный доступ</em>' : ''}</strong><small>${escapeHtml(description)}</small></span>
               <input data-smart-notification-key="${escapeHtml(key)}" type="checkbox" ${preferences[key] ? 'checked' : ''} ${model.saving || locked ? 'disabled' : ''}>
               <i></i>
             </label>`;
