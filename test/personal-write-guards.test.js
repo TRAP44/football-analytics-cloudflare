@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import {
   PERSONAL_WRITE_LIMITS,
   TEAM_LOGO_ALLOWED_HOSTS,
+  sanitizeTeamLogoUrl,
   normalizeFavoriteWrite,
   normalizeReminderWrite,
 } from '../src/personal-write-guards.js';
@@ -91,4 +92,13 @@ test('personal write guard contract is a blocking schema-drift dependency', () =
   assert.match(worker, /readPersonalWriteGuardContract/);
   assert.match(worker, /missing\.push\('personal_write_guards'\)/);
   assert.match(worker, /summary\.ok && fingerprint\.ok && personalWriteGuards\.ok/);
+});
+
+
+test('legacy stored logo URLs fail safely on read sanitization', () => {
+  assert.equal(sanitizeTeamLogoUrl('https://media.api-sports.io/football/teams/42.png'), 'https://media.api-sports.io/football/teams/42.png');
+  assert.equal(sanitizeTeamLogoUrl('https://example.test/logo.png'), '');
+  assert.equal(sanitizeTeamLogoUrl('javascript:alert(1)'), '');
+  assert.equal(sanitizeTeamLogoUrl('https://media.api-sports.io.evil.test/logo.png'), '');
+  assert.equal(sanitizeTeamLogoUrl('https://user:pass@media.api-sports.io/logo.png'), '');
 });
