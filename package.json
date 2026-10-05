@@ -11,13 +11,17 @@
     "security:scan": "node scripts/security-scan.js",
     "verify:release": "node scripts/verify-release.js",
     "verify:worker": "wrangler deploy --dry-run --outdir .wrangler-dist",
-    "lint": "node scripts/source-hygiene.js",
-    "security:privileged": "node scripts/privileged-access-audit.js"
+    "lint": "npx --yes eslint@9.39.1 \"public/modules/**/*.js\" \"scripts/**/*.js\" \"test/**/*.js\"",
+    "security:privileged": "node scripts/privileged-access-audit.js",
+    "lint:hygiene": "node scripts/source-hygiene.js"
   },
   "devDependencies": {
     "wrangler": "4.141.0"
   },
   "overrides": {
     "undici": "7.30.0"
+  },
+  "engines": {
+    "node": ">=22 <23"
   }
 }
