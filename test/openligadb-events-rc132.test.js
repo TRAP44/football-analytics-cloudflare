@@ -101,6 +101,27 @@ test('RC132 rejects a different or time-distant fixture instead of guessing', ()
   assert.equal(genericNameTrap.reason, 'fixture_not_matched');
 });
 
+test('RC132 fails closed when fixture kickoff context is missing or invalid', () => {
+  const rows = [{
+    matchID: 93,
+    matchDateTimeUTC: '2026-09-27T18:30:00Z',
+    team1: { teamName: 'FC Bayern München' },
+    team2: { teamName: 'SV Werder Bremen' },
+    goals: [{ scoreTeam1: 1, scoreTeam2: 0, matchMinute: 5, goalGetterName: 'Player' }],
+  }];
+  for (const kickoffAt of ['', 'not-a-date']) {
+    const result = normalizeOpenLigaMatchEvents(rows, {
+      homeId: 157,
+      awayId: 162,
+      homeName: 'Bayern Munich',
+      awayName: 'Werder Bremen',
+      kickoffAt,
+    });
+    assert.equal(result.available, false);
+    assert.equal(result.reason, 'fixture_not_matched');
+  }
+});
+
 test('RC132 drops goals when the scoring side cannot be inferred safely', () => {
   const rows = [{
     matchID: 5,
