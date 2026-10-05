@@ -52,6 +52,40 @@ test('provider observability rejects malformed outcomes and JavaScript numeric c
   assert.equal(snapshot.series[0].operation,'unknown');
 });
 
+test('provider observability repairs malformed in-memory buckets and classifies rate_limited outcome', () => {
+  const rt=runtime();
+  rt.memory.providerObservability={
+    windowStartedAt:'2026-09-28T12:00:00.000Z',
+    buckets:{
+      [JSON.stringify(['api-football','/fixtures'])]:{attempts:true},
+    },
+  };
+
+  assert.equal(rt.api.observeProviderRequest({
+    provider:'api-football',
+    operation:'/fixtures',
+    outcome:'rate_limited',
+    latencyMs:50,
+  }),true);
+
+  const snapshot=rt.api.currentWindow();
+  assert.equal(snapshot.totals.attempts,1);
+  assert.equal(snapshot.totals.requests,1);
+  assert.equal(snapshot.totals.failures,1);
+  assert.equal(snapshot.totals.rateLimits,1);
+});
+
+test('retry rate above 100 percent remains actionable instead of becoming malformed', () => {
+  assert.equal(providerSloState({
+    requests:10,
+    successRatePct:100,
+    timeoutRatePct:0,
+    rateLimitRatePct:0,
+    retryRatePct:150,
+    avgAttemptLatencyMs:100,
+  }).state,'incident');
+});
+
 test('provider observability clamps valid latency to the persistent SQL contract', () => {
   const rt=runtime();
   rt.api.observeProviderRequest({
@@ -273,7 +307,7 @@ test('distributed bucket options reject boolean coercion while preserving valid 
   const stringWindow=providerSloWindowsFromBuckets([row],{
     hours:'1',
     windowMinutes:'20',
-    nowMs,
+    nowMs:now,
     includeOpen:false,
   });
   assert.equal(stringWindow[0].metadata.windowEndedAt,'2026-09-28T12:20:00.000Z');
