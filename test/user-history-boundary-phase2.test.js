@@ -18,6 +18,12 @@ function runtime(overrides = {}) {
       reads.push({table,filters,options});
       return [];
     }),
+    recordOpsEvent:overrides.recordOpsEvent,
+    bumpTelemetry:overrides.bumpTelemetry,
+    redactOpsString:overrides.redactOpsString,
+    correlationId:overrides.correlationId,
+    retryDelayMs:overrides.retryDelayMs ?? 0,
+    sleep:overrides.sleep,
   });
   return {memory,writes,reads,service};
 }
@@ -87,21 +93,75 @@ test('history service preserves Supabase upsert contract and field bounds', asyn
   assert.equal(writes[0].row.analysis_version.length,80);
 });
 
-test('history service keeps non-critical writes fail-soft but surfaces read failures', async () => {
+test('history write failure remains fail-soft, emits ops signal and recovers idempotently in background', async () => {
+  let attempts=0;
+  const events=[];
+  const metrics={};
+  const background=[];
   const writeRuntime=runtime({
     hasSupabase:()=>true,
-    supaUpsert:async()=>{ throw new Error('write unavailable'); },
+    supaUpsert:async()=>{
+      attempts+=1;
+      if(attempts===1) throw new Error('write unavailable');
+    },
+    recordOpsEvent:async(_cfg,event)=>events.push(event),
+    bumpTelemetry:(key,amount=1)=>{ metrics[key]=Number(metrics[key]||0)+amount; },
+    correlationId:async()=> 'history-correlation-77',
+    retryDelayMs:0,
   });
-  await assert.doesNotReject(()=>writeRuntime.service.recordHistory(13,payload(77),{}));
+  const cfg={waitUntil:promise=>background.push(promise)};
+  await assert.doesNotReject(()=>writeRuntime.service.recordHistory(13,payload(77),cfg));
+  await Promise.all(background);
 
+  assert.equal(attempts,2);
+  assert.equal(metrics.analysisHistoryWriteErrors,1);
+  assert.equal(metrics.analysisHistoryRetryAttempts,1);
+  assert.equal(metrics.analysisHistoryWriteRecovered,1);
+  assert.equal(metrics.analysisHistoryWriteLosses,undefined);
+  assert.equal(metrics.analysisHistoryRetryPending,0);
+  assert.deepEqual(events.map(event=>event.code),[
+    'ANALYSIS_HISTORY_WRITE_FAILED',
+    'ANALYSIS_HISTORY_WRITE_RECOVERED',
+  ]);
+  assert.equal(events[0].meta.correlationId,'history-correlation-77');
+  assert.equal(events[0].meta.fixtureId,77);
+  assert.equal(Object.hasOwn(events[0].meta,'userId'),false);
+});
+
+test('history retry exhaustion is explicitly classified as accepted data loss', async () => {
+  const events=[];
+  const metrics={};
+  const background=[];
+  const writeRuntime=runtime({
+    hasSupabase:()=>true,
+    supaUpsert:async()=>{ throw new Error('database unavailable'); },
+    recordOpsEvent:async(_cfg,event)=>events.push(event),
+    bumpTelemetry:(key,amount=1)=>{ metrics[key]=Number(metrics[key]||0)+amount; },
+    correlationId:async()=> 'history-correlation-88',
+    retryDelayMs:0,
+  });
+  await writeRuntime.service.recordHistory(13,payload(88),{
+    waitUntil:promise=>background.push(promise),
+  });
+  await Promise.all(background);
+
+  assert.equal(metrics.analysisHistoryWriteErrors,1);
+  assert.equal(metrics.analysisHistoryRetryAttempts,1);
+  assert.equal(metrics.analysisHistoryWriteLosses,1);
+  assert.equal(metrics.analysisHistoryRetryPending,0);
+  const loss=events.find(event=>event.code==='ANALYSIS_HISTORY_WRITE_LOST');
+  assert.ok(loss);
+  assert.equal(loss.severity,'error');
+  assert.equal(loss.meta.acceptedDataLoss,true);
+  assert.equal(loss.meta.correlationId,'history-correlation-88');
+});
+
+test('history read remains fail-soft when Supabase is unavailable', async () => {
   const readRuntime=runtime({
     hasSupabase:()=>true,
     supaSelectMany:async()=>{ throw new Error('Supabase history unavailable'); },
   });
-  await assert.rejects(
-    ()=>readRuntime.service.getHistory(13,{supabaseUrl:'https://db.test'}),
-    /Supabase history unavailable/,
-  );
+  assert.deepEqual(await readRuntime.service.getHistory(13,{}),[]);
 });
 
 test('history service preserves Supabase read query shape', async () => {
@@ -126,6 +186,10 @@ test('worker delegates history storage boundary to extracted service', () => {
   const worker=fs.readFileSync('src/worker.js','utf8');
   assert.match(worker,/import \{ createUserHistoryService \} from '\.\/user-history\.js'/);
   assert.match(worker,/createUserHistoryService\(\{/);
+  assert.match(worker,/recordOpsEvent,\s*bumpTelemetry,\s*redactOpsString,/);
+  assert.match(worker,/analysis-history:\$\{Number\(userId\)\}:\$\{Number\(fixtureId\)\}/);
+  assert.match(worker,/analysisHistoryWriteErrors/);
+  assert.match(worker,/analysisHistoryWriteLosses/);
   assert.doesNotMatch(worker,/async function recordHistory\(userId, payload, cfg\)/);
   assert.doesNotMatch(worker,/async function getHistory\(userId, cfg\)/);
   assert.match(worker,/recordHistory\(/);
