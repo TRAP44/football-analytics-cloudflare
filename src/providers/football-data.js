@@ -93,7 +93,10 @@ function footballDataTeamMatches(providerName, expectedName) {
 export function footballDataScorersUrl(leagueId, season, { limit = 50 } = {}) {
   const code = footballDataCompetitionCode(leagueId);
   const year = Number(season || 0);
-  const safeLimit = Math.max(1, Math.min(100, Number(limit || 50) || 50));
+  const parsedLimit = Number(limit);
+  const safeLimit = Number.isFinite(parsedLimit)
+    ? Math.max(1, Math.min(100, Math.floor(parsedLimit)))
+    : 50;
   if (!code || !Number.isInteger(year) || year < 2000 || year > 2100) return '';
   return `https://api.football-data.org/v4/competitions/${encodeURIComponent(code)}/scorers?season=${year}&limit=${safeLimit}`;
 }
