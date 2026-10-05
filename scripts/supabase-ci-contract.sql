@@ -431,7 +431,7 @@ begin
   if not exists (
     select 1
     from supabase_migrations.schema_migrations
-    where version='20260101002000'
+    where version='20260101002100'
   ) then
     raise exception 'Supabase integration contract: latest migration history entry missing';
   end if;
