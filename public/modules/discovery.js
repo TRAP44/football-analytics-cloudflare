@@ -1,5 +1,6 @@
 export function createDiscoveryModule(deps = {}) {
   const {
+    $,
     RECENT_TEAMS_KEY,
     activeViewId,
     analyzeMatch,
