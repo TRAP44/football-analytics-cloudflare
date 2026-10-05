@@ -7,7 +7,7 @@
   X-Content-Type-Options: nosniff
 
 /app.js
-  Cache-Control: public, max-age=0, must-revalidate
+  Cache-Control: public, max-age=31536000, immutable
 
 /app-public.js
   Cache-Control: public, max-age=0, must-revalidate
@@ -16,16 +16,16 @@
   Cache-Control: public, max-age=0, must-revalidate
 
 /styles.css
-  Cache-Control: public, max-age=0, must-revalidate
+  Cache-Control: public, max-age=31536000, immutable
 
 /status.js
   Cache-Control: public, max-age=0, must-revalidate
 
 /styles/public-shell.css
-  Cache-Control: public, max-age=0, must-revalidate
+  Cache-Control: public, max-age=31536000, immutable
 
 /styles/premium-ui.css
-  Cache-Control: public, max-age=0, must-revalidate
+  Cache-Control: public, max-age=31536000, immutable
 
 /modules/*
   Cache-Control: public, max-age=0, must-revalidate
