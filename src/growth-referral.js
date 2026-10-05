@@ -16,6 +16,20 @@ export function createGrowthReferralRuntime({
   splitLaunchReferralParts,
   clock = () => Date.now(),
 }) {
+  function integerCandidate(value) {
+    if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+    if (typeof value !== 'string') return null;
+    const raw=value.trim();
+    if (!/^\d+$/.test(raw)) return null;
+    const number=Number(raw);
+    return Number.isSafeInteger(number) ? number : null;
+  }
+
+  function positiveSafeInteger(value) {
+    const number=integerCandidate(value);
+    return number !== null && number > 0 ? number : 0;
+  }
+
   function cleanLaunchPart(value = '', max = 48) {
     return String(value || '').toLowerCase().replace(/[^a-z0-9_-]/g,'').replace(/_+/g,'_').replace(/^-+|-+$/g,'').slice(0,max);
   }
@@ -73,7 +87,7 @@ export function createGrowthReferralRuntime({
   }
   
   async function ensureLaunchAttribution(userId, rawStartParam, cfg) {
-    const id=Number(userId || 0);
+    const id=positiveSafeInteger(userId);
     if (!id) return parseLaunchStartParam(rawStartParam);
     const incoming=parseLaunchStartParam(rawStartParam);
     const existing=await getUserRecord(id,cfg).catch(()=>null);
@@ -97,7 +111,14 @@ export function createGrowthReferralRuntime({
   
   async function recordGrowthEvent(cfg, event = {}) {
     const task = recordGrowthEventTask(cfg, event);
-    if (typeof cfg?.waitUntil === 'function') cfg.waitUntil(task);
+    if (typeof cfg?.waitUntil === 'function') {
+      try {
+        cfg.waitUntil(task);
+      } catch {
+        // waitUntil registration is best-effort; the caller still awaits the
+        // same task so analytics delivery is not lost because of a bad hook.
+      }
+    }
     return await task;
   }
   
@@ -110,9 +131,10 @@ export function createGrowthReferralRuntime({
     attribution=null,
     eventKey='',
   } = {}) {
-    const id=Number(userId || 0);
+    const id=positiveSafeInteger(userId);
     const event=cleanLaunchPart(eventName,40);
-    const dedupeKey=String(eventKey || '').trim().replace(/[^A-Za-z0-9._:-]/g,'').slice(0,180);
+    const rawDedupeKey=String(eventKey || '').trim();
+    const dedupeKey=/^[A-Za-z0-9._:-]{1,180}$/.test(rawDedupeKey) ? rawDedupeKey : '';
     if (!id || !event) return false;
     try {
       const attr=attribution || acquisitionFromUser(await getUserRecord(id,cfg).catch(()=>null));
@@ -121,7 +143,7 @@ export function createGrowthReferralRuntime({
         event_name:event,
         event_key:dedupeKey || null,
         channel:['telegram','miniapp','system'].includes(channel) ? channel : 'telegram',
-        fixture_id:Number(fixtureId || 0) || null,
+        fixture_id:positiveSafeInteger(fixtureId) || null,
         source:attr.source || 'telegram',
         campaign:attr.campaign || 'direct',
         content:attr.content || '',
@@ -153,16 +175,16 @@ export function createGrowthReferralRuntime({
   }
   
   function referralAttributionEventKey(userId) {
-    return `referral_attribution:${Number(userId || 0)}`;
+    return `referral_attribution:${positiveSafeInteger(userId)}`;
   }
   
   function referralOpenEventKey(userId) {
-    return `referral_open:${Number(userId || 0)}`;
+    return `referral_open:${positiveSafeInteger(userId)}`;
   }
   
   async function ensureReferralCode(userId, cfg) {
-    const id=Number(userId || 0);
-    if (!Number.isSafeInteger(id) || id<=0) return '';
+    const id=positiveSafeInteger(userId);
+    if (!id) return '';
     const code=normalizeReferralCode(await opaqueReferralCode(id,cfg?.botToken));
     if (!code) return '';
   
@@ -180,7 +202,7 @@ export function createGrowthReferralRuntime({
         created_at:new Date(clock()).toISOString(),
       }).catch(()=>null);
       const confirmed=await supaSelectOne(cfg,'growth_events',{event_key:`eq.${referralCodeEventKey(code)}`});
-      return Number(confirmed?.telegram_id || 0)===id && String(confirmed?.event_name || '')==='referral_code_created' ? code : '';
+      return positiveSafeInteger(confirmed?.telegram_id)===id && String(confirmed?.event_name || '')==='referral_code_created' ? code : '';
     }
   
     if (!(memory.referralCodeOwners instanceof Map)) memory.referralCodeOwners=new Map();
@@ -194,16 +216,20 @@ export function createGrowthReferralRuntime({
     if (hasSupabase(cfg)) {
       const row=await supaSelectOne(cfg,'growth_events',{event_key:`eq.${referralCodeEventKey(normalized)}`}).catch(()=>null);
       if (String(row?.event_name || '')!=='referral_code_created') return 0;
-      return Number(row?.telegram_id || 0) || 0;
+      return positiveSafeInteger(row?.telegram_id);
     }
-    return Number(memory.referralCodeOwners?.get?.(normalized) || 0) || 0;
+    return positiveSafeInteger(memory.referralCodeOwners?.get?.(normalized));
   }
   
   async function referralAttributionForUser(userId, cfg) {
-    const id=Number(userId || 0);
+    const id=positiveSafeInteger(userId);
     if (!id) return null;
     if (hasSupabase(cfg)) {
       const row=await supaSelectOne(cfg,'growth_events',{event_key:`eq.${referralAttributionEventKey(id)}`}).catch(()=>null);
+      if (
+        positiveSafeInteger(row?.telegram_id)!==id
+        || String(row?.event_name || '')!=='referred_first_open'
+      ) return null;
       const code=normalizeReferralCode(row?.metadata?.referral_code || '');
       return code ? {referralCode:code,createdAt:row?.created_at || null} : null;
     }
@@ -212,8 +238,9 @@ export function createGrowthReferralRuntime({
   }
   
   async function applyReferralAttribution(userId, launchIntent, cfg) {
-    const id=Number(userId || 0);
+    const id=positiveSafeInteger(userId);
     const code=normalizeReferralCode(launchIntent?.referralCode || '');
+    if (!id) return {accepted:false,status:'invalid_user'};
     if (!code) return {accepted:false,status:'none'};
   
     const [referrerUserId,existing]=await Promise.all([
@@ -252,7 +279,7 @@ export function createGrowthReferralRuntime({
       userId:id,
       eventName:'referred_first_open',
       channel:'telegram',
-      fixtureId:Number(launchIntent?.fixtureId || 0) || null,
+      fixtureId:positiveSafeInteger(launchIntent?.fixtureId) || null,
       attribution,
       metadata,
       eventKey:referralAttributionEventKey(id),
@@ -267,7 +294,7 @@ export function createGrowthReferralRuntime({
       userId:id,
       eventName:'referral_open',
       channel:'telegram',
-      fixtureId:Number(launchIntent?.fixtureId || 0) || null,
+      fixtureId:positiveSafeInteger(launchIntent?.fixtureId) || null,
       attribution,
       metadata,
       eventKey:referralOpenEventKey(id),
@@ -276,19 +303,21 @@ export function createGrowthReferralRuntime({
   }
   
   async function recordReferredPayment(userId, payment, plan, cfg) {
+    const id=positiveSafeInteger(userId);
     const chargeId=String(payment?.telegram_payment_charge_id || '').trim();
-    if (!chargeId) return false;
-    const referral=await referralAttributionForUser(userId,cfg);
+    const starsAmount=positiveSafeInteger(payment?.total_amount);
+    if (!id || !/^[A-Za-z0-9._:-]{1,160}$/.test(chargeId) || !starsAmount) return false;
+    const referral=await referralAttributionForUser(id,cfg);
     if (!referral?.referralCode) return false;
     return await recordGrowthEvent(cfg,{
-      userId,
+      userId:id,
       eventName:'referred_payment',
       channel:'system',
       attribution:{source:'referral',campaign:'telegram_stars',content:cleanLaunchPart(plan || 'paid',24) || 'paid'},
       metadata:{
         referral_code:referral.referralCode,
         plan:cleanLaunchPart(plan || '',24),
-        stars_amount:Number(payment?.total_amount || 0) || 0,
+        stars_amount:starsAmount,
         recurring:Boolean(payment?.is_recurring),
       },
       eventKey:`referred_payment:${chargeId}`,
@@ -297,9 +326,12 @@ export function createGrowthReferralRuntime({
   
   async function cleanupGrowthEvents(cfg) {
     if (!hasSupabase(cfg)) return {skipped:true};
-    const days=Math.max(7,Number(cfg.growthRetentionDays || 90));
-    const cutoff=new Date(clock()-days*86400_000).toISOString();
+    const configuredDays=integerCandidate(cfg?.growthRetentionDays);
+    const days=Math.max(7,Math.min(3650,configuredDays ?? 90));
     try {
+      const nowMs=Number(clock());
+      if (!Number.isFinite(nowMs)) throw new Error('Invalid growth cleanup clock.');
+      const cutoff=new Date(nowMs-days*86400_000).toISOString();
       await supaDelete(cfg,'growth_events',{created_at:`lt.${cutoff}`});
       return {ok:true,cutoff,retentionDays:days};
     } catch (error) {
