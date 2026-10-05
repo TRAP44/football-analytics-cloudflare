@@ -15,6 +15,7 @@ on:
       - ".github/workflows/cleanup-actions-history.yml"
       - ".github/workflows/cleanup-actions-artifacts.yml"
       - ".github/workflows/cleanup-actions-caches.yml"
+      - ".github/workflows/repository-maintenance.yml"
 
 permissions:
   contents: read
