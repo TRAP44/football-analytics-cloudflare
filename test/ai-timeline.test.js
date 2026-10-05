@@ -103,6 +103,45 @@ test('AI Timeline: near-identical immutable prediction and timeline capture do n
   assert.notEqual(timeline.points[0].source, 'model_predictions');
 });
 
+test('AI Timeline: rejects snapshots from another fixture and malformed probability sets', () => {
+  const timeline = buildAiTimeline({
+    snapshotRows: [
+      point('2026-10-01T12:00:00Z', { home:52, draw:27, away:21 }),
+      {
+        ...point('2026-10-01T12:05:00Z', { home:53, draw:26, away:21 }),
+        fixture_id:99,
+      },
+      point('2026-10-01T12:10:00Z', { home:90, draw:90, away:90 }),
+    ],
+    modelPrediction:{
+      fixture_id:99,
+      captured_at:'2026-10-01T11:00:00Z',
+      home_prob:52,
+      draw_prob:27,
+      away_prob:21,
+    },
+    match,
+  });
+  assert.equal(timeline.points.length,1);
+  assert.equal(timeline.points[0].fixtureId,42);
+  assert.equal(timeline.generatedFrom.immutableModelPrediction,true);
+});
+
+test('AI Timeline: match minutes are clamped to the supported 0-180 range', () => {
+  const row = analysisTimelineSnapshotRow({
+    generatedAt:'2026-10-01T20:00:00Z',
+    match:{fixtureId:42,date:match.date,status:'ET',elapsed:999},
+    probabilities:{home:50,draw:30,away:20},
+  });
+  assert.equal(row.match_minute,180);
+
+  const timeline=buildAiTimeline({
+    snapshotRows:[point('2026-10-01T20:00:00Z',{home:50,draw:30,away:20},{minute:999})],
+    match,
+  });
+  assert.equal(timeline.points[0].minute,180);
+});
+
 test('AI Timeline: confirmed lineup change uses temporal wording, not causal claim', () => {
   const trigger = timelineTriggerFromDelta({ codes:['lineups'] });
   assert.equal(trigger.relation, 'confirmed');
