@@ -23,7 +23,7 @@ test('access-control helper opens signed normal users unless strict beta is expl
   const start=access.indexOf('export function closedBetaAccessDecision');
   assert.notEqual(start,-1);
   const decision=access.slice(start);
-  assert.match(decision,/if \(!cfg\.betaAccessEnabled\)/);
+  assert.match(decision,/if \(cfg\.betaAccessEnabled !== true\)/);
   assert.match(decision,/allowed: isTelegramValidatedUser\(user\)/);
   assert.match(decision,/allowed: betaParticipant/);
 });
