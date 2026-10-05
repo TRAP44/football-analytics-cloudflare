@@ -40,6 +40,27 @@ test('player identity parses only safe integer IDs without JavaScript coercion',
   assert.equal(zeroAlias.invalidKnownIdValue,false);
 });
 
+test('player identity preserves safe fallback fields while treating blank IDs as absent', () => {
+  const descriptor=describePlayerIdentity({
+    id:'   ',
+    playerId:'123',
+    name:'',
+    playerName:'Fallback Player',
+  });
+  assert.equal(descriptor.id,123);
+  assert.equal(descriptor.name,'Fallback Player');
+  assert.equal(descriptor.normalizedName,'fallback player');
+  assert.equal(descriptor.invalidKnownIdValue,false);
+
+  const alternateName=describePlayerIdentity({
+    id:5,
+    name:{unexpected:true},
+    player_name:'Provider Name',
+  });
+  assert.equal(alternateName.name,'Provider Name');
+  assert.equal(alternateName.normalizedName,'provider name');
+});
+
 test('resolver fails closed on malformed or conflicting known IDs', () => {
   const resolver=createPlayerIdentityResolver([
     {id:10,name:'Known Player'},
