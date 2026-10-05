@@ -14,15 +14,23 @@ const IMMUTABLE_JSON_HEADERS = new Set([
 
 const MAX_RETRY_AFTER_SECONDS = 7 * 24 * 60 * 60;
 
+function numericCandidate(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'string') return null;
+  const raw=value.trim();
+  if (!/^\d+(?:\.\d+)?$/.test(raw)) return null;
+  const number=Number(raw);
+  return Number.isFinite(number) ? number : null;
+}
+
 function normalizedRetryAfter(value) {
-  if (value == null || value === '') return undefined;
-  const seconds=Number(value);
-  if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
+  const seconds=numericCandidate(value);
+  if (seconds === null || seconds <= 0) return undefined;
   return Math.min(MAX_RETRY_AFTER_SECONDS, Math.max(1, Math.ceil(seconds)));
 }
 
 function normalizedLimit(value) {
-  const number=Number(value);
+  const number=numericCandidate(value);
   return Number.isSafeInteger(number) && number > 0 ? number : null;
 }
 
