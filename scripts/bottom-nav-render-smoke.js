@@ -294,6 +294,12 @@ function assertLayout(width, snapshot) {
     if (action.height < 43.5) throw new Error(`${width}px: first-run action ${action.id} touch target is only ${action.height}px`);
   }
   if (snapshot.adminOnlyCount !== 0) throw new Error(`${width}px: public shell contains admin-only markup (${snapshot.adminOnlyCount})`);
+  if (!snapshot.publicContract?.remindersPanel || !snapshot.publicContract?.reminderList) {
+    throw new Error(`${width}px: public profile reminders contract is missing`);
+  }
+  if (!snapshot.publicContract?.statusLink) {
+    throw new Error(`${width}px: public service status link is missing`);
+  }
   if (!snapshot.assetRevision) throw new Error(`${width}px: frontend asset revision meta is missing`);
   if (snapshot.assetRevision !== EXPECTED_ASSET_REVISION) {
     throw new Error(`${width}px: frontend asset revision ${snapshot.assetRevision} does not match expected ${EXPECTED_ASSET_REVISION}`);
@@ -738,6 +744,11 @@ async function main() {
             firstRun,
             assetRevision: revision,
             adminOnlyCount: document.querySelectorAll('[data-admin-only]').length,
+            publicContract: {
+              remindersPanel: Boolean(document.querySelector('#profileView #remindersPanel')),
+              reminderList: Boolean(document.querySelector('#remindersPanel #reminderList')),
+              statusLink: Boolean(document.querySelector('#profileView .profile-about-service a[href="/status.html"]')),
+            },
             assetTokens: urls.map(value => {
               try { return new URL(value, location.href).searchParams.get('v') || ''; } catch { return ''; }
             }),
