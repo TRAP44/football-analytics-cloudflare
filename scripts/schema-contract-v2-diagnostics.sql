@@ -195,3 +195,94 @@ select
 from pg_indexes i
 where i.schemaname='public'
 order by i.tablename,i.indexname;
+
+select
+  'FUNCTION_DETAIL' as marker,
+  p.proname as function_name,
+  pg_get_function_identity_arguments(p.oid) as arguments,
+  coalesce(pg_get_function_result(p.oid),'') as result_type,
+  p.prokind::text as function_kind,
+  p.provolatile::text as volatility,
+  p.proisstrict as is_strict,
+  p.prosecdef as security_definer,
+  p.proparallel::text as parallel_safety
+from pg_proc p
+join pg_namespace n on n.oid=p.pronamespace
+where n.nspname='public'
+order by p.proname,pg_get_function_identity_arguments(p.oid);
+
+select
+  'POLICY_DETAIL' as marker,
+  p.tablename,
+  p.policyname,
+  coalesce(p.permissive,'') as permissive,
+  coalesce(p.cmd,'') as command,
+  coalesce(array_to_string(p.roles,','),'') as roles,
+  coalesce(p.qual,'') as using_expression,
+  coalesce(p.with_check,'') as check_expression
+from pg_policies p
+where p.schemaname='public'
+order by p.tablename,p.policyname;
+
+select
+  'TRIGGER_DETAIL' as marker,
+  c.relname as table_name,
+  t.tgname as trigger_name,
+  pg_get_triggerdef(t.oid,true) as definition
+from pg_trigger t
+join pg_class c on c.oid=t.tgrelid
+join pg_namespace n on n.oid=c.relnamespace
+where n.nspname='public' and not t.tgisinternal
+order by c.relname,t.tgname;
+
+with contract_roles(role_name) as (
+  values ('anon'::name), ('authenticated'::name), ('service_role'::name)
+)
+select
+  'TABLE_GRANT_DETAIL' as marker,
+  c.relname as object_name,
+  r.role_name::text as role_name,
+  has_table_privilege(r.role_name::text,c.oid,'SELECT') as can_select,
+  has_table_privilege(r.role_name::text,c.oid,'INSERT') as can_insert,
+  has_table_privilege(r.role_name::text,c.oid,'UPDATE') as can_update,
+  has_table_privilege(r.role_name::text,c.oid,'DELETE') as can_delete,
+  has_table_privilege(r.role_name::text,c.oid,'TRUNCATE') as can_truncate,
+  has_table_privilege(r.role_name::text,c.oid,'REFERENCES') as can_references,
+  has_table_privilege(r.role_name::text,c.oid,'TRIGGER') as can_trigger
+from pg_class c
+join pg_namespace n on n.oid=c.relnamespace
+cross join contract_roles r
+where n.nspname='public' and c.relkind in ('r','p','v','m','f')
+order by c.relname,r.role_name;
+
+with contract_roles(role_name) as (
+  values ('anon'::name), ('authenticated'::name), ('service_role'::name)
+)
+select
+  'SEQUENCE_GRANT_DETAIL' as marker,
+  c.relname as object_name,
+  r.role_name::text as role_name,
+  has_sequence_privilege(r.role_name::text,c.oid,'USAGE') as can_usage,
+  has_sequence_privilege(r.role_name::text,c.oid,'SELECT') as can_select,
+  has_sequence_privilege(r.role_name::text,c.oid,'UPDATE') as can_update
+from pg_class c
+join pg_namespace n on n.oid=c.relnamespace
+cross join contract_roles r
+where n.nspname='public' and c.relkind='S'
+order by c.relname,r.role_name;
+
+with contract_roles(role_name) as (
+  values ('anon'::name), ('authenticated'::name), ('service_role'::name)
+)
+select
+  'FUNCTION_GRANT_DETAIL' as marker,
+  p.proname as function_name,
+  pg_get_function_identity_arguments(p.oid) as arguments,
+  r.role_name::text as role_name,
+  has_function_privilege(r.role_name::text,p.oid,'EXECUTE') as can_execute
+from pg_proc p
+join pg_namespace n on n.oid=p.pronamespace
+cross join contract_roles r
+where n.nspname='public'
+order by p.proname,pg_get_function_identity_arguments(p.oid),r.role_name;
+
