@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
   PERSONAL_WRITE_LIMITS,
+  TEAM_LOGO_ALLOWED_HOSTS,
   normalizeFavoriteWrite,
   normalizeReminderWrite,
 } from '../src/personal-write-guards.js';
@@ -15,12 +16,24 @@ const migration = fs.readFileSync('supabase/migrations/supabase_migration_v6_19_
 
 test('personal write guards normalize valid favorites and reject unsafe payloads', () => {
   assert.deepEqual(
-    normalizeFavoriteWrite({ teamId: 7, teamName: ' Arsenal ', teamLogo: 'https://example.test/logo.png' }),
-    { teamId: 7, teamName: 'Arsenal', teamLogo: 'https://example.test/logo.png' },
+    normalizeFavoriteWrite({
+      teamId: 7,
+      teamName: ' Arsenal ',
+      teamLogo: 'https://media.api-sports.io/football/teams/42.png',
+    }),
+    {
+      teamId: 7,
+      teamName: 'Arsenal',
+      teamLogo: 'https://media.api-sports.io/football/teams/42.png',
+    },
   );
+  assert.deepEqual(TEAM_LOGO_ALLOWED_HOSTS, ['media.api-sports.io']);
   assert.throws(() => normalizeFavoriteWrite({ teamId: 0, teamName: 'x' }), /Некорректная команда/);
   assert.throws(() => normalizeFavoriteWrite({ teamId: 7, teamName: 'x'.repeat(PERSONAL_WRITE_LIMITS.teamName + 1) }), /слишком длинный/);
   assert.throws(() => normalizeFavoriteWrite({ teamId: 7, teamName: 'Club', teamLogo: 'javascript:alert(1)' }), /Некорректный URL/);
+  assert.throws(() => normalizeFavoriteWrite({ teamId: 7, teamName: 'Club', teamLogo: 'https://example.test/logo.png' }), /Некорректный URL/);
+  assert.throws(() => normalizeFavoriteWrite({ teamId: 7, teamName: 'Club', teamLogo: 'https://media.api-sports.io.evil.test/logo.png' }), /Некорректный URL/);
+  assert.throws(() => normalizeFavoriteWrite({ teamId: 7, teamName: 'Club', teamLogo: 'http://media.api-sports.io/football/teams/42.png' }), /Некорректный URL/);
 });
 
 test('personal write guards normalize valid reminders and reject stale or oversized input', () => {
