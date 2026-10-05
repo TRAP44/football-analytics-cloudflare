@@ -2,9 +2,9 @@ export const PUBLIC_READINESS_CACHE_MS = 15_000;
 
 function cleanText(value, fallback='', maxLength=120) {
   if (typeof value !== 'string') return fallback;
-  const text=value.trim().replace(/\s+/gu,' ');
-  if (!text || /[\u0000-\u001f\u007f-\u009f]/u.test(text)) return fallback;
-  return text.slice(0,maxLength);
+  const raw=value.trim();
+  if (!raw || /[\u0000-\u001f\u007f-\u009f]/u.test(raw)) return fallback;
+  return raw.replace(/\s+/gu,' ').slice(0,maxLength);
 }
 
 function cleanStatus(value, fallback='unknown') {
