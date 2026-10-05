@@ -1,4 +1,4 @@
-import { PERSONAL_WRITE_LIMITS, normalizeFavoriteWrite } from './personal-write-guards.js';
+import { PERSONAL_WRITE_LIMITS, normalizeFavoriteWrite, sanitizeTeamLogoUrl } from './personal-write-guards.js';
 
 export function createUserFavoritesService({
   memory,
@@ -9,10 +9,13 @@ export function createUserFavoritesService({
   supaHeaders,
 }) {
   async function getFavorites(userId, cfg) {
-    if (hasSupabase(cfg)) {
-      return await supaSelectMany(cfg, 'favorites', { telegram_id: `eq.${Number(userId)}` }, { limit: 50, order: 'created_at.desc' });
-    }
-    return memory.favorites.get(Number(userId)) || [];
+    const rows = hasSupabase(cfg)
+      ? await supaSelectMany(cfg, 'favorites', { telegram_id: `eq.${Number(userId)}` }, { limit: 50, order: 'created_at.desc' })
+      : (memory.favorites.get(Number(userId)) || []);
+    return (rows || []).map(row => ({
+      ...row,
+      team_logo: sanitizeTeamLogoUrl(row?.team_logo),
+    }));
   }
 
   async function addFavorite(userId, team, cfg) {
