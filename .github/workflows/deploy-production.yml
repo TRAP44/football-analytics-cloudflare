@@ -97,9 +97,9 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         shell: bash
         run: |
-          if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" || -z "$INVOICE_SIGNING_SECRET" ]]; then
+          if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
             echo "### Cloudflare deploy blocked" >> "$GITHUB_STEP_SUMMARY"
-            echo "CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID and INVOICE_SIGNING_SECRET are required before production deployment." >> "$GITHUB_STEP_SUMMARY"
+            echo "CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are required before production deployment." >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
 
@@ -179,7 +179,7 @@ jobs:
           echo "Pinned Cloudflare version $PREVIOUS_VERSION_ID for release $PREVIOUS_RELEASE before production cutover." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Configure dedicated invoice signing secret
-        if: steps.production_changes.outputs.changed == 'true'
+        if: steps.production_changes.outputs.changed == 'true' && env.INVOICE_SIGNING_SECRET != ''
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
