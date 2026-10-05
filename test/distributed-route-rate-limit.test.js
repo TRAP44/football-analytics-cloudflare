@@ -128,6 +128,39 @@ test('worker applies local account burst before distributed account RPC and befo
   assert.doesNotMatch(worker,/enforceDistributedRouteBurst/);
 });
 
+test('distributed guard rejects malformed RPC allow flags and bounds retry-after values',async()=>{
+  const req=request('/api/analyze',{method:'POST'});
+  const memory={};
+  const events=[];
+  const malformed=await enforceDistributedAccountRateLimit({
+    request:req,
+    user:{id:77},
+    cfg:{supabaseUrl:'https://db.example',supabaseKey:'server-key'},
+    hasSupabase:()=>true,
+    supaRpc:async()=>({allowed:'true',retryAfter:'not-a-number'}),
+    bumpTelemetry:()=>{},
+    recordOpsEvent:(_cfg,event)=>{ events.push(event); },
+    json,
+    memory,
+  });
+  assert.equal(malformed,null);
+  assert.equal(events[0]?.code,'DISTRIBUTED_ROUTE_GUARD_DEGRADED');
+
+  const blocked=await enforceDistributedAccountRateLimit({
+    request:req,
+    user:{id:77},
+    cfg:{supabaseUrl:'https://db.example',supabaseKey:'server-key'},
+    hasSupabase:()=>true,
+    supaRpc:async()=>({allowed:false,retryAfter:99999}),
+    bumpTelemetry:()=>{},
+    recordOpsEvent:async()=>{},
+    json,
+    memory:{},
+  });
+  assert.equal(blocked.status,429);
+  assert.equal(blocked.headers['retry-after'],'3600');
+});
+
 test('distributed guard reuses the existing server-only atomic fixed-window RPC contract',()=>{
   const source=fs.readFileSync('src/account-rate-limit.js','utf8');
   assert.match(source,/supaRpc\(cfg,'claim_provider_request'/);
