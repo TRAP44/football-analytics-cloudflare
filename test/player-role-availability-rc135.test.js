@@ -33,6 +33,27 @@ test('RC135 ambiguous names are not force-matched', () => {
   assert.equal(data.summary.seasonRole.home.matched,0);
 });
 
+test('RC135 malformed season counters are sanitized before role weighting', () => {
+  const data=enrichFixtureAbsencesWithSeasonRole(baseAbsence(), {
+    homePlayerStats:{
+      available:true,
+      players:[{
+        id:10,
+        name:'Key Player',
+        games:{appearances:'Infinity',lineups:-5,minutes:'NaN'},
+        goals:{total:2.5,assists:-1},
+      }],
+    },
+  });
+  const role=data.home[0].seasonRole;
+  assert.equal(role.appearances,0);
+  assert.equal(role.lineups,0);
+  assert.equal(role.minutes,0);
+  assert.equal(role.goals,2);
+  assert.equal(role.assists,0);
+  assert.ok(Number.isFinite(role.weight));
+});
+
 test('RC135 small samples shrink toward neutral', () => {
   const data=enrichFixtureAbsencesWithSeasonRole(baseAbsence(), {homePlayerStats:{available:true,players:[{id:10,name:'Key Player',games:{appearances:1,lineups:1,minutes:90},goals:{total:1,assists:1}}]}});
   const weight=data.home[0].seasonRole.weight;
