@@ -23,8 +23,14 @@ test('runtime history failures are surfaced instead of being rendered as an empt
   assert.doesNotMatch(runtimeApi, /listRuntimeHistory\(cfg, 12\)\.catch\(\(\) => \[\]\)/);
 
   const saveRuntime = section(runtimeControls, 'async function saveRuntimeControls', 'function runtimeFeatureResponse');
+  assert.match(saveRuntime, /RUNTIME_HISTORY_REQUIRED/);
   assert.match(saveRuntime, /RUNTIME_HISTORY_BASELINE_WRITE_FAILED/);
-  assert.match(saveRuntime, /RUNTIME_HISTORY_APPEND_FAILED/);
+  assert.match(saveRuntime, /RUNTIME_CONTROLS_ATOMIC_COMMIT_FAILED/);
+  assert.match(saveRuntime, /X-Runtime-Action/);
+  assert.match(saveRuntime, /X-Runtime-Reason-Hex/);
+  assert.match(saveRuntime, /const historyReady = true/);
+  assert.doesNotMatch(saveRuntime, /RUNTIME_HISTORY_APPEND_FAILED/);
+  assert.doesNotMatch(saveRuntime, /await appendRuntimeHistory\(/);
   assert.match(saveRuntime, /return \{ value, status: 200, historyReady, historyReason \}/);
 
   const rollback = section(runtimeControls, 'async function apiRuntimeRollback', 'return {\n    runtimeControlsSnapshot');

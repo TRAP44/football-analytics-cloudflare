@@ -179,83 +179,51 @@ export function createRuntimeControlsRuntime({
   async function rollbackRuntimeControls(cfg, user, body = {}) {
     const historySchema = await probeRuntimeHistorySchema(cfg);
     if (!historySchema.ok) {
+      const historyReason = 'Журнал изменений недоступен. Настройки не применены, чтобы не создавать неаудируемую версию.';
+      void recordOpsEvent(cfg, {
+        severity: 'error',
+        source: 'release',
+        eventType: 'runtime_history',
+        code: 'RUNTIME_HISTORY_REQUIRED',
+        message: historyReason,
+        endpoint: '/api/runtime-controls',
+        meta: { revision: Number(current.revision || 0), schemaStatus: String(historySchema.status || 'unknown') },
+      }).catch(() => {});
       return {
-        error: SUPABASE_SCHEMA_GUIDANCE,
-        code: 'RUNTIME_HISTORY_SCHEMA',
-        status: 409,
-      };
-    }
-  
-    const expectedRevision = Number(body.expectedRevision || 0);
-    const historyId = Number(body.historyId || 0);
-    if (!expectedRevision || !historyId) {
-      return { error: 'Не хватает номера текущей версии или идентификатора точки восстановления для отката.', code: 'RUNTIME_ROLLBACK_INPUT', status: 400 };
-    }
-  
-    const row = await supaSelectOne(cfg, 'runtime_control_history', { id: `eq.${historyId}` });
-    if (!row?.snapshot) {
-      return { error: 'Точка восстановления настроек функций не найдена.', code: 'RUNTIME_ROLLBACK_NOT_FOUND', status: 404 };
-    }
-  
-    const target = normalizeRuntimeControls(row.snapshot);
-    if (Number(target.revision || 0) === expectedRevision) {
-      return { error: 'Выбрана уже активная версия.', code: 'RUNTIME_ROLLBACK_SAME_REVISION', status: 409 };
-    }
-  
-    return await saveRuntimeControls(cfg, user, {
-      expectedRevision,
-      maintenanceMode: target.maintenanceMode,
-      analysisEnabled: target.analysisEnabled,
-      searchEnabled: target.searchEnabled,
-      liveEnabled: target.liveEnabled,
-      remindersEnabled: target.remindersEnabled,
-      expandedDataEnabled: target.expandedDataEnabled,
-      autoSettlementRecoveryEnabled: target.autoSettlementRecoveryEnabled,
-      message: target.message,
-      reason: String(body.reason || `Rollback to revision ${Number(row.revision || target.revision || 0)}`).slice(0, 240),
-      action: 'rollback',
-      sourceRevision: Number(row.revision || target.revision || 0),
-    });
-  }
-  
-  async function saveRuntimeControls(cfg, user, body = {}) {
-    const currentState = await loadRuntimeControls(cfg, { force: true });
-    if (!currentState.schemaReady) {
-      return { error: SUPABASE_SCHEMA_GUIDANCE, code: 'RUNTIME_CONTROLS_SCHEMA', status: 409 };
-    }
-  
-    const current = currentState.value;
-    const expectedRevision = Number(body.expectedRevision || 0);
-    if (!expectedRevision || expectedRevision !== Number(current.revision || 1)) {
-      return {
-        error: 'Настройки уже изменились в другой сессии. Обновите панель и повторите.',
-        code: 'RUNTIME_CONTROLS_CONFLICT',
-        status: 409,
+        error: historyReason,
+        code: 'RUNTIME_HISTORY_REQUIRED',
+        status: 503,
         current: publicRuntimeControls(current),
+        historyReady: false,
+        historyReason,
       };
     }
-  
-    const historySchema = await probeRuntimeHistorySchema(cfg);
-    let historyReady = Boolean(historySchema.ok);
-    let historyReason = historySchema.ok ? '' : SUPABASE_SCHEMA_GUIDANCE;
-    if (historySchema.ok) {
-      try {
-        await ensureRuntimeHistoryBaseline(cfg, current, user);
-      } catch (error) {
-        historyReady = false;
-        historyReason = 'История изменений временно недоступна: базовая точка восстановления не сохранена.';
-        void recordOpsEvent(cfg, {
-          severity: 'error',
-          source: 'release',
-          eventType: 'runtime_history',
-          code: 'RUNTIME_HISTORY_BASELINE_WRITE_FAILED',
-          message: error?.message || error,
-          endpoint: '/api/runtime-controls',
-          meta: { revision: Number(current.revision || 0) },
-        }).catch(() => {});
-      }
+
+    try {
+      await ensureRuntimeHistoryBaseline(cfg, current, user);
+    } catch (error) {
+      const historyReason = 'Журнал изменений недоступен: базовая точка не сохранена. Настройки не применены.';
+      void recordOpsEvent(cfg, {
+        severity: 'error',
+        source: 'release',
+        eventType: 'runtime_history',
+        code: 'RUNTIME_HISTORY_BASELINE_WRITE_FAILED',
+        message: error?.message || error,
+        endpoint: '/api/runtime-controls',
+        meta: { revision: Number(current.revision || 0) },
+      }).catch(() => {});
+      return {
+        error: historyReason,
+        code: 'RUNTIME_HISTORY_BASELINE_WRITE_FAILED',
+        status: 503,
+        current: publicRuntimeControls(current),
+        historyReady: false,
+        historyReason,
+      };
     }
-  
+
+    const historyReady = true;
+    const historyReason = '';
     const requestedAction = String(body.action || 'update').trim();
     const changeAction = ['update', 'defaults', 'rollback', 'lockdown', 'lockdown_release'].includes(requestedAction) ? requestedAction : 'update';
     const sourceRevision = Number(body.sourceRevision || 0) || null;
@@ -304,19 +272,48 @@ export function createRuntimeControlsRuntime({
       updated_by: Number(user?.id || 0) || null,
     };
   
+    const reasonHex = Array.from(
+      new TextEncoder().encode(changeReason),
+      byte => byte.toString(16).padStart(2, '0'),
+    ).join('');
     const url = new URL(`${cfg.supabaseUrl}/rest/v1/runtime_controls`);
     url.searchParams.set('id', 'eq.global');
     url.searchParams.set('revision', `eq.${expectedRevision}`);
     const response = await fetchWithTimeout(url, {
       method: 'PATCH',
-      headers: supaHeaders(cfg, { Prefer: 'return=representation' }),
+      headers: supaHeaders(cfg, {
+        Prefer: 'return=representation',
+        'X-Runtime-Action': changeAction,
+        'X-Runtime-Reason-Hex': reasonHex,
+        'X-Runtime-App-Version': String(APP_VERSION || '').slice(0, 120),
+        ...(sourceRevision ? { 'X-Runtime-Source-Revision': String(sourceRevision) } : {}),
+      }),
       body: JSON.stringify(next),
-    }, 7000, 'Supabase runtime controls');
-  
+    }, 7000, 'Supabase atomic runtime controls');
+
     if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      throw new Error(`Supabase runtime_controls: HTTP ${response.status}${text ? ` — ${text.slice(0, 160)}` : ''}`);
+      const responseText = await response.text().catch(() => '');
+      const failureReason = 'Настройки не применены: состояние и журнал не удалось сохранить одной транзакцией.';
+      void recordOpsEvent(cfg, {
+        severity: 'error',
+        source: 'release',
+        eventType: 'runtime_history',
+        code: 'RUNTIME_CONTROLS_ATOMIC_COMMIT_FAILED',
+        message: redactOpsString(responseText || `HTTP ${response.status}`, 160),
+        endpoint: '/api/runtime-controls',
+        status: response.status,
+        meta: { revision: expectedRevision, action: changeAction, sourceRevision },
+      }).catch(() => {});
+      return {
+        error: failureReason,
+        code: 'RUNTIME_CONTROLS_ATOMIC_COMMIT_FAILED',
+        status: 503,
+        current: publicRuntimeControls(current),
+        historyReady: false,
+        historyReason: failureReason,
+      };
     }
+
     const rows = await response.json().catch(() => []);
     if (!Array.isArray(rows) || rows.length !== 1) {
       return {
@@ -326,32 +323,21 @@ export function createRuntimeControlsRuntime({
         current: publicRuntimeControls((await loadRuntimeControls(cfg, { force: true })).value),
       };
     }
-  
+
     const value = normalizeRuntimeControls(rows[0]);
-    memory.runtimeControls = { value, loadedAt: clock(), source: 'supabase', schemaReady: true };
-  
-    if (historySchema.ok) {
-      try {
-        await appendRuntimeHistory(cfg, value, user, {
-          action: changeAction,
-          reason: changeReason,
-          sourceRevision,
-        });
-      } catch (error) {
-        historyReady = false;
-        historyReason = 'Настройки применены, но запись в журнал изменений временно не сохранилась.';
-        void recordOpsEvent(cfg, {
-          severity: 'error',
-          source: 'release',
-          eventType: 'runtime_history',
-          code: 'RUNTIME_HISTORY_APPEND_FAILED',
-          message: error?.message || error,
-          endpoint: '/api/runtime-controls',
-          meta: { revision: Number(value.revision || 0), action: changeAction, sourceRevision },
-        }).catch(() => {});
-      }
+    if (Number(value.revision || 0) !== expectedRevision + 1) {
+      const failureReason = 'Настройки не применены: база данных вернула некорректную версию состояния.';
+      return {
+        error: failureReason,
+        code: 'RUNTIME_CONTROLS_ATOMIC_COMMIT_INVALID',
+        status: 503,
+        current: publicRuntimeControls(current),
+        historyReady: false,
+        historyReason: failureReason,
+      };
     }
-  
+    memory.runtimeControls = { value, loadedAt: clock(), source: 'supabase', schemaReady: true };
+
     const securityLockdown = isSecurityLockdownControls(value);
     const lockdownTransition = !wasSecurityLockdown && securityLockdown
       ? 'enabled'
