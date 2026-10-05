@@ -5,6 +5,7 @@ import {
   auditWorkflow,
   auditWranglerVars,
   workflowActionRefs,
+  workflowPaths,
   workflowSecretRefs,
 } from '../scripts/privileged-access-audit.js';
 import {
@@ -56,6 +57,27 @@ test('workflow audit rejects write-all permissions', () => {
 permissions: write-all
 `);
   assert.ok(findings.some(item=>item.type==='write_all_permissions'));
+});
+
+test('workflow discovery audits every current YAML workflow, including zero-secret maintenance jobs', () => {
+  const paths=workflowPaths();
+  assert.ok(paths.includes('.github/workflows/audit-git-history-size.yml'));
+  assert.ok(paths.includes('.github/workflows/cleanup-merged-branches.yml'));
+  assert.ok(paths.includes('.github/workflows/repository-maintenance.yml'));
+  assert.ok(paths.every(path=>/\.ya?ml$/i.test(path)));
+});
+
+test('workflow action parser accepts quoted pinned action references', () => {
+  const sha='3d3c42e5aac5ba805825da76410c181273ba90b1';
+  const source=`permissions:
+  contents: read
+jobs:
+  audit:
+    steps:
+      - uses: "actions/checkout@${sha}"
+`;
+  assert.deepEqual(workflowActionRefs(source),[`actions/checkout@${sha}`]);
+  assert.deepEqual(auditWorkflow('.github/workflows/example.yml',source),[]);
 });
 
 test('wrangler vars audit blocks secret-like names from plaintext vars', () => {
