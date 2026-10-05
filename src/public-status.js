@@ -1,6 +1,25 @@
+import { constantTimeEqual } from './crypto-utils.js';
+
 function required(name, value) {
   if (typeof value !== 'function') throw new TypeError(`${name} is required`);
   return value;
+}
+
+function healthProbeAuthorized(request, cfg) {
+  const expected = String(cfg?.healthProbeToken || '');
+  if (!expected) return false;
+  const provided = String(request?.headers?.get?.('x-health-token') || '');
+  return Boolean(provided) && constantTimeEqual(provided, expected);
+}
+
+function detailedHealthPayload(health, manifest, cfg) {
+  return {
+    ...health,
+    database: cfg?.supabaseUrl && cfg?.supabaseKey ? 'supabase' : 'memory',
+    monetization: String(manifest?.monetization || (cfg?.monetizationEnabled ? 'enabled' : 'paused')),
+    deployment: manifest?.deployment || null,
+    features: manifest?.features && typeof manifest.features === 'object' ? manifest.features : {},
+  };
 }
 
 export function createPublicStatusRuntime({
@@ -156,7 +175,15 @@ export function createPublicStatusRouter({
 
     if (pathname === '/health' || pathname === '/api/health') {
       const health = await publicHealthRuntime.healthSnapshot(cfg);
-      return json(health, health.ok ? 200 : 503, { 'cache-control': 'no-store' });
+      const status = health.ok ? 200 : 503;
+      if (!healthProbeAuthorized(request, cfg)) {
+        return json({ ok:Boolean(health.ok) }, status, { 'cache-control': 'no-store' });
+      }
+      return json(
+        detailedHealthPayload(health, appManifest(cfg), cfg),
+        status,
+        { 'cache-control': 'no-store' },
+      );
     }
 
     if (method === 'GET' && pathname === '/api/app-manifest') {
