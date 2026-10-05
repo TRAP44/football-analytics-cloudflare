@@ -1,0 +1,185 @@
+name: Repository maintenance
+
+on:
+  schedule:
+    - cron: "19 4 * * 0"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: repository-maintenance
+  cancel-in-progress: false
+
+jobs:
+  history:
+    name: Clean Actions history
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      CURRENT_RUN_ID: ${{ github.run_id }}
+    steps:
+      - name: Delete stale completed workflow runs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          now="$(date -u +%s)"
+          deleted=0
+          kept=0
+
+          gh api --paginate "repos/$GH_REPO/actions/runs?status=completed&per_page=100" \
+            --jq '.workflow_runs[] | [.id, (.head_branch // ""), .created_at, .name, (.conclusion // "")] | @tsv' |
+          while IFS=$'\t' read -r run_id branch created_at workflow_name conclusion; do
+            [[ -z "$run_id" ]] && continue
+
+            if [[ "$run_id" == "$CURRENT_RUN_ID" || -z "$branch" ]]; then
+              kept=$((kept + 1))
+              continue
+            fi
+
+            created_epoch="$(date -u -d "$created_at" +%s)"
+            age_days=$(( (now - created_epoch) / 86400 ))
+            delete_run=false
+
+            if [[ "$branch" != "main" ]]; then
+              encoded_branch="$(jq -nr --arg v "$branch" '$v|@uri')"
+              if ! gh api "repos/$GH_REPO/git/ref/heads/$encoded_branch" >/dev/null 2>&1 && (( age_days >= 1 )); then
+                delete_run=true
+              fi
+            fi
+
+            if [[ "$branch" == "main" ]]; then
+              if [[ "$conclusion" == "cancelled" || "$conclusion" == "skipped" ]]; then
+                (( age_days >= 1 )) && delete_run=true
+              elif [[ "$conclusion" == "failure" ]]; then
+                (( age_days >= 14 )) && delete_run=true
+              else
+                case "$workflow_name" in
+                  "Backup Supabase"|"Deploy Production"|"Rollback Production")
+                    (( age_days >= 30 )) && delete_run=true
+                    ;;
+                  "Quality"|"CodeQL Security"|"Privileged Access Audit")
+                    (( age_days >= 7 )) && delete_run=true
+                    ;;
+                  "External Production Monitor"|"Cleanup merged branches"|"Repository maintenance")
+                    (( age_days >= 3 )) && delete_run=true
+                    ;;
+                  *)
+                    (( age_days >= 14 )) && delete_run=true
+                    ;;
+                esac
+              fi
+            fi
+
+            if [[ "$delete_run" == "true" ]]; then
+              if gh api -X DELETE "repos/$GH_REPO/actions/runs/$run_id" >/dev/null 2>&1; then
+                echo "Deleted stale run $run_id: $workflow_name [$branch] $conclusion"
+                deleted=$((deleted + 1))
+              else
+                echo "GitHub refused deletion for run $run_id"
+                kept=$((kept + 1))
+              fi
+            else
+              kept=$((kept + 1))
+            fi
+          done
+
+          echo "Actions history cleanup complete."
+
+  artifacts:
+    name: Clean Actions artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Delete stale non-backup artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          now="$(date -u +%s)"
+          deleted=0
+          kept=0
+
+          gh api --paginate "repos/$GH_REPO/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | [.id, .name, .created_at, .expired] | @tsv' |
+          while IFS=$'\t' read -r artifact_id name created_at expired; do
+            [[ -z "$artifact_id" ]] && continue
+
+            case "$name" in
+              supabase-production-backup-*)
+                kept=$((kept + 1))
+                continue
+                ;;
+            esac
+
+            created_epoch="$(date -u -d "$created_at" +%s)"
+            age_days=$(( (now - created_epoch) / 86400 ))
+            max_days=14
+
+            case "$name" in
+              external-production-monitor-*) max_days=3 ;;
+              codeql-sarif-*) max_days=7 ;;
+            esac
+
+            if [[ "$expired" == "true" || "$age_days" -ge "$max_days" ]]; then
+              if gh api -X DELETE "repos/$GH_REPO/actions/artifacts/$artifact_id" >/dev/null 2>&1; then
+                echo "Deleted artifact $artifact_id: $name"
+                deleted=$((deleted + 1))
+              else
+                echo "GitHub refused deletion for artifact $artifact_id: $name"
+                kept=$((kept + 1))
+              fi
+            else
+              kept=$((kept + 1))
+            fi
+          done
+
+          echo "Artifact cleanup complete: deleted=$deleted kept=$kept"
+
+  caches:
+    name: Clean Actions caches
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Delete caches unused for 7 days
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          now="$(date -u +%s)"
+          deleted=0
+          kept=0
+
+          gh api --paginate "repos/$GH_REPO/actions/caches?per_page=100" \
+            --jq '.actions_caches[] | [.id, .key, .ref, .last_accessed_at] | @tsv' |
+          while IFS=$'\t' read -r cache_id key ref last_accessed_at; do
+            [[ -z "$cache_id" ]] && continue
+
+            last_epoch="$(date -u -d "$last_accessed_at" +%s)"
+            age_days=$(( (now - last_epoch) / 86400 ))
+
+            if (( age_days >= 7 )); then
+              if gh api -X DELETE "repos/$GH_REPO/actions/caches/$cache_id" >/dev/null 2>&1; then
+                echo "Deleted stale cache $cache_id: $key [$ref]"
+                deleted=$((deleted + 1))
+              else
+                echo "GitHub refused cache deletion: $cache_id"
+                kept=$((kept + 1))
+              fi
+            else
+              kept=$((kept + 1))
+            fi
+          done
+
+          echo "Cache cleanup complete: deleted=$deleted kept=$kept"
