@@ -66,7 +66,9 @@ function eventDistanceMs(event, kickoffAt) {
   return Math.abs(a - b);
 }
 
-function findFixtureEvent(events, { homeName, awayName, kickoffAt }) {
+function findFixtureEvent(events, { homeName, awayName, kickoffAt } = {}) {
+  const kickoffMs = Date.parse(String(kickoffAt || ''));
+  if (!Number.isFinite(kickoffMs)) return null;
   const matches = (Array.isArray(events) ? events : []).filter(event =>
     safeTeamMatch(event?.home_team, homeName)
     && safeTeamMatch(event?.away_team, awayName)
@@ -75,7 +77,7 @@ function findFixtureEvent(events, { homeName, awayName, kickoffAt }) {
   matches.sort((a, b) => eventDistanceMs(a, kickoffAt) - eventDistanceMs(b, kickoffAt));
   const best = matches[0];
   const distance = eventDistanceMs(best, kickoffAt);
-  if (Number.isFinite(distance) && distance > 36 * 60 * 60 * 1000) return null;
+  if (!Number.isFinite(distance) || distance > 36 * 60 * 60 * 1000) return null;
   return best;
 }
 
@@ -99,14 +101,16 @@ export function normalizeTheOddsApiMarket(events, context = {}) {
 
   const samples = [];
   const updates = [];
-  for (const bookmaker of event.bookmakers || []) {
-    const market = (bookmaker.markets || []).find(item => item?.key === 'h2h');
+  const bookmakers = Array.isArray(event.bookmakers) ? event.bookmakers : [];
+  for (const bookmaker of bookmakers) {
+    const markets = Array.isArray(bookmaker?.markets) ? bookmaker.markets : [];
+    const market = markets.find(item => item?.key === 'h2h');
     if (!market) continue;
-    const outcomes = market.outcomes || [];
+    const outcomes = Array.isArray(market.outcomes) ? market.outcomes : [];
     const home = Number(outcomes.find(item => safeTeamMatch(item?.name, event.home_team))?.price);
     const away = Number(outcomes.find(item => safeTeamMatch(item?.name, event.away_team))?.price);
     const draw = Number(outcomes.find(item => /^draw$/i.test(String(item?.name || '').trim()))?.price);
-    if (home > 1 && draw > 1 && away > 1) {
+    if ([home, draw, away].every(value => Number.isFinite(value) && value > 1)) {
       samples.push({ home, draw, away });
       const updatedAt = market.last_update || bookmaker.last_update || '';
       if (Number.isFinite(Date.parse(String(updatedAt)))) updates.push(String(updatedAt));
