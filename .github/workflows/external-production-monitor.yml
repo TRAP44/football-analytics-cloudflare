@@ -59,7 +59,7 @@ jobs:
             monitor-result.json
             monitor-result.md
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 3
           compression-level: 6
 
       - name: Reconcile availability incidents
