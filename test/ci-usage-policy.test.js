@@ -57,3 +57,17 @@ test('closed pull requests cancel queued self-hosted CI without consuming a runn
     'both Quality jobs must skip on pull_request.closed',
   );
 });
+
+
+test('closed merged PR events cannot cancel current-main security checks',()=>{
+  assert.match(
+    codeql,
+    /group: codeql-\$\{\{ github\.workflow \}\}-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}/,
+  );
+  assert.match(
+    privileged,
+    /group: privileged-access-audit-\$\{\{ github\.event\.pull_request\.number \|\| github\.ref \}\}/,
+  );
+  assert.doesNotMatch(codeql,/group: codeql-\$\{\{ github\.workflow \}\}-\$\{\{ github\.ref \}\}/);
+  assert.doesNotMatch(privileged,/group: privileged-access-audit-\$\{\{ github\.ref \}\}/);
+});

@@ -30,7 +30,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: privileged-access-audit-${{ github.ref }}
+  group: privileged-access-audit-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
