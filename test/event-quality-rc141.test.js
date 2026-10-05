@@ -46,6 +46,36 @@ test('RC141 rejects future/invalid minutes and excludes unknown sides from analy
   assert.deepEqual(eventsForTrustedAnalytics(rows,quality).map(x=>x.id),['good']);
 });
 
+test('RC141 rejects coercible malformed time values and normalizes live mode safely', () => {
+  assert.equal(inspectMatchEvent(ev('bool-minute',true,'home'),{mode:'live',elapsed:20}).displayValid,false);
+  assert.equal(inspectMatchEvent(ev('empty-minute','','home'),{mode:'live',elapsed:20}).displayValid,false);
+  assert.equal(inspectMatchEvent(ev('array-minute',[12],'home'),{mode:'live',elapsed:20}).displayValid,false);
+  assert.equal(inspectMatchEvent(ev('numeric-string','12','home'),{mode:'live',elapsed:'20'}).displayValid,true);
+
+  const future=inspectMatchEvent(ev('future',40,'home'),{mode:' LIVE ',elapsed:'20'});
+  assert.equal(future.future,true);
+
+  const quality=assessMatchEventQuality(
+    [ev('bad',true,'home'),ev('good',12,'away')],
+    {eventsMeta:trustedMeta,mode:' LIVE ',elapsed:'20'},
+  );
+  assert.equal(quality.mode,'live');
+  assert.deepEqual(quality.displayEventIds,['good']);
+  assert.equal(quality.invalidTimeCount,1);
+});
+
+test('RC141 sanitized index selection ignores coercible or out-of-range quality indices', () => {
+  const rows=[ev('a',10,'home'),ev('b',11,'away'),ev('c',12,'home')];
+  const forged={
+    sourceTrusted:true,
+    analyticalConfidenceBearing:true,
+    displayEventIndices:[true,'0',[1],-1,99],
+    analyticalEventIndices:[false,'2',{},99],
+  };
+  assert.deepEqual(sanitizeEventsForDisplay(rows,forged).map(row=>row.id),['a']);
+  assert.deepEqual(eventsForTrustedAnalytics(rows,forged).map(row=>row.id),['c']);
+});
+
 test('RC141 fails closed when freshness/provenance is not trusted', () => {
   const rows=[ev('a',12,'home')];
   const quality=assessMatchEventQuality(rows,{eventsMeta:{...trustedMeta,stale:true,confidenceBearing:false,freshnessState:'stale'},mode:'live',elapsed:20});
