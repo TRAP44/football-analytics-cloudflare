@@ -253,6 +253,8 @@ export function sanitizeOddsSnapshotsForMovement(snapshots = []) {
     const odds = Object.fromEntries(SIDES.map(side => [side, inspections[side].value]));
     const probabilities = probabilitiesFromDecimalOdds(odds);
     if (!probabilities) continue;
+    const snapshotSources=integerCandidate(row?.sources);
+    if (snapshotSources === null || snapshotSources < 1 || snapshotSources > MAX_SOURCE_COUNT) continue;
     seenTimes.add(timestampMs);
     safe.push({
       ...row,
@@ -277,10 +279,10 @@ export function annotateOddsReliability(meta = {}, quality = {}) {
     partial:Boolean(quality?.state === 'sanitized'),
   };
 
-  if (!quality?.observed) {
+  if (quality?.observed !== true) {
     return { ...base, available:false, usable:false, confidenceBearing:false };
   }
-  if (!quality?.sourceTrusted) {
+  if (quality?.sourceTrusted !== true) {
     return {
       ...base,
       transportState:originalState,
@@ -292,7 +294,7 @@ export function annotateOddsReliability(meta = {}, quality = {}) {
       reason:'odds_source_untrusted',
     };
   }
-  if (!quality?.marketValid) {
+  if (quality?.marketValid !== true) {
     return {
       ...base,
       transportState:originalState,
