@@ -51,7 +51,9 @@ test('RC118 does not add a legacy acknowledgement requirement to stamped targets
     id: legacyId,
     annotations: {
       'workers/message': 'release=6.101.0-rc109 sha=d09f24590822816a32f036670c457c7544be8860',
+      'workers/tag': 'd09f24590822816a32f036670c457c7544be8860',
     },
+    metadata: { created_on: '2026-09-24T11:47:00.000Z' },
   };
   const result = verifyRollbackTarget(stamped, expectedVersion, legacyId, true, '');
   assert.equal(result.mode, 'stamped');
