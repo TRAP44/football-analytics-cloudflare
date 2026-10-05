@@ -2230,7 +2230,16 @@ async function applySuccessfulPayment(userId, payment, cfg, fallbackDate = Math.
       subscription_canceled: false,
       telegram_payment_charge_id: chargeId,
     }, cfg);
-    await recordReferredPayment(userId,payment,subscription.plan,cfg).catch(()=>false);
+    await recordReferredPayment(userId,payment,subscription.plan,cfg).catch(error => {
+      void recordCriticalWriteFailure(cfg, {
+        code:'BILLING_REFERRAL_WRITE_FAILED',
+        source:'billing',
+        eventType:'referral_payment',
+        message:error?.message || error,
+        meta:{plan:String(subscription.plan || '')},
+      });
+      return false;
+    });
     return true;
   }
 
@@ -6901,7 +6910,19 @@ async function markDigestSent(row, date, cfg) {
 }
 
 async function releaseDigestDelivery(row,date,cfg) {
-  if (hasSupabase(cfg)) return await supaRpc(cfg,'release_daily_digest',{p_telegram_id:Number(row.telegram_id),p_delivery_date:date},2500).catch(()=>false);
+  if (hasSupabase(cfg)) {
+    return await supaRpc(cfg,'release_daily_digest',{p_telegram_id:Number(row.telegram_id),p_delivery_date:date},2500)
+      .catch(error => {
+        void recordCriticalWriteFailure(cfg, {
+          code:'DAILY_DIGEST_RELEASE_WRITE_FAILED',
+          source:'telegram',
+          eventType:'daily_digest_claim',
+          message:error?.message || error,
+          meta:{deliveryDate:String(date || '')},
+        });
+        return false;
+      });
+  }
   const current=memory.botDigestSubscriptions.get(Number(row.telegram_id)) || row;
   memory.botDigestSubscriptions.set(Number(row.telegram_id),{...current,delivery_claim_date:null,delivery_locked_until:null});
   return true;
@@ -7814,7 +7835,15 @@ async function claimChannelPublishIdempotency(cacheKey, meta = {}, cfg) {
     }
     if (existing?.expired) {
       memory.cache.delete(key);
-      if (hasSupabase(cfg)) await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${key}`}).catch(()=>null);
+      if (hasSupabase(cfg)) {
+    await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${key}`})
+      .catch(error => recordCriticalWriteFailure(cfg, {
+        code:'POST_MATCH_RETURN_RELEASE_WRITE_FAILED',
+        source:'post_match_return',
+        eventType:'delivery_claim',
+        message:error?.message || error,
+      }));
+  }
     }
 
     const claimId=crypto.randomUUID();
@@ -11217,6 +11246,7 @@ async function saveSettlementReliability(cfg, patch = {}) {
 
 async function recordCriticalWriteFailure(cfg, {
   code,
+  source='model',
   eventType='critical_write',
   message,
   meta={},
@@ -11226,7 +11256,7 @@ async function recordCriticalWriteFailure(cfg, {
   try {
     await recordOpsEvent(cfg, {
       severity:'error',
-      source:'model',
+      source:String(source || 'model').slice(0,80),
       eventType,
       code:normalizedCode,
       message:normalizedMessage,
@@ -12099,7 +12129,16 @@ async function finishPostMatchReturnClaim(key, userId, fixtureId, cfg) {
   const payload={state:'sent',userId:Number(userId),fixtureId:Number(fixtureId),sentAt:new Date().toISOString(),version:APP_VERSION};
   const expiresAt=Date.now()+POST_MATCH_RETURN_MARKER_DAYS*86400_000;
   memory.cache.set(key,{payload,expiresAt});
-  if (hasSupabase(cfg)) await supaPatch(cfg,'analysis_cache',{cache_key:`eq.${key}`},{payload,expires_at:new Date(expiresAt).toISOString()}).catch(()=>null);
+  if (hasSupabase(cfg)) {
+    await supaPatch(cfg,'analysis_cache',{cache_key:`eq.${key}`},{payload,expires_at:new Date(expiresAt).toISOString()})
+      .catch(error => recordCriticalWriteFailure(cfg, {
+        code:'POST_MATCH_RETURN_FINISH_WRITE_FAILED',
+        source:'post_match_return',
+        eventType:'delivery_claim',
+        message:error?.message || error,
+        meta:{fixtureId:Number(fixtureId || 0)},
+      }));
+  }
 }
 
 async function releasePostMatchReturnClaim(key, cfg) {
