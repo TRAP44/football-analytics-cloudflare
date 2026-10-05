@@ -1,5 +1,31 @@
 import { apiSecurityHeaders } from './security-headers.js';
 
+const IMMUTABLE_JSON_HEADERS = new Set([
+  ...Object.keys(apiSecurityHeaders()).map(name => name.toLowerCase()),
+  'content-type',
+  'cache-control',
+  'content-length',
+  'x-app-version',
+  'x-api-contract',
+  'x-min-client-version',
+  'x-release-channel',
+  'vary',
+]);
+
+const MAX_RETRY_AFTER_SECONDS = 7 * 24 * 60 * 60;
+
+function normalizedRetryAfter(value) {
+  if (value == null || value === '') return undefined;
+  const seconds=Number(value);
+  if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
+  return Math.min(MAX_RETRY_AFTER_SECONDS, Math.max(1, Math.ceil(seconds)));
+}
+
+function normalizedLimit(value) {
+  const number=Number(value);
+  return Number.isSafeInteger(number) && number > 0 ? number : null;
+}
+
 export function createHttpRuntime({
   appVersion,
   apiContractVersion,
@@ -7,21 +33,27 @@ export function createHttpRuntime({
   releaseChannel,
   personalWriteLimits,
 } = {}) {
-  const json = (data, status = 200, extraHeaders = {}) => new Response(JSON.stringify(data), {
-    status,
-    headers: {
+  const json = (data, status = 200, extraHeaders = {}) => {
+    const headers=new Headers({
       ...apiSecurityHeaders(),
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store',
       'x-content-type-options': 'nosniff',
-      'x-app-version': appVersion,
-      'x-api-contract': String(apiContractVersion),
-      'x-min-client-version': minClientVersion,
-      'x-release-channel': releaseChannel,
+      'x-app-version': String(appVersion || ''),
+      'x-api-contract': String(apiContractVersion ?? ''),
+      'x-min-client-version': String(minClientVersion || ''),
+      'x-release-channel': String(releaseChannel || ''),
       'vary': 'x-telegram-init-data',
-      ...extraHeaders,
-    },
-  });
+    });
+
+    for (const [name,value] of Object.entries(extraHeaders || {})) {
+      const normalizedName=String(name || '').trim().toLowerCase();
+      if (!normalizedName || IMMUTABLE_JSON_HEADERS.has(normalizedName) || value == null) continue;
+      headers.set(name,String(value));
+    }
+
+    return new Response(JSON.stringify(data), { status, headers });
+  };
 
   const adminForbidden = () => json({
     error: 'Этот технический раздел доступен только администратору.',
@@ -30,7 +62,7 @@ export function createHttpRuntime({
 
   const publicRouteError = (error, rateLimited = false) => {
     const code = String(error?.code || (rateLimited ? 'FOOTBALL_RATE_LIMIT' : 'SERVER_ERROR'));
-    const retryAfter = Number(error?.retryAfter || 0) || undefined;
+    const retryAfter = normalizedRetryAfter(error?.retryAfter);
 
     if (rateLimited || ['FOOTBALL_RATE_LIMIT', 'FOOTBALL_COOLDOWN'].includes(code)) {
       return {
@@ -77,8 +109,12 @@ export function createHttpRuntime({
         status: 409,
         body: {
           error: code === 'FAVORITES_LIMIT'
-            ? `Достигнут лимит избранных команд: ${personalWriteLimits?.favorites}.`
-            : `Достигнут лимит активных напоминаний: ${personalWriteLimits?.reminders}.`,
+            ? normalizedLimit(personalWriteLimits?.favorites)
+              ? `Достигнут лимит избранных команд: ${normalizedLimit(personalWriteLimits.favorites)}.`
+              : 'Достигнут лимит избранных команд.'
+            : normalizedLimit(personalWriteLimits?.reminders)
+              ? `Достигнут лимит активных напоминаний: ${normalizedLimit(personalWriteLimits.reminders)}.`
+              : 'Достигнут лимит активных напоминаний.',
           code,
           category: 'limit',
           recoverable: false,
