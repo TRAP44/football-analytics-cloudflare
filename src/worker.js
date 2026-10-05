@@ -11566,7 +11566,19 @@ async function apiModelRemediation(request, cfg, user) {
       skippedCount: currentIds.length,
       fixtureIds: currentIds,
       detail: { providerCalls: dates.length, error: redactOpsString(error?.message || error, 180) },
-    }).catch(() => null);
+    }).catch(async auditError => {
+      await recordCriticalWriteFailure({
+        recordOpsEvent,
+        cfg,
+        source:'admin',
+        eventType:'remediation_audit_write',
+        code:'ADMIN_REMEDIATION_AUDIT_WRITE_FAILED',
+        message:'Failed to persist failed admin remediation audit record.',
+        meta:{ actionId, actionType:'recover', status:'failed', actorRole:'admin' },
+        error:auditError,
+      });
+      return null;
+    });
     throw error;
   }
 }
