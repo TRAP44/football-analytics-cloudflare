@@ -170,3 +170,60 @@ test('telegram processor propagates payment application failure instead of ackno
     /billing write failed/,
   );
 });
+
+
+test('lineup scheduler returns controlled failure summary when reminder read fails', async () => {
+  const events=[];
+  const service=createLineupNotificationService({
+    hasSupabase:()=>true,
+    loadRuntimeControls:async()=>({value:{remindersEnabled:true}}),
+    supaSelectPaged:async()=>{ throw new Error('reminder read failed'); },
+    loadLineupSnapshot:async()=>({confirmed:false}),
+    deliverClaimedReminder:async()=>({state:'sent'}),
+    recordOpsEvent:async(_cfg,event)=>events.push(event),
+  });
+
+  const summary=await service.processLineupNotifications({botToken:'token'});
+  assert.equal(summary.ok,false);
+  assert.equal(summary.failed,1);
+  assert.equal(summary.checked,0);
+  assert.equal(events[0]?.code,'LINEUP_NOTIFICATION_READ_FAILED');
+  assert.equal(events[0]?.message,'reminder read failed');
+});
+
+test('important-change scheduler isolates snapshot failure and continues other fixtures', async () => {
+  const deliveries=[];
+  const service=createImportantChangeNotificationService({
+    hasSupabase:()=>true,
+    loadRuntimeControls:async()=>({value:{remindersEnabled:true}}),
+    supaSelectPaged:async()=>({
+      rows:[
+        {telegram_id:1,fixture_id:801,home_name:'Broken',away_name:'Feed'},
+        {telegram_id:2,fixture_id:802,home_name:'Healthy',away_name:'Feed'},
+      ],
+      truncated:false,
+    }),
+    filterNotificationRecipients:async rows=>({rows,blockedByPreference:0,blockedByEntitlement:0}),
+    getOddsSnapshots:async fixtureId=>{
+      if (fixtureId===801) throw new Error('odds unavailable');
+      return [
+        {at:'2026-10-05T10:00:00.000Z',homeProb:40,drawProb:30,awayProb:30},
+        {at:'2026-10-05T12:00:00.000Z',homeProb:48,drawProb:27,awayProb:25},
+      ];
+    },
+    deliverClaimedReminder:async row=>{
+      deliveries.push(row.fixture_id);
+      return {state:'sent'};
+    },
+    recordOpsEvent:async()=>{},
+    thresholdPp:5,
+  });
+
+  const summary=await service.processImportantChangeNotifications({botToken:'token'});
+  assert.equal(summary.ok,false);
+  assert.equal(summary.fixturesChecked,2);
+  assert.equal(summary.failed,1);
+  assert.equal(summary.significant,1);
+  assert.equal(summary.sent,1);
+  assert.deepEqual(deliveries,[802]);
+});
