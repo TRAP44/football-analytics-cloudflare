@@ -37,6 +37,7 @@ jobs:
       - run: npm run security:scan
       - run: npm run security:privileged
       - run: npm run lint
+      - run: npm run lint:hygiene
       - run: npm run check
       - run: npm test
       - run: node scripts/bottom-nav-render-smoke.js
