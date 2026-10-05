@@ -16,14 +16,14 @@ function expectedReleaseCandidate(version) {
   return `RC${match[1]}`;
 }
 
-async function request(fetchImpl, baseUrl, path, timeoutMs = 8000) {
+async function request(fetchImpl, baseUrl, path, timeoutMs = 8000, headers = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetchImpl(new URL(path, baseUrl), {
       method: 'GET',
       redirect: 'follow',
-      headers: { accept: 'application/json' },
+      headers: { accept: 'application/json', ...headers },
       signal: controller.signal,
     });
   } finally {
@@ -37,11 +37,20 @@ export async function runRollbackSmoke(rawBaseUrl, expectedVersion, options = {}
   const fetchImpl = options.fetchImpl || fetch;
   const retries = Math.max(1, Number(options.retries || 10));
   const retryDelayMs = Math.max(0, Number(options.retryDelayMs ?? 6000));
+  const healthProbeToken=String(options.healthProbeToken || process.env.HEALTH_PROBE_TOKEN || '').trim();
+  if (!healthProbeToken) throw new Error('HEALTH_PROBE_TOKEN is required for rollback health verification.');
   let lastError = '';
 
   for (let attempt = 1; attempt <= retries; attempt += 1) {
     try {
-      const response = await request(fetchImpl, baseUrl, '/health');
+      const publicResponse=await request(fetchImpl,baseUrl,'/health');
+      if (!publicResponse.ok) throw new Error(`/health returned HTTP ${publicResponse.status}`);
+      const publicHealth=await publicResponse.json();
+      if (publicHealth?.ok!==true || Object.keys(publicHealth).some(key=>key!=='ok')) {
+        throw new Error('/health must remain minimal without the probe token.');
+      }
+
+      const response = await request(fetchImpl, baseUrl, '/health', 8000, {'x-health-token':healthProbeToken});
       if (!response.ok) throw new Error(`/health returned HTTP ${response.status}`);
       const health = await response.json();
       if (health?.ok !== true) throw new Error('/health.ok must be true after rollback.');
@@ -96,7 +105,7 @@ export async function runRollbackSmoke(rawBaseUrl, expectedVersion, options = {}
 const isCli = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isCli) {
   const [baseUrl, expectedVersion] = process.argv.slice(2);
-  runRollbackSmoke(baseUrl, expectedVersion)
+  runRollbackSmoke(baseUrl, expectedVersion, {healthProbeToken:process.env.HEALTH_PROBE_TOKEN})
     .then(result => {
       console.log(`Rollback smoke passed: ${result.version} / ${result.releaseCandidate}.`);
     })
