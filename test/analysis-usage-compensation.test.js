@@ -58,6 +58,78 @@ test('confirmed quota refund increments success telemetry only after persistence
   assert.equal(calls[0][4]['x-analysis-operation-id'], QUOTA_OPERATION);
 });
 
+test('invalid durable reservation fields fail before Supabase and never become pending', async () => {
+  let calls = 0;
+  const runtime = createAnalysisUsageCompensationRuntime({
+    hasSupabase: () => true,
+    supaRpc: async () => { calls += 1; return {}; },
+  });
+
+  for (const reservation of [
+    {
+      reserved:true,
+      durable:true,
+      operationId:QUOTA_OPERATION,
+      kind:'quota',
+      userId:0,
+      date:'2026-10-05',
+    },
+    {
+      reserved:true,
+      durable:true,
+      operationId:QUOTA_OPERATION,
+      kind:'quota',
+      userId:42,
+      date:'2026-02-31',
+    },
+    {
+      reserved:true,
+      durable:true,
+      operationId:PASS_OPERATION,
+      kind:'pass',
+      userId:42,
+      entitlementId:0,
+    },
+  ]) {
+    const result=await runtime.finalizeAnalysisUsageReservation({
+      reservation,
+      disposition:'refund',
+      cfg:CFG,
+    });
+    assert.deepEqual(result,{ok:false,pending:false,reason:'invalid_reservation'});
+  }
+  assert.equal(calls,0);
+});
+
+test('durable finalization requires the RPC response to confirm the same operation id', async () => {
+  const runtime = createAnalysisUsageCompensationRuntime({
+    hasSupabase: () => true,
+    supaRpc: async () => ({
+      ok:true,
+      status:'refunded',
+      operationId:'33333333-3333-4333-8333-333333333333',
+    }),
+    recordOpsEvent: async () => {},
+    redactOpsString: value => String(value),
+  });
+
+  const result=await runtime.finalizeAnalysisUsageReservation({
+    reservation:{
+      reserved:true,
+      durable:true,
+      operationId:QUOTA_OPERATION,
+      kind:'quota',
+      userId:42,
+      date:'2026-10-05',
+    },
+    disposition:'refund',
+    cfg:CFG,
+  });
+  assert.equal(result.ok,false);
+  assert.equal(result.pending,true);
+  assert.equal(result.operationId,QUOTA_OPERATION);
+});
+
 test('failed durable quota refund remains pending, emits an ops event and never reports success telemetry', async () => {
   const telemetry = {};
   const events = [];
@@ -173,6 +245,33 @@ test('reconciliation reuses the stable quota RPC and reports recovered reservati
   assert.equal(calls[0][1], 'refund_analysis_quota');
   assert.equal(calls[0][2].p_telegram_id, 0);
   assert.equal(calls[0][4]['x-analysis-usage-action'], 'reconcile');
+});
+
+test('reconciliation sanitizes malformed counters instead of propagating NaN or fractions', async () => {
+  const telemetry = {};
+  const runtime = createAnalysisUsageCompensationRuntime({
+    hasSupabase: () => true,
+    supaRpc: async () => ({
+      ok:true,
+      reconciliation:true,
+      reconciled:'NaN',
+      failed:-3,
+      pending:1.5,
+      cleaned:'2',
+    }),
+    recordOpsEvent: async () => {},
+    bumpTelemetry: (key, amount = 1) => { telemetry[key] = Number(telemetry[key] || 0) + amount; },
+  });
+  const result=await runtime.reconcileAnalysisUsageReservations(CFG);
+  assert.deepEqual(result,{
+    ok:true,
+    degraded:false,
+    reconciled:0,
+    failed:0,
+    pending:0,
+    cleaned:2,
+  });
+  assert.equal(telemetry.analysisUsageReconciled,undefined);
 });
 
 test('partial reconciliation remains observable while preserving successful recovery counts', async () => {
