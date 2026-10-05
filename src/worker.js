@@ -7836,14 +7836,14 @@ async function claimChannelPublishIdempotency(cacheKey, meta = {}, cfg) {
     if (existing?.expired) {
       memory.cache.delete(key);
       if (hasSupabase(cfg)) {
-    await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${key}`})
-      .catch(error => recordCriticalWriteFailure(cfg, {
-        code:'POST_MATCH_RETURN_RELEASE_WRITE_FAILED',
-        source:'post_match_return',
-        eventType:'delivery_claim',
-        message:error?.message || error,
-      }));
-  }
+        await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${key}`}).catch(error => recordCriticalWriteFailure(cfg, {
+          code:'CHANNEL_PUBLISH_STALE_CLAIM_DELETE_FAILED',
+          source:'channel_publisher',
+          eventType:'idempotency',
+          message:error?.message || error,
+          meta:{fixtureId},
+        }));
+      }
     }
 
     const claimId=crypto.randomUUID();
@@ -7919,8 +7919,15 @@ async function releaseChannelPublishIdempotency(cacheKey, meta = {}, cfg) {
     if (String(current?.payload?.claimId || '')!==claimId || current?.payload?.state!=='publishing') return;
     memory.cache.delete(key);
     if (hasSupabase(cfg)) await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${key}`});
-  } catch {
+  } catch (error) {
     // A retained claim is safer than a duplicate channel post; TTL clears it later.
+    void recordCriticalWriteFailure(cfg, {
+      code:'CHANNEL_PUBLISH_RELEASE_FAILED',
+      source:'channel_publisher',
+      eventType:'idempotency',
+      message:error?.message || error,
+      meta:{fixtureId:Number(meta.fixtureId || 0)},
+    });
   }
 }
 
