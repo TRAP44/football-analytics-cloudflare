@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const runtime = fs.readFileSync('src/runtime-controls.js', 'utf8');
-const migration = fs.readFileSync('supabase/migrations/supabase_migration_v6_29.sql', 'utf8');
+const migration = fs.readFileSync('supabase/migrations/supabase_migration_v6_29_1.sql', 'utf8');
 
 function saveSection() {
   const start = runtime.indexOf('async function saveRuntimeControls');
@@ -35,17 +35,22 @@ test('runtime-control UPDATE carries bounded audit metadata and no longer append
   assert.ok(patchIndex >= 0 && memoryIndex > patchIndex, 'memory may update only after the database transaction succeeds');
 });
 
-test('v6.29 database rule inserts the new immutable revision in the UPDATE transaction', () => {
+test('v6.29.1 database rule inserts a constraint-compatible immutable revision in the UPDATE transaction', () => {
   assert.match(migration, /create rule runtime_controls_atomic_history/i);
   assert.match(migration, /on update to public\.runtime_controls/i);
   assert.match(migration, /old\.revision is distinct from new\.revision/i);
   assert.match(migration, /insert into public\.runtime_control_history/i);
   assert.match(migration, /new\.revision/);
   assert.match(migration, /jsonb_build_object\(/);
+  assert.match(migration, /'requestedAction'/);
+  assert.match(migration, /'lockdown','lockdown_release'/);
+  assert.match(migration, /else 'update'/);
+  assert.match(migration, /drop function if exists public\.commit_runtime_controls/i);
+  assert.match(migration, /runtime_control_history_action_check/i);
   assert.doesNotMatch(migration, /on conflict/i);
 });
 
-test('v6.29 preserves the public function contract while enforcing rollback on history failure', () => {
+test('v6.29.1 restores the canonical public function contract while preserving atomic history', () => {
   assert.doesNotMatch(migration, /create\s+(?:or\s+replace\s+)?function\s+public\./i);
   assert.doesNotMatch(migration, /alter table public\.runtime_controls\s+add/i);
   assert.match(migration, /drop rule if exists runtime_controls_atomic_history/i);
