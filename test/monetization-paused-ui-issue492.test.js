@@ -13,6 +13,7 @@ function element() {
     textContent:'',
     className:'',
     dataset:{},
+    style:{},
     classList:{ toggle(){} },
     parentElement:{ setAttribute(){} },
     setAttribute(){},
