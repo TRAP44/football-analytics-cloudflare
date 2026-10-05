@@ -16,6 +16,9 @@ const controlPlaneScript = fs.readFileSync('scripts/external-monitor-control-pla
 const runbook = fs.readFileSync('docs/EXTERNAL_MONITORING_RUNBOOK_RU.md', 'utf8');
 
 test('external monitor accepts healthy production contracts', () => {
+  assert.equal(evaluateEndpoint('health',{statusCode:200,body:{ok:true}}).passed,true);
+  assert.equal(evaluateEndpoint('health',{statusCode:200,body:{ok:true,version:'leak'}}).passed,false);
+
   assert.equal(evaluateEndpoint('live', {
     statusCode: 200,
     body: { ok: true, status: 'alive', version: '6.120.0' },
@@ -74,6 +77,7 @@ test('external monitoring workflow is independent, retried and incident-aware wi
   assert.match(workflow, /issues: write/);
   assert.match(workflow, /EXTERNAL_MONITOR_RETRIES: "3"/);
   assert.match(workflow, /EXTERNAL_MONITOR_READY_WARNING_MS: "3000"/);
+  assert.match(monitorScript, /path: '\/health'/);
   assert.match(monitorScript, /\/health\/live/);
   assert.match(monitorScript, /\/health\/ready/);
   assert.match(monitorScript, /\/api\/public-status/);
