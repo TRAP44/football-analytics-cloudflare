@@ -22505,7 +22505,19 @@ async function apiMatchCenter(request, cfg) {
   });
   const postMatchPrediction = finished ? await loadModelPredictionForFixture(fixtureId, cfg) : null;
   const postMatchReview = finished ? buildPostMatchReview({prediction:postMatchPrediction,fixture,statistics:analyticalStatistics,events:analyticalEvents,homeName,awayName}) : null;
-  if (finished && fixture.fixture?.referee) await saveRefereeMatchHistory({ fixtureId, referee:fixture.fixture.referee, kickoffAt:fixture.fixture?.date || null, leagueId:Number(fixture.league?.id || 0), events:analyticalEvents, statistics:analyticalStatistics }, cfg).catch(() => false);
+  if (finished && fixture.fixture?.referee) await saveRefereeMatchHistory({ fixtureId, referee:fixture.fixture.referee, kickoffAt:fixture.fixture?.date || null, leagueId:Number(fixture.league?.id || 0), events:analyticalEvents, statistics:analyticalStatistics }, cfg).catch(async error => {
+    await recordCriticalWriteFailure({
+      recordOpsEvent,
+      cfg,
+      source:'model',
+      eventType:'referee_history_write',
+      code:'REFEREE_HISTORY_WRITE_FAILED',
+      message:'Referee match history persistence failed.',
+      meta:{ fixtureId:Number(fixtureId || 0), leagueId:Number(fixture.league?.id || 0) || null },
+      error,
+    });
+    return false;
+  });
   const smartInsights = (live || finished) ? buildSmartMatchInsights({
     statistics: analyticalStatistics,
     events: analyticalEvents,
@@ -23472,7 +23484,19 @@ async function apiAnalyze(request, cfg, user) {
 
   const previousMarketSnapshots = analysisMarket ? await getOddsSnapshots(fixtureId, cfg, 8).catch(() => []) : [];
   const marketMovement = buildOddsMovement(previousMarketSnapshots, analysisMarket);
-  if (analysisMarket) await saveOddsSnapshot(fixtureId, analysisMarket, cfg).catch(() => false);
+  if (analysisMarket) await saveOddsSnapshot(fixtureId, analysisMarket, cfg).catch(async error => {
+    await recordCriticalWriteFailure({
+      recordOpsEvent,
+      cfg,
+      source:'market',
+      eventType:'odds_snapshot_write',
+      code:'ODDS_SNAPSHOT_WRITE_FAILED',
+      message:'Odds snapshot persistence failed during analysis.',
+      meta:{ fixtureId:Number(fixtureId || 0) },
+      error,
+    });
+    return false;
+  });
   const apiPrediction = extractPrediction(predictions);
   const h2h = formatH2H(h2hRows, homeId, awayId);
   const baseAbsences = formatAbsences(trustedInjuries, homeId, awayId, lineups);
