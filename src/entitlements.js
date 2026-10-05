@@ -30,13 +30,21 @@ export const DEFAULT_PASS_PRODUCTS = Object.freeze({
   }),
 });
 
+function integerCandidate(value) {
+  if (typeof value === 'number') return value;
+  if (typeof value !== 'string') return Number.NaN;
+  const raw=value.trim();
+  if (!/^\d+$/.test(raw)) return Number.NaN;
+  return Number(raw);
+}
+
 function positiveInt(value, fallback) {
-  const n = Number(value);
+  const n = integerCandidate(value);
   return Number.isSafeInteger(n) && n > 0 ? n : fallback;
 }
 
 function nonNegativeInt(value, fallback = Number.NaN) {
-  const n = Number(value);
+  const n = integerCandidate(value);
   return Number.isSafeInteger(n) && n >= 0 ? n : fallback;
 }
 
