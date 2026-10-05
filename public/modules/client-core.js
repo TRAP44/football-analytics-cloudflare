@@ -1,4 +1,4 @@
-// Phase 3 public client infrastructure boundary.
+// Public client infrastructure boundary.
 // Transport/bootstrap helpers only; product and authorization semantics remain outside.
 export function initTelegramWebApp(scope = window) {
   const tg = scope.Telegram?.WebApp;
