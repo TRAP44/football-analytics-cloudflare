@@ -5,9 +5,8 @@ self-hosted CI/deploy runner.
 
 ## Runner boundaries
 
-- `External Production Monitor` runs on GitHub-hosted `ubuntu-latest`. It must
-  not depend on the MatchRadar self-hosted runner, Docker, Supabase, Cloudflare
-  deployment credentials, or local network/VPN state.
+- The primary `External Production Monitor` availability probe runs on GitHub-hosted `ubuntu-latest` and does not depend on the MatchRadar self-hosted runner, Docker, Supabase, Cloudflare deployment credentials, or local network/VPN state.
+- Its failure-diagnostics job runs on the self-hosted runner as a secondary classification path; loss of that runner must not invalidate the primary external availability signal.
 - `Quality`, `CodeQL Security`, `Privileged Access Audit`, and production
   deployment remain fail-closed when their required execution environment is
   unavailable.
@@ -38,4 +37,3 @@ A change to runner topology is acceptable only when:
   provenance;
 - monitor incident creation/recovery remains functional.
 
-This document records the recovery policy for GitHub Issue #463.
