@@ -1,5 +1,6 @@
 export function createProfileCoreModule(deps = {}) {
   const {
+    $,
     CLIENT_VERSION,
     adminBetaDashboardModule,
     adminBetaDashboardModulePromise,
