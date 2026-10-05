@@ -28,11 +28,13 @@ test('public status router delegates health routes without exposing internal rea
   assert.deepEqual(calls.map(row=>row.status),[200,200,200]);
   assert.equal(live.headers['cache-control'],'no-store');
   assert.equal(ready.headers['cache-control'],'no-store');
-  assert.equal('deployment' in ready.body,false);
+  assert.deepEqual(live.body,{ok:true,status:'alive'});
+  assert.deepEqual(ready.body,{ok:true,status:'ready'});
+  assert.deepEqual(health.body,{ok:true});
   assert.equal(await router.handle({method:'GET'},{pathname:'/unknown'},{}),null);
 });
 
-test('public live and readiness preserve version/release candidate without deployment internals',async()=>{
+test('public health runtime can retain sanitized metadata while router keeps it private',async()=>{
   const runtime=createPublicHealthRuntime({
     version:'6.120.0-rc144',
     releaseCandidate:'RC144',
