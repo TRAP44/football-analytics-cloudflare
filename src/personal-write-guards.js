@@ -9,24 +9,55 @@ export const PERSONAL_WRITE_LIMITS = Object.freeze({
   leagueName: 160,
 });
 
+function personalDataError(message) {
+  const error = new Error(message);
+  error.code = 'PERSONAL_DATA_INVALID';
+  return error;
+}
+
+function integerCandidate(value) {
+  if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+  if (typeof value !== 'string') return null;
+  const raw=value.trim();
+  if (!/^\d+$/.test(raw)) return null;
+  const number=Number(raw);
+  return Number.isSafeInteger(number) ? number : null;
+}
+
 function positiveSafeInteger(value) {
-  const n = Number(value);
-  return Number.isSafeInteger(n) && n > 0 ? n : 0;
+  const number=integerCandidate(value);
+  return number !== null && number > 0 ? number : 0;
 }
 
 function boundedText(value, maxLength, label, { required = false } = {}) {
-  const text = String(value ?? '').trim();
-  if (required && !text) {
-    const error = new Error(`${label} обязателен.`);
-    error.code = 'PERSONAL_DATA_INVALID';
-    throw error;
+  if (value == null) {
+    if (required) throw personalDataError(`${label} обязателен.`);
+    return '';
   }
-  if (text.length > maxLength) {
-    const error = new Error(`${label} слишком длинный.`);
-    error.code = 'PERSONAL_DATA_INVALID';
-    throw error;
+  if (typeof value !== 'string') throw personalDataError(`${label} имеет некорректный формат.`);
+  if(/[\u0000-\u001f\u007f-\u009f]/u.test(value)) {
+    throw personalDataError(`${label} содержит недопустимые символы.`);
   }
+  const text=value.trim().replace(/\s+/gu,' ');
+  if (required && !text) throw personalDataError(`${label} обязателен.`);
+  if (text.length > maxLength) throw personalDataError(`${label} слишком длинный.`);
   return text;
+}
+
+function strictBoolean(value, fallback, label) {
+  if (value === undefined) return fallback;
+  if (value === true || value === false) return value;
+  throw personalDataError(`${label} имеет некорректный формат.`);
+}
+
+function parseFixtureTimestamp(value) {
+  if (typeof value !== 'string') return null;
+  const raw=value.trim();
+  if (
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/i.test(raw)
+  ) return null;
+  const timestamp=Date.parse(raw);
+  return Number.isFinite(timestamp) ? timestamp : null;
 }
 
 function httpUrlOrEmpty(value) {
@@ -36,24 +67,27 @@ function httpUrlOrEmpty(value) {
   try {
     url = new URL(text);
   } catch {
-    const error = new Error('Некорректный URL логотипа.');
-    error.code = 'PERSONAL_DATA_INVALID';
-    throw error;
+    throw personalDataError('Некорректный URL логотипа.');
   }
-  if (!['http:', 'https:'].includes(url.protocol)) {
-    const error = new Error('Некорректный URL логотипа.');
-    error.code = 'PERSONAL_DATA_INVALID';
-    throw error;
+  if (
+    !['http:', 'https:'].includes(url.protocol)
+    || !url.hostname
+    || url.username
+    || url.password
+  ) {
+    throw personalDataError('Некорректный URL логотипа.');
   }
-  return url.toString();
+  const normalized=url.toString();
+  if (normalized.length > PERSONAL_WRITE_LIMITS.teamLogo) {
+    throw personalDataError('URL логотипа слишком длинный.');
+  }
+  return normalized;
 }
 
 export function normalizeFavoriteWrite(input = {}) {
   const teamId = positiveSafeInteger(input.teamId ?? input.id);
   if (!teamId) {
-    const error = new Error('Некорректная команда.');
-    error.code = 'PERSONAL_DATA_INVALID';
-    throw error;
+    throw personalDataError('Некорректная команда.');
   }
 
   return {
@@ -66,15 +100,11 @@ export function normalizeFavoriteWrite(input = {}) {
 export function normalizeFavoritePlayerReference(input = {}) {
   const playerId = positiveSafeInteger(input.playerId ?? input.id);
   if (!playerId) {
-    const error = new Error('Некорректный игрок.');
-    error.code = 'PERSONAL_DATA_INVALID';
-    throw error;
+    throw personalDataError('Некорректный игрок.');
   }
   const teamId = positiveSafeInteger(input.teamId);
   if (!teamId) {
-    const error = new Error('Некорректная команда игрока.');
-    error.code = 'PERSONAL_DATA_INVALID';
-    throw error;
+    throw personalDataError('Некорректная команда игрока.');
   }
   return { playerId, teamId };
 }
@@ -90,24 +120,19 @@ export function normalizeFavoritePlayerWrite(input = {}) {
 export function normalizeReminderWrite(input = {}, nowMs = Date.now()) {
   const fixtureId = positiveSafeInteger(input.fixtureId);
   if (!fixtureId) {
-    const error = new Error('Некорректный номер матча.');
-    error.code = 'PERSONAL_DATA_INVALID';
-    throw error;
+    throw personalDataError('Некорректный номер матча.');
   }
 
-  const fixtureMs = Date.parse(String(input.fixtureDate || ''));
-  if (!Number.isFinite(fixtureMs)) {
-    const error = new Error('Некорректное время матча.');
-    error.code = 'PERSONAL_DATA_INVALID';
-    throw error;
-  }
-  if (fixtureMs <= Number(nowMs) + 5 * 60_000) {
-    const error = new Error('Матч уже начинается или начался.');
-    error.code = 'PERSONAL_DATA_INVALID';
-    throw error;
+  const fixtureMs = parseFixtureTimestamp(input.fixtureDate);
+  if (fixtureMs === null) throw personalDataError('Некорректное время матча.');
+
+  const currentMs=typeof nowMs === 'number' && Number.isFinite(nowMs) ? nowMs : null;
+  if (currentMs === null) throw personalDataError('Некорректное текущее время.');
+  if (fixtureMs <= currentMs + 5 * 60_000) {
+    throw personalDataError('Матч уже начинается или начался.');
   }
 
-  const requestedMinutes = Number(input.reminderMinutes);
+  const requestedMinutes = integerCandidate(input.reminderMinutes);
   const reminderMinutes = [15, 30, 60].includes(requestedMinutes) ? requestedMinutes : 30;
 
   return {
@@ -117,6 +142,6 @@ export function normalizeReminderWrite(input = {}, nowMs = Date.now()) {
     leagueName: boundedText(input.leagueName, PERSONAL_WRITE_LIMITS.leagueName, 'Название турнира'),
     fixtureDate: new Date(fixtureMs).toISOString(),
     reminderMinutes,
-    kickoffNotify: input.kickoffNotify !== false,
+    kickoffNotify: strictBoolean(input.kickoffNotify, true, 'Настройка уведомления о начале матча'),
   };
 }
