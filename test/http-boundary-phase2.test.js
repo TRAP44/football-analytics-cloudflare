@@ -101,6 +101,9 @@ test('HTTP boundary normalizes malformed retry metadata and missing write limits
   const infinite=runtime.publicRouteError({code:'FOOTBALL_COOLDOWN',retryAfter:Infinity});
   assert.equal(infinite.body.retryAfter,undefined);
 
+  const booleanRetry=runtime.publicRouteError({code:'FOOTBALL_RATE_LIMIT',retryAfter:true});
+  assert.equal(booleanRetry.body.retryAfter,undefined);
+
   const fractional=runtime.publicRouteError({code:'FOOTBALL_RATE_LIMIT',retryAfter:2.2});
   assert.equal(fractional.body.retryAfter,3);
 
@@ -109,6 +112,9 @@ test('HTTP boundary normalizes malformed retry metadata and missing write limits
 
   const noLimits=createHttpRuntime({}).publicRouteError({code:'FAVORITES_LIMIT'});
   assert.equal(noLimits.body.error,'Достигнут лимит избранных команд.');
+
+  const coercedLimit=createHttpRuntime({personalWriteLimits:{favorites:true}}).publicRouteError({code:'FAVORITES_LIMIT'});
+  assert.equal(coercedLimit.body.error,'Достигнут лимит избранных команд.');
 });
 
 test('worker composes HTTP runtime instead of owning response helper implementations', () => {
