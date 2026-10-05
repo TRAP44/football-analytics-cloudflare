@@ -21,6 +21,76 @@ function runtime(start = Date.parse('2026-09-28T12:00:00.000Z')) {
   };
 }
 
+test('provider observability rejects malformed outcomes and JavaScript numeric coercion', () => {
+  const rt=runtime();
+  assert.equal(rt.api.observeProviderRequest({
+    provider:'api-football',
+    operation:'/fixtures',
+    outcome:true,
+    latencyMs:100,
+  }),false);
+  assert.equal(rt.api.observeProviderRequest({
+    provider:'api-football',
+    operation:'/fixtures',
+    outcome:'unknown',
+    latencyMs:100,
+  }),false);
+
+  assert.equal(rt.api.observeProviderRequest({
+    provider:{name:'api-football'},
+    operation:['/fixtures'],
+    outcome:'success',
+    latencyMs:true,
+  }),true);
+
+  const snapshot=rt.api.currentWindow();
+  assert.equal(snapshot.totals.attempts,1);
+  assert.equal(snapshot.totals.requests,1);
+  assert.equal(snapshot.totals.successes,1);
+  assert.equal(snapshot.totals.latencySamples,0);
+  assert.equal(snapshot.series[0].provider,'provider');
+  assert.equal(snapshot.series[0].operation,'unknown');
+});
+
+test('provider observability clamps valid latency to the persistent SQL contract', () => {
+  const rt=runtime();
+  rt.api.observeProviderRequest({
+    provider:'api-football',
+    operation:'/fixtures',
+    outcome:'success',
+    latencyMs:999999,
+  });
+  const snapshot=rt.api.currentWindow();
+  assert.equal(snapshot.totals.latencySamples,1);
+  assert.equal(snapshot.totals.latencySumMs,120000);
+  assert.equal(snapshot.totals.maxLatencyMs,120000);
+});
+
+test('provider SLO state fails closed on malformed explicit metrics and policy coercion', () => {
+  assert.equal(providerSloState({
+    requests:true,
+    successRatePct:100,
+  }).state,'collecting');
+
+  assert.equal(providerSloState({
+    requests:10,
+    successRatePct:true,
+    timeoutRatePct:0,
+    rateLimitRatePct:0,
+    retryRatePct:0,
+    avgAttemptLatencyMs:100,
+  }).state,'collecting');
+
+  assert.equal(providerSloState({
+    requests:10,
+    successRatePct:97,
+    timeoutRatePct:0,
+    rateLimitRatePct:0,
+    retryRatePct:0,
+    avgAttemptLatencyMs:100,
+  },{...DEFAULT_PROVIDER_SLO_POLICY,minSample:true}).state,'watch');
+});
+
 test('provider SLO counts retry recovery as one successful logical request', () => {
   const rt = runtime();
   rt.api.observeProviderRequest({
@@ -136,6 +206,79 @@ test('provider SLO policy exposes stable operational thresholds', () => {
 });
 
 
+test('distributed provider buckets ignore malformed counters and non-array input', () => {
+  const now=Date.parse('2026-09-28T12:20:00.000Z');
+  assert.deepEqual(providerSloWindowsFromBuckets({bad:true},{nowMs:now}),[]);
+
+  const rows=[
+    {
+      bucket_started_at:'2026-09-28T12:00:00.000Z',
+      provider:'api-football',
+      operation:'/fixtures',
+      attempts:true,
+      requests:1,
+      successes:1,
+      failures:0,
+      retries:0,
+      latency_sum_ms:100,
+      latency_samples:1,
+      max_latency_ms:100,
+    },
+    {
+      bucket_started_at:'2026-09-28T12:00:00.000Z',
+      provider:'api-football',
+      operation:'/odds',
+      attempts:2,
+      requests:2,
+      successes:3,
+      failures:0,
+      retries:0,
+      latency_sum_ms:200,
+      latency_samples:2,
+      max_latency_ms:100,
+    },
+  ];
+  assert.deepEqual(providerSloWindowsFromBuckets(rows,{nowMs:now,includeOpen:false}),[]);
+});
+
+test('distributed bucket options reject boolean coercion while preserving valid numeric strings', () => {
+  const now=Date.parse('2026-09-28T12:20:00.000Z');
+  const row={
+    bucket_started_at:'2026-09-28T12:00:00.000Z',
+    provider:'api-football',
+    operation:'/fixtures',
+    attempts:1,
+    requests:1,
+    successes:1,
+    failures:0,
+    retries:0,
+    timeouts:0,
+    network_errors:0,
+    rate_limits:0,
+    http_errors:0,
+    invalid_responses:0,
+    latency_sum_ms:100,
+    latency_samples:1,
+    max_latency_ms:100,
+  };
+  const fallback=providerSloWindowsFromBuckets([row],{
+    hours:true,
+    windowMinutes:true,
+    nowMs:now,
+    includeOpen:false,
+  });
+  assert.equal(fallback.length,1);
+  assert.equal(fallback[0].metadata.windowEndedAt,'2026-09-28T12:15:00.000Z');
+
+  const stringWindow=providerSloWindowsFromBuckets([row],{
+    hours:'1',
+    windowMinutes:'20',
+    nowMs,
+    includeOpen:false,
+  });
+  assert.equal(stringWindow[0].metadata.windowEndedAt,'2026-09-28T12:20:00.000Z');
+});
+
 test('distributed provider buckets combine cross-isolate traffic into one canonical window', () => {
   const now=Date.parse('2026-09-28T12:20:00.000Z');
   const rows=[
@@ -194,6 +337,39 @@ test('requested hours excludes older distributed buckets and duplicate snapshots
   const windows=providerSloWindowsFromBuckets(rows,{hours:1,nowMs:now,includeOpen:false});
   assert.equal(windows.length,1);
   assert.equal(windows[0].metadata.totals.requests,3);
+});
+
+test('summarizeWindows ignores malformed windows and does not trust arbitrary windowId collisions', () => {
+  const rt=runtime(Date.parse('2026-09-28T12:20:00.000Z'));
+  const make=(start,end,requests)=>({
+    metadata:{
+      windowId:'same-id',
+      windowStartedAt:start,
+      windowEndedAt:end,
+      series:[{
+        provider:'api-football',
+        operation:'/fixtures',
+        attempts:requests,
+        requests,
+        successes:requests,
+        failures:0,
+        retries:0,
+        latencySumMs:requests*100,
+        latencySamples:requests,
+        maxLatencyMs:100,
+      }],
+    },
+  });
+
+  rt.api.restoreWindow({series:{bad:true}});
+  const report=rt.api.summarizeWindows([
+    make('2026-09-28T11:30:00.000Z','2026-09-28T11:45:00.000Z',2),
+    make('2026-09-28T12:00:00.000Z','2026-09-28T12:15:00.000Z',3),
+    {metadata:{windowStartedAt:'bad',windowEndedAt:'2026-09-28T12:15:00.000Z',series:[]}},
+  ],{hours:1,includeCurrent:false});
+
+  assert.equal(report.windowCount,2);
+  assert.equal(report.overall.requests,5);
 });
 
 test('summarizeWindows enforces the requested hours boundary', () => {
