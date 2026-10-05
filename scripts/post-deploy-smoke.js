@@ -121,7 +121,6 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
       if (body?.checks?.backendSecurity?.ok !== true) throw new Error('Readiness backend security contract failed.');
       if (body?.checks?.telegramConfigured !== true) throw new Error('Readiness Telegram configuration failed.');
       if (Number(body?.checks?.recentSupabaseAuthFailures || 0) !== 0) throw new Error('Readiness detected recent Supabase authentication failures.');
-      verifyRuntimeDeploymentIdentity(body,'Readiness endpoint',expectedSha);
       readiness = body;
       break;
     } catch (error) {
@@ -139,7 +138,6 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
   if(Object.keys(publicHealth).some(key=>key!=='ok')) throw new Error('Public health endpoint exposes detailed diagnostics without a probe token.');
 
   const healthResult=await requestJsonForDeployment(fetchImpl,baseUrl,'/health','Health endpoint',expectedSha,{retries,retryDelayMs,headers:{'x-health-token':healthProbeToken}});
-  const healthResponse=healthResult.response;
   health=healthResult.body;
   if (health?.ok !== true) throw new Error('Health endpoint is not healthy.');
   if (health.releaseCandidate !== expectedReleaseCandidate) throw new Error(`Expected ${expectedReleaseCandidate}, received ${health.releaseCandidate || 'unknown'}.`);
