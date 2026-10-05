@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { DEFAULT_PRODUCTION_URL, runMonitorAttempt } from './external-production-monitor.js';
 
@@ -98,12 +97,18 @@ async function closeIncident(title, markdown, options = {}) {
   return { action: 'closed', number: existing.number };
 }
 
-function readEvidence(path = 'monitor-result.md') {
-  try {
-    return fs.readFileSync(path, 'utf8').slice(0, 12000);
-  } catch {
-    return 'Monitor evidence file was unavailable.';
-  }
+function primaryEvidence(outcome) {
+  const runId = String(process.env.GITHUB_RUN_ID || '').trim();
+  const runUrl = runId
+    ? `https://github.com/TRAP44/football-analytics-cloudflare/actions/runs/${runId}`
+    : 'GitHub Actions run URL unavailable';
+  return [
+    '### MatchRadar external production monitor',
+    '',
+    `- Workflow outcome: **${outcome.toUpperCase()}**`,
+    `- Run: ${runId ? `[${runId}](${runUrl})` : runUrl}`,
+    `- Detailed endpoint evidence: GitHub Actions artifact \`external-production-monitor-${runId || 'unknown'}\``,
+  ].join('\\n');
 }
 
 export function classifyPrimaryRunJobs(jobs = []) {
@@ -170,7 +175,7 @@ export function decideDiagnosticActions(primary, fallbackOk) {
 function checkRows(result) {
   if (!result?.checks || typeof result.checks !== 'object') return [];
   return Object.entries(result.checks).map(([name, check]) => (
-    `| ${name} | ${check.statusCode || 'network'} | ${check.elapsedMs ?? 0} ms | ${check.passed ? 'PASS' : 'FAIL'} | ${String(check.reason || '').replace(/\|/g, '\\|')} |`
+    `| ${name} | ${check.statusCode || 'network'} | ${check.elapsedMs ?? 0} ms | ${check.passed ? 'PASS' : 'FAIL'} | ${String(check.reason || '').replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')} |`
   ));
 }
 
@@ -223,7 +228,7 @@ async function runFallbackProbe() {
 
 async function primaryMode() {
   const outcome = String(process.env.MONITOR_OUTCOME || '').trim();
-  const evidence = readEvidence(process.env.MONITOR_EVIDENCE_PATH || 'monitor-result.md');
+  const evidence = primaryEvidence(outcome);
   if (outcome === 'failure') {
     await upsertIncident(AVAILABILITY_INCIDENT_TITLE, evidence);
     return;
