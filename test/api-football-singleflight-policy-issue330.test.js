@@ -92,3 +92,43 @@ test('concurrent calls with different transport policy cannot inherit each other
   ]);
   assert.deepEqual(fetchCalls.sort((a,b)=>a-b),[8000,10000]);
 });
+
+
+test('Issue #330 invalid numeric transport settings fall back to safe defaults',()=>{
+  const {gateway}=createGateway();
+  assert.deepEqual(gateway.providerTransportPolicy({
+    responseType:'unexpected',
+    transportRetries:'not-a-number',
+    timeoutMs:'not-a-number',
+  }),{
+    responseType:'array',
+    transportRetries:1,
+    timeoutMs:10000,
+    allowDailyReserve:false,
+  });
+
+  assert.deepEqual(gateway.providerTransportPolicy({
+    transportRetries:0.75,
+    timeoutMs:2500.9,
+  }),{
+    responseType:'array',
+    transportRetries:0,
+    timeoutMs:2500,
+    allowDailyReserve:false,
+  });
+});
+
+test('Issue #330 invalid numeric policy cannot skip the provider execution loop',async()=>{
+  const {gateway,fetchCalls}=createGateway();
+  const value=await gateway.apiFootball('/status',{}, {apiFootballKey:'secret'}, {
+    responseType:'any',
+    transportRetries:'NaN',
+    timeoutMs:'NaN',
+  });
+  assert.equal(value,null);
+  assert.deepEqual(fetchCalls,[10000]);
+  assert.equal(
+    gateway.providerRequestKey('/status',{}, {responseType:'any',transportRetries:'NaN',timeoutMs:'NaN'}),
+    gateway.providerRequestKey('/status',{}, {responseType:'any',transportRetries:1,timeoutMs:10000}),
+  );
+});
