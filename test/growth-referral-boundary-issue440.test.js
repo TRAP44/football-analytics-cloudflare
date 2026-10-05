@@ -74,6 +74,40 @@ test('growth/referral domain preserves first-touch acquisition in memory', async
   assert.equal(memory.users.get(42).acquisition_first_touch_at, first.firstTouchAt);
 });
 
+test('growth/referral runtime rejects coercible identifiers and malformed dedupe keys', async () => {
+  const { api, memory } = runtime();
+
+  const parsed=await api.ensureLaunchAttribution(true,'media_social_launch_card',{});
+  assert.equal(parsed.source,'social');
+  assert.equal(memory.users.size,0);
+
+  assert.equal(await api.recordGrowthEvent({}, {
+    userId:true,
+    eventName:'share_created',
+    eventKey:'share_created:true:1',
+  }), false);
+
+  assert.equal(await api.recordGrowthEvent({}, {
+    userId:7,
+    eventName:'share_created',
+    eventKey:'unsafe/key',
+  }), true);
+  assert.equal(memory.growthEventKeys.size,0);
+
+  assert.equal((await api.applyReferralAttribution(true,{referralCode:'a1b2c3d4e5f60708'},{})).status,'invalid_user');
+});
+
+test('growth event waitUntil hook failure does not suppress the awaited write', async () => {
+  const { api, memory } = runtime();
+  const ok=await api.recordGrowthEvent({waitUntil(){ throw new Error('bad hook'); }},{
+    userId:7,
+    eventName:'share_created',
+    eventKey:'share_created:7:1',
+  });
+  assert.equal(ok,true);
+  assert.equal(memory.growthEventKeys.has('share_created:7:1'),true);
+});
+
 test('growth events keep idempotent in-memory keys and sanitized metadata boundary', async () => {
   const { api, memory } = runtime();
   memory.users.set(7, {
@@ -129,6 +163,46 @@ test('referral lifecycle stays bounded, blocks duplicates and records referred p
   assert.equal(memory.growthEventKeys.has('referred_payment:charge-1'), true);
 });
 
+test('Supabase referral lookup fails closed for mismatched or corrupted attribution rows', async () => {
+  const code='a1b2c3d4e5f60708';
+  const wrongOwner=runtime({
+    hasSupabase:()=>true,
+    supaSelectOne:async()=>({
+      telegram_id:999,
+      event_name:'referred_first_open',
+      metadata:{referral_code:code},
+      created_at:'2026-10-05T12:00:00.000Z',
+    }),
+  });
+  assert.equal(await wrongOwner.api.referralAttributionForUser(200,{}),null);
+
+  const wrongEvent=runtime({
+    hasSupabase:()=>true,
+    supaSelectOne:async()=>({
+      telegram_id:200,
+      event_name:'referral_open',
+      metadata:{referral_code:code},
+      created_at:'2026-10-05T12:00:00.000Z',
+    }),
+  });
+  assert.equal(await wrongEvent.api.referralAttributionForUser(200,{}),null);
+});
+
+test('referred payment rejects malformed charge IDs and non-positive Stars amounts', async () => {
+  const { api, memory }=runtime();
+  memory.referralAttributions.set(200,'a1b2c3d4e5f60708');
+
+  assert.equal(await api.recordReferredPayment(200,{
+    telegram_payment_charge_id:'bad/charge',
+    total_amount:199,
+  },'PRO',{}),false);
+  assert.equal(await api.recordReferredPayment(200,{
+    telegram_payment_charge_id:'charge-zero',
+    total_amount:0,
+  },'PRO',{}),false);
+  assert.equal(memory.growthEventKeys.size,0);
+});
+
 test('growth retention cleanup uses injected clock and preserves table/query contract', async () => {
   const { api, deleted, setNow } = runtime({ hasSupabase: () => true });
   setNow(Date.parse('2026-10-04T12:00:00.000Z'));
@@ -136,6 +210,14 @@ test('growth retention cleanup uses injected clock and preserves table/query con
   const result = await api.cleanupGrowthEvents({ growthRetentionDays: 90 });
   assert.equal(result.ok, true);
   assert.equal(result.retentionDays, 90);
+
+  const malformed = await api.cleanupGrowthEvents({ growthRetentionDays: 'not-a-number' });
+  assert.equal(malformed.ok, true);
+  assert.equal(malformed.retentionDays, 90);
+
+  const tooSmall = await api.cleanupGrowthEvents({ growthRetentionDays: 1 });
+  assert.equal(tooSmall.ok, true);
+  assert.equal(tooSmall.retentionDays, 7);
   assert.equal(deleted.length, 1);
   assert.equal(deleted[0].table, 'growth_events');
   assert.match(deleted[0].filters.created_at, /^lt\./);
