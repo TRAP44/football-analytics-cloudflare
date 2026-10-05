@@ -2,6 +2,7 @@ name: Quality
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, closed]
     paths-ignore:
       - "docs/**"
       - "**/*.md"
@@ -20,6 +21,7 @@ concurrency:
 
 jobs:
   test:
+    if: ${{ github.event_name != 'pull_request' || github.event.action != 'closed' }}
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 10
     steps:
@@ -43,6 +45,7 @@ jobs:
 
 
   database-integration:
+    if: ${{ github.event_name != 'pull_request' || github.event.action != 'closed' }}
     runs-on: [self-hosted, Linux, X64]
     timeout-minutes: 20
     env:
