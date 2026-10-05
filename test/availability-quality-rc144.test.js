@@ -36,6 +36,37 @@ test('RC144 accepts trusted fixture absences for either match side', () => {
   assert.equal(sanitizeAvailabilityRows(rows, quality).length, 2);
 });
 
+test('RC144 fails closed when fixture team ids are missing, equal or malformed', () => {
+  const rows = [
+    { team:{}, player:{id:10,name:'No Team',type:'Injury'} },
+    { team:{id:1}, player:{id:11,name:'Player',type:'Injury'} },
+  ];
+
+  for (const fixture of [
+    { homeId:0, awayId:2 },
+    { homeId:1, awayId:1 },
+    { homeId:'bad', awayId:2 },
+  ]) {
+    const quality=assessFixtureAvailabilityQuality(rows,{
+      ...fixture,
+      injuriesMeta:trustedMeta,
+    });
+    assert.equal(quality.acceptedCount,0);
+    assert.equal(quality.confidenceBearing,false);
+    assert.ok(quality.issues.every(issue=>issue.code==='invalid_fixture_teams'));
+    assert.deepEqual(sanitizeAvailabilityRows(rows,quality),[]);
+  }
+});
+
+test('RC144 normalization never assigns team-less rows to default fixture id zero', async () => {
+  const { normalizeFixtureAbsences } = await import('../src/availability.js');
+  const data=normalizeFixtureAbsences([
+    {team:{},player:{id:10,name:'No Team',type:'Injury'}},
+  ]);
+  assert.equal(data.home.length,0);
+  assert.equal(data.away.length,0);
+});
+
 test('RC144 removes rows with unknown team or missing player identity', () => {
   const rows = [
     { team:{id:999}, player:{id:10,name:'Wrong Team',type:'Injury'} },
