@@ -129,7 +129,7 @@ export function createPublicStatusRouter({
   if (!publicStatusRuntime || typeof publicStatusRuntime.serviceStatus !== 'function') {
     throw new TypeError('publicStatusRuntime is required');
   }
-  if (!publicHealthRuntime || typeof publicHealthRuntime.healthSnapshot !== 'function') {
+  if (!publicHealthRuntime || typeof publicHealthRuntime.publicHealthSnapshot !== 'function' || typeof publicHealthRuntime.detailedHealthSnapshot !== 'function') {
     throw new TypeError('publicHealthRuntime is required');
   }
   required('appManifest', appManifest);
@@ -155,7 +155,10 @@ export function createPublicStatusRouter({
     }
 
     if (pathname === '/health' || pathname === '/api/health') {
-      const health = await publicHealthRuntime.healthSnapshot(cfg);
+      const authorized=publicHealthRuntime.isProbeAuthorized(request,cfg);
+      const health=authorized
+        ? await publicHealthRuntime.detailedHealthSnapshot(cfg)
+        : await publicHealthRuntime.publicHealthSnapshot(cfg);
       return json(health, health.ok ? 200 : 503, { 'cache-control': 'no-store' });
     }
 
