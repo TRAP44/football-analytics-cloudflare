@@ -69,8 +69,26 @@ async function requestFingerprint(request, secret='') {
   return await privacyNetworkFingerprint(request, secret);
 }
 
+function normalizedScannerPath(pathname = '') {
+  let path=String(pathname || '').replace(/\\/g,'/');
+  // Decode a small, bounded number of times so encoded scanner probes such as
+  // %2eenv and double-encoded variants cannot bypass the early edge filter.
+  for (let pass=0; pass<2; pass+=1) {
+    let decoded;
+    try {
+      decoded=decodeURIComponent(path);
+    } catch {
+      break;
+    }
+    decoded=decoded.replace(/\\/g,'/');
+    if (decoded===path) break;
+    path=decoded;
+  }
+  return path;
+}
+
 export function obviousScannerPath(pathname = '') {
-  const path = String(pathname || '');
+  const path = normalizedScannerPath(pathname);
   return SCANNER_PATH_PATTERNS.some(pattern => pattern.test(path));
 }
 
@@ -118,8 +136,13 @@ export async function cloudflareEdgeGuard(request, env = {}) {
 
   try {
     const result = await limiter.limit({ key: `${policy.id}:${fingerprint}` });
-    if (result?.success !== false) {
+    if (result?.success === true) {
       return { blocked: false, configured: true, policy: policy.id };
+    }
+    if (result?.success !== false) {
+      // An unexpected binding response must be visible as degraded instead of
+      // being silently treated as a successful rate-limit decision.
+      return { blocked: false, configured: true, degraded: true, policy: policy.id };
     }
     return {
       blocked: true,
