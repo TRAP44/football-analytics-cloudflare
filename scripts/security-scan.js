@@ -56,9 +56,20 @@ export function scanTrackedFiles(paths, readFile = path => fs.readFileSync(path,
   return findings;
 }
 
-export function trackedFiles() {
-  const output = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8' });
-  return output.split('\0').filter(Boolean);
+export function trackedFiles(run = execFileSync) {
+  let output;
+  try {
+    output = run('git', ['ls-files', '-z'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (error) {
+    const failure = new Error(
+      'Secret Leak Guard needs a git checkout (git ls-files failed). '
+      + 'Run it inside a cloned repository, not an unpacked ZIP archive.',
+    );
+    failure.code = 'SECURITY_SCAN_NO_GIT';
+    failure.cause = error;
+    throw failure;
+  }
+  return String(output).split('\0').filter(Boolean);
 }
 
 export function runSecurityScan() {
@@ -74,6 +85,12 @@ export function runSecurityScan() {
 
 const isCli = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isCli) {
-  const result = runSecurityScan();
-  if (!result.ok) process.exit(1);
+  try {
+    const result = runSecurityScan();
+    if (!result.ok) process.exit(1);
+  } catch (error) {
+    if (error?.code !== 'SECURITY_SCAN_NO_GIT') throw error;
+    console.error(error.message);
+    process.exit(2);
+  }
 }
