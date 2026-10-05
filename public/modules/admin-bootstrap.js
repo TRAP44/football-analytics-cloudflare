@@ -1,5 +1,6 @@
 export function createAdminBootstrapModule(deps = {}) {
   const {
+    $,
     CLIENT_API_CONTRACT,
     CLIENT_RELEASE_CHANNEL,
     CLIENT_VERSION,
