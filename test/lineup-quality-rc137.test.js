@@ -48,6 +48,31 @@ test('RC137 match summary requires both teams to pass the same guard', () => {
   assert.equal(quality.partialSides, 1);
 });
 
+test('RC137 rejects the same explicit player ID appearing in both starting XIs', () => {
+  const home={startXI:Array.from({length:11},(_,i)=>player(i+1,`H ${i+1}`))};
+  const away={startXI:Array.from({length:11},(_,i)=>player(i===0?1:100+i,`A ${i+1}`))};
+  const quality=assessMatchLineups({home,away});
+  assert.equal(quality.home.confirmed,true);
+  assert.equal(quality.away.confirmed,true);
+  assert.equal(quality.crossTeamStarterOverlapCount,1);
+  assert.equal(quality.integrityConfirmed,false);
+  assert.equal(quality.bothConfirmed,false);
+});
+
+test('RC137 does not treat same-name players with different explicit IDs as cross-team overlap', () => {
+  const home={startXI:[
+    player(1,'Alex Silva'),
+    ...Array.from({length:10},(_,i)=>player(i+2,`H ${i+2}`)),
+  ]};
+  const away={startXI:[
+    player(101,'Alex Silva'),
+    ...Array.from({length:10},(_,i)=>player(102+i,`A ${i+2}`)),
+  ]};
+  const quality=assessMatchLineups({home,away});
+  assert.equal(quality.crossTeamStarterOverlapCount,0);
+  assert.equal(quality.bothConfirmed,true);
+});
+
 const worker = fs.readFileSync('src/worker.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
 const runtime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
