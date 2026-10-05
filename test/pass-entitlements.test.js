@@ -121,12 +121,20 @@ test('expired Pass, Day Pass window and usage cap fail closed', () => {
   assert.equal(entitlementDecision(day, { fixtureId: 123, now: NOW }).active, true);
   assert.equal(entitlementDecision(day, { fixtureId: 123, now: Date.parse('2026-10-02T11:00:00.000Z') }).reason, 'expired');
 
-  const limited = { ...day, usage_limit: 3, usage_count: 3 };
+  const limited = {
+    ...day,
+    entitlement_type: 'WEEKEND_PASS',
+    usage_limit: 3,
+    usage_count: 3,
+  };
   assert.equal(entitlementDecision(limited, { fixtureId: 123, now: NOW }).reason, 'usage_exhausted');
 });
 
 test('malformed entitlement rows fail closed instead of broadening Pass access', () => {
   assert.equal(entitlementDecision(row({ usage_count: 'not-a-number' }), { fixtureId: 777, now: NOW }).reason, 'invalid_usage');
+  assert.equal(entitlementDecision(row({ usage_limit: 1 }), { fixtureId: 777, now: NOW }).reason, 'invalid_usage');
+  assert.equal(entitlementDecision(row({ id: null }), { fixtureId: 777, now: NOW }).reason, 'invalid_id');
+  assert.equal(entitlementDecision(row({ telegram_id: null }), { fixtureId: 777, now: NOW }).reason, 'invalid_owner');
   assert.equal(entitlementDecision(row({ fixture_id: 'broken' }), { fixtureId: 777, now: NOW }).reason, 'invalid_fixture');
   assert.equal(entitlementDecision(row({ starts_at: null }), { fixtureId: 777, now: NOW }).reason, 'invalid_window');
   assert.equal(entitlementDecision(row({
