@@ -15,6 +15,30 @@ test('static assets receive a Telegram-compatible restrictive CSP', () => {
   assert.match(staticHeaders, /frame-ancestors 'self' https:\/\/web\.telegram\.org https:\/\/\*\.telegram\.org/);
   assert.match(staticHeaders, /Strict-Transport-Security: max-age=31536000/);
   assert.doesNotMatch(staticHeaders, /script-src[^\n;]*'unsafe-inline'/);
+  assert.match(staticHeaders, /style-src 'self'/);
+  assert.doesNotMatch(staticHeaders, /style-src[^\n;]*'unsafe-inline'/);
+});
+
+test('public frontend contains no inline style attributes or runtime style mutations', () => {
+  const roots=[
+    new URL('../public/app.js',import.meta.url),
+    new URL('../public/index.html',import.meta.url),
+    new URL('../public/admin.html',import.meta.url),
+    new URL('../public/status.html',import.meta.url),
+    new URL('../public/privacy.html',import.meta.url),
+    new URL('../public/terms.html',import.meta.url),
+  ];
+  const moduleDir=new URL('../public/modules/',import.meta.url);
+  const moduleFiles=fs.readdirSync(moduleDir)
+    .filter(name=>name.endsWith('.js'))
+    .map(name=>new URL(name,moduleDir));
+  for (const file of [...roots,...moduleFiles]) {
+    const source=fs.readFileSync(file,'utf8');
+    assert.doesNotMatch(source,/\\sstyle\\s*=/i,String(file));
+    assert.doesNotMatch(source,/\\.style\\./,String(file));
+    assert.doesNotMatch(source,/style\\.cssText/,String(file));
+    assert.doesNotMatch(source,/setAttribute\\(\\s*['"]style['"]/,String(file));
+  }
 });
 
 test('security header factory returns an isolated copy', () => {
