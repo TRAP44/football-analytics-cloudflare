@@ -13,6 +13,74 @@ function row(created_at,deploySha,message=''){
   return {created_at,message,metadata:deploySha ? {deploySha} : {}};
 }
 
+test('release attribution rejects JavaScript coercion at identity and event boundaries',()=>{
+  const result=scopeOpsEventsToDeployment([
+    {created_at:'2026-09-29T13:00:00Z',message:'object-sha',metadata:{deploySha:{toString:()=>current}}},
+    {created_at:{toString:()=> '2026-09-29T13:01:00Z'},message:'object-time',metadata:{deploySha:current}},
+    row('2026-09-29T13:02:00Z',current,'exact'),
+  ],{
+    deploySha:{toString:()=>current},
+    cloudflareVersionTimestamp:'2026-09-29T12:59:15.000Z',
+  },{
+    nowMs:Date.parse('2026-09-29T13:05:00Z'),
+  });
+
+  assert.equal(result.deploySha,null);
+  assert.equal(result.invalidTime.length,1);
+  assert.deepEqual(result.unattributed.map(item=>item.message),['object-sha','exact']);
+  assert.deepEqual(result.actionable.map(item=>item.message),['object-sha','exact']);
+  assert.equal(result.attributionComplete,false);
+});
+
+test('release attribution rejects boolean window coercion and bounds oversized windows',()=>{
+  const now=Date.parse('2026-09-29T13:00:00Z');
+  const tooOld=row('2026-09-29T11:30:00Z',current,'too-old');
+  const recent=row('2026-09-29T12:30:00Z',current,'recent');
+
+  const fallback=scopeOpsEventsToDeployment([tooOld,recent],{deploySha:current},{
+    nowMs:now,
+    windowMs:true,
+  });
+  assert.deepEqual(fallback.actionable.map(item=>item.message),['recent']);
+
+  const bounded=scopeOpsEventsToDeployment([
+    row('2026-09-20T13:00:00Z',current,'beyond-seven-days'),
+    row('2026-09-23T13:00:00Z',current,'at-seven-days'),
+  ],{deploySha:current},{
+    nowMs:now,
+    windowMs:999999999999,
+  });
+  assert.deepEqual(bounded.actionable.map(item=>item.message),['at-seven-days']);
+});
+
+test('future or malformed deployment timestamps fall back to the bounded attribution window',()=>{
+  const now=Date.parse('2026-09-29T13:00:00Z');
+  for(const cloudflareVersionTimestamp of [
+    'not-a-date',
+    '2026-09-29T14:00:00Z',
+    {toString:()=> '2026-09-29T12:59:00Z'},
+  ]){
+    const result=scopeOpsEventsToDeployment([
+      row('2026-09-29T12:30:00Z',current,'recent'),
+    ],{deploySha:current,cloudflareVersionTimestamp},{nowMs:now,windowMs:60*60_000});
+    assert.deepEqual(result.actionable.map(item=>item.message),['recent']);
+    assert.equal(result.deploymentStartedAt,'2026-09-29T12:00:00.000Z');
+  }
+});
+
+test('actionable events preserve source order when timestamps are equal',()=>{
+  const at='2026-09-29T13:00:00Z';
+  const result=scopeOpsEventsToDeployment([
+    row(at,null,'unknown-first'),
+    row(at,current,'exact-second'),
+    row(at,null,'unknown-third'),
+  ],identity,{nowMs:Date.parse('2026-09-29T13:05:00Z')});
+  assert.deepEqual(
+    result.actionable.map(item=>item.message),
+    ['unknown-first','exact-second','unknown-third'],
+  );
+});
+
 test('release attribution isolates the current deployment from older SHAs',()=>{
   const result=scopeOpsEventsToDeployment([
     row('2026-09-29T13:00:00Z',current,'current'),
@@ -50,4 +118,5 @@ test('release attribution falls back to bounded time window when version timesta
     row('2026-09-29T12:30:00Z',current,'recent'),
   ],{deploySha:current},{nowMs:Date.parse('2026-09-29T13:00:00Z'),windowMs:60*60_000});
   assert.deepEqual(result.actionable.map(item=>item.message),['recent']);
+  assert.equal(result.deploymentStartedAt,'2026-09-29T12:00:00.000Z');
 });
