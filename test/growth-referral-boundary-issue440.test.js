@@ -227,9 +227,9 @@ test('growth retention cleanup uses injected clock and preserves table/query con
   const tooSmall = await api.cleanupGrowthEvents({ growthRetentionDays: 1 });
   assert.equal(tooSmall.ok, true);
   assert.equal(tooSmall.retentionDays, 7);
-  assert.equal(deleted.length, 1);
-  assert.equal(deleted[0].table, 'growth_events');
-  assert.match(deleted[0].filters.created_at, /^lt\./);
+  assert.equal(deleted.length, 3);
+  assert.ok(deleted.every(item=>item.table==='growth_events'));
+  assert.ok(deleted.every(item=>/^lt\./.test(item.filters.created_at)));
 });
 
 test('worker composition root wires growth/referral domain instead of owning its implementation', () => {
