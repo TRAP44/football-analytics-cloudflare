@@ -1,0 +1,71 @@
+name: Cleanup Actions artifacts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/cleanup-actions-artifacts.yml"
+  schedule:
+    - cron: "41 4 * * 0"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: cleanup-actions-artifacts
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Delete stale non-backup artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          now="$(date -u +%s)"
+          deleted=0
+          kept=0
+
+          gh api --paginate "repos/$GH_REPO/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | [.id, .name, .created_at, .expired] | @tsv' |
+          while IFS=$'\t' read -r artifact_id name created_at expired; do
+            [[ -z "$artifact_id" ]] && continue
+
+            case "$name" in
+              supabase-production-backup-*)
+                kept=$((kept + 1))
+                continue
+                ;;
+            esac
+
+            created_epoch="$(date -u -d "$created_at" +%s)"
+            age_days=$(( (now - created_epoch) / 86400 ))
+            max_days=14
+
+            case "$name" in
+              external-production-monitor-*) max_days=3 ;;
+              codeql-sarif-*) max_days=7 ;;
+            esac
+
+            if [[ "$expired" == "true" || "$age_days" -ge "$max_days" ]]; then
+              if gh api -X DELETE "repos/$GH_REPO/actions/artifacts/$artifact_id" >/dev/null 2>&1; then
+                echo "Deleted artifact $artifact_id: $name"
+                deleted=$((deleted + 1))
+              else
+                echo "GitHub refused deletion for artifact $artifact_id: $name"
+                kept=$((kept + 1))
+              fi
+            else
+              kept=$((kept + 1))
+            fi
+          done
+
+          echo "Artifact cleanup complete: deleted=$deleted kept=$kept"
