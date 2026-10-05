@@ -14,17 +14,51 @@ function iso(value) {
   return Number.isFinite(ms) ? new Date(ms).toISOString() : '';
 }
 
+function objectRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function nonNegativeCount(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? Math.floor(number) : 0;
+}
+
+function nonNegativeNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : 0;
+}
+
+function boundedRate(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : null;
+}
+
+function normalizedNowMs(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : Date.now();
+}
+
+function normalizedWindowDays(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(1, Math.min(30, Math.floor(number))) : 7;
+}
+
 function normalizeEvent(row = {}) {
   return {
     at: iso(row.created_at || row.createdAt || row.at),
     code: String(row.code || ''),
     severity: String(row.severity || ''),
-    metadata: row.metadata && typeof row.metadata === 'object' ? row.metadata : {},
+    metadata: objectRecord(row.metadata),
   };
 }
 
 function dateForEvent(event = {}) {
-  return String(event.metadata?.date || event.at || '').slice(0,10);
+  const metadataDate = String(event.metadata?.date || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(metadataDate)) {
+    const parsed = Date.parse(`${metadataDate}T00:00:00.000Z`);
+    if (Number.isFinite(parsed) && new Date(parsed).toISOString().slice(0,10) === metadataDate) return metadataDate;
+  }
+  return String(event.at || '').slice(0,10);
 }
 
 function incidentId(date = '') {
@@ -32,7 +66,7 @@ function incidentId(date = '') {
 }
 
 export function buildDailyDigestIncidentReport(rows = [], { nowMs = Date.now() } = {}) {
-  const events = (rows || [])
+  const events = (Array.isArray(rows) ? rows : [])
     .map(normalizeEvent)
     .filter(event => event.at && (ALERTABLE_CODES.has(event.code) || HEALTHY_CODES.has(event.code)))
     .sort((a,b) => Date.parse(a.at) - Date.parse(b.at));
@@ -55,7 +89,7 @@ export function buildDailyDigestIncidentReport(rows = [], { nowMs = Date.now() }
     const meta = latestAlert.metadata || {};
     const startedAt = firstAlert.at;
     const recoveredAt = recovered ? last.at : null;
-    const endMs = recoveredAt ? Date.parse(recoveredAt) : Number(nowMs);
+    const endMs = recoveredAt ? Date.parse(recoveredAt) : normalizedNowMs(nowMs);
     const startMs = Date.parse(startedAt);
     history.push({
       incidentId:incidentId(date),
@@ -73,11 +107,11 @@ export function buildDailyDigestIncidentReport(rows = [], { nowMs = Date.now() }
       fingerprint:'daily_digest|' + date,
       diagnostics:{
         code:latestAlert.code,
-        remaining:Number(meta.remaining ?? meta.backlog ?? 0),
-        sealedClaims:Number(meta.sealedClaims || 0),
-        failed:Number(meta.failed || 0),
-        completionRate:Number(meta.completionRate ?? 1),
-        oldestActiveClaimAgeMs:Number(meta.oldestActiveClaimAgeMs || 0),
+        remaining:nonNegativeCount(meta.remaining ?? meta.backlog),
+        sealedClaims:nonNegativeCount(meta.sealedClaims),
+        failed:nonNegativeCount(meta.failed),
+        completionRate:boundedRate(meta.completionRate) ?? 1,
+        oldestActiveClaimAgeMs:nonNegativeNumber(meta.oldestActiveClaimAgeMs),
       },
     });
   }
@@ -92,14 +126,14 @@ export function buildDailyDigestIncidentReport(rows = [], { nowMs = Date.now() }
 }
 
 function destinationRows(destinations = []) {
-  return (destinations || []).map((item,index) => ({
+  return (Array.isArray(destinations) ? destinations : []).map((item,index) => ({
     slot:Number.isInteger(Number(item?.slot)) ? Number(item.slot) : index,
     destinationKey:String(item?.destinationKey || item?.destination_key || ''),
   })).filter(item => item.slot >= 0 && item.destinationKey);
 }
 
 function ledgerRowsFor(rows = [], incidentId = '') {
-  return (rows || []).filter(row => String(row?.incident_id || row?.incidentId || '') === incidentId);
+  return (Array.isArray(rows) ? rows : []).filter(row => String(row?.incident_id || row?.incidentId || '') === incidentId);
 }
 
 function sentFor(rows = [], alertKey = '', destinationKey = '') {
@@ -242,7 +276,7 @@ function digestLedgerSummary(rows = [], incidentId = '') {
 }
 
 export function summarizeDailyDigestOperationalStatus(rows = [], ledgerRows = [], { nowMs = Date.now() } = {}) {
-  const events=(rows || [])
+  const events=(Array.isArray(rows) ? rows : [])
     .map(normalizeEvent)
     .filter(event=>event.at)
     .sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
@@ -253,16 +287,13 @@ export function summarizeDailyDigestOperationalStatus(rows = [], ledgerRows = []
   const incident=report.activeIncident || latestHistory || null;
   const ledger=digestLedgerSummary(ledgerRows,incident?.incidentId || '');
 
-  const completionRateRaw=Number(latestMeta.completionRate);
-  const completionRate=Number.isFinite(completionRateRaw)
-    ? Math.max(0,Math.min(1,completionRateRaw))
-    : null;
-  const remaining=Math.max(0,Number(latestMeta.remaining ?? latestMeta.backlog ?? 0));
-  const sealedClaims=Math.max(0,Number(latestMeta.sealedClaims || 0));
-  const failed=Math.max(0,Number(latestMeta.failed || 0));
-  const rateLimited=Math.max(0,Number(latestMeta.rateLimited || 0));
-  const truncated=Boolean(latestMeta.truncated);
-  const oldestActiveClaimAgeMs=Math.max(0,Number(latestMeta.oldestActiveClaimAgeMs || 0));
+  const completionRate=boundedRate(latestMeta.completionRate);
+  const remaining=nonNegativeCount(latestMeta.remaining ?? latestMeta.backlog);
+  const sealedClaims=nonNegativeCount(latestMeta.sealedClaims);
+  const failed=nonNegativeCount(latestMeta.failed);
+  const rateLimited=nonNegativeCount(latestMeta.rateLimited);
+  const truncated=latestMeta.truncated === true;
+  const oldestActiveClaimAgeMs=nonNegativeNumber(latestMeta.oldestActiveClaimAgeMs);
 
   let state='collecting';
   if (report.activeIncident) state='incident';
@@ -279,29 +310,29 @@ export function summarizeDailyDigestOperationalStatus(rows = [], ledgerRows = []
         : state==='healthy'
           ? 'Daily Digest работает штатно'
           : 'Нет данных о Daily Digest',
-    generatedAt:new Date(Number(nowMs)).toISOString(),
+    generatedAt:new Date(normalizedNowMs(nowMs)).toISOString(),
     latestRun:latest ? {
       at:latest.at,
       code:latest.code,
       severity:latest.severity || 'info',
       date:dateForEvent(latest),
-      scanned:Number(latestMeta.scanned || 0),
-      eligible:Number(latestMeta.eligible || 0),
-      claimed:Number(latestMeta.claimed || 0),
-      sent:Number(latestMeta.sent || 0),
-      duplicate:Number(latestMeta.duplicate || 0),
+      scanned:nonNegativeCount(latestMeta.scanned),
+      eligible:nonNegativeCount(latestMeta.eligible),
+      claimed:nonNegativeCount(latestMeta.claimed),
+      sent:nonNegativeCount(latestMeta.sent),
+      duplicate:nonNegativeCount(latestMeta.duplicate),
       failed,
       rateLimited,
-      deferred:Math.max(0,Number(latestMeta.deferred || 0)),
+      deferred:nonNegativeCount(latestMeta.deferred),
       remaining,
-      backlog:Math.max(0,Number(latestMeta.backlog ?? remaining)),
+      backlog:nonNegativeCount(latestMeta.backlog ?? remaining),
       sealedClaims,
-      expiredClaims:Math.max(0,Number(latestMeta.expiredClaims || 0)),
-      recoveredClaims:Math.max(0,Number(latestMeta.recoveredClaims || 0)),
+      expiredClaims:nonNegativeCount(latestMeta.expiredClaims),
+      recoveredClaims:nonNegativeCount(latestMeta.recoveredClaims),
       completionRate,
       oldestActiveClaimAgeMs,
       truncated,
-      durationMs:Math.max(0,Number((latestMeta.duration ?? latestMeta.durationMs) || 0)),
+      durationMs:nonNegativeNumber(latestMeta.duration ?? latestMeta.durationMs),
     } : null,
     incident:{
       state:report.state,
@@ -324,8 +355,8 @@ export function summarizeDailyDigestOperationalStatus(rows = [], ledgerRows = []
 
 
 export function summarizeDailyDigestReliability(rows = [], { days = 7, nowMs = Date.now() } = {}) {
-  const windowDays=Math.max(1,Math.min(30,Number(days || 7)));
-  const endMs=Number(nowMs);
+  const windowDays=normalizedWindowDays(days);
+  const endMs=normalizedNowMs(nowMs);
   const startMs=endMs-windowDays*24*3600_000;
   const events=(rows || [])
     .map(normalizeEvent)
@@ -371,23 +402,23 @@ export function summarizeDailyDigestReliability(rows = [], { days = 7, nowMs = D
 
     for (const event of list) {
       const meta=event.metadata || {};
-      sent+=Math.max(0,Number(meta.sent || 0));
-      claimed+=Math.max(0,Number(meta.claimed || 0));
-      failed+=Math.max(0,Number(meta.failed || 0));
-      rateLimited+=Math.max(0,Number(meta.rateLimited || 0));
-      const backlog=Math.max(0,Number(meta.remaining ?? meta.backlog ?? 0));
+      sent+=nonNegativeCount(meta.sent);
+      claimed+=nonNegativeCount(meta.claimed);
+      failed+=nonNegativeCount(meta.failed);
+      rateLimited+=nonNegativeCount(meta.rateLimited);
+      const backlog=nonNegativeCount(meta.remaining ?? meta.backlog);
       if (backlog>0) backlogRuns+=1;
       dayMaxBacklog=Math.max(dayMaxBacklog,backlog);
-      sealed ||= event.code==='DAILY_DIGEST_SEALED_CLAIMS' || Number(meta.sealedClaims || 0)>0;
+      sealed ||= event.code==='DAILY_DIGEST_SEALED_CLAIMS' || nonNegativeCount(meta.sealedClaims)>0;
       degraded ||= event.code==='DAILY_DIGEST_RUN_DEGRADED';
-      truncated ||= event.code==='DAILY_DIGEST_RUN_TRUNCATED' || Boolean(meta.truncated);
+      truncated ||= event.code==='DAILY_DIGEST_RUN_TRUNCATED' || meta.truncated === true;
     }
 
     const final=list.at(-1);
     const finalMeta=final?.metadata || {};
-    const finalRemaining=Math.max(0,Number(finalMeta.remaining ?? finalMeta.backlog ?? 0));
+    const finalRemaining=nonNegativeCount(finalMeta.remaining ?? finalMeta.backlog);
     const completionRate=claimed>0 ? Number((sent/claimed).toFixed(4))
-      : Number.isFinite(Number(finalMeta.completionRate)) ? Number(finalMeta.completionRate)
+      : boundedRate(finalMeta.completionRate) !== null ? boundedRate(finalMeta.completionRate)
         : finalRemaining===0 && failed===0 ? 1 : null;
 
     totalSent+=sent;
@@ -484,7 +515,7 @@ export const DAILY_DIGEST_RELIABILITY_SLO = Object.freeze({
 });
 
 function utcDate(ms) {
-  return new Date(Number(ms)).toISOString().slice(0,10);
+  return new Date(normalizedNowMs(ms)).toISOString().slice(0,10);
 }
 
 function afterMissingRunGrace(nowMs, policy = DAILY_DIGEST_RELIABILITY_SLO) {
@@ -499,9 +530,9 @@ export function assessDailyDigestReliabilitySlo(rows = [], {
   days = 7,
   policy = DAILY_DIGEST_RELIABILITY_SLO,
 } = {}) {
-  const now=Number(nowMs);
+  const now=normalizedNowMs(nowMs);
   const date=utcDate(now);
-  const normalized=(rows || []).map(normalizeEvent).filter(event=>event.at);
+  const normalized=(Array.isArray(rows) ? rows : []).map(normalizeEvent).filter(event=>event.at);
   const todayEvents=normalized.filter(event=>dateForEvent(event)===date && event.code.startsWith('DAILY_DIGEST_'));
   const latestSuccessfulDigestRun=[...normalized]
     .filter(event=>event.code==='DAILY_DIGEST_RUN_OK' || event.code==='DAILY_DIGEST_RUN_EMPTY')
@@ -623,12 +654,12 @@ export function assessDailyDigestReliabilitySlo(rows = [], {
 
 export function planDailyDigestReliabilitySloEvent(assessment = {}, priorRows = []) {
   const date=String(assessment?.date || '');
-  const rows=(priorRows || [])
+  const rows=(Array.isArray(priorRows) ? priorRows : [])
     .map(row=>({
       at:iso(row?.created_at || row?.createdAt || row?.at),
       severity:String(row?.severity || ''),
       code:String(row?.code || ''),
-      metadata:row?.metadata && typeof row.metadata==='object' ? row.metadata : {},
+      metadata:objectRecord(row?.metadata),
     }))
     .filter(row=>row.at)
     .sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
@@ -659,13 +690,13 @@ export function planDailyDigestReliabilitySloEvent(assessment = {}, priorRows = 
         state:'watch',
         reason:String(assessment.reason || ''),
         reasons:Array.isArray(assessment.reasons)?assessment.reasons:[],
-        sampleDays:Number(assessment.reliability?.sampleDays || 0),
-        claimed:Number(assessment.reliability?.totals?.claimed || 0),
-        completionRate:assessment.reliability?.completionRate ?? null,
-        backlogDays:Number(assessment.reliability?.backlog?.days || 0),
-        rateLimitDays:Number(assessment.reliability?.rateLimitDays || 0),
-        incidentDays:Number(assessment.reliability?.incidents?.count || 0),
-        degradedDays:Number(assessment.reliability?.degradedDays || 0),
+        sampleDays:nonNegativeCount(assessment.reliability?.sampleDays),
+        claimed:nonNegativeCount(assessment.reliability?.totals?.claimed),
+        completionRate:boundedRate(assessment.reliability?.completionRate),
+        backlogDays:nonNegativeCount(assessment.reliability?.backlog?.days),
+        rateLimitDays:nonNegativeCount(assessment.reliability?.rateLimitDays),
+        incidentDays:nonNegativeCount(assessment.reliability?.incidents?.count),
+        degradedDays:nonNegativeCount(assessment.reliability?.degradedDays),
         window:assessment.diagnostics?.window || null,
         expectedState:String(assessment.diagnostics?.expectedState || ''),
         lastSuccessfulDigestRun:assessment.diagnostics?.lastSuccessfulDigestRun || null,
@@ -696,9 +727,9 @@ export function planDailyDigestReliabilitySloEvent(assessment = {}, priorRows = 
         reason:missingRunRecovered ? 'missing_run_recovered' : 'within_thresholds',
         recoveredFrom:latest.code,
         watchStartedAt:latest.at,
-        sampleDays:Number(assessment.reliability?.sampleDays || 0),
-        claimed:Number(assessment.reliability?.totals?.claimed || 0),
-        completionRate:assessment.reliability?.completionRate ?? null,
+        sampleDays:nonNegativeCount(assessment.reliability?.sampleDays),
+        claimed:nonNegativeCount(assessment.reliability?.totals?.claimed),
+        completionRate:boundedRate(assessment.reliability?.completionRate),
         window:assessment.diagnostics?.window || null,
         expectedState:String(assessment.diagnostics?.expectedState || ''),
         lastSuccessfulDigestRun:assessment.diagnostics?.lastSuccessfulDigestRun || null,
