@@ -7,8 +7,9 @@ on:
     types: [completed]
     branches: [main]
   schedule:
-    # Four checks per hour, intentionally offset from the Worker's */5 cron.
-    - cron: "7,22,37,52 * * * *"
+    # Hourly independent check, offset from the Worker's */5 cron.
+    # Deploys still trigger an immediate external check via workflow_run.
+    - cron: "17 * * * *"
 
 permissions:
   contents: read
