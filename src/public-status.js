@@ -183,11 +183,12 @@ export function createPublicStatusRouter({
 
     if (pathname === '/health' || pathname === '/api/health') {
       const publicHealth = await publicHealthRuntime.healthSnapshot(cfg);
-      const status = publicHealth.ok ? 200 : 503;
       if (!healthProbeAuthorized(request, cfg)) {
+        const status = publicHealth.ok ? 200 : 503;
         return json({ ok:Boolean(publicHealth.ok) }, status, { 'cache-control': 'no-store' });
       }
       const readiness = await publicStatusRuntime.computeReadinessSnapshot(cfg);
+      const status = readiness.ok ? 200 : 503;
       const health = {
         ok:Boolean(readiness.ok),
         status:readiness.ok ? 'ready' : 'not_ready',
