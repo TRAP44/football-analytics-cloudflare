@@ -80,6 +80,81 @@ test('publisher has deterministic idempotency and suppresses a repeated send', a
   assert.equal(sends,1);
 });
 
+test('publisher fails closed on malformed idempotency booleans and invalid claims', async () => {
+  const cfg={botToken:'main-token',publisherBotToken:'publisher-token',telegramChannelId:'@MatchRadarFootball'};
+  const input={cfg,fixtureId:12345,text:'Тест MatchRadar',ctaUrl:'https://t.me/MatchRadarBot?start=fx12345'};
+  let sends=0;
+
+  const malformed=await publishChannelMessage(input,{
+    fetchImpl:async()=>{ sends+=1; return new Response('{}',{status:200}); },
+    claimIdempotency:async()=>({claimed:'true',inProgress:'true'}),
+    completeIdempotency:async()=>{},
+    releaseIdempotency:async()=>{},
+  });
+  assert.equal(malformed.duplicate,true);
+  assert.equal(malformed.inProgress,false);
+  assert.equal(sends,0);
+
+  await assert.rejects(
+    ()=>publishChannelMessage(input,{
+      fetchImpl:async()=>{ sends+=1; return new Response('{}',{status:200}); },
+      claimIdempotency:async()=>({claimed:true,claimId:'bad claim id'}),
+      completeIdempotency:async()=>{},
+      releaseIdempotency:async()=>{},
+    }),
+    error=>error?.code==='PUBLISHER_IDEMPOTENCY_INVALID_CLAIM',
+  );
+  assert.equal(sends,0);
+});
+
+test('publisher never releases a claim after Telegram accepted the message', async () => {
+  const cfg={botToken:'main-token',publisherBotToken:'publisher-token',telegramChannelId:'@MatchRadarFootball'};
+  const input={cfg,fixtureId:12345,text:'Тест MatchRadar',ctaUrl:'https://t.me/MatchRadarBot?start=fx12345'};
+  let releases=0;
+  await assert.rejects(
+    ()=>publishChannelMessage(input,{
+      fetchImpl:async()=>new Response(JSON.stringify({ok:true,result:{message_id:77}}),{status:200}),
+      claimIdempotency:async()=>({claimed:true,claimId:'claim-1'}),
+      completeIdempotency:async()=>{throw new Error('ledger write failed');},
+      releaseIdempotency:async()=>{releases+=1;},
+    }),
+    error=>error?.deliveryUncertain===true && error?.messageId===77,
+  );
+  assert.equal(releases,0);
+});
+
+test('publisher releases the claim only when Telegram definitely did not accept the message', async () => {
+  const cfg={botToken:'main-token',publisherBotToken:'publisher-token',telegramChannelId:'@MatchRadarFootball'};
+  const input={cfg,fixtureId:12345,text:'Тест MatchRadar',ctaUrl:'https://t.me/MatchRadarBot?start=fx12345'};
+  let releases=0;
+  await assert.rejects(
+    ()=>publishChannelMessage(input,{
+      fetchImpl:async()=>new Response(JSON.stringify({ok:false,description:'forbidden'}),{status:403}),
+      claimIdempotency:async()=>({claimed:true,claimId:'claim-1'}),
+      completeIdempotency:async()=>{},
+      releaseIdempotency:async()=>{releases+=1;},
+    }),
+    error=>error?.code==='PUBLISHER_TELEGRAM_ERROR',
+  );
+  assert.equal(releases,1);
+});
+
+test('publisher treats malformed Telegram success payload as delivery-uncertain and preserves claim', async () => {
+  const cfg={botToken:'main-token',publisherBotToken:'publisher-token',telegramChannelId:'@MatchRadarFootball'};
+  const input={cfg,fixtureId:12345,text:'Тест MatchRadar',ctaUrl:'https://t.me/MatchRadarBot?start=fx12345'};
+  let releases=0;
+  await assert.rejects(
+    ()=>publishChannelMessage(input,{
+      fetchImpl:async()=>new Response(JSON.stringify({ok:true,result:{}}),{status:200}),
+      claimIdempotency:async()=>({claimed:true,claimId:'claim-1'}),
+      completeIdempotency:async()=>{},
+      releaseIdempotency:async()=>{releases+=1;},
+    }),
+    error=>error?.code==='PUBLISHER_TELEGRAM_RESULT_INVALID' && error?.deliveryUncertain===true,
+  );
+  assert.equal(releases,0);
+});
+
 test('publisher dedupe uses existing analysis_cache without schema changes and cron does not publish', () => {
   assert.match(worker,/async function claimChannelPublishIdempotency/);
   assert.match(worker,/resolution=ignore-duplicates,return=representation/);
