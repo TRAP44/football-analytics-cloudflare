@@ -41,7 +41,7 @@ Workflow требует два GitHub Environment secret в environment `product
 
 ### 1. SUPABASE_DB_URL
 
-Для GitHub Actions нужно использовать **Supavisor Session pooler**, потому что GitHub Actions работает в IPv4-only окружении, а direct Supabase DB endpoint Free-проекта по умолчанию IPv6.
+Workflow по своему production-контракту требует **Supavisor Session pooler** на порту 5432. Это обеспечивает совместимый IPv4-путь к Supabase и проверяется preflight-шагом перед backup.
 
 1. Открыть Supabase Dashboard → проект MatchRadar.
 2. Нажать **Connect**.
@@ -139,7 +139,7 @@ Backup **не восстанавливается автоматически**.
 
 1. Берётся **ровно тот encrypted artifact**, который создан текущим backup run.
 2. Проверяется внешний SHA-256.
-3. Архив расшифровывается только во временный каталог GitHub-hosted runner.
+3. Архив расшифровывается только во временный каталог self-hosted Linux runner.
 4. Проверяются внутренние `SHA256SUMS`, `manifest.txt`, `roles.sql`, `schema.sql` и `data.sql`.
 5. Во временном каталоге запускается локальный Supabase stack.
 6. `schema.sql` и `data.sql` восстанавливаются в локальную disposable DB.
