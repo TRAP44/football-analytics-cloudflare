@@ -1,3 +1,5 @@
+import { bytesToHex } from './crypto-utils.js';
+
 // Bounded growth/referral domain extracted from worker.js for Issue #440.
 // Persistence, user lookup, metadata sanitization and clock are injected by the composition root.
 export function createGrowthReferralRuntime({
@@ -28,6 +30,14 @@ export function createGrowthReferralRuntime({
   function positiveSafeInteger(value) {
     const number=integerCandidate(value);
     return number !== null && number > 0 ? number : 0;
+  }
+
+  async function stableEventKeyToken(value = '') {
+    const raw=String(value || '').trim();
+    if (!raw || raw.length>512) return '';
+    if (/^[A-Za-z0-9._:-]{1,160}$/.test(raw)) return raw;
+    const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(raw));
+    return `h${bytesToHex(digest).slice(0,40)}`;
   }
 
   function cleanLaunchPart(value = '', max = 48) {
@@ -135,7 +145,7 @@ export function createGrowthReferralRuntime({
     const event=cleanLaunchPart(eventName,40);
     const rawDedupeKey=String(eventKey || '').trim();
     const dedupeKey=/^[A-Za-z0-9._:-]{1,180}$/.test(rawDedupeKey) ? rawDedupeKey : '';
-    if (!id || !event) return false;
+    if (!id || !event || (rawDedupeKey && !dedupeKey)) return false;
     try {
       const attr=attribution || acquisitionFromUser(await getUserRecord(id,cfg).catch(()=>null));
       const row={
@@ -306,7 +316,8 @@ export function createGrowthReferralRuntime({
     const id=positiveSafeInteger(userId);
     const chargeId=String(payment?.telegram_payment_charge_id || '').trim();
     const starsAmount=positiveSafeInteger(payment?.total_amount);
-    if (!id || !/^[A-Za-z0-9._:-]{1,160}$/.test(chargeId) || !starsAmount) return false;
+    const chargeToken=await stableEventKeyToken(chargeId);
+    if (!id || !chargeToken || !starsAmount) return false;
     const referral=await referralAttributionForUser(id,cfg);
     if (!referral?.referralCode) return false;
     return await recordGrowthEvent(cfg,{
@@ -320,7 +331,7 @@ export function createGrowthReferralRuntime({
         stars_amount:starsAmount,
         recurring:Boolean(payment?.is_recurring),
       },
-      eventKey:`referred_payment:${chargeId}`,
+      eventKey:`referred_payment:${chargeToken}`,
     });
   }
   
