@@ -1,0 +1,93 @@
+name: Cleanup merged branches
+
+on:
+  pull_request:
+    types: [closed]
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/cleanup-merged-branches.yml"
+  schedule:
+    - cron: "37 3 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: cleanup-merged-branches
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.merged == true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Delete safely merged branches
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          OWNER="${GH_REPO%%/*}"
+          DEFAULT_BRANCH="${{ github.event.repository.default_branch }}"
+          deleted=0
+          skipped=0
+
+          while IFS=$'\t' read -r branch sha protected; do
+            [[ -z "$branch" ]] && continue
+
+            if [[ "$branch" == "$DEFAULT_BRANCH" || "$protected" == "true" ]]; then
+              skipped=$((skipped + 1))
+              continue
+            fi
+
+            case "$branch" in
+              main|master|develop|development|production|staging)
+                skipped=$((skipped + 1))
+                continue
+                ;;
+            esac
+
+            open_prs="$(gh api -X GET "repos/$GH_REPO/pulls" \
+              -f state=open \
+              -f head="$OWNER:$branch" \
+              -f per_page=1 \
+              --jq 'length')"
+
+            if [[ "$open_prs" != "0" ]]; then
+              skipped=$((skipped + 1))
+              continue
+            fi
+
+            merged_match="$(gh api --paginate -X GET "repos/$GH_REPO/pulls" \
+              -f state=closed \
+              -f head="$OWNER:$branch" \
+              -f per_page=100 \
+              --jq '.[] | select(.merged_at != null) | [.head.sha, .merged_at, .number] | @tsv' \
+              | awk -F $'\t' -v current_sha="$sha" '$1 == current_sha { print; exit }')"
+
+            if [[ -z "$merged_match" ]]; then
+              skipped=$((skipped + 1))
+              continue
+            fi
+
+            encoded_branch="$(jq -nr --arg v "$branch" '$v|@uri')"
+
+            if gh api -X DELETE "repos/$GH_REPO/git/refs/heads/$encoded_branch" >/dev/null 2>&1; then
+              echo "Deleted merged branch: $branch"
+              deleted=$((deleted + 1))
+            else
+              echo "Skipped branch that GitHub refused to delete: $branch"
+              skipped=$((skipped + 1))
+            fi
+          done < <(
+            gh api --paginate "repos/$GH_REPO/branches?per_page=100" \
+              --jq '.[] | [.name, .commit.sha, .protected] | @tsv'
+          )
+
+          echo "Cleanup complete: deleted=$deleted skipped=$skipped"
