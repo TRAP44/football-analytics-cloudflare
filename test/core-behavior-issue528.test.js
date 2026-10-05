@@ -5,6 +5,7 @@ import worker from '../src/worker.js';
 import { createLineupNotificationService } from '../src/lineup-notification-service.js';
 import { createImportantChangeNotificationService } from '../src/important-change-notification-service.js';
 import { createTelegramUpdateProcessor } from '../src/telegram-update-orchestration.js';
+import { evaluatePromotionWindows, evaluatePostPromotionRollback } from '../src/calibration-lifecycle.js';
 
 test('worker /api/analyze executes real route and rejects invalid fixture deterministically', async () => {
   const request = new Request('http://localhost/api/analyze', {
@@ -226,4 +227,119 @@ test('important-change scheduler isolates snapshot failure and continues other f
   assert.equal(summary.significant,1);
   assert.equal(summary.sent,1);
   assert.deepEqual(deliveries,[802]);
+});
+
+
+test('calibration promotion threshold behaves at the exact Brier safety boundary', () => {
+  const windows=[
+    {sample:20,baselineBrier:0.205,candidateBrier:0.204,baselineLogLoss:0.91,candidateLogLoss:0.91},
+    {sample:20,baselineBrier:0.201,candidateBrier:0.200,baselineLogLoss:0.90,candidateLogLoss:0.89},
+  ];
+  const result=evaluatePromotionWindows(windows);
+  assert.equal(result.pass,true);
+  assert.equal(result.status,'eligible');
+
+  const held=evaluatePromotionWindows([
+    windows[0],
+    {...windows[1],candidateBrier:0.2005},
+  ]);
+  assert.equal(held.pass,false);
+  assert.equal(held.status,'held');
+});
+
+test('calibration rollback waits for sample size even when metrics regress materially', () => {
+  const early=evaluatePostPromotionRollback({
+    sample:19,
+    activeBrier:0.25,
+    championBrier:0.20,
+    activeLogLoss:1.05,
+    championLogLoss:0.90,
+  });
+  assert.equal(early.enoughData,false);
+  assert.equal(early.rollback,false);
+
+  const mature=evaluatePostPromotionRollback({
+    sample:20,
+    activeBrier:0.25,
+    championBrier:0.20,
+    activeLogLoss:1.05,
+    championLogLoss:0.90,
+  });
+  assert.equal(mature.enoughData,true);
+  assert.equal(mature.rollback,true);
+});
+
+test('telegram news-impact callback recovers through injected fallback when news delivery fails', async () => {
+  const recoveryCalls=[];
+  const apiCalls=[];
+  const processor=createTelegramUpdateProcessor({
+    loadRuntimeControls:async()=>({value:{}}),
+    telegramLockdownDecision:()=>({blocked:false,rejectCheckout:false}),
+    telegramApi:async(method,_cfg,body)=>{ apiCalls.push({method,body}); return {}; },
+    json:(body,status=200)=>({body,status}),
+    parseInvoicePayload:async()=>null,
+    billingPlanConfig:()=>null,
+    parsePassInvoicePayload:async()=>null,
+    passProductConfig:()=>null,
+    setBotDigestSubscription:async()=>{},
+    telegramWebAppUrl:()=> 'https://example.test/app',
+    recordGrowthEvent:async()=>{},
+    footballBotKeyboard:()=>({}),
+    sendBotDayMatches:async()=>{},
+    cleanNewsImpactDecisionCode:v=>String(v||''),
+    cleanNewsImpactActionCode:v=>String(v||''),
+    cleanNewsImpactRecoveryCode:v=>String(v||''),
+    recordNewsImpactRecoveryAttempt:async()=>{},
+    sendGeneralFootballNews:async()=>{ throw Object.assign(new Error('news provider down'),{status:503}); },
+    recordNewsImpactOutcome:async()=>{},
+    sendNewsImpactRecoveryMessage:async(...args)=>recoveryCalls.push(args),
+    sendBotFixtureShareCard:async()=>{},
+    sendBotFixtureSection:async()=>({ok:true}),
+    newsPublishedAtFromDayToken:()=>null,
+    newsTeamByToken:()=>null,
+    botRemoteTeamMatches:async()=>[],
+    newsRelevantFixture:()=>null,
+    newsTeamToken:()=> '',
+    sendBotFootballSearch:async()=>{},
+    sendFavoriteTeamNews:async()=>{},
+    toggleBotFavorite:async()=>({active:false,team:{name:'Team'}}),
+    loadBotFixtureCard:async()=>null,
+    getFavorites:async()=>[],
+    footballMatchActionKeyboard:()=>({}),
+    setCache:async()=>{},
+    postMatchReturnDisabledKey:id=>`postmatch:${id}`,
+    memory:{cache:new Map()},
+    hasSupabase:()=>false,
+    supaDelete:async()=>{},
+    applySuccessfulPayment:async()=>{},
+    applyRefundedPayment:async()=>{},
+    updateUserSubscription:async()=>{},
+    telegramStartPayload:()=> '',
+    upsertUser:async()=>{},
+    parseLaunchStartParam:()=>({fixtureId:0}),
+    ensureLaunchAttribution:async()=>({}),
+    applyReferralAttribution:async()=>({accepted:false,status:'none'}),
+    configureFootballBot:async()=>{},
+    sendBotFixtureMenu:async()=>{},
+    sendFootballBotHome:async()=>{},
+    footballBotMoreKeyboard:()=>({}),
+    sendFootballBotHelp:async()=>{},
+    sendBotFavoriteTeams:async()=>{},
+    sendBotFavoriteTeamMatches:async()=>{},
+    sendDailyPicks:async()=>{},
+    sendLastAiVerdict:async()=>{},
+    sendBotAiTrackRecord:async()=>{},
+    sendDigestControls:async()=>{},
+  });
+
+  const result=await processor(
+    {url:'https://example.test/telegram/webhook'},
+    {},
+    {callback_query:{id:'cb-news',data:'news:impact:material:news:123',from:{id:77},message:{chat:{id:88}}}},
+  );
+  assert.deepEqual(result.body,{ok:true,recovered:true});
+  assert.equal(recoveryCalls.length,1);
+  assert.equal(recoveryCalls[0][2].fixtureId,123);
+  assert.equal(recoveryCalls[0][2].fallback,'provider_unavailable');
+  assert.equal(apiCalls[0]?.method,'answerCallbackQuery');
 });
