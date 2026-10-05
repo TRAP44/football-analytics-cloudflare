@@ -326,6 +326,7 @@ function config(env) {
     publisherBotToken: env.TELEGRAM_PUBLISHER_BOT_TOKEN || '',
     telegramChannelId: env.TELEGRAM_CHANNEL_ID || '',
     webhookSecret: env.TELEGRAM_WEBHOOK_SECRET || '',
+    healthProbeToken: env.HEALTH_PROBE_TOKEN || '',
     adminTelegramIds: telegramIdList(env.ADMIN_TELEGRAM_IDS),
     betaTelegramIds: telegramIdList(env.BETA_TELEGRAM_IDS),
     // Public normal-user access is the default. Strict closed beta is an
@@ -23671,6 +23672,17 @@ const publicHealthRuntime=createPublicHealthRuntime({
   computeReadiness:publicStatusRuntime.computeReadinessSnapshot,
   version:APP_VERSION,
   releaseCandidate:RC_NAME,
+  buildDetailedHealth:async(cfg,readiness)=>({
+    ok:Boolean(readiness?.ok),
+    readiness,
+    version:APP_VERSION,
+    releaseCandidate:RC_NAME,
+    deployment:currentReleaseIdentity(cfg),
+    devMode:Boolean(cfg?.devMode),
+    database:hasSupabase(cfg) ? 'supabase' : 'memory',
+    monetization:cfg?.monetizationEnabled ? 'enabled' : 'paused',
+    features:appManifest(cfg).features,
+  }),
 });
 
 const publicStatusRouter=createPublicStatusRouter({
