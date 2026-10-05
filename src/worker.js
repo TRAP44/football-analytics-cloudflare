@@ -6899,7 +6899,19 @@ async function markDigestSent(row, date, cfg) {
 }
 
 async function releaseDigestDelivery(row,date,cfg) {
-  if (hasSupabase(cfg)) return await supaRpc(cfg,'release_daily_digest',{p_telegram_id:Number(row.telegram_id),p_delivery_date:date},2500).catch(()=>false);
+  if (hasSupabase(cfg)) return await supaRpc(cfg,'release_daily_digest',{p_telegram_id:Number(row.telegram_id),p_delivery_date:date},2500).catch(async error => {
+    await recordCriticalWriteFailure({
+      recordOpsEvent,
+      cfg,
+      source:'digest',
+      eventType:'digest_delivery_release',
+      code:'DIGEST_DELIVERY_RELEASE_FAILED',
+      message:'Daily digest delivery claim release failed.',
+      meta:{ telegramId:Number(row.telegram_id || 0), deliveryDate:String(date || '') },
+      error,
+    });
+    return false;
+  });
   const current=memory.botDigestSubscriptions.get(Number(row.telegram_id)) || row;
   memory.botDigestSubscriptions.set(Number(row.telegram_id),{...current,delivery_claim_date:null,delivery_locked_until:null});
   return true;
@@ -7888,7 +7900,17 @@ async function releaseChannelPublishIdempotency(cacheKey, meta = {}, cfg) {
     if (String(current?.payload?.claimId || '')!==claimId || current?.payload?.state!=='publishing') return;
     memory.cache.delete(key);
     if (hasSupabase(cfg)) await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${key}`});
-  } catch {
+  } catch (error) {
+    await recordCriticalWriteFailure({
+      recordOpsEvent,
+      cfg,
+      source:'channel_publisher',
+      eventType:'channel_publish_claim_release',
+      code:'CHANNEL_PUBLISH_CLAIM_RELEASE_FAILED',
+      message:'Channel publish idempotency claim release failed; TTL will clear the retained claim.',
+      meta:{ key, claimId:claimId.slice(0,80) },
+      error,
+    });
     // A retained claim is safer than a duplicate channel post; TTL clears it later.
   }
 }
@@ -7967,7 +7989,17 @@ async function releaseDistributedAnalysisLock(lock,cfg) {
     if (String(row?.payload?.claimId || '')!==String(lock.claimId)) return;
     memory.cache.delete(lock.key);
     await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${lock.key}`});
-  } catch {
+  } catch (error) {
+    await recordCriticalWriteFailure({
+      recordOpsEvent,
+      cfg,
+      source:'analysis_lock',
+      eventType:'analysis_lock_release',
+      code:'ANALYSIS_LOCK_RELEASE_FAILED',
+      message:'Distributed analysis lock release failed; TTL remains the final safety net.',
+      meta:{ key:String(lock.key || '').slice(0,160) },
+      error,
+    });
     // TTL is the final safety net if cleanup fails.
   }
 }
@@ -12083,7 +12115,19 @@ async function finishPostMatchReturnClaim(key, userId, fixtureId, cfg) {
 async function releasePostMatchReturnClaim(key, cfg) {
   if (!key) return;
   memory.cache.delete(key);
-  if (hasSupabase(cfg)) await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${key}`}).catch(()=>null);
+  if (hasSupabase(cfg)) await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${key}`}).catch(async error => {
+    await recordCriticalWriteFailure({
+      recordOpsEvent,
+      cfg,
+      source:'post_match_return',
+      eventType:'post_match_return_claim_release',
+      code:'POST_MATCH_RETURN_CLAIM_RELEASE_FAILED',
+      message:'Post-match return claim release failed.',
+      meta:{ key:String(key).slice(0,160) },
+      error,
+    });
+    return null;
+  });
 }
 
 async function processPostMatchReturns(cfg) {
