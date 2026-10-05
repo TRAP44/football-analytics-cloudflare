@@ -223,7 +223,7 @@ export function createRuntimeControlsRuntime({
     if (!currentState.schemaReady) {
       return { error: SUPABASE_SCHEMA_GUIDANCE, code: 'RUNTIME_CONTROLS_SCHEMA', status: 409 };
     }
-  
+
     const current = currentState.value;
     const expectedRevision = Number(body.expectedRevision || 0);
     if (!expectedRevision || expectedRevision !== Number(current.revision || 1)) {
@@ -234,28 +234,17 @@ export function createRuntimeControlsRuntime({
         current: publicRuntimeControls(current),
       };
     }
-  
+
     const historySchema = await probeRuntimeHistorySchema(cfg);
-    let historyReady = Boolean(historySchema.ok);
-    let historyReason = historySchema.ok ? '' : SUPABASE_SCHEMA_GUIDANCE;
-    if (historySchema.ok) {
-      try {
-        await ensureRuntimeHistoryBaseline(cfg, current, user);
-      } catch (error) {
-        historyReady = false;
-        historyReason = 'История изменений временно недоступна: базовая точка восстановления не сохранена.';
-        void recordOpsEvent(cfg, {
-          severity: 'error',
-          source: 'release',
-          eventType: 'runtime_history',
-          code: 'RUNTIME_HISTORY_BASELINE_WRITE_FAILED',
-          message: error?.message || error,
-          endpoint: '/api/runtime-controls',
-          meta: { revision: Number(current.revision || 0) },
-        }).catch(() => {});
-      }
+    if (!historySchema.ok) {
+      return {
+        error: 'Журнал изменений Runtime Controls недоступен. Изменение не применено.',
+        code: 'RUNTIME_HISTORY_SCHEMA',
+        status: 503,
+        current: publicRuntimeControls(current),
+      };
     }
-  
+
     const requestedAction = String(body.action || 'update').trim();
     const changeAction = ['update', 'defaults', 'rollback', 'lockdown', 'lockdown_release'].includes(requestedAction) ? requestedAction : 'update';
     const sourceRevision = Number(body.sourceRevision || 0) || null;
@@ -271,7 +260,7 @@ export function createRuntimeControlsRuntime({
       expandedDataEnabled: lockdownRequested ? false : lockdownReleaseRequested ? true : body.expandedDataEnabled !== false,
       autoSettlementRecoveryEnabled: lockdownRequested || lockdownReleaseRequested ? false : Boolean(body.autoSettlementRecoveryEnabled),
     };
-  
+
     if (wasSecurityLockdown && changeAction === 'update' && !isSecurityLockdownControls(proposed)) {
       return {
         error: 'Аварийный Security Lockdown можно снять только явным восстановлением, откатом или безопасными настройками.',
@@ -280,83 +269,148 @@ export function createRuntimeControlsRuntime({
         current: publicRuntimeControls(current),
       };
     }
-  
+
     const changeReason = String(
       body.reason
         || (lockdownRequested ? 'Аварийный Security Lockdown включён администратором.'
           : lockdownReleaseRequested ? 'Аварийный Security Lockdown снят администратором.'
             : '')
     ).trim().slice(0, 240);
-  
-    const next = {
-      maintenance_mode: proposed.maintenanceMode,
-      analysis_enabled: proposed.analysisEnabled,
-      search_enabled: proposed.searchEnabled,
-      live_enabled: proposed.liveEnabled,
-      reminders_enabled: proposed.remindersEnabled,
-      expanded_data_enabled: proposed.expandedDataEnabled,
-      auto_settlement_recovery_enabled: proposed.autoSettlementRecoveryEnabled,
-      message: lockdownRequested
-        ? String(body.message || 'Аварийный режим безопасности активен. Изменения временно недоступны.').trim().slice(0, 280)
-        : lockdownReleaseRequested ? '' : String(body.message || '').trim().slice(0, 280),
-      revision: expectedRevision + 1,
-      updated_at: new Date(clock()).toISOString(),
-      updated_by: Number(user?.id || 0) || null,
-    };
-  
-    const url = new URL(`${cfg.supabaseUrl}/rest/v1/runtime_controls`);
-    url.searchParams.set('id', 'eq.global');
-    url.searchParams.set('revision', `eq.${expectedRevision}`);
-    const response = await fetchWithTimeout(url, {
-      method: 'PATCH',
-      headers: supaHeaders(cfg, { Prefer: 'return=representation' }),
-      body: JSON.stringify(next),
-    }, 7000, 'Supabase runtime controls');
-  
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      throw new Error(`Supabase runtime_controls: HTTP ${response.status}${text ? ` — ${text.slice(0, 160)}` : ''}`);
-    }
-    const rows = await response.json().catch(() => []);
-    if (!Array.isArray(rows) || rows.length !== 1) {
+
+    const message = lockdownRequested
+      ? String(body.message || 'Аварийный режим безопасности активен. Изменения временно недоступны.').trim().slice(0, 280)
+      : lockdownReleaseRequested ? '' : String(body.message || '').trim().slice(0, 280);
+
+    const url = new URL(`${cfg.supabaseUrl}/rest/v1/rpc/commit_runtime_controls`);
+    let response;
+    try {
+      response = await fetchWithTimeout(url, {
+        method: 'POST',
+        headers: supaHeaders(cfg, { Prefer: 'return=representation' }),
+        body: JSON.stringify({
+          p_expected_revision: expectedRevision,
+          p_maintenance_mode: proposed.maintenanceMode,
+          p_analysis_enabled: proposed.analysisEnabled,
+          p_search_enabled: proposed.searchEnabled,
+          p_live_enabled: proposed.liveEnabled,
+          p_reminders_enabled: proposed.remindersEnabled,
+          p_expanded_data_enabled: proposed.expandedDataEnabled,
+          p_auto_settlement_recovery_enabled: proposed.autoSettlementRecoveryEnabled,
+          p_message: message,
+          p_updated_by: Number(user?.id || 0) || null,
+          p_action: changeAction,
+          p_reason: changeReason,
+          p_app_version: APP_VERSION,
+          p_source_revision: sourceRevision,
+        }),
+      }, 7000, 'Supabase atomic runtime controls');
+    } catch (error) {
+      void recordOpsEvent(cfg, {
+        severity: 'error',
+        source: 'release',
+        eventType: 'runtime_controls',
+        code: 'RUNTIME_CONTROLS_ATOMIC_COMMIT_FAILED',
+        message: error?.message || error,
+        endpoint: '/api/runtime-controls',
+        meta: { expectedRevision, action: changeAction, sourceRevision },
+      }).catch(() => {});
       return {
-        error: 'Настройки изменились до сохранения. Обновите панель и повторите.',
-        code: 'RUNTIME_CONTROLS_CONFLICT',
-        status: 409,
-        current: publicRuntimeControls((await loadRuntimeControls(cfg, { force: true })).value),
+        error: 'Настройки не применены: атомарное сохранение Runtime Controls недоступно.',
+        code: 'RUNTIME_CONTROLS_ATOMIC_COMMIT_FAILED',
+        status: 503,
+        current: publicRuntimeControls(current),
       };
     }
-  
-    const value = normalizeRuntimeControls(rows[0]);
-    memory.runtimeControls = { value, loadedAt: clock(), source: 'supabase', schemaReady: true };
-  
-    if (historySchema.ok) {
-      try {
-        await appendRuntimeHistory(cfg, value, user, {
-          action: changeAction,
-          reason: changeReason,
-          sourceRevision,
-        });
-      } catch (error) {
-        historyReady = false;
-        historyReason = 'Настройки применены, но запись в журнал изменений временно не сохранилась.';
-        void recordOpsEvent(cfg, {
-          severity: 'error',
-          source: 'release',
-          eventType: 'runtime_history',
-          code: 'RUNTIME_HISTORY_APPEND_FAILED',
-          message: error?.message || error,
-          endpoint: '/api/runtime-controls',
-          meta: { revision: Number(value.revision || 0), action: changeAction, sourceRevision },
-        }).catch(() => {});
-      }
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => '');
+      const detail = `HTTP ${response.status}${text ? ` — ${text.slice(0, 160)}` : ''}`;
+      void recordOpsEvent(cfg, {
+        severity: 'error',
+        source: 'release',
+        eventType: 'runtime_controls',
+        code: 'RUNTIME_CONTROLS_ATOMIC_COMMIT_FAILED',
+        message: detail,
+        endpoint: '/api/runtime-controls',
+        status: response.status,
+        meta: { expectedRevision, action: changeAction, sourceRevision },
+      }).catch(() => {});
+      return {
+        error: 'Настройки не применены: база данных не подтвердила атомарное сохранение.',
+        code: 'RUNTIME_CONTROLS_ATOMIC_COMMIT_FAILED',
+        status: 503,
+        current: publicRuntimeControls(current),
+      };
     }
-  
+
+    const result = await response.json().catch(() => null);
+    if (!result || result.ok !== true || !result.row) {
+      if (result?.reason === 'revision_conflict') {
+        const conflictCurrent = result.current
+          ? normalizeRuntimeControls(result.current)
+          : (await loadRuntimeControls(cfg, { force: true })).value;
+        return {
+          error: 'Настройки уже изменились в другой сессии. Обновите панель и повторите.',
+          code: 'RUNTIME_CONTROLS_CONFLICT',
+          status: 409,
+          current: publicRuntimeControls(conflictCurrent),
+        };
+      }
+
+      void recordOpsEvent(cfg, {
+        severity: 'error',
+        source: 'release',
+        eventType: 'runtime_controls',
+        code: 'RUNTIME_CONTROLS_ATOMIC_COMMIT_FAILED',
+        message: String(result?.reason || 'atomic_commit_not_confirmed'),
+        endpoint: '/api/runtime-controls',
+        meta: { expectedRevision, action: changeAction, sourceRevision },
+      }).catch(() => {});
+      return {
+        error: 'Настройки не применены: атомарная запись состояния и истории не подтверждена.',
+        code: 'RUNTIME_CONTROLS_ATOMIC_COMMIT_FAILED',
+        status: 503,
+        current: publicRuntimeControls(current),
+      };
+    }
+
+    const value = normalizeRuntimeControls(result.row);
+    if (Number(result.historyRevision || 0) !== Number(value.revision || 0)) {
+      void recordOpsEvent(cfg, {
+        severity: 'critical',
+        source: 'release',
+        eventType: 'runtime_controls',
+        code: 'RUNTIME_CONTROLS_ATOMIC_COMMIT_FAILED',
+        message: 'Atomic runtime commit returned mismatched history revision.',
+        endpoint: '/api/runtime-controls',
+        meta: {
+          expectedRevision,
+          committedRevision: Number(value.revision || 0),
+          historyRevision: Number(result.historyRevision || 0),
+          action: changeAction,
+        },
+      }).catch(() => {});
+      return {
+        error: 'Настройки не применены: подтверждение истории не совпало с новой версией.',
+        code: 'RUNTIME_CONTROLS_ATOMIC_COMMIT_FAILED',
+        status: 503,
+        current: publicRuntimeControls(current),
+      };
+    }
+
+    memory.runtimeControls = {
+      value,
+      loadedAt: clock(),
+      source: 'supabase',
+      schemaReady: true,
+      failClosed: false,
+    };
+
     const securityLockdown = isSecurityLockdownControls(value);
     const lockdownTransition = !wasSecurityLockdown && securityLockdown
       ? 'enabled'
       : wasSecurityLockdown && !securityLockdown ? 'released' : '';
-  
+
     await recordOpsEvent(cfg, {
       severity: securityLockdown ? 'critical' : value.maintenanceMode ? 'warning' : 'info',
       source: 'release',
@@ -385,12 +439,13 @@ export function createRuntimeControlsRuntime({
         action: changeAction,
         reason: changeReason,
         sourceRevision,
-        historyReady,
+        historyReady: true,
       },
     }).catch(() => {});
-    return { value, status: 200, historyReady, historyReason };
+
+    return { value, status: 200, historyReady: true, historyReason: '' };
   }
-  
+
   function runtimeFeatureResponse(code, message, runtime, status = 503) {
     const category = String(code || '').startsWith('SECURITY_LOCKDOWN_')
       ? 'security_lockdown'
