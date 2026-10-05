@@ -794,7 +794,7 @@ function setBootStatus(title, text = '', progress = null) {
   if ($('bootTitle')) $('bootTitle').textContent = title;
   if ($('bootText')) $('bootText').textContent = text;
   if ($('bootProgressFill') && Number.isFinite(Number(progress))) {
-    $('bootProgressFill').style.width = `${Math.max(0, Math.min(100, Number(progress)))}%`;
+    applyPercentWidthClass($('bootProgressFill'), progress);
   }
 }
 
@@ -5381,6 +5381,14 @@ function clampPercent(value) {
 
 function percentWidthClass(value) {
   return `pct-${Math.round(clampPercent(value))}`;
+}
+
+function applyPercentWidthClass(element, value) {
+  if (!element) return;
+  for (const cls of [...element.classList]) {
+    if (/^pct-\d+$/.test(cls)) element.classList.remove(cls);
+  }
+  element.classList.add(percentWidthClass(value));
 }
 
 function qualityInfo(completeness = {}) {
