@@ -1,0 +1,88 @@
+// @ts-check
+
+export default [
+  {
+    ignores: [
+      'node_modules/**',
+      '.wrangler-dist/**',
+      'coverage/**',
+      'public/app.js',
+      'src/worker.js',
+    ],
+  },
+  {
+    files: ['public/modules/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: {
+        window: 'readonly',
+        document: 'readonly',
+        location: 'readonly',
+        navigator: 'readonly',
+        localStorage: 'readonly',
+        sessionStorage: 'readonly',
+        MutationObserver: 'readonly',
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
+        Headers: 'readonly',
+        Request: 'readonly',
+        Response: 'readonly',
+        FormData: 'readonly',
+        Blob: 'readonly',
+        File: 'readonly',
+        crypto: 'readonly',
+        performance: 'readonly',
+        fetch: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        requestAnimationFrame: 'readonly',
+        cancelAnimationFrame: 'readonly',
+        structuredClone: 'readonly',
+        console: 'readonly',
+      },
+    },
+    rules: {
+      'no-undef': 'error',
+      'no-unused-vars': ['error', {
+        args: 'after-used',
+        argsIgnorePattern: '^_',
+        caughtErrors: 'none',
+        varsIgnorePattern: '^_',
+      }],
+    },
+  },
+  {
+    files: ['scripts/**/*.js', 'test/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: {
+        process: 'readonly',
+        Buffer: 'readonly',
+        console: 'readonly',
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
+        TextEncoder: 'readonly',
+        TextDecoder: 'readonly',
+        fetch: 'readonly',
+        structuredClone: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+      },
+    },
+    rules: {
+      'no-undef': 'error',
+      'no-unused-vars': ['error', {
+        args: 'after-used',
+        argsIgnorePattern: '^_',
+        caughtErrors: 'none',
+        varsIgnorePattern: '^_',
+      }],
+    },
+  },
+];
