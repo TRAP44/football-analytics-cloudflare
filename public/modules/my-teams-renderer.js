@@ -5,10 +5,10 @@ export function createMyTeamsRenderer({
   safeUrl,
   timeOf,
   onOpenTeam,
-  onAnalyzeMatch,
+  onOpenMatch,
 }) {
   if (!state || typeof elementById !== 'function' || typeof escapeHtml !== 'function' || typeof safeUrl !== 'function' ||
-      typeof timeOf !== 'function' || typeof onOpenTeam !== 'function' || typeof onAnalyzeMatch !== 'function') {
+      typeof timeOf !== 'function' || typeof onOpenTeam !== 'function' || typeof onOpenMatch !== 'function') {
     throw new TypeError('My Teams renderer requires state, formatters and explicit callbacks.');
   }
 
@@ -61,7 +61,7 @@ export function createMyTeamsRenderer({
       logo: btn.dataset.teamLogo || '',
     })));
     root.querySelectorAll('[data-team-fixture]').forEach(btn => btn.addEventListener('click', () => {
-      onAnalyzeMatch(Number(btn.dataset.teamFixture), btn);
+      onOpenMatch(Number(btn.dataset.teamFixture), btn);
     }));
   }
 
