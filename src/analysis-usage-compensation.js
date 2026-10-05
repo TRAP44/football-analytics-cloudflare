@@ -10,6 +10,23 @@ function normalizeKind(value) {
   return kind === 'pass' ? 'pass' : kind === 'quota' ? 'quota' : 'unknown';
 }
 
+function positiveSafeInteger(value) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number > 0 ? number : 0;
+}
+
+function usageDate(value) {
+  const raw = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return '';
+  const parsed = Date.parse(`${raw}T00:00:00.000Z`);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString().slice(0, 10) === raw ? raw : '';
+}
+
+function nonNegativeInteger(value) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 0 ? number : 0;
+}
+
 function compensationCode(disposition) {
   return disposition === 'commit'
     ? 'ANALYSIS_USAGE_COMMIT_PENDING'
@@ -57,8 +74,18 @@ export function createAnalysisUsageCompensationRuntime({
     const operationId = normalizeOperationId(reservation.operationId);
     const kind = normalizeKind(reservation.kind);
     const action = disposition === 'commit' ? 'commit' : disposition === 'refund' ? 'refund' : '';
+    const reservationUserId = positiveSafeInteger(userId || reservation.userId);
+    const reservationDate = kind === 'quota' ? usageDate(reservation.date) : '';
+    const entitlementId = kind === 'pass' ? positiveSafeInteger(reservation.entitlementId) : 0;
 
-    if (!operationId || !action || kind === 'unknown') {
+    if (
+      !operationId
+      || !action
+      || kind === 'unknown'
+      || !reservationUserId
+      || (kind === 'quota' && !reservationDate)
+      || (kind === 'pass' && !entitlementId)
+    ) {
       return { ok: false, pending: false, reason: 'invalid_reservation' };
     }
 
@@ -70,18 +97,23 @@ export function createAnalysisUsageCompensationRuntime({
       let result;
       if (kind === 'quota') {
         result = await supaRpc(cfg, 'refund_analysis_quota', {
-          p_telegram_id: Number(userId || reservation.userId),
-          p_usage_date: reservation.date,
+          p_telegram_id: reservationUserId,
+          p_usage_date: reservationDate,
         }, 4000, lifecycleHeaders(operationId, action));
       } else {
         result = await supaRpc(cfg, 'refund_pass_entitlement_usage', {
-          p_telegram_id: Number(userId || reservation.userId),
-          p_entitlement_id: Number(reservation.entitlementId),
+          p_telegram_id: reservationUserId,
+          p_entitlement_id: entitlementId,
         }, 4000, lifecycleHeaders(operationId, action));
       }
 
       const expectedStatus = action === 'commit' ? 'committed' : 'refunded';
-      if (result?.ok !== true || String(result?.status || '') !== expectedStatus) {
+      const resultOperationId = normalizeOperationId(result?.operationId);
+      if (
+        result?.ok !== true
+        || String(result?.status || '') !== expectedStatus
+        || resultOperationId !== operationId
+      ) {
         const error = new Error(String(result?.reason || 'analysis_usage_finalization_not_confirmed'));
         error.code = 'ANALYSIS_USAGE_FINALIZATION_NOT_CONFIRMED';
         throw error;
@@ -121,9 +153,8 @@ export function createAnalysisUsageCompensationRuntime({
         meta: {
           operationId,
           kind,
-          telegramId: Number(userId || reservation.userId || 0) || null,
-          usageDate: reservation.date || null,
-          entitlementId: Number(reservation.entitlementId || 0) || null,
+          usageDate: reservationDate || null,
+          entitlementId: entitlementId || null,
           error: redactOpsString(error?.message || error, 180),
         },
       })).catch(() => null);
@@ -157,8 +188,8 @@ export function createAnalysisUsageCompensationRuntime({
         throw error;
       }
 
-      const reconciled = Math.max(0, Number(result?.reconciled || 0));
-      const failed = Math.max(0, Number(result?.failed || 0));
+      const reconciled = nonNegativeInteger(result?.reconciled);
+      const failed = nonNegativeInteger(result?.failed);
       if (reconciled) bumpTelemetry?.('analysisUsageReconciled', reconciled);
       if (failed) {
         bumpTelemetry?.('analysisUsageReconciliationFailures', failed);
@@ -171,7 +202,7 @@ export function createAnalysisUsageCompensationRuntime({
           meta: {
             reconciled,
             failed,
-            pending: Math.max(0, Number(result?.pending || 0)),
+            pending: nonNegativeInteger(result?.pending),
           },
         })).catch(() => null);
       }
@@ -181,8 +212,8 @@ export function createAnalysisUsageCompensationRuntime({
         degraded: failed > 0,
         reconciled,
         failed,
-        pending: Math.max(0, Number(result?.pending || 0)),
-        cleaned: Math.max(0, Number(result?.cleaned || 0)),
+        pending: nonNegativeInteger(result?.pending),
+        cleaned: nonNegativeInteger(result?.cleaned),
       };
     } catch (error) {
       bumpTelemetry?.('analysisUsageReconciliationFailures');
