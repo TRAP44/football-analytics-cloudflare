@@ -51,6 +51,57 @@ test('paid capabilities enrich only when quota and runtime allow it',()=>{
   assert.equal(disabled.features.playerStats,false);
 });
 
+test('capabilities fail safely for malformed runtime, quota and budget values',()=>{
+  const malformed=createAppCapabilitiesRuntime({
+    memory:{provider:{plan:'PRO'}},
+    appVersion:'6.120.0-rc144',
+    minClientVersion:'5.8.0',
+    apiContractVersion:5,
+    releaseChannel:'rc144',
+    releaseCandidate:'RC144',
+    paidQuotaHealthy:()=> 'true',
+    providerPublicBudgetMode:()=>({mode:'normal',label:'Норма',liveRefreshSeconds:'NaN'}),
+    runtimeControlsSnapshot:()=>({
+      liveEnabled:'false',
+      expandedDataEnabled:'false',
+      maintenanceMode:'true',
+    }),
+    isSecurityLockdownControls:()=>false,
+    publicRuntimeControls:value=>({...value}),
+    currentReleaseIdentity:()=>({deploySha:'a'.repeat(40)}),
+    now:()=>new Date('2026-10-05T11:00:00.000Z'),
+  });
+  const caps=malformed.publicDataCapabilities();
+  assert.equal(caps.features.liveRefresh,false);
+  assert.equal(caps.features.playerStats,false);
+  assert.equal(caps.refreshSeconds,0);
+  assert.equal(malformed.appManifest({monetizationEnabled:'false'}).monetization,'paused');
+  assert.equal(malformed.appManifest({monetizationEnabled:'true'}).monetization,'paused');
+  assert.equal(malformed.appManifest({monetizationEnabled:false}).maintenance,false);
+});
+
+test('missing runtime object does not crash public capability or manifest generation',()=>{
+  const runtime=createAppCapabilitiesRuntime({
+    memory:{provider:{plan:'FREE'}},
+    appVersion:'6.120.0-rc144',
+    minClientVersion:'5.8.0',
+    apiContractVersion:5,
+    releaseChannel:'rc144',
+    releaseCandidate:'RC144',
+    paidQuotaHealthy:()=>true,
+    providerPublicBudgetMode:()=>null,
+    runtimeControlsSnapshot:()=>null,
+    isSecurityLockdownControls:()=>false,
+    publicRuntimeControls:value=>({...value}),
+    currentReleaseIdentity:()=>({deploySha:'a'.repeat(40)}),
+    now:()=>new Date('2026-10-05T11:00:00.000Z'),
+  });
+  assert.doesNotThrow(()=>runtime.publicDataCapabilities());
+  assert.equal(runtime.publicDataCapabilities().refreshSeconds,0);
+  assert.doesNotThrow(()=>runtime.appManifest());
+  assert.equal(runtime.appManifest().monetization,'paused');
+});
+
 test('security lockdown and maintenance remain explicit in the public capability contract',()=>{
   const lockdown=build({runtime:{securityLockdown:true,maintenanceMode:true,message:'lockdown'}}).publicDataCapabilities();
   assert.equal(lockdown.label,'Security Lockdown');
