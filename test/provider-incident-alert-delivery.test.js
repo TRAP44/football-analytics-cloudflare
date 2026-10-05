@@ -274,6 +274,74 @@ test('collecting breaks confirmation and two providers preserve diagnostic conte
   assert.deepEqual(new Set(multi.activeIncident.diagnostics.affectedProviders),new Set(['api-football','OpenLigaDB']));
 });
 
+test('alert destinations reject coercion and deduplicate slot and destination identity', () => {
+  const incident=alertIncident('pslo-destination-boundary');
+  const plan=planProviderIncidentAlert(
+    {activeIncident:incident,history:[incident]},
+    [],
+    {
+      destinations:[
+        {slot:0,destinationKey:'destination-key-0001'},
+        {slot:'0',destinationKey:'destination-key-0002'},
+        {slot:1,destinationKey:'destination-key-0001'},
+        {slot:true,destinationKey:'destination-key-0003'},
+        {slot:2,destinationKey:'destination-key-0004'},
+      ],
+    },
+  );
+  assert.equal(plan.action,'send');
+  assert.deepEqual(plan.targetSlots,[0,2]);
+});
+
+test('planner rejects malformed active/recovered incident identity', () => {
+  assert.deepEqual(
+    planProviderIncidentAlert(
+      {activeIncident:{active:true,state:'incident',highestState:'incident',incidentId:true}},
+      [],
+      {destinations:[{slot:0,destinationKey:'destination-key-0001'}]},
+    ),
+    {action:'none',reason:'incident_identity_unavailable'},
+  );
+
+  const recovered={
+    ...alertIncident('pslo-recovered-boundary'),
+    active:'false',
+    state:'recovered',
+  };
+  assert.equal(
+    planProviderIncidentAlert(
+      {activeIncident:null,history:[recovered]},
+      [],
+      {destinations:[{slot:0,destinationKey:'destination-key-0001'}]},
+    ).reason,
+    'no_incident',
+  );
+});
+
+test('planner uses newest ledger row and fails closed on malformed attempts', () => {
+  const incident=alertIncident('pslo-ledger-boundary');
+  const destinations=[{slot:0,destinationKey:'destination-key-0001'}];
+
+  const newest=planProviderIncidentAlert(
+    {activeIncident:incident,history:[incident]},
+    [
+      {...ledgerRow(incident.incidentId,'incident','sending',{lockedUntil:'2026-09-28T11:00:00Z'}),updated_at:'2026-09-28T10:10:00Z'},
+      {...ledgerRow(incident.incidentId,'incident','sent'),updated_at:'2026-09-28T10:20:00Z'},
+    ],
+    {nowMs:Date.parse('2026-09-28T10:30:00Z'),destinations},
+  );
+  assert.equal(newest.action,'none');
+  assert.equal(newest.reason,'incident_alert_deduplicated');
+
+  const malformed=planProviderIncidentAlert(
+    {activeIncident:incident,history:[incident]},
+    [{...ledgerRow(incident.incidentId,'incident','retry_pending'),attempts:true}],
+    {nowMs:Date.parse('2026-09-28T10:30:00Z'),destinations},
+  );
+  assert.equal(malformed.action,'none');
+  assert.equal(malformed.reason,'delivery_exhausted');
+});
+
 test('watch never sends an incident alert and a sent ledger row suppresses the duplicate', () => {
   const watchIncident={
     incidentId:'pslo-api-football-watch',
@@ -426,6 +494,45 @@ test('parallel executions allow exactly one owner and suppress duplicates', asyn
   assert.equal(states.filter(state => state === 'duplicate').length,2);
 });
 
+test('unconfirmed finalization fails closed after Telegram side effect', async () => {
+  let sends=0;
+  const result=await deliverProviderIncidentAlert({
+    plan:deliveryPlan('pslo-finalize-unconfirmed'),
+    adminTelegramIds:[101],
+    claimDelivery:async () => ({acquired:true,status:'sending',attempts:1}),
+    finalizeDelivery:async () => ({ok:false,reason:'write_not_confirmed'}),
+    sendMessage:async () => {
+      sends+=1;
+      return {ok:true,status:200,outcome:'sent'};
+    },
+  });
+  assert.equal(sends,1);
+  assert.equal(result.ok,false);
+  assert.equal(result.outcomes[0].state,'persistence_failure');
+  assert.equal(result.outcomes[0].deliveryState,'sent');
+  assert.equal(result.outcomes[0].reason,'write_not_confirmed');
+});
+
+test('delivery rejects coerced slots and chat IDs before persistence or Telegram side effects', async () => {
+  let claims=0;
+  let sends=0;
+  const malformedPlan=deliveryPlan('pslo-invalid-target');
+  malformedPlan.targetDeliveries=[{slot:true,destinationKey:'destination-key-0001'}];
+  const result=await deliverProviderIncidentAlert({
+    plan:malformedPlan,
+    adminTelegramIds:[101],
+    claimDelivery:async () => { claims+=1; return {acquired:true,status:'sending',attempts:1}; },
+    finalizeDelivery:async () => ({ok:true}),
+    sendMessage:async () => { sends+=1; return {ok:true,status:200}; },
+  });
+  assert.equal(claims,0);
+  assert.equal(sends,0);
+  assert.equal(result.outcomes[0].state,'terminal_failed');
+
+  assert.equal(await providerIncidentDestinationKey(true,'telegram-bot:123456789'),'');
+  assert.equal(await providerIncidentDestinationKey([123],'telegram-bot:123456789'),'');
+});
+
 test('unconfirmed claim result and rejected claim both fail closed without Telegram delivery', async () => {
   for (const claimDelivery of [
     async () => ({ok:false}),
@@ -465,6 +572,23 @@ test('rejected Telegram Promise is unknown, is finalized once and is never retri
   assert.equal(result.ok,false);
   assert.equal(result.outcomes[0].state,'unknown');
   assert.equal([...store.rows.values()][0].status,'unknown');
+});
+
+test('Telegram result classification requires strict success and bounds retry_after', () => {
+  const now=Date.parse('2026-09-28T10:30:00Z');
+  assert.equal(
+    classifyProviderIncidentTelegramResult({ok:'true',status:200,outcome:'sent'},now).state,
+    'terminal_failed',
+  );
+
+  const coerced=classifyProviderIncidentTelegramResult({ok:false,status:true,outcome:'unknown'},now);
+  assert.equal(coerced.state,'unknown');
+
+  const invalidRetry=classifyProviderIncidentTelegramResult({ok:false,status:429,retryAfter:true},now);
+  assert.equal(invalidRetry.retryAt,'2026-09-28T10:30:01.000Z');
+
+  const bounded=classifyProviderIncidentTelegramResult({ok:false,status:429,retryAfter:999999999},now);
+  assert.equal(bounded.retryAt,'2026-10-05T10:30:00.000Z');
 });
 
 test('Telegram 429, confirmed temporary failure and terminal failure have distinct states', () => {
