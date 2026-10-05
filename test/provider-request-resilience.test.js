@@ -40,6 +40,44 @@ test('secondary provider success returns JSON payload unchanged', async () => {
   assert.deepEqual(result, [{ id:1 }]);
 });
 
+test('secondary provider observability failures never break successful data delivery', async () => {
+  const api = createProviderRequestBoundary({
+    fetchWithTimeout: async () => new Response(JSON.stringify({ ok:true }), { status:200 }),
+    withSingleFlight: async (_key, factory) => await factory(),
+    sleepMs: async () => {},
+    observeProviderRequest: () => { throw new Error('telemetry offline'); },
+    recordOpsEvent: () => { throw new Error('ops offline'); },
+    now: () => 1000,
+  });
+  const result = await api.providerRequestJson('https://example.com/data', {}, {
+    provider:'OpenLigaDB',
+    operation:'standings',
+  });
+  assert.equal(result.ok,true);
+});
+
+test('secondary provider normalizes malformed retry configuration safely', async () => {
+  let calls=0;
+  const api = createProviderRequestBoundary({
+    fetchWithTimeout: async () => {
+      calls += 1;
+      if (calls === 1) throw new Error('temporary');
+      return new Response(JSON.stringify({ ok:true }), { status:200 });
+    },
+    withSingleFlight: async (_key, factory) => await factory(),
+    sleepMs: async () => {},
+    now: () => 1000,
+  });
+  const result=await api.providerRequestJson('https://example.com/data',{},{
+    provider:'OpenLigaDB',
+    operation:'standings',
+    retries:'invalid',
+  });
+  assert.equal(result.ok,true);
+  assert.equal(calls,2);
+  assert.equal(retryAfterSeconds(new Headers(), 'invalid', 1000),60);
+});
+
 test('secondary provider retries one network rejection and succeeds', async () => {
   let calls = 0;
   const { api, sleeps, counters } = runtime({
