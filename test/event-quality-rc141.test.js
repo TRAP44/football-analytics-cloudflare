@@ -35,6 +35,15 @@ test('RC141 deduplicates exact provider repeats before analytics', () => {
   assert.equal(eventsForTrustedAnalytics(rows,quality).length,1);
 });
 
+test('RC141 treats omitted extra time and explicit zero as the same event fingerprint', () => {
+  const a=ev('a',12,'home');
+  delete a.extra;
+  const b=ev('b',12,'home');
+  const quality=assessMatchEventQuality([a,b],{eventsMeta:trustedMeta,mode:'live',elapsed:20});
+  assert.equal(quality.duplicateCount,1);
+  assert.deepEqual(quality.displayEventIds,['a']);
+});
+
 test('RC141 rejects future/invalid minutes and excludes unknown sides from analytics', () => {
   assert.equal(inspectMatchEvent(ev('future',80,'home'),{mode:'live',elapsed:55}).future,true);
   const rows=[ev('future',80,'home'),ev('unknown',50,'','Card','Red Card'),ev('good',51,'away')];
