@@ -1,5 +1,6 @@
 export function createMatchCenterRenderModule(deps = {}) {
   const {
+    $,
     analyzeMatch,
     api,
     availabilityQualityHintHtml,
