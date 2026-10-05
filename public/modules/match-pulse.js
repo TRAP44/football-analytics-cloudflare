@@ -10,6 +10,12 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function percentClass(axis,value) {
+  const number=Number(value);
+  const safe=Number.isFinite(number) ? clamp(number,0,100) : 0;
+  return `pct-${axis}-${Math.round(safe)}`;
+}
+
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, char => ({
     '&': '&amp;',
@@ -249,8 +255,8 @@ export function renderMatchPulse(payload = {}) {
         <strong class="match-pulse-team away" title="${escapeHtml(pulse.awayName)}">${escapeHtml(pulse.awayName)}</strong>
       </div>
       <div class="match-pulse-track" aria-hidden="true">
-        <i style="width:${pulse.pressure.homeWidth.toFixed(2)}%"></i>
-        <b style="width:${pulse.pressure.awayWidth.toFixed(2)}%"></b>
+        <i class="${percentClass('w',pulse.pressure.homeWidth)}"></i>
+        <b class="${percentClass('w',pulse.pressure.awayWidth)}"></b>
       </div>
       <div class="match-pulse-pressure-values">
         <strong>${pulse.pressure.home}</strong>
