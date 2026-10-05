@@ -1,16 +1,22 @@
+import { pathToFileURL } from 'node:url';
+
 const SHA_RE = /^[0-9a-f]{40}$/i;
 const REPO_RE = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
-export function selectMergedPullRequest(pulls, baseBranch = 'main') {
+export function selectMergedPullRequest(pulls, baseBranch = 'main', repository = '') {
   if (!Array.isArray(pulls)) return null;
-  return pulls.find((pull) => (
-    pull
-    && pull.state === 'closed'
-    && typeof pull.merged_at === 'string'
-    && pull.merged_at.length > 0
-    && pull.base?.ref === baseBranch
-    && Number.isInteger(pull.number)
-  )) || null;
+  return pulls.find((pull) => {
+    const mergedAt=typeof pull?.merged_at === 'string' ? Date.parse(pull.merged_at) : NaN;
+    const baseRepository=String(pull?.base?.repo?.full_name || '');
+    return (
+      pull
+      && pull.state === 'closed'
+      && Number.isFinite(mergedAt)
+      && pull.base?.ref === baseBranch
+      && (!repository || baseRepository === repository)
+      && Number.isInteger(pull.number)
+    );
+  }) || null;
 }
 
 export async function fetchAssociatedPullRequests({
@@ -36,6 +42,7 @@ export async function fetchAssociatedPullRequests({
         Accept: 'application/vnd.github+json',
         Authorization: `Bearer ${token}`,
         'X-GitHub-Api-Version': '2022-11-28',
+        'User-Agent': 'MatchRadar-Main-PR-Provenance/1.0',
       },
       signal: AbortSignal.timeout(10_000),
     },
@@ -65,7 +72,7 @@ export async function verifyMainPrProvenance({
     token,
     fetchImpl,
   });
-  const mergedPull = selectMergedPullRequest(pulls, baseBranch);
+  const mergedPull = selectMergedPullRequest(pulls, baseBranch, repository);
   if (!mergedPull) {
     throw new Error(
       `production deploy blocked: commit ${sha} is not associated with a merged PR into ${baseBranch}`,
@@ -90,7 +97,7 @@ async function main() {
   }
 }
 
-const invokedPath = process.argv[1] ? new URL(`file://${process.argv[1]}`).href : '';
+const invokedPath = process.argv[1] ? pathToFileURL(process.argv[1]).href : '';
 if (import.meta.url === invokedPath) {
   await main();
 }
