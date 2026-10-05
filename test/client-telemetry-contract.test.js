@@ -13,6 +13,12 @@ import {
 const app = fs.readFileSync('public/app.js', 'utf8');
 const worker = fs.readFileSync('src/worker.js', 'utf8');
 
+test('client telemetry contract is consumed by production worker code', () => {
+  assert.match(worker, /import \{ CLIENT_TELEMETRY_EVENT_TYPE \} from '\.\/client-telemetry-contract\.js';/);
+  assert.match(worker, /eventType:\s*CLIENT_TELEMETRY_EVENT_TYPE/);
+  assert.doesNotMatch(worker, /eventType:\s*'client_telemetry'/);
+});
+
 function block(source, startNeedle, endNeedle) {
   const start = source.indexOf(startNeedle);
   const end = source.indexOf(endNeedle, start + startNeedle.length);
