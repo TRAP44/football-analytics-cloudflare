@@ -30,9 +30,34 @@ function sourceIsTrusted(meta = {}) {
   return ['fresh', 'cached'].includes(freshnessState) && provenanceState === 'verified';
 }
 
+function integerCandidate(value) {
+  if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+  if (typeof value !== 'string') return null;
+  const raw=value.trim();
+  if (!/^\d+$/.test(raw)) return null;
+  const n=Number(raw);
+  return Number.isSafeInteger(n) ? n : null;
+}
+
 function integerInRange(value, min, max) {
-  const n = Number(value);
-  return Number.isInteger(n) && n >= min && n <= max ? n : null;
+  const n = integerCandidate(value);
+  return n !== null && n >= min && n <= max ? n : null;
+}
+
+function positiveIdentifier(value) {
+  const n=integerCandidate(value);
+  return n !== null && n > 0 ? n : '';
+}
+
+function compactEventId(value) {
+  if (typeof value === 'string') return compactText(value);
+  if (typeof value === 'number' && Number.isSafeInteger(value)) return String(value);
+  return '';
+}
+
+function nonNegativeCount(value) {
+  const n=integerCandidate(value);
+  return n !== null && n >= 0 ? n : 0;
 }
 
 function eventFingerprint(event = {}) {
@@ -40,12 +65,12 @@ function eventFingerprint(event = {}) {
     integerInRange(event?.minute, 0, MAX_EVENT_MINUTE) ?? '',
     integerInRange(event?.extra, 0, MAX_EXTRA_MINUTE) ?? '',
     compactState(event?.side),
-    Number(event?.teamId || event?.team_id || 0) || '',
+    positiveIdentifier(event?.teamId ?? event?.team_id),
     normalizedText(event?.type),
     normalizedText(event?.detail),
-    Number(event?.playerId || event?.player_id || 0) || '',
+    positiveIdentifier(event?.playerId ?? event?.player_id),
     normalizedText(event?.playerName || event?.player),
-    Number(event?.assistPlayerId || event?.assist_player_id || 0) || '',
+    positiveIdentifier(event?.assistPlayerId ?? event?.assist_player_id),
     normalizedText(event?.assistPlayerName || event?.assist),
     normalizedText(event?.comments),
   ].join('|');
@@ -56,9 +81,10 @@ export function inspectMatchEvent(event = {}, { mode = 'live', elapsed = null } 
   const extra = integerInRange(event?.extra ?? 0, 0, MAX_EXTRA_MINUTE);
   const side = compactState(event?.side);
   const type = normalizedText(event?.type);
-  const liveElapsed = Number(elapsed);
-  const future = String(mode || '') === 'live'
-    && Number.isFinite(liveElapsed)
+  const normalizedMode = compactState(mode || 'live') || 'live';
+  const liveElapsed = integerInRange(elapsed, 0, MAX_EVENT_MINUTE);
+  const future = normalizedMode === 'live'
+    && liveElapsed !== null
     && liveElapsed > 0
     && minute !== null
     && minute > liveElapsed + LIVE_FUTURE_TOLERANCE;
@@ -76,7 +102,7 @@ export function inspectMatchEvent(event = {}, { mode = 'live', elapsed = null } 
   if (displayValid && analyticalType && !sideValid) reasons.push('side_unknown');
 
   return {
-    id:compactText(event?.id),
+    id:compactEventId(event?.id),
     minute,
     extra,
     side,
@@ -93,6 +119,7 @@ export function inspectMatchEvent(event = {}, { mode = 'live', elapsed = null } 
 
 export function assessMatchEventQuality(events = [], { eventsMeta = {}, mode = 'live', elapsed = null } = {}) {
   const rows = Array.isArray(events) ? events : [];
+  const normalizedMode = compactState(mode || 'live') || 'live';
   const sourceTrusted = sourceIsTrusted(eventsMeta);
   const seen = new Set();
   const displayEventIds = [];
@@ -110,7 +137,7 @@ export function assessMatchEventQuality(events = [], { eventsMeta = {}, mode = '
 
   for (let index = 0; index < rows.length; index += 1) {
     const event = rows[index] || {};
-    const inspected = inspectMatchEvent(event, { mode, elapsed });
+    const inspected = inspectMatchEvent(event, { mode:normalizedMode, elapsed });
     const eventId = inspected.id || `index:${index}`;
 
     if (!inspected.displayValid) {
@@ -175,7 +202,7 @@ export function assessMatchEventQuality(events = [], { eventsMeta = {}, mode = '
     state,
     label,
     reason,
-    mode:String(mode || 'live'),
+    mode:normalizedMode,
     observed,
     sourceTrusted,
     rawCount:rows.length,
@@ -206,15 +233,24 @@ export function assessMatchEventQuality(events = [], { eventsMeta = {}, mode = '
 }
 
 function selectEventIndices(events = [], indices = []) {
-  const allowed = new Set(Array.isArray(indices) ? indices.map(Number) : []);
-  return (Array.isArray(events) ? events : []).filter((_, index) => allowed.has(index));
+  const rows=Array.isArray(events) ? events : [];
+  const allowed = new Set(
+    (Array.isArray(indices) ? indices : [])
+      .map(integerCandidate)
+      .filter(index => index !== null && index >= 0 && index < rows.length),
+  );
+  return rows.filter((_, index) => allowed.has(index));
 }
 
 function selectEventIdsLegacy(events = [], ids = []) {
-  const allowed = new Set(Array.isArray(ids) ? ids.map(String) : []);
+  const allowed = new Set(
+    (Array.isArray(ids) ? ids : [])
+      .map(compactEventId)
+      .filter(Boolean),
+  );
   const emitted = new Set();
   return (Array.isArray(events) ? events : []).filter((event, index) => {
-    const id = compactText(event?.id) || `index:${index}`;
+    const id = compactEventId(event?.id) || `index:${index}`;
     if (!allowed.has(id) || emitted.has(id)) return false;
     emitted.add(id);
     return true;
@@ -243,8 +279,8 @@ export function annotateEventReliability(meta = {}, quality = {}) {
     ...meta,
     semanticState:String(quality?.state || 'unavailable'),
     eventQuality:quality,
-    rawCount:Number(quality?.rawCount || 0),
-    count:Number(quality?.displayCount || 0),
+    rawCount:nonNegativeCount(quality?.rawCount),
+    count:nonNegativeCount(quality?.displayCount),
     partial:Boolean(quality?.state === 'sanitized'),
   };
 
