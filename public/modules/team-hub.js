@@ -1,5 +1,6 @@
 export function createTeamHubModule(deps = {}) {
   const {
+    $,
     activeViewId,
     analyzeMatch,
     api,
