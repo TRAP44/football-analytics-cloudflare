@@ -6,7 +6,8 @@ import {
 } from '../src/post-deploy-regression-response.js';
 
 const sha='a'.repeat(40);
-const lifecycle=(state,at)=>({
+const lifecycle=(state,at,id=101)=>({
+  id,
   created_at:at,
   source:'release_regression',
   event_type:'post_deploy_regression',
@@ -19,6 +20,72 @@ const response=(state,at)=>({
   event_type:'incident_response',
   code:`POST_DEPLOY_REGRESSION_${state.toUpperCase()}`,
   metadata:{deploySha:sha,responseState:state},
+});
+
+test('response state rejects malformed deploy identity and malformed history containers',()=>{
+  const malformed=summarizePostDeployRegressionResponse({},sha);
+  assert.equal(malformed.available,false);
+  assert.equal(malformed.reason,'no_incident');
+
+  const invalidSha=summarizePostDeployRegressionResponse([], 'not-a-sha');
+  assert.deepEqual(invalidSha,{
+    available:false,
+    reason:'missing_deploy_sha',
+    incidentId:null,
+    state:'unavailable',
+    nextState:null,
+  });
+});
+
+test('malformed timestamps and out-of-order response rows cannot advance incident response state',()=>{
+  const history=[
+    lifecycle('incident','2026-09-29T15:00:00Z',201),
+    response('resolved','2026-09-29T15:01:00Z'),
+    response('investigating','not-a-date'),
+    response('acknowledged','2026-09-29T15:05:00Z'),
+    response('resolved','2026-09-29T15:06:00Z'),
+  ];
+
+  const status=summarizePostDeployRegressionResponse(history,sha);
+  assert.equal(status.state,'acknowledged');
+  assert.equal(status.nextState,'investigating');
+  assert.deepEqual(status.history.map(item=>item.state),['acknowledged']);
+  assert.equal(status.incidentEpisodeKey,'event-201');
+});
+
+test('a new incident episode on the same deploy resets manual response state and idempotency key',()=>{
+  const history=[
+    lifecycle('incident','2026-09-29T15:00:00Z',301),
+    response('acknowledged','2026-09-29T15:02:00Z'),
+    response('investigating','2026-09-29T15:03:00Z'),
+    lifecycle('recovered','2026-09-29T15:10:00Z',302),
+    response('resolved','2026-09-29T15:12:00Z'),
+    lifecycle('watch','2026-09-29T15:20:00Z',303),
+    lifecycle('incident','2026-09-29T15:30:00Z',304),
+  ];
+
+  const status=summarizePostDeployRegressionResponse(history,sha);
+  assert.equal(status.state,'new');
+  assert.equal(status.nextState,'acknowledged');
+  assert.equal(status.incidentEpisodeKey,'event-304');
+  assert.deepEqual(status.history,[]);
+
+  const plan=planPostDeployRegressionResponseTransition(history,sha,'acknowledged');
+  assert.equal(plan.action,'record');
+  assert.equal(plan.transitionKey,`release-regression-response:${sha}:event-304:acknowledged`);
+});
+
+test('response rows with an explicit different incident episode key are ignored',()=>{
+  const history=[
+    lifecycle('incident','2026-09-29T15:00:00Z',401),
+    {
+      ...response('acknowledged','2026-09-29T15:05:00Z'),
+      metadata:{deploySha:sha,responseState:'acknowledged',incidentEpisodeKey:'event-999'},
+    },
+  ];
+  const status=summarizePostDeployRegressionResponse(history,sha);
+  assert.equal(status.state,'new');
+  assert.equal(status.nextState,'acknowledged');
 });
 
 test('no regression incident cannot be acknowledged',()=>{
@@ -64,7 +131,8 @@ test('RECOVERED unlocks one RESOLVED transition',()=>{
   const plan=planPostDeployRegressionResponseTransition(history,sha,'resolved');
   assert.equal(plan.action,'record');
   assert.equal(plan.code,'POST_DEPLOY_REGRESSION_RESOLVED');
-  assert.equal(plan.transitionKey,`release-regression-response:${sha}:resolved`);
+  assert.equal(plan.transitionKey,`release-regression-response:${sha}:event-101:resolved`);
+  assert.equal(plan.meta.incidentEpisodeKey,'event-101');
 });
 
 test('response transitions are idempotent and deployment scoped',()=>{
