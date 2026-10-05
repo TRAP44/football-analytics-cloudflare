@@ -77,34 +77,39 @@ export function assessFeatureFreshness(meta = {}, {
   const fetchedAt = fetchedAtMs !== null ? String(meta.fetchedAt) : null;
   const anchorMs = sourceUpdatedAtMs ?? fetchedAtMs;
   const nowMs = Number(now);
-  const futureSkewSeconds = anchorMs !== null && Number.isFinite(nowMs) && anchorMs > nowMs
+  const clockValid = Number.isFinite(nowMs);
+  const futureSkewSeconds = anchorMs !== null && clockValid && anchorMs > nowMs
     ? Math.ceil((anchorMs - nowMs) / 1000)
     : 0;
-  const futureTimestamp = futureSkewSeconds > FUTURE_TIMESTAMP_TOLERANCE_SECONDS;
+  const futureTimestamp = clockValid && futureSkewSeconds > FUTURE_TIMESTAMP_TOLERANCE_SECONDS;
   const timestampRequired = source === 'embedded';
   const timestampMissing = timestampRequired && anchorMs === null;
 
-  const computedAge = anchorMs === null
-    ? boundedAgeSeconds(meta?.ageSeconds)
-    : futureTimestamp
-      ? null
-      : Math.max(0, Math.floor((nowMs - anchorMs) / 1000));
+  const computedAge = !clockValid
+    ? null
+    : anchorMs === null
+      ? boundedAgeSeconds(meta?.ageSeconds)
+      : futureTimestamp
+        ? null
+        : Math.max(0, Math.floor((nowMs - anchorMs) / 1000));
 
   const ttlPolicy = policyTtlState(meta, { feature, mode });
   const limit = ttlPolicy.limit;
   const ageExpired = computedAge !== null && computedAge > limit;
-  const explicitStale = forceStale
+  const explicitStale = forceStale === true
     || ['stale','stale_data'].includes(transportState)
     || freshnessHint === 'stale'
     || ['stale','stale-cache'].includes(source);
   const stale = explicitStale || ageExpired;
-  const freshnessKnown = stale
+  const freshnessKnown = clockValid && (
+    stale
     || (!timestampMissing && !futureTimestamp && computedAge !== null)
-    || (!timestampRequired && ['fresh','cached'].includes(freshnessHint));
+    || (!timestampRequired && ['fresh','cached'].includes(freshnessHint))
+  );
 
-  const originalAvailable = Boolean(meta?.available);
-  const originalUsable = meta?.usable === undefined ? originalAvailable : Boolean(meta.usable);
-  const freshnessPolicyValid = !futureTimestamp && !timestampMissing && !ttlPolicy.excessive;
+  const originalAvailable = meta?.available === true;
+  const originalUsable = meta?.usable === undefined ? originalAvailable : meta.usable === true;
+  const freshnessPolicyValid = clockValid && !futureTimestamp && !timestampMissing && !ttlPolicy.excessive;
   const confidenceBearing = originalAvailable
     && originalUsable
     && provenanceKnown
@@ -114,7 +119,10 @@ export function assessFeatureFreshness(meta = {}, {
 
   let state = String(meta?.state || 'unknown');
   let freshnessReason = '';
-  if (originalAvailable && futureTimestamp) {
+  if (originalAvailable && !clockValid) {
+    state = 'invalid_freshness';
+    freshnessReason = 'invalid_clock';
+  } else if (originalAvailable && futureTimestamp) {
     state = 'invalid_freshness';
     freshnessReason = 'future_timestamp';
   } else if (originalAvailable && !provenanceKnown) {
@@ -141,8 +149,8 @@ export function assessFeatureFreshness(meta = {}, {
     state,
     available: confidenceBearing ? originalAvailable : false,
     usable: confidenceBearing ? originalUsable : false,
-    observed: Boolean(meta?.observed ?? originalAvailable),
-    degraded: Boolean(meta?.degraded) || (originalAvailable && !confidenceBearing),
+    observed: meta?.observed === undefined ? originalAvailable : meta.observed === true,
+    degraded: meta?.degraded === true || (originalAvailable && !confidenceBearing),
     sourceUpdatedAt,
     fetchedAt,
     ageSeconds: computedAge,
@@ -153,6 +161,7 @@ export function assessFeatureFreshness(meta = {}, {
     confidenceBearing,
     freshnessReason,
     reason: freshnessReason || String(meta?.reason || ''),
+    clockValid,
     futureTimestamp,
     futureSkewSeconds,
     timestampRequired,
@@ -167,8 +176,11 @@ export function applyFeatureFreshness(meta = {}, options = {}) {
 }
 
 export function applyFeatureFreshnessMap(featureMeta = {}, options = {}) {
+  const source = featureMeta && typeof featureMeta === 'object' && !Array.isArray(featureMeta)
+    ? featureMeta
+    : {};
   return Object.fromEntries(
-    Object.entries(featureMeta || {}).map(([feature, meta]) => [
+    Object.entries(source).map(([feature, meta]) => [
       feature,
       assessFeatureFreshness(meta || {}, { ...options, feature }),
     ]),
