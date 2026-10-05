@@ -63,7 +63,7 @@ function nonNegativeCount(value) {
 function eventFingerprint(event = {}) {
   return [
     integerInRange(event?.minute, 0, MAX_EVENT_MINUTE) ?? '',
-    integerInRange(event?.extra, 0, MAX_EXTRA_MINUTE) ?? '',
+    integerInRange(event?.extra ?? 0, 0, MAX_EXTRA_MINUTE) ?? '',
     compactState(event?.side),
     positiveIdentifier(event?.teamId ?? event?.team_id),
     normalizedText(event?.type),
