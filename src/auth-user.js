@@ -2,6 +2,11 @@ import { MAX_TELEGRAM_INIT_DATA_LENGTH } from './security-gate.js';
 import { usesStrictTelegramFreshness } from './security-route-registry.js';
 
 
+function positiveTelegramId(value) {
+  const id = Number(value);
+  return Number.isSafeInteger(id) && id > 0 ? id : 0;
+}
+
 export function isLocalDevelopmentRequest(requestUrl) {
   const hostname = String(requestUrl?.hostname || '').toLowerCase();
   return hostname === 'localhost'
@@ -29,11 +34,20 @@ export function createUserAuthRuntime({
     const adminSensitive = usesStrictTelegramFreshness(requestUrl.pathname);
     const mutation = !['GET','HEAD','OPTIONS'].includes(String(request.method || 'GET').toUpperCase());
     const initDataMaxAgeSeconds = adminSensitive ? 15 * 60 : mutation ? 2 * 60 * 60 : 24 * 60 * 60;
-    let user = await validateTelegramInitData(initData, cfg.botToken, initDataMaxAgeSeconds);
-    const telegramValidated = Boolean(user);
-    if (!user && cfg.devMode && isLocalDevelopmentRequest(requestUrl)) {
+    let user = await validateTelegramInitData(initData, cfg?.botToken, initDataMaxAgeSeconds);
+    const validatedTelegramId = positiveTelegramId(user?.id);
+    const telegramValidated = Boolean(user && validatedTelegramId);
+    if (user && !validatedTelegramId) user = null;
+
+    const localDevelopmentId = positiveTelegramId(developmentTelegramId);
+    if (
+      !user
+      && cfg?.devMode === true
+      && localDevelopmentId
+      && isLocalDevelopmentRequest(requestUrl)
+    ) {
       user = {
-        id: developmentTelegramId,
+        id: localDevelopmentId,
         username: 'dev_user',
         first_name: 'DEV',
         last_name: 'User',
@@ -41,6 +55,7 @@ export function createUserAuthRuntime({
       };
     }
     if (!user) return null;
+    user.id = positiveTelegramId(user.id);
     user.__telegramValidated = telegramValidated;
     try {
       await upsertUser(user, cfg);
@@ -48,16 +63,21 @@ export function createUserAuthRuntime({
       // Authentication is already cryptographically validated. A transient DB
       // write problem must not take public read-only football screens offline.
       bumpTelemetry('supabaseErrors');
-      recordOpsEvent(cfg, {
-        severity: 'warning', source: 'auth', eventType: 'user_sync', code: 'USER_SYNC_DEGRADED',
-        message: error?.message || error, meta: { userSync: 'degraded' },
-      }).catch(() => {});
+      try {
+        await Promise.resolve(recordOpsEvent?.(cfg, {
+          severity: 'warning', source: 'auth', eventType: 'user_sync', code: 'USER_SYNC_DEGRADED',
+          message: error?.message || error, meta: { userSync: 'degraded' },
+        }));
+      } catch {
+        // Authentication remains valid even if operational logging is unavailable.
+      }
     }
     return user;
   }
 
   async function upsertUser(user, cfg) {
-    const userId = Number(user.id);
+    const userId = positiveTelegramId(user?.id);
+    if (!userId) throw new TypeError('valid Telegram user id is required');
     const record = {
       telegram_id: userId,
       username: user.username || null,
@@ -90,10 +110,12 @@ export function createUserAuthRuntime({
   }
 
   async function getUserRecord(userId, cfg) {
+    const normalizedUserId = positiveTelegramId(userId);
+    if (!normalizedUserId) return null;
     if (hasSupabase(cfg)) {
-      return await supaSelectOne(cfg, 'users', { telegram_id: `eq.${Number(userId)}` });
+      return await supaSelectOne(cfg, 'users', { telegram_id: `eq.${normalizedUserId}` });
     }
-    return memory.users.get(Number(userId)) || { telegram_id: Number(userId), plan: 'FREE' };
+    return memory.users.get(normalizedUserId) || { telegram_id: normalizedUserId, plan: 'FREE' };
   }
 
   return { getRequestUser, upsertUser, getUserRecord };
