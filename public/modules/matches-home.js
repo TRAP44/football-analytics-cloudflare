@@ -1,5 +1,6 @@
 export function createMatchesHomeModule(deps = {}) {
   const {
+    $,
     MATCH_SNAPSHOT_MAX_AGE_MS,
     MATCH_SNAPSHOT_PREFIX,
     MATCH_WATCHLIST_KEY,
