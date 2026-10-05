@@ -34,6 +34,21 @@ test('Phase 2 cache boundary preserves L1 hit and stale behavior',async()=>{
   assert.ok(stale.telemetry.includes('staleCacheHits'));
 });
 
+test('Phase 2 cache boundary preserves valid falsy payloads',async()=>{
+  for (const payload of [false,0,'']) {
+    const rt=runtime();
+    rt.memory.cache.set('falsy',{payload,expiresAt:Date.now()+60_000});
+    assert.equal(await rt.api.getCache('falsy',{}),payload);
+  }
+});
+
+test('Phase 2 cache boundary discards malformed L1 expiry without throwing',async()=>{
+  const rt=runtime();
+  rt.memory.cache.set('broken',{payload:{bad:true},expiresAt:NaN});
+  assert.equal(await rt.api.getCache('broken',{}),null);
+  assert.equal(rt.memory.cache.has('broken'),false);
+});
+
 test('Phase 2 cache boundary keeps Supabase as shared cache with L1 hydration',async()=>{
   const row={payload:{shared:true},expires_at:new Date(Date.now()+60_000).toISOString()};
   const rt=runtime({
@@ -55,6 +70,40 @@ test('Phase 2 cache boundary keeps read failures fail-soft to L1',async()=>{
   assert.equal(entry.expired,true);
   assert.deepEqual(entry.payload,{ok:'l1'});
   assert.ok(rt.telemetry.includes('supabaseErrors'));
+});
+
+test('Phase 2 cache boundary bounds malformed TTL and fixture ids safely',async()=>{
+  const writes=[];
+  const rt=runtime({
+    hasSupabase:()=>true,
+    supaUpsert:async(_cfg,_table,row)=>{writes.push(row);},
+  });
+  await rt.api.setCache('bad-ttl','not-an-id',{ok:true},{cacheMinutes:'NaN'},'Infinity');
+  const local=rt.memory.cache.get('bad-ttl');
+  const ttlMs=local.expiresAt-Date.now();
+  assert.ok(ttlMs>9*60_000 && ttlMs<=10*60_000+1000);
+  assert.equal(writes[0].fixture_id,null);
+
+  await rt.api.setCache('huge-ttl',1,{ok:true},{cacheMinutes:20},999999);
+  const hugeTtl=rt.memory.cache.get('huge-ttl').expiresAt-Date.now();
+  assert.ok(hugeTtl<=24*60*60_000+1000);
+});
+
+test('Phase 2 cache boundary keeps read/write fallback alive when ops logging throws synchronously',async()=>{
+  const read=runtime({
+    hasSupabase:()=>true,
+    supaSelectOne:async()=>{throw new Error('db down');},
+    recordOpsEvent:()=>{throw new Error('ops down');},
+  });
+  read.memory.cache.set('fallback',{payload:{ok:true},expiresAt:Date.now()-1000});
+  await assert.doesNotReject(()=>read.api.getCacheEntry('fallback',{},true));
+
+  const write=runtime({
+    hasSupabase:()=>true,
+    supaUpsert:async()=>{throw new Error('db down');},
+    recordOpsEvent:()=>{throw new Error('ops down');},
+  });
+  await assert.doesNotReject(()=>write.api.setCache('x',1,{ok:true},{cacheMinutes:5},5));
 });
 
 test('Phase 2 cache boundary persists provenance without making write failures fatal',async()=>{
