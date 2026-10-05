@@ -1,7 +1,12 @@
 import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { cloudflareVersionIdValid, RELEASE_IDENTITY_CODES } from '../src/release-identity.js';
+import {
+  cloudflareVersionIdValid,
+  RELEASE_IDENTITY_CODES,
+  validateReleaseIdentity,
+} from '../src/release-identity.js';
 
+const RELEASE_VERSION_RE = /^[0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+$/i;
 const RELEASE_MESSAGE_RE = /^release=([0-9]+\.[0-9]+\.[0-9]+-rc[0-9]+) sha=([0-9a-f]{40})$/i;
 const SHA_RE = /^[0-9a-f]{40}$/i;
 
@@ -10,6 +15,9 @@ function legacyAllowed(value) {
 }
 
 export function verifyRollbackTarget(version, expectedVersion, expectedId, allowLegacyUnverified = false, legacyConfirmation = '', expectedSha = '') {
+  if (!RELEASE_VERSION_RE.test(String(expectedVersion || ''))) {
+    throw new Error('Expected rollback release must use <version>-rc<number> format.');
+  }
   if (!version || typeof version !== 'object' || Array.isArray(version)) {
     throw new Error('Cloudflare rollback target metadata must be a JSON object.');
   }
@@ -25,6 +33,19 @@ export function verifyRollbackTarget(version, expectedVersion, expectedId, allow
 
   if (match) {
     const [, releaseVersion, deploySha] = match;
+    const rcNumber = /-rc([0-9]+)$/i.exec(releaseVersion)?.[1] || '';
+    const actualTag = String(version.annotations?.['workers/tag'] || '').trim();
+    const validation = validateReleaseIdentity({
+      appVersion: releaseVersion,
+      releaseCandidate: `RC${rcNumber}`,
+      deploySha,
+      cloudflareVersionId: version.id,
+      cloudflareVersionTag: actualTag,
+      cloudflareVersionTimestamp: version.metadata?.created_on,
+    });
+    if (!validation.ok) {
+      throw new Error(`Rollback target release identity validation failed: ${validation.code}.`);
+    }
     if (releaseVersion !== expectedVersion) {
       throw new Error(`Rollback target release identity mismatch: expected ${expectedVersion}, metadata reports ${releaseVersion}.`);
     }
@@ -59,7 +80,7 @@ function main() {
   const [metadataPath, expectedVersion, expectedId, allowLegacyUnverified = 'false', legacyConfirmation = '', expectedSha = ''] = process.argv.slice(2);
   if (!metadataPath || !expectedVersion || !expectedId) {
     throw new Error(
-      'Usage: node scripts/verify-rollback-target.js <metadata-json> <expected-version> <version-id> [allow-legacy-unverified] [legacy-confirmation]'
+      'Usage: node scripts/verify-rollback-target.js <metadata-json> <expected-version> <version-id> [allow-legacy-unverified] [legacy-confirmation] [expected-sha]'
     );
   }
 
