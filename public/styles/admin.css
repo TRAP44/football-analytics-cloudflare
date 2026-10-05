@@ -1,4 +1,4 @@
-/* Phase 3 admin-only presentation boundary. Authorization remains server-side. */
+/* Admin-only presentation boundary. Authorization remains server-side. */
 .admin-zone-heading {
   display: grid;
   gap: 5px;
