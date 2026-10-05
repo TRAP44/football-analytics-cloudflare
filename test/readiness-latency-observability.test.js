@@ -41,20 +41,15 @@ test('readiness uses a lightweight confirmed Supabase probe while diagnostics ke
 });
 
 
-test('readiness coalesces only concurrent checks without caching completed results', () => {
-  assert.match(worker,/let readinessSnapshotInFlight=null/);
-  assert.match(worker,/async function computeReadinessSnapshot\(cfg\)/);
-  const start=worker.indexOf('async function readinessSnapshot(cfg)');
-  const end=worker.indexOf('const TELEGRAM_WEBHOOK_DEPS',start);
-  assert.ok(start>=0 && end>start);
-  const block=worker.slice(start,end);
-  assert.match(block,/if \(readinessSnapshotInFlight\) return await readinessSnapshotInFlight/);
-  assert.match(block,/const task=computeReadinessSnapshot\(cfg\)/);
-  assert.match(block,/readinessSnapshotInFlight=task/);
-  assert.match(block,/if \(readinessSnapshotInFlight===task\) readinessSnapshotInFlight=null/);
-  assert.doesNotMatch(block,/setTimeout|Date\.now\(\).*ttl|cached/);
+test('public readiness adds a bounded completed-result cache without weakening internal readiness checks', () => {
+  const health=fs.readFileSync('src/public-health.js','utf8');
+  assert.match(worker,/const publicHealthRuntime=createPublicHealthRuntime/);
+  assert.match(worker,/computeReadiness:computeReadinessSnapshot/);
+  assert.match(health,/PUBLIC_READINESS_CACHE_MS = 15_000/);
+  assert.match(health,/if \(inFlight\) return await inFlight/);
+  assert.match(health,/current-Number\(cached\.at \|\| 0\) < Math\.max/);
+  assert.match(health,/sanitizePublicReadiness/);
 });
-
 
 test('recent Supabase auth failure readiness read filters candidates server-side without weakening local classification', () => {
   const start=worker.indexOf('async function readRecentSupabaseAuthFailures');
