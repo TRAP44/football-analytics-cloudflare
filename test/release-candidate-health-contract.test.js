@@ -8,7 +8,9 @@ test('public status router delegates health routes without exposing internal rea
   const publicHealthRuntime={
     liveSnapshot:()=>({ok:true,status:'alive',version:'6.120.0-rc144',releaseCandidate:'RC144'}),
     readinessSnapshot:async()=>({ok:true,status:'ready',version:'6.120.0-rc144',releaseCandidate:'RC144'}),
-    healthSnapshot:async()=>({ok:true,status:'ready',version:'6.120.0-rc144',releaseCandidate:'RC144',readiness:{ok:true,status:'ready'}}),
+    publicHealthSnapshot:async()=>({ok:true}),
+    detailedHealthSnapshot:async()=>({ok:true,status:'ready',version:'6.120.0-rc144',releaseCandidate:'RC144',deployment:{deploySha:'a'.repeat(40)}}),
+    isProbeAuthorized:(request,cfg)=>request.headers?.get?.('x-health-token')===cfg.healthProbeToken,
   };
   const router=createPublicStatusRouter({
     publicStatusRuntime:{serviceStatus:async()=>({ok:true,status:'operational'})},
@@ -22,12 +24,16 @@ test('public status router delegates health routes without exposing internal rea
 
   const live=await router.handle({method:'GET'},{pathname:'/health/live'},{});
   const ready=await router.handle({method:'GET'},{pathname:'/health/ready'},{});
-  const health=await router.handle({method:'GET'},{pathname:'/health'},{});
-  calls.push(live,ready,health);
+  const health=await router.handle(new Request('https://example.test/health'),{pathname:'/health'},{healthProbeToken:'secret'});
+  const detailed=await router.handle(new Request('https://example.test/health',{headers:{'x-health-token':'secret'}}),{pathname:'/health'},{healthProbeToken:'secret'});
+  calls.push(live,ready,health,detailed);
 
-  assert.deepEqual(calls.map(row=>row.status),[200,200,200]);
+  assert.deepEqual(calls.map(row=>row.status),[200,200,200,200]);
   assert.equal(live.headers['cache-control'],'no-store');
   assert.equal(ready.headers['cache-control'],'no-store');
+  assert.deepEqual(health.body,{ok:true});
+  assert.equal('deployment' in health.body,false);
+  assert.ok(detailed.body.deployment);
   assert.equal('deployment' in ready.body,false);
   assert.equal(await router.handle({method:'GET'},{pathname:'/unknown'},{}),null);
 });
