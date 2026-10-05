@@ -1,8 +1,34 @@
 const MAX_DELIVERY_ATTEMPTS=3;
+const DEPLOY_SHA_RE=/^[0-9a-f]{40}$/i;
+const LIFECYCLE_STATES=new Set(['watch','incident','recovered']);
+
+function numericCandidate(value){
+  if(typeof value==='number') return Number.isFinite(value)?value:null;
+  if(typeof value!=='string') return null;
+  const raw=value.trim();
+  if(!/^-?\d+(?:\.\d+)?$/.test(raw)) return null;
+  const number=Number(raw);
+  return Number.isFinite(number)?number:null;
+}
+
+function nonNegativeInteger(value,fallback=0){
+  const number=numericCandidate(value);
+  return Number.isSafeInteger(number)&&number>=0?number:fallback;
+}
+
+function positiveInteger(value,fallback=0){
+  const number=numericCandidate(value);
+  return Number.isSafeInteger(number)&&number>0?number:fallback;
+}
 
 function finite(value,fallback=0){
-  const n=Number(value);
-  return Number.isFinite(n)?n:fallback;
+  const n=numericCandidate(value);
+  return n===null?fallback:n;
+}
+
+function deploySha(value=''){
+  const sha=typeof value==='string'?value.trim().toLowerCase():'';
+  return DEPLOY_SHA_RE.test(sha)?sha:'';
 }
 
 function iso(value){
@@ -11,43 +37,65 @@ function iso(value){
 }
 
 function destinations(items=[]){
-  return (Array.isArray(items)?items:[])
-    .map((item,index)=>({
-      slot:Number.isInteger(Number(item?.slot))?Number(item.slot):index,
-      destinationKey:String(item?.destinationKey||item?.destination_key||'').trim(),
-    }))
-    .filter(item=>item.slot>=0&&item.destinationKey);
+  const normalized=[];
+  const seenSlots=new Set();
+  const seenKeys=new Set();
+  for(const [index,item] of (Array.isArray(items)?items:[]).entries()){
+    const rawSlot=item?.slot;
+    const slot=rawSlot===undefined||rawSlot===null||rawSlot===''
+      ? index
+      : nonNegativeInteger(rawSlot,-1);
+    const destinationKey=typeof (item?.destinationKey??item?.destination_key)==='string'
+      ? String(item.destinationKey??item.destination_key).trim()
+      : '';
+    if(slot<0||!destinationKey||destinationKey.length>180||seenSlots.has(slot)||seenKeys.has(destinationKey)) continue;
+    seenSlots.add(slot);
+    seenKeys.add(destinationKey);
+    normalized.push({slot,destinationKey});
+  }
+  return normalized;
 }
 
-function lifecycleRows(items=[],deploySha=''){
-  const sha=String(deploySha||'').toLowerCase();
+function lifecycleRows(items=[],deployShaValue=''){
+  const sha=deploySha(deployShaValue);
+  if(!sha) return [];
   return (Array.isArray(items)?items:[])
     .filter(row=>String(row?.source||'')==='release_regression')
-    .filter(row=>String(row?.event_type||'')==='post_deploy_regression')
-    .filter(row=>String(row?.metadata?.deploySha||'').toLowerCase()===sha)
+    .filter(row=>String(row?.event_type||row?.eventType||'')==='post_deploy_regression')
+    .filter(row=>deploySha(row?.metadata?.deploySha)===sha)
     .map(row=>({
       id:row?.id??null,
-      createdAt:iso(row?.created_at),
-      state:String(row?.metadata?.lifecycleState||''),
-      windowMinutes:Number(row?.metadata?.windowMinutes||0),
-      signalCodes:Array.isArray(row?.metadata?.signalCodes)?row.metadata.signalCodes.map(String):[],
-      releaseCandidate:String(row?.metadata?.releaseCandidate||''),
-      appVersion:String(row?.metadata?.appVersion||''),
+      createdAt:iso(row?.created_at??row?.createdAt),
+      state:String(row?.metadata?.lifecycleState||'').trim().toLowerCase(),
+      windowMinutes:positiveInteger(row?.metadata?.windowMinutes),
+      signalCodes:Array.isArray(row?.metadata?.signalCodes)
+        ? [...new Set(row.metadata.signalCodes.filter(code=>typeof code==='string').map(code=>code.trim()).filter(Boolean))].slice(0,50)
+        : [],
+      releaseCandidate:typeof row?.metadata?.releaseCandidate==='string'?row.metadata.releaseCandidate.trim().slice(0,80):'',
+      appVersion:typeof row?.metadata?.appVersion==='string'?row.metadata.appVersion.trim().slice(0,80):'',
       deploySha:sha,
     }))
-    .sort((a,b)=>Date.parse(a.createdAt||0)-Date.parse(b.createdAt||0));
+    .filter(row=>row.createdAt&&LIFECYCLE_STATES.has(row.state))
+    .sort((a,b)=>Date.parse(a.createdAt)-Date.parse(b.createdAt));
 }
 
-function plannedLifecycleRow(plan={},deploySha='',nowMs=Date.now()){
+function plannedLifecycleRow(plan={},deployShaValue='',nowMs=Date.now()){
   if(plan?.action!=='record') return null;
-  const sha=String(deploySha||'').toLowerCase();
-  if(String(plan?.meta?.deploySha||'').toLowerCase()!==sha) return null;
+  const sha=deploySha(deployShaValue);
+  const plannedSha=deploySha(plan?.meta?.deploySha);
+  const state=String(plan?.meta?.lifecycleState||'').trim().toLowerCase();
+  const timestamp=numericCandidate(nowMs);
+  if(!sha||plannedSha!==sha||!LIFECYCLE_STATES.has(state)||timestamp===null) return null;
+  const createdAt=iso(timestamp);
+  if(!createdAt) return null;
   return {
     id:null,
-    createdAt:new Date(Number(nowMs)).toISOString(),
-    state:String(plan?.meta?.lifecycleState||''),
-    windowMinutes:Number(plan?.meta?.windowMinutes||0),
-    signalCodes:Array.isArray(plan?.meta?.signalCodes)?plan.meta.signalCodes.map(String):[],
+    createdAt,
+    state,
+    windowMinutes:positiveInteger(plan?.meta?.windowMinutes),
+    signalCodes:Array.isArray(plan?.meta?.signalCodes)
+      ? [...new Set(plan.meta.signalCodes.filter(code=>typeof code==='string').map(code=>code.trim()).filter(Boolean))].slice(0,50)
+      : [],
     releaseCandidate:'',
     appVersion:'',
     deploySha:sha,
@@ -56,18 +104,27 @@ function plannedLifecycleRow(plan={},deploySha='',nowMs=Date.now()){
 }
 
 function ledgerRows(rows=[],incidentId=''){
+  const id=String(incidentId||'');
   return (Array.isArray(rows)?rows:[])
-    .filter(row=>String(row?.incident_id||row?.incidentId||'')===String(incidentId||''));
+    .filter(row=>String(row?.incident_id||row?.incidentId||'')===id);
 }
 
 function targetState(rows=[],alertKey='',targets=[],nowMs=Date.now()){
-  const matching=(rows||[]).filter(row=>String(row?.alert_key||row?.alertKey||'')===String(alertKey||''));
+  const matching=(Array.isArray(rows)?rows:[]).filter(row=>String(row?.alert_key||row?.alertKey||'')===String(alertKey||''));
   const byDestination=new Map();
   for(const row of matching){
-    const key=String(row?.destination_key||row?.destinationKey||'');
-    if(key) byDestination.set(key,row);
+    const key=String(row?.destination_key||row?.destinationKey||'').trim();
+    if(!key) continue;
+    const existing=byDestination.get(key);
+    const rowAt=Date.parse(String(row?.updated_at||row?.updatedAt||row?.created_at||row?.createdAt||''));
+    const existingAt=Date.parse(String(existing?.updated_at||existing?.updatedAt||existing?.created_at||existing?.createdAt||''));
+    if(!existing||(!Number.isFinite(existingAt)&&Number.isFinite(rowAt))||(Number.isFinite(rowAt)&&rowAt>=existingAt)){
+      byDestination.set(key,row);
+    }
   }
 
+  const now=numericCandidate(nowMs);
+  const effectiveNow=now===null?Date.now():now;
   const pending=[];
   const states=[];
   for(const target of targets){
@@ -77,19 +134,34 @@ function targetState(rows=[],alertKey='',targets=[],nowMs=Date.now()){
       states.push('missing');
       continue;
     }
-    const status=String(row?.status||'').toLowerCase();
-    states.push(status||'unknown');
+    const status=String(row?.status||'').trim().toLowerCase();
+    const attempts=nonNegativeInteger(row?.attempts);
     if(status==='retry_pending'){
-      const attempts=Math.max(0,finite(row?.attempts));
       const retryAt=Date.parse(String(row?.retry_at||row?.retryAt||''));
-      if(attempts<MAX_DELIVERY_ATTEMPTS&&(!Number.isFinite(retryAt)||retryAt<=nowMs)){
+      if(attempts<MAX_DELIVERY_ATTEMPTS&&(!Number.isFinite(retryAt)||retryAt<=effectiveNow)){
         pending.push(target);
+        states.push('retry_due');
+      }else{
+        states.push(attempts>=MAX_DELIVERY_ATTEMPTS?'terminal_failed':'retry_pending');
       }
+      continue;
     }
+    if(status==='claimed'||status==='sending'){
+      const lockedUntil=Date.parse(String(row?.locked_until||row?.lockedUntil||''));
+      if(attempts<MAX_DELIVERY_ATTEMPTS&&(!Number.isFinite(lockedUntil)||lockedUntil<=effectiveNow)){
+        pending.push(target);
+        states.push('lease_expired');
+      }else{
+        states.push(attempts>=MAX_DELIVERY_ATTEMPTS?'terminal_failed':'sending');
+      }
+      continue;
+    }
+    states.push(status||'unknown');
   }
 
   let reason='no_pending_recipients';
-  if(states.includes('sending')) reason='delivery_waiting';
+  if(pending.length) reason='pending_delivery';
+  else if(states.includes('sending')) reason='delivery_waiting';
   else if(states.includes('retry_pending')) reason='retry_waiting';
   else if(states.includes('unknown')) reason='delivery_outcome_unknown';
   else if(states.includes('terminal_failed')) reason='delivery_exhausted';
@@ -98,8 +170,8 @@ function targetState(rows=[],alertKey='',targets=[],nowMs=Date.now()){
   return {pending,reason,rows:matching};
 }
 
-export function postDeployRegressionIncidentId(deploySha=''){
-  const sha=String(deploySha||'').toLowerCase();
+export function postDeployRegressionIncidentId(deployShaValue=''){
+  const sha=deploySha(deployShaValue);
   return sha?'release-regression:'+sha:'';
 }
 
@@ -108,7 +180,7 @@ export function planPostDeployRegressionAlert(
   deliveryLedger=[],
   {deploySha='',plannedTransition=null,destinations:targetDestinations=[],nowMs=Date.now()}={},
 ){
-  const sha=String(deploySha||'').toLowerCase();
+  const sha=deploySha(deploySha);
   const targets=destinations(targetDestinations);
   if(!sha) return {action:'none',reason:'deployment_identity_unavailable'};
   if(!targets.length) return {action:'none',reason:'no_admin_recipients'};
