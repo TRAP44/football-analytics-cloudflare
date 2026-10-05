@@ -1,0 +1,57 @@
+name: Cleanup Actions caches
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/cleanup-actions-caches.yml"
+  schedule:
+    - cron: "53 4 * * 0"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: cleanup-actions-caches
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Delete caches unused for 7 days
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          now="$(date -u +%s)"
+          deleted=0
+          kept=0
+
+          gh api --paginate "repos/$GH_REPO/actions/caches?per_page=100" \
+            --jq '.actions_caches[] | [.id, .key, .ref, .last_accessed_at] | @tsv' |
+          while IFS=$'\t' read -r cache_id key ref last_accessed_at; do
+            [[ -z "$cache_id" ]] && continue
+            last_epoch="$(date -u -d "$last_accessed_at" +%s)"
+            age_days=$(( (now - last_epoch) / 86400 ))
+
+            if (( age_days >= 7 )); then
+              if gh api -X DELETE "repos/$GH_REPO/actions/caches/$cache_id" >/dev/null 2>&1; then
+                echo "Deleted stale cache $cache_id: $key [$ref]"
+                deleted=$((deleted + 1))
+              else
+                echo "GitHub refused cache deletion: $cache_id"
+                kept=$((kept + 1))
+              fi
+            else
+              kept=$((kept + 1))
+            fi
+          done
+
+          echo "Cache cleanup complete: deleted=$deleted kept=$kept"
