@@ -1,24 +1,54 @@
 import { DEFAULT_PROVIDER_SLO_POLICY, providerSloState } from './provider-observability.js';
 
 const ACTIONABLE_STATES = new Set(['healthy','watch','incident']);
+const REPORTED_STATES = new Set(['idle','collecting','healthy','watch','incident']);
+const MAX_LATENCY_MS = 120000;
+
+function numericCandidate(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'string') return null;
+  const raw=value.trim();
+  if (!/^-?\d+(?:\.\d+)?$/.test(raw)) return null;
+  const number=Number(raw);
+  return Number.isFinite(number) ? number : null;
+}
+
+function nonNegativeIntegerCandidate(value) {
+  const number=numericCandidate(value);
+  return Number.isSafeInteger(number) && number >= 0 ? number : null;
+}
+
+function timestampCandidate(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const timestamp=Date.parse(value.trim());
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
 
 function asIso(value) {
-  const ms = Date.parse(String(value || ''));
-  return Number.isFinite(ms) ? new Date(ms).toISOString() : '';
+  const ms=timestampCandidate(value);
+  return ms === null ? '' : new Date(ms).toISOString();
 }
 
 function finite(value, fallback = 0) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
+  const number=numericCandidate(value);
+  return number === null ? fallback : number;
 }
 
-function nullableNumber(value) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
+function nullableNumber(value, { min = -Infinity, max = Infinity } = {}) {
+  if (value === undefined || value === null || value === '') return null;
+  const number=numericCandidate(value);
+  return number !== null && number >= min && number <= max ? number : null;
 }
 
 function pct(part, total) {
-  return total > 0 ? Math.round((finite(part) / total) * 1000) / 10 : null;
+  return total > 0 ? Math.round((part / total) * 1000) / 10 : null;
+}
+
+function cleanLabel(value, fallback, maxLength) {
+  if (typeof value !== 'string') return fallback;
+  const text=value.trim().replace(/\s+/gu,' ');
+  if (!text || /[\u0000-\u001f\u007f-\u009f]/u.test(text)) return fallback;
+  return text.slice(0,maxLength);
 }
 
 function severityRank(state = '') {
@@ -33,19 +63,66 @@ function slug(value = '') {
     .slice(0,24) || 'provider';
 }
 
-function summarizeMetricRow(row = {}) {
-  const requests = finite(row.requests);
-  const attempts = finite(row.attempts);
-  const successes = finite(row.successes);
-  const failures = finite(row.failures);
-  const retries = finite(row.retries);
-  const timeouts = finite(row.timeouts);
-  const rateLimits = finite(row.rateLimits);
-  const latencySamples = finite(row.latencySamples);
-  const latencySumMs = finite(row.latencySumMs);
-  return {
-    provider:String(row.provider || 'provider').trim() || 'provider',
-    operation:String(row.operation || 'unknown').trim() || 'unknown',
+function inspectMetricRow(row = {}) {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) {
+    return { valid:false, summary:null };
+  }
+
+  const fields=[
+    'attempts','requests','successes','failures','retries','timeouts',
+    'rateLimits','networkErrors','httpErrors','invalidResponses','latencySamples','latencySumMs','maxLatencyMs',
+  ];
+  const values={};
+  let valid=true;
+  for (const key of fields) {
+    const raw=row?.[key];
+    if (raw === undefined || raw === null || raw === '') {
+      values[key]=0;
+      continue;
+    }
+    const number=nonNegativeIntegerCandidate(raw);
+    if (number === null) {
+      valid=false;
+      values[key]=0;
+    } else {
+      values[key]=number;
+    }
+  }
+
+  const {
+    attempts,requests,successes,failures,retries,timeouts,rateLimits,
+    networkErrors,httpErrors,invalidResponses,latencySamples,latencySumMs,maxLatencyMs,
+  }=values;
+
+  if (
+    successes + failures > requests
+    || (attempts > 0 && requests + retries > attempts)
+    || timeouts + networkErrors + rateLimits + httpErrors + invalidResponses > failures
+    || (attempts > 0 && latencySamples > attempts)
+    || (latencySamples === 0 && (latencySumMs > 0 || maxLatencyMs > 0))
+    || (latencySamples > 0 && maxLatencyMs > latencySumMs)
+    || maxLatencyMs > MAX_LATENCY_MS
+    || latencySumMs > latencySamples * MAX_LATENCY_MS
+  ) valid=false;
+
+  const explicitPct=(key,max=100)=>{
+    const raw=row?.[key];
+    if (raw === undefined || raw === null || raw === '') return null;
+    const number=nullableNumber(raw,{min:0,max});
+    if (number === null) valid=false;
+    return number;
+  };
+  const explicitLatency=(()=>{
+    const raw=row?.avgAttemptLatencyMs;
+    if (raw === undefined || raw === null || raw === '') return null;
+    const number=nullableNumber(raw,{min:0,max:MAX_LATENCY_MS});
+    if (number === null) valid=false;
+    return number;
+  })();
+
+  const summary={
+    provider:cleanLabel(row.provider,'provider',80),
+    operation:cleanLabel(row.operation,'unknown',180),
     attempts,
     requests,
     successes,
@@ -53,44 +130,85 @@ function summarizeMetricRow(row = {}) {
     retries,
     timeouts,
     rateLimits,
-    networkErrors:finite(row.networkErrors),
-    httpErrors:finite(row.httpErrors),
-    invalidResponses:finite(row.invalidResponses),
-    successRatePct: nullableNumber(row.successRatePct) ?? pct(successes, requests),
-    errorRatePct: nullableNumber(row.errorRatePct) ?? pct(failures, requests),
-    timeoutRatePct: nullableNumber(row.timeoutRatePct) ?? pct(timeouts, requests),
-    rateLimitRatePct: nullableNumber(row.rateLimitRatePct) ?? pct(rateLimits, requests),
-    retryRatePct: nullableNumber(row.retryRatePct) ?? pct(retries, requests),
-    avgAttemptLatencyMs: nullableNumber(row.avgAttemptLatencyMs)
-      ?? (latencySamples > 0 ? Math.round(latencySumMs / latencySamples) : null),
-    maxLatencyMs: nullableNumber(row.maxLatencyMs),
+    networkErrors,
+    httpErrors,
+    invalidResponses,
+    successRatePct:explicitPct('successRatePct') ?? pct(successes,requests),
+    errorRatePct:explicitPct('errorRatePct') ?? pct(failures,requests),
+    timeoutRatePct:explicitPct('timeoutRatePct') ?? pct(timeouts,requests),
+    rateLimitRatePct:explicitPct('rateLimitRatePct') ?? pct(rateLimits,requests),
+    retryRatePct:explicitPct('retryRatePct',Number.MAX_SAFE_INTEGER) ?? pct(retries,requests),
+    avgAttemptLatencyMs:explicitLatency ?? (latencySamples > 0 ? Math.round(latencySumMs / latencySamples) : null),
+    maxLatencyMs:nullableNumber(row.maxLatencyMs,{min:0,max:MAX_LATENCY_MS}) ?? maxLatencyMs,
+  };
+  return {valid,summary};
+}
+
+function summarizeMetricRow(row = {}) {
+  return inspectMetricRow(row).summary || {
+    provider:'provider',
+    operation:'unknown',
+    attempts:0,
+    requests:0,
+    successes:0,
+    failures:0,
+    retries:0,
+    timeouts:0,
+    rateLimits:0,
+    networkErrors:0,
+    httpErrors:0,
+    invalidResponses:0,
+    successRatePct:null,
+    errorRatePct:null,
+    timeoutRatePct:null,
+    rateLimitRatePct:null,
+    retryRatePct:null,
+    avgAttemptLatencyMs:null,
+    maxLatencyMs:0,
   };
 }
 
 function normalizeWindow(row = {}) {
-  const meta = row?.metadata && typeof row.metadata === 'object' ? row.metadata : row;
-  const endedAt = asIso(meta?.windowEndedAt || row?.created_at);
-  const startedAt = asIso(meta?.windowStartedAt || row?.created_at);
-  const reportedState = String(meta?.sloState || '').trim().toLowerCase();
-  const totals = summarizeMetricRow({
-    provider:'all',
-    operation:'all',
-    ...(meta?.totals && typeof meta.totals === 'object' ? meta.totals : {}),
-  });
-  const derivedState=providerSloState(totals).state;
-  const stateMismatch=ACTIONABLE_STATES.has(reportedState) && reportedState!==derivedState;
-  const series = Array.isArray(meta?.series)
-    ? meta.series.filter(x => x && typeof x === 'object').slice(0,24).map(summarizeMetricRow)
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return null;
+  const meta=row?.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+    ? row.metadata
+    : row;
+  const endedAt=asIso(meta?.windowEndedAt ?? row?.created_at);
+  const startedAt=asIso(meta?.windowStartedAt ?? row?.created_at);
+  if (!endedAt || !startedAt) return null;
+
+  const reportedState=typeof meta?.sloState === 'string'
+    ? meta.sloState.trim().toLowerCase()
+    : '';
+  const totalsInput=meta?.totals && typeof meta.totals === 'object' && !Array.isArray(meta.totals)
+    ? {provider:'all',operation:'all',...meta.totals}
+    : {provider:'all',operation:'all'};
+  const totalsInspection=inspectMetricRow(totalsInput);
+  const totals=totalsInspection.summary;
+  const derivedState=totalsInspection.valid ? providerSloState(totals).state : 'invalid';
+  const reportedStateInvalid=Boolean(reportedState && !REPORTED_STATES.has(reportedState));
+  const stateMismatch=reportedStateInvalid
+    || (Boolean(reportedState) && reportedState!==derivedState);
+  const series=Array.isArray(meta?.series)
+    ? meta.series
+        .slice(0,24)
+        .map(inspectMetricRow)
+        .filter(item=>item.valid && item.summary)
+        .map(item=>item.summary)
     : [];
+  const complete=meta?.complete === undefined ? true : meta.complete === true;
+
   return {
-    windowId:String(meta?.windowId || `${startedAt}|${endedAt}`),
+    windowId:typeof meta?.windowId === 'string' ? meta.windowId.trim().slice(0,180) : '',
     startedAt,
     endedAt,
-    state:stateMismatch ? 'invalid' : derivedState,
+    state:totalsInspection.valid && !stateMismatch ? derivedState : 'invalid',
     reportedState,
     derivedState,
     stateMismatch,
-    complete:meta?.complete !== false,
+    reportedStateInvalid,
+    metricIntegrityValid:totalsInspection.valid,
+    complete,
     totals,
     series,
   };
@@ -129,9 +247,9 @@ function canonicalWindows(rows = []) {
   const byIdentity=new Map();
   let duplicates=0;
   let duplicateConflicts=0;
-  for (const row of rows || []) {
+  for (const row of Array.isArray(rows) ? rows : []) {
     const window=normalizeWindow(row);
-    if (!window.endedAt || !window.startedAt) continue;
+    if (!window?.endedAt || !window?.startedAt) continue;
     const identity=`${window.startedAt}|${window.endedAt}`;
     const existing=byIdentity.get(identity);
     if (existing) {
@@ -163,12 +281,16 @@ function canonicalWindows(rows = []) {
     invalidDuration:0,
     incomplete:0,
     stateMismatches:0,
+    invalidMetrics:0,
+    invalidReportedStates:0,
   };
   for (let i=0;i<windows.length;i+=1) {
     const window=windows[i];
     if (!validWindowDuration(window)) integrity.invalidDuration+=1;
     if (!window.complete) integrity.incomplete+=1;
     if (window.stateMismatch) integrity.stateMismatches+=1;
+    if (!window.metricIntegrityValid) integrity.invalidMetrics+=1;
+    if (window.reportedStateInvalid) integrity.invalidReportedStates+=1;
     if (i>0) {
       const cadence=windowCadence(windows[i-1],window);
       if (cadence==='gap') integrity.gaps+=1;
@@ -411,7 +533,17 @@ export function buildProviderSloIncidentTimeline(rows = [], { nowMs = Date.now()
     }
   }
 
-  const now = Number(nowMs || Date.now());
+  const nowCandidate=typeof nowMs === 'number'
+    ? (Number.isFinite(nowMs) && nowMs >= 0 && nowMs <= 8.64e15 ? nowMs : null)
+    : typeof nowMs === 'string'
+      ? numericCandidate(nowMs)
+      : null;
+  const latestObserved=Date.parse(windows.at(-1)?.endedAt || '');
+  const now=nowCandidate !== null && nowCandidate >= 0 && nowCandidate <= 8.64e15
+    ? nowCandidate
+    : Number.isFinite(latestObserved)
+      ? latestObserved
+      : Date.now();
   for (const episode of episodes) {
     const start = Date.parse(episode.startedAt || '');
     const end = Date.parse(episode.recoveredAt || '');
