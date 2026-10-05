@@ -65,6 +65,54 @@ test('Issue #411 provider-backed route inventory is complete and lockdown-covere
   }
 });
 
+test('provider route registry rejects non-canonical definitions that would diverge from dispatch keys',()=>{
+  const base=providerBackedRouteInventory().slice(1);
+
+  for(const route of [
+    {method:'get',path:'/api/search',handler:'apiSearch',lockdownPolicy:'provider_fanout'},
+    {method:'GET',path:'api/search',handler:'apiSearch',lockdownPolicy:'provider_fanout'},
+    {method:'GET',path:'/api/search?scope=all',handler:'apiSearch',lockdownPolicy:'provider_fanout'},
+    {method:'GET',path:'/api/../search',handler:'apiSearch',lockdownPolicy:'provider_fanout'},
+    {method:'GET',path:'/api/search',handler:' apiSearch ',lockdownPolicy:'provider_fanout'},
+  ]){
+    assert.throws(
+      ()=>validateProviderBackedRouteDefinitions([route,...base]),
+      /canonical|API pathname/,
+    );
+  }
+});
+
+test('provider route registry requires strict authorization flags and rejects ambiguous scope',()=>{
+  const base=providerBackedRouteInventory().slice(1);
+
+  assert.throws(
+    ()=>validateProviderBackedRouteDefinitions([
+      {method:'GET',path:'/api/search',handler:'apiSearch',userScoped:'false',lockdownPolicy:'provider_fanout'},
+      ...base,
+    ]),
+    /invalid authorization flags/,
+  );
+
+  assert.throws(
+    ()=>validateProviderBackedRouteDefinitions([
+      {method:'GET',path:'/api/search',handler:'apiSearch',adminOnly:true,userScoped:true,lockdownPolicy:'provider_fanout'},
+      ...base,
+    ]),
+    /cannot be both admin-only and user-scoped/,
+  );
+});
+
+test('provider route lookups reject non-string coercion and inventory snapshots are immutable',()=>{
+  assert.equal(providerBackedRouteDefinition('/api/search',true),null);
+  assert.equal(providerBackedRouteDefinition({path:'/api/search'},'GET'),null);
+  assert.equal(isProviderFanoutPath({path:'/api/search'}),false);
+
+  const inventory=providerBackedRouteInventory();
+  assert.equal(Object.isFrozen(inventory[0]),true);
+  assert.throws(()=>{ inventory[0].handler='apiOther'; },TypeError);
+  assert.equal(providerBackedRouteDefinition('/api/search','GET')?.handler,'apiSearch');
+});
+
 test('Issue #411 synthetic provider route without explicit lockdown policy fails registry validation',()=>{
   const synthetic=[
     ...providerBackedRouteInventory(),
