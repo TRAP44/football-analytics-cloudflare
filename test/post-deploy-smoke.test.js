@@ -17,7 +17,7 @@ const json = (body, status = 200) => new Response(JSON.stringify(body), {
 
 function healthyFetch({ staleOnce = false, devMode = false, monetization = 'paused', database = 'supabase', serviceOverrides = {} } = {}) {
   let healthCalls = 0;
-  return async input => {
+  return async (input, init = {}) => {
     const url = new URL(input);
     if (url.pathname === '/health/ready') {
       healthCalls += 1;
@@ -33,6 +33,9 @@ function healthyFetch({ staleOnce = false, devMode = false, monetization = 'paus
       });
     }
     if (url.pathname === '/health') {
+      const token=new Headers(init.headers || {}).get('x-health-token');
+      if (!token) return json({ok:true});
+      assert.equal(token,'test-probe-token');
       healthCalls += 1;
       return json({
         ok: true,
@@ -370,7 +373,7 @@ function healthyFetchWithDeployment(identity) {
 
 test('post-deploy smoke validates RC35, security headers and protected routes', async () => {
   const result = await runDeploymentSmoke('https://football.example.test', '6.27.0-rc35', {
-    fetchImpl: healthyFetch(),
+    healthProbeToken:'test-probe-token', fetchImpl: healthyFetch(),
     retries: 1,
     retryDelayMs: 0,
   });
@@ -380,7 +383,7 @@ test('post-deploy smoke validates RC35, security headers and protected routes', 
 
 test('post-deploy smoke binds runtime Cloudflare identity to exact deploy SHA', async () => {
   const result = await runDeploymentSmoke('https://football.example.test', '6.27.0-rc35', deploySha, {
-    fetchImpl: healthyFetch(),
+    healthProbeToken:'test-probe-token', fetchImpl: healthyFetch(),
     retries: 1,
     retryDelayMs: 0,
   });
@@ -388,7 +391,7 @@ test('post-deploy smoke binds runtime Cloudflare identity to exact deploy SHA', 
 
   await assert.rejects(
     runDeploymentSmoke('https://football.example.test', '6.27.0-rc35', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', {
-      fetchImpl: healthyFetch(),
+      healthProbeToken:'test-probe-token', fetchImpl: healthyFetch(),
       retries: 1,
       retryDelayMs: 0,
     }),
@@ -400,7 +403,7 @@ test('post-deploy smoke binds runtime Cloudflare identity to exact deploy SHA', 
 test('Issue #409 post-deploy smoke rejects malformed Cloudflare version IDs with the validator code', async () => {
   await assert.rejects(
     runDeploymentSmoke('https://football.example.test','6.27.0-rc35',deploySha,{
-      fetchImpl:healthyFetchWithDeployment({
+      healthProbeToken:'test-probe-token', fetchImpl:healthyFetchWithDeployment({
         ...deploymentIdentity,
         cloudflareVersionId:'version-id',
       }),
@@ -414,7 +417,7 @@ test('Issue #409 post-deploy smoke rejects malformed Cloudflare version IDs with
 test('Issue #409 post-deploy smoke rejects implausible future Cloudflare timestamps', async () => {
   await assert.rejects(
     runDeploymentSmoke('https://football.example.test','6.27.0-rc35',deploySha,{
-      fetchImpl:healthyFetchWithDeployment({
+      healthProbeToken:'test-probe-token', fetchImpl:healthyFetchWithDeployment({
         ...deploymentIdentity,
         cloudflareVersionTimestamp:'2099-01-01T00:00:00.000Z',
       }),
@@ -762,7 +765,7 @@ test('post-deploy smoke tolerates brief mixed-edge identity propagation across h
 
 test('post-deploy smoke retries while the previous Worker version is propagating', async () => {
   const result = await runDeploymentSmoke('https://football.example.test/', '6.27.0-rc35', {
-    fetchImpl: healthyFetch({ staleOnce: true }),
+    healthProbeToken:'test-probe-token', fetchImpl: healthyFetch({ staleOnce: true }),
     retries: 2,
     retryDelayMs: 0,
   });
@@ -772,7 +775,7 @@ test('post-deploy smoke retries while the previous Worker version is propagating
 test('post-deploy smoke rejects DEV_MODE in production', async () => {
   await assert.rejects(
     runDeploymentSmoke('https://football.example.test', '6.27.0-rc35', {
-      fetchImpl: healthyFetch({ devMode: true }),
+      healthProbeToken:'test-probe-token', fetchImpl: healthyFetch({ devMode: true }),
       retries: 1,
       retryDelayMs: 0,
     }),
@@ -784,7 +787,7 @@ test('post-deploy smoke rejects DEV_MODE in production', async () => {
 test('post-deploy smoke rejects enabled monetization when the release still expects paused', async () => {
   await assert.rejects(
     runDeploymentSmoke('https://football.example.test', '6.27.0-rc35', {
-      fetchImpl: healthyFetch({ monetization: 'enabled' }),
+      healthProbeToken:'test-probe-token', fetchImpl: healthyFetch({ monetization: 'enabled' }),
       retries: 1,
       retryDelayMs: 0,
     }),
@@ -794,7 +797,7 @@ test('post-deploy smoke rejects enabled monetization when the release still expe
 
 test('post-deploy smoke accepts enabled monetization only when the release explicitly expects it', async () => {
   const result = await runDeploymentSmoke('https://football.example.test', '6.27.0-rc35', {
-    fetchImpl: healthyFetch({ monetization: 'enabled' }),
+    healthProbeToken:'test-probe-token', fetchImpl: healthyFetch({ monetization: 'enabled' }),
     retries: 1,
     retryDelayMs: 0,
     expectedMonetization: 'enabled',
@@ -805,7 +808,7 @@ test('post-deploy smoke accepts enabled monetization only when the release expli
 test('post-deploy smoke requires API-Football-backed public services to be operational', async () => {
   await assert.rejects(
     runDeploymentSmoke('https://football.example.test', '6.27.0-rc35', {
-      fetchImpl: healthyFetch({ serviceOverrides: { aiAnalysis: 'configuration_required' } }),
+      healthProbeToken:'test-probe-token', fetchImpl: healthyFetch({ serviceOverrides: { aiAnalysis: 'configuration_required' } }),
       retries: 1,
       retryDelayMs: 0,
     }),
