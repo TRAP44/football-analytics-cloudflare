@@ -83,7 +83,7 @@ export function createUserHistoryService({
     }
   }
 
-  async function retryHistoryWrite(userId, row, cfg, correlation, firstError) {
+  async function retryHistoryWrite(row, cfg, correlation, firstError) {
     bumpTelemetry('analysisHistoryRetryAttempts');
     try {
       const delay = Math.max(0, Math.min(1500, Number(retryDelayMs || 0)));
@@ -135,7 +135,7 @@ export function createUserHistoryService({
             correlation,
             error,
           });
-          await retryHistoryWrite(userId, row, cfg, correlation, error);
+          await retryHistoryWrite(row, cfg, correlation, error);
         })();
 
         if (typeof cfg?.waitUntil === 'function') {
