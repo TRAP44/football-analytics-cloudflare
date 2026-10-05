@@ -36,6 +36,7 @@ import {
 } from './access-control.js';
 import { createSupabaseClient } from './supabase-client.js';
 import { runtimeReleaseIdentity } from './release-identity.js';
+import { recordCriticalWriteFailure } from './ops-write-failure.js';
 import { scopeOpsEventsToDeployment } from './release-event-attribution.js';
 import { createReleaseFieldEvidenceRuntime } from './release-field-evidence.js';
 import { postDeployRegressionReport } from './post-deploy-regression.js';
@@ -2215,7 +2216,19 @@ async function applySuccessfulPayment(userId, payment, cfg, fallbackDate = Math.
       subscription_canceled: false,
       telegram_payment_charge_id: chargeId,
     }, cfg);
-    await recordReferredPayment(userId,payment,subscription.plan,cfg).catch(()=>false);
+    await recordReferredPayment(userId,payment,subscription.plan,cfg).catch(async error => {
+      await recordCriticalWriteFailure({
+        recordOpsEvent,
+        cfg,
+        source:'billing',
+        eventType:'referral_payment_write',
+        code:'REFERRAL_PAYMENT_WRITE_FAILED',
+        message:'Referral payment attribution write failed.',
+        meta:{ userId:Number(userId || 0), plan:String(subscription.plan || '') },
+        error,
+      });
+      return false;
+    });
     return true;
   }
 
@@ -11104,7 +11117,19 @@ async function reconcileInterruptedSettlementActions(cfg) {
   await noteSettlementWatchdogOutcome(cfg, 'failed', {
     actionId: reconciled[reconciled.length - 1]?.action_id || null,
     error: `${reconciled.length} зависших запусков фиксации результата отмечено как прерванные`,
-  }).catch(() => null);
+  }).catch(async error => {
+    await recordCriticalWriteFailure({
+      recordOpsEvent,
+      cfg,
+      source:'model',
+      eventType:'settlement_watchdog_write',
+      code:'SETTLEMENT_WATCHDOG_STATE_WRITE_FAILED',
+      message:'Settlement watchdog state write failed while reconciling interrupted runs.',
+      meta:{ actionId:reconciled[reconciled.length - 1]?.action_id || null, status:'failed' },
+      error,
+    });
+    return null;
+  });
   await recordOpsEvent(cfg, {
     severity: 'warning',
     source: 'model',
@@ -11509,7 +11534,19 @@ async function apiModelRemediation(request, cfg, user) {
       detail: { providerCalls: dates.length, finishedFixtures: fixtures.filter(f => isFinishedStatus(fixtureStatusShort(f))).length, settlementChecked: settlement.checked },
     });
     memory.modelRemediation.lastRun = action;
-    await noteSettlementWatchdogOutcome(cfg, status, { actionId }).catch(() => null);
+    await noteSettlementWatchdogOutcome(cfg, status, { actionId }).catch(async error => {
+      await recordCriticalWriteFailure({
+        recordOpsEvent,
+        cfg,
+        source:'model',
+        eventType:'settlement_watchdog_write',
+        code:'SETTLEMENT_WATCHDOG_STATE_WRITE_FAILED',
+        message:'Settlement watchdog state write failed after remediation.',
+        meta:{ actionId, status },
+        error,
+      });
+      return null;
+    });
     await recordOpsEvent(cfg, {
       severity: skippedCount ? 'warning' : 'info', source: 'model', eventType: 'prediction_remediation',
       code: skippedCount ? 'REMEDIATION_PARTIAL' : 'REMEDIATION_COMPLETED', message: reason,
@@ -11753,7 +11790,19 @@ async function runSettlementWatchdog(cfg) {
     return { ok: true, ...baseMeta, actionId, settledCount, skippedCount, status };
   } catch (error) {
     if (executionResult) {
-      await noteSettlementWatchdogOutcome(cfg, executionResult.status, { actionId }).catch(() => null);
+      await noteSettlementWatchdogOutcome(cfg, executionResult.status, { actionId }).catch(async error => {
+        await recordCriticalWriteFailure({
+          recordOpsEvent,
+          cfg,
+          source:'model',
+          eventType:'settlement_watchdog_write',
+          code:'SETTLEMENT_WATCHDOG_STATE_WRITE_FAILED',
+          message:'Settlement watchdog state write failed while finalizing audit recovery.',
+          meta:{ actionId, status:executionResult.status },
+          error,
+        });
+        return null;
+      });
       await recordOpsEvent(cfg, {
         severity: 'error',
         source: 'model',
@@ -11771,7 +11820,19 @@ async function runSettlementWatchdog(cfg) {
       }, cfg, 1440).catch(() => null);
       return { ok: true, ...baseMeta, actionId, ...executionResult, auditPending: true };
     }
-    await noteSettlementWatchdogOutcome(cfg, 'failed', { actionId, error: redactOpsString(error?.message || error, 180) }).catch(() => null);
+    await noteSettlementWatchdogOutcome(cfg, 'failed', { actionId, error: redactOpsString(error?.message || error, 180) }).catch(async watchdogError => {
+      await recordCriticalWriteFailure({
+        recordOpsEvent,
+        cfg,
+        source:'model',
+        eventType:'settlement_watchdog_write',
+        code:'SETTLEMENT_WATCHDOG_STATE_WRITE_FAILED',
+        message:'Settlement watchdog state write failed while recording a failed audit.',
+        meta:{ actionId, status:'failed' },
+        error:watchdogError,
+      });
+      return null;
+    });
     const failurePatch = {
       status: 'failed',
       inspectedCount: currentIds.length,
@@ -20995,7 +21056,19 @@ async function apiMatches(request, cfg) {
   const verifiedFixtures = integrityRun.accepted;
 
   // Reuse the verified fixtures request we already made to settle tracked predictions at zero additional provider cost.
-  await settlePredictionsFromFixtures(verifiedFixtures.map(x => x.fixture), cfg).catch(() => null);
+  await settlePredictionsFromFixtures(verifiedFixtures.map(x => x.fixture), cfg).catch(async error => {
+    await recordCriticalWriteFailure({
+      recordOpsEvent,
+      cfg,
+      source:'model',
+      eventType:'prediction_settlement_write',
+      code:'PREDICTION_SETTLEMENT_WRITE_FAILED',
+      message:'Prediction settlement write failed while serving verified matches.',
+      meta:{ fixtureCount:verifiedFixtures.length },
+      error,
+    });
+    return null;
+  });
 
   const matches = verifiedFixtures
     .filter(entry => !['CANC', 'PST', 'ABD', 'AWD', 'WO'].includes(entry.fixture?.fixture?.status?.short || ''))
@@ -22417,7 +22490,19 @@ async function apiMatchCenter(request, cfg) {
   const pressure = (live || finished) ? livePressure(analyticalStatistics) : null;
   const formattedEvents = sanitizeEventsForDisplay(rawFormattedEvents, eventQuality);
   const analyticalEvents = eventsForTrustedAnalytics(rawFormattedEvents, eventQuality);
-  if (finished) await settlePredictionsFromFixtures([fixture], cfg).catch(() => null);
+  if (finished) await settlePredictionsFromFixtures([fixture], cfg).catch(async error => {
+    await recordCriticalWriteFailure({
+      recordOpsEvent,
+      cfg,
+      source:'model',
+      eventType:'prediction_settlement_write',
+      code:'PREDICTION_SETTLEMENT_WRITE_FAILED',
+      message:'Prediction settlement write failed while building finished match details.',
+      meta:{ fixtureId:Number(fixtureId || 0) },
+      error,
+    });
+    return null;
+  });
   const postMatchPrediction = finished ? await loadModelPredictionForFixture(fixtureId, cfg) : null;
   const postMatchReview = finished ? buildPostMatchReview({prediction:postMatchPrediction,fixture,statistics:analyticalStatistics,events:analyticalEvents,homeName,awayName}) : null;
   if (finished && fixture.fixture?.referee) await saveRefereeMatchHistory({ fixtureId, referee:fixture.fixture.referee, kickoffAt:fixture.fixture?.date || null, leagueId:Number(fixture.league?.id || 0), events:analyticalEvents, statistics:analyticalStatistics }, cfg).catch(() => false);
@@ -23259,7 +23344,19 @@ async function apiAnalyze(request, cfg, user) {
     return await trackedFullAiFailureResponse({ error: 'Данные матча выглядят противоречиво, поэтому анализ временно заблокирован.', code: 'MATCH_DATA_INVALID', integrity: analysisIntegrity, quota: quotaBefore },409,'data_invalid');
   }
   // If this fixture has already finished, settle any earlier immutable pre-match snapshot without another football API call.
-  if (isFinishedStatus(fixture.fixture?.status?.short)) await settlePredictionsFromFixtures([fixture], cfg).catch(() => null);
+  if (isFinishedStatus(fixture.fixture?.status?.short)) await settlePredictionsFromFixtures([fixture], cfg).catch(async error => {
+    await recordCriticalWriteFailure({
+      recordOpsEvent,
+      cfg,
+      source:'model',
+      eventType:'prediction_settlement_write',
+      code:'PREDICTION_SETTLEMENT_WRITE_FAILED',
+      message:'Prediction settlement write failed before full AI analysis.',
+      meta:{ fixtureId:Number(fixtureId || 0) },
+      error,
+    });
+    return null;
+  });
 
   const homeId = fixture.teams?.home?.id, awayId = fixture.teams?.away?.id;
   const homeName = fixture.teams?.home?.name || '', awayName = fixture.teams?.away?.name || '';
