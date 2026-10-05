@@ -52,6 +52,42 @@ test('important-change detector requires two valid snapshots and a 5pp move', ()
   assert.deepEqual(movement.strongest,{side:'home',delta:6});
 });
 
+test('important-change detector rejects coerced probabilities and same-time pseudo history', () => {
+  const {service}=runtime();
+  const now=new Date().toISOString();
+
+  assert.equal(service.movementFromSnapshots([
+    {at:now,homeProb:true,drawProb:30,awayProb:69},
+    {at:new Date(Date.now()-60_000).toISOString(),homeProb:40,drawProb:30,awayProb:30},
+  ]).significant,false);
+
+  const sameTime=service.movementFromSnapshots([
+    {at:now,homeProb:46,drawProb:28,awayProb:26},
+    {at:now,homeProb:40,drawProb:30,awayProb:30},
+  ]);
+  assert.equal(sameTime.significant,false);
+  assert.equal(sameTime.reason,'insufficient_history');
+  assert.equal(sameTime.sample,1);
+});
+
+test('important-change threshold and fixture cap reject malformed/coerced configuration', async () => {
+  const rows=[reminder(1,100),reminder(2,200),reminder(3,300)];
+  const service=createImportantChangeNotificationService({
+    hasSupabase:()=>true,
+    loadRuntimeControls:async()=>({value:{remindersEnabled:true}}),
+    supaSelectPaged:async()=>({rows,truncated:false}),
+    getOddsSnapshots:async()=>snapshots({home:[40,44],draw:[30,29],away:[30,27]}),
+    deliverClaimedReminder:async()=>({state:'sent'}),
+    recordOpsEvent:async()=>{},
+    maxFixturesPerRun:Infinity,
+    thresholdPp:-1,
+  });
+  const result=await service.processImportantChangeNotifications({botToken:'token'});
+  assert.equal(result.fixturesChecked,3);
+  assert.equal(result.significant,0);
+  assert.equal(result.sent,0);
+});
+
 test('scheduler reads stored odds once per fixture and fans out through atomic claims', async () => {
   const rows=[reminder(1,100),reminder(2,100),reminder(3,200)];
   const {service,reads,deliveries}=runtime({
@@ -81,6 +117,36 @@ test('scheduler does not generate provider work and skips already notified recip
   assert.equal(deliveries.length,1);
   assert.equal(deliveries[0].row.telegram_id,2);
   assert.equal(result.checked,2);
+});
+
+test('scheduler fails soft when recipient preference filtering is unavailable', async () => {
+  const events=[];
+  const service=createImportantChangeNotificationService({
+    hasSupabase:()=>true,
+    loadRuntimeControls:async()=>({value:{remindersEnabled:true}}),
+    supaSelectPaged:async()=>({rows:[reminder(1,100)],truncated:false}),
+    getOddsSnapshots:async()=>{ throw new Error('should not probe odds'); },
+    deliverClaimedReminder:async()=>{ throw new Error('should not deliver'); },
+    filterNotificationRecipients:async()=>{ throw new Error('preference store unavailable'); },
+    recordOpsEvent:async(_cfg,event)=>events.push(event),
+  });
+
+  const result=await service.processImportantChangeNotifications({botToken:'token'});
+  assert.equal(result.ok,false);
+  assert.equal(result.failed,1);
+  assert.equal(result.fixturesChecked,0);
+  assert.equal(events.at(-1)?.code,'IMPORTANT_CHANGE_NOTIFICATION_AUDIENCE_FAILED');
+});
+
+test('scheduler ignores malformed fixture IDs instead of probing coerced fixtures', async () => {
+  const rows=[
+    {...reminder(1,100),fixture_id:true},
+    {...reminder(2,200),fixture_id:'200'},
+  ];
+  const {service,reads}=runtime({rows,byFixture:{200:snapshots()}});
+  const result=await service.processImportantChangeNotifications({botToken:'token'});
+  assert.deepEqual(reads,[200]);
+  assert.equal(result.fixturesChecked,1);
 });
 
 test('message is informational and labels the strongest market-probability move', () => {
