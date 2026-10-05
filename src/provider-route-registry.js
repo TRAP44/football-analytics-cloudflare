@@ -15,12 +15,25 @@ const PROVIDER_BACKED_ROUTES = Object.freeze([
 ]);
 
 function normalizeMethod(method='GET') {
-  return String(method || 'GET').toUpperCase();
+  if (typeof method !== 'string') return '';
+  const value=method.trim();
+  return value ? value.toUpperCase() : 'GET';
 }
 
 function normalizePath(pathname='') {
-  const path=String(pathname || '').trim();
+  if (typeof pathname !== 'string') return '';
+  const path=pathname.trim();
+  if (!path) return '/';
   return path.startsWith('/') ? path : '/' + path;
+}
+
+function isCanonicalProviderPath(path) {
+  return /^\/api(?:\/[A-Za-z0-9._~-]+)+$/.test(path)
+    && !path.split('/').some(segment=>segment==='.' || segment==='..');
+}
+
+function optionalBooleanIsValid(route,key) {
+  return route?.[key] === undefined || typeof route[key] === 'boolean';
 }
 
 export function validateProviderBackedRouteDefinitions(definitions = PROVIDER_BACKED_ROUTES) {
@@ -30,19 +43,32 @@ export function validateProviderBackedRouteDefinitions(definitions = PROVIDER_BA
 
   const seen=new Set();
   for (const route of definitions) {
-    const method=normalizeMethod(route?.method);
-    const path=normalizePath(route?.path);
-    const handler=String(route?.handler || '').trim();
-    const key=`${method} ${path}`;
+    if (!route || typeof route !== 'object' || Array.isArray(route)) {
+      throw new Error('Provider-backed route definition must be an object.');
+    }
+
+    const method=normalizeMethod(route.method);
+    const path=normalizePath(route.path);
+    const handler=typeof route.handler === 'string' ? route.handler.trim() : '';
+    const key=`${method || 'INVALID'} ${path || 'INVALID'}`;
 
     if (!['GET','POST'].includes(method)) {
       throw new Error(`Provider-backed route ${key} uses unsupported method.`);
     }
-    if (!path.startsWith('/api/')) {
-      throw new Error(`Provider-backed route ${key} must be an API path.`);
+    if (route.method !== method) {
+      throw new Error(`Provider-backed route ${key} must use a canonical uppercase method.`);
     }
-    if (!/^api[A-Z][A-Za-z0-9]*$/.test(handler)) {
-      throw new Error(`Provider-backed route ${key} is missing a valid handler.`);
+    if (!isCanonicalProviderPath(path) || route.path !== path) {
+      throw new Error(`Provider-backed route ${key} must use a canonical API pathname.`);
+    }
+    if (!/^api[A-Z][A-Za-z0-9]*$/.test(handler) || route.handler !== handler) {
+      throw new Error(`Provider-backed route ${key} is missing a valid canonical handler.`);
+    }
+    if (!optionalBooleanIsValid(route,'adminOnly') || !optionalBooleanIsValid(route,'userScoped')) {
+      throw new Error(`Provider-backed route ${key} has invalid authorization flags.`);
+    }
+    if (route.adminOnly === true && route.userScoped === true) {
+      throw new Error(`Provider-backed route ${key} cannot be both admin-only and user-scoped.`);
     }
     if (route?.lockdownPolicy !== PROVIDER_LOCKDOWN_POLICY) {
       throw new Error(`Provider-backed route ${key} is missing explicit runtime lockdown policy.`);
@@ -63,13 +89,17 @@ const PROVIDER_ROUTE_BY_KEY = new Map(
 );
 
 export function providerBackedRouteDefinition(pathname='', method='GET') {
-  return PROVIDER_ROUTE_BY_KEY.get(`${normalizeMethod(method)} ${normalizePath(pathname)}`) || null;
+  const normalizedMethod=normalizeMethod(method);
+  const normalizedPath=normalizePath(pathname);
+  if (!normalizedMethod || !normalizedPath) return null;
+  return PROVIDER_ROUTE_BY_KEY.get(`${normalizedMethod} ${normalizedPath}`) || null;
 }
 
 export function isProviderFanoutPath(pathname='') {
-  return PROVIDER_FANOUT_PATHS.has(normalizePath(pathname));
+  const normalizedPath=normalizePath(pathname);
+  return Boolean(normalizedPath && PROVIDER_FANOUT_PATHS.has(normalizedPath));
 }
 
 export function providerBackedRouteInventory() {
-  return PROVIDER_BACKED_ROUTES.map(route=>({ ...route }));
+  return PROVIDER_BACKED_ROUTES.map(route=>Object.freeze({ ...route }));
 }
