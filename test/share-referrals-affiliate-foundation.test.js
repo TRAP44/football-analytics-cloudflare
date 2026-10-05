@@ -30,6 +30,33 @@ function linksRuntime() {
   });
 }
 
+test('referral code normalization rejects non-string coercion and preserves canonical strings', () => {
+  assert.equal(normalizeReferralCode(' A1B2C3D4E5F60708 '),'a1b2c3d4e5f60708');
+  assert.equal(normalizeReferralCode(true),'');
+  assert.equal(normalizeReferralCode(['a1b2c3d4e5f60708']),'');
+  assert.equal(normalizeReferralCode({toString:()=> 'a1b2c3d4e5f60708'}),'');
+});
+
+test('opaque referral code requires strict positive user identity and bounded string secret', async () => {
+  assert.equal(await opaqueReferralCode(true,'test-bot-secret'),'');
+  assert.equal(await opaqueReferralCode([123],'test-bot-secret'),'');
+  assert.match(await opaqueReferralCode('123','test-bot-secret'),/^[a-f0-9]{16}$/);
+  assert.equal(await opaqueReferralCode(123,true),'');
+  assert.equal(await opaqueReferralCode(123,' test-bot-secret'),'');
+  assert.equal(await opaqueReferralCode(123,'x'.repeat(513)),'');
+});
+
+test('launch referral parser does not stringify hostile non-string parts', () => {
+  const code='a1b2c3d4e5f60708';
+  const parsed=splitLaunchReferralParts(['fx123',{toString:()=>`r${code}`}]);
+  assert.equal(parsed.referralCode,'');
+  assert.deepEqual(parsed.parts,['fx123','']);
+
+  const canonical=splitLaunchReferralParts([' FX123 ',` R${code.toUpperCase()} `]);
+  assert.equal(canonical.referralCode,code);
+  assert.deepEqual(canonical.parts,['fx123']);
+});
+
 test('opaque referral code is deterministic, compact and never exposes raw Telegram ID', async () => {
   const code=await opaqueReferralCode(123456789,'test-bot-secret');
   assert.match(code,/^[a-f0-9]{16}$/);
@@ -68,6 +95,10 @@ test('referral attribution blocks forged, self and duplicate attribution', () =>
   assert.equal(referralAttributionDecision({referredUserId:2,referrerUserId:0,referralCode:code}).status,'forged_ref');
   assert.equal(referralAttributionDecision({referredUserId:2,referrerUserId:2,referralCode:code}).status,'self_referral');
   assert.equal(referralAttributionDecision({referredUserId:2,referrerUserId:1,referralCode:code,existingReferralCode:'1111111111111111'}).status,'duplicate_attribution');
+  assert.equal(referralAttributionDecision({referredUserId:2,referrerUserId:1,referralCode:code,existingReferralCode:'corrupted'}).status,'duplicate_attribution');
+  assert.equal(referralAttributionDecision({referredUserId:true,referrerUserId:1,referralCode:code}).status,'invalid_user');
+  assert.equal(referralAttributionDecision({referredUserId:2,referrerUserId:[1],referralCode:code}).status,'forged_ref');
+  assert.equal(referralAttributionDecision({referredUserId:'2',referrerUserId:'1',referralCode:code}).status,'accepted');
   assert.equal(referralAttributionDecision({referredUserId:2,referrerUserId:1,referralCode:code}).status,'accepted');
 });
 
