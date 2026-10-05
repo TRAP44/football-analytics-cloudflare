@@ -23804,17 +23804,16 @@ async function apiAnalyze(request, cfg, user) {
             await refundAnalysisQuota(user.id,usageReservation,cfg);
           } catch (error) {
             bumpTelemetry('quotaRefundFailures');
-            await recordOpsEvent(cfg,{
-              severity:'error',
+            await recordCriticalWriteFailure(cfg, {
+              code:'LEGACY_QUOTA_REFUND_FAILED',
               source:'quota',
               eventType:'analysis_usage_compensation',
-              code:'LEGACY_QUOTA_REFUND_FAILED',
               message:'Legacy analysis quota refund failed before durable lifecycle confirmation.',
               meta:{
                 usageDate:usageReservation.date || null,
-                error:redactOpsString(error?.message || error,180),
+                refundError:redactOpsString(error?.message || error,180),
               },
-            }).catch(()=>null);
+            });
           }
         }
       }
@@ -23834,17 +23833,16 @@ async function apiAnalyze(request, cfg, user) {
             bumpTelemetry('passUsageRefunds');
           } catch (error) {
             bumpTelemetry('passUsageRefundFailures');
-            await recordOpsEvent(cfg,{
-              severity:'error',
+            await recordCriticalWriteFailure(cfg, {
+              code:'LEGACY_PASS_REFUND_FAILED',
               source:'quota',
               eventType:'analysis_usage_compensation',
-              code:'LEGACY_PASS_REFUND_FAILED',
               message:'Legacy limited Pass refund failed before durable lifecycle confirmation.',
               meta:{
                 entitlementId:Number(passUsageReservation.entitlementId || 0) || null,
-                error:redactOpsString(error?.message || error,180),
+                refundError:redactOpsString(error?.message || error,180),
               },
-            }).catch(()=>null);
+            });
           }
         }
       }
