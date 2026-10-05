@@ -28,7 +28,23 @@ test('public /health exposes only ok while valid probe token unlocks deployment 
     }),
   };
   const router=createPublicStatusRouter({
-    publicStatusRuntime:{serviceStatus:async()=>({ok:true,status:'operational'})},
+    publicStatusRuntime:{
+      serviceStatus:async()=>({ok:true,status:'operational'}),
+      computeReadinessSnapshot:async()=>({
+        ok:true,
+        status:'ready',
+        version:'6.120.0-rc144',
+        releaseCandidate:'RC144',
+        deployment:{deploySha:'a'.repeat(40)},
+        checks:{
+          supabase:{ok:true,status:'ok'},
+          schema:{ok:true,status:'ok',fingerprint:'fingerprint'},
+          backendSecurity:{ok:true,status:'ok'},
+          telegramConfigured:true,
+          recentSupabaseAuthFailures:0,
+        },
+      }),
+    },
     publicHealthRuntime,
     appManifest:()=>({
       version:'6.120.0-rc144',
