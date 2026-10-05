@@ -4,7 +4,8 @@ function providerLabel(value) {
 
 export function retryAfterSeconds(headers, fallbackSeconds = 60, nowMs = Date.now()) {
   const raw = String(headers?.get?.('retry-after') || '').trim();
-  const fallback = Math.max(1, Number(fallbackSeconds || 60));
+  const parsedFallback = Number(fallbackSeconds);
+  const fallback = Number.isFinite(parsedFallback) ? Math.max(1, Math.ceil(parsedFallback)) : 60;
   if (!raw) return fallback;
 
   const numeric = Number(raw);
@@ -27,7 +28,8 @@ export function providerRequestError(message, code, {
   error.provider = providerLabel(provider);
   error.operation = String(operation || '');
   if (Number.isFinite(Number(status)) && Number(status) > 0) error.status = Number(status);
-  error.retryAfter = Math.max(0, Number(retryAfter || 0));
+  const parsedRetryAfter = Number(retryAfter);
+  error.retryAfter = Number.isFinite(parsedRetryAfter) ? Math.max(0, parsedRetryAfter) : 0;
   if (cause) error.cause = cause;
   return error;
 }
@@ -62,7 +64,11 @@ export function createProviderRequestBoundary({
   if (typeof sleepMs !== 'function') throw new Error('sleepMs is required');
 
   async function observe(cfg, event) {
-    return await Promise.resolve(observeProviderRequest(event, cfg));
+    try {
+      await Promise.resolve(observeProviderRequest(event, cfg));
+    } catch {
+      // Provider observability is best-effort and must never break data delivery.
+    }
   }
 
   async function emitFailure(cfg, {
@@ -74,23 +80,27 @@ export function createProviderRequestBoundary({
     latencyMs,
   }) {
     if (typeof recordOpsEvent !== 'function') return;
-    await recordOpsEvent(cfg, {
-      severity: finalResult === 'retrying' ? 'warning' : 'error',
-      source: 'provider',
-      eventType: 'provider_request',
-      code: String(error?.code || 'PROVIDER_HTTP_ERROR'),
-      message: error?.message || 'Provider request failed',
-      endpoint: String(operation || ''),
-      status: Number(error?.status || 0) || undefined,
-      durationMs: Number(latencyMs || 0),
-      meta: {
-        provider: providerLabel(provider),
-        operation: String(operation || ''),
-        attempt: Number(attempt || 1),
-        finalResult,
-        retryAfter: Number(error?.retryAfter || 0),
-      },
-    }).catch(() => null);
+    try {
+      await Promise.resolve(recordOpsEvent(cfg, {
+        severity: finalResult === 'retrying' ? 'warning' : 'error',
+        source: 'provider',
+        eventType: 'provider_request',
+        code: String(error?.code || 'PROVIDER_HTTP_ERROR'),
+        message: error?.message || 'Provider request failed',
+        endpoint: String(operation || ''),
+        status: Number(error?.status || 0) || undefined,
+        durationMs: Number(latencyMs || 0),
+        meta: {
+          provider: providerLabel(provider),
+          operation: String(operation || ''),
+          attempt: Number(attempt || 1),
+          finalResult,
+          retryAfter: Number(error?.retryAfter || 0),
+        },
+      }));
+    } catch {
+      // Operational logging is best-effort and must not mask the provider error.
+    }
   }
 
   async function providerRequestJson(url, cfg, {
@@ -101,7 +111,10 @@ export function createProviderRequestBoundary({
     retries = 1,
   } = {}) {
     const normalizedProvider = providerLabel(provider);
-    const attemptsAllowed = Math.max(0, Math.min(2, Number(retries ?? 1)));
+    const parsedRetries = Number(retries);
+    const attemptsAllowed = Number.isFinite(parsedRetries)
+      ? Math.max(0, Math.min(2, Math.floor(parsedRetries)))
+      : 1;
 
     return await withSingleFlight(safeRequestKey(url, normalizedProvider, operation), async () => {
       let lastError = null;
