@@ -12,9 +12,14 @@ function numericCandidate(value){
   return Number.isFinite(number)?number:null;
 }
 
-function nonNegativeNumber(value,fallback=0){
+function nonNegativeInteger(value,fallback=0){
   const number=numericCandidate(value);
-  return number!==null&&number>=0?number:fallback;
+  return Number.isSafeInteger(number)&&number>=0?number:fallback;
+}
+
+function timestampMsCandidate(value){
+  const number=numericCandidate(value);
+  return number!==null&&number>=0&&number<=8.64e15?number:null;
 }
 
 function positiveInteger(value){
@@ -133,26 +138,26 @@ function normalizeSummary(summary={}){
     : {};
   return {
     severity:{
-      info:nonNegativeNumber(severity.info),
-      warning:nonNegativeNumber(severity.warning),
-      error:nonNegativeNumber(severity.error),
-      critical:nonNegativeNumber(severity.critical),
+      info:nonNegativeInteger(severity.info),
+      warning:nonNegativeInteger(severity.warning),
+      error:nonNegativeInteger(severity.error),
+      critical:nonNegativeInteger(severity.critical),
     },
-    errors:nonNegativeNumber(value.errors),
-    authFailures:nonNegativeNumber(value.authFailures),
-    providerFailures:nonNegativeNumber(value.providerFailures),
-    telegramFailures:nonNegativeNumber(value.telegramFailures),
-    clientErrors:nonNegativeNumber(value.clientErrors),
+    errors:nonNegativeInteger(value.errors),
+    authFailures:nonNegativeInteger(value.authFailures),
+    providerFailures:nonNegativeInteger(value.providerFailures),
+    telegramFailures:nonNegativeInteger(value.telegramFailures),
+    clientErrors:nonNegativeInteger(value.clientErrors),
     latency:{
-      samples:nonNegativeNumber(latency.samples),
+      samples:nonNegativeInteger(latency.samples),
       p95Ms:numericCandidate(latency.p95Ms),
     },
   };
 }
 
 function ratio(current,baseline){
-  const currentValue=nonNegativeNumber(current);
-  const baselineValue=nonNegativeNumber(baseline);
+  const currentValue=nonNegativeInteger(current);
+  const baselineValue=nonNegativeInteger(baseline);
   if(baselineValue<=0) return currentValue>0?null:1;
   return Number((currentValue/baselineValue).toFixed(2));
 }
@@ -233,7 +238,7 @@ export function postDeployRegressionReport(items=[],identity={},options={}){
   const startedAt=Date.parse(deploymentStartedAt);
 
   const hasNow=Object.hasOwn(options||{},'nowMs');
-  const nowCandidate=hasNow?numericCandidate(options?.nowMs):Date.now();
+  const nowCandidate=hasNow?timestampMsCandidate(options?.nowMs):Date.now();
   if(nowCandidate===null) return unavailable('monitor_clock_unavailable',deploySha);
   const nowMs=nowCandidate;
   const windows=normalizedWindows(options?.windowsMinutes);
