@@ -1,3 +1,5 @@
+// @ts-check
+
 export function createProfileDataCapabilitiesModule({
   state,
   elementById,
