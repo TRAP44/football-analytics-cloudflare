@@ -59,7 +59,10 @@ function pct(part,total) {
 }
 
 function seriesKey(provider,operation) {
-  return `${cleanLabel(provider,'provider',MAX_PROVIDER_LENGTH)}::${cleanLabel(operation,'unknown',MAX_OPERATION_LENGTH)}`;
+  return JSON.stringify([
+    cleanLabel(provider,'provider',MAX_PROVIDER_LENGTH),
+    cleanLabel(operation,'unknown',MAX_OPERATION_LENGTH),
+  ]);
 }
 
 function emptySeries(provider,operation) {
@@ -224,7 +227,7 @@ export function providerSloState(summary = {},policy = DEFAULT_PROVIDER_SLO_POLI
     success:summaryMetric(summary,'successRatePct',100,{min:0,max:100}),
     timeout:summaryMetric(summary,'timeoutRatePct',0,{min:0,max:100}),
     rateLimit:summaryMetric(summary,'rateLimitRatePct',0,{min:0,max:100}),
-    retry:summaryMetric(summary,'retryRatePct',0,{min:0,max:100}),
+    retry:summaryMetric(summary,'retryRatePct',0,{min:0,max:Number.MAX_SAFE_INTEGER}),
     latency:summaryMetric(summary,'avgAttemptLatencyMs',0,{min:0,max:MAX_LATENCY_MS}),
   };
   if (Object.values(metrics).some(metric=>!metric.valid)) {
@@ -425,7 +428,8 @@ export function createProviderObservabilityRuntime({
     const provider=cleanLabel(event.provider,'provider',MAX_PROVIDER_LENGTH);
     const operation=cleanLabel(event.operation,'unknown',MAX_OPERATION_LENGTH);
     const key=seriesKey(provider,operation);
-    state.buckets[key] ||= emptySeries(provider,operation);
+    const existing=normalizeMetricRow(state.buckets[key]);
+    state.buckets[key]=existing || emptySeries(provider,operation);
     const bucket=state.buckets[key];
     bucket.attempts += 1;
 
@@ -449,7 +453,8 @@ export function createProviderObservabilityRuntime({
     }
 
     bucket.failures += 1;
-    classifyFailure(bucket,event.errorType);
+    if (outcome === 'rate_limited') bucket.rateLimits += 1;
+    else classifyFailure(bucket,event.errorType);
     return true;
   }
 
