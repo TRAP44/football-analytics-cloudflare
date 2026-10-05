@@ -43,6 +43,8 @@ import { formatPostDeployRegressionAlert, planPostDeployRegressionAlert, postDep
 import { planPostDeployRegressionResponseTransition, summarizePostDeployRegressionResponse } from './post-deploy-regression-response.js';
 import { buildPostDeployRegressionSloDashboard } from './post-deploy-regression-slo.js';
 import { createCompositeReadinessRuntime } from './readiness-contract.js';
+import { createDiagnosticsRuntime } from './diagnostics-runtime.js';
+import { createAppCapabilitiesRuntime } from './app-capabilities.js';
 import { createPublicHealthRuntime } from './public-health.js';
 import { createAnalysisUsageCompensationRuntime, durableAnalysisUsageHeaders } from './analysis-usage-compensation.js';
 import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
@@ -371,130 +373,34 @@ function currentReleaseIdentity(cfg = {}) {
   });
 }
 
-function publicDataCapabilities() {
-  const paid = ['PRO', 'ULTRA', 'MEGA'].includes(String(memory.provider?.plan || '').toUpperCase());
-  const healthy = paidQuotaHealthy();
-  const publicBudget = providerPublicBudgetMode();
-  const runtime = runtimeControlsSnapshot();
-  const expandedAllowed = runtime.expandedDataEnabled !== false;
-  const liveAllowed = runtime.liveEnabled !== false;
-  const canEnrich = Boolean(paid && healthy && expandedAllowed && !['conserve','emergency'].includes(publicBudget.mode));
-  return {
-    visibility: 'public',
-    mode: paid ? 'expanded' : 'standard',
-    label: isSecurityLockdownControls(runtime) ? 'Security Lockdown' : runtime.maintenanceMode ? 'Техническое обслуживание' : publicBudget.label,
-    refreshSeconds: liveAllowed ? publicBudget.liveRefreshSeconds : 0,
-    runtime: publicRuntimeControls(runtime),
-    features: {
-      events: true,
-      matchStatistics: true,
-      liveRefresh: liveAllowed,
-      lineupsFallback: Boolean(paid && healthy && expandedAllowed),
-      playerStats: canEnrich,
-      injuries: canEnrich,
-      liveOdds: Boolean(canEnrich && liveAllowed),
-      oddsMovement: Boolean(canEnrich && liveAllowed),
-    },
-    note: isSecurityLockdownControls(runtime)
-      ? (runtime.message || 'Аварийный режим безопасности: изменения и внешние запросы временно остановлены.')
-      : runtime.maintenanceMode
-      ? (runtime.message || 'Часть футбольных функций временно приостановлена.')
-      : !expandedAllowed
-        ? 'Расширенные данные источника временно отключены администратором.'
-        : paid
-          ? (canEnrich
-              ? 'Расширенный режим активен. Сохранение данных по функциям снижает количество повторных запросов.'
-              : 'Расширенный тариф активен, но сейчас включён защитный режим квоты.')
-          : 'Сейчас приложение экономит запросы. После увеличения квоты расширенные данные включатся автоматически.',
-  };
+let appCapabilitiesRuntime=null;
+
+function getAppCapabilitiesRuntime() {
+  if (!appCapabilitiesRuntime) {
+    appCapabilitiesRuntime=createAppCapabilitiesRuntime({
+      memory,
+      appVersion:APP_VERSION,
+      minClientVersion:MIN_CLIENT_VERSION,
+      apiContractVersion:API_CONTRACT_VERSION,
+      releaseChannel:RELEASE_CHANNEL,
+      releaseCandidate:RC_NAME,
+      paidQuotaHealthy,
+      providerPublicBudgetMode,
+      runtimeControlsSnapshot,
+      isSecurityLockdownControls,
+      publicRuntimeControls,
+      currentReleaseIdentity,
+    });
+  }
+  return appCapabilitiesRuntime;
 }
 
+function publicDataCapabilities() {
+  return getAppCapabilitiesRuntime().publicDataCapabilities();
+}
 
 function appManifest(cfg) {
-  return {
-    ok: true,
-    app: 'football-manager',
-    version: APP_VERSION,
-    recommendedClientVersion: APP_VERSION,
-    minClientVersion: MIN_CLIENT_VERSION,
-    apiContract: API_CONTRACT_VERSION,
-    releaseChannel: RELEASE_CHANNEL,
-    releaseCandidate: RC_NAME,
-    deployment: currentReleaseIdentity(cfg),
-    maintenance: Boolean(runtimeControlsSnapshot().maintenanceMode),
-    monetization: cfg.monetizationEnabled ? 'enabled' : 'paused',
-    runtime: publicRuntimeControls(),
-    compatibility: {
-      hardBlockBelowMinClient: true,
-      contractRequired: API_CONTRACT_VERSION,
-      softReloadOnVersionDifference: true,
-    },
-    features: {
-      startupSafety: true,
-      rollbackSafety: true,
-      failureRecovery: true,
-      productionLoadSafety: true,
-      regressionQA: true,
-      releaseMonitor: true,
-      productionMonitor: true,
-      rollbackVerification: true,
-      providerDataReliability: true,
-      aiAnalysisQualityGate: true,
-      clientTelemetry: true,
-      notificationReliability: true,
-      reminderDeliveryClaims: true,
-      runtimeControls: true,
-      emergencyKillSwitches: true,
-      cloudflareEdgeRateLimits: true,
-      emergencySecurityLockdown: true,
-      runtimeRollback: true,
-      runtimeHistory: true,
-      predictionIntegrity: true,
-      modelVersionCohorts: true,
-      calibrationDiagnostics: true,
-      predictionRemediation: true,
-      settlementRecovery: true,
-      settlementWatchdog: true,
-      automaticSettlementRecovery: true,
-      settlementCircuitBreaker: true,
-      settlementReliability: true,
-      settlementRunLedger: true,
-      interruptedRunRecovery: true,
-      settlementFinalityVerification: true,
-      settlementDriftGuard: true,
-      settlementDriftReview: true,
-      settlementAdjudication: true,
-      trustedMetricsGate: true,
-      twoPassSettlementFinality: true,
-      calibrationPromotionGate: true,
-      adaptiveWeightsHoldout: true,
-      unifiedSearch: true,
-      searchMatchHistory: true,
-      searchLeagueFixtures: true,
-      searchQualityDrill: true,
-      searchOutcomeAnalytics: true,
-      zeroResultRecovery: true,
-      teamFixtureDiscovery: true,
-      matchSelectionIntelligence: true,
-      primaryMatchRecommendation: true,
-      oneTapAiHandoff: true,
-      telegramMiniAppE2E: true,
-      telegramWebhookPersistentDedupe: true,
-      telegramWebhookDedupeObservability: true,
-      supabaseProbeConfirmation: true,
-      supabaseSchemaProbeConfirmation: true,
-      cachedFullAnalysisHandoff: true,
-      aiFreshnessGuard: true,
-      preKickoffRecheck: true,
-      preKickoffChangeDetection: true,
-      analysisDeltaSummary: true,
-      smartNotifications: true,
-      smartNotificationEntitlements: true,
-      calibrationChampionChallenger: true,
-      calibrationAutomaticRollback: true,
-    },
-    serverTime: new Date().toISOString(),
-  };
+  return getAppCapabilitiesRuntime().appManifest(cfg);
 }
 
 function sleepMs(ms) {
@@ -13946,84 +13852,24 @@ function supabaseProbeConfirmationSelfTest() {
   };
 }
 
-async function readRecentOpsEvents(cfg, limit = 10) {
-  const fallback = () => ({ persistent: false, migrationReady: false, items: memory.opsEvents.slice(0, limit) });
-  if (!hasSupabase(cfg)) return fallback();
-  try {
-    const url = new URL(`${cfg.supabaseUrl}/rest/v1/ops_events`);
-    url.searchParams.set('select', 'created_at,severity,source,event_type,code,message,endpoint,status,duration_ms,metadata');
-    url.searchParams.set('order', 'created_at.desc');
-    url.searchParams.set('limit', String(Math.max(1, Math.min(20, limit))));
-    const r = await fetchWithTimeout(url, { headers: supaHeaders(cfg) }, 7000, 'Supabase ops');
-    if (!r.ok) return fallback();
-    const items = await r.json().catch(() => []);
-    return { persistent: true, migrationReady: true, items };
-  } catch {
-    return fallback();
-  }
-}
-
-async function collectDiagnostics(cfg) {
-  const [supabase, ops, integrity, telegramWebhook, providerObservability] = await Promise.all([
-    probeSupabaseConfirmed(cfg),
-    readRecentOpsEvents(cfg, 12),
-    readIntegrityDiagnostics(cfg, 12),
-    readTelegramDedupeHealth(cfg,60),
-    providerSloReport(cfg,24),
-  ]);
-  const provider = providerSnapshot();
-  let overall;
-  if (supabase.configured && !supabase.ok) overall = { state: 'critical', label: 'Нужна проверка Supabase' };
-  else if (supabase.recovered) overall = { state:'warning', label:'Supabase ответил после подтверждающего probe' };
-  else if (provider.health === 'critical') overall = { state: 'critical', label: 'API-Football временно ограничен' };
-  else if (providerObservability?.overall?.state === 'incident') overall = { state:'warning', label:'Provider SLO нарушен' };
-  else if (!ops.migrationReady && hasSupabase(cfg)) overall = { state: 'warning', label: 'Проверьте актуальную схему Supabase' };
-  else if (!integrity.migrationReady && hasSupabase(cfg)) overall = { state: 'warning', label: 'Проверьте актуальную схему Supabase' };
-  else if (!telegramWebhook.available && hasSupabase(cfg)) overall = { state:'warning', label:'Нужна миграция наблюдаемости Telegram webhook' };
-  else if (telegramWebhook.state === 'incident') overall = { state:'warning', label:'Persistent Telegram dedupe требует проверки' };
-  else if (integrity.lastRun?.health === 'critical') overall = { state: 'warning', label: 'Есть проблемы качества футбольных данных' };
-  else if (Number(memory.telemetry?.analysisHistoryWriteLosses || 0) >= 3) overall = { state: 'warning', label: 'Есть потери истории AI-анализов' };
-  else if (telegramWebhook.state === 'watch' || provider.health === 'warning' || providerObservability?.overall?.state === 'watch' || integrity.lastRun?.health === 'warning' || Number(memory.telemetry?.routeErrors || 0) > 0 || Number(memory.telemetry?.cacheWriteErrors || 0) > 0) overall = { state: 'warning', label: 'Есть предупреждения' };
-  else if (provider.health === 'waiting') overall = { state: 'waiting', label: 'Ожидаем первый запрос к источнику данных' };
-  else overall = { state: 'ok', label: 'Системы работают штатно' };
-
-  const recommendations = [];
-  if (supabase.ok && !ops.migrationReady && hasSupabase(cfg)) recommendations.push(`Схема постоянного журнала событий недоступна. ${SUPABASE_SCHEMA_GUIDANCE}`);
-  if (!integrity.migrationReady && hasSupabase(cfg)) recommendations.push(`Схема постоянного журнала целостности недоступна. ${SUPABASE_SCHEMA_GUIDANCE}`);
-  if (!telegramWebhook.available && hasSupabase(cfg)) recommendations.push('Примените supabase_migration_v6_17.sql: она добавляет read-only health RPC для persistent Telegram dedupe.');
-  if (Number(telegramWebhook.staleProcessing || 0) > 0 || Number(telegramWebhook.failedCurrent || 0) > 0) recommendations.push(`Проверьте Telegram webhook claims: stale=${Number(telegramWebhook.staleProcessing || 0)}, failed=${Number(telegramWebhook.failedCurrent || 0)}.`);
-  if (provider.cooldownActive) recommendations.push(`API-Football находится на паузе ещё примерно ${footballCooldownRemaining()} сек.; приложение должно использовать последние сохранённые данные.`);
-  if (providerObservability?.overall?.state === 'incident') recommendations.push('Provider SLO за 24 часа нарушен: проверьте success rate, timeout/rate-limit долю и задержку по источникам.');
-  else if (providerObservability?.overall?.state === 'watch') recommendations.push('Provider SLO за 24 часа вышел из целевого диапазона; наблюдайте provider/operation breakdown перед расширением нагрузки.');
-  for (const step of providerObservability?.incident?.activeIncident?.runbook || []) {
-    if (recommendations.length >= 8) break;
-    recommendations.push(String(step));
-  }
-  if (supabase.configured && !supabase.ok) recommendations.push('Проверьте адрес Supabase, сервисный ключ и доступность интерфейса базы данных.');
-  if (supabase.recovered) recommendations.push(`Первый Supabase probe не прошёл (${supabase.initialStatus || 'unknown'}), подтверждающий запрос успешно восстановился. Наблюдайте частоту transient recoveries.`);
-  if (Number(provider.dailyUsedPct) >= 90) recommendations.push('Дневная квота API-Football использована более чем на 90%; до сброса лимита работаем в экономном режиме.');
-  if (Number(integrity.lastRun?.quarantined || 0) > 0) recommendations.push(`Защита целостности скрыла ${Number(integrity.lastRun.quarantined)} подозрительных матч(а/ей) из последней выборки. Проверьте список кодов проблем ниже.`);
-  if (Number(integrity.lastRun?.warnings || 0) > 0 && !Number(integrity.lastRun?.quarantined || 0)) recommendations.push('В последней выборке есть предупреждения целостности данных; приложение оставило матчи доступными, но пометило их для контроля.');
-  if (Number(memory.telemetry?.analysisHistoryWriteLosses || 0) >= 3) recommendations.push(`История AI-анализов потеряла ${Number(memory.telemetry.analysisHistoryWriteLosses)} записей после повторной попытки в текущем экземпляре Worker. Проверьте Supabase analysis_history и события ANALYSIS_HISTORY_WRITE_LOST.`);
-  else if (Number(memory.telemetry?.analysisHistoryRetryPending || 0) > 0) recommendations.push('Есть фоновые повторные попытки сохранения истории AI-анализов; проверьте их завершение в ops_events.');
-  if (!recommendations.length) recommendations.push('Критичных действий сейчас не требуется.');
-
-  return {
-    available: true,
-    version: APP_VERSION,
-    generatedAt: new Date().toISOString(),
-    overall,
-    provider,
-    providerObservability,
-    supabase,
-    runtime: telemetrySnapshot(),
-    observability: { persistent: ops.persistent, migrationReady: ops.migrationReady, retentionDays: cfg.opsRetentionDays, recentEvents: ops.items },
-    telegramWebhook,
-    integrity,
-    recommendations,
-  };
-}
-
+const {
+  readRecentOpsEvents,
+  collectDiagnostics,
+} = createDiagnosticsRuntime({
+  memory,
+  appVersion:APP_VERSION,
+  supabaseSchemaGuidance:SUPABASE_SCHEMA_GUIDANCE,
+  hasSupabase,
+  fetchWithTimeout,
+  supaHeaders,
+  probeSupabaseConfirmed,
+  readIntegrityDiagnostics,
+  readTelegramDedupeHealth,
+  providerSloReport,
+  providerSnapshot,
+  footballCooldownRemaining,
+  telemetrySnapshot,
+});
 
 const CLIENT_TELEMETRY_EVENTS = new Set([
   'boot_ok',
