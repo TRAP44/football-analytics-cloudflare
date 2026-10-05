@@ -76,3 +76,50 @@ test('Phase 2 cache boundary persists provenance without making write failures f
   assert.ok(failing.telemetry.includes('cacheWriteErrors'));
   assert.ok(failing.telemetry.includes('supabaseErrors'));
 });
+
+
+test('Issue #494 redacts user-scoped cache keys from read failure ops metadata',async()=>{
+  const userKey='postmatch:return:disabled:123456789:v1';
+  const rt=runtime({
+    hasSupabase:()=>true,
+    supaSelectOne:async()=>{throw new Error('db down');},
+  });
+  await rt.api.getCacheEntry(userKey,{},false);
+  assert.equal(rt.ops.length,1);
+  assert.equal(rt.ops[0].code,'CACHE_DB_READ_NO_L1');
+  assert.equal(rt.ops[0].meta.cacheCategory,'postmatch:return:disabled');
+  assert.equal(Object.hasOwn(rt.ops[0].meta,'cacheKey'),false);
+  assert.equal(Object.hasOwn(rt.ops[0].meta,'fixtureId'),false);
+  assert.equal(JSON.stringify(rt.ops[0].meta).includes('123456789'),false);
+});
+
+test('Issue #494 redacts user/fixture ids from write failure ops metadata',async()=>{
+  const rt=runtime({
+    hasSupabase:()=>true,
+    supaUpsert:async()=>{throw new Error('write down');},
+  });
+  await rt.api.setCache(
+    'postmatch:return:disabled:987654321:v1',
+    777777,
+    {provider:'api-football'},
+    {cacheMinutes:20},
+    20,
+  );
+  assert.equal(rt.ops.length,1);
+  assert.equal(rt.ops[0].code,'CACHE_DB_WRITE');
+  assert.equal(rt.ops[0].meta.cacheCategory,'postmatch:return:disabled');
+  assert.equal(rt.ops[0].meta.provider,'api-football');
+  assert.equal(Object.hasOwn(rt.ops[0].meta,'cacheKey'),false);
+  assert.equal(Object.hasOwn(rt.ops[0].meta,'fixtureId'),false);
+  const serialized=JSON.stringify(rt.ops[0].meta);
+  assert.equal(serialized.includes('987654321'),false);
+  assert.equal(serialized.includes('777777'),false);
+});
+
+test('Issue #494 keeps useful bounded cache categories for ordinary keys',()=>{
+  const rt=runtime();
+  assert.equal(rt.api.cacheOpsCategory('fixture:12345'),'fixture');
+  assert.equal(rt.api.cacheOpsCategory('odds:league:premier:123'),'odds:league:premier');
+  assert.equal(rt.api.cacheOpsCategory(''),'unknown');
+  assert.ok(rt.api.cacheOpsCategory('x'.repeat(100)).length<=80);
+});
