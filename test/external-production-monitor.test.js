@@ -5,6 +5,8 @@ import { evaluateEndpoint } from '../scripts/external-production-monitor.js';
 import {
   classifyPrimaryRunJobs,
   decideDiagnosticActions,
+  parseTrackingIssueNumber,
+  selectInfrastructureIncidentTarget,
 } from '../scripts/external-monitor-control-plane.js';
 
 const workflow = fs.readFileSync('.github/workflows/external-production-monitor.yml', 'utf8');
@@ -91,6 +93,7 @@ test('failed primary monitor has a self-hosted diagnostic fallback with read-onl
   assert.match(diagnosticsWorkflow, /runs-on: \[self-hosted, Linux, X64\]/);
   assert.match(diagnosticsWorkflow, /actions: read/);
   assert.match(diagnosticsWorkflow, /issues: write/);
+  assert.match(diagnosticsWorkflow, /MONITOR_INFRA_TRACKING_ISSUE: "463"/);
   assert.match(diagnosticsWorkflow, /external-monitor-control-plane\.js diagnose/);
   assert.doesNotMatch(diagnosticsWorkflow, /API_FOOTBALL_KEY|THE_ODDS_API_KEY|TAVILY_KEY|SUPABASE_SECRET_KEY/);
 });
@@ -143,5 +146,29 @@ test('diagnostics use fallback health to separate app outage from monitor failur
   assert.deepEqual(decideDiagnosticActions(zeroStep, false), {
     availability: 'open',
     infrastructure: 'open',
+  });
+});
+
+
+test('known monitor-infrastructure failures reuse the umbrella runner incident instead of opening duplicates', () => {
+  assert.equal(parseTrackingIssueNumber('463'),463);
+  assert.equal(parseTrackingIssueNumber('0'),0);
+  assert.equal(parseTrackingIssueNumber('bad'),0);
+
+  const openIssues=[
+    { number:463, title:'P1 — Eliminate self-hosted runner as a single point of failure' },
+    { number:507, title:'[monitor-infra] External Production Monitor execution failure' },
+  ];
+  assert.deepEqual(selectInfrastructureIncidentTarget(openIssues,463),{
+    kind:'tracking',
+    number:463,
+  });
+  assert.deepEqual(selectInfrastructureIncidentTarget(openIssues,999),{
+    kind:'dedicated',
+    number:0,
+  });
+  assert.deepEqual(selectInfrastructureIncidentTarget([{number:463,pull_request:{}}],463),{
+    kind:'dedicated',
+    number:0,
   });
 });
