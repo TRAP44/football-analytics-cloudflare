@@ -523,13 +523,35 @@ export function createApiFootballGateway({
     return body.response;
   }
 
+  function providerTransportPolicy(options = {}) {
+    const responseType = ['array','any','envelope'].includes(String(options.responseType || 'array'))
+      ? String(options.responseType || 'array')
+      : 'array';
+    const transportRetries = Math.max(0, Math.min(1, Number(options.transportRetries ?? 1)));
+    const timeoutMs = Math.max(500, Number(options.timeoutMs || 10000));
+    const allowDailyReserve = options.allowDailyReserve === true;
+    return Object.freeze({
+      responseType,
+      transportRetries,
+      timeoutMs,
+      allowDailyReserve,
+    });
+  }
+
   function providerRequestKey(path, params, options = {}) {
     const pairs = Object.entries(params || {})
       .filter(([, value]) => value !== undefined && value !== null && value !== '')
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, value]) => `${key}=${String(value)}`)
       .join('&');
-    return `football:${path}?${pairs}:type=${options.responseType || 'array'}`;
+    const policy=providerTransportPolicy(options);
+    return [
+      `football:${path}?${pairs}`,
+      `type=${policy.responseType}`,
+      `retries=${policy.transportRetries}`,
+      `timeout=${policy.timeoutMs}`,
+      `dailyReserve=${policy.allowDailyReserve ? 'allow' : 'protect'}`,
+    ].join(':');
   }
 
   function isRetryableFootballTransportError(error) {
@@ -538,16 +560,21 @@ export function createApiFootballGateway({
   }
 
   async function apiFootball(path, params, cfg, options = {}) {
+    const policy=providerTransportPolicy(options);
     return await withSingleFlight(
-      providerRequestKey(path, params, options),
+      providerRequestKey(path, params, policy),
       async () => {
-        const retries = Math.max(0, Math.min(1, Number(options.transportRetries ?? 1)));
+        const retries = policy.transportRetries;
         const maxAttempts = retries + 1;
         let lastError = null;
         for (let attempt = 0; attempt <= retries; attempt += 1) {
           try {
             return await apiFootballNetwork(path, params, cfg, {
               ...options,
+              responseType:policy.responseType,
+              transportRetries:policy.transportRetries,
+              timeoutMs:policy.timeoutMs,
+              allowDailyReserve:policy.allowDailyReserve,
               attempt: attempt + 1,
               maxAttempts,
             });
@@ -576,6 +603,7 @@ export function createApiFootballGateway({
     claimEmergencyLocalProviderBudget,
     claimDistributedProviderBudget,
     apiFootballNetwork,
+    providerTransportPolicy,
     providerRequestKey,
     isRetryableFootballTransportError,
     apiFootball,
