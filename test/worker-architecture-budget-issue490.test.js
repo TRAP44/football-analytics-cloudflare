@@ -6,6 +6,9 @@ import { createPublicHealthRuntime } from '../src/public-health.js';
 import { createPublicStatusRouter, createPublicStatusRuntime } from '../src/public-status.js';
 import { createReleaseFieldEvidenceRuntime } from '../src/release-field-evidence.js';
 import { createAppCapabilitiesRuntime } from '../src/app-capabilities.js';
+import { createApiAnalyzeRuntime } from '../src/api-analyze-runtime.js';
+import { createProductionMonitorRuntime } from '../src/production-monitor-runtime.js';
+import { createLaunchFunnelRuntime } from '../src/launch-funnel-runtime.js';
 
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 
@@ -24,6 +27,12 @@ test('extracted runtime factories are executable contracts, not source-only plac
   assert.equal(typeof createReleaseFieldEvidenceRuntime,'function');
   assert.equal(typeof createDiagnosticsRuntime,'function');
   assert.equal(typeof createAppCapabilitiesRuntime,'function');
+  assert.equal(typeof createApiAnalyzeRuntime,'function');
+  assert.equal(typeof createProductionMonitorRuntime,'function');
+  assert.equal(typeof createLaunchFunnelRuntime,'function');
+  assert.equal(typeof createApiAnalyzeRuntime({}),'function');
+  assert.equal(typeof createProductionMonitorRuntime({}),'function');
+  assert.equal(typeof createLaunchFunnelRuntime({}),'function');
 
   const publicStatus=createPublicStatusRuntime({
     loadRuntimeControls:async()=>({value:{maintenanceMode:false,analysisEnabled:true,searchEnabled:true,liveEnabled:true,message:''}}),
@@ -118,6 +127,9 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/import \{ createReleaseFieldEvidenceRuntime \} from '\.\/release-field-evidence\.js'/);
   assert.match(worker,/import \{ createDiagnosticsRuntime \} from '\.\/diagnostics-runtime\.js'/);
   assert.match(worker,/import \{ createAppCapabilitiesRuntime \} from '\.\/app-capabilities\.js'/);
+  assert.match(worker,/import \{ createApiAnalyzeRuntime \} from '\.\/api-analyze-runtime\.js'/);
+  assert.match(worker,/import \{ createProductionMonitorRuntime \} from '\.\/production-monitor-runtime\.js'/);
+  assert.match(worker,/import \{ createLaunchFunnelRuntime \} from '\.\/launch-funnel-runtime\.js'/);
   assert.match(worker,/createDiagnosticsRuntime\(\{/);
   assert.match(worker,/createPublicHealthRuntime\(\{/);
   assert.match(worker,/createPublicStatusRuntime\(\{/);
@@ -132,4 +144,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.doesNotMatch(worker,/async function recordClosedBetaConfigurationEvidence\(/);
   assert.doesNotMatch(worker,/async function probeReleaseProviderQuotaEvidence\(/);
   assert.doesNotMatch(worker,/async function captureReleaseFieldEvidence\(/);
+  assert.doesNotMatch(worker,/async function apiAnalyze\(request, cfg, user\)/);
+  assert.doesNotMatch(worker,/async function runProductionMonitor\(cfg, scheduledAt = new Date\(\), options = \{\}\)/);
+  assert.doesNotMatch(worker,/async function apiLaunchFunnel\(request,cfg\)/);
 });
