@@ -1,5 +1,6 @@
 export function createPlayerHubModule(deps = {}) {
   const {
+    $,
     activeViewId,
     api,
     buildPlayerComparisonCandidates,
