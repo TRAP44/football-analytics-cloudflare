@@ -1,6 +1,13 @@
 import { isAdminSensitivePath } from './security-route-registry.js';
 import { privacyNetworkFingerprint } from './security-gate.js';
 
+const PUBLIC_HEALTH_PATHS = new Set([
+  '/health',
+  '/health/live',
+  '/health/ready',
+  '/api/health',
+]);
+
 const PUBLIC_UNAUTHENTICATED_API_PATHS = new Set([
   '/api/public-status',
   '/api/health',
@@ -14,6 +21,13 @@ function protectedApiPath(path='') {
 }
 
 const POLICIES = Object.freeze([
+  Object.freeze({
+    id: 'public-health',
+    binding: 'EDGE_ANALYZE_RATE_LIMIT',
+    limit: 600,
+    period: 60,
+    matches: (path) => PUBLIC_HEALTH_PATHS.has(path),
+  }),
   Object.freeze({
     id: 'sensitive',
     binding: 'EDGE_SENSITIVE_RATE_LIMIT',
