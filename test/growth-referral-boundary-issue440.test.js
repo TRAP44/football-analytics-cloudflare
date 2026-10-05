@@ -91,7 +91,7 @@ test('growth/referral runtime rejects coercible identifiers and malformed dedupe
     userId:7,
     eventName:'share_created',
     eventKey:'unsafe/key',
-  }), true);
+  }), false);
   assert.equal(memory.growthEventKeys.size,0);
 
   assert.equal((await api.applyReferralAttribution(true,{referralCode:'a1b2c3d4e5f60708'},{})).status,'invalid_user');
@@ -188,19 +188,28 @@ test('Supabase referral lookup fails closed for mismatched or corrupted attribut
   assert.equal(await wrongEvent.api.referralAttributionForUser(200,{}),null);
 });
 
-test('referred payment rejects malformed charge IDs and non-positive Stars amounts', async () => {
+test('referred payment safely deduplicates opaque charge IDs and rejects non-positive Stars amounts', async () => {
   const { api, memory }=runtime();
   memory.referralAttributions.set(200,'a1b2c3d4e5f60708');
 
   assert.equal(await api.recordReferredPayment(200,{
-    telegram_payment_charge_id:'bad/charge',
+    telegram_payment_charge_id:'opaque/charge+with=symbols',
     total_amount:199,
-  },'PRO',{}),false);
+  },'PRO',{}),true);
+  const paymentKeys=[...memory.growthEventKeys].filter(key=>key.startsWith('referred_payment:'));
+  assert.equal(paymentKeys.length,1);
+  assert.match(paymentKeys[0],/^referred_payment:h[a-f0-9]{40}$/);
+
+  assert.equal(await api.recordReferredPayment(200,{
+    telegram_payment_charge_id:'opaque/charge+with=symbols',
+    total_amount:199,
+  },'PRO',{}),true);
+  assert.equal([...memory.growthEventKeys].filter(key=>key.startsWith('referred_payment:')).length,1);
+
   assert.equal(await api.recordReferredPayment(200,{
     telegram_payment_charge_id:'charge-zero',
     total_amount:0,
   },'PRO',{}),false);
-  assert.equal(memory.growthEventKeys.size,0);
 });
 
 test('growth retention cleanup uses injected clock and preserves table/query contract', async () => {
