@@ -47,6 +47,7 @@ import { createCompositeReadinessRuntime } from './readiness-contract.js';
 import { createDiagnosticsRuntime } from './diagnostics-runtime.js';
 import { createAppCapabilitiesRuntime } from './app-capabilities.js';
 import { createPublicHealthRuntime } from './public-health.js';
+import { failSoftWithOpsEvent } from './fail-soft-ops.js';
 import { createPublicStatusRouter, createPublicStatusRuntime } from './public-status.js';
 import { createAnalysisUsageCompensationRuntime, durableAnalysisUsageHeaders } from './analysis-usage-compensation.js';
 import { markCachedSourceMeta, resolveProviderChain, sourceMeta } from './data-service.js';
@@ -2165,7 +2166,24 @@ async function applySuccessfulPayment(userId, payment, cfg, fallbackDate = Math.
   const chargeId = String(payment.telegram_payment_charge_id || '');
   if (!chargeId) return false;
 
-  const existingCharge = await findRefundableBillingCharge(userId, chargeId, cfg).catch(() => null);
+  const existingCharge = await failSoftWithOpsEvent(
+    () => findRefundableBillingCharge(userId, chargeId, cfg),
+    {
+      fallback:null,
+      onFailure:error=>recordOpsEvent(cfg,{
+        severity:'error',
+        source:'billing',
+        eventType:'payment_reconciliation',
+        code:'BILLING_EXISTING_CHARGE_LOOKUP_FAILED',
+        message:'Existing billing charge lookup failed during successful-payment reconciliation.',
+        endpoint:'telegram_stars_sync',
+        meta:{
+          chargeSuffix:chargeId.slice(-8),
+          error:redactOpsString(error?.message || error,180),
+        },
+      }),
+    },
+  );
   if (String(existingCharge?.status || '').toLowerCase() === 'refunded') {
     await recordOpsEvent(cfg, {
       severity:'warning',
@@ -2215,7 +2233,25 @@ async function applySuccessfulPayment(userId, payment, cfg, fallbackDate = Math.
       subscription_canceled: false,
       telegram_payment_charge_id: chargeId,
     }, cfg);
-    await recordReferredPayment(userId,payment,subscription.plan,cfg).catch(()=>false);
+    await failSoftWithOpsEvent(
+      () => recordReferredPayment(userId,payment,subscription.plan,cfg),
+      {
+        fallback:false,
+        onFailure:error=>recordOpsEvent(cfg,{
+          severity:'error',
+          source:'billing',
+          eventType:'referral_payment_write',
+          code:'BILLING_REFERRAL_PAYMENT_WRITE_FAILED',
+          message:'Referral payment attribution failed after a confirmed subscription payment.',
+          endpoint:'telegram_stars_sync',
+          meta:{
+            plan:subscription.plan,
+            chargeSuffix:chargeId.slice(-8),
+            error:redactOpsString(error?.message || error,180),
+          },
+        }),
+      },
+    );
     return true;
   }
 
@@ -6886,7 +6922,25 @@ async function markDigestSent(row, date, cfg) {
 }
 
 async function releaseDigestDelivery(row,date,cfg) {
-  if (hasSupabase(cfg)) return await supaRpc(cfg,'release_daily_digest',{p_telegram_id:Number(row.telegram_id),p_delivery_date:date},2500).catch(()=>false);
+  if (hasSupabase(cfg)) {
+    return await failSoftWithOpsEvent(
+      () => supaRpc(cfg,'release_daily_digest',{p_telegram_id:Number(row.telegram_id),p_delivery_date:date},2500),
+      {
+        fallback:false,
+        onFailure:error=>recordOpsEvent(cfg,{
+          severity:'error',
+          source:'notifications',
+          eventType:'digest_delivery_release',
+          code:'DAILY_DIGEST_RELEASE_FAILED',
+          message:'Daily digest delivery claim could not be released.',
+          meta:{
+            deliveryDate:String(date || ''),
+            error:redactOpsString(error?.message || error,180),
+          },
+        }),
+      },
+    );
+  }
   const current=memory.botDigestSubscriptions.get(Number(row.telegram_id)) || row;
   memory.botDigestSubscriptions.set(Number(row.telegram_id),{...current,delivery_claim_date:null,delivery_locked_until:null});
   return true;
@@ -7875,8 +7929,26 @@ async function releaseChannelPublishIdempotency(cacheKey, meta = {}, cfg) {
     if (String(current?.payload?.claimId || '')!==claimId || current?.payload?.state!=='publishing') return;
     memory.cache.delete(key);
     if (hasSupabase(cfg)) await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${key}`});
-  } catch {
+  } catch (error) {
     // A retained claim is safer than a duplicate channel post; TTL clears it later.
+    await failSoftWithOpsEvent(
+      async()=>{ throw error; },
+      {
+        fallback:null,
+        onFailure:cause=>recordOpsEvent(cfg,{
+          severity:'error',
+          source:'channel_publisher',
+          eventType:'idempotency_release',
+          code:'CHANNEL_PUBLISH_CLAIM_RELEASE_FAILED',
+          message:'Telegram channel publish idempotency claim release failed; TTL fallback remains active.',
+          endpoint:'/api/admin/channel-publisher/test',
+          meta:{
+            claimSuffix:claimId.slice(-8),
+            error:redactOpsString(cause?.message || cause,180),
+          },
+        }),
+      },
+    );
   }
 }
 
