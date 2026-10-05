@@ -29,10 +29,11 @@ test('invoice signing fails closed without a dedicated secret and rejects tamper
 });
 
 
-test('production deploy fails closed when dedicated invoice secret is absent',()=>{
+test('production deploy configures dedicated invoice secret when available without blocking dormant billing',()=>{
   const workflow=fs.readFileSync('.github/workflows/deploy-production.yml','utf8');
   assert.match(workflow,/INVOICE_SIGNING_SECRET: \$\{\{ secrets\.INVOICE_SIGNING_SECRET \}\}/);
-  assert.match(workflow,/-z "\$INVOICE_SIGNING_SECRET"/);
+  assert.doesNotMatch(workflow,/-z "\$INVOICE_SIGNING_SECRET"/);
   assert.match(workflow,/wrangler secret put INVOICE_SIGNING_SECRET/);
-  assert.doesNotMatch(workflow,/env\.INVOICE_SIGNING_SECRET != ''/);
+  assert.match(workflow,/env\.INVOICE_SIGNING_SECRET != ''/);
+  assert.match(workflow,/CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are required before production deployment/);
 });
