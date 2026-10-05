@@ -29,6 +29,65 @@ const event=(state,minutes,options={})=>({
   },
 });
 
+test('lifecycle rejects malformed deploy identities and malformed completed windows',()=>{
+  assert.deepEqual(
+    planPostDeployRegressionLifecycle({...report('watch',15),deploySha:'not-a-sha'},[]),
+    {action:'none',reason:'no_completed_window'},
+  );
+
+  assert.deepEqual(
+    planPostDeployRegressionLifecycle({
+      deploySha:sha,
+      completedWindows:true,
+      windows:[
+        {minutes:true,phase:'complete',state:'incident',signals:[{code:'bad'}]},
+        {minutes:15,phase:'complete',state:'unknown',signals:[{code:'bad'}]},
+      ],
+    },[]),
+    {action:'none',reason:'no_completed_window'},
+  );
+});
+
+test('lifecycle ignores malformed or foreign history rows before choosing previous state',()=>{
+  const history=[
+    event('watch',15,{id:201,createdAt:'2026-09-29T13:20:00Z'}),
+    event('incident',30,{id:202,createdAt:'not-a-date'}),
+    event('incident',30,{id:203,createdAt:'2026-09-29T13:40:00Z',deploySha:otherSha}),
+    {
+      id:204,
+      created_at:'2026-09-29T13:50:00Z',
+      source:'release_regression',
+      event_type:'post_deploy_regression',
+      metadata:{deploySha:sha,lifecycleState:'broken'},
+    },
+  ];
+  const plan=planPostDeployRegressionLifecycle(report('incident',30),history);
+  assert.equal(plan.action,'record');
+  assert.equal(plan.meta.previousLifecycleState,'watch');
+  assert.equal(plan.transitionKey,`${sha}:201:incident`);
+});
+
+test('INCIDENT never downgrades back to WATCH before an explicit recovery',()=>{
+  const history=[event('incident',15,{id:211})];
+  const plan=planPostDeployRegressionLifecycle(report('watch',30),history);
+  assert.deepEqual(plan,{action:'none',reason:'incident_remains_active'});
+});
+
+test('signal codes are canonicalized and bounded without coercing non-strings',()=>{
+  const custom=report('incident',30);
+  custom.completedWindows='2';
+  custom.windows[1].signals=[
+    {code:' auth_failures_increased '},
+    {code:'auth_failures_increased'},
+    {code:true},
+    {},
+  ];
+  const plan=planPostDeployRegressionLifecycle(custom,[]);
+  assert.equal(plan.action,'record');
+  assert.deepEqual(plan.meta.signalCodes,['auth_failures_increased']);
+  assert.equal(plan.meta.completedWindows,2);
+});
+
 test('A healthy regression report creates no lifecycle transition',()=>{
   const plan=planPostDeployRegressionLifecycle(report('healthy',15),[]);
   assert.deepEqual(plan,{action:'none',reason:'healthy_without_active_regression'});
@@ -104,6 +163,17 @@ test('J recovery transition identity is stable for retry after persistence uncer
   const retry=planPostDeployRegressionLifecycle(report('healthy',60),history);
   assert.equal(first.transitionKey,retry.transitionKey);
   assert.equal(first.transitionKey,`${sha}:171:recovered`);
+});
+
+test('transition identity falls back safely when persisted event id is malformed',()=>{
+  const history=[event('watch',15,{id:'not-an-id'})];
+  history[0].metadata.transitionEventId='stable-event-42';
+  const plan=planPostDeployRegressionLifecycle(report('incident',30),history);
+  assert.equal(plan.transitionKey,`${sha}:stable-event-42:incident`);
+
+  history[0].metadata.transitionEventId='unsafe/event';
+  const fallback=planPostDeployRegressionLifecycle(report('incident',30),history);
+  assert.equal(fallback.transitionKey,`${sha}:root:incident`);
 });
 
 test('K concurrent planners produce the same atomic transition identity',()=>{
