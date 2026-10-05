@@ -322,7 +322,7 @@
           </div>
           <div class="billing-quota-track" role="progressbar" aria-label="Использование AI-разборов" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="billingQuotaProgress"></i></div>
 
-          <div id="billingStatus" class="billing-status waiting" role="status" aria-live="polite">Проверяем доступность тарифов…</div>
+          <div id="billingStatus" class="billing-status" role="status" aria-live="polite">Бесплатный режим активен.</div>
 
           <div id="subscriptionDetails" class="subscription-details" hidden>
             <strong id="subscriptionPlan">PRO</strong>
@@ -430,6 +430,16 @@
           </div>
         </section>
 
+        <section id="remindersPanel" class="panel">
+          <div class="section-head profile-section-head">
+            <div>
+              <h2>🔔 Активные напоминания</h2>
+              <p>Можно отключить ненужный матч прямо здесь.</p>
+            </div>
+          </div>
+          <div id="reminderList" class="reminder-list"></div>
+        </section>
+
         <section class="panel preferences-panel">
           <div class="section-head profile-section-head">
             <div>
@@ -516,6 +526,7 @@
           <div class="service-links">
             <a href="/privacy.html">Конфиденциальность</a>
             <a href="/terms.html">Условия использования</a>
+            <a href="/status.html">Статус сервиса</a>
             <button id="betaFeedbackOpenBtn" class="service-link-button" type="button" aria-expanded="false">Сообщить о проблеме</button>
           </div>
           <div class="service-version"><span>Версия приложения</span><strong id="publicAppVersion">6.120.0</strong></div>
