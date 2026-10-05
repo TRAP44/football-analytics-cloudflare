@@ -4,10 +4,16 @@ const PHOTO_CAPTION_LIMIT = 1024;
 const DEDUPE_PREFIX = 'telegram:channel-publish:v1:';
 const CTA_TEXT = 'Открыть матч в MatchRadar';
 
-function publisherError(message, code) {
+function publisherError(message, code, extra = {}) {
   const error = new Error(message);
   error.code = code;
+  Object.assign(error, extra);
   return error;
+}
+
+function positiveSafeInteger(value) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number > 0 ? number : 0;
 }
 
 function normalizedChannelId(value) {
@@ -80,8 +86,19 @@ async function publisherTelegramApi(method, cfg, body = {}, options = {}) {
       signal:controller.signal,
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data?.ok) {
-      throw publisherError(data?.description || `Telegram ${method}: HTTP ${response.status}`, 'PUBLISHER_TELEGRAM_ERROR');
+    if (!response.ok || data?.ok !== true) {
+      throw publisherError(
+        data?.description || `Telegram ${method}: HTTP ${response.status}`,
+        'PUBLISHER_TELEGRAM_ERROR',
+        { status:Number(response.status) || null },
+      );
+    }
+    if (!data?.result || typeof data.result !== 'object' || Array.isArray(data.result)) {
+      throw publisherError(
+        `Telegram ${method} returned an invalid success payload.`,
+        'PUBLISHER_TELEGRAM_RESULT_INVALID',
+        { deliveryUncertain:true },
+      );
     }
     return { state, result:data.result };
   } finally {
@@ -145,8 +162,8 @@ export async function publishChannelMessage(input = {}, deps = {}) {
   if (!state.enabled) {
     return { ok:false, published:false, disabled:true, code:'PUBLISHER_DISABLED', reason:state.reason };
   }
-  const fixtureId = Number(input.fixtureId || 0);
-  if (!Number.isSafeInteger(fixtureId) || fixtureId <= 0) {
+  const fixtureId = positiveSafeInteger(input.fixtureId);
+  if (!fixtureId) {
     throw publisherError('A valid fixtureId is required.', 'PUBLISHER_FIXTURE_REQUIRED');
   }
   const text = safeText(input.text, MESSAGE_TEXT_LIMIT, 'text');
@@ -164,26 +181,41 @@ export async function publishChannelMessage(input = {}, deps = {}) {
   }
 
   const claim = await deps.claimIdempotency(dedupeKey, { fixtureId, channelId:state.channelId });
-  if (claim?.unavailable) {
+  if (claim?.unavailable === true) {
     return { ok:false, published:false, code:'PUBLISHER_IDEMPOTENCY_UNAVAILABLE', dedupeKey };
   }
-  if (!claim?.claimed) {
+  if (claim?.claimed !== true) {
     return {
       ok:true,
       published:false,
       duplicate:true,
-      inProgress:Boolean(claim?.inProgress),
-      messageId:Number(claim?.messageId || 0) || null,
+      inProgress:claim?.inProgress === true,
+      messageId:positiveSafeInteger(claim?.messageId) || null,
       dedupeKey,
       channelId:state.channelId,
     };
   }
 
+  const claimId = cleanIdempotencyKey(claim?.claimId);
+  if (!claimId) {
+    throw publisherError('Publisher idempotency claim did not return a valid claimId.', 'PUBLISHER_IDEMPOTENCY_INVALID_CLAIM');
+  }
+
+  let telegramAccepted = false;
+  let messageId = null;
   try {
     const result = await sendMessage(cfg, { text, ctaUrl }, { fetchImpl:deps.fetchImpl });
-    const messageId = Number(result?.message_id || 0) || null;
+    telegramAccepted = true;
+    messageId = positiveSafeInteger(result?.message_id) || null;
+    if (!messageId) {
+      throw publisherError(
+        'Telegram accepted the publish request but did not return a valid message_id.',
+        'PUBLISHER_TELEGRAM_RESULT_INVALID',
+        { deliveryUncertain:true },
+      );
+    }
     await deps.completeIdempotency(dedupeKey, {
-      claimId:claim.claimId,
+      claimId,
       fixtureId,
       channelId:state.channelId,
       messageId,
@@ -197,7 +229,18 @@ export async function publishChannelMessage(input = {}, deps = {}) {
       channelId:state.channelId,
     };
   } catch (error) {
-    await deps.releaseIdempotency(dedupeKey, { claimId:claim.claimId }).catch(() => {});
+    if (!telegramAccepted && error?.deliveryUncertain !== true) {
+      try {
+        await Promise.resolve(deps.releaseIdempotency(dedupeKey, { claimId }));
+      } catch {
+        // Failed release keeps the claim fail-closed rather than risking a duplicate publish.
+      }
+    }
+    if (telegramAccepted || error?.deliveryUncertain === true) {
+      error.deliveryUncertain = true;
+      error.dedupeKey = dedupeKey;
+      error.messageId = messageId;
+    }
     throw error;
   }
 }
