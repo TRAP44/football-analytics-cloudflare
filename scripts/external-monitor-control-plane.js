@@ -48,12 +48,15 @@ async function githubRequest(path, {
   token = process.env.GITHUB_TOKEN,
   repository = process.env.GITHUB_REPOSITORY,
   fetchImpl = fetch,
+  timeoutMs = 15000,
 } = {}) {
   const repo = normalizeRepository(repository);
+  const boundedTimeoutMs=Math.max(1000,Math.min(30000,Number(timeoutMs || 15000)));
   const response = await fetchImpl(`https://api.github.com/repos/${repo}${path}`, {
     method,
     headers: githubHeaders(token),
     body: body === null ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(boundedTimeoutMs),
   });
   const text = await response.text();
   let parsed = null;
@@ -141,8 +144,10 @@ async function closeIncident(title, markdown, options = {}) {
 
 function primaryEvidence(outcome) {
   const runId = String(process.env.GITHUB_RUN_ID || '').trim();
-  const runUrl = runId
-    ? `https://github.com/TRAP44/football-analytics-cloudflare/actions/runs/${runId}`
+  const repository = String(process.env.GITHUB_REPOSITORY || '').trim();
+  const serverUrl = String(process.env.GITHUB_SERVER_URL || 'https://github.com').replace(/\/+$/, '');
+  const runUrl = runId && repository
+    ? `${serverUrl}/${repository}/actions/runs/${runId}`
     : 'GitHub Actions run URL unavailable';
   return [
     '### MatchRadar external production monitor',
