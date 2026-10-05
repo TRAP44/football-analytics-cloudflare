@@ -75,7 +75,7 @@ if (!appRuntime.includes("CLIENT_RELEASE_CHANNEL = 'rc144'")) failures.push('Cli
 const frontendAssetRevision = /<meta name="frontend-asset-revision" content="([^"]+)" \/>/.exec(html)?.[1] || '';
 const adminFrontendAssetRevision = /<meta name="frontend-asset-revision" content="([^"]+)" \/>/.exec(adminHtml)?.[1] || '';
 const runtimeFrontendAssetRevision = /FRONTEND_ASSET_REVISION = '([^']+)'/.exec(appRuntime)?.[1] || '';
-if (!frontendAssetRevision || frontendAssetRevision === pkg.version || !frontendAssetRevision.startsWith(`${pkg.version}-`)) failures.push('Frontend asset revision must cache-bust the package version');
+if (frontendAssetRevision !== expected) failures.push(`Frontend asset revision must match runtime release identity ${expected}`);
 if (!runtimeFrontendAssetRevision || runtimeFrontendAssetRevision !== frontendAssetRevision) failures.push('Frontend runtime asset revision must match public HTML');
 if (adminFrontendAssetRevision !== frontendAssetRevision) failures.push('Admin and public frontend asset revisions must match');
 for (const [name, surface] of [['public', html], ['admin', adminHtml]]) {
