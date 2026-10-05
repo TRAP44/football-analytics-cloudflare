@@ -9113,7 +9113,12 @@ async function settlePredictionsFromFixtures(fixtures, cfg) {
         fixture_id: `in.(${ids.join(',')})`,
       }, { limit: Math.min(500, ids.length + 10) });
     } catch (error) {
-      console.warn('model prediction settle read skipped', error?.message || error);
+      await recordCriticalWriteFailure(cfg, {
+        code:'SETTLEMENT_PENDING_READ_FAILED',
+        eventType:'prediction_settlement',
+        message:error?.message || error,
+        meta:{fixtureCount:ids.length},
+      });
       return { checked: 0, settled: 0 };
     }
   } else {
@@ -9153,7 +9158,12 @@ async function settlePredictionsFromFixtures(fixtures, cfg) {
         await supaPatch(cfg, 'model_predictions', { fixture_id: `eq.${Number(row.fixture_id)}`, status: 'eq.pending' }, patch);
         settled++;
       } catch (error) {
-        console.warn('model prediction settle patch skipped', error?.message || error);
+        await recordCriticalWriteFailure(cfg, {
+          code:'SETTLEMENT_PREDICTION_WRITE_FAILED',
+          eventType:'prediction_settlement',
+          message:error?.message || error,
+          meta:{fixtureId:Number(row.fixture_id || 0)},
+        });
       }
     } else {
       memory.modelPredictions.set(Number(row.fixture_id), { ...row, ...patch });
@@ -21191,7 +21201,12 @@ async function apiMatches(request, cfg) {
   const verifiedFixtures = integrityRun.accepted;
 
   // Reuse the verified fixtures request we already made to settle tracked predictions at zero additional provider cost.
-  await settlePredictionsFromFixtures(verifiedFixtures.map(x => x.fixture), cfg).catch(() => null);
+  await settlePredictionsFromFixtures(verifiedFixtures.map(x => x.fixture), cfg).catch(error => recordCriticalWriteFailure(cfg, {
+    code:'SETTLEMENT_BACKGROUND_FAILED',
+    eventType:'prediction_settlement',
+    message:error?.message || error,
+    meta:{source:'verified_fixture_batch'},
+  }));
 
   const matches = verifiedFixtures
     .filter(entry => !['CANC', 'PST', 'ABD', 'AWD', 'WO'].includes(entry.fixture?.fixture?.status?.short || ''))
@@ -22613,7 +22628,12 @@ async function apiMatchCenter(request, cfg) {
   const pressure = (live || finished) ? livePressure(analyticalStatistics) : null;
   const formattedEvents = sanitizeEventsForDisplay(rawFormattedEvents, eventQuality);
   const analyticalEvents = eventsForTrustedAnalytics(rawFormattedEvents, eventQuality);
-  if (finished) await settlePredictionsFromFixtures([fixture], cfg).catch(() => null);
+  if (finished) await settlePredictionsFromFixtures([fixture], cfg).catch(error => recordCriticalWriteFailure(cfg, {
+    code:'SETTLEMENT_BACKGROUND_FAILED',
+    eventType:'prediction_settlement',
+    message:error?.message || error,
+    meta:{source:'match_center',fixtureId},
+  }));
   const postMatchPrediction = finished ? await loadModelPredictionForFixture(fixtureId, cfg) : null;
   const postMatchReview = finished ? buildPostMatchReview({prediction:postMatchPrediction,fixture,statistics:analyticalStatistics,events:analyticalEvents,homeName,awayName}) : null;
   if (finished && fixture.fixture?.referee) await saveRefereeMatchHistory({ fixtureId, referee:fixture.fixture.referee, kickoffAt:fixture.fixture?.date || null, leagueId:Number(fixture.league?.id || 0), events:analyticalEvents, statistics:analyticalStatistics }, cfg).catch(() => false);
@@ -23455,7 +23475,12 @@ async function apiAnalyze(request, cfg, user) {
     return await trackedFullAiFailureResponse({ error: 'Данные матча выглядят противоречиво, поэтому анализ временно заблокирован.', code: 'MATCH_DATA_INVALID', integrity: analysisIntegrity, quota: quotaBefore },409,'data_invalid');
   }
   // If this fixture has already finished, settle any earlier immutable pre-match snapshot without another football API call.
-  if (isFinishedStatus(fixture.fixture?.status?.short)) await settlePredictionsFromFixtures([fixture], cfg).catch(() => null);
+  if (isFinishedStatus(fixture.fixture?.status?.short)) await settlePredictionsFromFixtures([fixture], cfg).catch(error => recordCriticalWriteFailure(cfg, {
+    code:'SETTLEMENT_BACKGROUND_FAILED',
+    eventType:'prediction_settlement',
+    message:error?.message || error,
+    meta:{source:'analysis',fixtureId},
+  }));
 
   const homeId = fixture.teams?.home?.id, awayId = fixture.teams?.away?.id;
   const homeName = fixture.teams?.home?.name || '', awayName = fixture.teams?.away?.name || '';
