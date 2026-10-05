@@ -33,15 +33,25 @@ test('edge policies apply stable first-stage buckets to protected API, with stri
   assert.equal(edgePolicyForRequest(request('/api/runtime-controls'))?.id, 'sensitive');
   assert.equal(edgePolicyForRequest(request('/telegram/webhook', { method:'POST' }))?.id, 'telegram-webhook');
   assert.equal(edgePolicyForRequest(request('/api/public-status')), null);
-  assert.equal(edgePolicyForRequest(request('/api/health')), null);
+  assert.equal(edgePolicyForRequest(request('/api/health'))?.id, 'public-health');
   assert.equal(edgePolicyForRequest(request('/api/app-manifest')), null);
   assert.equal(edgePolicyForRequest(request('/api/runtime-status')), null);
   assert.equal(edgePolicyForRequest(request('/health/live')), null);
 });
 
 test('obvious scanner paths are rejected before auth/business routing', async () => {
-  for (const path of ['/api/.env', '/api/.git/config', '/api/wp-admin', '/api/phpmyadmin', '/api/vendor/phpunit/test']) {
-    assert.equal(obviousScannerPath(path), true, path);
+  for (const path of [
+    '/api/.env',
+    '/api/.git/config',
+    '/api/wp-admin',
+    '/api/phpmyadmin',
+    '/api/vendor/phpunit/test',
+    '/api/%2eenv',
+    '/api/%2egit/config',
+    '/api/%252eenv',
+    '/api/%2eenv%2elocal',
+  ]) {
+    assert.equal(obviousScannerPath(new URL(`https://example.com${path}`).pathname), true, path);
     const result = await cloudflareEdgeGuard(request(path), {});
     assert.equal(result.blocked, true, path);
     assert.equal(result.status, 404);
@@ -90,11 +100,18 @@ test('Webhook ceiling is intentionally much looser than user API ceilings', () =
   assert.equal(policies['telegram-webhook'].period,60);
 });
 
-test('binding outage and missing network identity fail open to existing Worker guards', async () => {
+test('binding outage, malformed result and missing network identity fail open to existing Worker guards', async () => {
   const throwing={ async limit(){ throw new Error('binding unavailable'); } };
   const failure=await cloudflareEdgeGuard(request('/api/analyze'),{EDGE_ANALYZE_RATE_LIMIT:throwing});
   assert.equal(failure.blocked,false);
   assert.equal(failure.degraded,true);
+
+  const malformed=await cloudflareEdgeGuard(request('/api/analyze'),{
+    EDGE_ANALYZE_RATE_LIMIT:{ async limit(){ return {}; } },
+  });
+  assert.equal(malformed.blocked,false);
+  assert.equal(malformed.configured,true);
+  assert.equal(malformed.degraded,true);
 
   const missingBinding=await cloudflareEdgeGuard(request('/api/analyze'),{});
   assert.equal(missingBinding.blocked,false);
