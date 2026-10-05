@@ -1,0 +1,68 @@
+name: Cleanup Actions history
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/cleanup-actions-history.yml"
+  schedule:
+    - cron: "19 4 * * 0"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: cleanup-actions-history
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      CURRENT_RUN_ID: ${{ github.run_id }}
+    steps:
+      - name: Delete completed runs for branches that no longer exist
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cutoff="$(date -u -d '24 hours ago' +%s)"
+          deleted=0
+          kept=0
+
+          gh api --paginate "repos/$GH_REPO/actions/runs?status=completed&per_page=100"             --jq '.workflow_runs[] | [.id, (.head_branch // ""), .created_at, .name] | @tsv' |
+          while IFS=$'\t' read -r run_id branch created_at workflow_name; do
+            [[ -z "$run_id" ]] && continue
+
+            if [[ "$run_id" == "$CURRENT_RUN_ID" || "$branch" == "main" || -z "$branch" ]]; then
+              kept=$((kept + 1))
+              continue
+            fi
+
+            created_epoch="$(date -u -d "$created_at" +%s)"
+            if (( created_epoch >= cutoff )); then
+              kept=$((kept + 1))
+              continue
+            fi
+
+            encoded_branch="$(jq -nr --arg v "$branch" '$v|@uri')"
+            if gh api "repos/$GH_REPO/git/ref/heads/$encoded_branch" >/dev/null 2>&1; then
+              kept=$((kept + 1))
+              continue
+            fi
+
+            if gh api -X DELETE "repos/$GH_REPO/actions/runs/$run_id" >/dev/null 2>&1; then
+              echo "Deleted orphaned run $run_id: $workflow_name [$branch]"
+              deleted=$((deleted + 1))
+            else
+              echo "GitHub refused deletion for run $run_id"
+              kept=$((kept + 1))
+            fi
+          done
+
+          echo "Actions cleanup completed."
