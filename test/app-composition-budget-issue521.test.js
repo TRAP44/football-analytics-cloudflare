@@ -34,3 +34,37 @@ test('consolidated frontend feature boundaries are composed lazily',()=>{
   assert.ok(!app.includes('async function loadMatches(options = {}) {'));
   assert.ok(!app.includes('function renderProfile() {'));
 });
+
+
+test('extracted DOM-heavy modules receive the local lookup helper explicitly',()=>{
+  const modules=[
+    'admin-bootstrap',
+    'analysis-presentation',
+    'discovery',
+    'match-center-render',
+    'matches-home',
+    'player-hub',
+    'profile-core',
+    'team-hub',
+    'tournament',
+  ];
+  for(const moduleName of modules) {
+    const source=readFileSync(new URL(`../public/modules/${moduleName}.js`,import.meta.url),'utf8');
+    assert.match(source,/const \{\s*\$,/s,`${moduleName} must declare $ as an injected dependency`);
+  }
+  for(const factory of [
+    'createAdminBootstrapModule',
+    'createAnalysisPresentationModule',
+    'createDiscoveryModule',
+    'createMatchCenterRenderModule',
+    'createMatchesHomeModule',
+    'createPlayerHubModule',
+    'createProfileCoreModule',
+    'createTeamHubModule',
+    'createTournamentModule',
+  ]) {
+    const start=app.indexOf(`${factory}({`);
+    assert.notEqual(start,-1,`${factory} wiring missing`);
+    assert.match(app.slice(start,start+240),/\{\s*\$,/s,`${factory} must receive local $`);
+  }
+});
