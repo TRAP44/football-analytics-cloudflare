@@ -45,7 +45,7 @@ jobs:
         with:
           node-version: 22
 
-      - name: Check public production health without privileged probe token
+      - name: Check production from external runner
         id: monitor
         continue-on-error: true
         run: node scripts/external-production-monitor.js
