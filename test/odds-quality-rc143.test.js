@@ -6,6 +6,7 @@ import {
   assessOddsMarketQuality,
   inspectDecimalOdd,
   oddsMarketForTrustedAnalytics,
+  probabilitiesFromDecimalOdds,
   sanitizeOddsSnapshotsForMovement,
 } from '../src/odds-quality.js';
 
@@ -40,6 +41,14 @@ test('RC143 rejects malformed, out-of-range and economically impossible odds tri
   assert.equal(quality.marketValid,false);
   assert.ok(quality.issues.some(x=>x.code==='implied_total_out_of_range'));
   assert.equal(oddsMarketForTrustedAnalytics(market,quality),null);
+});
+
+test('RC143 exported probability derivation rejects coercible or impossible odds', () => {
+  assert.equal(probabilitiesFromDecimalOdds({home:true,draw:3.5,away:4}),null);
+  assert.equal(probabilitiesFromDecimalOdds({home:100,draw:100,away:100}),null);
+  const probabilities=probabilitiesFromDecimalOdds({home:'2.0',draw:'3.5',away:'4'});
+  assert.ok(probabilities);
+  assert.ok(Math.abs(probabilities.home+probabilities.draw+probabilities.away-100)<=0.2);
 });
 
 test('RC143 recomputes inconsistent reported probabilities from trusted decimal odds', () => {
@@ -78,14 +87,41 @@ test('RC143 rejects markets without a positive bounded source count', () => {
   assert.ok(quality.issues.some(x=>x.code==='source_count_invalid'));
 });
 
+test('RC143 rejects coerced source counts and conflicting source metadata', () => {
+  const base={odds:{home:2,draw:3.5,away:4},provider:'api-football'};
+
+  const coerced=assessOddsMarketQuality({...base,sources:true},{oddsMeta:trustedMeta});
+  assert.equal(coerced.marketValid,false);
+  assert.ok(coerced.issues.some(issue=>issue.code==='source_count_invalid'));
+
+  const conflict=assessOddsMarketQuality({...base,sources:3,bookmakers:4},{oddsMeta:trustedMeta});
+  assert.equal(conflict.marketValid,false);
+  assert.ok(conflict.issues.some(issue=>issue.code==='source_count_mismatch'));
+
+  const numericString=assessOddsMarketQuality({...base,sources:'3'},{oddsMeta:trustedMeta});
+  assert.equal(numericString.marketValid,true);
+  assert.equal(numericString.sourceCount,3);
+});
+
+test('RC143 trusted-market projection requires strict quality booleans', () => {
+  const market={odds:{home:2,draw:3.5,away:4},sources:2,provider:'api-football'};
+  const quality=assessOddsMarketQuality(market,{oddsMeta:trustedMeta});
+  assert.ok(oddsMarketForTrustedAnalytics(market,quality));
+  assert.equal(oddsMarketForTrustedAnalytics(market,{...quality,confidenceBearing:'true'}),null);
+  assert.equal(oddsMarketForTrustedAnalytics(market,{...quality,marketValid:1}),null);
+});
+
 test('RC143 filters malformed historical snapshots and recomputes movement probabilities from odds', () => {
   const rows=[
     {at:'2026-09-25T12:00:00Z',home:2,draw:3.5,away:4,homeProb:99,drawProb:0.5,awayProb:0.5,sources:3},
+    {at:'2026-09-25T12:00:00.000Z',home:2.1,draw:3.4,away:3.9,sources:3},
     {at:'2026-09-25T12:01:00Z',home:100,draw:100,away:100,homeProb:33.3,drawProb:33.3,awayProb:33.3,sources:3},
     {at:'not-a-date',home:2,draw:3.5,away:4,sources:3},
+    {at:new Date('2026-09-25T12:02:00Z'),home:2,draw:3.5,away:4,sources:3},
   ];
   const safe=sanitizeOddsSnapshotsForMovement(rows);
   assert.equal(safe.length,1);
+  assert.equal(safe[0].at,'2026-09-25T12:00:00.000Z');
   assert.notEqual(safe[0].homeProb,99);
   assert.ok(Math.abs(safe[0].homeProb+safe[0].drawProb+safe[0].awayProb-100)<=0.2);
 });
