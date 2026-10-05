@@ -33,23 +33,33 @@ function boundedText(value, maxLength, label, { required = false } = {}) {
   return text;
 }
 
+export function sanitizeTeamLogoUrl(value) {
+  const text = String(value ?? '').trim();
+  if (!text || text.length > PERSONAL_WRITE_LIMITS.teamLogo) return '';
+  try {
+    const url = new URL(text);
+    if (
+      url.protocol !== 'https:'
+      || !TEAM_LOGO_ALLOWED_HOSTS.includes(url.hostname)
+      || url.username
+      || url.password
+    ) return '';
+    return url.toString();
+  } catch {
+    return '';
+  }
+}
+
 function httpUrlOrEmpty(value) {
   const text = boundedText(value, PERSONAL_WRITE_LIMITS.teamLogo, 'URL логотипа');
   if (!text) return '';
-  let url;
-  try {
-    url = new URL(text);
-  } catch {
+  const normalized = sanitizeTeamLogoUrl(text);
+  if (!normalized) {
     const error = new Error('Некорректный URL логотипа.');
     error.code = 'PERSONAL_DATA_INVALID';
     throw error;
   }
-  if (url.protocol !== 'https:' || !TEAM_LOGO_ALLOWED_HOSTS.includes(url.host)) {
-    const error = new Error('Некорректный URL логотипа.');
-    error.code = 'PERSONAL_DATA_INVALID';
-    throw error;
-  }
-  return url.toString();
+  return normalized;
 }
 
 export function normalizeFavoriteWrite(input = {}) {
