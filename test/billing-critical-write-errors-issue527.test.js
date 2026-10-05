@@ -68,3 +68,14 @@ test('analysis-lock and post-match-return cleanup failures stay observable',()=>
     assert.match(worker,new RegExp(code));
   }
 });
+
+
+test('channel publisher idempotency cleanup uses its own diagnostic codes',()=>{
+  assert.match(worker,/CHANNEL_PUBLISH_STALE_CLAIM_DELETE_FAILED/);
+  assert.match(worker,/CHANNEL_PUBLISH_RELEASE_FAILED/);
+  const start=worker.indexOf('async function claimChannelPublishIdempotency');
+  const end=worker.indexOf('const DISTRIBUTED_ANALYSIS_LOCK_TTL_SECONDS',start);
+  const body=worker.slice(start,end);
+  assert.doesNotMatch(body,/POST_MATCH_RETURN_RELEASE_WRITE_FAILED/);
+  assert.doesNotMatch(body,/source:'post_match_return'/);
+});
