@@ -114,6 +114,7 @@ function openLigaTeamName(team = {}) {
 
 function findOpenLigaMatch(matches = [], context = {}) {
   const kickoff = Date.parse(String(context.kickoffAt || ''));
+  if (!Number.isFinite(kickoff)) return null;
   const candidates = (Array.isArray(matches) ? matches : []).filter(match => {
     const home = openLigaTeamName(match?.team1 ?? match?.Team1 ?? {});
     const away = openLigaTeamName(match?.team2 ?? match?.Team2 ?? {});
@@ -121,7 +122,6 @@ function findOpenLigaMatch(matches = [], context = {}) {
   });
   if (!candidates.length) return null;
   candidates.sort((a, b) => {
-    if (!Number.isFinite(kickoff)) return 0;
     const left = openLigaKickoffMs(a);
     const right = openLigaKickoffMs(b);
     const ld = left === null ? Number.POSITIVE_INFINITY : Math.abs(left - kickoff);
@@ -129,10 +129,8 @@ function findOpenLigaMatch(matches = [], context = {}) {
     return ld - rd;
   });
   const best = candidates[0];
-  if (Number.isFinite(kickoff)) {
-    const bestKickoff = openLigaKickoffMs(best);
-    if (bestKickoff === null || Math.abs(bestKickoff - kickoff) > 12 * 60 * 60 * 1000) return null;
-  }
+  const bestKickoff = openLigaKickoffMs(best);
+  if (bestKickoff === null || Math.abs(bestKickoff - kickoff) > 12 * 60 * 60 * 1000) return null;
   return best;
 }
 
