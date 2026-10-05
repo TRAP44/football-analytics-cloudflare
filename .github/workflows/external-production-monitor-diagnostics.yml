@@ -1,0 +1,44 @@
+name: External Production Monitor Diagnostics
+
+on:
+  workflow_run:
+    workflows: ["External Production Monitor"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+concurrency:
+  group: external-production-monitor-diagnostics
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 5
+    env:
+      PRODUCTION_URL: "https://football-analytics-cloudflare.wok-side.workers.dev"
+      EXTERNAL_MONITOR_TIMEOUT_MS: "10000"
+      EXTERNAL_MONITOR_READY_WARNING_MS: "3000"
+      DIAGNOSTIC_MONITOR_RETRIES: "2"
+      PRIMARY_RUN_ID: ${{ github.event.workflow_run.id }}
+      PRIMARY_RUN_URL: ${{ github.event.workflow_run.html_url }}
+      GITHUB_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout diagnostics
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+
+      - name: Classify primary monitor failure
+        run: node scripts/external-monitor-control-plane.js diagnose
