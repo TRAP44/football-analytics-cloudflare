@@ -16,6 +16,30 @@ function asTime(value) {
   return Number.isFinite(parsed) ? parsed : Date.now();
 }
 
+function nonNegativeInteger(value, fallback = 0) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0) return fallback;
+  return Math.floor(number);
+}
+
+function positiveInteger(value, fallback, max = Number.MAX_SAFE_INTEGER) {
+  const number = Number(value);
+  const fallbackNumber = Number(fallback);
+  const safeFallback = Number.isFinite(fallbackNumber) && fallbackNumber > 0
+    ? Math.floor(fallbackNumber)
+    : 1;
+  if (!Number.isFinite(number) || number <= 0) return Math.min(max, safeFallback);
+  return Math.max(1, Math.min(max, Math.floor(number)));
+}
+
+function positiveFinite(value, fallback, max = Number.MAX_SAFE_INTEGER) {
+  const number = Number(value);
+  const fallbackNumber = Number(fallback);
+  const safeFallback = Number.isFinite(fallbackNumber) && fallbackNumber > 0 ? fallbackNumber : 1;
+  if (!Number.isFinite(number) || number <= 0) return Math.min(max, safeFallback);
+  return Math.max(1, Math.min(max, number));
+}
+
 export function isDailyDigestExecutionWindow(scheduledAt) {
   const date = scheduledAt instanceof Date ? scheduledAt : new Date(scheduledAt);
   return Number.isFinite(date.getTime()) && date.getUTCHours() === DAILY_DIGEST_POLICY.deliveryHourUtc;
@@ -53,12 +77,17 @@ export function planDailyDigestRecipients(rows = [], {
     .map(value => Math.max(0, nowMs - value));
   const expiredClaims = claimedToday.filter(row => !activeClaims.includes(row));
   const pending = due.filter(row => String(row?.delivery_claim_date || '') !== deliveryDate || expiredClaims.includes(row));
-  const boundedMax = Math.max(1, Number(maxRecipients || DAILY_DIGEST_POLICY.maxRecipientsPerRun));
+  const boundedMax = positiveInteger(
+    maxRecipients,
+    DAILY_DIGEST_POLICY.maxRecipientsPerRun,
+    DAILY_DIGEST_POLICY.scanCap,
+  );
+  const boundedPageSize = positiveInteger(pageSize, DAILY_DIGEST_POLICY.pageSize, DAILY_DIGEST_POLICY.scanCap);
   return {
     rows: pending.slice(0, boundedMax),
     pending,
     scanned: scannedRows.length,
-    pages: scannedRows.length ? Math.ceil(scannedRows.length / Math.max(1, Number(pageSize || 1))) : 0,
+    pages: scannedRows.length ? Math.ceil(scannedRows.length / boundedPageSize) : 0,
     eligible: due.length,
     duplicate: activeClaims.length,
     activeClaims: activeClaims.length,
@@ -77,16 +106,16 @@ export function assessDailyDigestRun(summary = {}, scheduledAt = new Date()) {
   const date = scheduledAt instanceof Date ? scheduledAt : new Date(scheduledAt);
   const minute = Number.isFinite(date.getTime()) ? date.getUTCMinutes() : 0;
   const finalWindow = minute >= DAILY_DIGEST_POLICY.lateBacklogMinuteUtc;
-  const backlog = Math.max(0, Number(summary.remaining ?? summary.backlog ?? 0));
-  const sealedClaims = Math.max(0, Number(summary.sealedClaims || 0));
-  const expiredClaims = Math.max(0, Number(summary.expiredClaims || 0));
-  const failed = Math.max(0, Number(summary.failed || 0));
-  const stateFailed = Math.max(0, Number(summary.stateFailed || 0));
-  const newsFailed = Math.max(0, Number(summary.newsFailed || 0));
-  const rateLimited = Math.max(0, Number(summary.rateLimited || 0));
-  const providerDegraded = Boolean(summary.providerDegraded || summary.payloadUnavailable);
-  const budgetExhausted = Boolean(summary.budgetExhausted);
-  const truncated = Boolean(summary.truncated);
+  const backlog = nonNegativeInteger(summary.remaining ?? summary.backlog);
+  const sealedClaims = nonNegativeInteger(summary.sealedClaims);
+  const expiredClaims = nonNegativeInteger(summary.expiredClaims);
+  const failed = nonNegativeInteger(summary.failed);
+  const stateFailed = nonNegativeInteger(summary.stateFailed);
+  const newsFailed = nonNegativeInteger(summary.newsFailed);
+  const rateLimited = nonNegativeInteger(summary.rateLimited);
+  const providerDegraded = summary.providerDegraded === true || summary.payloadUnavailable === true;
+  const budgetExhausted = summary.budgetExhausted === true;
+  const truncated = summary.truncated === true;
 
   if (sealedClaims > 0) {
     return {
@@ -140,7 +169,7 @@ export function classifyDigestTransportError(error) {
   const code = String(error?.code || '');
   const status = Number(error?.status || 0);
   const rateLimited = code === 'TELEGRAM_RATE_LIMIT' || status === 429;
-  const retryAfter = rateLimited ? Math.max(1, Number(error?.retryAfter || 1)) : 0;
+  const retryAfter = rateLimited ? positiveInteger(error?.retryAfter, 1, 3600) : 0;
   const ambiguous = ['TELEGRAM_TIMEOUT', 'TELEGRAM_NETWORK', 'TELEGRAM_UPSTREAM'].includes(code)
     || status >= 500
     || status === 0;
@@ -153,7 +182,7 @@ export function createDigestRateGate({
   now = () => Date.now(),
   minIntervalMs = DAILY_DIGEST_POLICY.minSendIntervalMs,
 } = {}) {
-  const gap = Math.max(1, Number(minIntervalMs || DAILY_DIGEST_POLICY.minSendIntervalMs));
+  const gap = positiveFinite(minIntervalMs, DAILY_DIGEST_POLICY.minSendIntervalMs, 60_000);
   let nextAt = 0;
   let cooldownUntil = 0;
   let tail = Promise.resolve();
@@ -173,7 +202,9 @@ export function createDigestRateGate({
       return current;
     },
     defer(seconds) {
-      cooldownUntil = Math.max(cooldownUntil, Number(now()) + Math.max(1, Number(seconds || 1)) * 1000);
+      const current = Number(now());
+      const nowMs = Number.isFinite(current) ? current : Date.now();
+      cooldownUntil = Math.max(cooldownUntil, nowMs + positiveInteger(seconds, 1, 3600) * 1000);
     },
   });
 }
@@ -198,26 +229,43 @@ export async function runBoundedDailyDigest({
     throw new TypeError('runBoundedDailyDigest requires plan, claim, arm, complete and sendDigest');
   }
 
-  const startedAt = Number(now());
-  const budget = Math.max(1000, Number(executionBudgetMs || DAILY_DIGEST_POLICY.executionBudgetMs));
-  const candidates = (plan.pending || plan.rows || []).slice(0, Math.max(1, Number(maxRecipients || DAILY_DIGEST_POLICY.maxRecipientsPerRun)));
-  const gate = createDigestRateGate({ sleep, now, minIntervalMs: minSendIntervalMs });
+  const startedAtRaw = Number(now());
+  const startedAt = Number.isFinite(startedAtRaw) ? startedAtRaw : Date.now();
+  const budget = positiveInteger(executionBudgetMs, DAILY_DIGEST_POLICY.executionBudgetMs, 15 * 60 * 1000);
+  const boundedMaxRecipients = positiveInteger(
+    maxRecipients,
+    DAILY_DIGEST_POLICY.maxRecipientsPerRun,
+    DAILY_DIGEST_POLICY.scanCap,
+  );
+  const pendingRows = Array.isArray(plan.pending)
+    ? plan.pending
+    : Array.isArray(plan.rows)
+      ? plan.rows
+      : [];
+  const candidates = pendingRows.slice(0, boundedMaxRecipients);
+  const boundedConcurrency = positiveInteger(concurrency, DAILY_DIGEST_POLICY.concurrency, 8);
+  const boundedMinSendIntervalMs = positiveFinite(
+    minSendIntervalMs,
+    DAILY_DIGEST_POLICY.minSendIntervalMs,
+    60_000,
+  );
+  const gate = createDigestRateGate({ sleep, now, minIntervalMs: boundedMinSendIntervalMs });
   const stats = {
-    scanned: Number(plan.scanned || 0),
-    pages: Number(plan.pages || 0),
-    eligible: Number(plan.eligible || 0),
+    scanned: nonNegativeInteger(plan.scanned),
+    pages: nonNegativeInteger(plan.pages),
+    eligible: nonNegativeInteger(plan.eligible),
     claimed: 0,
     sent: 0,
-    duplicate: Number(plan.duplicate || 0),
-    activeClaims: Number(plan.activeClaims || 0),
-    expiredClaims: Number(plan.expiredClaims || 0),
+    duplicate: nonNegativeInteger(plan.duplicate),
+    activeClaims: nonNegativeInteger(plan.activeClaims),
+    expiredClaims: nonNegativeInteger(plan.expiredClaims),
     recoveredClaims: 0,
     failed: 0,
     rateLimited: 0,
-    deferred: Math.max(0, Number(plan.pending?.length || candidates.length) - candidates.length),
-    remaining: Math.max(0, Number(plan.pending?.length || candidates.length) - candidates.length),
-    backlog: Math.max(0, Number(plan.pending?.length || candidates.length) - candidates.length),
-    truncated: Boolean(plan.truncated),
+    deferred: Math.max(0, pendingRows.length - candidates.length),
+    remaining: Math.max(0, pendingRows.length - candidates.length),
+    backlog: Math.max(0, pendingRows.length - candidates.length),
+    truncated: plan.truncated === true,
     attempted: 0,
     retries: 0,
     newsSent: 0,
@@ -231,14 +279,21 @@ export async function runBoundedDailyDigest({
     ambiguous: 0,
     permanentFailed: 0,
     budgetExhausted: false,
-    concurrency: Math.max(1, Math.min(8, Number(concurrency || DAILY_DIGEST_POLICY.concurrency))),
-    maxRecipients: Math.max(1, Number(maxRecipients || DAILY_DIGEST_POLICY.maxRecipientsPerRun)),
-    minSendIntervalMs: Math.max(1, Number(minSendIntervalMs || DAILY_DIGEST_POLICY.minSendIntervalMs)),
+    concurrency: boundedConcurrency,
+    maxRecipients: boundedMaxRecipients,
+    minSendIntervalMs: boundedMinSendIntervalMs,
   };
 
   let index = 0;
-  const elapsed = () => Math.max(0, Number(now()) - startedAt);
-  const withinBudget = (extraMs = 0) => elapsed() + Math.max(0, Number(extraMs || 0)) < budget;
+  const elapsed = () => {
+    const current = Number(now());
+    return Number.isFinite(current) ? Math.max(0, current - startedAt) : budget;
+  };
+  const withinBudget = (extraMs = 0) => {
+    const extra = Number(extraMs);
+    const boundedExtra = Number.isFinite(extra) ? Math.max(0, extra) : budget;
+    return elapsed() + boundedExtra < budget;
+  };
 
   async function sendWithRateLimit(send) {
     await gate.acquire();
@@ -284,7 +339,7 @@ export async function runBoundedDailyDigest({
 
       let owned = false;
       try {
-        owned = Boolean(await claim(row, date));
+        owned = await claim(row, date) === true;
       } catch {
         stats.claimFailed += 1;
         stats.failed += 1;
@@ -302,7 +357,7 @@ export async function runBoundedDailyDigest({
       // after this point we prefer at-most-once delivery over a possible duplicate.
       try {
         const armed = await arm(row, date);
-        if (armed === false) throw new Error('digest claim arm rejected');
+        if (armed !== true) throw new Error('digest claim arm rejected');
         stats.sealed += 1;
       } catch {
         stats.armFailed += 1;
@@ -311,7 +366,7 @@ export async function runBoundedDailyDigest({
         if (typeof release === 'function') {
           try {
             const released = await release(row, date);
-            if (released === false) stats.releaseFailed += 1;
+            if (released !== true) stats.releaseFailed += 1;
           } catch {
             stats.releaseFailed += 1;
           }
@@ -329,7 +384,7 @@ export async function runBoundedDailyDigest({
           stats.retryableDeferred += 1;
           try {
             const released = await release(row, date);
-            if (released === false) stats.releaseFailed += 1;
+            if (released !== true) stats.releaseFailed += 1;
           } catch {
             stats.releaseFailed += 1;
           }
@@ -340,7 +395,7 @@ export async function runBoundedDailyDigest({
       stats.sent += 1;
       try {
         const completed = await complete(row, date);
-        if (completed === false) stats.stateFailed += 1;
+        if (completed !== true) stats.stateFailed += 1;
       } catch {
         // Keep the claim rather than releasing it after a confirmed Telegram
         // success. The next cron therefore cannot duplicate this delivery.
