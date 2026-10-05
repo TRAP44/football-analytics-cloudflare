@@ -244,11 +244,33 @@ export function annotateLineupReliability(meta = {}, matchQuality = {}) {
     };
   }
 
+  if (bothConfirmed && (!originalAvailable || !originalUsable)) {
+    downgradeConfirmedMatchQuality(quality, 'lineup_source_unavailable');
+    return {
+      ...meta,
+      transportState: originalState,
+      available: false,
+      usable: false,
+      observed: originalObserved,
+      degraded: true,
+      semanticState: 'confirmed',
+      freshnessState: sourceReliability.freshnessState,
+      provenanceState: sourceReliability.provenanceState,
+      structurallyConfirmed: true,
+      confirmed: false,
+      partial: false,
+      stale: false,
+      confidenceBearing: false,
+      reason: 'lineup_source_unavailable',
+      lineupQuality: quality,
+    };
+  }
+
   if (bothConfirmed) {
     return {
       ...meta,
-      available: originalAvailable,
-      usable: originalUsable,
+      available: true,
+      usable: true,
       observed: originalObserved || originalAvailable,
       semanticState: 'confirmed',
       freshnessState: sourceReliability.freshnessState,
@@ -257,7 +279,7 @@ export function annotateLineupReliability(meta = {}, matchQuality = {}) {
       confirmed: true,
       partial: false,
       stale: false,
-      confidenceBearing: Boolean(originalAvailable && originalUsable),
+      confidenceBearing: true,
       lineupQuality: quality,
     };
   }
