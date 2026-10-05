@@ -42,10 +42,14 @@ export function resolveActiveProductionReleaseIdentity(deployment, versions) {
   }
 
   const activeVersionId = activeProductionVersion(deployment);
-  const activeVersion = versions.find(version => version?.id === activeVersionId);
-  if (!activeVersion) {
+  const activeVersions = versions.filter(version => version?.id === activeVersionId);
+  if (activeVersions.length === 0) {
     throw new Error(`Active production version ${activeVersionId} is missing from the recent Cloudflare versions list.`);
   }
+  if (activeVersions.length !== 1) {
+    throw new Error(`Active production version ${activeVersionId} appears multiple times in the Cloudflare versions list.`);
+  }
+  const [activeVersion] = activeVersions;
 
   const actualMessage = String(activeVersion.annotations?.['workers/message'] || '').trim();
   const actualTag = String(activeVersion.annotations?.['workers/tag'] || '').trim();
