@@ -11,7 +11,8 @@ import {
   resolveEntitlementAccess,
 } from '../src/entitlements.js';
 
-const BOT_TOKEN = 'unit-test-signing-key';
+const INVOICE_SECRET = 'unit-test-invoice-signing-key';
+const BOT_TOKEN = 'legacy-unit-test-bot-token';
 const NOW = Date.parse('2026-10-01T12:00:00.000Z');
 
 function row(overrides = {}) {
@@ -59,9 +60,9 @@ test('Pass prices keep requested defaults and are server-configurable', () => {
 });
 
 test('fa2 Telegram Stars payload signs user, Pass type and fixture and rejects tampering', async () => {
-  const payload = await createPassInvoicePayload(42, PASS_TYPES.MATCH, 777, BOT_TOKEN);
+  const payload = await createPassInvoicePayload(42, PASS_TYPES.MATCH, 777, INVOICE_SECRET);
   assert.match(payload, /^fa2\|42\|MATCH_PASS\|777\|[0-9a-f]{12}\|[0-9a-f]{24}$/);
-  assert.deepEqual(await parsePassInvoicePayload(payload, BOT_TOKEN), {
+  assert.deepEqual(await parsePassInvoicePayload(payload, INVOICE_SECRET, BOT_TOKEN), {
     userId: 42,
     passType: 'MATCH_PASS',
     fixtureId: 777,
@@ -71,15 +72,19 @@ test('fa2 Telegram Stars payload signs user, Pass type and fixture and rejects t
   const wrongFixture = payload.replace('|777|', '|778|');
   const wrongUser = payload.replace('fa2|42|', 'fa2|43|');
   const wrongType = payload.replace('|MATCH_PASS|', '|DAY_PASS|');
-  assert.equal(await parsePassInvoicePayload(wrongFixture, BOT_TOKEN), null);
-  assert.equal(await parsePassInvoicePayload(wrongUser, BOT_TOKEN), null);
-  assert.equal(await parsePassInvoicePayload(wrongType, BOT_TOKEN), null);
-  assert.equal(await parsePassInvoicePayload('fa2|broken', BOT_TOKEN), null);
-  assert.equal(await parsePassInvoicePayload(payload, 'wrong-token'), null);
+  assert.equal(await parsePassInvoicePayload(wrongFixture, INVOICE_SECRET, BOT_TOKEN), null);
+  assert.equal(await parsePassInvoicePayload(wrongUser, INVOICE_SECRET, BOT_TOKEN), null);
+  assert.equal(await parsePassInvoicePayload(wrongType, INVOICE_SECRET, BOT_TOKEN), null);
+  assert.equal(await parsePassInvoicePayload('fa2|broken', INVOICE_SECRET, BOT_TOKEN), null);
+  assert.equal(await parsePassInvoicePayload(payload, 'wrong-secret'), null);
 
-  await assert.rejects(() => createPassInvoicePayload(42, PASS_TYPES.MATCH, 0, BOT_TOKEN), /Некорректные параметры/);
-  const day = await createPassInvoicePayload(42, PASS_TYPES.DAY, 0, BOT_TOKEN);
-  assert.equal((await parsePassInvoicePayload(day, BOT_TOKEN)).fixtureId, 0);
+  await assert.rejects(() => createPassInvoicePayload(42, PASS_TYPES.MATCH, 0, INVOICE_SECRET), /Некорректные параметры/);
+  const day = await createPassInvoicePayload(42, PASS_TYPES.DAY, 0, INVOICE_SECRET);
+  assert.equal((await parsePassInvoicePayload(day, INVOICE_SECRET, BOT_TOKEN)).fixtureId, 0);
+
+  const legacy = await createPassInvoicePayload(42, PASS_TYPES.MATCH, 777, BOT_TOKEN);
+  assert.equal((await parsePassInvoicePayload(legacy, INVOICE_SECRET, BOT_TOKEN)).fixtureId,777);
+  assert.equal(await parsePassInvoicePayload(legacy, INVOICE_SECRET),null);
 });
 
 test('active Match Pass grants only its server-bound fixture', () => {
@@ -375,7 +380,7 @@ test('Worker reuses the established billing route/webhook and keeps monetization
   const env = fs.readFileSync('.env.example', 'utf8');
   const release = JSON.parse(fs.readFileSync('release-contract.json', 'utf8'));
 
-  assert.match(worker, /parsePassInvoicePayload\(q\.invoice_payload, cfg\.botToken\)/);
+  assert.match(worker, /parsePassInvoicePayload\([^\n]+cfg\.invoiceSigningSecret, cfg\.botToken\)/);
   assert.match(worker, /activatePassPurchase\(\{/);
   assert.match(worker, /refundPassByCharge\(userId, chargeId, cfg\)/);
   assert.match(worker, /getStarTransactions/);
@@ -384,6 +389,11 @@ test('Worker reuses the established billing route/webhook and keeps monetization
   assert.match(worker, /prices: \[\{ label: product\.title, amount: product\.stars \}\]/);
   assert.match(worker, /BILLING_ENTITLEMENT_STORE_UNAVAILABLE/);
   assert.match(worker, /BILLING_PASS_USAGE_LIMIT_REQUIRED/);
+  assert.match(env, /INVOICE_SIGNING_SECRET=PASTE_RANDOM_INVOICE_SIGNING_SECRET/);
+  assert.match(worker, /invoiceSigningSecret: env\.INVOICE_SIGNING_SECRET \|\| ''/);
+  assert.match(worker, /createPassInvoicePayload\([^\n]+cfg\.invoiceSigningSecret\)/);
+  assert.match(worker, /makeInvoicePayload\([^\n]+cfg\.invoiceSigningSecret\)/);
+  assert.match(worker, /INVOICE_SIGNING_SECRET_REQUIRED/);
   assert.match(env, /WEEKEND_PASS_DURATION_HOURS=168/);
   assert.match(env, /WEEKEND_PASS_USAGE_LIMIT=/);
   assert.match(worker, /WEEKEND_PASS: intEnv\(env\.WEEKEND_PASS_DURATION_HOURS, 168\)/);
