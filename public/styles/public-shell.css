@@ -1,4 +1,4 @@
-/* UX public flow — compact Telegram-first experience */
+/* Compact Telegram-first public flow */
 html {
   scroll-padding-top: calc(12px + env(safe-area-inset-top));
   scroll-padding-bottom: calc(104px + env(safe-area-inset-bottom));
@@ -343,7 +343,7 @@ html {
 }
 
 
-/* UX hotfix — public shell conflict resolution and profile/admin separation */
+/* Public shell conflict resolution and profile/admin separation */
 .profile-zone-kicker {
   display: inline-flex;
   margin: 0 auto 10px;
@@ -416,7 +416,7 @@ html {
 }
 
 
-/* Closed beta readiness — resilient journey states */
+/* Resilient journey states */
 .journey-state {
   display: grid;
   grid-template-columns: auto minmax(0,1fr);
@@ -467,7 +467,7 @@ html {
 }
 
 
-/* Closed Beta Observation & Feedback Loop */
+/* Feedback and observation states */
 .beta-feedback-panel{border-color:color-mix(in srgb,var(--accent) 18%,var(--line));}
 .beta-feedback-open{width:auto;min-width:178px}
 .beta-feedback-form{margin-top:14px;padding-top:14px;border-top:1px solid var(--line-soft)}
@@ -506,7 +506,7 @@ html {
 @media(max-width:520px){.beta-feedback-fields{grid-template-columns:1fr}.beta-section-head{flex-direction:column}.beta-dashboard-controls{width:100%}.beta-dashboard-controls select{flex:1}.beta-feedback-open{width:100%}}
 
 
-/* Real closed beta — provider cooldown + 360–400px mobile hardening */
+/* Provider cooldown and 360–400px mobile hardening */
 .brand-lockup {
   min-width: 0;
   flex: 1 1 auto;
@@ -663,7 +663,7 @@ html {
 }
 
 
-/* Phase 4 — Product UX Restructure */
+/* Product UX structure */
 .miniapp-public-shell{overflow-x:hidden}
 .home-search-block{display:grid;gap:8px;margin:0 0 14px}
 .home-search-block .search-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
@@ -694,7 +694,7 @@ html {
 @media(max-width:360px){.miniapp-public-shell .bottom-nav{gap:2px}.miniapp-public-shell .nav-item{min-width:0;padding-inline:2px}}
 
 
-/* Phase 4.1 — Public Visual Simplification & Polish */
+/* Public visual simplification and polish */
 .miniapp-public-shell .boot-gate{
   background:var(--bg);
 }
@@ -1142,7 +1142,7 @@ html {
 }
 
 
-/* Phase 4.2 — FutLens AI Brand Identity & Premium UI Polish */
+/* MatchRadar brand identity and UI polish */
 .miniapp-public-shell{
   --brand-night:#07111f;
   --brand-surface:#0f1d2e;
@@ -1546,7 +1546,7 @@ html {
   .miniapp-public-shell .nav-item svg{width:18px;height:18px}
 }
 
-/* Bottom Navigation Visibility Hotfix — final public cascade guard */
+/* Bottom navigation visibility cascade guard */
 .miniapp-public-shell .bottom-nav{
   display:grid;
   grid-template-columns:repeat(4,minmax(0,1fr));
@@ -3751,7 +3751,7 @@ html {
 }
 
 
-/* Match Pulse — Issue #286 */
+/* Match Pulse */
 .match-pulse{
   min-width:0;
   overflow:hidden;
@@ -3993,7 +3993,7 @@ html {
 }
 
 
-/* AI Timeline — Issue #287 */
+/* AI Timeline */
 .ai-timeline-compact,
 .ai-timeline-details{
   min-width:0;
