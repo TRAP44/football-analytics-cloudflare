@@ -179,6 +179,84 @@ export function createRuntimeControlsRuntime({
   async function rollbackRuntimeControls(cfg, user, body = {}) {
     const historySchema = await probeRuntimeHistorySchema(cfg);
     if (!historySchema.ok) {
+      return {
+        error: 'Журнал изменений недоступен. Откат не выполнен.',
+        code: 'RUNTIME_HISTORY_REQUIRED',
+        status: 503,
+        historyReady: false,
+        historyReason: 'Журнал изменений недоступен. Откат не выполнен.',
+      };
+    }
+
+    const expectedRevision = Number(body.expectedRevision || 0);
+    const historyId = Number(body.historyId || 0);
+    if (!expectedRevision || !historyId) {
+      return {
+        error: 'Не хватает номера текущей версии или идентификатора точки восстановления для отката.',
+        code: 'RUNTIME_ROLLBACK_INPUT',
+        status: 400,
+      };
+    }
+
+    const row = await supaSelectOne(cfg, 'runtime_control_history', { id: `eq.${historyId}` });
+    if (!row?.snapshot) {
+      return {
+        error: 'Точка восстановления настроек функций не найдена.',
+        code: 'RUNTIME_ROLLBACK_NOT_FOUND',
+        status: 404,
+      };
+    }
+
+    const target = normalizeRuntimeControls(row.snapshot);
+    if (Number(target.revision || 0) === expectedRevision) {
+      return {
+        error: 'Выбрана уже активная версия.',
+        code: 'RUNTIME_ROLLBACK_SAME_REVISION',
+        status: 409,
+      };
+    }
+
+    return await saveRuntimeControls(cfg, user, {
+      expectedRevision,
+      maintenanceMode: target.maintenanceMode,
+      analysisEnabled: target.analysisEnabled,
+      searchEnabled: target.searchEnabled,
+      liveEnabled: target.liveEnabled,
+      remindersEnabled: target.remindersEnabled,
+      expandedDataEnabled: target.expandedDataEnabled,
+      autoSettlementRecoveryEnabled: target.autoSettlementRecoveryEnabled,
+      message: target.message,
+      reason: String(
+        body.reason || `Rollback to revision ${Number(row.revision || target.revision || 0)}`
+      ).slice(0, 240),
+      action: 'rollback',
+      sourceRevision: Number(row.revision || target.revision || 0),
+    });
+  }
+
+  async function saveRuntimeControls(cfg, user, body = {}) {
+    const currentState = await loadRuntimeControls(cfg, { force: true });
+    if (!currentState.schemaReady) {
+      return {
+        error: SUPABASE_SCHEMA_GUIDANCE,
+        code: 'RUNTIME_CONTROLS_SCHEMA',
+        status: 409,
+      };
+    }
+
+    const current = currentState.value;
+    const expectedRevision = Number(body.expectedRevision || 0);
+    if (!expectedRevision || expectedRevision !== Number(current.revision || 1)) {
+      return {
+        error: 'Настройки уже изменились в другой сессии. Обновите панель и повторите.',
+        code: 'RUNTIME_CONTROLS_CONFLICT',
+        status: 409,
+        current: publicRuntimeControls(current),
+      };
+    }
+
+    const historySchema = await probeRuntimeHistorySchema(cfg);
+    if (!historySchema.ok) {
       const historyReason = 'Журнал изменений недоступен. Настройки не применены, чтобы не создавать неаудируемую версию.';
       void recordOpsEvent(cfg, {
         severity: 'error',
@@ -187,7 +265,10 @@ export function createRuntimeControlsRuntime({
         code: 'RUNTIME_HISTORY_REQUIRED',
         message: historyReason,
         endpoint: '/api/runtime-controls',
-        meta: { revision: Number(current.revision || 0), schemaStatus: String(historySchema.status || 'unknown') },
+        meta: {
+          revision: Number(current.revision || 0),
+          schemaStatus: String(historySchema.status || 'unknown'),
+        },
       }).catch(() => {});
       return {
         error: historyReason,
@@ -225,7 +306,9 @@ export function createRuntimeControlsRuntime({
     const historyReady = true;
     const historyReason = '';
     const requestedAction = String(body.action || 'update').trim();
-    const changeAction = ['update', 'defaults', 'rollback', 'lockdown', 'lockdown_release'].includes(requestedAction) ? requestedAction : 'update';
+    const changeAction = ['update', 'defaults', 'rollback', 'lockdown', 'lockdown_release'].includes(requestedAction)
+      ? requestedAction
+      : 'update';
     const sourceRevision = Number(body.sourceRevision || 0) || null;
     const wasSecurityLockdown = isSecurityLockdownControls(current);
     const lockdownRequested = changeAction === 'lockdown';
@@ -237,9 +320,11 @@ export function createRuntimeControlsRuntime({
       liveEnabled: lockdownRequested ? false : lockdownReleaseRequested ? true : body.liveEnabled !== false,
       remindersEnabled: lockdownRequested ? false : lockdownReleaseRequested ? true : body.remindersEnabled !== false,
       expandedDataEnabled: lockdownRequested ? false : lockdownReleaseRequested ? true : body.expandedDataEnabled !== false,
-      autoSettlementRecoveryEnabled: lockdownRequested || lockdownReleaseRequested ? false : Boolean(body.autoSettlementRecoveryEnabled),
+      autoSettlementRecoveryEnabled: lockdownRequested || lockdownReleaseRequested
+        ? false
+        : Boolean(body.autoSettlementRecoveryEnabled),
     };
-  
+
     if (wasSecurityLockdown && changeAction === 'update' && !isSecurityLockdownControls(proposed)) {
       return {
         error: 'Аварийный Security Lockdown можно снять только явным восстановлением, откатом или безопасными настройками.',
@@ -248,14 +333,14 @@ export function createRuntimeControlsRuntime({
         current: publicRuntimeControls(current),
       };
     }
-  
+
     const changeReason = String(
       body.reason
         || (lockdownRequested ? 'Аварийный Security Lockdown включён администратором.'
           : lockdownReleaseRequested ? 'Аварийный Security Lockdown снят администратором.'
             : '')
     ).trim().slice(0, 240);
-  
+
     const next = {
       maintenance_mode: proposed.maintenanceMode,
       analysis_enabled: proposed.analysisEnabled,
@@ -271,11 +356,12 @@ export function createRuntimeControlsRuntime({
       updated_at: new Date(clock()).toISOString(),
       updated_by: Number(user?.id || 0) || null,
     };
-  
+
     const reasonHex = Array.from(
       new TextEncoder().encode(changeReason),
       byte => byte.toString(16).padStart(2, '0'),
     ).join('');
+
     const url = new URL(`${cfg.supabaseUrl}/rest/v1/runtime_controls`);
     url.searchParams.set('id', 'eq.global');
     url.searchParams.set('revision', `eq.${expectedRevision}`);
@@ -336,13 +422,20 @@ export function createRuntimeControlsRuntime({
         historyReason: failureReason,
       };
     }
-    memory.runtimeControls = { value, loadedAt: clock(), source: 'supabase', schemaReady: true };
+
+    memory.runtimeControls = {
+      value,
+      loadedAt: clock(),
+      source: 'supabase',
+      schemaReady: true,
+      failClosed: false,
+    };
 
     const securityLockdown = isSecurityLockdownControls(value);
     const lockdownTransition = !wasSecurityLockdown && securityLockdown
       ? 'enabled'
       : wasSecurityLockdown && !securityLockdown ? 'released' : '';
-  
+
     await recordOpsEvent(cfg, {
       severity: securityLockdown ? 'critical' : value.maintenanceMode ? 'warning' : 'info',
       source: 'release',
@@ -374,9 +467,10 @@ export function createRuntimeControlsRuntime({
         historyReady,
       },
     }).catch(() => {});
+
     return { value, status: 200, historyReady, historyReason };
   }
-  
+
   function runtimeFeatureResponse(code, message, runtime, status = 503) {
     const category = String(code || '').startsWith('SECURITY_LOCKDOWN_')
       ? 'security_lockdown'
