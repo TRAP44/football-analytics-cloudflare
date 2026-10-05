@@ -11119,7 +11119,12 @@ async function reconcileInterruptedSettlementActions(cfg) {
   await noteSettlementWatchdogOutcome(cfg, 'failed', {
     actionId: reconciled[reconciled.length - 1]?.action_id || null,
     error: `${reconciled.length} зависших запусков фиксации результата отмечено как прерванные`,
-  }).catch(() => null);
+  }).catch(error => recordCriticalWriteFailure(cfg, {
+    code:'SETTLEMENT_WATCHDOG_STATE_WRITE_FAILED',
+    eventType:'settlement_watchdog_state',
+    message:error?.message || error,
+    meta:{phase:'interrupted_reconciliation',count:reconciled.length},
+  }));
   await recordOpsEvent(cfg, {
     severity: 'warning',
     source: 'model',
@@ -11184,7 +11189,18 @@ async function loadSettlementReliability(cfg) {
 
 async function saveSettlementReliability(cfg, patch = {}) {
   if (!hasSupabase(cfg)) return normalizeSettlementReliability(patch);
-  const current = await loadSettlementReliability(cfg).catch(() => normalizeSettlementReliability());
+  let current;
+  try {
+    current = await loadSettlementReliability(cfg);
+  } catch (error) {
+    await recordCriticalWriteFailure(cfg, {
+      code:'SETTLEMENT_RELIABILITY_READ_FAILED',
+      eventType:'settlement_watchdog_state',
+      message:error?.message || error,
+      meta:{status:String(status || 'unknown')},
+    });
+    current = normalizeSettlementReliability();
+  }
   const merged = {
     id: 'global',
     consecutive_failures: Math.max(0, Number(patch.consecutiveFailures ?? current.consecutiveFailures ?? 0)),
@@ -11197,6 +11213,33 @@ async function saveSettlementReliability(cfg, patch = {}) {
   };
   await supaUpsert(cfg, 'settlement_watchdog_state', merged, 'id');
   return normalizeSettlementReliability(merged);
+}
+
+async function recordCriticalWriteFailure(cfg, {
+  code,
+  eventType='critical_write',
+  message,
+  meta={},
+} = {}) {
+  const normalizedCode=String(code || 'CRITICAL_WRITE_FAILED').slice(0,100);
+  const normalizedMessage=redactOpsString(message || 'Critical state write failed.', 300);
+  try {
+    await recordOpsEvent(cfg, {
+      severity:'error',
+      source:'model',
+      eventType,
+      code:normalizedCode,
+      message:normalizedMessage,
+      status:503,
+      meta,
+    });
+  } catch (opsError) {
+    console.error(
+      normalizedCode,
+      normalizedMessage,
+      redactOpsString(opsError?.message || opsError, 180),
+    );
+  }
 }
 
 async function noteSettlementWatchdogOutcome(cfg, status, meta = {}) {
@@ -11524,7 +11567,12 @@ async function apiModelRemediation(request, cfg, user) {
       detail: { providerCalls: dates.length, finishedFixtures: fixtures.filter(f => isFinishedStatus(fixtureStatusShort(f))).length, settlementChecked: settlement.checked },
     });
     memory.modelRemediation.lastRun = action;
-    await noteSettlementWatchdogOutcome(cfg, status, { actionId }).catch(() => null);
+    await noteSettlementWatchdogOutcome(cfg, status, { actionId }).catch(error => recordCriticalWriteFailure(cfg, {
+      code:'SETTLEMENT_WATCHDOG_STATE_WRITE_FAILED',
+      eventType:'settlement_watchdog_state',
+      message:error?.message || error,
+      meta:{phase:'manual_remediation',actionId,status},
+    }));
     await recordOpsEvent(cfg, {
       severity: skippedCount ? 'warning' : 'info', source: 'model', eventType: 'prediction_remediation',
       code: skippedCount ? 'REMEDIATION_PARTIAL' : 'REMEDIATION_COMPLETED', message: reason,
@@ -11768,7 +11816,12 @@ async function runSettlementWatchdog(cfg) {
     return { ok: true, ...baseMeta, actionId, settledCount, skippedCount, status };
   } catch (error) {
     if (executionResult) {
-      await noteSettlementWatchdogOutcome(cfg, executionResult.status, { actionId }).catch(() => null);
+      await noteSettlementWatchdogOutcome(cfg, executionResult.status, { actionId }).catch(error => recordCriticalWriteFailure(cfg, {
+        code:'SETTLEMENT_WATCHDOG_STATE_WRITE_FAILED',
+        eventType:'settlement_watchdog_state',
+        message:error?.message || error,
+        meta:{phase:'watchdog_audit_finalize',actionId,status:executionResult.status},
+      }));
       await recordOpsEvent(cfg, {
         severity: 'error',
         source: 'model',
@@ -11786,7 +11839,12 @@ async function runSettlementWatchdog(cfg) {
       }, cfg, 1440).catch(() => null);
       return { ok: true, ...baseMeta, actionId, ...executionResult, auditPending: true };
     }
-    await noteSettlementWatchdogOutcome(cfg, 'failed', { actionId, error: redactOpsString(error?.message || error, 180) }).catch(() => null);
+    await noteSettlementWatchdogOutcome(cfg, 'failed', { actionId, error: redactOpsString(error?.message || error, 180) }).catch(stateError => recordCriticalWriteFailure(cfg, {
+      code:'SETTLEMENT_WATCHDOG_STATE_WRITE_FAILED',
+      eventType:'settlement_watchdog_state',
+      message:stateError?.message || stateError,
+      meta:{phase:'watchdog_failure',actionId},
+    }));
     const failurePatch = {
       status: 'failed',
       inspectedCount: currentIds.length,
@@ -11801,7 +11859,12 @@ async function runSettlementWatchdog(cfg) {
       },
     };
     if (auditStarted) {
-      await finalizeRemediationAction(cfg, actionId, failurePatch).catch(() => null);
+      await finalizeRemediationAction(cfg, actionId, failurePatch).catch(finalizeError => recordCriticalWriteFailure(cfg, {
+        code:'REMEDIATION_AUDIT_FINALIZE_FAILED',
+        eventType:'prediction_remediation_audit',
+        message:finalizeError?.message || finalizeError,
+        meta:{actionId,phase:'failure_finalize'},
+      }));
     } else {
       await recordRemediationAction(cfg, null, {
         actionId,
@@ -11817,7 +11880,12 @@ async function runSettlementWatchdog(cfg) {
         skippedCount: currentIds.length,
         fixtureIds: currentIds,
         detail: failurePatch.detail,
-      }).catch(() => null);
+      }).catch(recordError => recordCriticalWriteFailure(cfg, {
+        code:'REMEDIATION_AUDIT_WRITE_FAILED',
+        eventType:'prediction_remediation_audit',
+        message:recordError?.message || recordError,
+        meta:{actionId,phase:'failure_record'},
+      }));
     }
     await recordOpsEvent(cfg, {
       severity: 'error',
