@@ -47,7 +47,9 @@ export async function validateTelegramInitData(initData, botToken, maxAgeSeconds
   if (!constantTimeEqual(calculated.toLowerCase(), receivedHash.toLowerCase())) return null;
 
   const authDate = Number(params.get('auth_date') || 0);
-  const ageLimit = Math.max(60, Math.min(24 * 60 * 60, Number(maxAgeSeconds || 0)));
+  const requestedMaxAge = Number(maxAgeSeconds);
+  if (!Number.isFinite(requestedMaxAge)) return null;
+  const ageLimit = Math.max(60, Math.min(24 * 60 * 60, Math.floor(requestedMaxAge)));
   if (!Number.isSafeInteger(authDate) || authDate <= 0) return null;
   const nowSeconds = Math.floor(Date.now() / 1000);
   if (authDate > nowSeconds + TELEGRAM_AUTH_FUTURE_SKEW_SECONDS) return null;
@@ -55,7 +57,10 @@ export async function validateTelegramInitData(initData, botToken, maxAgeSeconds
 
   try {
     const user = JSON.parse(params.get('user') || '{}');
-    return user?.id ? user : null;
+    if (!user || typeof user !== 'object' || Array.isArray(user)) return null;
+    const userId = Number(user.id);
+    if (!Number.isSafeInteger(userId) || userId <= 0) return null;
+    return { ...user, id:userId };
   } catch {
     return null;
   }
