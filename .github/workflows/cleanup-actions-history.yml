@@ -1,4 +1,5 @@
 name: Cleanup Actions history
+# Re-run after stale branch pruning
 
 on:
   push:
