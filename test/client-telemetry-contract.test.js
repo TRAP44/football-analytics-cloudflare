@@ -41,6 +41,44 @@ test('zero matching samples are explicit insufficient evidence, never a healthy 
   assert.deepEqual(result.missingMetadata, BOOT_OK_REQUIRED_METADATA);
 });
 
+test('BOOT_OK required metadata is applied after canonical code normalization', () => {
+  const result = assessClientTelemetryEvidence([
+    { event_type:'client_telemetry', code:'BOOT_OK', metadata:{} },
+  ], { code:'boot_ok' });
+  assert.equal(result.status,'incomplete_samples');
+  assert.equal(result.completeSampleCount,0);
+  assert.deepEqual(result.missingMetadata,BOOT_OK_REQUIRED_METADATA);
+});
+
+test('malformed requiredMetadata falls back to the canonical contract and arrays are not metadata objects', () => {
+  const malformedRequired = assessClientTelemetryEvidence([
+    { event_type:'client_telemetry', code:'BOOT_OK', metadata:{} },
+  ], { code:'BOOT_OK', requiredMetadata:'deploySha' });
+  assert.equal(malformedRequired.status,'incomplete_samples');
+  assert.deepEqual(malformedRequired.missingMetadata,BOOT_OK_REQUIRED_METADATA);
+
+  const arrayMetadata = [];
+  for (const field of BOOT_OK_REQUIRED_METADATA) arrayMetadata[field] = field === 'deploySha'
+    ? '0123456789abcdef0123456789abcdef01234567'
+    : 123;
+  const arrayResult = assessClientTelemetryEvidence([
+    { event_type:'client_telemetry', code:'BOOT_OK', metadata:arrayMetadata },
+  ]);
+  assert.equal(arrayResult.status,'incomplete_samples');
+  assert.equal(arrayResult.completeSampleCount,0);
+});
+
+test('custom required metadata is normalized and deduplicated', () => {
+  const result=assessClientTelemetryEvidence([
+    {event_type:'client_telemetry',code:'PRODUCT_ACTION',metadata:{action:'open_match'}},
+  ],{
+    code:'product_action',
+    requiredMetadata:[' action ','action','','   '],
+  });
+  assert.equal(result.status,'confirmed');
+  assert.deepEqual(result.missingMetadata,[]);
+});
+
 test('BOOT_OK evidence is confirmed only when canonical rows carry required release/performance fields', () => {
   const metadata = Object.fromEntries(BOOT_OK_REQUIRED_METADATA.map(field => [field, field === 'deploySha'
     ? '0123456789abcdef0123456789abcdef01234567'
