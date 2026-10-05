@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   backup:
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production
     env:
@@ -240,7 +240,7 @@ jobs:
   restore_drill:
     name: Isolated restore drill
     needs: backup
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: production
     env:
