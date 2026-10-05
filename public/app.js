@@ -3048,7 +3048,9 @@ function filteredMatches() {
       const personalDelta = personalMatchInsight(b, signals).score - personalMatchInsight(a, signals).score;
       if (personalDelta) return personalDelta;
     }
-    if (Boolean(a.live) !== Boolean(b.live)) return a.live ? -1 : 1;
+    // LIVE is explicit in the LIVE filter; it must not make "Все" and
+    // "Для вас" look like the same feed or outrank stronger competitions.
+    if (state.filter === 'live' && Boolean(a.live) !== Boolean(b.live)) return a.live ? -1 : 1;
     if (Boolean(a.featured) !== Boolean(b.featured)) return a.featured ? -1 : 1;
     const ap = Number(a.competition?.priority || 0), bp = Number(b.competition?.priority || 0);
     if (ap !== bp) return bp - ap;
