@@ -50,6 +50,47 @@ test('RC130 normalizes club names and a licensed h2h feed into the internal 1X2 
   assert.ok(Math.abs(market.probabilities.home+market.probabilities.draw+market.probabilities.away-100)<=0.2);
 });
 
+test('RC130 fails closed on missing kickoff and ignores malformed bookmaker payloads',()=>{
+  const rows=[{
+    id:'event-1',
+    sport_key:'soccer_epl',
+    commence_time:'2026-09-25T19:00:00Z',
+    home_team:'Liverpool',
+    away_team:'Everton',
+    bookmakers:{unexpected:true},
+  }];
+  assert.equal(normalizeTheOddsApiMarket(rows,{
+    homeName:'Liverpool',
+    awayName:'Everton',
+    kickoffAt:'',
+  }),null);
+  assert.equal(normalizeTheOddsApiMarket(rows,{
+    homeName:'Liverpool',
+    awayName:'Everton',
+    kickoffAt:'2026-09-25T19:00:00Z',
+  }),null);
+});
+
+test('RC130 rejects non-finite bookmaker prices',()=>{
+  const rows=[{
+    id:'event-2',
+    sport_key:'soccer_epl',
+    commence_time:'2026-09-25T19:00:00Z',
+    home_team:'Liverpool',
+    away_team:'Everton',
+    bookmakers:[{markets:[{key:'h2h',outcomes:[
+      {name:'Liverpool',price:'Infinity'},
+      {name:'Draw',price:3.7},
+      {name:'Everton',price:4.5},
+    ]}]}],
+  }];
+  assert.equal(normalizeTheOddsApiMarket(rows,{
+    homeName:'Liverpool',
+    awayName:'Everton',
+    kickoffAt:'2026-09-25T19:00:00Z',
+  }),null);
+});
+
 test('RC130 rejects a different fixture instead of guessing by kickoff time',()=>{
   const rows=[{
     id:'wrong',
