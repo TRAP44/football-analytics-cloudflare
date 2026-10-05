@@ -29,3 +29,16 @@ test('refund reconciliation failure emits a stable operational error before retr
   assert.match(body,/eventType:'refund_reconciliation_failed'/);
   assert.match(body,/telegramWebhookRetrySafe = true/);
 });
+
+
+test('settlement watchdog state-write failures are observable instead of silently swallowed',()=>{
+  assert.match(worker,/async function recordCriticalWriteFailure\(/);
+  assert.match(worker,/SETTLEMENT_WATCHDOG_STATE_WRITE_FAILED/);
+  assert.match(worker,/SETTLEMENT_RELIABILITY_READ_FAILED/);
+  assert.match(worker,/REMEDIATION_AUDIT_FINALIZE_FAILED/);
+  assert.match(worker,/REMEDIATION_AUDIT_WRITE_FAILED/);
+  assert.doesNotMatch(
+    functionBody('noteSettlementWatchdogOutcome'),
+    /loadSettlementReliability\(cfg\)\.catch\(\(\) => normalizeSettlementReliability\(\)\)/,
+  );
+});
