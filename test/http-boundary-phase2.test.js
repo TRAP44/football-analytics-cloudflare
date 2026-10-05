@@ -27,6 +27,34 @@ test('HTTP boundary preserves JSON response metadata and restrictive security he
   assert.equal(response.headers.get('access-control-allow-origin'), null);
 });
 
+test('HTTP boundary prevents callers from overriding invariant response headers', async () => {
+  const response = runtime.json({ ok:true }, 200, {
+    'Content-Type':'text/html',
+    'Cache-Control':'public, max-age=3600',
+    'X-Content-Type-Options':'off',
+    'X-App-Version':'spoofed',
+    'X-Api-Contract':'999',
+    'X-Min-Client-Version':'0',
+    'X-Release-Channel':'evil',
+    'Vary':'*',
+    'Content-Length':'9999',
+    'Retry-After':'9',
+    'X-Request-Id':'req-1',
+  });
+
+  assert.equal(response.headers.get('content-type'),'application/json; charset=utf-8');
+  assert.equal(response.headers.get('cache-control'),'no-store');
+  assert.equal(response.headers.get('x-content-type-options'),'nosniff');
+  assert.equal(response.headers.get('x-app-version'),'6.120.0-rc144');
+  assert.equal(response.headers.get('x-api-contract'),'5');
+  assert.equal(response.headers.get('x-min-client-version'),'5.8.0');
+  assert.equal(response.headers.get('x-release-channel'),'rc144');
+  assert.equal(response.headers.get('vary'),'x-telegram-init-data');
+  assert.equal(response.headers.get('content-length'),null);
+  assert.equal(response.headers.get('retry-after'),'9');
+  assert.equal(response.headers.get('x-request-id'),'req-1');
+});
+
 test('HTTP boundary preserves admin forbidden response contract', async () => {
   const response = runtime.adminForbidden();
   assert.equal(response.status, 403);
@@ -62,6 +90,25 @@ test('HTTP boundary preserves public route error categories and limits', () => {
   assert.equal(runtime.publicRouteError({ code: 'UPSTREAM_TIMEOUT' }).status, 504);
   assert.equal(runtime.publicRouteError({ code: 'FOOTBALL_PROVIDER_FAILURE' }).status, 502);
   assert.equal(runtime.publicRouteError(new Error('unknown')).body.category, 'service');
+});
+
+test('HTTP boundary normalizes malformed retry metadata and missing write limits', () => {
+  const negative=runtime.publicRouteError({code:'FOOTBALL_RATE_LIMIT',retryAfter:-10});
+  assert.equal(negative.status,429);
+  assert.equal(negative.body.retryAfter,undefined);
+  assert.doesNotMatch(negative.body.error,/-10/);
+
+  const infinite=runtime.publicRouteError({code:'FOOTBALL_COOLDOWN',retryAfter:Infinity});
+  assert.equal(infinite.body.retryAfter,undefined);
+
+  const fractional=runtime.publicRouteError({code:'FOOTBALL_RATE_LIMIT',retryAfter:2.2});
+  assert.equal(fractional.body.retryAfter,3);
+
+  const capped=runtime.publicRouteError({code:'FOOTBALL_RATE_LIMIT',retryAfter:999999999});
+  assert.equal(capped.body.retryAfter,604800);
+
+  const noLimits=createHttpRuntime({}).publicRouteError({code:'FAVORITES_LIMIT'});
+  assert.equal(noLimits.body.error,'Достигнут лимит избранных команд.');
 });
 
 test('worker composes HTTP runtime instead of owning response helper implementations', () => {
