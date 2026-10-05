@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   test:
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -31,7 +31,7 @@ jobs:
 
 
   database-integration:
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       SUPABASE_CLI_VERSION: "2.119.0"
@@ -41,6 +41,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
+
+      - name: Verify hosted runner prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker version
+          psql --version
 
       - name: Verify pinned Supabase CLI
         run: |
