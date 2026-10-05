@@ -97,3 +97,12 @@ test('prediction settlement failures are never silently swallowed',()=>{
   }
   assert.doesNotMatch(worker,/settlePredictionsFromFixtures\([^\n]+\)\.catch\(\(\) => null\)/);
 });
+
+
+test('quota and pass compensation diagnostics have a non-silent fallback',()=>{
+  assert.match(worker,/LEGACY_QUOTA_REFUND_FAILED/);
+  assert.match(worker,/LEGACY_PASS_REFUND_FAILED/);
+  assert.match(worker,/recordCriticalWriteFailure\(cfg, \{/);
+  assert.doesNotMatch(worker,/LEGACY_QUOTA_REFUND_FAILED[\s\S]{0,500}\.catch\(\(\)=>null\)/);
+  assert.doesNotMatch(worker,/LEGACY_PASS_REFUND_FAILED[\s\S]{0,500}\.catch\(\(\)=>null\)/);
+});
