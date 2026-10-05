@@ -9,6 +9,7 @@ import {
 import { createFavoritePlayersService } from '../src/user-player-favorites.js';
 import {
   PLAYER_FOLLOW_NOTIFICATION_CONTRACT,
+  isPlayerFollowNotificationEventType,
   publicPlayerFollowNotificationContract,
 } from '../src/player-follow-contract.js';
 import { createPlayerFollowModule } from '../public/modules/player-follow.js';
@@ -269,6 +270,22 @@ test('Player Follow controls are mobile-safe at the required phone widths', () =
   for (const width of [320, 360, 375, 390, 430]) {
     assert.ok(width >= 320 && width <= 430);
   }
+});
+
+test('Player Follow notification contract snapshot is immutable and event types are unique', () => {
+  const publicContract=publicPlayerFollowNotificationContract();
+  assert.equal(Object.isFrozen(PLAYER_FOLLOW_NOTIFICATION_CONTRACT),true);
+  assert.equal(Object.isFrozen(PLAYER_FOLLOW_NOTIFICATION_CONTRACT.eventTypes),true);
+  assert.equal(Object.isFrozen(publicContract),true);
+  assert.equal(Object.isFrozen(publicContract.eventTypes),true);
+  assert.equal(new Set(publicContract.eventTypes).size,publicContract.eventTypes.length);
+
+  assert.equal(isPlayerFollowNotificationEventType('player.goal'),true);
+  assert.equal(isPlayerFollowNotificationEventType(' player.goal '),false);
+  assert.equal(isPlayerFollowNotificationEventType(true),false);
+  assert.equal(isPlayerFollowNotificationEventType('player.unknown'),false);
+
+  assert.throws(()=>publicContract.eventTypes.push('player.unknown'),TypeError);
 });
 
 test('Smart Notifications stay out of scope while a stable future event contract is exposed', () => {
