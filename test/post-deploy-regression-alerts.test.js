@@ -137,6 +137,7 @@ test('planned INCIDENT can be alerted in the same monitor run after lifecycle pe
   assert.equal(plan.action,'send');
   assert.equal(plan.kind,'incident');
   assert.equal(plan.incident.windowMinutes,30);
+  assert.equal(plan.incident.startedAt,'2026-09-29T15:30:00.000Z');
   assert.deepEqual(plan.incident.signalCodes,['critical_introduced']);
 });
 
@@ -187,6 +188,18 @@ test('delivery planner uses the newest ledger row for a destination',()=>{
   );
   assert.equal(plan.action,'none');
   assert.equal(plan.reason,'already_delivered');
+});
+
+test('malformed ledger attempts fail closed instead of triggering duplicate retries',()=>{
+  for(const attempts of [true,[1],'1.5','not-a-number']){
+    const plan=planPostDeployRegressionAlert(
+      [lifecycle('incident')],
+      [ledger('incident','retry_pending','destination-a',{attempts,retryAt:'2026-09-29T15:20:00Z'})],
+      {deploySha:sha,destinations:[destinations[0]],nowMs:Date.parse('2026-09-29T15:30:00Z')},
+    );
+    assert.equal(plan.action,'none');
+    assert.equal(plan.reason,'delivery_outcome_unknown');
+  }
 });
 
 test('retry_pending waits until retryAt and then targets only the due destination',()=>{
@@ -302,4 +315,8 @@ test('delivery outcomes become dedicated release regression alert ops events',()
   const failed=postDeployRegressionAlertOpsEvents(plan,{outcomes:[{slot:0,state:'persistence_failure'}]});
   assert.equal(failed[0].severity,'error');
   assert.equal(failed[0].code,'POST_DEPLOY_REGRESSION_ALERT_PERSISTENCE_FAILED');
+
+  const coerced=postDeployRegressionAlertOpsEvents(plan,{outcomes:[{slot:true,state:'SENT'}]});
+  assert.deepEqual(coerced[0].meta.recipientSlots,[]);
+  assert.equal(coerced[0].code,'POST_DEPLOY_REGRESSION_INCIDENT_ALERT_SENT');
 });
