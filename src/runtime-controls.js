@@ -199,6 +199,29 @@ export function createRuntimeControlsRuntime({
       };
     }
 
+    try {
+      await ensureRuntimeHistoryBaseline(cfg, current, user);
+    } catch (error) {
+      const historyReason = 'Журнал изменений недоступен: базовая точка не сохранена. Настройки не применены.';
+      void recordOpsEvent(cfg, {
+        severity: 'error',
+        source: 'release',
+        eventType: 'runtime_history',
+        code: 'RUNTIME_HISTORY_BASELINE_WRITE_FAILED',
+        message: error?.message || error,
+        endpoint: '/api/runtime-controls',
+        meta: { revision: Number(current.revision || 0) },
+      }).catch(() => {});
+      return {
+        error: historyReason,
+        code: 'RUNTIME_HISTORY_BASELINE_WRITE_FAILED',
+        status: 503,
+        current: publicRuntimeControls(current),
+        historyReady: false,
+        historyReason,
+      };
+    }
+
     const historyReady = true;
     const historyReason = '';
     const requestedAction = String(body.action || 'update').trim();
@@ -249,37 +272,34 @@ export function createRuntimeControlsRuntime({
       updated_by: Number(user?.id || 0) || null,
     };
   
-    const url = new URL(`${cfg.supabaseUrl}/rest/v1/rpc/commit_runtime_controls`);
+    const reasonHex = Array.from(
+      new TextEncoder().encode(changeReason),
+      byte => byte.toString(16).padStart(2, '0'),
+    ).join('');
+    const url = new URL(`${cfg.supabaseUrl}/rest/v1/runtime_controls`);
+    url.searchParams.set('id', 'eq.global');
+    url.searchParams.set('revision', `eq.${expectedRevision}`);
     const response = await fetchWithTimeout(url, {
-      method: 'POST',
-      headers: supaHeaders(cfg, { Prefer: 'return=representation' }),
-      body: JSON.stringify({
-        p_expected_revision: expectedRevision,
-        p_maintenance_mode: next.maintenance_mode,
-        p_analysis_enabled: next.analysis_enabled,
-        p_search_enabled: next.search_enabled,
-        p_live_enabled: next.live_enabled,
-        p_reminders_enabled: next.reminders_enabled,
-        p_expanded_data_enabled: next.expanded_data_enabled,
-        p_auto_settlement_recovery_enabled: next.auto_settlement_recovery_enabled,
-        p_message: next.message,
-        p_action: changeAction,
-        p_reason: changeReason,
-        p_app_version: APP_VERSION,
-        p_changed_by: next.updated_by,
-        p_source_revision: sourceRevision,
+      method: 'PATCH',
+      headers: supaHeaders(cfg, {
+        Prefer: 'return=representation',
+        'X-Runtime-Action': changeAction,
+        'X-Runtime-Reason-Hex': reasonHex,
+        'X-Runtime-App-Version': String(APP_VERSION || '').slice(0, 120),
+        ...(sourceRevision ? { 'X-Runtime-Source-Revision': String(sourceRevision) } : {}),
       }),
+      body: JSON.stringify(next),
     }, 7000, 'Supabase atomic runtime controls');
 
     if (!response.ok) {
       const responseText = await response.text().catch(() => '');
-      const failureReason = 'Настройки не применены: атомарное сохранение состояния и журнала недоступно.';
+      const failureReason = 'Настройки не применены: состояние и журнал не удалось сохранить одной транзакцией.';
       void recordOpsEvent(cfg, {
         severity: 'error',
         source: 'release',
         eventType: 'runtime_history',
         code: 'RUNTIME_CONTROLS_ATOMIC_COMMIT_FAILED',
-        message: responseText || `HTTP ${response.status}`,
+        message: redactOpsString(responseText || `HTTP ${response.status}`, 160),
         endpoint: '/api/runtime-controls',
         status: response.status,
         meta: { revision: expectedRevision, action: changeAction, sourceRevision },
@@ -294,37 +314,17 @@ export function createRuntimeControlsRuntime({
       };
     }
 
-    const result = await response.json().catch(() => null);
-    if (!result?.ok) {
-      if (result?.reason === 'revision_conflict') {
-        return {
-          error: 'Настройки изменились до сохранения. Обновите панель и повторите.',
-          code: 'RUNTIME_CONTROLS_CONFLICT',
-          status: 409,
-          current: publicRuntimeControls((await loadRuntimeControls(cfg, { force: true })).value),
-        };
-      }
-      const failureReason = 'Настройки не применены: база данных не подтвердила атомарную запись журнала.';
-      void recordOpsEvent(cfg, {
-        severity: 'error',
-        source: 'release',
-        eventType: 'runtime_history',
-        code: 'RUNTIME_CONTROLS_ATOMIC_COMMIT_REJECTED',
-        message: String(result?.reason || 'invalid_rpc_response'),
-        endpoint: '/api/runtime-controls',
-        meta: { revision: expectedRevision, action: changeAction, sourceRevision },
-      }).catch(() => {});
+    const rows = await response.json().catch(() => []);
+    if (!Array.isArray(rows) || rows.length !== 1) {
       return {
-        error: failureReason,
-        code: 'RUNTIME_CONTROLS_ATOMIC_COMMIT_REJECTED',
-        status: 503,
-        current: publicRuntimeControls(current),
-        historyReady: false,
-        historyReason: failureReason,
+        error: 'Настройки изменились до сохранения. Обновите панель и повторите.',
+        code: 'RUNTIME_CONTROLS_CONFLICT',
+        status: 409,
+        current: publicRuntimeControls((await loadRuntimeControls(cfg, { force: true })).value),
       };
     }
 
-    const value = normalizeRuntimeControls(result.value || {});
+    const value = normalizeRuntimeControls(rows[0]);
     if (Number(value.revision || 0) !== expectedRevision + 1) {
       const failureReason = 'Настройки не применены: база данных вернула некорректную версию состояния.';
       return {
