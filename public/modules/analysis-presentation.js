@@ -1,5 +1,6 @@
 export function createAnalysisPresentationModule(deps = {}) {
   const {
+    $,
     absenceKindLabel,
     absenceStatusLabel,
     analysisAccessUsageHtml,
