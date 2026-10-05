@@ -236,7 +236,7 @@
             <strong>AI-разборы на сегодня закончились</strong>
             <p>Матчи, LIVE, составы и статистика остаются доступны бесплатно.</p>
           </div>
-          <button id="quotaUpgradeBtn" class="primary-setting-btn" type="button">Смотреть PRO и PREMIUM</button>
+          <button id="quotaUpgradeBtn" class="primary-setting-btn" type="button" hidden>Смотреть PRO и PREMIUM</button>
         </section>
       </section>
 
@@ -307,9 +307,9 @@
         <section id="billingPanel" class="panel billing-panel" aria-labelledby="billingTitle">
           <div class="billing-head">
             <div>
-              <span class="profile-zone-kicker">MATCHRADAR PRO</span>
-              <h2 id="billingTitle">Тариф и AI-доступ</h2>
-              <p>Подписка через Telegram Stars. Матчи, LIVE и базовая статистика не блокируются тарифом.</p>
+              <span id="billingKicker" class="profile-zone-kicker">AI-ДОСТУП</span>
+              <h2 id="billingTitle">AI-лимит</h2>
+              <p id="billingIntro">Бесплатный режим активен. Матчи, LIVE и базовая статистика доступны без оплаты.</p>
             </div>
             <span id="billingPlanBadge" class="billing-plan-badge">Бесплатный</span>
           </div>
@@ -329,7 +329,7 @@
             <span id="subscriptionCopy"></span>
           </div>
 
-          <div class="pricing-grid billing-pricing-grid" aria-label="Тарифы MatchRadar">
+          <div id="billingPricingGrid" class="pricing-grid billing-pricing-grid" aria-label="Тарифы MatchRadar" hidden>
             <article class="pricing-card" data-plan="FREE">
               <span class="pricing-name">FREE · Бесплатный</span>
               <strong>0 ⭐</strong>
@@ -366,7 +366,7 @@
           </div>
 
 
-          <section id="passStore" class="pass-store" aria-labelledby="passStoreTitle">
+          <section id="passStore" class="pass-store" aria-labelledby="passStoreTitle" hidden>
             <div class="pass-store-head">
               <div>
                 <span class="profile-zone-kicker">РАЗОВЫЙ ДОСТУП</span>
@@ -402,11 +402,11 @@
             </div>
           </section>
 
-          <div class="billing-actions">
+          <div id="billingActions" class="billing-actions" hidden>
             <button id="billingSyncBtn" class="secondary-setting-btn" type="button" disabled>Проверить оплату</button>
             <button id="subscriptionManageBtn" class="secondary-setting-btn" type="button" hidden>Отключить автопродление</button>
           </div>
-          <p class="billing-footnote">Тариф активируется после подтверждения оплаты в Telegram Stars.</p>
+          <p id="billingFootnote" class="billing-footnote" hidden>Тариф активируется после подтверждения оплаты в Telegram Stars.</p>
         </section>
 
         <section class="panel digest-settings-panel" aria-label="Утренняя подборка">
