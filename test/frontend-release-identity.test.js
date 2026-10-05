@@ -23,3 +23,12 @@ test('frontend asset revision matches the runtime release identity', () => {
     assert.ok(html.includes(`/styles/public-shell.css?v=${expected}`));
   }
 });
+
+
+test('frontend assets do not retain legacy launch/p revision labels', () => {
+  const expected = release.runtimeVersion;
+  for (const html of [publicHtml, adminHtml]) {
+    assert.ok(html.includes(`/assets/brand/matchradar-mark.svg?v=${expected}`));
+    assert.doesNotMatch(html,/\?v=\d+\.\d+\.\d+-(?:launch|p)\d+/);
+  }
+});
