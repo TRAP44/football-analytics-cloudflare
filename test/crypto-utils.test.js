@@ -51,6 +51,29 @@ test('validateTelegramInitData rejects tampering and stale payloads', async () =
 });
 
 
+test('validateTelegramInitData fails closed for non-finite freshness configuration', async () => {
+  const token='123456:TEST_TOKEN';
+  const stale=await telegramInitData({
+    token,
+    authDate:Math.floor(Date.now()/1000)-7*24*60*60,
+  });
+  for (const maxAge of [Number.NaN,Number.POSITIVE_INFINITY,'NaN','Infinity']) {
+    assert.equal(await validateTelegramInitData(stale,token,maxAge),null,String(maxAge));
+  }
+});
+
+test('validateTelegramInitData rejects malformed Telegram user identities', async () => {
+  const token='123456:TEST_TOKEN';
+  for (const id of [0,-1,1.5,Number.MAX_SAFE_INTEGER+1,'not-a-user']) {
+    const initData=await telegramInitData({token,user:{id,first_name:'Bad'}});
+    assert.equal(await validateTelegramInitData(initData,token,3600),null,String(id));
+  }
+
+  const numericString=await telegramInitData({token,user:{id:'42',first_name:'Test'}});
+  const normalized=await validateTelegramInitData(numericString,token,3600);
+  assert.equal(normalized.id,42);
+});
+
 test('validateTelegramInitData accepts only the explicit small future clock skew', async () => {
   const token='123456:TEST_TOKEN';
   const now=Math.floor(Date.now()/1000);
