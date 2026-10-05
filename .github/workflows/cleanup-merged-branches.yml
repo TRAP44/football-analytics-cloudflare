@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   cleanup:
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.merged == true }}
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.state == 'closed' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -68,14 +68,42 @@ jobs:
             encoded_branch="$(jq -nr --arg v "$branch" '$v|@uri')"
             safe_to_delete=false
 
-            merged_match="$(gh api --paginate -X GET "repos/$GH_REPO/pulls" \
+            closed_match="$(gh api --paginate -X GET "repos/$GH_REPO/pulls" \
               -f state=closed \
               -f head="$OWNER:$branch" \
               -f per_page=100 \
-              --jq '.[] | select(.merged_at != null) | [.head.sha, .merged_at, .number] | @tsv' \
-              | awk -F $'\t' -v current_sha="$sha" '$1 == current_sha { print; exit }')"
+              --jq '.[] | [.head.sha, (.merged_at // ""), .number] | @tsv' \
+              | awk -F 
+              ahead_by="$(gh api "repos/$GH_REPO/compare/$DEFAULT_BRANCH...$encoded_branch" --jq '.ahead_by' 2>/dev/null || echo unknown)"
+              if [[ "$ahead_by" == "0" ]]; then
+                safe_to_delete=true
+              fi
+            fi
 
-            if [[ -n "$merged_match" ]]; then
+            if [[ "$safe_to_delete" != "true" ]]; then
+              echo "Keep branch with unique/unverified commits: $branch"
+              skipped=$((skipped + 1))
+              continue
+            fi
+
+            if gh api -X DELETE "repos/$GH_REPO/git/refs/heads/$encoded_branch" >/dev/null 2>&1; then
+              echo "Deleted fully merged branch: $branch"
+              deleted=$((deleted + 1))
+            else
+              echo "Skipped branch that GitHub refused to delete: $branch"
+              skipped=$((skipped + 1))
+            fi
+          done < <(
+            gh api --paginate "repos/$GH_REPO/branches?per_page=100" \
+              --jq '.[] | [.name, .commit.sha, .protected] | @tsv'
+          )
+
+          echo "Cleanup complete: deleted=$deleted skipped=$skipped"
+\t' -v current_sha="$sha" '$1 == current_sha { print; exit }')"
+
+            if [[ -n "$closed_match" ]]; then
+              # Exact branch head belongs to a closed PR. The PR keeps the review
+              # history and commit reference, so the named branch can be removed.
               safe_to_delete=true
             else
               ahead_by="$(gh api "repos/$GH_REPO/compare/$DEFAULT_BRANCH...$encoded_branch" --jq '.ahead_by' 2>/dev/null || echo unknown)"
