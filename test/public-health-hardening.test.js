@@ -97,13 +97,14 @@ test('public liveness is dependency-free and full public health stays minimal', 
   });
   assert.equal(calls,0);
 
-  const full=await runtime.healthSnapshot();
+  const full=await runtime.healthSnapshot({devMode:false});
   assert.equal(calls,1);
   assert.deepEqual(full,{
     ok:false,
     status:'not_ready',
     version:'6.120.0-rc144',
     releaseCandidate:'RC144',
+    devMode:false,
     readiness:{ok:false,status:'not_ready'},
   });
 });
