@@ -35,7 +35,7 @@ export function createBetaFeedbackModule({
     if (status) status.textContent='Отправляю…';
     try {
       await api('/api/beta-feedback',{method:'POST',body:JSON.stringify({category,severity,note}),timeoutMs:6500,retry:false,dedupe:false});
-      if (status) status.textContent='Спасибо. Сообщение добавлено в beta-наблюдение.';
+      if (status) status.textContent='Спасибо. Сообщение отправлено и добавлено в журнал обратной связи.';
       if ($('betaFeedbackNote')) $('betaFeedbackNote').value='';
       scheduleTask(()=>setBetaFeedbackOpen(false),900);
     } catch (error) {
