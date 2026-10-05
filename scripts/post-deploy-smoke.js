@@ -110,7 +110,7 @@ export async function runDeploymentSmoke(rawBaseUrl, expectedVersion, expectedSh
 
   for (let attempt = 1; attempt <= retries; attempt += 1) {
     try {
-      const response = await request(fetchImpl, baseUrl, '/health/ready');
+      const response = await request(fetchImpl, baseUrl, '/health/ready', 8000, { headers:{'x-health-token':healthProbeToken} });
       const body = await jsonBody(response, 'Readiness endpoint');
       if (!response.ok) throw new Error(`Readiness endpoint returned HTTP ${response.status}.`);
       if (body?.version !== expectedVersion) {
