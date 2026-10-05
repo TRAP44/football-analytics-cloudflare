@@ -8,7 +8,7 @@
 
 ## Что проверяется
 
-Каждые 15 минут, со смещением относительно Worker cron, а также после каждого завершённого workflow `Deploy Production`:
+Каждый час, со смещением относительно Worker cron, а также после каждого завершённого workflow `Deploy Production`:
 
 - `/health/live` — Worker отвечает и процесс жив;
 - `/health/ready` — Supabase, schema/security contract и обязательная конфигурация готовы;
@@ -39,7 +39,7 @@ Incident lifecycle реализован через GitHub REST API из Node.js 
 
 Повторные failures добавляют комментарии в существующий issue вместо создания дубликатов. Когда основной внешний monitor снова успешно завершается, availability и monitor-infrastructure incidents закрываются с recovery evidence.
 
-JSON/Markdown evidence основной проверки сохраняется как GitHub Actions artifact на 7 дней.
+JSON/Markdown evidence основной проверки сохраняется как GitHub Actions artifact на 3 дня.
 
 ## Разобранный инцидент #464
 
