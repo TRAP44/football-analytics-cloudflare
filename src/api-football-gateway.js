@@ -529,7 +529,9 @@ export function createApiFootballGateway({
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([key, value]) => `${key}=${String(value)}`)
       .join('&');
-    return `football:${path}?${pairs}:type=${options.responseType || 'array'}`;
+    const retries = Math.max(0, Math.min(1, Number(options.transportRetries ?? 1)));
+    const timeoutMs = Number(options.timeoutMs || 10000);
+    return `football:${path}?${pairs}:type=${options.responseType || 'array'}:retries=${retries}:timeout=${timeoutMs}`;
   }
 
   function isRetryableFootballTransportError(error) {
