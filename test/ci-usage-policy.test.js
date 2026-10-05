@@ -31,3 +31,29 @@ test('privileged audit keeps weekly coverage while avoiding unrelated PR churn',
   assert.match(privileged,/scripts\/security-history-scan\.js/);
   assert.match(privileged,/schedule:[\s\S]*cron: "47 3 \* \* 1"/);
 });
+
+
+test('closed pull requests cancel queued self-hosted CI without consuming a runner',()=>{
+  for (const [name,workflow] of [
+    ['Quality',quality],
+    ['CodeQL',codeql],
+    ['Privileged Access Audit',privileged],
+  ]) {
+    assert.match(
+      workflow,
+      /pull_request:[\s\S]*types: \[opened, synchronize, reopened, closed\]/,
+      `${name} must receive the closed event so workflow-level concurrency can cancel the queued PR run`,
+    );
+    assert.match(
+      workflow,
+      /if: \$\{\{ github\.event_name != 'pull_request' \|\| github\.event\.action != 'closed' \}\}/,
+      `${name} must skip runner jobs for the synthetic close/cancellation run`,
+    );
+  }
+
+  assert.equal(
+    (quality.match(/if: \$\{\{ github\.event_name != 'pull_request' \|\| github\.event\.action != 'closed' \}\}/g) || []).length,
+    2,
+    'both Quality jobs must skip on pull_request.closed',
+  );
+});
