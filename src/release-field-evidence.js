@@ -32,7 +32,7 @@ function clockValue(now) {
     return typeof value === 'number'
       && Number.isFinite(value)
       && value >= 0
-      && value <= MAX_TIMESTAMP_MS
+      && value <= MAX_TIMESTAMP_MS-EVIDENCE_LOCK_TTL_MS
       ? value
       : null;
   } catch {
@@ -224,9 +224,11 @@ export function createReleaseFieldEvidenceRuntime({
       );
       if (!Array.isArray(selected)) throw new Error('release_evidence_users_unavailable');
 
-      const rows=selected
+      const sampledRows=selected
         .filter(row=>row&&typeof row === 'object'&&!Array.isArray(row))
         .slice(0,50);
+      const rows=sampledRows.filter(row=>rowUserId(row)>0);
+      const invalidObservedUsers=sampledRows.length-rows.length;
       const adminIds=idSet(cfg?.adminTelegramIds);
       const betaIds=idSet(cfg?.betaTelegramIds);
       const overlap=[...betaIds].filter(id=>adminIds.has(id)).length;
@@ -266,6 +268,7 @@ export function createReleaseFieldEvidenceRuntime({
           adminAllowlistCount:adminIds.size,
           allowlistOverlapCount:overlap,
           observedUsers:rows.length,
+          observedInvalidUsers:invalidObservedUsers,
           observedNonAdminUsers:nonAdmin.length,
           observedNonAdminOutsideBeta:outside.length,
           newestUserCreatedAt:safeTimestamp(newest?.created_at),
