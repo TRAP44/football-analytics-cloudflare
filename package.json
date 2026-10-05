@@ -15,7 +15,7 @@
     "security:privileged": "node scripts/privileged-access-audit.js"
   },
   "devDependencies": {
-    "wrangler": "4.141.0"
+    "wrangler": "4.146.0"
   },
   "overrides": {
     "undici": "7.30.0"
