@@ -1,3 +1,28 @@
+function cacheOpsCategory(cacheKey) {
+  const raw = String(cacheKey || '').trim();
+  if (!raw) return 'unknown';
+
+  const parts = raw.split(':').filter(Boolean);
+  const safe = [];
+  for (const part of parts) {
+    const value = String(part).trim();
+    if (!value) continue;
+
+    // Stop before user/fixture ids, UUIDs, hashes or other opaque tokens.
+    if (
+      /^\d+$/.test(value)
+      || /^[0-9a-f]{8,}$/i.test(value)
+      || /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(value)
+      || value.length > 32
+    ) break;
+
+    safe.push(value.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 24));
+    if (safe.length >= 3) break;
+  }
+
+  return (safe.join(':') || 'opaque').slice(0, 80);
+}
+
 export function createSharedCacheRuntime({
   memory,
   bumpTelemetry,
@@ -60,13 +85,13 @@ export function createSharedCacheRuntime({
           }
           recordOpsEvent(cfg, {
             severity: 'warning', source: 'cache', eventType: 'supabase_cache_read_fallback', code: 'CACHE_DB_READ',
-            message: error?.message || error, meta: { cacheKey },
+            message: error?.message || error, meta: { cacheCategory: cacheOpsCategory(cacheKey) },
           }).catch(() => {});
           return { payload: local.payload, expired: local.expiresAt <= Date.now(), expiresAt: new Date(local.expiresAt).toISOString(), layer: 'memory-fallback' };
         }
         recordOpsEvent(cfg, {
           severity: 'warning', source: 'cache', eventType: 'supabase_cache_read_degraded', code: 'CACHE_DB_READ_NO_L1',
-          message: error?.message || error, meta: { cacheKey },
+          message: error?.message || error, meta: { cacheCategory: cacheOpsCategory(cacheKey) },
         }).catch(() => {});
         // Treat a transient shared-cache outage as a cache miss. The route may
         // still refresh from the provider and serve the user.
@@ -150,7 +175,7 @@ export function createSharedCacheRuntime({
       bumpTelemetry('supabaseErrors');
       recordOpsEvent(cfg, {
         severity: 'warning', source: 'cache', eventType: 'supabase_cache_write_fallback', code: 'CACHE_DB_WRITE',
-        message: error?.message || error, meta: { cacheKey, fixtureId: Number(fixtureId || 0), provider: provenance.provider },
+        message: error?.message || error, meta: { cacheCategory: cacheOpsCategory(cacheKey), provider: provenance.provider },
       }).catch(() => {});
       // Cache persistence is an optimization. Do not fail a successful user request
       // only because the shared cache could not be written.
@@ -162,6 +187,7 @@ export function createSharedCacheRuntime({
     getCache,
     getStaleCache,
     cacheSourceProvenance,
+    cacheOpsCategory,
     setCache,
   };
 }
