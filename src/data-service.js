@@ -1,6 +1,12 @@
 export function compactProviderError(error) {
-  const code = String(error?.code || error?.name || 'provider_error').slice(0, 80);
-  const status = Number(error?.status || 0) || null;
+  const code = String(error?.code || error?.name || 'provider_error')
+    .replace(/[\u0000-\u001f\u007f]+/g, '_')
+    .trim()
+    .slice(0, 80) || 'provider_error';
+  const rawStatus = Number(error?.status);
+  const status = Number.isInteger(rawStatus) && rawStatus >= 100 && rawStatus <= 599
+    ? rawStatus
+    : null;
   return { code, status };
 }
 
@@ -20,17 +26,19 @@ export function sourceMeta({
     source: String(source || 'network'),
     fetchedAt: fetchedAt || null,
     freshness: String(freshness || 'fresh'),
-    fallback: Boolean(fallback),
+    fallback: fallback === true,
     attribution: String(attribution || ''),
     attempts: Array.isArray(attempts) ? attempts.slice(0, 8) : [],
   };
 }
 
 function defaultAccept(result) {
-  if (!result || result.available === false) return false;
+  if (!result || typeof result !== 'object' || Array.isArray(result)) return false;
+  if (result.available === false) return false;
   if (Array.isArray(result.data)) return result.data.length > 0;
   if (Array.isArray(result.standings)) return result.standings.length > 0;
-  return Boolean(result.available ?? result.data ?? result.groups);
+  if (Array.isArray(result.groups)) return result.groups.length > 0;
+  return result.available === true;
 }
 
 export async function resolveProviderChain({
@@ -39,18 +47,28 @@ export async function resolveProviderChain({
   accept = defaultAccept,
 } = {}) {
   const attempts = [];
-  for (let index = 0; index < providers.length; index += 1) {
-    const provider = providers[index] || {};
-    const id = String(provider.id || `provider-${index + 1}`);
-    const label = String(provider.label || id);
-    const enabled = typeof provider.enabled === 'function' ? Boolean(await provider.enabled()) : provider.enabled !== false;
+  const chain = Array.isArray(providers) ? providers : [];
+  const acceptResult = typeof accept === 'function' ? accept : defaultAccept;
+  for (let index = 0; index < chain.length; index += 1) {
+    const provider = chain[index] && typeof chain[index] === 'object' ? chain[index] : {};
+    const id = String(provider.id || `provider-${index + 1}`).slice(0, 80);
+    const label = String(provider.label || id).slice(0, 120);
+    const enabled = provider.enabled === undefined
+      ? true
+      : typeof provider.enabled === 'function'
+        ? await provider.enabled() === true
+        : provider.enabled === true;
     if (!enabled) {
       attempts.push({ provider: id, state: 'skipped', reason: String(provider.skipReason || 'disabled') });
       continue;
     }
     try {
+      if (typeof provider.run !== 'function') {
+        attempts.push({ provider:id, state:'skipped', reason:'invalid_provider' });
+        continue;
+      }
       const result = await provider.run();
-      if (accept(result)) {
+      if (await acceptResult(result) === true) {
         const meta = sourceMeta({
           ...(result?.sourceMeta || {}),
           provider: result?.sourceMeta?.provider || id,
@@ -89,9 +107,10 @@ export async function resolveProviderChain({
 }
 
 export function markCachedSourceMeta(meta = {}, { stale = false } = {}) {
+  const isStale = stale === true;
   return sourceMeta({
     ...meta,
-    source: stale ? 'stale-cache' : 'cache',
-    freshness: stale ? 'stale' : 'cached',
+    source: isStale ? 'stale-cache' : 'cache',
+    freshness: isStale ? 'stale' : 'cached',
   });
 }
