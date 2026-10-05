@@ -3,9 +3,9 @@ import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 const TRACKED_SECRET_FILES = [
-  /^\.env$/i,
-  /^\.env\.(?!example$)[^/]+$/i,
-  /^\.dev\.vars$/i,
+  /(?:^|\/)\.env$/i,
+  /(?:^|\/)\.env\.(?!example$)[^/]+$/i,
+  /(?:^|\/)\.dev\.vars$/i,
   /\.pem$/i,
   /\.key$/i,
   /\.p12$/i,
@@ -22,7 +22,7 @@ const SECRET_PATTERNS = [
   { id: 'jwt_secret', pattern: /\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b/g },
 ];
 
-const TEXT_FILE = /(?:^|\/)(?:[^/]+\.(?:js|mjs|cjs|json|md|html|css|sql|yml|yaml|toml|txt|example)|\.gitignore)$/i;
+const TEXT_FILE = /(?:^|\/)(?:[^/]+\.(?:js|mjs|cjs|json|jsonc|md|html|css|sql|yml|yaml|toml|txt|example|sh|bash|zsh|ps1|ini|cfg|conf|xml)|\.gitignore)$/i;
 
 export function scanTextForSecrets(text = '') {
   const findings = [];
