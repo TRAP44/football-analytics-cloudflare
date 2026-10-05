@@ -21,8 +21,9 @@ concurrency:
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    # Must remain independent from the self-hosted CI/deploy runner so a local
-    # runner outage cannot make production invisible at the same time.
+    # Primary availability observation stays outside the self-hosted CI/deploy
+    # failure domain. A separate self-hosted diagnostic workflow only runs
+    # after this workflow itself fails.
     timeout-minutes: 5
     env:
       PRODUCTION_URL: "https://football-analytics-cloudflare.wok-side.workers.dev"
@@ -30,7 +31,7 @@ jobs:
       EXTERNAL_MONITOR_RETRY_DELAY_MS: "10000"
       EXTERNAL_MONITOR_TIMEOUT_MS: "10000"
       EXTERNAL_MONITOR_READY_WARNING_MS: "3000"
-      INCIDENT_TITLE: "[monitor] MatchRadar production availability incident"
+      GITHUB_TOKEN: ${{ github.token }}
 
     steps:
       - name: Checkout monitor
@@ -58,46 +59,14 @@ jobs:
           retention-days: 7
           compression-level: 6
 
-      - name: Open or update incident
-        if: steps.monitor.outcome == 'failure'
+      - name: Reconcile availability incidents
+        if: always() && (steps.monitor.outcome == 'success' || steps.monitor.outcome == 'failure')
         env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          issue_number="$(gh issue list             --state open             --limit 100             --json number,title             --jq ".[] | select(.title == \"$INCIDENT_TITLE\") | .number"             | head -n 1)"
-
-          if [[ -n "$issue_number" ]]; then
-            gh issue comment "$issue_number" --body-file monitor-result.md
-          else
-            gh issue create --title "$INCIDENT_TITLE" --body-file monitor-result.md
-          fi
-
-      - name: Close incident after recovery
-        if: steps.monitor.outcome == 'success'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          issue_number="$(gh issue list             --state open             --limit 100             --json number,title             --jq ".[] | select(.title == \"$INCIDENT_TITLE\") | .number"             | head -n 1)"
-
-          if [[ -n "$issue_number" ]]; then
-            {
-              echo "### Recovery confirmed"
-              echo
-              echo "External production checks are healthy again."
-              echo
-              cat monitor-result.md
-            } > recovery-comment.md
-            gh issue comment "$issue_number" --body-file recovery-comment.md
-            gh issue close "$issue_number" --reason completed
-          fi
+          MONITOR_OUTCOME: ${{ steps.monitor.outcome }}
+        run: node scripts/external-monitor-control-plane.js primary
 
       - name: Fail workflow when production is unavailable
-        if: steps.monitor.outcome == 'failure'
+        if: always() && steps.monitor.outcome == 'failure'
         run: |
           echo "External production monitor failed after all retries." >&2
           exit 1
