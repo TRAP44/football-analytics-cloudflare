@@ -1,7 +1,6 @@
-import { bytesToHex, constantTimeEqual, hmacSha256 } from './crypto-utils.js';
+import { bytesToHex } from './crypto-utils.js';
+import { signInvoiceBase, verifyInvoiceBaseSignature } from './invoice-signing.js';
 import { durableAnalysisUsageHeaders } from './analysis-usage-compensation.js';
-
-const enc = new TextEncoder();
 
 export const PASS_TYPES = Object.freeze({
   MATCH: 'MATCH_PASS',
@@ -64,27 +63,22 @@ function normalizedFixtureId(type, fixtureId) {
   return 0;
 }
 
-async function passInvoiceSignature(base, botToken) {
-  if (!botToken) return '';
-  return bytesToHex(await hmacSha256(enc.encode(botToken), base)).slice(0, 24);
-}
-
-export async function createPassInvoicePayload(userId, passType, fixtureId, botToken) {
+export async function createPassInvoicePayload(userId, passType, fixtureId, signingSecret) {
   const uid = Number(userId);
   const type = normalizePassType(passType);
   const fid = normalizedFixtureId(type, fixtureId);
-  if (!Number.isSafeInteger(uid) || uid <= 0 || !type || fid === null || !botToken) {
+  if (!Number.isSafeInteger(uid) || uid <= 0 || !type || fid === null || !signingSecret) {
     throw new Error('Некорректные параметры Pass-счёта.');
   }
   const nonceBytes = crypto.getRandomValues(new Uint8Array(6));
   const nonce = bytesToHex(nonceBytes);
   const base = `fa2|${uid}|${type}|${fid}|${nonce}`;
-  return `${base}|${await passInvoiceSignature(base, botToken)}`;
+  return `${base}|${await signInvoiceBase(base, signingSecret)}`;
 }
 
-export async function parsePassInvoicePayload(payload, botToken) {
+export async function parsePassInvoicePayload(payload, signingSecret, legacySecret = '') {
   const parts = String(payload || '').split('|');
-  if (parts.length !== 6 || parts[0] !== 'fa2' || !botToken) return null;
+  if (parts.length !== 6 || parts[0] !== 'fa2') return null;
   const [, uidRaw, typeRaw, fixtureRaw, nonce, sig] = parts;
   const userId = Number(uidRaw);
   const passType = normalizePassType(typeRaw);
@@ -99,8 +93,7 @@ export async function parsePassInvoicePayload(payload, botToken) {
     || !/^[0-9a-f]{24}$/i.test(sig)
   ) return null;
   const base = `fa2|${userId}|${passType}|${fixtureId}|${nonce}`;
-  const expected = await passInvoiceSignature(base, botToken);
-  if (!constantTimeEqual(expected.toLowerCase(), sig.toLowerCase())) return null;
+  if (!await verifyInvoiceBaseSignature(base, sig, signingSecret, legacySecret)) return null;
   return { userId, passType, fixtureId, nonce };
 }
 
