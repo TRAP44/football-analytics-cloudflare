@@ -1,3 +1,18 @@
+function cacheOpsNamespace(cacheKey = '') {
+  const parts = String(cacheKey || '')
+    .toLowerCase()
+    .split(':')
+    .map(part => part.trim())
+    .filter(Boolean);
+  const safe = [];
+  for (const part of parts) {
+    if (!/^[a-z][a-z_-]{0,31}$/.test(part)) break;
+    safe.push(part);
+    if (safe.length >= 2) break;
+  }
+  return safe.join(':') || 'unknown';
+}
+
 export function createSharedCacheRuntime({
   memory,
   bumpTelemetry,
@@ -60,13 +75,13 @@ export function createSharedCacheRuntime({
           }
           recordOpsEvent(cfg, {
             severity: 'warning', source: 'cache', eventType: 'supabase_cache_read_fallback', code: 'CACHE_DB_READ',
-            message: error?.message || error, meta: { cacheKey },
+            message: error?.message || error, meta: { cacheNamespace: cacheOpsNamespace(cacheKey) },
           }).catch(() => {});
           return { payload: local.payload, expired: local.expiresAt <= Date.now(), expiresAt: new Date(local.expiresAt).toISOString(), layer: 'memory-fallback' };
         }
         recordOpsEvent(cfg, {
           severity: 'warning', source: 'cache', eventType: 'supabase_cache_read_degraded', code: 'CACHE_DB_READ_NO_L1',
-          message: error?.message || error, meta: { cacheKey },
+          message: error?.message || error, meta: { cacheNamespace: cacheOpsNamespace(cacheKey) },
         }).catch(() => {});
         // Treat a transient shared-cache outage as a cache miss. The route may
         // still refresh from the provider and serve the user.
@@ -150,7 +165,7 @@ export function createSharedCacheRuntime({
       bumpTelemetry('supabaseErrors');
       recordOpsEvent(cfg, {
         severity: 'warning', source: 'cache', eventType: 'supabase_cache_write_fallback', code: 'CACHE_DB_WRITE',
-        message: error?.message || error, meta: { cacheKey, fixtureId: Number(fixtureId || 0), provider: provenance.provider },
+        message: error?.message || error, meta: { cacheNamespace: cacheOpsNamespace(cacheKey), provider: provenance.provider },
       }).catch(() => {});
       // Cache persistence is an optimization. Do not fail a successful user request
       // only because the shared cache could not be written.
