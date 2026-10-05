@@ -10,7 +10,9 @@ function stampedVersion(overrides = {}) {
     id: '11111111-2222-3333-4444-555555555555',
     annotations: {
       'workers/message': 'release=6.101.0-rc109 sha=297985dc7faf3f222e046844726f2f747b097e6e',
+      'workers/tag': '297985dc7faf3f222e046844726f2f747b097e6e',
     },
+    metadata: { created_on: '2026-09-24T11:47:00.000Z' },
     ...overrides,
   };
 }
@@ -38,6 +40,32 @@ test('Issue #409 rejects malformed rollback Cloudflare version identifiers', () 
       false,
     ),
     /RELEASE_IDENTITY_CLOUDFLARE_VERSION_ID_INVALID/,
+  );
+});
+
+test('RC117 rejects stamped targets with missing or mismatched Cloudflare tag', () => {
+  assert.throws(
+    () => verifyRollbackTarget(
+      stampedVersion({ annotations: {
+        'workers/message': 'release=6.101.0-rc109 sha=297985dc7faf3f222e046844726f2f747b097e6e',
+      } }),
+      '6.101.0-rc109',
+      '11111111-2222-3333-4444-555555555555',
+      false
+    ),
+    /CLOUDFLARE_VERSION_TAG_REQUIRED/
+  );
+  assert.throws(
+    () => verifyRollbackTarget(
+      stampedVersion({ annotations: {
+        'workers/message': 'release=6.101.0-rc109 sha=297985dc7faf3f222e046844726f2f747b097e6e',
+        'workers/tag': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      } }),
+      '6.101.0-rc109',
+      '11111111-2222-3333-4444-555555555555',
+      false
+    ),
+    /CLOUDFLARE_VERSION_TAG_MISMATCH/
   );
 });
 
