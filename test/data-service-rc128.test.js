@@ -34,6 +34,60 @@ test('RC128 provider chain falls back without hiding the primary failure',async(
   assert.equal(result.sourceMeta.attempts[0].state,'error');
 });
 
+test('provider chain fails closed for truthy string enable/accept values and supports async accept',async()=>{
+  let disabledRuns=0;
+  const disabled=await resolveProviderChain({
+    providers:[
+      {id:'bad-enabled',enabled:'true',run:async()=>{disabledRuns+=1;return {available:true};}},
+    ],
+  });
+  assert.equal(disabled.available,false);
+  assert.equal(disabledRuns,0);
+  assert.equal(disabled.sourceMeta.attempts[0].state,'skipped');
+
+  const accepted=await resolveProviderChain({
+    providers:[{id:'async',run:async()=>({available:true,data:[1]})}],
+    accept:async result=>result?.data?.length===1,
+  });
+  assert.equal(accepted.available,true);
+  assert.equal(accepted.sourceMeta.provider,'async');
+
+  const rejected=await resolveProviderChain({
+    providers:[{id:'truthy',run:async()=>({available:true,data:[1]})}],
+    accept:async()=> 'true',
+  });
+  assert.equal(rejected.available,false);
+});
+
+test('provider chain handles malformed provider collections and provider entries safely',async()=>{
+  const empty=await resolveProviderChain({providers:null});
+  assert.equal(empty.available,false);
+  assert.equal(empty.reason,'no_provider');
+
+  const malformed=await resolveProviderChain({
+    providers:[null,{id:'missing-run'}],
+  });
+  assert.equal(malformed.available,false);
+  assert.equal(malformed.sourceMeta.attempts.length,2);
+  assert.ok(malformed.sourceMeta.attempts.every(item=>item.reason==='invalid_provider'));
+});
+
+test('provider error metadata keeps only valid HTTP status and bounded safe code',async()=>{
+  const invalid=await resolveProviderChain({
+    providers:[{
+      id:'primary',
+      run:async()=>{
+        const error=new Error('boom');
+        error.code='BAD\nCODE';
+        error.status=Infinity;
+        throw error;
+      },
+    }],
+  });
+  assert.equal(invalid.sourceMeta.attempts[0].reason,'BAD_CODE');
+  assert.equal(invalid.sourceMeta.attempts[0].status,null);
+});
+
 test('RC128 cached provenance explicitly distinguishes fresh and stale cache',()=>{
   const cached=markCachedSourceMeta({provider:'openligadb',label:'OpenLigaDB'});
   const stale=markCachedSourceMeta({provider:'api-football',label:'API-Football'},{stale:true});
@@ -41,6 +95,13 @@ test('RC128 cached provenance explicitly distinguishes fresh and stale cache',()
   assert.equal(cached.freshness,'cached');
   assert.equal(stale.source,'stale-cache');
   assert.equal(stale.freshness,'stale');
+});
+
+test('cached provenance only marks stale on an actual boolean true',()=>{
+  const meta=markCachedSourceMeta({provider:'api-football'},{stale:'false'});
+  assert.equal(meta.source,'cache');
+  assert.equal(meta.freshness,'cached');
+  assert.equal(meta.fallback,false);
 });
 
 test('RC128 OpenLigaDB adapter only enables explicitly supported competitions',()=>{
