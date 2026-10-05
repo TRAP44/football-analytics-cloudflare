@@ -6,8 +6,25 @@ function finiteNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
+/**
+ * Clamp a finite numeric value into an inclusive range.
+ *
+ * Numeric strings are accepted for compatibility with UI/provider payloads.
+ * Nullish, empty, malformed and infinite values are rejected so invalid input
+ * cannot silently propagate as NaN into user-facing percentages.
+ */
+export function clamp(value, min, max) {
+  if (value === null || value === undefined || value === '') {
+    throw new TypeError('clamp value must be a finite number');
+  }
+  const number = Number(value);
+  const lower = Number(min);
+  const upper = Number(max);
+  if (!Number.isFinite(number) || !Number.isFinite(lower) || !Number.isFinite(upper)) {
+    throw new TypeError('clamp value and bounds must be finite numbers');
+  }
+  if (lower > upper) throw new RangeError('clamp min must be less than or equal to max');
+  return Math.min(upper, Math.max(lower, number));
 }
 
 function escapeHtml(value) {
