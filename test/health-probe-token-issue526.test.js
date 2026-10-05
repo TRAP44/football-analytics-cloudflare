@@ -90,3 +90,35 @@ test('wrong health token remains on the public minimal contract',async()=>{
   const result=await router.handle(request,new URL(request.url),cfg);
   assert.deepEqual(result.body,{ok:true});
 });
+
+
+test('authenticated health uses readiness result for both body and HTTP status',async()=>{
+  const router=createPublicStatusRouter({
+    publicStatusRuntime:{
+      serviceStatus:async()=>({ok:true,status:'operational'}),
+      computeReadinessSnapshot:async()=>({
+        ok:false,
+        status:'not_ready',
+        version:'6.120.0-rc144',
+        releaseCandidate:'RC144',
+        deployment:{deploySha:'a'.repeat(40)},
+        checks:{},
+      }),
+    },
+    publicHealthRuntime:{
+      liveSnapshot:()=>({ok:true,status:'alive'}),
+      readinessSnapshot:async()=>({ok:true,status:'ready'}),
+      healthSnapshot:async()=>({ok:true,status:'ready'}),
+    },
+    appManifest:()=>({monetization:'paused',deployment:{deploySha:'a'.repeat(40)},features:{}}),
+    loadRuntimeControls:async()=>({schemaReady:true,value:{revision:1},source:'supabase'}),
+    publicRuntimeControls:value=>value,
+    runtimeControlsCacheMs:30000,
+    json,
+  });
+  const request=new Request('https://example.test/health',{headers:{'x-health-token':'probe-secret'}});
+  const result=await router.handle(request,new URL(request.url),cfg);
+  assert.equal(result.status,503);
+  assert.equal(result.body.ok,false);
+  assert.equal(result.body.status,'not_ready');
+});
