@@ -36,7 +36,7 @@ test('edge policies apply stable first-stage buckets to protected API, with stri
   assert.equal(edgePolicyForRequest(request('/api/health'))?.id, 'public-health');
   assert.equal(edgePolicyForRequest(request('/api/app-manifest')), null);
   assert.equal(edgePolicyForRequest(request('/api/runtime-status')), null);
-  assert.equal(edgePolicyForRequest(request('/health/live')), null);
+  assert.equal(edgePolicyForRequest(request('/health/live'))?.id, 'public-health');
 });
 
 test('obvious scanner paths are rejected before auth/business routing', async () => {
