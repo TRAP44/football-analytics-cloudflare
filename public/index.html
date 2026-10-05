@@ -194,13 +194,13 @@
         <button id="tournamentBackBtn" class="back-btn" type="button">← К матчам</button>
         <div id="tournamentHero"></div>
         <div class="tournament-tabs" role="tablist" aria-label="Разделы турнира">
-          <button class="tournament-tab active" data-tournament-tab="matches" type="button">Матчи</button>
-          <button class="tournament-tab" data-tournament-tab="table" type="button">Таблица</button>
+          <button id="tournament-tab-matches" class="tournament-tab active" data-tournament-tab="matches" type="button" role="tab" aria-controls="tournamentMatchesPanel" aria-selected="true" tabindex="0">Матчи</button>
+          <button id="tournament-tab-table" class="tournament-tab" data-tournament-tab="table" type="button" role="tab" aria-controls="tournamentTablePanel" aria-selected="false" tabindex="-1">Таблица</button>
         </div>
-        <section id="tournamentMatchesPanel" class="tournament-panel active">
+        <section id="tournamentMatchesPanel" class="tournament-panel active" role="tabpanel" aria-labelledby="tournament-tab-matches" aria-hidden="false">
           <div id="tournamentMatches"></div>
         </section>
-        <section id="tournamentTablePanel" class="tournament-panel">
+        <section id="tournamentTablePanel" class="tournament-panel" role="tabpanel" aria-labelledby="tournament-tab-table" aria-hidden="true" hidden>
           <div id="tournamentTable"></div>
         </section>
       </section>
@@ -209,17 +209,17 @@
         <button id="teamBackBtn" class="back-btn" type="button">← Назад</button>
         <div id="teamHero"></div>
         <div class="team-tabs" role="tablist" aria-label="Разделы команды">
-          <button class="team-tab active" data-team-tab="overview" type="button">Обзор</button>
-          <button class="team-tab" data-team-tab="intelligence" type="button">Статистика</button>
-          <button class="team-tab" data-team-tab="squad" type="button">Состав</button>
-          <button class="team-tab" data-team-tab="results" type="button">Результаты</button>
-          <button class="team-tab" data-team-tab="schedule" type="button">Матчи</button>
+          <button id="team-tab-overview" class="team-tab active" data-team-tab="overview" type="button" role="tab" aria-controls="teamOverviewPanel" aria-selected="true" tabindex="0">Обзор</button>
+          <button id="team-tab-intelligence" class="team-tab" data-team-tab="intelligence" type="button" role="tab" aria-controls="teamIntelligencePanel" aria-selected="false" tabindex="-1">Статистика</button>
+          <button id="team-tab-squad" class="team-tab" data-team-tab="squad" type="button" role="tab" aria-controls="teamSquadPanel" aria-selected="false" tabindex="-1">Состав</button>
+          <button id="team-tab-results" class="team-tab" data-team-tab="results" type="button" role="tab" aria-controls="teamResultsPanel" aria-selected="false" tabindex="-1">Результаты</button>
+          <button id="team-tab-schedule" class="team-tab" data-team-tab="schedule" type="button" role="tab" aria-controls="teamSchedulePanel" aria-selected="false" tabindex="-1">Матчи</button>
         </div>
-        <section id="teamOverviewPanel" class="team-panel active"><div id="teamOverview"></div></section>
-        <section id="teamIntelligencePanel" class="team-panel"><div id="teamIntelligence"><div class="empty compact-empty">Откройте вкладку «Статистика», чтобы загрузить сезонные данные.</div></div></section>
-        <section id="teamSquadPanel" class="team-panel"><div id="teamSquad"><div class="empty compact-empty">Откройте вкладку «Состав», чтобы загрузить игроков.</div></div></section>
-        <section id="teamResultsPanel" class="team-panel"><div id="teamResults"></div></section>
-        <section id="teamSchedulePanel" class="team-panel"><div id="teamSchedule"></div></section>
+        <section id="teamOverviewPanel" class="team-panel active" role="tabpanel" aria-labelledby="team-tab-overview" aria-hidden="false"><div id="teamOverview"></div></section>
+        <section id="teamIntelligencePanel" class="team-panel" role="tabpanel" aria-labelledby="team-tab-intelligence" aria-hidden="true" hidden><div id="teamIntelligence"><div class="empty compact-empty">Откройте вкладку «Статистика», чтобы загрузить сезонные данные.</div></div></section>
+        <section id="teamSquadPanel" class="team-panel" role="tabpanel" aria-labelledby="team-tab-squad" aria-hidden="true" hidden><div id="teamSquad"><div class="empty compact-empty">Откройте вкладку «Состав», чтобы загрузить игроков.</div></div></section>
+        <section id="teamResultsPanel" class="team-panel" role="tabpanel" aria-labelledby="team-tab-results" aria-hidden="true" hidden><div id="teamResults"></div></section>
+        <section id="teamSchedulePanel" class="team-panel" role="tabpanel" aria-labelledby="team-tab-schedule" aria-hidden="true" hidden><div id="teamSchedule"></div></section>
       </section>
 
       <section id="playerView" class="view" hidden>
