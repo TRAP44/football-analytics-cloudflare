@@ -130,14 +130,17 @@ function controlInputValue(row,snake,camel) {
   return undefined;
 }
 
-function inspectRuntimeControls(row,defaults) {
+function inspectRuntimeControls(row,defaults,{requireComplete=false}={}) {
   const source=plainObject(row);
   if (source !== row) return {valid:false,value:{...defaults}};
   let valid=true;
 
   const booleanField=(snake,camel,fallback)=>{
     const raw=controlInputValue(source,snake,camel);
-    if (raw === undefined || raw === null) return fallback;
+    if (raw === undefined || raw === null) {
+      if (requireComplete) valid=false;
+      return fallback;
+    }
     if (typeof raw !== 'boolean') {
       valid=false;
       return fallback;
@@ -149,7 +152,7 @@ function inspectRuntimeControls(row,defaults) {
   const revision=rawRevision === undefined || rawRevision === null
     ? defaults.revision
     : positiveRevision(rawRevision,0);
-  if (!revision) valid=false;
+  if ((requireComplete && (rawRevision === undefined || rawRevision === null)) || !revision) valid=false;
 
   const rawUpdatedAt=controlInputValue(source,'updated_at','updatedAt');
   const updatedAt=rawUpdatedAt === undefined || rawUpdatedAt === null || rawUpdatedAt === ''
@@ -233,7 +236,16 @@ export function createRuntimeControlsRuntime({
   function runtimeControlsSnapshot() {
     const current=memory.runtimeControls?.value;
     if (!current || typeof current !== 'object' || Array.isArray(current)) return {...defaults};
-    return {...inspectRuntimeControls(current,defaults).value};
+    const normalized=inspectRuntimeControls(current,defaults).value;
+    return {
+      ...normalized,
+      ...(current.controlPlaneFailClosed === true
+        ? {
+            controlPlaneFailClosed:true,
+            controlPlaneReason:cleanText(current.controlPlaneReason,'control_plane_unavailable',80),
+          }
+        : {}),
+    };
   }
 
   function normalizeRuntimeControls(row = {}) {
@@ -289,7 +301,7 @@ export function createRuntimeControlsRuntime({
     try {
       const row=await supaSelectOne(cfg,'runtime_controls',{id:'eq.global'});
       if (!row) return activateFailClosed('runtime_controls_missing');
-      const inspected=inspectRuntimeControls(row,defaults);
+      const inspected=inspectRuntimeControls(row,defaults,{requireComplete:true});
       if (!inspected.valid) return activateFailClosed('runtime_controls_invalid');
       memory.runtimeControls={
         value:inspected.value,
@@ -381,7 +393,7 @@ export function createRuntimeControlsRuntime({
       if (!row || typeof row !== 'object' || Array.isArray(row)) continue;
       const id=positiveId(row.id);
       const revision=positiveRevision(row.revision,0);
-      const snapshotInspection=inspectRuntimeControls(row.snapshot,defaults);
+      const snapshotInspection=inspectRuntimeControls(row.snapshot,defaults,{requireComplete:true});
       if (!id || !revision || !snapshotInspection.valid || snapshotInspection.value.revision !== revision) continue;
       const sourceRevision=positiveRevision(row.source_revision,0);
       output.push({
@@ -441,7 +453,7 @@ export function createRuntimeControlsRuntime({
     }
 
     const rowRevision=positiveRevision(row.revision,0);
-    const targetInspection=inspectRuntimeControls(row.snapshot,defaults);
+    const targetInspection=inspectRuntimeControls(row.snapshot,defaults,{requireComplete:true});
     if (!rowRevision || !targetInspection.valid || targetInspection.value.revision !== rowRevision) {
       return {
         error:'Точка восстановления повреждена и не может быть применена.',
@@ -648,7 +660,10 @@ export function createRuntimeControlsRuntime({
     },7000,'Supabase atomic runtime controls');
 
     if (response?.ok !== true) {
-      const responseText=await response?.text?.().catch(()=> '') || '';
+      let responseText='';
+      if (typeof response?.text === 'function') {
+        try { responseText=await response.text(); } catch {}
+      }
       const status=integerCandidate(response?.status);
       const failureReason='Настройки не применены: состояние и журнал не удалось сохранить одной транзакцией.';
       void recordOpsEvent(cfg,{
@@ -671,7 +686,10 @@ export function createRuntimeControlsRuntime({
       };
     }
 
-    const rows=await response.json().catch(()=>null);
+    let rows=null;
+    if (typeof response?.json === 'function') {
+      try { rows=await response.json(); } catch {}
+    }
     if (!Array.isArray(rows) || rows.length !== 1) {
       return {
         error:'Настройки изменились до сохранения. Обновите панель и повторите.',
@@ -681,7 +699,7 @@ export function createRuntimeControlsRuntime({
       };
     }
 
-    const committed=inspectRuntimeControls(rows[0],defaults);
+    const committed=inspectRuntimeControls(rows[0],defaults,{requireComplete:true});
     const value=committed.value;
     const committedMatches=committed.valid
       && value.revision === expectedRevision+1
@@ -769,14 +787,24 @@ export function createRuntimeControlsRuntime({
       admin=false;
     }
     const normalizedRuntime=publicRuntimeControls(runtime);
-    const lockdown=runtimeLockdownDecision(request,{runtime:normalizedRuntime,isAdmin:admin});
+    let requestUrl;
+    try {
+      requestUrl=new URL(typeof request?.url === 'string' ? request.url : '');
+    } catch {
+      return runtimeFeatureResponse(
+        'RUNTIME_REQUEST_INVALID',
+        'Запрос не может быть безопасно обработан.',
+        normalizedRuntime,
+        400,
+      );
+    }
+    const method=typeof request?.method === 'string' ? request.method.trim().toUpperCase() : '';
+    const lockdown=runtimeLockdownDecision(
+      {url:requestUrl.toString(),method:method || 'INVALID'},
+      {runtime:normalizedRuntime,isAdmin:admin},
+    );
     if (lockdown.blocked) {
-      let path='';
-      try {
-        path=new URL(request.url).pathname;
-      } catch {
-        path='';
-      }
+      const path=requestUrl.pathname;
       const current=safeClock(clock);
       const minuteBucket=new Date(current).toISOString().slice(0,16);
       void recordOpsEvent(cfg,{
@@ -800,18 +828,7 @@ export function createRuntimeControlsRuntime({
     }
 
     if (admin) return null;
-    let path='';
-    try {
-      path=new URL(request.url).pathname;
-    } catch {
-      return runtimeFeatureResponse(
-        'RUNTIME_REQUEST_INVALID',
-        'Запрос не может быть безопасно обработан.',
-        normalizedRuntime,
-        400,
-      );
-    }
-    const method=typeof request?.method === 'string' ? request.method.trim().toUpperCase() : '';
+    const path=requestUrl.pathname;
 
     const footballRoutes=new Set([
       '/api/matches','/api/search','/api/tournament','/api/team','/api/team/intelligence',
