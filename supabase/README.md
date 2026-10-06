@@ -10,7 +10,7 @@
 
 - production schema: `6.29`;
 - fresh-install baseline: `supabase/baseline/supabase_baseline_v6_19.sql`;
-- latest migration: `supabase/migrations/supabase_migration_v6_29_1.sql`;
+- latest migration: `supabase/migrations/supabase_migration_v6_29_2.sql`;
 - database contract: `databaseContract.version = 2`;
 - readiness RPC: `backend_readiness_contract_v2`.
 
@@ -26,7 +26,7 @@
 
 `supabase/baseline/supabase_baseline_v6_19.sql`
 
-После baseline для новой БД последовательно применяются все numbered migrations начиная с `supabase_migration_v6_20.sql` и заканчивая текущей `supabase_migration_v6_29_1.sql`.
+После baseline для новой БД последовательно применяются все numbered migrations начиная с `supabase_migration_v6_20.sql` и заканчивая текущей `supabase_migration_v6_29_2.sql`.
 
 **Никогда не запускайте fresh-install baseline поверх существующей production БД.** Baseline содержит дополнительный guard, который должен остановить bootstrap при обнаружении рабочей схемы.
 
