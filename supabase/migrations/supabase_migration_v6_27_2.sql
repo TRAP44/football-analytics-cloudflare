@@ -5,6 +5,16 @@
 -- backend_readiness_contract(text,integer) functions are intentionally left
 -- unchanged so an older Worker remains ready while this migration is rolled
 -- out before the matching application release.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- backend_schema_contract_v2() remains the current complete structural contract
+-- and backend_readiness_contract_v2() remains the release-gating RPC.
+-- v2 fingerprints execution attributes and effective grants, but function
+-- proconfig/search_path is not part of that historical fingerprint. The legacy
+-- backend_security_contract() also originally missed mutable function search_path.
+-- v6.29.6 closes that security gap in the readiness security check without
+-- changing v2 function signatures/attributes or established fingerprints.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 create or replace function public.backend_schema_contract_v2()
 returns jsonb
