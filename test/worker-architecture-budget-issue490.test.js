@@ -11,13 +11,14 @@ import { createProviderDataRuntime } from '../src/provider-data-runtime.js';
 import { createProviderFixtureRuntime } from '../src/provider-fixture-runtime.js';
 import { createModelIntelligenceRuntime } from '../src/model-intelligence-runtime.js';
 import { createLiveMatchIntelligenceRuntime } from '../src/live-match-intelligence-runtime.js';
+import { createCompetitionIntegrityRuntime } from '../src/competition-integrity-runtime.js';
 
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 
 test('Worker composition root stays below the post-audit architecture budget',()=>{
   const bytes=Buffer.byteLength(worker,'utf8');
   assert.ok(
-    bytes<=885_000,
+    bytes<=860_000,
     `src/worker.js grew to ${bytes} bytes; extract another cohesive runtime instead of growing the composition root`,
   );
 });
@@ -122,6 +123,7 @@ test('extracted runtime factories are executable contracts, not source-only plac
   const providerFixture=createProviderFixtureRuntime(new Proxy({}, {get:()=>()=>null}));
   const modelIntelligence=createModelIntelligenceRuntime(new Proxy({}, {get:()=>()=>null}));
   const liveIntelligence=createLiveMatchIntelligenceRuntime({numericValue:value=>Number(value)});
+  const competitionIntegrity=createCompetitionIntegrityRuntime(new Proxy({}, {get:()=>()=>null}));
   assert.equal(typeof settlement.runSettlementWatchdog,'function');
   assert.equal(typeof settlement.runSettlementFinalityVerification,'function');
   assert.equal(typeof providerData.providerDataState,'function');
@@ -132,6 +134,8 @@ test('extracted runtime factories are executable contracts, not source-only plac
   assert.equal(typeof modelIntelligence.buildPreMatchIntelligence,'function');
   assert.equal(typeof liveIntelligence.buildLiveAiCoach,'function');
   assert.equal(typeof liveIntelligence.buildSmartMatchInsights,'function');
+  assert.equal(typeof competitionIntegrity.normalizeCompetition,'function');
+  assert.equal(typeof competitionIntegrity.validateFixtureIntegrity,'function');
 });
 
 test('Worker composes extracted runtimes through explicit imports',()=>{
@@ -147,6 +151,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/import \{ createProviderFixtureRuntime \} from '\.\/provider-fixture-runtime\.js'/);
   assert.match(worker,/import \{ createModelIntelligenceRuntime \} from '\.\/model-intelligence-runtime\.js'/);
   assert.match(worker,/import \{ createLiveMatchIntelligenceRuntime \} from '\.\/live-match-intelligence-runtime\.js'/);
+  assert.match(worker,/import \{ createCompetitionIntegrityRuntime \} from '\.\/competition-integrity-runtime\.js'/);
   assert.match(worker,/createDiagnosticsRuntime\(\{/);
   assert.match(worker,/createPublicHealthRuntime\(\{/);
   assert.match(worker,/createPublicStatusRuntime\(\{/);
@@ -160,6 +165,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/createProviderFixtureRuntime\(\{/);
   assert.match(worker,/createModelIntelligenceRuntime\(\{/);
   assert.match(worker,/createLiveMatchIntelligenceRuntime\(\{/);
+  assert.match(worker,/createCompetitionIntegrityRuntime\(\{/);
   assert.doesNotMatch(worker,/async function collectDiagnostics\(/);
   assert.doesNotMatch(worker,/async function readRecentOpsEvents\(/);
   assert.doesNotMatch(worker,/async function publicServiceStatus\(/);
@@ -185,4 +191,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.doesNotMatch(worker,/function buildLiveAiCoach\(/);
   assert.doesNotMatch(worker,/function buildSmartMatchInsights\(/);
   assert.doesNotMatch(worker,/function livePressure\(/);
+  assert.doesNotMatch(worker,/function normalizeCompetition\(/);
+  assert.doesNotMatch(worker,/function validateFixtureIntegrity\(/);
+  assert.doesNotMatch(worker,/function runMatchIntegrityGuard\(/);
 });
