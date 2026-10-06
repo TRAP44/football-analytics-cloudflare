@@ -128,8 +128,10 @@ const app = fs.readFileSync('public/app.js', 'utf8');
 const smoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 
 test('RC144 gates Match Center and prematch availability before absence analytics', () => {
-  assert.match(worker, /assessFixtureAvailabilityQuality\(injuryRows,/);
-  assert.match(worker, /const trustedInjuryRows = sanitizeAvailabilityRows\(injuryRows, availabilityQuality\)/);
+  assert.match(worker, /assessFixtureAvailabilityQuality\([\s\S]{0,120}?injuryRows/);
+  assert.match(worker, /sanitizeAvailabilityRows\([\s\S]{0,120}?injuryRows,[\s\S]{0,120}?availabilityQuality/);
+  assert.match(worker, /lineupSourceTrusted=trustedFeature\(featureMeta\.lineups\)/);
+  assert.match(worker, /formatAbsences\([\s\S]{0,160}?trustedInjuryRows,[\s\S]{0,160}?lineupSourceTrusted \? lineups : null/);
   assert.match(worker, /assessFixtureAvailabilityQuality\(injuries,/);
   assert.match(worker, /sanitizeAvailabilityRows\(injuries,availabilityQuality\)/);
   assert.match(worker, /const trustedLineups=featureTrusted\('lineups'\) \? lineups : \{\}/);
