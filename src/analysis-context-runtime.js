@@ -283,82 +283,240 @@ export function createAnalysisContextRuntime(deps) {
   }
 
   function comparisonNumber(value) {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : null;
+    return finiteNumber(value);
   }
-  
-  function comparisonMetric({ key, label, homeValue, awayValue, format = 'number', better = 'higher', minGap = 0, note = '' }) {
-    const home = comparisonNumber(homeValue);
-    const away = comparisonNumber(awayValue);
+
+  function comparisonMetric({
+    key,
+    label,
+    homeValue,
+    awayValue,
+    format='number',
+    better='higher',
+    minGap=0,
+    note='',
+  } = {}) {
+    const home=comparisonNumber(homeValue);
+    const away=comparisonNumber(awayValue);
     if (home === null || away === null) return null;
-    const gap = Math.abs(home - away);
-    let edge = 'even';
-    if (gap > Number(minGap || 0)) {
-      const homeBetter = better === 'lower' ? home < away : home > away;
-      edge = homeBetter ? 'home' : 'away';
+
+    const gapThreshold=finiteNumber(minGap);
+    const safeGap=gapThreshold !== null && gapThreshold>=0 ? gapThreshold : 0;
+    const direction=better === 'lower' ? 'lower' : 'higher';
+    const gap=Math.abs(home-away);
+    let edge='even';
+    if (gap>safeGap) {
+      const homeBetter=direction === 'lower' ? home<away : home>away;
+      edge=homeBetter ? 'home' : 'away';
     }
-    return { key, label, homeValue: home, awayValue: away, format, better, edge, note };
-  }
-  
-  function buildMatchComparison({ homeName, awayName, homeForm, awayForm, homeStanding, awayStanding, homeSeasonStats, awaySeasonStats, goalModel, h2h, absences, hasInjuryData }) {
-    const hOverall = homeForm?.overall || null;
-    const aOverall = awayForm?.overall || null;
-    const hVenue = homeForm?.venue || null;
-    const aVenue = awayForm?.venue || null;
-    const hSeason = homeSeasonStats?.derived || null;
-    const aSeason = awaySeasonStats?.derived || null;
-  
-    const metrics = [
-      comparisonMetric({ key:'form_ppg', label:'Форма · очки/матч', homeValue:hOverall?.ppg, awayValue:aOverall?.ppg, format:'decimal', minGap:.14, note:'Последние 5 завершённых матчей.' }),
-      comparisonMetric({ key:'venue_ppg', label:'Дома / в гостях', homeValue:hVenue?.ppg, awayValue:aVenue?.ppg, format:'decimal', minGap:.14, note:'Хозяева дома против гостей на выезде.' }),
-      comparisonMetric({ key:'attack', label:'Атака · гол/матч', homeValue:(hSeason && aSeason) ? hSeason.goalsForPerMatch : hOverall?.gfAvg, awayValue:(hSeason && aSeason) ? aSeason.goalsForPerMatch : aOverall?.gfAvg, format:'decimal', minGap:.14, note:(hSeason && aSeason) ? 'Сезонная статистика из уже загруженных сохранённых данных.' : 'Недавняя результативность.' }),
-      comparisonMetric({ key:'defense', label:'Оборона · пропущено', homeValue:(hSeason && aSeason) ? hSeason.goalsAgainstPerMatch : hOverall?.gaAvg, awayValue:(hSeason && aSeason) ? aSeason.goalsAgainstPerMatch : aOverall?.gaAvg, format:'decimal', better:'lower', minGap:.14, note:'Меньше — лучше.' }),
-      comparisonMetric({ key:'clean_sheets', label:'Сухие матчи', homeValue:(hSeason && aSeason) ? hSeason.cleanSheetRate : hOverall?.cleanSheetPct, awayValue:(hSeason && aSeason) ? aSeason.cleanSheetRate : aOverall?.cleanSheetPct, format:'percent', minGap:8, note:(hSeason && aSeason) ? 'Доля матчей сезона без пропущенных.' : 'Доля в последних матчах.' }),
-      comparisonMetric({ key:'expected_goals', label:'Голевая оценка модели', homeValue:goalModel?.homeExpected, awayValue:goalModel?.awayExpected, format:'decimal', minGap:.14, note:'Модель Пуассона по доступной форме.' }),
-      comparisonMetric({ key:'table_rank', label:'Место в таблице', homeValue:homeStanding?.rank, awayValue:awayStanding?.rank, format:'rank', better:'lower', minGap:0, note:'Показывается только если таблица турнира уже была загружена.' }),
-      ((Number(h2h?.homeWins||0)+Number(h2h?.awayWins||0)+Number(h2h?.draws||0)) > 0) ? comparisonMetric({ key:'h2h', label:'Победы в очных встречах', homeValue:h2h?.homeWins, awayValue:h2h?.awayWins, format:'integer', minGap:0, note:'Последние доступные очные встречи.' }) : null,
-      hasInjuryData ? comparisonMetric({ key:'absences', label:'Отмеченные потери', homeValue:absences?.home?.length || 0, awayValue:absences?.away?.length || 0, format:'integer', better:'lower', minGap:0, note:'Актуальные отметки источника после дедупликации и сверки с опубликованным составом.' }) : null,
-    ].filter(Boolean);
-  
-    const descriptions = {
-      form_ppg: 'лучше текущая форма', venue_ppg: 'сильнее профиль дома/в гостях', attack: 'выше результативность',
-      defense: 'меньше пропускает', clean_sheets: 'чаще сохраняет ворота сухими', expected_goals: 'выше голевая оценка модели',
-      table_rank: 'выше позиция в таблице', h2h: 'больше побед в очных матчах', absences: 'меньше отмеченных потерь состава',
+
+    return {
+      key:safeText(key,60),
+      label:safeText(label,160),
+      homeValue:home,
+      awayValue:away,
+      format:['number','decimal','percent','rank','integer'].includes(format)
+        ? format
+        : 'number',
+      better:direction,
+      edge,
+      note:safeText(note,320),
     };
-    const advantages = { home: [], away: [] };
-    let homeEdges = 0, awayEdges = 0, even = 0;
+  }
+
+  function buildMatchComparison({
+    homeName,
+    awayName,
+    homeForm,
+    awayForm,
+    homeStanding,
+    awayStanding,
+    homeSeasonStats,
+    awaySeasonStats,
+    goalModel,
+    h2h,
+    absences,
+    hasInjuryData,
+  } = {}) {
+    const homeLabel=safeText(homeName,120) || 'Хозяева';
+    const awayLabel=safeText(awayName,120) || 'Гости';
+    const hOverall=objectValue(homeForm)?.overall;
+    const aOverall=objectValue(awayForm)?.overall;
+    const hVenue=objectValue(homeForm)?.venue;
+    const aVenue=objectValue(awayForm)?.venue;
+    const hSeason=objectValue(objectValue(homeSeasonStats)?.derived);
+    const aSeason=objectValue(objectValue(awaySeasonStats)?.derived);
+    const model=objectValue(goalModel);
+    const homeTable=objectValue(homeStanding);
+    const awayTable=objectValue(awayStanding);
+
+    const h2hValue=objectValue(h2h);
+    const h2hHome=finiteRange(h2hValue?.homeWins,0,1000);
+    const h2hAway=finiteRange(h2hValue?.awayWins,0,1000);
+    const h2hDraws=finiteRange(h2hValue?.draws,0,1000);
+    const h2hValid=h2hHome !== null
+      && h2hAway !== null
+      && h2hDraws !== null
+      && h2hHome+h2hAway+h2hDraws>0;
+
+    const absenceValue=objectValue(absences);
+    const homeAbsences=Array.isArray(absenceValue?.home) ? absenceValue.home.length : null;
+    const awayAbsences=Array.isArray(absenceValue?.away) ? absenceValue.away.length : null;
+    const injuryDataUsable=hasInjuryData === true
+      && homeAbsences !== null
+      && awayAbsences !== null;
+
+    const metrics=[
+      comparisonMetric({
+        key:'form_ppg',
+        label:'Форма · очки/матч',
+        homeValue:hOverall?.ppg,
+        awayValue:aOverall?.ppg,
+        format:'decimal',
+        minGap:.14,
+        note:'Последние 5 завершённых матчей.',
+      }),
+      comparisonMetric({
+        key:'venue_ppg',
+        label:'Дома / в гостях',
+        homeValue:hVenue?.ppg,
+        awayValue:aVenue?.ppg,
+        format:'decimal',
+        minGap:.14,
+        note:'Хозяева дома против гостей на выезде.',
+      }),
+      comparisonMetric({
+        key:'attack',
+        label:'Атака · гол/матч',
+        homeValue:hSeason && aSeason ? hSeason.goalsForPerMatch : hOverall?.gfAvg,
+        awayValue:hSeason && aSeason ? aSeason.goalsForPerMatch : aOverall?.gfAvg,
+        format:'decimal',
+        minGap:.14,
+        note:hSeason && aSeason
+          ? 'Сезонная статистика из уже загруженных сохранённых данных.'
+          : 'Недавняя результативность.',
+      }),
+      comparisonMetric({
+        key:'defense',
+        label:'Оборона · пропущено',
+        homeValue:hSeason && aSeason ? hSeason.goalsAgainstPerMatch : hOverall?.gaAvg,
+        awayValue:hSeason && aSeason ? aSeason.goalsAgainstPerMatch : aOverall?.gaAvg,
+        format:'decimal',
+        better:'lower',
+        minGap:.14,
+        note:'Меньше — лучше.',
+      }),
+      comparisonMetric({
+        key:'clean_sheets',
+        label:'Сухие матчи',
+        homeValue:hSeason && aSeason ? hSeason.cleanSheetRate : hOverall?.cleanSheetPct,
+        awayValue:hSeason && aSeason ? aSeason.cleanSheetRate : aOverall?.cleanSheetPct,
+        format:'percent',
+        minGap:8,
+        note:hSeason && aSeason
+          ? 'Доля матчей сезона без пропущенных.'
+          : 'Доля в последних матчах.',
+      }),
+      comparisonMetric({
+        key:'expected_goals',
+        label:'Голевая оценка модели',
+        homeValue:model?.homeExpected,
+        awayValue:model?.awayExpected,
+        format:'decimal',
+        minGap:.14,
+        note:'Модель Пуассона по доступной форме.',
+      }),
+      comparisonMetric({
+        key:'table_rank',
+        label:'Место в таблице',
+        homeValue:homeTable?.rank,
+        awayValue:awayTable?.rank,
+        format:'rank',
+        better:'lower',
+        minGap:0,
+        note:'Показывается только если таблица турнира уже была загружена.',
+      }),
+      h2hValid ? comparisonMetric({
+        key:'h2h',
+        label:'Победы в очных встречах',
+        homeValue:h2hHome,
+        awayValue:h2hAway,
+        format:'integer',
+        minGap:0,
+        note:'Последние доступные очные встречи.',
+      }) : null,
+      injuryDataUsable ? comparisonMetric({
+        key:'absences',
+        label:'Отмеченные потери',
+        homeValue:homeAbsences,
+        awayValue:awayAbsences,
+        format:'integer',
+        better:'lower',
+        minGap:0,
+        note:'Актуальные отметки источника после дедупликации и сверки с опубликованным составом.',
+      }) : null,
+    ].filter(Boolean);
+
+    const descriptions={
+      form_ppg:'лучше текущая форма',
+      venue_ppg:'сильнее профиль дома/в гостях',
+      attack:'выше результативность',
+      defense:'меньше пропускает',
+      clean_sheets:'чаще сохраняет ворота сухими',
+      expected_goals:'выше голевая оценка модели',
+      table_rank:'выше позиция в таблице',
+      h2h:'больше побед в очных матчах',
+      absences:'меньше отмеченных потерь состава',
+    };
+    const advantages={home:[],away:[]};
+    let homeEdges=0;
+    let awayEdges=0;
+    let even=0;
     for (const metric of metrics) {
-      if (metric.edge === 'home') { homeEdges += 1; if (advantages.home.length < 4) advantages.home.push(descriptions[metric.key] || metric.label); }
-      else if (metric.edge === 'away') { awayEdges += 1; if (advantages.away.length < 4) advantages.away.push(descriptions[metric.key] || metric.label); }
-      else even += 1;
+      if (metric.edge==='home') {
+        homeEdges+=1;
+        if (advantages.home.length<4) {
+          advantages.home.push(descriptions[metric.key] || metric.label);
+        }
+      } else if (metric.edge==='away') {
+        awayEdges+=1;
+        if (advantages.away.length<4) {
+          advantages.away.push(descriptions[metric.key] || metric.label);
+        }
+      } else {
+        even+=1;
+      }
     }
-  
-    let balanceLabel = 'Баланс доступных метрик близкий';
-    if (homeEdges >= awayEdges + 2) balanceLabel = `${homeName} впереди по большему числу доступных метрик`;
-    else if (awayEdges >= homeEdges + 2) balanceLabel = `${awayName} впереди по большему числу доступных метрик`;
-  
-    const sources = ['последние матчи', 'дом/выезд'];
-    if (homeSeasonStats && awaySeasonStats) sources.push('сохранённая сезонная статистика');
-    if (homeStanding && awayStanding) sources.push('сохранённая таблица');
-    if ((Number(h2h?.homeWins||0)+Number(h2h?.awayWins||0)+Number(h2h?.draws||0)) > 0) sources.push('очные встречи');
-    if (hasInjuryData) sources.push('потери состава');
-  
+
+    let balanceLabel='Баланс доступных метрик близкий';
+    if (homeEdges>=awayEdges+2) {
+      balanceLabel=`${homeLabel} впереди по большему числу доступных метрик`;
+    } else if (awayEdges>=homeEdges+2) {
+      balanceLabel=`${awayLabel} впереди по большему числу доступных метрик`;
+    }
+
+    const sources=['последние матчи','дом/выезд'];
+    if (hSeason && aSeason) sources.push('сохранённая сезонная статистика');
+    if (homeTable && awayTable) sources.push('сохранённая таблица');
+    if (h2hValid) sources.push('очные встречи');
+    if (injuryDataUsable) sources.push('потери состава');
+
     return {
       metrics,
       advantages,
-      score: { home: homeEdges, away: awayEdges, even },
+      score:{home:homeEdges,away:awayEdges,even},
       balanceLabel,
-      dataReuse: {
-        separateApiRequests: 0,
-        seasonStatsCached: Boolean(homeSeasonStats && awaySeasonStats),
-        standingsCached: Boolean(homeStanding && awayStanding),
+      dataReuse:{
+        separateApiRequests:0,
+        seasonStatsCached:Boolean(hSeason && aSeason),
+        standingsCached:Boolean(homeTable && awayTable),
         sources,
-        note: 'Вкладка сравнения сама не делает дополнительных запросов к API-Football: она собирается из данных текущего анализа и уже сохранённых данных.',
+        note:'Вкладка сравнения сама не делает дополнительных запросов к API-Football: она собирается из данных текущего анализа и уже сохранённых данных.',
       },
     };
   }
-  
-  
+
+
   function buildAiInstructor({ probabilities, goalModel, confidence, completeness, factors = [], risks = [], referee = '', refereeData = null, refereeHistory = null, lineupImpact = null, marketMovement = null, providerReliability = null, minutesToKickoff = null } = {}) {
     const p = { home: Number(probabilities?.home || 0), draw: Number(probabilities?.draw || 0), away: Number(probabilities?.away || 0) };
     const confidenceScore = Math.max(0, Math.min(100, Number(confidence?.score || 0)));
