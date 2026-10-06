@@ -3,13 +3,108 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
   SMART_NOTIFICATION_POLICY,
+  effectiveNotificationPlan,
+  normalizeNotificationPreferences,
+  notificationCategory,
   notificationDecision,
+  notificationRequiredPlan,
   publicSmartNotificationCapabilities,
   smartNotificationDedupeKey,
 } from '../src/smart-notification-policy.js';
 import { createSmartNotificationDeliveryService } from '../src/smart-notification-delivery.js';
 import { aiProbabilityMovement, createSmartNotificationService, radarStrongSignalState } from '../src/smart-notification-service.js';
 import { createSmartNotificationsModule, normalizeSmartNotificationPayload } from '../public/modules/smart-notifications.js';
+
+test('notification policy rejects entitlement and event coercion',()=>{
+  assert.equal(effectiveNotificationPlan({plan:{toString:()=> 'PRO'}}),'FREE');
+  assert.equal(publicSmartNotificationCapabilities({toString:()=> 'PRO'}).plan,'FREE');
+  assert.equal(publicSmartNotificationCapabilities(['PRO']).smartAlerts,false);
+
+  assert.equal(notificationCategory({toString:()=> 'player.goal'}),'');
+  assert.equal(notificationRequiredPlan(['player.goal']),'');
+  assert.deepEqual(
+    notificationDecision({eventType:'unknown.event',plan:'PRO'}),
+    {allowed:false,reason:'invalid_event',category:'',requiredPlan:''},
+  );
+  assert.equal(
+    notificationDecision({
+      eventType:'player.goal',
+      plan:{toString:()=> 'PRO'},
+    }).reason,
+    'entitlement_required',
+  );
+});
+
+test('expired plan handling uses strict timestamps and clock input',()=>{
+  const expired={
+    plan:'PRO',
+    subscription_until:'2026-10-01T10:00:00.000Z',
+  };
+  assert.equal(
+    effectiveNotificationPlan(expired,Date.parse('2026-10-01T11:00:00.000Z')),
+    'FREE',
+  );
+  assert.equal(
+    effectiveNotificationPlan({
+      plan:'PRO',
+      subscription_until:{toString:()=> '2026-10-01T10:00:00.000Z'},
+    },Date.parse('2026-10-01T11:00:00.000Z')),
+    'PRO',
+  );
+  assert.equal(
+    effectiveNotificationPlan(expired,{valueOf:()=>Date.parse('2026-10-01T11:00:00.000Z')}),
+    'PRO',
+  );
+});
+
+test('notification preferences reject object coercion while preserving explicit booleans',()=>{
+  const prefs=normalizeNotificationPreferences({
+    enabled:'false',
+    match:false,
+    teams:{valueOf:()=>false},
+    players:true,
+    ai_radar:false,
+  });
+  assert.equal(prefs.enabled,true);
+  assert.equal(prefs.match,false);
+  assert.equal(prefs.teams,true);
+  assert.equal(prefs.players,true);
+  assert.equal(prefs.aiRadar,false);
+
+  const parsed=normalizeNotificationPreferences('{"enabled":false,"match":false}');
+  assert.equal(parsed.enabled,false);
+  assert.equal(parsed.match,false);
+  assert.equal(Object.isFrozen(parsed),true);
+});
+
+test('dedupe identity rejects coercion and prevents lossy event-key collisions',()=>{
+  assert.equal(smartNotificationDedupeKey({
+    fixtureId:true,
+    eventType:'match.goal',
+    eventKey:'55:goal',
+  }),'');
+  assert.equal(smartNotificationDedupeKey({
+    fixtureId:12,
+    eventType:{toString:()=> 'match.goal'},
+    eventKey:'55:goal',
+  }),'');
+  assert.equal(smartNotificationDedupeKey({
+    fixtureId:12,
+    eventType:'player.goal',
+    playerId:{valueOf:()=>99},
+    eventKey:'55:goal',
+  }),'');
+
+  const slash=smartNotificationDedupeKey({
+    fixtureId:12,eventType:'match.goal',eventKey:'normal/goal',
+  });
+  const space=smartNotificationDedupeKey({
+    fixtureId:12,eventType:'match.goal',eventKey:'normal goal',
+  });
+  assert.notEqual(slash,space);
+  assert.match(slash,/^v1:12:match\.goal:/);
+  assert.match(space,/^v1:12:match\.goal:/);
+});
 
 test('server policy keeps basic match alerts FREE and gates player/AI/market alerts', () => {
   assert.equal(notificationDecision({ eventType:'match.goal', plan:'FREE' }).allowed, true);
@@ -59,6 +154,20 @@ test('strong Radar signal uses persisted confidence/probability thresholds and o
   ], { now });
   assert.equal(stale.reason, 'stale_signal');
   assert.equal(stale.significant, false);
+});
+
+test('player dedupe identity requires a valid player id',()=>{
+  assert.equal(smartNotificationDedupeKey({
+    fixtureId:12,
+    eventType:'player.goal',
+    eventKey:'55:goal',
+  }),'');
+  assert.equal(smartNotificationDedupeKey({
+    fixtureId:12,
+    eventType:'player.goal',
+    playerId:true,
+    eventKey:'55:goal',
+  }),'');
 });
 
 test('dedupe keys are stable per fixture/event/player and distinct across events', () => {
