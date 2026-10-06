@@ -10729,10 +10729,8 @@ const CLIENT_ACTION_ERROR_KINDS = new Set([
   'unknown',
 ]);
 
-const CLIENT_TIMING_OPERATIONS = new Set(['sephase5Meta,...betaMeta},
-  });
-  return json({ ok: true, deduped: false });
-}
+const CLIENT_TIMING_OPERATIONS = new Set(['search', 'match', 'ai', 'live']);
+const CLOSED_BETA_COHORT = 'closed_beta_v1';
 
 let clientTelemetryRuntime = null;
 function getClientTelemetryRuntime() {
