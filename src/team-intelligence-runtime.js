@@ -258,7 +258,10 @@ export function createTeamIntelligenceRuntime(deps) {
           ? ''
           : 'Источник данных не вернул сезонную статистику для этой команды.',
       };
-      await setCache(cacheKey,teamId,payload,cfg,360).catch(()=>null);
+      if (statsScopeValid) {
+        const ttlMinutes=stats?.available === true ? 360 : 30;
+        await setCache(cacheKey,teamId,payload,cfg,ttlMinutes).catch(()=>null);
+      }
       return json({...payload,cached:false,stale:false,provider:capabilities()});
     } catch {
       const stale=objectValue(await getStaleCache(cacheKey,cfg).catch(()=>null));
@@ -418,6 +421,14 @@ export function createTeamIntelligenceRuntime(deps) {
 
     try {
       const providerRows=await apiFootball('/players/squads',{team:teamId},cfg);
+      if (!Array.isArray(providerRows)) throw new Error('invalid squad payload');
+      const hasRequestedTeam=providerRows.some(
+        row=>positiveSafeInteger(row?.team?.id)===teamId,
+      );
+      if (providerRows.length && !hasRequestedTeam) {
+        throw new Error('squad scope mismatch');
+      }
+
       const squad=normalizeTeamSquad(providerRows,teamId);
       const payload={
         ...squad,
@@ -426,7 +437,8 @@ export function createTeamIntelligenceRuntime(deps) {
           ? ''
           : 'Источник данных не вернул текущий состав команды.',
       };
-      await setCache(cacheKey,teamId,payload,cfg,720).catch(()=>null);
+      const ttlMinutes=squad.available ? 720 : 30;
+      await setCache(cacheKey,teamId,payload,cfg,ttlMinutes).catch(()=>null);
       return json({...payload,cached:false,stale:false,provider:capabilities()});
     } catch {
       const stale=objectValue(await getStaleCache(cacheKey,cfg).catch(()=>null));
