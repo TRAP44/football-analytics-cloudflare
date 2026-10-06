@@ -6,6 +6,7 @@ const worker=fs.readFileSync('src/worker.js','utf8');
 const matchCenterRuntime=fs.readFileSync('src/match-center-runtime.js','utf8');
 const analysisRuntime=fs.readFileSync('src/analysis-runtime.js','utf8');
 const providerFixtureRuntime=fs.readFileSync('src/provider-fixture-runtime.js','utf8');
+const competitionIntegrityRuntime=fs.readFileSync('src/competition-integrity-runtime.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 
 function block(source,start,end){
@@ -17,7 +18,7 @@ function block(source,start,end){
 }
 
 test('P0 capped public feed ranks competition relevance before LIVE status',()=>{
-  const rank=block(worker,'function catalogRank','function matchStatusRank');
+  const rank=block(competitionIntegrityRuntime,'function catalogRank','function matchStatusRank');
   assert.doesNotMatch(rank,/if \(match\?\.live\)/);
   assert.match(rank,/featured.*return 0/s);
 
