@@ -370,7 +370,7 @@ test('v6.29.5 keeps scheduled retention at or beyond the active lease horizon',(
     'initial retention must cover the requested lease',
   );
   assert.ok(
-    sql.includes('expires_at=greatest(expires_at,v_next_locked_until)'),
+    sql.includes('expires_at=greatest(expires_at,locked_until,v_next_locked_until)'),
     'heartbeat renewal must extend retention through the renewed lease',
   );
 });

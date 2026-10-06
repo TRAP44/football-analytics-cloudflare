@@ -154,8 +154,8 @@ begin
   v_next_locked_until := v_now + v_lease_seconds * interval '1 second';
 
   update public.scheduled_job_leases
-  set locked_until=v_next_locked_until,
-      expires_at=greatest(expires_at,v_next_locked_until)
+  set locked_until=greatest(locked_until,v_next_locked_until),
+      expires_at=greatest(expires_at,locked_until,v_next_locked_until)
   where job_key=v_job_key
     and lease_token=v_lease_token
     and status='running'
@@ -188,6 +188,6 @@ grant execute on function public.renew_scheduled_job(text,text,integer)
 comment on function public.claim_scheduled_job(text,text,timestamptz,integer,integer) is
   'Atomic scheduled-job ownership claim with retention guaranteed to cover the initial lease.';
 comment on function public.renew_scheduled_job(text,text,integer) is
-  'Renews active scheduled-job ownership and extends retention through the renewed lease horizon.';
+  'Renews active scheduled-job ownership without shortening it and extends retention through the lease horizon.';
 
 notify pgrst, 'reload schema';

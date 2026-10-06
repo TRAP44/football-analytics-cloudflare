@@ -260,6 +260,24 @@ async function testScheduledLease() {
     'scheduled lease retention must cover the initial ownership window',
   );
 
+  const longLockBefore=Number(await psql(
+    "select extract(epoch from locked_until)::bigint from public.scheduled_job_leases where job_key='"
+      + retentionJob + "';",
+  ));
+  const shortRenew=parseJson(await serviceRoleQuery(
+    "select public.renew_scheduled_job('" + retentionJob + "','"
+      + retentionClaim.leaseToken + "',30)::text;",
+  ),'renew_scheduled_job no-shortening boundary');
+  assert.equal(shortRenew.renewed,true,'active scheduled lease must accept heartbeat');
+  const longLockAfter=Number(await psql(
+    "select extract(epoch from locked_until)::bigint from public.scheduled_job_leases where job_key='"
+      + retentionJob + "';",
+  ));
+  assert.ok(
+    longLockAfter>=longLockBefore,
+    'renewal with a shorter TTL must not shorten an existing ownership lease',
+  );
+
   await psql(
     "update public.scheduled_job_leases set expires_at=clock_timestamp()-interval '1 second'"
       + " where job_key='" + retentionJob + "';",

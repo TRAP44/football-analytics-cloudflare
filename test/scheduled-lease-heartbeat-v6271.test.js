@@ -277,7 +277,7 @@ test('v6.29.5 preserves renewable ownership beyond the original retention horizo
   ).toLowerCase();
   assert.match(
     sql,
-    /set locked_until=v_next_locked_until,\s+expires_at=greatest\(expires_at,v_next_locked_until\)/,
+    /set locked_until=greatest\(locked_until,v_next_locked_until\),\s+expires_at=greatest\(expires_at,locked_until,v_next_locked_until\)/,
   );
   assert.ok(sql.includes('and locked_until>v_now'));
 });
