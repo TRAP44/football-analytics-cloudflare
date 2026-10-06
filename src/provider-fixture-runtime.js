@@ -34,6 +34,39 @@ export function createProviderFixtureRuntime(deps) {
     todayUtc,
   } = deps;
 
+  const requiredFunctions={
+    apiFootball,
+    bumpTelemetry,
+    catalogRank,
+    getCache,
+    getStaleCache,
+    isFinishedStatus,
+    isFootballRateLimitError,
+    isRetryableFootballTransportError,
+    isLiveStatus,
+    isTopLeague,
+    json,
+    liveRefreshSeconds,
+    markCachedSourceMeta,
+    matchInterestScore,
+    matchStatusRank,
+    normalizeCompetition,
+    normalizeRoundLabel,
+    persistIntegrityRun,
+    providerBudgetProfile,
+    publicDataCapabilities,
+    runMatchIntegrityGuard,
+    scoreSnapshot,
+    setCache,
+    settlePredictionsFromFixtures,
+    sourceMeta,
+    statusLabel,
+    todayUtc,
+  };
+  for (const [name,fn] of Object.entries(requiredFunctions)) {
+    if (typeof fn !== 'function') throw new TypeError(`${name} is required`);
+  }
+
   function positiveSafeInteger(value) {
     if (value === null || value === undefined || value === '') return null;
     const number=Number(value);
@@ -93,19 +126,21 @@ export function createProviderFixtureRuntime(deps) {
 
   function fixtureDateCachePayload(value, date) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-    if (String(value.date || '') !== date || !Array.isArray(value.fixtures)) return null;
+    if (value.date && String(value.date) !== date) return null;
+    if (!Array.isArray(value.fixtures)) return null;
     return value;
   }
 
   function teamDiscoveryCachePayload(value, teamId) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-    if (positiveSafeInteger(value.teamId) !== teamId || !Array.isArray(value.fixtures)) return null;
+    if (value.teamId !== undefined && value.teamId !== null && positiveSafeInteger(value.teamId) !== teamId) return null;
+    if (!Array.isArray(value.fixtures)) return null;
     return value;
   }
 
   function directFixtureCachePayload(value, fixtureId) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-    if (positiveSafeInteger(value.fixtureId) !== fixtureId) return null;
+    if (value.fixtureId !== undefined && value.fixtureId !== null && positiveSafeInteger(value.fixtureId) !== fixtureId) return null;
     if (positiveSafeInteger(value.fixture?.fixture?.id) !== fixtureId) return null;
     return value;
   }
@@ -118,7 +153,7 @@ export function createProviderFixtureRuntime(deps) {
 
   function providerFixtureDateCacheKey(date) {
     const normalized=strictUtcDate(date);
-    return normalized ? `provider-fixtures:${normalized}:v2` : '';
+    return normalized ? `provider-fixtures:${normalized}:v1` : '';
   }
   
   async function loadProviderFixturesForDate(date, cfg, { allowNetwork = true, forceRefresh = false } = {}) {
@@ -147,7 +182,7 @@ export function createProviderFixtureRuntime(deps) {
   
   function providerTeamDiscoveryCacheKey(teamId) {
     const id=positiveSafeInteger(teamId);
-    return id ? `provider-team-discovery:${id}:v2` : '';
+    return id ? `provider-team-discovery:${id}:v1` : '';
   }
   
   async function loadProviderTeamDiscoveryFixtures(teamId, cfg, { allowNetwork = true, forceRefresh = false } = {}) {
@@ -206,7 +241,7 @@ export function createProviderFixtureRuntime(deps) {
   
   function providerFixtureDirectCacheKey(fixtureId) {
     const id=positiveSafeInteger(fixtureId);
-    return id ? `provider-fixture:${id}:v2` : '';
+    return id ? `provider-fixture:${id}:v1` : '';
   }
   
   async function cachedProviderFixture(fixtureId,cfg) {
@@ -278,7 +313,7 @@ export function createProviderFixtureRuntime(deps) {
     const isToday=date===today;
     const yesterday=utcDateShift(today,-1);
     const isYesterday=date===yesterday;
-    const cacheKey=`matches:${date}:v7-integrity`;
+    const cacheKey=`matches:${date}:v6-integrity`;
   
     const cached=matchFeedCachePayload(await getCache(cacheKey,cfg).catch(()=>null),date);
     if (cached) return json({ ...cached, sourceMeta: markCachedSourceMeta(cached.sourceMeta || sourceMeta({ provider:'api-football', label:'API-Football' })), cached: true, stale: false });
