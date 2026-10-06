@@ -2993,6 +2993,7 @@ const {
   providerDataReliabilitySelfTest,
   providerEndpointLabel,
   providerFeatureFetch,
+  providerFeatureSourcesSummary,
   providerSloReport,
   providerSnapshot,
   providerTransitionProfile,
