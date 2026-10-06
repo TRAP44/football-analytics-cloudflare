@@ -490,8 +490,9 @@ begin
     5
   ) into v_contract;
   if coalesce((v_contract->>'ok')::boolean,false) is not true
-     or coalesce((v_contract->>'schemaContractVersion')::integer,0) <> 2 then
-    raise exception 'Supabase integration contract: v2 readiness contract failed';
+     or coalesce((v_contract->>'schemaContractVersion')::integer,0) <> 2
+     or coalesce((v_contract->'schema'->'privateAnalysisUsage'->>'ok')::boolean,false) is not true then
+    raise exception 'Supabase integration contract: v2 readiness/private usage contract failed: %', v_contract;
   end if;
 
   select public.provider_slo_aggregation_contract() into v_contract;
@@ -555,6 +556,45 @@ end
 $search_path_probe$;
 
 drop function public.issue438_search_path_probe();
+
+-- Prove private durable usage drift is release-blocking even though public v2
+-- fingerprint intentionally remains unchanged.
+revoke usage on schema private from service_role;
+
+do $private_usage_probe$
+declare
+  v_contract jsonb;
+  v_expected text;
+begin
+  select v2_fingerprint into v_expected
+  from issue438_contract_expectations;
+
+  select public.backend_readiness_contract_v2(v_expected,5) into v_contract;
+  if coalesce((v_contract->>'ok')::boolean,false) is true
+     or coalesce((v_contract->'schema'->'privateAnalysisUsage'->>'ok')::boolean,false) is true
+     or not (coalesce(v_contract->'failureReasons','[]'::jsonb) ? 'analysis_usage_private_contract') then
+    raise exception 'Supabase integration contract: private durable usage drift was not rejected: %', v_contract;
+  end if;
+end
+$private_usage_probe$;
+
+grant usage on schema private to service_role;
+
+do $private_usage_restored$
+declare
+  v_contract jsonb;
+  v_expected text;
+begin
+  select v2_fingerprint into v_expected
+  from issue438_contract_expectations;
+
+  select public.backend_readiness_contract_v2(v_expected,5) into v_contract;
+  if coalesce((v_contract->>'ok')::boolean,false) is not true
+     or coalesce((v_contract->'schema'->'privateAnalysisUsage'->>'ok')::boolean,false) is not true then
+    raise exception 'Supabase integration contract: private durable usage readiness did not recover: %', v_contract;
+  end if;
+end
+$private_usage_restored$;
 
 do $search_path_restored$
 declare
