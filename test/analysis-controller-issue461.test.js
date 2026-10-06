@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { createAnalysisController } from '../public/modules/analysis-controller.js';
+
+function readRepoFile(relativePath) {
+  return readFileSync(new URL('../' + relativePath, import.meta.url), 'utf8');
+}
 
 function deferred() {
   let resolve;
@@ -84,7 +88,30 @@ test('analysis controller keeps analysis single-flight', async () => {
   assert.ok(calls.some(row => row[0] === 'toast' && /уже выполняется/.test(row[1])));
 });
 
-test('runtime-disabled analysis exits before request and preserves source navigation contract', async () => {
+test('invalid fixture ids fail before navigation, busy UI or network work', async () => {
+  for (const fixtureId of [0,-1,1.5,Number.NaN,'bad']) {
+    const state=baseState();
+    let apiCalls=0;
+    const {controller,calls}=makeController({
+      state,
+      view:'teamView',
+      api:async()=>{ apiCalls+=1; return {}; },
+    });
+
+    await controller.analyzeMatch(fixtureId,null);
+
+    assert.equal(apiCalls,0,String(fixtureId));
+    assert.equal(state.analysisRequestSeq,0,String(fixtureId));
+    assert.equal(state.analysisActionPending,false,String(fixtureId));
+    assert.equal(state.analysisBackView,'matchesView',String(fixtureId));
+    assert.equal(calls.some(row=>row[0]==='stop-live'),false,String(fixtureId));
+    assert.equal(calls.some(row=>row[0]==='busy'),false,String(fixtureId));
+    assert.equal(calls.some(row=>row[0]==='view'),false,String(fixtureId));
+    assert.ok(calls.some(row=>row[0]==='toast' && /определить матч/.test(row[1])),String(fixtureId));
+  }
+});
+
+test('runtime-disabled analysis exits before request without mutating navigation coordination', async () => {
   const state = baseState();
   state.runtimeStatus = { message: 'AI временно выключен' };
   let apiCalls = 0;
@@ -98,9 +125,11 @@ test('runtime-disabled analysis exits before request and preserves source naviga
   await controller.analyzeMatch(7, null);
 
   assert.equal(apiCalls, 0);
-  assert.equal(state.analysisBackView, 'teamView');
-  assert.equal(state.analysisRequestSeq, 1);
+  assert.equal(state.analysisBackView, 'matchesView');
+  assert.equal(state.analysisRequestSeq, 0);
   assert.equal(state.analysisActionPending, false);
+  assert.equal(calls.some(row => row[0] === 'stop-live'), false);
+  assert.equal(calls.some(row => row[0] === 'view'), false);
   assert.ok(calls.some(row => row[0] === 'toast' && row[1] === 'AI временно выключен'));
 });
 
@@ -196,11 +225,14 @@ test('provider failure restores previous Match Center snapshot fail-soft', async
   assert.equal(calls.some(row => row[0] === 'journey' && row[1] === 'error'), false);
 });
 
-test('quota exhaustion shows paywall and actionable journey error', async () => {
+test('quota exhaustion shows paywall only for the explicit quota code', async () => {
   const state = baseState();
   const quotaError = Object.assign(new Error('quota'), {
     status: 429,
-    payload: { code: 'AI_DAILY_LIMIT' },
+    payload: {
+      code: 'ANALYSIS_QUOTA_EXHAUSTED',
+      quota: { used:3, limit:3, left:0 },
+    },
   });
   const { controller, calls } = makeController({
     state,
@@ -218,10 +250,62 @@ test('quota exhaustion shows paywall and actionable journey error', async () => 
   assert.ok(calls.some(row => row[0] === 'toast' && /закончились/.test(row[1])));
   assert.ok(calls.some(row => row[0] === 'journey' && row[1] === 'error'));
 });
+test('analysis warming and provider throttling never masquerade as quota exhaustion', async () => {
+  for (const scenario of [
+    {
+      error:Object.assign(new Error('Матч уже рассчитывается.'),{
+        status:429,
+        payload:{code:'ANALYSIS_WARMING',retryAfter:5,quota:{used:1,limit:3,left:2}},
+      }),
+      category:'rate_limit',
+      toast:/уже рассчитывается/,
+    },
+    {
+      error:Object.assign(new Error('provider limited'),{
+        status:429,
+        payload:{code:'FOOTBALL_RATE_LIMIT',retryAfter:12},
+      }),
+      category:'rate_limit',
+      toast:/~12 сек/,
+    },
+  ]) {
+    const state=baseState();
+    const {controller,calls}=makeController({
+      state,
+      view:'matchesView',
+      api:async url=>{
+        if (url.startsWith('/api/entitlements?')) return null;
+        if (url==='/api/analyze') throw scenario.error;
+        return null;
+      },
+      apiErrorCategory:()=>scenario.category,
+    });
+
+    await controller.analyzeMatch(15,null);
+
+    assert.equal(calls.some(row=>row[0]==='show-paywall'),false);
+    assert.ok(calls.some(row=>row[0]==='toast' && scenario.toast.test(String(row[1]))));
+    assert.ok(calls.some(row=>row[0]==='view' && row[1]==='matchesView' && row[2]?.restore===true));
+  }
+});
+
+test('analysis backend emits distinct 429 codes for quota exhaustion and warming', () => {
+  const source=readRepoFile('src/analysis-runtime.js');
+
+  assert.match(
+    source,
+    /code:'ANALYSIS_QUOTA_EXHAUSTED'[\s\S]*?429,'quota_exhausted'/,
+  );
+  assert.match(
+    source,
+    /code:'ANALYSIS_WARMING'[\s\S]*?429,'analysis_warming'/,
+  );
+});
+
 
 test('app keeps only a lazy analysis delegate while controller owns analyze network/recovery lifecycle', () => {
-  const app = fs.readFileSync(new URL('../public/app.js', import.meta.url), 'utf8');
-  const module = fs.readFileSync(new URL('../public/modules/analysis-controller.js', import.meta.url), 'utf8');
+  const app = readRepoFile('public/app.js');
+  const module = readRepoFile('public/modules/analysis-controller.js');
 
   assert.match(app, /import\('\.\/modules\/analysis-controller\.js'\)/);
   assert.match(app, /async function ensureAnalysisController\(\)/);
