@@ -30,6 +30,7 @@ export function createAdminModelQualityModule({
   }
 
   function renderModelQuality() {
+    if (!isAdmin()) return;
     const status = $('modelQualityStatus');
     const badge = $('modelQualitySampleBadge');
     const headline = $('modelQualityHeadline');
