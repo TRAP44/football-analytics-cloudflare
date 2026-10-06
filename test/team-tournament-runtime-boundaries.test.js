@@ -266,6 +266,43 @@ test('team season statistics normalize hostile provider values without NaN', () 
   assert.ok(Number.isFinite(stats.derived.points));
 });
 
+test('team match normalization rejects fixtures that do not contain the requested team', () => {
+  const runtime = createTeamTournamentRuntime(deps());
+
+  const match = runtime.normalizeTeamHubMatch({
+    fixture: { id: 100, date: '2026-10-07T18:00:00Z', status: { short: 'NS' } },
+    teams: {
+      home: { id: 20, name: 'Other Home' },
+      away: { id: 30, name: 'Other Away' },
+    },
+    league: { id: 39, name: 'League', season: 2026 },
+  }, 10);
+
+  assert.deepEqual(match, { fixtureId: 0 });
+});
+
+test('player normalization rejects statistics from another team, league or season', () => {
+  const runtime = createTeamTournamentRuntime(deps());
+
+  const players = runtime.normalizeApiFootballTeamPlayers([
+    {
+      player: { id: 7, name: 'Wrong Scope' },
+      statistics: [{
+        team: { id: 20, name: 'Other Team' },
+        league: { id: 140, name: 'Other League', season: 2025 },
+        games: { appearences: 20 },
+        goals: { total: 10 },
+      }],
+    },
+  ], {
+    teamId: 10,
+    leagueId: 39,
+    season: 2026,
+  });
+
+  assert.deepEqual(players, []);
+});
+
 test('player normalization deduplicates provider ids and sorts leaders deterministically', () => {
   const runtime = createTeamTournamentRuntime(deps());
   const statistics = (goals, appearances, minutes) => [{
