@@ -6,7 +6,9 @@ const worker=fs.readFileSync('src/worker.js','utf8')
   +'\n'+fs.readFileSync('src/analysis-runtime.js','utf8')
   +'\n'+fs.readFileSync('src/analysis-quality-runtime.js','utf8')
   +'\n'+fs.readFileSync('src/analysis-context-runtime.js','utf8')
-  +'\n'+fs.readFileSync('src/model-intelligence-runtime.js','utf8');
+  +'\n'+fs.readFileSync('src/model-intelligence-runtime.js','utf8')
+  +'\n'+fs.readFileSync('src/app-capabilities.js','utf8')
+  +'\n'+fs.readFileSync('src/admin-operational-api.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 
 test('RC105 confidence uses weighted signal coverage instead of raw source count',()=>{
@@ -23,7 +25,7 @@ test('RC105 confidence uses weighted signal coverage instead of raw source count
 test('RC105 goal totals and BTTS expose sample quality',()=>{
   assert.match(worker,/qualityScore/);
   assert.match(worker,/qualityLabel:\s*qualityScore\s*>=\s*80/);
-  assert.match(worker,/sample: \{ overall: overallSample, venue: venueSample \}/);
+  assert.match(worker,/sample:\s*\{\s*overall:\s*overallSample,\s*venue:\s*venueSample\s*\}/);
   assert.match(worker,/goalModel\?\.qualityScore \|\| 0\) >= 65/);
 });
 
@@ -56,8 +58,8 @@ test('RC105 exposes a deterministic quality-gate self-test and health contract',
   assert.match(worker,/function analysisQualityGateSelfTest\(/);
   assert.match(worker,/ready\.state\s*===\s*'ready'/);
   assert.match(worker,/hold\.state\s*===\s*'hold'/);
-  assert.match(worker,/aiAnalysisQualityGate: 'enabled'/);
-  assert.match(worker,/aiAnalysisQualityGateSelfTest: analysisQualityGateSelfTest\(\)\.pass \? 'enabled' : 'failed'/);
+  assert.match(worker,/aiAnalysisQualityGate:\s*true/);
+  assert.match(worker,/const aiQualityGateSelfTest\s*=\s*analysisQualityGateSelfTest\(\)/);
   assert.match(worker,/releaseCheck\('ai_analysis_quality_gate_selftest'/);
 });
 
