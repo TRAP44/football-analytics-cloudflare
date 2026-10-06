@@ -174,12 +174,12 @@ test('Issue #411 router dispatches provider-backed routes from the shared regist
 
 test('Issue #411 router has no duplicated direct provider-backed route dispatch blocks',()=>{
   const source=fs.readFileSync('src/router.js','utf8');
-  assert.match(source,/providerBackedRouteDefinition\(url\.pathname,request\.method\)/);
+  assert.match(source,/providerBackedRouteDefinition\(pathname,method\)/);
   assert.match(source,/deps\[providerRoute\.handler\]/);
 
   for(const route of providerBackedRouteInventory()){
     const escaped=route.path.replace(/[.*+?^$()|[\]\\]/g,'\\$&');
-    const direct=new RegExp("url\\.pathname\\s*===\\s*['\\\"]"+escaped+"['\\\"]");
+    const direct=new RegExp("pathname\\s*===\\s*['\\\"]"+escaped+"['\\\"]");
     assert.doesNotMatch(source,direct,route.method+' '+route.path+' must remain registry-dispatched');
   }
 });
