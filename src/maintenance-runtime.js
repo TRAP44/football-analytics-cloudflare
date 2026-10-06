@@ -21,7 +21,10 @@ export function createMaintenanceRuntime(deps = {}) {
     if (!hasSupabase(cfg)) return { skipped: true };
     const cutoff = new Date().toISOString();
     try {
-      await supaDelete(cfg, 'scheduled_job_leases', { expires_at: `lt.${cutoff}` });
+      await supaDelete(cfg, 'scheduled_job_leases', {
+        expires_at: `lt.${cutoff}`,
+        locked_until: `lt.${cutoff}`,
+      });
       return { ok: true, cutoff };
     } catch (error) {
       return { ok: false, error: redactOpsString(error?.message || error, 180) };
