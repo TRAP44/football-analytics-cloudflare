@@ -260,16 +260,31 @@ export function createLiveMatchIntelligenceRuntime(deps) {
   }
   
   function buildLiveAiCoach({ statistics, events, pressure, score, elapsed, homeName, awayName, smartInsights, prematch, oddsMovement, xgQuality = null } = {}) {
-    const minute=Number(elapsed||0);
-    const hg=Number(score?.home||0), ag=Number(score?.away||0);
-    const hxg=smartStat(statistics,'expected_goals','home'), axg=smartStat(statistics,'expected_goals','away');
-    const hred=smartStat(statistics,'Red Cards','home')||0, ared=smartStat(statistics,'Red Cards','away')||0;
-    const performanceSide=livePerformanceSide({statistics,pressure});
-    const pressureLeader=pressure?.leader || 'balanced';
-    const pressureLeaderLabel=pressureLeader==='home'?homeName:pressureLeader==='away'?awayName:'Баланс';
+    const eventRows=rows(events);
+    const minuteValue=eventMinute(elapsed);
+    const minute=minuteValue ?? 0;
+    const homeGoals=scoreValue(score?.home);
+    const awayGoals=scoreValue(score?.away);
+    const scoreKnown=homeGoals !== null && awayGoals !== null;
+    const hg=homeGoals ?? 0;
+    const ag=awayGoals ?? 0;
+    const hxg=smartStat(statistics,'expected_goals','home'),axg=smartStat(statistics,'expected_goals','away');
+    const hred=smartStat(statistics,'Red Cards','home') ?? 0,ared=smartStat(statistics,'Red Cards','away') ?? 0;
+    const pressureValue=normalizedPressure(pressure);
+    const performanceSide=livePerformanceSide({statistics,pressure:pressureValue});
+    const pressureLeader=pressureValue?.leader || 'balanced';
+    const pressureLeaderLabel=pressureLeader==='home'
+      ? smartSideName('home',homeName,awayName)
+      : pressureLeader==='away'
+        ? smartSideName('away',homeName,awayName)
+        : 'Баланс';
     const chanceSide=hxg!==null&&axg!==null&&Math.abs(hxg-axg)>=.25?(hxg>axg?'home':'away'):performanceSide;
-    const chanceLabel=chanceSide==='home'?`${homeName} опаснее`:chanceSide==='away'?`${awayName} опаснее`:'Без явного перевеса';
-    const recent=recentEventSummary(events,minute,homeName,awayName);
+    const chanceLabel=chanceSide==='home'
+      ? `${smartSideName('home',homeName,awayName)} опаснее`
+      : chanceSide==='away'
+        ? `${smartSideName('away',homeName,awayName)} опаснее`
+        : 'Без явного перевеса';
+    const recent=recentEventSummary(eventRows,minuteValue,homeName,awayName);
     const marketShift=liveMarketShift(oddsMovement);
     const pre= prematch?.aiInstructor || null;
     const preSignal=pre?.betSignal || null;
@@ -280,18 +295,19 @@ export function createLiveMatchIntelligenceRuntime(deps) {
       const other=expectedSide==='home'?'away':'home';
       const expectedGoals=expectedSide==='home'?hg:ag, otherGoals=other==='home'?hg:ag;
       if (performanceSide===expectedSide) support += 1.2;
-      if (pressureLeader===expectedSide && Math.abs(Number(pressure?.home||0)-Number(pressure?.away||0))>=12) support += .8;
-      if (expectedGoals>otherGoals) support += minute>=45?1.2:.7;
+      if (pressureLeader===expectedSide && Math.abs((pressureValue?.home ?? 50)-(pressureValue?.away ?? 50))>=12) support += .8;
+      if (scoreKnown && expectedGoals>otherGoals) support += minute>=45?1.2:.7;
       if (performanceSide===other) contradiction += 1.2;
-      if (otherGoals>expectedGoals) contradiction += minute>=45?1.5:.8;
+      if (scoreKnown && otherGoals>expectedGoals) contradiction += minute>=45?1.5:.8;
       if ((expectedSide==='home'?hred:ared) > (other==='home'?hred:ared)) contradiction += 1.8;
     } else if (preSignal?.code === 'over25') {
-      const totalGoals=hg+ag, totalXg=(hxg??0)+(axg??0);
-      if (totalGoals>=2 || (minute<=60 && totalXg>=1.8)) support += 2;
-      if (minute>=60 && totalGoals===0 && totalXg<1.2) contradiction += 2;
+      const totalGoals=scoreKnown ? hg+ag : null;
+      const totalXg=(hxg ?? 0)+(axg ?? 0);
+      if ((scoreKnown && totalGoals>=2) || (minuteValue !== null && minute<=60 && totalXg>=1.8)) support += 2;
+      if (scoreKnown && minuteValue !== null && minute>=60 && totalGoals===0 && totalXg<1.2) contradiction += 2;
     } else if (preSignal?.code === 'btts') {
-      if (hg>0 && ag>0) support += 2;
-      if (minute>=65 && (hg===0 || ag===0) && ((hg===0?hxg:axg)??0)<.5) contradiction += 1.8;
+      if (scoreKnown && hg>0 && ag>0) support += 2;
+      if (scoreKnown && minuteValue !== null && minute>=65 && (hg===0 || ag===0) && ((hg===0?hxg:axg) ?? 0)<.5) contradiction += 1.8;
     }
     if (recent?.leader && recent.leader===expectedSide) support += .5;
     if (recent?.leader && expectedSide!=='balanced' && recent.leader!==expectedSide && recent.leader!=='balanced') contradiction += .5;
@@ -304,13 +320,31 @@ export function createLiveMatchIntelligenceRuntime(deps) {
     else if (support>=1.8 && support>=contradiction+.5) { state='holds'; stateLabel='Сценарий подтверждается'; }
     else { state='shifted'; stateLabel='Сценарий меняется'; }
   
-    const dataScore=Number(smartInsights?.dataScore||0);
-    const confidence=Math.max(20,Math.min(92,Math.round(dataScore*.68 + Math.min(90,minute)/90*14 + (pressure?8:0) + ((events||[]).length?6:0))));
-    const recentCritical=(events||[]).some(e=>Number(e.minute||0)>=Math.max(0,minute-10) && (String(e.type||'').toLowerCase()==='goal' || (String(e.type||'').toLowerCase()==='card' && String(e.detail||'').toLowerCase().includes('red'))));
-    let volatilityLabel='Средний', volatilityReason='Картина матча может измениться после одного ключевого эпизода.';
-    if (hred!==ared || recentCritical || Math.abs(Number(marketShift?.delta||0))>=8) { volatilityLabel='Высокий'; volatilityReason='Есть удаление, недавнее ключевое событие или резкий сдвиг рынка.'; }
-    else if (minute>=75 && Math.abs(hg-ag)<=1) { volatilityLabel='Высокий'; volatilityReason='Концовка близкого матча — один эпизод может полностью изменить сценарий.'; }
-    else if (Math.abs(Number(pressure?.home||50)-Number(pressure?.away||50))<10) { volatilityLabel='Умеренный'; volatilityReason='По текущим показателям матч остаётся достаточно ровным.'; }
+    const dataScore=boundedNumber(smartInsights?.dataScore,0,100) ?? 0;
+    const confidence=Math.max(20,Math.min(92,Math.round(
+      dataScore*.68
+      + (minuteValue !== null ? Math.min(90,minute)/90*14 : 0)
+      + (pressureValue ? 8 : 0)
+      + (eventRows.length ? 6 : 0)
+    )));
+    const recentCritical=minuteValue !== null && eventRows.some(event=>{
+      const eventAt=eventMinute(event?.minute);
+      if (eventAt === null || eventAt < Math.max(0,minute-10) || eventAt > minute+15) return false;
+      const type=String(event?.type || '').toLowerCase();
+      const detail=String(event?.detail || '').toLowerCase();
+      return type==='goal' || (type==='card' && detail.includes('red'));
+    });
+    let volatilityLabel='Средний',volatilityReason='Картина матча может измениться после одного ключевого эпизода.';
+    if (hred!==ared || recentCritical || Math.abs(marketShift?.delta ?? 0)>=8) {
+      volatilityLabel='Высокий';
+      volatilityReason='Есть удаление, недавнее ключевое событие или резкий сдвиг рынка.';
+    } else if (scoreKnown && minuteValue !== null && minute>=75 && Math.abs(hg-ag)<=1) {
+      volatilityLabel='Высокий';
+      volatilityReason='Концовка близкого матча — один эпизод может полностью изменить сценарий.';
+    } else if (pressureValue && Math.abs(pressureValue.home-pressureValue.away)<10) {
+      volatilityLabel='Умеренный';
+      volatilityReason='По текущим показателям матч остаётся достаточно ровным.';
+    }
   
     let action={code:'watch',label:'Наблюдать',reason:'Собираю ещё несколько устойчивых сигналов по ходу матча.'};
     if (confidence<45 || dataScore<35) action={code:'wait',label:'Ждать больше данных',reason:'Покрытия пока мало для уверенного live-вывода.'};
@@ -343,20 +377,53 @@ export function createLiveMatchIntelligenceRuntime(deps) {
           : 'AI оценивает только то, что реально видно сейчас по счёту, событиям, статистике и рынку.';
   
     return {
-      available:Boolean(smartInsights?.available || pressure || (events||[]).length), state, headline, summary, confidence,
-      action, volatility:{label:volatilityLabel,reason:volatilityReason},
-      current:{pressure:pressure?{home:Number(pressure.home),away:Number(pressure.away)}:null,pressureLeaderLabel,chanceLabel,xg:{home:hxg,away:axg},xgQuality:xgQuality?{state:xgQuality.state,label:xgQuality.label,confidenceBearing:Boolean(xgQuality.confidenceBearing)}:null,performanceSide,marketShift},
-      prematch:{available:Boolean(pre),signal:preSignal?.label||'',outcome:pre?.verdict?.outcome||'',confidence:Number(pre?.confidenceScore||0),stateLabel},
+      available:Boolean(smartInsights?.available === true || pressureValue || eventRows.length),
+      state,
+      headline,
+      summary,
+      confidence,
+      action,
+      volatility:{label:volatilityLabel,reason:volatilityReason},
+      current:{
+        pressure:pressureValue ? {home:pressureValue.home,away:pressureValue.away} : null,
+        pressureLeaderLabel,
+        chanceLabel,
+        xg:{home:hxg,away:axg},
+        xgQuality:xgQuality && typeof xgQuality === 'object' && !Array.isArray(xgQuality)
+          ? {
+              state:displayText(xgQuality.state,'',40),
+              label:displayText(xgQuality.label,'',120),
+              confidenceBearing:xgQuality.confidenceBearing === true,
+            }
+          : null,
+        performanceSide,
+        marketShift,
+        scoreKnown,
+        minute:minuteValue,
+      },
+      prematch:{
+        available:Boolean(pre),
+        signal:displayText(preSignal?.label,'',160),
+        outcome:displayText(pre?.verdict?.outcome,'',160),
+        confidence:boundedNumber(pre?.confidenceScore,0,100) ?? 0,
+        stateLabel,
+      },
       watchNext:watch.slice(0,3),
     };
   }
   function buildSmartMatchInsights({
     statistics, events, pressure, score, elapsed, status,
     homeName, awayName, playerLeaders, absences,
-  }) {
-    const insights = [];
-    const homeGoals = numericValue(score?.home) ?? 0;
-    const awayGoals = numericValue(score?.away) ?? 0;
+  } = {}) {
+    const insights=[];
+    const eventRows=rows(events);
+    const pressureValue=normalizedPressure(pressure);
+    const minute=eventMinute(elapsed);
+    const homeGoalValue=scoreValue(score?.home);
+    const awayGoalValue=scoreValue(score?.away);
+    const scoreKnown=homeGoalValue !== null && awayGoalValue !== null;
+    const homeGoals=homeGoalValue ?? 0;
+    const awayGoals=awayGoalValue ?? 0;
   
     const hs = smartStat(statistics, 'Total Shots', 'home');
     const as = smartStat(statistics, 'Total Shots', 'away');
@@ -373,15 +440,15 @@ export function createLiveMatchIntelligenceRuntime(deps) {
     const hred = smartStat(statistics, 'Red Cards', 'home') || 0;
     const ared = smartStat(statistics, 'Red Cards', 'away') || 0;
   
-    if (pressure && Math.abs(Number(pressure.home || 0) - Number(pressure.away || 0)) >= 12) {
-      const side = pressure.home > pressure.away ? 'home' : 'away';
-      const own = side === 'home' ? pressure.home : pressure.away;
-      const opp = side === 'home' ? pressure.away : pressure.home;
+    if (pressureValue && Math.abs(pressureValue.home-pressureValue.away)>=12) {
+      const side=pressureValue.home>pressureValue.away ? 'home' : 'away';
+      const own=side==='home' ? pressureValue.home : pressureValue.away;
+      const opp=side==='home' ? pressureValue.away : pressureValue.home;
       insights.push(smartInsight(
         'pressure', side, '⚡', 'Территориальное давление',
         `${smartSideName(side, homeName, awayName)} сильнее по совокупности ударов, владения, угловых и других доступных метрик (${own}:${opp} по индексу давления).`,
         Math.abs(own - opp) >= 24 ? 'high' : 'medium',
-        [{ label: 'Индекс давления', home: pressure.home, away: pressure.away }]
+        [{label:'Индекс давления',home:pressureValue.home,away:pressureValue.away}]
       ));
     }
   
@@ -413,13 +480,13 @@ export function createLiveMatchIntelligenceRuntime(deps) {
       const perf = (hso - aso) * 2 + (hs - as) * 0.5;
       if (Math.abs(perf) >= 3.5) performanceLeader = perf > 0 ? 'home' : 'away';
     }
-    if (scoreLeader !== 'balanced' && performanceLeader !== 'balanced' && scoreLeader !== performanceLeader) {
+    if (scoreKnown && scoreLeader !== 'balanced' && performanceLeader !== 'balanced' && scoreLeader !== performanceLeader) {
       insights.push(smartInsight(
         'score_mismatch', performanceLeader, '↔️', 'Счёт расходится с картиной игры',
         `${smartSideName(scoreLeader, homeName, awayName)} ведёт ${homeGoals}:${awayGoals}, но по качеству/объёму моментов сильнее выглядит ${smartSideName(performanceLeader, homeName, awayName)}.`,
         'high'
       ));
-    } else if (scoreLeader === 'balanced' && performanceLeader !== 'balanced') {
+    } else if (scoreKnown && scoreLeader === 'balanced' && performanceLeader !== 'balanced') {
       insights.push(smartInsight(
         'score_mismatch', performanceLeader, '↔️', 'При равном счёте есть перевес',
         `Счёт равный, но ${smartSideName(performanceLeader, homeName, awayName)} имеет заметное преимущество по доступным атакующим показателям.`,
@@ -427,11 +494,11 @@ export function createLiveMatchIntelligenceRuntime(deps) {
       ));
     }
   
-    if (hxg !== null && homeGoals - hxg >= 0.8) {
+    if (scoreKnown && hxg !== null && homeGoals-hxg>=0.8) {
       insights.push(smartInsight('finishing', 'home', '🔥', 'Реализация выше ожидаемой',
         `${homeName} забил ${homeGoals} при xG ${hxg.toFixed(2)} — реализация заметно выше качества созданных моментов.`, 'medium'));
     }
-    if (axg !== null && awayGoals - axg >= 0.8) {
+    if (scoreKnown && axg !== null && awayGoals-axg>=0.8) {
       insights.push(smartInsight('finishing', 'away', '🔥', 'Реализация выше ожидаемой',
         `${awayName} забил ${awayGoals} при xG ${axg.toFixed(2)} — реализация заметно выше качества созданных моментов.`, 'medium'));
     }
@@ -466,15 +533,16 @@ export function createLiveMatchIntelligenceRuntime(deps) {
         `${smartSideName(side, homeName, awayName)} чаще доводит атаки до угловых: ${hcorn}:${acorn}.`, 'low'));
     }
   
-    const recent = recentEventSummary(events, elapsed, homeName, awayName);
+    const recent=recentEventSummary(eventRows,minute,homeName,awayName);
     if (recent) {
       insights.push(smartInsight('recent_phase', recent.leader, '⏱️', recent.title, recent.text, 'medium'));
     }
   
-    const leaders = [
-      ...(playerLeaders?.home || []).map(p => ({ ...p, side: 'home' })),
-      ...(playerLeaders?.away || []).map(p => ({ ...p, side: 'away' })),
-    ].filter(p => Number(p.rating || 0) >= 7.5).sort((a,b) => Number(b.rating || 0) - Number(a.rating || 0));
+    const leaders=[
+      ...rows(playerLeaders?.home).map(player=>({...player,side:'home'})),
+      ...rows(playerLeaders?.away).map(player=>({...player,side:'away'})),
+    ].filter(player=>(boundedNumber(player?.rating,0,10) ?? 0)>=7.5)
+      .sort((a,b)=>(boundedNumber(b?.rating,0,10) ?? 0)-(boundedNumber(a?.rating,0,10) ?? 0));
     if (leaders[0]) {
       const p = leaders[0];
       insights.push(smartInsight('player', p.side, '⭐', 'Выделяется игрок',
@@ -482,20 +550,20 @@ export function createLiveMatchIntelligenceRuntime(deps) {
         'low'));
     }
   
-    const hAbs = absences?.home?.length || 0;
-    const aAbs = absences?.away?.length || 0;
+    const hAbs=rows(absences?.home).length;
+    const aAbs=rows(absences?.away).length;
     if (Math.abs(hAbs - aAbs) >= 2 && Math.max(hAbs, aAbs) >= 2) {
       const side = hAbs > aAbs ? 'home' : 'away';
       insights.push(smartInsight('availability', side, '🩺', 'Разница по потерям',
         `${smartSideName(side, homeName, awayName)} имеет больше актуальных отметок о потерях состава после сверки с опубликованными составами: ${hAbs}:${aAbs}.`, 'low'));
     }
   
-    if (Number.isFinite(Number(elapsed)) && Number(elapsed) >= 20 && hs !== null && as !== null) {
-      const projectedShots = ((hs + as) / Math.max(1, Number(elapsed))) * 90;
-      if (projectedShots >= 28) {
+    if (minute !== null && minute>=20 && hs !== null && as !== null) {
+      const projectedShots=((hs+as)/Math.max(1,minute))*90;
+      if (projectedShots>=28) {
         insights.push(smartInsight('tempo', 'balanced', '🏃', 'Высокий темп',
           `По текущей частоте ударов матч идёт в высоком темпе — около ${Math.round(projectedShots)} ударов в пересчёте на 90 минут.`, 'low'));
-      } else if (projectedShots <= 13 && Number(elapsed) >= 35) {
+      } else if (projectedShots<=13 && minute>=35) {
         insights.push(smartInsight('tempo', 'balanced', '🧱', 'Закрытый характер',
           `Ударов немного для текущей минуты матча — темп создания моментов пока низкий.`, 'low'));
       }
@@ -510,15 +578,15 @@ export function createLiveMatchIntelligenceRuntime(deps) {
       hs !== null && as !== null,
       hso !== null && aso !== null,
       hpos !== null && apos !== null,
-      Array.isArray(events) && events.length > 0,
-      Boolean(pressure),
-      (playerLeaders?.home?.length || 0) + (playerLeaders?.away?.length || 0) > 0,
+      eventRows.length>0,
+      Boolean(pressureValue),
+      rows(playerLeaders?.home).length+rows(playerLeaders?.away).length>0,
     ];
     const dataScore = Math.round(coverageParts.filter(Boolean).length / coverageParts.length * 100);
     const dataLabel = dataScore >= 75 ? 'Высокое покрытие' : dataScore >= 45 ? 'Среднее покрытие' : 'Базовое покрытие';
   
     const main = insights[0] || null;
-    const headline = main?.title || (pressure?.leader === 'balanced' ? 'Матч выглядит сбалансированным' : 'Недостаточно данных для сильного вывода');
+    const headline=main?.title || (pressureValue?.leader==='balanced' ? 'Матч выглядит сбалансированным' : 'Недостаточно данных для сильного вывода');
     const summary = main?.text || 'Доступных событий и статистики пока недостаточно для содержательного автоматического вывода.';
   
     return {
@@ -529,12 +597,14 @@ export function createLiveMatchIntelligenceRuntime(deps) {
       dataLabel,
       insights: insights.slice(0, 7),
       methodology: 'Автоматические выводы строятся только из текущего счёта, событий и официальной статистики матча. Это объяснение происходящего, а не прогноз результата.',
-      generatedForStatus: String(status || ''),
+      generatedForStatus:displayText(status,'',40),
+      scoreKnown,
+      minute,
     };
   }
   
   
-  return {
+  return Object.freeze({
     formatPlayerLeaders,
     livePressure,
     smartStat,
@@ -546,5 +616,5 @@ export function createLiveMatchIntelligenceRuntime(deps) {
     liveMarketShift,
     buildLiveAiCoach,
     buildSmartMatchInsights,
-  };
+  });
 }
