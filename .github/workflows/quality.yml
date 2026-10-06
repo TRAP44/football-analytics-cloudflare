@@ -95,6 +95,9 @@ jobs:
 
           FRESH_LEGACY_FP="$(node -p "require(process.env.GITHUB_WORKSPACE + '/release-contract.json').databaseContract.freshInstallLegacyFingerprint")"
           FRESH_V2_FP="$(node -p "require(process.env.GITHUB_WORKSPACE + '/release-contract.json').databaseContract.freshInstallFingerprint")"
+          LATEST_MIGRATION_FILE="$(find "$FRESH_DIR/supabase/migrations" -maxdepth 1 -type f -name '*.sql' | sort | tail -n1)"
+          LATEST_MIGRATION_VERSION="$(basename "$LATEST_MIGRATION_FILE" | cut -d_ -f1)"
+          test -n "$LATEST_MIGRATION_VERSION"
 
           psql "$DB_URL" -X -v ON_ERROR_STOP=1 -c \
             "select public.backend_schema_fingerprint() as legacy_schema_contract, public.backend_schema_contract_v2() as schema_contract_v2;"
@@ -104,6 +107,7 @@ jobs:
           psql "$DB_URL" -X -v ON_ERROR_STOP=1 \
             -v expected_legacy_fingerprint="$FRESH_LEGACY_FP" \
             -v expected_v2_fingerprint="$FRESH_V2_FP" \
+            -v expected_latest_migration_version="$LATEST_MIGRATION_VERSION" \
             -f "$GITHUB_WORKSPACE/scripts/supabase-ci-contract.sql"
           node "$GITHUB_WORKSPACE/scripts/supabase-concurrency-gate.js"
 
@@ -176,11 +180,15 @@ jobs:
 
           node "$GITHUB_WORKSPACE/scripts/prepare-supabase-ci-migrations.js" \
             latest-only "$UPGRADE_DIR/supabase/migrations" "$GITHUB_WORKSPACE"
+          LATEST_MIGRATION_FILE="$(find "$UPGRADE_DIR/supabase/migrations" -maxdepth 1 -type f -name '*.sql' | sort | tail -n1)"
+          LATEST_MIGRATION_VERSION="$(basename "$LATEST_MIGRATION_FILE" | cut -d_ -f1)"
+          test -n "$LATEST_MIGRATION_VERSION"
           npx --yes "supabase@$SUPABASE_CLI_VERSION" migration up
 
           psql "$DB_URL" -X -v ON_ERROR_STOP=1 \
             -v expected_legacy_fingerprint="$FRESH_LEGACY_FP" \
             -v expected_v2_fingerprint="$FRESH_V2_FP" \
+            -v expected_latest_migration_version="$LATEST_MIGRATION_VERSION" \
             -f "$GITHUB_WORKSPACE/scripts/supabase-ci-contract.sql"
 
           NEW_WORKER_READY="$(psql "$DB_URL" -X -A -t -v ON_ERROR_STOP=1 -c \
