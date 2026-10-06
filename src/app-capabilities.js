@@ -52,7 +52,7 @@ export function createAppCapabilitiesRuntime({
 
   function securityLockdown(runtime) {
     try {
-      return securityLockdown(runtime) === true;
+      return isSecurityLockdownControls(runtime) === true;
     } catch {
       return true;
     }
