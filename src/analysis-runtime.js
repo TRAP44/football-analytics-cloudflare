@@ -281,48 +281,120 @@ export function createAnalysisRuntime(deps) {
   }
 
   async function apiAnalyze(request, cfg, user) {
-    let body = {};
-    try { body = await request.json(); } catch {}
-    const fixtureId = positiveSafeInteger(body?.fixtureId);
-    const userId = positiveSafeInteger(user?.id);
-    const analysisOrigin=String(body?.origin || 'miniapp').slice(0,30);
-    const recheckRequested=strictBoolean(body?.recheck);
-    const newsImpactRecheck=strictBoolean(body?.newsImpactRecheck);
-    const newsPublishedAt=normalizeNewsPublishedAt(body?.newsPublishedAt);
-    const newsImpactDecision=cleanNewsImpactDecisionCode(body?.newsImpactDecision);
-    const newsImpactAction=cleanNewsImpactActionCode(body?.newsImpactAction);
-    const newsImpactRecoveryCode=cleanNewsImpactRecoveryCode(body?.newsImpactRecoveryCode);
-    const newsImpactRecoveryFrom=cleanNewsImpactActionCode(body?.newsImpactRecoveryFrom);
-    const trackFullAi=analysisOrigin !== 'telegram_quick';
-    if (fixtureId === null) return json({ error: 'Некорректный номер матча.' }, 400);
-    if (userId === null) return json({ error: 'Пользователь не авторизован.' }, 401);
-    const recordTrackedFullAiOutcome=async (delivery='analysis')=>{
-      if (trackFullAi && newsImpactDecision && newsImpactAction==='full_ai') {
-        await recordNewsImpactOutcome(cfg,{userId:userId,fixtureId,decision:newsImpactDecision,action:'full_ai',channel:'miniapp',delivery});
-      }
+    let body={};
+    try {
+      body=objectValue(await request?.json?.()) || {};
+    } catch {}
+
+    const fixtureId=positiveSafeInteger(body.fixtureId);
+    const userId=positiveSafeInteger(user?.id);
+    const requestedOrigin=safeText(body.origin,30);
+    const analysisOrigin=requestedOrigin==='telegram_quick' ? 'telegram_quick' : 'miniapp';
+    const recheckRequested=strictBoolean(body.recheck);
+    const newsImpactRecheck=strictBoolean(body.newsImpactRecheck);
+    const newsPublishedAt=normalizeNewsPublishedAt(body.newsPublishedAt);
+
+    let newsImpactDecision='';
+    let newsImpactAction='';
+    let newsImpactRecoveryCode='';
+    let newsImpactRecoveryFrom='';
+    try { newsImpactDecision=safeText(cleanNewsImpactDecisionCode(body.newsImpactDecision),80); } catch {}
+    try { newsImpactAction=safeText(cleanNewsImpactActionCode(body.newsImpactAction),80); } catch {}
+    try { newsImpactRecoveryCode=safeText(cleanNewsImpactRecoveryCode(body.newsImpactRecoveryCode),80); } catch {}
+    try { newsImpactRecoveryFrom=safeText(cleanNewsImpactActionCode(body.newsImpactRecoveryFrom),80); } catch {}
+
+    const trackFullAi=analysisOrigin!=='telegram_quick';
+    if (fixtureId === null) return json({error:'Некорректный номер матча.'},400);
+    if (userId === null) return json({error:'Пользователь не авторизован.'},401);
+
+    const fireAndForget=(fn,...args)=>{
+      try {
+        const pending=fn(...args);
+        if (pending && typeof pending.catch==='function') void pending.catch(()=>null);
+      } catch {}
     };
+    const safeRecordHistory=async payload=>{
+      try { await recordHistory(userId,payload,cfg); } catch {}
+    };
+    const recordTrackedFullAiOutcome=async (delivery='analysis')=>{
+      if (!(trackFullAi && newsImpactDecision && newsImpactAction==='full_ai')) return;
+      try {
+        await recordNewsImpactOutcome(cfg,{
+          userId,
+          fixtureId,
+          decision:newsImpactDecision,
+          action:'full_ai',
+          channel:'miniapp',
+          delivery:safeText(delivery,40) || 'analysis',
+        });
+      } catch {}
+    };
+
     if (trackFullAi && newsImpactDecision && newsImpactAction==='full_ai') {
       if (newsImpactRecoveryCode) {
-        await recordNewsImpactRecoveryAttempt(cfg,{userId:userId,fixtureId,decision:newsImpactDecision,action:'full_ai',recovery:newsImpactRecoveryCode,sourceAction:newsImpactRecoveryFrom,channel:'miniapp'});
+        try {
+          await recordNewsImpactRecoveryAttempt(cfg,{
+            userId,
+            fixtureId,
+            decision:newsImpactDecision,
+            action:'full_ai',
+            recovery:newsImpactRecoveryCode,
+            sourceAction:newsImpactRecoveryFrom,
+            channel:'miniapp',
+          });
+        } catch {}
       }
-      void recordGrowthEvent(cfg,{userId:userId,eventName:'news_impact_action',channel:'miniapp',fixtureId,metadata:{decision:newsImpactDecision,action:'full_ai',...(newsImpactRecoveryCode ? {recovery:newsImpactRecoveryCode} : {})}});
+      fireAndForget(recordGrowthEvent,cfg,{
+        userId,
+        eventName:'news_impact_action',
+        channel:'miniapp',
+        fixtureId,
+        metadata:{
+          decision:newsImpactDecision,
+          action:'full_ai',
+          ...(newsImpactRecoveryCode ? {recovery:newsImpactRecoveryCode} : {}),
+        },
+      });
     }
+
     const recordTrackedFullAiFailure=async (reason='server_error',status=0)=>{
       if (!(trackFullAi && newsImpactDecision && newsImpactAction==='full_ai')) return null;
-      const recovery=await selectNewsImpactRecoveryStrategy(cfg,reason,'full_ai');
-      await recordNewsImpactFailure(cfg,{userId:userId,fixtureId,decision:newsImpactDecision,action:'full_ai',channel:'miniapp',reason,recovery:recovery.code,strategy:recovery.strategy,strategyReason:recovery.guardReason,status});
-      return recovery;
+      try {
+        const recovery=objectValue(
+          await selectNewsImpactRecoveryStrategy(cfg,safeText(reason,120) || 'server_error','full_ai'),
+        );
+        if (!recovery) return null;
+        await recordNewsImpactFailure(cfg,{
+          userId,
+          fixtureId,
+          decision:newsImpactDecision,
+          action:'full_ai',
+          channel:'miniapp',
+          reason:safeText(reason,120) || 'server_error',
+          recovery:safeText(recovery.code,120),
+          strategy:safeText(recovery.strategy,120),
+          strategyReason:safeText(recovery.guardReason,240),
+          status:nonNegativeSafeInteger(status,999) ?? 0,
+        }).catch(()=>null);
+        return recovery;
+      } catch {
+        return null;
+      }
     };
     const trackedFullAiFailureResponse=async (payload,status,reason,headers={})=>{
       const recovery=await recordTrackedFullAiFailure(reason,status);
-      return json({...payload,...(recovery ? {newsImpactRecovery:recovery} : {})},status,headers);
+      return json({
+        ...(objectValue(payload) || {}),
+        ...(recovery ? {newsImpactRecovery:recovery} : {}),
+      },status,objectValue(headers) || {});
     };
+
     try {
-    const cacheKey = `fixture:${fixtureId}:v15-availability-quality-rc144`;
-    const cachedCandidate = await getCache(cacheKey, cfg);
-    const cached = analysisCachePayload(cachedCandidate, fixtureId);
-    const staleCandidate = cached || await getStaleCache(cacheKey, cfg);
-    const staleBefore = analysisCachePayload(staleCandidate, fixtureId);
+    const cacheKey=`fixture:${fixtureId}:v15-availability-quality-rc144`;
+    const cachedCandidate=await getCache(cacheKey,cfg).catch(()=>null);
+    const cached=analysisCachePayload(cachedCandidate,fixtureId);
+    const staleCandidate=cached || await getStaleCache(cacheKey,cfg).catch(()=>null);
+    const staleBefore=analysisCachePayload(staleCandidate,fixtureId);
     if ((cachedCandidate && !cached) || (staleCandidate && !staleBefore)) {
       await recordOpsEvent(cfg,{
         severity:'warning',
@@ -333,9 +405,12 @@ export function createAnalysisRuntime(deps) {
         meta:{fixtureId},
       }).catch(()=>null);
     }
-    const previousFreshness = staleBefore ? analysisFreshness(staleBefore) : null;
-    const previousGeneratedMs=Date.parse(String(staleBefore?.generatedAt || ''));
-    const newsPublishedMs=Date.parse(String(newsPublishedAt || ''));
+    let previousFreshness=null;
+    if (staleBefore) {
+      try { previousFreshness=objectValue(analysisFreshness(staleBefore)); } catch {}
+    }
+    const previousGeneratedMs=Date.parse(safeText(staleBefore?.generatedAt,80));
+    const newsPublishedMs=Date.parse(newsPublishedAt);
     const newsImpactEligible=Boolean(
       recheckRequested
       && newsImpactRecheck
@@ -351,40 +426,75 @@ export function createAnalysisRuntime(deps) {
     // Only freshness derived from the stored server-side snapshot can waive
     // quota. News-impact flags/timestamps arrive from the client and may request
     // a comparison, but must never mint free provider work on their own.
-    if (needsFreshnessRecheck) freeRecheck=await userHasAnalyzedFixture(userId,fixtureId,cfg);
+    if (needsFreshnessRecheck) {
+      try { freeRecheck=await userHasAnalyzedFixture(userId,fixtureId,cfg) === true; }
+      catch { freeRecheck=false; }
+    }
     if (cached && !needsFreshnessRecheck) {
       if (!newsImpactEligible) {
-        await recordHistory(userId, cached, cfg);
-        if (trackFullAi) void recordGrowthEvent(cfg,{userId:userId,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,freshness:previousFreshness?.state || 'fresh'}});
+        await safeRecordHistory(cached);
+        if (trackFullAi) fireAndForget(recordGrowthEvent,cfg,{userId,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,freshness:safeText(previousFreshness?.state,40) || 'fresh'}});
         const newsImpact=newsImpactDeltaStatus(staleBefore,cached,null,{requested:newsImpactRecheck,eligible:newsImpactEligible,performed:false,publishedAt:newsPublishedAt});
         await recordTrackedFullAiOutcome('cached');
         return json(analysisResponsePayload(cached,{cached:true,stale:false,recheck:{requested:recheckRequested,performed:false,free:false,reasonCode:recheckReasonCode},newsImpact,quota:await quotaSnapshotForResponse(userId,cfg,null)}));
       }
     }
   
-    const entitlementBefore = await resolveUserEntitlements(userId, fixtureId, cfg);
-    const passCandidate = entitlementBefore.source === 'pass' && entitlementBefore.access.expandedAi === true;
-    const quotaBefore = await getQuota(userId, cfg);
-    if (!freeRecheck && !passCandidate && quotaBefore.left <= 0) return await trackedFullAiFailureResponse({ error: `Лимит исчерпан: ${quotaBefore.used}/${quotaBefore.limit} анализов сегодня.`, quota: quotaBefore },429,'quota_exhausted');
+    const entitlementBefore=objectValue(
+      await resolveUserEntitlements(userId,fixtureId,cfg).catch(()=>null),
+    ) || {source:'free',access:{},passes:{}};
+    const passCandidate=entitlementBefore.source==='pass'
+      && objectValue(entitlementBefore.access)?.expandedAi === true;
+    let quotaBefore;
+    try {
+      quotaBefore=quotaSnapshot(await getQuota(userId,cfg),null);
+    } catch {
+      quotaBefore=null;
+    }
+    if (!quotaBefore) {
+      return await trackedFullAiFailureResponse({
+        error:'Не удалось безопасно проверить лимит AI-анализов. Повторите позже.',
+        code:'ANALYSIS_QUOTA_UNAVAILABLE',
+      },503,'quota_unavailable',{'retry-after':'30'});
+    }
+    if (!freeRecheck && !passCandidate && quotaBefore.left<=0) {
+      return await trackedFullAiFailureResponse({
+        error:`Лимит исчерпан: ${quotaBefore.used}/${quotaBefore.limit} анализов сегодня.`,
+        quota:quotaBefore,
+      },429,'quota_exhausted');
+    }
   
-    const analysisLock=await claimDistributedAnalysisLock(fixtureId,cfg);
+    const analysisLock=objectValue(
+      await claimDistributedAnalysisLock(fixtureId,cfg).catch(()=>null),
+    ) || {claimed:false,unavailable:true};
     if (!analysisLock.claimed && analysisLock.unavailable) {
       if (staleBefore) {
-        await recordHistory(userId,staleBefore,cfg);
+        await safeRecordHistory(staleBefore);
         return json(analysisResponsePayload(staleBefore,{cached:true,stale:true,warning:'Координация нового AI-расчёта временно недоступна. Показан последний сохранённый анализ.',retryAfter:5,quota:quotaBefore}));
       }
       return await trackedFullAiFailureResponse({error:'Координация AI-расчёта временно недоступна. Повторите через несколько секунд.',code:'ANALYSIS_COORDINATION_DEGRADED',retryAfter:5,quota:quotaBefore},503,'analysis_coordination_degraded',{'retry-after':'5'});
     }
     if (!analysisLock.claimed) {
-      const joined=await waitForSharedAnalysis(cacheKey,cfg);
+      const joinedCandidate=await waitForSharedAnalysis(cacheKey,cfg).catch(()=>null);
+      const joined=analysisCachePayload(joinedCandidate,fixtureId);
+      if (joinedCandidate && !joined) {
+        await recordOpsEvent(cfg,{
+          severity:'warning',
+          source:'cache',
+          eventType:'analysis_shared_cache_rejected',
+          code:'ANALYSIS_SHARED_CACHE_INVALID',
+          message:'Shared AI analysis result was rejected because fixture identity did not match.',
+          meta:{fixtureId},
+        }).catch(()=>null);
+      }
       if (joined) {
-        await recordHistory(userId,joined,cfg);
+        await safeRecordHistory(joined);
         if (trackFullAi) void recordGrowthEvent(cfg,{userId:userId,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,sharedJoin:true}});
         await recordTrackedFullAiOutcome('shared');
         return json(analysisResponsePayload(joined,{cached:true,stale:false,sharedJoin:true,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_shared' : (previousFreshness?.reasonCode || 'shared_compute')},quota:await quotaSnapshotForResponse(userId,cfg,quotaBefore)}));
       }
       if (staleBefore) {
-        await recordHistory(userId,staleBefore,cfg);
+        await safeRecordHistory(staleBefore);
         await recordTrackedFullAiOutcome('stale_pending');
         return json(analysisResponsePayload(staleBefore,{cached:true,stale:true,sharedJoinPending:true,warning:'Свежий расчёт этого матча уже выполняется. Пока показан последний сохранённый анализ.',retryAfter:5,recheck:{requested:recheckRequested,performed:false,free:freeRecheck,reasonCode:'shared_compute_pending'},quota:quotaBefore}));
       }
