@@ -623,7 +623,9 @@ export function createModelEvaluationRuntime(deps = {}) {
     const url=new URL(request.url);
     const days=Number(url.searchParams.get('days') || 180);
     try {
-      return json(await loadPublicAiTrackRecord(cfg,days,{force:url.searchParams.get('refresh')==='1'}));
+      // Public callers may choose the reporting window, but must not bypass
+      // the shared cache and amplify reads from model_predictions.
+      return json(await loadPublicAiTrackRecord(cfg,days));
     } catch (error) {
       return json({available:false,reason:'История качества AI временно недоступна.',detail:redactOpsString(error?.message || error,160)},503);
     }
