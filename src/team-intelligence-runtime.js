@@ -132,64 +132,144 @@ export function createTeamIntelligenceRuntime(deps) {
   }
 
   async function apiTeamIntelligence(request, cfg) {
-    const url = new URL(request.url);
-    const teamId = Number(url.searchParams.get('teamId'));
-    const leagueId = Number(url.searchParams.get('leagueId'));
-    const season = Number(url.searchParams.get('season'));
-    if (!teamId || !leagueId || !season) return json({ error: 'Номер команды, номер турнира и сезон обязательны.' }, 400);
-    const cacheKey = `team:intelligence:${teamId}:${leagueId}:${season}:v2`;
-    const cached = await getCache(cacheKey, cfg);
-    if (cached) return json({ ...cached, cached: true, stale: false, provider: publicDataCapabilities() });
-    if (!freeQuotaHealthy(15, 2)) {
-      const stale = await getStaleCache(cacheKey, cfg);
-      if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Сезонная статистика показана из сохранённых данных: бережём лимит API-Football.', provider: publicDataCapabilities() });
-      return json({ available: false, quotaGuard: true, reason: 'Сезонная статистика временно не запрашивается: сохраняем остаток квоты API-Football.', provider: publicDataCapabilities() });
+    const url=new URL(request.url);
+    const teamId=positiveSafeInteger(url.searchParams.get('teamId'));
+    const leagueId=positiveSafeInteger(url.searchParams.get('leagueId'));
+    const season=safeSeason(url.searchParams.get('season'));
+    if (!teamId || !leagueId || !season) {
+      return json({error:'Номер команды, номер турнира и сезон обязательны.'},400);
     }
-    try {
-      const teamName=url.searchParams.get('teamName') || '';
-      const leagueName=url.searchParams.get('leagueName') || '';
-      const row = await apiFootball('/teams/statistics', { team: teamId, league: leagueId, season }, cfg, { responseType: 'any' });
-      const stats = normalizeTeamSeasonStatistics(row, {
-        teamId, leagueId, season,
-        teamName, teamLogo: url.searchParams.get('teamLogo') || '',
-        leagueName, country: url.searchParams.get('country') || '', leagueLogo: url.searchParams.get('leagueLogo') || '',
+
+    const cacheKey=`team:intelligence:${teamId}:${leagueId}:${season}:v2`;
+    const cached=objectValue(await getCache(cacheKey,cfg).catch(()=>null));
+    if (cached) {
+      return json({...cached,cached:true,stale:false,provider:capabilities()});
+    }
+
+    if (!quotaHealthy(15,2)) {
+      const stale=objectValue(await getStaleCache(cacheKey,cfg).catch(()=>null));
+      if (stale) {
+        return json({
+          ...stale,
+          cached:true,
+          stale:true,
+          warning:'Сезонная статистика показана из сохранённых данных: бережём лимит API-Football.',
+          provider:capabilities(),
+        });
+      }
+      return json({
+        available:false,
+        quotaGuard:true,
+        reason:'Сезонная статистика временно не запрашивается: сохраняем остаток квоты API-Football.',
+        provider:capabilities(),
       });
-  
-      let playerStats={
-        available:false,complete:false,partial:false,players:[],
-        summary:{count:0,complete:false,pagesLoaded:0,pagesTotal:0,sourceScope:'team-season'},
-        reason:'quota_guard',
-        sourceMeta:sourceMeta({provider:'none',label:'Не запрашивалось',freshness:'unavailable'}),
+    }
+
+    try {
+      const teamName=safeText(url.searchParams.get('teamName'),180);
+      const leagueName=safeText(url.searchParams.get('leagueName'),180);
+      const row=await apiFootball(
+        '/teams/statistics',
+        {team:teamId,league:leagueId,season},
+        cfg,
+        {responseType:'any'},
+      );
+
+      const normalizedStats=normalizeTeamSeasonStatistics(row,{
+        teamId,
+        leagueId,
+        season,
+        teamName,
+        teamLogo:safeText(url.searchParams.get('teamLogo'),500),
+        leagueName,
+        country:safeText(url.searchParams.get('country'),120),
+        leagueLogo:safeText(url.searchParams.get('leagueLogo'),500),
+      });
+      const stats=objectValue(normalizedStats) || {
+        available:false,
+        team:{id:teamId,name:teamName,logo:''},
+        league:{id:leagueId,name:leagueName,season},
       };
-      if (freeQuotaHealthy(10,1)) {
+
+      let playerStats=emptyPlayerStats();
+      if (quotaHealthy(10,1)) {
         try {
-          playerStats=await resolveTeamSeasonPlayers(teamId, teamName || stats.team?.name || '', leagueId, leagueName || stats.league?.name || '', season, cfg);
+          const resolved=objectValue(await resolveTeamSeasonPlayers(
+            teamId,
+            teamName || safeText(stats?.team?.name,180),
+            leagueId,
+            leagueName || safeText(stats?.league?.name,180),
+            season,
+            cfg,
+          ));
+          if (resolved) {
+            const fallbackSummary=emptyPlayerStats('invalid_player_stats','Нет доступного источника').summary;
+            playerStats={
+              ...resolved,
+              available:resolved.available === true,
+              complete:resolved.complete === true,
+              partial:resolved.partial === true,
+              players:rows(resolved.players),
+              summary:objectValue(resolved.summary) || fallbackSummary,
+              reason:safeText(resolved.reason,160),
+              sourceMeta:objectValue(resolved.sourceMeta) || sourceMeta({
+                provider:'none',
+                label:'Нет доступного источника',
+                freshness:'unavailable',
+              }),
+            };
+          } else {
+            playerStats=emptyPlayerStats('invalid_player_stats','Нет доступного источника');
+          }
         } catch (playerError) {
-          const compact=compactProviderError(playerError);
+          const compact=compactError(playerError);
           playerStats={
-            ...playerStats,
-            reason:compact.code,
-            sourceMeta:sourceMeta({provider:'none',label:'Нет доступного источника',freshness:'unavailable',attempts:[{provider:'api-football',state:'error',reason:compact.code,status:compact.status}]}),
+            ...emptyPlayerStats(compact.code,'Нет доступного источника'),
+            sourceMeta:sourceMeta({
+              provider:'none',
+              label:'Нет доступного источника',
+              freshness:'unavailable',
+              attempts:[{
+                provider:'api-football',
+                state:'error',
+                reason:compact.code,
+                status:compact.status,
+              }],
+            }),
           };
         }
       }
-  
-      const payload = {
-        available: stats.available,
+
+      const payload={
+        available:stats?.available === true,
         stats,
         playerStats,
-        refreshedAt: new Date().toISOString(),
-        reason: stats.available ? '' : 'Источник данных не вернул сезонную статистику для этой команды.',
+        refreshedAt:new Date().toISOString(),
+        reason:stats?.available === true
+          ? ''
+          : 'Источник данных не вернул сезонную статистику для этой команды.',
       };
-      await setCache(cacheKey, teamId, payload, cfg, 360);
-      return json({ ...payload, cached: false, stale: false, provider: publicDataCapabilities() });
-    } catch (error) {
-      const stale = await getStaleCache(cacheKey, cfg);
-      if (stale) return json({ ...stale, cached: true, stale: true, warning: 'Не удалось обновить сезонную статистику — показана сохранённая версия.', provider: publicDataCapabilities() });
-      return json({ available: false, reason: `Сезонная статистика сейчас недоступна: ${String(error?.message || error).slice(0, 180)}`, provider: publicDataCapabilities() });
+      await setCache(cacheKey,teamId,payload,cfg,360).catch(()=>null);
+      return json({...payload,cached:false,stale:false,provider:capabilities()});
+    } catch {
+      const stale=objectValue(await getStaleCache(cacheKey,cfg).catch(()=>null));
+      if (stale) {
+        return json({
+          ...stale,
+          cached:true,
+          stale:true,
+          warning:'Не удалось обновить сезонную статистику — показана сохранённая версия.',
+          provider:capabilities(),
+        });
+      }
+      return json({
+        available:false,
+        reason:'Сезонная статистика сейчас недоступна.',
+        provider:capabilities(),
+      });
     }
   }
-  
+
   function normalizeSquadPosition(position) {
     const p = String(position || '').toLowerCase();
     if (p.includes('goal')) return { key: 'goalkeeper', label: 'Вратари', order: 1 };
