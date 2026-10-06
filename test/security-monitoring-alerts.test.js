@@ -25,6 +25,49 @@ function event(minutesAgo, code, {
   };
 }
 
+test('security signal classification rejects object coercion and array metadata',()=>{
+  assert.equal(isSecuritySignal({source:{toString:()=> 'security'},code:'X'}),false);
+  assert.equal(isSecuritySignal({source:'billing',code:'BILLING_PROVIDER_WARNING',metadata:['fraud']}),false);
+  assert.equal(isSecuritySignal({source:'billing',code:'BILLING_PROVIDER_WARNING',metadata:{securityCategory:{toString:()=> 'fraud'}}}),false);
+  assert.equal(isSecuritySignal({source:' SECURITY ',code:'anything'}),true);
+});
+
+test('security assessment rejects boolean coercion in window, count and timestamps',()=>{
+  const nowMs=Date.parse('2026-10-02T21:00:00Z');
+  const row=event(1,'CROSS_SITE_MUTATION_BLOCKED',{nowMs});
+  row.occurrence_count=true;
+  row.last_occurred_at={toString:()=>new Date(nowMs-30_000).toISOString()};
+
+  const result=assessSecuritySignals([row],{nowMs,windowMinutes:true});
+  assert.equal(result.windowMinutes,15);
+  assert.equal(result.signalCount,1);
+  assert.equal(result.recordCount,1);
+  assert.equal(result.state,'watch');
+});
+
+test('security assessment tolerates malformed collection and clock input',()=>{
+  const result=assessSecuritySignals({0:event(1,'CROSS_SITE_MUTATION_BLOCKED')},{
+    nowMs:true,
+    windowMinutes:{value:60},
+  });
+  assert.equal(result.state,'healthy');
+  assert.equal(result.signalCount,0);
+  assert.equal(result.windowMinutes,15);
+});
+
+test('security occurrence volume is bounded without Number coercion',()=>{
+  const nowMs=Date.parse('2026-10-02T21:00:00Z');
+  const row=event(1,'CROSS_SITE_MUTATION_BLOCKED',{nowMs});
+  row.occurrence_count='999999999999999';
+  const result=assessSecuritySignals([row],{nowMs});
+  assert.equal(result.signalCount,1);
+
+  row.occurrence_count='1000000';
+  const bounded=assessSecuritySignals([row],{nowMs});
+  assert.equal(bounded.signalCount,1000000);
+  assert.equal(bounded.state,'incident');
+});
+
 test('single blocked request is watch noise, not an incident', () => {
   const nowMs=Date.parse('2026-10-02T21:00:00Z');
   const result=assessSecuritySignals([
@@ -70,6 +113,61 @@ test('provider rate limits do not become security incidents', () => {
   assert.equal(result.signalCount,0);
 });
 
+test('security lifecycle ignores malformed history identity and timestamps safely',()=>{
+  const nowMs=Date.parse('2026-10-02T21:00:00Z');
+  const assessment={
+    state:'incident',
+    severity:'critical',
+    startedAt:{toString:()=>new Date(nowMs-60_000).toISOString()},
+    primaryCode:{toString:()=> 'INVALID_AUTH_BURST_BLOCKED'},
+    signalCount:true,
+    recordCount:[2],
+    counts:[],
+    windowMinutes:true,
+  };
+  const history=[{
+    created_at:{toString:()=>new Date(nowMs-120_000).toISOString()},
+    source:'security_monitor',
+    event_type:'security_incident',
+    code:'SECURITY_INCIDENT_OPENED',
+    metadata:{incidentId:{toString:()=> 'security-forged'},startedAt:true,severity:'critical'},
+  }];
+  const timeline=securityIncidentTimeline(assessment,history,{nowMs:true});
+  assert.equal(timeline.transition?.kind,'opened');
+  assert.match(timeline.activeIncident.incidentId,/^security-/);
+  assert.equal(timeline.activeIncident.startedAt,null);
+  assert.equal(timeline.activeIncident.durationMinutes,0);
+  assert.equal(timeline.activeIncident.diagnostics.signalCount,0);
+  assert.equal(timeline.activeIncident.diagnostics.windowMinutes,15);
+});
+
+test('security lifecycle prevents severity downgrade while incident remains active',()=>{
+  const nowMs=Date.parse('2026-10-02T21:00:00Z');
+  const opened={
+    created_at:new Date(nowMs-60_000).toISOString(),
+    source:'security_monitor',
+    event_type:'security_incident',
+    code:'SECURITY_INCIDENT_OPENED',
+    metadata:{
+      incidentId:'security-existing',
+      startedAt:new Date(nowMs-60_000).toISOString(),
+      severity:'critical',
+    },
+  };
+  const timeline=securityIncidentTimeline({
+    state:'incident',
+    severity:'warning',
+    startedAt:new Date(nowMs-30_000).toISOString(),
+    primaryCode:'CROSS_SITE_MUTATION_BLOCKED',
+    signalCount:3,
+    recordCount:1,
+    counts:{crossSiteBlocks:3},
+    windowMinutes:15,
+  },[opened],{nowMs});
+  assert.equal(timeline.activeIncident.severity,'critical');
+  assert.equal(timeline.transition,null);
+});
+
 test('security lifecycle stays open through watch and recovers only on a clean window', () => {
   const nowMs=Date.parse('2026-10-02T21:00:00Z');
   const incidentAssessment=assessSecuritySignals([
@@ -103,6 +201,33 @@ test('security lifecycle stays open through watch and recovers only on a clean w
   const recovered=securityIncidentTimeline(healthy,[storedOpen],{nowMs:nowMs+30*60_000});
   assert.equal(recovered.transition?.kind,'recovered');
   assert.equal(securityIncidentOpsEvent(recovered.transition)?.code,'SECURITY_INCIDENT_RECOVERED');
+});
+
+test('security ops event and alert formatting reject coercible incident fields',()=>{
+  assert.equal(securityIncidentOpsEvent({
+    kind:'opened',
+    incident:{incidentId:{toString:()=> 'security-forged'}},
+  }),null);
+
+  const text=formatSecurityIncidentAlert({
+    kind:'incident',
+    incident:{
+      incidentId:{toString:()=> 'secret-id'},
+      severity:{toString:()=> 'critical'},
+      diagnostics:{
+        reason:{toString:()=> 'secret reason'},
+        primaryCode:{toString:()=> 'SECRET'},
+        signalCount:true,
+        counts:{invalidAuthBursts:[99]},
+        windowMinutes:true,
+      },
+    },
+  });
+  assert.match(text,/Incident ID: —/);
+  assert.match(text,/Security-сигналов: 0/);
+  assert.match(text,/Invalid auth bursts: 0/);
+  assert.match(text,/Окно: 15 мин/);
+  assert.doesNotMatch(text,/secret-id|secret reason|SECRET/);
 });
 
 test('security alert text contains aggregate diagnostics but no client identifiers', () => {
