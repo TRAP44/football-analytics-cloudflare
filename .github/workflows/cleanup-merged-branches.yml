@@ -73,7 +73,37 @@ jobs:
               -f head="$OWNER:$branch" \
               -f per_page=100 \
               --jq '.[] | [.head.sha, (.merged_at // ""), .number] | @tsv' \
-              | awk -F $'\t' -v current_sha="$sha" '$1 == current_sha { print; exit }')"
+              | awk -F "
+
+            if [[ -n "$closed_match" ]]; then
+              safe_to_delete=true
+            else
+              ahead_by="$(gh api "repos/$GH_REPO/compare/$DEFAULT_BRANCH...$encoded_branch" --jq '.ahead_by' 2>/dev/null || echo unknown)"
+              if [[ "$ahead_by" == "0" ]]; then
+                safe_to_delete=true
+              fi
+            fi
+
+            if [[ "$safe_to_delete" != "true" ]]; then
+              echo "Keep branch with unique/unverified commits: $branch"
+              skipped=$((skipped + 1))
+              continue
+            fi
+
+            if gh api -X DELETE "repos/$GH_REPO/git/refs/heads/$encoded_branch" >/dev/null 2>&1; then
+              echo "Deleted safe stale branch: $branch"
+              deleted=$((deleted + 1))
+            else
+              echo "Skipped branch that GitHub refused to delete: $branch"
+              skipped=$((skipped + 1))
+            fi
+          done < <(
+            gh api --paginate "repos/$GH_REPO/branches?per_page=100" \
+              --jq '.[] | [.name, .commit.sha, .protected] | @tsv'
+          )
+
+          echo "Cleanup complete: deleted=$deleted skipped=$skipped"
+\t' -v current_sha="$sha" '$1 == current_sha && $2 != "" { print; exit }')"
 
             if [[ -n "$closed_match" ]]; then
               safe_to_delete=true

@@ -35,6 +35,7 @@ jobs:
         with:
           ref: ${{ env.DEPLOY_SHA }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: RC110 guard against stale production deploy / RC111 verify deployment provenance
         shell: bash
@@ -96,6 +97,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         shell: bash
         run: |
+          set -euo pipefail
           if [[ -z "$CLOUDFLARE_API_TOKEN" || -z "$CLOUDFLARE_ACCOUNT_ID" ]]; then
             echo "### Cloudflare deploy blocked" >> "$GITHUB_STEP_SUMMARY"
             echo "CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are required in the production environment or repository secrets." >> "$GITHUB_STEP_SUMMARY"
