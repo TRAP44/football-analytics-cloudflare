@@ -47,6 +47,94 @@ test('analysis runtime rejects fractional/unsafe fixture ids and invalid users',
   assert.equal(invalidUser.status, 401);
 });
 
+test('analysis runtime rejects boolean identifier coercion', async () => {
+  const runtime=createAnalysisRuntime(baseDeps());
+
+  const fixture=await runtime.apiAnalyze(
+    {json:async()=>({fixtureId:true})},
+    {},
+    {id:123},
+  );
+  const user=await runtime.apiAnalyze(
+    {json:async()=>({fixtureId:123})},
+    {},
+    {id:true},
+  );
+
+  assert.equal(fixture.status,400);
+  assert.equal(user.status,401);
+});
+
+test('analysis cache outages fail soft before the quota gate', async () => {
+  const runtime=createAnalysisRuntime({
+    ...baseDeps(),
+    getCache:async()=>{ throw new Error('cache down'); },
+    getStaleCache:async()=>{ throw new Error('stale cache down'); },
+    resolveUserEntitlements:async()=>({source:'free',access:{}}),
+    getQuota:async()=>({plan:'FREE',used:3,limit:3,left:0}),
+  });
+
+  const response=await runtime.apiAnalyze(
+    {json:async()=>({fixtureId:123})},
+    {},
+    {id:456},
+  );
+
+  assert.equal(response.status,429);
+  assert.equal(response.body.quota.left,0);
+});
+
+test('malformed quota snapshots fail closed instead of bypassing quota', async () => {
+  const runtime=createAnalysisRuntime({
+    ...baseDeps(),
+    getCache:async()=>null,
+    getStaleCache:async()=>null,
+    resolveUserEntitlements:async()=>({source:'free',access:{}}),
+    getQuota:async()=>({plan:'FREE',used:'oops',limit:3,left:3}),
+  });
+
+  const response=await runtime.apiAnalyze(
+    {json:async()=>({fixtureId:123})},
+    {},
+    {id:456},
+  );
+
+  assert.equal(response.status,503);
+  assert.equal(response.body.code,'ANALYSIS_QUOTA_UNAVAILABLE');
+});
+
+test('shared analysis joins reject cross-fixture payloads', async () => {
+  let historyWrites=0;
+  let rejected=0;
+  const runtime=createAnalysisRuntime({
+    ...baseDeps(),
+    getCache:async()=>null,
+    getStaleCache:async()=>null,
+    resolveUserEntitlements:async()=>({source:'free',access:{}}),
+    getQuota:async()=>({plan:'FREE',used:0,limit:3,left:3}),
+    claimDistributedAnalysisLock:async()=>({claimed:false,unavailable:false}),
+    waitForSharedAnalysis:async()=>({
+      generatedAt:new Date().toISOString(),
+      match:{fixtureId:999,status:'NS'},
+    }),
+    recordHistory:async()=>{ historyWrites+=1; },
+    recordOpsEvent:async(_cfg,event)=>{
+      if (event?.code==='ANALYSIS_SHARED_CACHE_INVALID') rejected+=1;
+    },
+  });
+
+  const response=await runtime.apiAnalyze(
+    {json:async()=>({fixtureId:123})},
+    {},
+    {id:456},
+  );
+
+  assert.equal(response.status,429);
+  assert.equal(response.body.code,'ANALYSIS_WARMING');
+  assert.equal(historyWrites,0);
+  assert.equal(rejected,1);
+});
+
 test('analysis runtime treats string false as false and cached quota metadata is fail-soft', async () => {
   let entitlementsCalled = 0;
   const cached = {
@@ -158,4 +246,7 @@ test('analysis wiring owns Tavily adapter and retryable provider fallback', () =
   assert.match(runtime, /Bearer/);
   assert.match(runtime, /isRetryableFootballTransportError/);
   assert.match(runtime, /quotaSnapshotForResponse/);
+  assert.match(runtime, /safeAnalysisProviderFetch/);
+  assert.match(runtime, /analysisCachePayload\(joinedCandidate,fixtureId\)/);
+  assert.match(runtime, /return Object\.freeze\(\{apiAnalyze\}\)/);
 });
