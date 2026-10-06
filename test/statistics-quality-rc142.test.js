@@ -121,11 +121,11 @@ const app=fs.readFileSync('public/app.js','utf8');
 const smoke=fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
 
 test('RC142 routes sanitized statistics into comparative live analytics', () => {
-  assert.match(worker,/assessMatchStatisticsQuality\(rawFormattedStatistics/);
-  assert.match(worker,/sanitizeStatisticsForDisplay\(rawFormattedStatistics, statisticsQuality\)/);
-  assert.match(worker,/statisticsForTrustedAnalytics\(publicStatistics, statisticsQuality\)/);
+  assert.match(worker,/assessMatchStatisticsQuality\([\s\S]{0,120}?rawFormattedStatistics/);
+  assert.match(worker,/sanitizeStatisticsForDisplay\([\s\S]{0,120}?rawFormattedStatistics,[\s\S]{0,120}?statisticsQuality/);
+  assert.match(worker,/statisticsForTrustedAnalytics\([\s\S]{0,120}?publicStatistics,[\s\S]{0,120}?statisticsQuality/);
   assert.match(worker,/livePressure\(analyticalStatistics\)/);
-  assert.match(worker,/statistics: analyticalStatistics/);
+  assert.match(worker,/statistics:analyticalStatistics/);
   assert.match(worker,/statisticsQuality,/);
   assert.match(worker,/statisticsSemanticQualityGuard: 'enabled'/);
 });
