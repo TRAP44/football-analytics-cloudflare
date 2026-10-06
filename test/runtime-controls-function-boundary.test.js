@@ -36,7 +36,7 @@ test('Issue #484 save owns current-state CAS and atomic-history mutation', () =>
 
   assert.match(save, /const currentState = await loadRuntimeControls\(cfg, \{ force: true \}\)/);
   assert.match(save, /const current = currentState\.value/);
-  assert.match(save, /const expectedRevision = Number\(body\.expectedRevision \|\| 0\)/);
+  assert.match(save, /const expectedRevision=positiveRevision\(source\.expectedRevision,0\)/);
   assert.match(save, /RUNTIME_CONTROLS_CONFLICT/);
   assert.match(save, /RUNTIME_HISTORY_REQUIRED/);
   assert.match(save, /await ensureRuntimeHistoryBaseline\(cfg, current, user\)/);
