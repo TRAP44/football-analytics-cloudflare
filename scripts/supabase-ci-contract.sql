@@ -10,14 +10,28 @@
   \echo 'Missing psql variable: expected_v2_fingerprint'
   \quit 2
 \endif
+\if :{?expected_latest_migration_version}
+\else
+  \echo 'Missing psql variable: expected_latest_migration_version'
+  \quit 2
+\endif
 
 create temp table issue438_contract_expectations (
   legacy_fingerprint text not null,
-  v2_fingerprint text not null
+  v2_fingerprint text not null,
+  latest_migration_version text not null
 ) on commit preserve rows;
 
-insert into issue438_contract_expectations(legacy_fingerprint, v2_fingerprint)
-values (:'expected_legacy_fingerprint', :'expected_v2_fingerprint');
+insert into issue438_contract_expectations(
+  legacy_fingerprint,
+  v2_fingerprint,
+  latest_migration_version
+)
+values (
+  :'expected_legacy_fingerprint',
+  :'expected_v2_fingerprint',
+  :'expected_latest_migration_version'
+);
 
 do $matchradar$
 declare
@@ -28,9 +42,10 @@ declare
   v_contract_restored text;
   v_expected_legacy_fingerprint text;
   v_expected_v2_fingerprint text;
+  v_expected_latest_migration_version text;
 begin
-  select legacy_fingerprint, v2_fingerprint
-    into v_expected_legacy_fingerprint, v_expected_v2_fingerprint
+  select legacy_fingerprint, v2_fingerprint, latest_migration_version
+    into v_expected_legacy_fingerprint, v_expected_v2_fingerprint, v_expected_latest_migration_version
   from issue438_contract_expectations;
   if to_regclass('public.users') is null
      or to_regclass('public.usage_daily') is null
@@ -492,9 +507,10 @@ begin
   if not exists (
     select 1
     from supabase_migrations.schema_migrations
-    where version='20260101002200'
+    where version=v_expected_latest_migration_version
   ) then
-    raise exception 'Supabase integration contract: latest migration history entry missing';
+    raise exception 'Supabase integration contract: latest migration history entry missing: %',
+      v_expected_latest_migration_version;
   end if;
 end
 $matchradar$;
