@@ -10960,10 +10960,9 @@ async function apiClientTelemetry(request, cfg, user) {
     message: `Client event: ${event}`,
     endpoint: '/api/client-telemetry',
     durationMs: event === 'operation_timing' ? meta.durationMs : null,
-    meta:{...meta,...phase5Meta,.stent),
-      opsSampleLimited:opsRows.length>=1000,
-    },
+    meta:{...meta,...phase5Meta,...betaMeta},
   });
+  return json({ ok: true, deduped: false });
 }
 
 let betaPhase5Runtime = null;
