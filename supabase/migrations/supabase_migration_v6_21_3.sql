@@ -1,5 +1,16 @@
 -- Football Analytics v6.21.3 / important-change notification persistence
 -- Additive operational migration. Dedicated atomic state for one significant pre-match change delivery.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this migration in the upgrade chain. The important-change notified/claim
+-- timestamps and attempt counter remain active fields used by the current
+-- reminder delivery store and important-change notification service.
+-- save_match_reminder_guarded() here is an intermediate implementation that
+-- extends v6.21.2 for this delivery channel; v6.25.2 later replaces reminder
+-- persistence with save_match_reminder_guarded_v2() and explicit rearm semantics.
+-- The older reset-on-update behavior must remain historical, not be copied forward.
+-- Fingerprint exclusions here are rollout-compatibility behavior only.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 alter table public.match_reminders
   add column if not exists important_change_notified_at timestamptz,
