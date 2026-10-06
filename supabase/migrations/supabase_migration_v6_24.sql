@@ -1,6 +1,18 @@
 -- MatchRadar v6.24 / Smart Notifications
 -- Additive preferences + persistent event delivery ledger.
 -- Existing match_reminders delivery columns remain authoritative for prematch/kickoff/lineup/important-change.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this migration in the upgrade chain. notification_preferences,
+-- smart_notification_deliveries and claim_smart_notification_delivery() remain
+-- active parts of the current Smart Notification runtime.
+-- v6.25.1 later adds an explicit begin-send CAS boundary and replaces the
+-- finalizer so ambiguous post-send persistence cannot trigger a blind resend;
+-- it intentionally builds on, rather than replaces, the ledger and claim RPC here.
+-- The reminder-specific delivery state remains separate by design.
+-- Legacy fingerprint exclusions are rollout compatibility; newer schema
+-- contracts validate the complete structure.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 alter table public.user_preferences
   add column if not exists notification_preferences jsonb not null
