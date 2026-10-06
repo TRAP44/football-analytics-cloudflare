@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const worker=fs.readFileSync('src/worker.js','utf8')
   +'\n'+fs.readFileSync('src/analysis-runtime.js','utf8')
   +'\n'+fs.readFileSync('src/analysis-quality-runtime.js','utf8')
+  +'\n'+fs.readFileSync('src/analysis-context-runtime.js','utf8')
   +'\n'+fs.readFileSync('src/model-intelligence-runtime.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8');
 
@@ -21,7 +22,7 @@ test('RC105 confidence uses weighted signal coverage instead of raw source count
 
 test('RC105 goal totals and BTTS expose sample quality',()=>{
   assert.match(worker,/qualityScore/);
-  assert.match(worker,/qualityLabel: qualityScore >= 80/);
+  assert.match(worker,/qualityLabel:\s*qualityScore\s*>=\s*80/);
   assert.match(worker,/sample: \{ overall: overallSample, venue: venueSample \}/);
   assert.match(worker,/goalModel\?\.qualityScore \|\| 0\) >= 65/);
 });
@@ -40,7 +41,7 @@ test('RC105 quality gate fails closed on weak analysis evidence',()=>{
 });
 
 test('RC105 instructor cannot emit a working signal after quality gate hold',()=>{
-  assert.match(worker,/const qualityGate = analysisQualityGate\(/);
+  assert.match(worker,/const qualityGate\s*=\s*analysisQualityGate\(/);
   assert.match(worker,/if \(!qualityGate\.allowSignal && betSignal\.code !== 'skip'\)/);
   assert.match(worker,/Качество входных данных не прошло рабочий gate/);
   assert.match(worker,/qualityGate, matchPlan/);
@@ -53,8 +54,8 @@ test('RC105 final-window lineups are a hard hold',()=>{
 
 test('RC105 exposes a deterministic quality-gate self-test and health contract',()=>{
   assert.match(worker,/function analysisQualityGateSelfTest\(/);
-  assert.match(worker,/ready\.state === 'ready'/);
-  assert.match(worker,/hold\.state === 'hold'/);
+  assert.match(worker,/ready\.state\s*===\s*'ready'/);
+  assert.match(worker,/hold\.state\s*===\s*'hold'/);
   assert.match(worker,/aiAnalysisQualityGate: 'enabled'/);
   assert.match(worker,/aiAnalysisQualityGateSelfTest: analysisQualityGateSelfTest\(\)\.pass \? 'enabled' : 'failed'/);
   assert.match(worker,/releaseCheck\('ai_analysis_quality_gate_selftest'/);
