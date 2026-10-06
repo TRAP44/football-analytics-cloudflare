@@ -11,6 +11,18 @@ export function createAiTrackRecordRenderer({
 
   const $ = elementById;
   const retry = typeof onRetry === 'function' ? onRetry : () => {};
+  const safeCount = value => {
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? Math.trunc(number) : 0;
+  };
+  const safeProbability = value => {
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 && number <= 100 ? number : null;
+  };
+  const safePeriodDays = value => {
+    const number = Number(value);
+    return Number.isSafeInteger(number) && number > 0 ? number : 180;
+  };
 
   function renderAiTrackRecord() {
     const el=$('aiTrackRecord');
@@ -21,7 +33,7 @@ export function createAiTrackRecordRenderer({
     }
     if (state.aiTrackRecordError && !state.aiTrackRecordLoaded) {
       el.innerHTML=`<div class="ai-track-record-error"><strong>Протокол AI временно недоступен</strong><p>${escapeHtml(state.aiTrackRecordError)}</p><button id="aiTrackRetry" class="secondary-btn" type="button">Повторить</button></div>`;
-      $('aiTrackRetry')?.addEventListener('click',()=>retry(true));
+      $('aiTrackRetry')?.addEventListener('click',()=>retry());
       return;
     }
     const r=state.aiTrackRecord;
@@ -32,7 +44,7 @@ export function createAiTrackRecordRenderer({
     const sample=r.sample || {};
     const quality=r.probabilityQuality || {};
     const recent=Array.isArray(r.recent)?r.recent:[];
-    const brier=Number.isFinite(Number(quality.avgBrier))?Number(quality.avgBrier).toFixed(3):'—';
+    const brier=Number.isFinite(Number(quality.avgBrier)) && Number(quality.avgBrier) >= 0 ? Number(quality.avgBrier).toFixed(3) : '—';
     const sampleClass=sample.state==='early'?'early':sample.state==='forming'?'forming':sample.state==='informative'?'informative':'empty';
     const notice=state.aiTrackRecordError
       ? `<div class="data-notice stale">⚠️ ${escapeHtml(state.aiTrackRecordError)} Показана последняя загруженная версия.</div>`
@@ -46,18 +58,18 @@ export function createAiTrackRecordRenderer({
         </div>
         <p class="ai-track-intro">Только неизменяемые предматчевые прогнозы с подтверждённым финальным результатом. Здесь нет рекламного «процента побед».</p>
         <div class="ai-track-kpis">
-          <div><span>Проверено</span><strong>${Number(sample.verified || 0)}</strong><small>матчей</small></div>
-          <div><span>Совпало</span><strong>${Number(sample.matched || 0)}</strong><small>основной исход</small></div>
-          <div><span>Не совпало</span><strong>${Number(sample.missed || 0)}</strong><small>основной исход</small></div>
+          <div><span>Проверено</span><strong>${safeCount(sample.verified)}</strong><small>матчей</small></div>
+          <div><span>Совпало</span><strong>${safeCount(sample.matched)}</strong><small>основной исход</small></div>
+          <div><span>Не совпало</span><strong>${safeCount(sample.missed)}</strong><small>основной исход</small></div>
           <div><span>Брайер</span><strong>${brier}</strong><small>ниже — лучше</small></div>
         </div>
         <p class="ai-track-sample-note">${escapeHtml(sample.message || '')}</p>
         ${recent.length?`<div class="ai-track-recent">
-          <div class="ai-track-block-head"><strong>Последние подтверждённые прогнозы</strong><span>${Number(r.periodDays || 180)} дней</span></div>
+          <div class="ai-track-block-head"><strong>Последние подтверждённые прогнозы</strong><span>${safePeriodDays(r.periodDays)} дней</span></div>
           ${recent.map(row=>`<div class="ai-track-row">
             <span class="ai-track-result ${row.matched?'hit':'miss'}">${row.matched?'✓':'✕'}</span>
-            <div><strong>${escapeHtml(row.home)} — ${escapeHtml(row.away)}</strong><small>${escapeHtml(row.league || '')}${row.kickoffAt?` · ${dateTime(row.kickoffAt)}`:''}</small></div>
-            <div class="ai-track-outcome"><strong>${escapeHtml(row.score)}</strong><small>AI: ${escapeHtml(row.predictedLabel || '—')}${Number.isFinite(Number(row.topProbability))?` · ${Number(row.topProbability)}%`:''} → ${escapeHtml(row.actualLabel || '—')}</small></div>
+            <div><strong>${escapeHtml(row.home)} — ${escapeHtml(row.away)}</strong><small>${escapeHtml(row.league || '')}${row.kickoffAt?` · ${escapeHtml(dateTime(row.kickoffAt))}`:''}</small></div>
+            <div class="ai-track-outcome"><strong>${escapeHtml(row.score)}</strong><small>AI: ${escapeHtml(row.predictedLabel || '—')}${safeProbability(row.topProbability)!==null?` · ${safeProbability(row.topProbability)}%`:''} → ${escapeHtml(row.actualLabel || '—')}</small></div>
           </div>`).join('')}
         </div>`:''}
         <div class="ai-track-method">
