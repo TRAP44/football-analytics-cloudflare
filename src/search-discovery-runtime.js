@@ -59,8 +59,11 @@ export function createSearchDiscoveryRuntime(deps) {
   function safeSeason(value, fallback = new Date().getUTCFullYear()) {
     const number=Number(value);
     const current=new Date().getUTCFullYear();
-    if (Number.isSafeInteger(number) && number >= 1900 && number <= current+2) return number;
-    return Number.isSafeInteger(fallback) && fallback >= 1900 && fallback <= current+2 ? fallback : current;
+    if (Number.isSafeInteger(number) && number>=1900 && number<=current+2) return number;
+    const fallbackNumber=Number(fallback);
+    return Number.isSafeInteger(fallbackNumber) && fallbackNumber>=1900 && fallbackNumber<=current+2
+      ? fallbackNumber
+      : null;
   }
 
   function finiteScore(value, fallback = 0) {
@@ -406,8 +409,11 @@ export function createSearchDiscoveryRuntime(deps) {
   
   async function loadSearchCompetitionMatches(competition, cfg) {
     const leagueId=positiveSafeInteger(competition?.leagueId);
-    const season=safeSeason(competition?.season);
-    if (!leagueId) return {matches:[],matchSource:null,warning:''};
+    const rawSeason=competition?.season;
+    const season=rawSeason === null || rawSeason === undefined || rawSeason === ''
+      ? safeSeason(new Date().getUTCFullYear(),null)
+      : safeSeason(rawSeason,null);
+    if (!leagueId || !season) return {matches:[],matchSource:null,warning:''};
   
     const fromDate = new Date(); fromDate.setUTCDate(fromDate.getUTCDate() - 45);
     const toDate = new Date(); toDate.setUTCDate(toDate.getUTCDate() + 45);
@@ -668,8 +674,9 @@ export function createSearchDiscoveryRuntime(deps) {
       return json({...cached,query,knownTeams,resolvedQuery:teamPlan.resolved ? teamPlan.providerQuery : safeText(cached.resolvedQuery,60),competitions,...fixtureSearch,warning:mergeSearchWarnings(cached.warning,fixtureSearch.warning),cached:true,provider:capabilities()});
     }
   
-    let rows = [];
-    let warning = '';
+    let rows=[];
+    let warning='';
+    let providerDegraded=false;
     try {
       if (!quotaHealthy(8,2) && !(highIntentTeam && quotaHealthy(2,1))) {
         const stale=teamSearchCachePayload(await getStaleCache(cacheKey,cfg).catch(()=>null));
@@ -696,9 +703,15 @@ export function createSearchDiscoveryRuntime(deps) {
           : await loadSearchTeamMatches(stale.teams[0], cfg);
         return json({ ...stale, query, knownTeams, resolvedQuery:teamPlan.resolved ? teamPlan.providerQuery : (stale.resolvedQuery || ''), competitions, ...fixtureSearch, cached: true, stale: true, warning: mergeSearchWarnings('Не удалось обновить поиск — показаны сохранённые результаты.', fixtureSearch.warning), provider:capabilities() });
       }
-      if (isFootballRateLimitError(error)) warning='API-Football временно ограничил поиск команд. Повторите чуть позже.';
-      else if (recoverableProviderError(error)) warning='Поиск команд временно недоступен. Повторите чуть позже.';
-      else throw error;
+      if (isFootballRateLimitError(error)) {
+        providerDegraded=true;
+        warning='API-Football временно ограничил поиск команд. Повторите чуть позже.';
+      } else if (recoverableProviderError(error)) {
+        providerDegraded=true;
+        warning='Поиск команд временно недоступен. Повторите чуть позже.';
+      } else {
+        throw error;
+      }
     }
   
     const seen = new Set();
@@ -709,7 +722,7 @@ export function createSearchDiscoveryRuntime(deps) {
       ? await loadSearchCompetitionMatches(competitions[0], cfg)
       : await loadSearchTeamMatches(teams[0], cfg);
     const payload = { query, resolvedQuery:teamPlan.resolved ? teamPlan.providerQuery : '', teams, knownTeams, warning, refreshedAt: new Date().toISOString() };
-    await setCache(cacheKey,0,payload,cfg,1440).catch(()=>null);
+    if (!providerDegraded) await setCache(cacheKey,0,payload,cfg,1440).catch(()=>null);
     return json({ ...payload, competitions, ...fixtureSearch, warning: mergeSearchWarnings(warning, fixtureSearch.warning), cached: false, provider:capabilities() });
   }
   
