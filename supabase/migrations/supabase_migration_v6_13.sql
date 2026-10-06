@@ -1,5 +1,10 @@
 -- Football Analytics v6.13 / RC42
 -- Verified referee history collected only from completed match-center data.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this migration in the upgrade chain. referee_match_history is used by
+-- the current referee-intelligence runtime and is part of the later schema contract.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 create table if not exists public.referee_match_history (
   fixture_id bigint primary key,
