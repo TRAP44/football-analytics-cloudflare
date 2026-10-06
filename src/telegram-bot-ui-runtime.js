@@ -86,9 +86,9 @@ export function createTelegramBotUiRuntime(deps = {}) {
         .normalize('NFKC')
         .replace(/\r\n?/g,'\n')
         .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g,' ')
-        .trim()
-        .slice(0,max);
-      return text || fallback;
+        .trim();
+      if (!text) return fallback;
+      return text.length<=max ? text : fallback;
     } catch {
       return fallback;
     }
@@ -266,7 +266,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
 
   function favoriteMatchTeamRow(match={},favorites=[]) {
     const card=normalizeBotFixtureCard(match);
-    if (!card.fixtureId) return [];
+    if (!validBotFixtureCard(card)) return [];
 
     const fav=favoriteTeamIdSet(favorites);
     const teams=[card.home,card.away]
@@ -314,8 +314,8 @@ export function createTelegramBotUiRuntime(deps = {}) {
   ) {
     const source=objectValue(match) || {};
     const card=normalizeBotFixtureCard(source);
+    if (!validBotFixtureCard(card)) return footballBotKeyboard(request);
     const fixtureId=card.fixtureId;
-    if (!fixtureId) return footballBotKeyboard(request);
 
     const favoriteRow=favoriteMatchTeamRow(card,favorites);
     const finished=card.finished;
@@ -402,8 +402,8 @@ export function createTelegramBotUiRuntime(deps = {}) {
   ) {
     const source=objectValue(match) || {};
     const card=normalizeBotFixtureCard(source);
+    if (!validBotFixtureCard(card)) return footballBotKeyboard(request);
     const fixtureId=card.fixtureId;
-    if (!fixtureId) return footballBotKeyboard(request);
 
     const rows=[];
     const full=fullAnalysisUrl(request,fixtureId);
@@ -445,8 +445,8 @@ export function createTelegramBotUiRuntime(deps = {}) {
   function footballSearchHandoffKeyboard(request,match={},searchUrl='') {
     const source=objectValue(match) || {};
     const card=normalizeBotFixtureCard(source);
+    if (!validBotFixtureCard(card)) return footballBotKeyboard(request);
     const fixtureId=card.fixtureId;
-    if (!fixtureId) return footballBotKeyboard(request);
 
     if (card.live || card.finished) {
       return footballMatchActionKeyboard(request,card,searchUrl,[]);
