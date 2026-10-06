@@ -10440,12 +10440,10 @@ async function readDailyDigestSloEvents(cfg, startIso, endIso, limit = 100) {
     const r=await fetchWithTimeout(url,{headers:supaHeaders(cfg)},7000,'Supabase daily digest SLO');
     if (!r.ok) return fallback();
     const items=await r.json().catch(()=>[]);
-    return {persistent:truook.failedCurrent || 0),
-      },
-    }).catch(() => {});
+    return {persistent:true,items:Array.isArray(items)?items:[]};
+  } catch {
+    return fallback();
   }
-
-  return value;
 }
 
 
@@ -10668,10 +10666,8 @@ async function apiReleaseMonitor(request, cfg) {
     },
   };
   memory.releaseMonitor ||= {};
-  memory.releupdate_claims',
-    healthy: healthy.ok,
-    missing: drift.missing,
-  };
+  memory.releaseMonitor[cacheKey] = { at: Date.now(), value };
+  return json(value);
 }
 
 let supabaseSchemaRuntime = null;
@@ -10704,11 +10700,7 @@ const probeSupabaseSchemaDrift = (...args) => getSupabaseSchemaRuntime().probeSu
 const combineSupabaseSchemaProbeAttempts = (...args) => getSupabaseSchemaRuntime().combineSupabaseSchemaProbeAttempts(...args);
 const probeSupabaseSchemaDriftConfirmed = (...args) => getSupabaseSchemaRuntime().probeSupabaseSchemaDriftConfirmed(...args);
 const supabaseSchemaProbeConfirmationSelfTest = (...args) => getSupabaseSchemaRuntime().supabaseSchemaProbeConfirmationSelfTest(...args);
-const supabaseSchemaDriftSelfTest =: redactOpsString(error?.message || error, 140),
-      shape: [],
-    };
-  }
-}
+const supabaseSchemaDriftSelfTest = (...args) => getSupabaseSchemaRuntime().supabaseSchemaDriftSelfTest(...args);
 
 
 let releaseReadinessRuntime = null;
