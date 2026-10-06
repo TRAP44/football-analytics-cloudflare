@@ -521,7 +521,7 @@ export function createTeamTournamentRuntime(deps) {
   }
 
   async function resolveTournamentStandings(leagueId, season, cfg, { skipPrimary = false } = {}) {
-    const result = await resolveProviderChain({
+    const rawResult=await resolveProviderChain({
       feature:'standings',
       providers:[
         {
@@ -530,87 +530,109 @@ export function createTeamTournamentRuntime(deps) {
           skipReason:skipPrimary ? 'quota_reserve' : '',
           run:async () => normalizeApiFootballStandings(
             await apiFootball('/standings', { league:leagueId, season }, cfg),
-            leagueId, season,
+            leagueId,
+            season,
           ),
         },
         {
           id:'openligadb', label:'OpenLigaDB',
           enabled:Boolean(openLigaCompetition(leagueId, season)),
           skipReason:'competition_not_supported',
-          run:async () => await openLigaStandingsProvider(leagueId, season, cfg),
+          run:async () => openLigaStandingsProvider(leagueId, season, cfg),
         },
         {
           id:'football-data', label:'football-data.org',
-          enabled:Boolean(cfg.footballDataToken && footballDataStandingsUrl(leagueId, season)),
-          skipReason:cfg.footballDataToken ? 'competition_not_supported' : 'token_not_configured',
-          run:async () => await footballDataStandingsProvider(leagueId, season, cfg),
+          enabled:Boolean(cfg?.footballDataToken && footballDataStandingsUrl(leagueId, season)),
+          skipReason:cfg?.footballDataToken ? 'competition_not_supported' : 'token_not_configured',
+          run:async () => footballDataStandingsProvider(leagueId, season, cfg),
         },
       ],
-      accept:value => Boolean(value?.available && value?.standings?.length),
+      accept:value => Boolean(value?.available && rows(value?.standings).length),
     });
-  
+
+    const result=rawResult && typeof rawResult === 'object' && !Array.isArray(rawResult)
+      ? rawResult
+      : {
+          available:false,
+          standings:[],
+          groups:[],
+          reason:'provider_chain_invalid_response',
+          sourceMeta:sourceMeta({provider:'none',label:'Нет доступного источника',freshness:'unavailable'}),
+        };
+
     if (result.available && result.sourceMeta?.fallback) {
       await recordOpsEvent(cfg, {
         severity:'info', source:'provider', eventType:'provider_fallback',
-        code:'STANDINGS_FALLBACK_USED', message:'Для турнирной таблицы использован разрешённый резервный источник.',
-        meta:{ leagueId:Number(leagueId), season:Number(season), provider:result.sourceMeta.provider },
+        code:'STANDINGS_FALLBACK_USED',
+        message:'Для турнирной таблицы использован разрешённый резервный источник.',
+        meta:{
+          leagueId:integer(leagueId),
+          season:integer(season),
+          provider:safeText(result.sourceMeta?.provider, 80),
+        },
       }).catch(() => null);
     }
     return result;
   }
-  
+
   async function apiTournament(request, cfg) {
-    const url = new URL(request.url);
-    const leagueId = Number(url.searchParams.get('leagueId'));
-    const season = Number(url.searchParams.get('season'));
-    if (!Number.isFinite(leagueId) || leagueId <= 0) return json({ error: 'Номер турнира обязателен.' }, 400);
-    if (!Number.isFinite(season) || season < 2000 || season > 2100) return json({ error: 'Сезон обязателен.' }, 400);
-  
-    const cacheKey = `tournament:${leagueId}:${season}:standings:v1`;
-    const cached = await getCache(cacheKey, cfg);
-    if (cached) return json({
+    const url=new URL(request.url);
+    const leagueId=positiveSafeInteger(url.searchParams.get('leagueId'));
+    const season=positiveSafeInteger(url.searchParams.get('season'));
+    if (!leagueId) return json({ error:'Номер турнира обязателен.' },400);
+    if (!season || season<2000 || season>2100) return json({ error:'Сезон обязателен.' },400);
+
+    const cacheKey=`tournament:${leagueId}:${season}:standings:v1`;
+    const cached=await getCache(cacheKey,cfg).catch(()=>null);
+    if (cached && typeof cached === 'object' && !Array.isArray(cached)) return json({
       ...cached,
       sourceMeta:markCachedSourceMeta(cached.sourceMeta || sourceMeta({provider:'api-football',label:'API-Football'})),
-      cached:true, stale:false, provider:publicDataCapabilities(),
+      cached:true,
+      stale:false,
+      provider:capabilities(),
     });
-  
-    const minuteRemaining = Number(providerMinuteRemaining());
-    const skipPrimary = Number.isFinite(minuteRemaining) && minuteRemaining <= 1;
-    const resolved = await resolveTournamentStandings(leagueId, season, cfg, { skipPrimary });
-  
-    if (resolved.available) {
-      const payload = {
-        ...resolved,
-        refreshedAt:new Date().toISOString(),
-      };
-      const ttlMinutes = resolved.sourceMeta?.provider === 'api-football' ? 360 : 30;
-      await setCache(cacheKey, 0, payload, cfg, ttlMinutes);
-      return json({ ...payload, cached:false, stale:false, provider:publicDataCapabilities() });
+
+    const remaining=providerMinuteBudget();
+    const skipPrimary=Number.isFinite(remaining) && remaining<=1;
+    const resolved=await resolveTournamentStandings(leagueId,season,cfg,{skipPrimary});
+
+    if (resolved?.available) {
+      const payload={...resolved,refreshedAt:new Date().toISOString()};
+      const ttlMinutes=resolved.sourceMeta?.provider === 'api-football' ? 360 : 30;
+      await setCache(cacheKey,0,payload,cfg,ttlMinutes).catch(()=>null);
+      return json({...payload,cached:false,stale:false,provider:capabilities()});
     }
-  
-    const stale = await getStaleCache(cacheKey, cfg);
-    if (stale) return json({
+
+    const stale=await getStaleCache(cacheKey,cfg).catch(()=>null);
+    if (stale && typeof stale === 'object' && !Array.isArray(stale)) return json({
       ...stale,
-      sourceMeta:markCachedSourceMeta(stale.sourceMeta || sourceMeta({provider:'api-football',label:'API-Football'}),{stale:true}),
+      sourceMeta:markCachedSourceMeta(
+        stale.sourceMeta || sourceMeta({provider:'api-football',label:'API-Football'}),
+        {stale:true},
+      ),
       cached:true,
       stale:true,
       warning:skipPrimary
         ? 'Показана последняя сохранённая таблица: основной источник находится в защитном резерве квоты.'
         : 'Не удалось обновить таблицу ни из основного, ни из разрешённых резервных источников.',
-      provider:publicDataCapabilities(),
+      provider:capabilities(),
     });
-  
+
     return json({
-      leagueId, season, standings:[], groups:[], available:false,
+      leagueId,
+      season,
+      standings:[],
+      groups:[],
+      available:false,
       reason:skipPrimary
         ? 'Основной источник находится в защитном резерве квоты, а подходящий резервный источник не вернул таблицу.'
         : 'Таблица временно недоступна во всех настроенных источниках.',
-      sourceMeta:resolved.sourceMeta,
-      provider:publicDataCapabilities(),
+      sourceMeta:resolved?.sourceMeta || null,
+      provider:capabilities(),
     });
   }
-  
-  
+
+
   function normalizeTeamHubMatch(f, teamId) {
     const homeId = Number(f.teams?.home?.id || 0);
     const awayId = Number(f.teams?.away?.id || 0);
