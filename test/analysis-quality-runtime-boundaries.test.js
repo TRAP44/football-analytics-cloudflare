@@ -1,8 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
+import { readFileSync } from 'node:fs';
 
 import { createAnalysisQualityRuntime } from '../src/analysis-quality-runtime.js';
+
+function readRepoFile(relativePath) {
+  return readFileSync(new URL('../' + relativePath, import.meta.url), 'utf8');
+}
 
 function deps(overrides = {}) {
   return {
@@ -74,6 +78,35 @@ test('lineup impact fails soft on malformed quality and does not trust stale lin
   assert.equal(impact.lineupsTrusted,false);
   assert.equal(impact.availabilityTrusted,false);
   assert.match(impact.note,/не прошёл проверку свежести|не прошёл проверку/i);
+});
+
+test('lineup and injury evidence fail closed when provenance metadata is absent', () => {
+  const runtime=createAnalysisQualityRuntime(deps());
+
+  const impact=runtime.buildLineupImpact({
+    absences:{
+      home:[{status:'reported_out',seasonRole:{matched:true,weight:1.4}}],
+      away:[],
+      summary:{
+        home:{injury:1,illness:0,suspension:0,doubtful:0},
+        away:{},
+      },
+    },
+    lineups:{
+      home:{confirmed:true},
+      away:{confirmed:true},
+    },
+  });
+
+  assert.equal(impact.structuralHomeConfirmed,true);
+  assert.equal(impact.structuralAwayConfirmed,true);
+  assert.equal(impact.homeConfirmed,false);
+  assert.equal(impact.awayConfirmed,false);
+  assert.equal(impact.lineupsTrusted,false);
+  assert.equal(impact.availabilityTrusted,false);
+  assert.deepEqual(impact.availabilityUnits,{home:0,away:0});
+  assert.match(impact.note,/не подтвердил данные о потерях/);
+  assert.match(impact.note,/не прошёл проверку свежести или provenance/);
 });
 
 test('trusted lineup and injury evidence keep bounded impact metrics', () => {
@@ -255,6 +288,40 @@ test('partial/degraded provider reliability participates in the gate', () => {
   assert.ok(degraded.reasons.some(reason=>reason.code==='provider_degraded'));
 });
 
+test('provider reliability contradictions and unknown states fail closed', () => {
+  const runtime=createAnalysisQualityRuntime(deps());
+  const base={
+    probabilities:{home:60,draw:25,away:15},
+    confidence:{score:75,signalCount:3,disagreement:4,agreement:80},
+    dataTrustScore:90,
+    lineupImpact:{homeConfirmed:true,awayConfirmed:true},
+    minutesToKickoff:120,
+  };
+
+  const lowHealthy=runtime.analysisQualityGate({
+    ...base,
+    providerReliability:{state:'healthy',trustCap:40},
+  });
+  assert.equal(lowHealthy.state,'hold');
+  assert.equal(lowHealthy.allowSignal,false);
+  assert.ok(lowHealthy.reasons.some(reason=>reason.code==='provider_trust_cap'));
+
+  const unknown=runtime.analysisQualityGate({
+    ...base,
+    providerReliability:{state:'mystery',trustCap:100},
+  });
+  assert.equal(unknown.state,'hold');
+  assert.equal(unknown.allowSignal,false);
+  assert.ok(unknown.reasons.some(reason=>reason.code==='provider_reliability_invalid'));
+
+  const malformed=runtime.analysisQualityGate({
+    ...base,
+    providerReliability:{state:'healthy',trustCap:Infinity},
+  });
+  assert.equal(malformed.state,'hold');
+  assert.ok(malformed.reasons.some(reason=>reason.code==='provider_reliability_invalid'));
+});
+
 test('analysis quality self-test covers ready, hold and malformed fail-closed states', () => {
   const runtime=createAnalysisQualityRuntime(deps());
   const result=runtime.analysisQualityGateSelfTest();
@@ -266,15 +333,16 @@ test('analysis quality self-test covers ready, hold and malformed fail-closed st
 });
 
 test('worker keeps analysis quality wiring explicit', () => {
-  const worker=fs.readFileSync('src/worker.js','utf8');
-  const source=fs.readFileSync('src/analysis-quality-runtime.js','utf8');
+  const worker=readRepoFile('src/worker.js');
+  const source=readRepoFile('src/analysis-quality-runtime.js');
 
   assert.match(
     worker,
     /createAnalysisQualityRuntime\(\{[\s\S]*?absenceAdjustmentUnits,[\s\S]*?assessMatchLineups,[\s\S]*?probabilityLeaderMargin,[\s\S]*?\}\);/,
   );
   assert.match(source,/const requiredFunctions=\{/);
-  assert.match(source,/safeProbabilityVector/);
-  assert.match(source,/lineupSourceTrusted/);
+  assert.match(source,/function safeProbabilityVector\(value\)/);
+  assert.match(source,/const lineupSourceTrusted=Boolean\(/);
+  assert.match(source,/provider_trust_cap/);
   assert.match(source,/return Object\.freeze\(\{/);
 });
