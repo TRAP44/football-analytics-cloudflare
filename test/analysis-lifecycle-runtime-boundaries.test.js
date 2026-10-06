@@ -1,8 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
+import { readFileSync } from 'node:fs';
 
 import { createAnalysisLifecycleRuntime } from '../src/analysis-lifecycle-runtime.js';
+
+function readRepoFile(relativePath) {
+  return readFileSync(new URL('../' + relativePath, import.meta.url), 'utf8');
+}
 
 function deps(overrides = {}) {
   return {
@@ -121,15 +125,20 @@ test('kickoff handoff fails closed when kickoff time is not trustworthy', () => 
   assert.equal(live.locked,true);
 });
 
-test('history eligibility rejects fractional ids and verifies Supabase fixture identity', async () => {
+test('history eligibility rejects fractional ids and verifies both Supabase identities', async () => {
   let calls=0;
+  const rows=[
+    {telegram_id:99,fixture_id:71},
+    {telegram_id:12,fixture_id:72},
+    {telegram_id:12,fixture_id:71},
+  ];
   const runtime=createAnalysisLifecycleRuntime(deps({
     hasSupabase:()=>true,
     supaSelectOne:async(...args)=>{
       calls+=1;
       assert.equal(args[1],'analysis_history');
       assert.deepEqual(args[2],{telegram_id:'eq.12',fixture_id:'eq.71'});
-      return {fixture_id:72};
+      return rows.shift() || null;
     },
   }));
 
@@ -138,7 +147,9 @@ test('history eligibility rejects fractional ids and verifies Supabase fixture i
   assert.equal(calls,0);
 
   assert.equal(await runtime.userHasAnalyzedFixture(12,71,{}),false);
-  assert.equal(calls,1);
+  assert.equal(await runtime.userHasAnalyzedFixture(12,71,{}),false);
+  assert.equal(await runtime.userHasAnalyzedFixture(12,71,{}),true);
+  assert.equal(calls,3);
 });
 
 test('memory history eligibility is bounded and uses exact safe ids', async () => {
@@ -166,6 +177,38 @@ test('recheck delta refuses to compare different fixtures', () => {
   assert.equal(result.material,false);
   assert.equal(result.stable,false);
   assert.equal(result.reasonCode,'fixture_mismatch');
+});
+
+test('recheck delta rejects reversed snapshot chronology', () => {
+  const runtime=createAnalysisLifecycleRuntime(deps());
+  const result=runtime.analysisRecheckDelta(
+    snapshot({generatedAt:'2026-09-23T18:05:00Z'}),
+    snapshot({generatedAt:'2026-09-23T18:04:59Z'}),
+  );
+
+  assert.deepEqual(result,{
+    available:false,
+    material:false,
+    stable:false,
+    reasonCode:'snapshot_order_invalid',
+    codes:[],
+    items:[],
+    summary:'Новый AI-снимок оказался старше предыдущего; изменение не может считаться корректной перепроверкой.',
+  });
+});
+
+test('recheck delta allows equal timestamps but does not invent changes', () => {
+  const runtime=createAnalysisLifecycleRuntime(deps());
+  const sameTime='2026-09-23T18:05:00Z';
+  const result=runtime.analysisRecheckDelta(
+    snapshot({generatedAt:sameTime}),
+    snapshot({generatedAt:sameTime}),
+  );
+
+  assert.equal(result.available,true);
+  assert.equal(result.material,false);
+  assert.equal(result.stable,true);
+  assert.deepEqual(result.codes,[]);
 });
 
 test('malformed probability snapshots never produce a false stable delta', () => {
@@ -271,8 +314,8 @@ test('response wrapper ignores array payloads/extras and exposes deterministic d
 });
 
 test('worker keeps lifecycle dependencies explicit', () => {
-  const worker=fs.readFileSync('src/worker.js','utf8');
-  const source=fs.readFileSync('src/analysis-lifecycle-runtime.js','utf8');
+  const worker=readRepoFile('src/worker.js');
+  const source=readRepoFile('src/analysis-lifecycle-runtime.js');
 
   assert.match(
     worker,
@@ -280,6 +323,7 @@ test('worker keeps lifecycle dependencies explicit', () => {
   );
   assert.match(source,/const requiredFunctions=\{/);
   assert.match(source,/memory\.history instanceof Map/);
-  assert.match(source,/trustedLineupsConfirmed/);
+  assert.match(source,/function trustedLineupsConfirmed\(payload\)/);
+  assert.match(source,/snapshot_order_invalid/);
   assert.match(source,/return Object\.freeze\(\{/);
 });
