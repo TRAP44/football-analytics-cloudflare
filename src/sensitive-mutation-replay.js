@@ -106,22 +106,24 @@ function requestSensitivePath(request,url) {
   }
 }
 
-function cleanIdempotencyKey(request) {
+function readIdempotencyKey(request) {
   let value;
   try {
     value=request?.headers?.get?.('x-idempotency-key');
   } catch {
-    return '';
+    return {valid:false,value:''};
   }
-  if (value === null || value === undefined || value === '') return '';
-  if (typeof value !== 'string') return '';
+  if (value === null || value === undefined || value === '') {
+    return {valid:true,value:''};
+  }
+  if (typeof value !== 'string') return {valid:false,value:''};
   const raw=value.trim();
   if (
     !raw
     || raw.length > MAX_IDEMPOTENCY_KEY_LENGTH
     || /[\u0000-\u001f\u007f-\u009f]/u.test(raw)
-  ) return '';
-  return raw;
+  ) return {valid:false,value:''};
+  return {valid:true,value:raw};
 }
 
 function cleanLeaseToken(value) {
@@ -210,7 +212,9 @@ export async function sensitiveMutationReplayIdentity(request, url, user) {
   ].join('|'));
   if (!SHA256_RE.test(requestDigest)) return null;
 
-  const rawIdempotencyKey=cleanIdempotencyKey(request);
+  const idempotencyKey=readIdempotencyKey(request);
+  if (!idempotencyKey.valid) return null;
+  const rawIdempotencyKey=idempotencyKey.value;
   const idempotencyKeyHash=rawIdempotencyKey
     ? await sha256Hex([
         'matchradar-sensitive-client-key-v2',
