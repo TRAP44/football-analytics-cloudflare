@@ -13,7 +13,7 @@ function input() {
   };
 }
 
-function supabaseRuntime({ finalizeResult={updated:true}, finalizeThrows=false, beginResult={started:true,reason:'sending'} } = {}) {
+function supabaseRuntime({ finalizeResult={updated:true,reason:'finalized'}, finalizeThrows=false, beginResult={started:true,reason:'sending'} } = {}) {
   let sends=0;
   let claims=0;
   const events=[];
@@ -42,6 +42,179 @@ function supabaseRuntime({ finalizeResult={updated:true}, finalizeThrows=false, 
   });
   return {service,events,get sends(){return sends;}};
 }
+
+test('delivery rejects JavaScript coercion before claim or Telegram side effects',async()=>{
+  let rpcCalls=0;
+  let sends=0;
+  const service=createSmartNotificationDeliveryService({
+    memory:{},
+    hasSupabase:()=>true,
+    supaRpc:async()=>{rpcCalls+=1;return {};},
+    sendTelegramMessage:async()=>{sends+=1;return {ok:true,status:200,outcome:'sent'};},
+  });
+
+  for(const bad of [
+    {...input(),row:{telegram_id:true,fixture_id:420}},
+    {...input(),row:{telegram_id:[42],fixture_id:420}},
+    {...input(),row:{telegram_id:42,fixture_id:{value:420}}},
+    {...input(),eventType:{toString:()=> 'match.goal'}},
+    {...input(),category:['match']},
+    {...input(),dedupeKey:{toString:()=> 'v1:420:match.goal:55'}},
+    {...input(),text:{toString:()=> 'Goal'}},
+    {...input(),cooldownSeconds:true},
+  ]){
+    assert.equal((await service.deliverSmartNotification(bad,{})).state,'invalid');
+  }
+  assert.equal(rpcCalls,0);
+  assert.equal(sends,0);
+});
+
+test('truthy non-boolean Supabase availability fails closed before send',async()=>{
+  let rpcCalls=0;
+  let sends=0;
+  const service=createSmartNotificationDeliveryService({
+    memory:{},
+    hasSupabase:()=> 'true',
+    supaRpc:async()=>{rpcCalls+=1;return {};},
+    sendTelegramMessage:async()=>{sends+=1;return {ok:true,status:200,outcome:'sent'};},
+  });
+  assert.equal((await service.deliverSmartNotification(input(),{})).state,'persistence_ambiguous');
+  assert.equal(rpcCalls,0);
+  assert.equal(sends,0);
+});
+
+test('persistent claim requires strict allowed flag, reason and claim timestamp',async()=>{
+  for(const claim of [
+    {allowed:'true',reason:'created',claimAt:'2026-10-03T12:00:00.000Z'},
+    {allowed:true,reason:'unknown',claimAt:'2026-10-03T12:00:00.000Z'},
+    {allowed:true,reason:'created',claimAt:{toString:()=> '2026-10-03T12:00:00.000Z'}},
+    {allowed:true,reason:'created',claimAt:'not-a-time'},
+  ]){
+    let sends=0;
+    const service=createSmartNotificationDeliveryService({
+      memory:{},
+      hasSupabase:()=>true,
+      supaRpc:async(_cfg,name)=>{
+        if(name==='claim_smart_notification_delivery') return claim;
+        throw new Error('must not reach '+name);
+      },
+      sendTelegramMessage:async()=>{sends+=1;return {ok:true,status:200,outcome:'sent'};},
+    });
+    assert.equal((await service.deliverSmartNotification(input(),{})).state,'persistence_ambiguous');
+    assert.equal(sends,0);
+  }
+});
+
+test('pre-send RPC requires strict started confirmation',async()=>{
+  let sends=0;
+  const service=createSmartNotificationDeliveryService({
+    memory:{},
+    hasSupabase:()=>true,
+    supaRpc:async(_cfg,name)=>{
+      if(name==='claim_smart_notification_delivery') {
+        return {allowed:true,reason:'created',claimAt:'2026-10-03T12:00:00.000Z'};
+      }
+      if(name==='begin_smart_notification_delivery_send') {
+        return {started:'true',reason:'sending'};
+      }
+      throw new Error('unexpected rpc '+name);
+    },
+    sendTelegramMessage:async()=>{sends+=1;return {ok:true,status:200,outcome:'sent'};},
+  });
+  assert.equal((await service.deliverSmartNotification(input(),{})).state,'persistence_ambiguous');
+  assert.equal(sends,0);
+});
+
+test('finalize requires updated true and finalized reason',async()=>{
+  const runtime=supabaseRuntime({finalizeResult:{updated:true}});
+  assert.equal((await runtime.service.deliverSmartNotification(input(),{})).state,'sent_unconfirmed');
+  assert.equal(runtime.sends,1);
+});
+
+test('truthy Telegram ok is ambiguous and never becomes automatic retry',async()=>{
+  let finalizedStatus='';
+  const service=createSmartNotificationDeliveryService({
+    memory:{},
+    hasSupabase:()=>true,
+    supaRpc:async(_cfg,name,args)=>{
+      if(name==='claim_smart_notification_delivery') {
+        return {allowed:true,reason:'created',claimAt:'2026-10-03T12:00:00.000Z'};
+      }
+      if(name==='begin_smart_notification_delivery_send') return {started:true,reason:'sending'};
+      if(name==='finalize_smart_notification_delivery') {
+        finalizedStatus=args.p_status;
+        return {updated:true,reason:'finalized'};
+      }
+      throw new Error('unexpected rpc '+name);
+    },
+    sendTelegramMessage:async()=>({ok:'true',status:200}),
+  });
+  const result=await service.deliverSmartNotification(input(),{});
+  assert.equal(result.state,'unknown');
+  assert.equal(finalizedStatus,'unknown');
+});
+
+test('malformed Telegram result is finalized unknown rather than retry_pending',async()=>{
+  let finalizedStatus='';
+  const service=createSmartNotificationDeliveryService({
+    memory:{},
+    hasSupabase:()=>true,
+    supaRpc:async(_cfg,name,args)=>{
+      if(name==='claim_smart_notification_delivery') {
+        return {allowed:true,reason:'created',claimAt:'2026-10-03T12:00:00.000Z'};
+      }
+      if(name==='begin_smart_notification_delivery_send') return {started:true,reason:'sending'};
+      if(name==='finalize_smart_notification_delivery') {
+        finalizedStatus=args.p_status;
+        return {updated:true,reason:'finalized'};
+      }
+      throw new Error('unexpected rpc '+name);
+    },
+    sendTelegramMessage:async()=>({}),
+  });
+  assert.equal((await service.deliverSmartNotification(input(),{})).state,'unknown');
+  assert.equal(finalizedStatus,'unknown');
+});
+
+test('confirmed Telegram retry_after is bounded to database contract',async()=>{
+  let retryAfter=0;
+  const service=createSmartNotificationDeliveryService({
+    memory:{},
+    hasSupabase:()=>true,
+    supaRpc:async(_cfg,name,args)=>{
+      if(name==='claim_smart_notification_delivery') {
+        return {allowed:true,reason:'created',claimAt:'2026-10-03T12:00:00.000Z'};
+      }
+      if(name==='begin_smart_notification_delivery_send') return {started:true,reason:'sending'};
+      if(name==='finalize_smart_notification_delivery') {
+        retryAfter=args.p_retry_after_seconds;
+        return {updated:true,reason:'finalized'};
+      }
+      throw new Error('unexpected rpc '+name);
+    },
+    sendTelegramMessage:async()=>({
+      ok:false,
+      outcome:'confirmed_failure',
+      status:429,
+      errorCode:429,
+      retryAfter:'999999',
+      description:'Too Many Requests',
+    }),
+  });
+  assert.equal((await service.deliverSmartNotification(input(),{})).state,'retry_pending');
+  assert.equal(retryAfter,86400);
+});
+
+test('observability failure never changes delivery result',async()=>{
+  const service=createSmartNotificationDeliveryService({
+    memory:{},
+    hasSupabase:()=>false,
+    supaRpc:async()=>{throw new Error('unexpected rpc');},
+    sendTelegramMessage:async()=>({ok:true,status:200,outcome:'sent'}),
+    recordOpsEvent:()=>{throw new Error('ops unavailable');},
+  });
+  assert.equal((await service.deliverSmartNotification(input(),{})).state,'sent');
+});
 
 test('successful Telegram send with finalize updated:false is not reported as safely finalized or resent', async()=>{
   const runtime=supabaseRuntime({finalizeResult:{updated:false}});
@@ -72,6 +245,35 @@ test('maximum-attempt guard stops delivery before Telegram', async()=>{
   assert.ok(runtime.events.some(event=>event.code==='SMART_NOTIFICATION_MAX_RETRIES'));
 });
 
+test('memory retry state with malformed retry timestamp fails closed',async()=>{
+  const memory={smartNotificationDeliveries:new Map([[
+    '42:v1:420:match.goal:55',
+    {
+      userId:42,
+      fixtureId:420,
+      eventType:'match.goal',
+      category:'match',
+      dedupeKey:'v1:420:match.goal:55',
+      status:'retry_pending',
+      attempts:1,
+      claimedAt:'2026-10-03T12:00:00.000Z',
+      retryAt:{toString:()=> '2026-10-03T12:01:00.000Z'},
+      createdAt:'2026-10-03T12:00:00.000Z',
+      updatedAt:'2026-10-03T12:00:00.000Z',
+    },
+  ]])};
+  let sends=0;
+  const service=createSmartNotificationDeliveryService({
+    memory,
+    hasSupabase:()=>false,
+    supaRpc:async()=>{throw new Error('unexpected rpc');},
+    sendTelegramMessage:async()=>{sends+=1;return {ok:true,status:200,outcome:'sent'};},
+    now:()=>Date.parse('2026-10-03T12:10:00.000Z'),
+  });
+  assert.equal((await service.deliverSmartNotification(input(),{})).state,'persistence_ambiguous');
+  assert.equal(sends,0);
+});
+
 test('transport exception is treated as unknown outcome instead of confirmed retryable failure', async()=>{
   let finalizedStatus='';
   let sends=0;
@@ -83,7 +285,7 @@ test('transport exception is treated as unknown outcome instead of confirmed ret
       if (name==='begin_smart_notification_delivery_send') return {started:true,reason:'sending'};
       if (name==='finalize_smart_notification_delivery') {
         finalizedStatus=args.p_status;
-        return {updated:true};
+        return {updated:true,reason:'finalized'};
       }
       throw new Error('unexpected rpc '+name);
     },
@@ -96,6 +298,23 @@ test('transport exception is treated as unknown outcome instead of confirmed ret
   assert.equal((await service.deliverSmartNotification(input(),{})).state,'unknown');
   assert.equal(sends,1);
   assert.equal(finalizedStatus,'unknown');
+});
+
+test('delivery constructor validates required boundary dependencies',()=>{
+  assert.throws(()=>createSmartNotificationDeliveryService({}),/hasSupabase is required/);
+  assert.throws(()=>createSmartNotificationDeliveryService({
+    hasSupabase:()=>false,
+  }),/supaRpc is required/);
+  assert.throws(()=>createSmartNotificationDeliveryService({
+    hasSupabase:()=>false,
+    supaRpc:async()=>{},
+  }),/sendTelegramMessage is required/);
+  assert.throws(()=>createSmartNotificationDeliveryService({
+    memory:[],
+    hasSupabase:()=>false,
+    supaRpc:async()=>{},
+    sendTelegramMessage:async()=>({}),
+  }),/memory must be a plain object/);
 });
 
 test('v6.25.1 migration adds pre-send CAS, permanent ambiguous-send suppression and bounded attempts',()=>{
