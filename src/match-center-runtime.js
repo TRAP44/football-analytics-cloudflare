@@ -322,130 +322,263 @@ export function createMatchCenterRuntime(deps) {
       && value?.provenanceState==='verified';
   }
 
-  async function apiMatchCenter(request, cfg) {
-    const url = new URL(request.url);
-    const fixtureId = positiveSafeInteger(url.searchParams.get('fixtureId'));
-    if (fixtureId === null) return json({ error: 'Укажите корректный положительный целый номер матча.' }, 400);
-  
+  async function apiMatchCenter(request,cfg) {
+    const fixtureId=requestFixtureId(request);
+    if (fixtureId===null) {
+      return json({
+        error:'Укажите корректный положительный целый номер матча.',
+      },400);
+    }
+
     // Shared across all users. LIVE cache follows the provider refresh cadence
     // with a hard minimum of 10 seconds.
-    const baseCacheKey = `match-center:${fixtureId}:v16-availability-quality-rc144`;
-    const cachedCandidate = await getCache(baseCacheKey, cfg);
-    const cached = matchCenterCachePayload(cachedCandidate, fixtureId);
+    const baseCacheKey=`match-center:${fixtureId}:v16-availability-quality-rc144`;
+    const cachedCandidate=await optionalAsync(getCache,baseCacheKey,cfg);
+    const cached=matchCenterCachePayload(cachedCandidate,fixtureId);
     if (cachedCandidate && !cached) {
-      await recordOpsEvent(cfg, {
+      await safeRecordOps(cfg,{
         severity:'warning',
         source:'cache',
         eventType:'match_center_cache_rejected',
         code:'MATCH_CENTER_CACHE_INVALID',
         message:'Match Center ignored a cache entry whose fixture identity or mode was invalid.',
-        meta:{ fixtureId },
-      }).catch(() => null);
+        meta:{fixtureId},
+      });
     }
+
     if (cached) {
-      const cachedMode = String(cached.mode);
-      const cachedMeta = {
-        ...(cached.dataFreshness || {}),
-        match: cached.dataFreshness?.match || {
-          feature:'match', provider:'api-football', source:'cache', state:'available',
-          available:true, usable:true, observed:true, fetchedAt:cached.generatedAt || null,
+      const cachedMode=safeText(cached.mode,24);
+      const cachedFreshness=objectValue(cached.dataFreshness) || {};
+      const cachedMeta={
+        ...cachedFreshness,
+        match:objectValue(cachedFreshness.match) || {
+          feature:'match',
+          provider:'api-football',
+          source:'cache',
+          state:'available',
+          available:true,
+          usable:true,
+          observed:true,
+          fetchedAt:safeText(cached.generatedAt,80) || null,
         },
       };
-      const cachedAiTimeline = cached.aiTimeline || await loadFixtureAiTimeline({
-        fixtureId,
-        match: cached.match || { fixtureId },
-        events: Array.isArray(cached.events) ? cached.events : [],
-        cfg,
-      }).catch(() => null);
-      return json({ ...cached, aiTimeline:cachedAiTimeline, dataFreshness:applyFeatureFreshnessMap(cachedMeta, { mode:cachedMode }), cached: true });
+      const cachedAiTimeline=objectValue(cached.aiTimeline)
+        || objectValue(await optionalAsync(loadFixtureAiTimeline,{
+          fixtureId,
+          match:objectValue(cached.match) || {fixtureId},
+          events:rowsOrEmpty(cached.events,500),
+          cfg,
+        }));
+      return json({
+        ...cached,
+        aiTimeline:cachedAiTimeline,
+        dataFreshness:safeFeatureFreshnessMap(cachedMeta,{mode:cachedMode}),
+        cached:true,
+      });
     }
-  
+
     let fixture;
     try {
-      fixture = await loadProviderFixture(fixtureId,cfg);
+      fixture=objectValue(await loadProviderFixture(fixtureId,cfg));
     } catch (error) {
-      const staleCandidate = await getStaleCache(baseCacheKey, cfg);
-      const stale = matchCenterCachePayload(staleCandidate, fixtureId);
-      const transientProviderFailure = isFootballRateLimitError(error) || isRetryableFootballTransportError(error);
+      const staleCandidate=await optionalAsync(getStaleCache,baseCacheKey,cfg);
+      const stale=matchCenterCachePayload(staleCandidate,fixtureId);
+      const providerLimited=safePredicate(isFootballRateLimitError,error);
+      const transientProviderFailure=providerLimited
+        || safePredicate(isRetryableFootballTransportError,error);
+
       if (staleCandidate && !stale) {
-        await recordOpsEvent(cfg, {
+        await safeRecordOps(cfg,{
           severity:'warning',
           source:'cache',
           eventType:'match_center_stale_cache_rejected',
           code:'MATCH_CENTER_STALE_CACHE_INVALID',
           message:'Match Center ignored an invalid stale cache entry.',
-          meta:{ fixtureId },
-        }).catch(() => null);
+          meta:{fixtureId},
+        });
       }
+
       if (stale && transientProviderFailure) {
-        const staleMode = String(stale.mode);
-        const staleMeta = {
-          ...(stale.dataFreshness || {}),
-          match: stale.dataFreshness?.match || {
-            feature:'match', provider:'api-football', source:'stale-cache', state:'available',
-            available:true, usable:true, observed:true, fetchedAt:stale.generatedAt || null,
+        const staleMode=safeText(stale.mode,24);
+        const staleFreshnessMeta=objectValue(stale.dataFreshness) || {};
+        const staleMeta={
+          ...staleFreshnessMeta,
+          match:objectValue(staleFreshnessMeta.match) || {
+            feature:'match',
+            provider:'api-football',
+            source:'stale-cache',
+            state:'available',
+            available:true,
+            usable:true,
+            observed:true,
+            fetchedAt:safeText(stale.generatedAt,80) || null,
           },
         };
-        const staleFreshness = applyFeatureFreshnessMap(staleMeta, { mode:staleMode, forceStale:true });
-        const suppressLiveSignals = staleMode === 'live';
+        const staleFreshness=safeFeatureFreshnessMap(staleMeta,{
+          mode:staleMode,
+          forceStale:true,
+        });
+        const suppressLiveSignals=staleMode==='live';
         return json({
           ...stale,
           dataFreshness:staleFreshness,
           ...(suppressLiveSignals ? {
-            livePressure:null, smartInsights:null, liveAiCoach:null, liveOdds:null, oddsMovement:null,
-            liveOddsQuality:stale.liveOddsQuality ? {
-              ...stale.liveOddsQuality,
-              state:'source_untrusted',
-              label:'Рынок не используется',
-              reason:'stale_match_center_cache',
-              sourceTrusted:false,
-              confidenceBearing:false,
-            } : stale.liveOddsQuality,
-            availabilityQuality:stale.availabilityQuality ? {
-              ...stale.availabilityQuality,
-              state:'source_untrusted',
-              label:'Потери не используются',
-              reason:'stale_match_center_cache',
-              sourceTrusted:false,
-              confidenceBearing:false,
-            } : stale.availabilityQuality,
-            availability:{ ...(stale.availability || {}), events:false, statistics:false, players:false, injuries:false, liveOdds:false, lineupsConfirmed:false, lineupsTrusted:false },
+            livePressure:null,
+            smartInsights:null,
+            liveAiCoach:null,
+            liveOdds:null,
+            oddsMovement:null,
+            liveOddsQuality:objectValue(stale.liveOddsQuality)
+              ? {
+                  ...stale.liveOddsQuality,
+                  state:'source_untrusted',
+                  label:'Рынок не используется',
+                  reason:'stale_match_center_cache',
+                  sourceTrusted:false,
+                  confidenceBearing:false,
+                }
+              : null,
+            availabilityQuality:objectValue(stale.availabilityQuality)
+              ? {
+                  ...stale.availabilityQuality,
+                  state:'source_untrusted',
+                  label:'Потери не используются',
+                  reason:'stale_match_center_cache',
+                  sourceTrusted:false,
+                  confidenceBearing:false,
+                }
+              : null,
+            availability:{
+              ...objectValue(stale.availability),
+              events:false,
+              statistics:false,
+              xg:false,
+              players:false,
+              injuries:false,
+              liveOdds:false,
+              lineupsConfirmed:false,
+              lineupsTrusted:false,
+            },
           } : {}),
           cached:true,
           stale:true,
           warning:'Данные матча показаны из последнего сохранённого снимка. Устаревшие live-сигналы исключены из аналитики.',
-          retryAfter:boundedRetryAfter(error?.retryAfter, 60),
+          retryAfter:boundedRetryAfter(error?.retryAfter,60),
         });
       }
       throw error;
     }
-    if (!fixture) return json({ error: 'Матч не найден.' }, 404);
-    const centerIntegrity = validateFixtureIntegrity(fixture, '', null);
-    if (centerIntegrity.quarantine) {
-      await recordOpsEvent(cfg, { severity: 'warning', source: 'integrity', eventType: 'single_fixture_guard', code: 'MATCH_CENTER_REJECTED', message: 'Центр матча отклонил структурно некорректные данные матча.', meta: { fixtureId, issues: centerIntegrity.issues.filter(x => x.severity === 'error').map(x => x.code) } }).catch(() => {});
-      return json({ error: 'Данные этого матча не прошли проверку целостности. Попробуйте позже.', code: 'MATCH_DATA_INVALID', integrity: centerIntegrity }, 409);
+
+    if (!fixture) return json({error:'Матч не найден.'},404);
+
+    const loadedFixtureId=positiveSafeInteger(fixture?.fixture?.id);
+    if (loadedFixtureId!==fixtureId) {
+      await safeRecordOps(cfg,{
+        severity:'warning',
+        source:'integrity',
+        eventType:'single_fixture_guard',
+        code:'MATCH_CENTER_FIXTURE_ID_MISMATCH',
+        message:'Match Center provider returned a fixture outside the requested identity.',
+        meta:{fixtureId,loadedFixtureId},
+      });
+      return json({
+        error:'Источник вернул данные другого матча, поэтому центр матча временно заблокирован.',
+        code:'MATCH_IDENTITY_MISMATCH',
+      },409);
     }
-  
-    const status = fixture.fixture?.status?.short || '';
-    const elapsed = nonNegativeSafeInteger(fixture.fixture?.status?.elapsed);
-    const live = isLiveStatus(status);
-    const finished = isFinishedStatus(status);
-    const homeId = fixture.teams?.home?.id;
-    const awayId = fixture.teams?.away?.id;
-    const embedded = embeddedLiveData(fixture) || {};
-    const leagueName = fixture.league?.name || '';
-    const homeName = fixture.teams?.home?.name || '';
-    const awayName = fixture.teams?.away?.name || '';
-    const limitedCoverage = isYouthReserveMatch(leagueName, homeName, awayName);
-    const centerMode = live ? 'live' : finished ? 'finished' : 'upcoming';
-    const fixtureFetchedAt = new Date().toISOString();
-    const featureMeta = {
-      match: applyFeatureFreshness({
-        feature:'match', provider:'api-football', source:'network', fetchedAt:fixtureFetchedAt, ageSeconds:0,
-        ...providerDataState([fixture], { attempted:true }),
-      }, { feature:'match', mode:centerMode }),
+
+    let centerIntegrity;
+    try {
+      centerIntegrity=objectValue(validateFixtureIntegrity(fixture,'',null));
+    } catch {}
+    if (!centerIntegrity) {
+      centerIntegrity={
+        state:'invalid',
+        qualityScore:0,
+        quarantine:true,
+        warnings:[],
+        issues:[{severity:'error',code:'integrity_check_unavailable'}],
+      };
+    }
+    const integrityIssues=rowsOrEmpty(centerIntegrity.issues,50);
+    const integrityWarnings=rowsOrEmpty(centerIntegrity.warnings,50);
+    if (centerIntegrity.quarantine===true) {
+      await safeRecordOps(cfg,{
+        severity:'warning',
+        source:'integrity',
+        eventType:'single_fixture_guard',
+        code:'MATCH_CENTER_REJECTED',
+        message:'Центр матча отклонил структурно некорректные данные матча.',
+        meta:{
+          fixtureId,
+          issues:integrityIssues
+            .filter(issue=>issue?.severity==='error')
+            .map(issue=>safeText(issue?.code,80))
+            .filter(Boolean)
+            .slice(0,12),
+        },
+      });
+      return json({
+        error:'Данные этого матча не прошли проверку целостности. Попробуйте позже.',
+        code:'MATCH_DATA_INVALID',
+        integrity:{
+          ...centerIntegrity,
+          warnings:integrityWarnings,
+          issues:integrityIssues,
+        },
+      },409);
+    }
+
+    const status=safeText(fixture?.fixture?.status?.short,24);
+    const elapsed=nonNegativeSafeInteger(
+      fixture?.fixture?.status?.elapsed,
+      300,
+    );
+    const live=safePredicate(isLiveStatus,status);
+    const finished=safePredicate(isFinishedStatus,status);
+
+    const homeId=positiveSafeInteger(fixture?.teams?.home?.id);
+    const awayId=positiveSafeInteger(fixture?.teams?.away?.id);
+    if (!homeId || !awayId || homeId===awayId) {
+      return json({
+        error:'Команды матча не прошли проверку идентификаторов.',
+        code:'MATCH_TEAM_IDENTITY_INVALID',
+      },409);
+    }
+
+    let embedded={};
+    try { embedded=objectValue(embeddedLiveData(fixture)) || {}; } catch {}
+
+    const leagueName=safeText(fixture?.league?.name,180);
+    const homeName=safeText(fixture?.teams?.home?.name,180);
+    const awayName=safeText(fixture?.teams?.away?.name,180);
+    const limitedCoverage=safePredicate(
+      isYouthReserveMatch,
+      leagueName,
+      homeName,
+      awayName,
+    );
+    const centerMode=live ? 'live' : finished ? 'finished' : 'upcoming';
+    const fixtureFetchedAt=new Date().toISOString();
+
+    const matchState=safeProviderDataState([fixture],{
+      attempted:true,
+      feature:'match',
+    });
+    const featureMeta={
+      match:safeFeatureFreshness({
+        feature:'match',
+        provider:'api-football',
+        source:'network',
+        fetchedAt:fixtureFetchedAt,
+        ageSeconds:0,
+        ...matchState,
+      },{
+        feature:'match',
+        mode:centerMode,
+      }),
     };
-  
+
     // v4.9: every expensive enrichment feature gets its own cache + quota policy.
     // Do not burn extra /events + /statistics calls when coverage is predictably low.
     // For senior competitions, targeted fallbacks are still allowed when embedded
