@@ -142,12 +142,17 @@ export function createAnalysisRuntime(deps) {
     try {
       const response = await fetchWithTimeout('https://api.tavily.com/search', {
         method:'POST',
-        headers:{ 'content-type':'application/json' },
+        headers:{
+          'authorization':`Bearer ${String(cfg.tavilyKey)}`,
+          'content-type':'application/json',
+        },
         body:JSON.stringify({
-          api_key:String(cfg.tavilyKey),
           query:normalized,
           search_depth:'basic',
+          topic:'news',
           include_answer:true,
+          include_published_date:true,
+          safe_search:true,
           max_results:5,
         }),
       }, 7000, 'Tavily search');
@@ -159,6 +164,7 @@ export function createAnalysisRuntime(deps) {
         title:String(item?.title || '').slice(0, 200),
         url:String(item?.url || '').slice(0, 1000),
         content:String(item?.content || '').slice(0, 1200),
+        publishedAt:String(item?.published_date || '').slice(0, 80),
         score:Number.isFinite(Number(item?.score)) ? Number(item.score) : null,
       }));
       return {
