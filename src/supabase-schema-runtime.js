@@ -85,17 +85,31 @@ export function createSupabaseSchemaRuntime(deps) {
     if (!hasSupabase(cfg)) return { ok:false, status:'not_configured' };
     try {
       const raw = await supaRpc(cfg, 'personal_write_guard_contract', {}, 3000);
+      const version=String(raw?.version || '');
+      const favoritesLimit=Number(raw?.favoritesLimit || 0);
+      const favoritePlayersLimit=Number(raw?.favoritePlayersLimit || 0);
+      const remindersLimit=Number(raw?.remindersLimit || 0);
+      const canonicalReminders=raw?.canonicalReminders === true;
+      const explicitRearm=raw?.explicitRearm === true;
+      const reminderRetentionDays=Number(raw?.reminderRetentionDays || 0);
       const ok = Boolean(raw?.ok)
-        && Number(raw?.favoritesLimit || 0) === PERSONAL_WRITE_LIMITS.favorites
-        && Number(raw?.favoritePlayersLimit || 0) === PERSONAL_WRITE_LIMITS.favoritePlayers
-        && Number(raw?.remindersLimit || 0) === PERSONAL_WRITE_LIMITS.reminders;
+        && version === 'v2'
+        && favoritesLimit === PERSONAL_WRITE_LIMITS.favorites
+        && favoritePlayersLimit === PERSONAL_WRITE_LIMITS.favoritePlayers
+        && remindersLimit === PERSONAL_WRITE_LIMITS.reminders
+        && canonicalReminders
+        && explicitRearm
+        && reminderRetentionDays === 90;
       return {
         ok,
         status: ok ? 'ok' : 'contract_mismatch',
-        version: String(raw?.version || ''),
-        favoritesLimit: Number(raw?.favoritesLimit || 0),
-        favoritePlayersLimit: Number(raw?.favoritePlayersLimit || 0),
-        remindersLimit: Number(raw?.remindersLimit || 0),
+        version,
+        favoritesLimit,
+        favoritePlayersLimit,
+        remindersLimit,
+        canonicalReminders,
+        explicitRearm,
+        reminderRetentionDays,
       };
     } catch (error) {
       return { ok:false, status:error?.code || 'error', detail:redactOpsString(error?.message || error,160) };
