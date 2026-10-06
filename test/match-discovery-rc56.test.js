@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const worker=fs.readFileSync('src/worker.js','utf8');
+const providerFixtureRuntime=fs.readFileSync('src/provider-fixture-runtime.js','utf8');
 const app=fs.readFileSync('public/app.js','utf8')+'\n'+fs.readFileSync('public/modules/global-search-renderer.js','utf8')+'\n'+fs.readFileSync('public/modules/global-search-controller.js','utf8');
 const css=fs.readFileSync('public/styles.css','utf8');
 
@@ -18,9 +19,9 @@ test('RC56 discovers team fixtures in one shared backend path',()=> {
 test('discovery uses provider-supported team next/last queries with recent-match recovery',()=> {
   assert.match(worker,/TEAM_DISCOVERY_PAST_DAYS = 30/);
   assert.match(worker,/TEAM_DISCOVERY_FUTURE_DAYS = 120/);
-  assert.match(worker,/apiFootball\('\/fixtures',\{team:teamId,next:12\},cfg\)/);
-  assert.match(worker,/apiFootball\('\/fixtures',\{team:teamId,last:8\},cfg\)/);
-  assert.doesNotMatch(worker,/apiFootball\('\/fixtures',\{team:teamId,from,to\},cfg\)/);
+  assert.match(providerFixtureRuntime,/apiFootball\('\/fixtures',\{team:id,next:12\},cfg\)/);
+  assert.match(providerFixtureRuntime,/apiFootball\('\/fixtures',\{team:id,last:8\},cfg\)/);
+  assert.doesNotMatch(providerFixtureRuntime,/apiFootball\('\/fixtures',\{team:id,from,to\},cfg\)/);
   assert.match(worker,/mode:upcoming\.length \? 'upcoming' : recent\.length \? 'recent' : 'empty'/);
   assert.match(worker,/matches:\[\.\.\.split\.upcoming,\.\.\.split\.recent\]/);
 });
