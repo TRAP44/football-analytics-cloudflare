@@ -276,70 +276,99 @@ export function createAnalysisUsageCompensationRuntime({
   }
 
   async function reconcileAnalysisUsageReservations(cfg) {
-    if (!hasSupabase(cfg)) {
-      return { ok: true, skipped: true, reason: 'supabase_not_configured', reconciled: 0 };
+    if (!supabaseConfigured(cfg)) {
+      return {
+        ok:true,
+        skipped:true,
+        reason:'supabase_not_configured',
+        reconciled:0,
+      };
     }
 
     try {
-      const operationId = '00000000-0000-4000-8000-000000000000';
-      const result = await supaRpc(cfg, 'refund_analysis_quota', {
-        p_telegram_id: 0,
-        p_usage_date: new Date().toISOString().slice(0, 10),
-      }, 7000, lifecycleHeaders(operationId, 'reconcile'));
+      const operationId='00000000-0000-4000-8000-000000000000';
+      const rawResult=await supaRpc(
+        cfg,
+        'refund_analysis_quota',
+        {
+          p_telegram_id:0,
+          p_usage_date:new Date().toISOString().slice(0,10),
+        },
+        7000,
+        lifecycleHeaders(operationId,'reconcile'),
+      );
+      const result=objectValue(rawResult);
 
-      if (result?.reconciliation !== true) {
-        const error = new Error(String(result?.reason || 'analysis_usage_reconciliation_not_confirmed'));
-        error.code = 'ANALYSIS_USAGE_RECONCILIATION_NOT_CONFIRMED';
+      if (!result || result.reconciliation !== true) {
+        const error=new Error(
+          safeScalarText(result?.reason,160)
+            || 'analysis_usage_reconciliation_not_confirmed',
+        );
+        error.code='ANALYSIS_USAGE_RECONCILIATION_NOT_CONFIRMED';
         throw error;
       }
 
-      const reconciled = nonNegativeInteger(result?.reconciled);
-      const failed = nonNegativeInteger(result?.failed);
-      if (reconciled) bumpTelemetry?.('analysisUsageReconciled', reconciled);
+      // The SQL contract processes at most 100 stale reservations and cleans at
+      // most 500 finalized rows per call. Reject impossible counters instead of
+      // silently reporting a healthy reconciliation.
+      const reconciled=boundedNonNegativeInteger(result.reconciled,100);
+      const failed=boundedNonNegativeInteger(result.failed,100);
+      const pending=boundedNonNegativeInteger(result.pending);
+      const cleaned=boundedNonNegativeInteger(result.cleaned,500);
+
+      if (
+        reconciled === null
+        || failed === null
+        || pending === null
+        || cleaned === null
+        || reconciled+failed>100
+        || result.ok !== (failed===0)
+      ) {
+        const error=new Error('analysis_usage_reconciliation_contract_invalid');
+        error.code='ANALYSIS_USAGE_RECONCILIATION_CONTRACT_INVALID';
+        throw error;
+      }
+
+      if (reconciled) safeTelemetry('analysisUsageReconciled',reconciled);
       if (failed) {
-        bumpTelemetry?.('analysisUsageReconciliationFailures', failed);
-        await Promise.resolve(recordOpsEvent?.(cfg, {
-          severity: 'error',
-          source: 'quota',
-          eventType: 'analysis_usage_reconciliation',
-          code: 'ANALYSIS_USAGE_RECONCILIATION_PARTIAL',
-          message: 'Some stale analysis usage reservations could not be reconciled and remain pending.',
-          meta: {
-            reconciled,
-            failed,
-            pending: nonNegativeInteger(result?.pending),
-          },
-        })).catch(() => null);
+        safeTelemetry('analysisUsageReconciliationFailures',failed);
+        await safeRecordOpsEvent(cfg,{
+          severity:'error',
+          source:'quota',
+          eventType:'analysis_usage_reconciliation',
+          code:'ANALYSIS_USAGE_RECONCILIATION_PARTIAL',
+          message:'Some stale analysis usage reservations could not be reconciled and remain pending.',
+          meta:{reconciled,failed,pending},
+        });
       }
 
       return {
-        ok: failed === 0,
-        degraded: failed > 0,
+        ok:failed===0,
+        degraded:failed>0,
         reconciled,
         failed,
-        pending: nonNegativeInteger(result?.pending),
-        cleaned: nonNegativeInteger(result?.cleaned),
+        pending,
+        cleaned,
       };
     } catch (error) {
-      bumpTelemetry?.('analysisUsageReconciliationFailures');
-      await Promise.resolve(recordOpsEvent?.(cfg, {
-        severity: 'error',
-        source: 'quota',
-        eventType: 'analysis_usage_reconciliation',
-        code: 'ANALYSIS_USAGE_RECONCILIATION_FAILED',
-        message: 'Durable analysis usage reservations could not be reconciled.',
-        meta: {
-          error: redactOpsString(error?.message || error, 180),
-        },
-      })).catch(() => null);
+      safeTelemetry('analysisUsageReconciliationFailures');
+      const reason=safeErrorText(error,180);
+      await safeRecordOpsEvent(cfg,{
+        severity:'error',
+        source:'quota',
+        eventType:'analysis_usage_reconciliation',
+        code:'ANALYSIS_USAGE_RECONCILIATION_FAILED',
+        message:'Durable analysis usage reservations could not be reconciled.',
+        meta:{error:reason},
+      });
       return {
-        ok: false,
-        degraded: true,
-        reconciled: 0,
-        failed: 1,
-        pending: 0,
-        cleaned: 0,
-        reason: redactOpsString(error?.message || error, 180),
+        ok:false,
+        degraded:true,
+        reconciled:0,
+        failed:1,
+        pending:0,
+        cleaned:0,
+        reason,
       };
     }
   }
