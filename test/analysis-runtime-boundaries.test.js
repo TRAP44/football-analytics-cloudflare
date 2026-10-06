@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { createAnalysisRuntime } from '../src/analysis-runtime.js';
+
+function readRepoFile(relativePath) {
+  return readFileSync(new URL('../' + relativePath, import.meta.url), 'utf8');
+}
 
 function json(body, status = 200, headers = {}) {
   return { body, status, headers };
@@ -85,12 +89,38 @@ test('analysis cache outages fail soft before the quota gate', async () => {
 });
 
 test('malformed quota snapshots fail closed instead of bypassing quota', async () => {
+  for (const quota of [
+    {plan:'FREE',used:'oops',limit:3,left:3},
+    {plan:'FREE',used:0,limit:3,left:999},
+    {plan:'FREE',used:5,limit:3,left:1},
+    {plan:'FREE',used:0,limit:0,left:0},
+  ]) {
+    const runtime=createAnalysisRuntime({
+      ...baseDeps(),
+      getCache:async()=>null,
+      getStaleCache:async()=>null,
+      resolveUserEntitlements:async()=>({source:'free',access:{}}),
+      getQuota:async()=>quota,
+    });
+
+    const response=await runtime.apiAnalyze(
+      {json:async()=>({fixtureId:123})},
+      {},
+      {id:456},
+    );
+
+    assert.equal(response.status,503,JSON.stringify(quota));
+    assert.equal(response.body.code,'ANALYSIS_QUOTA_UNAVAILABLE',JSON.stringify(quota));
+  }
+});
+
+test('quota snapshots may report used above a reduced limit only when left is exactly zero', async () => {
   const runtime=createAnalysisRuntime({
     ...baseDeps(),
     getCache:async()=>null,
     getStaleCache:async()=>null,
     resolveUserEntitlements:async()=>({source:'free',access:{}}),
-    getQuota:async()=>({plan:'FREE',used:'oops',limit:3,left:3}),
+    getQuota:async()=>({plan:'FREE',used:5,limit:3,left:0}),
   });
 
   const response=await runtime.apiAnalyze(
@@ -99,8 +129,14 @@ test('malformed quota snapshots fail closed instead of bypassing quota', async (
     {id:456},
   );
 
-  assert.equal(response.status,503);
-  assert.equal(response.body.code,'ANALYSIS_QUOTA_UNAVAILABLE');
+  assert.equal(response.status,429);
+  assert.equal(response.body.code,'ANALYSIS_QUOTA_EXHAUSTED');
+  assert.deepEqual(response.body.quota,{
+    plan:'FREE',
+    used:5,
+    limit:3,
+    left:0,
+  });
 });
 
 test('shared analysis joins reject cross-fixture payloads', async () => {
@@ -172,8 +208,8 @@ test('analysis runtime treats string false as false and cached quota metadata is
   assert.equal(entitlementsCalled, 0);
 });
 
-test('analysis runtime rejects cache payloads for another fixture', async () => {
-  let opsEvents = 0;
+test('analysis runtime rejects cache payloads for another fixture and records the integrity code', async () => {
+  const events=[];
   const runtime = createAnalysisRuntime({
     ...baseDeps(),
     getCache: async () => ({
@@ -181,7 +217,7 @@ test('analysis runtime rejects cache payloads for another fixture', async () => 
       match:{ fixtureId:999, date:new Date().toISOString(), status:'NS' },
     }),
     getStaleCache: async () => null,
-    recordOpsEvent: async () => { opsEvents += 1; },
+    recordOpsEvent: async (_cfg,event) => { events.push(event); },
     resolveUserEntitlements: async () => ({ source:'free', access:{} }),
     getQuota: async () => ({ plan:'FREE', used:3, limit:3, left:0 }),
   });
@@ -192,8 +228,11 @@ test('analysis runtime rejects cache payloads for another fixture', async () => 
     { id:456 },
   );
 
-  assert.equal(response.status, 429);
-  assert.equal(opsEvents, 1);
+  assert.equal(response.status,429);
+  assert.equal(response.body.code,'ANALYSIS_QUOTA_EXHAUSTED');
+  assert.equal(events.length,1);
+  assert.equal(events[0].code,'ANALYSIS_CACHE_INVALID');
+  assert.deepEqual(events[0].meta,{fixtureId:123,source:'fresh'});
 });
 
 test('client-supplied news impact flags cannot mint a free recheck', async () => {
@@ -236,17 +275,18 @@ test('client-supplied news impact flags cannot mint a free recheck', async () =>
   assert.equal(historyEligibilityChecks, 0);
 });
 
-test('analysis wiring owns Tavily adapter and retryable provider fallback', () => {
-  const worker = fs.readFileSync('src/worker.js', 'utf8');
-  const runtime = fs.readFileSync('src/analysis-runtime.js', 'utf8');
+test('analysis wiring owns Tavily adapter and keeps boundary helpers local to the runtime', () => {
+  const worker = readRepoFile('src/worker.js');
+  const runtime = readRepoFile('src/analysis-runtime.js');
 
   assert.doesNotMatch(worker, /\btavilySearch\b/);
   assert.match(runtime, /fetchWithTimeout/);
   assert.match(runtime, /Authorization|authorization/);
   assert.match(runtime, /Bearer/);
   assert.match(runtime, /isRetryableFootballTransportError/);
-  assert.match(runtime, /quotaSnapshotForResponse/);
-  assert.match(runtime, /safeAnalysisProviderFetch/);
+  assert.match(runtime, /function quotaSnapshot\(value, fallback = null\)/);
+  assert.match(runtime, /const expectedLeft=Math\.max\(0,limit-used\)/);
+  assert.match(runtime, /function safeAnalysisProviderFetch\(input\)/);
   assert.match(runtime, /analysisCachePayload\(joinedCandidate,fixtureId\)/);
   assert.match(runtime, /return Object\.freeze\(\{apiAnalyze\}\)/);
 });
