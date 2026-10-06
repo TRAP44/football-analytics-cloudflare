@@ -821,6 +821,30 @@ function billingWebhookStatus(...args) { return getBillingRuntime().billingWebho
 function loadStarTransactionsForSync(...args) { return getBillingRuntime().loadStarTransactionsForSync(...args); }
 function syncBillingFromStars(...args) { return getBillingRuntime().syncBillingFromStars(...args); }
 
+let telegramLinksRuntime = null;
+function getTelegramLinksRuntime() {
+  if (!telegramLinksRuntime) {
+    telegramLinksRuntime = createTelegramLinksRuntime({
+      cleanLaunchPart,
+      getCache,
+      setCache,
+      telegramApi,
+    });
+  }
+  return telegramLinksRuntime;
+}
+
+function telegramWebAppUrl(...args) { return getTelegramLinksRuntime().telegramWebAppUrl(...args); }
+function telegramAnalysisHandoffParams(...args) { return getTelegramLinksRuntime().telegramAnalysisHandoffParams(...args); }
+function telegramFullAnalysisUrl(...args) { return getTelegramLinksRuntime().telegramFullAnalysisUrl(...args); }
+function oneTapHandoffDrill(...args) { return getTelegramLinksRuntime().oneTapHandoffDrill(...args); }
+function fixtureShareStartParam(...args) { return getTelegramLinksRuntime().fixtureShareStartParam(...args); }
+function campaignStartParam(...args) { return getTelegramLinksRuntime().campaignStartParam(...args); }
+function telegramBotUsername(...args) { return getTelegramLinksRuntime().telegramBotUsername(...args); }
+function fixtureTelegramDeepLink(...args) { return getTelegramLinksRuntime().fixtureTelegramDeepLink(...args); }
+function telegramCampaignDeepLink(...args) { return getTelegramLinksRuntime().telegramCampaignDeepLink(...args); }
+function telegramShareComposerUrl(...args) { return getTelegramLinksRuntime().telegramShareComposerUrl(...args); }
+
 function telegramMiniAppE2EDrill() {
   const request=new Request('https://app.example/');
   const match={
