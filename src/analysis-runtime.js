@@ -124,6 +124,29 @@ export function createAnalysisRuntime(deps) {
     return value;
   }
 
+  function reservationQuotaSnapshot(reservation, fallback = null) {
+    if (!reservation || reservation.allowed !== true) return fallback;
+    const used = Number(reservation.used);
+    const limit = Number(reservation.limit);
+    const left = Number(reservation.left);
+    if (!Number.isFinite(used) || !Number.isFinite(limit) || !Number.isFinite(left)) return fallback;
+    return {
+      plan:String(reservation.plan || fallback?.plan || 'FREE'),
+      used,
+      limit,
+      left:Math.max(0, left),
+    };
+  }
+
+  async function quotaSnapshotForResponse(userId, cfg, fallback = null) {
+    try {
+      const quota = await getQuota(userId, cfg);
+      return quota && typeof quota === 'object' ? quota : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
   function normalizeNewsPublishedAt(value, now = Date.now()) {
     const parsed = Date.parse(String(value || ''));
     if (!Number.isFinite(parsed)) return '';
@@ -259,7 +282,7 @@ export function createAnalysisRuntime(deps) {
         if (trackFullAi) void recordGrowthEvent(cfg,{userId:userId,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,freshness:previousFreshness?.state || 'fresh'}});
         const newsImpact=newsImpactDeltaStatus(staleBefore,cached,null,{requested:newsImpactRecheck,eligible:newsImpactEligible,performed:false,publishedAt:newsPublishedAt});
         await recordTrackedFullAiOutcome('cached');
-        return json(analysisResponsePayload(cached,{cached:true,stale:false,recheck:{requested:recheckRequested,performed:false,free:false,reasonCode:recheckReasonCode},newsImpact,quota:await getQuota(userId,cfg)}));
+        return json(analysisResponsePayload(cached,{cached:true,stale:false,recheck:{requested:recheckRequested,performed:false,free:false,reasonCode:recheckReasonCode},newsImpact,quota:await quotaSnapshotForResponse(userId,cfg,null)}));
       }
     }
   
@@ -282,7 +305,7 @@ export function createAnalysisRuntime(deps) {
         await recordHistory(userId,joined,cfg);
         if (trackFullAi) void recordGrowthEvent(cfg,{userId:userId,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,sharedJoin:true}});
         await recordTrackedFullAiOutcome('shared');
-        return json(analysisResponsePayload(joined,{cached:true,stale:false,sharedJoin:true,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_shared' : (previousFreshness?.reasonCode || 'shared_compute')},quota:await getQuota(userId,cfg)}));
+        return json(analysisResponsePayload(joined,{cached:true,stale:false,sharedJoin:true,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_shared' : (previousFreshness?.reasonCode || 'shared_compute')},quota:await quotaSnapshotForResponse(userId,cfg,quotaBefore)}));
       }
       if (staleBefore) {
         await recordHistory(userId,staleBefore,cfg);
@@ -674,7 +697,8 @@ export function createAnalysisRuntime(deps) {
     if (needsFreshnessRecheck) void recordGrowthEvent(cfg,{userId:userId,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:previousFreshness?.reasonCode || 'age_window',material:Boolean(recheckDelta?.material),stable:Boolean(recheckDelta?.stable),changeCount:Number(recheckDelta?.items?.length || 0),codes:(recheckDelta?.codes || []).slice(0,6)}});
     if (trackFullAi) void recordGrowthEvent(cfg,{userId:userId,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:false,recheck:shouldPerformRecheck}});
     await recordTrackedFullAiOutcome('fresh');
-    const responseQuota=await getQuota(userId,cfg);
+    const responseQuotaFallback = reservationQuotaSnapshot(usageReservation, quotaBefore);
+    const responseQuota = await quotaSnapshotForResponse(userId, cfg, responseQuotaFallback);
     usageCommitted=true;
     return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:recheckReasonCode,delta:recheckDelta},newsImpact,quota:responseQuota}));
     } finally {
