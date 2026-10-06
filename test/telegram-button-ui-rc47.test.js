@@ -5,7 +5,9 @@ import fs from 'node:fs';
 const app=fs.readFileSync('public/app.js','utf8');
 const worker=(fs.readFileSync('src/worker.js','utf8')
   +'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8')
-  +'\n'+fs.readFileSync('src/telegram-bot-ui-runtime.js','utf8'));
+  +'\n'+fs.readFileSync('src/telegram-bot-ui-runtime.js','utf8')
+  +'\n'+fs.readFileSync('src/telegram-bot-orchestration-runtime.js','utf8')
+  +'\n'+fs.readFileSync('src/telegram-digest-runtime.js','utf8'));
 
 test('telegram uses a persistent button-first keyboard instead of a slash command menu',()=> {
   assert.match(worker,/commands:\s*\[\]/);
@@ -49,9 +51,9 @@ test('mini app deep links can open an exact analysis tab',()=> {
   assert.match(app,/openLaunchFixture\(fixtureId, action, tab, handoff, newsImpactDecision, newsImpactAction, newsImpactRecoveryCode, newsImpactRecoveryFrom\)/);
 });
 
-test('RC47 health exposes button-first contracts',()=> {
-  assert.match(worker,/botPersistentKeyboard:\s*'enabled'/);
-  assert.match(worker,/botMatchActionButtons:\s*'enabled'/);
-  assert.match(worker,/botSlashMenuHidden:\s*'enabled'/);
-  assert.match(worker,/botProfileBranding:\s*'enabled'/);
+test('RC47 release contract follows extracted button-first runtimes',()=> {
+  assert.match(worker,/createTelegramBotUiRuntime\(\{/);
+  assert.match(worker,/createTelegramBotOrchestrationRuntime\(\{/);
+  assert.match(worker,/createTelegramDigestRuntime\(\{/);
+  assert.match(worker,/return Object\.freeze\(\{/);
 });
