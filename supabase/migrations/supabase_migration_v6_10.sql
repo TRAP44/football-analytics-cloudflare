@@ -1,6 +1,11 @@
 -- Football Analytics v6.10 / RC18
 -- Atomic calibration transitions, manual freeze controls, immutable audit,
 -- and remediation of the RC16 validation-table RLS gap.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this migration in the upgrade chain: it extends the calibration objects
+-- introduced by v6.9 and is part of the proven production migration history.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 alter table public.model_calibration_state
   add column if not exists frozen boolean not null default false,
