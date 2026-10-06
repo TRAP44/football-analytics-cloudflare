@@ -172,54 +172,165 @@ export function createAnalysisLifecycleRuntime(deps) {
   }
 
   function analysisKickoffHandoff(payload = {}, now = Date.now()) {
-    const status=String(payload?.match?.status || '');
-    const kickoffMs=Date.parse(payload?.match?.date || '');
-    const minutesToKickoff=Number.isFinite(kickoffMs) ? Math.round((kickoffMs-now)/60000) : null;
-    const finished=isFinishedStatus(status);
-    const liveByStatus=isLiveStatus(status);
-    const liveByClock=!finished && minutesToKickoff!==null && minutesToKickoff < -5;
+    const source=objectValue(payload) || {};
+    const nowMs=safeNow(now);
+    const status=safeText(source?.match?.status,32);
+    const kickoffMs=parsedTime(source?.match?.date);
+    const minutesToKickoff=kickoffMs !== null
+      ? Math.round((kickoffMs-nowMs)/60000)
+      : null;
+    const finished=statusFlag(isFinishedStatus,status);
+    const liveByStatus=statusFlag(isLiveStatus,status);
+    const liveByClock=!finished && minutesToKickoff!==null && minutesToKickoff<-5;
+
     if (finished) {
-      return {state:'finished',locked:true,minutesToKickoff,label:'Матч завершён',actionLabel:'Открыть итог матча',reason:'Предматчевый AI сохранён как архивный снимок. Для результата, событий и статистики используйте центр матча.'};
+      return {
+        state:'finished',
+        locked:true,
+        minutesToKickoff,
+        label:'Матч завершён',
+        actionLabel:'Открыть итог матча',
+        reason:'Предматчевый AI сохранён как архивный снимок. Для результата, событий и статистики используйте центр матча.',
+      };
     }
     if (liveByStatus || liveByClock) {
-      return {state:'live',locked:true,minutesToKickoff,label:'Матч уже идёт',actionLabel:'Открыть центр матча',reason:'Предматчевый сигнал зафиксирован и больше не обновляется как live-рекомендация. Смотрите счёт, события и статистику в центре матча.'};
+      return {
+        state:'live',
+        locked:true,
+        minutesToKickoff,
+        label:'Матч уже идёт',
+        actionLabel:'Открыть центр матча',
+        reason:'Предматчевый сигнал зафиксирован и больше не обновляется как live-рекомендация. Смотрите счёт, события и статистику в центре матча.',
+      };
     }
-    if (minutesToKickoff!==null && minutesToKickoff<=10) {
-      return {state:'imminent',locked:false,minutesToKickoff,label:'Финальное окно до старта',actionLabel:'Перепроверить перед стартом',reason:'До матча осталось мало времени: финально проверьте составы, потери и движение рынка.'};
+    if (kickoffMs === null) {
+      return {
+        state:'unknown',
+        locked:true,
+        minutesToKickoff:null,
+        label:'Время матча не подтверждено',
+        actionLabel:'Обновить данные матча',
+        reason:'Без подтверждённого времени начала нельзя безопасно определить фазу предматчевого анализа.',
+      };
     }
-    return {state:'prematch',locked:false,minutesToKickoff,label:'Предматчевый режим',actionLabel:'',reason:''};
+    if (minutesToKickoff<=10) {
+      return {
+        state:'imminent',
+        locked:false,
+        minutesToKickoff,
+        label:'Финальное окно до старта',
+        actionLabel:'Перепроверить перед стартом',
+        reason:'До матча осталось мало времени: финально проверьте составы, потери и движение рынка.',
+      };
+    }
+    return {
+      state:'prematch',
+      locked:false,
+      minutesToKickoff,
+      label:'Предматчевый режим',
+      actionLabel:'',
+      reason:'',
+    };
   }
-  
+
   const ANALYSIS_KICKOFF_HANDOFF_DRILL_NOW=Date.parse('2026-09-23T18:00:00Z');
   function analysisKickoffHandoffDrill() {
-    const pre=analysisKickoffHandoff({match:{date:'2026-09-23T20:00:00Z',status:'NS'}},ANALYSIS_KICKOFF_HANDOFF_DRILL_NOW);
-    const imminent=analysisKickoffHandoff({match:{date:'2026-09-23T18:08:00Z',status:'NS'}},ANALYSIS_KICKOFF_HANDOFF_DRILL_NOW);
-    const live=analysisKickoffHandoff({match:{date:'2026-09-23T17:55:00Z',status:'1H'}},ANALYSIS_KICKOFF_HANDOFF_DRILL_NOW);
-    const finished=analysisKickoffHandoff({match:{date:'2026-09-23T15:00:00Z',status:'FT'}},ANALYSIS_KICKOFF_HANDOFF_DRILL_NOW);
-    return {pass:pre.state==='prematch' && !pre.locked && imminent.state==='imminent' && !imminent.locked && live.state==='live' && live.locked && finished.state==='finished' && finished.locked,cases:4};
+    const pre=analysisKickoffHandoff(
+      {match:{date:'2026-09-23T20:00:00Z',status:'NS'}},
+      ANALYSIS_KICKOFF_HANDOFF_DRILL_NOW,
+    );
+    const imminent=analysisKickoffHandoff(
+      {match:{date:'2026-09-23T18:08:00Z',status:'NS'}},
+      ANALYSIS_KICKOFF_HANDOFF_DRILL_NOW,
+    );
+    const live=analysisKickoffHandoff(
+      {match:{date:'2026-09-23T17:55:00Z',status:'1H'}},
+      ANALYSIS_KICKOFF_HANDOFF_DRILL_NOW,
+    );
+    const finished=analysisKickoffHandoff(
+      {match:{date:'2026-09-23T15:00:00Z',status:'FT'}},
+      ANALYSIS_KICKOFF_HANDOFF_DRILL_NOW,
+    );
+    const unknown=analysisKickoffHandoff(
+      {match:{date:'invalid',status:'NS'}},
+      ANALYSIS_KICKOFF_HANDOFF_DRILL_NOW,
+    );
+    return {
+      pass:pre.state==='prematch'
+        && !pre.locked
+        && imminent.state==='imminent'
+        && !imminent.locked
+        && live.state==='live'
+        && live.locked
+        && finished.state==='finished'
+        && finished.locked
+        && unknown.state==='unknown'
+        && unknown.locked,
+      cases:5,
+    };
   }
-  
+
   async function userHasAnalyzedFixture(userId, fixtureId, cfg) {
-    const uid=Number(userId || 0), id=Number(fixtureId || 0);
+    const uid=positiveSafeInteger(userId);
+    const id=positiveSafeInteger(fixtureId);
     if (!uid || !id) return false;
-    if (hasSupabase(cfg)) {
+
+    if (useSupabase(cfg)) {
       try {
-        const row=await supaSelectOne(cfg,'analysis_history',{telegram_id:`eq.${uid}`,fixture_id:`eq.${id}`});
-        return Boolean(row?.fixture_id);
-      } catch { return false; }
+        const row=objectValue(await supaSelectOne(
+          cfg,
+          'analysis_history',
+          {telegram_id:`eq.${uid}`,fixture_id:`eq.${id}`},
+        ));
+        return positiveSafeInteger(row?.fixture_id)===id;
+      } catch {
+        return false;
+      }
     }
-    return (memory.history.get(uid) || []).some(row=>Number(row.fixture_id)===id);
+
+    return rows(memory.history.get(uid),500).some(
+      row=>positiveSafeInteger(row?.fixture_id)===id,
+    );
   }
-  
+
   const ANALYSIS_FRESHNESS_DRILL_NOW=Date.parse('2026-09-23T18:00:00Z');
   function analysisFreshnessDrill() {
-    const base={match:{date:'2026-09-23T18:30:00Z',status:'NS'},market:{odds:{home:2,draw:3,away:4}},lineups:{home:{startXI:[]},away:{startXI:[]}}};
-    const stale=analysisFreshness({...base,generatedAt:'2026-09-23T17:52:00Z'},ANALYSIS_FRESHNESS_DRILL_NOW);
-    const fresh=analysisFreshness({...base,generatedAt:'2026-09-23T17:58:00Z'},ANALYSIS_FRESHNESS_DRILL_NOW);
-    const far=analysisFreshness({...base,match:{date:'2026-09-24T02:00:00Z',status:'NS'},generatedAt:'2026-09-23T17:30:00Z'},ANALYSIS_FRESHNESS_DRILL_NOW);
-    return {pass:stale.needsRecheck && stale.reasonCode==='lineups_window' && !fresh.needsRecheck && !far.needsRecheck,cases:3};
+    const base={
+      match:{date:'2026-09-23T18:30:00Z',status:'NS'},
+      market:{odds:{home:2,draw:3,away:4}},
+      lineupImpact:{homeConfirmed:false,awayConfirmed:false},
+    };
+    const stale=analysisFreshness(
+      {...base,generatedAt:'2026-09-23T17:52:00Z'},
+      ANALYSIS_FRESHNESS_DRILL_NOW,
+    );
+    const fresh=analysisFreshness(
+      {...base,generatedAt:'2026-09-23T17:58:00Z'},
+      ANALYSIS_FRESHNESS_DRILL_NOW,
+    );
+    const far=analysisFreshness(
+      {
+        ...base,
+        match:{date:'2026-09-24T02:00:00Z',status:'NS'},
+        generatedAt:'2026-09-23T17:30:00Z',
+      },
+      ANALYSIS_FRESHNESS_DRILL_NOW,
+    );
+    const future=analysisFreshness(
+      {...base,generatedAt:'2026-09-24T17:58:00Z'},
+      ANALYSIS_FRESHNESS_DRILL_NOW,
+    );
+    return {
+      pass:stale.needsRecheck
+        && stale.reasonCode==='lineups_window'
+        && !fresh.needsRecheck
+        && !far.needsRecheck
+        && future.needsRecheck
+        && future.reasonCode==='generated_time_invalid',
+      cases:4,
+    };
   }
-  
+
   function analysisDeltaProbabilityLabel(key = '') {
     return key==='home'?'П1':key==='draw'?'Н':key==='away'?'П2':String(key || '');
   }
