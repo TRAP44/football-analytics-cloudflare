@@ -11290,12 +11290,7 @@ async function rcReadRoute(label, factory) {
 
 const NEWS_BLOCKED_HOST_RE = /(?:facebook|instagram|tiktok|twitter|x\.com|youtube|youtu\.be|pinterest|betting|bet365|tips?ster|prediction)/i;
 const NEWS_MAJOR_SOURCE_RE = /(?:reuters|apnews|bbc\.|espn|skysports|theathletic|goal\.|marca\.|as\.com|lequipe|kicker|gazzetta)/i;
-const NEWS_OFFICIAL_SOURCE_RE = /(?:uefa\.|fifa\.|premier  })),
-    };
-  } catch {
-    return { answer: '', results: [] };
-  }
-}
+const NEWS_OFFICIAL_SOURCE_RE = /(?:uefa\.|fifa\.|premierleague\.com|laliga\.com|bundesliga\.com|legaseriea\.it|ligue1\.com)/i;
 
 let footballNewsRuntime = null;
 function getFootballNewsRuntime() {
