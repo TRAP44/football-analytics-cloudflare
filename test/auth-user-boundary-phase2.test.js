@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createUserAuthRuntime } from '../src/auth-user.js';
+import { MAX_TELEGRAM_INIT_DATA_LENGTH } from '../src/security-gate.js';
 import { adminSensitivePathInventory, requiresAdminAuthorizationPath } from '../src/security-route-registry.js';
 
 function createRuntime(overrides = {}) {
@@ -95,6 +96,117 @@ test('Phase 2 auth boundary rejects malformed Telegram validator identities',asy
   }
 });
 
+test('Phase 2 auth boundary fails closed when Telegram validation throws',async()=>{
+  const rt=createRuntime({
+    validateTelegramInitData:async()=>{
+      throw new Error('validator unavailable');
+    },
+  });
+
+  assert.equal(
+    await rt.api.getRequestUser(request(),{botToken:'token',devMode:false}),
+    null,
+  );
+  assert.equal(rt.memory.users.size,0);
+});
+
+test('Phase 2 local development may recover from validator failure only on localhost',async()=>{
+  const local=createRuntime({
+    validateTelegramInitData:async()=>{ throw new Error('validator unavailable'); },
+  });
+  const localUser=await local.api.getRequestUser(
+    request('/','GET','signed','http://localhost:8787'),
+    {botToken:'token',devMode:true},
+  );
+  assert.equal(localUser.id,999999999);
+  assert.equal(localUser.__developmentIdentity,true);
+  assert.equal(localUser.__telegramValidated,false);
+
+  const remote=createRuntime({
+    validateTelegramInitData:async()=>{ throw new Error('validator unavailable'); },
+  });
+  assert.equal(
+    await remote.api.getRequestUser(
+      request('/','GET','signed','https://example.test'),
+      {botToken:'token',devMode:true},
+    ),
+    null,
+  );
+});
+
+test('Phase 2 auth boundary rejects malformed request URL and header access before validation',async()=>{
+  let validations=0;
+  const rt=createRuntime({
+    validateTelegramInitData:async()=>{
+      validations+=1;
+      return {id:42};
+    },
+  });
+
+  const malformedUrl={
+    url:'not a valid URL',
+    method:'GET',
+    headers:{get:()=> 'signed'},
+  };
+  assert.equal(
+    await rt.api.getRequestUser(malformedUrl,{botToken:'token',devMode:false}),
+    null,
+  );
+
+  const brokenHeaders={
+    url:'https://example.test/',
+    method:'GET',
+    headers:{get:()=>{ throw new Error('headers unavailable'); }},
+  };
+  assert.equal(
+    await rt.api.getRequestUser(brokenHeaders,{botToken:'token',devMode:false}),
+    null,
+  );
+  assert.equal(validations,0);
+});
+
+test('Phase 2 auth boundary rejects oversized initData before invoking HMAC validation',async()=>{
+  let validations=0;
+  const rt=createRuntime({
+    validateTelegramInitData:async()=>{
+      validations+=1;
+      return {id:42};
+    },
+  });
+  const oversized='x'.repeat(MAX_TELEGRAM_INIT_DATA_LENGTH+1);
+
+  assert.equal(
+    await rt.api.getRequestUser(
+      request('/','GET',oversized),
+      {botToken:'token',devMode:false},
+    ),
+    null,
+  );
+  assert.equal(validations,0);
+});
+
+test('Phase 2 auth boundary clones frozen signed user data instead of mutating validator output',async()=>{
+  const signed=Object.freeze({
+    id:42,
+    username:'frozen-user',
+    first_name:'Frozen',
+  });
+  const rt=createRuntime({
+    validateTelegramInitData:async()=>signed,
+  });
+
+  const user=await rt.api.getRequestUser(
+    request(),
+    {botToken:'token',devMode:false},
+  );
+
+  assert.notEqual(user,signed);
+  assert.equal(user.id,42);
+  assert.equal(user.username,'frozen-user');
+  assert.equal(user.__telegramValidated,true);
+  assert.equal(Object.prototype.hasOwnProperty.call(signed,'__telegramValidated'),false);
+});
+
 test('Phase 2 auth boundary never creates synthetic admin identity on remote hosts',async()=>{
   const remote=createRuntime({validateTelegramInitData:async()=>null});
   const user=await remote.api.getRequestUser(request('/api/diagnostics','GET',''),{botToken:'token',devMode:true});
@@ -178,6 +290,20 @@ test('Phase 2 user persistence rejects invalid ids and record lookup fails close
   await assert.rejects(()=>rt.api.upsertUser({id:0},{}),/valid Telegram user id/);
   assert.equal(await rt.api.getUserRecord(0,{}),null);
   assert.equal(await rt.api.getUserRecord('not-a-user',{}),null);
+});
+
+
+test('Phase 2 getUserRecord propagates configured storage failures but never fabricates identity',async()=>{
+  const rt=createRuntime({
+    hasSupabase:()=>true,
+    supaSelectOne:async()=>{ throw new Error('db read down'); },
+  });
+
+  await assert.rejects(
+    ()=>rt.api.getUserRecord(42,{}),
+    /db read down/,
+  );
+  assert.equal(await rt.api.getUserRecord(0,{}),null);
 });
 
 test('Phase 2 auth boundary keeps local user storage and record fallback shape',async()=>{
