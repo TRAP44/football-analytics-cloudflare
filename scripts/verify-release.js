@@ -83,6 +83,9 @@ if (!releaseContract.databaseContract?.compatibleFingerprints?.includes(releaseC
 if (releaseContract.databaseContract?.privateContracts?.analysisUsage?.version !== 1) failures.push('release-contract private analysisUsage contract version must remain 1');
 if (releaseContract.databaseContract?.privateContracts?.analysisUsage?.readinessField !== 'schema.privateAnalysisUsage') failures.push('release-contract private analysisUsage readiness field must remain schema.privateAnalysisUsage');
 if (releaseContract.databaseContract?.privateContracts?.analysisUsage?.sourceMigration !== 'supabase/migrations/supabase_migration_v6_28.sql') failures.push('release-contract private analysisUsage source migration drifted');
+if (releaseContract.databaseContract?.runtimeControlAtomicHistory?.version !== 1) failures.push('release-contract runtimeControlAtomicHistory contract version must remain 1');
+if (releaseContract.databaseContract?.runtimeControlAtomicHistory?.readinessField !== 'backendSecurity.rule_violations') failures.push('release-contract runtimeControlAtomicHistory readiness field must remain backendSecurity.rule_violations');
+if (releaseContract.databaseContract?.runtimeControlAtomicHistory?.sourceMigration !== 'supabase/migrations/supabase_migration_v6_29_1.sql') failures.push('release-contract runtimeControlAtomicHistory source migration drifted');
 
 if (!worker.includes(`const APP_VERSION = '${expected}'`)) failures.push(`Worker version must be ${expected}`);
 if (!expectedRc || !worker.includes(`const RC_NAME = '${expectedRc}'`)) failures.push(`Worker RC name must be ${expectedRc || 'derived from runtimeVersion'}`);
