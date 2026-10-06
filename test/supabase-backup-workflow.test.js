@@ -70,6 +70,7 @@ test('Supabase restore drill is isolated, measurable and preserves least privile
   assert.ok(workflow.includes('LOCAL_PROJECT="$RUNNER_TEMP/supabase-restore-project"'));
   assert.ok(workflow.includes('echo "LOCAL_PROJECT=$LOCAL_PROJECT" >> "$GITHUB_ENV"'));
   assert.ok(workflow.includes('tail -n 80 "$RUNNER_TEMP/supabase-restore-start.log"'));
+  assert.ok(workflow.includes(`PROJECT_ID="$(awk -F'"' '/^[[:space:]]*project_id[[:space:]]*=/ { print $2; exit }' supabase/config.toml)"`));
   assert.ok(workflow.includes('DB_CONTAINER="supabase_db_${PROJECT_ID}"'));
   assert.ok(workflow.includes('[[ -n "${LOCAL_PROJECT:-}" && -d "$LOCAL_PROJECT" ]]'));
   assert.match(workflow, /apply-supabase-restore-hardening\.sql/);
