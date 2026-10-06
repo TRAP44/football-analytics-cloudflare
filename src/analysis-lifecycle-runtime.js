@@ -301,7 +301,8 @@ export function createAnalysisLifecycleRuntime(deps) {
           'analysis_history',
           {telegram_id:`eq.${uid}`,fixture_id:`eq.${id}`},
         ));
-        return positiveSafeInteger(row?.fixture_id)===id;
+        return positiveSafeInteger(row?.telegram_id)===uid
+          && positiveSafeInteger(row?.fixture_id)===id;
       } catch {
         return false;
       }
@@ -418,6 +419,24 @@ export function createAnalysisLifecycleRuntime(deps) {
         codes:[],
         items:[],
         summary:'Снимки относятся к разным матчам и не могут сравниваться.',
+      };
+    }
+
+    const previousGeneratedAt=parsedTime(before?.generatedAt);
+    const nextGeneratedAt=parsedTime(after?.generatedAt);
+    if (
+      previousGeneratedAt !== null
+      && nextGeneratedAt !== null
+      && nextGeneratedAt < previousGeneratedAt
+    ) {
+      return {
+        available:false,
+        material:false,
+        stable:false,
+        reasonCode:'snapshot_order_invalid',
+        codes:[],
+        items:[],
+        summary:'Новый AI-снимок оказался старше предыдущего; изменение не может считаться корректной перепроверкой.',
       };
     }
 
