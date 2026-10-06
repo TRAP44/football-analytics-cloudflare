@@ -49,6 +49,76 @@ function runtime(overrides = {}) {
   };
 }
 
+test('runtime-controls reject JavaScript boolean and revision coercion',async()=>{
+  const {api}=runtime();
+  const normalized=api.normalizeRuntimeControls({
+    maintenance_mode:'false',
+    analysis_enabled:'false',
+    search_enabled:1,
+    live_enabled:true,
+    reminders_enabled:true,
+    expanded_data_enabled:true,
+    auto_settlement_recovery_enabled:'true',
+    message:{toString:()=> 'hidden'},
+    revision:true,
+    updated_at:{toString:()=> '2026-10-04T12:00:00.000Z'},
+  });
+  assert.deepEqual(normalized,{
+    ...DEFAULT_RUNTIME_CONTROLS,
+    liveEnabled:true,
+    remindersEnabled:true,
+    expandedDataEnabled:true,
+  });
+});
+
+test('malformed persisted runtime row activates fail-closed control plane',async()=>{
+  const {api}=runtime({
+    hasSupabase:()=>true,
+    supaSelectOne:async()=>({
+      id:'global',
+      revision:4,
+      maintenance_mode:'false',
+      analysis_enabled:true,
+      search_enabled:true,
+      live_enabled:true,
+      reminders_enabled:true,
+      expanded_data_enabled:true,
+      auto_settlement_recovery_enabled:false,
+    }),
+  });
+  const state=await api.loadRuntimeControls({});
+  assert.equal(state.schemaReady,false);
+  assert.equal(state.source,'fail_closed');
+  assert.equal(state.value.controlPlaneFailClosed,true);
+  assert.equal(state.value.maintenanceMode,true);
+  assert.equal(state.value.analysisEnabled,false);
+});
+
+test('runtime control cache rejects force truthiness and clock rollback',async()=>{
+  let reads=0;
+  const {api,setNow}=runtime({
+    hasSupabase:()=>true,
+    supaSelectOne:async()=>{
+      reads+=1;
+      return {
+        id:'global',
+        revision:4,
+        maintenance_mode:false,
+        analysis_enabled:true,
+        search_enabled:true,
+        live_enabled:true,
+        reminders_enabled:true,
+        expanded_data_enabled:true,
+        auto_settlement_recovery_enabled:false,
+      };
+    },
+  });
+  await api.loadRuntimeControls({});
+  setNow(1_699_999_999_000);
+  await api.loadRuntimeControls({}, {force:'true'});
+  assert.equal(reads,2);
+});
+
 test('runtime-controls domain normalizes database rows and exposes only public control state', () => {
   const { api } = runtime();
   const normalized = api.normalizeRuntimeControls({
@@ -137,6 +207,107 @@ test('runtime-controls domain caches a verified control row for the configured T
   assert.equal(second.value.revision, 4);
 });
 
+test('runtime control update requires strict booleans and revision identity',async()=>{
+  const {api}=runtime({
+    hasSupabase:()=>true,
+    supaSelectOne:async()=>({
+      id:'global',
+      revision:9,
+      maintenance_mode:false,
+      analysis_enabled:true,
+      search_enabled:true,
+      live_enabled:true,
+      reminders_enabled:true,
+      expanded_data_enabled:true,
+      auto_settlement_recovery_enabled:false,
+    }),
+  });
+
+  const coercedRevision=await api.saveRuntimeControls({}, {id:123}, {expectedRevision:true});
+  assert.equal(coercedRevision.code,'RUNTIME_CONTROLS_CONFLICT');
+
+  const malformed=await api.saveRuntimeControls({}, {id:123}, {
+    expectedRevision:9,
+    maintenanceMode:'false',
+    analysisEnabled:true,
+    searchEnabled:true,
+    liveEnabled:true,
+    remindersEnabled:true,
+    expandedDataEnabled:true,
+    autoSettlementRecoveryEnabled:false,
+  });
+  assert.equal(malformed.status,400);
+  assert.equal(malformed.code,'RUNTIME_CONTROLS_INPUT');
+});
+
+test('rollback rejects inconsistent or malformed history snapshots',async()=>{
+  const {api}=runtime({
+    hasSupabase:()=>true,
+    fetchWithTimeout:async()=>new Response('[]',{status:200}),
+    supaSelectOne:async(_cfg,table)=>{
+      if(table==='runtime_control_history'){
+        return {
+          id:5,
+          revision:3,
+          snapshot:{
+            revision:2,
+            maintenanceMode:false,
+            analysisEnabled:true,
+            searchEnabled:true,
+            liveEnabled:true,
+            remindersEnabled:true,
+            expandedDataEnabled:true,
+            autoSettlementRecoveryEnabled:false,
+          },
+        };
+      }
+      return null;
+    },
+  });
+  const result=await api.rollbackRuntimeControls({}, {id:1}, {
+    expectedRevision:9,
+    historyId:5,
+  });
+  assert.equal(result.status,409);
+  assert.equal(result.code,'RUNTIME_ROLLBACK_SNAPSHOT_INVALID');
+});
+
+test('history listing drops malformed rows instead of exposing rollback targets',async()=>{
+  const {api}=runtime({
+    supaSelectMany:async()=>[
+      {
+        id:1,
+        revision:3,
+        action:'update',
+        snapshot:{
+          revision:3,
+          maintenanceMode:false,
+          analysisEnabled:true,
+          searchEnabled:true,
+          liveEnabled:true,
+          remindersEnabled:true,
+          expandedDataEnabled:true,
+          autoSettlementRecoveryEnabled:false,
+        },
+      },
+      {
+        id:true,
+        revision:4,
+        snapshot:{revision:4},
+      },
+      {
+        id:3,
+        revision:5,
+        snapshot:{revision:4},
+      },
+    ],
+  });
+  const rows=await api.listRuntimeHistory({},true);
+  assert.equal(rows.length,1);
+  assert.equal(rows[0].id,1);
+  assert.equal(rows[0].revision,3);
+});
+
 test('runtime-controls domain preserves optimistic revision conflict semantics', async () => {
   const { api } = runtime({
     hasSupabase: () => true,
@@ -179,6 +350,27 @@ test('runtime-controls domain preserves maintenance and feature guards for norma
   );
   assert.equal(analysis.status, 503);
   assert.equal((await analysis.json()).code, 'ANALYSIS_DISABLED');
+});
+
+test('runtime guard requires strict admin boolean and handles malformed request URL fail-closed',async()=>{
+  const truthy=runtime({isAdminUser:()=> 'true'});
+  const blocked=truthy.api.runtimeGuard(
+    new Request('https://example.com/api/search'),
+    {id:99},
+    {},
+    {...DEFAULT_RUNTIME_CONTROLS,maintenanceMode:true,searchEnabled:false},
+  );
+  assert.equal(blocked.status,503);
+
+  const malformed=runtime();
+  const response=malformed.api.runtimeGuard(
+    {method:'POST',url:'not a url'},
+    {id:1},
+    {},
+    DEFAULT_RUNTIME_CONTROLS,
+  );
+  assert.equal(response.status,400);
+  assert.equal((await response.json()).code,'RUNTIME_REQUEST_INVALID');
 });
 
 test('runtime-controls domain keeps administrators exempt from ordinary feature toggles', () => {
