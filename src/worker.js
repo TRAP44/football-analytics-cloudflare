@@ -33,6 +33,7 @@ import { createCalibrationRuntime } from './calibration-runtime.js';
 import { createModelEvaluationRuntime } from './model-evaluation-runtime.js';
 import { createProviderFixtureRuntime } from './provider-fixture-runtime.js';
 import { createProviderDataRuntime } from './provider-data-runtime.js';
+import { createProviderReadinessWiringRuntime } from './provider-readiness-wiring-runtime.js';
 import { createAnalysisRuntime } from './analysis-runtime.js';
 import { createDistributedAnalysisLockRuntime } from './distributed-analysis-lock-runtime.js';
 import { createMatchCenterRuntime } from './match-center-runtime.js';
@@ -1613,31 +1614,9 @@ function finishPostMatchReturnClaim(...args) { return getPostMatchReturnRuntime(
 function releasePostMatchReturnClaim(...args) { return getPostMatchReturnRuntime().releasePostMatchReturnClaim(...args); }
 function processPostMatchReturns(...args) { return getPostMatchReturnRuntime().processPostMatchReturns(...args); }
 
-const reminderDeliveryRuntime = createReminderDeliveryRuntime({
-  fetchWithTimeout,
-  hasSupabase,
-  redactOpsString,
-  supaHeaders,
-});
-
 const {
   sendTelegramMessage,
   probeReminderReliabilitySchema,
-} = reminderDeliveryRuntime;
-
-const providerBudgetRuntime = createProviderBudgetRuntime({
-  clamp,
-  freeQuotaHealthy: (...args) => freeQuotaHealthy(...args),
-  getCache,
-  hasSupabase,
-  memory,
-  phase5ProviderUsage,
-  recordOpsEvent,
-  runtimeControlsSnapshot,
-  setCache,
-});
-
-const {
   PROVIDER_PLAN_LIMITS,
   PROVIDER_BUDGET_FLOORS,
   PROVIDER_FEATURE_TTLS,
@@ -1660,9 +1639,6 @@ const {
   providerPublicBudgetMode,
   providerFeaturePolicy,
   featureCacheAgeSeconds,
-} = providerBudgetRuntime;
-
-const {
   footballError,
   isFootballRateLimitError,
   footballCooldownRemaining,
@@ -1673,28 +1649,6 @@ const {
   providerRequestKey,
   isRetryableFootballTransportError,
   apiFootball,
-} = createApiFootballGateway({
-  memory,
-  providerPlanLimits: PROVIDER_PLAN_LIMITS,
-  providerBudgetFloors: PROVIDER_BUDGET_FLOORS,
-  hasSupabase,
-  supaRpc,
-  bumpTelemetry,
-  observeProviderRequest,
-  recordOpsEvent,
-  loadSharedProviderState,
-  phase5ProviderUsage,
-  persistSharedProviderCooldown,
-  fetchWithTimeout,
-  updateProviderFromHeaders,
-  persistSharedProviderQuota,
-  providerQuotaEvidence,
-  providerSnapshot,
-  withSingleFlight,
-  sleepMs,
-});
-
-const {
   providerFailureState,
   providerDataState,
   providerDataReliabilitySummary,
@@ -1711,88 +1665,44 @@ const {
   providerAuditEndpointPlan,
   providerAuditCall,
   providerAuditScore,
-} = createProviderDataRuntime({
-  apiFootball,
-  featureCacheAgeSeconds,
-  getCache,
-  getCacheEntry,
-  isFinishedStatus,
-  isFootballRateLimitError,
-  isLiveStatus,
-  memory,
-  promedFailure) bumpTelemetry('supabaseProbeConfirmedFailures');
-  return combined;
-}
-
-let supabaseReadinessRuntime = null;
-function getSupabaseReadinessRuntime() {
-  if (!supabaseReadinessRuntime) {
-    supabaseReadinessRuntime = createSupabaseReadinessRuntime({
-      bumpTelemetry,
-      fetchWithTimeout,
-      hasSupabase,
-      redactOpsString,
-      sleepMs,
-      supaHeaders,
-    });
-  }
-  return supabaseReadinessRuntime;
-}
-
-const probeSupabase = (...args) => getSupabaseReadinessRuntime().probeSupabase(...args);
-const combineSupabaseProbeAttempts = (...args) => getSupabaseReadinessRuntime().combineSupabaseProbeAttempts(...args);
-const probeSupabaseConfirmed = (...args) => getSupabaseReadinessRuntime().probeSupabaseConfirmed(...args);
-const probeSupabaseReadiness = (...args) => getSupabaseReadinessRuntime().probeSupabaseReadiness(...args);
-const probeSupabaseReadinessConfirmed = (...args) => getSupabaseReadinessRuntime().probeSupabaseReadinessConfirmed(...args);
-const supabaseProbeConfirmationSelfTest = (...args) => getSupabaseReadinessRuntime().supabaseProbeConfirmationSelfTest(...args);
-
-const { readCompositeReadiness } = createCompositeReadinessRuntime({
-  hasSupabase,
-  supaRpc,
-  probeConnectivity: cfg => probeSupabaseReadinessConfirmed(cfg),
-  expectedFingerprint: EXPECTED_SCHEMA_FINGERPRINT,
-  expectedFingerprints: COMPATIBLE_SCHEMA_FINGERPRINTS,
-  expectedContractVersion: EXPECTED_SCHEMA_CONTRACT_VERSION,
-  readinessRpc: 'backend_readiness_contract_v2',
-});
-
-function supabaseProbeConfirmationSelfTest() {
-  const direct=combineSupabaseProbeAttempts({configured:true,ok:true,status:'ok',latencyMs:40});
-  const recovered=combineSupabaseProbeAttempts(
-    {configured:true,ok:false,status:'network_error',latencyMs:7000},
-    {configured:true,ok:true,status:'ok',latencyMs:52}
-  );
-  const confirmed=combineSupabaseProbeAttempts(
-    {configured:true,ok:false,status:'network_error',latencyMs:7000},
-    {configured:true,ok:false,status:'http_503',latencyMs:120}
-  );
-  return {
-    pass:direct.ok && direct.attempts===1
-      && recovered.ok && recovered.attempts===2 && recovered.recovered && !recovered.confirmedFailure
-      && !confirmed.ok && confirmed.attempts===2 && confirmed.confirmedFailure,
-    direct:direct.ok,
-    recovered:recovered.recovered,
-    confirmedFailure:confirmed.confirmedFailure,
-  };
-}
-
-const {
+  probeSupabase,
+  combineSupabaseProbeAttempts,
+  probeSupabaseConfirmed,
+  probeSupabaseReadiness,
+  probeSupabaseReadinessConfirmed,
+  supabaseProbeConfirmationSelfTest,
+  readCompositeReadiness,
   readRecentOpsEvents,
   collectDiagnostics,
-} = createDiagnosticsRuntime({
-  memory,
-  appVersion:APP_VERSION,
-  supabaseSchemaGuidance:SUPABASE_SCHEMA_GUIDANCE,
-  hasSupabase,
+} = createProviderReadinessWiringRuntime({
+  APP_VERSION,
+  COMPATIBLE_SCHEMA_FINGERPRINTS,
+  EXPECTED_SCHEMA_CONTRACT_VERSION,
+  EXPECTED_SCHEMA_FINGERPRINT,
+  SUPABASE_SCHEMA_GUIDANCE,
+  bumpTelemetry,
+  clamp,
   fetchWithTimeout,
+  getCache,
+  getCacheEntry,
+  hasSupabase,
+  isFinishedStatus,
+  isLiveStatus,
+  memory,
+  observeProviderRequest,
+  phase5ProviderUsage: (...args) => phase5ProviderUsage(...args),
+  providerSloReport: (...args) => providerSloReport(...args),
+  readIntegrityDiagnostics: (...args) => readIntegrityDiagnostics(...args),
+  readTelegramDedupeHealth: (...args) => readTelegramDedupeHealth(...args),
+  recordOpsEvent,
+  redactOpsString,
+  runtimeControlsSnapshot,
+  setCache,
+  sleepMs,
   supaHeaders,
-  probeSupabaseConfirmed,
-  readIntegrityDiagnostics,
-  readTelegramDedupeHealth,
-  providerSloReport,
-  providerSnapshot,
-  footballCooldownRemaining,
+  supaRpc,
   telemetrySnapshot,
+  withSingleFlight,
 });
 
 const CLIENT_TELEMETRY_EVENTS = new Set([
