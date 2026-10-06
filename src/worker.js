@@ -1,10 +1,7 @@
-import { createReminderDeliveryRuntime } from './reminder-delivery-runtime.js';
 import { createTelegramDigestRuntime } from './telegram-digest-runtime.js';
 import { createMarketParsingRuntime } from './market-parsing-runtime.js';
 import { createReleaseMonitorApiRuntime } from './release-monitor-api-runtime.js';
-import { createProviderBudgetRuntime } from './provider-budget-runtime.js';
 import { createReleaseReadinessRuntime } from './release-readiness-runtime.js';
-import { createSupabaseReadinessRuntime } from './supabase-readiness-runtime.js';
 import { createOddsSnapshotRuntime } from './odds-snapshot-runtime.js';
 import { createUserDataApiRuntime } from './user-data-api-runtime.js';
 import { createBillingRuntime } from './billing-runtime.js';
@@ -31,7 +28,6 @@ import { createPredictionMathRuntime } from './prediction-math-runtime.js';
 import { createCalibrationRuntime } from './calibration-runtime.js';
 import { createModelEvaluationRuntime } from './model-evaluation-runtime.js';
 import { createProviderFixtureRuntime } from './provider-fixture-runtime.js';
-import { createProviderDataRuntime } from './provider-data-runtime.js';
 import { createProviderReadinessWiringRuntime } from './provider-readiness-wiring-runtime.js';
 import { createAnalysisRuntime } from './analysis-runtime.js';
 import { createDistributedAnalysisLockRuntime } from './distributed-analysis-lock-runtime.js';
@@ -39,7 +35,6 @@ import { createMatchCenterRuntime } from './match-center-runtime.js';
 import { createTelegramBotUiRuntime } from './telegram-bot-ui-runtime.js';
 import { createTelegramBotOrchestrationRuntime } from './telegram-bot-orchestration-runtime.js';
 import { createTelegramSearchRuntime } from './telegram-search-runtime.js';
-import { createApiFootballGateway } from './api-football-gateway.js';
 import { createTelegramDedupeRuntime } from './telegram-dedupe.js';
 import { createUserAuthRuntime } from './auth-user.js';
 import { isAdminSensitivePath, privilegedLocalRatePolicy } from './security-route-registry.js';
@@ -86,8 +81,6 @@ import { planPostDeployRegressionLifecycle } from './post-deploy-regression-life
 import { formatPostDeployRegressionAlert, planPostDeployRegressionAlert, postDeployRegressionAlertOpsEvents } from './post-deploy-regression-alerts.js';
 import { planPostDeployRegressionResponseTransition, summarizePostDeployRegressionResponse } from './post-deploy-regression-response.js';
 import { buildPostDeployRegressionSloDashboard } from './post-deploy-regression-slo.js';
-import { createCompositeReadinessRuntime } from './readiness-contract.js';
-import { createDiagnosticsRuntime } from './diagnostics-runtime.js';
 import { createAppCapabilitiesRuntime } from './app-capabilities.js';
 import { createCommonInfrastructureRuntime } from './common-infrastructure-runtime.js';
 import { ROUTE_BURST_POLICIES, createRouteSecurityRuntime } from './route-security-runtime.js';
@@ -468,6 +461,28 @@ const {
   fetchWithTimeout,
   redactMessage: redactOpsString,
 });
+
+let sharedCacheRuntime = null;
+function getSharedCacheRuntime() {
+  if (!sharedCacheRuntime) {
+    sharedCacheRuntime = createSharedCacheRuntime({
+      memory,
+      bumpTelemetry,
+      phase5ProviderCacheUsage: (...args) => phase5ProviderCacheUsage(...args),
+      hasSupabase,
+      supaSelectOne,
+      supaUpsert,
+      pruneMemoryState,
+      recordOpsEvent,
+    });
+  }
+  return sharedCacheRuntime;
+}
+
+function getCacheEntry(...args) { return getSharedCacheRuntime().getCacheEntry(...args); }
+function getCache(...args) { return getSharedCacheRuntime().getCache(...args); }
+function getStaleCache(...args) { return getSharedCacheRuntime().getStaleCache(...args); }
+function setCache(...args) { return getSharedCacheRuntime().setCache(...args); }
 
 const {
   finalizeAnalysisUsageReservation,
@@ -1554,7 +1569,7 @@ const {
   stalePredictionCandidates,
 } = createSettlementSupportRuntime({
   actualOutcomeFromGoals,
-  isFinishedStatus,
+  isFinishedStatus: (...args) => isFinishedStatus(...args),
   scoreBrier,
   settlementDriftBeforeSnapshot: (...args) => settlementDriftBeforeSnapshot(...args),
   settlementDriftProviderSnapshot: (...args) => settlementDriftProviderSnapshot(...args),
@@ -1675,13 +1690,13 @@ const {
   EXPECTED_SCHEMA_FINGERPRINT,
   SUPABASE_SCHEMA_GUIDANCE,
   bumpTelemetry,
-  clamp,
+  clamp: (...args) => clamp(...args),
   fetchWithTimeout,
   getCache,
   getCacheEntry,
   hasSupabase,
-  isFinishedStatus,
-  isLiveStatus,
+  isFinishedStatus: (...args) => isFinishedStatus(...args),
+  isLiveStatus: (...args) => isLiveStatus(...args),
   memory,
   observeProviderRequest,
   phase5ProviderUsage: (...args) => phase5ProviderUsage(...args),
