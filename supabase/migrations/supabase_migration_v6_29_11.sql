@@ -238,8 +238,18 @@ function_violations as (
           'p_operation_key text, p_lease_token text, p_retryable boolean, p_retention_seconds integer')
     )
     and (
-      lower(pg_catalog.pg_get_functiondef(p.oid)) not like '%and locked_until is not null%'
-      or lower(pg_catalog.pg_get_functiondef(p.oid)) not like '%and locked_until > v_now%'
+      pg_catalog.regexp_replace(
+        lower(pg_catalog.pg_get_functiondef(p.oid)),
+        '[[:space:]]+',
+        '',
+        'g'
+      ) not like '%andlocked_untilisnotnull%'
+      or pg_catalog.regexp_replace(
+        lower(pg_catalog.pg_get_functiondef(p.oid)),
+        '[[:space:]]+',
+        '',
+        'g'
+      ) not like '%andlocked_until>v_now%'
     )
 ),
 rule_violations as (
