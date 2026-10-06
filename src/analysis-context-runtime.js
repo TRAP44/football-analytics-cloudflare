@@ -360,6 +360,48 @@ export function createAnalysisContextRuntime(deps) {
     const homeTable=objectValue(homeStanding);
     const awayTable=objectValue(awayStanding);
 
+    const formHomePpg=finiteRange(hOverall?.ppg,0,3);
+    const formAwayPpg=finiteRange(aOverall?.ppg,0,3);
+    const venueHomePpg=finiteRange(hVenue?.ppg,0,3);
+    const venueAwayPpg=finiteRange(aVenue?.ppg,0,3);
+
+    const recentHomeAttack=finiteRange(hOverall?.gfAvg,0,20);
+    const recentAwayAttack=finiteRange(aOverall?.gfAvg,0,20);
+    const seasonHomeAttack=finiteRange(hSeason?.goalsForPerMatch,0,20);
+    const seasonAwayAttack=finiteRange(aSeason?.goalsForPerMatch,0,20);
+    const attackUsesSeason=seasonHomeAttack !== null && seasonAwayAttack !== null;
+
+    const recentHomeDefense=finiteRange(hOverall?.gaAvg,0,20);
+    const recentAwayDefense=finiteRange(aOverall?.gaAvg,0,20);
+    const seasonHomeDefense=finiteRange(hSeason?.goalsAgainstPerMatch,0,20);
+    const seasonAwayDefense=finiteRange(aSeason?.goalsAgainstPerMatch,0,20);
+    const defenseUsesSeason=seasonHomeDefense !== null && seasonAwayDefense !== null;
+
+    const recentHomeClean=finiteRange(hOverall?.cleanSheetPct,0,100);
+    const recentAwayClean=finiteRange(aOverall?.cleanSheetPct,0,100);
+    const seasonHomeClean=finiteRange(hSeason?.cleanSheetRate,0,100);
+    const seasonAwayClean=finiteRange(aSeason?.cleanSheetRate,0,100);
+    const cleanUsesSeason=seasonHomeClean !== null && seasonAwayClean !== null;
+
+    const expectedHome=finiteRange(model?.homeExpected,0,15);
+    const expectedAway=finiteRange(model?.awayExpected,0,15);
+    const homeRank=positiveSafeInteger(homeTable?.rank);
+    const awayRank=positiveSafeInteger(awayTable?.rank);
+    const standingsUsable=Boolean(
+      homeRank && awayRank && homeRank<=1000 && awayRank<=1000,
+    );
+    const seasonStatsUsable=attackUsesSeason || defenseUsesSeason || cleanUsesSeason;
+    const recentFormUsable=(
+      formHomePpg !== null && formAwayPpg !== null
+    ) || (
+      recentHomeAttack !== null && recentAwayAttack !== null
+    ) || (
+      recentHomeDefense !== null && recentAwayDefense !== null
+    ) || (
+      recentHomeClean !== null && recentAwayClean !== null
+    );
+    const venueFormUsable=venueHomePpg !== null && venueAwayPpg !== null;
+
     const h2hValue=objectValue(h2h);
     const h2hHome=nonNegativeSafeInteger(h2hValue?.homeWins,1000);
     const h2hAway=nonNegativeSafeInteger(h2hValue?.awayWins,1000);
@@ -370,8 +412,12 @@ export function createAnalysisContextRuntime(deps) {
       && h2hHome+h2hAway+h2hDraws>0;
 
     const absenceValue=objectValue(absences);
-    const homeAbsences=Array.isArray(absenceValue?.home) ? absenceValue.home.length : null;
-    const awayAbsences=Array.isArray(absenceValue?.away) ? absenceValue.away.length : null;
+    const homeAbsences=Array.isArray(absenceValue?.home)
+      ? Math.min(absenceValue.home.length,200)
+      : null;
+    const awayAbsences=Array.isArray(absenceValue?.away)
+      ? Math.min(absenceValue.away.length,200)
+      : null;
     const injuryDataUsable=hasInjuryData === true
       && homeAbsences !== null
       && awayAbsences !== null;
@@ -380,8 +426,8 @@ export function createAnalysisContextRuntime(deps) {
       comparisonMetric({
         key:'form_ppg',
         label:'Форма · очки/матч',
-        homeValue:hOverall?.ppg,
-        awayValue:aOverall?.ppg,
+        homeValue:formHomePpg,
+        awayValue:formAwayPpg,
         format:'decimal',
         minGap:.14,
         note:'Последние 5 завершённых матчей.',
@@ -389,8 +435,8 @@ export function createAnalysisContextRuntime(deps) {
       comparisonMetric({
         key:'venue_ppg',
         label:'Дома / в гостях',
-        homeValue:hVenue?.ppg,
-        awayValue:aVenue?.ppg,
+        homeValue:venueHomePpg,
+        awayValue:venueAwayPpg,
         format:'decimal',
         minGap:.14,
         note:'Хозяева дома против гостей на выезде.',
@@ -398,19 +444,19 @@ export function createAnalysisContextRuntime(deps) {
       comparisonMetric({
         key:'attack',
         label:'Атака · гол/матч',
-        homeValue:hSeason && aSeason ? hSeason.goalsForPerMatch : hOverall?.gfAvg,
-        awayValue:hSeason && aSeason ? aSeason.goalsForPerMatch : aOverall?.gfAvg,
+        homeValue:attackUsesSeason ? seasonHomeAttack : recentHomeAttack,
+        awayValue:attackUsesSeason ? seasonAwayAttack : recentAwayAttack,
         format:'decimal',
         minGap:.14,
-        note:hSeason && aSeason
+        note:attackUsesSeason
           ? 'Сезонная статистика из уже загруженных сохранённых данных.'
           : 'Недавняя результативность.',
       }),
       comparisonMetric({
         key:'defense',
         label:'Оборона · пропущено',
-        homeValue:hSeason && aSeason ? hSeason.goalsAgainstPerMatch : hOverall?.gaAvg,
-        awayValue:hSeason && aSeason ? aSeason.goalsAgainstPerMatch : aOverall?.gaAvg,
+        homeValue:defenseUsesSeason ? seasonHomeDefense : recentHomeDefense,
+        awayValue:defenseUsesSeason ? seasonAwayDefense : recentAwayDefense,
         format:'decimal',
         better:'lower',
         minGap:.14,
@@ -419,19 +465,19 @@ export function createAnalysisContextRuntime(deps) {
       comparisonMetric({
         key:'clean_sheets',
         label:'Сухие матчи',
-        homeValue:hSeason && aSeason ? hSeason.cleanSheetRate : hOverall?.cleanSheetPct,
-        awayValue:hSeason && aSeason ? aSeason.cleanSheetRate : aOverall?.cleanSheetPct,
+        homeValue:cleanUsesSeason ? seasonHomeClean : recentHomeClean,
+        awayValue:cleanUsesSeason ? seasonAwayClean : recentAwayClean,
         format:'percent',
         minGap:8,
-        note:hSeason && aSeason
+        note:cleanUsesSeason
           ? 'Доля матчей сезона без пропущенных.'
           : 'Доля в последних матчах.',
       }),
       comparisonMetric({
         key:'expected_goals',
         label:'Голевая оценка модели',
-        homeValue:model?.homeExpected,
-        awayValue:model?.awayExpected,
+        homeValue:expectedHome,
+        awayValue:expectedAway,
         format:'decimal',
         minGap:.14,
         note:'Модель Пуассона по доступной форме.',
@@ -439,8 +485,8 @@ export function createAnalysisContextRuntime(deps) {
       comparisonMetric({
         key:'table_rank',
         label:'Место в таблице',
-        homeValue:homeTable?.rank,
-        awayValue:awayTable?.rank,
+        homeValue:standingsUsable ? homeRank : null,
+        awayValue:standingsUsable ? awayRank : null,
         format:'rank',
         better:'lower',
         minGap:0,
@@ -506,10 +552,10 @@ export function createAnalysisContextRuntime(deps) {
     }
 
     const sources=[];
-    if (hOverall && aOverall) sources.push('последние матчи');
-    if (hVenue && aVenue) sources.push('дом/выезд');
-    if (hSeason && aSeason) sources.push('сохранённая сезонная статистика');
-    if (homeTable && awayTable) sources.push('сохранённая таблица');
+    if (recentFormUsable) sources.push('последние матчи');
+    if (venueFormUsable) sources.push('дом/выезд');
+    if (seasonStatsUsable) sources.push('сохранённая сезонная статистика');
+    if (standingsUsable) sources.push('сохранённая таблица');
     if (h2hValid) sources.push('очные встречи');
     if (injuryDataUsable) sources.push('потери состава');
 
@@ -520,8 +566,8 @@ export function createAnalysisContextRuntime(deps) {
       balanceLabel,
       dataReuse:{
         separateApiRequests:0,
-        seasonStatsCached:Boolean(hSeason && aSeason),
-        standingsCached:Boolean(homeTable && awayTable),
+        seasonStatsCached:seasonStatsUsable,
+        standingsCached:standingsUsable,
         sources,
         note:'Вкладка сравнения сама не делает дополнительных запросов к API-Football: она собирается из данных текущего анализа и уже сохранённых данных.',
       },
