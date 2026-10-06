@@ -7,6 +7,18 @@ export function createSettlementSupportRuntime(deps = {}) {
     settlementDriftProviderSnapshot
   } = deps;
 
+  function positiveSafeInteger(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const number = Number(value);
+    return Number.isSafeInteger(number) && number > 0 ? number : null;
+  }
+
+  function nonNegativeSafeInteger(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const number = Number(value);
+    return Number.isSafeInteger(number) && number >= 0 ? number : null;
+  }
+
   const SETTLEMENT_FINALITY_DELAY_HOURS = 6;
   const SETTLEMENT_FINALITY_CONFIRM_DELAY_HOURS = 24;
   const SETTLEMENT_FINALITY_LOOKBACK_DAYS = 7;
@@ -19,7 +31,7 @@ export function createSettlementSupportRuntime(deps = {}) {
   
   
   function buildSettlementDriftResolution(row, event, action, resolvedAt = new Date().toISOString()) {
-    const normalizedAction = String(action || '');
+    const normalizedAction = String(action || '').trim().toLowerCase();
     if (!SETTLEMENT_DRIFT_ACTIONS.has(normalizedAction)) {
       return { valid: false, error: 'unsupported_action' };
     }
@@ -30,7 +42,7 @@ export function createSettlementSupportRuntime(deps = {}) {
       settlement_verification_count: Math.max(1, Number(row?.settlement_verification_count || 0)),
       settlement_resolved_at: resolvedAt,
       settlement_resolution_action: normalizedAction,
-      settlement_resolution_event_id: Number(event?.id || 0) || null,
+      settlement_resolution_event_id: positiveSafeInteger(event?.id),
     };
   
     if (normalizedAction === 'keep_stored') {
@@ -54,11 +66,11 @@ export function createSettlementSupportRuntime(deps = {}) {
     }
   
     const providerStatus = String(event?.provider_status || '').toUpperCase();
-    const home = Number(event?.provider_home_goals);
-    const away = Number(event?.provider_away_goals);
-    const outcome = actualOutcomeFromGoals(home, away);
+    const home = nonNegativeSafeInteger(event?.provider_home_goals);
+    const away = nonNegativeSafeInteger(event?.provider_away_goals);
+    const outcome = home === null || away === null ? '' : actualOutcomeFromGoals(home, away);
     const eventOutcome = String(event?.provider_outcome || '');
-    if (!isFinishedStatus(providerStatus) || !Number.isFinite(home) || !Number.isFinite(away) || !outcome ||
+    if (!isFinishedStatus(providerStatus) || home === null || away === null || !outcome ||
         (eventOutcome && eventOutcome !== outcome)) {
       return { valid: false, error: 'provider_result_not_safe_to_accept', before, provider };
     }
@@ -106,9 +118,9 @@ export function createSettlementSupportRuntime(deps = {}) {
   function stalePredictionCandidates(rows, now = Date.now()) {
     return (rows || [])
       .filter(row => {
-        const id = Number(row?.fixture_id || 0);
+        const id = positiveSafeInteger(row?.fixture_id);
         const kickoff = Date.parse(row?.kickoff_at || '');
-        return row?.status === 'pending' && Number.isInteger(id) && id > 0 &&
+        return row?.status === 'pending' && id !== null &&
           Number.isFinite(kickoff) && kickoff < now - 36 * 3600_000;
       })
       .sort((a, b) => Date.parse(a.kickoff_at || 0) - Date.parse(b.kickoff_at || 0));
