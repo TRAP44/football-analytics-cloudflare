@@ -28,10 +28,13 @@ export function createAdminOverviewModule({
     const sample = modelQuality.sample || {};
 
     const hasRuntime = Object.keys(runtime).length > 0;
-    const enabled = ['analysisEnabled', 'searchEnabled', 'liveEnabled'].filter(key => runtime[key] !== false).length;
+    const primaryFeatureKeys = ['analysisEnabled', 'searchEnabled', 'liveEnabled'];
+    const knownPrimaryFeatures = primaryFeatureKeys.filter(key => typeof runtime[key] === 'boolean');
+    const enabled = knownPrimaryFeatures.filter(key => runtime[key] === true).length;
+    const hasCompletePrimaryFeatures = knownPrimaryFeatures.length === primaryFeatureKeys.length;
 
     setText('adminOverviewService', !hasRuntime ? 'Проверяется' : runtime.maintenanceMode ? 'Обслуживание' : 'Работает');
-    setText('adminOverviewFeatures', hasRuntime
+    setText('adminOverviewFeatures', hasCompletePrimaryFeatures
       ? `${enabled}/3 основных функций`
       : 'Проверяем основные функции');
 
@@ -68,9 +71,12 @@ export function createAdminOverviewModule({
       setText('adminOverviewNotifications', healthy ? 'Норма' : 'Проверить');
       setText('adminOverviewNotificationsDetail',
         `${Number(summary.activeUpcoming || 0)} активных · ${Number(summary.failed24h || 0)} ошибок за 24ч`);
+    } else if (runtime.remindersEnabled === true) {
+      setText('adminOverviewNotifications', 'Включены');
+      setText('adminOverviewNotificationsDetail', 'Доставка разрешена');
     } else {
-      setText('adminOverviewNotifications', hasRuntime ? 'Включены' : 'Не проверено');
-      setText('adminOverviewNotificationsDetail', hasRuntime ? 'Доставка разрешена' : 'Проверка ещё не выполнена');
+      setText('adminOverviewNotifications', 'Не проверено');
+      setText('adminOverviewNotificationsDetail', 'Проверка ещё не выполнена');
     }
 
     if (runtime.analysisEnabled === false) {
@@ -83,7 +89,7 @@ export function createAdminOverviewModule({
       setText('adminOverviewAi', 'Включён');
       setText('adminOverviewAiDetail', `${Number(sample.settled)} прогнозов проверено`);
     } else {
-      setText('adminOverviewAi', hasRuntime ? 'Включён' : 'Проверяется');
+      setText('adminOverviewAi', runtime.analysisEnabled === true ? 'Включён' : 'Проверяется');
       setText('adminOverviewAiDetail', 'Качество — в расширенных инструментах');
     }
 
