@@ -68,6 +68,12 @@ test('Issue #478 keeps lockdown writes constraint-compatible without losing requ
   );
 });
 
+test('Issue #478 removes the superseded application-side history append path', () => {
+  const runtime=fs.readFileSync('src/runtime-controls.js','utf8');
+  assert.doesNotMatch(runtime,/async function appendRuntimeHistory\s*\(/);
+  assert.doesNotMatch(runtime,/appendRuntimeHistory,/);
+});
+
 test('Issue #478 exposes lockdown intent from snapshot.requestedAction in runtime history', () => {
   const runtime=fs.readFileSync('src/runtime-controls.js','utf8');
   const start=runtime.indexOf('async function listRuntimeHistory');
