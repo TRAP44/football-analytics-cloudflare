@@ -217,12 +217,13 @@ test('Supabase persistence writes only normalized verified history rows', async 
 
 test('history profile filters corrupt, future, wrong-referee and duplicate fixture rows', async () => {
   const memory={refereeMatchHistory:new Map([
-    [1,{fixture_id:1,referee_key:'john doe',referee_name:'John Doe',kickoff_at:'2026-10-01T18:00:00Z',yellow_cards:2,red_cards:0,fouls:20}],
-    [2,{fixture_id:2,referee_key:'john doe',referee_name:'John Doe',kickoff_at:'2026-09-25T18:00:00Z',yellow_cards:4,red_cards:1,fouls:30}],
-    [3,{fixture_id:3,referee_key:'john doe',referee_name:'John Doe',kickoff_at:'2026-09-20T18:00:00Z',yellow_cards:0,red_cards:0,fouls:10}],
-    [4,{fixture_id:4,referee_key:'another ref',referee_name:'Another Ref',kickoff_at:'2026-09-18T18:00:00Z',yellow_cards:10,red_cards:3,fouls:60}],
-    [5,{fixture_id:5,referee_key:'john doe',referee_name:'John Doe',kickoff_at:'2099-01-01T00:00:00Z',yellow_cards:10,red_cards:2,fouls:50}],
-    [6,{fixture_id:6,referee_key:'john doe',referee_name:'John Doe',kickoff_at:'2026-09-10T18:00:00Z',yellow_cards:'bad',red_cards:0,fouls:20}],
+    [1,{fixture_id:1,referee_key:'john doe',referee_name:'John Doe',referee_country:'England',kickoff_at:'2026-10-01T18:00:00Z',yellow_cards:2,red_cards:0,fouls:20}],
+    [2,{fixture_id:2,referee_key:'john doe',referee_name:'John Doe',referee_country:'England',kickoff_at:'2026-09-25T18:00:00Z',yellow_cards:4,red_cards:1,fouls:30}],
+    [3,{fixture_id:3,referee_key:'john doe',referee_name:'John Doe',referee_country:'England',kickoff_at:'2026-09-20T18:00:00Z',yellow_cards:0,red_cards:0,fouls:10}],
+    [4,{fixture_id:4,referee_key:'another ref',referee_name:'Another Ref',referee_country:'England',kickoff_at:'2026-09-18T18:00:00Z',yellow_cards:10,red_cards:3,fouls:60}],
+    [5,{fixture_id:5,referee_key:'john doe',referee_name:'John Doe',referee_country:'England',kickoff_at:'2099-01-01T00:00:00Z',yellow_cards:10,red_cards:2,fouls:50}],
+    [6,{fixture_id:6,referee_key:'john doe',referee_name:'John Doe',referee_country:'England',kickoff_at:'2026-09-10T18:00:00Z',yellow_cards:'bad',red_cards:0,fouls:20}],
+    [7,{fixture_id:7,referee_key:'john doe',referee_name:'John Doe',referee_country:'Scotland',kickoff_at:'2026-09-09T18:00:00Z',yellow_cards:9,red_cards:2,fouls:45}],
   ])};
   const runtime=createRefereeIntelligenceRuntime(deps({memory}));
 
