@@ -137,6 +137,113 @@ export function createAnalysisRuntime(deps) {
       : null;
   }
 
+  function safeSeason(value) {
+    const season=positiveSafeInteger(value);
+    return season !== null && season>=1900 && season<=2200 ? season : null;
+  }
+
+  function probabilityVector(value) {
+    const source=objectValue(value);
+    if (!source) return null;
+    const home=finiteNumber(source.home);
+    const draw=finiteNumber(source.draw);
+    const away=finiteNumber(source.away);
+    if (
+      home === null || draw === null || away === null
+      || home<0 || home>100
+      || draw<0 || draw>100
+      || away<0 || away>100
+    ) return null;
+    const total=home+draw+away;
+    if (!Number.isFinite(total) || Math.abs(total-100)>2.5) return null;
+    return {home,draw,away};
+  }
+
+  async function optionalAsync(fn, ...args) {
+    try {
+      return typeof fn === 'function' ? await fn(...args) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function normalizedModelBaseWeights() {
+    const base=objectValue(MODEL_BASE_WEIGHTS) || {};
+    const normalized={};
+    for (const [key,value] of Object.entries(base)) {
+      const name=safeText(key,40);
+      const weight=finiteNumber(value);
+      if (!name || weight === null || weight<0 || weight>1) continue;
+      normalized[name]=weight;
+    }
+    return normalized;
+  }
+
+  function calibrationProfileValue(value) {
+    let fallback={};
+    try { fallback=objectValue(baselineCalibrationProfile()) || {}; } catch {}
+
+    const source=objectValue(value) || fallback;
+    const baseWeights=normalizedModelBaseWeights();
+    const candidateWeights=objectValue(source.signalWeights);
+    let signalWeights={...baseWeights};
+    let weightsValid=false;
+
+    if (candidateWeights) {
+      const keys=Object.keys(baseWeights);
+      const candidate={};
+      let valid=keys.length>0;
+      let total=0;
+      for (const key of keys) {
+        const weight=finiteNumber(candidateWeights[key]);
+        if (weight === null || weight<0 || weight>1) {
+          valid=false;
+          break;
+        }
+        candidate[key]=weight;
+        total+=weight;
+      }
+      if (valid && Math.abs(total-1)<=0.02) {
+        signalWeights=candidate;
+        weightsValid=true;
+      }
+    }
+
+    const temperature=finiteNumber(source.temperature);
+    const safeTemperature=temperature !== null && temperature>=0.5 && temperature<=2
+      ? temperature
+      : 1;
+    const requestedMode=safeText(source.mode,24);
+    const mode=['active','shadow','baseline'].includes(requestedMode)
+      ? requestedMode
+      : 'baseline';
+    const temperatureActive=source.temperatureActive === true
+      && mode==='active'
+      && safeTemperature!==1;
+    const weightsActive=source.weightsActive === true
+      && mode==='active'
+      && weightsValid;
+
+    return {
+      ...fallback,
+      ...source,
+      version:safeText(source.version || CALIBRATION_PROFILE_VERSION,80)
+        || safeText(CALIBRATION_PROFILE_VERSION,80),
+      fingerprint:safeText(source.fingerprint,120),
+      mode:temperatureActive || weightsActive ? 'active' : mode==='shadow' ? 'shadow' : 'baseline',
+      sample:nonNegativeSafeInteger(source.sample,1_000_000) ?? 0,
+      temperature:safeTemperature,
+      temperatureActive,
+      weightsActive,
+      signalWeights,
+      temperatureValidation:objectValue(source.temperatureValidation),
+      weightsValidation:objectValue(source.weightsValidation),
+      promotionGate:objectValue(source.promotionGate),
+      lifecycle:objectValue(source.lifecycle),
+      note:safeText(source.note,1000),
+    };
+  }
+
   function strictBoolean(value) {
     return value === true;
   }
