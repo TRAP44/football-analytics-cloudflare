@@ -13,6 +13,57 @@ const TELEGRAM_DEDUPE_RISK = Object.freeze({
   BILLING: 'billing',
 });
 
+const LOCAL_DEDUPE_TTL_MS = 10 * 60 * 1000;
+const MAX_DEDUPE_KEY_LENGTH = 240;
+
+function plainObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+}
+
+function textValue(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function integerCandidate(value) {
+  if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+  if (typeof value !== 'string') return null;
+  const raw=value.trim();
+  if (!/^-?\d+$/.test(raw)) return null;
+  const number=Number(raw);
+  return Number.isSafeInteger(number) ? number : null;
+}
+
+function positiveIdentifier(value) {
+  const number=integerCandidate(value);
+  return number !== null && number > 0 ? number : 0;
+}
+
+function nonNegativeInteger(value, fallback = 0) {
+  const number=integerCandidate(value);
+  return number !== null && number >= 0 ? number : fallback;
+}
+
+function boundedInteger(value, fallback, min, max) {
+  const number=integerCandidate(value);
+  return number !== null && number >= min && number <= max ? number : fallback;
+}
+
+function validDedupeKey(value) {
+  if (typeof value !== 'string') return '';
+  const key=value.trim();
+  if (
+    !key
+    || key.length > MAX_DEDUPE_KEY_LENGTH
+    || /[\u0000-\u001f\u007f-\u009f]/u.test(key)
+  ) return '';
+  return key;
+}
+
+function validTimestamp(value) {
+  const number=integerCandidate(value);
+  return number !== null && number >= 0 ? number : 0;
+}
+
 function telegramUpdateDedupeRisk(update = {}) {
   if (
     update?.pre_checkout_query
@@ -24,7 +75,7 @@ function telegramUpdateDedupeRisk(update = {}) {
   }
 
   if (update?.callback_query) {
-    const data=String(update?.callback_query?.data || '');
+    const data=textValue(update?.callback_query?.data);
     if (
       /^(?:digest:(?:on|off)|favorite:toggle:\d+:\d+|postmatch:return:(?:on|off))$/.test(data)
     ) {
@@ -33,7 +84,7 @@ function telegramUpdateDedupeRisk(update = {}) {
     return { kind:TELEGRAM_DEDUPE_RISK.EXTERNAL_SIDE_EFFECT, highRisk:true };
   }
 
-  const text=String(update?.message?.text || '').trim();
+  const text=textValue(update?.message?.text);
   if (
     /^\/(?:start|digest|digest_off)(?:@\w+)?(?:\s|$)/i.test(text)
   ) {
@@ -51,39 +102,62 @@ export function createTelegramDedupeRuntime({
   supaRpc,
   redactOpsString,
 }) {
+  const runtimeMemory=plainObject(memory) || {};
+  if (!(runtimeMemory.telegramUpdateDedupe instanceof Map)) runtimeMemory.telegramUpdateDedupe=new Map();
+  if (!(runtimeMemory.telegramBurst instanceof Map)) runtimeMemory.telegramBurst=new Map();
+
+  const noteTelemetry = typeof bumpTelemetry === 'function' ? bumpTelemetry : () => {};
+  const pruneMemory = typeof pruneMemoryState === 'function' ? pruneMemoryState : () => {};
+  const supabaseAvailable = typeof hasSupabase === 'function' ? hasSupabase : () => false;
+  const rpc = typeof supaRpc === 'function'
+    ? supaRpc
+    : async () => { throw new Error('Supabase RPC unavailable'); };
+  const redact = typeof redactOpsString === 'function'
+    ? redactOpsString
+    : (value, limit = 160) => String(value ?? '').slice(0, limit);
+
   function telegramUpdateDedupeKey(update = {}, cfg = {}) {
-    return primaryTelegramUpdateDedupeKey(cfg.botToken, update);
+    const source=plainObject(cfg) || {};
+    return validDedupeKey(primaryTelegramUpdateDedupeKey(source.botToken, update));
   }
 
   function claimTelegramUpdate(update = {}, cfg = {}) {
     const key=telegramUpdateDedupeKey(update,cfg);
     if (!key) return {key:'',duplicate:false};
     const now=Date.now();
-    const prior=memory.telegramUpdateDedupe.get(key);
-    if (prior && now-Number(prior.at || 0)<10*60*1000) {
-      bumpTelemetry('telegramDuplicateUpdates');
+    const prior=runtimeMemory.telegramUpdateDedupe.get(key);
+    const priorAt=validTimestamp(prior?.at);
+    if (priorAt && now-priorAt<LOCAL_DEDUPE_TTL_MS) {
+      noteTelemetry('telegramDuplicateUpdates');
       return {key,duplicate:true};
     }
-    memory.telegramUpdateDedupe.set(key,{at:now,state:'processing'});
-    if (memory.telegramUpdateDedupe.size>4000) pruneMemoryState();
+    runtimeMemory.telegramUpdateDedupe.set(key,{at:now,state:'processing'});
+    if (runtimeMemory.telegramUpdateDedupe.size>4000) pruneMemory();
     return {key,duplicate:false};
   }
 
   function completeTelegramUpdate(key='') {
-    if (!key) return;
-    const current=memory.telegramUpdateDedupe.get(key);
-    memory.telegramUpdateDedupe.set(key,{at:Date.now(),state:'done',startedAt:current?.at || null});
+    const normalizedKey=validDedupeKey(key);
+    if (!normalizedKey) return;
+    const current=runtimeMemory.telegramUpdateDedupe.get(normalizedKey);
+    if (!current) return;
+    runtimeMemory.telegramUpdateDedupe.set(normalizedKey,{
+      at:Date.now(),
+      state:'done',
+      startedAt:validTimestamp(current?.at) || null,
+    });
   }
 
   function releaseTelegramUpdate(key='') {
-    if (key) memory.telegramUpdateDedupe.delete(key);
+    const normalizedKey=validDedupeKey(key);
+    if (normalizedKey) runtimeMemory.telegramUpdateDedupe.delete(normalizedKey);
   }
 
   function degradedTelegramDedupeDecision(update = {}) {
     const risk=telegramUpdateDedupeRisk(update);
-    bumpTelemetry('telegramPersistentDedupeUnavailable');
+    noteTelemetry('telegramPersistentDedupeUnavailable');
     if (risk.highRisk) {
-      bumpTelemetry('telegramDedupeFailClosedHighRisk');
+      noteTelemetry('telegramDedupeFailClosedHighRisk');
       return {
         persistent:false,
         claimed:false,
@@ -94,43 +168,51 @@ export function createTelegramDedupeRuntime({
         risk:risk.kind,
       };
     }
-    bumpTelemetry('telegramDedupeSafeFallbacks');
+    noteTelemetry('telegramDedupeSafeFallbacks');
     return { persistent:false, claimed:true, duplicate:false, status:'fallback' };
   }
 
   async function claimTelegramUpdatePersistent(cfg, key='', update = {}) {
-    if (!key || !hasSupabase(cfg)) return degradedTelegramDedupeDecision(update);
+    const normalizedKey=validDedupeKey(key);
+    if (!normalizedKey || !supabaseAvailable(cfg)) return degradedTelegramDedupeDecision(update);
     try {
-      const claimed=Boolean(await supaRpc(cfg,'claim_telegram_update',{p_update_key:key,p_lease_seconds:90},1800));
-      if (!claimed) {
-        bumpTelemetry('telegramPersistentDuplicateUpdates');
+      const claimed=await rpc(
+        cfg,
+        'claim_telegram_update',
+        {p_update_key:normalizedKey,p_lease_seconds:90},
+        1800,
+      );
+      if (claimed !== true) {
+        noteTelemetry('telegramPersistentDuplicateUpdates');
         return { persistent:true, claimed:false, duplicate:true, status:'duplicate' };
       }
       return { persistent:true, claimed:true, duplicate:false, status:'claimed' };
     } catch {
-      bumpTelemetry('telegramDedupeFallbacks');
+      noteTelemetry('telegramDedupeFallbacks');
       return degradedTelegramDedupeDecision(update);
     }
   }
 
   async function completeTelegramUpdatePersistent(cfg, key='') {
-    if (!key || !hasSupabase(cfg)) return false;
+    const normalizedKey=validDedupeKey(key);
+    if (!normalizedKey || !supabaseAvailable(cfg)) return false;
     try {
-      await supaRpc(cfg,'complete_telegram_update',{p_update_key:key},1200);
+      await rpc(cfg,'complete_telegram_update',{p_update_key:normalizedKey},1200);
       return true;
     } catch {
-      bumpTelemetry('telegramDedupeFallbacks');
+      noteTelemetry('telegramDedupeFallbacks');
       return false;
     }
   }
 
   async function releaseTelegramUpdatePersistent(cfg, key='') {
-    if (!key || !hasSupabase(cfg)) return false;
+    const normalizedKey=validDedupeKey(key);
+    if (!normalizedKey || !supabaseAvailable(cfg)) return false;
     try {
-      await supaRpc(cfg,'release_telegram_update',{p_update_key:key},1200);
+      await rpc(cfg,'release_telegram_update',{p_update_key:normalizedKey},1200);
       return true;
     } catch {
-      bumpTelemetry('telegramDedupeFallbacks');
+      noteTelemetry('telegramDedupeFallbacks');
       return false;
     }
   }
@@ -155,10 +237,11 @@ export function createTelegramDedupeRuntime({
   }
 
   function telegramDedupeHealthState(health = {}) {
-    if (!health.available) return { state:'watch', label:'Persistent dedupe observability недоступна' };
-    const stale=Number(health.staleProcessing || 0);
-    const failedRecent=Number(health.failedRecent || 0);
-    const failedCurrent=Number(health.failedCurrent || 0);
+    const source=plainObject(health) || {};
+    if (source.available !== true) return { state:'watch', label:'Persistent dedupe observability недоступна' };
+    const stale=nonNegativeInteger(source.staleProcessing);
+    const failedRecent=nonNegativeInteger(source.failedRecent);
+    const failedCurrent=nonNegativeInteger(source.failedCurrent);
     if (stale >= 5 || failedRecent >= 5) {
       return { state:'incident', label:'Telegram webhook dedupe требует немедленной проверки' };
     }
@@ -169,31 +252,36 @@ export function createTelegramDedupeRuntime({
   }
 
   function normalizeTelegramDedupeHealth(raw = {}, available = true, detail = '') {
+    const source=plainObject(raw) || {};
+    const generatedAt=textValue(source.generated_at ?? source.generatedAt);
+    const lastDuplicateAt=textValue(source.last_duplicate_at ?? source.lastDuplicateAt);
+    let safeDetail='';
+    try { safeDetail=String(redact(textValue(detail),160) ?? '').slice(0,160); } catch {}
     const value={
-      available:Boolean(available),
-      windowMinutes:Number(raw?.window_minutes ?? raw?.windowMinutes ?? 60) || 60,
-      ledgerRows:Number(raw?.ledger_rows ?? raw?.ledgerRows ?? 0) || 0,
-      claimsRecent:Number(raw?.claims_recent ?? raw?.claimsRecent ?? 0) || 0,
-      completedRecent:Number(raw?.completed_recent ?? raw?.completedRecent ?? 0) || 0,
-      failedRecent:Number(raw?.failed_recent ?? raw?.failedRecent ?? 0) || 0,
-      failedCurrent:Number(raw?.failed_current ?? raw?.failedCurrent ?? 0) || 0,
-      activeProcessing:Number(raw?.active_processing ?? raw?.activeProcessing ?? 0) || 0,
-      staleProcessing:Number(raw?.stale_processing ?? raw?.staleProcessing ?? 0) || 0,
-      duplicateAttemptsRetained:Number(raw?.duplicate_attempts_retained ?? raw?.duplicateAttemptsRetained ?? 0) || 0,
-      duplicateRowsRecent:Number(raw?.duplicate_rows_recent ?? raw?.duplicateRowsRecent ?? 0) || 0,
-      lastDuplicateAt:raw?.last_duplicate_at ?? raw?.lastDuplicateAt ?? null,
-      oldestStaleSeconds:Number(raw?.oldest_stale_seconds ?? raw?.oldestStaleSeconds ?? 0) || 0,
-      generatedAt:raw?.generated_at ?? raw?.generatedAt ?? new Date().toISOString(),
-      detail:redactOpsString(detail || '',160),
+      available:available === true,
+      windowMinutes:boundedInteger(source.window_minutes ?? source.windowMinutes,60,1,1440),
+      ledgerRows:nonNegativeInteger(source.ledger_rows ?? source.ledgerRows),
+      claimsRecent:nonNegativeInteger(source.claims_recent ?? source.claimsRecent),
+      completedRecent:nonNegativeInteger(source.completed_recent ?? source.completedRecent),
+      failedRecent:nonNegativeInteger(source.failed_recent ?? source.failedRecent),
+      failedCurrent:nonNegativeInteger(source.failed_current ?? source.failedCurrent),
+      activeProcessing:nonNegativeInteger(source.active_processing ?? source.activeProcessing),
+      staleProcessing:nonNegativeInteger(source.stale_processing ?? source.staleProcessing),
+      duplicateAttemptsRetained:nonNegativeInteger(source.duplicate_attempts_retained ?? source.duplicateAttemptsRetained),
+      duplicateRowsRecent:nonNegativeInteger(source.duplicate_rows_recent ?? source.duplicateRowsRecent),
+      lastDuplicateAt:lastDuplicateAt || null,
+      oldestStaleSeconds:nonNegativeInteger(source.oldest_stale_seconds ?? source.oldestStaleSeconds),
+      generatedAt:generatedAt || new Date().toISOString(),
+      detail:safeDetail,
     };
     return { ...value, ...telegramDedupeHealthState(value) };
   }
 
   async function readTelegramDedupeHealth(cfg, windowMinutes = 60) {
-    if (!hasSupabase(cfg)) return normalizeTelegramDedupeHealth({},false,'supabase_not_configured');
+    if (!supabaseAvailable(cfg)) return normalizeTelegramDedupeHealth({},false,'supabase_not_configured');
     try {
-      const raw=await supaRpc(cfg,'telegram_webhook_dedupe_health',{
-        p_window_minutes:Math.max(5,Math.min(1440,Number(windowMinutes || 60))),
+      const raw=await rpc(cfg,'telegram_webhook_dedupe_health',{
+        p_window_minutes:boundedInteger(windowMinutes,60,5,1440),
       },1800);
       return normalizeTelegramDedupeHealth(raw || {},true,'');
     } catch (error) {
@@ -217,7 +305,7 @@ export function createTelegramDedupeRuntime({
 
   function telegramBurstKind(update = {}) {
     if (update?.pre_checkout_query || update?.subscription || update?.message?.successful_payment || update?.message?.refunded_payment) return '';
-    const callback=String(update?.callback_query?.data || '');
+    const callback=textValue(update?.callback_query?.data);
     if (/^(?:news:refresh|news:team_refresh:|match:refresh:)/.test(callback) || /^news:impact:[^:]+:recheck:/.test(callback)) return 'refresh';
     if (update?.callback_query) return 'callback';
     if (update?.message?.text) return 'message';
@@ -228,20 +316,23 @@ export function createTelegramDedupeRuntime({
     const kind=telegramBurstKind(update);
     const policy=TELEGRAM_BURST_POLICIES[kind];
     if (!policy) return null;
-    const userId=Number(update?.callback_query?.from?.id || update?.message?.from?.id || 0);
+    const userId=positiveIdentifier(update?.callback_query?.from?.id ?? update?.message?.from?.id);
     if (!userId) return null;
     const now=Date.now();
     const key=`${userId}:${policy.label}`;
-    let bucket=memory.telegramBurst.get(key);
-    if (!bucket || now-Number(bucket.startedAt || 0)>=policy.windowMs) bucket={startedAt:now,count:0};
+    let bucket=runtimeMemory.telegramBurst.get(key);
+    const startedAt=validTimestamp(bucket?.startedAt);
+    const count=nonNegativeInteger(bucket?.count);
+    if (!startedAt || now-startedAt>=policy.windowMs) bucket={startedAt:now,count:0};
+    else bucket={startedAt,count};
     bucket.count+=1;
-    memory.telegramBurst.set(key,bucket);
+    runtimeMemory.telegramBurst.set(key,bucket);
     if (bucket.count<=policy.limit) {
-      if (memory.telegramBurst.size>2500) pruneMemoryState();
+      if (runtimeMemory.telegramBurst.size>2500) pruneMemory();
       return null;
     }
     const retryAfter=Math.max(1,Math.ceil((policy.windowMs-(now-bucket.startedAt))/1000));
-    bumpTelemetry('telegramBurstBlocks');
+    noteTelemetry('telegramBurstBlocks');
     return {blocked:true,userId,kind,retryAfter};
   }
 
