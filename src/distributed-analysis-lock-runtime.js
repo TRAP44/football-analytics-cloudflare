@@ -109,9 +109,12 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
     try { await recordOpsEvent(cfg,event); } catch {}
   }
 
-  function supabaseConfigured(cfg) {
-    try { return hasSupabase(cfg)===true; }
-    catch { return false; }
+  function supabaseAvailability(cfg) {
+    try {
+      return {configured:hasSupabase(cfg)===true,probeFailed:false};
+    } catch {
+      return {configured:false,probeFailed:true};
+    }
   }
 
   function analysisCacheInsertUrl(cfg) {
@@ -176,7 +179,9 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
 
   function validLockEntry(entry,fixtureId) {
     const value=objectValue(entry);
-    if (!value || value.expired===true) return false;
+    if (!value || value.expired!==false) return false;
+    const expiresAt=Date.parse(safeText(value.expiresAt,80));
+    if (!Number.isFinite(expiresAt) || expiresAt<=Date.now()) return false;
     const payload=objectValue(value.payload);
     if (!payload || payload.state!=='computing') return false;
     if (positiveSafeInteger(payload.fixtureId)!==fixtureId) return false;
@@ -230,7 +235,30 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
       };
     }
 
-    if (!supabaseConfigured(cfg)) {
+    const supabase=supabaseAvailability(cfg);
+    if (supabase.probeFailed) {
+      safeTelemetry('analysisLockFailClosed');
+      await safeRecord(cfg,{
+        severity:'error',
+        source:'analysis_lock',
+        eventType:'analysis_lock_degraded',
+        code:'ANALYSIS_LOCK_FAIL_CLOSED',
+        message:'Supabase coordination availability could not be determined.',
+        endpoint:'/api/analyze',
+        meta:{fixtureId:id},
+      });
+      return {
+        claimed:false,
+        key,
+        claimId:'',
+        fixtureId:id,
+        shared:false,
+        degraded:true,
+        unavailable:true,
+        reason:'coordination_probe_failed',
+      };
+    }
+    if (!supabase.configured) {
       return {
         claimed:true,
         key,
@@ -394,7 +422,12 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
     if (!key || !fixtureId || !claimId) {
       return {released:false,skipped:true,reason:'invalid_lock'};
     }
-    if (!supabaseConfigured(cfg)) {
+    const supabase=supabaseAvailability(cfg);
+    if (supabase.probeFailed) {
+      safeTelemetry('analysisLockReleaseFailures');
+      return {released:false,skipped:false,reason:'coordination_probe_failed'};
+    }
+    if (!supabase.configured) {
       return {released:false,skipped:true,reason:'supabase_not_configured'};
     }
 
@@ -413,9 +446,13 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
       }
 
       const payload=objectValue(row.payload);
+      const rowKey=safeText(row.cache_key,160);
+      const rowFixtureId=positiveSafeInteger(row.fixture_id);
       if (
         normalizeUuid(payload?.claimId)!==claimId
         || positiveSafeInteger(payload?.fixtureId)!==fixtureId
+        || (rowKey && rowKey!==key)
+        || (rowFixtureId && rowFixtureId!==fixtureId)
       ) {
         safeTelemetry('analysisLockReleaseOwnershipMisses');
         return {released:false,skipped:true,reason:'ownership_changed'};
@@ -426,6 +463,15 @@ export function createDistributedAnalysisLockRuntime(deps = {}) {
         fixture_id:`eq.${fixtureId}`,
         'payload->>claimId':`eq.${claimId}`,
       });
+
+      const remaining=objectValue(await supaSelectOne(
+        cfg,
+        'analysis_cache',
+        {cache_key:`eq.${key}`},
+      ));
+      if (normalizeUuid(remaining?.payload?.claimId)===claimId) {
+        throw new Error('analysis lock release not confirmed');
+      }
 
       const local=objectValue(memory.cache.get(key));
       if (normalizeUuid(local?.payload?.claimId)===claimId) {
