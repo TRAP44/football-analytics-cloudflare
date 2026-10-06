@@ -177,6 +177,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/import \{ createSearchDiscoveryRuntime \} from '\.\/search-discovery-runtime\.js'/);
   assert.match(worker,/import \{ createTeamTournamentRuntime \} from '\.\/team-tournament-runtime\.js'/);
   assert.match(worker,/import \{ createTeamIntelligenceRuntime \} from '\.\/team-intelligence-runtime\.js'/);
+  assert.match(worker,/import \{ createRefereeIntelligenceRuntime \} from '\.\/referee-intelligence-runtime\.js'/);
   assert.match(worker,/createDiagnosticsRuntime\(\{/);
   assert.match(worker,/createPublicHealthRuntime\(\{/);
   assert.match(worker,/createPublicStatusRuntime\(\{/);
@@ -195,6 +196,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/createSearchDiscoveryRuntime\(\{/);
   assert.match(worker,/createTeamTournamentRuntime\(\{/);
   assert.match(worker,/createTeamIntelligenceRuntime\(\{/);
+  assert.match(worker,/createRefereeIntelligenceRuntime\(\{/);
   assert.doesNotMatch(worker,/async function collectDiagnostics\(/);
   assert.doesNotMatch(worker,/async function readRecentOpsEvents\(/);
   assert.doesNotMatch(worker,/async function publicServiceStatus\(/);
@@ -234,4 +236,9 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.doesNotMatch(worker,/async function apiTeamIntelligence\(/);
   assert.doesNotMatch(worker,/async function apiTeamSquad\(/);
   assert.doesNotMatch(worker,/async function loadLineupNotificationSnapshot\(/);
+  assert.doesNotMatch(worker,/function refereeProfile\(/);
+  assert.doesNotMatch(worker,/function refereeHistoryKey\(/);
+  assert.doesNotMatch(worker,/function refereeCardSummary\(/);
+  assert.doesNotMatch(worker,/async function saveRefereeMatchHistory\(/);
+  assert.doesNotMatch(worker,/async function loadRefereeHistoryProfile\(/);
 });
