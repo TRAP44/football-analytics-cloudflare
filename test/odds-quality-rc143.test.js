@@ -153,19 +153,19 @@ const app=fs.readFileSync('public/app.js','utf8');
 const smoke=fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
 
 test('RC143 gates prematch and live odds before snapshots, movement and model blending', () => {
-  assert.match(worker,/assessOddsMarketQuality\(market, \{ oddsMeta:analysisFeatureMeta\.odds \|\| \{\}, mode:'upcoming' \}\)/);
-  assert.match(worker,/analysisFeatureMeta\.odds = annotateOddsReliability/);
-  assert.match(worker,/const analysisMarket = oddsMarketForTrustedAnalytics\(market, oddsQuality\)/);
-  assert.match(worker,/blendProbabilitySignals\(\{ market:analysisMarket/);
-  assert.match(worker,/liveOdds = oddsMarketForTrustedAnalytics\(liveOdds, liveOddsQuality\)/);
+  assert.match(worker,/assessOddsMarketQuality\(market,\{[\s\S]{0,180}?oddsMeta:objectValue\(analysisFeatureMeta\.odds\) \|\| \{\},[\s\S]{0,120}?mode:'upcoming'/);
+  assert.match(worker,/analysisFeatureMeta\.odds=objectValue\(annotateOddsReliability/);
+  assert.match(worker,/analysisMarket=objectValue\(oddsMarketForTrustedAnalytics\(market,oddsQuality\)\)/);
+  assert.match(worker,/blendProbabilitySignals\(\{[\s\S]{0,120}?market:analysisMarket/);
+  assert.match(worker,/oddsMarketForTrustedAnalytics\(liveOdds,liveOddsQuality\)/);
   assert.match(worker,/sanitizeOddsSnapshotsForMovement\(snapshots\)/);
-  assert.match(worker,/if \(liveOdds\) \{[\s\S]*saveOddsSnapshot/);
+  assert.match(worker,/if \(liveOdds\) \{[\s\S]{0,500}?saveOddsSnapshot/);
 });
 
 test('RC143 exposes odds quality through Match Center, analysis and production health contracts', () => {
   assert.match(worker,/match-center:\$\{fixtureId\}:v16-availability-quality-rc144/);
   assert.match(worker,/fixture:\$\{fixtureId\}:v15-availability-quality-rc144/);
-  assert.match(worker,/analysisVersion: '4\.15\.0-availability-quality'/);
+  assert.match(worker,/analysisVersion:\s*'4\.15\.0-availability-quality'/);
   assert.match(worker,/liveOddsQuality,/);
   assert.match(worker,/oddsQuality,/);
   assert.match(worker,/oddsSemanticQualityGuard: 'enabled'/);
