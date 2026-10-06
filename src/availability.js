@@ -419,7 +419,8 @@ function seasonPlayerIndex(playerStats = null) {
 
 function matchSeasonPlayer(absence = {}, index = {}) {
   const id = positiveSafeId(absence?.id);
-  if (id && index.byId?.has(id)) return index.byId.get(id);
+  if (id) return index.byId?.get(id) || null;
+
   const name = normalizedName(absence?.name || '');
   return name && index.byName?.has(name) ? index.byName.get(name) : null;
 }
