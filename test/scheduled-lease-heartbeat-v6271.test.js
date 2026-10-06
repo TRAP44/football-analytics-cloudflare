@@ -97,6 +97,55 @@ test('scheduled lease runtime renews through owner-token RPC and claim exposes h
   assert.equal(calls[1].args.p_lease_seconds,720);
 });
 
+test('renewal rejects truthy success and mismatched RPC identity',async()=>{
+  const claimBase={
+    claimed:true,
+    persistent:true,
+    jobKey:'cron:test',
+    groupKey:'cron-global',
+    leaseToken:'lease-owner-1234567890',
+    leaseSeconds:720,
+  };
+
+  const truthy=leaseRuntime({
+    supaRpc:async()=>({
+      renewed:'true',
+      reason:'renewed',
+      jobKey:'cron:test',
+      lockedUntil:'2026-10-04T10:40:00Z',
+    }),
+  });
+  assert.equal((await truthy.renewScheduledJob({},claimBase)).renewed,false);
+
+  const mismatched=leaseRuntime({
+    supaRpc:async()=>({
+      renewed:true,
+      reason:'renewed',
+      jobKey:'cron:other',
+      lockedUntil:'2026-10-04T10:40:00Z',
+    }),
+  });
+  const renewal=await mismatched.renewScheduledJob({},claimBase);
+  assert.equal(renewal.renewed,false);
+  assert.equal(renewal.reason,'malformed_response');
+});
+
+test('renewal rejects malformed claims before RPC',async()=>{
+  let calls=0;
+  const api=leaseRuntime({
+    supaRpc:async()=>{calls+=1;return {renewed:true};},
+  });
+  for(const claim of [
+    {claimed:'true',persistent:true,jobKey:'cron:test',groupKey:'cron-global',leaseToken:'lease-owner-1234567890'},
+    {claimed:true,persistent:'true',jobKey:'cron:test',groupKey:'cron-global',leaseToken:'lease-owner-1234567890'},
+    {claimed:true,persistent:true,jobKey:'cron:test',groupKey:'cron-global',leaseToken:'short'},
+  ]){
+    const result=await api.renewScheduledJob({},claim);
+    assert.equal(result.renewed,false);
+  }
+  assert.equal(calls,0);
+});
+
 test('scheduled lease renewal outage is explicit and fail-closed', async()=>{
   const events=[];
   const api=leaseRuntime({
@@ -109,6 +158,7 @@ test('scheduled lease renewal outage is explicit and fail-closed', async()=>{
         jobKey:'cron:test',
         groupKey:'cron-global',
         leaseToken:'lease-owner-1234567890',
+        lockedUntil:'2026-10-04T10:30:00Z',
       };
     },
   });
