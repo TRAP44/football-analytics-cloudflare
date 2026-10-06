@@ -353,7 +353,10 @@ export function createAnalysisRuntime(deps) {
     const used=nonNegativeSafeInteger(quota.used);
     const limit=nonNegativeSafeInteger(quota.limit);
     const left=nonNegativeSafeInteger(quota.left);
-    if (used === null || limit === null || left === null) return fallback;
+    if (used === null || limit === null || left === null || limit <= 0) return fallback;
+
+    const expectedLeft=Math.max(0,limit-used);
+    if (left !== expectedLeft) return fallback;
 
     return {
       ...quota,
