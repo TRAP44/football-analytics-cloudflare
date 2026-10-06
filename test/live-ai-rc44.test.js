@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const app=fs.readFileSync('public/app.js','utf8');
-const worker=fs.readFileSync('src/worker.js','utf8');
+const worker=fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/live-match-intelligence-runtime.js','utf8')+'\n'+fs.readFileSync('src/match-center-runtime.js','utf8');
 const css=fs.readFileSync('public/styles.css','utf8');
 
 test('match center builds a dedicated AI LIVE coach',()=>{
