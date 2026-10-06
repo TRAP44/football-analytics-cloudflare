@@ -9,11 +9,11 @@ const css=fs.readFileSync('public/styles.css','utf8');
 
 test('RC59 computes dynamic freshness from analysis age kickoff lineups and market',()=> {
   assert.match(worker,/function analysisFreshness\(/);
-  assert.match(worker,/minutesToKickoff <= 15\) maxAgeMinutes=3/);
-  assert.match(worker,/minutesToKickoff <= 45\) maxAgeMinutes=5/);
-  assert.match(worker,/minutesToKickoff <= 120\) maxAgeMinutes=10/);
-  assert.match(worker,/minutesToKickoff <= 360\) maxAgeMinutes=20/);
-  assert.match(worker,/minutesToKickoff <= 90 && !lineupsConfirmed/);
+  assert.match(worker,/minutesToKickoff\s*<=\s*15\)\s*maxAgeMinutes=3/);
+  assert.match(worker,/minutesToKickoff\s*<=\s*45\)\s*maxAgeMinutes=5/);
+  assert.match(worker,/minutesToKickoff\s*<=\s*120\)\s*maxAgeMinutes=10/);
+  assert.match(worker,/minutesToKickoff\s*<=\s*360\)\s*maxAgeMinutes=20/);
+  assert.match(worker,/minutesToKickoff\s*<=\s*90 && !lineupsConfirmed/);
   assert.match(worker,/reasonCode='lineups_window'/);
 });
 
@@ -26,7 +26,7 @@ test('freshness drill distinguishes near-kickoff stale fresh and far-away snapsh
 });
 
 test('conditional recheck bypasses cache only when freshness requires it',()=> {
-  assert.match(worker,/const recheckRequested=Boolean\(body\?\.recheck\)/);
+  assert.match(worker,/const recheckRequested=strictBoolean\(body\?\.recheck\)/);
   assert.match(worker,/const needsFreshnessRecheck=Boolean\(recheckRequested && staleBefore && previousFreshness\?\.needsRecheck\)/);
   assert.match(worker,/if \(cached && !needsFreshnessRecheck\)/);
   assert.match(worker,/body:JSON\.stringify\(\{fixtureId:Number\(fixtureId\),origin:'telegram_quick',recheck:true\}\)/);
@@ -35,7 +35,7 @@ test('conditional recheck bypasses cache only when freshness requires it',()=> {
 test('free recheck is scoped to a user who already analyzed the fixture',()=> {
   assert.match(worker,/async function userHasAnalyzedFixture\(/);
   assert.match(worker,/analysis_history/);
-  assert.match(worker,/if \(needsFreshnessRecheck\) freeRecheck=await userHasAnalyzedFixture\(user\.id,fixtureId,cfg\)/);
+  assert.match(worker,/if \(needsFreshnessRecheck\) freeRecheck=await userHasAnalyzedFixture\(userId,fixtureId,cfg\)/);
   assert.match(worker,/const passCandidate = entitlementBefore\.source === 'pass' && entitlementBefore\.access\.expandedAi === true/);
   assert.match(worker,/if \(!freeRecheck && !passCandidate && quotaBefore\.left <= 0\)/);
   assert.match(worker,/if \(!freeRecheck && !passAccess\) \{\n    usageReservation=await reserveAnalysisQuota\(user\.id,cfg\)/);
