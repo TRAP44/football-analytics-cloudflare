@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-const worker=(fs.readFileSync('src/worker.js','utf8')+'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8'));
+const worker=(fs.readFileSync('src/worker.js','utf8')
+  +'\n'+fs.readFileSync('src/telegram-update-orchestration.js','utf8')
+  +'\n'+fs.readFileSync('src/telegram-bot-ui-runtime.js','utf8'));
 
 test('telegram match buttons answer inline instead of forcing the mini app',()=> {
   assert.match(worker,/callback_data: `match:verdict:/);
@@ -23,7 +25,7 @@ test('telegram AI verdict includes skip confidence risk and data quality',()=> {
 
 test('telegram sections reuse the protected analysis pipeline',()=> {
   assert.match(worker,/function botAnalyzeFixture/);
-  assert.match(worker,/await apiAnalyze\(inner, cfg, \{ id:Number\(userId\) \}\)/);
+  assert.match(worker,/await apiAnalyze\(inner,cfg,\{id:user\}\)/);
   assert.match(worker,/fixture:\$\{id\}:v10-ai-instructor/);
 });
 
