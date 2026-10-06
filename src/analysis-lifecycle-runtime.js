@@ -12,6 +12,87 @@ export function createAnalysisLifecycleRuntime(deps) {
     supaSelectOne,
   } = deps;
 
+  const requiredFunctions={
+    hasSupabase,
+    isFinishedStatus,
+    isLiveStatus,
+    supaSelectOne,
+  };
+  for (const [name,fn] of Object.entries(requiredFunctions)) {
+    if (typeof fn !== 'function') throw new TypeError(`${name} is required`);
+  }
+  if (!memory || typeof memory !== 'object' || Array.isArray(memory)) {
+    throw new TypeError('memory is required');
+  }
+  if (!(memory.history instanceof Map)) {
+    throw new TypeError('memory.history must be a Map');
+  }
+
+  function objectValue(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  }
+
+  function rows(value, limit = 200) {
+    return Array.isArray(value) ? value.slice(0,limit) : [];
+  }
+
+  function safeText(value, max = 240) {
+    if (!['string','number','bigint'].includes(typeof value)) return '';
+    return String(value)
+      .normalize('NFKC')
+      .replace(/[\u0000-\u001F\u007F]/g,' ')
+      .replace(/\s+/g,' ')
+      .trim()
+      .slice(0,max);
+  }
+
+  function finiteNumber(value) {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value !== 'string') return null;
+    const raw=value.trim();
+    if (!/^-?(?:\d+|\d+\.\d+|\.\d+)$/.test(raw)) return null;
+    const number=Number(raw);
+    return Number.isFinite(number) ? number : null;
+  }
+
+  function positiveSafeInteger(value) {
+    const number=finiteNumber(value);
+    return number !== null && Number.isSafeInteger(number) && number>0 ? number : null;
+  }
+
+  function safeNow(value) {
+    const number=finiteNumber(value);
+    return number !== null && number>=0 ? number : Date.now();
+  }
+
+  function parsedTime(value) {
+    const raw=safeText(value,80);
+    if (!raw) return null;
+    const parsed=Date.parse(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function statusFlag(checker,status) {
+    try { return checker(status) === true; }
+    catch { return false; }
+  }
+
+  function useSupabase(cfg) {
+    try { return hasSupabase(cfg) === true; }
+    catch { return false; }
+  }
+
+  function trustedLineupsConfirmed(payload) {
+    const source=objectValue(payload) || {};
+    const impact=objectValue(source.lineupImpact);
+    if (impact) return impact.homeConfirmed === true && impact.awayConfirmed === true;
+    const quality=objectValue(source.lineupQuality);
+    if (quality && typeof quality.bothConfirmed === 'boolean') return quality.bothConfirmed === true;
+    const homeQuality=objectValue(source?.lineups?.home?.quality);
+    const awayQuality=objectValue(source?.lineups?.away?.quality);
+    return homeQuality?.confirmed === true && awayQuality?.confirmed === true;
+  }
+
   function analysisFreshness(payload = {}, now = Date.now()) {
     const generatedMs=Date.parse(payload?.generatedAt || '');
     const kickoffMs=Date.parse(payload?.match?.date || '');
