@@ -10,7 +10,7 @@
 
 - production schema: `6.29`;
 - fresh-install baseline: `supabase/baseline/supabase_baseline_v6_19.sql`;
-- latest migration: `supabase/migrations/supabase_migration_v6_29_6.sql`;
+- latest migration: `supabase/migrations/supabase_migration_v6_29_7.sql`;
 - database contract: `databaseContract.version = 2`;
 - readiness RPC: `backend_readiness_contract_v2`.
 
@@ -26,7 +26,7 @@
 
 `supabase/baseline/supabase_baseline_v6_19.sql`
 
-После baseline для новой БД последовательно применяются все numbered migrations начиная с `supabase_migration_v6_20.sql` и заканчивая текущей `supabase_migration_v6_29_6.sql`.
+После baseline для новой БД последовательно применяются все numbered migrations начиная с `supabase_migration_v6_20.sql` и заканчивая текущей `supabase_migration_v6_29_7.sql`.
 
 **Никогда не запускайте fresh-install baseline поверх существующей production БД.** Baseline содержит дополнительный guard, который должен остановить bootstrap при обнаружении рабочей схемы.
 
@@ -71,6 +71,7 @@ Production fingerprint остаётся primary. Fresh-install fingerprint пр�
 - `service_role` и другие секреты нельзя помещать в этот каталог или коммитить в Git.
 - Новые public RPC/functions должны получать только минимально необходимые `EXECUTE` grants.
 - `SECURITY DEFINER` нельзя использовать как обход проблем с правами; если он действительно необходим, функция должна иметь минимальный scope, безопасный `search_path` и явные grants.
+- Private durable analysis-usage ledger не входит в public fingerprint v2, поэтому отдельно проверяется `backend_readiness_contract_v2` как `schema.privateAnalysisUsage`.
 - Schema-changing SQL должен оставаться идемпотентным там, где это требуется rollout-контрактом.
 - После DDL/RLS/grants изменений необходимо запускать schema/readiness checks и Supabase security/performance advisors.
 - Executable CI schema checks являются обязательной частью release contract.
