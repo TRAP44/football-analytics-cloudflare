@@ -133,8 +133,8 @@ test('Telegram renders a dedicated before-vs-after News Impact Delta block',()=>
 });
 
 test('RC71 analytics remain aggregate and exclude article text and URL',()=>{
-  assert.match(telegramBot,/eventName:'news_impact_delta'/);
-  const event=/eventName:'news_impact_delta'[\s\S]{0,900}?metadata:\{([\s\S]*?)\}\}\);/.exec(telegramBot);
+  assert.match(botUi,/eventName:'news_impact_delta'/);
+  const event=/eventName:'news_impact_delta'[\s\S]{0,900}?metadata:\{([\s\S]*?)\}\}\);/.exec(botUi);
   assert.ok(event,'news impact growth event missing');
   assert.match(event[1],/compared/);
   assert.match(event[1],/material/);
