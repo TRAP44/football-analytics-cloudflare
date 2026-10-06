@@ -240,6 +240,37 @@ test('runtime-controls domain caches a verified control row for the configured T
   assert.equal(second.value.revision, 4);
 });
 
+test('direct runtime update cannot spoof rollback audit provenance',async()=>{
+  const {api}=runtime({
+    hasSupabase:()=>true,
+    supaSelectOne:async()=>({
+      id:'global',
+      revision:9,
+      maintenance_mode:false,
+      analysis_enabled:true,
+      search_enabled:true,
+      live_enabled:true,
+      reminders_enabled:true,
+      expanded_data_enabled:true,
+      auto_settlement_recovery_enabled:false,
+    }),
+  });
+  const result=await api.saveRuntimeControls({}, {id:123}, {
+    expectedRevision:9,
+    maintenanceMode:false,
+    analysisEnabled:true,
+    searchEnabled:true,
+    liveEnabled:true,
+    remindersEnabled:true,
+    expandedDataEnabled:true,
+    autoSettlementRecoveryEnabled:false,
+    action:'rollback',
+    sourceRevision:3,
+  });
+  assert.equal(result.status,400);
+  assert.equal(result.code,'RUNTIME_CONTROLS_ACTION_INVALID');
+});
+
 test('runtime control update requires strict booleans and revision identity',async()=>{
   const {api}=runtime({
     hasSupabase:()=>true,
@@ -361,6 +392,47 @@ test('runtime-controls domain preserves optimistic revision conflict semantics',
   assert.equal(result.status, 409);
   assert.equal(result.code, 'RUNTIME_CONTROLS_CONFLICT');
   assert.equal(result.current.revision, 9);
+});
+
+test('corrupted runtime state is treated as fail-closed lockdown by the guard',async()=>{
+  const {api}=runtime();
+  const response=api.runtimeGuard(
+    new Request('https://example.com/api/analyze',{method:'POST'}),
+    {id:1},
+    {},
+    {analysisEnabled:'true'},
+  );
+  assert.equal(response.status,503);
+  const body=await response.json();
+  assert.equal(body.category,'security_lockdown');
+  assert.equal(body.runtime.controlPlaneFailClosed,true);
+});
+
+test('corrupted cached runtime state is not served as a verified cache hit',async()=>{
+  let reads=0;
+  const {api,memory}=runtime({
+    hasSupabase:()=>true,
+    supaSelectOne:async()=>{
+      reads+=1;
+      return {
+        id:'global',
+        revision:4,
+        maintenance_mode:false,
+        analysis_enabled:true,
+        search_enabled:true,
+        live_enabled:true,
+        reminders_enabled:true,
+        expanded_data_enabled:true,
+        auto_settlement_recovery_enabled:false,
+      };
+    },
+  });
+  await api.loadRuntimeControls({});
+  memory.runtimeControls.value.analysisEnabled='true';
+  const second=await api.loadRuntimeControls({});
+  assert.equal(second.cached,false);
+  assert.equal(reads,2);
+  assert.equal(second.value.analysisEnabled,true);
 });
 
 test('runtime-controls domain preserves maintenance and feature guards for normal users', async () => {
