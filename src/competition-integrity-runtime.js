@@ -166,32 +166,40 @@ export function createCompetitionIntegrityRuntime(deps) {
   }));
   
   function normalizeCountryName(country = '') {
-    const raw = String(country || '').trim();
+    const raw=safeText(country,120);
     return COUNTRY_RU.get(raw) || raw || 'Мир';
   }
   
   function isYouthReserveMatch(leagueName = '', homeName = '', awayName = '') {
-    return YOUTH_RESERVE_RE.test(`${leagueName || ''} ${homeName || ''} ${awayName || ''}`);
+    return YOUTH_RESERVE_RE.test(
+      `${safeText(leagueName,160)} ${safeText(homeName,160)} ${safeText(awayName,160)}`,
+    );
   }
   
   function detectCompetitionCategory(leagueId, leagueName = '', country = '', homeName = '', awayName = '') {
-    const known = COMPETITIONS.get(Number(leagueId));
-    const hay = `${leagueName} ${country} ${homeName} ${awayName}`;
-    if (isYouthReserveMatch(leagueName, homeName, awayName)) return 'youth';
+    const id=positiveSafeInteger(leagueId);
+    const league=safeText(leagueName,160);
+    const countryName=safeText(country,120);
+    const home=safeText(homeName,160);
+    const away=safeText(awayName,160);
+    const known=id ? COMPETITIONS.get(id) : null;
+    const hay=`${league} ${countryName} ${home} ${away}`;
+    if (isYouthReserveMatch(league,home,away)) return 'youth';
     if (WOMEN_RE.test(hay)) return 'women';
-    if (FRIENDLY_RE.test(leagueName)) return 'friendly';
+    if (FRIENDLY_RE.test(league)) return 'friendly';
     if (known?.category) return known.category;
-    if (/champions|europa|conference|world cup|euro|copa america|nations league|club world/i.test(leagueName)) return 'international';
-    if (CUP_RE.test(leagueName)) return 'cup';
-    if (LOWER_RE.test(leagueName)) return 'lower';
+    if (/champions|europa|conference|world cup|euro|copa america|nations league|club world/i.test(league)) return 'international';
+    if (CUP_RE.test(league)) return 'cup';
+    if (LOWER_RE.test(league)) return 'lower';
     return 'league';
   }
   
   function leagueGroup(leagueId, leagueName = '', country = '') {
-    const known = COMPETITIONS.get(Number(leagueId));
+    const id=positiveSafeInteger(leagueId);
+    const known=id ? COMPETITIONS.get(id) : null;
     if (known?.group) return known.group;
-    const n = String(leagueName).toLowerCase();
-    const c = String(country).toLowerCase();
+    const n=safeText(leagueName,160).toLowerCase();
+    const c=safeText(country,120).toLowerCase();
     if (/champions|europa|conference|world cup|euro|copa america|nations league|club world/.test(n)) return 'international';
     if (c === 'england') return 'england';
     if (c === 'spain') return 'spain';
@@ -206,15 +214,17 @@ export function createCompetitionIntegrityRuntime(deps) {
   }
   
   function normalizeCompetition(leagueId, leagueName = '', country = '', homeName = '', awayName = '') {
-    const id = Number(leagueId || 0);
-    const known = COMPETITIONS.get(id);
-    const category = detectCompetitionCategory(id, leagueName, country, homeName, awayName);
-    const youth = category === 'youth';
-    const friendly = category === 'friendly';
-    const lower = category === 'lower';
-    let tier = known?.tier || 'standard';
-    let priority = Number(known?.priority || 45);
-    const lname = String(leagueName || '').toLowerCase();
+    const id=positiveSafeInteger(leagueId) || 0;
+    const league=safeText(leagueName,160);
+    const rawCountry=safeText(country,120);
+    const known=COMPETITIONS.get(id);
+    const category=detectCompetitionCategory(id,league,rawCountry,homeName,awayName);
+    const youth=category==='youth';
+    const friendly=category==='friendly';
+    const lower=category==='lower';
+    let tier=known?.tier || 'standard';
+    let priority=Number.isFinite(Number(known?.priority)) ? Number(known.priority) : 45;
+    const lname=league.toLowerCase();
     if (!known && category === 'cup') priority = 52;
     if (!known && category === 'international') priority = 74;
     if (!known && /libertadores/.test(lname)) { tier = 'elite'; priority = 90; }
@@ -225,14 +235,15 @@ export function createCompetitionIntegrityRuntime(deps) {
     if (lower) { tier = 'basic'; priority = Math.min(priority, 28); }
     if (friendly) { tier = 'basic'; priority = Math.min(priority, 24); }
     if (youth) { tier = 'basic'; priority = 8; }
-    const group = known?.group || leagueGroup(id, leagueName, country);
+    priority=Math.max(0,Math.min(100,Number.isFinite(priority) ? priority : 45));
+    const group=known?.group || leagueGroup(id,league,rawCountry);
     return {
       id,
-      originalName: String(leagueName || ''),
-      name: known?.name || String(leagueName || 'Турнир'),
-      shortName: known?.short || known?.name || String(leagueName || 'Турнир'),
-      country: normalizeCountryName(country),
-      countryRaw: String(country || ''),
+      originalName:league,
+      name:known?.name || league || 'Турнир',
+      shortName:known?.short || known?.name || league || 'Турнир',
+      country:normalizeCountryName(rawCountry),
+      countryRaw:rawCountry,
       group,
       category,
       tier,
@@ -245,14 +256,16 @@ export function createCompetitionIntegrityRuntime(deps) {
   }
   
   function isTopLeague(leagueId, leagueName = '') {
-    const known = COMPETITIONS.get(Number(leagueId));
-    if (known) return known.priority >= 80;
-    if (YOUTH_RESERVE_RE.test(String(leagueName || ''))) return false;
-    return /premier league|la liga|serie a|bundesliga|ligue 1|champions league|europa league|conference league|world cup|copa america|major league soccer|primeira liga/i.test(String(leagueName));
+    const id=positiveSafeInteger(leagueId);
+    const known=id ? COMPETITIONS.get(id) : null;
+    const league=safeText(leagueName,160);
+    if (known) return known.priority>=80;
+    if (YOUTH_RESERVE_RE.test(league)) return false;
+    return /premier league|la liga|serie a|bundesliga|ligue 1|champions league|europa league|conference league|world cup|copa america|major league soccer|primeira liga/i.test(league);
   }
   
   function normalizeRoundLabel(round = '') {
-    const raw = String(round || '').trim();
+    const raw=safeText(round,160);
     if (!raw) return '';
     let m = raw.match(/Regular Season\s*-\s*(\d+)/i);
     if (m) return `Тур ${m[1]}`;
@@ -269,20 +282,27 @@ export function createCompetitionIntegrityRuntime(deps) {
     return raw;
   }
   
-  function matchInterestScore({ competition, leagueId, leagueName, country, homeName, awayName, status, date }) {
-    const comp = competition || normalizeCompetition(leagueId, leagueName, country, homeName, awayName);
-    let score = Math.max(8, Math.min(72, Number(comp.priority || 45)));
-    if (BIG_TEAM_RE.test(homeName || '')) score += 12;
-    if (BIG_TEAM_RE.test(awayName || '')) score += 12;
-    if (isLiveStatus(status)) score += 8;
-    if (date) {
-      const mins = Math.abs((Date.parse(date) - Date.now()) / 60000);
-      if (mins <= 180) score += 5;
+  function matchInterestScore({ competition, leagueId, leagueName, country, homeName, awayName, status, date } = {}) {
+    const normalized=normalizeCompetition(leagueId,leagueName,country,homeName,awayName);
+    const comp=competition && typeof competition === 'object' && !Array.isArray(competition)
+      ? {...normalized,...competition}
+      : normalized;
+    const rawPriority=Number(comp.priority);
+    let score=Math.max(8,Math.min(72,Number.isFinite(rawPriority) ? rawPriority : 45));
+    const home=safeText(homeName,160);
+    const away=safeText(awayName,160);
+    if (BIG_TEAM_RE.test(home)) score+=12;
+    if (BIG_TEAM_RE.test(away)) score+=12;
+    if (isLiveStatus(safeText(status,16).toUpperCase())) score+=8;
+    const kickoffMs=Date.parse(safeText(date,80));
+    if (Number.isFinite(kickoffMs)) {
+      const mins=Math.abs((kickoffMs-Date.now())/60000);
+      if (mins<=180) score+=5;
     }
-    if (comp.youth) score -= 28;
-    if (comp.friendly) score -= 18;
-    if (comp.lower) score -= 14;
-    return Math.max(5, Math.min(99, Math.round(score)));
+    if (comp.youth === true) score-=28;
+    if (comp.friendly === true) score-=18;
+    if (comp.lower === true) score-=14;
+    return Math.max(5,Math.min(99,Math.round(score)));
   }
   
   function catalogRank(match) {
@@ -299,9 +319,10 @@ export function createCompetitionIntegrityRuntime(deps) {
   }
   
   function matchStatusRank(status) {
-    if (isLiveStatus(status)) return 0;
-    if (['NS','TBD'].includes(status)) return 1;
-    if (isFinishedStatus(status)) return 2;
+    const normalized=safeText(status,16).toUpperCase();
+    if (isLiveStatus(normalized)) return 0;
+    if (['NS','TBD'].includes(normalized)) return 1;
+    if (isFinishedStatus(normalized)) return 2;
     return 3;
   }
   
@@ -485,7 +506,16 @@ export function createCompetitionIntegrityRuntime(deps) {
   
       for (const issue of result.issues) {
         if (issue.severity === 'info') continue;
-        issues.push({ fixtureId: fixtureId || null, ...issue, home: fixture?.teams?.home?.name || '', away: fixture?.teams?.away?.name || '', league: fixture?.league?.name || '' });
+        issues.push({
+          fixtureId:fixtureId || null,
+          severity:issue.severity,
+          code:safeText(issue.code,80),
+          message:safeText(issue.message,400),
+          meta:issue.meta && typeof issue.meta === 'object' && !Array.isArray(issue.meta) ? issue.meta : {},
+          home:safeText(fixture?.teams?.home?.name,120),
+          away:safeText(fixture?.teams?.away?.name,120),
+          league:safeText(fixture?.league?.name,160),
+        });
       }
   
       if (result.quarantine) {
@@ -533,9 +563,16 @@ export function createCompetitionIntegrityRuntime(deps) {
     const integrityMemory=ensureIntegrityMemory();
     integrityMemory.lastRun=run;
     integrityMemory.recentIssues=rows(issues).slice(0,30).map(issue=>({
+      fixtureId:positiveSafeInteger(issue?.fixtureId),
+      severity:['info','warning','error'].includes(issue?.severity) ? issue.severity : 'warning',
+      code:safeText(issue?.code,80) || 'DATA_QUALITY',
+      message:safeText(issue?.message,400),
+      home:safeText(issue?.home,120),
+      away:safeText(issue?.away,120),
+      league:safeText(issue?.league,160),
+      meta:safeMetadata(issue?.meta),
       observed_at:observedAt,
       run_id:runId,
-      ...issue,
     }));
     safeTelemetry('integrityRuns');
     safeTelemetry('integrityWarnings',safeReport.warnings);
@@ -640,14 +677,14 @@ export function createCompetitionIntegrityRuntime(deps) {
   
   
   return Object.freeze({
-    COMPETITIONS,
+    COMPETITIONS:new Map(COMPETITIONS),
     BIG_TEAM_RE,
     YOUTH_RESERVE_RE,
     WOMEN_RE,
     FRIENDLY_RE,
     CUP_RE,
     LOWER_RE,
-    COUNTRY_RU,
+    COUNTRY_RU:new Map(COUNTRY_RU),
     normalizeCountryName,
     isYouthReserveMatch,
     detectCompetitionCategory,
@@ -658,7 +695,7 @@ export function createCompetitionIntegrityRuntime(deps) {
     matchInterestScore,
     catalogRank,
     matchStatusRank,
-    KNOWN_FIXTURE_STATUSES,
+    KNOWN_FIXTURE_STATUSES:new Set(KNOWN_FIXTURE_STATUSES),
     INTEGRITY_SEVERITY_WEIGHT,
     finiteNonNegative,
     fixtureScorePair,
