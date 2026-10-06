@@ -216,6 +216,8 @@ export function createMatchCenterRuntime(deps) {
     try {
       const parsed=new URL(raw);
       return ['http:','https:'].includes(parsed.protocol)
+        && !parsed.username
+        && !parsed.password
         ? parsed.toString().slice(0,max)
         : '';
     } catch {
@@ -1146,13 +1148,27 @@ export function createMatchCenterRuntime(deps) {
       await optionalAsync(settlePredictionsFromFixtures,[fixture],cfg);
     }
 
-    const postMatchPrediction=finished
+    const postMatchPredictionCandidate=finished
       ? objectValue(await optionalAsync(
           loadModelPredictionForFixture,
           fixtureId,
           cfg,
         ))
       : null;
+    const postMatchPrediction=postMatchPredictionCandidate
+      && positiveSafeInteger(postMatchPredictionCandidate.fixture_id)===fixtureId
+        ? postMatchPredictionCandidate
+        : null;
+    if (postMatchPredictionCandidate && !postMatchPrediction) {
+      await safeRecordOps(cfg,{
+        severity:'warning',
+        source:'model',
+        eventType:'post_match_prediction_rejected',
+        code:'POST_MATCH_PREDICTION_IDENTITY_MISMATCH',
+        message:'Match Center ignored a model prediction from another fixture identity.',
+        meta:{fixtureId},
+      });
+    }
 
     let postMatchReview=null;
     if (finished) {
