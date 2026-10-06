@@ -67,7 +67,7 @@ function scheduledDate(value) {
 
 function heartbeatInterval(value) {
   const interval=integerCandidate(value);
-  if (interval === null || interval < 1000 || interval > MAX_HEARTBEAT_INTERVAL_MS) {
+  if (interval === null || interval < 10 || interval > MAX_HEARTBEAT_INTERVAL_MS) {
     return GLOBAL_CRON_HEARTBEAT_INTERVAL_MS;
   }
   return interval;
