@@ -7,6 +7,17 @@
 --
 -- This keeps backend_schema_contract_v2 stable while giving the new Worker
 -- an idempotent reserve/commit/refund lifecycle for quota and limited Pass usage.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- The private ledger and its three helper RPCs remain active dependencies of
+-- the current durable quota/limited-Pass lifecycle. Because schema contract v2
+-- intentionally fingerprints only public, these private objects were originally
+-- outside release-readiness drift detection. v6.29.7 adds an explicit private
+-- analysis-usage readiness contract without changing public fingerprints.
+-- Stale reserved operations are intentionally refunded by reconciliation: this
+-- is the conservative ambiguous-outcome policy that avoids permanently charging
+-- a user when final commit/refund confirmation cannot be established.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 create schema if not exists private;
 revoke all on schema private from public, anon, authenticated;
