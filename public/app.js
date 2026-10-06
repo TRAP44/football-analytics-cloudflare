@@ -905,7 +905,7 @@ async function runStartupSequence() {
 
   applyLaunchIntent();
   if (!hasDirectLaunchIntent()) showView('matchesView');
-  sendProductAction('open', 'matchesView');
+  sendProductAction('matches_open', 'matchesView');
   setBootStatus('MatchRadar', 'Загружаем матчи…', 100);
   phaseStartedAt = performance.now();
   await new Promise(resolve => setTimeout(resolve, 120));
