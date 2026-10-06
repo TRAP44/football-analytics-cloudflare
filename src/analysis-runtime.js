@@ -678,7 +678,15 @@ export function createAnalysisRuntime(deps) {
       }
       if (joined) {
         await safeRecordHistory(joined);
-        if (trackFullAi) void recordGrowthEvent(cfg,{userId:userId,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,sharedJoin:true}});
+        if (trackFullAi) {
+          fireAndForget(recordGrowthEvent,cfg,{
+            userId,
+            eventName:'full_ai',
+            channel:'miniapp',
+            fixtureId,
+            metadata:{cached:true,sharedJoin:true},
+          });
+        }
         await recordTrackedFullAiOutcome('shared');
         return json(safeAnalysisResponsePayload(joined,{cached:true,stale:false,sharedJoin:true,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_shared' : (previousFreshness?.reasonCode || 'shared_compute')},quota:await quotaSnapshotForResponse(userId,cfg,quotaBefore)}));
       }
@@ -717,7 +725,7 @@ export function createAnalysisRuntime(deps) {
           message:'Limited Pass reservation response was not confirmed. A durable database reservation, if created, will be reconciled automatically.',
           meta:{
             operationId:passOperationId,
-            fixtureId:Number(fixtureId),
+            fixtureId,
             error:safeText(error?.message || error,180) || 'unknown_error',
           },
         }).catch(()=>null);
