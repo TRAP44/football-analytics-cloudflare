@@ -98,111 +98,179 @@ export function createAnalysisUsageCompensationRuntime({
     throw new TypeError('createAnalysisUsageCompensationRuntime requires Supabase dependencies');
   }
 
+  function supabaseConfigured(cfg) {
+    try { return hasSupabase(cfg) === true; }
+    catch { return false; }
+  }
+
+  function safeTelemetry(key, amount = 1) {
+    try {
+      if (typeof bumpTelemetry === 'function') bumpTelemetry(key, amount);
+    } catch {}
+  }
+
+  function safeErrorText(error, max = 180) {
+    let raw=error;
+    try {
+      if (error && typeof error === 'object' && 'message' in error) raw=error.message;
+    } catch {}
+
+    if (typeof redactOpsString === 'function') {
+      try {
+        const redacted=safeScalarText(redactOpsString(raw,max),max);
+        if (redacted) return redacted;
+      } catch {}
+    }
+    return safeScalarText(raw,max) || 'unknown_error';
+  }
+
+  async function safeRecordOpsEvent(cfg, event) {
+    if (typeof recordOpsEvent !== 'function') return;
+    try { await recordOpsEvent(cfg,event); } catch {}
+  }
+
   async function finalizeAnalysisUsageReservation({
     reservation,
     disposition,
     cfg,
     userId,
   } = {}) {
-    if (!reservation?.reserved || reservation?.durable !== true) {
-      return { ok: true, skipped: true, reason: 'legacy_or_not_reserved' };
+    const value=objectValue(reservation);
+    if (!value || value.reserved !== true || value.durable !== true) {
+      return {ok:true,skipped:true,reason:'legacy_or_not_reserved'};
     }
 
-    const operationId = normalizeOperationId(reservation.operationId);
-    const kind = normalizeKind(reservation.kind);
-    const action = disposition === 'commit' ? 'commit' : disposition === 'refund' ? 'refund' : '';
-    const reservationUserId = positiveSafeInteger(userId || reservation.userId);
-    const reservationDate = kind === 'quota' ? usageDate(reservation.date) : '';
-    const entitlementId = kind === 'pass' ? positiveSafeInteger(reservation.entitlementId) : 0;
+    const operationId=normalizeOperationId(value.operationId);
+    const kind=normalizeKind(value.kind);
+    const action=disposition==='commit'
+      ? 'commit'
+      : disposition==='refund'
+        ? 'refund'
+        : '';
+
+    const storedUserId=positiveSafeInteger(value.userId);
+    const explicitUserSupplied=userId !== undefined && userId !== null && userId !== '';
+    const explicitUserId=explicitUserSupplied ? positiveSafeInteger(userId) : 0;
+    const reservationUserId=explicitUserSupplied ? explicitUserId : storedUserId;
+    const reservationDate=kind==='quota' ? usageDate(value.date) : '';
+    const entitlementId=kind==='pass' ? positiveSafeInteger(value.entitlementId) : 0;
 
     if (
       !operationId
       || !action
-      || kind === 'unknown'
+      || kind==='unknown'
+      || !storedUserId
       || !reservationUserId
-      || (kind === 'quota' && !reservationDate)
-      || (kind === 'pass' && !entitlementId)
+      || (explicitUserSupplied && explicitUserId!==storedUserId)
+      || (kind==='quota' && !reservationDate)
+      || (kind==='pass' && !entitlementId)
     ) {
-      return { ok: false, pending: false, reason: 'invalid_reservation' };
+      return {ok:false,pending:false,reason:'invalid_reservation'};
     }
 
-    if (!hasSupabase(cfg)) {
-      return { ok: false, pending: false, persistent: false, reason: 'supabase_not_configured' };
+    if (!supabaseConfigured(cfg)) {
+      return {
+        ok:false,
+        pending:false,
+        persistent:false,
+        operationId,
+        kind,
+        reason:'supabase_not_configured',
+      };
     }
 
     try {
-      let result;
-      if (kind === 'quota') {
-        result = await supaRpc(cfg, 'refund_analysis_quota', {
-          p_telegram_id: reservationUserId,
-          p_usage_date: reservationDate,
-        }, 4000, lifecycleHeaders(operationId, action));
-      } else {
-        result = await supaRpc(cfg, 'refund_pass_entitlement_usage', {
-          p_telegram_id: reservationUserId,
-          p_entitlement_id: entitlementId,
-        }, 4000, lifecycleHeaders(operationId, action));
-      }
+      const rawResult=kind==='quota'
+        ? await supaRpc(
+            cfg,
+            'refund_analysis_quota',
+            {
+              p_telegram_id:reservationUserId,
+              p_usage_date:reservationDate,
+            },
+            4000,
+            lifecycleHeaders(operationId,action),
+          )
+        : await supaRpc(
+            cfg,
+            'refund_pass_entitlement_usage',
+            {
+              p_telegram_id:reservationUserId,
+              p_entitlement_id:entitlementId,
+            },
+            4000,
+            lifecycleHeaders(operationId,action),
+          );
 
-      const expectedStatus = action === 'commit' ? 'committed' : 'refunded';
-      const resultOperationId = normalizeOperationId(result?.operationId);
+      const result=objectValue(rawResult);
+      const expectedStatus=action==='commit' ? 'committed' : 'refunded';
+      const resultOperationId=normalizeOperationId(result?.operationId);
+      const resultStatus=safeScalarText(result?.status,40).toLowerCase();
+
       if (
-        result?.ok !== true
-        || String(result?.status || '') !== expectedStatus
-        || resultOperationId !== operationId
+        !result
+        || result.ok !== true
+        || resultStatus!==expectedStatus
+        || resultOperationId!==operationId
       ) {
-        const error = new Error(String(result?.reason || 'analysis_usage_finalization_not_confirmed'));
-        error.code = 'ANALYSIS_USAGE_FINALIZATION_NOT_CONFIRMED';
+        const error=new Error(
+          safeScalarText(result?.reason,160)
+            || 'analysis_usage_finalization_not_confirmed',
+        );
+        error.code='ANALYSIS_USAGE_FINALIZATION_NOT_CONFIRMED';
         throw error;
       }
 
-      if (action === 'commit') {
-        bumpTelemetry?.('analysisUsageCommits');
+      // Persistence is already confirmed. Observability must never turn a
+      // committed/refunded operation back into a synthetic pending failure.
+      if (action==='commit') {
+        safeTelemetry('analysisUsageCommits');
       } else {
-        bumpTelemetry?.('analysisUsageRefunds');
-        if (kind === 'quota') bumpTelemetry?.('quotaRefunds');
-        if (kind === 'pass') bumpTelemetry?.('passUsageRefunds');
+        safeTelemetry('analysisUsageRefunds');
+        if (kind==='quota') safeTelemetry('quotaRefunds');
+        if (kind==='pass') safeTelemetry('passUsageRefunds');
       }
 
       return {
-        ok: true,
-        pending: false,
-        persistent: true,
-        duplicate: Boolean(result?.duplicate),
-        status: expectedStatus,
+        ok:true,
+        pending:false,
+        persistent:true,
+        duplicate:result.duplicate === true,
+        status:expectedStatus,
         operationId,
         kind,
       };
     } catch (error) {
-      bumpTelemetry?.('analysisUsageCompensationFailures');
-      if (action === 'commit') bumpTelemetry?.('analysisUsageCommitFailures');
-      if (action === 'refund' && kind === 'quota') bumpTelemetry?.('quotaRefundFailures');
-      if (action === 'refund' && kind === 'pass') bumpTelemetry?.('passUsageRefundFailures');
+      safeTelemetry('analysisUsageCompensationFailures');
+      if (action==='commit') safeTelemetry('analysisUsageCommitFailures');
+      if (action==='refund' && kind==='quota') safeTelemetry('quotaRefundFailures');
+      if (action==='refund' && kind==='pass') safeTelemetry('passUsageRefundFailures');
 
-      await Promise.resolve(recordOpsEvent?.(cfg, {
-        severity: 'error',
-        source: 'quota',
-        eventType: 'analysis_usage_compensation',
-        code: compensationCode(action),
-        message: action === 'commit'
+      const reason=safeErrorText(error,180);
+      await safeRecordOpsEvent(cfg,{
+        severity:'error',
+        source:'quota',
+        eventType:'analysis_usage_compensation',
+        code:compensationCode(action),
+        message:action==='commit'
           ? 'Analysis usage completion could not be persisted; the durable reservation remains pending for reconciliation.'
           : 'Failed analysis usage could not be refunded immediately; the durable reservation remains pending for reconciliation.',
-        meta: {
+        meta:{
           operationId,
           kind,
-          usageDate: reservationDate || null,
-          entitlementId: entitlementId || null,
-          error: redactOpsString(error?.message || error, 180),
+          usageDate:reservationDate || null,
+          entitlementId:entitlementId || null,
+          error:reason,
         },
-      })).catch(() => null);
+      });
 
       return {
-        ok: false,
-        pending: true,
-        persistent: true,
+        ok:false,
+        pending:true,
+        persistent:true,
         operationId,
         kind,
-        reason: redactOpsString(error?.message || error, 180),
+        reason,
       };
     }
   }
