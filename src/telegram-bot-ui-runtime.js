@@ -534,73 +534,157 @@ export function createTelegramBotUiRuntime(deps = {}) {
     };
   }
 
-  async function rememberBotFixtureCards(matches = [], cfg) {
-    await Promise.allSettled((matches || []).map(async match => {
-      const card = normalizeBotFixtureCard(match);
-      if (!card.fixtureId) return;
-      const writes=[setCache(`bot:fixture-card:${card.fixtureId}:v2`, card.fixtureId, { match:card, savedAt:new Date().toISOString() }, cfg, 180)];
+  async function rememberBotFixtureCards(matches=[],cfg) {
+    const tasks=[];
+    for (const match of rowsOrEmpty(matches,100)) {
+      const card=normalizeBotFixtureCard(match);
+      if (!card.fixtureId) continue;
+
+      const savedAt=new Date().toISOString();
+      tasks.push(optionalAsync(
+        setCache,
+        `bot:fixture-card:${card.fixtureId}:v2`,
+        card.fixtureId,
+        {match:card,savedAt},
+        cfg,
+        180,
+      ));
+
       for (const team of [card.home,card.away]) {
-        if (Number(team?.id || 0)>0 && team?.name) writes.push(setCache(`bot:team-card:${Number(team.id)}:v1`,Number(team.id),{team,savedAt:new Date().toISOString()},cfg,720));
+        if (!team.id || !team.name) continue;
+        tasks.push(optionalAsync(
+          setCache,
+          `bot:team-card:${team.id}:v1`,
+          team.id,
+          {team,savedAt},
+          cfg,
+          720,
+        ));
       }
-      await Promise.allSettled(writes);
-    }));
-  }
-  
-  async function loadBotTeamCard(teamId,cfg) {
-    const id=Number(teamId || 0);
-    if (!id) return null;
-    const cached=await getCache(`bot:team-card:${id}:v1`,cfg).catch(()=>null);
-    if (cached?.team?.name) return cached.team;
-    return null;
-  }
-  
-  async function loadBotFixtureCard(fixtureId, cfg) {
-    const id = Number(fixtureId || 0);
-    if (!id) return null;
-    const saved = await getCache(`bot:fixture-card:${id}:v2`, cfg).catch(()=>null);
-    if (saved?.match) return normalizeBotFixtureCard(saved.match);
-    const analyzed = await getCache(`fixture:${id}:v10-ai-instructor`, cfg).catch(()=>null);
-    if (analyzed?.match) {
-      const card=normalizeBotFixtureCard(analyzed.match);
-      await rememberBotFixtureCards([card],cfg);
-      return card;
     }
-    if (!freeQuotaHealthy(6,1)) return { fixtureId:id, home:{id:0,name:'Матч',logo:''}, away:{id:0,name:String(id),logo:''}, homeName:'Матч', awayName:String(id), league:'Футбол', live:false, finished:false };
-    const fixture = await loadProviderFixture(id,cfg).catch(()=>null);
+    await Promise.allSettled(tasks);
+  }
+
+  async function loadBotTeamCard(teamId,cfg) {
+    const id=positiveSafeInteger(teamId);
+    if (id===null) return null;
+
+    const cached=objectValue(
+      await optionalAsync(getCache,`bot:team-card:${id}:v1`,cfg),
+    );
+    const team=safeTeam(cached?.team,'');
+    if (team.id!==id || !team.name) return null;
+    return team;
+  }
+
+  function fallbackFixtureCard(id) {
+    return {
+      fixtureId:id,
+      date:'',
+      status:'',
+      statusLabel:'',
+      live:false,
+      finished:false,
+      elapsed:null,
+      home:{id:0,name:'Матч',logo:''},
+      away:{id:0,name:String(id),logo:''},
+      homeName:'Матч',
+      awayName:String(id),
+      league:'Футбол',
+      leagueId:0,
+      country:'',
+      round:'',
+    };
+  }
+
+  async function loadBotFixtureCard(fixtureId,cfg) {
+    const id=positiveSafeInteger(fixtureId);
+    if (id===null) return null;
+
+    const saved=objectValue(
+      await optionalAsync(getCache,`bot:fixture-card:${id}:v2`,cfg),
+    );
+    if (objectValue(saved?.match)) {
+      const card=normalizeBotFixtureCard(saved.match);
+      if (card.fixtureId===id) return card;
+    }
+
+    const analyzed=objectValue(
+      await optionalAsync(getCache,`fixture:${id}:v10-ai-instructor`,cfg),
+    );
+    if (objectValue(analyzed?.match)) {
+      const card=normalizeBotFixtureCard(analyzed.match);
+      if (card.fixtureId===id) {
+        await rememberBotFixtureCards([card],cfg);
+        return card;
+      }
+    }
+
+    if (!safePredicate(freeQuotaHealthy,6,1)) {
+      return fallbackFixtureCard(id);
+    }
+
+    const fixture=objectValue(
+      await optionalAsync(loadProviderFixture,id,cfg),
+    );
     if (!fixture) return null;
-    const card = normalizeBotFixtureCard(fixture);
-    await rememberBotFixtureCards([card], cfg);
+
+    const card=normalizeBotFixtureCard(fixture);
+    if (card.fixtureId!==id) return null;
+    await rememberBotFixtureCards([card],cfg);
     return card;
   }
-  
-  function botFixtureDateTime(iso = '') {
-    const d=new Date(iso || '');
+
+  function botFixtureDateTime(iso='') {
+    const raw=safeText(iso,80);
+    if (!raw) return 'время уточняется';
+    const d=new Date(raw);
     if (!Number.isFinite(d.getTime())) return 'время уточняется';
-    return new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:'UTC'}).format(d)+' UTC';
+    try {
+      return new Intl.DateTimeFormat('ru-RU',{
+        day:'2-digit',
+        month:'2-digit',
+        hour:'2-digit',
+        minute:'2-digit',
+        timeZone:'UTC',
+      }).format(d)+' UTC';
+    } catch {
+      return 'время уточняется';
+    }
   }
-  
-  function botFixtureCardText(match = {}, { aiReady=false } = {}) {
-    const card = normalizeBotFixtureCard(match);
-    const status = card.live ? `🔴 ${card.statusLabel || 'Матч идёт'}` : card.finished ? '✅ Матч завершён' : `🗓 ${botFixtureDateTime(card.date)}`;
-    const round=card.round ? ` · ${telegramHtmlEscape(card.round)}` : '';
-    const aiState=card.finished ? '📋 Доступен центр матча' : aiReady ? '🧠 AI-разбор уже сохранён' : '🧠 AI готов собрать полный разбор';
+
+  function botFixtureCardText(match={},options={}) {
+    const card=normalizeBotFixtureCard(match);
+    const opts=objectValue(options) || {};
+    const aiReady=opts.aiReady===true;
+    const status=card.live
+      ? `🔴 ${card.statusLabel || 'Матч идёт'}`
+      : card.finished
+        ? '✅ Матч завершён'
+        : `🗓 ${botFixtureDateTime(card.date)}`;
+    const round=card.round ? ` · ${escapeHtml(card.round,120)}` : '';
+    const aiState=card.finished
+      ? '📋 Доступен центр матча'
+      : aiReady
+        ? '🧠 AI-разбор уже сохранён'
+        : '🧠 AI готов собрать полный разбор';
+
     return [
       '⚽ <b>MatchRadar AI · MATCH</b>',
       '',
-      `<b>${telegramHtmlEscape(card.homeName)} — ${telegramHtmlEscape(card.awayName)}</b>`,
-      `${telegramHtmlEscape(card.league)}${round}`,
-      telegramHtmlEscape(status),
-      `<i>${telegramHtmlEscape(aiState)}</i>`,
+      `<b>${escapeHtml(card.homeName,120)} — ${escapeHtml(card.awayName,120)}</b>`,
+      `${escapeHtml(card.league,160)}${round}`,
+      escapeHtml(status,160),
+      `<i>${escapeHtml(aiState,180)}</i>`,
       '',
       'Выберите нужный блок. ☆/★ добавляет клуб в «Мои команды».',
     ].join('\n');
   }
-  
+
   async function botAnalyzeFixtureDefault(request,cfg,userId,fixtureId) {
-    const data=await botAnalyzeFixture(request,cfg,userId,fixtureId);
-    return data;
+    return await botAnalyzeFixture(request,cfg,userId,fixtureId);
   }
-  
+
   async function sendBotFixtureMenu(request, cfg, userId, chatId, fixtureId, options = {}) {
     void recordGrowthEvent(cfg,{userId,eventName:'match_open',channel:'telegram',fixtureId,attribution:options.attribution || null,metadata:{source:options.source || 'match_select'}});
     const [match,favorites] = await Promise.all([
