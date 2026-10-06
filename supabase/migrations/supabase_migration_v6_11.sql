@@ -1,6 +1,13 @@
 -- Football Analytics v6.11 / RC19
 -- Locks the public schema to the Cloudflare Worker service role and exposes a
 -- machine-readable security contract for release gates.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this migration in the upgrade chain. It establishes the public-schema
+-- least-privilege baseline used by later migrations and release checks.
+-- ALTER DEFAULT PRIVILEGES applies to the role executing this migration; the
+-- follow-up v6.11.1 contract audits application object owners for unsafe defaults.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 -- The browser never talks to Supabase directly. Keep schema discovery usable,
 -- but prevent public object creation and all direct data access.
