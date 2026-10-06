@@ -6,13 +6,14 @@ import { createPublicHealthRuntime } from '../src/public-health.js';
 import { createPublicStatusRouter, createPublicStatusRuntime } from '../src/public-status.js';
 import { createReleaseFieldEvidenceRuntime } from '../src/release-field-evidence.js';
 import { createAppCapabilitiesRuntime } from '../src/app-capabilities.js';
+import { createSettlementRuntime } from '../src/settlement-runtime.js';
 
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 
 test('Worker composition root stays below the post-audit architecture budget',()=>{
   const bytes=Buffer.byteLength(worker,'utf8');
   assert.ok(
-    bytes<=1_165_000,
+    bytes<=1_080_000,
     `src/worker.js grew to ${bytes} bytes; extract another cohesive runtime instead of growing the composition root`,
   );
 });
@@ -24,6 +25,7 @@ test('extracted runtime factories are executable contracts, not source-only plac
   assert.equal(typeof createReleaseFieldEvidenceRuntime,'function');
   assert.equal(typeof createDiagnosticsRuntime,'function');
   assert.equal(typeof createAppCapabilitiesRuntime,'function');
+  assert.equal(typeof createSettlementRuntime,'function');
 
   const publicStatus=createPublicStatusRuntime({
     loadRuntimeControls:async()=>({value:{maintenanceMode:false,analysisEnabled:true,searchEnabled:true,liveEnabled:true,message:''}}),
@@ -110,6 +112,10 @@ test('extracted runtime factories are executable contracts, not source-only plac
   });
   assert.equal(capabilities.publicDataCapabilities().mode,'standard');
   assert.equal(capabilities.appManifest({monetizationEnabled:false}).monetization,'paused');
+
+  const settlement=createSettlementRuntime(new Proxy({}, {get:()=>()=>null}));
+  assert.equal(typeof settlement.runSettlementWatchdog,'function');
+  assert.equal(typeof settlement.runSettlementFinalityVerification,'function');
 });
 
 test('Worker composes extracted runtimes through explicit imports',()=>{
@@ -118,12 +124,14 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.match(worker,/import \{ createReleaseFieldEvidenceRuntime \} from '\.\/release-field-evidence\.js'/);
   assert.match(worker,/import \{ createDiagnosticsRuntime \} from '\.\/diagnostics-runtime\.js'/);
   assert.match(worker,/import \{ createAppCapabilitiesRuntime \} from '\.\/app-capabilities\.js'/);
+  assert.match(worker,/import \{ createSettlementRuntime \} from '\.\/settlement-runtime\.js'/);
   assert.match(worker,/createDiagnosticsRuntime\(\{/);
   assert.match(worker,/createPublicHealthRuntime\(\{/);
   assert.match(worker,/createPublicStatusRuntime\(\{/);
   assert.match(worker,/createPublicStatusRouter\(\{/);
   assert.match(worker,/createReleaseFieldEvidenceRuntime\(\{/);
   assert.match(worker,/createAppCapabilitiesRuntime\(\{/);
+  assert.match(worker,/createSettlementRuntime\(\{/);
   assert.doesNotMatch(worker,/async function collectDiagnostics\(/);
   assert.doesNotMatch(worker,/async function readRecentOpsEvents\(/);
   assert.doesNotMatch(worker,/async function publicServiceStatus\(/);
@@ -132,4 +140,7 @@ test('Worker composes extracted runtimes through explicit imports',()=>{
   assert.doesNotMatch(worker,/async function recordClosedBetaConfigurationEvidence\(/);
   assert.doesNotMatch(worker,/async function probeReleaseProviderQuotaEvidence\(/);
   assert.doesNotMatch(worker,/async function captureReleaseFieldEvidence\(/);
+  assert.doesNotMatch(worker,/async function runSettlementWatchdog\(/);
+  assert.doesNotMatch(worker,/async function runSettlementFinalityVerification\(/);
+  assert.doesNotMatch(worker,/function buildPredictionIntegrity\(/);
 });

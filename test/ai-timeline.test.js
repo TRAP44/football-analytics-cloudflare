@@ -258,7 +258,7 @@ test('AI Timeline persistence is server-only and append-only for the application
 
 test('AI Timeline integration does not add provider requests and preserves Match Pulse ordering', () => {
   const worker=fs.readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
-  const helper=worker.slice(worker.indexOf('async function loadFixtureAiTimeline'),worker.indexOf('async function captureModelPrediction'));
+  const helper=worker.slice(worker.indexOf('async function loadFixtureAiTimeline'),worker.indexOf('async function loadModelPredictionForFixture'));
   assert.ok(helper.length>0);
   assert.doesNotMatch(helper,/apiFootball\(|providerFeatureFetch\(|loadProviderFixture\(/);
   assert.match(worker,/captureAnalysisTimelineSnapshot\(payload, cfg, \{ delta: effectiveRecheckDelta \}\)/);
