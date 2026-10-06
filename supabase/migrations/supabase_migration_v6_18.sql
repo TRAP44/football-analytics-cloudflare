@@ -1,6 +1,15 @@
 -- Football Analytics v6.18 / RC127
 -- Atomic analysis quota, distributed API-Football minute budget,
 -- daily digest delivery claims, full schema fingerprint and stricter service-role privileges.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this migration in the upgrade chain. Current runtimes still call the
+-- quota, provider-budget and digest RPC signatures introduced here.
+-- v6.18.1 intentionally replaces consume_analysis_quota() to fix the first-user
+-- FK race; v6.19/v6.21 evolve backend_schema_fingerprint(); v6.28 later adds
+-- durable quota lifecycle semantics while preserving the public RPC signatures.
+-- These superseded definitions are therefore replay steps, not removable duplicates.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 alter table public.bot_digest_subscriptions
   add column if not exists delivery_claim_date date,
