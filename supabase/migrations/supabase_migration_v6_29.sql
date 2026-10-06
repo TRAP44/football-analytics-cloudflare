@@ -6,6 +6,14 @@
 -- The rule intentionally lives in pg_rewrite rather than adding a new public
 -- RPC/function signature, so the established public schema-contract fingerprint
 -- remains unchanged during this backward-compatible rollout.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- v6.29.1 later repairs action-constraint compatibility: persisted action stays
+-- update/defaults/rollback while lockdown intent lives in snapshot.requestedAction.
+-- The pg_rewrite rule is intentionally outside schema-contract-v2 fingerprinting;
+-- v6.29.8 adds an explicit backend-security/readiness check so removing or
+-- materially regressing the atomic-history rule becomes release-blocking.
+-- Do not rewrite applied DDL here; corrections belong in forward migrations.
 
 drop rule if exists runtime_controls_atomic_history on public.runtime_controls;
 
