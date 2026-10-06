@@ -73,7 +73,10 @@ test('RC137 does not treat same-name players with different explicit IDs as cros
   assert.equal(quality.bothConfirmed,true);
 });
 
-const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync('src/analysis-runtime.js', 'utf8') + '\n' + fs.readFileSync('src/match-formatting-runtime.js', 'utf8');
+const worker = fs.readFileSync('src/worker.js', 'utf8')
+  + '\n' + fs.readFileSync('src/analysis-runtime.js', 'utf8')
+  + '\n' + fs.readFileSync('src/analysis-quality-runtime.js', 'utf8')
+  + '\n' + fs.readFileSync('src/match-formatting-runtime.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
 const runtime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const smoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
@@ -81,8 +84,8 @@ const smoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 test('RC137 uses lineup quality in Match Center and AI quality gate', () => {
   assert.match(worker, /lineup\.quality = assessLineupQuality\(lineup\)/);
   assert.match(worker, /const lineupQuality=assessMatchLineups\(lineups\)/);
-  assert.match(worker, /homeConfirmed=Boolean\(lineupQuality\.home\.confirmed\)/);
-  assert.match(worker, /awayConfirmed=Boolean\(lineupQuality\.away\.confirmed\)/);
+  assert.match(worker, /const homeConfirmed=Boolean\(structuralHomeConfirmed && lineupSourceTrusted\)/);
+  assert.match(worker, /const awayConfirmed=Boolean\(structuralAwayConfirmed && lineupSourceTrusted\)/);
   assert.match(worker, /lineupQuality,/);
   assert.match(worker, /lineupQualityGuard: 'enabled'/);
   assert.match(worker, /analysisVersion: '4\.15\.0-availability-quality'/);
