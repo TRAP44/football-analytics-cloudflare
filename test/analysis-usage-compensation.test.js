@@ -19,6 +19,53 @@ test('durable usage headers bind a valid operation id and reject malformed ids',
   assert.throws(() => durableAnalysisUsageHeaders('not-a-uuid'), /requires a UUID/);
 });
 
+test('durable usage identifiers reject coercive booleans and symbols safely', () => {
+  assert.throws(() => durableAnalysisUsageHeaders(true), /requires a UUID/);
+  assert.throws(() => durableAnalysisUsageHeaders(Symbol('operation')), /requires a UUID/);
+
+  const runtime=createAnalysisUsageCompensationRuntime({
+    hasSupabase:()=>true,
+    supaRpc:async()=>{ throw new Error('must not call'); },
+  });
+  return runtime.finalizeAnalysisUsageReservation({
+    reservation:{
+      reserved:true,
+      durable:true,
+      operationId:QUOTA_OPERATION,
+      kind:'quota',
+      userId:true,
+      date:'2026-10-05',
+    },
+    disposition:'refund',
+    cfg:CFG,
+  }).then(result=>{
+    assert.deepEqual(result,{ok:false,pending:false,reason:'invalid_reservation'});
+  });
+});
+
+test('explicit finalization user must match the durable reservation owner', async () => {
+  let calls=0;
+  const runtime=createAnalysisUsageCompensationRuntime({
+    hasSupabase:()=>true,
+    supaRpc:async()=>{ calls+=1; return {}; },
+  });
+  const result=await runtime.finalizeAnalysisUsageReservation({
+    reservation:{
+      reserved:true,
+      durable:true,
+      operationId:QUOTA_OPERATION,
+      kind:'quota',
+      userId:42,
+      date:'2026-10-05',
+    },
+    disposition:'refund',
+    cfg:CFG,
+    userId:43,
+  });
+  assert.deepEqual(result,{ok:false,pending:false,reason:'invalid_reservation'});
+  assert.equal(calls,0);
+});
+
 test('confirmed quota refund increments success telemetry only after persistence', async () => {
   const calls = [];
   const telemetry = {};
@@ -167,6 +214,65 @@ test('failed durable quota refund remains pending, emits an ops event and never 
   assert.equal(events[0].meta.operationId, QUOTA_OPERATION);
 });
 
+test('observability failures cannot turn a confirmed durable refund into pending', async () => {
+  const runtime=createAnalysisUsageCompensationRuntime({
+    hasSupabase:()=>true,
+    supaRpc:async()=>({
+      ok:true,
+      status:'refunded',
+      operationId:QUOTA_OPERATION,
+    }),
+    bumpTelemetry:()=>{ throw new Error('telemetry down'); },
+    recordOpsEvent:()=>{ throw new Error('ops down'); },
+    redactOpsString:()=>{ throw new Error('redactor down'); },
+  });
+
+  const result=await runtime.finalizeAnalysisUsageReservation({
+    reservation:{
+      reserved:true,
+      durable:true,
+      operationId:QUOTA_OPERATION,
+      kind:'quota',
+      userId:42,
+      date:'2026-10-05',
+    },
+    disposition:'refund',
+    cfg:CFG,
+    userId:42,
+  });
+
+  assert.equal(result.ok,true);
+  assert.equal(result.pending,false);
+  assert.equal(result.status,'refunded');
+});
+
+test('finalization failure remains structured even when observability helpers throw', async () => {
+  const runtime=createAnalysisUsageCompensationRuntime({
+    hasSupabase:()=>true,
+    supaRpc:async()=>{ throw new Error('database unavailable'); },
+    bumpTelemetry:()=>{ throw new Error('telemetry down'); },
+    recordOpsEvent:()=>{ throw new Error('ops down'); },
+    redactOpsString:()=>{ throw new Error('redactor down'); },
+  });
+
+  const result=await runtime.finalizeAnalysisUsageReservation({
+    reservation:{
+      reserved:true,
+      durable:true,
+      operationId:QUOTA_OPERATION,
+      kind:'quota',
+      userId:42,
+      date:'2026-10-05',
+    },
+    disposition:'refund',
+    cfg:CFG,
+  });
+
+  assert.equal(result.ok,false);
+  assert.equal(result.pending,true);
+  assert.match(result.reason,/database unavailable/);
+});
+
 test('successful limited Pass usage is explicitly committed through the existing refund RPC surface', async () => {
   const calls = [];
   const telemetry = {};
@@ -248,8 +354,9 @@ test('reconciliation reuses the stable quota RPC and reports recovered reservati
   assert.equal(calls[0][4]['x-analysis-usage-action'], 'reconcile');
 });
 
-test('reconciliation sanitizes malformed counters instead of propagating NaN or fractions', async () => {
+test('reconciliation fails closed on malformed or impossible counters', async () => {
   const telemetry = {};
+  const events = [];
   const runtime = createAnalysisUsageCompensationRuntime({
     hasSupabase: () => true,
     supaRpc: async () => ({
@@ -260,19 +367,66 @@ test('reconciliation sanitizes malformed counters instead of propagating NaN or 
       pending:1.5,
       cleaned:'2',
     }),
-    recordOpsEvent: async () => {},
+    recordOpsEvent: async (_cfg,event) => events.push(event),
     bumpTelemetry: (key, amount = 1) => { telemetry[key] = Number(telemetry[key] || 0) + amount; },
   });
   const result=await runtime.reconcileAnalysisUsageReservations(CFG);
-  assert.deepEqual(result,{
-    ok:true,
-    degraded:false,
-    reconciled:0,
-    failed:0,
-    pending:0,
-    cleaned:2,
-  });
+  assert.equal(result.ok,false);
+  assert.equal(result.degraded,true);
+  assert.equal(result.reconciled,0);
+  assert.equal(result.failed,1);
+  assert.match(result.reason,/reconciliation_contract_invalid/);
   assert.equal(telemetry.analysisUsageReconciled,undefined);
+  assert.equal(telemetry.analysisUsageReconciliationFailures,1);
+  assert.equal(events[0].code,'ANALYSIS_USAGE_RECONCILIATION_FAILED');
+});
+
+test('reconciliation rejects contradictory ok and failed counters', async () => {
+  const runtime=createAnalysisUsageCompensationRuntime({
+    hasSupabase:()=>true,
+    supaRpc:async()=>({
+      ok:false,
+      reconciliation:true,
+      reconciled:2,
+      failed:0,
+      pending:0,
+      cleaned:0,
+    }),
+    recordOpsEvent:async()=>{},
+  });
+
+  const result=await runtime.reconcileAnalysisUsageReservations(CFG);
+  assert.equal(result.ok,false);
+  assert.equal(result.degraded,true);
+  assert.equal(result.failed,1);
+  assert.match(result.reason,/reconciliation_contract_invalid/);
+});
+
+test('Supabase detection failures stay fail-soft', async () => {
+  const runtime=createAnalysisUsageCompensationRuntime({
+    hasSupabase:()=>{ throw new Error('config probe failed'); },
+    supaRpc:async()=>{ throw new Error('must not call'); },
+  });
+
+  const reconciliation=await runtime.reconcileAnalysisUsageReservations(CFG);
+  assert.equal(reconciliation.ok,true);
+  assert.equal(reconciliation.skipped,true);
+
+  const finalization=await runtime.finalizeAnalysisUsageReservation({
+    reservation:{
+      reserved:true,
+      durable:true,
+      operationId:QUOTA_OPERATION,
+      kind:'quota',
+      userId:42,
+      date:'2026-10-05',
+    },
+    disposition:'refund',
+    cfg:CFG,
+  });
+  assert.equal(finalization.ok,false);
+  assert.equal(finalization.pending,false);
+  assert.equal(finalization.reason,'supabase_not_configured');
 });
 
 test('partial reconciliation remains observable while preserving successful recovery counts', async () => {
