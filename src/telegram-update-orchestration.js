@@ -61,9 +61,89 @@ export function createTelegramUpdateProcessor(deps) {
     sendDigestControls,
   } = deps;
 
+  function plainObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  }
+
+  function textValue(value) {
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
+  function integerCandidate(value) {
+    if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+    if (typeof value !== 'string') return null;
+    const raw=value.trim();
+    if (!/^-?\d+$/.test(raw)) return null;
+    const number=Number(raw);
+    return Number.isSafeInteger(number) ? number : null;
+  }
+
+  function positiveInteger(value) {
+    const number=integerCandidate(value);
+    return number !== null && number>0 ? number : 0;
+  }
+
+  function nonNegativeInteger(value, fallback = 0) {
+    const number=integerCandidate(value);
+    return number !== null && number>=0 ? number : fallback;
+  }
+
+  function telegramChatId(value) {
+    const number=integerCandidate(value);
+    return number !== null && number !== 0 ? number : 0;
+  }
+
+  function telegramUserId(value, fallback = 0) {
+    return positiveInteger(value) || positiveInteger(fallback);
+  }
+
+  function samePositiveInteger(left, right) {
+    const a=positiveInteger(left);
+    const b=positiveInteger(right);
+    return a>0 && b>0 && a===b;
+  }
+
+  function boundedErrorText(value, fallback, max = 180) {
+    const text=textValue(value);
+    return (text || fallback).slice(0,max);
+  }
+
+  function backgroundGrowthEvent(cfg,event) {
+    if (typeof recordGrowthEvent !== 'function') return;
+    try {
+      const task=recordGrowthEvent(cfg,event);
+      if (task && typeof task.catch === 'function') task.catch(()=>null);
+    } catch {}
+  }
+
+  function transientControlPlaneError(error) {
+    const failure=error instanceof Error ? error : new Error('Telegram runtime controls are unavailable.');
+    if (!textValue(failure.code)) failure.code='TELEGRAM_UPSTREAM';
+    return failure;
+  }
+
   return async function processTelegramUpdate(request, cfg, update) {
-  const runtimeState = await loadRuntimeControls(cfg);
-  const lockdown = telegramLockdownDecision(update, { runtime: runtimeState.value });
+  cfg=plainObject(cfg) || {};
+  update=plainObject(update) || {};
+
+  let runtimeState;
+  try {
+    runtimeState=await loadRuntimeControls(cfg);
+  } catch (error) {
+    throw transientControlPlaneError(error);
+  }
+  const runtimeValue=plainObject(runtimeState)?.value;
+  if (!plainObject(runtimeValue)) {
+    throw transientControlPlaneError(new Error('Telegram runtime controls returned an invalid state.'));
+  }
+
+  let lockdown;
+  try {
+    lockdown=plainObject(telegramLockdownDecision(update,{runtime:runtimeValue}));
+  } catch (error) {
+    throw transientControlPlaneError(error);
+  }
+  if (!lockdown) throw transientControlPlaneError(new Error('Telegram lockdown decision is unavailable.'));
   if (lockdown.blocked) {
     if (update.pre_checkout_query && lockdown.rejectCheckout) {
       await telegramApi('answerPreCheckoutQuery', cfg, {
@@ -98,17 +178,21 @@ export function createTelegramUpdateProcessor(deps) {
       const planCfg = parsed ? billingPlanConfig(parsed.plan, cfg) : null;
       const pass = parsed ? null : await parsePassInvoicePayload(q.invoice_payload, cfg.botToken);
       const passCfg = pass ? passProductConfig(pass.passType, cfg) : null;
+      const checkoutUserId=positiveInteger(q.from?.id);
+      const checkoutAmount=positiveInteger(q.total_amount);
       ok = Boolean(
         q.currency === 'XTR'
+        && checkoutUserId>0
+        && checkoutAmount>0
         && (
           (parsed
-            && Number(parsed.userId) === Number(q.from?.id)
+            && samePositiveInteger(parsed.userId,checkoutUserId)
             && planCfg
-            && Number(q.total_amount) === Number(planCfg.stars))
+            && samePositiveInteger(planCfg.stars,checkoutAmount))
           || (pass
-            && Number(pass.userId) === Number(q.from?.id)
+            && samePositiveInteger(pass.userId,checkoutUserId)
             && passCfg
-            && Number(q.total_amount) === Number(passCfg.stars))
+            && samePositiveInteger(passCfg.stars,checkoutAmount))
         )
       );
       if (!ok) errorMessage = 'Параметры покупки не совпадают. Откройте приложение и создайте счёт заново.';
@@ -122,13 +206,13 @@ export function createTelegramUpdateProcessor(deps) {
   }
 
   if (update.callback_query) {
-    const cb = update.callback_query;
-    const data = String(cb.data || '');
-    const callbackChatId = cb.message?.chat?.id;
-    const callbackUserId = Number(cb.from?.id || callbackChatId || 0);
+    const cb=plainObject(update.callback_query) || {};
+    const data=textValue(cb.data);
+    const callbackChatId=telegramChatId(cb.message?.chat?.id);
+    const callbackUserId=telegramUserId(cb.from?.id,callbackChatId>0 ? callbackChatId : 0);
     if (callbackChatId && data === 'digest:on') {
       await setBotDigestSubscription(callbackUserId, callbackChatId, true, cfg, telegramWebAppUrl(request));
-      void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'digest_opt_in',channel:'telegram'});
+      backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'digest_opt_in',channel:'telegram'});
       await telegramApi('answerCallbackQuery', cfg, { callback_query_id: cb.id, text: 'Утренняя подборка включена' });
       await telegramApi('sendMessage', cfg, { chat_id: callbackChatId, text: '✅ Утренняя подборка включена. Примерно в 07:00 UTC будут приходить матчи дня и короткий блок важных футбольных новостей.', reply_markup: footballBotKeyboard(request) });
       return json({ ok: true });
@@ -156,9 +240,9 @@ export function createTelegramUpdateProcessor(deps) {
       const decision=cleanNewsImpactDecisionCode(matched[1]);
       const action=cleanNewsImpactActionCode(matched[2]);
       const recoveryCode=newsImpactRecoveryAction ? cleanNewsImpactRecoveryCode(matched[3]) : '';
-      const fixtureId=Number(matched[newsImpactRecoveryAction ? 4 : 3]);
+      const fixtureId=positiveInteger(matched[newsImpactRecoveryAction ? 4 : 3]);
       if (recoveryCode) await recordNewsImpactRecoveryAttempt(cfg,{userId:callbackUserId,fixtureId,decision,action,recovery:recoveryCode,channel:'telegram'});
-      void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_impact_action',channel:'telegram',fixtureId,metadata:{decision,action,...(recoveryCode ? {recovery:recoveryCode} : {})}});
+      backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_impact_action',channel:'telegram',fixtureId,metadata:{decision,action,...(recoveryCode ? {recovery:recoveryCode} : {})}});
       if (action==='news') {
         await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Открываю новости…'}).catch(()=>null);
         try {
@@ -187,7 +271,13 @@ export function createTelegramUpdateProcessor(deps) {
       }).catch(()=>null);
       const delivery=await sendBotFixtureSection(request,cfg,callbackUserId,callbackChatId,fixtureId,action==='recheck'?'verdict':action,{suppressFallback:true});
       if (!delivery?.ok) {
-        const error=Object.assign(new Error(delivery?.message || 'delivery_failed'),{status:Number(delivery?.status || 0),code:String(delivery?.code || '')});
+        const error=Object.assign(
+          new Error(boundedErrorText(delivery?.message,'delivery_failed')),
+          {
+            status:nonNegativeInteger(delivery?.status),
+            code:textValue(delivery?.code).slice(0,80),
+          },
+        );
         await sendNewsImpactRecoveryMessage(request,cfg,{userId:callbackUserId,chatId:callbackChatId,fixtureId,decision,action,error,fallback:'server_error'});
         return json({ok:true,recovered:true});
       }
@@ -203,10 +293,10 @@ export function createTelegramUpdateProcessor(deps) {
     const legacyNewsAiMatchAction=data.match(/^news:ai_match:(\d+)$/);
     const newsAiMatchAction=datedNewsAiMatchAction || legacyNewsAiMatchAction;
     if (callbackChatId && newsAiMatchAction) {
-      const fixtureId=Number(newsAiMatchAction[1]);
+      const fixtureId=positiveInteger(newsAiMatchAction[1]);
       const newsPublishedAt=newsPublishedAtFromDayToken(datedNewsAiMatchAction?.[2] || '');
-      void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_ai_intent',channel:'telegram',fixtureId,metadata:{mode:'direct_fixture',linking:'smart_fixture'}});
-      void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_return',channel:'telegram',fixtureId,metadata:{origin:'news_ai_cta'}});
+      backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_ai_intent',channel:'telegram',fixtureId,metadata:{mode:'direct_fixture',linking:'smart_fixture'}});
+      backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_return',channel:'telegram',fixtureId,metadata:{origin:'news_ai_cta'}});
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Сравниваю AI до и после новости…'}).catch(()=>null);
       await sendBotFixtureMenu(request,cfg,callbackUserId,callbackChatId,fixtureId,{source:'news_impact',newsImpactDelta:Boolean(newsPublishedAt),newsPublishedAt});
       return json({ok:true});
@@ -226,23 +316,23 @@ export function createTelegramUpdateProcessor(deps) {
         const matches=await botRemoteTeamMatches(parts,cfg).catch(()=>[]);
         const link=newsRelevantFixture({publishedAt,category:{code:'general'}},matches || []);
         if (link?.fixture?.fixtureId) {
-          const fixtureId=Number(link.fixture.fixtureId);
-          void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_ai_intent',channel:'telegram',fixtureId,metadata:{mode:'team_smart_link',team:newsTeamToken(team),linking:'smart_fixture'}});
-          void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_return',channel:'telegram',fixtureId,metadata:{origin:'news_ai_smart_link'}});
+          const fixtureId=positiveInteger(link.fixture.fixtureId);
+          backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_ai_intent',channel:'telegram',fixtureId,metadata:{mode:'team_smart_link',team:newsTeamToken(team),linking:'smart_fixture'}});
+          backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_return',channel:'telegram',fixtureId,metadata:{origin:'news_ai_smart_link'}});
           await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:`Нашёл релевантный матч ${team.canonical}`}).catch(()=>null);
           await sendBotFixtureMenu(request,cfg,callbackUserId,callbackChatId,fixtureId,{source:'news_impact',newsImpactDelta:true,newsPublishedAt:publishedAt});
           return json({ok:true});
         }
       }
-      void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_ai_intent',channel:'telegram',metadata:{mode:'team_search',team:newsTeamToken(team)}});
+      backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_ai_intent',channel:'telegram',metadata:{mode:'team_search',team:newsTeamToken(team)}});
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:`Ищу ближайший матч ${team.canonical}…`}).catch(()=>null);
       await sendBotFootballSearch(request,cfg,callbackUserId,callbackChatId,team.canonical);
       return json({ok:true});
     }
     const newsMatchAction=data.match(/^news:match:(\d+)$/);
     if (callbackChatId && newsMatchAction) {
-      const fixtureId=Number(newsMatchAction[1]);
-      void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_return',channel:'telegram',fixtureId,metadata:{origin:'team_news'}});
+      const fixtureId=positiveInteger(newsMatchAction[1]);
+      backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'news_return',channel:'telegram',fixtureId,metadata:{origin:'team_news'}});
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Открываю матч из новости…'}).catch(()=>null);
       await sendBotFixtureMenu(request,cfg,callbackUserId,callbackChatId,fixtureId);
       return json({ok:true});
@@ -250,27 +340,27 @@ export function createTelegramUpdateProcessor(deps) {
     const newsTeamAction=data.match(/^news:team:(\d+)$/);
     if (callbackChatId && newsTeamAction) {
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Ищу новости клуба…'}).catch(()=>null);
-      await sendFavoriteTeamNews(request,cfg,callbackUserId,callbackChatId,Number(newsTeamAction[1]),{force:false});
+      await sendFavoriteTeamNews(request,cfg,callbackUserId,callbackChatId,positiveInteger(newsTeamAction[1]),{force:false});
       return json({ok:true});
     }
     const newsTeamRefresh=data.match(/^news:team_refresh:(\d+)$/);
     if (callbackChatId && newsTeamRefresh) {
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Обновляю новости клуба…'}).catch(()=>null);
-      await sendFavoriteTeamNews(request,cfg,callbackUserId,callbackChatId,Number(newsTeamRefresh[1]),{force:true});
+      await sendFavoriteTeamNews(request,cfg,callbackUserId,callbackChatId,positiveInteger(newsTeamRefresh[1]),{force:true});
       return json({ok:true});
     }
     const favoriteToggle=data.match(/^favorite:toggle:(\d+):(\d+)$/);
     if (callbackChatId && favoriteToggle) {
-      const teamId=Number(favoriteToggle[1]), fixtureId=Number(favoriteToggle[2]);
+      const teamId=positiveInteger(favoriteToggle[1]), fixtureId=positiveInteger(favoriteToggle[2]);
       try {
         const result=await toggleBotFavorite(callbackUserId,teamId,cfg);
-        if (result.active) void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'favorite_add',channel:'telegram',fixtureId,metadata:{teamId}});
+        if (result.active) backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'favorite_add',channel:'telegram',fixtureId,metadata:{teamId}});
         await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:result.active?`★ ${result.team.name} добавлен в «Мои команды»`:`☆ ${result.team.name} удалён из «Моих команд»`}).catch(()=>null);
         if (fixtureId && cb.message?.message_id) {
           const [match,favorites]=await Promise.all([loadBotFixtureCard(fixtureId,cfg),getFavorites(callbackUserId,cfg)]);
           if (match) await telegramApi('editMessageReplyMarkup',cfg,{
             chat_id:callbackChatId,
-            message_id:Number(cb.message.message_id),
+            message_id:positiveInteger(cb.message.message_id),
             reply_markup:footballMatchActionKeyboard(request,match,'',favorites),
           }).catch(()=>null);
         }
@@ -282,7 +372,7 @@ export function createTelegramUpdateProcessor(deps) {
     const favoriteAction=data.match(/^favorite:team:(\d+)$/);
     if (callbackChatId && favoriteAction) {
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Ищу матчи клуба…'}).catch(()=>null);
-      await sendBotFavoriteTeamMatches(request,cfg,callbackUserId,callbackChatId,Number(favoriteAction[1]));
+      await sendBotFavoriteTeamMatches(request,cfg,callbackUserId,callbackChatId,positiveInteger(favoriteAction[1]));
       return json({ok:true});
     }
     if (callbackChatId && data === 'postmatch:return:off') {
@@ -292,7 +382,7 @@ export function createTelegramUpdateProcessor(deps) {
       return json({ok:true});
     }
     if (callbackChatId && data === 'postmatch:return:on') {
-      memory.cache.delete(postMatchReturnDisabledKey(callbackUserId));
+      if (memory?.cache instanceof Map) memory.cache.delete(postMatchReturnDisabledKey(callbackUserId));
       if (hasSupabase(cfg)) await supaDelete(cfg,'analysis_cache',{cache_key:`eq.${postMatchReturnDisabledKey(callbackUserId)}`}).catch(()=>null);
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Итоги после матчей включены'}).catch(()=>null);
       await telegramApi('sendMessage',cfg,{chat_id:callbackChatId,text:'🔔 Автоматические итоги после проанализированных матчей снова включены.'}).catch(()=>null);
@@ -300,15 +390,15 @@ export function createTelegramUpdateProcessor(deps) {
     }
     const returnReview=data.match(/^match:return_review:(\d+)$/);
     if (callbackChatId && returnReview) {
-      const fixtureId=Number(returnReview[1]);
-      void recordGrowthEvent(cfg,{userId:callbackUserId,eventName:'post_match_return_open',channel:'telegram',fixtureId});
+      const fixtureId=positiveInteger(returnReview[1]);
+      backgroundGrowthEvent(cfg,{userId:callbackUserId,eventName:'post_match_return_open',channel:'telegram',fixtureId});
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Открываю итог AI…'}).catch(()=>null);
       await sendBotFixtureSection(request,cfg,callbackUserId,callbackChatId,fixtureId,'review');
       return json({ok:true});
     }
     const shareAction=data.match(/^match:share:(\d+)$/);
     if (callbackChatId && shareAction) {
-      const fixtureId=Number(shareAction[1]);
+      const fixtureId=positiveInteger(shareAction[1]);
       await telegramApi('answerCallbackQuery',cfg,{callback_query_id:cb.id,text:'Готовлю ссылку…'}).catch(()=>null);
       try { await sendBotFixtureShareCard(request,cfg,callbackUserId,callbackChatId,fixtureId); }
       catch { await telegramApi('sendMessage',cfg,{chat_id:callbackChatId,text:'Не удалось подготовить ссылку на этот матч.'}).catch(()=>null); }
@@ -317,7 +407,7 @@ export function createTelegramUpdateProcessor(deps) {
     const matchAction = data.match(/^match:(menu|verdict|referee|squads|market|refresh|review):(\d+)$/);
     if (callbackChatId && matchAction) {
       const section = matchAction[1];
-      const fixtureId = Number(matchAction[2]);
+      const fixtureId = positiveInteger(matchAction[2]);
       await telegramApi('answerCallbackQuery', cfg, {
         callback_query_id: cb.id,
         text: section === 'menu' ? 'Готовлю короткую AI-оценку…' : section === 'review' ? 'Сверяю прогноз с фактом…' : 'Собираю футбольные данные…',
@@ -330,23 +420,26 @@ export function createTelegramUpdateProcessor(deps) {
     return json({ ok: true });
   }
 
-  const msg = update.message;
+  const msg=plainObject(update.message);
   if (msg?.successful_payment) {
-    await applySuccessfulPayment(msg.from?.id, msg.successful_payment, cfg, Number(msg.date || Math.floor(Date.now() / 1000)));
-    return json({ ok: true });
+    const userId=positiveInteger(msg.from?.id);
+    if (!userId) return json({ok:false,error:'telegram_user_invalid'},400);
+    const eventTime=nonNegativeInteger(msg.date,Math.floor(Date.now()/1000));
+    await applySuccessfulPayment(userId,msg.successful_payment,cfg,eventTime);
+    return json({ok:true});
   }
 
   if (msg?.refunded_payment) {
-    const userId = Number(msg.from?.id || 0);
-    const chargeId = String(msg.refunded_payment.telegram_payment_charge_id || '');
-    if (userId && chargeId) await applyRefundedPayment(userId, chargeId, cfg);
-    return json({ ok: true });
+    const userId=positiveInteger(msg.from?.id);
+    const chargeId=textValue(msg.refunded_payment.telegram_payment_charge_id);
+    if (userId && chargeId) await applyRefundedPayment(userId,chargeId,cfg);
+    return json({ok:true});
   }
 
   if (update.subscription) {
-    const sub = update.subscription;
-    const parsed = await parseInvoicePayload(sub.invoice_payload, cfg.botToken);
-    if (parsed && Number(parsed.userId) === Number(sub.user?.id)) {
+    const sub=plainObject(update.subscription) || {};
+    const parsed=await parseInvoicePayload(sub.invoice_payload,cfg.botToken);
+    if (parsed && samePositiveInteger(parsed.userId,sub.user?.id)) {
       if (sub.state === 'canceled') {
         await updateUserSubscription(parsed.userId, { subscription_canceled: true }, cfg);
       } else if (sub.state === 'active') {
@@ -356,31 +449,32 @@ export function createTelegramUpdateProcessor(deps) {
     return json({ ok: true });
   }
 
-  const text = String(msg?.text || '').trim();
-  const chatId = msg?.chat?.id;
+  const text=textValue(msg?.text);
+  const chatId=telegramChatId(msg?.chat?.id);
   if (chatId && /^\/start(?:@\w+)?(?:\s|$)/i.test(text)) {
-    const userId=Number(msg.from?.id || chatId);
+    const userId=telegramUserId(msg.from?.id,chatId>0 ? chatId : 0);
     const startParam=telegramStartPayload(text);
     await upsertUser(msg.from || {id:userId},cfg).catch(()=>null);
     const launchIntent=parseLaunchStartParam(startParam);
     const attribution=await ensureLaunchAttribution(userId,startParam,cfg);
     const referral=await applyReferralAttribution(userId,launchIntent,cfg).catch(()=>({accepted:false,status:'unavailable'}));
     const eventAttribution=startParam ? launchIntent : attribution;
-    void recordGrowthEvent(cfg,{userId,eventName:'bot_start',channel:'telegram',attribution:eventAttribution,fixtureId:Number(launchIntent.fixtureId || 0) || null,metadata:{attributed:Boolean(startParam),fixtureDeepLink:Boolean(launchIntent.fixtureId),referralStatus:referral.status}});
+    const launchFixtureId=positiveInteger(launchIntent.fixtureId);
+    backgroundGrowthEvent(cfg,{userId,eventName:'bot_start',channel:'telegram',attribution:eventAttribution,fixtureId:launchFixtureId || null,metadata:{attributed:Boolean(startParam),fixtureDeepLink:launchFixtureId>0,referralStatus:referral.status}});
     await configureFootballBot(request, cfg, chatId);
-    if (Number(launchIntent.fixtureId || 0)>0) {
-      void recordGrowthEvent(cfg,{
+    if (launchFixtureId>0) {
+      backgroundGrowthEvent(cfg,{
         userId,
         eventName:'share_open',
         channel:'telegram',
-        fixtureId:Number(launchIntent.fixtureId),
+        fixtureId:launchFixtureId,
         attribution:launchIntent,
         metadata:{referral:Boolean(launchIntent.referralCode),referralStatus:referral.status},
         eventKey:`share_open:${userId}:${startParam}`,
       });
-      void recordGrowthEvent(cfg,{userId,eventName:'fixture_deep_link_open',channel:'telegram',fixtureId:Number(launchIntent.fixtureId),attribution:launchIntent,metadata:{startParam}});
+      backgroundGrowthEvent(cfg,{userId,eventName:'fixture_deep_link_open',channel:'telegram',fixtureId:launchFixtureId,attribution:launchIntent,metadata:{startParam}});
       await telegramApi('sendMessage',cfg,{chat_id:chatId,text:'⚡ Ссылка ведёт прямо на матч. Загружаю AI-разбор без повторного поиска…'}).catch(()=>null);
-      await sendBotFixtureMenu(request,cfg,userId,chatId,Number(launchIntent.fixtureId),{attribution:launchIntent,source:'deep_link'});
+      await sendBotFixtureMenu(request,cfg,userId,chatId,launchFixtureId,{attribution:launchIntent,source:'deep_link'});
       return json({ok:true});
     }
     await sendFootballBotHome(request, cfg, chatId, msg.from || {});
@@ -428,12 +522,12 @@ export function createTelegramUpdateProcessor(deps) {
   }
 
   if (chatId && (/^\/favorites(?:@\w+)?(?:\s|$)/i.test(text) || text === '⭐ Мои команды')) {
-    await sendBotFavoriteTeams(request,cfg,Number(msg.from?.id || chatId),chatId);
+    await sendBotFavoriteTeams(request,cfg,telegramUserId(msg.from?.id,chatId>0 ? chatId : 0),chatId);
     return json({ ok: true });
   }
 
   if (chatId && text === '📰 Новости') {
-    await sendGeneralFootballNews(request,cfg,Number(msg.from?.id || chatId),chatId,{force:false});
+    await sendGeneralFootballNews(request,cfg,telegramUserId(msg.from?.id,chatId>0 ? chatId : 0),chatId,{force:false});
     return json({ ok: true });
   }
 
@@ -451,12 +545,12 @@ export function createTelegramUpdateProcessor(deps) {
   }
 
   if (chatId && /^\/(?:search|ask)(?:@\w+)?(?:\s|$)/i.test(text)) {
-    await sendBotFootballSearch(request, cfg, Number(msg.from?.id || chatId), chatId, text);
+    await sendBotFootballSearch(request, cfg, telegramUserId(msg.from?.id,chatId>0 ? chatId : 0), chatId, text);
     return json({ ok: true });
   }
 
   if (chatId && (/^\/last(?:@\w+)?(?:\s|$)/i.test(text) || text === '🕘 Последний разбор')) {
-    await sendLastAiVerdict(request, cfg, Number(msg.from?.id || chatId), chatId);
+    await sendLastAiVerdict(request, cfg, telegramUserId(msg.from?.id,chatId>0 ? chatId : 0), chatId);
     return json({ ok: true });
   }
 
@@ -489,7 +583,7 @@ export function createTelegramUpdateProcessor(deps) {
   }
 
   if (chatId && text && !text.startsWith('/')) {
-    await sendBotFootballSearch(request, cfg, Number(msg.from?.id || chatId), chatId, text);
+    await sendBotFootballSearch(request, cfg, telegramUserId(msg.from?.id,chatId>0 ? chatId : 0), chatId, text);
   }
 
   return json({ ok: true });
