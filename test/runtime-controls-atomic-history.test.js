@@ -17,7 +17,7 @@ test('runtime-control mutation fails closed when history is unavailable', () => 
   assert.match(save, /RUNTIME_HISTORY_REQUIRED/);
   assert.match(save, /RUNTIME_HISTORY_BASELINE_WRITE_FAILED/);
   assert.match(save, /status:\s*503/);
-  assert.match(save, /await ensureRuntimeHistoryBaseline\(cfg, current, user\)/);
+  assert.match(save, /await ensureRuntimeHistoryBaseline\(cfg\s*,\s*current\s*,\s*user\)/);
 });
 
 test('runtime-control UPDATE carries bounded audit metadata and no longer appends history after commit', () => {
@@ -30,8 +30,8 @@ test('runtime-control UPDATE carries bounded audit metadata and no longer append
   assert.match(save, /RUNTIME_CONTROLS_ATOMIC_COMMIT_FAILED/);
   assert.doesNotMatch(save, /await appendRuntimeHistory\(/);
 
-  const patchIndex = save.indexOf("method: 'PATCH'");
-  const memoryIndex = save.indexOf('memory.runtimeControls =');
+  const patchIndex = save.search(/method\s*:\s*'PATCH'/);
+  const memoryIndex = save.search(/memory\.runtimeControls\s*=/);
   assert.ok(patchIndex >= 0 && memoryIndex > patchIndex, 'memory may update only after the database transaction succeeds');
 });
 
