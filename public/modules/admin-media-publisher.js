@@ -55,6 +55,7 @@ export function createAdminMediaPublisherModule({
 
       if ($('mediaPublisherCopyBtn')) $('mediaPublisherCopyBtn').disabled = false;
       $('mediaPublisherTelegramBtn')?.addEventListener('click', () => {
+        if (!isAdmin()) return;
         const url = String(mediaPublisherPayload?.telegramShareUrl || '');
         if (!url) return;
         if (tg?.openTelegramLink) tg.openTelegramLink(url);
@@ -73,6 +74,7 @@ export function createAdminMediaPublisherModule({
   }
 
   async function copyMediaPublisherPost() {
+    if (!isAdmin()) return;
     const text = String(mediaPublisherPayload?.copy?.body || '');
     if (!text) return toast('Сначала создайте ссылку.');
     try {
