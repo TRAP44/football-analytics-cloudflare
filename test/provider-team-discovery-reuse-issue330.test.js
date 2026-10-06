@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const worker=readFileSync(new URL('../src/worker.js',import.meta.url),'utf8');
 const providerFixtureRuntime=readFileSync(new URL('../src/provider-fixture-runtime.js',import.meta.url),'utf8');
+const searchDiscoveryRuntime=readFileSync(new URL('../src/search-discovery-runtime.js',import.meta.url),'utf8');
 
 function block(start,end,source=worker){
   const a=source.indexOf(start);
@@ -28,7 +29,7 @@ test('Issue #330 shares team discovery fixtures across search and team page flow
   assert.match(helper,/Math\.ceil\(liveRefreshSeconds\(\)\/60\)/);
   assert.match(helper,/ttlMinutes/);
 
-  const search=block('async function loadSearchTeamMatches','async function apiSearch');
+  const search=block('async function loadSearchTeamMatches','async function apiSearch',searchDiscoveryRuntime);
   assert.match(search,/loadProviderTeamDiscoveryFixtures\(teamId,cfg\)/);
   assert.doesNotMatch(search,/apiFootball\('\/fixtures',\{team:teamId,next:12\}/);
   assert.doesNotMatch(search,/apiFootball\('\/fixtures',\{team:teamId,last:8\}/);
