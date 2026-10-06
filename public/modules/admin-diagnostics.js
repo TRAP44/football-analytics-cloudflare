@@ -9,6 +9,7 @@ export function createAdminDiagnosticsModule(deps) {
   } = deps;
 
   function renderDiagnostics() {
+    if (!isAdmin()) return;
     const root = $('diagnosticsStatus');
     if (!root) return;
     const d = state.diagnostics;
