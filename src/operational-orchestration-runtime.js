@@ -8,6 +8,10 @@ import { createTelegramUpdateProcessor } from './telegram-update-orchestration.j
 import { createTelegramWebhookHandler } from './telegram-transport.js';
 
 export function createOperationalOrchestrationRuntime(deps = {}) {
+  if (!deps || typeof deps !== 'object' || Array.isArray(deps)) {
+    throw new TypeError('Operational orchestration dependencies are required.');
+  }
+
   const {
     API_CONTRACT_VERSION,
     APP_VERSION,
@@ -154,7 +158,6 @@ export function createOperationalOrchestrationRuntime(deps = {}) {
     probeOptionalTable,
     probeReminderReliabilitySchema,
     probeRuntimeHistorySchema,
-    probeSupabaseReadinessConfirmed,
     probeSupabaseSchemaDriftConfirmed,
     processDailyDigests,
     processDueReminders,
@@ -192,6 +195,7 @@ export function createOperationalOrchestrationRuntime(deps = {}) {
     regulationScore,
     releaseCheck,
     releaseScheduledJob,
+    renewScheduledJob,
     releaseTelegramUpdate,
     releaseTelegramUpdatePersistent,
     reminderDeliveryStatus,
@@ -250,6 +254,38 @@ export function createOperationalOrchestrationRuntime(deps = {}) {
     weightedTopCalibrationError
   } = deps;
 
+  if (!memory || typeof memory !== 'object' || Array.isArray(memory)) {
+    throw new TypeError('memory is required');
+  }
+  for (const [name, fn] of Object.entries({
+    claimScheduledJob,
+    renewScheduledJob,
+    completeScheduledJob,
+    releaseScheduledJob,
+    loadRuntimeControls,
+    publicRuntimeControls,
+    currentReleaseIdentity,
+    readCompositeReadiness,
+    json,
+  })) {
+    if (typeof fn !== 'function') throw new TypeError(`${name} is required`);
+  }
+
+  function providerCooldownTimestamp() {
+    const raw=memory.provider?.cooldownUntil;
+    if (raw === null || raw === undefined || raw === '') return 0;
+    if (typeof raw === 'number') return Number.isFinite(raw) ? raw : NaN;
+    if (typeof raw !== 'string') return NaN;
+    const text=raw.trim();
+    if (!text) return 0;
+    if (/^\d+$/.test(text)) {
+      const number=Number(text);
+      return Number.isSafeInteger(number) && number >= 0 ? number : NaN;
+    }
+    const timestamp=Date.parse(text);
+    return Number.isFinite(timestamp) ? timestamp : NaN;
+  }
+
   const releaseFieldEvidenceRuntime=createReleaseFieldEvidenceRuntime({
     hasSupabase,
     appVersion:APP_VERSION,
@@ -268,7 +304,7 @@ export function createOperationalOrchestrationRuntime(deps = {}) {
   const publicStatusRuntime=createPublicStatusRuntime({
     loadRuntimeControls,
     publicRuntimeControls,
-    providerCooldownUntil:()=>Number(memory.provider?.cooldownUntil || 0),
+    providerCooldownUntil:providerCooldownTimestamp,
     currentReleaseIdentity,
     readCompositeReadiness,
     scheduleReleaseFieldEvidence,
@@ -663,11 +699,12 @@ export function createOperationalOrchestrationRuntime(deps = {}) {
     runSettlementFinalityVerification,
     recordOpsEvent,
     claimScheduledJob,
+    renewScheduledJob,
     completeScheduledJob,
     releaseScheduledJob,
   });
 
-  return {
+  return Object.freeze({
     API_ROUTE_DEPS,
     captureModelPrediction,
     handleScheduled,
@@ -682,5 +719,5 @@ export function createOperationalOrchestrationRuntime(deps = {}) {
     trustedMetricsGateSelfTest,
     verifiedBrierScore,
     verifiedSettledRows
-  };
+  });
 }
