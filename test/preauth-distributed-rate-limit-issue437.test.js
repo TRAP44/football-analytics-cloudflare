@@ -70,6 +70,18 @@ async function enforce(req,{
   return {response,backend,events,telemetry};
 }
 
+test('network identity and fingerprint secret reject object coercion',async()=>{
+  assert.equal(normalizeClientNetworkAddress({toString:()=> '198.51.100.4'}),'');
+  assert.equal(normalizeClientNetworkAddress(['198.51.100.4']),'');
+  assert.equal(
+    await privacyNetworkFingerprint(
+      request('/api/me',{ip:'198.51.100.4'}),
+      {toString:()=> 'secret'},
+    ),
+    '',
+  );
+});
+
 test('Issue #437 normalizes equivalent IPv4 and IPv6 identities before fingerprinting', async()=>{
   assert.equal(normalizeClientNetworkAddress('198.051.100.004'),'198.51.100.4');
   assert.equal(normalizeClientNetworkAddress('999.1.1.1'),'');
@@ -162,6 +174,93 @@ test('pre-auth threshold blocks before Telegram validation or downstream provide
   const authAt=worker.indexOf('const user = await getRequestUser(request, cfg)',fetchAt);
   const routeAt=worker.indexOf('return await dispatchApiRoute(request, url, cfg, user, API_ROUTE_DEPS)',fetchAt);
   assert.ok(fetchAt>=0 && preAuthAt>fetchAt && authAt>preAuthAt && routeAt>authAt);
+});
+
+test('distributed limiter requires strict backend booleans and strict dev mode',async()=>{
+  const malformedBackend={
+    rpc:async()=>({allowed:'true',retryAfter:true}),
+    calls:[],
+    buckets:new Map(),
+  };
+  const malformed=await enforce(request('/api/analyze',{
+    method:'POST',
+    ip:'198.51.100.81',
+  }),{backend:malformedBackend});
+  assert.equal(malformed.response.status,503);
+  assert.equal(malformed.response.body.code,'PREAUTH_RATE_GUARD_UNAVAILABLE');
+
+  const stringDev=await enforce(request('/api/analyze',{
+    method:'POST',
+    ip:'198.51.100.82',
+  }),{
+    backend:{rpc:async()=>{throw new Error('down');},calls:[],buckets:new Map()},
+    cfg:{supabaseUrl:'https://db.example',supabaseKey:'server-key',devMode:'false'},
+  });
+  assert.equal(stringDev.response.status,503);
+
+  const actualDev=await enforce(request('/api/analyze',{
+    method:'POST',
+    ip:'198.51.100.83',
+  }),{
+    backend:{rpc:async()=>{throw new Error('down');},calls:[],buckets:new Map()},
+    cfg:{supabaseUrl:'https://db.example',supabaseKey:'server-key',devMode:true},
+  });
+  assert.equal(actualDev.response,null);
+});
+
+test('distributed limiter rejects truthy Supabase availability for sensitive routes',async()=>{
+  const response=await enforceDistributedPreAuthRateLimit({
+    request:request('/api/analyze',{method:'POST',ip:'198.51.100.84'}),
+    cfg:{devMode:false},
+    fingerprintSecret:'unit-test-secret',
+    hasSupabase:()=> 'true',
+    supaRpc:async()=>({allowed:true}),
+    json,
+  });
+  assert.equal(response.status,503);
+  assert.equal(response.body.code,'PREAUTH_RATE_GUARD_UNAVAILABLE');
+});
+
+test('blocked retry_after is bounded and rejects coercion',async()=>{
+  const response=await enforceDistributedPreAuthRateLimit({
+    request:request('/api/analyze',{method:'POST',ip:'198.51.100.85'}),
+    cfg:{devMode:false},
+    fingerprintSecret:'unit-test-secret',
+    hasSupabase:()=>true,
+    supaRpc:async()=>({allowed:false,retryAfter:{value:999999}}),
+    json,
+  });
+  assert.equal(response.status,429);
+  assert.equal(response.body.retryAfter,60);
+  assert.equal(response.headers['retry-after'],'60');
+});
+
+test('malformed request URL returns a safe rejection instead of throwing',async()=>{
+  const response=await enforceDistributedPreAuthRateLimit({
+    request:{method:'POST',url:{toString:()=> 'https://example.com/api/analyze'},headers:new Headers()},
+    cfg:{devMode:false},
+    fingerprintSecret:'unit-test-secret',
+    hasSupabase:()=>true,
+    supaRpc:async()=>({allowed:true}),
+    json,
+  });
+  assert.equal(response.status,400);
+  assert.equal(response.body.code,'PREAUTH_REQUEST_INVALID');
+});
+
+test('distributed limiter observability failures do not change the block decision',async()=>{
+  const response=await enforceDistributedPreAuthRateLimit({
+    request:request('/api/analyze',{method:'POST',ip:'198.51.100.86'}),
+    cfg:{devMode:false},
+    fingerprintSecret:'unit-test-secret',
+    hasSupabase:()=>true,
+    supaRpc:async()=>({allowed:false,retryAfter:10}),
+    bumpTelemetry:()=>{throw new Error('telemetry down');},
+    recordOpsEvent:()=>{throw new Error('ops down');},
+    json,
+  });
+  assert.equal(response.status,429);
+  assert.equal(response.body.code,'PREAUTH_RATE_LIMIT');
 });
 
 test('backend outage fails closed for expensive/admin routes but keeps ordinary reads fail-soft', async()=>{
