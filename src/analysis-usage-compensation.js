@@ -1,43 +1,80 @@
 const LIFECYCLE_HEADER = 'durable-v1';
 
+function safeScalarText(value, max = 240) {
+  if (!['string','number','bigint'].includes(typeof value)) return '';
+  try {
+    return String(value)
+      .normalize('NFKC')
+      .replace(/[\u0000-\u001F\u007F]/g,' ')
+      .replace(/\s+/g,' ')
+      .trim()
+      .slice(0,max);
+  } catch {
+    return '';
+  }
+}
+
+function objectValue(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+}
+
+function integerValue(value) {
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) ? value : null;
+  }
+  if (typeof value !== 'string') return null;
+  const raw=value.trim();
+  if (!/^-?\d+$/.test(raw)) return null;
+  const number=Number(raw);
+  return Number.isSafeInteger(number) ? number : null;
+}
+
 function normalizeOperationId(value) {
-  const id = String(value || '').trim().toLowerCase();
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id) ? id : '';
+  const id=safeScalarText(value,80).toLowerCase();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(id)
+    ? id
+    : '';
 }
 
 function normalizeKind(value) {
-  const kind = String(value || '').trim().toLowerCase();
-  return kind === 'pass' ? 'pass' : kind === 'quota' ? 'quota' : 'unknown';
+  const kind=safeScalarText(value,20).toLowerCase();
+  return kind==='pass' ? 'pass' : kind==='quota' ? 'quota' : 'unknown';
 }
 
 function positiveSafeInteger(value) {
-  const number = Number(value);
-  return Number.isSafeInteger(number) && number > 0 ? number : 0;
+  const number=integerValue(value);
+  return number !== null && number>0 ? number : 0;
 }
 
 function usageDate(value) {
-  const raw = String(value || '').trim();
+  const raw=safeScalarText(value,10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return '';
-  const parsed = Date.parse(`${raw}T00:00:00.000Z`);
-  return Number.isFinite(parsed) && new Date(parsed).toISOString().slice(0, 10) === raw ? raw : '';
+  const parsed=Date.parse(`${raw}T00:00:00.000Z`);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString().slice(0,10)===raw
+    ? raw
+    : '';
 }
 
-function nonNegativeInteger(value) {
-  const number = Number(value);
-  return Number.isSafeInteger(number) && number >= 0 ? number : 0;
+function boundedNonNegativeInteger(value, max = Number.MAX_SAFE_INTEGER) {
+  const number=integerValue(value);
+  return number !== null && number>=0 && number<=max ? number : null;
+}
+
+function nonNegativeInteger(value, max = Number.MAX_SAFE_INTEGER) {
+  return boundedNonNegativeInteger(value,max) ?? 0;
 }
 
 function compensationCode(disposition) {
-  return disposition === 'commit'
+  return disposition==='commit'
     ? 'ANALYSIS_USAGE_COMMIT_PENDING'
     : 'ANALYSIS_USAGE_REFUND_PENDING';
 }
 
 function lifecycleHeaders(operationId, action) {
   return {
-    'x-analysis-usage-lifecycle': LIFECYCLE_HEADER,
-    'x-analysis-operation-id': operationId,
-    'x-analysis-usage-action': action,
+    'x-analysis-usage-lifecycle':LIFECYCLE_HEADER,
+    'x-analysis-operation-id':operationId,
+    'x-analysis-usage-action':action,
   };
 }
 
