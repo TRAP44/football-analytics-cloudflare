@@ -45,6 +45,7 @@ export function createAnalysisRuntime(deps) {
     formatAbsences,
     formatH2H,
     formatLineups,
+    fetchWithTimeout,
     freeQuotaHealthy,
     getCache,
     getCalibrationProfile,
@@ -57,6 +58,7 @@ export function createAnalysisRuntime(deps) {
     hydratePlayerRolesForAnalysis,
     isFinishedStatus,
     isFootballRateLimitError,
+    isRetryableFootballTransportError,
     isLiveStatus,
     isYouthReserveMatch,
     json,
@@ -90,7 +92,6 @@ export function createAnalysisRuntime(deps) {
     selectNewsImpactRecoveryStrategy,
     setCache,
     settlePredictionsFromFixtures,
-    tavilySearch,
     temperatureScaleProbabilities,
     usableOddsFeatureMeta,
     userHasAnalyzedFixture,
@@ -98,34 +99,115 @@ export function createAnalysisRuntime(deps) {
     waitForSharedAnalysis,
   } = deps;
 
+  function positiveSafeInteger(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const number = Number(value);
+    return Number.isSafeInteger(number) && number > 0 ? number : null;
+  }
+
+  function strictBoolean(value) {
+    return value === true;
+  }
+
+  function rowsOrEmpty(value) {
+    return Array.isArray(value) ? value : [];
+  }
+
+  function boundedRetryAfter(value, fallback = 60) {
+    const number = Number(value);
+    return Number.isSafeInteger(number) && number >= 1 && number <= 3600 ? number : fallback;
+  }
+
+  function analysisCachePayload(value, fixtureId) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    if (positiveSafeInteger(value?.match?.fixtureId) !== fixtureId) return null;
+    return value;
+  }
+
+  function normalizeNewsPublishedAt(value, now = Date.now()) {
+    const parsed = Date.parse(String(value || ''));
+    if (!Number.isFinite(parsed)) return '';
+    // Client clocks can drift slightly, but future-dated news must not create a
+    // synthetic "after news" recheck window.
+    if (parsed > now + 5 * 60_000) return '';
+    if (parsed < now - 7 * 86400_000) return '';
+    return new Date(parsed).toISOString();
+  }
+
+  async function tavilySearch(query, cfg) {
+    const normalized = String(query || '').trim().slice(0, 500);
+    if (!normalized || !cfg?.tavilyKey || typeof fetchWithTimeout !== 'function') {
+      return { available:false, answer:'', results:[], reason:'not_configured' };
+    }
+    try {
+      const response = await fetchWithTimeout('https://api.tavily.com/search', {
+        method:'POST',
+        headers:{ 'content-type':'application/json' },
+        body:JSON.stringify({
+          api_key:String(cfg.tavilyKey),
+          query:normalized,
+          search_depth:'basic',
+          include_answer:true,
+          max_results:5,
+        }),
+      }, 7000, 'Tavily search');
+      if (!response?.ok) {
+        return { available:false, answer:'', results:[], reason:`http_${Number(response?.status || 0) || 0}` };
+      }
+      const data = await response.json().catch(() => null);
+      const results = rowsOrEmpty(data?.results).slice(0, 5).map(item => ({
+        title:String(item?.title || '').slice(0, 200),
+        url:String(item?.url || '').slice(0, 1000),
+        content:String(item?.content || '').slice(0, 1200),
+        score:Number.isFinite(Number(item?.score)) ? Number(item.score) : null,
+      }));
+      return {
+        available:Boolean(String(data?.answer || '').trim() || results.length),
+        answer:String(data?.answer || '').slice(0, 2400),
+        results,
+        reason:'',
+      };
+    } catch (error) {
+      return {
+        available:false,
+        answer:'',
+        results:[],
+        reason:String(error?.code || 'search_error').slice(0, 60),
+      };
+    }
+  }
+
   async function apiAnalyze(request, cfg, user) {
     let body = {};
     try { body = await request.json(); } catch {}
-    const fixtureId = Number(body?.fixtureId);
+    const fixtureId = positiveSafeInteger(body?.fixtureId);
+    const userId = positiveSafeInteger(user?.id);
     const analysisOrigin=String(body?.origin || 'miniapp').slice(0,30);
-    const recheckRequested=Boolean(body?.recheck);
-    const newsImpactRecheck=Boolean(body?.newsImpactRecheck);
-    const newsPublishedAt=Number.isFinite(Date.parse(String(body?.newsPublishedAt || ''))) ? new Date(Date.parse(String(body.newsPublishedAt))).toISOString() : '';
+    const recheckRequested=strictBoolean(body?.recheck);
+    const newsImpactRecheck=strictBoolean(body?.newsImpactRecheck);
+    const newsPublishedAt=normalizeNewsPublishedAt(body?.newsPublishedAt);
     const newsImpactDecision=cleanNewsImpactDecisionCode(body?.newsImpactDecision);
     const newsImpactAction=cleanNewsImpactActionCode(body?.newsImpactAction);
     const newsImpactRecoveryCode=cleanNewsImpactRecoveryCode(body?.newsImpactRecoveryCode);
     const newsImpactRecoveryFrom=cleanNewsImpactActionCode(body?.newsImpactRecoveryFrom);
     const trackFullAi=analysisOrigin !== 'telegram_quick';
+    if (fixtureId === null) return json({ error: 'Некорректный номер матча.' }, 400);
+    if (userId === null) return json({ error: 'Пользователь не авторизован.' }, 401);
     const recordTrackedFullAiOutcome=async (delivery='analysis')=>{
       if (trackFullAi && newsImpactDecision && newsImpactAction==='full_ai') {
-        await recordNewsImpactOutcome(cfg,{userId:user.id,fixtureId,decision:newsImpactDecision,action:'full_ai',channel:'miniapp',delivery});
+        await recordNewsImpactOutcome(cfg,{userId:userId,fixtureId,decision:newsImpactDecision,action:'full_ai',channel:'miniapp',delivery});
       }
     };
     if (trackFullAi && newsImpactDecision && newsImpactAction==='full_ai') {
       if (newsImpactRecoveryCode) {
-        await recordNewsImpactRecoveryAttempt(cfg,{userId:user.id,fixtureId,decision:newsImpactDecision,action:'full_ai',recovery:newsImpactRecoveryCode,sourceAction:newsImpactRecoveryFrom,channel:'miniapp'});
+        await recordNewsImpactRecoveryAttempt(cfg,{userId:userId,fixtureId,decision:newsImpactDecision,action:'full_ai',recovery:newsImpactRecoveryCode,sourceAction:newsImpactRecoveryFrom,channel:'miniapp'});
       }
-      void recordGrowthEvent(cfg,{userId:user.id,eventName:'news_impact_action',channel:'miniapp',fixtureId,metadata:{decision:newsImpactDecision,action:'full_ai',...(newsImpactRecoveryCode ? {recovery:newsImpactRecoveryCode} : {})}});
+      void recordGrowthEvent(cfg,{userId:userId,eventName:'news_impact_action',channel:'miniapp',fixtureId,metadata:{decision:newsImpactDecision,action:'full_ai',...(newsImpactRecoveryCode ? {recovery:newsImpactRecoveryCode} : {})}});
     }
     const recordTrackedFullAiFailure=async (reason='server_error',status=0)=>{
       if (!(trackFullAi && newsImpactDecision && newsImpactAction==='full_ai')) return null;
       const recovery=await selectNewsImpactRecoveryStrategy(cfg,reason,'full_ai');
-      await recordNewsImpactFailure(cfg,{userId:user.id,fixtureId,decision:newsImpactDecision,action:'full_ai',channel:'miniapp',reason,recovery:recovery.code,strategy:recovery.strategy,strategyReason:recovery.guardReason,status});
+      await recordNewsImpactFailure(cfg,{userId:userId,fixtureId,decision:newsImpactDecision,action:'full_ai',channel:'miniapp',reason,recovery:recovery.code,strategy:recovery.strategy,strategyReason:recovery.guardReason,status});
       return recovery;
     };
     const trackedFullAiFailureResponse=async (payload,status,reason,headers={})=>{
@@ -133,11 +215,21 @@ export function createAnalysisRuntime(deps) {
       return json({...payload,...(recovery ? {newsImpactRecovery:recovery} : {})},status,headers);
     };
     try {
-    if (!Number.isFinite(fixtureId) || fixtureId <= 0) return await trackedFullAiFailureResponse({ error: 'Некорректный номер матча.' },400,'invalid_fixture');
-  
     const cacheKey = `fixture:${fixtureId}:v15-availability-quality-rc144`;
-    const cached = await getCache(cacheKey, cfg);
-    const staleBefore = cached || await getStaleCache(cacheKey, cfg);
+    const cachedCandidate = await getCache(cacheKey, cfg);
+    const cached = analysisCachePayload(cachedCandidate, fixtureId);
+    const staleCandidate = cached || await getStaleCache(cacheKey, cfg);
+    const staleBefore = analysisCachePayload(staleCandidate, fixtureId);
+    if ((cachedCandidate && !cached) || (staleCandidate && !staleBefore)) {
+      await recordOpsEvent(cfg,{
+        severity:'warning',
+        source:'cache',
+        eventType:'analysis_cache_rejected',
+        code:'ANALYSIS_CACHE_INVALID',
+        message:'AI analysis ignored a cache entry whose fixture identity was invalid.',
+        meta:{fixtureId},
+      }).catch(()=>null);
+    }
     const previousFreshness = staleBefore ? analysisFreshness(staleBefore) : null;
     const previousGeneratedMs=Date.parse(String(staleBefore?.generatedAt || ''));
     const newsPublishedMs=Date.parse(String(newsPublishedAt || ''));
@@ -153,27 +245,27 @@ export function createAnalysisRuntime(deps) {
     const shouldPerformRecheck=Boolean(needsFreshnessRecheck || newsImpactEligible);
     const recheckReasonCode=newsImpactEligible ? 'news_impact' : (previousFreshness?.reasonCode || 'fresh');
     let freeRecheck=false;
-    if (needsFreshnessRecheck) freeRecheck=await userHasAnalyzedFixture(user.id,fixtureId,cfg);
-    else if (newsImpactEligible) freeRecheck=await userHasAnalyzedFixture(user.id,fixtureId,cfg);
+    if (needsFreshnessRecheck) freeRecheck=await userHasAnalyzedFixture(userId,fixtureId,cfg);
+    else if (newsImpactEligible) freeRecheck=await userHasAnalyzedFixture(userId,fixtureId,cfg);
     if (cached && !needsFreshnessRecheck) {
       if (!newsImpactEligible) {
-        await recordHistory(user.id, cached, cfg);
-        if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,freshness:previousFreshness?.state || 'fresh'}});
+        await recordHistory(userId, cached, cfg);
+        if (trackFullAi) void recordGrowthEvent(cfg,{userId:userId,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,freshness:previousFreshness?.state || 'fresh'}});
         const newsImpact=newsImpactDeltaStatus(staleBefore,cached,null,{requested:newsImpactRecheck,eligible:newsImpactEligible,performed:false,publishedAt:newsPublishedAt});
         await recordTrackedFullAiOutcome('cached');
-        return json(analysisResponsePayload(cached,{cached:true,stale:false,recheck:{requested:recheckRequested,performed:false,free:false,reasonCode:recheckReasonCode},newsImpact,quota:await getQuota(user.id,cfg)}));
+        return json(analysisResponsePayload(cached,{cached:true,stale:false,recheck:{requested:recheckRequested,performed:false,free:false,reasonCode:recheckReasonCode},newsImpact,quota:await getQuota(userId,cfg)}));
       }
     }
   
-    const entitlementBefore = await resolveUserEntitlements(user.id, fixtureId, cfg);
+    const entitlementBefore = await resolveUserEntitlements(userId, fixtureId, cfg);
     const passCandidate = entitlementBefore.source === 'pass' && entitlementBefore.access.expandedAi === true;
-    const quotaBefore = await getQuota(user.id, cfg);
+    const quotaBefore = await getQuota(userId, cfg);
     if (!freeRecheck && !passCandidate && quotaBefore.left <= 0) return await trackedFullAiFailureResponse({ error: `Лимит исчерпан: ${quotaBefore.used}/${quotaBefore.limit} анализов сегодня.`, quota: quotaBefore },429,'quota_exhausted');
   
     const analysisLock=await claimDistributedAnalysisLock(fixtureId,cfg);
     if (!analysisLock.claimed && analysisLock.unavailable) {
       if (staleBefore) {
-        await recordHistory(user.id,staleBefore,cfg);
+        await recordHistory(userId,staleBefore,cfg);
         return json(analysisResponsePayload(staleBefore,{cached:true,stale:true,warning:'Координация нового AI-расчёта временно недоступна. Показан последний сохранённый анализ.',retryAfter:5,quota:quotaBefore}));
       }
       return await trackedFullAiFailureResponse({error:'Координация AI-расчёта временно недоступна. Повторите через несколько секунд.',code:'ANALYSIS_COORDINATION_DEGRADED',retryAfter:5,quota:quotaBefore},503,'analysis_coordination_degraded',{'retry-after':'5'});
@@ -181,13 +273,13 @@ export function createAnalysisRuntime(deps) {
     if (!analysisLock.claimed) {
       const joined=await waitForSharedAnalysis(cacheKey,cfg);
       if (joined) {
-        await recordHistory(user.id,joined,cfg);
-        if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,sharedJoin:true}});
+        await recordHistory(userId,joined,cfg);
+        if (trackFullAi) void recordGrowthEvent(cfg,{userId:userId,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,sharedJoin:true}});
         await recordTrackedFullAiOutcome('shared');
-        return json(analysisResponsePayload(joined,{cached:true,stale:false,sharedJoin:true,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_shared' : (previousFreshness?.reasonCode || 'shared_compute')},quota:await getQuota(user.id,cfg)}));
+        return json(analysisResponsePayload(joined,{cached:true,stale:false,sharedJoin:true,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_shared' : (previousFreshness?.reasonCode || 'shared_compute')},quota:await getQuota(userId,cfg)}));
       }
       if (staleBefore) {
-        await recordHistory(user.id,staleBefore,cfg);
+        await recordHistory(userId,staleBefore,cfg);
         await recordTrackedFullAiOutcome('stale_pending');
         return json(analysisResponsePayload(staleBefore,{cached:true,stale:true,sharedJoinPending:true,warning:'Свежий расчёт этого матча уже выполняется. Пока показан последний сохранённый анализ.',retryAfter:5,recheck:{requested:recheckRequested,performed:false,free:freeRecheck,reasonCode:'shared_compute_pending'},quota:quotaBefore}));
       }
@@ -202,7 +294,7 @@ export function createAnalysisRuntime(deps) {
     if (!freeRecheck && passCandidate) {
       const passOperationId=crypto.randomUUID();
       try {
-        passUsageReservation=await reserveEntitlementUsage(user.id,entitlementBefore.passes.active,fixtureId,cfg,{
+        passUsageReservation=await reserveEntitlementUsage(userId,entitlementBefore.passes.active,fixtureId,cfg,{
           durable:hasSupabase(cfg),
           operationId:passOperationId,
         });
@@ -224,7 +316,7 @@ export function createAnalysisRuntime(deps) {
       passAccess=Boolean(passUsageReservation?.allowed);
     }
     if (!freeRecheck && !passAccess) {
-      usageReservation=await reserveAnalysisQuota(user.id,cfg);
+      usageReservation=await reserveAnalysisQuota(userId,cfg);
       if (!usageReservation.allowed) {
         return await trackedFullAiFailureResponse({error:`Лимит исчерпан: ${usageReservation.used}/${usageReservation.limit} анализов сегодня.`,quota:{plan:usageReservation.plan,used:usageReservation.used,limit:usageReservation.limit,left:usageReservation.left}},429,'quota_exhausted');
       }
@@ -233,11 +325,22 @@ export function createAnalysisRuntime(deps) {
     try {
       fixture = await loadProviderFixture(fixtureId,cfg);
     } catch (error) {
-      if (staleBefore && isFootballRateLimitError(error)) {
-        await recordHistory(user.id, staleBefore, cfg);
-        if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,stale:true}});
+      const transientProviderFailure = isFootballRateLimitError(error) || isRetryableFootballTransportError(error);
+      if (staleBefore && transientProviderFailure) {
+        await recordHistory(userId, staleBefore, cfg);
+        if (trackFullAi) void recordGrowthEvent(cfg,{userId:userId,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:true,stale:true}});
         await recordTrackedFullAiOutcome('stale');
-        return json(analysisResponsePayload(staleBefore,{cached:true,stale:true,warning:'Показан последний сохранённый анализ: источник футбольных данных временно ограничил запросы.',retryAfter:Number(error?.retryAfter || 60),recheck:{requested:recheckRequested,performed:false,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_provider_limit' : (previousFreshness?.reasonCode || 'provider_limit')},quota:quotaBefore}));
+        const providerLimited = isFootballRateLimitError(error);
+        return json(analysisResponsePayload(staleBefore,{
+          cached:true,
+          stale:true,
+          warning:providerLimited
+            ? 'Показан последний сохранённый анализ: источник футбольных данных временно ограничил запросы.'
+            : 'Показан последний сохранённый анализ: источник футбольных данных временно недоступен.',
+          retryAfter:boundedRetryAfter(error?.retryAfter, 60),
+          recheck:{requested:recheckRequested,performed:false,free:freeRecheck,reasonCode:newsImpactEligible ? 'news_impact_provider_unavailable' : (previousFreshness?.reasonCode || 'provider_unavailable')},
+          quota:quotaBefore,
+        }));
       }
       throw error;
     }
@@ -297,11 +400,11 @@ export function createAnalysisRuntime(deps) {
       allowed:canFetchLineups, skipReason:lineupSkipReason,
     });
   
-    const injuries = injuryResult.data;
-    const predictions = predictionResult.data;
-    const odds = oddsResult.data;
-    const h2hRows = h2hResult.data;
-    const lineupsRows = lineupResult.data;
+    const injuries = rowsOrEmpty(injuryResult?.data);
+    const predictions = rowsOrEmpty(predictionResult?.data);
+    const odds = rowsOrEmpty(oddsResult?.data);
+    const h2hRows = rowsOrEmpty(h2hResult?.data);
+    const lineupsRows = rowsOrEmpty(lineupResult?.data);
     const lineups = formatLineups(lineupsRows, homeId, awayId);
     const lineupQuality=assessMatchLineups(lineups);
     const lineupMeta=annotateLineupReliability(lineupResult.meta, lineupQuality);
@@ -462,6 +565,7 @@ export function createAnalysisRuntime(deps) {
       completeness: completenessPreview,
     });
   
+    const dataCapabilities = publicDataCapabilities();
     const payload = {
       generatedAt: new Date().toISOString(),
       analysisVersion: '4.15.0-availability-quality',
@@ -506,7 +610,7 @@ export function createAnalysisRuntime(deps) {
         featureReliability: analysisFeatureMeta,
         reliability: providerReliability,
       },
-      dataCapabilities: publicDataCapabilities(),
+      dataCapabilities,
       dataProvenance: {
         primaryProvider:'api-football',
         generatedAt:new Date().toISOString(),
@@ -539,7 +643,7 @@ export function createAnalysisRuntime(deps) {
       insights: notes.factors, risks: [...(notes.risks || []), ...skipped], news: web,
       completeness: completenessPreview,
       providerReliability,
-      provider: publicDataCapabilities(),
+      provider: dataCapabilities,
       disclaimer: 'Расчёт основан на доступных статистических сигналах и не гарантирует исход матча. Это не финансовая рекомендация.',
     };
   
@@ -557,14 +661,14 @@ export function createAnalysisRuntime(deps) {
     await setCache(cacheKey, fixtureId, payload, cfg, ttl);
     await captureAnalysisTimelineSnapshot(payload, cfg, { delta: effectiveRecheckDelta });
     await captureModelPrediction(payload, cfg);
-    await recordHistory(user.id, payload, cfg);
+    await recordHistory(userId, payload, cfg);
     if (newsImpactEligible && !needsFreshnessRecheck) {
-      void recordGrowthEvent(cfg,{userId:user.id,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:'news_impact',material:Boolean(effectiveRecheckDelta?.material),stable:Boolean(effectiveRecheckDelta?.stable),changeCount:Number(effectiveRecheckDelta?.items?.length || 0),codes:(effectiveRecheckDelta?.codes || []).slice(0,6)}});
+      void recordGrowthEvent(cfg,{userId:userId,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:'news_impact',material:Boolean(effectiveRecheckDelta?.material),stable:Boolean(effectiveRecheckDelta?.stable),changeCount:Number(effectiveRecheckDelta?.items?.length || 0),codes:(effectiveRecheckDelta?.codes || []).slice(0,6)}});
     }
-    if (needsFreshnessRecheck) void recordGrowthEvent(cfg,{userId:user.id,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:previousFreshness?.reasonCode || 'age_window',material:Boolean(recheckDelta?.material),stable:Boolean(recheckDelta?.stable),changeCount:Number(recheckDelta?.items?.length || 0),codes:(recheckDelta?.codes || []).slice(0,6)}});
-    if (trackFullAi) void recordGrowthEvent(cfg,{userId:user.id,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:false,recheck:shouldPerformRecheck}});
+    if (needsFreshnessRecheck) void recordGrowthEvent(cfg,{userId:userId,eventName:'analysis_recheck',channel:analysisOrigin==='telegram_quick'?'telegram':'miniapp',fixtureId,metadata:{free:freeRecheck,reason:previousFreshness?.reasonCode || 'age_window',material:Boolean(recheckDelta?.material),stable:Boolean(recheckDelta?.stable),changeCount:Number(recheckDelta?.items?.length || 0),codes:(recheckDelta?.codes || []).slice(0,6)}});
+    if (trackFullAi) void recordGrowthEvent(cfg,{userId:userId,eventName:'full_ai',channel:'miniapp',fixtureId,metadata:{cached:false,recheck:shouldPerformRecheck}});
     await recordTrackedFullAiOutcome('fresh');
-    const responseQuota=await getQuota(user.id,cfg);
+    const responseQuota=await getQuota(userId,cfg);
     usageCommitted=true;
     return json(analysisResponsePayload(payload,{cached:false,stale:false,recheck:{requested:recheckRequested,performed:shouldPerformRecheck,free:freeRecheck,reasonCode:recheckReasonCode,delta:recheckDelta},newsImpact,quota:responseQuota}));
     } finally {
@@ -577,11 +681,11 @@ export function createAnalysisRuntime(deps) {
               reservation:usageReservation,
               disposition,
               cfg,
-              userId:user.id,
+              userId:userId,
             });
           } else if (!usageCommitted) {
             try {
-              await refundAnalysisQuota(user.id,usageReservation,cfg);
+              await refundAnalysisQuota(userId,usageReservation,cfg);
             } catch (error) {
               bumpTelemetry('quotaRefundFailures');
               await recordOpsEvent(cfg,{
@@ -605,11 +709,11 @@ export function createAnalysisRuntime(deps) {
               reservation:passUsageReservation,
               disposition,
               cfg,
-              userId:user.id,
+              userId:userId,
             });
           } else if (!usageCommitted) {
             try {
-              const result=await refundEntitlementUsage(user.id,passUsageReservation.entitlementId,cfg);
+              const result=await refundEntitlementUsage(userId,passUsageReservation.entitlementId,cfg);
               if (result?.updated !== true) throw new Error(String(result?.reason || 'legacy_pass_refund_not_confirmed'));
               bumpTelemetry('passUsageRefunds');
             } catch (error) {
