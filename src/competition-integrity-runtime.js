@@ -693,7 +693,10 @@ export function createCompetitionIntegrityRuntime(deps) {
   
   
   return Object.freeze({
-    COMPETITIONS:new Map(COMPETITIONS),
+    COMPETITIONS:new Map([...COMPETITIONS].map(([id,value])=>[
+      id,
+      Object.freeze({...value}),
+    ])),
     BIG_TEAM_RE,
     YOUTH_RESERVE_RE,
     WOMEN_RE,
