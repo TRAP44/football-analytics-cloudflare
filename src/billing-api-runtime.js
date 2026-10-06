@@ -18,6 +18,7 @@ export function createBillingApiRuntime(deps = {}) {
     json,
     listUserEntitlements,
     makeInvoicePayload,
+    memory,
     passProductConfig,
     recordOpsEvent,
     resolveUserEntitlements,
