@@ -64,19 +64,26 @@ function normalizeNow(value) {
   return Date.now();
 }
 
-function normalizeSubscriptionUntil(user) {
+function inspectSubscriptionUntil(user) {
   const source=plainObject(user);
-  if (!source) return null;
-  const value=typeof source.subscription_until === 'string'
-    ? source.subscription_until
-    : typeof source.subscriptionUntil === 'string'
-      ? source.subscriptionUntil
-      : '';
-  if (!value.trim()) return null;
+  if (!source) return {present:false,valid:true,timestamp:null};
+
+  const hasSnake=Object.hasOwn(source,'subscription_until');
+  const hasCamel=Object.hasOwn(source,'subscriptionUntil');
+  if (!hasSnake && !hasCamel) return {present:false,valid:true,timestamp:null};
+
+  const value=hasSnake ? source.subscription_until : source.subscriptionUntil;
+  if (value === null || value === undefined || value === '') {
+    return {present:true,valid:true,timestamp:null};
+  }
+  if (typeof value !== 'string' || !value.trim()) {
+    return {present:true,valid:false,timestamp:null};
+  }
   const timestamp=Date.parse(value.trim());
-  return Number.isFinite(timestamp) && timestamp >= 0 && timestamp <= MAX_TIMESTAMP_MS
-    ? timestamp
-    : null;
+  if (!Number.isFinite(timestamp) || timestamp < 0 || timestamp > MAX_TIMESTAMP_MS) {
+    return {present:true,valid:false,timestamp:null};
+  }
+  return {present:true,valid:true,timestamp};
 }
 
 function normalizeEventType(value) {
@@ -86,12 +93,12 @@ function normalizeEventType(value) {
 }
 
 function eventKeyHash(value) {
-  let hash=2166136261;
+  let hash=14695981039346656037n;
   for (const byte of new TextEncoder().encode(value)) {
-    hash^=byte;
-    hash=Math.imul(hash,16777619)>>>0;
+    hash^=BigInt(byte);
+    hash=(hash*1099511628211n)&0xffffffffffffffffn;
   }
-  return hash.toString(16).padStart(8,'0');
+  return hash.toString(16).padStart(16,'0');
 }
 
 function normalizeEventKey(value) {
@@ -107,7 +114,7 @@ function normalizeEventKey(value) {
     .replace(/[^a-z0-9._:+-]+/g,'-')
     .replace(/^-+|-+$/g,'')
     .slice(0,96);
-  return `${prefix || 'event'}~${eventKeyHash(raw)}`;
+  return `${prefix || 'event'}-${eventKeyHash(raw)}`;
 }
 
 function clonePreferences(input) {
@@ -142,8 +149,9 @@ export function effectiveNotificationPlan(user = {},now=Date.now()) {
   const plan=normalizePlan(source.plan);
   if (plan === 'FREE') return 'FREE';
 
-  const expiresAt=normalizeSubscriptionUntil(source);
-  if (expiresAt !== null && expiresAt <= normalizeNow(now)) return 'FREE';
+  const subscription=inspectSubscriptionUntil(source);
+  if (!subscription.valid) return 'FREE';
+  if (subscription.timestamp !== null && subscription.timestamp <= normalizeNow(now)) return 'FREE';
   return plan;
 }
 
