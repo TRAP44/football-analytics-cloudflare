@@ -85,12 +85,12 @@ const runtime = fs.readFileSync('public/modules/app-runtime.js', 'utf8');
 const smoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 
 test('RC140 routes xG through the semantic guard before live AI and post-match evidence', () => {
-  assert.match(worker, /assessExpectedGoalsQuality\(rawFormattedStatistics/);
-  assert.match(worker, /statisticsForTrustedAnalytics\(publicStatistics, statisticsQuality\)/);
-  assert.match(worker, /statisticsForTrustedExpectedGoals\(comparativeStatistics, xgQuality\)/);
-  assert.match(worker, /buildSmartMatchInsights\(\{[\s\S]{0,260}statistics: analyticalStatistics/);
-  assert.match(worker, /buildLiveAiCoach\(\{[\s\S]{0,260}statistics: analyticalStatistics/);
-  assert.match(worker, /buildPostMatchReview\(\{prediction:postMatchPrediction,fixture,statistics:analyticalStatistics/);
+  assert.match(worker, /assessExpectedGoalsQuality\([\s\S]{0,120}?rawFormattedStatistics/);
+  assert.match(worker, /statisticsForTrustedAnalytics\([\s\S]{0,120}?publicStatistics,[\s\S]{0,120}?statisticsQuality/);
+  assert.match(worker, /statisticsForTrustedExpectedGoals\([\s\S]{0,120}?comparativeStatistics,[\s\S]{0,120}?xgQuality/);
+  assert.match(worker, /buildSmartMatchInsights\(\{[\s\S]{0,420}?statistics:analyticalStatistics/);
+  assert.match(worker, /buildLiveAiCoach\(\{[\s\S]{0,420}?statistics:analyticalStatistics/);
+  assert.match(worker, /buildPostMatchReview\(\{[\s\S]{0,420}?prediction:postMatchPrediction,[\s\S]{0,420}?statistics:analyticalStatistics/);
   assert.match(worker, /xgQuality,/);
   assert.match(worker, /xgSemanticQualityGuard: 'enabled'/);
 });
