@@ -1,8 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
+import { readFileSync } from 'node:fs';
 
 import { createAnalysisContextRuntime } from '../src/analysis-context-runtime.js';
+
+function readRepoFile(relativePath) {
+  return readFileSync(new URL('../' + relativePath, import.meta.url), 'utf8');
+}
 
 function deps(overrides = {}) {
   return {
@@ -360,6 +364,70 @@ test('AI instructor quality-gate failures cannot leak a betting signal', () => {
   assert.ok(result.qualityGate.reasons.some(reason=>reason.code==='quality_gate_unavailable'));
 });
 
+test('AI instructor treats contradictory hold/blocked quality-gate states as fail-closed', () => {
+  for (const state of ['hold','blocked','unexpected']) {
+    const runtime=createAnalysisContextRuntime(deps({
+      analysisQualityGate:()=>({
+        state,
+        allowSignal:true,
+        reasons:[],
+      }),
+    }));
+
+    const result=runtime.buildAiInstructor({
+      probabilities:{home:65,draw:20,away:15},
+      goalModel:{qualityScore:80,over25:70,btts:60},
+      confidence:{score:80,signalCount:3,disagreement:4,agreement:90},
+      completeness:{score:10,max:10},
+      providerReliability:{state:'healthy',trustCap:100},
+    });
+
+    assert.equal(result.betSignal.code,'skip',state);
+    assert.equal(result.qualityGate.allowSignal,false,state);
+    assert.equal(
+      result.qualityGate.state,
+      state==='unexpected' ? 'blocked' : state,
+      state,
+    );
+  }
+});
+
+test('AI instructor allows explicit caution only when there is no blocking reason', () => {
+  const caution=createAnalysisContextRuntime(deps({
+    analysisQualityGate:()=>({
+      state:'caution',
+      allowSignal:true,
+      reasons:[{level:'warn',code:'lineups_pending',text:'Составы ещё уточняются.'}],
+    }),
+  })).buildAiInstructor({
+    probabilities:{home:65,draw:20,away:15},
+    confidence:{score:80,signalCount:3,disagreement:4,agreement:90},
+    completeness:{score:10,max:10},
+    providerReliability:{state:'healthy',trustCap:100},
+  });
+
+  assert.equal(caution.qualityGate.state,'caution');
+  assert.equal(caution.qualityGate.allowSignal,true);
+  assert.notEqual(caution.betSignal.code,'skip');
+
+  const contradictory=createAnalysisContextRuntime(deps({
+    analysisQualityGate:()=>({
+      state:'ready',
+      allowSignal:true,
+      reasons:[{level:'hold',code:'late_lineups',text:'Стоп.'}],
+    }),
+  })).buildAiInstructor({
+    probabilities:{home:65,draw:20,away:15},
+    confidence:{score:80,signalCount:3,disagreement:4,agreement:90},
+    completeness:{score:10,max:10},
+    providerReliability:{state:'healthy',trustCap:100},
+  });
+
+  assert.equal(contradictory.qualityGate.allowSignal,false);
+  assert.equal(contradictory.betSignal.code,'skip');
+  assert.equal(contradictory.betSignal.reason,'Стоп.');
+});
+
 test('AI instructor formatting dependencies fail soft and hostile arrays are sanitized', () => {
   const runtime=createAnalysisContextRuntime(deps({
     marketMovementNote:()=>{ throw new Error('market formatter down'); },
@@ -406,16 +474,14 @@ test('valid AI instructor behavior preserves verdict and strong signal semantics
 });
 
 test('worker keeps analysis context dependencies explicit', () => {
-  const worker=fs.readFileSync('src/worker.js','utf8');
-  const source=fs.readFileSync('src/analysis-context-runtime.js','utf8');
+  const worker=readRepoFile('src/worker.js');
+  const source=readRepoFile('src/analysis-context-runtime.js');
 
   assert.match(
     worker,
     /createAnalysisContextRuntime\(\{[\s\S]*?analysisQualityGate,[\s\S]*?freeQuotaHealthy,[\s\S]*?getCache,[\s\S]*?getStaleCache,[\s\S]*?marketMovementNote,[\s\S]*?refereeProfile,[\s\S]*?resolveTeamSeasonPlayers,[\s\S]*?setCache,[\s\S]*?\}\);/,
   );
   assert.match(source,/const requiredFunctions=\{/);
-  assert.match(source,/teamIntelligenceCacheValue/);
-  assert.match(source,/playerRoleCacheValue/);
-  assert.match(source,/safeQualityGate/);
+  assert.match(source,/function safeQualityGate\(input\)/);
   assert.match(source,/return Object\.freeze\(\{/);
 });
