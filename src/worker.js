@@ -2125,9 +2125,6 @@ const sendGeneralFootballNews = (...args) => getFootballNewsRuntime().sendGenera
 const sendFavoriteTeamNews = (...args) => getFootballNewsRuntime().sendFavoriteTeamNews(...args);
 const currentMorningFootballNews = (...args) => getFootballNewsRuntime().currentMorningFootballNews(...args);
 const morningNewsText = (...args) => getFootballNewsRuntime().morningNewsText(...args);
-const tavll('%', '').replace(',', '.'));
-  return Number.isFinite(n) ? n : null;
-}
 
 const marketParsingRuntime = createMarketParsingRuntime();
 
@@ -2160,9 +2157,7 @@ const sideFromPrematchSignal = (...args) => getLiveMatchIntelligenceRuntime().si
 const livePerformanceSide = (...args) => getLiveMatchIntelligenceRuntime().livePerformanceSide(...args);
 const liveMarketShift = (...args) => getLiveMatchIntelligenceRuntime().liveMarketShift(...args);
 const buildLiveAiCoach = (...args) => getLiveMatchIntelligenceRuntime().buildLiveAiCoach(...args);
-const buildSmartMatchInsights = (...args) home: delta('home'), draw: delta('draw'), away: delta('away') },
-  };
-}
+const buildSmartMatchInsights = (...args) => getLiveMatchIntelligenceRuntime().buildSmartMatchInsights(...args);
 
 let oddsSnapshotRuntime = null;
 function getOddsSnapshotRuntime() {
