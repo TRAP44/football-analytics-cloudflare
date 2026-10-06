@@ -149,7 +149,7 @@ test('RC46 AI instructor builds a concrete three-step pre-kickoff plan', () => {
   });
 
   const result = runtime.buildAiInstructor({
-    probabilities: { home:45, draw:30, away:25 },
+    probabilities: { home:40, draw:30, away:30 },
     goalModel: {
       qualityScore:80,
       over25:72,
