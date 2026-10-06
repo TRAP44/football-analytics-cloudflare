@@ -306,6 +306,13 @@ export function createTelegramBotUiRuntime(deps = {}) {
     return sameOriginWebAppUrl(request,searchUrl);
   }
 
+  function analysisCacheKey(fixtureId) {
+    const id=positiveSafeInteger(fixtureId);
+    return id===null
+      ? ''
+      : `fixture:${id}:v15-availability-quality-rc144`;
+  }
+
   function footballMatchActionKeyboard(
     request,
     match={},
@@ -637,7 +644,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
     }
 
     const analyzed=objectValue(
-      await optionalAsync(getCache,`fixture:${id}:v10-ai-instructor`,cfg),
+      await optionalAsync(getCache,analysisCacheKey(id),cfg),
     );
     if (objectValue(analyzed?.match)) {
       const card=normalizeBotFixtureCard(analyzed.match);
@@ -761,7 +768,7 @@ export function createTelegramBotUiRuntime(deps = {}) {
       const analysis=objectValue(
         await optionalAsync(
           getCache,
-          `fixture:${id}:v10-ai-instructor`,
+          analysisCacheKey(id),
           cfg,
         ),
       );
