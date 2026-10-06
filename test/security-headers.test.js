@@ -17,6 +17,16 @@ test('static assets receive a Telegram-compatible restrictive CSP', () => {
   assert.doesNotMatch(staticHeaders, /script-src[^\n;]*'unsafe-inline'/);
 });
 
+test('API security headers keep framing and cross-origin isolation fail-closed',()=>{
+  assert.equal(API_SECURITY_HEADERS['x-frame-options'],'DENY');
+  assert.equal(API_SECURITY_HEADERS['cross-origin-opener-policy'],'same-origin');
+  assert.equal(API_SECURITY_HEADERS['cross-origin-resource-policy'],'same-origin');
+  assert.match(API_SECURITY_HEADERS['content-security-policy'],/default-src 'none'/);
+  assert.match(API_SECURITY_HEADERS['content-security-policy'],/frame-ancestors 'none'/);
+  assert.doesNotMatch(API_SECURITY_HEADERS['content-security-policy'],/'unsafe-inline'|'unsafe-eval'/);
+  assert.equal(API_SECURITY_HEADERS['strict-transport-security'],'max-age=31536000');
+});
+
 test('security header factory returns an isolated copy', () => {
   const headers = apiSecurityHeaders();
   headers['referrer-policy'] = 'unsafe-url';
@@ -29,5 +39,11 @@ test('Worker JSON responses include API security headers without permissive CORS
   assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
   assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
   assert.equal(response.headers.get('cross-origin-resource-policy'), 'same-origin');
+  assert.equal(response.headers.get('cross-origin-opener-policy'), 'same-origin');
+  assert.equal(response.headers.get('x-frame-options'), 'DENY');
+  assert.equal(
+    response.headers.get('content-security-policy'),
+    "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  );
   assert.equal(response.headers.get('access-control-allow-origin'), null);
 });
