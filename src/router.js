@@ -235,8 +235,9 @@ export async function dispatchApiRoute(request, url, cfg, user, deps) {
   }
   if (pathname === '/api/reminder-health') {
     if (!adminAllowed()) return adminForbidden();
-    if (!['GET','POST'].includes(method)) return methodNotAllowed(['GET','POST']);
-    return await apiReminderHealth(request,cfg,user);
+    if (method === 'GET') return await apiReminderHealth(request,cfg,user);
+    if (method === 'POST') return await sensitiveMutation(()=>apiReminderHealth(request,cfg,user));
+    return methodNotAllowed(['GET','POST']);
   }
   if (method === 'GET' && pathname === '/api/data-integrity') {
     if (!adminAllowed()) return adminForbidden();
