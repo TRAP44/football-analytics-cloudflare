@@ -19,20 +19,76 @@ export function createProviderDataRuntime(deps) {
     setCache,
   } = deps;
 
+  const PROVIDER_FEATURE_CACHE_VERSION = 'v5.0';
+  const ANALYSIS_PROVIDER_CACHE_VERSION = 'v2';
+
+  function positiveSafeInteger(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const number = Number(value);
+    return Number.isSafeInteger(number) && number > 0 ? number : null;
+  }
+
+  function rowsOrEmpty(value) {
+    return Array.isArray(value) ? value : [];
+  }
+
+  function boundedRetryAfter(value) {
+    const number = Number(value);
+    return Number.isFinite(number) && number > 0
+      ? Math.min(86400, Math.max(1, Math.ceil(number)))
+      : null;
+  }
+
+  function boundedTtlSeconds(value, fallback = 600) {
+    const number = Number(value);
+    const safeFallback = Number.isFinite(Number(fallback))
+      ? Math.min(86400, Math.max(15, Math.ceil(Number(fallback))))
+      : 600;
+    return Number.isFinite(number) && number > 0
+      ? Math.min(86400, Math.max(15, Math.ceil(number)))
+      : safeFallback;
+  }
+
+  function normalizedFeatureName(value) {
+    const feature = String(value || '').trim();
+    return /^[A-Za-z][A-Za-z0-9_-]{0,39}$/.test(feature) ? feature : '';
+  }
+
+  function providerCacheEnvelope(payload, fixtureId, feature) {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+    if (positiveSafeInteger(payload.fixtureId) !== fixtureId) return null;
+    if (String(payload.feature || '') !== feature) return null;
+    if (!Array.isArray(payload.data)) return null;
+    return payload;
+  }
+
+  function providerCacheKey(feature, fixtureId, shared = true) {
+    return shared
+      ? `provider-feature:${feature}:${fixtureId}:${PROVIDER_FEATURE_CACHE_VERSION}`
+      : `analysis-provider:${feature}:${fixtureId}:${ANALYSIS_PROVIDER_CACHE_VERSION}`;
+  }
+
   function providerFailureState(error) {
     const code = String(error?.code || '');
     const message = String(error?.message || '');
+    const status = Number(error?.status);
     if (isFootballRateLimitError(error)) return 'rate_limited';
     if (code === 'UPSTREAM_TIMEOUT') return 'timeout';
-    if (code === 'FOOTBALL_CONFIG') return 'configuration';
-    if (/free plans? do not have access|plan|subscription|not have access|access denied|forbidden/i.test(message)) return 'plan_limited';
+    if (code === 'FOOTBALL_CONFIG' || (code === 'FOOTBALL_HTTP' && status === 401)) return 'configuration';
+    if (
+      (code === 'FOOTBALL_HTTP' && status === 403) ||
+      /free plans? do not have access|\bplan\b|subscription|not have access|access denied|forbidden/i.test(message)
+    ) return 'plan_limited';
     if (code === 'FOOTBALL_NETWORK') return 'network_error';
+    if (code === 'FOOTBALL_INVALID_RESPONSE') return 'invalid_response';
     if (code.startsWith('FOOTBALL_')) return 'provider_error';
     return 'error';
   }
   
   function providerDataState(data, options = {}) {
-    const rows = Array.isArray(data) ? data : data == null ? [] : [data];
+    const arrayResponse = Array.isArray(data);
+    const malformedResponse = data !== null && data !== undefined && !arrayResponse;
+    const rows = rowsOrEmpty(data);
     const attempted = options.attempted !== false;
     const reason = String(options.reason || '');
     const error = options.error || null;
@@ -40,17 +96,27 @@ export function createProviderDataRuntime(deps) {
       ? 'skipped'
       : error
         ? providerFailureState(error)
-        : rows.length
-          ? 'available'
-          : 'empty_response';
+        : malformedResponse
+          ? 'invalid_response'
+          : rows.length
+            ? 'available'
+            : 'empty_response';
     return {
       state,
       available: state === 'available',
       observed: state === 'available' || state === 'empty_response',
-      usable: rows.length > 0,
-      degraded: ['rate_limited','timeout','configuration','plan_limited','network_error','provider_error','error'].includes(state),
-      reason: reason || (error ? String(error?.code || state) : state === 'empty_response' ? 'empty_response' : ''),
-      retryAfter: Number(error?.retryAfter || 0) || null,
+      usable: state === 'available',
+      degraded: ['rate_limited','timeout','configuration','plan_limited','network_error','invalid_response','provider_error','error'].includes(state),
+      reason: reason || (
+        error
+          ? String(error?.code || state)
+          : malformedResponse
+            ? 'invalid_data_shape'
+            : state === 'empty_response'
+              ? 'empty_response'
+              : ''
+      ),
+      retryAfter: boundedRetryAfter(error?.retryAfter),
       count: rows.length,
     };
   }
@@ -161,197 +227,311 @@ export function createProviderDataRuntime(deps) {
   }
   
   async function analysisProviderFetch({ feature, path, params, fixtureId = 0, cfg, allowed = true, skipReason = '' }) {
-    const ttlSeconds=({
+    const safeFeature = normalizedFeatureName(feature);
+    const safeFixtureId = positiveSafeInteger(fixtureId);
+    if (!safeFeature || safeFixtureId === null) {
+      return {
+        data: [],
+        meta: {
+          feature: safeFeature || String(feature || '').slice(0, 40),
+          provider: 'api-football',
+          source: 'skipped',
+          fetchedAt: null,
+          ...providerDataState([], {
+            attempted: false,
+            reason: safeFixtureId === null ? 'invalid_fixture' : 'invalid_feature',
+          }),
+        },
+      };
+    }
+
+    const ttlSeconds = boundedTtlSeconds(({
       injuries:1800,
       predictions:1800,
       odds:600,
       h2h:21600,
       lineups:300,
-    })[feature] || 600;
-    const sharedFeature=['injuries','lineups'].includes(feature);
-    const cacheKey=Number(fixtureId)>0
-      ? (sharedFeature
-        ? `provider-feature:${feature}:${Number(fixtureId)}:v4.9`
-        : `analysis-provider:${feature}:${Number(fixtureId)}:v1`)
-      : '';
-  
-    const fresh=cacheKey ? await getCacheEntry(cacheKey,cfg,false).catch(()=>null) : null;
-    if (fresh?.payload) {
-      const data=fresh.payload.data ?? [];
+    })[safeFeature], 600);
+    const sharedFeature = ['injuries','lineups'].includes(safeFeature);
+    const cacheKey = providerCacheKey(safeFeature, safeFixtureId, sharedFeature);
+
+    const freshEntry = await getCacheEntry(cacheKey,cfg,false).catch(()=>null);
+    const fresh = providerCacheEnvelope(freshEntry?.payload, safeFixtureId, safeFeature);
+    if (fresh) {
+      const data = rowsOrEmpty(fresh.data);
       return {
         data,
         meta:{
-          feature,
-          provider:fresh.payload.provider || 'api-football',
+          feature:safeFeature,
+          provider:fresh.provider || 'api-football',
           source:'cache',
-          fetchedAt:fresh.payload.fetchedAt || null,
-          ageSeconds:featureCacheAgeSeconds(fresh.payload),
-          expiresAt:fresh.expiresAt || null,
+          fetchedAt:fresh.fetchedAt || null,
+          ageSeconds:featureCacheAgeSeconds(fresh),
+          expiresAt:freshEntry.expiresAt || null,
           ...providerDataState(data,{attempted:true}),
         },
       };
     }
-  
-    const stale=cacheKey ? await getCacheEntry(cacheKey,cfg,true).catch(()=>null) : null;
+
+    const staleEntry = await getCacheEntry(cacheKey,cfg,true).catch(()=>null);
+    const stale = providerCacheEnvelope(staleEntry?.payload, safeFixtureId, safeFeature);
     if (!allowed) {
-      if (stale?.payload) {
-        const data=stale.payload.data ?? [];
+      if (stale) {
+        const data = rowsOrEmpty(stale.data);
         return {
           data,
           meta:{
-            feature,
-            provider:stale.payload.provider || 'api-football',
+            feature:safeFeature,
+            provider:stale.provider || 'api-football',
             source:'stale',
-            fetchedAt:stale.payload.fetchedAt || null,
-            ageSeconds:featureCacheAgeSeconds(stale.payload),
-            expiresAt:stale.expiresAt || null,
+            fetchedAt:stale.fetchedAt || null,
+            ageSeconds:featureCacheAgeSeconds(stale),
+            expiresAt:staleEntry.expiresAt || null,
             ...providerDataState(data,{attempted:true,reason:skipReason || 'policy'}),
             state:'stale',
+            available:false,
+            usable:false,
+            degraded:true,
             reason:skipReason || 'policy',
           },
         };
       }
       const meta = providerDataState([], { attempted: false, reason: skipReason || 'policy' });
-      return { data: [], meta: { feature, provider: 'api-football', source: 'skipped', fetchedAt: null, ...meta } };
+      return { data: [], meta: { feature:safeFeature, provider:'api-football', source:'skipped', fetchedAt:null, ...meta } };
     }
-  
+
     try {
-      const data = await apiFootball(path, params, cfg);
-      const wrapped={data,provider:'api-football',fetchedAt:new Date().toISOString()};
-      if (cacheKey) await setCache(cacheKey,Number(fixtureId || 0),wrapped,cfg,ttlSeconds/60).catch(()=>null);
-      const meta = providerDataState(data, { attempted: true });
-      return { data: Array.isArray(data) ? data : [], meta: { feature, provider: 'api-football', source: 'network', fetchedAt: wrapped.fetchedAt, ...meta } };
+      const rawData = await apiFootball(path, params, cfg);
+      const data = rowsOrEmpty(rawData);
+      const shape = providerDataState(rawData, { attempted:true });
+      if (shape.state === 'invalid_response') {
+        return {
+          data:[],
+          meta:{
+            feature:safeFeature,
+            provider:'api-football',
+            source:'error',
+            fetchedAt:new Date().toISOString(),
+            ...shape,
+          },
+        };
+      }
+      const wrapped={
+        fixtureId:safeFixtureId,
+        feature:safeFeature,
+        data,
+        provider:'api-football',
+        fetchedAt:new Date().toISOString(),
+      };
+      await setCache(cacheKey,safeFixtureId,wrapped,cfg,ttlSeconds/60).catch(()=>null);
+      return {
+        data,
+        meta:{
+          feature:safeFeature,
+          provider:'api-football',
+          source:'network',
+          fetchedAt:wrapped.fetchedAt,
+          ageSeconds:0,
+          ...shape,
+        },
+      };
     } catch (error) {
-      if (stale?.payload) {
-        const data=stale.payload.data ?? [];
+      if (stale) {
+        const data = rowsOrEmpty(stale.data);
         return {
           data,
           meta:{
-            feature,
-            provider:stale.payload.provider || 'api-football',
+            feature:safeFeature,
+            provider:stale.provider || 'api-football',
             source:'stale',
-            fetchedAt:stale.payload.fetchedAt || null,
-            ageSeconds:featureCacheAgeSeconds(stale.payload),
-            expiresAt:stale.expiresAt || null,
+            fetchedAt:stale.fetchedAt || null,
+            ageSeconds:featureCacheAgeSeconds(stale),
+            expiresAt:staleEntry.expiresAt || null,
             ...providerDataState(data,{attempted:true,error}),
             state:'stale',
+            available:false,
+            usable:false,
+            degraded:true,
             reason:String(error?.code || 'api_error'),
           },
         };
       }
-      const meta = providerDataState([], { attempted: true, error });
-      return { data: [], meta: { feature, provider: 'api-football', source: 'error', fetchedAt: null, ...meta } };
+      const meta = providerDataState([], { attempted:true, error });
+      return { data:[], meta:{ feature:safeFeature, provider:'api-football', source:'error', fetchedAt:null, ...meta } };
     }
   }
-  
+
   async function providerFeatureFetch({ feature, path, params, fixtureId, cfg, context = {} }) {
-    const policy = providerFeaturePolicy(feature, context);
-    const cacheKey = `provider-feature:${feature}:${Number(fixtureId || 0)}:v4.9`;
+    const safeFeature = normalizedFeatureName(feature);
+    const safeFixtureId = positiveSafeInteger(fixtureId);
+    if (!safeFeature || safeFixtureId === null) {
+      if (safeFeature) providerFeatureCounter(safeFeature, 'skipped');
+      return {
+        data:[],
+        meta:{
+          feature:safeFeature || String(feature || '').slice(0,40),
+          provider:'api-football',
+          source:'skipped',
+          fetchedAt:null,
+          ageSeconds:null,
+          expiresAt:null,
+          ...providerDataState([], {
+            attempted:false,
+            reason:safeFixtureId === null ? 'invalid_fixture' : 'invalid_feature',
+          }),
+        },
+      };
+    }
+
+    const rawPolicy = providerFeaturePolicy(safeFeature, context) || {};
+    const policy = {
+      ...rawPolicy,
+      feature:safeFeature,
+      allowed:rawPolicy.allowed !== false,
+      reason:String(rawPolicy.reason || ''),
+      ttlSeconds:boundedTtlSeconds(rawPolicy.ttlSeconds, 600),
+    };
+    const cacheKey = providerCacheKey(safeFeature, safeFixtureId, true);
+
     const freshEntry = await getCacheEntry(cacheKey, cfg, false).catch(() => null);
-    if (freshEntry?.payload) {
-      providerFeatureCounter(feature, 'cache');
-      return {
-        data: freshEntry.payload.data ?? [],
-        meta: {
-          feature,
-          provider: freshEntry.payload.provider || 'api-football',
-          source: 'cache',
-          fetchedAt: freshEntry.payload.fetchedAt || null,
-          ageSeconds: featureCacheAgeSeconds(freshEntry.payload),
-          expiresAt: freshEntry.expiresAt || null,
-          policy,
-          ...providerDataState(freshEntry.payload.data ?? [], { attempted: true }),
-        },
-      };
-    }
-  
-    const staleEntry = await getCacheEntry(cacheKey, cfg, true).catch(() => null);
-  
-    if (!policy.allowed) {
-      providerFeatureCounter(feature, 'skipped');
-      if (staleEntry?.payload) {
-        providerFeatureCounter(feature, 'stale');
-        return {
-          data: staleEntry.payload.data ?? [],
-          meta: {
-            feature,
-            provider: staleEntry.payload.provider || 'api-football',
-            source: 'stale',
-            fetchedAt: staleEntry.payload.fetchedAt || null,
-            ageSeconds: featureCacheAgeSeconds(staleEntry.payload),
-            expiresAt: staleEntry.expiresAt || null,
-            policy,
-            ...providerDataState(staleEntry.payload.data ?? [], { attempted: true, reason: policy.reason }),
-            state: 'stale',
-            reason: policy.reason,
-          },
-        };
-      }
-      return {
-        data: [],
-        meta: {
-          feature,
-          source: 'skipped',
-          fetchedAt: null,
-          ageSeconds: null,
-          expiresAt: null,
-          policy,
-          ...providerDataState([], { attempted: false, reason: policy.reason }),
-          reason: policy.reason,
-        },
-      };
-    }
-  
-    try {
-      const data = await apiFootball(path, params, cfg);
-      const wrapped = { data, provider: 'api-football', fetchedAt: new Date().toISOString() };
-      await setCache(cacheKey, fixtureId, wrapped, cfg, policy.ttlSeconds / 60).catch(() => null);
-      providerFeatureCounter(feature, 'api');
+    const fresh = providerCacheEnvelope(freshEntry?.payload, safeFixtureId, safeFeature);
+    if (fresh) {
+      providerFeatureCounter(safeFeature, 'cache');
+      const data = rowsOrEmpty(fresh.data);
       return {
         data,
         meta: {
-          feature,
-          provider: 'api-football',
-          source: 'network',
-          fetchedAt: wrapped.fetchedAt,
-          ageSeconds: 0,
-          expiresAt: new Date(Date.now() + policy.ttlSeconds * 1000).toISOString(),
+          feature:safeFeature,
+          provider:fresh.provider || 'api-football',
+          source:'cache',
+          fetchedAt:fresh.fetchedAt || null,
+          ageSeconds:featureCacheAgeSeconds(fresh),
+          expiresAt:freshEntry.expiresAt || null,
           policy,
-          ...providerDataState(data, { attempted: true }),
+          ...providerDataState(data, { attempted:true }),
         },
       };
-    } catch (error) {
-      if (staleEntry?.payload) {
-        providerFeatureCounter(feature, 'stale');
+    }
+
+    const staleEntry = await getCacheEntry(cacheKey, cfg, true).catch(() => null);
+    const stale = providerCacheEnvelope(staleEntry?.payload, safeFixtureId, safeFeature);
+
+    if (!policy.allowed) {
+      providerFeatureCounter(safeFeature, 'skipped');
+      if (stale) {
+        providerFeatureCounter(safeFeature, 'stale');
+        const data = rowsOrEmpty(stale.data);
         return {
-          data: staleEntry.payload.data ?? [],
+          data,
           meta: {
-            feature,
-            provider: staleEntry.payload.provider || 'api-football',
-            source: 'stale',
-            fetchedAt: staleEntry.payload.fetchedAt || null,
-            ageSeconds: featureCacheAgeSeconds(staleEntry.payload),
-            expiresAt: staleEntry.expiresAt || null,
+            feature:safeFeature,
+            provider:stale.provider || 'api-football',
+            source:'stale',
+            fetchedAt:stale.fetchedAt || null,
+            ageSeconds:featureCacheAgeSeconds(stale),
+            expiresAt:staleEntry.expiresAt || null,
             policy,
-            ...providerDataState(staleEntry.payload.data ?? [], { attempted: true, error }),
-            state: 'stale',
-            reason: String(error?.code || 'api_error'),
+            ...providerDataState(data, { attempted:true, reason:policy.reason }),
+            state:'stale',
+            available:false,
+            usable:false,
+            degraded:true,
+            reason:policy.reason || 'policy',
           },
         };
       }
-      providerFeatureCounter(feature, 'skipped');
       return {
-        data: [],
-        meta: {
-          feature,
-          provider: 'api-football',
-          source: 'error',
-          fetchedAt: null,
-          ageSeconds: null,
-          expiresAt: null,
+        data:[],
+        meta:{
+          feature:safeFeature,
+          provider:'api-football',
+          source:'skipped',
+          fetchedAt:null,
+          ageSeconds:null,
+          expiresAt:null,
           policy,
-          ...providerDataState([], { attempted: true, error }),
-          reason: String(error?.code || 'api_error'),
+          ...providerDataState([], { attempted:false, reason:policy.reason || 'policy' }),
+        },
+      };
+    }
+
+    try {
+      const rawData = await apiFootball(path, params, cfg);
+      const data = rowsOrEmpty(rawData);
+      const shape = providerDataState(rawData, { attempted:true });
+      if (shape.state === 'invalid_response') {
+        providerFeatureCounter(safeFeature, 'skipped');
+        return {
+          data:[],
+          meta:{
+            feature:safeFeature,
+            provider:'api-football',
+            source:'error',
+            fetchedAt:new Date().toISOString(),
+            ageSeconds:0,
+            expiresAt:null,
+            policy,
+            ...shape,
+          },
+        };
+      }
+      const wrapped={
+        fixtureId:safeFixtureId,
+        feature:safeFeature,
+        data,
+        provider:'api-football',
+        fetchedAt:new Date().toISOString(),
+      };
+      await setCache(cacheKey,safeFixtureId,wrapped,cfg,policy.ttlSeconds/60).catch(() => null);
+      providerFeatureCounter(safeFeature, 'api');
+      return {
+        data,
+        meta:{
+          feature:safeFeature,
+          provider:'api-football',
+          source:'network',
+          fetchedAt:wrapped.fetchedAt,
+          ageSeconds:0,
+          expiresAt:new Date(Date.now() + policy.ttlSeconds * 1000).toISOString(),
+          policy,
+          ...shape,
+        },
+      };
+    } catch (error) {
+      if (stale) {
+        providerFeatureCounter(safeFeature, 'stale');
+        const data = rowsOrEmpty(stale.data);
+        return {
+          data,
+          meta:{
+            feature:safeFeature,
+            provider:stale.provider || 'api-football',
+            source:'stale',
+            fetchedAt:stale.fetchedAt || null,
+            ageSeconds:featureCacheAgeSeconds(stale),
+            expiresAt:staleEntry.expiresAt || null,
+            policy,
+            ...providerDataState(data, { attempted:true, error }),
+            state:'stale',
+            available:false,
+            usable:false,
+            degraded:true,
+            reason:String(error?.code || 'api_error'),
+          },
+        };
+      }
+      providerFeatureCounter(safeFeature, 'skipped');
+      return {
+        data:[],
+        meta:{
+          feature:safeFeature,
+          provider:'api-football',
+          source:'error',
+          fetchedAt:null,
+          ageSeconds:null,
+          expiresAt:null,
+          policy,
+          ...providerDataState([], { attempted:true, error }),
         },
       };
     }
@@ -363,21 +543,29 @@ export function createProviderDataRuntime(deps) {
   }
   
   function providerValidationStatus(steps = []) {
-    const blocking = steps.filter(x => x.state === 'fail');
-    const holds = steps.filter(x => x.state === 'hold');
-    const warnings = steps.filter(x => x.state === 'warn');
-    if (blocking.length) return { code: 'NEEDS_ATTENTION', label: 'Нужна проверка', ready: false };
-    if (holds.length) return { code: 'HOLD', label: 'Ожидает расширенный тариф', ready: false };
-    if (warnings.length) return { code: 'READY_WITH_LIMITATIONS', label: 'Готово с ограничениями', ready: true };
-    return { code: 'READY', label: 'Готово к расширенному режиму', ready: true };
+    const rows = Array.isArray(steps) ? steps : [];
+    const allowedStates = new Set(['pass','warn','hold','fail']);
+    const malformed = rows.length === 0 || rows.some(step => !allowedStates.has(String(step?.state || '')));
+    const blocking = rows.filter(x => x?.state === 'fail');
+    const holds = rows.filter(x => x?.state === 'hold');
+    const warnings = rows.filter(x => x?.state === 'warn');
+    if (malformed || blocking.length) return { code:'NEEDS_ATTENTION', label:'Нужна проверка', ready:false };
+    if (holds.length) return { code:'HOLD', label:'Ожидает расширенный тариф', ready:false };
+    if (warnings.length) return { code:'READY_WITH_LIMITATIONS', label:'Готово с ограничениями', ready:true };
+    return { code:'READY', label:'Готово к расширенному режиму', ready:true };
   }
   
   function providerFeatureSourcesSummary(dataFreshness = {}) {
-    const summary = { api: 0, cache: 0, embedded: 0, stale: 0, skipped: 0, error: 0, other: 0 };
-    for (const meta of Object.values(dataFreshness || {})) {
-      const source = String(meta?.source || 'other');
-      if (source in summary) summary[source] += 1;
-      else summary.other += 1;
+    const summary = { api:0, cache:0, embedded:0, stale:0, skipped:0, error:0, other:0 };
+    const values = dataFreshness && typeof dataFreshness === 'object' && !Array.isArray(dataFreshness)
+      ? Object.values(dataFreshness)
+      : [];
+    for (const meta of values) {
+      const source = String(meta?.source || 'other').trim().toLowerCase();
+      const bucket = source === 'network' || source === 'api' ? 'api'
+        : source === 'stale-cache' || source === 'stale' ? 'stale'
+          : source in summary ? source : 'other';
+      summary[bucket] += 1;
     }
     return summary;
   }
@@ -387,15 +575,23 @@ export function createProviderDataRuntime(deps) {
   }
   
   async function loadLastProviderE2E(cfg) {
-    if (memory.providerE2E?.last) return memory.providerE2E.last;
+    if (memory.providerE2E?.last && typeof memory.providerE2E.last === 'object' && !Array.isArray(memory.providerE2E.last)) {
+      return memory.providerE2E.last;
+    }
     const cached = await getCache('provider-e2e:last:v5.0', cfg).catch(() => null);
-    if (cached) memory.providerE2E.last = cached;
-    return cached || null;
+    const valid = cached && typeof cached === 'object' && !Array.isArray(cached) ? cached : null;
+    memory.providerE2E ||= { last:null };
+    if (valid) memory.providerE2E.last = valid;
+    return valid;
   }
   
   async function saveProviderE2E(result, fixtureId, cfg) {
+    if (!result || typeof result !== 'object' || Array.isArray(result)) return false;
+    const safeFixtureId = positiveSafeInteger(fixtureId);
+    memory.providerE2E ||= { last:null };
     memory.providerE2E.last = result;
-    await setCache('provider-e2e:last:v5.0', Number(fixtureId || 0), result, cfg, 1440).catch(() => null);
+    await setCache('provider-e2e:last:v5.0', safeFixtureId, result, cfg, 1440).catch(() => null);
+    return true;
   }
   
   
@@ -414,21 +610,24 @@ export function createProviderDataRuntime(deps) {
   }
   
   function providerAuditEndpointPlan(fixture) {
+    const fixtureId = positiveSafeInteger(fixture?.fixture?.id);
+    const validFixture = fixtureId !== null;
     const status = String(fixture?.fixture?.status?.short || '').toUpperCase();
-    const live = isLiveStatus(status);
-    const finished = isFinishedStatus(status);
+    const live = validFixture && isLiveStatus(status);
+    const finished = validFixture && isFinishedStatus(status);
     const kickoffMs = Date.parse(fixture?.fixture?.date || '');
     const minsToKickoff = Number.isFinite(kickoffMs) ? Math.round((kickoffMs - Date.now()) / 60000) : null;
-    const lineupsExpected = live || finished || (minsToKickoff !== null && minsToKickoff <= 120);
+    const lineupsExpected = validFixture && (live || finished || (minsToKickoff !== null && minsToKickoff <= 120));
+    const params = { fixture: fixtureId };
     return [
-      { key: 'events', path: '/fixtures/events', params: { fixture: Number(fixture?.fixture?.id || 0) }, applicable: live || finished, expectedData: live || finished },
-      { key: 'statistics', path: '/fixtures/statistics', params: { fixture: Number(fixture?.fixture?.id || 0) }, applicable: live || finished, expectedData: live || finished },
-      { key: 'lineups', path: '/fixtures/lineups', params: { fixture: Number(fixture?.fixture?.id || 0) }, applicable: lineupsExpected, expectedData: lineupsExpected },
-      { key: 'players', path: '/fixtures/players', params: { fixture: Number(fixture?.fixture?.id || 0) }, applicable: live || finished, expectedData: live || finished },
-      { key: 'injuries', path: '/injuries', params: { fixture: Number(fixture?.fixture?.id || 0) }, applicable: !finished, expectedData: false },
-      { key: 'predictions', path: '/predictions', params: { fixture: Number(fixture?.fixture?.id || 0) }, applicable: !finished, expectedData: !finished },
-      { key: 'odds', path: '/odds', params: { fixture: Number(fixture?.fixture?.id || 0) }, applicable: !live && !finished, expectedData: false },
-      { key: 'liveOdds', path: '/odds/live', params: { fixture: Number(fixture?.fixture?.id || 0) }, applicable: live, expectedData: false },
+      { key:'events', path:'/fixtures/events', params, applicable:validFixture && (live || finished), expectedData:live || finished },
+      { key:'statistics', path:'/fixtures/statistics', params, applicable:validFixture && (live || finished), expectedData:live || finished },
+      { key:'lineups', path:'/fixtures/lineups', params, applicable:lineupsExpected, expectedData:lineupsExpected },
+      { key:'players', path:'/fixtures/players', params, applicable:validFixture && (live || finished), expectedData:live || finished },
+      { key:'injuries', path:'/injuries', params, applicable:validFixture && !finished, expectedData:false },
+      { key:'predictions', path:'/predictions', params, applicable:validFixture && !finished, expectedData:validFixture && !finished },
+      { key:'odds', path:'/odds', params, applicable:validFixture && !live && !finished, expectedData:false },
+      { key:'liveOdds', path:'/odds/live', params, applicable:validFixture && live, expectedData:false },
     ];
   }
   
@@ -453,6 +652,7 @@ export function createProviderDataRuntime(deps) {
         label: providerEndpointLabel(item.key),
         state,
         results,
+        expectedData:Boolean(item.expectedData),
         latencyMs: Date.now() - startedAt,
         note: results > 0
           ? 'Данные возвращены.'
@@ -464,9 +664,10 @@ export function createProviderDataRuntime(deps) {
       return {
         key: item.key,
         label: providerEndpointLabel(item.key),
-        state: 'error',
-        results: null,
-        latencyMs: Date.now() - startedAt,
+        state:'error',
+        results:null,
+        expectedData:Boolean(item.expectedData),
+        latencyMs:Date.now() - startedAt,
         code: String(error?.code || 'ERROR'),
         note: redactOpsString(error?.message || 'Ошибка метода API.', 160),
       };
@@ -474,11 +675,11 @@ export function createProviderDataRuntime(deps) {
   }
   
   function providerAuditScore(endpoints) {
-    const relevant = (endpoints || []).filter(x => x.state !== 'not_applicable');
+    const relevant = (Array.isArray(endpoints) ? endpoints : []).filter(x => x?.state !== 'not_applicable');
     if (!relevant.length) return 0;
     const points = relevant.reduce((sum, x) => {
-      if (x.state === 'available') return sum + 1;
-      if (x.state === 'empty') return sum + 0.6;
+      if (x?.state === 'available') return sum + 1;
+      if (x?.state === 'empty') return sum + (x?.expectedData ? 0.35 : 0.7);
       return sum;
     }, 0);
     return Math.round(points / relevant.length * 100);
