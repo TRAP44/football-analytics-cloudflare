@@ -18,6 +18,21 @@ function normalize(value) {
   return String(value || '').replace(/\s+/g, '').toLowerCase();
 }
 
+function navButtonMarkup(navMarkup, id) {
+  return new RegExp(`<button\\b[^>]*\\bid="${id}"[^>]*>[\\s\\S]*?<\\/button>`).exec(navMarkup)?.[0] || '';
+}
+
+function headerBlock(headers, pathname) {
+  const lines = String(headers || '').split(/\r?\n/);
+  const start = lines.findIndex(line => line.trim() === pathname);
+  if (start < 0) return '';
+  const blockLines = [lines[start]];
+  for (let index = start + 1; index < lines.length && lines[index].trim(); index += 1) {
+    blockLines.push(lines[index]);
+  }
+  return blockLines.join('\n');
+}
+
 function bottomNavColumnDeclarations(css) {
   return [...css.matchAll(/[^{}]*\.bottom-nav[^{}]*\{([^{}]*)\}/g)]
     .map(match => /grid-template-columns\s*:\s*([^;]+);?/i.exec(match[1])?.[1])
@@ -27,11 +42,26 @@ function bottomNavColumnDeclarations(css) {
 
 test('public bottom navigation contains exactly the four canonical visible destinations in order', () => {
   const navMarkup = /<nav class="bottom-nav"[\s\S]*?<\/nav>/.exec(html)?.[0] || '';
-  const ids = [...navMarkup.matchAll(/<button id="([^"]+)" class="nav-item[^"]*"/g)].map(match => match[1]);
+  assert.match(navMarkup, /<nav class="bottom-nav"[^>]*aria-label="Основная навигация"/);
+
+  const ids = [...navMarkup.matchAll(/<button\b[^>]*\bid="([^"]+)"[^>]*>/g)].map(match => match[1]);
   assert.deepEqual(ids, NAV.map(([id]) => id));
+
   for (const [id, label] of NAV) {
-    assert.match(navMarkup, new RegExp(`id="${id}"[\\s\\S]*?<small>${label}<\\/small>`));
+    const button = navButtonMarkup(navMarkup, id);
+    assert.ok(button, `${id} must exist in the canonical bottom navigation`);
+    assert.match(button, /\bclass="[^"]*\bnav-item\b[^"]*"/);
+    assert.match(button, /\btype="button"/);
+    assert.match(button, new RegExp(`<small>${label}<\\/small>`));
+    if (id === 'navMatches') {
+      assert.match(button, /\bclass="[^"]*\bactive\b[^"]*"/);
+      assert.match(button, /\baria-current="page"/);
+    } else {
+      assert.doesNotMatch(button, /\baria-current=/);
+    }
   }
+
+  assert.equal((navMarkup.match(/\saria-current=/g) || []).length, 1);
   assert.doesNotMatch(navMarkup, /\shidden(?:\s|>|=)/i);
 });
 
@@ -43,7 +73,10 @@ test('every bottom-nav grid declaration is four minmax columns and final public 
   assert.ok(declarations.length >= 2);
   assert.deepEqual(new Set(declarations), new Set(['repeat(4,minmax(0,1fr))']));
   assert.equal(declarations.at(-1), 'repeat(4,minmax(0,1fr))');
-  assert.match(publicShell, /Bottom Navigation Visibility Hotfix[\s\S]*grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/);
+  assert.match(
+    publicShell,
+    /Bottom navigation visibility cascade guard[\s\S]*?\.miniapp-public-shell \.bottom-nav\s*\{[\s\S]*?grid-template-columns:repeat\(4,minmax\(0,1fr\)\)/i,
+  );
 });
 
 test('final public rule forces all four nav items visible without horizontal min-width pressure', () => {
@@ -67,16 +100,22 @@ test('Telegram safe-area and cache-bust contracts cover the public shell', () =>
   assert.ok(revision);
   assert.notEqual(revision, pkg.version);
   assert.ok(revision.startsWith(`${pkg.version}-`));
-  for (const asset of ['/app.js', '/styles.css', '/styles/public-shell.css']) {
+  for (const asset of ['/app.js', '/styles.css', '/styles/public-shell.css', '/styles/premium-ui.css']) {
     assert.ok(html.includes(`${asset}?v=${revision}`), `${asset} must use the current frontend asset revision`);
   }
 });
 
-test('HTML shell and public-shell CSS are explicitly revalidated', () => {
+test('versioned shell assets are immutable while HTML entry points revalidate', () => {
   const headers = fs.readFileSync('public/_headers', 'utf8');
-  assert.match(headers, /\/styles\/public-shell\.css[\s\S]*?Cache-Control: public, max-age=0, must-revalidate/);
-  assert.match(headers, /\/index\.html[\s\S]*?Cache-Control: no-cache, max-age=0, must-revalidate/);
-  assert.match(headers, /(?:^|\n)\/[ \t]*\n[\s\S]*?Cache-Control: no-cache, max-age=0, must-revalidate/);
+  for (const asset of ['/app.js', '/styles.css', '/styles/public-shell.css', '/styles/premium-ui.css']) {
+    assert.match(
+      headerBlock(headers, asset),
+      /Cache-Control: public, max-age=31536000, immutable/,
+      `${asset} must remain immutable because index.html cache-busts it with the frontend revision`,
+    );
+  }
+  assert.match(headerBlock(headers, '/index.html'), /Cache-Control: no-cache, max-age=0, must-revalidate/);
+  assert.match(headerBlock(headers, '/'), /Cache-Control: no-cache, max-age=0, must-revalidate/);
 });
 
 test('render regression covers the required Telegram mobile widths', () => {
