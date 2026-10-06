@@ -76,10 +76,7 @@ export function createNewsImpactRecoveryRuntime(deps = {}) {
       action:'Повторить обновление AI позже.',priority:0,
     };
   }
-  
-  const NEWS_IMPACT_DECISION_CODES = new Set(['material','detail','stable','guarded','baseline_missing','unavailable']);
-  const NEWS_IMPACT_ACTION_CODES = new Set(['full_ai','squads','market','recheck','news','share']);
-  
+
   function cleanNewsImpactDecisionCode(value = '') {
     const code=String(value || '').toLowerCase().trim();
     return NEWS_IMPACT_DECISION_CODES.has(code) ? code : '';
