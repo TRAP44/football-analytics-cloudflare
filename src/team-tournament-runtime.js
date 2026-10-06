@@ -110,49 +110,101 @@ export function createTeamTournamentRuntime(deps) {
     throw new TypeError('teamDiscoveryFutureDays is required');
   }
 
+  function rows(value) {
+    return Array.isArray(value) ? value : [];
+  }
+
+  function finiteNumber(value, fallback = 0) {
+    try {
+      const number = Number(value);
+      return Number.isFinite(number) ? number : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  function integer(value, fallback = 0) {
+    return Math.trunc(finiteNumber(value, fallback));
+  }
+
+  function nonNegativeInteger(value, fallback = 0) {
+    return Math.max(0, integer(value, fallback));
+  }
+
+  function positiveSafeInteger(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const number = finiteNumber(value, NaN);
+    return Number.isSafeInteger(number) && number > 0 ? number : null;
+  }
+
+  function safeText(value, max = 240) {
+    if (!['string', 'number', 'bigint'].includes(typeof value)) return '';
+    return String(value).trim().slice(0, max);
+  }
+
+  function capabilities() {
+    try {
+      const value = publicDataCapabilities();
+      return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function providerMinuteBudget() {
+    try {
+      return finiteNumber(providerMinuteRemaining(), NaN);
+    } catch {
+      return NaN;
+    }
+  }
+
   function normalizeStandingRow(row = {}) {
-    const all = row?.all || {};
-    const goals = all?.goals || {};
+    const all = row?.all && typeof row.all === 'object' ? row.all : {};
+    const goals = all?.goals && typeof all.goals === 'object' ? all.goals : {};
     return {
-      rank: Number(row?.rank || 0),
+      rank: nonNegativeInteger(row?.rank),
       team: {
-        id: Number(row?.team?.id || 0),
+        id: positiveSafeInteger(row?.team?.id) || 0,
         providerId: null,
-        name: String(row?.team?.name || ''),
-        logo: String(row?.team?.logo || ''),
+        name: safeText(row?.team?.name, 180),
+        logo: safeText(row?.team?.logo, 500),
       },
-      points: Number(row?.points || 0),
-      goalsDiff: Number(row?.goalsDiff || 0),
-      played: Number(all?.played || 0),
-      win: Number(all?.win || 0),
-      draw: Number(all?.draw || 0),
-      lose: Number(all?.lose || 0),
-      goalsFor: Number(goals?.for || 0),
-      goalsAgainst: Number(goals?.against || 0),
-      form: String(row?.form || '').slice(-6),
-      description: String(row?.description || ''),
+      points: nonNegativeInteger(row?.points),
+      goalsDiff: integer(row?.goalsDiff),
+      played: nonNegativeInteger(all?.played),
+      win: nonNegativeInteger(all?.win),
+      draw: nonNegativeInteger(all?.draw),
+      lose: nonNegativeInteger(all?.lose),
+      goalsFor: nonNegativeInteger(goals?.for),
+      goalsAgainst: nonNegativeInteger(goals?.against),
+      form: safeText(row?.form, 12).slice(-6),
+      description: safeText(row?.description, 500),
     };
   }
-  
+
   function normalizeApiFootballStandings(response = [], leagueId, season) {
-    const league = response?.[0]?.league || {};
-    const groups = Array.isArray(league?.standings) ? league.standings : [];
-    const normalizedGroups = groups.map((rows, index) => ({
+    const leagueKey = positiveSafeInteger(leagueId) || 0;
+    const seasonKey = nonNegativeInteger(season);
+    const first = rows(response)[0];
+    const league = first?.league && typeof first.league === 'object' ? first.league : {};
+    const groups = rows(league?.standings);
+    const normalizedGroups = groups.map((groupRows, index) => ({
       name: groups.length > 1 ? `Группа ${index + 1}` : '',
-      rows: (Array.isArray(rows) ? rows : []).map(normalizeStandingRow).filter(x => x.team.id),
+      rows: rows(groupRows).map(normalizeStandingRow).filter(item => item.team.id),
     })).filter(group => group.rows.length);
     const standings = normalizedGroups.flatMap(group => group.rows);
     return {
-      leagueId: Number(leagueId),
-      season: Number(season),
+      leagueId: leagueKey,
+      season: seasonKey,
       available: standings.length > 0,
       league: {
-        id: Number(league?.id || leagueId),
-        name: String(league?.name || ''),
+        id: positiveSafeInteger(league?.id) || leagueKey,
+        name: safeText(league?.name, 180),
         country: normalizeCountryName(league?.country || ''),
-        logo: String(league?.logo || ''),
-        flag: String(league?.flag || ''),
-        season: Number(league?.season || season),
+        logo: safeText(league?.logo, 500),
+        flag: safeText(league?.flag, 500),
+        season: nonNegativeInteger(league?.season, seasonKey),
       },
       groups: normalizedGroups,
       standings,
@@ -160,54 +212,64 @@ export function createTeamTournamentRuntime(deps) {
       sourceMeta: sourceMeta({ provider:'api-football', label:'API-Football' }),
     };
   }
-  
+
   async function claimSecondaryProviderBudget(cfg, provider, limit) {
     if (!hasSupabase(cfg)) return { allowed:false, reason:'shared_rate_guard_unavailable' };
+    const normalizedProvider = safeText(provider, 80) || 'unknown';
+    const requestLimit = Math.max(1, Math.min(10000, nonNegativeInteger(limit, 1) || 1));
     try {
       const result = await supaRpc(cfg, 'claim_provider_request', {
-        p_bucket_key: `secondary:${String(provider || 'unknown')}:minute`,
-        p_limit: Math.max(1, Number(limit || 1)),
+        p_bucket_key: `secondary:${normalizedProvider}:minute`,
+        p_limit: requestLimit,
         p_window_seconds: 60,
       });
       return {
-        allowed: Boolean(result?.allowed),
-        reason: String(result?.reason || ''),
-        retryAfter: Number(result?.retryAfter || 0) || null,
+        allowed: result?.allowed === true,
+        reason: safeText(result?.reason, 160),
+        retryAfter: positiveSafeInteger(result?.retryAfter),
       };
     } catch (error) {
       await recordOpsEvent(cfg, {
         severity:'warning', source:'provider', eventType:'secondary_rate_guard',
         code:'SECONDARY_RATE_GUARD_UNAVAILABLE', message:error?.message || error,
-        meta:{ provider:String(provider || 'unknown') },
+        meta:{ provider:normalizedProvider },
       }).catch(() => null);
       return { allowed:false, reason:'shared_rate_guard_unavailable' };
     }
   }
-  
+
   async function openLigaStandingsProvider(leagueId, season, cfg) {
     const competition = openLigaCompetition(leagueId, season);
     if (!competition) return { available:false, reason:'competition_not_supported' };
     const budget = await claimSecondaryProviderBudget(cfg, 'openligadb', 50);
     if (!budget.allowed) return { available:false, reason:budget.reason || 'secondary_rate_limit' };
-  
-    for (const candidate of openLigaTableUrls(leagueId, season)) {
+
+    for (const candidate of rows(openLigaTableUrls(leagueId, season))) {
+      const candidateUrl=safeText(candidate?.url, 2000);
+      if (!candidateUrl) continue;
       try {
-        const rows = await secondaryProviderJson(candidate.url, cfg, { provider:'OpenLigaDB', operation:'standings', timeoutMs:6500 });
-        const normalized = normalizeOpenLigaStandings(rows, {
-          leagueId, season, label:competition.label,
+        const payload = await secondaryProviderJson(candidateUrl, cfg, {
+          provider:'OpenLigaDB',
+          operation:'standings',
+          timeoutMs:6500,
         });
-        if (normalized.available) return normalized;
+        const normalized = normalizeOpenLigaStandings(payload, {
+          leagueId,
+          season,
+          label:safeText(competition?.label, 180),
+        });
+        if (normalized?.available) return normalized;
       } catch (error) {
         await recordOpsEvent(cfg, {
           severity:'info', source:'provider', eventType:'fallback_provider_failure',
           code:'OPENLIGADB_STANDINGS', message:error?.message || error,
-          meta:{ leagueId:Number(leagueId), season:Number(season), shortcut:candidate.shortcut },
+          meta:{ leagueId:integer(leagueId), season:integer(season), shortcut:safeText(candidate?.shortcut, 80) },
         }).catch(() => null);
       }
     }
     return { available:false, reason:'openligadb_empty' };
   }
-  
+
   function openLigaEventFeatureMeta(events, sourceMeta = {}, { source = 'network', fetchedAt = null, expiresAt = null, context = {} } = {}) {
     return {
       feature:'events',
