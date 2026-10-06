@@ -11,6 +11,8 @@ const app = fs.readFileSync('public/app.js','utf8');
 const html = fs.readFileSync('public/admin.html','utf8');
 const smoke = fs.readFileSync('scripts/post-deploy-smoke.js','utf8');
 const migration = fs.readFileSync('supabase/migrations/supabase_migration_v6_26_2.sql','utf8');
+const stableReadHotfix = fs.readFileSync('supabase/migrations/supabase_migration_v6_29_3.sql','utf8');
+const stableReadiness = fs.readFileSync('supabase/migrations/supabase_migration_v6_29_10.sql','utf8');
 
 test('provider observability is wired to both primary and secondary football transports', () => {
   assert.match(worker, /createProviderObservabilityRuntime/);
@@ -78,4 +80,14 @@ test('v6.26.2 provider SLO aggregation is backend-only and service-role scoped',
   assert.match(migration,/revoke execute on function public\.record_provider_slo_observation[\s\S]*from public, anon, authenticated/);
   assert.match(migration,/grant execute on function public\.record_provider_slo_observation[\s\S]*to service_role/);
   assert.match(migration,/security invoker/g);
+});
+
+test('provider SLO reader keeps a statement-stable implicit upper bound and readiness detects body drift', () => {
+  assert.match(stableReadHotfix,/language sql\s+stable\s+security invoker/i);
+  assert.match(stableReadHotfix,/coalesce\(p_until,statement_timestamp\(\)\)/i);
+  assert.doesNotMatch(stableReadHotfix,/coalesce\(p_until,clock_timestamp\(\)\)/i);
+  assert.match(stableReadiness,/provider_slo_read_boundary_drift/);
+  assert.match(stableReadiness,/statement_timestamp\(\)/);
+  assert.match(stableReadiness,/clock_timestamp\(\)/);
+  assert.match(stableReadiness,/pg_get_functiondef/);
 });
