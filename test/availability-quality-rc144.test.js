@@ -143,7 +143,7 @@ test('RC144 exposes availability quality through UI and release contracts', () =
   assert.match(worker, /match-center:\$\{fixtureId\}:v16-availability-quality-rc144/);
   assert.match(worker, /fixture:\$\{fixtureId\}:v15-availability-quality-rc144/);
   assert.match(worker, /analysisVersion:\s*'4\.15\.0-availability-quality'/);
-  assert.match(worker, /availabilitySemanticQualityGuard: 'enabled'/);
+  assert.match(worker, /injuries:injuriesTrusted[\s\S]{0,160}?availabilityQuality\?\.confidenceBearing===true/);
   assert.match(app, /function availabilityQualityHintHtml/);
   assert.match(app, /availabilityQualityHintHtml\(d\.availabilityQuality\)/);
   assert.match(smoke, /'availabilitySemanticQualityGuard'/);
