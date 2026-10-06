@@ -515,4 +515,56 @@ begin
 end
 $matchradar$;
 
+-- The structural v2 fingerprint intentionally does not include function proconfig.
+-- Prove that the readiness security contract closes that gap by rejecting a
+-- backend-only public function whose search_path is inherited from the session.
+create function public.issue438_search_path_probe()
+returns integer
+language sql
+security invoker
+as $
+  select 1;
+$;
+
+revoke all on function public.issue438_search_path_probe()
+  from public, anon, authenticated, service_role;
+grant execute on function public.issue438_search_path_probe()
+  to service_role;
+
+do $search_path_probe$
+declare
+  v_contract jsonb;
+begin
+  select public.backend_security_contract() into v_contract;
+
+  if coalesce((v_contract->>'ok')::boolean,false) is true then
+    raise exception 'Supabase integration contract: mutable function search_path was not rejected';
+  end if;
+
+  if not exists (
+    select 1
+    from jsonb_array_elements(
+      coalesce(v_contract->'function_violations','[]'::jsonb)
+    ) item
+    where item->>'reason'='search_path_mutable'
+      and item->>'object' like 'public.issue438_search_path_probe(%'
+  ) then
+    raise exception 'Supabase integration contract: search_path_mutable violation missing: %', v_contract;
+  end if;
+end
+$search_path_probe$;
+
+drop function public.issue438_search_path_probe();
+
+do $search_path_restored$
+declare
+  v_contract jsonb;
+begin
+  select public.backend_security_contract() into v_contract;
+  if coalesce((v_contract->>'ok')::boolean,false) is not true then
+    raise exception 'Supabase integration contract: security contract did not recover after search-path probe: %', v_contract;
+  end if;
+end
+$search_path_restored$;
+
 select 'MatchRadar executable Supabase schema contract passed.' as result;
