@@ -123,7 +123,7 @@ test('RC144 excludes stale or unverified injury feeds from analytics', () => {
   assert.equal(annotated.confidenceBearing, false);
 });
 
-const worker = fs.readFileSync('src/worker.js', 'utf8');
+const worker = fs.readFileSync('src/worker.js', 'utf8') + '\n' + fs.readFileSync('src/match-center-runtime.js', 'utf8');
 const app = fs.readFileSync('public/app.js', 'utf8');
 const smoke = fs.readFileSync('scripts/post-deploy-smoke.js', 'utf8');
 
