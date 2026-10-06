@@ -86,8 +86,17 @@ export function createAnalysisLifecycleRuntime(deps) {
     const source=objectValue(payload) || {};
     const impact=objectValue(source.lineupImpact);
     if (impact) return impact.homeConfirmed === true && impact.awayConfirmed === true;
+
+    const reliabilityMeta=objectValue(source?.providerReliability?.features?.lineups)
+      || objectValue(source?.dataProvenance?.features?.lineups);
+    const sourceTrusted=reliabilityMeta?.confidenceBearing === true
+      && reliabilityMeta?.stale !== true;
+    if (!sourceTrusted) return false;
+
     const quality=objectValue(source.lineupQuality);
-    if (quality && typeof quality.bothConfirmed === 'boolean') return quality.bothConfirmed === true;
+    if (quality && typeof quality.bothConfirmed === 'boolean') {
+      return quality.bothConfirmed === true;
+    }
     const homeQuality=objectValue(source?.lineups?.home?.quality);
     const awayQuality=objectValue(source?.lineups?.away?.quality);
     return homeQuality?.confirmed === true && awayQuality?.confirmed === true;
@@ -109,7 +118,11 @@ export function createAnalysisLifecycleRuntime(deps) {
       ? Math.round((kickoffMs-nowMs)/60000)
       : null;
     const lineupsConfirmed=trustedLineupsConfirmed(source);
-    const marketAvailable=Boolean(objectValue(source.market));
+    const market=objectValue(source.market);
+    const marketAvailable=Boolean(
+      objectValue(market?.odds)
+      || objectValue(market?.probabilities),
+    );
 
     if (live || finished || (minutesToKickoff !== null && minutesToKickoff < -5)) {
       return {
