@@ -121,7 +121,8 @@ test('News Impact deterministic drill remains green',()=>{
   assert.ok(result.cases>=5);
 
   assert.match(analysisRuntime,/analysisRecheckDelta\(staleBefore,payload\)/);
-  assert.match(analysisRuntime,/newsImpactDeltaStatus\(staleBefore,payload,effectiveRecheckDelta/);
+  assert.match(analysisRuntime,/safeNewsImpactDeltaStatus\([\s\S]*?staleBefore,[\s\S]*?payload,[\s\S]*?effectiveRecheckDelta/);
+  assert.match(analysisRuntime,/return newsImpactDeltaStatus\(previous,next,delta,options\)/);
 });
 
 test('Telegram renders a dedicated before-vs-after News Impact Delta block',()=>{
