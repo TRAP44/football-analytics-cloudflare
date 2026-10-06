@@ -120,12 +120,24 @@ export function createClientTelemetryRuntime(deps) {
     'unknown',
   ]);
   
+  function finiteTelemetryNumber(value) {
+    if (value === null || value === undefined || typeof value === 'boolean') return null;
+    if (typeof value === 'string' && !value.trim()) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function boundedTelemetryNumber(value, min, max) {
+    const parsed = finiteTelemetryNumber(value);
+    return parsed === null ? null : Math.max(min, Math.min(max, Math.round(parsed)));
+  }
+
   function clientTelemetryMetadata(body = {}, event = '') {
-    const meta = body?.meta && typeof body.meta === 'object' ? body.meta : {};
+    const meta = body?.meta && typeof body.meta === 'object' && !Array.isArray(body.meta) ? body.meta : {};
     const rawReason = String(meta.reason || '').trim().toLowerCase();
     const rawErrorKind = String(meta.errorKind || '').trim().toLowerCase();
     const rawView = String(meta.view || '').trim();
-    const rawDurationMs = Number(meta.durationMs);
+    const rawDurationMs = finiteTelemetryNumber(meta.durationMs);
     const reason = event === 'product_action'
       ? (CLIENT_PRODUCT_ACTIONS.has(rawReason) ? rawReason : '')
       : event === 'action_error'
@@ -138,22 +150,22 @@ export function createClientTelemetryRuntime(deps) {
       : redactOpsString(rawErrorKind, 60);
     const out = {
       clientVersion: redactOpsString(meta.clientVersion || '', 40),
-      apiContract: Number.isFinite(Number(meta.apiContract)) ? Number(meta.apiContract) : null,
+      apiContract: finiteTelemetryNumber(meta.apiContract),
       releaseChannel: redactOpsString(meta.releaseChannel || '', 30),
       view: CLIENT_TELEMETRY_VIEWS.has(rawView) ? rawView : 'unknown',
       networkMode: redactOpsString(meta.networkMode || '', 30),
-      bootMs: Number.isFinite(Number(meta.bootMs)) ? Math.max(0, Math.min(60000, Math.round(Number(meta.bootMs)))) : null,
-      durationMs: event === 'operation_timing' && Number.isFinite(rawDurationMs) ? Math.max(0, Math.min(120000, Math.round(rawDurationMs))) : null,
-      moduleReadyMs: event === 'boot_ok' && Number.isFinite(Number(meta.moduleReadyMs)) ? Math.max(0, Math.min(60000, Math.round(Number(meta.moduleReadyMs)))) : null,
-      navigationReadyMs: event === 'boot_ok' && Number.isFinite(Number(meta.navigationReadyMs)) ? Math.max(0, Math.min(60000, Math.round(Number(meta.navigationReadyMs)))) : null,
-      responseEndMs: event === 'boot_ok' && Number.isFinite(Number(meta.responseEndMs)) ? Math.max(0, Math.min(60000, Math.round(Number(meta.responseEndMs)))) : null,
-      domContentLoadedMs: event === 'boot_ok' && Number.isFinite(Number(meta.domContentLoadedMs)) ? Math.max(0, Math.min(60000, Math.round(Number(meta.domContentLoadedMs)))) : null,
-      firstContentfulPaintMs: event === 'boot_ok' && Number.isFinite(Number(meta.firstContentfulPaintMs)) ? Math.max(0, Math.min(60000, Math.round(Number(meta.firstContentfulPaintMs)))) : null,
-      manifestMs: event === 'boot_ok' && Number.isFinite(Number(meta.manifestMs)) ? Math.max(0, Math.min(60000, Math.round(Number(meta.manifestMs)))) : null,
-      identityMs: event === 'boot_ok' && Number.isFinite(Number(meta.identityMs)) ? Math.max(0, Math.min(60000, Math.round(Number(meta.identityMs)))) : null,
-      feedMs: event === 'boot_ok' && Number.isFinite(Number(meta.feedMs)) ? Math.max(0, Math.min(60000, Math.round(Number(meta.feedMs)))) : null,
-      revealDelayMs: event === 'boot_ok' && Number.isFinite(Number(meta.revealDelayMs)) ? Math.max(0, Math.min(5000, Math.round(Number(meta.revealDelayMs)))) : null,
-      viewportWidth: event === 'boot_ok' && Number.isFinite(Number(meta.viewportWidth)) ? Math.max(200, Math.min(2400, Math.round(Number(meta.viewportWidth)))) : null,
+      bootMs: boundedTelemetryNumber(meta.bootMs, 0, 60000),
+      durationMs: event === 'operation_timing' ? boundedTelemetryNumber(rawDurationMs, 0, 120000) : null,
+      moduleReadyMs: event === 'boot_ok' ? boundedTelemetryNumber(meta.moduleReadyMs, 0, 60000) : null,
+      navigationReadyMs: event === 'boot_ok' ? boundedTelemetryNumber(meta.navigationReadyMs, 0, 60000) : null,
+      responseEndMs: event === 'boot_ok' ? boundedTelemetryNumber(meta.responseEndMs, 0, 60000) : null,
+      domContentLoadedMs: event === 'boot_ok' ? boundedTelemetryNumber(meta.domContentLoadedMs, 0, 60000) : null,
+      firstContentfulPaintMs: event === 'boot_ok' ? boundedTelemetryNumber(meta.firstContentfulPaintMs, 0, 60000) : null,
+      manifestMs: event === 'boot_ok' ? boundedTelemetryNumber(meta.manifestMs, 0, 60000) : null,
+      identityMs: event === 'boot_ok' ? boundedTelemetryNumber(meta.identityMs, 0, 60000) : null,
+      feedMs: event === 'boot_ok' ? boundedTelemetryNumber(meta.feedMs, 0, 60000) : null,
+      revealDelayMs: event === 'boot_ok' ? boundedTelemetryNumber(meta.revealDelayMs, 0, 5000) : null,
+      viewportWidth: event === 'boot_ok' ? boundedTelemetryNumber(meta.viewportWidth, 200, 2400) : null,
       matchMode: event === 'data_coverage' && ['upcoming','live','finished'].includes(String(meta.matchMode || '').toLowerCase())
         ? String(meta.matchMode || '').toLowerCase()
         : null,
