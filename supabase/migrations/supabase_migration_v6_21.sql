@@ -2,6 +2,15 @@
 -- Additive migration: aggregate existing service-role readiness/security contracts
 -- and minimum schema/auth checks into one PostgREST RPC round-trip.
 -- Existing RPCs, tables, columns, RLS policies and grants are preserved.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- Keep this migration in the upgrade chain. backend_readiness_contract() remains
+-- the legacy readiness layer called by backend_readiness_contract_v2() in v6.29.1.
+-- Its minimum-column, security, default-ACL, operational auth-failure and legacy
+-- fingerprint checks are therefore still part of the current production gate.
+-- backend_schema_fingerprint() is intentionally replaced by later additive
+-- migrations while this readiness RPC remains compatible with that legacy layer.
+-- Do not rewrite applied DDL here; corrections belong in a new forward migration.
 
 create or replace function public.backend_readiness_contract(
   p_expected_fingerprint text,
