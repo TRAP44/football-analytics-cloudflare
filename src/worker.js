@@ -525,6 +525,7 @@ const {
 
 const {
   claimScheduledJob,
+  renewScheduledJob,
   completeScheduledJob,
   releaseScheduledJob,
   getPreferences,
@@ -3014,7 +3015,6 @@ const {
   probeOptionalTable,
   probeReminderReliabilitySchema,
   probeRuntimeHistorySchema,
-  probeSupabaseReadinessConfirmed,
   probeSupabaseSchemaDriftConfirmed,
   processDailyDigests,
   processDueReminders,
@@ -3052,6 +3052,7 @@ const {
   regulationScore,
   releaseCheck,
   releaseScheduledJob,
+  renewScheduledJob,
   releaseTelegramUpdate,
   releaseTelegramUpdatePersistent,
   reminderDeliveryStatus,
