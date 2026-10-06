@@ -11,6 +11,10 @@ test('RC100 probes required Supabase tables and columns without DDL', () => {
   assert.match(worker, /async function readPersonalWriteGuardContract\(/);
   assert.match(worker, /personal_write_guard_contract/);
   assert.match(worker, /personal_write_guards/);
+  assert.match(worker, /favoritePlayersLimit/);
+  assert.match(worker, /canonicalReminders/);
+  assert.match(worker, /explicitRearm/);
+  assert.match(worker, /reminderRetentionDays === 90/);
   for (const marker of [
     "id: 'users_acquisition'",
     "id: 'analysis_history_ai'",
