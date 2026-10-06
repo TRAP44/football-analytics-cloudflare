@@ -6,6 +6,13 @@
 -- This replaces only the function body. The public function signature and
 -- execution attributes are unchanged, so legacy and v2 schema fingerprints
 -- remain stable.
+--
+-- HISTORICAL / FROZEN MIGRATION:
+-- This is the canonical repair for the v6.25.2 contract regression. The full
+-- v2 payload is part of the current Worker/release contract: three limits plus
+-- canonicalReminders, explicitRearm and reminderRetentionDays.
+-- v6.29.9 later makes that complete payload release-blocking in readiness v2;
+-- do not rewrite this applied hotfix to change contract semantics.
 
 create or replace function public.personal_write_guard_contract()
 returns jsonb
